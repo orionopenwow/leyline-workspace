@@ -2411,7 +2411,7 @@ class Hub:
     # /catalog with no filters: a few short rows of big cards (Popular, Game modes, Make it look nicer, Quality of life)
     # and one search box. The full catalog with every filter is /catalog?view=all ("Browse everything"), and any filter
     # or search goes there too. The launcher's Discover does the same (launcher/ui/simple.js), with the same rows.
-    SIMPLE_ROW_N = 4
+    SIMPLE_ROW_N = 3
 
     def simple_rows(self, items: list, ups: list, metrics: dict | None = None) -> list[tuple[str, str, str, str, list]]:
         """[(key, title, line, see-all href, [items])]: the Simple view's rows, each up to SIMPLE_ROW_N, empty ones

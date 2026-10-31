@@ -281,6 +281,49 @@ pub fn check(timeout: Duration) -> DockerInfo {
     detect_with(HostOs::current(), &|a| run_docker(a, None, timeout), &l)
 }
 
+// ---------------------------------------------------------------- starting Docker Desktop
+
+/// Start Docker Desktop: `docker desktop start --detach` where its CLI has that (Docker Desktop 4.37 and later),
+/// else the app itself (`Docker Desktop.exe`, or `open -a` on a Mac). Linux is only told how: the launcher never
+/// runs sudo. Fixed arguments only; the paths are the ones `locate` found. The caller then watches `docker info`.
+/// `run` runs the found `docker`; `launch` starts a program and does not wait for it.
+pub fn start_with(os: HostOs, found: &Located, run: Runner, launch: &dyn Fn(&Path, &[&str]) -> Result<(), String>) -> Result<String, String> {
+    const STARTING: &str = "Starting Docker. This usually takes under a minute.";
+    if os == HostOs::Linux {
+        return Err(if found.desktop.is_some() {
+            "Open Docker Desktop from your apps. This page sees it once it runs.".into()
+        } else {
+            "In a terminal: sudo systemctl start docker. This page sees it once it runs.".into()
+        });
+    }
+    if found.cli.is_some() && matches!(run(&["desktop", "version"]), Some((0, _))) {
+        if let Some((0, _)) = run(&["desktop", "start", "--detach"]) {
+            return Ok(STARTING.into());
+        }
+    }
+    let app = found.desktop.as_deref().ok_or("Docker Desktop is not on this PC: get it first.")?;
+    match os {
+        HostOs::Windows => launch(app, &[])?,
+        _ => launch(Path::new("/usr/bin/open"), &["-a", &app.display().to_string()])?,
+    }
+    Ok(STARTING.into())
+}
+
+/// `start_with` on this PC.
+pub fn start() -> Result<String, String> {
+    let l = relocate();
+    let launch = |prog: &Path, args: &[&str]| -> Result<(), String> {
+        let mut c = Command::new(prog);
+        c.args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        if prog.ends_with("open") {
+            // `open` hands the app to the system and ends at once
+            return c.status().map(|_| ()).map_err(|e| format!("Could not open Docker Desktop: {e}"));
+        }
+        c.spawn().map(|_| ()).map_err(|e| format!("Could not open Docker Desktop: {e}"))
+    };
+    start_with(HostOs::current(), &l, &|a| run_docker(a, None, Duration::from_secs(30)), &launch)
+}
+
 /// Run `docker` with `args` in `cwd`, at most `timeout`; output capped at 256 KB.
 pub fn run_docker(args: &[&str], cwd: Option<&Path>, timeout: Duration) -> Option<(i32, String)> {
     let prog = program();
@@ -540,6 +583,42 @@ mod tests {
         let p = with_dir_first(Path::new("/opt/d"), Some(std::env::join_paths(["/usr/bin", "/opt/d", "/bin"]).unwrap())).unwrap();
         let parts: Vec<PathBuf> = std::env::split_paths(&p).collect();
         assert_eq!(parts, vec![PathBuf::from("/opt/d"), "/usr/bin".into(), "/bin".into()]);
+    }
+
+    #[test]
+    fn start_docker_desktop() {
+        use std::cell::RefCell;
+        let app = j(&[r"C:\Program Files", "Docker", "Docker", "Docker Desktop.exe"]);
+        let cli = j(&[r"C:\Program Files", "Docker", "Docker", "resources", "bin", "docker.exe"]);
+        let found = Located { cli: Some(cli), desktop: Some(app.clone()) };
+        let ran: RefCell<Vec<String>> = RefCell::new(vec![]);
+        let launched: RefCell<Vec<String>> = RefCell::new(vec![]);
+        let launch = |p: &Path, a: &[&str]| { launched.borrow_mut().push(format!("{} {}", p.display(), a.join(" "))); Ok(()) };
+        // 4.37 and later: its own start
+        let new = |a: &[&str]| { ran.borrow_mut().push(a.join(" ")); Some((0, String::new())) };
+        assert!(start_with(HostOs::Windows, &found, &new, &launch).unwrap().contains("Starting Docker"));
+        assert_eq!(*ran.borrow(), vec!["desktop version".to_string(), "desktop start --detach".into()]);
+        assert!(launched.borrow().is_empty());
+        // older: `docker desktop` is an unknown command, so the app itself
+        ran.borrow_mut().clear();
+        let old = |a: &[&str]| { ran.borrow_mut().push(a.join(" ")); Some((1, "docker: 'desktop' is not a docker command.".into())) };
+        start_with(HostOs::Windows, &found, &old, &launch).unwrap();
+        assert_eq!(*ran.borrow(), vec!["desktop version".to_string()], "never a start the CLI doesn't have");
+        assert_eq!(launched.borrow().last().unwrap().trim(), app.display().to_string());
+        // no CLI found yet (per-user install): the app
+        let only_app = Located { cli: None, desktop: Some(app.clone()) };
+        start_with(HostOs::Windows, &only_app, &|_| panic!("no docker to run"), &launch).unwrap();
+        // a Mac: open -a with the app found
+        let mac = Located { cli: None, desktop: Some("/Applications/Docker.app".into()) };
+        start_with(HostOs::Mac, &mac, &|_| None, &launch).unwrap();
+        assert_eq!(launched.borrow().last().unwrap(), "/usr/bin/open -a /Applications/Docker.app");
+        // Linux: told, never run (no sudo from the launcher)
+        let n = launched.borrow().len();
+        let e = start_with(HostOs::Linux, &Located { cli: Some("/usr/bin/docker".into()), desktop: None }, &|_| panic!("nothing runs"), &launch).unwrap_err();
+        assert!(e.contains("systemctl start docker"));
+        assert_eq!(launched.borrow().len(), n);
+        // nothing to start
+        assert!(start_with(HostOs::Windows, &Located::default(), &|_| None, &launch).unwrap_err().contains("get it first"));
     }
 
     #[test]

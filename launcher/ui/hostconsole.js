@@ -788,6 +788,8 @@
     no_permission: "Let Docker in", no_compose: "Update Docker", ready: "Docker" };
   const dockLink = (d) => () => call("open_link", { name: (d.get_url || "").includes("engine") ? "dockerengine" : "docker" }).catch(() => {});
   function dockAction(d) {
+    if (d.state === "starting") return btn("Cancel", "btn hc-step-go", stopWaiting);
+    if (d.can_start) { const b = btn("Start Docker", "btn primary hc-step-go", () => startDocker(b)); b.id = "hc-docker-start"; return b; }
     if (d.state === "missing") return btn("Get Docker", "btn hc-step-go", dockLink(d));
     if (d.state === "no_compose") return btn("Update Docker", "btn hc-step-go", dockLink(d));
     return null;
@@ -869,9 +871,9 @@
     if (startShown()) { if (!dockTimer) dockTimer = setInterval(recheckDocker, DOCK_EVERY); }
     else if (dockTimer) { clearInterval(dockTimer); dockTimer = null; }
   }
-  async function recheckDocker() {
+  async function recheckDocker(force) {
     if (!startShown()) { watchDocker(); return; }
-    if (dockBusy) return;
+    if (dockBusy || (waiting && force !== true)) return;
     dockBusy = true;
     let d = null;
     try { d = await call("docker_info"); } catch (_) { /* keep the last answer */ } finally { dockBusy = false; }
@@ -884,6 +886,45 @@
   new MutationObserver(watchDocker).observe(page, { attributes: true, attributeFilter: ["class"] });
   new MutationObserver(watchDocker).observe(main, { attributes: true, attributeFilter: ["class"] });
   window.__hcDockerWatch = () => !!dockTimer;   // for the tests
+
+  // Start Docker: Docker Desktop's own start (or its app), then `docker info` every 3 s for up to two minutes
+  const WAIT_EVERY = 3000, WAIT_MAX = 120000;
+  let waiting = null;    // { t0, timer }
+  async function startDocker(b) {
+    if (b) b.disabled = true;
+    let note;
+    try { note = await call("docker_start"); }
+    catch (e) { say(oops(e, "Docker did not start. Open Docker Desktop yourself: this page sees it."), "warn"); if (b) b.disabled = false; return; }
+    say(note || "");
+    waiting = { t0: Date.now(), timer: null };
+    dock = Object.assign({}, dock, { state: "starting", can_start: false, help: "Starting Docker… This usually takes under a minute." });
+    paintPrereq(); paintGo();
+    waitTick();
+  }
+  function stopWaiting(msg) {
+    if (waiting && waiting.timer) clearTimeout(waiting.timer);
+    waiting = null;
+    if (dock && dock.state === "starting") recheckDocker(true);
+    if (typeof msg === "string") say(msg, "warn"); else say("");
+  }
+  async function waitTick() {
+    if (!waiting || mode !== "setup") return;
+    let d = null;
+    try { d = await call("docker_info"); } catch (_) { /* try again */ }
+    if (!waiting) return;
+    const secs = Math.round((Date.now() - waiting.t0) / 1000);
+    if (d && d.state === "ready") { waiting = null; dock = d; say("Docker is running.", "ok"); paintPrereq(); paintGo(); return; }
+    if (Date.now() - waiting.t0 >= WAIT_MAX) {
+      waiting = null; dock = d || dock; paintPrereq(); paintGo();
+      say("Docker hasn't answered yet. Look at Docker Desktop's window: it may ask you to accept its terms, then try again.", "warn");
+      return;
+    }
+    const help = secs < 45 ? `Starting Docker… ${secs} s. This usually takes under a minute.`
+      : `Still starting… ${secs} s. If Docker Desktop shows a window, accept it there.`;
+    dock = Object.assign({}, d || dock, { state: "starting", can_start: false, help });
+    paintPrereq();
+    waiting.timer = setTimeout(waitTick, WAIT_EVERY);
+  }
 
   function paintPrereq() {
     const pre = ui.prereq;

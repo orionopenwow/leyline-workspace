@@ -49,6 +49,12 @@ pub async fn docker_info() -> Result<DockerInfo, String> {
     blocking(|| Ok(docker::check(Duration::from_secs(15)))).await
 }
 
+/// Start Docker Desktop (Start Docker on the Host page). The UI then watches `docker_info` until it answers.
+#[tauri::command]
+pub async fn docker_start() -> Result<String, String> {
+    blocking(docker::start).await
+}
+
 /// Host any client: the realm profiles the kit can run for the clients Leyline found on this PC, and the saved
 /// choice (host/profiles.rs). Nothing here takes a path from the UI: clients by their id, profiles by their name.
 #[tauri::command]

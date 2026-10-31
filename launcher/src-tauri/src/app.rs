@@ -890,6 +890,7 @@ pub fn run() {
             crate::p2p::cmds::hostpack_info,
             crate::p2p::cmds::hostpack_install,
             crate::p2p::cmds::docker_info,
+            crate::p2p::cmds::docker_start, // Start Docker: Docker Desktop's own start, else its app (host/docker.rs start)
             crate::p2p::cmds::host_profiles, // host any client (host/profiles.rs)
             crate::p2p::cmds::host_choose,
             crate::p2p::cmds::host_stop,

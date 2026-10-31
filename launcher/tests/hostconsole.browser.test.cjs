@@ -70,6 +70,7 @@ const FAKE = (setUp) => {
       case 'host_listing': return { tags: [], region: null, language: null, max_players: null, direct: false };
       case 'p2p_flags': return { effective: { p2p_hosting: false, limits: {} }, known: [], local: { overrides: {} }, site: {} };
       case 'open_link': return null;
+      case 'docker_start': window.__started = (window.__started || 0) + 1; return 'Starting Docker. This usually takes under a minute.';
       default: throw 'unknown ' + cmd;
     }
   } } };
@@ -393,5 +394,34 @@ test('Docker installed but closed: the step says Start Docker (never Get Docker)
   await page.waitForSelector('.hc-step[data-docker="missing"]', { timeout: 8000 });
   assert.equal(await page.textContent('.hc-step[data-docker] b'), 'Get Docker');
   assert.match(await page.textContent('.hc-step[data-docker] .hc-step-t span'), /sees it/);
+  await page.close();
+});
+
+test('Start Docker: one press starts Docker Desktop, the step counts the seconds, and moves on once Docker answers', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, colorScheme: 'dark' });
+  await page.addInitScript(() => {
+    let polls = 0;
+    window.__dock = () => {
+      if (window.__started) polls++;
+      const ready = window.__started && polls >= 3;
+      return ready ? { state: 'ready', version: '27.3.1', help: 'Docker is ready.', get_url: 'https://docs.docker.com/desktop/', can_start: false }
+        : { state: 'desktop_stopped', version: null, help: 'Docker Desktop is installed but closed.', get_url: 'https://docs.docker.com/desktop/', can_start: true,
+          desktop: 'C:/Program Files/Docker/Docker/Docker Desktop.exe' };
+    };
+  });
+  await page.addInitScript(FAKE, false);
+  await page.goto(INDEX);
+  await page.click('.nav[data-page="host"]');
+  await page.waitForSelector('#hc-docker-start');
+  assert.equal(await page.textContent('#hc-docker-start'), 'Start Docker');
+  await page.click('#hc-docker-start');
+  await page.waitForSelector('.hc-step.wait[data-docker="starting"]');
+  assert.match(await page.textContent('.hc-step[data-docker] .hc-step-t span'), /Starting Docker… \d+ s/);
+  assert.equal(await page.textContent('.hc-step[data-docker] b'), 'Starting Docker…');
+  if (process.env.SHOT_DIR) await page.screenshot({ path: process.env.SHOT_DIR + '/docker-starting.png' });
+  await page.waitForSelector('.hc-ready[hidden]', { state: 'attached', timeout: 15000 });
+  assert.equal(await page.evaluate(() => window.__started), 1, 'one start, no command from the page');
+  assert.deepEqual((await calls(page, 'docker_start'))[0], undefined, 'docker_start takes nothing from the page');
+  assert.match(await page.textContent('.hc-start .hc-status'), /Docker is running/);
   await page.close();
 });

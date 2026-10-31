@@ -366,9 +366,13 @@ keys = {"id", "source", "name", "description", "category", "builds", "author", "
         "download", "sha256", "featured"}
 check("all.json: format 1, CORS *", doc.get("format") == 1 and hd.get("Access-Control-Allow-Origin") == "*")
 check("all.json: the 13 categories and the builds", [c["id"] for c in doc.get("categories", [])] == CAT_IDS and doc.get("builds") == ["3.3.5a", "1.12", "any"])
-check("all.json: both kinds in one schema", {p["source"] for p in ps} == {"packaged", "community"} and all(set(p) == keys for p in ps))
-_hp = [p for p in ps if p["id"] == "mod:host-pack"]   # the Host pack (stream/hostpack.json), a tools project in the same shape
-check("all.json: every project once", len(ps) == 3 + len(records()) + len(_hp) and len({p["id"] for p in ps}) == len(ps)
+# Reviewed upstream addons (stream/upstream_addons.py, stream/upstream-addons.json) are merged in too: their own
+# shape (test_upstream_addons.py covers it). The two kinds this file makes keep the one schema.
+_up = [p for p in ps if p.get("source") == "upstream"]
+_own = [p for p in ps if p.get("source") != "upstream"]
+check("all.json: both kinds in one schema", {p["source"] for p in _own} == {"packaged", "community"} and all(set(p) == keys for p in _own))
+_hp = [p for p in _own if p["id"] == "mod:host-pack"]   # the Host pack (stream/hostpack.json), a tools project in the same shape
+check("all.json: every project once", len(_own) == 3 + len(records()) + len(_hp) and len({p["id"] for p in ps}) == len(ps)
       and all(p["category"] == "tools" and p["kind"] == "hostpack" for p in _hp))
 pk = next(p for p in ps if p["id"] == "mod:pings")
 check("all.json: packaged fields", pk["download"] == "https://play.example/wrath/mods/pings/download" and pk["on_wrath"] is True

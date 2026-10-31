@@ -96,8 +96,8 @@ for rule in ("CAN_JOIN_LFG", "10 MB a file, 50 MB a package, 2000 files", "## In
 check("unite: marked as a proposal", "This page is a proposal" in visible(pages["unite"]))
 check("hero-key: unverified parts marked to confirm", "To confirm" in visible(pages["hero-key"])
       and "herokey_v2.py" in pages["hero-key"] and "passport.py" in pages["hero-key"])
-check("launcher: planned, Tauri, the decisions", all(s in visible(pages["launcher"]) for s in
-      ("planned", "Tauri", "All mods are allowed", "No review queue yet", "No code signing yet")))
+check("launcher: Tauri, the decisions", all(s in visible(pages["launcher"]) for s in
+      ("Tauri", "every mod is allowed", "no review queue", "no code signing")))
 cs = visible(pages["cross-server"])
 check("cross-server: never touch others, the three open layers, how to list",
       all(s in cs for s in ("We never touch other servers' clients", "The mod format", "The realm record and listing schema",
@@ -255,7 +255,7 @@ check("fastloop.sh: checks /wrath/docs", "/wrath/docs" in fl)
 check("fastloop.sh: bash syntax", subprocess.run(["bash", "-n", os.path.join(STREAM, "fastloop.sh")]).returncode == 0)
 bat = open(os.path.join(STREAM, "Update sign-in and warm-up.bat"), encoding="utf-8").read()
 check("sign-in bat: packs docs.py and the pages", "%DOCS%" in bat and "-C .. docs/leyline" in bat
-      and "docs.py 2>/dev/null" in bat)
+      and re.search(r"\$\(ls [^)]*\bdocs\.py\b[^)]*2>/dev/null\)", bat) is not None)
 check("docs.py: finds the pages beside itself on the server", 'os.path.join(HERE, "docs", "leyline")' in open(DOCS_PY).read())
 
 print(f"\n{passed}/{passed + failed} passed")

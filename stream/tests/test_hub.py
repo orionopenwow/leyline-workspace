@@ -145,9 +145,12 @@ def header_of(page):
 
 
 hd, nav, labels, on = header_of(front)
-check("top bar (owner 2026-10-31: \"fit for the website\"): the header is a website's top bar, no side menu or fold switch",
-      'id="hb-side"' not in front and 'class="hb-side-b"' not in front and "--hb-side:236px" not in front
-      and "leyline.side" not in HB.HUB_JS and front.count('<header class="hb-top"><a class="hb-brand"') == 1)
+check("side menu (owner 2026-10-31: keep the side menu): wide screens get the launcher's side menu with the fold switch, "
+      "remembered in this browser; after SITE_CSS so it wins; phones keep the top bar",
+      'id="hb-side"' in front and 'class="hb-side-b"' in front and "--hb-side:236px" in front
+      and "leyline.side" in HB.HUB_JS and front.count('<header class="hb-top"><a class="hb-brand"') == 1
+      and front.index(HB.SITE_CSS.strip()[:40]) < front.index("--hb-side:236px")
+      and "@media (max-width:1080px){.hb-side-t,.hb-side-b{display:none}}" in front)
 check("the launcher's palette: the generated tokens (the launcher's own blue, Light by the system) before the hub's styles",
       HB.SITE_TOKENS_CSS.strip() in front and "--lk-accent:#5b8def" in HB.SITE_TOKENS_CSS and "#3592cf" not in HB.SITE_TOKENS_CSS
       and "@media (prefers-color-scheme:light){:root{--lk-bg:#eef1f6" in HB.SITE_TOKENS_CSS

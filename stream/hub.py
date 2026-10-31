@@ -932,7 +932,13 @@ class Hub:
                 f'{NAV_ICONS["download"]}</svg>Download</a>')
         # A top bar like a website (owner 2026-10-31: "fit for the website"): the brand, the launcher's pages, Download and
         # the account. On a phone Menu opens the same items as a sheet (no script needed).
-        return (f'<header class="hb-top"><a class="hb-brand" href="{home}" aria-label="Leyline Launcher">{self._wordmark()}</a>'
+        # On a wide screen the header is the launcher's side menu (owner 2026-10-30: "make all the tools come from the side by
+        # default and can collapse if wanted"; 2026-10-31: keep the side menu): open by default, the arrow folds it to an
+        # icon rail (no script needed; HUB_JS remembers the choice). On a phone it stays the top bar with the Menu sheet.
+        return ('<input type="checkbox" id="hb-side" class="hb-side-t" aria-label="Fold the side menu">'
+                f'<header class="hb-top"><a class="hb-brand" href="{home}" aria-label="Leyline Launcher">{self._wordmark()}</a>'
+                '<label for="hb-side" class="hb-side-b" title="Fold or open the side menu" aria-hidden="true">'
+                '<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></label>'
                 '<input type="checkbox" id="hb-menu" class="hb-menu-t" aria-label="Menu">'
                 '<label for="hb-menu" class="hb-menu-b" aria-hidden="true">Menu</label>'
                 f'<nav class="hb-nav" aria-label="Leyline">{"".join(item(*m) for m in main)}{drop}{extra}'
@@ -975,7 +981,7 @@ class Hub:
         meta = ('<meta name="description" content="Leyline: one launcher for your own game clients and every realm, '
                 'with mods, addons, realm scripts and tools.">')
         css = ((self.portal("LOOK_VARS") or LOOK_FALLBACK) + SITE_TOKENS_CSS + (self.portal("SPIN_CSS") or "") + HUB_CSS + SITE_CSS
-               + DARK_ISLANDS + self._backdrop() + css)
+               + SIDE_CSS + DARK_ISLANDS + self._backdrop() + css)
         return (f'<!doctype html><html lang="en" data-look="leyline"><head><meta charset="utf-8">'
                 f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light">'
                 f'<title>{e(title)}</title>{meta}{robots}<style>{css}</style></head>'
@@ -995,7 +1001,7 @@ class Hub:
         if not ok:
             return ""
         # a fixed layer over the page's own area (right of the side menu), so the picture is centred with the hero
-        return ('body.hb::before{content:"";position:fixed;top:0;bottom:0;right:0;left:0;z-index:-1;pointer-events:none;'
+        return ('body.hb::before{content:"";position:fixed;top:0;bottom:0;right:0;left:var(--hb-side,0px);z-index:-1;pointer-events:none;'
                 'background:linear-gradient(180deg,rgba(11,13,20,.46),rgba(11,13,20,.74) 80%),'
                 f'url(/wrath/art/{BACKDROP}) center top/cover no-repeat;transition:left .2s ease}}'
                 'html{background:#0b0d14}body.hb{background:transparent}'
@@ -3556,7 +3562,7 @@ background:rgba(16,18,24,.78);color:#fff;cursor:pointer;font:600 20px/1 var(--lk
 .hb-lb-pic img{max-height:62vh}.hb-lb-cap{padding:16px}.hb-lb-x{top:8px;right:8px}}
 /* the featured modpack (Hub.featured_mod): full-bleed picture, soft vignette, the words on a glass panel; eases on scroll */
 body.hb{overflow-x:clip}
-.hb-coa{position:relative;width:100vw;margin:34px 0 16px calc(50% - 50vw);
+.hb-coa{position:relative;width:calc(100vw - var(--hb-side,0px));margin:34px 0 16px calc(50% - (100vw - var(--hb-side,0px)) / 2);
 overflow:hidden;isolation:isolate;background:#0b0d12;scroll-margin-top:72px}
 .hb-coa-track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain;outline:none}
 .hb-coa-track::-webkit-scrollbar{display:none}
@@ -3947,6 +3953,49 @@ border:1px solid var(--lk-border);border-radius:12px;background:linear-gradient(
 }
 """
 
+# The side menu on wide screens (owner 2026-10-31: the top bar went; the side menu stays), after SITE_CSS so it wins.
+SIDE_CSS = """
+/* the sidebar (wide screens): the launcher's layout, the page as it is beside it; folds to an icon rail */
+@media (min-width:1081px){
+:root{--hb-side:236px}
+:root:has(#hb-side:checked){--hb-side:72px}
+.hb-side-t{position:fixed;opacity:0;width:1px;height:1px;pointer-events:none}
+body.hb .hb-top{position:fixed;inset:0 auto 0 0;width:var(--hb-side);min-height:0;flex-direction:column;align-items:stretch;gap:4px;
+padding:16px 12px 14px;overflow-y:auto;overflow-x:hidden;border-right:1px solid var(--lk-border);border-bottom:0;animation:none;box-shadow:none;
+background:color-mix(in srgb,var(--lk-chrome) 90%,transparent);transition:width .2s ease;scrollbar-width:none}
+body.hb .hb-top::-webkit-scrollbar{display:none}
+body.hb .hb-brand{padding:2px 6px 12px;margin-bottom:6px;border-bottom:1px solid var(--lk-border)}
+body.hb .hb-nav{flex-direction:column;align-items:stretch;gap:2px;margin:0}
+body.hb .hb-ni{justify-content:flex-start;width:100%;padding:9px 12px;border-radius:10px;font-size:15px;gap:12px;white-space:nowrap}
+body.hb .hb-ni svg{display:block;width:20px;height:20px}
+body.hb .hb-ni.on{background:var(--lk-accent-soft);box-shadow:inset 3px 0 0 var(--lk-accent)}
+body.hb .hb-ni.on::after{display:none}
+body.hb .hb-top.hb-scrolled{box-shadow:none}
+body.hb .hb-more-d{display:none}
+body.hb .hb-nav-x{display:flex;flex-direction:column;gap:2px;margin-top:10px;padding-top:10px;border-top:1px solid var(--lk-border)}
+body.hb .hb-end{flex-direction:column;align-items:stretch;gap:8px;margin-top:auto;padding-top:14px}
+body.hb .hb-dl,body.hb .hb-signin,body.hb .hb-acct{justify-content:center;white-space:nowrap;overflow:hidden}
+body.hb{padding-left:var(--hb-side);transition:padding-left .2s ease}
+.hb-side-b{position:absolute;top:22px;right:10px;display:grid;place-items:center;width:28px;height:28px;border-radius:8px;cursor:pointer;
+color:var(--lk-muted);border:1px solid var(--lk-border)}
+.hb-side-b:hover{color:var(--lk-text);border-color:var(--lk-accent)}
+.hb-side-b svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:rotate .2s}
+.hb-side-t:focus-visible~.hb-top .hb-side-b{outline:2px solid var(--lk-accent-strong);outline-offset:2px}
+/* folded: icons only, the labels as tooltips */
+body.hb:has(#hb-side:checked) .hb-top{padding:16px 10px 14px}
+body.hb:has(#hb-side:checked) :is(.hb-ni span,.hb-word,.hb-acct-n){display:none}
+body.hb:has(#hb-side:checked) .hb-ni{justify-content:center;padding:10px 0;gap:0}
+body.hb:has(#hb-side:checked) .hb-brand{justify-content:center;padding:2px 0 44px}
+body.hb:has(#hb-side:checked) .hb-side-b{top:64px;left:50%;right:auto;translate:-50% 0}
+body.hb:has(#hb-side:checked) .hb-side-b svg{rotate:180deg}
+body.hb:has(#hb-side:checked) .hb-dl{font-size:0;gap:0;padding:0}
+body.hb:has(#hb-side:checked) .hb-signin{font-size:0;padding:0}
+body.hb:has(#hb-side:checked) .hb-acct{padding:0 4px}
+}
+@media (max-width:1080px){.hb-side-t,.hb-side-b{display:none}}
+@media (prefers-reduced-motion:reduce){body.hb,body.hb .hb-top,.hb-side-b svg{transition:none}}
+"""
+
 # The drawings of the launcher's own windows (the host console, the in-game realm list) and the realm posters are dark
 # pictures: in Light they keep the Dark tokens, so their words stay light on dark.
 DARK_ISLANDS = ("@media (prefers-color-scheme:light){:is(.hb-sw,.hb-rlx,.hb-poster){"
@@ -3959,6 +4008,9 @@ DARK_ISLANDS = ("@media (prefers-color-scheme:light){:is(.hb-sw,.hb-rlx,.hb-post
 # the section reveal. Everything works without it: the addresses are selectable text, the filter is a GET form.
 HUB_JS = r"""(function(){
 // the side menu: remember folded or open in this browser (the page works without it)
+var side=document.getElementById("hb-side");
+if(side){try{if(localStorage.getItem("leyline.side")==="folded")side.checked=true;}catch(e){}
+side.addEventListener("change",function(){try{localStorage.setItem("leyline.side",side.checked?"folded":"open");}catch(e){}});}
 "use strict";
 var d=document,root=d.documentElement;root.classList.add("hb-js");
 var still=!!(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches);

@@ -912,8 +912,9 @@ const luaN = (v) => (typeof v === 'number' && Number.isFinite(v) ? String(Math.t
 const CALLBACK = (kind) => ` local f = WUUI_LEYLINE_ONNET; if type(f) == "function" then pcall(f, "${kind}") end`
   + ` f = WUUI_LEYLINE_ONNET_GLUE; if type(f) == "function" then pcall(f, "${kind}") end`;
 
-function rowLua(r) {
-  return '{ id = ' + luaQ(r.id) + ', name = ' + luaQ(r.name) + ', live = ' + luaB(r.live) + ', online = ' + luaN(r.online)
+function rowLua(r, env = {}) {
+  const here = env.hop ? r.id === env.hop : r.hangout;   // on Wrath itself, its own Beacon (the hangout) is this realm
+  return '{ id = ' + luaQ(r.id) + ', here = ' + luaB(!!here) + ', name = ' + luaQ(r.name) + ', live = ' + luaB(r.live) + ', online = ' + luaN(r.online)
     + ', bots = ' + luaN(r.bots) + ', build = ' + luaN(r.build ?? BROWSER_BUILD) + ', chip = ' + luaQ(CHIP[r.build ?? BROWSER_BUILD])
     + ', browser = ' + luaB(r.browser) + ', own = ' + luaB(r.own) + ', hk = ' + luaB(r.herokey) + ', up = ' + luaN(r.up)
     + ', featured = ' + luaB(r.featured) + ', verified = ' + luaB(r.verified) + ', hangout = ' + luaB(r.hangout)
@@ -921,7 +922,7 @@ function rowLua(r) {
 }
 
 /** The Lua chunk for one page of the list (or the error). */
-export function listLua(list, ask, { sso = false, err = '' } = {}) {
+export function listLua(list, ask, { sso = false, err = '', env = {} } = {}) {
   if (err) return 'WUUI_LEYLINE_NET = { err = ' + luaQ(hostText(err, 80)) + ', rows = {} };' + CALLBACK('list');
   const shown = filterRealms(list, ask.filter, ask.q);
   const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
@@ -931,7 +932,7 @@ export function listLua(list, ask, { sso = false, err = '' } = {}) {
   return 'WUUI_LEYLINE_NET = { v = 1, page = ' + page + ', pages = ' + pages + ', total = ' + shown.length
     + ', all = ' + list.length + ', sso = ' + luaB(!!sso) + ', mine = ' + BROWSER_BUILD
     + ', network = { realms = ' + live.length + ', players = ' + live.reduce((a, r) => a + (r.online || 0), 0)
-    + ', bots = ' + live.reduce((a, r) => a + (r.bots || 0), 0) + ' }, rows = { ' + rows.map(rowLua).join(', ') + ' } };'
+    + ', bots = ' + live.reduce((a, r) => a + (r.bots || 0), 0) + ' }, rows = { ' + rows.map((r) => rowLua(r, env)).join(', ') + ' } };'
     + CALLBACK('list');
 }
 
@@ -1167,7 +1168,7 @@ export function watchBrowse(wenilla, { env = window.__wenilla_env || {}, net = m
   if (!wenilla || typeof wenilla.lua !== 'function') return h;
   const answer = async (ask) => {
     await net.load();
-    if (ask.kind === 'list') return listLua(net.list, ask, { sso: net.flags.herokey_sso === true, err: net.list.length ? '' : net.err });
+    if (ask.kind === 'list') return listLua(net.list, ask, { sso: net.flags.herokey_sso === true, err: net.list.length ? '' : net.err, env });
     const r = net.find(ask.id);
     if (ask.kind === 'launch') { launchBar(r, env, doc); return null; }
     let hk = r && r.herokey === false ? 'no' : r && r.herokey === true ? 'yes' : 'unknown';

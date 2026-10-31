@@ -271,3 +271,22 @@ test('watchBrowse: the ask is taken through the bridge, the answer goes back in;
   await new Promise((r) => setTimeout(r, 5));
   assert.deepEqual(hops, ['fast:abcdefghijklmnop', 'https://play.openvanilla.app/wrath?go=r:abcdefghijklmnop']);
 });
+
+test('end to end: the real page answers drive the real window (test_wuui_leyline_browse.lua)', async () => {
+  const m = await load();
+  const fs = require('node:fs'), os = require('node:os');
+  const net = { realms: [
+    rec(H, 'Wrath Unleashed', { community: { realmId: H, sample: true, group: 'sample', lastHeartbeat: { players: 4, bots: 10 } } }),
+    rec(A, 'Frost Haven', { tagline: 'A cosy place', community: { realmId: A, featured: true, lastHeartbeat: { players: 7, bots: 0 } } }),
+    rec(B, 'Old Days of fun', { profile: { build: 5875 }, community: { realmId: B, lastHeartbeat: { players: 3, bots: 0 } } }),
+    rec(C, 'Quiet Meadow', { state: 'offline' })] };
+  const relay = { realms: [rec(A, 'Frost Haven', { online: 7, who: ['Mira', 'Tolan'], rules: 'Be kind. No spam.', herokey: true, uptime_pct: 99,
+    mods: [{ id: 'mode:minigolf', name: 'Minigolf', required: true, client: false }, { id: 'up:skada', name: 'Skada', required: false, client: true }, 'mod:dalaran-dice'] })] };
+  const list = m.mergeListings(net, relay);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'browse-'));
+  fs.writeFileSync(path.join(dir, 'list.lua'), m.listLua(list, m.parseAsk('list|1||'), { sso: true, env: {} }));
+  fs.writeFileSync(path.join(dir, 'preview.lua'), m.previewLua(list[1], {}, { hk: 'ready' }));
+  const out = execFileSync('lua5.1', [path.join(__dirname, 'test_wuui_leyline_browse.lua'), path.join(__dirname, '..', 'fui-web', 'Interface', 'AddOns', 'WrathUnleashedUI'),
+    path.join(dir, 'list.lua'), path.join(dir, 'preview.lua')], { encoding: 'utf8' });
+  assert.match(out, /\n(\d+)\/\1 passed/, out.split('\n').filter((l) => l.startsWith('FAIL')).join('\n'));
+});

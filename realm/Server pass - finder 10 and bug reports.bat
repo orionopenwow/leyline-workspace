@@ -62,6 +62,9 @@ rem The web armory rides along too: .armory off / .armory on (ov_armory.lua), an
 rem serverpass.sh installs with its 5-minute cron (step 1b) to fill play.openvanilla.app/wrath/armory.
 if exist "custom\lua_scripts\ov_armory.lua" copy /y "custom\lua_scripts\ov_armory.lua" "%T%\" >nul
 if exist "custom\armory-export.py" copy /y "custom\armory-export.py" "%T%\" >nul
+rem The name guard (ov_names.lua: names that trip the one blocklist flagged for a rename, public chat starred; serverpass.sh
+rem step 1f fills reserved_name / profanity_name from the portal's namecheck.py) rides along too.
+if exist "custom\lua_scripts\ov_names.lua" copy /y "custom\lua_scripts\ov_names.lua" "%T%\" >nul
 copy /y serverpass.sh "%T%\serverpass.sh.txt" >nul
 tar -cf "%TEMP%\wu-serverpass.tar" -C "%T%" . || (echo Packing failed. & pause & exit /b 1)
 ssh -i "%KEY%" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 root@play.openvanilla.app "T=$(mktemp -d) && tar -x -C $T -f - && sed 's/\r$//' $T/serverpass.sh.txt > $T/sp.sh && rm -f $T/serverpass.sh.txt && (cd $T && tar -cf - *.lua $(ls leyline-fetch.py armory-export.py workshop-export.py duels-export.py 2>/dev/null)) | SERVERPASS_WARN_MIN=%WARN% bash $T/sp.sh 2>&1 | tee /tmp/wu-serverpass.log; rm -rf $T; grep -q '^SERVERPASS OK' /tmp/wu-serverpass.log" < "%TEMP%\wu-serverpass.tar"

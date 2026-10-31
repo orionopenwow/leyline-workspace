@@ -50,13 +50,41 @@ A = None   # stream/admin.py (attributes looked up live)
 
 
 def setup(admin) -> None:
-    global A
+    global A, W
     A = admin
     register()
+    W = _load_words()
 
 
 def P(name):
     return A.P(name)
+
+
+W = None   # stream/hq_words.py: blocked words and names (Content > Blocked words, Needs you), when it is here
+
+
+def _load_words():
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hq_words.py")
+    if not os.path.isfile(p):
+        return None
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("wu_hq_words", p)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.setup(A, _HQSelf())
+        return mod
+    except Exception:   # noqa: BLE001: HQ runs without it
+        return None
+
+
+class _HQSelf:
+    """This module for hq_words.py (looked up live, like admin's _Self)."""
+    def __getattr__(self, name):
+        try:
+            return globals()[name]
+        except KeyError:
+            raise AttributeError(name) from None
 
 
 # ----------------------------------------------------------------------------------------------
@@ -366,6 +394,13 @@ def inbox_items() -> tuple[list[dict], list[str]]:
             items.append(_item("theme", f"theme:{t['kind']}:{t['id']}", "Theme pack: waiting", t["name"], "", 0, "/wrath/admin/themes",
                                [(f"{t['kind']}.approve", t["id"], "Approve", {}, None, False),
                                 (f"{t['kind']}.reject", t["id"], "Reject", {}, t["id"], True)], sub="by " + t["by"]))
+    if W is not None:   # flagged names and the names refused lately (stream/hq_words.py)
+        try:
+            more, probs = W.inbox_items(_item)
+            items += more
+            problems += probs
+        except Exception:   # noqa: BLE001
+            problems.append("flagged names")
     items.sort(key=lambda x: (x["group"], -x["at"]))
     return items, problems
 
@@ -1478,6 +1513,8 @@ def page(user: dict, tab: str, query: dict):
         return 200, "Realms", realms_wrap(user)
     if tab == "content":
         return 200, "Catalog", A.catalog_page(user)
+    if tab == "words" and W is not None:
+        return 200, "Blocked words", W.page(user)
     if tab == "forum":
         st, body = forum_page(user, query)
         return st, "Forum", body

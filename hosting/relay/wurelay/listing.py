@@ -49,6 +49,11 @@ import time
 
 from wunet import domains, keys
 
+try:   # the one blocklist for names (stream/namecheck.py; this copy rides in wunet with its blocklist.json)
+    from wunet import namecheck
+except ImportError:   # an older wunet: the slur list below only
+    namecheck = None
+
 from . import httpd
 
 TYPES = ("PvE", "PvP", "RP", "RP-PvP", "Fun")
@@ -97,6 +102,17 @@ def has_slur(text) -> bool:
         return True
     squashed = re.sub(r"[^a-z]", "", low)
     return any(len(w) >= 6 and w in squashed for w in SLURS)
+
+
+def bad_name(text) -> bool:
+    """A realm name the list refuses: a slur (above), or what wunet/namecheck.py refuses in a realm name (slurs, sexual
+    terms, profanity, passing for the Leyline team: "Leyline Staff", "0fficial GM"; look-alike letters undone)."""
+    if has_slur(text):
+        return True
+    try:
+        return bool(namecheck and isinstance(text, str) and namecheck.realm_name_hit(text))
+    except Exception:   # noqa: BLE001: the slur list still holds
+        return False
 
 
 def unbrand(text: str) -> str:
@@ -171,12 +187,12 @@ def clean_mods(v):
 def clean_record(rec: dict) -> dict:
     rec = rec if isinstance(rec, dict) else {}
     raw_name = _text(rec.get("name"), 32)
-    name = "" if has_slur(raw_name) else unbrand(raw_name)
+    name = "" if bad_name(raw_name) else unbrand(raw_name)
     out = {
         "name": name,
         # the name passed the filter untouched (False: a brand word was taken out, or it was refused)
         "name_ok": bool(name) and name == raw_name,
-        "name_refused": bool(raw_name) and has_slur(raw_name),
+        "name_refused": bool(raw_name) and bad_name(raw_name),
         "tagline": _filtered(rec.get("tagline"), 80),
         "summary": _filtered(rec.get("summary"), 400),
         "type": rec.get("type") if rec.get("type") in TYPES else "PvE",

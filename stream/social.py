@@ -96,7 +96,7 @@ CHAR_RE = re.compile(r"^[A-Za-zÀ-ɏ]{2,12}$")
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 DEVICE_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 CODE_RE = re.compile(r"^[" + USER_CODE_ABC + r"]{4}-?[" + USER_CODE_ABC + r"]{4}$")
-CTRL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f​-‏‪-‮⁦-⁩]")
+CTRL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f​-‏‪-‮⁦-⁩­͏؜ᅟᅠ឴឵᠋-᠏⁠-⁥⁪-⁯ㅤ︀-️﻿ﾠ]")   # + soft hyphen, word joiners, fillers, variation selectors, BOM (stream/namecheck.py INVISIBLE_RE)
 BRAND_RE = re.compile(r"(?i)world\s*of\s*warcraft|warcraft|lich\s*king|blizzard|\bwow\b")
 
 # The realm's word filter (ov_workshop.lua badWord), ported: names that trip it are refused; in messages the
@@ -113,7 +113,27 @@ def _squash(s: str) -> str:
     return re.sub(r"(.)\1+", r"\1", s)
 
 
-def bad_word(text: str) -> str | None:
+def _namecheck():
+    """stream/namecheck.py (the one blocklist for names everywhere), shared through sys.modules["wu_namecheck"]; None when
+    it is missing (an older install): the short list below is used then."""
+    m = sys.modules.get("wu_namecheck")
+    if m is None:
+        p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "namecheck.py")
+        if not os.path.isfile(p):
+            return None
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("wu_namecheck", p)
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+        except Exception:   # noqa: BLE001: the short list still works
+            log.exception("namecheck.py did not load: the short word list is used")
+            return None
+        sys.modules["wu_namecheck"] = m
+    return m
+
+
+def _bad_word_short(text: str) -> str | None:
     low = str(text or "").lower().translate(LEET)
     words = re.findall(r"[a-z]+", low)
     joined = "".join(words)
@@ -132,8 +152,21 @@ def bad_word(text: str) -> str | None:
     return None
 
 
+def bad_word(text: str) -> str | None:
+    """The first filtered word in a text (a title, a message), else None: stream/namecheck.py's lists, word by word."""
+    nc = _namecheck()
+    if nc is not None:
+        h = nc.text_hit(str(text or ""))
+        return h[1] if h else None
+    return _bad_word_short(text)
+
+
 def mask(text: str) -> str:
-    """A message with the filter's words starred out (the rest untouched)."""
+    """A message with the filter's words starred out (the rest untouched, the same length)."""
+    nc = _namecheck()
+    if nc is not None:
+        return nc.mask(text)
+
     def rep(m):
         w = m.group(0)
         n = _squash(w.lower().translate(LEET))
@@ -149,19 +182,38 @@ def clean_text(v, n: int) -> str:
     return re.sub(r"[ \t]+", " ", CTRL_RE.sub(" ", v)).strip()[:n]
 
 
+def name_hit(v) -> tuple[str, str] | None:
+    """(kind, word) when a name trips the blocklist (stream/namecheck.py name_hit), else None."""
+    nc = _namecheck()
+    if nc is not None:
+        return nc.name_hit(v)
+    if bad_word(v):
+        return ("slur", "")
+    return ("brand", "") if BRAND_RE.search(v) else None
+
+
 def clean_name(v) -> str:
     """A display name from anything (the website's display name, a character): allowed characters only."""
-    s = re.sub(r"[^A-Za-z0-9_.\-À-ɏ]", "", str(v or ""))[:NAME_MAX]
-    if len(s) < NAME_MIN or bad_word(s) or BRAND_RE.search(s):
+    nc = _namecheck()
+    s = re.sub(r"[^A-Za-z0-9_.\-À-ɏ]", "", nc.strip_invisible(str(v or "")) if nc is not None else str(v or ""))[:NAME_MAX]
+    if len(s) < NAME_MIN or name_hit(s):
         return ""
     return s
 
 
-def name_error(v) -> str:
+def name_error(v, acct: str = "", where: str = "") -> str:
+    """Why a display name is refused ("" when it's fine). acct: whose name it is (a protected staff name is theirs
+    only); where: when set, a refusal is noted for Leyline HQ's Needs you ("site", "launcher")."""
     if not isinstance(v, str) or not NAME_RE.fullmatch(v):
         return "Names are 2 to 24 letters, digits, dots, dashes or underscores."
-    if bad_word(v) or BRAND_RE.search(v):
-        return "Pick another name."
+    h = name_hit(v)
+    nc = _namecheck()
+    if not h and nc is not None and nc.protected_clash(v, acct):
+        h = ("staff", "protected")
+    if h:
+        if where and nc is not None and h[0] != "brand":
+            nc.record_hit(where, v, h[0], acct)
+        return nc.message(h[0]) if nc is not None else "Pick another name."
     return ""
 
 
@@ -349,7 +401,7 @@ class Social:
         p = self.ensure(acct)
         if "name" in doc:
             name = doc.get("name")
-            err = name_error(name)
+            err = name_error(name, acct)
             if err:
                 raise SocialError(400, err)
             if name.lower() != p["name"].lower() or name != p["name"]:
@@ -1268,8 +1320,9 @@ def post(h, path: str) -> None:
         if sub == "profile":
             prof = _profiles()
             check_name = prof.name_problem if prof is not None else name_error
-            if "name" in doc and check_name(doc.get("name")):   # refused before anything changes: no half-saved profile
-                return _json(h, 400, {"error": check_name(doc.get("name"))})
+            name_err = check_name(doc.get("name"), acct, via) if "name" in doc else ""
+            if name_err:   # refused before anything changes: no half-saved profile
+                return _json(h, 400, {"error": name_err})
             if prof is not None and any(k in doc for k in ("bio", "avatar", "setup")):
                 try:
                     prof.save(acct, {k: doc[k] for k in ("bio", "avatar", "setup") if k in doc}, by="self:" + via)

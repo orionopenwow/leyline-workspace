@@ -37,6 +37,10 @@ rem the Leyline network: the realm browser, /wrath/realms.json and realm reports
 if exist network.py set "LINKS=%LINKS% network.py"
 rem Leyline friends and messages (/wrath/api/social, /wrath/link)
 if exist social.py set "LINKS=%LINKS% social.py"
+rem the one blocklist for names (namecheck.py and its blocklist.json, always as a pair; social.py, profiles.py, forum.py,
+rem hostflow.py and HQ use it) and HQ's Blocked words page (hq_words.py)
+if exist namecheck.py if exist blocklist.json set "LINKS=%LINKS% namecheck.py blocklist.json"
+if exist hq_words.py set "LINKS=%LINKS% hq_words.py"
 rem the Leyline forum (/wrath/leyline/forum, /wrath/forum/api)
 if exist forum.py set "LINKS=%LINKS% forum.py"
 rem the duel leaderboards (/wrath/leaderboards, /wrath/api/leaderboards; duels-export.py fills them on the realm)

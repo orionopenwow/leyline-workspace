@@ -158,6 +158,57 @@ if [ -f "$T/duels-export.py" ]; then
   fi
 fi
 
+# 1f. Blocked names (owner 2026-10-31: "username blocks, in game name blocks"; ov_names.lua, stream/namecheck.py): the
+# one blocklist's whole names go into AzerothCore's reserved_name (names that pass for the team) and profanity_name
+# (the rest), so character create, guild charters and pet names refuse them (the world server reads both at a start:
+# a change sets the restart below); the owner's own words from Leyline HQ (portal-data/blocked-words.json) go into
+# characters.ov_blocked_words for ov_names.lua (which catches look-alikes and run-together words after create, and
+# flags them for a rename; nothing is deleted). Only rows this step added (ov_names_reserved) are ever taken out
+# again. Needs the portal's namecheck.py (the signin step puts it in /srv/wrath/portal); without it, skipped.
+NC=/srv/wrath/portal/namecheck.py
+if [ -f "$DST/ov_names.lua" ] && [ -f "$NC" ]; then
+  echo "== 1f. blocked names"
+  NSQL=$(python3 -I - "$NC" /srv/wrath/portal-data/blocked-words.json <<'PY'
+import importlib.util, json, re, sys
+spec = importlib.util.spec_from_file_location("nc", sys.argv[1]); nc = importlib.util.module_from_spec(spec); spec.loader.exec_module(nc)
+try:
+    words = [x for x in json.load(open(sys.argv[2], encoding="utf-8")).get("words") or [] if isinstance(x, dict)]
+except (OSError, ValueError, AttributeError):
+    words = []
+ok = lambda w: isinstance(w, str) and re.fullmatch(r"[a-z]{2,24}", w)
+print("CREATE TABLE IF NOT EXISTS ov_blocked_words (word VARCHAR(24) NOT NULL PRIMARY KEY, mode VARCHAR(8) NOT NULL DEFAULT 'word');")
+print("CREATE TABLE IF NOT EXISTS ov_name_flags (what VARCHAR(6) NOT NULL, id INT UNSIGNED NOT NULL, name VARCHAR(24) NOT NULL, "
+      "kind VARCHAR(12) NOT NULL, at INT UNSIGNED NOT NULL, status VARCHAR(8) NOT NULL DEFAULT 'open', PRIMARY KEY (what, id), KEY status (status));")
+print("CREATE TABLE IF NOT EXISTS ov_names_reserved (name VARCHAR(12) NOT NULL, tbl VARCHAR(16) NOT NULL, PRIMARY KEY (tbl, name));")
+print("DELETE FROM ov_blocked_words;")
+for x in words:
+    if ok(x.get("w")):
+        print(f"INSERT IGNORE INTO ov_blocked_words (word, mode) VALUES ('{x['w']}', '{'inside' if x.get('mode') == 'inside' else 'word'}');")
+for tbl, names in nc.reserved_names(words).items():
+    assert tbl in ("reserved_name", "profanity_name")
+    print(f"DELETE t FROM {tbl} t JOIN ov_names_reserved o ON o.name = t.name AND o.tbl = '{tbl}';")
+    print(f"DELETE FROM ov_names_reserved WHERE tbl = '{tbl}';")
+    for n in names:
+        if re.fullmatch(r"[a-z]{2,12}", n):
+            print(f"INSERT IGNORE INTO ov_names_reserved (name, tbl) SELECT '{n}', '{tbl}' FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM {tbl} WHERE name = '{n}');")
+            print(f"INSERT IGNORE INTO {tbl} (name) VALUES ('{n}');")
+PY
+) || die "could not work out the blocked names (namecheck.py)"
+  docker exec ov-ac-database sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldump -uroot --single-transaction --skip-lock-tables acore_characters reserved_name profanity_name' \
+    2>/dev/null | gzip > "$BK/names_tables.sql.gz" || true
+  printf '%s\n' "$NSQL" | docker exec -i ov-ac-database sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot -N -B acore_characters' \
+    || die "could not fill reserved_name / profanity_name (backup: $BK/names_tables.sql.gz)"
+  nsum=$(printf '%s\n' "$NSQL" | grep -E '^INSERT IGNORE INTO (reserved|profanity)_name ' | md5sum | cut -c1-32)
+  echo "  $(printf '%s\n' "$NSQL" | grep -c '^INSERT IGNORE INTO reserved_name ') reserved, $(printf '%s\n' "$NSQL" | grep -c '^INSERT IGNORE INTO profanity_name ') profane names; $(printf '%s\n' "$NSQL" | grep -c '^INSERT IGNORE INTO ov_blocked_words ') of the owner's words"
+  if [ "$(cat /srv/wrath/.ov-names.md5 2>/dev/null)" != "$nsum" ]; then
+    echo "$nsum" > /srv/wrath/.ov-names.md5; need_names=1; echo "  the name lists changed: the world server reads them at the restart below"
+  fi
+  # the guard reads the owner's words again now (a script it already runs; a new one loads at the restart)
+  case " $NEW " in *" ov_names.lua "*) ;; *) bash soap-cmd.sh "ovnames reload" >/dev/null 2>&1 || true ;; esac
+elif [ -f "$DST/ov_names.lua" ]; then
+  echo "  NOTE: blocked names skipped: $NC is missing (run the signin step first)"
+fi
+
 echo "== 2. dungeon levels (world database)"
 docker exec ov-ac-database sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldump -uroot --single-transaction --skip-lock-tables acore_world dungeon_access_template' \
   | gzip > "$BK/dungeon_access_template.sql.gz"
@@ -205,6 +256,7 @@ fi
 echo "== 3. profile"
 sed -i 's/\r$//' "$PF"
 need=${need_npcs:-0}
+[ "${need_names:-0}" = 0 ] || need=1   # 1f: the name lists changed (read at a start)
 for kv in AC_DUNGEON_ACCESS_REQUIREMENTS_LFGLEVEL_DBCOVERRIDE=1 AC_ALLOW_TWO_SIDE_INTERACTION_GROUP=1 OV_AUTOLEARN=1 OV_DUEL_RESET=1 OV_EVENTS=1 OV_EVENTS_STOCK=1 OV_EVENTS_TRIVIA=1 OV_EVENTS_HIDE=1 OV_DUELS=1 \
     OV_COMPANIONS=0 AC_PLAYERBOTS_MAX_ADDED_BOTS=0 OV_COMPANIONS_PER_PLAYER_RAID=9 OV_COMPANIONS_GROUP_MAX=10 \
     OV_COMPANIONS_REALM_MAX=60 OV_COMPANIONS_RAID25=0 \

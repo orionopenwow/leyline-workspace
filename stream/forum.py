@@ -101,7 +101,7 @@ LIMITS = {   # gap: seconds between posts; thread_h/d: new threads an hour/day; 
 }
 REPORTS_PER_DAY = 10
 ACCT_RE = re.compile(r"^[A-Z0-9]{1,16}$")
-CTRL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f​-‏‪-‮⁦-⁩]")
+CTRL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f​-‏‪-‮⁦-⁩­͏؜ᅟᅠ឴឵᠋-᠏⁠-⁥⁪-⁯ㅤ︀-️﻿ﾠ]")   # + soft hyphen, word joiners, fillers, variation selectors, BOM (stream/namecheck.py INVISIBLE_RE)
 URL_RE = re.compile(r"https?://[^\s<>\"'`]+", re.I)
 BRAND_RE = re.compile(r"(?i:world\s*of\s*warcraft|warcraft|lich\s*king|blizzard)|(?i:(?<![a-z])wow(?![a-z]))"
                       r"|WoW|WOW|(?<![a-z])Wow(?=[A-Z0-9])|(?<=[a-z])Wow(?![a-z])")

@@ -74,7 +74,7 @@ WAYS = ("herokey", "google", "discord")
 WAY_START = {"herokey": "/key", "google": "/auth/google/start", "discord": "/auth/discord/start"}
 WAYS_TTL, WAYS_TTL_FAIL = 300, 60
 PID_RE = re.compile(r"^[a-z0-9]{10}$")
-CTRL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f​-‏‪-‮⁦-⁩]")
+CTRL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f​-‏‪-‮⁦-⁩­͏؜ᅟᅠ឴឵᠋-᠏⁠-⁥⁪-⁯ㅤ︀-️﻿ﾠ]")   # + soft hyphen, word joiners, fillers, variation selectors, BOM (stream/namecheck.py INVISIBLE_RE)
 
 # The preset pictures: (id, name, background from, to, the shape in a 24-unit box). Original simple shapes.
 PRESETS = (
@@ -459,11 +459,12 @@ def name_generated(name: str) -> bool:
     return bool(GENERATED_RE.fullmatch(str(name or "")))
 
 
-def name_problem(name) -> str:
-    """Why a display name is refused ("" when it's fine): social.py's rules, plus the game and company names hidden
-    behind separators or run into other words ("Lich_King", "War.craft", "WoWAlice"), and names that pass for the team."""
+def name_problem(name, acct: str = "", where: str = "") -> str:
+    """Why a display name is refused ("" when it's fine): social.py's rules (stream/namecheck.py's blocklist, a protected
+    staff name that isn't acct's), plus the game and company names hidden behind separators or run into other words
+    ("Lich_King", "War.craft", "WoWAlice"), and names that pass for the team. where: note a refusal for HQ."""
     mod = P("social")
-    err = mod.name_error(name) if mod is not None else ("" if isinstance(name, str) else "Bad name.")
+    err = mod.name_error(name, acct, where) if mod is not None else ("" if isinstance(name, str) else "Bad name.")
     if err:
         return err
     flat = re.sub(r"[^a-z]", "", name.lower())
@@ -481,7 +482,7 @@ def set_name(acct: str, name, by: str = "self") -> dict:
     Your own changes (by "self...") are limited to name_changes_per_day() a day (from the history: a restart doesn't
     reset it); staff resets aren't."""
     soc, mod = _soc(), P("social")
-    err = name_problem(name)
+    err = name_problem(name, acct, ("site" if by == "self" else by[5:] or "site") if by.startswith("self") else "")
     if err:
         raise ProfileError(400, err)
     old = soc.ensure(acct)["name"]

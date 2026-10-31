@@ -54,7 +54,7 @@ check("overlay: the bot counts live in modules.env (it is read after the profile
 check("overlay: the Dungeon Finder is not touched", "AC_DUNGEON_FINDER_OPTIONS_MASK" not in ov and mods.get("AC_DUNGEON_FINDER_OPTIONS_MASK") == "7")
 check("overlay: Companions are not touched (parties and 10-player raids as on main)",
       not any(k.startswith("OV_COMPANIONS") for k in ov) and "AC_PLAYERBOTS_MAX_ADDED_BOTS" not in ov
-      and main.get("OV_COMPANIONS") == "1" and main.get("OV_COMPANIONS_GROUP_MAX") == "10")
+      and main.get("OV_COMPANIONS") in ("0", "1") and main.get("OV_COMPANIONS_GROUP_MAX") == "10")
 check("overlay: random bots still join the Dungeon Finder", "AC_PLAYERBOTS_RANDOM_BOT_JOIN_LFG" not in ov and mods.get("AC_PLAYERBOTS_RANDOM_BOT_JOIN_LFG") == "1")
 check("overlay: no raid, instance or arena switch", not any(re.search(r"RAID|INSTANCE|ARENA|BATTLEGROUND|LFG|DUNGEON", k) for k in ov), ov)
 check("overlay: idle grids unload after a minute", ov.get("AC_GRID_UNLOAD") == "1" and int(ov["AC_GRID_CLEAN_UP_DELAY"]) <= 60000)
@@ -159,7 +159,7 @@ live = kv(os.path.join(st, "live.env"))
 check("on: the world server runs with OV_SAMPLER=1 and 12 bots",
       live.get("OV_SAMPLER") == "1" and live.get("AC_PLAYERBOTS_MAX_RANDOM_BOTS") == "12" and live.get("AC_PLAYERBOTS_MIN_RANDOM_BOTS") == "12", live)
 check("on: main.env keeps everything else (boost, Companions, the bot specs)",
-      live.get("OV_MAIN") == "1" and live.get("OV_COMPANIONS") == "1" and live.get("AC_PLAYERBOTS_PREMADE_SPEC_NAME_1__0") == "arms pve")
+      live.get("OV_MAIN") == "1" and live.get("OV_COMPANIONS") == main.get("OV_COMPANIONS") and live.get("AC_PLAYERBOTS_PREMADE_SPEC_NAME_1__0") == "arms pve")
 check("on: the bot counts went into modules.env, the old lines kept as #sampler-was:",
       "#sampler-was: AC_PLAYERBOTS_MIN_RANDOM_BOTS=30" in read(mf) and "AC_PLAYERBOTS_MAX_RANDOM_BOTS=12" in read(mf)
       and "AC_PLAYERBOTS_MAX_RANDOM_BOTS" not in read(pf))

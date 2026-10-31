@@ -76,6 +76,42 @@
         "source": "https://github.com/jonhaldors/hordes-of-azeroth",
         "more": ["https://github.com/jonhaldors/hordes-of-azeroth-server"]
       }
+    },
+    {
+      "id": "arena-1v1",
+      "title": "1v1 arena",
+      "line": "Rated or practice one-on-one arena at level 80. The battlemaster stands at the duel corner.",
+      "kind": "in-game",
+      "players": { "min": 2, "max": 2 },
+      "status": "live",
+      "start": { "cmd": ".hub arena" }
+    },
+    {
+      "id": "keystones",
+      "title": "Keystone dungeons",
+      "line": "Timed dungeons with a key that gets harder at every level, plus extra twists to beat.",
+      "kind": "in-game",
+      "players": { "min": 1, "max": 5 },
+      "status": "live",
+      "start": { "cmd": ".hub keys" }
+    },
+    {
+      "id": "transmog",
+      "title": "Transmog",
+      "line": "Change how your gear looks. The Warpweaver in Dalaran does it for you.",
+      "kind": "in-game",
+      "players": { "min": 1, "max": 1 },
+      "status": "live",
+      "start": { "cmd": ".hub transmog" }
+    },
+    {
+      "id": "hardcore",
+      "title": "Hardcore and challenges",
+      "line": "One life, slow XP, only gear you made and more. Start a new character at level 1.",
+      "kind": "in-game",
+      "players": { "min": 1, "max": 1 },
+      "status": "live",
+      "start": { "cmd": ".hub hardcore" }
     }
   ]
 }

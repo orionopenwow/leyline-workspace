@@ -70,7 +70,7 @@ test('Modes page: no menu item, Realms › MODES opens it, cards, credit, Coming
   assert.ok(await page.isVisible('#page-modes'));
   const names = await page.$$eval('#md-list .md-card .name', (n) => n.map((x) => x.textContent));
   assert.deepEqual(names, CATALOG.modes.map((m) => m.title));
-  assert.equal(await page.textContent('#md-net'), '5 to play · 2 coming soon');
+  assert.equal(await page.textContent('#md-net'), '9 to play · 2 coming soon');
   const golf = await card(page, 'minigolf').textContent();
   assert.match(golf, /1-8 players/); assert.match(golf, /On our realm/); assert.match(golf, /Play/);
   assert.doesNotMatch(golf, /Coming soon/);
@@ -110,6 +110,21 @@ test('PLAY on the desktop: the pick, then play on the official realm', async () 
   // a realm type: HOST IT goes to the Host page
   await card(page, 'brawl').locator('button:has-text("Host it")').click();
   assert.ok(await page.isVisible('#page-host'));
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('In-game modes: the .hub command on the card, PLAY just opens the game', async () => {
+  const { page, errors } = await open();
+  const tm = await card(page, 'transmog').textContent();
+  assert.match(tm, /In game/); assert.match(tm, /In game, type \.hub transmog to find it\./);
+  assert.equal(await card(page, 'transmog').locator('code').textContent(), '.hub transmog');
+  assert.equal(await card(page, 'minigolf').locator('.md-cmd').count(), 0, 'only in-game modes show a command');
+  await card(page, 'transmog').locator('.md-play').click();
+  await page.waitForFunction(() => /Started/.test(document.getElementById('md-status').textContent));
+  assert.deepEqual(await calls(page, 'mode_prepare_desktop'), [], 'nothing written into the client');
+  assert.deepEqual(await calls(page, 'play'), [{ client: 'c335a-1', realm: 'play.openvanilla.app' }]);
+  assert.equal(await page.textContent('#md-status'), 'Started My Wrath on play.openvanilla.app. In game, type .hub transmog.');
   assert.deepEqual(errors, []);
   await page.close();
 });

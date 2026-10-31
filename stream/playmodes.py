@@ -11,6 +11,9 @@ https://play.openvanilla.app/wrath/modes.json) and the site show. Each entry:
               offline     runs in the browser client with no server (the player's own game folder);
                           start = {"path": "/wrath/..."} on this site
               realm-type  needs its own server type, hosted through the Host pack; start = {"host": "<preset>"}
+              in-game     a mode on our realm that starts in the game itself, at an NPC in Dalaran (the realm's
+                          modules: 1v1 arena, transmog, keystone dungeons, Hardcore); start = {"cmd": ".hub <spot>"},
+                          the command that shows the way (realm/custom/lua_scripts/ov_go.lua). Play just opens the game.
     players   {"min": n, "max": n or null}
     status    live | coming   (coming: shown with "Coming soon" and its credit link, never a Play button)
     credit    for anything not ours: {"by", "license", "source": https URL, "note"?, "more"?: [https URLs]}
@@ -38,7 +41,8 @@ ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 ACCOUNT_RE = re.compile(r"^[A-Za-z0-9]{1,16}$")
 PATH_RE = re.compile(r"^/wrath(?:/[A-Za-z0-9._-]+)*(?:\?[A-Za-z0-9._=&-]*)?$")
 URL_RE = re.compile(r"^https://[a-z0-9.-]+\.[a-z]{2,}(?:/[A-Za-z0-9._~/%-]*)?$")
-KINDS = ("realm", "offline", "realm-type")
+KINDS = ("realm", "offline", "realm-type", "in-game")
+CMD_RE = re.compile(r"^\.hub [a-z0-9]{2,16}$")
 STATUSES = ("live", "coming")
 FIELDS = {"id", "title", "line", "kind", "players", "status", "start", "credit"}
 CREDIT_FIELDS = {"by", "license", "source", "note", "more"}
@@ -106,6 +110,9 @@ def check(doc) -> list[str]:
         elif kind == "offline":
             if not (isinstance(s.get("path"), str) and len(s["path"]) <= 120 and PATH_RE.fullmatch(s["path"])):
                 errs.append(f'{where}: an offline mode starts with {{"path": "/wrath/..."}} on this site')
+        elif kind == "in-game":
+            if not (isinstance(s.get("cmd"), str) and CMD_RE.fullmatch(s["cmd"])):
+                errs.append(f'{where}: an in-game mode starts with {{"cmd": ".hub <spot>"}}')
         elif kind == "realm-type":
             h = s.get("host")
             if not (isinstance(h, str) and 2 <= len(h) <= 32 and ID_RE.fullmatch(h)):
@@ -166,7 +173,7 @@ def players_text(p: dict) -> str:
     return f"{lo}-{hi} players"
 
 
-KIND_TEXT = {"realm": "On our realm", "offline": "No server", "realm-type": "Its own realm type"}
+KIND_TEXT = {"realm": "On our realm", "offline": "No server", "realm-type": "Its own realm type", "in-game": "In game"}
 
 
 def play_href(m: dict, host_href: str = "/wrath/host") -> str | None:
@@ -178,6 +185,8 @@ def play_href(m: dict, host_href: str = "/wrath/host") -> str | None:
         return "/wrath?go=" + s["go"]
     if m["kind"] == "offline":
         return s["path"]
+    if m["kind"] == "in-game":
+        return "/wrath"
     return host_href
 
 
@@ -195,11 +204,13 @@ def section(host_href: str = "/wrath/host") -> str:
             note = f' · {e(c["note"])}' if c.get("note") else ""
             credit = (f'<p class="md-hint">By {e(c["by"])}{note} · {e(c["license"])} · '
                       f'<a href="{e(c["source"])}" rel="noopener">Source</a></p>')
+        if m["kind"] == "in-game":
+            credit += f'<p class="md-hint">In game, type <code>{e(m["start"]["cmd"])}</code> to find it.</p>'
         href = play_href(m, host_href)
         if href is None:
             act = ""
         else:
-            label = {"realm": "Play", "offline": "Play", "realm-type": "Host it"}[m["kind"]]
+            label = {"realm": "Play", "offline": "Play", "in-game": "Play", "realm-type": "Host it"}[m["kind"]]
             act = f'<a class="md-go" href="{e(href)}">{label}</a>'
         cards.append(f'<div class="md-card" id="mode-{e(m["id"])}"><h3>{e(m["title"])}</h3><p>{e(m["line"])}</p>'
                      f'<div class="md-tags">{"".join(tags)}</div>{credit}{act}</div>')

@@ -21,7 +21,7 @@
     if (text !== undefined) e.textContent = text;
     return e;
   };
-  const KIND = { realm: "On our realm", offline: "No server", "realm-type": "Its own realm type" };
+  const KIND = { realm: "On our realm", offline: "No server", "realm-type": "Its own realm type", "in-game": "In game" };
   const OFFICIAL = "play.openvanilla.app";
   // Key art shipped with the launcher (art/modes/), by mode id: on the mode's card and, for the featured mode, as a
   // banner on Home. A mode without art, or art that fails to load, simply has none (the card and Home as before).
@@ -122,13 +122,19 @@
     tags.append(el("span", "tag", KIND[m.kind] || m.kind), el("span", "tag", playersText(m.players)));
     if (m.credit) tags.append(el("span", "tag gold", "Community made"));
     c.append(tags, el("p", "desc", m.line));
+    if (m.kind === "in-game" && m.start && m.start.cmd) {
+      // an NPC in Dalaran: PLAY opens the game, this line says how to find it there
+      const how = el("p", "md-cmd");
+      how.append(document.createTextNode("In game, type "), el("code", "", m.start.cmd), document.createTextNode(" to find it."));
+      c.append(how);
+    }
     if (m.credit) {
       const cr = el("p", "credit");
       cr.append(document.createTextNode(`By ${m.credit.by}${m.credit.note ? " · " + m.credit.note : ""} · ${m.credit.license}`));
       c.append(cr);
     }
     const acts = el("div", "acts");
-    if (m.status === "live" && (m.kind === "realm" || m.kind === "offline")) {
+    if (m.status === "live" && (m.kind === "realm" || m.kind === "offline" || m.kind === "in-game")) {
       const b = el("button", "btn small md-play", "Play");
       b.type = "button";
       b.addEventListener("click", () => play(m, b));
@@ -190,7 +196,8 @@
       if (c.build !== "3.3.5a") { say(`${m.title} plays with your Wrath game folder: pick it in the play bar, or add it first.`, "bad"); return; }
       if (window.LeylineAddons) await window.LeylineAddons.beforePlay(c);   // modes want the Leyline addons (addons.js)
       say("Starting…");
-      const ready = await invoke("mode_prepare_desktop", { client: c.id, id: m.id });
+      // an in-game mode has no pick to write: the game itself is the way in
+      const ready = m.kind === "in-game" ? `In game, type ${m.start.cmd}.` : await invoke("mode_prepare_desktop", { client: c.id, id: m.id });
       const started = await invoke("play", { client: c.id, realm: state.official_realm || OFFICIAL });
       say(`${started} ${ready}`, "ok");
     } catch (e) {

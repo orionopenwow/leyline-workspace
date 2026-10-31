@@ -520,6 +520,10 @@ local HUB_ALIAS = {
     amph = "amphitheater", anguish = "amphitheater",
 }
 local HUB_COOLDOWN = 10 -- seconds
+-- ov_go.lua's .hub spots in Dalaran (and their other names): left to it.
+local GO_SPOTS = { duels = true, duel = true, corner = true, arena = true, ["1v1"] = true, pvp = true, transmog = true,
+    tmog = true, transmogrifier = true, keys = true, key = true, keystone = true, mythic = true, hardcore = true, hc = true,
+    challenge = true, challenges = true }
 local lastHub = {}
 local hubCache = {}
 
@@ -689,6 +693,9 @@ local function onCommand(event, player, command)
         end
         return
     elseif cmd == "hub" then
+        -- ov_go.lua answers .hub alone and its Dalaran spots (duels, arena, transmog, keys, hardcore), and anything
+        -- at all while these travel hubs are off; here only a travel hub name, or another name while they are on.
+        if not hubOn() or arg == nil or GO_SPOTS[arg] then return end
         hubTeleport(player, arg)
         return false
     end

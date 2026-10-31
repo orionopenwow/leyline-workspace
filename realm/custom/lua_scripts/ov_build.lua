@@ -3593,7 +3593,7 @@ X.CMD.find = function(player, words)
         return X.sayFound(player, "Objects", 1, false, { c })
     end
     if #ws == 0 then return say(player, "Usage: |cffffff00.build find <words> [page]|r  (e.g. .build find bench)") end
-    if not WorldDBQuery then return say(player, "The world database can't be searched here.") end
+    if not WorldDBQuery then return say(player, "Search isn't available on this realm.") end
     local like = {}
     for _, w in ipairs(ws) do like[#like + 1] = "name LIKE '%" .. w .. "%'" end
     local sql = string.format("SELECT %s FROM gameobject_template WHERE %s AND %s ORDER BY name, entry LIMIT %d OFFSET %d",
@@ -3617,7 +3617,7 @@ X.CMD.search = X.CMD.find
 X.CMD.models = function(player, words)
     if not X.modelsWanted() then return say(player, "Models are off on this realm.") end
     if not X.displays() then
-        return say(player, "The realm can't read its own GameObjectDisplayInfo (the dbc folder from your game), so models are off.")
+        return say(player, "The realm can't read the model list from the game files it was set up with, so models are off.")
     end
     local guid, now = player:GetGUIDLow(), os.time()
     if X.lastFind[guid] == now then return say(player, "One search a second.") end
@@ -3807,7 +3807,7 @@ X.CMD.tilt = function(player, words)
     if not (axis == "yaw" or axis == "pitch" or axis == "roll") or not deg or not finite(deg) or math.abs(deg) > 180 then
         return say(player, "Usage: |cffffff00.build tilt yaw|pitch|roll <degrees>|r (up to 180 a step)")
     end
-    if axis ~= "yaw" and not core(player) then return say(player, "Tilting needs mod-sandbox-core on this realm's image; turning (yaw) works.") end
+    if axis ~= "yaw" and not core(player) then return say(player, "Tilting isn't switched on for this realm. Turning (yaw) works.") end
     local list = editList(player)
     if not list then return end
     if not rateMove(player:GetGUIDLow()) then return say(player, "Slow down a little.") end
@@ -3992,7 +3992,7 @@ function X.DenCheck(doc, add)
     if not DEN then return nil, "This realm has no Den." end
     if type(doc) ~= "table" or doc.format ~= "leyline-den" then return nil, "That isn't a Den file." end
     if type(doc.version) ~= "number" or doc.version < 1 then return nil, "That Den file has no version." end
-    if doc.version > 1 then return nil, "That Den file is from a newer Leyline: update the host kit." end
+    if doc.version > 1 then return nil, "That Den file is from a newer Leyline: update the Host pack." end
     if type(doc.props) ~= "table" or #doc.props > K.LAYOUT_MAX then
         return nil, "A Den file holds up to " .. K.LAYOUT_MAX .. " props."
     end

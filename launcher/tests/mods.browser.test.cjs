@@ -205,7 +205,7 @@ test('a leyline://install link opens that project and installs nothing by itself
   assert.ok(await card(page, 'mod:old-bars').locator('.acts .btn').isDisabled(), "a 1.12 mod can't go into the 3.3.5a client");
   await page.close();
   const two = await open({ link: { action: 'install', id: 'mod:not-here' } });
-  await two.page.waitForFunction(() => /not in the Workshop catalog here yet/.test(document.getElementById('cat-status').textContent));
+  await two.page.waitForFunction(() => /isn.t in the mods list here yet/.test(document.getElementById('cat-status').textContent));
   assert.deepEqual(two.errors, []);
   assert.deepEqual(errors, []);
   await two.page.close();

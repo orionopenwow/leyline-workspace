@@ -463,7 +463,7 @@ def validate(form: dict) -> tuple[dict, dict]:
     out["name"] = name
     preset = g("preset") or "dalaran"
     if preset not in PRESETS:
-        err["preset"] = "Pick one of the presets."
+        err["preset"] = "Pick a ruleset."
         preset = "dalaran"
     out["preset"] = preset
     vis = g("visibility") or "public"
@@ -681,7 +681,7 @@ def script_sh(rec: dict) -> bytes:
     return (
         "#!/usr/bin/env bash\n"
         f"# Leyline: start your realm \"{rec['name']}\" on this Mac or Linux PC.\n"
-        "# Put this file in your unzipped host kit folder (next to the `leyline` script), then run:\n"
+        "# Put this file in your unzipped Host pack folder (next to the `leyline` script), then run:\n"
         f"#   bash leyline-{rid}.sh\n"
         "# It sets up the realm with the answers you gave on the website and starts it with `leyline host`.\n"
         "# It holds this realm's links and its claim token: yours, keep it private.\n"
@@ -689,7 +689,7 @@ def script_sh(rec: dict) -> bytes:
         f"# you make your GM account {rec['gm']} yourself on your own join page (leyline status shows it).\n"
         "set -euo pipefail\n"
         'KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n'
-        '[ -f "$KIT/leyline" ] || { echo "Put this file in your host kit folder (next to leyline), then run it again."; exit 1; }\n'
+        '[ -f "$KIT/leyline" ] || { echo "Put this file in your Host pack folder (next to leyline), then run it again."; exit 1; }\n'
         'mkdir -p "$KIT/state"\n'
         "umask 077\n"
         "cat > \"$KIT/state/seed.b64\" <<'SEED'\n"
@@ -708,13 +708,13 @@ def script_bat(rec: dict) -> bytes:
         "setlocal",
         f"title Leyline - start {rec['name']}",
         f"rem Leyline: start your realm \"{rec['name']}\" on this Windows PC. Needs Docker Desktop.",
-        "rem Put this file in your unzipped host kit folder (next to \"Host a Wrath realm.bat\") and double-click it.",
+        "rem Put this file in your unzipped Host pack folder (next to \"Host a Wrath realm.bat\") and double-click it.",
         "rem It sets up the realm with the answers you gave on the website, then starts it.",
         "rem It holds this realm's links and its claim token: yours, keep it private.",
         "rem The realm's key is made on this PC and never leaves it. No passwords, no accounts:",
         f"rem you make your GM account {rec['gm']} yourself on your own join page (state\\host-link.txt).",
         'cd /d "%~dp0"',
-        'if not exist "Host a Wrath realm.bat" (echo Put this file in your host kit folder, next to "Host a Wrath realm.bat", then run it again. & pause & exit /b 1)',
+        'if not exist "Host a Wrath realm.bat" (echo Put this file in your Host pack folder, next to "Host a Wrath realm.bat", then run it again. & pause & exit /b 1)',
         "docker version >nul 2>&1 || (echo Docker Desktop is not running. Start it ^(or install it from docker.com^), then run this again. & pause & exit /b 1)",
         'if not defined WU_TOOLS_PREBUILT set "WU_TOOLS_PREBUILT=ghcr.io/orionopenwow/wu-host-tools:1"',
         'set "WU_TOOLS_IMAGE=wu-host-tools:1"',
@@ -973,8 +973,8 @@ def form_page(owner: str, display: str, vals: dict | None = None, errs: dict | N
             '<section class="ly-panel recipes"><h2>Start from a ready-made realm</h2><ul class="recipes-l">'
             + "".join(f'<li><a href="/wrath/host?recipe={k}"><b>{e(r[0])}</b><span>{e(r[1])}</span></a></li>' for k, r in RECIPES.items())
             + '</ul><p class="hint">Each fills the form below; name it and press Start server.</p>'
-            f'<p class="hint">Want it up all the time, or already run a server? <a href="{ALWAYS_ON_URL}">Run an always-on '
-            'realm, or put your own server on the list</a>.</p></section>'
+            f'<p class="hint">Want it up all the time, or already run a server? <a href="{ALWAYS_ON_URL}">Keep your realm up '
+            '24/7, or put your own server on the list</a>.</p></section>'
             '<section class="ly-panel" id="new-realm"><h2>New realm</h2>'
             + (f'<p class="note" role="status">{e(note)}</p>' if note else "")
             + (f'<p class="err">{e(errs["_"])}</p>' if "_" in errs else "") +
@@ -982,7 +982,7 @@ def form_page(owner: str, display: str, vals: dict | None = None, errs: dict | N
             f'<input type="hidden" name="csrf" value="{e(csrf(owner))}">'
             '<label for="f-name">Realm name<span class="hint">Up to 32 letters, digits, spaces, _ \' or -</span></label>'
             f'<input type="text" id="f-name" name="name" maxlength="32" required value="{e(vals.get("name", ""))}">{er("name")}'
-            f'<label>Preset</label><div class="opts">{opts}</div>{er("preset")}'
+            f'<label>Ruleset</label><div class="opts">{opts}</div>{er("preset")}'
             '<label for="f-tag">Tagline<span class="hint">One line for the realm list (optional)</span></label>'
             f'<input type="text" id="f-tag" name="tagline" maxlength="{TAGLINE_LEN}" value="{e(vals.get("tagline", ""))}">{er("tagline")}'
             f'<label for="f-rules">House rules<span class="hint">One per line, up to {MAX_RULES}. Shown on the realm list and your join page.</span></label>'
@@ -1001,9 +1001,9 @@ def form_page(owner: str, display: str, vals: dict | None = None, errs: dict | N
         '<section class="hb-pg hf-pg" aria-labelledby="hf-h"><header class="hb-pg-h"><div class="hb-pg-t"><h1 id="hf-h">Host</h1>'
         + host_tabs() + '</div></header><div class="hb-pg-b hf-cols">'
         f'<div class="hf-pane hf-start" id="hf-start"><div class="hf-card"><div class="hf-card-h">{crest}<div>'
-        '<p class="hf-eyebrow">Your server</p><h2>Host a realm</h2></div></div>'
+        '<p class="hf-eyebrow">Your realm</p><h2>Host a realm</h2></div></div>'
         f'<p class="ly-lede">Signed in as {e(display)}. Your realm runs on your own PC, free, and players reach it '
-        'through the Leyline relay: nobody sees your home address and you open no ports.</p>'
+        'through the Leyline network. You open no ports, and nobody sees your home address.</p>'
         + needs_panel() + '<h3 class="hf-cap">Before you start</h3>' + before_steps() + mine_html + form + '</div></div>'
         + guide_pane() + pack_pane() + '</div></section>')
     return page("Your server", inner)
@@ -1057,16 +1057,17 @@ def before_steps() -> str:
 
 
 GUIDE = (
-    ("How the Leyline network works", "Players reach your realm through the Leyline relay: no ports to open, and your "
-     "address stays hidden.", NETWORK_DOC, "How the network works"),
+    ("How the Leyline network works", "Players reach your realm through the Leyline network. You open no ports, and "
+     "nobody sees your address.", NETWORK_DOC, "How the network works"),
     ("Start your realm", "Pick a ruleset, name it and press Start server. Download your realm's file into the Host pack "
      "folder and run it. The first start takes 5 to 20 minutes.", None, None),
     ("Public or private", "Public realms show on the realm list for everyone. Private ones only let in people with your "
      "invite link.", None, None),
     ("Invite friends", "Your realm's page has a link to share. A private realm also has an invite link.", None, None),
     ("Your GM account", "Make it on your own join link, with your own password. It gets GM rights by itself.", None, None),
-    ("Always on", "Keep a realm up all the time on a spare PC or a small server.", ALWAYS_ON_URL, "Always-on realms"),
-    ("Link a server you already run", "Put your own server on the Leyline list and keep your own setup.", ALWAYS_ON_URL,
+    ("Keep it up 24/7", "What PC is enough, how to stop it sleeping, and what happens on a power cut.", ALWAYS_ON_URL,
+     "Keep your realm up 24/7"),
+    ("Link a server you already run", "Put your own server on the realm list and keep your own setup.", ALWAYS_ON_URL,
      "Put it on the list"),
     ("Move it to another PC", "Copy the Host pack folder, with its state folder, to the new PC.", None, None),
     ("When something's wrong", "The hosting guide walks through the usual problems.", GUIDE_URL, "Hosting guide"),
@@ -1090,9 +1091,9 @@ def pack_pane() -> str:
             '<section><h2>Settings</h2><p>Rates, bots, who can make accounts, region, language, tags and the player limit are '
             'under More settings on Start. The launcher\'s Host page has the same settings.</p>'
             '<div class="row"><a class="dl" href="/wrath/host#new-realm">Open the form</a></div></section>'
-            '<section><h2>Always on, or your own server</h2><p>Run a realm that stays up, or put a server you already run on '
+            '<section><h2>Keep it up 24/7</h2><p>Keep your realm up day and night, or put a server you already run on '
             'the list.</p>'
-            f'<div class="row"><a class="dl" href="{ALWAYS_ON_URL}">Always-on realms</a>'
+            f'<div class="row"><a class="dl" href="{ALWAYS_ON_URL}">Keep your realm up 24/7</a>'
             f'<a class="dl" href="{e(GUIDE_URL)}">Hosting guide</a></div></section></div></div>')
 
 
@@ -1179,12 +1180,12 @@ def start_page(rec: dict) -> bytes:
         f'and unzip the <a href="{e(kit)}" rel="noopener noreferrer">Host pack</a>. The server uses your own game '
         'files, read on your PC; nothing is downloaded or shared.</span></li>'
         f'<li><b>Run your realm\'s file</b><span>Download it into the Host pack folder and run it.</span>{dl}</li>'
-        '<li><b>Leave it running</b><span>This page changes to <b>Online</b> when your PC connects to the relay.</span></li>'
+        '<li><b>Leave it running</b><span>This page changes to <b>Online</b> when your PC connects to the Leyline network.</span></li>'
         + gm +
         '</ol></section>'
         '<p class="ly-fine">The first start imports the databases and can take 5 to 20 minutes. '
         f'<a href="{e(GUIDE_URL)}" rel="noopener noreferrer">Hosting guide</a> · '
-        f'<a href="{ALWAYS_ON_URL}">Keep it always on</a> · <a href="/wrath/host">Your realms</a></p></div></div>'
+        f'<a href="{ALWAYS_ON_URL}">Keep it up 24/7</a> · <a href="/wrath/host">Your realms</a></p></div></div>'
         + guide_pane() + '</div></section>')
     # while it is about to be listed, look again sooner (the relay lists it seconds after the PC connects)
     return page(rec["name"], inner, refresh=0 if final else (5 if state == "online" else REFRESH))

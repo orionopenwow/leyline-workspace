@@ -231,7 +231,7 @@
       title: `${r.name} uses ${names.length === 1 ? names[0] : names.length + " mods your game doesn't have"}`,
       body: `This realm uses ${names.join(", ")}. Get them and play?`,
       list: names,
-      fine: "Leyline gets them from the Workshop and checks every file first. Remove them any time in Mods › Installed.",
+      fine: "Leyline downloads them and checks every file first. Remove them any time in Mods › Installed.",
       yes: "Get them and play", no: "Play without them",
     });
     if (a === "cancel") return { go: false, leyline };

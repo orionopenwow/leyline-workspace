@@ -1498,7 +1498,7 @@ def _page(h, v, form=None, answer=None, step="", error="", status=200, query=Non
                  '<span><b>3</b> List it</span></p>' + inner + HOW_HTML + '</section>')
     w = _get("workshop")
     if w is not None and hasattr(w, "_page"):
-        body = w._page("List your mod · Workshop", PAGE, "List your mod · Leyline Workshop", page_body,
+        body = w._page("List your mod · Mods", PAGE, "List your mod · Leyline Mods", page_body,
                        "List your mod for one-click install in the Leyline launcher.")
     else:
         body = ("<!doctype html><meta charset=utf-8><title>List your mod</title>" + page_body).encode("utf-8")

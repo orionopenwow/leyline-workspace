@@ -316,7 +316,7 @@ s.start:Fire("OnClick")
 check("start: level 1 only", H.opts.start == "level1" and s.start:GetText() == "Level 1 only")
 H.Cycle("core", H.CORES)
 check("cycling the core: CMaNGOS, its first ruleset, rates off", H.opts.core == "cmangos" and H.opts.preset == "cmangos-1.12.1"
-    and s.xp.enabled == false and s.bots:GetText() == "Coming on this core")
+    and s.xp.enabled == false and s.bots:GetText() == "Coming soon")
 H.Cycle("core", H.CORES)
 s.name.text = "Den"; s.name:Fire("OnTextChanged")
 check("typing the name", H.opts.name == "Den" and s.problem:GetText() == "")
@@ -369,7 +369,7 @@ local st = H.status
 check("GM status: uptime, players, bots, the host kit's facts", st.gm and st.up == "3725" and st.players == "3" and st.bots == "0"
     and st.listed == "1" and st.signup == "open" and st.botsCfg == "40" and st.rates == "3/1/2" and st.herokey == "off"
     and st.invite == "https://relay.openvanilla.app/join/abcdefghijklmnop" and hwin.control.restart:IsShown())
-check("status text", hwin.control.status:GetText():find("^Up 1h 2m") and hwin.control.status:GetText():find("On the Leyline list: yes"))
+check("status text", hwin.control.status:GetText():find("^Up 1h 2m") and hwin.control.status:GetText():find("On the realm list: yes"))
 local function act(btnOrFn)
     serverClock = serverClock + 3; clock = clock + 2
     if type(btnOrFn) == "function" then btnOrFn() else btnOrFn:Fire("OnClick") end

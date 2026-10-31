@@ -121,7 +121,7 @@ end
 function L.JoinText(r)
     if r.net then return r.here and "You're here" or "View" end
     if r.id ~= "this" then return "Join" end
-    if r.relayId and r.relayLive and not L.HasPage() then return "Join through the relay" end
+    if r.relayId and r.relayLive and not L.HasPage() then return "Join by link" end
     return "You're here"
 end
 
@@ -136,7 +136,7 @@ function L.Request(force)
     if not force and L.askedAt and now() - L.askedAt < ASK_EVERY and not L.failed then return false end
     if not SendAddonMessage or not UnitName then setStatus(UNAVAILABLE); return false end
     L.askedAt, L.waiting, L.failed = now(), true, nil
-    setStatus("Asking the realm for the Leyline list...")
+    setStatus("Asking the realm for the realm list...")
     pcall(SendAddonMessage, PREFIX, "L", "WHISPER", UnitName("player"))
     return true
 end
@@ -335,7 +335,7 @@ function L.AskList(page)
     local q = (L.query or ""):gsub("[|%c]", ""):sub(1, 32)
     WUUI_LEYLINE_ASK = "list|" .. L.netPage .. "|" .. table.concat(f, ",") .. "|" .. q
     L.browseAt = now()
-    setStatus("Asking for the Leyline list...")
+    setStatus("Asking for the realm list...")
     return WUUI_LEYLINE_ASK
 end
 
@@ -586,8 +586,8 @@ function L.Refresh()
             -- that row has no Copy link of its own)
             local jt = L.JoinText(r)
             row.join:SetText(jt)
-            row.join:SetWidth(jt == "Join through the relay" and 164 or jt == "You're here" and 80 or 56)
-            if jt == "Join through the relay" then row.copyBtn:Hide() else row.copyBtn:Show() end
+            row.join:SetWidth(jt == "Join by link" and 164 or jt == "You're here" and 80 or 56)
+            if jt == "Join by link" then row.copyBtn:Hide() else row.copyBtn:Show() end
             row:Show()
         else
             row:Hide()
@@ -655,7 +655,7 @@ function L.HostYourOwn()
         W.Host.Show(1)
         return true
     end
-    info("Host your own realm: 1. Get the Leyline launcher and Docker. 2. Open Host, pick a profile and your rules. "
+    info("Host your own realm: 1. Get the Leyline launcher and Docker. 2. Open Host, pick a ruleset and your rules. "
         .. "3. Make it public: it shows up here. The link has the details.")
     copy(L.HOST_LINK)
 end
@@ -687,8 +687,8 @@ end
 function L.Join(r)
     local link = L.RowLink(r)
     if r.id == "this" then
-        if L.JoinText(r) == "Join through the relay" then
-            info("You're on " .. r.name .. " now. Other clients come in through the relay: the link above (or "
+        if L.JoinText(r) == "Join by link" then
+            info("You're on " .. r.name .. " now. Other players join with the link above (or "
                 .. "leyline://realm/" .. r.relayId .. " in the Leyline launcher).")
         else
             info("You're on " .. r.name .. " now. Share the link above to bring friends here.")

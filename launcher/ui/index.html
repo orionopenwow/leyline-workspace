@@ -33,7 +33,7 @@
     <span>Join the Discord</span>
   </button>
   <div class="tb-fill" data-tauri-drag-region></div>
-  <button type="button" class="pill upd" id="tb-modupd" hidden title="Workshop mods with a newer version: open Mods › Installed">Mod updates</button>
+  <button type="button" class="pill upd" id="tb-modupd" hidden title="Mods with a newer version: open Mods › Installed">Mod updates</button>
   <!-- owner 31 Oct: every update reaches everyone; one calm line, Restart, or it finishes the next time Leyline opens -->
   <div class="pill upd-line" id="tb-update" role="status" hidden><span id="tb-update-text">Update ready — restart to finish</span><button type="button" class="upd-go" id="tb-update-go">Restart</button></div>
   <div class="pill" id="tb-status"><span class="dot"></span><span id="tb-status-text">Checking…</span></div>
@@ -122,7 +122,7 @@
       </section>
       <section class="hm-sec hm-host" id="hm-host" aria-label="Host your own">
         <span class="hm-host-ic" aria-hidden="true"><img src="art/brand/leyline-crystal-256.webp" alt="" decoding="async"></span>
-        <div class="hm-host-txt"><b>Host your own</b><span>Your realm on the Leyline network. No port forwarding.</span></div>
+        <div class="hm-host-txt"><b>Host your own</b><span>Your realm on the Leyline network. No router settings.</span></div>
         <div class="hm-host-acts">
           <button type="button" class="btn small primary" id="hm-host-start">Start a realm</button>
           <button type="button" class="btn small" id="hm-host-link">Link my server</button>
@@ -180,7 +180,7 @@
         <!-- the Simple view (simple.js): one search box and short rows of big cards; Browse everything is the full catalog -->
         <div id="dc-simple" class="dc-simple">
           <div class="toolbar dc-sbar">
-            <input id="dc-sq" type="search" placeholder="Search mods, addons and themes" aria-label="Search the Workshop" autocomplete="off" spellcheck="false">
+            <input id="dc-sq" type="search" placeholder="Search mods, addons and themes" aria-label="Search mods" autocomplete="off" spellcheck="false">
             <button type="button" class="btn small" id="dc-all">Browse everything</button>
             <!-- the "List your mod" slot: the submission flow is wired by its own agent (window.LeylineListMod); until then it opens the site's form -->
             <button type="button" class="btn small" id="dc-list-mod" data-slot="list-your-mod">List your mod</button>
@@ -189,7 +189,7 @@
         </div>
         <div class="toolbar dc-bar dc-full">
           <button type="button" class="btn small dc-back" id="dc-simple-btn" title="Back to the short list">‹ Simple</button>
-          <input id="cat-q" type="search" placeholder="Search mods" aria-label="Search the Workshop" autocomplete="off" spellcheck="false">
+          <input id="cat-q" type="search" placeholder="Search mods" aria-label="Search mods" autocomplete="off" spellcheck="false">
           <span class="toolbar-fill"></span>
           <select class="client-pick dc-client" data-for="discover" aria-label="Install into"></select>
         </div>
@@ -208,7 +208,7 @@
         </details>
         <p class="status" id="cat-status" role="status"></p>
         <div class="mod-grid dc-grid dc-full" id="cat-grid"></div>
-        <div class="row dc-more dc-full"><button type="button" class="btn small" data-link="mods">Open the Workshop</button><button type="button" class="btn small" data-link="modders">Make a mod</button></div>
+        <div class="row dc-more dc-full"><button type="button" class="btn small" data-link="mods">Mods on the website</button><button type="button" class="btn small" data-link="modders">Make a mod</button></div>
       </div>
     </div>
   </section>
@@ -253,7 +253,7 @@
       <div class="realm-list" id="rl-list"></div>
       <section class="rl-host-banner" id="rl-host-cta" aria-label="Host your own">
         <span class="rl-host-ic" aria-hidden="true"><img src="art/brand/leyline-crystal-256.webp" alt="" decoding="async"></span>
-        <p><b>Host your own realm.</b> <span>It runs on your PC and shows up here for everyone, no port forwarding.</span></p>
+        <p><b>Host your own realm.</b> <span>It runs on your PC and shows up here for everyone. No router settings.</span></p>
         <div class="rl-host-acts">
           <button type="button" class="btn small primary" id="rl-host">Start a realm</button>
           <button type="button" class="btn small" id="rl-host-link">Link my server</button>
@@ -300,9 +300,9 @@
       <div class="hc-pane on" id="hc-pane-main" role="tabpanel" aria-labelledby="hc-tab-main"></div>
       <div class="hc-pane" id="hc-pane-guide" role="tabpanel" aria-labelledby="hc-tab-guide"></div>
       <div class="hc-pane" id="hc-pane-kit" role="tabpanel" aria-labelledby="hc-tab-kit">
-      <p class="lede">Run a realm on this PC for friends or everyone. It uses your own game files and reaches players through the Leyline relay: no port forwarding, your address stays hidden. It runs while your PC does.</p>
+      <p class="lede">Run a realm on this PC for friends or everyone. It uses your own game files. Players reach it through the Leyline network: you open no ports, and nobody sees your address. It runs while your PC is on.</p>
       <!-- TODO(owner): the host needs wording (hostconsole.js and the website's /wrath/host say the same) -->
-      <p class="hint hc-needs" id="host-needs"><b>You need:</b> Docker, your own game folder <span class="hc-ver">3.3.5a</span>, about 10 GB free. The first start takes 5 to 20 minutes, and your PC must stay on for others to play.</p>
+      <p class="hint hc-needs" id="host-needs"><b>You need:</b> Docker (a free program that runs your realm in its own space), your own game folder <span class="hc-ver">3.3.5a</span>, about 10 GB free. The first start takes 5 to 20 minutes, and your PC must stay on for others to play.</p>
       <ol class="steps">
         <li><b>Make your realm on the website.</b> Sign in, pick a name, a ruleset and your house rules, then download your realm file.
           <div class="row"><button type="button" class="btn" data-link="host">Host a realm</button></div></li>
@@ -471,7 +471,7 @@
       <h3>No files? Play in your browser</h3>
       <p class="lede">Pick Play in your browser in the play bar's realm list: the official realm streams there, with nothing to install.</p>
       <h3>Mods, realms and hosting</h3>
-      <p class="lede">Mods › Discover lists the Workshop: Install adds a mod to your game. Mods › Installed turns mods off and on, updates and removes them. Realms lists every realm; Host runs your own.</p>
+      <p class="lede">Mods › Discover lists every mod: Install adds a mod to your game. Mods › Installed turns mods off and on, updates and removes them. Realms lists every realm; Host runs your own.</p>
       <h3>Agents</h3>
       <p class="lede">Your own AI assistant can check realms, find mods and read your realm's logs. It asks you before it changes anything.
         <button type="button" class="link" data-page-go="agents">Agents ›</button> <button type="button" class="link" data-link="agentsguide">The guide ›</button></p>
@@ -515,8 +515,8 @@
       <div class="row"><button type="button" class="btn" id="upd-check">Check now</button><button type="button" class="btn" id="upd-restart" hidden>Restart to update</button><button type="button" class="btn" id="upd-open" hidden>Open the release page</button></div>
       <p class="status" id="upd-status" role="status"></p>
       <h3>Privacy</h3>
-      <p class="lede">No telemetry. Your account is optional and lives on the website. Leyline only fetches the Workshop, realm list and status, the Leyline addons and its own updates, and keeps copies so it works offline.</p>
-      <label class="check"><input type="checkbox" id="set-count"> Count my installs: after a Workshop install, tell the hub
+      <p class="lede">We don't track you. Your account is optional and lives on the website. Leyline only fetches the mods list, realm list and status, the Leyline addons and its own updates, and keeps copies so it works offline.</p>
+      <label class="check"><input type="checkbox" id="set-count"> Count my installs: after you install a mod, tell the website
         "one more install" (the mod, your client's build and a random one-time number; no account, nothing about you or your PC).
         It helps good mods rise in Hot and Most installed.</label>
       <p class="status" id="count-status" role="status"></p>

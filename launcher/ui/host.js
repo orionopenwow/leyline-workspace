@@ -33,7 +33,7 @@
   const dockLine = mk("div", "hint");
   const dockActs = mk("div", "row");
   packCard.append(head, mk("p", "lede",
-    "Everything a host needs, in one download: the scripts, the realm tools and the relay agent. Our code only, no game files. Only hosts need it, and Docker."),
+    "Everything you need to host, in one download. Our code only, no game files. Only hosts need it, and Docker."),
     packLine, packActs, packStatus, dockLine, dockActs);
   const steps = panel.querySelector("ol.steps");
   panel.insertBefore(packCard, steps || panel.firstChild);
@@ -206,7 +206,7 @@
     for (const c of (o ? o.clients : [])) { const op = mk("option", "", `${c.name} · ${c.path}`); op.value = c.id; clientSel.append(op); }
     lc.hidden = !o || !o.clients.length;
     if (keep) clientSel.value = keep;
-    gameHint.textContent = o ? (o.note || `Runs ${o.core} for the ${o.version} client. The server data is made from your client's folder (read-only).`) : "";
+    gameHint.textContent = o ? (o.note || `Runs ${o.core}. The realm's map data is made from your own game folder, which is only read, never changed.`) : "";
     gameHint.className = "hint" + (o && o.note ? " warn" : "");
   }
   async function saveGame() {
@@ -256,7 +256,7 @@
   const advStatus = mk("p", "status");
   const natLine = mk("p", "hint");
   adv.append(mk("h3", "", "Advanced: peer-to-peer"),
-    mk("p", "lede", "Off unless you or the website turn them on. Peer-to-peer never carries game files or a game client: only Leyline itself, mods that passed the Workshop checks, theme packs and the Host pack, each checked against its sha256."),
+    mk("p", "lede", "Off unless you or the website turn them on. Peer-to-peer never shares game files or a game client. It only shares Leyline itself, checked mods, theme packs and the Host pack, and each file is checked before it is used."),
     advList, natLine, advStatus);
   if (setPanel) setPanel.insertBefore(adv, setPanel.querySelector("h3") || null);
 
@@ -298,7 +298,7 @@
         note(advStatus, "Asking a STUN server for this PC's public address…");
         try {
           const r = await call("p2p_nat_check");
-          const words = { open: "no router in the way", endpoint_independent: "direct connections can work", symmetric: "direct connections will not work: the relay is used", unknown: "could not tell", blocked: "UDP is blocked: the relay is used" };
+          const words = { open: "no router in the way", endpoint_independent: "direct connections can work", symmetric: "direct connections will not work: the Leyline network is used", unknown: "could not tell", blocked: "direct connections are blocked: the Leyline network is used" };
           note(advStatus, `Network: ${words[r.kind] || r.kind}.`, r.kind === "open" || r.kind === "endpoint_independent" ? "ok" : "warn");
         } catch (e) { note(advStatus, oops(e), "bad"); }
       }));

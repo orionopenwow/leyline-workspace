@@ -1447,7 +1447,7 @@ do
     check("setrot: the group faces 90 (tilt dropped without the module)", math.abs(math.deg(bench.o) - 90) < 0.1
         and math.abs(math.deg(tbl.o) - 90) < 0.1 and last(dora):find("tilting needs a realm update"))
     cmd(dora, "build tilt pitch 15")
-    check("tilt pitch: needs the module", last(dora):find("needs mod%-sandbox%-core"))
+    check("tilt pitch: needs the module", last(dora):find("Tilting isn.t switched on"))
     step()
     cmd(dora, "build tilt yaw 15")
     check("tilt yaw: each prop turns about itself", math.abs(math.deg(bench.o) - 105) < 0.1 and math.abs(math.deg(tbl.o) - 105) < 0.1)

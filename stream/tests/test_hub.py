@@ -187,7 +187,7 @@ check("hero: the whole mark leads, crisp (the 512px layers), big (~400px, 220px 
       and 'class="hb-hero-a"' not in front and 'class="hb-dl" href="https://github.com/orionopenwow/Leyline/releases/download/launcher-latest/Leyline.exe"' in front)
 stats = re.search(r'<section class="hb-sbar hb-rv" id="status".*?</section>', front, re.S).group(0)
 check("Platform status: one slim bar of pills, the main realm online from realm_status, sign-in, the network, the relay, the mod catalog",
-      all(x in stats for x in ('<em class="ok">OK</em> · 3 playing', "<b>Sign-in</b>", "<b>Realm network</b>", "<b>Relay</b>", "<b>Mod catalog</b>", " items</span>"))
+      all(x in stats for x in ('<em class="ok">OK</em> · 3 playing', "<b>Sign-in</b>", "<b>Realm network</b>", "<b>Relay</b>", "<b>Mods</b>", " items</span>"))
       and '<li><a class="hb-pill ok" href="/wrath/realms"><i class="hb-pdot" aria-hidden="true"></i>' in stats
       and '<a class="hb-pill info" href="/wrath/leyline-preview/catalog">' in stats and 'class="hb-stat' not in front
       and '<h2 id="hb-st" class="hb-sbar-h">' in stats and re.search(r'<p class="hb-sbar-s">(All systems normal|Some systems are down|Systems are down)</p>', stats), stats)
@@ -240,7 +240,7 @@ fs = re.findall(r'<section class="hb-fs hb-rv( flip)?" id="f-([a-z]+)".*?<p clas
                 r'<div class="hb-fs-v">(.*?)</div></section>', front, re.S)
 check("feature sections: one per part of Leyline, in the recommended order", [f[1] for f in fs] == [
       "launcher", "host", "realms", "modes", "mods", "forge", "agents", "community"] and [f[2] for f in fs] == [
-      "Desktop launcher", "Server hosting software", "Realms &amp; hopping", "Minigolf &amp; game modes", "Mods &amp; the Workshop",
+      "Desktop launcher", "Server hosting software", "Realms &amp; hopping", "Minigolf &amp; game modes", "Mods",
       "Forge", "Agents", "Community hub"], [f[1:3] for f in fs])
 check("feature sections: alternating sides (every other one flips)", [bool(f[0]) for f in fs] == [False, True] * 4)
 check("feature sections: a heading, a lede, points and a first link each", all(f[3] and f[4] and f[5].count("<li>") >= 2
@@ -347,7 +347,7 @@ check("submit: the same repo again is already queued", st == 400 and "already in
 st, _, b = req("/wrath/leyline-preview/submit", "POST", "repo=https%3A%2F%2Fexample.com%2Fx&build=3.3.5a&category=tools")
 check("submit: other sites refused, the form kept", st == 400 and "GitHub, GitLab or Codeberg" in b.decode() and "example.com" in b.decode())
 st, _, b = req("/wrath/leyline-preview/submit", "POST", "repo=" + first["repo"] + "&build=3.3.5a&category=tools")
-check("submit: a listed repo is already in the catalog", st == 400 and "already in the catalog" in b.decode())
+check("submit: a listed repo is already in the catalog", st == 400 and "already on the list" in b.decode())
 st, _, b = req("/wrath/leyline-preview/submit", "POST", "repo=https%3A%2F%2Fgithub.com%2FChumpton%2Fx&build=3.3.5a&category=tools")
 check("submit: Chumpton refused", st == 400)
 st, _, b = req("/wrath/leyline-preview/submit", "POST", "repo=https%3A%2F%2Fgithub.com%2Fa%2Fb&build=9.9&category=tools")
@@ -912,7 +912,7 @@ check("host console (owner: \"the server GM console / health etc ... all in one 
       'id="f-host"' in fp and sw and fp.find('id="f-host"') < fp.find('class="hb-sw"') < fp.find('id="f-realms"')
       and "Your realm console" in sw and "Online · listed" in sw)
 check("host console: health tiles (the four services, players, uptime)",
-      re.findall(r"<li><i></i>([^<]+)<span>", sw) == ["Database", "Login server", "World server", "Relay agent", "Players", "Uptime"])
+      re.findall(r"<li><i></i>([^<]+)<span>", sw) == ["Database", "Login server", "World server", "Leyline network", "Players", "Uptime"])
 check("host console: the GM controls of the in-game Your realm window, restart with its five-minute warning",
       re.findall(r"<li><b>([^<]+)</b><span>", sw) == [a for a, _ in HB.HOST_GM]
       and "with a five-minute warning" in sw and "announce" in open(os.path.join(REPO, "realm", "custom", "lua_scripts", "ov_hostctl.lua")).read().lower())
@@ -921,7 +921,7 @@ check("host console: Check my realm's checks and Realm tools' jobs",
 check("host console: the cores it runs, One click only for what the host pack runs today (cores.py), the rest Coming, and Your own",
       sorted(c[0] for c in cores) == ["azerothcore", "cmangos", "own", "trinitycore", "vmangos"]
       and {c[0] for c in cores if c[1] == "live"} == kit_live and all(c[4] == "One click" for c in cores if c[1] == "live")
-      and all(c[4] == "Coming" for c in cores if c[1] == "coming") and [c[4] for c in cores if c[0] == "own"] == ["Relay agent"],
+      and all(c[4] == "Coming" for c in cores if c[1] == "coming") and [c[4] for c in cores if c[0] == "own"] == ["Small helper"],
       (kit_live, [c[:2] for c in cores]))
 check("server software: our own crest (the Leyline crystal) and a rune rule drawn in SVG, no pictures, no game words, no numbers",
       '<svg class="hb-crest"' in sw and sw.count('class="hb-rune"') == 2 and "<img" not in sw and "url(" not in sw

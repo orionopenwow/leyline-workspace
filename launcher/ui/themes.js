@@ -196,7 +196,7 @@
       card.append(el("p", "hint bad", "This pack no longer passes the checks: " + t.problem));
     } else {
       card.append(el("p", "desc", t.description || ""));
-      if (!t.builtin) card.append(el("p", "credit", [t.author, "v" + t.version, t.licence, t.source === "catalog" ? "from the Workshop" : "from a file"].filter(Boolean).join(" · ")));
+      if (!t.builtin) card.append(el("p", "credit", [t.author, "v" + t.version, t.licence, t.source === "catalog" ? "from the mods list" : "from a file"].filter(Boolean).join(" · ")));
     }
     const acts = el("div", "acts");
     if (!t.problem && t.id !== saved.id) {
@@ -302,8 +302,8 @@
   function renderDiscover(box) {
     const cards = catalogThemes.map(catalogCard);
     box.replaceChildren(
-      el("p", "lede", (catalogCategory && catalogCategory.line) || "Theme packs from the Workshop: colours, fonts and art for the launcher. Packs are only CSS and images, checked before they are used."),
-      section("From the Workshop", cards, "No theme packs in the Workshop yet. Make the first one: see MAKE A THEME."),
+      el("p", "lede", (catalogCategory && catalogCategory.line) || "Theme packs: colours, fonts and art for the launcher. A pack is only styles and pictures, checked before it is used."),
+      section("From the mods list", cards, "No theme packs yet. Make the first one: see MAKE A THEME."),
       section("Built in and installed", list.map(themeCard), ""),
     );
     const row = localButtons();

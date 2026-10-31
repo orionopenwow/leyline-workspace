@@ -177,7 +177,7 @@ test('Game Clients: the version chip shows, the technical lines sit behind Detai
 test('Settings: Privacy in one line about the account; no Wine on Windows; Wine elsewhere', async () => {
   let { page, ctx, errors } = await open({ windows: true });
   await go(page, 'settings');
-  assert.match(await text(page, '#page-settings'), /No telemetry\. Your account is optional and lives on the website\./);
+  assert.match(await text(page, '#page-settings'), /We don't track you\. Your account is optional and lives on the website\./);
   assert.equal(await page.isVisible('#wine-set'), false);
   assert.equal(await page.isVisible('#set-save'), false);
   await ctx.close();
@@ -239,8 +239,8 @@ test('Realms: the count says community realms; Mods › Discover offline: one li
   await page.waitForFunction(() => document.getElementById('rl-net').textContent);
   assert.equal(await page.textContent('#rl-net'), '0 community realms · 5 playing');
   await go(page, 'mods', 'discover');
-  await page.waitForFunction(() => /Can't reach the Workshop/.test(document.getElementById('cat-status').textContent));
-  assert.equal(await page.textContent('#cat-status'), "Can't reach the Workshop. Try again.");
+  await page.waitForFunction(() => /Can't load the mods/.test(document.getElementById('cat-status').textContent));
+  assert.equal(await page.textContent('#cat-status'), "Can't load the mods. Try again.");
   assert.equal(await page.textContent('#cat-grid'), '', 'no second line under it');
   assert.deepEqual(errors, []);
   await ctx.close();

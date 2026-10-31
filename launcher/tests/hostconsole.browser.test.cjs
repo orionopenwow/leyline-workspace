@@ -125,15 +125,15 @@ test('a realm set up on this PC: the Host page is its console', async () => {
   assert.equal(await page.textContent('.hc-t'), 'Frost Haven');
   const tiles = await page.$$eval('.hc-svc li', (l) => l.map((x) => [x.querySelector('b').textContent, x.querySelector('span').textContent, x.className]));
   assert.deepEqual(tiles, [['Database', 'ready', 'hc-tile ok'], ['Login server', 'ready', 'hc-tile ok'], ['World server', 'ready', 'hc-tile ok'],
-    ['Relay agent', 'listed', 'hc-tile ok'], ['Players', '12 online', 'hc-tile ok'], ['Uptime', '3 days', 'hc-tile ok']]);
+    ['Leyline network', 'listed', 'hc-tile ok'], ['Players', '12 online', 'hc-tile ok'], ['Uptime', '3 days', 'hc-tile ok']]);
   assert.deepEqual(await page.$$eval('.hc-act-h b', (l) => l.map((x) => x.textContent)),
     ['Announce', 'On-screen notice', 'Message of the day', 'Kick', 'Mute or unmute', 'Send to Dalaran', 'Ban account', 'Allow-list', 'Restart']);
   assert.deepEqual(await page.$$eval('.hc-chk li span', (l) => l.map((x) => x.textContent)),
-    ['The servers on your PC', 'The tunnel to the relay', 'A login through the relay', 'Your invite link', 'Your place on the realm list']);
+    ['The servers on your PC', 'Your link to the Leyline network', 'A test login from outside', 'Your invite link', 'Your place on the realm list']);
   assert.deepEqual(await page.$$eval('.hc-tool', (l) => l.filter((x) => !x.parentElement.hidden).map((x) => x.textContent)),
     ['Invite links', 'Accounts for friends', 'Public or private', 'Who may sign up', 'Browser players', 'Max players', 'Server logs', 'House rules']);
   assert.deepEqual(await page.$$eval('.hc-core', (l) => l.map((x) => [x.dataset.core, x.querySelector('span span').textContent])),
-    [['azerothcore', 'One click'], ['cmangos', 'One click'], ['trinitycore', 'Coming'], ['vmangos', 'Coming'], ['own', 'Relay agent']]);
+    [['azerothcore', 'One click'], ['cmangos', 'One click'], ['trinitycore', 'Coming'], ['vmangos', 'Coming'], ['own', 'Small helper']]);
   assert.equal(await page.getAttribute('.hc-core[data-core="azerothcore"]', 'aria-current'), 'true', 'the core this realm runs');
   assert.ok(await page.isHidden('.hc-top-acts button:has-text("Start")') && await page.isVisible('.hc-top-acts button:has-text("Stop")'));
   assert.doesNotMatch(await page.textContent('#page-host'), NO_BRANDS);
@@ -303,7 +303,7 @@ test('no realm yet: the setup start (Vanilla+ always on, Link my server) and the
   await page.click('#hc-tab-guide');
   assert.ok(await page.isVisible('#hc-pane-guide'));
   const topics = await page.$$eval('#hc-pane-guide .hc-g summary', (l) => l.map((x) => x.textContent));
-  assert.deepEqual(topics, ['How the Leyline network works', 'Start your realm', 'Stop it', 'Update', 'Go public', 'Invite friends', 'Claim it with your Hero Key', 'Always on',
+  assert.deepEqual(topics, ['How the Leyline network works', 'Start your realm', 'Stop it', 'Update', 'Go public', 'Invite friends', 'Claim it with your Hero Key', 'Keep it up 24/7',
     'Link a server you already run', 'Backups', "When something's wrong"]);
   await page.click('#hc-pane-guide .hc-g[data-topic="alwayson"] summary');
   await page.click('#hc-pane-guide .hc-g[data-topic="alwayson"] .hc-more');
@@ -313,7 +313,7 @@ test('no realm yet: the setup start (Vanilla+ always on, Link my server) and the
   assert.deepEqual(names, ['alwayson', 'hostdocs', 'network']);
   // what a host needs and how long it takes, before the rulesets (and on the Host pack tab)
   const needs = await page.textContent('#hc-pane-main .hc-needs');
-  assert.match(needs, /You need: Docker, your own game folder 3\.3\.5a, about 10 GB free\. The first start takes 5 to 20 minutes, and your PC must stay on for others to play\./);
+  assert.match(needs, /You need: Docker \(a free program that runs your realm in its own space\), your own game folder 3\.3\.5a, about 10 GB free\. The first start takes 5 to 20 minutes, and your PC must stay on for others to play\./);
   assert.match(await page.textContent('#host-needs'), /about 10 GB free/);
   // the kit and its settings are one tab away
   await page.click('#hc-tab-kit');

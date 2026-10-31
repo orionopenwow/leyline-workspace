@@ -36,8 +36,8 @@ const NEWS = [
     "Duels arena now on the realm list",
   ] },
   { tag: "LEYLINE LAUNCHER 0.2", title: "MODS, REALMS AND HOSTING", items: [
-    "Install, update, turn off and remove Workshop mods per client, or drop your own zip",
-    "Play on community Beacons from the realm list, and back to Wrath in one click",
+    "Install, update, turn off and remove mods for each game, or drop in your own zip",
+    "Play on community realms from the realm list, and back to Wrath Unleashed in one click",
     "Host your own realm from the Host page with the Host pack",
   ] },
   { tag: "LEYLINE LAUNCHER 0.1", title: "ONE LAUNCHER FOR EVERY REALM", items: [
@@ -61,7 +61,7 @@ function say(id, text, kind) {
 const OOPS = {
   "play-status": "That didn't work. Try again, or ask on the Discord.",
   "cl-status": "Leyline couldn't use that folder. Pick the folder that holds the game, or see Find your game files.",
-  "cat-status": "Can't reach the Workshop. Try again.",
+  "cat-status": "Can't load the mods. Try again.",
   "mods-status": "That mod change didn't work. Try again, or ask on the Discord.",
   "rl-status": "Can't reach the realm list right now. Try again, or ask on the Discord.",
   "host-status-line": "The host didn't answer. Try again, or see the Guide tab.",
@@ -1409,20 +1409,20 @@ $("cat-cat").addEventListener("change", async () => {
 
 let catFailed = false;   // the Workshop could not be read and there is nothing to show: the status line says so, alone
 async function loadCatalog(quiet) {
-  if (!quiet) say("cat-status", "Loading the Workshop…");
+  if (!quiet) say("cat-status", "Loading mods…");
   try {
     catalog = await invoke("mods_catalog");
     if (window.LeylineThemes) catalog = window.LeylineThemes.takeThemes(catalog); // themes.js: theme packs go under Discover › Themes
     catalogNames = catalog.projects.map((p) => p.name);
     const when = catalog.saved_at ? new Date(catalog.saved_at * 1000).toLocaleString() : "an earlier visit";
-    if (catalog.from_cache) say("cat-status", `Offline: showing the Workshop as it was ${when}.`, "warn");
-    else say("cat-status", catalog.projects.length ? `${catalog.projects.length} projects in the Workshop.` : "", "ok");
+    if (catalog.from_cache) say("cat-status", `Offline: showing the mods as they were ${when}.`, "warn");
+    else say("cat-status", catalog.projects.length ? `${catalog.projects.length} mods.` : "", "ok");
     catFailed = false;
   } catch (e) {
     // one line, no count (owner audit 2026-10-30): the grid stays empty under it
     console.error("[leyline] workshop", e);
     catFailed = !catalog.projects.length;
-    say("cat-status", "Can't reach the Workshop. Try again.", "bad");
+    say("cat-status", "Can't load the mods. Try again.", "bad");
   }
   await loadRanks(true);
   renderModTiles();
@@ -1461,7 +1461,7 @@ function renderCatalog() {
     const cat = catalog.categories.find((k) => k.id === catFilter.cat);
     grid.append(el("p", "hint dc-empty", catalog.projects.length
       ? (cat && !catalog.projects.some((p) => p.category === cat.id) ? `No mods in ${cat.name} yet. Make the first one: see Make a mod.` : "Nothing matches.")
-      : "The Workshop list is not here yet."));
+      : "The mods list is not here yet."));
     return;
   }
   for (const p of list) grid.append(projectCard(p, c));
@@ -1709,7 +1709,7 @@ async function handleDeepLink() {
   if (!link || link.action !== "install" || typeof link.id !== "string") return;
   const p = catalog.projects.find((x) => x.id === link.id);
   show("mods", true, "discover");   // the catalog was just loaded
-  if (!p) { say("cat-status", "That mod is not in the Workshop catalog here yet. Try again after the catalog refreshes.", "warn"); return; }
+  if (!p) { say("cat-status", "That mod isn't in the mods list here yet. Try again in a few minutes.", "warn"); return; }
   linkedId = p.id;
   catFilter.cat = "";
   catFilter.kind = "";
@@ -1733,7 +1733,7 @@ const HOST_WORDS = {
     "cmangos-1.12.1": "CMaNGOS Classic", "cmangos-2.4.3": "CMaNGOS TBC" },
   type: { normal: "Normal", pvp: "PvP", rp: "RP", rppvp: "RP-PvP" },
   start: { level1: "Level 1 only", boost: "Level 1, or the boost to 80" },
-  vis: { public: "Public: on the Leyline list", private: "Private: invite link only" },
+  vis: { public: "Public: on the realm list", private: "Private: invite link only" },
   signup: { open: "Open: anyone", invite: "Invite link only", off: "Closed" },
   herokey: { on: "On", off: "Off" },
 };
@@ -1745,7 +1745,7 @@ const HOST_MANAGE = {
   bots: ["Bots", "In your Host pack folder: leyline options --bots 40 (0 turns them off), then restart the realm (leyline stop, then leyline host)."],
   rates: ["Rates", "In your Host pack folder: leyline options --xp 3 --loot 1 --rep 2 (1 to 10), then restart the realm (leyline stop, then leyline host)."],
   signup: ["Sign-up", "In your Host pack folder: leyline signup open (anyone), leyline signup invite (invite link only) or leyline signup off."],
-  list: ["The Leyline list", "In your Host pack folder: leyline public (on the list) or leyline private (invite link only). The list changes within a minute."],
+  list: ["The realm list", "In your Host pack folder: leyline public (on the list) or leyline private (invite link only). The list changes within a minute."],
   invite: ["Invite link", "Your realm's invite link is below, under Your realm: Copy invite link. New invite link stops the old one."],
 };
 
@@ -1824,7 +1824,7 @@ function renderModTiles() {
     const t = el("button", "tile" + (m && m.update ? " has-update" : ""));
     t.type = "button";
     const txt = el("span", "tile-txt");
-    let name = "Mod catalog", line = "Loading…", cls = "";
+    let name = "Mods", line = "Loading…", cls = "";
     if (m) {
       name = m.name;
       if (m.update) { line = `Update to v${m.update}`; cls = "upd"; }
@@ -1832,7 +1832,7 @@ function renderModTiles() {
       else line = m.version ? `Installed · v${m.version}` : "Installed";
     } else if (p) {
       name = p.name;
-      line = "In the Workshop";
+      line = "In the mods list";
     } else if (catalog.projects.length || installed.length) {
       continue;
     }
@@ -1923,7 +1923,7 @@ function renderInstalled() {
     meta.append(el("span", "", what.join(" · ")));
     if (m.credits) meta.append(el("span", "", m.credits));
     if (m.update) meta.append(el("span", "ok", `Update available: v${m.update}`));
-    else if (m.source === "catalog" && !m.in_catalog) meta.append(el("span", "warn", "No longer in the Workshop for this client"));
+    else if (m.source === "catalog" && !m.in_catalog) meta.append(el("span", "warn", "No longer in the mods list for this game"));
     for (const w of m.warnings || []) meta.append(el("span", "warn", w));
     const acts = el("div", "acts");
     const tog = el("button", "btn small", m.enabled ? "Turn off" : "Turn on");
@@ -2485,10 +2485,10 @@ async function hostStatus() {
       set("is-online", s.listed ? "ONLINE · ON THE REALM LIST" : "ONLINE",
         [...counts, s.visibility === "private" ? "Private: friends join with your invite link" : "", s.address ? `Realmlist: ${s.address}` : ""].filter(Boolean).join(" · "));
     } else {
-      set("is-offline", "OFFLINE", "The relay knows your realm, but your PC is not connected. Start it above.");
+      set("is-offline", "OFFLINE", "The Leyline network knows your realm, but your PC isn't connected. Start it above.");
     }
   } catch (e) {
-    set("is-partial", "NOT SEEN YET", oops(e, "The relay hasn't seen your realm yet."));
+    set("is-partial", "NOT SEEN YET", oops(e, "The Leyline network hasn't seen your realm yet."));
   }
 }
 

@@ -35,7 +35,7 @@ PAGES = (
     ("mods", "Mod format"),
     ("publishing", "Publishing"),
     ("hosting", "Hosting"),
-    ("always-on", "Always-on realms"),
+    ("always-on", "Keep your realm up 24/7"),
     ("launcher", "Launcher"),
     ("agents", "Agents"),   # the launcher's Agents page: your own AI assistant, what it may do (launcher/src-tauri/src/agents.rs)
     ("hero-key", "Hero Key"),

@@ -91,7 +91,7 @@ test('the header mark is the spinner, in Dark and in Light', async () => {
 
 test('a loading state carries the spinner, and loses it when it is done', async () => {
   const { page, ctx, errors } = await open();
-  await page.waitForFunction(() => /Loading the Workshop/.test(document.getElementById('cat-status').textContent));
+  await page.waitForFunction(() => /Loading mods/.test(document.getElementById('cat-status').textContent));
   await page.waitForFunction(() => document.querySelector('#cat-status > .ly-spin:first-child'));
   assert.ok(await page.evaluate(() => document.getElementById('cat-status').classList.contains('busy')));
   // the words change (as say() does): the spinner goes; a busy text again: it comes back

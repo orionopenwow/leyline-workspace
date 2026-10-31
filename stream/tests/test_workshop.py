@@ -172,7 +172,7 @@ def cards(html_):
     return re.findall(r'<a class="wk-card" href="/wrath/mods/([a-z0-9-]+)"', html_)
 
 st, lp, ct, _ = page("/wrath/mods")
-check("GET /wrath/mods is a page", st == 200 and ct.startswith("text/html") and "<h1 class=\"wk-h1\">Workshop</h1>" in lp)
+check("GET /wrath/mods is a page", st == 200 and ct.startswith("text/html") and "<h1 class=\"wk-h1\">Mods</h1>" in lp)
 check("a card per mod, by name", cards(lp) == ["dalaran-dice", "emote-wheel", "pings"], cards(lp))
 check("Leyline look", "ly-panel" in lp and "/wrath/art/leyline-bg.webp" in lp and 'class="ly"' in lp)
 check("card shows the screenshot", '/wrath/mods/pings/shot/0' in lp)
@@ -299,7 +299,7 @@ check("hostile catalog: a bad zip name is never offered", "/download" not in d3 
 check("hostile catalog: path screenshots dropped", W3.mod("evil-mod")["screenshots"] == ["passwd"] or W3.mod("evil-mod")["screenshots"] == ["ok.png"])
 P4 = os.path.join(T, "pub4"); os.makedirs(P4); open(os.path.join(P4, "catalog.json"), "w").write("{broken")
 W4 = wp.workshop_mod.Workshop(P4, wp.leyline_css, wp.card_meta, wp.REALM_NAME)
-check("broken catalog: an empty Workshop, no error", W4.serve("/wrath/mods", {})[0] == 200 and "empty right now" in W4.serve("/wrath/mods", {})[1].decode())
+check("broken catalog: an empty Workshop, no error", W4.serve("/wrath/mods", {})[0] == 200 and "No mods here right now" in W4.serve("/wrath/mods", {})[1].decode())
 W5 = wp.workshop_mod.Workshop(os.path.join(T, "missing"), wp.leyline_css, wp.card_meta, wp.REALM_NAME)
 check("no catalog at all: empty, and mod() is None", W5.mod("pings") is None and W5.serve("/wrath/mods", {})[0] == 200)
 check("no catalog: empty categories still list, each says Publish the first one",

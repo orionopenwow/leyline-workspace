@@ -877,41 +877,42 @@ def register() -> None:
 CSS = """
 .ad-head{margin-bottom:4px}.ad-sub{margin-top:-2px}.ad-sub a{font-size:13px;padding:4px 10px}
 .hq-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px;margin:14px 0 6px}
-.hq-chip{background:rgba(18,22,54,.72);border:1px solid var(--ly-line);border-radius:8px;padding:10px 12px;min-width:0}
-.hq-chip .k{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ly-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hq-chip .v{display:flex;align-items:center;gap:8px;font-size:18px;font-weight:600;margin:2px 0}
-.hq-chip .d{display:block;font-size:12px;color:var(--ly-dim)}
-.hq-dot{flex:none;width:10px;height:10px;border-radius:50%;background:#7c84ad}
-.hq-dot.good{background:#5ef0a0;box-shadow:0 0 8px rgba(94,240,160,.6)}.hq-dot.bad{background:#ff7a90;box-shadow:0 0 8px rgba(255,122,144,.6)}
-.hq-dot.warn{background:#ffd27a}
+.hq-chip{background:var(--sw-inset);border:1px solid var(--sw-inset-border);border-radius:var(--sw-radius-sm);padding:10px 12px;min-width:0}
+.hq-chip .k{display:block;font:700 11px var(--sw-font);letter-spacing:.12em;text-transform:uppercase;color:var(--sw-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hq-chip .v{display:flex;align-items:center;gap:8px;font-size:17px;font-weight:700;margin:2px 0;color:var(--sw-text)}
+.hq-chip .d{display:block;font-size:12px;color:var(--sw-muted)}
+.hq-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--sw-muted);opacity:.6}
+.hq-dot.good,.hq-dot.bad,.hq-dot.warn{opacity:1}
+.hq-dot.good{background:var(--sw-ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--sw-ok) 18%,transparent)}
+.hq-dot.bad{background:var(--sw-bad);box-shadow:0 0 0 3px color-mix(in srgb,var(--sw-bad) 18%,transparent)}
+.hq-dot.warn{background:var(--sw-warn)}
 .hq-grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:0 18px;align-items:start}
 @media (max-width:900px){.hq-grid{grid-template-columns:minmax(0,1fr)}}
-.hq-item{border-top:1px solid rgba(120,150,255,.16);padding:12px 0}.hq-item:first-of-type{border-top:0;padding-top:4px}
-.hq-item p{margin:0}.hq-item .what{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ly-cyan)}
-.hq-item .title{margin:2px 0}.hq-item .sub{font-size:13px;color:var(--ly-dim)}.hq-item .acts{margin-top:6px}
+.hq-item{border-top:1px solid var(--sw-border);padding:12px 0}.hq-item:first-of-type{border-top:0;padding-top:4px}
+.hq-item p{margin:0}.hq-item .what{font:700 11px var(--sw-font);letter-spacing:.12em;text-transform:uppercase;color:var(--sw-accent-strong)}
+.hq-item .title{margin:2px 0}.hq-item .sub{font-size:13px;color:var(--sw-muted)}.hq-item .acts{margin-top:6px}
 .hq-item .body{max-height:7.5em;overflow:hidden}
-.hq-calm{font-size:17px;color:var(--ly-ink);margin:6px 0}
-.hq-big{font:600 15px/1.3 system-ui,sans-serif;color:var(--ly-dim);margin:-4px 0 10px}
+.hq-calm{font-size:16px;color:var(--sw-text);margin:6px 0}
+.hq-big{font:600 15px/1.3 var(--sw-font);color:var(--sw-text-2);margin:-4px 0 10px}
 .hq-rows{display:grid;grid-template-columns:auto minmax(0,1fr);gap:7px 14px;margin:0}
-.hq-rows dt{color:var(--ly-dim);font-size:14px}.hq-rows dd{margin:0;font-size:15px}.hq-rows dd .fine{margin-left:6px}
-.hq-list{list-style:none;padding:0;margin:0}.hq-list li{padding:8px 0;border-top:1px solid rgba(120,150,255,.12)}
+.hq-rows dt{color:var(--sw-muted);font-size:14px}.hq-rows dd{margin:0;font-size:15px}.hq-rows dd .fine{margin-left:6px}
+.hq-list{list-style:none;padding:0;margin:0}.hq-list li{padding:8px 0;border-top:1px solid var(--sw-border)}
 .hq-list li:first-child{border-top:0}
 .hq-note h3{margin:0 0 4px;font-size:16px}.hq-note ul{margin:4px 0 0 18px;padding:0}.hq-note li{margin:2px 0}
 .hq-say textarea{width:100%;box-sizing:border-box;min-height:84px}
 .hq-say form.blk{max-width:none}
-.hq-people{list-style:none;padding:0;margin:8px 0}.hq-people li{padding:9px 0;border-top:1px solid rgba(120,150,255,.12)}
-.hq-tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
-.hq-tools .tool{background:rgba(10,12,34,.55);border:1px solid var(--ly-line);border-radius:6px;padding:12px}
-.hq-tools .tool h3{margin:0 0 6px;font-size:15px}
-.hq-tools form{display:flex;flex-wrap:wrap}
-.hq-mono{font:13px/1.45 ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-word;background:rgba(5,8,25,.6);padding:8px;border-radius:4px;max-height:360px;overflow:auto}
+.hq-people{list-style:none;padding:0;margin:8px 0}.hq-people li{padding:9px 0;border-top:1px solid var(--sw-border)}
+.hq-tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.hq-tools .tool{background:var(--sw-inset);border:1px solid var(--sw-inset-border);border-radius:var(--sw-radius-sm);padding:14px}
+.hq-tools .tool h3{margin:0 0 9px}
+.hq-tools form{display:flex;flex-wrap:wrap;margin:0 0 6px}
+.hq-mono{font:12.5px/1.45 ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-word;background:var(--sw-inset);border:1px solid var(--sw-inset-border);color:var(--sw-text-2);padding:8px 10px;border-radius:var(--sw-radius-xs);max-height:360px;overflow:auto}
 .ad .ad-top{row-gap:6px}
-.ad .ly-panel>h2{font-size:clamp(18px,2.2vw,24px);margin-top:0}
-.hq-more{display:inline-block;margin-top:10px;padding:7px 14px;border:1px solid var(--ly-line);border-radius:999px;text-decoration:none}
-.hq-more:hover,.hq-more:focus-visible{border-color:var(--ly-cyan);box-shadow:var(--ly-glow)}
+.hq-more{display:inline-block;margin-top:10px;padding:6px 12px;border:1px solid var(--sw-border-strong);border-radius:var(--sw-radius-xs);background:var(--sw-raised);color:var(--sw-text);font:600 12.5px var(--sw-font);text-decoration:none}
+.hq-more:hover,.hq-more:focus-visible{border-color:var(--sw-accent);background:var(--sw-accent-soft)}
 @media (max-width:640px){.ly-wrap.ad{padding-left:12px;padding-right:12px}.ly-panel{padding:16px 14px}
 .hq-strip{grid-template-columns:repeat(2,minmax(0,1fr))}.hq-chip .v{font-size:16px}
-.ad-top a{padding:6px 10px;font-size:13px}.ly h1.ad{font-size:30px}.ad form{margin:3px 4px 3px 0}}
+.ad-top a{padding:6px 10px}.ad form{margin:3px 4px 3px 0}}
 """
 
 

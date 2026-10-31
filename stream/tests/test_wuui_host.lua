@@ -192,40 +192,41 @@ local function near(c, hex)
     local r, g, b = tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255
     return math.abs(c[1] - r) < 0.003 and math.abs(c[2] - g) < 0.003 and math.abs(c[3] - b) < 0.003
 end
-check("palette: the launcher's colours", near(S.C.bg, "181b23") and near(S.C.bg2, "11131a") and near(S.C.border, "2b3040")
-    and near(S.C.accent, "5b8def") and near(S.C.violet, "8b5cf6") and near(S.C.text, "e6e8ef") and near(S.C.muted, "9aa3b5"))
-check("Hex for coloured words", S.Hex("accent") == "|cff5b8def" and S.Hex("nope") == "|cffe6e8ef")
+check("palette: the server windows' tokens (design/server-window.tokens.json: the launcher's dark set, frost accent)",
+    near(S.C.bg, "1a1d25") and near(S.C.bg2, "15171e") and near(S.C.border, "343a47")
+    and near(S.C.accent, "3592cf") and near(S.C.violet, "8b6cf0") and near(S.C.text, "eef0f4") and near(S.C.muted, "9aa1ae"))
+check("Hex for coloured words", S.Hex("accent") == "|cff57abe0" and S.Hex("nope") == "|cffeef0f4")
 local parent = CreateFrame("Frame", nil, UIParent)
 local clicks = 0
 local b = S.Button(parent, "Go", 80, function() clicks = clicks + 1 end, "primary", "TOPLEFT", 1, 1)
 check("button: no stock template, our text", b.template == nil and b:GetText() == "Go" and b.styleText.text == "Go")
 local function bg(x) return x.styleBg.tex end
-check("primary: the accent", near(bg(b), "5b8def"))
+check("primary: the accent", near(bg(b), "3592cf"))
 b:Fire("OnEnter"); local hover = bg(b)
 b:Fire("OnMouseDown"); local pressed = bg(b)
 b:Fire("OnMouseUp"); b:Fire("OnLeave")
-check("hover lighter, pressed darker, back after", near(hover, "7aa3f3") and near(pressed, "4a78d4") and near(bg(b), "5b8def"))
+check("hover lighter, pressed darker, back after", near(hover, "57abe0") and near(pressed, "2a7db5") and near(bg(b), "3592cf"))
 b:Disable()
 check("disabled: the off fill and grey text", b.enabled == false and near(bg(b), "1d2029") and near(b.styleText.color, "5d6474"))
 b:Enable()
-check("enabled again", b.enabled == true and near(bg(b), "5b8def"))
+check("enabled again", b.enabled == true and near(bg(b), "3592cf"))
 b:Fire("OnClick")
 check("click works", clicks == 1)
 local g = S.Button(parent, "Later", 80, nil, nil)
-check("ghost by default: the dark fill, border edge", near(bg(g), "222632") and near(g.styleEdge[1].tex, "2b3040"))
+check("ghost by default: the dark fill, border edge", near(bg(g), "262b37") and near(g.styleEdge[1].tex, "343a47"))
 S.Tab(g, true)
-check("a selected tab: accent edge", near(g.styleEdge[1].tex, "5b8def"))
+check("a selected tab: accent edge", near(g.styleEdge[1].tex, "3592cf"))
 local winf = CreateFrame("Frame", "StyleProbe", UIParent)
 local title = S.Window(winf, "Probe")
 local mark
 for _, c in ipairs(created) do if c.parent == winf and c.kind == "Texture" and c.tex == S.MARK then mark = c end end
 check("window: the title bar with the Leyline mark and the title", title.text == "Probe" and mark ~= nil
     and S.MARK == "Interface\\AddOns\\WrathUnleashedUI\\Media\\leyline-mark-64" and winf.backdrop.bgFile == S.WHITE
-    and near(winf.bdColor, "181b23"))
+    and near(winf.bdColor, "1a1d25"))
 local gold = winf:CreateFontString()
 gold.color = { 1, 0.82, 0 }
 winf.styleWatch:Fire("OnShow")
-check("gold text takes the palette's text colour when the window shows", near(gold.color, "e6e8ef"))
+check("gold text takes the palette's text colour when the window shows", near(gold.color, "eef0f4"))
 
 -- our own media: 32-bit TGA, power-of-two sizes
 local function tga(path)

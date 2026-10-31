@@ -468,3 +468,5 @@
 1176a scripts Realm: edit mode sends a keep-alive the next browser client needs (live reload)
 1176b foreverui In game: edit mode comments only (keeps the stream in step)
 1177a ship Save to GitHub: PLAY back to the red button (GitHub then rebuilds Leyline.exe)
+1178a signin Site: guests and Hero Key accounts set their own name and picture (shown at once), forum moderation in HQ (Forum tab: reports, threads, mute, ban), forum posting from the launcher
+1178b ship Save to GitHub: launcher forum posting and Manage account fixes (GitHub then rebuilds Leyline.exe)

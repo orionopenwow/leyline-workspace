@@ -26,8 +26,8 @@ const FAKE = (o) => {
   let signed = !!opts.signed;
   const avatars = ['star', 'moon', 'flame'].map((id) => ({ id, name: id[0].toUpperCase() + id.slice(1), url: `https://play.openvanilla.app/wrath/avatar/p/${id}.svg` }));
   const prof = { bio: opts.bio || '', avatar: opts.avatar || '', setup: opts.setup !== false,
-    avatar_url: opts.picUrl || 'https://play.openvanilla.app/wrath/avatar/u/aaaaaaaaaa.svg?v=2' };
-  let name = opts.evil ? '<img src=x onerror=window.__xss=1>' : 'Alice';
+    avatar_url: opts.picUrl || 'https://play.openvanilla.app/wrath/avatar/u/aaaaaaaaaa.svg?v=2', name_generated: !!opts.guest };
+  let name = opts.evil ? '<img src=x onerror=window.__xss=1>' : (opts.guest ? 'GuestABCD2345' : 'Alice');
   window.__poll = opts.poll || 'signed_in';
   window.__TAURI__ = { core: { invoke: async (cmd, args) => {
     calls.push([cmd, args]);
@@ -213,6 +213,22 @@ test('the server refusing a name shows its words', async () => {
   await page.click('#ac-save');
   await page.waitForFunction(() => /Pick another name/.test(document.getElementById('ac-status').textContent));
   assert.ok(await page.isEnabled('#ac-save'));
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('a guest account: its made name is flagged, and it renames like anyone', async () => {
+  const { page, errors } = await open({ signed: true, guest: true });
+  await page.waitForSelector('#hf-me-btn');
+  await page.evaluate(() => window.LeylineNav.show('account'));
+  await page.waitForSelector('#ac-name');
+  assert.match(await page.textContent('#ac-name-h'), /Your name was made for you/);
+  assert.equal(await page.inputValue('#ac-name'), 'GuestABCD2345');
+  await page.fill('#ac-name', 'Orion');
+  await page.click('#ac-save');
+  await page.waitForFunction(() => /Saved/.test(document.getElementById('ac-status').textContent));
+  const sent = await page.evaluate(() => window.__calls.filter(([c, a]) => c === 'social_call' && a.action === 'profile').pop()[1].args);
+  assert.equal(sent.name, 'Orion');
   assert.deepEqual(errors, []);
   await page.close();
 });

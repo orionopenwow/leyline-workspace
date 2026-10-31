@@ -5,7 +5,8 @@
 // (Hero Key, Google, Discord: only the ways the website offers) and the waiting state while the browser is open; the
 // sign-in itself is social.js's (LeylineSocial). The first time after signing in: step 2, the profile, with Skip.
 // Signed in: your picture, name#tag and bio; edit the display name, the picture (your initial or one of the website's
-// preset pictures) and the bio; the ways to sign in (each opens the website: the Hero Key page, link Google or Discord,
+// preset pictures) and the bio (a guest account too: the same rules, and a line when its name is still the one made for
+// it, me.profile.name_generated); the ways to sign in (each opens the website: the Hero Key page, link Google or Discord,
 // linked launchers); Sign out. Saving goes through the core's social_call "profile" (src-tauri/src/social.rs ACTIONS),
 // which only sends name, avatar, bio and setup. Everything from the server is shown with textContent.
 //
@@ -115,7 +116,8 @@
     const nl = el("label", "ac-label", "Display name"); nl.htmlFor = "ac-name";
     const name = el("input"); name.id = "ac-name"; name.type = "text"; name.maxLength = 24; name.value = draft.name; name.autocomplete = "off"; name.spellcheck = false;
     name.setAttribute("aria-describedby", "ac-name-h");
-    const nh = el("p", "hint", `2 to 24 letters, digits, dots, dashes or underscores. Others see it with your tag${me.tag ? " (#" + me.tag + ")" : ""}.`); nh.id = "ac-name-h";
+    const nh = el("p", "hint", (prof.name_generated ? "Your name was made for you (a guest's or the default): pick your own. " : "")
+      + `2 to 24 letters, digits, dots, dashes or underscores. Others see it with your tag${me.tag ? " (#" + me.tag + ")" : ""}.`); nh.id = "ac-name-h";
     name.oninput = () => { draft.name = name.value; };
     const bl = el("label", "ac-label", "Bio (optional)"); bl.htmlFor = "ac-bio";
     const bio = el("textarea"); bio.id = "ac-bio"; bio.maxLength = BIO_MAX; bio.rows = 3; bio.value = draft.bio;

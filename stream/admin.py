@@ -19,7 +19,8 @@ Leyline look, with a little plain script (only for the typed confirm). Nothing h
     GET  /wrath/admin/profiles         player profiles (stream/profiles.py): find one, reset its picture, bio or name
                                        (the old value stays in the profile history and the audit log)
     GET  /wrath/admin/forum            the forum (stream/forum.py): reported posts (hide, done, dismiss), threads (pin, lock,
-                                       hide, merge a duplicate into another), hidden posts (show again)
+                                       hide, merge a duplicate into another), hidden posts (show again). With Leyline HQ
+                                       (hq.py) it is HQ's own Forum section (and a poster's history, mute from the forum)
     GET  /wrath/admin/health           what this server can see of itself (and Autopilot, when it is reachable)
     GET  /wrath/admin/staff            who is staff (owner: grant and revoke)
     GET  /wrath/admin/audit            every admin action: who, what, when, before and after
@@ -486,9 +487,9 @@ def who(h, path: str, api: bool = False) -> dict | None:
 # blocked(activity, acct=..., site=...) and refuses with the text it gets back. Never raises.
 # ----------------------------------------------------------------------------------------------
 
-SANCTION_TYPES = ("suspend", "mute", "nosubmit")
+SANCTION_TYPES = ("suspend", "mute", "nosubmit", "noforum")
 # what each kind of activity is stopped by
-ACTIVITY = {"post": ("suspend", "mute"),        # forum posts and replies
+ACTIVITY = {"post": ("suspend", "mute", "noforum"),   # forum posts and replies ("noforum": muted from the forum only)
             "message": ("suspend", "mute"),     # friends and messages: send, friend requests
             "submit": ("suspend", "nosubmit"),  # Workshop links, the index, + Your server
             "realm": ("suspend",),              # Hero Key sign-in to community realms
@@ -545,7 +546,8 @@ def sanction_of(kind: str, acct: str = "", site: str = "") -> dict | None:
 def sanction_text(v: dict) -> str:
     """What the player reads: plain words, the reason and until when."""
     what = {"suspend": "Your Leyline account is suspended", "mute": "You can't post or send messages right now",
-            "nosubmit": "You can't add new things to Leyline right now"}.get(v.get("type"), "This is paused for your account")
+            "nosubmit": "You can't add new things to Leyline right now",
+            "noforum": "You can't post on the forum right now"}.get(v.get("type"), "This is paused for your account")
     until = v.get("until")
     when = (" until " + time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(until))) if isinstance(until, (int, float)) and until > 0 else ""
     reason = (": " + str(v.get("reason"))[:200]) if v.get("reason") else ""
@@ -569,7 +571,7 @@ def blocked(activity: str, acct: str = "", site: str = "") -> str:
 
 def set_sanction(user: dict, kind: str, acct: str, site: str, hours: int, reason: str) -> tuple[dict, dict]:
     if kind not in SANCTION_TYPES:
-        raise Refused("Pick suspend, mute or no new submissions.")
+        raise Refused("Pick suspend, mute, no new submissions or no forum posts.")
     acct = str(acct or "").strip().upper()
     site = str(site or "").strip()
     if acct and not GAME_ACCT_RE.fullmatch(acct):
@@ -1190,11 +1192,12 @@ document.querySelectorAll('form[data-confirm]').forEach(function(f){
 TABS = (("", "Dashboard"), ("catalog", "Catalog"), ("workshop", "Workshop"), ("hub", "Index"), ("realms", "Realms"),
         ("releases", "Releases"), ("flags", "Flags"), ("themes", "Themes"), ("reports", "Reports"),
         ("forum", "Forum"), ("profiles", "Profiles"), ("health", "Health"), ("staff", "Staff"), ("audit", "Audit"))
-# Leyline HQ's menu (stream/hq.py): eight plain words; Content and System open their own short row.
-HQ_TABS = (("", "Home"), ("inbox", "Needs you"), ("players", "Players"), ("realms", "Realms"), ("releases", "Releases"),
-           ("content", "Content"), ("game", "Game"), ("system", "System"))
+# Leyline HQ's menu (stream/hq.py): nine plain words; Content and System open their own short row. Forum is its own
+# section (owner 2026-10-31: "making sure forum moderation is in my ultimate admin control panel").
+HQ_TABS = (("", "Home"), ("inbox", "Needs you"), ("players", "Players"), ("forum", "Forum"), ("realms", "Realms"),
+           ("releases", "Releases"), ("content", "Content"), ("game", "Game"), ("system", "System"))
 CONTENT_TABS = (("catalog", "Catalog"), ("workshop", "Workshop"), ("hub", "Index"), ("themes", "Themes"),
-                ("forum", "Forum"), ("profiles", "Profiles"), ("reports", "All reports"))
+                ("profiles", "Profiles"), ("reports", "All reports"))
 SYSTEM_TABS = (("health", "Health"), ("numbers", "Numbers"), ("flags", "Flags"), ("staff", "Staff"), ("audit", "Audit"))
 TAB_GROUP = dict([(k, "content") for k, _ in CONTENT_TABS] + [(k, "system") for k, _ in SYSTEM_TABS]
                  + [("person", "players"), ("notes", "")])

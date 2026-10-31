@@ -20,9 +20,20 @@ for restarts and logs, and Leyline Control on the owner's PC as the deploy runne
 | **Releases** | launcher version, channel or hold, the newest GitHub build runs, the addon pack version, the host pack version, when the website's files changed | GitHub's public API (no token, cached 10 minutes), `addonpack.json` on the `leyline-addons` release, `hostpack.json` |
 | **Recent changes** | the last deploys: done, failed or waiting | `hq/changes.json` from the PC |
 
-The menu: **Home · Needs you · Players · Realms · Releases · Content · Game · System**. Content opens Catalog,
-Workshop, Index, Themes, Forum, Profiles and All reports; System opens Health, Numbers (the old dashboard), Flags,
+The menu: **Home · Needs you · Players · Forum · Realms · Releases · Content · Game · System**. Content opens
+Catalog, Workshop, Index, Themes, Profiles and All reports; System opens Health, Numbers (the old dashboard), Flags,
 Staff and Audit.
+
+## Forum
+
+The forum's moderation (`stream/forum.py`; why it is built in: [FORUM.md](FORUM.md)), at `/wrath/admin/forum`:
+**Reported posts** (open, done, dismissed, all: hide or show the post, Done with what you did, Dismiss, and under "The
+poster" mute from the forum or ban the account), **Threads** (search; pin, lock, hide, merge a duplicate), **Hidden
+posts** (show again) and **a poster's forum history** (`?acct=WR...`: their posts with hide/show, the reports about
+them, their sanctions, mute or lift the mute, ban the account). Mute from the forum is the site-wide sanction
+`noforum` (no new threads or replies; messages and reports still work): mods up to 168 hours, admins any length.
+Ban the account is `sanction.set` type `suspend` (admins). Forum reports also show in Needs you, with Hide or Show,
+Done, Dismiss and Mute from the forum. A person's page has an **On the forum** box.
 
 ## Roles
 
@@ -31,7 +42,7 @@ server checks again.
 
 | Role | Who | Can |
 |---|---|---|
-| **mod** | staff granted as mod; `WU_MODS_ADMINS`; a game account with GM level `WU_ADMIN_GM_LEVEL` or more | reports (resolve, dismiss, notes), hide links, realms and forum posts, pin/lock threads, profile resets, re-run checks, kick, mute, unmute, send to Dalaran |
+| **mod** | staff granted as mod; `WU_MODS_ADMINS`; a game account with GM level `WU_ADMIN_GM_LEVEL` or more | reports (resolve, dismiss, notes), hide links, realms and forum posts, pin/lock threads, mute from the forum (up to a week), profile resets, re-run checks, kick, mute, unmute, send to Dalaran |
 | **admin** | staff granted as admin (an old staff entry without a role is an admin); `WU_ADMIN_STAFF` | everything a mod does, plus approvals and rejections, featured and edits, the index, realm official/featured/verified, relay blocks, News, game bans and unbans, announcements, site-wide sanctions, signing out launchers, forum merges |
 | **owner** | `WU_ADMIN_OWNERS` | everything, plus flags, staff, the stable/beta channel and hold, notes to Claude |
 
@@ -43,7 +54,8 @@ realms they host), launcher sign-ins (sign one or all out) and the staff history
 
 - **In the game** (one character box): Kick, Send to Dalaran, Mute (minutes + reason), Unmute.
 - **The game account**: Ban (hours, 0 = permanent; reason; type the account) and Unban.
-- **On Leyline (site-wide)**: Mute (no forum posts, no messages or friend requests), No new submissions (Workshop
+- **On Leyline (site-wide)**: Mute (no forum posts, no messages or friend requests), No forum posts (the forum only),
+  No new submissions (Workshop
   links, + Your server), Suspend (all of that, plus Hero Key sign-in to community realms, profile changes and
   reports; a suspended staff member loses the console). Hours (0 = until lifted), a reason the player reads, the
   account typed to confirm. Keyed by game account and/or website account id. **Lift** ends it at once; nothing is
@@ -97,6 +109,7 @@ GET  /wrath/admin/api/realm?id=         {realm, overrides, relay_blocked, report
 GET  /wrath/admin/api/audit?n=&action=  {audit: [...]}
 GET  /wrath/admin/api/stats             {status, needs_you, needs_you_by_kind, releases, changes}
 GET  /wrath/admin/api/notes             {from_claude, to_claude (owner only)}
+GET  /wrath/admin/api/forum?view=reports&status=  {reports, actions}   (view=threads&q=, hidden, poster&acct=)
 POST /wrath/admin/api/act               {action, target, ...fields, confirm}  ->  {ok, message}
 ```
 

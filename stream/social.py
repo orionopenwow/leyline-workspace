@@ -1065,8 +1065,19 @@ def csrf_for(session: str) -> str:
     return hmac.new(store.key, ("social|" + session).encode(), hashlib.sha256).hexdigest()[:32]
 
 
+def shown_name(acct: str, display: str) -> str:
+    """The name to show for a signed-in account: its Leyline name when it has one here (so a guest who renamed
+    "Guest ABCD1234" sees the new name in the site header at once), else the website's display name."""
+    try:
+        p = store.profile(acct) if store is not None else None
+    except Exception:   # noqa: BLE001
+        p = None
+    return p["name"] if p and p.get("name") else display
+
+
 def cookie_user(h) -> tuple[str, str] | None:
-    """(acct, display) for the website session, cached 60 s; None when signed out. Raises OSError when the site is down."""
+    """(acct, name) for the website session, cached 60 s; None when signed out. Raises OSError when the site is down.
+    name: the Leyline profile name once the account has one (shown_name), else the website's display name."""
     cookie = h.headers.get("Cookie", "")
     sess = _session(cookie)
     if not sess:
@@ -1074,7 +1085,7 @@ def cookie_user(h) -> tuple[str, str] | None:
     key = hashlib.sha256(sess.encode()).hexdigest()
     hit = _who_cache.get(key)
     if hit and hit[0] > time.monotonic():
-        return hit[1], hit[2]
+        return hit[1], shown_name(hit[1], hit[2])
     ip, ua = h.ip(), h.headers.get("User-Agent", "")
     status, me = P("portal_get")("/api/me", cookie, ip, ua)
     if status in (401, 403) or 300 <= status < 400:
@@ -1089,7 +1100,7 @@ def cookie_user(h) -> tuple[str, str] | None:
     if len(_who_cache) > 5000:
         _who_cache.clear()
     _who_cache[key] = (time.monotonic() + 60, user.upper(), display)
-    return user.upper(), display
+    return user.upper(), shown_name(user.upper(), display)
 
 
 def _json(h, status: int, doc: dict) -> None:

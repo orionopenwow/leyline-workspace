@@ -1,7 +1,9 @@
 //! The Forum page (`ui/forum.js`): reading the website's forum (`stream/forum.py`, its JSON under `/wrath/forum/api`).
 //!
-//! Reading only, and no sign-in: the forum's JSON is public. Posting happens on the website, in the player's browser
-//! (New thread and Reply open the forum's own pages there, signed in with the website's sign-in).
+//! Reading needs no sign-in: the forum's JSON is public. Posting (a new thread, a reply, a report) goes from here too,
+//! with the launcher's own Leyline sign-in (`crate::social`'s token, `Authorization: Bearer`): no second sign-in.
+//! The forum checks the same rules as its website forms (`stream/forum.py` api_post). Signed out, New thread and Reply
+//! still open the forum's own pages in the player's browser.
 //!
 //! The UI never names a URL: it names an action from `ACTIONS` with plain parameters, as with `social.rs`. A link
 //! inside a post opens only when it came in a reply from the forum and is a plain https address (`seen`).
@@ -27,6 +29,53 @@ pub const ACTIONS: &[(&str, &[&str])] = &[
     ("thread", &["id", "page"]),
     ("search", &["q"]),
 ];
+
+/// What the UI may post: (action, the parameters it may send). Strings and whole numbers only.
+pub const POSTS: &[(&str, &[&str])] = &[
+    ("new", &["cat", "title", "body"]),
+    ("reply", &["thread", "body"]),
+    ("report", &["post", "reason", "note"]),
+];
+/// The longest text the UI may send (the forum's own limits are lower: 100 for a title, 5000 for a post).
+const POST_MAX: usize = 6000;
+
+/// The path and JSON body for a post. Unknown actions are refused, unknown parameters dropped; ids are numbers, a
+/// category or reason plain letters, texts strings of at most POST_MAX characters.
+pub fn post_for(action: &str, args: &Value) -> Result<(String, Value), String> {
+    let (_, keys) = POSTS.iter().find(|a| a.0 == action).ok_or("Unknown action.")?;
+    let mut body = serde_json::Map::new();
+    for k in keys.iter() {
+        let v = match args.get(*k) {
+            Some(Value::String(s)) => s.clone(),
+            Some(Value::Number(n)) if n.is_u64() => n.to_string(),
+            None | Some(Value::Null) => continue,
+            _ => return Err("Bad parameter.".into()),
+        };
+        let ok = match *k {
+            "thread" | "post" => !v.is_empty() && v.len() <= 9 && v.bytes().all(|b| b.is_ascii_digit()),
+            "cat" | "reason" => plain(&v, 16),
+            _ => v.chars().count() <= POST_MAX,
+        };
+        if !ok {
+            return Err("Bad parameter.".into());
+        }
+        let val = if *k == "thread" || *k == "post" { Value::from(v.parse::<u64>().unwrap_or(0)) } else { Value::String(v) };
+        body.insert((*k).to_string(), val);
+    }
+    Ok((action.to_string(), Value::Object(body)))
+}
+
+/// One post to the forum as the signed-in player ("signed_out" without the launcher's sign-in).
+pub fn post(dir: &std::path::Path, action: &str, args: &Value) -> Result<Value, String> {
+    let (path, body) = post_for(action, args)?;
+    crate::social::post_as_player(dir, &format!("{}/{path}", base()), &body).map_err(|e| {
+        if e.starts_with("Can't reach") {
+            UNREACHABLE.to_string()
+        } else {
+            e
+        }
+    })
+}
 
 /// The API base: the official one, or LEYLINE_FORUM_API for a test server (https, or http on this PC only).
 pub fn base() -> String {
@@ -144,6 +193,15 @@ pub mod commands {
         tauri::async_runtime::spawn_blocking(move || call(&action, &args)).await.map_err(|e| e.to_string())?
     }
 
+    /// Post to the forum as the launcher's signed-in player (see POSTS).
+    #[tauri::command]
+    pub async fn forum_post(action: String, args: Option<Value>) -> Result<Value, String> {
+        let args = args.unwrap_or(Value::Null);
+        tauri::async_runtime::spawn_blocking(move || post(&crate::settings::app_dir(), &action, &args))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+
     /// Open a forum page (or a link from a post) in the player's browser.
     #[tauri::command]
     pub fn forum_open(app: AppHandle, kind: String, arg: Option<String>) -> Result<(), String> {
@@ -180,6 +238,28 @@ mod tests {
         remember(&json!({"posts": [{"parts": [{"t": "see "}, {"u": "https://docs.example/a"}, {"u": "javascript:alert(1)"}]}]}));
         assert_eq!(page_for("link", "https://docs.example/a").unwrap(), "https://docs.example/a");
         assert!(page_for("link", "javascript:alert(1)").is_err());
+    }
+
+    #[test]
+    fn posts_send_only_their_fields() {
+        let (p, b) = post_for("new", &json!({"cat": "help", "title": "Stuck", "body": "Hi", "token": "x", "url": "y"})).unwrap();
+        assert_eq!((p.as_str(), b), ("new", json!({"cat": "help", "title": "Stuck", "body": "Hi"})));
+        let (p, b) = post_for("reply", &json!({"thread": "12", "body": "Thanks"})).unwrap();
+        assert_eq!((p.as_str(), b), ("reply", json!({"thread": 12, "body": "Thanks"})));
+        let (_, b) = post_for("report", &json!({"post": 7, "reason": "spam"})).unwrap();
+        assert_eq!(b, json!({"post": 7, "reason": "spam"}));
+        assert!(post_for("delete", &json!({})).is_err());
+        assert!(post_for("reply", &json!({"thread": "1/../x", "body": "a"})).is_err());
+        assert!(post_for("reply", &json!({"thread": -1, "body": "a"})).is_err());
+        assert!(post_for("new", &json!({"cat": "a b", "title": "t", "body": "b"})).is_err());
+        assert!(post_for("new", &json!({"cat": "help", "title": ["x"], "body": "b"})).is_err());
+        assert!(post_for("reply", &json!({"thread": 1, "body": "x".repeat(POST_MAX + 1)})).is_err());
+    }
+
+    #[test]
+    fn posting_needs_the_launchers_sign_in() {
+        let d = tempfile::tempdir().unwrap();
+        assert_eq!(post(d.path(), "reply", &json!({"thread": 1, "body": "hi"})).unwrap_err(), "signed_out");
     }
 
     #[test]

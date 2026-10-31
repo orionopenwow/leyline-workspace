@@ -26,6 +26,12 @@ JSON, read only, CORS * (the launcher's Forum page reads it through its http com
     GET  /wrath/forum/api/search?q=             {q, threads: [...]}
   a thread: {id, cat, title, author, tag, created, bumped, replies, pinned, locked, url}; parts: the text cut into
   [{"t": text} | {"u": url}] so a client can make the links without parsing.
+JSON, posting from the launcher (api_post; Authorization: Bearer <the launcher's Leyline sign-in token, stream/social.py>,
+never the cookie, no CORS header; the same rules, limits and sanctions as the forms):
+    POST /wrath/forum/api/new {cat, title, body}       {ok, thread}
+    POST /wrath/forum/api/reply {thread, body}         {ok, post, thread, page}
+    POST /wrath/forum/api/report {post, reason, note?} {ok, text}
+  refusals: {error} with 400/401 (signed out)/403 (locked, Announcements, a sanction)/404/429 (rate limits).
 
 Text: plain text only. Links (http and https) are made clickable with rel="nofollow ugc noopener noreferrer"; an
 image address is just a link (nothing is uploaded here, nothing is embedded). No HTML. Titles 4-100 characters, posts
@@ -37,8 +43,11 @@ hour and a day, and the number of links in one post. An account new to the forum
 WU_FORUM_NEW_HOURS ago, default 72) gets the stricter set (LIMITS["new"]).
 
 Moderation: Report on every post (reasons REASONS, 10 a day). Staff hide or show posts and threads, lock, pin and merge
-a duplicate thread into another from the admin console's Forum tab (stream/admin.py), which reads Forum.reports() and
-calls the store's moderation methods. Nothing is deleted: hidden posts stay in the database.
+a duplicate thread into another, read a poster's history and mute them from the forum (a "noforum" sanction) or ban the
+account (a site-wide suspend) in Leyline HQ's Forum section (stream/hq.py, /wrath/admin/forum; the classic console's
+Forum tab in stream/admin.py without HQ), which read Forum.reports() / posts_by() / poster() and call the store's
+moderation methods through admin.run_action (roles, audit log). Nothing is deleted: hidden posts stay in the database.
+Why the forum is built in (and when it would move): docs/FORUM.md.
 
 Storage: SQLite in $WU_PORTAL_DATA (default /data), forum.sqlite3; the form key in forum.key (0600) unless
 WU_FORM_SECRET is set. Settings: WU_FORUM=0 (off), WU_FORUM_NEW_HOURS. Standard library only.
@@ -270,15 +279,19 @@ class Forum:
             return cur.lastrowid or cur.rowcount
 
     # ------------------------------------------------------------------ people
-    def seen(self, acct: str, name: str, tag: str = "", staff: bool = False) -> None:
-        """The account is here (signed in): remember its name now and when the forum first saw it."""
+    def seen(self, acct: str, name: str, tag: str = "", staff: bool | None = False) -> None:
+        """The account is here (signed in): remember its name now and when the forum first saw it. staff None (a
+        launcher token, which can't tell): keep the Team badge as the website sign-in last set it."""
         if not ACCT_RE.fullmatch(acct or ""):
             raise ForumError(400, "Unknown account.")
         t = self.now()
         with self.lock:
             if self.one("SELECT 1 FROM forum_users WHERE acct = ?", (acct,)):
-                self.x("UPDATE forum_users SET name = ?, tag = ?, last = ?, staff = ? WHERE acct = ?",
-                       (name or "Player", tag or "", t, 1 if staff else 0, acct))
+                if staff is None:
+                    self.x("UPDATE forum_users SET name = ?, tag = ?, last = ? WHERE acct = ?", (name or "Player", tag or "", t, acct))
+                else:
+                    self.x("UPDATE forum_users SET name = ?, tag = ?, last = ?, staff = ? WHERE acct = ?",
+                           (name or "Player", tag or "", t, 1 if staff else 0, acct))
             else:
                 self.x("INSERT INTO forum_users (acct, name, tag, first, last, staff) VALUES (?,?,?,?,?,?)",
                        (acct, name or "Player", tag or "", t, t, 1 if staff else 0))
@@ -535,6 +548,30 @@ class Forum:
                       "WHERE p.hidden = 1 ORDER BY p.id DESC LIMIT ?", (n,))
         return [self._p(r) for r in rows]
 
+    def posts_by(self, acct: str, n: int = 50) -> list[dict]:
+        """One poster's posts, newest first, hidden ones too (Leyline HQ's forum history), each with its thread's title."""
+        rows = self.q("SELECT p.id, p.thread, p.author, p.body, p.created, p.hidden, p.opener, COALESCE(u.name, 'Player'), "
+                      "COALESCE(u.tag, ''), COALESCE(u.staff, 0) FROM forum_posts p LEFT JOIN forum_users u ON u.acct = p.author "
+                      "WHERE p.author = ? ORDER BY p.id DESC LIMIT ?", (acct, max(1, min(int(n), 500))))
+        out = []
+        for r in rows:
+            p = self._p(r)
+            th = self.thread(p["thread"]) or {}
+            p["thread_title"] = th.get("title", "")
+            out.append(p)
+        return out
+
+    def poster(self, acct: str) -> dict | None:
+        """What the forum knows of one account: {acct, name, tag, staff, first, last, posts, hidden, threads, new}."""
+        r = self.one("SELECT acct, name, tag, staff, first, last FROM forum_users WHERE acct = ?", (acct,))
+        if not r:
+            return None
+        n = self.one("SELECT COUNT(*), COALESCE(SUM(hidden), 0) FROM forum_posts WHERE author = ?", (acct,))
+        th = self.one("SELECT COUNT(*) FROM forum_threads WHERE author = ?", (acct,))[0]
+        rep = self.one("SELECT COUNT(*) FROM forum_reports r JOIN forum_posts p ON p.id = r.post WHERE p.author = ?", (acct,))[0]
+        return {"acct": r[0], "name": r[1], "tag": r[2], "staff": bool(r[3]), "first": r[4], "last": r[5], "posts": n[0],
+                "hidden": n[1], "threads": th, "reported": rep, "new": self.is_new(acct)}
+
     def reports(self, status: str = "open", limit: int = 100) -> list[dict]:
         rows = self.q("SELECT r.id, r.at, r.reporter, r.post, r.reason, r.note, r.status, r.handled_by, r.handled_at, r.outcome, "
                       "COALESCE(u.name, '') FROM forum_reports r LEFT JOIN forum_users u ON u.acct = r.reporter "
@@ -645,7 +682,7 @@ def viewer(h) -> dict | None:
     key = hashlib.sha256(sess.encode()).hexdigest()
     hit = _who_cache.get(key)
     if hit and hit[0] > time.monotonic():
-        return hit[1]
+        return _fresh(hit[1])
     ip, ua = h.ip(), h.headers.get("User-Agent", "")
     status, me = P("portal_get")("/api/me", cookie, ip, ua)
     if status in (401, 403) or 300 <= status < 400:
@@ -658,20 +695,7 @@ def viewer(h) -> dict | None:
         raise OSError(f"api/play answered {status}")
     acct = user.upper()
     display = str(me.get("display_name") or me.get("username") or "")
-    name, tag = "", ""
-    soc = P("social")
-    try:
-        if soc is not None and getattr(soc, "store", None) is not None:   # the Leyline profile name and #tag
-            p = soc.store.ensure(acct, display)
-            name, tag = p["name"], p["tag"]
-        elif soc is not None:
-            name = soc.clean_name(display)
-    except Exception:   # noqa: BLE001
-        name = ""
-    if not name:
-        name = re.sub(r"[^A-Za-z0-9_.\-À-ɏ]", "", display)[:24]
-        if len(name) < 2 or BRAND_RE.search(name):
-            name = "Player"
+    name, tag = _names(acct, display)
     staff = False
     adm = P("admin")
     if adm is not None:
@@ -684,6 +708,52 @@ def viewer(h) -> dict | None:
         _who_cache.clear()
     _who_cache[key] = (time.monotonic() + 60, who)
     return who
+
+
+def _names(acct: str, display: str) -> tuple[str, str]:
+    """(name, tag): the Leyline profile name and #tag (stream/social.py), else the website's display name, cleaned."""
+    name, tag = "", ""
+    soc = P("social")
+    try:
+        if soc is not None and getattr(soc, "store", None) is not None:
+            p = soc.store.ensure(acct, display)
+            name, tag = p["name"], p["tag"]
+        elif soc is not None:
+            name = soc.clean_name(display)
+    except Exception:   # noqa: BLE001
+        name = ""
+    if not name:
+        name = re.sub(r"[^A-Za-z0-9_.\-À-ɏ]", "", display)[:24]
+        if len(name) < 2 or BRAND_RE.search(name):
+            name = "Player"
+    return name, tag
+
+
+def _fresh(who: dict | None) -> dict | None:
+    """A cached sign-in with its name read again (a rename shows at once, not after the minute's cache)."""
+    if not who:
+        return who
+    name, tag = _names(who["acct"], who["display"])
+    return dict(who, name=name, tag=tag)
+
+
+def token_viewer(h) -> dict | None:
+    """The launcher's sign-in (Authorization: Bearer <token>, stream/social.py's device tokens), as viewer() shapes it;
+    None without a Bearer header. Raises ForumError 401 for a revoked or unknown token. A token never carries staff
+    powers here (the website sign-in does): staff None keeps the Team badge the website last set."""
+    authz = h.headers.get("Authorization", "")
+    if not authz.startswith("Bearer "):
+        return None
+    soc = P("social")
+    st = getattr(soc, "store", None) if soc is not None else None
+    if st is None:
+        raise ForumError(503, "Sign-in isn't available here right now.")
+    tok = authz[7:].strip()
+    acct = st.token_acct(tok)
+    if not acct:
+        raise ForumError(401, "Signed out. Sign in again from the launcher.")
+    name, tag = _names(acct, "")
+    return {"acct": acct, "name": name, "tag": tag, "staff": False, "session": "", "display": name, "via": "launcher"}
 
 
 def form_token(who: dict, action: str) -> str:
@@ -823,7 +893,7 @@ def _shell(h, title: str, body: str, path: str, who, status: int = 200) -> None:
     page = f'<div class="fm">{body}</div>'
     if hub is not None and getattr(hub, "hub", None) is not None:
         try:
-            hub._REQ.who = (who["acct"], who["display"] or who["name"]) if who else None
+            hub._REQ.who = (who["acct"], who["name"] or who["display"]) if who else None
             out = hub.hub._shell(title, page, path, active="forum", css=FORUM_CSS)
             hh = hub._Live(h) if hub.front_on() else h
             hh.send(status, out, headers={} if hub.front_on() else {"X-Robots-Tag": "noindex, nofollow"})
@@ -934,6 +1004,18 @@ def page_cat(h, who, cat: str, query: dict) -> None:
     _shell(h, f"{c[1]} · Forum · Leyline", body, f"{PAGE}/c/{cat}", who)
 
 
+def _pick_name(who) -> str:
+    """One small line under "as <name>" while the name is still the one made for the account (a website guest's
+    "GuestABCD1234", or "Player"): a link to pick one's own (stream/profiles.py)."""
+    prof = P("profiles")
+    try:
+        if who and prof is not None and prof.name_generated(who["name"]):
+            return '<p class="fm-fine">That name was made for you. <a href="/wrath/profile">Pick your own name and picture</a>.</p>'
+    except Exception:   # noqa: BLE001
+        pass
+    return ""
+
+
 def _reply_form(who, th: dict, note: str = "", text: str = "") -> str:
     e = html.escape
     if th["locked"] and not (who and who["staff"]):
@@ -945,7 +1027,7 @@ def _reply_form(who, th: dict, note: str = "", text: str = "") -> str:
     return (f'<section class="fm-box" aria-labelledby="fm-rp"><h2 id="fm-rp">Reply</h2>'
             f'<form class="fm-form" method="post" action="{PAGE}/t/{th["id"]}/reply">{err}'
             f'<input type="hidden" name="t" value="{form_token(who, "reply:" + str(th["id"]))}">'
-            f'<label for="fm-b">Your reply, as {e(who["name"])}</label>'
+            f'<label for="fm-b">Your reply, as {e(who["name"])}</label>{_pick_name(who)}'
             f'<textarea id="fm-b" name="body" maxlength="{BODY_MAX}" required>{e(text)}</textarea>'
             '<p class="fm-fine">Plain text. Links work; images show as links.</p>'
             '<div class="fm-acts"><button class="fm-btn" type="submit">Post reply</button></div></form></section>')
@@ -1023,7 +1105,7 @@ def page_new(h, who, query: dict, note: str = "", form: dict | None = None, stat
             f'<label for="fm-c">Category</label><select id="fm-c" name="cat" required>'
             f'<option value="">Pick one</option>{opts}</select>'
             f'<label for="fm-t">Title</label><input id="fm-t" name="title" maxlength="{TITLE_MAX}" required value="{e(form.get("title", ""))}">'
-            f'<label for="fm-b">Post, as {e(who["name"])}</label>'
+            f'<label for="fm-b">Post, as {e(who["name"])}</label>{_pick_name(who)}'
             f'<textarea id="fm-b" name="body" maxlength="{BODY_MAX}" required>{e(form.get("body", ""))}</textarea>'
             '<p class="fm-fine">Plain text. Links work; screenshots go in as links. Sharing a realm? Put its invite link here.</p>'
             '<div class="fm-acts"><button class="fm-btn" type="submit">Post thread</button>'
@@ -1142,7 +1224,79 @@ def _see_other(h, url: str) -> None:
     h.end_headers()
 
 
+POST_API = {"new": ("cat", "title", "body"), "reply": ("thread", "body"), "report": ("post", "reason", "note")}
+
+
+def _jpost(h, status: int, doc: dict) -> None:
+    """A JSON answer to a launcher POST: no CORS header (only the launcher, which isn't a browser page, posts here)."""
+    h.send(status, json.dumps(doc, separators=(",", ":"), ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8",
+           headers={"Cache-Control": "no-store"})
+
+
+def _read_json(h) -> dict | None:
+    try:
+        n = int(h.headers.get("Content-Length", "0"))
+    except ValueError:
+        return None
+    if n < 0 or n > FORM_MAX:
+        return None
+    try:
+        doc = json.loads(h.rfile.read(n).decode("utf-8") or "{}")
+    except (UnicodeDecodeError, ValueError):
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def api_post(h, sub: str) -> None:
+    """POST /wrath/forum/api/new {cat, title, body} | reply {thread, body} | report {post, reason, note}: the launcher
+    posts as its signed-in player with the token from the Leyline sign-in (Authorization: Bearer, stream/social.py).
+    The same rules as the website's forms (store.new_thread / reply / report: lengths, word filter, rate limits, the
+    stricter limits for accounts new to the forum, locked threads, Announcements for the team) and the same sanctions.
+    CSRF: only a Bearer token is accepted here, never the website cookie, so another site's page can't post for a
+    visitor (it has no token to send), and the answer has no CORS header."""
+    doc = _read_json(h)   # read first, so a refusal never resets the connection under the sender
+    if sub not in POST_API:   # the reading calls are GET only
+        return _jpost(h, 405, {"error": "Method not allowed."})
+    if not h.headers.get("Authorization", "").startswith("Bearer "):
+        return _jpost(h, 401, {"error": "Sign in from the launcher first."})
+    if doc is None:
+        return _jpost(h, 400, {"error": "Bad request."})
+    lim = P("browse_limit")
+    if lim is not None and not lim.hit("forum-post|" + h.ip(), 120):
+        return _jpost(h, 429, {"error": "Slow down a little."})
+    try:
+        who = token_viewer(h)
+    except ForumError as ex:
+        return _jpost(h, ex.status, {"error": ex.text})
+    blk = _sanctioned(who, sub)
+    if blk:
+        return _jpost(h, 403, {"error": blk})
+    store.seen(who["acct"], who["name"], who["tag"], None)
+    args = {k: (v if isinstance(v, (str, int)) and not isinstance(v, bool) else "") for k, v in
+            ((k, doc.get(k)) for k in POST_API[sub])}
+    try:
+        if sub == "new":
+            tid = store.new_thread(who["acct"], args["cat"], args["title"], args["body"], False)
+            log.info("forum: thread %d from the launcher", tid)
+            return _jpost(h, 200, {"ok": True, "thread": store.thread_doc(store.thread(tid))})
+        if sub == "reply":
+            if not isinstance(args["thread"], (int, str)) or isinstance(args["thread"], bool):
+                raise ForumError(400, "Which thread?")
+            pid = store.reply(who["acct"], args["thread"], args["body"], False)
+            th = store.post(pid)["thread"]
+            return _jpost(h, 200, {"ok": True, "post": pid, "thread": th, "page": store.page_of(pid)})
+        pid = args["post"]
+        if not isinstance(pid, (int, str)) or isinstance(pid, bool):
+            raise ForumError(400, "Which post?")
+        text = store.report(who["acct"], pid, args["reason"], args["note"] if isinstance(args["note"], str) else "")
+        return _jpost(h, 200, {"ok": True, "text": text})
+    except ForumError as ex:
+        return _jpost(h, ex.status, {"error": ex.text})
+
+
 def post(h, path: str) -> None:
+    if store is not None and path.startswith(API + "/"):
+        return api_post(h, path[len(API):].strip("/"))
     if store is None or path == API or path.startswith(API + "/"):
         _read_form(h)
         return h.send(405, b"method not allowed\n", "text/plain")

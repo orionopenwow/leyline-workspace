@@ -360,6 +360,54 @@ ok, msg = wp.admin.run_action(user, {"action": "profile.reset.bio", "target": "n
 check("admin: a bad target is refused", not ok)
 check("admin: the Profiles tab is listed", ("profiles", "Profiles") in wp.admin.TABS)
 
+# ---------------------------------------------------------------- guests: a website guest account renames itself like anyone
+# The website's "Play as guest" makes a real account (username guest-xxxxxxxx, display name "Guest XXXXXXXX", a Hero Key
+# right away); it never went through the Leyline sign-in, so its name is the generated one until it picks its own.
+ACCOUNTS["guest1"] = ("guest-abcd2345", "Guest ABCD2345", "WR000009")
+st, _, body, _ = req("GET", "/wrath/profile", "guest1")
+gname = S.profile("WR000009")["name"]
+check("guest: the profile page works, with its generated name and a plain line to pick one's own", st == 200 and gname == "GuestABCD2345"
+      and "Your name was made for you" in body and 'value="GuestABCD2345"' in body and "Manage your Hero Key" in body, body[:300])
+st, _, body, _ = req("GET", "/wrath/leyline/forum/new", "guest1")
+check("guest: the forum's form offers to pick a name (one click to the profile)", "Post, as GuestABCD2345" in body
+      and 'href="/wrath/profile">Pick your own name' in body)
+st, doc = jget("/wrath/api/social/me", who="guest1")
+check("guest: GET me says the name was made for it", st == 200 and doc["me"]["profile"]["name_generated"] is True, doc)
+t = tok("guest1", "/wrath/profile")
+st, hd, _, _ = req("POST", "/wrath/profile", "guest1", {"t": t, "name": "Orion", "avatar": "moon", "bio": "New here"})
+check("guest: sets a display name, a picture and a bio", st == 303 and S.profile("WR000009")["name"] == "Orion"
+      and PR.get("WR000009")["avatar"] == "moon" and PR.get("WR000009")["bio"] == "New here")
+st, _, body, _ = req("GET", "/wrath/profile", "guest1")
+check("guest: the site header shows the new name at once, the line about a made name is gone",
+      'class="hb-acct-n">Orion<' in body and "Your name was made for you" not in body, re.findall(r'hb-acct-n">[^<]*', body))
+st, doc = jget("/wrath/api/social/me", who="guest1")
+check("guest: GET me: no longer a made name", doc["me"]["name"] == "Orion" and doc["me"]["profile"]["name_generated"] is False)
+st, _, body, _ = req("GET", "/wrath/leyline/forum/new", "guest1")
+check("guest: the forum posts as the new name", "Post, as Orion" in body and "Pick your own name" not in body)
+for bad, why in (("Admin", "team"), ("LeylineStaff", "team"), ("Moderator7", "team"), ("Guest12345678", "guest"), ("Warcraft", "another")):
+    t = tok("guest1", "/wrath/profile")
+    st, _, body, _ = req("POST", "/wrath/profile", "guest1", {"t": t, "name": bad, "avatar": "moon", "bio": ""})
+    check(f"names: {bad} refused ({why})", st == 400 and S.profile("WR000009")["name"] == "Orion", body[-300:])
+check("names: the same rules for the launcher's JSON", jpost("/wrath/api/social/profile", {"name": "Admin"}, who="guest1",
+      headers={"X-Leyline-CSRF": doc.get("csrf", "")})[0] == 400)
+t = tok("guest1", "/wrath/profile")
+st, _, _, _ = req("POST", "/wrath/profile", "guest1", {"t": t, "name": "Orion2", "avatar": "moon", "bio": "New here"})
+t = tok("guest1", "/wrath/profile")
+st2, _, _, _ = req("POST", "/wrath/profile", "guest1", {"t": t, "name": "Orion3", "avatar": "moon", "bio": "New here"})
+check("names: three changes a day", st == 303 and st2 == 303 and S.profile("WR000009")["name"] == "Orion3")
+t = tok("guest1", "/wrath/profile")
+st, _, body, _ = req("POST", "/wrath/profile", "guest1", {"t": t, "name": "Orion4", "avatar": "sun", "bio": "New here"})
+check("names: the fourth in a day waits until tomorrow (the picture isn't half-saved)", st == 400 and "tomorrow" in body
+      and S.profile("WR000009")["name"] == "Orion3")
+t = tok("guest1", "/wrath/profile")
+st, _, _, _ = req("POST", "/wrath/profile", "guest1", {"t": t, "name": "Orion3", "avatar": "sun", "bio": "Still here"})
+check("names: the picture and bio still change after the name limit", st == 303 and PR.get("WR000009")["avatar"] == "sun")
+staff = {"account": "WR000003", "name": "Mod Sam", "role": "staff", "session": "s"}
+ok, msg = wp.admin.run_action(staff, {"action": "profile.reset.name", "target": "WR000009", "confirm": "WR000009"})
+check("names: a staff reset isn't limited", ok and S.profile("WR000009")["name"] == "Player", msg)
+check("a made name: Player and the guest names", PM.name_generated("Player") and PM.name_generated("GuestABCD2345")
+      and not PM.name_generated("Orion"))
+
 # ---------------------------------------------------------------- the nav and the deploy
 check("site nav: Sign in goes to the Leyline sign-in", "/wrath/signin?next=%2Fwrath" in wp.site_nav("", False)
       and "/wrath/profile" in wp.site_nav("", True))

@@ -38,9 +38,12 @@ import time
 log = logging.getLogger("wrath-portal.demo")
 
 # The one public base URL of the website (player-facing links). Keep ov_demo.lua's PUBLIC_BASE_URL in step.
+# A guest pass has no account and keeps nothing (the pass is shared and reset after each visit), so there is no
+# progress to claim: the one click is a free account through the Leyline sign-in (stream/profiles.py: Hero Key,
+# Google or Discord, then the name-and-picture step). ov_demo.lua's in-game line still says /login, which works too.
 PUBLIC_BASE_URL = "https://" + os.environ.get("PUBLIC_HOST", "play.openvanilla.app")
-SIGNUP_URL = PUBLIC_BASE_URL + "/login?next=%2Fwrath"
-SIGNUP_PATH = "/login?next=%2Fwrath"
+SIGNUP_PATH = "/wrath/signin?next=%2Fwrath"
+SIGNUP_URL = PUBLIC_BASE_URL + SIGNUP_PATH
 TRY_PATH = "/wrath?demo=1"
 
 PREFIX = "LYDEMO"
@@ -359,6 +362,7 @@ def section_html() -> str:
         f'<ul class="ly-demo-facts"><li>{m}-minute guest pass</li><li>Runs in the browser</li>'
         '<li>Free account to keep playing</li></ul>'
         f'<div class="ly-demo-go"><a class="ly-btn" href="{html.escape(TRY_PATH)}">Try it</a></div>'
-        '<p class="ly-fine">Guest passes are shared and reset after each visit, so chat channels, whispers, trade, mail '
-        f'and groups are off. <a href="{html.escape(SIGNUP_PATH)}">Make a free account</a> to keep a character and go further.</p>'
+        '<p class="ly-fine">Guest passes are shared and reset after each visit, so nothing you do on one is kept, and chat '
+        'channels, whispers, trade, mail and groups are off. '
+        f'<a href="{html.escape(SIGNUP_PATH)}">Make a free account</a> to keep a character, pick your name and picture, and go further.</p>'
         '</section>')

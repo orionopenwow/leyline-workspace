@@ -105,6 +105,10 @@ server.
 
 ### The launcher's sign-in (device code)
 
+The token also signs the launcher's forum posts (`POST /wrath/forum/api/new|reply|report`, docs/FORUM.md) and mod
+ratings (`stream/hub_rank.py`): one sign-in for everything the launcher does.
+
+
 1. The launcher calls `POST device/start`. It opens `verify_url`
    (`https://play.openvanilla.app/wrath/link?code=BCDF-GHJK`) in the system browser.
 2. `/wrath/link`:

@@ -12,7 +12,10 @@ console, and the system tabs. Server-rendered, the Leyline look, plain words, wo
     GET  /wrath/admin/game            in the game: announce, kick, mute, rescue to Dalaran, ban, GM tickets (read-only)
     GET  /wrath/admin/notes           every note from Claude, and (owner) every note to Claude
     GET  /wrath/admin/realms          the official realm, community realms (admin.realms_page), relay blocks
-    GET  /wrath/admin/api/<what>      the JSON API: me, inbox, search, person, realm, audit, stats, notes
+    GET  /wrath/admin/forum           the forum (stream/forum.py): reported posts (hide, show, done, dismiss, mute the
+                                      poster), threads (pin, lock, hide, merge), hidden posts, and one poster's forum
+                                      history (?acct=) with mute from the forum, ban the account (a site-wide suspend)
+    GET  /wrath/admin/api/<what>      the JSON API: me, inbox, search, person, realm, audit, stats, notes, forum
     POST /wrath/admin/api/act         the same actions as the pages (admin.run_action), JSON in and out
 
 The API uses the website cookie plus the CSRF token from api/me (header X-Leyline-CSRF or the field "csrf").
@@ -289,9 +292,14 @@ def inbox_items() -> tuple[list[dict], list[str]]:
         try:
             for r in fs.reports("open", 200):
                 rid = str(r["id"])
-                acts = ([("forum.post.hide", str(r["post"]), "Hide the post", {}, None, False)] if not r["post_hidden"] else []) + [
+                author = str(r.get("author") or "")
+                acts = ([("forum.post.hide", str(r["post"]), "Hide the post", {}, None, False)] if not r["post_hidden"] else
+                        [("forum.post.unhide", str(r["post"]), "Show the post", {}, None, False)]) + [
                     ("forum.report.done", rid, "Done", {"outcome": ("text", "what you did")}, None, False),
                     ("forum.report.dismiss", rid, "Dismiss", {}, None, False)]
+                if A.GAME_ACCT_RE.fullmatch(author):
+                    acts.append(("forum.mute", author, "Mute from the forum", {"hours": "72", "reason": ("text", "reason (required; they read it)")},
+                                 author, True))
                 items.append(_item("forum", f"forum:{rid}", "Forum report",
                                    f"{(r['author_name'] or '?')[:40]} reported by {(r['reporter_name'] or '?')[:40]}",
                                    str(r["post_body"])[:600], r["at"], "/wrath/admin/forum", acts,
@@ -801,6 +809,11 @@ def person(acct: str, site: str = "") -> dict:
                              for r in hf.realms_of(acct)][:20]
         except Exception:   # noqa: BLE001
             pass
+    try:
+        fp = forum_poster(acct, 20)
+        doc["forum"] = fp if fp and (fp["posts"] or fp["poster"]["first"]) else None
+    except Exception:   # noqa: BLE001
+        doc["forum"] = None
     doc["audit"] = [r for r in A.audit_tail(400) if acct in str(r.get("target", "")) or (site and site in str(r.get("target", "")))][:20]
     return doc
 
@@ -849,6 +862,241 @@ def a_realm_block(on):
     return fn
 
 
+# ----------------------------------------------------------------------------------------------
+# The forum (stream/forum.py): moderation in HQ. The store's own tools do the work; every action goes through
+# admin.run_action (role check, typed confirm, audit log) like everything else here.
+# ----------------------------------------------------------------------------------------------
+
+FORUM_MOD_MAX_HOURS = 168   # a mod mutes for up to a week; longer (or until lifted) is for admins
+
+# The JSON API's names for the forum actions (POST /wrath/admin/api/act {action, target, ...}): what a later launcher
+# admin mode calls. target is the post, thread, report id or game account; the extra fields are listed.
+FORUM_API_ACTIONS = {
+    "hide_post": {"action": "forum.post.hide", "target": "post id"},
+    "show_post": {"action": "forum.post.unhide", "target": "post id"},
+    "report_done": {"action": "forum.report.done", "target": "report id", "fields": {"outcome": "optional"}},
+    "report_dismiss": {"action": "forum.report.dismiss", "target": "report id"},
+    "report_reopen": {"action": "forum.report.reopen", "target": "report id"},
+    "pin": {"action": "forum.thread.pin", "target": "thread id"}, "unpin": {"action": "forum.thread.unpin", "target": "thread id"},
+    "lock": {"action": "forum.thread.lock", "target": "thread id"}, "unlock": {"action": "forum.thread.unlock", "target": "thread id"},
+    "hide_thread": {"action": "forum.thread.hide", "target": "thread id", "confirm": "the thread id"},
+    "show_thread": {"action": "forum.thread.unhide", "target": "thread id"},
+    "merge": {"action": "forum.thread.merge", "target": "the duplicate's id", "fields": {"into": "thread id"}, "confirm": "the duplicate's id"},
+    "mute": {"action": "forum.mute", "target": "game account", "fields": {"hours": "1-168 (admins: 0 = until lifted)", "reason": "required"},
+             "confirm": "the game account"},
+    "unmute": {"action": "forum.unmute", "target": "game account"},
+    "ban": {"action": "sanction.set", "target": "game account", "fields": {"type": "suspend", "hours": "0 = until lifted",
+                                                                           "reason": "required"}, "confirm": "the game account"},
+}
+
+
+def _forum_acct(target: str) -> str:
+    acct = str(target or "").strip().upper()
+    if not A.GAME_ACCT_RE.fullmatch(acct):
+        raise A.Refused("Not a game account.")
+    return acct
+
+
+def a_forum_mute(user, target, form):
+    """Mute from the forum only (a "noforum" site-wide sanction: no new threads or replies, reports still work)."""
+    acct = _forum_acct(target)
+    try:
+        hours = int(str(form.get("hours") or "72").strip() or 72)
+    except ValueError:
+        raise A.Refused("Hours: a number.") from None
+    if not A.can(user, "admin") and not 1 <= hours <= FORUM_MOD_MAX_HOURS:
+        raise A.Refused(f"Mods mute for 1 to {FORUM_MOD_MAX_HOURS} hours; ask an admin for longer.")
+    if A.sanction_of("noforum", acct=acct):
+        raise A.Refused("Already muted from the forum.")
+    return A.set_sanction(user, "noforum", acct, "", hours, A._clean_line(form.get("reason"), 200))
+
+
+def a_forum_unmute(user, target, form):
+    acct = _forum_acct(target)
+    live = [v for v in A.sanctions_for(acct) if v.get("type") == "noforum"]
+    if not live:
+        raise A.Refused("Not muted from the forum.")
+    for v in live:
+        A.lift_sanction(user, v["id"])
+    return {"noforum": [v["id"] for v in live]}, {"noforum": []}
+
+
+def forum_poster(acct: str, n: int = 50) -> dict | None:
+    """One poster: what the forum knows (posts, threads, reports about them), their posts newest first, their forum
+    sanctions. None when the forum isn't here."""
+    fs = A.forum_store()
+    if fs is None:
+        return None
+    acct = acct.upper()
+    info = fs.poster(acct) or {"acct": acct, "name": "", "tag": "", "staff": False, "first": 0, "last": 0, "posts": 0,
+                               "hidden": 0, "threads": 0, "reported": 0, "new": True}
+    posts = [{"id": p["id"], "thread": p["thread"], "thread_title": p["thread_title"], "at": p["created"], "hidden": p["hidden"],
+              "opener": p["opener"], "text": p["body"][:2000]} for p in fs.posts_by(acct, n)]
+    reports = [{"id": r["id"], "at": r["at"], "status": r["status"], "reason": r["reason"], "post": r["post"],
+                "thread": r["thread_title"]} for r in fs.reports("", 1000) if r.get("author") == acct][:50]
+    sanc = [v for v in A.sanctions_for(acct, active=False) if v.get("type") in ("noforum", "mute", "suspend")]
+    return {"poster": info, "posts": posts, "reports": reports, "sanctions": sanc,
+            "muted": bool(A.blocked("post", acct=acct))}
+
+
+def _forum_report_doc(r: dict) -> dict:
+    return {k: r.get(k) for k in ("id", "at", "status", "reason", "note", "post", "post_hidden", "author", "author_name",
+                                   "reporter_name", "thread", "thread_title", "handled_by", "outcome")} | {"post_text": str(r.get("post_body") or "")[:2000]}
+
+
+def _forum_thread_doc(t: dict) -> dict:
+    return {k: t.get(k) for k in ("id", "cat", "title", "author", "author_acct", "created", "bumped", "replies", "pinned", "locked", "hidden")}
+
+
+FORUM_VIEWS = (("reports", "Reported posts"), ("threads", "Threads"), ("hidden", "Hidden posts"))
+
+
+def _mute_form(user: dict, acct: str, back: str, label: str = "Mute from the forum") -> str:
+    hours = "72"
+    return A.act(user, "forum.mute", acct, label, back,
+                 f'<input type="text" name="hours" value="{hours}" size="4" inputmode="numeric" aria-label="Hours" '
+                 f'title="Hours ({FORUM_MOD_MAX_HOURS} at most for mods; admins: 0 = until lifted)">'
+                 '<input type="text" name="reason" maxlength="200" placeholder="reason (they read it)" aria-label="Reason" required>',
+                 confirm=acct, danger=True)
+
+
+def _ban_form(user: dict, acct: str, back: str) -> str:
+    return A.act(user, "sanction.set", acct, "Ban the account (suspend everywhere)", back,
+                 '<input type="hidden" name="type" value="suspend"><input type="text" name="hours" value="0" size="4" '
+                 'inputmode="numeric" aria-label="Hours (0 = until lifted)" title="Hours (0 = until lifted)">'
+                 '<input type="text" name="reason" maxlength="200" placeholder="reason (they read it)" aria-label="Reason" required>',
+                 confirm=acct, danger=True)
+
+
+def _poster_link(acct: str, name: str) -> str:
+    if not A.GAME_ACCT_RE.fullmatch(acct or ""):
+        return e(name or "?")
+    return f'<a href="/wrath/admin/forum?acct={e(acct)}">{e(name or acct)}</a>'
+
+
+def forum_page(user: dict, query: dict) -> tuple[int, str]:
+    """Leyline HQ's Forum: Reported posts, Threads, Hidden posts, and one poster's history (?acct=). Nothing is deleted."""
+    fs = A.forum_store()
+    if fs is None:
+        return 200, '<section class="ly-panel"><h2>Forum</h2><p class="fine">The forum (stream/forum.py) is not on this portal.</p></section>'
+    q1 = lambda k: str((query.get(k) or [""])[0])   # noqa: E731
+    pub = "/wrath/leyline/forum"
+    acct = q1("acct").strip().upper()
+    if acct:
+        return forum_poster_page(user, acct)
+    view = q1("view") or "reports"
+    view = view if view in dict(FORUM_VIEWS) else "reports"
+    show = q1("show") or "open"
+    show = show if show in ("open", "done", "dismissed", "all") else "open"
+    back = "/wrath/admin/forum" + ("" if view == "reports" else "?view=" + view)
+    n_open = len(fs.reports("open", 1000))
+    tabs = '<p class="hq-fm-tabs">' + " · ".join(
+        (f'<b>{e(lab)}</b>' if k == view else f'<a href="/wrath/admin/forum{"" if k == "reports" else "?view=" + k}">{e(lab)}</a>')
+        + (f' <span class="tag hot">{n_open}</span>' if k == "reports" and n_open else "") for k, lab in FORUM_VIEWS) + "</p>"
+    find = ('<form method="get" action="/wrath/admin/forum" class="hq-fm-find"><input type="text" name="acct" maxlength="16" '
+            'placeholder="game account (WR...)" aria-label="A poster\'s game account" size="16"> <button type="submit">Their forum history</button></form>')
+    head = (f'<section class="ly-panel"><h2>Forum</h2><p class="fine">Moderate the forum here: reports also show in Needs you. '
+            f'Hiding keeps everything in the database. Mute from the forum stops new threads and replies (mods: up to '
+            f'{FORUM_MOD_MAX_HOURS} hours); Ban the account suspends it on the website and the launcher. Every action is in the '
+            f'audit log. <a href="{pub}">Open the forum</a></p>{tabs}{find}</section>')
+    if view == "reports":
+        rows = []
+        for r in fs.reports("" if show == "all" else show, 200):
+            rid, st, author = str(r["id"]), r["status"], str(r.get("author") or "")
+            acts = ""
+            if r["post_hidden"]:
+                acts += A.act(user, "forum.post.unhide", str(r["post"]), "Show the post", back)
+            else:
+                acts += A.act(user, "forum.post.hide", str(r["post"]), "Hide the post", back)
+            if st == "open":
+                acts += (A.act(user, "forum.report.done", rid, "Done", back,
+                               '<input type="text" name="outcome" maxlength="300" placeholder="what you did" aria-label="Outcome">')
+                         + A.act(user, "forum.report.dismiss", rid, "Dismiss", back))
+            else:
+                acts += A.act(user, "forum.report.reopen", rid, "Reopen", back)
+            more = (_mute_form(user, author, back) + _ban_form(user, author, back)) if A.GAME_ACCT_RE.fullmatch(author) else ""
+            if more:
+                acts += f'<details><summary>The poster</summary>{more}</details>'
+            rows.append(f'<article class="hq-item"><p class="what">Forum report · {e(ago(r["at"]))} '
+                        f'{A._tags((st, "good" if st != "open" else "hot"), ("hidden", "") if r["post_hidden"] else ("", ""))}</p>'
+                        f'<p class="title"><b>{_poster_link(author, r["author_name"])}</b> reported by {e(r["reporter_name"] or "?")}</p>'
+                        f'<p class="sub">{e(r["reason"])} · in <a href="{pub}/t/{r["thread"]}#p{r["post"]}">{e(str(r["thread_title"] or "?")[:80])}</a>'
+                        + (f' · note: {e(str(r["note"])[:200])}' if r["note"] else "")
+                        + (f' · outcome: {e(str(r["outcome"])[:200])} ({e(str(r["handled_by"])[:60])})' if r["outcome"] else "")
+                        + f'</p><div class="body">{e(str(r["post_body"])[:2000])}</div><div class="acts">{acts}</div></article>')
+        filt = " · ".join(f'<b>{s_}</b>' if s_ == show else f'<a href="/wrath/admin/forum?show={s_}">{s_}</a>'
+                          for s_ in ("open", "done", "dismissed", "all"))
+        body = (f'<section class="ly-panel"><h2>Reported posts</h2><p class="fine">{filt}</p>'
+                + ("".join(rows) if rows else '<p class="hq-calm">No forum reports here.</p>') + '</section>')
+        return 200, head + body
+    if view == "threads":
+        qq = q1("q")[:60]
+        trow = []
+        for t in fs.staff_threads(qq, 60):
+            tid = str(t["id"])
+            acts = (A.act(user, "forum.thread.unpin" if t["pinned"] else "forum.thread.pin", tid, "Unpin" if t["pinned"] else "Pin", back)
+                    + A.act(user, "forum.thread.unlock" if t["locked"] else "forum.thread.lock", tid, "Unlock" if t["locked"] else "Lock", back)
+                    + A.act(user, "forum.thread.unhide" if t["hidden"] else "forum.thread.hide", tid, "Show" if t["hidden"] else "Hide", back,
+                            confirm=None if t["hidden"] else tid, danger=not t["hidden"])
+                    + A.act(user, "forum.thread.merge", tid, "Merge into", back,
+                            '<input type="text" name="into" inputmode="numeric" pattern="[0-9]{1,9}" size="6" placeholder="thread #" '
+                            'aria-label="Merge into thread number" required>', confirm=tid, danger=True))
+            trow.append(f'<article class="hq-item"><p class="title"><b>#{tid} <a href="{pub}/t/{tid}">{e(t["title"])}</a></b> '
+                        f'{A._tags(("pinned", "good") if t["pinned"] else ("", ""), ("locked", "") if t["locked"] else ("", ""), ("hidden", "hot") if t["hidden"] else ("", ""))}</p>'
+                        f'<p class="sub">{e(t["cat"])} · by {_poster_link(t.get("author_acct", ""), t["author"])} · {t["replies"]} '
+                        f'repl{"y" if t["replies"] == 1 else "ies"} · active {e(ago(t["bumped"]))}</p><div class="acts">{acts}</div></article>')
+        search = ('<form method="get" action="/wrath/admin/forum"><input type="hidden" name="view" value="threads">'
+                  f'<input type="text" name="q" value="{e(qq)}" maxlength="60" placeholder="title" aria-label="Search titles"> '
+                  '<button type="submit">Search</button></form>')
+        return 200, head + (f'<section class="ly-panel"><h2>Threads</h2><p class="fine">Pin keeps a thread at the top of its '
+                            f'category. Merge moves a duplicate\'s posts into another thread (type the duplicate\'s number to '
+                            f'confirm); its address then leads there.</p>{search}'
+                            + ("".join(trow) if trow else '<p class="fine">No threads.</p>') + '</section>')
+    hrow = [f'<article class="hq-item"><p class="title"><b>{_poster_link(p["author"], p["name"])}</b> · post {p["id"]} in '
+            f'<a href="{pub}/t/{p["thread"]}">thread #{p["thread"]}</a> · {e(ago(p["created"]))}</p>'
+            f'<div class="body">{e(p["body"][:600])}</div><div class="acts">'
+            f'{A.act(user, "forum.post.unhide", str(p["id"]), "Show again", back)}</div></article>' for p in fs.hidden_posts(50)]
+    return 200, head + ('<section class="ly-panel"><h2>Hidden posts</h2>' + ("".join(hrow) if hrow else '<p class="fine">No hidden posts.</p>')
+                        + '</section>')
+
+
+def forum_poster_page(user: dict, acct: str) -> tuple[int, str]:
+    if not A.GAME_ACCT_RE.fullmatch(acct):
+        return 404, '<section class="ly-panel"><h2>Not found</h2><p>That is not a game account.</p></section>'
+    d = forum_poster(acct)
+    back = "/wrath/admin/forum?acct=" + acct
+    pub = "/wrath/leyline/forum"
+    pi = d["poster"]
+    who_ = (pi["name"] or acct) + ("#" + pi["tag"] if pi["tag"] else "")
+    muted = A.blocked("post", acct=acct)
+    live_noforum = A.sanction_of("noforum", acct=acct)
+    tools = (A.act(user, "forum.unmute", acct, "Lift the forum mute", back) if live_noforum else _mute_form(user, acct, back)) + _ban_form(user, acct, back)
+    rows = []
+    for p in d["posts"]:
+        pid = str(p["id"])
+        act_ = (A.act(user, "forum.post.unhide", pid, "Show", back) if p["hidden"] else A.act(user, "forum.post.hide", pid, "Hide", back))
+        rows.append(f'<article class="hq-item"><p class="what">{"New thread" if p["opener"] else "Reply"} · {e(ago(p["at"]))} '
+                    f'{A._tags(("hidden", "hot") if p["hidden"] else ("", ""))}</p>'
+                    f'<p class="title">in <a href="{pub}/t/{p["thread"]}#p{pid}">{e(p["thread_title"] or "#" + str(p["thread"]))}</a></p>'
+                    f'<div class="body">{e(p["text"][:600])}</div><div class="acts">{act_}</div></article>')
+    reps = "".join(f'<li>{e(r["reason"])} in {e(r["thread"] or "?")} {A._tags((r["status"], "hot" if r["status"] == "open" else ""))}'
+                   f'<span class="fine"> {e(ago(r["at"]))}</span></li>' for r in d["reports"])
+    sanc = "".join(f'<li>{A._tags((v["type"], "bad" if A.sanction_active(v) else ""), ("lifted", "") if v.get("lifted") else ("", ""))} '
+                   f'<span class="fine">{e(v.get("reason", ""))} · by {e(v.get("by", ""))} {e(ago(v.get("at")))}</span></li>' for v in d["sanctions"])
+    return 200, (
+        f'<section class="ly-panel"><p class="fine"><a href="/wrath/admin/forum">Forum</a> / a poster</p><h2>{e(who_)}</h2>'
+        f'<p class="hq-big">{"Muted: " + e(muted) if muted else "Can post"}</p>'
+        f'<dl class="hq-rows"><dt>Game account</dt><dd><code>{e(acct)}</code> · <a href="/wrath/admin/person?acct={e(acct)}">their page</a></dd>'
+        f'<dt>On the forum</dt><dd>{pi["posts"]} posts ({pi["hidden"]} hidden), {pi["threads"]} threads, reported {pi["reported"]} times'
+        + (f' · first seen {e(ago(pi["first"]))}' if pi["first"] else " · never signed in to the forum")
+        + (' · new (stricter limits)' if pi["new"] else "") + '</dd></dl>'
+        f'<div class="hq-tools"><div class="tool"><h3>Act</h3>{tools}</div></div></section>'
+        f'<section class="ly-panel"><h2>Their posts</h2>' + ("".join(rows) if rows else '<p class="fine">No posts.</p>') + '</section>'
+        f'<section class="ly-panel"><h2>Reports about their posts</h2>' + (f'<ul class="hq-list">{reps}</ul>' if reps else '<p class="fine">None.</p>')
+        + f'</section><section class="ly-panel"><h2>Sanctions</h2>' + (f'<ul class="hq-list">{sanc}</ul>' if sanc else '<p class="fine">None.</p>')
+        + '</section>')
+
+
 def register() -> None:
     A.ACTIONS.update({
         "game.kick": (a_game("kick"), "mod", None),
@@ -864,6 +1112,8 @@ def register() -> None:
         "device.revoke": (a_device_revoke, "admin", None),
         "realm.block": (a_realm_block(True), "admin", True),
         "realm.unblock": (a_realm_block(False), "admin", None),
+        "forum.mute": (a_forum_mute, "mod", True),
+        "forum.unmute": (a_forum_unmute, "mod", None),
         "hq.note.add": (a_note_add, "owner", None),
         "hq.note.close": (a_note_status("closed"), "owner", None),
         "hq.note.reopen": (a_note_status("open"), "owner", None),
@@ -908,6 +1158,8 @@ CSS = """
 .hq-tools form{display:flex;flex-wrap:wrap;margin:0 0 6px}
 .hq-mono{font:12.5px/1.45 ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-word;background:var(--sw-inset);border:1px solid var(--sw-inset-border);color:var(--sw-text-2);padding:8px 10px;border-radius:var(--sw-radius-xs);max-height:360px;overflow:auto}
 .ad .ad-top{row-gap:6px}
+.hq-fm-tabs{margin:8px 0 6px;font-size:15px}.hq-fm-find{margin:4px 0 0}
+.hq-item details{display:inline-block;margin-left:4px}.hq-item details form{display:flex;flex-wrap:wrap;margin:6px 0 0}
 .hq-more{display:inline-block;margin-top:10px;padding:6px 12px;border:1px solid var(--sw-border-strong);border-radius:var(--sw-radius-xs);background:var(--sw-raised);color:var(--sw-text);font:600 12.5px var(--sw-font);text-decoration:none}
 .hq-more:hover,.hq-more:focus-visible{border-color:var(--sw-accent);background:var(--sw-accent-soft)}
 @media (max-width:640px){.ly-wrap.ad{padding-left:12px;padding-right:12px}.ly-panel{padding:16px 14px}
@@ -1081,7 +1333,8 @@ def person_page(user: dict, query: dict) -> tuple[int, str]:
            + A.act(user, "game.unban", acct, UNBAN_LABEL, back, confirm=acct))
     san_form = A.act(user, "sanction.set", acct, "Apply", back,
                      '<select name="type" aria-label="Sanction"><option value="mute">Mute (no posts or messages)</option>'
-                     '<option value="nosubmit">No new submissions</option><option value="suspend">Suspend (everything)</option></select>'
+                     '<option value="nosubmit">No new submissions</option><option value="noforum">No forum posts</option>'
+                     '<option value="suspend">Suspend (everything)</option></select>'
                      '<input type="text" name="hours" value="72" size="5" inputmode="numeric" aria-label="Hours (0 = until lifted)">'
                      f'<input type="text" name="site" value="{e(site)}" maxlength="64" placeholder="website id (optional)" aria-label="Website account id">'
                      '<input type="text" name="reason" maxlength="200" placeholder="reason (the player reads it)" aria-label="Reason" required>',
@@ -1126,9 +1379,24 @@ def person_page(user: dict, query: dict) -> tuple[int, str]:
           'the launcher, with the reason shown to the player. A game ban stops logins to ' + e(realm_name()) + '.</p></section>'
         + f'<section class="ly-panel"><h2>Sanctions</h2>{lst([san_rows]) if san_rows else "<p class=fine>None.</p>"}</section>'
         + f'<section class="ly-panel"><h2>Reports about them</h2>{reports}</section>'
+        + _person_forum(d)
         + f'<section class="ly-panel"><h2>What they made</h2>{made}<h3>Realms they host</h3>{realms}</section>'
         + f'<section class="ly-panel"><h2>Launcher sign-ins</h2>{lst([dev]) if dev else "<p class=fine>None.</p>"}</section>'
         + f'<section class="ly-panel"><h2>Staff history</h2>{hist}</section>')
+
+
+def _person_forum(d: dict) -> str:
+    fp = d.get("forum")
+    if not fp:
+        return ""
+    pi = fp["poster"]
+    last = "".join(f'<li>{"Thread" if p["opener"] else "Reply"} in {e(p["thread_title"] or "#" + str(p["thread"]))} '
+                   f'{A._tags(("hidden", "hot") if p["hidden"] else ("", ""))}<span class="fine"> {e(ago(p["at"]))}</span></li>'
+                   for p in fp["posts"][:5])
+    return (f'<section class="ly-panel"><h2>On the forum</h2><p>{pi["posts"]} posts ({pi["hidden"]} hidden), {pi["threads"]} threads, '
+            f'reported {pi["reported"]} times{" · muted" if fp["muted"] else ""}.</p>'
+            + (f'<ul class="hq-list">{last}</ul>' if last else "")
+            + f'<p class="fine"><a href="/wrath/admin/forum?acct={e(d["acct"])}">Their forum history, mute from the forum</a></p></section>')
 
 
 def game_page(user: dict) -> str:
@@ -1199,6 +1467,9 @@ def page(user: dict, tab: str, query: dict):
         return 200, "Realms", realms_wrap(user)
     if tab == "content":
         return 200, "Catalog", A.catalog_page(user)
+    if tab == "forum":
+        st, body = forum_page(user, query)
+        return st, "Forum", body
     if tab == "system":
         return 200, "Health", A.health_page(user)
     return None
@@ -1256,6 +1527,31 @@ def api_get(h, user: dict, what: str, query: dict) -> None:
                               "needs_you": len(items), "needs_you_by_kind": {k: sum(1 for x in items if x["kind"] == k) for k in INBOX_WORDS},
                               "releases": [{"what": k, "value": v, "detail": d} for k, v, d in release_rows()],
                               "changes": changes()})
+    if what == "forum":
+        fs = A.forum_store()
+        if fs is None:
+            return _json(h, 404, {"ok": False, "error": "The forum is not on this portal."})
+        view = q1("view") or "reports"
+        doc = {"ok": True, "view": view, "actions": {k: v for k, v in FORUM_API_ACTIONS.items()
+                                                      if A.can(user, A.ACTIONS.get(v["action"], (None, "owner"))[1])}}
+        if view == "reports":
+            status = q1("status") or "open"
+            if status not in ("open", "done", "dismissed", "all"):
+                return _json(h, 400, {"ok": False, "error": "status: open, done, dismissed or all."})
+            doc["reports"] = [_forum_report_doc(r) for r in fs.reports("" if status == "all" else status, 200)]
+        elif view == "threads":
+            doc["threads"] = [_forum_thread_doc(t) for t in fs.staff_threads(q1("q")[:60], 60)]
+        elif view == "hidden":
+            doc["posts"] = [{"id": p["id"], "thread": p["thread"], "author": p["author"], "name": p["name"], "at": p["created"],
+                             "text": p["body"][:2000]} for p in fs.hidden_posts(50)]
+        elif view == "poster":
+            acct = q1("acct").upper()
+            if not A.GAME_ACCT_RE.fullmatch(acct):
+                return _json(h, 400, {"ok": False, "error": "That is not a game account."})
+            doc.update(forum_poster(acct))
+        else:
+            return _json(h, 400, {"ok": False, "error": "view: reports, threads, hidden or poster."})
+        return _json(h, 200, doc)
     if what == "notes":
         cn = claude_notes()
         doc = {"ok": True, "from_claude": cn["notes"]}

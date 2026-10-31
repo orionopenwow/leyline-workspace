@@ -56,6 +56,11 @@ import sys
 
 from wunet import domains, keys, srp6
 
+try:   # the one blocklist for names (wunet/namecheck.py, a copy of stream/namecheck.py with its blocklist.json)
+    from wunet import namecheck
+except ImportError:
+    namecheck = None
+
 from . import cores
 
 KIT = os.environ.get("WU_KIT", "/kit")
@@ -644,6 +649,8 @@ def cmd_init(a):
     name = a.name if a.name is not None else cfg.get("name")
     if not name or not NAME_RE.match(name.strip()):
         sys.exit("Realm name: 1-32 letters, digits, spaces, _ ' or -")
+    if name_refused(name):
+        sys.exit(NAME_REFUSED)
     profile = a.profile or cfg.get("profile", "main")
     if profile not in PROFILES:
         sys.exit("Profile must be " + ", ".join(sorted(k for k in PROFILES if cores.offered(k))))
@@ -908,6 +915,8 @@ def cmd_link(a):
     name = (a.name if a.name is not None else cfg.get("name") or "").strip()
     if not NAME_RE.match(name) or BRAND_RE.search(name):
         sys.exit("Realm name: 1-32 letters, digits, spaces, _ ' or -, no game or publisher brand names")
+    if name_refused(name):
+        sys.exit(NAME_REFUSED)
     auth = host_port(a.auth_service or cfg.get("auth_service") or "", "Login server address")
     world = host_port(a.world_service or cfg.get("world_service") or "", "World server address")
     build = a.build if a.build is not None else old.get("build", BUILD)
@@ -959,6 +968,16 @@ def cmd_link(a):
 
 
 BRAND_RE = re.compile(r"(?i)world\s*of\s*warcraft|\bwow\b|warcraft|lich\s*king|blizzard")
+NAME_REFUSED = ("That realm name is not allowed on the Leyline list (slurs, rude words and names that pass for the "
+                "Leyline team are refused): pick another.")
+
+
+def name_refused(name) -> bool:
+    """What the relay's realm list refuses in a name (wunet/namecheck.py realm_name_hit), checked here first."""
+    try:
+        return bool(namecheck and namecheck.realm_name_hit(str(name or "")))
+    except Exception:   # noqa: BLE001: the relay checks again
+        return False
 
 
 def write_beacon(cfg):

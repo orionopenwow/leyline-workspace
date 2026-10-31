@@ -668,7 +668,9 @@ export function hopUi(env = window.__wenilla_env || {}, hop = window.__wuHop) {
   document.head.append(css);
   const name = String(env.hop_name || 'a community realm').slice(0, 32);
   const words = brand(env);
-  const home = () => location.assign(hopUrl('wrath', env));
+  const slowHome = () => location.assign(hopUrl('wrath', env));
+  // the same session back home (fastHop: POST /__gate?hop=wrath), else through the website as before
+  const home = () => (fastHopOn() ? fastHop('wrath', { env }).then((went) => { if (!went) slowHome(); }, slowHome) : slowHome());
   const hangout = !!hop.state.home;   // the official realm's Beacon: Wrath itself, the player's own login
   const bar = document.createElement('div');
   bar.id = 'wu-hop-bar';

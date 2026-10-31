@@ -1,0 +1,426 @@
+diff --git a/crates/benilla-app/src/golf/mod.rs b/crates/benilla-app/src/golf/mod.rs
+index 5edd5c12..0c004508 100644
+--- a/crates/benilla-app/src/golf/mod.rs
++++ b/crates/benilla-app/src/golf/mod.rs
+@@ -605,9 +605,25 @@ fn drain_bridge(
+     script: Option<NonSend<benilla_ui::script::UiScript>>,
+     cams: Query<&GlobalTransform, With<FlyCam>>,
+     mut ed: ResMut<editor::Editor>,
++    free_cam: crate::player::edit_mode::EditFactsParam,
+ ) {
+     let now = time.elapsed_secs();
+     let inbox = std::mem::take(&mut bridge().inbox);
++    // The course editor's free camera obeys edit mode's local bars (combat, death, a flight, an
++    // instance): refused at "editor on", and ended when one starts. With no character of ours (a
++    // server-less run) there is nothing to scout, and nothing is refused.
++    let facts = free_cam.facts();
++    let free_cam_refusal = facts
++        .unit_flags
++        .and_then(|_| crate::player::edit_mode::local_refusal(&facts));
++    if ed.on && free_cam_refusal.is_some() {
++        info!("golf: course editor closed: {}", free_cam_refusal.unwrap_or_default());
++        ed.on = false;
++        clear(&mut golf, &mut commands);
++        golf.course = None;
++        player.detached = false;
++        call_hud(script.as_deref(), "OnError(\"The course editor closed: not here, not now.\")");
++    }
+     // Leaving the world (a logout, a character switch) ends the session here too.
+     if !player.active && (golf.active() || ed.on) {
+         clear(&mut golf, &mut commands);
+@@ -731,6 +747,13 @@ fn drain_bridge(
+                     }
+                     continue;
+                 }
++                if w.get(1) == Some(&"on") {
++                    if let Some(why) = free_cam_refusal {
++                        info!("golf: course editor refused: {why}");
++                        call_hud(script.as_deref(), "OnError(\"You can't use the course editor here or now.\")");
++                        continue;
++                    }
++                }
+                 let origin = match (w.get(1).copied(), w.get(2).copied()) {
+                     (Some("on"), Some("keep")) => Some((golf.origin, golf.yaw)),
+                     (Some("on"), _) => Some(here()),
+diff --git a/crates/benilla-app/src/player.rs b/crates/benilla-app/src/player.rs
+index 7c7dee8b..a2e17dc9 100644
+--- a/crates/benilla-app/src/player.rs
++++ b/crates/benilla-app/src/player.rs
+@@ -16,7 +16,7 @@ use bevy::prelude::*;
+ use bevy::window::{CursorOptions, PrimaryWindow};
+ 
+ use crate::creature_anim::{move_flags, wrap_pi, BodyTwist, MovementState};
+-use crate::net::{ClientCommand, Embodied, NetCommands, TeleportMessage, WorldportMessage};
++use crate::net::{ClientCommand, Embodied, NetCommands, NetHandlerApp, TeleportMessage, WorldportMessage};
+ use crate::ui_script::InspectMode;
+ use benilla_assets::coords::wow_to_bevy;
+ use benilla_assets::AssetSet;
+@@ -273,6 +273,9 @@ impl Plugin for PlayerPlugin {
+         // Leyline edit mode (F7 / the Builder window): the free-fly detach before `control`, the
+         // camera kept near the parked body after it.
+         .init_resource::<edit_mode::EditMode>()
++        .init_resource::<edit_mode::EditGrant>()
++        .net_handler(benilla_protocol::SessionEventKind::Chat, on_edit_grant)
++        .net_handler(benilla_protocol::SessionEventKind::Disconnected, on_edit_session_end)
+         .init_resource::<edit_mode::EditGrab>()
+         .init_resource::<edit_mode::EditHandleHover>()
+         .init_resource::<camera::SelfModelHidden>()
+@@ -467,3 +470,23 @@ fn guard_non_finite_view(
+         }
+     }
+ }
++
++/// `SMSG_MESSAGECHAT`: the realm's edit-mode grant lines ([`edit_mode::EditGrant`]).
++fn on_edit_grant(
++    In(ev): In<benilla_protocol::SessionEvent>,
++    self_guid: Res<crate::net::SelfGuid>,
++    time: Res<Time<Real>>,
++    mut grant: ResMut<edit_mode::EditGrant>,
++) {
++    if let benilla_protocol::SessionEvent::Chat(m) = ev {
++        edit_mode::take_grant(&m, self_guid.0, time.elapsed_secs_f64(), &mut grant);
++    }
++}
++
++/// A session end drops the edit-mode grant with everything else the realm said.
++fn on_edit_session_end(
++    In(_): In<benilla_protocol::SessionEvent>,
++    mut grant: ResMut<edit_mode::EditGrant>,
++) {
++    grant.revoke();
++}
+diff --git a/crates/benilla-app/src/player/edit_mode.rs b/crates/benilla-app/src/player/edit_mode.rs
+index e0f92d6a..6fda3a2a 100644
+--- a/crates/benilla-app/src/player/edit_mode.rs
++++ b/crates/benilla-app/src/player/edit_mode.rs
+@@ -6,10 +6,20 @@
+ //! nothing: building itself goes through the realm's `.build` commands, which check every change.
+ //! The camera stays within [`EDIT_RADIUS`] of the body, so edit mode is a building view and not a
+ //! way to scout. Off, the camera seats back on the body as usual.
++//!
++//! The client itself decides whether the camera may come out, whatever the CVar says
++//! ([`edit_refusal`]): only while the realm's grant is fresh ([`EditGrant`]: the realm's
++//! `wubuild`/`snap` `on` and its `keep` refreshes, OVMOD addon lines the server alone can send, as
++//! the realm drops every OVMOD line a player sends before it reaches anyone), and never in combat,
++//! dead or a ghost, on a flight, or on a dungeon, raid, battleground or arena map (`Map.dbc`
++//! `InstanceType`). A CVar set any other way (`/run SetCVar`, `/console`) is put back to `0` and
++//! the camera stays on (or snaps back to) the body. F7 with no grant asks the realm through the
++//! edit HUD (`E.Set(true)`) instead of flipping the CVar.
+ 
+ use super::camera::FlyCam;
+ use super::Player;
+ use crate::cvars::Cvars;
++use crate::net::{ObjectStore, SelfPlayer};
+ use bevy::prelude::*;
+ 
+ /// The CVar the Builder window and F7 share; the UI hides itself while it reads `1`.
+@@ -25,13 +35,162 @@ pub(crate) struct EditMode {
+     pub(crate) on: bool,
+ }
+ 
+-/// Follows the CVar (and F7) into [`EditMode`] and the free-fly detach. Runs before `control`.
++/// The addon prefix of the realm's grant: Open Mod API traffic (`ov_modapi.lua`), which the realm
++/// never relays from a player, so a line under it with our own guid as sender came from the server.
++pub(crate) const GRANT_PREFIX: &str = "OVMOD";
++/// The realm's module and message for edit mode (`ov_build.lua`, `X.snapSend`).
++const GRANT_HEAD: &str = "wubuild\tsnap\t1/1\t";
++/// How long one grant (or its last `keep`) holds, seconds. The realm refreshes it every
++/// `X.SNAP_KEEP` (10 s) while edit mode is on, so a missed refresh or two never drops the camera.
++pub(crate) const GRANT_LEASE_SECS: f64 = 30.0;
++
++/// The realm's say on edit mode, server-authoritative: the time (real seconds) the grant runs to.
++#[derive(Resource, Default, Clone, Copy, Debug, PartialEq)]
++pub(crate) struct EditGrant {
++    until: Option<f64>,
++}
++
++impl EditGrant {
++    pub(crate) fn fresh(&self, now: f64) -> bool {
++        self.until.is_some_and(|t| now < t)
++    }
++    pub(crate) fn revoke(&mut self) {
++        self.until = None;
++    }
++    /// One grant line from the realm: `on` starts a lease, `keep` extends a live one only, `off`
++    /// (with or without its reason) ends it.
++    fn apply(&mut self, line: GrantLine, now: f64) {
++        match line {
++            GrantLine::On => self.until = Some(now + GRANT_LEASE_SECS),
++            GrantLine::Keep if self.fresh(now) => self.until = Some(now + GRANT_LEASE_SECS),
++            GrantLine::Keep => {}
++            GrantLine::Off => self.revoke(),
++        }
++    }
++}
++
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++enum GrantLine {
++    On,
++    Keep,
++    Off,
++}
++
++/// Reads an addon line's wire text (`prefix` TAB payload) as a grant line, if it is one.
++fn grant_line(text: &[u8]) -> Option<GrantLine> {
++    let text = std::str::from_utf8(text).ok()?;
++    let rest = text.strip_prefix(GRANT_PREFIX)?.strip_prefix('\t')?;
++    let data = rest.strip_prefix(GRANT_HEAD)?;
++    match data {
++        "on" => Some(GrantLine::On),
++        "keep" => Some(GrantLine::Keep),
++        d if d == "off" || d.starts_with("off,") => Some(GrantLine::Off),
++        _ => None,
++    }
++}
++
++/// One `SMSG_MESSAGECHAT` line for the grant. Only `LANG_ADDON` lines whose sender is our own
++/// character count (the realm sends them as us to us); the realm drops every OVMOD line a player
++/// sends, a whisper to themselves included, so no player can make one arrive.
++pub(crate) fn take_grant(
++    m: &benilla_protocol::messages::ChatMessage,
++    self_guid: Option<u64>,
++    now: f64,
++    grant: &mut EditGrant,
++) {
++    if !m.is_addon() || self_guid.is_none_or(|g| g != m.sender_guid) {
++        return;
++    }
++    let text = m.addon_bytes.as_deref().unwrap_or(m.text.as_bytes());
++    if let Some(line) = grant_line(text) {
++        grant.apply(line, now);
++        debug!("edit mode: realm grant {line:?}");
++    }
++}
++
++/// What the client knows of us that bars edit mode, with nothing filled for an unknown.
++#[derive(Clone, Copy, Debug, Default)]
++pub(crate) struct EditFacts {
++    /// Our `UNIT_FIELD_FLAGS`, `None` with no self descriptor yet.
++    pub(crate) unit_flags: Option<u32>,
++    pub(crate) dead_or_ghost: bool,
++    /// The current map's `Map.dbc` `InstanceType` (`Some(0)` for a map with no row), `None` when
++    /// the map or the catalog is not known.
++    pub(crate) instance_type: Option<u32>,
++}
++
++/// Why the free camera may not come out now, or `None`. Fails closed on anything unknown.
++pub(crate) fn local_refusal(f: &EditFacts) -> Option<&'static str> {
++    let Some(flags) = f.unit_flags else {
++        return Some("no character yet");
++    };
++    if flags & super::UNIT_FLAG_IN_COMBAT != 0 {
++        return Some("in combat");
++    }
++    if f.dead_or_ghost {
++        return Some("dead");
++    }
++    if flags & super::UNIT_FLAG_TAXI_FLIGHT != 0 {
++        return Some("on a flight");
++    }
++    match f.instance_type {
++        None => Some("map unknown"),
++        // 1 party, 2 raid, 3 battleground, 4 arena: every instanced map.
++        Some(t) if t != 0 => Some("in an instance"),
++        Some(_) => None,
++    }
++}
++
++/// [`local_refusal`], then the realm's grant.
++pub(crate) fn edit_refusal(f: &EditFacts, grant: &EditGrant, now: f64) -> Option<&'static str> {
++    local_refusal(f).or_else(|| (!grant.fresh(now)).then_some("the realm hasn't allowed it"))
++}
++
++/// The facts for [`local_refusal`] from the self descriptor and the map.
++pub(crate) fn edit_facts(
++    store: Option<&ObjectStore>,
++    map: Option<u32>,
++    maps: Option<&benilla_assets::MapCatalogRes>,
++) -> EditFacts {
++    EditFacts {
++        unit_flags: store.map(|s| s.0.unit_flags()),
++        dead_or_ghost: store.is_some_and(|s| s.0.is_dead_or_ghost()),
++        instance_type: map.and_then(|m| maps.map(|c| c.0.instance_type(m).unwrap_or(0))),
++    }
++}
++
++/// The reads behind [`EditFacts`], for every free building camera (edit mode, the golf editor).
++#[derive(bevy::ecs::system::SystemParam)]
++pub(crate) struct EditFactsParam<'w, 's> {
++    self_q: Query<'w, 's, &'static ObjectStore, With<SelfPlayer>>,
++    map: Option<Res<'w, benilla_world::world_map::CurrentMap>>,
++    maps: Option<Res<'w, benilla_assets::MapCatalogRes>>,
++}
++
++impl EditFactsParam<'_, '_> {
++    pub(crate) fn facts(&self) -> EditFacts {
++        edit_facts(self.self_q.iter().next(), self.map.as_deref().map(|m| m.0), self.maps.as_deref())
++    }
++}
++
++/// Everything [`sync_edit_mode`] reads to decide whether edit mode may be on.
++#[derive(bevy::ecs::system::SystemParam)]
++pub(super) struct EditGate<'w, 's> {
++    grant: ResMut<'w, EditGrant>,
++    time: Res<'w, Time<Real>>,
++    facts: EditFactsParam<'w, 's>,
++}
++
++/// Follows the CVar (and F7) into [`EditMode`] and the free-fly detach, behind [`edit_refusal`].
++/// Runs before `control`.
+ pub(super) fn sync_edit_mode(
+     keys: Res<ButtonInput<KeyCode>>,
+     capture: Res<crate::ui_script::UiKeyboardCapture>,
+     cvars: Option<ResMut<Cvars>>,
+     mut edit: ResMut<EditMode>,
+     mut player: ResMut<Player>,
++    mut gate: EditGate,
++    script: Option<NonSend<benilla_ui::script::UiScript>>,
+ ) {
+     let Some(mut cvars) = cvars else {
+         return;
+@@ -46,12 +205,41 @@ pub(super) fn sync_edit_mode(
+         if edit.on {
+             edit.on = false;
+         }
++        gate.grant.revoke();
+         return;
+     }
++    let now = gate.time.elapsed_secs_f64();
++    let facts = gate.facts.facts();
++    // Combat, death, a flight or an instance also ends the realm's grant: the next edit mode needs
++    // a fresh yes, not the rest of an old lease.
++    if local_refusal(&facts).is_some() {
++        gate.grant.revoke();
++    }
++    let refusal = edit_refusal(&facts, &gate.grant, now);
+     let mut want = cvar_on;
+     if !capture.typing && keys.just_pressed(EDIT_KEY) {
+-        want = !want;
+-        let _ = cvars.set(EDIT_CVAR, if want { "1" } else { "0" });
++        if edit.on || cvar_on {
++            want = false;
++            let _ = cvars.set(EDIT_CVAR, "0");
++        } else if refusal.is_none() {
++            want = true;
++            let _ = cvars.set(EDIT_CVAR, "1");
++        } else {
++            // Not allowed yet: the edit HUD asks the realm, and sets the CVar on its yes.
++            call_hud(
++                script.as_deref(),
++                "local E = WrathUnleashedUI and WrathUnleashedUI.EditMode; if E and E.Set then E.Set(true) end",
++            );
++        }
++    }
++    if want {
++        if let Some(why) = refusal {
++            // Set by hand (`/run SetCVar`, `/console`), or the grant ran out: back to 0, and the
++            // camera stays on (or goes back to) the body.
++            want = false;
++            let _ = cvars.set(EDIT_CVAR, "0");
++            info!("edit mode refused: {why}");
++        }
+     }
+     if want != edit.on {
+         edit.on = want;
+@@ -1253,6 +1441,101 @@ fn draw_handles(gizmos: &mut Gizmos, at: Vec3, len: f32, hot: Option<HandleKind>
+ mod tests {
+     use super::*;
+ 
++    fn open_world() -> EditFacts {
++        EditFacts { unit_flags: Some(0), dead_or_ghost: false, instance_type: Some(0) }
++    }
++
++    #[test]
++    fn only_the_realms_snap_lines_are_grant_lines() {
++        assert_eq!(grant_line(b"OVMOD\twubuild\tsnap\t1/1\ton"), Some(GrantLine::On));
++        assert_eq!(grant_line(b"OVMOD\twubuild\tsnap\t1/1\tkeep"), Some(GrantLine::Keep));
++        assert_eq!(grant_line(b"OVMOD\twubuild\tsnap\t1/1\toff,combat,You're in combat."), Some(GrantLine::Off));
++        assert_eq!(grant_line(b"OVMOD\twubuild\tsnap\t1/1\toff,done,"), Some(GrantLine::Off));
++        // another prefix (a player's own addon whisper), another module or message, a split line
++        assert_eq!(grant_line(b"OVMODX\twubuild\tsnap\t1/1\ton"), None);
++        assert_eq!(grant_line(b"LLGRANT\twubuild\tsnap\t1/1\ton"), None);
++        assert_eq!(grant_line(b"OVMOD\twubuild\tcmd\t1/1\tsnap on"), None);
++        assert_eq!(grant_line(b"OVMOD\twuden\tsnap\t1/1\ton"), None);
++        assert_eq!(grant_line(b"OVMOD\twubuild\tsnap\t1/2\ton"), None);
++        assert_eq!(grant_line(b"OVMOD\twubuild\tsnap\t1/1\tonx"), None);
++    }
++
++    fn line(language: u32, sender: u64, text: &str) -> benilla_protocol::messages::ChatMessage {
++        benilla_protocol::messages::ChatMessage {
++            chat_type: benilla_protocol::messages::CHAT_MSG_WHISPER,
++            language,
++            sender_guid: sender,
++            target_guid: sender,
++            sender_name: None,
++            channel: None,
++            text: text.into(),
++            chat_tag: 0,
++            achievement: 0,
++            addon_bytes: (language == benilla_protocol::messages::LANGUAGE_ADDON).then(|| text.as_bytes().to_vec()),
++        }
++    }
++
++    /// Only an addon line from our own guid (the realm's shape) grants; a spoken line with the same
++    /// words, another sender, or no character yet does not.
++    #[test]
++    fn only_an_addon_line_from_ourselves_grants() {
++        let addon = benilla_protocol::messages::LANGUAGE_ADDON;
++        let on = "OVMOD\twubuild\tsnap\t1/1\ton";
++        let mut g = EditGrant::default();
++        take_grant(&line(0, 7, on), Some(7), 0.0, &mut g);
++        assert!(!g.fresh(0.0), "a spoken line is not addon traffic");
++        take_grant(&line(addon, 8, on), Some(7), 0.0, &mut g);
++        assert!(!g.fresh(0.0), "another sender");
++        take_grant(&line(addon, 7, on), None, 0.0, &mut g);
++        assert!(!g.fresh(0.0), "no character yet");
++        take_grant(&line(addon, 7, on), Some(7), 0.0, &mut g);
++        assert!(g.fresh(0.0));
++        take_grant(&line(addon, 7, "OVMOD\twubuild\tsnap\t1/1\toff,done,"), Some(7), 1.0, &mut g);
++        assert!(!g.fresh(1.0));
++    }
++
++    #[test]
++    fn the_grant_is_a_lease_that_keep_extends_and_off_ends() {
++        let mut g = EditGrant::default();
++        assert!(!g.fresh(0.0));
++        // a keep with no grant starts nothing
++        g.apply(GrantLine::Keep, 1.0);
++        assert!(!g.fresh(1.0));
++        g.apply(GrantLine::On, 10.0);
++        assert!(g.fresh(10.0 + GRANT_LEASE_SECS - 0.1));
++        assert!(!g.fresh(10.0 + GRANT_LEASE_SECS));
++        g.apply(GrantLine::Keep, 30.0);
++        assert!(g.fresh(30.0 + GRANT_LEASE_SECS - 0.1));
++        g.apply(GrantLine::Off, 31.0);
++        assert!(!g.fresh(31.0));
++        // an expired grant is not revived by a late keep
++        g.apply(GrantLine::On, 100.0);
++        g.apply(GrantLine::Keep, 100.0 + GRANT_LEASE_SECS + 1.0);
++        assert!(!g.fresh(100.0 + GRANT_LEASE_SECS + 1.0));
++    }
++
++    #[test]
++    fn edit_mode_needs_the_grant_and_a_quiet_open_world_body() {
++        let mut g = EditGrant::default();
++        assert_eq!(edit_refusal(&open_world(), &g, 0.0), Some("the realm hasn't allowed it"));
++        g.apply(GrantLine::On, 0.0);
++        assert_eq!(edit_refusal(&open_world(), &g, 1.0), None);
++        let combat = EditFacts { unit_flags: Some(super::super::UNIT_FLAG_IN_COMBAT), ..open_world() };
++        assert_eq!(edit_refusal(&combat, &g, 1.0), Some("in combat"));
++        let taxi = EditFacts { unit_flags: Some(super::super::UNIT_FLAG_TAXI_FLIGHT), ..open_world() };
++        assert_eq!(edit_refusal(&taxi, &g, 1.0), Some("on a flight"));
++        let dead = EditFacts { dead_or_ghost: true, ..open_world() };
++        assert_eq!(edit_refusal(&dead, &g, 1.0), Some("dead"));
++        for t in 1..=4 {
++            let inst = EditFacts { instance_type: Some(t), ..open_world() };
++            assert_eq!(edit_refusal(&inst, &g, 1.0), Some("in an instance"), "InstanceType {t}");
++        }
++        // unknowns fail closed
++        let no_map = EditFacts { instance_type: None, ..open_world() };
++        assert_eq!(edit_refusal(&no_map, &g, 1.0), Some("map unknown"));
++        assert_eq!(edit_refusal(&EditFacts::default(), &g, 1.0), Some("no character yet"));
++    }
++
+     #[test]
+     fn the_camera_stays_within_the_radius() {
+         let c = Vec3::new(10.0, 0.0, 0.0);

@@ -2,7 +2,7 @@
 -- ov_build.lua under a fake mod-ale: roles, build areas, the catalog check, spawn / move / turn / undo / delete /
 -- clear, the limits and rates, save / share / load codes, the GM-only commands, props coming back after a grid
 -- unload and a restart, the OVMOD channel, and no game-brand names in anything players saw. 2026-10-31: edit mode's
--- gate (.build snap: every reason it says no, the root, every reason it ends edit mode) and undo's re-checks. M3: plots and their
+-- gate (.build snap: every reason it says no, the root, every reason it ends edit mode, the client's keep lease) and undo's re-checks. M3: plots and their
 -- roles and GM tools, budgets and trust tiers, multi-select and group ops, copy and paste, exact numbers and size,
 -- prefabs and the OVBuild functions, the op log and GM rollback, and a restart reading all of it back.
 local file = arg[1] or "realm/custom/lua_scripts/ov_build.lua"
@@ -1633,9 +1633,27 @@ do
     forced(function() clock = clock + 601 end, function() end, "timeout", "10 minutes idle")
     cmd(wren, "build snap on")
     clock = clock + 400; cmd(wren, "build where"); clock = clock + 400; poll()
-    check("snap: a build command keeps it on (not idle)", lastSnap(wren) == "on" and wren.rooted)
+    check("snap: a build command keeps it on (not idle)", (lastSnap(wren) == "on" or lastSnap(wren) == "keep") and wren.rooted
+        and T.X.snapped[900] ~= nil)
     wren.hp = 120; poll(); wren.hp = 110; poll()
     check("snap: a heal raises the mark, a hit after it ends it", lastSnap(wren):find("^off,damage,"))
+    -- the client's lease (wotlk-client-20261031a): "keep" every X.SNAP_KEEP seconds while it is on, never after off
+    cmd(wren, "build snap on")
+    local function keeps() local n = 0; for _, a in ipairs(wren.addon) do if a[2] == "wubuild\tsnap\t1/1\tkeep" then n = n + 1 end end; return n end
+    local k0 = keeps()
+    poll()
+    check("snap: no keep before X.SNAP_KEEP seconds", keeps() == k0 and lastSnap(wren) == "on")
+    clock = clock + T.X.SNAP_KEEP; poll()
+    check("snap: a keep after X.SNAP_KEEP seconds, as an OVMOD whisper to the player", keeps() == k0 + 1
+        and wren.addon[#wren.addon][1] == "OVMOD")
+    poll()
+    check("snap: one keep per X.SNAP_KEEP seconds", keeps() == k0 + 1)
+    clock = clock + T.X.SNAP_KEEP; poll()
+    check("snap: and the next one", keeps() == k0 + 2)
+    check("snap: the lease outlasts two missed keeps (client 30 s, realm 10 s)", T.X.SNAP_KEEP * 3 <= 30)
+    cmd(wren, "build snap off")
+    clock = clock + T.X.SNAP_KEEP; poll()
+    check("snap: no keep once it is off", keeps() == k0 + 2 and lastSnap(wren) == "off,done,")
     cmd(wren, "build snap on")
     events[4](4, wren)
     check("snap: logout forgets it", not T.X.snapped[900])

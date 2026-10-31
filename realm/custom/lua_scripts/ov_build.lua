@@ -3941,6 +3941,7 @@ end
 -- EditMode.lua asks with ".build snap on" (the channel's cmd) and sets the client's leylineEditMode CVar only on
 -- the answer "on"; F7 again, Done or the addon's own checks send ".build snap off".
 --   server -> client   snap   on                    edit mode may start; the character is rooted where it stands
+--                      snap   keep                  every X.SNAP_KEEP seconds while it is on: the client's lease
 --                      snap   off,<why>,<text>      not now, or not any more: the addon leaves edit mode
 -- why: off (building is off here), role (not a builder), dead, taxi, flying, instance, combat, area (outside the
 -- build areas), damage, timeout (10 minutes without a build command), reload (the scripts were reloaded), done.
@@ -3950,10 +3951,14 @@ end
 -- the rest (a poll over the players in edit mode only; damage = health lower than at the last look, which also
 -- catches falls and lava; a creature or player hit is caught at once by the combat event). Every change made in
 -- edit mode is still a .build command checked as always: the gate decides only who gets the camera.
--- Not closed here: the CVar is the client's own, so a player who sets it by hand gets the camera without asking
--- (the addon turns it straight back off when it didn't ask); only the client asking the realm itself closes that.
-X.snapped = {}   -- [guid] = { name, hp (health at the last look), at (last build command) }
-X.SNAP_IDLE, X.SNAP_POLL_MS = 600, 1000
+-- The browser client (wotlk-client-20261031a) holds the camera to this too, whatever the CVar says: it engages only
+-- while the client has this realm's "snap on" (or a "keep" since) from the last 30 seconds, and never in combat,
+-- dead, on a flight or on an instance map; a CVar set by hand (/run SetCVar, /console) goes straight back to 0.
+-- These lines are OVMOD addon whispers from the player to the player, which only the realm can make arrive:
+-- ov_modapi.lua drops every OVMOD line a player sends (a whisper to themselves included) before the core relays it.
+-- So the "keep" below is what keeps the camera out: without it the client ends edit mode after 30 seconds.
+X.snapped = {}   -- [guid] = { name, hp (health at the last look), at (last build command), kept (last "keep") }
+X.SNAP_IDLE, X.SNAP_POLL_MS, X.SNAP_KEEP = 600, 1000, 10
 X.SNAP_NO = {
     off = "Building is off on this realm.",
     role = "Only builders can use edit mode.",
@@ -4019,7 +4024,7 @@ function X.snapCommand(player, what)
         X.snapSend(player, "off," .. why .. "," .. X.SNAP_NO[why])
         return say(player, X.SNAP_NO[why])
     end
-    X.snapped[guid] = { name = player:GetName(), hp = tonumber(try(player, "GetHealth")), at = os.time() }
+    X.snapped[guid] = { name = player:GetName(), hp = tonumber(try(player, "GetHealth")), at = os.time(), kept = os.time() }
     try(player, "SetRooted", true)
     X.snapSend(player, "on")
     if not X.snapTimer and CreateLuaEvent then
@@ -4039,7 +4044,12 @@ function X.snapCheck(player, why)
         s.hp = hp or s.hp
     end
     if not why and os.time() - s.at >= X.SNAP_IDLE then why = "timeout" end
-    if why then X.snapEnd(player, why) end
+    if why then return X.snapEnd(player, why) end
+    -- still allowed: renew the client's lease
+    if os.time() - (s.kept or 0) >= X.SNAP_KEEP then
+        s.kept = os.time()
+        X.snapSend(player, "keep")
+    end
 end
 
 function X.snapPoll()

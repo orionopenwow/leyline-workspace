@@ -1446,6 +1446,18 @@ check("Game mods: Play it on lists the live realms whose listing names the mod (
       and "Sleepy" not in g2 and "No live realm runs it right now" in bump and 'href="/wrath?go=mode:bumper-balls"' not in bump, golf[-400:])
 HB.hub.realm_rows = real_rows
 
+# ---- realms declare their mods (docs/GAME-MODS.md): "Uses 3 mods" on realm rows, and the launcher line
+rmh = HB.hub.realm_mods_html({"mods": [{"id": "mode:minigolf"}, {"id": "up:skada", "version": "r1"}, {"id": "https://evil.example/x"},
+                                       {"id": "mod:unknown-one"}]})
+check("realm row: Uses N mods, named (ids the Workshop doesn't know by their id), the client ones marked, Get the launcher",
+      "<summary>Uses 3 mods</summary>" in rmh and "<li>Minigolf</li>" in rmh and "Skada <small>r1</small> <span class=\"hb-rl-mg\">in your game</span>" in rmh
+      and "<li>unknown-one</li>" in rmh and "evil" not in rmh and "to add them automatically when you join" in rmh, rmh)
+check("realm row: no list, no line", HB.hub.realm_mods_html({}) == "" and HB.hub.realm_mods_html({"mods": "mod:x"}) == "")
+rl = req("/wrath/leyline-preview/realms")[2].decode()
+home = re.search(r'<li class="hb-rl home.*?</li>\s*(?=<li|</ul>)', rl, re.S)
+check("realm list: our realm says which mods it uses (from its own config)", home and "<summary>Uses " in home.group(0)
+      and "<li>Minigolf</li>" in home.group(0), home.group(0)[:300] if home else rl[:200])
+
 srv.shutdown()
 shutil.rmtree(DATA, ignore_errors=True)
 shutil.rmtree(HUBDIR, ignore_errors=True)

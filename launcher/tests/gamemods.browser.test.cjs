@@ -127,3 +127,85 @@ test('the official realm without a list from the site: its own (modes it runs, W
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+// ------------------------------------------------------------------ joining a realm: the one-click offer
+async function playOn(page, name) {
+  await page.click('.nav[data-page="realms"]');
+  await page.waitForFunction(() => document.querySelectorAll('#rl-list .realm-card').length > 0);
+  const card = page.locator('#rl-list .realm-card', { has: page.locator(`.name:text-is("${name}")`) });
+  await card.locator('.rl-play').click();
+  return card;
+}
+
+test('realm cards say how many mods a realm uses (bad ids never counted)', async () => {
+  const { page, errors } = await open();
+  await page.click('.nav[data-page="realms"]');
+  await page.waitForFunction(() => document.querySelectorAll('#rl-list .realm-card .rl-mods').length === 3);
+  const card = page.locator('#rl-list .realm-card', { has: page.locator('.name:text-is("Frost Haven")') });
+  assert.equal(await card.locator('.rl-mods').textContent(), 'Uses 4 mods');
+  assert.equal(await card.locator('.rl-mods').getAttribute('title'), 'Coin Dash, Dalaran Dice 0.1.0, Hud, not-in-catalog');
+  await shot(page, 'launcher-realms-mods');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('join: one offer for the client mods this game lacks; "Get them and play" installs only those, then plays', async () => {
+  const { page, errors } = await open();
+  await playOn(page, 'Frost Haven');
+  await page.waitForSelector('#gm-dlg[open]');
+  await shot(page, 'launcher-join-offer');
+  assert.equal(await page.textContent('#gm-dlg h3'), 'Frost Haven uses 2 mods your game doesn\'t have');
+  assert.deepEqual(await page.$$eval('#gm-dlg .mk-list li', (l) => l.map((x) => x.textContent)), ['Dalaran Dice', 'Leyline addons (game modes, golf)'],
+    'realm-only (Hud) and unknown ids (not in the catalog, a URL) are never offered');
+  assert.equal((await calls(page, 'mod_install')).length, 0, 'nothing before the click');
+  await page.click('#gm-dlg .btn.primary');
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'play_realm'));
+  assert.deepEqual((await calls(page, 'mod_install')).map((a) => a.project), ['mod:dalaran-dice']);
+  assert.equal((await calls(page, 'addons_install')).length, 1, 'the Leyline addons, for the modes');
+  const order = await page.evaluate(() => window.__calls.map(([c]) => c).filter((c) => ['mod_install', 'addons_install', 'play_realm'].includes(c)));
+  assert.deepEqual(order, ['mod_install', 'addons_install', 'play_realm'], 'installed first, then PLAY');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('join: Play without them installs nothing; Cancel stops PLAY; nothing to ask when the game has them', async () => {
+  let { page, errors } = await open();
+  await playOn(page, 'Frost Haven');
+  await page.waitForSelector('#gm-dlg[open]');
+  await page.click('#gm-dlg .btn:text-is("Play without them")');
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'play_realm'));
+  assert.equal((await calls(page, 'mod_install')).length + (await calls(page, 'addons_install')).length, 0);
+  assert.deepEqual(errors, []);
+  await page.close();
+  ({ page, errors } = await open());
+  await playOn(page, 'Frost Haven');
+  await page.waitForSelector('#gm-dlg[open]');
+  await page.click('#gm-dlg .btn:text-is("Cancel")');
+  await page.waitForTimeout(300);
+  assert.equal((await calls(page, 'play_realm')).length + (await calls(page, 'mod_install')).length, 0, 'Cancel: no PLAY, no install');
+  await page.close();
+  ({ page, errors } = await open({ addonsInstalled: true, installedMods: [{ key: 'mod:dalaran-dice', name: 'Dalaran Dice', version: '0.1.0', source: 'packaged',
+    update: null, in_catalog: true, enabled: true, files: [], addons: [], patches: [] }] }));
+  await playOn(page, 'Frost Haven');
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'play_realm'));
+  assert.equal(await page.locator('#gm-dlg[open]').count(), 0, 'no offer when nothing is missing');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('join: a native-code mod still asks its own one-time OK; saying no skips it and PLAY goes on', async () => {
+  const realms = [OFFICIAL, Object.assign({}, FROST, { name: 'Native Realm', mods: [{ id: 'mod:native' }, { id: 'mod:nohash' }] })];
+  const { page, errors } = await open({ realms, addonsInstalled: true });
+  await playOn(page, 'Native Realm');
+  await page.waitForSelector('#gm-dlg[open]');
+  assert.deepEqual(await page.$$eval('#gm-dlg .mk-list li', (l) => l.map((x) => x.textContent)), ['Native Thing'], 'a mod without a hash is never offered');
+  await page.click('#gm-dlg .btn.primary');
+  await page.waitForSelector('#native-dlg[open]');
+  assert.equal(await page.textContent('#native-name'), 'Native Thing');
+  await page.click('#native-no');
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'play_realm'));
+  assert.equal((await calls(page, 'mod_native_confirm')).length, 0);
+  assert.equal((await calls(page, 'mod_install')).length, 1, 'tried once, refused by the core until the OK');
+  assert.deepEqual(errors, []);
+  await page.close();
+});

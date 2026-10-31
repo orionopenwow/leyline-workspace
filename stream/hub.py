@@ -1163,11 +1163,41 @@ class Hub:
         cap = r.get("max") if isinstance(r.get("max"), int) and r.get("max") > 0 else 100
         fill = 0 if not live or not players else max(6, min(100, round(100 * players / cap)))
         bar = (f'<span class="hb-rl-bar" aria-hidden="true"><i style="width:{fill}%"></i></span>' if live else "")
+        mods = self.realm_mods_html(r)
         return (f'<li class="hb-rl{" home" if r.get("home") else ""}{" pv" if pv else ""}{"" if live else " off"}"{data} data-client="{client}" '
                 f'data-live="{1 if live else 0}" data-players="{players or 0}">{icon}<div class="hb-rl-n"><b>{e(name)}</b>'
                 + (f'<span class="hb-rl-k">{e(r["kind"])}</span>' if r.get("kind") else "") + f'{verchip}{"".join(bdg)}'
-                f'<span class="hb-rl-m">{e(" · ".join(meta))}</span></div>{count.replace("</div>", bar + "</div>", 1) if live else count}'
+                f'<span class="hb-rl-m">{e(" · ".join(meta))}</span>{mods}</div>{count.replace("</div>", bar + "</div>", 1) if live else count}'
                 f'<div class="hb-rl-a">{"".join(acts)}</div>{pv}</li>')
+
+    def mod_names(self) -> dict:
+        """id -> the name players see, for every mod a realm can list (Leyline Modes, Workshop, upstream addons)."""
+        names = {"mode:" + m["id"]: m.get("title") or m["id"] for m in self._modes() if isinstance(m, dict) and m.get("id")}
+        for p in self.workshop():
+            names[p["id"]] = clean_line(p.get("name"), 64) or p["id"]
+        for u in self.upstream():
+            names[u["id"]] = u["name"]
+        return names
+
+    def realm_mods_html(self, r: dict) -> str:
+        """A realm row's "Uses 3 mods" (docs/GAME-MODS.md): the list it declares, which ones go in your game, and that the
+        launcher adds those when you join. "" for a realm with no list. Ids the Workshop doesn't know are named as ids."""
+        mods = GM.clean_mods(r.get("mods")) if GM is not None else []
+        if not mods:
+            return ""
+        e = html.escape
+        names = self.mod_names()
+        by_id = {p["id"]: p for p in self.workshop()}
+        lis = []
+        for m in mods:
+            nm = neutral(names.get(m["id"])) or m["id"].split(":", 1)[1]
+            game = m["id"] in by_id and GM.side(m["id"], by_id[m["id"]]) != "realm" or m["id"].startswith("up:")
+            lis.append(f'<li>{e(nm)}' + (f' <small>{e(m["version"])}</small>' if m.get("version") else "")
+                       + (' <span class="hb-rl-mg">in your game</span>' if game else "") + "</li>")
+        n = len(mods)
+        return (f'<details class="hb-rl-mods"><summary>Uses {n} mod{"" if n == 1 else "s"}</summary><ul>{"".join(lis)}</ul>'
+                f'<p><a href="{e(self._download())}" rel="noopener noreferrer">Get the launcher</a> to add them automatically '
+                'when you join.</p></details>')
 
     def realm_section(self, got=None) -> str:
         """The sub hero: every server on the network, the home realm first, one click to play. "" without a list."""
@@ -3775,6 +3805,12 @@ background:var(--lk-surface-2);color:var(--lk-text-2)!important;font-size:13px;f
 .hb-pg .hb-grid.hb-big{grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:18px}
 .hb-big .hb-card h3{font-size:17px}
 .hb-sall{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:26px 0 0;padding-top:18px;border-top:1px solid var(--lk-border);color:var(--lk-muted);font-size:13.5px}
+/* a realm row's "Uses 3 mods" */
+.hb-rl-mods{display:block;margin:4px 0 0;font-size:12.5px;color:var(--lk-text-2)}
+.hb-rl-mods summary{cursor:pointer;display:inline-flex;padding:1px 9px;border-radius:999px;border:1px solid var(--lk-border-strong);color:var(--lk-text-2);font-weight:600;list-style:none}
+.hb-rl-mods summary::-webkit-details-marker{display:none}
+.hb-rl-mods ul{margin:6px 0 2px;padding-left:18px}.hb-rl-mods p{margin:2px 0 0;color:var(--lk-muted)}
+.hb-rl-mg{font-size:11px;color:var(--lk-ok)}
 /* Game mods (hub game_card) */
 .hb-gm .hb-meta{margin-top:8px}.hb-gm-soon{border-color:var(--lk-accent)!important;color:var(--lk-text)!important}
 .hb-gm-on{margin:8px 14px 0!important;font-size:13px!important;color:var(--lk-text)!important}.hb-gm-on b{color:var(--lk-ok)}

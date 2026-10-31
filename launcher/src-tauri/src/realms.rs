@@ -89,6 +89,69 @@ pub struct Realm {
     pub report_url: Option<String>,
     /// The official realm is temporary for now (the network listing's `sample` block says).
     pub temporary: bool,
+    /// The mods the realm runs or asks players to have (docs/GAME-MODS.md): ids only, checked by `parse_mods`. The UI
+    /// offers the client ones it finds in the Workshop catalog when the player joins (ui/gamemods.js); `mod_install`
+    /// looks each id up in the core's own catalog, so a realm can never name a URL or a file.
+    pub mods: Vec<RealmMod>,
+}
+
+/// One entry of a realm's mod list.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct RealmMod {
+    /// `mod:<id>`, `up:<slug>` or `mode:<id>` (`mod_id_ok`).
+    pub id: String,
+    pub version: Option<String>,
+}
+
+/// The most mods a realm lists (stream/gamemods.py MAX_MODS, the relay's listing.py).
+pub const MAX_MODS: usize = 32;
+
+/// A realm mod id, the rules of stream/gamemods.py ID_RE: `mod:` + a letter then 2-31 of a-z 0-9 -; `up:` + a-z 0-9
+/// then up to 63 of a-z 0-9 . _ -; `mode:` + a letter then 1-31 of a-z 0-9 -.
+pub fn mod_id_ok(s: &str) -> bool {
+    let tail = |t: &str, first: fn(char) -> bool, rest: fn(char) -> bool, lo: usize, hi: usize| {
+        let mut c = t.chars();
+        matches!(c.next(), Some(f) if first(f)) && (lo..=hi).contains(&(t.chars().count() - 1)) && c.all(rest)
+    };
+    let low = |c: char| c.is_ascii_lowercase();
+    let word = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-';
+    if let Some(t) = s.strip_prefix("mod:") {
+        return tail(t, low, word, 2, 31);
+    }
+    if let Some(t) = s.strip_prefix("mode:") {
+        return tail(t, low, word, 1, 31);
+    }
+    if let Some(t) = s.strip_prefix("up:") {
+        return tail(t, |c| c.is_ascii_lowercase() || c.is_ascii_digit(),
+                    |c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-'), 0, 63);
+    }
+    false
+}
+
+/// A version as stream/gamemods.py VERSION_RE: 1-32 of A-Z a-z 0-9 . + -, starting with a letter or digit.
+pub fn mod_version_ok(s: &str) -> bool {
+    (1..=32).contains(&s.len()) && s.chars().next().is_some_and(|c| c.is_ascii_alphanumeric())
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '+' | '-'))
+}
+
+/// A realm's mod list from a listing (strings or `{id, version}`), each id once, at most `MAX_MODS`.
+pub fn parse_mods(v: Option<&Value>) -> Vec<RealmMod> {
+    let mut out: Vec<RealmMod> = Vec::new();
+    for m in v.and_then(Value::as_array).map(|a| a.iter().take(MAX_MODS * 2).collect::<Vec<_>>()).unwrap_or_default() {
+        let (id, ver) = match m {
+            Value::String(s) => (s.as_str(), None),
+            Value::Object(_) => (m.get("id").and_then(Value::as_str).unwrap_or(""), m.get("version").and_then(Value::as_str)),
+            _ => continue,
+        };
+        if !mod_id_ok(id) || out.iter().any(|x| x.id == id) {
+            continue;
+        }
+        out.push(RealmMod { id: id.into(), version: ver.filter(|v| mod_version_ok(v)).map(String::from) });
+        if out.len() >= MAX_MODS {
+            break;
+        }
+    }
+    out
 }
 
 /// The network line: realms online, players online, bots (counted apart).
@@ -347,6 +410,7 @@ pub fn parse_community_in(v: &Value, all: bool) -> Vec<Realm> {
                 group: String::new(),
                 report_url: Some(format!("{REPORT_BASE}{rid}")),
                 temporary: false,
+                mods: parse_mods(r.get("mods")),
                 realm_id: Some(rid),
             })
         })
@@ -416,6 +480,9 @@ pub fn apply_sample(official: &mut Realm, doc: &Value) {
         .filter(|n| !n.trim().is_empty())
     {
         official.name = n;
+    }
+    if sm.get("mods").is_some() {
+        official.mods = parse_mods(sm.get("mods"));   // our realm's own list (stream/network.py, hub official_mods)
     }
     if let Some(t) = sm.get("temporary").and_then(Value::as_bool) {
         official.temporary = t;
@@ -713,6 +780,32 @@ mod tests {
         let l = fetch_network(&[&dead_url(), &dead_url()], d.path());
         assert!(l.from_cache && l.realms[0].official);
         assert_eq!(cached(d.path())[0].group, "official");
+    }
+
+    #[test]
+    fn realm_mod_lists() {
+        for ok in ["mod:dalaran-dice", "mode:minigolf", "up:skada", "up:pfquest-wotlk", "up:x", "mod:abc"] {
+            assert!(mod_id_ok(ok), "{ok}");
+        }
+        for bad in ["https://evil.example/x.zip", "mod:../x", "mod:A", "mod:ab", "mode:", "up:", "up:../x", "file:/x", "mod:dice\n",
+                    "MOD:dice", " mod:dice", "mode:golf/x"] {
+            assert!(!mod_id_ok(bad), "{bad:?}");
+        }
+        let v: Value = serde_json::from_str(r#"{"kind":"network","sample":{"name":"Wrath Unleashed","temporary":false,
+            "mods":[{"id":"mode:minigolf"},{"id":"mod:pings","version":"0.1.0"}]},
+            "realms":[{"name":"Frost","state":"live","profile":{"version":"3.3.5a","port":40002},
+            "community":{"realmId":"aaaaaaaaaaaaaaaa","relay":"relay.openvanilla.app"},
+            "mods":[{"id":"mode:coin-dash"},"up:skada",{"id":"mod:dalaran-dice","version":"../x"},{"id":"https://evil.example/x"},
+                    {"id":"mode:coin-dash"},7]}]}"#).unwrap();
+        let l = list_of(&v, false, None, None);
+        let ids = |r: &Realm| r.mods.iter().map(|m| (m.id.clone(), m.version.clone())).collect::<Vec<_>>();
+        let off = l.realms.iter().find(|r| r.official).unwrap();
+        assert_eq!(ids(off), vec![("mode:minigolf".into(), None), ("mod:pings".into(), Some("0.1.0".into()))]);
+        let frost = l.realms.iter().find(|r| r.name == "Frost").unwrap();
+        assert_eq!(ids(frost), vec![("mode:coin-dash".into(), None), ("up:skada".into(), None), ("mod:dalaran-dice".into(), None)]);
+        let many: Value = serde_json::json!((0..100).map(|i| format!("mod:m{i:03}")).collect::<Vec<_>>());
+        assert_eq!(parse_mods(Some(&many)).len(), MAX_MODS);
+        assert!(parse_mods(Some(&serde_json::json!("mod:x"))).is_empty());
     }
 
     #[test]

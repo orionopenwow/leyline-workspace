@@ -37,7 +37,9 @@ def rec(rid, name, live=True, players=0, bots=0, score=0.0, tags=(), region=None
 
 
 LISTING = {"schema": 1, "kind": "community", "realms": [
-    rec(BUSY, "Busy Den", players=30, bots=40, score=80.5, tags=["pvp", "bots"], region="na-east", lang="en", up=(99, 98)),
+    dict(rec(BUSY, "Busy Den", players=30, bots=40, score=80.5, tags=["pvp", "bots"], region="na-east", lang="en", up=(99, 98)),
+         mods=[{"id": "mode:coin-dash"}, {"id": "mod:dalaran-dice", "version": "0.1.0", "url": "https://evil.example/x"},
+               {"id": "https://evil.example/x.zip"}, "up:skada"]),
     rec(HANG, "Wrath Unleashed", players=1, bots=30, score=60, tags=["hangout"]),
     rec(PLAIN, "Plain Field", players=0, score=30, tags=["rp"], lang="de", est="eu", up=(70, 60), new=True, maxp=50),
     rec(FEAT, "Picked One", players=2, score=12, tags=["blizzlike", "pvp"], region="eu", build=5875, up=(95, 96)),
@@ -209,7 +211,13 @@ check("realms.json: the launcher's fields", c[BUSY]["connect"]["url"] == f"https
       and c[BUSY]["community"]["uptime"] == {"h24": 99, "d7": 98})
 check("realms.json: an old relay record gets safe defaults", c[OLD]["profile"]["build"] == 12340 and c[OLD]["tags"] == []
       and c[OLD]["community"]["uptime"] == {"h24": None, "d7": None})
-check("realms.json: the sample block for the launcher", doc["sample"] == {"name": "Leyline Sample Hangout", "temporary": True})
+check("realms.json: the sample block for the launcher (with our realm's mod list, the Leyline Modes first)",
+      {k: v for k, v in doc["sample"].items() if k != "mods"} == {"name": "Leyline Sample Hangout", "temporary": True}
+      and doc["sample"]["mods"][:4] == [{"id": "mode:minigolf"}, {"id": "mode:bumper-balls"}, {"id": "mode:coin-dash"},
+                                        {"id": "mode:community"}], doc["sample"])
+check("realms.json: a realm's mod list, checked (ids and versions only, a URL dropped); none for an old record",
+      c[BUSY]["mods"] == [{"id": "mode:coin-dash"}, {"id": "mod:dalaran-dice", "version": "0.1.0"}, {"id": "up:skada"}]
+      and c[OLD]["mods"] == [] and c[PLAIN]["mods"] == [], c[BUSY]["mods"])
 check("realms.json: never official, direct connect off", all(not r["official"] and not r["community"]["directConnect"]
                                                              for r in doc["realms"]))
 

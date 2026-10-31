@@ -40,6 +40,21 @@ import time
 import urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _clean_mods_fn():
+    """stream/gamemods.py clean_mods (a realm's mod list, docs/GAME-MODS.md), or a stand-in that keeps nothing."""
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("wu_net_gamemods", os.path.join(HERE, "gamemods.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.clean_mods
+    except Exception:   # noqa: BLE001
+        return lambda v: []
+
+
+clean_mods = _clean_mods_fn()
 SAMPLE_NAME = os.environ.get("WU_SAMPLE_NAME", "Leyline Sample Hangout")
 SAMPLE_NOTE = "temporary"
 REALM_ID_RE = re.compile(r"^[a-z2-7]{16}$")
@@ -215,6 +230,8 @@ def extra(rec: dict) -> dict:
         # site must not offer "Play in browser" (the host's "Browser players" switch: setup.py browser on|off)
         "warden": prof.get("warden") if isinstance(prof.get("warden"), bool) else None,
         "first_seen": com.get("firstSeen") if isinstance(com.get("firstSeen"), str) and len(com["firstSeen"]) <= 25 else "",
+        # the mods the realm runs or asks players to have (the host's `leyline mods`): checked ids and versions only
+        "mods": clean_mods(rec.get("mods")),
     }
 
 
@@ -342,6 +359,7 @@ def record_of(r: dict, sample: dict | None = None) -> dict:
                     "ruleset": r.get("ruleset", "custom"), "warden": r.get("warden")},
         "connect": {"kind": "web-signin", "url": f"https://{relay}/join/{rid}", "label": "Join this realm"},
         "rules": list(r.get("rules") or []),
+        "mods": list(r.get("mods") or []),
         "tags": list(r.get("tags") or []), "region": r.get("region"), "language": r.get("language"),
         "maxPlayers": r.get("max_players"),
         "status": {"url": f"https://{relay}/r/{rid}/status.json", "format": "openvanilla-status-1"},
@@ -365,7 +383,9 @@ def realms_json(realms: list[dict], ok: bool, sample_status: dict | None = None,
     doc = {"schema": 1, "kind": "network", "ok": ok,
            "updated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
            "network": totals(shown, sample_status),
-           "sample": {"name": (sample or {}).get("name") or SAMPLE_NAME, "temporary": bool((sample or {}).get("temporary", True))},
+           "sample": {"name": (sample or {}).get("name") or SAMPLE_NAME, "temporary": bool((sample or {}).get("temporary", True)),
+                      # our realm's mod list, from its own config (hub official_mods): the launcher's join offer reads it
+                      "mods": clean_mods((sample or {}).get("mods"))},
            "realms": [record_of(r, sample) for r in shown]}
     return (json.dumps(doc, ensure_ascii=False) + "\n").encode("utf-8")
 

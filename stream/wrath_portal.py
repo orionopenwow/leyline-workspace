@@ -1572,7 +1572,15 @@ def _players_text(players, bots, live) -> str:
 
 def sample_info() -> dict:
     """Our own realm on the network's lists (stream/network.py): the Leyline Sample Hangout, temporary, while
-    WU_SAMPLER=1 (realm/sampler.sh); before that, this realm under its own name."""
+    WU_SAMPLER=1 (realm/sampler.sh); before that, this realm under its own name. With its mod list (docs/GAME-MODS.md)."""
+    try:
+        mods = hub_mod.hub.official_mods() if hub_mod is not None else []
+    except Exception:   # noqa: BLE001
+        mods = []
+    return dict(_sample_info(), mods=mods)
+
+
+def _sample_info() -> dict:
     if SAMPLER:
         return {"name": SAMPLER_NAME, "temporary": True,
                 "blurb_html": f'<p>{html.escape(SAMPLER_NOTE)} (<a href="{GAME_FOLDER_HELP}">How to add your game folder</a>.)</p>'}

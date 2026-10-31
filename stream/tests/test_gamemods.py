@@ -48,6 +48,19 @@ check("clean_mods: never more than id and version", all(set(m) <= {"id", "versio
 PM = json.load(open(os.path.join(STREAM, "playmodes.json")))["modes"]
 live_realm = [m["id"] for m in PM if m["kind"] == "realm" and m["status"] == "live"]
 check("BUILTIN_MODES are playmodes.json's live realm modes", list(gm.BUILTIN_MODES) == live_realm, live_realm)
+kit = open(os.path.join(REPO, "hosting", "kit", "tools", "wuhost", "setup.py"), encoding="utf-8").read()
+m = re.search(r"^BUILTIN_MODES = \(([^)]*)\)", kit, re.M)
+check("the host kit's BUILTIN_MODES match", m and [x.strip().strip('"') for x in m.group(1).split(",") if x.strip()] == list(gm.BUILTIN_MODES),
+      m.group(0) if m else "missing")
+relay = open(os.path.join(REPO, "hosting", "relay", "wurelay", "listing.py"), encoding="utf-8").read()
+for name in ("ID_RE", "VERSION_RE"):
+    r = re.search(rf'^MOD_{name} = re\.compile\(r"([^"]+)"\)', relay, re.M)
+    check(f"the relay's MOD_{name} is gamemods.{name}", r and r.group(1) == getattr(gm, name).pattern, r.group(1) if r else "missing")
+for name in ("ID_RE", "VERSION_RE"):
+    r = re.search(rf'^MOD_{name} = re\.compile\(r"([^"]+)"\)', kit, re.M)
+    check(f"the host kit's MOD_{name} is gamemods.{name}", r and r.group(1) == getattr(gm, name).pattern, r.group(1) if r else "missing")
+check("the relay's MAX_MODS is gamemods.MAX_MODS", re.search(rf"^MAX_MODS = {gm.MAX_MODS}$", relay, re.M) is not None)
+
 CAT = [
     {"id": "mod:dalaran-dice", "source": "packaged", "name": "Dalaran Dice", "category": "sandbox", "kind": "both", "version": "0.1.0",
      "on_wrath": True, "download": "https://play.openvanilla.app/wrath/mods/dalaran-dice/download", "sha256": "ab" * 32},

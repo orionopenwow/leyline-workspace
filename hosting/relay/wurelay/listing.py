@@ -27,6 +27,8 @@ Listing quality (2026-10-29, all optional in the beat, so older agents keep work
   core ("azerothcore", ...), build (12340, ...), tags (blizzlike boosted custom pvp rp hangout bots), region
   (host-chosen: na-east na-west sa eu africa me asia oce), language ("en", "pt-BR"), max_players, and
   direct (the host allows direct connections). Each is checked here and dropped when it is not one of those.
+  Also mods (2026-10-31, docs/GAME-MODS.md): the mods the realm runs or asks players to have, [{"id", "version"?}]
+  (clean_mods), shown on realm cards and offered by the launcher on join; names only, never files.
 The listing works out the rest itself from the heartbeats: uptime over 24 h and 7 d (hourly buckets of the seconds
 a realm was seen online), "new" (first seen in the last 7 days), a coarse region estimate (the relay's own
 RELAY_REGION when the realm's tunnel answers in under 45 ms) and a fair score (players, bots counted apart and
@@ -68,6 +70,11 @@ BUILDS = {5875: ("1.12.1", "classic-1.12.1"), 8606: ("2.4.3", "tbc-2.4.3"), 1234
           15595: ("4.3.4", "cata-4.3.4"), 18414: ("5.4.8", "mop-5.4.8")}
 LANG_RE = re.compile(r"^[a-z]{2,3}(-[A-Z]{2})?$")
 NEAR_MS = 45
+# The realm's mod list (docs/GAME-MODS.md): ids and versions only, the same rules as stream/gamemods.py (its tests check
+# these three match). Never a URL, a file or code: a player's launcher only offers what its own Workshop catalog has.
+MOD_ID_RE = re.compile(r"^(?:mod:[a-z][a-z0-9-]{2,31}|up:[a-z0-9][a-z0-9._-]{0,63}|mode:[a-z][a-z0-9-]{1,31})$")
+MOD_VERSION_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.+-]{0,31}$")
+MAX_MODS = 32
 
 # The word filter (owner rules: player-facing text never names the game or its publisher, and no slurs). The same two
 # lists as stream/hostflow.py BANNED and SLURS (hosting/tests/test_network_listing.py checks they match): the relay and
@@ -141,6 +148,26 @@ def _filtered(v, n):
     return "" if has_slur(t) else unbrand(t)
 
 
+def clean_mods(v):
+    """[{"id", "version"?}]: checked ids, each once, at most MAX_MODS; anything else in an entry is dropped."""
+    out, seen = [], set()
+    for m in (v if isinstance(v, list) else [])[:MAX_MODS * 2]:
+        if isinstance(m, str):
+            m = {"id": m}
+        mid = m.get("id") if isinstance(m, dict) else None
+        if not isinstance(mid, str) or not MOD_ID_RE.fullmatch(mid) or mid in seen:
+            continue
+        seen.add(mid)
+        one = {"id": mid}
+        ver = m.get("version")
+        if isinstance(ver, str) and MOD_VERSION_RE.fullmatch(ver):
+            one["version"] = ver
+        out.append(one)
+        if len(out) >= MAX_MODS:
+            break
+    return out
+
+
 def clean_record(rec: dict) -> dict:
     rec = rec if isinstance(rec, dict) else {}
     raw_name = _text(rec.get("name"), 32)
@@ -165,6 +192,7 @@ def clean_record(rec: dict) -> dict:
         "max_players": _int_in(rec.get("max_players"), 1, 10000),
         "direct": rec.get("direct") is True,
         "signup": rec.get("signup") if rec.get("signup") in SIGNUPS else None,
+        "mods": clean_mods(rec.get("mods")),
     }
     return out
 
@@ -408,6 +436,7 @@ class Listing:
                         "note": join_note(self.signup_of(rid, rec))},
             "rules": rec["rules"],
             "features": [],
+            "mods": list(rec.get("mods") or []),
             "media": {"icon": None, "screenshots": [], "trailer": None},
             "discord": rec["discord"],
             "status": {"url": f"https://{relay}/r/{rid}/status.json", "format": "openvanilla-status-1"},

@@ -64,7 +64,7 @@
   // tools that change a setting of the kit's own realm: not for a linked server (its own settings), browser only on AzerothCore
   // and a Den has no player limit to set (the kit sets 10 for it, docs/DEN.md)
   const toolShown = (k, c) => !(c.linked && (k === "browser" || k === "max" || k === "signup")) && !(k === "browser" && (c.core || "azerothcore") !== "azerothcore")
-    && !(k === "max" && c.profile === DEN) && !(k === "dens" && c.profile !== DEN);
+    && !(k === "max" && LOCAL_IDS.includes(c.profile)) && !(k === "dens" && c.profile !== DEN);
   // the cores the host pack runs (stream/hub.py HOST_CORES): one click only for what the kit hosts today
   const CORES = [["azerothcore", "AzerothCore", "One click"], ["cmangos", "CMaNGOS", "One click"], ["trinitycore", "TrinityCore", "Coming"],
     ["vmangos", "vMaNGOS", "Coming"], ["own", "Your own", "Relay agent"]];
@@ -72,6 +72,7 @@
   const RULESETS = {
     vanillaplus: ["Vanilla+", "The original world to 60, made to stay up.", "Always on"],
     den: ["My Den", "A private room to build in: you and the friends you invite. No bots.", "Private"],
+    solo: ["Solo leveling", "Just you, levelling from 1 at 2x. Helper bots fill your group; dungeons scale to you.", "Private"],
     dalaran: ["Dalaran hangout", "Light: a one-time boost, no bots."],
     main: ["Classic levelling", "From level 1 at 3x, or a one-time boost."],
     brawl: ["Brawl", "Everyone starts at the top level."],
@@ -80,11 +81,18 @@
     "cmangos-2.4.3": ["Second era", "A plain realm on CMaNGOS."],
     "tcpp-4.3.4": ["Fourth era", "A plain realm on TrinityCore."],
   };
-  const ORDER = ["vanillaplus", "den", "dalaran", "main", "progression", "brawl", "cmangos-1.12.1", "cmangos-2.4.3", "tcpp-4.3.4"];
+  const ORDER = ["vanillaplus", "den", "solo", "dalaran", "main", "progression", "brawl", "cmangos-1.12.1", "cmangos-2.4.3", "tcpp-4.3.4"];
   // Make my Den (docs/DEN.md): the kit's "den" profile, private and sign-up from the invite link only, never bots, at
   // most 10 players (the kit writes those; host/profiles.rs starts it with --private). No bots or max-players choice.
   const DEN = "den";
   const DEN_FACTS = [["Private", "only friends with your invite link"], ["Sign-up", "from your invite link only"], ["No bots", "just you and your friends"]];
+  // Solo leveling (realm/profiles/solo.env, owner 2026-10-31): private like a Den, helper bots on, at most 5 players
+  const SOLO = "solo";
+  const SOLO_FACTS = [["Private", "just you, on this PC"], ["Helper bots", "type .recruit party to fill your group"], ["Dungeons", "scaled to the group you bring"]];
+  const FACTS = { den: DEN_FACTS, solo: SOLO_FACTS };
+  // the realms made for this PC alone (the play bar's rows): always private. One Host pack hosts one realm, so these
+  // two take turns on it (switchTo: the same realm, its accounts and characters kept)
+  const LOCAL_IDS = [DEN, SOLO];
   // the guide: short how-tos, each with its page on the website (lib.rs LINKS: hostdocs, alwayson)
   const GUIDE = [
     ["network", "How the Leyline network works", "Players reach your realm through the Leyline relay, by its realm id: nobody sees your address and you open no ports. Public realms are listed; private ones take an invite link. Leyline never ships game files.", "network"],
@@ -164,7 +172,8 @@
   let autoTab = true;
   let openTool = null;
   let timer = null;
-  let askedFor = null;        // a ruleset asked for from elsewhere (the play bar's My Den): picked once offered
+  let askedFor = null;        // a ruleset asked for from elsewhere (the play bar's My Den / Solo leveling): picked once offered
+  let askedHow = {};          // and how: { switch: from the other local realm, start: it didn't answer, why }
   const ui = {};
 
   const say = (text, kind) => { if (ui.status) { ui.status.textContent = text || ""; ui.status.className = "status hc-status" + (kind ? " " + kind : ""); } };
@@ -176,30 +185,60 @@
     if (want !== mode) { mode = want; build(); if (autoTab) { tab("main"); autoTab = false; } }
     if (mode === "console") { refresh(); applyWant(); } else loadSetup();
   });
-  // the play bar's My Den with no Den on this PC: the Host page with Make my Den picked
+  // the play bar's My Den / Solo leveling not on this PC: the Host page with that ruleset picked; the other one on
+  // this PC: switch to it; it didn't answer: say so beside Start
   document.addEventListener("leyline:host-ruleset", (e) => {
     askedFor = (e.detail && e.detail.profile) || null;
+    askedHow = (e.detail && typeof e.detail === "object" && e.detail) || {};
     tab("main");
     applyWant();
   });
+  const rsName = (id) => (RULESETS[id] || [id])[0];
   function applyWant() {
     if (!askedFor || !mode) return;
     const id = askedFor;
+    const how = askedHow || {};
     if (mode === "console") {
       askedFor = null;
-      const name = (kit && kit.realm && kit.realm.name) || "a realm";
-      if (id === DEN) say(`This Host pack runs ${name}. A Host pack hosts one realm, so your Den needs a Host pack of its own.`, "warn");
+      const cur = kit && kit.realm;
+      const name = (cur && cur.name) || "a realm";
+      if (cur && cur.profile === id) {
+        const running = !!(con && (con.services || []).some((x) => x.role === "world" && (x.state === "ok" || x.state === "starting")));
+        if (running) say(`${rsName(id)} is running. If PLAY didn't get in, try again in a minute.`, "warn");
+        else { say(`${how.why ? how.why + " " : ""}Press Start to start ${rsName(id)}.`, "warn"); if (ui.start) ui.start.focus(); }
+        return;
+      }
+      if (cur && LOCAL_IDS.includes(cur.profile) && LOCAL_IDS.includes(id)) { switchTo(id, cur); return; }
+      if (LOCAL_IDS.includes(id)) say(`This PC runs ${name}, and one PC hosts one realm at a time, so ${rsName(id)} can't run beside it.`, "warn");
       return;
     }
     if (!offers) return;    // loadSetup calls again once the rulesets are in
     askedFor = null;
     const o = offers.find((x) => x.id === id);
-    if (!o) { say("Your Host pack has no Den yet: update it under Host pack & settings.", "warn"); return; }
+    if (!o) { say(`Your Host pack has no ${rsName(id)} yet: update it under Host pack & settings.`, "warn"); return; }
     if (o.note) { say(o.note, "warn"); return; }
     pick(id).then(() => {
       const b = ui.rules && ui.rules.querySelector(`.hc-rs[data-profile="${id}"]`);
       if (b) { b.scrollIntoView({ block: "nearest" }); b.focus(); }
     });
+  }
+
+  // My Den <-> Solo leveling on this PC's one realm: asked first, then the kit runs the other ruleset (no window)
+  async function switchTo(id, cur) {
+    const to = rsName(id), from = cur.name || rsName(cur.profile);
+    if (!(await ask(`Switch to ${to}?`, `This PC runs one realm at a time, and it runs ${from} now. ${to} takes its place: your account and characters stay, and you can switch back any time. Make a new character for ${to}. It takes a few minutes.`, `Switch to ${to}`))) {
+      say(`Kept ${from}.`);
+      return;
+    }
+    say(`Switching to ${to}…`);
+    try {
+      const prof = await call("host_profiles").catch(() => null);
+      const o = Array.isArray(prof) && Array.isArray(prof[0]) ? prof[0].find((x) => x && x.id === id) : null;
+      await call("host_choose", { profile: id, clientId: o && o.clients && o.clients[0] ? o.clients[0].id : null });
+      await call("host_start_quiet", { answers: { name: NAMES[id], visibility: "private", gm: null } });
+      job = { idle: false, kind: "host", running: true, code: null, step: "Getting ready", n: 0, of: 8, secs: 0, problem: null };
+      followJob();
+    } catch (e) { say(oops(e), "bad"); }
   }
 
   function build() {
@@ -231,7 +270,11 @@
     ui.refresh.setAttribute("aria-label", "Refresh");
     ui.refresh.title = "Refresh";
     ui.refresh.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    ui.acts.append(ui.start, ui.stop, ui.refresh);
+    // My Den / Solo leveling: play it from here too (app.js window.LeylineLocal: the invite knock, then PLAY)
+    ui.play = btn("Play", "btn small primary", () => { if (con && window.LeylineLocal) window.LeylineLocal.play(con.profile); });
+    ui.play.id = "hc-play";
+    ui.play.hidden = true;
+    ui.acts.append(ui.play, ui.start, ui.stop, ui.refresh);
     top.append(crest(), id, ui.badge, ui.acts);
 
     // the six tiles
@@ -483,7 +526,7 @@
   function paint() {
     const c = con || { services: [], docker: false };
     if (c.name) ui.name.textContent = c.name;
-    ui.kicker.textContent = c.linked ? "Your server, linked" : c.profile === DEN ? "Your Den" : "Your realm console";
+    ui.kicker.textContent = c.linked ? "Your server, linked" : c.profile === DEN ? "Your Den" : c.profile === SOLO ? "Your solo realm" : "Your realm console";
     // the badge
     if (stat && stat.online) {
       setBadge("ok", stat.listed ? "Online · listed" : (stat.visibility === "private" || c.visibility === "private") ? "Online · private" : "Online");
@@ -505,6 +548,7 @@
     const running = (c.services || []).some((s) => s.state === "ok" || s.state === "starting");
     ui.start.hidden = running || c.linked;
     ui.stop.hidden = !running || c.linked;
+    if (ui.play) { ui.play.hidden = !running || !LOCAL_IDS.includes(c.profile) || !window.LeylineLocal; ui.play.textContent = `Play ${rsName(c.profile)}`; }
     // GM controls
     ui.gmNote.hidden = !c.gm_note;
     ui.gmNote.textContent = c.gm_note || "";
@@ -833,10 +877,9 @@
     ui.form.append(nameL, ui.visL, ui.gmL);
     ui.prog = mk("div", "hc-prog");
     ui.prog.hidden = true;
-    // My Den: what the kit sets for it, in place of choices (no bots, no player limit)
+    // My Den / Solo leveling: what the kit sets for it, in place of choices (paintGo fills it for the one picked)
     ui.den = mk("ul", "hc-den");
     ui.den.setAttribute("aria-label", "My Den");
-    for (const [b, t] of DEN_FACTS) { const li = mk("li", ""); li.append(mk("b", "", b), mk("span", "", t)); ui.den.append(li); }
     ui.den.hidden = true;
     ui.status = mk("p", "status hc-status");
     ui.status.setAttribute("role", "status");
@@ -864,19 +907,19 @@
 
   // the form: a name for the ruleset (until one is typed), who can join (a Den is always friends only), and on a Mac or
   // Linux the host's own account name (`leyline host` never makes accounts; the Windows kit makes a GM login itself)
-  const NAMES = { den: "My Den", dalaran: "Dalaran Hangout", vanillaplus: "Vanilla Plus" };
+  const NAMES = { den: "My Den", solo: "Solo leveling", dalaran: "Dalaran Hangout", vanillaplus: "Vanilla Plus" };
   const needsGm = !/Windows/i.test(navigator.userAgent || "");
   let visPick = "private";
   function paintForm() {
     if (!ui.form) return;
     if (ui.nameIn && !ui.nameIn.dataset.typed) ui.nameIn.value = NAMES[picked] || "My Realm";
-    ui.visL.hidden = picked === DEN;
+    ui.visL.hidden = LOCAL_IDS.includes(picked);
     for (const b of ui.visSeg.querySelectorAll(".hc-seg-b")) b.setAttribute("aria-pressed", String(b.dataset.value === visPick));
   }
   const NAME_OK = /^[A-Za-z0-9 _'-]{1,32}$/;
   const GM_OK = /^[A-Za-z0-9]{3,16}$/;
   function answers() {
-    return { name: ui.nameIn.value.trim(), visibility: picked === DEN ? "private" : visPick, gm: needsGm ? ui.gmIn.value.trim() : null };
+    return { name: ui.nameIn.value.trim(), visibility: LOCAL_IDS.includes(picked) ? "private" : visPick, gm: needsGm ? ui.gmIn.value.trim() : null };
   }
   function formProblem() {
     if (!ui.nameIn) return null;
@@ -1050,8 +1093,17 @@
     ui.goHint.textContent = !ready ? "Get the Host pack first (step 1 above)." : !dockOk ? "Docker first (step 2 above)." : !picked ? "Pick a ruleset."
       : why ? why
       : picked === "vanillaplus" ? "Always on: it comes back after a reboot."
-      : picked === DEN ? "Then invite friends with your invite link. The first start takes 5 to 20 minutes." : "The first start takes 5 to 20 minutes.";
-    if (ui.den) ui.den.hidden = picked !== DEN;
+      : picked === DEN ? "Then invite friends with your invite link. The first start takes 5 to 20 minutes."
+      : picked === SOLO ? "Then pick Solo leveling in the play bar. The first start takes 5 to 20 minutes." : "The first start takes 5 to 20 minutes.";
+    if (ui.den) {
+      const facts = FACTS[picked];
+      ui.den.hidden = !facts;
+      if (facts && ui.den.dataset.for !== picked) {
+        ui.den.dataset.for = picked;
+        ui.den.setAttribute("aria-label", rsName(picked));
+        ui.den.replaceChildren(...facts.map(([b, t]) => { const li = mk("li", ""); li.append(mk("b", "", b), mk("span", "", t)); return li; }));
+      }
+    }
   }
   async function pick(id) {
     const o = (offers || []).find((x) => x.id === id);

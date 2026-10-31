@@ -542,11 +542,13 @@ html[data-base="light"] .pb-menu { box-shadow: 0 -10px 30px rgba(16, 24, 40, 0.1
 #pb-detail:empty { display: none; }
 .pb-status .status { margin: 0 0 0 auto; font-size: 12px; font-weight: 500; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; }
 .pb-realm[aria-expanded="false"] .pb-caret { transform: rotate(180deg); }
-.pb-rmenu { width: 100%; min-width: 340px; }
+.pb-rmenu { width: 100%; min-width: 340px; max-height: min(700px, calc(100vh - 130px)); }   /* room for the game client part too */
 .pb-head { padding: 8px 16px 4px; font: 700 10.5px var(--t-font); letter-spacing: 0.12em; text-transform: uppercase; color: var(--t-muted); }
 .pb-rmenu .pb-opt { min-height: 42px; font-size: 14px; }
 .pb-rmenu .pb-opt .rl-ic { flex: none; }
 .pb-rmenu .pb-opt-sub.live { color: var(--t-ok); }
+/* the game client part: the one plain line when no folder of the realm's version is in yet */
+.pb-note { padding: 2px 16px 6px; font-size: 13px; line-height: 1.4; color: var(--t-warn); white-space: normal; }
 .pb-rmenu .pb-opt.off { color: var(--t-muted); }
 .pb-rmenu .pb-opt.off .rl-ic { opacity: 0.6; }
 .pb-opt[aria-disabled="true"] { cursor: default; color: var(--t-muted); }

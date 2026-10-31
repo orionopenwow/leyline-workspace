@@ -20,6 +20,8 @@
 --   Edit mode (the browser client's free camera, EditMode.lua) also sends:
 --   .build pick <object id> [add]     selects the clicked prop (its GUID counter); "add" (Shift-click) adds it
 --                                     to the selection, or takes it out
+--   .build snap on|off                asks to enter edit mode (or leaves it): only builders, in a build area, not in
+--                                     combat, dead, on a flight or in an instance; the character is rooted meanwhile
 --   .build spawnat <id> <x> <y> <z>   a prop at an exact point you clicked (within 100 yards, in the area)
 --   .build placeat <x> <y> <z> <deg>  moves the selection to an exact point and turns it <deg> (a drag-and-drop);
 --                                     a group keeps its shape around the last-picked prop
@@ -102,9 +104,11 @@
 --                                not spawned>;
 --                                core=<1 when mod-sandbox-core moves props in place, else 0>
 --                      prefabs   id,name,code,count;...           your prefabs
+--                      snap      on | off,<why>,<text>             edit mode's gate (see "edit mode's gate" below)
 --                      found     <objects|models>,<page>,<more 0|1>;id,key,category,name,points;...
 --                                                                  a .build find / .build models answer
--- mod-ale events: 3 ON_LOGIN, 4 ON_LOGOUT, 27 ON_UPDATE_ZONE, 28 ON_MAP_CHANGE, 42 ON_COMMAND.
+-- mod-ale events: 3 ON_LOGIN, 4 ON_LOGOUT, 27 ON_UPDATE_ZONE, 28 ON_MAP_CHANGE, 33 ON_ENTER_COMBAT, 42 ON_COMMAND.
+-- Edit mode's gate (.build snap on|off, the "snap" message): see "edit mode's gate" near the end.
 
 local TAG = "|cff66ccff[Builder]|r "
 local MOD = "wubuild"
@@ -830,6 +834,24 @@ local X = { redo = {}, storage = {}, groupOf = {}, nextGroup = 0, dirty = {} }
 X.MODEL_BASE = 2000000000
 X.locked, X.hidden = {}, {}   -- [prop id] = true: locked (no edits) / hidden (not in the world, kept)
 X.SYSTEM = 0   -- the owner of the props a Den's room is made of (ov_den.lua): no character has guid 0
+-- Each prop's version, for undo (2026-10-31): X.ver[id] = { n = changes so far, by = guid of the last change,
+-- on = the version of the last change by someone other than "by" }. An undo or redo refuses a prop someone else
+-- changed after the undo entry was made (it would wipe out their newer edit). In memory only, like the undo stacks.
+X.ver = {}
+function X.bump(id)
+    local by = actor and actor:GetGUIDLow() or 0
+    local v = X.ver[id] or { n = 0 }
+    if v.by ~= nil and v.by ~= by then v.on = v.n end
+    v.n, v.by = v.n + 1, by
+    X.ver[id] = v
+end
+-- Has anyone but guid changed prop id after version since?
+function X.changedByOther(id, guid, since)
+    local v = X.ver[id]
+    if not v or not since then return false end
+    if v.by ~= guid then return v.n > since end
+    return (v.on or 0) > since
+end
 function X.denInside()  return num("OV_DEN_INSIDE_POINTS", 1000, 0, 100000) end
 function X.denOutside() return num("OV_DEN_OUTSIDE_POINTS", 300, 0, 100000) end
 
@@ -1349,6 +1371,7 @@ local function addProp(owner, ownerName, area, entry, map, x, y, z, o, id, s, pt
         x = x, y = y, z = z, o = normO(o), pt = normTilt(pt), rl = normTilt(rl) }
     if s and s ~= 1 then p.s = clampScale(s) end
     props[id] = p
+    X.bump(id)
     exec(sqlProp(p))
     if p.s then saveScale(p) end
     if p.pt or p.rl then saveTilt(p) end
@@ -1369,6 +1392,7 @@ end
 
 local function removeProp(p, player)
     rec(p.id, copyProp(p), nil)
+    X.bump(p.id)
     despawn(p, player, true)
     props[p.id] = nil
     if X.locked[p.id] or X.hidden[p.id] then X.setFlags(p.id, nil, nil) end
@@ -1406,11 +1430,22 @@ local function placeProp(p, x, y, z, o, player, s, pt, rl)
     if ns ~= p.s then p.s = ns; saveScale(p) end
     if npt ~= p.pt or nrl ~= p.rl then p.pt, p.rl = npt, nrl; saveTilt(p) end
     if not inPlace then spawn(p) end
+    X.bump(p.id)
     rec(p.id, before, copyProp(p))
 end
 
 -- keep: true when redo itself puts the action back (anything else is a new change: the redo stack goes).
+-- The versions of the props an undo or redo entry touches, as they are now (X.changedByOther checks them later).
+function X.stamp(action)
+    local v = {}
+    for _, id in ipairs(action.ids or { action.id }) do v[id] = (X.ver[id] or { n = 0 }).n end
+    for _, b in ipairs(action.list or {}) do if b.id then v[b.id] = (X.ver[b.id] or { n = 0 }).n end end
+    action.vers = v
+    return action
+end
+
 local function pushUndo(guid, action, keep)
+    X.stamp(action)
     local stack = undo[guid] or {}
     undo[guid] = stack
     stack[#stack + 1] = action
@@ -1419,6 +1454,7 @@ local function pushUndo(guid, action, keep)
 end
 
 function X.pushRedo(guid, action)
+    X.stamp(action)
     local stack = X.redo[guid] or {}
     X.redo[guid] = stack
     stack[#stack + 1] = action
@@ -1867,10 +1903,57 @@ function X.applyBack(player, a)
     return "nothing.", nil
 end
 
+-- Why action a can't be taken back now, or nil (2026-10-31): your rights today, each prop's lock, the area and
+-- plot where it would go, and nobody else's newer edit. All or none, like the group ops; a refused entry is dropped.
+function X.backBlocked(player, a)
+    local guid = player:GetGUIDLow()
+    if not isBuilder(player) then return "you can't build here any more." end
+    local function newer(id)
+        return a.vers and a.vers[id] ~= nil and X.changedByOther(id, guid, a.vers[id])
+    end
+    if a.kind == "spawn" or a.kind == "load" then
+        for _, id in ipairs(a.ids or { a.id }) do
+            local p = props[id]
+            if p then
+                if X.locked[id] then return X.lockedText(p) end
+                local ok, why = canEdit(player, p)
+                if not ok and p.owner ~= guid then return why end
+                if newer(id) then return "someone else changed " .. propName(p) .. " since." end
+            end
+        end
+    elseif a.kind == "places" then
+        for _, b in ipairs(a.list or {}) do
+            local p = props[b.id]
+            if p then
+                if X.locked[b.id] then return X.lockedText(p) end
+                local ok, why = canEdit(player, p)
+                if not ok then return why end
+                if newer(b.id) then return "someone else changed " .. propName(p) .. " since." end
+                if not insideArea(p.area, p.map, b.x, b.y, b.z) then return "that spot isn't in the build area any more." end
+                local okAt, whyAt = canBuildAt(player, p.map, b.x, b.y, b.z)
+                if not okAt then return whyAt end
+            end
+        end
+    elseif a.kind == "restore" then
+        for _, c in ipairs(a.list or {}) do
+            if not props[c.id] then
+                if not insideArea(c.area, c.map, c.x, c.y, c.z) then return "that spot isn't in the build area any more." end
+                local okAt, whyAt = canBuildAt(player, c.map, c.x, c.y, c.z)
+                if not okAt then return whyAt end
+                local ok, why = canEdit(player, c)
+                if not ok and c.owner ~= guid then return why end
+            end
+        end
+    end
+    return nil
+end
+
 local function undoCommand(player)
     local guid = player:GetGUIDLow()
     local a = undo[guid] and table.remove(undo[guid])
     if not a then return say(player, "Nothing to undo.") end
+    local blocked = X.backBlocked(player, a)
+    if blocked then return say(player, "Can't undo: " .. blocked) end
     local msg, back, alone = X.applyBack(player, a)
     if back then X.pushRedo(guid, back) end
     say(player, alone and msg or ("Undone: " .. msg))
@@ -1880,6 +1963,8 @@ function X.redoCommand(player)
     local guid = player:GetGUIDLow()
     local a = X.redo[guid] and table.remove(X.redo[guid])
     if not a then return say(player, "Nothing to redo.") end
+    local blocked = X.backBlocked(player, a)
+    if blocked then return say(player, "Can't redo: " .. blocked) end
     local msg, back, alone = X.applyBack(player, a)
     if back then pushUndo(guid, back, true) end
     say(player, alone and msg or ("Redone: " .. msg))
@@ -3799,6 +3884,10 @@ local function run(player, text)
     for w in tostring(text or ""):gmatch("%S+") do words[#words + 1] = w end
     local sub = (words[1] or "help"):lower()
     if sub == "help" or sub == "?" then return showHelp(player) end
+    -- edit mode's gate answers everyone (a "no" is an answer too), so it comes before the role check
+    if sub == "snap" then return X.snapCommand(player, (words[2] or "on"):lower()) end
+    local snapped = X.snapped[player:GetGUIDLow()]
+    if snapped then snapped.at = os.time() end
     if not onSwitch() then return say(player, "The Builder is off on this realm.") end
     local prev = beginOp(player, sub)
     local prevActor = actor
@@ -3846,11 +3935,145 @@ if OVMod then
     end)
 end
 
-local function onArrive(event, player) if player then sync(player, true) end end
+------------------------------------------------------------------------------------------------
+-- edit mode's gate (2026-10-31): the browser client's free camera only after the realm says yes
+------------------------------------------------------------------------------------------------
+-- EditMode.lua asks with ".build snap on" (the channel's cmd) and sets the client's leylineEditMode CVar only on
+-- the answer "on"; F7 again, Done or the addon's own checks send ".build snap off".
+--   server -> client   snap   on                    edit mode may start; the character is rooted where it stands
+--                      snap   off,<why>,<text>      not now, or not any more: the addon leaves edit mode
+-- why: off (building is off here), role (not a builder), dead, taxi, flying, instance, combat, area (outside the
+-- build areas), damage, timeout (10 minutes without a build command), reload (the scripts were reloaded), done.
+-- While it is on the realm roots the character (no immunity, no untargetable flag) and ends it when the player
+-- enters combat, takes damage, dies, boards a taxi, enters an instance, arena or battleground, leaves the build
+-- area, or loses the builder role: at once on combat (event 33) and a map or zone change, and within a second on
+-- the rest (a poll over the players in edit mode only; damage = health lower than at the last look, which also
+-- catches falls and lava; a creature or player hit is caught at once by the combat event). Every change made in
+-- edit mode is still a .build command checked as always: the gate decides only who gets the camera.
+-- Not closed here: the CVar is the client's own, so a player who sets it by hand gets the camera without asking
+-- (the addon turns it straight back off when it didn't ask); only the client asking the realm itself closes that.
+X.snapped = {}   -- [guid] = { name, hp (health at the last look), at (last build command) }
+X.SNAP_IDLE, X.SNAP_POLL_MS = 600, 1000
+X.SNAP_NO = {
+    off = "Building is off on this realm.",
+    role = "Only builders can use edit mode.",
+    dead = "You can't build while dead.",
+    taxi = "You can't build while on a flight.",
+    flying = "Land first, then build.",
+    instance = "Building isn't allowed in dungeons, raids, arenas or battlegrounds.",
+    combat = "You can't build in combat.",
+    area = "Building isn't allowed here.",
+}
+X.SNAP_OUT = {
+    off = "Edit mode is off: building was turned off.",
+    role = "Edit mode is off: you can't build here any more.",
+    dead = "Edit mode is off: you died.",
+    taxi = "Edit mode is off: you're on a flight.",
+    flying = "Edit mode is off: you're in the air.",
+    instance = "Edit mode is off: no building in here.",
+    combat = "Edit mode is off: you're in combat.",
+    area = "Edit mode is off: you left the build area.",
+    damage = "Edit mode is off: you took damage.",
+    timeout = "Edit mode is off after 10 idle minutes.",
+    reload = "Edit mode is off: the realm updated. Press F7 again.",
+}
+
+-- Why the player may not be in edit mode now (a code for X.SNAP_NO / X.SNAP_OUT), or nil.
+function X.snapWhy(player)
+    if not onSwitch() then return "off" end
+    if not isBuilder(player) then return "role" end
+    if try(player, "IsDead") == true or try(player, "IsAlive") == false then return "dead" end
+    -- on a flight: AzerothCore's UNIT_STATE_IN_FLIGHT (0x100) or the flight path's motion (FLIGHT_MOTION_TYPE 7)
+    if try(player, "HasUnitState", 0x100) == true or tonumber(try(player, "GetMovementType")) == 7 then return "taxi" end
+    if try(player, "IsFlying") == true then return "flying" end
+    if inInstance(player) then return "instance" end
+    if try(player, "IsInCombat") == true then return "combat" end
+    if not buildArea(player) then return "area" end
+    return nil
+end
+
+function X.snapSend(player, data) if OVMod then pcall(OVMod.Send, player, MOD, "snap", data) end end
+
+-- Ends edit mode for the player: why nil when they left it themselves, else the reason they were taken out.
+function X.snapEnd(player, why)
+    local guid = player:GetGUIDLow()
+    local was = X.snapped[guid] ~= nil
+    X.snapped[guid] = nil
+    if was then try(player, "SetRooted", false) end
+    if why then
+        X.snapSend(player, "off," .. why .. "," .. (X.SNAP_OUT[why] or X.SNAP_NO[why] or ""))
+        if was then say(player, X.SNAP_OUT[why] or X.SNAP_NO[why] or "Edit mode is off.") end
+    else
+        X.snapSend(player, "off,done,")
+    end
+    return was
+end
+
+function X.snapCommand(player, what)
+    local guid = player:GetGUIDLow()
+    if what == "off" then X.snapEnd(player, nil); return end
+    if what ~= "on" then return say(player, "Usage: |cffffff00.build snap on|off|r (edit mode; F7 in the browser client)") end
+    local why = X.snapWhy(player)
+    if why then
+        if X.snapped[guid] then X.snapped[guid] = nil; try(player, "SetRooted", false) end
+        X.snapSend(player, "off," .. why .. "," .. X.SNAP_NO[why])
+        return say(player, X.SNAP_NO[why])
+    end
+    X.snapped[guid] = { name = player:GetName(), hp = tonumber(try(player, "GetHealth")), at = os.time() }
+    try(player, "SetRooted", true)
+    X.snapSend(player, "on")
+    if not X.snapTimer and CreateLuaEvent then
+        X.snapTimer = true
+        CreateLuaEvent(function() X.snapPoll() end, X.SNAP_POLL_MS, 0)
+    end
+end
+
+-- Is the player still allowed to be in edit mode? If not, out they go (with the reason).
+function X.snapCheck(player, why)
+    local s = player and X.snapped[player:GetGUIDLow()]
+    if not s then return end
+    why = why or X.snapWhy(player)
+    if not why then
+        local hp = tonumber(try(player, "GetHealth"))
+        if hp and s.hp and hp < s.hp then why = "damage" end
+        s.hp = hp or s.hp
+    end
+    if not why and os.time() - s.at >= X.SNAP_IDLE then why = "timeout" end
+    if why then X.snapEnd(player, why) end
+end
+
+function X.snapPoll()
+    for guid, s in pairs(X.snapped) do
+        local p = GetPlayerByName and GetPlayerByName(s.name)
+        if p and p:GetGUIDLow() == guid then pcall(X.snapCheck, p) else X.snapped[guid] = nil end
+    end
+end
+
+-- A script reload forgets who was in edit mode: everyone online is told it is off, and a rooted character is
+-- let go (no other realm script roots; a root from a spell aura stays, the core keeps it).
+function X.snapReset()
+    if not GetPlayersInWorld then return end
+    local ok, players = pcall(GetPlayersInWorld)
+    if not ok or type(players) ~= "table" then return end
+    for _, pl in ipairs(players) do
+        pcall(function()
+            if try(pl, "IsRooted") == true then try(pl, "SetRooted", false) end
+            X.snapSend(pl, "off,reload," .. X.SNAP_OUT.reload)
+        end)
+    end
+end
+X.snapReset()
+
+local function onArrive(event, player)
+    if not player then return end
+    X.snapCheck(player)
+    sync(player, true)
+end
 
 local function onLogout(event, player)
     if not player then return end
     local guid = player:GetGUIDLow()
+    X.snapped[guid] = nil
     selected[guid], nearList[guid], undo[guid], lastSpawn[guid], lastLoad[guid], moves[guid], lastSync[guid] =
         nil, nil, nil, nil, nil, nil, nil
     group[guid], clip[guid], lastCode[guid], writes[guid] = nil, nil, nil, nil
@@ -3870,6 +4093,7 @@ RegisterPlayerEvent(4, onLogout)    -- PLAYER_EVENT_ON_LOGOUT
 RegisterPlayerEvent(27, onArrive)   -- PLAYER_EVENT_ON_UPDATE_ZONE
 RegisterPlayerEvent(28, onArrive)   -- PLAYER_EVENT_ON_MAP_CHANGE
 RegisterPlayerEvent(42, onCommand)  -- PLAYER_EVENT_ON_COMMAND
+RegisterPlayerEvent(33, function(event, player) X.snapCheck(player, "combat") end)   -- PLAYER_EVENT_ON_ENTER_COMBAT
 if CreateLuaEvent then CreateLuaEvent(syncAll, K.SYNC_EVERY_MS, 0) end
 
 ------------------------------------------------------------------------------------------------

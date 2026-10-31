@@ -1,7 +1,8 @@
 -- lua5.1 stream/tests/test_ov_build.lua [ov_build.lua] [ov_modapi.lua]
 -- ov_build.lua under a fake mod-ale: roles, build areas, the catalog check, spawn / move / turn / undo / delete /
 -- clear, the limits and rates, save / share / load codes, the GM-only commands, props coming back after a grid
--- unload and a restart, the OVMOD channel, and no game-brand names in anything players saw. M3: plots and their
+-- unload and a restart, the OVMOD channel, and no game-brand names in anything players saw. 2026-10-31: edit mode's
+-- gate (.build snap: every reason it says no, the root, every reason it ends edit mode) and undo's re-checks. M3: plots and their
 -- roles and GM tools, budgets and trust tiers, multi-select and group ops, copy and paste, exact numbers and size,
 -- prefabs and the OVBuild functions, the op log and GM rollback, and a restart reading all of it back.
 local file = arg[1] or "realm/custom/lua_scripts/ov_build.lua"
@@ -121,6 +122,18 @@ local function player(over)
     function p:GetY() return self.y end
     function p:GetZ() return self.z end
     function p:GetO() return self.o end
+    -- edit mode's gate reads these (combat, death, a flight, an arena or battleground, health) and roots the body
+    function p:IsInCombat() return self.combat == true end
+    function p:IsDead() return self.dead == true end
+    function p:IsAlive() return self.dead ~= true end
+    function p:HasUnitState(st) return st == 0x100 and self.taxi == true end
+    function p:GetMovementType() return self.taxi and 7 or 0 end
+    function p:IsFlying() return self.flying == true end
+    function p:InArena() return self.arena == true end
+    function p:InBattleground() return self.bg == true end
+    function p:GetHealth() return self.hp end
+    function p:SetRooted(on) self.rooted = on ~= false end
+    function p:IsRooted() return self.rooted == true end
     online[p.guid] = p
     lastSeen[#lastSeen + 1] = p
     return p
@@ -1532,6 +1545,164 @@ dofile(file)
 cmd(gm, "build setscale")
 check("size limits never beyond 0.1 to 5 (the module's)", last(gm):find("0%.1 to 5%.0"))
 env.OV_BUILD_SCALE_MIN, env.OV_BUILD_SCALE_MAX = nil, nil
+
+-- Edit mode's gate (2026-10-31): the browser client's free camera only after the realm says yes ---------------
+propRows, roleRows = nil, nil
+for k in pairs(extraRows) do extraRows[k] = nil end
+for k in pairs(env) do env[k] = nil end
+local function lastSnap(p)
+    for i = #p.addon, 1, -1 do
+        local m = p.addon[i][2]:match("^wubuild\tsnap\t1/1\t(.*)$")
+        if m then return m end
+    end
+    return ""
+end
+local function snapTimer() for _, e in ipairs(luaEvents) do if e.delay == 1000 and e.rep == 0 then return e.fn end end end
+do
+    local wren = player({ guid = 900, name = "Wren", x = AREA.x + 4, y = AREA.y + 4, hp = 100, rooted = true })
+    local nev = player({ guid = 901, name = "Nev", x = AREA.x - 4, y = AREA.y + 4, hp = 100 })
+    local fen = player({ guid = 902, name = "Fen", x = AREA.x + 8, y = AREA.y - 4, hp = 100 })
+    local evs0 = #luaEvents
+    dofile(file)
+    T = OV_BUILD_TEST
+    check("snap: a script reload tells everyone edit mode is off and lets a rooted character go",
+        lastSnap(wren):find("^off,reload,") and wren.rooted == false and lastSnap(nev):find("^off,reload,"))
+    check("snap: no poll timer until someone is in edit mode", #luaEvents == evs0 + 1)
+    cmd(gm, "build grant Wren"); cmd(gm, "build grant Fen")
+
+    cmd(nev, "build snap on")
+    check("snap: not a builder, no (and said plainly)", lastSnap(nev) == "off,role,Only builders can use edit mode."
+        and last(nev):find("Only builders can use edit mode%.") and not nev.rooted and not T.X.snapped[901])
+    cmd(wren, "build snap on")
+    check("snap: a builder in the build area: yes, and the character is rooted", lastSnap(wren) == "on" and wren.rooted == true
+        and T.X.snapped[900] ~= nil)
+    check("snap: the poll timer starts with the first one in edit mode, once", snapTimer() ~= nil and #luaEvents == evs0 + 2)
+    cmd(wren, "build snap off")
+    check("snap off: unrooted, the addon told", wren.rooted == false and lastSnap(wren) == "off,done," and not T.X.snapped[900])
+
+    local function denied(setup, undo, code, text, name)
+        setup()
+        cmd(wren, "build snap on")
+        check("snap: no when " .. name, lastSnap(wren):find("^off," .. code .. ",") and last(wren):find(text, 1, true)
+            and not wren.rooted and not T.X.snapped[900])
+        undo()
+    end
+    denied(function() wren.combat = true end, function() wren.combat = nil end, "combat", "You can't build in combat.", "in combat")
+    denied(function() wren.dead = true end, function() wren.dead = nil end, "dead", "You can't build while dead.", "dead")
+    denied(function() wren.taxi = true end, function() wren.taxi = nil end, "taxi", "You can't build while on a flight.", "on a taxi")
+    denied(function() wren.flying = true end, function() wren.flying = nil end, "flying", "Land first, then build.", "in the air")
+    denied(function() wren.arena = true end, function() wren.arena = nil end, "instance",
+        "Building isn't allowed in dungeons, raids, arenas or battlegrounds.", "in an arena")
+    denied(function() wren.bg = true end, function() wren.bg = nil end, "instance", "arenas or battlegrounds", "in a battleground")
+    denied(function() wren.map = 36; mapObj(36).IsDungeon = function() return true end end, function() wren.map = 0 end,
+        "instance", "dungeons", "in a dungeon")
+    denied(function() wren.x = AREA.x + 300 end, function() wren.x = AREA.x + 4 end, "area", "Building isn't allowed here.",
+        "outside the build area")
+    denied(function() env.OV_BUILD = "0" end, function() env.OV_BUILD = nil end, "off", "Building is off on this realm.",
+        "building is off on the realm")
+    gm.hp = 100
+    cmd(gm, "build snap on")
+    check("snap: a GM is a builder", lastSnap(gm) == "on" and gm.rooted)
+    cmd(gm, "build snap off")
+    cmd(wren, "build snap maybe")
+    check("snap: anything but on or off says how", last(wren):find("snap on|off", 1, true) and not T.X.snapped[900])
+
+    -- forced off
+    local poll = snapTimer()
+    local function forced(setup, undo, code, name, fire)
+        cmd(wren, "build snap on")
+        local ok1 = lastSnap(wren) == "on"
+        setup()
+        if fire then fire() else poll() end
+        check("snap: forced off when " .. name, ok1 and lastSnap(wren):find("^off," .. code .. ",Edit mode is off")
+            and last(wren):find("Edit mode is off") and wren.rooted == false and not T.X.snapped[900])
+        undo()
+    end
+    forced(function() wren.combat = true end, function() wren.combat = nil end, "combat", "entering combat (the event, at once)",
+        function() events[33](33, wren, nil) end)
+    forced(function() wren.combat = true end, function() wren.combat = nil end, "combat", "in combat (the poll)")
+    forced(function() wren.hp = 80 end, function() wren.hp = 100 end, "damage", "taking damage")
+    forced(function() wren.dead = true end, function() wren.dead = nil end, "dead", "dying")
+    forced(function() wren.taxi = true end, function() wren.taxi = nil end, "taxi", "on a flight")
+    forced(function() wren.map = 36 end, function() wren.map = 0 end, "instance", "entering an instance (map change, at once)",
+        function() events[28](28, wren) end)
+    forced(function() wren.bg = true end, function() wren.bg = nil end, "instance", "entering a battleground (zone change)",
+        function() events[27](27, wren) end)
+    forced(function() wren.x = AREA.x + 300 end, function() wren.x = AREA.x + 4 end, "area", "teleported out of the build area")
+    forced(function() cmd(gm, "build revoke Wren") end, function() cmd(gm, "build grant Wren") end, "role", "the builder role is taken away")
+    forced(function() clock = clock + 601 end, function() end, "timeout", "10 minutes idle")
+    cmd(wren, "build snap on")
+    clock = clock + 400; cmd(wren, "build where"); clock = clock + 400; poll()
+    check("snap: a build command keeps it on (not idle)", lastSnap(wren) == "on" and wren.rooted)
+    wren.hp = 120; poll(); wren.hp = 110; poll()
+    check("snap: a heal raises the mark, a hit after it ends it", lastSnap(wren):find("^off,damage,"))
+    cmd(wren, "build snap on")
+    events[4](4, wren)
+    check("snap: logout forgets it", not T.X.snapped[900])
+    wren.rooted = false
+    cmd(fen, "build snap on")
+    online[902] = nil; poll(); online[902] = fen
+    check("snap: someone gone from the world is dropped by the poll", not T.X.snapped[902])
+    check("snap: player-facing words are plain (no brand names, no version numbers)", (function()
+        for _, t in pairs(T.X.SNAP_NO) do if t:find("Warcraft") or t:find("WoW") or t:find("%d%.%d") then return false end end
+        for _, t in pairs(T.X.SNAP_OUT) do if t:find("Warcraft") or t:find("WoW") or t:find("%d%.%d") then return false end end
+        return true end)())
+
+    -- undo and redo check again: rights, the lock, the area or plot, and nobody else's newer edit
+    clock = clock + 5
+    cmd(wren, "build spawn chair")
+    local c = T.props[T.selected[900]]
+    cmd(wren, "build move z 1")
+    cmd(gm, "build pick " .. T.live[c.id]); clock = clock + 1
+    cmd(gm, "build move x 2")
+    local gx = c.x
+    cmd(wren, "build undo")
+    check("undo: refused when someone else moved it since (their edit stays)", last(wren):find("Can't undo: someone else changed")
+        and c.x == gx)
+    cmd(wren, "build undo")
+    check("undo: the older spawn entry is refused too (it would delete their edit)", last(wren):find("Can't undo: someone else changed")
+        and T.props[c.id] ~= nil)
+
+    clock = clock + 1
+    cmd(fen, "build spawn chair")
+    local f = T.props[T.selected[902]]
+    clock = clock + 1
+    cmd(fen, "build move z 1"); local fz = f.z
+    cmd(fen, "build lock")
+    cmd(fen, "build undo")
+    check("undo: refused on a locked prop", last(fen):find("Can't undo: .*locked") and f.z == fz)
+
+    clock = clock + 1
+    cmd(fen, "build spawn barrel")
+    local b = T.props[T.selected[902]]
+    clock = clock + 1
+    cmd(fen, "build move x 1"); local bx = b.x
+    T.BUILD_AREAS[1].r = 1
+    cmd(fen, "build undo")
+    check("undo: refused when the spot isn't in the build area any more", last(fen):find("Can't undo: that spot isn't in the build area")
+        and b.x == bx)
+    T.BUILD_AREAS[1].r = 45
+
+    clock = clock + 1
+    cmd(fen, "build spawn crate")
+    local k = T.props[T.selected[902]]
+    clock = clock + 1
+    cmd(fen, "build move x 1"); local kx = k.x
+    cmd(gm, "build revoke Fen")
+    cmd(fen, "build undo")
+    check("undo: refused after the builder role is gone", T.props[k.id] and k.x == kx and not last(fen):find("^Undone"))
+    check("undo: the re-check refuses without the role too", (T.X.backBlocked(fen, { kind = "places", list = {} }) or ""):find("can't build"))
+    cmd(gm, "build grant Fen")
+    cmd(fen, "build undo")
+    check("undo: own change, nobody else's since: works as before", math.abs(k.x - (kx - 1)) < 0.01)
+    cmd(fen, "build redo")
+    check("redo: works as before", math.abs(k.x - kx) < 0.01)
+    cmd(gm, "build pick " .. T.live[k.id]); clock = clock + 1
+    cmd(gm, "build move y 1")
+    cmd(fen, "build undo")
+    cmd(fen, "build undo")
+    check("redo and undo: refused once someone else changed it", last(fen):find("Can't undo: someone else changed"))
+end
 
 realPrint(string.format("\n%d/%d passed", pass, pass + fail))
 os.exit(fail == 0 and 0 or 1)

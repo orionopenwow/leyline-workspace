@@ -648,8 +648,107 @@ do
     E.Toggle()
     check("/edit on your own game: the Builder and Properties open, no camera switch", win:IsShown() and B.Panel():IsShown() and not cvarSet)
     LeylineEdit = function() end
+    serverClock = serverClock + 1
     E.Toggle()
-    check("/edit in the browser client: the edit camera", cvarSet)
+    check("/edit in the browser client: the edit camera, after the realm's yes", cvarSet and E.allowed
+        and lastSent() == "wubuild\tcmd\t1/1\tsnap on")
+    E.Leave()
+
+    -- edit mode's gate (2026-10-31): the addon asks, the realm says yes or no, and the realm can end it
+    local cv = { leylineEditMode = "0" }
+    GetCVar = function(k) return cv[k] end
+    SetCVar = function(k, v) cv[k] = v end
+    local errs = {}
+    UIErrorsFrame = { AddMessage = function(_, t) errs[#errs + 1] = t end }
+    local function snapMsg(data) fireClient("OVMOD", "wubuild\tsnap\t1/1\t" .. data, "WHISPER", "Tester") end
+    local function tick() for _, f in ipairs(frames) do if f.scripts.OnUpdate and f ~= win then f:Fire("OnUpdate", 0.6) end end end
+    local function fireEvent(ev) for _, f in ipairs(frames) do if f.events[ev] then f:Fire("OnEvent", ev) end end end
+    local realServer = onServerAddon
+    onServerAddon = nil   -- the realm answers by hand here
+    E.Toggle()
+    check("gate: F7 asks the realm and doesn't switch the camera yet", cv.leylineEditMode == "0" and E.asking
+        and lastSent() == "wubuild\tcmd\t1/1\tsnap on")
+    snapMsg("off,area,Building isn't allowed here.")
+    check("gate: a no keeps the camera off and says why", cv.leylineEditMode == "0" and not E.asking and not E.allowed
+        and errs[#errs] == "Building isn't allowed here.")
+    snapMsg("on")
+    check("gate: an unasked yes is ignored", cv.leylineEditMode == "0")
+    fireClient("OVMOD", "wubuild\tsnap\t1/1\ton", "WHISPER", "Someone")
+    E.Toggle(); fireClient("OVMOD", "wubuild\tsnap\t1/1\ton", "WHISPER", "Someone")
+    check("gate: a yes from anyone else is ignored", cv.leylineEditMode == "0" and E.asking)
+    snapMsg("on")
+    check("gate: our yes turns it on", cv.leylineEditMode == "1" and E.allowed)
+    tick()
+    check("gate: edit mode is on", E.IsOn())
+    snapMsg("off,combat,Edit mode is off: you're in combat.")
+    tick()
+    check("gate: the realm ends it and the addon obeys", cv.leylineEditMode == "0" and not E.allowed
+        and errs[#errs]:find("in combat") and not E.IsOn())
+    local n0 = #sent
+    cv.leylineEditMode = "1"   -- the browser client's own F7 (or a hand-set CVar)
+    tick()
+    check("gate: the client's F7 flipping the CVar goes straight back off and asks", cv.leylineEditMode == "0"
+        and E.asking and sent[n0 + 1] and sent[n0 + 1][2] == "wubuild\tcmd\t1/1\tsnap on" and #sent == n0 + 1)
+    cv.leylineEditMode = "1"; tick()
+    check("gate: while asking, set again: still off, no second ask", cv.leylineEditMode == "0" and #sent == n0 + 1)
+    snapMsg("off,role,Only builders can use edit mode.")
+    tick()
+    check("gate: a non-builder's F7: no camera", cv.leylineEditMode == "0" and errs[#errs] == "Only builders can use edit mode.")
+    E.Toggle(); snapMsg("on"); tick(); tick()
+    local n4 = #sent
+    cv.leylineEditMode = "0"   -- the client's F7 again, or a loading screen
+    tick()
+    check("gate: the client turning it off tells the realm", not E.allowed and sent[n4 + 1] and sent[n4 + 1][2] == "wubuild\tcmd\t1/1\tsnap off")
+    tick()
+    local function leaves(ev, setup, text)
+        E.Toggle(); snapMsg("on"); tick()
+        local ok1 = cv.leylineEditMode == "1"
+        if setup then setup() end
+        local n1 = #sent
+        fireEvent(ev)
+        check("gate: leaves by itself on " .. ev, ok1 and cv.leylineEditMode == "0" and not E.allowed
+            and sent[n1 + 1] and sent[n1 + 1][2] == "wubuild\tcmd\t1/1\tsnap off" and errs[#errs]:find(text, 1, true))
+        tick()
+    end
+    leaves("PLAYER_REGEN_DISABLED", nil, "in combat")
+    leaves("PLAYER_DEAD", nil, "you died")
+    leaves("ZONE_CHANGED_NEW_AREA", function() IsInInstance = function() return 1, "arena" end end, "no building in here")
+    IsInInstance = function() return nil, "none" end
+    E.Toggle(); snapMsg("on"); tick()
+    fireEvent("ZONE_CHANGED_NEW_AREA")
+    check("gate: a zone change in the open world keeps it on", cv.leylineEditMode == "1")
+    local n2 = #sent
+    E.Toggle()
+    check("gate: F7 again leaves and tells the realm", cv.leylineEditMode == "0" and sent[n2 + 1][2] == "wubuild\tcmd\t1/1\tsnap off")
+    tick()
+    UnitAffectingCombat = function() return 1 end
+    local n3 = #sent
+    E.Toggle()
+    check("gate: in combat it doesn't even ask", #sent == n3 and errs[#errs] == "You can't build in combat.")
+    UnitAffectingCombat = nil
+    E.Toggle()
+    clock = clock + 10
+    tick()
+    check("gate: no answer, no camera (and it says so)", cv.leylineEditMode == "0" and not E.asking and errs[#errs]:find("didn't answer"))
+    -- through the real ov_build.lua: a builder in the build area gets the yes; the realm roots and lets go
+    onServerAddon = realServer
+    local rooted
+    function player:SetRooted(on) rooted = on ~= false end
+    serverClock = serverClock + 1
+    E.Toggle()
+    check("gate with the realm: yes, the character rooted", cv.leylineEditMode == "1" and rooted == true)
+    tick()
+    serverClock = serverClock + 1
+    E.Toggle()
+    check("gate with the realm: F7 back, the character free", cv.leylineEditMode == "0" and rooted == false)
+    tick()
+    function player:IsInCombat() return true end
+    serverClock = serverClock + 1
+    E.Toggle()
+    check("gate with the realm: in combat (the realm's no)", cv.leylineEditMode == "0" and errs[#errs] == "You can't build in combat."
+        and rooted == false)
+    player.IsInCombat = nil
+    UIErrorsFrame = nil
     LeylineEdit, GetCVar, SetCVar = nil, nil, realSet
     B.ShowProps(false)
 

@@ -11,6 +11,15 @@
 --     /den opens it outside edit mode too.
 -- Your character stays where it stood; the realm checks every change, exactly as for the .build commands.
 --
+-- Asking first (2026-10-31): edit mode only starts when the realm says yes. F7 sends ".build snap on" (mod
+-- "wubuild", cmd); the CVar is set only on the realm's answer "snap on" (ov_build.lua: builders only, in a build
+-- area, not in combat, dead, on a flight, in the air or in a dungeon, raid, arena or battleground). "snap off,<why>,
+-- <text>" says no, or ends edit mode later (combat, damage, death, an instance, the area, the builder role lost);
+-- the addon obeys. It also leaves by itself on entering combat (PLAYER_REGEN_DISABLED), dying and entering an
+-- instance. The browser client's own F7 flips the CVar by itself: the watcher turns it straight back off and
+-- asks (so does a CVar set by hand), and when the client turns it off the realm hears it. The realm roots the
+-- character while edit mode is on. The camera's reach (120 yards around the body) is the client's own.
+--
 -- Keys (the browser client reads them and calls back here):
 --   click a prop       select it (the realm says if it isn't yours); Shift-click adds it to the selection
 --                      (or takes it out); move, turn, delete, duplicate and carry then work on the group
@@ -45,12 +54,67 @@ local TAG_PATTERN = "%[Builder%]"
 
 local hud, wasOn
 local E = {}
+local ASK_WAIT = 5   -- seconds to wait for the realm's answer
 
 local function on() return GetCVar and GetCVar(CVAR) == "1" end
 local function cvarNum(name, default) return tonumber(GetCVar and GetCVar(name) or "") or default end
+local function setCVar(v) if SetCVar then pcall(SetCVar, CVAR, v and "1" or "0") end end
+local function clock() return GetTime and GetTime() or 0 end
 
+local function sendBuild(text)
+    if not SendAddonMessage or not UnitName then return false end
+    pcall(SendAddonMessage, "OVMOD", "wubuild\tcmd\t1/1\t" .. text, "WHISPER", UnitName("player"))
+    return true
+end
+
+-- A short line where the player sees it with the edit HUD hidden or shown: the red error line, and the chat.
+local function tell(text)
+    if not text or text == "" then return end
+    if UIErrorsFrame and UIErrorsFrame.AddMessage then pcall(UIErrorsFrame.AddMessage, UIErrorsFrame, text, 1, 0.3, 0.3) end
+end
+
+local function inInstance()
+    if not IsInInstance then return false end
+    local ok, yes, kind = pcall(IsInInstance)
+    return ok and (yes == 1 or yes == true) and kind ~= "none"
+end
+
+-- Leaves edit mode now (F7, Done, combat, death...): the camera goes back to the body and the realm hears it, so
+-- it lets the character move again.
+function E.Leave(text)
+    local was = E.allowed or on() or E.asking
+    E.allowed, E.asking, E.seenOn = nil, nil, nil
+    if on() then setCVar(false) end
+    if was then sendBuild("snap off") end
+    if text then tell(text); E.Note(text) end
+end
+
+-- want true: asks the realm (edit mode starts on its yes, E.OnSnap); false: leaves at once.
 function E.Set(want)
-    if SetCVar then pcall(SetCVar, CVAR, want and "1" or "0") end
+    if not want then return E.Leave() end
+    if E.asking then return end
+    local combat = (UnitAffectingCombat and UnitAffectingCombat("player")) or (InCombatLockdown and InCombatLockdown())
+    if combat then return tell("You can't build in combat.") end
+    if UnitIsDeadOrGhost and UnitIsDeadOrGhost("player") then return tell("You can't build while dead.") end
+    E.asking = clock()
+    if not sendBuild("snap on") then E.asking = nil end
+end
+
+-- The realm's answer: "on", or "off,<why>,<text>".
+function E.OnSnap(data)
+    data = tostring(data or "")
+    if data == "on" then
+        if not E.asking then return end   -- only ever the answer to our own ask
+        E.asking, E.allowed, E.seenOn = nil, true, nil
+        setCVar(true)
+        return
+    end
+    local why, text = data:match("^off,(%a*),(.*)$")
+    if not why then return end
+    local was = E.allowed or on() or E.asking
+    E.allowed, E.asking, E.seenOn = nil, nil, nil
+    if on() then setCVar(false) end
+    if was and why ~= "done" then tell(text) end
 end
 
 -- On a player's own game (no browser client: no edit-mode camera, no LeylineEdit), F7 and /edit open the Builder
@@ -424,7 +488,7 @@ local function refreshCard()
     if hud.den then if s.den then hud.den:Show() else hud.den:Hide() end end
     if s.den == "visitor" and not E.toldVisitor then
         E.toldVisitor = true
-        E.Note("You're visiting this Den: look around as you like. Its owner can make you a builder.")
+        E.Note("You're visiting this Den. Its owner can make you a builder.")
     end
 end
 
@@ -599,6 +663,25 @@ local watcher = CreateFrame("Frame", nil, WorldFrame or UIParent)
 local since = 0
 watcher:SetScript("OnUpdate", function(_, elapsed)
     local nowOn = on() and true or false
+    if nowOn and not E.allowed then
+        -- The CVar went on without the realm's yes: the browser client's own F7 flips it, and so does a hand-set
+        -- CVar. Off again at once, and that counts as asking (the realm decides).
+        setCVar(false)
+        nowOn = false
+        if not E.asking then E.Set(true) end
+    elseif E.allowed then
+        if nowOn then
+            E.seenOn = true
+        elseif E.seenOn then
+            -- the client turned it off (F7, a loading screen): the realm lets the character go
+            E.allowed, E.seenOn = nil, nil
+            sendBuild("snap off")
+        end
+    end
+    if E.asking and clock() - E.asking > ASK_WAIT then
+        E.asking = nil
+        tell("The realm didn't answer, so edit mode stays off.")
+    end
     if nowOn ~= wasOn then
         wasOn = nowOn
         apply(nowOn)
@@ -621,6 +704,27 @@ SlashCmdList["LEYLINEDEN"] = function() E.ToggleDen() end
 local denListener = CreateFrame("Frame")
 denListener:RegisterEvent("CHAT_MSG_ADDON")
 denListener:RegisterEvent("PLAYER_ENTERING_WORLD")
+-- edit mode leaves by itself on these (the realm also ends it, and roots the character only while it is on)
+denListener:RegisterEvent("PLAYER_REGEN_DISABLED")
+denListener:RegisterEvent("PLAYER_DEAD")
+denListener:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+
+-- The realm's edit mode answers (mod "wubuild", name "snap"), whispered to ourselves.
+function E.OnBuildMessage(prefix, msg, channel, sender)
+    if prefix ~= "OVMOD" or type(msg) ~= "string" or channel ~= "WHISPER" then return end
+    if UnitName and sender ~= UnitName("player") then return end
+    local data = msg:match("^wubuild\tsnap\t1/1\t(.*)$")
+    if data then E.OnSnap(data) end
+end
+
+function E.OnEvent(event)
+    if not (E.allowed or E.asking or on()) then return end
+    if event == "PLAYER_REGEN_DISABLED" then E.Leave("Edit mode is off: you're in combat.")
+    elseif event == "PLAYER_DEAD" then E.Leave("Edit mode is off: you died.")
+    elseif (event == "ZONE_CHANGED_NEW_AREA" or event == "PLAYER_ENTERING_WORLD") and inInstance() then
+        E.Leave("Edit mode is off: no building in here.")
+    end
+end
 -- On entering the world the addon asks for the Den's info: a Den hears the addon is here (ov_den.lua tells a
 -- game without it where to get it), and the panel knows your role. Elsewhere nobody answers.
 function E.Hello()
@@ -629,8 +733,12 @@ function E.Hello()
     pcall(SendAddonMessage, "OVMOD", DEN_MOD .. "\tinfo\t1/1\t", "WHISPER", UnitName("player"))
 end
 denListener:SetScript("OnEvent", function(_, event, prefix, msg, channel, sender)
+    if event == "CHAT_MSG_ADDON" then
+        E.OnBuildMessage(prefix, msg, channel, sender)
+        return E.OnDenMessage(prefix, msg, channel, sender)
+    end
+    E.OnEvent(event)
     if event == "PLAYER_ENTERING_WORLD" then return E.Hello() end
-    E.OnDenMessage(prefix, msg, channel, sender)
 end)
 
 W.EditMode = E

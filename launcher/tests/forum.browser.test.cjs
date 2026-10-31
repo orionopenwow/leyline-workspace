@@ -31,7 +31,19 @@ const FAKE = (opts) => {
       case 'get_state': return { version: 'test', settings: { clients: [], selected_client: null, selected_realm: 'play.openvanilla.app',
         wine: { enabled: true, command: 'wine', prefix: '' } }, official_realm: 'play.openvanilla.app',
         browser_url: 'https://play.openvanilla.app/wrath', windows: false, data_dir: '/tmp' };
-      case 'social_status': return false;
+      case 'social_status': return !!opts.signed;
+      case 'social_call':
+        if (args.action === 'me') return { me: { pid: 'aaaaaaaaaa', name: 'Orion', tag: '1001', main: '', offline: false,
+          profile: { bio: '', avatar: '', avatar_url: '', setup: true } }, avatars: [], ways: { herokey: true, google: true, discord: false } };
+        throw 'unexpected social call ' + args.action;
+      case 'forum_post': {
+        const a = args.action, p = args.args || {};
+        if (opts.postFail) throw opts.postFail;
+        if (a === 'new') return { ok: true, thread: T(77, p.cat, p.title) };
+        if (a === 'reply') return { ok: true, post: 99, thread: p.thread, page: 1 };
+        if (a === 'report') return { ok: true, text: 'Thanks. The moderators will look at it.' };
+        throw 'unknown forum post';
+      }
       case 'forum_open': case 'open_link': return null;
       case 'forum_call': {
         if (opts.down) throw "The forum isn't answering right now (timed out).";
@@ -174,6 +186,93 @@ test('the forum unreachable: the reason and Try again, nothing breaks', async ()
   assert.ok(await page.isVisible('#fm-discord'), 'the Discord is still one click away');
   const text = await page.evaluate(() => document.body.innerText);
   assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+// ---------------------------------------------------------------- posting from the launcher (signed in)
+test('signed in: New thread is a form here; it posts with forum_post and opens the new thread', async () => {
+  const { page, errors } = await open({ page: 'forum', signed: true });
+  await page.waitForSelector('#fm-view .fm-cats');
+  await page.waitForFunction(() => window.LeylineSocial.signedIn() && window.LeylineSocial.me());
+  assert.match(await page.textContent('#page-forum .fm-fine'), /post and reply right here/);
+  await page.click('#fm-new');
+  await page.waitForSelector('#fm-new-form');
+  assert.equal((await calls(page, 'forum_open')).length, 0, 'no browser');
+  assert.deepEqual(await page.$$eval('#fm-new-c option', (o) => o.map((x) => x.value)), ['', 'realms', 'mods'], 'Announcements is not offered');
+  assert.match(await page.textContent('#fm-new-form .fm-as'), /Posting as Orion#1001/);
+  await page.click('#fm-new-go');
+  assert.match(await page.textContent('#fm-new-st'), /Pick a category/);
+  assert.equal((await calls(page, 'forum_post')).length, 0, 'refused before any call');
+  await page.selectOption('#fm-new-c', 'mods');
+  await page.fill('#fm-new-t', 'My first mod');
+  await page.fill('#fm-new-b', 'It does <b>things</b>');
+  await page.click('#fm-new-go');
+  await page.waitForFunction(() => /Posted/.test(document.getElementById('fm-status').textContent));
+  assert.deepEqual((await calls(page, 'forum_post')).pop(), { action: 'new', args: { cat: 'mods', title: 'My first mod', body: 'It does <b>things</b>' } });
+  assert.deepEqual((await calls(page, 'forum_call')).pop(), { action: 'thread', args: { id: 77, page: 1 } });
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('signed in: reply under the thread, report someone else\'s post (not your own), the forum\'s refusal shown', async () => {
+  const { page, errors } = await open({ page: 'forum', signed: true });
+  await page.waitForFunction(() => window.LeylineSocial.signedIn() && window.LeylineSocial.me());
+  await page.evaluate(() => window.LeylineForum.openThread(1));
+  await page.waitForSelector('#fm-reply-form');
+  const posts = page.locator('#fm-view .fm-post');
+  assert.equal(await posts.nth(0).locator('.fm-rep').count(), 1, 'Report on Bramble\'s post');
+  assert.equal(await posts.nth(2).locator('.fm-rep').count(), 0, 'no Report on my own post (Orion#1001)');
+  await page.click('#fm-view .fm-head button:has-text("REPLY")');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'fm-reply-b', 'Reply goes to the box');
+  assert.equal((await calls(page, 'forum_open')).length, 0);
+  await page.fill('#fm-reply-b', 'Thanks!');
+  await page.click('#fm-reply-go');
+  await page.waitForFunction(() => /Reply posted/.test(document.getElementById('fm-status').textContent));
+  assert.deepEqual((await calls(page, 'forum_post')).pop(), { action: 'reply', args: { thread: 1, body: 'Thanks!' } });
+  await page.waitForSelector('#fm-view .fm-post');
+  await page.locator('#fm-view .fm-post').nth(0).locator('.fm-rep').click();
+  await page.selectOption('#fm-view .fm-report select', 'spam');
+  await page.fill('#fm-view .fm-report input', 'ads');
+  await page.click('#fm-view .fm-report button:has-text("SEND THE REPORT")');
+  await page.waitForFunction(() => /moderators will look/.test(document.querySelector('#fm-view .fm-report').textContent));
+  assert.deepEqual((await calls(page, 'forum_post')).pop(), { action: 'report', args: { post: 10, reason: 'spam', note: 'ads' } });
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('signed in: a refused post keeps the text and says why; a locked thread has no reply box', async () => {
+  const { page, errors } = await open({ page: 'forum', signed: true, postFail: 'Wait 40 seconds before posting again.' });
+  await page.waitForFunction(() => window.LeylineSocial.signedIn() && window.LeylineSocial.me());
+  await page.evaluate(() => window.LeylineForum.openThread(1));
+  await page.waitForSelector('#fm-reply-form');
+  await page.fill('#fm-reply-b', 'Again');
+  await page.click('#fm-reply-go');
+  await page.waitForFunction(() => /Wait 40 seconds/.test(document.getElementById('fm-reply-st').textContent));
+  assert.equal(await page.inputValue('#fm-reply-b'), 'Again');
+  await page.evaluate(() => window.LeylineForum.openThread(2));
+  await page.waitForFunction(() => /Locked one/.test(document.getElementById('fm-view').textContent));
+  assert.equal(await page.locator('#fm-reply-form').count(), 0);
+  assert.match(await page.textContent('#fm-view'), /locked, so no new replies/);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('signed in, dark: a screenshot of posting from the launcher', async () => {
+  const { page, errors } = await open({ page: 'forum', signed: true });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.waitForFunction(() => window.LeylineSocial.signedIn() && window.LeylineSocial.me());
+  await page.evaluate(() => window.LeylineForum.openThread(1));
+  await page.waitForSelector('#fm-reply-form');
+  await page.locator('#fm-view .fm-post').nth(0).locator('.fm-rep').click();
+  await page.fill('#fm-reply-b', 'Joined last night, the invite works. Thanks!');
+  const dir = process.env.FORUM_SHOTS;
+  if (dir) {
+    await page.screenshot({ path: path.join(dir, 'launcher-forum-reply-dark.png'), fullPage: false });
+    await page.click('#fm-new');
+    await page.waitForSelector('#fm-new-form');
+    await page.screenshot({ path: path.join(dir, 'launcher-forum-new-dark.png'), fullPage: false });
+  }
   assert.deepEqual(errors, []);
   await page.close();
 });

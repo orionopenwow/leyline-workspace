@@ -157,6 +157,20 @@ body:has(#page-play.on) .home .card.home-side {
 .fm-pager { display: flex; justify-content: center; gap: 18px; margin: 10px 0 0; }
 .fm-pager:empty { display: none; }
 .fm-fine { margin-top: 10px; }
+/* posting from the launcher (forum.js): the new-thread form, the reply box under a thread, a post's report form */
+.fm-form { margin-top: 12px; }
+.fm-form-in { display: grid; gap: 6px; padding: 14px; }
+.fm-form-in .fm-title { margin-bottom: 2px; }
+.fm-form select, .fm-report select, .fm-report input[type=text] { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: var(--t-radius-sm);
+  border: var(--t-border-w) solid var(--t-border-strong); background: color-mix(in srgb, var(--t-bg) 70%, transparent); color: var(--t-text); font: 14px var(--t-font); }
+.fm-form input[type=text] { font-size: 14px; }
+.fm-form .fm-acts { margin-top: 6px; }
+.fm-form .status, .fm-report .status { margin: 2px 0 0; min-height: 1.2em; }
+.fm-as { margin: 2px 0 0 !important; }
+.fm-as .link-s { font-size: 12px; }
+.fm-rep { font-size: 12px; }
+.fm-report { margin: 10px 0 2px; padding: 10px 12px; border-radius: var(--t-radius-sm); background: color-mix(in srgb, var(--t-text) 4%, transparent); }
+.fm-report .ac-label:first-child { margin-top: 0; }
 
 /* owner 2026-10-30 22:11: "hide this sidebar area for now and put a subtle join the discord thing at the top of the
    launcher to the right of the search bar". The docked panel is gone (Home uses the full width again); the profile

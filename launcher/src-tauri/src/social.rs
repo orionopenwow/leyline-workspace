@@ -275,6 +275,24 @@ pub fn call(dir: &Path, action: &str, args: &Value) -> Result<Value, String> {
     }
 }
 
+/// POST `body` to another of the website's APIs (the forum's, `crate::forum`) as the signed-in player, with the same
+/// token and the same rules as `call`: "signed_out" without a token or on a 401 (the token is then forgotten), the
+/// server's own words on a refusal. `url` is built by the caller from its fixed base, never from the UI.
+pub fn post_as_player(dir: &Path, url: &str, body: &Value) -> Result<Value, String> {
+    let token = load_token(dir).ok_or("signed_out")?;
+    let req = agent(TIMEOUT).post(url).set("Authorization", &format!("Bearer {token}"));
+    match post_json(req, body) {
+        Ok(r) => read_json(r),
+        Err(e) => {
+            let msg = failure(e);
+            if msg == "signed_out" {
+                forget(dir);
+            }
+            Err(msg)
+        }
+    }
+}
+
 /// Sign out: revoke the token on the server (best effort) and forget it here.
 pub fn sign_out(dir: &Path) {
     if let Some(token) = load_token(dir) {

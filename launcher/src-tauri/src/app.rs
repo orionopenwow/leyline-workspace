@@ -932,6 +932,7 @@ pub fn run() {
             crate::social::commands::social_ways,
             // the Forum page: reading the website's forum, opening its pages (forum.rs)
             crate::forum::commands::forum_call,
+            crate::forum::commands::forum_post,
             crate::forum::commands::forum_open,
             // the News page: the website's news feed (news.rs)
             crate::news::commands::news_list,

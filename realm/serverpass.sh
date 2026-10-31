@@ -33,6 +33,12 @@
 #      works before the restart that loads the script), installs /srv/wrath/workshop-export.py, which writes
 #      /srv/wrath/portal/workshop/items.json (wu-portal's /app/workshop) from cron every 5 minutes, and runs it
 #      once. Read only, approved items only, no new database login.
+#   1d. The duel leaderboards (play.openvanilla.app/wrath/leaderboards, stream/duels.py), when duels-export.py rides
+#      along: makes ov_duels.lua's three tables (the same CREATE TABLE IF NOT EXISTS text, from duels-export.py
+#      --schema, so the export works before the restart that loads the script), installs /srv/wrath/duels-export.py,
+#      which writes /srv/wrath/portal/duels/leaderboards.json (wu-portal's /app/duels) from cron every 5 minutes, and
+#      runs it once. Read only, names only (no account details), bots and opted-out characters left out.
+#      OV_DUELS = 1 (owner 2026-10-31): ov_duels.lua's ratings and points (a new setting: the world server restarts).
 #   4. Announces a restart (SERVERPASS_WARN_MIN, default 5) and recreates the world server; if only the Lua
 #      changed, a live "reload ale" instead.
 # Never prints a password: MySQL runs in its container with the container's own root password.
@@ -132,6 +138,26 @@ SQL
   fi
 fi
 
+# The duel leaderboards' export (see 1d above). Safe to run again: CREATE TABLE IF NOT EXISTS, install, one cron file.
+if [ -f "$T/duels-export.py" ]; then
+  echo "== 1d. duel leaderboards export"
+  sed -i 's/\r$//' "$T/duels-export.py"
+  if python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' "$T/duels-export.py"; then
+    [ -f /srv/wrath/duels-export.py ] && cp -p /srv/wrath/duels-export.py "$BK/duels-export.py"
+    [ -f /etc/cron.d/wu-duels ] && cp -p /etc/cron.d/wu-duels "$BK/cron.wu-duels"
+    python3 -I "$T/duels-export.py" --schema | docker exec -i ov-ac-database sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot -N -B acore_characters' \
+      || die "could not make the duel tables"
+    install -m 755 "$T/duels-export.py" /srv/wrath/duels-export.py
+    install -d -m 755 /srv/wrath/portal/duels
+    printf '*/5 * * * * root python3 -I /srv/wrath/duels-export.py >/dev/null 2>&1\n' > /etc/cron.d/wu-duels
+    chmod 644 /etc/cron.d/wu-duels
+    if out=$(python3 -I /srv/wrath/duels-export.py 2>&1); then echo "  $out (cron every 5 min)"
+    else echo "  NOTE: the first duels export failed (${out:0:200}); cron tries again in 5 minutes"; fi
+  else
+    echo "  NOTE: duels-export.py doesn't parse; skipped"
+  fi
+fi
+
 echo "== 2. dungeon levels (world database)"
 docker exec ov-ac-database sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldump -uroot --single-transaction --skip-lock-tables acore_world dungeon_access_template' \
   | gzip > "$BK/dungeon_access_template.sql.gz"
@@ -179,7 +205,7 @@ fi
 echo "== 3. profile"
 sed -i 's/\r$//' "$PF"
 need=${need_npcs:-0}
-for kv in AC_DUNGEON_ACCESS_REQUIREMENTS_LFGLEVEL_DBCOVERRIDE=1 AC_ALLOW_TWO_SIDE_INTERACTION_GROUP=1 OV_AUTOLEARN=1 OV_DUEL_RESET=1 OV_EVENTS=1 OV_EVENTS_STOCK=1 OV_EVENTS_TRIVIA=1 OV_EVENTS_HIDE=1 \
+for kv in AC_DUNGEON_ACCESS_REQUIREMENTS_LFGLEVEL_DBCOVERRIDE=1 AC_ALLOW_TWO_SIDE_INTERACTION_GROUP=1 OV_AUTOLEARN=1 OV_DUEL_RESET=1 OV_EVENTS=1 OV_EVENTS_STOCK=1 OV_EVENTS_TRIVIA=1 OV_EVENTS_HIDE=1 OV_DUELS=1 \
     OV_COMPANIONS=0 AC_PLAYERBOTS_MAX_ADDED_BOTS=0 OV_COMPANIONS_PER_PLAYER_RAID=9 OV_COMPANIONS_GROUP_MAX=10 \
     OV_COMPANIONS_REALM_MAX=60 OV_COMPANIONS_RAID25=0 \
     AC_PLAYERBOTS_LOOT_NEED_ROLL_LEVEL=0 AC_PLAYERBOTS_LOOT_GREED_ROLL_LEVEL=0 AC_PLAYERBOTS_LOOT_ROLL_DISENCHANT=0 \

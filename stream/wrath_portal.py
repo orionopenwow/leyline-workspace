@@ -13,6 +13,8 @@ Two listeners, both inside Docker networks only (never published on the host):
          GET /wrath/healthz    200 when AzerothCore's SOAP answers
          GET /wrath/realms     public: the official realm first, then community realms from the
                                Beacons relay's listing (cached; a dead relay never slows the page)
+         GET /wrath/leaderboards, /wrath/api/leaderboards  public: the duel leaderboards (stream/duels.py), read
+                               from the file realm/custom/duels-export.py writes to /app/duels every 5 minutes
          GET /wrath/armory[/<Name>]  public: the web armory (stream/armory.py), read from the files that
                                realm/custom/armory-export.py writes to /app/armory every 5 minutes
          GET /wrath/mods       public: the mods Workshop (stream/workshop.py, optional): the catalog the
@@ -312,6 +314,9 @@ if admin is not None:
     admin.bind(lambda name: globals()[name])
     if creations is not None:
         creations.adjust = admin.adjust_catalog
+duels = _load_module("wu_duels", "duels.py")   # /wrath/leaderboards, /wrath/api/leaderboards: duel boards (stream/duels.py)
+if duels is not None:
+    duels.bind(lambda name: globals()[name])
 
 
 def signin_url(nxt: str = "/wrath") -> str:
@@ -2989,6 +2994,9 @@ class PageHandler(BaseHTTPRequestHandler):
             return
         if path.startswith("/wrath/art/"):
             self.art(urllib.parse.unquote(path[len("/wrath/art/"):]))
+            return
+        if duels is not None and duels.match(path):   # the duel leaderboards and their JSON (stream/duels.py)
+            duels.get(self, path, query)
             return
         if forum is not None and forum.match(path):   # the forum and its JSON (stream/forum.py)
             forum.get(self, path, query)

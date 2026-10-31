@@ -20,6 +20,7 @@ const FAKE = ({ page, backdrop, tabs }) => {
   const calls = (window.__calls = []);
   try {
     if (page) localStorage.setItem('leyline.page', page); else localStorage.removeItem('leyline.page');
+    localStorage.setItem('leyline.dcView', 'all'); localStorage.setItem('leyline.dcMore', '1');   // the full catalog, More filters open (simple.js)
     if (backdrop) localStorage.setItem('leyline.backdrop', backdrop); else localStorage.removeItem('leyline.backdrop');
     if (tabs) localStorage.setItem('leyline.tabs', JSON.stringify(tabs)); else localStorage.removeItem('leyline.tabs');
   } catch (_) { /* fine */ }

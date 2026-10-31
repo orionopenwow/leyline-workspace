@@ -19,6 +19,7 @@ const FAKE = (o) => {
   const calls = (window.__calls = []);
   try {
     if (o.page) localStorage.setItem('leyline.page', o.page); else localStorage.removeItem('leyline.page');
+    localStorage.setItem('leyline.dcView', 'all'); localStorage.setItem('leyline.dcMore', '1');   // the full catalog, More filters open (simple.js)
     localStorage.setItem('leyline.mode', 'online');
   } catch (_) { /* fine */ }
   const clients = o.noClients ? [] : [{ id: 'c335a-1', name: 'My Wrath', path: '/x', build: '3.3.5a', realmlist: 'play.openvanilla.app', locale: 'enUS' }];

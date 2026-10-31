@@ -192,6 +192,7 @@ $("search-form").addEventListener("submit", (ev) => {
   } else {
     $("cat-q").value = q;
     catFilter.cat = "";
+    if (window.LeylineSimple) window.LeylineSimple.setView("all", true);   // a search is the full catalog (simple.js)
     show("mods", false, "discover");
   }
 });
@@ -1087,6 +1088,7 @@ async function loadCatalog(quiet) {
 }
 
 function renderCatalog() {
+  if (window.LeylineSimple) window.LeylineSimple.render();   // the Simple view's rows, or the full view's smart chips (simple.js)
   const c = pickedClient();
   const q = $("cat-q").value.trim().toLowerCase();
   const fitOnly = $("cat-fit").checked;
@@ -1367,6 +1369,7 @@ async function handleDeepLink() {
   const c = pickedClient();
   if (c && !fitsClient(p, c)) $("cat-fit").checked = false;
   await loadRanks(false);
+  if (window.LeylineSimple && window.LeylineSimple.view() !== "all") window.LeylineSimple.setView("all", true);   // the card is in the full catalog
   renderCatalog();
   const card = document.querySelector(`#cat-grid .mod-card[data-id="${CSS.escape(p.id)}"]`);
   if (card) { card.scrollIntoView({ block: "center" }); const b = card.querySelector(".acts .btn"); if (b && !b.disabled) b.focus(); }

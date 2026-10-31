@@ -127,7 +127,7 @@ check("offered_only: hidden-only items go, mixed ones keep the offered builds",
       and HB.offered_only({"builds": ["4.3.4"]}, HB.offered_builds({"LEYLINE_ALL_CLIENTS": "1"})) is not None)
 check("offered_tag: a hidden build is no filter", HB.offered_tag("5.4.8") == "" and HB.offered_tag("cata") == ""
       and HB.offered_tag("1.12.1") == "1.12" and HB.build_tag("5.4.8") == "5.4.8")
-check("catalog page: the 12 categories and themes", all(f"catalog?cat={c}" in req("/wrath/leyline-preview/catalog")[2].decode() for c in HB.CATEGORY_IDS + ["themes"]))
+check("catalog page (Browse everything): the 12 categories and themes", all(f"catalog?cat={c}" in req("/wrath/leyline-preview/catalog?view=all")[2].decode() for c in HB.CATEGORY_IDS + ["themes"]))
 check("front page: creators and Host a Beacon", "/wrath/leyline-preview/creators" in front and "/wrath/leyline-preview/beacon" in front)
 check("front page: a TODO(owner) for the tagline, no words in the owner's voice", "TODO(owner)" in front)
 # the owner's mockup (2026-10-30): header nav, the hero, Platform Status, Community Spotlight, the footer
@@ -821,7 +821,7 @@ check("gallery: hover zoom and caption reveal, none of it moving with reduced mo
       and ".hb-gal.flt .hb-gt{grid-column:auto;grid-row:auto}" in fp)
 SRC = re.compile(r'(?:src|href)="([^"]+\.(?:webp|png|jpe?g|gif|avif|svg))"|<img\b[^>]*\bsrc="([^"]+)"|url\(([^)]+)\)', re.I)
 HB.hub.portal = lambda name: None if name == "hub_rank" else portal_gal(name)
-cat = req("/wrath/leyline-preview/catalog")[2].decode()
+cat = req("/wrath/leyline-preview/catalog?view=all")[2].decode()
 catf = req("/wrath/leyline-preview/catalog?cat=addons")[2].decode()
 HB.hub.portal = portal_gal
 third = [u for page in (fp, gal, cat) for m in SRC.findall(page) for u in m if u and not u.startswith("#") and not (u.startswith("/") and not u.startswith("//"))]
@@ -1174,7 +1174,7 @@ check("catalog: each external pack carries the badge and Visit the authors' page
       for c in ecards), ecards[:1])
 check("catalog: never an Install for an external pack", "leyline://install/ext:" not in catx and not any("Install" in c for c in ecards))
 check("catalog: the source chip 'Graphics & external packs' (?source=external) shows only them",
-      'href="/wrath/leyline-preview/catalog?source=external"' in req("/wrath/leyline-preview/catalog")[2].decode())
+      'href="/wrath/leyline-preview/catalog?source=external"' in req("/wrath/leyline-preview/catalog?view=all")[2].decode())
 only = req("/wrath/leyline-preview/catalog?source=external")[2].decode()
 check("catalog ?source=external: the two packs, nothing else", len(re.findall(r'<article class="hb-card hb-ext">', only)) == 2
       and '<article class="hb-card">' not in only)
@@ -1374,7 +1374,7 @@ check("Install is the launcher's blue action, Play the launcher's red PLAY (owne
       '<a class="hb-inst sm" href="leyline://install/up:skada"' in ska and "hb-play sm" not in ad
       and ".hb-play,.hb-ho-a .hb-cta{position:relative;border:2px solid #3c4646" in HB.SITE_CSS and "#a5191b" in HB.SITE_CSS)
 HB.hub.portal = real
-cat0 = req("/wrath/leyline-preview/catalog")[2].decode()
+cat0 = req("/wrath/leyline-preview/catalog?view=all")[2].decode()
 check("catalog panel: the page's panel with its header strip, More filters as a details (no script), Get the launcher",
       '<section class="hb-pg hb-cat" aria-labelledby="hb-pg-h"><header class="hb-pg-h">' in cat0
       and '<details class="hb-fmore"><summary>More filters</summary>' in cat0 and 'class="hb-get"' in cat0
@@ -1386,6 +1386,34 @@ check("phones: 16px gutters, chip rows scroll inside the panel, one card per row
       ".hb-main:has(>.hb-pg),.hb-main:has(>.fm),.hb-main:has(>.hf){padding:16px 16px 32px}" in HB.SITE_CSS
       and ".hb-pg .hb-grid{grid-template-columns:minmax(0,1fr)}" in HB.SITE_CSS)
 check("the index in the repo passes the hub's rules", HB.validate_index(json.load(open(os.path.join(HERE, "hub", "community-index.json")))) == [])
+
+# ---- Mods, the Simple view (owner 31 Oct: "'Mods' should also have a simple section, trim search")
+sim = req("/wrath/leyline-preview/catalog")[2].decode()
+check("Mods: /catalog is the Simple view: one search box, rows of big cards, Browse everything, no filter rows",
+      'class="hb-pg hb-cat hb-simple"' in sim and sim.count('role="search"') == 1 and 'class="hb-fmore"' not in sim
+      and 'class="hb-filters"' not in sim and '<h2 id="hb-sr-popular">Popular</h2>' in sim
+      and '<a class="hb-cta sm" href="/wrath/leyline-preview/catalog?view=all">Browse everything</a>' in sim
+      and 'class="hb-grid hb-big"' in sim and "<script" not in sim)
+check("Mods Simple: Discover is the tab that is on", '<a href="/wrath/leyline-preview/catalog" class="on" aria-current="page">Discover</a>' in sim)
+full = req("/wrath/leyline-preview/catalog?view=all")[2].decode()
+smart = re.search(r'<div class="hb-chips hb-smart"[^>]*>(.*?)</div>', full, re.S)
+check("Mods Browse everything: a few smart chips (4) before More filters, Sort and Show inside it",
+      smart and len(re.findall(r'class="hb-chip', smart.group(1))) == 4
+      and full.index('hb-smart') < full.index('<summary>More filters</summary>') < full.index('>Sort</span>'))
+check("Mods: a search (or any filter) is the full catalog; a chip that clears every filter stays there (view=all)",
+      'class="hb-simple"' not in req("/wrath/leyline-preview/catalog?q=bags")[2].decode()
+      and 'hb-simple' not in req("/wrath/leyline-preview/catalog?cat=addons")[2].decode()
+      and 'href="/wrath/leyline-preview/catalog?view=all" aria-current="true">Everything</a>' in full)
+mk = lambda i, **k: dict({"id": i, "source": "workshop", "name": i, "category": "addons", "score": 1.0, "tags": []}, **k)   # noqa: E731
+rows = HB.hub.simple_rows([mk("mod:a", score=9), mk("mod:b", category="sandbox"), mk("theme:c", category="themes", source="theme"),
+                           mk("mod:d"), mk("ext:x", source="external")],
+                          [mk("up:e", source="upstream", tags=["unit-frames"]), mk("up:f", source="upstream", tags=["bags"])])
+got = {k: [i["id"] for i in its] for k, _t, _l, _h, its in rows}
+check("simple_rows: Popular first (no themes), then Game modes, Make it look nicer, Quality of life; external packs never",
+      list(got) == ["popular", "game", "looks", "qol"] and got["popular"][0] == "mod:a" and "theme:c" in got["looks"]
+      and all("ext:x" not in v for v in got.values()) and len(got["popular"]) <= 4 and "theme:c" not in got["popular"]
+      and got["game"] == ["mod:b"] and "up:e" in got["looks"] and "up:f" in got["qol"]
+      and len(sum((v for k, v in got.items() if k != "popular"), [])) == len(set(sum((v for k, v in got.items() if k != "popular"), []))), got)
 
 srv.shutdown()
 shutil.rmtree(DATA, ignore_errors=True)

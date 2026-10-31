@@ -2357,12 +2357,92 @@ class Hub:
               + f'>Works on {e(HANGOUT_NAME)}</a>')
         return f'<nav class="hb-mk-bar" aria-label="Addon types"><div class="hb-chips">{"".join(chips)}</div>{wk}</nav>'
 
+    # ---------------------------------------------------------------- Mods, the Simple view (owner 31 Oct: "simple section")
+    # /catalog with no filters: a few short rows of big cards (Popular, Game modes, Make it look nicer, Quality of life)
+    # and one search box. The full catalog with every filter is /catalog?view=all ("Browse everything"), and any filter
+    # or search goes there too. The launcher's Discover does the same (launcher/ui/simple.js), with the same rows.
+    SIMPLE_ROW_N = 4
+
+    def simple_rows(self, items: list, ups: list, metrics: dict | None = None) -> list[tuple[str, str, str, str, list]]:
+        """[(key, title, line, see-all href, [items])]: the Simple view's rows, each up to SIMPLE_ROW_N, empty ones
+        left out. Popular is the top of everything; an item is in one of the other rows at most (the first that takes it)."""
+        pool = [i for i in items if i["source"] != "external"] + list(ups)
+        metrics = metrics or {}
+
+        def pop(i):
+            m = metrics.get(i["id"]) or {}
+            n = ((m.get("installs") or {}).get("all") or 0) if isinstance(m, dict) else 0
+            return (-n, -float(i.get("score") or 0), i["name"].lower(), i["id"])
+        pool.sort(key=pop)
+        tags = lambda i: set(i.get("tags") or [])   # noqa: E731
+        rows = [
+            ("game", "Game modes", "Minigames and mods that change how you play.", f"{BASE}/catalog?cat=sandbox",
+             lambda i: i["category"] in GAME_CATS),
+            ("looks", "Make it look nicer", "Interfaces, frames, nameplates and looks for the launcher.", f"{BASE}/catalog?cat=themes",
+             lambda i: i["category"] in ("themes", "graphics") or bool(tags(i) & LOOK_TAGS) or bool(i.get("replaces_ui"))),
+            ("qol", "Quality of life", "Small helpers: bags, quests, maps, chat and more.", f"{BASE}/catalog?cat=addons",
+             lambda i: bool(tags(i) & QOL_TAGS) or (i["category"] == "addons" and not tags(i))),
+        ]
+        used: set[str] = set()   # the themed rows never repeat a card (Popular may show one of theirs)
+        out = []
+        popular = [i for i in pool if i["category"] != "themes"][:self.SIMPLE_ROW_N]
+        if popular:
+            out.append(("popular", "Popular", "What players pick most.", f"{BASE}/catalog?view=all", popular))
+        for key, title, line, href, fits in rows:
+            got = [i for i in pool if i["id"] not in used and fits(i)][:self.SIMPLE_ROW_N]
+            if got:
+                used |= {i["id"] for i in got}
+                out.append((key, title, line, href, got))
+        return out
+
+    def simple_page(self) -> bytes:
+        """The Simple view of Mods (see above): one search box, the rows, Browse everything."""
+        e = html.escape
+        rk = self.portal("hub_rank")
+        rk = rk if rk is not None and getattr(rk, "store", None) is not None else None
+        items = self.items()
+        metrics = rk.store.metrics(items) if rk else {}
+        rows = self.simple_rows(items, self.upstream(), metrics)
+        seg = self.mods_tabs("")
+
+        def one(i):
+            return self.upstream_card(i) if i["source"] == "upstream" else self.card(i, metrics.get(i["id"]) if rk else None, rk)
+        secs = "".join(
+            f'<section class="hb-srow" id="row-{key}" aria-labelledby="hb-sr-{key}"><div class="hb-srow-h"><div>'
+            f'<h2 id="hb-sr-{key}">{e(title)}</h2><p>{e(line)}</p></div><a class="hb-ghost sm" href="{e(href)}">See all</a></div>'
+            f'<div class="hb-grid hb-big">{"".join(one(i) for i in got)}</div></section>' for key, title, line, href, got in rows)
+        if not secs:
+            secs = f'<p class="hb-empty">Nothing here yet. <a href="{BASE}/submit">Submit a mod</a> to fill it.</p>'
+        body = (f'<section class="hb-pg hb-cat hb-simple" aria-labelledby="hb-pg-h"><header class="hb-pg-h"><div class="hb-pg-t">'
+                f'<h1 id="hb-pg-h">Mods</h1>{seg}</div>'
+                f'<a class="hb-ghost hb-pg-x" href="{BASE}/submit">Submit a mod</a></header><div class="hb-pg-b">'
+                f'<form class="hb-search" method="get" action="{BASE}/catalog" role="search">'
+                '<label for="hb-q" class="hb-vh">Search mods</label><input id="hb-q" name="q" type="search" maxlength="60" '
+                'placeholder="Search mods, addons and themes"><button type="submit">Search</button></form>'
+                f'{secs}<p class="hb-sall"><a class="hb-cta sm" href="{BASE}/catalog?view=all">Browse everything</a>'
+                '<span>Every mod, with all the filters.</span></p></div></section>'
+                + f'<p class="hb-get">Installing needs the Leyline launcher on this PC. <a href="{e(self._download())}" '
+                  'rel="noopener noreferrer">Get the launcher</a></p>'
+                + (f"<style>{rk.RANK_CSS}</style>" if rk else ""))
+        return self._shell("Mods · Leyline", body, BASE + "/catalog", active="mods")
+
+    def mods_tabs(self, cur: str) -> str:
+        """The Mods panel's tabs: Discover (the Simple view), Addons, Themes."""
+        e = html.escape
+        tabs = [("", "Discover"), ("addons", "Addons"), ("themes", "Themes")]
+        return ('<nav class="hb-seg" aria-label="Mods">' + "".join(
+            f'<a href="{e(f"{BASE}/catalog" + (f"?cat={c}" if c else ""))}"' + (' class="on" aria-current="page"' if c == cur else "")
+            + f">{t}</a>" for c, t in tabs) + "</nav>")
+
     def catalog_page(self, query: dict) -> bytes:
         """The launcher's Mods › Discover on the web: one panel with its tabs (Discover, Addons, Themes), the search and
         the filters as plain links (no script), the addon marketplace's chips on Addons, and the cards: Install hands
-        over to the launcher (leyline://install/<id>); nothing installs from the website."""
+        over to the launcher (leyline://install/<id>); nothing installs from the website. With no filter at all (and no
+        ?view=all) it is the Simple view (simple_page)."""
         e = html.escape
         q1 = lambda k: (query.get(k) or [""])[0][:80]   # noqa: E731
+        if q1("view") != "all" and not any(q1(k) for k in ("build", "cat", "source", "q", "sort", "tag", "works", "kind", "page")):
+            return self.simple_page()
         build, cat, source, text, sort = offered_tag(q1("build")), q1("cat"), q1("source"), clean_line(q1("q"), 60), q1("sort") or "score"
         cat = cat if cat in CATEGORY_IDS + ["themes"] else ""
         source = source if source in ("workshop", "index", "theme", "external", "upstream") else ""
@@ -2428,7 +2508,7 @@ class Hub:
                    "tag": tag, "works": "1" if works else ""}
             cur.update(over)
             qs = urllib.parse.urlencode({k: v for k, v in cur.items() if v})
-            return f"{BASE}/catalog" + (f"?{qs}" if qs else "")
+            return f"{BASE}/catalog?" + (qs or "view=all")   # no filter left: still the full catalog, not the Simple view
 
         def chips(key, opts, cur):
             return "".join(f'<a class="hb-chip{" on" if v == cur else ""}" href="{e(link(**{key: v, "page": ""}))}"'
@@ -2470,18 +2550,26 @@ class Hub:
             group = '<p class="hb-empty">No external packs here.</p>'
         total += len(ext)
         title = {"addons": "Addons", "themes": "Themes"}.get(cat, "Mods")
-        tabs = [("", "Discover"), ("addons", "Addons"), ("themes", "Themes")]
-        seg = ('<nav class="hb-seg" aria-label="Mods">' + "".join(
-            f'<a href="{e(f"{BASE}/catalog" + (f"?cat={c}" if c else ""))}"' + (' class="on" aria-current="page"' if c == cat else "")
-            + f">{t}</a>" for c, t in tabs) + "</nav>")
+        seg = self.mods_tabs(cat if cat in ("addons", "themes") else "")
         mk = self.mk_bar([u for u in ups_all if (not build or build in u["builds"] or "any" in u["builds"])], tag, works, link) \
             if ups_all and cat in ("", "addons") and source in ("", "upstream") else ""
         unfiltered = not (build or cat or source or kind or text or tag or works)
-        more_on = bool(build or source or kind)
+        more_on = bool(build or source or kind or tag or (sort != "score"))
         lede = {"addons": f"Addons for your game client, many straight from their authors. Install opens the Leyline launcher on "
                           f"this PC.",
                 "themes": "Looks for the Leyline launcher. Install opens the launcher on this PC."}.get(
             cat, "Mods, addons, realm scripts and tools. Install opens the Leyline launcher on this PC.")
+        # A few smart chips (one click each); every other filter waits under More filters (owner 31 Oct: "trim search")
+        smart = [("", "Everything", link(cat="", works="", tag="", page=""), not cat and not works),
+                 ("addons", "Addons", link(cat="addons", works="", page=""), cat == "addons" and not works),
+                 ("sandbox", "Game modes", link(cat="sandbox", works="", tag="", page=""), cat == "sandbox"),
+                 ("works", f"Works on {HANGOUT_NAME}", link(works="" if works else "1", page=""), works)]
+        f_smart = "".join(f'<a class="hb-chip{" on" if on else ""}{" hb-mk-works" if k == "works" else ""}" href="{e(href)}"'
+                          + (' aria-current="true"' if on else "") + f">{e(label)}</a>" for k, label, href, on in smart)
+        filters = (f'<div class="hb-filters"><div class="hb-chips hb-smart" role="group" aria-label="Show">{f_smart}</div>'
+                   f'<details class="hb-fmore"{" open" if more_on else ""}><summary>More filters</summary>'
+                   f'{frow("Sort", f_sort)}{frow("Show", f_cat)}{frow("Client", f_build)}{frow("From", f_src)}{f_kind}{mk}'
+                   '</details></div>')
         body = (f'<section class="hb-pg hb-cat" aria-labelledby="hb-pg-h"><header class="hb-pg-h"><div class="hb-pg-t">'
                 f'<h1 id="hb-pg-h">{title}</h1>{seg}</div>'
                 f'<a class="hb-ghost hb-pg-x" href="{BASE}/submit">Submit a mod</a></header><div class="hb-pg-b">'
@@ -2491,14 +2579,7 @@ class Hub:
                 f'placeholder="Search {title.lower()}">'
                 '<button type="submit">Search</button></form>'
                 f'<p class="hb-count">{total} items' + (f' for the {e(CLIENT_LABEL[build].lower())}' if build and build != "any" else "") + '</p>'
-                + (f'<div class="hb-filters">{frow("Show", f_cat)}{frow("Sort", f_sort)}'
-                   f'<details class="hb-fmore"{" open" if more_on else ""}><summary>More filters</summary>'
-                   f'{frow("Client", f_build)}{frow("From", f_src)}{f_kind}</details></div>' if cat not in ("addons", "themes") else
-                   # on the Addons and Themes tabs the tab is the category: the other categories wait under More filters
-                   f'<div class="hb-filters">{frow("Sort", f_sort)}'
-                   f'<details class="hb-fmore"{" open" if more_on else ""}><summary>More filters</summary>'
-                   f'{frow("Show", f_cat)}{frow("Client", f_build)}{frow("From", f_src)}{f_kind}</details></div>')
-                + mk
+                + filters
                 + (self.featured_strip(self.items()) if page == 1 and unfiltered else "")
                 + (f'<div class="hb-grid">{grid}</div>' if grid else "") + f'{group}{nav}</div></section>'
                 + f'<p class="hb-get">Installing needs the Leyline launcher on this PC. <a href="{e(self._download())}" '
@@ -3562,6 +3643,14 @@ list-style:none;border:1px dashed var(--lk-border-strong);color:var(--lk-text-2)
 background:var(--lk-surface-2);color:var(--lk-text-2)!important;font-size:13px;font-weight:600;text-decoration:none}
 .hb-chip:hover{border-color:var(--lk-border-strong);color:var(--lk-text)!important}
 .hb-chip.on{background:var(--lk-accent-soft);border-color:var(--lk-accent);color:var(--lk-text)!important}
+/* Mods, the Simple view: rows of big cards under one search box */
+.hb-smart{margin:0 0 2px}
+.hb-srow{margin:22px 0 0}.hb-srow:first-of-type{margin-top:14px}
+.hb-srow-h{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin:0 0 10px}
+.hb-srow-h h2{margin:0;font-size:18px;line-height:1.25;text-align:left}.hb-srow-h p{margin:2px 0 0;color:var(--lk-muted);font-size:13.5px}
+.hb-pg .hb-grid.hb-big{grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:18px}
+.hb-big .hb-card h3{font-size:17px}
+.hb-sall{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:26px 0 0;padding-top:18px;border-top:1px solid var(--lk-border);color:var(--lk-muted);font-size:13.5px}
 /* the addon marketplace's chips: kinds, and "Works on" on the right */
 .hb-mk-bar{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 16px;margin:0 0 16px;
 padding-top:14px;border-top:1px solid var(--lk-border)}
@@ -3666,7 +3755,7 @@ border:1px solid var(--lk-border);border-radius:12px;background:linear-gradient(
 .hb-frow p::-webkit-scrollbar,.hb-mk-bar .hb-chips::-webkit-scrollbar{display:none}
 .hb-chip{flex:none}
 .hb-mk-bar .hb-chips{flex-basis:100%}
-.hb-pg .hb-grid{grid-template-columns:minmax(0,1fr)}
+.hb-pg .hb-grid{grid-template-columns:minmax(0,1fr)}.hb-pg .hb-grid.hb-big{grid-template-columns:minmax(0,1fr)}.hb-srow-h{align-items:flex-start}
 .hb .hb-pg .net-filters div{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:0 16px}
 .hb .hb-pg .net-filters a,.hb .hb-pg .net-filters span{flex:none}
 .hb-rl{grid-template-columns:42px minmax(0,1fr);gap:8px 12px;padding:12px}
@@ -4001,6 +4090,11 @@ MK_SUBS = (("full-ui", "Full interfaces"), ("unit-frames", "Unit frames"), ("rai
            ("chat", "Chat"), ("social", "Groups and friends"), ("class", "Class"), ("professions", "Professions"), ("pvp", "PvP"),
            ("skins", "Skins"), ("libraries", "Libraries"), ("quality-of-life", "Quality of life"))
 MK_SUB_NAME = dict(MK_SUBS)
+# The Simple view's rows (Hub.simple_rows; the launcher's simple.js keeps the same three lists): game-changing
+# categories, the addon kinds that change how the game looks, and the small helpers.
+GAME_CATS = ("sandbox", "maps", "encounters", "conversions")
+LOOK_TAGS = {"full-ui", "unit-frames", "raid-frames", "action-bars", "nameplates", "skins", "combat-text", "auras"}
+QOL_TAGS = {"quality-of-life", "bags", "quests", "maps", "minimap", "tooltips", "chat", "auction", "gear", "social", "professions"}
 KIND_WORDS = {"addon": ("Addon", "an addon", "addons"), "mod": ("Mod", "a mod", "mods"), "mode": ("Game mode", "a game mode", "modes"),
               "theme": ("Theme", "a theme", "creators")}
 GALLERY_FILTERS = (("", "All"), ("game", "In game"), ("mods", "Mods"), ("launcher", "Launcher"))

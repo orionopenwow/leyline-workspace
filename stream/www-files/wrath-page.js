@@ -251,6 +251,7 @@ export function guestPass(env = window.__wenilla_env) {
 export function signingIn(wenilla) {
   if (!pageSignedIn()) return;
   const guest = guestPass();    // the cover stays up through the character list, into the inn
+  const hopping = window.__wenilla_env?.hop ? String(window.__wenilla_env.hop_name || 'a community realm').replace(/[\u0000-\u001f<>]/g, '').slice(0, 32) : '';
   const GIVE_UP_MS = guest ? 30000 : 12000;     // a failed sign-in: the client's own form comes back
   const NO_BRIDGE_MS = 5000;    // without bridge states: about a sign-in's length
   let cover = null, done = false, timer = 0;
@@ -272,7 +273,7 @@ export function signingIn(wenilla) {
     cover.id = 'ow-signin';
     cover.setAttribute('role', 'status');
     cover.innerHTML = '<div><div class="wu-spin" aria-hidden="true"></div>'
-      + (guest ? 'Opening the Goldshire Inn…' : 'Signing in…') + '</div>';
+      + (guest ? 'Opening the Goldshire Inn…' : hopping ? 'Going to ' + hopping + '…' : 'Signing in…') + '</div>';
     document.body.append(cover);
     status.signin = 'shown';
     timer = setTimeout(() => hide(wenilla?.ready ? 'gave up' : 'timer'), wenilla?.ready ? GIVE_UP_MS : NO_BRIDGE_MS);
@@ -582,8 +583,9 @@ export function hopEcho(payload) {
   return m ? m[1] : null;
 }
 
-/** Watch for the Leyline window's Join. `go(url)` navigates (tests pass their own). Returns a small handle. */
-export function watchHops(wenilla, { env = window.__wenilla_env || {}, go = (u) => location.assign(u), pollMs = 1000 } = {}) {
+/** Watch for the Leyline window's Join. `go(url)` navigates (tests pass their own). `fast(target)` (the page passes
+ * fastHop): tried first; it resolves false when the old way should be taken. Returns a small handle. */
+export function watchHops(wenilla, { env = window.__wenilla_env || {}, go = (u) => location.assign(u), pollMs = 1000, fast = null } = {}) {
   const h = { taking: false, gone: null, take: null, timer: 0, polls: 0, taken: null, error: null };
   if (!wenilla || typeof wenilla.lua !== 'function') return h;
   h.take = async () => {
@@ -598,6 +600,11 @@ export function watchHops(wenilla, { env = window.__wenilla_env || {}, go = (u) 
       if (!t || (t === 'wrath' && !env.hop)) return null;   // already home
       if (t === env.hop) return null;                       // already there
       h.gone = hopUrl(t, env);
+      if (typeof fast === 'function') {
+        const old = h.gone;
+        Promise.resolve().then(() => fast(t)).then((went) => { if (!went) go(old); }, () => go(old));
+        return h.gone;
+      }
       go(h.gone);
       return h.gone;
     } finally {
@@ -731,6 +738,469 @@ export function hopUi(env = window.__wenilla_env || {}, hop = window.__wuHop) {
   }
 }
 // <<< leyline-hop -----------------------------------------------------------------------------------
+
+// >>> leyline-browse (the in-game realm browser, 2026-10-31) ------------------------------------------
+// The Leyline window (WrathUnleashedUI/Leyline.lua) and the character select screen's Realms button
+// (GlueXML/LeylineGlue.lua) show every realm on the network, with a preview before joining. The game can't make HTTP
+// calls, so the page does, and hands the answers in through the bridge, the way the game folder's state goes in:
+//   game -> page   WUUI_LEYLINE_ASK = "list|<page>|<filters>|<search>"   filters: b plays in the browser, o needs own
+//                                                                          game files, p has players, v<build> that version
+//                  WUUI_LEYLINE_ASK = "preview|<realm id>"                 one realm's details (and a Hero Key prefetch)
+//                  WUUI_LEYLINE_ASK = "launch|<realm id>"                  needs another game version: the launcher bar
+//   page -> game   WUUI_LEYLINE_NET = { rows = {...}, page, pages, total, ... }     at most PAGE_SIZE rows
+//                  WUUI_LEYLINE_PREVIEW = { id, name, desc, rules, who, mods, verdict, ... }
+//                  then WUUI_LEYLINE_ONNET(kind) and WUUI_LEYLINE_ONNET_GLUE(kind) when they are functions.
+// The page takes the ask on a 0.4 s poll while the bridge has a VM, and sets WUUI_LEYLINE_BROWSE = 1 so the game knows
+// it can ask (an older page: the window keeps its realm-side list, ov_leyline.lua).
+// The data: the network listing (<home>/wrath/realms.json: staff hides, featured, the official order) merged by realm
+// id with the relay's own listing (or the mesh's /api/mesh/realms.json when the site's mesh_realms flag is on), which
+// carries the per-realm fields of the listing contract (docs/leyline-realm-hopping.md "Realm browser"): build, online,
+// who, rules, mods, herokey, uptime_pct. Each is read defensively; missing = unknown. Host text never shows a game
+// brand word or a version number; the version is only ever a chip.
+const PAGE_SIZE = 20;
+const NET_TTL_MS = 30000;
+const BUILD_OF = { '1.12.1': 5875, '2.4.3': 8606, '3.3.5a': 12340, '4.3.4': 15595, '5.4.8': 18414 };
+const CHIP = { 5875: '1.12.1', 8606: '2.4.3', 12340: '3.3.5a', 15595: '4.3.4', 18414: '5.4.8' };
+const BROWSER_BUILD = 12340;   // the browser game's own client
+const BRAND_WORDS = /\b(world\s+of\s+warcraft|warcraft|lich\s+king|blizzard|wow)\b/gi;
+const BRAND_ONE = /\b(world\s+of\s+warcraft|warcraft|lich\s+king|blizzard|wow)\b/i;
+const VERSION_WORDS = /\b\d+\.\d+\.\d+[a-z]?\b/gi;
+const PRE_KEY = 'wu.leyline.pre.';
+const T0_KEY = 'wu.leyline.hop.t0';
+const RELAY_DEFAULT = 'https://relay.openvanilla.app';
+
+/** Host text as players see it: one line, no colour codes, no brand words, no version numbers, at most n chars. */
+export function hostText(v, n) {
+  if (typeof v !== 'string') return '';
+  const s = v.replace(/\|c[0-9a-fA-F]{8}|\|r/g, '').replace(/[\u0000-\u001f\u007f|]/g, ' ')
+    .replace(BRAND_WORDS, '').replace(VERSION_WORDS, '').replace(/\s+/g, ' ').trim();
+  return s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s;
+}
+
+const pick = (rec, k) => (rec && rec[k] !== undefined ? rec[k] : rec?.community?.[k]);
+const num = (v, lo, hi) => (typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi ? v : null);
+const int = (v, lo, hi) => { const n = num(v, lo, hi); return n === null ? null : Math.floor(n); };
+
+function buildOf(rec) {
+  const b = pick(rec, 'build');
+  if (typeof b === 'string' && BUILD_OF[b]) return BUILD_OF[b];
+  if (typeof b === 'number' && CHIP[b]) return b;
+  const pb = rec?.profile?.build;
+  if (typeof pb === 'number' && CHIP[pb]) return pb;
+  if (typeof rec?.profile?.version === 'string' && BUILD_OF[rec.profile.version]) return BUILD_OF[rec.profile.version];
+  return null;
+}
+
+function modName(id) {
+  const t = String(id).replace(/^(mode|mod|up):/, '').replace(/[-_.]+/g, ' ').trim();
+  return t ? t[0].toUpperCase() + t.slice(1) : 'A mod';
+}
+
+/** A realm's mod list: [{id, name, required (true/false/null), client (true/false/null)}], at most 32. */
+export function cleanMods(v) {
+  const out = [], seen = new Set();
+  for (const m0 of (Array.isArray(v) ? v : []).slice(0, 64)) {
+    const m = typeof m0 === 'string' ? { id: m0 } : m0;
+    if (!m || typeof m !== 'object' || typeof m.id !== 'string' || !/^[a-z0-9:._-]{2,72}$/.test(m.id) || seen.has(m.id)) continue;
+    seen.add(m.id);
+    const client = typeof m.client === 'boolean' ? m.client : (m.id.startsWith('up:') ? true : m.id.startsWith('mode:') ? false : null);
+    out.push({ id: m.id, name: hostText(m.name, 40) || modName(m.id),
+               required: typeof m.required === 'boolean' ? m.required : null, client });
+    if (out.length >= 32) break;
+  }
+  return out;
+}
+
+/** One listing record (schema 1, as /wrath/realms.json and the relay's listing give it), with the contract's fields
+ * when the relay record has them. Null when it isn't a community realm record. */
+export function realmFrom(rec, relayRec) {
+  const id = rec?.community?.realmId;
+  if (typeof id !== 'string' || !/^[a-z2-7]{16}$/.test(id) || rec.official === true) return null;
+  const x = relayRec && relayRec.community?.realmId === id ? relayRec : rec;
+  const com = rec.community || {};
+  const hb = (x.community && x.community.lastHeartbeat) || com.lastHeartbeat || {};
+  const live = rec.state === 'live';
+  const online = int(pick(x, 'online'), 0, 999999) ?? int(hb.players, 0, 999999);
+  const rulesRaw = pick(x, 'rules');
+  const rules = typeof rulesRaw === 'string' ? hostText(rulesRaw, 300)
+    : Array.isArray(rulesRaw) ? hostText(rulesRaw.filter((t) => typeof t === 'string').slice(0, 10).join(' · '), 300) : '';
+  const whoRaw = pick(x, 'who');
+  const who = Array.isArray(whoRaw)
+    ? whoRaw.filter((n) => typeof n === 'string' && /^[\p{L}]{2,12}$/u.test(n) && !BRAND_ONE.test(n)).slice(0, 50) : null;
+  const hk = pick(x, 'herokey');
+  const up = num(pick(x, 'uptime_pct'), 0, 100) ?? num(x.community?.uptime?.d7, 0, 100) ?? num(x.community?.uptime?.h24, 0, 100);
+  const build = buildOf(x) ?? buildOf(rec);
+  const warden = x.profile?.warden === true || rec.profile?.warden === true;
+  const ownRaw = pick(x, 'own_files');
+  return {
+    id, name: hostText(rec.name, 32) || 'Unnamed realm', live,
+    desc: hostText(rec.tagline || x.tagline || rec.summary, 160),
+    rules, online, bots: int(hb.bots, 0, 999999), who, mods: cleanMods(pick(x, 'mods') ?? rec.mods),
+    build, herokey: typeof hk === 'boolean' ? hk : null, up: up === null ? null : Math.round(up),
+    browser: (build ?? BROWSER_BUILD) === BROWSER_BUILD && !warden,
+    own: ownRaw === true || (build !== null && build !== BROWSER_BUILD),
+    warden, featured: com.featured === true, verified: com.verified === true,
+    hangout: com.sample === true || com.group === 'sample', ruleset: typeof rec.profile?.ruleset === 'string' ? rec.profile.ruleset : 'custom',
+  };
+}
+
+/** The network's realms: the network listing's records (its order and hides) with the relay's fields merged in; the
+ * relay listing alone when the network one can't be had. */
+export function mergeListings(networkDoc, relayDoc) {
+  const relayRecs = Array.isArray(relayDoc?.realms) ? relayDoc.realms : [];
+  const byId = new Map();
+  for (const r of relayRecs) { const id = r?.community?.realmId; if (typeof id === 'string') byId.set(id, r); }
+  const base = Array.isArray(networkDoc?.realms) ? networkDoc.realms : relayRecs;
+  const out = [], seen = new Set();
+  for (const rec of base.slice(0, 200)) {
+    const r = realmFrom(rec, byId.get(rec?.community?.realmId));
+    if (r && !seen.has(r.id)) { seen.add(r.id); out.push(r); }
+  }
+  return out;
+}
+
+/** "b,o,p,v12340" -> the filter; the search words. */
+export function parseAsk(s) {
+  if (typeof s !== 'string' || s.length > 160) return null;
+  const parts = s.split('|');
+  if (parts[0] === 'list') {
+    const page = Math.max(1, Math.min(50, parseInt(parts[1], 10) || 1));
+    const f = {};
+    for (const t of (parts[2] || '').split(',')) {
+      if (t === 'b') f.browser = true;
+      else if (t === 'o') f.own = true;
+      else if (t === 'p') f.players = true;
+      else if (/^v\d{4,5}$/.test(t) && CHIP[+t.slice(1)]) f.build = +t.slice(1);
+    }
+    return { kind: 'list', page, filter: f, q: String(parts[3] || '').slice(0, 32).toLowerCase().trim() };
+  }
+  if ((parts[0] === 'preview' || parts[0] === 'launch') && /^[a-z2-7]{16}$/.test(parts[1] || '')) return { kind: parts[0], id: parts[1] };
+  return null;
+}
+
+export function filterRealms(list, filter = {}, q = '') {
+  return list.filter((r) => {
+    if (filter.browser && !r.browser) return false;
+    if (filter.own && !r.own) return false;
+    if (filter.players && !(r.live && (r.online || 0) > 0)) return false;
+    if (filter.build && (r.build ?? BROWSER_BUILD) !== filter.build) return false;
+    if (q) {
+      const hay = (r.name + ' ' + r.desc + ' ' + r.mods.map((m) => m.name).join(' ')).toLowerCase();
+      if (!q.split(/\s+/).every((w) => hay.includes(w))) return false;
+    }
+    return true;
+  });
+}
+
+/** What Join does with this realm from here: ok (a hop), own (a hop that switches to own game files), launcher (another
+ * game version, or no browser players: the Leyline launcher), offline. And why, in plain words. */
+export function verdict(r, env = {}) {
+  if (!r) return { verdict: 'offline', why: 'That realm is not on the list right now.' };
+  if (!r.live) return { verdict: 'offline', why: 'This realm is offline right now.' };
+  if ((r.build ?? BROWSER_BUILD) !== BROWSER_BUILD) {
+    return { verdict: 'launcher', why: 'This realm needs a different game version than this one. Open it in the Leyline launcher.' };
+  }
+  if (r.warden) return { verdict: 'launcher', why: 'This realm only takes players from the desktop game. Open it in the Leyline launcher.' };
+  if (r.own && env.mode !== 'own') return { verdict: 'own', why: 'This realm needs your own game files. Join switches to them.' };
+  return { verdict: 'ok', why: '' };
+}
+
+const luaQ = (v) => '"' + String(v ?? '').replace(/[^A-Za-z0-9 .,'!?()&+#_:/-]/g, (c) =>
+  Array.from(new TextEncoder().encode(c)).map((b) => '\\' + String(b).padStart(3, '0')).join('')) + '"';
+const luaB = (v) => (v === true ? 'true' : v === false ? 'false' : 'nil');
+const luaN = (v) => (typeof v === 'number' && Number.isFinite(v) ? String(Math.trunc(v)) : 'nil');
+const CALLBACK = (kind) => ` local f = WUUI_LEYLINE_ONNET; if type(f) == "function" then pcall(f, "${kind}") end`
+  + ` f = WUUI_LEYLINE_ONNET_GLUE; if type(f) == "function" then pcall(f, "${kind}") end`;
+
+function rowLua(r) {
+  return '{ id = ' + luaQ(r.id) + ', name = ' + luaQ(r.name) + ', live = ' + luaB(r.live) + ', online = ' + luaN(r.online)
+    + ', bots = ' + luaN(r.bots) + ', build = ' + luaN(r.build ?? BROWSER_BUILD) + ', chip = ' + luaQ(CHIP[r.build ?? BROWSER_BUILD])
+    + ', browser = ' + luaB(r.browser) + ', own = ' + luaB(r.own) + ', hk = ' + luaB(r.herokey) + ', up = ' + luaN(r.up)
+    + ', featured = ' + luaB(r.featured) + ', verified = ' + luaB(r.verified) + ', hangout = ' + luaB(r.hangout)
+    + ', mods = ' + r.mods.length + ', desc = ' + luaQ(r.desc.slice(0, 80)) + ' }';
+}
+
+/** The Lua chunk for one page of the list (or the error). */
+export function listLua(list, ask, { sso = false, err = '' } = {}) {
+  if (err) return 'WUUI_LEYLINE_NET = { err = ' + luaQ(hostText(err, 80)) + ', rows = {} };' + CALLBACK('list');
+  const shown = filterRealms(list, ask.filter, ask.q);
+  const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+  const page = Math.min(ask.page, pages);
+  const rows = shown.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const live = list.filter((r) => r.live);
+  return 'WUUI_LEYLINE_NET = { v = 1, page = ' + page + ', pages = ' + pages + ', total = ' + shown.length
+    + ', all = ' + list.length + ', sso = ' + luaB(!!sso) + ', mine = ' + BROWSER_BUILD
+    + ', network = { realms = ' + live.length + ', players = ' + live.reduce((a, r) => a + (r.online || 0), 0)
+    + ', bots = ' + live.reduce((a, r) => a + (r.bots || 0), 0) + ' }, rows = { ' + rows.map(rowLua).join(', ') + ' } };'
+    + CALLBACK('list');
+}
+
+/** The Lua chunk for one realm's preview. hk: "ready" (Hero Key sign-in prepared), "yes", "no", "unknown". */
+export function previewLua(r, env = {}, { hk = 'unknown' } = {}) {
+  if (!r) return 'WUUI_LEYLINE_PREVIEW = { missing = true };' + CALLBACK('preview');
+  const v = verdict(r, env);
+  const mods = r.mods.map((m) => '{ name = ' + luaQ(m.name) + ', req = ' + luaB(m.required) + ', client = ' + luaB(m.client) + ' }');
+  return 'WUUI_LEYLINE_PREVIEW = { id = ' + luaQ(r.id) + ', name = ' + luaQ(r.name) + ', desc = ' + luaQ(r.desc)
+    + ', rules = ' + luaQ(r.rules) + ', live = ' + luaB(r.live) + ', online = ' + luaN(r.online) + ', bots = ' + luaN(r.bots)
+    + ', who = ' + (r.who ? '{ ' + r.who.map(luaQ).join(', ') + ' }' : 'nil')
+    + ', mods = { ' + mods.join(', ') + ' }, build = ' + luaN(r.build ?? BROWSER_BUILD) + ', chip = ' + luaQ(CHIP[r.build ?? BROWSER_BUILD])
+    + ', up = ' + luaN(r.up) + ', hk = ' + luaQ(hk) + ', browser = ' + luaB(r.browser) + ', own = ' + luaB(r.own)
+    + ', verdict = ' + luaQ(v.verdict) + ', why = ' + luaQ(v.why) + ', hangout = ' + luaB(r.hangout) + ' };' + CALLBACK('preview');
+}
+
+export const BROWSE_TAKE = 'WUUI_LEYLINE_BROWSE = 1; local a = WUUI_LEYLINE_ASK; WUUI_LEYLINE_ASK = nil; return a';
+
+const relayBase = (env) => {
+  const m = /^(wss?):\/\/([A-Za-z0-9.-]+(?::\d{1,5})?)\/ws\//.exec(String(env.hop_ws || ''));
+  return m ? (m[1] === 'wss' ? 'https://' : 'http://') + m[2] : RELAY_DEFAULT;
+};
+const homeOf = (env) => (typeof env.home === 'string' && /^https:\/\/[a-z0-9.-]+$/i.test(env.home) ? env.home : CONFIG.homeUrl);
+
+/** The network list, cached NET_TTL_MS. Returns {list, flags, err}. */
+export function makeNet({ env = window.__wenilla_env || {}, fetchFn = (...a) => fetch(...a), now = () => Date.now() } = {}) {
+  const net = { at: -1e12, list: [], flags: {}, err: '', inflight: null, tickets: new Map() };
+  const get = (url) => fetchFn(url, { mode: 'cors', credentials: 'omit', cache: 'no-cache' })
+    .then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  net.load = () => {
+    if (now() - net.at < NET_TTL_MS && !net.err) return Promise.resolve(net);
+    if (net.inflight) return net.inflight;
+    const home = homeOf(env), relay = relayBase(env);
+    net.inflight = get(home + '/wrath/leyline/flags.json').then(async (fl) => {
+      const flags = (fl && typeof fl.flags === 'object' && fl.flags) || {};
+      const relayUrl = relay + (flags.mesh_realms === true ? '/api/mesh/realms.json' : '/api/listing/realms.json');
+      let [netDoc, relayDoc] = await Promise.all([get(home + '/wrath/realms.json'), get(relayUrl)]);
+      if (!relayDoc && flags.mesh_realms === true) relayDoc = await get(relay + '/api/listing/realms.json');   // the mesh failed: today's listing
+      if (!netDoc && !relayDoc) { net.err = 'Realm list unavailable'; return net; }
+      net.list = mergeListings(netDoc, relayDoc);
+      net.flags = flags;
+      net.err = '';
+      net.at = now();
+      return net;
+    }).finally(() => { net.inflight = null; });
+    return net.inflight;
+  };
+  net.find = (id) => net.list.find((r) => r.id === id) || null;
+  return net;
+}
+
+/** Can this tab sign in to that realm with the Hero Key? (the site flag, the realm's own say, not declined here) */
+export function ssoUsable(r, net, store = globalThis.localStorage) {
+  if (!r || r.herokey !== true || r.hangout || net?.flags?.herokey_sso !== true) return false;
+  try { if (store?.getItem('wu.leyline.sso.off.' + r.id) === '1') return false; } catch { /* storage blocked */ }
+  return true;
+}
+
+/** A Hero Key assertion for this realm from the portal (same origin, the session cookie), kept 90 s. */
+export async function prefetchTicket(id, net, { fetchFn = (...a) => fetch(...a), now = () => Date.now() } = {}) {
+  const have = net.tickets.get(id);
+  if (have && now() - have.at < 90000) return have;
+  let doc = null;
+  try {
+    const r = await fetchFn('/__gate?herokey=' + id, { method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    doc = r.ok ? await r.json() : null;
+  } catch { doc = null; }
+  const okRedeem = doc && typeof doc.redeem === 'string' && new RegExp('^https://[A-Za-z0-9.-]+(:\\d{1,5})?/api/realms/' + id + '/herokey$').test(doc.redeem);
+  if (!doc || !doc.ok || !okRedeem || !/^HK[A-Z2-7]{14}$/.test(doc.login?.user || '') || typeof doc.login?.pass !== 'string') {
+    net.tickets.delete(id);
+    return null;
+  }
+  const t = { at: now(), assertion: doc.assertion, sig: doc.sig, redeem: doc.redeem, user: doc.login.user, pass: doc.login.pass,
+              ttl: Number(doc.ttl) || 120 };
+  net.tickets.set(id, t);
+  return t;
+}
+
+function timed(p, ms) {
+  return Promise.race([p, new Promise((r) => setTimeout(() => r(null), ms))]);
+}
+
+const HOP_COVER_CSS = `
+  #wu-hop-go { position: fixed; inset: 0; z-index: 45; display: grid; place-items: center; transition: opacity .3s;
+    background: radial-gradient(120% 90% at 50% 45%, rgba(20,34,58,.94) 0%, rgba(2,3,6,.97) 100%);
+    color: #d8e6f5; font: 600 clamp(15px, 2.4vh, 22px) Georgia, serif; letter-spacing: .06em; text-align: center; }
+  #wu-hop-go .bar { width: min(320px, 70vw); height: 6px; margin: 14px auto 8px; border-radius: 3px; background: rgba(160,200,240,.15); overflow: hidden; }
+  #wu-hop-go .bar i { display: block; height: 100%; width: 8%; background: linear-gradient(90deg, #9cc8f0, #f0d389); transition: width .35s; }
+  #wu-hop-go small { display: block; font: 13px system-ui, sans-serif; letter-spacing: 0; color: #9fb3c8; }
+`;
+
+/** "Going to <realm>…" over the game while the hop gets ready. Returns {step(text, pct), done()}. */
+export function hopCover(name, doc = globalThis.document) {
+  if (!doc?.body) return { step() {}, done() {} };
+  let el = doc.getElementById('wu-hop-go');
+  if (!el) {
+    const css = doc.createElement('style');
+    css.textContent = HOP_COVER_CSS;
+    doc.head.append(css);
+    el = doc.createElement('div');
+    el.id = 'wu-hop-go';
+    el.setAttribute('role', 'status');
+    el.innerHTML = '<div><div class="t"></div><div class="bar"><i></i></div><small></small></div>';
+    doc.body.append(el);
+  }
+  el.querySelector('.t').textContent = 'Going to ' + String(name || 'that realm').slice(0, 32) + '…';
+  return {
+    step(text, pct) { el.querySelector('small').textContent = text; el.querySelector('.bar i').style.width = Math.max(8, Math.min(100, pct)) + '%'; },
+    done() { el.remove(); },
+  };
+}
+
+/** The fast hop: switch this session on the server (POST /__gate?hop=), with the Hero Key login already redeemed at the
+ * relay when the realm takes it, then reload on the landing page. Resolves true when it went (or will), false when the
+ * caller should take the old path (/wrath?go=r:<id> through the website). */
+export async function fastHop(target, { env = window.__wenilla_env || {}, net = null, fetchFn = (...a) => fetch(...a),
+  replace = (u) => location.replace(u), assign = (u) => location.assign(u), session = globalThis.sessionStorage,
+  store = globalThis.localStorage, cover = hopCover, now = () => Date.now() } = {}) {
+  const t = hopTarget(target);
+  if (!t || (t === 'wrath' && !env.hop)) return false;
+  if (env.demo === '1') return false;
+  if (t !== 'wrath' && net && !net.list.length) await timed(net.load(), 2500);
+  const r = t === 'wrath' ? null : (net?.find?.(t) || null);
+  const v = r ? verdict(r, env) : { verdict: 'ok' };
+  if (v.verdict === 'launcher') { launchBar(r, env); return true; }   // never a broken hop: the launcher's link instead
+  if (v.verdict === 'offline') return false;
+  const c = cover(t === 'wrath' ? (brand(env).home) : (r?.name || env.hop_name || 'that realm'));
+  if (v.verdict === 'own') {   // a session switch the website does: own game files for this realm
+    c.step('Switching to your own game files', 40);
+    assign(homeOf(env) + '/wrath/play?mode=own&go=r:' + t);
+    return true;
+  }
+  const t0 = now();
+  let pre = false;
+  if (r && ssoUsable(r, net, store)) {
+    c.step('Signing in with your Hero Key', 25);
+    const ticket = await timed(prefetchTicket(t, net, { fetchFn, now }), 4000);
+    if (ticket) {
+      const res = await timed(fetchFn(ticket.redeem, { method: 'POST', mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assertion: ticket.assertion, sig: ticket.sig }) })
+        .then((x) => x.ok).catch(() => false), 6000);
+      net.tickets.delete(t);   // one use
+      if (res) {
+        try {   // the realm's login window runs from now (the redeem), not from when the assertion was made
+          session.setItem(PRE_KEY + t, JSON.stringify({ user: ticket.user, pass: ticket.pass, at: now(), ttl: ticket.ttl }));
+          pre = true;
+        } catch { pre = false; }
+      }
+    }
+  }
+  c.step('Switching realm', 60);
+  let doc = null;
+  try {
+    const x = await timed(fetchFn('/__gate?hop=' + t, { method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sso: pre ? 'pre' : '' }) }), 5000);
+    doc = x && x.ok ? await x.json() : null;
+  } catch { doc = null; }
+  const land = doc?.ok && typeof doc.land === 'string' && /^\/\?(ownfiles=1&)?go=(r:[a-z2-7]{16}|h:dalaran)$/.test(doc.land) ? doc.land : null;
+  if (!land) {
+    try { session.removeItem(PRE_KEY + t); } catch { /* blocked */ }
+    c.done();
+    return false;
+  }
+  try { session.setItem(T0_KEY, JSON.stringify({ at: t0, id: t })); } catch { /* the timing is optional */ }
+  c.step('Loading', 85);
+  replace(land);
+  return true;
+}
+
+/** After a fast hop: the time from Join to the character list, for the live measurement (window.__wuHop.timing). */
+export function hopTiming(wenilla, { session = globalThis.sessionStorage, now = () => Date.now(), env = window.__wenilla_env || {} } = {}) {
+  let t0 = null;
+  try { t0 = JSON.parse(session.getItem(T0_KEY) || 'null'); session.removeItem(T0_KEY); } catch { t0 = null; }
+  if (!t0 || typeof t0.at !== 'number' || (t0.id !== env.hop && !(t0.id === 'wrath' && !env.hop))) return null;
+  const out = { id: t0.id, page: now() - t0.at, charselect: null, sso: window.__wuHop?.state?.sso || null };
+  try { if (window.__wuHop) window.__wuHop.timing = out; } catch { /* no hop layer */ }
+  wenilla?.on?.('state', (s) => {
+    if (out.charselect === null && (s?.state === 'charselect' || s?.state === 'charcreate')) {
+      out.charselect = now() - t0.at;
+      console.info('[leyline] hop: character list ' + out.charselect + ' ms after Join (page up at ' + out.page + ' ms, sign-in ' + (out.sso || 'kept/join page') + ')');
+    }
+  });
+  return out;
+}
+
+const LAUNCH_CSS = `
+  #wu-hop-launch { position: fixed; left: 50%; top: 12px; transform: translateX(-50%); z-index: 33; display: flex; gap: 8px; align-items: center;
+    padding: 6px 8px 6px 12px; border-radius: 8px; font: 13px system-ui, sans-serif; color: #d8e6f5; max-width: 94vw;
+    background: linear-gradient(#101a2c, #070b14); border: 1px solid rgba(201,162,39,.6); box-shadow: 0 4px 16px rgba(0,0,0,.6); }
+  #wu-hop-launch a, #wu-hop-launch button { cursor: pointer; border-radius: 6px; padding: 4px 10px; font: 12px system-ui, sans-serif;
+    border: 1px solid rgba(201,162,39,.6); background: #151a28; color: #e9e4d4; text-decoration: none; }
+  #wu-hop-launch a.go { border: 0; background: linear-gradient(#f0d389, #d8b25a); color: #1b1406; font-weight: 600; }
+`;
+
+/** A realm the browser game can't open: a bar with "Open in the Leyline launcher" (a real click: leyline://realm/<id>). */
+export function launchBar(r, env = {}, doc = globalThis.document) {
+  if (!r || !doc?.body) return null;
+  doc.getElementById('wu-hop-launch')?.remove();
+  if (!doc.getElementById('wu-hop-launch-css')) {
+    const css = doc.createElement('style');
+    css.id = 'wu-hop-launch-css';
+    css.textContent = LAUNCH_CSS;
+    doc.head.append(css);
+  }
+  const bar = doc.createElement('div');
+  bar.id = 'wu-hop-launch';
+  bar.setAttribute('role', 'dialog');
+  const msg = doc.createElement('span');
+  msg.textContent = r.name + ' needs ' + (r.warden ? 'the desktop game.' : 'a different game version.');
+  const go = doc.createElement('a');
+  go.className = 'go';
+  go.href = 'leyline://realm/' + r.id;
+  go.textContent = 'Open in the Leyline launcher';
+  const get = doc.createElement('a');
+  get.href = homeOf(env) + '/wrath/leyline';
+  get.target = '_blank';
+  get.rel = 'noopener';
+  get.textContent = 'Get the launcher';
+  const no = doc.createElement('button');
+  no.type = 'button';
+  no.textContent = 'Not now';
+  no.addEventListener('click', () => bar.remove());
+  bar.append(msg, go, get, no);
+  doc.body.append(bar);
+  return bar;
+}
+
+/** The poll: asks in, answers out. Returns a small handle (for tests and live checks: window.__wuBrowse). */
+export function watchBrowse(wenilla, { env = window.__wenilla_env || {}, net = makeNet({ env }), pollMs = 400,
+  fetchFn = (...a) => fetch(...a), doc = globalThis.document } = {}) {
+  const h = { polls: 0, asks: 0, error: null, timer: 0, busy: false, net, last: null, tick: null };
+  if (!wenilla || typeof wenilla.lua !== 'function') return h;
+  const answer = async (ask) => {
+    await net.load();
+    if (ask.kind === 'list') return listLua(net.list, ask, { sso: net.flags.herokey_sso === true, err: net.list.length ? '' : net.err });
+    const r = net.find(ask.id);
+    if (ask.kind === 'launch') { launchBar(r, env, doc); return null; }
+    let hk = r && r.herokey === false ? 'no' : r && r.herokey === true ? 'yes' : 'unknown';
+    if (r && ssoUsable(r, net)) {   // prepare the sign-in while the player reads (the website only; the realm is not asked)
+      const t = await timed(prefetchTicket(r.id, net, { fetchFn }), 2500);
+      if (t) hk = 'ready';
+    }
+    return previewLua(r, env, { hk });
+  };
+  h.tick = async () => {
+    if (h.busy) return null;
+    h.busy = true;
+    h.polls++;
+    try {
+      let a = null;
+      try { [a] = (await wenilla.lua(BROWSE_TAKE, 1500)) || []; h.error = null; } catch (e) { h.error = String(e?.message || e).slice(0, 120); }
+      const ask = parseAsk(a);
+      if (!ask) return null;
+      h.asks++;
+      h.last = ask.kind;
+      const chunk = await answer(ask);
+      if (chunk) await wenilla.lua(chunk, 1500);
+      return ask.kind;
+    } finally {
+      h.busy = false;
+    }
+  };
+  const vmUp = () => { try { return !!wenilla.ready && !!wenilla.state; } catch { return false; } };
+  if (pollMs > 0) h.timer = setInterval(() => { if (vmUp()) h.tick().catch(() => {}); }, pollMs);
+  try { window.__wuBrowse = h; } catch { /* tests */ }
+  return h;
+}
+// <<< leyline-browse ---------------------------------------------------------------------------------
 
 // >>> leyline-host (host your own, from the game, 2026-10-30) ------------------------------------------
 // The in-game Host window (WrathUnleashedUI/Host.lua) can't open pages, so its "Start hosting" sets the Lua global
@@ -950,7 +1420,11 @@ export async function install(wenilla) {
   step('loading', () => loading(wenilla));
   step('busy banner', busyBanner);
   step('go link', () => { status.go = goLink(); if (status.go) window.wuGo = status.go; });
-  step('leyline hop', () => { status.hop = watchHops(wenilla); });
+  step('leyline browse', () => { status.browse = watchBrowse(wenilla); });
+  step('leyline hop', () => {
+    status.hop = watchHops(wenilla, { fast: (t) => fastHop(t, { net: status.browse && status.browse.net }) });
+  });
+  step('hop timing', () => { status.hopTiming = hopTiming(wenilla); });
   step('host your own', () => { status.host = watchHostAsk(wenilla); });
   step('game folder', () => { if (!window.__wenilla_env?.hop) status.folder = watchGameFolder(wenilla); });
   const ui = () => step('leyline hop page', () => { hopUi(); });

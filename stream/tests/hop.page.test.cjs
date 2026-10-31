@@ -22,13 +22,14 @@ function storage(init = {}) {
   return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k), m };
 }
 
-function page(env, { store = storage(), protocol = 'https:', host = 'wrath.example', fetch } = {}) {
+function page(env, { store = storage(), protocol = 'https:', host = 'wrath.example', fetch, session } = {}) {
   const opened = [];
   function FakeWS(url, protocols) { this.url = url; this.protocols = protocols; opened.push(url); }
   FakeWS.OPEN = 1;
   const win = { __wenilla_env: env, location: { protocol, host, href: `${protocol}//${host}/` }, localStorage: store,
                 WebSocket: FakeWS, console, URL, setTimeout, clearTimeout };
   if (fetch) win.fetch = fetch;
+  if (session) win.sessionStorage = session;
   win.window = win;
   vm.runInNewContext(HOP_SRC, win);
   return { win, opened, FakeWS };
@@ -341,4 +342,54 @@ test('hero key off (no hop_sso): exactly the old hop', () => {
   assert.equal(win.__wuHop.state.ssoPending, null);
   assert.equal(win.__wuHop.state.login, false);
   assert.equal(win.fetch, f, 'fetch not wrapped');
+});
+
+// ---- the fast hop (wrath-page.js fastHop): the old page redeemed the assertion before the reload
+test('fast hop: the wasm download starts at once; only its answer waits for the redeem', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const f = fakeFetch(() => gate.then(ok));
+  const { win } = page(ssoEnv(), { fetch: f });
+  let started = false;
+  const wasm = win.fetch('https://wrath.example/wenilla_bg.wasm').then(() => { started = true; });
+  assert.ok(f.calls.some((c) => c.url.endsWith('/wenilla_bg.wasm')), 'the download is already on its way');
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(started, false, 'but the client gets it only after the realm answered');
+  release();
+  await wasm;
+  assert.equal(started, true);
+});
+
+test('fast hop: a fresh pre-redeemed login is used as is (no redeem, no wait); a stale one is dropped', async () => {
+  const now = Date.now();
+  const session = storage({ ['wu.leyline.pre.' + RID]: JSON.stringify({ user: 'HKPREPREPREPRE22', pass: 'Z9Y8X7W6V5U4T3S2', at: now - 5000, ttl: 120 }) });
+  const f = fakeFetch(ok);
+  const env = ssoEnv();
+  const { win } = page(env, { fetch: f, session });
+  const H = win.__wuHop;
+  assert.equal(H.state.sso, 'pre');
+  assert.equal(H.state.login, true);
+  assert.equal(env.user, 'HKPREPREPREPRE22');
+  assert.equal(env.pass, 'Z9Y8X7W6V5U4T3S2');
+  assert.equal(env.hop_sso, undefined);
+  assert.equal(f.calls.length, 0, 'nothing posted to the relay');
+  let started = false;
+  await win.fetch('https://wrath.example/wenilla_bg.wasm').then(() => { started = true; });
+  assert.equal(started, true, 'nothing held');
+  assert.ok(!JSON.stringify(H.status()).includes('Z9Y8X7W6V5U4T3S2'));
+  // stale (past its window less 15 s): removed, the normal Hero Key path runs
+  const old = storage({ ['wu.leyline.pre.' + RID]: JSON.stringify({ user: 'HKPREPREPREPRE22', pass: 'Z9Y8X7W6V5U4T3S2', at: now - 110000, ttl: 120 }) });
+  const env2 = ssoEnv();
+  const p2 = page(env2, { fetch: fakeFetch(ok), session: old });
+  assert.equal(p2.win.__wuHop.state.sso, 'pending');
+  assert.equal(old.m.size, 0, 'the stale login is gone');
+  // junk is ignored; the Wrath Unleashed (hop_home) never takes one
+  for (const v of ['nope', JSON.stringify({ user: 'friend1', pass: 'x', at: now, ttl: 120 })]) {
+    const p3 = page(ssoEnv(), { fetch: fakeFetch(ok), session: storage({ ['wu.leyline.pre.' + RID]: v }) });
+    assert.equal(p3.win.__wuHop.state.sso, 'pending');
+  }
+  const homeEnv = Object.assign(hopEnv(), { hop_home: '1', user: 'WR000123', pass: 'Pa55word1234abcd' });
+  const p4 = page(homeEnv, { session: storage({ ['wu.leyline.pre.' + RID]: JSON.stringify({ user: 'HKPREPREPREPRE22', pass: 'Z9Y8X7W6V5U4T3S2', at: now, ttl: 120 }) }) });
+  assert.equal(homeEnv.user, 'WR000123');
+  assert.equal(p4.win.__wuHop.state.sso, null);
 });

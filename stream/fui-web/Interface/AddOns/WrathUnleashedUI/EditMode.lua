@@ -16,9 +16,12 @@
 -- area, not in combat, dead, on a flight, in the air or in a dungeon, raid, arena or battleground). "snap off,<why>,
 -- <text>" says no, or ends edit mode later (combat, damage, death, an instance, the area, the builder role lost);
 -- the addon obeys. It also leaves by itself on entering combat (PLAYER_REGEN_DISABLED), dying and entering an
--- instance. The browser client's own F7 flips the CVar by itself: the watcher turns it straight back off and
--- asks (so does a CVar set by hand), and when the client turns it off the realm hears it. The realm roots the
--- character while edit mode is on. The camera's reach (120 yards around the body) is the client's own.
+-- instance. The browser client's F7 calls E.Set(true) (older clients flip the CVar: the watcher turns it straight
+-- back off and asks, as for a CVar set by hand), and when the client turns it off the realm hears it. The realm
+-- roots the character while edit mode is on. The camera's reach (120 yards around the body) is the client's own.
+-- Client 20261031a also holds the camera itself: only with the realm's "snap on" (renewed by "snap keep", which
+-- E.OnSnap ignores) from the last 30 seconds, and never in combat, dead, on a flight or on an instance map; a
+-- CVar set any other way goes back to 0 there, so /run SetCVar or /console can't open the camera.
 --
 -- Keys (the browser client reads them and calls back here):
 --   click a prop       select it (the realm says if it isn't yours); Shift-click adds it to the selection

@@ -462,3 +462,9 @@
 1171b foreverui In game: the balancing module's login line hidden
 1171c addons Leyline addons download: the same for desktop players
 1172a ship Save to GitHub: launcher test fix for Windows (GitHub then rebuilds Leyline.exe with the new hosting)
+1173a worldlog Read-only: why the world server restarted at 13:54
+1174a worldlog Read-only: the world server's last lines before the 13:54 restart
+1175a scripts Realm crash fix: never read the sandbox status table when it isn't there (that took the realm down at 13:54) (live reload)
+1176a scripts Realm: edit mode sends a keep-alive the next browser client needs (live reload)
+1176b foreverui In game: edit mode comments only (keeps the stream in step)
+1177a ship Save to GitHub: PLAY back to the red button (GitHub then rebuilds Leyline.exe)

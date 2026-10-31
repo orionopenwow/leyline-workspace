@@ -444,3 +444,5 @@
 1162a addons Leyline addons download: the same in-game changes for desktop players
 1161c firewall Server: per-address connection limits on the game and web ports, and a day ban for anyone guessing passwords (dry run checked 07:39)
 1161d ship Save to GitHub: addon marketplace in the launcher, friendly errors, news, Help, host console, network quick wins and security fixes (GitHub then rebuilds Leyline.exe)
+1163a hqnote Fill HQ: today's security, marketplace and in-game notes
+1164a ship Save to GitHub: PLAY in frost blue (GitHub then rebuilds Leyline.exe)

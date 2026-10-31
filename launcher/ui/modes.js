@@ -255,5 +255,5 @@
   // whenever the page opens (show("modes"), or the page remembered from last time): load once, then keep "PLAY …" current
   new MutationObserver(() => { if (page.classList.contains("on")) { if (!loaded) load(); else renderHow(); } }).observe(page, { attributes: true, attributeFilter: ["class"] });
 
-  window.LeylineModes = { load, ensure, modes: () => modes, show, open: openPage, ART, FEATURED, artImg, KIND, playersText };
+  window.LeylineModes = { load, ensure, modes: () => modes, show, open: openPage, play, ART, FEATURED, artImg, KIND, playersText };
 })();

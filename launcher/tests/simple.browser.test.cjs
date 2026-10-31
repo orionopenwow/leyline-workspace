@@ -102,8 +102,12 @@ test('typing a search opens the full catalog with the words; ‹ Simple goes bac
 test('full view: four smart chips, everything else under More filters; See all opens a row', async () => {
   const { page, errors } = await open();
   await page.click('#dc-rows .dc-srow[data-row="game"] .dc-srow-h .btn');
+  assert.equal(await page.getAttribute('#pane-discover', 'data-tab'), 'game', 'the Game modes row opens the Game mods tab');
+  await page.click('#discover-tabs .ly-tab[data-tab="mods"]');
+  await page.click('#dc-rows .dc-srow[data-row="qol"] .dc-srow-h .btn');
   await page.waitForFunction(() => document.getElementById('pane-discover').dataset.view === 'all');
-  assert.deepEqual(await page.$$eval('#cat-grid .mod-card .name', (n) => n.map((x) => x.textContent)), ['Dalaran Dice'], 'See all: the row\'s category');
+  assert.deepEqual((await page.$$eval('#cat-grid .mod-card .name', (n) => n.map((x) => x.textContent))).sort(), ['Bagger', 'Frames', 'Meter', 'Pings', 'Plates'], 'See all: the row\'s category');
+  await page.click('#dc-smart .chip-btn:text-is("Game modes")');
   assert.deepEqual(await page.$$eval('#dc-smart .chip-btn', (b) => b.map((x) => x.textContent)), ['Everything', 'Addons', 'Game modes', 'Works on Wrath Unleashed']);
   assert.equal(await page.getAttribute('#dc-smart .chip-btn:text-is("Game modes")', 'aria-pressed'), 'true');
   assert.equal(await page.isVisible('#cat-sort'), false, 'Sort is under More filters');

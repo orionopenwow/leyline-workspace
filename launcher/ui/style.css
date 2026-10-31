@@ -674,6 +674,17 @@ select.dc-client { field-sizing: content; width: auto; min-width: 0; max-width: 
 .dc-mf[open] summary { margin-bottom: 8px; }
 .dc-mf-row { gap: 8px; margin: 0 0 8px; }
 #dc-more-body .mk-bar { margin: 0; }
+/* Game mods (gamemods.js) */
+.game-box .lede { margin: 0 0 12px; color: var(--t-text-2); max-width: 72ch; }
+.gm-tags { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 0; }
+.gm-tag { padding: 1px 8px; border-radius: 999px; border: var(--t-border-w) solid var(--t-border-strong); color: var(--t-muted); font: 500 11px var(--t-font); }
+.gm-tag.soon { border-color: var(--t-accent); color: var(--t-accent); }
+.gm-on { margin: 8px 0 0; font-size: 12px; color: var(--t-text); }
+.gm-on b { color: var(--t-ok, #4ade80); font-weight: 650; }
+.gm-on.off { color: var(--t-muted); }
+.gm-h { margin: 22px 0 8px; }
+.gm-card .dc-foot { margin-top: auto; }
+.rl-mods { font-size: 11.5px; color: var(--t-muted); }
 .dc-card {
   position: relative; display: flex; flex-direction: column; min-width: 0; overflow: hidden;
   border-radius: var(--t-radius); background: var(--t-card); user-select: none;

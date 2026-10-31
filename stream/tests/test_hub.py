@@ -161,12 +161,12 @@ check("header: each item goes to the launcher page's web twin", hrefs == {
       "Forum": "/wrath/leyline/forum"} and "addons" in HB.CATEGORY_IDS, hrefs)
 more = re.search(r'<details class="hb-more-d"><summary class="hb-ni[^"]*">.*?<span>More</span></summary><div class="hb-more-m">(.*?)</div></details>', nav, re.S)
 check("header: More is a details dropdown (no script needed) with Forge, Agents, Docs, News, Creators",
-      more and re.findall(r"<span>([^<]+)</span>", more.group(1)) == ["Forge", "Agents", "Docs", "News", "Creators"]
+      more and re.findall(r"<span>([^<]+)</span>", more.group(1)) == ["Leaderboards", "Forge", "Agents", "Docs", "News", "Creators"]
       and "#status" not in more.group(1) and "/gallery" not in more.group(1))
 check("header: the phone sheet has the same items as tiles, and the download", re.findall(
-      r"<span>([^<]+)</span>", re.search(r'<div class="hb-nav-x">(.*?)</div>', nav, re.S).group(1)) == ["Forge", "Agents", "Docs", "News", "Creators"]
+      r"<span>([^<]+)</span>", re.search(r'<div class="hb-nav-x">(.*?)</div>', nav, re.S).group(1)) == ["Leaderboards", "Forge", "Agents", "Docs", "News", "Creators"]
       and 'class="hb-dl-x"' in nav and 'id="hb-menu" class="hb-menu-t"' in hd and '<label for="hb-menu" class="hb-menu-b"' in hd)
-check("header: a line icon by every item (inline SVG, currentColor)", nav.count('<svg viewBox="0 0 24 24" aria-hidden="true">') == 6 + 1 + 5 + 5
+check("header: a line icon by every item (inline SVG, currentColor)", nav.count('<svg viewBox="0 0 24 24" aria-hidden="true">') == 6 + 1 + 6 + 6
       and "stroke:currentColor" in front)
 check("header: Download (primary) and Sign In (the crystal) on the right, no item active on the front page",
       re.search(r'<div class="hb-end"><a class="hb-dl" href="https://github\.com/orionopenwow/Leyline/releases/download/launcher-latest/Leyline\.exe"[^>]*>.*?Download</a>'
@@ -1340,8 +1340,9 @@ check("upstream card: the licence chip (No licence when none), the credit line (
       and '<p class="hb-mk-credit" title="Alice · MIT · Installs from the author&#x27;s GitHub"><span>Alice</span>' in ska
       and '<span class="hb-dc-tag ui">Whole interface</span>' in elv and '<span class="hb-dc-tag">Meters</span>' in ska, (elv[-700:], ska[-700:]))
 check("upstream card: names are text, never markup", "<img src=x" not in ad and "&lt;img src=x onerror=alert(1)&gt;" in ad)
-check("tabs: Discover, Addons, Themes as links, the current one marked",
+check("tabs: Discover, Game mods, Addons, Themes as links, the current one marked",
       '<nav class="hb-seg" aria-label="Mods"><a href="/wrath/leyline-preview/catalog">Discover</a>'
+      '<a href="/wrath/leyline-preview/catalog?view=game">Game mods</a>'
       '<a href="/wrath/leyline-preview/catalog?cat=addons" class="on" aria-current="page">Addons</a>'
       '<a href="/wrath/leyline-preview/catalog?cat=themes">Themes</a></nav>' in ad and '<h1 id="hb-pg-h">Addons</h1>' in ad)
 bar = re.search(r'<nav class="hb-mk-bar" aria-label="Addon types">.*?</nav>', ad, re.S)
@@ -1414,6 +1415,36 @@ check("simple_rows: Popular first (no themes), then Game modes, Make it look nic
       and all("ext:x" not in v for v in got.values()) and len(got["popular"]) <= 4 and "theme:c" not in got["popular"]
       and got["game"] == ["mod:b"] and "up:e" in got["looks"] and "up:f" in got["qol"]
       and len(sum((v for k, v in got.items() if k != "popular"), [])) == len(set(sum((v for k, v in got.items() if k != "popular"), []))), got)
+
+# ---- Game mods (stream/gamemods.py; owner 31 Oct: "a client mod section like future skating and golf")
+gmp = req("/wrath/leyline-preview/catalog?view=game")[2].decode()
+gcards = re.findall(r'<article class="hb-card hb-gm".*?</article>', gmp, re.S)
+gids = re.findall(r'data-id="([^"]+)"', " ".join(gcards))
+check("Game mods: the Leyline Modes, each saying what it adds, that it needs a realm that allows it, and where to play it",
+      gids[:4] == ["mode:minigolf", "mode:bumper-balls", "mode:coin-dash", "mode:community"]
+      and all("Needs a realm that allows it" in c and f"<b>Play it on:</b> {HB.HANGOUT_NAME}" in c for c in gcards[:4])
+      and '<a class="hb-play sm" href="/wrath?go=mode:minigolf">Play</a>' in gmp
+      and '<a href="/wrath/leyline-preview/catalog?view=game" class="on" aria-current="page">Game mods</a>' in gmp, gids)
+check("Game mods: no made-up entries (only playmodes.json realm modes and Workshop game categories), nothing Coming that isn't real",
+      all(i.startswith("mode:") or i.startswith("mod:") or i.startswith("up:") for i in gids) and "skating" not in gmp.lower()
+      and ">Coming<" not in gmp)
+check("Game mods: no brand words shown", not BANNED.findall(visible(gmp)))
+sim2 = req("/wrath/leyline-preview/catalog")[2].decode()
+check("Simple view: the Game modes row is the Game mods section's cards, See all opens it",
+      '<h2 id="hb-sr-game">Game modes</h2>' in sim2 and 'href="/wrath/leyline-preview/catalog?view=game">See all</a>' in sim2
+      and 'data-id="mode:minigolf"' in sim2)
+real_rows = HB.hub.realm_rows
+HB.hub.realm_rows = lambda query=None: ([{"home": True, "name": HB.HANGOUT_NAME, "live": True, "mods": [{"id": "mode:minigolf"}]},
+                                         {"name": "Frost Haven", "live": True, "mods": [{"id": "mode:minigolf"}, {"id": "mode:coin-dash"}]},
+                                         {"name": "Sleepy", "live": False, "mods": [{"id": "mode:coin-dash"}]}], {}, True, {}, {})
+g2 = req("/wrath/leyline-preview/catalog?view=game")[2].decode()
+golf = re.search(r'<article class="hb-card hb-gm"[^>]*data-id="mode:minigolf".*?</article>', g2, re.S).group(0)
+dash = re.search(r'<article class="hb-card hb-gm"[^>]*data-id="mode:coin-dash".*?</article>', g2, re.S).group(0)
+bump = re.search(r'<article class="hb-card hb-gm"[^>]*data-id="mode:bumper-balls".*?</article>', g2, re.S).group(0)
+check("Game mods: Play it on lists the live realms whose listing names the mod (offline ones left out)",
+      f"<b>Play it on:</b> {HB.HANGOUT_NAME}, Frost Haven</p>" in golf and "<b>Play it on:</b> Frost Haven</p>" in dash
+      and "Sleepy" not in g2 and "No live realm runs it right now" in bump and 'href="/wrath?go=mode:bumper-balls"' not in bump, golf[-400:])
+HB.hub.realm_rows = real_rows
 
 srv.shutdown()
 shutil.rmtree(DATA, ignore_errors=True)

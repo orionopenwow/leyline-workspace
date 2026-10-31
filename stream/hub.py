@@ -76,6 +76,21 @@ FRONT = "/wrath/leyline"
 FORUM = FRONT + "/forum"   # the forum (stream/forum.py), always at the front door's address
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+
+def _load_gamemods():
+    """stream/gamemods.py from beside this file (game mods and realm mod lists), or None."""
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("wu_hub_gamemods", os.path.join(HERE, "gamemods.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception:   # noqa: BLE001: the hub runs without it (no Game mods section)
+        return None
+
+
+GM = _load_gamemods()
+
 # ------------------------------------------------------------------------------------------- shared rules
 BUILDS = ["1.12", "2.4.3", "3.3.5a", "4.3.4", "5.4.8"]           # the client builds the launcher supports
 BUILD_LABEL = {"1.12": "1.12.1", "2.4.3": "2.4.3", "3.3.5a": "3.3.5a", "4.3.4": "4.3.4", "5.4.8": "5.4.8", "any": "Any build"}
@@ -877,7 +892,9 @@ class Hub:
                 ("mods", "Mods", BASE + "/catalog", "mods"), ("addons", "Addons", BASE + "/catalog?cat=addons", "addons"),
                 ("host", "Host", "/wrath/host", "host"),
                 ("forum", "Forum", FORUM, "forum")]   # owner 2026-10-30: "change community to forum"
-        more = [("forge", "Forge", BASE + "/forge", "forge"), ("agents", "Agents", BASE + "/agents", "agents"),
+        # the duel leaderboards (stream/duels.py; owner 2026-10-31: "leaderboards on site") lead the More menu
+        more = [("leaderboards", "Leaderboards", "/wrath/leaderboards", "leaderboards"),
+                ("forge", "Forge", BASE + "/forge", "forge"), ("agents", "Agents", BASE + "/agents", "agents"),
                 ("docs", "Docs", "/wrath/docs", "docs"), ("news", "News", BASE + "/news", "news"),
                 ("creators", "Creators", BASE + "/creators", "creators")]   # Modes, Gallery and Status left the menu (owner 2026-10-30)
         return main, more
@@ -1072,7 +1089,7 @@ class Hub:
                 "name": HANGOUT_NAME,   # the official realm, sampler or not: one name everywhere at launch
                 "kind": HANGOUT_KIND, "tagline": rec.get("tagline") or HANGOUT_LINE,
                 "temporary": bool(sample.get("temporary")), "featured": False, "new": False, "group": "home",
-                "address": self.portal("PUBLIC_HOST") or "play.openvanilla.app"}
+                "address": self.portal("PUBLIC_HOST") or "play.openvanilla.app", "mods": self.official_mods()}
         fits = lambda r: net.matches(r, f) and f.get("client") in (None, client_of(r))   # noqa: E731
         rest = []
         for r in shown:
@@ -2083,6 +2100,8 @@ class Hub:
                 + listing
                 + '<p class="hb-fine">Play in browser opens the realm in this browser. For a desktop client, use the '
                   'address in the launcher (Realms, then Add a realm) or in your realmlist file.</p>'
+                + f'<p class="hb-fine">Duels on {e(HANGOUT_NAME)} count for points and a rating: '
+                  '<a href="/wrath/leaderboards">the leaderboards</a>.</p>'
                 + net.host_cta("hub", pack["download"] if pack else None) + '</div></section>')
         return self._shell("Realms · Leyline", body, BASE + "/realms", nonce)
 
@@ -2122,7 +2141,8 @@ class Hub:
                 'in your browser once your character is in the world. The launcher lists the same games on its Modes page.</p></section>'
                 + (f'<div class="hb-modes">{"".join(cards)}</div>' if cards else
                    '<p class="hb-empty">No modes are listed right now. <a href="/wrath/modes">The modes page</a></p>')
-                + '<p class="hb-fine">Duels, boss fights, dungeons and hangouts are on <a href="/wrath/modes">the full modes page</a>.</p>')
+                + '<p class="hb-fine">Duels, boss fights, dungeons and hangouts are on <a href="/wrath/modes">the full modes page</a>. '
+                  'Duel points and ratings: <a href="/wrath/leaderboards">the leaderboards</a>.</p>')
         return self._shell("Modes · Leyline", body, BASE + "/modes")
 
     def news_posts(self, n: int = 30) -> list[dict]:
@@ -2407,15 +2427,23 @@ class Hub:
 
         def one(i):
             return self.upstream_card(i) if i["source"] == "upstream" else self.card(i, metrics.get(i["id"]) if rk else None, rk)
+        games = self.game_mods()
+        if games:   # the Game modes row is the Game mods section's first cards (with where to play them)
+            realms = self.mod_realms()
+            gcards = "".join(self.game_card(g, realms) for g in [g for g in games if g["status"] == "live"][:self.SIMPLE_ROW_N])
+            rows = [r for r in rows if r[0] != "game"]
+            rows.insert(1 if rows and rows[0][0] == "popular" else 0,
+                        ("game", "Game modes", "Minigames and mods that change how you play.", f"{BASE}/catalog?view=game", gcards))
         secs = "".join(
             f'<section class="hb-srow" id="row-{key}" aria-labelledby="hb-sr-{key}"><div class="hb-srow-h"><div>'
             f'<h2 id="hb-sr-{key}">{e(title)}</h2><p>{e(line)}</p></div><a class="hb-ghost sm" href="{e(href)}">See all</a></div>'
-            f'<div class="hb-grid hb-big">{"".join(one(i) for i in got)}</div></section>' for key, title, line, href, got in rows)
+            f'<div class="hb-grid hb-big">{got if isinstance(got, str) else "".join(one(i) for i in got)}</div></section>'
+            for key, title, line, href, got in rows)
         if not secs:
             secs = f'<p class="hb-empty">Nothing here yet. <a href="{BASE}/submit">Submit a mod</a> to fill it.</p>'
         body = (f'<section class="hb-pg hb-cat hb-simple" aria-labelledby="hb-pg-h"><header class="hb-pg-h"><div class="hb-pg-t">'
                 f'<h1 id="hb-pg-h">Mods</h1>{seg}</div>'
-                f'<a class="hb-ghost hb-pg-x" href="{BASE}/submit">Submit a mod</a></header><div class="hb-pg-b">'
+                f'<a class="hb-ghost hb-pg-x" href="{BASE}/submit" data-slot="list-your-mod">List your mod</a></header><div class="hb-pg-b">'
                 f'<form class="hb-search" method="get" action="{BASE}/catalog" role="search">'
                 '<label for="hb-q" class="hb-vh">Search mods</label><input id="hb-q" name="q" type="search" maxlength="60" '
                 'placeholder="Search mods, addons and themes"><button type="submit">Search</button></form>'
@@ -2427,12 +2455,106 @@ class Hub:
         return self._shell("Mods · Leyline", body, BASE + "/catalog", active="mods")
 
     def mods_tabs(self, cur: str) -> str:
-        """The Mods panel's tabs: Discover (the Simple view), Addons, Themes."""
+        """The Mods panel's tabs: Discover (the Simple view), Game mods, Addons, Themes."""
         e = html.escape
-        tabs = [("", "Discover"), ("addons", "Addons"), ("themes", "Themes")]
+        tabs = [("", "Discover", ""), ("game", "Game mods", "?view=game"), ("addons", "Addons", "?cat=addons"),
+                ("themes", "Themes", "?cat=themes")]
         return ('<nav class="hb-seg" aria-label="Mods">' + "".join(
-            f'<a href="{e(f"{BASE}/catalog" + (f"?cat={c}" if c else ""))}"' + (' class="on" aria-current="page"' if c == cur else "")
-            + f">{t}</a>" for c, t in tabs) + "</nav>")
+            f'<a href="{e(f"{BASE}/catalog{q}")}"' + (' class="on" aria-current="page"' if c == cur else "")
+            + f">{t}</a>" for c, t, q in tabs if c != "game" or GM is not None) + "</nav>")
+
+    # ---------------------------------------------------------------- Game mods (stream/gamemods.py, docs/GAME-MODS.md)
+    def _modes(self) -> list:
+        pm = self.portal("playmodes")
+        try:
+            return pm.entries() if pm is not None else []
+        except Exception:   # noqa: BLE001
+            return []
+
+    def official_mods(self) -> list[dict]:
+        """Our realm's mod list from its own config: the Leyline Modes it runs and the Workshop mods it installs."""
+        return GM.official(self.workshop(), self._modes()) if GM is not None else []
+
+    def game_mods(self) -> list[dict]:
+        """The Game mods section's entries, the brand words taken out of their text (a bad one is left out)."""
+        if GM is None:
+            return []
+        out = []
+        for g in GM.entries(self._modes(), self.workshop()):
+            name, line = neutral(clean_line(g["name"], 64)), neutral(clean_line(g["line"], 240))
+            if name and not banned(name + " " + line):
+                out.append(dict(g, name=name, line=line))
+        return out
+
+    def mod_realms(self) -> list[dict]:
+        """Every realm with its mod list (ours first): realm_rows(), or ours alone without a realm list."""
+        got = self.realm_rows()
+        if got:
+            return got[0]
+        st = self.portal("realm_status")
+        try:
+            live = bool((st() or {}).get("online")) if st else True
+        except Exception:   # noqa: BLE001
+            live = True
+        return [{"home": True, "name": HANGOUT_NAME, "live": live, "mods": self.official_mods()}]
+
+    def game_card(self, g: dict, realms: list[dict]) -> str:
+        """One game mod: what it adds, whether it needs a realm that allows it, the live realms that run it, and the way
+        in (Play for a Leyline Mode; Install, handed to the launcher, for a mod with a client part)."""
+        e = html.escape
+        on = GM.runs_on(g["id"], realms) if GM is not None else []
+        tags = []
+        if g["status"] == "coming":
+            tags.append('<span class="hb-tag hb-gm-soon">Coming</span>')
+        tags.append(f'<span class="hb-tag">{"Needs a realm that allows it" if g["realm"] else "Works on any realm"}</span>')
+        if g["addon"]:
+            tags.append('<span class="hb-tag" title="The launcher offers them when you press Play">Plays through the Leyline addons</span>')
+        elif g["client"]:
+            tags.append('<span class="hb-tag">Adds files to your game</span>')
+        names = [neutral(r.get("name")) or "A realm" for r in on]
+        if names:
+            shown = ", ".join(names[:3]) + (f" and {len(names) - 3} more" if len(names) > 3 else "")
+            where = f'<p class="hb-gm-on"><b>Play it on:</b> {e(shown)}</p>'
+        elif g["status"] == "live":
+            where = f'<p class="hb-gm-on off">No live realm runs it right now. <a href="/wrath/host">Host your own</a></p>'
+        else:
+            where = ""
+        acts = []
+        if g["kind"] == "mode" and g["status"] == "live" and on:
+            acts.append(f'<a class="hb-play sm" href="{e("/wrath?go=mode:" + g["mode"])}">Play</a>')
+        p = g.get("project") or {}
+        if g["kind"] == "mod":
+            if g["client"] and p.get("source") == "packaged" and p.get("download") and p.get("sha256"):
+                acts.append(f'<a class="hb-inst sm" href="leyline://install/{e(g["id"])}" title="Opens the Leyline launcher on this PC">Install</a>')
+            acts.append(f'<a class="hb-ghost sm" href="{BASE}/p/{_slug(g["id"])}">View</a>')
+        art = {"id": g["id"]}
+        icon = "modes" if g["kind"] == "mode" else "mods"
+        return (f'<article class="hb-card hb-gm" id="gm-{e(g["id"].replace(":", "-"))}" data-id="{e(g["id"])}">'
+                f'<div class="hb-card-pic">{self.gen_art(art, g["name"], icon, "hb-gt-art gen hb-card-art")}'
+                f'<span class="hb-dc-tag">{"Leyline Mode" if g["kind"] == "mode" else "Workshop mod"}</span></div>'
+                f'<h3>{e(g["name"])}</h3><p class="hb-desc">{e(g["line"])}</p><p class="hb-meta">{"".join(tags)}</p>{where}'
+                f'<div class="hb-dc-foot"><span></span><span class="hb-dc-acts">{"".join(acts)}</span></div></article>')
+
+    def game_page(self) -> bytes:
+        """Mods › Game mods: everything that changes how you play in game, and where to play it."""
+        e = html.escape
+        realms = self.mod_realms()
+        ents = self.game_mods()
+        live = [g for g in ents if g["status"] == "live"]
+        soon = [g for g in ents if g["status"] == "coming"]
+        grid = "".join(self.game_card(g, realms) for g in live)
+        body = (f'<section class="hb-pg hb-cat hb-game" aria-labelledby="hb-pg-h"><header class="hb-pg-h"><div class="hb-pg-t">'
+                f'<h1 id="hb-pg-h">Game mods</h1>{self.mods_tabs("game")}</div>'
+                f'<a class="hb-ghost hb-pg-x" href="{BASE}/submit" data-slot="list-your-mod">List your mod</a></header><div class="hb-pg-b">'
+                '<p class="hb-lede">Mods that change how you play in game: minigames, game modes and more. Some need a realm '
+                'that allows them. Realms say which mods they use, and the Leyline launcher adds the ones your game needs '
+                'when you join.</p>'
+                + (f'<div class="hb-grid hb-big">{grid}</div>' if grid else '<p class="hb-empty">No game mods are listed right now.</p>')
+                + (f'<h2 class="hb-gm-h">Coming</h2><div class="hb-grid hb-big">{"".join(self.game_card(g, realms) for g in soon)}</div>' if soon else "")
+                + '<p class="hb-fine">Host a realm and pick its mods: <code>leyline mods add &lt;id&gt;</code> in the host kit. '
+                f'<a href="{e(self._download())}" rel="noopener noreferrer">Get the launcher</a> to add a realm\'s mods automatically.</p>'
+                "</div></section>")
+        return self._shell("Game mods · Leyline", body, BASE + "/catalog", active="mods")
 
     def catalog_page(self, query: dict) -> bytes:
         """The launcher's Mods › Discover on the web: one panel with its tabs (Discover, Addons, Themes), the search and
@@ -2441,6 +2563,8 @@ class Hub:
         ?view=all) it is the Simple view (simple_page)."""
         e = html.escape
         q1 = lambda k: (query.get(k) or [""])[0][:80]   # noqa: E731
+        if q1("view") == "game" and GM is not None:
+            return self.game_page()
         if q1("view") != "all" and not any(q1(k) for k in ("build", "cat", "source", "q", "sort", "tag", "works", "kind", "page")):
             return self.simple_page()
         build, cat, source, text, sort = offered_tag(q1("build")), q1("cat"), q1("source"), clean_line(q1("q"), 60), q1("sort") or "score"
@@ -2572,7 +2696,7 @@ class Hub:
                    '</details></div>')
         body = (f'<section class="hb-pg hb-cat" aria-labelledby="hb-pg-h"><header class="hb-pg-h"><div class="hb-pg-t">'
                 f'<h1 id="hb-pg-h">{title}</h1>{seg}</div>'
-                f'<a class="hb-ghost hb-pg-x" href="{BASE}/submit">Submit a mod</a></header><div class="hb-pg-b">'
+                f'<a class="hb-ghost hb-pg-x" href="{BASE}/submit" data-slot="list-your-mod">List your mod</a></header><div class="hb-pg-b">'
                 f'<p class="hb-lede">{e(lede)}</p>'
                 f'<form class="hb-search" method="get" action="{BASE}/catalog" role="search">{hidden}'
                 f'<label for="hb-q" class="hb-vh">Search</label><input id="hb-q" name="q" type="search" value="{e(text)}" maxlength="60" '
@@ -3651,6 +3775,11 @@ background:var(--lk-surface-2);color:var(--lk-text-2)!important;font-size:13px;f
 .hb-pg .hb-grid.hb-big{grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:18px}
 .hb-big .hb-card h3{font-size:17px}
 .hb-sall{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:26px 0 0;padding-top:18px;border-top:1px solid var(--lk-border);color:var(--lk-muted);font-size:13.5px}
+/* Game mods (hub game_card) */
+.hb-gm .hb-meta{margin-top:8px}.hb-gm-soon{border-color:var(--lk-accent)!important;color:var(--lk-text)!important}
+.hb-gm-on{margin:8px 14px 0!important;font-size:13px!important;color:var(--lk-text)!important}.hb-gm-on b{color:var(--lk-ok)}
+.hb-gm-on.off{color:var(--lk-muted)!important}.hb-gm-h{margin:26px 0 10px;font-size:18px;text-align:left}
+.hb-gm .hb-dc-foot{margin-top:auto}
 /* the addon marketplace's chips: kinds, and "Works on" on the right */
 .hb-mk-bar{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 16px;margin:0 0 16px;
 padding-top:14px;border-top:1px solid var(--lk-border)}
@@ -4058,6 +4187,7 @@ NAV_ICONS = {
     "download": '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
     "key": '<circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/>',
     "gallery": '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/>',
+    "leaderboards": '<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8M10 17h4"/>',
 }
 # The gallery (Hub.gallery_tiles). Our in-game screenshots (stream/www-files/art, checked by eye: no logo, no game name;
 # behind the game data killswitch): name -> (width, height, title, line, alt). Words only; no client numbers, no game name.

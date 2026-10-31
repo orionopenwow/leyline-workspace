@@ -62,7 +62,9 @@
     return out;
   }
 
+  let modesAsked = false;
   function seeAll(open) {
+    if (open.tab && window.LeylineThemes) { window.LeylineThemes.showTab(open.tab); return; }
     if (typeof catFilter !== "undefined") { catFilter.cat = open.cat || ""; catFilter.kind = ""; }
     if (window.LeylineMarket) { window.LeylineMarket.state.sub = ""; window.LeylineMarket.state.works = false; }
     setView("all");
@@ -73,7 +75,16 @@
     if (!box) return;
     const c = typeof pickedClient === "function" ? pickedClient() : null;
     const kids = [];
-    for (const [key, title, line, list, open] of rows()) {
+    let all = rows();
+    const gmods = window.LeylineGameMods ? window.LeylineGameMods.entries().filter((g) => g.status === "live").slice(0, ROW_N) : [];
+    if (gmods.length) {   // the Game modes row is the Game mods tab's first cards, with where to play them (gamemods.js)
+      all = all.filter((r) => r[0] !== "game");
+      all.splice(all.length && all[0][0] === "popular" ? 1 : 0, 0, ["game", "Game modes", "Minigames and mods that change how you play.", gmods, { tab: "game" }]);
+    } else if (window.LeylineGameMods && !modesAsked) {
+      modesAsked = true;
+      window.LeylineGameMods.loadModes().then(() => { if (view === "simple") drawSimple(); });
+    }
+    for (const [key, title, line, list, open] of all) {
       const sec = el("section", "dc-srow");
       sec.dataset.row = key;
       const head = el("div", "dc-srow-h");
@@ -87,7 +98,7 @@
       all.addEventListener("click", () => seeAll(open));
       head.append(words, all);
       const grid = el("div", "mod-grid dc-grid dc-big");
-      for (const p of list) grid.append(projectCard(p, c));
+      for (const p of list) grid.append(key === "game" && open.tab ? window.LeylineGameMods.card(p) : projectCard(p, c));
       sec.append(head, grid);
       kids.push(sec);
     }
@@ -145,6 +156,11 @@
     });
     if ($("dc-all")) $("dc-all").addEventListener("click", () => seeAll({}));
     if ($("dc-simple-btn")) $("dc-simple-btn").addEventListener("click", () => setView("simple"));
+    // "List your mod": a slot for the submission flow (window.LeylineListMod, when it is there); else the website's form
+    if ($("dc-list-mod")) $("dc-list-mod").addEventListener("click", () => {
+      if (window.LeylineListMod && typeof window.LeylineListMod.open === "function") window.LeylineListMod.open();
+      else if (typeof openUrl === "function") openUrl("https://play.openvanilla.app/wrath/leyline/submit");
+    });
     const more = $("dc-more");
     if (more) {
       try { more.open = localStorage.getItem("leyline.dcMore") === "1"; } catch (_) { /* fine */ }

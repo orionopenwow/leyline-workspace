@@ -4,8 +4,10 @@
 //!
 //! * Health: the realm's containers (`docker ps`, by the kit's container names, every core), the agent's
 //!   `state/relay-state.json`, the world server's uptime.
-//! * GM controls: the in-game Your realm window's actions (realm/custom/lua_scripts/ov_hostctl.lua: announce, message
-//!   of the day, kick, ban / unban, the allow list, restart with five minutes' warning). The kit has no SOAP, so the
+//! * GM controls: the in-game Your realm window's actions (realm/custom/lua_scripts/ov_hostctl.lua: announce, an
+//!   on-screen notice, message of the day, kick, mute / unmute, send to Dalaran, Ban account / Unban account (the
+//!   character's whole account, with a reason and how long, as on Leyline HQ), the allow list, restart with five
+//!   minutes' warning). The kit has no SOAP, so the
 //!   console adds one row to `ov_host_queue` in the realm's own characters database (`docker exec` into its database
 //!   container, which only this PC's owner can reach) and ov_hostctl.lua runs it as the console within seconds, with
 //!   the same checks and limits, and writes its answer back. A restart can only be the five-minute one: the console
@@ -234,7 +236,23 @@ pub fn ps_args() -> Vec<&'static str> {
 // ------------------------------------------------------------------------------------------------ GM controls
 
 /// The actions ov_hostctl.lua runs (its ACTIONS, plus status).
-pub const GM_ACTIONS: &[&str] = &["status", "announce", "motd", "kick", "ban", "unban", "allow", "restart", "cancel"];
+pub const GM_ACTIONS: &[&str] =
+    &["status", "announce", "notify", "motd", "kick", "mute", "unmute", "rescue", "ban", "unban", "allow", "restart", "cancel"];
+
+/// Ban account: at most a year (0 = permanent), as on Leyline HQ (stream/hq.py build "ban").
+pub const BAN_HOURS: u32 = 8760;
+/// Mute: at most a week, in minutes (hq.py "mute").
+pub const MUTE_MINUTES: u32 = 10080;
+
+/// A reason for a mute or a ban (hq.py game_reason, ov_hostctl.lua CleanReason): one line of letters, digits, spaces
+/// and . , ! ? ' ( ) : / - only, at most 160 characters, at least 3.
+pub fn clean_reason(s: &str) -> Option<String> {
+    let t = clean_text(&s.replace('_', " "))?;
+    let t: String = t.chars().filter(|c| c.is_alphanumeric() || c.is_whitespace() || ".,!?'():/-".contains(*c)).collect();
+    let t = t.split_whitespace().collect::<Vec<_>>().join(" ");
+    let t: String = t.chars().take(160).collect::<String>().trim_end().to_string();
+    Some(t).filter(|t| t.chars().count() >= 3)
+}
 
 /// Text for everyone: no control characters or pipes (colour codes), one line, at most 200 characters. The realm
 /// script cleans it again (and takes out the game's brand names).
@@ -262,13 +280,20 @@ pub fn gm_data(action: &str, data: &str) -> Result<String, String> {
     const NAME: &str = "A character name: letters only.";
     match action {
         "status" | "restart" | "cancel" => Ok(String::new()),
-        "announce" | "motd" => clean_text(data).ok_or_else(|| "Write the message first.".into()),
-        "kick" | "unban" => clean_name(data).ok_or_else(|| NAME.into()),
-        "ban" => {
-            let mut it = data.split(|c: char| c == '\t' || c == ' ').filter(|x| !x.is_empty());
+        "announce" | "motd" | "notify" => clean_text(data).ok_or_else(|| "Write the message first.".into()),
+        "kick" | "unban" | "unmute" | "rescue" => clean_name(data).ok_or_else(|| NAME.into()),
+        // name, a number, the reason (the rest): tabs from the console, spaces when typed
+        "ban" | "mute" => {
+            let mut it = data.trim().splitn(3, |c: char| c == '\t' || c == ' ');
             let name = it.next().and_then(clean_name).ok_or(NAME)?;
-            let hours: u32 = it.next().and_then(|h| h.parse().ok()).filter(|h| (1..=720).contains(h)).ok_or("Ban for 1 to 720 hours.")?;
-            Ok(format!("{name}\t{hours}"))
+            let n = it.next().and_then(|h| h.trim().parse::<u32>().ok());
+            let n = if action == "ban" {
+                n.filter(|h| *h <= BAN_HOURS).ok_or("Hours: 1 to 8760, or 0 for a permanent ban.")?
+            } else {
+                n.filter(|m| (1..=MUTE_MINUTES).contains(m)).ok_or("Minutes: a number from 1 to 10080 (a week).")?
+            };
+            let reason = it.next().and_then(clean_reason).ok_or("Say why (3 letters or more).")?;
+            Ok(format!("{name}\t{n}\t{reason}"))
         }
         "allow" => match data.trim() {
             "on" | "off" => Ok(data.trim().into()),
@@ -696,9 +721,24 @@ mod tests {
         assert_eq!(gm_data("kick", "grumpy").unwrap(), "Grumpy");
         assert!(gm_data("kick", "Rob'); DROP").is_err());
         assert!(gm_data("kick", "A").is_err());
-        assert_eq!(gm_data("ban", "grumpy 24").unwrap(), "Grumpy\t24");
-        assert_eq!(gm_data("ban", "Grumpy\t720").unwrap(), "Grumpy\t720");
-        assert!(gm_data("ban", "Grumpy 0").is_err() && gm_data("ban", "Grumpy 721").is_err() && gm_data("ban", "Grumpy").is_err());
+        // Ban account: name, hours (0 = permanent, at most a year, as on HQ) and a reason
+        assert_eq!(gm_data("ban", "grumpy 24 Cheating in the arena").unwrap(), "Grumpy\t24\tCheating in the arena");
+        assert_eq!(gm_data("ban", "Grumpy\t8760\tGold seller").unwrap(), "Grumpy\t8760\tGold seller");
+        assert_eq!(gm_data("ban", "Grumpy\t0\tGold seller").unwrap(), "Grumpy\t0\tGold seller", "0 = permanent");
+        assert_eq!(gm_data("ban", "Grumpy 24").unwrap_err(), "Say why (3 letters or more).");
+        assert_eq!(gm_data("ban", "Grumpy 24 ok").unwrap_err(), "Say why (3 letters or more).");
+        assert_eq!(gm_data("ban", "Grumpy 8761 Spam").unwrap_err(), "Hours: 1 to 8760, or 0 for a permanent ban.");
+        assert!(gm_data("ban", "Grumpy").is_err() && gm_data("ban", "Grumpy -1 Spam").is_err());
+        assert_eq!(gm_data("ban", "Grumpy 24 |cffff0000spam|r; DROP `x` _a_").unwrap(), "Grumpy\t24\tcffff0000spam r DROP x a");
+        assert_eq!(gm_data("ban", &format!("Grumpy 24 {}", "x".repeat(300))).unwrap().len(), "Grumpy\t24\t".len() + 160);
+        // mute: name, minutes (1 to a week) and a reason; unmute, Send to Dalaran, the notice
+        assert_eq!(gm_data("mute", "grumpy 60 Spam in trade").unwrap(), "Grumpy\t60\tSpam in trade");
+        assert_eq!(gm_data("mute", "Grumpy 0 Spam").unwrap_err(), "Minutes: a number from 1 to 10080 (a week).");
+        assert!(gm_data("mute", "Grumpy 10081 Spam").is_err() && gm_data("mute", "Grumpy 10").is_err());
+        assert_eq!(gm_data("unmute", "grumpy").unwrap(), "Grumpy");
+        assert_eq!(gm_data("rescue", "grumpy").unwrap(), "Grumpy");
+        assert!(gm_data("rescue", "Grumpy Dalaran").is_err());
+        assert_eq!(gm_data("notify", " Back in five ").unwrap(), "Back in five");
         assert_eq!(gm_data("allow", "on").unwrap(), "on");
         assert_eq!(gm_data("allow", "add friendly").unwrap(), "add\tFriendly");
         assert!(gm_data("allow", "drop Friendly").is_err());

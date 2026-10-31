@@ -82,12 +82,19 @@ if PM is None:
     print(f"\n{passed}/{passed + failed} passed"); sys.exit(1)
 check("the catalog passes its check", PM.ERRORS == [] and PM.CATALOG is not None, PM.ERRORS)
 ids = [m["id"] for m in PM.entries()]
-check("the seed modes", ids == ["minigolf", "bumper-balls", "coin-dash", "community", "brawl", "azeroth-survivors", "hordes-of-azeroth"], ids)
+check("the seed modes", ids == ["minigolf", "bumper-balls", "coin-dash", "community", "brawl", "azeroth-survivors", "hordes-of-azeroth",
+                               "arena-1v1", "keystones", "transmog", "hardcore"], ids)
+INGAME = {"arena-1v1": ".hub arena", "keystones": ".hub keys", "transmog": ".hub transmog", "hardcore": ".hub hardcore"}
+check("the in-game modes: live, found with .hub", all(PM.by_id(k)["kind"] == "in-game" and PM.by_id(k)["status"] == "live"
+      and PM.by_id(k)["start"] == {"cmd": v} for k, v in INGAME.items()))
+gol = open(os.path.join(REPO, "realm", "custom", "lua_scripts", "ov_go.lua"), encoding="utf-8").read()
+hubt = gol[gol.index("local HUB = {"):gol.index("local HUB_ORDER")]
+check("every .hub spot in the catalog is one ov_go.lua knows", all(re.search(rf"^\s+{v.split()[1]}\s+= \{{", hubt, re.M) for v in INGAME.values()))
 check("live realm modes", PM.realm_ids() == ["minigolf", "bumper-balls", "coin-dash", "community"], PM.realm_ids())
 surv, hordes = PM.by_id("azeroth-survivors"), PM.by_id("hordes-of-azeroth")
 check("Azeroth Survivors: offline, coming, credited (MIT or Apache-2.0)", surv["kind"] == "offline" and surv["status"] == "coming"
-      and surv["credit"]["by"] == "Aethus" and "Apache-2.0" in surv["credit"]["license"] and "MIT" in surv["credit"]["license"]
-      and surv["credit"]["source"] == "https://github.com/OutThisLife/azeroth-survivors-re" and "survivors=1" in surv["start"]["path"])
+      and surv["credit"]["by"] == "Aethus (original game)" and surv["credit"]["note"] == "Open rebuild by OutThisLife" and "Apache-2.0" in surv["credit"]["license"] and "MIT" in surv["credit"]["license"]
+      and surv["credit"]["source"] == "https://github.com/OutThisLife/azeroth-survivors-re" and surv["start"] == {"path": "/wrath/survivors"} and "own site" in surv["line"])
 check("Hordes of Azeroth: a realm type, coming, both repos and licenses", hordes["kind"] == "realm-type" and hordes["status"] == "coming"
       and hordes["credit"]["by"] == "jonhaldors" and "GPL-3.0" in hordes["credit"]["license"] and "GPL-2.0" in hordes["credit"]["license"]
       and hordes["credit"]["source"] == "https://github.com/jonhaldors/hordes-of-azeroth"
@@ -128,6 +135,10 @@ for name, fn in (
         ("credit javascript source", lambda d: d["modes"][5]["credit"].update(source="javascript:alert(1)")),
         ("credit more not https", lambda d: d["modes"][6]["credit"].update(more=["ftp://x.example/y"])),
         ("credit more not a list", lambda d: d["modes"][6]["credit"].update(more="https://github.com/x")),
+        ("in-game mode with another command", lambda d: d["modes"][7].update(start={"cmd": ".gm on"})),
+        ("in-game mode with a go", lambda d: d["modes"][7].update(start={"go": "mode:arena-1v1"})),
+        ("in-game command with more words", lambda d: d["modes"][7].update(start={"cmd": ".hub arena; .server shutdown"})),
+        ("realm mode with a command", lambda d: d["modes"][0].update(start={"cmd": ".hub arena"})),
 ):
     check(f"checker refuses: {name}", bad(fn) != [])
 check("checker on a broken file: no catalog, a reason", PM.load(os.path.join(tempfile.mkdtemp(), "none.json"))[0] is None)
@@ -153,10 +164,19 @@ for mid in PM.realm_ids():
     check(f"Play {mid}: /wrath?go=mode:{mid}", f'href="/wrath?go=mode:{mid}">Play<' in page)
 check("brawl: Host it", 'id="mode-brawl"' in page and re.search(r'id="mode-brawl".*?href="/wrath/host">Host it<', page, re.S))
 for mid in ("azeroth-survivors", "hordes-of-azeroth"):
-    card = re.search(rf'id="mode-{mid}".*?</div></div>', page, re.S)
+    card = re.search(rf'id="mode-{mid}".*?(?=<div class="md-card"|</section>)', page, re.S)   # up to the next card
     card = card.group(0) if card else ""
     check(f"{mid}: Coming soon, credit and source, no Play", "Coming soon" in card and "Source</a>" in card
           and 'class="md-go"' not in card and PM.by_id(mid)["credit"]["source"] in card)
+for mid, c in INGAME.items():
+    card = re.search(rf'id="mode-{mid}"(.*?)(?=<div class="md-card"|</section>)', page, re.S)
+    card = card.group(1) if card else ""
+    check(f"{mid}: In game, the command, Play opens the game", "In game</span>" in card and f"<code>{c}</code>" in card
+          and 'href="/wrath">Play<' in card)
+inv = re.findall(r'id="md-host-own".*?</p>', page, re.S)
+check("one line inviting to host your own world, under the cards", len(inv) == 1 and 'href="/wrath/host">host your own<' in inv[0]
+      and page.index('id="md-host-own"') > page.index('id="mode-hardcore"'))
+check("in-game modes are never sent to the realm as a play intent", not set(INGAME) & set(PM.realm_ids()))
 check("players text", "1-8 players" in page and "1 player" in page and "Any number of players" in page)
 BANNED = re.compile(r"(?i)world of warcraft|\bwow\b|warcraft|lich king|blizzard")
 vis = re.sub(r"<[^>]+>", " ", re.sub(r"<style.*?</style>", " ", page, flags=re.S))

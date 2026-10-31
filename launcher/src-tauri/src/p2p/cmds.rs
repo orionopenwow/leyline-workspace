@@ -46,7 +46,13 @@ pub async fn hostpack_install() -> Result<(Installed, String), String> {
 
 #[tauri::command]
 pub async fn docker_info() -> Result<DockerInfo, String> {
-    blocking(|| Ok(docker::detect(HostOs::current(), &|a| docker::run_docker(a, None, Duration::from_secs(15))))).await
+    blocking(|| Ok(docker::check(Duration::from_secs(15)))).await
+}
+
+/// Start Docker Desktop (Start Docker on the Host page). The UI then watches `docker_info` until it answers.
+#[tauri::command]
+pub async fn docker_start() -> Result<String, String> {
+    blocking(docker::start).await
 }
 
 /// Host any client: the realm profiles the kit can run for the clients Leyline found on this PC, and the saved
@@ -150,6 +156,33 @@ pub fn host_link_start() -> Result<String, String> {
     let plan = host::plan_link(&kit()?, HostOs::current(), host::on_path)?;
     host::run(&plan)?;
     Ok(plan.note)
+}
+
+/// Start the realm with no window: the Host page's answers (name, public or private, the host's account name) go to
+/// the kit's script, which asks nothing; `host_progress` then shows its steps.
+#[tauri::command]
+pub fn host_start_quiet(answers: host::Answers) -> Result<String, String> {
+    let plan = host::plan_quiet(&kit()?, HostOs::current(), &answers)?;
+    host::run_job(&plan, "host")
+}
+
+/// "Put it on Leyline": `leyline link` for a server found on this PC (or typed in), with no window.
+#[tauri::command]
+pub fn host_link_quiet(answers: host::LinkAnswers) -> Result<String, String> {
+    let plan = host::plan_link_quiet(&kit()?, HostOs::current(), &answers)?;
+    host::run_job(&plan, "link")
+}
+
+/// "Already run a server?": a game server found on this PC (its containers, programs or game ports), read-only.
+#[tauri::command]
+pub async fn host_scan() -> Result<Option<host::scan::Found>, String> {
+    blocking(|| Ok(host::scan::scan())).await
+}
+
+/// The quiet start's step, in plain words.
+#[tauri::command]
+pub fn host_progress() -> host::Progress {
+    host::progress()
 }
 
 #[tauri::command]

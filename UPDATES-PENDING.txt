@@ -446,3 +446,18 @@
 1161d ship Save to GitHub: addon marketplace in the launcher, friendly errors, news, Help, host console, network quick wins and security fixes (GitHub then rebuilds Leyline.exe)
 1163a hqnote Fill HQ: today's security, marketplace and in-game notes
 1164a ship Save to GitHub: PLAY in frost blue (GitHub then rebuilds Leyline.exe)
+1165a ov112-data-check Read-only: where the old 1.12 game files are on the server (before removing them)
+1166a scripts Realm: edit mode (F7) only for builders, after the realm says yes; it ends on combat, damage, death, instances (live reload, no restart)
+1166b foreverui In game: F7 asks the realm before the building camera turns on
+1166c addons Leyline addons download: the same F7 change for desktop players
+1167a ov112-data-remove-check Dry run: what removing the old 1.12 game files would do (changes nothing)
+1168a ov112-data-remove Remove the old 1.12 game files (12.6 GB): the old site answers 410 for /data, then the files go; Wrath untouched
+1169a scripts Realm: no bots (companions off), duel reset and the duel corner at Krasus' Landing, 1v1 / keystone / transmog in Dalaran, events clock, .rules, three login lines, bans by account (the new settings restart the realm with the 5-minute warning)
+1169b signin Site: Modes cards for 1v1, keystones, transmog and Hardcore; HQ in the shared look (dark and light); bans by account
+1169c foreverui In game: Your realm window bans the account, mute and notice; the shared palette
+1169d addons Leyline addons download: the same in-game changes for desktop players
+1170a hostkit Host pack: hosting runs with no window, finds Docker and a server you already run
+1170b ship Save to GitHub: launcher hosting (Docker found and started, no window, link your server, 3 clicks to You're live), bans by account, shared look, modes cards (GitHub then rebuilds Leyline.exe)
+1171a scripts Realm: .hub and hide and seek work in Dalaran even when the server says Crystalsong Forest (live reload)
+1171b foreverui In game: the balancing module's login line hidden
+1171c addons Leyline addons download: the same for desktop players

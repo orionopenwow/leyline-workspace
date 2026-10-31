@@ -1,6 +1,7 @@
 -- ov_hostctl.lua: "Your realm" in the in-game Host window (WrathUnleashedUI/Host.lua), the realm half (mod-ale).
 --
--- The realm's GM runs their realm from the game: status, announce, message of the day, kick, ban / unban, an allow
+-- The realm's GM runs their realm from the game: status, announce, an on-screen notice, message of the day, kick, mute /
+-- unmute, send to Dalaran, ban / unban the ACCOUNT (a ban covers the player's whole account, as on Leyline HQ), an allow
 -- list (only listed characters may log in), and a restart with a five-minute warning. Everything the realm can't do
 -- from here (bots, rates, sign-up, the Leyline list, the invite link with its secret) the window hands to the
 -- launcher's Host page (leyline://host) or the website, never to this script.
@@ -13,10 +14,15 @@
 -- Transport: the Open Mod API (ov_modapi.lua, prefix OVMOD, whispered to yourself, never relayed). mod "wuhost":
 --   client -> server   status                       (data empty)
 --                      announce   <text>            to everyone online, as "[Realm] <text>"
+--                      notify     <text>            an on-screen notice to everyone online (.notify)
 --                      motd       <text>            the message of the day (.server set motd)
 --                      kick       <name>
---                      ban        <name>\t<hours>   1-720 hours (.ban character)
---                      unban      <name>
+--                      mute       <name>\t<minutes>\t<reason>   1-10080 minutes (.mute)
+--                      unmute     <name>
+--                      rescue     <name>            send to Dalaran (.tele name <name> Dalaran)
+--                      ban        <name>\t<hours>\t<reason>     the character's ACCOUNT, 1-8760 hours or 0 = permanent
+--                                                   (.ban account <account>; the same words and limits as Leyline HQ)
+--                      unban      <name>            the character's account (.unban account)
 --                      allow      on|off | add\t<name> | del\t<name>
 --                      restart    (data empty)      a restart in RESTART_DELAY seconds (never sooner), with warnings
 --                      cancel     (data empty)      cancels a pending restart
@@ -43,7 +49,7 @@
 -- file above is there when the script loads); the operator's own realm never polls.
 --
 -- mod-ale used: RegisterPlayerEvent 3 ON_LOGIN, 4 ON_LOGOUT; CreateLuaEvent (the console queue); Player:GetGMRank / GetName / GetGUIDLow / KickPlayer /
--- SendBroadcastMessage / RegisterEvent; GetPlayerByName, GetPlayersInWorld, SendWorldMessage, RunCommand,
+-- SendBroadcastMessage / RegisterEvent / GetAccountId; GetPlayerByName, GetPlayersInWorld, SendWorldMessage, RunCommand,
 -- CharDBQuery / CharDBExecute, AuthDBQuery, GetRealmID.
 
 if (os.getenv("OV_HOSTCTL") or "1") == "0" then return end
@@ -55,7 +61,8 @@ local FILE = os.getenv("OV_HOST_FILE") or "/azerothcore/lua_scripts/host-realm.d
 local RESTART_DELAY = 300
 local QUEUE_EVERY, QUEUE_MAX_AGE = 3000, 120
 local ACTION_COOLDOWN, ANNOUNCE_COOLDOWN, RESTART_COOLDOWN = 2, 10, 600
-local MAX_TEXT, MAX_ALLOW = 200, 500
+local MAX_TEXT, MAX_ALLOW, MAX_REASON = 200, 500, 160
+local BAN_HOURS, MUTE_MINUTES = 8760, 10080
 local TAG = "|cff5b8def[Realm]|r "
 local LOADED_AT = os.time()
 
@@ -92,6 +99,16 @@ function H.CleanText(s)
     s = s:gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")
     if #s > MAX_TEXT then s = s:sub(1, MAX_TEXT):gsub("[\128-\191]*$", ""):gsub("[\192-\255]$", "") end
     return s ~= "" and s or nil
+end
+
+-- A reason for a mute or ban (the same rule as stream/hq.py game_reason): one line, letters, digits and . , ! ? ' ( ) : / -
+-- only, at most MAX_REASON, at least 3 letters.
+function H.CleanReason(s)
+    s = H.CleanText(s)
+    if not s then return nil end
+    s = s:gsub("_", " "):gsub("[^%w%s%.,!%?'%(%):/%-\128-\255]", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")
+    if #s > MAX_REASON then s = s:sub(1, MAX_REASON):gsub("[\128-\191]*$", ""):gsub("[\192-\255]$", ""):gsub(" $", "") end
+    return #s >= 3 and s or nil
 end
 
 function H.CleanName(s)
@@ -160,6 +177,25 @@ local function charQuery(sql)
     if ok then return q end
 end
 local function charExec(sql) if CharDBExecute then pcall(CharDBExecute, sql) end end
+local function authQuery(sql)
+    if not AuthDBQuery then return nil end
+    local ok, q = pcall(AuthDBQuery, sql)
+    if ok then return q end
+end
+
+-- The account behind a character (a ban covers the whole account): { id, name, gm } or nil. The name is already
+-- cleaned (letters only) and the account name is checked before it reaches a command.
+function H.AccountOf(name)
+    local q = charQuery("SELECT account FROM characters WHERE name = '" .. name .. "'")
+    local id = q and tonumber(q:GetString(0))
+    if not id then return nil end
+    id = math.floor(id)
+    local a = authQuery("SELECT username FROM account WHERE id = " .. id)
+    local user = a and a:GetString(0)
+    if type(user) ~= "string" or not user:match("^[%w_%.%-]+$") or #user > 32 then return nil end
+    local g = authQuery("SELECT MAX(gmlevel) FROM account_access WHERE id = " .. id)
+    return { id = id, name = user:upper(), gm = tonumber(g and g:GetString(0)) or 0 }
+end
 
 local function loadAllow()
     if allow.loaded then return end
@@ -270,6 +306,19 @@ function ACTIONS.announce(player, data)
     ok(player, "Announced to everyone online.")
 end
 
+function ACTIONS.notify(player, data)
+    local t = H.CleanText(data)
+    if not t then return err(player, "Write the notice.") end
+    local g, now = player:GetGUIDLow(), os.time()
+    if lastAnnounce[g] and now - lastAnnounce[g] < ANNOUNCE_COOLDOWN then
+        return err(player, "One announcement every " .. ANNOUNCE_COOLDOWN .. " seconds.")
+    end
+    if not RunCommand then return err(player, "This realm can't show a notice from here.") end
+    lastAnnounce[g] = now
+    pcall(RunCommand, "notify " .. t)
+    ok(player, "Notice shown to everyone online.")
+end
+
 function ACTIONS.motd(player, data)
     local t = H.CleanText(data)
     if not t then return err(player, "Write the message of the day.") end
@@ -298,25 +347,83 @@ function ACTIONS.kick(player, data)
     ok(player, name .. " was kicked.")
 end
 
-function ACTIONS.ban(player, data)
-    local who, hours = (data or ""):match("^(%a+)\t(%d+)$")
-    local name, why = target(player, who)
-    if not name then return err(player, why) end
-    hours = tonumber(hours)
-    if not hours or hours < 1 or hours > 720 then return err(player, "Ban for 1 to 720 hours.") end
+-- A player someone may act on: on this realm, not yourself, not your own account, not a GM of your level or higher.
+local function account(player, name)
+    local acct = H.AccountOf(name)
+    if not acct then return nil, "No character called " .. name .. " on this realm." end
+    local mine = tonumber(try(player, "GetAccountId"))
+    if mine and mine == acct.id then return nil, "Not your own account." end
     local p = GetPlayerByName and GetPlayerByName(name)
-    if p and gmLevel(p) >= gmLevel(player) then return err(player, "Not a GM of your level or higher.") end
+    if acct.gm >= gmLevel(player) or (p and gmLevel(p) >= gmLevel(player)) then
+        return nil, "Not a GM of your level or higher."
+    end
+    return acct
+end
+
+local function hoursText(h) return h == 0 and "for good" or ("for " .. h .. (h == 1 and " hour" or " hours")) end
+
+function ACTIONS.mute(player, data)
+    local who, minutes, why = (data or ""):match("^(%a+)\t(%d+)\t?(.*)$")
+    local name, bad = target(player, who)
+    if not name then return err(player, bad) end
+    minutes = tonumber(minutes)
+    if not minutes or minutes < 1 or minutes > MUTE_MINUTES then
+        return err(player, "Minutes: a number from 1 to " .. MUTE_MINUTES .. " (a week).")
+    end
+    local reason = H.CleanReason(why)
+    if not reason then return err(player, "Say why (3 letters or more).") end
+    local _, no = account(player, name)
+    if no then return err(player, no) end
+    if not RunCommand then return err(player, "This realm can't mute from here.") end
+    pcall(RunCommand, string.format("mute %s %d %s", name, minutes, reason))
+    ok(player, name .. " can't talk for " .. minutes .. " minutes.")
+end
+
+function ACTIONS.unmute(player, data)
+    local name, why = target(player, data)
+    if not name then return err(player, why) end
+    if not RunCommand then return err(player, "This realm can't unmute from here.") end
+    pcall(RunCommand, "unmute " .. name)
+    ok(player, name .. " can talk again.")
+end
+
+function ACTIONS.rescue(player, data)
+    local name, why = target(player, data)
+    if not name then return err(player, why) end
+    local _, no = account(player, name)
+    if no then return err(player, no) end
+    if not RunCommand then return err(player, "This realm can't move players from here.") end
+    pcall(RunCommand, "tele name " .. name .. " Dalaran")
+    ok(player, name .. " is on the way to Dalaran.")
+end
+
+-- Ban account: the character's whole account (every character on it), as on Leyline HQ. 1-8760 hours, 0 = permanent.
+function ACTIONS.ban(player, data)
+    local who, hours, why = (data or ""):match("^(%a+)\t(%d+)\t?(.*)$")
+    local name, bad = target(player, who)
+    if not name then return err(player, bad) end
+    hours = tonumber(hours)
+    if not hours or hours < 0 or hours > BAN_HOURS then return err(player, "Hours: 1 to 8760, or 0 for a permanent ban.") end
+    local reason = H.CleanReason(why)
+    if not reason then return err(player, "Say why (3 letters or more).") end
+    local acct, no = account(player, name)
+    if not acct then return err(player, no) end
     if not RunCommand then return err(player, "This realm can't ban from here.") end
-    pcall(RunCommand, string.format("ban character %s %dh Banned by the realm's GM", name, hours))
-    ok(player, name .. " is banned for " .. hours .. " hours.")
+    pcall(RunCommand, string.format("ban account %s %s %s", acct.name, hours > 0 and (hours .. "h") or "-1", reason))
+    local p = GetPlayerByName and GetPlayerByName(name)
+    if p then try(p, "KickPlayer") end
+    log("ban account " .. acct.name .. " (" .. name .. ") " .. hoursText(hours) .. " by " .. tostring(try(player, "GetName")))
+    ok(player, name .. "'s account is banned " .. hoursText(hours) .. ".")
 end
 
 function ACTIONS.unban(player, data)
     local name, why = target(player, data)
     if not name then return err(player, why) end
+    local acct = H.AccountOf(name)
+    if not acct then return err(player, "No character called " .. name .. " on this realm.") end
     if not RunCommand then return err(player, "This realm can't unban from here.") end
-    pcall(RunCommand, "unban character " .. name)
-    ok(player, name .. " is no longer banned.")
+    pcall(RunCommand, "unban account " .. acct.name)
+    ok(player, name .. "'s account is no longer banned.")
 end
 
 function ACTIONS.allow(player, data)
@@ -391,7 +498,9 @@ function H.Handle(player, action, data)
     return true
 end
 
-for _, a in ipairs({ "status", "announce", "motd", "kick", "ban", "unban", "allow", "restart", "cancel" }) do
+H.ACTION_NAMES = { "status", "announce", "notify", "motd", "kick", "mute", "unmute", "rescue", "ban", "unban", "allow",
+    "restart", "cancel" }
+for _, a in ipairs(H.ACTION_NAMES) do
     OVMod.On(MOD, a, function(player, data) H.Handle(player, a, data) end)
 end
 

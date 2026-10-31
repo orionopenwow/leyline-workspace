@@ -41,14 +41,21 @@
 
   // ---------------------------------------------------------------- the words (the website's console, HOST_* in hub.py)
   const SERVICES = [["database", "Database"], ["login", "Login server"], ["world", "World server"], ["agent", "Relay agent"]];
+  // the same words as the in-game Your realm window and Leyline HQ: a ban is the player's whole ACCOUNT
   const GM = [
     ["announce", "Announce", "to everyone online"],
+    ["notify", "On-screen notice", "in the middle of everyone's screen"],
     ["motd", "Message of the day", "shown at login"],
     ["kick", "Kick", "one player"],
-    ["ban", "Ban or unban", "a player"],
+    ["mute", "Mute or unmute", "no chat for a while"],
+    ["rescue", "Send to Dalaran", "a stuck player"],
+    ["ban", "Ban account", "the player's whole account"],
     ["allow", "Allow-list", "only listed characters"],
     ["restart", "Restart", "with a five-minute warning"],
   ];
+  // how long (hours; 0 = permanent) and the mute's minutes: HQ's limits (stream/hq.py build)
+  const BAN_FOR = [["24", "1 day"], ["72", "3 days"], ["168", "1 week"], ["720", "30 days"], ["0", "Permanent"]];
+  const MUTE_FOR = [["15", "15 minutes"], ["60", "1 hour"], ["1440", "1 day"], ["10080", "1 week"]];
   const CHECKS = [["pc", "The servers on your PC"], ["tunnel", "The tunnel to the relay"], ["login", "A login through the relay"],
     ["invite", "Your invite link"], ["list", "Your place on the realm list"]];
   const TOOLS = [["invite", "Invite links"], ["friends", "Accounts for friends"], ["vis", "Public or private"],
@@ -289,7 +296,12 @@
     ui.drawer.hidden = true;
     ui.status = mk("p", "status hc-status");
     ui.status.setAttribute("role", "status");
-    sw.append(top, rune(), ui.svc, cols, ui.drawer, ui.status, rune(), mk("p", "hc-bh", "Runs on"), coreChips());
+    // "You're live": once, right after a start from this page, when the relay sees the realm
+    ui.live = mk("div", "hc-live");
+    ui.live.hidden = true;
+    ui.prog = mk("div", "hc-prog");
+    ui.prog.hidden = true;
+    sw.append(top, ui.live, ui.prog, rune(), ui.svc, cols, ui.drawer, ui.status, rune(), mk("p", "hc-bh", "Runs on"), coreChips());
     main.append(sw);
   }
 
@@ -329,11 +341,19 @@
     });
     const input = (ph, max, cls) => { const i = mk("input", cls || ""); i.type = "text"; i.placeholder = ph; i.maxLength = max; i.spellcheck = false; i.autocomplete = "off"; return i; };
     const name = () => input("Character name", 12, "hc-name");
-    if (a === "announce" || a === "motd") {
-      const t = input(a === "announce" ? "Everyone online sees this" : "Shown to everyone at login", 200);
-      const go = btn(a === "announce" ? "Send" : "Set", "btn small primary", async () => {
+    const reason = () => input("Reason (the player sees it)", 160, "hc-reason");
+    const choose = (list, label, pick) => {
+      const sel = mk("select", "hc-hours");
+      sel.setAttribute("aria-label", label);
+      for (const [v, t] of list) { const o = mk("option", "", t); o.value = v; sel.append(o); }
+      if (pick) sel.value = pick;
+      return sel;
+    };
+    if (a === "announce" || a === "motd" || a === "notify") {
+      const t = input(a === "announce" ? "Everyone online sees this" : a === "notify" ? "On everyone's screen, once" : "Shown to everyone at login", 200);
+      const go = btn(a === "motd" ? "Set" : a === "notify" ? "Show" : "Send", "btn small primary", async () => {
         if (!t.value.trim()) { t.focus(); return; }
-        if (await gm(a, t.value, go)) { if (a === "announce") t.value = ""; }
+        if (await gm(a, t.value, go)) { if (a !== "motd") t.value = ""; }
       });
       t.addEventListener("keydown", (e) => { if (e.key === "Enter") go.click(); });
       f.append(t, go);
@@ -345,19 +365,37 @@
         if (await ask(`Kick ${who}?`, "They're sent off the realm now. They can log in again.", "Kick")) gm("kick", who, go);
       });
       f.append(n, go);
-    } else if (a === "ban") {
+    } else if (a === "mute") {
       const n = name();
-      const hrs = mk("select", "hc-hours");
-      hrs.setAttribute("aria-label", "How long");
-      for (const [v, t] of [["24", "1 day"], ["72", "3 days"], ["168", "1 week"], ["720", "30 days"]]) { const o = mk("option", "", t); o.value = v; hrs.append(o); }
-      const go = btn("Ban", "btn small danger", async () => {
+      const mins = choose(MUTE_FOR, "How long", "60");
+      const why = reason();
+      const go = btn("Mute", "btn small danger", () => {
         const who = n.value.trim();
         if (!who) { n.focus(); return; }
-        const long = hrs.options[hrs.selectedIndex].textContent;
-        if (await ask(`Ban ${who} for ${long}?`, "They can't log in until it ends. You can unban them any time.", "Ban")) gm("ban", `${who}\t${hrs.value}`, go);
+        if (why.value.trim().length < 3) { say("Say why (3 letters or more).", "warn"); why.focus(); return; }
+        gm("mute", `${who}\t${mins.value}\t${why.value.trim()}`, go);
       });
-      const un = btn("Unban", "btn small", () => { const who = n.value.trim(); if (!who) { n.focus(); return; } gm("unban", who, un); });
-      f.append(n, hrs, go, un);
+      const un = btn("Unmute", "btn small", () => { const who = n.value.trim(); if (!who) { n.focus(); return; } gm("unmute", who, un); });
+      f.append(n, mins, why, go, un);
+    } else if (a === "rescue") {
+      const n = name();
+      const go = btn("Send to Dalaran", "btn small primary", () => { const who = n.value.trim(); if (!who) { n.focus(); return; } gm("rescue", who, go); });
+      f.append(n, go);
+    } else if (a === "ban") {
+      const n = name();
+      const hrs = choose(BAN_FOR, "How long");
+      const why = reason();
+      const go = btn("Ban account", "btn small danger", async () => {
+        const who = n.value.trim();
+        if (!who) { n.focus(); return; }
+        if (why.value.trim().length < 3) { say("Say why (3 letters or more).", "warn"); why.focus(); return; }
+        const long = hrs.value === "0" ? "for good" : `for ${hrs.options[hrs.selectedIndex].textContent}`;
+        if (await ask(`Ban ${who}'s account ${long}?`, "Every character on their account is locked out of your realm until it ends. You can unban it any time.", "Ban account")) {
+          gm("ban", `${who}\t${hrs.value}\t${why.value.trim()}`, go);
+        }
+      });
+      const un = btn("Unban account", "btn small", () => { const who = n.value.trim(); if (!who) { n.focus(); return; } gm("unban", who, un); });
+      f.append(n, hrs, why, go, un);
     } else if (a === "allow") {
       const n = name();
       const add = btn("Add", "btn small", () => { const who = n.value.trim(); if (!who) { n.focus(); return; } gm("allow", `add\t${who}`, add).then((ok) => { if (ok) n.value = ""; }); });
@@ -481,8 +519,38 @@
     for (const b of ui.tools.querySelectorAll(".hc-tool")) b.parentElement.hidden = !toolShown(b.dataset.tool, c);
     if (openTool && !toolShown(openTool, c)) toggleTool(openTool);
     if (!c.docker && con) say("Docker is not answering: start Docker Desktop, then refresh.", "warn");
+    paintLive(c);
+    paintProg();
     if (openTool) fillTool(openTool, true);
   }
+
+  function paintLive(c) {
+    const box = ui.live;
+    if (!box) return;
+    box.hidden = !liveWanted;
+    if (!liveWanted) return;
+    const on = !!(stat && stat.online);
+    const was = box.classList.contains("on");
+    box.className = "hc-live" + (on ? " on" : "");
+    box.replaceChildren();
+    const t = mk("div", "hc-live-t");
+    const priv = (stat && stat.visibility === "private") || c.visibility === "private";
+    t.append(mk("b", "", on ? "You're live" : "Almost there"),
+      mk("span", "", !on ? "Connecting to the network. This takes a minute." : c.linked ? "Your server is on the realm list."
+        : priv ? "Send friends your invite link. They make their account there, then play." : "Your realm is on the realm list. Send the link to anyone."));
+    if (on && c.linked) {
+      const ul = mk("ul", "hc-live-l");
+      for (const line of ["Players reach your server through the network: the realm address your server gives out must already work for players.",
+        "Turn off your login server's wrong-password ban (WrongPass.MaxCount = 0): every player comes through one address."]) ul.append(mk("li", "", line));
+      t.append(ul);
+    }
+    box.append(t);
+    if (on && !c.linked) box.append(btn("Copy invite link", "btn primary", copyInvite));
+    if (on) { const x = btn("", "hc-x", () => { liveWanted = false; box.hidden = true; }); x.setAttribute("aria-label", "Close"); x.textContent = "×"; box.append(x); }
+    if (on && !was) box.scrollIntoView({ block: "nearest" });
+    if (!on && !liveTimer) liveTimer = setTimeout(() => { liveTimer = null; refresh(true); }, 10000);
+  }
+  let liveTimer = null;
 
   async function startRealm() {
     say("Starting your realm…");
@@ -671,7 +739,31 @@
     ui.go.id = "hc-start";
     ui.go.disabled = true;
     ui.goHint = mk("span", "hc-fine", "Pick a ruleset.");
-    go.append(ui.go, ui.goHint);
+    ui.goWin = btn("Open in a window instead", "hc-more hc-win", startInWindow);
+    ui.goWin.hidden = true;
+    go.append(ui.go, ui.goHint, ui.goWin);
+    // the kit's questions, answered here so no window asks them (host.rs Answers)
+    ui.form = mk("div", "hc-form");
+    const nameL = mk("label", "hc-field");
+    ui.nameIn = mk("input", "hc-token");
+    ui.nameIn.id = "hc-name"; ui.nameIn.type = "text"; ui.nameIn.maxLength = 32; ui.nameIn.spellcheck = false; ui.nameIn.autocomplete = "off";
+    ui.nameIn.addEventListener("input", () => { ui.nameIn.dataset.typed = "1"; paintGo(); });
+    nameL.append(mk("span", "", "Realm name"), ui.nameIn);
+    ui.visL = mk("div", "hc-field");
+    ui.visL.append(mk("span", "", "Who can join"));
+    ui.visSeg = seg([["private", "Friends with my link"], ["public", "Everyone"]], visPick, (v) => { visPick = v; paintForm(); });
+    ui.visSeg.id = "hc-vis";
+    ui.visL.append(ui.visSeg);
+    ui.gmL = mk("label", "hc-field");
+    ui.gmIn = mk("input", "hc-token");
+    ui.gmIn.id = "hc-gm"; ui.gmIn.type = "text"; ui.gmIn.maxLength = 16; ui.gmIn.spellcheck = false; ui.gmIn.autocomplete = "off";
+    ui.gmIn.placeholder = "3 to 16 letters or digits";
+    ui.gmIn.addEventListener("input", paintGo);
+    ui.gmL.append(mk("span", "", "Your account name (it gets GM)"), ui.gmIn);
+    ui.gmL.hidden = !needsGm;
+    ui.form.append(nameL, ui.visL, ui.gmL);
+    ui.prog = mk("div", "hc-prog");
+    ui.prog.hidden = true;
     // My Den: what the kit sets for it, in place of choices (no bots, no player limit)
     ui.den = mk("ul", "hc-den");
     ui.den.setAttribute("aria-label", "My Den");
@@ -688,12 +780,168 @@
     // before anything else, while the Host pack or Docker is missing (owner 2026-10-30: "make getting the host pack more obvious")
     ui.ready = mk("div", "hc-ready");
     ui.ready.hidden = true;
-    sw.append(top, rune(), lede, needs, ui.ready, mk("p", "hc-bh", "Pick a ruleset"), ui.rules, ui.den, go, ui.status, link, rune(), mk("p", "hc-bh", "Runs on"), coreChips(linkServer));
+    // a server already on this PC (host/scan.rs): put it on Leyline in one press
+    ui.found = mk("div", "hc-found");
+    ui.found.hidden = true;
+    ui.pickH = mk("p", "hc-bh", "Pick a ruleset");
+    sw.append(top, rune(), lede, needs, ui.ready, ui.found, ui.pickH, ui.rules, ui.den, ui.form, go, ui.prog, ui.status, link, rune(), mk("p", "hc-bh", "Runs on"), coreChips(linkServer));
     const side = mk("aside", "hc-box hc-side");
     side.append(mk("p", "hc-bh", "Guide"), guideList(true));
     wrap.append(sw, side);
     main.append(wrap);
     paintRulesets();
+    paintProg();
+  }
+
+  // the form: a name for the ruleset (until one is typed), who can join (a Den is always friends only), and on a Mac or
+  // Linux the host's own account name (`leyline host` never makes accounts; the Windows kit makes a GM login itself)
+  const NAMES = { den: "My Den", dalaran: "Dalaran Hangout", vanillaplus: "Vanilla Plus" };
+  const needsGm = !/Windows/i.test(navigator.userAgent || "");
+  let visPick = "private";
+  function paintForm() {
+    if (!ui.form) return;
+    if (ui.nameIn && !ui.nameIn.dataset.typed) ui.nameIn.value = NAMES[picked] || "My Realm";
+    ui.visL.hidden = picked === DEN;
+    for (const b of ui.visSeg.querySelectorAll(".hc-seg-b")) b.setAttribute("aria-pressed", String(b.dataset.value === visPick));
+  }
+  const NAME_OK = /^[A-Za-z0-9 _'-]{1,32}$/;
+  const GM_OK = /^[A-Za-z0-9]{3,16}$/;
+  function answers() {
+    return { name: ui.nameIn.value.trim(), visibility: picked === DEN ? "private" : visPick, gm: needsGm ? ui.gmIn.value.trim() : null };
+  }
+  function formProblem() {
+    if (!ui.nameIn) return null;
+    const a = answers();
+    if (!NAME_OK.test(a.name)) return "Give your realm a name: letters, digits and spaces.";
+    if (needsGm && !GM_OK.test(a.gm || "")) return "Type your account name: 3 to 16 letters or digits.";
+    return null;
+  }
+
+  // ---------------------------------------------------------------- a server already on this PC
+  const CLIENTS = [["vanilla", "The original game (to 60)"], ["tbc", "Second era"], ["wrath", "Third era"]];
+  let found = null;
+  let scanned = false;
+  async function scanServers() {
+    let f = null;
+    try { f = await call("host_scan"); } catch (_) { /* nothing found */ }
+    scanned = true;
+    found = f || null;
+    paintFound();
+  }
+  function paintFound() {
+    const box = ui.found;
+    if (!box) return;
+    box.hidden = !found;
+    if (ui.pickH) ui.pickH.textContent = found ? "Or host a new realm" : "Pick a ruleset";
+    if (!found) return;
+    box.replaceChildren();
+    const f = found;
+    const head = mk("div", "hc-found-h");
+    const t = mk("div", "hc-found-t");
+    t.append(mk("b", "", !f.running ? "Your server is stopped" : f.confirmed || f.kind !== "ports" ? "Found a server on this PC" : "Is this your server?"), mk("span", "", f.what));
+    head.append(t);
+    box.append(head);
+    if (!f.running) {
+      box.append(mk("p", "hc-fine", "Start it the way you usually do, then press Look again."));
+      const again = btn("Look again", "btn small", (ev) => { ev.currentTarget.disabled = true; scanServers(); });
+      box.append(again);
+      return;
+    }
+    const row = mk("div", "hc-found-f");
+    const nl = mk("label", "hc-field");
+    ui.linkName = mk("input", "hc-token");
+    ui.linkName.id = "hc-link-name"; ui.linkName.type = "text"; ui.linkName.maxLength = 32; ui.linkName.spellcheck = false; ui.linkName.autocomplete = "off";
+    ui.linkName.value = "My Server";
+    nl.append(mk("span", "", "Its name on the realm list"), ui.linkName);
+    row.append(nl);
+    ui.linkClient = null;
+    if (!f.client) {
+      const cl = mk("label", "hc-field");
+      ui.linkClient = mk("select", "hc-hours");
+      ui.linkClient.id = "hc-link-client";
+      for (const [v, label] of CLIENTS) { const o = mk("option", "", label); o.value = v; ui.linkClient.append(o); }
+      cl.append(mk("span", "", "The game it's for"), ui.linkClient);
+      row.append(cl);
+    }
+    const put = btn(f.confirmed || f.kind !== "ports" ? "Put it on Leyline" : "Yes, link it", "btn primary hc-step-go", linkFound);
+    put.id = "hc-put";
+    row.append(put);
+    box.append(row, mk("p", "hc-fine", "Only a small helper runs next to it. Your server, its accounts and its settings are not changed."));
+  }
+  async function linkFound() {
+    const f = found;
+    if (!f) { linkServer(); return; }
+    const name = ((ui.linkName && ui.linkName.value) || "").trim();
+    if (!NAME_OK.test(name)) { say("Give your server a name: letters, digits and spaces.", "warn"); if (ui.linkName) ui.linkName.focus(); return; }
+    if (dock && dock.state !== "ready") { say("Docker first (step 2 above): the helper runs in it.", "warn"); return; }
+    const put = byId("hc-put");
+    if (put) put.disabled = true;
+    try {
+      if (!(kit && kit.is_kit)) {   // one press: the Host pack comes with it
+        say("Getting the Host pack…");
+        const r = await call("hostpack_install");
+        await call("set_host_kit", { path: r[1] });
+      }
+      const client = f.client || (ui.linkClient && ui.linkClient.value) || "wrath";
+      await call("host_link_quiet", { answers: { name, auth: f.auth, world: f.world, client, core: f.core || null } });
+      say("");
+      job = { idle: false, kind: "link", running: true, code: null, step: "Getting ready", n: 0, of: 4, secs: 0, problem: null };
+      followJob();
+    } catch (e) { say(oops(e), "bad"); }
+    finally { if (put) put.disabled = false; }
+  }
+
+  // ---------------------------------------------------------------- a start with no window: the kit's steps, here
+  let job = null;          // host_progress
+  let jobTimer = null;
+  let liveWanted = false;  // a start just finished: the console says "You're live" once the relay sees the realm
+  function fmt(secs) { const m = Math.floor(secs / 60), s2 = secs % 60; return m ? `${m} min ${String(s2).padStart(2, "0")} s` : `${s2} s`; }
+  function paintProg() {
+    const box = ui.prog;
+    if (!box) return;
+    // in the console a finished start is said by "You're live" instead
+    box.hidden = !job || job.idle || (mode === "console" && !job.running && job.code === 0);
+    if (box.hidden) return;
+    const failed = !job.running && job.code !== 0;
+    box.className = "hc-prog" + (failed ? " bad" : job.running ? "" : " ok");
+    box.replaceChildren();
+    const head = mk("div", "hc-prog-h");
+    head.append(mk("b", "", failed ? (job.kind === "link" ? "Linking stopped" : "Setting up stopped") : job.running ? job.step : (job.kind === "link" ? "Linked" : "Set up")),
+      mk("span", "hc-fine", job.running ? `Step ${Math.max(1, job.n)} of ${job.of} · ${fmt(job.secs)}` : fmt(job.secs)));
+    const bar = mk("div", "hc-bar");
+    const fill = mk("i", "");
+    fill.style.width = `${Math.round((job.running ? Math.max(job.n - 0.5, 0.3) : job.of) / Math.max(job.of, 1) * 100)}%`;
+    bar.append(fill);
+    bar.setAttribute("role", "progressbar");
+    bar.setAttribute("aria-valuemin", "0"); bar.setAttribute("aria-valuemax", String(job.of)); bar.setAttribute("aria-valuenow", String(job.n));
+    box.append(head, bar);
+    if (job.running) box.append(mk("p", "hc-fine", job.kind === "link" ? "Usually under a minute." : "The first start takes 5 to 20 minutes. You can use the rest of Leyline meanwhile."));
+    if (failed) {
+      box.append(mk("p", "hc-prog-why", job.problem || "Something went wrong."));
+      const row = mk("div", "hc-row");
+      row.append(btn("Try again", "btn small primary", job.kind === "link" ? linkFound : startPicked));
+      if (job.kind !== "link") row.append(btn("Open in a window instead", "btn small", startInWindow));
+      box.append(row);
+    }
+    if (ui.go) ui.go.hidden = !!(job.running);
+    if (ui.goHint) ui.goHint.hidden = !!(job.running);
+  }
+  async function followJob() {
+    if (jobTimer) clearTimeout(jobTimer);
+    let p = null;
+    try { p = await call("host_progress"); } catch (_) { /* try again */ }
+    const wasRunning = !!(job && job.running);
+    if (p) job = p;
+    paintProg();
+    paintGo();
+    if (ui.prog && !ui.prog.hidden && (!wasRunning || !job.running)) ui.prog.scrollIntoView({ block: "nearest" });
+    if (job && job.running) { jobTimer = setTimeout(followJob, 2000); return; }
+    jobTimer = null;
+    if (job && !job.idle && job.code === 0) {
+      liveWanted = true;
+      say(job.kind === "link" ? "Linked. Checking the realm list…" : "Your realm is up. Checking the network…", "ok");
+      if (typeof loadHost === "function") loadHost();   // app.js: read the kit again (it now hosts a realm: the console)
+    }
   }
 
   function paintRulesets() {
@@ -701,6 +949,10 @@
     ui.rules.replaceChildren();
     const list = offers || ORDER.slice(0, 6).map((id) => ({ id, clients: [], note: null, core: "azerothcore" }));
     const ids = ORDER.filter((id) => list.some((o) => o.id === id));
+    if (!picked && offers) {
+      const free = ids.filter((id) => !list.find((o) => o.id === id).note);
+      picked = free.includes("dalaran") ? "dalaran" : free[0] || null;
+    }
     for (const id of ids) {
       const o = list.find((x) => x.id === id);
       const [title, line, chip] = RULESETS[id] || [o.label || id, ""];
@@ -721,9 +973,13 @@
     if (!ui.go) return;
     const ready = kit && kit.is_kit;
     const name = picked ? (RULESETS[picked] || [picked])[0] : null;
-    ui.go.disabled = !ready || !picked;
+    const dockOk = !dock || dock.state === "ready";
+    paintForm();
+    const why = formProblem();
+    ui.go.disabled = !ready || !picked || !dockOk || !!(job && job.running);
     ui.go.textContent = name ? `Start ${name}` : "Start";
-    ui.goHint.textContent = !ready ? "Get the Host pack first (step 1 above)." : !picked ? "Pick a ruleset."
+    ui.goHint.textContent = !ready ? "Get the Host pack first (step 1 above)." : !dockOk ? "Docker first (step 2 above)." : !picked ? "Pick a ruleset."
+      : why ? why
       : picked === "vanillaplus" ? "Always on: it comes back after a reboot."
       : picked === DEN ? "Then invite friends with your invite link. The first start takes 5 to 20 minutes." : "The first start takes 5 to 20 minutes.";
     if (ui.den) ui.den.hidden = picked !== DEN;
@@ -736,11 +992,24 @@
     catch (e) { say(oops(e), "bad"); }
   }
   async function startPicked() {
+    const why = formProblem();
+    if (why) { say(why, "warn"); (needsGm && !GM_OK.test(ui.gmIn.value.trim()) ? ui.gmIn : ui.nameIn).focus(); return; }
     ui.go.disabled = true;
-    say("Starting your realm…");
-    try { say(await call("host_start", {}), "ok"); } catch (e) { say(oops(e), "bad"); }
+    say("");
+    try {
+      const o = (offers || []).find((x) => x.id === picked);
+      await call("host_choose", { profile: picked, clientId: o && o.clients[0] ? o.clients[0].id : null });
+      await call("host_start_quiet", { answers: answers() });
+      job = { idle: false, kind: "host", running: true, code: null, step: "Getting ready", n: 0, of: 8, secs: 0, problem: null };
+      followJob();
+    } catch (e) { say(oops(e), "bad"); if (ui.goWin) ui.goWin.hidden = false; }
     paintGo();
-    setTimeout(() => { if (typeof loadHost === "function") loadHost(); }, 20000);   // app.js: read the kit again
+  }
+  // the old way: the kit's script in a window of its own, asking its questions there
+  async function startInWindow() {
+    say("Opening it in a window…");
+    try { say(await call("host_start", {}), "ok"); } catch (e) { say(oops(e), "bad"); }
+    setTimeout(() => { if (typeof loadHost === "function") loadHost(); }, 20000);
   }
   async function linkServer() {
     if (!(kit && kit.is_kit)) { say("Get the Host pack first (Host pack & settings).", "warn"); return; }
@@ -748,6 +1017,18 @@
     try { say(await call("host_link_start"), "ok"); } catch (e) { say(oops(e), "bad"); }
   }
 
+  // Docker, as the step says it (host/docker.rs DockerState; `help` is its plain line for this OS): the step's title, and
+  // its button (none while Docker is closed: the page sees it start by itself)
+  const DOCK_TITLE = { missing: "Get Docker", stopped: "Start Docker", desktop_stopped: "Start Docker", starting: "Starting Docker…",
+    no_permission: "Let Docker in", no_compose: "Update Docker", ready: "Docker" };
+  const dockLink = (d) => () => call("open_link", { name: (d.get_url || "").includes("engine") ? "dockerengine" : "docker" }).catch(() => {});
+  function dockAction(d) {
+    if (d.state === "starting") return btn("Cancel", "btn hc-step-go", stopWaiting);
+    if (d.can_start) { const b = btn("Start Docker", "btn primary hc-step-go", () => startDocker(b)); b.id = "hc-docker-start"; return b; }
+    if (d.state === "missing") return btn("Get Docker", "btn hc-step-go", dockLink(d));
+    if (d.state === "no_compose") return btn("Update Docker", "btn hc-step-go", dockLink(d));
+    return null;
+  }
   // the two things a host needs first, as two big numbered steps; gone once both are ready
   function paintReady(p, d, haveKit) {
     const box = ui.ready;
@@ -778,9 +1059,13 @@
       : av ? `One download${av.size ? `, ${Math.ceil(av.size / 1024)} KB` : ""}: the realm, its console and the relay agent. No game files.`
       : "Not listed right now: try again in a minute.";
     step(1, haveKit, "Get the Host pack", kitLine, kitBtn);
-    let dockBtn = null;
-    if (!dockOk) dockBtn = btn("Get Docker", "btn hc-step-go", () => call("open_link", { name: (d.get_url || "").includes("engine") ? "dockerengine" : "docker" }).catch(() => {}));
-    step(2, dockOk, "Get Docker", dockOk ? "Docker is running." : "Free. It runs the realm's servers. Start it once it's installed.", dockBtn);
+    const st = d ? d.state : "ready";
+    const line = dockOk ? "Docker is running." : st === "missing" ? `${d.help || "Free. It runs the realm's servers."} This page sees it once it's in.`
+      : (d.help || "Docker is not answering yet.");
+    step(2, dockOk, dockOk ? "Docker" : (DOCK_TITLE[st] || "Get Docker"), line, dockOk ? null : dockAction(d));
+    const s2 = box.lastChild;
+    s2.dataset.docker = st;
+    s2.classList.toggle("wait", st === "starting");
   }
   async function getPack(b, dir) {
     b.disabled = true;
@@ -793,18 +1078,93 @@
     } catch (e) { say(oops(e), "bad"); b.disabled = false; b.textContent = "Try again"; }
   }
 
+  let pk = null;      // hostpack_info
+  let dock = null;    // docker_info
   async function loadSetup() {
     paintGo();
-    const pre = ui.prereq;
     const [p, d, prof] = await Promise.all([
       call("hostpack_info").catch(() => null), call("docker_info").catch(() => null), call("host_profiles").catch(() => null)]);
     if (mode !== "setup") return;
+    pk = p; dock = d;
     if (Array.isArray(prof) && Array.isArray(prof[0])) {
       offers = prof[0].filter((o) => o && Array.isArray(o.clients));
       if (prof[1] && prof[1].profile && !picked) picked = prof[1].profile;
     }
     paintRulesets();
     applyWant();
+    paintPrereq();
+    watchDocker();
+    if (!scanned || !found) scanServers();
+  }
+
+  // Docker is looked at again every 5 s while the Start tab shows (someone installs or opens Docker Desktop and comes
+  // back: the step moves on by itself); never while the page, the tab or the window is hidden
+  const DOCK_EVERY = 5000;
+  let dockTimer = null;
+  let dockBusy = false;
+  const startShown = () => mode === "setup" && isOn() && main.classList.contains("on") && document.visibilityState !== "hidden";
+  function watchDocker() {
+    if (startShown()) { if (!dockTimer) dockTimer = setInterval(recheckDocker, DOCK_EVERY); }
+    else if (dockTimer) { clearInterval(dockTimer); dockTimer = null; }
+  }
+  async function recheckDocker(force) {
+    if (!startShown()) { watchDocker(); return; }
+    if (dockBusy || (waiting && force !== true)) return;
+    dockBusy = true;
+    let d = null;
+    try { d = await call("docker_info"); } catch (_) { /* keep the last answer */ } finally { dockBusy = false; }
+    if (!d || mode !== "setup") return;
+    const was = dock && dock.state;
+    dock = d;
+    if (d.state !== was) { paintPrereq(); paintGo(); if (d.state === "ready") scanServers(); }
+  }
+  document.addEventListener("visibilitychange", watchDocker);
+  new MutationObserver(watchDocker).observe(page, { attributes: true, attributeFilter: ["class"] });
+  new MutationObserver(watchDocker).observe(main, { attributes: true, attributeFilter: ["class"] });
+  window.__hcDockerWatch = () => !!dockTimer;   // for the tests
+
+  // Start Docker: Docker Desktop's own start (or its app), then `docker info` every 3 s for up to two minutes
+  const WAIT_EVERY = 3000, WAIT_MAX = 120000;
+  let waiting = null;    // { t0, timer }
+  async function startDocker(b) {
+    if (b) b.disabled = true;
+    let note;
+    try { note = await call("docker_start"); }
+    catch (e) { say(oops(e, "Docker did not start. Open Docker Desktop yourself: this page sees it."), "warn"); if (b) b.disabled = false; return; }
+    say(note || "");
+    waiting = { t0: Date.now(), timer: null };
+    dock = Object.assign({}, dock, { state: "starting", can_start: false, help: "This usually takes under a minute." });
+    paintPrereq(); paintGo();
+    waitTick();
+  }
+  function stopWaiting(msg) {
+    if (waiting && waiting.timer) clearTimeout(waiting.timer);
+    waiting = null;
+    if (dock && dock.state === "starting") recheckDocker(true);
+    if (typeof msg === "string") say(msg, "warn"); else say("");
+  }
+  async function waitTick() {
+    if (!waiting || mode !== "setup") return;
+    let d = null;
+    try { d = await call("docker_info"); } catch (_) { /* try again */ }
+    if (!waiting) return;
+    const secs = Math.round((Date.now() - waiting.t0) / 1000);
+    if (d && d.state === "ready") { waiting = null; dock = d; say("Docker is running.", "ok"); paintPrereq(); paintGo(); return; }
+    if (Date.now() - waiting.t0 >= WAIT_MAX) {
+      waiting = null; dock = d || dock; paintPrereq(); paintGo();
+      say("Docker hasn't answered yet. Look at Docker Desktop's window: it may ask you to accept its terms, then try again.", "warn");
+      return;
+    }
+    const help = secs < 45 ? `${secs} s so far. This usually takes under a minute.`
+      : `${secs} s so far. If Docker Desktop shows a window, accept it there.`;
+    dock = Object.assign({}, d || dock, { state: "starting", can_start: false, help });
+    paintPrereq();
+    waiting.timer = setTimeout(waitTick, WAIT_EVERY);
+  }
+
+  function paintPrereq() {
+    const pre = ui.prereq;
+    const p = pk, d = dock;
     if (!pre) return;
     pre.replaceChildren();
     const chip = (ok, text, onFix) => {
@@ -819,6 +1179,6 @@
     paintReady(p, d, haveKit);
     if (ui.ready && !ui.ready.hidden) return;   // the steps say it already: no pills in the corner
     pre.append(chip(haveKit, haveKit ? "Host pack ready" : (p && p.installed ? "Host pack: use it" : "Get the Host pack"), haveKit ? null : () => tab("kit")));
-    if (d) pre.append(chip(d.state === "ready", d.state === "ready" ? "Docker ready" : "Get Docker", d.state === "ready" ? null : () => call("open_link", { name: (d.get_url || "").includes("engine") ? "dockerengine" : "docker" }).catch(() => {})));
+    if (d) pre.append(chip(d.state === "ready", d.state === "ready" ? "Docker ready" : (DOCK_TITLE[d.state] || "Get Docker"), d.state === "ready" ? null : dockLink(d)));
   }
 })();

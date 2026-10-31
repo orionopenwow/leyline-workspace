@@ -22,6 +22,12 @@
 -- Browser (streamed) accounts stay inside the stream: ov_slices.lua brings them home from a place that isn't
 -- streamed, with its own message.
 --
+-- .hub (also .wuhub): the Dalaran spots for the modes players can't find otherwise: the duel corner, the 1v1 arena
+-- battlemaster, the transmogrifier and the keystone master (their NPCs are spawned by realm/serverpass.sh step 2b,
+-- at the HUB positions below; stream/tests/test_ov_go_hub.lua keeps the two in step), and how Hardcore starts.
+-- .hub <spot> hops there when you are already in Dalaran (out of combat, every 10 s); from elsewhere it says where.
+-- ov_qol.lua's own travel hubs (.hub gurubashi etc., on the Brawl and Dalaran profiles) keep their names.
+--
 -- Player commands: .go (try the waiting go now; also .wugo), .go cancel. Plain players only for .go, so a GM's
 -- own .go commands are never shadowed; .wugo works for everyone. Players can never use ovgo: the console
 -- command is only read when the command hook has no player (the console or SOAP).
@@ -79,7 +85,7 @@ local PLACES = {
     ["b:zulaman"] = { name = "Zul'Aman", what = "raid", map = 568, pos = nil, min = 70, raid = true, hint = "" },
     ["b:zulgurub"] = { name = "Zul'Gurub", what = "raid", map = 309, pos = nil, min = 60, raid = true, hint = "" },
     ["h:dalaran"] = { name = "Dalaran", what = "hangout", map = 571, pos = { 571, 5807.98, 588.487, 660.94, 1.66594 }, min = 1, raid = false, hint = "" },
-    ["h:duels"] = { name = "Duels in Dalaran", what = "hangout", map = 571, pos = { 571, 5807.98, 588.487, 660.94, 1.66594 }, min = 1, raid = false, hint = "Duel: target a player and type /duel, or right-click their portrait. Either of you can say no." },
+    ["h:duels"] = { name = "Duels in Dalaran", what = "hangout", map = 571, pos = { 571, 5813.84, 449.122, 658.752, 1.16086 }, min = 1, raid = false, hint = "Duel corner: target a player and type /duel. Either of you can say no. Health and cooldowns come back after." },
     ["h:goldshire-inn"] = { name = "The Goldshire Inn", what = "hangout", map = 0, pos = { 0, -9460.3, 18.9, 57, 3.98 }, min = 1, raid = false, hint = "" },
     ["q:258"] = { name = "Random dungeon: Azeroth", what = "queue", map = nil, pos = nil, min = 15, raid = false, hint = "" },
     ["q:259"] = { name = "Random dungeon: Outland", what = "queue", map = nil, pos = nil, min = 59, raid = false, hint = "" },
@@ -331,10 +337,80 @@ local function consoleCommand(command, handler)
     return false
 end
 
+-- .hub: the Dalaran spots ------------------------------------------------------------------------------------------------
+-- TODO(check in game): every position stands on open ground (z) and clear of the city's own NPCs.
+local DALARAN_ZONE = 4395
+-- In game (31 Oct) a player standing in Dalaran reported Crystalsong Forest (2817) as their zone: the floating city
+-- sits over it. So: the zone or area is Dalaran, or the player is on Northrend high above Crystalsong, in the city's box.
+local function inDalaran(player)
+    if try(player, "GetZoneId") == DALARAN_ZONE or try(player, "GetAreaId") == DALARAN_ZONE then return true end
+    if try(player, "GetMapId") ~= 571 then return false end
+    local x, y, z = try(player, "GetX"), try(player, "GetY"), try(player, "GetZ")
+    return type(x) == "number" and type(y) == "number" and type(z) == "number"
+        and x > 5500 and x < 6100 and y > 250 and y < 1050 and z > 550
+end
+local HUB_COOLDOWN = 10
+local HUB = {
+    duels    = { label = "Duel corner", pos = PLACES["h:duels"].pos,
+                 tip = "The duel corner. Target a player and type /duel. Health and cooldowns come back after." },
+    arena    = { label = "1v1 arena", pos = { 571, 5818.2, 446.0, 658.752, 2.6 }, npc = 999991,
+                 tip = "Talk to the Arena Battlemaster 1v1 (level 80), or type .q1v1 rated or .q1v1 unrated." },
+    transmog = { label = "Transmog", pos = { 571, 5799.6, 628.6, 647.8, 5.6 }, npc = 190010,
+                 tip = "Talk to the Warpweaver to change how your gear looks." },
+    keys     = { label = "Keystone dungeons", pos = { 571, 5808.7, 628.9, 647.8, 3.9 }, npc = 200005,
+                 tip = "Talk to the keystone master for a key, then take your group to the dungeon it names." },
+    hardcore = { label = "Hardcore and challenges",
+                 tip = "One life, slow XP and more: make a new character, pick Begin at level 1, then touch the Shrine "
+                     .. "of Challenge by your start zone's graveyard." },
+}
+local HUB_ORDER = { "duels", "arena", "transmog", "keys", "hardcore" }
+local HUB_ALIAS = { duel = "duels", corner = "duels", ["1v1"] = "arena", pvp = "arena", tmog = "transmog",
+    transmogrifier = "transmog", key = "keys", keystone = "keys", mythic = "keys", hc = "hardcore",
+    challenge = "hardcore", challenges = "hardcore" }
+local lastHub = {}
+-- ov_qol.lua's travel hubs (.hub gurubashi, ...) are on: the same rule as its hubOn()
+local QOL_HUB = os.getenv("OV_QOL_HUB") == "1" or (os.getenv("OV_QOL_HUB") ~= "0" and os.getenv("OV_BRAWL") == "1")
+
+local function hubList(player)
+    say(player, "In Dalaran: |cffffff00.hub duels|r (duel corner), |cffffff00.hub arena|r (1v1), "
+        .. "|cffffff00.hub transmog|r, |cffffff00.hub keys|r (keystone dungeons), |cffffff00.hub hardcore|r (how to start)."
+        .. (QOL_HUB and " Travel hubs: |cffffff00.qol hub|r." or ""))
+end
+
+local function hub(player, which)
+    local key = HUB_ALIAS[which] or which
+    local h = HUB[key]
+    if not h then return hubList(player) end
+    if not h.pos then return say(player, h.tip) end
+    if not inDalaran(player) then
+        return say(player, h.label .. " is in Dalaran. Come to the city (your hearthstone, or Dalaran on " .. SITE
+            .. "), then type |cffffff00.hub " .. key .. "|r.")
+    end
+    local stop = try(player, "IsInCombat") and "not in combat" or try(player, "IsDead") and "not while dead" or nil
+    if stop then return say(player, h.label .. ": " .. stop .. ".") end
+    local guid, t = player:GetGUIDLow(), now()
+    if lastHub[guid] and t - lastHub[guid] < HUB_COOLDOWN then
+        return say(player, string.format("Again in %ds.", HUB_COOLDOWN - (t - lastHub[guid])))
+    end
+    lastHub[guid] = t
+    local pos = h.pos
+    player:RegisterEvent(function(_, _, _, p)   -- never teleport from inside the command hook
+        if p and p:Teleport(pos[1], pos[2], pos[3], pos[4], pos[5]) ~= false then say(p, h.tip) end
+    end, 100, 1)
+end
+
 local function onCommand(event, player, command, handler)
     if not player then return consoleCommand(command or "", handler) end
     local raw = (command or ""):gsub("^[%.!]", ""):lower():gsub("%s+$", "")
     local verb, arg = raw:match("^(%S+)%s*(.*)$")
+    if verb == "wuhub" or (verb == "hub" and (arg == "" or HUB[HUB_ALIAS[arg] or arg])) then
+        if arg == "" then hubList(player) else hub(player, arg) end
+        return false
+    end
+    if verb == "hub" and not QOL_HUB then
+        hubList(player)   -- ov_qol.lua's travel hubs are off here: nobody else answers
+        return false
+    end
     if verb ~= "wugo" and not (verb == "go" and (try(player, "GetGMRank") or 0) == 0 and (arg == "" or arg == "cancel")) then
         return nil   -- ovgo included: players never reach the console command
     end
@@ -381,4 +457,4 @@ RegisterPlayerEvent(30, onFirstLogin)  -- PLAYER_EVENT_ON_FIRST_LOGIN
 RegisterPlayerEvent(42, onCommand)     -- PLAYER_EVENT_ON_COMMAND
 
 -- for tests (stream/tests/test_ov_go.lua)
-OV_GO_TEST = { PLACES = PLACES, pending = pending, act = act, validGo = validGo, TTL = TTL }
+OV_GO_TEST = { PLACES = PLACES, pending = pending, act = act, validGo = validGo, TTL = TTL, HUB = HUB, HUB_ORDER = HUB_ORDER }

@@ -14,6 +14,9 @@
 //!   the same as typing `.playmode <id>`); the realm checks the id. A pick older than 15 minutes, or one already asked
 //!   for (the addon's saved variables), is never asked again. See docs/leyline-modes-play.md.
 //! * A realm type (its own server type) has no PLAY: the page offers the Host page instead.
+//! * An in-game mode (an NPC in Dalaran: 1v1 arena, transmog, keystone dungeons, Hardcore) has nothing to start: PLAY
+//!   just opens the game (the site's play page, or the client on the official realm), and the card shows the
+//!   `.hub <spot>` command that leads to it (`realm/custom/lua_scripts/ov_go.lua`).
 //! * A mode marked `coming` has no PLAY: "Coming soon", and its credit and source link.
 //!
 //! The UI never names a URL: it names a mode id, and the address is built here from the checked catalog.
@@ -33,7 +36,7 @@ pub const CACHE_FILE: &str = "modes-cache.json";
 /// The addon folder written into the player's client for desktop PLAY.
 pub const ADDON: &str = "LeylinePlay";
 const ADDON_LUA: &str = include_str!("modes/LeylinePlay.lua");
-const KINDS: &[&str] = &["realm", "offline", "realm-type"];
+const KINDS: &[&str] = &["realm", "offline", "realm-type", "in-game"];
 const MAX_PLAYERS: u32 = 40;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -61,6 +64,9 @@ pub struct Start {
     pub path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host: Option<String>,
+    /// An in-game mode: the `.hub <spot>` command that leads to it (shown, never run by Leyline).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cmd: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -68,7 +74,7 @@ pub struct Mode {
     pub id: String,
     pub title: String,
     pub line: String,
-    /// realm | offline | realm-type
+    /// realm | offline | realm-type | in-game
     pub kind: String,
     pub players: Players,
     /// live | coming
@@ -121,12 +127,19 @@ fn path_ok(p: &str) -> bool {
         && p.matches('?').count() <= 1
 }
 
+/// An in-game mode's command: `.hub ` and one plain word (the same rule as `stream/playmodes.py` CMD_RE).
+fn cmd_ok(c: &str) -> bool {
+    c.strip_prefix(".hub ").is_some_and(|w| (2..=16).contains(&w.len()) && w.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()))
+}
+
 /// One entry's checks (the same rules as `stream/playmodes.py`, so a bad entry from anywhere is left out).
 pub fn valid(m: &Mode) -> bool {
+    let s = &m.start;
     let start_ok = match m.kind.as_str() {
-        "realm" => m.start.go.as_deref() == Some(&format!("mode:{}", m.id)) && m.start.path.is_none() && m.start.host.is_none(),
-        "offline" => m.start.path.as_deref().is_some_and(path_ok) && m.start.go.is_none() && m.start.host.is_none(),
-        "realm-type" => m.start.host.as_deref().is_some_and(id_ok) && m.start.go.is_none() && m.start.path.is_none(),
+        "realm" => s.go.as_deref() == Some(&format!("mode:{}", m.id)) && s.path.is_none() && s.host.is_none() && s.cmd.is_none(),
+        "offline" => s.path.as_deref().is_some_and(path_ok) && s.go.is_none() && s.host.is_none() && s.cmd.is_none(),
+        "realm-type" => s.host.as_deref().is_some_and(id_ok) && s.go.is_none() && s.path.is_none() && s.cmd.is_none(),
+        "in-game" => s.cmd.as_deref().is_some_and(cmd_ok) && s.go.is_none() && s.path.is_none() && s.host.is_none(),
         _ => false,
     };
     let players_ok = (1..=MAX_PLAYERS).contains(&m.players.min) && m.players.max.map_or(true, |x| (m.players.min..=MAX_PLAYERS).contains(&x));
@@ -202,6 +215,7 @@ pub fn browser_url(m: &Mode) -> Option<String> {
     match m.kind.as_str() {
         "realm" => Some(format!("{}?go=mode:{}", crate::BROWSER_PLAY_URL, m.id)),
         "offline" => m.start.path.as_ref().map(|p| format!("https://{}{p}", crate::OFFICIAL_REALM)),
+        "in-game" => Some(crate::BROWSER_PLAY_URL.to_string()),
         _ => None,
     }
 }
@@ -318,6 +332,9 @@ mod tests {
     fn m(v: Value) -> Mode {
         serde_json::from_value(v).unwrap()
     }
+    fn all_in_game() -> Vec<Mode> {
+        builtin().into_iter().filter(|x| x.kind == "in-game").collect()
+    }
     fn golf() -> Mode {
         builtin().into_iter().find(|x| x.id == "minigolf").unwrap()
     }
@@ -328,11 +345,15 @@ mod tests {
     #[test]
     fn builtin_catalog_parses_whole() {
         let ids: Vec<String> = builtin().into_iter().map(|x| x.id).collect();
-        assert_eq!(ids, ["minigolf", "bumper-balls", "coin-dash", "community", "brawl", "azeroth-survivors", "hordes-of-azeroth"]);
+        assert_eq!(ids, ["minigolf", "bumper-balls", "coin-dash", "community", "brawl", "azeroth-survivors", "hordes-of-azeroth", "arena-1v1", "keystones", "transmog", "hardcore"]);
+        let t = all_in_game();
+        assert_eq!(t.iter().map(|x| x.start.cmd.as_deref().unwrap()).collect::<Vec<_>>(), [".hub arena", ".hub keys", ".hub transmog", ".hub hardcore"]);
+        assert!(t.iter().all(|x| x.live() && !x.realm_live()));
         let all = builtin();
         let s = all.iter().find(|x| x.id == "azeroth-survivors").unwrap();
         assert_eq!((s.kind.as_str(), s.status.as_str()), ("offline", "coming"));
-        assert_eq!(s.credit.as_ref().unwrap().by, "Aethus");
+        assert_eq!(s.credit.as_ref().unwrap().by, "Aethus (original game)");
+        assert_eq!(s.credit.as_ref().unwrap().note.as_deref(), Some("Open rebuild by OutThisLife"));
         let h = all.iter().find(|x| x.id == "hordes-of-azeroth").unwrap();
         assert_eq!(credit_urls(h), ["https://github.com/jonhaldors/hordes-of-azeroth", "https://github.com/jonhaldors/hordes-of-azeroth-server"]);
         assert_eq!(all.iter().find(|x| x.id == "brawl").unwrap().players.max, None);
@@ -365,6 +386,17 @@ mod tests {
             v["credit"] = json!({"by": "Someone", "license": "MIT", "source": "javascript:alert(1)"})
         }));
         list.push(bad(&|v| v["players"] = json!({"min": 5, "max": 2})));
+        list.push(bad(&|v| {
+            v["id"] = json!("hub-other");
+            v["kind"] = json!("in-game");
+            v["start"] = json!({"cmd": ".gm on"})
+        }));
+        list.push(bad(&|v| {
+            v["id"] = json!("hub-two");
+            v["kind"] = json!("in-game");
+            v["start"] = json!({"cmd": ".hub arena", "go": "mode:hub-two"})
+        }));
+        list.push(bad(&|v| v["start"] = json!({"go": "mode:minigolf", "cmd": ".hub arena"})));
         list.push(good.clone()); // a repeat
         let got = parse(&json!({"schema": 1, "modes": list})).unwrap();
         assert_eq!(got.len(), 1);
@@ -388,8 +420,8 @@ mod tests {
         assert!(l.from_cache && l.modes.len() == 1);
         let empty = tempfile::tempdir().unwrap();
         let l = fetch_from(&dead_url(), empty.path());
-        assert!(l.builtin && !l.from_cache && l.modes.len() == 7 && l.error.is_some());
-        assert_eq!(known(empty.path()).len(), 7);
+        assert!(l.builtin && !l.from_cache && l.modes.len() == 11 && l.error.is_some());
+        assert_eq!(known(empty.path()).len(), 11);
         assert!(find(empty.path(), "nope").is_err());
     }
 
@@ -401,9 +433,11 @@ mod tests {
         assert_eq!(browser_url(&get("coin-dash")).as_deref(), Some("https://play.openvanilla.app/wrath?go=mode:coin-dash"));
         assert_eq!(browser_url(&get("brawl")), None, "a realm type: the Host page instead");
         assert_eq!(browser_url(&get("azeroth-survivors")), None, "coming soon: no Play");
+        assert_eq!(browser_url(&get("transmog")).as_deref(), Some("https://play.openvanilla.app/wrath"), "in game: Play opens the game");
+        assert!(cmd_ok(".hub keys") && !cmd_ok(".hub") && !cmd_ok(".hub a b") && !cmd_ok(".gm on") && !cmd_ok(".hub Keys"));
         let mut s = get("azeroth-survivors");
         s.status = "live".into();
-        assert_eq!(browser_url(&s).as_deref(), Some("https://play.openvanilla.app/wrath/play?mode=own&survivors=1"));
+        assert_eq!(browser_url(&s).as_deref(), Some("https://play.openvanilla.app/wrath/survivors"));
         let mut odd = get("minigolf");
         odd.start.go = Some("mode:other".into());
         assert_eq!(browser_url(&odd), None);
@@ -445,7 +479,7 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let all = builtin();
         let c = profile(d.path(), Build::V335a);
-        for id in ["brawl", "azeroth-survivors", "hordes-of-azeroth"] {
+        for id in ["brawl", "azeroth-survivors", "hordes-of-azeroth", "transmog", "hardcore"] {
             assert!(prepare_desktop(&c, all.iter().find(|x| x.id == id).unwrap(), 1).is_err(), "{id}");
         }
         let old = profile(d.path(), Build::V1121);

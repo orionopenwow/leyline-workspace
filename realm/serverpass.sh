@@ -5,9 +5,14 @@
 #      ov_reports.lua: .bug / .stuck / .wu).
 #   2. World DB: dungeon_access_template min_level 10 for Ragefire Chasm (389), Wailing Caverns (43),
 #      the Deadmines (36) and Shadowfang Keep (33), normal difficulty.
+#   2b. World DB: the Dalaran NPCs for 1v1 arena, transmog and keystone dungeons (ov_go.lua .hub); a restart shows them.
 #   3. Profile: DungeonAccessRequirements.LFGLevelDBCOverride = 1 (the finder uses that table's levels
 #      instead of LFGDungeons.dbc's 15), AllowTwoSide.Interaction.Group = 1 (friends on either side can group).
 #      OV_AUTOLEARN = 1: ov_qol.lua's instant spell learn on level up (the profile had it at 0).
+#      OV_DUEL_RESET = 1 (owner 2026-10-31): health, power and cooldowns back after a duel (the duel corner).
+#      OV_EVENTS, _STOCK, _TRIVIA, _HIDE = 1: the events clock (ov_events.lua; bragging rights only).
+#      No bots for now (owner 2026-10-31, realm/profiles/main.env): OV_COMPANIONS = 0 and AC_PLAYERBOTS_MAX_ADDED_BOTS = 0
+#      (this pass used to put the cap back to 9).
 #      Companions (ov_companions.lua, dungeons and 10-player raids): AC_PLAYERBOTS_MAX_ADDED_BOTS = 9 (the bot
 #      module's per-player cap: you + 9 = a 10-player raid), OV_COMPANIONS_PER_PLAYER_RAID = 9,
 #      OV_COMPANIONS_GROUP_MAX = 10, OV_COMPANIONS_REALM_MAX = 60, OV_COMPANIONS_RAID25 = 0 (25-player off).
@@ -138,11 +143,44 @@ sqlq "SELECT map_id, min_level, max_level FROM dungeon_access_template WHERE map
 missing=$(sqlq "SELECT COUNT(*) FROM (SELECT 389 m UNION SELECT 43 UNION SELECT 36 UNION SELECT 33) w WHERE m NOT IN (SELECT map_id FROM dungeon_access_template WHERE difficulty = 0)")
 [ "${missing:-0}" = 0 ] || echo "  NOTE: $missing of the four maps have no access row; the finder keeps the DBC level for them"
 
+# 2b. The Dalaran NPCs for the modes we compile but nobody could find (ov_go.lua .hub; stream/playmodes.json "in-game"
+# cards): the 1v1 Arena Battlemaster (mod-1v1-arena 999991) at the duel corner, the Warpweaver (mod-transmog 190010)
+# and the keystone master (mod-mythic-plus 200005) by the boost's landing spot. Saved spawns with our own guids
+# (OV_NPC_GUIDS), so it is safe to run again: our rows are deleted and written back. A row is only written when its
+# module's creature_template is there, and is skipped when a GM already placed that NPC on the map. Positions are the
+# HUB ones in ov_go.lua (stream/tests/test_ov_go_hub.lua keeps them equal); new rows show after the restart below.
+echo "== 2b. Dalaran NPCs (world database)"
+OV_NPC_GUIDS="9100001,9100002,9100003"
+idcol=$(sqlq "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'creature' AND COLUMN_NAME IN ('id1', 'id') ORDER BY COLUMN_NAME DESC LIMIT 1")
+[ -n "$idcol" ] || die "the creature table has no id column"
+foreign=$(sqlq "SELECT COUNT(*) FROM creature WHERE guid IN ($OV_NPC_GUIDS) AND $idcol NOT IN (999991, 190010, 200005)")
+if [ "${foreign:-0}" != 0 ]; then
+  echo "  NOTE: guids $OV_NPC_GUIDS hold other creatures; Dalaran NPCs not placed (nothing changed)"
+else
+  docker exec ov-ac-database sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldump -uroot --single-transaction --skip-lock-tables --no-create-info acore_world creature --where="guid IN ('"$OV_NPC_GUIDS"')"' \
+    | gzip > "$BK/creature_dalaran_npcs.sql.gz" || die "could not back up the Dalaran NPC rows; nothing changed"
+  before_npcs=$(sqlq "SELECT GROUP_CONCAT(CONCAT_WS(':', guid, $idcol, ROUND(position_x, 1), ROUND(position_y, 1)) ORDER BY guid) FROM creature WHERE guid IN ($OV_NPC_GUIDS)")
+  sqlq "DELETE FROM creature WHERE guid IN ($OV_NPC_GUIDS)" >/dev/null
+  for row in "9100001 999991 5818.2 446 658.752 2.6" "9100002 190010 5799.6 628.6 647.8 5.6" "9100003 200005 5808.7 628.9 647.8 3.9"; do
+    set -- $row
+    sqlq "INSERT INTO creature (guid, $idcol, map, spawnMask, phaseMask, position_x, position_y, position_z, orientation, spawntimesecs, wander_distance, MovementType)
+          SELECT $1, $2, 571, 1, 1, $3, $4, $5, $6, 300, 0, 0 FROM creature_template t WHERE t.entry = $2
+          AND NOT EXISTS (SELECT 1 FROM creature c WHERE c.$idcol = $2 AND c.map = 571)" >/dev/null
+  done
+  after_npcs=$(sqlq "SELECT GROUP_CONCAT(CONCAT_WS(':', guid, $idcol, ROUND(position_x, 1), ROUND(position_y, 1)) ORDER BY guid) FROM creature WHERE guid IN ($OV_NPC_GUIDS)")
+  for e in 999991 190010 200005; do
+    if [ "$(sqlq "SELECT COUNT(*) FROM creature WHERE guid IN ($OV_NPC_GUIDS) AND $idcol = $e")" = 1 ]; then echo "  NPC $e placed in Dalaran"
+    elif [ "$(sqlq "SELECT COUNT(*) FROM creature_template WHERE entry = $e")" = 0 ]; then echo "  NOTE: NPC $e has no template (is its module built in?); not placed"
+    else echo "  NPC $e: a GM already placed one on the map; kept that one"; fi
+  done
+  [ "$before_npcs" = "$after_npcs" ] || need_npcs=1
+fi
+
 echo "== 3. profile"
 sed -i 's/\r$//' "$PF"
-need=0
-for kv in AC_DUNGEON_ACCESS_REQUIREMENTS_LFGLEVEL_DBCOVERRIDE=1 AC_ALLOW_TWO_SIDE_INTERACTION_GROUP=1 OV_AUTOLEARN=1 \
-    AC_PLAYERBOTS_MAX_ADDED_BOTS=9 OV_COMPANIONS_PER_PLAYER_RAID=9 OV_COMPANIONS_GROUP_MAX=10 \
+need=${need_npcs:-0}
+for kv in AC_DUNGEON_ACCESS_REQUIREMENTS_LFGLEVEL_DBCOVERRIDE=1 AC_ALLOW_TWO_SIDE_INTERACTION_GROUP=1 OV_AUTOLEARN=1 OV_DUEL_RESET=1 OV_EVENTS=1 OV_EVENTS_STOCK=1 OV_EVENTS_TRIVIA=1 OV_EVENTS_HIDE=1 \
+    OV_COMPANIONS=0 AC_PLAYERBOTS_MAX_ADDED_BOTS=0 OV_COMPANIONS_PER_PLAYER_RAID=9 OV_COMPANIONS_GROUP_MAX=10 \
     OV_COMPANIONS_REALM_MAX=60 OV_COMPANIONS_RAID25=0 \
     AC_PLAYERBOTS_LOOT_NEED_ROLL_LEVEL=0 AC_PLAYERBOTS_LOOT_GREED_ROLL_LEVEL=0 AC_PLAYERBOTS_LOOT_ROLL_DISENCHANT=0 \
     AC_PLAYERBOTS_LOOT_ROLL_RECIPE=0 AC_PLAYERBOTS_FREE_METHOD_LOOT=0 AC_PLAYERBOTS_ALLOW_GUILD_BOTS=0 \

@@ -50,13 +50,13 @@
     {
       "id": "azeroth-survivors",
       "title": "Azeroth Survivors",
-      "line": "A survivors-style roguelike: hold out against the waves. Runs in your browser with your own game folder, no server.",
+      "line": "A survivors-style roguelike: hold out against the waves. It gets its own site soon, with your Leyline sign-in.",
       "kind": "offline",
       "players": { "min": 1, "max": 1 },
       "status": "coming",
-      "start": { "path": "/wrath/play?mode=own&survivors=1" },
+      "start": { "path": "/wrath/survivors" },
       "credit": {
-        "by": "Aethus",
+        "by": "Aethus (original game)",
         "note": "Open rebuild by OutThisLife",
         "license": "MIT or Apache-2.0",
         "source": "https://github.com/OutThisLife/azeroth-survivors-re"
@@ -76,6 +76,42 @@
         "source": "https://github.com/jonhaldors/hordes-of-azeroth",
         "more": ["https://github.com/jonhaldors/hordes-of-azeroth-server"]
       }
+    },
+    {
+      "id": "arena-1v1",
+      "title": "1v1 arena",
+      "line": "Rated or practice one-on-one arena at level 80. The battlemaster stands at the duel corner.",
+      "kind": "in-game",
+      "players": { "min": 2, "max": 2 },
+      "status": "live",
+      "start": { "cmd": ".hub arena" }
+    },
+    {
+      "id": "keystones",
+      "title": "Keystone dungeons",
+      "line": "Timed dungeons with a key that gets harder at every level, plus extra twists to beat.",
+      "kind": "in-game",
+      "players": { "min": 1, "max": 5 },
+      "status": "live",
+      "start": { "cmd": ".hub keys" }
+    },
+    {
+      "id": "transmog",
+      "title": "Transmog",
+      "line": "Change how your gear looks. The Warpweaver in Dalaran does it for you.",
+      "kind": "in-game",
+      "players": { "min": 1, "max": 1 },
+      "status": "live",
+      "start": { "cmd": ".hub transmog" }
+    },
+    {
+      "id": "hardcore",
+      "title": "Hardcore and challenges",
+      "line": "One life, slow XP, only gear you made and more. Start a new character at level 1.",
+      "kind": "in-game",
+      "players": { "min": 1, "max": 1 },
+      "status": "live",
+      "start": { "cmd": ".hub hardcore" }
     }
   ]
 }

@@ -890,6 +890,7 @@ pub fn run() {
             crate::p2p::cmds::hostpack_info,
             crate::p2p::cmds::hostpack_install,
             crate::p2p::cmds::docker_info,
+            crate::p2p::cmds::docker_start, // Start Docker: Docker Desktop's own start, else its app (host/docker.rs start)
             crate::p2p::cmds::host_profiles, // host any client (host/profiles.rs)
             crate::p2p::cmds::host_choose,
             crate::p2p::cmds::host_stop,
@@ -907,6 +908,10 @@ pub fn run() {
             crate::p2p::cmds::host_rules,
             crate::p2p::cmds::host_rules_set,
             crate::p2p::cmds::host_link_start,
+            crate::p2p::cmds::host_start_quiet, // no window: the Host page's answers, its steps (host.rs plan_quiet, progress)
+            crate::p2p::cmds::host_link_quiet,
+            crate::p2p::cmds::host_progress,
+            crate::p2p::cmds::host_scan, // a server already on this PC, to link (host/scan.rs)
             crate::p2p::cmds::p2p_flags,
             crate::p2p::cmds::p2p_set_flag,
             crate::p2p::cmds::p2p_set_limits,

@@ -19,6 +19,7 @@ pub mod console;
 pub mod docker;
 pub mod pack;
 pub mod profiles;
+pub mod scan;
 
 use crate::realms;
 use serde::{Deserialize, Serialize};
@@ -325,14 +326,25 @@ pub fn on_path(name: &str) -> bool {
 }
 
 pub fn run(p: &HostPlan) -> Result<(), String> {
+    spawn(p).map(|_| ())
+}
+
+fn spawn(p: &HostPlan) -> Result<std::process::Child, String> {
     let mut c = Command::new(&p.program);
     c.args(&p.args).current_dir(&p.cwd).envs(p.env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+    // the kit's scripts call `docker` themselves: the one the launcher found, even when it is not on PATH
+    if let Some(path) = docker::path_env() {
+        c.env("PATH", path);
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         if p.new_console {
             c.creation_flags(CREATE_NEW_CONSOLE);
+        } else if p.log.is_some() {
+            c.creation_flags(CREATE_NO_WINDOW);
         }
     }
     if let Some(log) = &p.log {
@@ -343,7 +355,280 @@ pub fn run(p: &HostPlan) -> Result<(), String> {
         let f2 = f.try_clone().map_err(|e| e.to_string())?;
         c.stdin(Stdio::null()).stdout(f).stderr(f2).env("LEYLINE_NONINTERACTIVE", "1");
     }
-    c.spawn().map(|_| ()).map_err(|e| format!("Could not start the host kit: {e}"))
+    c.spawn().map_err(|e| format!("Could not start the host kit: {e}"))
+}
+
+// ---------------------------------------------------------------- starting with no window (the launcher shows the steps)
+
+/// The answers the Host page's form gives the kit, so its script asks nothing: the realm's name, public or private,
+/// and (for `leyline host` on a Mac or Linux) the account name the host plays as and makes GM.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+pub struct Answers {
+    pub name: Option<String>,
+    pub visibility: Option<String>,
+    pub gm: Option<String>,
+}
+
+const BRANDS: &[&str] = &["world of warcraft", "warcraft", "lich king", "lichking", "blizzard"];
+
+/// A realm name the kit takes (setup.py NAME_RE: 1-32 letters, digits, spaces, _ ' or -) and no game or publisher name.
+pub fn name_ok(n: &str) -> bool {
+    let t = n.trim();
+    let low = t.to_ascii_lowercase();
+    (1..=32).contains(&t.chars().count())
+        && t.chars().all(|c| c.is_ascii_alphanumeric() || " _'-".contains(c))
+        && !BRANDS.iter().any(|b| low.contains(b))
+        && !low.split(|c: char| !c.is_ascii_alphanumeric()).any(|w| w == "wow")
+}
+
+/// An account name for GM (setup.py GM_RE: 3-16 letters or digits).
+pub fn gm_ok(n: &str) -> bool {
+    (3..=16).contains(&n.len()) && n.chars().all(|c| c.is_ascii_alphanumeric())
+}
+
+/// The env for the answers (the kit's `WU_*` and `leyline`'s `LEYLINE_*` names), each checked first.
+fn answer_env(a: &Answers) -> Result<Vec<(String, String)>, String> {
+    let mut env = Vec::new();
+    if let Some(n) = a.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+        if !name_ok(n) {
+            return Err("Realm name: up to 32 letters, digits, spaces, _ ' or -, and no game names.".into());
+        }
+        env.extend([("WU_NAME".to_string(), n.to_string()), ("LEYLINE_NAME".to_string(), n.to_string())]);
+    }
+    if let Some(v) = a.visibility.as_deref() {
+        if v != "public" && v != "private" {
+            return Err("Pick public or private.".into());
+        }
+        env.extend([("WU_VISIBILITY".to_string(), v.to_string()), ("LEYLINE_VISIBILITY".to_string(), v.to_string())]);
+    }
+    if let Some(g) = a.gm.as_deref().map(str::trim).filter(|g| !g.is_empty()) {
+        if !gm_ok(g) {
+            return Err("Your account name: 3 to 16 letters or digits.".into());
+        }
+        env.extend([("WU_GM_NAME".to_string(), g.to_string()), ("LEYLINE_GM".to_string(), g.to_string())]);
+    }
+    Ok(env)
+}
+
+/// The quiet run's output, in the kit's state folder.
+pub fn job_log(kit: &Path) -> PathBuf {
+    kit.join("state").join("leyline-launcher.log")
+}
+
+/// Start the kit's host script with no window: its answers from the Host page, its output to the log the launcher
+/// reads for the steps (`progress`). A realm file from the website (a seed) still opens its own window (`plan`).
+pub fn plan_quiet(kit: &Path, os: HostOs, a: &Answers) -> Result<HostPlan, String> {
+    let info = inspect(Some(kit), None);
+    let mine = answer_env(a)?;
+    // the form's answers win over the saved choice's (a Den's name and "private")
+    let mut env: Vec<(String, String)> = profiles::env_for(kit).into_iter().filter(|(k, _)| !mine.iter().any(|(m, _)| m == k)).collect();
+    env.extend(mine);
+    env.push(("LEYLINE_NONINTERACTIVE".into(), "1".into()));
+    let note = "Setting up your realm. The first start takes 5 to 20 minutes.".to_string();
+    let log = Some(job_log(kit));
+    match os {
+        HostOs::Windows => {
+            if !info.has_windows_script {
+                return Err(format!("\"{WINDOWS_SCRIPT}\" is not in this folder: pick your host kit folder."));
+            }
+            Ok(HostPlan { program: "cmd.exe".into(), args: vec!["/C".into(), WINDOWS_SCRIPT.into()], cwd: kit.to_path_buf(),
+                new_console: false, log, env, note })
+        }
+        HostOs::Mac | HostOs::Linux => {
+            if !info.has_unix_script {
+                return Err("The `leyline` script is not in this folder: pick your host kit folder.".into());
+            }
+            if !kit.join("state").join("host.json").is_file() && !env.iter().any(|(k, _)| k == "LEYLINE_GM") {
+                return Err("Type the account name you'll play as: it becomes the realm's GM.".into());
+            }
+            let mut args = vec![LEYLINE_SCRIPT.to_string(), "host".into()];
+            if profiles::read_choice(kit).map(|c| c.profile).as_deref() == Some("vanillaplus") {
+                args.push("--always-on".into());
+            }
+            Ok(HostPlan { program: "bash".into(), args, cwd: kit.to_path_buf(), new_console: false, log, env, note })
+        }
+    }
+}
+
+/// What the Host page's "Put it on Leyline" gives `leyline link`: the server's name, where its login and world
+/// servers answer on this PC, and the client it is for. Every value is checked here and again by setup.py.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+pub struct LinkAnswers {
+    pub name: String,
+    pub auth: String,
+    pub world: String,
+    /// vanilla, tbc or wrath.
+    pub client: String,
+    pub core: Option<String>,
+}
+
+fn addr_ok(a: &str) -> bool {
+    let Some((h, p)) = a.rsplit_once(':') else { return false };
+    p.parse::<u16>().is_ok_and(|p| p > 0) && !h.is_empty() && h.len() <= 253
+        && h.chars().all(|c| c.is_ascii_alphanumeric() || ".-".contains(c))
+}
+
+/// `leyline link` (or "Link my server.bat") with no window and no questions.
+pub fn plan_link_quiet(kit: &Path, os: HostOs, a: &LinkAnswers) -> Result<HostPlan, String> {
+    if !name_ok(&a.name) {
+        return Err("Name: up to 32 letters, digits, spaces, _ ' or -, and no game names.".into());
+    }
+    if !addr_ok(&a.auth) || !addr_ok(&a.world) {
+        return Err("That server address does not look right.".into());
+    }
+    if !matches!(a.client.as_str(), "vanilla" | "tbc" | "wrath") {
+        return Err("Pick the client it's for.".into());
+    }
+    if hosted(kit).is_some() && !fs::read_to_string(kit.join("state").join("host.json")).unwrap_or_default().contains("\"linked\": true") {
+        return Err("This Host pack runs a realm already, and a Host pack holds one. Your server can't be linked from it.".into());
+    }
+    let mut env = vec![
+        ("LEYLINE_LINK_NAME".to_string(), a.name.trim().to_string()),
+        ("LEYLINE_LINK_AUTH".into(), a.auth.clone()),
+        ("LEYLINE_LINK_WORLD".into(), a.world.clone()),
+        ("LEYLINE_LINK_CLIENT".into(), a.client.clone()),
+        ("LEYLINE_NONINTERACTIVE".into(), "1".into()),
+    ];
+    if let Some(c) = a.core.as_deref().filter(|c| matches!(*c, "azerothcore" | "trinitycore" | "cmangos" | "vmangos" | "other")) {
+        env.push(("LEYLINE_LINK_CORE".into(), c.to_string()));
+    }
+    let note = "Linking your server. It shows on the realm list within a minute.".to_string();
+    let log = Some(job_log(kit));
+    if os == HostOs::Windows {
+        if !kit.join(LINK_SCRIPT).is_file() {
+            return Err(format!("\"{LINK_SCRIPT}\" is not in this folder: update the Host pack."));
+        }
+        return Ok(HostPlan { program: "cmd.exe".into(), args: vec!["/C".into(), LINK_SCRIPT.into()], cwd: kit.to_path_buf(),
+            new_console: false, log, env, note });
+    }
+    if !kit.join(LEYLINE_SCRIPT).is_file() {
+        return Err("The `leyline` script is not in this folder: pick your host kit folder.".into());
+    }
+    Ok(HostPlan { program: "bash".into(), args: vec![LEYLINE_SCRIPT.into(), "link".into()], cwd: kit.to_path_buf(), new_console: false, log, env, note })
+}
+
+/// The one quiet run at a time: what it is, its log and when it started.
+struct Job {
+    child: std::process::Child,
+    kind: &'static str,
+    log: PathBuf,
+    started: std::time::Instant,
+    code: Option<i32>,
+}
+
+static JOB: std::sync::Mutex<Option<Job>> = std::sync::Mutex::new(None);
+
+/// Start a quiet plan (`plan_quiet`, `plan_link_quiet`) and keep it for `progress`. One at a time.
+pub fn run_job(p: &HostPlan, kind: &'static str) -> Result<String, String> {
+    let mut j = JOB.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(job) = j.as_mut() {
+        if job.child.try_wait().ok().flatten().is_none() {
+            return Err("Your realm is being set up already: wait for it to finish.".into());
+        }
+    }
+    let log = p.log.clone().ok_or("Not a quiet start.")?;
+    let child = spawn(p)?;
+    *j = Some(Job { child, kind, log, started: std::time::Instant::now(), code: None });
+    Ok(p.note.clone())
+}
+
+/// A quiet run, as the Host page shows it: the step it is at, in plain words, and how it ended.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct Progress {
+    /// No quiet run since the launcher started.
+    pub idle: bool,
+    /// host or link.
+    pub kind: String,
+    pub running: bool,
+    /// The exit code once it ended (0: done).
+    pub code: Option<i32>,
+    /// The step it is at, in plain words.
+    pub step: String,
+    /// 1-based step number and how many there are, for the bar.
+    pub n: u32,
+    pub of: u32,
+    pub secs: u64,
+    /// Why it stopped, in plain words (only when it failed).
+    pub problem: Option<String>,
+}
+
+/// The kit's steps (its "== ..." lines), in the order they come, and the words the Host page shows for each.
+const STEPS: &[(&[&str], &str)] = &[
+    (&["helper image"], "Getting the helper (about a minute)"),
+    (&["your realm", "your beacon", "link a server"], "Saving your settings"),
+    (&["realm images", "server: building"], "Downloading the realm (the biggest step)"),
+    (&["game data", "server data"], "Reading the game data from your game folder"),
+    (&["starting the realm", "starting the ", "starting the helper", "starting the agent"], "Starting the servers (the first time: 5 to 20 minutes)"),
+    (&["world changes"], "Setting up the ruleset"),
+    (&["connecting to the relay"], "Connecting to the network"),
+    (&["make your gm account", "done"], "Done"),
+];
+const LINK_STEPS: &[(&[&str], &str)] = &[
+    (&["helper image"], "Getting the helper (about a minute)"),
+    (&["link a server"], "Saving your server's details"),
+    (&["starting the helper", "starting the agent"], "Connecting your server to the network"),
+    (&["done"], "Done"),
+];
+
+/// A line safe to show: no passwords, keys, tokens or links with a secret, no game or publisher names and no client
+/// versions (the Host page's own words take their place).
+pub fn safe_line(l: &str) -> Option<String> {
+    let t = docker::plain(l).trim().trim_start_matches("Problem:").trim().to_string();
+    let low = t.to_ascii_lowercase();
+    let secret = ["password", "secret", "token", "key", "account:", "host-link", "login", "#"].iter().any(|w| low.contains(w));
+    let brand = BRANDS.iter().any(|b| low.contains(b)) || low.split(|c: char| !c.is_ascii_alphanumeric()).any(|w| w == "wow");
+    let version = t.split(|c: char| !(c.is_ascii_alphanumeric() || c == '.')).any(|w| {
+        let parts: Vec<&str> = w.split('.').collect();
+        parts.len() >= 3 && parts[0].chars().all(|c| c.is_ascii_digit()) && !parts[0].is_empty()
+    });
+    (!t.is_empty() && t.len() <= 200 && !secret && !brand && !version).then_some(t)
+}
+
+/// Read the steps out of the run's output.
+pub fn read_progress(text: &str, kind: &str, running: bool, code: Option<i32>, secs: u64) -> Progress {
+    let table = if kind == "link" { LINK_STEPS } else { STEPS };
+    let mut at = 0usize;
+    for l in text.lines() {
+        let l = docker::plain(l);
+        let Some(h) = l.trim().strip_prefix("== ") else { continue };
+        let h = h.to_ascii_lowercase();
+        if let Some(i) = table.iter().position(|(keys, _)| keys.iter().any(|k| h.starts_with(k))) {
+            at = at.max(i + 1);
+        }
+    }
+    let step = if at == 0 { "Getting ready".to_string() } else { table[at - 1].1.to_string() };
+    let failed = !running && code.is_some_and(|c| c != 0);
+    let problem = failed.then(|| {
+        let last = text.lines().rev().filter_map(safe_line).find(|l| !l.starts_with("==") && !l.to_ascii_lowercase().starts_with("press "));
+        let base = match (kind, at) {
+            ("link", _) => "Linking stopped.",
+            (_, 0..=2) => "Setting up stopped before the realm was downloaded.",
+            (_, 3) => "Downloading the realm stopped. Is this PC online?",
+            (_, 4) => "Your game folder was not found or could not be read. Add it on the Clients page, then try again.",
+            _ => "Your realm did not start.",
+        };
+        match last {
+            Some(l) => format!("{base} It said: {l}"),
+            None => base.to_string(),
+        }
+    });
+    Progress { idle: false, kind: kind.into(), running, code, step, n: at as u32, of: table.len() as u32, secs, problem }
+}
+
+/// The quiet run now.
+pub fn progress() -> Progress {
+    let mut j = JOB.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(job) = j.as_mut() else { return Progress { idle: true, ..Default::default() } };
+    if job.code.is_none() {
+        if let Ok(Some(st)) = job.child.try_wait() {
+            job.code = Some(st.code().unwrap_or(-1));
+        }
+    }
+    let text = fs::read(&job.log).map(|b| {
+        let tail = &b[b.len().saturating_sub(64 * 1024)..];
+        String::from_utf8_lossy(tail).to_string()
+    }).unwrap_or_default();
+    read_progress(&text, job.kind, job.code.is_none(), job.code, job.started.elapsed().as_secs())
 }
 
 /// The hosted realm as the relay sees it, plus its live counts.
@@ -670,6 +955,114 @@ mod tests {
         assert_eq!((x.program.as_str(), &x.args[x.args.len() - 3..]), ("xterm", &["bash".to_string(), "leyline".into(), "link".into()][..]));
         assert!(plan_link(k.path(), HostOs::Linux, |_| false).unwrap_err().contains("bash leyline link"), "its questions need a window");
         assert!(plan_link(k.path(), HostOs::Mac, |_| false).unwrap().args[1].contains("'leyline' 'link'"));
+    }
+
+    #[test]
+    fn a_quiet_start_takes_the_forms_answers_and_opens_no_window() {
+        let k = kit();
+        profiles::choose(k.path(), "dalaran", None).unwrap();
+        let a = Answers { name: Some("Frost Haven".into()), visibility: Some("public".into()), gm: Some("hostguy".into()) };
+        let w = plan_quiet(k.path(), HostOs::Windows, &a).unwrap();
+        assert_eq!((w.program.as_str(), w.args.clone(), w.new_console), ("cmd.exe", vec!["/C".to_string(), WINDOWS_SCRIPT.to_string()], false));
+        assert_eq!(w.log.as_deref(), Some(job_log(k.path()).as_path()), "no window: its output goes to the log the launcher reads");
+        for kv in [("WU_NAME", "Frost Haven"), ("WU_VISIBILITY", "public"), ("WU_GM_NAME", "hostguy"), ("WU_PROFILE", "dalaran"), ("LEYLINE_NONINTERACTIVE", "1")] {
+            assert!(w.env.contains(&(kv.0.to_string(), kv.1.to_string())), "{kv:?} in {:?}", w.env);
+        }
+        let l = plan_quiet(k.path(), HostOs::Linux, &a).unwrap();
+        assert_eq!((l.program.as_str(), l.args.clone()), ("bash", vec!["leyline".to_string(), "host".into()]));
+        assert!(l.env.contains(&("LEYLINE_NAME".into(), "Frost Haven".into())) && l.env.contains(&("LEYLINE_GM".into(), "hostguy".into())));
+        assert!(!l.args.iter().any(|x| x.contains("Frost")), "answers never on a command line");
+        // leyline host needs the host's account name (it never makes one)
+        let no_gm = Answers { gm: None, ..a.clone() };
+        assert!(plan_quiet(k.path(), HostOs::Mac, &no_gm).unwrap_err().contains("account name"));
+        assert!(plan_quiet(k.path(), HostOs::Windows, &no_gm).is_ok(), "the Windows kit makes its GM login itself");
+        // checked here before anything runs
+        for bad in ["", "x".repeat(33).as_str(), "My \"realm\" & co", "WoW Classic", "Lich King Fans", "a/b"] {
+            if bad.is_empty() { continue; }
+            assert!(plan_quiet(k.path(), HostOs::Windows, &Answers { name: Some(bad.into()), ..a.clone() }).is_err(), "{bad}");
+        }
+        assert!(plan_quiet(k.path(), HostOs::Windows, &Answers { visibility: Some("secret".into()), ..a.clone() }).is_err());
+        assert!(plan_quiet(k.path(), HostOs::Linux, &Answers { gm: Some("no spaces".into()), ..a.clone() }).is_err());
+        assert!(name_ok("Dalaran Hangout") && name_ok("O'Neil's-Den_2") && !name_ok("wow") && name_ok("Wowzers"));
+        // a Den: the form's private and name win over the saved choice's, once each
+        profiles::choose(k.path(), "den", None).unwrap();
+        let d = plan_quiet(k.path(), HostOs::Windows, &Answers { name: Some("Our Den".into()), visibility: Some("private".into()), gm: None }).unwrap();
+        assert_eq!(d.env.iter().filter(|(k, _)| k == "WU_NAME").collect::<Vec<_>>(), vec![&("WU_NAME".to_string(), "Our Den".to_string())]);
+        // Vanilla+ stays up
+        profiles::choose(k.path(), "vanillaplus", None).unwrap();
+        assert_eq!(plan_quiet(k.path(), HostOs::Linux, &a).unwrap().args.last().unwrap(), "--always-on");
+    }
+
+    #[test]
+    fn a_quiet_link_takes_what_was_found() {
+        let k = kit();
+        let a = LinkAnswers { name: "My Server".into(), auth: "127.0.0.1:3724".into(), world: "127.0.0.1:8086".into(), client: "wrath".into(), core: Some("azerothcore".into()) };
+        assert!(plan_link_quiet(k.path(), HostOs::Windows, &a).unwrap_err().contains(LINK_SCRIPT));
+        touch(k.path(), LINK_SCRIPT, b"@echo off");
+        let w = plan_link_quiet(k.path(), HostOs::Windows, &a).unwrap();
+        assert_eq!((w.program.as_str(), w.args.clone(), w.new_console, w.log.is_some()), ("cmd.exe", vec!["/C".to_string(), LINK_SCRIPT.to_string()], false, true));
+        for kv in [("LEYLINE_LINK_NAME", "My Server"), ("LEYLINE_LINK_AUTH", "127.0.0.1:3724"), ("LEYLINE_LINK_WORLD", "127.0.0.1:8086"), ("LEYLINE_LINK_CLIENT", "wrath"), ("LEYLINE_LINK_CORE", "azerothcore")] {
+            assert!(w.env.contains(&(kv.0.to_string(), kv.1.to_string())), "{kv:?}");
+        }
+        let l = plan_link_quiet(k.path(), HostOs::Linux, &a).unwrap();
+        assert_eq!(l.args, vec!["leyline".to_string(), "link".into()]);
+        for bad in [
+            LinkAnswers { auth: "127.0.0.1:3724; rm -rf /".into(), ..a.clone() },
+            LinkAnswers { world: "host".into(), ..a.clone() },
+            LinkAnswers { client: "cata".into(), ..a.clone() },
+            LinkAnswers { name: "World of Warcraft".into(), ..a.clone() },
+        ] {
+            assert!(plan_link_quiet(k.path(), HostOs::Linux, &bad).is_err(), "{bad:?}");
+        }
+        assert!(!plan_link_quiet(k.path(), HostOs::Linux, &LinkAnswers { core: Some("$(evil)".into()), ..a.clone() }).unwrap().env.iter().any(|(k, _)| k == "LEYLINE_LINK_CORE"));
+        // a kit that hosts a realm keeps it
+        touch(k.path(), "state/host.json", format!(r#"{{"realm_id":"{RID}","name":"Frost Haven"}}"#).as_bytes());
+        assert!(plan_link_quiet(k.path(), HostOs::Linux, &a).unwrap_err().contains("runs a realm already"));
+        touch(k.path(), "state/host.json", format!("{{\n \"realm_id\": \"{RID}\",\n \"linked\": true\n}}").as_bytes());
+        assert!(plan_link_quiet(k.path(), HostOs::Linux, &a).is_ok(), "linking again is fine");
+    }
+
+    #[test]
+    fn the_steps_in_plain_words_and_never_a_secret() {
+        let out = "\n== Helper image\n\n== Your realm\n\n== Realm images\n  Using the prebuilt images.\n\n== Game data for the server (from your own 3.3.5a install; nothing is downloaded or shared)\n";
+        let p = read_progress(out, "host", true, None, 42);
+        assert_eq!((p.step.as_str(), p.n, p.of, p.running, p.problem.clone()), ("Reading the game data from your game folder", 4, 8, true, None));
+        assert!(!p.step.contains("3.3.5a"));
+        let p = read_progress("== Helper image\n", "host", false, Some(1), 3);
+        assert!(p.problem.unwrap().starts_with("Setting up stopped"));
+        // a failure says the kit's last line only when it is safe to show
+        let p = read_progress("== Realm images\n  Could not download the ready-made realm images (is this PC online?).\n", "host", false, Some(1), 9);
+        assert!(p.problem.unwrap().contains("It said: Could not download"), "a plain line is passed on");
+        let p = read_progress("== Game data\nNo 3.3.5a game files in \"C:\\Games\\World of Warcraft 3.3.5a\".\n", "host", false, Some(1), 9);
+        let t = p.problem.unwrap();
+        assert!(t.contains("Clients page") && !t.contains("3.3.5a") && !t.contains("Warcraft"), "{t}");
+        for bad in ["  password: Q2W3E4R5T6Y7", "Your GM login: state\\host-login.txt", "https://relay.openvanilla.app/join/abc#ABCDEFGHJKMNPQRS",
+            "claim token XYZ", "Your realm key", "\u{1b}[31mProblem: World of Warcraft folder\u{1b}[0m"] {
+            assert_eq!(safe_line(bad), None, "{bad}");
+        }
+        assert_eq!(safe_line("\u{1b}[31mProblem: Docker is not running.\u{1b}[0m").as_deref(), Some("Docker is not running."));
+        let done = read_progress("== Helper image\n== Your realm\n== Starting the realm\n== Connecting to the relay\n== Done\n", "host", false, Some(0), 600);
+        assert_eq!((done.step.as_str(), done.problem), ("Done", None));
+        let l = read_progress("== Helper image\n== Link a server you already run\n== Starting the helper\n", "link", true, None, 5);
+        assert_eq!((l.step.as_str(), l.n, l.of), ("Connecting your server to the network", 3, 4));
+        assert!(progress().idle || !progress().kind.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_quiet_run_is_followed_to_its_end() {
+        let k = kit();
+        let p = HostPlan { program: "sh".into(), args: vec!["-c".into(), "echo '== Helper image'; echo '== Your realm'; exit 0".into()],
+            cwd: k.path().to_path_buf(), new_console: false, log: Some(job_log(k.path())), env: vec![], note: "Setting up.".into() };
+        assert_eq!(run_job(&p, "host").unwrap(), "Setting up.");
+        let mut last = progress();
+        for _ in 0..100 {
+            if !last.running { break; }
+            std::thread::sleep(std::time::Duration::from_millis(30));
+            last = progress();
+        }
+        assert_eq!((last.running, last.code, last.n), (false, Some(0), 2));
+        assert_eq!(last.step, "Saving your settings");
     }
 
     #[cfg(unix)]

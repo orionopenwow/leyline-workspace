@@ -241,8 +241,9 @@ local INVITE = "discord.gg/hVeUxYwbkr"   -- wrath_portal.DISCORD_URL; the in-gam
 local OFFICIAL_NAME = "Wrath Unleashed"   -- the official realm (ov_modapi.lua OVMod.OFFICIAL_NAME; this file may load first)
 -- one line (owner audit 2026-10-30): the welcome, where help is (.wu lists the commands, ov_reports.lua), the Discord,
 -- then the two things to try
-local WELCOME = "|cff7289da[" .. OFFICIAL_NAME .. "]|r Welcome! Need help? Type |cffffff00.wu|r or ask on the Discord: |cffffff00"
-    .. INVITE .. "|r. Try |cffffff00/golf|r for minigolf and |cffffff00/modes|r for game modes."   -- ASCII only: the game font
+-- The Discord line of the three login lines (owner 2026-10-31: ov_qol.lua's welcome, its one tip, and this).
+local WELCOME = "|cff7289da[" .. OFFICIAL_NAME .. "]|r Need help? Type |cffffff00.wu|r or ask on the Discord: |cffffff00"
+    .. INVITE .. "|r"   -- ASCII only: the game font
 
 local function hostKit()
     local f = io.open(os.getenv("OV_HOST_FILE") or "/azerothcore/lua_scripts/host-realm.dat", "rb")

@@ -86,10 +86,13 @@ HANGOUTS = [
      "line": "The Lion's Pride Inn in Elwynn Forest. With your own game files, or try it with no sign-up."},
 ]
 
-# The duel spot: the Dalaran hangout's meeting point (duels work anywhere in the city).
-DUEL = {"id": "duels", "name": "Duels in Dalaran", "pos": DALARAN, "min": 1, "tag": "Any level · 1 v 1",
-        "line": "Meet in the city centre and challenge anyone who agrees.",
-        "hint": "Duel: target a player and type /duel, or right-click their portrait. Either of you can say no."}
+# The duel corner: Krasus' Landing, the open flight platform on the city's edge (game_tele "KrasusLanding",
+# azerothcore-wotlk game_tele.sql id 1731). Duels work anywhere in the city; this is the one place we point at.
+# TODO(check in game): the spot stands clear of the flight master and his landing path.
+DUEL_CORNER = (571, 5813.84, 449.122, 658.752, 1.16086)
+DUEL = {"id": "duels", "name": "Duels in Dalaran", "pos": DUEL_CORNER, "min": 1, "tag": "Any level · 1 v 1",
+        "line": "The duel corner at Krasus' Landing. Health and cooldowns come back after every duel.",
+        "hint": "Duel corner: target a player and type /duel. Either of you can say no. Health and cooldowns come back after."}
 
 # ---------------------------------------------------------------------------------------------
 # 5-player dungeons (share kind "q", by slug) and the random queues (kind "q", by LFG id)

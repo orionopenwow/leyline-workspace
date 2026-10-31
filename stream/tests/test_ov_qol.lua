@@ -376,5 +376,63 @@ cmd(bq3, "qol")
 check("brand on (OVMod.Brand): .qol names Wrath Unleashed", bq3.msgs[1]:find("Wrath Unleashed quality of life:", 1, true) ~= nil)
 _G.OVMod = nil
 
+-- the login chat: one welcome line and one tip (ov_discord.lua adds the Discord line: three at most) -------------
+env.OV_AUTOLEARN = "0"
+local W = OV_QOL_TEST
+local w1 = player({ guid = 90, account = 900, level = 80 })
+events[3](3, w1)
+check("login: two lines from here (welcome, one tip)", #w1.msgs == 2, #w1.msgs)
+check("the welcome names .wu and .rules", w1.msgs[1]:find("Help: |cffffff00.wu|r", 1, true) and w1.msgs[1]:find(".rules", 1, true))
+check("the first login of the day: the host invitation is the tip", w1.msgs[2]:find("/host", 1, true) ~= nil)
+local w2 = player({ guid = 90, account = 900, level = 80 })
+events[3](3, w2)
+check("the same day again: a tip, not the invitation", #w2.msgs == 2 and not w2.msgs[2]:find("/host", 1, true))
+local seen = {}
+for i = 1, #W.TIPS do
+    local wx = player({ guid = 90, account = 900, level = 80 })
+    events[3](3, wx); seen[wx.msgs[2]] = true
+end
+local n = 0; for _ in pairs(seen) do n = n + 1 end
+check("tips take turns (every tip comes round)", n == #W.TIPS, n)
+clock = clock + 86400
+local w3 = player({ guid = 90, account = 900, level = 80 })
+events[3](3, w3)
+check("the next day: the invitation once more", w3.msgs[2]:find("/host", 1, true) ~= nil)
+local low = {}
+for i = 1, 12 do
+    local wl = player({ guid = 91, account = 901, level = 20 })
+    events[3](3, wl); low[#low + 1] = wl.msgs[2] or ""
+end
+check("below 80: never the .guide tip", (function() for _, m in ipairs(low) do if m:find(".guide", 1, true) then return false end end return true end)())
+local wr = player({ guid = 92, account = 902, level = 30, rest = 777 })
+events[3](3, wr)
+check("rested XP banked: the rested note is the one tip", #wr.msgs == 2 and wr.msgs[2]:find("Rested: 777", 1, true))
+_G.OV_EXTRA_TIPS = { { text = "Type .events for what is on next." } }
+local ex = {}
+for i = 1, 10 do
+    local we = player({ guid = 93, account = 903, level = 80 }); events[3](3, we); ex[we.msgs[2] or ""] = true
+end
+check("another script's tip (OV_EXTRA_TIPS) comes round too", ex["|cff66ccff[QoL]|r Type .events for what is on next."])
+_G.OV_EXTRA_TIPS = nil
+env.OV_HOST_INVITE = "0"
+local wn = player({ guid = 94, account = 904, level = 80 })
+events[3](3, wn)
+check("OV_HOST_INVITE=0: no invitation", not wn.msgs[2]:find("/host", 1, true))
+env.OV_HOST_INVITE = nil
+env.OV_QOL_WELCOME = "0"
+local wo = player({ guid = 95, account = 905, level = 80 })
+events[3](3, wo)
+check("OV_QOL_WELCOME=0: nothing", #wo.msgs == 0)
+env.OV_QOL_WELCOME, env.OV_AUTOLEARN = nil, nil
+check("tips and invitation: no brand words, ASCII", (function()
+    local all = { W.HOST_INVITE }
+    for _, t in ipairs(W.TIPS) do all[#all + 1] = t.text end
+    for _, t in ipairs(all) do
+        local l = t:lower()
+        if l:find("warcraft") or l:find("blizzard") or l:find("lich king") or l:find("%f[%a]wow%f[%A]") or t:find("[\128-\255]") then return false end
+    end
+    return true
+end)())
+
 realPrint(string.format("\n%d/%d passed", pass, pass + fail))
 os.exit(fail == 0 and 0 or 1)

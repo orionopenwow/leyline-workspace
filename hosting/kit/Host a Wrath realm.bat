@@ -8,7 +8,9 @@ rem
 rem It asks three things the first time: the realm's name, its profile, private or public.
 rem Answers can also come from the environment: WU_NAME, WU_PROFILE (main, brawl, progression, dalaran, vanillaplus, den, or a
 rem profile for another client in profiles\: cmangos-1.12.1, cmangos-2.4.3; WU_CLIENT_DIR is its game folder),
-rem WU_VISIBILITY, WU_WOW_DIR, WU_BUILD (1: build the realm images here if they are not published, 0: stock).
+rem WU_VISIBILITY, WU_WOW_DIR, WU_BUILD (1: build the realm images here if they are not published, 0: stock),
+rem WU_GM_NAME (your own account name: it gets GM rights; without it a GM login is made in state\host-login.txt).
+rem Waits use ping, not timeout: the launcher runs this with no window, and timeout needs one.
 cd /d "%~dp0"
 
 rem ---- images (the prebuilt ones are published by Leyline's CI; the local build is the fallback)
@@ -78,6 +80,8 @@ if not defined WU_VISIBILITY (
   set /p "WU_VISIBILITY=Private or public [!D!]: "
 )
 if /i not "%WU_VISIBILITY%"=="private" if /i not "%WU_VISIBILITY%"=="public" (echo Please type private or public. & set "WU_VISIBILITY=" & goto askvis)
+set "GMARG="
+if defined WU_GM_NAME set "GMARG=--gm-name %WU_GM_NAME%"
 rem A realm for another client: its own build and start (profiles\Host a profile realm.bat).
 if "%OTHER%"=="1" (
   call "%~dp0profiles\Host a profile realm.bat"
@@ -92,7 +96,7 @@ set "PULLERR=%TEMP%\wu-host-pull.txt"
 docker pull -q "%WU_IMAGE%-worldserver:%WU_TAG%" >nul 2>"%PULLERR%" && docker pull -q "%WU_IMAGE%-authserver:%WU_TAG%" >nul 2>>"%PULLERR%" && docker pull -q "%WU_IMAGE%-db-import:%WU_TAG%" >nul 2>>"%PULLERR%" && (set "IMG=%WU_IMAGE%" & set "TAG=%WU_TAG%" & echo   Using the prebuilt WrathUnleashed images.)
 if not defined IMG docker image inspect "%WU_LOCAL_IMAGE%-worldserver:%WU_LOCAL_TAG%" >nul 2>&1 && (set "IMG=%WU_LOCAL_IMAGE%" & set "TAG=%WU_LOCAL_TAG%" & echo   Using the images built on this PC.)
 if not defined IMG call :noimages || (pause & exit /b 1)
-docker run --rm -v "%~dp0.:/kit" -e WU_KIT=/kit %WU_TOOLS_IMAGE% python -m wuhost.setup init --name "%WU_NAME%" --profile %WU_PROFILE% --visibility %WU_VISIBILITY% --image %IMG% --tag %TAG% --tools-image %WU_TOOLS_IMAGE% --relay %WU_RELAY% >nul || (echo Setup failed ^(see above^). & pause & exit /b 1)
+docker run --rm -v "%~dp0.:/kit" -e WU_KIT=/kit %WU_TOOLS_IMAGE% python -m wuhost.setup init --name "%WU_NAME%" --profile %WU_PROFILE% --visibility %WU_VISIBILITY% --image %IMG% --tag %TAG% --tools-image %WU_TOOLS_IMAGE% --relay %WU_RELAY% %GMARG% >nul || (echo Setup failed ^(see above^). & pause & exit /b 1)
 
 echo.
 echo == Game data for the server ^(from your own 3.3.5a install; nothing is downloaded or shared^)
@@ -118,7 +122,7 @@ echo.
 echo == Connecting to the relay
 for /l %%i in (1,1,24) do (
   findstr /c:"\"realmlist_ok\": true" "state\relay-state.json" >nul 2>&1 && goto connected
-  timeout /t 5 >nul
+  ping -n 6 127.0.0.1 >nul
 )
 echo   Not connected yet; it keeps trying by itself. Run "Check my realm.bat" in a minute.
 goto done
@@ -196,7 +200,7 @@ exit /b 0
 :waitready
 set /a N=0
 :waitloop
-timeout /t 10 >nul
+ping -n 11 127.0.0.1 >nul
 docker logs --since %T0% wu-host-worldserver 2>&1 | findstr /c:"ready..." >nul && exit /b 0
 set /a N+=1
 set /a M=N %% 6

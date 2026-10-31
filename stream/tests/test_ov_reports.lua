@@ -114,7 +114,24 @@ check(".wu lists commands", events[42](42, w, "wu") == false and w.msgs[1]:match
 check("other commands untouched", events[42](42, w, "boost") == nil and events[42](42, w, "gm on") == nil)
 local l = player()
 events[3](3, l)
-check("login tip", l.msgs[1]:match("%.bug"))
+check("login: no lines of its own (ov_qol.lua's welcome and tip cover .wu, .bug, .guide)", #l.msgs == 0)
+
+-- .rules: the house rules (TODO(owner) approval), brand-safe, one per line
+local ru = player()
+check(".rules handled", events[42](42, ru, "rules") == false)
+check(".rules shows the ten rules and the title", #ru.msgs == #OV_REPORTS_TEST.RULES and #OV_REPORTS_TEST.RULES == 11
+    and ru.msgs[2]:match("Be kind") and ru.msgs[11]:match("/host"))
+check(".house is the same", (function() local x = player(); events[42](42, x, "house"); return #x.msgs == 11 end)())
+check("the rules: no game or company names, no money links", (function()
+    for _, line in ipairs(OV_REPORTS_TEST.RULES) do
+        local t = line:lower()
+        if t:find("warcraft") or t:find("blizzard") or t:find("lich king") or t:find("%f[%a]wow%f[%A]")
+            or t:find("http") or t:find("donat") or t:find("patreon") then return false end
+    end
+    return true
+end)())
+check(".wu names .rules and .hub", (function() local x = player(); events[42](42, x, "wu"); return x.msgs[1]:match("%.rules") and x.msgs[1]:match("%.hub") end)())
+check("the guide ends with /host", OV_REPORTS_TEST.GUIDE[#OV_REPORTS_TEST.GUIDE]:match("/host"))
 
 -- the level 80 guide
 local g = player()
@@ -133,12 +150,9 @@ check("below 80: no guide", not mid.timers)
 local again = player({ level = 80 })
 events[13](13, again, 80)
 check("already 80 (a level event at 80): no repeat", not again.timers)
-local l80 = player({ level = 80 })
-events[3](3, l80)
-check("an 80's login points to .guide", l80.msgs[2] and l80.msgs[2]:match("%.guide"))
 local l12 = player()
 events[3](3, l12)
-check("a level 12's login doesn't", #l12.msgs == 1)
+check("a level 12's login: nothing", #l12.msgs == 0)
 
 -- every mount for level 80s
 -- fire queued timers like ALE: each event runs `rep` times; returns the number of ticks run

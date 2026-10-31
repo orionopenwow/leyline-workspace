@@ -16,9 +16,10 @@ const { chromium } = require('playwright');
 const INDEX = 'file://' + path.join(__dirname, '..', 'ui', 'index.html');
 const CATALOG = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'stream', 'playmodes.json'), 'utf8'));
 
-const FAKE = ({ modes, extra, offline, browser, page }) => {
+const FAKE = ({ modes, extra, offline, browser, page, invited }) => {
   const calls = (window.__calls = []);
   try {
+    if (invited) localStorage.setItem('leyline.hostInvite.modes', new Date().toISOString().slice(0, 10));
     localStorage.setItem('leyline.mode', browser ? 'browser' : 'online');
     if (page) localStorage.setItem('leyline.page', page); else localStorage.removeItem('leyline.page');
   } catch (_) { /* fine */ }
@@ -70,12 +71,12 @@ test('Modes page: no menu item, Realms › MODES opens it, cards, credit, Coming
   assert.ok(await page.isVisible('#page-modes'));
   const names = await page.$$eval('#md-list .md-card .name', (n) => n.map((x) => x.textContent));
   assert.deepEqual(names, CATALOG.modes.map((m) => m.title));
-  assert.equal(await page.textContent('#md-net'), '5 to play · 2 coming soon');
+  assert.equal(await page.textContent('#md-net'), '9 to play · 2 coming soon');
   const golf = await card(page, 'minigolf').textContent();
   assert.match(golf, /1-8 players/); assert.match(golf, /On our realm/); assert.match(golf, /Play/);
   assert.doesNotMatch(golf, /Coming soon/);
   const surv = await card(page, 'azeroth-survivors').textContent();
-  assert.match(surv, /Coming soon/); assert.match(surv, /By Aethus · Open rebuild by OutThisLife · MIT or Apache-2.0/);
+  assert.match(surv, /Coming soon/); assert.match(surv, /By Aethus \(original game\) · Open rebuild by OutThisLife · MIT or Apache-2.0/);
   assert.match(surv, /No server/); assert.match(surv, /1 player/); assert.match(surv, /Community made/);
   assert.equal(await card(page, 'azeroth-survivors').locator('.md-play').count(), 0, 'no PLAY while coming');
   assert.equal(await card(page, 'azeroth-survivors').locator('.md-soon[disabled]').textContent(), 'Coming soon', 'a disabled COMING SOON where PLAY would be');
@@ -112,6 +113,39 @@ test('PLAY on the desktop: the pick, then play on the official realm', async () 
   assert.ok(await page.isVisible('#page-host'));
   assert.deepEqual(errors, []);
   await page.close();
+});
+
+test('In-game modes: the .hub command on the card, PLAY just opens the game', async () => {
+  const { page, errors } = await open();
+  const tm = await card(page, 'transmog').textContent();
+  assert.match(tm, /In game/); assert.match(tm, /In game, type \.hub transmog to find it\./);
+  assert.equal(await card(page, 'transmog').locator('code').textContent(), '.hub transmog');
+  assert.equal(await card(page, 'minigolf').locator('.md-cmd').count(), 0, 'only in-game modes show a command');
+  await card(page, 'transmog').locator('.md-play').click();
+  await page.waitForFunction(() => /Started/.test(document.getElementById('md-status').textContent));
+  assert.deepEqual(await calls(page, 'mode_prepare_desktop'), [], 'nothing written into the client');
+  assert.deepEqual(await calls(page, 'play'), [{ client: 'c335a-1', realm: 'play.openvanilla.app' }]);
+  assert.equal(await page.textContent('#md-status'), 'Started My Wrath on play.openvanilla.app. In game, type .hub transmog.');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Host your own: one line under the list, once a day, opens the Host page', async () => {
+  const { page, errors } = await open();
+  assert.match(await page.textContent('#md-invite'), /Run it with friends on your own world, your rules\. Host your own ›/);
+  await page.click('#md-refresh');
+  await page.waitForFunction(() => document.getElementById('md-net').textContent.includes('to play'));
+  assert.equal(await page.locator('#md-invite').count(), 1, 'still there after a Refresh, once');
+  await page.click('#md-invite button');
+  assert.ok(await page.isVisible('#page-host'));
+  assert.equal(await page.evaluate(() => localStorage.getItem('leyline.hostInvite.modes')), new Date().toISOString().slice(0, 10));
+  assert.deepEqual(errors, []);
+  await page.close();
+  // the same day, a new start of Leyline: not again
+  const again = await open({ invited: true });
+  assert.equal(await again.page.locator('#md-invite').count(), 0, 'once a day');
+  assert.deepEqual(again.errors, []);
+  await again.page.close();
 });
 
 test('PLAY in the browser, offline list, remembered page, text not markup', async () => {

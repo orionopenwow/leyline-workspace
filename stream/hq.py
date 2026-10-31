@@ -1020,6 +1020,21 @@ def _poster_link(acct: str, name: str) -> str:
     return f'<a href="/wrath/admin/forum?acct={e(acct)}">{e(name or acct)}</a>'
 
 
+def _forum_discord_line(fs) -> str:
+    """One line on how the forum's Discord link is doing (stream/forum_discord.py), or "" when it is off."""
+    link = getattr(fs, "discord", None)
+    if link is None:
+        return ""
+    try:
+        st = link.status()
+    except Exception:   # noqa: BLE001
+        return ""
+    wait = f', {st["outbox"]} waiting to go to Discord' if st["outbox"] else ""
+    err = f'. Last problem: {e(st["last_error"])}' if st["last_error"] and st["outbox"] else ""
+    return (f'<p class="fine">Discord link: {e(st["state"])}{wait}; {st["links"]} linked account{"" if st["links"] == 1 else "s"}; '
+            f'categories {e(", ".join(st["categories"]))}. Hiding, locking and merging here also change the Discord copy{err}.</p>')
+
+
 def forum_page(user: dict, query: dict) -> tuple[int, str]:
     """Leyline HQ's Forum: Reported posts, Threads, Hidden posts, and one poster's history (?acct=). Nothing is deleted."""
     fs = A.forum_store()
@@ -1044,7 +1059,7 @@ def forum_page(user: dict, query: dict) -> tuple[int, str]:
     head = (f'<section class="ly-panel"><h2>Forum</h2><p class="fine">Moderate the forum here: reports also show in Needs you. '
             f'Hiding keeps everything in the database. Mute from the forum stops new threads and replies (mods: up to '
             f'{FORUM_MOD_MAX_HOURS} hours); Ban the account suspends it on the website and the launcher. Every action is in the '
-            f'audit log. <a href="{pub}">Open the forum</a></p>{tabs}{find}</section>')
+            f'audit log. <a href="{pub}">Open the forum</a></p>{_forum_discord_line(fs)}{tabs}{find}</section>')
     if view == "reports":
         rows = []
         for r in fs.reports("" if show == "all" else show, 200):

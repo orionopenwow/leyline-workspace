@@ -110,12 +110,114 @@ audit log (`admin/audit.jsonl`), refused ones too.
 The JSON for a later launcher admin mode: `GET /wrath/admin/api/forum?view=reports&status=open|done|dismissed|all`,
 `?view=threads&q=`, `?view=hidden`, `?view=poster&acct=`. Each answer lists the `actions` this person's role may call.
 
+## The Discord link (forum and Discord, one conversation)
+
+Owner, 2026-10-31: "merge forum with discord somehow as the backend and talking". Code: `stream/forum_discord.py`
+(loaded by `forum.py`), tests: `stream/tests/test_forum_discord.py` (a fake Discord API, every flow below).
+
+**Our forum stays the source of truth.** Accounts, moderation, bans, blocked words and rate limits all stay ours.
+Discord is a live window onto it. It is **off** until the owner sets it up (the checklist below).
+
+| What happens | Where it shows |
+|---|---|
+| A new forum thread in a linked category | A Discord thread with the same title, its first post as the starter: the author's name and a link to the post |
+| A forum reply (website or launcher) | A message in that thread, posted by the bot: the name, a link, the text (no pings, no link previews, markdown shown as typed) |
+| A reply in that Discord thread from someone who **linked** their Leyline account | A forum post as their Leyline account, marked "via Discord · <Discord name>" (also `via` in the JSON) |
+| The same from someone who **didn't** link | Nothing on the forum. They get one note ("Link your Leyline account to post here", with the link) and their message is taken off |
+| A new thread a linked person starts in a linked Discord **Forum** channel | A forum thread (threads from before the link was turned on are left alone) |
+| A Discord post the forum refuses (rate limit, a sanction, a bad title, a locked thread) | Not posted; they get the reason in a note and the message is taken off |
+| A Discord post the word filter changes | Posted on the forum with the stars; the Discord copy is replaced by the bot's, showing the forum's text |
+
+Discord only lets a bot answer "only you can see this" to a slash command. So `/link` answers that way, and the
+one-time note for an unlinked person is a **DM** instead; with DMs closed, it is a reply that pings only them and is
+deleted after 2 minutes. The note goes at most once a week per person.
+
+**Linking.** In the Discord, `/link` answers (privately) with a one-time link, good for 15 minutes. Opening it signed
+in on the website shows "Link the Discord account X to your Leyline account Y?" with a button. Anyone can open
+`/wrath/leyline/forum/discord` to see or undo their link. `/unlink` in Discord undoes it too. When the website's own
+Discord sign-in (Profile, Ways to sign in, "Link Discord") reports the Discord id in `/api/me` (`discord_id`, or
+`discord.id`), the page offers "Link my Discord" in one click. **Unverified:** we haven't seen whether the website's
+`/api/me` sends that field; without it, `/link` is the way.
+
+**Same rules, same sanctions.** A Discord post goes through `store.reply` / `store.new_thread`, the same code as a
+website post: lengths, the word and brand filters, the rate limits (the stricter ones for accounts new to the forum),
+locked threads, Announcements for the team. It also passes `admin.blocked("post")`: a ban (suspend), a mute or
+"Mute from the forum" in HQ stops it at once.
+
+**Moderation both ways.**
+
+| In Leyline HQ | On Discord |
+|---|---|
+| Hide a post | Our copy is edited to "This post was removed by a moderator."; a Discord person's own message is deleted |
+| Show it again | Our copy is edited back; a deleted one is posted again by the bot |
+| Lock / unlock a thread | The Discord thread is locked / unlocked |
+| Hide a thread | The Discord thread is deleted. Show again: a new Discord thread with the first post |
+| Merge a duplicate | A "merged into <title>" note in its Discord thread, then it is locked and archived |
+| Pin | Not copied (a Discord Forum channel can pin only one thread) |
+
+| On Discord | In the forum |
+|---|---|
+| A message deleted (ours or a linked person's) | That post is hidden, within seconds (the thread's message count drops) or within 10 minutes (the sweep) |
+| A whole thread deleted | The forum thread is hidden |
+
+Only people with **Manage Messages** in those channels can delete other people's messages on Discord, so that is the
+Discord's mods. A person deleting their own message hides their own post. Every hide from Discord is in HQ's audit
+log as `discord` ("deleted in Discord"), and it can be undone in HQ like any hide. `WU_FORUM_DISCORD_DELETE_HIDES=0`
+turns that direction off. Edits made in Discord are not copied: the forum keeps what was first posted.
+
+**If Discord is down.** Every change for Discord goes to an outbox table in `forum.sqlite3` first. A worker thread in
+the portal sends it in order, thread by thread. It follows Discord's rate-limit headers, waits out a short 429 and
+hands a long one back. It retries with back-off (5 seconds, doubling up to 15 minutes). Missing permissions are retried
+every hour. Nothing is dropped except what Discord says can never work (a 400) or what is gone (a 404). A refused token
+pauses the link and keeps the outbox. HQ's Forum page has one line: the link's state, what is waiting and the last
+problem. Discord is read with plain REST, no gateway: one call every `WU_FORUM_DISCORD_POLL` seconds lists the
+server's active threads, and only threads with new messages are read.
+
+### Owner setup checklist (about 10 minutes)
+
+1. **Discord Developer Portal > New Application** (or the bridge's existing "Leyline" app). Note the **Application
+   ID** and the **Public Key** (General Information).
+2. **Bot** tab: copy the token (Reset Token). Turn on **Message Content Intent**; without it, Discord sends empty
+   texts. No other intent is needed.
+3. **General Information > Interactions Endpoint URL**:
+   `https://play.openvanilla.app/wrath/forum/api/discord/interactions` (Discord checks it once the portal has the
+   settings below, so do step 6 first, then save this).
+4. **OAuth2 > URL Generator**: scopes **bot** and **applications.commands**; bot permissions **View Channel, Send
+   Messages, Send Messages in Threads, Create Public Threads, Read Message History, Manage Messages, Manage Threads**
+   (permission integer `326417591296`). Nothing else: no Administrator, no Mention Everyone, no Manage Roles, no
+   Embed Links. Open the URL and add the bot to the server. Manage Messages is for taking off unlinked or refused posts
+   and deleting hidden ones. Manage Threads is for lock, archive and delete.
+5. In Discord, make one **Forum channel** per category you want on Discord (or use a text channel: its threads are
+   used). Turn on Developer Mode (User Settings > Advanced), then right-click each channel > Copy Channel ID. One Forum
+   channel with a tag per category also works: `help=<channel id>/<tag id>`. Optional but tidy: let only the team
+   post in the Announcements channel.
+6. On the server, edit `/srv/wrath/portal.env` (never commit or paste it anywhere), add:
+   ```
+   WU_FORUM_DISCORD=1
+   DISCORD_BOT_TOKEN=<the token>
+   DISCORD_APP_ID=<the application id>
+   DISCORD_PUBLIC_KEY=<the public key>
+   WU_FORUM_DISCORD_CHANNELS=help=<id>,general=<id>,realms=<id>,mods=<id>,dens=<id>,news=<id>
+   ```
+   Categories: `realms mods dens help general news`. Leave one out to keep it off Discord. Then restart the portal
+   (`docker restart wu-portal`, or run the `signin` step). No realm restart.
+7. Check: `docker logs wu-portal 2>&1 | grep forum-discord` says `running for N categories` (or exactly what is
+   missing). Post a test thread on the forum and watch it appear. Type `/link` in the Discord.
+8. Tell the community: "Type /link in the Discord to reply to forum threads from there."
+
+To turn it off: `WU_FORUM_DISCORD=0` (or remove the line) and restart the portal. The outbox and the links stay in
+`forum.sqlite3` for when it is on again.
+
+Other settings: `WU_FORUM_DISCORD_POLL` (5 seconds), `WU_FORUM_DISCORD_UNLINKED=keep` (leave unlinked and refused
+messages on Discord; they still never reach the forum), `WU_FORUM_DISCORD_DELETE_HIDES=0`.
+
 ## Settings
 
 `WU_FORUM=0` turns the forum off. `WU_FORUM_NEW_HOURS` (72) is how long an account counts as new to the forum.
-`WU_NAME_CHANGES_PER_DAY` (3) limits a player's own name changes. Nothing else is new: no service, port or secret.
+`WU_NAME_CHANGES_PER_DAY` (3) limits a player's own name changes. The Discord link's settings are above; it is the
+only part with a secret (the bot token, in `portal.env` only).
 
 ## Deploy
 
-`signin` ships the portal (forum.py, profiles.py, social.py, admin.py, hq.py, demo.py). `ship` ships the launcher
+`signin` ships the portal (forum.py, forum_discord.py, profiles.py, social.py, admin.py, hq.py, demo.py). `ship` ships the launcher
 (the Forum page's posting). No realm restart.

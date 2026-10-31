@@ -26,6 +26,9 @@ Record (the file; all.json publishes the public fields, never "submitter" or "re
     submitted_by  the submitter's display name;  submitter  their account id (private)
     submitted_at, last_checked   ISO 8601 UTC ("" when the forge was never reached)
     reports       account ids that reported it (private);  hidden, hidden_by, hidden_at
+    report_log    [{reason, note, at}] (private: no account ids), for Leyline HQ
+    listing       a listed mod (stream/listings.py, "List your mod"): its format, the pinned install block with every
+                  file's sha256, the plan in plain words, flags, state "community" | "reviewed", pending_update
 
 Settings (environment):
     WU_PORTAL_DATA       the data folder (default /data)
@@ -493,8 +496,10 @@ class Projects:
         return None
 
     # -------------------------------------------------- writes
-    def submit(self, me, form: dict) -> tuple[bool, object]:
-        """(True, record) or (False, message for the submitter). me is the /api/me answer."""
+    def submit(self, me, form: dict, listing: dict | None = None, hold: list | None = None) -> tuple[bool, object]:
+        """(True, record) or (False, message for the submitter). me is the /api/me answer.
+        listing (stream/listings.py): a checked mod for one-click install; hold: its reasons to wait for a moderator.
+        A listing installs from the author only, so a repo without an open licence is not held for that."""
         who = account_of(me)
         if not who:
             return False, "Sign in to add a link."
@@ -526,13 +531,16 @@ class Projects:
         with self._locked():
             recs = list(self.load())
             for r in recs:
+                if listing is not None and r.get("key") == link["key"] and r.get("submitter") == who and not r.get("hidden"):
+                    break   # the author lists (or re-lists) their own project: the record gets the listing below
                 if r.get("key") == link["key"] and held(r):
                     return False, "That project is already waiting for a person to check it: thanks."
                 if r.get("key") == link["key"]:
                     return False, ("That project is already listed." if not r.get("hidden")
                                    else "That link was taken down and can't be added again.") + f"|{r['id']}"
             day = now - 86400
-            mine = [r for r in recs if r.get("submitter") == who and _iso_time(r.get("submitted_at", "")) > day]
+            mine = [r for r in recs if r.get("submitter") == who and _iso_time(r.get("submitted_at", "")) > day
+                    and r.get("key") != link["key"]]
             if len(mine) >= self.per_day:
                 return False, f"You can add {self.per_day} links a day. Please come back tomorrow."
             if sum(1 for r in recs if _iso_time(r.get("submitted_at", "")) > day) >= self.day_max:
@@ -560,14 +568,25 @@ class Projects:
         }
         why = hub_problems(link["url"], [rec["title"], rec["author"], rec["repo_description"], desc],
                            rec["licence"], bool(meta))
+        if listing is not None:
+            why = [w for w in why if w != "no open licence"] + [w for w in (hold or []) if isinstance(w, str)]
+            rec["listing"] = listing
+            rec["report_log"] = []
         if why:
-            rec["review"] = {"state": "pending", "reasons": why}
+            rec["review"] = {"state": "pending", "reasons": why[:12]}
         with self._locked():
             recs = list(self.load())
-            if any(r.get("key") == rec["key"] for r in recs):
+            old = next((r for r in recs if r.get("key") == rec["key"]), None)
+            if old is not None and not (listing is not None and old.get("submitter") == who and not old.get("hidden")):
                 return False, "That project is already listed.|" + rec["id"]
+            if old is not None:
+                recs.remove(old)
+                rec["submitted_at"] = old.get("submitted_at") or rec["submitted_at"]
             recs.append(rec)
             self._save(recs)
+        if held(rec) and listing is not None:
+            log.info("listing held for a moderator: %s: %s", rec["id"], ", ".join(rec["review"]["reasons"])[:300])
+            return True, rec
         if held(rec):
             queue_for_review(rec, link, build)
             log.info("community project held for review: %s (%s): %s", rec["id"], rec["host"], ", ".join(rec["review"]["reasons"]))
@@ -575,11 +594,17 @@ class Projects:
         log.info("community project added: %s (%s)", rec["id"], rec["host"])
         return True, rec
 
-    def report(self, pid: str, me) -> tuple[bool, str]:
+    REPORT_REASONS = ("broken", "malware", "stolen", "gamedata", "cheat", "rude", "spam", "other")
+
+    def report(self, pid: str, me, reason: str = "", note: str = "", hide_after: int = 0) -> tuple[bool, str]:
+        """One report per account. reason: one of REPORT_REASONS (else "other"); note: one line. hide_after: a listed
+        mod with this many reports from different accounts (never its author) hides itself until a moderator looks
+        (Leyline HQ, Needs you); 0 = never."""
         who = account_of(me)
         if not who:
             return False, "Sign in to report a link."
         now = self.now()
+        reason = reason if reason in self.REPORT_REASONS else "other"
         with self._locked():
             recent = [t for t in self._report_log.get(who, []) if t > now - 86400]
             if len(recent) >= self.reports_per_day:
@@ -587,14 +612,75 @@ class Projects:
             recs = list(self.load())
             for r in recs:
                 if r["id"] == pid and not r.get("hidden"):
+                    if r.get("submitter") == who:
+                        return False, "That's your own listing: edit or remove it instead."
                     reps = r.get("reports") if isinstance(r.get("reports"), list) else []
                     if who not in reps:
                         r["reports"] = (reps + [who])[-200:]
+                        log_ = r.get("report_log") if isinstance(r.get("report_log"), list) else []
+                        r["report_log"] = (log_ + [{"reason": reason, "note": clean_text(note, 300), "at": _now_iso(now)}])[-200:]
+                        if hide_after and isinstance(r.get("listing"), dict) and len(r["reports"]) >= hide_after and not held(r):
+                            r["review"] = {"state": "pending", "by_reports": True,
+                                           "reasons": [f"hidden after {len(r['reports'])} reports, until a moderator looks"]}
+                            log.info("listing %s hidden by %d reports", pid, len(r["reports"]))
                         self._save(recs)
                     self._report_log[who] = recent + [now]
                     log.info("community project reported: %s (%d reports)", pid, len(r["reports"]))
                     return True, "Thanks: the admins will take a look."
         return False, "That link isn't listed."
+
+    def _mine_or_admin(self, r: dict, me) -> bool:
+        who = account_of(me)
+        return bool(who) and (r.get("submitter") == who or who in self.admins())
+
+    def edit(self, pid: str, me, fields: dict) -> tuple[bool, str]:
+        """The author changes their own listing's description or category (same rules as at submit)."""
+        with self._locked():
+            recs = list(self.load())
+            r = next((x for x in recs if x["id"] == pid), None)
+            if r is None or r.get("hidden"):
+                return False, "That link isn't listed."
+            if not self._mine_or_admin(r, me):
+                return False, "Only its author can change it."
+            if "description" in fields:
+                d = fields.get("description")
+                d = clean_text(d, 10_000) if isinstance(d, str) else ""
+                if not MIN_DESC <= len(d) <= MAX_DESC:
+                    return False, f"Write a one-line description of {MIN_DESC} to {MAX_DESC} characters."
+                if re.search(r"(?i)https?://|www\.", d) or BRAND_RE.search(d):
+                    return False, "Describe it without links or the game's brand names."
+                r["description"] = d
+            if fields.get("category"):
+                if fields["category"] not in self.category_ids():
+                    return False, "Pick a category."
+                r["category"] = fields["category"]
+            self._save(recs)
+        return True, "Saved."
+
+    def remove(self, pid: str, me) -> tuple[bool, str]:
+        """The author (or an admin) takes their listing out for good."""
+        with self._locked():
+            recs = list(self.load())
+            r = next((x for x in recs if x["id"] == pid), None)
+            if r is None:
+                return False, "That link isn't listed."
+            if not self._mine_or_admin(r, me):
+                return False, "Only its author can remove it."
+            recs.remove(r)
+            self._save(recs)
+        log.info("community project removed by its author: %s", pid)
+        return True, "Removed."
+
+    def update_listing(self, pid: str, fn) -> bool:
+        """Change one record under the lock (stream/listings.py: updates, HQ decisions)."""
+        with self._locked():
+            recs = list(self.load())
+            for r in recs:
+                if r["id"] == pid:
+                    fn(r)
+                    self._save(recs)
+                    return True
+        return False
 
     def set_hidden(self, pid: str, me, hidden: bool, staff: bool = False) -> tuple[bool, str]:
         """staff=True: the Admin Console (stream/admin.py) already checked the caller's role."""
@@ -609,6 +695,9 @@ class Projects:
                     r["hidden_at"] = _now_iso(self.now()) if hidden else ""
                     if not hidden:
                         r["reports"] = []
+                        r["report_log"] = []
+                        if (r.get("review") or {}).get("by_reports"):
+                            r.pop("review", None)
                     self._save(recs)
                     log.info("community project %s: %s", "hidden" if hidden else "shown again", pid)
                     return True, "Hidden." if hidden else "Shown again."
@@ -621,6 +710,9 @@ class Projects:
             for r in recs:
                 if r["id"] == pid:
                     r["reports"] = []
+                    r["report_log"] = []
+                    if (r.get("review") or {}).get("by_reports"):
+                        r.pop("review", None)
                     self._save(recs)
                     return True, "Reports dismissed."
         return False, "That link isn't listed."

@@ -143,6 +143,9 @@ def installable(i: dict) -> bool:
     """What the launcher installs in one click: a Workshop package (zip on our site with a sha256) or a theme pack
     with a download. Community links are View source."""
     if i.get("source") == "workshop":
+        ws = i.get("ws") if isinstance(i.get("ws"), dict) else {}
+        if ws.get("source") == "listed":   # a listed mod: installed from its author's repo (stream/listings.py)
+            return isinstance(ws.get("install"), dict)
         return bool(i.get("packaged") and i.get("download") and i.get("sha256"))
     if i.get("source") == "theme":
         return bool(i.get("download") and i.get("sha256"))

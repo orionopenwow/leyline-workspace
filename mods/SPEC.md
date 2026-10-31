@@ -190,3 +190,62 @@ python3 -I tools/addon-curate/curate.py unapprove up:skada
 `stream/upstream_addons.py` merges into `/wrath/mods/all.json` (checked again there). The seeds are
 `tools/addon-curate/seeds-addons.json` (repo, our name and words, tags, `replaces_ui`, `requires`, or `exclude` with the
 reason). For the Admin Console, curate.py has `pending_entries(path)` and `approve_entry(path, id, by, notes, works)`.
+
+## Listed mods (List your mod)
+
+Any signed-in player can list a mod for one-click install (players' guide: `docs/LIST-YOUR-MOD.md`). The website
+(`stream/listings.py`) and the launcher (`launcher/src-tauri/src/listing.rs`, `ui/listmod.js`) both offer it. We never
+host the files: the launcher installs from the author's own repo (`launcher/src-tauri/src/listed.rs`).
+
+**The link.** A public repo on GitHub, GitLab or Codeberg: the repo, `/tree/<branch>`, `/commit/<sha>`,
+`/releases/tag/<tag>`, `/releases/latest`, or one release file `/releases/download/<tag>/<file>` (`.zip` or `.MPQ`).
+It is pinned to one exact download: the release file (GitHub; its sha256 is recorded, release files are byte-stable)
+or the archive of a 40-hex commit. A repo or branch link follows the branch (the latest release for a release link);
+a commit or tag link never moves.
+
+**The check** reads the download once (then deletes it) and detects the format:
+
+| Format | Detected by | Client install | Goes live at once (default policy) |
+|---|---|---|---|
+| `addon` | addon folders whose `.toc` holds `Interface: 30300` (the curated addons' layout rules) | `Interface/AddOns/<Name>/` | yes, unless `.blp` art, stock-art names or a missing TOC file |
+| `package` | `mod.json` at the top | its `ui/` addons and `native/` files; `realm/` only on realms | yes, unless native code |
+| `patch` | `.MPQ` files at the top (or in `Data/`), or one `.MPQ` release file | `Data/patch-<X>.MPQ`, a free letter | no: a moderator first |
+| `native` | `.dll/.asi/.exe` at the top (with their `.ini/.cfg/...`) | the client folder, after the player's OK | no: a moderator first |
+| `realm-script` | `.lua` with `Register*Event` (no `.toc`) | none (for realm owners) | yes |
+| `game-mode` | one `.lua` with `Mode.Title` and `On*` callbacks, at most 14 KB | none (for the Modes editor) | yes |
+| `loose-data` | loose `Interface/`, `World/`... game files | refused: pack them as a patch | |
+
+The rules are the shared `launcher/src-tauri/src/upstream-rules.json` (`upstream-cases.json` runs in the listings tests
+too). Refused anywhere in the download: game data (`.m2 .wmo .adt .dbc .skin .anim .wdt .wdl .db2 .bls`, by extension
+or first bytes; `.MPQ` only as a patch and only with MPQ bytes), nested archives, programs other than a native mod's (or a
+package's `native/`), unsafe paths, links, passwords, case twins; realm and mode Lua that uses what Realm rules 3 forbids
+(`io`, `os` beyond time, `load*`, `require`, `debug`, `_G`, `HttpRequest`, `RunCommand`...); `.blp` in a mod package.
+Caps: 32 MB a file (1 GB a patch), the curated caps for the rest, `WU_LISTING_FETCH_MAX` (300 MB) read per check.
+
+**The record** is a community project (`stream/projects.py`, `listing` object): `format`, `install` (the block the
+launcher checks: `kind` `addon` or `files`, `from`, `url`, `rev`, `sha256`, `strip_prefix`, `files` path -> sha256,
+`files_digest`, `folders` and `blp` for addons), `plan`, `flags`, `state` (`community` or `reviewed`), `follow`,
+`pending_update`. all.json carries it as `source: "listed"` (`mods/all-json.md`).
+
+**Policy** (`$WU_PORTAL_DATA/listings-policy.json`, set by the owner in Leyline HQ › Needs you): which formats go live
+without a moderator (`auto_live`), `report_hide` (independent reports that hide a listing until a moderator looks,
+default 3), `big_mb` (a big pack waits, default 64), `new_account_days` (3) and `new_account_per_day` (1). A listing
+that is flagged, from a new account, or caught by the hub's word rules waits in **Needs you** (Approve / Take down with
+a reason). A missing open licence never holds a listing: it installs from the author only.
+
+**Updates.** About hourly, listings that follow a branch or the latest release are asked again. A new rev is checked
+like a new listing: clean and allowed by the policy, it replaces the install (players see Update); flagged or failing, it
+waits as `pending_update` (Needs you: Approve the update / Keep the old one) while the old install stays live, like
+curate.py's `pending_update`.
+
+**Ratings, reports, rankings.** Ratings and Hot / Rising / Top come from `stream/hub_rank.py` (one rating per account,
+changeable). Reports take a reason (`broken malware stolen gamedata cheat rude spam other`) and a note; one per account,
+never the author's own; HQ shows them with their reasons. **Abuse limits:** 10 checks an hour per account and 400 a day
+in all (a check downloads), the Workshop's links-a-day limit (3), one a day for new accounts, site-wide sanctions
+(HQ's "no submissions") refuse both check and submit. Authors edit (description, category) and remove their own;
+moderators take down.
+
+**API** (`/wrath/api/listings/<action>`, JSON; the launcher's `Authorization: Bearer` token, or the site cookie with
+`X-Leyline-CSRF` from `GET /wrath/api/listings/mine`): `check {url}`, `submit {t, category, description, builds?}`,
+`report {id, reason, note?}`, `edit {id, description?, category?}`, `remove {id}`; `GET mine`. The page
+`/wrath/mods/list` does the same with plain forms.

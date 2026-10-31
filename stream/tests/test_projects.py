@@ -459,6 +459,16 @@ for f in os.listdir(FB):
     os.chmod(os.path.join(FB, f), 0o755)
 open(os.path.join(FL, "Caddyfile"), "w").write("play.example {\n}\n")
 
+# ---------------------------------------------------------------- List your mod through the portal (stream/listings.py)
+st, hd, body = req("GET", "/wrath/mods/list")
+check("List your mod: the page is served (signed out: sign in)", st == 200 and "List your mod" in body and "Sign in" in body, st)
+st, hd, body = req("POST", "/wrath/api/listings/check", raw=b'{"url":"https://github.com/alice/frame-kit"}')
+check("List your mod: the API needs a sign-in", st in (400, 401, 503), (st, body[:200]))
+check("List your mod: HQ's listing actions are registered", wp.admin is None or "listing.approve" in wp.admin.ACTIONS)
+st, hd, body = req("GET", "/wrath/mods/submit")
+check("Add a project points to List your mod", "/wrath/mods/list" in body)
+
+
 def fastloop(state):
     os.makedirs(state, exist_ok=True)
     env = dict(os.environ, PATH=FB + os.pathsep + os.environ["PATH"], FAKE_STATE=state, WU_DIR=FWU, WU_LIB=os.path.join(FL, "none.sh"),

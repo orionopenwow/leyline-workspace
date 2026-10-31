@@ -125,6 +125,22 @@ QUEUED_NOTE = ("Thanks: this one waits for a person to check it before it's list
                "cheats and leaked or decompiled material off the Workshop).")
 
 
+def _load_listings():
+    """stream/listings.py (List your mod) beside this file, for the all.json fields of a listed mod; None without it."""
+    import sys
+    if "wu_listings" in sys.modules:
+        return sys.modules["wu_listings"]
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "listings.py")
+    try:
+        spec = importlib.util.spec_from_file_location("wu_listings", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        sys.modules["wu_listings"] = mod
+        return mod
+    except Exception:   # noqa: BLE001: the Workshop runs without it
+        return None
+
+
 def _load_projects():
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "projects.py")
     try:
@@ -137,6 +153,7 @@ def _load_projects():
 
 
 projects_mod = _load_projects()
+_listings = _load_listings()
 
 WORKSHOP_CSS = """
 .wk-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;margin:0 0 14px}
@@ -472,7 +489,8 @@ class Workshop:
                         "builds": builds or ["any"], "stars": stars, "last_push": t("last_push", 25),
                         "submitted_by": t("submitted_by", 40), "submitted_at": t("submitted_at", 25),
                         "last_checked": t("last_checked", 25),
-                        "reports": len(r["reports"]) if isinstance(r.get("reports"), list) else 0})
+                        "reports": len(r["reports"]) if isinstance(r.get("reports"), list) else 0,
+                        "listing": r["listing"] if isinstance(r.get("listing"), dict) else None})   # List your mod (listings.py)
         return out if self.adjust is None else self.adjust("projects", out, "pid")
 
     def everything(self) -> list[dict]:
@@ -860,6 +878,8 @@ class Workshop:
                 '<p class="wk-actions" style="margin:0"><button class="wk-btn violet" type="submit">Add the link</button></p></form>')
         body = ('<p><a href="/wrath/mods">&larr; All mods</a></p>'
                 '<section class="ly-panel" aria-labelledby="wk-sub"><h2 id="wk-sub">Add your project</h2>'
+                '<p class="wk-msg" role="note">Made a mod players can install? <a href="/wrath/mods/list">List your mod</a> '
+                'instead: we check it once and the launcher installs it in one click.</p>'   # stream/listings.py
                 f'{inner}</section>')
         return status, self._page("Add a project · Workshop", "/wrath/mods/submit", "Add your project · Leyline Workshop",
                                   body, "Share a link to your mod, tool or server project on the Leyline Workshop.")
@@ -907,6 +927,8 @@ class Workshop:
                 "sha256": m["sha256"] if m and m["zip"] else None,
                 "featured": it["featured"],
             })
+            if p and p.get("listing") and _listings is not None:   # a listed mod: one-click install (stream/listings.py)
+                out[-1].update(_listings.all_json_fields(p["listing"]))
         doc = {"format": 1, "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                "categories": self.categories()[0], "builds": ["3.3.5a", "1.12", "any"], "projects": out}
         return (json.dumps(doc, indent=1, ensure_ascii=False) + "\n").encode("utf-8")

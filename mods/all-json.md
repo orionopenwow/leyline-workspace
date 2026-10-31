@@ -65,3 +65,20 @@ https://play.openvanilla.app/wrath/mods. It is public, `Access-Control-Allow-Ori
 
 Sorted by name. Hidden links, and mods staff rejected or unpublished, are left out. New fields may appear in format 1: ignore what you don't know.
 Show the text as text (never as HTML) and open `repo` / `page` in the browser.
+
+## Listed mods (`source: "listed"`)
+
+A community link whose author listed it with **List your mod** (stream/listings.py, docs/LIST-YOUR-MOD.md) and whose
+check found something for a game client. Same id (`link:<12 hex>`), plus:
+
+| Field | Meaning |
+|---|---|
+| `format`, `format_label` | `addon`, `package`, `patch` or `native`, and its words |
+| `state` | `community` ("Community · not reviewed") or `reviewed` (a moderator approved it) |
+| `flags`, `plan` | what the check flagged (a moderator looked first), and what one click does in plain words |
+| `native`, `blp`, `size`, `file_count`, `version` | native code (the launcher asks first), `.blp` author art, the installed size |
+| `install` | `kind` (`addon`: addon folders, installed like an upstream addon, with `folders` and `blp`; `files`: staged and checked like a dropped zip: patches, native code, a package's client half), `from` (`release-asset` or `commit-archive`), `url` (the listing's own repo), `rev`, `sha256` (release files only), `size`, `file_count`, `strip_prefix`, `files` (path -> sha256 of every installed file), `files_digest` |
+
+The launcher (`launcher/src-tauri/src/listed.rs`) installs it only when the block checks out (`listed::install_ok`) and
+every downloaded file matches; otherwise it shows it as a plain link. Listings that wait for a moderator, are hidden by
+reports or were taken down are not in all.json. Realm scripts and game modes stay `community` links (nothing for a client).

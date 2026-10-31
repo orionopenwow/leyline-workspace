@@ -60,6 +60,8 @@ rm -rf "$BK/hub"
 if [ -f "$WU/portal/hub.py" ]; then cp -p "$WU/portal/hub.py" "$BK/hub.py"; [ ! -d "$WU/portal/hub" ] || cp -a "$WU/portal/hub" "$BK/hub"; had_hub=1; fi
 had_rank=""
 if [ -f "$WU/portal/hub_rank.py" ]; then cp -p "$WU/portal/hub_rank.py" "$BK/hub_rank.py"; had_rank=1; fi
+had_listings=""
+if [ -f "$WU/portal/listings.py" ]; then cp -p "$WU/portal/listings.py" "$BK/listings.py"; [ ! -f "$WU/portal/upstream-rules.json" ] || cp -p "$WU/portal/upstream-rules.json" "$BK/"; had_listings=1; fi
 had_art=""
 rm -rf "$BK/art"
 if [ -d "$WU/portal/art" ]; then cp -a "$WU/portal/art" "$BK/art"; had_art=1; fi
@@ -94,6 +96,8 @@ put_back() {
   if [ -n "$had_hub" ]; then cp -p "$BK/hub.py" "$WU/portal/hub.py"; [ ! -d "$BK/hub" ] || cp -a "$BK/hub" "$WU/portal/hub"
   else rm -f "$WU/portal/hub.py"; fi
   if [ -n "$had_rank" ]; then cp -p "$BK/hub_rank.py" "$WU/portal/hub_rank.py"; else rm -f "$WU/portal/hub_rank.py"; fi
+  if [ -n "$had_listings" ]; then cp -p "$BK/listings.py" "$WU/portal/listings.py"; [ ! -f "$BK/upstream-rules.json" ] || cp -p "$BK/upstream-rules.json" "$WU/portal/"
+  else rm -f "$WU/portal/listings.py" "$WU/portal/upstream-rules.json"; fi
   rm -rf "$WU/portal/art"
   if [ -n "$had_art" ]; then cp -a "$BK/art" "$WU/portal/art"; fi
 }
@@ -195,6 +199,12 @@ fi
 # the hub rankings (/wrath/leyline/mods.json, /wrath/api/hub/*: stream/hub_rank.py): optional; its store is
 # $WU/portal-data/hub_rank.sqlite3 (the writable /data mount)
 if [ -f hub_rank.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' hub_rank.py && install -m 644 hub_rank.py "$WU/portal/hub_rank.py"; fi
+# List your mod (/wrath/mods/list, /wrath/api/listings: stream/listings.py) and the shared rules file, always as a pair;
+# its listings live in projects.jsonl, its policy in $WU/portal-data/listings-policy.json
+if [ -f listings.py ] && [ -f upstream-rules.json ]; then
+  python3 -I -c 'import ast,sys,json;ast.parse(open(sys.argv[1]).read());json.load(open(sys.argv[2]))' listings.py upstream-rules.json && {
+    install -m 644 listings.py "$WU/portal/listings.py"; install -m 644 upstream-rules.json "$WU/portal/upstream-rules.json"; }
+fi
 if [ -d www-files/art ] && [ -f www-files/art/wu-theme.css ]; then
   install -d -m 755 "$WU/portal/art"
   find www-files/art -maxdepth 1 -type f -exec install -m 644 {} "$WU/portal/art/" \;

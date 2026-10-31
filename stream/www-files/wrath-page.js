@@ -600,9 +600,11 @@ export function watchHops(wenilla, { env = window.__wenilla_env || {}, go = (u) 
       if (!t || (t === 'wrath' && !env.hop)) return null;   // already home
       if (t === env.hop) return null;                       // already there
       h.gone = hopUrl(t, env);
+      markHop(t, typeof fast === 'function' ? 'fast' : 'old');   // the live measurement (hopTiming)
       if (typeof fast === 'function') {
         const old = h.gone;
-        Promise.resolve().then(() => fast(t)).then((went) => { if (!went) go(old); }, () => go(old));
+        const slow = () => { markHop(t, 'old'); go(old); };
+        Promise.resolve().then(() => fast(t)).then((went) => { if (!went) slow(); }, slow);
         return h.gone;
       }
       go(h.gone);
@@ -1066,7 +1068,6 @@ export async function fastHop(target, { env = window.__wenilla_env || {}, net = 
     assign(homeOf(env) + '/wrath/play?mode=own&go=r:' + t);
     return true;
   }
-  const t0 = now();
   let pre = false;
   if (r && ssoUsable(r, net, store)) {
     c.step('Signing in with your Hero Key', 25);
@@ -1097,23 +1098,37 @@ export async function fastHop(target, { env = window.__wenilla_env || {}, net = 
     c.done();
     return false;
   }
-  try { session.setItem(T0_KEY, JSON.stringify({ at: t0, id: t })); } catch { /* the timing is optional */ }
   c.step('Loading', 85);
   replace(land);
   return true;
 }
 
-/** After a fast hop: the time from Join to the character list, for the live measurement (window.__wuHop.timing). */
+/** When Join was taken and which way it went, for hopTiming on the page that comes up (this tab's sessionStorage
+ * survives the trip through the website too). */
+function markHop(id, via, session = globalThis.sessionStorage) {
+  try {
+    const was = JSON.parse(session.getItem(T0_KEY) || 'null');
+    const at = was && was.id === id && Date.now() - was.at < 30000 ? was.at : Date.now();
+    session.setItem(T0_KEY, JSON.stringify({ at, id, via }));
+  } catch { /* the timing is optional */ }
+}
+
+/** Fast hop on unless this browser turned it off for a comparison (localStorage wu.leyline.fasthop = "off"). */
+export function fastHopOn(store = globalThis.localStorage) {
+  try { return store?.getItem('wu.leyline.fasthop') !== 'off'; } catch { return true; }
+}
+
+/** After a hop: the time from Join to the character list, for the live measurement (window.__wuHop.timing). */
 export function hopTiming(wenilla, { session = globalThis.sessionStorage, now = () => Date.now(), env = window.__wenilla_env || {} } = {}) {
   let t0 = null;
   try { t0 = JSON.parse(session.getItem(T0_KEY) || 'null'); session.removeItem(T0_KEY); } catch { t0 = null; }
   if (!t0 || typeof t0.at !== 'number' || (t0.id !== env.hop && !(t0.id === 'wrath' && !env.hop))) return null;
-  const out = { id: t0.id, page: now() - t0.at, charselect: null, sso: window.__wuHop?.state?.sso || null };
+  const out = { id: t0.id, via: t0.via === 'old' ? 'old' : 'fast', page: now() - t0.at, charselect: null, sso: window.__wuHop?.state?.sso || null };
   try { if (window.__wuHop) window.__wuHop.timing = out; } catch { /* no hop layer */ }
   wenilla?.on?.('state', (s) => {
     if (out.charselect === null && (s?.state === 'charselect' || s?.state === 'charcreate')) {
       out.charselect = now() - t0.at;
-      console.info('[leyline] hop: character list ' + out.charselect + ' ms after Join (page up at ' + out.page + ' ms, sign-in ' + (out.sso || 'kept/join page') + ')');
+      console.info('[leyline] hop (' + out.via + '): character list ' + out.charselect + ' ms after Join (page up at ' + out.page + ' ms, sign-in ' + (out.sso || 'kept/join page') + ')');
     }
   });
   return out;
@@ -1124,7 +1139,7 @@ const LAUNCH_CSS = `
     padding: 6px 8px 6px 12px; border-radius: 8px; font: 13px system-ui, sans-serif; color: #d8e6f5; max-width: 94vw;
     background: linear-gradient(#101a2c, #070b14); border: 1px solid rgba(201,162,39,.6); box-shadow: 0 4px 16px rgba(0,0,0,.6); }
   #wu-hop-launch a, #wu-hop-launch button { cursor: pointer; border-radius: 6px; padding: 4px 10px; font: 12px system-ui, sans-serif;
-    border: 1px solid rgba(201,162,39,.6); background: #151a28; color: #e9e4d4; text-decoration: none; }
+    border: 1px solid rgba(201,162,39,.6); background: #151a28; color: #e9e4d4; text-decoration: none; white-space: nowrap; }
   #wu-hop-launch a.go { border: 0; background: linear-gradient(#f0d389, #d8b25a); color: #1b1406; font-weight: 600; }
 `;
 
@@ -1423,7 +1438,7 @@ export async function install(wenilla) {
   step('go link', () => { status.go = goLink(); if (status.go) window.wuGo = status.go; });
   step('leyline browse', () => { status.browse = watchBrowse(wenilla); });
   step('leyline hop', () => {
-    status.hop = watchHops(wenilla, { fast: (t) => fastHop(t, { net: status.browse && status.browse.net }) });
+    status.hop = watchHops(wenilla, { fast: fastHopOn() ? (t) => fastHop(t, { net: status.browse && status.browse.net }) : null });
   });
   step('hop timing', () => { status.hopTiming = hopTiming(wenilla); });
   step('host your own', () => { status.host = watchHostAsk(wenilla); });

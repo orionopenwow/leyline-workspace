@@ -194,7 +194,6 @@ test('fast hop with Hero Key: prefetched at the preview, redeemed before the rel
   const pre = JSON.parse(session.getItem('wu.leyline.pre.' + A));
   assert.equal(pre.user, 'HKABCDEFGHIJKLMN');
   assert.equal(pre.ttl, 120);
-  assert.ok(session.getItem('wu.leyline.hop.t0'));
   assert.deepEqual(steps.map((s) => s[0]), ['Signing in with your Hero Key', 'Switching realm', 'Loading']);
 });
 
@@ -289,4 +288,31 @@ test('end to end: the real page answers drive the real window (test_wuui_leyline
   const out = execFileSync('lua5.1', [path.join(__dirname, 'test_wuui_leyline_browse.lua'), path.join(__dirname, '..', 'fui-web', 'Interface', 'AddOns', 'WrathUnleashedUI'),
     path.join(dir, 'list.lua'), path.join(dir, 'preview.lua')], { encoding: 'utf8' });
   assert.match(out, /\n(\d+)\/\1 passed/, out.split('\n').filter((l) => l.startsWith('FAIL')).join('\n'));
+});
+
+test('the live measurement: Join marks the time and the way, the next page reports Join -> character list', async () => {
+  const m = await load();
+  const mm = new Map();
+  globalThis.sessionStorage = { getItem: (k) => (mm.has(k) ? mm.get(k) : null), setItem: (k, v) => mm.set(k, String(v)), removeItem: (k) => mm.delete(k) };
+  const hb = { ready: true, state: {}, lua: async () => ['abcdefghijklmnop'] };
+  const w = m.watchHops(hb, { env: {}, go() {}, pollMs: 0, fast: async () => false });
+  await w.take();
+  await new Promise((r) => setTimeout(r, 5));
+  const t0 = JSON.parse(mm.get('wu.leyline.hop.t0'));
+  assert.equal(t0.id, 'abcdefghijklmnop');
+  assert.equal(t0.via, 'old', 'the fast hop said no: the old way');
+  let onState = null;
+  const bridge = { on: (ev, fn) => { if (ev === 'state') onState = fn; } };
+  let clock = t0.at + 900;
+  globalThis.window = { __wenilla_env: { hop: 'abcdefghijklmnop' }, __wuHop: { state: { sso: 'pre' } } };
+  const out = m.hopTiming(bridge, { session: globalThis.sessionStorage, now: () => clock, env: { hop: 'abcdefghijklmnop' } });
+  assert.equal(out.page, 900);
+  assert.equal(out.via, 'old');
+  clock += 2100;
+  onState({ state: 'charselect' });
+  assert.equal(out.charselect, 3000);
+  assert.equal(mm.has('wu.leyline.hop.t0'), false, 'read once');
+  assert.equal(m.fastHopOn({ getItem: () => 'off' }), false);
+  assert.equal(m.fastHopOn({ getItem: () => null }), true);
+  delete globalThis.sessionStorage;
 });

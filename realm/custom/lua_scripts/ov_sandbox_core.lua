@@ -83,10 +83,16 @@ function S.Available(player)
     if known.ok then return true end
     if known.at and os.time() - known.at < RECHECK then return false end
     -- The row first: without it no packet goes anywhere.
+    -- Ask whether the table exists before reading it: a query on a missing table makes the core ABORT the whole
+    -- world server (MySQL 1146 is fatal; pcall never sees it). That took the realm down on 2026-10-31 20:54 UTC.
     local row = false
     if CharDBQuery then
-        local ok, q = pcall(CharDBQuery, "SELECT version, move_mode FROM sandbox_core_status WHERE id = 1")
-        row = ok and q ~= nil
+        local okT, t = pcall(CharDBQuery, "SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() "
+            .. "AND TABLE_NAME = 'sandbox_core_status'")
+        if okT and t ~= nil then
+            local ok, q = pcall(CharDBQuery, "SELECT version, move_mode FROM sandbox_core_status WHERE id = 1")
+            row = ok and q ~= nil
+        end
     end
     if not row then known.at = os.time(); return false end
     local version, mode = call(player, OP.PING, nil, function(p) return p:ReadULong(), p:ReadUByte() end, 5)

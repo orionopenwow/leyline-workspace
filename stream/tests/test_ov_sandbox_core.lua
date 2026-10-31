@@ -37,9 +37,13 @@ function CreatePacket(op, size) created = created + 1; return packet(op) end
 
 -- ------------------------------------------------------------------ the fake module
 local statusRow = false
+local tableThere, queriedMissing = true, false
 local module = { on = true, status = 0, guid = 0xF110000000001000, moveGuid = nil, log = {} }
 function CharDBQuery(sql)
+    if sql:find("information_schema.TABLES", 1, true) then return tableThere and { GetUInt32 = function() return 1 end } or nil end
     if sql:find("FROM sandbox_core_status") then
+        -- the real core ABORTS the world server on a query against a missing table (MySQL 1146)
+        if not tableThere then queriedMissing = true; return nil end
         if not statusRow then return nil end
         return { GetUInt32 = function() return 1 end }
     end
@@ -160,6 +164,13 @@ check("and back on", S.Available(alice) == true)
 -- no brand words in what players could see
 local src = io.open(file):read("*a")
 check("no game-brand names", not src:find("World of Warcraft") and not src:find("Blizzard") and not src:find("Warcraft"))
+
+-- 2026-10-31: the realm went down when the table itself was missing (MySQL 1146 aborts the core): a fresh load with
+-- no table never queries it
+tableThere, queriedMissing = false, false
+Sandbox, OV_SANDBOX_CORE_TEST = nil, nil
+dofile(file)
+check("no table: never queried, and not available", Sandbox.Available(alice) == false and not queriedMissing)
 
 print(string.format("%d passed, %d failed", pass, fail))
 os.exit(fail == 0 and 0 or 1)

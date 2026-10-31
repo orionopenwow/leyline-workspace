@@ -903,6 +903,10 @@ pub fn run() {
             // the host console: health, GM controls, Check my realm, realm tools, Link my server (host/console.rs)
             crate::p2p::cmds::host_console,
             crate::p2p::cmds::host_gm,
+            crate::p2p::cmds::host_dens, // a Den's save files: list, a copy, add one, open one (host/dens.rs)
+            crate::p2p::cmds::host_den_text,
+            crate::p2p::cmds::host_den_add,
+            crate::p2p::cmds::host_den_open,
             crate::p2p::cmds::host_check,
             crate::p2p::cmds::host_tool,
             crate::p2p::cmds::host_rules,

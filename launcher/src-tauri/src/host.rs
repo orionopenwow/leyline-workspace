@@ -16,6 +16,7 @@
 //!   realm is set up on this PC; and `leyline link` (a server the player already runs) in a window of its own.
 
 pub mod console;
+pub mod dens;
 pub mod docker;
 pub mod pack;
 pub mod profiles;

@@ -327,6 +327,10 @@ pub fn on_path(name: &str) -> bool {
 pub fn run(p: &HostPlan) -> Result<(), String> {
     let mut c = Command::new(&p.program);
     c.args(&p.args).current_dir(&p.cwd).envs(p.env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+    // the kit's scripts call `docker` themselves: the one the launcher found, even when it is not on PATH
+    if let Some(path) = docker::path_env() {
+        c.env("PATH", path);
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

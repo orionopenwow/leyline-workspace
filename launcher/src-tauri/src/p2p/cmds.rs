@@ -46,7 +46,7 @@ pub async fn hostpack_install() -> Result<(Installed, String), String> {
 
 #[tauri::command]
 pub async fn docker_info() -> Result<DockerInfo, String> {
-    blocking(|| Ok(docker::detect(HostOs::current(), &|a| docker::run_docker(a, None, Duration::from_secs(15))))).await
+    blocking(|| Ok(docker::check(Duration::from_secs(15)))).await
 }
 
 /// Host any client: the realm profiles the kit can run for the clients Leyline found on this PC, and the saved

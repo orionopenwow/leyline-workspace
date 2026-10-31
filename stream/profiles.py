@@ -17,7 +17,10 @@ This module adds Leyline's own sign-in page in front of it, in phases:
     /wrath/profile                     manage your profile on the website: picture, name, bio, sign-in ways, sign out
 
 Profiles: the display name and #tag are stream/social.py's (one name everywhere, its rules: social.name_error, which
-refuses the game and company names). Here: a bio (plain text, up to BIO_MAX, the word filter's words starred out, game
+refuses the game and company names; here also names that pass for the team, and at most WU_NAME_CHANGES_PER_DAY (3)
+changes of your own a day). Every signed-in account edits its profile the same way, a website guest account (username
+guest-xxxxxxxx, "Guest XXXXXXXX") included: its made name is flagged (name_generated, me.profile.name_generated) so the
+pages say "pick your own". Here: a bio (plain text, up to BIO_MAX, the word filter's words starred out, game
 and company names replaced like forum posts) and a picture: one of PRESETS (original shapes drawn here, no game art) or
 the default (your initial on a colour). Uploads and the Google/Discord picture are not offered: the portal image has no
 image library to re-encode uploads safely, and the website's /api/me does not pass the provider's picture on
@@ -410,7 +413,10 @@ def avatars(absolute: bool = False) -> list[dict]:
 def public(acct: str, absolute: bool = True) -> dict:
     """What GET .../social/me adds: me.profile, plus the presets and the sign-in ways."""
     pr = store.get(acct) if store is not None else {"bio": "", "avatar": "", "setup": False}
-    return {"profile": {"bio": pr["bio"], "avatar": pr["avatar"], "avatar_url": avatar_url(acct, absolute), "setup": pr["setup"]},
+    soc = _soc()
+    p = soc.profile(acct) if soc is not None else None
+    return {"profile": {"bio": pr["bio"], "avatar": pr["avatar"], "avatar_url": avatar_url(acct, absolute), "setup": pr["setup"],
+                        "name_generated": name_generated((p or {}).get("name", ""))},
             "avatars": avatars(absolute), "ways": ways(), "manage_url": f"https://{host()}{PROFILE}"}
 
 
@@ -433,11 +439,29 @@ def save(acct: str, doc: dict, by: str = "self") -> dict:
 
 
 SQUASHED_BRANDS = ("worldofwarcraft", "warcraft", "lichking", "blizzard")
+# Names that would pass for the team (a guest renaming itself "Admin"): refused for everyone's own changes.
+STAFF_WORDS = ("admin", "moderator", "leyline", "gamemaster", "official")
+STAFF_NAMES = {"mod", "mods", "gm", "staff", "owner", "support", "system", "team", "openvanilla"}
+# Names the website or the realm made for you, not ones you picked: a guest's "Guest ABCD1234" (the website's guest
+# accounts, username guest-xxxxxxxx), the "Player" default, a dungeon preset's slot. name_generated() says so.
+GENERATED_RE = re.compile(r"^(?:Guest[A-Z0-9]{8}|Guest|Player|preset-?\d+-?\d*)$", re.I)
+
+
+def name_changes_per_day() -> int:
+    try:
+        return max(1, int(os.environ.get("WU_NAME_CHANGES_PER_DAY", "3") or 3))
+    except ValueError:
+        return 3
+
+
+def name_generated(name: str) -> bool:
+    """True when the name is one made for the account (a guest's, the default), so the pages can say "pick your own"."""
+    return bool(GENERATED_RE.fullmatch(str(name or "")))
 
 
 def name_problem(name) -> str:
     """Why a display name is refused ("" when it's fine): social.py's rules, plus the game and company names hidden
-    behind separators or run into other words ("Lich_King", "War.craft", "WoWAlice")."""
+    behind separators or run into other words ("Lich_King", "War.craft", "WoWAlice"), and names that pass for the team."""
     mod = P("social")
     err = mod.name_error(name) if mod is not None else ("" if isinstance(name, str) else "Bad name.")
     if err:
@@ -445,16 +469,27 @@ def name_problem(name) -> str:
     flat = re.sub(r"[^a-z]", "", name.lower())
     if "WoW" in name or re.search(r"(?i)(?:^|[^a-z])wow(?:[^a-z]|$)", name) or any(b in flat for b in SQUASHED_BRANDS):
         return "Pick another name."
+    if flat in STAFF_NAMES or any(w in flat for w in STAFF_WORDS):
+        return "That name is kept for the Leyline team. Pick another."
+    if re.fullmatch(r"(?i)guest[a-z0-9]{8}", re.sub(r"[^A-Za-z0-9]", "", name)):
+        return "Pick a name of your own (not a guest name)."
     return ""
 
 
 def set_name(acct: str, name, by: str = "self") -> dict:
-    """The display name through social.py's rules (and name_problem's); the change is noted in the profile history."""
+    """The display name through social.py's rules (and name_problem's); the change is noted in the profile history.
+    Your own changes (by "self...") are limited to name_changes_per_day() a day (from the history: a restart doesn't
+    reset it); staff resets aren't."""
     soc, mod = _soc(), P("social")
     err = name_problem(name)
     if err:
         raise ProfileError(400, err)
     old = soc.ensure(acct)["name"]
+    if by.startswith("self") and store is not None and name != old:
+        n = store.one("SELECT COUNT(*) FROM profile_history WHERE acct = ? AND field = 'name' AND by LIKE 'self%' AND at > ?",
+                      (acct, store.now() - 86400))[0]
+        if n >= name_changes_per_day():
+            raise ProfileError(429, "You've changed your name a few times today. Try again tomorrow.")
     try:
         p = soc.set_profile(acct, {"name": name})
     except mod.SocialError as e:
@@ -724,6 +759,10 @@ def page_profile(h, note: str = "", ok: str = "", form: dict | None = None, stat
     pr = store.get(who["acct"])
     w = ways()
     msg = (f'<p class="pf-msg err" role="alert">{e(note)}</p>' if note else "") + (f'<p class="pf-msg" role="status">{e(ok)}</p>' if ok else "")
+    if name_generated(who["name"]) and not note:   # a guest's (or the default) name: say plainly that it can change
+        msg += ('<p class="pf-msg" role="note">Your name was made for you. Pick your own name and a picture below: others '
+                'see them on the forum, in the launcher and on your realm. Playing as a guest? Save your Hero Key '
+                '(Ways to sign in) so you can always come back to this account.</p>')
     bio = f'<p style="margin-top:6px;white-space:pre-wrap">{e(pr["bio"])}</p>' if pr["bio"] else ""
     ways_rows = ['<li><span><b>Hero Key</b><br><span class="pf-fine">Your key: sign in on any device, and the launcher.</span></span>'
                  '<a href="/account/key">Manage your Hero Key</a></li>']

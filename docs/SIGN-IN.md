@@ -47,6 +47,29 @@ first time, it opens its own Manage account page for the profile step.
 - The admin console's Profiles tab resets a picture, bio or name. Every change, the player's own too, is kept in
   `profile_history` (profiles.sqlite3) and staff resets are in the audit log. Nothing is deleted.
 
+### Guests
+
+What "guest" means here, and what each kind can do:
+
+| Kind | What it is | `/api/me` | Name and picture |
+|---|---|---|---|
+| **Website guest account** | "Play as guest" on the Rust site (`auth/guest.rs`): a real account with no password, a Hero Key made at once, characters kept | `username: guest-xxxxxxxx`, `display_name: "Guest XXXXXXXX"` | like anyone: `/wrath/profile`, the launcher's Manage account, the welcome step when it signs in through `/wrath/signin`. Its first Leyline name is `GuestXXXXXXXX`; the pages flag it (`name_generated`) and the forum's forms link "Pick your own name and picture" |
+| **Hero Key account** | any account signing in with its Hero Key (a guest's or anyone's) | as its account | the same |
+| **Guest pass** (`stream/demo.py`, `WU_GUEST_DEMO=1`) | a shared demo character, no account, reset after each visit | none (no sign-in) | not possible: nothing is kept. Its pages say so, and "Make a free account" goes to `/wrath/signin` |
+
+What stopped guests before (31 Oct): nothing refused them, but the site header and the forum showed the website's display
+name ("Guest ABCD2345") even after a rename, for up to a minute on the forum and forever in the header. Now
+`social.cookie_user` and the forum show the Leyline name at once. Nothing else was guest-specific.
+
+The same rules for everyone: `social.name_error`, the brand rule, the word filter, the presets; names that pass for the
+team (Admin, Moderator, Leyline..., GM, Staff, Owner) and guest-style names are refused; at most
+`WU_NAME_CHANGES_PER_DAY` (3) name changes of your own a day (staff resets aren't counted). The forum's stricter limits
+for accounts new to it stay (they count from the forum's first sight of the account, so a rename doesn't reset them).
+
+Not ours to change (the Rust site): an idle guest account is removed after `OPENVANILLA_GUEST_IDLE_DAYS` (30) even when
+it saved its Hero Key. The sweep (`auth/guest.rs sweep`) doesn't look at keys. TODO(owner): if Hero Key accounts must
+be kept, that sweep needs `AND NOT EXISTS (SELECT 1 FROM hero_keys ...)` in the website's repository.
+
 ### Not built, and what each would need
 
 - Uploading a picture: the portal runs on the stock `python:3.12-alpine` image, which has no image library to decode and

@@ -387,5 +387,182 @@ check("fastloop.sh: installs forum.py, backs it up, puts it back", 'install -m 6
       and 'cp -p "$WU/portal/forum.py" "$BK/forum.py"' in fl and 'cp -p "$BK/forum.py" "$WU/portal/forum.py"' in fl)
 check("the sign-in bat packs forum.py", 'if exist forum.py set "LINKS=%LINKS% forum.py"' in bat and " forum.py " in bat)
 
+# ---------------------------------------------------------------- the launcher posts with its own sign-in (Bearer token)
+S = wp.social.store
+
+
+def launcher_token(acct):
+    d = S.device_start("10.9.9.%d" % (len(acct) % 200))
+    S.device_answer(S.device_lookup(d["user_code"]), acct, True)
+    return S.device_poll(d["device_code"])["token"]
+
+
+def tpost(sub, doc, token=None, cookie=None, origin=None):
+    c = http.client.HTTPConnection("127.0.0.1", PAGE, timeout=30)
+    h = {"X-Forwarded-For": "10.0.0.8", "Content-Type": "application/json"}
+    if token:
+        h["Authorization"] = "Bearer " + token
+    if cookie:
+        h["Cookie"] = "wr_session=" + cookie
+    if origin:
+        h["Origin"] = origin
+        h["Sec-Fetch-Site"] = "cross-site"
+    c.request("POST", "/wrath/forum/api/" + sub, body=json.dumps(doc).encode(), headers=h)
+    r = c.getresponse()
+    hd, b = dict(r.getheaders()), r.read().decode()
+    c.close()
+    try:
+        return r.status, hd, json.loads(b)
+    except ValueError:
+        return r.status, hd, {}
+
+
+ACCOUNTS["dave"] = ("dave", "Dave", "WR000006")
+TOK = launcher_token("WR000004")   # carol, through the launcher only
+NOW[0] += 4000
+st, hd, doc = tpost("new", {"cat": "help", "title": "Posted from the launcher", "body": "Hello from the app https://example.org/x"}, TOK)
+TL = (doc.get("thread") or {}).get("id")
+check("launcher: a new thread with the Bearer token (no cookie, no form token)", st == 200 and doc.get("ok") and TL
+      and F.thread(TL)["author_acct"] == "WR000004" and "Access-Control-Allow-Origin" not in hd, doc)
+check("launcher: the poster's Leyline name on the thread", F.thread(TL)["author"] == wp.social.store.profile("WR000004")["name"])
+NOW[0] += 100
+st, _, doc = tpost("reply", {"thread": TL, "body": "and a reply"}, TOK)
+check("launcher: a reply", st == 200 and doc.get("ok") and doc.get("thread") == TL and F.post(doc["post"])["author"] == "WR000004", doc)
+st, _, doc = tpost("reply", {"thread": TL, "body": "too fast"}, TOK)
+check("launcher: the same rate limits as the forms (a new account waits a minute)", st == 429 and "Wait" in doc.get("error", ""), doc)
+NOW[0] += 100
+st, _, doc = tpost("new", {"cat": "news", "title": "Not the team", "body": "x"}, TOK)
+check("launcher: Announcements stays the team's", st == 403, doc)
+st, _, doc = tpost("new", {"cat": "help", "title": "Warcraft tips", "body": "x"}, TOK)
+check("launcher: the title rules (game names refused)", st == 400 and "game and company names" in doc.get("error", ""), doc)
+st, _, doc = tpost("new", {"cat": ["help"], "title": {"a": 1}, "body": 5}, TOK)
+check("launcher: odd JSON values refused plainly", st == 400, doc)
+st, _, doc = tpost("reply", {"thread": TL, "body": "x" * 5001}, TOK)
+check("launcher: the length limit", st == 400 and "5000" in doc.get("error", ""), doc)
+bob_post = F.posts(T1)[0][0]["id"]
+st, _, doc = tpost("report", {"post": bob_post, "reason": "spam", "note": "from the app"}, TOK)
+check("launcher: a report", st == 200 and "moderators" in doc.get("text", ""), doc)
+st, _, doc = tpost("report", {"post": doc and F.posts(TL)[0][0]["id"], "reason": "spam"}, TOK)
+check("launcher: no reporting your own post", st == 400, doc)
+st, _, doc = tpost("reply", {"thread": TL, "body": "cookie only"}, cookie="alice")
+check("CSRF: the website cookie alone can't post to the JSON (Bearer only)", st == 401 and F.one("SELECT COUNT(*) FROM forum_posts WHERE body = 'cookie only'")[0] == 0)
+st, _, doc = tpost("reply", {"thread": TL, "body": "cross"}, cookie="alice", origin="https://evil.example")
+check("CSRF: a cross-site page with the visitor's cookie: refused", st == 401)
+st, _, doc = tpost("reply", {"thread": TL, "body": "x"}, "A" * 43)
+check("an unknown token: 401 (the launcher signs out)", st == 401 and "Sign in again" in doc.get("error", ""))
+st, _, doc = tpost("categories", {}, TOK)
+check("the reading calls stay GET only", st == 405)
+# the staff badge from the website survives a launcher post; a token never carries staff powers
+TS = launcher_token("WR000003")
+NOW[0] += 100
+st, _, doc = tpost("new", {"cat": "news", "title": "Team news", "body": "x"}, TS)
+check("launcher: a staff token posts as a player (Announcements from the website only)", st == 403)
+st, _, doc = tpost("reply", {"thread": TL, "body": "Team here"}, TS)
+check("launcher: the Team badge (set by the website sign-in) stays on a launcher post",
+      st == 200 and F.post(doc["post"])["staff"], doc)
+# a site-wide sanction stops launcher posts too; "noforum" stops forum posts only
+A = wp.admin
+owner = {"account": "staff1", "name": "Mod Sam", "role": "admin", "session": "s"}
+A.set_sanction(owner, "noforum", "WR000004", "", 2, "spam in the forum")
+NOW[0] += 100
+st, _, doc = tpost("reply", {"thread": TL, "body": "muted?"}, TOK)
+check("muted from the forum: a launcher reply refused, with the reason", st == 403 and "spam in the forum" in doc.get("error", ""), doc)
+check("muted from the forum: messages are not stopped", A.blocked("message", acct="WR000004") == "")
+check("muted from the forum: the website's form refused too", "spam in the forum" in wp.forum._sanctioned({"acct": "WR000004"}, "new"))
+st, _, doc = tpost("report", {"post": bob_post, "reason": "other"}, TOK)
+check("muted from the forum: reporting still works", st == 200, doc)
+
+# ---------------------------------------------------------------- the header and the forum show the Leyline name at once
+wp.social._who_cache.clear()
+FM._who_cache.clear()
+st, _, b = req("GET", "/wrath/leyline/forum", "dave")
+pre = wp.social.store.profile("WR000006")["name"]
+wp.social.store.set_profile("WR000006", {"name": "DaveTheBold"})
+st, _, b = req("GET", "/wrath/leyline/forum/new", "dave")
+check("a rename shows at once in the forum (no minute's wait) and in the site header", "Post, as DaveTheBold" in b
+      and 'class="hb-acct-n">DaveTheBold<' in b, re.findall(r'hb-acct-n">[^<]*', b))
+
+# ---------------------------------------------------------------- Leyline HQ's Forum section
+ACCOUNTS["mod1"] = ("mod1", "Mo Mod", "WR000005")
+os.environ["WU_MODS_ADMINS"] = "mod1"
+st, _, body = req("GET", "/wrath/admin/forum", "alice")
+check("HQ Forum: staff only", st == 403)
+st, _, body = req("GET", "/wrath/admin/forum", "mod1")
+check("HQ Forum: a mod gets in; Forum in HQ's main menu, lit", st == 200 and re.search(r'<a href="/wrath/admin/forum" class=on aria-current=page>Forum</a>', body)
+      and "Reported posts" in body and "Threads" in body and "Hidden posts" in body, body[:400])
+check("HQ Forum: the report from the launcher, with hide, done, dismiss and the poster's mute", "from the app" in body and "forum.post.hide" in body
+      and "forum.report.done" in body and "forum.report.dismiss" in body and 'value="forum.mute"' in body)
+check("HQ Forum: a mod sees no account ban (admins only)", 'name="type" value="suspend"' not in body)
+mcsrf = re.search(r'name="csrf" value="([0-9a-f]+)"', body).group(1)
+
+
+def hq_act(who, csrf_, action, target, back="/wrath/admin/forum", **f):
+    d = {"csrf": csrf_, "action": action, "target": str(target), "back": back}
+    d.update(f)
+    st, hd, _ = req("POST", "/wrath/admin/act", who, d)
+    loc = urllib.parse.unquote(hd.get("Location", ""))
+    return "ok=Done" in loc, loc
+
+
+ok, loc = hq_act("mod1", mcsrf, "forum.mute", "WR000002", hours="72", reason="flooding")
+check("mute from the forum: needs the typed confirm", not ok and "Type WR000002" in loc, loc)
+ok, loc = hq_act("mod1", mcsrf, "forum.mute", "WR000002", hours="500", reason="flooding", confirm="WR000002")
+check("mute from the forum: a mod, at most a week", not ok and "168" in loc, loc)
+ok, loc = hq_act("mod1", mcsrf, "forum.mute", "WR000002", hours="24", reason="flooding", confirm="WR000002")
+check("mute from the forum: a mod mutes bob for a day", ok and "flooding" in A.blocked("post", acct="WR000002")
+      and A.blocked("message", acct="WR000002") == "", loc)
+NOW[0] += 100
+st, _, b = reply("bob", T1, "am I muted")
+check("muted: the website's reply form refuses", st == 403 and "flooding" in b)
+ok, loc = hq_act("mod1", mcsrf, "sanction.set", "WR000002", type="suspend", hours="0", reason="ban", confirm="WR000002")
+check("ban the account: admins only (a mod is refused, and it's audited)", not ok and "admins" in loc.lower())
+ok, loc = hq_act("mod1", mcsrf, "forum.unmute", "WR000002")
+check("lift the forum mute", ok and A.blocked("post", acct="WR000002") == "", loc)
+st, _, body = req("GET", "/wrath/admin/forum?acct=WR000004", "mod1")
+check("a poster's forum history: their posts, the reports about them, their forum mute",
+      st == 200 and "Posted from the launcher" in body and "and a reply" in body and "spam in the forum" in body
+      and "forum.unmute" in body and "their page" in body, body[-1500:])
+st, _, body = req("GET", "/wrath/admin/forum?view=threads", "mod1")
+check("HQ Forum threads: pin, lock, hide; merge is the admins'", st == 200 and "forum.thread.pin" in body and "forum.thread.lock" in body
+      and "forum.thread.hide" in body and "forum.thread.merge" not in body)
+st, _, body = req("GET", "/wrath/admin/forum?view=threads", "staff1")
+check("HQ Forum threads: an admin can merge", "forum.thread.merge" in body)
+st, _, body = req("GET", "/wrath/admin/forum?view=hidden", "mod1")
+check("HQ Forum hidden posts", st == 200 and "Hidden posts" in body)
+st, _, body = req("GET", "/wrath/admin/inbox", "mod1")
+check("Needs you: the forum report with Hide and Mute from the forum", "Forum report" in body and "forum.mute" in body)
+st, _, body = req("GET", "/wrath/admin/person?acct=WR000004", "mod1")
+check("a person's page: On the forum, with a link to their history", "On the forum" in body and "/wrath/admin/forum?acct=WR000004" in body)
+
+
+def hq_api(who, path):
+    st, _, b = req("GET", "/wrath/admin/api/" + path, who)
+    try:
+        return st, json.loads(b)
+    except ValueError:
+        return st, {}
+
+
+st, doc = hq_api("mod1", "forum")
+check("HQ API forum: the open reports and the actions a mod may call", st == 200 and doc["ok"] and any(r["post_text"] for r in doc["reports"])
+      and "mute" in doc["actions"] and "merge" not in doc["actions"] and "ban" not in doc["actions"], doc)
+st, doc = hq_api("staff1", "forum?view=poster&acct=WR000004")
+check("HQ API forum poster", st == 200 and doc["poster"]["posts"] >= 2 and doc["muted"] and "ban" in doc["actions"], doc)
+st, doc = hq_api("staff1", "forum?view=threads")
+check("HQ API forum threads", st == 200 and any(t["id"] == TL for t in doc["threads"]))
+st, doc = hq_api("alice", "forum")
+check("HQ API forum: staff only", st == 403)
+st, _, meb = req("GET", "/wrath/admin/api/me", "mod1")
+mtok = json.loads(meb)["csrf"]
+c = http.client.HTTPConnection("127.0.0.1", PAGE, timeout=30)
+c.request("POST", "/wrath/admin/api/act", body=json.dumps({"action": "forum.thread.lock", "target": str(TL), "csrf": mtok}).encode(),
+          headers={"Cookie": "wr_session=mod1", "Content-Type": "application/json", "Origin": "https://play.example", "X-Forwarded-For": "10.0.0.9"})
+r = c.getresponse(); jb = json.loads(r.read()); c.close()
+check("HQ API act: a mod locks a thread through the JSON", r.status == 200 and jb["ok"] and F.thread(TL)["locked"], jb)
+aud = [json.loads(x) for x in open(os.path.join(TMP, "admin", "audit.jsonl"))]
+check("the audit log: who muted, the refused ban, the API lock", any(a["action"] == "forum.mute" and a["ok"] and a["who"] == "mod1" for a in aud)
+      and any(a["action"] == "sanction.set" and not a["ok"] and a["who"] == "mod1" for a in aud)
+      and any(a["action"] == "forum.thread.lock" and a["ok"] and a["target"] == str(TL) for a in aud))
+
 print(f"{count - fails}/{count} passed")
 sys.exit(1 if fails else 0)

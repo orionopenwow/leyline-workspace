@@ -170,10 +170,35 @@
     return c;
   }
 
+  // One line under the list, once a day: run these with friends on your own world (the Host page).
+  const INVITE_KEY = "leyline.hostInvite.modes";
+  let inviteToday = null;   // shown in this session already: it stays through a Refresh
+  function hostInvite() {
+    const today = new Date().toISOString().slice(0, 10);
+    if (inviteToday !== today) {
+      let last = null;
+      try { last = localStorage.getItem(INVITE_KEY); } catch (_) { /* no storage: show it */ }
+      if (last === today) return null;
+      try { localStorage.setItem(INVITE_KEY, today); } catch (_) { /* fine */ }
+      inviteToday = today;
+    }
+    const p = el("p", "md-invite");
+    p.append(document.createTextNode("Liked a mode? Run it with friends on your own world, your rules. "));
+    const b = el("button", "link-s", "Host your own ›");
+    b.type = "button";
+    b.addEventListener("click", () => { const go = document.querySelector('.nav[data-page="host"]'); if (go) go.click(); });
+    p.append(b);
+    return p;
+  }
+
   function render() {
     const box = $("md-list");
     box.replaceChildren(...modes.map(card));
     if (!modes.length) box.append(el("p", "hint", "No modes listed right now."));
+    const old = document.getElementById("md-invite");
+    if (old) old.remove();
+    const inv = modes.length ? hostInvite() : null;
+    if (inv) { inv.id = "md-invite"; box.after(inv); }
   }
 
   // ---------------------------------------------------------------- PLAY

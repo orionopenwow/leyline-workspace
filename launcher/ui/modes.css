@@ -13,3 +13,4 @@
 .md-card .md-soon { cursor: default; opacity: .7; }
 .md-card .md-cmd { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
 .md-card .md-cmd code { color: var(--t-accent, inherit); }
+.md-invite { color: var(--muted); font-size: 13px; margin: 12px 0 0; }

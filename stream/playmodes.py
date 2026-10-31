@@ -219,7 +219,9 @@ def section(host_href: str = "/wrath/host") -> str:
     return ('<section class="ly-panel" id="games" aria-labelledby="md-games"><h2 id="md-games">Games</h2>'
             '<p class="md-lede">Minigames and game modes. Play signs you in and starts the game when your character '
             'is in the world. The Leyline launcher lists the same games on its Modes page.</p>'
-            f'<div class="md-cards">{"".join(cards)}</div></section>')
+            f'<div class="md-cards">{"".join(cards)}</div>'
+            f'<p class="md-hint" id="md-host-own">Liked one? Run it with friends on your own world, your rules: '
+            f'<a href="{e(host_href)}">host your own</a>.</p></section>')
 
 
 # --------------------------------------------------------------------------------------- the play intent

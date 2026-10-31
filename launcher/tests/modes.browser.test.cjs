@@ -16,9 +16,10 @@ const { chromium } = require('playwright');
 const INDEX = 'file://' + path.join(__dirname, '..', 'ui', 'index.html');
 const CATALOG = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'stream', 'playmodes.json'), 'utf8'));
 
-const FAKE = ({ modes, extra, offline, browser, page }) => {
+const FAKE = ({ modes, extra, offline, browser, page, invited }) => {
   const calls = (window.__calls = []);
   try {
+    if (invited) localStorage.setItem('leyline.hostInvite.modes', new Date().toISOString().slice(0, 10));
     localStorage.setItem('leyline.mode', browser ? 'browser' : 'online');
     if (page) localStorage.setItem('leyline.page', page); else localStorage.removeItem('leyline.page');
   } catch (_) { /* fine */ }
@@ -127,6 +128,24 @@ test('In-game modes: the .hub command on the card, PLAY just opens the game', as
   assert.equal(await page.textContent('#md-status'), 'Started My Wrath on play.openvanilla.app. In game, type .hub transmog.');
   assert.deepEqual(errors, []);
   await page.close();
+});
+
+test('Host your own: one line under the list, once a day, opens the Host page', async () => {
+  const { page, errors } = await open();
+  assert.match(await page.textContent('#md-invite'), /Run it with friends on your own world, your rules\. Host your own ›/);
+  await page.click('#md-refresh');
+  await page.waitForFunction(() => document.getElementById('md-net').textContent.includes('to play'));
+  assert.equal(await page.locator('#md-invite').count(), 1, 'still there after a Refresh, once');
+  await page.click('#md-invite button');
+  assert.ok(await page.isVisible('#page-host'));
+  assert.equal(await page.evaluate(() => localStorage.getItem('leyline.hostInvite.modes')), new Date().toISOString().slice(0, 10));
+  assert.deepEqual(errors, []);
+  await page.close();
+  // the same day, a new start of Leyline: not again
+  const again = await open({ invited: true });
+  assert.equal(await again.page.locator('#md-invite').count(), 0, 'once a day');
+  assert.deepEqual(again.errors, []);
+  await again.page.close();
 });
 
 test('PLAY in the browser, offline list, remembered page, text not markup', async () => {

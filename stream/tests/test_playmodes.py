@@ -173,6 +173,9 @@ for mid, c in INGAME.items():
     card = card.group(1) if card else ""
     check(f"{mid}: In game, the command, Play opens the game", "In game</span>" in card and f"<code>{c}</code>" in card
           and 'href="/wrath">Play<' in card)
+inv = re.findall(r'id="md-host-own".*?</p>', page, re.S)
+check("one line inviting to host your own world, under the cards", len(inv) == 1 and 'href="/wrath/host">host your own<' in inv[0]
+      and page.index('id="md-host-own"') > page.index('id="mode-hardcore"'))
 check("in-game modes are never sent to the realm as a play intent", not set(INGAME) & set(PM.realm_ids()))
 check("players text", "1-8 players" in page and "1 player" in page and "Any number of players" in page)
 BANNED = re.compile(r"(?i)world of warcraft|\bwow\b|warcraft|lich king|blizzard")

@@ -6,7 +6,10 @@
 --   .wu (or .commands)      lists the WrathUnleashed commands (ov_qol.lua's .learnall, .respec, .xp, .hearth,
 --                           .summon and .qol on a second line).
 --   .guide                  the level 80 guide: what to do at 80 on this realm. Shown by itself when a
---                           character reaches 80 (the boost included); 80s get a one-line pointer at login.
+--                           character reaches 80 (the boost included); ov_qol.lua's login tips point at it.
+--   .rules (or .house)      the realm's house rules (RULES below; a player-hosted world says its host sets them).
+-- Nothing at login any more (owner 2026-10-31: three login lines at most): ov_qol.lua's welcome names .wu and .rules,
+-- and its one tip in turn covers .bug, .stuck and .guide.
 --   .mounts                 every mount for level 80s: learns every mount spell (ground and flying) the player
 --                           doesn't have yet. Runs by itself once per character on reaching 80 (the boost included)
 --                           or at the first login at 80, marked in acore_characters.ov_unlocks; .mounts re-runs it
@@ -206,6 +209,34 @@ local function mountsCommand(player)
     mountsAt[guid] = now
 end
 
+-- TODO(owner): approve the house rules (player-facing; plain words, no game or company names).
+local RULES = {
+    "|cffffd100House rules|r",
+    "1. Be kind. No harassment, hate or spam.",
+    "2. Duel only people who say yes. Saying no is always fine.",
+    "3. Dalaran is a safe place. Don't pull monsters onto people or attack anyone who didn't agree.",
+    "4. Bots, when they are on, are labelled. They never win event prizes, and you can't sell or trade them.",
+    "5. No cheats, exploits or automation. Found a bug? Type |cffffff00.bug|r and tell us. Honest reports are never punished.",
+    "6. Nothing here is for sale. Don't buy or sell accounts, gold or items for real money.",
+    "7. Keep names and chat friendly. Don't pretend to be staff or another player.",
+    "8. In events, follow the host's calls. One prize per person.",
+    "9. Staff decide. First a warning, then a mute, a kick or a ban. You can ask again on the Discord.",
+    "10. Want different rules? Host your own world: |cffffff00/host|r",
+}
+local function hostKit()
+    local f = io.open(os.getenv("OV_HOST_FILE") or "/azerothcore/lua_scripts/host-realm.dat", "rb")
+    if f then f:close(); return true end
+    return false
+end
+
+local function showRules(player)
+    if hostKit() then
+        return say(player, "This is a player-hosted world: its host sets the rules (they show with it in Leyline's "
+            .. "realm list). Be kind, and duel only people who say yes.")
+    end
+    for _, line in ipairs(RULES) do say(player, line) end
+end
+
 local GUIDE = {
     "|cffffd100Level 80: where to go from here|r",
     "1. |cffffff00Dungeon Finder|r (I, or the eye on the minimap): the random dungeon at the top, then its Heroic. Bots fill "
@@ -221,7 +252,8 @@ local GUIDE = {
         .. "|cffffff00/wubars|r puts spells you just learned on your bars.",
     "7. |cffffff00Quality of life|r: |cffffff00.respec confirm|r resets your talents free, |cffffff00.hearth|r "
         .. "readies your hearthstone (hourly), |cffffff00.summon|r brings your bots to you.",
-    "Hang out in Dalaran. Found a bug? |cffffff00.bug|r and what happened. All commands: |cffffff00.wu|r",
+    "8. |cffffff00In Dalaran|r: |cffffff00.hub|r for the duel corner, the 1v1 arena, transmog and keystone dungeons.",
+    "Found a bug? |cffffff00.bug|r and what happened. All commands: |cffffff00.wu|r. Your own world: |cffffff00/host|r",
 }
 
 local function showGuide(player)
@@ -231,7 +263,8 @@ end
 local function listCommands(player)
     say(player, "Commands: |cffffff00.boost|r (level 80 boost, new characters), |cffffff00.play|r (places and dungeons), "
         .. "|cffffff00.bug <text>|r (report a bug), |cffffff00.stuck|r (go home if stuck), "
-        .. "|cffffff00.guide|r (what to do at 80), |cffffff00.mounts|r (every mount, at 80).")
+        .. "|cffffff00.guide|r (what to do at 80), |cffffff00.mounts|r (every mount, at 80), "
+        .. "|cffffff00.hub|r (Dalaran spots), |cffffff00.rules|r (house rules).")
     say(player, "Quality of life: |cffffff00.learnall|r (class spells; they come by themselves on level up), "
         .. "|cffffff00.respec confirm|r (free talent reset), |cffffff00.xp off|r / |cffffff00.xp on|r (freeze XP), "
         .. "|cffffff00.hearth|r (hearthstone ready, hourly), |cffffff00.summon|r (your bots), |cffffff00.qol|r (what's on).")
@@ -254,6 +287,9 @@ local function onCommand(event, player, command)
     elseif verb == "guide" or verb == "help80" then
         showGuide(player)
         return false
+    elseif verb == "rules" or verb == "house" then
+        showRules(player)
+        return false
     elseif verb == "wu" or verb == "commands" then
         listCommands(player)
         return false
@@ -262,11 +298,7 @@ end
 
 local function onLogin(event, player)
     if not ON or not player then return end
-    say(player, "Found a bug? Type |cffffff00.bug|r and what happened. Stuck? |cffffff00.stuck|r. All commands: |cffffff00.wu|r")
-    if player:GetLevel() >= 80 then
-        say(player, "At 80: |cffffff00.guide|r shows where to go (dungeons, gear, raids, PvP).")
-        maybeUnlockMounts(player)
-    end
+    if player:GetLevel() >= 80 then maybeUnlockMounts(player) end
 end
 
 -- Reaching 80 (levelling or the boost): the guide, a moment later so it lands after the boost's own lines.
@@ -282,5 +314,5 @@ RegisterPlayerEvent(13, onLevel)   -- PLAYER_EVENT_ON_LEVEL_CHANGE
 
 -- for tests
 OV_REPORTS_TEST = { esc = esc, allowReport = allowReport, fileReport = fileReport, unstick = unstick,
-    onCommand = onCommand, onLevel = onLevel, GUIDE = GUIDE, MOUNT_SPELLS = MOUNT_SPELLS,
+    onCommand = onCommand, onLevel = onLevel, GUIDE = GUIDE, RULES = RULES, onLogin = onLogin, MOUNT_SPELLS = MOUNT_SPELLS,
     MOUNTS_PER_TICK = MOUNTS_PER_TICK }

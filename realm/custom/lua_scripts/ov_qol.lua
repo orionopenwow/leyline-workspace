@@ -9,7 +9,7 @@
 --   .hearth               clears the hearthstone cooldown (once an hour)
 --   .summon               teleports the playerbots in your group to you (open world; .summon bots for GMs)
 --   Rested note at login  how much rested XP is banked (below 80, XP not frozen); a frozen-XP reminder
---   Welcome message, .qol help, .qol bots, and the Brawl extras: .qol repair, .hub <place>, duel reset.
+--   Welcome line and one tip at login (the host invitation once a day), .qol help, .qol bots, and the Brawl extras: .qol repair, .hub <place>, duel reset.
 --
 -- Env-var gates (read with os.getenv at each use; "1" = on, "0" = off, unset = the default shown):
 --   OV_AUTOLEARN      instant spell learn (+ .learnall)         default on
@@ -20,7 +20,8 @@
 --   OV_BOT_SUMMON     .summon                                   default on
 --   OV_REALM_NAME     realm name shown in the welcome           default "WrathUnleashed"
 --                     (while the Leyline brand is on: OV_LEYLINE_REALM_NAME, default "Wrath Unleashed")
---   OV_QOL_WELCOME    login welcome message                     default on
+--   OV_QOL_WELCOME    login welcome (one line) and one tip      default on
+--   OV_HOST_INVITE    the tip is "host your own world" once a day  default on
 --   OV_QOL_BOTHELP    .qol bots help text                       default on
 --   OV_DUEL_RESET     restore health/power/cooldowns at duel end  default on only with OV_BRAWL=1
 --   OV_QOL_HUB        hub teleports (.qol hub/.hub/.tele)       default on only with OV_BRAWL=1
@@ -622,28 +623,69 @@ local function showBotHelp(player)
     say(player, "  Going AFK? Say 'stay' first so they don't wander, and 'follow' when you're back.")
 end
 
+-- The login chat is three lines at most (owner 2026-10-31): this welcome, one tip (below), and ov_discord.lua's
+-- Discord line a few seconds later. Everything else the old welcome said is a tip, or in .wu.
 local function showWelcome(player)
-    say(player, "Welcome to |cffffd100" .. realmName() .. "|r, " .. player:GetName() .. ".")
-    say(player, ".ov  free faction, race and appearance changes   |   .armory  gear search")
-    say(player, ".qol  what's switched on here (instant spell learn, .respec, .xp, .hearth, .summon, ...)")
+    say(player, "Welcome to |cffffd100" .. realmName() .. "|r, " .. player:GetName() .. ". Help: |cffffff00.wu|r"
+        .. "   Rules: |cffffff00.rules|r")
 end
 
--- One line at login: XP frozen, or the rested XP banked (below 80 only).
-local function restedNote(player)
-    if not restedOn() or player:GetLevel() >= MAX_LEVEL then return end
+-- The rested note: XP frozen, or the rested XP banked (below 80 only). nil when there is nothing to say.
+local function restedText(player)
+    if not restedOn() or player:GetLevel() >= MAX_LEVEL then return nil end
     if xpToggleOn() and xpFrozen(player) then
-        return say(player, "Your experience is frozen (|cffffff00.xp on|r to level again).")
+        return "Your experience is frozen (|cffffff00.xp on|r to level again)."
     end
     local rest = math.floor(tonumber(try(player, "GetRestBonus")) or 0)
     if rest > 0 then
-        say(player, string.format("Rested: %d bonus XP banked; kills give double XP until it is used up.", rest))
+        return string.format("Rested: %d bonus XP banked; kills give double XP until it is used up.", rest)
     end
+    return nil
+end
+
+-- One tip per login, in turn. The "host your own world" invitation takes the tip's place once a day per account
+-- (OV_HOST_INVITE=0 turns it off; kept in memory, so a restart can show it once more that day).
+local HOST_INVITE = "Your own world: your rules, your friends, no port forwarding. Type |cffffff00/host|r to start one."
+local TIPS = {
+    { text = "In Dalaran, |cffffff00.hub|r shows the duel corner, the 1v1 arena, transmog and keystone dungeons." },
+    { text = "At 80, |cffffff00.guide|r shows where to go: dungeons, gear, raids, PvP.", min = MAX_LEVEL },
+    { text = "|cffffff00/golf|r for minigolf, |cffffff00/modes|r for minigames with friends." },
+    { text = "Found a bug? |cffffff00.bug|r and what happened. Stuck? |cffffff00.stuck|r takes you home." },
+    { text = "|cffffff00.ov|r: free faction, race and appearance changes. |cffffff00.qol|r: what's switched on here." },
+}
+local tipTurn = {}       -- player guid -> the next tip
+local invitedOn = {}     -- account id -> the day ("%Y-%m-%d") it was last invited to host
+
+local function loginTip(player)
+    local acc = try(player, "GetAccountId")
+    local today = os.date("%Y-%m-%d", os.time())
+    if acc and os.getenv("OV_HOST_INVITE") ~= "0" and invitedOn[acc] ~= today then
+        invitedOn[acc] = today
+        return HOST_INVITE
+    end
+    local list = {}
+    for _, t in ipairs(TIPS) do list[#list + 1] = t end
+    -- other scripts add theirs to the shared OV_EXTRA_TIPS ({ text =, min = }; ov_events.lua: .events)
+    for _, t in ipairs(rawget(_G, "OV_EXTRA_TIPS") or {}) do
+        if type(t) == "table" and type(t.text) == "string" then list[#list + 1] = t end
+    end
+    local guid, lvl = player:GetGUIDLow(), player:GetLevel()
+    local n = #list
+    local i = tipTurn[guid] or (guid % n) + 1
+    if i > n then i = 1 end
+    for _ = 1, n do
+        local t = list[i]
+        i = i % n + 1
+        if lvl >= (t.min or 0) then tipTurn[guid] = i; return t.text end
+    end
+    return nil
 end
 
 local function onLogin(event, player)
     if not player or isBot(player) then return end
     if welcomeOn() then showWelcome(player) end
-    restedNote(player)
+    local tip = restedText(player) or (welcomeOn() and loginTip(player)) or nil
+    if tip then say(player, tip) end
     if autolearnOn() then startLearn(player, "login", LEARN_LOGIN_DELAY_MS) end
 end
 
@@ -716,5 +758,5 @@ RegisterPlayerEvent(13, onLevelChange) -- PLAYER_EVENT_ON_LEVEL_CHANGE
 RegisterPlayerEvent(42, onCommand)     -- PLAYER_EVENT_ON_COMMAND
 
 -- for tests/test_ov_qol.lua (read only)
-OV_QOL_TEST = { classSpells = classSpells, schema = function() return schema end, TEACHES = TEACHES,
+OV_QOL_TEST = { TIPS = TIPS, HOST_INVITE = HOST_INVITE, loginTip = loginTip, showWelcome = showWelcome, classSpells = classSpells, schema = function() return schema end, TEACHES = TEACHES,
     LEARN_BATCH = LEARN_BATCH, PLAYER_FLAGS = PLAYER_FLAGS, NO_XP = PLAYER_FLAGS_NO_XP_GAIN }

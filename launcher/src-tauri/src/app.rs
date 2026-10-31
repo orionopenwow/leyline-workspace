@@ -867,6 +867,7 @@ pub fn run() {
         .setup(|app| {
             start_update_timer(app.handle().clone());
             crate::p2p::cmds::magnet_from_args(); // a shared magnet: link (only with the magnet_links flag on)
+            crate::agents::commands::start(app.handle().clone()); // Agents: the heartbeat `Leyline mcp` looks for (agents.rs)
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -994,7 +995,12 @@ pub fn run() {
             crate::addons::commands::addons_remove,
             crate::addons::commands::addons_auto_update,
             crate::addons::commands::addons_set_prefs,
-            crate::addons::commands::addons_should_offer
+            crate::addons::commands::addons_should_offer,
+            // Agents: Allow agents, approval cards, the audit, Connect (agents.rs, ui/agents.js)
+            crate::agents::commands::agents_state,
+            crate::agents::commands::agents_set_allow,
+            crate::agents::commands::agents_answer,
+            crate::agents::commands::agents_connect
         ])
         .run(tauri::generate_context!())
         .expect("error while running Leyline");

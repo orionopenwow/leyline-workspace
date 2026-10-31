@@ -32,8 +32,8 @@ CSS = "/*LEYLINE-CSS*/"
 names = [n for n, _ in d.PAGES]
 
 # ---------------------------------------------------------------- 1. the page list and the files
-check("thirteen pages, fixed order", names == ["index", "network", "getting-started", "play", "commands", "mods", "publishing",
-                                               "hosting", "always-on", "launcher", "hero-key", "cross-server", "unite"], names)
+check("fourteen pages, fixed order", names == ["index", "network", "getting-started", "play", "commands", "mods", "publishing",
+                                               "hosting", "always-on", "launcher", "agents", "hero-key", "cross-server", "unite"], names)
 on_disk = sorted(f[:-3] for f in os.listdir(DOCS_DIR) if f.endswith(".md"))
 check("every page has its file in docs/leyline", all(n in on_disk for n in names), set(names) - set(on_disk))
 check("every file in docs/leyline is on the page list", all(n in names for n in on_disk), set(on_disk) - set(names))
@@ -108,6 +108,9 @@ for c in (".wu", ".bug", ".stuck", ".recruit", ".buddy", ".build", ".go", ".armo
 host = visible(pages["hosting"])
 check("hosting: leyline host, relay, presets, house rules, GM account, private and public",
       all(s in host for s in ("leyline host", "The relay", "Presets", "House rules", "The GM account", "Private and public")))
+ag = visible(pages["agents"])
+check("agents: the three tiers in plain words, off until turned on", all(s in ag for s in ("Allow agents", "Approve", "Deny", "Never",
+      "2 minutes", "Add for me", "keeps a copy")) and not re.search(r"\b(1\.12|2\.4\.3|3\.3\.5)", ag))
 aon = visible(pages["always-on"])
 check("always-on: a new realm in one command, link a server you run, never game files from us",
       all(s in aon for s in ("leyline host --ruleset vanillaplus --public --always-on", "leyline link", "Link my server.bat",

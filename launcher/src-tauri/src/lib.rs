@@ -12,6 +12,7 @@
 //! invite knock (`realms`, `host`), the official realm's status file (`status`), the website's forum, read only
 //! (`forum`), and GitHub's release list (`update`). Each has an 8 second timeout; the listings fall back to a cached copy.
 
+pub mod agents; // the Agents page and `Leyline mcp`: the player's own AI assistant, read / ask / never tiers (agents.rs)
 pub mod addons; // the Leyline addons: our own in-game addons for a 3.3.5a client (ui/addons.js)
 pub mod catalog;
 pub mod clientimport; // drop a game folder, a zip or a link to your own backup on the client list (clientimport.rs)
@@ -68,6 +69,7 @@ pub const LINKS: &[(&str, &str)] = &[
     ("github", "https://github.com/orionopenwow/Leyline"),
     ("host", host::HOST_PAGE),
     ("hostguide", "https://play.openvanilla.app/wrath/docs/hosting"), // the Host pack and its settings
+    ("agentsguide", "https://play.openvanilla.app/wrath/docs/agents"), // Agents and Help: docs/leyline/agents.md
     ("hostdocs", "https://play.openvanilla.app/wrath/docs/hosting"), // the host console's guide (host/console.rs)
     ("alwayson", "https://play.openvanilla.app/wrath/docs/always-on"),
     ("network", "https://play.openvanilla.app/wrath/docs/network"), // the host guide's first item: how the network works

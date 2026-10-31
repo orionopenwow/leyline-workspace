@@ -450,6 +450,11 @@ st, _, doc = tpost("reply", {"thread": TL, "body": "cross"}, cookie="alice", ori
 check("CSRF: a cross-site page with the visitor's cookie: refused", st == 401)
 st, _, doc = tpost("reply", {"thread": TL, "body": "x"}, "A" * 43)
 check("an unknown token: 401 (the launcher signs out)", st == 401 and "Sign in again" in doc.get("error", ""))
+st, _, doc = tpost("mine", {}, TOK)
+check("launcher: mine lists the player's own threads only", st == 200 and [t["id"] for t in doc.get("threads", [])][:1] == [TL]
+      and all(F.thread(t["id"])["author_acct"] == "WR000004" for t in doc["threads"]), doc)
+st, _, doc = tpost("mine", {})
+check("launcher: mine needs the Bearer token", st == 401)
 st, _, doc = tpost("categories", {}, TOK)
 check("the reading calls stay GET only", st == 405)
 # the staff badge from the website survives a launcher post; a token never carries staff powers

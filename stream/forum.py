@@ -31,6 +31,8 @@ never the cookie, no CORS header; the same rules, limits and sanctions as the fo
     POST /wrath/forum/api/new {cat, title, body}       {ok, thread}
     POST /wrath/forum/api/reply {thread, body}         {ok, post, thread, page}
     POST /wrath/forum/api/report {post, reason, note?} {ok, text}
+    POST /wrath/forum/api/mine {}                      {threads: [...]}  the signed-in player's own threads, newest first
+                                                       (the launcher's Agents page reads it: launcher/src-tauri/src/agents.rs)
   refusals: {error} with 400/401 (signed out)/403 (locked, Announcements, a sanction)/404/429 (rate limits).
 
 Text: plain text only. Links (http and https) are made clickable with rel="nofollow ugc noopener noreferrer"; an
@@ -476,6 +478,12 @@ class Forum:
         like = "%" + s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         rows = self.q(f"SELECT {self._TCOLS} FROM forum_threads t LEFT JOIN forum_users u ON u.acct = t.author "
                       f"WHERE {self._LIVE} AND t.title_lc LIKE ? ESCAPE '\\' ORDER BY t.bumped DESC LIMIT ?", (like, n))
+        return [self._t(r) for r in rows]
+
+    def threads_by(self, acct: str, n: int = 30) -> list[dict]:
+        """One player's own threads that are still up, newest first (the launcher's "mine")."""
+        rows = self.q(f"SELECT {self._TCOLS} FROM forum_threads t LEFT JOIN forum_users u ON u.acct = t.author "
+                      f"WHERE t.author = ? AND {self._LIVE} ORDER BY t.id DESC LIMIT ?", (acct, max(1, min(int(n), 100))))
         return [self._t(r) for r in rows]
 
     def categories(self) -> list[dict]:
@@ -1336,7 +1344,7 @@ def _see_other(h, url: str) -> None:
     h.end_headers()
 
 
-POST_API = {"new": ("cat", "title", "body"), "reply": ("thread", "body"), "report": ("post", "reason", "note")}
+POST_API = {"new": ("cat", "title", "body"), "reply": ("thread", "body"), "report": ("post", "reason", "note"), "mine": ()}
 
 
 def _jpost(h, status: int, doc: dict) -> None:
@@ -1380,6 +1388,8 @@ def api_post(h, sub: str) -> None:
         who = token_viewer(h)
     except ForumError as ex:
         return _jpost(h, ex.status, {"error": ex.text})
+    if sub == "mine":   # reading one's own threads: no sanction stops it, nothing is written
+        return _jpost(h, 200, {"threads": [store.thread_doc(t) for t in store.threads_by(who["acct"])]})
     blk = _sanctioned(who, sub)
     if blk:
         return _jpost(h, 403, {"error": blk})

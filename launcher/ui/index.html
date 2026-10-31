@@ -15,6 +15,7 @@
 <link rel="stylesheet" href="addons.css"><!-- the Leyline addons: Clients, Mods › Our addons, the PLAY offer (addons.js) -->
 <link rel="stylesheet" href="market.css"><!-- the addon marketplace in Mods › Discover (market.js) -->
 <link rel="stylesheet" href="home.css"><!-- Home: the hero gallery and the rows below it (home.js) -->
+<link rel="stylesheet" href="agents.css"><!-- Agents: your own AI assistant, the approval card on every page (agents.js) -->
 </head>
 <body class="ly">
 <div class="frame">
@@ -71,6 +72,7 @@
 
   <div class="side-foot">
     <button class="nav plain" data-page="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>Settings</button>
+    <button class="nav plain" data-page="agents"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9.5 13h.01M14.5 13h.01M9.5 16.5h5M3 13v2M21 13v2"/></svg>Agents<span class="badge" id="nav-agents-count" hidden></span></button>
     <button class="nav plain" data-page="help"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/></svg>Help</button>
   </div>
 </aside>
@@ -408,6 +410,51 @@
     </div>
   </section>
 
+  <!-- AGENTS (agents.js; src-tauri/src/agents.rs): the player's own AI assistant through `Leyline mcp`. Read tools answer at once,
+       ask tools wait for Approve here, the rest has no tool at all. Off until Allow agents is on. -->
+  <section class="page" id="page-agents">
+    <div class="panel wide ag">
+      <h2>Agents</h2>
+      <p class="lede">Let your own AI assistant, such as Claude, help with Leyline: check realms, find mods, read your realm's logs.
+        Anything that changes something waits for your OK here.</p>
+      <label class="ag-allow"><input type="checkbox" id="ag-allow" role="switch"><span class="ag-sw" aria-hidden="true"></span>
+        <span><b>Allow agents</b><span class="hint" id="ag-allow-note">Off: agents get no answers at all.</span></span></label>
+      <h3>Waiting for you</h3>
+      <div id="ag-wait" class="ag-wait"><p class="hint">Nothing is waiting.</p></div>
+      <h3>Connect</h3>
+      <div class="ag-grid">
+        <section class="card ag-conn" id="ag-cc">
+          <div class="card-head"><span>CLAUDE CODE</span><span class="ag-dot" id="ag-cc-state">Not added</span></div>
+          <p>Run this once, or press Add for me. Then start a new Claude Code session.</p>
+          <div class="ag-cmd"><code id="ag-cc-cmd"></code><button type="button" class="btn small" data-copy="ag-cc-cmd">Copy</button></div>
+          <div class="row"><button type="button" class="btn small primary" id="ag-cc-add">Add for me</button><button type="button" class="btn small" id="ag-cc-del" hidden>Remove</button></div>
+        </section>
+        <section class="card ag-conn" id="ag-dt">
+          <div class="card-head"><span>CLAUDE DESKTOP APP</span><span class="ag-dot" id="ag-dt-state">Not added</span></div>
+          <p>Adds Leyline to the Claude app's settings. Quit and reopen the Claude app after.</p>
+          <div class="row"><button type="button" class="btn small primary" id="ag-dt-add">Add for me</button><button type="button" class="btn small" id="ag-dt-del" hidden>Remove</button></div>
+          <p class="hint">Leyline keeps a copy of the file first.</p>
+        </section>
+        <section class="card ag-conn" id="ag-other">
+          <div class="card-head"><span>OTHER AGENTS</span></div>
+          <p>Any assistant that runs local tools (MCP) can start Leyline with this command:</p>
+          <div class="ag-cmd"><code id="ag-raw"></code><button type="button" class="btn small" data-copy="ag-raw">Copy</button></div>
+          <details><summary>As settings</summary><div class="ag-cmd"><pre id="ag-json"></pre><button type="button" class="btn small" data-copy="ag-json">Copy</button></div></details>
+        </section>
+      </div>
+      <p class="status" id="ag-status" role="status"></p>
+      <h3>What agents may do</h3>
+      <div class="ag-tiers">
+        <section class="ag-tier ag-read"><b>Look, without asking you</b><ul id="ag-t-read"></ul></section>
+        <section class="ag-tier ag-ask"><b>Only after you press Approve</b><ul id="ag-t-ask"></ul></section>
+        <section class="ag-tier ag-never"><b>Never</b><ul id="ag-t-never"></ul><p class="hint">No tool exists for these, so nothing can ask for them.</p></section>
+      </div>
+      <h3>What agents did</h3>
+      <div id="ag-audit" class="ag-audit"><p class="hint">Nothing yet.</p></div>
+      <p class="hint">More in the guide: <button type="button" class="link" data-link="agentsguide">Agents ›</button></p>
+    </div>
+  </section>
+
   <!-- HELP: four steps to play (TODO(owner): the Help words, his voice), then the rest -->
   <section class="page" id="page-help">
     <div class="panel">
@@ -425,6 +472,9 @@
       <p class="lede">Pick Play in your browser in the play bar's realm list: the official realm streams there, with nothing to install.</p>
       <h3>Mods, realms and hosting</h3>
       <p class="lede">Mods › Discover lists the Workshop: Install adds a mod to your game. Mods › Installed turns mods off and on, updates and removes them. Realms lists every realm; Host runs your own.</p>
+      <h3>Agents</h3>
+      <p class="lede">Your own AI assistant can check realms, find mods and read your realm's logs. It asks you before it changes anything.
+        <button type="button" class="link" data-page-go="agents">Agents ›</button> <button type="button" class="link" data-link="agentsguide">The guide ›</button></p>
       <div class="row"><button type="button" class="btn" data-link="gettingstarted">Read the player guide</button><button type="button" class="btn" data-link="docs">Open the Leyline docs</button></div>
       <p class="hint help-dc">Lost files or need help? Ask on the Discord: the Join the Discord button at the top.</p>
     </div>
@@ -475,6 +525,15 @@
     </div>
   </section>
 </main>
+
+<!-- An agent's request, on any page (agents.js): Approve or Deny; no answer in time is Deny -->
+<div class="ag-card" id="ag-card" role="alertdialog" aria-labelledby="ag-card-title" aria-describedby="ag-card-lines" hidden>
+  <div class="ag-card-head"><span class="ag-card-from" id="ag-card-from"></span><span class="ag-card-left" id="ag-card-left"></span></div>
+  <h3 id="ag-card-title"></h3>
+  <ul id="ag-card-lines"></ul>
+  <div class="row"><button type="button" class="btn primary" id="ag-card-yes">Approve</button><button type="button" class="btn" id="ag-card-no">Deny</button></div>
+  <p class="status" id="ag-card-status" role="status"></p>
+</div>
 
 <!-- The one-time notice for a mod with native code -->
 <dialog class="dlg" id="native-dlg" aria-labelledby="native-title">
@@ -569,5 +628,6 @@
 <script src="host.js"></script>
 <script src="hostconsole.js"></script>
 <script src="home.js"></script>
+<script src="agents.js"></script><!-- Agents: the page and the approval card on every page (window.LeylineAgents) -->
 </body>
 </html>

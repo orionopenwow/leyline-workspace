@@ -37,6 +37,7 @@ PAGES = (
     ("hosting", "Hosting"),
     ("always-on", "Always-on realms"),
     ("launcher", "Launcher"),
+    ("agents", "Agents"),   # the launcher's Agents page: your own AI assistant, what it may do (launcher/src-tauri/src/agents.rs)
     ("hero-key", "Hero Key"),
     ("cross-server", "Other servers"),
     ("unite", "Working together"),

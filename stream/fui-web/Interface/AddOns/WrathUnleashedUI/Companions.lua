@@ -659,6 +659,8 @@ C.listener = listener
 function C.SystemFilter(_, _, msg)
     msg = tostring(msg or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
     return msg:find("^Playerbots: The server is configured with %d+ bots%.?$") ~= nil
+        -- the balancing module's own login line (seen in game 31 Oct): noise for players
+        or msg:find("^This server is running the AutoBalance module%.?$") ~= nil
 end
 
 if ChatFrame_AddMessageEventFilter then

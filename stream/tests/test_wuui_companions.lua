@@ -241,7 +241,8 @@ check("chat filters for bot achievements and whispers", filters.CHAT_MSG_ACHIEVE
 check("the bot module's 'configured with N bots' login line is hidden; its credit line stays", filters.CHAT_MSG_SYSTEM
     and filters.CHAT_MSG_SYSTEM(nil, "CHAT_MSG_SYSTEM", "|cff00ff00Playerbots:|r The server is configured with 0 bots.") == true
     and filters.CHAT_MSG_SYSTEM(nil, "CHAT_MSG_SYSTEM", "|cff00ff00This server runs with |cff00ccffmod-playerbots|r |cffcccccchttps://github.com/mod-playerbots/mod-playerbots|r") == false
-    and filters.CHAT_MSG_SYSTEM(nil, "CHAT_MSG_SYSTEM", "You have learned a new spell.") == false)
+    and filters.CHAT_MSG_SYSTEM(nil, "CHAT_MSG_SYSTEM", "You have learned a new spell.") == false
+    and filters.CHAT_MSG_SYSTEM(nil, "CHAT_MSG_SYSTEM", "This server is running the |cff4CFF00AutoBalance|r module.") == true)
 
 -- entering the world: a roster ask a moment later; the realm has bots, so the minimap button shows
 C.listener:Fire("OnEvent", "PLAYER_ENTERING_WORLD")

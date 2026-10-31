@@ -460,6 +460,7 @@ function renderClientMenu() {
   const sep = () => { const d = el("li", "pb-sep"); d.setAttribute("role", "presentation"); return d; };
   const top = [
     row("pb-act", "Add a game folder…", { run: () => show("clients") }),
+    row("pb-act", "Add from a zip or a link…", { run: () => cimpOpen() }),
     row("pb-act", "Find your game files", { run: () => openFindFiles() }),
   ];
   const have = state.settings.clients;
@@ -530,6 +531,177 @@ $("ff-pick").addEventListener("click", async () => {
   try { addClient(await invoke("pick_folder")); } catch (e) { sayErr("cl-status", e); }
 });
 $("ff-browser").addEventListener("click", () => { setMode("browser"); show("play"); });
+
+// ------------------------------------------------------------------ add a game client by dropping it (clientimport.rs)
+// Owner 31 Oct: drop a folder, a zip or a direct link to your own backup on the client list (or Find your game files),
+// with a progress bar in the launcher: download %, then unpacking %, Cancel. A folder is added where it is; a zip or a
+// link is unpacked into a folder you pick (by default in Leyline's own folder). Never a torrent: the core says so.
+const cimp = { input: null, checked: null, folder: null, timer: null };
+const CIMP_PHASE = { downloading: "Downloading", unpacking: "Unpacking", checking: "Looking for the game" };
+function cimpView(view) {
+  const box = $("cimp");
+  box.hidden = false;
+  box.dataset.state = view;
+  $("cimp-pick").hidden = view !== "pick";
+  $("cimp-ask").hidden = view !== "ask";
+  $("cimp-run").hidden = view !== "run";
+  $("cimp-go").hidden = view !== "ask";
+  $("cimp-cancel").hidden = !(view === "ask" || view === "run");
+  $("cimp-ok").hidden = !(view === "done" || view === "error");
+  if (view !== "done" && view !== "error") say("cimp-status", "");
+}
+function cimpClose() {
+  clearTimeout(cimp.timer);
+  $("cimp").hidden = true;
+  $("cimp").classList.remove("drag");
+}
+// From the menu's Add from a zip or a link…: the drop area, a link box, Choose a zip… or a folder.
+function cimpOpen() {
+  if (cimp.running) { $("cimp").hidden = false; return; }
+  closeClientMenu(false);
+  $("cimp-what").textContent = "Drop your game folder, a zip of it, or a direct link to your own backup.";
+  $("cimp-link").value = "";
+  cimpView("pick");
+  $("cimp-link").focus();
+}
+function cimpError(e) {
+  if (typeof closeClientMenu === "function") closeClientMenu(false);
+  $("cimp-what").textContent = "";
+  cimpView("error");
+  say("cimp-status", oops(e, "That didn't work. Drop your game folder or a zip of it, or try again."), "bad");
+}
+// Anything dropped or pasted: the core says what it is (or why not), then a folder is added and a zip or link asks where.
+async function clientImport(input) {
+  input = String(input || "").trim();
+  if (!input) return;
+  if (cimp.running) { $("cimp").hidden = false; say("cimp-status", "Leyline is already adding a game client.", "warn"); return; }
+  closeClientMenu(false);
+  let c;
+  try { c = await invoke("client_import_check", { input }); }
+  catch (e) { cimpError(e); return; }
+  cimp.input = input;
+  cimp.checked = c;
+  cimp.folder = c.default_folder;
+  if (!c.unpacks) { $("cimp-what").textContent = `Adding ${c.name || "your folder"}…`; cimpStart(); return; }
+  $("cimp-what").textContent = c.kind === "link" ? `Download from ${c.name} and unpack it.` : `Unpack ${c.name}.`;
+  cimpDest(cimp.folder);
+  cimpView("ask");
+  $("cimp-go").focus();
+}
+async function cimpStart() {
+  cimpView("run");
+  cimpProgress({ phase: "checking", done: 0, total: 0 });
+  cimp.running = true;
+  try { await invoke("client_import_start", { input: cimp.input, folder: cimp.checked && cimp.checked.unpacks ? cimp.folder : null }); }
+  catch (e) { cimp.running = false; cimpError(e); return; }
+  cimpPoll();
+}
+// the end of a long folder path, where its name is
+function cimpDest(f) {
+  const t = [...String(f || "")];
+  $("cimp-dest").textContent = t.length > 46 ? "…" + t.slice(-45).join("") : t.join("");
+  $("cimp-dest").title = f || "";
+}
+function cimpProgress(p) {
+  const pct = p.total > 0 ? Math.min(100, Math.floor((p.done * 100) / p.total)) : null;
+  $("cimp-phase").textContent = (CIMP_PHASE[p.phase] || "Working") + "…";
+  $("cimp-pct").textContent = pct === null ? "" : pct + "%";
+  $("cimp-fill").style.width = (pct === null ? 100 : pct) + "%";
+  $("cimp-bar").classList.toggle("unknown", pct === null);
+  if (pct === null) $("cimp-bar").removeAttribute("aria-valuenow"); else $("cimp-bar").setAttribute("aria-valuenow", String(pct));
+}
+async function cimpPoll() {
+  clearTimeout(cimp.timer);
+  let p;
+  try { p = await invoke("client_import_state"); } catch (e) { cimp.running = false; cimpError(e); return; }
+  if (p.phase === "downloading" || p.phase === "unpacking" || p.phase === "checking") {
+    cimpProgress(p);
+    cimp.timer = setTimeout(cimpPoll, 400);
+    return;
+  }
+  cimp.running = false;
+  if (p.phase === "done") {
+    cimpView("done");
+    $("cimp-what").textContent = "";
+    say("cimp-status", p.message || "Added.", "ok");
+    await refresh();
+    if (p.client_id) { $("play-client").value = p.client_id; realmChanged(); saveSelection(); }
+    const added = state && state.settings.clients.find((x) => x.id === p.client_id);
+    if (added && window.LeylineAddons) window.LeylineAddons.offer(added);
+    $("cimp-ok").focus();
+  } else if (p.phase === "cancelled") {
+    cimpView("done");
+    $("cimp-what").textContent = "";
+    say("cimp-status", p.message || "Stopped. Nothing was added.", "warn");
+  } else cimpError(p.message);
+}
+$("cimp-go").addEventListener("click", cimpStart);
+$("cimp-cancel").addEventListener("click", async () => {
+  if (!cimp.running) { cimpClose(); return; }
+  $("cimp-phase").textContent = "Stopping…";
+  try { await invoke("client_import_cancel"); } catch (_) { /* it ends by itself */ }
+});
+$("cimp-ok").addEventListener("click", cimpClose);
+$("cimp-x").addEventListener("click", () => { if (!cimp.running) cimpClose(); else $("cimp-cancel").click(); });
+$("cimp-change").addEventListener("click", async () => {
+  try { const f = await invoke("client_import_pick_folder"); if (f) { cimp.folder = f; cimpDest(f); } }
+  catch (e) { say("cimp-status", oops(e), "bad"); }
+});
+const cimpLink = (id) => () => clientImport($(id).value);
+$("cimp-link-go").addEventListener("click", cimpLink("cimp-link"));
+$("cimp-link").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); cimpLink("cimp-link")(); } });
+$("ff-link-go").addEventListener("click", cimpLink("ff-link"));
+$("ff-link").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); cimpLink("ff-link")(); } });
+const cimpPickZip = async () => { try { const z = await invoke("client_import_pick_zip"); if (z) clientImport(z); } catch (e) { cimpError(e); } };
+$("cimp-zip").addEventListener("click", cimpPickZip);
+$("ff-zip").addEventListener("click", cimpPickZip);
+$("cimp-folder-pick").addEventListener("click", async () => { try { const f = await invoke("pick_folder"); if (f) clientImport(f); } catch (e) { cimpError(e); } });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("cimp").hidden && !cimp.running) cimpClose(); });
+// Where a drop adds a game client: the client button, its open list, this panel, and the whole Find your game files page.
+function clientDropAt(x, y) {
+  if (currentPage === "findfiles") return true;
+  return [$("pb-client"), menuOpen && $("pb-menu"), !$("cimp").hidden && $("cimp")].some((n) => {
+    if (!n) return false;
+    const r = n.getBoundingClientRect();
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  });
+}
+function clientDragOn(on) {
+  $("pb-menu").classList.toggle("drag", on);
+  $("cimp").classList.toggle("drag", on);
+  $("ff-drop").classList.toggle("drag", on);
+}
+// Links and text dragged out of a browser arrive as HTML drops (files come through the window: setupDrop).
+function dropText(dt) {
+  if (!dt) return "";
+  const uris = (dt.getData("text/uri-list") || "").trim();
+  return uris || (dt.getData("text/plain") || "").trim();
+}
+for (const id of ["pb-client", "pb-menu", "cimp", "page-findfiles"]) {
+  const n = $(id);
+  n.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    if (id === "pb-client" && !menuOpen && $("cimp").hidden) openClientMenu();
+    clientDragOn(true);
+  });
+  n.addEventListener("dragleave", (e) => { if (!n.contains(e.relatedTarget)) clientDragOn(false); });
+  n.addEventListener("drop", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    clientDragOn(false);
+    const t = dropText(e.dataTransfer);
+    if (t) clientImport(t);
+  });
+}
+// A link pasted while the client list, this panel or the guide is open (not into a text box).
+document.addEventListener("paste", (e) => {
+  if (e.target && e.target.closest && e.target.closest("input, textarea, [contenteditable]")) return;
+  if (!(menuOpen || !$("cimp").hidden || currentPage === "findfiles")) return;
+  const t = ((e.clipboardData && e.clipboardData.getData("text")) || "").trim();
+  if (t) { e.preventDefault(); clientImport(t); }
+});
+window.LeylineClientImport = { drop: clientImport, open: cimpOpen };
 
 // ------------------------------------------------------------------ the play bar's realm picker: a drop-up list
 // (owner 2026-10-30: the ONLINE / SOLO / BROWSER switch gave way to it.) Your realms first (the official one and the
@@ -1850,15 +2022,37 @@ function setupDrop() {
   const wv = window.__TAURI__ && window.__TAURI__.webview && window.__TAURI__.webview.getCurrentWebview
     ? window.__TAURI__.webview.getCurrentWebview() : null;
   if (!wv || !wv.onDragDropEvent) return;
+  // Over the play bar's game client (its button, its open list, the add panel) or on Find your game files, a drop
+  // adds a game client (clientImport); over the rest of the play bar nothing moves; anywhere else it is a mod.
   wv.onDragDropEvent((ev) => {
     const t = ev.payload && ev.payload.type;
     const here = currentPage === "mods" && currentTab === "installed";
-    if (t === "enter" || t === "over") { $("drop").classList.add("over"); if (!here) show("mods", false, "installed"); }
-    else if (t === "leave") $("drop").classList.remove("over");
+    const pos = ev.payload && ev.payload.position;
+    const dpr = window.devicePixelRatio || 1;
+    const x = pos ? pos.x / dpr : -1, y = pos ? pos.y / dpr : -1;
+    const client = clientDropAt(x, y);
+    const bar = $("play-form").getBoundingClientRect();
+    const onBar = y >= bar.top && y <= bar.bottom;
+    if (t === "enter" || t === "over") {
+      if (client) {
+        if (!menuOpen && $("cimp").hidden && currentPage !== "findfiles") openClientMenu();
+        clientDragOn(true);
+        $("drop").classList.remove("over");
+      } else {
+        clientDragOn(false);
+        if (onBar) return;
+        $("drop").classList.add("over");
+        if (!here) show("mods", false, "installed");
+      }
+    } else if (t === "leave") { $("drop").classList.remove("over"); clientDragOn(false); }
     else if (t === "drop") {
       $("drop").classList.remove("over");
+      clientDragOn(false);
+      const paths = ev.payload.paths || [];
+      if (client) { if (paths[0]) clientImport(paths[0]); return; }
+      if (onBar) return;
       if (!here) show("mods", false, "installed");
-      installLocal(ev.payload.paths || []);
+      installLocal(paths);
     }
   });
 }
@@ -2309,31 +2503,55 @@ $("host-refresh").addEventListener("click", () => loadHost());
 
 // ------------------------------------------------------------------ the launcher's own updates
 // The core checks at start and every 6 hours and downloads in the background (app.rs). The UI only shows it:
-// "Update ready, restart" in the title bar, and the channel and state in Settings.
+// One calm line in the title bar (owner 31 Oct): "Update ready — restart to finish" and Restart. Ignored, the update
+// finishes by itself the next time Leyline opens ("Finishing the update…"); never while a game Leyline started runs.
 let upd = null;
+function updLine(u) {
+  const i = (u && u.info) || {};
+  if (!u) return null;
+  if (u.finishing) return { text: "Finishing the update…", go: null };
+  if (u.ready) return u.game_running
+    ? { text: "Update ready — restart after your game", go: "Restart", disabled: true, title: "Your game is open. Restart after you close it, or the update finishes the next time you open Leyline." }
+    : { text: "Update ready — restart to finish", go: "Restart", title: "Restart Leyline to finish the update. Or leave it: it finishes the next time you open Leyline." };
+  if (u.mode === "link" && i.newer) return { text: "A new Leyline is out", go: "Get it", title: "Open the download page" };
+  return null;
+}
 function renderUpdate() {
   if (!upd) return;
   const i = upd.info || {};
   $("upd-channel").value = upd.channel || "stable";
-  $("tb-update").hidden = !(upd.ready || (upd.mode === "link" && i.newer));
-  $("tb-update").textContent = upd.ready ? "Update ready, restart" : `Leyline ${i.latest} is out`;
-  $("tb-update").title = upd.ready
-    ? (upd.game_running ? "Close your game first: Leyline restarts only when no game is open" : `Restart into Leyline ${upd.ready}`)
-    : "Open the release page";
+  const line = updLine(upd);
+  $("tb-update").hidden = !line;
+  if (line) {
+    $("tb-update-text").textContent = line.text;
+    $("tb-update-go").hidden = !line.go;
+    $("tb-update-go").textContent = line.go || "";
+    $("tb-update-go").disabled = !!line.disabled;
+    $("tb-update").title = line.title || "";
+    $("tb-update").classList.toggle("busy", !!upd.finishing);
+  }
   $("upd-restart").hidden = !upd.ready;
+  $("upd-restart").disabled = !!upd.game_running;
   $("upd-open").hidden = !i.url;
   let text = "", kind = "";
-  if (upd.checking) text = "Checking…";
-  else if (upd.downloading) text = `Downloading Leyline ${i.latest} in the background…`;
-  else if (upd.ready) { text = `Leyline ${upd.ready} is ready (you have ${i.current}). Restart when you like.` + (upd.game_running ? " Your game is open: restart after you close it." : ""); kind = "ok"; }
-  else if (i.newer) { text = `Leyline ${i.latest} is out (you have ${i.current}). ${upd.note || ""}`; kind = "ok"; }
-  else if (i.latest) { text = `You have the newest Leyline on the ${upd.channel} channel (${i.current}).` + (i.from_cache ? " (offline: from the last check)" : ""); kind = "ok"; }
+  if (upd.finishing) { text = "Finishing the update. Leyline opens again in a moment."; kind = "ok"; }
+  else if (upd.checking) text = "Checking…";
+  else if (upd.downloading) text = "Downloading the update in the background…";
+  else if (upd.ready) { text = "Update ready. Press Restart when you like, or it finishes the next time you open Leyline." + (upd.game_running ? " Your game is open: Leyline waits until you close it." : ""); kind = "ok"; }
+  else if (i.newer) { text = `A new Leyline is out (${i.latest}). ${upd.note || ""}`; kind = "ok"; }
+  else if (i.latest) { text = `You have the newest Leyline (${i.current}).` + (i.from_cache ? " (offline: from the last check)" : ""); kind = "ok"; }
   else if (upd.checked_at) { text = i.error ? oops(i.error, OOPS["upd-status"]) : "No launcher releases on this channel yet."; kind = i.error ? "warn" : ""; }
   if (upd.error && !upd.ready && !upd.downloading) { text += (text ? " " : "") + oops(upd.error, "The download didn't finish: Leyline tries again later."); kind = "warn"; }
   say("upd-status", text, kind);
 }
+// Every minute; every second for the first half minute and while a check, a download or the finish is going.
+const updStarted = Date.now();
+let updTimer = null;
 async function loadUpdateState() {
+  clearTimeout(updTimer);
   try { upd = await invoke("launcher_update_state"); renderUpdate(); } catch (_) { /* preview page */ }
+  const fast = (upd && (upd.checking || upd.downloading || upd.finishing)) || Date.now() - updStarted < 30000;
+  updTimer = setTimeout(loadUpdateState, fast ? 1000 : 60000);
 }
 async function checkUpdate() {
   say("upd-status", "Checking…");
@@ -2349,13 +2567,12 @@ async function restartToUpdate() {
 $("upd-check").addEventListener("click", checkUpdate);
 $("upd-restart").addEventListener("click", restartToUpdate);
 $("upd-open").addEventListener("click", () => { if (upd && upd.info && upd.info.url) openUrl(upd.info.url); });
-$("tb-update").addEventListener("click", restartToUpdate);
+$("tb-update-go").addEventListener("click", restartToUpdate);
 $("upd-channel").addEventListener("change", async () => {
   say("upd-status", "Saved. Checking the new channel…");
   try { upd = await invoke("set_update_channel", { channel: $("upd-channel").value }); renderUpdate(); }
   catch (e) { sayErr("upd-status", e); }
 });
-setInterval(loadUpdateState, 60000);
 
 // ------------------------------------------------------------------ for Home's gallery and rows (home.js, loaded after this)
 // Home's "Join <HANGOUT.name>" slide: select the Hangout and press PLAY. With a 3.3.5a client, that client on

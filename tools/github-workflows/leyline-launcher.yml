@@ -14,8 +14,15 @@
 # outage turned a whole run red on 2026-10-26). A release without its .dmg can be completed by re-running the
 # failed macOS job later.
 #
-# One tag push makes a release: the tag's version (launcher-v0.3.0 -> 0.3.0) must match tauri.conf.json, and a
-# version with a "-" (0.3.1-beta.1) is published as a pre-release, which only the beta channel installs.
+# Every ship is a release for everyone (owner 31 Oct: "make sure any update to this launcher from now on is auto queued
+# for restart update for everyone"): each push to main that changes launcher/ (the Leyline step pushes the export) gets
+# the next version (launcher/scripts/release_version.py: one patch above the last launcher-v tag, or tauri.conf.json's
+# version when that is higher), stamped into the build, and a normal (stable) release with latest.json, so every
+# installed launcher downloads it in the background and offers Restart.
+# A hand-pushed tag still works: its version (launcher-v0.3.0 -> 0.3.0) must match tauri.conf.json, and a version with
+# a "-" (0.3.1-beta.1) is published as a pre-release, which only the opt-in early channel installs.
+# One run at a time per kind (pull requests apart): a release is never made twice, and a run that finds its release
+# already finished (latest.json there) builds nothing.
 name: leyline launcher
 on:
   # No `paths` filter on push: with one, GitHub can skip tag pushes, and the tag is what makes a release.
@@ -30,7 +37,26 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: leyline-launcher-${{ github.event_name == 'pull_request' && github.ref || 'release' }}
+  cancel-in-progress: false
+
 jobs:
+  # A push to main: does the launcher ship, and as which version (launcher/scripts/release_version.py).
+  plan:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    outputs:
+      ship: ${{ steps.p.outputs.ship }}
+      version: ${{ steps.p.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Next launcher version
+        id: p
+        run: python3 launcher/scripts/release_version.py plan | tee -a "$GITHUB_OUTPUT"
+
   core-tests:
     strategy:
       fail-fast: false
@@ -56,8 +82,8 @@ jobs:
   #   https://github.com/orionopenwow/Leyline/releases/download/launcher-latest/Leyline.exe
   # "Open Leyline Launcher.bat" fetches it from there (the website can link it once the first build is up).
   portable:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: core-tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.plan.outputs.ship == 'true'
+    needs: [core-tests, plan]
     runs-on: windows-latest
     permissions:
       contents: write
@@ -72,6 +98,9 @@ jobs:
       - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: launcher/src-tauri
+      - name: This ship's version
+        shell: bash
+        run: python launcher/scripts/release_version.py stamp "${{ needs.plan.outputs.version }}"
       - name: Build Leyline.exe (no installer)
         working-directory: launcher
         shell: bash
@@ -86,7 +115,7 @@ jobs:
         run: |
           set -euo pipefail
           ver=$(python -c "import json;print(json.load(open('launcher/src-tauri/tauri.conf.json'))['version'])")
-          notes="The newest Leyline launcher for Windows, built from main ($GITHUB_SHA, version $ver). One file, no installer: download Leyline.exe and double-click it. Not code-signed yet: Windows may ask once (More info, Run anyway). Leyline uses the game client you already have; it never downloads one."
+          notes="The newest Leyline launcher for Windows, built from main ($GITHUB_SHA, version $ver). One file, no installer: download Leyline.exe and double-click it. Not code-signed yet: Windows may ask once (More info, Run anyway). It updates itself. Leyline uses your own game client; it never offers or shares one."
           if gh release view launcher-latest -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit launcher-latest -R "$GITHUB_REPOSITORY" --title "Leyline launcher (latest, $ver)" --notes "$notes" --prerelease=false
           else
@@ -95,14 +124,19 @@ jobs:
           gh release upload launcher-latest Leyline.exe -R "$GITHUB_REPOSITORY" --clobber
 
   create-release:
-    if: startsWith(github.ref, 'refs/tags/launcher-v')
-    needs: core-tests
+    # a launcher-v tag, or a ship from main (plan)
+    if: >-
+      !cancelled() && needs.core-tests.result == 'success' &&
+      (startsWith(github.ref, 'refs/tags/launcher-v') || needs.plan.outputs.ship == 'true')
+    needs: [core-tests, plan]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
     outputs:
       id: ${{ steps.r.outputs.id }}
       signed: ${{ steps.r.outputs.signed }}
+      stamp: ${{ steps.r.outputs.stamp }}
+      skip: ${{ steps.r.outputs.skip }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Make the release (once per tag)
@@ -110,27 +144,46 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          SHIP_VERSION: ${{ needs.plan.outputs.version }}
           HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
         run: |
           set -euo pipefail
-          ver="${TAG#launcher-v}"
-          conf=$(python3 -c "import json;print(json.load(open('launcher/src-tauri/tauri.conf.json'))['version'])")
-          if [ "$ver" != "$conf" ]; then
-            echo "::error::The tag says $ver but launcher/src-tauri/tauri.conf.json says $conf. Tag the version in the file."
-            exit 1
-          fi
           pre=""
-          case "$ver" in *-*) pre="--prerelease" ;; esac
-          if ! gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          target=()
+          if [ "$REF_TYPE" = "tag" ]; then
+            TAG="$REF_NAME"
+            ver="${TAG#launcher-v}"
+            conf=$(python3 -c "import json;print(json.load(open('launcher/src-tauri/tauri.conf.json'))['version'])")
+            if [ "$ver" != "$conf" ]; then
+              echo "::error::The tag says $ver but launcher/src-tauri/tauri.conf.json says $conf. Tag the version in the file."
+              exit 1
+            fi
+            case "$ver" in *-*) pre="--prerelease" ;; esac
+            echo "stamp=" >> "$GITHUB_OUTPUT"
+          else
+            # a ship from main: always a normal release, so every installed launcher gets it
+            ver="$SHIP_VERSION"
+            TAG="launcher-v$ver"
+            target=(--target "$GITHUB_SHA")
+            echo "stamp=$ver" >> "$GITHUB_OUTPUT"
+          fi
+          skip=false
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # made by the other kind of run already: finished when its updater manifest is there
+            if gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -qx latest.json; then skip=true; fi
+          else
             awk -v v="$ver" '$0 ~ "^## "v"( |$)" {on=1; next} /^## / {if (on) exit} on' launcher/CHANGELOG.md > notes.md || true
+            [ -s notes.md ] || echo "The newest Leyline. Installed launchers download it by themselves: press Restart when it says Update ready, or it finishes the next time Leyline opens." > notes.md
             {
               echo
               echo "Builds are not code-signed yet: on Windows choose \"More info, Run anyway\"; on macOS right-click Leyline and choose Open (see launcher/README.md)."
-              echo "Leyline uses the game client you already have. It never downloads one."
+              echo "Leyline uses your own game client. It never offers or shares one."
             } >> notes.md
-            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "Leyline $ver" --notes-file notes.md $pre
+            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "Leyline $ver" --notes-file notes.md $pre "${target[@]}"
           fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
           echo "id=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json databaseId --jq .databaseId)" >> "$GITHUB_OUTPUT"
           pk=$(python3 -c "import json;print(json.load(open('launcher/src-tauri/tauri.conf.json'))['plugins']['updater']['pubkey'])")
           if [ "$HAS_KEY" = "true" ] && [ "${pk#TODO}" = "$pk" ]; then
@@ -142,6 +195,7 @@ jobs:
 
   release:
     needs: create-release
+    if: needs.create-release.outputs.skip != 'true'
     permissions:
       contents: write
     strategy:
@@ -169,6 +223,10 @@ jobs:
       - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: launcher/src-tauri
+      - name: This ship's version
+        if: needs.create-release.outputs.stamp != ''
+        shell: bash
+        run: $(command -v python3 || command -v python) launcher/scripts/release_version.py stamp "${{ needs.create-release.outputs.stamp }}"
       - name: Install the Tauri CLI
         working-directory: launcher
         run: npm install
@@ -197,6 +255,7 @@ jobs:
 
   release-macos:
     needs: create-release
+    if: needs.create-release.outputs.skip != 'true'
     runs-on: macos-latest
     continue-on-error: true
     permissions:
@@ -213,6 +272,10 @@ jobs:
       - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: launcher/src-tauri
+      - name: This ship's version
+        if: needs.create-release.outputs.stamp != ''
+        shell: bash
+        run: $(command -v python3 || command -v python) launcher/scripts/release_version.py stamp "${{ needs.create-release.outputs.stamp }}"
       - name: Install the Tauri CLI
         working-directory: launcher
         run: npm install

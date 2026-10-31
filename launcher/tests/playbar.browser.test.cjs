@@ -79,7 +79,7 @@ test('the picker: the client and its version; the drop-up list in its three grou
   assert.equal(await page.getAttribute('#pb-client', 'aria-expanded'), 'true');
   assert.equal(await page.getAttribute('#pb-menu', 'role'), 'listbox');
   assert.deepEqual(await rows(page), [
-    'pb-act|Add a game folder…|||false|', 'pb-act|Find your game files|||false|', '---',
+    'pb-act|Add a game folder…|||false|', 'pb-act|Add from a zip or a link…|||false|', 'pb-act|Find your game files|||false|', '---',
     'pb-missing|TBC|2.4.3|Not found|false|true', '---',
     'pb-mine|My Wrath|3.3.5a|C:\\Games\\Wrath|true|', 'pb-mine|My Vanilla|1.12.1|/home/me/Games/vanilla|false|',
   ]);
@@ -130,7 +130,7 @@ test('no clients: every family greyed; a greyed row opens Find your game files; 
   assert.equal(await page.textContent('#pb-client-name'), 'No game client');
   assert.equal(await page.isVisible('#pb-client-ver'), false);
   await page.click('#pb-client');
-  assert.deepEqual(await rows(page), ['pb-act|Add a game folder…|||false|', 'pb-act|Find your game files|||false|', '---',
+  assert.deepEqual(await rows(page), ['pb-act|Add a game folder…|||false|', 'pb-act|Add from a zip or a link…|||false|', 'pb-act|Find your game files|||false|', '---',
     'pb-missing|Vanilla|1.12.1|Not found|false|true', 'pb-missing|TBC|2.4.3|Not found|false|true', 'pb-missing|Wrath|3.3.5a|Not found|false|true']);
   await page.click('#pb-menu .pb-missing >> text=TBC');
   assert.equal(await pageOn(page), 'page-findfiles');

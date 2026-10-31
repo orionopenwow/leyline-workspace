@@ -604,6 +604,67 @@ html[data-base="light"] .pb-menu { box-shadow: 0 -10px 30px rgba(16, 24, 40, 0.1
 .ff-list b { color: var(--t-text); margin-right: 4px; }
 .ff-list code, .ff-card code { font-size: 12px; }
 #ff-want { color: var(--t-text); font-weight: 600; }
+/* Drop it here (owner 31 Oct): a folder, a zip or a link to your own backup; the whole page takes the drop */
+.panel.ff .ff-drop { margin: 0 0 12px; border-style: dashed; border-color: color-mix(in srgb, var(--t-accent) 45%, var(--t-border)); }
+.ff-drop p { margin: 0 0 10px; color: var(--t-text-2); font-size: 13.5px; }
+.ff-drop-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ff-drop-row input { flex: 1 1 260px; width: auto; height: 32px; }
+.ff-drop.drag, .pb-menu.drag { border-color: var(--t-accent); box-shadow: 0 0 0 2px var(--t-accent), 0 -10px 34px rgba(0, 0, 0, 0.35); }
+.ff-drop.drag { background: var(--t-accent-soft); }
+.pb-menu.drag::after {
+  content: "Drop to add this game client"; position: sticky; bottom: 0; display: block; margin: 6px 8px 0; padding: 10px 12px;
+  border-radius: 6px; text-align: center; font: 600 13px var(--t-font); color: var(--t-on-accent); background: var(--t-accent);
+}
+
+/* ---------------------------------------------------------------- adding a client: the panel over the play bar */
+.cimp {
+  position: absolute; left: 0; bottom: calc(100% + 8px); width: max(100%, 380px); z-index: 6; padding: 14px 16px 12px;
+  border-radius: 10px; background: var(--t-chrome); border: var(--t-border-w) solid var(--t-border-strong);
+  box-shadow: 0 -10px 34px rgba(0, 0, 0, 0.45); display: grid; gap: 10px;
+}
+html[data-base="light"] .cimp { box-shadow: 0 -10px 30px rgba(16, 24, 40, 0.14); }
+.cimp[hidden], .cimp [hidden] { display: none !important; }
+.cimp.drag { border-color: var(--t-accent); box-shadow: 0 0 0 2px var(--t-accent); }
+.cimp-head { display: flex; align-items: center; gap: 8px; font-size: 14.5px; }
+.cimp-x { margin-left: auto; width: 26px; height: 26px; border: 0; border-radius: 6px; background: none; color: var(--t-muted); font-size: 18px; cursor: pointer; }
+.cimp-x:hover { background: var(--t-raised); color: var(--t-text); }
+.cimp-what { margin: 0; font-size: 13px; color: var(--t-text-2); overflow-wrap: anywhere; }
+.cimp-what:empty { display: none; }
+.cimp-pick { display: grid; gap: 8px; }
+.cimp-drop {
+  padding: 18px 12px; text-align: center; border-radius: 8px; font-size: 13px; color: var(--t-muted);
+  border: 1.5px dashed color-mix(in srgb, var(--t-accent) 45%, var(--t-border-strong));
+}
+.cimp.drag .cimp-drop { color: var(--t-text); background: var(--t-accent-soft); border-color: var(--t-accent); }
+.cimp .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cimp .row input { flex: 1 1 180px; width: auto; height: 30px; }
+.cimp-label { font: 700 10.5px var(--t-font); letter-spacing: 0.12em; text-transform: uppercase; color: var(--t-muted); }
+.cimp-ask { display: grid; gap: 4px; }
+.cimp-dest { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cimp-dest span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--t-text); }
+.cimp-bar { position: relative; height: 8px; border-radius: 99px; overflow: hidden; background: var(--t-surface-2); border: var(--t-border-w) solid var(--t-border); }
+.cimp-bar > span { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: inherit; background: linear-gradient(90deg, var(--t-accent), var(--t-accent-2)); transition: width 0.3s; }
+.cimp-bar.unknown > span { width: 35% !important; animation: cimp-slide 1.3s ease-in-out infinite; }
+@keyframes cimp-slide { from { left: -35%; } to { left: 100%; } }
+@media (prefers-reduced-motion: reduce) { .cimp-bar > span { transition: none; } .cimp-bar.unknown > span { animation: none; width: 100% !important; opacity: 0.5; } }
+.cimp-line { display: flex; justify-content: space-between; margin-top: 6px; font-size: 12.5px; color: var(--t-text-2); }
+.cimp-line #cimp-pct { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--t-text); }
+.cimp .status { margin: 0; font-size: 13px; }
+.cimp .status:empty { display: none; }
+.cimp-btns { justify-content: flex-end; }
+.cimp-btns:not(:has(> :not([hidden]))) { display: none; }
+
+/* ---------------------------------------------------------------- the update line in the title bar */
+.pill.upd-line { gap: 10px; padding: 0 4px 0 13px; border-color: color-mix(in srgb, var(--t-accent) 55%, var(--t-border)); background: var(--t-accent-soft); font-weight: 500; }
+.pill.upd-line[hidden] { display: none; }
+.upd-go {
+  height: 24px; padding: 0 11px; border: 0; border-radius: 999px; cursor: pointer;
+  background: var(--t-accent); color: var(--t-on-accent); font: 600 12px var(--t-font);
+}
+.upd-go:hover { background: var(--t-accent-strong); }
+.upd-go:disabled { cursor: default; background: var(--t-raised); color: var(--t-muted); }
+.upd-go[hidden] { display: none; }
+.pill.upd-line.busy { padding-right: 13px; }
 
 @media (max-width: 1150px) {
   .search { flex-basis: 300px; }

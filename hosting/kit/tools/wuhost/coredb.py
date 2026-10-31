@@ -20,7 +20,7 @@ when it is there.
 import os
 import time
 
-from .agent import RealmDB
+from .agent import RealmDB, probe_auth
 
 
 def to_mangos_hex(le_hex):
@@ -115,6 +115,30 @@ class CmangosDB(RealmDB):
         finally:
             c.close()
 
+    def get_login(self, username):
+        c = self._conn(self.AUTH)
+        try:
+            with c.cursor() as cur:
+                cur.execute("SELECT s, v FROM account WHERE username = %s", (username,))
+                row = cur.fetchone()
+            return (from_mangos_hex(row[0]).hex(), from_mangos_hex(row[1]).hex()) if row else None
+        finally:
+            c.close()
+
+    def who(self, limit=50):
+        """Online characters, never a GM account's (account.gmlevel > 0)."""
+        c = self._conn(self.CHARS)
+        try:
+            with c.cursor() as cur:
+                cur.execute(f"SELECT c.name FROM characters c JOIN `{self.AUTH}`.account a ON a.id = c.account "
+                            "WHERE c.online = 1 AND a.gmlevel = 0 ORDER BY c.name LIMIT %s", (int(limit),))
+                return [str(r[0]) for r in cur.fetchall()]
+        finally:
+            c.close()
+
+    def probe(self):
+        return probe_auth(self, "SELECT realmbuilds, name FROM realmlist WHERE id = %s")
+
     def status(self):
         c = self._conn(self.CHARS)
         try:
@@ -131,7 +155,9 @@ class CmangosDB(RealmDB):
 
 
 class TrinityDB(RealmDB):
-    """TrinityCore 4.3.4 (auth / characters): AzerothCore's account bytes, TrinityCore's account_access columns."""
+    """TrinityCore (auth / characters): AzerothCore's account bytes, TrinityCore's account_access columns. The kit's
+    4.3.4 profile (expansion 3) and an existing TrinityCore 3.3.5a server joining the network (WU_EXPANSION=2,
+    setup.py join-network): both keep salt/verifier as binary(32) and AccountID/SecurityLevel in account_access."""
 
     def __init__(self, host, port, user, password, realm_db_id=1, auth="auth", chars="characters", expansion=3):
         super().__init__(host, port, user, password, realm_db_id)
@@ -205,6 +231,18 @@ class TrinityDB(RealmDB):
         finally:
             c.close()
 
+    def who(self, limit=50):
+        """Online characters, never a GM account's (account_access.SecurityLevel > 0)."""
+        c = self._conn(self.CHARS)
+        try:
+            with c.cursor() as cur:
+                cur.execute(f"SELECT c.name FROM characters c JOIN `{self.AUTH}`.account a ON a.id = c.account "
+                            f"LEFT JOIN `{self.AUTH}`.account_access aa ON aa.AccountID = a.id AND aa.SecurityLevel > 0 "
+                            "WHERE c.online = 1 AND aa.AccountID IS NULL ORDER BY c.name LIMIT %s", (int(limit),))
+                return [str(r[0]) for r in cur.fetchall()]
+        finally:
+            c.close()
+
     def status(self):
         c = self._conn(self.CHARS)
         try:
@@ -248,4 +286,6 @@ def open_db(env=None, realm_db_id=None):
         kw = {k: env[e] for k, e in (("auth", "WU_DB_AUTH"), ("chars", "WU_DB_CHARS"), ("expansion", "WU_EXPANSION"))
               if env.get(e)}
         return cls(*args, **kw)
+    if cls is RealmDB:   # AzerothCore: an existing server may name its databases its own way (join-network)
+        return cls(*args, auth=env.get("WU_DB_AUTH") or None, chars=env.get("WU_DB_CHARS") or None)
     return cls(*args)

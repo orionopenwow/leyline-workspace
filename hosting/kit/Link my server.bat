@@ -94,7 +94,10 @@ docker run --rm -v "%~dp0.:/kit" -e WU_KIT=/kit %WU_TOOLS_IMAGE% python -m wuhos
 echo.
 echo == Starting the helper
 docker rm -f %LC% >nul 2>&1
-docker run -d --name %LC% --restart unless-stopped --read-only --cap-drop ALL --security-opt no-new-privileges --memory 96m --tmpfs /tmp --log-opt max-size=10m --log-opt max-file=3 --add-host host.docker.internal:host-gateway -v "%~dp0state:/state" %WU_TOOLS_IMAGE% python -m wuhost.agent --state /state >nul || (echo The helper did not start: docker logs %LC% & pause & exit /b 1)
+rem Hero Key sign-in (join-network, docs/leyline/join-network.md): the login database settings, when given
+set "ENVF="
+if exist "state\link-db.env" set "ENVF=--env-file state\link-db.env"
+docker run -d --name %LC% --restart unless-stopped !ENVF! --read-only --cap-drop ALL --security-opt no-new-privileges --memory 96m --tmpfs /tmp --log-opt max-size=10m --log-opt max-file=3 --add-host host.docker.internal:host-gateway -v "%~dp0state:/state" %WU_TOOLS_IMAGE% python -m wuhost.agent --state /state >nul || (echo The helper did not start: docker logs %LC% & pause & exit /b 1)
 set /a N=0
 :wait
 findstr /c:"\"connected\": true" "state\relay-state.json" >nul 2>&1 && goto connected

@@ -52,7 +52,8 @@ def pick_relay(nodes: list, *, volunteers: bool, seeds: set) -> str | None:
     return best[1] if best else None
 
 
-def volunteer_env(host: str, *, region="", max_realms=25, kbps=256, daily_gb=5, bootstrap="") -> str:
+def volunteer_env(host: str, *, region="", max_realms=25, kbps=256, daily_gb=5, bootstrap="", max_players=None,
+                  total_kbps=None) -> str:
     """The env file for docker-compose.volunteer-relay.yml."""
     if not mesh.host_ok((host or "").lower()):
         raise SystemExit("--host must be this PC's public DNS name, like relay.example.org")
@@ -74,5 +75,10 @@ def volunteer_env(host: str, *, region="", max_realms=25, kbps=256, daily_gb=5, 
         f"RELAY_PORT_MAX={41000 + 2 * max(1, min(int(max_realms), 200)) + 1}",
         "RELAY_SHARED_AUTH_PORT=0",
         "RELAY_LISTING=1",
+        # Help carry the network (docs/leyline/be-a-node.md): the launcher's caps. A player uses two streams.
+        f"RELAY_MAX_STREAMS_TOTAL={2 * max(1, min(int(max_players), 500))}" if max_players else "",
+        f"RELAY_TOTAL_KBPS={max(64, min(int(total_kbps), 100000))}" if total_kbps else "",
+        "RELAY_NODE_DIR=/node",
     ]
+    lines = [ln for ln in lines if ln]
     return "\n".join(lines) + "\n"

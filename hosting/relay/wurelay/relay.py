@@ -48,7 +48,7 @@ import time
 from wunet import domains, keys, mux, ws
 from wunet.mux import CLOSE, DATA, OPEN
 
-from . import httpd, listing, meshnode
+from . import httpd, listing, meshnode, nodes
 
 log = logging.getLogger("wu-relay")
 SID_RE = re.compile(r"^[a-z2-7]{16}$")
@@ -120,6 +120,13 @@ class Config:
         self.mesh_every = _env_int("RELAY_MESH_EVERY", 10)
         self.mesh_fanout = _env_int("RELAY_MESH_FANOUT", 3)
         self.volunteer = e("RELAY_VOLUNTEER", "0") == "1"
+        # Community nodes (wurelay/nodes.py, docs/leyline/be-a-node.md). On a seed: RELAY_NODE_REGISTRY=1 takes node
+        # registrations, checks their health and serves /api/nodes.json. On a node: RELAY_NODE_DIR is the folder the
+        # owner's launcher shares with it (status.json out, a "pause" file in); RELAY_TOTAL_KBPS caps this PC's upload
+        # for everyone it carries together (0 = only the per-realm cap).
+        self.node_registry = e("RELAY_NODE_REGISTRY", "0") == "1"
+        self.node_dir = e("RELAY_NODE_DIR", "")
+        self.total_kbps = _env_int("RELAY_TOTAL_KBPS", 0)
         # --- limits per realm
         self.max_streams = _env_int("RELAY_MAX_STREAMS", 128)          # a player uses 2 (auth, world)
         self.kbps = _env_int("RELAY_KBPS", 512)                          # both directions together
@@ -399,6 +406,9 @@ class Relay:
         self.feed_fetching = False
         self.listing = listing.Listing(self.cfg, self) if self.cfg.listing else None
         self.mesh = meshnode.MeshNode(self.cfg, self) if self.cfg.mesh else None
+        self.nodes = nodes.Registry(self.cfg, self) if (self.cfg.node_registry and not self.cfg.volunteer) else None
+        self.node_self = nodes.NodeSelf(self.cfg, self) if self.cfg.volunteer else None
+        self.total_bucket = mux.TokenBucket(self.cfg.total_kbps * 1024) if self.cfg.total_kbps > 0 else None
         self._load()
 
     # ---------------------------------------------------------------- state
@@ -473,6 +483,8 @@ class Relay:
             if not isinstance(doc.get("sig"), str) or not hmac.compare_digest(doc["sig"], want):
                 log.warning("block feed: bad signature, ignored")
                 return None
+        if self.nodes is not None:
+            self.nodes.take_feed(doc)   # banned community nodes and the "stop every node" switch (wurelay/nodes.py)
         rows = [r for r in doc["blocked"] if isinstance(r, dict) and isinstance(r.get("id"), str)
                 and re.fullmatch(r"[a-z2-7]{16}", r["id"])]
         rows.sort(key=lambda r: str(r.get("at", "")))
@@ -700,6 +712,8 @@ class Relay:
         s = self.sessions.get(realm_id)
         if not s:
             return None, (404, "realm offline")
+        if self.node_self is not None and self.node_self.paused():
+            return None, (503, "this relay is resting right now: try again, or another one")
         if s.visibility == "private" and not (self.knocked(ip, realm_id) or self.invite_ok(s, invite)):
             return None, (403, "private realm: open your invite link on this computer first")
         if self.over_quota(realm_id):
@@ -735,6 +749,8 @@ class Relay:
                 st.bytes += len(data)
                 self.count_bytes(session, len(data))
                 await session.bucket.take(len(data))
+                if self.total_bucket is not None:
+                    await self.total_bucket.take(len(data))
                 if st.closed or session.closed:
                     break
                 session.ws.send_nowait(mux.pack(DATA, st.sid, data))
@@ -896,6 +912,8 @@ class Relay:
                     if not st.conn.write(payload):
                         s.close_stream(st, why="player too slow (buffer full)")
                     d = s.bucket.delay_for(len(payload))
+                    if self.total_bucket is not None:
+                        d = max(d, self.total_bucket.delay_for(len(payload)))
                     if d > 0:
                         await asyncio.sleep(d)
                     if self.over_quota(s.realm_id):
@@ -1042,6 +1060,8 @@ class Relay:
             return await self.listing.route(req, parts[2:])
         if parts[:2] == ["api", "mesh"] and self.mesh:
             return await self.mesh.route(req, parts[2:])
+        if parts[:2] == ["api", "nodes"] and self.nodes is not None:
+            return await self.nodes.route(req, parts[2:])
         return httpd.response(404, {"error": "not found"})
 
     async def player_ws(self, req, reader, writer, rid, port_s, invite):
@@ -1280,6 +1300,12 @@ class Relay:
             n += 1
             if self.mesh and n % max(1, self.cfg.mesh_every // max(1, every)) == 0:
                 self._spawn(self.mesh.gossip_round())
+            if self.node_self is not None:
+                self.node_self.write_status()
+                if n % max(1, nodes.REGISTER_EVERY // max(1, every)) == 0:
+                    self._spawn(asyncio.to_thread(self.node_self.register_once))
+            if self.nodes is not None and n % 12 == 6:
+                self._spawn(self.nodes.health_round())
             if n % 12 == 0:
                 self.load_blocklist()
                 self._spawn(self.poll_feed())
@@ -1302,6 +1328,8 @@ class Relay:
         self._spawn(self.sweeper())
         if self.mesh:
             self._spawn(self.mesh.bootstrap_once())
+        if self.node_self is not None:
+            self._spawn(asyncio.to_thread(self.node_self.register_once))
         return self
 
     def http_port(self):

@@ -21,6 +21,7 @@ WU_HEROKEY_SITE_KEYS (hex, comma separated: tests, a self-hosted network). With 
 ("off") and the realm keeps its join page.
 """
 import hashlib
+import json
 import os
 import re
 import time
@@ -33,6 +34,10 @@ VERSION = 1
 # the herokey_sso flag is on). Two entries during a key rotation. Empty: Hero Key sign-in is off on every realm.
 SITE_KEYS: tuple = ()
 ENV_KEYS = "WU_HEROKEY_SITE_KEYS"
+# The key a host pinned with `setup.py join-network` / `setup.py herokey pin` (state/herokey-site-keys.json, fetched
+# once over HTTPS from the website's /wrath/leyline/herokey.json). {"keys": ["<64 hex>", ...], "from": url, "at": unix}.
+STATE_KEYS = "herokey-site-keys.json"
+MAX_PINNED = 4
 
 SKEW = 60                 # clock difference allowed between the website and the realm, seconds
 MAX_LIFETIME = 300        # exp - iat may not be longer than this
@@ -56,11 +61,45 @@ def key_id(pub: bytes) -> str:
     return hashlib.sha256(pub).hexdigest()[:16]
 
 
-def pinned_keys(env=None) -> dict:
-    """kid -> public key bytes: SITE_KEYS plus WU_HEROKEY_SITE_KEYS. Junk entries are skipped."""
+def state_keys(state_dir) -> list:
+    """The hex keys pinned in state/herokey-site-keys.json (at most MAX_PINNED), or []."""
+    if not state_dir:
+        return []
+    try:
+        with open(os.path.join(state_dir, STATE_KEYS), encoding="utf-8") as f:
+            doc = json.load(f)
+    except (OSError, ValueError):
+        return []
+    ks = doc.get("keys") if isinstance(doc, dict) else None
+    return [k for k in ks if isinstance(k, str)][:MAX_PINNED] if isinstance(ks, list) else []
+
+
+def pin_state_keys(state_dir, pubs_hex, source="", now=None) -> list:
+    """Write state/herokey-site-keys.json with these keys (checked: 32-byte hex). Returns the key ids pinned."""
+    good = []
+    for h in pubs_hex or []:
+        try:
+            b = bytes.fromhex(str(h))
+        except ValueError:
+            continue
+        if len(b) == 32 and b.hex() not in good:
+            good.append(b.hex())
+    good = good[:MAX_PINNED]
+    if not good:
+        raise ValueError("no usable key")
+    tmp = os.path.join(state_dir, STATE_KEYS + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"keys": good, "from": str(source)[:200], "at": int(time.time() if now is None else now)}, f)
+    os.replace(tmp, os.path.join(state_dir, STATE_KEYS))
+    return [key_id(bytes.fromhex(h)) for h in good]
+
+
+def pinned_keys(env=None, state_dir=None) -> dict:
+    """kid -> public key bytes: SITE_KEYS, WU_HEROKEY_SITE_KEYS, and the host's pinned file in `state_dir`. Junk entries
+    are skipped."""
     env = os.environ if env is None else env
     out = {}
-    for h in list(SITE_KEYS) + [x.strip() for x in str(env.get(ENV_KEYS, "")).split(",")]:
+    for h in list(SITE_KEYS) + [x.strip() for x in str(env.get(ENV_KEYS, "")).split(",")] + state_keys(state_dir):
         try:
             b = bytes.fromhex(h)
         except ValueError:

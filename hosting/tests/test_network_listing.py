@@ -99,8 +99,12 @@ class Mods(unittest.TestCase):
             {"id": "mode:minigolf"}, {"id": "mod:dalaran-dice", "version": "0.1.0", "url": "https://evil.example/x.zip"},
             "up:skada", {"id": "mod:dalaran-dice"}, {"id": "https://evil.example/x.zip"}, {"id": "mod:../../etc"},
             {"id": "mod:dice\n"}, {"id": "up:pfquest", "version": "../../x"}, 7, None]})
-        self.assertEqual(rec["mods"], [{"id": "mode:minigolf"}, {"id": "mod:dalaran-dice", "version": "0.1.0"},
-                                       {"id": "up:skada"}, {"id": "up:pfquest"}])
+        ids = lambda ms: [{k: v for k, v in m.items() if k in ("id", "version")} for m in ms]   # noqa: E731
+        self.assertEqual(ids(rec["mods"]), [{"id": "mode:minigolf"}, {"id": "mod:dalaran-dice", "version": "0.1.0"},
+                                            {"id": "up:skada"}, {"id": "up:pfquest"}])
+        # 2026-10-31 (the in-game hop window): every entry says required or optional, and whether it is a client mod
+        self.assertTrue(all("required" not in m for m in rec["mods"]), "the host never said: unknown")
+        self.assertEqual([m["client"] for m in rec["mods"]], [False, True, True, True], "a Leyline Mode runs on the realm")
         self.assertEqual(len(listing.clean_record({"name": "A", "mods": [f"mod:m{i:03d}" for i in range(99)]})["mods"]), 32)
         self.assertEqual(listing.clean_record({"name": "A", "mods": "mod:x"})["mods"], [])
         self.assertEqual(listing.clean_record({"name": "A"})["mods"], [], "older agents: no list")
@@ -110,7 +114,8 @@ class Mods(unittest.TestCase):
         L.heartbeat(h.beat(now, record={"name": "Frost Haven", "mods": [{"id": "mode:coin-dash"}, {"id": "mod:pings", "version": "0.1.0"}]}),
                     "1.2.3.4", now=now)
         r = L.realms_json(now)["realms"][0]
-        self.assertEqual(r["mods"], [{"id": "mode:coin-dash"}, {"id": "mod:pings", "version": "0.1.0"}])
+        self.assertEqual(r["mods"], [{"id": "mode:coin-dash", "client": False},
+                                     {"id": "mod:pings", "version": "0.1.0", "client": True}])
 
 
 class Uptime(unittest.TestCase):

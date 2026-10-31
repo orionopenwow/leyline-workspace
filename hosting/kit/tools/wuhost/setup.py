@@ -36,6 +36,15 @@
                                                     a server you ALREADY run (any core) on the Leyline realm list:
                                                     only the agent runs (leyline link); it never touches that
                                                     server's realm list, accounts or GM rights. The key is made here.
+  python -m wuhost.setup join-network --name "Frost Haven" --core azerothcore --auth-service 127.0.0.1:3724
+         --world-service 127.0.0.1:8085 --db-host 127.0.0.1 [--db-user leyline] [--auth-db acore_auth]
+         [--chars-db acore_characters]           (password: WU_JOIN_DB_PASSWORD or --db-password-file, never printed)
+                                                    an existing AzerothCore or TrinityCore 3.3.5a server joins the
+                                                    Leyline network with Hero Key sign-in: link + the login database
+                                                    for HK accounts (state/link-db.env, 0600) + the website's key
+                                                    pinned + checks (docs/leyline/join-network.md)
+  python -m wuhost.setup herokey on|off|pin|status  Hero Key sign-in for this realm; pin fetches the website's key once
+  python -m wuhost.setup share-names on|off         list who is online (character names) on the realm list; off by default
   python -m wuhost.setup official --name "Wrath Unleashed" --relay-url ws://... --listing-url http://...
          --auth-service ov-ac-authserver:3724 --world-service ov-ac-worldserver:8085 [--status-url URL]
                                                     the operator's OWN realm as a Beacon (hosting/hangout):
@@ -486,6 +495,14 @@ def clean_mods(v):
         one = {"id": mid}
         if isinstance(m.get("version"), str) and MOD_VERSION_RE.fullmatch(m["version"]):
             one["version"] = m["version"]
+        # the Network tab's mods editor: a short label, required or optional, a client mod or a server-side one
+        name = " ".join(str(m.get("name") or "").split())[:40]
+        if name and not BRAND_RE.search(name):
+            one["name"] = name
+        if isinstance(m.get("required"), bool):
+            one["required"] = m["required"]
+        if isinstance(m.get("client"), bool):
+            one["client"] = m["client"]
         out.append(one)
         if len(out) >= MAX_MODS:
             break
@@ -514,35 +531,58 @@ def cmd_mods(a):
     if not cfg:
         sys.exit("Run Host a Wrath realm first.")
     builtin = not cfg.get("linked") and cfg.get("profile") not in cores.PROFILES
-    if a.action in ("add", "remove"):
+    if a.action == "set":   # the whole list at once (the launcher's Network tab): JSON [{"id", "name", "required", "client"}]
+        try:
+            want = json.loads(a.json or "[]")
+        except ValueError:
+            sys.exit("mods set --json: a JSON list of {id, name, required, client}")
+        if not isinstance(want, list) or len(want) > MAX_MODS:
+            sys.exit(f"mods set --json: a list of at most {MAX_MODS} mods")
+        for m in want:
+            mid = m.get("id") if isinstance(m, dict) else m
+            if not isinstance(mid, str) or not MOD_ID_RE.fullmatch(mid):
+                sys.exit(f"Not a mod id: {mid!r}. Use the id from the Workshop, like mod:dalaran-dice or up:skada.")
+        _set_mods([m for m in clean_mods(want) if not (builtin and m["id"].startswith("mode:") and m["id"][5:] in BUILTIN_MODES)])
+    elif a.action in ("add", "remove"):
         if not a.ids:
             sys.exit(f"Usage: leyline mods {a.action} ID [ID ...]")
-        want = [parse_mod(x) for x in a.ids]
-        cur = [m for m in clean_mods((cfg.get("record") or {}).get("mods")) if not (builtin and m["id"][5:] in BUILTIN_MODES
-                                                                                    and m["id"].startswith("mode:"))]
-        if a.action == "add":
-            ids = {m["id"] for m in want}
-            cur = [m for m in cur if m["id"] not in ids] + want
-            if len(cur) + (len(BUILTIN_MODES) if builtin else 0) > MAX_MODS:
-                sys.exit(f"A realm lists at most {MAX_MODS} mods.")
-        else:
-            gone = {m["id"] for m in want}
-            if builtin and any(i.startswith("mode:") and i[5:] in BUILTIN_MODES for i in gone):
-                sys.exit("The Leyline Modes come with this realm's scripts, so they stay on its list.")
-            cur = [m for m in cur if m["id"] not in gone]
+        _mods_add_remove(a, cfg, builtin)
+    _mods_report(a)
 
-        def put(c):
-            c.setdefault("record", {})["mods"] = cur
-            try:
-                with open(path("beacon.json"), encoding="utf-8-sig") as f:
-                    b = json.load(f)
-            except (OSError, ValueError):
-                b = None
-            if isinstance(b, dict):   # beacon.json is the host's copy of the text: keep it in step
-                b["mods"] = cur
-                with open(path("beacon.json"), "w", encoding="utf-8") as f:
-                    json.dump(b, f, indent=1)
-        _edit(put)
+
+def _set_mods(cur):
+    def put(c):
+        c.setdefault("record", {})["mods"] = cur
+        try:
+            with open(path("beacon.json"), encoding="utf-8-sig") as f:
+                b = json.load(f)
+        except (OSError, ValueError):
+            b = None
+        if isinstance(b, dict):   # beacon.json is the host's copy of the text: keep it in step
+            b["mods"] = cur
+            with open(path("beacon.json"), "w", encoding="utf-8") as f:
+                json.dump(b, f, indent=1)
+    _edit(put)
+
+
+def _mods_add_remove(a, cfg, builtin):
+    want = [parse_mod(x) for x in a.ids]
+    cur = [m for m in clean_mods((cfg.get("record") or {}).get("mods")) if not (builtin and m["id"][5:] in BUILTIN_MODES
+                                                                                and m["id"].startswith("mode:"))]
+    if a.action == "add":
+        ids = {m["id"] for m in want}
+        cur = [m for m in cur if m["id"] not in ids] + want
+        if len(cur) + (len(BUILTIN_MODES) if builtin else 0) > MAX_MODS:
+            sys.exit(f"A realm lists at most {MAX_MODS} mods.")
+    else:
+        gone = {m["id"] for m in want}
+        if builtin and any(i.startswith("mode:") and i[5:] in BUILTIN_MODES for i in gone):
+            sys.exit("The Leyline Modes come with this realm's scripts, so they stay on its list.")
+        cur = [m for m in cur if m["id"] not in gone]
+    _set_mods(cur)
+
+
+def _mods_report(a):
     rec = (load() or {}).get("record") or {}
     mods = rec.get("mods") or []
     sys.stderr.write((f"This realm lists {len(mods)} mod{'' if len(mods) == 1 else 's'}:\n" if mods else "This realm lists no mods.\n")
@@ -1118,11 +1158,133 @@ def cmd_signup(a):
 
 def cmd_herokey(a):
     """Hero Key sign-in (docs/HERO-KEY-SSO.md): players signed in on the Leyline website get an account here
-    without the join page. Off by default; it only works once the kit pins the website's key (wunet/herokey.py)."""
-    _edit(lambda c: c.update(herokey=a.state == "on"))
+    without the join page. Off by default; it only works once the website's key is pinned (the kit's own,
+    wunet/herokey.py SITE_KEYS, or `herokey pin`, which fetches it once from the website over HTTPS)."""
     from wunet import herokey
-    if a.state == "on" and not herokey.pinned_keys():
-        sys.stderr.write("Saved. Hero Key sign-in starts once this kit knows the website's key (a kit update).\n")
+    if a.state == "pin":
+        kids = pin_site_key((load() or {}).get("site") or domains.SITE)
+        sys.stderr.write(("Pinned the website's Hero Key sign-in key: " + ", ".join(kids) + "\n") if kids else
+                         "The website does not offer Hero Key sign-in yet: nothing pinned. Try again once it does.\n")
+        return
+    if a.state == "status":
+        cfg = load() or {}
+        pinned = herokey.pinned_keys(state_dir=STATE)
+        print(json.dumps({"on": cfg.get("herokey") is True, "pinned": sorted(pinned),
+                          "database": bool(cfg.get("linked") is not True or os.path.exists(path(LINK_DB_ENV)))}))
+        return
+    _edit(lambda c: c.update(herokey=a.state == "on"))
+    if a.state == "on" and not herokey.pinned_keys(state_dir=STATE):
+        sys.stderr.write("Saved. Hero Key sign-in starts once this kit knows the website's key: `herokey pin` (once the "
+                         "website has it on), or a kit update.\n")
+
+
+def pin_site_key(site, get=None):
+    """Fetch the website's public Hero Key key(s) once over HTTPS and pin them in state/herokey-site-keys.json.
+    Returns the key ids, or [] when the website does not offer Hero Key sign-in (its herokey.json is 404)."""
+    from wunet import herokey
+    import urllib.error
+    import urllib.request
+    url = site.rstrip("/") + "/wrath/leyline/herokey.json"
+    if not url.startswith("https://") and not os.environ.get("WU_ALLOW_HTTP_SITE"):
+        sys.exit("The website address must be https://")
+
+    def _get(u):
+        req = urllib.request.Request(u, headers={"User-Agent": "wu-host-setup/1", "Accept": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return json.loads(r.read(65536).decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+            raise
+    doc = (get or _get)(url)
+    if not isinstance(doc, dict):
+        return []
+    pubs = [k.get("pub") for k in doc.get("keys") or [] if isinstance(k, dict) and k.get("use") in ("current", "next")]
+    os.makedirs(STATE, exist_ok=True)
+    try:
+        return herokey.pin_state_keys(STATE, pubs, source=url)
+    except ValueError:
+        return []
+
+
+def cmd_share_names(a):
+    """The realm list shows who is online (character names, at most 50; never GM or bot characters). Off by default."""
+    _edit(lambda c: c.update(share_names=a.state == "on"))
+    sys.stderr.write("Saved. The realm list shows who is online within a minute.\n" if a.state == "on" else
+                     "Saved. The realm list shows only how many are online.\n")
+
+
+LINK_DB_ENV = "link-db.env"
+JOIN_CORES = {"azerothcore": ("acore_auth", "acore_characters"), "trinitycore": ("auth", "characters")}
+NOT_YET_CORES = ("cmangos", "vmangos", "mangos", "other")
+DB_NAME_RE = re.compile(r"^[A-Za-z0-9_$]{1,64}$")
+DB_USER_RE = re.compile(r"^[A-Za-z0-9_.@-]{1,80}$")
+
+
+def db_env_lines(core, host, port, user, password, auth, chars, realm_db_id=1):
+    """state/link-db.env for the linked agent (docker run --env-file): its login database, for Hero Key accounts."""
+    for v in (host, user, password, auth, chars):
+        if "\n" in str(v) or "\r" in str(v):
+            sys.exit("Database settings can't hold line breaks.")
+    return "".join(f"{k}={v}\n" for k, v in (
+        ("DB_HOST", host), ("DB_PORT", port), ("DB_USER", user), ("DB_PASSWORD", password), ("WU_CORE", core),
+        ("WU_DB_AUTH", auth), ("WU_DB_CHARS", chars), ("WU_EXPANSION", 2), ("WU_REALM_DB_ID", realm_db_id)))
+
+
+def cmd_join_network(a):
+    """An existing AzerothCore or TrinityCore 3.3.5a server joins the Leyline network with Hero Key sign-in
+    (docs/leyline/join-network.md): link it (cmd_link), give the agent the login database for Hero Key accounts,
+    check the database and the server's client, pin the website's key, and switch Hero Key sign-in on."""
+    core = (a.core or "").lower()
+    if core in NOT_YET_CORES:
+        sys.exit(f"{core}: not yet. Hero Key sign-in for existing servers is for AzerothCore and TrinityCore servers "
+                 "of the Wrath client for now. You can still put your server on the realm list with: link")
+    if core not in JOIN_CORES:
+        sys.exit("--core azerothcore or --core trinitycore")
+    password = os.environ.get("WU_JOIN_DB_PASSWORD", "")
+    if a.db_password_file:
+        with open(a.db_password_file, encoding="utf-8") as f:
+            password = f.read().strip()
+    if not a.db_host or not HP_RE.match(f"{a.db_host}:{a.db_port}") or not 0 < a.db_port < 65536:
+        sys.exit("--db-host: the login database's host name or address (and --db-port, default 3306)")
+    user = a.db_user or "root"
+    auth = a.auth_db or JOIN_CORES[core][0]
+    chars = a.chars_db or JOIN_CORES[core][1]
+    if not DB_USER_RE.match(user) or not DB_NAME_RE.match(auth) or not DB_NAME_RE.match(chars):
+        sys.exit("--db-user, --auth-db, --chars-db: plain names")
+    env = {"DB_HOST": a.db_host, "DB_PORT": str(a.db_port), "DB_USER": user, "DB_PASSWORD": password, "WU_CORE": core,
+           "WU_DB_AUTH": auth, "WU_DB_CHARS": chars, "WU_EXPANSION": "2", "WU_REALM_DB_ID": str(a.realm_db_id)}
+    problems = []
+    if not a.skip_check:
+        from .coredb import open_db
+        try:
+            probe = open_db(env).probe()
+        except Exception as e:   # noqa: BLE001: a plain line, never the password
+            sys.exit(f"Could not reach the login database at {a.db_host}:{a.db_port} as {user} ({type(e).__name__}). "
+                     "Check the address and user, and that this PC may connect to it.")
+        if probe.get("build") != BUILD:
+            sys.exit(f"The realm list of this server is for another client (build {probe.get('build')}): Hero Key "
+                     "sign-in is for servers of the Wrath client for now. Use link to list it without Hero Key sign-in.")
+        if not probe.get("can_write"):
+            problems.append("The database user may not add accounts: give it INSERT and UPDATE on the login database.")
+        sys.stderr.write(f"Login database reached: realm \"{probe.get('realm_name')}\", {probe.get('accounts')} accounts.\n")
+    a.build, a.core = BUILD, core
+    cmd_link(a)
+    with open(path(LINK_DB_ENV) + ".tmp", "w", encoding="utf-8") as f:
+        os.chmod(path(LINK_DB_ENV) + ".tmp", 0o600)
+        f.write(db_env_lines(core, a.db_host, a.db_port, user, password, auth, chars, a.realm_db_id))
+    os.replace(path(LINK_DB_ENV) + ".tmp", path(LINK_DB_ENV))
+    kids = [] if a.no_pin else pin_site_key((load() or {}).get("site") or domains.SITE)
+    cfg = load()
+    cfg.update(herokey=True, db_core=core)
+    save(cfg)
+    sys.stderr.write(("The website's Hero Key key is pinned (" + ", ".join(kids) + ").\n") if kids else
+                     "The website does not offer Hero Key sign-in yet: your server is listed now and takes Hero Key "
+                     "sign-ins once it does (then run: herokey pin).\n")
+    for p_ in problems:
+        sys.stderr.write("PROBLEM: " + p_ + "\n")
+    sys.stderr.write("Next: start the agent with state/link-db.env, then run the self-test (Test Hero Key sign-in).\n")
 
 
 def cmd_options(a):
@@ -1191,7 +1353,9 @@ def cmd_volunteer_relay(a):
         sys.stderr.write("Community relay settings removed. Stop it with: docker compose -f docker-compose.volunteer-relay.yml down\n")
         return
     env = meshpick.volunteer_env(a.host, region=a.region or "", max_realms=a.max_realms, kbps=a.kbps,
-                                 daily_gb=a.daily_gb, bootstrap=a.bootstrap or f"https://{domains.RELAY}")
+                                 daily_gb=a.daily_gb, bootstrap=a.bootstrap or f"https://{domains.RELAY}",
+                                 max_players=a.max_players, total_kbps=a.total_kbps)
+    os.makedirs(path("node"), exist_ok=True)   # shared with the relay: status.json out, a "pause" file in
     os.makedirs(STATE, exist_ok=True)
     with open(p, "w", encoding="utf-8") as f:
         f.write(env)
@@ -1301,11 +1465,30 @@ def main(argv=None):
     p.add_argument("state", choices=["on", "off"])
     p.set_defaults(fn=cmd_browser)
     p = sub.add_parser("herokey", help="Hero Key sign-in: players from the Leyline website, no join page (off by default)")
-    p.add_argument("state", choices=["on", "off"])
+    p.add_argument("state", choices=["on", "off", "pin", "status"])
     p.set_defaults(fn=cmd_herokey)
+    p = sub.add_parser("share-names", help="list who is online (character names) on the realm list (off by default)")
+    p.add_argument("state", choices=["on", "off"])
+    p.set_defaults(fn=cmd_share_names)
+    p = sub.add_parser("join-network", help="an existing AzerothCore or TrinityCore 3.3.5a server joins with Hero Key sign-in")
+    for k in ("--name", "--auth-service", "--world-service", "--type", "--tags", "--region", "--language", "--tagline",
+              "--summary", "--rules-file", "--discord", "--status-url", "--relay", "--relay-url", "--listing-url"):
+        p.add_argument(k)
+    p.add_argument("--core", required=True, help="azerothcore or trinitycore (others: not yet)")
+    p.add_argument("--db-host")
+    p.add_argument("--db-port", type=int, default=3306)
+    p.add_argument("--db-user")
+    p.add_argument("--db-password-file", help="a file holding the password (or WU_JOIN_DB_PASSWORD); never printed")
+    p.add_argument("--auth-db")
+    p.add_argument("--chars-db")
+    p.add_argument("--realm-db-id", type=int, default=1)
+    p.add_argument("--skip-check", action="store_true", help="tests only: no database check")
+    p.add_argument("--no-pin", action="store_true", help="do not fetch the website's key now")
+    p.set_defaults(fn=cmd_join_network, build=None)
     sub.add_parser("rules").set_defaults(fn=cmd_rules)
     p = sub.add_parser("mods", help="the mods this realm runs or asks players to have (docs/GAME-MODS.md)")
-    p.add_argument("action", nargs="?", choices=["list", "add", "remove"], default="list")
+    p.add_argument("action", nargs="?", choices=["list", "add", "remove", "set"], default="list")
+    p.add_argument("--json", help="mods set: the whole list, JSON [{id, name, required, client}]")
     p.add_argument("ids", nargs="*", help="mod:<id>, up:<slug> or mode:<id>, optionally @VERSION")
     p.set_defaults(fn=cmd_mods)
     p = sub.add_parser("options", help="the realm's own settings: type, rates, start (state/realm.env)")
@@ -1322,6 +1505,8 @@ def main(argv=None):
     p.add_argument("--max-realms", type=int, default=25)
     p.add_argument("--kbps", type=int, default=256, help="per realm, both directions")
     p.add_argument("--daily-gb", type=int, default=5, help="per realm per day")
+    p.add_argument("--max-players", type=int, help="players this PC carries at most, all realms together")
+    p.add_argument("--total-kbps", type=int, help="this PC's upload for everyone it carries, KB/s")
     p.add_argument("--bootstrap", help="mesh nodes to start from (comma separated https URLs)")
     p.add_argument("--off", action="store_true")
     p.set_defaults(fn=cmd_volunteer_relay)

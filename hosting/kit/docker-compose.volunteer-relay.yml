@@ -23,7 +23,8 @@ services:
       RELAY_GAME_BIND: "0.0.0.0"
       RELAY_TRUSTED_PROXIES: "172.16.0.0/12,127.0.0.1/32"
     ports: ["41000-41051:41000-41051"]
-    volumes: [relay-state:/var/lib/wu-relay]
+    # state/node: shared with the launcher (status.json: players carried now; a "pause" file: take no new players)
+    volumes: [relay-state:/var/lib/wu-relay, ./state/node:/node]
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

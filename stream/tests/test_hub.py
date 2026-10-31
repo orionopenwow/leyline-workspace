@@ -1374,9 +1374,10 @@ check("upstream page: the launcher's detail view (badge, the whole-interface war
       and not NOPE.findall(shown(up_p)), NOPE.findall(shown(up_p)))
 check("upstream page: an unknown or hidden-build addon is not found", req("/wrath/leyline-preview/p/up-bags")[0] == 404
       and req("/wrath/leyline-preview/p/up-nope")[0] == 404)
-check("Install is the launcher's blue action, Play the launcher's red PLAY (owner 2026-10-31: back to the red)",
+check("Install is the launcher's blue action, Play the launcher's own PLAY picture (owner 2026-10-31: the launcher's button style)",
       '<a class="hb-inst sm" href="leyline://install/up:skada"' in ska and "hb-play sm" not in ad
-      and ".hb-play,.hb-ho-a .hb-cta{position:relative;border:2px solid #3c4646" in HB.SITE_CSS and "#a5191b" in HB.SITE_CSS)
+      and ".hb-play,.hb-ho-a .hb-cta{position:relative;border:12px solid transparent" in HB.SITE_CSS
+      and "border-image:url(/wrath/art/play-stone.webp)" in HB.SITE_CSS and '"play-stone.webp": "image/webp"' in open(PORTAL).read())
 HB.hub.portal = real
 cat0 = req("/wrath/leyline-preview/catalog?view=all")[2].decode()
 check("catalog panel: the page's panel with its header strip, More filters as a details (no script), Get the launcher",

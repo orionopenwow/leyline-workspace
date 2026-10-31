@@ -1024,6 +1024,7 @@ ART_TYPES = {
     # the Agents inn), game pictures, so behind the killswitch like the other leyline-shot- files
     "leyline-shot-forge.webp": "image/webp", "leyline-shot-agents.webp": "image/webp",
     "leyline-shot-backdrop.webp": "image/webp",   # the hub's backdrop (the owner's picture), faint behind every page
+    "play-stone.webp": "image/webp",   # the launcher's PLAY button picture without the word, for the site's Play buttons
     "leyline-display.woff2": "font/woff2", "leyline-display-OFL.txt": "text/plain; charset=utf-8",   # Big Shoulders Display 600 (SIL OFL 1.1, leyline-display-OFL.txt)
     "leyline-corner-tl.webp": "image/webp", "leyline-corner-tr.webp": "image/webp",   # our gold frame art, hued blue
     "leyline-corner-bl.webp": "image/webp", "leyline-corner-br.webp": "image/webp", "leyline-divider.webp": "image/webp",

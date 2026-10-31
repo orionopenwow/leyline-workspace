@@ -461,3 +461,4 @@
 1171a scripts Realm: .hub and hide and seek work in Dalaran even when the server says Crystalsong Forest (live reload)
 1171b foreverui In game: the balancing module's login line hidden
 1171c addons Leyline addons download: the same for desktop players
+1172a ship Save to GitHub: launcher test fix for Windows (GitHub then rebuilds Leyline.exe with the new hosting)

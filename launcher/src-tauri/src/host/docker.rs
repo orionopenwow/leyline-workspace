@@ -547,7 +547,8 @@ mod tests {
         assert_eq!(l.cli.as_deref(), Some(Path::new("/Users/me/.docker/bin/docker")));
         assert_eq!(l.desktop.as_deref(), Some(Path::new("/Applications/Docker.app")));
         let i = detect_with(HostOs::Mac, &|a| Some(if a[0] == "version" { (0, "27.3.1".into()) } else { (0, "v2".into()) }), &l);
-        assert_eq!((i.state, i.cli.as_deref()), (DockerState::Ready, Some("/Users/me/.docker/bin/docker")));
+        // compared as a path: on a Windows test runner the joined path prints with backslashes
+        assert_eq!((i.state, i.cli.as_deref().map(Path::new)), (DockerState::Ready, Some(Path::new("/Users/me/.docker/bin/docker"))));
         // only inside the app
         let d = disk(["/Applications/Docker.app", "/Applications/Docker.app/Contents/Resources/bin/docker"].map(PathBuf::from).to_vec());
         assert!(locate(&places(HostOs::Mac, &d)).cli.unwrap().starts_with("/Applications/Docker.app"));

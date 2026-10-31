@@ -322,3 +322,80 @@ pub async fn magnet_fetch(info_hash: String) -> Result<(String, crate::p2p::tran
     })
     .await
 }
+
+// ------------------------------------------------------------------------------------------------ the Network tab
+// (host/network.rs, docs/leyline/join-network.md, docs/leyline/be-a-node.md)
+
+/// How this realm shows on the Leyline network: listed, Hero Key, who's online, mods, rules, arrivals, node status.
+#[tauri::command]
+pub async fn host_network() -> Result<host::network::Network, String> {
+    blocking(|| Ok(host::network::read(&kit()?, crate::p2p::mesh::now_secs()))).await
+}
+
+/// One Network tab change, by its word (host/network.rs `set_cmd`); `arg` only for the mods list (JSON, checked there).
+#[tauri::command]
+pub async fn host_network_set(what: String, arg: Option<String>) -> Result<String, String> {
+    blocking(move || host::network::set(&kit()?, &what, arg.as_deref())).await
+}
+
+/// Test Hero Key sign-in: the kit's dry run beside the realm's database; nothing stays.
+#[tauri::command]
+pub async fn host_herokey_test() -> Result<host::network::TestReport, String> {
+    blocking(|| host::network::herokey_test(&kit()?)).await
+}
+
+#[derive(serde::Serialize)]
+pub struct CarryView {
+    pub settings: host::network::CarrySettings,
+    pub node: host::network::NodeStatus,
+    /// The website offers it (`relay_volunteer`): the owner's switch for everyone.
+    pub offered: bool,
+    pub idle_secs: Option<u64>,
+    pub on_ac: Option<bool>,
+}
+
+static CARRY_TICK: std::sync::Once = std::sync::Once::new();
+
+/// While the launcher runs: every 30 s, pause or resume carrying by the "only while idle and plugged in" rule.
+fn carry_ticker() {
+    CARRY_TICK.call_once(|| {
+        std::thread::spawn(|| loop {
+            if let Ok(k) = kit() {
+                host::network::tick(&k, &settings::app_dir());
+            }
+            std::thread::sleep(Duration::from_secs(30));
+        });
+    });
+}
+
+/// Help carry the network: this PC's settings, the live "carrying N players" status, and whether it is offered.
+#[tauri::command]
+pub async fn host_carry() -> Result<CarryView, String> {
+    blocking(|| {
+        let dir = settings::app_dir();
+        let s = host::network::load_carry(&dir);
+        if s.on {
+            carry_ticker();
+        }
+        let node = kit().map(|k| host::network::node_status(&k, crate::p2p::mesh::now_secs())).unwrap_or_default();
+        Ok(CarryView { settings: s, node, offered: flags::load(&dir, flags::URL).site.relay_volunteer,
+                       idle_secs: host::network::idle_secs(), on_ac: host::network::on_ac() })
+    })
+    .await
+}
+
+/// Turn helping carry the network on (with its caps) or off: one click.
+#[tauri::command]
+pub async fn host_carry_set(settings: host::network::CarrySettings) -> Result<String, String> {
+    blocking(move || {
+        let dir = crate::settings::app_dir();
+        let offered = flags::load(&dir, flags::URL).site.relay_volunteer;
+        let on = settings.on;
+        let r = host::network::carry_set(&kit()?, &dir, settings, offered)?;
+        if on {
+            carry_ticker();
+        }
+        Ok(r)
+    })
+    .await
+}

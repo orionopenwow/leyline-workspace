@@ -18,6 +18,7 @@
 pub mod console;
 pub mod dens;
 pub mod docker;
+pub mod network;
 pub mod pack;
 pub mod profiles;
 pub mod scan;

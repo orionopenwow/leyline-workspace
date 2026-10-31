@@ -956,6 +956,11 @@ pub fn run() {
             crate::p2p::cmds::host_link_quiet,
             crate::p2p::cmds::host_progress,
             crate::p2p::cmds::host_scan, // a server already on this PC, to link (host/scan.rs)
+            crate::p2p::cmds::host_network, // the host console's Network tab (host/network.rs)
+            crate::p2p::cmds::host_network_set,
+            crate::p2p::cmds::host_herokey_test,
+            crate::p2p::cmds::host_carry, // Help carry the network (host/network.rs)
+            crate::p2p::cmds::host_carry_set,
             crate::p2p::cmds::p2p_flags,
             crate::p2p::cmds::p2p_set_flag,
             crate::p2p::cmds::p2p_set_limits,

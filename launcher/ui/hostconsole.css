@@ -411,3 +411,31 @@ button.hc-pill:hover { background: color-mix(in srgb, currentColor 10%, transpar
 .hc-found-f select { height: 34px; }
 .hc-found .hc-fine { margin: 0; }
 .hc-live-l { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 2px; font-size: 12.5px; color: var(--t-text-2); }
+
+/* ---------------------------------------------------------------- the Network tab (hostnetwork.js) */
+.hc-pane.hc-net.on { display: grid; gap: 12px; }
+.hc-net-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.hc-net-h { margin: 0; font: 600 15px var(--t-font); color: var(--t-text); }
+.hc-net-status { margin: 0; min-height: 1.2em; font-size: 12.5px; color: var(--t-ok); }
+.hc-net-status.bad { color: var(--t-bad); }
+.hc-net-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.hc-net-pill { padding: 3px 10px; border-radius: 999px; font: 600 11.5px var(--t-font); border: 1px solid var(--t-border-strong); color: var(--t-muted); }
+.hc-net-pill.ok { color: var(--t-ok); border-color: color-mix(in srgb, var(--t-ok) 45%, transparent); }
+.hc-net-box { display: grid; gap: 8px; }
+.hc-net-line { margin: 0; font-size: 13px; color: var(--t-text-2); }
+.hc-net-line.muted { color: var(--t-muted); font-size: 12px; }
+.hc-net-facts { list-style: none; padding: 0; margin: 0; display: grid; gap: 3px; font-size: 12.5px; }
+.hc-net-facts li::before { content: "\25CF"; margin-right: 7px; font-size: 9px; vertical-align: 1px; color: var(--t-muted); }
+.hc-net-facts li.ok::before { color: var(--t-ok); }
+.hc-net-facts li.bad { color: var(--t-text-2); }
+.hc-net-facts li.bad::before { color: var(--t-bad); }
+.hc-net-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--t-text-2); }
+.hc-net-mods { display: grid; gap: 6px; }
+.hc-net-mod { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hc-net-mod code { font-size: 12px; min-width: 9em; color: var(--t-text); }
+.hc-net-mod input[type="text"] { flex: 1 1 10em; min-width: 0; }
+.hc-net-rules { width: 100%; box-sizing: border-box; font: 13px/1.45 var(--t-font); }
+.hc-net-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px 12px; }
+.hc-net-field { display: grid; gap: 3px; font-size: 12px; color: var(--t-muted); }
+.hc-net-field input, .hc-net-field select { min-width: 0; }
+.hc-net-carrying { font: 600 13.5px var(--t-font); color: var(--t-text); }

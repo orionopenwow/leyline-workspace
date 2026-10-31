@@ -157,6 +157,19 @@ check("no script, CSP script-src none", "<script" not in page and "script-src 'n
 check("no-store", h.get("cache-control") == "no-store")
 check("no instant-slot option", not re.search(r"(?i)instant|slot|coming soon", page))
 check("form: no banned words", not BANNED.findall(visible(page)), BANNED.findall(visible(page)))
+# the launcher's Host page on the web (owner 2026-10-31): the website's top bar, Start / Guide / Host pack & settings as
+# anchor tabs (no script), the numbered steps, the guide, the Host pack; the form itself unchanged
+check("form: in the website's shell (top bar, Host marked) with no index", 'class="hb-top"' in page
+      and re.search(r'class="hb-ni on" href="/wrath/host"', page) and '<meta name="robots" content="noindex">' in page)
+check("form: the tabs Start, Guide and Host pack & settings link to their panes",
+      '<a href="/wrath/host#hf-start" data-t="start">Start</a><a href="/wrath/host#hf-guide" data-t="guide">Guide</a>'
+      '<a href="/wrath/host#hf-pack" data-t="pack">Host pack &amp; settings</a>' in page
+      and all(f'id="hf-{x}"' in page for x in ("start", "guide", "pack")) and "@supports selector(:has(a))" in hf.HOST_CSS)
+check("form: the steps before the form (Host pack, Docker, start), Get the launcher, no install-to-folder",
+      re.findall(r'<li><b>([^<]+)</b>', page.split('class="hf-steps"')[1].split("</ol>")[0])
+      == ["Get the Host pack", "Get Docker", "Pick a ruleset and start"] and ">Get the launcher</a>" in page)
+check("form: the guide's entries open without script", page.count("<details><summary>") == len(hf.GUIDE)
+      and "When something&#x27;s wrong" in page)
 check("form: what a host needs and how long it takes, up front", "You need:" in page and "Docker" in page
       and "your own game folder" in page and "about 10 GB free" in page and "5 to 20 minutes" in page
       and "your PC must stay on for others to play" in page and 'href="/wrath/docs/network"' in page

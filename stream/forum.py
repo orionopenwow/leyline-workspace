@@ -874,6 +874,37 @@ border:1px solid var(--lk-border-strong);background:var(--lk-bg);color:var(--lk-
 border:1px solid var(--lk-border-strong);background:linear-gradient(120deg,rgba(91,141,239,.16),rgba(139,108,240,.10) 60%,rgba(20,23,31,.55))}
 .fm-dc p{margin:0;flex:1 1 260px;color:var(--lk-text-2)}.fm-dc b{color:var(--lk-text)}
 @media (max-width:560px){.fm-row{grid-template-columns:minmax(0,1fr)}.fm-row .fm-n{text-align:left}.fm-head .fm-acts{width:100%}}
+/* the launcher's Forum page on the web (owner 2026-10-31): one panel with a header strip (the title, search, New thread),
+   the categories and the latest threads side by side on a wide screen; the launcher's blue and Light from the hub's tokens */
+.fm{gap:16px;padding:0 0 24px;border:1px solid var(--lk-border);border-radius:var(--lk-r);
+background:color-mix(in srgb,var(--lk-surface) 92%,transparent);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+box-shadow:0 14px 36px rgba(0,0,0,.30)}
+.fm>*{margin-left:24px;margin-right:24px}
+.fm>.fm-head{margin:0;padding:16px 24px;align-items:center;border-bottom:1px solid var(--lk-border);
+background:color-mix(in srgb,var(--lk-text) 3%,transparent);border-radius:var(--lk-r) var(--lk-r) 0 0}
+.fm-head h1{font-size:22px;font-weight:700;letter-spacing:-.01em}.fm-head p{font-size:14px}
+.fm-search input{background:var(--lk-surface-2);border-color:var(--lk-border)}
+.fm-search input:focus,.fm-form :is(input,select,textarea):focus{outline:none;border-color:var(--lk-accent);box-shadow:0 0 0 3px var(--lk-accent-soft)}
+.fm-btn{background:var(--lk-accent);color:var(--lk-on-accent)!important}
+.fm-btn.ghost{background:var(--lk-surface-2)}
+.fm-box{background:var(--lk-surface-2);border-radius:12px}
+.fm-box h2{color:var(--lk-accent-strong);background:none}
+a.fm-row:hover{background:color-mix(in srgb,var(--lk-text) 4%,transparent)}
+.fm-tag.lock{background:color-mix(in srgb,var(--lk-bad) 14%,transparent)}
+.fm-msg.err{background:color-mix(in srgb,var(--lk-bad) 12%,transparent)}
+.fm-form :is(input,select,textarea){background:var(--lk-surface);border-color:var(--lk-border)}
+.fm-dc{border-color:var(--lk-border-strong);background:linear-gradient(110deg,var(--lk-accent-soft),transparent 75%),var(--lk-surface-2)}
+.fm-dc .fm-btn{background:var(--lk-surface);border:1px solid var(--lk-border-strong);color:var(--lk-text)!important}
+.fm-dc .fm-btn:hover{border-color:var(--lk-accent)}
+.fm:has(#fm-cats){grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
+.fm:has(#fm-cats)>:not(.fm-box){grid-column:1/-1}
+.fm:has(#fm-cats)>.fm-box:has(#fm-cats){margin-right:0}.fm:has(#fm-cats)>.fm-box:has(#fm-new){margin-left:0}
+@media (max-width:860px){.fm:has(#fm-cats){grid-template-columns:minmax(0,1fr)}
+.fm:has(#fm-cats)>.fm-box:has(#fm-cats){margin-right:24px}.fm:has(#fm-cats)>.fm-box:has(#fm-new){margin-left:24px}}
+@media (max-width:640px){.fm>*,.fm:has(#fm-cats)>.fm-box:is(:has(#fm-cats),:has(#fm-new)){margin-left:16px;margin-right:16px}
+.fm>.fm-head{margin:0;padding:14px 16px}.fm-head h1{font-size:20px}.fm-head>div{min-width:0}
+.fm-head .fm-acts{flex-wrap:wrap}.fm-search{flex:1 1 100%;max-width:none;min-width:0}}
+@media (prefers-color-scheme:light){.fm{box-shadow:0 10px 28px rgba(16,24,40,.08)}.fm-box{background:var(--lk-surface)}}
 """
 
 

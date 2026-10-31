@@ -145,13 +145,14 @@ def header_of(page):
 
 
 hd, nav, labels, on = header_of(front)
-check("side menu (owner 2026-10-30: \"make all the tools come from the side by default and can collapse\"): a fold switch before the "
-      "header, a sidebar on wide screens, folded to icons, remembered by HUB_JS, the top bar kept on a phone",
-      front.count('<input type="checkbox" id="hb-side" class="hb-side-t" aria-label="Fold the side menu"><header class="hb-top">') == 1
-      and '<label for="hb-side" class="hb-side-b"' in hd and "@media (min-width:1081px){" in front
-      and "body.hb .hb-top{position:fixed;inset:0 auto 0 0;width:var(--hb-side)" in front
-       and ":root:has(#hb-side:checked){--hb-side:72px}" in front and 'localStorage.setItem("leyline.side"' in HB.HUB_JS
-      and "@media (max-width:1080px){.hb-side-t,.hb-side-b{display:none}}" in front)
+check("top bar (owner 2026-10-31: \"fit for the website\"): the header is a website's top bar, no side menu or fold switch",
+      'id="hb-side"' not in front and 'class="hb-side-b"' not in front and "--hb-side:236px" not in front
+      and "leyline.side" not in HB.HUB_JS and front.count('<header class="hb-top"><a class="hb-brand"') == 1)
+check("the launcher's palette: the generated tokens (the launcher's own blue, Light by the system) before the hub's styles",
+      HB.SITE_TOKENS_CSS.strip() in front and "--lk-accent:#5b8def" in HB.SITE_TOKENS_CSS and "#3592cf" not in HB.SITE_TOKENS_CSS
+      and "@media (prefers-color-scheme:light){:root{--lk-bg:#eef1f6" in HB.SITE_TOKENS_CSS
+      and front.index("--lk-accent:#5b8def") < front.index(".hb-skip{") < front.index(".hb-pg{")
+      and '<meta name="color-scheme" content="dark light">' in front)
 check("header: Play, Realms, Mods, Addons, Host, Forum, More (Modes, Gallery and Status out of the menu)", labels == NAV_ORDER, labels)
 hrefs = dict(re.findall(r'<a class="hb-ni[^"]*" href="([^"]+)"[^>]*><svg.*?</svg><span>([^<]+)</span>', nav, re.S)[i][::-1] for i in range(6))
 check("header: each item goes to the launcher page's web twin", hrefs == {
@@ -1295,6 +1296,95 @@ _flood = sum(_h._rate_ok(f"10.2.{i // 250}.{i % 250}", _t) for i in range(6000))
 check("submit limits: 5 an hour per address, and a flood from many addresses never resets the daily cap of 200",
       _per_ip == [True] * 5 + [False] and _flood == 195 and not _h._rate_ok("10.9.9.9", _t)
       and not _h._rate_ok("2001:db8:1:2::5", _t), (_per_ip, _flood))
+# ---------------------------------------------------------------- the launcher's look (owner 2026-10-31)
+# The addon marketplace on the web: upstream addons (stream/upstream_addons.py) as the launcher's cards, the kinds and
+# "Works on <the official realm>" chips, the licence chip and credit line, Install handed to the launcher, their page.
+def _up(slug, name, **kw):
+    d = {"id": "up:" + slug, "source": "upstream", "name": name, "description": f"{name} does useful things.", "category": "addons",
+         "tags": ["meters"], "builds": ["3.3.5a"], "author": "alice", "author_url": "https://github.com/alice", "licence": "MIT",
+         "repo": f"https://github.com/alice/{slug}", "addons": [name], "requires": [], "conflicts": [], "replaces_ui": False,
+         "native": False, "blp": "none", "review": {"by": "owner", "at": "2026-10-31T09:00:00Z", "notes": ""},
+         "compat": {"realm": "Wrath Unleashed", "status": "untested", "checked_at": ""},
+         "install": {"from": "commit-archive", "url": "x", "size": 2400000, "file_count": 120, "folders": {"": name}}}
+    d.update(kw)
+    return d
+
+
+class FakeUp:
+    @staticmethod
+    def projects():
+        return [_up("elvui", "ElvUI", tags=["full-ui"], replaces_ui=True, licence="", requires=["up:skada"],
+                    compat={"realm": "Wrath Unleashed", "status": "works", "checked_at": "2026-10-31T10:00:00Z"}),
+                _up("skada", "Skada"), _up("bags", "Bagger", tags=["bags"], builds=["5.4.8"]),
+                _up("evil", "<img src=x onerror=alert(1)>", tags=["chat"])]
+
+
+HB.hub.portal = lambda name: FakeUp if name == "upstream_addons" else real(name)
+ups = HB.hub.upstream()
+check("upstream: the reviewed addons in the catalog's shape, hidden builds left out, never in items() or the launcher feed",
+      [u["id"] for u in ups] == ["up:evil", "up:elvui", "up:skada"] and all(u["source"] == "upstream" for u in ups)
+      and not any(i["id"].startswith("up:") for i in HB.hub.items())
+      and not any(p["id"].startswith("up:") for p in json.loads(req("/wrath/leyline/catalog.json")[2])["projects"]))
+ad = req("/wrath/leyline-preview/catalog?cat=addons")[2].decode()
+cards = dict(re.findall(r'<article class="hb-card hb-mk" data-tags="[^"]*">.*?<h3><a href="/wrath/leyline-preview/p/up-([a-z-]+)">.*?</article>', ad, re.S) and
+             [(m.group(1), m.group(0)) for m in re.finditer(r'<article class="hb-card hb-mk" data-tags="[^"]*">.*?/p/up-([a-z-]+)".*?</article>', ad, re.S)])
+elv, ska = cards.get("elvui", ""), cards.get("skada", "")
+check("addons tab: the upstream cards, each with Install handed to the launcher and Source, never a download of ours",
+      elv and ska and 'href="leyline://install/up:skada"' in ska and '>Install</a>' in ska
+      and 'href="https://github.com/alice/skada" rel="noopener noreferrer nofollow ugc"' in ska and "/download" not in ska, list(cards))
+check("upstream card: the \"Works on\" badge on the picture only when tried on the official realm",
+      f'<span class="hb-mk-badge on-pic" title="Tried on {HB.HANGOUT_NAME} by our team">Works on {HB.HANGOUT_NAME}</span>' in elv
+      and "hb-mk-badge" not in ska)
+check("upstream card: the licence chip (No licence when none), the credit line (author · where it comes from), the kind over the picture",
+      '<span class="hb-mk-lic" title="Licence: MIT">MIT</span>' in ska and '<span class="hb-mk-lic none" title="The author states no licence">No licence</span>' in elv
+      and '<p class="hb-mk-credit" title="Alice · MIT · Installs from the author&#x27;s GitHub"><span>Alice</span>' in ska
+      and '<span class="hb-dc-tag ui">Whole interface</span>' in elv and '<span class="hb-dc-tag">Meters</span>' in ska, (elv[-700:], ska[-700:]))
+check("upstream card: names are text, never markup", "<img src=x" not in ad and "&lt;img src=x onerror=alert(1)&gt;" in ad)
+check("tabs: Discover, Addons, Themes as links, the current one marked",
+      '<nav class="hb-seg" aria-label="Mods"><a href="/wrath/leyline-preview/catalog">Discover</a>'
+      '<a href="/wrath/leyline-preview/catalog?cat=addons" class="on" aria-current="page">Addons</a>'
+      '<a href="/wrath/leyline-preview/catalog?cat=themes">Themes</a></nav>' in ad and '<h1 id="hb-pg-h">Addons</h1>' in ad)
+bar = re.search(r'<nav class="hb-mk-bar" aria-label="Addon types">.*?</nav>', ad, re.S)
+bar = bar.group(0) if bar else ""
+check("the marketplace's chips: All addons, the kinds that have an addon (in the launcher's order), Works on the official realm",
+      re.findall(r'>([^<>]+)</a>', bar) == ["All addons", "Full interfaces", "Meters", "Chat", f"Works on {HB.HANGOUT_NAME}"]
+      and 'href="/wrath/leyline-preview/catalog?cat=addons&amp;tag=meters"' in bar
+      and 'href="/wrath/leyline-preview/catalog?cat=addons&amp;works=1"' in bar, bar[:600])
+w1 = req("/wrath/leyline-preview/catalog?cat=addons&works=1")[2].decode()
+m1 = req("/wrath/leyline-preview/catalog?cat=addons&tag=meters")[2].decode()
+check("the chips filter: Works on shows only tried addons, a kind only its addons (both marked on)",
+      "/p/up-elvui" in w1 and "/p/up-skada" not in w1 and '<article class="hb-card">' not in w1
+      and "/p/up-skada" in m1 and "/p/up-elvui" not in m1 and 'class="hb-chip on" href="/wrath/leyline-preview/catalog?cat=addons"' in m1)
+check("search finds upstream addons by kind and name", "/p/up-skada" in req("/wrath/leyline-preview/catalog?q=meters")[2].decode()
+      and "/p/up-elvui" in req("/wrath/leyline-preview/catalog?q=elvui")[2].decode())
+check("other categories and external packs: no upstream addons", "/p/up-" not in req("/wrath/leyline-preview/catalog?cat=tools")[2].decode()
+      and "/p/up-" not in req("/wrath/leyline-preview/catalog?source=external")[2].decode())
+st, _, up_b = req("/wrath/leyline-preview/p/up-elvui")
+up_p = up_b.decode()
+check("upstream page: the launcher's detail view (badge, the whole-interface warning, the facts, Install with Leyline, Source)",
+      st == 200 and "<h1>ElvUI</h1>" in up_p and f">Works on {HB.HANGOUT_NAME}</span>" in up_p
+      and "Replaces your whole interface" in up_p and "<dt>Licence</dt><dd>Licence not stated</dd>" in up_p
+      and "<dt>Needs</dt><dd>Skada</dd>" in up_p and "<dt>Size</dt><dd>2.3 MB, 120 files</dd>" in up_p
+      and f"<dt>On {HB.HANGOUT_NAME}</dt><dd>Works (checked 2026-10-31)</dd>" in up_p
+      and 'href="leyline://install/up:elvui">Install with Leyline</a>' in up_p and "Get the launcher" in up_p
+      and not NOPE.findall(shown(up_p)), NOPE.findall(shown(up_p)))
+check("upstream page: an unknown or hidden-build addon is not found", req("/wrath/leyline-preview/p/up-bags")[0] == 404
+      and req("/wrath/leyline-preview/p/up-nope")[0] == 404)
+check("Install is the launcher's blue action, Play the launcher's red PLAY (owner 2026-10-31: back to the red)",
+      '<a class="hb-inst sm" href="leyline://install/up:skada"' in ska and "hb-play sm" not in ad
+      and ".hb-play,.hb-ho-a .hb-cta{position:relative;border:2px solid #3c4646" in HB.SITE_CSS and "#a5191b" in HB.SITE_CSS)
+HB.hub.portal = real
+cat0 = req("/wrath/leyline-preview/catalog")[2].decode()
+check("catalog panel: the page's panel with its header strip, More filters as a details (no script), Get the launcher",
+      '<section class="hb-pg hb-cat" aria-labelledby="hb-pg-h"><header class="hb-pg-h">' in cat0
+      and '<details class="hb-fmore"><summary>More filters</summary>' in cat0 and 'class="hb-get"' in cat0
+      and "<script" not in cat0)
+rlp = req("/wrath/leyline-preview/realms")[2].decode()
+check("realms panel: the realm list in the page's panel, Host your own in its header", '<section class="hb-pg hb-realms-pg"' in rlp
+      and '<a class="hb-ghost hb-pg-x" href="/wrath/host">Host your own</a>' in rlp)
+check("phones: 16px gutters, chip rows scroll inside the panel, one card per row",
+      ".hb-main:has(>.hb-pg),.hb-main:has(>.fm),.hb-main:has(>.hf){padding:16px 16px 32px}" in HB.SITE_CSS
+      and ".hb-pg .hb-grid{grid-template-columns:minmax(0,1fr)}" in HB.SITE_CSS)
 check("the index in the repo passes the hub's rules", HB.validate_index(json.load(open(os.path.join(HERE, "hub", "community-index.json")))) == [])
 
 srv.shutdown()

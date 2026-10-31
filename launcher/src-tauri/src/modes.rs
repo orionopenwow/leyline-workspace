@@ -352,7 +352,8 @@ mod tests {
         let all = builtin();
         let s = all.iter().find(|x| x.id == "azeroth-survivors").unwrap();
         assert_eq!((s.kind.as_str(), s.status.as_str()), ("offline", "coming"));
-        assert_eq!(s.credit.as_ref().unwrap().by, "Aethus");
+        assert_eq!(s.credit.as_ref().unwrap().by, "Aethus (original game)");
+        assert_eq!(s.credit.as_ref().unwrap().note.as_deref(), Some("Open rebuild by OutThisLife"));
         let h = all.iter().find(|x| x.id == "hordes-of-azeroth").unwrap();
         assert_eq!(credit_urls(h), ["https://github.com/jonhaldors/hordes-of-azeroth", "https://github.com/jonhaldors/hordes-of-azeroth-server"]);
         assert_eq!(all.iter().find(|x| x.id == "brawl").unwrap().players.max, None);
@@ -436,7 +437,7 @@ mod tests {
         assert!(cmd_ok(".hub keys") && !cmd_ok(".hub") && !cmd_ok(".hub a b") && !cmd_ok(".gm on") && !cmd_ok(".hub Keys"));
         let mut s = get("azeroth-survivors");
         s.status = "live".into();
-        assert_eq!(browser_url(&s).as_deref(), Some("https://play.openvanilla.app/wrath/play?mode=own&survivors=1"));
+        assert_eq!(browser_url(&s).as_deref(), Some("https://play.openvanilla.app/wrath/survivors"));
         let mut odd = get("minigolf");
         odd.start.go = Some("mode:other".into());
         assert_eq!(browser_url(&odd), None);

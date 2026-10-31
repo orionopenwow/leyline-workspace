@@ -9,7 +9,9 @@ https://play.openvanilla.app/wrath/modes.json) and the site show. Each entry:
     kind      realm       runs on our realm (realm/custom/lua_scripts/ov_playmode.lua starts it through
                           ov_golf.lua / ov_modes.lua); start = {"go": "mode:<id>"}
               offline     runs in the browser client with no server (the player's own game folder);
-                          start = {"path": "/wrath/..."} on this site
+                          start = {"path": "/wrath/..."} on this site. Azeroth Survivors' "/wrath/survivors" is a
+                          placeholder: the game gets its own sign-in-gated subdomain (TODO(owner): the address), and
+                          that path will send players there. It stays "coming" until then.
               realm-type  needs its own server type, hosted through the Host pack; start = {"host": "<preset>"}
               in-game     a mode on our realm that starts in the game itself, at an NPC in Dalaran (the realm's
                           modules: 1v1 arena, transmog, keystone dungeons, Hardcore); start = {"cmd": ".hub <spot>"},

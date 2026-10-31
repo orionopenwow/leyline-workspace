@@ -50,13 +50,13 @@
     {
       "id": "azeroth-survivors",
       "title": "Azeroth Survivors",
-      "line": "A survivors-style roguelike: hold out against the waves. Runs in your browser with your own game folder, no server.",
+      "line": "A survivors-style roguelike: hold out against the waves. It gets its own site soon, with your Leyline sign-in.",
       "kind": "offline",
       "players": { "min": 1, "max": 1 },
       "status": "coming",
-      "start": { "path": "/wrath/play?mode=own&survivors=1" },
+      "start": { "path": "/wrath/survivors" },
       "credit": {
-        "by": "Aethus",
+        "by": "Aethus (original game)",
         "note": "Open rebuild by OutThisLife",
         "license": "MIT or Apache-2.0",
         "source": "https://github.com/OutThisLife/azeroth-survivors-re"

@@ -46,6 +46,7 @@ const FAKE = ({ catalog, metrics, order, link, signedOut, noRanks, installedMods
   const calls = (window.__calls = []);
   try {
     localStorage.setItem('leyline.page', 'discover');
+    localStorage.setItem('leyline.dcView', 'all'); localStorage.setItem('leyline.dcMore', '1');   // the full catalog, More filters open (simple.js)
     if (sort) localStorage.setItem('leyline.catSort', sort); else localStorage.removeItem('leyline.catSort');
   } catch (_) { /* fine */ }
   let mods = installedMods || [];

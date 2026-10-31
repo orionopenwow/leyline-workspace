@@ -173,21 +173,39 @@
         <div id="mods-list" class="cards mods-grid"></div>
         <p class="hint">No review, no signing: only add mods from people you trust. Downloads must match their checksum, and anything holding game data or secrets is refused. Native mods (.dll, .asi) need a one-time OK. Removing a mod takes out exactly what Leyline put in.</p>
       </div>
-      <div class="tabpane" id="pane-discover" role="tabpanel" aria-labelledby="tab-mods-discover">
-        <div class="toolbar dc-bar">
+      <div class="tabpane" id="pane-discover" role="tabpanel" aria-labelledby="tab-mods-discover" data-view="simple">
+        <!-- the Simple view (simple.js): one search box and short rows of big cards; Browse everything is the full catalog -->
+        <div id="dc-simple" class="dc-simple">
+          <div class="toolbar dc-sbar">
+            <input id="dc-sq" type="search" placeholder="Search mods, addons and themes" aria-label="Search the Workshop" autocomplete="off" spellcheck="false">
+            <button type="button" class="btn small" id="dc-all">Browse everything</button>
+            <!-- the "List your mod" slot: the submission flow is wired by its own agent (window.LeylineListMod); until then it opens the site's form -->
+            <button type="button" class="btn small" id="dc-list-mod" data-slot="list-your-mod">List your mod</button>
+          </div>
+          <div id="dc-rows" class="dc-rows"></div>
+        </div>
+        <div class="toolbar dc-bar dc-full">
+          <button type="button" class="btn small dc-back" id="dc-simple-btn" title="Back to the short list">‹ Simple</button>
           <input id="cat-q" type="search" placeholder="Search mods" aria-label="Search the Workshop" autocomplete="off" spellcheck="false">
-          <label class="dc-pick"><span>Sort</span><select id="cat-sort" aria-label="Sort">
-            <option value="hot">Hot</option><option value="rising">Rising</option><option value="top">Top rated</option>
-            <option value="installs">Most installed</option><option value="installs30">This month</option>
-            <option value="new">New</option><option value="updated">Updated</option></select></label>
-          <label class="dc-pick"><span>Show</span><select id="cat-cat" aria-label="Category"><option value="">All</option></select></label>
           <span class="toolbar-fill"></span>
-          <label class="dc-fit" title="Only show mods made for the picked client"><input type="checkbox" id="cat-fit" checked><span>Only for</span></label>
           <select class="client-pick dc-client" data-for="discover" aria-label="Install into"></select>
         </div>
+        <div class="chips dc-smart dc-full" id="dc-smart" role="toolbar" aria-label="Show"></div>
+        <details class="dc-mf dc-full" id="dc-more">
+          <summary>More filters</summary>
+          <div class="toolbar dc-mf-row">
+            <label class="dc-pick"><span>Sort</span><select id="cat-sort" aria-label="Sort">
+              <option value="hot">Hot</option><option value="rising">Rising</option><option value="top">Top rated</option>
+              <option value="installs">Most installed</option><option value="installs30">This month</option>
+              <option value="new">New</option><option value="updated">Updated</option></select></label>
+            <label class="dc-pick"><span>Show</span><select id="cat-cat" aria-label="Category"><option value="">All</option></select></label>
+            <label class="dc-fit" title="Only show mods made for the picked client"><input type="checkbox" id="cat-fit" checked><span>Only for the picked client</span></label>
+          </div>
+          <div id="dc-more-body"></div>
+        </details>
         <p class="status" id="cat-status" role="status"></p>
-        <div class="mod-grid dc-grid" id="cat-grid"></div>
-        <div class="row dc-more"><button type="button" class="btn small" data-link="mods">Open the Workshop</button><button type="button" class="btn small" data-link="modders">Make a mod</button></div>
+        <div class="mod-grid dc-grid dc-full" id="cat-grid"></div>
+        <div class="row dc-more dc-full"><button type="button" class="btn small" data-link="mods">Open the Workshop</button><button type="button" class="btn small" data-link="modders">Make a mod</button></div>
       </div>
     </div>
   </section>
@@ -511,7 +529,9 @@
 <script src="account.js"></script>
 <script src="forum.js"></script>
 <script src="modes.js"></script>
-<script src="market.js"></script><!-- upstream addons from their authors: chips, cards, detail (window.LeylineMarket; before app.js, which calls it) -->
+<script src="market.js"></script>
+<script src="gamemods.js"></script><!-- Game mods and the realm's mods on join (window.LeylineGameMods; before app.js, which calls it) -->
+<script src="simple.js"></script><!-- Mods › Discover's Simple view and smart chips (window.LeylineSimple; before app.js, which calls it) --><!-- upstream addons from their authors: chips, cards, detail (window.LeylineMarket; before app.js, which calls it) -->
 <script src="app.js"></script>
 <script src="addons.js"></script>
 <script src="host.js"></script>

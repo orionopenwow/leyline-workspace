@@ -192,6 +192,7 @@ $("search-form").addEventListener("submit", (ev) => {
   } else {
     $("cat-q").value = q;
     catFilter.cat = "";
+    if (window.LeylineSimple) window.LeylineSimple.setView("all", true);   // a search is the full catalog (simple.js)
     show("mods", false, "discover");
   }
 });
@@ -773,7 +774,11 @@ $("play-form").addEventListener("submit", async (ev) => {
   if (!realm) { show("realms"); $("play-custom").focus(); return say("play-status", "Type a realm address.", "bad"); }
   $("play-go").disabled = true;
   try {
-    if (window.LeylineAddons && isOfficial()) await window.LeylineAddons.beforePlay(c);   // offers the Leyline addons (addons.js)
+    // the realm's mods (gamemods.js): one offer for the client mods it uses that this game lacks; Cancel stops PLAY
+    const rr = isOfficial() ? realmsCache.find((x) => x.official) : realmAt(realm);
+    const j = window.LeylineGameMods && rr ? await window.LeylineGameMods.beforeJoin(rr, c, (t, k) => say("play-status", t, k)) : { go: true, leyline: false };
+    if (!j.go) { say("play-status", ""); return; }
+    if (window.LeylineAddons && isOfficial() && !j.leyline) await window.LeylineAddons.beforePlay(c);   // offers the Leyline addons (addons.js)
     say("play-status", "Starting…");
     say("play-status", await invoke("play", { client: c.id, realm }), "ok");
     state = await invoke("get_state");
@@ -1087,6 +1092,7 @@ async function loadCatalog(quiet) {
 }
 
 function renderCatalog() {
+  if (window.LeylineSimple) window.LeylineSimple.render();   // the Simple view's rows, or the full view's smart chips (simple.js)
   const c = pickedClient();
   const q = $("cat-q").value.trim().toLowerCase();
   const fitOnly = $("cat-fit").checked;
@@ -1367,6 +1373,7 @@ async function handleDeepLink() {
   const c = pickedClient();
   if (c && !fitsClient(p, c)) $("cat-fit").checked = false;
   await loadRanks(false);
+  if (window.LeylineSimple && window.LeylineSimple.view() !== "all") window.LeylineSimple.setView("all", true);   // the card is in the full catalog
   renderCatalog();
   const card = document.querySelector(`#cat-grid .mod-card[data-id="${CSS.escape(p.id)}"]`);
   if (card) { card.scrollIntoView({ block: "center" }); const b = card.querySelector(".acts .btn"); if (b && !b.disabled) b.focus(); }
@@ -1860,6 +1867,12 @@ function renderRealms() {
     if (r.address) more.push("Realmlist: " + r.address);
     line.title = more.filter(Boolean).join(" · ") + (r.rules && r.rules.length ? "\n" + r.rules.slice(0, 4).join("\n") : "");
     main.append(title, line);
+    const rmods = window.LeylineGameMods ? window.LeylineGameMods.realmMods(r) : [];
+    if (rmods.length) {   // the realm's own mod list (docs/GAME-MODS.md); PLAY offers the ones this game lacks
+      const um = el("div", "rl-mods", `Uses ${rmods.length} mod${rmods.length === 1 ? "" : "s"}`);
+      um.title = rmods.map((m) => window.LeylineGameMods.nameOf(m.id) + (m.version ? " " + m.version : "")).join(", ");
+      main.append(um);
+    }
     if (r.build && !fit) main.append(el("div", "rl-note", `Needs your own ${r.build} client`));
     // the realm's own links, quiet
     const links = el("div", "rl-links");
@@ -1960,7 +1973,10 @@ async function playRealm(r, btn) {
   btn.disabled = true;
   say("rl-status", `Starting ${c.name} on ${r.name}…`);
   try {
-    if (window.LeylineAddons && r.official) await window.LeylineAddons.beforePlay(c);   // offers the Leyline addons (addons.js)
+    // the realm's mods (gamemods.js): "This realm uses X, Y: Get them and play" (one click; Cancel stops PLAY)
+    const j = window.LeylineGameMods ? await window.LeylineGameMods.beforeJoin(r, c, (t, k) => say("rl-status", t, k)) : { go: true, leyline: false };
+    if (!j.go) { say("rl-status", ""); btn.disabled = false; return; }
+    if (window.LeylineAddons && r.official && !j.leyline) await window.LeylineAddons.beforePlay(c);   // offers the Leyline addons (addons.js)
     const msg = await invoke("play_realm", { client: picked.id, slug: r.slug });
     say("rl-status", msg + (r.official ? "" : " First time here? Make your account with Make an account."), "ok");
     await refresh();

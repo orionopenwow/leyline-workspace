@@ -76,6 +76,21 @@ FRONT = "/wrath/leyline"
 FORUM = FRONT + "/forum"   # the forum (stream/forum.py), always at the front door's address
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+
+def _load_gamemods():
+    """stream/gamemods.py from beside this file (game mods and realm mod lists), or None."""
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("wu_hub_gamemods", os.path.join(HERE, "gamemods.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception:   # noqa: BLE001: the hub runs without it (no Game mods section)
+        return None
+
+
+GM = _load_gamemods()
+
 # ------------------------------------------------------------------------------------------- shared rules
 BUILDS = ["1.12", "2.4.3", "3.3.5a", "4.3.4", "5.4.8"]           # the client builds the launcher supports
 BUILD_LABEL = {"1.12": "1.12.1", "2.4.3": "2.4.3", "3.3.5a": "3.3.5a", "4.3.4": "4.3.4", "5.4.8": "5.4.8", "any": "Any build"}
@@ -765,11 +780,11 @@ class Hub:
         return sorted(out, key=lambda i: (i["name"].lower(), i["id"]))
 
     def get_item(self, slug: str) -> dict | None:
-        m = re.fullmatch(r"(link|mod|theme|ext)-([a-z0-9][a-z0-9-]{1,40})", slug or "")
+        m = re.fullmatch(r"(link|mod|theme|ext|up)-([a-z0-9][a-z0-9-]{1,40})", slug or "")
         if not m:
             return None
         want = f"{m.group(1)}:{m.group(2)}"
-        pool = self.external() if m.group(1) == "ext" else self.items()
+        pool = self.external() if m.group(1) == "ext" else self.upstream() if m.group(1) == "up" else self.items()
         return next((i for i in pool if i["id"] == want), None)
 
     def thumb_of(self, i: dict) -> str:
@@ -877,7 +892,9 @@ class Hub:
                 ("mods", "Mods", BASE + "/catalog", "mods"), ("addons", "Addons", BASE + "/catalog?cat=addons", "addons"),
                 ("host", "Host", "/wrath/host", "host"),
                 ("forum", "Forum", FORUM, "forum")]   # owner 2026-10-30: "change community to forum"
-        more = [("forge", "Forge", BASE + "/forge", "forge"), ("agents", "Agents", BASE + "/agents", "agents"),
+        # the duel leaderboards (stream/duels.py; owner 2026-10-31: "leaderboards on site") lead the More menu
+        more = [("leaderboards", "Leaderboards", "/wrath/leaderboards", "leaderboards"),
+                ("forge", "Forge", BASE + "/forge", "forge"), ("agents", "Agents", BASE + "/agents", "agents"),
                 ("docs", "Docs", "/wrath/docs", "docs"), ("news", "News", BASE + "/news", "news"),
                 ("creators", "Creators", BASE + "/creators", "creators")]   # Modes, Gallery and Status left the menu (owner 2026-10-30)
         return main, more
@@ -913,14 +930,9 @@ class Hub:
         dl = self._download()
         dl_a = (f'<a class="hb-dl" href="{e(dl)}" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true">'
                 f'{NAV_ICONS["download"]}</svg>Download</a>')
-        # On a wide screen the header is the launcher's sidebar (owner 2026-10-30: "make all the tools come from the side by
-        # default and can collapse if wanted"): open by default, the arrow folds it to an icon rail (no script needed;
-        # HUB_JS remembers the choice). On a phone it stays the top bar with the Menu sheet.
-        return ('<input type="checkbox" id="hb-side" class="hb-side-t" aria-label="Fold the side menu">'
-                f'<header class="hb-top"><a class="hb-brand" href="{home}" aria-label="Leyline Launcher">{self._wordmark()}</a>'
-                '<label for="hb-side" class="hb-side-b" title="Fold or open the side menu" aria-hidden="true">'
-                '<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></label>'
-
+        # A top bar like a website (owner 2026-10-31: "fit for the website"): the brand, the launcher's pages, Download and
+        # the account. On a phone Menu opens the same items as a sheet (no script needed).
+        return (f'<header class="hb-top"><a class="hb-brand" href="{home}" aria-label="Leyline Launcher">{self._wordmark()}</a>'
                 '<input type="checkbox" id="hb-menu" class="hb-menu-t" aria-label="Menu">'
                 '<label for="hb-menu" class="hb-menu-b" aria-hidden="true">Menu</label>'
                 f'<nav class="hb-nav" aria-label="Leyline">{"".join(item(*m) for m in main)}{drop}{extra}'
@@ -962,9 +974,10 @@ class Hub:
         robots = "" if front_on() else '<meta name="robots" content="noindex">'
         meta = ('<meta name="description" content="Leyline: one launcher for your own game clients and every realm, '
                 'with mods, addons, realm scripts and tools.">')
-        css = (self.portal("LOOK_VARS") or LOOK_FALLBACK) + (self.portal("SPIN_CSS") or "") + HUB_CSS + self._backdrop() + css
+        css = ((self.portal("LOOK_VARS") or LOOK_FALLBACK) + SITE_TOKENS_CSS + (self.portal("SPIN_CSS") or "") + HUB_CSS + SITE_CSS
+               + DARK_ISLANDS + self._backdrop() + css)
         return (f'<!doctype html><html lang="en" data-look="leyline"><head><meta charset="utf-8">'
-                f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">'
+                f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light">'
                 f'<title>{e(title)}</title>{meta}{robots}<style>{css}</style></head>'
                 f'<body class="hb"><a class="hb-skip" href="#main">Skip to content</a>{top}'
                 f'<main id="main" class="hb-main{" hb-front" if front else ""}">{flag}{sub}{body}</main>{foot}'
@@ -982,10 +995,14 @@ class Hub:
         if not ok:
             return ""
         # a fixed layer over the page's own area (right of the side menu), so the picture is centred with the hero
-        return ('body.hb::before{content:"";position:fixed;top:0;bottom:0;right:0;left:var(--hb-side,0px);z-index:-1;pointer-events:none;'
+        return ('body.hb::before{content:"";position:fixed;top:0;bottom:0;right:0;left:0;z-index:-1;pointer-events:none;'
                 'background:linear-gradient(180deg,rgba(11,13,20,.46),rgba(11,13,20,.74) 80%),'
                 f'url(/wrath/art/{BACKDROP}) center top/cover no-repeat;transition:left .2s ease}}'
                 'html{background:#0b0d14}body.hb{background:transparent}'
+                # Light: the same picture, faint under a pale wash (the text stays dark on light)
+                '@media (prefers-color-scheme:light){html{background:var(--lk-bg)}body.hb::before{opacity:.5;'
+                'background:linear-gradient(180deg,rgba(238,241,246,.86),rgba(238,241,246,.96) 70%),'
+                f'url(/wrath/art/{BACKDROP}) center top/cover no-repeat}}}}'
                 '@media print{body.hb::before{display:none}}')
 
     def status_cards(self) -> str:
@@ -1072,7 +1089,7 @@ class Hub:
                 "name": HANGOUT_NAME,   # the official realm, sampler or not: one name everywhere at launch
                 "kind": HANGOUT_KIND, "tagline": rec.get("tagline") or HANGOUT_LINE,
                 "temporary": bool(sample.get("temporary")), "featured": False, "new": False, "group": "home",
-                "address": self.portal("PUBLIC_HOST") or "play.openvanilla.app"}
+                "address": self.portal("PUBLIC_HOST") or "play.openvanilla.app", "mods": self.official_mods()}
         fits = lambda r: net.matches(r, f) and f.get("client") in (None, client_of(r))   # noqa: E731
         rest = []
         for r in shown:
@@ -1146,11 +1163,41 @@ class Hub:
         cap = r.get("max") if isinstance(r.get("max"), int) and r.get("max") > 0 else 100
         fill = 0 if not live or not players else max(6, min(100, round(100 * players / cap)))
         bar = (f'<span class="hb-rl-bar" aria-hidden="true"><i style="width:{fill}%"></i></span>' if live else "")
+        mods = self.realm_mods_html(r)
         return (f'<li class="hb-rl{" home" if r.get("home") else ""}{" pv" if pv else ""}{"" if live else " off"}"{data} data-client="{client}" '
                 f'data-live="{1 if live else 0}" data-players="{players or 0}">{icon}<div class="hb-rl-n"><b>{e(name)}</b>'
                 + (f'<span class="hb-rl-k">{e(r["kind"])}</span>' if r.get("kind") else "") + f'{verchip}{"".join(bdg)}'
-                f'<span class="hb-rl-m">{e(" · ".join(meta))}</span></div>{count.replace("</div>", bar + "</div>", 1) if live else count}'
+                f'<span class="hb-rl-m">{e(" · ".join(meta))}</span>{mods}</div>{count.replace("</div>", bar + "</div>", 1) if live else count}'
                 f'<div class="hb-rl-a">{"".join(acts)}</div>{pv}</li>')
+
+    def mod_names(self) -> dict:
+        """id -> the name players see, for every mod a realm can list (Leyline Modes, Workshop, upstream addons)."""
+        names = {"mode:" + m["id"]: m.get("title") or m["id"] for m in self._modes() if isinstance(m, dict) and m.get("id")}
+        for p in self.workshop():
+            names[p["id"]] = clean_line(p.get("name"), 64) or p["id"]
+        for u in self.upstream():
+            names[u["id"]] = u["name"]
+        return names
+
+    def realm_mods_html(self, r: dict) -> str:
+        """A realm row's "Uses 3 mods" (docs/GAME-MODS.md): the list it declares, which ones go in your game, and that the
+        launcher adds those when you join. "" for a realm with no list. Ids the Workshop doesn't know are named as ids."""
+        mods = GM.clean_mods(r.get("mods")) if GM is not None else []
+        if not mods:
+            return ""
+        e = html.escape
+        names = self.mod_names()
+        by_id = {p["id"]: p for p in self.workshop()}
+        lis = []
+        for m in mods:
+            nm = neutral(names.get(m["id"])) or m["id"].split(":", 1)[1]
+            game = m["id"] in by_id and GM.side(m["id"], by_id[m["id"]]) != "realm" or m["id"].startswith("up:")
+            lis.append(f'<li>{e(nm)}' + (f' <small>{e(m["version"])}</small>' if m.get("version") else "")
+                       + (' <span class="hb-rl-mg">in your game</span>' if game else "") + "</li>")
+        n = len(mods)
+        return (f'<details class="hb-rl-mods"><summary>Uses {n} mod{"" if n == 1 else "s"}</summary><ul>{"".join(lis)}</ul>'
+                f'<p><a href="{e(self._download())}" rel="noopener noreferrer">Get the launcher</a> to add them automatically '
+                'when you join.</p></details>')
 
     def realm_section(self, got=None) -> str:
         """The sub hero: every server on the network, the home realm first, one click to play. "" without a list."""
@@ -2071,16 +2118,21 @@ class Hub:
             listing = f'<p class="hb-rl-none">No realms match these filters. <a href="{BASE}/realms">Show every realm</a></p>'
         else:
             listing = '<p class="hb-rl-none">The realm list isn\'t reachable right now. Try again in a minute.</p>'
-        body = ('<section class="hb-head"><h1>Realms</h1>'
-                '<p>Every server on the Leyline network, hosted by players. The order is players online, uptime and '
+        # the launcher's Realms page on the web: one panel, the network line, the filters, the realm cards, Host your own
+        body = ('<section class="hb-pg hb-realms-pg" aria-labelledby="hb-pg-h"><header class="hb-pg-h"><div class="hb-pg-t">'
+                '<h1 id="hb-pg-h">Realms</h1></div>'
+                f'<a class="hb-ghost hb-pg-x" href="/wrath/host">Host your own</a></header><div class="hb-pg-b">'
+                '<p class="hb-lede">Every server on the Leyline network, hosted by players. The order is players online, uptime and '
                 'staff picks: nothing can be bought.</p>'
-                f'<p class="hb-netline" data-net>{e(net.network_line(t))}</p></section>'
+                f'<p class="hb-netline" data-net>{e(net.network_line(t))}</p>'
                 + self.realm_filters(f, fc)
                 + ("" if ok else '<p class="hb-fine">The community list may be a little out of date right now.</p>')
                 + listing
                 + '<p class="hb-fine">Play in browser opens the realm in this browser. For a desktop client, use the '
                   'address in the launcher (Realms, then Add a realm) or in your realmlist file.</p>'
-                + net.host_cta("hub", pack["download"] if pack else None))
+                + f'<p class="hb-fine">Duels on {e(HANGOUT_NAME)} count for points and a rating: '
+                  '<a href="/wrath/leaderboards">the leaderboards</a>.</p>'
+                + net.host_cta("hub", pack["download"] if pack else None) + '</div></section>')
         return self._shell("Realms · Leyline", body, BASE + "/realms", nonce)
 
     def modes_page(self) -> bytes:
@@ -2119,7 +2171,8 @@ class Hub:
                 'in your browser once your character is in the world. The launcher lists the same games on its Modes page.</p></section>'
                 + (f'<div class="hb-modes">{"".join(cards)}</div>' if cards else
                    '<p class="hb-empty">No modes are listed right now. <a href="/wrath/modes">The modes page</a></p>')
-                + '<p class="hb-fine">Duels, boss fights, dungeons and hangouts are on <a href="/wrath/modes">the full modes page</a>.</p>')
+                + '<p class="hb-fine">Duels, boss fights, dungeons and hangouts are on <a href="/wrath/modes">the full modes page</a>. '
+                  'Duel points and ratings: <a href="/wrath/leaderboards">the leaderboards</a>.</p>')
         return self._shell("Modes · Leyline", body, BASE + "/modes")
 
     def news_posts(self, n: int = 30) -> list[dict]:
@@ -2159,6 +2212,9 @@ class Hub:
         return self._shell("News · Leyline", body, BASE + "/news")
 
     def card(self, i: dict, m: dict | None = None, rk=None) -> str:
+        """A catalog card in the launcher's Discover look: its kind over the picture, the name, one line, the author and
+        where it is from, then the licence chip and the actions (Install hands over to the launcher; Source opens the
+        repo)."""
         e = html.escape
         rank = ""
         if m is not None and rk is not None:
@@ -2167,14 +2223,27 @@ class Hub:
         badge = {"workshop": "Workshop", "index": "Community", "theme": "Theme"}[i["source"]]
         builds = " ".join(f'<span class="hb-tag">{e(CLIENT_LABEL.get(b, "Any client"))}</span>' for b in i["builds"])
         stars = f' · ★ {int(i["stars"])}' if isinstance(i.get("stars"), int) and not isinstance(i.get("stars"), bool) else ""
+        inst = rk.installable(i) if rk is not None and hasattr(rk, "installable") else bool(
+            i.get("packaged") or (i["source"] == "theme" and i.get("download") and i.get("sha256")))
+        acts = ""
+        if i.get("repo"):
+            acts += f'<a class="hb-ghost sm" href="{e(i["repo"])}" rel="noopener noreferrer nofollow ugc">Source</a>'
+        if inst:
+            acts += (f'<a class="hb-inst sm" href="leyline://install/{e(i["id"])}" title="Opens the Leyline launcher on this PC">'
+                     'Install</a>')
+        elif not i.get("repo"):
+            acts += f'<a class="hb-ghost sm" href="{BASE}/p/{_slug(i["id"])}">View</a>'
+        lic = neutral(i.get("licence"))
         return (f'<article class="hb-card">{self.card_pic(i)}<h3><a href="{BASE}/p/{_slug(i["id"])}">{e(neutral(i["name"]) or "Untitled")}</a></h3>'
                 f'<p class="hb-by">by {e(neutral(i["author"]) or "unknown")} · <span class="hb-src hb-{i["source"]}">{badge}</span></p>'
-                f'<p>{e(neutral(i.get("description") or i["summary"]))}</p><p class="hb-meta">{builds}'
-                f'<span class="hb-lic">{e(neutral(i.get("licence")) or "licence not stated")}{stars}</span></p>{rank}</article>')
+                f'<p class="hb-desc">{e(neutral(i.get("description") or i["summary"]))}</p><p class="hb-meta">{builds}'
+                + (f'<span class="hb-lic">{stars[3:]}</span>' if stars else "") + f'</p>{rank}'
+                f'<div class="hb-dc-foot">{self.licence_chip(lic)}<span class="hb-dc-acts">{acts}</span></div></article>')
 
     def card_pic(self, i: dict) -> str:
         """A card's picture: the Workshop screenshot, else the project's preview thumbnail (credited in its title), else
-        the tile drawn from its id. A link to the item page, skipped by keyboard and screen readers (the name links)."""
+        the tile drawn from its id; its category over it. A link to the item page, skipped by keyboard and screen readers
+        (the name links)."""
         e = html.escape
         name = neutral(i["name"]) or "Untitled"
         href = f"{BASE}/p/{_slug(i['id'])}"
@@ -2185,7 +2254,9 @@ class Hub:
         else:
             icon = "creators" if i.get("source") == "theme" else "mods" if i.get("source") == "external" else KIND_WORDS[self._kind(i)][2]
             pic = self.gen_art(i, name, icon, "hb-gt-art gen hb-card-art")
-        return f'<a class="hb-card-pic" href="{href}" tabindex="-1" aria-hidden="true">{pic}</a>'
+        cat = dict(CATEGORIES + [THEMES]).get(i.get("category"), "")
+        tag = f'<span class="hb-dc-tag">{e(cat)}</span>' if cat else ""
+        return f'<a class="hb-card-pic" href="{href}" tabindex="-1" aria-hidden="true">{pic}{tag}</a>'
 
     def ext_card(self, i: dict) -> str:
         """An external pack in the catalog: the flag that we neither checked nor host it, and the authors' page. Never
@@ -2198,12 +2269,339 @@ class Hub:
                 f'<p class="hb-meta">{builds}</p><p class="hb-ext-a"><a class="hb-ghost" href="{e(i["url"])}" '
                 f'rel="noopener nofollow ugc" target="_blank">Visit the authors\' page</a></p></article>')
 
+    # ---------------------------------------------------------------- the addon marketplace (upstream addons)
+    # The launcher's Mods › Discover marketplace on the web (launcher/ui/market.js): curated third-party addons the
+    # launcher installs straight from their author's repo (stream/upstream_addons.py, all.json source "upstream"). The
+    # site never installs or hosts them: Install hands over to the launcher (leyline://install/up:<id>), Source opens the
+    # author's repo. They are listed here only, never in items() (the launcher's catalog.json feed stays as it was).
+    def upstream(self) -> list[dict]:
+        """The reviewed upstream addons in the catalog's item shape (source "upstream"), [] without the list."""
+        ua = self.portal("upstream_addons")
+        try:
+            raw = ua.projects() if ua is not None else []
+        except Exception:   # noqa: BLE001: a broken list never breaks the catalog
+            raw = []
+        out, offered = [], offered_builds()
+        for p in raw:
+            name = clean_line(p.get("display_name") or p.get("name"), 64)
+            desc = clean_line(p.get("description"), 240)
+            author = clean_line(p.get("author"), 60)
+            if not name or banned(name + " " + desc + " " + author):
+                continue
+            compat = p.get("compat") if isinstance(p.get("compat"), dict) else {}
+            inst = p.get("install") if isinstance(p.get("install"), dict) else {}
+            review = p.get("review") if isinstance(p.get("review"), dict) else {}
+            i = {"id": p["id"], "source": "upstream", "name": name, "summary": desc, "description": "",
+                 "category": "addons", "type": "addon", "builds": [b for b in (p.get("builds") or ["any"]) if b in BUILDS + ["any"]] or ["any"],
+                 "author": author, "author_url": _https(p.get("author_url")), "licence": clean_line(p.get("licence"), 40),
+                 "repo": _https(p.get("repo")), "tags": [t for t in (p.get("tags") or []) if t in MK_SUB_NAME],
+                 "works": compat.get("status") == "works" or p.get("on_wrath") is True,
+                 "checked": clean_line(compat.get("checked_at"), 40)[:10], "reviewed": clean_line(review.get("at"), 40)[:10],
+                 "from": "Hosted by Leyline" if inst.get("from") == "mirror" else "Installs from the author's GitHub",
+                 "addons": [clean_line(a, 64) for a in (p.get("addons") or [])[:20] if isinstance(a, str)],
+                 "requires": [r for r in (p.get("requires") or []) if isinstance(r, str)][:20],
+                 "conflicts": [r for r in (p.get("conflicts") or []) if isinstance(r, str)][:20],
+                 "replaces_ui": bool(p.get("replaces_ui")), "author_art": p.get("blp") == "author-art",
+                 "size": inst.get("size") if isinstance(inst.get("size"), int) else None,
+                 "files": inst.get("file_count") if isinstance(inst.get("file_count"), int) else None,
+                 "score": 40.0, "stars": None, "updated": "", "page": "", "download": None, "sha256": None, "packaged": False}
+            i = offered_only(i, offered)
+            if i is not None:
+                out.append(i)
+        return sorted(out, key=lambda i: (i["name"].lower(), i["id"]))
+
+    @staticmethod
+    def works_badge(cls: str = "hb-mk-badge") -> str:
+        return f'<span class="{cls}" title="Tried on {html.escape(HANGOUT_NAME)} by our team">Works on {html.escape(HANGOUT_NAME)}</span>'
+
+    @staticmethod
+    def licence_chip(lic: str) -> str:
+        e = html.escape
+        if lic:
+            return f'<span class="hb-mk-lic" title="Licence: {e(lic)}">{e(lic)}</span>'
+        return '<span class="hb-mk-lic none" title="The author states no licence">No licence</span>'
+
+    def upstream_card(self, i: dict) -> str:
+        """An upstream addon as the launcher's marketplace card: its kind over the picture, the "Works on" badge, the
+        credit line (author · where it comes from), the licence chip, Source and Install (handed to the launcher)."""
+        e = html.escape
+        name = neutral(i["name"]) or "Untitled"
+        href = f"{BASE}/p/{_slug(i['id'])}"
+        tag = "Whole interface" if i["replaces_ui"] else MK_SUB_NAME.get((i["tags"] or [""])[0], "Addon")
+        pic = (f'<a class="hb-card-pic" href="{href}" tabindex="-1" aria-hidden="true">'
+               + self.gen_art(i, name, "addons", "hb-gt-art gen hb-card-art")
+               + f'<span class="hb-dc-tag{" ui" if i["replaces_ui"] else ""}">{e(tag)}</span>'
+               + (self.works_badge("hb-mk-badge on-pic") if i["works"] else "") + "</a>")
+        author = neutral(i["author"]) or "Unknown author"
+        src = (f'<a class="hb-ghost sm" href="{e(i["repo"])}" rel="noopener noreferrer nofollow ugc" title="Open the author\'s repo">Source</a>'
+               if i["repo"] else "")
+        return (f'<article class="hb-card hb-mk" data-tags="{e(" ".join(i["tags"]))}">{pic}'
+                f'<h3><a href="{href}">{e(name)}</a></h3><p class="hb-desc">{e(neutral(i["summary"]))}</p>'
+                f'<p class="hb-mk-credit" title="{e(author)} · {e(i["licence"] or "Licence not stated")} · {e(i["from"])}">'
+                f'<span>{e(author)}</span><span class="hb-mk-sep" aria-hidden="true">·</span><span>{e(i["from"])}</span></p>'
+                f'<div class="hb-dc-foot">{self.licence_chip(i["licence"])}<span class="hb-dc-acts">{src}'
+                f'<a class="hb-inst sm" href="leyline://install/{e(i["id"])}" title="Opens the Leyline launcher on this PC">Install</a>'
+                '</span></div></article>')
+
+    def upstream_page(self, i: dict, slug: str) -> bytes:
+        """An upstream addon's page: the launcher's detail view (market.js detail()) on the web."""
+        e = html.escape
+        name = neutral(i["name"]) or "Untitled"
+        names = {x["id"]: x["name"] for x in self.upstream()}
+
+        def mb(n):
+            return (f"{n / 1048576:.1f}".rstrip("0").rstrip(".") + " MB") if n >= 1048576 else f"{max(1, round(n / 1024))} KB"
+        facts = [("Made by", (f'<a href="{e(i["author_url"])}" rel="noopener noreferrer nofollow ugc">{e(neutral(i["author"]) or "Unknown author")}</a>'
+                              if i["author_url"] else e(neutral(i["author"]) or "Unknown author"))),
+                 ("Licence", e(i["licence"] or "Licence not stated")), ("Comes from", e(i["from"])),
+                 ("Kind", e(", ".join(MK_SUB_NAME[t] for t in i["tags"]) or "Addon"))]
+        if i["size"]:
+            facts.append(("Size", e(mb(i["size"]) + (f", {i['files']} files" if i["files"] else ""))))
+        if i["addons"]:
+            facts.append(("Addon folders", e(", ".join(i["addons"]))))
+        if i["requires"]:
+            facts.append(("Needs", e(", ".join(neutral(names.get(r, r.removeprefix("up:"))) for r in i["requires"]))))
+        if i["conflicts"]:
+            facts.append(("Can't go with", e(", ".join(neutral(names.get(r, r.removeprefix("up:"))) for r in i["conflicts"]))))
+        if i["author_art"]:
+            facts.append(("Art", "Uses the author's own textures, installed from the author only"))
+        if i["reviewed"]:
+            facts.append(("Last reviewed", e(i["reviewed"])))
+        facts.append((f"On {e(HANGOUT_NAME)}", f"Works (checked {e(i['checked'])})" if i["works"] and i["checked"] else
+                      "Works" if i["works"] else "Not tried on our realm yet"))
+        dl = "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in facts)
+        warn = ('<p class="hb-mk-warn" role="note">Replaces your whole interface. It may conflict with the Leyline UI.</p>'
+                if i["replaces_ui"] else "")
+        acts = [f'<a class="hb-cta sm" href="leyline://install/{e(i["id"])}">Install with Leyline</a>']
+        if i["repo"]:
+            acts.append(f'<a class="hb-ghost" href="{e(i["repo"])}" rel="noopener noreferrer nofollow ugc">Source</a>')
+        acts.append(f'<a class="hb-ghost" href="{e(self._download())}" rel="noopener noreferrer">Get the launcher</a>')
+        body = (f'<nav class="hb-crumb" aria-label="Where you are"><a href="{BASE}/catalog?cat=addons">Addons</a></nav>'
+                f'<article class="hb-pg hb-mk-item"><header class="hb-pg-h"><div class="hb-pg-t"><h1>{e(name)}</h1>'
+                + (self.works_badge() if i["works"] else "") + "</div></header>"
+                f'<div class="hb-pg-b"><div class="hb-mk-top">{self.item_pic(i)}<div>'
+                f'<p class="hb-sum">{e(neutral(i["summary"]))}</p>{warn}<dl class="hb-facts">{dl}</dl>'
+                f'<p class="hb-actions">{"".join(acts)}</p></div></div>'
+                '<p class="hb-fine">Install opens the Leyline launcher on this PC. It downloads the addon from the author, checks '
+                'every file against what we reviewed, and puts it in your AddOns folder. Remove takes out exactly what it put in.</p>'
+                "</div></article>")
+        return self._shell(f"{name} · Leyline", body, BASE + "/p/" + slug, active="addons")
+
+    def mk_bar(self, ups: list[dict], tag: str, works: bool, link) -> str:
+        """The marketplace's chips above the grid (market.js bar()): All addons, each kind that has an addon, and
+        "Works on <the official realm>". Plain links (no script)."""
+        e = html.escape
+        counts: dict[str, int] = {}
+        for u in ups:
+            for t in u["tags"]:
+                counts[t] = counts.get(t, 0) + 1
+        chips = [f'<a class="hb-chip{" on" if not tag else ""}" href="{e(link(tag="", works="1" if works else "", page=""))}"'
+                 + (' aria-current="true"' if not tag else "") + ">All addons</a>"]
+        for t, label in MK_SUBS:
+            if counts.get(t):
+                chips.append(f'<a class="hb-chip{" on" if tag == t else ""}" href="{e(link(tag="" if tag == t else t, page=""))}" '
+                             f'title="{counts[t]} addon{"" if counts[t] == 1 else "s"}"' + (' aria-current="true"' if tag == t else "")
+                             + f">{e(label)}</a>")
+        wk = (f'<a class="hb-chip hb-mk-works{" on" if works else ""}" href="{e(link(works="" if works else "1", page=""))}" '
+              f'title="Tried on {e(HANGOUT_NAME)} by our team"' + (' aria-current="true"' if works else "")
+              + f'>Works on {e(HANGOUT_NAME)}</a>')
+        return f'<nav class="hb-mk-bar" aria-label="Addon types"><div class="hb-chips">{"".join(chips)}</div>{wk}</nav>'
+
+    # ---------------------------------------------------------------- Mods, the Simple view (owner 31 Oct: "simple section")
+    # /catalog with no filters: a few short rows of big cards (Popular, Game modes, Make it look nicer, Quality of life)
+    # and one search box. The full catalog with every filter is /catalog?view=all ("Browse everything"), and any filter
+    # or search goes there too. The launcher's Discover does the same (launcher/ui/simple.js), with the same rows.
+    SIMPLE_ROW_N = 3
+
+    def simple_rows(self, items: list, ups: list, metrics: dict | None = None) -> list[tuple[str, str, str, str, list]]:
+        """[(key, title, line, see-all href, [items])]: the Simple view's rows, each up to SIMPLE_ROW_N, empty ones
+        left out. Popular is the top of everything; an item is in one of the other rows at most (the first that takes it)."""
+        pool = [i for i in items if i["source"] != "external"] + list(ups)
+        metrics = metrics or {}
+
+        def pop(i):
+            m = metrics.get(i["id"]) or {}
+            n = ((m.get("installs") or {}).get("all") or 0) if isinstance(m, dict) else 0
+            return (-n, -float(i.get("score") or 0), i["name"].lower(), i["id"])
+        pool.sort(key=pop)
+        tags = lambda i: set(i.get("tags") or [])   # noqa: E731
+        rows = [
+            ("game", "Game modes", "Minigames and mods that change how you play.", f"{BASE}/catalog?cat=sandbox",
+             lambda i: i["category"] in GAME_CATS),
+            ("looks", "Make it look nicer", "Interfaces, frames, nameplates and looks for the launcher.", f"{BASE}/catalog?cat=themes",
+             lambda i: i["category"] in ("themes", "graphics") or bool(tags(i) & LOOK_TAGS) or bool(i.get("replaces_ui"))),
+            ("qol", "Quality of life", "Small helpers: bags, quests, maps, chat and more.", f"{BASE}/catalog?cat=addons",
+             lambda i: bool(tags(i) & QOL_TAGS) or (i["category"] == "addons" and not tags(i))),
+        ]
+        used: set[str] = set()   # the themed rows never repeat a card (Popular may show one of theirs)
+        out = []
+        popular = [i for i in pool if i["category"] != "themes"][:self.SIMPLE_ROW_N]
+        if popular:
+            out.append(("popular", "Popular", "What players pick most.", f"{BASE}/catalog?view=all", popular))
+        for key, title, line, href, fits in rows:
+            got = [i for i in pool if i["id"] not in used and fits(i)][:self.SIMPLE_ROW_N]
+            if got:
+                used |= {i["id"] for i in got}
+                out.append((key, title, line, href, got))
+        return out
+
+    def simple_page(self) -> bytes:
+        """The Simple view of Mods (see above): one search box, the rows, Browse everything."""
+        e = html.escape
+        rk = self.portal("hub_rank")
+        rk = rk if rk is not None and getattr(rk, "store", None) is not None else None
+        items = self.items()
+        metrics = rk.store.metrics(items) if rk else {}
+        rows = self.simple_rows(items, self.upstream(), metrics)
+        seg = self.mods_tabs("")
+
+        def one(i):
+            return self.upstream_card(i) if i["source"] == "upstream" else self.card(i, metrics.get(i["id"]) if rk else None, rk)
+        games = self.game_mods()
+        if games:   # the Game modes row is the Game mods section's first cards (with where to play them)
+            realms = self.mod_realms()
+            gcards = "".join(self.game_card(g, realms) for g in [g for g in games if g["status"] == "live"][:self.SIMPLE_ROW_N])
+            rows = [r for r in rows if r[0] != "game"]
+            rows.insert(1 if rows and rows[0][0] == "popular" else 0,
+                        ("game", "Game modes", "Minigames and mods that change how you play.", f"{BASE}/catalog?view=game", gcards))
+        secs = "".join(
+            f'<section class="hb-srow" id="row-{key}" aria-labelledby="hb-sr-{key}"><div class="hb-srow-h"><div>'
+            f'<h2 id="hb-sr-{key}">{e(title)}</h2><p>{e(line)}</p></div><a class="hb-ghost sm" href="{e(href)}">See all</a></div>'
+            f'<div class="hb-grid hb-big">{got if isinstance(got, str) else "".join(one(i) for i in got)}</div></section>'
+            for key, title, line, href, got in rows)
+        if not secs:
+            secs = f'<p class="hb-empty">Nothing here yet. <a href="{BASE}/submit">Submit a mod</a> to fill it.</p>'
+        body = (f'<section class="hb-pg hb-cat hb-simple" aria-labelledby="hb-pg-h"><header class="hb-pg-h"><div class="hb-pg-t">'
+                f'<h1 id="hb-pg-h">Mods</h1>{seg}</div>'
+                f'<a class="hb-ghost hb-pg-x" href="{BASE}/submit" data-slot="list-your-mod">List your mod</a></header><div class="hb-pg-b">'
+                f'<form class="hb-search" method="get" action="{BASE}/catalog" role="search">'
+                '<label for="hb-q" class="hb-vh">Search mods</label><input id="hb-q" name="q" type="search" maxlength="60" '
+                'placeholder="Search mods, addons and themes"><button type="submit">Search</button></form>'
+                f'{secs}<p class="hb-sall"><a class="hb-cta sm" href="{BASE}/catalog?view=all">Browse everything</a>'
+                '<span>Every mod, with all the filters.</span></p></div></section>'
+                + f'<p class="hb-get">Installing needs the Leyline launcher on this PC. <a href="{e(self._download())}" '
+                  'rel="noopener noreferrer">Get the launcher</a></p>'
+                + (f"<style>{rk.RANK_CSS}</style>" if rk else ""))
+        return self._shell("Mods · Leyline", body, BASE + "/catalog", active="mods")
+
+    def mods_tabs(self, cur: str) -> str:
+        """The Mods panel's tabs: Discover (the Simple view), Game mods, Addons, Themes."""
+        e = html.escape
+        tabs = [("", "Discover", ""), ("game", "Game mods", "?view=game"), ("addons", "Addons", "?cat=addons"),
+                ("themes", "Themes", "?cat=themes")]
+        return ('<nav class="hb-seg" aria-label="Mods">' + "".join(
+            f'<a href="{e(f"{BASE}/catalog{q}")}"' + (' class="on" aria-current="page"' if c == cur else "")
+            + f">{t}</a>" for c, t, q in tabs if c != "game" or GM is not None) + "</nav>")
+
+    # ---------------------------------------------------------------- Game mods (stream/gamemods.py, docs/GAME-MODS.md)
+    def _modes(self) -> list:
+        pm = self.portal("playmodes")
+        try:
+            return pm.entries() if pm is not None else []
+        except Exception:   # noqa: BLE001
+            return []
+
+    def official_mods(self) -> list[dict]:
+        """Our realm's mod list from its own config: the Leyline Modes it runs and the Workshop mods it installs."""
+        return GM.official(self.workshop(), self._modes()) if GM is not None else []
+
+    def game_mods(self) -> list[dict]:
+        """The Game mods section's entries, the brand words taken out of their text (a bad one is left out)."""
+        if GM is None:
+            return []
+        out = []
+        for g in GM.entries(self._modes(), self.workshop()):
+            name, line = neutral(clean_line(g["name"], 64)), neutral(clean_line(g["line"], 240))
+            if name and not banned(name + " " + line):
+                out.append(dict(g, name=name, line=line))
+        return out
+
+    def mod_realms(self) -> list[dict]:
+        """Every realm with its mod list (ours first): realm_rows(), or ours alone without a realm list."""
+        got = self.realm_rows()
+        if got:
+            return got[0]
+        st = self.portal("realm_status")
+        try:
+            live = bool((st() or {}).get("online")) if st else True
+        except Exception:   # noqa: BLE001
+            live = True
+        return [{"home": True, "name": HANGOUT_NAME, "live": live, "mods": self.official_mods()}]
+
+    def game_card(self, g: dict, realms: list[dict]) -> str:
+        """One game mod: what it adds, whether it needs a realm that allows it, the live realms that run it, and the way
+        in (Play for a Leyline Mode; Install, handed to the launcher, for a mod with a client part)."""
+        e = html.escape
+        on = GM.runs_on(g["id"], realms) if GM is not None else []
+        tags = []
+        if g["status"] == "coming":
+            tags.append('<span class="hb-tag hb-gm-soon">Coming</span>')
+        tags.append(f'<span class="hb-tag">{"Needs a realm that allows it" if g["realm"] else "Works on any realm"}</span>')
+        if g["addon"]:
+            tags.append('<span class="hb-tag" title="The launcher offers them when you press Play">Plays through the Leyline addons</span>')
+        elif g["client"]:
+            tags.append('<span class="hb-tag">Adds files to your game</span>')
+        names = [neutral(r.get("name")) or "A realm" for r in on]
+        if names:
+            shown = ", ".join(names[:3]) + (f" and {len(names) - 3} more" if len(names) > 3 else "")
+            where = f'<p class="hb-gm-on"><b>Play it on:</b> {e(shown)}</p>'
+        elif g["status"] == "live":
+            where = f'<p class="hb-gm-on off">No live realm runs it right now. <a href="/wrath/host">Host your own</a></p>'
+        else:
+            where = ""
+        acts = []
+        if g["kind"] == "mode" and g["status"] == "live" and on:
+            acts.append(f'<a class="hb-play sm" href="{e("/wrath?go=mode:" + g["mode"])}">Play</a>')
+        p = g.get("project") or {}
+        if g["kind"] == "mod":
+            if g["client"] and p.get("source") == "packaged" and p.get("download") and p.get("sha256"):
+                acts.append(f'<a class="hb-inst sm" href="leyline://install/{e(g["id"])}" title="Opens the Leyline launcher on this PC">Install</a>')
+            acts.append(f'<a class="hb-ghost sm" href="{BASE}/p/{_slug(g["id"])}">View</a>')
+        art = {"id": g["id"]}
+        icon = "modes" if g["kind"] == "mode" else "mods"
+        return (f'<article class="hb-card hb-gm" id="gm-{e(g["id"].replace(":", "-"))}" data-id="{e(g["id"])}">'
+                f'<div class="hb-card-pic">{self.gen_art(art, g["name"], icon, "hb-gt-art gen hb-card-art")}'
+                f'<span class="hb-dc-tag">{"Leyline Mode" if g["kind"] == "mode" else "Workshop mod"}</span></div>'
+                f'<h3>{e(g["name"])}</h3><p class="hb-desc">{e(g["line"])}</p><p class="hb-meta">{"".join(tags)}</p>{where}'
+                f'<div class="hb-dc-foot"><span></span><span class="hb-dc-acts">{"".join(acts)}</span></div></article>')
+
+    def game_page(self) -> bytes:
+        """Mods › Game mods: everything that changes how you play in game, and where to play it."""
+        e = html.escape
+        realms = self.mod_realms()
+        ents = self.game_mods()
+        live = [g for g in ents if g["status"] == "live"]
+        soon = [g for g in ents if g["status"] == "coming"]
+        grid = "".join(self.game_card(g, realms) for g in live)
+        body = (f'<section class="hb-pg hb-cat hb-game" aria-labelledby="hb-pg-h"><header class="hb-pg-h"><div class="hb-pg-t">'
+                f'<h1 id="hb-pg-h">Game mods</h1>{self.mods_tabs("game")}</div>'
+                f'<a class="hb-ghost hb-pg-x" href="{BASE}/submit" data-slot="list-your-mod">List your mod</a></header><div class="hb-pg-b">'
+                '<p class="hb-lede">Mods that change how you play in game: minigames, game modes and more. Some need a realm '
+                'that allows them. Realms say which mods they use, and the Leyline launcher adds the ones your game needs '
+                'when you join.</p>'
+                + (f'<div class="hb-grid hb-big">{grid}</div>' if grid else '<p class="hb-empty">No game mods are listed right now.</p>')
+                + (f'<h2 class="hb-gm-h">Coming</h2><div class="hb-grid hb-big">{"".join(self.game_card(g, realms) for g in soon)}</div>' if soon else "")
+                + '<p class="hb-fine">Host a realm and pick its mods: <code>leyline mods add &lt;id&gt;</code> in the host kit. '
+                f'<a href="{e(self._download())}" rel="noopener noreferrer">Get the launcher</a> to add a realm\'s mods automatically.</p>'
+                "</div></section>")
+        return self._shell("Game mods · Leyline", body, BASE + "/catalog", active="mods")
+
     def catalog_page(self, query: dict) -> bytes:
+        """The launcher's Mods › Discover on the web: one panel with its tabs (Discover, Addons, Themes), the search and
+        the filters as plain links (no script), the addon marketplace's chips on Addons, and the cards: Install hands
+        over to the launcher (leyline://install/<id>); nothing installs from the website. With no filter at all (and no
+        ?view=all) it is the Simple view (simple_page)."""
         e = html.escape
         q1 = lambda k: (query.get(k) or [""])[0][:80]   # noqa: E731
+        if q1("view") == "game" and GM is not None:
+            return self.game_page()
+        if q1("view") != "all" and not any(q1(k) for k in ("build", "cat", "source", "q", "sort", "tag", "works", "kind", "page")):
+            return self.simple_page()
         build, cat, source, text, sort = offered_tag(q1("build")), q1("cat"), q1("source"), clean_line(q1("q"), 60), q1("sort") or "score"
         cat = cat if cat in CATEGORY_IDS + ["themes"] else ""
-        source = source if source in ("workshop", "index", "theme", "external") else ""
+        source = source if source in ("workshop", "index", "theme", "external", "upstream") else ""
+        tag = q1("tag") if q1("tag") in MK_SUB_NAME else ""
+        works = q1("works") == "1"
         rk = self.portal("hub_rank")
         rk = rk if rk is not None and getattr(rk, "store", None) is not None else None
         ranked_sorts = [s for s, _ in rk.SORT_LABELS] if rk else []
@@ -2214,8 +2612,12 @@ class Hub:
         except ValueError:
             page = 1
         items = self.items()
-        ext = self.external() if not kind and source in ("", "external") else []
-        if source == "external":
+        ups_all = self.upstream()
+        ext = self.external() if not kind and source in ("", "external") and not (tag or works) else []
+        ups = ups_all if not kind and source in ("", "upstream") and cat in ("", "addons") else []
+        if source in ("external", "upstream"):
+            items = []
+        if tag or works:   # the marketplace's own filters: upstream addons only (the launcher's chips do the same)
             items = []
 
         def keep(lst):
@@ -2225,19 +2627,27 @@ class Hub:
                 lst = [i for i in lst if i["category"] == cat]
             if text:
                 words = text.lower().split()
-                lst = [i for i in lst if all(w in (i["name"] + " " + i["summary"] + " " + i.get("description", "")
-                                                   + " " + i["author"]).lower() for w in words)]
+                lst = [i for i in lst if all(w in (i["name"] + " " + i["summary"] + " " + i.get("description", "") + " " + i["author"]
+                                                   + " " + " ".join(MK_SUB_NAME.get(t, t) for t in i.get("tags") or [])
+                                                   + " " + " ".join(i.get("addons") or [])).lower() for w in words)]
             return lst
-        items, ext = keep(items), keep(ext)
-        if source and source != "external":
+        items, ext, ups = keep(items), keep(ext), keep(ups)
+        if tag:
+            ups = [u for u in ups if tag in u["tags"]]
+        if works:
+            ups = [u for u in ups if u["works"]]
+        if source and source not in ("external", "upstream"):
             items = [i for i in items if i["source"] == source]
         if kind:
             items = [i for i in items if rk.kind_of(i) == kind]
         metrics = rk.store.metrics(self.items()) if rk else {}
+        items = items + ups
         if sort == "name":
             items.sort(key=lambda i: (i["name"].lower(), i["id"]))
         elif sort in ranked_sorts:
-            items.sort(key=lambda i: rk.sort_key(sort, metrics[i["id"]], i))
+            zero = {"hot": 0, "rising": None, "new": None, "updated": None, "installs": {"all": 0, "d30": 0, "d7": 0, "prev7": 0},
+                    "rating": {"score": None, "n": 0, "avg": None}}   # an upstream addon: no installs counted here yet
+            items.sort(key=lambda i: rk.sort_key(sort, metrics.get(i["id"], zero), i))
         elif sort == "updated":
             items.sort(key=lambda i: (i.get("updated") or "", i["name"].lower()), reverse=True)
         else:
@@ -2248,33 +2658,39 @@ class Hub:
         shown = items[(page - 1) * self.PER_PAGE: page * self.PER_PAGE]
 
         def link(**over):
-            cur = {"build": build, "cat": cat, "source": source, "kind": kind, "q": text, "sort": sort if sort != "score" else ""}
+            cur = {"build": build, "cat": cat, "source": source, "kind": kind, "q": text, "sort": sort if sort != "score" else "",
+                   "tag": tag, "works": "1" if works else ""}
             cur.update(over)
             qs = urllib.parse.urlencode({k: v for k, v in cur.items() if v})
-            return f"{BASE}/catalog" + (f"?{qs}" if qs else "")
+            return f"{BASE}/catalog?" + (qs or "view=all")   # no filter left: still the full catalog, not the Simple view
 
         def chips(key, opts, cur):
             return "".join(f'<a class="hb-chip{" on" if v == cur else ""}" href="{e(link(**{key: v, "page": ""}))}"'
                            + (' aria-current="true"' if v == cur else "") + f">{e(label)}</a>" for v, label in opts)
+
+        def frow(label, inner):
+            return f'<div class="hb-frow"><span class="hb-flabel">{e(label)}</span><p>{inner}</p></div>'
         f_build = chips("build", [("", "Every client")] + [(b, CLIENT_LABEL[b]) for b in offered_builds()], build)
         f_cat = chips("cat", [("", "All")] + CATEGORIES + [THEMES], cat)
-        f_src = chips("source", [("", "Everything"), ("workshop", "Workshop"), ("index", "Community"), ("theme", "Themes"),
-                                 ("external", EXTERNAL_LABEL)], source)
+        f_src = chips("source", [("", "Everything"), ("workshop", "Workshop"), ("upstream", "From the authors"),
+                                 ("index", "Community"), ("theme", "Themes"), ("external", EXTERNAL_LABEL)], source)
         if rk:
             f_sort = chips("sort", [("", "Best")] + rk.SORT_LABELS + [("name", "A to Z")], sort if sort != "score" else "")
-            f_kind = "<p>" + chips("kind", [("", "Every kind")] + rk.KIND_LABELS, kind) + "</p>"
+            f_kind = frow("Kind", chips("kind", [("", "Every kind")] + rk.KIND_LABELS, kind))
         else:
             f_sort = chips("sort", [("", "Best"), ("name", "A to Z"), ("updated", "Recently updated")], sort if sort != "score" else "")
             f_kind = ""
         hidden = "".join(f'<input type="hidden" name="{k}" value="{e(v)}">' for k, v in
-                         (("build", build), ("cat", cat), ("source", source), ("kind", kind), ("sort", sort if sort != "score" else "")) if v)
+                         (("build", build), ("cat", cat), ("source", source), ("kind", kind), ("sort", sort if sort != "score" else ""),
+                          ("tag", tag), ("works", "1" if works else "")) if v)
         nav = ""
         if pages > 1:
             nav = ('<nav class="hb-pages" aria-label="Pages">'
                    + (f'<a href="{e(link(page=str(page - 1)))}">Previous</a>' if page > 1 else "")
                    + f"<span>Page {page} of {pages}</span>"
                    + (f'<a href="{e(link(page=str(page + 1)))}">Next</a>' if page < pages else "") + "</nav>")
-        grid = "".join(self.card(i, metrics.get(i["id"]) if rk else None, rk) for i in shown) or (
+        grid = "".join(self.upstream_card(i) if i["source"] == "upstream" else self.card(i, metrics.get(i["id"]) if rk else None, rk)
+                       for i in shown) or (
             "" if source == "external" else
             '<p class="hb-empty">Nothing here yet. '
             + (f'<a href="{BASE}/submit">Submit a mod</a> to fill it.' if cat != "themes" else "Theme packs are on the way.") + "</p>")
@@ -2287,15 +2703,42 @@ class Hub:
         elif source == "external":
             group = '<p class="hb-empty">No external packs here.</p>'
         total += len(ext)
-        body = (f'<header class="hb-head"><h1>Catalog</h1><p>{total} items'
-                + (f' for the {e(CLIENT_LABEL[build].lower())}' if build and build != "any" else "") + '</p></header>'
+        title = {"addons": "Addons", "themes": "Themes"}.get(cat, "Mods")
+        seg = self.mods_tabs(cat if cat in ("addons", "themes") else "")
+        mk = self.mk_bar([u for u in ups_all if (not build or build in u["builds"] or "any" in u["builds"])], tag, works, link) \
+            if ups_all and cat in ("", "addons") and source in ("", "upstream") else ""
+        unfiltered = not (build or cat or source or kind or text or tag or works)
+        more_on = bool(build or source or kind or tag or (sort != "score"))
+        lede = {"addons": f"Addons for your game client, many straight from their authors. Install opens the Leyline launcher on "
+                          f"this PC.",
+                "themes": "Looks for the Leyline launcher. Install opens the launcher on this PC."}.get(
+            cat, "Mods, addons, realm scripts and tools. Install opens the Leyline launcher on this PC.")
+        # A few smart chips (one click each); every other filter waits under More filters (owner 31 Oct: "trim search")
+        smart = [("", "Everything", link(cat="", works="", tag="", page=""), not cat and not works),
+                 ("addons", "Addons", link(cat="addons", works="", page=""), cat == "addons" and not works),
+                 ("sandbox", "Game modes", link(cat="sandbox", works="", tag="", page=""), cat == "sandbox"),
+                 ("works", f"Works on {HANGOUT_NAME}", link(works="" if works else "1", page=""), works)]
+        f_smart = "".join(f'<a class="hb-chip{" on" if on else ""}{" hb-mk-works" if k == "works" else ""}" href="{e(href)}"'
+                          + (' aria-current="true"' if on else "") + f">{e(label)}</a>" for k, label, href, on in smart)
+        filters = (f'<div class="hb-filters"><div class="hb-chips hb-smart" role="group" aria-label="Show">{f_smart}</div>'
+                   f'<details class="hb-fmore"{" open" if more_on else ""}><summary>More filters</summary>'
+                   f'{frow("Sort", f_sort)}{frow("Show", f_cat)}{frow("Client", f_build)}{frow("From", f_src)}{f_kind}{mk}'
+                   '</details></div>')
+        body = (f'<section class="hb-pg hb-cat" aria-labelledby="hb-pg-h"><header class="hb-pg-h"><div class="hb-pg-t">'
+                f'<h1 id="hb-pg-h">{title}</h1>{seg}</div>'
+                f'<a class="hb-ghost hb-pg-x" href="{BASE}/submit" data-slot="list-your-mod">List your mod</a></header><div class="hb-pg-b">'
+                f'<p class="hb-lede">{e(lede)}</p>'
                 f'<form class="hb-search" method="get" action="{BASE}/catalog" role="search">{hidden}'
-                f'<label for="hb-q">Search</label><input id="hb-q" name="q" value="{e(text)}" maxlength="60">'
+                f'<label for="hb-q" class="hb-vh">Search</label><input id="hb-q" name="q" type="search" value="{e(text)}" maxlength="60" '
+                f'placeholder="Search {title.lower()}">'
                 '<button type="submit">Search</button></form>'
-                f'<div class="hb-filters"><p>{f_build}</p><p>{f_cat}</p><p>{f_src}</p>{f_kind}'
-                f'<p role="tablist" aria-label="Sort">{f_sort}</p></div>'
-                + (self.featured_strip(self.items()) if page == 1 and not (build or cat or source or kind or text) else "")
-                + (f'<div class="hb-grid">{grid}</div>' if grid else "") + f'{group}{nav}' + (f"<style>{rk.RANK_CSS}</style>" if rk else ""))
+                f'<p class="hb-count">{total} items' + (f' for the {e(CLIENT_LABEL[build].lower())}' if build and build != "any" else "") + '</p>'
+                + filters
+                + (self.featured_strip(self.items()) if page == 1 and unfiltered else "")
+                + (f'<div class="hb-grid">{grid}</div>' if grid else "") + f'{group}{nav}</div></section>'
+                + f'<p class="hb-get">Installing needs the Leyline launcher on this PC. <a href="{e(self._download())}" '
+                  'rel="noopener noreferrer">Get the launcher</a></p>'
+                + (f"<style>{rk.RANK_CSS}</style>" if rk else ""))
         return self._shell("Catalog · Leyline", body, BASE + "/catalog", active="addons" if cat == "addons" else "mods")
 
     def item_page(self, slug: str, handler=None, query: dict | None = None) -> tuple[int, bytes]:
@@ -2306,6 +2749,8 @@ class Hub:
                                     f'<p><a href="{BASE}/catalog">See everything</a></p></section>', BASE)
         if i["source"] == "external":
             return 200, self.external_page(i, slug)
+        if i["source"] == "upstream":
+            return 200, self.upstream_page(i, slug)
         rows = [("Works with", ", ".join(CLIENT_LABEL.get(b, "Any client") for b in i["builds"])),
                 ("Category", dict(CATEGORIES + [THEMES]).get(i["category"], i["category"])),
                 ("Author", neutral(i["author"]) or "unknown"), ("Licence", neutral(i.get("licence")) or "not stated")]
@@ -2576,6 +3021,16 @@ LOOK_FALLBACK = (":root{--lk-bg:#15181f;--lk-chrome:#181b23;--lk-surface:#1e222b
                  "--lk-accent:#5b8def;--lk-accent-strong:#7aa3f5;--lk-accent-soft:rgba(91,141,239,.16);--lk-accent-2:#8b6cf0;"
                  "--lk-ok:#4fd18b;--lk-bad:#ff7f76;--lk-r:14px;--lk-r-sm:10px;"
                  "--lk-font:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif}")
+
+# The launcher's palette on the website (owner 2026-10-31: "the website is outdated compared to launcher design"): the
+# --lk-* every hub style reads, from the one tokens file the launcher's host console, HQ and the game windows use. Dark
+# by default, Light when the visitor's system is set to light.
+# sw-tokens:begin: generated by design/make_tokens.py from design/server-window.tokens.json: edit that file, not this block
+SITE_TOKENS_CSS = """
+:root{--lk-bg:#12151b;--lk-chrome:#15171e;--lk-surface:#1a1d25;--lk-surface-2:#20242e;--lk-raised:#262b37;--lk-border:#262a34;--lk-border-strong:#343a47;--lk-text:#eef0f4;--lk-text-2:#c8cdd7;--lk-muted:#9aa1ae;--lk-accent:#5b8def;--lk-accent-strong:#7aa3f5;--lk-accent-press:color-mix(in srgb,#5b8def 82%,#000);--lk-on-accent:#ffffff;--lk-accent-soft:rgba(91,141,239,0.16);--lk-accent-2:#8b6cf0;--lk-ok:#4fd18b;--lk-warn:#f2c14e;--lk-bad:#ff7f76;--lk-danger:#e5484d;--lk-gold:#f1cf86;--lk-gold-line:rgba(217,164,65,0.45);--lk-r:14px;--lk-r-sm:10px;--lk-r-xs:7px;--lk-font:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;color-scheme:dark}
+@media (prefers-color-scheme:light){:root{--lk-bg:#eef1f6;--lk-chrome:#f8f9fb;--lk-surface:#ffffff;--lk-surface-2:#f3f5f9;--lk-raised:#e9edf3;--lk-border:#dde2ea;--lk-border-strong:#c3cad6;--lk-text:#141820;--lk-text-2:#2e3542;--lk-muted:#5a6273;--lk-accent:#3a6fdc;--lk-accent-strong:#2c5bc0;--lk-accent-press:color-mix(in srgb,#3a6fdc 82%,#000);--lk-on-accent:#ffffff;--lk-accent-soft:rgba(58,111,220,0.11);--lk-accent-2:#6c4fd8;--lk-ok:#12804a;--lk-warn:#8f5d00;--lk-bad:#b42318;--lk-danger:#c4320a;--lk-gold:#855a00;--lk-gold-line:rgba(176,125,28,0.45);color-scheme:light}}
+"""
+# sw-tokens:end
 
 HUB_CSS = """
 *{box-sizing:border-box}html{background:var(--lk-bg)}
@@ -3100,7 +3555,7 @@ background:rgba(16,18,24,.78);color:#fff;cursor:pointer;font:600 20px/1 var(--lk
 .hb-lb-pic img{max-height:62vh}.hb-lb-cap{padding:16px}.hb-lb-x{top:8px;right:8px}}
 /* the featured modpack (Hub.featured_mod): full-bleed picture, soft vignette, the words on a glass panel; eases on scroll */
 body.hb{overflow-x:clip}
-.hb-coa{position:relative;width:calc(100vw - var(--hb-side,0px));margin:34px 0 16px calc(50% - (100vw - var(--hb-side,0px)) / 2);
+.hb-coa{position:relative;width:100vw;margin:34px 0 16px calc(50% - 50vw);
 overflow:hidden;isolation:isolate;background:#0b0d12;scroll-margin-top:72px}
 .hb-coa-track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain;outline:none}
 .hb-coa-track::-webkit-scrollbar{display:none}
@@ -3253,45 +3708,249 @@ margin:-16px -16px 6px;border-bottom:1px solid var(--lk-border)}
 .hb-coa-pic img{transform:scale(1.03)!important}.hb-rlx-r{transition:none}
 .hb-gt :is(img,.hb-gt-art),.hb-lb-in{transform:none!important}.hb-gt-c{transform:none}.hb-lb{-webkit-backdrop-filter:none;backdrop-filter:none}}
 
-/* the sidebar (wide screens): the launcher's layout, the page as it is beside it; folds to an icon rail */
-@media (min-width:1081px){
-:root{--hb-side:236px}
-:root:has(#hb-side:checked){--hb-side:72px}
-.hb-side-t{position:fixed;opacity:0;width:1px;height:1px;pointer-events:none}
-body.hb .hb-top{position:fixed;inset:0 auto 0 0;width:var(--hb-side);min-height:0;flex-direction:column;align-items:stretch;gap:4px;
-padding:16px 12px 14px;overflow-y:auto;overflow-x:hidden;border-right:1px solid rgba(255,255,255,.05);border-bottom:0;animation:none;box-shadow:none;
-background:rgba(14,16,23,.72);transition:width .2s ease;scrollbar-width:none}
-body.hb .hb-top::-webkit-scrollbar{display:none}
-body.hb .hb-brand{padding:2px 6px 12px;margin-bottom:6px;border-bottom:1px solid var(--lk-border)}
-body.hb .hb-nav{flex-direction:column;align-items:stretch;gap:2px;margin:0}
-body.hb .hb-ni{justify-content:flex-start;width:100%;padding:9px 12px;border-radius:10px;font-size:15px;gap:12px;white-space:nowrap}
-body.hb .hb-ni svg{display:block;width:20px;height:20px}
-body.hb .hb-ni.on{background:var(--lk-accent-soft);box-shadow:inset 3px 0 0 var(--lk-accent)}
-body.hb .hb-ni.on::after{display:none}
-body.hb .hb-more-d{display:none}
-body.hb .hb-nav-x{display:flex;flex-direction:column;gap:2px;margin-top:10px;padding-top:10px;border-top:1px solid var(--lk-border)}
-body.hb .hb-end{flex-direction:column;align-items:stretch;gap:8px;margin-top:auto;padding-top:14px}
-body.hb .hb-dl,body.hb .hb-signin,body.hb .hb-acct{justify-content:center;white-space:nowrap;overflow:hidden}
-body.hb{padding-left:var(--hb-side);transition:padding-left .2s ease}
-.hb-side-b{position:absolute;top:22px;right:10px;display:grid;place-items:center;width:28px;height:28px;border-radius:8px;cursor:pointer;
-color:var(--lk-muted);border:1px solid var(--lk-border)}
-.hb-side-b:hover{color:var(--lk-text);border-color:var(--lk-accent)}
-.hb-side-b svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:rotate .2s}
-.hb-side-t:focus-visible~.hb-top .hb-side-b{outline:2px solid var(--lk-accent-strong);outline-offset:2px}
-/* folded: icons only, the labels as tooltips */
-body.hb:has(#hb-side:checked) .hb-top{padding:16px 10px 14px}
-body.hb:has(#hb-side:checked) :is(.hb-ni span,.hb-word,.hb-acct-n){display:none}
-body.hb:has(#hb-side:checked) .hb-ni{justify-content:center;padding:10px 0;gap:0}
-body.hb:has(#hb-side:checked) .hb-brand{justify-content:center;padding:2px 0 44px}
-body.hb:has(#hb-side:checked) .hb-side-b{top:64px;left:50%;right:auto;translate:-50% 0}
-body.hb:has(#hb-side:checked) .hb-side-b svg{rotate:180deg}
-body.hb:has(#hb-side:checked) .hb-dl{font-size:0;gap:0;padding:0}
-body.hb:has(#hb-side:checked) .hb-signin{font-size:0;padding:0}
-body.hb:has(#hb-side:checked) .hb-acct{padding:0 4px}
-}
-@media (max-width:1080px){.hb-side-t,.hb-side-b{display:none}}
-@media (prefers-reduced-motion:reduce){body.hb,body.hb .hb-top,.hb-side-b svg{transition:none}}
 """
+
+# The launcher's look on the website (owner 2026-10-31: "the mods, add-ons, host, forum, and realms tab on the website
+# are outdated compared to launcher design. Fit for the website, though"): after HUB_CSS, the same pieces as
+# launcher/ui (style.css, market.css, hostconsole.css): one panel per page with a header strip, segmented tabs, chips,
+# Discover cards, realm cards and the Host steps, in the tokens' palette (SITE_TOKENS_CSS) with the launcher's blue;
+# Play is the launcher's red PLAY. A top
+# bar instead of the launcher's side bar; Light by the visitor's system. Phones: 16px gutters, nothing wider than the screen.
+SITE_CSS = """
+html{background:var(--lk-bg)}
+body.hb{background:var(--lk-bg);color:var(--lk-text)}
+.hb a{color:var(--lk-accent-strong)}
+.hb-main:has(>.hb-pg),.hb-main:has(>.fm),.hb-main:has(>.hf){max-width:1200px;padding:24px clamp(16px,2.4vw,32px) 40px}
+/* the top bar: the launcher's title bar, as a website's header */
+.hb-top{background:color-mix(in srgb,var(--lk-chrome) 84%,transparent);border-bottom:1px solid var(--lk-border)}
+.hb-top.hb-scrolled{box-shadow:0 6px 22px rgba(0,0,0,.28)}
+.hb-word i{color:var(--lk-accent-strong);font-size:12px;font-weight:700;letter-spacing:.32em;text-transform:uppercase}
+.hb-word b{font-size:21px}
+.hb-ni{font-size:15px;padding:9px 13px}
+.hb-ni.on::after{bottom:-12px}
+.hb-more-m{background:var(--lk-surface);border-color:var(--lk-border-strong);box-shadow:0 14px 40px rgba(0,0,0,.35)}
+.hb-dl{min-height:40px;padding:0 18px;font-size:15px;color:var(--lk-on-accent)!important;
+box-shadow:0 4px 14px color-mix(in srgb,var(--lk-accent) 32%,transparent)}
+.hb-signin,.hb-acct{min-height:40px;font-size:15px}
+/* buttons: the launcher's blue for actions, ghost buttons on a raised fill */
+.hb-inst,.hb-cta,.hb .ly-btn,.hb-dl,.hb-dl-x{background:var(--lk-accent);color:var(--lk-on-accent)!important;border:1px solid transparent}
+.hb-inst:hover,.hb-cta:hover,.hb .ly-btn:hover,.hb-dl:hover{background:var(--lk-accent-strong)}
+.hb-inst:active,.hb-cta:active,.hb .ly-btn:active{background:var(--lk-accent-press)}
+.hb-play,.hb-inst,.hb-ghost{display:inline-flex;align-items:center;min-height:36px;padding:0 14px;border-radius:var(--lk-r-sm);font-weight:600;
+font-size:14px;gap:6px;text-decoration:none}
+/* Play: the launcher's PLAY (owner 2026-10-31: "back to our red colorstyle"): a red face in a stone frame, gold words.
+   The launcher's picture says "Play" on its own, so the website draws the same button with its own words. */
+.hb-play,.hb-ho-a .hb-cta{position:relative;border:2px solid #3c4646;border-radius:6px;color:#f3cf6a!important;font-weight:700;
+letter-spacing:.02em;text-shadow:0 1px 0 #2a0505,0 0 6px rgba(0,0,0,.55);
+background:radial-gradient(120% 90% at 50% 30%,#a5191b,#7a0f11 55%,#4f0809);
+box-shadow:inset 0 0 0 1px #6f7a78,inset 0 0 0 3px #1c2222,inset 0 2px 10px rgba(0,0,0,.55),0 4px 12px rgba(0,0,0,.35)}
+.hb-play:hover,.hb-ho-a .hb-cta:hover{filter:brightness(1.15) saturate(1.05);background:radial-gradient(120% 90% at 50% 30%,#a5191b,#7a0f11 55%,#4f0809)}
+.hb-play:active,.hb-ho-a .hb-cta:active{transform:translateY(1px);filter:brightness(.92)}
+.hb-play:focus-visible,.hb-ho-a .hb-cta:focus-visible{outline:2px solid #ffd100;outline-offset:3px}
+.hb-ho-a .hb-cta{min-height:48px;padding:0 26px;font-size:17px;display:inline-flex;align-items:center}
+.hb-ghost{background:var(--lk-surface-2);border:1px solid var(--lk-border-strong);color:var(--lk-text)!important}
+.hb-ghost:hover{background:var(--lk-raised);border-color:var(--lk-accent)}
+.hb-play.sm,.hb-inst.sm,.hb-ghost.sm{min-height:30px;padding:0 11px;font-size:13px;border-radius:8px}
+.hb-cta{box-shadow:0 8px 22px color-mix(in srgb,var(--lk-accent) 30%,transparent)}
+.hb .ly-btn.hb-alt{background:var(--lk-surface-2);border:1px solid var(--lk-border-strong);color:var(--lk-text)!important}
+.hb-vh{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+/* the page panel: a header strip with the title and its tabs, then the body */
+.hb-pg{position:relative;border:1px solid var(--lk-border);border-radius:var(--lk-r);
+background:color-mix(in srgb,var(--lk-surface) 92%,transparent);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+box-shadow:0 14px 36px rgba(0,0,0,.30)}
+.hb-pg-h{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;padding:16px 24px;
+border-bottom:1px solid var(--lk-border);background:color-mix(in srgb,var(--lk-text) 3%,transparent);border-radius:var(--lk-r) var(--lk-r) 0 0}
+.hb-pg-t{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;min-width:0}
+.hb-pg-h h1{margin:0;font-size:22px;line-height:1.2;font-weight:700;letter-spacing:-.01em;color:var(--lk-text);text-align:left}
+.hb-pg-b{padding:20px 24px 24px}
+.hb-pg-b>:first-child{margin-top:0}
+.hb-lede{margin:0 0 14px;max-width:72ch;color:var(--lk-text-2)}
+.hb-pg .hb-fine,.hb-pg .hb-count{text-align:left}
+.hb-crumb{margin:0 0 10px;font-size:13.5px}.hb-crumb a{color:var(--lk-text-2);text-decoration:none}
+.hb-crumb a::before{content:"\\2039  "}.hb-crumb a:hover{color:var(--lk-text)}
+.hb-get{margin:14px 0 0;text-align:center;color:var(--lk-muted);font-size:13.5px}
+/* segmented tabs (the launcher's Installed / Discover and Start / Guide / Host pack) */
+.hb-seg{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;border-radius:12px;background:var(--lk-bg);border:1px solid var(--lk-border)}
+.hb-seg a{display:inline-flex;align-items:center;min-height:34px;padding:0 14px;border-radius:9px;color:var(--lk-text-2)!important;
+text-decoration:none;font-weight:600;font-size:14.5px}
+.hb-seg a:hover{color:var(--lk-text)!important;background:var(--lk-surface-2)}
+.hb-seg a.on{background:var(--lk-accent);color:var(--lk-on-accent)!important}
+/* search and filters */
+.hb-pg .hb-search{display:flex;gap:8px;margin:0 0 6px}
+.hb-pg .hb-search input{flex:1 1 auto;min-width:0;min-height:40px;padding:0 14px;border-radius:var(--lk-r-sm);border:1px solid var(--lk-border);
+background:var(--lk-surface-2);color:var(--lk-text);font:inherit}
+.hb-pg .hb-search input:focus{border-color:var(--lk-accent);outline:none;box-shadow:0 0 0 3px var(--lk-accent-soft)}
+.hb-pg .hb-search button{min-height:40px;padding:0 16px;border-radius:var(--lk-r-sm);border:1px solid var(--lk-border-strong);
+background:var(--lk-surface-2);color:var(--lk-text);font:600 14px var(--lk-font);cursor:pointer}
+.hb-pg .hb-search button:hover{border-color:var(--lk-accent)}
+.hb-pg .hb-count{margin:0 0 12px;font-size:13px;color:var(--lk-ok)}
+.hb-filters{display:grid;gap:8px;margin:0 0 14px}
+.hb-frow{display:grid;grid-template-columns:52px minmax(0,1fr);align-items:start;gap:8px}
+.hb-flabel{padding-top:7px;color:var(--lk-muted);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+.hb-frow p{display:flex;flex-wrap:wrap;gap:6px;margin:0}
+.hb-fmore summary{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:0 12px;border-radius:999px;cursor:pointer;
+list-style:none;border:1px dashed var(--lk-border-strong);color:var(--lk-text-2);font-size:13px;font-weight:600}
+.hb-fmore summary::-webkit-details-marker{display:none}.hb-fmore summary::before{content:"+";font-weight:800}
+.hb-fmore[open] summary::before{content:"\\2212"}
+.hb-fmore[open] summary{margin-bottom:8px}.hb-fmore .hb-frow+.hb-frow{margin-top:8px}
+.hb-chip{display:inline-flex;align-items:center;min-height:30px;padding:0 12px;border-radius:999px;border:1px solid var(--lk-border);
+background:var(--lk-surface-2);color:var(--lk-text-2)!important;font-size:13px;font-weight:600;text-decoration:none}
+.hb-chip:hover{border-color:var(--lk-border-strong);color:var(--lk-text)!important}
+.hb-chip.on{background:var(--lk-accent-soft);border-color:var(--lk-accent);color:var(--lk-text)!important}
+/* Mods, the Simple view: rows of big cards under one search box */
+.hb-smart{margin:0 0 2px}
+.hb-srow{margin:22px 0 0}.hb-srow:first-of-type{margin-top:14px}
+.hb-srow-h{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin:0 0 10px}
+.hb-srow-h h2{margin:0;font-size:18px;line-height:1.25;text-align:left}.hb-srow-h p{margin:2px 0 0;color:var(--lk-muted);font-size:13.5px}
+.hb-pg .hb-grid.hb-big{grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:18px}
+.hb-big .hb-card h3{font-size:17px}
+.hb-sall{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:26px 0 0;padding-top:18px;border-top:1px solid var(--lk-border);color:var(--lk-muted);font-size:13.5px}
+/* a realm row's "Uses 3 mods" */
+.hb-rl-mods{display:block;margin:4px 0 0;font-size:12.5px;color:var(--lk-text-2)}
+.hb-rl-mods summary{cursor:pointer;display:inline-flex;padding:1px 9px;border-radius:999px;border:1px solid var(--lk-border-strong);color:var(--lk-text-2);font-weight:600;list-style:none}
+.hb-rl-mods summary::-webkit-details-marker{display:none}
+.hb-rl-mods ul{margin:6px 0 2px;padding-left:18px}.hb-rl-mods p{margin:2px 0 0;color:var(--lk-muted)}
+.hb-rl-mg{font-size:11px;color:var(--lk-ok)}
+/* Game mods (hub game_card) */
+.hb-gm .hb-meta{margin-top:8px}.hb-gm-soon{border-color:var(--lk-accent)!important;color:var(--lk-text)!important}
+.hb-gm-on{margin:8px 14px 0!important;font-size:13px!important;color:var(--lk-text)!important}.hb-gm-on b{color:var(--lk-ok)}
+.hb-gm-on.off{color:var(--lk-muted)!important}.hb-gm-h{margin:26px 0 10px;font-size:18px;text-align:left}
+.hb-gm .hb-dc-foot{margin-top:auto}
+/* the addon marketplace's chips: kinds, and "Works on" on the right */
+.hb-mk-bar{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 16px;margin:0 0 16px;
+padding-top:14px;border-top:1px solid var(--lk-border)}
+.hb-mk-bar .hb-chips{flex:1 1 420px}
+.hb-mk-works::before,.hb-mk-badge::before{content:"";width:7px;height:7px;margin-right:7px;border-radius:50%;background:var(--lk-ok);flex:none}
+.hb-mk-works.on{background:color-mix(in srgb,var(--lk-ok) 14%,transparent);border-color:var(--lk-ok)}
+/* Discover cards (launcher dc-card / mk-card) */
+.hb-pg .hb-grid{grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:16px}
+.hb-card{position:relative;display:flex;flex-direction:column;padding:0;overflow:hidden;border:1px solid var(--lk-border);
+border-radius:var(--lk-r);background:var(--lk-surface-2);box-shadow:0 1px 2px rgba(0,0,0,.18);transition:border-color .15s,transform .15s,box-shadow .15s}
+.hb-card:hover{border-color:var(--lk-border-strong);transform:translateY(-2px);box-shadow:0 12px 28px rgba(0,0,0,.28)}
+.hb-card-pic{position:relative;margin:0;aspect-ratio:16/9;border-radius:0}
+.hb-card-pic{text-decoration:none!important}
+.hb-card-art.gen{background:repeating-linear-gradient(135deg,rgba(255,255,255,.045) 0 2px,transparent 2px 16px),
+linear-gradient(var(--a),hsl(var(--h1) 55% 32%),hsl(var(--h2) 50% 18%) 78%)}
+.hb-card-art.gen b{font-size:56px;text-decoration:none}
+.hb-card-art.gen svg{top:auto;left:auto;right:12px;bottom:12px;width:20px;height:20px;opacity:.75}
+.hb-dc-tag{position:absolute;top:10px;left:10px;max-width:calc(100% - 20px);padding:3px 9px;border-radius:999px;overflow:hidden;
+text-overflow:ellipsis;white-space:nowrap;background:rgba(8,10,14,.62);color:#fff;font-size:11.5px;font-weight:650;line-height:1.3}
+.hb-dc-tag.ui{color:#f1cf86}
+.hb-mk-badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:650;line-height:1.3;
+background:color-mix(in srgb,var(--lk-ok) 14%,transparent);color:var(--lk-ok);border:1px solid color-mix(in srgb,var(--lk-ok) 40%,transparent)}
+.hb-mk-badge.on-pic{position:absolute;left:10px;bottom:10px;background:rgba(8,10,14,.66);color:#fff;border-color:transparent;font-size:11.5px}
+.hb-card h3{margin:12px 14px 2px;font-size:16px;line-height:1.3;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hb-card h3 a{color:var(--lk-text)!important;text-decoration:none}.hb-card h3 a:hover{color:var(--lk-accent-strong)!important}
+.hb-card h3 a::after{content:"";position:absolute;inset:0;z-index:0}
+.hb-card :is(.hb-dc-foot a,.hb-by,.hb-rk){position:relative;z-index:1}
+.hb-card p{margin:2px 14px;font-size:13.5px;color:var(--lk-text-2)}
+.hb-card .hb-by{font-size:12.5px}
+.hb-card .hb-desc{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:var(--lk-text-2)}
+.hb-card .hb-meta{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.hb-card .hb-tag{margin:0;padding:1px 8px;font-size:11.5px;border-color:var(--lk-border-strong);color:var(--lk-muted)}
+.hb-card .hb-lic{font-size:11.5px;color:var(--lk-muted);align-self:center}
+.hb-card .hb-src{margin:0;padding:0 7px;font-size:11px}
+.hb-card .hb-rk{font-size:12px;color:var(--lk-muted)}
+.hb-mk-credit{display:flex;gap:6px;min-width:0;font-size:12.5px!important;color:var(--lk-muted)!important;white-space:nowrap}
+.hb-mk-credit span{overflow:hidden;text-overflow:ellipsis}.hb-mk-credit span:first-child{flex:none;max-width:45%;color:var(--lk-text-2)}
+.hb-mk-sep{flex:none}
+.hb-dc-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;padding:12px 14px 14px}
+.hb-dc-acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.hb-mk-lic{display:inline-block;max-width:110px;padding:2px 8px;border-radius:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+font-size:11.5px;font-weight:700;background:color-mix(in srgb,var(--lk-ok) 15%,transparent);color:var(--lk-ok)}
+.hb-mk-lic.none{background:none;color:var(--lk-muted);font-weight:600;padding-left:0}
+.hb-feat-s h2,.hb-ext-s h2{font-size:13px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--lk-accent-strong)}
+.hb-ext-s{margin-top:22px;padding-top:18px;border-top:1px solid var(--lk-border)}
+/* an addon's page: the launcher's detail view */
+.hb-mk-top{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:22px;align-items:start}
+.hb-mk-top .hb-item-pic{margin:0;max-width:none;border-radius:var(--lk-r-sm)}
+.hb-mk-top .hb-sum{margin:0 0 12px;font-size:16.5px;color:var(--lk-text)}
+.hb-mk-warn{margin:0 0 12px;padding:10px 12px;border-radius:var(--lk-r-sm);border:1px solid var(--lk-gold-line);
+background:color-mix(in srgb,var(--lk-gold) 10%,transparent);color:var(--lk-text)}
+.hb-facts{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:7px 18px;margin:0 0 16px;font-size:14px}
+.hb-facts dt{color:var(--lk-muted)}.hb-facts dd{margin:0;color:var(--lk-text);overflow-wrap:anywhere}
+.hb-pg .hb-actions{display:flex;flex-wrap:wrap;gap:8px;margin:0}
+.hb-pg .hb-actions .hb-cta.sm{padding:0 18px;min-height:40px;display:inline-flex;align-items:center;font-size:15px}
+.hb-pg .hb-actions .hb-ghost{min-height:40px}
+@media (max-width:760px){.hb-mk-top{grid-template-columns:minmax(0,1fr)}}
+/* the other item pages and the plain panels: the same panel */
+.hb .ly-panel{border-color:var(--lk-border);border-radius:var(--lk-r);background:color-mix(in srgb,var(--lk-surface) 92%,transparent);
+box-shadow:0 14px 36px rgba(0,0,0,.26)}
+.hb .ly-table th,.hb .ly-table td{border-bottom-color:var(--lk-border)}
+/* realms: the launcher's realm cards */
+.hb-pg .hb-netline{display:flex;align-items:center;gap:8px;margin:0 0 12px;color:var(--lk-text-2);font-weight:600;font-size:13.5px}
+.hb-pg .hb-netline::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--lk-ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--lk-ok) 22%,transparent)}
+.hb .hb-pg .net-filters{display:grid;gap:8px;justify-content:stretch;margin:0 0 16px}
+.hb .hb-pg .net-filters div{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.hb .hb-pg .net-filters span{min-width:72px;color:var(--lk-muted);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+.hb .hb-pg .net-filters a{display:inline-flex;align-items:center;min-height:30px;padding:0 12px;border-radius:999px;border:1px solid var(--lk-border);
+background:var(--lk-surface-2);color:var(--lk-text-2);font-size:13px;font-weight:600;text-decoration:none}
+.hb .hb-pg .net-filters a:hover{border-color:var(--lk-border-strong);color:var(--lk-text)}
+.hb .hb-pg .net-filters a.on{background:var(--lk-accent-soft);border-color:var(--lk-accent);color:var(--lk-text)}
+.hb-rlist{gap:10px}
+.hb-rl{padding:14px 16px;border:1px solid var(--lk-border);border-radius:12px;background:var(--lk-surface-2);box-shadow:none}
+.hb-rl:hover{border-color:var(--lk-border-strong);box-shadow:0 10px 24px rgba(0,0,0,.24)}
+.hb-rl.home{border-color:color-mix(in srgb,var(--lk-accent) 55%,transparent);box-shadow:inset 3px 0 0 var(--lk-accent);
+background:linear-gradient(90deg,var(--lk-accent-soft),transparent 70%),var(--lk-surface-2)}
+.hb-rl-ic{border-radius:10px}
+.hb-rl-n b{font-size:16px}
+.hb-ver{background:color-mix(in srgb,var(--lk-gold) 12%,transparent);border-color:var(--lk-gold-line);color:var(--lk-gold)}
+.hb-rl-bar{background:var(--lk-border)}
+.hb-bdg.o{background:var(--lk-accent-soft)}
+code.hb-addr{background:var(--lk-bg);border:1px solid var(--lk-border)}
+.hb .hb-pg .host-cta{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 20px;align-items:center;margin:18px 0 0;padding:18px 20px;
+border:1px solid var(--lk-border);border-radius:12px;background:linear-gradient(110deg,var(--lk-accent-soft),transparent 75%),var(--lk-surface-2)}
+.hb .hb-pg .host-cta h2{grid-column:1;margin:0;font-size:17px}
+.hb .hb-pg .host-cta>p:not(.fine){grid-column:1;margin:0;color:var(--lk-text-2)}
+.hb .hb-pg .host-cta ol{grid-column:1;margin:6px 0 0 1.2em;font-size:14px}
+.hb .hb-pg .host-cta>p:has(.btn){grid-column:2;grid-row:1/span 3;display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.hb .hb-pg .host-cta .btn{min-height:36px;align-items:center;font-weight:600;font-size:14px;text-decoration:none;background:var(--lk-surface-2);color:var(--lk-text)!important}
+.hb .hb-pg .host-cta .btn.primary{background:var(--lk-accent);border-color:var(--lk-accent);color:var(--lk-on-accent)!important}
+.hb .hb-pg .host-cta .fine{grid-column:1/-1;margin:6px 0 0;font-size:13px}
+@media (max-width:760px){.hb .hb-pg .host-cta{grid-template-columns:minmax(0,1fr)}.hb .hb-pg .host-cta>p:has(.btn){grid-column:1;grid-row:auto;justify-content:flex-start}}
+/* phones: 16px gutters, the panel's header and body tighter, nothing wider than the screen */
+@media (max-width:640px){
+.hb-main:has(>.hb-pg),.hb-main:has(>.fm),.hb-main:has(>.hf){padding:16px 16px 32px}
+.hb-pg-h{padding:14px 16px}.hb-pg-b{padding:16px}
+.hb-pg-h h1{font-size:20px}
+.hb-seg{display:flex;flex-wrap:nowrap;width:100%}.hb-seg a{flex:1 1 auto;justify-content:center;padding:0 10px;white-space:nowrap;font-size:14px}
+.hb-pg-x{display:none}
+.hb-frow{grid-template-columns:minmax(0,1fr);gap:4px}.hb-flabel{padding-top:0}
+.hb-frow p,.hb-mk-bar .hb-chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:0 16px 2px}
+.hb-frow p::-webkit-scrollbar,.hb-mk-bar .hb-chips::-webkit-scrollbar{display:none}
+.hb-chip{flex:none}
+.hb-mk-bar .hb-chips{flex-basis:100%}
+.hb-pg .hb-grid{grid-template-columns:minmax(0,1fr)}.hb-pg .hb-grid.hb-big{grid-template-columns:minmax(0,1fr)}.hb-srow-h{align-items:flex-start}
+.hb .hb-pg .net-filters div{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:0 16px}
+.hb .hb-pg .net-filters a,.hb .hb-pg .net-filters span{flex:none}
+.hb-rl{grid-template-columns:42px minmax(0,1fr);gap:8px 12px;padding:12px}
+.hb-rl-ic{grid-row:1/span 2}
+.hb-rl-p{grid-column:2;display:flex;align-items:center;flex-wrap:wrap;text-align:left}
+.hb-rl-p .hb-dot{margin-right:6px}.hb-rl-p b{margin-right:4px}
+.hb-rl-p small{display:inline;margin-left:8px}.hb-rl-bar{margin:0 0 0 10px;width:72px}
+.hb-rl-a{grid-column:1/-1}
+.hb-pg .hb-search{flex-wrap:nowrap}
+}
+/* Light: the shadows soften, the glass turns pale; the art keeps its own colours */
+@media (prefers-color-scheme:light){
+.hb-top.hb-scrolled{box-shadow:0 4px 16px rgba(16,24,40,.08)}
+.hb-pg,.hb .ly-panel{box-shadow:0 10px 28px rgba(16,24,40,.08)}
+.hb-card{box-shadow:0 1px 2px rgba(16,24,40,.06)}.hb-card:hover{box-shadow:0 10px 24px rgba(16,24,40,.12)}
+.hb-rl:hover{box-shadow:0 8px 20px rgba(16,24,40,.10)}
+.hb-seg{background:var(--lk-surface-2)}
+.hb-card,.hb-rl{background:var(--lk-surface)}
+.hb-rl.home{background:linear-gradient(90deg,var(--lk-accent-soft),transparent 70%),var(--lk-surface)}
+.hb .hb-pg .host-cta{background:linear-gradient(110deg,var(--lk-accent-soft),transparent 75%),var(--lk-surface)}
+.hb-more-m{box-shadow:0 14px 40px rgba(16,24,40,.14)}
+.hb-dc-tag.ui{color:#ffd98a}
+}
+"""
+
+# The drawings of the launcher's own windows (the host console, the in-game realm list) and the realm posters are dark
+# pictures: in Light they keep the Dark tokens, so their words stay light on dark.
+DARK_ISLANDS = ("@media (prefers-color-scheme:light){:is(.hb-sw,.hb-rlx,.hb-poster){"
+                + SITE_TOKENS_CSS.split("{", 1)[1].split("}", 1)[0].split(";--lk-r:")[0] + ";color-scheme:dark}"
+                ".hb-ho,.hb-cm-dc.big{background:linear-gradient(110deg,var(--lk-accent-soft),transparent 75%),var(--lk-surface)}}")
 
 # The hub's only script (front page and realm list; every other hub page has none). Plain and small: it adds
 # Copy buttons to the realm addresses, the realm filter without a reload, the live player counts from the public
@@ -3299,9 +3958,6 @@ body.hb:has(#hb-side:checked) .hb-acct{padding:0 4px}
 # the section reveal. Everything works without it: the addresses are selectable text, the filter is a GET form.
 HUB_JS = r"""(function(){
 // the side menu: remember folded or open in this browser (the page works without it)
-var side=document.getElementById("hb-side");
-if(side){try{if(localStorage.getItem("leyline.side")==="folded")side.checked=true;}catch(e){}
-side.addEventListener("change",function(){try{localStorage.setItem("leyline.side",side.checked?"folded":"open");}catch(e){}});}
 "use strict";
 var d=document,root=d.documentElement;root.classList.add("hb-js");
 var still=!!(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -3567,6 +4223,7 @@ NAV_ICONS = {
     "download": '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
     "key": '<circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/>',
     "gallery": '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/>',
+    "leaderboards": '<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8M10 17h4"/>',
 }
 # The gallery (Hub.gallery_tiles). Our in-game screenshots (stream/www-files/art, checked by eye: no logo, no game name;
 # behind the game data killswitch): name -> (width, height, title, line, alt). Words only; no client numbers, no game name.
@@ -3591,6 +4248,19 @@ LAUNCHER_SHOTS = {
     "modes": ("Game modes", "Minigames and modes, with one PLAY button each.",
               "The launcher's Modes page: minigames and game modes with one PLAY button each."),
 }
+# The marketplace's addon kinds (launcher/ui/market.js SUBS, the curate seeds' tags), in this order
+MK_SUBS = (("full-ui", "Full interfaces"), ("unit-frames", "Unit frames"), ("raid-frames", "Raid frames"), ("action-bars", "Action bars"),
+           ("nameplates", "Nameplates"), ("meters", "Meters"), ("boss-mods", "Boss fights"), ("raid-tools", "Raid tools"),
+           ("auras", "Auras"), ("cooldowns", "Cooldowns"), ("combat-text", "Combat text"), ("quests", "Quests"), ("maps", "Maps"),
+           ("minimap", "Minimap"), ("bags", "Bags"), ("auction", "Auction house"), ("gear", "Gear"), ("tooltips", "Tooltips"),
+           ("chat", "Chat"), ("social", "Groups and friends"), ("class", "Class"), ("professions", "Professions"), ("pvp", "PvP"),
+           ("skins", "Skins"), ("libraries", "Libraries"), ("quality-of-life", "Quality of life"))
+MK_SUB_NAME = dict(MK_SUBS)
+# The Simple view's rows (Hub.simple_rows; the launcher's simple.js keeps the same three lists): game-changing
+# categories, the addon kinds that change how the game looks, and the small helpers.
+GAME_CATS = ("sandbox", "maps", "encounters", "conversions")
+LOOK_TAGS = {"full-ui", "unit-frames", "raid-frames", "action-bars", "nameplates", "skins", "combat-text", "auras"}
+QOL_TAGS = {"quality-of-life", "bags", "quests", "maps", "minimap", "tooltips", "chat", "auction", "gear", "social", "professions"}
 KIND_WORDS = {"addon": ("Addon", "an addon", "addons"), "mod": ("Mod", "a mod", "mods"), "mode": ("Game mode", "a game mode", "modes"),
               "theme": ("Theme", "a theme", "creators")}
 GALLERY_FILTERS = (("", "All"), ("game", "In game"), ("mods", "Mods"), ("launcher", "Launcher"))

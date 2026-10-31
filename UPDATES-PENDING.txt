@@ -470,3 +470,9 @@
 1177a ship Save to GitHub: PLAY back to the red button (GitHub then rebuilds Leyline.exe)
 1178a signin Site: guests and Hero Key accounts set their own name and picture (shown at once), forum moderation in HQ (Forum tab: reports, threads, mute, ban), forum posting from the launcher
 1178b ship Save to GitHub: launcher forum posting and Manage account fixes (GitHub then rebuilds Leyline.exe)
+1179a signin Site: Mods, Addons, Realms, Host and Forum in the launcher's look (light and dark, phone width), reviewed addons on the site, red Play buttons
+1180a scripts Realm: duel points and ratings (.duel stats, .duel top), the leaderboard export (new settings: restart with the 5-minute warning)
+1180b signin Site: Mods made simple, Game mods, realms list their mods, leaderboards page
+1180c relay Relay: realms carry their mod list
+1180d hostkit Host pack: leyline mods add/remove, realms list their mods
+1180e ship Save to GitHub: launcher Mods simple view, Game mods, Get them and play on join (GitHub then rebuilds Leyline.exe)

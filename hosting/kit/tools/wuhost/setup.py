@@ -19,6 +19,11 @@
                                                     read by the world server at its next start) and its
                                                     realm-list type; also what a seed's "options" set (the
                                                     website's More settings, the in-game Host window)
+  python -m wuhost.setup mods [list | add ID[@VERSION] ... | remove ID ...]
+                                                    the mods this realm runs or asks players to have, on the realm
+                                                    list (docs/GAME-MODS.md): Workshop ids (mod:<id>, up:<slug>) or
+                                                    Leyline Modes (mode:<id>). Names only: players' launchers offer
+                                                    the ones in the Workshop catalog, checked, when they join
   python -m wuhost.setup rules                      re-read state/rules.txt and state/beacon.json (the
                                                     realm list text) after you edited them
   python -m wuhost.setup init --seed state/seed.b64 a realm made on the website (/wrath/host): its links,
@@ -70,7 +75,14 @@ PROFILE_ENV = {"dalaran": {"WU_DB_BUFFER": "256M", "WU_PLAYER_LIMIT": "40"},
 PROFILE_BOTS = {"dalaran": 0, "vanillaplus": 0, "den": 0}   # the bot count a new realm starts with
 NO_BOTS = ("dalaran", "den")                       # rulesets that never run bots (and the other cores: none yet)
 # The text the realm list and the join page show; the host edits these two files (then: Realm tools > rules).
-EDITABLE = ("tagline", "summary", "type", "discord", "tags", "region", "language", "max_players", "direct")
+EDITABLE = ("tagline", "summary", "type", "discord", "tags", "region", "language", "max_players", "direct", "mods")
+# The realm's mod list (docs/GAME-MODS.md; the same rules as stream/gamemods.py and the relay's listing.py clean_mods).
+# Every AzerothCore realm this kit makes runs the Leyline realm scripts (make-kit.sh copies realm/custom/lua_scripts), so
+# it lists the built-in Leyline Modes by itself; the host adds Workshop mods with `leyline mods add <id>`.
+MOD_ID_RE = re.compile(r"^(?:mod:[a-z][a-z0-9-]{2,31}|up:[a-z0-9][a-z0-9._-]{0,63}|mode:[a-z][a-z0-9-]{1,31})$")
+MOD_VERSION_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.+-]{0,31}$")
+MAX_MODS = 32
+BUILTIN_MODES = ("minigolf", "bumper-balls", "coin-dash", "community")
 # The realm list's filters (hosting/relay/wurelay/listing.py checks them again). Tags a profile starts with; the
 # host changes them in state/beacon.json or the launcher's Host page. "bots" follows the bot count by itself.
 TAGS = ("blizzlike", "boosted", "custom", "pvp", "rp", "hangout", "bots")
@@ -426,10 +438,90 @@ def beacon_record(cfg):
     rec.setdefault("discord", None)
     if cfg.get("linked"):   # a server the host already runs: its own core and client, no ruleset of ours
         rec.update(name=cfg["name"], type=rec.get("type", "PvE"), ruleset="custom", warden=None, signup="off")
+        rec["mods"] = realm_mods(rec.get("mods"), builtin=False)
         return linked_fields(rec)
     rec.update(name=cfg["name"], type=rec.get("type", "PvE"), ruleset=cfg["profile"],
                warden=cfg["warden"], signup=cfg.get("signup") or "invite")
+    rec["mods"] = realm_mods(rec.get("mods"), builtin=cfg.get("profile") not in cores.PROFILES)
     return listing_fields(rec, cfg)
+
+
+def clean_mods(v):
+    """[{"id", "version"?}], checked, each id once, at most MAX_MODS (a bad entry is dropped)."""
+    out, seen = [], set()
+    for m in (v if isinstance(v, list) else [])[:MAX_MODS * 2]:
+        if isinstance(m, str):
+            m = {"id": m}
+        mid = m.get("id") if isinstance(m, dict) else None
+        if not isinstance(mid, str) or not MOD_ID_RE.fullmatch(mid) or mid in seen:
+            continue
+        seen.add(mid)
+        one = {"id": mid}
+        if isinstance(m.get("version"), str) and MOD_VERSION_RE.fullmatch(m["version"]):
+            one["version"] = m["version"]
+        out.append(one)
+        if len(out) >= MAX_MODS:
+            break
+    return out
+
+
+def realm_mods(v, builtin):
+    """The realm's list: the built-in Leyline Modes first (a realm with the Leyline realm scripts runs them), then the host's."""
+    return clean_mods(([{"id": "mode:" + m} for m in BUILTIN_MODES] if builtin else []) + (v if isinstance(v, list) else []))
+
+
+def parse_mod(arg):
+    """ID or ID@VERSION from the command line, checked; exits with a plain message when it is not a mod id."""
+    mid, _, ver = arg.strip().partition("@")
+    if not MOD_ID_RE.fullmatch(mid):
+        sys.exit(f"Not a mod id: {arg!r}. Use the id from the Workshop, like mod:dalaran-dice, up:skada or mode:minigolf.")
+    if ver and not MOD_VERSION_RE.fullmatch(ver):
+        sys.exit(f"Not a version: {ver!r}.")
+    return {"id": mid, **({"version": ver} if ver else {})}
+
+
+def cmd_mods(a):
+    """The realm's mod list on the realm list (docs/GAME-MODS.md). add/remove change state/beacon.json too (the host's
+    copy of the list text); the agent sends the list with its next heartbeat. Names only: nothing is downloaded here."""
+    cfg = load()
+    if not cfg:
+        sys.exit("Run Host a Wrath realm first.")
+    builtin = not cfg.get("linked") and cfg.get("profile") not in cores.PROFILES
+    if a.action in ("add", "remove"):
+        if not a.ids:
+            sys.exit(f"Usage: leyline mods {a.action} ID [ID ...]")
+        want = [parse_mod(x) for x in a.ids]
+        cur = [m for m in clean_mods((cfg.get("record") or {}).get("mods")) if not (builtin and m["id"][5:] in BUILTIN_MODES
+                                                                                    and m["id"].startswith("mode:"))]
+        if a.action == "add":
+            ids = {m["id"] for m in want}
+            cur = [m for m in cur if m["id"] not in ids] + want
+            if len(cur) + (len(BUILTIN_MODES) if builtin else 0) > MAX_MODS:
+                sys.exit(f"A realm lists at most {MAX_MODS} mods.")
+        else:
+            gone = {m["id"] for m in want}
+            if builtin and any(i.startswith("mode:") and i[5:] in BUILTIN_MODES for i in gone):
+                sys.exit("The Leyline Modes come with this realm's scripts, so they stay on its list.")
+            cur = [m for m in cur if m["id"] not in gone]
+
+        def put(c):
+            c.setdefault("record", {})["mods"] = cur
+            try:
+                with open(path("beacon.json"), encoding="utf-8-sig") as f:
+                    b = json.load(f)
+            except (OSError, ValueError):
+                b = None
+            if isinstance(b, dict):   # beacon.json is the host's copy of the text: keep it in step
+                b["mods"] = cur
+                with open(path("beacon.json"), "w", encoding="utf-8") as f:
+                    json.dump(b, f, indent=1)
+        _edit(put)
+    rec = (load() or {}).get("record") or {}
+    mods = rec.get("mods") or []
+    sys.stderr.write((f"This realm lists {len(mods)} mod{'' if len(mods) == 1 else 's'}:\n" if mods else "This realm lists no mods.\n")
+                     + "".join(f"  {m['id']}{' ' + m['version'] if m.get('version') else ''}\n" for m in mods)
+                     + ("The realm list shows changes within a minute. Players' launchers offer the ones in the Workshop "
+                        "when they join.\n" if a.action != "list" else ""))
 
 
 def listing_fields(rec, cfg):
@@ -1171,6 +1263,10 @@ def main(argv=None):
     p.add_argument("state", choices=["on", "off"])
     p.set_defaults(fn=cmd_herokey)
     sub.add_parser("rules").set_defaults(fn=cmd_rules)
+    p = sub.add_parser("mods", help="the mods this realm runs or asks players to have (docs/GAME-MODS.md)")
+    p.add_argument("action", nargs="?", choices=["list", "add", "remove"], default="list")
+    p.add_argument("ids", nargs="*", help="mod:<id>, up:<slug> or mode:<id>, optionally @VERSION")
+    p.set_defaults(fn=cmd_mods)
     p = sub.add_parser("options", help="the realm's own settings: type, rates, start (state/realm.env)")
     p.add_argument("--type", choices=sorted(TYPES))
     p.add_argument("--xp", type=int)

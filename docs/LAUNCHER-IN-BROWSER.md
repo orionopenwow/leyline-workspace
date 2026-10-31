@@ -42,6 +42,10 @@ Status: **done** = the browser has it now. **closed** = closed by the hub work i
    the Beacon agent on the host's PC. Needs a control channel the agent doesn't have today.
 5. **One news source.** The launcher reads `/wrath/leyline/news.json` (cached) instead of its built-in list, so the
    website and the launcher say the same.
-6. **Light look on the hub.** The launcher has Dark and Light; the hub is Dark only.
+6. ~~**Light look on the hub.**~~ Done (31 Oct): the hub, the forum and the Host page wear the launcher's palette
+   (design/server-window.tokens.json through `python3 design/make_tokens.py`, the accent from launcher/ui/style.css),
+   Dark by default and Light when the visitor's system is set to light. Mods, Addons (the upstream marketplace with
+   its kinds, licence chip, credit line and "Works on" badge), Realms, Host (Start / Guide / Host pack & settings)
+   and Forum use the launcher's panels, tabs, chips and cards under a website top bar; Play is the red PLAY.
 7. **Other builds in the browser.** Play in browser is 3.3.5a only (the browser client). 1.12.1 and 2.4.3 realms show
    "Needs a 1.12.1 client" and their address.

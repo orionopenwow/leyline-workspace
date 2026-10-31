@@ -91,6 +91,28 @@ class Fields(unittest.TestCase):
         self.assertEqual((r["tags"], r["region"], r["language"], r["maxPlayers"]), (["blizzlike"], "na-east", "en", 50))
 
 
+class Mods(unittest.TestCase):
+    """The realm's mod list (docs/GAME-MODS.md): ids and versions only, checked, on the public record."""
+
+    def test_mods_checked_and_capped(self):
+        rec = listing.clean_record({"name": "A", "mods": [
+            {"id": "mode:minigolf"}, {"id": "mod:dalaran-dice", "version": "0.1.0", "url": "https://evil.example/x.zip"},
+            "up:skada", {"id": "mod:dalaran-dice"}, {"id": "https://evil.example/x.zip"}, {"id": "mod:../../etc"},
+            {"id": "mod:dice\n"}, {"id": "up:pfquest", "version": "../../x"}, 7, None]})
+        self.assertEqual(rec["mods"], [{"id": "mode:minigolf"}, {"id": "mod:dalaran-dice", "version": "0.1.0"},
+                                       {"id": "up:skada"}, {"id": "up:pfquest"}])
+        self.assertEqual(len(listing.clean_record({"name": "A", "mods": [f"mod:m{i:03d}" for i in range(99)]})["mods"]), 32)
+        self.assertEqual(listing.clean_record({"name": "A", "mods": "mod:x"})["mods"], [])
+        self.assertEqual(listing.clean_record({"name": "A"})["mods"], [], "older agents: no list")
+
+    def test_record_carries_the_mods(self):
+        L, h, now = listing.Listing(cfg()), Host(), time.time()
+        L.heartbeat(h.beat(now, record={"name": "Frost Haven", "mods": [{"id": "mode:coin-dash"}, {"id": "mod:pings", "version": "0.1.0"}]}),
+                    "1.2.3.4", now=now)
+        r = L.realms_json(now)["realms"][0]
+        self.assertEqual(r["mods"], [{"id": "mode:coin-dash"}, {"id": "mod:pings", "version": "0.1.0"}])
+
+
 class Uptime(unittest.TestCase):
     def test_uptime_24h_and_7d_from_heartbeats(self):
         L, h = listing.Listing(cfg()), Host()
@@ -251,6 +273,38 @@ class Setup(unittest.TestCase):
         rec = self.cfg()["record"]
         self.assertEqual((rec["tags"], rec["language"], rec["region"]), (["custom"], None, "eu"))
 
+
+    def test_mods_command(self):
+        self.s.main(["init", "--name", "Frost Haven", "--profile", "dalaran", "--visibility", "public", "--gm-name", "HOSTER"])
+        builtin = [{"id": "mode:" + m} for m in self.s.BUILTIN_MODES]
+        self.assertEqual(self.cfg()["record"]["mods"], builtin, "a Leyline realm lists the built-in modes by itself")
+        self.s.main(["mods", "add", "mod:dalaran-dice@0.1.0", "up:skada"])
+        want = builtin + [{"id": "mod:dalaran-dice", "version": "0.1.0"}, {"id": "up:skada"}]
+        self.assertEqual(self.cfg()["record"]["mods"], want)
+        self.assertEqual(rd(os.path.join(self.kit, "state", "beacon.json"))["mods"], want, "beacon.json in step")
+        self.s.main(["mods", "add", "mod:dalaran-dice@0.2.0"])
+        self.assertEqual(self.cfg()["record"]["mods"][-1], {"id": "mod:dalaran-dice", "version": "0.2.0"}, "re-adding updates the version")
+        self.s.main(["mods", "remove", "up:skada"])
+        self.assertEqual([m["id"] for m in self.cfg()["record"]["mods"]][4:], ["mod:dalaran-dice"])
+        for bad in (["mods", "add", "https://evil.example/x.zip"], ["mods", "add", "mod:../x"], ["mods", "add"],
+                    ["mods", "remove", "mode:minigolf"], ["mods", "add", "mod:dice@../x"]):
+            with self.assertRaises(SystemExit, msg=bad):
+                self.s.main(bad)
+        # beacon.json edited by hand: checked (a URL dropped), built-ins kept first
+        p = os.path.join(self.kit, "state", "beacon.json")
+        b = rd(p)
+        b["mods"] = ["mod:pings", "https://evil.example/x", {"id": "mode:minigolf"}]
+        wr(p, b)
+        self.s.main(["rules"])
+        self.assertEqual(self.cfg()["record"]["mods"], builtin + [{"id": "mod:pings"}])
+        self.s.main(["mods"])   # list: changes nothing
+
+    def test_linked_server_has_no_builtin_modes(self):
+        self.s.main(["link", "--name", "Old Days", "--auth-service", "127.0.0.1:3724", "--world-service", "127.0.0.1:8085",
+                     "--build", "5875", "--core", "vmangos"])
+        self.assertEqual(self.cfg()["record"].get("mods") or [], [])
+        self.s.main(["mods", "add", "up:pfquest"])
+        self.assertEqual(self.cfg()["record"]["mods"], [{"id": "up:pfquest"}])
 
 
 class ScoreCap(unittest.TestCase):

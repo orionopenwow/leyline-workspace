@@ -713,50 +713,112 @@ def script_bat(rec: dict) -> bytes:
 # ----------------------------------------------------------------------------------------------
 
 HOST_CSS = """
-.hf{max-width:760px}.hf .ly-panel{padding:22px 22px 24px}
-.hf label{display:block;font-weight:600;margin:14px 0 4px;color:var(--ly-ink)}
-.hf .hint{display:block;font-weight:400;font-size:13px;color:var(--ly-dim);margin-top:2px}
-.hf input[type=text],.hf textarea{width:100%;background:rgba(5,6,20,.85);color:var(--ly-ink);border:1px solid var(--ly-line);
-border-radius:5px;padding:10px 12px;font:15px/1.4 system-ui,sans-serif}
+.hf{display:block}
+.hf .back{display:none}
+.hf-pg{scroll-margin-top:80px}
+.hf-who{margin:0;color:var(--lk-muted);font-size:13.5px}
+.hf-cols{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:20px;align-items:start}
+.hf-pane{scroll-margin-top:90px;min-width:0}
+.hf-pack{grid-column:1/-1}
+/* the Start card: the launcher's slate card with the crest, the eyebrow and the title */
+.hf-card{position:relative;padding:22px 22px 24px;border:1px solid var(--lk-border-strong);border-radius:var(--lk-r);
+background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--lk-text) 1.6%,transparent) 0 2px,transparent 2px 7px),
+linear-gradient(180deg,var(--lk-surface-2),var(--lk-surface));box-shadow:inset 0 1px 0 color-mix(in srgb,var(--lk-text) 5%,transparent)}
+.hf-card-h{display:flex;align-items:center;gap:14px;margin:0 0 14px;padding-bottom:14px;border-bottom:1px solid var(--lk-border)}
+.hf-card-h .ly-spin{--ly-spin-size:44px!important}
+.hf-crest{display:grid;place-items:center;flex:none;width:46px;height:46px;border-radius:50%;border:1px solid var(--lk-gold-line);
+background:radial-gradient(circle at 50% 40%,var(--lk-surface-2),var(--lk-bg))}
+.hf-eyebrow{margin:0;color:var(--lk-gold);font-size:11.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+.hf-card h2,.hf .hf-card-h h2{margin:2px 0 0;font-size:22px;line-height:1.2;font-weight:700;text-align:left}
+.hf .ly-lede{margin:0 0 10px;color:var(--lk-text-2);font-size:15px;text-align:left;max-width:none}
+.hf-cap{margin:22px 0 10px;color:var(--lk-muted);font-size:11.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+.hf-cap:first-child{margin-top:0}
+/* the steps: big numbers, done ticks (the launcher's "Before you start") */
+.hf-steps{display:grid;gap:10px;margin:0;padding:12px;list-style:none;counter-reset:hf;border:1px solid var(--lk-gold-line);border-radius:12px;
+background:color-mix(in srgb,var(--lk-gold) 5%,transparent)}
+.hf-steps>li{counter-increment:hf;display:grid;grid-template-columns:36px minmax(0,1fr);gap:4px 14px;align-items:center;margin:0;
+padding:12px 14px;border-radius:10px;background:var(--lk-surface);border:1px solid var(--lk-border)}
+.hf-steps>li::before{content:counter(hf);grid-row:1/span 3;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;
+background:var(--lk-accent);color:var(--lk-on-accent);font-weight:700;font-size:15px;box-shadow:0 0 0 4px var(--lk-accent-soft)}
+.hf-steps>li>b{font-size:16px;font-weight:650;color:var(--lk-text)}
+.hf-steps>li>span{color:var(--lk-text-2);font-size:14px}
+.hf-steps>li>.row{justify-content:flex-start;margin:6px 0 0}
+.hf-steps .hint{margin:4px 0 0}
+.hf-steps .link{margin:6px 0 0}
+/* the Guide: the launcher's accordion */
+.hf-guide{padding:16px;border:1px solid var(--lk-border);border-radius:var(--lk-r);background:var(--lk-surface)}
+.hf-guide details{margin:0 0 8px;border:1px solid var(--lk-border);border-radius:10px;background:var(--lk-surface-2)}
+.hf-guide summary{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;cursor:pointer;list-style:none;
+font-weight:600;font-size:14px;color:var(--lk-text)}
+.hf-guide summary::-webkit-details-marker{display:none}
+.hf-guide summary::after{content:"";flex:none;width:7px;height:7px;border:solid var(--lk-muted);border-width:0 1.6px 1.6px 0;transform:rotate(45deg) translateY(-2px)}
+.hf-guide details[open] summary::after{transform:rotate(-135deg)}
+.hf-guide details p{margin:0;padding:0 12px 12px;color:var(--lk-text-2);font-size:13.5px}
+.hf-pack-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.hf-pack-g>section{padding:18px;border:1px solid var(--lk-border);border-radius:12px;background:var(--lk-surface-2)}
+.hf-pack-g h2{margin:0 0 6px;font-size:17px;text-align:left}.hf-pack-g p{margin:0 0 10px;color:var(--lk-text-2);font-size:14px}
+@supports selector(:has(a)){
+.hf-pack{display:none}
+.hf-pg:has(#hf-guide:target) .hf-start,.hf-pg:has(#hf-pack:target) :is(.hf-start,.hf-guide){display:none}
+.hf-pg:has(#hf-pack:target) .hf-pack{display:block}
+.hf-pg:has(#hf-guide:target) .hf-cols{grid-template-columns:minmax(0,1fr)}
+.hf-pg:has(#hf-guide:target) .hf-guide{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;align-items:start}
+.hf-pg:has(#hf-guide:target) .hf-guide :is(.hf-cap,.hf-fine){grid-column:1/-1}
+.hf-pg:has(#hf-guide:target) .hf-guide details{margin:0}
+.hf-pg:not(:has(:is(#hf-guide,#hf-pack):target)) .hf-seg a[data-t=start],.hf-pg:has(#hf-guide:target) .hf-seg a[data-t=guide],
+.hf-pg:has(#hf-pack:target) .hf-seg a[data-t=pack]{background:var(--lk-accent);color:var(--lk-on-accent)!important}
+}
+/* the form */
+.hf label{display:block;font-weight:600;margin:16px 0 5px;color:var(--lk-text);font-size:14px}
+.hf .hint{display:block;font-weight:400;font-size:13px;color:var(--lk-muted);margin-top:2px}
+.hf input[type=text],.hf input[type=number],.hf textarea,.hf select{width:100%;min-height:40px;background:var(--lk-surface-2);color:var(--lk-text);
+border:1px solid var(--lk-border);border-radius:var(--lk-r-sm);padding:9px 12px;font:15px/1.4 var(--lk-font)}
 .hf textarea{min-height:120px;resize:vertical}
-.hf input:focus,.hf textarea:focus{outline:2px solid var(--ly-cyan);outline-offset:1px}
+.hf :is(input,textarea,select):focus{outline:none;border-color:var(--lk-accent);box-shadow:0 0 0 3px var(--lk-accent-soft)}
 .hf .opts{display:grid;gap:8px;grid-template-columns:repeat(2,minmax(0,1fr))}
-@media (max-width:560px){.hf .opts{grid-template-columns:1fr}}
-.hf .opt{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--ly-line);border-radius:6px;padding:10px 12px;
-background:rgba(18,22,54,.6);font-weight:400;margin:0;cursor:pointer}
-.hf .opt b{display:block;color:var(--ly-cyan)}.hf .opt span{font-size:14px;color:var(--ly-dim)}
-.hf .opt input{margin-top:4px;accent-color:#5fe3ff}
-.hf .recipes-l{list-style:none;margin:0 0 8px;padding:0;display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
-.hf .recipes-l a{display:grid;gap:2px;height:100%;padding:10px 12px;border:1px solid var(--ly-line);border-radius:8px;
-background:rgba(18,22,54,.6);text-decoration:none;color:var(--ly-ink)}
-.hf .recipes-l a:hover{border-color:var(--ly-cyan)}
-.hf .recipes-l b{color:var(--ly-cyan)}.hf .recipes-l span{font-size:13.5px;color:var(--ly-dim)}
-.hf .err{color:#ff9a8a;font-size:14px;margin:4px 0 0}
-.hf .go{margin-top:20px;display:flex;justify-content:center}
-.hf button,.hf a.dl{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:52px;padding:10px 26px;
-font:600 20px/1.1 'Leyline Display','OW Cinzel',Impact,sans-serif;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;
-color:#1a1030;background:linear-gradient(180deg,#9ff0ff,#5fe3ff);border:1px solid #9ff0ff;border-radius:6px;text-decoration:none}
-.hf a.dl{font-size:16px;min-height:44px;padding:8px 18px;color:var(--ly-ink)!important;
-background:linear-gradient(180deg,rgba(40,52,110,.92),rgba(16,20,52,.95));border-color:rgba(140,170,255,.45)}
-.hf button:focus-visible,.hf a.dl:focus-visible{outline:2px solid #fff;outline-offset:2px}
-.hf .row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:10px 0}
-.hf code,.hf .link{display:block;background:rgba(5,6,20,.85);border:1px solid var(--ly-line);border-radius:5px;padding:9px 12px;
-font:14px/1.4 ui-monospace,monospace;overflow-wrap:anywhere;color:var(--ly-ink)}
-.hf .pill{display:inline-block;border-radius:999px;padding:4px 12px;font-weight:600;font-size:14px;border:1px solid var(--ly-line)}
-.hf .pill.waiting{color:#ffd27a;border-color:rgba(255,210,122,.5)}.hf .pill.online,.hf .pill.listed{color:#5ef0a0;border-color:rgba(94,240,160,.5)}
-.hf .pill.offline{color:var(--ly-dim)}
-.hf ol{padding-left:1.3rem}.hf li{margin:8px 0}.hf .mine a{color:var(--ly-cyan)}
-.hf .back{display:inline-block;margin:0 0 6px;font-size:14px}
-.hf h1{font-size:clamp(40px,8vw,72px)}
-.hf .more{margin-top:18px;border:1px solid var(--ly-line);border-radius:6px;padding:4px 14px 14px;background:rgba(18,22,54,.4)}
-.hf .more summary{cursor:pointer;font-weight:600;padding:10px 0;color:var(--ly-cyan)}
-.hf select,.hf input[type=number]{width:100%;background:rgba(5,6,20,.85);color:var(--ly-ink);border:1px solid var(--ly-line);
-border-radius:5px;padding:9px 10px;font:15px system-ui,sans-serif}
+.hf .opt{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--lk-border);border-radius:10px;padding:11px 13px;
+background:var(--lk-surface);font-weight:400;margin:0;cursor:pointer}
+.hf .opt:hover{border-color:var(--lk-border-strong)}
+.hf .opt:has(input:checked){border-color:var(--lk-accent);box-shadow:0 0 0 1px var(--lk-accent),0 0 0 4px var(--lk-accent-soft)}
+.hf .opt b{display:block;color:var(--lk-text);font-weight:650}.hf .opt span{font-size:13.5px;color:var(--lk-muted)}
+.hf .opt input{margin-top:4px;accent-color:var(--lk-accent)}
+.hf .recipes-l{list-style:none;margin:0 0 8px;padding:0;display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
+.hf .recipes-l a{display:grid;gap:2px;height:100%;padding:11px 13px;border:1px solid var(--lk-border);border-radius:10px;
+background:var(--lk-surface);text-decoration:none;color:var(--lk-text)}
+.hf .recipes-l a:hover{border-color:var(--lk-accent)}
+.hf .recipes-l b{color:var(--lk-text);font-weight:650}.hf .recipes-l span{font-size:13px;color:var(--lk-muted)}
+.hf .err{color:var(--lk-bad);font-size:14px;margin:4px 0 0}
+.hf .go{margin-top:20px;display:flex;justify-content:flex-start}
+.hf button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 24px;font:600 16px var(--lk-font);
+cursor:pointer;color:var(--lk-on-accent);background:var(--lk-accent);border:0;border-radius:var(--lk-r-sm);
+box-shadow:0 8px 22px color-mix(in srgb,var(--lk-accent) 30%,transparent)}
+.hf button:hover{background:var(--lk-accent-strong)}
+.hf a.dl{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:0 16px;border-radius:var(--lk-r-sm);
+font-weight:600;font-size:14px;text-decoration:none;color:var(--lk-text)!important;background:var(--lk-surface-2);border:1px solid var(--lk-border-strong)}
+.hf a.dl:hover{border-color:var(--lk-accent)}
+.hf a.dl.primary{background:var(--lk-accent);border-color:var(--lk-accent);color:var(--lk-on-accent)!important}
+.hf a.dl.primary:hover{background:var(--lk-accent-strong)}
+.hf :is(button,a.dl):focus-visible{outline:2px solid var(--lk-accent-strong);outline-offset:2px}
+.hf .row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.hf code,.hf .link{display:block;background:var(--lk-bg);border:1px solid var(--lk-border);border-radius:8px;padding:9px 12px;
+font:13.5px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:anywhere;color:var(--lk-text)}
+.hf .pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 12px;font-weight:600;font-size:13px;border:1px solid var(--lk-border-strong)}
+.hf .pill.waiting{color:var(--lk-warn);border-color:color-mix(in srgb,var(--lk-warn) 50%,transparent)}
+.hf .pill.online,.hf .pill.listed{color:var(--lk-ok);border-color:color-mix(in srgb,var(--lk-ok) 50%,transparent);background:color-mix(in srgb,var(--lk-ok) 10%,transparent)}
+.hf .pill.offline{color:var(--lk-muted)}
+.hf ol{padding-left:1.3rem}.hf li{margin:6px 0}.hf .mine a{color:var(--lk-accent-strong)}
+.hf .ly-panel{margin:14px 0 0;padding:18px 18px 20px;border:1px solid var(--lk-border);border-radius:12px;background:var(--lk-surface);box-shadow:none}
+.hf .hf-card .ly-panel{background:transparent;border:0;padding:0;margin:18px 0 0}
+.hf .ly-panel h2,.hf-card .ly-panel h2{margin:0 0 10px;font-size:17px;text-align:left}
+.hf .needs{margin:0;padding:0;border:0;background:none}.hf .needs p{margin:4px 0;color:var(--lk-text-2);font-size:14.5px}
+.hf .needs b{color:var(--lk-text)}
+.hf .more{margin-top:18px;border:1px solid var(--lk-border);border-radius:10px;padding:2px 14px 14px;background:var(--lk-surface)}
+.hf .more summary{cursor:pointer;font-weight:600;padding:10px 0;color:var(--lk-accent-strong)}
 .hf .trio{display:grid;gap:10px;grid-template-columns:repeat(3,minmax(0,1fr))}
-@media (max-width:560px){.hf .trio{grid-template-columns:1fr}}
 .hf .tags{display:flex;flex-wrap:wrap;gap:6px 14px}.hf label.tag{display:inline-flex;gap:6px;font-weight:400;margin:4px 0}
-.hf .needs p{margin:4px 0}.hf .ver{display:inline-block;padding:0 7px;border-radius:999px;border:1px solid var(--ly-line);font-size:12.5px}
-.hf .live{border-color:rgba(94,240,160,.55)}.hf .live .link{user-select:all;-webkit-user-select:all;margin:6px 0}
+.hf .ver{display:inline-block;padding:0 7px;border-radius:6px;border:1px solid var(--lk-gold-line);color:var(--lk-gold);
+background:color-mix(in srgb,var(--lk-gold) 12%,transparent);font:600 12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.hf .live{border-color:color-mix(in srgb,var(--lk-ok) 55%,transparent)}.hf .live .link{user-select:all;-webkit-user-select:all;margin:6px 0}
 .hf .poster{position:relative;isolation:isolate;display:flex;flex-direction:column;justify-content:flex-end;max-width:280px;min-height:220px;
 padding:16px;border-radius:12px;overflow:hidden;border:1px solid rgba(140,170,255,.45);
 background:linear-gradient(var(--a),hsl(var(--h1) 55% 26%),hsl(var(--h2) 50% 16%) 70%,#11131a)}
@@ -765,7 +827,11 @@ background:url(/wrath/art/leyline-crystal-256.webp) var(--x) var(--y)/58% no-rep
 .hf .poster::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,transparent 30%,rgba(10,12,18,.88))}
 .hf .poster h3{margin:0 0 4px;font-size:21px;color:#fff}.hf .poster-p{position:absolute;top:12px;left:14px;margin:0;font-size:12.5px;color:#dfe6ff}
 .hf .poster-l{margin:0;color:#d6dbea;font-size:14px}
-.hf .note{border:1px solid rgba(91,141,239,.55);background:rgba(91,141,239,.12);border-radius:6px;padding:10px 12px;font-size:14px}
+.hf .note{border:1px solid var(--lk-accent);background:var(--lk-accent-soft);border-radius:10px;padding:10px 12px;font-size:14px}
+.hf .ly-fine,.hf-fine{margin:14px 0 0;color:var(--lk-muted);font-size:13.5px}
+@media (max-width:900px){.hf-cols{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:560px){.hf .opts,.hf .trio{grid-template-columns:1fr}.hf-card{padding:16px}.hf-steps{padding:8px}
+.hf-steps>li{grid-template-columns:28px minmax(0,1fr);gap:4px 10px;padding:10px;align-items:start}.hf-steps>li::before{width:26px;height:26px;font-size:13px}}
 """
 
 PLUS_CSS = (".ly-plus{display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:999px;text-decoration:none;"
@@ -782,12 +848,24 @@ def plus_button(where: str = "") -> str:
 
 
 def page(title: str, inner: str, refresh: int = 0) -> bytes:
+    """A Host page: in the hub's shell (the website's top bar, the launcher's look) when the portal has the hub, else
+    the plain Leyline page. Private to the signed-in host: never indexed."""
     e = html.escape
-    css = P("leyline_css")() + HOST_CSS
-    meta = f'<meta http-equiv="refresh" content="{int(refresh)}">' if refresh else ""
+    meta = (f'<meta http-equiv="refresh" content="{int(refresh)}">' if refresh else "") + '<meta name="robots" content="noindex">'
+    hub = P("hub_mod")
+    if hub is not None and getattr(hub, "hub", None) is not None:
+        try:
+            out = hub.hub._shell(f"{title} · Leyline", f'<div class="hf">{inner}</div>', "/wrath/host", active="host", css=HOST_CSS)
+            if hub.front_on():   # the hub's own links, at the front door's address (as hub._Live does)
+                out = out.replace(hub.BASE.encode(), hub.FRONT.encode())
+            out = out.replace(b'<meta name="robots" content="noindex">', b"")
+            return out.replace(b"<title>", meta.encode() + b"<title>", 1)
+        except Exception:   # noqa: BLE001: the plain page then
+            pass
+    css = (P("LOOK_VARS") or "") + P("leyline_css")() + HOST_CSS
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">'
-            f'<meta name="robots" content="noindex">{meta}<title>{e(title)} · Leyline</title><style>{css}</style></head>'
+            f'{meta}<title>{e(title)} · Leyline</title><style>{css}</style></head>'
             f'<body class="ly"><div class="ly-glow"></div><div class="ly-wrap hf">'
             f'<a class="back" href="/wrath/leyline">&larr; Leyline</a>{inner}</div></body></html>').encode("utf-8")
 
@@ -866,36 +944,44 @@ def form_page(owner: str, display: str, vals: dict | None = None, errs: dict | N
                                f'<span class="hint">{e(PRESETS[r["preset"]][0])}, {e(r["visibility"])}</span></li>'
                                for r in mine) + '</ul></section>')
     full = len(mine) >= PER_ACCOUNT
+    form = ('<section class="ly-panel"><p>You have made the most realms one account can for now '
+            f'({PER_ACCOUNT}). Open one above to start it.</p></section>' if full else
+            '<section class="ly-panel recipes"><h2>Start from a ready-made realm</h2><ul class="recipes-l">'
+            + "".join(f'<li><a href="/wrath/host?recipe={k}"><b>{e(r[0])}</b><span>{e(r[1])}</span></a></li>' for k, r in RECIPES.items())
+            + '</ul><p class="hint">Each fills the form below; name it and press Start server.</p>'
+            f'<p class="hint">Want it up all the time, or already run a server? <a href="{ALWAYS_ON_URL}">Run an always-on '
+            'realm, or put your own server on the list</a>.</p></section>'
+            '<section class="ly-panel" id="new-realm"><h2>New realm</h2>'
+            + (f'<p class="note" role="status">{e(note)}</p>' if note else "")
+            + (f'<p class="err">{e(errs["_"])}</p>' if "_" in errs else "") +
+            '<form method="post" action="/wrath/host">'
+            f'<input type="hidden" name="csrf" value="{e(csrf(owner))}">'
+            '<label for="f-name">Realm name<span class="hint">Up to 32 letters, digits, spaces, _ \' or -</span></label>'
+            f'<input type="text" id="f-name" name="name" maxlength="32" required value="{e(vals.get("name", ""))}">{er("name")}'
+            f'<label>Preset</label><div class="opts">{opts}</div>{er("preset")}'
+            '<label for="f-tag">Tagline<span class="hint">One line for the realm list (optional)</span></label>'
+            f'<input type="text" id="f-tag" name="tagline" maxlength="{TAGLINE_LEN}" value="{e(vals.get("tagline", ""))}">{er("tagline")}'
+            f'<label for="f-rules">House rules<span class="hint">One per line, up to {MAX_RULES}. Shown on the realm list and your join page.</span></label>'
+            f'<textarea id="f-rules" name="rules">{e(rules_text)}</textarea>{er("rules")}'
+            f'<label>Who can join</label><div class="opts">{visopts}</div>{er("visibility")}'
+            + more_settings(vals, errs) +
+            '<label for="f-gm">Your GM account name<span class="hint">3 to 16 letters or digits. You make this game account '
+            'yourself on your realm\'s join page, with your own password; it gets GM rights by itself.</span></label>'
+            f'<input type="text" id="f-gm" name="gm" maxlength="16" required autocomplete="off" value="{e(vals.get("gm", ""))}">{er("gm")}'
+            '<div class="go"><button type="submit">Start server</button></div></form></section>')
+    # the launcher's Host page on the web (owner 2026-10-31): Start (the steps, the rulesets, the form), Guide, and
+    # Host pack & settings, as tabs that are anchors (no script: the tab in the address shows its pane)
+    spin = P("spin")
+    crest = f'<span class="hf-crest" aria-hidden="true">{spin(40, "slow") if spin else ""}</span>'
     inner = (
-        '<header class="ly-hero"><h1>Your server</h1>'
+        '<section class="hb-pg hf-pg" aria-labelledby="hf-h"><header class="hb-pg-h"><div class="hb-pg-t"><h1 id="hf-h">Host</h1>'
+        + host_tabs() + '</div></header><div class="hb-pg-b hf-cols">'
+        f'<div class="hf-pane hf-start" id="hf-start"><div class="hf-card"><div class="hf-card-h">{crest}<div>'
+        '<p class="hf-eyebrow">Your server</p><h2>Host a realm</h2></div></div>'
         f'<p class="ly-lede">Signed in as {e(display)}. Your realm runs on your own PC, free, and players reach it '
-        'through the Leyline relay: nobody sees your home address and you open no ports.</p></header>'
-        + needs_panel() + mine_html +
-        ('<section class="ly-panel"><p>You have made the most realms one account can for now '
-         f'({PER_ACCOUNT}). Open one above to start it.</p></section>' if full else
-         '<section class="ly-panel recipes"><h2>Start from a ready-made realm</h2><ul class="recipes-l">'
-         + "".join(f'<li><a href="/wrath/host?recipe={k}"><b>{e(r[0])}</b><span>{e(r[1])}</span></a></li>' for k, r in RECIPES.items())
-         + '</ul><p class="hint">Each fills the form below; name it and press Start server.</p>'
-         f'<p class="hint">Want it up all the time, or already run a server? <a href="{ALWAYS_ON_URL}">Run an always-on '
-         'realm, or put your own server on the list</a>.</p></section>'
-         '<section class="ly-panel"><h2>New realm</h2>'
-         + (f'<p class="note" role="status">{e(note)}</p>' if note else "")
-         + (f'<p class="err">{e(errs["_"])}</p>' if "_" in errs else "") +
-         '<form method="post" action="/wrath/host">'
-         f'<input type="hidden" name="csrf" value="{e(csrf(owner))}">'
-         '<label for="f-name">Realm name<span class="hint">Up to 32 letters, digits, spaces, _ \' or -</span></label>'
-         f'<input type="text" id="f-name" name="name" maxlength="32" required value="{e(vals.get("name", ""))}">{er("name")}'
-         f'<label>Preset</label><div class="opts">{opts}</div>{er("preset")}'
-         '<label for="f-tag">Tagline<span class="hint">One line for the realm list (optional)</span></label>'
-         f'<input type="text" id="f-tag" name="tagline" maxlength="{TAGLINE_LEN}" value="{e(vals.get("tagline", ""))}">{er("tagline")}'
-         f'<label for="f-rules">House rules<span class="hint">One per line, up to {MAX_RULES}. Shown on the realm list and your join page.</span></label>'
-         f'<textarea id="f-rules" name="rules">{e(rules_text)}</textarea>{er("rules")}'
-         f'<label>Who can join</label><div class="opts">{visopts}</div>{er("visibility")}'
-         + more_settings(vals, errs) +
-         '<label for="f-gm">Your GM account name<span class="hint">3 to 16 letters or digits. You make this game account '
-         'yourself on your realm\'s join page, with your own password; it gets GM rights by itself.</span></label>'
-         f'<input type="text" id="f-gm" name="gm" maxlength="16" required autocomplete="off" value="{e(vals.get("gm", ""))}">{er("gm")}'
-         '<div class="go"><button type="submit">Start server</button></div></form></section>'))
+        'through the Leyline relay: nobody sees your home address and you open no ports.</p>'
+        + needs_panel() + '<h3 class="hf-cap">Before you start</h3>' + before_steps() + mine_html + form + '</div></div>'
+        + guide_pane() + pack_pane() + '</div></section>')
     return page("Your server", inner)
 
 
@@ -912,6 +998,78 @@ def needs_panel() -> str:
             '<section class="ly-panel needs" aria-label="What you need"><p><b>You need:</b> '
             f'{e(NEEDS[0])}, {e(NEEDS[1])} <span class="ver" title="Game client version">3.3.5a</span>, {e(NEEDS[2])}.</p>'
             f'<p>{e(NEEDS_TIME)} <a href="{NETWORK_DOC}">How the Leyline network works</a></p></section>')
+
+
+def host_tabs() -> str:
+    """Start, Guide and Host pack & settings: links to the panes (CSS shows the one in the address)."""
+    return ('<nav class="hb-seg hf-seg" aria-label="Host">'
+            '<a href="/wrath/host#hf-start" data-t="start">Start</a><a href="/wrath/host#hf-guide" data-t="guide">Guide</a>'
+            '<a href="/wrath/host#hf-pack" data-t="pack">Host pack &amp; settings</a></nav>')
+
+
+def _launcher_url() -> str:
+    hub = P("hub_mod")
+    try:
+        return hub.hub._download() if hub is not None else LAUNCHER_FALLBACK
+    except Exception:   # noqa: BLE001
+        return LAUNCHER_FALLBACK
+
+
+LAUNCHER_FALLBACK = "https://github.com/orionopenwow/Leyline/releases"
+DOCKER_URL = "https://www.docker.com/products/docker-desktop/"
+
+
+def before_steps() -> str:
+    """The two things a host needs first and the third that starts it, as the launcher's numbered steps."""
+    e = html.escape
+    return ('<ol class="hf-steps">'
+            '<li><b>Get the Host pack</b><span>The Leyline launcher has it built in, or download the pack on its own.</span>'
+            f'<div class="row"><a class="dl primary" href="{e(_launcher_url())}" rel="noopener noreferrer">Get the launcher</a>'
+            f'<a class="dl" href="{e(KIT_URL or GUIDE_URL)}" rel="noopener noreferrer">Host pack</a></div></li>'
+            '<li><b>Get Docker</b><span>Docker Desktop runs the realm\'s servers on your PC. It is free for personal use.</span>'
+            f'<div class="row"><a class="dl" href="{DOCKER_URL}" rel="noopener noreferrer">Get Docker</a></div></li>'
+            '<li><b>Pick a ruleset and start</b><span>Name your realm below and press Start server. Then run the file it gives '
+            'you in the Host pack folder.</span></li></ol>')
+
+
+GUIDE = (
+    ("How the Leyline network works", "Players reach your realm through the Leyline relay: no ports to open, and your "
+     "address stays hidden.", NETWORK_DOC, "How the network works"),
+    ("Start your realm", "Pick a ruleset, name it and press Start server. Download your realm's file into the Host pack "
+     "folder and run it. The first start takes 5 to 20 minutes.", None, None),
+    ("Public or private", "Public realms show on the realm list for everyone. Private ones only let in people with your "
+     "invite link.", None, None),
+    ("Invite friends", "Your realm's page has a link to share. A private realm also has an invite link.", None, None),
+    ("Your GM account", "Make it on your own join link, with your own password. It gets GM rights by itself.", None, None),
+    ("Always on", "Keep a realm up all the time on a spare PC or a small server.", ALWAYS_ON_URL, "Always-on realms"),
+    ("Link a server you already run", "Put your own server on the Leyline list and keep your own setup.", ALWAYS_ON_URL,
+     "Put it on the list"),
+    ("Move it to another PC", "Copy the Host pack folder, with its state folder, to the new PC.", None, None),
+    ("When something's wrong", "The hosting guide walks through the usual problems.", GUIDE_URL, "Hosting guide"),
+)
+
+
+def guide_pane() -> str:
+    e = html.escape
+    rows = "".join(f'<details><summary>{e(t)}</summary><p>{e(line)}'
+                   + (f' <a href="{e(href)}">{e(label)}</a>' if href else "") + "</p></details>" for t, line, href, label in GUIDE)
+    return f'<aside class="hf-pane hf-guide" id="hf-guide" aria-label="Guide"><h2 class="hf-cap">Guide</h2>{rows}</aside>'
+
+
+def pack_pane() -> str:
+    e = html.escape
+    return ('<div class="hf-pane hf-pack" id="hf-pack"><div class="hf-pack-g">'
+            '<section><h2>The Host pack</h2><p>Everything your PC needs to run a realm, in one folder. The launcher\'s Host '
+            'page sets it up and starts it for you.</p>'
+            f'<div class="row"><a class="dl primary" href="{e(_launcher_url())}" rel="noopener noreferrer">Get the launcher</a>'
+            f'<a class="dl" href="{e(KIT_URL or GUIDE_URL)}" rel="noopener noreferrer">Download the Host pack</a></div></section>'
+            '<section><h2>Settings</h2><p>Rates, bots, who can make accounts, region, language, tags and the player limit are '
+            'under More settings on Start. The launcher\'s Host page has the same settings.</p>'
+            '<div class="row"><a class="dl" href="/wrath/host#new-realm">Open the form</a></div></section>'
+            '<section><h2>Always on, or your own server</h2><p>Run a realm that stays up, or put a server you already run on '
+            'the list.</p>'
+            f'<div class="row"><a class="dl" href="{ALWAYS_ON_URL}">Always-on realms</a>'
+            f'<a class="dl" href="{e(GUIDE_URL)}">Hosting guide</a></div></section></div></div>')
 
 
 def poster_preview(rec: dict, rid: str) -> str:
@@ -973,32 +1131,37 @@ def start_page(rec: dict) -> bytes:
                 '<p>It\'s public: it shows on the realm list for everyone, on the site and in the game, once your PC is online.</p>')
         links = (f'<p>Share this link: it opens your realm\'s page with a preview card.</p>'
                  f'<div class="link">{e(share)}</div>{priv}')
-        gm = (f'<li>Make your GM account <b>{e(rec["gm"])}</b> on your own join link (yours only: it can make the GM '
-              f'account), with a password you choose:<div class="link">{e(host_link)}</div></li>')
+        gm = (f'<li><b>Make your GM account</b><span>Make <b>{e(rec["gm"])}</b> on your own join link (yours only: it can make '
+              f'the GM account), with a password you choose:</span><div class="link">{e(host_link)}</div></li>')
     else:
         links = ('<p>Your realm\'s links appear here as soon as your PC connects: the realm\'s address comes from the '
                  'key your PC makes.</p>')
-        gm = (f'<li>Make your GM account <b>{e(rec["gm"])}</b> on your own join link, with a password you choose. The '
-              'link shows here (and in the setup window on your PC) once your PC is connected.</li>')
+        gm = (f'<li><b>Make your GM account</b><span>Make <b>{e(rec["gm"])}</b> on your own join link, with a password you '
+              'choose. The link shows here (and in the setup window on your PC) once your PC is connected.</span></li>')
     live = live_panel(rec, f"https://{host}/wrath/r/{rid}") if rid and state == "listed" else ""
     inner = (
-        f'<header class="ly-hero"><h1>{e(rec["name"])}</h1>'
-        f'<p class="ly-lede">{e(PRESETS[rec["preset"]][0])} · {e(rec["visibility"])} · GM {e(rec["gm"])}</p>'
-        f'<span class="pill {e(state)}" role="status">{"&#9679; " if state in ("online", "listed") else ""}{e(text)}</span></header>'
+        '<section class="hb-pg hf-pg" aria-labelledby="hf-h"><header class="hb-pg-h"><div class="hb-pg-t">'
+        f'<h1 id="hf-h">{e(rec["name"])}</h1>'
+        f'<span class="pill {e(state)}" role="status">{"&#9679; " if state in ("online", "listed") else ""}{e(text)}</span></div>'
+        '<a class="hb-ghost" href="/wrath/host">Your realms</a></header><div class="hb-pg-b hf-cols">'
+        f'<div class="hf-pane hf-start" id="hf-start"><div class="hf-card"><div class="hf-card-h"><div>'
+        f'<p class="hf-eyebrow">{e(PRESETS[rec["preset"]][0])}</p><h2>Start {e(rec["name"])}</h2>'
+        f'<p class="ly-lede">{e(PRESETS[rec["preset"]][0])} · {e(rec["visibility"])} · GM {e(rec["gm"])}</p></div></div>'
         + live +
         f'<section class="ly-panel"><h2>Your link</h2>{links}</section>'
         + ("" if live else needs_panel()) +
-        '<section class="ly-panel"><h2>Set up your PC</h2><ol>'
-        f'<li>Install <a href="https://www.docker.com/products/docker-desktop/" rel="noopener noreferrer">Docker</a> '
+        '<section class="ly-panel"><h2>Set up your PC</h2><ol class="hf-steps">'
+        f'<li><b>Get Docker and the Host pack</b><span>Install <a href="{DOCKER_URL}" rel="noopener noreferrer">Docker</a> '
         f'and unzip the <a href="{e(kit)}" rel="noopener noreferrer">Host pack</a>. The server uses your own game '
-        'files, read on your PC; nothing is downloaded or shared.</li>'
-        f'<li>Download your realm\'s file into the Host pack folder and run it.{dl}</li>'
-        '<li>Leave it running. This page changes to <b>Online</b> when your PC connects to the relay.</li>'
+        'files, read on your PC; nothing is downloaded or shared.</span></li>'
+        f'<li><b>Run your realm\'s file</b><span>Download it into the Host pack folder and run it.</span>{dl}</li>'
+        '<li><b>Leave it running</b><span>This page changes to <b>Online</b> when your PC connects to the relay.</span></li>'
         + gm +
         '</ol></section>'
         '<p class="ly-fine">The first start imports the databases and can take 5 to 20 minutes. '
         f'<a href="{e(GUIDE_URL)}" rel="noopener noreferrer">Hosting guide</a> · '
-        f'<a href="{ALWAYS_ON_URL}">Keep it always on</a> · <a href="/wrath/host">Your realms</a></p>')
+        f'<a href="{ALWAYS_ON_URL}">Keep it always on</a> · <a href="/wrath/host">Your realms</a></p></div></div>'
+        + guide_pane() + '</div></section>')
     # while it is about to be listed, look again sooner (the relay lists it seconds after the PC connects)
     return page(rec["name"], inner, refresh=0 if final else (5 if state == "online" else REFRESH))
 
@@ -1040,6 +1203,11 @@ def who(h, path: str):
         h.send(503, P("error_page")("Your account isn't ready yet. Please try again in a minute."))
         return None
     display = str(me.get("display_name") or me.get("username") or user)[:40]
+    hub = P("hub_mod")   # the top bar's account chip on the hub's shell
+    try:
+        hub._REQ.who = hub._viewer(h) if hub is not None else None
+    except Exception:   # noqa: BLE001: the page shows Sign In then
+        pass
     return owner_key(user), display
 
 

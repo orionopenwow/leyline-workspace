@@ -652,6 +652,39 @@ select.dc-client { field-sizing: content; width: auto; min-width: 0; max-width: 
 #cat-status { margin: 0 0 10px; font-size: 11.5px; }
 .dc-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin: 0 0 14px; }
 .dc-empty { grid-column: 1 / -1; padding: 28px 0; text-align: center; }
+/* Discover, made simple (simple.js): the Simple view (one search box, short rows of big cards) or the full catalog
+   (one search box, a few smart chips, More filters for the rest) */
+#pane-discover[data-view="simple"] .dc-full, #pane-discover[data-view="simple"] #cat-status { display: none !important; }
+#pane-discover:not([data-view="simple"]) #dc-simple { display: none; }
+.dc-sbar { gap: 8px; margin: 0 0 4px; }
+.dc-sbar input[type="search"] { flex: 1 1 260px; height: 42px; font-size: 14px; }
+.dc-srow { margin: 18px 0 0; }
+.dc-srow-h { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 0 0 8px; }
+.dc-srow-h h3 { margin: 0; font-size: 16px; }
+.dc-srow-h .hint { margin: 2px 0 0; }
+.dc-big { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.dc-back { flex: none; }
+.dc-smart { margin: 0 0 6px; }
+.dc-mf { margin: 0 0 10px; }
+.dc-mf summary { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 999px; cursor: pointer; list-style: none;
+  border: var(--t-border-w) dashed var(--t-border-strong); color: var(--t-text-2); font: 600 12px var(--t-font); }
+.dc-mf summary::-webkit-details-marker { display: none; }
+.dc-mf summary::before { content: "+"; font-weight: 800; }
+.dc-mf[open] summary::before { content: "\2212"; }
+.dc-mf[open] summary { margin-bottom: 8px; }
+.dc-mf-row { gap: 8px; margin: 0 0 8px; }
+#dc-more-body .mk-bar { margin: 0; }
+/* Game mods (gamemods.js) */
+.game-box .lede { margin: 0 0 12px; color: var(--t-text-2); max-width: 72ch; }
+.gm-tags { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 0; }
+.gm-tag { padding: 1px 8px; border-radius: 999px; border: var(--t-border-w) solid var(--t-border-strong); color: var(--t-muted); font: 500 11px var(--t-font); }
+.gm-tag.soon { border-color: var(--t-accent); color: var(--t-accent); }
+.gm-on { margin: 8px 0 0; font-size: 12px; color: var(--t-text); }
+.gm-on b { color: var(--t-ok, #4ade80); font-weight: 650; }
+.gm-on.off { color: var(--t-muted); }
+.gm-h { margin: 22px 0 8px; }
+.gm-card .dc-foot { margin-top: auto; }
+.rl-mods { font-size: 11.5px; color: var(--t-muted); }
 .dc-card {
   position: relative; display: flex; flex-direction: column; min-width: 0; overflow: hidden;
   border-radius: var(--t-radius); background: var(--t-card); user-select: none;

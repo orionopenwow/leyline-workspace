@@ -127,7 +127,7 @@ check("offered_only: hidden-only items go, mixed ones keep the offered builds",
       and HB.offered_only({"builds": ["4.3.4"]}, HB.offered_builds({"LEYLINE_ALL_CLIENTS": "1"})) is not None)
 check("offered_tag: a hidden build is no filter", HB.offered_tag("5.4.8") == "" and HB.offered_tag("cata") == ""
       and HB.offered_tag("1.12.1") == "1.12" and HB.build_tag("5.4.8") == "5.4.8")
-check("catalog page: the 12 categories and themes", all(f"catalog?cat={c}" in req("/wrath/leyline-preview/catalog")[2].decode() for c in HB.CATEGORY_IDS + ["themes"]))
+check("catalog page (Browse everything): the 12 categories and themes", all(f"catalog?cat={c}" in req("/wrath/leyline-preview/catalog?view=all")[2].decode() for c in HB.CATEGORY_IDS + ["themes"]))
 check("front page: creators and Host a Beacon", "/wrath/leyline-preview/creators" in front and "/wrath/leyline-preview/beacon" in front)
 check("front page: a TODO(owner) for the tagline, no words in the owner's voice", "TODO(owner)" in front)
 # the owner's mockup (2026-10-30): header nav, the hero, Platform Status, Community Spotlight, the footer
@@ -145,13 +145,14 @@ def header_of(page):
 
 
 hd, nav, labels, on = header_of(front)
-check("side menu (owner 2026-10-30: \"make all the tools come from the side by default and can collapse\"): a fold switch before the "
-      "header, a sidebar on wide screens, folded to icons, remembered by HUB_JS, the top bar kept on a phone",
-      front.count('<input type="checkbox" id="hb-side" class="hb-side-t" aria-label="Fold the side menu"><header class="hb-top">') == 1
-      and '<label for="hb-side" class="hb-side-b"' in hd and "@media (min-width:1081px){" in front
-      and "body.hb .hb-top{position:fixed;inset:0 auto 0 0;width:var(--hb-side)" in front
-       and ":root:has(#hb-side:checked){--hb-side:72px}" in front and 'localStorage.setItem("leyline.side"' in HB.HUB_JS
-      and "@media (max-width:1080px){.hb-side-t,.hb-side-b{display:none}}" in front)
+check("top bar (owner 2026-10-31: \"fit for the website\"): the header is a website's top bar, no side menu or fold switch",
+      'id="hb-side"' not in front and 'class="hb-side-b"' not in front and "--hb-side:236px" not in front
+      and "leyline.side" not in HB.HUB_JS and front.count('<header class="hb-top"><a class="hb-brand"') == 1)
+check("the launcher's palette: the generated tokens (the launcher's own blue, Light by the system) before the hub's styles",
+      HB.SITE_TOKENS_CSS.strip() in front and "--lk-accent:#5b8def" in HB.SITE_TOKENS_CSS and "#3592cf" not in HB.SITE_TOKENS_CSS
+      and "@media (prefers-color-scheme:light){:root{--lk-bg:#eef1f6" in HB.SITE_TOKENS_CSS
+      and front.index("--lk-accent:#5b8def") < front.index(".hb-skip{") < front.index(".hb-pg{")
+      and '<meta name="color-scheme" content="dark light">' in front)
 check("header: Play, Realms, Mods, Addons, Host, Forum, More (Modes, Gallery and Status out of the menu)", labels == NAV_ORDER, labels)
 hrefs = dict(re.findall(r'<a class="hb-ni[^"]*" href="([^"]+)"[^>]*><svg.*?</svg><span>([^<]+)</span>', nav, re.S)[i][::-1] for i in range(6))
 check("header: each item goes to the launcher page's web twin", hrefs == {
@@ -160,12 +161,12 @@ check("header: each item goes to the launcher page's web twin", hrefs == {
       "Forum": "/wrath/leyline/forum"} and "addons" in HB.CATEGORY_IDS, hrefs)
 more = re.search(r'<details class="hb-more-d"><summary class="hb-ni[^"]*">.*?<span>More</span></summary><div class="hb-more-m">(.*?)</div></details>', nav, re.S)
 check("header: More is a details dropdown (no script needed) with Forge, Agents, Docs, News, Creators",
-      more and re.findall(r"<span>([^<]+)</span>", more.group(1)) == ["Forge", "Agents", "Docs", "News", "Creators"]
+      more and re.findall(r"<span>([^<]+)</span>", more.group(1)) == ["Leaderboards", "Forge", "Agents", "Docs", "News", "Creators"]
       and "#status" not in more.group(1) and "/gallery" not in more.group(1))
 check("header: the phone sheet has the same items as tiles, and the download", re.findall(
-      r"<span>([^<]+)</span>", re.search(r'<div class="hb-nav-x">(.*?)</div>', nav, re.S).group(1)) == ["Forge", "Agents", "Docs", "News", "Creators"]
+      r"<span>([^<]+)</span>", re.search(r'<div class="hb-nav-x">(.*?)</div>', nav, re.S).group(1)) == ["Leaderboards", "Forge", "Agents", "Docs", "News", "Creators"]
       and 'class="hb-dl-x"' in nav and 'id="hb-menu" class="hb-menu-t"' in hd and '<label for="hb-menu" class="hb-menu-b"' in hd)
-check("header: a line icon by every item (inline SVG, currentColor)", nav.count('<svg viewBox="0 0 24 24" aria-hidden="true">') == 6 + 1 + 5 + 5
+check("header: a line icon by every item (inline SVG, currentColor)", nav.count('<svg viewBox="0 0 24 24" aria-hidden="true">') == 6 + 1 + 6 + 6
       and "stroke:currentColor" in front)
 check("header: Download (primary) and Sign In (the crystal) on the right, no item active on the front page",
       re.search(r'<div class="hb-end"><a class="hb-dl" href="https://github\.com/orionopenwow/Leyline/releases/download/launcher-latest/Leyline\.exe"[^>]*>.*?Download</a>'
@@ -820,7 +821,7 @@ check("gallery: hover zoom and caption reveal, none of it moving with reduced mo
       and ".hb-gal.flt .hb-gt{grid-column:auto;grid-row:auto}" in fp)
 SRC = re.compile(r'(?:src|href)="([^"]+\.(?:webp|png|jpe?g|gif|avif|svg))"|<img\b[^>]*\bsrc="([^"]+)"|url\(([^)]+)\)', re.I)
 HB.hub.portal = lambda name: None if name == "hub_rank" else portal_gal(name)
-cat = req("/wrath/leyline-preview/catalog")[2].decode()
+cat = req("/wrath/leyline-preview/catalog?view=all")[2].decode()
 catf = req("/wrath/leyline-preview/catalog?cat=addons")[2].decode()
 HB.hub.portal = portal_gal
 third = [u for page in (fp, gal, cat) for m in SRC.findall(page) for u in m if u and not u.startswith("#") and not (u.startswith("/") and not u.startswith("//"))]
@@ -1173,7 +1174,7 @@ check("catalog: each external pack carries the badge and Visit the authors' page
       for c in ecards), ecards[:1])
 check("catalog: never an Install for an external pack", "leyline://install/ext:" not in catx and not any("Install" in c for c in ecards))
 check("catalog: the source chip 'Graphics & external packs' (?source=external) shows only them",
-      'href="/wrath/leyline-preview/catalog?source=external"' in req("/wrath/leyline-preview/catalog")[2].decode())
+      'href="/wrath/leyline-preview/catalog?source=external"' in req("/wrath/leyline-preview/catalog?view=all")[2].decode())
 only = req("/wrath/leyline-preview/catalog?source=external")[2].decode()
 check("catalog ?source=external: the two packs, nothing else", len(re.findall(r'<article class="hb-card hb-ext">', only)) == 2
       and '<article class="hb-card">' not in only)
@@ -1295,7 +1296,167 @@ _flood = sum(_h._rate_ok(f"10.2.{i // 250}.{i % 250}", _t) for i in range(6000))
 check("submit limits: 5 an hour per address, and a flood from many addresses never resets the daily cap of 200",
       _per_ip == [True] * 5 + [False] and _flood == 195 and not _h._rate_ok("10.9.9.9", _t)
       and not _h._rate_ok("2001:db8:1:2::5", _t), (_per_ip, _flood))
+# ---------------------------------------------------------------- the launcher's look (owner 2026-10-31)
+# The addon marketplace on the web: upstream addons (stream/upstream_addons.py) as the launcher's cards, the kinds and
+# "Works on <the official realm>" chips, the licence chip and credit line, Install handed to the launcher, their page.
+def _up(slug, name, **kw):
+    d = {"id": "up:" + slug, "source": "upstream", "name": name, "description": f"{name} does useful things.", "category": "addons",
+         "tags": ["meters"], "builds": ["3.3.5a"], "author": "alice", "author_url": "https://github.com/alice", "licence": "MIT",
+         "repo": f"https://github.com/alice/{slug}", "addons": [name], "requires": [], "conflicts": [], "replaces_ui": False,
+         "native": False, "blp": "none", "review": {"by": "owner", "at": "2026-10-31T09:00:00Z", "notes": ""},
+         "compat": {"realm": "Wrath Unleashed", "status": "untested", "checked_at": ""},
+         "install": {"from": "commit-archive", "url": "x", "size": 2400000, "file_count": 120, "folders": {"": name}}}
+    d.update(kw)
+    return d
+
+
+class FakeUp:
+    @staticmethod
+    def projects():
+        return [_up("elvui", "ElvUI", tags=["full-ui"], replaces_ui=True, licence="", requires=["up:skada"],
+                    compat={"realm": "Wrath Unleashed", "status": "works", "checked_at": "2026-10-31T10:00:00Z"}),
+                _up("skada", "Skada"), _up("bags", "Bagger", tags=["bags"], builds=["5.4.8"]),
+                _up("evil", "<img src=x onerror=alert(1)>", tags=["chat"])]
+
+
+HB.hub.portal = lambda name: FakeUp if name == "upstream_addons" else real(name)
+ups = HB.hub.upstream()
+check("upstream: the reviewed addons in the catalog's shape, hidden builds left out, never in items() or the launcher feed",
+      [u["id"] for u in ups] == ["up:evil", "up:elvui", "up:skada"] and all(u["source"] == "upstream" for u in ups)
+      and not any(i["id"].startswith("up:") for i in HB.hub.items())
+      and not any(p["id"].startswith("up:") for p in json.loads(req("/wrath/leyline/catalog.json")[2])["projects"]))
+ad = req("/wrath/leyline-preview/catalog?cat=addons")[2].decode()
+cards = dict(re.findall(r'<article class="hb-card hb-mk" data-tags="[^"]*">.*?<h3><a href="/wrath/leyline-preview/p/up-([a-z-]+)">.*?</article>', ad, re.S) and
+             [(m.group(1), m.group(0)) for m in re.finditer(r'<article class="hb-card hb-mk" data-tags="[^"]*">.*?/p/up-([a-z-]+)".*?</article>', ad, re.S)])
+elv, ska = cards.get("elvui", ""), cards.get("skada", "")
+check("addons tab: the upstream cards, each with Install handed to the launcher and Source, never a download of ours",
+      elv and ska and 'href="leyline://install/up:skada"' in ska and '>Install</a>' in ska
+      and 'href="https://github.com/alice/skada" rel="noopener noreferrer nofollow ugc"' in ska and "/download" not in ska, list(cards))
+check("upstream card: the \"Works on\" badge on the picture only when tried on the official realm",
+      f'<span class="hb-mk-badge on-pic" title="Tried on {HB.HANGOUT_NAME} by our team">Works on {HB.HANGOUT_NAME}</span>' in elv
+      and "hb-mk-badge" not in ska)
+check("upstream card: the licence chip (No licence when none), the credit line (author · where it comes from), the kind over the picture",
+      '<span class="hb-mk-lic" title="Licence: MIT">MIT</span>' in ska and '<span class="hb-mk-lic none" title="The author states no licence">No licence</span>' in elv
+      and '<p class="hb-mk-credit" title="Alice · MIT · Installs from the author&#x27;s GitHub"><span>Alice</span>' in ska
+      and '<span class="hb-dc-tag ui">Whole interface</span>' in elv and '<span class="hb-dc-tag">Meters</span>' in ska, (elv[-700:], ska[-700:]))
+check("upstream card: names are text, never markup", "<img src=x" not in ad and "&lt;img src=x onerror=alert(1)&gt;" in ad)
+check("tabs: Discover, Game mods, Addons, Themes as links, the current one marked",
+      '<nav class="hb-seg" aria-label="Mods"><a href="/wrath/leyline-preview/catalog">Discover</a>'
+      '<a href="/wrath/leyline-preview/catalog?view=game">Game mods</a>'
+      '<a href="/wrath/leyline-preview/catalog?cat=addons" class="on" aria-current="page">Addons</a>'
+      '<a href="/wrath/leyline-preview/catalog?cat=themes">Themes</a></nav>' in ad and '<h1 id="hb-pg-h">Addons</h1>' in ad)
+bar = re.search(r'<nav class="hb-mk-bar" aria-label="Addon types">.*?</nav>', ad, re.S)
+bar = bar.group(0) if bar else ""
+check("the marketplace's chips: All addons, the kinds that have an addon (in the launcher's order), Works on the official realm",
+      re.findall(r'>([^<>]+)</a>', bar) == ["All addons", "Full interfaces", "Meters", "Chat", f"Works on {HB.HANGOUT_NAME}"]
+      and 'href="/wrath/leyline-preview/catalog?cat=addons&amp;tag=meters"' in bar
+      and 'href="/wrath/leyline-preview/catalog?cat=addons&amp;works=1"' in bar, bar[:600])
+w1 = req("/wrath/leyline-preview/catalog?cat=addons&works=1")[2].decode()
+m1 = req("/wrath/leyline-preview/catalog?cat=addons&tag=meters")[2].decode()
+check("the chips filter: Works on shows only tried addons, a kind only its addons (both marked on)",
+      "/p/up-elvui" in w1 and "/p/up-skada" not in w1 and '<article class="hb-card">' not in w1
+      and "/p/up-skada" in m1 and "/p/up-elvui" not in m1 and 'class="hb-chip on" href="/wrath/leyline-preview/catalog?cat=addons"' in m1)
+check("search finds upstream addons by kind and name", "/p/up-skada" in req("/wrath/leyline-preview/catalog?q=meters")[2].decode()
+      and "/p/up-elvui" in req("/wrath/leyline-preview/catalog?q=elvui")[2].decode())
+check("other categories and external packs: no upstream addons", "/p/up-" not in req("/wrath/leyline-preview/catalog?cat=tools")[2].decode()
+      and "/p/up-" not in req("/wrath/leyline-preview/catalog?source=external")[2].decode())
+st, _, up_b = req("/wrath/leyline-preview/p/up-elvui")
+up_p = up_b.decode()
+check("upstream page: the launcher's detail view (badge, the whole-interface warning, the facts, Install with Leyline, Source)",
+      st == 200 and "<h1>ElvUI</h1>" in up_p and f">Works on {HB.HANGOUT_NAME}</span>" in up_p
+      and "Replaces your whole interface" in up_p and "<dt>Licence</dt><dd>Licence not stated</dd>" in up_p
+      and "<dt>Needs</dt><dd>Skada</dd>" in up_p and "<dt>Size</dt><dd>2.3 MB, 120 files</dd>" in up_p
+      and f"<dt>On {HB.HANGOUT_NAME}</dt><dd>Works (checked 2026-10-31)</dd>" in up_p
+      and 'href="leyline://install/up:elvui">Install with Leyline</a>' in up_p and "Get the launcher" in up_p
+      and not NOPE.findall(shown(up_p)), NOPE.findall(shown(up_p)))
+check("upstream page: an unknown or hidden-build addon is not found", req("/wrath/leyline-preview/p/up-bags")[0] == 404
+      and req("/wrath/leyline-preview/p/up-nope")[0] == 404)
+check("Install is the launcher's blue action, Play the launcher's red PLAY (owner 2026-10-31: back to the red)",
+      '<a class="hb-inst sm" href="leyline://install/up:skada"' in ska and "hb-play sm" not in ad
+      and ".hb-play,.hb-ho-a .hb-cta{position:relative;border:2px solid #3c4646" in HB.SITE_CSS and "#a5191b" in HB.SITE_CSS)
+HB.hub.portal = real
+cat0 = req("/wrath/leyline-preview/catalog?view=all")[2].decode()
+check("catalog panel: the page's panel with its header strip, More filters as a details (no script), Get the launcher",
+      '<section class="hb-pg hb-cat" aria-labelledby="hb-pg-h"><header class="hb-pg-h">' in cat0
+      and '<details class="hb-fmore"><summary>More filters</summary>' in cat0 and 'class="hb-get"' in cat0
+      and "<script" not in cat0)
+rlp = req("/wrath/leyline-preview/realms")[2].decode()
+check("realms panel: the realm list in the page's panel, Host your own in its header", '<section class="hb-pg hb-realms-pg"' in rlp
+      and '<a class="hb-ghost hb-pg-x" href="/wrath/host">Host your own</a>' in rlp)
+check("phones: 16px gutters, chip rows scroll inside the panel, one card per row",
+      ".hb-main:has(>.hb-pg),.hb-main:has(>.fm),.hb-main:has(>.hf){padding:16px 16px 32px}" in HB.SITE_CSS
+      and ".hb-pg .hb-grid{grid-template-columns:minmax(0,1fr)}" in HB.SITE_CSS)
 check("the index in the repo passes the hub's rules", HB.validate_index(json.load(open(os.path.join(HERE, "hub", "community-index.json")))) == [])
+
+# ---- Mods, the Simple view (owner 31 Oct: "'Mods' should also have a simple section, trim search")
+sim = req("/wrath/leyline-preview/catalog")[2].decode()
+check("Mods: /catalog is the Simple view: one search box, rows of big cards, Browse everything, no filter rows",
+      'class="hb-pg hb-cat hb-simple"' in sim and sim.count('role="search"') == 1 and 'class="hb-fmore"' not in sim
+      and 'class="hb-filters"' not in sim and '<h2 id="hb-sr-popular">Popular</h2>' in sim
+      and '<a class="hb-cta sm" href="/wrath/leyline-preview/catalog?view=all">Browse everything</a>' in sim
+      and 'class="hb-grid hb-big"' in sim and "<script" not in sim)
+check("Mods Simple: Discover is the tab that is on", '<a href="/wrath/leyline-preview/catalog" class="on" aria-current="page">Discover</a>' in sim)
+full = req("/wrath/leyline-preview/catalog?view=all")[2].decode()
+smart = re.search(r'<div class="hb-chips hb-smart"[^>]*>(.*?)</div>', full, re.S)
+check("Mods Browse everything: a few smart chips (4) before More filters, Sort and Show inside it",
+      smart and len(re.findall(r'class="hb-chip', smart.group(1))) == 4
+      and full.index('hb-smart') < full.index('<summary>More filters</summary>') < full.index('>Sort</span>'))
+check("Mods: a search (or any filter) is the full catalog; a chip that clears every filter stays there (view=all)",
+      'class="hb-simple"' not in req("/wrath/leyline-preview/catalog?q=bags")[2].decode()
+      and 'hb-simple' not in req("/wrath/leyline-preview/catalog?cat=addons")[2].decode()
+      and 'href="/wrath/leyline-preview/catalog?view=all" aria-current="true">Everything</a>' in full)
+mk = lambda i, **k: dict({"id": i, "source": "workshop", "name": i, "category": "addons", "score": 1.0, "tags": []}, **k)   # noqa: E731
+rows = HB.hub.simple_rows([mk("mod:a", score=9), mk("mod:b", category="sandbox"), mk("theme:c", category="themes", source="theme"),
+                           mk("mod:d"), mk("ext:x", source="external")],
+                          [mk("up:e", source="upstream", tags=["unit-frames"]), mk("up:f", source="upstream", tags=["bags"])])
+got = {k: [i["id"] for i in its] for k, _t, _l, _h, its in rows}
+check("simple_rows: Popular first (no themes), then Game modes, Make it look nicer, Quality of life; external packs never",
+      list(got) == ["popular", "game", "looks", "qol"] and got["popular"][0] == "mod:a" and "theme:c" in got["looks"]
+      and all("ext:x" not in v for v in got.values()) and len(got["popular"]) <= 4 and "theme:c" not in got["popular"]
+      and got["game"] == ["mod:b"] and "up:e" in got["looks"] and "up:f" in got["qol"]
+      and len(sum((v for k, v in got.items() if k != "popular"), [])) == len(set(sum((v for k, v in got.items() if k != "popular"), []))), got)
+
+# ---- Game mods (stream/gamemods.py; owner 31 Oct: "a client mod section like future skating and golf")
+gmp = req("/wrath/leyline-preview/catalog?view=game")[2].decode()
+gcards = re.findall(r'<article class="hb-card hb-gm".*?</article>', gmp, re.S)
+gids = re.findall(r'data-id="([^"]+)"', " ".join(gcards))
+check("Game mods: the Leyline Modes, each saying what it adds, that it needs a realm that allows it, and where to play it",
+      gids[:4] == ["mode:minigolf", "mode:bumper-balls", "mode:coin-dash", "mode:community"]
+      and all("Needs a realm that allows it" in c and f"<b>Play it on:</b> {HB.HANGOUT_NAME}" in c for c in gcards[:4])
+      and '<a class="hb-play sm" href="/wrath?go=mode:minigolf">Play</a>' in gmp
+      and '<a href="/wrath/leyline-preview/catalog?view=game" class="on" aria-current="page">Game mods</a>' in gmp, gids)
+check("Game mods: no made-up entries (only playmodes.json realm modes and Workshop game categories), nothing Coming that isn't real",
+      all(i.startswith("mode:") or i.startswith("mod:") or i.startswith("up:") for i in gids) and "skating" not in gmp.lower()
+      and ">Coming<" not in gmp)
+check("Game mods: no brand words shown", not BANNED.findall(visible(gmp)))
+sim2 = req("/wrath/leyline-preview/catalog")[2].decode()
+check("Simple view: the Game modes row is the Game mods section's cards, See all opens it",
+      '<h2 id="hb-sr-game">Game modes</h2>' in sim2 and 'href="/wrath/leyline-preview/catalog?view=game">See all</a>' in sim2
+      and 'data-id="mode:minigolf"' in sim2)
+real_rows = HB.hub.realm_rows
+HB.hub.realm_rows = lambda query=None: ([{"home": True, "name": HB.HANGOUT_NAME, "live": True, "mods": [{"id": "mode:minigolf"}]},
+                                         {"name": "Frost Haven", "live": True, "mods": [{"id": "mode:minigolf"}, {"id": "mode:coin-dash"}]},
+                                         {"name": "Sleepy", "live": False, "mods": [{"id": "mode:coin-dash"}]}], {}, True, {}, {})
+g2 = req("/wrath/leyline-preview/catalog?view=game")[2].decode()
+golf = re.search(r'<article class="hb-card hb-gm"[^>]*data-id="mode:minigolf".*?</article>', g2, re.S).group(0)
+dash = re.search(r'<article class="hb-card hb-gm"[^>]*data-id="mode:coin-dash".*?</article>', g2, re.S).group(0)
+bump = re.search(r'<article class="hb-card hb-gm"[^>]*data-id="mode:bumper-balls".*?</article>', g2, re.S).group(0)
+check("Game mods: Play it on lists the live realms whose listing names the mod (offline ones left out)",
+      f"<b>Play it on:</b> {HB.HANGOUT_NAME}, Frost Haven</p>" in golf and "<b>Play it on:</b> Frost Haven</p>" in dash
+      and "Sleepy" not in g2 and "No live realm runs it right now" in bump and 'href="/wrath?go=mode:bumper-balls"' not in bump, golf[-400:])
+HB.hub.realm_rows = real_rows
+
+# ---- realms declare their mods (docs/GAME-MODS.md): "Uses 3 mods" on realm rows, and the launcher line
+rmh = HB.hub.realm_mods_html({"mods": [{"id": "mode:minigolf"}, {"id": "up:skada", "version": "r1"}, {"id": "https://evil.example/x"},
+                                       {"id": "mod:unknown-one"}]})
+check("realm row: Uses N mods, named (ids the Workshop doesn't know by their id), the client ones marked, Get the launcher",
+      "<summary>Uses 3 mods</summary>" in rmh and "<li>Minigolf</li>" in rmh and "Skada <small>r1</small> <span class=\"hb-rl-mg\">in your game</span>" in rmh
+      and "<li>unknown-one</li>" in rmh and "evil" not in rmh and "to add them automatically when you join" in rmh, rmh)
+check("realm row: no list, no line", HB.hub.realm_mods_html({}) == "" and HB.hub.realm_mods_html({"mods": "mod:x"}) == "")
+rl = req("/wrath/leyline-preview/realms")[2].decode()
+home = re.search(r'<li class="hb-rl home.*?</li>\s*(?=<li|</ul>)', rl, re.S)
+check("realm list: our realm says which mods it uses (from its own config)", home and "<summary>Uses " in home.group(0)
+      and "<li>Minigolf</li>" in home.group(0), home.group(0)[:300] if home else rl[:200])
 
 srv.shutdown()
 shutil.rmtree(DATA, ignore_errors=True)

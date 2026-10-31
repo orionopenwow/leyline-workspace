@@ -13,6 +13,8 @@ Two listeners, both inside Docker networks only (never published on the host):
          GET /wrath/healthz    200 when AzerothCore's SOAP answers
          GET /wrath/realms     public: the official realm first, then community realms from the
                                Beacons relay's listing (cached; a dead relay never slows the page)
+         GET /wrath/leaderboards, /wrath/api/leaderboards  public: the duel leaderboards (stream/duels.py), read
+                               from the file realm/custom/duels-export.py writes to /app/duels every 5 minutes
          GET /wrath/armory[/<Name>]  public: the web armory (stream/armory.py), read from the files that
                                realm/custom/armory-export.py writes to /app/armory every 5 minutes
          GET /wrath/mods       public: the mods Workshop (stream/workshop.py, optional): the catalog the
@@ -312,6 +314,9 @@ if admin is not None:
     admin.bind(lambda name: globals()[name])
     if creations is not None:
         creations.adjust = admin.adjust_catalog
+duels = _load_module("wu_duels", "duels.py")   # /wrath/leaderboards, /wrath/api/leaderboards: duel boards (stream/duels.py)
+if duels is not None:
+    duels.bind(lambda name: globals()[name])
 
 
 def signin_url(nxt: str = "/wrath") -> str:
@@ -1572,7 +1577,15 @@ def _players_text(players, bots, live) -> str:
 
 def sample_info() -> dict:
     """Our own realm on the network's lists (stream/network.py): the Leyline Sample Hangout, temporary, while
-    WU_SAMPLER=1 (realm/sampler.sh); before that, this realm under its own name."""
+    WU_SAMPLER=1 (realm/sampler.sh); before that, this realm under its own name. With its mod list (docs/GAME-MODS.md)."""
+    try:
+        mods = hub_mod.hub.official_mods() if hub_mod is not None else []
+    except Exception:   # noqa: BLE001
+        mods = []
+    return dict(_sample_info(), mods=mods)
+
+
+def _sample_info() -> dict:
     if SAMPLER:
         return {"name": SAMPLER_NAME, "temporary": True,
                 "blurb_html": f'<p>{html.escape(SAMPLER_NOTE)} (<a href="{GAME_FOLDER_HELP}">How to add your game folder</a>.)</p>'}
@@ -2981,6 +2994,9 @@ class PageHandler(BaseHTTPRequestHandler):
             return
         if path.startswith("/wrath/art/"):
             self.art(urllib.parse.unquote(path[len("/wrath/art/"):]))
+            return
+        if duels is not None and duels.match(path):   # the duel leaderboards and their JSON (stream/duels.py)
+            duels.get(self, path, query)
             return
         if forum is not None and forum.match(path):   # the forum and its JSON (stream/forum.py)
             forum.get(self, path, query)

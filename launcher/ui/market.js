@@ -67,7 +67,8 @@
       box.id = "mk-bar";
       box.setAttribute("role", "toolbar");
       box.setAttribute("aria-label", "Addon types");
-      grid.before(box);
+      const more = $("dc-more-body");   // under Discover's More filters (index.html, simple.js)
+      if (more) more.append(box); else grid.before(box);
     }
     if (!box) return;
     const ups = projects().filter((p) => p.source === "upstream");

@@ -43,6 +43,7 @@
 .ly-tab:hover { color: var(--t-text); }
 .ly-tab[aria-selected="true"] { color: var(--t-accent); border-bottom-color: var(--t-accent); }
 #pane-discover[data-tab="themes"] > :not(.ly-tabs):not(#themes-discover) { display: none !important; }
+#pane-discover[data-tab="game"] > :not(.ly-tabs):not(#game-discover) { display: none !important; }
 
 /* Previewing: KEEP / UNDO */
 .theme-preview-bar {

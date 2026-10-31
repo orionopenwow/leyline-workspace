@@ -47,6 +47,7 @@ const FAKE = ({ catalog, installedMods }) => {
   const calls = (window.__calls = []);
   try {
     localStorage.setItem('leyline.page', 'discover');
+    localStorage.setItem('leyline.dcView', 'all'); localStorage.setItem('leyline.dcMore', '1');   // the full catalog, More filters open (simple.js)
     localStorage.removeItem('leyline.mkSub');
     localStorage.removeItem('leyline.mkWorks');
   } catch (_) { /* fine */ }

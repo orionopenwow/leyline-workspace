@@ -333,6 +333,8 @@
     const d = document.getElementById("themes-discover");
     d.hidden = t !== "themes";
     if (t === "themes") { renderDiscover(d); loadCatalog(); }
+    const g = document.getElementById("game-discover");   // Game mods (gamemods.js)
+    if (g) { g.hidden = t !== "game"; if (t === "game" && window.LeylineGameMods) window.LeylineGameMods.show(); }
   }
 
   async function loadCatalog() {
@@ -369,7 +371,7 @@
       const tabs = el("div", "ly-tabs");
       tabs.id = "discover-tabs";
       tabs.setAttribute("role", "tablist");
-      for (const [id, label] of [["mods", "Mods"], ["themes", "Themes"]]) {
+      for (const [id, label] of [["mods", "Mods"], ["game", "Game mods"], ["themes", "Themes"]]) {
         const b = el("button", "ly-tab", label);
         b.type = "button";
         b.dataset.tab = id;
@@ -382,6 +384,10 @@
       box.id = "themes-discover";
       box.hidden = true;
       panel.append(box);
+      const game = el("div", "game-box");
+      game.id = "game-discover";
+      game.hidden = true;
+      panel.append(game);
       showTab(tab);
     }
     document.querySelectorAll('.nav[data-page="settings"]').forEach((n) => n.addEventListener("click", () => sync().then(render).catch(() => {})));

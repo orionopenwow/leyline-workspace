@@ -166,6 +166,7 @@ STEPS = {
     "ov112-data-check": ("tools/ov112-data/Old 1.12 data - check.bat", "Read-only: where the old 1.12 game files are on the server, their size and who serves them", False),
     "ov112-data-remove-check": ("tools/ov112-data/Old 1.12 data - remove (dry run).bat", "Dry run: what removing the old 1.12 game files would do", False),
     "ov112-data-remove": ("tools/ov112-data/Old 1.12 data - remove.bat", "Remove the old 1.12 game files (the old site answers 410 for /data first; Wrath untouched)", False),
+    "worldlog": ("tools/diag/World server log.bat", "Read-only: why the world server restarted (state, recent output, crash dumps)", False),
     "caddy-check": ("tools/security/Caddy check.bat", "Caddy and compose check: live config to the PC, secrets removed (read-only)", False),
     "hq-sync": ("tools/hq/HQ sync.bat", "Leyline HQ: send the recent changes and Claude's notes, fetch the owner's notes", False),
     "hqnote": ("tools/hq/HQ sync.bat", "Leyline HQ: publish Claude's notes (and sync)", False),
@@ -174,7 +175,7 @@ STEPS = {
 # Steps that change nothing in production. With "Ask before deploys" on (control/autopilot.json "confirm"),
 # Autopilot runs only these by itself; anything else waits for "Launch all".
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
-             "fresh-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check"}
+             "fresh-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}
 
 # Never in a log or on the page: passwords, tokens, keys, connection strings (scrub() on every line a step prints).

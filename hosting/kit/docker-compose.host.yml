@@ -103,6 +103,8 @@ services:
       # dbc + maps extracted from YOUR 3.3.5a install (same volume the realm\ tooling uses)
       - ov-client-data:/azerothcore/env/dist/data:ro
       - ./realm-files/lua_scripts:/azerothcore/lua_scripts:ro
+      # a Den's save files (ov_den.lua: .den save / load, the launcher's Saved Dens); JSON layouts only, nothing run
+      - ./state/dens:/azerothcore/dens
     env_file:
       - path: realm-files/profiles/${WU_PROFILE:-main}.env
       - path: realm-files/modules.env

@@ -38,6 +38,8 @@
 --                                     (.build move x|y|z, .build rotate <deg> and .build scale <size> still work)
 --   .build prefab save|list|paste|pasteat|share|delete ...   prefabs: a named selection, as JSON
 --   .build plot [claim|add <name> [builder|visitor]|remove <name>|abandon]   your plot, built with friends
+--   .build path <prop> from | to [every] | <x1> <y1> <z1> <x2> <y2> <z2> [every]   a line of props on the ground
+--                                     ("Paths", near the end; the Builder's Path button)
 --   GM only: .build grant <name> | revoke <name> | purge <name> | trust <name> <tier>
 --            .build plot list | plot remove <id> | plot transfer <id> <name>
 --            .build oplog <name> [n] | rollback <name> [ops] [yards]
@@ -545,10 +547,36 @@ local CATALOG = {
 local CATEGORIES = { "seating", "tables", "barrels", "crates", "lights", "banners", "tents", "fires", "fences", "nature", "decor",
     "structure" }
 
+-- Buildings (2026-10-31, "place buildings" in a Den): whole houses, inns, towers and huts. These are the world
+-- database's "map object" templates (type 14) whose display is a building model (WMO): checked against
+-- AzerothCore's gameobject_template.sql (master, 2026-10-31): type 14, every data field 0, no AIName, no ScriptName.
+-- Only in a Den (or with OV_BUILD_BUILDINGS=1): they are big. How each looks and stands in the world (and whether the
+-- browser client draws a building object) is "to verify" in game. The other type 14 rows (whole cities, dungeon
+-- entrances, caves) are left out on purpose.
+if os.getenv("OV_BUILD_BUILDINGS") == "1" or (os.getenv("OV_BUILD_BUILDINGS") ~= "0" and os.getenv("OV_DEN") == "1") then
+    for _, b in ipairs({
+        { 19006, "house", "House" }, { 19253, "house2", "House, second" }, { 19262, "smallhouse", "Small House" },
+        { 19286, "house3", "House, third" }, { 19007, "inn", "Inn" }, { 19258, "inn2", "Inn, second" },
+        { 19362, "inn3", "Inn, third" }, { 19367, "tavern", "Tavern" }, { 19001, "chapel", "Chapel" },
+        { 19002, "barn", "Barn" }, { 19005, "farm", "Farm" }, { 19010, "stable", "Stable" }, { 19365, "stable2", "Stable, second" },
+        { 19004, "blacksmith", "Blacksmith" }, { 19358, "blacksmith2", "Blacksmith, second" }, { 19256, "guardtower", "Guard Tower" },
+        { 19255, "druidtower", "Tower, tall" }, { 19388, "tower3", "Tower, round" }, { 19013, "hut", "Hut" },
+        { 19014, "hut2", "Hut, second" }, { 19277, "hut3", "Hut, third" }, { 19311, "trollhut", "Hut, thatched" },
+        { 19312, "trollhutsmall", "Hut, thatched, small" }, { 19387, "domehut", "Hut, dome" }, { 19389, "domehut2", "Hut, dome, second" },
+        { 19064, "bamboohouse", "Bamboo House" }, { 19243, "igloo", "Igloo" }, { 19301, "longhouse", "Longhouse" },
+        { 19299, "tepee", "Tepee" }, { 19294, "tentbig", "Tent, big" }, { 19295, "huntertent", "Tent, hunter's" },
+        { 19302, "shamantent", "Tent, painted" }, { 19260, "moonwell", "Moonwell" }, { 19057, "bridge", "Bridge" },
+        { 19029, "wallpiece", "Town Wall" }, { 19031, "wallpiece2", "Town Wall, second" }, { 19035, "wallpost", "Town Wall Post" },
+    }) do
+        CATALOG[#CATALOG + 1] = { id = b[1], key = b[2], cat = "buildings", name = b[3] }
+    end
+    CATEGORIES[#CATEGORIES + 1] = "buildings"
+end
+
 -- Build points: how heavy a prop is for the realm and for everyone's frame rate. Lights and fires carry
 -- effects, tents and statues are big models; a few huge ones cost more.
 local CAT_COST = { seating = 1, tables = 1, barrels = 1, crates = 1, banners = 1, lights = 2, fires = 2,
-    fences = 2, nature = 2, tents = 3, decor = 3, structure = 1 }
+    fences = 2, nature = 2, tents = 3, decor = 3, structure = 1, buildings = 10 }
 local BIG_COST = { [32372] = 6, [175471] = 6, [187591] = 6, [182251] = 6, [19413] = 4, [19416] = 4,
     [19494] = 4, [181289] = 4, [19583] = 4, [195000] = 2, [202872] = 2, [187117] = 2,
     -- rugs are flat: a floor's weight, not a statue's
@@ -858,9 +886,10 @@ function X.denOutside() return num("OV_DEN_OUTSIDE_POINTS", 300, 0, 100000) end
 ------------------------------------------------------------------------------------------------
 -- a prop's state as text, for the op log: entry,map,x,y,z,o,scale,owner,ownerName,area
 ------------------------------------------------------------------------------------------------
+-- grp: its group (X.groupOf), so an undo or redo that puts a prop back puts it back in its group (a path stays one).
 local function copyProp(p)
     return { id = p.id, owner = p.owner, ownerName = p.ownerName, area = p.area, entry = p.entry, map = p.map,
-        x = p.x, y = p.y, z = p.z, o = p.o, s = p.s, pt = p.pt, rl = p.rl }
+        x = p.x, y = p.y, z = p.z, o = p.o, s = p.s, pt = p.pt, rl = p.rl, grp = X.groupOf[p.id] }
 end
 
 -- ...,area[,pitch,roll]: the tilt rides at the end, so rows written before it existed still read.
@@ -1887,6 +1916,10 @@ function X.applyBack(player, a)
             if not props[c.id] then
                 addProp(c.owner, c.ownerName, c.area, c.entry, c.map, c.x, c.y, c.z, c.o, c.id, c.s, c.pt, c.rl)
                 n = n + 1; ids[#ids + 1] = c.id
+                if c.grp then
+                    X.groupOf[c.id] = c.grp
+                    exec(string.format("REPLACE INTO mod_builder_groups (prop, grp) VALUES (%d, %d)", c.id, c.grp))
+                end
             end
         end
         if #ids > 0 then selectMany(guid, ids) end
@@ -1915,7 +1948,8 @@ function X.backBlocked(player, a)
         for _, id in ipairs(a.ids or { a.id }) do
             local p = props[id]
             if p then
-                if X.locked[id] then return X.lockedText(p) end
+                -- withLocks: the load itself brought the locks (an opened Den file): taking it back may remove them
+                if X.locked[id] and not a.withLocks then return X.lockedText(p) end
                 local ok, why = canEdit(player, p)
                 if not ok and p.owner ~= guid then return why end
                 if newer(id) then return "someone else changed " .. propName(p) .. " since." end
@@ -2034,7 +2068,7 @@ local function placeMany(player, rel, origin, label)
     if #ids == 0 then say(player, "The realm couldn't place that here."); return nil end
     pushUndo(guid, { kind = "load", ids = ids })
     selectMany(guid, ids)
-    say(player, string.format("Pasted '%s': %s%s.", label, plural(#ids, "prop"),
+    say(player, string.format(label == "path" and "Path laid: %.0s%s%s." or "Pasted '%s': %s%s.", label, plural(#ids, "prop"),
         skipped > 0 and string.format(" (%d didn't fit here)", skipped) or ""))
     return ids
 end
@@ -3804,6 +3838,272 @@ X.CMD.setrot = function(player, words)
     end
 end
 
+------------------------------------------------------------------------------------------------
+-- Paths (2026-10-31, owner: "place buildings and paths and doodads"): a line of props, one every N yards, each set
+-- down on the ground (a Den's floor in its room) and facing along the line.
+--   .build path <prop> <x1> <y1> <z1> <x2> <y2> <z2> [every]   edit mode's two clicks (the Builder's Path button)
+--   .build path <prop> from          marks where you stand as the start (a player's own game: no clicks)
+--   .build path <prop> to [every]    lays it from the mark to where you stand
+-- <prop>: a catalog key, id or a name only one prop has, t<entry> or m<display>. every: 1 to 20 yards (default 3).
+-- At most K.GROUP_MAX pieces, K.PATH_LEN yards long. Every piece is checked like a paste (role, area, plots,
+-- budgets, the paste rate). The pieces are one group (a click on one selects the whole path) and one undo entry;
+-- the path itself (prop, spacing, both ends) is kept in mod_builder_paths for a Den's save file.
+------------------------------------------------------------------------------------------------
+K.PATH_LEN = 120
+K.PATH_EVERY = 3
+exec("CREATE TABLE IF NOT EXISTS mod_builder_paths (grp INT UNSIGNED NOT NULL PRIMARY KEY, entry INT UNSIGNED NOT NULL, "
+    .. "every FLOAT NOT NULL, x1 FLOAT NOT NULL, y1 FLOAT NOT NULL, z1 FLOAT NOT NULL, x2 FLOAT NOT NULL, y2 FLOAT NOT NULL, "
+    .. "z2 FLOAT NOT NULL)")
+X.paths, X.pathFrom = {}, {}   -- [group id] = { entry, every, x1, y1, z1, x2, y2, z2 }; [guid] = the marked start
+do
+    local q = query("SELECT grp, entry, every, x1, y1, z1, x2, y2, z2 FROM mod_builder_paths")
+    if q then
+        repeat
+            X.paths[q:GetUInt32(0)] = { entry = q:GetUInt32(1), every = q:GetFloat(2), x1 = q:GetFloat(3), y1 = q:GetFloat(4),
+                z1 = q:GetFloat(5), x2 = q:GetFloat(6), y2 = q:GetFloat(7), z2 = q:GetFloat(8) }
+        until not q:NextRow()
+    end
+end
+
+function X.pathItem(word)
+    local c = findProp(word)
+    if c then return c end
+    return X.findAny(word)
+end
+
+function X.savePath(gid, pa)
+    X.paths[gid] = pa
+    exec(string.format("REPLACE INTO mod_builder_paths (grp, entry, every, x1, y1, z1, x2, y2, z2) VALUES "
+        .. "(%d, %d, %.2f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f)", gid, pa.entry, pa.every, pa.x1, pa.y1, pa.z1, pa.x2, pa.y2, pa.z2))
+end
+
+-- The pieces' points: evenly spaced from one end to the other (both ends included), on the ground, facing along.
+function X.pathPoints(player, a, b, every)
+    local dx, dy = b.x - a.x, b.y - a.y
+    local len = math.sqrt(dx * dx + dy * dy)
+    if len > K.PATH_LEN then return nil, string.format("A path is up to %d yards long (that one is %d).", K.PATH_LEN, math.floor(len)) end
+    local n = (len < 0.5) and 1 or (math.floor(len / every + 0.5) + 1)
+    if n > K.GROUP_MAX then
+        return nil, string.format("That path needs %d pieces; at most %d (space them wider: the last number, in yards).", n, K.GROUP_MAX)
+    end
+    local yaw = (len < 0.5) and (player:GetO() or 0) or math.atan2(dy, dx)
+    local out = {}
+    for i = 1, n do
+        local t = (n == 1) and 0 or (i - 1) / (n - 1)
+        local x, y, zg = a.x + dx * t, a.y + dy * t, a.z + (b.z - a.z) * t
+        out[i] = { x = x, y = y, z = X.floorAt(player, x, y, zg) or zg, o = yaw }
+    end
+    return out
+end
+
+X.CMD.path = function(player, words)
+    local usage = "Usage: |cffffff00.build path <prop> from|r here, walk, then |cffffff00.build path <prop> to [yards apart]|r "
+        .. "(edit mode: the Builder's Path, then two clicks)."
+    local item = words[2] and X.pathItem(words[2])
+    if not item then return say(player, usage) end
+    local guid, mode = player:GetGUIDLow(), (words[3] or ""):lower()
+    local here = { x = player:GetX(), y = player:GetY(), z = player:GetZ(), map = player:GetMapId() }
+    local a, b, everyWord
+    if mode == "from" or mode == "start" then
+        local key, why = buildArea(player)
+        if not key then return say(player, why) end
+        X.pathFrom[guid] = here
+        return say(player, string.format("Path start marked here. Walk to where it ends, then |cffffff00.build path %s to|r.", item.key))
+    elseif mode == "to" or mode == "end" then
+        a = X.pathFrom[guid]
+        if not a or a.map ~= here.map then return say(player, "Mark the start first: |cffffff00.build path " .. item.key .. " from|r.") end
+        b, everyWord = here, words[4]
+    else
+        local why
+        a, why = exactPoint(player, words[3], words[4], words[5])
+        if a then b, why = exactPoint(player, words[6], words[7], words[8]) end
+        if not (a and b) then return pointUsage(player, why, ".build path <prop> <x1> <y1> <z1> <x2> <y2> <z2> [every]") end
+        everyWord = words[9]
+    end
+    local every = tonumber(everyWord or "") or K.PATH_EVERY
+    if not finite(every) or every < 1 or every > 20 then return say(player, "Space the pieces 1 to 20 yards apart.") end
+    local pts, why = X.pathPoints(player, a, b, every)
+    if not pts then return say(player, why) end
+    local rel = {}
+    for i, pt in ipairs(pts) do rel[i] = { entry = item.id, dx = pt.x, dy = pt.y, dz = pt.z, o = pt.o } end
+    local ids = placeMany(player, rel, { x = 0, y = 0, z = 0, o = 0 }, "path")
+    if not ids then return end
+    X.pathFrom[guid] = nil
+    local stack = undo[guid]
+    if stack and stack[#stack] then stack[#stack].what = "the path (" .. plural(#ids, "prop") .. ") is gone." end
+    if #ids >= 2 then
+        X.nextGroup = X.nextGroup + 1
+        for _, id in ipairs(ids) do
+            X.groupOf[id] = X.nextGroup
+            exec(string.format("REPLACE INTO mod_builder_groups (prop, grp) VALUES (%d, %d)", id, X.nextGroup))
+        end
+        X.savePath(X.nextGroup, { entry = item.id, every = every, x1 = a.x, y1 = a.y, z1 = a.z, x2 = b.x, y2 = b.y, z2 = b.z })
+        say(player, "One group: a click on a piece selects the whole path; Ctrl+Z (|cffffff00.build undo|r) takes it back.")
+    end
+end
+
+------------------------------------------------------------------------------------------------
+-- A Den's save file (2026-10-31, owner: "save to a file and relaunch into it"). ov_den.lua writes and reads the
+-- file (docs/DEN.md, "The save file"); here the layout becomes a table, and a table read from a file becomes props,
+-- checked first. Nothing from a file is ever run: it is JSON text read by jsonDecode, and every value is checked.
+--   OVBuild.DenLayout()                 -> { props = {...}, paths = {...} } (positions from the Den's middle and floor)
+--   OVBuild.DenCheck(doc, add)          -> checked { items, paths, skipped }  or  nil, why
+--   OVBuild.DenApply(player, checked, replace) -> props placed (one op, two undo entries when replacing)
+--   OVBuild.JsonDecode(text, maxLen)    -> the table, or nil, why (the strict reader the prefabs use)
+-- (defined on X here; exported with the rest of OVBuild at the end of the file)
+------------------------------------------------------------------------------------------------
+K.DEN_PATHS = 100
+function X.r3(v) return math.floor(v * 1000 + 0.5) / 1000 end
+function X.deg(rad) return math.floor(math.deg(rad or 0) * 100 + 0.5) / 100 end
+
+function X.denProps()
+    local list = {}
+    if not DEN then return list end
+    for _, p in pairs(props) do if p.area == DEN.key and p.owner ~= X.SYSTEM then list[#list + 1] = p end end
+    table.sort(list, function(a, b) return a.id < b.id end)
+    return list
+end
+
+function X.DenLayout()
+    if not DEN then return nil end
+    local fz = DEN.floorZ or DEN.z
+    local out, gmap, gn, paths = {}, {}, 0, {}
+    for _, p in ipairs(X.denProps()) do
+        local g = X.groupOf[p.id]
+        if g and not gmap[g] then gn = gn + 1; gmap[g] = gn end
+        out[#out + 1] = { entry = p.entry, model = p.entry >= X.MODEL_BASE and (p.entry - X.MODEL_BASE) or nil,
+            x = X.r3(p.x - DEN.x), y = X.r3(p.y - DEN.y), z = X.r3(p.z - fz), yaw = X.deg(p.o), pitch = p.pt and X.deg(p.pt) or nil,
+            roll = p.rl and X.deg(p.rl) or nil, scale = p.s, locked = X.locked[p.id] or nil, hidden = X.hidden[p.id] or nil,
+            group = g and gmap[g] or nil }
+    end
+    for g, pa in pairs(X.paths) do
+        if gmap[g] then
+            paths[#paths + 1] = { group = gmap[g], entry = pa.entry, every = pa.every,
+                from = { X.r3(pa.x1 - DEN.x), X.r3(pa.y1 - DEN.y), X.r3(pa.z1 - fz) }, to = { X.r3(pa.x2 - DEN.x), X.r3(pa.y2 - DEN.y), X.r3(pa.z2 - fz) } }
+        end
+    end
+    table.sort(paths, function(a, b) return a.group < b.group end)
+    return { props = out, paths = paths }
+end
+
+-- doc: the file's table. add: the props go next to what is there (the budgets count both). Unknown entries and
+-- props outside this Den are left out (counted in skipped); wrong shapes refuse the whole file.
+function X.DenCheck(doc, add)
+    if not DEN then return nil, "This realm has no Den." end
+    if type(doc) ~= "table" or doc.format ~= "leyline-den" then return nil, "That isn't a Den file." end
+    if type(doc.version) ~= "number" or doc.version < 1 then return nil, "That Den file has no version." end
+    if doc.version > 1 then return nil, "That Den file is from a newer Leyline: update the host kit." end
+    if type(doc.props) ~= "table" or #doc.props > K.LAYOUT_MAX then
+        return nil, "A Den file holds up to " .. K.LAYOUT_MAX .. " props."
+    end
+    if doc.paths ~= nil and (type(doc.paths) ~= "table" or #doc.paths > K.DEN_PATHS) then return nil, "Too many paths in that file." end
+    local fz = DEN.floorZ or DEN.z
+    local function num(v, lo, hi) return type(v) == "number" and finite(v) and v >= lo and v <= hi end
+    local items, skipped = {}, 0
+    for _, e in ipairs(doc.props) do
+        if type(e) ~= "table" then return nil, "A prop in that file isn't a prop." end
+        local entry = e.entry
+        if not (num(entry, 1, 4294967295) and entry == math.floor(entry)) then return nil, "A prop in that file has no entry." end
+        if not (num(e.x, -1000, 1000) and num(e.y, -1000, 1000) and num(e.z, -1000, 1000)) then return nil, "A prop in that file has no place." end
+        for _, k in ipairs({ "yaw", "pitch", "roll" }) do
+            if e[k] ~= nil and not num(e[k], -100000, 100000) then return nil, "A prop in that file has a bad " .. k .. "." end
+        end
+        if e.scale ~= nil and not num(e.scale, 0, 100) then return nil, "A prop in that file has a bad size." end
+        if (e.locked ~= nil and type(e.locked) ~= "boolean") or (e.hidden ~= nil and type(e.hidden) ~= "boolean") then
+            return nil, "A prop in that file has bad flags."
+        end
+        if e.group ~= nil and not (num(e.group, 1, 100000) and e.group == math.floor(e.group)) then return nil, "A prop in that file has a bad group." end
+        local x, y, z = DEN.x + e.x, DEN.y + e.y, fz + e.z
+        if X.known(entry) and insideArea(DEN.key, DEN.map, x, y, z) then
+            items[#items + 1] = { entry = entry, x = x, y = y, z = z, o = math.rad(e.yaw or 0), pt = e.pitch and math.rad(e.pitch) or nil,
+                rl = e.roll and math.rad(e.roll) or nil, s = e.scale, locked = e.locked == true, hidden = e.hidden == true, group = e.group }
+        else
+            skipped = skipped + 1
+        end
+    end
+    local paths = {}
+    for _, pa in ipairs(doc.paths or {}) do
+        if type(pa) ~= "table" or not (num(pa.group, 1, 100000) and num(pa.entry, 1, 4294967295) and num(pa.every, 1, 20))
+            or type(pa.from) ~= "table" or type(pa.to) ~= "table" then
+            return nil, "A path in that file isn't a path."
+        end
+        local ok = true
+        for i = 1, 3 do if not (num(pa.from[i], -1000, 1000) and num(pa.to[i], -1000, 1000)) then ok = false end end
+        if not ok then return nil, "A path in that file has no ends." end
+        paths[#paths + 1] = { group = pa.group, entry = pa.entry, every = pa.every, x1 = DEN.x + pa.from[1], y1 = DEN.y + pa.from[2],
+            z1 = fz + pa.from[3], x2 = DEN.x + pa.to[1], y2 = DEN.y + pa.to[2], z2 = fz + pa.to[3] }
+    end
+    -- the Den's budgets and the area's prop limit, as if every prop were placed now
+    local addIn, addOut = 0, 0
+    for _, it in ipairs(items) do
+        if X.denInsideAt(it.x, it.y) then addIn = addIn + costOf(it.entry) else addOut = addOut + costOf(it.entry) end
+    end
+    local usedIn, usedOut, n = 0, 0, 0
+    if add then usedIn, usedOut = X.denUsage(); n = countArea(DEN.key) end
+    if usedIn + addIn > X.denInside() then
+        return nil, string.format("That Den needs %d of the room's %d decor points (%d in use).", addIn, X.denInside(), usedIn)
+    end
+    if usedOut + addOut > X.denOutside() then
+        return nil, string.format("That Den needs %d of the yard's %d decor points (%d in use).", addOut, X.denOutside(), usedOut)
+    end
+    if n + #items > perArea() then return nil, string.format("That's %d props; this Den holds %d.", n + #items, perArea()) end
+    return { items = items, paths = paths, skipped = skipped }
+end
+
+-- Places a checked file for player (the Den's owner). replace: everyone's decor in the Den goes first (one undo
+-- entry puts it back). Groups and paths get new ids here. Returns the props placed.
+function X.DenApply(player, c, replace)
+    if not (DEN and player and type(c) == "table") then return 0 end
+    local guid, name = player:GetGUIDLow(), player:GetName()
+    local prev, prevActor = beginOp(player, "denload"), actor
+    actor = player
+    local ok, n = pcall(function()
+        if replace then
+            local saved = {}
+            for _, p in ipairs(X.denProps()) do saved[#saved + 1] = copyProp(p); removeProp(p, player) end
+            if #saved > 0 then pushUndo(guid, { kind = "restore", list = saved, what = plural(#saved, "prop") .. " back as they were." }) end
+        end
+        -- paths whose pieces are all gone (cleared, deleted, replaced) are dropped from the file's list
+        local used = {}
+        for _, gg in pairs(X.groupOf) do used[gg] = true end
+        for g in pairs(X.paths) do
+            if not used[g] then X.paths[g] = nil; exec(string.format("DELETE FROM mod_builder_paths WHERE grp = %d", g)) end
+        end
+        local ids, newGroup = {}, {}
+        for _, it in ipairs(c.items) do
+            local p = addProp(guid, name, DEN.key, it.entry, DEN.map, it.x, it.y, it.z, it.o, nil, it.s, it.pt, it.rl)
+            ids[#ids + 1] = p.id
+            if it.locked or it.hidden then
+                X.setFlags(p.id, it.locked, it.hidden)
+                if it.hidden then despawn(p, player) end
+            end
+            if it.group then
+                if not newGroup[it.group] then X.nextGroup = X.nextGroup + 1; newGroup[it.group] = X.nextGroup end
+                X.groupOf[p.id] = newGroup[it.group]
+                exec(string.format("REPLACE INTO mod_builder_groups (prop, grp) VALUES (%d, %d)", p.id, newGroup[it.group]))
+            end
+        end
+        for _, pa in ipairs(c.paths or {}) do
+            local g = newGroup[pa.group]
+            if g then X.savePath(g, { entry = pa.entry, every = pa.every, x1 = pa.x1, y1 = pa.y1, z1 = pa.z1, x2 = pa.x2, y2 = pa.y2, z2 = pa.z2 }) end
+        end
+        if #ids > 0 then
+            pushUndo(guid, { kind = "load", ids = ids, withLocks = true, what = "the opened Den (" .. plural(#ids, "prop") .. ") is gone." },
+                replace and true)
+        end
+        selectOne(guid, nil)
+        lastLoad[guid] = os.time()
+        return #ids
+    end)
+    actor = prevActor
+    endOp(prev)
+    if not ok then error(n, 0) end
+    sendState(player)
+    return n
+end
+
+X.JsonDecode = function(s, maxLen) return jsonDecode(s, maxLen) end
+
 local function showHelp(player)
     local cap = budgetOf(player)
     say(player, "Builder: place props in build areas and share builds as codes. /builder opens the window.")
@@ -3816,6 +4116,7 @@ local function showHelp(player)
     say(player, "  |cffffff00.build plot claim|r  |cffffff00.build plot add <name>|r  |cffffff00.build plot|r: your own plot to build on with friends.")
     say(player, "  |cffffff00.build redo|r  |cffffff00.build store|r / |cffffff00storage|r  |cffffff00.build group|r / |cffffff00ungroup|r  "
         .. "|cffffff00.build floor|r  |cffffff00.build layout save|load|list <name>|r")
+    say(player, "  |cffffff00.build path <prop> from|r, walk, |cffffff00.build path <prop> to [yards apart]|r: a path of that prop on the ground.")
     if X.anyOn() then
         say(player, "  Any object: |cffffff00.build find <words>|r  |cffffff00.build models <words>|r  then |cffffff00.build spawn <key>|r")
     end
@@ -4285,6 +4586,9 @@ function OVBuild.ModelBox(entry)
     if not m or not m.minz or not m.w then return nil end
     return m.w, m.d, m.minz, m.maxz
 end
+
+-- A Den's save file (see "A Den's save file" above): the layout as a table, a file's table checked, and placed.
+OVBuild.DenLayout, OVBuild.DenCheck, OVBuild.DenApply, OVBuild.JsonDecode = X.DenLayout, X.DenCheck, X.DenApply, X.JsonDecode
 
 -- OVBuild.DenUsage() -> inside used, inside cap, yard used, yard cap
 function OVBuild.DenUsage()

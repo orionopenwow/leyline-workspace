@@ -376,6 +376,21 @@ def write_links(cfg):
     if cfg.get("host_secret"):
         write_private("host-link.txt", host_link(cfg) + "\n")
     write_den_invite(cfg)
+    make_den_saves(cfg)
+
+
+def make_den_saves(cfg):
+    """state/dens: a Den's save files (ov_den.lua writes <name>.den.json there, the launcher's Saved Dens reads them
+    and writes open.json). The world server mounts it (docker-compose.host.yml) and runs as its own user, so for a
+    Den the folder is open to it (it holds only layout files; nothing in it is ever run). Made for every realm so
+    Docker never makes it as root."""
+    d = path("dens")
+    try:
+        os.makedirs(d, exist_ok=True)
+        if cfg.get("profile") == "den" and os.name == "posix":
+            os.chmod(d, 0o777)
+    except OSError:
+        pass
 
 
 def write_den_invite(cfg):

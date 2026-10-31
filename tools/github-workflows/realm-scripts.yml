@@ -55,8 +55,10 @@ jobs:
         run: |
           lua5.1 stream/tests/test_ov_modes.lua stream/fui-web/Interface/AddOns/WrathUnleashedUI realm/custom/lua_scripts
           lua5.1 stream/tests/test_ov_golf.lua stream/fui-web/Interface/AddOns/WrathUnleashedUI realm/custom/lua_scripts
-      - name: ov_den (the Den)
-        run: lua5.1 stream/tests/test_ov_den.lua realm/custom/lua_scripts/ov_den.lua realm/custom/lua_scripts/ov_build.lua realm/custom/lua_scripts/ov_modapi.lua
+      - name: ov_den (the Den), and its smoke test (buildings, paths, restart, the save file, relaunch, invite)
+        run: |
+          lua5.1 stream/tests/test_ov_den.lua realm/custom/lua_scripts/ov_den.lua realm/custom/lua_scripts/ov_build.lua realm/custom/lua_scripts/ov_modapi.lua
+          lua5.1 stream/tests/test_den_smoke.lua realm/custom/lua_scripts
       - name: ov_hostctl (Your realm, for the realm's GM) and the in-game Host window, Realm List, the Leyline look
         run: |
           lua5.1 stream/tests/test_wuui_host.lua

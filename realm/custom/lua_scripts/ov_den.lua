@@ -21,6 +21,10 @@
 --   .den room [white|stone|wood]  (owner) the room's look; ".den room rebuild" puts it up again, "clear" takes it down
 --   .den budget                   the decor budgets: inside the room and out in the yard
 --   .den save|load <name> [replace] | .den layouts     the whole Den as a layout (.build layout)
+--   .den save <name>              (owner) also writes the Den to a file on the host's PC: <kit>/state/dens/<name>.den.json
+--   .den load <name> [replace|add] (owner) opens that file (asks first when the Den has decor; replace keeps a
+--                                 copy of what was there as "backup"); without a file, your own layout as before
+--   .den files                    the Den files saved from here (the launcher's Host page lists every one)
 --
 -- The Den bar (WrathUnleashedUI/EditMode.lua) talks to this over the OVMOD channel (ov_modapi.lua), mod "wuden":
 --   client -> server   cmd      <the text after .den>
@@ -29,7 +33,13 @@
 --
 -- Files: <kit>/realm-files/lua_scripts/den-invite.dat (the host kit's setup.py, den profile only), data only:
 --   return { invite = "https://.../join/<realm id>#<invite secret>" }       read, never run (OV_DEN_INVITE_FILE)
--- Table: mod_den_settings (k, v): the room's look and its floor height.
+--        <kit>/state/dens (mounted at OV_DEN_SAVES, /azerothcore/dens): the Den's save files, JSON (docs/DEN.md, "The
+--   save file"), written by .den save, read by .den load and by the launcher's "Open a saved Den", which writes
+--   open.json there ({"file": "<name>", "id": "<letters>"}): the Den opens with that file (replacing what is there,
+--   a copy kept as "backup") as soon as its owner is in the room. Files are JSON read by OVBuild.JsonDecode and
+--   checked (OVBuild.DenCheck: known entries only, inside the Den, the budgets); nothing in them is ever run.
+-- Tables: mod_den_settings (k, v): the room's look, its floor height, the last opened launcher file;
+--   mod_den_files (name, props, at): the files saved from here.
 -- mod-ale used: RegisterPlayerEvent 3 ON_LOGIN, 28 ON_MAP_CHANGE, 30 ON_FIRST_LOGIN, 42 ON_COMMAND; CreateLuaEvent;
 -- Player:Teleport / IsGM / GetGMRank / SetBindPoint / RegisterEvent / SendBroadcastMessage; Map:GetHeight;
 -- GetPlayersInWorld, GetPlayerByName, CharDBQuery / CharDBExecute.
@@ -43,6 +53,10 @@ local CHECK_MS = 2000          -- the edge check
 local BACK_COOLDOWN = 3        -- seconds between two "back in the room" for one player
 local AREA_ID = 876            -- AreaTable.dbc: the island's own area (the hearth's area)
 local ADDON_WAIT = 20          -- seconds after a login without a word from the addon: say how to get it
+local SAVES = os.getenv("OV_DEN_SAVES") or "/azerothcore/dens"
+local FILE_MAX = 512 * 1024    -- bytes in one Den file
+local OPEN_EVERY = 5           -- edge checks (2 s each) between two looks for the launcher's open.json
+local Files = { VERSION = 1 }  -- the save file (below)
 
 local OVMod
 do
@@ -232,11 +246,16 @@ local function checkOne(player)
     toRoom(player)
 end
 
+local ticks = 0
 local function checkAll()
     if not GetPlayersInWorld then return end
     local ok, list = pcall(GetPlayersInWorld)
     if not ok or type(list) ~= "table" then return end
     for _, pl in ipairs(list) do pcall(checkOne, pl) end
+    ticks = ticks + 1
+    if ticks % OPEN_EVERY == 0 and Files.openPending and B() then
+        for _, pl in ipairs(list) do pcall(Files.openPending, pl) end
+    end
 end
 
 ------------------------------------------------------------------------------------------------
@@ -248,7 +267,7 @@ local function inviteLink()
     if not f then return nil end
     local text = f:read("*a") or ""
     f:close()
-    local link = text:match('invite%s*=%s*"(https://[%w%.%-]+/join/[a-z2-7]+#[A-Z2-9]+)"')
+    local link = text:match('invite%s*=%s*"(https://[%w%.%-]+[:%d]*/join/[a-z2-7]+#[A-Z2-9]+)"')
     if link and #link < 200 then return link end
     return nil
 end
@@ -329,11 +348,189 @@ local function helpCommand(player)
     else
         say(player, "You build here (" .. r .. "): F7 is edit mode (hold Q for props, G to carry, Ctrl+Z undo, Ctrl+Y redo).")
         say(player, "  |cffffff00.den budget|r  |cffffff00.den save <name>|r  |cffffff00.den load <name>|r  |cffffff00.den layouts|r  |cffffff00.den builders|r")
+        say(player, "  Paths: |cffffff00.build path <prop> from|r, walk, |cffffff00.build path <prop> to|r (the Builder's Path: two clicks).")
     end
     if r == "owner" then
         say(player, "  Owner: |cffffff00.den invite|r  |cffffff00.den allow <name> build|view|r  |cffffff00.den room white|stone|wood|rebuild|r")
+        say(player, "  |cffffff00.den save <name>|r also writes a file on your PC (state\\dens); |cffffff00.den load <name> replace|add|r opens one; |cffffff00.den files|r")
     end
     say(player, "  |cffffff00.den home|r takes you back to the middle of the room.")
+end
+
+------------------------------------------------------------------------------------------------
+-- the save file: the Den as JSON on the host's PC (docs/DEN.md, "The save file")
+------------------------------------------------------------------------------------------------
+exec("CREATE TABLE IF NOT EXISTS mod_den_files (name VARCHAR(24) NOT NULL PRIMARY KEY, props SMALLINT UNSIGNED NOT NULL, "
+    .. "at INT UNSIGNED NOT NULL DEFAULT 0)")
+
+function Files.clean(name)
+    name = tostring(name or ""):lower():gsub("%.den%.json$", ""):gsub("[^%w_%-]", ""):sub(1, 24)
+    return name ~= "" and name or nil
+end
+function Files.path(name) return SAVES .. "/" .. name .. ".den.json" end
+
+-- A small JSON writer: tables with only 1..n keys are arrays, others objects (keys sorted); numbers short.
+local function jstr(s)
+    return '"' .. tostring(s):gsub('[%c"\\]', function(c)
+        if c == '"' then return '\\"' elseif c == "\\" then return "\\\\" elseif c == "\n" then return "\\n" end
+        return string.format("\\u%04x", c:byte())
+    end) .. '"'
+end
+local function jnum(v)
+    if v ~= v or v == math.huge or v == -math.huge then return "0" end
+    if v == math.floor(v) and math.abs(v) < 1e15 then return string.format("%d", v) end
+    local t = string.format("%.4f", v):gsub("0+$", ""):gsub("%.$", "")
+    return t
+end
+function Files.encode(v, indent)
+    indent = indent or ""
+    local t = type(v)
+    if t == "number" then return jnum(v) elseif t == "boolean" then return tostring(v) elseif t == "string" then return jstr(v) end
+    if t ~= "table" then return "null" end
+    local n = #v
+    local isArray = n > 0 or next(v) == nil
+    for k in pairs(v) do if type(k) ~= "number" or k < 1 or k > n or k ~= math.floor(k) then isArray = false; break end end
+    if isArray then
+        local flat, parts = true, {}
+        for i = 1, n do if type(v[i]) == "table" then flat = false end end
+        for i = 1, n do parts[i] = Files.encode(v[i], indent .. " ") end
+        if flat then return "[" .. table.concat(parts, ",") .. "]" end
+        return "[\n" .. indent .. " " .. table.concat(parts, ",\n" .. indent .. " ") .. "\n" .. indent .. "]"
+    end
+    local keys, parts = {}, {}
+    for k in pairs(v) do keys[#keys + 1] = tostring(k) end
+    table.sort(keys)
+    local deep = false
+    for _, k in ipairs(keys) do if type(v[k]) == "table" then deep = true end end
+    for _, k in ipairs(keys) do parts[#parts + 1] = jstr(k) .. ":" .. Files.encode(v[k], indent .. " ") end
+    if not deep then return "{" .. table.concat(parts, ",") .. "}" end
+    return "{\n" .. indent .. " " .. table.concat(parts, ",\n" .. indent .. " ") .. "\n" .. indent .. "}"
+end
+
+-- The whole Den as the file's table (version 1).
+function Files.doc(name)
+    local b, d = B(), den()
+    local lay = b.DenLayout()
+    return { format = "leyline-den", version = Files.VERSION, name = name, saved = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        room = { look = currentTheme().name, size = d.half }, props = lay.props, paths = lay.paths }
+end
+
+-- Writes the Den to <SAVES>/<name>.den.json: true, props  or  nil, why
+function Files.write(name)
+    local doc = Files.doc(name)
+    local text = Files.encode(doc) .. "\n"
+    if #text > FILE_MAX then return nil, "the Den is too big for one file" end
+    local tmp = Files.path(name) .. ".tmp"
+    local f = io and io.open and io.open(tmp, "w")
+    if not f then return nil, "the realm can't write to its saves folder" end
+    local ok = f:write(text)
+    f:close()
+    if not ok or not (os.rename and os.rename(tmp, Files.path(name))) then
+        if os.remove then pcall(os.remove, tmp) end
+        return nil, "the realm can't write to its saves folder"
+    end
+    exec(string.format("REPLACE INTO mod_den_files (name, props, at) VALUES ('%s', %d, %d)", name, #doc.props, os.time()))
+    return true, #doc.props
+end
+
+-- Reads and checks <name>.den.json: checked (OVBuild.DenCheck), doc  or  nil, why. Never runs anything in it.
+function Files.read(name, add)
+    local f = io and io.open and io.open(Files.path(name), "r")
+    if not f then return nil, "no file" end
+    local text = f:read(FILE_MAX + 1) or ""
+    f:close()
+    if #text > FILE_MAX then return nil, "That Den file is too big." end
+    local b = B()
+    local doc, why = b.JsonDecode(text:gsub("^\239\187\191", ""), FILE_MAX)
+    if type(doc) ~= "table" then return nil, "That Den file can't be read (" .. tostring(why or "not JSON") .. ")." end
+    local c, why2 = b.DenCheck(doc, add)
+    if not c then return nil, why2 end
+    return c, doc
+end
+
+local function decorCount() return #(B().DenLayout().props) end
+
+-- Opens a checked file for the owner: the room's look from the file, then the props. replace: a copy of what was
+-- here is saved first as "backup".
+function Files.open(player, name, c, doc, replace)
+    local backup
+    if replace and decorCount() > 0 then
+        if Files.write("backup") then backup = true end
+    end
+    local t = type(doc.room) == "table" and themeOf(doc.room.look)
+    if t and t.name ~= currentTheme().name and not settings.cleared then buildRoom(player, t, true) end
+    local n = B().DenApply(player, c, replace)
+    local d = den()
+    say(player, string.format("Opened '%s': %d props%s.%s%s", name, n,
+        c.skipped > 0 and string.format(" (%d left out: not known on this realm, or outside this Den)", c.skipped) or "",
+        backup and " What was here is saved as 'backup' (|cffffff00.den load backup replace|r)." or "",
+        (type(doc.room) == "table" and tonumber(doc.room.size) and tonumber(doc.room.size) ~= d.half)
+            and string.format(" It was saved in a room %d yards wide; this one is %d.", doc.room.size * 2, d.half * 2) or ""))
+    say(player, "Ctrl+Z (|cffffff00.build undo|r) takes it back.")
+    return n
+end
+
+local function saveCommand(player, name)
+    B().Run(player, "layout save " .. name)
+    if not isOwner(player) then return end
+    local ok, n = Files.write(name)
+    if ok then
+        say(player, string.format("Saved to a file too (%d props): state\\dens\\%s.den.json in your host kit folder. The "
+            .. "launcher's Host page (Saved Dens) opens it or saves a copy.", n, name))
+    else
+        say(player, "Couldn't save the file (" .. tostring(n) .. "); the layout is saved in the realm.")
+    end
+end
+
+local function loadCommand(player, name, mode)
+    if not isOwner(player) then return B().Run(player, "layout load " .. name .. (mode == "replace" and " replace" or "")) end
+    local c, doc = Files.read(name, mode == "add")
+    if not c then
+        if doc ~= "no file" then return say(player, doc) end
+        return B().Run(player, "layout load " .. name .. (mode == "replace" and " replace" or ""))
+    end
+    local have = decorCount()
+    if have > 0 and mode ~= "replace" and mode ~= "add" then
+        return say(player, string.format("Your Den has %d props. |cffffff00.den load %s replace|r puts the file's Den in their "
+            .. "place (a copy of yours is saved as 'backup'); |cffffff00.den load %s add|r adds it to them.", have, name, name))
+    end
+    Files.open(player, name, c, doc, mode == "replace")
+end
+
+local function filesCommand(player)
+    local q = query("SELECT name, props FROM mod_den_files ORDER BY name")
+    local names = {}
+    if q then repeat names[#names + 1] = q:GetString(0) .. " (" .. q:GetUInt32(1) .. ")" until not q:NextRow() end
+    if #names == 0 then return say(player, "No Den files yet: |cffffff00.den save <name>|r writes one.") end
+    say(player, "Den files saved here: " .. table.concat(names, ", ") .. ". The launcher's Host page lists every file.")
+end
+
+-- The launcher's "Open a saved Den": <SAVES>/open.json names a file; opened once (its id is kept) when the owner
+-- is in the room.
+function Files.pending()
+    local f = io and io.open and io.open(SAVES .. "/open.json", "r")
+    if not f then return nil end
+    local text = f:read(4096) or ""
+    f:close()
+    local doc = B().JsonDecode(text, 4096)
+    if type(doc) ~= "table" then return nil end
+    local name, id = Files.clean(doc.file), tostring(doc.id or ""):gsub("[^%w]", ""):sub(1, 32)
+    if not name or id == "" or settings.opened == id then return nil end
+    return name, id
+end
+
+function Files.openPending(player)
+    if not (player and isOwner(player) and inside(player)) then return end
+    local name, id = Files.pending()
+    if not name then return end
+    setSetting("opened", id)
+    if os.remove then pcall(os.remove, SAVES .. "/open.json") end
+    local c, doc = Files.read(name)
+    if not c then
+        return say(player, "The launcher asked to open '" .. name .. "', but " .. (doc == "no file" and "that file isn't there." or doc))
+    end
+    say(player, "Opening '" .. name .. "' from the launcher.")
+    Files.open(player, name, c, doc, true)
 end
 
 local function run(player, text)
@@ -348,10 +545,12 @@ local function run(player, text)
     elseif sub == "room" then return roomCommand(player, words)
     elseif sub == "budget" then return budgetCommand(player)
     elseif sub == "save" or sub == "load" then
-        local name = (words[2] or ""):gsub("[^%w_%-]", "")
-        if name == "" then return say(player, "Usage: |cffffff00.den " .. sub .. " <name>|r") end
-        return B().Run(player, "layout " .. sub .. " " .. name .. ((sub == "load" and (words[3] or ""):lower() == "replace") and " replace" or ""))
+        local name = Files.clean(words[2])
+        if not name then return say(player, "Usage: |cffffff00.den " .. sub .. " <name>|r") end
+        if sub == "save" then return saveCommand(player, name) end
+        return loadCommand(player, name, (words[3] or ""):lower())
     elseif sub == "layouts" then return B().Run(player, "layout list")
+    elseif sub == "files" then return filesCommand(player)
     end
     helpCommand(player)
 end
@@ -375,6 +574,7 @@ local function arrive(player)
     local b = B()
     if b then b.SetFloor(floorZ()) end
     sendInfo(player)
+    if Files.openPending and b then pcall(Files.openPending, player) end
 end
 
 local function onLogin(event, player)
@@ -422,4 +622,5 @@ if B() and settings.floor then B().SetFloor(floorZ()) end
 
 -- for stream/tests/test_ov_den.lua (read only)
 OV_DEN_TEST = { THEMES = THEMES, plan = plan, buildRoom = buildRoom, inside = inside, checkAll = checkAll,
-    inviteLink = inviteLink, settings = settings, run = run, role = role, heard = heard, ADDON_WAIT = ADDON_WAIT }
+    inviteLink = inviteLink, settings = settings, run = run, role = role, heard = heard, ADDON_WAIT = ADDON_WAIT,
+    Files = Files, SAVES = SAVES }

@@ -934,6 +934,10 @@ pub fn run() {
             crate::forum::commands::forum_call,
             crate::forum::commands::forum_post,
             crate::forum::commands::forum_open,
+            // List your mod: check, list, report, edit, remove with the launcher's sign-in (listing.rs)
+            crate::listing::commands::listing_post,
+            crate::listing::commands::listing_mine,
+            crate::listing::commands::listing_open,
             // the News page: the website's news feed (news.rs)
             crate::news::commands::news_list,
             // the Modes page (modes.rs)

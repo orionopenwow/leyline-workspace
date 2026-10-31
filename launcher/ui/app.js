@@ -1272,9 +1272,11 @@ function projectCard(p, c) {
     meta.append(ins);
     if (m.rising) { const r = el("span", "rising", "▲"); r.title = "Rising"; r.setAttribute("aria-label", "Rising"); meta.append(r); }
   } else if (p.source !== "packaged") meta.append(el("span", "src", "Community"));
+  // a player's listed mod (listmod.js, listed.rs): installs from its author; says whether a moderator looked
+  if (p.source === "listed" && window.LeylineListMod) window.LeylineListMod.decorate(p, thumb, meta);
   const acts = el("div", "acts");
   const mine = installed.find((x) => x.key === p.id);
-  if (p.source === "packaged" && p.download) {
+  if ((p.source === "packaged" && p.download) || (p.source === "listed" && p.install)) {
     const b = el("button", "btn small");
     b.type = "button";
     if (!c) { b.textContent = "Install"; b.disabled = true; b.title = "Add a game client first"; }
@@ -1284,7 +1286,9 @@ function projectCard(p, c) {
     else { b.textContent = "Install"; b.classList.add("primary"); }
     b.addEventListener("click", (ev) => { ev.stopPropagation(); installProject(p, b); });
     if (p.kind === "realm") b.title = "A realm mod: it runs on a realm that installs it, not in your game";
+    if (p.source === "listed" && p.plan && p.plan.length && !b.title) b.title = p.plan.join(" ");
     acts.append(b);
+    if (p.source === "listed" && window.LeylineListMod) acts.append(window.LeylineListMod.reportButton(p));
   } else if (page) {
     const b = el("button", "btn small", "Get ↗");
     b.type = "button";

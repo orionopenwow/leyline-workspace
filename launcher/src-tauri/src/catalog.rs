@@ -77,6 +77,16 @@ pub struct Project {
     pub file_count: Option<u64>,
     pub review: Option<crate::upstream::Review>,
     pub compat: Option<crate::upstream::Compat>,
+
+    // ---- listed mods only (`source: "listed"`, id `link:<12 hex>`, "List your mod": listed.rs, mods/all-json.md)
+    /// `addon`, `package`, `patch`, `native` (what one click puts in the client).
+    pub format: String,
+    /// `community` ("Community · not reviewed") or `reviewed` (a moderator looked).
+    pub state: String,
+    /// What the site's check flagged (a moderator looked at these before it went live).
+    pub flags: Vec<String>,
+    /// What one click does, in plain words (the site's check wrote it).
+    pub plan: Vec<String>,
 }
 
 impl Project {
@@ -90,9 +100,11 @@ impl Project {
         build != Build::Other
             && (self.builds.is_empty() || self.builds.iter().any(|b| b == "any" || Build::from_tag(b) == Some(build)))
     }
-    /// Leyline can download and install it (a packaged mod with a zip on the site, or a reviewed upstream addon).
+    /// Leyline can download and install it (a packaged mod with a zip on the site, a reviewed upstream addon, or a
+    /// listed mod from its author's repo).
     pub fn installable(&self) -> bool {
-        (self.source == "packaged" && self.download.is_some()) || (self.source == "upstream" && self.install.is_some())
+        (self.source == "packaged" && self.download.is_some())
+            || (matches!(self.source.as_str(), "upstream" | "listed") && self.install.is_some())
     }
 }
 
@@ -151,6 +163,8 @@ pub fn clean_in(mut p: Project, origin: &str, all: bool) -> Option<Project> {
         "packaged".into()
     } else if p.source == "upstream" && p.id.starts_with("up:") {
         "upstream".into()
+    } else if p.source == "listed" && p.id.starts_with("link:") {
+        "listed".into()
     } else {
         "community".into()
     };
@@ -210,6 +224,10 @@ fn clean_upstream(p: &mut Project, origin: &str) {
     let tag = |t: &String| !t.is_empty() && t.len() <= 24 && t.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
     p.tags = std::mem::take(&mut p.tags).into_iter().filter(tag).take(8).collect();
     p.licence_source = text(&p.licence_source, 80);
+    clean_listed(p);
+    if p.source == "listed" {
+        return;
+    }
     if p.source != "upstream" {
         p.install = None;
         p.addons.clear();
@@ -246,6 +264,47 @@ fn clean_upstream(p: &mut Project, origin: &str) {
         p.install = None;
     }
     if let Some(i) = &p.install {
+        p.size = Some(i.size);
+        p.file_count = Some(i.file_count);
+        p.sha256 = i.sha256.clone();
+    }
+}
+
+/// The listed-mod fields made safe. A listed entry whose install block does not check out (`listed::install_ok`)
+/// stays listed as a plain link (its repo) and installs nothing.
+fn clean_listed(p: &mut Project) {
+    let lines = |v: Vec<String>, n: usize| v.into_iter().map(|x| text(&x, 300)).filter(|x| !x.is_empty()).take(n).collect::<Vec<_>>();
+    if p.source != "listed" {
+        p.format.clear();
+        p.state.clear();
+        p.flags.clear();
+        p.plan.clear();
+        return;
+    }
+    p.download = None;
+    p.mirror_allowed = false;
+    p.review = None;
+    p.compat = None;
+    p.addons.clear();
+    p.requires.clear();
+    p.conflicts.clear();
+    p.name = crate::upstream::clean_title(&p.name);
+    if p.name.is_empty() {
+        p.name = p.id[5..].to_string();
+    }
+    p.format = if matches!(p.format.as_str(), "addon" | "package" | "patch" | "native") { p.format.clone() } else { String::new() };
+    p.state = if p.state == "reviewed" { "reviewed".into() } else { "community".into() };
+    p.flags = lines(std::mem::take(&mut p.flags), 8);
+    p.plan = lines(std::mem::take(&mut p.plan), 8);
+    p.blp = if p.blp == "author-art" { p.blp.clone() } else { "none".into() };
+    let ok = p.install.as_ref().is_some_and(|i| crate::listed::install_ok(i, &p.repo, p.blp == "author-art"));
+    if !ok {
+        p.source = "community".into();
+        p.install = None;
+        return;
+    }
+    if let Some(i) = &p.install {
+        p.native = i.files.keys().any(|f| [".dll", ".asi", ".exe"].iter().any(|x| f.to_ascii_lowercase().ends_with(x)));
         p.size = Some(i.size);
         p.file_count = Some(i.file_count);
         p.sha256 = i.sha256.clone();
@@ -430,6 +489,34 @@ mod tests {
         // An "upstream" claim on a mod: id, or on a link: id, is not upstream.
         let p = one(&entry("").replace("up:frames", "mod:frames"));
         assert_eq!(p.source, "community");
+    }
+
+    #[test]
+    fn listed_mods_keep_the_install_block_the_site_checked() {
+        // An install block exactly as stream/listings.py writes it (all_json_fields) for a repo that is the addon.
+        let inst = r#"{"kind": "addon", "from": "commit-archive", "url": "https://github.com/alice/Frames/archive/0123456789abcdef0123456789abcdef01234567.zip", "rev": "0123456789abcdef0123456789abcdef01234567", "sha256": null, "size": 52, "file_count": 2, "strip_prefix": "Frames-0123456789abcdef0123456789abcdef01234567/", "files": {"Frames/Frames.lua": "98752ee28d5484bdc2814fb70adb6a0b2fb31f6a9b8ee7ae81fd2fc9cf300b3b", "Frames/Frames.toc": "8b79a6a116a5ff03299307d821e92c6e688c9a25821d2517bfdc7e622e7eaac4"}, "files_digest": "c4da748e050b500a9e56d144189a4cec5e07270def30bfb4b0c3ec32b836578f", "folders": {"": "Frames"}, "blp": "none", "native": false}"#;
+        let entry = |extra: &str, inst: &str| {
+            format!(
+                r#"{{"projects":[{{"id":"link:3f9a0c12bd47","source":"listed","name":"Frames (WotLK)","builds":["3.3.5a"],
+                "repo":"https://github.com/alice/Frames","format":"addon","state":"community","blp":"none",
+                "plan":["Adds 1 addon folder to Interface/AddOns: Frames."],"flags":[],"install":{inst}{extra}}}]}}"#
+            )
+        };
+        let one = |doc: String| parse(&serde_json::from_str(&doc).unwrap(), "https://play.openvanilla.app").unwrap().1.remove(0);
+        let p = one(entry("", inst));
+        assert_eq!(p.source, "listed");
+        assert!(p.installable() && p.download.is_none() && !p.native);
+        assert_eq!((p.name.as_str(), p.state.as_str(), p.format.as_str()), ("Frames", "community", "addon"));
+        assert_eq!(p.plan.len(), 1);
+        // another repo's download, a changed file list (digest), a "listed" claim on a mod: id: a link, never installed
+        let other = one(entry("", &inst.replace("github.com/alice/Frames/archive", "github.com/mallory/Frames/archive")));
+        let tampered = one(entry("", &inst.replace("98752ee2", "00000000")));
+        let state = one(entry(r#","state":"trust me""#, inst));
+        assert!(!other.installable() && other.source == "community");
+        assert!(!tampered.installable() && tampered.source == "community");
+        assert_eq!(state.state, "community");
+        let modid = one(entry("", inst).replace("link:3f9a0c12bd47", "mod:frames"));
+        assert!(modid.source == "community" && modid.install.is_none());
     }
 
     #[test]

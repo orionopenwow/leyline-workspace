@@ -12,6 +12,10 @@
 //! A Den (`den`, docs/DEN.md: a private room to build in) is always private: its start also gets
 //! `LEYLINE_VISIBILITY` / `WU_VISIBILITY=private` (and `host.rs` adds `--private`), and on its first start the name
 //! "My Den". The kit then makes its join page take accounts only from the invite link and never runs bots.
+//! Solo leveling (`solo`, realm/profiles/solo.env: one player levelling alone, with helper bots and dungeons scaled
+//! for one) is private the same way, named "Solo leveling" on its first start; it does run bots.
+//! One kit hosts one realm (one `state/host.json`, one compose project): a Den and Solo leveling take turns on it
+//! (the same realm, its accounts and characters kept), so the play bar offers to switch between them.
 
 use crate::clients::{Build, ClientProfile};
 use serde::{Deserialize, Serialize};
@@ -32,6 +36,7 @@ pub struct KitProfile {
 pub const PROFILES: &[KitProfile] = &[
     KitProfile { id: "dalaran", label: "3.3.5a: a light Dalaran hangout (boost to 80, no bots)", build: Build::V335a, core: "azerothcore", own_folder: false },
     KitProfile { id: "den", label: "3.3.5a: My Den (a private room to build in)", build: Build::V335a, core: "azerothcore", own_folder: false },
+    KitProfile { id: "solo", label: "3.3.5a: Solo leveling (just you, with helper bots)", build: Build::V335a, core: "azerothcore", own_folder: false },
     KitProfile { id: "main", label: "3.3.5a: normal from level 1, or a one-time boost", build: Build::V335a, core: "azerothcore", own_folder: false },
     KitProfile { id: "brawl", label: "3.3.5a: everyone starts at 80", build: Build::V335a, core: "azerothcore", own_folder: false },
     KitProfile { id: "progression", label: "3.3.5a: blizzlike progression", build: Build::V335a, core: "azerothcore", own_folder: false },
@@ -54,6 +59,24 @@ pub fn id_ok(id: &str) -> bool {
 pub const DEN: &str = "den";
 /// A new Den's name (the kit's own question otherwise).
 pub const DEN_NAME: &str = "My Den";
+
+/// Solo leveling (realm/profiles/solo.env): private, for one player, helper bots on.
+pub const SOLO: &str = "solo";
+pub const SOLO_NAME: &str = "Solo leveling";
+
+/// The realms made for this PC alone (the play bar's My Den and Solo leveling): always started private.
+pub fn private_profile(id: &str) -> bool {
+    id == DEN || id == SOLO
+}
+
+/// The name a private profile's realm gets on its first start.
+pub fn first_name(id: &str) -> Option<&'static str> {
+    match id {
+        DEN => Some(DEN_NAME),
+        SOLO => Some(SOLO_NAME),
+        _ => None,
+    }
+}
 
 /// The profiles that never run bots (the kit refuses them): the Dalaran hangout and a Den.
 pub fn no_bots(id: &str) -> bool {
@@ -178,14 +201,14 @@ pub fn env_for(kit: &Path) -> Vec<(String, String)> {
     let Some(c) = read_choice(kit) else { return Vec::new() };
     let Some(p) = find(&c.profile) else { return Vec::new() };
     let mut env = vec![("WU_PROFILE".to_string(), c.profile.clone()), ("LEYLINE_RULESET".to_string(), c.profile.clone())];
-    if c.profile == DEN {
+    if private_profile(&c.profile) {
         for k in ["LEYLINE_VISIBILITY", "WU_VISIBILITY"] {
             env.push((k.to_string(), "private".to_string()));
         }
         // the first start only: a realm already set up keeps its own name
-        if !kit.join("state").join("host.json").is_file() {
+        if let Some(n) = first_name(&c.profile).filter(|_| !kit.join("state").join("host.json").is_file()) {
             for k in ["LEYLINE_NAME", "WU_NAME"] {
-                env.push((k.to_string(), DEN_NAME.to_string()));
+                env.push((k.to_string(), n.to_string()));
             }
         }
     }
@@ -246,7 +269,7 @@ mod tests {
         let o = offers_in(Some(&k), &mine, true);
         assert_eq!(o.len(), PROFILES.len());
         let ready: Vec<&str> = o.iter().filter(|x| x.note.is_none()).map(|x| x.id.as_str()).collect();
-        assert_eq!(ready, ["dalaran", "den", "main", "brawl", "progression", "vanillaplus", "cmangos-2.4.3"]);
+        assert_eq!(ready, ["dalaran", "den", "solo", "main", "brawl", "progression", "vanillaplus", "cmangos-2.4.3"]);
         let den = o.iter().find(|x| x.id == "den").unwrap();
         assert_eq!((den.version.as_str(), den.core.as_str(), den.clients[0].path.as_str()), ("3.3.5a", "azerothcore", "/games/335"));
         let tbc = o.iter().find(|x| x.id == "cmangos-2.4.3").unwrap();
@@ -311,6 +334,37 @@ mod tests {
         let env = env_for(&k);
         assert!(!env.iter().any(|(k, _)| k.ends_with("NAME")), "{env:?}");
         assert!(env.contains(&("LEYLINE_VISIBILITY".into(), "private".into())));
+        let _ = fs::remove_dir_all(&k);
+        let _ = fs::remove_dir_all(&games);
+    }
+
+    /// Solo leveling (realm/profiles/solo.env): private like a Den, "Solo leveling" on its first start, bots on.
+    #[test]
+    fn solo_leveling_is_private_and_runs_bots() {
+        let k = kit("solo", &[]);
+        let games = std::env::temp_dir().join(format!("wu-profiles-solo-335-{}", std::process::id()));
+        fs::create_dir_all(&games).unwrap();
+        let wrath = client("b", Build::V335a, games.to_str().unwrap());
+        let p = find(SOLO).unwrap();
+        assert_eq!((p.build, p.core, p.own_folder), (Build::V335a, "azerothcore", false));
+        assert!(p.label.contains("Solo leveling"));
+        assert!(!no_bots(SOLO), "its helper bots are the point");
+        assert!(private_profile(SOLO) && private_profile(DEN) && !private_profile("main") && !private_profile("dalaran"));
+        assert_eq!((first_name(SOLO), first_name(DEN), first_name("main")), (Some("Solo leveling"), Some("My Den"), None));
+        let tbc = client("a", Build::V243, games.to_str().unwrap());
+        assert!(choose(&k, SOLO, Some(&tbc)).unwrap_err().contains("needs a 3.3.5a client"));
+        choose(&k, SOLO, Some(&wrath)).unwrap();
+        let env = env_for(&k);
+        for (key, v) in [("WU_PROFILE", "solo"), ("LEYLINE_RULESET", "solo"), ("LEYLINE_VISIBILITY", "private"), ("WU_VISIBILITY", "private"),
+            ("LEYLINE_NAME", "Solo leveling"), ("WU_NAME", "Solo leveling")] {
+            assert!(env.contains(&(key.into(), v.into())), "{key}={v}: {env:?}");
+        }
+        assert!(env.contains(&("WU_WOW_DIR".into(), games.display().to_string())));
+        // a Den switched to Solo leveling: the same realm, still private, its name from the switch (host.rs Answers)
+        fs::write(k.join("state/host.json"), r#"{"realm_id":"abcdefghijk2345a","name":"My Den","profile":"den"}"#).unwrap();
+        let env = env_for(&k);
+        assert!(!env.iter().any(|(k, _)| k.ends_with("NAME")), "{env:?}");
+        assert!(env.contains(&("WU_VISIBILITY".into(), "private".into())));
         let _ = fs::remove_dir_all(&k);
         let _ = fs::remove_dir_all(&games);
     }

@@ -30,7 +30,7 @@ const FAKE = (setUp) => {
         browser_url: 'https://play.openvanilla.app/wrath', windows: true, data_dir: '/tmp' };
       case 'deep_link_take': return null;
       case 'host_info': if (window.__jobDone && !realm) realm = window.__jobDone; return { dir: '/home/me/kit', is_kit: !window.__noKit, has_windows_script: true, has_unix_script: true, problems: [], seeds: [], realm };
-      case 'host_console': return { set_up: !!realm, linked: false, name: realm ? realm.name : '', realm_id: realm ? realm.realm_id : '',
+      case 'host_console': return { set_up: !!realm, linked: !!(realm && realm.profile === 'linked'), name: realm ? realm.name : '', realm_id: realm ? realm.realm_id : '',
         profile: realm ? realm.profile : 'vanillaplus', core: 'azerothcore', visibility, signup: 'invite', herokey: false, claim_sent: false, browser: true, max_players: den ? 10 : 0,
         relay: 'relay.openvanilla.app', relay_connected: true, relay_error: null, docker: true,
         services: [svc('database', 'ok', 'ready'), svc('login', 'ok', 'ready'), svc('world', 'ok', 'ready'), svc('agent', 'ok', 'connected')],
@@ -70,6 +70,7 @@ const FAKE = (setUp) => {
       case 'host_listing': return { tags: [], region: null, language: null, max_players: null, direct: false };
       case 'p2p_flags': return { effective: { p2p_hosting: false, limits: {} }, known: [], local: { overrides: {} }, site: {} };
       case 'open_link': return null;
+      case 'host_scan': return window.__found || null;
       case 'host_start_quiet': window.__jobAt = 0; return 'Setting up your realm. The first start takes 5 to 20 minutes.';
       case 'host_link_quiet': window.__jobAt = 0; window.__jobKind = 'link'; return 'Linking your server. It shows on the realm list within a minute.';
       case 'host_progress': {
@@ -424,6 +425,7 @@ test('Docker installed but closed: the step says Start Docker (never Get Docker)
   await page.waitForSelector('.hc-step[data-docker="missing"]', { timeout: 8000 });
   assert.equal(await page.textContent('.hc-step[data-docker] b'), 'Get Docker');
   assert.match(await page.textContent('.hc-step[data-docker] .hc-step-t span'), /sees it/);
+  if (process.env.SHOT_DIR) await page.screenshot({ path: process.env.SHOT_DIR + '/docker-missing.png' });
   await page.close();
 });
 
@@ -446,7 +448,7 @@ test('Start Docker: one press starts Docker Desktop, the step counts the seconds
   assert.equal(await page.textContent('#hc-docker-start'), 'Start Docker');
   await page.click('#hc-docker-start');
   await page.waitForSelector('.hc-step.wait[data-docker="starting"]');
-  assert.match(await page.textContent('.hc-step[data-docker] .hc-step-t span'), /Starting Docker… \d+ s/);
+  assert.match(await page.textContent('.hc-step[data-docker] .hc-step-t span'), /\d+ s so far/);
   assert.equal(await page.textContent('.hc-step[data-docker] b'), 'Starting Docker…');
   if (process.env.SHOT_DIR) await page.screenshot({ path: process.env.SHOT_DIR + '/docker-starting.png' });
   await page.waitForSelector('.hc-ready[hidden]', { state: 'attached', timeout: 15000 });
@@ -506,4 +508,70 @@ test('a start that stops says why in plain words, with Try again and the window 
   await page.click('.hc-prog button:has-text("Open in a window instead")');
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'host_start'));
   await page.close();
+});
+
+test('a server already on this PC: found, and two presses put it on Leyline with no questions', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, colorScheme: 'dark' });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.addInitScript(() => {
+    window.__found = { kind: 'docker', running: true, confirmed: true, core: 'azerothcore', client: 'wrath',
+      auth: '127.0.0.1:3724', world: '127.0.0.1:8085', what: 'AzerothCore in Docker (login 3724, world 8085)' };
+  });
+  await page.addInitScript(FAKE, false);
+  await page.goto(INDEX);
+  let presses = 0;
+  const press = async (sel) => { presses++; await page.click(sel); };
+  await press('.nav[data-page="host"]');                  // 1: Host
+  await page.waitForSelector('.hc-found:not([hidden]) #hc-put');
+  assert.match(await page.textContent('.hc-found'), /Found a server on this PC.*AzerothCore in Docker \(login 3724, world 8085\)/s);
+  assert.equal(await page.textContent('.hc-start .hc-bh:not(.hc-gap)'), 'Or host a new realm');
+  assert.equal(await page.$('#hc-link-client'), null, 'the game it is for was told by the server itself');
+  assert.equal(await page.inputValue('#hc-link-name'), 'My Server');
+  if (process.env.SHOT_DIR) await page.screenshot({ path: process.env.SHOT_DIR + '/server-found.png' });
+  await press('#hc-put');                                 // 2: Put it on Leyline
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'host_link_quiet'));
+  assert.deepEqual((await calls(page, 'host_link_quiet'))[0], { answers: { name: 'My Server', auth: '127.0.0.1:3724', world: '127.0.0.1:8085', client: 'wrath', core: 'azerothcore' } });
+  assert.equal((await calls(page, 'host_link_start')).length, 0, 'no window, no four questions');
+  await page.waitForSelector('.hc-live.on', { timeout: 20000 });
+  assert.equal(presses, 2);
+  assert.equal(await page.textContent('.hc-live b'), "You're live");
+  assert.match(await page.textContent('.hc-live'), /on the realm list.*WrongPass\.MaxCount = 0/s);
+  if (process.env.SHOT_DIR) await page.screenshot({ path: process.env.SHOT_DIR + '/linked-live.png' });
+  assert.doesNotMatch(await page.textContent('#page-host'), NO_BRANDS);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('found, but the era is not told or the ports alone answer: the host picks, and a stopped server is said so', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, colorScheme: 'dark' });
+  await page.addInitScript(() => {
+    window.__found = { kind: 'native', running: true, confirmed: true, core: 'cmangos', client: '', auth: '127.0.0.1:3724', world: '127.0.0.1:8085',
+      what: 'CMaNGOS running on this PC (login 3724, world 8085)' };
+  });
+  await page.addInitScript(FAKE, false);
+  await page.goto(INDEX);
+  await page.click('.nav[data-page="host"]');
+  await page.waitForSelector('#hc-link-client');
+  await page.selectOption('#hc-link-client', 'tbc');
+  await page.fill('#hc-link-name', 'Old Friends');
+  await page.click('#hc-put');
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'host_link_quiet'));
+  const a = (await calls(page, 'host_link_quiet'))[0].answers;
+  assert.deepEqual([a.name, a.client, a.core], ['Old Friends', 'tbc', 'cmangos']);
+  await page.close();
+
+  const p2 = await browser.newPage({ viewport: { width: 1280, height: 900 }, colorScheme: 'dark' });
+  await p2.addInitScript(() => {
+    window.__found = { kind: 'docker', running: false, confirmed: false, core: 'azerothcore', client: 'wrath', auth: '127.0.0.1:3724', world: '127.0.0.1:8085',
+      what: 'AzerothCore in Docker, stopped' };
+  });
+  await p2.addInitScript(FAKE, false);
+  await p2.goto(INDEX);
+  await p2.click('.nav[data-page="host"]');
+  await p2.waitForSelector('.hc-found:not([hidden])');
+  assert.match(await p2.textContent('.hc-found'), /Your server is stopped/);
+  assert.equal(await p2.$('#hc-put'), null, 'never linked while it is stopped');
+  if (process.env.SHOT_DIR) await p2.screenshot({ path: process.env.SHOT_DIR + '/server-stopped.png' });
+  await p2.close();
 });

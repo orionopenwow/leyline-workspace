@@ -19,6 +19,7 @@ pub mod console;
 pub mod docker;
 pub mod pack;
 pub mod profiles;
+pub mod scan;
 
 use crate::realms;
 use serde::{Deserialize, Serialize};

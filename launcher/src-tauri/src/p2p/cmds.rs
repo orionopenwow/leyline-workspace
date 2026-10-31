@@ -173,6 +173,12 @@ pub fn host_link_quiet(answers: host::LinkAnswers) -> Result<String, String> {
     host::run_job(&plan, "link")
 }
 
+/// "Already run a server?": a game server found on this PC (its containers, programs or game ports), read-only.
+#[tauri::command]
+pub async fn host_scan() -> Result<Option<host::scan::Found>, String> {
+    blocking(|| Ok(host::scan::scan())).await
+}
+
 /// The quiet start's step, in plain words.
 #[tauri::command]
 pub fn host_progress() -> host::Progress {

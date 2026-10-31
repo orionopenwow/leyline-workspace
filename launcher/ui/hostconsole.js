@@ -538,6 +538,12 @@
     t.append(mk("b", "", on ? "You're live" : "Almost there"),
       mk("span", "", !on ? "Connecting to the network. This takes a minute." : c.linked ? "Your server is on the realm list."
         : priv ? "Send friends your invite link. They make their account there, then play." : "Your realm is on the realm list. Send the link to anyone."));
+    if (on && c.linked) {
+      const ul = mk("ul", "hc-live-l");
+      for (const line of ["Players reach your server through the network: the realm address your server gives out must already work for players.",
+        "Turn off your login server's wrong-password ban (WrongPass.MaxCount = 0): every player comes through one address."]) ul.append(mk("li", "", line));
+      t.append(ul);
+    }
     box.append(t);
     if (on && !c.linked) box.append(btn("Copy invite link", "btn primary", copyInvite));
     if (on) { const x = btn("", "hc-x", () => { liveWanted = false; box.hidden = true; }); x.setAttribute("aria-label", "Close"); x.textContent = "×"; box.append(x); }
@@ -774,7 +780,11 @@
     // before anything else, while the Host pack or Docker is missing (owner 2026-10-30: "make getting the host pack more obvious")
     ui.ready = mk("div", "hc-ready");
     ui.ready.hidden = true;
-    sw.append(top, rune(), lede, needs, ui.ready, mk("p", "hc-bh", "Pick a ruleset"), ui.rules, ui.den, ui.form, go, ui.prog, ui.status, link, rune(), mk("p", "hc-bh", "Runs on"), coreChips(linkServer));
+    // a server already on this PC (host/scan.rs): put it on Leyline in one press
+    ui.found = mk("div", "hc-found");
+    ui.found.hidden = true;
+    ui.pickH = mk("p", "hc-bh", "Pick a ruleset");
+    sw.append(top, rune(), lede, needs, ui.ready, ui.found, ui.pickH, ui.rules, ui.den, ui.form, go, ui.prog, ui.status, link, rune(), mk("p", "hc-bh", "Runs on"), coreChips(linkServer));
     const side = mk("aside", "hc-box hc-side");
     side.append(mk("p", "hc-bh", "Guide"), guideList(true));
     wrap.append(sw, side);
@@ -807,6 +817,80 @@
     return null;
   }
 
+  // ---------------------------------------------------------------- a server already on this PC
+  const CLIENTS = [["vanilla", "The original game (to 60)"], ["tbc", "Second era"], ["wrath", "Third era"]];
+  let found = null;
+  let scanned = false;
+  async function scanServers() {
+    let f = null;
+    try { f = await call("host_scan"); } catch (_) { /* nothing found */ }
+    scanned = true;
+    found = f || null;
+    paintFound();
+  }
+  function paintFound() {
+    const box = ui.found;
+    if (!box) return;
+    box.hidden = !found;
+    if (ui.pickH) ui.pickH.textContent = found ? "Or host a new realm" : "Pick a ruleset";
+    if (!found) return;
+    box.replaceChildren();
+    const f = found;
+    const head = mk("div", "hc-found-h");
+    const t = mk("div", "hc-found-t");
+    t.append(mk("b", "", !f.running ? "Your server is stopped" : f.confirmed || f.kind !== "ports" ? "Found a server on this PC" : "Is this your server?"), mk("span", "", f.what));
+    head.append(t);
+    box.append(head);
+    if (!f.running) {
+      box.append(mk("p", "hc-fine", "Start it the way you usually do, then press Look again."));
+      const again = btn("Look again", "btn small", (ev) => { ev.currentTarget.disabled = true; scanServers(); });
+      box.append(again);
+      return;
+    }
+    const row = mk("div", "hc-found-f");
+    const nl = mk("label", "hc-field");
+    ui.linkName = mk("input", "hc-token");
+    ui.linkName.id = "hc-link-name"; ui.linkName.type = "text"; ui.linkName.maxLength = 32; ui.linkName.spellcheck = false; ui.linkName.autocomplete = "off";
+    ui.linkName.value = "My Server";
+    nl.append(mk("span", "", "Its name on the realm list"), ui.linkName);
+    row.append(nl);
+    ui.linkClient = null;
+    if (!f.client) {
+      const cl = mk("label", "hc-field");
+      ui.linkClient = mk("select", "hc-hours");
+      ui.linkClient.id = "hc-link-client";
+      for (const [v, label] of CLIENTS) { const o = mk("option", "", label); o.value = v; ui.linkClient.append(o); }
+      cl.append(mk("span", "", "The game it's for"), ui.linkClient);
+      row.append(cl);
+    }
+    const put = btn(f.confirmed || f.kind !== "ports" ? "Put it on Leyline" : "Yes, link it", "btn primary hc-step-go", linkFound);
+    put.id = "hc-put";
+    row.append(put);
+    box.append(row, mk("p", "hc-fine", "Only a small helper runs next to it. Your server, its accounts and its settings are not changed."));
+  }
+  async function linkFound() {
+    const f = found;
+    if (!f) { linkServer(); return; }
+    const name = ((ui.linkName && ui.linkName.value) || "").trim();
+    if (!NAME_OK.test(name)) { say("Give your server a name: letters, digits and spaces.", "warn"); if (ui.linkName) ui.linkName.focus(); return; }
+    if (dock && dock.state !== "ready") { say("Docker first (step 2 above): the helper runs in it.", "warn"); return; }
+    const put = byId("hc-put");
+    if (put) put.disabled = true;
+    try {
+      if (!(kit && kit.is_kit)) {   // one press: the Host pack comes with it
+        say("Getting the Host pack…");
+        const r = await call("hostpack_install");
+        await call("set_host_kit", { path: r[1] });
+      }
+      const client = f.client || (ui.linkClient && ui.linkClient.value) || "wrath";
+      await call("host_link_quiet", { answers: { name, auth: f.auth, world: f.world, client, core: f.core || null } });
+      say("");
+      job = { idle: false, kind: "link", running: true, code: null, step: "Getting ready", n: 0, of: 4, secs: 0, problem: null };
+      followJob();
+    } catch (e) { say(oops(e), "bad"); }
+    finally { if (put) put.disabled = false; }
+  }
+
   // ---------------------------------------------------------------- a start with no window: the kit's steps, here
   let job = null;          // host_progress
   let jobTimer = null;
@@ -835,7 +919,7 @@
     if (failed) {
       box.append(mk("p", "hc-prog-why", job.problem || "Something went wrong."));
       const row = mk("div", "hc-row");
-      row.append(btn("Try again", "btn small primary", job.kind === "link" ? linkServer : startPicked));
+      row.append(btn("Try again", "btn small primary", job.kind === "link" ? linkFound : startPicked));
       if (job.kind !== "link") row.append(btn("Open in a window instead", "btn small", startInWindow));
       box.append(row);
     }
@@ -1010,6 +1094,7 @@
     applyWant();
     paintPrereq();
     watchDocker();
+    if (!scanned || !found) scanServers();
   }
 
   // Docker is looked at again every 5 s while the Start tab shows (someone installs or opens Docker Desktop and comes
@@ -1031,7 +1116,7 @@
     if (!d || mode !== "setup") return;
     const was = dock && dock.state;
     dock = d;
-    if (d.state !== was) { paintPrereq(); paintGo(); }
+    if (d.state !== was) { paintPrereq(); paintGo(); if (d.state === "ready") scanServers(); }
   }
   document.addEventListener("visibilitychange", watchDocker);
   new MutationObserver(watchDocker).observe(page, { attributes: true, attributeFilter: ["class"] });
@@ -1048,7 +1133,7 @@
     catch (e) { say(oops(e, "Docker did not start. Open Docker Desktop yourself: this page sees it."), "warn"); if (b) b.disabled = false; return; }
     say(note || "");
     waiting = { t0: Date.now(), timer: null };
-    dock = Object.assign({}, dock, { state: "starting", can_start: false, help: "Starting Docker… This usually takes under a minute." });
+    dock = Object.assign({}, dock, { state: "starting", can_start: false, help: "This usually takes under a minute." });
     paintPrereq(); paintGo();
     waitTick();
   }
@@ -1070,8 +1155,8 @@
       say("Docker hasn't answered yet. Look at Docker Desktop's window: it may ask you to accept its terms, then try again.", "warn");
       return;
     }
-    const help = secs < 45 ? `Starting Docker… ${secs} s. This usually takes under a minute.`
-      : `Still starting… ${secs} s. If Docker Desktop shows a window, accept it there.`;
+    const help = secs < 45 ? `${secs} s so far. This usually takes under a minute.`
+      : `${secs} s so far. If Docker Desktop shows a window, accept it there.`;
     dock = Object.assign({}, d || dock, { state: "starting", can_start: false, help });
     paintPrereq();
     waiting.timer = setTimeout(waitTick, WAIT_EVERY);

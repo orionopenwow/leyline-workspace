@@ -911,6 +911,7 @@ pub fn run() {
             crate::p2p::cmds::host_start_quiet, // no window: the Host page's answers, its steps (host.rs plan_quiet, progress)
             crate::p2p::cmds::host_link_quiet,
             crate::p2p::cmds::host_progress,
+            crate::p2p::cmds::host_scan, // a server already on this PC, to link (host/scan.rs)
             crate::p2p::cmds::p2p_flags,
             crate::p2p::cmds::p2p_set_flag,
             crate::p2p::cmds::p2p_set_limits,

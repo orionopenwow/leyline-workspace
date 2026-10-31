@@ -79,7 +79,7 @@ local PLACES = {
     ["b:zulaman"] = { name = "Zul'Aman", what = "raid", map = 568, pos = nil, min = 70, raid = true, hint = "" },
     ["b:zulgurub"] = { name = "Zul'Gurub", what = "raid", map = 309, pos = nil, min = 60, raid = true, hint = "" },
     ["h:dalaran"] = { name = "Dalaran", what = "hangout", map = 571, pos = { 571, 5807.98, 588.487, 660.94, 1.66594 }, min = 1, raid = false, hint = "" },
-    ["h:duels"] = { name = "Duels in Dalaran", what = "hangout", map = 571, pos = { 571, 5807.98, 588.487, 660.94, 1.66594 }, min = 1, raid = false, hint = "Duel: target a player and type /duel, or right-click their portrait. Either of you can say no." },
+    ["h:duels"] = { name = "Duels in Dalaran", what = "hangout", map = 571, pos = { 571, 5813.84, 449.122, 658.752, 1.16086 }, min = 1, raid = false, hint = "Duel corner: target a player and type /duel. Either of you can say no. Health and cooldowns come back after." },
     ["h:goldshire-inn"] = { name = "The Goldshire Inn", what = "hangout", map = 0, pos = { 0, -9460.3, 18.9, 57, 3.98 }, min = 1, raid = false, hint = "" },
     ["q:258"] = { name = "Random dungeon: Azeroth", what = "queue", map = nil, pos = nil, min = 15, raid = false, hint = "" },
     ["q:259"] = { name = "Random dungeon: Outland", what = "queue", map = nil, pos = nil, min = 59, raid = false, hint = "" },

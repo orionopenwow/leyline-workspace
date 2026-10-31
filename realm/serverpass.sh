@@ -8,6 +8,9 @@
 #   3. Profile: DungeonAccessRequirements.LFGLevelDBCOverride = 1 (the finder uses that table's levels
 #      instead of LFGDungeons.dbc's 15), AllowTwoSide.Interaction.Group = 1 (friends on either side can group).
 #      OV_AUTOLEARN = 1: ov_qol.lua's instant spell learn on level up (the profile had it at 0).
+#      OV_DUEL_RESET = 1 (owner 2026-10-31): health, power and cooldowns back after a duel (the duel corner).
+#      No bots for now (owner 2026-10-31, realm/profiles/main.env): OV_COMPANIONS = 0 and AC_PLAYERBOTS_MAX_ADDED_BOTS = 0
+#      (this pass used to put the cap back to 9).
 #      Companions (ov_companions.lua, dungeons and 10-player raids): AC_PLAYERBOTS_MAX_ADDED_BOTS = 9 (the bot
 #      module's per-player cap: you + 9 = a 10-player raid), OV_COMPANIONS_PER_PLAYER_RAID = 9,
 #      OV_COMPANIONS_GROUP_MAX = 10, OV_COMPANIONS_REALM_MAX = 60, OV_COMPANIONS_RAID25 = 0 (25-player off).
@@ -141,8 +144,8 @@ missing=$(sqlq "SELECT COUNT(*) FROM (SELECT 389 m UNION SELECT 43 UNION SELECT 
 echo "== 3. profile"
 sed -i 's/\r$//' "$PF"
 need=0
-for kv in AC_DUNGEON_ACCESS_REQUIREMENTS_LFGLEVEL_DBCOVERRIDE=1 AC_ALLOW_TWO_SIDE_INTERACTION_GROUP=1 OV_AUTOLEARN=1 \
-    AC_PLAYERBOTS_MAX_ADDED_BOTS=9 OV_COMPANIONS_PER_PLAYER_RAID=9 OV_COMPANIONS_GROUP_MAX=10 \
+for kv in AC_DUNGEON_ACCESS_REQUIREMENTS_LFGLEVEL_DBCOVERRIDE=1 AC_ALLOW_TWO_SIDE_INTERACTION_GROUP=1 OV_AUTOLEARN=1 OV_DUEL_RESET=1 \
+    OV_COMPANIONS=0 AC_PLAYERBOTS_MAX_ADDED_BOTS=0 OV_COMPANIONS_PER_PLAYER_RAID=9 OV_COMPANIONS_GROUP_MAX=10 \
     OV_COMPANIONS_REALM_MAX=60 OV_COMPANIONS_RAID25=0 \
     AC_PLAYERBOTS_LOOT_NEED_ROLL_LEVEL=0 AC_PLAYERBOTS_LOOT_GREED_ROLL_LEVEL=0 AC_PLAYERBOTS_LOOT_ROLL_DISENCHANT=0 \
     AC_PLAYERBOTS_LOOT_ROLL_RECIPE=0 AC_PLAYERBOTS_FREE_METHOD_LOOT=0 AC_PLAYERBOTS_ALLOW_GUILD_BOTS=0 \

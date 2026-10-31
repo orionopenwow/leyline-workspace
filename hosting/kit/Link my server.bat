@@ -100,7 +100,7 @@ set /a N=0
 findstr /c:"\"connected\": true" "state\relay-state.json" >nul 2>&1 && goto connected
 set /a N+=1
 if !N! GEQ 30 (echo   Not connected yet: check this PC is online ^(docker logs %LC%^). & goto done)
-timeout /t 2 /nobreak >nul
+ping -n 3 127.0.0.1 >nul
 goto wait
 :connected
 echo   Connected to the Leyline relay.

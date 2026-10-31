@@ -77,7 +77,7 @@ echo.
 echo == Connecting to the relay
 for /l %%i in (1,1,24) do (
   findstr /c:"\"realmlist_ok\": true" "state\relay-state.json" >nul 2>&1 && goto connected
-  timeout /t 5 >nul
+  ping -n 6 127.0.0.1 >nul
 )
 echo   Not connected yet; it keeps trying by itself. Run "Check my realm.bat" in a minute.
 goto done
@@ -126,7 +126,7 @@ exit /b 0
 :waitready
 set /a N=0
 :waitloop
-timeout /t 10 >nul
+ping -n 11 127.0.0.1 >nul
 docker logs --since %T0% wu-host-realm-world 2>&1 | findstr /c:"%LL_READY%" >nul && exit /b 0
 set /a N+=1
 set /a M=N %% 6

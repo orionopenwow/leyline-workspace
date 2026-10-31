@@ -158,6 +158,27 @@ pub fn host_link_start() -> Result<String, String> {
     Ok(plan.note)
 }
 
+/// Start the realm with no window: the Host page's answers (name, public or private, the host's account name) go to
+/// the kit's script, which asks nothing; `host_progress` then shows its steps.
+#[tauri::command]
+pub fn host_start_quiet(answers: host::Answers) -> Result<String, String> {
+    let plan = host::plan_quiet(&kit()?, HostOs::current(), &answers)?;
+    host::run_job(&plan, "host")
+}
+
+/// "Put it on Leyline": `leyline link` for a server found on this PC (or typed in), with no window.
+#[tauri::command]
+pub fn host_link_quiet(answers: host::LinkAnswers) -> Result<String, String> {
+    let plan = host::plan_link_quiet(&kit()?, HostOs::current(), &answers)?;
+    host::run_job(&plan, "link")
+}
+
+/// The quiet start's step, in plain words.
+#[tauri::command]
+pub fn host_progress() -> host::Progress {
+    host::progress()
+}
+
 #[tauri::command]
 pub async fn p2p_flags() -> Result<View, String> {
     blocking(|| Ok(flags::load(&settings::app_dir(), flags::URL))).await

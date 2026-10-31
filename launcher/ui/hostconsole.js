@@ -296,7 +296,12 @@
     ui.drawer.hidden = true;
     ui.status = mk("p", "status hc-status");
     ui.status.setAttribute("role", "status");
-    sw.append(top, rune(), ui.svc, cols, ui.drawer, ui.status, rune(), mk("p", "hc-bh", "Runs on"), coreChips());
+    // "You're live": once, right after a start from this page, when the relay sees the realm
+    ui.live = mk("div", "hc-live");
+    ui.live.hidden = true;
+    ui.prog = mk("div", "hc-prog");
+    ui.prog.hidden = true;
+    sw.append(top, ui.live, ui.prog, rune(), ui.svc, cols, ui.drawer, ui.status, rune(), mk("p", "hc-bh", "Runs on"), coreChips());
     main.append(sw);
   }
 
@@ -514,8 +519,32 @@
     for (const b of ui.tools.querySelectorAll(".hc-tool")) b.parentElement.hidden = !toolShown(b.dataset.tool, c);
     if (openTool && !toolShown(openTool, c)) toggleTool(openTool);
     if (!c.docker && con) say("Docker is not answering: start Docker Desktop, then refresh.", "warn");
+    paintLive(c);
+    paintProg();
     if (openTool) fillTool(openTool, true);
   }
+
+  function paintLive(c) {
+    const box = ui.live;
+    if (!box) return;
+    box.hidden = !liveWanted;
+    if (!liveWanted) return;
+    const on = !!(stat && stat.online);
+    const was = box.classList.contains("on");
+    box.className = "hc-live" + (on ? " on" : "");
+    box.replaceChildren();
+    const t = mk("div", "hc-live-t");
+    const priv = (stat && stat.visibility === "private") || c.visibility === "private";
+    t.append(mk("b", "", on ? "You're live" : "Almost there"),
+      mk("span", "", !on ? "Connecting to the network. This takes a minute." : c.linked ? "Your server is on the realm list."
+        : priv ? "Send friends your invite link. They make their account there, then play." : "Your realm is on the realm list. Send the link to anyone."));
+    box.append(t);
+    if (on && !c.linked) box.append(btn("Copy invite link", "btn primary", copyInvite));
+    if (on) { const x = btn("", "hc-x", () => { liveWanted = false; box.hidden = true; }); x.setAttribute("aria-label", "Close"); x.textContent = "×"; box.append(x); }
+    if (on && !was) box.scrollIntoView({ block: "nearest" });
+    if (!on && !liveTimer) liveTimer = setTimeout(() => { liveTimer = null; refresh(true); }, 10000);
+  }
+  let liveTimer = null;
 
   async function startRealm() {
     say("Starting your realm…");
@@ -704,7 +733,31 @@
     ui.go.id = "hc-start";
     ui.go.disabled = true;
     ui.goHint = mk("span", "hc-fine", "Pick a ruleset.");
-    go.append(ui.go, ui.goHint);
+    ui.goWin = btn("Open in a window instead", "hc-more hc-win", startInWindow);
+    ui.goWin.hidden = true;
+    go.append(ui.go, ui.goHint, ui.goWin);
+    // the kit's questions, answered here so no window asks them (host.rs Answers)
+    ui.form = mk("div", "hc-form");
+    const nameL = mk("label", "hc-field");
+    ui.nameIn = mk("input", "hc-token");
+    ui.nameIn.id = "hc-name"; ui.nameIn.type = "text"; ui.nameIn.maxLength = 32; ui.nameIn.spellcheck = false; ui.nameIn.autocomplete = "off";
+    ui.nameIn.addEventListener("input", () => { ui.nameIn.dataset.typed = "1"; paintGo(); });
+    nameL.append(mk("span", "", "Realm name"), ui.nameIn);
+    ui.visL = mk("div", "hc-field");
+    ui.visL.append(mk("span", "", "Who can join"));
+    ui.visSeg = seg([["private", "Friends with my link"], ["public", "Everyone"]], visPick, (v) => { visPick = v; paintForm(); });
+    ui.visSeg.id = "hc-vis";
+    ui.visL.append(ui.visSeg);
+    ui.gmL = mk("label", "hc-field");
+    ui.gmIn = mk("input", "hc-token");
+    ui.gmIn.id = "hc-gm"; ui.gmIn.type = "text"; ui.gmIn.maxLength = 16; ui.gmIn.spellcheck = false; ui.gmIn.autocomplete = "off";
+    ui.gmIn.placeholder = "3 to 16 letters or digits";
+    ui.gmIn.addEventListener("input", paintGo);
+    ui.gmL.append(mk("span", "", "Your account name (it gets GM)"), ui.gmIn);
+    ui.gmL.hidden = !needsGm;
+    ui.form.append(nameL, ui.visL, ui.gmL);
+    ui.prog = mk("div", "hc-prog");
+    ui.prog.hidden = true;
     // My Den: what the kit sets for it, in place of choices (no bots, no player limit)
     ui.den = mk("ul", "hc-den");
     ui.den.setAttribute("aria-label", "My Den");
@@ -721,12 +774,90 @@
     // before anything else, while the Host pack or Docker is missing (owner 2026-10-30: "make getting the host pack more obvious")
     ui.ready = mk("div", "hc-ready");
     ui.ready.hidden = true;
-    sw.append(top, rune(), lede, needs, ui.ready, mk("p", "hc-bh", "Pick a ruleset"), ui.rules, ui.den, go, ui.status, link, rune(), mk("p", "hc-bh", "Runs on"), coreChips(linkServer));
+    sw.append(top, rune(), lede, needs, ui.ready, mk("p", "hc-bh", "Pick a ruleset"), ui.rules, ui.den, ui.form, go, ui.prog, ui.status, link, rune(), mk("p", "hc-bh", "Runs on"), coreChips(linkServer));
     const side = mk("aside", "hc-box hc-side");
     side.append(mk("p", "hc-bh", "Guide"), guideList(true));
     wrap.append(sw, side);
     main.append(wrap);
     paintRulesets();
+    paintProg();
+  }
+
+  // the form: a name for the ruleset (until one is typed), who can join (a Den is always friends only), and on a Mac or
+  // Linux the host's own account name (`leyline host` never makes accounts; the Windows kit makes a GM login itself)
+  const NAMES = { den: "My Den", dalaran: "Dalaran Hangout", vanillaplus: "Vanilla Plus" };
+  const needsGm = !/Windows/i.test(navigator.userAgent || "");
+  let visPick = "private";
+  function paintForm() {
+    if (!ui.form) return;
+    if (ui.nameIn && !ui.nameIn.dataset.typed) ui.nameIn.value = NAMES[picked] || "My Realm";
+    ui.visL.hidden = picked === DEN;
+    for (const b of ui.visSeg.querySelectorAll(".hc-seg-b")) b.setAttribute("aria-pressed", String(b.dataset.value === visPick));
+  }
+  const NAME_OK = /^[A-Za-z0-9 _'-]{1,32}$/;
+  const GM_OK = /^[A-Za-z0-9]{3,16}$/;
+  function answers() {
+    return { name: ui.nameIn.value.trim(), visibility: picked === DEN ? "private" : visPick, gm: needsGm ? ui.gmIn.value.trim() : null };
+  }
+  function formProblem() {
+    if (!ui.nameIn) return null;
+    const a = answers();
+    if (!NAME_OK.test(a.name)) return "Give your realm a name: letters, digits and spaces.";
+    if (needsGm && !GM_OK.test(a.gm || "")) return "Type your account name: 3 to 16 letters or digits.";
+    return null;
+  }
+
+  // ---------------------------------------------------------------- a start with no window: the kit's steps, here
+  let job = null;          // host_progress
+  let jobTimer = null;
+  let liveWanted = false;  // a start just finished: the console says "You're live" once the relay sees the realm
+  function fmt(secs) { const m = Math.floor(secs / 60), s2 = secs % 60; return m ? `${m} min ${String(s2).padStart(2, "0")} s` : `${s2} s`; }
+  function paintProg() {
+    const box = ui.prog;
+    if (!box) return;
+    // in the console a finished start is said by "You're live" instead
+    box.hidden = !job || job.idle || (mode === "console" && !job.running && job.code === 0);
+    if (box.hidden) return;
+    const failed = !job.running && job.code !== 0;
+    box.className = "hc-prog" + (failed ? " bad" : job.running ? "" : " ok");
+    box.replaceChildren();
+    const head = mk("div", "hc-prog-h");
+    head.append(mk("b", "", failed ? (job.kind === "link" ? "Linking stopped" : "Setting up stopped") : job.running ? job.step : (job.kind === "link" ? "Linked" : "Set up")),
+      mk("span", "hc-fine", job.running ? `Step ${Math.max(1, job.n)} of ${job.of} · ${fmt(job.secs)}` : fmt(job.secs)));
+    const bar = mk("div", "hc-bar");
+    const fill = mk("i", "");
+    fill.style.width = `${Math.round((job.running ? Math.max(job.n - 0.5, 0.3) : job.of) / Math.max(job.of, 1) * 100)}%`;
+    bar.append(fill);
+    bar.setAttribute("role", "progressbar");
+    bar.setAttribute("aria-valuemin", "0"); bar.setAttribute("aria-valuemax", String(job.of)); bar.setAttribute("aria-valuenow", String(job.n));
+    box.append(head, bar);
+    if (job.running) box.append(mk("p", "hc-fine", job.kind === "link" ? "Usually under a minute." : "The first start takes 5 to 20 minutes. You can use the rest of Leyline meanwhile."));
+    if (failed) {
+      box.append(mk("p", "hc-prog-why", job.problem || "Something went wrong."));
+      const row = mk("div", "hc-row");
+      row.append(btn("Try again", "btn small primary", job.kind === "link" ? linkServer : startPicked));
+      if (job.kind !== "link") row.append(btn("Open in a window instead", "btn small", startInWindow));
+      box.append(row);
+    }
+    if (ui.go) ui.go.hidden = !!(job.running);
+    if (ui.goHint) ui.goHint.hidden = !!(job.running);
+  }
+  async function followJob() {
+    if (jobTimer) clearTimeout(jobTimer);
+    let p = null;
+    try { p = await call("host_progress"); } catch (_) { /* try again */ }
+    const wasRunning = !!(job && job.running);
+    if (p) job = p;
+    paintProg();
+    paintGo();
+    if (ui.prog && !ui.prog.hidden && (!wasRunning || !job.running)) ui.prog.scrollIntoView({ block: "nearest" });
+    if (job && job.running) { jobTimer = setTimeout(followJob, 2000); return; }
+    jobTimer = null;
+    if (job && !job.idle && job.code === 0) {
+      liveWanted = true;
+      say(job.kind === "link" ? "Linked. Checking the realm list…" : "Your realm is up. Checking the network…", "ok");
+      if (typeof loadHost === "function") loadHost();   // app.js: read the kit again (it now hosts a realm: the console)
+    }
   }
 
   function paintRulesets() {
@@ -734,6 +865,10 @@
     ui.rules.replaceChildren();
     const list = offers || ORDER.slice(0, 6).map((id) => ({ id, clients: [], note: null, core: "azerothcore" }));
     const ids = ORDER.filter((id) => list.some((o) => o.id === id));
+    if (!picked && offers) {
+      const free = ids.filter((id) => !list.find((o) => o.id === id).note);
+      picked = free.includes("dalaran") ? "dalaran" : free[0] || null;
+    }
     for (const id of ids) {
       const o = list.find((x) => x.id === id);
       const [title, line, chip] = RULESETS[id] || [o.label || id, ""];
@@ -755,9 +890,12 @@
     const ready = kit && kit.is_kit;
     const name = picked ? (RULESETS[picked] || [picked])[0] : null;
     const dockOk = !dock || dock.state === "ready";
-    ui.go.disabled = !ready || !picked || !dockOk;
+    paintForm();
+    const why = formProblem();
+    ui.go.disabled = !ready || !picked || !dockOk || !!(job && job.running);
     ui.go.textContent = name ? `Start ${name}` : "Start";
     ui.goHint.textContent = !ready ? "Get the Host pack first (step 1 above)." : !dockOk ? "Docker first (step 2 above)." : !picked ? "Pick a ruleset."
+      : why ? why
       : picked === "vanillaplus" ? "Always on: it comes back after a reboot."
       : picked === DEN ? "Then invite friends with your invite link. The first start takes 5 to 20 minutes." : "The first start takes 5 to 20 minutes.";
     if (ui.den) ui.den.hidden = picked !== DEN;
@@ -770,11 +908,24 @@
     catch (e) { say(oops(e), "bad"); }
   }
   async function startPicked() {
+    const why = formProblem();
+    if (why) { say(why, "warn"); (needsGm && !GM_OK.test(ui.gmIn.value.trim()) ? ui.gmIn : ui.nameIn).focus(); return; }
     ui.go.disabled = true;
-    say("Starting your realm…");
-    try { say(await call("host_start", {}), "ok"); } catch (e) { say(oops(e), "bad"); }
+    say("");
+    try {
+      const o = (offers || []).find((x) => x.id === picked);
+      await call("host_choose", { profile: picked, clientId: o && o.clients[0] ? o.clients[0].id : null });
+      await call("host_start_quiet", { answers: answers() });
+      job = { idle: false, kind: "host", running: true, code: null, step: "Getting ready", n: 0, of: 8, secs: 0, problem: null };
+      followJob();
+    } catch (e) { say(oops(e), "bad"); if (ui.goWin) ui.goWin.hidden = false; }
     paintGo();
-    setTimeout(() => { if (typeof loadHost === "function") loadHost(); }, 20000);   // app.js: read the kit again
+  }
+  // the old way: the kit's script in a window of its own, asking its questions there
+  async function startInWindow() {
+    say("Opening it in a window…");
+    try { say(await call("host_start", {}), "ok"); } catch (e) { say(oops(e), "bad"); }
+    setTimeout(() => { if (typeof loadHost === "function") loadHost(); }, 20000);
   }
   async function linkServer() {
     if (!(kit && kit.is_kit)) { say("Get the Host pack first (Host pack & settings).", "warn"); return; }

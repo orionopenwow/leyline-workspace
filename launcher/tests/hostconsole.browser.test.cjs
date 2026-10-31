@@ -18,7 +18,7 @@ const RID = 'abcdefghijk2345a';
 const FAKE = (setUp) => {
   const calls = (window.__calls = []);
   const den = setUp === 'den';   // a Den set up on this PC (docs/DEN.md)
-  const realm = setUp ? { realm_id: 'abcdefghijk2345a', name: den ? 'My Den' : 'Frost Haven', visibility: den ? 'private' : 'public', relay: 'relay.openvanilla.app', profile: den ? 'den' : 'vanillaplus' } : null;
+  let realm = setUp ? { realm_id: 'abcdefghijk2345a', name: den ? 'My Den' : 'Frost Haven', visibility: den ? 'private' : 'public', relay: 'relay.openvanilla.app', profile: den ? 'den' : 'vanillaplus' } : null;
   const svc = (role, state, text) => ({ role, state, text });
   let rules = ['Be kind.', 'No gold selling.'];
   let visibility = den ? 'private' : 'public';
@@ -29,7 +29,7 @@ const FAKE = (setUp) => {
         wine: { enabled: false, command: 'wine', prefix: '' } }, official_realm: 'play.openvanilla.app',
         browser_url: 'https://play.openvanilla.app/wrath', windows: true, data_dir: '/tmp' };
       case 'deep_link_take': return null;
-      case 'host_info': return { dir: '/home/me/kit', is_kit: !window.__noKit, has_windows_script: true, has_unix_script: true, problems: [], seeds: [], realm };
+      case 'host_info': if (window.__jobDone && !realm) realm = window.__jobDone; return { dir: '/home/me/kit', is_kit: !window.__noKit, has_windows_script: true, has_unix_script: true, problems: [], seeds: [], realm };
       case 'host_console': return { set_up: !!realm, linked: false, name: realm ? realm.name : '', realm_id: realm ? realm.realm_id : '',
         profile: realm ? realm.profile : 'vanillaplus', core: 'azerothcore', visibility, signup: 'invite', herokey: false, claim_sent: false, browser: true, max_players: den ? 10 : 0,
         relay: 'relay.openvanilla.app', relay_connected: true, relay_error: null, docker: true,
@@ -70,6 +70,23 @@ const FAKE = (setUp) => {
       case 'host_listing': return { tags: [], region: null, language: null, max_players: null, direct: false };
       case 'p2p_flags': return { effective: { p2p_hosting: false, limits: {} }, known: [], local: { overrides: {} }, site: {} };
       case 'open_link': return null;
+      case 'host_start_quiet': window.__jobAt = 0; return 'Setting up your realm. The first start takes 5 to 20 minutes.';
+      case 'host_link_quiet': window.__jobAt = 0; window.__jobKind = 'link'; return 'Linking your server. It shows on the realm list within a minute.';
+      case 'host_progress': {
+        if (window.__jobAt === undefined) return { idle: true, kind: '', running: false, code: null, step: '', n: 0, of: 0, secs: 0, problem: null };
+        const link = window.__jobKind === 'link';
+        const steps = link ? ['Getting the helper (about a minute)', "Saving your server's details", 'Connecting your server to the network', 'Done']
+          : ['Getting the helper (about a minute)', 'Saving your settings', 'Downloading the realm (the biggest step)', 'Reading the game data from your game folder',
+            'Starting the servers (the first time: 5 to 20 minutes)', 'Setting up the ruleset', 'Connecting to the network', 'Done'];
+        const n = Math.min(++window.__jobAt, steps.length);
+        if (window.__jobFail && n >= 4) return { idle: false, kind: 'host', running: false, code: 1, step: steps[3], n: 4, of: 8, secs: 61,
+          problem: 'Your game folder was not found or could not be read. Add it on the Clients page, then try again.' };
+        const done = n >= (window.__jobSteps || steps.length);
+        if (done && !window.__jobDone) window.__jobDone = link
+          ? { realm_id: 'abcdefghijk2345a', name: 'My Server', visibility: 'public', relay: 'relay.openvanilla.app', profile: 'linked' }
+          : { realm_id: 'abcdefghijk2345a', name: 'Dalaran Hangout', visibility: 'private', relay: 'relay.openvanilla.app', profile: 'dalaran' };
+        return { idle: false, kind: link ? 'link' : 'host', running: !done, code: done ? 0 : null, step: done ? 'Done' : steps[n - 1], n, of: steps.length, secs: n * 37, problem: null };
+      }
       case 'docker_start': window.__started = (window.__started || 0) + 1; return 'Starting Docker. This usually takes under a minute.';
       default: throw 'unknown ' + cmd;
     }
@@ -252,14 +269,23 @@ test('no realm yet: the setup start (Vanilla+ always on, Link my server) and the
   assert.deepEqual(await page.$$eval('.hc-rs', (l) => l.map((x) => [x.dataset.profile, x.querySelector('b').textContent, x.disabled])),
     [['vanillaplus', 'Vanilla+', false], ['den', 'My Den', false], ['dalaran', 'Dalaran hangout', false], ['main', 'Classic levelling', false], ['cmangos-1.12.1', 'True Vanilla', true]]);
   assert.equal(await page.textContent('.hc-rs[data-profile="vanillaplus"] em'), 'Always on');
-  assert.ok(await page.isDisabled('#hc-start'));
+  assert.equal(await page.textContent('#hc-start'), 'Start Dalaran hangout', 'a ruleset is picked already: Start is one press');
+  assert.equal((await calls(page, 'host_choose')).length, 0, 'nothing written until Start or a pick');
   await page.click('.hc-rs[data-profile="vanillaplus"]');
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'host_choose'));
   assert.deepEqual((await calls(page, 'host_choose'))[0], { profile: 'vanillaplus', clientId: 'c1' });
   assert.equal(await page.textContent('#hc-start'), 'Start Vanilla+');
-  assert.match(await page.textContent('.hc-go'), /Always on/);
+  assert.match(await page.textContent('.hc-go'), /account name/, 'on a Mac or Linux the host names their own account first');
+  assert.equal(await page.inputValue('#hc-name'), 'Vanilla Plus');
   await page.click('#hc-start');
-  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'host_start'));
+  assert.equal((await calls(page, 'host_start_quiet')).length, 0, 'not without the account name');
+  await page.fill('#hc-gm', 'hostguy');
+  assert.match(await page.textContent('.hc-go'), /Always on/);
+  await page.click('#hc-vis .hc-seg-b[data-value="public"]');
+  await page.click('#hc-start');
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'host_start_quiet'));
+  assert.deepEqual((await calls(page, 'host_start_quiet'))[0], { answers: { name: 'Vanilla Plus', visibility: 'public', gm: 'hostguy' } });
+  assert.equal((await calls(page, 'host_start')).length, 0, 'no window');
   await page.click('#hc-link');
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'host_link_start'));
   assert.match(await page.textContent('.hc-start .hc-status'), /four questions/);
@@ -309,8 +335,12 @@ test('Make my Den: private and invite-only, no bots, no player limit; picked fro
   await page.evaluate(() => document.dispatchEvent(new CustomEvent('leyline:host-ruleset', { detail: { profile: 'den' } })));
   await page.waitForFunction(() => document.querySelector('.hc-rs[data-profile="den"].on'));
   assert.equal((await calls(page, 'host_choose')).pop().profile, 'den');
+  assert.equal(await page.isVisible('#hc-vis'), false, 'a Den is always friends only');
+  assert.equal(await page.inputValue('#hc-name'), 'My Den');
+  await page.fill('#hc-gm', 'denboss');
   await page.click('#hc-start');
-  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'host_start'));
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'host_start_quiet'));
+  assert.deepEqual((await calls(page, 'host_start_quiet'))[0].answers, { name: 'My Den', visibility: 'private', gm: 'denboss' });
   assert.doesNotMatch(await page.textContent('#page-host'), NO_BRANDS);
   assert.deepEqual(errors, []);
 
@@ -423,5 +453,57 @@ test('Start Docker: one press starts Docker Desktop, the step counts the seconds
   assert.equal(await page.evaluate(() => window.__started), 1, 'one start, no command from the page');
   assert.deepEqual((await calls(page, 'docker_start'))[0], undefined, 'docker_start takes nothing from the page');
   assert.match(await page.textContent('.hc-start .hc-status'), /Docker is running/);
+  await page.close();
+});
+
+test('three presses from Host to "You\'re live": no window, the steps here, then the console says so', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, colorScheme: 'dark' });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.addInitScript(() => { window.__noKit = true; window.__jobSteps = 8; });
+  await page.addInitScript(FAKE, false);
+  await page.goto(INDEX);
+  let presses = 0;
+  const press = async (sel) => { presses++; await page.click(sel); };
+  await press('.nav[data-page="host"]');                  // 1: Host
+  await page.waitForSelector('#hc-get-pack');
+  await press('#hc-get-pack');                            // 2: Get the Host pack
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'set_host_kit'));
+  await page.waitForFunction(() => document.querySelector('#hc-start') && !document.querySelector('#hc-start').disabled);
+  assert.equal(await page.textContent('#hc-start'), 'Start Dalaran hangout');
+  await page.fill('#hc-gm', 'hostguy');                   // typing, not a press (Mac and Linux only)
+  if (process.env.SHOT_DIR) await page.screenshot({ path: process.env.SHOT_DIR + '/ready-to-start.png' });
+  await press('#hc-start');                               // 3: Start
+  await page.waitForSelector('.hc-prog:not([hidden]) .hc-bar');
+  await page.waitForFunction(() => /Step [3-6] of 8/.test(document.querySelector('.hc-prog').textContent));
+  assert.ok(await page.isHidden('#hc-start'), 'no second start while one runs');
+  if (process.env.SHOT_DIR) await page.screenshot({ path: process.env.SHOT_DIR + '/setting-up.png' });
+  await page.waitForSelector('.hc-live.on', { timeout: 30000 });
+  assert.equal(await page.textContent('.hc-live b'), "You're live");
+  assert.equal(presses, 3);
+  assert.match(await page.textContent('.hc-live'), /invite link/);
+  if (process.env.SHOT_DIR) await page.screenshot({ path: process.env.SHOT_DIR + '/youre-live.png' });
+  await page.click('.hc-live .btn');
+  assert.equal((await calls(page, 'host_start')).length, 0, 'never a window');
+  assert.doesNotMatch(await page.textContent('#page-host'), NO_BRANDS);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('a start that stops says why in plain words, with Try again and the window as a way out', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, colorScheme: 'dark' });
+  await page.addInitScript(() => { window.__jobFail = true; });
+  await page.addInitScript(FAKE, false);
+  await page.goto(INDEX);
+  await page.click('.nav[data-page="host"]');
+  await page.waitForFunction(() => document.querySelector('#hc-start') && !document.querySelector('#hc-start').disabled);
+  await page.fill('#hc-gm', 'hostguy');
+  await page.click('#hc-start');
+  await page.waitForSelector('.hc-prog.bad', { timeout: 15000 });
+  assert.match(await page.textContent('.hc-prog'), /Setting up stopped.*Clients page/s);
+  assert.ok(await page.isVisible('.hc-prog button:has-text("Try again")'));
+  if (process.env.SHOT_DIR) await page.screenshot({ path: process.env.SHOT_DIR + '/start-stopped.png' });
+  await page.click('.hc-prog button:has-text("Open in a window instead")');
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'host_start'));
   await page.close();
 });

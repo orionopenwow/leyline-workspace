@@ -293,5 +293,24 @@ class HostOnWindows(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(json.load(open(os.path.join(kit, "state", "host.json")))["realm_id"], first["realm_id"])
 
 
+    async def test_the_launchers_quiet_start_answers_everything(self):
+        """The launcher's Host page runs the .bat with no window (host.rs plan_quiet): every answer comes from the
+        environment, the host's own account name becomes GM (no login made), and nothing waits on a console."""
+        kit = self.kit("quiet")
+        env = {"WU_NAME": "Quiet Realm", "WU_PROFILE": "dalaran", "WU_VISIBILITY": "private", "WU_GM_NAME": "hostguy",
+               "WU_TOOLS_IMAGE": "wu-host-tools:1", "WU_RELAY": "relay.test"}
+        c = Cmd(kit, env)
+        c.env["GMARG"] = "--gm-name " + env["WU_GM_NAME"]   # the .bat's own: if defined WU_GM_NAME set "GMARG=..."
+        c.host_bat()
+        cfg = json.load(open(os.path.join(kit, "state", "host.json")))
+        self.assertEqual((cfg["name"], cfg["visibility"], cfg["gm_name"]), ("Quiet Realm", "private", "HOSTGUY"))
+        self.assertNotIn("gm", cfg, "no GM login made for the host")
+        self.assertFalse(os.path.exists(os.path.join(kit, "state", "host-login.txt")))
+        bat = open(HOST_BAT, encoding="utf-8").read()
+        self.assertIn('if defined WU_GM_NAME set "GMARG=--gm-name %WU_GM_NAME%"', bat)
+        for f in (HOST_BAT, os.path.join(HOSTING, "kit", "Link my server.bat"), os.path.join(HOSTING, "kit", "profiles", "Host a profile realm.bat")):
+            self.assertNotIn("timeout /t", open(f, encoding="utf-8").read(), f + ": timeout fails with no console")
+
+
 if __name__ == "__main__":
     unittest.main()

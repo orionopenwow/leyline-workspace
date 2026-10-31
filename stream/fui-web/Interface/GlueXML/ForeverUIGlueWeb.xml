@@ -4,4 +4,6 @@
 	     GlueXML.toc right after ForeverUIGlue.xml (fui-overlay.py), so every Forever UI frame
 	     exists when it runs. Not part of Forever UI itself. -->
 	<Script file="ForeverUIGlueWeb.lua"/>
+	<!-- Leyline realms on character select: the realm browser and its preview (the page hands it the list). -->
+	<Script file="ForeverUIGlueLeyline.lua"/>
 </Ui>

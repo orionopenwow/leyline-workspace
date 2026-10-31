@@ -634,6 +634,11 @@ function L.Hop(target, name)
     if SendAddonMessage and UnitName then pcall(SendAddonMessage, PREFIX, "H:" .. target, "WHISPER", UnitName("player")) end
     if target == "wrath" then
         info(brand().back .. "... the game reloads there in a moment.")
+    elseif L.Browsing() then   -- the page's fast hop: straight to that realm's characters
+        local d = L.detail and L.detail.id == target and L.detail or nil
+        local hk = d and (d.hk == "ready" or d.hk == "yes")
+        info("Going to " .. (name or "that realm") .. "... the game reloads there in a moment. "
+            .. (hk and "You sign in with your Hero Key." or "The first time, you make an account there (or sign in to yours)."))
     else
         info("Hopping to " .. (name or "that realm") .. "... the game reloads there in a moment. The first time, you "
             .. "make an account on that realm (or sign in to yours); " .. (W.OFFICIAL_NAME or "our realm") .. " uses your "
@@ -812,7 +817,7 @@ local function build()
         if q == "" then win.searchHint:Show() else win.searchHint:Hide() end
     end)
     win.search = search
-    win.searchHint = label(win, "Search realms", "GameFontDisableSmall", "LEFT", search, "LEFT", 4, 0)
+    win.searchHint = label(search, "Search realms", "GameFontDisableSmall", "LEFT", search, "LEFT", 6, 0)   -- on the box: above its fill
     win.bfilters = {
         browser = button(win, "In browser", 96, function() L.BCycle("browser") end, "TOPLEFT", 156, -68),
         own = button(win, "Own files", 88, function() L.BCycle("own") end, "TOPLEFT", 256, -68),

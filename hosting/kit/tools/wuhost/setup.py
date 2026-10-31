@@ -72,12 +72,15 @@ PROFILES = {"main": "Leyline main: normal Wrath from level 1, or a one-time boos
             "progression": "Progression: blizzlike 1x, Vanilla then TBC then Wrath per character",
             "dalaran": "Dalaran hangout: light on your PC, no bots, boost to 80 straight to Dalaran",
             "vanillaplus": "Vanilla+: the original world only (level 60 cap), 1.5x XP, made to stay up for good",
-            "den": "My Den: your own room to build in, private, for you and the friends you invite"}
+            "den": "My Den: your own room to build in, private, for you and the friends you invite",
+            "solo": "Solo leveling: a private realm on your PC for levelling alone, with helper bots, dungeons scaled for one"}
 # Per-profile settings for .env (docker-compose.host.yml): a Dalaran hangout runs on a small PC.
 # A Den (realm/profiles/den.env, docs/DEN.md) is one room on the host's PC: the smallest of all.
 PROFILE_ENV = {"dalaran": {"WU_DB_BUFFER": "256M", "WU_PLAYER_LIMIT": "40"},
-               "den": {"WU_DB_BUFFER": "256M", "WU_PLAYER_LIMIT": "10"}}
-PROFILE_BOTS = {"dalaran": 0, "vanillaplus": 0, "den": 0}   # the bot count a new realm starts with
+               "den": {"WU_DB_BUFFER": "256M", "WU_PLAYER_LIMIT": "10"},
+               "solo": {"WU_PLAYER_LIMIT": "5"}}
+# Solo leveling (realm/profiles/solo.env): a few roaming bots so the world isn't empty; its helper bots are the point.
+PROFILE_BOTS = {"dalaran": 0, "vanillaplus": 0, "den": 0, "solo": 20}   # the bot count a new realm starts with
 NO_BOTS = ("dalaran", "den")                       # rulesets that never run bots (and the other cores: none yet)
 # The text the realm list and the join page show; the host edits these two files (then: Realm tools > rules).
 EDITABLE = ("tagline", "summary", "type", "discord", "tags", "region", "language", "max_players", "direct", "mods")
@@ -94,8 +97,9 @@ TAGS = ("blizzlike", "boosted", "custom", "pvp", "rp", "hangout", "bots")
 REGIONS = ("na-east", "na-west", "sa", "eu", "africa", "me", "asia", "oce")
 LANG_RE = re.compile(r"^[a-z]{2,3}(-[A-Z]{2})?$")
 PROFILE_TAGS = {"main": ["boosted"], "brawl": ["boosted", "pvp", "custom"], "progression": ["blizzlike"],
-                "dalaran": ["hangout", "boosted"], "vanillaplus": ["blizzlike", "custom"], "den": ["custom"]}
-PROFILE_MAX = {"dalaran": 40, "den": 10}
+                "dalaran": ["hangout", "boosted"], "vanillaplus": ["blizzlike", "custom"], "den": ["custom"],
+                "solo": ["custom"]}
+PROFILE_MAX = {"dalaran": 40, "den": 10, "solo": 5}
 CORE, BUILD = "azerothcore", 12340   # what the host kit runs
 DEFAULT_RULES = {"dalaran": [
     "Be kind: no harassment, hate speech or spam.",
@@ -105,10 +109,13 @@ DEFAULT_RULES = {"dalaran": [
 ], "den": [
     "This is the host's Den: look around, and build only if the host made you a builder.",
     "Be kind: no harassment, hate speech or spam.",
+], "solo": [
+    "This is the host's own realm for levelling alone, with helper bots.",
 ]}
 DEFAULT_TAGLINE = {"dalaran": "A Dalaran hangout: boost to 80, duel, queue, meet.",
                    "vanillaplus": "Vanilla+: the original world to level 60, always on.",
-                   "den": "A Den: a room to build in, for friends with the invite link."}
+                   "den": "A Den: a room to build in, for friends with the invite link.",
+                   "solo": "Solo leveling: one player, helper bots, dungeons scaled for one."}
 # Host any client: the profiles on other cores (cores.py; their files in profiles/<id>/, steps in
 # profiles/host-profile.sh). (core, client build, the login and world services in their compose file)
 PROFILE_CORE = {k: (p["core"], p["build"], cores.LOGON, cores.WORLD) for k, p in cores.PROFILES.items()}

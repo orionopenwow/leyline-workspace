@@ -2669,7 +2669,8 @@ class Hub:
                            + (' aria-current="true"' if v == cur else "") + f">{e(label)}</a>" for v, label in opts)
 
         def frow(label, inner):
-            return f'<div class="hb-frow"><span class="hb-flabel">{e(label)}</span><p>{inner}</p></div>'
+            return (f'<div class="hb-frow"><span class="hb-flabel">{e(label)}</span>'
+                    f'<p role="group" aria-label="{e(label)}">{inner}</p></div>')
         f_build = chips("build", [("", "Every client")] + [(b, CLIENT_LABEL[b]) for b in offered_builds()], build)
         f_cat = chips("cat", [("", "All")] + CATEGORIES + [THEMES], cat)
         f_src = chips("source", [("", "Everything"), ("workshop", "Workshop"), ("upstream", "From the authors"),

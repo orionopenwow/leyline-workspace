@@ -6,9 +6,14 @@ Builder (`realm/custom/lua_scripts/ov_build.lua`) places and checks every prop, 
 around it. Friends join through the relay with the realm's invite link; the owner decides who may build.
 
 Status: 2026-10-30, workstream E of the Leyline launch; the editor to the world editors' level (any object, models,
-exact transforms, lock, hide, measure, align, stack) the same evening, workstream L. Server side and addon built and
-tested under the fake realm; not yet run on a real PC with Docker (the owner's test script is at the bottom). The
-browser client's engine hooks below are still to do.
+exact transforms, lock, hide, measure, align, stack) the same evening, workstream L. 2026-10-31 (owner: "Den working
+smoketest place buildings and paths and doodads that save to a file and can relaunch into it and invite a friend"):
+**buildings** (a catalog category), a **Path** tool, the **save file** (`.den save` / `.den load`, the launcher's
+Saved Dens and "Open"), and the invite link checked from the kit to the Den panel. Server side, addon and launcher
+built and tested under the fake realm (`stream/tests/test_den_smoke.lua`: place, restart, save, load, relaunch,
+invite, bad files); **not yet run on a real PC with Docker**: this build machine has Docker but no game data, so a
+real worldserver can't start here. The owner's 10-minute test is at the bottom. Engine hooks: 1 to 5 below are in the
+browser client since patch 20261026a; 6 to 10 are still to do.
 
 ## Hosting a Den
 
@@ -82,7 +87,7 @@ what the official newest housing system does (sources at the bottom), and our st
 | Multi-select | Shift-click, box select, Select mine, group ops as one undo entry | built (box drag and Shift-click: engine hooks) | not documented for Midnight; ours anyway |
 | Undo and redo | `.build undo` / `redo`, 30 deep, Ctrl+Z / Ctrl+Y | built (Ctrl+Y: engine hook) | not documented for Midnight; ours anyway |
 | Copy, paste, duplicate (an addon adds these in Midnight) | Copy, Paste at a click, Duplicate (V) | built (Ctrl+C/V: engine hook) | [5] |
-| Layouts: save, load, share at room, plot or house level | `.den save/load <name> [replace]`: the whole Den with size and tilt; builds and prefabs share as 6-letter codes | built; layout codes: later | [4] |
+| Layouts: save, load, share at room, plot or house level | `.den save/load <name> [replace|add]`: the whole Den with size, tilt, locks, hidden props, groups and paths, kept in the realm and **in a file on the host's PC** (below); builds and prefabs share as 6-letter codes | built; sharing Den files on the Workshop: later (same format) | [4] |
 | Inside and outside are separate | the room (inside the walls) and its yard | built | [1] |
 | Budgets (placement budget, room limit; outside smaller, rising with house level) | build points per prop; two Den budgets, room 1000 and yard 300 (`OV_DEN_INSIDE_POINTS`, `_OUTSIDE_POINTS`) | built (no levels) | [1][4][6] |
 | Floorplan: add rooms | one room | later | [2] |
@@ -106,7 +111,12 @@ budgets). [7] The official EU forums, "Housing permissions needs a bit more". Fu
 .den allow <name> build|view  (owner) a friend builds, or only looks
 .den room white|stone|wood|rebuild|clear   (owner) the room's look
 .den budget                   the room's and the yard's decor budgets
-.den save|load <name> [replace] / .den layouts   the whole Den as a layout
+.den save <name>              the whole Den as a layout; the owner's also goes to a file: state\dens\<name>.den.json
+.den load <name> [replace|add] (owner) opens that file: asks first when the Den has decor; replace keeps a copy as
+                              "backup"; without a file (or for a builder) your own layout as before
+.den files / .den layouts     the files saved from here / your layouts
+.build path <prop> from       a path: marks where you stand; walk; .build path <prop> to [yards apart, 1-20, default 3]
+.build path <prop> <x1> <y1> <z1> <x2> <y2> <z2> [every]   the same from two clicks (the Builder's Path in edit mode)
 .build redo | store | storage | group | ungroup | floor | layout save|load|list|delete <name> [replace]
 .build find <words> [page] | models <words> [page] | spawn t<entry> | spawn m<display>   any object, any model
 .build lock | unlock | hide | show [all] | measure | align x|y|z|top|bottom | stack | stackon <id>
@@ -114,7 +124,82 @@ budgets). [7] The official EU forums, "Housing permissions needs a bit more". Fu
 ```
 
 In game: F7 (edit mode), the third tool bar (Group, Ungroup, Put away, Storage, Floor, Den), `/den` for the Den
-panel outside edit mode.
+panel outside edit mode, the Builder's **Path** button (Group row) and its **buildings** category.
+
+## Buildings, doodads and paths (2026-10-31)
+
+- **Buildings**: a `buildings` catalog category, only in a Den (`OV_BUILD_BUILDINGS=1` elsewhere, `0` to turn it off):
+  37 houses, inns, a chapel, barn, farm, stables, blacksmiths, towers, huts, a longhouse, an igloo, tents, a moonwell,
+  a bridge and town walls. They are the world database's "map object" templates (type 14) whose model is a building
+  (WMO), checked against AzerothCore's `gameobject_template.sql` (type 14, every data field 0, no AIName, no
+  ScriptName); whole cities, dungeon entrances and caves of that type are left out. 10 build points each (the yard
+  holds 300). **To verify in game**: that a stock client draws and collides with them (widely used this way on
+  private servers, not seen here), how big each is next to the 32-yard room (the yard reaches 14 yards past the walls;
+  `OV_DEN_SIZE` up to 32 makes the Den bigger, or `.den room clear` makes space), and whether the browser client draws
+  building objects at all (its engine is ours: unknown until tried).
+- **Doodads**: everything else in the catalog, any safe object (`.build find`) and any model (`.build models`).
+- **Paths**: the Builder's **Path** button lays a line of the picked prop, one every 3 yards: in edit mode click where
+  it starts and where it ends; on a player's own game press Path where it starts, walk, press Path again. Each piece
+  is set down on the ground (the room's floor inside the walls), facing along the line; at most 40 pieces and 120
+  yards; every piece checked like a paste (role, area, budgets, rate). The pieces are one group (a click selects the
+  whole path) and one undo entry (undo and redo keep it one group); the path itself (prop, spacing, ends) is kept in
+  `mod_builder_paths` and goes into the save file. Good path props: Platform, small; a rug; lanterns; fences.
+
+## The save file (2026-10-31)
+
+`.den save <name>` (the owner) writes the whole Den to `<host kit>/state/dens/<name>.den.json` on the host's PC (the
+world server mounts `./state/dens` at `/azerothcore/dens`, `OV_DEN_SAVES`; setup makes the folder and, for a Den,
+opens it to the server's own user). The room itself isn't in it (it's the look); everyone's decor is. Version 1:
+
+```json
+{
+ "format": "leyline-den", "version": 1, "name": "house", "saved": "2026-10-31T22:50:37Z",
+ "room": {"look": "white", "size": 16},
+ "props": [
+  {"entry": 19006, "x": 0, "y": 24, "z": 0, "yaw": 90},
+  {"entry": 2413, "x": 3, "y": 3, "z": 0, "yaw": 90, "pitch": 10, "roll": 0, "scale": 1.5, "group": 1, "locked": true},
+  {"entry": 2000004523, "model": 4523, "x": -3, "y": -4, "z": 0, "yaw": 0, "hidden": true}
+ ],
+ "paths": [{"group": 2, "entry": 190023, "every": 4, "from": [-10, 20, -0.2], "to": [10, 20, 0.2]}]
+}
+```
+
+- `x`, `y`: yards from the Den's middle; `z`: from the room's floor; `yaw`, `pitch`, `roll` in degrees; `scale` 0.1
+  to 5 (left out at 1); `entry` a catalog id, a world-database entry, or 2000000000 + a model's display (`model`
+  repeats the display); `group` numbers props that belong together (a path is a group); `locked`, `hidden` flags.
+  Positions are relative, so a file works in any Den (another spot, `OV_DEN_X/_Y`; a file from a bigger room keeps
+  only what fits, and says so).
+- **Opening one**: `.den load <name>` (owner). When the Den has decor it asks: `replace` (everyone's decor goes; a
+  copy is saved first as `backup.den.json`) or `add` (next to it). The launcher's **Saved Dens** (Host page, Realm
+  tools, a Den only) lists the files, **Open** writes `state/dens/open.json` (`{"file": "<name>", "id": "<new id>"}`),
+  and the realm opens it, replacing, as soon as the Den's owner is in the room: within 10 seconds when they are, else
+  at their next login; when the realm is off, Open starts it. Each id opens once. **Save a copy** downloads the file;
+  **Add a Den file** brings one in from this PC (checked; never over another file: `house-2`).
+- **Checked, never run.** The file is JSON read by the realm's strict reader (`OVBuild.JsonDecode`) and checked by
+  `OVBuild.DenCheck`: the format and version (a newer one asks to update), at most 800 props and 100 paths and 512 KB,
+  every field's type; props whose entry this realm doesn't know (or doesn't allow: the same safe kinds as `.build
+  find`) or that fall outside the Den are left out and counted; the room's and the yard's budgets and the Den's prop
+  limit refuse a file that doesn't fit. File names are letters, digits, - and _ only. The launcher checks the shape
+  too (`host/dens.rs`). One undo entry takes an opened Den back (and one more brings back what was replaced).
+- **Later**: the same file is what a Workshop "Den" item will carry (share a Den; the realm checks it the same way).
+
+## Invite a friend: the path, checked (2026-10-31)
+
+1. The kit writes `realm-files/lua_scripts/den-invite.dat` (`return { invite = "https://<relay>/join/<realm id>#<invite
+   secret>" }`, data only, mode 0600) for the den profile only (`hosting/tests/test_den_profile.py`).
+2. In game, Den panel > **Invite a friend** (`.den invite`, the owner only): ov_den.lua reads the link as text (never
+   runs the file) and the panel shows it to copy. The test runs the real `setup.py` output through the realm's and the
+   panel's patterns, and a relay address with a port now works too (it didn't). If the world server can't read the
+   file (on Linux it runs as its own user; the file is 0600), the owner is told where the link is: the launcher's Host
+   page, Copy invite link.
+3. The friend opens the link: the relay's join page makes their account from the invite (`hosting/tests/test_relay.py`
+   `test_private_needs_the_secret`, `test_signup_from_join_page_then_play`), then they play with their own game (the
+   launcher) and log in: a new character starts in the Den's room, "You're visiting".
+4. The owner decides: Den panel, the friend's name, **Can build** / **View only** (`.den allow <name> build|view`; the
+   friend must be online). A builder places, moves, lays paths; back to View only, they can't, not even undo.
+
+Gap, not fixed here: the browser client can't visit a Den yet (the stream doesn't carry the island's terrain tile;
+see Requests), so a friend joins with their own game for now.
 
 ## The editor: any object, to the world editors' level
 
@@ -230,7 +315,41 @@ Everything below already has its addon side; the client calls the hook or sends 
 3. Layout codes (share a Den's layout with anyone), a guest book, more looks (doors, ceilings), more rooms.
 4. A Den on the Leyline network: a public Den as a showcase (read-only visitors, Midnight's snapshot visits).
 
-## The owner's test on a real PC
+## The owner's 10-minute test on a real PC (2026-10-31)
+
+Needs: Docker Desktop running; the launcher and the Host pack from this build (update both); your own 3.3.5a game folder
+on the Clients page; a friend (or a second account on another PC) for step 8. What you should see is after each arrow.
+
+1. **Start the Den.** Launcher > **Host**. New: pick **My Den** > **Start** (first time 5 to 20 minutes). Already have
+   one: **Stop**, then **Start** (the new saves folder is set up on start) -> the console says "Your Den", Online ·
+   private.
+2. **Play.** Play bar > realm **My Den** > **PLAY**, log in, make or pick a character -> you're in the white room.
+3. **A building.** Walk out of the doorway in the south wall about 12 yards. Type `/builder`, press **Category** until it
+   says `buildings`, double-click **House** -> a house stands in the yard. Walk into it. (Note: does it show, can you go
+   in, how big is it?)
+4. **Doodads.** Category `all`: double-click **Wooden Chair**, then **Lantern**, then **Barrel** -> three props at your
+   feet (step a little between them).
+5. **A path.** Click **Platform, small** in the list once. Stand where the path starts, press **Path** (Group row) ->
+   "Start marked". Walk about 20 yards, press **Path** again -> chat "Path laid: 6 props". (Browser client: F7,
+   **Path**, click the start, click the end.) Click one piece -> the whole path is selected.
+6. **Save to a file.** Type `.den save test1` -> "Saved to a file too (N props): state\dens\test1.den.json". Launcher >
+   Host > Realm tools > **Saved Dens** -> `test1` with N props.
+7. **Restart.** Launcher > Host > **Stop** (confirm), then **Start**; log in -> the house, doodads and path are where they
+   were.
+8. **Relaunch into the file.** In game: `.build clear` -> your props in the Den are gone. Launcher > Saved Dens > `test1` > **Open** > **Open** -> within 10 seconds in game "Opening
+   'test1' from the launcher" and everything is back. Once more with the realm off: **Stop**, Saved Dens > `test1` >
+   **Open** -> the realm starts; log in -> the Den opens with `test1` at login. (`.den load test1` in game does the
+   same; with decor there it asks replace or add.)
+9. **Invite a friend.** `/den` > **Invite a friend** -> the link in the box; Ctrl+C, send it. The friend opens it, makes
+   an account on the join page, plays with their own game -> they arrive in your room, "You're visiting", and can't
+   place anything. Den panel: type their name > **Can build** -> they place a chair. **View only** -> they can't.
+10. **A copy.** Saved Dens > `test1` > **Save a copy** -> a `test1.den.json` download. **Add a Den file**, pick it ->
+   "Added as 'test1-2'".
+
+Tell us: does each building show and how big is it; can you walk into it; do path pieces sit on the ground; did
+anything not come back after the restart or the Open; any message that read oddly.
+
+## The full test on a real PC (the editor's tools)
 
 Needs: Docker Desktop running, the host kit from this branch (Make host kit), your own 3.3.5a game folder (the kit
 extracts its dbc and maps into the realm's data volume at setup), the launcher. What you should see is under each step.

@@ -903,6 +903,10 @@ pub fn run() {
             // the host console: health, GM controls, Check my realm, realm tools, Link my server (host/console.rs)
             crate::p2p::cmds::host_console,
             crate::p2p::cmds::host_gm,
+            crate::p2p::cmds::host_dens, // a Den's save files: list, a copy, add one, open one (host/dens.rs)
+            crate::p2p::cmds::host_den_text,
+            crate::p2p::cmds::host_den_add,
+            crate::p2p::cmds::host_den_open,
             crate::p2p::cmds::host_check,
             crate::p2p::cmds::host_tool,
             crate::p2p::cmds::host_rules,
@@ -934,6 +938,10 @@ pub fn run() {
             crate::forum::commands::forum_call,
             crate::forum::commands::forum_post,
             crate::forum::commands::forum_open,
+            // List your mod: check, list, report, edit, remove with the launcher's sign-in (listing.rs)
+            crate::listing::commands::listing_post,
+            crate::listing::commands::listing_mine,
+            crate::listing::commands::listing_open,
             // the News page: the website's news feed (news.rs)
             crate::news::commands::news_list,
             // the Modes page (modes.rs)

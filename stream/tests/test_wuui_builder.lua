@@ -402,6 +402,33 @@ check("hold Q: the spawn menu", menu:IsShown())
 E.SpawnMenu(false)
 check("let go: it closes", not menu:IsShown())
 
+-- 2026-10-31: the Path tool: in edit mode two ground clicks; on foot the window's Path, walk, Path again
+do
+    B.pick = B.catalog[1]
+    serverClock = serverClock + 10
+    local n1 = countProps()
+    E.StartPath(B.pick, 3)
+    E.Clicked(player.x - 6, player.y, player.z)
+    check("Path: the first click waits for the end", E.pending and E.pending.kind == "path" and countProps() == n1)
+    E.Clicked(player.x + 6, player.y, player.z)
+    check("Path: the second click lays a prop every 3 yards", sent[#sent][2]:find("^wubuild\tcmd\t1/1\tpath " .. B.pick.id .. " [%-%d%.]+ [%-%d%.]+ [%-%d%.]+ [%-%d%.]+ [%-%d%.]+ [%-%d%.]+ 3$")
+        and countProps() == n1 + 5 and E.pending == nil and E.note:find("Path laid"))
+    win.undo:Fire("OnClick")
+    check("Path: one undo takes it all back", countProps() == n1)
+    serverClock = serverClock + 10
+    local x0 = player.x
+    win.path:Fire("OnClick")
+    check("Path on foot: the first press marks where you stand", sent[#sent][2]:find("path " .. B.pick.id .. " from$") and win.status:GetText():find("walk to where"))
+    player.x = x0 + 9
+    win.path:Fire("OnClick")
+    check("Path on foot: the second press lays it to where you stand", sent[#sent][2]:find("path " .. B.pick.id .. " to 3$") and countProps() == n1 + 4)
+    player.x = x0
+    win.undo:Fire("OnClick")
+    B.pick = nil
+    win.path:Fire("OnClick")
+    check("Path without a prop picked: says what to do", win.status:GetText():find("Pick the prop"))
+end
+
 -- Gmod-style edits: the gizmo previews on the client and commits once on release; the panel's tilt -------------------
 do
     local function nearly(a, b, eps) return a and b and math.abs(a - b) <= (eps or 0.02) end

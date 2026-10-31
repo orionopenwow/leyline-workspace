@@ -50,13 +50,41 @@ A = None   # stream/admin.py (attributes looked up live)
 
 
 def setup(admin) -> None:
-    global A
+    global A, W
     A = admin
     register()
+    W = _load_words()
 
 
 def P(name):
     return A.P(name)
+
+
+W = None   # stream/hq_words.py: blocked words and names (Content > Blocked words, Needs you), when it is here
+
+
+def _load_words():
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hq_words.py")
+    if not os.path.isfile(p):
+        return None
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("wu_hq_words", p)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.setup(A, _HQSelf())
+        return mod
+    except Exception:   # noqa: BLE001: HQ runs without it
+        return None
+
+
+class _HQSelf:
+    """This module for hq_words.py (looked up live, like admin's _Self)."""
+    def __getattr__(self, name):
+        try:
+            return globals()[name]
+        except KeyError:
+            raise AttributeError(name) from None
 
 
 # ----------------------------------------------------------------------------------------------
@@ -310,12 +338,14 @@ def inbox_items() -> tuple[list[dict], list[str]]:
     for p in A.projects_all():
         pid = p.get("id", "")
         n = len(p.get("reports") or []) if isinstance(p.get("reports"), list) else 0
-        if not n or p.get("hidden") or not A.PID_RE.fullmatch(str(pid)):
+        if not n or p.get("hidden") or not A.PID_RE.fullmatch(str(pid)) or (p.get("review") or {}).get("by_reports"):
             continue
+        why = sorted({str(x.get("reason") or "other") for x in (p.get("report_log") or []) if isinstance(x, dict)})
         items.append(_item("link", "link:" + pid, "Link report", str(p.get("title") or pid)[:80],
                            str(p.get("description") or "")[:300], p.get("submitted_at"), "/wrath/admin/catalog",
                            [("link.hide", pid, "Hide", {}, pid, True), ("link.dismiss", pid, "Dismiss reports", {}, None, False)],
-                           sub=f"{n} report{'s' if n != 1 else ''} · added by {str(p.get('submitted_by') or '?')[:40]}", group=0))
+                           sub=f"{n} report{'s' if n != 1 else ''}" + (f" ({', '.join(why)})" if why else "")
+                               + f" · added by {str(p.get('submitted_by') or '?')[:40]}", group=0))
     net = P("network")
     if net is not None:
         try:
@@ -331,6 +361,12 @@ def inbox_items() -> tuple[list[dict], list[str]]:
                                    sub=str(net.REPORT_REASON.get(x.get("reason"), "?")), group=0))
         except Exception:   # noqa: BLE001
             problems.append("realm reports")
+    lst = P("listings")
+    if lst is not None:   # listed mods waiting for a moderator, hidden by reports, or with an update (stream/listings.py)
+        try:
+            items += lst.hq_items(A, _item)
+        except Exception:   # noqa: BLE001
+            problems.append("listed mods")
     ok, ws, err = A.ws_list("pending")
     if not ok:
         problems.append("the Workshop queue (" + err + ")")
@@ -358,6 +394,13 @@ def inbox_items() -> tuple[list[dict], list[str]]:
             items.append(_item("theme", f"theme:{t['kind']}:{t['id']}", "Theme pack: waiting", t["name"], "", 0, "/wrath/admin/themes",
                                [(f"{t['kind']}.approve", t["id"], "Approve", {}, None, False),
                                 (f"{t['kind']}.reject", t["id"], "Reject", {}, t["id"], True)], sub="by " + t["by"]))
+    if W is not None:   # flagged names and the names refused lately (stream/hq_words.py)
+        try:
+            more, probs = W.inbox_items(_item)
+            items += more
+            problems += probs
+        except Exception:   # noqa: BLE001
+            problems.append("flagged names")
     items.sort(key=lambda x: (x["group"], -x["at"]))
     return items, problems
 
@@ -365,7 +408,8 @@ def inbox_items() -> tuple[list[dict], list[str]]:
 INBOX_WORDS = {"bug": ("bug report", "bug reports"), "msg": ("message report", "message reports"),
                "forum": ("forum report", "forum reports"), "link": ("link report", "link reports"),
                "realm": ("realm report", "realm reports"), "ws": ("Workshop item waiting", "Workshop items waiting"),
-               "hub": ("index submission", "index submissions"), "theme": ("theme pack waiting", "theme packs waiting")}
+               "hub": ("index submission", "index submissions"), "theme": ("theme pack waiting", "theme packs waiting"),
+               "listing": ("listed mod waiting", "listed mods waiting")}
 
 
 def inbox_counts(items: list[dict]) -> str:
@@ -408,11 +452,13 @@ def inbox_page(user: dict) -> str:
     items, problems = inbox_items()
     back = "/wrath/admin/inbox"
     warn = (f'<p class="ad-msg err">Could not read: {e("; ".join(problems))}. The rest is below.</p>' if problems else "")
+    lst = P("listings")
+    pol = lst.hq_policy_html(user, A, back) if lst is not None else ""   # the owner's listing policy (stream/listings.py)
     if not items:
         return (f'<section class="ly-panel"><h2>Needs you</h2>{warn}<p class="hq-calm">Nothing is waiting. '
-                f'Reports and queues show up here as they come in.</p></section>')
+                f'Reports and queues show up here as they come in.</p></section>' + pol)
     return (f'<section class="ly-panel"><h2>Needs you</h2><p class="fine">{e(inbox_counts(items))}. Reports first, newest '
-            f'first, then the queues.</p>{warn}' + "".join(item_html(user, x, back) for x in items[:200]) + '</section>')
+            f'first, then the queues.</p>{warn}' + "".join(item_html(user, x, back) for x in items[:200]) + '</section>' + pol)
 
 
 # ----------------------------------------------------------------------------------------------
@@ -1467,6 +1513,8 @@ def page(user: dict, tab: str, query: dict):
         return 200, "Realms", realms_wrap(user)
     if tab == "content":
         return 200, "Catalog", A.catalog_page(user)
+    if tab == "words" and W is not None:
+        return 200, "Blocked words", W.page(user)
     if tab == "forum":
         st, body = forum_page(user, query)
         return st, "Forum", body

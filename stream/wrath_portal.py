@@ -306,6 +306,11 @@ hub_rank = _load_module("wu_hub_rank", "hub_rank.py")   # mods.json, installs an
 if hub_rank is not None:
     hub_rank.bind(lambda name: globals()[name])
     hub_rank.setup()
+# List your mod (stream/listings.py): any signed-in player lists a mod for one-click install; shared with workshop.py
+listings = sys.modules.get("wu_listings") or _load_module("wu_listings", "listings.py")
+if listings is not None:
+    sys.modules["wu_listings"] = listings
+    listings.bind(lambda name: globals()[name])
 network = _load_module("wu_network", "network.py")   # the realm browser, /wrath/realms.json, realm reports (stream/network.py)
 if network is not None:
     network.bind(lambda name: globals()[name])
@@ -2383,6 +2388,8 @@ if workshop_mod is not None:
 if workshop is not None and admin is not None:
     workshop.adjust = admin.adjust_catalog   # staff overrides: unpublished, featured, edited (stream/admin.py)
     workshop.blocked = getattr(admin, "blocked", None)   # site-wide sanctions: no new links (Leyline HQ)
+if listings is not None:
+    listings.setup()   # the listings service and its hourly update check (stream/listings.py)
 
 
 _Window = ratelimit.Limiter   # stream/ratelimit.py
@@ -2919,6 +2926,9 @@ class PageHandler(BaseHTTPRequestHandler):
         if forum is not None and forum.match(path):   # the forum's forms (stream/forum.py)
             forum.post(self, path)
             return
+        if listings is not None and listings.match(path):   # List your mod: check, submit, report (stream/listings.py)
+            listings.post(self, path)
+            return
         if hub_rank is not None and hub_rank.match(path):   # POST /wrath/api/hub/install|rate (stream/hub_rank.py)
             hub_rank.post(self, path)
             return
@@ -3024,6 +3034,9 @@ class PageHandler(BaseHTTPRequestHandler):
                 return
         if admin is not None and admin.match(path):   # /wrath/admin and the /wrath/leyline/*.json feeds (stream/admin.py)
             admin.get(self, path, query)
+            return
+        if listings is not None and listings.match(path):   # /wrath/mods/list, /wrath/api/listings/mine (stream/listings.py)
+            listings.get(self, path, query)
             return
         if hub_rank is not None and hub_rank.match(path):   # /wrath/leyline/mods.json, /wrath/api/hub/me (stream/hub_rank.py)
             hub_rank.get(self, path, query)

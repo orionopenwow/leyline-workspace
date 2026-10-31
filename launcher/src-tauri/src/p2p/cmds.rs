@@ -150,6 +150,32 @@ pub async fn host_rules_set(lines: Vec<String>) -> Result<String, String> {
     blocking(move || host::console::set_rules(&kit()?, &lines)).await
 }
 
+// ---------------------------------------------------------------- a Den's save files (host/dens.rs)
+
+/// Saved Dens: the Den files in the kit's state/dens, newest first.
+#[tauri::command]
+pub fn host_dens() -> Result<Vec<host::dens::DenFile>, String> {
+    Ok(host::dens::list(&kit()?))
+}
+
+/// One Den file's text, for Save a copy (they are 512 KB at most).
+#[tauri::command]
+pub fn host_den_text(name: String) -> Result<String, String> {
+    host::dens::text(&kit()?, &name)
+}
+
+/// Adds a Den file the host picked on this PC (its name and text, read by the page): checked, never over another.
+#[tauri::command]
+pub fn host_den_add(file_name: String, text: String) -> Result<String, String> {
+    host::dens::add(&kit()?, &file_name, &text)
+}
+
+/// Open a saved Den: the realm opens it (replacing what is there, a copy kept as "backup") when the owner is in the Den.
+#[tauri::command]
+pub fn host_den_open(name: String) -> Result<String, String> {
+    host::dens::open(&kit()?, &name)
+}
+
 /// `leyline link` (Link my server.bat) in a window of its own.
 #[tauri::command]
 pub fn host_link_start() -> Result<String, String> {

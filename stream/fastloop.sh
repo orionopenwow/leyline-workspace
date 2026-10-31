@@ -45,6 +45,10 @@ had_projects=""
 if [ -f "$WU/portal/projects.py" ]; then cp -p "$WU/portal/projects.py" "$BK/projects.py"; had_projects=1; fi
 had_social=""
 if [ -f "$WU/portal/social.py" ]; then cp -p "$WU/portal/social.py" "$BK/social.py"; had_social=1; fi
+had_names=""
+for f in namecheck.py blocklist.json hq_words.py; do
+  if [ -f "$WU/portal/$f" ]; then cp -p "$WU/portal/$f" "$BK/$f"; had_names="$had_names $f"; fi
+done
 had_forum=""
 if [ -f "$WU/portal/forum.py" ]; then cp -p "$WU/portal/forum.py" "$BK/forum.py"; had_forum=1; fi
 had_duels=""
@@ -60,6 +64,8 @@ rm -rf "$BK/hub"
 if [ -f "$WU/portal/hub.py" ]; then cp -p "$WU/portal/hub.py" "$BK/hub.py"; [ ! -d "$WU/portal/hub" ] || cp -a "$WU/portal/hub" "$BK/hub"; had_hub=1; fi
 had_rank=""
 if [ -f "$WU/portal/hub_rank.py" ]; then cp -p "$WU/portal/hub_rank.py" "$BK/hub_rank.py"; had_rank=1; fi
+had_listings=""
+if [ -f "$WU/portal/listings.py" ]; then cp -p "$WU/portal/listings.py" "$BK/listings.py"; [ ! -f "$WU/portal/upstream-rules.json" ] || cp -p "$WU/portal/upstream-rules.json" "$BK/"; had_listings=1; fi
 had_art=""
 rm -rf "$BK/art"
 if [ -d "$WU/portal/art" ]; then cp -a "$WU/portal/art" "$BK/art"; had_art=1; fi
@@ -83,6 +89,9 @@ put_back() {
   if [ -n "$had_herokey" ]; then cp -p "$BK/herokey_sso.py" "$WU/portal/herokey_sso.py"; else rm -f "$WU/portal/herokey_sso.py"; fi
   if [ -n "$had_projects" ]; then cp -p "$BK/projects.py" "$WU/portal/projects.py"; else rm -f "$WU/portal/projects.py"; fi
   if [ -n "$had_social" ]; then cp -p "$BK/social.py" "$WU/portal/social.py"; else rm -f "$WU/portal/social.py"; fi
+  for f in namecheck.py blocklist.json hq_words.py; do
+    case " $had_names " in *" $f "*) cp -p "$BK/$f" "$WU/portal/$f" ;; *) rm -f "$WU/portal/$f" ;; esac
+  done
   if [ -n "$had_forum" ]; then cp -p "$BK/forum.py" "$WU/portal/forum.py"; else rm -f "$WU/portal/forum.py"; fi
   if [ -n "$had_duels" ]; then cp -p "$BK/duels.py" "$WU/portal/duels.py"; else rm -f "$WU/portal/duels.py"; fi
   if [ -n "$had_profiles" ]; then cp -p "$BK/profiles.py" "$WU/portal/profiles.py"; else rm -f "$WU/portal/profiles.py"; fi
@@ -94,6 +103,8 @@ put_back() {
   if [ -n "$had_hub" ]; then cp -p "$BK/hub.py" "$WU/portal/hub.py"; [ ! -d "$BK/hub" ] || cp -a "$BK/hub" "$WU/portal/hub"
   else rm -f "$WU/portal/hub.py"; fi
   if [ -n "$had_rank" ]; then cp -p "$BK/hub_rank.py" "$WU/portal/hub_rank.py"; else rm -f "$WU/portal/hub_rank.py"; fi
+  if [ -n "$had_listings" ]; then cp -p "$BK/listings.py" "$WU/portal/listings.py"; [ ! -f "$BK/upstream-rules.json" ] || cp -p "$BK/upstream-rules.json" "$WU/portal/"
+  else rm -f "$WU/portal/listings.py" "$WU/portal/upstream-rules.json"; fi
   rm -rf "$WU/portal/art"
   if [ -n "$had_art" ]; then cp -a "$BK/art" "$WU/portal/art"; fi
 }
@@ -161,6 +172,14 @@ if [ -f upstream_addons.py ] && [ -f upstream-addons.json ]; then
 fi
 # Leyline friends and messages (/wrath/api/social, /wrath/link): optional; its store is $WU/portal-data/social.sqlite3
 if [ -f social.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' social.py && install -m 644 social.py "$WU/portal/social.py"; fi
+# the one blocklist for names (stream/namecheck.py and blocklist.json, always as a pair: social.py, profiles.py, forum.py,
+# hostflow.py and HQ read it; realm/serverpass.sh step 1f fills the realm's name tables from it); the owner's own words
+# live in $WU/portal-data/blocked-words.json. HQ's Blocked words page (hq_words.py) beside hq.py.
+if [ -f namecheck.py ] && [ -f blocklist.json ]; then
+  python3 -I -c 'import ast,sys,json;ast.parse(open(sys.argv[1]).read());json.load(open(sys.argv[2]))' namecheck.py blocklist.json \
+    && install -m 644 namecheck.py blocklist.json "$WU/portal/"
+fi
+if [ -f hq_words.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' hq_words.py && install -m 644 hq_words.py "$WU/portal/hq_words.py"; fi
 # the Leyline forum (/wrath/leyline/forum, /wrath/forum/api): optional; its store is $WU/portal-data/forum.sqlite3
 if [ -f forum.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' forum.py && install -m 644 forum.py "$WU/portal/forum.py"; fi
 # the duel leaderboards (/wrath/leaderboards, /wrath/api/leaderboards): optional; it reads $WU/portal/duels/, which
@@ -195,6 +214,12 @@ fi
 # the hub rankings (/wrath/leyline/mods.json, /wrath/api/hub/*: stream/hub_rank.py): optional; its store is
 # $WU/portal-data/hub_rank.sqlite3 (the writable /data mount)
 if [ -f hub_rank.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' hub_rank.py && install -m 644 hub_rank.py "$WU/portal/hub_rank.py"; fi
+# List your mod (/wrath/mods/list, /wrath/api/listings: stream/listings.py) and the shared rules file, always as a pair;
+# its listings live in projects.jsonl, its policy in $WU/portal-data/listings-policy.json
+if [ -f listings.py ] && [ -f upstream-rules.json ]; then
+  python3 -I -c 'import ast,sys,json;ast.parse(open(sys.argv[1]).read());json.load(open(sys.argv[2]))' listings.py upstream-rules.json && {
+    install -m 644 listings.py "$WU/portal/listings.py"; install -m 644 upstream-rules.json "$WU/portal/upstream-rules.json"; }
+fi
 if [ -d www-files/art ] && [ -f www-files/art/wu-theme.css ]; then
   install -d -m 755 "$WU/portal/art"
   find www-files/art -maxdepth 1 -type f -exec install -m 644 {} "$WU/portal/art/" \;

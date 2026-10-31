@@ -295,7 +295,7 @@ check("mods.json: no brand words in names", not any(re.search(r"(?i)\bwow\b|warc
 st, page, h = call("GET", "/wrath/leyline-preview/catalog?sort=top&kind=theme")
 check("catalog: sort tabs (Hot, Rising, Top rated, Most installed, New, Recently updated) and kinds",
       all(t in page for t in ("Hot", "Rising", "Top rated", "Most installed", "New", "Recently updated", "Game modes")) and
-      'role="tablist"' in page and h.get("x-robots-tag") == "noindex, nofollow")
+      ('role="tablist"' in page or 'role="group" aria-label="Sort"' in page) and h.get("x-robots-tag") == "noindex, nofollow")
 check("catalog: kind=theme lists themes only, rated first", page.find("Night Sky") != -1 and
       (page.find("Ember") == -1 or page.find("Night Sky") < page.find("Ember")) and "/p/link-" not in page)
 check("catalog: the cards show ratings and installs", "installs" in page and "of 5" in page)

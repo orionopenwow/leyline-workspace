@@ -1787,6 +1787,9 @@ pub fn install_project(
     if p.source == "upstream" {
         return crate::upstream::install(client, build, p, catalog_origin, scratch); // from the author's repo (upstream.rs)
     }
+    if p.source == "listed" {
+        return crate::listed::install(client, build, p, scratch, native_ok); // a player's listed mod, from its author (listed.rs)
+    }
     if !p.fits(build) {
         return Err(format!("{} is made for the {} client, not this {} one.", p.name, p.builds.join(" / "), build.catalog_tag()));
     }
@@ -1873,6 +1876,7 @@ pub fn with_updates(man: &Manifest, catalog: &[Project], build: Build) -> Vec<In
             let p = catalog.iter().find(|p| p.id == m.key && p.installable() && p.fits(build));
             let update = match p {
                 Some(p) if p.source == "upstream" => crate::upstream::update_for(m, p), // by rev (r736, 3x05...)
+                Some(p) if p.source == "listed" => crate::listed::update_for(m, p), // by the pinned rev (listed.rs)
                 _ => p.and_then(|p| p.version.clone()).filter(|v| newer(v, &m.version)),
             };
             // TOC titles can carry colour codes and the game's brand words: My Mods shows them cleaned.

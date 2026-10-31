@@ -94,6 +94,43 @@ class DenProfile(unittest.TestCase):
         if os.path.exists(hd):
             self.assertNotIn(new, open(hd, encoding="ascii").read())
 
+    def test_invite_link_reaches_the_den_panel(self):
+        """The link setup writes is the one ov_den.lua reads (as data) and the Den panel (EditMode.lua) accepts: the
+        realm id, the invite secret's letters, the relay's join host (with a port too)."""
+        import shutil
+        import subprocess
+        if not shutil.which("lua5.1"):
+            self.skipTest("lua5.1 not installed")
+        den = open(os.path.join(REPO, "realm", "custom", "lua_scripts", "ov_den.lua"), encoding="utf-8").read()
+        panel = open(os.path.join(REPO, "stream", "fui-web", "Interface", "AddOns", "WrathUnleashedUI", "EditMode.lua"),
+                     encoding="utf-8").read()
+        read_pat = re.search(r"text:match\('(invite%s\*=%s\*\"\(https://.*?\)\")'\)", den).group(1)
+        panel_pat = re.search(r'data:match\("(\^https://[^"]+)"\)', panel).group(1)
+        for relay in (None, "relay.example.app:8443"):
+            argv = ["init", "--name", "My Den", "--profile", "den"] + (["--relay", relay] if relay else [])
+            self.run_cmd(*argv)
+            text = open(self.dat(), encoding="ascii").read()
+            lua = ("local t = io.read('*a'); local l = t:match(arg[1]); io.write(l or '');"
+                   " if l and l:match(arg[2]) then io.write('\\nOK') end")
+            script = os.path.join(self.kit, "check.lua")
+            with open(script, "w") as f:
+                f.write(lua)
+            p = subprocess.run(["lua5.1", script, read_pat, panel_pat], input=text, capture_output=True, text=True)
+            link = text.split('"')[1]
+            self.assertTrue(p.stdout.startswith(link) and p.stdout.endswith("OK"), (relay, text, p.stdout, p.stderr))
+
+    def test_den_saves_folder(self):
+        self.run_cmd("init", "--name", "My Den", "--profile", "den")
+        d = os.path.join(self.kit, "state", "dens")
+        self.assertTrue(os.path.isdir(d), "state/dens is made at setup (Docker would make it as root)")
+        if os.name == "posix":
+            self.assertEqual(os.stat(d).st_mode & 0o777, 0o777, "the world server's own user writes the Den's files")
+        compose = open(os.path.join(KIT, "docker-compose.host.yml"), encoding="utf-8").read()
+        self.assertIn("- ./state/dens:/azerothcore/dens\n", compose)
+        self.assertNotRegex(compose, r"state/dens:/azerothcore/dens:ro")
+        self.assertIn('os.getenv("OV_DEN_SAVES") or "/azerothcore/dens"',
+                      open(os.path.join(REPO, "realm", "custom", "lua_scripts", "ov_den.lua"), encoding="utf-8").read())
+
     def test_other_profiles_never_write_it(self):
         self.run_cmd("init", "--name", "Hang", "--profile", "dalaran", "--visibility", "private")
         self.assertFalse(os.path.exists(self.dat()))

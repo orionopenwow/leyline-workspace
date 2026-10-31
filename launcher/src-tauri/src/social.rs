@@ -293,6 +293,27 @@ pub fn post_as_player(dir: &Path, url: &str, body: &Value) -> Result<Value, Stri
     }
 }
 
+/// A GET (body None) or POST as the signed-in player with its own read timeout ("signed_out" without the sign-in).
+/// For calls the server needs longer for, such as List your mod's check (it fetches the mod once: listing.rs).
+pub fn call_as_player(dir: &Path, url: &str, body: Option<&Value>, read: Duration) -> Result<Value, String> {
+    let token = load_token(dir).ok_or("signed_out")?;
+    let auth = format!("Bearer {token}");
+    let r = match body {
+        Some(b) => post_json(agent(read).post(url).set("Authorization", &auth), b),
+        None => agent(read).get(url).set("Authorization", &auth).call(),
+    };
+    match r {
+        Ok(r) => read_json(r),
+        Err(e) => {
+            let msg = failure(e);
+            if msg == "signed_out" {
+                forget(dir);
+            }
+            Err(msg)
+        }
+    }
+}
+
 /// Sign out: revoke the token on the server (best effort) and forget it here.
 pub fn sign_out(dir: &Path) {
     if let Some(token) = load_token(dir) {

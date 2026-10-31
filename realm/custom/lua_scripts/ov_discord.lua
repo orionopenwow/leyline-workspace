@@ -115,6 +115,12 @@ local function onChannelChat(event, player, msg, msgType, lang, channel)
     local text = tostring(msg or "")
     if text:find("^%s*$") then return end
     if not allowPlayer(player:GetGUIDLow()) then return end
+    -- the name guard's chat filter (ov_names.lua): the channel shows the line starred, so Discord gets it starred too
+    local names = rawget(_G, "OVNames")
+    if names and type(names.Mask) == "function" then
+        local ok, m = pcall(names.Mask, text)
+        if ok and type(m) == "string" then text = m end
+    end
     seq = seq + 1
     queue[#queue + 1] = { seq = seq, name = player:GetName():sub(1, MAX_NAME), text = text:sub(1, MAX_TEXT) }
     while #queue > QUEUE_MAX do table.remove(queue, 1) end

@@ -37,6 +37,10 @@ rem the Leyline network: the realm browser, /wrath/realms.json and realm reports
 if exist network.py set "LINKS=%LINKS% network.py"
 rem Leyline friends and messages (/wrath/api/social, /wrath/link)
 if exist social.py set "LINKS=%LINKS% social.py"
+rem the one blocklist for names (namecheck.py and its blocklist.json, always as a pair; social.py, profiles.py, forum.py,
+rem hostflow.py and HQ use it) and HQ's Blocked words page (hq_words.py)
+if exist namecheck.py if exist blocklist.json set "LINKS=%LINKS% namecheck.py blocklist.json"
+if exist hq_words.py set "LINKS=%LINKS% hq_words.py"
 rem the Leyline forum (/wrath/leyline/forum, /wrath/forum/api)
 if exist forum.py set "LINKS=%LINKS% forum.py"
 rem the duel leaderboards (/wrath/leaderboards, /wrath/api/leaderboards; duels-export.py fills them on the realm)
@@ -53,6 +57,9 @@ rem the hidden Leyline hub (/wrath/leyline-preview): hub.py and its index (hub\c
 if exist hub.py if exist hub\community-index.json set "LINKS=%LINKS% hub.py hub"
 rem the hub rankings (hub_rank.py: /wrath/leyline/mods.json, installs and ratings; its store is /data/hub_rank.sqlite3)
 if exist hub_rank.py set "LINKS=%LINKS% hub_rank.py"
+rem List your mod (listings.py: /wrath/mods/list, /wrath/api/listings) with the one rules file the launcher builds in
+if exist listings.py if exist ..\launcher\src-tauri\src\upstream-rules.json copy /y "..\launcher\src-tauri\src\upstream-rules.json" upstream-rules.json >nul
+if exist listings.py if exist upstream-rules.json set "LINKS=%LINKS% listings.py upstream-rules.json"
 rem "+ Your server" (hostflow.py) with the kit's Ed25519, always as a pair
 if exist hostflow.py if exist ..\hosting\kit\tools\wunet\ed25519_pure.py copy /y "..\hosting\kit\tools\wunet\ed25519_pure.py" ed25519_pure.py >nul
 if exist hostflow.py if exist ed25519_pure.py set "LINKS=%LINKS% hostflow.py ed25519_pure.py"
@@ -70,7 +77,7 @@ echo [1/2] Uploading...
 scp %OPTS% "%T%" %HOST%:/tmp/wu-fastloop.tgz || (echo Upload failed. If it says "timed out", wait 2 minutes and run this again. & pause & exit /b 1)
 
 echo [2/2] Applying it on the server (under a minute)...
-ssh %OPTS% %HOST% "mkdir -p /srv/wrath/fastloop && rm -rf /srv/wrath/fastloop/www-files /srv/wrath/fastloop/docs /srv/wrath/fastloop/hub && tar -xzf /tmp/wu-fastloop.tgz -C /srv/wrath/fastloop && rm -f /tmp/wu-fastloop.tgz && cd /srv/wrath/fastloop && sed -i 's/\r$//' fastloop.sh wrath_portal.py $(ls ratelimit.py links.py demo.py armory.py modes.py modes_data.py playmodes.py workshop.py creations.py hostflow.py ed25519_pure.py herokey_sso.py projects.py social.py forum.py duels.py profiles.py network.py docs.py leyline_net.py upstream_addons.py admin.py wu-mod.py hq.py hub.py hub_rank.py 2>/dev/null) && bash fastloop.sh 2>&1 | tee fastloop.log; grep -q '^FASTLOOP OK' fastloop.log"
+ssh %OPTS% %HOST% "mkdir -p /srv/wrath/fastloop && rm -rf /srv/wrath/fastloop/www-files /srv/wrath/fastloop/docs /srv/wrath/fastloop/hub && tar -xzf /tmp/wu-fastloop.tgz -C /srv/wrath/fastloop && rm -f /tmp/wu-fastloop.tgz && cd /srv/wrath/fastloop && sed -i 's/\r$//' fastloop.sh wrath_portal.py $(ls ratelimit.py links.py demo.py armory.py modes.py modes_data.py playmodes.py workshop.py creations.py hostflow.py ed25519_pure.py herokey_sso.py projects.py social.py forum.py duels.py profiles.py network.py docs.py leyline_net.py upstream_addons.py admin.py wu-mod.py hq.py hub.py hub_rank.py listings.py 2>/dev/null) && bash fastloop.sh 2>&1 | tee fastloop.log; grep -q '^FASTLOOP OK' fastloop.log"
 if errorlevel 1 (
   echo.
   echo It did not report success; see the lines above. Anything it changed was put back.

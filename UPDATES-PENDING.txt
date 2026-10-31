@@ -476,3 +476,10 @@
 1180c relay Relay: realms carry their mod list
 1180d hostkit Host pack: leyline mods add/remove, realms list their mods
 1180e ship Save to GitHub: launcher Mods simple view, Game mods, Get them and play on join (GitHub then rebuilds Leyline.exe)
+1181a signin Site: blocked names everywhere (HQ Blocked words), List your mod, forum hardening, Den and mods pages
+1181b scripts Realm: character and guild name checks, chat words starred, Den save/load and the path tool (the new script restarts the realm with the 5-minute warning)
+1181c relay Relay: realm names checked against the blocklist
+1181d hostkit Host pack: Den save files, name checks
+1181e foreverui In game: the Builder's Path button
+1181f addons Leyline addons download: the same for desktop players
+1181g ship Save to GitHub: launcher List your mod, Saved Dens (GitHub then rebuilds Leyline.exe)

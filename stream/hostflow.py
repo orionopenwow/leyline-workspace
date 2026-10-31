@@ -99,9 +99,33 @@ def has_slur(text) -> bool:
     return any(len(w) >= 6 and w in squashed for w in SLURS)
 
 
+def _namecheck():
+    """stream/namecheck.py (the one blocklist for names), shared through sys.modules["wu_namecheck"]; None without it."""
+    import sys
+    m = sys.modules.get("wu_namecheck")
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "namecheck.py")
+    if m is None and os.path.isfile(p):
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("wu_namecheck", p)
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            sys.modules["wu_namecheck"] = m
+        except Exception:   # noqa: BLE001: the slur list above still holds
+            return None
+    return m
+
+
 def name_ok(name) -> bool:
-    """A realm name fit for the front page: no brand word, no slur."""
-    return isinstance(name, str) and bool(name.strip()) and not BANNED.search(name) and not has_slur(name)
+    """A realm name fit for the front page: no brand word, no slur, nothing stream/namecheck.py refuses in a realm name
+    (sexual terms, profanity, passing for the Leyline team)."""
+    if not (isinstance(name, str) and bool(name.strip()) and not BANNED.search(name) and not has_slur(name)):
+        return False
+    nc = _namecheck()
+    try:
+        return not (nc is not None and nc.realm_name_hit(name))
+    except Exception:   # noqa: BLE001
+        return True
 PRESETS = {   # setup.py PROFILES, in the order the form shows them (dalaran first: the default)
     "dalaran": ("Dalaran hangout", "Light on your PC, no bots: everyone boosts to 80 and meets in Dalaran."),
     "main": ("Classic levelling", "The full world from level 1, with a one-time boost to 80 for anyone who wants it."),

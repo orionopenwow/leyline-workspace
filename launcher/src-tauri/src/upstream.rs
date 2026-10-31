@@ -76,6 +76,9 @@ pub const FORGES: &[&str] = &["github.com", "gitlab.com", "codeberg.org"];
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Install {
+    /// Listed mods only (listed.rs): `addon` (addon folders, installed like an upstream addon) or `files` (a client
+    /// patch, native code or a mod package's client half, checked like a dropped zip). Empty for upstream addons.
+    pub kind: String,
     /// `release-asset`, `commit-archive` or `mirror`.
     pub from: String,
     pub url: String,

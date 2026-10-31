@@ -51,6 +51,12 @@ const FAKE = (setUp) => {
       case 'host_rules': return rules;
       case 'host_rules_set': rules = args.lines.filter((l) => l.trim()); return 'Saved. The realm list shows them within a minute.';
       case 'host_logs': return 'wu-host-worldserver | World initialized';
+      // a Den's save files (host/dens.rs)
+      case 'host_dens': return (window.__dens = window.__dens || [
+        { name: 'house', bytes: 2400, props: 16, saved: '2026-10-31T22:50:37Z' }, { name: 'backup', bytes: 900, props: 4, saved: '2026-10-31T20:00:00Z' }]);
+      case 'host_den_text': return '{"format":"leyline-den","version":1,"name":"' + args.name + '","props":[]}';
+      case 'host_den_add': if (!/"leyline-den"/.test(args.text)) throw "That isn't a Den file."; window.__dens.push({ name: 'friend', bytes: 99, props: 1, saved: '' }); return 'friend';
+      case 'host_den_open': return args.name;
       case 'host_stop': return 'Stopped.';
       case 'host_start': return 'Started in its own window.';
       case 'host_link_start': return 'Started in its own window: answer its four questions.';
@@ -124,7 +130,7 @@ test('a realm set up on this PC: the Host page is its console', async () => {
     ['Announce', 'On-screen notice', 'Message of the day', 'Kick', 'Mute or unmute', 'Send to Dalaran', 'Ban account', 'Allow-list', 'Restart']);
   assert.deepEqual(await page.$$eval('.hc-chk li span', (l) => l.map((x) => x.textContent)),
     ['The servers on your PC', 'The tunnel to the relay', 'A login through the relay', 'Your invite link', 'Your place on the realm list']);
-  assert.deepEqual(await page.$$eval('.hc-tool', (l) => l.map((x) => x.textContent)),
+  assert.deepEqual(await page.$$eval('.hc-tool', (l) => l.filter((x) => !x.parentElement.hidden).map((x) => x.textContent)),
     ['Invite links', 'Accounts for friends', 'Public or private', 'Who may sign up', 'Browser players', 'Max players', 'Server logs', 'House rules']);
   assert.deepEqual(await page.$$eval('.hc-core', (l) => l.map((x) => [x.dataset.core, x.querySelector('span span').textContent])),
     [['azerothcore', 'One click'], ['cmangos', 'One click'], ['trinitycore', 'Coming'], ['vmangos', 'Coming'], ['own', 'Relay agent']]);
@@ -353,6 +359,44 @@ test('Make my Den: private and invite-only, no bots, no player limit; picked fro
   const shown = await den.page.$$eval('.hc-tool', (l) => l.filter((x) => !x.parentElement.hidden).map((x) => x.dataset.tool));
   assert.ok(!shown.includes('max') && shown.includes('invite') && shown.includes('signup'), shown.join(','));
   assert.deepEqual(den.errors, []);
+});
+
+test('a Den: Saved Dens lists the files, opens one after a confirm, saves a copy, adds one; only on a Den', async () => {
+  const other = await open(true);
+  await other.page.waitForSelector('.hc-tool[data-tool="dens"]', { state: 'attached' });
+  assert.equal(await other.page.$eval('.hc-tool[data-tool="dens"]', (b) => b.parentElement.hidden), true, 'not on other realms');
+  const { page, errors } = await open('den');
+  await page.waitForFunction(() => document.querySelector('.hc-run') && document.querySelector('.hc-run').textContent === 'Online · private');
+  await page.click('.hc-tool[data-tool="dens"]');
+  await page.waitForSelector('.hc-den-list li');
+  const rows = await page.$$eval('.hc-den-list li', (l) => l.map((x) => x.querySelector('.hc-den-t').textContent));
+  assert.equal(rows.length, 2);
+  assert.match(rows[0], /^house16 props · /);
+  assert.match(rows[1], /backup \(before the last open\)4 props/);
+  // Open: a confirm first; no means nothing is sent
+  await page.click('.hc-den-list li:first-child button.primary');
+  await page.waitForSelector('#hc-confirm[open]');
+  assert.match(await page.textContent('#hc-confirm-body'), /replaces what's in your Den now \(a copy is kept as 'backup'\)/);
+  await page.click('#hc-confirm-no');
+  assert.deepEqual(await calls(page, 'host_den_open'), []);
+  await page.click('.hc-den-list li:first-child button.primary');
+  await page.click('#hc-confirm-yes');
+  await page.waitForFunction(() => /opens when you're in your Den/.test(document.querySelector('.hc-status').textContent));
+  assert.deepEqual(await calls(page, 'host_den_open'), [{ name: 'house' }]);
+  assert.deepEqual(await calls(page, 'host_start'), [], 'the realm is up: no start');
+  // Save a copy: a download of the file's text
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('.hc-den-list li:first-child button:not(.primary)')]);
+  assert.equal(dl.suggestedFilename(), 'house.den.json');
+  // Add a Den file from this PC
+  await page.setInputFiles('.hc-dens ~ .hc-row input[type=file]', { name: 'Friend.den.json', mimeType: 'application/json',
+    buffer: Buffer.from('{"format":"leyline-den","version":1,"props":[{"entry":2413}]}') });
+  await page.waitForFunction(() => document.querySelectorAll('.hc-den-list li').length === 3);
+  assert.match(await page.textContent('.hc-status'), /Added as 'friend'/);
+  await page.setInputFiles('.hc-dens ~ .hc-row input[type=file]', { name: 'x.json', mimeType: 'application/json', buffer: Buffer.from('nope') });
+  await page.waitForFunction(() => document.querySelector('.hc-status').classList.contains('bad'));
+  await page.screenshot({ path: process.env.DEN_SHOT || '/tmp/hc-dens.png', fullPage: true });
+  assert.doesNotMatch(await page.textContent('#page-host'), NO_BRANDS);
+  assert.deepEqual(errors, []);
 });
 
 test('the console in the Light theme reads the light tokens', async () => {

@@ -33,8 +33,9 @@ local SIZE_STEP = 0.1
 local TURN = 15
 -- "objects" and "models" aren't catalog categories: the realm searches them (.build find / .build models; a Den
 -- places any safe object and any model of the host's own game files), and their lists are the realm's answers.
+-- "buildings" (houses, inns, towers: a Den's catalog only) shows only when the realm's catalog has them.
 local CATS = { "all", "seating", "tables", "barrels", "crates", "lights", "banners", "tents", "fires", "fences", "nature", "decor",
-    "structure", "objects", "models" }
+    "structure", "buildings", "objects", "models" }
 local SEARCHED = { objects = "find", models = "models" }
 local MENU_COLS, MENU_ROWS = 3, 12
 local RECENT_MAX = 12
@@ -621,7 +622,7 @@ end
 
 local function buildMenu()
     menu = CreateFrame("Frame", "WrathUnleashedSpawnMenu", UIParent)
-    menu:SetWidth(580); menu:SetHeight(470)
+    menu:SetWidth(580); menu:SetHeight(500)
     menu:SetPoint("CENTER")
     menu:SetFrameStrata("DIALOG")
     menu:EnableMouse(true)
@@ -789,6 +790,29 @@ function B.Nudge(field, sign)
         return B.Command(string.format("setscale %.2f", v))
     end
     return false
+end
+
+-- Path: a line of the picked prop, one every B.PATH_EVERY yards along the ground (.build path): in edit mode two
+-- clicks (where it starts, where it ends); on foot the first press marks where you stand, the second lays the path
+-- to where you stand then. One group and one undo entry (ov_build.lua).
+B.PATH_EVERY = 3
+function B.Path()
+    if not B.pick then setStatus("Pick the prop the path is made of first (a platform, a rug, a lantern...)."); return false end
+    local why = B.Blocked(B.pick)
+    if why then setStatus(why); return false end
+    remember(B.pick)
+    if editing() and W.EditMode.StartPath then
+        W.EditMode.StartPath(B.pick, B.PATH_EVERY)
+        setStatus("Click where the path starts, then where it ends.")
+        return true
+    end
+    if B.pathFrom == B.pick.id then
+        B.pathFrom = nil
+        return B.Command(string.format("path %d to %d", B.pick.id, B.PATH_EVERY))
+    end
+    B.pathFrom = B.pick.id
+    setStatus("Start marked where you stand: walk to where the path ends, then press Path again.")
+    return B.Command("path " .. B.pick.id .. " from")
 end
 
 -- Stack: in edit mode, the next click on a prop is what the selection goes on top of; outside it, the first
@@ -984,6 +1008,7 @@ local function build()
     win.copy = button(win, "Copy", 64, function() B.Command("copy") end, "TOPLEFT", x0 + 100, y - 138)
     win.paste = button(win, "Paste", 64, function() B.Paste() end, "TOPLEFT", x0 + 168, y - 138)
     win.selclear = button(win, "Clear selection", 120, function() B.Command("selclear") end, "TOPLEFT", x0 + 236, y - 138)
+    win.path = button(win, "Path", 64, function() B.Path() end, "TOPLEFT", x0 + 362, y - 138)
 
     -- save / load / share
     label(win, "Build", "GameFontNormal", "TOPLEFT", 20, y - 174)

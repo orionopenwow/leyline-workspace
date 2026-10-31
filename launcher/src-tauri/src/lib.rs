@@ -19,6 +19,8 @@ pub mod forum; // the Forum page: reading the website's forum (stream/forum.py)
 pub mod herokey; // Hero Key sign-in to community realms (docs/HERO-KEY-SSO.md; the herokey_sso flag)
 pub mod host;
 pub mod launch;
+pub mod listed; // listed mods: what players list with "List your mod", installed from the author (stream/listings.py)
+pub mod listing; // List your mod from the launcher: check, list, report, edit, remove (stream/listings.py)
 pub mod modes; // the Modes page: game modes one click away (modes agent)
 pub mod mods;
 pub mod news; // the News page: the website's news feed, read only (news.rs)

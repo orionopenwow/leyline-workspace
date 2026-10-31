@@ -178,6 +178,10 @@ function E.StartPasting() pend("paste", nil, "Click the ground where the copy go
 function E.StartPrefab(name) if name then pend("prefab", name, "Click the ground where '" .. name .. "' goes.") end end
 function E.StartBox() pend("box", nil, "Box select: click one corner on the ground, then the other.") end
 function E.StartStack() pend("stack", nil, "Stack: click the prop the selection goes on top of.") end
+-- The Builder's Path: two ground clicks, where it starts and where it ends (.build path, a prop every few yards).
+function E.StartPath(prop, every)
+    if prop then pend("path", { prop = prop, every = tonumber(every) or 3 }, "Path of " .. prop.name .. ": click where it starts.") end
+end
 function E.Cancel() pend(nil) end
 
 local function shiftDown(flag)
@@ -223,6 +227,16 @@ function E.Clicked(x, y, z, objectId, shift)
             pend(nil)
             cmd(string.format("prefab pasteat %s %.2f %.2f %.2f", p.data, x, y, z))
             E.Note("Prefab pasted. G carries the group, Ctrl+Z takes it back.")
+        elseif p.kind == "path" then
+            if not p.data.a then
+                p.data.a = { x = x, y = y, z = z }
+                E.Note("Now click where the path ends.")
+            else
+                pend(nil)
+                local a = p.data.a
+                cmd(string.format("path %d %.2f %.2f %.2f %.2f %.2f %.2f %d", p.data.prop.id, a.x, a.y, a.z, x, y, z, p.data.every))
+                E.Note("Path laid. A click on a piece selects the whole path; Ctrl+Z takes it back.")
+            end
         elseif p.kind == "box" then
             if not p.data then
                 p.data = { x = x, y = y }
@@ -650,7 +664,7 @@ function E.OnDenMessage(prefix, msg, channel, sender)
         for k, v in data:gmatch("(%a+)=([^;]*)") do d[k] = v:gsub("|", "") end
         E.denInfo = d
         denRefresh()
-    elseif name == "invite" and data:match("^https://[%w%.%-]+/join/[a-z2-7]+#[A-Z2-9]+$") then
+    elseif name == "invite" and data:match("^https://[%w%.%-]+[:%d]*/join/[a-z2-7]+#[A-Z2-9]+$") then
         E.inviteLink = data
         if not den then buildDen() end
         den.link:SetText(data)

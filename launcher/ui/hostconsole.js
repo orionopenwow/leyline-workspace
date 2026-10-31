@@ -59,11 +59,12 @@
   const CHECKS = [["pc", "The servers on your PC"], ["tunnel", "The tunnel to the relay"], ["login", "A login through the relay"],
     ["invite", "Your invite link"], ["list", "Your place on the realm list"]];
   const TOOLS = [["invite", "Invite links"], ["friends", "Accounts for friends"], ["vis", "Public or private"],
-    ["signup", "Who may sign up"], ["browser", "Browser players"], ["max", "Max players"], ["logs", "Server logs"], ["rules", "House rules"]];
+    ["signup", "Who may sign up"], ["browser", "Browser players"], ["max", "Max players"], ["logs", "Server logs"], ["rules", "House rules"],
+    ["dens", "Saved Dens"]];
   // tools that change a setting of the kit's own realm: not for a linked server (its own settings), browser only on AzerothCore
   // and a Den has no player limit to set (the kit sets 10 for it, docs/DEN.md)
   const toolShown = (k, c) => !(c.linked && (k === "browser" || k === "max" || k === "signup")) && !(k === "browser" && (c.core || "azerothcore") !== "azerothcore")
-    && !(k === "max" && c.profile === DEN);
+    && !(k === "max" && c.profile === DEN) && !(k === "dens" && c.profile !== DEN);
   // the cores the host pack runs (stream/hub.py HOST_CORES): one click only for what the kit hosts today
   const CORES = [["azerothcore", "AzerothCore", "One click"], ["cmangos", "CMaNGOS", "One click"], ["trinitycore", "TrinityCore", "Coming"],
     ["vmangos", "vMaNGOS", "Coming"], ["own", "Your own", "Relay agent"]];
@@ -694,6 +695,8 @@
       row.append(btn("Refresh", "btn small", load));
       d.append(pre, row);
       load();
+    } else if (k === "dens") {
+      fillDens(d, c);
     } else if (k === "rules") {
       const ta = mk("textarea", "hc-rules");
       ta.rows = 5; ta.spellcheck = true;
@@ -711,6 +714,72 @@
       }), n);
       d.append(ta, row);
     }
+  }
+
+  // ---------------------------------------------------------------- Saved Dens (host/dens.rs; docs/DEN.md "The save file")
+  // In game ".den save <name>" writes a file in the kit's state/dens; here: open one (the realm opens it when you're in
+  // your Den), save a copy of one, or add a file from this PC (a friend's Den, a copy you kept).
+  const denDate = (s) => { const t = Date.parse(s || ""); return isNaN(t) ? "" : new Date(t).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }); };
+  async function fillDens(d, c) {
+    const box = mk("div", "hc-dens");
+    d.append(mk("p", "hc-fine", "In your Den, type .den save and a name: the whole Den goes into a file on this PC. Open one to put your Den back the way it was."), box);
+    const add = mk("input", "");
+    add.type = "file"; add.accept = ".json,application/json"; add.hidden = true;
+    add.addEventListener("change", async () => {
+      const f = add.files && add.files[0];
+      add.value = "";
+      if (!f) return;
+      if (f.size > 512 * 1024) { say("That file is too big for a Den (512 KB at most).", "warn"); return; }
+      try { const n = await call("host_den_add", { fileName: f.name, text: await f.text() }); say(`Added as '${n}'.`, "ok"); }
+      catch (e) { say(oops(e, "That isn't a Den file."), "bad"); }
+      paintDens(box, c);
+    });
+    const row = mk("div", "hc-row");
+    row.append(btn("Add a Den file", "btn small", () => add.click()), add);
+    d.append(row);
+    await paintDens(box, c);
+  }
+  async function paintDens(box, c) {
+    let list = [];
+    try { list = await call("host_dens"); } catch (e) { box.replaceChildren(mk("p", "hc-fine", oops(e))); return; }
+    box.replaceChildren();
+    if (!list.length) { box.append(mk("p", "hc-fine", "No saved Dens yet.")); return; }
+    const ul = mk("ul", "hc-den-list");
+    for (const f of list) {
+      const li = mk("li", "");
+      const t = mk("div", "hc-den-t");
+      t.append(mk("b", "", f.name === "backup" ? "backup (before the last open)" : f.name),
+        mk("span", "", [`${f.props} prop${f.props === 1 ? "" : "s"}`, denDate(f.saved)].filter(Boolean).join(" · ")));
+      const acts = mk("div", "hc-row");
+      acts.append(btn("Open", "btn small primary", (ev) => openDen(f, ev.currentTarget, c)), btn("Save a copy", "btn small", () => saveDen(f)));
+      li.append(t, acts);
+      ul.append(li);
+    }
+    box.append(ul);
+  }
+  async function openDen(f, b, c) {
+    const running = ((c && c.services) || []).some((s) => s.role === "world" && (s.state === "ok" || s.state === "starting"));
+    if (!(await ask(`Open '${f.name}'?`, "It replaces what's in your Den now (a copy is kept as 'backup'). It opens as soon as you're in your Den" +
+      (running ? ", within a few seconds." : ": the realm starts now."), "Open"))) return;
+    b.disabled = true;
+    try {
+      await call("host_den_open", { name: f.name });
+      if (running) say(`'${f.name}' opens when you're in your Den (or at your next login).`, "ok");
+      else { say(`Starting your Den with '${f.name}'…`); say(await call("host_start", {}), "ok"); setTimeout(() => refresh(true), 20000); }
+    } catch (e) { say(oops(e), "bad"); }
+    b.disabled = false;
+  }
+  async function saveDen(f) {
+    let text;
+    try { text = await call("host_den_text", { name: f.name }); } catch (e) { say(oops(e), "bad"); return; }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+    a.download = `${f.name}.den.json`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    say(`Saved a copy: ${f.name}.den.json.`, "ok");
   }
 
   // ================================================================ the setup start (no realm on this PC yet)

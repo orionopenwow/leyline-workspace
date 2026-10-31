@@ -424,6 +424,7 @@ snapshots a second network-wide. Spread over the full nodes, that is:
 | Community relay profile: `RELAY_VOLUNTEER`, compose file, Caddy, `setup.py volunteer-relay`, `relay-pick`, Host pack contents | **Built**. The compose file has not been run on a real PC with open ports. |
 | Launcher: the realm list from the mesh, a relay chosen per realm, peers cache, fallback to today's listings | **Built**, tested |
 | Launcher toggle and START/STOP (`host_volunteer_relay`) | **Built**. The command compiles only with the `app` feature, which was not built here. |
+| Community nodes, 2026-10-31 ("Help carry the network", `wurelay/nodes.py`): seed registry (`RELAY_NODE_REGISTRY=1`, `POST /api/nodes/register` with the node's signed relay record, `GET /api/nodes.json`), health checks every 2 min (the node's own `/api/mesh/node` must answer with its key), bans and the "stop every node" switch from HQ's block feed (`nodes`, `nodes_off`), the node pausing itself (HQ's answer, or the owner's `state/node/pause`), `RELAY_TOTAL_KBPS`, `state/node/status.json`; the launcher picks only healthy nodes and names our relay as `community.fallback` | **Built**, tested (`hosting/tests/test_join_network.py`, `p2p/mesh.rs`, `host/network.rs`, `stream/tests/test_hq_network.py`). Off: needs `RELAY_NODE_REGISTRY=1` on the seed, `relay_volunteer` and `mesh_relays` |
 | Multi-relay agents and the realm-list rewrite on the relay | Designed |
 | Sealed path (end-to-end encryption past the relay) | Designed |
 | DHT | Designed, simulated |
@@ -448,7 +449,9 @@ snapshots a second network-wide. Spread over the full nodes, that is:
 3. **Host pack release, then `relay_volunteer` on the site.** That offers "Help the network". Players still use
    only the seeds and each realm's own relay.
 4. **`mesh_relays` on the site,** only after the sealed path exists, or after the owner accepts the privacy
-   trade-off in section 9. From then on, players use community relays when they are closer.
+   trade-off in section 9. From then on, players use community relays when they are closer, and only nodes the seed
+   checked lately (`/api/nodes.json`, needs `RELAY_NODE_REGISTRY=1` on the seed). HQ, Network: "Stop every node now"
+   sends every launcher back to our relays within about a minute.
 5. **`p2p_hosting`** is independent of the mesh (direct connections).
 
 **Backward compatibility:** the new flags change the flags file's sha256, and old launchers still verify it,

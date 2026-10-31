@@ -32,8 +32,9 @@ CSS = "/*LEYLINE-CSS*/"
 names = [n for n, _ in d.PAGES]
 
 # ---------------------------------------------------------------- 1. the page list and the files
-check("fourteen pages, fixed order", names == ["index", "network", "getting-started", "play", "commands", "mods", "publishing",
-                                               "hosting", "always-on", "launcher", "agents", "hero-key", "cross-server", "unite"], names)
+check("sixteen pages, fixed order", names == ["index", "network", "getting-started", "play", "commands", "mods", "publishing",
+                                              "hosting", "always-on", "join-network", "be-a-node", "launcher", "agents", "hero-key",
+                                              "cross-server", "unite"], names)
 on_disk = sorted(f[:-3] for f in os.listdir(DOCS_DIR) if f.endswith(".md"))
 check("every page has its file in docs/leyline", all(n in on_disk for n in names), set(names) - set(on_disk))
 check("every file in docs/leyline is on the page list", all(n in names for n in on_disk), set(on_disk) - set(names))

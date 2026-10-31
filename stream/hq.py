@@ -1173,6 +1173,10 @@ def register() -> None:
         "device.revoke": (a_device_revoke, "admin", None),
         "realm.block": (a_realm_block(True), "admin", True),
         "realm.unblock": (a_realm_block(False), "admin", None),
+        "node.block": (a_node_block(True), "admin", True),
+        "node.unblock": (a_node_block(False), "admin", None),
+        "nodes.off": (a_nodes_off(True), "owner", True),
+        "nodes.on": (a_nodes_off(False), "owner", None),
         "forum.mute": (a_forum_mute, "mod", True),
         "forum.unmute": (a_forum_unmute, "mod", None),
         "hq.note.add": (a_note_add, "owner", None),
@@ -1509,6 +1513,113 @@ def realms_wrap(user: dict) -> str:
     return off + A.realms_page(user) + rb
 
 
+# ----------------------------------------------------------------------------------------------
+# Network: the Leyline network at a glance (docs/leyline/join-network.md, docs/leyline/be-a-node.md). Realms on the
+# relay's list, the ones taking Hero Key sign-in, the community nodes and their health (the relay's /api/nodes.json),
+# and every switch that stops something network-wide, with where it lives.
+# ----------------------------------------------------------------------------------------------
+
+NET_SWITCHES = (("herokey_sso", "Hero Key sign-in on community realms"),
+                ("relay_volunteer", "Offer Help carry the network in the launcher"),
+                ("mesh_relays", "Players use community nodes when they are closer"),
+                ("mesh_realms", "Launchers read the realm list from the mesh"))
+
+
+def _relay_base() -> str:
+    try:
+        u = str(P("listing_url")() or "")
+    except Exception:   # noqa: BLE001
+        u = ""
+    m = re.match(r"^(https?://[A-Za-z0-9.:-]+)/api/listing/realms\.json$", u)
+    return m.group(1) if m else "https://relay.openvanilla.app"
+
+
+REASON_BOX = ('<input type="text" name="reason" maxlength="200" placeholder="why (staff only)" aria-label="Reason" '
+              'required>')
+
+
+def network_overview(fetch=None) -> dict:
+    """{realms, live, players, herokey: [names], nodes: {...} | None, errors}: what the Network page shows."""
+    fetch = fetch or _fetch_json
+    base = _relay_base()
+    out = {"realms": 0, "live": 0, "players": 0, "herokey": [], "nodes": None, "errors": []}
+    try:
+        doc = fetch(base + "/api/listing/realms.json")
+        recs = [r for r in (doc.get("realms") or []) if isinstance(r, dict)]
+        live = [r for r in recs if r.get("state") == "live"]
+        out.update(realms=len(recs), live=len(live),
+                   players=sum(int(r.get("online") or 0) for r in live if isinstance(r.get("online"), int)),
+                   herokey=sorted(clean_text(r.get("name"), 32) for r in live if r.get("herokey") is True)[:200])
+    except Exception as ex:   # noqa: BLE001
+        out["errors"].append(f"The relay's realm list did not answer ({type(ex).__name__}).")
+    try:
+        nd = fetch(base + "/api/nodes.json")
+        if isinstance(nd, dict) and isinstance(nd.get("nodes"), list):
+            out["nodes"] = {"kill": nd.get("kill") is True, "counts": nd.get("counts") or {},
+                            "rows": [n for n in nd["nodes"] if isinstance(n, dict)][:500]}
+    except Exception as ex:   # noqa: BLE001
+        out["errors"].append(f"The relay has no node list yet ({type(ex).__name__}): it needs RELAY_NODE_REGISTRY=1.")
+    return out
+
+
+def network_page(user: dict, fetch=None) -> str:
+    back = "/wrath/admin/network"
+    o = network_overview(fetch)
+    flags = (A.flags_doc().get("flags") or {}) if hasattr(A, "flags_doc") else {}
+    chips = "".join(f'<div class="hq-chip"><span class="k">{e(k)}</span><span class="v">{e(str(v))}</span>'
+                    f'<span class="d">{e(d)}</span></div>' for k, v, d in (
+                        ("Realms", o["realms"], f'{o["live"]} live now'), ("Players", o["players"], "on live realms"),
+                        ("Hero Key realms", len(o["herokey"]), "take Hero Key sign-in"),
+                        ("Nodes", (o["nodes"] or {}).get("counts", {}).get("nodes", "?") if o["nodes"] else "?",
+                         f'{(o["nodes"] or {}).get("counts", {}).get("healthy", 0)} healthy' if o["nodes"] else "no list yet")))
+    warn = "".join(f'<p class="ad-msg err">{e(x)}</p>' for x in o["errors"])
+    sw_rows = "".join(f'<dt>{e(label)}</dt><dd>{A._tags(("on", "good") if flags.get(k) else ("off", ""))}'
+                      f'<span class="fine"><code>{e(k)}</code></span></dd>' for k, label in NET_SWITCHES)
+    off = A.nodes_off() if hasattr(A, "nodes_off") else False
+    sw_rows += (f'<dt>Every community node</dt><dd>{A._tags(("stopped", "bad") if off else ("running", "good"))}'
+                + (A.act(user, "nodes.on", "all", "Let nodes carry players again", back) if off else
+                   A.act(user, "nodes.off", "all", "Stop every node now", back, confirm="all", danger=True)) + '</dd>')
+    switches = (f'<section class="ly-panel"><h2>Network switches</h2><dl class="hq-rows">{sw_rows}</dl>'
+                '<p class="fine">The first four are flags (System, Flags; owner only). Stopping every node takes effect within '
+                'about a minute: launchers play through our relays only and each node takes no new players.</p></section>')
+    hk = ", ".join(e(n) for n in o["herokey"]) or "None yet."
+    hkp = f'<section class="ly-panel"><h2>Hero Key realms</h2><p>{hk}</p></section>'
+    stopped = A.node_blocks() if hasattr(A, "node_blocks") else {}
+    rows = ""
+    for n in (o["nodes"] or {}).get("rows", []):
+        nid = str(n.get("id") or "")
+        load, caps = n.get("load") or {}, n.get("caps") or {}
+        rows += (f'<tr><td>{e(str(n.get("host") or ""))}<br><code class="fine">{e(nid)}</code></td>'
+                 f'<td>{A._tags(("healthy", "good") if n.get("healthy") else ("not checked yet", ""))} '
+                 f'<span class="fine">{e(str(n.get("region") or ""))} {e(str(round(n["rtt_ms"])) + " ms" if isinstance(n.get("rtt_ms"), (int, float)) else "")}</span></td>'
+                 f'<td>{e(str(load.get("streams", 0) // 2))} / {e(str(caps.get("streams", 0) // 2))} players</td>'
+                 f'<td>{A.act(user, "node.block", nid, "Stop this node", back, REASON_BOX, confirm=nid, danger=True)}</td></tr>')
+    table = (f'<table class="ly-table"><thead><tr><th>Node</th><th>Health</th><th>Carrying</th><th></th></tr></thead><tbody>{rows}</tbody></table>'
+             if rows else '<p class="fine">No community nodes are registered right now.</p>')
+    st_rows = "".join(f'<li><code>{e(k)}</code> <span class="fine">{e(v.get("reason", ""))} · {e(ago(v.get("at")))}</span>'
+                      + A.act(user, "node.unblock", k, "Let it carry again", back) + '</li>' for k, v in sorted(stopped.items()))
+    nodes = (f'<section class="ly-panel"><h2>Community nodes</h2><p class="fine">Players\' PCs that help carry the network. A node '
+             f'registers with a key it signs with; the relay checks it every two minutes. Stop one and it leaves the list and '
+             f'takes no new players within about a minute.</p>{table}'
+             + (f'<h3>Stopped</h3><ul class="hq-list">{st_rows}</ul>' if st_rows else "") + '</section>')
+    return (f'<div class="hq-strip">{chips}</div>{warn}' + switches + hkp + nodes)
+
+
+def a_node_block(on):
+    def fn(user, target, form):
+        reason = A._clean_line(form.get("reason"), 200)
+        if on and not reason:
+            raise A.Refused("Say why (staff only; the feed carries no reasons).")
+        return A.set_node_block(user, target, on, reason)
+    return fn
+
+
+def a_nodes_off(on):
+    def fn(user, target, form):
+        return A.set_nodes_off(user, on)
+    return fn
+
+
 def page(user: dict, tab: str, query: dict):
     """(status, title, body) for the HQ pages, or None for the classic ones (stream/admin.py)."""
     if tab == "":
@@ -1526,6 +1637,8 @@ def page(user: dict, tab: str, query: dict):
         return 200, "Notes", notes_page(user)
     if tab == "realms":
         return 200, "Realms", realms_wrap(user)
+    if tab == "network":
+        return 200, "Network", network_page(user)
     if tab == "content":
         return 200, "Catalog", A.catalog_page(user)
     if tab == "words" and W is not None:

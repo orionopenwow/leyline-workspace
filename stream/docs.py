@@ -36,6 +36,8 @@ PAGES = (
     ("publishing", "Publishing"),
     ("hosting", "Hosting"),
     ("always-on", "Keep your realm up 24/7"),
+    ("join-network", "Bring your server"),   # an existing server joins with Hero Key sign-in (setup.py join-network)
+    ("be-a-node", "Help carry the network"),   # community nodes (hosting/relay/wurelay/nodes.py)
     ("launcher", "Launcher"),
     ("agents", "Agents"),   # the launcher's Agents page: your own AI assistant, what it may do (launcher/src-tauri/src/agents.rs)
     ("hero-key", "Hero Key"),

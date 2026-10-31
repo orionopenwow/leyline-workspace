@@ -1195,6 +1195,7 @@ TABS = (("", "Dashboard"), ("catalog", "Catalog"), ("workshop", "Workshop"), ("h
 # Leyline HQ's menu (stream/hq.py): nine plain words; Content and System open their own short row. Forum is its own
 # section (owner 2026-10-31: "making sure forum moderation is in my ultimate admin control panel").
 HQ_TABS = (("", "Home"), ("inbox", "Needs you"), ("players", "Players"), ("forum", "Forum"), ("realms", "Realms"),
+           ("network", "Network"),
            ("releases", "Releases"), ("content", "Content"), ("game", "Game"), ("system", "System"))
 CONTENT_TABS = (("catalog", "Catalog"), ("workshop", "Workshop"), ("hub", "Index"), ("themes", "Themes"),
                 ("profiles", "Profiles"), ("words", "Blocked words"), ("reports", "All reports"))
@@ -2824,10 +2825,16 @@ def relay_feed_sig(doc: dict) -> str:
 
 
 def relay_block_feed() -> dict:
-    """{"format": 1, "updated_at", "blocked": [{"id", "at"}], "sig"}: ids and times only (no reasons, no staff names)."""
+    """{"format": 1, "updated_at", "blocked": [{"id", "at"}], "nodes": [{"id", "at"}], "nodes_off", "sig"}: ids and times
+    only (no reasons, no staff names). "nodes" are community nodes the team stopped, "nodes_off" the switch that pauses
+    every community node at once (hosting/relay/wurelay/nodes.py; docs/leyline/be-a-node.md)."""
     b = relay_blocks()
     doc = {"format": 1, "updated_at": _read_json(_apath("relay-block.json"), {}).get("updated_at") or "",
            "blocked": [{"id": k, "at": str(v.get("at", ""))[:20]} for k, v in sorted(b.items())]}
+    nb = node_blocks()
+    if nb or nodes_off():   # unchanged for a relay that never saw a node block (and its signature with it)
+        doc["nodes"] = [{"id": k, "at": str(v.get("at", ""))[:20]} for k, v in sorted(nb.items())]
+        doc["nodes_off"] = nodes_off()
     sig = relay_feed_sig(doc)
     if sig:
         doc["sig"] = sig
@@ -2847,8 +2854,51 @@ def set_relay_block(user: dict, rid: str, on: bool, reason: str = "") -> tuple[d
             if rid not in b:
                 raise Refused("That realm is not blocked at the relay.")
             b.pop(rid)
-        _write_json(_apath("relay-block.json"), {"format": 1, "updated_at": _iso(), "blocked": b}, 0o640)
+        _write_json(_apath("relay-block.json"), dict(doc, format=1, updated_at=_iso(), blocked=b), 0o640)
     return before, {"blocked": on}
+
+
+# Community nodes ("Help carry the network"): the same file carries the nodes the team stopped and the switch for all.
+NODE_ID_RE = re.compile(r"n-[a-z2-7]{16}")
+
+
+def node_blocks() -> dict:
+    doc = _read_json(_apath("relay-block.json"), {})
+    b = doc.get("nodes") if isinstance(doc.get("nodes"), dict) else {}
+    return {k: v for k, v in b.items() if NODE_ID_RE.fullmatch(k) and isinstance(v, dict)}
+
+
+def nodes_off() -> bool:
+    return _read_json(_apath("relay-block.json"), {}).get("nodes_off") is True
+
+
+def set_node_block(user: dict, nid: str, on: bool, reason: str = "") -> tuple[dict, dict]:
+    if not NODE_ID_RE.fullmatch(str(nid or "")):
+        raise Refused("That is not a node id (n- and 16 letters).")
+    with _lock:
+        doc = _read_json(_apath("relay-block.json"), {})
+        b = doc.get("nodes") if isinstance(doc.get("nodes"), dict) else {}
+        before = {"stopped": nid in b}
+        if on:
+            if len(b) >= 500 and nid not in b:
+                raise Refused("The node block list is full (500 nodes).")
+            b[nid] = {"at": _iso(), "by": user.get("account", ""), "reason": reason}
+        elif nid not in b:
+            raise Refused("That node is not stopped.")
+        else:
+            b.pop(nid)
+        _write_json(_apath("relay-block.json"), dict(doc, format=1, updated_at=_iso(), nodes=b,
+                                                     blocked=doc.get("blocked") if isinstance(doc.get("blocked"), dict) else {}), 0o640)
+    return before, {"stopped": on}
+
+
+def set_nodes_off(user: dict, on: bool) -> tuple[dict, dict]:
+    with _lock:
+        doc = _read_json(_apath("relay-block.json"), {})
+        before = {"nodes_off": doc.get("nodes_off") is True}
+        _write_json(_apath("relay-block.json"), dict(doc, format=1, updated_at=_iso(), nodes_off=bool(on),
+                                                     blocked=doc.get("blocked") if isinstance(doc.get("blocked"), dict) else {}), 0o640)
+    return before, {"nodes_off": bool(on)}
 
 
 class _Self:

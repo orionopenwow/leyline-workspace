@@ -14,6 +14,8 @@ Anyone can host a Wrath realm (on AzerothCore) from their own PC. On Leyline a h
 
 Want a realm that stays up for good (a Vanilla+ realm on a spare PC or a small server), or already run a server and want it on the realm list? See [Keep your realm up 24/7](always-on.md): one command either way.
 
+Already run an AzerothCore or TrinityCore server and want Hero Key sign-in on it? See [Bring your server](join-network.md). Want to help carry other players' connections from your PC? See [Help carry the network](be-a-node.md).
+
 ## What you need
 
 - Docker: [Docker Desktop](https://www.docker.com/products/docker-desktop/) on Windows and macOS, Docker Engine on Linux. Every helper runs in containers, so you need no Python on the host.

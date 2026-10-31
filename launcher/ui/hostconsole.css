@@ -290,3 +290,7 @@ button.hc-pill:hover { background: color-mix(in srgb, currentColor 10%, transpar
 .hc-step.done .hc-step-t b { color: var(--t-text-2); }
 .hc-step-go { flex: none; min-width: 168px; height: 42px; font-size: 14px; }
 .hc-rulesets:has(.hc-rs[disabled]) { opacity: .9; }
+/* Docker starting: the step's number turns into a slow ring */
+.hc-step.wait .hc-step-n { color: transparent; background: transparent; box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--t-accent) 30%, transparent);
+  border-top: 3px solid var(--t-accent); animation: hc-spin 1s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .hc-step.wait .hc-step-n { animation: none; } }

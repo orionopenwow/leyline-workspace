@@ -66,7 +66,7 @@ const FAKE = (setUp) => {
         : { installed: { version: '7' }, available: { version: '7' }, update: false, kit_dir: '/home/me/kit' };
       case 'hostpack_install': window.__noKit = false; return [{ version: '7' }, '/home/me/kit'];
       case 'set_host_kit': return null;
-      case 'docker_info': return window.__noKit ? { state: 'missing', version: null, help: 'Docker is not installed.', get_url: 'https://docs.docker.com/desktop/' } : { state: 'ready', version: '27.3.1', help: 'Docker is ready.', get_url: 'https://docs.docker.com/desktop/' };
+      case 'docker_info': if (window.__dock) return window.__dock(); return window.__noKit ? { state: 'missing', version: null, help: 'Docker is not installed.', get_url: 'https://docs.docker.com/desktop/' } : { state: 'ready', version: '27.3.1', help: 'Docker is ready.', get_url: 'https://docs.docker.com/desktop/' };
       case 'host_listing': return { tags: [], region: null, language: null, max_players: null, direct: false };
       case 'p2p_flags': return { effective: { p2p_hosting: false, limits: {} }, known: [], local: { overrides: {} }, site: {} };
       case 'open_link': return null;
@@ -322,5 +322,46 @@ test('no Host pack yet: two big numbered steps come first, and Get the Host pack
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'set_host_kit'));
   assert.ok((await calls(page, 'hostpack_install')).length === 1);
   assert.deepEqual((await calls(page, 'set_host_kit'))[0], { path: '/home/me/kit' });
+  await page.close();
+});
+
+test('Docker installed but closed: the step says Start Docker (never Get Docker), and the page sees it start by itself', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await page.addInitScript(() => {
+    window.__dockState = 'desktop_stopped';
+    window.__dock = () => ({ state: window.__dockState, version: null, get_url: 'https://docs.docker.com/desktop/',
+      help: window.__dockState === 'missing' ? 'Get Docker Desktop: free for personal use.' : 'Docker Desktop is installed but closed.' });
+  });
+  await page.addInitScript(FAKE, false);
+  await page.goto(INDEX);
+  await page.click('.nav[data-page="host"]');
+  await page.waitForSelector('.hc-step[data-docker="desktop_stopped"]');
+  const s = await page.$eval('.hc-step[data-docker]', (x) => [x.querySelector('b').textContent, x.querySelector('.hc-step-t span').textContent, x.querySelectorAll('button').length]);
+  assert.equal(s[0], 'Start Docker');
+  assert.match(s[1], /installed but closed/);
+  assert.ok(!(await page.textContent('.hc-ready')).includes('Get Docker'), 'never sent to the website when it is installed');
+  assert.ok(await page.isDisabled('#hc-start'));
+  assert.match(await page.textContent('.hc-go .hc-fine'), /Docker first/);
+  assert.ok(await page.evaluate(() => window.__hcDockerWatch()), 'watching while the Start tab shows');
+  if (process.env.SHOT_DIR) await page.screenshot({ path: process.env.SHOT_DIR + '/docker-closed.png' });
+  // Docker Desktop opened by hand: within about 5 s the step goes and Start is ready
+  const before = (await calls(page, 'docker_info')).length;
+  await page.evaluate(() => { window.__dockState = 'ready'; });
+  await page.waitForSelector('.hc-ready[hidden]', { state: 'attached', timeout: 8000 });
+  assert.ok((await calls(page, 'docker_info')).length > before);
+  assert.ok(!(await page.isDisabled('#hc-start')) || !(await page.$('.hc-rs.on')), 'Start once a ruleset is picked');
+  // hidden tab: no more checks
+  await page.click('#hc-tab-guide');
+  assert.equal(await page.evaluate(() => window.__hcDockerWatch()), false, 'stops when the Start tab is hidden');
+  await page.click('#hc-tab-main');
+  assert.ok(await page.evaluate(() => window.__hcDockerWatch()));
+  await page.click('.nav[data-page="play"]').catch(() => page.click('.nav[data-page]:not([data-page="host"])'));
+  assert.equal(await page.evaluate(() => window.__hcDockerWatch()), false, 'stops when the Host page is left');
+  // missing: Get Docker, and the line says the page notices
+  await page.evaluate(() => { window.__dockState = 'missing'; });
+  await page.click('.nav[data-page="host"]');
+  await page.waitForSelector('.hc-step[data-docker="missing"]', { timeout: 8000 });
+  assert.equal(await page.textContent('.hc-step[data-docker] b'), 'Get Docker');
+  assert.match(await page.textContent('.hc-step[data-docker] .hc-step-t span'), /sees it/);
   await page.close();
 });

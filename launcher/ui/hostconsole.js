@@ -721,9 +721,10 @@
     if (!ui.go) return;
     const ready = kit && kit.is_kit;
     const name = picked ? (RULESETS[picked] || [picked])[0] : null;
-    ui.go.disabled = !ready || !picked;
+    const dockOk = !dock || dock.state === "ready";
+    ui.go.disabled = !ready || !picked || !dockOk;
     ui.go.textContent = name ? `Start ${name}` : "Start";
-    ui.goHint.textContent = !ready ? "Get the Host pack first (step 1 above)." : !picked ? "Pick a ruleset."
+    ui.goHint.textContent = !ready ? "Get the Host pack first (step 1 above)." : !dockOk ? "Docker first (step 2 above)." : !picked ? "Pick a ruleset."
       : picked === "vanillaplus" ? "Always on: it comes back after a reboot."
       : picked === DEN ? "Then invite friends with your invite link. The first start takes 5 to 20 minutes." : "The first start takes 5 to 20 minutes.";
     if (ui.den) ui.den.hidden = picked !== DEN;
@@ -748,6 +749,16 @@
     try { say(await call("host_link_start"), "ok"); } catch (e) { say(oops(e), "bad"); }
   }
 
+  // Docker, as the step says it (host/docker.rs DockerState; `help` is its plain line for this OS): the step's title, and
+  // its button (none while Docker is closed: the page sees it start by itself)
+  const DOCK_TITLE = { missing: "Get Docker", stopped: "Start Docker", desktop_stopped: "Start Docker", starting: "Starting Docker…",
+    no_permission: "Let Docker in", no_compose: "Update Docker", ready: "Docker" };
+  const dockLink = (d) => () => call("open_link", { name: (d.get_url || "").includes("engine") ? "dockerengine" : "docker" }).catch(() => {});
+  function dockAction(d) {
+    if (d.state === "missing") return btn("Get Docker", "btn hc-step-go", dockLink(d));
+    if (d.state === "no_compose") return btn("Update Docker", "btn hc-step-go", dockLink(d));
+    return null;
+  }
   // the two things a host needs first, as two big numbered steps; gone once both are ready
   function paintReady(p, d, haveKit) {
     const box = ui.ready;
@@ -778,9 +789,13 @@
       : av ? `One download${av.size ? `, ${Math.ceil(av.size / 1024)} KB` : ""}: the realm, its console and the relay agent. No game files.`
       : "Not listed right now: try again in a minute.";
     step(1, haveKit, "Get the Host pack", kitLine, kitBtn);
-    let dockBtn = null;
-    if (!dockOk) dockBtn = btn("Get Docker", "btn hc-step-go", () => call("open_link", { name: (d.get_url || "").includes("engine") ? "dockerengine" : "docker" }).catch(() => {}));
-    step(2, dockOk, "Get Docker", dockOk ? "Docker is running." : "Free. It runs the realm's servers. Start it once it's installed.", dockBtn);
+    const st = d ? d.state : "ready";
+    const line = dockOk ? "Docker is running." : st === "missing" ? `${d.help || "Free. It runs the realm's servers."} This page sees it once it's in.`
+      : (d.help || "Docker is not answering yet.");
+    step(2, dockOk, dockOk ? "Docker" : (DOCK_TITLE[st] || "Get Docker"), line, dockOk ? null : dockAction(d));
+    const s2 = box.lastChild;
+    s2.dataset.docker = st;
+    s2.classList.toggle("wait", st === "starting");
   }
   async function getPack(b, dir) {
     b.disabled = true;
@@ -793,18 +808,53 @@
     } catch (e) { say(oops(e), "bad"); b.disabled = false; b.textContent = "Try again"; }
   }
 
+  let pk = null;      // hostpack_info
+  let dock = null;    // docker_info
   async function loadSetup() {
     paintGo();
-    const pre = ui.prereq;
     const [p, d, prof] = await Promise.all([
       call("hostpack_info").catch(() => null), call("docker_info").catch(() => null), call("host_profiles").catch(() => null)]);
     if (mode !== "setup") return;
+    pk = p; dock = d;
     if (Array.isArray(prof) && Array.isArray(prof[0])) {
       offers = prof[0].filter((o) => o && Array.isArray(o.clients));
       if (prof[1] && prof[1].profile && !picked) picked = prof[1].profile;
     }
     paintRulesets();
     applyWant();
+    paintPrereq();
+    watchDocker();
+  }
+
+  // Docker is looked at again every 5 s while the Start tab shows (someone installs or opens Docker Desktop and comes
+  // back: the step moves on by itself); never while the page, the tab or the window is hidden
+  const DOCK_EVERY = 5000;
+  let dockTimer = null;
+  let dockBusy = false;
+  const startShown = () => mode === "setup" && isOn() && main.classList.contains("on") && document.visibilityState !== "hidden";
+  function watchDocker() {
+    if (startShown()) { if (!dockTimer) dockTimer = setInterval(recheckDocker, DOCK_EVERY); }
+    else if (dockTimer) { clearInterval(dockTimer); dockTimer = null; }
+  }
+  async function recheckDocker() {
+    if (!startShown()) { watchDocker(); return; }
+    if (dockBusy) return;
+    dockBusy = true;
+    let d = null;
+    try { d = await call("docker_info"); } catch (_) { /* keep the last answer */ } finally { dockBusy = false; }
+    if (!d || mode !== "setup") return;
+    const was = dock && dock.state;
+    dock = d;
+    if (d.state !== was) { paintPrereq(); paintGo(); }
+  }
+  document.addEventListener("visibilitychange", watchDocker);
+  new MutationObserver(watchDocker).observe(page, { attributes: true, attributeFilter: ["class"] });
+  new MutationObserver(watchDocker).observe(main, { attributes: true, attributeFilter: ["class"] });
+  window.__hcDockerWatch = () => !!dockTimer;   // for the tests
+
+  function paintPrereq() {
+    const pre = ui.prereq;
+    const p = pk, d = dock;
     if (!pre) return;
     pre.replaceChildren();
     const chip = (ok, text, onFix) => {
@@ -819,6 +869,6 @@
     paintReady(p, d, haveKit);
     if (ui.ready && !ui.ready.hidden) return;   // the steps say it already: no pills in the corner
     pre.append(chip(haveKit, haveKit ? "Host pack ready" : (p && p.installed ? "Host pack: use it" : "Get the Host pack"), haveKit ? null : () => tab("kit")));
-    if (d) pre.append(chip(d.state === "ready", d.state === "ready" ? "Docker ready" : "Get Docker", d.state === "ready" ? null : () => call("open_link", { name: (d.get_url || "").includes("engine") ? "dockerengine" : "docker" }).catch(() => {})));
+    if (d) pre.append(chip(d.state === "ready", d.state === "ready" ? "Docker ready" : (DOCK_TITLE[d.state] || "Get Docker"), d.state === "ready" ? null : dockLink(d)));
   }
 })();

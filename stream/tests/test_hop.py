@@ -230,5 +230,84 @@ wp.leyline_net.write_flags(None, {"herokey_sso": False}, by="test")
 _, _, env5, _ = session_env(f"/wrath/play?mini=mini&go=r:{LIVE}")
 check("herokey back off: the old hop at once", "hop_sso" not in env5 and "user" not in env5)
 
+# --- the fast hop (the in-game realm browser's Join): POST /__gate?hop=<id|wrath> in the same session, and the Hero Key
+# prefetch POST /__gate?herokey=<id> (docs/leyline-realm-hopping.md "Fast hop")
+def post(path, body=b"{}", cookie="", origin="https://wrath.example", ctype="application/json", ip="10.0.1.9"):
+    c = http.client.HTTPConnection("127.0.0.1", PAGE_PORT, timeout=20)
+    hd = {"X-Forwarded-For": ip, "Content-Type": ctype, "Content-Length": str(len(body))}
+    if origin:
+        hd["Origin"] = origin
+    if cookie:
+        hd["Cookie"] = cookie
+    c.request("POST", path, body=body, headers=hd)
+    r = c.getresponse()
+    raw = r.read()
+    try:
+        return r.status, json.loads(raw)
+    except ValueError:
+        return r.status, {}
+
+
+def fresh_sid(play_path="/wrath/play?mini=mini"):
+    st, h, _ = get(play_path, cookie="wr_session=good")
+    q = urllib.parse.urlsplit(h.get("location", "")).query
+    st, h, _ = get("/__gate?" + q)
+    return h.get("set-cookie", "").split(";")[0].split("=", 1)[1]
+
+
+def env_of(sid):
+    _, _, b = get("/__env.js", cookie=f"wu_play={sid}")
+    return json.loads(b.decode().split("\n")[0][len("window.__wenilla_env = "):].rstrip(";"))
+
+
+sid = fresh_sid()
+ck = f"wu_play={sid}"
+check("fast hop: refused from another origin", post(f"/__gate?hop={LIVE}", cookie=ck, origin="https://evil.example")[0] == 403)
+check("fast hop: refused without the session", post(f"/__gate?hop={LIVE}")[0] == 403)
+check("fast hop: JSON only", post(f"/__gate?hop={LIVE}", cookie=ck, ctype="text/plain")[0] == 415)
+check("fast hop: an offline / unknown / bad realm is refused, the session unchanged",
+      [post(f"/__gate?hop={r}", cookie=ck)[0] for r in (OFF, "a" * 16, "../x")] == [404, 404, 404] and "hop" not in env_of(sid))
+st, doc = post(f"/__gate?hop={LIVE}", cookie=ck)
+check("fast hop: a live realm, same session, the landing page", st == 200 and doc.get("land") == f"/?go=r:{LIVE}"
+      and doc.get("name") == "Frost Haven", (st, doc))
+e = env_of(sid)
+check("fast hop: /__env.js is now that realm's hop env, no Wrath login", e.get("hop") == LIVE and e.get("hop_ws") == f"wss://relay.example/ws/{LIVE}"
+      and "pass" not in e and e.get("slice") == "mini", e)
+wp.modes._recent.clear()
+SOAP_CMDS.clear()
+st, doc = post("/__gate?hop=wrath", cookie=ck)
+e = env_of(sid)
+check("fast back home: the same session, the Wrath login again, Dalaran on arrival", st == 200 and doc.get("land") == "/?go=h:dalaran"
+      and "hop" not in e and e.get("user") == "WR000123" and "ovgo set WR000123 h:dalaran" in SOAP_CMDS, (doc, e, SOAP_CMDS))
+wp.modes._recent.clear()
+SOAP_CMDS.clear()
+st, doc = post(f"/__gate?hop={HANG}", cookie=ck)
+e = env_of(sid)
+check("fast hop to the hangout: the Wrath login through the relay, Dalaran", st == 200 and e.get("hop_home") == "1"
+      and e.get("user") == "WR000123" and "ovgo set WR000123 h:dalaran" in SOAP_CMDS, (e.get("hop"), SOAP_CMDS))
+osid = fresh_sid("/wrath/play?mode=own")
+st, doc = post(f"/__gate?hop={LIVE}", cookie=f"wu_play={osid}", ip="10.0.1.10")
+check("fast hop with own files: the own-files landing", st == 200 and doc.get("land") == f"/?ownfiles=1&go=r:{LIVE}"
+      and env_of(osid).get("mode") == "own", doc)
+sid = fresh_sid()   # own files ended the player's other sessions, as /wrath/play?mode=own always does
+ck = f"wu_play={sid}"
+check("herokey prefetch: off with the flag off", post(f"/__gate?herokey={LIVE}", cookie=ck, ip="10.0.1.11")[0] == 404)
+wp.leyline_net.write_flags(None, {"herokey_sso": True}, by="test")
+st, doc = post(f"/__gate?herokey={LIVE}", cookie=ck, ip="10.0.1.11")
+check("herokey prefetch: an assertion for that realm and its one-time login", st == 200 and doc["assertion"]["aud"] == LIVE
+      and re.match(r"^HK[A-Z2-7]{14}$", doc["login"]["user"]) and doc["redeem"] == f"https://relay.example/api/realms/{LIVE}/herokey"
+      and doc["ttl"] == 120 and "WR000123" not in json.dumps(doc).upper(), (st, doc.get("why")))
+check("herokey prefetch: never for the hangout, an offline realm or junk",
+      [post(f"/__gate?herokey={r}", cookie=ck, ip="10.0.1.11")[0] for r in (HANG, OFF, "x")] == [404, 404, 404])
+st, doc = post(f"/__gate?hop={LIVE}", body=b'{"sso":"pre"}', cookie=ck, ip="10.0.1.11")
+e = env_of(sid)
+check("fast hop after the page redeemed it (sso pre): no second assertion in the env", st == 200 and e.get("hop") == LIVE
+      and "hop_sso" not in e and "pass" not in e, e.keys())
+st, doc = post(f"/__gate?hop={LIVE}", cookie=ck, ip="10.0.1.11")
+check("fast hop without pre: the env issues its own, as before", "hop_sso" in env_of(sid))
+wp.leyline_net.write_flags(None, {"herokey_sso": False}, by="test")
+codes = [post(f"/__gate?hop={OFF}", cookie=ck, ip="10.0.1.12")[0] for _ in range(32)]
+check("fast hop: rate limited per IP", codes[-1] == 429 and codes[0] == 404, codes[-3:])
+
 print(f"\n{count - fails}/{count} passed")
 sys.exit(1 if fails else 0)

@@ -33,6 +33,11 @@ local function player(over)
     function p:GetLevel() return 80 end
     function p:GetGMRank() return self.gm end
     function p:GetZoneId() return self.zone end
+    function p:GetAreaId() return self.area or self.zone end
+    function p:GetMapId() return self.map or 0 end
+    function p:GetX() return self.x end
+    function p:GetY() return self.y end
+    function p:GetZ() return self.z end
     function p:IsInCombat() return self.combat or false end
     function p:IsDead() return self.dead or false end
     function p:Teleport(...) self.teleports[#self.teleports + 1] = { ... }; return true end
@@ -81,6 +86,13 @@ check(".hub something-else: the list (travel hubs off here)", cmd(p, "hub guruba
 
 -- refusals ------------------------------------------------------------------------------------------------------------
 clock = clock + 11
+-- in game (31 Oct): standing in Dalaran reported zone 2817 (Crystalsong Forest): the city's box counts
+local floating = player({ zone = 2817, map = 571, x = 5807.9, y = 588.4, z = 660.9, guid = 31 })
+cmd(floating, "hub duels"); run(floating)
+check("in Dalaran but the zone says Crystalsong: still goes", #floating.teleports == 1)
+local below = player({ zone = 2817, map = 571, x = 5807.9, y = 588.4, z = 140, guid = 32 })
+cmd(below, "hub duels")
+check("Crystalsong Forest below the city: told to come to the city", #below.teleports == 0 and last(below):find("Come to the city", 1, true))
 local away = player({ zone = 1519, guid = 8 })
 check("outside Dalaran: no hop, where it is", cmd(away, "hub duels") == false and #away.queue == 0
     and last(away):find("is in Dalaran", 1, true))

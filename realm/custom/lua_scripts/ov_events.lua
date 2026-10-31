@@ -59,6 +59,14 @@ local function try(obj, method, ...)
     if ok2 then return a end
     return nil
 end
+-- A player in Dalaran can report Crystalsong Forest (2817) as the zone (seen in game 31 Oct): the city's box counts too.
+function E.inDalaran(p)
+    if try(p, "GetZoneId") == DALARAN_ZONE or try(p, "GetAreaId") == DALARAN_ZONE then return true end
+    if try(p, "GetMapId") ~= DALARAN_MAP then return false end
+    local x, y, z = try(p, "GetX"), try(p, "GetY"), try(p, "GetZ")
+    return type(x) == "number" and type(y) == "number" and type(z) == "number"
+        and x > 5500 and x < 6100 and y > 250 and y < 1050 and z > 550
+end
 local function isBot(p)
     if try(p, "IsBot") == true or try(p, "IsPlayerbot") == true then return true end
     local name = try(p, "GetAccountName")
@@ -487,7 +495,7 @@ local function onCommand(event, p, command)
     elseif gm and sub == "trivia" then if not trivia(p) then say(p, "An event is already running (|cffffff00.events stop|r).") end
     elseif gm and sub == "hide" then
         local here, hint = arg:match("^(here)%s*(.*)$")
-        if here and try(p, "GetZoneId") ~= DALARAN_ZONE then say(p, "Stand in Dalaran to hide it here.")
+        if here and not E.inDalaran(p) then say(p, "Stand in Dalaran to hide it here.")
         elseif not hide(p, here ~= nil, hint) then say(p, "An event is already running (|cffffff00.events stop|r).") end
     elseif gm and sub == "stop" then
         if E.active then finish("The event was stopped by staff.") else say(p, "Nothing is running.") end

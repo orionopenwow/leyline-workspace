@@ -340,6 +340,15 @@ end
 -- .hub: the Dalaran spots ------------------------------------------------------------------------------------------------
 -- TODO(check in game): every position stands on open ground (z) and clear of the city's own NPCs.
 local DALARAN_ZONE = 4395
+-- In game (31 Oct) a player standing in Dalaran reported Crystalsong Forest (2817) as their zone: the floating city
+-- sits over it. So: the zone or area is Dalaran, or the player is on Northrend high above Crystalsong, in the city's box.
+local function inDalaran(player)
+    if try(player, "GetZoneId") == DALARAN_ZONE or try(player, "GetAreaId") == DALARAN_ZONE then return true end
+    if try(player, "GetMapId") ~= 571 then return false end
+    local x, y, z = try(player, "GetX"), try(player, "GetY"), try(player, "GetZ")
+    return type(x) == "number" and type(y) == "number" and type(z) == "number"
+        and x > 5500 and x < 6100 and y > 250 and y < 1050 and z > 550
+end
 local HUB_COOLDOWN = 10
 local HUB = {
     duels    = { label = "Duel corner", pos = PLACES["h:duels"].pos,
@@ -373,7 +382,7 @@ local function hub(player, which)
     local h = HUB[key]
     if not h then return hubList(player) end
     if not h.pos then return say(player, h.tip) end
-    if try(player, "GetZoneId") ~= DALARAN_ZONE then
+    if not inDalaran(player) then
         return say(player, h.label .. " is in Dalaran. Come to the city (your hearthstone, or Dalaran on " .. SITE
             .. "), then type |cffffff00.hub " .. key .. "|r.")
     end

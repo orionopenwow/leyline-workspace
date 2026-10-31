@@ -251,7 +251,7 @@ check("GM hides it where they stand, with their hint", E.active and E.active.kin
 online = { alice }
 alice.x, alice.y = 0, 0
 check("talking to it wins (gossip)", gossip[721](1, alice, spawns[#spawns].c) == false and E.active == nil and alice.closed)
-gmp.zone = 1
+gmp.zone, gmp.map = 1, 1
 cmd(gmp, "events hide here")
 check("GM outside Dalaran: refused", E.active == nil and last(gmp):find("Stand in Dalaran", 1, true))
 cmd(gmp, "events trivia"); cmd(gmp, "events stop")

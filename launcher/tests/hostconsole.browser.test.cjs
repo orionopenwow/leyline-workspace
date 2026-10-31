@@ -102,7 +102,7 @@ test('a realm set up on this PC: the Host page is its console', async () => {
   assert.deepEqual(tiles, [['Database', 'ready', 'hc-tile ok'], ['Login server', 'ready', 'hc-tile ok'], ['World server', 'ready', 'hc-tile ok'],
     ['Relay agent', 'listed', 'hc-tile ok'], ['Players', '12 online', 'hc-tile ok'], ['Uptime', '3 days', 'hc-tile ok']]);
   assert.deepEqual(await page.$$eval('.hc-act-h b', (l) => l.map((x) => x.textContent)),
-    ['Announce', 'Message of the day', 'Kick', 'Ban or unban', 'Allow-list', 'Restart']);
+    ['Announce', 'On-screen notice', 'Message of the day', 'Kick', 'Mute or unmute', 'Send to Dalaran', 'Ban account', 'Allow-list', 'Restart']);
   assert.deepEqual(await page.$$eval('.hc-chk li span', (l) => l.map((x) => x.textContent)),
     ['The servers on your PC', 'The tunnel to the relay', 'A login through the relay', 'Your invite link', 'Your place on the realm list']);
   assert.deepEqual(await page.$$eval('.hc-tool', (l) => l.map((x) => x.textContent)),
@@ -116,7 +116,7 @@ test('a realm set up on this PC: the Host page is its console', async () => {
   assert.deepEqual(errors, []);
 });
 
-test('GM controls: announce at once; kick, ban and restart only after a confirm; a restart never carries a delay', async () => {
+test('GM controls: announce at once; kick, Ban account (with a reason) and restart only after a confirm; mute, Send to Dalaran, notice; a restart never carries a delay', async () => {
   const { page, errors } = await open(true);
   await page.waitForFunction(() => document.querySelector('.hc-run').textContent === 'Online · listed');
   await page.click('[data-gm="announce"] .hc-act-h');
@@ -140,16 +140,46 @@ test('GM controls: announce at once; kick, ban and restart only after a confirm;
   await page.waitForFunction(() => window.__calls.some(([c, a]) => c === 'host_gm' && a.action === 'kick'));
   assert.deepEqual((await calls(page, 'host_gm')).find((a) => a.action === 'kick'), { action: 'kick', data: 'Grumpy' });
 
-  // ban for a week
+  // Ban account for a week: the whole account, a reason first (HQ's words)
   await page.click('[data-gm="ban"] .hc-act-h');
-  await page.fill('[data-gm="ban"] input', 'Grumpy');
+  await page.fill('[data-gm="ban"] input.hc-name', 'Grumpy');
   await page.selectOption('[data-gm="ban"] select', '168');
-  await page.click('[data-gm="ban"] .hc-act-f button:has-text("Ban")');
+  await page.click('[data-gm="ban"] .hc-act-f button:has-text("Ban account")');
+  await page.waitForFunction(() => document.querySelector('.hc-status').textContent === 'Say why (3 letters or more).');
+  assert.ok(await page.isHidden('#hc-confirm[open]'), 'no reason: nothing asked, nothing sent');
+  await page.fill('[data-gm="ban"] input.hc-reason', 'Cheating in the arena');
+  await page.click('[data-gm="ban"] .hc-act-f button:has-text("Ban account")');
   await page.waitForSelector('#hc-confirm[open]');
-  assert.equal(await page.textContent('#hc-confirm-title'), 'Ban Grumpy for 1 week?');
+  assert.equal(await page.textContent('#hc-confirm-title'), "Ban Grumpy's account for 1 week?");
+  assert.match(await page.textContent('#hc-confirm-body'), /Every character on their account/);
   await page.click('#hc-confirm-yes');
   await page.waitForFunction(() => window.__calls.some(([c, a]) => c === 'host_gm' && a.action === 'ban'));
-  assert.deepEqual((await calls(page, 'host_gm')).find((a) => a.action === 'ban'), { action: 'ban', data: 'Grumpy\t168' });
+  assert.deepEqual((await calls(page, 'host_gm')).find((a) => a.action === 'ban'), { action: 'ban', data: 'Grumpy\t168\tCheating in the arena' });
+  await page.selectOption('[data-gm="ban"] select', '0');
+  await page.click('[data-gm="ban"] .hc-act-f button:has-text("Ban account")');
+  await page.waitForSelector('#hc-confirm[open]');
+  assert.equal(await page.textContent('#hc-confirm-title'), "Ban Grumpy's account for good?");
+  await page.click('#hc-confirm-no');
+  await page.click('[data-gm="ban"] .hc-act-f button:has-text("Unban account")');
+  await page.waitForFunction(() => window.__calls.some(([c, a]) => c === 'host_gm' && a.action === 'unban'));
+
+  // mute (with a reason), Send to Dalaran, the on-screen notice
+  await page.click('[data-gm="mute"] .hc-act-h');
+  await page.fill('[data-gm="mute"] input.hc-name', 'Grumpy');
+  await page.fill('[data-gm="mute"] input.hc-reason', 'Spam in trade');
+  await page.click('[data-gm="mute"] .hc-act-f button:has-text("Mute")');
+  await page.waitForFunction(() => window.__calls.some(([c, a]) => c === 'host_gm' && a.action === 'mute'));
+  assert.deepEqual((await calls(page, 'host_gm')).find((a) => a.action === 'mute'), { action: 'mute', data: 'Grumpy\t60\tSpam in trade' });
+  await page.click('[data-gm="rescue"] .hc-act-h');
+  await page.fill('[data-gm="rescue"] input', 'Grumpy');
+  await page.click('[data-gm="rescue"] .hc-act-f button:has-text("Send to Dalaran")');
+  await page.waitForFunction(() => window.__calls.some(([c, a]) => c === 'host_gm' && a.action === 'rescue'));
+  assert.deepEqual((await calls(page, 'host_gm')).find((a) => a.action === 'rescue'), { action: 'rescue', data: 'Grumpy' });
+  await page.click('[data-gm="notify"] .hc-act-h');
+  await page.fill('[data-gm="notify"] input', 'Restart soon');
+  await page.click('[data-gm="notify"] .hc-act-f button:has-text("Show")');
+  await page.waitForFunction(() => window.__calls.some(([c, a]) => c === 'host_gm' && a.action === 'notify'));
+  assert.deepEqual((await calls(page, 'host_gm')).find((a) => a.action === 'notify'), { action: 'notify', data: 'Restart soon' });
 
   // restart: always the five-minute one
   await page.click('[data-gm="restart"] .hc-act-h');

@@ -10,8 +10,10 @@
 --       and offers the website's host page, /wrath/host?<query>, filled in (the realm key is made on the host's PC);
 --     the desktop client: leyline://host?<query> (the launcher's Host page) and the website link, in the box to copy.
 -- Your realm: on your own realm as its GM, the realm half (realm/custom/lua_scripts/ov_hostctl.lua) answers over the
---   Open Mod API (OVMOD, mod "wuhost"): status, announce, message of the day, kick / ban / unban, the allow list, a
---   restart with a five-minute warning (two clicks, never instant). Bots, rates, sign-up, the Leyline list and the
+--   Open Mod API (OVMOD, mod "wuhost"): status, announce, an on-screen notice, message of the day, kick, mute / unmute,
+--   send to Dalaran, Ban account / Unban account (the player's whole account, with a reason and how long: the same words
+--   and limits as Leyline HQ and the launcher; two clicks), the allow list, a restart with a five-minute warning (two
+--   clicks, never instant). Bots, rates, sign-up, the Leyline list and the
 --   invite link change on the host's PC: those buttons put leyline://host?manage=<what> in the box (the launcher's
 --   Host page). The server checks the GM level on every action; this window only hides what it can't use.
 
@@ -153,7 +155,8 @@ function H.Send(action, data)
     if action ~= "status" and now() - lastSend < SEND_EVERY then return false end
     if action ~= "status" then lastSend = now() end
     data = tostring(data or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("[\t\n|]", " ")
-    if action == "ban" or action == "allow" then data = data:gsub(" ", "\t", 1) end
+    if action == "allow" then data = data:gsub(" ", "\t", 1)
+    elseif action == "ban" or action == "mute" then data = data:gsub(" ", "\t", 2) end
     pcall(SendAddonMessage, "OVMOD", "wuhost\t" .. action .. "\t1/1\t" .. data:sub(1, 200), "WHISPER", UnitName("player"))
     return true
 end
@@ -381,6 +384,11 @@ local function buildSetup(page)
     win.setup = s
 end
 
+-- How long a ban lasts (hours; 0 = permanent): the launcher's and HQ's choices.
+H.BAN_HOURS = { 24, 72, 168, 720, 0 }
+H.BAN_LABEL = { [24] = "1 day", [72] = "3 days", [168] = "1 week", [720] = "30 days", [0] = "Permanent" }
+H.MUTE_MINUTES = 60
+
 -- "Your realm": what the realm reports, and the GM's controls.
 local function fmtUp(sec)
     sec = tonumber(sec)
@@ -417,10 +425,13 @@ local function buildControl(page)
     local function gm(x) c.gmOnly[#c.gmOnly + 1] = x; return x end
     local y = -86
     gm(muted(label(page, "Say to everyone online", "GameFontNormalSmall", "TOPLEFT", 6, y)))
-    c.say = gm(input(page, 380, "TOPLEFT", 6, y - 14))
+    c.say = gm(input(page, 290, "TOPLEFT", 6, y - 14))
     c.say:SetMaxLetters(200)
-    gm(button(page, "Announce", 100, function() if H.Send("announce", c.say:GetText()) then c.say:SetText("") end end,
-        "primary", "TOPLEFT", 394, y - 14))
+    gm(button(page, "Announce", 90, function() if H.Send("announce", c.say:GetText()) then c.say:SetText("") end end,
+        "primary", "TOPLEFT", 302, y - 14))
+    c.notice = gm(button(page, "On-screen notice", 124, function()
+        if H.Send("notify", c.say:GetText()) then c.say:SetText("") end
+    end, "ghost", "TOPLEFT", 398, y - 14))
     y = y - 46
     gm(muted(label(page, "Message of the day", "GameFontNormalSmall", "TOPLEFT", 6, y)))
     c.motd = gm(input(page, 380, "TOPLEFT", 6, y - 14))
@@ -428,14 +439,43 @@ local function buildControl(page)
     gm(button(page, "Set", 100, function() H.Send("motd", c.motd:GetText()) end, "ghost", "TOPLEFT", 394, y - 14))
     y = y - 46
     gm(muted(label(page, "A player (character name)", "GameFontNormalSmall", "TOPLEFT", 6, y)))
-    c.who = gm(input(page, 140, "TOPLEFT", 6, y - 14))
+    c.who = gm(input(page, 130, "TOPLEFT", 6, y - 14))
     c.who:SetMaxLetters(12)
     local function who() return (c.who:GetText() or ""):gsub("%s", "") end
-    gm(button(page, "Kick", 58, function() H.Send("kick", who()) end, "ghost", "TOPLEFT", 152, y - 14))
-    gm(button(page, "Ban 24h", 70, function() H.Send("ban", who() .. " 24") end, "danger", "TOPLEFT", 212, y - 14))
-    gm(button(page, "Unban", 62, function() H.Send("unban", who()) end, "ghost", "TOPLEFT", 284, y - 14))
-    gm(button(page, "Allow", 62, function() H.Send("allow", "add " .. who()) end, "ghost", "TOPLEFT", 348, y - 14))
-    gm(button(page, "Remove", 70, function() H.Send("allow", "del " .. who()) end, "ghost", "TOPLEFT", 412, y - 14))
+    local function why() return (c.why:GetText() or ""):gsub("[\t\n]", " ") end
+    c.kick = gm(button(page, "Kick", 54, function() H.Send("kick", who()) end, "ghost", "TOPLEFT", 142, y - 14))
+    c.rescue = gm(button(page, "Send to Dalaran", 124, function() H.Send("rescue", who()) end, "ghost", "TOPLEFT", 200, y - 14))
+    gm(button(page, "Allow", 62, function() H.Send("allow", "add " .. who()) end, "ghost", "TOPLEFT", 328, y - 14))
+    gm(button(page, "Remove", 70, function() H.Send("allow", "del " .. who()) end, "ghost", "TOPLEFT", 394, y - 14))
+    y = y - 46
+    gm(muted(label(page, "Reason (for a mute or a ban: the player sees it)", "GameFontNormalSmall", "TOPLEFT", 6, y)))
+    c.why = gm(input(page, 270, "TOPLEFT", 6, y - 14))
+    c.why:SetMaxLetters(160)
+    c.mute = gm(button(page, "Mute 1 hour", 96, function()
+        H.Send("mute", who() .. " " .. H.MUTE_MINUTES .. " " .. why())
+    end, "ghost", "TOPLEFT", 282, y - 14))
+    c.unmute = gm(button(page, "Unmute", 70, function() H.Send("unmute", who()) end, "ghost", "TOPLEFT", 382, y - 14))
+    y = y - 46
+    gm(muted(label(page, "Ban account: every character on the player's account", "GameFontNormalSmall", "TOPLEFT", 6, y)))
+    c.banFor = 24
+    c.banLong = gm(button(page, "", 100, function(self, mouse)
+        c.banFor = step(H.BAN_HOURS, c.banFor, mouse == "RightButton" and -1 or 1)
+        self:SetText(H.BAN_LABEL[c.banFor])
+    end, "ghost", "TOPLEFT", 6, y - 14))
+    c.banLong:SetText(H.BAN_LABEL[c.banFor])
+    if c.banLong.RegisterForClicks then c.banLong:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
+    -- two clicks (the second within 5 s), like the restart
+    c.ban = gm(button(page, "Ban account", 110, function(self)
+        if self.armed and now() - self.armed < 5 then
+            self.armed = nil
+            self:SetText("Ban account")
+            H.Send("ban", who() .. " " .. c.banFor .. " " .. why())
+        else
+            self.armed = now()
+            self:SetText("Click again: ban")
+        end
+    end, "danger", "TOPLEFT", 110, y - 14))
+    c.unban = gm(button(page, "Unban account", 116, function() H.Send("unban", who()) end, "ghost", "TOPLEFT", 224, y - 14))
     y = y - 46
     c.allow = gm(button(page, "Only my allow list: off", 190, function()
         H.Send("allow", (H.status and H.status.allow == "on") and "off" or "on")

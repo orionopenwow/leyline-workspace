@@ -856,6 +856,22 @@ body = req("GET", "/wrath/admin/game", "modadm")[2]
 check("Game page: tools, GM tickets (escaped), online list without bots", "Say to everyone" not in body and "A character" in body
       and "Ticket: 3. Created by: Ann" in body and "&lt;b&gt;help&lt;/b&gt;" in body and "WRMAL" in body and "RNDBOT12" not in body)
 check("Game page: admins see the announce and ban tools", all(x in req("GET", "/wrath/admin/game", "staff1")[2] for x in ("Say to everyone", 'value="game.ban"')))
+_gb = req("GET", "/wrath/admin/game", "staff1")[2]
+_pb = req("GET", "/wrath/admin/person?acct=WRMAL", "staff1")[2]
+check("HQ says Ban account / Unban account (the player realms' words), with how long and a reason, on both pages",
+      all(">Ban account</button>" in b and ">Unban account</button>" in b and 'aria-label="Hours (0 = permanent)"' in b
+          and 'placeholder="Reason (the player sees it)"' in b for b in (_gb, _pb)) and "Ban the game account" not in _pb)
+# one meaning of a ban everywhere (owner, 31 Oct): the player realms ban the character's ACCOUNT, with HQ's limits and words
+_lua = open(os.path.join(ROOT, "realm", "custom", "lua_scripts", "ov_hostctl.lua"), encoding="utf-8").read()
+_rs = open(os.path.join(ROOT, "launcher", "src-tauri", "src", "host", "console.rs"), encoding="utf-8").read()
+_js = open(os.path.join(ROOT, "launcher", "ui", "hostconsole.js"), encoding="utf-8").read()
+_gui = open(os.path.join(STREAM, "fui-web", "Interface", "AddOns", "WrathUnleashedUI", "Host.lua"), encoding="utf-8").read()
+_lim = "Hours: 1 to 8760, or 0 for a permanent ban."
+check("player realms ban by account, never by character, with HQ's limits", 'ban account %s' in _lua and "ban character" not in _lua
+      and "unban character" not in _lua and _lim in _lua and _lim in _rs and "BAN_HOURS: u32 = 8760" in _rs
+      and _lim in open(os.path.join(STREAM, "hq.py"), encoding="utf-8").read())
+check("the same button words everywhere: Ban account / Unban account", all('"Ban account"' in t for t in (_js, _gui))
+      and all('"Unban account"' in t for t in (_js, _gui)) and H.BAN_LABEL == "Ban account" and H.UNBAN_LABEL == "Unban account")
 check("game actions are audited", {"game.kick", "game.mute", "game.rescue", "game.ban", "game.unban", "game.announce"}
       <= {a["action"] for a in audit() if a["ok"]})
 

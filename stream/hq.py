@@ -1052,6 +1052,14 @@ CHAR_FIELDS = ('<input type="text" name="target" value="{v}" maxlength="12" plac
 CHAR_BUTTONS = [("game.kick", "Kick"), ("game.rescue", "Send to Dalaran"), ("game.mute", "Mute"), ("game.unmute", "Unmute")]
 
 
+# Ban account: the same words, limits and reason as the player realms' tools (the launcher's host console, the in-game
+# Your realm window, ov_hostctl.lua): a ban covers the player's whole account, 1-8760 hours or 0 = permanent, a reason.
+BAN_LABEL, UNBAN_LABEL = "Ban account", "Unban account"
+BAN_FIELDS = ('<input type="text" name="hours" value="24" size="5" inputmode="numeric" aria-label="Hours (0 = permanent)" '
+              'title="How long, in hours (0 = permanent)">'
+              '<input type="text" name="reason" maxlength="160" placeholder="Reason (the player sees it)" aria-label="Reason" required>')
+
+
 def _tool(title: str, body: str) -> str:
     return f'<div class="tool"><h3>{e(title)}</h3>{body}</div>' if body else ""
 
@@ -1068,11 +1076,8 @@ def person_page(user: dict, query: dict) -> tuple[int, str]:
     chars = ", ".join(d["chars"]) or "none known"
     first = d["chars"][0] if d["chars"] else ""
     game = multi_act(user, back, CHAR_FIELDS.format(v=e(first)), CHAR_BUTTONS)
-    ban = (A.act(user, "game.ban", acct, "Ban the game account", back,
-                 '<input type="text" name="hours" value="24" size="5" inputmode="numeric" aria-label="Hours (0 = permanent)">'
-                 '<input type="text" name="reason" maxlength="160" placeholder="reason" aria-label="Reason" required>',
-                 confirm=acct, danger=True)
-           + A.act(user, "game.unban", acct, "Unban", back, confirm=acct))
+    ban = (A.act(user, "game.ban", acct, BAN_LABEL, back, BAN_FIELDS, confirm=acct, danger=True)
+           + A.act(user, "game.unban", acct, UNBAN_LABEL, back, confirm=acct))
     san_form = A.act(user, "sanction.set", acct, "Apply", back,
                      '<select name="type" aria-label="Sanction"><option value="mute">Mute (no posts or messages)</option>'
                      '<option value="nosubmit">No new submissions</option><option value="suspend">Suspend (everything)</option></select>'
@@ -1140,14 +1145,11 @@ def game_page(user: dict) -> str:
                    + A.act(user, "game.notify", "all", "On-screen notice", back,
                            '<input type="text" name="text" maxlength="200" placeholder="message (one line)" aria-label="Notice" size="30" required>'))
              + _tool("A character", multi_act(user, back, CHAR_FIELDS.format(v=""), CHAR_BUTTONS))
-             + _tool("A game account", aact("game.ban", "Ban", '<input type="text" name="hours" value="24" size="5" inputmode="numeric" '
-                                            'aria-label="Hours (0 = permanent)"><input type="text" name="reason" maxlength="160" '
-                                            'placeholder="reason" aria-label="Reason" required>', danger=True)
-                     + aact("game.unban", "Unban")))
+             + _tool("A game account", aact("game.ban", BAN_LABEL, BAN_FIELDS, danger=True) + aact("game.unban", UNBAN_LABEL)))
     tok, tlines = tickets()
     onl_ok, olines = online_list()
     return (f'<section class="ly-panel"><h2>In the game</h2><p class="fine">{e(realm_name())}, through the realm\'s console. '
-            f'Send to Dalaran rescues a stuck character. Bans need the account typed twice. Everything is in the audit log.</p>'
+            f'Send to Dalaran rescues a stuck character. Ban account covers every character on the account and needs it typed twice. Everything is in the audit log.</p>'
             f'<div class="hq-tools">{tools}</div></section>'
             f'<section class="ly-panel"><h2>GM tickets</h2><p class="fine">Read-only (answer them in the game).</p>'
             f'<div class="hq-mono">{e(chr(10).join(tlines)) or "No open tickets."}</div></section>'

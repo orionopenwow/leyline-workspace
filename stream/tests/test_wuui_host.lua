@@ -8,7 +8,9 @@
 --          (the order and names hostflow.py and deeplink.rs read), the hand-over (page: WUUI_LEYLINE_HOST and the
 --          website link; desktop: the leyline:// link), the page that never takes it;
 --   Your realm: a player gets gm=0 and every action refused (and nothing happens); the GM: status, announce (and its
---          limit), message of the day, kick / ban / unban (never yourself, never a GM of your level), the allow list
+--          limit), the on-screen notice, message of the day, kick, mute / unmute, send to Dalaran, Ban account /
+--          Unban account (the character's whole ACCOUNT, with a reason and how long, two clicks; never yourself or your
+--          own account, never a GM of your level, never a character this realm doesn't have), the allow list
 --          (a login kicked when not on it), a restart only with five minutes' warning (two clicks; one at a time;
 --          cancel), the action rate limit; the host kit's facts file read as data only.
 local dir = arg[1] or "stream/fui-web/Interface/AddOns/WrathUnleashedUI"
@@ -126,6 +128,7 @@ local function fakePlayer(name, gm, guid)
     function p:SendBroadcastMessage(m) self.chat[#self.chat + 1] = m end
     function p:KickPlayer() self.kicked = true end
     function p:RegisterEvent(fn) fn(nil, nil, nil, self) end
+    function p:GetAccountId() return self.guid * 10 end
     world[#world + 1] = p
     return p
 end
@@ -137,8 +140,25 @@ function GetPlayerByName(n) for _, p in ipairs(world) do if p.name:lower() == n:
 function RunCommand(c) commands[#commands + 1] = c end
 function SendWorldMessage(m) worldMsgs[#worldMsgs + 1] = m end
 function CharDBExecute(q) sql[#sql + 1] = q end
-function CharDBQuery() return nil end
-function AuthDBQuery(q) if q:find("uptime") then return { GetString = function() return tostring(serverClock - 3725) end } end end
+-- the characters and their accounts (account id = guid * 10; "Offline" is on this realm but not in the world)
+local function row(v) return { GetString = function() return v end, NextRow = function() return false end } end
+local accounts = { [10] = "TESTER", [20] = "grumpy_1", [30] = "STAFF", [40] = "OFFLINE" }
+local chars = { tester = 10, grumpy = 20, staff = 30, offline = 40 }
+function CharDBQuery(q)
+    local n = q:match("^SELECT account FROM characters WHERE name = '(%a+)'$")
+    if n and chars[n:lower()] then return row(tostring(chars[n:lower()])) end
+    return nil
+end
+function AuthDBQuery(q)
+    if q:find("uptime") then return row(tostring(serverClock - 3725)) end
+    local id = tonumber(q:match("^SELECT username FROM account WHERE id = (%d+)$") or "")
+    if id then return accounts[id] and row(accounts[id]) end
+    id = tonumber(q:match("^SELECT MAX%(gmlevel%) FROM account_access WHERE id = (%d+)$") or "")
+    if id then
+        for _, p in ipairs(world) do if p.guid * 10 == id then return row(tostring(p.gm)) end end
+        return row("0")
+    end
+end
 function GetRealmID() return 1 end
 local luaEvents = {}
 function CreateLuaEvent(fn, ms, times) luaEvents[#luaEvents + 1] = { fn = fn, ms = ms, times = times } end
@@ -330,8 +350,9 @@ check("Your realm asks the realm (OVMOD wuhost status, to self)", lastSent()[1] 
 check("a player: gm=0, the controls hidden, says only the GM", H.status and H.status.gm == false
     and hwin.control.status:GetText():find("^Only this realm's GM") and not hwin.control.restart:IsShown())
 local before = { #commands, #worldMsgs }
-for _, a in ipairs({ { "announce", "hi all" }, { "motd", "x" }, { "kick", "Grumpy" }, { "ban", "Grumpy\t24" },
-                     { "unban", "Grumpy" }, { "allow", "on" }, { "restart", "" }, { "cancel", "" } }) do
+for _, a in ipairs({ { "announce", "hi all" }, { "notify", "hi" }, { "motd", "x" }, { "kick", "Grumpy" },
+                     { "mute", "Grumpy\t60\tspam" }, { "unmute", "Grumpy" }, { "rescue", "Grumpy" },
+                     { "ban", "Grumpy\t24\tcheating" }, { "unban", "Grumpy" }, { "allow", "on" }, { "restart", "" }, { "cancel", "" } }) do
     serverClock = serverClock + 3; clock = clock + 2
     SendAddonMessage("OVMOD", "wuhost\t" .. a[1] .. "\t1/1\t" .. a[2], "WHISPER", "Tester")
 end
@@ -366,12 +387,70 @@ act(function() H.Send("kick", "Tester") end)
 check("not yourself", H.lastReply.text == "Not yourself.")
 act(function() H.Send("kick", "Staff") end)
 check("not a GM of your level", not staff.kicked and H.lastReply.text == "Not a GM of your level or higher.")
+-- Ban account: the character's whole account, a reason and how long (the launcher's and HQ's words and limits)
+act(function() H.Send("ban", "Grumpy 24 Cheating in the arena") end)
+check("Ban account 24h: by the character's ACCOUNT, with the reason", commands[#commands] == "ban account GRUMPY_1 24h Cheating in the arena"
+    and H.lastReply.text == "Grumpy's account is banned for 24 hours.")
+act(function() H.Send("ban", "Grumpy 0 Gold seller") end)
+check("Ban account: 0 = permanent", commands[#commands] == "ban account GRUMPY_1 -1 Gold seller"
+    and H.lastReply.text == "Grumpy's account is banned for good.")
+act(function() H.Send("ban", "Grumpy 9999 x x x") end)
+check("Ban account: 1 to 8760 hours, or 0", H.lastReply.text == "Hours: 1 to 8760, or 0 for a permanent ban.")
+local nb = #commands
 act(function() H.Send("ban", "Grumpy 24") end)
-check("ban 24h", commands[#commands] == "ban character Grumpy 24h Banned by the realm's GM")
-act(function() H.Send("ban", "Grumpy 9999") end)
-check("ban: 1 to 720 hours", H.lastReply.text == "Ban for 1 to 720 hours.")
+check("Ban account: a reason is needed", H.lastReply.text == "Say why (3 letters or more)." and #commands == nb)
+act(function() H.Send("ban", "Grumpy 24 |cffff0000spam|r; DROP `x`") end)
+check("Ban account: the reason is cleaned", commands[#commands] == "ban account GRUMPY_1 24h spam DROP x")
+act(function() H.Send("ban", "Offline 72 Abuse") end)
+check("Ban account: a character who isn't online", commands[#commands] == "ban account OFFLINE 72h Abuse")
+nb = #commands
+act(function() H.Send("ban", "Nobody 24 Abuse") end)
+check("Ban account: not a character on this realm", H.lastReply.text == "No character called Nobody on this realm." and #commands == nb)
+act(function() H.Send("ban", "Staff 24 Abuse") end)
+check("Ban account: never a GM of your level", H.lastReply.text == "Not a GM of your level or higher." and #commands == nb)
 act(function() H.Send("unban", "grumpy") end)
-check("unban (name cleaned)", commands[#commands] == "unban character Grumpy")
+check("Unban account (name cleaned, by the account)", commands[#commands] == "unban account GRUMPY_1"
+    and H.lastReply.text == "Grumpy's account is no longer banned.")
+-- the window: a reason box, how long, two clicks
+local c = hwin.control
+c.who.text = "Grumpy"; c.why.text = "Rude in chat"
+nb = #commands
+act(c.ban)
+check("Ban account button: the first click only asks to confirm", #commands == nb and c.ban:GetText() == "Click again: ban")
+act(c.ban)
+check("Ban account button: confirmed, 1 day by default, with the reason", commands[#commands] == "ban account GRUMPY_1 24h Rude in chat")
+c.banLong:Fire("OnClick", "LeftButton"); c.banLong:Fire("OnClick", "LeftButton")
+check("how long: cycles 1 day, 3 days, 1 week, 30 days, Permanent", c.banFor == 168 and c.banLong:GetText() == "1 week")
+c.banLong:Fire("OnClick", "LeftButton"); c.banLong:Fire("OnClick", "LeftButton")
+act(c.ban); act(c.ban)
+check("Ban account button: Permanent", c.banLong:GetText() == "Permanent" and commands[#commands] == "ban account GRUMPY_1 -1 Rude in chat")
+act(c.unban)
+check("Unban account button", commands[#commands] == "unban account GRUMPY_1")
+-- mute, unmute, send to Dalaran, the on-screen notice
+act(c.mute)
+check("Mute 1 hour, with the reason", commands[#commands] == "mute Grumpy 60 Rude in chat" and H.lastReply.text == "Grumpy can't talk for 60 minutes.")
+c.why.text = ""
+nb = #commands
+act(c.mute)
+check("mute: a reason is needed", H.lastReply.text == "Say why (3 letters or more)." and #commands == nb)
+act(function() H.Send("mute", "Grumpy 20000 spam") end)
+check("mute: 1 to 10080 minutes", H.lastReply.text:find("^Minutes: a number from 1 to 10080"))
+act(function() H.Send("mute", "Staff 10 spam") end)
+check("mute: never a GM of your level", H.lastReply.text == "Not a GM of your level or higher.")
+act(c.unmute)
+check("unmute", commands[#commands] == "unmute Grumpy" and H.lastReply.text == "Grumpy can talk again.")
+act(c.rescue)
+check("Send to Dalaran", commands[#commands] == "tele name Grumpy Dalaran" and H.lastReply.text == "Grumpy is on the way to Dalaran.")
+act(function() H.Send("rescue", "Tester") end)
+check("Send to Dalaran: not yourself", H.lastReply.text == "Not yourself.")
+serverClock = serverClock + 10
+c.say.text = "|cffff0000Server|r back soon"
+act(c.notice)
+check("On-screen notice: cleaned, to everyone", commands[#commands] == "notify Server back soon" and H.lastReply.text == "Notice shown to everyone online."
+    and c.say:GetText() == "")
+act(function() H.Send("notify", "again") end)
+check("notice: shares the announce limit", H.lastReply.text:find("^One announcement every"))
+serverClock = serverClock + 10
 act(function() H.Send("kick", "Rob'); DROP") end)
 check("a bad name is refused", H.lastReply.kind == "err")
 -- the action limit
@@ -443,8 +522,13 @@ other.kicked = false
 check("console: announce to everyone", console("announce", "From the launcher") == "ok:Announced to everyone online."
     and worldMsgs[#worldMsgs] == "|cff5b8def[Realm]|r From the launcher")
 check("console: kick (it outranks every GM)", console("kick", "Grumpy") == "ok:Grumpy was kicked." and other.kicked)
-check("console: ban and unban, the same checks", console("ban", "Grumpy\t24") == "ok:Grumpy is banned for 24 hours."
-    and commands[#commands] == "ban character Grumpy 24h Banned by the realm's GM" and console("ban", "Grumpy\t9999") == "err:Ban for 1 to 720 hours.")
+check("console: Ban account, the same checks", console("ban", "Grumpy\t24\tCheating") == "ok:Grumpy's account is banned for 24 hours."
+    and commands[#commands] == "ban account GRUMPY_1 24h Cheating" and console("ban", "Grumpy\t9999\tCheating") == "err:Hours: 1 to 8760, or 0 for a permanent ban."
+    and console("ban", "Grumpy\t24") == "err:Say why (3 letters or more).")
+check("console: it outranks every GM (a GM's account can be banned from the console)", console("ban", "Staff\t1\tTesting") == "ok:Staff's account is banned for 1 hour.")
+check("console: mute, Send to Dalaran, notice, unban", console("mute", "Grumpy\t5\tSpam") == "ok:Grumpy can't talk for 5 minutes."
+    and console("rescue", "Grumpy") == "ok:Grumpy is on the way to Dalaran." and console("unban", "Grumpy") == "ok:Grumpy's account is no longer banned."
+    and console("notify", "Hi") == "ok:Notice shown to everyone online." and commands[#commands] == "notify Hi")
 local nc = #commands
 check("console: a restart is always five minutes, whatever it sends", console("restart", "1") == "ok:Restart in 5 minutes. Everyone online was told."
     and commands[nc + 1] == "server restart 300" and HC._restart.at == serverClock + 300)

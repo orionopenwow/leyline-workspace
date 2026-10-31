@@ -41,14 +41,21 @@
 
   // ---------------------------------------------------------------- the words (the website's console, HOST_* in hub.py)
   const SERVICES = [["database", "Database"], ["login", "Login server"], ["world", "World server"], ["agent", "Relay agent"]];
+  // the same words as the in-game Your realm window and Leyline HQ: a ban is the player's whole ACCOUNT
   const GM = [
     ["announce", "Announce", "to everyone online"],
+    ["notify", "On-screen notice", "in the middle of everyone's screen"],
     ["motd", "Message of the day", "shown at login"],
     ["kick", "Kick", "one player"],
-    ["ban", "Ban or unban", "a player"],
+    ["mute", "Mute or unmute", "no chat for a while"],
+    ["rescue", "Send to Dalaran", "a stuck player"],
+    ["ban", "Ban account", "the player's whole account"],
     ["allow", "Allow-list", "only listed characters"],
     ["restart", "Restart", "with a five-minute warning"],
   ];
+  // how long (hours; 0 = permanent) and the mute's minutes: HQ's limits (stream/hq.py build)
+  const BAN_FOR = [["24", "1 day"], ["72", "3 days"], ["168", "1 week"], ["720", "30 days"], ["0", "Permanent"]];
+  const MUTE_FOR = [["15", "15 minutes"], ["60", "1 hour"], ["1440", "1 day"], ["10080", "1 week"]];
   const CHECKS = [["pc", "The servers on your PC"], ["tunnel", "The tunnel to the relay"], ["login", "A login through the relay"],
     ["invite", "Your invite link"], ["list", "Your place on the realm list"]];
   const TOOLS = [["invite", "Invite links"], ["friends", "Accounts for friends"], ["vis", "Public or private"],
@@ -329,11 +336,19 @@
     });
     const input = (ph, max, cls) => { const i = mk("input", cls || ""); i.type = "text"; i.placeholder = ph; i.maxLength = max; i.spellcheck = false; i.autocomplete = "off"; return i; };
     const name = () => input("Character name", 12, "hc-name");
-    if (a === "announce" || a === "motd") {
-      const t = input(a === "announce" ? "Everyone online sees this" : "Shown to everyone at login", 200);
-      const go = btn(a === "announce" ? "Send" : "Set", "btn small primary", async () => {
+    const reason = () => input("Reason (the player sees it)", 160, "hc-reason");
+    const choose = (list, label, pick) => {
+      const sel = mk("select", "hc-hours");
+      sel.setAttribute("aria-label", label);
+      for (const [v, t] of list) { const o = mk("option", "", t); o.value = v; sel.append(o); }
+      if (pick) sel.value = pick;
+      return sel;
+    };
+    if (a === "announce" || a === "motd" || a === "notify") {
+      const t = input(a === "announce" ? "Everyone online sees this" : a === "notify" ? "On everyone's screen, once" : "Shown to everyone at login", 200);
+      const go = btn(a === "motd" ? "Set" : a === "notify" ? "Show" : "Send", "btn small primary", async () => {
         if (!t.value.trim()) { t.focus(); return; }
-        if (await gm(a, t.value, go)) { if (a === "announce") t.value = ""; }
+        if (await gm(a, t.value, go)) { if (a !== "motd") t.value = ""; }
       });
       t.addEventListener("keydown", (e) => { if (e.key === "Enter") go.click(); });
       f.append(t, go);
@@ -345,19 +360,37 @@
         if (await ask(`Kick ${who}?`, "They're sent off the realm now. They can log in again.", "Kick")) gm("kick", who, go);
       });
       f.append(n, go);
-    } else if (a === "ban") {
+    } else if (a === "mute") {
       const n = name();
-      const hrs = mk("select", "hc-hours");
-      hrs.setAttribute("aria-label", "How long");
-      for (const [v, t] of [["24", "1 day"], ["72", "3 days"], ["168", "1 week"], ["720", "30 days"]]) { const o = mk("option", "", t); o.value = v; hrs.append(o); }
-      const go = btn("Ban", "btn small danger", async () => {
+      const mins = choose(MUTE_FOR, "How long", "60");
+      const why = reason();
+      const go = btn("Mute", "btn small danger", () => {
         const who = n.value.trim();
         if (!who) { n.focus(); return; }
-        const long = hrs.options[hrs.selectedIndex].textContent;
-        if (await ask(`Ban ${who} for ${long}?`, "They can't log in until it ends. You can unban them any time.", "Ban")) gm("ban", `${who}\t${hrs.value}`, go);
+        if (why.value.trim().length < 3) { say("Say why (3 letters or more).", "warn"); why.focus(); return; }
+        gm("mute", `${who}\t${mins.value}\t${why.value.trim()}`, go);
       });
-      const un = btn("Unban", "btn small", () => { const who = n.value.trim(); if (!who) { n.focus(); return; } gm("unban", who, un); });
-      f.append(n, hrs, go, un);
+      const un = btn("Unmute", "btn small", () => { const who = n.value.trim(); if (!who) { n.focus(); return; } gm("unmute", who, un); });
+      f.append(n, mins, why, go, un);
+    } else if (a === "rescue") {
+      const n = name();
+      const go = btn("Send to Dalaran", "btn small primary", () => { const who = n.value.trim(); if (!who) { n.focus(); return; } gm("rescue", who, go); });
+      f.append(n, go);
+    } else if (a === "ban") {
+      const n = name();
+      const hrs = choose(BAN_FOR, "How long");
+      const why = reason();
+      const go = btn("Ban account", "btn small danger", async () => {
+        const who = n.value.trim();
+        if (!who) { n.focus(); return; }
+        if (why.value.trim().length < 3) { say("Say why (3 letters or more).", "warn"); why.focus(); return; }
+        const long = hrs.value === "0" ? "for good" : `for ${hrs.options[hrs.selectedIndex].textContent}`;
+        if (await ask(`Ban ${who}'s account ${long}?`, "Every character on their account is locked out of your realm until it ends. You can unban it any time.", "Ban account")) {
+          gm("ban", `${who}\t${hrs.value}\t${why.value.trim()}`, go);
+        }
+      });
+      const un = btn("Unban account", "btn small", () => { const who = n.value.trim(); if (!who) { n.focus(); return; } gm("unban", who, un); });
+      f.append(n, hrs, why, go, un);
     } else if (a === "allow") {
       const n = name();
       const add = btn("Add", "btn small", () => { const who = n.value.trim(); if (!who) { n.focus(); return; } gm("allow", `add\t${who}`, add).then((ok) => { if (ok) n.value = ""; }); });

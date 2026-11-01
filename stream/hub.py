@@ -676,7 +676,7 @@ class Store:
 
 # The feature sections the front page shows (Hub.features), in their order there: the launcher's story, nothing that
 # repeats the realm list above them. Forge, Agents and the rest keep their own pages and menu items.
-FRONT_FEATURES = ("launcher", "host", "modes", "mods")
+FRONT_FEATURES = ("launcher", "looks", "host", "modes", "mods")   # Looks: a main section (owner 1 Nov 14:38)
 
 
 class Hub:
@@ -926,6 +926,7 @@ class Hub:
         home = FRONT if front_on() else BASE
         main = [("play", "Play", "/wrath", "play"), ("realms", "Realms", BASE + "/realms", "realms"),
                 ("mods", "Mods", BASE + "/catalog", "mods"), ("addons", "Addons", BASE + "/addons", "addons"),
+                ("looks", "Looks", "/wrath/looks", "looks"),   # owner 1 Nov 14:38: graphics and UI looks, a main part of the site
                 ("host", "Host", "/wrath/host", "host"),
                 ("forum", "Forum", FORUM, "forum")]   # owner 2026-10-30: "change community to forum"
         # the duel leaderboards (stream/duels.py; owner 2026-10-31: "leaderboards on site") lead the More menu
@@ -1460,6 +1461,23 @@ class Hub:
                 f'<span>Population</span></p><ul class="hb-rlx-l">{"".join(out)}</ul>'
                 f'<p class="hb-rlx-f"><a href="{BASE}/realms">Every realm, with filters</a><a href="/wrath">Play ours now</a></p></div>')
 
+    def looks_art(self) -> str:
+        """The Looks section's picture: a few looks as small cards (stream/looks.py featured), each a link to its card on
+        /wrath/looks; drawn in CSS, never a game picture. A plain drawing when the looks list is not there."""
+        e = html.escape
+        lk = self.portal("looks_mod")
+        try:
+            picks = lk.featured(4, offered=offered_builds()) if lk is not None else []
+        except Exception:   # noqa: BLE001
+            picks = []
+        if not picks:
+            return ('<div class="hb-draw hb-looks" aria-hidden="true"><p class="hb-lk preset"><b>Max</b><span>Graphics preset</span></p>'
+                    '<p class="hb-lk ui-look"><b>New interface</b><span>UI look</span></p></div>')
+        tiles = "".join(
+            f'<a class="hb-lk {e(x["look"]["type"])}" href="/wrath/looks#look-{e(x["id"].split(":", 1)[1])}">'
+            f'<b>{e(neutral(x["name"]))}</b><span>{e(lk.TYPES[x["look"]["type"]])}</span></a>' for x in picks)
+        return f'<div class="hb-draw hb-looks">{tiles}</div>'
+
     def modes_art(self, shot) -> str:
         """The "Game modes" picture: the owner's Minigolf recording (our mode on our realm) as a muted loop that HUB_JS
         plays only while it is on screen (the poster alone with reduced motion or Save-Data; without script the poster
@@ -1537,6 +1555,13 @@ class Hub:
              [(dl, "Download the launcher", True)],   # Play in your browser is the realm's own button, above
              shot("launcher", "The Leyline launcher: its realm list open over Home, with Wrath Unleashed, Your Den, your realms and Host a server, "
                   "and the game client, realm and PLAY button below.")),
+            ("looks", "Looks", "Make the game look new",
+             # TODO(owner): the Looks section's words, his voice
+             "Graphics packs, new interfaces and graphics presets, with credit to the people who made them. Most "
+             "install in one click with the launcher, and one click takes you back to the original look.",
+             ["Presets for every client: Max, Balanced or Classic", "New interfaces from their authors",
+              "HD packs linked to their makers' own pages", "Back to the original look, any time"],
+             [("/wrath/looks", "See every look", False)], self.looks_art()),
             ("host", "Host a server", "Pick a template, press Host",
              "Host a realm from your own PC in one click: classic levelling, solo levelling with helper bots, a duel ladder, "
              "hide and seek, minigolf nights and more, each a template you can host as it is or fork and change. It goes on "
@@ -3537,6 +3562,12 @@ background:var(--lk-surface-2)}
 .hb-pp i{grid-row:span 2;display:grid;place-items:center;width:42px;height:42px;border-radius:12px;font-style:normal;font-weight:800;color:#fff;
 background:linear-gradient(135deg,hsl(var(--h) 70% 62%),hsl(calc(var(--h) + 40) 60% 52%))}
 .hb-pp b{font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hb-pp span{color:var(--lk-muted);font-size:12.5px}
+.hb-looks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.hb-lk{position:relative;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;min-height:96px;padding:12px;border-radius:var(--lk-r-sm);
+color:#fff;text-decoration:none;overflow:hidden;background:linear-gradient(160deg,#1d2a44,#2c2347 55%,#3a2a3a);border:1px solid rgba(255,255,255,.08)}
+.hb-lk.preset{background:linear-gradient(160deg,#16314a,#1e4a5c 60%,#2a5e5a)}.hb-lk.ui-look{background:linear-gradient(160deg,#2a2240,#3b2d5c 60%,#4d3a6b)}
+.hb-lk b{font-size:15.5px;text-shadow:0 1px 3px rgba(0,0,0,.5)}.hb-lk span{font-size:12px;opacity:.85}
+a.hb-lk:hover,a.hb-lk:focus-visible{border-color:var(--lk-accent)}
 .hb-code{overflow:auto;font:13.5px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--lk-text-2);white-space:pre}
 .hb-code s{text-decoration:none;color:var(--lk-accent-2);font-weight:700}.hb-code u{text-decoration:none;color:var(--lk-accent-strong)}
 .hb-code q{quotes:none;color:var(--lk-ok)}
@@ -4641,6 +4672,8 @@ ICONS = {
     "mods": '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
     "community": '<circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6M15 14.5c3 0 6 2 6 5"/>',
     "agents": '<rect x="5" y="7" width="14" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M9.5 16h5M2 12v3M22 12v3"/>',
+    "looks": '<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-.5-.2-.8-.4-1.1-.3-.3-.4-.6-.4-1 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5c0-4.1-4-7.7-9-7.7z"/>'
+             '<circle cx="7.5" cy="11" r="1.2"/><circle cx="10" cy="7.3" r="1.2"/><circle cx="14.5" cy="7.3" r="1.2"/>',
 }
 
 
@@ -4652,7 +4685,7 @@ BACKDROP = "leyline-shot-backdrop.webp"   # the site backdrop (Hub._backdrop)
 # The header's line icons (the launcher's sidebar style: 24x24 strokes, currentColor).
 NAV_ICONS = {
     "play": '<circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l6-3.5z"/>',
-    "realms": ICONS["realms"], "mods": ICONS["mods"], "modes": ICONS["modes"], "host": ICONS["host"],
+    "realms": ICONS["realms"], "mods": ICONS["mods"], "modes": ICONS["modes"], "host": ICONS["host"], "looks": ICONS["looks"],
     "community": ICONS["community"], "forge": ICONS["forge"], "agents": ICONS["agents"],
     "forum": '<path d="M4 4h11a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H9l-4 3.5V13H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/>'
              '<path d="M16 8h4a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-1v3.5L15 17h-4a1 1 0 0 1-1-1v-1"/>',

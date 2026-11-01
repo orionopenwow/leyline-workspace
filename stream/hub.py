@@ -1473,10 +1473,11 @@ class Hub:
         if not picks:
             return ('<div class="hb-draw hb-looks" aria-hidden="true"><p class="hb-lk preset"><b>Max</b><span>Graphics preset</span></p>'
                     '<p class="hb-lk ui-look"><b>New interface</b><span>UI look</span></p></div>')
+        shots = self.game_shots_on()   # our in-game pictures where a look has one (off with the killswitch: the drawings)
         # each tile its own drawing (looks.MOTIF_CSS: our own CSS art, never a game picture) under a dark scrim, the words
         # in white on it (explicit colours, AA contrast in both themes)
         tiles = "".join(
-            f'<a class="hb-lk {e(x["look"]["type"])}" href="/wrath/looks#look-{e(x["id"].split(":", 1)[1])}">{lk.art(x)}'
+            f'<a class="hb-lk {e(x["look"]["type"])}" href="/wrath/looks#look-{e(x["id"].split(":", 1)[1])}">{lk.tile_art(x, shots)}'
             f'<b>{e(neutral(x["name"]))}</b><span>{e(lk.TYPES[x["look"]["type"]])}</span></a>' for x in picks)
         return f'<div class="hb-draw hb-looks"><style>{lk.MOTIF_CSS}</style>{tiles}</div>'
 

@@ -270,6 +270,12 @@ if [ -d www-files/art ] && [ -f www-files/art/wu-theme.css ]; then
     find www-files/art/avatars -maxdepth 1 -type f -name '*.svg' -exec install -m 644 {} "$WU/portal/art/avatars/" \;
     echo "  portraits: $(find www-files/art/avatars -maxdepth 1 -type f -name '*.svg' | wc -l) -> $WU/portal/art/avatars"
   fi
+  # the Looks pictures (our own in-game shots, stream/looks.json look.previews), served at /wrath/art/looks/
+  if [ -d www-files/art/looks ]; then
+    rm -rf "$WU/portal/art/looks"; install -d -m 755 "$WU/portal/art/looks"
+    find www-files/art/looks -maxdepth 1 -type f -name 'look-*.webp' -exec install -m 644 {} "$WU/portal/art/looks/" \;
+    echo "  looks pictures: $(find www-files/art/looks -maxdepth 1 -type f -name 'look-*.webp' | wc -l) -> $WU/portal/art/looks"
+  fi
   if [ -d www-files/art/hub-thumbs ]; then
     rm -rf "$WU/portal/art/hub-thumbs"; install -d -m 755 "$WU/portal/art/hub-thumbs"
     find www-files/art/hub-thumbs -maxdepth 1 -type f -name '*.webp' -exec install -m 644 {} "$WU/portal/art/hub-thumbs/" \;

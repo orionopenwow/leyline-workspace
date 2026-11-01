@@ -18,14 +18,18 @@ const FAKE = (opts) => {
     builds: ['1.12', '2.4.3', '3.3.5a'], author: 'Leyline', author_url: '', licence: 'MIT', repo: 'https://github.com/orionopenwow/Leyline', page: '',
     credits: `${name} by Leyline · MIT · github.com`, size: 0, look: { type, preset: '', uses: [], changes: ['View distance', 'Shadows'], featured: true, order: 1, note: '', how: 'launcher' } }, extra);
   const projects = [
-    look('look:max', 'Max', 'preset', { look: { type: 'preset', preset: 'ultra', uses: [], changes: ['View distance', 'Shadows', 'Textures'], order: 1, note: 'Changes the game\'s own settings file.', how: 'launcher' } }),
+    look('look:max', 'Max', 'preset', { look: { type: 'preset', preset: 'ultra', uses: [], changes: ['View distance', 'Shadows', 'Textures'], order: 1, note: 'Changes the game\'s own settings file.', how: 'launcher',
+      previews: [{ src: '/wrath/art/looks/look-max.webp', w: 490, h: 276, alt: 'A misty village path', credit: 'Screenshot by the Leyline team' }] } }),
     look('look:classic', 'Classic', 'preset', { look: { type: 'preset', preset: 'classic', uses: [], changes: ['View distance'], order: 3, note: '', how: 'launcher' } }),
     look('look:water', 'Clear water', 'graphics-pack', { author: 'alice', repo: 'https://github.com/alice/water', page: 'https://github.com/alice/water', builds: ['3.3.5a'],
       licence: 'CC-BY-4.0', credits: 'Clear water by alice · CC-BY-4.0 · github.com', size: 7340032,
       look: { type: 'graphics-pack', preset: '', uses: [], changes: ['Water'], order: 5, note: '', how: 'launcher' } }),
     look('look:forever-ui', 'Forever UI', 'ui-look', { author: 'Adrestie', repo: 'https://github.com/Adrestie/mod-forever-ui', page: 'https://github.com/Adrestie/mod-forever-ui',
       builds: ['3.3.5a'], licence: 'GPL-2.0', credits: 'Forever UI by Adrestie · GPL-2.0 · github.com', size: 346030080,
-      look: { type: 'ui-look', preset: '', uses: [], changes: ['Interface', 'Login screen'], order: 4, note: 'Get it from its author\'s page.', how: 'link' } }),
+      look: { type: 'ui-look', preset: '', uses: [], changes: ['Interface', 'Login screen'], order: 4, note: 'Get it from its author\'s page.', how: 'link',
+        previews: ['hud', 'charselect', 'character', 'professions'].map((n) => ({ src: `/wrath/art/looks/look-forever-ui-${n}.webp`, w: 796, h: 434,
+          alt: n === 'charselect' ? 'Character select with the Forever UI look' : `Forever UI ${n}`, credit: 'Wrath Unleashed, in game' }))
+          .concat([{ src: 'https://evil.example/x.webp', w: 9, h: 9, alt: 'not ours', credit: 'x' }]) } }),
     look('look:hd', 'HD pack', 'graphics-pack', { author: 'the pack authors', repo: '', page: 'https://example.org/hd-pack', builds: ['1.12'], licence: '',
       credits: 'HD pack by the pack authors · licence not stated · example.org', size: null,
       look: { type: 'graphics-pack', preset: '', uses: [], changes: ['Textures'], order: 6, note: '', how: 'link' } }),
@@ -111,11 +115,27 @@ test('Looks: the tab, the cards, a preset, a pack in and out, a link, the filter
   assert.equal(await page.$eval(`${max} .lk-chips li.on`, (x) => x.textContent), '3.3.5a', 'this game version marked');
   assert.ok(await page.isDisabled('#looks-reset'), 'nothing to put back yet');
   // each look its own drawing, the website's (stream/looks.py): Max, Classic, a UI look, a pack
-  assert.deepEqual(await page.$$eval('#looks-grid .lk-card .lk-art', (a) => a.map((x) => x.className)),
-    ['lk-art m-ultra', 'lk-art m-classic', 'lk-art m-ui', 'lk-art m-pack', 'lk-art m-pack']);
-  assert.deepEqual(await page.$$eval(`${max} .lk-art i`, (a) => a.map((x) => x.className)), ['m-sun', 'm-far', 'm-near']);
-  assert.ok(await page.$eval(`${max} .lk-art`, (a) => getComputedStyle(a).backgroundImage.includes('linear-gradient') && a.getBoundingClientRect().height > 40),
+  // our own pictures where a look has one (the bundled copy), the drawings for the rest
+  assert.deepEqual(await page.$$eval('#looks-grid .lk-card .lk-art', (a) => a.map((x) => x.className)), ['lk-art m-classic', 'lk-art m-pack', 'lk-art m-pack']);
+  assert.deepEqual(await page.$$eval(`#looks-grid .lk-card[data-id="look:classic"] .lk-art i`, (a) => a.map((x) => x.className)), ['m-sun', 'm-far', 'm-near']);
+  assert.ok(await page.$eval('#looks-grid .lk-card[data-id="look:classic"] .lk-art', (a) => getComputedStyle(a).backgroundImage.includes('linear-gradient') && a.getBoundingClientRect().height > 40),
     'the drawing is drawn (looks-art.css loaded)');
+  const mi = await page.$eval(`${max} .lk-ph img`, (i) => ({ src: i.getAttribute('src'), ok: i.complete && i.naturalWidth > 0, max: i.style.maxWidth, alt: i.alt }));
+  assert.deepEqual(mi, { src: 'art/looks/look-max.webp', ok: true, max: '490px', alt: 'A misty village path' });
+  assert.equal(await page.textContent(`${max} .lk-ph-cap`), 'Screenshot by the Leyline team');
+  // Forever UI: four pictures in a strip (the address that isn't ours is dropped), each opening a larger view
+  const fu = '#looks-grid .lk-card[data-id="look:forever-ui"]';
+  assert.deepEqual(await page.$$eval(`${fu} .lk-thumb img`, (a) => a.map((x) => x.getAttribute('src'))),
+    ['hud', 'charselect', 'character', 'professions'].map((n) => `art/looks/look-forever-ui-${n}.webp`));
+  await page.click(`${fu} .lk-thumb >> nth=1`);
+  await page.waitForSelector('#looks-view');
+  assert.equal(await page.$eval('#looks-view img', (i) => i.alt), 'Character select with the Forever UI look');
+  assert.match(await page.textContent('#looks-view figcaption'), /2 of 4/);
+  if (process.env.SHOTS) await page.screenshot({ path: path.join(process.env.SHOTS, 'launcher-looks-viewer.png') });
+  await page.click('#looks-view .btn:has-text("Next")');
+  assert.match(await page.textContent('#looks-view figcaption'), /3 of 4/);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.$('#looks-view'), null);
   if (process.env.SHOTS) await page.screenshot({ path: path.join(process.env.SHOTS, 'launcher-looks.png') });
   // a preset in one click
   await page.click(`${max} .lk-go`);
@@ -172,6 +192,13 @@ test('Looks: looks-art.css is exactly the website\'s drawings (stream/looks.py M
   const copy = fs.readFileSync(path.join(__dirname, '..', 'ui', 'looks-art.css'), 'utf8').replace(/^\/\*[\s\S]*?\*\/\n/, '').trim();
   assert.equal(copy, site, 'copy MOTIF_CSS from stream/looks.py into launcher/ui/looks-art.css');
   const js = fs.readFileSync(path.join(__dirname, '..', 'ui', 'looks.js'), 'utf8');
+  // the bundled pictures are exactly the website's (stream/www-files/art/looks/), and looks.js lists each of them
+  const siteArt = path.join(__dirname, '..', '..', 'stream', 'www-files', 'art', 'looks');
+  const here = path.join(__dirname, '..', 'ui', 'art', 'looks');
+  const files = fs.readdirSync(siteArt).sort();
+  assert.deepEqual(fs.readdirSync(here).sort(), files, 'copy stream/www-files/art/looks/ into launcher/ui/art/looks/');
+  for (const f of files) assert.ok(fs.readFileSync(path.join(siteArt, f)).equals(fs.readFileSync(path.join(here, f))), `${f}: the launcher's copy differs`);
+  assert.deepEqual(JSON.parse(js.match(/const PICS = (\[[^\]]+\])/)[1].replace(/\s+/g, ' ')), files, 'looks.js PICS lists the bundled pictures');
   const block = py.split('MOTIFS = {')[1].split('\n}\n')[0];
   for (const part of block.split(/\n    (?=")/).filter((x) => x.trim())) {
     const k = part.match(/"([a-z]+)":/)[1];

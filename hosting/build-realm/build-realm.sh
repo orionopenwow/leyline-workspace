@@ -218,6 +218,18 @@ if [ "$MODE" = --check ]; then
       | grep -iE 'socket|auth|session|account|logged|login|kick|disconnect|reject|denied|realm|character|enum|addon|ban|version|build' \
       | grep -viE 'password|passwd|secret|token|sessionkey|config:|> using|loading|loaded' | tail -40 | sed 's/^/     /' || true
   fi
+  # the world's own log files (SQL errors never reach the console: a failing login query just hangs the client)
+  if [ -d "$DIR/logs" ]; then
+    echo; echo "== $DIR/logs: files, and their last error lines"
+    ls -la "$DIR/logs" 2>/dev/null | sed 's/^/     /' | head -20
+    for f in "$DIR"/logs/*.log; do
+      [ -f "$f" ] || continue
+      n=$(grep -ciE 'error|fail|doesn.t exist|unknown column|denied' "$f" 2>/dev/null || true)
+      echo "     -- $(basename "$f"): $n error lines; the last ones:"
+      grep -iE 'error|fail|doesn.t exist|unknown column|denied' "$f" 2>/dev/null | grep -viE 'password|passwd|secret|token|sessionkey' \
+        | tail -12 | cut -c1-300 | sed 's/^/        /' || true
+    done
+  fi
   if running "$AUTH_C"; then
     echo; echo "== $AUTH_C: logins (filtered)"
     docker logs --tail 3000 "$AUTH_C" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -iE 'account|login|logon|reconnect|banned|unknown|fail|proof|realm' \

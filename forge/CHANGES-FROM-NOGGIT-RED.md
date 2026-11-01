@@ -99,6 +99,8 @@ change line by line. Changed source files also say "Modified for Forge" in their
 - `CMakeLists.txt`: minimum CMake 3.16 (FetchContent and C++20 need it anyway), the `src/forge` sources.
 - `CMakeLists.txt`: FastNoise2's NoiseTool and tests are switched off as cache values (`FORCE`), so newer CMake
   really skips them (the NoiseTool's bundled Magnum no longer configures).
+- Boost 1.89 (vcpkg): `src/opengl/shader.cpp` drops the unused `boost/filesystem/string_file.hpp` include (removed
+  from Boost); `src/noggit/scripting/script_filesystem.cpp` and `script_settings.cpp` include `<fstream>` themselves.
 
 ### Build and release (new)
 

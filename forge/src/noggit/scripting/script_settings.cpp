@@ -1,4 +1,5 @@
 // This file is part of Noggit3, licensed under GNU General Public License (version 3).
+// Modified for Forge (see CHANGES-FROM-NOGGIT-RED.md).
 #include <noggit/scripting/script_settings.hpp>
 #include <noggit/scripting/script_profiles.hpp>
 #include <noggit/scripting/scripting_tool.hpp>
@@ -6,6 +7,7 @@
 
 #include <sol/sol.hpp>
 #include <boost/filesystem.hpp>
+#include <fstream>
 #include <nlohmann/json.hpp>
 
 #include <iomanip>

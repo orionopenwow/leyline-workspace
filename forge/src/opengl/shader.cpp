@@ -1,4 +1,5 @@
 // This file is part of Noggit3, licensed under GNU General Public License (version 3).
+// Modified for Forge (see CHANGES-FROM-NOGGIT-RED.md).
 #include <math/matrix_4x4.hpp>
 #include <opengl/scoped.hpp>
 #include <opengl/context.hpp>
@@ -7,7 +8,6 @@
 #include <opengl/texture.hpp>
 #include <noggit/Misc.h>
 #include <glm/vec3.hpp>
-#include <boost/filesystem/string_file.hpp>
 
 #include <QFile>
 #include <QTextStream>

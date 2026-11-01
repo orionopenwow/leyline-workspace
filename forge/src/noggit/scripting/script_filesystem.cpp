@@ -1,4 +1,5 @@
 // This file is part of Noggit3, licensed under GNU General Public License (version 3).
+// Modified for Forge (see CHANGES-FROM-NOGGIT-RED.md).
 
 #include <noggit/scripting/script_exception.hpp>
 #include <noggit/scripting/script_filesystem.hpp>
@@ -8,6 +9,7 @@
 
 #include <QtWidgets/QMessageBox>
 #include <boost/filesystem.hpp>
+#include <fstream>
 #include <sol/sol.hpp>
 
 #include <set>

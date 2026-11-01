@@ -58,7 +58,10 @@ echo "== toolchain: $TOOLCHAIN"
 # scripts/web-build.sh's packing steps, as upstream wrote them (its own cargo build line is the one above).
 WASM="$CARGO_TARGET_DIR/wasm32-unknown-unknown/release/wenilla.wasm"
 rm -rf "$DIST"; mkdir -p "$DIST"
-wasm-bindgen --target web --no-typescript --remove-name-section --remove-producers-section --out-dir "$DIST" "$WASM"
+# wasm-bindgen needs a lot of memory on this module (more than 5.5 GB measured): one thread and one malloc arena keep
+# its peak down; the output is the same. Killed (exit 137) = not enough memory: run it again when the box is quieter.
+RAYON_NUM_THREADS=1 MALLOC_ARENA_MAX=1 wasm-bindgen --target web --no-typescript --remove-name-section --remove-producers-section \
+  --out-dir "$DIST" "$WASM" || { echo "wasm-bindgen failed (exit $?; 137 = out of memory). The cargo build is cached: run this again." >&2; exit 1; }
 cp web/index.html web/favicon.svg web/wasi_stubs.js web/boot.js web/platform.js web/bridge.js "$DIST/"
 mkdir -p "$DIST/examples" && cp web/examples/*.js "$DIST/examples/"
 for m in web/boot-manifest.json web/world-manifest.json; do if [ -f "$m" ]; then cp "$m" "$DIST/"; fi; done

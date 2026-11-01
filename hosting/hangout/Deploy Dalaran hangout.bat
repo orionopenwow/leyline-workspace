@@ -12,7 +12,7 @@ if not exist "hangout\hangout-up.sh" (echo hangout\hangout-up.sh is missing next
 where tar >nul 2>&1 || (echo tar.exe is missing ^(Windows 10 1803 or later has it^). & pause & exit /b 1)
 set "MODE="
 if /i "%~1"=="remove" set "MODE=--remove"
-set "TGZ=%TEMP%\wu-hangout-src.tgz"
+set "TGZ=%TEMP%\wu-hangout-src-%RANDOM%%RANDOM%.tgz"
 if exist "%TGZ%" del /q "%TGZ%"
 tar -czf "%TGZ%" --exclude=__pycache__ --exclude=*.pyc --exclude=state kit/tools/wunet kit/tools/wuhost kit/tools/Dockerfile hangout || (echo Packing the hangout failed. & pause & exit /b 1)
 ssh -i "%USERPROFILE%\.ssh\openwow" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 root@play.openvanilla.app "T=$(mktemp -d) && tar -xzf - -C $T && sed 's/\r$//' $T/hangout/hangout-up.sh > $T/hangout-up.sh && bash $T/hangout-up.sh $T %MODE% 2>&1 | tee /tmp/wu-hangout-up.log; rm -rf $T; grep -q -e '^HANGOUT OK' -e '^HANGOUT REMOVED' /tmp/wu-hangout-up.log && exit 0; exit 1" < "%TGZ%"

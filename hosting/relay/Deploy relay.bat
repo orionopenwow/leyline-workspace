@@ -8,7 +8,7 @@ rem Safe to run again. If DNS for relay.openvanilla.app is missing it says exact
 cd /d "%~dp0.."
 if not exist "relay\deploy\relay-up.sh" (echo relay\deploy\relay-up.sh is missing next to this file. & pause & exit /b 1)
 where tar >nul 2>&1 || (echo tar.exe is missing ^(Windows 10 1803 or later has it^). & pause & exit /b 1)
-set "TGZ=%TEMP%\wu-relay-src.tgz"
+set "TGZ=%TEMP%\wu-relay-src-%RANDOM%%RANDOM%.tgz"
 if exist "%TGZ%" del /q "%TGZ%"
 tar -czf "%TGZ%" --exclude=__pycache__ --exclude=*.pyc kit/tools/wunet relay/wurelay relay/Dockerfile relay/deploy || (echo Packing the relay failed. & pause & exit /b 1)
 ssh -i "%USERPROFILE%\.ssh\openwow" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 root@play.openvanilla.app "T=$(mktemp -d) && tar -xzf - -C $T && sed 's/\r$//' $T/relay/deploy/relay-up.sh > $T/relay-up.sh && bash $T/relay-up.sh $T 2>&1 | tee /tmp/wu-relay-up.log; rm -rf $T; grep -q '^RELAY OK' /tmp/wu-relay-up.log && exit 0; grep -q '^RELAY WAITING FOR DNS' /tmp/wu-relay-up.log && exit 3; exit 1" < "%TGZ%"

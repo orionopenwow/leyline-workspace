@@ -225,6 +225,9 @@ check("hero: the whole mark leads, crisp (the 512px layers), big (~400px, 220px 
       and "Every client, every server" in front and "One launcher for every classic client and every server" in front
       and "hb-bullets" not in front and "TODO(owner): the hero heading" in front
       and 'class="hb-hero-a"' not in front and 'class="hb-dl" href="https://github.com/orionopenwow/Leyline/releases/download/launcher-latest/Leyline.exe"' in front)
+check("hero: one quiet Start here link under the line (not a button), before the launcher shot",
+      front.count('href="/wrath/start"') == 1 and '<p class="hb-start"><a href="/wrath/start">New here? Start here ›</a></p>' in front
+      and front.index('class="hb-sub-h"') < front.index('class="hb-start"') < front.index('class="hb-hero-shot"'))
 stats = re.search(r'<section class="hb-sbar hb-rv" id="status".*?</section>', front, re.S).group(0)
 check("Platform status: one slim bar of pills, the main realm online from realm_status, sign-in, the network, the relay, the mod catalog",
       all(x in stats for x in ('<em class="ok">OK</em> · 3 playing', "<b>Sign-in</b>", "<b>Realm network</b>", "<b>Relay</b>", "<b>Mods</b>", " items</span>"))

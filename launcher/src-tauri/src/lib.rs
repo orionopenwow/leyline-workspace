@@ -71,6 +71,7 @@ pub const LINKS: &[(&str, &str)] = &[
     ("linkedlaunchers", "https://play.openvanilla.app/wrath/link"),
     ("news", "https://play.openvanilla.app/wrath/leyline/news"),
     ("docs", "https://play.openvanilla.app/wrath/docs"),
+    ("start", "https://play.openvanilla.app/wrath/start"), // Start here: the four ways in (Help, the tour; stream/wrath_portal.py)
     ("gettingstarted", "https://play.openvanilla.app/wrath/docs/getting-started"), // the player guide (Help, Find your game files)
     ("mods", "https://play.openvanilla.app/wrath/mods"),
     ("discord", "https://discord.gg/hVeUxYwbkr"),
@@ -125,6 +126,7 @@ mod link_tests {
     fn news_and_the_player_guide_link_to_the_site_and_nothing_asks_for_money() {
         assert_eq!(super::link("news"), Some("https://play.openvanilla.app/wrath/leyline/news"));
         assert_eq!(super::link("gettingstarted"), Some("https://play.openvanilla.app/wrath/docs/getting-started"));
+        assert_eq!(super::link("start"), Some("https://play.openvanilla.app/wrath/start"));
         assert!(super::link("support").is_none());
         assert!(super::LINKS.iter().all(|(_, u)| !u.contains("ko-fi") && !u.contains("patreon")));
     }

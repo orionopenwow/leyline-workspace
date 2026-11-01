@@ -645,7 +645,9 @@ end
 
 -- One tip per login, in turn. The "host your own world" invitation takes the tip's place once a day per account
 -- (OV_HOST_INVITE=0 turns it off; kept in memory, so a restart can show it once more that day).
-local HOST_INVITE = "Your own world: your rules, your friends, no port forwarding. Type |cffffff00/host|r to start one."
+-- One line for both ways to have your own place: the Den (the launcher's Your Den, on your PC) and hosting (/host).
+-- TODO(owner): his words for this line
+local HOST_INVITE = "Your own Den: a room to build in on your PC (the launcher's Your Den). Host it for friends: |cffffff00/host|r."
 local TIPS = {
     { text = "In Dalaran, |cffffff00.hub|r shows the duel corner, the 1v1 arena, transmog and keystone dungeons." },
     { text = "At 80, |cffffff00.guide|r shows where to go: dungeons, gear, raids, PvP.", min = MAX_LEVEL },

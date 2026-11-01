@@ -1996,6 +1996,7 @@ async function installProject(p, btn) {
   try {
     const m = await withNativeOk(() => invoke("mod_install", { client: c.id, project: p.id }));
     say("cat-status", installedText(was ? "Updated" : "Installed", m, c), m.warnings.length ? "warn" : "ok");
+    if (!was && window.LeylineGuide) window.LeylineGuide.moment("mod");   // the first mod: one line, once (guide.js)
   } catch (e) {
     sayErr("cat-status", e);
   }
@@ -2324,6 +2325,7 @@ async function installLocal(paths) {
     try {
       const m = await withNativeOk(() => invoke("mod_install_local", { client: c.id, path }));
       say("mods-status", installedText("Installed", m, c), m.warnings.length ? "warn" : "ok");
+      if (window.LeylineGuide) window.LeylineGuide.moment("mod");   // the first mod: one line, once (guide.js)
     } catch (e) {
       say("mods-status", `${name}: ` + showProblems(e), "bad");
       break;

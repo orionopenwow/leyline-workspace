@@ -53,6 +53,9 @@ pub struct Settings {
     /// game's login screen through Leyline's patch archive, so the player types nothing. Off until the owner has
     /// checked it on a real PC.
     pub hybrid_login: bool,
+    /// The launcher's guide (ui/guide.js): the first-run tour ("tour") and each one-time encouragement line
+    /// ("hosted", "friend", "mod") once shown. Kept here so each shows once, never again after a restart.
+    pub seen: Vec<String>,
 }
 
 impl Default for Settings {
@@ -68,6 +71,7 @@ impl Default for Settings {
             update_channel: crate::update::Channel::Stable,
             count_installs: true,
             hybrid_login: false,
+            seen: Vec::new(),
         }
     }
 }
@@ -82,6 +86,18 @@ impl Settings {
     /// The player OK'd native code for this mod.
     pub fn native_allowed(&self, key: &str) -> bool {
         self.native_ok.iter().any(|k| k == key)
+    }
+    /// Mark a guide key as shown (ui/guide.js). False for a key that isn't one: lower-case letters, digits and -,
+    /// up to 32, and at most 64 keys kept.
+    pub fn mark_seen(&mut self, key: &str) -> bool {
+        let ok = !key.is_empty() && key.len() <= 32 && key.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+        if !ok {
+            return false;
+        }
+        if !self.seen.iter().any(|k| k == key) && self.seen.len() < 64 {
+            self.seen.push(key.to_string());
+        }
+        true
     }
     pub fn remove_client(&mut self, id: &str) -> bool {
         let n = self.clients.len();
@@ -206,6 +222,23 @@ mod tests {
         assert!(s.remove_client("c335a-1"));
         assert_eq!(s.selected_client.as_deref(), Some("c1121-1"));
         assert!(!s.remove_client("nope"));
+    }
+
+    #[test]
+    fn guide_keys_are_kept_once_and_checked() {
+        let d = tempfile::tempdir().unwrap();
+        let mut s = Settings::default();
+        assert!(s.seen.is_empty());
+        assert!(s.mark_seen("tour") && s.mark_seen("tour") && s.mark_seen("first-mod"));
+        assert_eq!(s.seen, vec!["tour".to_string(), "first-mod".to_string()]);
+        for bad in ["", "Tour", "../x", "a b", &"x".repeat(33)] {
+            assert!(!s.mark_seen(bad), "{bad}");
+        }
+        save(d.path(), &s).unwrap();
+        assert_eq!(load(d.path()).seen, s.seen);
+        // a settings file from before the guide: nothing seen yet
+        fs::write(d.path().join(FILE_NAME), br#"{"selected_realm":"x.example.org"}"#).unwrap();
+        assert!(load(d.path()).seen.is_empty());
     }
 
     #[test]

@@ -2533,6 +2533,7 @@ dependencies = [
  "minisign-verify",
  "mlua",
  "ring",
+ "rustls",
  "serde",
  "serde_json",
  "sha2",
@@ -2544,6 +2545,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "ureq",
+ "webpki-roots 0.26.11",
  "zip 2.6.1",
 ]
 

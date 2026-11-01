@@ -45,6 +45,10 @@ flate2 = "1"
 sha2 = "0.10"
 # The Leyline mesh (src/p2p/mesh.rs): Ed25519 checks of signed realm records. Already in the tree through rustls.
 ring = "0.17"
+# Your Den on the network (src/host/litenet.rs): the relay tunnel's wss, with the same TLS stack and roots as ureq
+# (already in the tree through it).
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+webpki-roots = "0.26"
 # Leyline's own updates from any source (update.rs verify_minisign): the same minisign check the updater plugin makes,
 # already in the tree through tauri-plugin-updater.
 minisign-verify = "0.3"

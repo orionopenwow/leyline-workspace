@@ -18,6 +18,7 @@
 pub mod console;
 pub mod dens;
 pub mod lite; // Den Lite: the built-in Den server, no Docker (an interface; the program is labs/den-lite)
+pub mod litenet; // Your Den on the Leyline network with no Docker: the relay tunnel for Den Lite's friends (host/litenet.rs)
 pub mod terrain; // Your Den's ground: the terrain delta, patch-T.MPQ, the Docker Den's tile (host/terrain.rs)
 pub mod forge; // Forge, the Den's terrain editor (GPL, its own program): get it, start it, take what it saves
 pub mod yourden; // Your Den: the one Den page, Lite or Docker, Saved Dens, Packs, Share with friends (host/yourden.rs)

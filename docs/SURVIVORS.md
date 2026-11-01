@@ -77,6 +77,13 @@ commands). It never runs `make build`, `make native`, `make fetch-data`, `script
 (those download the game client). It adds `licenses/` (upstream's licence files, its vendored kira and Lua licences,
 and `tools/survivors/licenses-index.html`) and writes every file's SHA-256 into the lock.
 
+**Status (1 Nov):** the cargo step is done (the wasm before wasm-bindgen: `cargo_wasm` in the lock, 165 MB). The
+packing is not: wasm-bindgen needs more than 6 GB of memory on this module and the build box gives a session 6.27 GB,
+so it was killed every time, even with nothing else running. The lock's `dist` is empty until a machine with about
+8 GB free runs `SV_CARGO_WASM=<that wenilla.wasm> bash tools/survivors/build-dist.sh <work dir> --write-lock` (it checks
+the file against `cargo_wasm`, then packs) or the whole script. Until then survivors-check refuses every dist ("the
+lock lists no dist files yet"), so nothing unlocked can be recorded with or uploaded.
+
 Deviations from upstream's own build are listed in the lock (`deviations`): the build box could not download Rust's
 pinned toolchain, so it used the installed stable Rust with the standard library built from source; and gzip
 without a name and time (`-n`) so the hashes don't change from one build to the next. The source is unmodified.

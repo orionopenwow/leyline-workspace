@@ -9,6 +9,8 @@
 # <work dir>/src      the upstream clone, checked out at stream/survivors/upstream.lock.json's sha (cloned when missing)
 # <work dir>/dist     the build: upstream's web/dist, plus licenses/ (upstream's licence files and our small index)
 # --write-lock        write every dist file's SHA-256 into the lock (the check on the owner's PC and the server)
+# SV_CARGO_WASM=<wenilla.wasm>   skip the cargo step: pack a cargo build made before (checked against the lock's
+#                     cargo_wasm). wasm-bindgen needs more than 6 GB of memory on this module.
 #
 # The toolchain: upstream pins Rust 1.98.1 with a prebuilt wasm32 std. Where that can't be downloaded (this build box:
 # static.rust-lang.org is not reachable) it builds with the installed stable Rust and std from source (RUSTC_BOOTSTRAP=1
@@ -43,7 +45,15 @@ have=$(wasm-bindgen --version 2>/dev/null | awk '{print $2}' || true)
 [ "$have" = "$want" ] || cargo install wasm-bindgen-cli --version "$want" --locked --force
 export WASI_SDK="$SRC/tools/wasi-sdk"
 
-if [ "${SV_TOOLCHAIN:-}" = pinned ]; then
+if [ -n "${SV_CARGO_WASM:-}" ]; then
+  # the cargo step done elsewhere (wasm-bindgen needs more memory than the build box has): its wenilla.wasm, checked
+  # against the lock's cargo_wasm sha256, then the packing below as usual
+  want_wasm=$(python3 -I -c 'import json,sys;print(json.load(open(sys.argv[1])).get("cargo_wasm",{}).get("sha256",""))' "$LOCK")
+  [ "$(sha256sum "$SV_CARGO_WASM" | cut -d' ' -f1)" = "$want_wasm" ] || { echo "$SV_CARGO_WASM is not the locked cargo build" >&2; exit 1; }
+  TOOLCHAIN=$(python3 -I -c 'import json,sys;print(json.load(open(sys.argv[1])).get("toolchain",""))' "$LOCK")
+  mkdir -p "$CARGO_TARGET_DIR/wasm32-unknown-unknown/release"
+  cp "$SV_CARGO_WASM" "$CARGO_TARGET_DIR/wasm32-unknown-unknown/release/wenilla.wasm"
+elif [ "${SV_TOOLCHAIN:-}" = pinned ]; then
   TOOLCHAIN="rust $(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml) (the pin), prebuilt wasm32 std"
   rustup target add wasm32-unknown-unknown
   cargo build --profile release --target wasm32-unknown-unknown -p wenilla --no-default-features --features webgpu

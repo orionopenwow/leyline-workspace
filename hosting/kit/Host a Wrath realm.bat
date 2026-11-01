@@ -102,7 +102,15 @@ docker run --rm -v "%~dp0.:/kit" -e WU_KIT=/kit %WU_TOOLS_IMAGE% python -m wuhos
 echo.
 echo == Game data for the server ^(from your own 3.3.5a install; nothing is downloaded or shared^)
 docker volume create ov-client-data >nul
-docker run --rm -v ov-client-data:/d alpine:3.20 test -d /d/dbc -a -d /d/maps >nul 2>&1 && (echo   Already extracted.) || call :extract || (pause & exit /b 1)
+rem The light Den (docs/DEN.md, "A light local Den"): the den profile takes only the island, the starting areas and the dbc.
+set "DENLIGHT=0" & set "HAVE=0" & set "MARKED=0" & set "SKIP=0"
+if /i "%WU_PROFILE%"=="den" if not "%WU_DEN_FULL_DATA%"=="1" set "DENLIGHT=1"
+docker run --rm -v ov-client-data:/d alpine:3.20 test -d /d/dbc -a -d /d/maps >nul 2>&1 && set "HAVE=1"
+docker run --rm -v ov-client-data:/d alpine:3.20 test -f /d/den-light.json >nul 2>&1 && set "MARKED=1"
+if "%DENLIGHT%"=="1" if exist "%~dp0state\packs\restage" set "HAVE=0"
+if "%HAVE%"=="1" if "%DENLIGHT%"=="1" set "SKIP=1"
+if "%HAVE%"=="1" if "%MARKED%"=="0" set "SKIP=1"
+if "%SKIP%"=="1" (echo   Already extracted.) else (call :extract || (pause & exit /b 1))
 if not "%IMG%"=="acore/ac-wotlk" (
   docker run --rm -v ov-client-data:/d alpine:3.20 test -d /d/dbc-stock >nul 2>&1 || call :arac
 )
@@ -187,9 +195,26 @@ if not defined WOW (
   set /p "WOW=Where is your 3.3.5a game folder (the one with Data in it)? "
 )
 if not exist "%WOW%\Data\lichking.MPQ" (echo No 3.3.5a game files in "%WOW%". & exit /b 1)
+if "%DENLIGHT%"=="1" call :denlight && exit /b 0
 echo   Extracting dbc + maps from "%WOW%" ^(a few minutes^)...
 docker run --rm --user root -v "%WOW%:/wow:ro" -v ov-client-data:/out -w /out acore/ac-wotlk-tools:master /azerothcore/env/dist/bin/map_extractor -i /wow -o /out || (echo Extracting the game data failed. & exit /b 1)
+docker run --rm -v ov-client-data:/d alpine:3.20 rm -f /d/den-light.json
 exit /b 0
+
+:denlight
+echo   Den data only: the island, the starting areas and the dbc from "%WOW%" ^(about a minute^)...
+docker volume rm ov-den-stage >nul 2>&1
+if not exist "%~dp0state\packs" mkdir "%~dp0state\packs"
+docker run --rm --user root -v "%WOW%:/wow:ro" -v ov-den-stage:/out -v "%~dp0tools:/t:ro" -e PYTHONPATH=/t -v "%~dp0state:/state:ro" %WU_TOOLS_IMAGE% python -m wuhost.denslice stage --game /wow --out /out --pack-tiles /state/packs/tiles.json || goto denlightno
+docker run --rm --user root -v ov-den-stage:/wow:ro -v ov-client-data:/out -w /out acore/ac-wotlk-tools:master /azerothcore/env/dist/bin/map_extractor -i /wow -o /out || goto denlightno
+docker run --rm -v ov-den-stage:/s:ro -v ov-client-data:/d alpine:3.20 cp /s/den-slice.json /d/den-light.json || goto denlightno
+docker volume rm ov-den-stage >nul 2>&1
+if exist "%~dp0state\packs\restage" del "%~dp0state\packs\restage"
+exit /b 0
+:denlightno
+docker volume rm ov-den-stage >nul 2>&1
+echo   The Den-only data didn't work out; taking the whole world instead.
+exit /b 1
 
 :arac
 echo   All-races-all-classes data ^(mod-arac, pinned commit^)...

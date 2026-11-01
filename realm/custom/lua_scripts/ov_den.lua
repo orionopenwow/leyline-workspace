@@ -41,7 +41,8 @@
 --   open.json there ({"file": "<name>", "id": "<letters>"}): the Den opens with that file (replacing what is there,
 --   a copy kept as "backup") as soon as its owner is in the room. Files are JSON read by OVBuild.JsonDecode and
 --   checked (OVBuild.DenCheck: known entries only, inside the Den, the budgets); nothing in them is ever run.
--- Tables: mod_den_settings (k, v): the room's look, its floor height, the last opened launcher file;
+--        <kit>/state/dens/packs.json: the packs made on this PC (packs.py), data only; a Den file's "packs" (below).
+-- Tables: mod_den_settings (k, v): the room's look, its floor height, the last opened launcher file, its packs;
 --   mod_den_files (name, props, at): the files saved from here.
 -- mod-ale used: RegisterPlayerEvent 3 ON_LOGIN, 28 ON_MAP_CHANGE, 30 ON_FIRST_LOGIN, 42 ON_COMMAND; CreateLuaEvent;
 -- Player:Teleport / IsGM / GetGMRank / SetBindPoint / RegisterEvent / SendBroadcastMessage; Map:GetHeight;
@@ -615,12 +616,66 @@ function Files.encode(v, indent)
     return "{\n" .. indent .. " " .. table.concat(parts, ",\n" .. indent .. " ") .. "\n" .. indent .. "}"
 end
 
+-- Packs (docs/DEN.md, "Packs"): parts of the game the player makes from their own game folder (the host kit's
+-- tools/wuhost/packs.py). A Den remembers the packs it took (settings "packs", ids joined by "."); its file lists
+-- them ("packs": ["goldshire"]), and whoever opens it hears which of them they haven't made yet. The packs made on
+-- this PC: <SAVES>/packs.json ({"packs": [{"id": ..., "title": ...}]}), read as data.
+function Files.packIds(list)
+    local out, seen = {}, {}
+    if type(list) ~= "table" then return out end
+    for i = 1, math.min(#list, 32) do
+        local id = list[i]
+        if type(id) == "string" and #id <= 24 and id:match("^[a-z0-9][a-z0-9%-]*$") and not seen[id] then
+            seen[id] = true
+            out[#out + 1] = id
+        end
+    end
+    return out
+end
+function Files.denPacks()
+    local out = {}
+    for id in tostring(settings.packs or ""):gmatch("[^%.]+") do out[#out + 1] = id end
+    return Files.packIds(out)
+end
+function Files.madePacks()
+    local f = io and io.open and io.open(SAVES .. "/packs.json", "r")
+    if not f then return {} end
+    local text = f:read(65536) or ""
+    f:close()
+    local b = B()
+    local doc = b and b.JsonDecode(text, 65536)
+    local out = {}
+    if type(doc) == "table" and type(doc.packs) == "table" then
+        for _, p in ipairs(doc.packs) do
+            if type(p) == "table" and type(p.id) == "string" then
+                out[p.id] = type(p.title) == "string" and p.title:gsub("[^%w%s%-',]", ""):sub(1, 40) or p.id
+            end
+        end
+    end
+    return out
+end
+-- A file's packs join the Den's; returns the ones not made on this PC.
+function Files.takePacks(doc)
+    local ids = Files.packIds(type(doc) == "table" and doc.packs)
+    if #ids == 0 then return {} end
+    local have, list = {}, Files.denPacks()
+    for _, id in ipairs(list) do have[id] = true end
+    for _, id in ipairs(ids) do if not have[id] then list[#list + 1] = id; have[id] = true end end
+    local joined = table.concat(list, ".")
+    if #joined <= 64 then setSetting("packs", joined) end
+    local made, missing = Files.madePacks(), {}
+    for _, id in ipairs(ids) do if not made[id] then missing[#missing + 1] = id end end
+    return missing
+end
+
 -- The whole Den as the file's table (version 1).
 function Files.doc(name)
     local b, d = B(), den()
     local lay = b.DenLayout()
+    local packs = Files.denPacks()
     return { format = "leyline-den", version = Files.VERSION, name = name, saved = os.date("!%Y-%m-%dT%H:%M:%SZ"),
-        room = { look = currentTheme().name, size = d.half }, props = lay.props, paths = lay.paths }
+        room = { look = currentTheme().name, size = d.half }, props = lay.props, paths = lay.paths,
+        packs = #packs > 0 and packs or nil }
 end
 
 -- Writes the Den to <SAVES>/<name>.den.json: true, props  or  nil, why
@@ -675,6 +730,12 @@ function Files.open(player, name, c, doc, replace)
         (type(doc.room) == "table" and tonumber(doc.room.size) and tonumber(doc.room.size) ~= d.half)
             and string.format(" It was saved in a room %d yards wide; this one is %d.", doc.room.size * 2, d.half * 2) or ""))
     say(player, "Ctrl+Z (|cffffff00.build undo|r) takes it back.")
+    local missing = Files.takePacks(doc)
+    if #missing > 0 then
+        say(player, "This Den uses packs you haven't made yet: " .. table.concat(missing, ", ") .. ". Make them from your own "
+            .. "game folder (|cffffff00leyline pack build " .. missing[1] .. "|r on your PC) and restart the Den; until then "
+            .. "some of it may look bare.")
+    end
     return n
 end
 

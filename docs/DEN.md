@@ -76,6 +76,32 @@ teleports players elsewhere (`OV_MAIN`, `OV_QOL_HUB` off). The kit writes `realm
 (the invite link, data only, mode 0600) for the in-game "Invite a friend"; only this profile does, and leaving it
 removes the file.
 
+### A light local Den (2026-11-01)
+
+A Den doesn't need the whole world. On the den profile the kit's game-data step (`client_data` in
+`host-wrath-realm.sh`, `:extract` in `Host a Wrath realm.bat`) runs `tools/wuhost/denslice.py`: it reads **your own**
+3.3.5a archives (`tools/wuhost/mpq.py`, the standard library only) and writes a tiny game folder holding:
+
+- every dbc and `component.wow-<locale>.txt` (the server loads all the dbc; the extractor reads the build there);
+- the WDT and ADT of the 3 x 3 tiles around the island (map 1, grid 1,1: most of the ring is sea and has no tile);
+- the tile of each starting area the worldserver checks before it starts (`World.cpp`: it exits with "Failed to find
+  map files for starting areas" unless these eight `.map` files exist), and the Death Knight start (map 609);
+- the intro cameras (`Cameras\*`), and any pack's tiles (below).
+
+Then the stock extractor (`map_extractor` in `acore/ac-wotlk-tools`) runs over that folder instead of yours, so it
+converts about a dozen tiles instead of every map. No vmaps or mmaps are made: a Den runs with pathing off
+(`OV_PATHING=0`), and `ExistVMap` passes when vmap loading is off. The volume gets `den-light.json` (what went in);
+any other profile sees that mark and extracts the whole world. If anything in the light step fails, the kit says so
+and extracts the whole world as before. `WU_DEN_FULL_DATA=1` skips the light step.
+
+Size and time (estimates; to measure on a real PC): the whole world's extraction is a few minutes and about 1-2 GB of
+`maps` plus the dbc. The light one reads about 30-40 MB from your archives (the dbc, about 12 ADTs at 0.5-3 MB each),
+writes about the same, and should take well under a minute. Checked here, from AzerothCore's own source: the
+extractor's archive list and locale detection, that it lists dbc from each archive's `(listfile)` (the staged archives
+have one), that it skips tiles it can't open, the `.map` naming, and the startup check. **To verify on a real PC**: the
+extractor reading our archives (zlib sectors, v1 header), the server starting with only those tiles, and logging in.
+What doesn't shrink: the first start's database import (5-20 minutes) is the world database itself, not map data.
+
 ## The room
 
 **Where:** the sealed island in the far north-east corner of Kalimdor (map 1), AzerothCore's `game_tele` 424
@@ -291,6 +317,39 @@ opens it to the server's own user). The room itself isn't in it (it's the look);
   limit refuse a file that doesn't fit. File names are letters, digits, - and _ only. The launcher checks the shape
   too (`host/dens.rs`). One undo entry takes an opened Den back (and one more brings back what was replaced).
 - **Later**: the same file is what a Workshop "Den" item will carry (share a Den; the realm checks it the same way).
+
+## Packs: parts of the game from your own folder (2026-11-01)
+
+Leyline ships **recipes**, never game files: `hosting/kit/tools/wuhost/recipes/<id>.json`. You make a pack on your
+own PC from your own game folder (any version you have: 1.12, 2.4.3 or 3.3.5a):
+
+```
+leyline pack list
+leyline pack build goldshire --game "/path/to/your/game"
+```
+
+`tools/wuhost/packs.py` reads the recipe's tiles, files and folders from your archives and follows what each needs
+(an ADT's textures, doodads and buildings; a model's textures and skins; a building's group files and textures;
+never sound). It writes into the Den's `state/`:
+
+- `packs/<id>/server/...`: the land (ADTs) for the Den's server; `packs/tiles.json` lists every pack's tiles and
+  `packs/restage` makes the next start re-stage the light Den's data with them;
+- `packs/client/patch-L.MPQ`: the client files, only when your folder is not the 3.3.5a one you play the Den with
+  (or `--client-patch always`): copy it into your game's Data folder;
+- `dens/pack-<id>.den.json`: a recipe's layout, the doodads near its centre as model props (`.den load pack-<id>
+  add`), and `dens/packs.json`, the packs made here.
+
+Starter recipes: **goldshire** (the village's land, map 0 tiles 49-50 x 31-32, and the doodads within 28 yards of
+the inn as Den props), **mounts** (riding animals' models and textures), **human-buildings** (human town buildings
+and village doodads). A recipe holds only data: `id`, `title`, `line`, `tiles` (map + world box), `files`,
+`prefixes` (folder + extensions), `deps`, `layout` (centre, radius, max), `limits` (files, MB); anything else is
+refused. To verify in game: the doodads' facing (the positions are the usual ADT conversion), and whether the
+Den's spot can move to a pack's land (today the Den stays on the island; the land is on the server for that next
+step).
+
+**Den files list their packs.** A Den remembers the packs whose layouts it opened, and `.den save` writes them as
+`"packs": ["goldshire"]` (version 1 still: older readers ignore it). Opening a file that lists packs not made on this
+PC (`dens/packs.json`) says which ones and how: "Make them from your own game folder (leyline pack build ...)".
 
 ## Invite a friend: the path, checked (2026-10-31)
 

@@ -1,0 +1,18 @@
+{
+ "format": "leyline-pack-recipe",
+ "version": 1,
+ "id": "mounts",
+ "title": "Mounts",
+ "line": "The riding animals: horses, rams, wolves, raptors, kodos and mechanostriders, with their skins and textures.",
+ "comment": "Client files only (no land, no layout): what the Den's later mount and creature tools draw. The folder names are the 3.3.5a archives' own; a folder another client doesn't have is skipped (pack.json lists what was missing).",
+ "prefixes": [
+  {"path": "Creature\\Horse\\", "ext": [".m2", ".skin", ".blp"]},
+  {"path": "Creature\\Ram\\", "ext": [".m2", ".skin", ".blp"]},
+  {"path": "Creature\\Wolf\\", "ext": [".m2", ".skin", ".blp"]},
+  {"path": "Creature\\Raptor\\", "ext": [".m2", ".skin", ".blp"]},
+  {"path": "Creature\\Kodo\\", "ext": [".m2", ".skin", ".blp"]},
+  {"path": "Creature\\Mechastrider\\", "ext": [".m2", ".skin", ".blp"]}
+ ],
+ "deps": true,
+ "limits": {"files": 2000, "mb": 150}
+}

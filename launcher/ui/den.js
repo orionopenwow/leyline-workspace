@@ -512,7 +512,7 @@
     for (const f of list) {
       const li = mk("li", "");
       const t = mk("div", "yd-li-t");
-      t.append(mk("b", "", f.name === "backup" ? "backup (before the last open)" : f.name),
+      t.append(mk("b", "", f.name === "backup" ? "backup (before the last open)" : f.name === "autosave" ? "autosave (your Den as you left it)" : f.name),
         mk("span", "yd-hint", [`${f.props} prop${f.props === 1 ? "" : "s"}`, denDate(f.saved)].filter(Boolean).join(" · ")));
       const acts = mk("div", "yd-row");
       const o = btn("Open", "btn small primary"); o.addEventListener("click", () => openDen(f, o));

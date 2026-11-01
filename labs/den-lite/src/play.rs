@@ -75,10 +75,18 @@ pub fn modes() -> Vec<Mode> {
 /// `.den mode`: the ids, in two lines.
 pub fn list_lines() -> Vec<String> {
     let all = modes();
-    let ids = |src: &str| all.iter().filter(|m| m.source == src).map(|m| m.id.as_str()).collect::<Vec<_>>().join(", ");
+    let ids = |src: &str, live: bool| {
+        all.iter().filter(|m| m.source == src && m.live == live && m.id != "den").map(|m| m.id.as_str()).collect::<Vec<_>>().join(", ")
+    };
+    // the ones that run now, then the ones still coming (smoke O7: "coming" and this Den itself aren't "run on this PC")
+    let soon: Vec<String> = [ids("template", false), ids("mode", false)].into_iter().filter(|x| !x.is_empty()).collect();
+    let mut modes_line = format!("Game modes (Leyline's Modes page): {}.", ids("mode", true));
+    if !soon.is_empty() {
+        modes_line.push_str(&format!(" Coming: {}.", soon.join(", ")));
+    }
     vec![
-        format!("Host templates (run on this PC): {}.", ids("template")),
-        format!("Game modes (Leyline's Modes page): {}.", ids("mode")),
+        format!("Host templates (run on this PC): {}.", ids("template", true)),
+        modes_line,
         ".den mode <id> says what one is and how to try it here. Den Lite itself only builds: no combat, spells or quests.".into(),
     ]
 }
@@ -171,7 +179,7 @@ pub fn mods_lines(addons: &[String], client: Option<&Path>) -> Vec<String> {
     }
     out.push("Addons run in your game as on any realm, so your Den is a quiet place to try them: /reload after changing one. Mods with realm parts need the full Den (.den mode den).".into());
     match client {
-        None => out.push("The launcher's mod list (<game folder>/Leyline/mods.json) isn't shown: Den Lite wasn't told the game folder (--client).".into()),
+        None => out.push("Start your Den from the Leyline launcher to see its mods for this game here too.".into()),
         Some(dir) => {
             let p = dir.join("Leyline").join("mods.json");
             let v: Option<Value> = std::fs::read_to_string(&p).ok().filter(|t| t.len() < 4 * 1024 * 1024).and_then(|t| serde_json::from_str(&t).ok());
@@ -207,6 +215,9 @@ mod tests {
         assert!(all.iter().any(|m| m.id == "minigolf" && m.source == "mode"));
         let l = list_lines();
         assert!(l[0].contains("duel-ladder") && l[1].contains("minigolf"), "{l:?}");
+        let run = l[0].split(':').nth(1).unwrap();
+        assert!(!run.contains("survivors") && !run.split(", ").any(|x| x.trim_matches(['.', ' ']) == "den"), "only what runs: {l:?}");
+        assert!(l[1].contains("Coming:") && l[1].split("Coming:").nth(1).unwrap().contains("survivors"), "{l:?}");
         let golf = explain("Minigolf");
         assert!(golf[1].contains("Minigolf night template") && golf[2].contains("Host a mode › Minigolf night › Host (ruleset dalaran"), "{golf:?}");
         let duel = explain("duel-ladder");
@@ -238,7 +249,7 @@ mod tests {
         assert_eq!(names, ["Blizzard_AuctionUI", "LeylineDen", "Questie"]);
         let l = mods_lines(&names, None);
         assert!(l[0].starts_with("Your game loaded 2 addons: LeylineDen, Questie (and 1 built-in ones)"), "{l:?}");
-        assert!(l[2].contains("--client"));
+        assert!(l[2].contains("Leyline launcher") && !l[2].contains("--"), "plain words: {l:?}");
         let d = std::env::temp_dir().join(format!("den-lite-mods-{}", std::process::id()));
         std::fs::create_dir_all(d.join("Leyline")).unwrap();
         std::fs::write(d.join("Leyline/mods.json"), r#"{"schema":1,"build":"12340","mods":[{"key":"leyline:addons","name":"Leyline addons","version":"1.4","enabled":true,"addons":["LeylineDen"],"patches":[]},{"key":"mod:hd","name":"HD water","version":"","enabled":false,"patches":["Data/patch-4.MPQ"]}],"created_dirs":[]}"#).unwrap();

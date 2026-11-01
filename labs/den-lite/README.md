@@ -25,6 +25,9 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
   the password. A server that doesn't know the password can't finish a login. An empty password isn't an option
   either: the stock login screen won't log in without one. So the player types `den` (the launcher should say so
   next to the button, or set a password of its own with `--password`).
+- **The Den keeps itself**: within 2 seconds of any change (and at logout) the whole Den is written to
+  `<dens>/autosave.den.json`, and Den Lite opens it when it starts, so a restart brings back the room as it was
+  (nothing to undo after it). A damaged autosave is left as it is and the Den starts empty.
 - **Den files**: `.den save <name>` writes `<dens>/<name>.den.json`; `.den load <name>` reads it. Names are letters,
   digits, - and _ (up to 24), as the launcher's `host/dens.rs`.
 - **The launcher's Open**: while the player is in the world, `<dens>/open.json` (`{"file": "<name>", "id": "<id>"}`,

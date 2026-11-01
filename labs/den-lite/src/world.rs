@@ -158,6 +158,7 @@ fn leave(shared: &Shared, id: u64) {
         *live = None;
         drop(live);
         shared.companion.lock().unwrap_or_else(|e| e.into_inner()).away();
+        shared.autosave();
     }
 }
 
@@ -471,7 +472,7 @@ fn enter_world(c: &Writer, shared: &Shared, p: Pos) -> io::Result<()> {
 /// What the tips look at (companion::TipCtx): the Den now.
 fn tip_ctx(shared: &Shared) -> companion::TipCtx {
     let (props, size) = { let d = shared.den.lock().unwrap(); (d.props.len(), d.ring() + 1) };
-    let saved = den::list_names(&shared.cfg.den_dir).iter().any(|n| n != "backup");
+    let saved = den::list_names(&shared.cfg.den_dir).iter().any(|n| n != "backup" && n != den::AUTOSAVE);
     companion::TipCtx { props, saved, size }
 }
 
@@ -541,7 +542,7 @@ fn cheer(c: &Writer, shared: &Shared, key: &str) -> io::Result<()> {
     }
 }
 
-/// The first-minute tutorial, said at every login (four lines: build, undo, save).
+/// The first-minute tutorial, said at every login (five lines: build, a stamp, undo, save, grow and the companion).
 const TUTORIAL: &[&str] = &[
     "Quick start: 1) .den place chair  puts a chair in front of you (.den find lamp: what's there to place)",
     "2) .den stamp inn now  puts down a whole inn (.den stamps: the others)",
@@ -964,6 +965,9 @@ pub fn companion_ticker(shared: Arc<Shared>) {
         std::thread::sleep(Duration::from_millis(500));
         n += 1;
         let _ = companion_tick(&shared, n % 2 == 0);
+        if n % 4 == 0 {
+            shared.autosave(); // every 2 seconds, when the Den changed
+        }
     }
 }
 

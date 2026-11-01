@@ -88,6 +88,8 @@ pub struct Shared {
     /// The player in the world now: the session's number, its writer and where the player stands.
     pub live: Mutex<Option<(u64, world::Writer, companion::At)>>,
     world: Mutex<SocketAddr>,
+    /// The Den as the autosave last wrote it (den::Den::autosave_key).
+    autosaved: Mutex<String>,
     opened: Mutex<std::collections::HashSet<String>>,
 }
 
@@ -112,6 +114,22 @@ impl Shared {
         }
         true
     }
+    /// The autosave (den::AUTOSAVE): written when the Den changed since the last one. True when it wrote. A Den
+    /// whose autosave didn't open is never written over until the player changes something.
+    pub fn autosave(&self) -> bool {
+        let d = self.den.lock().unwrap_or_else(|e| e.into_inner());
+        let key = d.autosave_key();
+        let mut last = self.autosaved.lock().unwrap_or_else(|e| e.into_inner());
+        if *last == key {
+            return false;
+        }
+        let ok = d.save(&self.cfg.den_dir, den::AUTOSAVE, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|t| t.as_secs()).unwrap_or(0)).is_ok();
+        if ok {
+            *last = key;
+        }
+        ok
+    }
+
     /// The realm list's address for the world server.
     pub fn world_address(&self) -> String {
         self.world.lock().unwrap().to_string()
@@ -135,9 +153,15 @@ pub fn start(cfg: Config) -> io::Result<Running> {
             eprintln!("den-lite: the ground file isn't used: {e}");
         }
     }
+    // the Den as it was when Den Lite last ran (den::AUTOSAVE)
+    if let Some(Err(e)) = d.open_autosave(&cfg.den_dir) {
+        eprintln!("den-lite: the autosave didn't open ({e}); it is kept as it is and the Den starts empty");
+    }
+    let autosaved = d.autosave_key();
     let shared = Arc::new(Shared {
         den: Mutex::new(d),
         companion: Mutex::new(companion::Companion::restore(&cfg.den_dir)),
+        autosaved: Mutex::new(autosaved),
         live: Mutex::new(None),
         cfg,
         sessions: Mutex::new(HashMap::new()),

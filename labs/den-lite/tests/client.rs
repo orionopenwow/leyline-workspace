@@ -716,7 +716,7 @@ fn the_den_grows_and_the_companion_talks_with_the_assistant() {
     let l = w.until_line().1;
     assert!(l.starts_with("Your game loaded 2 addons: Leyline_Addon0, Leyline_Addon1"), "{l}");
     w.until_line();
-    assert!(w.until_line().1.contains("--client"));
+    assert!(w.until_line().1.contains("Leyline launcher"), "no command-line flag shown to a player");
     w.send(&CMSG_LOGOUT_REQUEST {});
     w.until(|f| matches!(f.msg, Some(ServerOpcodeMessage::SMSG_LOGOUT_COMPLETE)).then_some(()));
     assert!(srv.shared.live.lock().unwrap().is_none());
@@ -911,5 +911,42 @@ fn the_companion_is_there_from_login_and_takes_short_commands() {
     assert!(!srv.shared.companion.lock().unwrap().out);
     w.say(".den companion tips");
     assert!(w.until_line().1.contains(".den place chair"), "tips without her: a system line");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Smoke O1: the Den keeps itself. A piece placed is in the autosave within seconds, and a Den Lite started again on
+/// the same folder (the PC restarted) opens it: the player walks into their room as they left it, nothing to load,
+/// and undo has nothing to take back.
+#[test]
+fn the_den_is_kept_by_itself_and_open_again_after_a_restart() {
+    let dir = std::env::temp_dir().join(format!("den-lite-test-autosave-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let cfg = || Config { login_port: 0, world_port: 0, den_dir: dir.clone(), stamps_dir: stamps(), companion: false, ..Config::default() };
+    let srv = start(cfg()).unwrap();
+    assert!(!dir.join("autosave.den.json").exists(), "an empty new Den writes nothing");
+    let mut w = into_world(&srv, 0);
+    w.say(".den place wooden chair");
+    assert!(w.until_line().1.starts_with("Wooden Chair is down"));
+    w.say(".den room stone");
+    w.until_line();
+    std::thread::sleep(Duration::from_millis(2600));
+    let kept = den::read_file(&dir.join("autosave.den.json")).expect("the autosave");
+    assert_eq!((kept.props.len(), kept.room.as_ref().unwrap().look.as_str()), (1, "stone"));
+    let at = std::fs::metadata(dir.join("autosave.den.json")).unwrap().modified().unwrap();
+    std::thread::sleep(Duration::from_millis(2200));
+    assert_eq!(std::fs::metadata(dir.join("autosave.den.json")).unwrap().modified().unwrap(), at, "unchanged: not written again");
+    drop(w);
+    // started again on the same folder
+    let srv2 = start(cfg()).unwrap();
+    let mut w = into_world(&srv2, 0);
+    let d = srv2.shared.den.lock().unwrap();
+    assert_eq!((d.props.len(), d.look.name), (1, "stone"));
+    drop(d);
+    w.say(".build undo");
+    assert_eq!(w.until_line().1, "Nothing to undo.", "nothing to undo after a restart");
+    assert_eq!(srv2.shared.den.lock().unwrap().props.len(), 1);
+    // the tips don't count the autosave as a save of the player's own
+    w.say(".den companion tips");
+    assert!(w.until_line().1.contains(".den save"));
     let _ = std::fs::remove_dir_all(&dir);
 }

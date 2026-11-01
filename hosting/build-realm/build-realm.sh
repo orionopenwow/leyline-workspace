@@ -211,6 +211,18 @@ if [ "$MODE" = --check ]; then
       docker logs --tail 50 "$c" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -viE 'password|passwd|secret|token|sessionkey' | sed 's/^/     /' || true
     fi
   done
+  # the players' connections and logins (the last 50 lines are mostly the world's start-up and its creature noise)
+  if running "$WORLD_C"; then
+    echo; echo "== $WORLD_C: connections, logins and kicks (the last 6000 lines, filtered)"
+    docker logs --tail 6000 "$WORLD_C" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' \
+      | grep -iE 'socket|auth|session|account|logged|login|kick|disconnect|reject|denied|realm|character|enum|addon|ban|version|build' \
+      | grep -viE 'password|passwd|secret|token|sessionkey|config:|> using|loading|loaded' | tail -40 | sed 's/^/     /' || true
+  fi
+  if running "$AUTH_C"; then
+    echo; echo "== $AUTH_C: logins (filtered)"
+    docker logs --tail 3000 "$AUTH_C" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -iE 'account|login|logon|reconnect|banned|unknown|fail|proof|realm' \
+      | grep -viE 'password|passwd|secret|token|sessionkey|config:' | tail -20 | sed 's/^/     /' || true
+  fi
   echo; echo "Would: back up acore_auth (and the build databases) to $DIR/backups/<time>/, make $AUTH_DB / $CHARS_DB / $BOTS_DB,"
   echo "start $AUTH_C and $WORLD_C (realm id $REALM_ID, no published port, the main realm untouched), check them and the"
   echo "main realm, then list \"$NAME\" on Leyline through the relay ($AGENT_C), and roll back on any failure."

@@ -43,7 +43,12 @@
    "updated": "2023-04-18",
    "archived": false,
    "source": "discovered",
-   "score": 19.3
+   "score": 19.3,
+   "release": {
+    "tag": "rev.04",
+    "date": "2021-08-12",
+    "url": "https://github.com/LightDestory/AzerothCoreAdmin/releases/tag/rev.04"
+   }
   },
   {
    "id": "link:1a8c3eedc7a4",
@@ -64,7 +69,12 @@
    "updated": "2026-10-29",
    "archived": false,
    "source": "discovered",
-   "score": 14.8
+   "score": 14.8,
+   "release": {
+    "tag": "v1.1.8",
+    "date": "2026-10-29",
+    "url": "https://github.com/NovaElysium/CawDPSMeter/releases/tag/v1.1.8"
+   }
   },
   {
    "id": "link:785aeec48533",
@@ -81,11 +91,11 @@
    ],
    "summary": "Floating combat numbers with the older pop-up animation style.",
    "description": "",
-   "stars": null,
+   "stars": 11,
    "updated": "2026-07-14",
    "archived": false,
    "source": "seed",
-   "score": 11.0,
+   "score": 22.8,
    "thumb": "/wrath/art/hub-thumbs/nom0re__classicnumbers-wotlk.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -125,11 +135,11 @@
    ],
    "summary": "A larger, immersive window for quest, gossip and book text.",
    "description": "",
-   "stars": null,
+   "stars": 11,
    "updated": "2026-09-27",
    "archived": false,
    "source": "seed",
-   "score": 11.0
+   "score": 22.8
   },
   {
    "id": "link:0d52b994138d",
@@ -150,7 +160,12 @@
    "updated": "2017-07-03",
    "archived": false,
    "source": "discovered",
-   "score": 8.8
+   "score": 8.8,
+   "release": {
+    "tag": "b54",
+    "date": "2017-07-03",
+    "url": "https://github.com/tdymel/DPSMateTBC/releases/tag/b54"
+   }
   },
   {
    "id": "link:c5e5ca642822",
@@ -167,11 +182,16 @@
    ],
    "summary": "An addon for the 3.3.5a client.",
    "description": "",
-   "stars": 16,
+   "stars": 17,
    "updated": "2026-09-24",
    "archived": false,
    "source": "discovered",
-   "score": 18.3
+   "score": 19.6,
+   "release": {
+    "tag": "v2.1.8",
+    "date": "2026-09-24",
+    "url": "https://github.com/vibecoder99-cmd/echoes-of-the-worldsoul/releases/tag/v2.1.8"
+   }
   },
   {
    "id": "link:8811e12ff06e",
@@ -213,7 +233,12 @@
    "updated": "2026-04-27",
    "archived": false,
    "source": "seed",
-   "score": 23.8
+   "score": 23.8,
+   "release": {
+    "tag": "v1.2.3",
+    "date": "2026-04-27",
+    "url": "https://github.com/fondlez/GroupBulletinBoard/releases/tag/v1.2.3"
+   }
   },
   {
    "id": "link:fdb99ee534db",
@@ -230,11 +255,16 @@
    ],
    "summary": "Shows the next recipe to craft to level a trade skill toward the cap, beside the profession window.",
    "description": "",
-   "stars": null,
+   "stars": 4,
    "updated": "2026-10-21",
    "archived": false,
    "source": "seed",
-   "score": 11.0
+   "score": 19.0,
+   "release": {
+    "tag": "v2.1.0",
+    "date": "2026-10-22",
+    "url": "https://github.com/DarkChimu/Improved-Profession-Capper/releases/tag/v2.1.0"
+   }
   },
   {
    "id": "link:82748c6889dd",
@@ -276,7 +306,12 @@
    "updated": "2019-10-14",
    "archived": false,
    "source": "discovered",
-   "score": 10.0
+   "score": 10.0,
+   "release": {
+    "tag": "v1.1.1",
+    "date": "2018-11-10",
+    "url": "https://github.com/RagedUnicorn/wow-vanilla-logparser/releases/tag/v1.1.1"
+   }
   },
   {
    "id": "link:a17d534aa2e6",
@@ -338,9 +373,14 @@
    "description": "A Questhelper and Database Addon for the game: Vanilla & TBC",
    "stars": 270,
    "updated": "2025-08-25",
-   "archived": false,
+   "archived": true,
    "source": "seed",
-   "score": 33.3
+   "score": 30.3,
+   "release": {
+    "tag": "7.0.1",
+    "date": "2025-07-23",
+    "url": "https://github.com/shagu/pfQuest/releases/tag/7.0.1"
+   }
   },
   {
    "id": "link:79fb0a05cadf",
@@ -382,7 +422,12 @@
    "updated": "2023-02-16",
    "archived": false,
    "source": "seed",
-   "score": 23.9
+   "score": 23.9,
+   "release": {
+    "tag": "v1.3.0",
+    "date": "2023-01-27",
+    "url": "https://github.com/Ostoic/RaidBrowser/releases/tag/v1.3.0"
+   }
   },
   {
    "id": "link:e10bb765bc27",
@@ -405,7 +450,12 @@
    "source": "discovered",
    "score": 13.0,
    "thumb": "/wrath/art/hub-thumbs/brian8544__setxpbar.webp",
-   "thumb_credit": "Preview image from the project's GitHub page"
+   "thumb_credit": "Preview image from the project's GitHub page",
+   "release": {
+    "tag": "1.0.0-Vanilla",
+    "date": "2025-09-29",
+    "url": "https://github.com/brian8544/SetXpBar/releases/tag/1.0.0-Vanilla"
+   }
   },
   {
    "id": "link:5110e63d9c90",
@@ -422,11 +472,11 @@
    ],
    "summary": "Small quality-of-life changes to the default interface, each one switchable on its own.",
    "description": "",
-   "stars": null,
+   "stars": 104,
    "updated": "2025-08-15",
-   "archived": false,
+   "archived": true,
    "source": "seed",
-   "score": 8.0
+   "score": 26.2
   },
   {
    "id": "link:e7a07858151f",
@@ -443,36 +493,16 @@
    ],
    "summary": "Spoken alerts for important enemy spells and cooldowns, aimed at arena and battlegrounds.",
    "description": "",
-   "stars": null,
+   "stars": 19,
    "updated": "2022-01-03",
    "archived": false,
    "source": "seed",
-   "score": 6.0
-  },
-  {
-   "id": "link:530f0f4ac679",
-   "name": "Sounds",
-   "author": "fondlez",
-   "owner": "fondlez",
-   "repo": "https://github.com/fondlez/wow-sounds",
-   "forge": "github",
-   "licence": "MIT",
-   "category": "audio",
-   "type": "tool",
-   "builds": [
-    "1.12",
-    "2.4.3",
-    "3.3.5a",
-    "4.3.4",
-    "5.4.8"
-   ],
-   "summary": "A tool for 1.12.1, 2.4.3, 3.3.5a, 4.3.4 and 5.4.8 modders and realm hosts.",
-   "description": "Listing of all sound files for vanilla (1.12.1), The Burning Crusade (2.4.3), Wrath (3.3.5a), Cataclysm (4.3.4) and Mists of Pandaria (5.4.8) clients.",
-   "stars": 27,
-   "updated": "2024-12-23",
-   "archived": false,
-   "source": "discovered",
-   "score": 18.5
+   "score": 20.0,
+   "release": {
+    "tag": "1.1",
+    "date": "2021-12-31",
+    "url": "https://github.com/Cortes-Jeremy/SoundAlerter/releases/tag/1.1"
+   }
   },
   {
    "id": "link:b25c54095347",
@@ -489,12 +519,12 @@
    ],
    "summary": "Optional character challenges such as hardcore, slow XP, self-crafted gear and iron man, each with its own rewards.",
    "description": "Challenge Modes Module for AzerothCore",
-   "stars": 68,
+   "stars": 69,
    "updated": "2025-11-25",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 30.4
+   "score": 30.5
   },
   {
    "id": "link:9e1a1f59da11",
@@ -511,12 +541,12 @@
    ],
    "summary": "Generates random dungeon runs: pick a theme and difficulty, then fight scaled creatures and a boss at the end.",
    "description": "Randomly generated dungeons for AzerothCore",
-   "stars": 53,
+   "stars": 64,
    "updated": "2026-09-06",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 29.3,
+   "score": 30.1,
    "thumb": "/wrath/art/hub-thumbs/trauntrow__mod-dungeon-master.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -540,7 +570,7 @@
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 22.3,
+   "score": 23.3,
    "thumb": "/wrath/art/hub-thumbs/55honey__acore_eventscripts.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -581,12 +611,12 @@
    ],
    "summary": "Tunes damage, healing and absorbs per map and phase, and adds a harder mode for selected raids and dungeons.",
    "description": "",
-   "stars": null,
+   "stars": 34,
    "updated": "2026-10-17",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 11.0,
+   "score": 27.4,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__mod-zone-difficulty.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -605,11 +635,16 @@
    ],
    "summary": "A tool for 3.3.5a modders and realm hosts.",
    "description": "Volumetric fog, sun and moon shafts, lamp light, water and per-zone looks for the 3.3.5a client",
-   "stars": 44,
+   "stars": 48,
    "updated": "2026-10-23",
    "archived": false,
    "source": "discovered",
-   "score": 23.5
+   "score": 23.9,
+   "release": {
+    "tag": "v0.1.1",
+    "date": "2026-10-23",
+    "url": "https://github.com/lumenveil/Lumenveil/releases/tag/v0.1.1"
+   }
   },
   {
    "id": "link:34d1a345cdba",
@@ -626,13 +661,18 @@
    ],
    "summary": "The open 3.3.5a server core most realm modules here are written for: world, auth and database, with a module system.",
    "description": "",
-   "stars": 9100,
-   "updated": "2026-10-28",
+   "stars": 9131,
+   "updated": "2026-10-31",
    "archived": false,
    "source": "seed",
-   "score": 50.6,
+   "score": 51.6,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__azerothcore-wotlk.webp",
-   "thumb_credit": "Preview image from the project's GitHub page"
+   "thumb_credit": "Preview image from the project's GitHub page",
+   "release": {
+    "tag": "Latest",
+    "date": "2024-11-16",
+    "url": "https://github.com/azerothcore/azerothcore-wotlk/releases/tag/Latest"
+   }
   },
   {
    "id": "link:27c65bb94e2e",
@@ -649,12 +689,12 @@
    ],
    "summary": "Run a whole realm (database, auth and world servers) from ready-made Docker images and one compose file.",
    "description": "",
-   "stars": null,
+   "stars": 306,
    "updated": "2026-06-29",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 11.0,
+   "score": 36.9,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__acore-docker.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -696,13 +736,18 @@
    ],
    "summary": "A TrinityCore-based server core kept up for 4.3.4 realms.",
    "description": "",
-   "stars": null,
+   "stars": 304,
    "updated": "2026-10-25",
    "archived": false,
    "source": "seed",
-   "score": 11.0,
+   "score": 36.8,
    "thumb": "/wrath/art/hub-thumbs/the-cataclysm-preservation-project__trinitycore.webp",
-   "thumb_credit": "Preview image from the project's GitHub page"
+   "thumb_credit": "Preview image from the project's GitHub page",
+   "release": {
+    "tag": "TDB434.22011",
+    "date": "2022-01-09",
+    "url": "https://github.com/The-Cataclysm-Preservation-Project/TrinityCore/releases/tag/TDB434.22011"
+   }
   },
   {
    "id": "link:1e2365494bfd",
@@ -719,11 +764,16 @@
    ],
    "summary": "The CMaNGOS server core for 1.12.1, with its own scripting and a focus on accurate behaviour.",
    "description": "",
-   "stars": null,
+   "stars": 1096,
    "updated": "2026-10-28",
    "archived": false,
    "source": "seed",
-   "score": 11.0
+   "score": 42.4,
+   "release": {
+    "tag": "latest",
+    "date": "2026-05-23",
+    "url": "https://github.com/cmangos/mangos-classic/releases/tag/latest"
+   }
   },
   {
    "id": "link:0586489030da",
@@ -740,11 +790,16 @@
    ],
    "summary": "The CMaNGOS server core for 2.4.3 realms.",
    "description": "",
-   "stars": null,
+   "stars": 527,
    "updated": "2026-10-28",
    "archived": false,
    "source": "seed",
-   "score": 11.0
+   "score": 39.2,
+   "release": {
+    "tag": "latest",
+    "date": "2026-05-23",
+    "url": "https://github.com/cmangos/mangos-tbc/releases/tag/latest"
+   }
   },
   {
    "id": "link:f89e6bff806a",
@@ -761,11 +816,16 @@
    ],
    "summary": "The CMaNGOS server core for 3.3.5a, with its own scripting and a focus on accurate behaviour.",
    "description": "",
-   "stars": null,
-   "updated": "2026-10-27",
+   "stars": 561,
+   "updated": "2026-10-31",
    "archived": false,
    "source": "seed",
-   "score": 11.0
+   "score": 39.5,
+   "release": {
+    "tag": "latest",
+    "date": "2026-05-23",
+    "url": "https://github.com/cmangos/mangos-wotlk/releases/tag/latest"
+   }
   },
   {
    "id": "link:d4a2e2163730",
@@ -834,7 +894,7 @@
    "updated": "2026-10-23",
    "archived": false,
    "source": "discovered",
-   "score": 28.6
+   "score": 29.6
   },
   {
    "id": "link:36f3e41bf73a",
@@ -851,12 +911,12 @@
    ],
    "summary": "Opt-in permadeath with hardcore and ironman rules, milestone rewards and seasons.",
    "description": "",
-   "stars": null,
+   "stars": 5,
    "updated": "2025-08-27",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 8.0
+   "score": 16.8
   },
   {
    "id": "link:6d7cafdc3769",
@@ -873,11 +933,16 @@
    ],
    "summary": "A one-window single-player setup: it builds a local realm with bots from the client you already own, runs it in the background and starts the game.",
    "description": "",
-   "stars": 3,
+   "stars": 6,
    "updated": "2026-10-27",
    "archived": false,
    "source": "seed",
-   "score": 17.0
+   "score": 20.5,
+   "release": {
+    "tag": "v0.1.2",
+    "date": "2026-10-27",
+    "url": "https://github.com/LonelyIceProject/lonelyice/releases/tag/v0.1.2"
+   }
   },
   {
    "id": "link:508eec2c28e9",
@@ -894,11 +959,16 @@
    ],
    "summary": "The MaNGOS server core for 2.4.3, with Eluna Lua scripting built in.",
    "description": "",
-   "stars": null,
+   "stars": 193,
    "updated": "2026-09-02",
    "archived": false,
    "source": "seed",
-   "score": 11.0
+   "score": 34.9,
+   "release": {
+    "tag": "v22.04.161",
+    "date": "2026-09-02",
+    "url": "https://github.com/mangosone/server/releases/tag/v22.04.161"
+   }
   },
   {
    "id": "link:c76b12864041",
@@ -915,11 +985,16 @@
    ],
    "summary": "The MaNGOS server core for 4.3.4 realms.",
    "description": "",
-   "stars": null,
+   "stars": 135,
    "updated": "2026-10-28",
    "archived": false,
    "source": "seed",
-   "score": 11.0
+   "score": 33.3,
+   "release": {
+    "tag": "v22.03.565",
+    "date": "2026-10-28",
+    "url": "https://github.com/mangosthree/server/releases/tag/v22.03.565"
+   }
   },
   {
    "id": "link:7a6c32701a22",
@@ -936,11 +1011,16 @@
    ],
    "summary": "The MaNGOS server core for 1.12.1, with Eluna Lua scripting built in.",
    "description": "",
-   "stars": 1000,
+   "stars": 1036,
    "updated": "2026-09-08",
    "archived": false,
    "source": "seed",
-   "score": 41.0
+   "score": 42.2,
+   "release": {
+    "tag": "v22.04.481",
+    "date": "2026-09-08",
+    "url": "https://github.com/mangoszero/server/releases/tag/v22.04.481"
+   }
   },
   {
    "id": "link:6ec9f665a51e",
@@ -957,12 +1037,12 @@
    ],
    "summary": "Opens content in phases across the whole realm, with tuned bosses and loot per phase, for progression-style realms.",
    "description": "",
-   "stars": null,
+   "stars": 82,
    "updated": "2026-10-17",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 11.0,
+   "score": 31.2,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__mod-progression-system.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -981,11 +1061,16 @@
    ],
    "summary": "An open server core for 5.4.8 realms.",
    "description": "",
-   "stars": 598,
+   "stars": 601,
    "updated": "2026-10-30",
    "archived": false,
    "source": "seed",
-   "score": 38.8
+   "score": 39.8,
+   "release": {
+    "tag": "sf_db_26",
+    "date": "2026-08-15",
+    "url": "https://github.com/ProjectSkyfire/SkyFire_548/releases/tag/sf_db_26"
+   }
   },
   {
    "id": "link:0ab815425371",
@@ -1004,9 +1089,9 @@
    "description": "SkyFireONE is a full featured (FL/OSS) emulator for the Burning Crusade expansion.",
    "stars": 40,
    "updated": "2018-04-28",
-   "archived": false,
+   "archived": true,
    "source": "discovered",
-   "score": 17.1
+   "score": 14.1
   },
   {
    "id": "link:d0b78a519da8",
@@ -1044,11 +1129,16 @@
    ],
    "summary": "Long-running open server core; its 3.3.5 branch runs Wrath realms and is the base AzerothCore grew from.",
    "description": "",
-   "stars": 10800,
-   "updated": "2026-10-29",
+   "stars": 10850,
+   "updated": "2026-10-31",
    "archived": false,
    "source": "seed",
-   "score": 51.3
+   "score": 52.4,
+   "release": {
+    "tag": "TDB335.26091",
+    "date": "2026-09-09",
+    "url": "https://github.com/TrinityCore/TrinityCore/releases/tag/TDB335.26091"
+   }
   },
   {
    "id": "link:8faa9b7b93df",
@@ -1067,9 +1157,9 @@
    "description": "",
    "stars": 19,
    "updated": "2019-01-02",
-   "archived": false,
+   "archived": true,
    "source": "discovered",
-   "score": 13.0
+   "score": 11.0
   },
   {
    "id": "link:552843098e59",
@@ -1088,11 +1178,16 @@
    "description": "Derived from sunstrider-legacy and amied to provide fully open-sourced and playable trinity tbc core",
    "stars": 22,
    "updated": "2021-01-02",
-   "archived": false,
+   "archived": true,
    "source": "discovered",
-   "score": 15.6,
+   "score": 12.6,
    "thumb": "/wrath/art/hub-thumbs/trinitytbc__core.webp",
-   "thumb_credit": "Preview image from the project's GitHub page"
+   "thumb_credit": "Preview image from the project's GitHub page",
+   "release": {
+    "tag": "TTDB20011",
+    "date": "2020-01-04",
+    "url": "https://github.com/TrinityTBC/core/releases/tag/TTDB20011"
+   }
   },
   {
    "id": "link:c3f17b2f370f",
@@ -1109,11 +1204,11 @@
    ],
    "summary": "An open server core for 1.12.1 realms, aiming at the content of each patch of that era.",
    "description": "",
-   "stars": null,
+   "stars": 968,
    "updated": "2026-10-28",
    "archived": false,
    "source": "seed",
-   "score": 11.0
+   "score": 41.9
   },
   {
    "id": "link:c04af693c17f",
@@ -1134,7 +1229,7 @@
    "updated": "2026-10-20",
    "archived": false,
    "source": "discovered",
-   "score": 23.8,
+   "score": 24.8,
    "thumb": "/wrath/art/hub-thumbs/mserajnik__vmangos-deploy.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -1221,12 +1316,12 @@
    ],
    "summary": "Loot every nearby corpse at once.",
    "description": "Loot all bodies at once!",
-   "stars": 76,
-   "updated": "2026-10-10",
+   "stars": 86,
+   "updated": "2026-10-31",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 30.9,
+   "score": 31.4,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__mod-aoe-loot.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -1269,12 +1364,12 @@
    ],
    "summary": "Revives players automatically, for test or casual realms.",
    "description": "",
-   "stars": null,
+   "stars": 3,
    "updated": "2025-02-27",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 8.0,
+   "score": 15.0,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__mod-auto-revive.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -1293,12 +1388,12 @@
    ],
    "summary": "A bag item that rolls random, level-appropriate loot.",
    "description": "",
-   "stars": null,
+   "stars": 7,
    "updated": "2026-07-13",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 11.0
+   "score": 21.0
   },
   {
    "id": "link:e29a5a7656f4",
@@ -1339,12 +1434,12 @@
    ],
    "summary": "An in-game guide for new players with tips, a small wiki and progress rewards.",
    "description": "",
-   "stars": null,
+   "stars": 4,
    "updated": "2026-07-07",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 11.0
+   "score": 19.0
   },
   {
    "id": "link:2b4f6d35a3a0",
@@ -1361,12 +1456,12 @@
    ],
    "summary": "Announces raid boss kills to the whole realm.",
    "description": "",
-   "stars": null,
+   "stars": 11,
    "updated": "2026-03-03",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 11.0
+   "score": 22.8
   },
   {
    "id": "link:a40ce94207e9",
@@ -1383,12 +1478,17 @@
    ],
    "summary": "Spreads playerbots across level ranges you set, so every bracket has company.",
    "description": "",
-   "stars": 61,
+   "stars": 62,
    "updated": "2026-09-22",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore with mod-playerbots",
-   "score": 28.9
+   "score": 30.0,
+   "release": {
+    "tag": "release-v1.08",
+    "date": "2025-11-16",
+    "url": "https://github.com/DustinHendrickson/mod-player-bot-level-brackets/releases/tag/release-v1.08"
+   }
   },
   {
    "id": "link:b38deb6b9bbb",
@@ -1429,12 +1529,12 @@
    ],
    "summary": "An NPC that casts a set of buffs on players.",
    "description": "",
-   "stars": null,
+   "stars": 25,
    "updated": "2026-03-23",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 11.0
+   "score": 26.1
   },
   {
    "id": "link:b6ed5916c692",
@@ -1451,12 +1551,12 @@
    ],
    "summary": "A buff menu in two languages, loot multipliers and random buffs, with no SQL needed.",
    "description": "",
-   "stars": null,
+   "stars": 0,
    "updated": "2026-08-29",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 11.0
+   "score": 12.0
   },
   {
    "id": "link:a8475fb51400",
@@ -1473,12 +1573,12 @@
    ],
    "summary": "Lets players copy a character at its current stage, for example for low-level PvP.",
    "description": "",
-   "stars": null,
+   "stars": 7,
    "updated": "2022-02-20",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 6.0
+   "score": 16.0
   },
   {
    "id": "link:2ac5fd641b5c",
@@ -1500,7 +1600,7 @@
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 20.8,
+   "score": 21.8,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__mod-character-tools.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -1519,12 +1619,12 @@
    ],
    "summary": "Fills battleground teams from both factions so queues pop faster.",
    "description": "",
-   "stars": null,
+   "stars": 25,
    "updated": "2026-07-19",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 11.0,
+   "score": 26.1,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__mod-cfbg.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -1543,12 +1643,12 @@
    ],
    "summary": "A realm module for AzerothCore (3.3.5a).",
    "description": "An original module for AzerothCore by StygianTheBest",
-   "stars": 18,
+   "stars": 19,
    "updated": "2025-03-02",
    "archived": false,
    "source": "discovered",
    "needs": "AzerothCore",
-   "score": 16.8
+   "score": 17.0
   },
   {
    "id": "link:13f78fb88295",
@@ -1565,12 +1665,12 @@
    ],
    "summary": "After a boss kill, players pick one item from its loot table themselves.",
    "description": "",
-   "stars": null,
+   "stars": 2,
    "updated": "2026-05-24",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 11.0
+   "score": 16.8
   },
   {
    "id": "link:fc1902fb1616",
@@ -1587,12 +1687,12 @@
    ],
    "summary": "Warns players before they leave a battleground early and take the deserter debuff.",
    "description": "",
-   "stars": null,
+   "stars": 4,
    "updated": "2025-02-22",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 8.0
+   "score": 15.0
   },
   {
    "id": "link:966948c8c8d2",
@@ -1609,12 +1709,12 @@
    ],
    "summary": "Restores health, mana and cooldowns after a duel.",
    "description": "",
-   "stars": null,
+   "stars": 25,
    "updated": "2026-09-20",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 11.0,
+   "score": 26.1,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__mod-duel-reset.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -1634,7 +1734,7 @@
    "summary": "Helps playerbot groups clear whole dungeons on their own.",
    "description": "A module for AzerothCore's playerbots to help them clear dungeons.",
    "stars": 118,
-   "updated": "2026-10-26",
+   "updated": "2026-10-31",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore with mod-playerbots",
@@ -1708,7 +1808,7 @@
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 19.5,
+   "score": 20.5,
    "thumb": "/wrath/art/hub-thumbs/55honey__acore_exchangenpc.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -1727,12 +1827,12 @@
    ],
    "summary": "A board at flight masters to unlock nearby flight paths for in-game gold.",
    "description": "",
-   "stars": null,
+   "stars": 0,
    "updated": "2026-10-15",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 11.0
+   "score": 12.0
   },
   {
    "id": "link:b315fa8df0a7",
@@ -1756,7 +1856,12 @@
    "needs": "AzerothCore",
    "score": 13.8,
    "thumb": "/wrath/art/hub-thumbs/gozzim__mod-globalchat.webp",
-   "thumb_credit": "Preview image from the project's GitHub page"
+   "thumb_credit": "Preview image from the project's GitHub page",
+   "release": {
+    "tag": "v1.0.0",
+    "date": "2022-05-15",
+    "url": "https://github.com/Gozzim/mod-globalchat/releases/tag/v1.0.0"
+   }
   },
   {
    "id": "link:591df46d78dd",
@@ -1778,7 +1883,7 @@
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 19.5
+   "score": 20.5
   },
   {
    "id": "link:2ca4ae574f9e",
@@ -1842,7 +1947,7 @@
    "summary": "Each player sets their own experience rate with a command.",
    "description": "",
    "stars": 29,
-   "updated": "2026-04-19",
+   "updated": "2026-10-31",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
@@ -1863,12 +1968,12 @@
    ],
    "summary": "Change the look of gear to that of other items you own, through an NPC.",
    "description": "",
-   "stars": null,
+   "stars": 6,
    "updated": "2026-07-29",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 11.0
+   "score": 20.5
   },
   {
    "id": "link:ced8eb5e6712",
@@ -1885,12 +1990,12 @@
    ],
    "summary": "A starting point for an NPC that upgrades items in steps.",
    "description": "",
-   "stars": null,
+   "stars": 4,
    "updated": "2023-04-20",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 6.0
+   "score": 13.0
   },
   {
    "id": "link:b8303a65cadb",
@@ -1953,12 +2058,12 @@
    ],
    "summary": "Keeps players out of maps and zones you choose.",
    "description": "",
-   "stars": null,
+   "stars": 2,
    "updated": "2025-07-03",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 8.0,
+   "score": 13.8,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__mod-keep-out.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2023,12 +2128,12 @@
    ],
    "summary": "An item reward on each level-up, and weapon skills learned automatically.",
    "description": "",
-   "stars": null,
+   "stars": 0,
    "updated": "2026-04-26",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 11.0,
+   "score": 12.0,
    "thumb": "/wrath/art/hub-thumbs/phreeez__levelreward.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2047,12 +2152,12 @@
    ],
    "summary": "Grants a random primary stat bonus on each level-up.",
    "description": "",
-   "stars": null,
+   "stars": 3,
    "updated": "2026-04-17",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 11.0,
+   "score": 18.0,
    "thumb": "/wrath/art/hub-thumbs/brytenwally__levelstats.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2100,7 +2205,7 @@
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 20.8,
+   "score": 21.8,
    "thumb": "/wrath/art/hub-thumbs/55honey__acore_levelupreward.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2119,12 +2224,12 @@
    ],
    "summary": "A realm module for AzerothCore (3.3.5a).",
    "description": "AI-powered bot conversations for AzerothCore WotLK 3.3.5a - for mod-playerbots",
-   "stars": 100,
-   "updated": "2026-10-28",
+   "stars": 103,
+   "updated": "2026-10-31",
    "archived": false,
    "source": "discovered",
    "needs": "AzerothCore",
-   "score": 27.0
+   "score": 27.2
   },
   {
    "id": "link:f7b39a118221",
@@ -2141,12 +2246,12 @@
    ],
    "summary": "A realm module for AzerothCore (3.3.5a).",
    "description": "An AI-powered in-game assistant for AzerothCore",
-   "stars": 14,
+   "stars": 17,
    "updated": "2026-10-06",
    "archived": false,
    "source": "discovered",
    "needs": "AzerothCore",
-   "score": 18.8,
+   "score": 19.6,
    "thumb": "/wrath/art/hub-thumbs/hokken__mod-llm-guide.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2165,12 +2270,12 @@
    ],
    "summary": "Routes group loot to the player who can use it best.",
    "description": "",
-   "stars": null,
+   "stars": 5,
    "updated": "2026-06-30",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 11.0
+   "score": 19.8
   },
   {
    "id": "link:6579538594e2",
@@ -2187,12 +2292,12 @@
    ],
    "summary": "A companion pet that loots corpses for you.",
    "description": "",
-   "stars": null,
+   "stars": 4,
    "updated": "2026-04-26",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 11.0
+   "score": 19.0
   },
   {
    "id": "link:896a72f08073",
@@ -2209,12 +2314,12 @@
    ],
    "summary": "A codex of the world's lore that unlocks as you explore, talk and quest; comes with an addon.",
    "description": "",
-   "stars": 5,
+   "stars": 6,
    "updated": "2026-10-26",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 18.8
+   "score": 20.5
   },
   {
    "id": "link:d0994aa9f487",
@@ -2232,7 +2337,7 @@
    "summary": "Lua scripts for 1.12.1 realms.",
    "description": "A Vanilla game server aimed at providing the best developer experience",
    "stars": 13,
-   "updated": "2026-10-29",
+   "updated": "2026-11-01",
    "archived": false,
    "source": "discovered",
    "score": 18.5
@@ -2274,12 +2379,12 @@
    ],
    "summary": "Resets the hearthstone cooldown right after use.",
    "description": "AzerothCore module that immediately skips the cooldown of the Hearthstone after use",
-   "stars": 21,
+   "stars": 24,
    "updated": "2025-03-07",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 22.4,
+   "score": 23.0,
    "thumb": "/wrath/art/hub-thumbs/bytesgalore__mod-no-hearthstone-cooldown.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2298,12 +2403,12 @@
    ],
    "summary": "A realm module for AzerothCore (3.3.5a).",
    "description": "Teaches all mounts",
-   "stars": 13,
+   "stars": 14,
    "updated": "2026-03-23",
    "archived": false,
    "source": "discovered",
    "needs": "AzerothCore",
-   "score": 18.5
+   "score": 18.8
   },
   {
    "id": "link:f5d4dabbaa93",
@@ -2344,14 +2449,19 @@
    ],
    "summary": "A realm module for AzerothCore (3.3.5a).",
    "description": "Mod-ollama-chat is an AzerothCore module that enhances the Player Bots module by integrating external language model (LLM) support via the Ollama API.",
-   "stars": 127,
+   "stars": 139,
    "updated": "2026-10-05",
    "archived": false,
    "source": "discovered",
    "needs": "AzerothCore",
-   "score": 28.1,
+   "score": 28.5,
    "thumb": "/wrath/art/hub-thumbs/dustinhendrickson__mod-ollama-chat.webp",
-   "thumb_credit": "Preview image from the project's GitHub page"
+   "thumb_credit": "Preview image from the project's GitHub page",
+   "release": {
+    "tag": "v0.1.3",
+    "date": "2026-10-05",
+    "url": "https://github.com/DustinHendrickson/mod-ollama-chat/releases/tag/v0.1.3"
+   }
   },
   {
    "id": "link:70da67ee3465",
@@ -2368,14 +2478,19 @@
    ],
    "summary": "A realm module for AzerothCore (3.3.5a).",
    "description": "A character-focused LLM integration for AzerothCore/Playerbots",
-   "stars": 52,
+   "stars": 64,
    "updated": "2026-10-04",
    "archived": false,
    "source": "discovered",
    "needs": "AzerothCore",
-   "score": 24.2,
+   "score": 25.1,
    "thumb": "/wrath/art/hub-thumbs/deseven__mod-pbc.webp",
-   "thumb_credit": "Preview image from the project's GitHub page"
+   "thumb_credit": "Preview image from the project's GitHub page",
+   "release": {
+    "tag": "2026-10-04",
+    "date": "2026-10-04",
+    "url": "https://github.com/deseven/mod-pbc/releases/tag/2026-10-04"
+   }
   },
   {
    "id": "link:dfefb279f469",
@@ -2392,12 +2507,12 @@
    ],
    "summary": "Gives a reward item for every set amount of time played.",
    "description": "",
-   "stars": null,
+   "stars": 23,
    "updated": "2026-09-30",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 11.0,
+   "score": 25.8,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__mod-reward-played-time.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2416,12 +2531,12 @@
    ],
    "summary": "Adds AI-driven player characters that quest, group, run dungeons and fill the world; needs its own core branch.",
    "description": "AzerothCore Playerbots Module",
-   "stars": 1100,
-   "updated": "2026-10-22",
+   "stars": 1203,
+   "updated": "2026-10-30",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore (the Playerbot branch)",
-   "score": 42.4,
+   "score": 42.8,
    "thumb": "/wrath/art/hub-thumbs/mod-playerbots__mod-playerbots.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2440,12 +2555,12 @@
    ],
    "summary": "Awards the old PvP rank titles for honorable kills.",
    "description": "",
-   "stars": null,
+   "stars": 26,
    "updated": "2025-02-22",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 8.0,
+   "score": 23.3,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__mod-pvp-titles.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2469,7 +2584,7 @@
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 22.8,
+   "score": 23.8,
    "thumb": "/wrath/art/hub-thumbs/yuof__mod-rndbot-sync.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2488,12 +2603,12 @@
    ],
    "summary": "Rolls random bonus enchants on weapons and armour when they drop.",
    "description": "",
-   "stars": null,
+   "stars": 5,
    "updated": "2026-06-12",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 11.0
+   "score": 19.8
   },
   {
    "id": "link:4133c0d348f0",
@@ -2537,7 +2652,7 @@
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 19.8
+   "score": 20.8
   },
   {
    "id": "link:ab804ef7c9b2",
@@ -2578,12 +2693,12 @@
    ],
    "summary": "Lets GMs mail items to players already soulbound.",
    "description": "",
-   "stars": null,
+   "stars": 8,
    "updated": "2022-11-03",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 6.0,
+   "score": 16.5,
    "thumb": "/wrath/art/hub-thumbs/55honey__acore_sendandbind.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2602,12 +2717,12 @@
    ],
    "summary": "Sitting down slowly restores health and mana.",
    "description": "",
-   "stars": null,
+   "stars": 6,
    "updated": "2026-04-28",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 11.0,
+   "score": 20.5,
    "thumb": "/wrath/art/hub-thumbs/brytenwally__sitmeansrest.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2626,12 +2741,12 @@
    ],
    "summary": "Lets new death knights skip the starting quest chain.",
    "description": "",
-   "stars": 20,
+   "stars": 21,
    "updated": "2026-10-11",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 24.2,
+   "score": 24.4,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__mod-skip-dk-starting-area.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2650,12 +2765,12 @@
    ],
    "summary": "Lets a single player queue for the Dungeon Finder.",
    "description": "Solo LFG Module for use on AzerothCore 3.3.5a",
-   "stars": 55,
+   "stars": 58,
    "updated": "2025-02-27",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 26.5
+   "score": 26.7
   },
   {
    "id": "link:6c25ed7a0d37",
@@ -2672,12 +2787,12 @@
    ],
    "summary": "Scales a player's stats inside dungeons and raids to the group size, for small groups and solo players.",
    "description": "Solocraft module for AzerothCore",
-   "stars": 72,
+   "stars": 77,
    "updated": "2026-09-21",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 30.6,
+   "score": 30.9,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__mod-solocraft.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2696,12 +2811,12 @@
    ],
    "summary": "A realm module for AzerothCore (3.3.5a).",
    "description": "This module automatically joins new players to a guild of your choice on first login.",
-   "stars": 16,
+   "stars": 17,
    "updated": "2026-04-04",
    "archived": false,
    "source": "discovered",
    "needs": "AzerothCore",
-   "score": 19.3,
+   "score": 19.6,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__mod-starter-guild.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2720,12 +2835,12 @@
    ],
    "summary": "A GM command to summon every player, or a group, to one place.",
    "description": "",
-   "stars": null,
+   "stars": 5,
    "updated": "2022-02-20",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 6.0,
+   "score": 14.8,
    "thumb": "/wrath/art/hub-thumbs/55honey__acore_summonall.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2744,12 +2859,12 @@
    ],
    "summary": "A Lua NPC that buffs players on request.",
    "description": "",
-   "stars": null,
+   "stars": 1,
    "updated": "2023-04-06",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 6.0
+   "score": 10.0
   },
   {
    "id": "link:ee9660e697ca",
@@ -2766,12 +2881,12 @@
    ],
    "summary": "Repeating announcements that a GM or the console starts and stops.",
    "description": "",
-   "stars": null,
+   "stars": 7,
    "updated": "2022-09-06",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 6.0,
+   "score": 16.0,
    "thumb": "/wrath/art/hub-thumbs/55honey__acore_tempannouncements.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2790,12 +2905,12 @@
    ],
    "summary": "A realm-wide collection event in which players hand in supplies to unlock content.",
    "description": "",
-   "stars": null,
+   "stars": 7,
    "updated": "2026-06-21",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 11.0,
+   "score": 20.0,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__mod-war-effort.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2819,7 +2934,7 @@
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 23.8,
+   "score": 24.8,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__mod-weapon-visual.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2886,12 +3001,12 @@
    ],
    "summary": "Moves players out of zones you have closed.",
    "description": "",
-   "stars": null,
+   "stars": 7,
    "updated": "2023-02-10",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 6.0,
+   "score": 16.0,
    "thumb": "/wrath/art/hub-thumbs/55honey__acore_zonecheck.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2910,12 +3025,12 @@
    ],
    "summary": "Applies a configurable debuff to players in chosen zones.",
    "description": "",
-   "stars": null,
+   "stars": 6,
    "updated": "2023-03-08",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 6.0,
+   "score": 15.5,
    "thumb": "/wrath/art/hub-thumbs/55honey__acore_zonedebuff.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2934,12 +3049,12 @@
    ],
    "summary": "Adds a one-versus-one rated arena queue through an arena NPC.",
    "description": "",
-   "stars": null,
+   "stars": 29,
    "updated": "2026-03-25",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 11.0,
+   "score": 26.8,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__mod-1v1-arena.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2958,12 +3073,12 @@
    ],
    "summary": "A 1v1 duel queue with best-of-three matches and matchmaking, written in Lua.",
    "description": "",
-   "stars": null,
+   "stars": 0,
    "updated": "2025-09-03",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 8.0,
+   "score": 9.0,
    "thumb": "/wrath/art/hub-thumbs/privatedonut__1v1_pvp_system.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -2982,12 +3097,12 @@
    ],
    "summary": "Queue alone for 3v3 arena; the module builds balanced teams from the solo players waiting.",
    "description": "",
-   "stars": null,
+   "stars": 14,
    "updated": "2026-09-29",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 11.0,
+   "score": 23.8,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__mod-arena-3v3-solo-queue.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -3011,7 +3126,7 @@
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 15.8,
+   "score": 16.8,
    "thumb": "/wrath/art/hub-thumbs/r-o-b-o-t-o__mod-i-found-your-sword.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -3030,12 +3145,12 @@
    ],
    "summary": "Wanted levels for player crimes that persist and send NPC bounty hunters after the guilty.",
    "description": "",
-   "stars": null,
+   "stars": 2,
    "updated": "2026-05-15",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 11.0,
+   "score": 16.8,
    "thumb": "/wrath/art/hub-thumbs/zyggy123__crime-bounty-system.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -3054,14 +3169,19 @@
    ],
    "summary": "The classic roll-down dice game between two players, with its own window.",
    "description": "",
-   "stars": null,
+   "stars": 2,
    "updated": "2024-08-01",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna, plus AIO",
-   "score": 8.0,
+   "score": 13.8,
    "thumb": "/wrath/art/hub-thumbs/sogladev__mod-deathroll-aio.webp",
-   "thumb_credit": "Preview image from the project's GitHub page"
+   "thumb_credit": "Preview image from the project's GitHub page",
+   "release": {
+    "tag": "v0.2.0",
+    "date": "2024-07-31",
+    "url": "https://github.com/sogladev/mod-deathroll-aio/releases/tag/v0.2.0"
+   }
   },
   {
    "id": "link:de6b3c3bcfc3",
@@ -3078,12 +3198,12 @@
    ],
    "summary": "A usable flask that turns the drinker into a random creature model for a while.",
    "description": "",
-   "stars": null,
+   "stars": 2,
    "updated": "2026-05-10",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 11.0
+   "score": 16.8
   },
   {
    "id": "link:2089b5252131",
@@ -3124,11 +3244,11 @@
    ],
    "summary": "A tool for 3.3.5a modders and realm hosts.",
    "description": "Web client to consume azerothcore opcodes",
-   "stars": 29,
+   "stars": 30,
    "updated": "2024-10-10",
    "archived": false,
    "source": "discovered",
-   "score": 18.8,
+   "score": 18.9,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__acore-client.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -3147,13 +3267,18 @@
    ],
    "summary": "Command-line updater for addons hosted on GitHub or GitLab, driven by a simple list file.",
    "description": "",
-   "stars": null,
+   "stars": 31,
    "updated": "2022-06-05",
    "archived": false,
    "source": "seed",
-   "score": 6.0,
+   "score": 22.1,
    "thumb": "/wrath/art/hub-thumbs/alchem1ster__addons-update-tool.webp",
-   "thumb_credit": "Preview image from the project's GitHub page"
+   "thumb_credit": "Preview image from the project's GitHub page",
+   "release": {
+    "tag": "v1.3.4",
+    "date": "2022-06-04",
+    "url": "https://github.com/alchem1ster/AddOns-Update-Tool/releases/tag/v1.3.4"
+   }
   },
   {
    "id": "link:fb8a6a00dbd2",
@@ -3175,7 +3300,12 @@
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 29.7
+   "score": 30.7,
+   "release": {
+    "tag": "v2.0",
+    "date": "2015-12-23",
+    "url": "https://github.com/Rochet2/AIO/releases/tag/v2.0"
+   }
   },
   {
    "id": "link:d5124fd2887f",
@@ -3192,12 +3322,12 @@
    ],
    "summary": "The AzerothCore Lua Engine, an Eluna-based module that runs Lua realm scripts on AzerothCore.",
    "description": "AzerothCore Lua Engine",
-   "stars": 186,
+   "stars": 196,
    "updated": "2026-10-10",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 34.7
+   "score": 34.9
   },
   {
    "id": "link:39b219549a64",
@@ -3214,11 +3344,16 @@
    ],
    "summary": "A client-side library that adds newer interface functions (such as nameplate APIs) to the 3.3.5a client for addons to use.",
    "description": "",
-   "stars": null,
+   "stars": 87,
    "updated": "2026-06-03",
    "archived": false,
    "source": "seed",
-   "score": 11.0
+   "score": 31.4,
+   "release": {
+    "tag": "0.1.4",
+    "date": "2022-11-16",
+    "url": "https://github.com/FrostAtom/awesome_wotlk/releases/tag/0.1.4"
+   }
   },
   {
    "id": "link:57ce413c5697",
@@ -3235,14 +3370,19 @@
    ],
    "summary": "A desktop world editor for AzerothCore realms: build quests, NPCs, objects, spawns and patrols in a 3D view, then export it all as SQL.",
    "description": "",
-   "stars": 16,
+   "stars": 17,
    "updated": "2026-10-29",
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 23.3,
+   "score": 24.6,
    "thumb": "/wrath/art/hub-thumbs/dmck96__azeroth-world-editor.webp",
-   "thumb_credit": "Preview image from the project's GitHub page"
+   "thumb_credit": "Preview image from the project's GitHub page",
+   "release": {
+    "tag": "v0.10.0",
+    "date": "2026-10-30",
+    "url": "https://github.com/DMCK96/azeroth-world-editor/releases/tag/v0.10.0"
+   }
   },
   {
    "id": "link:e43457e58669",
@@ -3265,7 +3405,12 @@
    "source": "discovered",
    "score": 26.3,
    "thumb": "/wrath/art/hub-thumbs/r-o-b-o-t-o__azerothcore-armory.webp",
-   "thumb_credit": "Preview image from the project's GitHub page"
+   "thumb_credit": "Preview image from the project's GitHub page",
+   "release": {
+    "tag": "v1.0.0",
+    "date": "2022-03-20",
+    "url": "https://github.com/r-o-b-o-t-o/azerothcore-armory/releases/tag/v1.0.0"
+   }
   },
   {
    "id": "link:ce831d3570c2",
@@ -3282,11 +3427,11 @@
    ],
    "summary": "A tool for 3.3.5a modders and realm hosts.",
    "description": "MCP server for AzerothCore",
-   "stars": 24,
+   "stars": 27,
    "updated": "2026-04-15",
    "archived": false,
    "source": "discovered",
-   "score": 21.0,
+   "score": 21.5,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__azerothmcp.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -3330,7 +3475,7 @@
    "updated": "2026-10-25",
    "archived": false,
    "source": "discovered",
-   "score": 19.0
+   "score": 20.0
   },
   {
    "id": "link:0d15a3dd09c7",
@@ -3396,7 +3541,12 @@
    "updated": "2026-10-11",
    "archived": false,
    "source": "seed",
-   "score": 23.0
+   "score": 24.0,
+   "release": {
+    "tag": "Wowpad-1.4.2",
+    "date": "2026-10-11",
+    "url": "https://github.com/Oddity-git/WoW-Pad/releases/tag/Wowpad-1.4.2"
+   }
   },
   {
    "id": "link:379810e1dff9",
@@ -3419,7 +3569,12 @@
    "source": "discovered",
    "score": 34.6,
    "thumb": "/wrath/art/hub-thumbs/bandysc__wowdatabaseeditor.webp",
-   "thumb_credit": "Preview image from the project's GitHub page"
+   "thumb_credit": "Preview image from the project's GitHub page",
+   "release": {
+    "tag": "build2659",
+    "date": "2024-03-09",
+    "url": "https://github.com/BAndysc/WoWDatabaseEditor/releases/tag/build2659"
+   }
   },
   {
    "id": "link:0c0a296730bd",
@@ -3436,12 +3591,12 @@
    ],
    "summary": "Posts chosen realm events and messages to a Discord channel through a webhook.",
    "description": "",
-   "stars": null,
+   "stars": 3,
    "updated": "2023-06-06",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 6.0
+   "score": 13.0
   },
   {
    "id": "link:47d4c1afebef",
@@ -3458,7 +3613,7 @@
    ],
    "summary": "Lua scripting engine for server cores: hook events and script creatures, items and gossip without rebuilding.",
    "description": "Eluna Lua Engine for Emulators",
-   "stars": 454,
+   "stars": 455,
    "updated": "2026-10-22",
    "archived": false,
    "source": "seed",
@@ -3523,12 +3678,12 @@
    ],
    "summary": "Logs GM commands for review and shows them on a small web dashboard.",
    "description": "",
-   "stars": null,
+   "stars": 2,
    "updated": "2026-06-29",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 11.0
+   "score": 16.8
   },
   {
    "id": "link:70e80df8975b",
@@ -3547,9 +3702,9 @@
    "description": "Python wowcore 2.4.3",
    "stars": 7,
    "updated": "2022-07-14",
-   "archived": false,
+   "archived": true,
    "source": "discovered",
-   "score": 11.0
+   "score": 8.0
   },
   {
    "id": "link:a27baca06236",
@@ -3568,11 +3723,16 @@
    "description": "",
    "stars": 125,
    "updated": "2025-01-07",
-   "archived": false,
+   "archived": true,
    "source": "discovered",
-   "score": 24.0,
+   "score": 22.0,
    "thumb": "/wrath/art/hub-thumbs/helias__keira2.webp",
-   "thumb_credit": "Preview image from the project's GitHub page"
+   "thumb_credit": "Preview image from the project's GitHub page",
+   "release": {
+    "tag": "v2.2.1",
+    "date": "2016-03-11",
+    "url": "https://github.com/Helias/Keira2/releases/tag/v2.2.1"
+   }
   },
   {
    "id": "link:bb7fdc619729",
@@ -3590,12 +3750,17 @@
    "summary": "Desktop database editor for AzerothCore: creatures, quests, items, loot and gossip, with SQL output you can review.",
    "description": "Official Database Editor for AzerothCore. Completely open-source and cross-platform, built with modern web technologies.",
    "stars": 459,
-   "updated": "2026-10-25",
+   "updated": "2026-10-31",
    "archived": false,
    "source": "seed",
    "score": 38.6,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__keira3.webp",
-   "thumb_credit": "Preview image from the project's GitHub page"
+   "thumb_credit": "Preview image from the project's GitHub page",
+   "release": {
+    "tag": "v3.10.5",
+    "date": "2026-05-11",
+    "url": "https://github.com/azerothcore/Keira3/releases/tag/v3.10.5"
+   }
   },
   {
    "id": "link:b43939ee4da3",
@@ -3654,11 +3819,16 @@
    ],
    "summary": "Compact GM panel addon: common commands, a teleport list and playerbot controls in one window.",
    "description": "",
-   "stars": null,
+   "stars": 1,
    "updated": "2026-09-26",
    "archived": false,
    "source": "seed",
-   "score": 11.0
+   "score": 15.0,
+   "release": {
+    "tag": "v1.2.0",
+    "date": "2026-09-26",
+    "url": "https://github.com/ntorres38/MiniGM/releases/tag/v1.2.0"
+   }
   },
   {
    "id": "link:f32a83a0741c",
@@ -3675,11 +3845,11 @@
    ],
    "summary": "The starting template for a new AzerothCore module, with the folder layout, CMake hooks and a sample script.",
    "description": "This is a template, a skeleton of a module to use as a base for your new modules.",
-   "stars": 56,
-   "updated": "2026-09-20",
+   "stars": 59,
+   "updated": "2026-10-31",
    "archived": false,
    "source": "seed",
-   "score": 29.6,
+   "score": 29.8,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__skeleton-module.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -3700,9 +3870,9 @@
    "description": "",
    "stars": 29,
    "updated": "2021-12-27",
-   "archived": false,
+   "archived": true,
    "source": "discovered",
-   "score": 15.8,
+   "score": 13.8,
    "thumb": "/wrath/art/hub-thumbs/neechbear__trinitycore.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -3721,13 +3891,18 @@
    ],
    "summary": "Map editor for the 3.3.5a terrain format: sculpt, paint textures, place models and edit water. You bring your own game files.",
    "description": "",
-   "stars": null,
+   "stars": 204,
    "updated": "2026-04-13",
    "archived": false,
    "source": "seed",
-   "score": 11.0,
+   "score": 35.1,
    "thumb": "/wrath/art/hub-thumbs/wowdev__noggit3.webp",
-   "thumb_credit": "Preview image from the project's GitHub page"
+   "thumb_credit": "Preview image from the project's GitHub page",
+   "release": {
+    "tag": "test-3580",
+    "date": "2024-06-02",
+    "url": "https://github.com/wowdev/noggit3/releases/tag/test-3580"
+   }
   },
   {
    "id": "link:4e18e63f66a3",
@@ -3765,11 +3940,11 @@
    ],
    "summary": "Desktop app to manage an AzerothCore realm over SSH, MySQL and SOAP: start, stop, accounts and logs.",
    "description": "",
-   "stars": null,
+   "stars": 0,
    "updated": "2026-09-12",
    "archived": false,
    "source": "seed",
-   "score": 11.0
+   "score": 12.0
   },
   {
    "id": "link:c32318ed6ebd",
@@ -3786,11 +3961,11 @@
    ],
    "summary": "A tool for 3.3.5a modders and realm hosts.",
    "description": "AzerothCore Server status",
-   "stars": 39,
+   "stars": 40,
    "updated": "2026-10-25",
    "archived": false,
    "source": "discovered",
-   "score": 23.0,
+   "score": 23.1,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__server-status.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -3809,11 +3984,16 @@
    ],
    "summary": "A tool for 3.3.5a modders and realm hosts.",
    "description": "Simple Registration page for TrinityCore/AzerothCore/AshamaneCore/CMangos",
-   "stars": 361,
+   "stars": 362,
    "updated": "2026-04-13",
    "archived": false,
    "source": "discovered",
-   "score": 32.6
+   "score": 32.6,
+   "release": {
+    "tag": "2.0.3",
+    "date": "2023-12-28",
+    "url": "https://github.com/masterking32/WoWSimpleRegistration/releases/tag/2.0.3"
+   }
   },
   {
    "id": "link:dbf9dc8bc2cd",
@@ -3855,7 +4035,7 @@
    "updated": "2019-10-13",
    "archived": false,
    "source": "discovered",
-   "score": 10.4,
+   "score": 11.4,
    "thumb": "/wrath/art/hub-thumbs/helias__tc-telegram-bot.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -3874,11 +4054,11 @@
    ],
    "summary": "A tool for 3.3.5a modders and realm hosts.",
    "description": "Python script to automated the db backup using Telegram as cloud storage",
-   "stars": 71,
+   "stars": 83,
    "updated": "2026-10-25",
    "archived": false,
    "source": "discovered",
-   "score": 25.6,
+   "score": 26.2,
    "thumb": "/wrath/art/hub-thumbs/azerothcore__telegram-automated-db-backup.webp",
    "thumb_credit": "Preview image from the project's GitHub page"
   },
@@ -3897,12 +4077,12 @@
    ],
    "summary": "An item for test realms that opens menus for levels, gear, teleports and other testing shortcuts.",
    "description": "",
-   "stars": null,
+   "stars": 0,
    "updated": "2026-07-06",
    "archived": false,
    "source": "seed",
    "needs": "mod-ale or Eluna",
-   "score": 11.0
+   "score": 12.0
   },
   {
    "id": "link:dba48735e583",
@@ -3923,9 +4103,14 @@
    "updated": "2026-09-08",
    "archived": false,
    "source": "discovered",
-   "score": 26.2,
+   "score": 27.2,
    "thumb": "/wrath/art/hub-thumbs/walkline__tocloud9.webp",
-   "thumb_credit": "Preview image from the project's GitHub page"
+   "thumb_credit": "Preview image from the project's GitHub page",
+   "release": {
+    "tag": "libsidecar-v1.0.0",
+    "date": "2026-08-01",
+    "url": "https://github.com/walkline/ToCloud9/releases/tag/libsidecar-v1.0.0"
+   }
   },
   {
    "id": "link:ba25190e701f",
@@ -3946,7 +4131,12 @@
    "updated": "2026-07-10",
    "archived": false,
    "source": "discovered",
-   "score": 15.5
+   "score": 15.5,
+   "release": {
+    "tag": "v2.0.0",
+    "date": "2026-07-10",
+    "url": "https://github.com/sanjaygbhat/wow-translate/releases/tag/v2.0.0"
+   }
   },
   {
    "id": "link:fd9e8033d814",
@@ -3967,7 +4157,12 @@
    "updated": "2025-09-12",
    "archived": false,
    "source": "discovered",
-   "score": 15.8
+   "score": 16.8,
+   "release": {
+    "tag": "1.1.1",
+    "date": "2024-02-28",
+    "url": "https://github.com/Miorey/trinitycore-srp6/releases/tag/1.1.1"
+   }
   },
   {
    "id": "link:c6a3ca93db91",
@@ -3984,12 +4179,17 @@
    ],
    "summary": "A modding framework with its own editor setup: write server scripts and content changes in TypeScript and build them into a TrinityCore realm.",
    "description": "",
-   "stars": 125,
+   "stars": 126,
    "updated": "2026-08-02",
    "archived": false,
    "source": "seed",
    "needs": "TrinityCore",
-   "score": 32.0
+   "score": 33.0,
+   "release": {
+    "tag": "build-0060883",
+    "date": "2026-08-02",
+    "url": "https://github.com/tswow/tswow/releases/tag/build-0060883"
+   }
   },
   {
    "id": "link:a966e0c86e2e",

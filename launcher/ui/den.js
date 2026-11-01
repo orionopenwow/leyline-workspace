@@ -93,7 +93,7 @@
     say(liteUp() ? "Opening your Den…" : "Starting your Den… (a few seconds)");
     try {
       await call("den_play_lite", { client: c.id });
-      say(`Your Den is open. At the login screen the account is ${st.lite.account || "filled in"}: press Login.`, "ok");
+      say(`Your Den is open. At the login screen: account ${st.lite.account || "DEN"}, password ${st.lite.password || "den"}. Press Login.`, "ok");
     } catch (e) { say(oops(e, "Your Den didn't open. Try again."), "bad"); }
     busy = false;
     load();

@@ -10,7 +10,8 @@
 //! * `den-lite --dens <dir> --bind 127.0.0.1` listens on 127.0.0.1:3724 (login) and 127.0.0.1:8085 (world);
 //! * it reads and writes `<name>.den.json` files ("leyline-den", host/dens.rs) in `<dir>`, and opens the one named by
 //!   `<dir>/open.json` as the Docker Den's realm does;
-//! * it takes one login, the account [`ACCOUNT`], with any password (it only ever listens on this PC).
+//! * it takes one login, the account [`ACCOUNT`] with the password [`PASSWORD`] (SRP6 needs a password the server
+//!   knows before the client proves anything; it only ever listens on this PC), passed as `--password`.
 
 use serde::Serialize;
 use std::net::{SocketAddr, TcpStream};
@@ -25,6 +26,8 @@ pub const LOGIN_PORT: u16 = 3724;
 pub const ADDRESS: &str = "127.0.0.1";
 /// The one account Den Lite takes (written into the client's Config.wtf so the login screen has it filled in).
 pub const ACCOUNT: &str = "DEN";
+/// Den Lite's local password (labs/den-lite `--password`; shown on the Den page beside the account).
+pub const PASSWORD: &str = "den";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct LiteStatus {
@@ -34,6 +37,7 @@ pub struct LiteStatus {
     pub running: bool,
     pub address: String,
     pub account: String,
+    pub password: String,
     /// Where its Den files live (`<root>/state/dens`, the same layout as a Host pack's).
     pub den_dir: String,
 }
@@ -78,7 +82,7 @@ pub fn candidates(app_dir: &Path, env: Option<&str>, launcher_dir: Option<&Path>
 
 /// The launch line for `exe` on `den_dir`.
 pub fn command_line(den_dir: &Path) -> Vec<String> {
-    vec!["--dens".into(), den_dir.display().to_string(), "--bind".into(), ADDRESS.into()]
+    vec!["--dens".into(), den_dir.display().to_string(), "--bind".into(), ADDRESS.into(), "--password".into(), PASSWORD.into()]
 }
 
 fn port_answers(port: u16) -> bool {
@@ -157,6 +161,7 @@ impl DenLite for Binary {
             running: available && Self::child_alive() && port_answers(LOGIN_PORT),
             address: ADDRESS.into(),
             account: ACCOUNT.into(),
+            password: PASSWORD.into(),
             den_dir: self.den_dir().display().to_string(),
         }
     }
@@ -189,6 +194,6 @@ mod tests {
 
     #[test]
     fn its_command_line() {
-        assert_eq!(command_line(Path::new("/d")), ["--dens", "/d", "--bind", "127.0.0.1"]);
+        assert_eq!(command_line(Path::new("/d")), ["--dens", "/d", "--bind", "127.0.0.1", "--password", "den"]);
     }
 }

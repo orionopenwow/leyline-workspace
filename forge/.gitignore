@@ -1,0 +1,5 @@
+# Forge: build output only. Everything else in forge/ is source.
+/build/
+/out/
+/_deps/
+CMakeUserPresets.json

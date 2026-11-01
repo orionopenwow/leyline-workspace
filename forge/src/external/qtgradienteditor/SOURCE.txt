@@ -1,0 +1,6 @@
+qtgradienteditor: files from the Qt 4 "tools" sources (Nokia, 2009), as bundled by Noggit Red.
+Their headers offer the Technology Preview License or, alternatively, the GNU Lesser General Public
+License version 2.1. Forge uses them under the LGPL-2.1, whose text is LICENSE.LGPL in this folder
+(the file the headers name was missing from the Noggit Red tree; it was added for Forge).
+The headers also mention the optional "Nokia Qt LGPL Exception version 1.1" (LGPL_EXCEPTION.txt), an
+additional permission that Forge does not need or rely on; that file was not in the Noggit Red tree.

@@ -1,0 +1,3 @@
+qtimgui: https://github.com/seanchas116/qtimgui (MIT, LICENSE in this folder,
+fetched from the upstream repository's LICENSE file for Forge).
+Dear ImGui (imgui/): https://github.com/ocornut/imgui (MIT, imgui/LICENSE.txt).

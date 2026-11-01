@@ -31,8 +31,8 @@ def steps(doc, job):
 class Workflows(unittest.TestCase):
     def test_all_parse(self):
         names = sorted(p.name for p in HERE.glob("*.yml"))
-        self.assertEqual(names, ["hub-index.yml", "leyline-launcher.yml", "realm-scripts.yml", "scout.yml", "wu-hosting.yml",
-                                 "wu-images.yml"])
+        self.assertEqual(names, ["forge.yml", "hub-index.yml", "leyline-launcher.yml", "realm-scripts.yml", "scout.yml",
+                                 "wu-hosting.yml", "wu-images.yml"])
         for n in names:
             text, doc = load(n)
             self.assertTrue(doc["name"] and doc["on"] and doc["jobs"], n)
@@ -45,6 +45,29 @@ class Workflows(unittest.TestCase):
                         self.assertRegex(s["uses"], r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$", f"{n}: pin actions to a commit SHA")
                         self.assertRegex(text, re.escape(s["uses"]) + r" # (v\d+|stable)\n", f"{n}: name the tag in a comment")
             self.assertNotIn("\t", text, n)
+
+    def test_forge(self):
+        """Forge (GPL-3.0, forge/): only when forge/ changes or by hand; Windows; pinned tools; the built-in token only;
+        the zip, its sha256 and the source tarball on the rolling release forge-latest; the UI word check runs first."""
+        text, doc = load("forge.yml")
+        self.assertEqual(doc["on"]["push"]["paths"], ["forge/**", ".github/workflows/forge.yml"])
+        self.assertEqual(doc["on"]["push"]["branches"], ["main"])
+        self.assertIn("workflow_dispatch", doc["on"])
+        self.assertNotIn("pull_request", doc["on"])
+        self.assertEqual(doc["permissions"], {"contents": "read"})
+        self.assertEqual(set(re.findall(r"secrets\.([A-Za-z_]+)", text)), {"GITHUB_TOKEN"})
+        job = doc["jobs"]["windows"]
+        self.assertEqual(job["runs-on"], "windows-latest")
+        self.assertEqual(job["permissions"], {"contents": "write"})
+        for k in ("QT_VERSION", "AQT_VERSION", "CMAKE_VERSION", "VCPKG_TAG"):
+            self.assertRegex(str(doc["env"][k]), r"^\d", k)
+        run = "\n".join(s.get("run", "") for s in job["steps"])
+        self.assertLess(run.index("check_ui_words.py"), run.index("cmake -S forge"))
+        self.assertIn("windeployqt", run)
+        self.assertIn("Forge.zip.sha256", run)
+        self.assertIn("gh release upload forge-latest Forge.zip Forge.zip.sha256 forge-source.tar.gz", run)
+        self.assertIn("SOURCE.txt", run)
+        self.assertNotRegex(run, r"(?i)\.mpq|\bData/")
 
     def test_hub_index(self):
         """Daily and on demand; the built-in token only; PRs from the daily and review branches, never a push to main;

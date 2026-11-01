@@ -1,0 +1,177 @@
+# Forge (forge/): the Den's ground editor, based on Noggit Red, its own GPL-3.0 program. Builds Forge.exe on Windows
+# and puts it on the rolling release "forge-latest" of this repo, always at the same addresses:
+#   https://github.com/<this repo>/releases/download/forge-latest/Forge.zip
+#   https://github.com/<this repo>/releases/download/forge-latest/Forge.zip.sha256
+#   https://github.com/<this repo>/releases/download/forge-latest/forge-source.tar.gz   (the GPL source of that build)
+# The zip has Forge.exe, the Qt runtime (windeployqt), the other DLLs it needs, the licences and the source notice.
+# It never holds game data: Forge reads the player's own game folder.
+#
+# Runs in the workspace repo (public: the repo itself is Forge's source offer, and the release carries the source
+# tarball of the exact commit). Source copy: tools/github-workflows/forge.yml; "setup\Turn on GitHub builds.bat"
+# (tools/github-builds/github_builds.py, WU_FILES) puts it in .github/workflows/.
+# Not on every push: only when forge/ (or this file) changes, or by hand (Actions > forge > Run workflow).
+# Nothing here is linked into the MIT launcher, Den Lite or the browser client; they only start Forge.exe.
+name: forge
+on:
+  push:
+    branches: [main]
+    paths:
+      - "forge/**"
+      - ".github/workflows/forge.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forge-latest
+  cancel-in-progress: false
+
+env:
+  QT_VERSION: "5.15.2"
+  QT_ARCH: "win64_msvc2019_64"
+  AQT_VERSION: "3.1.21"
+  CMAKE_VERSION: "3.31.6"
+  VCPKG_TAG: "2025.01.13"
+  VCPKG_TRIPLET: "x64-windows"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 150
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: No game or publisher names in what players see
+        shell: bash
+        run: python forge/tools/check_ui_words.py
+
+      - name: Tools (CMake, aqtinstall), pinned
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check "cmake==${CMAKE_VERSION}" "aqtinstall==${AQT_VERSION}"
+          cmake --version
+
+      - name: Qt (LGPL), pinned
+        shell: bash
+        run: |
+          python -m aqt install-qt windows desktop "$QT_VERSION" "$QT_ARCH" -O "C:/Qt"
+          echo "QT_DIR=C:/Qt/$QT_VERSION/msvc2019_64" >> "$GITHUB_ENV"
+
+      - name: Libraries from vcpkg at a pinned tag (Boost, StormLib, Lua)
+        shell: bash
+        run: |
+          set -euo pipefail
+          V="$VCPKG_INSTALLATION_ROOT"
+          git -C "$V" fetch -q --no-tags origin "refs/tags/${VCPKG_TAG}:refs/tags/${VCPKG_TAG}"
+          git -C "$V" -c advice.detachedHead=false checkout -q "${VCPKG_TAG}"
+          "$V/bootstrap-vcpkg.bat" -disableMetrics
+          "$V/vcpkg.exe" install --triplet "$VCPKG_TRIPLET" \
+            boost-thread boost-filesystem boost-system boost-test boost-dll boost-format boost-algorithm \
+            boost-optional boost-variant boost-range boost-pool boost-function boost-smart-ptr boost-utility \
+            stormlib lua
+          echo "VCPKG_PREFIX=$(cygpath -m "$V/installed/$VCPKG_TRIPLET")" >> "$GITHUB_ENV"
+
+      - name: Configure
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="$(date -u +%Y.%m.%d)-${GITHUB_SHA::7}"
+          echo "FORGE_VERSION=$ver" >> "$GITHUB_ENV"
+          cmake -S forge -B forge/build -G "Visual Studio 17 2022" -A x64 \
+            -DCMAKE_PREFIX_PATH="$QT_DIR;$VCPKG_PREFIX" \
+            -DBoost_USE_STATIC_LIBS=OFF -DBoost_NO_WARN_NEW_VERSIONS=ON \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -DNOGGIT_ENABLE_TRACY_PROFILER=OFF -DUSE_SQL=OFF \
+            -DFORGE_VERSION="$ver"
+
+      - name: Build
+        shell: bash
+        run: cmake --build forge/build --config Release --target noggit --parallel
+
+      - name: Package Forge.zip (Qt runtime, DLLs, licences, source notice)
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=pkg/Forge
+          mkdir -p "$P/licenses" "$P/scripts"
+          exe="$(find forge/build -name Forge.exe -path '*Release*' | head -n1)"
+          test -n "$exe"
+          cp "$exe" "$P/Forge.exe"
+          "$QT_DIR/bin/windeployqt.exe" --release --no-translations --no-system-d3d-compiler --no-opengl-sw \
+            --no-compiler-runtime "$P/Forge.exe"
+          # the libraries from vcpkg (Boost, StormLib and its zlib/bzip2, Lua), as DLLs
+          cp "$VCPKG_PREFIX"/bin/*.dll "$P/"
+          # the Microsoft C++ runtime, app-local
+          for d in msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do cp "/c/Windows/System32/$d" "$P/"; done
+          cp forge/scripts/*.lua "$P/scripts/"
+          cp forge/LICENSE forge/README.md forge/CHANGES-FROM-NOGGIT-RED.md forge/THIRD-PARTY-NOTICES.md "$P/"
+          # every bundled and linked part's licence (THIRD-PARTY-NOTICES.md says which is which)
+          L="$P/licenses"; E=forge/src/external
+          cp forge/LICENSE "$L/Forge-GPL-3.0.txt"
+          cp forge/resources/Inter-OFL.txt "$L/Inter-OFL-1.1.txt"
+          cp forge/resources/FontAwesome-OFL.txt "$L/FontAwesome-OFL-1.1.txt"
+          cp forge/resources/FontAwesome-Free-LICENSE.txt "$L/FontAwesome-Free-LICENSE.txt"
+          cp "$E/NodeEditor/LICENSE" "$L/NodeEditor-BSD-3-Clause.txt"
+          cp "$E/QtAdvancedDockingSystem/LICENSE" "$L/QtAdvancedDockingSystem-LGPL-2.1.txt"
+          cp "$E/libnoise/LICENSE.md" "$L/libnoise-LGPL-2.1.txt"
+          cp "$E/qt-color-widgets/COPYING" "$L/qt-color-widgets-LGPL-3.0.txt"
+          cp "$E/qtgradienteditor/LICENSE.LGPL" "$L/qtgradienteditor-LGPL-2.1.txt"
+          cp "$E/framelesshelper/LICENSE" "$L/framelesshelper-MIT.txt"
+          cp "$E/imguizmo/LICENSE" "$L/ImGuizmo-MIT.txt"
+          cp "$E/qtimgui/LICENSE" "$L/qtimgui-MIT.txt"
+          cp "$E/qtimgui/imgui/LICENSE.txt" "$L/DearImGui-MIT.txt"
+          cp "$E/tracy/LICENSE" "$L/Tracy-BSD-3-Clause.txt"
+          cp "$E/glm/copying.txt" "$L/GLM-MIT.txt"
+          cp "$E/PNG2BLP/LICENSE" "$L/PNG2BLP-MIT.txt"
+          cp "$E/PNG2BLP/libimagequant/COPYRIGHT" "$L/libimagequant-GPL-3.0-or-later.txt"
+          cp "$E/PNG2BLP/libpng/LICENSE" "$L/libpng.txt"
+          cp "$E/PNG2BLP/pngpp/COPYING" "$L/pngpp-BSD-3-Clause.txt"
+          cp "$E/PNG2BLP/zlib/LICENSE" "$L/zlib-bundled.txt"
+          sed -n '1,/\*\//p' "$E/PNG2BLP/libtxc_dxtn/txc_dxtn.h" > "$L/libtxc_dxtn-MIT.txt"
+          head -n 30 "$E/tsl/robin_map.h" > "$L/robin-map-MIT.txt"
+          cp forge/src/external/qt-color-widgets/COPYING "$L/Qt-LGPL-3.0.txt"
+          # fetched at build time (FetchContent) and from vcpkg
+          for dep in json lodepng fastnoise2 sol2; do
+            f="$(ls forge/build/_deps/${dep}-src/LICENSE* 2>/dev/null | head -n1 || true)"
+            if [ -n "$f" ]; then cp "$f" "$L/${dep}.txt"; else echo "::warning::no licence file found for $dep"; fi
+          done
+          for port in boost-thread stormlib lua zlib bzip2; do
+            f="$VCPKG_PREFIX/share/$port/copyright"
+            if [ -f "$f" ]; then cp "$f" "$L/${port}.txt"; else echo "::warning::no copyright file for $port"; fi
+          done
+          cat > "$P/SOURCE.txt" <<EOT
+          Forge $FORGE_VERSION is free software under the GNU General Public License, version 3 (LICENSE).
+          It is based on Noggit Red by the Noggit contributors; CHANGES-FROM-NOGGIT-RED.md lists every change.
+
+          Its complete source code, for exactly this build:
+            https://github.com/$GITHUB_REPOSITORY/tree/$GITHUB_SHA/forge
+            https://github.com/$GITHUB_REPOSITORY/releases/download/forge-latest/forge-source.tar.gz
+          How to build it: forge/README.md and .github/workflows/forge.yml (source copy tools/github-workflows/forge.yml).
+
+          Qt $QT_VERSION is used under the GNU LGPL version 3 (licenses/Qt-LGPL-3.0.txt) as unmodified DLLs that
+          can be replaced; its source code: https://download.qt.io/archive/qt/5.15/$QT_VERSION/single/
+          The other parts and their licences: THIRD-PARTY-NOTICES.md and licenses/.
+          Forge reads your own game folder and never contains or downloads game data.
+          EOT
+          (cd pkg && 7z a -tzip -mx=9 ../Forge.zip Forge >/dev/null)
+          sha256sum Forge.zip | awk '{print $1"  Forge.zip"}' > Forge.zip.sha256
+          git archive --format=tar.gz --prefix=forge-source/ -o forge-source.tar.gz "$GITHUB_SHA" forge tools/github-workflows/forge.yml docs/terrain-delta.schema.json
+          cat Forge.zip.sha256
+          ls -la Forge.zip forge-source.tar.gz
+
+      - name: Put it on forge-latest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          notes="Forge, the Den's ground editor, built from $GITHUB_SHA (version $FORGE_VERSION). Windows: download Forge.zip, check it against Forge.zip.sha256, unzip, run Forge.exe (the Leyline launcher does this for you). Free software under the GPL-3.0, based on Noggit Red by the Noggit contributors; the source of this exact build is forge-source.tar.gz and the forge/ folder of this repo. Not code-signed yet. Forge reads your own game folder; it never contains or downloads game data."
+          if gh release view forge-latest -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit forge-latest -R "$GITHUB_REPOSITORY" --title "Forge (latest, $FORGE_VERSION)" --notes "$notes" --prerelease=false
+          else
+            gh release create forge-latest -R "$GITHUB_REPOSITORY" --title "Forge (latest, $FORGE_VERSION)" --notes "$notes" --target "$GITHUB_SHA" --latest=false
+          fi
+          gh release upload forge-latest Forge.zip Forge.zip.sha256 forge-source.tar.gz -R "$GITHUB_REPOSITORY" --clobber

@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/orionopenwow/leyline-workspace/blob/main/docs/terrain-delta.schema.json",
+  "title": "Leyline terrain delta (<name>.terrain.json), version 1",
+  "description": "One map tile's changes from its base, as numbers and file names only: never a byte of a game file. Shape from docs/NOGGIT-DEN-PLAN.md section 2.5; meaning of each field in forge/docs/DEN-MODE.md. Written by Forge (GPL-3.0) on save and by the MIT leyline-terrain crate; both only share this file format. Readers are strict, never run anything from it, and refuse files over 4 MB.",
+  "type": "object",
+  "required": ["format", "version", "base", "open", "chunks", "models"],
+  "additionalProperties": false,
+  "properties": {
+    "format": {"const": "leyline-terrain"},
+    "version": {"const": 1},
+    "base": {
+      "description": "What the delta applies to: own:<map>/<tile x>/<tile y> (the tile from the player's own game files), pack:<name> (a pack's land moved onto the Den's tile), or blank.",
+      "type": "string",
+      "pattern": "^(own:[0-9]{1,5}/[0-9]{1,2}/[0-9]{1,2}|pack:[a-z0-9_-]{1,64}|blank)$"
+    },
+    "open": {
+      "description": "Chunk indices (0-255, row * 16 + column, the map file's chunk order) that may differ from the base. Every entry of chunks is in this list.",
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {"type": "integer", "minimum": 0, "maximum": 255}
+    },
+    "pad": {
+      "description": "The Den's starting pad, when it has one: its floor height in yards and its texture's path in the game.",
+      "type": "object",
+      "required": ["height", "texture"],
+      "additionalProperties": false,
+      "properties": {
+        "height": {"type": "number"},
+        "texture": {"$ref": "#/$defs/game_path"}
+      }
+    },
+    "chunks": {
+      "description": "Each changed chunk's whole state. A chunk that is the same as the base is not listed.",
+      "type": "array",
+      "maxItems": 256,
+      "items": {"$ref": "#/$defs/chunk"}
+    },
+    "models": {
+      "description": "Ground models (M2 and WMO placements) on the tile that are not in the base unchanged: new ones, and base ones that moved (same uid).",
+      "type": "array",
+      "maxItems": 4096,
+      "items": {"$ref": "#/$defs/model"}
+    },
+    "made": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "by": {"type": "string", "maxLength": 64},
+        "at": {"type": "string", "maxLength": 64, "description": "UTC time, ISO 8601"}
+      }
+    }
+  },
+  "$defs": {
+    "game_path": {
+      "description": "A file's path inside the player's own game archives (a name, never its bytes).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 260,
+      "pattern": "^[^\\u0000-\\u001f:*?\"<>|]+$"
+    },
+    "base64": {"type": "string", "contentEncoding": "base64"},
+    "chunk": {
+      "type": "object",
+      "required": ["i", "heights", "layers", "holes", "area", "impassable"],
+      "additionalProperties": false,
+      "properties": {
+        "i": {"type": "integer", "minimum": 0, "maximum": 255},
+        "heights": {
+          "description": "145 little-endian 32-bit floats (580 bytes), absolute heights in yards, in the map file's vertex order (9 outer, 8 inner, alternating rows).",
+          "allOf": [{"$ref": "#/$defs/base64"}],
+          "minLength": 776, "maxLength": 776
+        },
+        "normals": {"description": "Always false in version 1: readers compute normals from the heights.", "const": false},
+        "layers": {
+          "description": "Texture layers, bottom first (at most 4). Layer 0 has no alpha; each other layer has its 64 x 64 alpha map.",
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": ["tex", "flags"],
+            "additionalProperties": false,
+            "properties": {
+              "tex": {"$ref": "#/$defs/game_path"},
+              "flags": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+              "alpha": {
+                "description": "4096 bytes, one 0-255 value per cell, 64 rows of 64.",
+                "allOf": [{"$ref": "#/$defs/base64"}],
+                "minLength": 5464, "maxLength": 5464
+              }
+            }
+          }
+        },
+        "holes": {"description": "The chunk's 16-bit hole mask (4 x 4 cells).", "type": "integer", "minimum": 0, "maximum": 65535},
+        "water": {
+          "description": "The chunk's first liquid layer; no key means no water.",
+          "type": "object",
+          "required": ["type", "min", "max", "mask"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {"description": "The liquid type id (the game's own LiquidType row).", "type": "integer", "minimum": 0, "maximum": 65535},
+            "min": {"type": "number"},
+            "max": {"type": "number"},
+            "mask": {
+              "description": "8 bytes, little-endian 64-bit mask of the 8 x 8 cells that have water.",
+              "allOf": [{"$ref": "#/$defs/base64"}],
+              "minLength": 12, "maxLength": 12
+            }
+          }
+        },
+        "colors": {
+          "description": "Vertex colours: 145 x 4 bytes (580 bytes) as the map file stores them: blue, green, red, alpha; 127 is 1.0. No key means none.",
+          "allOf": [{"$ref": "#/$defs/base64"}],
+          "minLength": 776, "maxLength": 776
+        },
+        "area": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+        "impassable": {"type": "boolean"}
+      }
+    },
+    "model": {
+      "type": "object",
+      "required": ["path", "uid", "x", "y", "z", "rx", "ry", "rz", "scale"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"description": "The .m2 (or .mdx) or .wmo path in the player's own game.", "$ref": "#/$defs/game_path"},
+        "uid": {"description": "The placement's unique id. New ground models use 2130706432 (0x7F000000) and up; a base model's own uid means it moved.", "type": "integer", "minimum": 0, "maximum": 4294967295},
+        "x": {"description": "World yards from the Den's middle, along the world's x axis.", "type": "number"},
+        "y": {"description": "World yards from the Den's middle, along the world's y axis.", "type": "number"},
+        "z": {"description": "Yards above the Den's middle height.", "type": "number"},
+        "rx": {"description": "Rotation in degrees, the map file's first rotation value.", "type": "number"},
+        "ry": {"description": "Rotation in degrees, the map file's second rotation value.", "type": "number"},
+        "rz": {"description": "Rotation in degrees, the map file's third rotation value.", "type": "number"},
+        "scale": {"description": "1.0 is normal size; WMOs are always 1.0.", "type": "number", "exclusiveMinimum": 0, "maximum": 64}
+      }
+    }
+  }
+}

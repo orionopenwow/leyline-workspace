@@ -1,0 +1,34 @@
+# Azeroth Survivors' host (docs/SURVIVORS.md): sv-play serves the unmodified upstream browser build (/www, with the
+# upstream licence files in /www/licenses) and its game-file slice (/slice), and nothing else: our wenilla-host
+# (the Wrath stream's, stream/bin/wenilla-host) with --only-listed, so a name that is not in the slice is a 404,
+# never a fallback. No game connection: Survivors needs no server. Caddy (survivors.caddy) puts the sign-in in front.
+# hosting/survivors/sv-site-up.sh installs this as /srv/survivors/docker-compose.yml and runs it:
+#   docker compose -f /srv/survivors/docker-compose.yml up -d     (sv-site-up.sh --go)
+#   docker compose -f /srv/survivors/docker-compose.yml down      (sv-site-up.sh --off)
+name: survivors
+services:
+  sv-play:
+    container_name: sv-play
+    image: debian:bookworm-slim
+    command: ["/usr/local/bin/wenilla-host", "--www", "/www", "--patch", "/slice", "--only-listed", "--bind", "0.0.0.0:8090"]
+    restart: unless-stopped
+    read_only: true
+    user: "65534:65534"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    cpus: 1.0
+    labels:
+      leyline.survivors: "1"
+    volumes:
+      - ${SV_ROOT:-/srv/survivors}/www:/www:ro
+      - ${SV_ROOT:-/srv/survivors}/slice:/slice:ro
+      - ${SV_HOST_BIN:-/srv/wrath/stream/bin/wenilla-host}:/usr/local/bin/wenilla-host:ro
+    networks: [edge]
+    logging:
+      driver: json-file
+      options: {max-size: "20m", max-file: "3"}
+networks:
+  edge:
+    external: true
+    name: wenilla-realm_default

@@ -1,0 +1,45 @@
+# >>> Azeroth Survivors site (sv-site-up.sh)
+# Azeroth Survivors (docs/SURVIVORS.md): the unmodified upstream browser build and its game-file slice, both served
+# by sv-play (hosting/survivors/docker-compose.yml). Everything but the licences is behind the Leyline sign-in:
+# wu-portal's gate, as on the Wrath stream (/__gate swaps the Play code for the wu_play cookie on this address;
+# forward_auth asks /__auth?site=survivors for every other request). The game reads /data from the root of its own
+# address, so it can't live under a path of another site. The game data killswitch (gamedata-switch.sh) puts its
+# block first in here (gamedata-caddy.py add-sv): /data 410, every page but the licences a short "resting" page.
+# sv-site-up.sh writes this block with the address in place of __SV_HOST__; do not edit it in the Caddyfile.
+__SV_HOST__ {
+	encode zstd gzip
+	# nothing here takes a body bigger than a few bytes
+	request_body {
+		max_size 1MB
+	}
+	# the upstream licence files, for anyone (the credit on /wrath/survivors links here)
+	@licenses_sv path /licenses /licenses/*
+	handle @licenses_sv {
+		reverse_proxy sv-play:8090
+	}
+	@gate_sv path /__gate
+	handle @gate_sv {
+		reverse_proxy wu-portal:8091 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	handle {
+		forward_auth wu-portal:8091 {
+			uri /__auth?site=survivors
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+		}
+		# Game files: they never change under their name within a slice (a new slice is a new upload): a week,
+		# private (signed-in only). The lists (/data/__*) as sv-play sends them.
+		@data_sv {
+			path /data/*
+			not path /data/__*
+		}
+		reverse_proxy @data_sv sv-play:8090 {
+			header_down Cache-Control "private, max-age=604800"
+		}
+		reverse_proxy sv-play:8090
+	}
+}
+# <<< Azeroth Survivors site

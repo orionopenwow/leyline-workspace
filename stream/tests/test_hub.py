@@ -291,7 +291,12 @@ check("feature sections: one per part of Leyline, in the recommended order", [f[
       "launcher", "looks", "host", "realms", "modes", "mods", "forge", "agents", "community"] and [f[2] for f in fs] == [
       "Desktop launcher", "Looks", "Host a server", "Realms &amp; hopping", "Minigolf &amp; game modes", "Mods",
       "Forge", "Agents", "Community hub"], [f[1:3] for f in fs])
-lks = re.findall(r'<a class="hb-lk ([a-z-]+)" href="/wrath/looks#look-([a-z0-9-]+)"><b>([^<]+)</b><span>([^<]+)</span></a>', front)
+lks = re.findall(r'<a class="hb-lk ([a-z-]+)" href="/wrath/looks#look-([a-z0-9-]+)"><span class="lk-art (m-[a-z]+)" aria-hidden="true">.*?</span><b>([^<]+)</b><span>([^<]+)</span></a>', front)
+check("front page: each Looks tile its own drawing (Max, Balanced, Classic, a UI look: different motifs, our own CSS)",
+      [x[2] for x in lks][:4] == ["m-ultra", "m-balanced", "m-classic", "m-ui"] and ".m-ultra .m-sun" in front, [x[2] for x in lks])
+check("front page: the Looks tiles' words have their colour set explicitly (white on a dark scrim), not the link colour",
+      ".hb-draw .hb-lk b{font-size:15.5px;color:#fff!important" in HB.HUB_CSS and ".hb-draw .hb-lk>span:last-child{font-size:12.5px;color:#f1f3f8!important" in HB.HUB_CSS
+      and ".hb-lk::after{" in HB.HUB_CSS and "rgba(4,6,12,.82)" in HB.HUB_CSS)
 check("front page: the Looks section shows a few featured looks (drawn, no game picture), each a link to its card on /wrath/looks",
       2 <= len(lks) <= 4 and [x[1] for x in lks][:3] == ["max", "balanced", "classic"] and 'href="/wrath/looks">See every look</a>' in front
       and "<img" not in front.split('id="f-looks"')[1].split("</section>")[0], lks)
@@ -1667,6 +1672,27 @@ else:
                 pg.close()
         b.close()
     HB.hub.realm_rows = real_rows
+    # the Looks tiles on the front page: near-white words over the scrim, in the light and the dark theme (WCAG AA:
+    # white on the scrim's darkest part, rgba(4,6,12,.82) over any of the drawings, is well past 4.5:1)
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        for scheme in ("light", "dark"):
+            pg = b.new_page(viewport={"width": 1400, "height": 900}, color_scheme=scheme)
+            pg.goto(f"http://127.0.0.1:{PAGE_PORT}/wrath/leyline-preview")
+            got = pg.evaluate("""() => [...document.querySelectorAll('.hb-lk')].map(t => {
+                const rgb = (el) => getComputedStyle(el).color.match(/\\d+/g).slice(0, 3).map(Number);
+                const lum = (c) => { const f = c.map(v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); });
+                                     return .2126 * f[0] + .7152 * f[1] + .0722 * f[2]; };
+                const bg = getComputedStyle(t, '::after').backgroundImage;
+                // the worst case behind the words: the scrim (alpha .82 of #04060c) over pure white
+                const back = [4 * .82 + 255 * .18, 6 * .82 + 255 * .18, 12 * .82 + 255 * .18];
+                const ratio = (c) => (lum(c) + .05) / (lum(back) + .05);
+                return {b: ratio(rgb(t.querySelector('b'))), s: ratio(rgb(t.querySelector(':scope > span:last-child'))), scrim: bg.includes('0.82')};
+            })""")
+            check(f"front page Looks tiles ({scheme} theme): words at AA contrast or better on the scrim, even over the brightest drawing",
+                  len(got) >= 3 and all(t["b"] >= 4.5 and t["s"] >= 4.5 and t["scrim"] for t in got), got)
+            pg.close()
+        b.close()
 
 srv.shutdown()
 shutil.rmtree(DATA, ignore_errors=True)

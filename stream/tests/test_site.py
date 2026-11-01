@@ -279,6 +279,9 @@ check("/wrath/looks: what it changes, its size or that it needs no download, whi
 check("/wrath/looks: no client numbers anywhere a visitor reads, chips included", not re.search(r"\b(1\.12|2\.4\.3|3\.3\.5)", visible(lp)))
 check("/wrath/looks: styled placeholders, never a game picture (no previews are allowed yet)",
       "<img" not in lp.split('class="lk-grid"')[1].split("</ul>")[0] and lp.count('class="lk-pv lk-ph ') == len(cards))
+check("/wrath/looks: each placeholder its own drawing (Max, Balanced, Classic, packs, UI looks differ)",
+      all(f'class="lk-art m-{m}"' in by[k][3] for k, m in (("max", "ultra"), ("balanced", "balanced"), ("classic", "classic"),
+                                                           ("ultrahd", "pack"), ("forever-ui", "ui"))) and ".m-classic .m-far" in lp)
 check("/wrath/looks: placeholders of others' looks link to the author's page for pictures",
       "Pictures on the author's page" in by["ultrahd"][3] and "Pictures on the author" not in by["max"][3])
 st, _, lv = get("/wrath/looks?v=1.12")

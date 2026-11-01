@@ -381,14 +381,65 @@ def size_words(n) -> str:
     return f"{n / 1024 ** 3:.1f} GB"
 
 
-# The styled placeholder: a small drawing per type, never a game picture.
-_PH = {
-    "preset": '<i class="lk-bar" style="--w:92%"></i><i class="lk-bar" style="--w:64%"></i><i class="lk-bar" style="--w:38%"></i>',
-    "graphics-pack": '<i class="lk-sun"></i><i class="lk-hill a"></i><i class="lk-hill b"></i>',
-    "ui-look": '<i class="lk-fr a"></i><i class="lk-fr b"></i><i class="lk-row"></i>',
+# The styled placeholder: a drawing of our own per look (CSS only, never a game picture), so the looks look different:
+# Max a bright sky over a sharp horizon, Balanced softer, Classic warm and low-detail, a graphics pack water under a moon,
+# a UI look a sketch of an interface panel. motif() picks one; MOTIF_CSS draws them (the site's cards and the hub's tiles).
+MOTIFS = {
+    "ultra": '<i class="m-sun"></i><i class="m-far"></i><i class="m-near"></i>',
+    "high": '<i class="m-sun"></i><i class="m-far"></i><i class="m-near"></i>',
+    "balanced": '<i class="m-sun"></i><i class="m-far"></i><i class="m-near"></i>',
+    "classic": '<i class="m-sun"></i><i class="m-far"></i><i class="m-near"></i>',
+    "low": '<i class="m-sun"></i><i class="m-far"></i><i class="m-near"></i>',
+    "pack": '<i class="m-moon"></i><i class="m-shore"></i><i class="m-water"></i>',
+    "ui": ('<i class="m-panel"></i><i class="m-unit a"></i><i class="m-unit b"></i><i class="m-map"></i>'
+           '<i class="m-bar"></i>'),
 }
+MOTIF_CSS = """
+.lk-art{position:absolute;inset:0;overflow:hidden;display:block}
+.lk-art i{position:absolute;display:block}
+.lk-art.m-ultra,.lk-art.m-high{background:linear-gradient(180deg,#1f6fd1 0%,#55a7f0 38%,#bfe4ff 60%,#ffe7b0 61%,#ffe7b0 62%,#2c5d3a 62%,#1d4a2c 100%)}
+.m-ultra .m-sun,.m-high .m-sun{right:18%;top:14%;width:13%;aspect-ratio:1;border-radius:50%;background:#fffbe8;box-shadow:0 0 0 6px rgba(255,251,232,.35),0 0 30px 10px rgba(255,236,170,.7)}
+.m-ultra .m-far,.m-high .m-far{left:0;right:0;bottom:38%;height:30%;background:#3e5d86;clip-path:polygon(0 100%,10% 40%,18% 70%,30% 5%,42% 60%,52% 25%,63% 75%,75% 15%,86% 55%,100% 30%,100% 100%)}
+.m-ultra .m-near,.m-high .m-near{left:0;right:0;bottom:0;height:40%;background:linear-gradient(180deg,#2f6a3e,#173a22);clip-path:polygon(0 30%,20% 10%,45% 35%,70% 5%,100% 25%,100% 100%,0 100%)}
+.lk-art.m-balanced{background:linear-gradient(180deg,#6f97c0 0%,#a9c4dc 55%,#d9e3ea 70%,#7d9a86 70%,#5f7d6a 100%)}
+.m-balanced .m-sun{right:20%;top:18%;width:16%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,#fff6dc 0 45%,rgba(255,246,220,0) 72%)}
+.m-balanced .m-far{left:-10%;right:-10%;bottom:28%;height:26%;border-radius:50% 50% 0 0/100% 100% 0 0;background:#8aa6bf;filter:blur(1.5px)}
+.m-balanced .m-near{left:-20%;right:20%;bottom:-18%;height:46%;border-radius:50%;background:#56795f;filter:blur(1px)}
+.lk-art.m-classic,.lk-art.m-low{background:linear-gradient(180deg,#7a3a24 0%,#c4682f 45%,#f0b35a 66%,#5a4a2a 66%,#3e3220 100%)}
+.m-classic .m-sun,.m-low .m-sun{left:16%;top:36%;width:14%;aspect-ratio:1;background:#ffd88a;border-radius:2px}
+.m-classic .m-far,.m-low .m-far{left:0;right:0;bottom:34%;height:22%;background:#6b4a2c;clip-path:polygon(0 100%,0 50%,20% 50%,20% 20%,45% 20%,45% 60%,70% 60%,70% 0,100% 0,100% 100%)}
+.m-classic .m-near,.m-low .m-near{left:0;right:0;bottom:0;height:34%;background:#2e2616;clip-path:polygon(0 40%,35% 40%,35% 15%,65% 15%,65% 45%,100% 45%,100% 100%,0 100%)}
+.lk-art.m-pack{background:linear-gradient(180deg,#0f1b3a 0%,#1d3466 50%,#2a4c7c 58%,#14466a 58%,#0b2b45 100%)}
+.m-pack .m-moon{right:16%;top:12%;width:14%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 35% 35%,#fffbe9,#e5dcc0);box-shadow:0 0 24px 6px rgba(255,248,220,.35)}
+.m-pack .m-shore{left:-5%;width:55%;bottom:38%;height:24%;background:#16324d;clip-path:polygon(0 100%,15% 30%,35% 55%,55% 10%,80% 60%,100% 100%)}
+.m-pack .m-water{left:0;right:0;bottom:0;height:42%;background:repeating-linear-gradient(180deg,rgba(160,210,255,.35) 0 2px,transparent 2px 9px),
+linear-gradient(90deg,transparent 60%,rgba(255,248,220,.35) 66% 74%,transparent 80%)}
+.lk-art.m-ui{background:radial-gradient(circle at 70% 20%,#4b3a7a,#241c3d 70%)}
+.m-ui .m-panel{left:6%;right:6%;top:10%;bottom:10%;border:2px solid rgba(255,255,255,.55);border-radius:8px;background:rgba(10,8,22,.35)}
+.m-ui .m-unit{top:18%;width:30%;height:16%;border-radius:4px;border:1px solid rgba(255,255,255,.6);
+background:linear-gradient(180deg,#46c46a 0 50%,#3a7ee0 50% 100%)}
+.m-ui .m-unit.a{left:11%}.m-ui .m-unit.b{left:44%;width:24%;background:linear-gradient(180deg,#d9534f 0 50%,#3a7ee0 50% 100%)}
+.m-ui .m-map{right:11%;top:16%;width:15%;aspect-ratio:1;border-radius:50%;border:2px solid rgba(255,255,255,.7);background:radial-gradient(circle,#5f8f6a,#2d4a35)}
+.m-ui .m-bar{left:11%;right:11%;bottom:18%;height:15%;border-radius:3px;
+background:repeating-linear-gradient(90deg,rgba(255,215,120,.85) 0 7%,rgba(0,0,0,0) 7% 8.5%)}
+"""
 
-CSS = """
+
+def motif(e: dict) -> str:
+    """The drawing's key for a look: its preset id, or pack / ui."""
+    lk = e["look"]
+    if lk["type"] == "preset":
+        return lk.get("preset") if lk.get("preset") in MOTIFS else "balanced"
+    return "pack" if lk["type"] == "graphics-pack" else "ui"
+
+
+def art(e: dict) -> str:
+    """The look's drawing (decorative: aria-hidden)."""
+    m = motif(e)
+    return f'<span class="lk-art m-{m}" aria-hidden="true">{MOTIFS[m]}</span>'
+
+
+CSS = MOTIF_CSS + """
 .lk h1{text-align:center}.lk .sub{text-align:center;max-width:44rem;margin-left:auto;margin-right:auto}
 .wu-pg.lk{width:min(72rem,100%)}
 .lk-filters{display:flex;flex-direction:column;gap:8px;margin:16px 0 6px}
@@ -404,20 +455,9 @@ border:1px solid var(--lk-border,rgba(255,255,255,.12));background:var(--lk-surf
 .lk-card:target{border-color:var(--lk-accent,#7aa3f5);box-shadow:0 0 0 2px var(--lk-accent-soft,rgba(91,141,239,.3))}
 .lk-pv{position:relative;aspect-ratio:16/6;overflow:hidden;margin:0;background:linear-gradient(160deg,#1d2a44,#2c2347 55%,#3a2a3a)}
 .lk-pv img{display:block;width:100%;height:100%;object-fit:cover}
-.lk-pv figcaption,.lk-ph-cap{position:absolute;right:8px;bottom:6px;font-size:12px;color:#e8ecf5;background:rgba(10,12,18,.55);
+.lk-pv figcaption,.lk-ph-cap{position:absolute;z-index:1;right:8px;bottom:6px;font-size:12px;color:#fff;background:rgba(6,8,14,.78);
 padding:2px 8px;border-radius:999px}
 .lk-ph-cap a{color:inherit}
-.lk-ph.preset{background:linear-gradient(160deg,#16314a,#1e4a5c 60%,#2a5e5a)}
-.lk-ph.ui-look{background:linear-gradient(160deg,#2a2240,#3b2d5c 60%,#4d3a6b)}
-.lk-ph i{position:absolute;display:block}
-.lk-bar{left:12%;height:9%;width:var(--w);max-width:76%;border-radius:999px;background:rgba(255,255,255,.75)}
-.lk-bar:nth-child(1){top:24%}.lk-bar:nth-child(2){top:45%;opacity:.7}.lk-bar:nth-child(3){top:66%;opacity:.5}
-.lk-sun{right:16%;top:16%;width:16%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,#ffe6a8,#f1a95b)}
-.lk-hill{bottom:-30%;border-radius:50% 50% 0 0;background:#1a3b33}.lk-hill.a{left:-10%;width:70%;height:75%;background:#245246}
-.lk-hill.b{right:-12%;width:80%;height:62%;background:#1b4038}
-.lk-fr{border:2px solid rgba(255,255,255,.7);border-radius:6px;background:rgba(255,255,255,.08)}
-.lk-fr.a{left:8%;top:14%;width:30%;height:22%}.lk-fr.b{right:8%;top:14%;width:30%;height:22%}
-.lk-row{left:8%;right:60%;bottom:12%;height:14%;border-radius:4px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.7) 0 9%,transparent 9% 11%)}
 .lk-b{display:flex;flex-direction:column;gap:6px;padding:12px 14px 14px;flex:1}
 .wu-box .lk-b p,.wu-box .lk-b h2{margin:0}
 .lk-type{margin:0;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--lk-muted,#9aa3b5);font-weight:650}
@@ -455,7 +495,7 @@ def card(e: dict, ups: set, labels: dict, offered) -> str:
     else:
         cap = (f'<span class="lk-ph-cap"><a href="{x(page)}" rel="noopener nofollow ugc">Pictures on the author\'s page</a></span>'
                if page and e["author"] != "Leyline" else "")
-        pic = (f'<div class="lk-pv lk-ph {x(lk["type"])}" aria-hidden="{"false" if cap else "true"}">{_PH[lk["type"]]}'
+        pic = (f'<div class="lk-pv lk-ph {x(lk["type"])}" aria-hidden="{"false" if cap else "true"}">{art(e)}'
                f'{cap}</div>')
     chips = "".join(f"<li>{x(labels.get(b, b))}</li>" for b in e["builds"] if b in offered)
     acts = []

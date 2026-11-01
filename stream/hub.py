@@ -1473,10 +1473,12 @@ class Hub:
         if not picks:
             return ('<div class="hb-draw hb-looks" aria-hidden="true"><p class="hb-lk preset"><b>Max</b><span>Graphics preset</span></p>'
                     '<p class="hb-lk ui-look"><b>New interface</b><span>UI look</span></p></div>')
+        # each tile its own drawing (looks.MOTIF_CSS: our own CSS art, never a game picture) under a dark scrim, the words
+        # in white on it (explicit colours, AA contrast in both themes)
         tiles = "".join(
-            f'<a class="hb-lk {e(x["look"]["type"])}" href="/wrath/looks#look-{e(x["id"].split(":", 1)[1])}">'
+            f'<a class="hb-lk {e(x["look"]["type"])}" href="/wrath/looks#look-{e(x["id"].split(":", 1)[1])}">{lk.art(x)}'
             f'<b>{e(neutral(x["name"]))}</b><span>{e(lk.TYPES[x["look"]["type"]])}</span></a>' for x in picks)
-        return f'<div class="hb-draw hb-looks">{tiles}</div>'
+        return f'<div class="hb-draw hb-looks"><style>{lk.MOTIF_CSS}</style>{tiles}</div>'
 
     def modes_art(self, shot) -> str:
         """The "Game modes" picture: the owner's Minigolf recording (our mode on our realm) as a muted loop that HUB_JS
@@ -3563,10 +3565,12 @@ background:var(--lk-surface-2)}
 background:linear-gradient(135deg,hsl(var(--h) 70% 62%),hsl(calc(var(--h) + 40) 60% 52%))}
 .hb-pp b{font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hb-pp span{color:var(--lk-muted);font-size:12.5px}
 .hb-looks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.hb-lk{position:relative;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;min-height:96px;padding:12px;border-radius:var(--lk-r-sm);
+.hb-lk{position:relative;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;min-height:132px;padding:12px;border-radius:var(--lk-r-sm);
 color:#fff;text-decoration:none;overflow:hidden;background:linear-gradient(160deg,#1d2a44,#2c2347 55%,#3a2a3a);border:1px solid rgba(255,255,255,.08)}
 .hb-lk.preset{background:linear-gradient(160deg,#16314a,#1e4a5c 60%,#2a5e5a)}.hb-lk.ui-look{background:linear-gradient(160deg,#2a2240,#3b2d5c 60%,#4d3a6b)}
-.hb-draw .hb-lk b{font-size:15.5px;color:#fff!important;text-shadow:0 1px 3px rgba(0,0,0,.5)}.hb-draw .hb-lk span{font-size:12px;color:#e6e9f2!important;opacity:.9}
+.hb-lk{isolation:isolate;background:#0d111b!important}.hb-lk .lk-art{bottom:auto;height:66%}.hb-lk::after{content:"";position:absolute;inset:40% 0 0;z-index:0;background:linear-gradient(180deg,rgba(4,6,12,0),rgba(4,6,12,.82) 40%,rgba(4,6,12,.92))}
+.hb-draw .hb-lk>b,.hb-draw .hb-lk>span:last-child{position:relative;z-index:1}
+.hb-draw .hb-lk b{font-size:15.5px;color:#fff!important;text-shadow:0 1px 3px rgba(0,0,0,.7)}.hb-draw .hb-lk>span:last-child{font-size:12.5px;color:#f1f3f8!important}
 a.hb-lk:hover,a.hb-lk:focus-visible{border-color:var(--lk-accent)}
 .hb-code{overflow:auto;font:13.5px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--lk-text-2);white-space:pre}
 .hb-code s{text-decoration:none;color:var(--lk-accent-2);font-weight:700}.hb-code u{text-decoration:none;color:var(--lk-accent-strong)}

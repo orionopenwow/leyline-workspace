@@ -232,5 +232,16 @@ for _, f in ipairs(created) do
     if s:find("warcraft") or s:find("%f[%a]wow%f[%A]") or s:find("blizzard") or s:find("lich king") then bad = bad + 1 end
 end
 check("no game-brand names", bad == 0)
+-- the stock realm wizard never shows: it goes straight on to character select
+do
+    local screens = {}
+    function SetGlueScreen(n) screens[#screens + 1] = n end
+    RealmWizard = new("Frame", "RealmWizard")
+    setup(true)
+    RealmWizard.shown = true
+    RealmWizard.scripts.OnShow(RealmWizard)
+    check("the stock realm wizard is skipped: on to character select", screens[#screens] == "charselect" and LeylineGlue.skipWizard == true)
+    RealmWizard, SetGlueScreen = nil, nil
+end
 print(string.format("\n%d/%d passed", pass, pass + fail))
 os.exit(fail == 0 and 0 or 1)

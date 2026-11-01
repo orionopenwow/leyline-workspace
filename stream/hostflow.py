@@ -1148,7 +1148,7 @@ def start_page(rec: dict) -> bytes:
         dl = ('<p>Your PC holds this realm\'s key, so there is nothing more to download. To move the realm, '
               'copy the Host pack folder (with its <b>state</b> folder) to the new PC.</p>')
     if rid:
-        share = f"https://{host}/wrath/r/{rid}"
+        share = f"https://{host}/wrath/r/{rid[:8]}"
         invite = f"{join}/join/{rid}" + (f"#{rec['invite_secret']}" if rec["visibility"] == "private" else "")
         host_link = f"{join}/join/{rid}#{rec['invite_secret']}~{rec['host_secret']}"
         priv = (f'<p>It\'s private: friends need your invite link to join.</p><div class="link">{e(invite)}</div>'
@@ -1163,7 +1163,7 @@ def start_page(rec: dict) -> bytes:
                  'key your PC makes.</p>')
         gm = (f'<li><b>Make your GM account</b><span>Make <b>{e(rec["gm"])}</b> on your own join link, with a password you '
               'choose. The link shows here (and in the setup window on your PC) once your PC is connected.</span></li>')
-    live = live_panel(rec, f"https://{host}/wrath/r/{rid}") if rid and state == "listed" else ""
+    live = live_panel(rec, f"https://{host}/wrath/r/{rid[:8]}") if rid and state == "listed" else ""
     inner = (
         '<section class="hb-pg hf-pg" aria-labelledby="hf-h"><header class="hb-pg-h"><div class="hb-pg-t">'
         f'<h1 id="hf-h">{e(rec["name"])}</h1>'

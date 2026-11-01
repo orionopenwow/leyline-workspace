@@ -621,19 +621,39 @@
     cue();
   }
 
+  // Live now (owner 31 Oct): the busiest player realms by players then uptime, each with its mode badge and Play; New
+  // this week: realms new on the list with a player in the last day (realmlink.js). Once the list is in, an empty row
+  // says so in plain words instead of hiding.
+  let realmsIn = false;
+  function realmCard(r, RL) {
+    const c = el("div", "hm-card hm-realm hm-lv");
+    const ver = App.realmVersion(r);
+    let chip = null;
+    if (ver) { chip = el("span", "rl-ver sm", ver); chip.title = "Game client version"; }
+    const t = txt(r.name, r.players ? `${r.players} playing` : "Online", chip);
+    t.lastChild.classList.add("hm-live");
+    t.append(el("span", "hm-mode-bdg", RL.modeLabel(r)));
+    const b = el("button", "btn small primary hm-play", "Play");
+    b.type = "button";
+    b.title = `Play on ${r.name}`;
+    b.addEventListener("click", () => RL.play(r, b));
+    c.append(App.realmIcon(r.name, false), t, b);
+    return c;
+  }
+  function emptyRow(id, text) {
+    $(id + "-row").replaceChildren(el("p", "hm-empty", text));
+    $(id).hidden = false;
+    cue();
+  }
   function renderRealms() {
-    const live = App.realms().filter((r) => r.state === "live" && !App.hiddenBuild(r.build)).slice(0, 4);
-    fill("hm-realms", live.map((r) => {
-      const c = card("hm-realm", () => go("realms"), `${r.name}: open Realms`);
-      const ver = App.realmVersion(r);
-      let chip = null;
-      if (ver) { chip = el("span", "rl-ver sm", ver); chip.title = "Game client version"; }
-      const line = r.players != null ? `${r.players} playing` : "Online";
-      const t = txt(r.name, line, chip);
-      t.lastChild.classList.add("hm-live");
-      c.append(App.realmIcon(r.name, r.official), t);
-      return c;
-    }));
+    const RL = window.LeylineRealmLink;
+    if (!RL) return;
+    const live = RL.liveNow(4);
+    const fresh = RL.newThisWeek(4);
+    if (live.length) fill("hm-realms", live.map((r) => realmCard(r, RL)));
+    else if (realmsIn) emptyRow("hm-realms", "No player realms are up right now. Check back soon, or host your own.");
+    if (fresh.length) fill("hm-new", fresh.map((r) => realmCard(r, RL)));
+    else if (realmsIn) emptyRow("hm-new", "No new realms with players this week yet.");
   }
 
   function renderMods() {
@@ -706,7 +726,7 @@
   if (main) main.addEventListener("scroll", cue, { passive: true });
 
   // ---------------------------------------------------------------- data in
-  document.addEventListener("leyline:realms", () => { renderRealms(); build(); });
+  document.addEventListener("leyline:realms", () => { realmsIn = true; renderRealms(); build(); });
   document.addEventListener("leyline:catalog", () => { build(); renderMods(); });
   document.addEventListener("leyline:modes", () => { build(); renderModes(); });
   document.addEventListener("leyline:news", () => { build(); renderNewsRow(); });   // the website's news feed came in (app.js loadNews)
@@ -714,6 +734,7 @@
   build();
   loadForum();
   loadHomeArt();
+  realmsIn = App.realms().length > 0;   // the list may be in before this file ran
   renderRealms();
   renderMods();
   renderModes();

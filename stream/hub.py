@@ -1283,6 +1283,43 @@ class Hub:
                 'Nothing to install.</p></div>'
                 '<p class="hb-ho-a"><a class="hb-cta sm" href="/wrath">Play in your browser</a></p></section>')
 
+    LIVE_CSS = (".hb-lv{margin:0 0 18px}.hb-lv-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:12px}"
+                ".hb-lv h2{margin:0 0 8px;font-size:15px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--lk-text-2)}"
+                ".hb-lv-l{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}"
+                ".hb-lv-l li{display:flex;align-items:center;gap:10px;min-height:44px;padding:6px 10px;border:1px solid var(--lk-border);"
+                "border-radius:var(--lk-r-sm);background:var(--lk-surface)}"
+                ".hb-lv-n{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;color:var(--lk-text)!important;text-decoration:none}"
+                ".hb-lv-n:hover{text-decoration:underline}.hb-lv-p{color:var(--lk-text-2);font-size:13px;white-space:nowrap}"
+                ".hb-lv-l .hb-play{flex:none;margin-left:auto}.hb-lv-l .hb-bdg{white-space:nowrap}.hb-lv-e{margin:0;color:var(--lk-muted);font-size:14px}"
+                "@media (max-width:560px){.hb-lv-l li{flex-wrap:wrap;row-gap:4px}.hb-lv-n{flex-basis:100%}}")
+
+    def live_strip(self, got) -> str:
+        """Live now (owner 31 Oct): the busiest player realms right now (players online, then uptime) and New this week
+        (first seen in the last 7 days, a player online in the last day; stream/links.py), each with its mode badge and
+        Play. Plain-word empty states. No realm list at all: nothing."""
+        lk = self.portal("links")
+        if not got or lk is None or not hasattr(lk, "live_now"):
+            return ""
+        e = html.escape
+        rows, labels = got[0], self.portal("RULESET_LABELS") or {}
+
+        def items(rs):
+            out = []
+            for r in rs:
+                it = lk.live_item(r, labels)
+                n = it["players"]
+                out.append(f'<li><a class="hb-lv-n" href="{e(it["link"])}">{e(neutral(it["name"]) or "A realm")}</a>'
+                           f'<span class="hb-bdg">{e(it["mode"])}</span>'
+                           f'<span class="hb-lv-p">{e(f"{n} playing" if n else "Online")}</span>'
+                           f'<a class="hb-play" href="{e(it["play"])}">Play</a></li>')
+            return "".join(out)
+        busy, fresh = items(lk.live_now(rows)), items(lk.new_this_week(rows))
+        return ('<section class="hb-lv hb-rv" id="live" aria-label="Live now"><style>' + self.LIVE_CSS + '</style><div class="hb-lv-g">'
+                '<div><h2>Live now</h2>' + (f'<ul class="hb-lv-l">{busy}</ul>' if busy else
+                '<p class="hb-lv-e">No player realms are up right now. Check back soon, or host your own.</p>') + '</div>'
+                '<div><h2>New this week</h2>' + (f'<ul class="hb-lv-l">{fresh}</ul>' if fresh else
+                '<p class="hb-lv-e">No new realms with players this week yet.</p>') + '</div></div></section>')
+
     def how_strip(self) -> str:
         e = html.escape
         steps = (("Get the launcher", "Free, for Windows, macOS and Linux"),
@@ -2074,7 +2111,7 @@ class Hub:
             '<p class="hb-sub-h">One launcher for every classic client and every server: your game, your realm, one click.</p>'
             # no buttons under the line (owner 2026-10-30): Download and Play are in the side menu
             '<p class="hb-note">Free and open source, for Windows, macOS and Linux. Nothing to buy.</p></section>'
-            + self.hangout_open(got) + self.ticker(got) + self.realm_section(got) + self.how_strip() + den_week_html() + self.counters(got, items) + self.featured_mod(items) + self.features(got)
+            + self.hangout_open(got) + self.live_strip(got) + self.ticker(got) + self.realm_section(got) + self.how_strip() + den_week_html() + self.counters(got, items) + self.featured_mod(items) + self.features(got)
             + self.posters(got) + self.herokey_teaser(got) + self.community(items) + self.mod_strip(items) + status +
             '<p class="hb-fine">Community projects are links: nothing of theirs is hosted here. Each belongs to its '
             'authors, under the licence they chose. Leyline is an independent open-source project.</p>')

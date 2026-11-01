@@ -1600,9 +1600,19 @@ def _refresh_listing(busy=None) -> None:
             if ok:
                 _listing["realms"] = realms
                 _listing["when"] = time.time()
+        if ok and links is not None and hasattr(links, "note_players"):
+            links.note_players(realms)   # "New this week" needs a player in the last day (stream/links.py)
     finally:   # always, or no refresh ever runs again and the list freezes
         busy.release()
         _listing_done.set()
+
+
+def launcher_download() -> str:
+    """The launcher's download (the hub's Download button), for "Get the launcher" on realm links."""
+    try:
+        return hub_mod.hub._download() if hub_mod is not None else ""
+    except Exception:   # noqa: BLE001 - links.py's own default then
+        return ""
 
 
 def community_realms() -> tuple[list[dict], bool]:
@@ -1712,7 +1722,7 @@ def realms_page(query: dict | None = None) -> bytes:
             + ('<details><summary>House rules</summary><ol>'
                + "".join(f'<li>{html.escape(x)}</li>' for x in r["rules"]) + '</ol></details>' if r["rules"] else '')
             + f'<p>{button}</p>'
-            + share_box(f'/wrath/r/{r["id"]}') + '</div>')
+            + share_box(f'/wrath/r/{r["id"][:8]}') + '</div>')
     if rows:
         community = "".join(rows)
         if not ok:
@@ -3228,7 +3238,8 @@ class PageHandler(BaseHTTPRequestHandler):
                                             REALM_NAME, community_realms,
                                             who=armory.card_line if armory is not None else None,
                                             mods=workshop.mod if workshop else None,
-                                            made=creations.card_item if creations is not None else None))
+                                            made=creations.card_item if creations is not None else None,
+                                            labels=RULESET_LABELS, host=PUBLIC_HOST, get_launcher=launcher_download()))
             return
         if path == "/wrath/modes" and modes is not None:
             if not browse_limit.hit(rl_bucket(self.ip()), 600):
@@ -3492,6 +3503,8 @@ def main() -> int:
         herokeys.setup()   # the launchers' website sessions and passwords in /data (stream/herokeys.py)
     if forum is not None:
         forum.setup()   # the forum's store in /data (stream/forum.py)
+    if links is not None and hasattr(links, "load_last"):   # when each realm last had players ("New this week")
+        links.load_last(os.path.join(os.environ.get("WU_PORTAL_DATA", "/data"), "realm-last-player.json"))
     try:
         page.serve_forever()
     except KeyboardInterrupt:

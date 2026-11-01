@@ -106,8 +106,12 @@
     <!-- below the fold (home.js): one row each, shown once its data is in, hidden when empty -->
     <div class="home-more" id="home-more">
       <section class="hm-sec" id="hm-realms" aria-labelledby="hm-realms-h" hidden>
-        <div class="card-head hm-head"><span id="hm-realms-h">POPULAR REALMS</span><button type="button" class="link" data-hm-go="realms">See all ›</button></div>
+        <div class="card-head hm-head"><span id="hm-realms-h">LIVE NOW</span><button type="button" class="link" data-hm-go="realms">See all ›</button></div>
         <div class="hm-row" id="hm-realms-row"></div>
+      </section>
+      <section class="hm-sec" id="hm-new" aria-labelledby="hm-new-h" hidden>
+        <div class="card-head hm-head"><span id="hm-new-h">NEW THIS WEEK</span><button type="button" class="link" data-hm-go="realms">See all ›</button></div>
+        <div class="hm-row" id="hm-new-row"></div>
       </section>
       <section class="hm-sec" id="hm-mods" aria-labelledby="hm-mods-h" hidden>
         <div class="card-head hm-head"><span id="hm-mods-h">MODS TO TRY</span><button type="button" class="link" data-hm-go="discover">See all ›</button></div>
@@ -249,6 +253,15 @@
           </div>
         </div>
       </div>
+      <form class="rl-paste" id="rl-paste" autocomplete="off">
+        <label for="rl-paste-in">Paste a realm link or address</label>
+        <div class="rl-paste-row">
+          <input id="rl-paste-in" placeholder="play.openvanilla.app/wrath/r/… or realm.example.org:3724" spellcheck="false">
+          <button type="submit" class="btn small">Add</button>
+          <button type="button" class="btn small primary" id="rl-paste-play" hidden>Play now</button>
+        </div>
+        <p class="status" id="rl-paste-status" role="status"></p>
+      </form>
       <p class="net-line" id="rl-net" aria-live="polite"></p>
       <p class="status" id="rl-status" role="status"></p>
       <div class="realm-list" id="rl-list"></div>
@@ -616,6 +629,7 @@
         <span class="pbd-fill" id="pbd-fill" aria-hidden="true"></span>
         <span class="pbd-text"><span class="pbd-head" id="pbd-head"></span><span class="pbd-line" id="pbd-line"></span></span>
         <span class="sr" id="pbd-say" role="status"></span>
+        <button type="button" class="pbd-btn pbd-go" id="pbd-play" hidden>Play now</button>
         <button type="button" class="pbd-btn" id="pbd-retry" hidden>Try again</button>
         <button type="button" class="pbd-btn" id="pbd-cancel" hidden>Cancel</button>
         <button type="button" class="pbd-x" id="pbd-x" aria-label="Close" hidden>×</button>
@@ -640,6 +654,7 @@
 <script src="simple.js"></script><!-- Mods › Discover's Simple view and smart chips (window.LeylineSimple; before app.js, which calls it) --><!-- upstream addons from their authors: chips, cards, detail (window.LeylineMarket; before app.js, which calls it) -->
 <script src="listmod.js"></script><!-- List your mod: check, list, report (window.LeylineListMod; before app.js, which calls it) -->
 <script src="app.js"></script>
+<script src="realmlink.js"></script><!-- paste a realm link to add it; Live now (window.LeylineRealmLink; after app.js, before home.js) -->
 <script src="addons.js"></script>
 <script src="host.js"></script>
 <script src="hostconsole.js"></script>

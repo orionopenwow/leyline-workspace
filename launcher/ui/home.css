@@ -392,3 +392,13 @@ html[data-base="light"] .hs-shot.back { filter: saturate(.9) brightness(.97); }
 }
 
 html[data-base="light"] .hs-st li:last-child .hs-st-n { color: #fff; }
+
+/* Live now and New this week (home.js realmCard): a Play button on the card, the mode as a small badge */
+.hm-card.hm-lv { cursor: default; }
+.hm-card.hm-lv:hover { transform: none; }
+.hm-lv .hm-txt { flex: 1 1 auto; }
+.hm-mode-bdg { justify-self: start; max-width: 100%; padding: 0 7px; border-radius: 999px; border: var(--t-border-w) solid var(--t-border-strong);
+  color: var(--t-text-2); font: 600 11px/18px var(--t-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hm-lv .hm-play { flex: none; }
+.hm-empty { grid-column: 1 / -1; margin: 0; padding: 14px; color: var(--t-muted); font-size: 13px; border-radius: var(--t-radius-sm);
+  border: var(--t-border-w) dashed var(--t-border-strong); }

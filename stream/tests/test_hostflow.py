@@ -451,7 +451,7 @@ st, h, b = req("GET", loc, "alice")
 check("online, not listed yet", b"joining the realm list" in b)
 check("paired: the site learned the PC's realm id", hf.load(pid)["realm_id"] == rid and "realm_key" not in hf.load(pid))
 page = b.decode()
-check("share link once paired", f"https://play.openvanilla.app/wrath/r/{rid}" in page)
+check("share link once paired", f"https://play.openvanilla.app/wrath/r/{rid[:8]}" in page)
 check("host's own join link (GM account) once paired",
       f"https://relay.test/join/{rid}#{rec['invite_secret']}~{rec['host_secret']}" in page)
 listing.append({"id": rid, "name": "Violet Hangout", "tagline": "", "type": "PvE", "ruleset": "dalaran", "live": True,
@@ -461,8 +461,8 @@ st, h, b = req("GET", loc, "alice")
 check("online, listed", b"Online, listed" in b and b"http-equiv=\"refresh\"" not in b)
 lv = b.decode()
 check("you're live: on the front page, the share link, a Discord line and the card preview", "You're on the front page" in lv
-      and f"https://play.openvanilla.app/wrath/r/{rid}" in lv
-      and f"Come play on Violet Hangout, my realm on Leyline: https://play.openvanilla.app/wrath/r/{rid}" in lv
+      and f"https://play.openvanilla.app/wrath/r/{rid[:8]}" in lv
+      and f"Come play on Violet Hangout, my realm on Leyline: https://play.openvanilla.app/wrath/r/{rid[:8]}" in lv
       and 'class="poster"' in lv and "<h3>Violet Hangout</h3>" in lv and "TODO(owner): the &quot;You" not in lv
       and "TODO(owner)" in lv and "<script" not in lv, re.findall(r"You[^<]{0,40}front page|Come play[^<]*|<h3>[^<]*", lv))
 check("claimed for the account", fake_relay["claims"] and fake_relay["claims"][-1] == {
@@ -502,7 +502,7 @@ old = {"realm_key": old_key.hex(), "realm_id": old_rid, "invite_secret": hf.gen(
        "first_online": None}
 hf.save(old)
 st, h, b = req("GET", f"/wrath/host/{old_rid}", "bob")
-check("old record: page at its realm id, links shown", st == 200 and f"/wrath/r/{old_rid}".encode() in b)
+check("old record: page at its realm id, links shown", st == 200 and f"/wrath/r/{old_rid[:8]}".encode() in b)
 st, h, b = req("GET", f"/wrath/host/{old_rid}/leyline-{old_rid}.sh", "bob")
 seed = re.search(rb"([A-Za-z0-9+/=]{200,})", b)
 doc = json.loads(base64.b64decode(seed.group(1))) if seed else {}

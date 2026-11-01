@@ -726,6 +726,7 @@ function bimpView(view, head, line) {
   $("pbd-cancel").hidden = !(view === "run" || view === "picking");
   $("pbd-retry").hidden = view !== "error";
   $("pbd-x").hidden = !(view === "error" || view === "done");
+  if ($("pbd-play")) $("pbd-play").hidden = true;   // a realm link's Play now (realmlink.js) shows it after this
   box.classList.toggle("unknown", view === "picking" || view === "run");
   if (view !== "run") $("pbd-fill").style.width = view === "done" ? "100%" : "0";
   if (view !== "over" && view !== "run") $("pbd-say").textContent = [head, line].filter(Boolean).join(". ");
@@ -746,6 +747,7 @@ function bimpProgress(p) {
 async function barImport(input) {
   input = String(input || "").trim();
   if (!input) return;
+  if (window.LeylineRealmLink && window.LeylineRealmLink.take(input, "bar")) return;   // a realm link or address (realmlink.js)
   if (bimp.running || cimp.running) { say("play-status", "Leyline is already adding a game client.", "warn"); return; }
   closeRealmMenu(false);
   closeClientMenu(false);
@@ -864,7 +866,7 @@ document.addEventListener("paste", (e) => {
   const t = ((e.clipboardData && e.clipboardData.getData("text")) || "").trim();
   if (t) { e.preventDefault(); barImport(t); }
 }, true);
-window.LeylineBarImport = { drop: barImport, dragOn: barDragOn };
+window.LeylineBarImport = { drop: barImport, dragOn: barDragOn, view: bimpView };
 
 // Settings › Testing (clienttorrent.rs): saved on this PC only, off by default
 async function loadTesting() {
@@ -2783,6 +2785,7 @@ window.LeylineApp = {
   news: () => news, realms: () => realmsCache, catalog: () => catalog, mode: () => mode, setMode, openLink, playHangout, HANGOUT,
   realmIcon, realmVersion, hiddenBuild, nameHue,
   state: () => state,   // addons.js: the clients
+  pickRealm, playRealm, loadRealms, showRealm: showLinkedRealm,   // realmlink.js: paste to add, Live now
 };
 
 // ------------------------------------------------------------------ start

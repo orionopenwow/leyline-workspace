@@ -22,6 +22,8 @@
 --                                                                    V verified, N new, S sample hangout, E region
 --                                                                    estimated)
 --                      N:<realms>:<players>:<bots>                   the network line
+--                      W:<title>:<by>:<line>                         Den of the week (staff pick it on the site):
+--                                                                    said after the network line, as text
 --                      E:<count>                                     the list is complete
 --                      U:<text>                                      no list (e.g. "Realm list unavailable")
 --                      S:<id>:<live 0|1>                             this realm's own relay listing (left out of the
@@ -271,7 +273,7 @@ function L.OnMessage(prefix, msg, channel, sender)
     if UnitName and sender ~= UnitName("player") then return end
     local kind, rest = msg:match("^(%u):(.*)$")
     if kind == "B" then
-        L.incoming, L.network, L.selfId, L.selfLive = {}, nil, nil, nil
+        L.incoming, L.network, L.selfId, L.selfLive, L.denWeek = {}, nil, nil, nil, nil
         L.age = tonumber(rest:match(":(%d+)$") or "")
     elseif kind == "M" and L.incoming then
         local id, m = metaLine(rest)
@@ -285,6 +287,9 @@ function L.OnMessage(prefix, msg, channel, sender)
     elseif kind == "N" and L.incoming then
         local n, p, b = rest:match("^(%d+):(%d+):(%d+)$")
         if n then L.network = { realms = tonumber(n), players = tonumber(p), bots = tonumber(b) } end
+    elseif kind == "W" and L.incoming then
+        local t, by, line = rest:match("^([^:]+):([^:]+):([^:]*)$")
+        if t then L.denWeek = { title = t:gsub("|", ""):sub(1, 40), by = by:gsub("|", ""):sub(1, 24), line = line:gsub("|", ""):sub(1, 140) } end
     elseif kind == "R" and L.incoming then
         local r = realmLine(rest)
         if r and #L.incoming < 100 then L.incoming[#L.incoming + 1] = r end
@@ -294,8 +299,9 @@ function L.OnMessage(prefix, msg, channel, sender)
         local n = 0
         for _, r in ipairs(L.realms) do if r.id ~= "this" then n = n + 1 end end
         local age = L.age and L.age >= 120 and string.format(" (updated %d min ago)", math.floor(L.age / 60)) or ""
+        local dw = L.denWeek and (" Den of the week: " .. L.denWeek.title .. " by " .. L.denWeek.by .. ".") or ""
         if L.network then
-            setStatus(networkLine(L.network) .. "." .. age)
+            setStatus(networkLine(L.network) .. "." .. age .. dw)
         else
             setStatus((n == 0 and "No other realms are open right now." or (n == 1 and "1 other realm" or (n .. " other realms")) .. " on Leyline.") .. age)
         end

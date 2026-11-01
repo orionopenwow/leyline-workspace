@@ -92,5 +92,18 @@ rc, ids = run(LEYLINE_ALL_CLIENTS="")
 check("a 4.3.4 realm is not listed in game", rc == 0 and ids == ["tbctbctbctbctbc2"], ids)
 rc, ids = run(LEYLINE_ALL_CLIENTS="1")
 check("the override lists it", rc == 0 and ids == ["catacatacatacata", "tbctbctbctbctbc2"], ids)
+# Den of the week: home.json's den_week, cleaned, into the file before realms (the --from runs never fetch it)
+import importlib.util
+_spec = importlib.util.spec_from_file_location("lf", FETCH)
+lf = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(lf)
+dw = lf.den_week({"den_week": {"title": "Mossy: Hollow|cff", "by": "Ana", "line": "A pond\nand lanterns", "shots": ["x"]}})
+check("den_week cleaned: no colons, bars or new lines; only title, by, line", dw == {"title": "Mossy Hollow cff", "by": "Ana",
+      "line": "A pond and lanterns"}, dw)
+check("den_week: a brand word or no name is none", lf.den_week({"den_week": {"title": "WoW den", "by": "Ana"}}) is None
+      and lf.den_week({"den_week": {"title": "Den"}}) is None and lf.den_week({}) is None and lf.den_week([]) is None)
+text = lf.render({"realms": [rec("abcdefghijklmnop", "Busy Den", True, 40)]}, 1000, None, None, {"title": 'Say "hi"', "by": "Ana", "line": ""})
+check("render: den_week before realms, quotes as \\ddd", text.startswith('return { updated = 1000, den_week = { title = "Say \\034hi\\034", by = "Ana", line = "" }, realms = {'), text[:120])
+check("render without one: as before", lf.render({"realms": []}, 1000).startswith("return { updated = 1000, realms = {"))
 print(f"\n{count - fails}/{count} passed")
 sys.exit(1 if fails else 0)

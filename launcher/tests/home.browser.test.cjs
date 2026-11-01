@@ -446,6 +446,7 @@ test('Den of the week: from the site\'s home.json, as text; Visit shows a leylin
   assert.deepEqual(await s.locator('.hs-steps .hs-st-t i').allTextContents(), ['Ana', '2 on the website', 'Opens it on Realms']);
   assert.equal(await s.locator('img').count(), 0, 'no screenshot shown as a picture');
   await showKey(page, 'denweek');
+  if (process.env.SHOT_DIR) await page.screenshot({ path: path.join(process.env.SHOT_DIR, 'den-week-home.png') });
   await s.locator('.hs-go').click();
   assert.equal((await where(page)).page, 'page-realms');
   await page.evaluate(() => window.LeylineNav.show('play'));

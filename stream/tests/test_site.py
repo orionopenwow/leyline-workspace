@@ -144,7 +144,7 @@ def get(path, ip="203.0.113.5"):
 
 NAV_ITEMS = [("Leyline", "/wrath/leyline"), ("Play", "/wrath/account"), ("Realms", "/wrath/realms"), ("Modes", "/wrath/modes"),
              ("Mods", "/wrath/mods"), ("Armory", "/wrath/armory"), ("Docs", "/wrath/docs"), ("Server", wp.HOST_URL), ("Discord", wp.DISCORD_URL),
-             ("Sign in", "/login?next=%2Fwrath"), ("Play now", "/wrath")]
+             ("Log In", "/login?next=%2Fwrath"), ("Play now", "/wrath")]
 CURRENT_HREF = {"leyline": "/wrath/leyline", "play": "/wrath/account", "realms": "/wrath/realms", "modes": "/wrath/modes",
                 "mods": "/wrath/mods", "armory": "/wrath/armory", "docs": "/wrath/docs"}
 
@@ -156,7 +156,7 @@ def check_chrome(label, page, current, public=True, next_step=True, signed_in=Fa
     nav = nav_of(page)
     check(f"{label}: the site nav, once", page.count('id="ly-site-nav"') == 1 and nav)
     check(f"{label}: no nav of its own left", page.count('<nav class="ly-nav"') == 1 and 'class="grp"' not in page)
-    want = [x for x in NAV_ITEMS if not (signed_in and x[0] == "Sign in")]
+    want = [x for x in NAV_ITEMS if not (signed_in and x[0] == "Log In")]
     missing = [t for t, href in want if f'href="{wp.html.escape(href)}"' not in nav or f">{t}</a>" not in nav]
     check(f"{label}: every nav item", not missing, missing)
     marked = re.findall(r'<a href="([^"]+)"[^>]*aria-current="page"', nav)
@@ -207,7 +207,7 @@ acct = wp.account_page("Tester", "WR1", "pw", "n").decode()
 check_chrome("account page (signed in)", acct, "play", public=False, next_step=False, signed_in=True)
 check("account page: still the realm list and the Hero Key link", "Choose a realm" in acct and 'href="/wrath/key"' in acct
       and 'class="wu-panel wide"' in acct)
-check("account page: no Sign in once signed in", ">Sign in</a>" not in nav_of(acct))
+check("account page: no Log In once signed in", ">Log In</a>" not in nav_of(acct))
 check("the gold pages keep their themed body", '<body class="wu">' in wp.signed_out_page().decode())
 check("titles say which page", "<title>Realms · WrathUnleashed</title>" in get("/wrath/realms")[2]
       and "<title>Leyline</title>" in get("/wrath/leyline")[2] and "<title>Sign in · WrathUnleashed</title>" in wp.signed_out_page().decode())

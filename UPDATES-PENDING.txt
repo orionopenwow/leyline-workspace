@@ -520,8 +520,13 @@
 1204a ship Save to GitHub: launcher blue download bar (pause, time left, Nodes), stone side panel, red stone window buttons
 1204b leyline Leyline repo: the launcher release with the download bar and window buttons
 1205a client Browser game: ship the new faster-loading build (the old one is kept; client-back puts it back)
-1190b build-realm-on Builders' Realm on: backup, its databases and servers, self-check, on Leyline (rollback on failure; main realm untouched)
+1206a scripts Realm scripts: the Den's Inn stamp (live reload, no restart)
+1206b foreverui In-game UI: Inn in the Den's Stamps tab; Alt+Z hides the interface (screenshot mode)
+1206c hostkit Host kit: the Inn stamp for local Dens
+1190b build-realm-on Builders' Realm on (third try: the arena-season and start-up fixes are on this PC now)
 1190c signin Site: hops to the Builders' Realm
+1213a signin Site: the launcher's stone look (stone side menu, bars, red stone Log In / Download, metal panel edges), Join the Discord under News
+1210a ship Save to GitHub: launcher edge (one texture all round), button tab; Builders' Realm arena-season fix
 1202k release-mirror Mirror releases: copy the launcher releases to the mirror (after the GitHub build)
 1203a vr-data Vanilla Remastered: build the movement maps the world server needs (long; no upload again; resumable)
 1203b ov112-on Vanilla Remastered: turn the 1-20 realm on (backup, self-check, rollback)

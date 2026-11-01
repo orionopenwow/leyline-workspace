@@ -254,9 +254,11 @@ local function defaultKeys(quiet)
     for _, key in ipairs(PAGE_KEYS) do pcall(SetBinding, key) end
     for _, bar in ipairs(BAR_KEYS) do
         for i, key in ipairs(KEYS) do
-            pcall(SetBinding, bar[2] .. key, bar[1] .. i)
+            -- Alt+Z is the screenshot key (hide the interface, as in the classic game), not a right-bar slot
+            if bar[2] .. key ~= "ALT-Z" then pcall(SetBinding, bar[2] .. key, bar[1] .. i) end
         end
     end
+    if W.ShotKey then W.ShotKey() end
     if SaveBindings then pcall(SaveBindings, (GetCurrentBindingSet and GetCurrentBindingSet()) or 2) end
     if not quiet then
         say("Keys set: main bar 1-7 and F G T Z X; the bar above it Shift + those keys; the next Ctrl +; the right bar Alt +.")
@@ -382,6 +384,7 @@ function W.LeylineDefaults()
         if c.keys then c.pageKeys = true; say("Every action bar is on, with keys: 1-7 and F G T Z X, plus Shift, Ctrl and Alt for the bars above. Esc > Mods & Workshop to change.") end
     end
     if c.keys and not c.pageKeys then c.pageKeys = unbindPageFlips() or nil end
+    if not c.shotKey and W.ShotKey then c.shotKey = W.ShotKey() or nil end
     lastLevel = UnitLevel("player")
     if lastLevel and lastLevel >= 80 and not c.filled80 then
         if SendAddonMessage and UnitName then
@@ -458,6 +461,17 @@ function W.ScreenshotMode(on)
     shot.left = 3
     UIParent:Hide()
     shot:Show()
+end
+-- Alt+Z (owner 31 Oct, the live check: it only fired the right bar's Alt+Z slot): a key binding that clicks a hidden
+-- button toggling screenshot mode. Bindings work while the interface is hidden; the catcher's Alt+Z and Esc bring it back.
+local shotKeyBtn = CreateFrame("Button", "WrathUnleashedShotKey", nil)
+shotKeyBtn:SetScript("OnClick", function() W.ScreenshotMode() end)
+function W.ShotKey()
+    if not SetBindingClick then return false end
+    if InCombatLockdown and InCombatLockdown() then return false end
+    if not pcall(SetBindingClick, "ALT-Z", "WrathUnleashedShotKey") then return false end
+    if SaveBindings then pcall(SaveBindings, (GetCurrentBindingSet and GetCurrentBindingSet()) or 2) end
+    return true
 end
 SLASH_WUSHOT1, SLASH_WUSHOT2 = "/shot", "/hideui"
 SlashCmdList["WUSHOT"] = function() W.ScreenshotMode() end

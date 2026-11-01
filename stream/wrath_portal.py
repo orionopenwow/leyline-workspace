@@ -1034,6 +1034,11 @@ ART_TYPES = {
     "leyline-shot-forge.webp": "image/webp", "leyline-shot-agents.webp": "image/webp",
     "leyline-shot-backdrop.webp": "image/webp",   # the hub's backdrop (the owner's picture), faint behind every page
     "play-stone.webp": "image/webp",   # the launcher's PLAY button picture without the word, for the site's Play buttons
+    # the launcher's stone look on the site (launcher/ui/stone.css, owner 2026-10-31): the header/footer strip, the side
+    # panel's tile, the grey metal edge, the red stone button (Log In / Download) and its Marcellus lettering (SIL OFL 1.1)
+    "stone-bar.webp": "image/webp", "stone-side.webp": "image/webp", "stone-btn.webp": "image/webp",
+    "window-edge.png": "image/png",
+    "marcellus-400.woff2": "font/woff2", "Marcellus-OFL.txt": "text/plain; charset=utf-8",
     "leyline-display.woff2": "font/woff2", "leyline-display-OFL.txt": "text/plain; charset=utf-8",   # Big Shoulders Display 600 (SIL OFL 1.1, leyline-display-OFL.txt)
     "leyline-corner-tl.webp": "image/webp", "leyline-corner-tr.webp": "image/webp",   # our gold frame art, hued blue
     "leyline-corner-bl.webp": "image/webp", "leyline-corner-br.webp": "image/webp", "leyline-divider.webp": "image/webp",
@@ -2026,6 +2031,22 @@ body:has(>.ly-nav):not(.ly)>.ly-nav{width:calc(100% + 32px);margin:0 -16px 28px}
 body:has(>.ly-nav):not(.ly)>main{margin-bottom:auto}
 body:has(>.ly-nav):not(.ly)>.ly-next{margin-top:18px}
 body:has(>.ly-nav):not(.ly)>.ly-foot{width:calc(100% + 32px);margin:18px -16px 0}
+/* the launcher's stone (owner 2026-10-31, as on the hub pages: hub.STONE_CSS): the nav and the footer on the stone strip
+   under a dark shade, Play now and the closing step on the red stone with gold Marcellus lettering */
+@font-face{font-family:"Marcellus";font-weight:400;font-display:swap;src:url(/wrath/art/marcellus-400.woff2) format("woff2")}
+html body .ly-nav{background:linear-gradient(180deg,rgba(0,0,0,.12),rgba(0,0,0,.36)),url(/wrath/art/stone-bar.webp) 0 0/340px 34px repeat!important;
+border-bottom:1px solid #0a0908!important;box-shadow:inset 0 -1px 0 rgba(255,255,255,.05),0 4px 16px rgba(0,0,0,.35);-webkit-backdrop-filter:none;backdrop-filter:none}
+html body .ly-foot{background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(0,0,0,.36)),url(/wrath/art/stone-bar.webp) 0 0/340px 34px repeat!important;
+border-top:1px solid #0a0908!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.07)}
+html body .ly-nav a,html body .ly-foot :is(a,p){text-shadow:0 1px 1px rgba(0,0,0,.6)}
+html body .ly-nav a.on{background:linear-gradient(180deg,rgba(0,0,0,.5),rgba(0,0,0,.36))!important;border-color:#0a0908!important;
+box-shadow:inset 0 2px 4px rgba(0,0,0,.6),0 1px 0 rgba(255,255,255,.06)}
+html body :is(.ly-nav a.ly-hot,a.ly-next-go){min-height:44px;padding:0 18px;border:10px solid transparent!important;border-radius:0!important;
+border-image:url(/wrath/art/stone-btn.webp) 28 30 fill/10px!important;background:none!important;box-shadow:none!important;
+color:#f6cf55!important;font:400 17px/1 "Marcellus",Georgia,serif!important;letter-spacing:.04em!important;text-transform:none!important;
+text-shadow:0 1px 0 #2a1200,0 2px 3px rgba(0,0,0,.85)}
+html body :is(.ly-nav a.ly-hot,a.ly-next-go):hover{filter:brightness(1.15)}
+html body :is(.ly-nav a.ly-hot,a.ly-next-go):focus-visible{outline:2px solid #f2c94c;outline-offset:3px}
 .ly-share{margin:8px 0 0;font:13px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 .ly-share>summary{display:inline-flex;align-items:center;min-height:30px;padding:0 10px;cursor:pointer;list-style:none;border-radius:4px;
 border:1px solid rgba(120,150,255,.35);color:#cfd6ff;font-weight:600;font-size:11px;letter-spacing:.1em;text-transform:uppercase}
@@ -2075,7 +2096,7 @@ def site_nav(current: str = "", signed_in: bool = False) -> str:
     links_html += _nav_item("server", "Server", HOST_URL, current, external=True)
     links_html += _nav_item("discord", "Discord", DISCORD_URL, current, external=True)
     end = (_nav_item("profile", "Profile", "/wrath/profile", current) if signed_in and profiles is not None and profiles.store is not None
-           else "" if signed_in else _nav_item("signin", "Sign in", signin_url("/wrath"), current))
+           else "" if signed_in else _nav_item("signin", "Log In", signin_url("/wrath"), current))   # the launcher's word (owner 2026-10-31)
     return ('<nav class="ly-nav" id="ly-site-nav" aria-label="Leyline">'
             + (_nav_item("leyline", "Leyline", "/wrath/leyline", current, "ly-brand").replace(">Leyline</a>", ">" + spin(26) + "Leyline</a>")
                if BRAND else _nav_item("leyline", "Leyline", "/wrath/leyline", current, "ly-brand"))

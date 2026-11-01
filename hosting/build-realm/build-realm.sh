@@ -302,14 +302,19 @@ note "$AUTH_DB: $(echo "$tables" | grep -cvE '^(realmlist|ov_.*|mod_.*)$') views
 clone_schema() {  # clone_schema FROM TO: the tables (empty), and the rows of the small bookkeeping tables
   local from="$1" to="$2" n
   n=$(echo "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$to';" | sql) || return 1
-  if [ "${n:-0}" != 0 ]; then note "$to: already has its tables (kept as they are)"; return 0; fi
-  dump --no-data "$from" | sed -E 's/ AUTO_INCREMENT=[0-9]+//' | docker exec -i "$DB_C" sh -c 'MYSQL_PWD="${MYSQL_ROOT_PASSWORD:-}" exec mysql -uroot "$1"' sql "$to" || return 1
-  for t in updates updates_include worldstates; do
+  if [ "${n:-0}" != 0 ]; then
+    note "$to: already has its tables (kept as they are)"
+  else
+    dump --no-data "$from" | sed -E 's/ AUTO_INCREMENT=[0-9]+//' | docker exec -i "$DB_C" sh -c 'MYSQL_PWD="${MYSQL_ROOT_PASSWORD:-}" exec mysql -uroot "$1"' sql "$to" || return 1
+  fi
+  # The rows the world server needs at start (2026-10-31 live: "active_arena_season can't be empty" stopped it),
+  # topped up every run, so a database made by an earlier run gets them too.
+  for t in updates updates_include worldstates active_arena_season; do
     if [ "$(echo "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$from' AND table_name = '$t';" | sql)" = 1 ]; then
       echo "INSERT IGNORE INTO \`$to\`.\`$t\` SELECT * FROM \`$from\`.\`$t\`;" | sql >/dev/null || return 1
     fi
   done
-  note "$to: the tables of $from, empty (its update records copied)"
+  note "$to: the tables of $from, empty (its update records and the arena season copied)"
 }
 clone_schema acore_characters "$CHARS_DB" || fail "could not make $CHARS_DB"
 if db_exists acore_playerbots; then clone_schema acore_playerbots "$BOTS_DB" || fail "could not make $BOTS_DB"; fi
@@ -442,9 +447,19 @@ while [ "$waited" -le "$WORLD_WAIT" ]; do
 done
 [ -n "$ok" ] || { docker logs --tail 40 "$WORLD_C" >&2 2>&1 || true; fail "the world server ($WORLD_C) did not greet within ${WORLD_WAIT}s (${out:-no answer})"; }
 note "world server: $out (after about ${waited}s)"
+# Restarts before the first greeting (2026-10-31 live: 3, then a steady greeting) are noted with the log's last lines;
+# only a restart, stop or out-of-memory after it greets fails the step.
+r0=$(docker inspect -f '{{.RestartCount}}' "$WORLD_C" 2>/dev/null || echo 0)
+if [ "${r0:-0}" != 0 ]; then
+  note "!! the world server restarted $r0 time(s) while starting; its last lines:"
+  docker logs --tail 40 "$WORLD_C" 2>&1 | grep -viE 'password|secret|token' | sed 's/^/     /' >&2 || true
+fi
 sleep "$SETTLE"
 rc=$(docker inspect -f '{{.RestartCount}} {{.State.Running}} {{.State.OOMKilled}}' "$WORLD_C" 2>/dev/null)
-[ "$rc" = "0 true false" ] || fail "the world server restarted, stopped or ran out of memory right after it started (restarts, running, out of memory: $rc; WU_BUILD_WORLD_MEM raises the cap)"
+if [ "$rc" != "${r0:-0} true false" ]; then
+  docker logs --tail 40 "$WORLD_C" 2>&1 | grep -viE 'password|secret|token' | sed 's/^/     /' >&2 || true
+  fail "the world server restarted, stopped or ran out of memory after it greeted (restarts, running, out of memory: $rc; it had $r0 at the greeting; WU_BUILD_WORLD_MEM raises the cap)"
+fi
 used=$(docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' 2>/dev/null | awk -v w="$WORLD_C" '$1==w {print $2}')
 note "memory in use: $WORLD_C ${used:-?} of $WORLD_MEM"
 out=$(probe "$EDGE_NET" world "$MAIN_WORLD" 8085 2>&1) || fail "the main realm's world server does not greet any more ($out)"

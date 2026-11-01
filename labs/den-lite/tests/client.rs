@@ -326,6 +326,9 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
     w.send(&CMSG_PLAYER_LOGIN { guid: ch.guid });
     let (frames, welcome) = w.until_line();
     assert!(welcome.starts_with("Welcome to your Den: 0 props"), "{welcome}");
+    // the quick start: four lines, the first one places a chair
+    let tutorial: Vec<String> = (0..4).map(|_| w.until_line().1).collect();
+    assert!(tutorial[0].contains(".den place chair") && tutorial[3].contains(".den save"), "{tutorial:?}");
     let names: Vec<u16> = frames.iter().map(|f| f.opcode).collect();
     let at = |op: u16| names.iter().position(|&o| o == op).unwrap_or_else(|| panic!("no {op:#x} in {names:x?}"));
     // SMSG_LOGIN_VERIFY_WORLD first, then account data, ..., the player, world states, the room
@@ -374,6 +377,23 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
     assert!((fire.x - px).abs() < 0.01 && (fire.y - py).abs() < 0.01 && (fire.z - pz).abs() < 0.01);
     assert!(stamp.values().any(|g| g.entry == 24538 && (g.x - (px + 3.0)).abs() < 0.01 && (g.y - py).abs() < 0.01), "a bench 3 yards ahead");
     let stamp_guids: Vec<u64> = stamp.keys().copied().collect();
+
+    // one piece by name, 3 yards ahead (facing east), then taken back
+    w.say(".den find chair");
+    let (_, line) = w.until_line();
+    assert!(line.starts_with("Wooden Chair") || line.contains("Wooden Chair"), "{line}");
+    w.say(".den place wooden chair");
+    let (frames, line) = w.until_line();
+    assert!(line.starts_with("Wooden Chair is down (1 props)"), "{line}");
+    let (one, _) = objects(&frames);
+    let chair = one.values().next().expect("the chair");
+    assert_eq!((chair.entry, chair.display), (2413, 39));
+    assert!((chair.x - (px + 3.0)).abs() < 0.01 && (chair.y - py).abs() < 0.01);
+    w.say(".den place nosuchthing");
+    assert!(w.until_line().1.starts_with("Nothing called 'nosuchthing'"));
+    w.say(".build undo");
+    let (frames, _) = w.until_line();
+    assert_eq!(objects(&frames).1.len(), 1, "the chair goes");
 
     // the client asks what a campfire is
     w.send(&CMSG_GAMEOBJECT_QUERY { entry_id: 1953, guid: Guid::new(stamp_guids[0]) });

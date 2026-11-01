@@ -37,6 +37,8 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 | Command | What it does |
 |---|---|
 | `.den` | the commands |
+| `.den place <name>` | one piece 3 yards in front of you, facing as you face (`chair`, `lantern`, `house`...: whole name first, then a word's start) |
+| `.den find <word>` | the pieces whose name has that word (12 shown) |
 | `.den stamps` | the stamps |
 | `.den stamp <name> now [degrees]` | puts a stamp down where you stand, facing as you face (15 degree steps); `x` ahead of you, `y` to your left, as `ov_den_home.lua` |
 | `.build undo` | takes the last stamp or load back (50 deep) |
@@ -46,7 +48,7 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 | `.den room white\|stone\|wood` | the room's look (`ov_den.lua` THEMES) |
 
 The character is a ready-made human (female by default, `--gender male`), level 1, in a white shirt, trousers and
-boots, standing in the middle of the Den on the GM island (map 1, 16226.2, 16257.0, floor 13.2: `game_tele` 424).
+boots, standing in the middle of the Den on the GM island. At every login four chat lines are a quick start (place a chair, put down the inn, undo, save) (map 1, 16226.2, 16257.0, floor 13.2: `game_tele` 424).
 Other chat is said back as your own line. No creatures, combat, spells, quests or loot.
 
 ## How it works

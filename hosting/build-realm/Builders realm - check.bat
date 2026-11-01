@@ -9,7 +9,7 @@ if not exist "hosting\build-realm\build-realm.sh" (echo hosting\build-realm\buil
 where tar >nul 2>&1 || (echo tar.exe is missing ^(Windows 10 1803 or later has it^). & pause & exit /b 1)
 set "TGZ=%TEMP%\wu-build-realm-src.tgz"
 if exist "%TGZ%" del /q "%TGZ%"
-tar -czf "%TGZ%" --exclude=__pycache__ --exclude=*.pyc --exclude=state hosting/build-realm hosting/kit/tools/wunet hosting/kit/tools/wuhost hosting/kit/tools/Dockerfile realm/profiles/build.env realm/custom/lua_scripts/ov_buildrealm.lua || (echo Packing failed. & pause & exit /b 1)
+tar -czf "%TGZ%" --exclude=__pycache__ --exclude=*.pyc --exclude=state hosting/build-realm hosting/kit/tools/wunet hosting/kit/tools/wuhost hosting/kit/tools/Dockerfile realm/profiles/build.env realm/custom/lua_scripts/ov_buildrealm.lua realm/custom/lua_scripts/ov_den.lua || (echo Packing failed. & pause & exit /b 1)
 ssh -i "%USERPROFILE%\.ssh\openwow" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 root@play.openvanilla.app "T=$(mktemp -d) && tar -xzf - -C $T && sed 's/\r$//' $T/hosting/build-realm/build-realm.sh > $T/build-realm.sh && bash $T/build-realm.sh $T --check 2>&1 | tee /tmp/wu-build-realm.log; rm -rf $T; grep -q '^BUILD REALM DRY' /tmp/wu-build-realm.log" < "%TGZ%"
 set "RC=%ERRORLEVEL%"
 del /q "%TGZ%" >nul 2>&1

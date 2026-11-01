@@ -204,6 +204,13 @@ note "ports: none published (players come through the relay $RELAY_NAME; the rel
 note "already running: $WORLD_C=$(running "$WORLD_C" && echo 1 || echo 0) $AUTH_C=$(running "$AUTH_C" && echo 1 || echo 0) $AGENT_C=$(running "$AGENT_C" && echo 1 || echo 0)"
 
 if [ "$MODE" = --check ]; then
+  # while it runs: the last lines of its servers' logs (read-only; nothing secret: those lines are dropped)
+  for c in "$WORLD_C" "$AUTH_C" "$AGENT_C"; do
+    if running "$c"; then
+      echo; echo "== the last lines of $c"
+      docker logs --tail 50 "$c" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -viE 'password|passwd|secret|token|sessionkey' | sed 's/^/     /' || true
+    fi
+  done
   echo; echo "Would: back up acore_auth (and the build databases) to $DIR/backups/<time>/, make $AUTH_DB / $CHARS_DB / $BOTS_DB,"
   echo "start $AUTH_C and $WORLD_C (realm id $REALM_ID, no published port, the main realm untouched), check them and the"
   echo "main realm, then list \"$NAME\" on Leyline through the relay ($AGENT_C), and roll back on any failure."

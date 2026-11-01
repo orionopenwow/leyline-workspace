@@ -33,7 +33,7 @@
     const order = G.flatMap((g) => g[2]);
     return CATS.filter(([id]) => id !== "addons").sort((a, b) => (order.indexOf(a[0]) + 99) % 99 - (order.indexOf(b[0]) + 99) % 99);
   }
-  const DEFAULT_CAT = { addon: "addons", package: "addons", patch: "graphics", native: "tools", "realm-script": "realm-scripts", "game-mode": "sandbox" };
+  const DEFAULT_CAT = { addon: "addons", package: "addons", patch: "graphics", native: "tools", "realm-script": "realm-scripts", "game-mode": "sandbox", den: "sandbox" };
   const failed = (e, fb) => {
     const m = String(e);
     if (m === "signed_out") { if (S() && S().refresh) S().refresh(); return "You were signed out. Sign in again from Manage account."; }
@@ -78,10 +78,11 @@
   }
   function status() { const s = el("p", "status lm-status"); s.setAttribute("role", "status"); return s; }
 
-  let listKind = "mod";   // "addon" when it was opened from an Addons tab ("List your addon")
+  let listKind = "mod";   // "addon" when it was opened from an Addons tab ("List your addon"); "den" from Your Den (den.js)
   function open(kind) {
-    listKind = kind === "addon" ? "addon" : "mod";
-    const d = head(listKind === "addon" ? "List your addon" : "List your mod");
+    listKind = kind === "addon" || kind === "den" ? kind : "mod";
+    const den = listKind === "den";
+    const d = head(listKind === "addon" ? "List your addon" : den ? "Share your Den on the Workshop" : "List your mod");
     if (!signedIn()) {
       d.append(el("p", "", "Sign in to list a mod: any player can. Paste your repo link and Leyline shows exactly what one click will install."));
       const acc = el("button", "btn primary", "Sign in"); acc.type = "button";
@@ -92,9 +93,12 @@
       d.showModal();
       return;
     }
-    d.append(el("p", "", "Paste a link to your mod on GitHub, GitLab or Codeberg: the repo, a branch, a release, or one release file (.zip or .MPQ). We check it once; players install it from your repo."));
-    const l = el("label", "ac-label", "Your mod's link"); l.htmlFor = "lm-url";
-    const u = el("input"); u.id = "lm-url"; u.type = "url"; u.maxLength = 400; u.placeholder = "https://github.com/you/your-mod"; u.spellcheck = false;
+    d.append(el("p", "", den
+      ? "Paste the link to the GitHub release that has your Den file (.den.json) attached. We check the file once, like a Den opens it; anyone can then add it from the Workshop."
+      : "Paste a link to your mod on GitHub, GitLab or Codeberg: the repo, a branch, a release, or one release file (.zip or .MPQ). We check it once; players install it from your repo."));
+    const l = el("label", "ac-label", den ? "Your Den's release link" : "Your mod's link"); l.htmlFor = "lm-url";
+    const u = el("input"); u.id = "lm-url"; u.type = "url"; u.maxLength = 400; u.spellcheck = false;
+    u.placeholder = den ? "https://github.com/you/your-den/releases/tag/v1" : "https://github.com/you/your-mod";
     const go = el("button", "btn primary", "Check it"); go.type = "button";
     const st = status();
     const out = el("div", "lm-out");

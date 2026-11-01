@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="account.css"><!-- the sign-in chooser (social.js) and Manage account (account.js) -->
 <link rel="stylesheet" href="modes.css">
 <link rel="stylesheet" href="hostconsole.css"><!-- Host: the host console (hostconsole.js) -->
+<link rel="stylesheet" href="den.css"><!-- Your Den: the one Den page and the Home entry (den.js) -->
 <link rel="stylesheet" href="hostmodes.css"><!-- Host: modes anyone can host and fork (hostmodes.js) -->
 <link rel="stylesheet" href="addons.css"><!-- the Leyline addons: Clients, Mods & Addons › Installed › Addons, the PLAY offer (addons.js) -->
 <link rel="stylesheet" href="market.css"><!-- the addon marketplace in Mods & Addons › Discover › Addons (market.js) -->
@@ -59,8 +60,10 @@
     <!-- The website's side menu (stream/hub.py nav_items): Home, Realms, Mods & Addons, Host, Forum, News. Mods & Addons is one
          page (the website's Mods and Addons): Installed and Discover (app.js TABS), each split into Mods and Addons (shelf.js:
          one rule, docs/WORDS.md); one entry, not two, because both tabs hold both and a second entry would only repeat them.
-         Forum reads the website's forum (forum.js). Modes has no item: Home and Realms lead there. -->
+         Forum reads the website's forum (forum.js). Modes has no item: Home and Realms lead there.
+         Your Den (den.js) right under Home: the main way in to your own room to build in. -->
     <button class="nav" data-page="play"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</button>
+    <button class="nav nav-den" data-page="den"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5M6 9v11h12V9M10 20v-5h4v5"/></svg>Your Den</button>
     <button class="nav" data-page="realms"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>Realms</button>
     <button class="nav" data-page="mods"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Mods &amp; Addons<span class="badge" id="nav-mods-count" hidden></span></button>
     <button class="nav" data-page="host"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>Host</button>
@@ -108,6 +111,15 @@
 
     <!-- below the fold (home.js): one row each, shown once its data is in, hidden when empty -->
     <div class="home-more" id="home-more">
+      <!-- Your Den first (den.js): one click into your own white room to build in -->
+      <section class="hm-sec hm-den" id="hm-den" aria-label="Your Den">
+        <span class="hm-den-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5M6 9v11h12V9M10 20v-5h4v5"/></svg></span>
+        <div class="hm-den-txt"><b>Your Den</b><span>A white room to build in, on this PC. One click and you're in.</span></div>
+        <div class="hm-den-acts">
+          <button type="button" class="btn primary" id="hm-den-go">Your Den</button>
+          <button type="button" class="link-s" id="hm-den-page">Saved Dens, friends, Workshop ›</button>
+        </div>
+      </section>
       <section class="hm-sec" id="hm-realms" aria-labelledby="hm-realms-h" hidden>
         <div class="card-head hm-head"><span id="hm-realms-h">LIVE NOW</span><button type="button" class="link" data-hm-go="realms">See all ›</button></div>
         <div class="hm-row" id="hm-realms-row"></div>
@@ -304,6 +316,11 @@
       </div>
       </details>
     </div>
+  </section>
+
+  <!-- YOUR DEN (den.js; host/yourden.rs, host/lite.rs): Play, friends, Saved Dens, Packs, Share on the Workshop -->
+  <section class="page" id="page-den">
+    <div class="panel wide yd" id="yd"></div>
   </section>
 
   <!-- HOST -->
@@ -691,6 +708,7 @@
 <script src="host.js"></script>
 <script src="hostconsole.js"></script>
 <script src="hostmodes.js"></script><!-- Host: the mode cards first, Fork this mode (host/modes.rs; after hostconsole.js) -->
+<script src="den.js"></script><!-- Your Den: the one Den page and the Home entry (window.LeylineDen; after app.js and hostconsole.js) -->
 <script src="hostnetwork.js"></script><!-- Host: the Network tab (host/network.rs) -->
 <script src="home.js"></script>
 <script src="agents.js"></script><!-- Agents: the page and the approval card on every page (window.LeylineAgents) -->

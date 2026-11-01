@@ -1,5 +1,5 @@
 // The launcher's side menu, page tabs and backdrop (ui/index.html, ui/app.js, ui/style.css) in Chromium with a fake
-// Tauri core: the menu matches the website's (Home, Realms, Mods, Host, Forum, News; then Your realms, Settings,
+// Tauri core: the menu matches the website's (Home, Your Den, Realms, Mods, Host, Forum, News; then Your realms, Settings,
 // Help), Mods has the tabs Installed and Discover, the Forum replaced Community (Friends and Hub) and the old page ids
 // (mymods, discover, friends, community, hub, mods) still land on the right page and tab, the arrow keys move between tabs, the
 // Your realms rows carry the realm's icon and client version, and the website's backdrop sits behind the content area
@@ -74,8 +74,9 @@ const where = (page) => page.evaluate(() => ({
 test('the side menu matches the website, with the same line icons', async () => {
   const { page, ctx, errors } = await open();
   const items = await page.$$eval('aside nav .nav[data-page]', (b) => b.map((x) => [x.dataset.page, x.textContent.trim().replace(/\d+$/, '')]));
-  assert.deepEqual(items, [['play', 'Home'], ['realms', 'Realms'], ['mods', 'Mods & Addons'], ['host', 'Host'], ['forum', 'Forum'], ['news', 'News']]);
-  assert.equal(await page.locator('aside nav .nav[data-page] svg').count(), 6, 'each with its line icon');
+  // Your Den right under Home (den.js): the main way in to your own room to build in
+  assert.deepEqual(items, [['play', 'Home'], ['den', 'Your Den'], ['realms', 'Realms'], ['mods', 'Mods & Addons'], ['host', 'Host'], ['forum', 'Forum'], ['news', 'News']]);
+  assert.equal(await page.locator('aside nav .nav[data-page] svg').count(), 7, 'each with its line icon');
   // owner 31 Oct 21:59: Join the Discord under News (a link, not a page)
   assert.equal(await page.$eval('aside nav .nav:last-child', (b) => b.id + '|' + b.dataset.link + '|' + b.textContent.trim()), 'tb-discord|discord|Join the Discord');
   const foot = await page.$$eval('.side-foot .nav:not([hidden])', (b) => b.map((x) => x.dataset.page));

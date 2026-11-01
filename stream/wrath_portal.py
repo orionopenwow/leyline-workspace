@@ -668,7 +668,10 @@ def slice_info(slug: str) -> dict | None:
 
 
 class Sessions:
-    """Play sessions (id -> game login) and their one-time codes, in memory only."""
+    """Play sessions (id -> game login) and their one-time codes. The sessions are kept in a 0600 file too (path, set
+    by main()), so a portal restart (every site deploy) no longer signs every player out mid-game: before, their
+    /data requests started redirecting to the sign-in page and a world load in progress waited forever (live 1 Nov).
+    The logins in them are the site's own stream accounts (WR...), never a player's own password. Codes stay in memory."""
 
     MAX_SESSIONS = 5000
     PER_USER = 3
@@ -677,6 +680,41 @@ class Sessions:
         self.lock = threading.Lock()
         self.sessions: dict[str, dict] = {}
         self.codes: dict[str, tuple[str, float]] = {}
+        self.path = ""
+
+    def _persist(self) -> None:
+        """Write the live sessions (call with the lock held). Atomic, 0600; a failure only logs."""
+        if not self.path:
+            return
+        try:
+            tmp = self.path + ".tmp"
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                json.dump(self.sessions, f, separators=(",", ":"))
+            os.replace(tmp, self.path)
+        except Exception as e:   # noqa: BLE001: memory still works
+            log.warning("play sessions not saved: %s", e)
+
+    def load(self, path: str) -> int:
+        """Keep the sessions in `path` from now on, and take back the unexpired ones it has (returns how many)."""
+        self.path = path
+        try:
+            with open(path) as f:
+                got = json.load(f)
+        except FileNotFoundError:
+            return 0
+        except Exception as e:   # noqa: BLE001: a broken file means a fresh start
+            log.warning("play sessions file unreadable (%s): starting empty", e)
+            return 0
+        now, n = time.time(), 0
+        with self.lock:
+            for k, v in (got.items() if isinstance(got, dict) else []):
+                if (isinstance(k, str) and isinstance(v, dict) and isinstance(v.get("user"), str)
+                        and isinstance(v.get("exp"), (int, float)) and v["exp"] > now and len(self.sessions) < self.MAX_SESSIONS):
+                    self.sessions[k] = v
+                    n += 1
+            self._persist()
+        return n
 
     def _sweep(self, now: float) -> None:
         for k in [k for k, v in self.sessions.items() if v["exp"] <= now]:
@@ -699,6 +737,7 @@ class Sessions:
             self.sessions[sid] = {"user": user.upper(), "pass": password, "slice": slug,
                                   "tier": tier, "mode": mode, "exp": now + SESSION_TTL}
             self.codes[code] = (sid, now + CODE_TTL)
+            self._persist()
         return code
 
     def redeem(self, code: str) -> str | None:
@@ -725,12 +764,14 @@ class Sessions:
             if sid in self.sessions:
                 self.sessions[sid]["hop"] = {"id": hop["id"], "name": hop["name"], "home": bool(hop.get("home")),
                                              "pre": bool(hop.get("pre"))}
+                self._persist()
 
     def clear_hop(self, sid: str) -> None:
         """Back home in the same session (the fast hop's "wrath"): /__env.js gives the Wrath login again."""
         with self.lock:
             if sid in self.sessions:
                 self.sessions[sid].pop("hop", None)
+                self._persist()
 
     def end_user(self, user: str) -> int:
         with self.lock:
@@ -739,6 +780,8 @@ class Sessions:
                 del self.sessions[k]
             for c in [c for c, v in self.codes.items() if v[0] in gone]:
                 del self.codes[c]
+            if gone:
+                self._persist()
         return len(gone)
 
 
@@ -3554,6 +3597,8 @@ def main() -> int:
         herokeys.setup()   # the launchers' website sessions and passwords in /data (stream/herokeys.py)
     if forum is not None:
         forum.setup()   # the forum's store in /data (stream/forum.py)
+    kept = sessions.load(os.path.join(os.environ.get("WU_PORTAL_DATA", "/data"), "play-sessions.json"))
+    log.info("play sessions: %d kept from before the restart", kept)
     if links is not None and hasattr(links, "load_last"):   # when each realm last had players ("New this week")
         links.load_last(os.path.join(os.environ.get("WU_PORTAL_DATA", "/data"), "realm-last-player.json"))
     try:

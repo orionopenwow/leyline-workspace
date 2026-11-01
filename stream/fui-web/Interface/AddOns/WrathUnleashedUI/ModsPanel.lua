@@ -299,6 +299,81 @@ end
 -- Realm List goes right under Mods & Workshop. Each closes the menu and opens its window; Esc closes that window
 -- (UISpecialFrames), as with the game's own panels.
 local MENU_GAP = 25
+
+-- One column for the whole Esc menu, laid out each time it opens (owner 1 Nov 13:40: Realm List, Customize UI and
+-- Help Request sat on top of each other). The game's own buttons in their order, then ours, then any other button
+-- an addon or Forever UI put on the menu (Customize UI, Help Request...) in the order they sit; a gap; Logout, Exit;
+-- a gap; Return to Game. The frame's height follows the number of buttons.
+local MENU_ORDER = { "GameMenuButtonOptions", "GameMenuButtonSoundOptions", "GameMenuButtonUIOptions",
+    "GameMenuButtonMacOptions", "GameMenuButtonRatings", "GameMenuButtonKeybindings", "GameMenuButtonMacros",
+    "GameMenuButtonAddOns", "GameMenuButtonRealmList" }
+local MENU_TAIL = { "GameMenuButtonLogout", "GameMenuButtonQuit" }
+local MENU_LAST = "GameMenuButtonContinue"
+local function call(o, m, ...)
+    if o and type(o[m]) == "function" then
+        local ok, a, b, c, d, e = pcall(o[m], o, ...)
+        if ok then return a, b, c, d, e end
+    end
+end
+local function shownButton(b) return b and call(b, "IsShown") ~= false end
+function W.LayoutGameMenu()
+    if not GameMenuFrame then return nil end
+    local seen, list = {}, {}
+    for _, n in ipairs(MENU_ORDER) do
+        local b = _G[n]
+        if b then seen[b] = true; if shownButton(b) then list[#list + 1] = b end end
+    end
+    for _, n in ipairs(MENU_TAIL) do if _G[n] then seen[_G[n]] = true end end
+    if _G[MENU_LAST] then seen[_G[MENU_LAST]] = true end
+    local extra = {}
+    local kids = {}
+    if type(GameMenuFrame.GetChildren) == "function" then
+        local r = { pcall(GameMenuFrame.GetChildren, GameMenuFrame) }
+        if r[1] then for i = 2, #r do kids[#kids + 1] = r[i] end end
+    end
+    for _, c in ipairs(kids) do
+        if type(c) == "table" and not seen[c] and call(c, "IsObjectType", "Button") and shownButton(c) then
+            local t = call(c, "GetText")
+            if t and t ~= "" then extra[#extra + 1] = c end
+        end
+    end
+    table.sort(extra, function(a, b) return (call(a, "GetTop") or 0) > (call(b, "GetTop") or 0) end)
+    for _, b in ipairs(extra) do list[#list + 1] = b end
+    if #list == 0 then return nil end
+    local bh = call(list[1], "GetHeight") or 21
+    if bh <= 0 then bh = 21 end
+    local _, _, _, _, top = call(list[1], "GetPoint", 1)
+    top = math.abs(tonumber(top) or 37)
+    local prev = list[1]
+    for i = 2, #list do
+        local b = list[i]
+        call(b, "ClearAllPoints")
+        call(b, "SetPoint", "TOP", prev, "BOTTOM", 0, -1)
+        prev = b
+    end
+    local h = top + #list * bh + (#list - 1)
+    for i, n in ipairs(MENU_TAIL) do
+        local b = _G[n]
+        if b and shownButton(b) then
+            call(b, "ClearAllPoints")
+            call(b, "SetPoint", "TOP", prev, "BOTTOM", 0, i == 1 and -16 or -1)
+            h = h + bh + (i == 1 and 16 or 1)
+            prev = b
+        end
+    end
+    local last = _G[MENU_LAST]
+    if last and shownButton(last) then
+        call(last, "ClearAllPoints")
+        call(last, "SetPoint", "TOP", prev, "BOTTOM", 0, -16)
+        h = h + bh + 16
+    end
+    call(GameMenuFrame, "SetHeight", h + 22)
+    return list
+end
+if GameMenuFrame and GameMenuFrame.HookScript then
+    GameMenuFrame:HookScript("OnShow", function() W.LayoutGameMenu() end)
+end
+
 function W.AddMenuButtons()
     if not GameMenuFrame then return nil end
     local mods = _G["GameMenuButtonAddOns"]
@@ -327,14 +402,7 @@ function W.AddMenuButtons()
         GameMenuFrame:SetHeight(GameMenuFrame:GetHeight() + MENU_GAP)
     end
     if ForeverUI and ForeverUI.GameMenu and ForeverUI.GameMenu.Layout then ForeverUI.GameMenu.Layout() end
-    -- after Forever UI's layout: Realm List under Mods & Workshop, the rest of the menu moved down one button
-    realms:ClearAllPoints()
-    realms:SetPoint("TOP", mods, "BOTTOM", 0, -1)
-    local below = _G["GameMenuButtonLogout"]
-    if below and below ~= realms then
-        below:ClearAllPoints()
-        below:SetPoint("TOP", realms, "BOTTOM", 0, -16)
-    end
+    W.LayoutGameMenu()
     return mods, realms
 end
 W.AddMenuButtons()

@@ -186,6 +186,8 @@ STEPS = {
     "firewall-check": ("tools/security/Firewall limits - dry run.bat", "Firewall limits: what would be added (read-only)", False),
     "firewall": ("tools/security/Firewall limits - apply.bat", "Firewall limits on game, relay and web ports + fail2ban for wrong passwords", False),
     "addons-curate": ("tools/addon-curate/Curate addons.bat", "Addon marketplace: curate upstream addons from their authors (new ones wait for review; then ship + signin)", False),
+    "tidy-check": ("tools/server-tidy/Server tidy - dry run.bat", "Read-only: what making room on the server would remove, and how much", False),
+    "tidy": ("tools/server-tidy/Server tidy.bat", "Make room on the server: build cache, old logs, old site backups, the parked VR browser slice (owner OK 1 Nov)", False),
     "ov112-data-check": ("tools/ov112-data/Old 1.12 data - check.bat", "Read-only: where the old 1.12 game files are on the server, their size and who serves them", False),
     "ov112-data-remove-check": ("tools/ov112-data/Old 1.12 data - remove (dry run).bat", "Dry run: what removing the old 1.12 game files would do", False),
     "ov112-data-remove": ("tools/ov112-data/Old 1.12 data - remove.bat", "Remove the old 1.12 game files (the old site answers 410 for /data first; Wrath untouched)", False),
@@ -198,7 +200,7 @@ STEPS = {
 # Steps that change nothing in production. With "Ask before deploys" on (control/autopilot.json "confirm"),
 # Autopilot runs only these by itself; anything else waits for "Launch all".
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
-             "fresh-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog",
+             "fresh-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
              "vr-data-check", "vr-site-check", "release-mirror-check"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}
 

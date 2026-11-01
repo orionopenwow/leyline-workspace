@@ -199,6 +199,25 @@ forwarding every `MSG_MOVE_*` to the others with the mover's guid; chat to every
 session (the per-session writer in `world.rs` is already shareable for that); several characters per account and a
 character store; and visibility (who is near whom). For friends, the full Docker Den is the way ("share with friends").
 
+### Inviting a friend from Play solo (owner 1 Nov 14:37): what is missing, and the safe way today
+
+Today "Invite friends" on the launcher's Your Den page moves this Den to the full Docker Den (Share with friends),
+which already has the Leyline network's invite link, private by default, and a per-friend account. Den Lite itself
+can't take a friend yet, and must not be put on the relay as it is:
+
+1. **No shared password on the network.** Den Lite logs in any account name with one fixed local password. Through a
+   relay tunnel every connection arrives from 127.0.0.1, so "local only" can't be told from a friend. Needed: the
+   host's own account gets a secret of its own (made by the launcher, handed to the game by the hybrid glue as now),
+   and each friend a guest account the host's Den Lite makes (SRP verifier and salt in `<dens>/guests.json`, the
+   password made from the OS's random source and given once through the invite), with the fixed local login turned
+   off while the Den is on the network.
+2. **A tunnel without Docker.** The relay's link agent (`wu-link-agent`) runs in the Host kit's Docker; Den Lite needs
+   the same outbound connection from the launcher itself (or Den Lite), and its realm list must then name the relay's
+   address and port for the friend instead of 127.0.0.1:8085.
+3. **More than one player in the world** (the list below).
+
+Two real PCs on different networks are needed to prove any of it.
+
 ## Crates and licences
 
 | Crate | Version | Licence | Used for |

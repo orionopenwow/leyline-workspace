@@ -137,7 +137,7 @@ pub const TOOLS: &[Tool] = &[
         description: "Asks the player: a line their companion says in their Den, in game (up to 200 letters, plain words).",
         props: r#"{"text": {"type": "string", "maxLength": 200}}"#, required: &["text"] },
     Tool { name: "den_recipe_save", title: "Add to the building library", tier: Tier::Ask,
-        description: "Asks the player: save a new recipe in their building library, so the next build like it needs no layout written. Either `recipe` (a JSON template: params, let, pieces; docs/DEN.md \"Building brain\") or `script` (Lua 5.1 text that sets `recipe` and a function build(params) returning pieces; it runs only on the player's PC, sandboxed). It must make a layout that fits a Den with its default settings.",
+        description: "Asks the player: save a new recipe in their building library, so the next build like it needs no layout written. Either `recipe` (a JSON template: params, let, pieces; docs/DEN.md \"Building brain\") or `script` (Lua 5.1 text that sets `recipe` and a function build(params) returning pieces; it runs only on the player's PC, sandboxed; only in launcher builds with scripted recipes). It must make a layout that fits a Den with its default settings.",
         props: r#"{"name": {"type": "string", "maxLength": 24}, "recipe": {"type": "object"}, "script": {"type": "string", "maxLength": 65536}}"#,
         required: &["name"] },
 ];

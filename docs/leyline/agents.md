@@ -74,8 +74,8 @@ goes when you leave your Den or log out. Your assistant needs Leyline open to ap
 a build from a few settings (a tavern, a garden, a ring of lanterns, a path, a market row to start with). A build a
 recipe knows costs your assistant nothing to write: it names the recipe and the settings. Good builds can go into the
 library as new recipes (after your Approve), as small files in your Host pack folder, `state\dens\recipes`: copy them to
-share them. A recipe is numbers and pieces, or a small script that runs only on your PC, in a sandbox (no files, no
-network). What it makes is checked like any other build. The format is in the Den guide for mod makers (docs/DEN.md in Leyline's source, "Building brain").
+share them. A recipe is numbers and pieces (later also small scripts that run only on your PC, in a sandbox, with no files and
+no network). What it makes is checked like any other build. The format is in the Den guide for mod makers (docs/DEN.md in Leyline's source, "Building brain").
 
 ## What agents did
 

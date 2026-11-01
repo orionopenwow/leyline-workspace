@@ -47,12 +47,16 @@ pub const FRESH: u64 = 30;
 pub const RECIPE_MAX_BYTES: u64 = 64 * 1024;
 pub const RECIPES_MAX: usize = 200;
 /// Words the companion never says (the game's brand: the website, the launcher and the Den never use them).
+/// What a scripted recipe says in a launcher built without the lua-recipes feature (the default).
+pub const NO_SCRIPTS: &str = "This recipe needs scripted recipes, which aren't in this launcher build yet.";
+/// Scripted recipes (Lua) are in this build.
+pub const SCRIPTS: bool = cfg!(feature = "lua-recipes");
 pub const BRAND_WORDS: &[&str] = &["world of warcraft", "warcraft", "lich king", "blizzard", "wow"];
 
 /// The starter recipes, built in (a file of the same name in the player's recipes folder wins).
 pub const BUILT_IN: &[(&str, &str)] = &[
     ("tavern.recipe.json", include_str!("../../den-recipes/tavern.recipe.json")),
-    ("garden-scatter.recipe.lua", include_str!("../../den-recipes/garden-scatter.recipe.lua")),
+    ("garden-scatter.recipe.json", include_str!("../../den-recipes/garden-scatter.recipe.json")),
     ("lantern-ring.recipe.json", include_str!("../../den-recipes/lantern-ring.recipe.json")),
     ("path.recipe.json", include_str!("../../den-recipes/path.recipe.json")),
     ("market-row.recipe.json", include_str!("../../den-recipes/market-row.recipe.json")),
@@ -687,7 +691,7 @@ impl Recipe {
     }
     pub fn brief(&self) -> Value {
         json!({"name": self.name, "title": self.title, "about": self.about, "kind": self.kind(), "source": self.source,
-            "file": self.file, "params": self.params})
+            "file": self.file, "params": self.params, "usable": !matches!(self.body, Body::Script(_)) || SCRIPTS})
     }
 }
 
@@ -701,7 +705,12 @@ fn recipe_name(file: &str) -> Option<(String, bool)> {
 pub fn parse_recipe(file: &str, text: &str, lua: bool, source: &'static str) -> Result<Recipe, String> {
     let fallback = recipe_name(file).map(|r| r.0).unwrap_or_default();
     let (meta, body) = if lua {
-        (script_meta(text)?, Body::Script(text.to_string()))
+        #[cfg(feature = "lua-recipes")]
+        let meta = script_meta(text)?;
+        // without Lua: listed by its file name, refused when used (run_recipe)
+        #[cfg(not(feature = "lua-recipes"))]
+        let meta = json!({"about": format!("A scripted recipe. {NO_SCRIPTS}")});
+        (meta, Body::Script(text.to_string()))
     } else {
         let v: Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|e| format!("not JSON ({e})"))?;
         if v.get("format").and_then(Value::as_str) != Some("leyline-recipe") {
@@ -823,6 +832,9 @@ fn seed_of(p: &BTreeMap<String, PVal>) -> f64 {
 
 /// Runs a recipe: its pieces, as a layout's props ({key, x, y, z, yaw, scale}), not yet checked.
 pub fn run_recipe(r: &Recipe, p: &BTreeMap<String, PVal>) -> Result<Vec<Value>, String> {
+    if matches!(r.body, Body::Script(_)) && !SCRIPTS {
+        return Err(NO_SCRIPTS.into());
+    }
     let out = match &r.body {
         Body::Template(t) => run_template(t, p),
         Body::Script(s) => run_script(s, p),
@@ -956,6 +968,7 @@ fn piece_loop(
 
 // ------------------------------------------------------------------------------------------------ the Lua sandbox
 
+#[cfg(feature = "lua-recipes")]
 /// A Lua 5.1 with math, string (no patterns, no dump, no rep) and table only: no files, no os, no loading code, a
 /// 16 MB memory limit and an instruction limit. `rand(a, b)` (and math.random) are the steady random numbers.
 fn sandbox(seed: f64) -> Result<mlua::Lua, String> {
@@ -999,12 +1012,14 @@ fn sandbox(seed: f64) -> Result<mlua::Lua, String> {
     Ok(lua)
 }
 
+#[cfg(feature = "lua-recipes")]
 fn lua_err(e: mlua::Error) -> String {
     let s = e.to_string();
     let first = s.lines().next().unwrap_or("").replace("runtime error: ", "");
     short(&first, 200)
 }
 
+#[cfg(feature = "lua-recipes")]
 fn load_script(lua: &mlua::Lua, src: &str) -> Result<(), String> {
     if src.len() as u64 > RECIPE_MAX_BYTES {
         return Err("too big (64 KB at most)".into());
@@ -1015,6 +1030,7 @@ fn load_script(lua: &mlua::Lua, src: &str) -> Result<(), String> {
     lua.load(src).set_name("recipe").set_mode(mlua::ChunkMode::Text).exec().map_err(lua_err)
 }
 
+#[cfg(feature = "lua-recipes")]
 fn lua_to_json(v: mlua::Value, depth: usize) -> Value {
     match v {
         mlua::Value::Boolean(b) => json!(b),
@@ -1037,6 +1053,7 @@ fn lua_to_json(v: mlua::Value, depth: usize) -> Value {
     }
 }
 
+#[cfg(feature = "lua-recipes")]
 /// A script recipe's `recipe` table (name, title, about, params), read by running the script's definitions once.
 fn script_meta(src: &str) -> Result<Value, String> {
     let lua = sandbox(1.0)?;
@@ -1052,6 +1069,12 @@ fn script_meta(src: &str) -> Result<Value, String> {
     Ok(lua_to_json(r, 0))
 }
 
+#[cfg(not(feature = "lua-recipes"))]
+fn run_script(_src: &str, _p: &BTreeMap<String, PVal>) -> Result<Vec<Value>, String> {
+    Err(NO_SCRIPTS.into())
+}
+
+#[cfg(feature = "lua-recipes")]
 fn run_script(src: &str, p: &BTreeMap<String, PVal>) -> Result<Vec<Value>, String> {
     let lua = sandbox(seed_of(p))?;
     load_script(&lua, src)?;
@@ -1285,6 +1308,9 @@ fn plan_recipe(kit: &Path, args: &Value) -> Result<(String, String, bool, Card),
             r["version"] = json!(1);
             r["name"] = json!(name);
             (serde_json::to_string_pretty(&r).map_err(|e| e.to_string())?, false)
+        }
+        (None, Some(_)) if !SCRIPTS => {
+            return Err("Scripted recipes aren't in this launcher build yet: save it as a JSON template (recipe) instead.".into())
         }
         (None, Some(s)) => (s.to_string(), true),
         _ => return Err("Give either recipe (a JSON template) or script (Lua text), not both.".into()),
@@ -1618,15 +1644,49 @@ mod tests {
         let p = run_recipe(get("path"), &settings(get("path"), &Value::Null, &cat).unwrap()).unwrap();
         assert_eq!(p.iter().filter(|x| x["key"] == "platform").count(), 8);
         assert_eq!(p.iter().filter(|x| x["key"] == "lantern").count(), 2);
-        // the garden script: steady (the same settings, the same garden), another seed another garden
+        // the garden: steady (the same settings, the same garden), another seed another garden
         let g = get("garden-scatter");
-        assert_eq!(g.kind(), "script");
+        assert_eq!(g.kind(), "template", "a template: no Lua needed in the default build");
         let a = run_recipe(g, &settings(g, &Value::Null, &cat).unwrap()).unwrap();
         assert_eq!(a, run_recipe(g, &settings(g, &Value::Null, &cat).unwrap()).unwrap());
         assert_ne!(a, run_recipe(g, &settings(g, &json!({"seed": 7}), &cat).unwrap()).unwrap());
         assert_eq!(a.iter().filter(|x| x["key"] != "woodfence2").count(), 20);
     }
 
+    #[cfg(not(feature = "lua-recipes"))]
+    #[test]
+    fn without_lua_a_script_is_listed_but_refused() {
+        let t = setup();
+        fs::create_dir_all(recipes_dir(t.kit.path())).unwrap();
+        fs::write(recipes_dir(t.kit.path()).join("garden-script.recipe.lua"), include_str!("../../den-recipes/examples/garden-scatter-script.recipe.lua")).unwrap();
+        let (lib, problems) = library(Some(t.kit.path()));
+        assert!(problems.is_empty(), "{problems:?}");
+        let r = lib.iter().find(|r| r.name == "garden-script").expect("listed");
+        assert_eq!((r.kind(), r.brief()["usable"].clone()), ("script", json!(false)));
+        assert_eq!(run_recipe(r, &BTreeMap::new()).unwrap_err(), NO_SCRIPTS);
+        let mut s = server(t.app.path());
+        heartbeat(t.kit.path(), json!({}));
+        let (ok, text) = call(&mut s, "den_place_layout", json!({"recipe": "garden-script"}));
+        assert!(!ok && text == NO_SCRIPTS, "{text}");
+        let (ok, text) = call(&mut s, "den_recipe_save", json!({"name": "x", "script": "recipe = {}"}));
+        assert!(!ok && text.contains("aren't in this launcher build"), "{text}");
+        assert!(crate::agents::pending(t.app.path()).is_empty());
+    }
+
+    #[cfg(feature = "lua-recipes")]
+    #[test]
+    fn the_example_script_runs() {
+        let src = include_str!("../../den-recipes/examples/garden-scatter-script.recipe.lua");
+        let r = parse_recipe("garden-script.recipe.lua", src, true, "yours").unwrap();
+        let d = tempfile::tempdir().unwrap();
+        kit_at(d.path());
+        let cat = catalog(d.path()).unwrap();
+        let props = run_recipe(&r, &settings(&r, &Value::Null, &cat).unwrap()).unwrap();
+        assert!(check_layout(&cat, &limits(d.path()), &json!({"props": props}), "g", None).is_ok());
+        assert_eq!(props, run_recipe(&r, &settings(&r, &Value::Null, &cat).unwrap()).unwrap(), "steady");
+    }
+
+    #[cfg(feature = "lua-recipes")]
     #[test]
     fn the_sandbox_holds() {
         let meta = "recipe = { name = 'x', params = {} }\n";
@@ -1855,16 +1915,18 @@ mod tests {
         assert!(ok, "{text}");
         assert!(p.card.lines.iter().any(|l| l.contains("makes 5 pieces")), "{:?}", p.card.lines);
         assert!(recipes_dir(t.kit.path()).join("bench-row.recipe.json").is_file());
-        // the same name as a built-in: saved next to it, never over it
+        // the same name as a built-in: saved next to it, never over it (a script, with Lua in the build)
+        let two = json!({"title": "Two chairs", "pieces": [{"key": "chair", "x": 0, "y": 0}, {"key": "chair", "x": 1, "y": 0}]});
         let script = "recipe = { title = 'Two chairs', params = {} }\nfunction build(p) return { { key = 'chair', x = 0, y = 0 }, { key = 'chair', x = 1, y = 0 } } end";
+        let args = if SCRIPTS { json!({"name": "tavern", "script": script}) } else { json!({"name": "tavern", "recipe": two}) };
         let h = launcher(t.app.path().to_path_buf(), true);
-        let (ok, text) = call(&mut s, "den_recipe_save", json!({"name": "tavern", "script": script}));
+        let (ok, text) = call(&mut s, "den_recipe_save", args);
         let p = h.join().unwrap().unwrap();
         assert!(ok, "{text}");
         assert!(p.card.lines.iter().any(|l| l.contains("saved as \"tavern-2\"")), "{:?}", p.card.lines);
         let (lib, _) = library(Some(t.kit.path()));
         assert!(lib.iter().any(|r| r.name == "tavern" && r.source == "built in"));
-        assert!(lib.iter().any(|r| r.name == "tavern-2" && r.kind() == "script"));
+        assert!(lib.iter().any(|r| r.name == "tavern-2" && r.kind() == if SCRIPTS { "script" } else { "template" }));
         // and it builds by name, no layout written
         heartbeat(t.kit.path(), json!({}));
         let h = launcher(t.app.path().to_path_buf(), true);

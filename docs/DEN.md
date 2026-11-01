@@ -333,7 +333,7 @@ recipes that make a layout from a few settings. A known build costs no layout to
 `recipe` and `params` builds it straight away, and the assistant is asked only for what's new. Recipes are files in
 `<host kit>/state/dens/recipes/` (share them by copying the file); five starters are built into the launcher
 (`launcher/src-tauri/den-recipes/`): **tavern** (tables with four seats, a bar of kegs, lanterns), **garden-scatter**
-(a script: plants scattered over a round bed, never too close, a fence around it), **lantern-ring**, **path**
+(plants spread over a round bed in a sunflower spiral, nudged at random, a fence around it), **lantern-ring**, **path**
 (stones between two points, lights on alternate sides) and **market-row** (stalls with counters, goods and lamp
 posts). A file of the same name in the folder wins over a starter.
 
@@ -369,6 +369,10 @@ A **script**, `<name>.recipe.lua`, is Lua 5.1 that sets a table `recipe` (name, 
 function `build(params)` returning pieces `{ key, x, y, z, yaw, scale }`. It runs **only on the player's PC**, in
 the launcher, sandboxed: math, string (no patterns) and table only; no files, no os, no loading code; 16 MB and a few
 million instructions at most; `rand(a, b)` and `math.random` are the steady random numbers. Never on the realm.
+Scripts need a launcher built with the `lua-recipes` Cargo feature (it compiles Lua 5.1 from C; **off by default**):
+without it a `.recipe.lua` is listed but refused in plain words ("This recipe needs scripted recipes, which aren't
+in this launcher build yet"), and `den_recipe_save` takes templates only. An example script:
+`launcher/src-tauri/den-recipes/examples/garden-scatter-script.recipe.lua`.
 
 Either way the output is checked like any other layout (the catalog, the Den, the budgets, 400 pieces), and
 `den_recipe_save` keeps only a recipe whose default settings make a layout that fits.

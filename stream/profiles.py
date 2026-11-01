@@ -766,7 +766,7 @@ def page_profile(h, note: str = "", ok: str = "", form: dict | None = None, stat
                 '(Ways to sign in) so you can always come back to this account.</p>')
     bio = f'<p style="margin-top:6px;white-space:pre-wrap">{e(pr["bio"])}</p>' if pr["bio"] else ""
     ways_rows = ['<li><span><b>Hero Key</b><br><span class="pf-fine">Your key: sign in on any device, and the launcher.</span></span>'
-                 '<a href="/account/key">Manage your Hero Key</a></li>']
+                 '<a href="/wrath/key">Your Hero Key</a></li>']
     if w.get("google"):
         ways_rows.append('<li><span><b>Google</b></span><a href="/auth/google/start?link=1">Link Google</a></li>')
     if w.get("discord"):
@@ -777,7 +777,7 @@ def page_profile(h, note: str = "", ok: str = "", form: dict | None = None, stat
              f'<div><b>{e(who["name"])}</b><small>#{e(who["tag"])}</small><p class="pf-fine">Signed in</p></div></div>{bio}</section>'
              f'{msg}<section class="pf-card"><h2>Edit your profile</h2>' + _profile_form(who, "profile", PROFILE, "Save", "", form)
              + '</section><section class="pf-card"><h2>Ways to sign in</h2><p class="pf-fine">Linking another way lets it sign in to '
-             'this same account. Unlinking is done on the Hero Key page.</p>'
+             'this same account.</p>'
              f'<ul class="pf-list">{"".join(ways_rows)}</ul></section>'
              '<section class="pf-card"><h2>Sign out</h2><p class="pf-fine">Signs this browser out. Your launcher stays signed in '
              'until you sign out there or revoke it on Linked launchers.</p>'

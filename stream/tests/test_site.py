@@ -205,7 +205,7 @@ check_chrome("busy page", wp.busy_page(back="/wrath/realms").decode(), "realms",
 check_chrome("streaming off page", wp.stream_off_page().decode(), "play", public=False, next_step=False)
 acct = wp.account_page("Tester", "WR1", "pw", "n").decode()
 check_chrome("account page (signed in)", acct, "play", public=False, next_step=False, signed_in=True)
-check("account page: still the realm list and the Hero Key link", "Choose a realm" in acct and 'href="/account/key"' in acct
+check("account page: still the realm list and the Hero Key link", "Choose a realm" in acct and 'href="/wrath/key"' in acct
       and 'class="wu-panel wide"' in acct)
 check("account page: no Sign in once signed in", ">Sign in</a>" not in nav_of(acct))
 check("the gold pages keep their themed body", '<body class="wu">' in wp.signed_out_page().decode())

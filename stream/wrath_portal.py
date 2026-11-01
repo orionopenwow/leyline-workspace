@@ -26,6 +26,8 @@ Two listeners, both inside Docker networks only (never published on the host):
          GET /wrath/status.json  public realm status for the website's Beacons page, the launcher
                                and the GM console (CORS *, cached 30 s, at most one SOAP call per
                                30 s however many visitors ask)
+         GET /wrath/key, POST /wrath/key/start|signin   Your Hero Key (stream/herokeys.py): see it, save it, make a
+                               new one; a new account or a Hero Key sign-in. The website's /account/key redirects here
          GET /wrath/admin[/...], POST /wrath/admin/act   staff only: the Leyline Admin Console (stream/admin.py,
                                docs/ADMIN-CONSOLE.md); GET /wrath/leyline/{flags,channel,news,themes,realm-overrides}.json
                                are its public feeds for the launcher
@@ -307,6 +309,9 @@ if social is not None:
 profiles = _load_module("wu_profiles", "profiles.py")   # /wrath/signin, /wrath/profile, /wrath/avatar (stream/profiles.py)
 if profiles is not None:
     profiles.bind(lambda name: globals()[name])
+herokeys = _load_module("wu_herokeys", "herokeys.py")   # /wrath/key: Your Hero Key, for the site and the launcher (stream/herokeys.py)
+if herokeys is not None:
+    herokeys.bind(lambda name: globals()[name])
 forum = _load_module("wu_forum", "forum.py")   # the Leyline forum: /wrath/leyline/forum, /wrath/forum/api (stream/forum.py)
 if forum is not None:
     forum.bind(lambda name: globals()[name])
@@ -1357,7 +1362,7 @@ def account_page(display: str, user: str, password: str, nonce: str) -> bytes:
     body = (
         f'<style>{REALM_CSS}</style>'
         f'<div class="top"><span class="eyebrow">{html.escape(REALM_NAME)}</span>'
-        '<a class="keylink" href="/account/key">Your Hero Key</a></div>'
+        '<a class="keylink" href="/wrath/key">Your Hero Key</a></div>'
         f'{crest("Choose a realm")}<p class="sub">Signed in as {html.escape(display)}</p>{RULE}'
         # 1. Dalaran: the streamed mini version
         + (f'<div class="realm"><h2>{SAMPLER_NAME}</h2>'
@@ -3022,6 +3027,9 @@ class PageHandler(BaseHTTPRequestHandler):
         if profiles is not None and profiles.match(path):   # the profile forms (stream/profiles.py)
             profiles.post(self, path)
             return
+        if herokeys is not None and herokeys.match(path):   # Your Hero Key's forms (stream/herokeys.py)
+            herokeys.post(self, path)
+            return
         if social is not None and social.match(path):   # Leyline friends and messages (stream/social.py)
             social.post(self, path)
             return
@@ -3115,6 +3123,9 @@ class PageHandler(BaseHTTPRequestHandler):
             return
         if profiles is not None and profiles.match(path):   # sign-in, profile and pictures (stream/profiles.py)
             profiles.get(self, path, query)
+            return
+        if herokeys is not None and herokeys.match(path):   # Your Hero Key (stream/herokeys.py)
+            herokeys.get(self, path, query)
             return
         twin = hub_mod.twin(path, query) if hub_mod is not None and hasattr(hub_mod, "twin") else None
         if twin:   # an older page with a twin on the Leyline front door (stream/hub.py TWINS): one site, one page each
@@ -3429,6 +3440,8 @@ def main() -> int:
         social.setup()   # the store in /data and the realm bridge thread (stream/social.py)
     if profiles is not None:
         profiles.setup()   # the profiles' store in /data (stream/profiles.py)
+    if herokeys is not None:
+        herokeys.setup()   # the launchers' website sessions and passwords in /data (stream/herokeys.py)
     if forum is not None:
         forum.setup()   # the forum's store in /data (stream/forum.py)
     try:

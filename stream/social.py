@@ -34,6 +34,8 @@ The JSON API, under /wrath/api/social (Caddy sends /wrath* here; /api/* belongs 
     POST device/poll {device_code}  {status: pending|ok|denied|expired, token?}
     POST token/revoke            the launcher signs itself out (Bearer)
     POST herokey {realm}         Hero Key sign-in to a community realm (herokey_sso flag; docs/HERO-KEY-SSO.md)
+    Your Hero Key (stream/herokeys.py): POST account/new, herokey/signin {key}, password/signin {name, password} (no
+    sign-in: each answers a launcher token); GET herokey; POST herokey/new, herokey/saved, password {password|remove}
   GET/POST /wrath/link           the approval page (and the list of linked launchers, with Revoke). Signed out, it goes
                                  to the Leyline sign-in (/wrath/signin, stream/profiles.py); ?via=herokey|google|discord
                                  (the launcher's three buttons) goes straight to that way
@@ -767,17 +769,22 @@ class Social:
             if not approve:
                 d["denied"] = True
                 return True
+            d["token"] = self.issue_token(acct, "Leyline launcher, linked " + time.strftime("%Y-%m-%d", time.gmtime(self.clock())))
+            return True
+
+    def issue_token(self, acct: str, label: str) -> str:
+        """A new launcher sign-in for acct (only its hash is kept); the oldest of ten makes room. Also used by
+        stream/herokeys.py (a new account, a Hero Key or a password signed in from the launcher)."""
+        with self.lock:
             self.ensure(acct)
             n = self.one("SELECT COUNT(*) FROM social_tokens WHERE acct = ?", (acct,))[0]
             if n >= 10:   # the oldest launcher sign-in makes room
                 self.x("DELETE FROM social_tokens WHERE hash = (SELECT hash FROM social_tokens WHERE acct = ? "
                        "ORDER BY used LIMIT 1)", (acct,))
             tok = secrets.token_urlsafe(32)
-            label = "Leyline launcher, linked " + time.strftime("%Y-%m-%d", time.gmtime(self.clock()))
             self.x("INSERT INTO social_tokens (hash, acct, label, created, used) VALUES (?,?,?,?,?)",
-                   (hashlib.sha256(tok.encode()).hexdigest(), acct, label, self.now(), self.now()))
-            d["token"] = tok
-            return True
+                   (hashlib.sha256(tok.encode()).hexdigest(), acct, clean_text(label, 80), self.now(), self.now()))
+            return tok
 
     def token_acct(self, tok) -> str | None:
         if not isinstance(tok, str) or not TOKEN_RE.fullmatch(tok):
@@ -1159,6 +1166,31 @@ def _json(h, status: int, doc: dict) -> None:
     h.send(status, json.dumps(doc, separators=(",", ":")).encode("utf-8"), "application/json; charset=utf-8")
 
 
+def _herokeys():
+    """stream/herokeys.py (Your Hero Key: a new account, Hero Key and password sign-in, a new key), or None."""
+    try:
+        return P("herokeys")
+    except Exception:   # noqa: BLE001
+        return None
+
+
+def _hk_call(h, hk, sub: str, method: str, acct, how: str, extra, doc) -> None:
+    def send(status: int, out: dict, cookies: list) -> None:
+        if not cookies:
+            return _json(h, status, out)
+        body = json.dumps(out, separators=(",", ":")).encode("utf-8")
+        h.send_response(status)
+        h.send_header("Content-Type", "application/json; charset=utf-8")
+        h.send_header("Content-Length", str(len(body)))
+        for c in cookies:
+            h.send_header("Set-Cookie", c)
+        h.send_header("Cache-Control", "no-store")
+        h.send_header("X-Content-Type-Options", "nosniff")
+        h.end_headers()
+        h.wfile.write(body)
+    hk.api(h, sub, method, acct, how, extra or "", doc, send)
+
+
 def _auth(h, post: bool):
     """(acct, how, extra) or None after answering. how is "token" or "cookie"."""
     authz = h.headers.get("Authorization", "")
@@ -1228,6 +1260,9 @@ def get(h, path: str, query: dict) -> None:
         return _json(h, 429, {"error": "Slow down a little."})
     if how == "token":
         store.mark_seen(acct)
+    hk = _herokeys()
+    if hk is not None and hk.handles(sub, "GET", True):   # Your Hero Key (stream/herokeys.py)
+        return _hk_call(h, hk, sub, "GET", acct, how, extra, {})
     one = lambda k: (query.get(k) or [""])[0]   # noqa: E731
     if sub == "me":
         p = store.ensure(acct)
@@ -1300,6 +1335,12 @@ def post(h, path: str) -> None:
             return _json(h, 200, store.device_poll(doc.get("device_code")))
         except SocialError as e:
             return _json(h, e.status, {"error": e.text})
+    hk = _herokeys()
+    if hk is not None and hk.handles(sub, "POST", False):   # a new account, Hero Key or password sign-in (no token yet)
+        doc = _body(h)
+        if doc is None:
+            return _json(h, 400, {"error": "Bad request."})
+        return _hk_call(h, hk, sub, "POST", None, "", "", doc)
     a = _auth(h, True)
     if a is None:
         return
@@ -1316,6 +1357,8 @@ def post(h, path: str) -> None:
     if blk:   # a site-wide sanction (Leyline HQ, stream/admin.py blocked())
         return _json(h, 403, {"error": blk})
     pid = lambda: store.by_pid(doc.get("pid"))   # noqa: E731
+    if hk is not None and hk.handles(sub, "POST", True):   # a new key, saved, a password (stream/herokeys.py)
+        return _hk_call(h, hk, sub, "POST", acct, how, extra, doc)
     try:
         if sub == "profile":
             prof = _profiles()
@@ -1363,6 +1406,8 @@ def post(h, path: str) -> None:
             st, out = P("herokey_issue_api")(acct, doc.get("realm"), via)
             return _json(h, st, out)
         if sub == "token/revoke" and how == "token":
+            if hk is not None:   # the website session this launcher owns ends too (stream/herokeys.py)
+                hk.launcher_signed_out(extra, acct, ip, h.headers.get("User-Agent", ""))
             store.revoke(acct, tok=extra)
             store.seen.pop(acct, None)
             store.touch_circle(acct)
@@ -1506,6 +1551,9 @@ def link_post(h) -> None:
     if act in ("approve", "deny"):
         if not code or not store.device_answer(code, acct, act == "approve"):
             return link_page(h, {}, "That code has expired. Start again from the launcher.")
+        hk = _herokeys()
+        if act == "approve" and hk is not None:   # the launcher borrows this browser's session for its Hero Key
+            hk.launcher_linked((store.devices.get(code) or {}).get("token") or "", acct, h.headers.get("Cookie", ""))
         return link_page(h, {}, "Done. The launcher signs in by itself: you can close this tab." if act == "approve"
                          else "Refused. The launcher was not linked.")
     if act == "revoke":

@@ -315,7 +315,7 @@ st, hd, _, _ = req("GET", "/wrath/profile")
 check("profile page signed out: the chooser, coming back here", st == 302 and hd.get("Location") == "/wrath/signin?next=%2Fwrath%2Fprofile")
 st, hd, body, _ = req("GET", "/wrath/profile", "alice")
 check("profile page: who is signed in (picture, name#tag), the form, the ways, sign out", st == 200 and "AliceR" in body
-      and "#" + S.profile("WR000001")["tag"] in body and 'action="/logout"' in body and "/account/key" in body
+      and "#" + S.profile("WR000001")["tag"] in body and 'action="/logout"' in body and "/wrath/key" in body
       and "/auth/google/start?link=1" in body and "/auth/discord/start?link=1" in body and "/wrath/link" in body and "<script" not in body)
 check("profile page: never a game or company name", not BRAND.search(re.sub(r"<[^>]+>", " ", body)))
 t = tok("alice", "/wrath/profile")
@@ -367,7 +367,7 @@ ACCOUNTS["guest1"] = ("guest-abcd2345", "Guest ABCD2345", "WR000009")
 st, _, body, _ = req("GET", "/wrath/profile", "guest1")
 gname = S.profile("WR000009")["name"]
 check("guest: the profile page works, with its generated name and a plain line to pick one's own", st == 200 and gname == "GuestABCD2345"
-      and "Your name was made for you" in body and 'value="GuestABCD2345"' in body and "Manage your Hero Key" in body, body[:300])
+      and "Your name was made for you" in body and 'value="GuestABCD2345"' in body and "Your Hero Key" in body and "/wrath/key" in body, body[:300])
 st, _, body, _ = req("GET", "/wrath/leyline/forum/new", "guest1")
 check("guest: the forum's form offers to pick a name (one click to the profile)", "Post, as GuestABCD2345" in body
       and 'href="/wrath/profile">Pick your own name' in body)

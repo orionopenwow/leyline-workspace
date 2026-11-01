@@ -1533,7 +1533,16 @@ function renderSettings() {
   $("wine-set").disabled = !!state.windows;
   if ($("set-save")) $("set-save").hidden = !!state.windows;
   $("set-count").checked = state.settings.count_installs !== false;
+  $("set-hybrid").checked = state.settings.hybrid_login === true;
 }
+$("set-hybrid").addEventListener("change", async () => {
+  const on = $("set-hybrid").checked;
+  try {
+    const msg = await invoke("set_hybrid_login", { on });
+    state.settings.hybrid_login = on;
+    say("hybrid-status", msg, "ok");
+  } catch (e) { $("set-hybrid").checked = !on; sayErr("hybrid-status", e); }
+});
 $("set-count").addEventListener("change", async () => {
   const on = $("set-count").checked;
   try {
@@ -2651,8 +2660,9 @@ async function playRealmHeroKey(r, btn) {
   try {
     const l = await invoke("play_realm_herokey", { client: picked.id, slug: r.slug });
     const mins = Math.max(1, Math.round((l.valid_s || 600) / 60));
-    say("rl-status", `Started on ${r.name} as ${l.user}. At the login screen type this one-time password: ${l.pass} `
-      + `(it works for ${mins} minutes and is not saved).`, "ok");
+    if (l.auto) say("rl-status", `Started on ${r.name} as ${l.user}. The game signs you in by itself.`, "ok");
+    else say("rl-status", `Started on ${r.name} as ${l.user}. At the login screen type this one-time password: ${l.pass} `
+      + `(it works for ${mins} minutes and is not saved).` + (l.auto_why ? ` (Signing in by itself didn't work here: ${l.auto_why})` : ""), "ok");
     await refresh();
     renderRealms();
   } catch (e) { sayErr("rl-status", e); }

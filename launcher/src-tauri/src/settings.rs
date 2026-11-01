@@ -49,6 +49,10 @@ pub struct Settings {
     /// After a catalog install, tell the hub "one more install" (anonymous: the mod id, the build and a fresh
     /// random id; rankings.rs). On unless the player turns it off.
     pub count_installs: bool,
+    /// The hybrid client (hybrid.rs, docs/HYBRID-CLIENT.md): Hero Key sign-in hands the one-time login to the
+    /// game's login screen through Leyline's patch archive, so the player types nothing. Off until the owner has
+    /// checked it on a real PC.
+    pub hybrid_login: bool,
 }
 
 impl Default for Settings {
@@ -63,6 +67,7 @@ impl Default for Settings {
             native_ok: Vec::new(),
             update_channel: crate::update::Channel::Stable,
             count_installs: true,
+            hybrid_login: false,
         }
     }
 }

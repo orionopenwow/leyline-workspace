@@ -24,12 +24,14 @@ pub mod deeplink; // leyline://install/<id> (hub rankings agent)
 pub mod gfx; // Mods & Addons › Graphics: the client's own graphics settings in Config.wtf (gfx.rs)
 pub mod forum; // the Forum page: reading the website's forum (stream/forum.py)
 pub mod herokey; // Hero Key sign-in to community realms (docs/HERO-KEY-SSO.md; the herokey_sso flag)
+pub mod hybrid; // the hybrid client: the desktop game signs in and loads like the browser game (docs/HYBRID-CLIENT.md)
 pub mod host;
 pub mod launch;
 pub mod listed; // listed mods: what players list with "List your mod", installed from the author (stream/listings.py)
 pub mod listing; // List your mod from the launcher: check, list, report, edit, remove (stream/listings.py)
 pub mod modes; // the Modes page: game modes one click away (modes agent)
 pub mod mods;
+pub mod mpq; // a small MPQ writer for the hybrid client's patch archive (our files and Forever UI's glue only)
 pub mod news; // the News page: the website's news feed, read only (news.rs)
 pub mod net;
 pub mod p2p;

@@ -103,3 +103,8 @@ html.ly-brand #wu-addons .row { border-top-color: var(--lk-border); }
   .ly-spin::before, html.ly-brand #wenilla-boot .box::before, html.ly-brand #wu-loading .box::before,
   html.ly-brand #wu-layer-cover::before { animation: none !important; }
 }
+
+/* -- the tip under the bar (wu-loading.js addTips): muted, the launcher's font ------------------ */
+html.ly-brand body #wenilla-boot .ly-tip, html.ly-brand #wu-loading .ly-tip {
+  margin-top: 16px; font: 13px/1.4 var(--lk-font); font-style: normal; color: var(--lk-muted);
+}

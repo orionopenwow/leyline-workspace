@@ -22,6 +22,35 @@
 
 const SAFETY_MS = 180000;
 const FIRST_LINE = 'Entering the world…';
+const TIP_MS = 7000;
+
+// One short tip at a time under the bar, on every loading screen (owner 31 Oct 23:51: "all loading screens the
+// same … our spinning leyline logo and loadbar, maybe relevant tips float"). Plain words, no brand names.
+export const TIPS = [
+  'Type /realms to see every realm on the network and hop between them.',
+  'Your Hero Key signs you in on any realm in the network. No password to remember.',
+  'Build in your Den: drop a stamp like the Inn, then move, turn and undo each piece.',
+  'Type /shot to hide the interface for a clean screenshot.',
+  'What loads once stays in your browser, so the next visit is faster.',
+  'Ideas, questions or a realm to share? The forum is open at play.openvanilla.app.',
+  'Host your own realm from the Leyline launcher in three steps.',
+];
+
+/** Put a rotating tip line in `box` (once); it stops when the box leaves the page. */
+export function addTips(box, start = Math.floor(Math.random() * TIPS.length)) {
+  if (!box || box.querySelector(':scope > .ly-tip')) return null;
+  const tip = document.createElement('div');
+  tip.className = 'ly-tip';
+  let i = start % TIPS.length;
+  tip.textContent = TIPS[i];
+  box.append(tip);
+  const t = setInterval(() => {
+    if (!tip.isConnected) { clearInterval(t); return; }
+    tip.classList.add('out');
+    setTimeout(() => { i = (i + 1) % TIPS.length; tip.textContent = TIPS[i]; tip.classList.remove('out'); }, 400);
+  }, TIP_MS);
+  return tip;
+}
 
 /** The cover's bar width from the client's percent: never empty, never full while it is up. */
 export function coverWidth(percent) {
@@ -52,8 +81,11 @@ export function installLoading(opts = {}) {
   cover.innerHTML = `<div class="box"><div class="stage">${FIRST_LINE}</div><div class="bar pulse"><i></i></div></div>`;
   const bar = cover.querySelector('.bar'), fill = cover.querySelector('.bar > i');
   const stage = cover.querySelector('.stage');
+  addTips(cover.querySelector('.box'));
   // wu-loading.css draws the line from data-line (its ::after); the text node keeps it for readers.
   const setLine = (text) => {
+    // unchanged: touch nothing (a write is a DOM mutation, and the page-wide observer below calls back in here)
+    if ((text || null) === (stage.dataset.line || null) && stage.textContent === (text || FIRST_LINE)) return;
     stage.textContent = text || FIRST_LINE;
     if (text) stage.dataset.line = text; else delete stage.dataset.line;
   };
@@ -125,10 +157,51 @@ export function installLoading(opts = {}) {
       fill.style.width = Math.max(8, Math.min(100, Math.round((100 * c.done) / c.total))) + '%';
     }
   }
+  // -- the client's own cover (#wenilla-cover: grey words, a yellow bar, drawn over everything by newer clients):
+  // while it is up, ours is up instead with its words and its progress, and it is hidden under ours (wu-loading.css,
+  // body.wu-client-cover). Without this module the client's cover shows as before.
+  let ccWatch = null, ccEl = null, viaClient = false;
+  function clientCoverUp(cc) {
+    if (!cc || !cc.isConnected) return false;
+    const s = cc.style;
+    return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
+  }
+  function mirrorClient() {
+    const cc = document.getElementById('wenilla-cover');
+    if (cc !== ccEl) {
+      if (ccWatch) ccWatch.disconnect();
+      ccEl = cc; ccWatch = null;
+      if (cc) {
+        try {
+          ccWatch = new MutationObserver(mirrorClient);
+          ccWatch.observe(cc, { attributes: true, attributeFilter: ['style', 'class'], subtree: true, childList: true, characterData: true });
+        } catch { /* no observer: the page-wide one still notices it come and go */ }
+      }
+    }
+    if (clientCoverUp(cc)) {
+      if (!viaClient) { viaClient = true; document.body.classList.add('wu-client-cover'); }
+      show('client cover');
+      const label = cc.querySelector('.label');
+      const words = label && label.textContent.trim();
+      if (words) setLine(words);
+      const fi = cc.querySelector('i');
+      const w = fi && coverWidth(parseFloat(fi.style.width));
+      if (w) { measured = true; bar.classList.remove('pulse'); fill.style.width = w; }
+    } else if (viaClient) {
+      viaClient = false;
+      document.body.classList.remove('wu-client-cover');
+      hide('client cover gone');
+    }
+  }
+  st.mirror = mirrorClient;
+  // the boot overlay gets the same tips
+  const bootTips = () => { const b = document.querySelector('#wenilla-boot .box'); if (b) addTips(b); };
+
   try {
-    const mo = new MutationObserver(() => { readCorner(); busy(); });
+    const mo = new MutationObserver(() => { readCorner(); mirrorClient(); bootTips(); busy(); });
     mo.observe(document.body, { subtree: true, childList: true, characterData: true });
   } catch { /* no observer: the numbers just aren't kept */ }
+  mirrorClient(); bootTips();
   busy();
   return st;
 }

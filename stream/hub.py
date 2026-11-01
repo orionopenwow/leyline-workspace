@@ -153,6 +153,24 @@ def banned(text: str) -> bool:
     return bool(BANNED_RE.search(text or ""))
 
 
+def den_week_html() -> str:
+    """The front page's Den of the week card (stream/denweek.py: staff pick it in HQ), or "" when none is picked."""
+    m = sys.modules.get("wu_denweek")
+    if m is None:
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("wu_denweek", os.path.join(os.path.dirname(os.path.abspath(__file__)), "denweek.py"))
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            sys.modules["wu_denweek"] = m
+        except Exception:   # noqa: BLE001
+            return ""
+    try:
+        return m.section_html()
+    except Exception:   # noqa: BLE001
+        return ""
+
+
 # The hub pages never show a client build number or the game's name (the owner, 2026-10-30: "not mention client numbers
 # or world of warcraft on any part of the site but gently indicate its for all clients"). The catalog and the realm list
 # still filter by build underneath (?build=, the launcher feed keeps the numbers); what a visitor reads is these words.
@@ -2056,7 +2074,7 @@ class Hub:
             '<p class="hb-sub-h">One launcher for every classic client and every server: your game, your realm, one click.</p>'
             # no buttons under the line (owner 2026-10-30): Download and Play are in the side menu
             '<p class="hb-note">Free and open source, for Windows, macOS and Linux. Nothing to buy.</p></section>'
-            + self.hangout_open(got) + self.ticker(got) + self.realm_section(got) + self.how_strip() + self.counters(got, items) + self.featured_mod(items) + self.features(got)
+            + self.hangout_open(got) + self.ticker(got) + self.realm_section(got) + self.how_strip() + den_week_html() + self.counters(got, items) + self.featured_mod(items) + self.features(got)
             + self.posters(got) + self.herokey_teaser(got) + self.community(items) + self.mod_strip(items) + status +
             '<p class="hb-fine">Community projects are links: nothing of theirs is hosted here. Each belongs to its '
             'authors, under the licence they chose. Leyline is an independent open-source project.</p>')

@@ -1093,6 +1093,19 @@ def home_art(name: str) -> bool:
     return isinstance(name, str) and bool(HOME_ART_RE.fullmatch(name)) and ".." not in name
 
 
+def den_week_home(body: bytes | None) -> bytes | None:
+    """home.json with the Den of the week added as "den_week" (stream/denweek.py: staff pick it in HQ; links and words
+    only, no pictures), for the launcher's Home and the in-game Leyline window (realm/custom/leyline-fetch.py)."""
+    m = sys.modules.get("wu_denweek") or _load_module("wu_denweek", "denweek.py")
+    if m is None:
+        return body
+    sys.modules["wu_denweek"] = m
+    try:
+        return m.merge_home(body)
+    except Exception:   # noqa: BLE001
+        return body
+
+
 def art_bytes(name: str) -> bytes | None:
     """One file from the allow-list in ART_DIR, or None (not listed, or missing). Never a path from the URL."""
     if not art_type(name):
@@ -1101,7 +1114,7 @@ def art_bytes(name: str) -> bytes | None:
         with open(os.path.join(ART_DIR, name), "rb") as f:
             body = f.read(4_000_000)
     except OSError:
-        return None
+        return den_week_home(None) if name == HOME_JSON else None
     if name in ART_TYPES:
         return body
     if name == HOME_JSON:                                   # the list: a JSON object or nothing
@@ -1109,7 +1122,7 @@ def art_bytes(name: str) -> bytes | None:
             ok = len(body) <= HOME_JSON_MAX and isinstance(json.loads(body.decode("utf-8")), dict)
         except (ValueError, UnicodeDecodeError):
             ok = False
-        return body if ok else None
+        return den_week_home(body if ok else None)
     webp = body[:4] == b"RIFF" and body[8:12] == b"WEBP"
     if home_art(name):                                      # a screenshot: a real WebP or JPEG of a sane size, or nothing
         jpeg = body[:3] == b"\xff\xd8\xff"

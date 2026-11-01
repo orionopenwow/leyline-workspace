@@ -20,16 +20,7 @@
 .hf-me-name { font: 700 15px/1.25 var(--t-font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hf-caret { width: 14px; height: 14px; flex: none; fill: none; stroke: var(--t-muted); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .hf-me-st { font-size: 12.5px; color: var(--t-muted); }
-.hf-me-menu {
-  position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 170px; display: grid; padding: 5px;
-  border-radius: var(--t-radius-sm); background: var(--t-surface);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--t-text) 8%, transparent), 0 14px 32px rgba(0, 0, 0, 0.4);
-}
-.hf-me-menu button { padding: 8px 10px; border: 0; border-radius: var(--t-radius-xs); background: none; color: var(--t-text); font: 500 13px var(--t-font); text-align: left; cursor: pointer; }
-.hf-me-menu button:hover, .hf-me-menu button:focus-visible { background: var(--t-accent-soft); outline: none; }
 .hf-list { flex: 1; min-height: 0; overflow: auto; padding: 4px 6px 10px; scrollbar-width: thin; scrollbar-color: var(--t-border-strong) transparent; }
-  color: var(--t-muted); font: 600 12px var(--t-font); letter-spacing: 0.02em; text-align: left; }
-html[data-base="light"] .hf-me-menu { box-shadow: 0 0 0 1px rgba(16, 24, 40, 0.08), 0 12px 28px rgba(16, 24, 40, 0.16); }
 
 /* the panel docks to the title bar and the window's right edge, full height, no gap (owner 2026-10-30) */
 .home .card.home-side { margin: -18px -20px 0 0; border-radius: 0 0 0 var(--t-radius); align-self: stretch;
@@ -200,7 +191,6 @@ body:has(#page-play.on) .titlebar .winbtns { margin-left: 0; }
 .titlebar .tb-me .hf-me-name { font-size: 13px; }
 .titlebar .tb-me .hf-me-st { font-size: 11px; }
 .titlebar .tb-me .hf-me .btn { height: 28px; padding: 0 12px; font-size: 11.5px; }
-.titlebar .tb-me .hf-me-menu { right: 0; left: auto; top: calc(100% + 6px); z-index: 40; }
 .titlebar .tb-me .hf-code {
   position: absolute; top: calc(100% + 8px); right: 0; width: 280px; padding: 12px 14px; z-index: 40;
   background: var(--t-panel-solid, var(--t-chrome)); border: var(--t-border-w) solid var(--t-border); border-radius: var(--t-radius-sm, 10px);

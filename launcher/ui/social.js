@@ -6,8 +6,8 @@
 // pick a way (Hero Key, Google or Discord: only the ones the website offers right now), the browser opens that way's
 // sign-in with a code, and Leyline continues by itself once the code is approved. The launcher keeps only a revocable
 // token. The first time, Manage account (account.js) opens for the profile step (name, picture, bio). Signed in: your
-// picture and name with a menu (Manage account, Sign out). The same sign-in rates mods and signs in to community realms
-// with your Hero Key.
+// picture and name; the chip opens your account panel (you, your friends, quick links, Manage account, Sign out). The
+// same sign-in rates mods and signs in to community realms with your Hero Key.
 //
 // The sign-in's state (flow) is shared with Manage account, which shows the same chooser and waiting state; both listen
 // for "leyline:signin" and "leyline:me". Loaded before app.js. Everything from the server is shown with textContent or
@@ -92,7 +92,9 @@
       const sp = el("span", "ly-spin"); sp.setAttribute("aria-hidden", "true");
       const t = el("div", "sf-wait-t");
       t.append(el("b", "", "Waiting for your browser…"),
-        el("span", "", "Finish signing in there" + (flow.via ? " with " + (WAYS.find((x) => x[0] === flow.via) || ["", "the website"])[1] : "") + ", then approve this code. Leyline continues by itself."));
+        el("span", "", flow.via === "guest"
+          ? "On the website, pick More ways to sign in, then Play as guest, and approve this code. Leyline continues by itself."
+          : "Finish signing in there" + (flow.via ? " with " + (WAYS.find((x) => x[0] === flow.via) || ["", "the website"])[1] : "") + ", then approve this code. Leyline continues by itself."));
       w.append(sp, t);
       const c = el("p", "sx-code", code); c.setAttribute("aria-label", "Sign-in code " + code.split("").join(" "));
       const row = el("div", "sf-acts");
@@ -116,23 +118,257 @@
       b.onclick = () => signIn(k);
       list.append(b);
     }
-    box.append(list, el("p", "sf-fine", "Opens the website in your browser. New here? Google" + (wayOn("discord") ? " or Discord" : "")
-      + " makes your free account. We never see your password."));
+    box.append(list);
+    // the title bar's panel: a guest account too (the website's Play as guest: no password, a Hero Key made at once)
+    if (!big) {
+      const or = el("p", "sf-or"); or.append(el("span", "", "or"));
+      const g = el("button", "sf-way sf-guest"); g.type = "button"; g.dataset.via = "guest";
+      g.append(svg('<circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5"/>'), el("span", "", "Play as guest"));
+      g.onclick = () => signIn("guest");
+      box.append(or, g);
+    }
+    box.append(el("p", "sf-fine", "Opens the website in your browser. New here? Google" + (wayOn("discord") ? " or Discord" : "")
+      + (big ? "" : " or a guest account") + " makes your free account. We never see your password."));
   }
 
-  // ---------------------------------------------------------------- the title bar's chip
-  let meMenu = null;
-  function closeMeMenu() { if (meMenu) { meMenu.remove(); meMenu = null; const b = $("hf-me-btn"); if (b) b.setAttribute("aria-expanded", "false"); } }
+  // ---------------------------------------------------------------- the title bar's chip and its account panel
+  // Owner 31 Oct 18:36: "make this popout menu from profile icon more consistent and in line with the module at top,
+  // open a panel downward from it and open friends list, other stuff and sign out manage account etc". The whole chip
+  // is one button; it opens #hf-panel under it, joined to it (account.css): you (picture, name#tag, how you show,
+  // change name or picture), your friends (online first, requests, add a friend; the core's social_call "state",
+  // "request", "accept" and "decline", asked each time the panel opens: no live poll), quick links, and the account
+  // (Manage account, Hero Key, Sign out last). Esc or a click outside closes it; Tab stays inside; focus goes back to
+  // the chip. Signed out, the same panel look holds the chooser (#hf-code) with Play as guest under it.
+  let panel = null, friends = null, friendsErr = "", adding = false, addNote = ["", ""], panelRun = 0;
+  const isGuest = () => !!(me && me.profile && me.profile.name_generated);
+  const ICONS = {
+    profile: '<circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5"/>',
+    den: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/>',
+    solo: '<path d="M14.5 4H20v5.5L9 20.5 3.5 15z"/><path d="M5 13l6 6M3 21l2.5-2.5"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/>',
+    forum: '<path d="M4 4h11a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H9l-4 3.5V13H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M16 8h4a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-1v3.5L15 17h-4a1 1 0 0 1-1-1v-1"/>',
+    help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/>',
+    manage: '<rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9.5" cy="11" r="2"/><path d="M6.5 16c.6-1.4 1.7-2 3-2s2.4.6 3 2M14.5 10h3M14.5 13h3"/>',
+    key: '<circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M15 12v2"/>',
+    out: '<path d="M10 5H6a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h4"/><path d="M14 8l4 4-4 4M18 12H9"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+  };
+  const icon = (k) => svg(ICONS[k], "ap-ic");
+  const STATUS_LINE = { game: (f) => `Playing ${f.char || "a character"}${f.realm ? " on " + f.realm : ""}`, launcher: () => "In the launcher", offline: () => "Offline" };
+  const RANK = { game: 0, launcher: 1, offline: 2 };
+
+  function focusables(box) {
+    return [...box.querySelectorAll("button, input, [tabindex]:not([tabindex='-1'])")]
+      .filter((x) => !x.disabled && !x.closest("[hidden]") && x.getClientRects().length);
+  }
+  // Tab stays inside box; arrow keys move between its menu items
+  function trap(box, e) {
+    if (e.key === "Tab") {
+      const f = focusables(box);
+      if (!f.length) return;
+      const i = f.indexOf(document.activeElement);
+      if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
+      else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
+    } else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && document.activeElement && document.activeElement.getAttribute("role") === "menuitem") {
+      const items = [...box.querySelectorAll("[role='menuitem']")];
+      const i = items.indexOf(document.activeElement);
+      e.preventDefault();
+      items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus();
+    }
+  }
+
+  function closePanel(back) {
+    if (!panel) return;
+    panel.remove(); panel = null; panelRun++;
+    const tb = document.querySelector(".tb-me"); if (tb) tb.classList.remove("open");
+    const b = $("hf-me-btn");
+    if (b) { b.setAttribute("aria-expanded", "false"); if (back) b.focus(); }
+  }
+  function openPanel(focus) {
+    const tb = document.querySelector(".tb-me"), btn = $("hf-me-btn");
+    if (!tb || !btn || !me) return;
+    closePanel(false);
+    panel = buildPanel();
+    tb.append(panel); tb.classList.add("open");
+    btn.setAttribute("aria-expanded", "true");
+    if (focus) { const f = panel.querySelector(".ap-edit"); if (f) f.focus(); }
+    loadFriends();
+  }
+  const go = (fn) => () => { closePanel(false); fn(); };
+  const nav = (page) => () => { if (window.LeylineNav) window.LeylineNav.show(page); };
+  // My Den and Solo leveling: the Host page with that ruleset picked, as Home's Make my Den does (home.js)
+  const ruleset = (profile) => () => { nav("host")(); document.dispatchEvent(new CustomEvent("leyline:host-ruleset", { detail: { profile } })); };
+
+  function menuItem(ic, label, line, fn, cls) {
+    const b = el("button", "ap-item" + (cls ? " " + cls : "")); b.type = "button"; b.setAttribute("role", "menuitem");
+    const t = el("span", "ap-item-t"); t.append(el("b", "", label)); if (line) t.append(el("small", "", line));
+    b.append(icon(ic), t);
+    b.onclick = go(fn);
+    return b;
+  }
+
+  function buildPanel() {
+    const p = el("div", "acct-panel"); p.id = "hf-panel";
+    p.setAttribute("role", "dialog"); p.setAttribute("aria-label", "Your account");
+    p.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closePanel(true); return; }
+      trap(p, e);
+    });
+    const guest = isGuest();
+
+    // you
+    const head = el("div", "ap-head");
+    const who = el("div", "ap-who");
+    const nm = el("p", "ap-name"); nm.append(el("b", "", me.name), el("span", "ap-tag", me.tag ? "#" + me.tag : ""));
+    const st = el("p", "ap-st" + (me.offline ? " off" : "")); st.id = "ap-st";
+    st.append(el("i", "ap-dot"), el("span", "", me.offline ? "Appearing offline" : "Online"));
+    who.append(nm, st);
+    if (guest) who.append(el("p", "ap-guest", "Guest account"));
+    head.append(avatar(me.name, "ap-av", picOf(me)), who);
+    const edit = el("button", "btn small ap-edit" + (guest ? " primary" : ""), guest ? "Pick your own name and picture" : "Change name or picture");
+    edit.type = "button"; edit.onclick = go(manage);
+    head.append(edit);
+    p.append(head);
+
+    // the scrolling middle: friends, then the quick links
+    const mid = el("div", "ap-mid");
+    const fr = el("section", "ap-sec ap-friends"); fr.setAttribute("aria-labelledby", "ap-fh");
+    const fh = el("div", "ap-sec-h");
+    const h = el("h3", "", "Friends"); h.id = "ap-fh";
+    const count = el("span", "ap-count"); count.id = "ap-fcount";
+    const add = el("button", "ap-add"); add.type = "button"; add.id = "ap-add";
+    add.append(icon("plus"), el("span", "", "Add a friend"));
+    add.setAttribute("aria-expanded", String(adding)); add.setAttribute("aria-controls", "ap-addform");
+    add.onclick = () => { adding = !adding; addNote = ["", ""]; renderFriends(); if (adding) { const i = $("ap-addin"); if (i) i.focus(); } };
+    fh.append(h, count, add);
+    const form = el("form", "ap-addform"); form.id = "ap-addform"; form.hidden = !adding; form.noValidate = true;
+    const inp = el("input"); inp.id = "ap-addin"; inp.type = "text"; inp.maxLength = 40; inp.autocomplete = "off"; inp.spellcheck = false;
+    inp.placeholder = "Name#1234"; inp.setAttribute("aria-label", "Their name and tag, like Alice#1234");
+    const send = el("button", "btn small primary", "Send"); send.type = "submit";
+    const note = el("p", "ap-note"); note.id = "ap-addnote"; note.setAttribute("role", "status");
+    form.append(inp, send, note);
+    form.onsubmit = (e) => { e.preventDefault(); sendRequest(inp.value); };
+    const list = el("ul", "ap-flist"); list.id = "ap-flist"; list.setAttribute("aria-label", "Friends");
+    fr.append(fh, form, list);
+    mid.append(fr);
+
+    const ql = el("section", "ap-sec ap-links"); ql.setAttribute("aria-label", "Quick links");
+    const qm = el("div", "ap-grid"); qm.setAttribute("role", "menu"); qm.setAttribute("aria-label", "Quick links");
+    qm.append(menuItem("profile", "My profile", "On the website", () => openLink("profile")),
+      menuItem("den", "My Den", "Your own room", ruleset("den")),
+      menuItem("solo", "Solo leveling", "Play alone", ruleset("solo")),
+      menuItem("forum", "Forum", "Ask and share", nav("forum")),
+      menuItem("settings", "Settings", "This launcher", nav("settings")),
+      menuItem("help", "Help", "Guides and fixes", nav("help")));
+    ql.append(qm);
+    mid.append(ql);
+    p.append(mid);
+
+    // the account, Sign out last
+    const ac = el("div", "ap-acct"); ac.setAttribute("role", "menu"); ac.setAttribute("aria-label", "Account");
+    ac.append(menuItem("manage", "Manage account", "Name, picture, bio and ways to sign in", manage),
+      menuItem("key", "Hero Key", guest ? "Save it to keep this guest account" : "Signs you in on any device", () => openLink("herokey"), guest ? "warn" : ""));
+    const sep = el("div", "ap-sep"); sep.setAttribute("role", "separator");
+    ac.append(sep, menuItem("out", "Sign out", "", signOut, "ap-out"));
+    p.append(ac);
+    renderFriendsInto(p);
+    return p;
+  }
+
+  function renderFriends() { if (panel) renderFriendsInto(panel); }
+  function renderFriendsInto(p) {
+    const list = p.querySelector("#ap-flist"), count = p.querySelector("#ap-fcount"), form = p.querySelector("#ap-addform");
+    const add = p.querySelector("#ap-add"), note = p.querySelector("#ap-addnote");
+    if (!list) return;
+    form.hidden = !adding; add.setAttribute("aria-expanded", String(adding));
+    note.textContent = addNote[0]; note.className = "ap-note" + (addNote[1] ? " " + addNote[1] : "");
+    list.textContent = "";
+    if (!friends) {
+      count.textContent = "";
+      if (friendsErr) {
+        const li = el("li", "ap-empty"); li.append(el("span", "", friendsErr));
+        const again = el("button", "link-s", "Try again"); again.type = "button"; again.onclick = loadFriends;
+        li.append(" ", again); list.append(li);
+      } else list.append(el("li", "ap-empty", "Loading your friends…"));
+      return;
+    }
+    const all = friends.friends.slice().sort((a, b) => (RANK[a.status] ?? 3) - (RANK[b.status] ?? 3) || String(a.name).localeCompare(String(b.name)));
+    const on = all.filter((f) => f.status !== "offline").length;
+    count.textContent = all.length ? `${on} of ${all.length} online` : "";
+    for (const r of friends.incoming || []) {
+      const li = el("li", "ap-f ap-req");
+      li.append(avatar(r.name, "ap-fav"));
+      const t = el("div", "ap-f-t"); t.append(el("b", "", `${r.name}#${r.tag}`), el("span", "", "Wants to be friends"));
+      const yes = el("button", "btn small primary", "Accept"); yes.type = "button"; yes.onclick = () => act("accept", { pid: r.pid });
+      const no = el("button", "btn small", "Decline"); no.type = "button"; no.onclick = () => act("decline", { pid: r.pid });
+      const acts = el("div", "ap-f-acts"); acts.append(yes, no);
+      li.append(t, acts); list.append(li);
+    }
+    for (const f of all) {
+      const li = el("li", "ap-f st-" + f.status);
+      const av = avatar(f.name, "ap-fav"); av.append(el("i", "ap-fdot"));
+      const t = el("div", "ap-f-t"); t.append(el("b", "", f.name), el("span", "", (STATUS_LINE[f.status] || STATUS_LINE.offline)(f)));
+      li.title = `${f.name}#${f.tag}`;
+      li.append(av, t); list.append(li);
+    }
+    for (const o of friends.outgoing || []) {
+      const li = el("li", "ap-f ap-wait");
+      li.append(avatar(o.name, "ap-fav"));
+      const t = el("div", "ap-f-t"); t.append(el("b", "", o.name), el("span", "", "Asked: waiting for them"));
+      li.append(t); list.append(li);
+    }
+    if (!list.children.length) {
+      const mine = me && me.tag ? `${me.name}#${me.tag}` : "";
+      list.append(el("li", "ap-empty", "No friends yet. Add someone with their name and tag, like Alice#1234" + (mine ? `, or give them yours: ${mine}.` : ".")));
+    }
+  }
+
+  async function loadFriends() {
+    const id = panelRun;
+    friendsErr = "";
+    if (!friends) renderFriends();
+    try {
+      const s = await invoke("social_call", { action: "state", args: {} });
+      if (id !== panelRun) return;
+      friends = { friends: (s && s.friends) || [], incoming: (s && s.incoming) || [], outgoing: (s && s.outgoing) || [] };
+    } catch (e) {
+      if (id !== panelRun) return;
+      if (String(e) === "signed_out") { closePanel(false); loadMe(); return; }
+      friendsErr = "Couldn't load your friends right now.";
+    }
+    renderFriends();
+  }
+
+  async function act(action, args) {
+    try { await invoke("social_call", { action, args }); }
+    catch (e) { addNote = [String(e), "bad"]; }
+    await loadFriends();
+  }
+  async function sendRequest(text) {
+    const to = String(text || "").trim();
+    if (!to) { addNote = ["Type their name and tag, like Alice#1234.", "bad"]; renderFriends(); return; }
+    addNote = ["Sending…", ""]; renderFriends();
+    try {
+      await invoke("social_call", { action: "request", args: { to } });
+      addNote = [`Asked ${to}. They show here once they say yes.`, "ok"];
+      const i = $("ap-addin"); if (i) i.value = "";
+    } catch (e) { addNote = [String(e) === "signed_out" ? "You were signed out. Sign in again." : String(e), "bad"]; }
+    await loadFriends();
+  }
+
   document.addEventListener("pointerdown", (e) => {
-    if (meMenu && !e.target.closest(".hf-me-pick")) closeMeMenu();
+    if (panel && !e.target.closest(".tb-me")) closePanel(false);
     if (flow.stage === "choose" && !e.target.closest(".tb-me")) { flow.stage = "idle"; renderCode(); }
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && flow.stage === "choose") { flow.stage = "idle"; renderCode(); const b = $("hf-signin"); if (b) b.focus(); } });
+  document.addEventListener("leyline:page", () => closePanel(false));
 
   function renderMe() {
     const box = $("hf-me");
     if (!box) return;
-    closeMeMenu();
+    const wasOpen = !!panel;
+    closePanel(false);
+    if (!signedIn || !me) { friends = null; adding = false; }
     box.textContent = "";
     if (!signedIn || !me) {
       const t = el("div", "hf-me-t");
@@ -150,30 +386,19 @@
       renderCode();
       return;
     }
-    const pick = el("div", "hf-me-pick");
+    // the whole chip is the button: picture, name and #tag, the caret
     const btn = el("button", "hf-me-btn");
     btn.type = "button"; btn.id = "hf-me-btn";
-    btn.setAttribute("aria-haspopup", "menu"); btn.setAttribute("aria-expanded", "false");
-    btn.append(el("b", "hf-me-name", me.name));
-    btn.append(svg('<path d="M6 9l6 6 6-6"/>', "hf-caret"));
+    btn.setAttribute("aria-haspopup", "dialog"); btn.setAttribute("aria-expanded", "false"); btn.setAttribute("aria-controls", "hf-panel");
+    const who = el("span", "hf-me-who");
+    who.append(el("b", "hf-me-name", me.name), el("span", "hf-me-st", me.tag ? "#" + me.tag : "Signed in"));
+    btn.append(avatar(me.name, "hf-me-av", picOf(me)), who, svg('<path d="M6 9l6 6 6-6"/>', "hf-caret"));
     btn.title = me.tag ? `${me.name}#${me.tag}` : me.name;
-    btn.onclick = () => {
-      if (meMenu) { closeMeMenu(); return; }
-      meMenu = el("div", "hf-me-menu"); meMenu.setAttribute("role", "menu");
-      const item = (label, fn) => { const b = el("button", "", label); b.type = "button"; b.setAttribute("role", "menuitem"); b.onclick = () => { closeMeMenu(); fn(); }; meMenu.append(b); return b; };
-      item("Manage account", manage);
-      item("Sign out", signOut);
-      meMenu.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeMeMenu(); btn.focus(); } });
-      pick.append(meMenu);
-      btn.setAttribute("aria-expanded", "true");
-      meMenu.querySelector("button").focus();
-    };
-    pick.append(btn, el("span", "hf-me-st", me.tag ? "#" + me.tag : "Signed in"));
-    const av = avatar(me.name, "hf-me-av", picOf(me));
-    av.title = "Manage account"; av.classList.add("hf-me-pic");
-    av.onclick = manage;
-    box.append(av, pick);
+    btn.setAttribute("aria-label", `Your account: ${btn.title}`);
+    btn.onclick = () => { if (panel) closePanel(true); else openPanel(true); };
+    box.append(btn);
     renderCode();
+    if (wasOpen) openPanel(false);
   }
   function manage() { if (window.LeylineNav) window.LeylineNav.show("account"); }
 
@@ -185,6 +410,10 @@
         && !(window.LeylineNav && window.LeylineNav.current().page === "account");
       box.hidden = !open;
       if (open) buildFlow(box, false); else box.textContent = "";
+      box.classList.add("acct-panel", "ap-signin");
+      if (!box.dataset.trap) { box.dataset.trap = "1"; box.addEventListener("keydown", (e) => trap(box, e)); }
+      const sb = $("hf-signin"); if (sb) sb.setAttribute("aria-expanded", String(open));
+      const tb = document.querySelector(".tb-me"); if (tb) tb.classList.toggle("open-in", open);
       box.setAttribute("role", flow.stage === "waiting" ? "status" : "dialog");
       box.setAttribute("aria-label", "Sign in");
     }
@@ -213,7 +442,7 @@
     const id = ++runId;
     flow.via = typeof via === "string" ? via : ""; flow.note = "";
     try {
-      const s = await invoke("social_signin_start", { via: flow.via || null });
+      const s = await invoke("social_signin_start", { via: flow.via && flow.via !== "guest" ? flow.via : null });
       if (id !== runId) return;
       code = s.user_code || "";
       flow.stage = "waiting";

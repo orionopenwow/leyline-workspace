@@ -909,7 +909,13 @@ def cmd_official(a):
     text = " ".join([a.name, a.tagline or "", a.summary or ""] + rules)
     if BRAND_RE.search(text):
         sys.exit("Leave game and publisher brand names out of the realm list text.")
-    cfg.update(realm_id=rid, official=True, name=a.name.strip(), profile="dalaran", visibility="public", signup="off",
+    # The operator's other official realms (hosting/build-realm: the Builders' Realm) say what they are with
+    # --ruleset / --tags; the defaults are the official realm's own (the hangout step passes neither).
+    ruleset = a.ruleset or "dalaran"
+    tags = [t.strip().lower() for t in (a.tags or "hangout,boosted").split(",") if t.strip()]
+    if ruleset not in ("dalaran", "den", "custom") or not tags or any(t not in TAGS for t in tags):
+        sys.exit(f"--ruleset: dalaran, den or custom; --tags: some of {', '.join(TAGS)}")
+    cfg.update(realm_id=rid, official=True, name=a.name.strip(), profile=ruleset, visibility="public", signup="off",
                relay=relay, relay_url=a.relay_url or f"wss://{relay}/agent",
                listing_url=a.listing_url or f"https://{relay}/api/listing/heartbeat",
                join_base=(a.join_base or f"https://{relay}").rstrip("/"), site=(a.site or domains.SITE).rstrip("/"),
@@ -918,9 +924,9 @@ def cmd_official(a):
     for k in ("invite_secret", "host_secret", "gm", "gm_name", "db_password", "claim"):
         cfg.pop(k, None)   # nothing to invite to, no GM account to make, no database of its own
     cfg["record"] = {"name": cfg["name"], "tagline": " ".join((a.tagline or "").split())[:80],
-                     "summary": " ".join((a.summary or "").split())[:400], "type": "PvE", "ruleset": "dalaran",
+                     "summary": " ".join((a.summary or "").split())[:400], "type": "PvE", "ruleset": ruleset,
                      "rules": rules, "discord": a.discord or None, "warden": None, "signup": "off",
-                     "tags": ["hangout", "boosted"], "max_players": None, "direct": False}
+                     "tags": tags, "max_players": a.max_players or None, "direct": False}
     cfg["record"] = listing_fields(cfg["record"], cfg)
     save(cfg)
     print(json.dumps({"realm_id": rid, "name": cfg["name"]}))
@@ -1424,6 +1430,9 @@ def main(argv=None):
     p.add_argument("--summary")
     p.add_argument("--rules-file")
     p.add_argument("--discord")
+    p.add_argument("--ruleset", help="dalaran (default), den or custom")
+    p.add_argument("--tags", help="comma list of realm list tags (default hangout,boosted)")
+    p.add_argument("--max-players", type=int)
     p.set_defaults(fn=cmd_official)
     p = sub.add_parser("link", help="a server you already run, on the Leyline realm list (only the agent runs)")
     p.add_argument("--name")

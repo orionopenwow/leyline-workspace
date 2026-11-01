@@ -17,6 +17,10 @@ os.environ.update(SOAP_USER="WUSOAP", SOAP_PASS="x", AC_SOAP_URL=f"http://127.0.
                   STREAM_HOST="wrath.example", WU_RELAY_LISTING=f"http://127.0.0.1:{RELAY_PORT}/api/listing/realms.json",
                   WU_JOIN_BASE="https://relay.example", WU_RELAY_WS="wss://relay.example",
                   WU_HANGOUT_REALM="hangouthangout22", WU_LEYLINE_DIR=tempfile.mkdtemp())
+BUILD_FILE = os.path.join(tempfile.mkdtemp(), "build-realm.id")   # the Builders' Realm (hosting/build-realm)
+with open(BUILD_FILE, "w") as f:
+    f.write("buildersrealm234\n")
+os.environ["WU_BUILD_REALM_FILE"] = BUILD_FILE
 spec = importlib.util.spec_from_file_location("wp", sys.argv[1])
 wp = importlib.util.module_from_spec(spec); spec.loader.exec_module(wp)
 
@@ -35,7 +39,8 @@ class Relay(BaseHTTPRequestHandler):
     def do_GET(self):
         hang = rec(HANG, "Wrath Unleashed", True)
         hang["community"]["lastHeartbeat"]["players"] = 1
-        body = json.dumps({"realms": [rec(LIVE, "Frost Haven", True), rec(OFF, "Quiet Corner", False), hang]}).encode()
+        body = json.dumps({"realms": [rec(LIVE, "Frost Haven", True), rec(OFF, "Quiet Corner", False), hang,
+                                      rec("buildersrealm234", "Builders' Realm", True)]}).encode()
         self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
 
@@ -155,6 +160,14 @@ SOAP_CMDS.clear()
 _, _, env, _ = session_env(f"/wrath/play?mode=own&go=r:{HANG}")
 check("hangout with own files: the Wrath login too", env.get("hop_home") == "1" and env.get("mode") == "own" and env.get("user") == "WR000123")
 check("hangout with own files: Dalaran", "ovgo set WR000123 h:dalaran" in gos(), gos())
+# the Builders' Realm (build-realm.id): the same accounts, so the player's own login too, but no Dalaran intent
+wp.modes._recent.clear()
+SOAP_CMDS.clear()
+_, _, env, _ = session_env("/wrath/play?mini=mini&go=r:buildersrealm234")
+check("builders' realm: a hop with the player's own login", env.get("hop") == "buildersrealm234" and env.get("hop_home") == "1"
+      and env.get("user") == "WR000123" and env.get("hop_ws") == "wss://relay.example/ws/buildersrealm234", env)
+check("builders' realm: no Dalaran intent", gos() == [], gos())
+check("builders' realm: no Hero Key sign-in for it", wp.herokey_issue_api("WR000123", "buildersrealm234", "web")[0] in (400, 404))
 # another Beacon: never the Wrath login, never a Dalaran intent
 wp.modes._recent.clear()
 SOAP_CMDS.clear()

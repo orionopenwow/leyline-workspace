@@ -861,7 +861,7 @@ def hop_for(query: dict) -> dict | None:
         return None
     for r in community_realms()[0]:
         if r["id"] == got[1] and r["live"]:
-            return {"id": r["id"], "name": r["name"], "home": r["id"] == hangout_id()}
+            return {"id": r["id"], "name": r["name"], "home": own_login_realm(r["id"])}
     return None
 
 
@@ -872,9 +872,10 @@ def hop_env(sess: dict) -> dict:
     env = {"hop": rid, "hop_name": sess["hop"]["name"], "hop_ws": f"{RELAY_WS}/ws/{rid}",
            "hop_join": f"{JOIN_BASE}/join/{rid}?hop=1", "host": urllib.parse.urlsplit(RELAY_WS).hostname or "",
            "home": f"https://{PUBLIC_HOST}"}
-    if sess["hop"].get("home") and rid == hangout_id():
+    if sess["hop"].get("home") and own_login_realm(rid):
         # The official realm's Beacon (hangout-realm.id) is this realm through the relay: the player's own Wrath login, as on a plain visit
-        # (the same account; the relay and the Beacon agent only carry SRP, never the password).
+        # (the same account; the relay and the Beacon agent only carry SRP, never the password). The Builders' Realm
+        # (build-realm.id, hosting/build-realm) shares this realm's accounts, so it takes the same login.
         env.update(user=sess["user"], hop_home="1")
         env["pass"] = sess["pass"]
     elif not sess["hop"].get("pre"):   # "pre": the page redeemed one itself before the fast hop (POST /__gate?hop=)
@@ -937,8 +938,8 @@ def herokey_issue_api(acct: str, realm, via: str) -> tuple[int, dict]:
         return 404, {"error": "Hero Key sign-in for community realms isn't on yet."}
     if not isinstance(realm, str) or not REALM_ID_RE.match(realm):
         return 400, {"error": "That is not a realm id."}
-    if realm == hangout_id():
-        return 400, {"error": f"{REALM_NAME} uses your own game login."}
+    if own_login_realm(realm):
+        return 400, {"error": f"{REALM_NAME if realm == hangout_id() else 'That realm'} uses your own game login."}
     blk = admin.blocked("realm", acct=str(acct).upper()) if admin is not None and getattr(admin, "blocked", None) else ""
     if blk:
         return 403, {"error": blk}
@@ -1430,6 +1431,28 @@ RELAY_WS = os.environ.get("WU_RELAY_WS", "wss://relay.openvanilla.app").rstrip("
 HANGOUT_REALM = os.environ.get("WU_HANGOUT_REALM", "").strip()
 HANGOUT_FILE = os.environ.get("WU_HANGOUT_FILE", "/app/hangout-realm.id")
 _hangout = {"at": -1e9, "id": None}
+# The Builders' Realm (hosting/build-realm/build-realm.sh writes the id): an official realm with this realm's accounts.
+BUILD_REALM_FILE = os.environ.get("WU_BUILD_REALM_FILE", "/app/build-realm.id")
+_build_realm = {"at": -1e9, "id": None}
+
+
+def build_realm_id() -> str | None:
+    """The Builders' Realm's relay realm id, or None. Re-read once a minute."""
+    now = time.monotonic()
+    if now - _build_realm["at"] > 60:
+        _build_realm["at"] = now
+        try:
+            with open(BUILD_REALM_FILE, encoding="utf-8") as f:
+                v = f.read(64).strip()
+            _build_realm["id"] = v if REALM_ID_RE.match(v) else None
+        except OSError:
+            _build_realm["id"] = None
+    return _build_realm["id"]
+
+
+def own_login_realm(rid) -> bool:
+    """A realm that takes the player's own login (this realm's accounts): the official realm's Beacon, the Builders' Realm."""
+    return bool(rid) and rid in (hangout_id(), build_realm_id())
 
 
 def hangout_id() -> str | None:
@@ -2841,7 +2864,7 @@ class PageHandler(BaseHTTPRequestHandler):
         own = sess.get("mode") == OWN
         if "herokey" in query:
             rid = (query.get("herokey") or [""])[0][:20]
-            if not REALM_ID_RE.match(rid) or rid == hangout_id() or not hop_for({"go": ["r:" + rid]}):
+            if not REALM_ID_RE.match(rid) or own_login_realm(rid) or not hop_for({"go": ["r:" + rid]}):
                 self.json_reply(404, {"ok": False, "why": "not a live community realm"})
                 return
             t = herokey_issue(sess["user"], rid, herokey_mod.LOGIN_TTL_WEB if herokey_mod else 120)

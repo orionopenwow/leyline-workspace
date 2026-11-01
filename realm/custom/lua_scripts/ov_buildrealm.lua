@@ -22,7 +22,8 @@
 --
 -- Env (os.getenv when the script loads): OV_BUILDREALM (1 = on), OV_BUILDREALM_VISITORS (0/1),
 -- OV_BUILDREALM_MAIN_CHARS (default acore_characters), OV_BUILDREALM_NAME (default "Builders' Realm"),
--- OV_BUILDREALM_KICK_MS (default 6000).
+-- OV_BUILDREALM_KICK_MS (default 20000: long enough to see the message once the world has loaded; the browser
+-- game takes 10-30 s to load, and at 6 s players were dropped before they could read why).
 -- mod-ale used: RegisterPlayerEvent 3 ON_LOGIN, 42 ON_COMMAND; Player:GetAccountId / GetGMRank / GetName /
 -- KickPlayer / RegisterEvent / SendBroadcastMessage; GetPlayersInWorld; CharDBQuery / CharDBExecute; AuthDBQuery.
 
@@ -33,7 +34,7 @@ local NAME = os.getenv("OV_BUILDREALM_NAME") or "Builders' Realm"   -- TODO(owne
 local VISITORS = os.getenv("OV_BUILDREALM_VISITORS") == "1"
 local MAIN_CHARS = os.getenv("OV_BUILDREALM_MAIN_CHARS") or "acore_characters"
 if not MAIN_CHARS:match("^[A-Za-z0-9_]+$") then MAIN_CHARS = "acore_characters" end
-local KICK_MS = tonumber(os.getenv("OV_BUILDREALM_KICK_MS") or "") or 6000
+local KICK_MS = tonumber(os.getenv("OV_BUILDREALM_KICK_MS") or "") or 20000
 
 local function say(player, text) player:SendBroadcastMessage(TAG .. text) end
 
@@ -98,11 +99,16 @@ local function revoke(player)
     if b and b.SetBuilder and isBuilderHere(name) then b.SetBuilder(nil, name, false) end
 end
 
+local AWAY = " is for approved builders. Ask the realm's team to add you, then come back."
 local function sendAway(player)
-    say(player, NAME .. " is for approved builders. Ask the realm's team to add you, then come back.")
+    say(player, NAME .. AWAY)
     local function go(_, _, _, pl)
         pl = pl or player
-        if pl then try(pl, "KickPlayer") end
+        if pl then
+            try(pl, "SendAreaTriggerMessage", NAME .. AWAY)   -- on screen, not only in chat
+            say(pl, NAME .. AWAY)
+            try(pl, "KickPlayer")
+        end
     end
     if not try(player, "RegisterEvent", go, KICK_MS, 1) then go() end
 end
@@ -110,6 +116,9 @@ end
 local function onLogin(event, player)
     if not player then return end
     local why = reason(player)
+    -- one line on the world console per login, so the build-realm check shows why someone was dropped
+    print(string.format("[buildrealm] login %s (account %s): %s", tostring(try(player, "GetName")),
+        tostring(try(player, "GetAccountId")), why or (VISITORS and "visitor" or "sent away")))
     if why then
         if why ~= "gm" then grant(player) end
         say(player, "Welcome to " .. NAME .. ". Press F7 to build (or type /builder). Save your work with .den save <name>.")

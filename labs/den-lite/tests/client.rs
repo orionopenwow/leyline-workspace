@@ -135,6 +135,9 @@ fn reparse(opcode: u16, body: &[u8]) -> Option<ServerOpcodeMessage> {
     if opcode == ADDON_INFO || opcode == GO_QUERY_RESPONSE {
         return None; // the crate can't read SMSG_ADDON_INFO, and its query response has 6 data fields, not 24
     }
+    if opcode == 0x0096 && body.get(1..5) == Some(&[0xFF; 4]) {
+        return None; // an addon whisper (LANG_ADDON): the crate has no such language; read by hand (addon_text)
+    }
     let size = body.len() + 2;
     let mut v = Vec::with_capacity(size + 3);
     if size > 0x7FFF {
@@ -200,6 +203,39 @@ impl World {
         self.s.write_all(&v).unwrap();
     }
 
+    /// A frame the crate can't write: an addon whisper to ourselves (SendAddonMessage(prefix, text, "WHISPER", me)).
+    fn addon(&mut self, prefix: &str, text: &str) {
+        let mut body = Vec::new();
+        body.extend_from_slice(&7u32.to_le_bytes());
+        body.extend_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
+        body.extend_from_slice(b"Wren\0");
+        body.extend_from_slice(format!("{prefix}\t{text}").as_bytes());
+        body.push(0);
+        let mut v = Vec::new();
+        self.c.encrypter().write_encrypted_client_header(&mut v, (body.len() + 4) as u16, 0x0095).unwrap();
+        v.extend_from_slice(&body);
+        self.s.write_all(&v).unwrap();
+    }
+
+    /// The next addon answer for `md`/`name`, its parts joined.
+    fn until_addon(&mut self, md: &str, name: &str) -> String {
+        let want = format!("OVMOD\t{md}\t{name}\t");
+        let mut parts: Vec<String> = Vec::new();
+        loop {
+            let f = self.frame();
+            let Some(t) = addon_text(&f) else { continue };
+            let Some(rest) = t.strip_prefix(&want) else { continue };
+            let (pn, data) = rest.split_once('\t').unwrap();
+            let (i, n) = pn.split_once('/').unwrap();
+            let (i, n): (usize, usize) = (i.parse().unwrap(), n.parse().unwrap());
+            assert_eq!(i, parts.len() + 1, "parts in order");
+            parts.push(data.to_string());
+            if i == n {
+                return parts.concat();
+            }
+        }
+    }
+
     fn say(&mut self, text: &str) {
         self.send(&CMSG_MESSAGECHAT { chat_type: CMSG_MESSAGECHAT_ChatType::Say, language: Language::Common, message: text.into() });
     }
@@ -238,6 +274,16 @@ impl World {
             got.push(f);
         }
     }
+}
+
+/// An addon whisper's text (SMSG_MESSAGECHAT, LANG_ADDON): u8 type, u32 lang, u64 sender, u32 flags, u64 target,
+/// u32 length, the text.
+fn addon_text(f: &Frame) -> Option<String> {
+    if f.opcode != 0x0096 || f.body.get(1..5) != Some(&[0xFF; 4]) || f.body.len() < 30 {
+        return None;
+    }
+    let len = u32::from_le_bytes(f.body[25..29].try_into().unwrap()) as usize;
+    Some(String::from_utf8_lossy(&f.body[29..29 + len - 1]).to_string())
 }
 
 /// The CMSG_AUTH_SESSION addon list: u32 size, then zlib (u32 count, each: name, has key, crc, extra crc; a time).
@@ -1088,5 +1134,101 @@ fn the_guest_command_prints_a_login_once() {
     assert!(l[0].get("pass").is_none() && l[0].get("verifier").is_none());
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_den-lite")).args(["guest", "revoke", "--dens", &dir.display().to_string(), "all"]).output().unwrap();
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "{\"revoked\":1}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The opcodes the real game sends after the one-click sign-in (the launcher's keys or our login screen code):
+/// the realm list, character list, a character made (Den Lite keeps its ready-made one), enter the world; then what
+/// the Leyline UI sends in the world: the Den panel's hello, the Builder's catalog, spawn, move, turn, delete, undo,
+/// "Invite a friend" asked of the launcher and its answer back in the panel. Every step is in den-lite.events.
+#[test]
+fn one_click_lands_in_the_den_with_the_builder_ready() {
+    let (srv, dir) = server("oneclick", HeroGender::Female);
+    let ev = |dir: &std::path::Path| den_lite::events::read(dir).into_iter().map(|l| l.ev).collect::<Vec<_>>();
+    assert_eq!(ev(&dir), ["start"]);
+    // the login screen code signs in as DENAUTO (the launcher's keys: DEN, as Config.wtf fills in)
+    let (key, _, address) = login(srv.login, "DENAUTO", "den").expect("login");
+    let mut w = World::connect(&address, "DENAUTO", key, 3);
+    w.send(&CMSG_CHAR_ENUM {});
+    let ch = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_CHAR_ENUM(e)) => Some(e.characters.clone()),
+        _ => None,
+    });
+    assert_eq!(ch.len(), 1, "one ready-made character, for any account name");
+    w.send(&CMSG_CHAR_CREATE { name: "Wren".into(), race: Race::Human, class: Class::Warrior, gender: Gender::Female, skin_color: 0, face: 0, hair_style: 0, hair_color: 0, facial_hair: 0 });
+    let made = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_CHAR_CREATE(c)) => Some(c.result),
+        _ => None,
+    });
+    assert_eq!(made, WorldResult::CharCreateSuccess, "a character made by the login screen code doesn't hang it");
+    w.send(&CMSG_PLAYER_LOGIN { guid: ch[0].guid });
+    let (_, welcome) = w.until_line();
+    assert!(welcome.contains("F7 or /builder") && welcome.contains("/den (Invite a friend, Shape the ground"), "{welcome}");
+    for _ in 0..5 {
+        w.until_line();
+    }
+
+    // the Den panel's hello (EditMode.lua E.Hello at PLAYER_ENTERING_WORLD)
+    w.addon("OVMOD", "wuden\tinfo\t1/1\t");
+    assert_eq!(w.until_addon("wuden", "info"), "role=owner;theme=white;builders=-;invite=1");
+    // the Builder: its catalog in parts, then spawn a chair, move it up, turn it, delete it and undo
+    w.addon("OVMOD", "wubuild\tcatalog\t1/1\t");
+    let cat = w.until_addon("wubuild", "catalog");
+    assert!(cat.matches(';').count() > 50 && cat.contains("2413,woodenchair,seating,Wooden Chair,1;"));
+    w.send(&heartbeat(16226.2, 16257.0, 14.2, 0.0));
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tspawn 2413");
+    let st = w.until_addon("wubuild", "state");
+    let id: u64 = st.split("sel=").nth(1).unwrap().split(',').next().unwrap().parse().expect(&st);
+    assert!(st.contains(",2413,Wooden Chair;") && st.contains("n=1;") && st.contains("den=owner"), "{st}");
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tmove z 0.5");
+    let st = w.until_addon("wubuild", "state");
+    assert!(st.contains(",13.70,"), "half a yard up from the floor: {st}");
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tturn 45");
+    assert!(w.until_addon("wubuild", "state").contains("rot=45,0,0"));
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tdelete");
+    let gone = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_DESTROY_OBJECT(d)) => Some(d.guid.guid()),
+        _ => None,
+    });
+    assert_eq!(gone & 0xFF_FFFF, id);
+    assert!(w.until_addon("wubuild", "state").contains("sel=-;"));
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tundo");
+    assert!(w.until_addon("wubuild", "state").contains("mine=1/"));
+    // the Den keeps itself: the chair is in the autosave within a few seconds
+    let auto = dir.join("autosave.den.json");
+    let mut kept = false;
+    for _ in 0..40 {
+        if std::fs::read_to_string(&auto).is_ok_and(|t| t.contains("\"entry\": 2413") || t.contains("\"entry\":2413")) {
+            kept = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(150));
+    }
+    assert!(kept, "the Builder's chair is autosaved");
+
+    // Invite a friend: asked of the launcher, its answer lands in the Den panel
+    w.addon("OVMOD", "wuden\tcmd\t1/1\tinvite");
+    assert!(w.until_line().1.starts_with("Making an invite link"));
+    let ask = std::fs::read_to_string(dir.join(den_lite::ovmod::ASK_FILE)).unwrap();
+    assert!(ask.contains("\"ask\":\"invite\""), "{ask}");
+    let link = "https://relay.openvanilla.app/join/kzdvvj2umnduyauf#ABCDEFGHJKLMNPQRSTUVWXYZ~~GABCDE2345.ABCDEFGH23456789";
+    std::fs::write(dir.join(den_lite::ovmod::ANSWER_FILE), format!("{{\"id\":1,\"invite\":\"{link}\"}}")).unwrap();
+    assert_eq!(w.until_addon("wuden", "invite"), link);
+    // Shape the ground: asked too
+    w.say(".den forge");
+    assert!(w.until_line().1.starts_with("Opening Forge"));
+    assert!(std::fs::read_to_string(dir.join(den_lite::ovmod::ASK_FILE)).unwrap().contains("forge"));
+
+    let got = ev(&dir);
+    for want in ["start", "login_challenge", "auth_ok", "realm_list", "world_auth", "char_enum", "char_create", "player_login", "in_world", "builder_ready", "first_move", "ask"] {
+        assert!(got.iter().any(|e| e == want), "{want} missing from {got:?}");
+    }
+    let order: Vec<&str> = got.iter().map(String::as_str).filter(|e| ["auth_ok", "char_enum", "player_login", "in_world"].contains(e)).collect();
+    assert_eq!(order, ["auth_ok", "char_enum", "player_login", "in_world"]);
+    let lines = den_lite::events::read(&dir);
+    assert!(lines.iter().any(|l| l.ev == "login_challenge" && l.who == "DENAUTO"), "which way it signed in shows");
+    let text = std::fs::read_to_string(dir.join(den_lite::events::FILE)).unwrap();
+    assert!(!text.contains("\"den\""), "the password is never written");
+    drop(srv);
     let _ = std::fs::remove_dir_all(&dir);
 }

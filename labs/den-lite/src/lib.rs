@@ -8,7 +8,9 @@
 pub mod cheers;
 pub mod companion;
 pub mod den;
+pub mod events;
 pub mod guests;
+pub mod ovmod;
 pub mod login;
 pub mod objects;
 pub mod play;
@@ -102,9 +104,16 @@ pub struct Shared {
     /// The Den as the autosave last wrote it (den::Den::autosave_key).
     autosaved: Mutex<String>,
     opened: Mutex<std::collections::HashSet<String>>,
+    /// `<dens>/den-lite.events`: the milestones on the way in (events.rs).
+    pub events: events::Events,
 }
 
 impl Shared {
+    /// One milestone in `<dens>/den-lite.events` (events.rs; never anything secret).
+    pub fn event(&self, ev: &str, who: &str, detail: &str) {
+        self.events.note(ev, who, detail);
+    }
+
     pub fn log(&self, s: &str) {
         if self.cfg.verbose {
             eprintln!("den-lite: {s}");
@@ -191,7 +200,10 @@ pub fn start(cfg: Config) -> io::Result<Running> {
         eprintln!("den-lite: the autosave didn't open ({e}); it is kept as it is and the Den starts empty");
     }
     let autosaved = d.autosave_key();
+    let events = events::Events::new(&cfg.den_dir);
+    events.note("start", "", &la.port().to_string());
     let shared = Arc::new(Shared {
+        events,
         den: Mutex::new(d),
         companion: Mutex::new(companion::Companion::restore(&cfg.den_dir)),
         autosaved: Mutex::new(autosaved),

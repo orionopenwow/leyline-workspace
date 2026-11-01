@@ -605,7 +605,7 @@ local function text(parent, t, ...)
 end
 
 local function buildDen()
-    den = panel(UIParent, 420, 250, { 0.78, 0.64, 1, 1 })
+    den = panel(UIParent, 420, 280, { 0.78, 0.64, 1, 1 })
     den:SetPoint("LEFT", UIParent, "LEFT", 24, 0)
     den:SetFrameStrata("DIALOG")
     den:EnableMouse(true)
@@ -644,6 +644,8 @@ local function buildDen()
         lx = lx + 74
     end
     bar(den, "Budget", 70, function() E.DenCmd("budget") end, "TOPLEFT", lx + 20, -196)
+    -- Shape the ground: the Den asks the launcher to open Forge (Den Lite; the full Den's realm says how)
+    own(bar(den, "Shape the ground", 130, function() E.DenCmd("forge") end, "TOPLEFT", 12, -226))
     bar(den, "Back to the room", 130, function() E.DenCmd("home") end, "BOTTOMLEFT", 12, 10)
     bar(den, "Builder", 80, function() if W.ToggleBuilder then W.ToggleBuilder() end end, "BOTTOMLEFT", 146, 10)
     -- the Den's home (DenHome.lua): starter places, stamps, the grid at your feet, the front door, the mailbox
@@ -684,7 +686,8 @@ function E.OnDenMessage(prefix, msg, channel, sender)
         for k, v in data:gmatch("(%a+)=([^;]*)") do d[k] = v:gsub("|", "") end
         E.denInfo = d
         denRefresh()
-    elseif name == "invite" and data:match("^https://[%w%.%-]+[:%d]*/join/[a-z2-7]+#[A-Z2-9]+$") then
+    elseif name == "invite" and (data:match("^https://[%w%.%-]+[:%d]*/join/[a-z2-7]+#[A-Z2-9]+$")
+        or data:match("^https://[%w%.%-]+[:%d]*/join/[a-z2-7]+#[A-Z2-9]+~~G[A-Z0-9]+%.[A-Z0-9]+$")) then   -- Den Lite: one friend's login
         E.inviteLink = data
         if not den then buildDen() end
         den.link:SetText(data)

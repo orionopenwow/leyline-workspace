@@ -421,6 +421,10 @@ enum Undo {
     Placed(Vec<u64>),
     /// A load that replaced the Den: undo takes the new props away and puts the old ones back.
     Replaced { added: Vec<u64>, removed: Vec<Prop>, look: String, half: f32 },
+    /// One prop moved, turned or sized (the Builder): undo puts it back as it was, keeping its object.
+    Edited { guid: u64, before: Prop },
+    /// One prop deleted (the Builder): undo puts it back.
+    Deleted(Prop),
 }
 
 /// What a change did, for the world server to tell the client: objects to create and guids to destroy.
@@ -634,6 +638,79 @@ impl Den {
         Change { created: made, destroyed: Vec::new(), skipped, message }
     }
 
+    /// The prop with this object guid.
+    pub fn placed(&self, guid: u64) -> Option<&Placed> {
+        self.props.iter().find(|p| p.obj.guid == guid)
+    }
+
+    /// The prop nearest to (x, y, z), within `reach` yards (the Builder's "near").
+    pub fn nearest(&self, x: f32, y: f32, z: f32, reach: f32) -> Option<u64> {
+        let d = |p: &Placed| (p.obj.x - x).powi(2) + (p.obj.y - y).powi(2) + (p.obj.z - z).powi(2);
+        self.props
+            .iter()
+            .filter(|p| d(p) <= reach * reach)
+            .min_by(|a, b| d(a).partial_cmp(&d(b)).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|p| p.obj.guid)
+    }
+
+    /// How many undo steps there are (the Builder's state line).
+    pub fn undo_depth(&self) -> usize {
+        self.undo.len()
+    }
+
+    /// Puts `prop` in place of the one with `guid`, keeping the guid: the new object, or None (no such prop, or
+    /// the new place is outside the Den).
+    fn set_prop(&mut self, guid: u64, prop: Prop) -> Option<WorldObject> {
+        let i = self.props.iter().position(|p| p.obj.guid == guid)?;
+        let mut obj = self.object_for(&prop)?;
+        obj.guid = guid;
+        self.props[i] = Placed { prop, obj: obj.clone() };
+        Some(obj)
+    }
+
+    /// The Builder's move / turn / size of one prop (`f` changes its file entry, relative to the Den): the object
+    /// destroyed and made again with the same guid where it now is. Refused when it would leave the Den.
+    pub fn edit(&mut self, guid: u64, f: impl FnOnce(&mut Prop)) -> Result<Change, String> {
+        let before = self.placed(guid).ok_or("Select a prop first (Near picks the closest).")?.prop.clone();
+        let mut p = before.clone();
+        f(&mut p);
+        p.x = quiet_round(p.x);
+        p.y = quiet_round(p.y);
+        p.z = quiet_round(p.z);
+        p.yaw = quiet_round(p.yaw.rem_euclid(360.0));
+        if let Some(s) = p.scale {
+            p.scale = Some(quiet_round(s.clamp(0.1, 5.0)));
+        }
+        let obj = self.set_prop(guid, p).ok_or("That would put it outside your Den.")?;
+        self.push_undo(Undo::Edited { guid, before });
+        Ok(Change { created: vec![obj], destroyed: vec![guid], ..Default::default() })
+    }
+
+    /// The Builder's Delete: the prop taken away (undo puts it back).
+    pub fn delete(&mut self, guid: u64) -> Result<Change, String> {
+        let i = self.props.iter().position(|p| p.obj.guid == guid).ok_or("Select a prop first (Near picks the closest).")?;
+        let gone = self.props.remove(i);
+        self.push_undo(Undo::Deleted(gone.prop));
+        Ok(Change { destroyed: vec![guid], message: "Deleted. Undo puts it back.".into(), ..Default::default() })
+    }
+
+    /// The Builder's Spawn: one piece of `entry` at (x, y, z) in the world, facing `o` (radians). The new object.
+    pub fn spawn(&mut self, entry: u32, x: f32, y: f32, z: f32, o: f32) -> Result<WorldObject, String> {
+        template(entry).ok_or("That prop isn't in your Den's catalog.")?;
+        let p = Prop {
+            entry: entry as u64,
+            x: quiet_round((x - self.spot.x) as f64),
+            y: quiet_round((y - self.spot.y) as f64),
+            z: quiet_round((z - self.spot.z) as f64),
+            yaw: quiet_round((o.to_degrees() as f64).rem_euclid(360.0)),
+            ..Default::default()
+        };
+        let (made, _) = self.place(&[p]);
+        let obj = made.into_iter().next().ok_or("It doesn't fit there: stand inside your Den.")?;
+        self.push_undo(Undo::Placed(vec![obj.guid]));
+        Ok(obj)
+    }
+
     /// `.build undo`: the last change taken back.
     pub fn undo(&mut self) -> Change {
         let Some(u) = self.undo.pop() else {
@@ -644,6 +721,14 @@ impl Den {
                 self.props.retain(|p| !guids.contains(&p.obj.guid));
                 let n = guids.len();
                 Change { destroyed: guids, message: format!("Undone: {n} props taken away."), ..Default::default() }
+            }
+            Undo::Edited { guid, before } => match self.set_prop(guid, before) {
+                Some(obj) => Change { created: vec![obj], destroyed: vec![guid], message: "Undone: the prop is back where it was.".into(), ..Default::default() },
+                None => Change { message: "Undone (that prop is gone).".into(), ..Default::default() },
+            },
+            Undo::Deleted(prop) => {
+                let (made, _) = self.place(&[prop]);
+                Change { created: made, message: "Undone: the prop is back.".into(), ..Default::default() }
             }
             Undo::Replaced { added, removed, look: old, half } => {
                 self.props.retain(|p| !added.contains(&p.obj.guid));

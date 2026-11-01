@@ -557,6 +557,22 @@ for _hubv in (_HUB, None):
           and 'value="themes"' not in _ph and '<option value="addons" selected>' in _pk and ">Addon or mod <" in _ph, _ph[-900:])
 L._get = _old_get
 
+# ---------------------------------------------------------------- checks at once, and the disk they download to
+svc.check_log.clear(); svc.day_log.clear()
+held = [L.CHECKS_AT_ONCE.acquire(blocking=False) for _ in range(2)]
+ok, msg = svc.check("BUSY1", "https://github.com/alice/Frames")
+for _ in held:
+    L.CHECKS_AT_ONCE.release()
+check("two checks download at once; a third is asked to wait a minute", all(held) and not ok and "a minute" in msg, msg)
+_du = L.shutil.disk_usage
+L.shutil.disk_usage = lambda p: type("U", (), {"free": 100 * 1048576})()
+try:
+    ok, msg = svc.check("BUSY2", "https://github.com/alice/Frames")
+finally:
+    L.shutil.disk_usage = _du
+check("a check never downloads into the disk's last free space", not ok and "paused" in msg, msg)
+check("... and checks work again after both", svc.check("BUSY3", "https://github.com/alice/Frames")[0])
+
 shutil.rmtree(T, ignore_errors=True)
 print(f"\n{passed}/{passed + failed} passed")
 sys.exit(1 if failed else 0)

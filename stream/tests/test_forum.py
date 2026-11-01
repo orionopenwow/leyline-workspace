@@ -622,5 +622,17 @@ check("an account that isn't new still posts from that network", st_old == 303, 
 check("the per-network keys are the network's /64 for IPv6", FM._net(type("H", (), {"ip": lambda s: "2001:db8:1:2::5"})()) == "2001:db8:1:2::/64")
 wp.browse_limit.hit = lambda *a, **k: True
 
+# ---------------------------------------------------------------- a thread over more than one page
+while F.posts(TA)[2] < 2:
+    F.reply("WR000003", TA, f"Team note {F.thread(TA)['replies']}", staff=True)
+_, _, p1 = req("GET", f"/wrath/leyline/forum/t/{TA}", "bob")
+_, _, p2 = req("GET", f"/wrath/leyline/forum/t/{TA}?page=2", "bob")
+_, _, pz = req("GET", f"/wrath/leyline/forum/t/{TA}?page=abc")
+check("thread pages: page 1 has Later and no reply form", "Page 1 of 2" in p1 and f"?page=2" in p1 and 'name="body"' not in p1)
+check("... the last page has Earlier and the reply form", "Page 2 of 2" in p2 and "Earlier" in p2 and 'name="body"' in p2)
+check("... a bad page number reads as page 1, signed out", "Page 1 of 2" in pz and "Sign in to reply" not in pz)
+last = F.posts(TA, 2)[0][-1]["id"]
+check("page_of finds a post's page (the reply's redirect)", F.page_of(last) == 2)
+
 print(f"{count - fails}/{count} passed")
 sys.exit(1 if fails else 0)

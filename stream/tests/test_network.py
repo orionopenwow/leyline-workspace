@@ -283,7 +283,7 @@ check("hub realms page: the same list, filters on the hub's own path", st == 200
 st, _, front = req("GET", "/wrath/leyline-preview")
 check("hub front page: Platform Status has the network line, linked to the hub's realm list", "Realm network" in front
       and re.search(r"\d+ realms · \d+ players online", front) and 'href="/wrath/leyline-preview/realms"' in front
-      and "Host a realm" in front)
+      and "Start hosting" in front)
 
 # the realm list under the hero (owner 2026-10-30): every server, ours first, one click to play
 sec = re.search(r'<section class="hb-sec hb-realms" id="realms".*?</section>', front, re.S)

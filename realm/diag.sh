@@ -21,4 +21,15 @@ echo; echo "== recent world server errors (last 90 min, deduplicated)"
 docker logs --since 90m ov-ac-worldserver 2>&1 | grep -iE 'error|lua|ale|lfg|crash|assert|exception' | sed -E 's/[0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9:.]+//' | sort | uniq -c | sort -rn | head -40
 echo; echo "== world server: last 25 lines"
 docker logs --tail 25 ov-ac-worldserver 2>&1 | cut -c1-220
+echo; echo "== browser game files (wu-play): the served slice, its permissions, the file server's log"
+SL=/srv/wrath/stream/slices
+ls -la "$SL" 2>&1 | head -12
+for f in "$SL/mini/DBFilesClient/AreaTable.dbc" "$SL/mini/DBFilesClient/Spell.dbc" "$SL/mini/Interface/GlueXML/GlueXML.toc"; do
+  ls -la "$f" 2>&1 | sed 's/^/  /'
+done
+echo "  files in mini: $(find "$SL/mini" -type f 2>/dev/null | wc -l); not readable by everyone: $(find "$SL/mini" -type f ! -perm -004 2>/dev/null | wc -l); dirs not searchable: $(find "$SL/mini" -type d ! -perm -005 2>/dev/null | wc -l)"
+find "$SL/mini" -maxdepth 1 2>/dev/null | head -12 | sed 's/^/  /'
+du -sh "$SL"/* 2>/dev/null | sed 's/^/  /'
+docker inspect -f 'wu-play: {{.State.Status}} since {{.State.StartedAt}}; mounts: {{range .Mounts}}{{.Source}}->{{.Destination}} {{end}}' wu-play 2>&1
+docker logs --tail 15 wu-play 2>&1 | cut -c1-200 | sed 's/^/  /'
 echo; echo "DIAG OK"

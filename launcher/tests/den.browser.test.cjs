@@ -121,7 +121,7 @@ test('Den Lite: one click on Home plays straight into the room with its account'
   assert.equal(await page.evaluate(() => document.querySelector('.page.on').id), 'page-den');
   assert.deepEqual(await calls(page, 'den_play_lite'), [{ client: 'c335a-1' }]);
   await page.waitForFunction(() => /Your Den is open/.test(document.querySelector('#yd .yd-status').textContent));
-  assert.match(await statusText(page), /the account is DEN/);
+  assert.match(await statusText(page), /account DEN, password den/);
   await page.waitForFunction(() => /Open on this PC/.test(document.querySelector('#yd-state').textContent));
   assert.deepEqual(await calls(page, 'host_start_quiet'), [], 'no Docker');
   assert.deepEqual(errors, []);

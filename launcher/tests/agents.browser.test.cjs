@@ -85,8 +85,8 @@ test('the Agents item, off by default, the tiers in plain words, Connect and the
   assert.equal(await page.isChecked('#ag-allow'), false, 'off by default');
   assert.match(await page.textContent('#ag-allow-note'), /no answers at all/);
   assert.match(await page.textContent('#ag-wait'), /Nothing can ask while agents are off/);
-  assert.equal(await page.locator('#ag-t-read li').count(), 7);
-  assert.equal(await page.locator('#ag-t-ask li').count(), 6);
+  assert.equal(await page.locator('#ag-t-read li').count(), 11);   // + Den status, catalog, recipes and messages (1 Nov)
+  assert.equal(await page.locator('#ag-t-ask li').count(), 9);   // + place a Den layout, the companion says, save a recipe (1 Nov)
   assert.equal(await page.locator('#ag-t-never li').count(), 7);
   assert.match(await page.textContent('#ag-t-never'), /password.*money.*Delete files.*public.*ban/s);
   assert.equal(await page.textContent('#ag-cc-cmd'), 'claude mcp add --scope user leyline -- "C:\\Users\\pat\\AppData\\Local\\Leyline\\Leyline.exe" mcp');

@@ -6,7 +6,8 @@
 //!   (`.../releases/download/launcher-v<version>/latest.json`, made by CI).
 //! * The install (the desktop app, `app.rs`): Tauri's updater plugin fetches that one manifest, checks the
 //!   download's signature against the public key in tauri.conf.json, downloads it in the background and installs
-//!   it only when the player presses "Restart" in the title bar, never while a game Leyline started is running.
+//!   it when the player presses "Restart" in the title bar, never while a game Leyline started is running. Left
+//!   waiting, it is installed at the next start (`READY_FILE`, `finish_now`).
 //!   Until the owner has run "setup\Turn on launcher updates.bat" (no public key yet), or on a .deb install, Leyline
 //!   only links to the release page.
 //!
@@ -166,6 +167,52 @@ pub fn check_from(url: &str, app_dir: &Path, current: &str, channel: Channel) ->
     out
 }
 
+// ------------------------------------------------------------------------------------------------ finishing on the next start
+
+/// When an update is downloaded and the player does not press Restart, Leyline notes its version here; the next
+/// start downloads it again (the signature is checked again) and installs it straight away, before anything else
+/// (owner 31 Oct: "auto queued for restart update for everyone").
+pub const READY_FILE: &str = "update-ready.txt";
+
+pub fn read_ready(app_dir: &Path) -> Option<String> {
+    let t = std::fs::read_to_string(app_dir.join(READY_FILE)).ok()?;
+    let v = t.trim().to_string();
+    parse_version(&v).map(|_| v)
+}
+
+pub fn write_ready(app_dir: &Path, version: &str) {
+    if parse_version(version).is_some() {
+        let _ = crate::settings::write_atomic(&app_dir.join(READY_FILE), version.as_bytes());
+    }
+}
+
+pub fn clear_ready(app_dir: &Path) {
+    let _ = std::fs::remove_file(app_dir.join(READY_FILE));
+}
+
+/// The note from the last run, if it still means something: a version newer than this build. An older or equal
+/// one (the update went in) is cleared.
+pub fn take_ready_at_start(app_dir: &Path, current: &str) -> Option<String> {
+    let v = read_ready(app_dir);
+    match v {
+        Some(v) if is_newer(&v, current) => Some(v),
+        _ => {
+            clear_ready(app_dir);
+            None
+        }
+    }
+}
+
+/// Install the just-downloaded `downloaded` right away, with no Restart press: only on the first check after a
+/// start that found the last run's note (`waiting`), when it is at least that version and newer than this build,
+/// and never while a game Leyline started is running.
+pub fn finish_now(waiting: Option<&str>, current: &str, downloaded: &str, game_running: bool) -> bool {
+    let Some(w) = waiting else { return false };
+    !game_running
+        && is_newer(downloaded, current)
+        && matches!(cmp_versions(downloaded, w), Some(Ordering::Greater | Ordering::Equal))
+}
+
 // ------------------------------------------------------------------------------------------------ the manifest
 
 /// One platform's download in latest.json.
@@ -299,6 +346,46 @@ mod tests {
         assert!(off.newer && off.from_cache);
         let none = check_from(&dead_url(), tempfile::tempdir().unwrap().path(), "0.1.0", Channel::Stable);
         assert!(!none.newer && none.error.is_some());
+    }
+
+    #[test]
+    fn a_downloaded_update_finishes_on_the_next_start() {
+        let d = tempfile::tempdir().unwrap();
+        assert_eq!(read_ready(d.path()), None);
+        write_ready(d.path(), "0.3.4");
+        assert_eq!(read_ready(d.path()).as_deref(), Some("0.3.4"));
+        write_ready(d.path(), "not a version");
+        assert_eq!(read_ready(d.path()).as_deref(), Some("0.3.4"), "only versions are written");
+        // the next start, still on the old build: the note stands
+        assert_eq!(take_ready_at_start(d.path(), "0.3.2").as_deref(), Some("0.3.4"));
+        assert!(d.path().join(READY_FILE).exists());
+        // the start after the update went in: the note is cleared
+        assert_eq!(take_ready_at_start(d.path(), "0.3.4"), None);
+        assert!(!d.path().join(READY_FILE).exists());
+        write_ready(d.path(), "0.3.4");
+        assert_eq!(take_ready_at_start(d.path(), "0.4.0"), None);
+        std::fs::write(d.path().join(READY_FILE), "garbage").unwrap();
+        assert_eq!(take_ready_at_start(d.path(), "0.3.0"), None);
+
+        // installs by itself only with the note, a newer download, and no game open
+        assert!(finish_now(Some("0.3.4"), "0.3.2", "0.3.4", false));
+        assert!(finish_now(Some("0.3.4"), "0.3.2", "0.3.5", false), "a newer one than the note");
+        assert!(!finish_now(Some("0.3.4"), "0.3.2", "0.3.4", true), "never while a game runs");
+        assert!(!finish_now(None, "0.3.2", "0.3.4", false), "a fresh download waits for Restart");
+        assert!(!finish_now(Some("0.3.4"), "0.3.2", "0.3.3", false), "an older one than the note");
+        assert!(!finish_now(Some("0.3.4"), "0.3.4", "0.3.4", false), "nothing newer than this build");
+    }
+
+    #[test]
+    fn every_ship_is_a_stable_release() {
+        // CI's ship releases are plain versions (launcher/scripts/release_version.py), so the default channel,
+        // stable, gets each one; the beta channel sees them too, plus pre-releases.
+        let v: Value = serde_json::from_str(r#"[
+          {"tag_name":"launcher-v0.3.2","prerelease":false,"html_url":"https://github.com/orionopenwow/Leyline/releases/tag/launcher-v0.3.2"},
+          {"tag_name":"launcher-v0.3.1","prerelease":false,"html_url":"https://github.com/orionopenwow/Leyline/releases/tag/launcher-v0.3.1"}]"#).unwrap();
+        assert_eq!(Channel::default(), Channel::Stable);
+        assert_eq!(latest(&v, Channel::Stable).unwrap().version, "0.3.2");
+        assert_eq!(latest(&v, Channel::Beta).unwrap().version, "0.3.2");
     }
 
     fn sig() -> String {

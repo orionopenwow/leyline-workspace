@@ -53,6 +53,17 @@ def _http(method, url, body=None, timeout=5.0):
         return 0, None
 
 
+def _node_of(doc):
+    """The node id of a relay record's node dict or an endpoint's attestation ("pubkey" / "node"), or None."""
+    if not isinstance(doc, dict):
+        return None
+    pk = doc.get("pubkey") or doc.get("node")
+    try:
+        return mesh.node_id(pk) if isinstance(pk, str) and len(pk) == 64 else None
+    except ValueError:
+        return None
+
+
 def batches(recs, limit=PUSH_BYTES):
     out, cur, n = [], [], 2
     for r in recs:
@@ -133,6 +144,9 @@ class MeshNode:
     def load(self):
         if self.relay is None:
             return {"realms": 0, "streams": 0}
+        ns = getattr(self.relay, "node_self", None)
+        if ns is not None and ns.paused():   # a resting community node shows as full, so nobody picks it
+            return {"realms": len(self.relay.sessions), "streams": int(getattr(self.cfg, "max_streams_total", 0) or 0)}
         return {"realms": len(self.relay.sessions), "streams": self.relay.streams_total()}
 
     def caps(self):
@@ -182,7 +196,17 @@ class MeshNode:
         """Offer records to the store. Returns (any accepted, the last reason)."""
         now = self.clock() if now is None else now
         any_ok, why = False, "empty"
+        reg = getattr(self.relay, "nodes", None) if self.relay is not None else None
+        banned = reg.banned if reg is not None else set()
         for r in recs if isinstance(recs, list) else []:
+            if banned and isinstance(r, dict):
+                if r.get("kind") == "relay" and _node_of(r.get("node")) in banned:
+                    why = "refused: node stopped by the Leyline team"
+                    self.metrics["refused"] += 1
+                    continue
+                if r.get("kind") == "realm" and isinstance(r.get("endpoints"), list):
+                    r = dict(r, endpoints=[e for e in r["endpoints"]
+                                           if _node_of((e or {}).get("att") if isinstance(e, dict) else None) not in banned])
             ok, why = self.store.offer(r, now)
             if ok:
                 any_ok = True
@@ -382,10 +406,16 @@ def record_view(r: dict, ep: dict | None, now: float) -> dict:
                     "address": relay, "port": a.get("auth_port"), "warden": rec["warden"], "ruleset": rec["ruleset"],
                     "patches": None, "clientFiles": "own"},
         "tags": rec["tags"], "region": rec["region"], "language": rec["language"], "maxPlayers": rec["max_players"],
+        "mods": rec["mods"],
         "connect": {"kind": "web-signin", "url": f"https://{relay}/join/{rid}" if relay else None,
                     "label": "Join this realm",
                     "note": listing.join_note(rec.get("signup"))},
-        "rules": rec["rules"], "features": [], "media": {"icon": None, "screenshots": [], "trailer": None},
+        "rules": rec["rules"], "rulesText": listing.rules_text(rec["rules"]),
+        # the in-game hop window's fields (listing.py record), from the realm's own signed beat
+        "build": rec["build"], "online": (players or 0) if online else 0,
+        "who": listing.clean_who(st.get("who")) if online else [], "herokey": beat.get("herokey") is True,
+        "uptime_pct": None,
+        "features": [], "media": {"icon": None, "screenshots": [], "trailer": None},
         "discord": rec["discord"],
         "status": {"url": f"https://{relay}/r/{rid}/status.json" if relay else None, "format": "openvanilla-status-1"},
         "leaderboards": {"duels": None, "bossfights": None},

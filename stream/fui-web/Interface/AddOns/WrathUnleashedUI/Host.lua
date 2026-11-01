@@ -51,7 +51,7 @@ H.REGION_LABEL = { [""] = "not set", ["na-east"] = "NA east", ["na-west"] = "NA 
 H.LANGS = { "", "en", "de", "fr", "es", "pt-BR", "ru", "it", "pl", "zh", "ko" }
 H.TAGS = { "blizzlike", "boosted", "custom", "pvp", "rp", "hangout" }
 H.TAG_LABEL = { blizzlike = "Original rules", boosted = "Boosted", custom = "Custom", pvp = "PvP", rp = "RP", hangout = "Hangout" }
-H.MANAGE = { bots = "Bots", rates = "Rates", signup = "Sign-up", list = "Leyline list", invite = "Invite link" }
+H.MANAGE = { bots = "Bots", rates = "Rates", signup = "Sign-up", list = "Realm list", invite = "Invite link" }
 H.MANAGE_ORDER = { "bots", "rates", "signup", "list", "invite" }
 
 -- What each ruleset fixes (setup.py PROFILES / PROFILE_BOTS / PROFILE_TAGS).
@@ -80,8 +80,8 @@ local BANNED = { "world%s*of%s*warcraft", "warcraft", "lich%s*king", "blizzard",
 function H.Validate(o)
     local e, first = {}, nil
     local function bad(k, m) e[k] = m; first = first or m end
-    if not has(H.CORES, o.core) then bad("core", "Pick a core.") end
-    if not has(H.PRESETS[o.core] or {}, o.preset) then bad("preset", "Pick a ruleset for that core.") end
+    if not has(H.CORES, o.core) then bad("core", "Pick the server software.") end
+    if not has(H.PRESETS[o.core] or {}, o.preset) then bad("preset", "Pick a ruleset for that server software.") end
     local name = type(o.name) == "string" and o.name:gsub("^%s+", ""):gsub("%s+$", "") or ""
     if name == "" then bad("name", "Give your realm a name.")
     elseif #name > 32 or not name:match("^[A-Za-z0-9 _'%-]+$") then bad("name", "Realm names: up to 32 letters, digits, spaces, _ ' or -.")
@@ -93,7 +93,7 @@ function H.Validate(o)
     for _, k in ipairs({ "xp", "loot", "rep" }) do
         local v = tonumber(o[k])
         if not v or v < 0 or v > 10 or v ~= math.floor(v) then bad(k, "Rates: 1x to 10x.")
-        elseif v > 0 and fixed.rates == false then bad(k, "Rates are set by the ruleset on this core.") end
+        elseif v > 0 and fixed.rates == false then bad(k, "Rates are set by the ruleset here.") end
     end
     if o.preset == "main" and o.start ~= "level1" and o.start ~= "boost" then bad("start", "Start at level 1 or with the boost.") end
     local b = tonumber(o.bots)
@@ -274,8 +274,8 @@ local function refreshSetup()
         s.start:SetText(fixed.start or "Level 1"); s.start:Disable()
     end
     if fixed.bots then s.bots:SetText(o.bots == 0 and "Off" or (o.bots .. " bots")); s.bots:Enable()
-    else s.bots:SetText(o.core == "cmangos" and "Coming on this core" or "None in this ruleset"); s.bots:Disable() end
-    s.vis:SetText(o.vis == "public" and "Public: on the Leyline list" or "Private: invite link only")
+    else s.bots:SetText(o.core == "cmangos" and "Coming soon" or "None in this ruleset"); s.bots:Disable() end
+    s.vis:SetText(o.vis == "public" and "Public: on the realm list" or "Private: invite link only")
     s.signup:SetText(H.SIGNUP_LABEL[o.signup])
     s.herokey:SetText(o.herokey == "on" and "Hero Key sign-in: on" or "Hero Key sign-in: off")
     s.region:SetText("Region: " .. H.REGION_LABEL[o.region or ""])
@@ -318,7 +318,7 @@ local function buildSetup(page)
         return at
     end
     local X = 150
-    local at = row("Server core")
+    local at = row("Server software")
     s.core = cycler(page, "core", H.CORES, 150, "TOPLEFT", X, at)
     muted(label(page, H.CORES_COMING, "GameFontDisableSmall", "TOPLEFT", X + 160, at - 5))
     at = row("Ruleset")
@@ -406,7 +406,7 @@ function H.StatusLines(s)
     end
     local dash = function(v) return (v == nil or v == "-" or v == "") and "-" or v end
     local listed = s.listed == "1" and "yes" or s.listed == "0" and "no (private)" or "ask the launcher"
-    return string.format("Up %s  ·  %s playing  ·  %s bots online\nOn the Leyline list: %s  ·  Sign-up: %s  ·  Hero Key: %s\n"
+    return string.format("Up %s  ·  %s playing  ·  %s bots online\nOn the realm list: %s  ·  Sign-up: %s  ·  Hero Key: %s\n"
         .. "Bots set: %s  ·  Rates (XP/loot/rep): %s  ·  Allow list: %s (%s names)%s",
         fmtUp(s.up), dash(s.players), dash(s.bots), listed, dash(s.signup), dash(s.herokey), dash(s.botsCfg),
         dash(s.rates), s.allow == "on" and "on" or "off", dash(s.allowed),
@@ -569,7 +569,7 @@ local function build()
     box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     box:SetScript("OnTextChanged", function(self) if self.fixed and self:GetText() ~= self.fixed then self:SetText(self.fixed) end end)
     win.copy = box
-    win.info = label(win, "Your realm runs on your own PC, free; players reach it through the Leyline relay. Pick your "
+    win.info = label(win, "Your realm runs on your own PC, free. Players reach it through the Leyline network. Pick your "
         .. "choices, then Start hosting.", "GameFontHighlightSmall", "BOTTOMLEFT", 20, 46)
     win.info:SetWidth(WIN_W - 40)
     muted(win.info)

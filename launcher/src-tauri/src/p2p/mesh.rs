@@ -15,7 +15,7 @@
 //!   any other listing.
 
 use serde_json::{json, Map, Value};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -346,11 +346,48 @@ pub fn view(rec: &Value, ep: Option<&Value>, now: u64) -> Value {
     })
 }
 
-/// The realms.json document for everything verified: each realm through its chosen relay.
+/// The realms.json document for everything verified: each realm through its chosen relay. When that is a community
+/// node, `community.fallback` names the relay to use at once if it does not answer: one of ours, or the realm's own.
 pub fn realms_doc(m: &Merged, rtt: &HashMap<String, f64>, volunteers: bool, seeds: &[String], now: u64) -> Value {
     let relays = m.relays();
-    let realms: Vec<Value> = m.realms().map(|r| view(r, choose(r, &relays, rtt, volunteers, seeds, false), now)).collect();
+    let realms: Vec<Value> = m.realms().map(|r| {
+        let ep = choose(r, &relays, rtt, volunteers, seeds, false);
+        let mut v = view(r, ep, now);
+        let safe = choose(r, &relays, rtt, false, seeds, false);
+        if let (Some(e), Some(f)) = (ep, safe) {
+            if e["att"]["relay"] != f["att"]["relay"] {
+                v["community"]["fallback"] = json!({"address": f["att"]["relay"], "port": f["att"]["auth_port"],
+                                                    "browser": f["att"]["ws"] == Value::Bool(true)});
+            }
+        }
+        v
+    }).collect();
     json!({"schema": 1, "kind": "community", "source": "mesh", "realms": realms})
+}
+
+/// The seeds' word on community nodes (`GET /api/nodes.json`, hosting/relay/wurelay/nodes.py): the kill switch, and
+/// the hosts that passed the seed's last health check.
+pub fn node_health(doc: &Value) -> (bool, HashSet<String>) {
+    let kill = doc["kill"] == Value::Bool(true);
+    let hosts = doc["nodes"].as_array().into_iter().flatten()
+        .filter(|n| n["healthy"] == Value::Bool(true))
+        .filter_map(|n| n["host"].as_str().map(String::from))
+        .collect();
+    (kill, hosts)
+}
+
+/// The record with the endpoints on community nodes the seeds don't vouch for left out (our relays and the realm's
+/// own relay always stay).
+pub fn keep_healthy(rec: &Value, healthy: &HashSet<String>, seeds: &[String]) -> Value {
+    let own = rec["beat"]["relay"].as_str().unwrap_or("");
+    let mut r = rec.clone();
+    if let Some(eps) = r.get_mut("endpoints").and_then(Value::as_array_mut) {
+        eps.retain(|e| {
+            let h = e["att"]["relay"].as_str().unwrap_or("");
+            h == own || seeds.iter().any(|s| s == h) || healthy.contains(h)
+        });
+    }
+    r
 }
 
 // ------------------------------------------------------------------------------------------- sources and peers
@@ -436,8 +473,23 @@ pub fn realms_doc_for(app_dir: &Path, flags: &Flags, seeds: &[&str], fetch: &dyn
     let m = gather(&sources(app_dir, seeds), fetch, now, STAFF_KEYS)?;
     learn_peers(app_dir, &m);
     let seeds_h: Vec<String> = seeds.iter().filter_map(|s| s.split("://").nth(1)).map(|h| h.split(':').next().unwrap_or(h).to_string()).collect();
-    let hosts: Vec<String> = if flags.mesh_relays { m.relays().into_keys().collect() } else { vec![] };
-    let doc = realms_doc(&m, &rtt(&hosts), flags.mesh_relays, &seeds_h, now);
+    // community nodes: only the ones a seed checked lately, and none at all while the Leyline team's switch is off
+    let (mut volunteers, mut m) = (flags.mesh_relays, m);
+    if volunteers {
+        let health = seeds.iter().find_map(|s| fetch(&format!("{}/api/nodes.json", s.trim_end_matches('/'))).ok());
+        match health.as_ref().map(node_health) {
+            Some((false, healthy)) => {
+                for (k, (_, r)) in m.recs.iter_mut() {
+                    if k.starts_with("r-") {
+                        *r = keep_healthy(r, &healthy, &seeds_h);
+                    }
+                }
+            }
+            _ => volunteers = false,   // the switch is off, or no seed answered: our relays only
+        }
+    }
+    let hosts: Vec<String> = if volunteers { m.relays().into_keys().collect() } else { vec![] };
+    let doc = realms_doc(&m, &rtt(&hosts), volunteers, &seeds_h, now);
     Some(doc)
 }
 
@@ -567,6 +619,48 @@ mod tests {
         assert_eq!(realms.len(), 1);
         assert_eq!((realms[0].address.as_deref(), realms[0].state.as_str(), realms[0].kind.as_str()), (Some("v2.example.org:41010"), "live", "PvE"));
         assert_eq!(realms[0].join_url.as_deref(), Some(format!("https://v2.example.org/join/{rid}").as_str()));
+        // a community node in use: our relay is named as the instant fallback
+        let r0 = &doc["realms"][0]["community"]["fallback"];
+        assert_eq!((r0["address"].as_str(), r0["port"].as_u64()), (Some("relay.openvanilla.app"), Some(40000)));
+        assert!(realms_doc(&m, &rtt, false, &seeds, now)["realms"][0]["community"].get("fallback").is_none(), "already ours");
+        // only nodes a seed vouches for: v2 failed its health check, so v1 is the pick
+        let (kill, healthy) = node_health(&json!({"kill": false, "nodes": [{"host": "v1.example.org", "healthy": true},
+                                                                           {"host": "v2.example.org", "healthy": false}]}));
+        assert!(!kill);
+        let kept = keep_healthy(&rec, &healthy, &seeds);
+        let hosts: Vec<&str> = kept["endpoints"].as_array().unwrap().iter().map(|e| e["att"]["relay"].as_str().unwrap()).collect();
+        assert_eq!(hosts, ["relay.openvanilla.app", "v1.example.org"], "our relay and the healthy node stay");
+        assert_eq!(choose(&kept, &rel, &rtt, true, &seeds, false).unwrap()["att"]["relay"], "v1.example.org");
+        assert!(node_health(&json!({"kill": true, "nodes": []})).0);
+    }
+
+    #[test]
+    fn the_kill_switch_means_our_relays_only() {
+        let (r, seed, v) = (Key::new(1), Key::new(2), Key::new(3));
+        let now = now_secs();
+        let rid = r.rid();
+        let beat = json!({"v": 1, "realm_id": rid, "pubkey": r.pubhex(), "seq": 1, "ts": now, "relay": "relay.openvanilla.app",
+            "relays": ["v1.example.org"], "record": {"name": "Many"}, "status": {"online": true}});
+        let rec = json!({"kind": "realm", "sig": r.sign(CTX_HEARTBEAT, &beat), "beat": beat, "endpoints": [
+            seed.ep(&rid, "relay.openvanilla.app", now, 40000, true), v.ep(&rid, "v1.example.org", now, 41000, true)]});
+        let snap = json!({"v": 1, "records": [rec, v.node("v1.example.org", "https://v1.example.org", now, (0, 100))]});
+        let d = tempfile::tempdir().unwrap();
+        let fetch_with = |kill: bool| {
+            let snap = snap.clone();
+            move |u: &str| -> Result<Value, String> {
+                if u.ends_with("/api/nodes.json") {
+                    return Ok(json!({"kill": kill, "nodes": [{"host": "v1.example.org", "healthy": true}]}));
+                }
+                if u.ends_with("/api/mesh/snapshot") { Ok(snap.clone()) } else { Err("no".into()) }
+            }
+        };
+        let rtt = |_: &[String]| -> HashMap<String, f64> { [("relay.openvanilla.app".to_string(), 200.0), ("v1.example.org".to_string(), 10.0)].into_iter().collect() };
+        let on = Flags { mesh_realms: true, mesh_relays: true, ..Default::default() };
+        let seeds = ["https://relay.openvanilla.app"];
+        let doc = realms_doc_for(d.path(), &on, &seeds, &fetch_with(false), &rtt).unwrap();
+        assert_eq!(doc["realms"][0]["profile"]["address"], "v1.example.org", "the closer healthy node");
+        let doc = realms_doc_for(d.path(), &on, &seeds, &fetch_with(true), &rtt).unwrap();
+        assert_eq!(doc["realms"][0]["profile"]["address"], "relay.openvanilla.app", "the team's switch: ours only");
     }
 
     #[test]

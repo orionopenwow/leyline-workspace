@@ -102,7 +102,7 @@
       sec.append(head, grid);
       kids.push(sec);
     }
-    if (!kids.length) kids.push(el("p", "hint dc-empty", "The Workshop list is not here yet."));
+    if (!kids.length) kids.push(el("p", "hint dc-empty", "The mods list is not here yet."));
     box.replaceChildren(...kids);
   }
 

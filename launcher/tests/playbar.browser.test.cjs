@@ -79,7 +79,7 @@ test('the picker: the client and its version; the drop-up list in its three grou
   assert.equal(await page.getAttribute('#pb-client', 'aria-expanded'), 'true');
   assert.equal(await page.getAttribute('#pb-menu', 'role'), 'listbox');
   assert.deepEqual(await rows(page), [
-    'pb-act|Add a game folder…|||false|', 'pb-act|Find your game files|||false|', '---',
+    'pb-act|Add a game folder…|||false|', 'pb-act|Add from a zip or a link…|||false|', 'pb-act|Find your game files|||false|', '---',
     'pb-missing|TBC|2.4.3|Not found|false|true', '---',
     'pb-mine|My Wrath|3.3.5a|C:\\Games\\Wrath|true|', 'pb-mine|My Vanilla|1.12.1|/home/me/Games/vanilla|false|',
   ]);
@@ -130,7 +130,7 @@ test('no clients: every family greyed; a greyed row opens Find your game files; 
   assert.equal(await page.textContent('#pb-client-name'), 'No game client');
   assert.equal(await page.isVisible('#pb-client-ver'), false);
   await page.click('#pb-client');
-  assert.deepEqual(await rows(page), ['pb-act|Add a game folder…|||false|', 'pb-act|Find your game files|||false|', '---',
+  assert.deepEqual(await rows(page), ['pb-act|Add a game folder…|||false|', 'pb-act|Add from a zip or a link…|||false|', 'pb-act|Find your game files|||false|', '---',
     'pb-missing|Vanilla|1.12.1|Not found|false|true', 'pb-missing|TBC|2.4.3|Not found|false|true', 'pb-missing|Wrath|3.3.5a|Not found|false|true']);
   await page.click('#pb-menu .pb-missing >> text=TBC');
   assert.equal(await pageOn(page), 'page-findfiles');
@@ -212,6 +212,7 @@ async function openNet(net = NET) {
   return { page, ctx, errors };
 }
 const rrows = (page) => page.$$eval('#pb-rmenu > li', (l) => l.map((x) => (x.classList.contains('pb-sep') ? '---' : x.classList.contains('pb-head') ? '# ' + x.textContent
+  : x.classList.contains('pb-note') ? '! ' + x.textContent
   : [x.querySelector('.pb-opt-name').textContent, (x.querySelector('.rl-ver') || {}).textContent || '', (x.querySelector('.pb-opt-sub') || {}).textContent || '',
     x.getAttribute('aria-selected'), x.getAttribute('aria-disabled') || ''].join('|'))));
 
@@ -224,9 +225,10 @@ test('the realm picker: a drop-up list of your realms, live realms, browser play
   assert.deepEqual(await rrows(page), [
     '# Official', 'Wrath Unleashed|3.3.5a|5 playing|true|', '---',
     '# On the network', 'Busy Den|3.3.5a|30 playing|false|', 'Small Den|3.3.5a|3 playing|false|', '---',
-    'Play in your browser||Nothing to install|false|', 'My Den||Make your Den|false|', '---',
-    '+ Make a realm|||false|', 'Find more realms…|||false|',
-  ], 'live realms by players; offline ones left out');
+    'Play in your browser||Nothing to install|false|', 'My Den||Make your Den|false|', 'Solo leveling||Set it up once|false|', '---',
+    '+ Make a realm|||false|', 'Find more realms…|||false|', '---',
+    '# Game client', 'My Wrath|3.3.5a|C:\\Games\\Wrath|true|', 'Add a game folder…|||false|',
+  ], 'live realms by players; offline ones left out; the client it plays with nearest the button');
   assert.equal(await page.evaluate(() => document.activeElement.querySelector('.pb-opt-name').textContent), 'Wrath Unleashed', 'the picked row has the focus');
   const r = await page.evaluate(() => [document.getElementById('pb-rmenu').getBoundingClientRect(), document.getElementById('pb-realm-btn').getBoundingClientRect()].map((b) => [b.top, b.bottom]));
   assert.ok(r[0][1] <= r[1][0] && r[0][0] >= 0, 'a drop-up');
@@ -249,7 +251,8 @@ test('the realm picker: a drop-up list of your realms, live realms, browser play
   assert.equal(await page.evaluate(() => window.LeylineApp.mode()), 'browser');
   await page.click('#pb-realm-btn');
   assert.equal(await page.getAttribute('#pb-rmenu .pb-browser', 'aria-selected'), 'true');
-  assert.equal(await page.locator('#pb-rmenu .pb-solo').count(), 0, 'Solo (coming soon) gave way to My Den');
+  assert.equal(await page.locator('#pb-rmenu .pb-solo .pb-solo-ic svg').count(), 1, 'Solo leveling, with its sword mark');
+  assert.equal(await page.locator('#pb-rmenu .pb-head', { hasText: 'Game client' }).count(), 0, 'no game client in the browser');
   await page.click('#pb-rmenu >> text=Wrath Unleashed');
   assert.equal(await page.evaluate(() => window.LeylineApp.mode()), 'online');
   assert.equal(await page.inputValue('#play-realm'), 'official');
@@ -290,7 +293,7 @@ test('the realm picker by keyboard: Up opens, arrows and Home / End, Enter picks
   await page.keyboard.press('ArrowDown');
   assert.equal(await page.evaluate(() => document.activeElement.querySelector('.pb-opt-name').textContent), 'Busy Den');
   await page.keyboard.press('End');
-  assert.equal(await page.evaluate(() => document.activeElement.querySelector('.pb-opt-name').textContent), 'Find more realms…');
+  assert.equal(await page.evaluate(() => document.activeElement.querySelector('.pb-opt-name').textContent), 'Add a game folder…');
   await page.keyboard.press('Home');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowDown');

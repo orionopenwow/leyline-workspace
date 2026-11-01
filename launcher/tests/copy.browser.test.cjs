@@ -177,7 +177,7 @@ test('Game Clients: the version chip shows, the technical lines sit behind Detai
 test('Settings: Privacy in one line about the account; no Wine on Windows; Wine elsewhere', async () => {
   let { page, ctx, errors } = await open({ windows: true });
   await go(page, 'settings');
-  assert.match(await text(page, '#page-settings'), /No telemetry\. Your account is optional and lives on the website\./);
+  assert.match(await text(page, '#page-settings'), /We don't track you\. Your account is optional and lives on the website\./);
   assert.equal(await page.isVisible('#wine-set'), false);
   assert.equal(await page.isVisible('#set-save'), false);
   await ctx.close();
@@ -191,7 +191,7 @@ test('Settings: Privacy in one line about the account; no Wine on Windows; Wine 
 test('one wording: sign-in, realms, the official name, original rules, Host pack; no money link', async () => {
   const { page, ctx, errors } = await open();
   assert.equal(await page.getAttribute('#tb-account', 'title'), 'Your account lives on the website: sign in, or manage it');
-  assert.equal(await page.textContent('#page-forum .fm-fine'), 'Reading here; to post, sign in on the website. Plain text and links only.');
+  assert.equal(await page.textContent('#page-forum .fm-fine'), 'Reading here; sign in on Home or Manage account to post from the launcher. Plain text and links only.');
   assert.equal((await page.textContent('.realm-add')).trim(), '+Add a realm');
   assert.equal(await page.textContent('#play-realm option[value="official"]'), 'Wrath Unleashed (the official realm)');
   assert.equal(await page.locator('[data-link="support"]').count(), 0, 'no support link at all');
@@ -201,7 +201,7 @@ test('one wording: sign-in, realms, the official name, original rules, Host pack
   // the Host page: Start is the way in, then the Guide, then the Host pack
   await go(page, 'host');
   assert.deepEqual(await page.$$eval('#page-host .page-tab', (b) => b.map((x) => [x.textContent, x.getAttribute('aria-selected')])),
-    [['Start', 'true'], ['Guide', 'false'], ['Host pack & settings', 'false']]);
+    [['Start', 'true'], ['Guide', 'false'], ['Network', 'false'], ['Host pack & settings', 'false']]);
   await page.click('#hc-tab-kit');
   const kit = await text(page, '#hc-pane-kit');
   assert.match(kit, /Choose the Host pack folder…/); assert.match(kit, /Get the Host pack/);
@@ -239,8 +239,8 @@ test('Realms: the count says community realms; Mods › Discover offline: one li
   await page.waitForFunction(() => document.getElementById('rl-net').textContent);
   assert.equal(await page.textContent('#rl-net'), '0 community realms · 5 playing');
   await go(page, 'mods', 'discover');
-  await page.waitForFunction(() => /Can't reach the Workshop/.test(document.getElementById('cat-status').textContent));
-  assert.equal(await page.textContent('#cat-status'), "Can't reach the Workshop. Try again.");
+  await page.waitForFunction(() => /Can't load the mods/.test(document.getElementById('cat-status').textContent));
+  assert.equal(await page.textContent('#cat-status'), "Can't load the mods. Try again.");
   assert.equal(await page.textContent('#cat-grid'), '', 'no second line under it');
   assert.deepEqual(errors, []);
   await ctx.close();

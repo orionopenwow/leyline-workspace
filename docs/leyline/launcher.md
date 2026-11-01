@@ -1,6 +1,6 @@
 # Launcher
 
-The Leyline Launcher is a desktop app for Windows, macOS and Linux, built with Tauri. Its window says "Leyline". It uses the game client you already have: it never downloads, copies or ships game files. It has no telemetry and no accounts.
+The Leyline Launcher is a desktop app for Windows, macOS and Linux, built with Tauri. Its window says "Leyline". It uses your own game client: it never offers, shares or ships game files. It has no telemetry and no accounts.
 
 Version 0.3 adds every client build, every server type and self-updates. See [Getting a build](#getting-a-build).
 
@@ -9,12 +9,12 @@ Version 0.3 adds every client build, every server type and self-updates. See [Ge
 | Page | What you can do |
 |---|---|
 | **Home** | Pick a client and a realm, then PLAY. Or play Wrath in the browser. |
-| **Game clients** | Add a client folder you already have: 1.12.1 (5875), 2.4.3 (8606) or 3.3.5a (12340) for now. Leyline reads the build from the game's .exe and checks the install is complete. Any other build shows as "other": it can play realms, but gets no mods. Leyline never downloads a client. |
+| **Game clients** | Add a client folder you already have: 1.12.1 (5875), 2.4.3 (8606) or 3.3.5a (12340) for now. Leyline reads the build from the game's .exe and checks the install is complete. Any other build shows as "other": it can play realms, but gets no mods. Or drop your game folder, a zip of it, or a direct link to your own backup zip on the play bar's game client list (or on Find your game files): a progress bar shows the download and the unpacking, Cancel stops it, and the client is added. Never from a torrent. |
 | **Discover** | Browse the Workshop: categories, search, credits, links to each project's page, source and author. Install a mod into the client you pick. |
 | **My Mods** | See what is installed in each client. One click to update or remove; turn mods off and on; UPDATE ALL. Drop a .zip, an addon folder, a .MPQ patch or a native mod (.dll, .asi, after a one-time OK) to add your own. |
 | **Realms** | The official realm and every community Beacon, with their server (AzerothCore, TrinityCore, CMaNGOS, vMaNGOS, MaNGOS), build, status and player counts. PLAY picks one of your clients of the right build, sets its realm address and starts the game, or says which client is missing. Join a private realm with its invite link. |
 | **Host** | Run your own realm on your PC through the relay, step by step. |
-| **Settings** | Wine (macOS and Linux run Windows clients through it), updates (Stable or Beta), where your data lives. |
+| **Settings** | Wine (macOS and Linux run Windows clients through it), updates, where your data lives. |
 
 ## Mods
 
@@ -55,7 +55,7 @@ Hosting runs on your own PC. There are no hosted slots on our servers: the realm
 
 ## Updates and privacy
 
-Leyline checks GitHub for a newer launcher release (tags `launcher-v*`) when it starts and every 6 hours, downloads it in the background and checks its signature. The title bar then says "Update ready, restart". It installs only when you press that, and never while a game you started from Leyline is open. Settings has a Stable and a Beta channel.
+Leyline updates itself, for everyone: every new launcher is a normal release. It checks GitHub (tags `launcher-v*`) when it starts and every 6 hours, downloads a new version in the background and checks its signature. The title bar then says "Update ready — restart to finish" with a Restart button. Leave it, and the update finishes by itself the next time you open Leyline. It never restarts while a game you started from Leyline is open. Settings can also take early test versions.
 
 What it fetches: the Workshop list and the mods you install, the realm list and realm status, relay lookups for the realm you pick or host, and GitHub's release list. Each request gives up after 8 seconds (a mod download may take longer once it has started). The lists are kept, so Leyline works offline. It sends nothing about you. Settings and caches live in `%APPDATA%\Leyline` (Windows), `~/Library/Application Support/Leyline` (macOS) or `~/.local/share/Leyline` (Linux).
 

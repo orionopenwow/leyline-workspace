@@ -36,8 +36,8 @@ const NEWS = [
     "Duels arena now on the realm list",
   ] },
   { tag: "LEYLINE LAUNCHER 0.2", title: "MODS, REALMS AND HOSTING", items: [
-    "Install, update, turn off and remove Workshop mods per client, or drop your own zip",
-    "Play on community Beacons from the realm list, and back to Wrath in one click",
+    "Install, update, turn off and remove mods for each game, or drop in your own zip",
+    "Play on community realms from the realm list, and back to Wrath Unleashed in one click",
     "Host your own realm from the Host page with the Host pack",
   ] },
   { tag: "LEYLINE LAUNCHER 0.1", title: "ONE LAUNCHER FOR EVERY REALM", items: [
@@ -61,7 +61,7 @@ function say(id, text, kind) {
 const OOPS = {
   "play-status": "That didn't work. Try again, or ask on the Discord.",
   "cl-status": "Leyline couldn't use that folder. Pick the folder that holds the game, or see Find your game files.",
-  "cat-status": "Can't reach the Workshop. Try again.",
+  "cat-status": "Can't load the mods. Try again.",
   "mods-status": "That mod change didn't work. Try again, or ask on the Discord.",
   "rl-status": "Can't reach the realm list right now. Try again, or ask on the Discord.",
   "host-status-line": "The host didn't answer. Try again, or see the Guide tab.",
@@ -247,7 +247,7 @@ function officialName() { return HANGOUT.name; }
 function realmLabel() {
   if (isOfficial()) return officialName();
   const a = chosenRealm();
-  if (a && a === denAddress()) return DEN.name;
+  if (localAt(a)) return localAt(a).name;   // My Den or Solo leveling
   const r = realmsCache.find((x) => x.address === a);
   return r ? r.name : (a || "Another realm");
 }
@@ -271,7 +271,7 @@ function renderRealmRows() {
     const txt = el("span", "rr-txt");
     txt.append(el("span", "name", name));
     if (ver) { const v = el("span", "rl-ver sm", ver); v.title = "Game client version"; txt.append(v); }
-    b.append(!official && name === DEN.name && custom === denAddress() ? markIcon("den") : realmIcon(name, official, "sm"), txt, dot);
+    b.append(!official && localAt(custom) && name === localAt(custom).name ? markIcon(localAt(custom).mark) : realmIcon(name, official, "sm"), txt, dot);
     b.title = ver ? `${name} · ${ver}` : name;
     b.addEventListener("click", () => {
       $("play-realm").value = official ? "official" : "custom";
@@ -286,7 +286,7 @@ function renderRealmRows() {
   const custom = !isOfficial() ? chosenRealm() : (saved && saved !== state.official_realm ? saved : "");
   if (custom) {
     const beacon = realmsCache.find((x) => x.address === custom);
-    if (custom === denAddress()) add(DEN.name, false, DEN.build);   // this PC's Den (the play bar's My Den)
+    if (localAt(custom)) add(localAt(custom).name, false, localAt(custom).build);   // this PC's Den or Solo leveling (the play bar's rows)
     else add(beacon ? beacon.name : custom, false, realmVersion(beacon));
   }
 }
@@ -460,6 +460,7 @@ function renderClientMenu() {
   const sep = () => { const d = el("li", "pb-sep"); d.setAttribute("role", "presentation"); return d; };
   const top = [
     row("pb-act", "Add a game folder…", { run: () => show("clients") }),
+    row("pb-act", "Add from a zip or a link…", { run: () => cimpOpen() }),
     row("pb-act", "Find your game files", { run: () => openFindFiles() }),
   ];
   const have = state.settings.clients;
@@ -531,28 +532,216 @@ $("ff-pick").addEventListener("click", async () => {
 });
 $("ff-browser").addEventListener("click", () => { setMode("browser"); show("play"); });
 
+// ------------------------------------------------------------------ add a game client by dropping it (clientimport.rs)
+// Owner 31 Oct: drop a folder, a zip or a direct link to your own backup on the client list (or Find your game files),
+// with a progress bar in the launcher: download %, then unpacking %, Cancel. A folder is added where it is; a zip or a
+// link is unpacked into a folder you pick (by default in Leyline's own folder). Never a torrent: the core says so.
+const cimp = { input: null, checked: null, folder: null, timer: null };
+const CIMP_PHASE = { downloading: "Downloading", unpacking: "Unpacking", checking: "Looking for the game" };
+function cimpView(view) {
+  const box = $("cimp");
+  box.hidden = false;
+  box.dataset.state = view;
+  $("cimp-pick").hidden = view !== "pick";
+  $("cimp-ask").hidden = view !== "ask";
+  $("cimp-run").hidden = view !== "run";
+  $("cimp-go").hidden = view !== "ask";
+  $("cimp-cancel").hidden = !(view === "ask" || view === "run");
+  $("cimp-ok").hidden = !(view === "done" || view === "error");
+  if (view !== "done" && view !== "error") say("cimp-status", "");
+}
+function cimpClose() {
+  clearTimeout(cimp.timer);
+  $("cimp").hidden = true;
+  $("cimp").classList.remove("drag");
+}
+// From the menu's Add from a zip or a link…: the drop area, a link box, Choose a zip… or a folder.
+function cimpOpen() {
+  if (cimp.running) { $("cimp").hidden = false; return; }
+  closeClientMenu(false);
+  $("cimp-what").textContent = "Drop your game folder, a zip of it, or a direct link to your own backup.";
+  $("cimp-link").value = "";
+  cimpView("pick");
+  $("cimp-link").focus();
+}
+function cimpError(e) {
+  if (typeof closeClientMenu === "function") closeClientMenu(false);
+  $("cimp-what").textContent = "";
+  cimpView("error");
+  say("cimp-status", oops(e, "That didn't work. Drop your game folder or a zip of it, or try again."), "bad");
+}
+// Anything dropped or pasted: the core says what it is (or why not), then a folder is added and a zip or link asks where.
+async function clientImport(input) {
+  input = String(input || "").trim();
+  if (!input) return;
+  if (cimp.running) { $("cimp").hidden = false; say("cimp-status", "Leyline is already adding a game client.", "warn"); return; }
+  closeClientMenu(false);
+  let c;
+  try { c = await invoke("client_import_check", { input }); }
+  catch (e) { cimpError(e); return; }
+  cimp.input = input;
+  cimp.checked = c;
+  cimp.folder = c.default_folder;
+  if (!c.unpacks) { $("cimp-what").textContent = `Adding ${c.name || "your folder"}…`; cimpStart(); return; }
+  $("cimp-what").textContent = c.kind === "link" ? `Download from ${c.name} and unpack it.` : `Unpack ${c.name}.`;
+  cimpDest(cimp.folder);
+  cimpView("ask");
+  $("cimp-go").focus();
+}
+async function cimpStart() {
+  cimpView("run");
+  cimpProgress({ phase: "checking", done: 0, total: 0 });
+  cimp.running = true;
+  try { await invoke("client_import_start", { input: cimp.input, folder: cimp.checked && cimp.checked.unpacks ? cimp.folder : null }); }
+  catch (e) { cimp.running = false; cimpError(e); return; }
+  cimpPoll();
+}
+// the end of a long folder path, where its name is
+function cimpDest(f) {
+  const t = [...String(f || "")];
+  $("cimp-dest").textContent = t.length > 46 ? "…" + t.slice(-45).join("") : t.join("");
+  $("cimp-dest").title = f || "";
+}
+function cimpProgress(p) {
+  const pct = p.total > 0 ? Math.min(100, Math.floor((p.done * 100) / p.total)) : null;
+  $("cimp-phase").textContent = (CIMP_PHASE[p.phase] || "Working") + "…";
+  $("cimp-pct").textContent = pct === null ? "" : pct + "%";
+  $("cimp-fill").style.width = (pct === null ? 100 : pct) + "%";
+  $("cimp-bar").classList.toggle("unknown", pct === null);
+  if (pct === null) $("cimp-bar").removeAttribute("aria-valuenow"); else $("cimp-bar").setAttribute("aria-valuenow", String(pct));
+}
+async function cimpPoll() {
+  clearTimeout(cimp.timer);
+  let p;
+  try { p = await invoke("client_import_state"); } catch (e) { cimp.running = false; cimpError(e); return; }
+  if (p.phase === "downloading" || p.phase === "unpacking" || p.phase === "checking") {
+    cimpProgress(p);
+    cimp.timer = setTimeout(cimpPoll, 400);
+    return;
+  }
+  cimp.running = false;
+  if (p.phase === "done") {
+    cimpView("done");
+    $("cimp-what").textContent = "";
+    say("cimp-status", p.message || "Added.", "ok");
+    await refresh();
+    if (p.client_id) { $("play-client").value = p.client_id; realmChanged(); saveSelection(); }
+    const added = state && state.settings.clients.find((x) => x.id === p.client_id);
+    if (added && window.LeylineAddons) window.LeylineAddons.offer(added);
+    $("cimp-ok").focus();
+  } else if (p.phase === "cancelled") {
+    cimpView("done");
+    $("cimp-what").textContent = "";
+    say("cimp-status", p.message || "Stopped. Nothing was added.", "warn");
+  } else cimpError(p.message);
+}
+$("cimp-go").addEventListener("click", cimpStart);
+$("cimp-cancel").addEventListener("click", async () => {
+  if (!cimp.running) { cimpClose(); return; }
+  $("cimp-phase").textContent = "Stopping…";
+  try { await invoke("client_import_cancel"); } catch (_) { /* it ends by itself */ }
+});
+$("cimp-ok").addEventListener("click", cimpClose);
+$("cimp-x").addEventListener("click", () => { if (!cimp.running) cimpClose(); else $("cimp-cancel").click(); });
+$("cimp-change").addEventListener("click", async () => {
+  try { const f = await invoke("client_import_pick_folder"); if (f) { cimp.folder = f; cimpDest(f); } }
+  catch (e) { say("cimp-status", oops(e), "bad"); }
+});
+const cimpLink = (id) => () => clientImport($(id).value);
+$("cimp-link-go").addEventListener("click", cimpLink("cimp-link"));
+$("cimp-link").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); cimpLink("cimp-link")(); } });
+$("ff-link-go").addEventListener("click", cimpLink("ff-link"));
+$("ff-link").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); cimpLink("ff-link")(); } });
+const cimpPickZip = async () => { try { const z = await invoke("client_import_pick_zip"); if (z) clientImport(z); } catch (e) { cimpError(e); } };
+$("cimp-zip").addEventListener("click", cimpPickZip);
+$("ff-zip").addEventListener("click", cimpPickZip);
+$("cimp-folder-pick").addEventListener("click", async () => { try { const f = await invoke("pick_folder"); if (f) clientImport(f); } catch (e) { cimpError(e); } });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("cimp").hidden && !cimp.running) cimpClose(); });
+// Where a drop adds a game client: the client button, its open list, this panel, and the whole Find your game files page.
+function clientDropAt(x, y) {
+  if (currentPage === "findfiles") return true;
+  return [$("pb-client"), menuOpen && $("pb-menu"), !$("cimp").hidden && $("cimp")].some((n) => {
+    if (!n) return false;
+    const r = n.getBoundingClientRect();
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  });
+}
+function clientDragOn(on) {
+  $("pb-menu").classList.toggle("drag", on);
+  $("cimp").classList.toggle("drag", on);
+  $("ff-drop").classList.toggle("drag", on);
+}
+// Links and text dragged out of a browser arrive as HTML drops (files come through the window: setupDrop).
+function dropText(dt) {
+  if (!dt) return "";
+  const uris = (dt.getData("text/uri-list") || "").trim();
+  return uris || (dt.getData("text/plain") || "").trim();
+}
+for (const id of ["pb-client", "pb-menu", "cimp", "page-findfiles"]) {
+  const n = $(id);
+  n.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    if (id === "pb-client" && !menuOpen && $("cimp").hidden) openClientMenu();
+    clientDragOn(true);
+  });
+  n.addEventListener("dragleave", (e) => { if (!n.contains(e.relatedTarget)) clientDragOn(false); });
+  n.addEventListener("drop", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    clientDragOn(false);
+    const t = dropText(e.dataTransfer);
+    if (t) clientImport(t);
+  });
+}
+// A link pasted while the client list, this panel or the guide is open (not into a text box).
+document.addEventListener("paste", (e) => {
+  if (e.target && e.target.closest && e.target.closest("input, textarea, [contenteditable]")) return;
+  if (!(menuOpen || !$("cimp").hidden || currentPage === "findfiles")) return;
+  const t = ((e.clipboardData && e.clipboardData.getData("text")) || "").trim();
+  if (t) { e.preventDefault(); clientImport(t); }
+});
+window.LeylineClientImport = { drop: clientImport, open: cimpOpen };
+
 // ------------------------------------------------------------------ the play bar's realm picker: a drop-up list
 // (owner 2026-10-30: the ONLINE / SOLO / BROWSER switch gave way to it.) Your realms first (the official one and the
-// one you picked before), then the live realms on the network by players, then Play in your browser and My Den, and
-// at the bottom + Make a realm and Find more realms…. Picking a realm selects it the way the side bar's
-// Your realms does; browser play is a row. The same keys as the client list.
-// My Den (docs/DEN.md, owner 2026-10-30; it took Solo's place): the private room to build in, hosted on this PC (the
-// host kit's state/host.json profile "den", read by host_info). Hosted: the row plays it as the Host page's Play
-// would, through the realm's own invite link (host_invite, then join_invite: the relay's knock, the client pointed
-// at the Den), then PLAY. Not hosted: the Host page with Make my Den picked (hostconsole.js "leyline:host-ruleset").
-const DEN = { name: "My Den", profile: "den", build: "3.3.5a" };
-const denHosted = () => !!(kit && kit.realm && kit.realm.profile === DEN.profile);
-function denAddress() {
-  try { return localStorage.getItem("leyline.den") || ""; } catch (_) { return ""; }
+// one you picked before), then the live realms on the network by players, then Play in your browser, My Den and Solo
+// leveling, + Make a realm and Find more realms…, and nearest the button the game client the realm plays with. Picking
+// a realm selects it the way the side bar's Your realms does, with a client of the version it needs; browser play is
+// a row. The same keys as the client list.
+// My Den (docs/DEN.md, owner 2026-10-30) and Solo leveling (owner 2026-10-31: "add solo leveling"): the realms made
+// for this PC, hosted by the host kit (its state/host.json profile "den" or "solo", read by host_info). One kit runs
+// one realm (one state/host.json, one compose project), so the two take turns: the row of the one not running offers
+// to switch (hostconsole.js asks, then runs it on the same realm, its accounts and characters kept). Each row says its
+// next step: Needs your game folder (the add flow; setup goes on by itself once a folder of its build is in), Make your
+// Den / Set it up once (the Host page with that ruleset picked: Host pack and Docker steps, then Start), Switch from
+// <the other>, or On this PC (played as the Host page's Play would: host_invite, then join_invite: the relay's knock,
+// the client pointed at it, then PLAY). PLAY on one of them knocks again first, and never fails without saying why.
+const LOCAL = {
+  den: { name: "My Den", profile: "den", build: "3.3.5a", key: "leyline.den", mark: "den", setup: "Make your Den",
+    title: "A private room to build in: you and the friends you invite" },
+  solo: { name: "Solo leveling", profile: "solo", build: "3.3.5a", key: "leyline.solo", mark: "solo", setup: "Set it up once",
+    title: "A private realm on this PC for levelling alone: helper bots fill your group, dungeons scale to you" },
+};
+const DEN = LOCAL.den;
+const localHosted = (L) => !!(kit && kit.realm && kit.realm.profile === L.profile);
+const denHosted = () => localHosted(DEN);
+function localAddress(L) {
+  try { return localStorage.getItem(L.key) || ""; } catch (_) { return ""; }
 }
-// the kit as it is now (the realm picker asks each time it opens: the Den may have been made since)
+function denAddress() { return localAddress(DEN); }
+// the local realm the address its invite gave belongs to (the two share one realm, so the last one played keeps it)
+const localAt = (addr) => (addr ? Object.values(LOCAL).find((L) => localAddress(L) === addr) || null : null);
+// the kit as it is now (the realm picker asks each time it opens: a Den or Solo leveling may have been made since)
 async function readKit() {
   try { kit = await invoke("host_info"); } catch (_) { /* a preview page, or no kit */ }
   return kit;
 }
-// marks for the rows that are not a realm on the list: a house for My Den, a globe for browser play
+// marks for the rows that are not a realm on the list: a house for My Den, a sword for Solo leveling, a globe for
+// browser play
 const MARKS = {
   den: '<svg viewBox="0 0 16 16" width="14" height="14" focusable="false"><path d="M2.5 7.4 8 2.8l5.5 4.6M4 6.3v6.9h8V6.3M6.6 13.2V9.6h2.8v3.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  solo: '<svg viewBox="0 0 16 16" width="14" height="14" focusable="false"><path d="M13.2 2.8 7 9l-.9-.9M13.2 2.8l-.4 2.1M13.2 2.8l-2.1.4M4.4 8.6l3 3M5.9 10.1 3 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   web: '<svg viewBox="0 0 16 16" width="14" height="14" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="5.6"/><path d="M2.4 8h11.2M8 2.4c1.6 1.6 2.3 3.5 2.3 5.6S9.6 12 8 13.6M8 2.4C6.4 4 5.7 5.9 5.7 8s.7 4 2.3 5.6"/></g></svg>',
 };
 function markIcon(kind) {
@@ -562,42 +751,169 @@ function markIcon(kind) {
   return box;
 }
 const denIcon = () => markIcon("den");
-// the chosen realm is this PC's Den (the address its invite gave)
-const denChosen = () => mode !== "browser" && !isOfficial() && !!chosenRealm() && chosenRealm() === denAddress();
-async function playDen() {
-  const c = currentClient();
-  const own = c && c.build === DEN.build ? c : (state && state.settings.clients.find((x) => x.build === DEN.build));
-  if (!own) {
-    show("clients");
-    say("cl-status", `Your Den plays with a ${DEN.build} client: add your ${DEN.build} game folder, then pick My Den again.`, "warn");
+// the chosen realm is one of this PC's own (the address its invite gave)
+const localChosen = () => (mode !== "browser" && !isOfficial() ? localAt(chosenRealm()) : null);
+const denChosen = () => localChosen() === DEN;
+
+// ---- which game client a realm launches with (owner 31 Oct: "choose client here"; "hopping between client versions
+// should be easy too"). Kept per realm and per client version (localStorage leyline.clientFor: {realm: {key: client
+// id}, build: {version: client id}}): picking a realm takes the client used there before, else the last one of the
+// version it needs, else any of that version; none of it: one plain line and Add a game folder….
+const CHOICE_KEY = "leyline.clientFor";
+function clientChoices() {
+  try { const v = JSON.parse(localStorage.getItem(CHOICE_KEY) || "{}"); return v && typeof v === "object" ? v : {}; } catch (_) { return {}; }
+}
+function rememberClient(key, c) {
+  if (!c) return;
+  const v = clientChoices();
+  v.realm = v.realm && typeof v.realm === "object" ? v.realm : {};
+  v.build = v.build && typeof v.build === "object" ? v.build : {};
+  if (key) { delete v.realm[key]; v.realm[key] = c.id; }
+  if (c.build) v.build[c.build] = c.id;
+  const ks = Object.keys(v.realm);
+  ks.slice(0, Math.max(0, ks.length - 40)).forEach((k) => delete v.realm[k]);   // the 40 latest realms
+  try { localStorage.setItem(CHOICE_KEY, JSON.stringify(v)); } catch (_) { /* fine: the first fitting one then */ }
+}
+// the chosen realm's key for that memory (none in the browser)
+const realmKey = () => (mode === "browser" ? null : isOfficial() ? "official" : localChosen() ? localChosen().profile : chosenRealm() || null);
+// the client version the chosen realm needs, when known
+const neededBuild = () => (mode === "browser" ? null : localChosen() ? localChosen().build : chosenRealmBuild());
+function clientForRealm(key, build) {
+  const have = state ? state.settings.clients : [];
+  const v = clientChoices();
+  const fits = (c) => !!c && (!build || c.build === build);
+  const byId = (id) => have.find((x) => x.id === id);
+  const cur = currentClient();
+  return [byId((v.realm || {})[key]), cur, byId((v.build || {})[build]), ...have].find(fits) || null;
+}
+function useClientFor(key, build) {
+  const c = clientForRealm(key, build);
+  if (c && $("play-client").value !== c.id) $("play-client").value = c.id;
+  return c;
+}
+function chooseClient(c) {
+  $("play-client").value = c.id;
+  rememberClient(realmKey(), c);
+  realmChanged();
+  saveSelection();
+}
+// the existing add flow: the game client list's own "Add a game folder…" (whatever it does), else the Clients page
+function addGameFolder(why) {
+  if (why) { say("play-status", why, "warn"); say("cl-status", why, "warn"); }
+  renderClientMenu();
+  const add = [...$("pb-menu").querySelectorAll(".pb-opt")].find((r) => /add a game folder/i.test(r.textContent));
+  if (add) add.click(); else show("clients");
+}
+
+// ---- the local realms' steps
+let pendingLocal = null;   // a local realm waiting for its game folder: it goes on once one is added
+let localKnocked = false;  // PLAY right after a knock: no second knock
+const haveBuild = (b) => !!state && state.settings.clients.some((x) => x.build === b);
+function localStep(L) {
+  if (localHosted(L)) return "play";
+  if (!haveBuild(L.build)) return "folder";
+  if (kit && kit.realm && Object.values(LOCAL).some((o) => o !== L && localHosted(o))) return "switch";
+  if (kit && kit.realm) return "busy";
+  return "setup";
+}
+function localSub(L) {
+  const step = localStep(L);
+  if (step === "play") return "On this PC";
+  if (step === "folder") return "Needs your game folder";
+  if (step === "switch") return `Switch from ${Object.values(LOCAL).find(localHosted).name}`;
+  if (step === "busy") return `Your PC hosts ${kit.realm.name || "a realm"}`;
+  return L.setup;
+}
+function localGo(L) {
+  const step = localStep(L);
+  if (step === "play") { playLocal(L); return; }
+  if (step === "folder") {
+    pendingLocal = L.profile;
+    addGameFolder(`${L.name} plays with your own ${L.build} game folder. Add it, and setup goes on from there.`);
     return;
   }
-  say("play-status", "Opening your Den…");
+  pendingLocal = null;
+  show("host");
+  document.dispatchEvent(new CustomEvent("leyline:host-ruleset", { detail: { profile: L.profile, switch: step === "switch" } }));
+}
+function makeDen() { localGo(DEN); }
+// a folder of the waited-for version is in: on to the next step
+function continuePending() {
+  const P = pendingLocal && LOCAL[pendingLocal];
+  if (!P || !haveBuild(P.build)) return;
+  pendingLocal = null;
+  say("play-status", "");
+  say("cl-status", `Found it. On to ${P.name}…`, "ok");
+  setTimeout(() => localGo(P), 0);
+}
+// it didn't answer: the Host page, which says whether it runs and has its Start
+function localNotUp(L, why) {
+  say("play-status", `${why} Start it on the Host page.`, "warn");
+  show("host");
+  document.dispatchEvent(new CustomEvent("leyline:host-ruleset", { detail: { profile: L.profile, start: true, why } }));
+}
+async function playLocal(L) {
+  if (!(await knockLocal(L))) return;
+  localKnocked = true;
+  $("play-form").requestSubmit();
+}
+// the knock: the client of its version pointed at it, the bar set to it (true), else its next step said (false)
+async function knockLocal(L) {
+  await readKit();
+  if (kit && kit.is_kit && !localHosted(L)) { localGo(L); return false; }   // not set up (any more): its next step
+  const own = clientForRealm(L.profile, L.build);
+  if (!own) {
+    pendingLocal = L.profile;
+    addGameFolder(`${L.name} plays with your own ${L.build} game folder. Add it, then pick ${L.name} again.`);
+    return false;
+  }
+  say("play-status", `Opening ${L.name}…`);
   let link = null;
   try { link = await invoke("host_invite"); } catch (_) { /* no kit */ }
-  if (!link) { say("play-status", "Your Den has no invite link yet: start it once on the Host page.", "warn"); return; }
+  if (!link) { localNotUp(L, `${L.name} has no invite link yet.`); return false; }
   let j;
   try { j = await invoke("join_invite", { client: own.id, link }); }
-  catch (e) { say("play-status", oops(e, "Your Den didn't answer.") + " Is your Den running? Start it on the Host page.", "bad"); return; }
-  try { localStorage.setItem("leyline.den", j.address); } catch (_) { /* the bar then shows the address */ }
+  catch (e) { localNotUp(L, oops(e, `${L.name} didn't answer.`)); return false; }
+  for (const o of Object.values(LOCAL)) {
+    try {
+      if (o === L) localStorage.setItem(o.key, j.address);
+      else if (localStorage.getItem(o.key) === j.address) localStorage.removeItem(o.key);
+    } catch (_) { /* the bar then shows the address */ }
+  }
+  rememberClient(realmKey(), currentClient());
   $("play-client").value = own.id;
   $("play-realm").value = "custom";
   $("play-custom").value = j.address;
   if (mode === "browser") setMode("online");
+  rememberClient(L.profile, own);
   realmChanged();
   saveSelection();
-  $("play-form").requestSubmit();
+  return true;
 }
-function makeDen() {
-  show("host");
-  document.dispatchEvent(new CustomEvent("leyline:host-ruleset", { detail: { profile: DEN.profile } }));
+// PLAY with a local realm chosen: knock again first (true: stop, its next step was said)
+async function localBeforePlay() {
+  const L = localChosen();
+  if (!L || localKnocked) { localKnocked = false; return false; }
+  return !(await knockLocal(L));
 }
+// the bar's status line for a local realm (renderPlayBar)
+function localHint() {
+  continuePending();
+  const L = localChosen();
+  if (!L) return null;
+  if (kit && kit.is_kit && !localHosted(L)) return { head: `${L.name.toUpperCase()} IS NOT SET UP`, detail: "PLAY sets it up", warn: true };
+  if (!clientForRealm(L.profile, L.build)) return { head: "ADD YOUR GAME FOLDER", detail: `${L.name} needs your ${L.build} folder`, warn: true };
+  return { head: "READY TO PLAY", detail: "On this PC", warn: false };
+}
+window.LeylineLocal = { play: (id) => (LOCAL[id] ? playLocal(LOCAL[id]) : null), names: () => Object.fromEntries(Object.values(LOCAL).map((L) => [L.profile, L.name])) };
 let rmenuOpen = false;
 const realmRowsOf = (m) => [...m.querySelectorAll(".pb-opt")];
 function pickRealm(r) {
+  rememberClient(realmKey(), currentClient());   // the client used with the realm left, for next time
   $("play-realm").value = r.official ? "official" : "custom";
   if (!r.official) $("play-custom").value = r.address || "";
   if (mode === "browser") setMode("online");
+  useClientFor(realmKey(), neededBuild());       // another version: a client of that version, by itself
   realmChanged();
   saveSelection();
 }
@@ -638,26 +954,46 @@ function renderRealmMenu() {
   const mine = [];
   const saved = !isOfficial() ? here : (state.settings.selected_realm && state.settings.selected_realm !== state.official_realm ? state.settings.selected_realm : "");
   const savedRealm = saved ? realmAt(saved) : null;
-  if (saved && saved === denAddress() && denHosted()) { /* the Den: its own row below */ }
+  if (saved && localAt(saved)) { /* My Den or Solo leveling: its own row below */ }
   else if (saved && savedRealm && !inLineup(savedRealm)) mine.push(realmRow(savedRealm));
   else if (saved && !savedRealm) mine.push(row("pb-realm-opt", saved, { icon: realmIcon(saved, false, "sm"), selected: online && !isOfficial(), sub: "Your address", run: () => pickRealm({ official: false, address: saved }) }));
   const live = (realmsCache || []).filter((r) => !r.official && !inLineup(r) && r.state === "live" && r.address && r.address !== saved && !hiddenBuild(r.build))
     .sort((x, y) => (y.players || 0) - (x.players || 0)).slice(0, 6).map(realmRow);
   const other = [
     row("pb-browser", "Play in your browser", { icon: markIcon("web"), sub: "Nothing to install", selected: !online, run: () => setMode("browser") }),
-    denHosted()
-      ? row("pb-den", DEN.name, { icon: denIcon(), ver: DEN.build, sub: "On this PC", selected: online && !isOfficial() && !!here && here === denAddress(),
-        title: "Your Den on this PC: play it", run: playDen })
-      : row("pb-den", DEN.name, { icon: denIcon(), sub: "Make your Den", title: "A private room to build in: you and the friends you invite", run: makeDen }),
+    ...Object.values(LOCAL).map((L) => {
+      const on = localStep(L) === "play";
+      return row("pb-local pb-" + L.mark, L.name, { icon: markIcon(L.mark), ver: on ? L.build : "", sub: localSub(L), subCls: on ? "live" : "",
+        selected: localChosen() === L, title: on ? `${L.name} on this PC: play it` : L.title, run: () => localGo(L) });
+    }),
   ];
   const acts = [
     row("pb-act", "+ Make a realm", { run: () => show("host") }),
     row("pb-act", "Find more realms…", { run: () => show("realms") }),
   ];
+  // the game client this realm plays with: the clients of the version it needs (the picked one marked), Add a game
+  // folder… (the existing add flow); none of that version: one plain line first
+  const clients = [];
+  if (online) {
+    const need = neededBuild();
+    const cur = currentClient();
+    const fit = state.settings.clients.filter((x) => !need || x.build === need);
+    const tail = (t) => ([...t].length > 30 ? "…" + [...t].slice(-29).join("") : t);
+    clients.push(head("Game client"));
+    if (!fit.length) {
+      const note = el("li", "pb-note", need ? `This realm plays with ${need}. No ${need} game folder yet.` : "No game folder yet.");
+      note.setAttribute("role", "presentation");
+      clients.push(note);
+    }
+    clients.push(...fit.map((x) => row("pb-client-opt", x.name, { ver: clientVersion(x), sub: tail(x.path), selected: !!cur && x.id === cur.id, title: x.path,
+      run: () => chooseClient(x) })));
+    clients.push(row("pb-act pb-add-client", "Add a game folder…", { run: () => addGameFolder(need && !fit.length ? `Add your ${need} game folder.` : "") }));
+  }
   const parts = [[head("Official"), ...official]];
   if (mine.length) parts.push([head("Your realms"), ...mine]);
   if (live.length) parts.push([head("On the network"), ...live]);
   parts.push(other, acts);
+  if (clients.length) parts.push(clients);
   menu.replaceChildren(...parts.flatMap((g, i) => (i ? [sep(), ...g] : g)));
 }
 function openRealmMenu() {
@@ -673,10 +1009,11 @@ function openRealmMenu() {
     if (at) at.focus();
   };
   focusPicked();
-  // My Den: hosted on this PC or not, as the kit says now (the row changes only when that changed)
-  const had = denHosted();
+  // My Den and Solo leveling: hosted on this PC or not, as the kit says now (the rows change only when that changed)
+  const hosted = () => (kit && kit.realm ? kit.realm.profile : "");
+  const had = hosted();
   readKit().then(() => {
-    if (!rmenuOpen || denHosted() === had) return;
+    if (!rmenuOpen || hosted() === had) return;
     const i = realmRowsOf($("pb-rmenu")).indexOf(document.activeElement);
     renderRealmMenu();
     const rows = realmRowsOf($("pb-rmenu"));
@@ -738,6 +1075,8 @@ function renderPlayBar() {
   } else {
     detail = "";
   }
+  const lh = mode === "browser" ? null : localHint();   // My Den / Solo leveling: their own next step
+  if (lh) ({ head, detail, warn } = lh);
   $("play-headline").textContent = head;
   bar.classList.toggle("warn", warn);
   $("pb-detail").textContent = detail;
@@ -745,13 +1084,13 @@ function renderPlayBar() {
   $("pb-realm-btn").title = mode === "browser" ? "Plays in your browser: choose a realm instead" : `${realmLabel()}: choose another realm`;
   // the realm's icon and client version beside its name (none in the browser)
   const official = isOfficial();
-  const rv = mode === "browser" ? null : official ? "3.3.5a" : denChosen() ? DEN.build : realmVersion(realmAt(chosenRealm()));
+  const rv = mode === "browser" ? null : official ? "3.3.5a" : localChosen() ? localChosen().build : realmVersion(realmAt(chosenRealm()));
   $("pb-realm-ver").hidden = !rv;
   $("pb-realm-ver").textContent = rv || "";
   $("pb-realm-ic").hidden = mode === "browser";
   if (mode !== "browser") fillRealmIcon($("pb-realm-ic"), realmLabel(), official);
-  $("pb-realm-ic").classList.toggle("pb-mark-ic", denChosen());
-  if (denChosen()) $("pb-realm-ic").innerHTML = MARKS.den;
+  $("pb-realm-ic").classList.toggle("pb-mark-ic", !!localChosen());
+  if (localChosen()) $("pb-realm-ic").innerHTML = MARKS[localChosen().mark];
   if (rmenuOpen) renderRealmMenu();
   renderClientMenu();
   $("play-caption").textContent = mode === "browser" ? "IN YOUR BROWSER" : (c ? `ONLINE  ·  ${c.name.toUpperCase()}` : "NO GAME FOLDER YET");
@@ -768,6 +1107,7 @@ $("play-form").addEventListener("submit", async (ev) => {
     catch (e) { sayErr("play-status", e); }
     return;
   }
+  if (await localBeforePlay()) return;   // My Den / Solo leveling: knocked again first, or its next step
   const c = currentClient();
   if (!c) { openFindFiles(); return; }   // no game folder yet: where to find one (and browser play)
   const realm = chosenRealm();
@@ -1069,20 +1409,20 @@ $("cat-cat").addEventListener("change", async () => {
 
 let catFailed = false;   // the Workshop could not be read and there is nothing to show: the status line says so, alone
 async function loadCatalog(quiet) {
-  if (!quiet) say("cat-status", "Loading the Workshop…");
+  if (!quiet) say("cat-status", "Loading mods…");
   try {
     catalog = await invoke("mods_catalog");
     if (window.LeylineThemes) catalog = window.LeylineThemes.takeThemes(catalog); // themes.js: theme packs go under Discover › Themes
     catalogNames = catalog.projects.map((p) => p.name);
     const when = catalog.saved_at ? new Date(catalog.saved_at * 1000).toLocaleString() : "an earlier visit";
-    if (catalog.from_cache) say("cat-status", `Offline: showing the Workshop as it was ${when}.`, "warn");
-    else say("cat-status", catalog.projects.length ? `${catalog.projects.length} projects in the Workshop.` : "", "ok");
+    if (catalog.from_cache) say("cat-status", `Offline: showing the mods as they were ${when}.`, "warn");
+    else say("cat-status", catalog.projects.length ? `${catalog.projects.length} mods.` : "", "ok");
     catFailed = false;
   } catch (e) {
     // one line, no count (owner audit 2026-10-30): the grid stays empty under it
     console.error("[leyline] workshop", e);
     catFailed = !catalog.projects.length;
-    say("cat-status", "Can't reach the Workshop. Try again.", "bad");
+    say("cat-status", "Can't load the mods. Try again.", "bad");
   }
   await loadRanks(true);
   renderModTiles();
@@ -1121,7 +1461,7 @@ function renderCatalog() {
     const cat = catalog.categories.find((k) => k.id === catFilter.cat);
     grid.append(el("p", "hint dc-empty", catalog.projects.length
       ? (cat && !catalog.projects.some((p) => p.category === cat.id) ? `No mods in ${cat.name} yet. Make the first one: see Make a mod.` : "Nothing matches.")
-      : "The Workshop list is not here yet."));
+      : "The mods list is not here yet."));
     return;
   }
   for (const p of list) grid.append(projectCard(p, c));
@@ -1369,7 +1709,7 @@ async function handleDeepLink() {
   if (!link || link.action !== "install" || typeof link.id !== "string") return;
   const p = catalog.projects.find((x) => x.id === link.id);
   show("mods", true, "discover");   // the catalog was just loaded
-  if (!p) { say("cat-status", "That mod is not in the Workshop catalog here yet. Try again after the catalog refreshes.", "warn"); return; }
+  if (!p) { say("cat-status", "That mod isn't in the mods list here yet. Try again in a few minutes.", "warn"); return; }
   linkedId = p.id;
   catFilter.cat = "";
   catFilter.kind = "";
@@ -1393,7 +1733,7 @@ const HOST_WORDS = {
     "cmangos-1.12.1": "CMaNGOS Classic", "cmangos-2.4.3": "CMaNGOS TBC" },
   type: { normal: "Normal", pvp: "PvP", rp: "RP", rppvp: "RP-PvP" },
   start: { level1: "Level 1 only", boost: "Level 1, or the boost to 80" },
-  vis: { public: "Public: on the Leyline list", private: "Private: invite link only" },
+  vis: { public: "Public: on the realm list", private: "Private: invite link only" },
   signup: { open: "Open: anyone", invite: "Invite link only", off: "Closed" },
   herokey: { on: "On", off: "Off" },
 };
@@ -1405,7 +1745,7 @@ const HOST_MANAGE = {
   bots: ["Bots", "In your Host pack folder: leyline options --bots 40 (0 turns them off), then restart the realm (leyline stop, then leyline host)."],
   rates: ["Rates", "In your Host pack folder: leyline options --xp 3 --loot 1 --rep 2 (1 to 10), then restart the realm (leyline stop, then leyline host)."],
   signup: ["Sign-up", "In your Host pack folder: leyline signup open (anyone), leyline signup invite (invite link only) or leyline signup off."],
-  list: ["The Leyline list", "In your Host pack folder: leyline public (on the list) or leyline private (invite link only). The list changes within a minute."],
+  list: ["The realm list", "In your Host pack folder: leyline public (on the list) or leyline private (invite link only). The list changes within a minute."],
   invite: ["Invite link", "Your realm's invite link is below, under Your realm: Copy invite link. New invite link stops the old one."],
 };
 
@@ -1458,11 +1798,14 @@ async function showLinkedRealm(id) {
   if (!realmsCache.length) { try { await loadRealms(false); } catch (_) {} }
   const r = realmsCache.find((x) => (id === "official" ? x.official : x.realm_id === id));
   if (!r) { say("rl-status", "That realm isn't on the realm list right now: it may be offline. Try Refresh in a minute.", "warn"); return; }
+  if (r.official || r.address) pickRealm(r);   // the play bar too, with a client of the version it needs
   $("rl-mine").checked = false;
   renderRealms();
   const card = [...document.querySelectorAll("#rl-list .realm-card")].find((c) => c.querySelector(".name")?.textContent === r.name);
   if (card) { card.classList.add("linked"); card.scrollIntoView({ block: "center" }); const b = card.querySelector(".acts .btn"); if (b && !b.disabled) b.focus(); }
-  say("rl-status", `From the website: ${r.name}. Press PLAY to join.`, "ok");
+  const need = r.official ? "3.3.5a" : r.build;
+  if (need && BUILDS[need] && !state.settings.clients.some((x) => x.build === need)) say("rl-status", `${r.name} plays with ${need}. Add your ${need} game folder first: Add a game folder… in the play bar.`, "warn");
+  else say("rl-status", `From the website: ${r.name}. Press PLAY to join.`, "ok");
 }
 
 $("cat-q").addEventListener("input", renderCatalog);
@@ -1481,7 +1824,7 @@ function renderModTiles() {
     const t = el("button", "tile" + (m && m.update ? " has-update" : ""));
     t.type = "button";
     const txt = el("span", "tile-txt");
-    let name = "Mod catalog", line = "Loading…", cls = "";
+    let name = "Mods", line = "Loading…", cls = "";
     if (m) {
       name = m.name;
       if (m.update) { line = `Update to v${m.update}`; cls = "upd"; }
@@ -1489,7 +1832,7 @@ function renderModTiles() {
       else line = m.version ? `Installed · v${m.version}` : "Installed";
     } else if (p) {
       name = p.name;
-      line = "In the Workshop";
+      line = "In the mods list";
     } else if (catalog.projects.length || installed.length) {
       continue;
     }
@@ -1580,7 +1923,7 @@ function renderInstalled() {
     meta.append(el("span", "", what.join(" · ")));
     if (m.credits) meta.append(el("span", "", m.credits));
     if (m.update) meta.append(el("span", "ok", `Update available: v${m.update}`));
-    else if (m.source === "catalog" && !m.in_catalog) meta.append(el("span", "warn", "No longer in the Workshop for this client"));
+    else if (m.source === "catalog" && !m.in_catalog) meta.append(el("span", "warn", "No longer in the mods list for this game"));
     for (const w of m.warnings || []) meta.append(el("span", "warn", w));
     const acts = el("div", "acts");
     const tog = el("button", "btn small", m.enabled ? "Turn off" : "Turn on");
@@ -1679,15 +2022,37 @@ function setupDrop() {
   const wv = window.__TAURI__ && window.__TAURI__.webview && window.__TAURI__.webview.getCurrentWebview
     ? window.__TAURI__.webview.getCurrentWebview() : null;
   if (!wv || !wv.onDragDropEvent) return;
+  // Over the play bar's game client (its button, its open list, the add panel) or on Find your game files, a drop
+  // adds a game client (clientImport); over the rest of the play bar nothing moves; anywhere else it is a mod.
   wv.onDragDropEvent((ev) => {
     const t = ev.payload && ev.payload.type;
     const here = currentPage === "mods" && currentTab === "installed";
-    if (t === "enter" || t === "over") { $("drop").classList.add("over"); if (!here) show("mods", false, "installed"); }
-    else if (t === "leave") $("drop").classList.remove("over");
+    const pos = ev.payload && ev.payload.position;
+    const dpr = window.devicePixelRatio || 1;
+    const x = pos ? pos.x / dpr : -1, y = pos ? pos.y / dpr : -1;
+    const client = clientDropAt(x, y);
+    const bar = $("play-form").getBoundingClientRect();
+    const onBar = y >= bar.top && y <= bar.bottom;
+    if (t === "enter" || t === "over") {
+      if (client) {
+        if (!menuOpen && $("cimp").hidden && currentPage !== "findfiles") openClientMenu();
+        clientDragOn(true);
+        $("drop").classList.remove("over");
+      } else {
+        clientDragOn(false);
+        if (onBar) return;
+        $("drop").classList.add("over");
+        if (!here) show("mods", false, "installed");
+      }
+    } else if (t === "leave") { $("drop").classList.remove("over"); clientDragOn(false); }
     else if (t === "drop") {
       $("drop").classList.remove("over");
+      clientDragOn(false);
+      const paths = ev.payload.paths || [];
+      if (client) { if (paths[0]) clientImport(paths[0]); return; }
+      if (onBar) return;
       if (!here) show("mods", false, "installed");
-      installLocal(ev.payload.paths || []);
+      installLocal(paths);
     }
   });
 }
@@ -2120,10 +2485,10 @@ async function hostStatus() {
       set("is-online", s.listed ? "ONLINE · ON THE REALM LIST" : "ONLINE",
         [...counts, s.visibility === "private" ? "Private: friends join with your invite link" : "", s.address ? `Realmlist: ${s.address}` : ""].filter(Boolean).join(" · "));
     } else {
-      set("is-offline", "OFFLINE", "The relay knows your realm, but your PC is not connected. Start it above.");
+      set("is-offline", "OFFLINE", "The Leyline network knows your realm, but your PC isn't connected. Start it above.");
     }
   } catch (e) {
-    set("is-partial", "NOT SEEN YET", oops(e, "The relay hasn't seen your realm yet."));
+    set("is-partial", "NOT SEEN YET", oops(e, "The Leyline network hasn't seen your realm yet."));
   }
 }
 
@@ -2138,31 +2503,55 @@ $("host-refresh").addEventListener("click", () => loadHost());
 
 // ------------------------------------------------------------------ the launcher's own updates
 // The core checks at start and every 6 hours and downloads in the background (app.rs). The UI only shows it:
-// "Update ready, restart" in the title bar, and the channel and state in Settings.
+// One calm line in the title bar (owner 31 Oct): "Update ready — restart to finish" and Restart. Ignored, the update
+// finishes by itself the next time Leyline opens ("Finishing the update…"); never while a game Leyline started runs.
 let upd = null;
+function updLine(u) {
+  const i = (u && u.info) || {};
+  if (!u) return null;
+  if (u.finishing) return { text: "Finishing the update…", go: null };
+  if (u.ready) return u.game_running
+    ? { text: "Update ready — restart after your game", go: "Restart", disabled: true, title: "Your game is open. Restart after you close it, or the update finishes the next time you open Leyline." }
+    : { text: "Update ready — restart to finish", go: "Restart", title: "Restart Leyline to finish the update. Or leave it: it finishes the next time you open Leyline." };
+  if (u.mode === "link" && i.newer) return { text: "A new Leyline is out", go: "Get it", title: "Open the download page" };
+  return null;
+}
 function renderUpdate() {
   if (!upd) return;
   const i = upd.info || {};
   $("upd-channel").value = upd.channel || "stable";
-  $("tb-update").hidden = !(upd.ready || (upd.mode === "link" && i.newer));
-  $("tb-update").textContent = upd.ready ? "Update ready, restart" : `Leyline ${i.latest} is out`;
-  $("tb-update").title = upd.ready
-    ? (upd.game_running ? "Close your game first: Leyline restarts only when no game is open" : `Restart into Leyline ${upd.ready}`)
-    : "Open the release page";
+  const line = updLine(upd);
+  $("tb-update").hidden = !line;
+  if (line) {
+    $("tb-update-text").textContent = line.text;
+    $("tb-update-go").hidden = !line.go;
+    $("tb-update-go").textContent = line.go || "";
+    $("tb-update-go").disabled = !!line.disabled;
+    $("tb-update").title = line.title || "";
+    $("tb-update").classList.toggle("busy", !!upd.finishing);
+  }
   $("upd-restart").hidden = !upd.ready;
+  $("upd-restart").disabled = !!upd.game_running;
   $("upd-open").hidden = !i.url;
   let text = "", kind = "";
-  if (upd.checking) text = "Checking…";
-  else if (upd.downloading) text = `Downloading Leyline ${i.latest} in the background…`;
-  else if (upd.ready) { text = `Leyline ${upd.ready} is ready (you have ${i.current}). Restart when you like.` + (upd.game_running ? " Your game is open: restart after you close it." : ""); kind = "ok"; }
-  else if (i.newer) { text = `Leyline ${i.latest} is out (you have ${i.current}). ${upd.note || ""}`; kind = "ok"; }
-  else if (i.latest) { text = `You have the newest Leyline on the ${upd.channel} channel (${i.current}).` + (i.from_cache ? " (offline: from the last check)" : ""); kind = "ok"; }
+  if (upd.finishing) { text = "Finishing the update. Leyline opens again in a moment."; kind = "ok"; }
+  else if (upd.checking) text = "Checking…";
+  else if (upd.downloading) text = "Downloading the update in the background…";
+  else if (upd.ready) { text = "Update ready. Press Restart when you like, or it finishes the next time you open Leyline." + (upd.game_running ? " Your game is open: Leyline waits until you close it." : ""); kind = "ok"; }
+  else if (i.newer) { text = `A new Leyline is out (${i.latest}). ${upd.note || ""}`; kind = "ok"; }
+  else if (i.latest) { text = `You have the newest Leyline (${i.current}).` + (i.from_cache ? " (offline: from the last check)" : ""); kind = "ok"; }
   else if (upd.checked_at) { text = i.error ? oops(i.error, OOPS["upd-status"]) : "No launcher releases on this channel yet."; kind = i.error ? "warn" : ""; }
   if (upd.error && !upd.ready && !upd.downloading) { text += (text ? " " : "") + oops(upd.error, "The download didn't finish: Leyline tries again later."); kind = "warn"; }
   say("upd-status", text, kind);
 }
+// Every minute; every second for the first half minute and while a check, a download or the finish is going.
+const updStarted = Date.now();
+let updTimer = null;
 async function loadUpdateState() {
+  clearTimeout(updTimer);
   try { upd = await invoke("launcher_update_state"); renderUpdate(); } catch (_) { /* preview page */ }
+  const fast = (upd && (upd.checking || upd.downloading || upd.finishing)) || Date.now() - updStarted < 30000;
+  updTimer = setTimeout(loadUpdateState, fast ? 1000 : 60000);
 }
 async function checkUpdate() {
   say("upd-status", "Checking…");
@@ -2178,13 +2567,12 @@ async function restartToUpdate() {
 $("upd-check").addEventListener("click", checkUpdate);
 $("upd-restart").addEventListener("click", restartToUpdate);
 $("upd-open").addEventListener("click", () => { if (upd && upd.info && upd.info.url) openUrl(upd.info.url); });
-$("tb-update").addEventListener("click", restartToUpdate);
+$("tb-update-go").addEventListener("click", restartToUpdate);
 $("upd-channel").addEventListener("change", async () => {
   say("upd-status", "Saved. Checking the new channel…");
   try { upd = await invoke("set_update_channel", { channel: $("upd-channel").value }); renderUpdate(); }
   catch (e) { sayErr("upd-status", e); }
 });
-setInterval(loadUpdateState, 60000);
 
 // ------------------------------------------------------------------ for Home's gallery and rows (home.js, loaded after this)
 // Home's "Join <HANGOUT.name>" slide: select the Hangout and press PLAY. With a 3.3.5a client, that client on

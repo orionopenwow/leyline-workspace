@@ -31,6 +31,8 @@ never the cookie, no CORS header; the same rules, limits and sanctions as the fo
     POST /wrath/forum/api/new {cat, title, body}       {ok, thread}
     POST /wrath/forum/api/reply {thread, body}         {ok, post, thread, page}
     POST /wrath/forum/api/report {post, reason, note?} {ok, text}
+    POST /wrath/forum/api/mine {}                      {threads: [...]}  the signed-in player's own threads, newest first
+                                                       (the launcher's Agents page reads it: launcher/src-tauri/src/agents.rs)
   refusals: {error} with 400/401 (signed out)/403 (locked, Announcements, a sanction)/404/429 (rate limits).
 
 Text: plain text only. Links (http and https) are made clickable with rel="nofollow ugc noopener noreferrer"; an
@@ -48,6 +50,11 @@ account (a site-wide suspend) in Leyline HQ's Forum section (stream/hq.py, /wrat
 Forum tab in stream/admin.py without HQ), which read Forum.reports() / posts_by() / poster() and call the store's
 moderation methods through admin.run_action (roles, audit log). Nothing is deleted: hidden posts stay in the database.
 Why the forum is built in (and when it would move): docs/FORUM.md.
+
+The Discord link (stream/forum_discord.py, off unless WU_FORUM_DISCORD=1): the store tells its listeners about every
+change (Forum.listeners: thread.new, post.new, post.hidden, thread.hidden / locked / pinned, thread.merge), which the
+link turns into Discord messages; posts that came from Discord carry via="discord" and the Discord name (shown "via
+Discord · <name>"). Its pages: /wrath/leyline/forum/discord (link an account), POST /wrath/forum/api/discord/interactions.
 
 Storage: SQLite in $WU_PORTAL_DATA (default /data), forum.sqlite3; the form key in forum.key (0600) unless
 WU_FORM_SECRET is set. Settings: WU_FORUM=0 (off), WU_FORUM_NEW_HOURS. Standard library only.
@@ -239,7 +246,20 @@ class Forum:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=NORMAL")
         self.db.executescript(SCHEMA)
+        cols = {r[1] for r in self.db.execute("PRAGMA table_info(forum_posts)")}
+        if "via" not in cols:   # where a post came from ("" = this website or the launcher, "discord") and the name there
+            self.db.execute("ALTER TABLE forum_posts ADD COLUMN via TEXT NOT NULL DEFAULT ''")
+            self.db.execute("ALTER TABLE forum_posts ADD COLUMN via_name TEXT NOT NULL DEFAULT ''")
+        self.listeners: list = []   # fn(kind, data) after each change (stream/forum_discord.py)
+        self.discord = None         # the Discord link, when on
         self.key = self._key()
+
+    def emit(self, kind: str, **data) -> None:
+        for fn in list(self.listeners):
+            try:
+                fn(kind, data)
+            except Exception:   # noqa: BLE001: a listener never stops a post
+                log.exception("forum: a listener failed on %s", kind)
 
     def _key(self) -> bytes:
         env = os.environ.get("WU_FORM_SECRET", "")
@@ -350,7 +370,7 @@ class Forum:
         return masked if isinstance(masked, str) and len(masked) == len(b) else b
 
     # ------------------------------------------------------------------ writing
-    def new_thread(self, acct: str, cat, title, body, staff: bool = False) -> int:
+    def new_thread(self, acct: str, cat, title, body, staff: bool = False, via: str = "", via_name: str = "") -> int:
         if cat not in CAT:
             raise ForumError(400, "Pick a category.")
         if CAT[cat][3] and not staff:
@@ -362,11 +382,13 @@ class Forum:
         with self.lock:
             tid = self.x("INSERT INTO forum_threads (cat, title, title_lc, author, created, bumped) VALUES (?,?,?,?,?,?)",
                          (cat, t, t.lower(), acct, now, now))
-            self.x("INSERT INTO forum_posts (thread, author, body, created, opener) VALUES (?,?,?,?,1)", (tid, acct, b, now))
+            pid = self.x("INSERT INTO forum_posts (thread, author, body, created, opener, via, via_name) VALUES (?,?,?,?,1,?,?)",
+                         (tid, acct, b, now, via, clean_line(via_name, 32)))
         log.info("forum: new thread %d in %s", tid, cat)
+        self.emit("thread.new", thread=tid, post=pid, via=via)
         return tid
 
-    def reply(self, acct: str, tid, body, staff: bool = False) -> int:
+    def reply(self, acct: str, tid, body, staff: bool = False, via: str = "", via_name: str = "") -> int:
         th = self.thread(tid)
         if not th or th["hidden"] or th["merged_into"]:
             raise ForumError(404, "That thread isn't here any more.")
@@ -377,8 +399,10 @@ class Forum:
             self.check_rate(acct, False, links_in(b))
         now = self.now()
         with self.lock:
-            pid = self.x("INSERT INTO forum_posts (thread, author, body, created) VALUES (?,?,?,?)", (th["id"], acct, b, now))
+            pid = self.x("INSERT INTO forum_posts (thread, author, body, created, via, via_name) VALUES (?,?,?,?,?,?)",
+                         (th["id"], acct, b, now, via, clean_line(via_name, 32)))
             self.recount(th["id"])
+        self.emit("post.new", thread=th["id"], post=pid, via=via)
         return pid
 
     def recount(self, tid: int) -> None:
@@ -456,6 +480,12 @@ class Forum:
                       f"WHERE {self._LIVE} AND t.title_lc LIKE ? ESCAPE '\\' ORDER BY t.bumped DESC LIMIT ?", (like, n))
         return [self._t(r) for r in rows]
 
+    def threads_by(self, acct: str, n: int = 30) -> list[dict]:
+        """One player's own threads that are still up, newest first (the launcher's "mine")."""
+        rows = self.q(f"SELECT {self._TCOLS} FROM forum_threads t LEFT JOIN forum_users u ON u.acct = t.author "
+                      f"WHERE t.author = ? AND {self._LIVE} ORDER BY t.id DESC LIMIT ?", (acct, max(1, min(int(n), 100))))
+        return [self._t(r) for r in rows]
+
     def categories(self) -> list[dict]:
         out = []
         for cid, name, line, staff in CATEGORIES:
@@ -472,13 +502,14 @@ class Forum:
         except (TypeError, ValueError):
             return None
         r = self.one("SELECT p.id, p.thread, p.author, p.body, p.created, p.hidden, p.opener, COALESCE(u.name, 'Player'), "
-                     "COALESCE(u.tag, ''), COALESCE(u.staff, 0) FROM forum_posts p LEFT JOIN forum_users u ON u.acct = p.author WHERE p.id = ?", (pid,))
+                     "COALESCE(u.tag, ''), COALESCE(u.staff, 0), p.via, p.via_name FROM forum_posts p LEFT JOIN forum_users u ON u.acct = p.author WHERE p.id = ?", (pid,))
         return self._p(r) if r else None
 
     @staticmethod
     def _p(r) -> dict:
         return {"id": r[0], "thread": r[1], "author": r[2], "body": r[3], "created": r[4], "hidden": bool(r[5]),
-                "opener": bool(r[6]), "name": r[7], "tag": r[8], "staff": bool(r[9])}
+                "opener": bool(r[6]), "name": r[7], "tag": r[8], "staff": bool(r[9]),
+                "via": r[10] if len(r) > 10 else "", "via_name": r[11] if len(r) > 11 else ""}
 
     def posts(self, tid: int, page: int = 1) -> tuple[list[dict], bool, int]:
         """(posts, more, pages): oldest first."""
@@ -486,7 +517,7 @@ class Forum:
         pages = max(1, (total + PER_PAGE - 1) // PER_PAGE)
         off = (max(1, page) - 1) * PER_PAGE
         rows = self.q("SELECT p.id, p.thread, p.author, p.body, p.created, p.hidden, p.opener, COALESCE(u.name, 'Player'), "
-                      "COALESCE(u.tag, ''), COALESCE(u.staff, 0) FROM forum_posts p LEFT JOIN forum_users u ON u.acct = p.author "
+                      "COALESCE(u.tag, ''), COALESCE(u.staff, 0), p.via, p.via_name FROM forum_posts p LEFT JOIN forum_users u ON u.acct = p.author "
                       "WHERE p.thread = ? ORDER BY p.created, p.id LIMIT ? OFFSET ?", (tid, PER_PAGE, off))
         return [self._p(r) for r in rows], off + PER_PAGE < total, pages
 
@@ -506,6 +537,8 @@ class Forum:
         if not th:
             raise ForumError(404, "No such thread.")
         self.x(f"UPDATE forum_threads SET {field} = ? WHERE id = ?", (1 if on else 0, th["id"]))
+        if th[field] != bool(on):
+            self.emit("thread." + field, thread=th["id"], on=bool(on))
         return {field: th[field]}, {field: bool(on)}
 
     def set_post_hidden(self, pid, on: bool) -> tuple[dict, dict]:
@@ -514,6 +547,8 @@ class Forum:
             raise ForumError(404, "No such post.")
         self.x("UPDATE forum_posts SET hidden = ? WHERE id = ?", (1 if on else 0, p["id"]))
         self.recount(p["thread"])
+        if p["hidden"] != bool(on):
+            self.emit("post.hidden", thread=p["thread"], post=p["id"], on=bool(on))
         return {"hidden": p["hidden"]}, {"hidden": bool(on)}
 
     def merge(self, src, dst) -> tuple[dict, dict]:
@@ -529,6 +564,7 @@ class Forum:
             self.x("UPDATE forum_posts SET thread = ?, opener = 0 WHERE thread = ?", (b["id"], a["id"]))
             self.x("UPDATE forum_threads SET merged_into = ?, replies = 0, pinned = 0 WHERE id = ?", (b["id"], a["id"]))
             self.recount(b["id"])
+        self.emit("thread.merge", thread=a["id"], into=b["id"])
         return {"thread": a["id"], "title": a["title"]}, {"merged_into": b["id"]}
 
     def staff_threads(self, text: str = "", n: int = 60) -> list[dict]:
@@ -604,7 +640,8 @@ class Forum:
             return {"id": p["id"], "author": "", "tag": "", "staff": False, "at": p["created"], "hidden": True,
                     "text": "", "parts": []}
         return {"id": p["id"], "author": p["name"], "tag": p["tag"], "staff": p["staff"],
-                "at": p["created"], "hidden": False, "text": p["body"], "parts": parts(p["body"])}
+                "at": p["created"], "hidden": False, "text": p["body"], "parts": parts(p["body"]),
+                "via": p.get("via", ""), "via_name": p.get("via_name", "")}
 
 
 # ----------------------------------------------------------------------------------------------
@@ -656,7 +693,54 @@ def setup() -> Forum | None:
     except Exception:   # noqa: BLE001: the rest of the portal runs without the forum
         log.exception("forum: off (the store didn't open)")
         return None
+    discord_setup()
     return store
+
+
+def _discord_mod():
+    """stream/forum_discord.py beside this file (python3 -I leaves this folder off sys.path), or None."""
+    import importlib.util
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "forum_discord.py")
+    if not os.path.isfile(p):
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("wu_forum_discord", p)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception:   # noqa: BLE001
+        log.exception("forum: the Discord link didn't load")
+        return None
+
+
+class _Me:
+    """This module as forum_discord.py sees it (the portal loads it without a sys.modules entry)."""
+
+    def __getattr__(self, k):
+        try:
+            return globals()[k]
+        except KeyError:
+            raise AttributeError(k) from None
+
+
+_ME = _Me()
+_fd = None
+
+
+def discord_setup(start_thread: bool = True, **kw):
+    """The Discord link (stream/forum_discord.py) when WU_FORUM_DISCORD=1 and its settings are complete."""
+    global _fd
+    if store is None or os.environ.get("WU_FORUM_DISCORD", "0") != "1":
+        return None
+    _fd = _fd or _discord_mod()
+    if _fd is None:
+        return None
+    try:
+        store.discord = _fd.attach(_ME, store, start_thread=start_thread, **kw)
+    except Exception:   # noqa: BLE001
+        log.exception("forum: the Discord link is off (it didn't start)")
+        store.discord = None
+    return store.discord
 
 
 def match(path: str) -> bool:
@@ -856,6 +940,7 @@ vertical-align:2px;background:var(--lk-accent-soft);color:var(--lk-accent-strong
 font-weight:800;font-size:13px;color:#fff;background:linear-gradient(135deg,var(--lk-accent),var(--lk-accent-2))}
 .fm-by img.fm-av{display:block;object-fit:cover;background:none}
 .fm-by .fm-team{padding:1px 7px;border-radius:999px;background:var(--lk-accent);color:#fff;font-size:11px;font-weight:700}
+.fm-by .fm-via{padding:1px 7px;border-radius:999px;border:1px solid var(--lk-border-strong);color:var(--lk-text-2);font-size:11px;font-weight:600}
 .fm-by a{margin-left:auto;color:var(--lk-muted);font-size:12.5px}
 .fm-text{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6;color:var(--lk-text)}
 .fm-text a{color:var(--lk-accent-strong)}
@@ -1088,8 +1173,10 @@ def page_thread(h, who, tid: str, query: dict, note: str = "", text: str = "", s
         team = '<span class="fm-team">Team</span>' if p["staff"] else ""
         tag = f'<small>#{e(p["tag"])}</small>' if p["tag"] else ""
         rep = (f'<a href="{PAGE}/report?p={p["id"]}" rel="nofollow">Report</a>' if (who and who["acct"] != p["author"]) else "")
+        via = (f'<span class="fm-via">via Discord{" · " + e(p["via_name"]) if p.get("via_name") else ""}</span>'
+               if p.get("via") == "discord" else "")
         out.append(f'<article class="fm-post" id="p{p["id"]}"><p class="fm-by">{_avatar(p["author"], p["name"])}'
-                   f'<b>{e(p["name"])}</b>{tag}{team}<span>{_ago(p["created"])}</span>{rep}</p>'
+                   f'<b>{e(p["name"])}</b>{tag}{team}{via}<span>{_ago(p["created"])}</span>{rep}</p>'
                    f'<p class="fm-text">{render(p["body"])}</p></article>')
     nav = ""
     if pages > 1:
@@ -1229,6 +1316,8 @@ def get(h, path: str, query: dict) -> None:
         return page_search(h, who, query)
     if sub == "report":
         return page_report(h, who, query)
+    if sub == "discord" and store.discord is not None:
+        return _fd.page(_ME, h, who, query)
     _shell(h, "Not found · Forum · Leyline", f'<section class="fm-head"><div><h1>Not found</h1><p><a href="{PAGE}">The forum</a></p></div></section>',
            PAGE, who, 404)
 
@@ -1255,7 +1344,7 @@ def _see_other(h, url: str) -> None:
     h.end_headers()
 
 
-POST_API = {"new": ("cat", "title", "body"), "reply": ("thread", "body"), "report": ("post", "reason", "note")}
+POST_API = {"new": ("cat", "title", "body"), "reply": ("thread", "body"), "report": ("post", "reason", "note"), "mine": ()}
 
 
 def _jpost(h, status: int, doc: dict) -> None:
@@ -1299,6 +1388,8 @@ def api_post(h, sub: str) -> None:
         who = token_viewer(h)
     except ForumError as ex:
         return _jpost(h, ex.status, {"error": ex.text})
+    if sub == "mine":   # reading one's own threads: no sanction stops it, nothing is written
+        return _jpost(h, 200, {"threads": [store.thread_doc(t) for t in store.threads_by(who["acct"])]})
     blk = _sanctioned(who, sub)
     if blk:
         return _jpost(h, 403, {"error": blk})
@@ -1326,6 +1417,8 @@ def api_post(h, sub: str) -> None:
 
 
 def post(h, path: str) -> None:
+    if store is not None and path == API + "/discord/interactions" and _fd is not None:
+        return _fd.interactions_http(_ME, h)
     if store is not None and path.startswith(API + "/"):
         return api_post(h, path[len(API):].strip("/"))
     if store is None or path == API or path.startswith(API + "/"):
@@ -1370,6 +1463,8 @@ def post(h, path: str) -> None:
             th = store.post(pid)["thread"]
             pg = store.page_of(pid)
             return _see_other(h, f"{PAGE}/t/{th}" + (f"?page={pg}" if pg > 1 else "") + f"#p{pid}")
+        if sub == "discord" and store.discord is not None:
+            return _fd.post(_ME, h, who, form)
         if sub == "report":
             pid = str(_int(form.get("p"), 0))
             if not hmac.compare_digest(tok, form_token(who, "report:" + pid)):

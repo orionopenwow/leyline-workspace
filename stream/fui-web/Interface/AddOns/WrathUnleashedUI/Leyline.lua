@@ -39,6 +39,16 @@
 -- game at /wrath?go=r:<id>. It also sets the global WUUI_LEYLINE_HOP, which the page reads (and clears) through
 -- the bridge, so a hop works on a realm whose server doesn't echo (a Beacon without ov_leyline.lua). The desktop
 -- client has no page: after HOP_WAIT seconds the window says to open the link instead.
+--
+-- The realm browser (2026-10-31): in the browser game the page hands the window the whole network's list, paged, and
+-- one realm's preview (stream/www-files/wrath-page.js leyline-browse): WUUI_LEYLINE_ASK = "list|<page>|<filters>|
+-- <search>" or "preview|<id>" or "launch|<id>", answered in WUUI_LEYLINE_NET / WUUI_LEYLINE_PREVIEW and a call to
+-- WUUI_LEYLINE_ONNET. The page says it can (WUUI_LEYLINE_BROWSE = 1); else the window keeps the realm's list above.
+-- Then: a search box and the filters Plays in browser, Own files, Has players, Version; a row's View opens the
+-- preview beside the window (the host's words and house rules, who's on when the realm shares it, its mods,
+-- required and optional, the ones on your side marked, its version chip, uptime, Hero Key sign-in) and its Join
+-- hops. A realm that needs another game version is never hopped to: Join hands it to the Leyline launcher
+-- (leyline://realm/<id>, the page shows the button). The preview also works on the realm's list (fewer details).
 
 local W = WrathUnleashedUI
 -- The public site. Links are PUBLIC_BASE .. "/r/<id>"; a future Leyline domain is this one line.
@@ -109,8 +119,9 @@ end
 -- The Join button's text: "You're here" on this realm's row; "Join through the relay" only where that is how this
 -- player would come back in (this realm listed on the relay, live, and no browser page: the desktop client), else Join.
 function L.JoinText(r)
+    if r.net then return r.here and "You're here" or "View" end
     if r.id ~= "this" then return "Join" end
-    if r.relayId and r.relayLive and not L.HasPage() then return "Join through the relay" end
+    if r.relayId and r.relayLive and not L.HasPage() then return "Join by link" end
     return "You're here"
 end
 
@@ -125,7 +136,7 @@ function L.Request(force)
     if not force and L.askedAt and now() - L.askedAt < ASK_EVERY and not L.failed then return false end
     if not SendAddonMessage or not UnitName then setStatus(UNAVAILABLE); return false end
     L.askedAt, L.waiting, L.failed = now(), true, nil
-    setStatus("Asking the realm for the Leyline list...")
+    setStatus("Asking the realm for the realm list...")
     pcall(SendAddonMessage, PREFIX, "L", "WHISPER", UnitName("player"))
     return true
 end
@@ -299,6 +310,196 @@ function L.OnMessage(prefix, msg, channel, sender)
     end
 end
 
+-- ---------------------------------------------------------------- The realm browser (the page's list)
+
+local PANEL_W = 340
+local SEARCH_WAIT = 0.5                   -- seconds of no typing before the search is asked
+L.bfilter, L.query = {}, ""
+
+function L.Browsing() return WUUI_LEYLINE_BROWSE == 1 end
+
+-- The running game's build (GetBuildInfo's second value), 12340 when unknown.
+function L.MyBuild()
+    if not GetBuildInfo then return 12340 end
+    local ok, _, b = pcall(GetBuildInfo)
+    return (ok and tonumber(b)) or 12340
+end
+
+function L.AskList(page)
+    local f = {}
+    if L.bfilter.browser then f[#f + 1] = "b" end
+    if L.bfilter.own then f[#f + 1] = "o" end
+    if L.bfilter.players then f[#f + 1] = "p" end
+    if L.bfilter.build then f[#f + 1] = "v" .. L.bfilter.build end
+    L.netPage = math.max(1, math.floor(tonumber(page) or 1))
+    local q = (L.query or ""):gsub("[|%c]", ""):sub(1, 32)
+    WUUI_LEYLINE_ASK = "list|" .. L.netPage .. "|" .. table.concat(f, ",") .. "|" .. q
+    L.browseAt = now()
+    setStatus("Asking for the realm list...")
+    return WUUI_LEYLINE_ASK
+end
+
+-- One row of the page's list, in the window's row shape.
+function L.FromNet(r)
+    return { id = r.id, name = tostring(r.name or ""):gsub("|", ""):sub(1, 40), live = r.live == true,
+        players = tonumber(r.online), bots = tonumber(r.bots), build = BUILDS[tonumber(r.build) or 0] and tonumber(r.build) or 12340,
+        chip = type(r.chip) == "string" and r.chip or nil, browser = r.browser == true, own = r.own == true, hk = r.hk,
+        up = tonumber(r.up), featured = r.featured == true, verified = r.verified == true, here = r.here == true,
+        mods = tonumber(r.mods) or 0, desc = type(r.desc) == "string" and r.desc or "", ruleset = "custom", net = true }
+end
+
+function L.OnNet(kind)
+    if kind == "list" then
+        local n = WUUI_LEYLINE_NET
+        if type(n) ~= "table" then return end
+        L.browseAt = nil
+        if type(n.err) == "string" then
+            L.browse, L.realms = nil, {}
+            setStatus(n.err:gsub("|", ""))
+            L.Refresh()
+            return
+        end
+        L.browse = n
+        local out = {}
+        for _, r in ipairs(type(n.rows) == "table" and n.rows or {}) do
+            if type(r) == "table" and type(r.id) == "string" and r.id:match("^[a-z2-7]+$") and #r.id == 16 and #out < 50 then
+                out[#out + 1] = L.FromNet(r)
+            end
+        end
+        L.realms, L.offset = out, L.backPage and math.max(0, #out - ROWS) or 0
+        L.backPage = nil
+        local net = type(n.network) == "table" and n.network or nil
+        local line = net and networkLine({ realms = tonumber(net.realms) or 0, players = tonumber(net.players) or 0,
+            bots = tonumber(net.bots) or 0 }) .. "." or ""
+        if (tonumber(n.total) or 0) == 0 then
+            line = (L.query ~= "" or next(L.bfilter)) and "No realm matches. Try fewer filters." or "No realms are open right now."
+        end
+        setStatus(line)
+        L.Refresh()
+    elseif kind == "preview" then
+        local p = WUUI_LEYLINE_PREVIEW
+        if type(p) == "table" and L.selected and p.id == L.selected.id then
+            L.detail = p
+            L.ShowPreview(L.selected)
+        end
+    end
+end
+WUUI_LEYLINE_ONNET = function(kind) L.OnNet(kind) end
+
+-- Plays in browser, Own files, Has players: on/off. Version: every version the list shows, then any.
+function L.BCycle(key)
+    if key == "build" then
+        local seen, order = {}, { 12340, 5875, 8606, 15595, 18414 }
+        for _, r in ipairs(L.realms) do if r.build then seen[r.build] = true end end
+        if L.bfilter.build then seen[L.bfilter.build] = true end
+        local vs = {}
+        for _, b in ipairs(order) do if seen[b] then vs[#vs + 1] = b end end
+        local cur, nextv = L.bfilter.build, nil
+        if cur == nil then nextv = vs[1] else for i, v in ipairs(vs) do if v == cur then nextv = vs[i + 1] end end end
+        L.bfilter.build = nextv
+    else
+        L.bfilter[key] = not L.bfilter[key] or nil
+    end
+    L.AskList(1)
+    L.Refresh()
+end
+
+-- What Join does here: ok, own (the page switches to own game files), launcher (another game version: the Leyline
+-- launcher), offline. The page's preview says it; without one, from what the row knows.
+function L.Verdict(r, p)
+    if p and type(p.verdict) == "string" then return p.verdict, type(p.why) == "string" and p.why or "" end
+    if not r.live then return "offline", "This realm is offline right now." end
+    if r.build and r.build ~= L.MyBuild() then
+        return "launcher", "This realm needs a different game version than this one. Open it in the Leyline launcher."
+    end
+    return "ok", ""
+end
+
+local function chipOf(r) return r.chip or BUILDS[r.build or 12340] or "?" end
+
+-- The preview's words (pure: the tests read it). p: the page's WUUI_LEYLINE_PREVIEW for r, or nil.
+function L.PreviewTexts(r, p)
+    local t = {}
+    t.title = (p and p.name) or r.name
+    local chips = { "|cff8b5cf6" .. chipOf(r) .. "|r" }
+    local browser = p and p.browser or r.browser
+    if r.net or p then chips[#chips + 1] = browser and "Plays in browser" or "Own game files" end
+    local hk = p and p.hk or (r.hk == true and "yes" or r.hk == false and "no" or nil)
+    if hk == "ready" or hk == "yes" then chips[#chips + 1] = "|cff4cc38aHero Key sign-in|r"
+    elseif hk == "no" then chips[#chips + 1] = "Own accounts" end
+    t.chips = table.concat(chips, "  ·  ")
+    local online = p and tonumber(p.online) or r.players
+    local bots = p and tonumber(p.bots) or r.bots
+    local live = (p and p.live ~= nil) and p.live or r.live
+    if not live then t.players = "|cff9aa3b5Offline|r"
+    elseif online then t.players = online .. (online == 1 and " player" or " players") .. " online now"
+        .. ((bots and bots > 0) and (" · " .. bots .. " bots") or "")
+    else t.players = "|cff4cc38aOnline|r" end
+    local up = p and tonumber(p.up) or r.up
+    t.up = up and (up .. "% up lately") or "Uptime: new"
+    t.desc = (p and p.desc ~= "" and p.desc) or r.desc or ""
+    t.rules = (p and p.rules ~= "" and p.rules) or ((not p and r.net) and "Loading..." or "") 
+    if t.rules == "" then t.rules = "The host hasn't written house rules." end
+    if p and type(p.who) == "table" then
+        local names = {}
+        for i, n in ipairs(p.who) do if i <= 50 and type(n) == "string" then names[#names + 1] = n end end
+        t.who = #names > 0 and table.concat(names, ", ") or "Nobody right now."
+    elseif p then
+        t.who = "This realm doesn't share who's on."
+    else
+        t.who = r.net and "Loading..." or "Shown in the browser game."
+    end
+    if p and type(p.mods) == "table" then
+        local req, opt, other = {}, {}, {}
+        for _, m in ipairs(p.mods) do
+            if type(m) == "table" and type(m.name) == "string" then
+                local n = m.name .. (m.client == true and " |cff5b8def(on your side)|r" or "")
+                if m.req == true then req[#req + 1] = n elseif m.req == false then opt[#opt + 1] = n else other[#other + 1] = n end
+            end
+        end
+        local lines = {}
+        if #req > 0 then lines[#lines + 1] = "Required: " .. table.concat(req, ", ") end
+        if #opt > 0 then lines[#lines + 1] = "Optional: " .. table.concat(opt, ", ") end
+        if #other > 0 then lines[#lines + 1] = "Uses: " .. table.concat(other, ", ") end
+        t.mods = #lines > 0 and table.concat(lines, "\n") or "No mods listed."
+    else
+        t.mods = r.net and "Loading..." or "Shown in the browser game."
+    end
+    local v, why = L.Verdict(r, p)
+    t.verdict, t.why = v, why
+    if r.here or r.id == "this" then t.join, t.why = "You're here", "You're on this realm now."
+    elseif v == "launcher" then t.join = "Open in launcher"
+    elseif v == "offline" then t.join = "Offline"
+    else t.join = "Join" end
+    return t
+end
+
+function L.Preview(r)
+    if not r then return false end
+    L.selected, L.detail = r, nil
+    if r.id ~= "this" and L.Browsing() then WUUI_LEYLINE_ASK = "preview|" .. r.id end
+    L.ShowPreview(r)
+    return true
+end
+
+-- The preview's Join: never a broken hop.
+function L.PreviewJoin()
+    local r = L.selected
+    if not r then return false end
+    local t = L.PreviewTexts(r, L.detail)
+    if t.join == "You're here" then return L.Join(r) end
+    if t.verdict == "launcher" then
+        if L.Browsing() then WUUI_LEYLINE_ASK = "launch|" .. r.id end
+        L.panelInfo(r.name .. " needs another game version. " .. (L.HasPage() and "The bar at the top of the page opens it in the Leyline launcher."
+            or "Open it in the Leyline launcher: the link is in the box."))
+        if win and L.Copy then L.Copy("leyline://realm/" .. r.id) end
+        return "launcher"
+    end
+    if t.verdict == "offline" then L.panelInfo(r.name .. " is offline right now. Try again later."); return false end
+    L.panelInfo("Going to " .. r.name .. "...")
+    return L.Hop(r.id, r.name)
+end
+
 -- ---------------------------------------------------------------- Window
 
 local function players(r)
@@ -311,10 +512,24 @@ local function copy(text)
     local box = win.copy
     box.fixed = text; box:SetText(text); box:SetFocus(); box:HighlightText()
 end
+L.Copy = copy
 
 -- The row's texts: the name (with the sample's label and the Featured / Verified / New badges), the rules line
 -- (ruleset, then tags, build, region, language when the realm has them) and the state (with the uptime badge).
 function L.Texts(r)
+    if r.net then
+        local name = r.name .. (r.here and "  |cff8b5cf6(you are here)|r" or "")
+        local badges = {}
+        if r.featured then badges[#badges + 1] = "|cff8b5cf6Featured|r" end
+        if r.verified then badges[#badges + 1] = "|cff4cc38aVerified|r" end
+        if #badges > 0 then name = name .. "  " .. table.concat(badges, " ") end
+        local chips = { chipOf(r), r.browser and "Plays in browser" or "Own game files" }
+        if r.hk == true then chips[#chips + 1] = "Hero Key" end
+        if r.mods and r.mods > 0 then chips[#chips + 1] = r.mods .. (r.mods == 1 and " mod" or " mods") end
+        local state = r.live and "|cff4cc38aonline|r" or "|cff9aa3b5offline|r"
+        if r.up then state = state .. " · " .. r.up .. "% up" end
+        return name, table.concat(chips, " · "), state
+    end
     local name = r.name
     if r.sample then name = (brand().on and brand().home or SAMPLE_NAME) .. " · " .. SAMPLE_NOTE end
     if r.id == "this" then name = name .. "  |cff8b5cf6(you are here)|r" end
@@ -343,6 +558,18 @@ function L.Refresh()
         win.filters.region:SetText("Region: " .. (f.region and REGIONS[f.region] or "any"))
         win.filters.lang:SetText("Lang: " .. (f.lang or "any"))
         win.filters.now:SetText(f.now and "Has players" or "Everyone")
+        local browsing = L.Browsing()
+        for _, b in pairs(win.filters) do if browsing then b:Hide() else b:Show() end end
+        if win.bfilters then
+            local bf = L.bfilter
+            win.bfilters.browser:SetText(bf.browser and "In browser: on" or "In browser")
+            win.bfilters.own:SetText(bf.own and "Own files: on" or "Own files")
+            win.bfilters.players:SetText(bf.players and "Has players" or "Everyone")
+            win.bfilters.build:SetText("Version: " .. (bf.build and BUILDS[bf.build] or "any"))
+            for _, b in pairs(win.bfilters) do if browsing then b:Show() else b:Hide() end end
+            if browsing then win.search:Show(); win.searchHint:Show() else win.search:Hide(); win.searchHint:Hide() end
+            if (L.query or "") ~= "" then win.searchHint:Hide() end
+        end
     end
     local n = #L.realms
     if L.offset > math.max(0, n - ROWS) then L.offset = math.max(0, n - ROWS) end
@@ -359,14 +586,31 @@ function L.Refresh()
             -- that row has no Copy link of its own)
             local jt = L.JoinText(r)
             row.join:SetText(jt)
-            row.join:SetWidth(jt == "Join through the relay" and 164 or jt == "You're here" and 80 or 56)
-            if jt == "Join through the relay" then row.copyBtn:Hide() else row.copyBtn:Show() end
+            row.join:SetWidth(jt == "Join by link" and 164 or jt == "You're here" and 80 or 56)
+            if jt == "Join by link" then row.copyBtn:Hide() else row.copyBtn:Show() end
             row:Show()
         else
             row:Hide()
         end
     end
     win.count:SetText(n > ROWS and string.format("%d-%d of %d", L.offset + 1, math.min(n, L.offset + ROWS), n) or "")
+    local b = L.browse
+    if L.Browsing() and b and (tonumber(b.pages) or 1) > 1 then
+        win.count:SetText(string.format("Page %d of %d · %d realms", tonumber(b.page) or 1, tonumber(b.pages) or 1, tonumber(b.total) or n))
+    end
+end
+
+-- Up / Down: through the rows, then the page's next (or previous) page of the list.
+function L.Scroll(dir)
+    local b = L.browse
+    if dir > 0 then
+        if L.offset + ROWS < #L.realms then L.offset = L.offset + ROWS
+        elseif L.Browsing() and b and (tonumber(b.page) or 1) < (tonumber(b.pages) or 1) then L.AskList((tonumber(b.page) or 1) + 1) end
+    else
+        if L.offset > 0 then L.offset = math.max(0, L.offset - ROWS)
+        elseif L.Browsing() and b and (tonumber(b.page) or 1) > 1 then L.backPage = true; L.AskList((tonumber(b.page) or 1) - 1) end
+    end
+    L.Refresh()
 end
 
 local function info(text) if win then win.info:SetText(text) end end
@@ -390,6 +634,11 @@ function L.Hop(target, name)
     if SendAddonMessage and UnitName then pcall(SendAddonMessage, PREFIX, "H:" .. target, "WHISPER", UnitName("player")) end
     if target == "wrath" then
         info(brand().back .. "... the game reloads there in a moment.")
+    elseif L.Browsing() then   -- the page's fast hop: straight to that realm's characters
+        local d = L.detail and L.detail.id == target and L.detail or nil
+        local hk = d and (d.hk == "ready" or d.hk == "yes")
+        info("Going to " .. (name or "that realm") .. "... the game reloads there in a moment. "
+            .. (hk and "You sign in with your Hero Key." or "The first time, you make an account there (or sign in to yours)."))
     else
         info("Hopping to " .. (name or "that realm") .. "... the game reloads there in a moment. The first time, you "
             .. "make an account on that realm (or sign in to yours); " .. (W.OFFICIAL_NAME or "our realm") .. " uses your "
@@ -406,7 +655,7 @@ function L.HostYourOwn()
         W.Host.Show(1)
         return true
     end
-    info("Host your own realm: 1. Get the Leyline launcher and Docker. 2. Open Host, pick a profile and your rules. "
+    info("Host your own realm: 1. Get the Leyline launcher and Docker. 2. Open Host, pick a ruleset and your rules. "
         .. "3. Make it public: it shows up here. The link has the details.")
     copy(L.HOST_LINK)
 end
@@ -438,8 +687,8 @@ end
 function L.Join(r)
     local link = L.RowLink(r)
     if r.id == "this" then
-        if L.JoinText(r) == "Join through the relay" then
-            info("You're on " .. r.name .. " now. Other clients come in through the relay: the link above (or "
+        if L.JoinText(r) == "Join by link" then
+            info("You're on " .. r.name .. " now. Other players join with the link above (or "
                 .. "leyline://realm/" .. r.relayId .. " in the Leyline launcher).")
         else
             info("You're on " .. r.name .. " now. Share the link above to bring friends here.")
@@ -479,12 +728,12 @@ local function buildRow(i)
     end, "RIGHT", -64, 0)
     row.join = button(row, "Join", 56, function(self)
         local r = self:GetParent().realm
-        if r then L.Join(r) end
+        if r and r.net and not r.here then L.Preview(r) elseif r then L.Join(r) end
     end, "RIGHT", -4, 0)
     row.copyBtn:ClearAllPoints()
     row.copyBtn:SetPoint("RIGHT", row.join, "LEFT", -4, 0)   -- left of Join, whatever its width
     row:SetScript("OnClick", function(self)
-        if self.realm then L.selected = self.realm; copy(L.RowLink(self.realm)) end
+        if self.realm then copy(L.RowLink(self.realm)); L.Preview(self.realm) end
     end)
     row:Hide()
     return row
@@ -554,21 +803,41 @@ local function build()
         lang = button(win, "Lang: any", 90, function() L.Cycle("lang") end, "TOPLEFT", 352, -68),
         now = button(win, "Everyone", 86, function() L.Cycle("now") end, "TOPLEFT", 444, -68),
     }
+    -- the realm browser's own (the page's list): search, then the filters
+    local search = W.Style and W.Style.Input(win, 126, 20) or CreateFrame("EditBox", nil, win, "InputBoxTemplate")
+    search:SetWidth(126); search:SetHeight(20)
+    search:SetPoint("TOPLEFT", 24, -69)
+    search:SetAutoFocus(false)
+    search:SetMaxLetters(32)
+    search:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    search:SetScript("OnEnterPressed", function(self) self:ClearFocus(); L.searchAt = now() - SEARCH_WAIT end)
+    search:SetScript("OnTextChanged", function(self)
+        local q = (self:GetText() or ""):gsub("[|%c]", "")
+        if q ~= L.query then L.query, L.searchAt = q, now() end
+        if q == "" then win.searchHint:Show() else win.searchHint:Hide() end
+    end)
+    win.search = search
+    win.searchHint = label(search, "Search realms", "GameFontDisableSmall", "LEFT", search, "LEFT", 6, 0)   -- on the box: above its fill
+    win.bfilters = {
+        browser = button(win, "In browser", 96, function() L.BCycle("browser") end, "TOPLEFT", 156, -68),
+        own = button(win, "Own files", 88, function() L.BCycle("own") end, "TOPLEFT", 256, -68),
+        players = button(win, "Everyone", 90, function() L.BCycle("players") end, "TOPLEFT", 348, -68),
+        build = button(win, "Version: any", 98, function() L.BCycle("build") end, "TOPLEFT", 442, -68),
+    }
 
     win.list = CreateFrame("Frame", nil, win)
     win.list:SetWidth(WIN_W - 40); win.list:SetHeight(ROWS * ROW_H)
     win.list:SetPoint("TOPLEFT", 20, LIST_TOP)
     win.list:EnableMouseWheel(true)
     win.list:SetScript("OnMouseWheel", function(_, delta)
-        L.offset = math.max(0, L.offset - delta); L.Refresh()
+        if L.Browsing() then L.Scroll(-delta) else L.offset = math.max(0, L.offset - delta); L.Refresh() end
     end)
     win.rows = {}
     for i = 1, ROWS do win.rows[i] = buildRow(i) end
     local listBottom = LIST_TOP - ROWS * ROW_H
     win.count = label(win, "", "GameFontHighlightSmall", "TOPLEFT", 20, listBottom - 8)
-    button(win, "Up", 50, function() L.offset = math.max(0, L.offset - ROWS); L.Refresh() end,
-        "TOPRIGHT", -76, listBottom - 4)
-    button(win, "Down", 50, function() L.offset = L.offset + ROWS; L.Refresh() end, "TOPRIGHT", -20, listBottom - 4)
+    button(win, "Up", 50, function() L.Scroll(-1) end, "TOPRIGHT", -76, listBottom - 4)
+    button(win, "Down", 50, function() L.Scroll(1) end, "TOPRIGHT", -20, listBottom - 4)
     win.report = button(win, "Report", 64, function() L.Report() end, "TOPRIGHT", -132, listBottom - 4)
 
     local box = W.Style and W.Style.Input(win, WIN_W - 50, 20) or CreateFrame("EditBox", nil, win, "InputBoxTemplate")
@@ -589,6 +858,16 @@ local function build()
 
     -- No answer from the realm in time: say so (and let Refresh try again).
     win:SetScript("OnUpdate", function()
+        if L.browseAt and now() - L.browseAt > ANSWER_WAIT then   -- the page didn't answer: the realm's own list
+            L.browseAt = nil
+            WUUI_LEYLINE_BROWSE = nil
+            L.Request(true)
+            L.Refresh()
+        end
+        if L.searchAt and now() - L.searchAt >= SEARCH_WAIT then
+            L.searchAt = nil
+            if L.Browsing() then L.AskList(1) end
+        end
         if L.waiting and L.askedAt and now() - L.askedAt > ANSWER_WAIT then
             L.waiting, L.failed, L.incoming = nil, true, nil
             setStatus(UNAVAILABLE)
@@ -602,10 +881,76 @@ local function build()
     end)
     win:SetScript("OnShow", function()
         if PlaySound then pcall(PlaySound, "igCharacterInfoOpen") end
-        L.Request(false)
+        if L.Browsing() then L.AskList(L.netPage or 1) else L.Request(false) end
         L.Refresh()
     end)
+    win:SetScript("OnHide", function() if win.panel then win.panel:Hide() end end)
     win:Hide()
+end
+
+-- The preview, beside the window (the window moves left to make room).
+local function buildPanel()
+    local p = CreateFrame("Frame", "WrathUnleashedLeylinePreview", win)
+    p:SetWidth(PANEL_W); p:SetHeight(WIN_H)
+    p:SetPoint("TOPLEFT", win, "TOPRIGHT", -4, 0)
+    p:EnableMouse(true)
+    do
+        local bg = p:CreateTexture(nil, "BACKGROUND")
+        bg:SetTexture(0.094, 0.106, 0.137, 0.97)
+        bg:SetPoint("TOPLEFT", 10, -10); bg:SetPoint("BOTTOMRIGHT", -10, 10)
+    end
+    if W.Style then W.Style.Window(p, "Realm preview") else label(p, "Realm preview", "GameFontNormalLarge", "TOP", 0, -18) end
+    local close = (W.Style and W.Style.Close(p) or CreateFrame("Button", nil, p, "UIPanelCloseButton"))
+    close:SetPoint("TOPRIGHT", -6, -6)
+    close:SetScript("OnClick", function() p:Hide() end)
+    local wide = PANEL_W - 44
+    p.title = label(p, "", "GameFontNormalLarge", "TOPLEFT", 22, -48); p.title:SetWidth(wide)
+    p.chips = label(p, "", "GameFontHighlightSmall", "TOPLEFT", p.title, "BOTTOMLEFT", 0, -6); p.chips:SetWidth(wide)
+    p.players = label(p, "", "GameFontHighlight", "TOPLEFT", p.chips, "BOTTOMLEFT", 0, -8); p.players:SetWidth(wide)
+    p.up = label(p, "", "GameFontHighlightSmall", "TOPLEFT", p.players, "BOTTOMLEFT", 0, -3); p.up:SetWidth(wide)
+    p.desc = label(p, "", "GameFontHighlightSmall", "TOPLEFT", p.up, "BOTTOMLEFT", 0, -8); p.desc:SetWidth(wide)
+    local function section(name, anchor)
+        local h = label(p, name, "GameFontNormal", "TOPLEFT", anchor, "BOTTOMLEFT", 0, -12)
+        local b = label(p, "", "GameFontHighlightSmall", "TOPLEFT", h, "BOTTOMLEFT", 0, -4)
+        b:SetWidth(wide)
+        return h, b
+    end
+    p.rulesH, p.rules = section("House rules", p.desc)
+    p.whoH, p.who = section("Who's on", p.rules)
+    p.modsH, p.mods = section("Mods", p.who)
+    p.why = label(p, "", "GameFontHighlightSmall", "BOTTOMLEFT", 22, 74); p.why:SetWidth(wide)
+    p.info = label(p, "", "GameFontHighlightSmall", "BOTTOMLEFT", 22, 50); p.info:SetWidth(wide)
+    p.join = button(p, "Join", 150, function() L.PreviewJoin() end, "BOTTOMLEFT", 20, 16)
+    if W.Style then W.Style.SetKind(p.join, "primary") end
+    p.copyBtn = button(p, "Copy link", 90, function()
+        if L.selected then copy(L.RowLink(L.selected)) end
+    end, "BOTTOMRIGHT", -20, 16)
+    p:SetScript("OnShow", function() win:ClearAllPoints(); win:SetPoint("CENTER", -PANEL_W / 2, 0) end)
+    p:SetScript("OnHide", function() win:ClearAllPoints(); win:SetPoint("CENTER") end)
+    p:Hide()
+    win.panel = p
+    return p
+end
+
+function L.panelInfo(text) if win and win.panel then win.panel.info:SetText(text or "") end end
+
+function L.ShowPreview(r)
+    if not win then return end
+    local p = win.panel or buildPanel()
+    local t = L.PreviewTexts(r, L.detail)
+    p.title:SetText(t.title)
+    p.chips:SetText(t.chips)
+    p.players:SetText(t.players)
+    p.up:SetText(t.up)
+    p.desc:SetText(t.desc)
+    p.rules:SetText(t.rules)
+    p.who:SetText(t.who)
+    p.mods:SetText(t.mods)
+    p.why:SetText(t.why ~= "" and ((t.verdict == "launcher" and "|cfff0d389" or "") .. t.why .. (t.verdict == "launcher" and "|r" or "")) or "")
+    p.join:SetText(t.join)
+    if t.join == "Offline" then p.join:Disable() else p.join:Enable() end
+    p.info:SetText("")
+    p:Show()
 end
 
 function W.ToggleLeyline()
@@ -628,3 +973,4 @@ SlashCmdList["WULEYLINE"] = function() W.ToggleLeyline() end
 
 W.Leyline = L
 L.Window, L.PUBLIC_BASE, L.PREFIX, L.HOP_WAIT = function() return win end, PUBLIC_BASE, PREFIX, HOP_WAIT
+L.ROWS, L.PANEL_W = ROWS, PANEL_W

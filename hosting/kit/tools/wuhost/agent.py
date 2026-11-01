@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import random
+import re
 import socket
 import sys
 import time
@@ -39,6 +40,19 @@ from wunet.mux import CLOSE, DATA, OPEN
 
 log = logging.getLogger("wu-agent")
 VERSION = "wu-agent/1"
+WHO_MAX = 50              # names on the realm list at most (host.json "share_names", off by default)
+CHAR_NAME_RE = re.compile(r"^[A-Za-z\u00c0-\u024f]{2,12}$")
+
+
+def clean_who(names):
+    """Character names for the realm list: plain names only (2-12 letters), each once, at most WHO_MAX."""
+    out = []
+    for n in names if isinstance(names, list) else []:
+        if isinstance(n, str) and CHAR_NAME_RE.match(n) and n not in out:
+            out.append(n)
+        if len(out) >= WHO_MAX:
+            break
+    return out
 
 
 def read_json(path, default=None):
@@ -80,21 +94,117 @@ def herokey_salt():
 
 
 # ------------------------------------------------------------------------------ the realm's DB
+class _Kept:
+    """A shared connection handed out by RealmDB._conn during a dry run: close() leaves it open."""
+
+    def __init__(self, c):
+        self.c = c
+
+    def cursor(self):
+        return self.c.cursor()
+
+    def close(self):
+        pass
+
+
+def probe_auth(db, realm_sql):
+    """{core_hint, build, realm_name, can_write, accounts}: read-only facts about a server's login database."""
+    c = db._conn(db.AUTH)
+    try:
+        with c.cursor() as cur:
+            cur.execute(realm_sql, (db.realm_db_id,))
+            row = cur.fetchone()
+            cur.execute("SELECT COUNT(*) FROM account")
+            n = cur.fetchone()[0]
+            cur.execute("SHOW GRANTS FOR CURRENT_USER()")
+            grants = " ".join(str(r[0]) for r in cur.fetchall()).upper()
+        can = "ALL PRIVILEGES" in grants or ("INSERT" in grants and "UPDATE" in grants)
+        m = re.match(r"\s*(\d+)", str(row[0])) if row and row[0] is not None else None
+        return {"build": int(m.group(1)) if m else None,
+                "realm_name": str(row[1]) if row else None, "accounts": int(n or 0), "can_write": can}
+    finally:
+        c.close()
+
+
 class RealmDB:
     """acore_auth / acore_characters through PyMySQL (the tools image has it). Calls block; the
     agent runs them in a thread."""
 
-    def __init__(self, host, port, user, password, realm_db_id=1):
+    AUTH, CHARS = "acore_auth", "acore_characters"
+    dry_conn = None        # a dry run (dry_run()): every call shares one connection, rolled back at the end
+
+    def __init__(self, host, port, user, password, realm_db_id=1, auth=None, chars=None):
         self.args = dict(host=host, port=port, user=user, password=password, connect_timeout=5,
                          read_timeout=10, write_timeout=10, autocommit=True, charset="utf8mb4")
         self.realm_db_id = realm_db_id
+        if auth:   # an existing server whose databases have other names (setup.py join-network --auth-db)
+            self.AUTH = auth
+        if chars:
+            self.CHARS = chars
 
     def _conn(self, db):
+        if self.dry_conn is not None:
+            self.dry_conn.select_db(db)
+            return _Kept(self.dry_conn)
         import pymysql
         return pymysql.connect(database=db, **self.args)
 
+    def dry_run(self):
+        """A context manager: inside it every write lands in one transaction that is rolled back at the end (the Hero Key
+        self-test, wuhost/hktest.py). Nothing it does stays in the database."""
+        db = self
+
+        class _Dry:
+            def __enter__(self_):
+                import pymysql
+                args = dict(db.args, autocommit=False)
+                db.dry_conn = pymysql.connect(database=db.AUTH, **args)
+                db.dry_conn.begin()
+                return db
+
+            def __exit__(self_, *exc):
+                c, db.dry_conn = db.dry_conn, None
+                try:
+                    c.rollback()
+                finally:
+                    c.close()
+                return False
+        return _Dry()
+
+    def get_login(self, username):
+        """(salt, verifier) as 32 little-endian bytes in hex (the relay's form), or None: the self-test reads back what it
+        wrote."""
+        c = self._conn(self.AUTH)
+        try:
+            with c.cursor() as cur:
+                cur.execute("SELECT salt, verifier FROM account WHERE username = %s", (username,))
+                row = cur.fetchone()
+            return (bytes(row[0]).hex(), bytes(row[1]).hex()) if row else None
+        finally:
+            c.close()
+
+    def who(self, limit=50):
+        """Names of the characters online now, for the realm list (only when the host opted in, host.json
+        "share_names"): never a GM account's characters (any GM level on any realm, so hidden GMs stay hidden), never
+        bots. At most `limit`, sorted."""
+        c = self._conn(self.CHARS)
+        try:
+            with c.cursor() as cur:
+                cur.execute(f"SELECT c.name FROM characters c JOIN `{self.AUTH}`.account a ON a.id = c.account "
+                            f"LEFT JOIN `{self.AUTH}`.account_access aa ON aa.id = a.id AND aa.gmlevel > 0 "
+                            "WHERE c.online = 1 AND aa.id IS NULL AND a.username NOT LIKE 'RNDBOT%%' "
+                            "ORDER BY c.name LIMIT %s", (int(limit),))
+                return [str(r[0]) for r in cur.fetchall()]
+        finally:
+            c.close()
+
+    def probe(self):
+        """What the join-network check needs to know about an existing server: {core, build, realm_name, can_write}.
+        Read only (the write check is a GRANT lookup, never a write)."""
+        return probe_auth(self, "SELECT gamebuild, name FROM realmlist WHERE id = %s")
+
     def set_realm_address(self, name, address, port):
-        c = self._conn("acore_auth")
+        c = self._conn(self.AUTH)
         try:
             with c.cursor() as cur:
                 cur.execute("SELECT name, address, localAddress, port FROM realmlist WHERE id = %s", (self.realm_db_id,))
@@ -110,7 +220,7 @@ class RealmDB:
             c.close()
 
     def create_account(self, username, salt, verifier, gmlevel=0):
-        c = self._conn("acore_auth")
+        c = self._conn(self.AUTH)
         try:
             with c.cursor() as cur:
                 cur.execute("SELECT id FROM account WHERE username = %s", (username,))
@@ -128,7 +238,7 @@ class RealmDB:
     def set_login(self, username, salt, verifier):
         """Hero Key sign-in (wunet/herokey.py): a new SRP6 salt + verifier on an account this agent made for a
         Hero Key pseudonym. 'updated', or 'missing' (the host deleted it: the agent makes it again)."""
-        c = self._conn("acore_auth")
+        c = self._conn(self.AUTH)
         try:
             with c.cursor() as cur:
                 cur.execute("SELECT id FROM account WHERE username = %s", (username,))
@@ -144,7 +254,7 @@ class RealmDB:
         """Give an EXISTING account GM rights on this realm. Never makes an account or touches a
         password: the operator makes their own account (join page or server console) first.
         'missing' until it exists, then 'ok' / 'unchanged'."""
-        c = self._conn("acore_auth")
+        c = self._conn(self.AUTH)
         try:
             with c.cursor() as cur:
                 cur.execute("SELECT id FROM account WHERE username = %s", (username.upper(),))
@@ -162,13 +272,13 @@ class RealmDB:
             c.close()
 
     def status(self):
-        c = self._conn("acore_characters")
+        c = self._conn(self.CHARS)
         try:
             with c.cursor() as cur:
                 cur.execute("SELECT SUM(a.username NOT LIKE 'RNDBOT%%'), SUM(a.username LIKE 'RNDBOT%%') "
-                            "FROM characters c JOIN acore_auth.account a ON a.id = c.account WHERE c.online = 1")
+                            f"FROM characters c JOIN `{self.AUTH}`.account a ON a.id = c.account WHERE c.online = 1")
                 players, bots = cur.fetchone()
-                cur.execute("SELECT starttime FROM acore_auth.uptime WHERE realmid = %s ORDER BY starttime DESC LIMIT 1",
+                cur.execute(f"SELECT starttime FROM `{self.AUTH}`.uptime WHERE realmid = %s ORDER BY starttime DESC LIMIT 1",
                             (self.realm_db_id,))
                 row = cur.fetchone()
             return {"players": int(players or 0), "bots": int(bots or 0),
@@ -224,6 +334,7 @@ class Agent:
         self.hk_gen = {}          # account -> generation of its one-time login (a newer sign-in wins)
         self.hk_lock = asyncio.Lock()
         self.hk_tasks = set()
+        self.arrivals = []        # times players came in through the relay (a login stream opened): the host's Network tab
 
     def _mtime(self):
         try:
@@ -252,10 +363,14 @@ class Agent:
         return hashlib.sha256(hs.encode()).hexdigest() if hs else None
 
     def herokey_on(self):
-        """Hero Key sign-in: the host turned it on (`setup.py herokey on`), the site's key is pinned, and this is a
-        realm whose accounts the agent keeps (not the operator's own realm, which has its own sign-in)."""
-        return (self.cfg.get("herokey") is True and self.db is not None and not self.official()
-                and bool(herokey.pinned_keys()))
+        """Hero Key sign-in: the host turned it on (`setup.py herokey on`), the site's key is pinned, and the agent can
+        reach the accounts: a kit realm, or a linked server that gave it its login database (`setup.py join-network`).
+        Never the operator's own realm (host.json "official"), which has its own sign-in."""
+        return (self.cfg.get("herokey") is True and self.db is not None and self.cfg.get("official") is not True
+                and bool(self.site_keys()))
+
+    def site_keys(self):
+        return herokey.pinned_keys(state_dir=self.state_dir)
 
     def save_state(self, **kw):
         self.relay_state.update(kw, updated=int(time.time()))
@@ -361,6 +476,8 @@ class Agent:
                         port = mux.parse_open(payload)
                     except ValueError:
                         continue
+                    if port == 3724:
+                        self.note_arrival()
                     if port not in self.services:
                         self.ws.send_nowait(mux.pack(CLOSE, sid))
                         continue
@@ -476,6 +593,16 @@ class Agent:
         if self.ws and not self.ws.closed:
             self.ws.send_nowait(json.dumps(res))
 
+    def note_arrival(self, now=None):
+        now = time.time() if now is None else now
+        self.arrivals = [t for t in self.arrivals if now - t < 86400][-2000:] + [now]
+
+    def arrival_counts(self, now=None):
+        """How many logins came in through the relay in the last hour and day (no names, no addresses)."""
+        now = time.time() if now is None else now
+        return {"hour": sum(1 for t in self.arrivals if now - t < 3600),
+                "day": sum(1 for t in self.arrivals if now - t < 86400)}
+
     # -------------------------------------------------------------- Hero Key sign-in
     def hk_map_path(self):
         return os.path.join(self.state_dir, "herokey-accounts.json")
@@ -487,7 +614,7 @@ class Agent:
         if not self.herokey_on():
             return {"ok": False, "error": "off"}
         claims, why = herokey.check(doc.get("assertion"), doc.get("sig"), self.cfg["realm_id"],
-                                    herokey.pinned_keys(), self.hk_seen)
+                                    self.site_keys(), self.hk_seen)
         if why:
             log.info("Hero Key sign-in refused: %s", why)
             return {"ok": False, "error": why}
@@ -571,6 +698,11 @@ class Agent:
                 st.update(await asyncio.to_thread(self.db.status))
             except Exception as e:
                 log.debug("status from db: %s", e)
+            if self.cfg.get("share_names") is True and hasattr(self.db, "who"):
+                try:   # only when the host opted in; GM and bot characters never (RealmDB.who)
+                    st["who"] = clean_who(await asyncio.to_thread(self.db.who, WHO_MAX))
+                except Exception as e:
+                    log.debug("who from db: %s", e)
         elif self.cfg.get("status_url"):
             try:
                 st.update(await asyncio.to_thread(self.status_from_url, self.cfg["status_url"]))
@@ -655,6 +787,10 @@ class Agent:
                 "ts": int(time.time()), "relay": (self.welcome or {}).get("address"),
                 "record": self.cfg.get("record") or {"name": self.cfg["name"]},
                 "status": {k: status.get(k) for k in ("online", "players", "bots", "uptime_s")}}
+        if isinstance(status.get("who"), list):
+            beat["status"]["who"] = status["who"][:WHO_MAX]
+        if self.herokey_on():
+            beat["herokey"] = True   # the realm list's "Hero Key sign-in" badge (the relay also knows it from the hello)
         if self.cfg.get("claim"):
             beat["claim"] = self.cfg["claim"]
         return {"beat": beat, "sig": keys.sign_doc(self.secret, beat, keys.CTX_HEARTBEAT)}
@@ -664,9 +800,12 @@ class Agent:
             beat_now = self.cfg.get("visibility") == "public" and self.welcome and self.ws and not self.ws.closed
             if beat_now:
                 try:
-                    body = json.dumps(self.beat(await self.status())).encode()
+                    status = await self.status()
+                    body = json.dumps(self.beat(status)).encode()
                     code, reply = await asyncio.to_thread(self.http_post, self.cfg["listing_url"], body)
-                    self.save_state(listing_status=code, listing_reply=reply[:300].decode("utf-8", "replace"))
+                    self.save_state(listing_status=code, listing_reply=reply[:300].decode("utf-8", "replace"),
+                                    players=status.get("players"), who=status.get("who"),
+                                    herokey=self.herokey_on(), arrivals=self.arrival_counts())
                     if code != 200:
                         log.warning("listing answered %s: %s", code, reply[:200])
                 except Exception as e:

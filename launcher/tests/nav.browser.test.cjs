@@ -77,7 +77,7 @@ test('the side menu matches the website, with the same line icons', async () => 
   assert.deepEqual(items, [['play', 'Home'], ['realms', 'Realms'], ['mods', 'Mods'], ['host', 'Host'], ['forum', 'Forum'], ['news', 'News']]);
   assert.equal(await page.locator('aside nav .nav svg').count(), 6, 'each with its line icon');
   const foot = await page.$$eval('.side-foot .nav:not([hidden])', (b) => b.map((x) => x.dataset.page));
-  assert.deepEqual(foot, ['settings', 'help']);
+  assert.deepEqual(foot, ['settings', 'agents', 'help']);
   assert.equal(await page.textContent('.side-label'), 'YOUR REALMS');
   assert.equal(await page.locator('[data-link="support"]:visible').count(), 0, 'support buttons stay hidden');
   // Your realms: the crystal for the official realm and the gold client version

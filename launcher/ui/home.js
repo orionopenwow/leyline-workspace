@@ -82,7 +82,7 @@
         run: (b) => { App.setMode("browser"); b.textContent = "Browser play is on"; b.disabled = true; } });
     }
     // (d) hosting
-    out.push({ key: "host", kicker: "Host", title: "Host an always-on realm", line: "Vanilla+ or your own rules, on the Leyline network.",
+    out.push({ key: "host", kicker: "Host", title: "Host a realm, up 24/7", line: "Vanilla+ or your own rules, on the Leyline network.",
       chips: hostChips, photo: true, side: hostSteps, cta: "Start hosting", run: () => go("host") });
     // (e) your Den (docs/DEN.md): the Host page with Make my Den picked, as the play bar's My Den does when there is none
     // TODO(owner): the Den slide's kicker, title, line and chips, his words.
@@ -92,7 +92,7 @@
     // (f) a Workshop mod: the first packaged one, its screenshot in front of three more
     const cat = App.catalog();
     const p = cat.projects.find((x) => x.source === "packaged");
-    if (p) out.push({ key: "mod", kicker: "Workshop spotlight", title: p.name, line: firstSentence(p.description) || "A mod from the Workshop.",
+    if (p) out.push({ key: "mod", kicker: "Mod spotlight", title: p.name, line: firstSentence(p.description) || "A mod from the mods list.",
       chips: modChips, ill: () => shotStack(p), side: () => moreMods(p), cta: "See it in Discover", run: () => go("mods", "discover") });
     return out;
   }
@@ -390,7 +390,7 @@
   // the host slide's right side (owner 2026-10-30: "make this a small infographic for setup guide"): four steps
   function hostSteps() {
     return stepsCard("Set up in four steps", [["Pick a ruleset", "Vanilla+, Dalaran hangout, a Den or your own"],
-      ["Press Start", "The host pack runs it on this PC"], ["Listed in a minute", "The relay: no ports, your address hidden"],
+      ["Press Start", "The Host pack runs it on this PC"], ["Listed in a minute", "No ports to open, your address stays hidden"],
       ["Invite friends", "Share the link, or go public"]]);
   }
   function stepsCard(title, steps) {
@@ -474,7 +474,7 @@
     const list = othersOf(p).slice(0, 5);
     if (!list.length) return null;
     const box = el("div", "hs-side hs-more");
-    box.append(sideHead("More in the Workshop"));
+    box.append(sideHead("More mods"));
     for (const o of list) {
       const row = el("button", "hs-wm");
       row.type = "button";

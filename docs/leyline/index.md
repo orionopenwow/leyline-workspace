@@ -28,6 +28,7 @@ Our own realm is Wrath Unleashed, the official realm, which gets our client addi
 | Web armory, Modes hub and share links | Live | [Play](play.md#share-links) |
 | These docs at /wrath/docs | Live | this page |
 | Host pack and the `leyline host` command | Live | [Hosting](hosting.md) |
+| Keeping a realm up 24/7 (PC, sleep, power cuts, renting a server) | Live | [Keep your realm up 24/7](always-on.md) |
 | The relay (tunnels, join pages, listing) | Live | [Hosting](hosting.md#the-relay) |
 | How the network fits together, for players | Live | [The network](network.md) |
 | Discord bridge | Built, off until the owner sets it up | [Hosting](hosting.md#discord-bridge) |
@@ -49,7 +50,7 @@ Our own realm is Wrath Unleashed, the official realm, which gets our client addi
 - New player: [Play](play.md), then [Commands](commands.md).
 - Mod maker: [Mod format](mods.md), then [Publishing](publishing.md).
 - New to the network: [How the Leyline network works](network.md).
-- Host: [Hosting](hosting.md).
+- Host: [Hosting](hosting.md), then [Keep your realm up 24/7](always-on.md).
 - Running another server: [Other servers](cross-server.md) and [Working together](unite.md).
 - Accounts and sign-in: [Hero Key](hero-key.md).
 

@@ -406,6 +406,10 @@
 // (the wasm download) until the realm answered, at most 8 s. No join page, nothing kept in localStorage. A realm
 // that doesn't take it (or any failure) falls back to the login this browser keeps, else the join page.
 // "Use another account" turns it off for that realm in this browser (wu.leyline.sso.off.<id>).
+// The fast hop (wrath-page.js fastHop, the in-game realm browser's Join): the old page already redeemed an assertion
+// and kept its one-time login in this tab's sessionStorage (wu.leyline.pre.<id>, {user, pass, at, ttl}); while it is
+// fresh it is used as is: no redeem, no wait. The wasm download no longer waits for a redeem either: it runs at once
+// and only its answer is held until the realm took the assertion.
 // window.__wuHop.status(): what this page did (the hop, the rewritten sockets, the hop watcher), for live tests;
 // never a password.
 (function (root) {
@@ -413,6 +417,7 @@
   var ID = /^[a-z2-7]{16}$/;
   var KEY = 'wu.leyline.login.';
   var SSO_OFF = 'wu.leyline.sso.off.';
+  var PRE = 'wu.leyline.pre.';
   var SSO_WAIT = 8000;
   var USER = /^[A-Za-z0-9]{3,16}$/, PASS = /^[\x21-\x7e]{1,16}$/;
 
@@ -491,7 +496,18 @@
     });
   }
 
-  /** Hold the client's start (its wasm download) until `pending` settles. */
+  /** The one-time login the fast hop redeemed before the reload (this tab only), while fresh: {user, pass}, else null. */
+  function preLogin(storage, id, nowMs) {
+    try {
+      var v = JSON.parse(storage.getItem(PRE + id) || 'null');
+      if (!v || !/^HK[A-Z2-7]{14}$/.test(v.user || '') || !PASS.test(v.pass || '')) return null;
+      var ttl = Math.min(Number(v.ttl) || 0, 900), at = Number(v.at) || 0;
+      if (!(at > 0) || nowMs - at < 0 || nowMs - at > (ttl - 15) * 1000) { storage.removeItem(PRE + id); return null; }
+      return { user: v.user, pass: v.pass };
+    } catch (e) { return null; }
+  }
+
+  /** Hold the client's start (its wasm download's answer) until `pending` settles; the download itself starts at once. */
   function holdStart(win, pending) {
     var orig = win.fetch;
     if (typeof orig !== 'function') return;
@@ -502,8 +518,8 @@
         path = new URL(String(url), win.location.href).pathname;
       } catch (e) { /* not a URL */ }
       if (!/\/wenilla_bg\.wasm$/.test(path)) return orig.apply(this, arguments);
-      var self = this, args = arguments;
-      return pending.then(function () { return orig.apply(self, args); });
+      var got = orig.apply(this, arguments);
+      return Promise.all([got, pending]).then(function (r) { return r[0]; });
     };
   }
 
@@ -514,7 +530,15 @@
     if (!base) { console.warn('leyline hop: no usable relay address; staying put'); return null; }
     var home = env.hop_home === '1' && USER.test(env.user || '') && PASS.test(env.pass || '');
     var login = null, sso = null, pending = null, declined = false;
+    var pre = null;
     if (!home) {
+      try { pre = preLogin(win.sessionStorage, env.hop, Date.now()); } catch (e) { pre = null; }
+    }
+    if (pre) {
+      delete env.user; delete env.pass; delete env.hop_sso;
+      env.user = pre.user; env.pass = pre.pass;   // redeemed already, by the page before the reload
+      sso = 'pre';
+    } else if (!home) {
       var url = null;
       if (env.hop_sso) {
         try { declined = ssoDeclined(win.localStorage, env.hop); } catch (e) { declined = false; }
@@ -563,7 +587,7 @@
       Hop.__wuHop = true;
       win.WebSocket = Hop;
     }
-    return { id: env.hop, name: String(env.hop_name || ''), base: base, login: !!login || home || !!pending, home: home,
+    return { id: env.hop, name: String(env.hop_name || ''), base: base, login: !!login || home || !!pending || !!pre, home: home,
              sso: sso, ssoPending: pending, ssoOffer: declined };
   }
 
@@ -584,6 +608,7 @@
 
   var api = { KEY: KEY, SSO_OFF: SSO_OFF, hopBase: hopBase, rewrite: rewrite, savedLogin: savedLogin, saveLogin: saveLogin,
               forgetLogin: forgetLogin, ssoDeclined: ssoDeclined, setSso: setSso, ssoRedeem: ssoRedeem, apply: apply,
+              PRE: PRE, preLogin: preLogin,
               state: null, sockets: [], watch: null, status: status };
   root.__wuHop = api;
   try { if (root.location) api.state = apply(root); } catch (e) { console.warn('wrath-early.js leyline hop', e); }

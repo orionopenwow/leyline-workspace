@@ -284,7 +284,7 @@ local function inviteCommand(player)
     if not isOwner(player) then return say(player, "Only the Den's owner hands out the invite link: ask them for it.") end
     local link = inviteLink()
     if not link then
-        return say(player, "Your invite link is on the launcher's Host page (Copy invite link), and in your host kit "
+        return say(player, "Your invite link is on the launcher's Host page (Copy invite link), and in your Host pack "
             .. "folder: state\\invite.txt. Anyone with it can join this Den.")
     end
     say(player, "Give a friend this link: |cffffff00" .. link .. "|r")
@@ -475,7 +475,7 @@ local function saveCommand(player, name)
     if not isOwner(player) then return end
     local ok, n = Files.write(name)
     if ok then
-        say(player, string.format("Saved to a file too (%d props): state\\dens\\%s.den.json in your host kit folder. The "
+        say(player, string.format("Saved to a file too (%d props): state\\dens\\%s.den.json in your Host pack folder. The "
             .. "launcher's Host page (Saved Dens) opens it or saves a copy.", n, name))
     else
         say(player, "Couldn't save the file (" .. tostring(n) .. "); the layout is saved in the realm.")

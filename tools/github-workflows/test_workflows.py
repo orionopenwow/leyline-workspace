@@ -184,6 +184,43 @@ class Workflows(unittest.TestCase):
         upd = (REPO / "launcher" / "src-tauri" / "src" / "update.rs").read_text()
         self.assertIn('"https://api.github.com/repos/orionopenwow/Leyline/releases', upd)
 
+    def test_launcher_every_ship_is_a_release_for_everyone(self):
+        # owner 31 Oct: "any update to this launcher from now on is auto queued for restart update for everyone"
+        text, doc = load("leyline-launcher.yml")
+        jobs = doc["jobs"]
+        self.assertEqual(doc["on"]["push"]["branches"], ["main"])
+        self.assertNotIn("paths", doc["on"]["push"], "a paths filter can skip tag pushes")
+        plan = jobs["plan"]
+        self.assertIn("refs/heads/main", plan["if"])
+        self.assertEqual(plan["steps"][0]["with"]["fetch-depth"], 0, "the plan reads the launcher-v tags")
+        self.assertIn("release_version.py plan", plan["steps"][1]["run"])
+        self.assertTrue((REPO / "launcher" / "scripts" / "release_version.py").is_file(), "exported with launcher/")
+        cr = jobs["create-release"]
+        self.assertEqual(cr["needs"], ["core-tests", "plan"])
+        self.assertIn("needs.plan.outputs.ship == 'true'", cr["if"])
+        self.assertIn("startsWith(github.ref, 'refs/tags/launcher-v')", cr["if"])
+        run = cr["steps"][1]["run"]
+        # a ship: never a pre-release, tagged at the pushed commit; only a hand-pushed tag with "-" is one
+        ship = run.split("else", 1)[1].split("fi", 1)[0]
+        self.assertNotIn("prerelease", ship)
+        self.assertIn('--target "$GITHUB_SHA"', ship)
+        self.assertIn('*-*) pre="--prerelease"', run)
+        self.assertIn("latest.json", run, "a release already finished is not built twice")
+        for j in ("release", "release-macos"):
+            self.assertEqual(jobs[j]["if"], "needs.create-release.outputs.skip != 'true'", j)
+            names = [s.get("name", "") for s in jobs[j]["steps"]]
+            st = jobs[j]["steps"][names.index("This ship's version")]
+            self.assertIn("release_version.py stamp", st["run"])
+            self.assertLess(names.index("This ship's version"), names.index("Install the Tauri CLI"), "stamped before the build")
+            act = [s for s in jobs[j]["steps"] if s.get("uses", "").startswith("tauri-apps/tauri-action")][0]
+            self.assertEqual(act["with"]["includeUpdaterJson"], "${{ needs.create-release.outputs.signed == 'true' }}")
+        self.assertIn("needs.plan.outputs.ship == 'true'", jobs["portable"]["if"])
+        self.assertIn("release_version.py stamp", "\n".join(s.get("run", "") for s in jobs["portable"]["steps"]))
+        # one release run at a time; pull requests apart
+        self.assertFalse(doc["concurrency"]["cancel-in-progress"])
+        self.assertIn("'release'", doc["concurrency"]["group"])
+        self.assertNotRegex(text, r"never downloads")
+
 
 if __name__ == "__main__":
     unittest.main()

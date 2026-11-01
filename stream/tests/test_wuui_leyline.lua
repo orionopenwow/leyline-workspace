@@ -350,13 +350,13 @@ check("this row: You're here in the browser game (a page)", (function()
     WUUI_GAMEFOLDER = nil
     return t == "You're here" end)())
 L.Refresh()
-check("this row: Join through the relay in the desktop client (listed, live, no page)",
-    shown()[1].join:GetText() == "Join through the relay")
+check("this row: Join by link in the desktop client (listed, live, no page)",
+    shown()[1].join:GetText() == "Join by link")
 shown()[1].copyBtn:Fire("OnClick")
 check("desktop: Copy link gives the relay link", win.copy:GetText() == "https://play.openvanilla.app/r/kkkkkkkkkkkkkkkk")
 list({ "B:3:0", "R:this:1:4:0:main:Wrath Unleashed", "M:this:-:0:-:12340:-:-:-:",
     "R:kkkkkkkkkkkkkkkk:0:0:0:dalaran:Wrath Unleashed", "M:kkkkkkkkkkkkkkkk:N:40:-:12340:-:-:-:hangout", "E:3" })
-check("listing offline: no Join through the relay", #L.realms == 1 and shown()[1].join:GetText() == "You're here")
+check("listing offline: no Join by link", #L.realms == 1 and shown()[1].join:GetText() == "You're here")
 list({ "B:3:0", "R:this:1:4:0:main:Wrath Unleashed", "M:this:-:0:-:12340:-:-:-:", "S:mmmmmmmmmmmmmmmm:1",
     "R:kkkkkkkkkkkkkkkk:1:4:0:dalaran:Wrath Unleashed", "M:kkkkkkkkkkkkkkkk:N:40:-:12340:-:-:-:hangout", "E:3" })
 check("the realm's S line wins: only that id is this realm (a same-name realm elsewhere stays)",

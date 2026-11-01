@@ -51,6 +51,8 @@ for f in namecheck.py blocklist.json hq_words.py; do
 done
 had_forum=""
 if [ -f "$WU/portal/forum.py" ]; then cp -p "$WU/portal/forum.py" "$BK/forum.py"; had_forum=1; fi
+rm -f "$BK/forum_discord.py"
+[ ! -f "$WU/portal/forum_discord.py" ] || cp -p "$WU/portal/forum_discord.py" "$BK/forum_discord.py"
 had_duels=""
 if [ -f "$WU/portal/duels.py" ]; then cp -p "$WU/portal/duels.py" "$BK/duels.py"; had_duels=1; fi
 had_profiles=""
@@ -93,6 +95,7 @@ put_back() {
     case " $had_names " in *" $f "*) cp -p "$BK/$f" "$WU/portal/$f" ;; *) rm -f "$WU/portal/$f" ;; esac
   done
   if [ -n "$had_forum" ]; then cp -p "$BK/forum.py" "$WU/portal/forum.py"; else rm -f "$WU/portal/forum.py"; fi
+  if [ -f "$BK/forum_discord.py" ]; then cp -p "$BK/forum_discord.py" "$WU/portal/forum_discord.py"; else rm -f "$WU/portal/forum_discord.py"; fi
   if [ -n "$had_duels" ]; then cp -p "$BK/duels.py" "$WU/portal/duels.py"; else rm -f "$WU/portal/duels.py"; fi
   if [ -n "$had_profiles" ]; then cp -p "$BK/profiles.py" "$WU/portal/profiles.py"; else rm -f "$WU/portal/profiles.py"; fi
   if [ -n "$had_network" ]; then cp -p "$BK/network.py" "$WU/portal/network.py"; else rm -f "$WU/portal/network.py"; fi
@@ -182,6 +185,9 @@ fi
 if [ -f hq_words.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' hq_words.py && install -m 644 hq_words.py "$WU/portal/hq_words.py"; fi
 # the Leyline forum (/wrath/leyline/forum, /wrath/forum/api): optional; its store is $WU/portal-data/forum.sqlite3
 if [ -f forum.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' forum.py && install -m 644 forum.py "$WU/portal/forum.py"; fi
+# the forum's Discord link (stream/forum_discord.py): loaded by forum.py, OFF until portal.env has WU_FORUM_DISCORD=1, the
+# bot token and the channel ids (docs/FORUM.md, "The Discord link"); its tables live in forum.sqlite3
+if [ -f forum.py ] && [ -f forum_discord.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' forum_discord.py && install -m 644 forum_discord.py "$WU/portal/forum_discord.py"; fi
 # the duel leaderboards (/wrath/leaderboards, /wrath/api/leaderboards): optional; it reads $WU/portal/duels/, which
 # duels-export.py fills (realm/serverpass.sh step 1d)
 if [ -f duels.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' duels.py && install -m 644 duels.py "$WU/portal/duels.py"; fi

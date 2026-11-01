@@ -98,6 +98,16 @@ What each party sees:
 - Ban a player's pseudonym: add its `sub` to host.json `"herokey_banned": [...]`.
 - Cap the login window: host.json `"herokey_login_ttl_max"` (seconds, at most 900).
 - Works on every core the kit supports (`set_login` in `agent.RealmDB` and `coredb.py`).
+- An existing server (2026-10-31, `docs/leyline/join-network.md`): `setup.py join-network` (or `join-network.sh`)
+  for AzerothCore and TrinityCore servers of the Wrath client. It links the server, gives the agent the login database
+  (`state/link-db.env`, 0600: `DB_*`, `WU_CORE`, `WU_DB_AUTH`, `WU_DB_CHARS`, `WU_EXPANSION=2`), checks the database
+  (reachable, realm list build 12340, INSERT/UPDATE granted), pins the website's key and turns `herokey` on. A linked
+  agent takes Hero Key sign-ins when it has that database (`Agent.herokey_on`); the operator's own realm never does.
+- Pinning without a kit release: `setup.py herokey pin` fetches `/wrath/leyline/herokey.json` once over HTTPS and
+  writes `state/herokey-site-keys.json` (`herokey.pinned_keys(state_dir=...)` reads it beside `SITE_KEYS`). Trust on
+  first use: the pin is only as good as that one HTTPS fetch.
+- Test Hero Key sign-in (`wuhost/hktest.py`; the launcher's Network tab, `join-network.sh test`): a dry run of every
+  step, the account made inside one database transaction that is rolled back.
 
 ## The flag
 

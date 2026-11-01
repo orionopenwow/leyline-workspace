@@ -127,6 +127,12 @@ STEPS = {
     "relay": ("hosting/relay/Deploy relay.bat", "Beacons relay (relay.openvanilla.app)", False),
     "hangout": ("hosting/hangout/Deploy Dalaran hangout.bat", "Wrath Unleashed on Leyline (the realm as a Beacon)", False),
     "hangout-off": ("hosting/hangout/Take Dalaran hangout off Leyline.bat", "Take Wrath Unleashed off Leyline", False),
+    # The Builders' Realm (owner 2026-10-31: an official realm just for building, open to approved builders;
+    # docs/BUILD-REALM.md): a second small world server beside the main realm, which is never restarted.
+    "build-realm-check": ("hosting/build-realm/Builders realm - check.bat", "Builders' Realm: memory, disk and what turning it on would do (read-only)", False),
+    "build-realm-on": ("hosting/build-realm/Builders realm - on.bat", "Builders' Realm on: backup, its own databases and servers, self-check, on Leyline (rollback on failure)", False),
+    "build-realm-off": ("hosting/build-realm/Builders realm - off.bat", "Builders' Realm off: off Leyline, a 5-minute countdown for builders online, stopped (data kept)", False),
+    "build-realm-saves": ("hosting/build-realm/Builders realm - saves.bat", "Builders' Realm saves: copy them to this PC, send the files in its send folder", False),
     "leyline": ("tools/leyline-repo/Update Leyline repo.bat", "Leyline repo: copy and push (github.com/orionopenwow/Leyline)", False),
     "mods":  ("mods/Put mods on Wrath.bat", "Mods catalog: realm (live reload), streamed addons and /wrath/mods", False),
     "hostkit": ("hosting/kit/Publish host kit.bat", "Host kit download (checked zip on the public Leyline release)", False),
@@ -174,7 +180,7 @@ STEPS = {
 }
 # Steps that change nothing in production. With "Ask before deploys" on (control/autopilot.json "confirm"),
 # Autopilot runs only these by itself; anything else waits for "Launch all".
-READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
+READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}
 

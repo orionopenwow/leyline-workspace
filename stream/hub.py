@@ -932,7 +932,13 @@ class Hub:
                 f'{NAV_ICONS["download"]}</svg>Download</a>')
         # A top bar like a website (owner 2026-10-31: "fit for the website"): the brand, the launcher's pages, Download and
         # the account. On a phone Menu opens the same items as a sheet (no script needed).
-        return (f'<header class="hb-top"><a class="hb-brand" href="{home}" aria-label="Leyline Launcher">{self._wordmark()}</a>'
+        # On a wide screen the header is the launcher's side menu (owner 2026-10-30: "make all the tools come from the side by
+        # default and can collapse if wanted"; 2026-10-31: keep the side menu): open by default, the arrow folds it to an
+        # icon rail (no script needed; HUB_JS remembers the choice). On a phone it stays the top bar with the Menu sheet.
+        return ('<input type="checkbox" id="hb-side" class="hb-side-t" aria-label="Fold the side menu">'
+                f'<header class="hb-top"><a class="hb-brand" href="{home}" aria-label="Leyline Launcher">{self._wordmark()}</a>'
+                '<label for="hb-side" class="hb-side-b" title="Fold or open the side menu" aria-hidden="true">'
+                '<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></label>'
                 '<input type="checkbox" id="hb-menu" class="hb-menu-t" aria-label="Menu">'
                 '<label for="hb-menu" class="hb-menu-b" aria-hidden="true">Menu</label>'
                 f'<nav class="hb-nav" aria-label="Leyline">{"".join(item(*m) for m in main)}{drop}{extra}'
@@ -949,15 +955,15 @@ class Hub:
         top = self._header(ACTIVE.get(path.split("?")[0], "mods" if path.startswith(BASE + "/p/") else "") if active is None else active)
         sub = "" if (front or front_on()) else (f'<nav class="hb-sub" aria-label="Hub">'
                + "".join(f'<a href="{BASE}{h}"' + (' aria-current="page" class="on"' if path == BASE + h else "") + f">{t}</a>"
-                         for h, t in (("", "Hub"), ("/realms", "Realms"), ("/modes", "Modes"), ("/catalog", "Catalog"), ("/gallery", "Gallery"),
-                                      ("/news", "News"), ("/creators", "Creators"), ("/beacon", "Host a Beacon"),
+                         for h, t in (("", "Hub"), ("/realms", "Realms"), ("/modes", "Modes"), ("/catalog", "Mods"), ("/gallery", "Gallery"),
+                                      ("/news", "News"), ("/creators", "Creators"), ("/beacon", "Host a realm"),
                                       ("/submit", "Submit a mod")))
                + "</nav>")
         flag = '<p class="hb-flag">Preview: this page is hidden while it is being built.</p>' if not front_on() else ""
         repo = self.portal("LEYLINE_REPO") or "https://github.com/orionopenwow/Leyline"
         discord = self.portal("DISCORD_URL") or ""
         foot_links = [("Docs", "/wrath/docs"), ("Download", dl), ("Forum", FORUM), ("Status", f"{home}#status"),
-                      ("Catalog", f"{BASE}/catalog"), ("Creators", f"{BASE}/creators"), ("Submit a mod", f"{BASE}/submit")]
+                      ("Mods", f"{BASE}/catalog"), ("Creators", f"{BASE}/creators"), ("Submit a mod", f"{BASE}/submit")]
         social = [("GitHub", repo)]
         hs = self.health_state()
         health = (f'<a class="hb-health {hs}" href="{home}#status"><span class="hb-hdot" aria-hidden="true"></span>'
@@ -975,7 +981,7 @@ class Hub:
         meta = ('<meta name="description" content="Leyline: one launcher for your own game clients and every realm, '
                 'with mods, addons, realm scripts and tools.">')
         css = ((self.portal("LOOK_VARS") or LOOK_FALLBACK) + SITE_TOKENS_CSS + (self.portal("SPIN_CSS") or "") + HUB_CSS + SITE_CSS
-               + DARK_ISLANDS + self._backdrop() + css)
+               + SIDE_CSS + DARK_ISLANDS + self._backdrop() + css)
         return (f'<!doctype html><html lang="en" data-look="leyline"><head><meta charset="utf-8">'
                 f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light">'
                 f'<title>{e(title)}</title>{meta}{robots}<style>{css}</style></head>'
@@ -995,7 +1001,7 @@ class Hub:
         if not ok:
             return ""
         # a fixed layer over the page's own area (right of the side menu), so the picture is centred with the hero
-        return ('body.hb::before{content:"";position:fixed;top:0;bottom:0;right:0;left:0;z-index:-1;pointer-events:none;'
+        return ('body.hb::before{content:"";position:fixed;top:0;bottom:0;right:0;left:var(--hb-side,0px);z-index:-1;pointer-events:none;'
                 'background:linear-gradient(180deg,rgba(11,13,20,.46),rgba(11,13,20,.74) 80%),'
                 f'url(/wrath/art/{BACKDROP}) center top/cover no-repeat;transition:left .2s ease}}'
                 'html{background:#0b0d14}body.hb{background:transparent}'
@@ -1053,7 +1059,7 @@ class Hub:
             pill("Realm network", net.network_line(t), None, BASE + "/realms")
             pill("Relay", "", bool(ok))
         items = self.items()
-        pill("Mod catalog", f"{len(items)} items", None, BASE + "/catalog")
+        pill("Mods", f"{len(items)} items", None, BASE + "/catalog")
         state = ("ok" if all(oks) else "bad" if not any(oks) else "warn") if oks else ""
         self._health = (time.monotonic(), state)
         sum_word = {"ok": "All systems normal", "warn": "Some systems are down", "bad": "Systems are down"}.get(state, "Live now")
@@ -1302,7 +1308,7 @@ class Hub:
             cores.append(f'<li class="hb-sw-core{"" if live else " soon"}" data-core="{cid}" data-status="{status}" title="{e(line)}">'
                          f'<b>{e(name)}</b><span>{"One click" if live else "Coming"}</span></li>')
         cores.append(f'<li class="hb-sw-core own" data-core="own" data-status="own" title="{e(HOST_OWN[1])}">'
-                     f'<b>{e(HOST_OWN[0])}</b><span>Relay agent</span></li>')
+                     f'<b>{e(HOST_OWN[0])}</b><span>Small helper</span></li>')
         return ('<div class="hb-sw" role="group" aria-label="The host pack: your realm\'s console">'
                 f'<div class="hb-sw-top">{self._crest()}<div><p class="hb-sw-k">The host pack</p><p class="hb-sw-t">Your realm console</p></div>'
                 '<p class="hb-sw-run"><span aria-hidden="true"></span>Online · listed</p></div>'
@@ -1413,7 +1419,7 @@ class Hub:
         host_art = self.host_showcase()
         community_art = ('<div class="hb-draw hb-people" aria-hidden="true">'
                          + "".join(f'<p class="hb-pp"><i style="--h:{h}">{c}</i><b>{t}</b><span>{s}</span></p>' for h, c, t, s in (
-                             (220, "Q", "Quest Lens", "New in the Workshop"), (265, "L", "Lantern Isle", "A realm opened tonight"),
+                             (220, "Q", "Quest Lens", "A new mod"), (265, "L", "Lantern Isle", "A realm opened tonight"),
                              (160, "M", "Minigolf course", "Built by players"), (300, "D", "Discord", "Where everyone meets")))
                          + "</div>")
         agents_art = ('<pre class="hb-draw hb-code" aria-hidden="true"><code><s>GET</s> /wrath/leyline/catalog.json\n\n'
@@ -1430,13 +1436,13 @@ class Hub:
              [(dl, "Download the launcher", True), ("/wrath", "Play in your browser", False)],
              shot("home", "The Leyline launcher's home page: the server, your account, your game client and the PLAY button.")),
             ("host", "Server hosting software", "Host your own realm in one click",
-             "Run a realm from your own PC, on any core. The Host pack is everything in one download: the realm, its "
-             "console with health checks and GM controls, the realm tools and the relay agent. Our code only, never game files.",
-             ["Any core, your rules, your GM login", "No port forwarding: the relay lists it",
+             "Run a realm from your own PC, on the server software you like. The Host pack is everything in one download: "
+             "your realm, its health checks, GM controls and tools. Our code only, never game files.",
+             ["Your rules, your GM account", "No ports to open: it goes on the realm list by itself",
               "Start from the website or the launcher's Host page", "An invite link for friends"],
-             [("/wrath/host", "Start hosting", False), (BASE + "/beacon", "Host a Beacon", False)], host_art),
+             [("/wrath/host", "Start hosting", False), (BASE + "/beacon", "How hosting works", False)], host_art),
             ("realms", "Realms & hopping", "Every realm, one list",
-             "Every server on the Leyline network, hosted by players and ranked by players online, uptime and staff "
+             "Every realm on the Leyline network, hosted by players and ranked by players online, uptime and staff "
              "picks. Nothing can be bought. Hop from one realm to the next in a click.",
              ["Plays in your browser, or with your own client", "Filters for rules, region and language",
               "Hero Key sign-in across community realms (coming)"],
@@ -1448,13 +1454,13 @@ class Hub:
              ["Minigolf: courses built by players", "Made by players, checked by a GM", "Host a mode as a whole realm type",
               "The same list in the launcher"],
              [("/wrath?go=mode:minigolf", "Play Minigolf", False), (BASE + "/modes", "Every mode", False)], self.modes_art(shot)),
-            ("mods", "Mods & the Workshop", "Hot, rising and top picks",
+            ("mods", "Mods", "Hot, rising and top picks",
              "Addons, realm scripts, tools and themes, sorted by what players install and rate. Install in one click with "
              "the launcher; open projects from anywhere are linked with credit to their authors.",
              ["One-click install, every package checked", "Rate what you play", "Submit your own project with a link"],
              [(BASE + "/catalog" + ("?sort=hot" if rk is not None else ""), "Browse mods", False),
               (BASE + "/submit", "Submit a mod", False)],
-             shot("workshop", "The launcher's Discover page: Workshop mods sorted by Hot, with ratings, installs and Install.")),
+             shot("workshop", "The launcher's Discover page: mods sorted by Hot, with ratings, installs and Install.")),
             ("forge", "Forge", "Make worlds, quests and creatures",
              "The Leyline creator app. Shape the land, bring your own models, write creatures, quests and items, walk "
              "them in the game in one click and publish them as a pack any realm can install. Early access.",
@@ -2220,7 +2226,7 @@ class Hub:
         if m is not None and rk is not None:
             rank = (f'<p class="hb-rk">{e(rk.stars_text(m["rating"]))} · {m["installs"]["all"]} installs'
                     + (" · Install with Leyline" if rk.installable(i) else "") + "</p>")
-        badge = {"workshop": "Workshop", "index": "Community", "theme": "Theme"}[i["source"]]
+        badge = {"workshop": "Ready to install", "index": "Community", "theme": "Theme"}[i["source"]]
         builds = " ".join(f'<span class="hb-tag">{e(CLIENT_LABEL.get(b, "Any client"))}</span>' for b in i["builds"])
         stars = f' · ★ {int(i["stars"])}' if isinstance(i.get("stars"), int) and not isinstance(i.get("stars"), bool) else ""
         inst = rk.installable(i) if rk is not None and hasattr(rk, "installable") else bool(
@@ -2561,7 +2567,7 @@ class Hub:
         icon = "modes" if g["kind"] == "mode" else "mods"
         return (f'<article class="hb-card hb-gm" id="gm-{e(g["id"].replace(":", "-"))}" data-id="{e(g["id"])}">'
                 f'<div class="hb-card-pic">{self.gen_art(art, g["name"], icon, "hb-gt-art gen hb-card-art")}'
-                f'<span class="hb-dc-tag">{"Leyline Mode" if g["kind"] == "mode" else "Workshop mod"}</span></div>'
+                f'<span class="hb-dc-tag">{"Leyline Mode" if g["kind"] == "mode" else "Mod"}</span></div>'
                 f'<h3>{e(g["name"])}</h3><p class="hb-desc">{e(g["line"])}</p><p class="hb-meta">{"".join(tags)}</p>{where}'
                 f'<div class="hb-dc-foot"><span></span><span class="hb-dc-acts">{"".join(acts)}</span></div></article>')
 
@@ -2581,7 +2587,7 @@ class Hub:
                 'when you join.</p>'
                 + (f'<div class="hb-grid hb-big">{grid}</div>' if grid else '<p class="hb-empty">No game mods are listed right now.</p>')
                 + (f'<h2 class="hb-gm-h">Coming</h2><div class="hb-grid hb-big">{"".join(self.game_card(g, realms) for g in soon)}</div>' if soon else "")
-                + '<p class="hb-fine">Host a realm and pick its mods: <code>leyline mods add &lt;id&gt;</code> in the host kit. '
+                + '<p class="hb-fine">Host a realm and pick its mods: <code>leyline mods add &lt;id&gt;</code> in the Host pack folder. '
                 f'<a href="{e(self._download())}" rel="noopener noreferrer">Get the launcher</a> to add a realm\'s mods automatically.</p>'
                 "</div></section>")
         return self._shell("Game mods · Leyline", body, BASE + "/catalog", active="mods")
@@ -2673,7 +2679,7 @@ class Hub:
                     f'<p role="group" aria-label="{e(label)}">{inner}</p></div>')
         f_build = chips("build", [("", "Every client")] + [(b, CLIENT_LABEL[b]) for b in offered_builds()], build)
         f_cat = chips("cat", [("", "All")] + CATEGORIES + [THEMES], cat)
-        f_src = chips("source", [("", "Everything"), ("workshop", "Workshop"), ("upstream", "From the authors"),
+        f_src = chips("source", [("", "Everything"), ("workshop", "Ready to install"), ("upstream", "From the authors"),
                                  ("index", "Community"), ("theme", "Themes"), ("external", EXTERNAL_LABEL)], source)
         if rk:
             f_sort = chips("sort", [("", "Best")] + rk.SORT_LABELS + [("name", "A to Z")], sort if sort != "score" else "")
@@ -2740,13 +2746,13 @@ class Hub:
                 + f'<p class="hb-get">Installing needs the Leyline launcher on this PC. <a href="{e(self._download())}" '
                   'rel="noopener noreferrer">Get the launcher</a></p>'
                 + (f"<style>{rk.RANK_CSS}</style>" if rk else ""))
-        return self._shell("Catalog · Leyline", body, BASE + "/catalog", active="addons" if cat == "addons" else "mods")
+        return self._shell("Mods · Leyline", body, BASE + "/catalog", active="addons" if cat == "addons" else "mods")
 
     def item_page(self, slug: str, handler=None, query: dict | None = None) -> tuple[int, bytes]:
         e = html.escape
         i = self.get_item(slug)
         if i is None:
-            return 404, self._shell("Not found · Leyline", '<section class="ly-panel"><h2>Not in the catalog</h2>'
+            return 404, self._shell("Not found · Leyline", '<section class="ly-panel"><h2>Not in the mods list</h2>'
                                     f'<p><a href="{BASE}/catalog">See everything</a></p></section>', BASE)
         if i["source"] == "external":
             return 200, self.external_page(i, slug)
@@ -2771,14 +2777,14 @@ class Hub:
         if i["source"] == "workshop":
             local = urllib.parse.urlsplit(i.get("page") or "").path
             if local.startswith("/wrath/"):
-                acts.append(f'<a class="ly-btn" href="{e(local)}">Open in the Workshop</a>')
+                acts.append(f'<a class="ly-btn" href="{e(local)}">Open its page</a>')
         if i.get("repo"):
             forge = FORGE_LABEL.get(i.get("forge", ""), "the forge")
             acts.append(f'<a class="ly-btn hb-alt" href="{e(i["repo"])}" rel="noopener noreferrer nofollow ugc">'
                         f'View source on {e(forge)}</a>')
         how = {"index": "A community project: Leyline links to it and hosts nothing of it. Install it the way its "
                         "authors describe. The launcher shows it with View source and no Install button.",
-               "workshop": "In our Workshop" + (": the launcher installs it in one click." if i.get("packaged") else
+               "workshop": "On Leyline" + (": the launcher installs it in one click." if i.get("packaged") else
                                                  ": a link people shared."),
                "theme": "A theme pack for the Leyline launcher."}[i["source"]]
         name, summary, about = neutral(i["name"]) or "Untitled", neutral(i["summary"]), neutral(i.get("description"))
@@ -2842,11 +2848,11 @@ class Hub:
             "No bots or cheats for other people's realms.",
             "Names are shown without the game's brand words; credit always goes to the authors."))
         body = ('<section class="ly-panel"><h1>For creators</h1>'
-                '<p>Leyline lists two kinds of things: mods in our Workshop (packages the launcher installs) and open '
+                '<p>Leyline lists two kinds of things: mods ready to install (the launcher installs them) and open '
                 'projects anywhere on GitHub, GitLab or Codeberg (linked, never hosted).</p>'
                 '<ul class="hb-list">'
                 '<li><a href="/wrath/docs">The Leyline docs</a>: modes, the realm API, hosting.</li>'
-                '<li><a href="/wrath/mods">The Workshop</a>: what is packaged today.</li>'
+                '<li><a href="/wrath/mods">Mods</a>: what you can install today.</li>'
                 f'<li><a href="{BASE}/submit">Submit a mod</a>: add your repo to the index.</li></ul></section>'
                 '<section class="ly-panel"><h2>How the index works</h2>'
                 '<p>Every day a script checks the forges for open projects for every client the launcher supports, '
@@ -2884,11 +2890,11 @@ class Hub:
              ("Fights and dialogue", "A fight plan as cards (yell a line at half health, go to phase two) and dialogue "
               "pages with choices."),
              ("Test and publish", "Walk it in the game in one click, then publish a pack that any Leyline realm can "
-              "install from the Workshop.")),
+              "install.")),
             '<section class="ly-panel"><h2>Get it</h2><p>Forge is in early access for Windows. The next build is on its '
             'way; join the Discord to hear when it lands.</p>'
             f'<p class="hb-actions"><a class="ly-btn" href="{BASE}/creators">Creator docs</a> '
-            f'<a class="ly-btn hb-alt" href="{BASE}/catalog">The Workshop</a></p></section>',
+            f'<a class="ly-btn hb-alt" href="{BASE}/catalog">Mods</a></p></section>',
             BASE + "/forge")
 
     def agents_page(self) -> bytes:
@@ -2916,24 +2922,26 @@ class Hub:
     def beacon_page(self) -> bytes:
         host_url = self.portal("HOST_URL") or "https://github.com/orionopenwow/Leyline"
         e = html.escape
-        body = ('<section class="ly-panel"><h1>Host a Beacon</h1>'
-                '<p>A Beacon is a realm someone runs on their own PC or server and puts on the Leyline list. Players '
-                'see it in the launcher and in the game\'s Leyline window and hop over with one click.</p>'
-                '<ol class="hb-list"><li>Get the Host pack and start a realm: one command, your rules, your GM login.</li>'
+        body = ('<section class="ly-panel"><h1>Host a realm</h1>'
+                '<p>Anyone can run a realm on their own PC or a server and put it on the realm list. Players '
+                'see it in the launcher and in the game\'s Leyline window, and join with one click.</p>'
+                '<ol class="hb-list"><li>Get the Host pack and start your realm: your rules, your GM account.</li>'
                 '<li>Pick a ruleset: a Dalaran hangout, levelling from 1, duels, a private Den and more.</li>'
-                '<li>Turn on the Beacon: the relay lists it, no port forwarding needed.</li></ol>'
-                '<p>In the Leyline launcher: open Host, get the Host pack, pick a ruleset and your house rules, then '
-                'set the realm list details (tags, region, language, player limit). Community realms are listed first '
+                '<li>Make it public: it goes on the realm list by itself. You open no ports.</li></ol>'
+                '<p>In the launcher: open Host, get the Host pack, pick a ruleset and your house rules, then '
+                'fill in how your realm shows on the list (tags, region, language, player limit). Community realms come first '
                 'everywhere: on the website, in the launcher and in the game\'s Leyline window.</p>'
                 '<p class="hb-actions"><a class="ly-btn" href="/wrath/leyline">Get the launcher</a> '
                 '<a class="ly-btn hb-alt" href="/wrath/host">Start on the website</a></p>'
                 f'<p class="hb-actions"><a class="ly-btn" href="{e(host_url)}" rel="noopener noreferrer">The host guide</a> '
                 '<a class="ly-btn hb-alt" href="/wrath/realms">See live realms</a></p></section>'
+                '<section class="ly-panel"><h2>Keep it up 24/7</h2><p>What PC is enough, how to stop it sleeping, and what '
+                'happens on a power cut: <a href="/wrath/docs/always-on">Keep your realm up 24/7</a>.</p></section>'
                 # no "add realm scripts" until a hosted realm can take per-realm mods: the catalog's server projects are
                 # for people who run a server by hand
                 f'<section class="ly-panel"><h2>Before you start</h2>{host_needs()}'
                 f'<p><a href="/wrath/docs/network">How the Leyline network works</a></p></section>')
-        return self._shell("Host a Beacon · Leyline", body, BASE + "/beacon")
+        return self._shell("Host a realm · Leyline", body, BASE + "/beacon")
 
     def submit_page(self, msg: str = "", form: dict | None = None, done: bool = False) -> bytes:
         e = html.escape
@@ -2948,7 +2956,7 @@ class Hub:
         cats = "".join(opt(c, n, form.get("category", "")) for c, n in CATEGORIES)
         err = f'<p class="hb-err" role="alert">{e(msg)}</p>' if msg else ""
         body = ('<section class="ly-panel"><h1>Submit a mod</h1>'
-                '<p>Add an open project to the index: an addon, a realm module or script, a tool, a preset. '
+                '<p>Add an open project to the list: an addon, a realm module or script, a tool, a ruleset. '
                 'We only need the link; the rest is read from the repo. No account, no email.</p>'
                 f'{err}<form class="hb-form" method="post" action="{BASE}/submit">'
                 f'<label for="s-repo">Repo link (GitHub, GitLab or Codeberg)</label>'
@@ -2997,7 +3005,7 @@ class Hub:
         if "chumpton" in (c["key"] + " " + note).lower():
             return False, "That project can't be listed here."
         if any(i["id"] == "link:" + c["id"] for i in self.items()):
-            return False, "That project is already in the catalog."
+            return False, "That project is already on the list."
         dec = self.store.decisions().get(c["id"])
         if dec and dec["decision"] in ("reject", "delist"):
             return False, "That project was reviewed and isn't listed here."
@@ -3556,7 +3564,7 @@ background:rgba(16,18,24,.78);color:#fff;cursor:pointer;font:600 20px/1 var(--lk
 .hb-lb-pic img{max-height:62vh}.hb-lb-cap{padding:16px}.hb-lb-x{top:8px;right:8px}}
 /* the featured modpack (Hub.featured_mod): full-bleed picture, soft vignette, the words on a glass panel; eases on scroll */
 body.hb{overflow-x:clip}
-.hb-coa{position:relative;width:100vw;margin:34px 0 16px calc(50% - 50vw);
+.hb-coa{position:relative;width:calc(100vw - var(--hb-side,0px));margin:34px 0 16px calc(50% - (100vw - var(--hb-side,0px)) / 2);
 overflow:hidden;isolation:isolate;background:#0b0d12;scroll-margin-top:72px}
 .hb-coa-track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain;outline:none}
 .hb-coa-track::-webkit-scrollbar{display:none}
@@ -3739,19 +3747,22 @@ box-shadow:0 4px 14px color-mix(in srgb,var(--lk-accent) 32%,transparent)}
 .hb-inst:active,.hb-cta:active,.hb .ly-btn:active{background:var(--lk-accent-press)}
 .hb-play,.hb-inst,.hb-ghost{display:inline-flex;align-items:center;min-height:36px;padding:0 14px;border-radius:var(--lk-r-sm);font-weight:600;
 font-size:14px;gap:6px;text-decoration:none}
-/* Play: the launcher's PLAY (owner 2026-10-31: "back to our red colorstyle"): a red face in a stone frame, gold words.
-   The launcher's picture says "Play" on its own, so the website draws the same button with its own words. */
-.hb-play,.hb-ho-a .hb-cta{position:relative;border:2px solid #3c4646;border-radius:6px;color:#f3cf6a!important;font-weight:700;
-letter-spacing:.02em;text-shadow:0 1px 0 #2a0505,0 0 6px rgba(0,0,0,.55);
-background:radial-gradient(120% 90% at 50% 30%,#a5191b,#7a0f11 55%,#4f0809);
-box-shadow:inset 0 0 0 1px #6f7a78,inset 0 0 0 3px #1c2222,inset 0 2px 10px rgba(0,0,0,.55),0 4px 12px rgba(0,0,0,.35)}
-.hb-play:hover,.hb-ho-a .hb-cta:hover{filter:brightness(1.15) saturate(1.05);background:radial-gradient(120% 90% at 50% 30%,#a5191b,#7a0f11 55%,#4f0809)}
-.hb-play:active,.hb-ho-a .hb-cta:active{transform:translateY(1px);filter:brightness(.92)}
+/* Play: the launcher's PLAY button itself (owner 2026-10-31: "make the buttons in the site the new button style we use
+   for launcher"): its red stone face in the bevelled metal frame (/wrath/art/play-stone.webp, the launcher's picture
+   without the word), stretched by border-image so any label fits; gold serif words with a dark edge. */
+.hb-play,.hb-ho-a .hb-cta{position:relative;border:12px solid transparent;border-radius:0;
+border-image:url(/wrath/art/play-stone.webp) 34 fill / 12px / 0 stretch;background:none!important;box-shadow:none!important;
+color:#f3c85a!important;font-family:Georgia,"Times New Roman",serif;font-weight:700;letter-spacing:.01em;
+text-shadow:0 1px 0 #1a0303,1px 0 0 #1a0303,-1px 0 0 #1a0303,0 -1px 0 #1a0303,0 2px 6px rgba(0,0,0,.6);
+padding:0 10px!important;filter:drop-shadow(0 4px 10px rgba(0,0,0,.45));transition:filter .12s,transform .08s}
+.hb-play:hover,.hb-ho-a .hb-cta:hover{filter:drop-shadow(0 4px 10px rgba(0,0,0,.45)) brightness(1.15) saturate(1.05)}
+.hb-play:active,.hb-ho-a .hb-cta:active{transform:translateY(1px);filter:drop-shadow(0 2px 6px rgba(0,0,0,.45)) brightness(.92)}
 .hb-play:focus-visible,.hb-ho-a .hb-cta:focus-visible{outline:2px solid #ffd100;outline-offset:3px}
-.hb-ho-a .hb-cta{min-height:48px;padding:0 26px;font-size:17px;display:inline-flex;align-items:center}
+.hb-ho-a .hb-cta{min-height:56px;padding:0 22px!important;font-size:19px;display:inline-flex;align-items:center}
 .hb-ghost{background:var(--lk-surface-2);border:1px solid var(--lk-border-strong);color:var(--lk-text)!important}
 .hb-ghost:hover{background:var(--lk-raised);border-color:var(--lk-accent)}
 .hb-play.sm,.hb-inst.sm,.hb-ghost.sm{min-height:30px;padding:0 11px;font-size:13px;border-radius:8px}
+.hb-play.sm{border-width:9px;border-image-width:9px;border-radius:0;padding:0 6px!important}
 .hb-cta{box-shadow:0 8px 22px color-mix(in srgb,var(--lk-accent) 30%,transparent)}
 .hb .ly-btn.hb-alt{background:var(--lk-surface-2);border:1px solid var(--lk-border-strong);color:var(--lk-text)!important}
 .hb-vh{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -3947,6 +3958,49 @@ border:1px solid var(--lk-border);border-radius:12px;background:linear-gradient(
 }
 """
 
+# The side menu on wide screens (owner 2026-10-31: the top bar went; the side menu stays), after SITE_CSS so it wins.
+SIDE_CSS = """
+/* the sidebar (wide screens): the launcher's layout, the page as it is beside it; folds to an icon rail */
+@media (min-width:1081px){
+:root{--hb-side:236px}
+:root:has(#hb-side:checked){--hb-side:72px}
+.hb-side-t{position:fixed;opacity:0;width:1px;height:1px;pointer-events:none}
+body.hb .hb-top{position:fixed;inset:0 auto 0 0;width:var(--hb-side);min-height:0;flex-direction:column;align-items:stretch;gap:4px;
+padding:16px 12px 14px;overflow-y:auto;overflow-x:hidden;border-right:1px solid var(--lk-border);border-bottom:0;animation:none;box-shadow:none;
+background:color-mix(in srgb,var(--lk-chrome) 90%,transparent);transition:width .2s ease;scrollbar-width:none}
+body.hb .hb-top::-webkit-scrollbar{display:none}
+body.hb .hb-brand{padding:2px 6px 12px;margin-bottom:6px;border-bottom:1px solid var(--lk-border)}
+body.hb .hb-nav{flex-direction:column;align-items:stretch;gap:2px;margin:0}
+body.hb .hb-ni{justify-content:flex-start;width:100%;padding:9px 12px;border-radius:10px;font-size:15px;gap:12px;white-space:nowrap}
+body.hb .hb-ni svg{display:block;width:20px;height:20px}
+body.hb .hb-ni.on{background:var(--lk-accent-soft);box-shadow:inset 3px 0 0 var(--lk-accent)}
+body.hb .hb-ni.on::after{display:none}
+body.hb .hb-top.hb-scrolled{box-shadow:none}
+body.hb .hb-more-d{display:none}
+body.hb .hb-nav-x{display:flex;flex-direction:column;gap:2px;margin-top:10px;padding-top:10px;border-top:1px solid var(--lk-border)}
+body.hb .hb-end{flex-direction:column;align-items:stretch;gap:8px;margin-top:auto;padding-top:14px}
+body.hb .hb-dl,body.hb .hb-signin,body.hb .hb-acct{justify-content:center;white-space:nowrap;overflow:hidden}
+body.hb{padding-left:var(--hb-side);transition:padding-left .2s ease}
+.hb-side-b{position:absolute;top:22px;right:10px;display:grid;place-items:center;width:28px;height:28px;border-radius:8px;cursor:pointer;
+color:var(--lk-muted);border:1px solid var(--lk-border)}
+.hb-side-b:hover{color:var(--lk-text);border-color:var(--lk-accent)}
+.hb-side-b svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:rotate .2s}
+.hb-side-t:focus-visible~.hb-top .hb-side-b{outline:2px solid var(--lk-accent-strong);outline-offset:2px}
+/* folded: icons only, the labels as tooltips */
+body.hb:has(#hb-side:checked) .hb-top{padding:16px 10px 14px}
+body.hb:has(#hb-side:checked) :is(.hb-ni span,.hb-word,.hb-acct-n){display:none}
+body.hb:has(#hb-side:checked) .hb-ni{justify-content:center;padding:10px 0;gap:0}
+body.hb:has(#hb-side:checked) .hb-brand{justify-content:center;padding:2px 0 44px}
+body.hb:has(#hb-side:checked) .hb-side-b{top:64px;left:50%;right:auto;translate:-50% 0}
+body.hb:has(#hb-side:checked) .hb-side-b svg{rotate:180deg}
+body.hb:has(#hb-side:checked) .hb-dl{font-size:0;gap:0;padding:0}
+body.hb:has(#hb-side:checked) .hb-signin{font-size:0;padding:0}
+body.hb:has(#hb-side:checked) .hb-acct{padding:0 4px}
+}
+@media (max-width:1080px){.hb-side-t,.hb-side-b{display:none}}
+@media (prefers-reduced-motion:reduce){body.hb,body.hb .hb-top,.hb-side-b svg{transition:none}}
+"""
+
 # The drawings of the launcher's own windows (the host console, the in-game realm list) and the realm posters are dark
 # pictures: in Light they keep the Dark tokens, so their words stay light on dark.
 DARK_ISLANDS = ("@media (prefers-color-scheme:light){:is(.hb-sw,.hb-rlx,.hb-poster){"
@@ -3959,6 +4013,9 @@ DARK_ISLANDS = ("@media (prefers-color-scheme:light){:is(.hb-sw,.hb-rlx,.hb-post
 # the section reveal. Everything works without it: the addresses are selectable text, the filter is a GET form.
 HUB_JS = r"""(function(){
 // the side menu: remember folded or open in this browser (the page works without it)
+var side=document.getElementById("hb-side");
+if(side){try{if(localStorage.getItem("leyline.side")==="folded")side.checked=true;}catch(e){}
+side.addEventListener("change",function(){try{localStorage.setItem("leyline.side",side.checked?"folded":"open");}catch(e){}});}
 "use strict";
 var d=document,root=d.documentElement;root.classList.add("hb-js");
 var still=!!(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -4242,8 +4299,8 @@ GAME_SHOTS = {
 LAUNCHER_SHOTS = {
     "home": ("The launcher", "The server, your account, your game client and one PLAY button.",
              "The Leyline launcher's home page: the server, your account, your game client and the PLAY button."),
-    "workshop": ("Mods in one click", "Workshop mods sorted by Hot, with ratings, installs and Install.",
-                 "The launcher's Discover page: Workshop mods sorted by Hot, with ratings, installs and Install."),
+    "workshop": ("Mods in one click", "Mods sorted by Hot, with ratings, installs and Install.",
+                 "The launcher's Discover page: mods sorted by Hot, with ratings, installs and Install."),
     "realms": ("Every realm, one list", "Players online, uptime and badges for every realm on the network.",
                "The launcher's Realms page: every realm on the network with its players, uptime and badges."),
     "modes": ("Game modes", "Minigames and modes, with one PLAY button each.",
@@ -4304,14 +4361,14 @@ HOST_CORES = (
      "The strongest classic core for content and progression; a ruleset is a small follow-up.",
      "C++ scripts", "No bots"),
 )
-HOST_OWN = ("Your own", "Already run a server? Put it on the Leyline list with the relay agent and keep your own core.")
+HOST_OWN = ("Your own", "Already run a server? A small helper puts it on the realm list. Your server is not changed.")
 # The console's health tiles (sample values; what Check my realm and the in-game status show).
-HOST_SERVICES = (("Database", "ready"), ("Login server", "ready"), ("World server", "ready"), ("Relay agent", "listed"),
+HOST_SERVICES = (("Database", "ready"), ("Login server", "ready"), ("World server", "ready"), ("Leyline network", "listed"),
                  ("Players", "12 online"), ("Uptime", "3 days"))
 # The in-game Your realm window's GM controls (ov_hostctl.lua), what Check my realm tests (selfcheck.py) and Realm tools.bat.
 HOST_GM = (("Announce", "to everyone online"), ("Message of the day", "shown at login"), ("Kick", "one player"),
            ("Ban or unban", "an account"), ("Allow-list", "only listed characters"), ("Restart", "with a five-minute warning"))
-HOST_CHECKS = ("The servers on your PC", "The tunnel to the relay", "A login through the relay", "Your invite link",
+HOST_CHECKS = ("The servers on your PC", "Your link to the Leyline network", "A test login from outside", "Your invite link",
                "Your place on the realm list")
 HOST_TOOLS = ("Invite links", "Accounts for friends", "Public or private", "Who may sign up", "Server logs", "House rules")
 

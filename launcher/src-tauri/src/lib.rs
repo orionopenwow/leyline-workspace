@@ -4,15 +4,18 @@
 //! Everything here is plain Rust with no webview, so `cargo test --no-default-features` runs it anywhere.
 //! The desktop app (`app` feature) wraps these modules in Tauri commands; see `app.rs`.
 //!
-//! Leyline never downloads game files: a client is the player's own folder. It sends no telemetry: the one count
+//! Leyline never offers game files: a client is the player's own folder, zip or link to their own backup
+//! (`clientimport`), and never comes peer-to-peer. It sends no telemetry: the one count
 //! it sends is an anonymous "this mod was installed" (a mod id, a build and a fresh random id per install, never
 //! an account or machine id; Settings turns it off: `rankings`). Its network
 //! calls: the Workshop catalog and mod zips (`catalog`, `mods`), the Leyline addons listing and zip on the public release (`addons`), the hub's rankings (`rankings`), the relay's realm list, realm lookup and
 //! invite knock (`realms`, `host`), the official realm's status file (`status`), the website's forum, read only
 //! (`forum`), and GitHub's release list (`update`). Each has an 8 second timeout; the listings fall back to a cached copy.
 
+pub mod agents; // the Agents page and `Leyline mcp`: the player's own AI assistant, read / ask / never tiers (agents.rs)
 pub mod addons; // the Leyline addons: our own in-game addons for a 3.3.5a client (ui/addons.js)
 pub mod catalog;
+pub mod clientimport; // drop a game folder, a zip or a link to your own backup on the client list (clientimport.rs)
 pub mod clients;
 pub mod deeplink; // leyline://install/<id> (hub rankings agent)
 pub mod forum; // the Forum page: reading the website's forum (stream/forum.py)
@@ -66,6 +69,7 @@ pub const LINKS: &[(&str, &str)] = &[
     ("github", "https://github.com/orionopenwow/Leyline"),
     ("host", host::HOST_PAGE),
     ("hostguide", "https://play.openvanilla.app/wrath/docs/hosting"), // the Host pack and its settings
+    ("agentsguide", "https://play.openvanilla.app/wrath/docs/agents"), // Agents and Help: docs/leyline/agents.md
     ("hostdocs", "https://play.openvanilla.app/wrath/docs/hosting"), // the host console's guide (host/console.rs)
     ("alwayson", "https://play.openvanilla.app/wrath/docs/always-on"),
     ("network", "https://play.openvanilla.app/wrath/docs/network"), // the host guide's first item: how the network works

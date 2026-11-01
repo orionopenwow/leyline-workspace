@@ -41,7 +41,7 @@ pub(crate) struct Core {
 }
 
 impl Core {
-    fn update<T>(&self, f: impl FnOnce(&mut Settings) -> Result<T, String>) -> Result<T, String> {
+    pub(crate) fn update<T>(&self, f: impl FnOnce(&mut Settings) -> Result<T, String>) -> Result<T, String> {
         let mut s = self.settings.lock().map_err(|_| "settings lock poisoned")?;
         let out = f(&mut s)?;
         settings::save(&self.dir, &s).map_err(|e| format!("Could not save settings: {e}"))?;
@@ -663,6 +663,8 @@ struct UpdView {
     downloading: bool,
     /// A downloaded, signature-checked version waiting for "Restart".
     ready: Option<String>,
+    /// The update the last run left waiting is going in now (no Restart press): the title bar says so.
+    finishing: bool,
     error: Option<String>,
     game_running: bool,
     /// Seconds since 1970 of the last check.
@@ -673,6 +675,8 @@ struct UpdView {
 struct UpdState {
     view: UpdView,
     pending: Option<(tauri_plugin_updater::Update, Vec<u8>)>,
+    /// The version the last run downloaded and left waiting (update::READY_FILE): finished by the first check.
+    waiting: Option<String>,
 }
 
 /// Whether this build can update itself, and if not, why.
@@ -754,6 +758,11 @@ async fn run_update_check(app: AppHandle) -> UpdView {
             match res {
                 Ok(Some((up, bytes))) => {
                     u.view.ready = Some(up.version.clone());
+                    update::write_ready(&core.dir, &up.version);
+                    let waiting = u.waiting.take();
+                    if update::finish_now(waiting.as_deref(), env!("CARGO_PKG_VERSION"), &up.version, core.game_running()) {
+                        u.view.finishing = true;
+                    }
                     u.pending = Some((up, bytes));
                 }
                 Ok(None) => {}
@@ -761,7 +770,31 @@ async fn run_update_check(app: AppHandle) -> UpdView {
             }
         }
     }
+    // The update the last run left waiting: in now, before the player starts anything ("Finishing the update…").
+    if core.upd.lock().map(|u| u.view.finishing).unwrap_or(false) {
+        std::thread::sleep(Duration::from_millis(2500));
+        if let Err(e) = install_and_restart(&app, &core) {
+            if let Ok(mut u) = core.upd.lock() {
+                u.view.finishing = false;
+                u.view.error = Some(e);
+            }
+        }
+    }
     upd_view(&core)
+}
+
+/// Install the downloaded update and start the new Leyline. Refused while a game Leyline started is running.
+fn install_and_restart(app: &AppHandle, core: &Core) -> Result<(), String> {
+    if core.game_running() {
+        return Err("Your game is still running. Close it first: Leyline restarts only when no game is open.".into());
+    }
+    let pending = core.upd.lock().map_err(|_| "update lock poisoned")?.pending.take();
+    let Some((up, bytes)) = pending else {
+        return Err("No update is ready yet.".into());
+    };
+    // On Windows the installer takes over and closes Leyline itself; elsewhere Leyline restarts into the new one.
+    up.install(&bytes).map_err(|e| format!("The update could not be installed: {e}"))?;
+    app.restart()
 }
 
 #[tauri::command]
@@ -787,6 +820,7 @@ async fn set_update_channel(app: AppHandle, channel: Channel) -> Result<UpdView,
             u.pending = None;
             u.view.ready = None;
         };
+        update::clear_ready(&core.dir);
     }
     Ok(run_update_check(app).await)
 }
@@ -795,20 +829,19 @@ async fn set_update_channel(app: AppHandle, channel: Channel) -> Result<UpdView,
 /// Leyline started is running, so a game is never cut off.
 #[tauri::command]
 fn launcher_update_restart(app: AppHandle, core: State<Core>) -> Result<(), String> {
-    if core.game_running() {
-        return Err("Your game is still running. Close it first: Leyline restarts only when no game is open.".into());
-    }
-    let pending = core.upd.lock().map_err(|_| "update lock poisoned")?.pending.take();
-    let Some((up, bytes)) = pending else {
-        return Err("No update is ready yet.".into());
-    };
-    // On Windows the installer takes over and closes Leyline itself; elsewhere Leyline restarts into the new one.
-    up.install(&bytes).map_err(|e| format!("The update could not be installed: {e}"))?;
-    app.restart()
+    install_and_restart(&app, &core)
 }
 
-/// Check at start, then every 6 hours, for as long as Leyline runs.
+/// Check at start, then every 6 hours, for as long as Leyline runs. An update the last run downloaded and left
+/// waiting is finished by the first check (update::finish_now).
 fn start_update_timer(app: AppHandle) {
+    {
+        let core = app.state::<Core>();
+        let waiting = update::take_ready_at_start(&core.dir, env!("CARGO_PKG_VERSION"));
+        if let Ok(mut u) = core.upd.lock() {
+            u.waiting = waiting;
+        };
+    }
     std::thread::spawn(move || loop {
         tauri::async_runtime::block_on(run_update_check(app.clone()));
         std::thread::sleep(Duration::from_secs(update::CHECK_EVERY_SECS));
@@ -834,6 +867,7 @@ pub fn run() {
         .setup(|app| {
             start_update_timer(app.handle().clone());
             crate::p2p::cmds::magnet_from_args(); // a shared magnet: link (only with the magnet_links flag on)
+            crate::agents::commands::start(app.handle().clone()); // Agents: the heartbeat `Leyline mcp` looks for (agents.rs)
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -884,6 +918,12 @@ pub fn run() {
             launcher_update_state,
             launcher_update_check,
             launcher_update_restart,
+            crate::clientimport::commands::client_import_check,
+            crate::clientimport::commands::client_import_start,
+            crate::clientimport::commands::client_import_state,
+            crate::clientimport::commands::client_import_cancel,
+            crate::clientimport::commands::client_import_pick_zip,
+            crate::clientimport::commands::client_import_pick_folder,
             set_update_channel,
             crate::themes::commands::themes_list, crate::themes::commands::theme_apply, crate::themes::commands::theme_css, crate::themes::commands::theme_install, crate::themes::commands::theme_install_local, crate::themes::commands::theme_remove, crate::themes::commands::pick_theme, // themes.rs
             // Host pack, Docker, realm stop/logs/invite, P2P and torrent flags (src/p2p/cmds.rs)
@@ -916,6 +956,11 @@ pub fn run() {
             crate::p2p::cmds::host_link_quiet,
             crate::p2p::cmds::host_progress,
             crate::p2p::cmds::host_scan, // a server already on this PC, to link (host/scan.rs)
+            crate::p2p::cmds::host_network, // the host console's Network tab (host/network.rs)
+            crate::p2p::cmds::host_network_set,
+            crate::p2p::cmds::host_herokey_test,
+            crate::p2p::cmds::host_carry, // Help carry the network (host/network.rs)
+            crate::p2p::cmds::host_carry_set,
             crate::p2p::cmds::p2p_flags,
             crate::p2p::cmds::p2p_set_flag,
             crate::p2p::cmds::p2p_set_limits,
@@ -955,7 +1000,12 @@ pub fn run() {
             crate::addons::commands::addons_remove,
             crate::addons::commands::addons_auto_update,
             crate::addons::commands::addons_set_prefs,
-            crate::addons::commands::addons_should_offer
+            crate::addons::commands::addons_should_offer,
+            // Agents: Allow agents, approval cards, the audit, Connect (agents.rs, ui/agents.js)
+            crate::agents::commands::agents_state,
+            crate::agents::commands::agents_set_allow,
+            crate::agents::commands::agents_answer,
+            crate::agents::commands::agents_connect
         ])
         .run(tauri::generate_context!())
         .expect("error while running Leyline");

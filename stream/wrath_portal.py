@@ -81,6 +81,14 @@ Play in the browser, streamed (a small "mini" slice of the game, never the full 
                                streamed player where they cannot load. A new stream play, own files and
                                "End my browser pass" drop the lease. Same-origin JSON POSTs with the session
                                cookie only. (On /__gate because Caddy already sends that path here.)
+         POST /__gate?hop=<realm id|wrath>   the fast hop (docs/leyline-realm-hopping.md "Fast hop"): the
+                               in-game realm browser's Join switches THIS session to that live listed realm
+                               (or back home) and answers {ok, land}; the page reloads on land, with no trip
+                               through the website's sign-in. {"sso": "pre"}: the page already redeemed a Hero
+                               Key assertion for it, so /__env.js issues none. Same-origin JSON, session cookie.
+         POST /__gate?herokey=<realm id>     a Hero Key assertion for this session's account and that realm
+                               (the herokey_sso flag on), fetched when the realm's preview opens; the page
+                               redeems it at the relay on Join. Same rules as the hop env's.
   The off switch: WU_STREAM=0 (the default until stream-up.sh sets 1). /wrath/play then says
   streaming is off and /__auth refuses the game data.
   The game data killswitch (stream/server/gamedata-switch.sh, docs/GAME-DATA-ON-OUR-SERVER.md): while the flag
@@ -707,7 +715,14 @@ class Sessions:
         """This session plays on a community realm (a Leyline hop): /__env.js gives that realm's addresses."""
         with self.lock:
             if sid in self.sessions:
-                self.sessions[sid]["hop"] = {"id": hop["id"], "name": hop["name"], "home": bool(hop.get("home"))}
+                self.sessions[sid]["hop"] = {"id": hop["id"], "name": hop["name"], "home": bool(hop.get("home")),
+                                             "pre": bool(hop.get("pre"))}
+
+    def clear_hop(self, sid: str) -> None:
+        """Back home in the same session (the fast hop's "wrath"): /__env.js gives the Wrath login again."""
+        with self.lock:
+            if sid in self.sessions:
+                self.sessions[sid].pop("hop", None)
 
     def end_user(self, user: str) -> int:
         with self.lock:
@@ -846,7 +861,7 @@ def hop_for(query: dict) -> dict | None:
         return None
     for r in community_realms()[0]:
         if r["id"] == got[1] and r["live"]:
-            return {"id": r["id"], "name": r["name"], "home": r["id"] == hangout_id()}
+            return {"id": r["id"], "name": r["name"], "home": own_login_realm(r["id"])}
     return None
 
 
@@ -857,12 +872,13 @@ def hop_env(sess: dict) -> dict:
     env = {"hop": rid, "hop_name": sess["hop"]["name"], "hop_ws": f"{RELAY_WS}/ws/{rid}",
            "hop_join": f"{JOIN_BASE}/join/{rid}?hop=1", "host": urllib.parse.urlsplit(RELAY_WS).hostname or "",
            "home": f"https://{PUBLIC_HOST}"}
-    if sess["hop"].get("home") and rid == hangout_id():
+    if sess["hop"].get("home") and own_login_realm(rid):
         # The official realm's Beacon (hangout-realm.id) is this realm through the relay: the player's own Wrath login, as on a plain visit
-        # (the same account; the relay and the Beacon agent only carry SRP, never the password).
+        # (the same account; the relay and the Beacon agent only carry SRP, never the password). The Builders' Realm
+        # (build-realm.id, hosting/build-realm) shares this realm's accounts, so it takes the same login.
         env.update(user=sess["user"], hop_home="1")
         env["pass"] = sess["pass"]
-    else:
+    elif not sess["hop"].get("pre"):   # "pre": the page redeemed one itself before the fast hop (POST /__gate?hop=)
         # Hero Key sign-in (the herokey_sso flag; off: nothing here, the join page as before): a signed assertion
         # for this realm and the one-time login it sets there. wrath-early.js redeems it at the relay before the
         # client starts; a realm that doesn't take it falls back to the join page.
@@ -922,8 +938,8 @@ def herokey_issue_api(acct: str, realm, via: str) -> tuple[int, dict]:
         return 404, {"error": "Hero Key sign-in for community realms isn't on yet."}
     if not isinstance(realm, str) or not REALM_ID_RE.match(realm):
         return 400, {"error": "That is not a realm id."}
-    if realm == hangout_id():
-        return 400, {"error": f"{REALM_NAME} uses your own game login."}
+    if own_login_realm(realm):
+        return 400, {"error": f"{REALM_NAME if realm == hangout_id() else 'That realm'} uses your own game login."}
     blk = admin.blocked("realm", acct=str(acct).upper()) if admin is not None and getattr(admin, "blocked", None) else ""
     if blk:
         return 403, {"error": blk}
@@ -1009,6 +1025,7 @@ ART_TYPES = {
     # the Agents inn), game pictures, so behind the killswitch like the other leyline-shot- files
     "leyline-shot-forge.webp": "image/webp", "leyline-shot-agents.webp": "image/webp",
     "leyline-shot-backdrop.webp": "image/webp",   # the hub's backdrop (the owner's picture), faint behind every page
+    "play-stone.webp": "image/webp",   # the launcher's PLAY button picture without the word, for the site's Play buttons
     "leyline-display.woff2": "font/woff2", "leyline-display-OFL.txt": "text/plain; charset=utf-8",   # Big Shoulders Display 600 (SIL OFL 1.1, leyline-display-OFL.txt)
     "leyline-corner-tl.webp": "image/webp", "leyline-corner-tr.webp": "image/webp",   # our gold frame art, hued blue
     "leyline-corner-bl.webp": "image/webp", "leyline-corner-br.webp": "image/webp", "leyline-divider.webp": "image/webp",
@@ -1414,6 +1431,28 @@ RELAY_WS = os.environ.get("WU_RELAY_WS", "wss://relay.openvanilla.app").rstrip("
 HANGOUT_REALM = os.environ.get("WU_HANGOUT_REALM", "").strip()
 HANGOUT_FILE = os.environ.get("WU_HANGOUT_FILE", "/app/hangout-realm.id")
 _hangout = {"at": -1e9, "id": None}
+# The Builders' Realm (hosting/build-realm/build-realm.sh writes the id): an official realm with this realm's accounts.
+BUILD_REALM_FILE = os.environ.get("WU_BUILD_REALM_FILE", "/app/build-realm.id")
+_build_realm = {"at": -1e9, "id": None}
+
+
+def build_realm_id() -> str | None:
+    """The Builders' Realm's relay realm id, or None. Re-read once a minute."""
+    now = time.monotonic()
+    if now - _build_realm["at"] > 60:
+        _build_realm["at"] = now
+        try:
+            with open(BUILD_REALM_FILE, encoding="utf-8") as f:
+                v = f.read(64).strip()
+            _build_realm["id"] = v if REALM_ID_RE.match(v) else None
+        except OSError:
+            _build_realm["id"] = None
+    return _build_realm["id"]
+
+
+def own_login_realm(rid) -> bool:
+    """A realm that takes the player's own login (this realm's accounts): the official realm's Beacon, the Builders' Realm."""
+    return bool(rid) and rid in (hangout_id(), build_realm_id())
 
 
 def hangout_id() -> str | None:
@@ -2794,6 +2833,65 @@ class PageHandler(BaseHTTPRequestHandler):
         self.send(status, (json.dumps(doc, separators=(",", ":")) + "\n").encode(), "application/json; charset=utf-8",
                   same_origin=True)
 
+    def stream_hop(self, query: dict) -> None:
+        """POST /__gate?hop=<id|wrath> and POST /__gate?herokey=<id> on the stream site (see the module doc)."""
+        if not gate_limit.hit("hop:" + rl_bucket(self.ip()), 30):
+            self.json_reply(429, {"ok": False, "why": "too many requests"})
+            return
+        if self.headers.get("Origin", "") != f"https://{STREAM_HOST}":
+            self.json_reply(403, {"ok": False, "why": "same-origin only"})
+            return
+        if not self.headers.get("Content-Type", "").lower().startswith("application/json"):
+            self.json_reply(415, {"ok": False, "why": "JSON only"})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = -1
+        if length < 0 or length > 512:
+            self.json_reply(413, {"ok": False, "why": "too large"})
+            return
+        try:
+            body = json.loads(self.rfile.read(length) or b"{}")
+        except ValueError:
+            body = {}
+        body = body if isinstance(body, dict) else {}
+        sid = cookie_value(self.headers.get("Cookie", ""), "wu_play")
+        sess = self.stream_session()
+        if not sess or sess.get("mode") not in ("stream", OWN):
+            self.json_reply(403, {"ok": False, "why": "not a game session"})
+            return
+        own = sess.get("mode") == OWN
+        if "herokey" in query:
+            rid = (query.get("herokey") or [""])[0][:20]
+            if not REALM_ID_RE.match(rid) or own_login_realm(rid) or not hop_for({"go": ["r:" + rid]}):
+                self.json_reply(404, {"ok": False, "why": "not a live community realm"})
+                return
+            t = herokey_issue(sess["user"], rid, herokey_mod.LOGIN_TTL_WEB if herokey_mod else 120)
+            if not t:
+                self.json_reply(404 if not herokey_on() else 429, {"ok": False, "why": "no Hero Key sign-in"})
+                return
+            self.json_reply(200, {"ok": True, "realm": rid, "assertion": t["assertion"], "sig": t["sig"],
+                                  "login": t["login"], "redeem": herokey_redeem_url(rid),
+                                  "ttl": herokey_mod.LOGIN_TTL_WEB if herokey_mod else 120})
+            return
+        target = (query.get("hop") or [""])[0][:20]
+        base = "/?ownfiles=1&" if own else "/?"
+        if target == "wrath":
+            sessions.clear_hop(sid)
+            remember_go(sess["user"], {"go": ["h:dalaran"]})
+            self.json_reply(200, {"ok": True, "land": base + "go=h:dalaran"})
+            return
+        hop = hop_for({"go": ["r:" + target]}) if REALM_ID_RE.match(target) else None
+        if not hop:
+            self.json_reply(404, {"ok": False, "why": "not a live listed realm"})
+            return
+        hop["pre"] = body.get("sso") == "pre" and not hop.get("home")
+        sessions.set_hop(sid, hop)
+        if hop.get("home"):
+            remember_go(sess["user"], {"go": ["r:" + target]})   # the official realm's Beacon: Dalaran on arrival
+        self.json_reply(200, {"ok": True, "land": base + "go=r:" + target, "name": hop["name"]})
+
     def stream_layer(self, query: dict) -> None:
         """POST /__gate?layer=on|off|beat on the stream site: the game-folder layer (see the module doc)."""
         op = (query.get("layer") or [""])[0]
@@ -2915,7 +3013,11 @@ class PageHandler(BaseHTTPRequestHandler):
         split = urllib.parse.urlsplit(self.path)
         path = split.path.rstrip("/") or "/"
         if path in ("/__gate", "/__layer"):
-            self.stream_layer(urllib.parse.parse_qs(split.query))
+            q = urllib.parse.parse_qs(split.query)
+            if path == "/__gate" and ("hop" in q or "herokey" in q):
+                self.stream_hop(q)   # the in-game realm browser: fast hop, Hero Key prefetch
+            else:
+                self.stream_layer(q)
             return
         if profiles is not None and profiles.match(path):   # the profile forms (stream/profiles.py)
             profiles.post(self, path)

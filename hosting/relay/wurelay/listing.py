@@ -164,8 +164,53 @@ def _filtered(v, n):
     return "" if has_slur(t) else unbrand(t)
 
 
+WHO_MAX = 50
+CHAR_NAME_RE = re.compile(r"^[A-Za-z\u00c0-\u024f]{2,12}$")
+RULES_TEXT_MAX = 300
+
+
+def clean_who(v):
+    """The host's opt-in list of who is online (the agent sends it only with host.json "share_names"): plain character
+    names, each once, at most WHO_MAX; a name the word filter refuses is left out (never shown, never stored)."""
+    out = []
+    for n in v[:WHO_MAX * 2] if isinstance(v, list) else []:
+        if (isinstance(n, str) and CHAR_NAME_RE.match(n) and n not in out and not has_slur(n) and not BANNED.search(n)
+                and not _bad_char_name(n)):
+            out.append(n)
+        if len(out) >= WHO_MAX:
+            break
+    return out
+
+
+def _bad_char_name(n):
+    try:
+        return bool(namecheck and namecheck.name_hit(n))
+    except Exception:   # noqa: BLE001: the slur list above still holds
+        return False
+
+
+def _masked(v, n):
+    """_filtered, then the one blocklist's text check (wunet/namecheck.py mask: rude words starred out), for the lines
+    other players read in game: the rules and the mods' names."""
+    t = _filtered(v, n)
+    try:
+        return namecheck.mask(t) if (t and namecheck) else t
+    except Exception:   # noqa: BLE001: the slur and brand filter above still held
+        return t
+
+
+def rules_text(rules):
+    """The rules as one short line (the in-game hop window's "rules"): the filtered lines joined, at most 300 chars."""
+    t = " ".join(r for r in rules or [] if r)
+    return t if len(t) <= RULES_TEXT_MAX else t[:RULES_TEXT_MAX - 1].rstrip() + "\u2026"
+
+
 def clean_mods(v):
-    """[{"id", "version"?}]: checked ids, each once, at most MAX_MODS; anything else in an entry is dropped."""
+    """[{"id", "version"?, "name"?, "required"?, "client"}]: checked ids, each once, at most MAX_MODS. "name" is the
+    host's short label (word-filtered), "required" whether players must have it to join (else optional; absent when the
+    host never said), "client"
+    whether it is something the player installs (an addon or UI mod) rather than a server-side change. Anything else in
+    an entry is dropped."""
     out, seen = [], set()
     for m in (v if isinstance(v, list) else [])[:MAX_MODS * 2]:
         if isinstance(m, str):
@@ -178,6 +223,12 @@ def clean_mods(v):
         ver = m.get("version")
         if isinstance(ver, str) and MOD_VERSION_RE.fullmatch(ver):
             one["version"] = ver
+        name = _masked(m.get("name"), 40)
+        if name:
+            one["name"] = name
+        if isinstance(m.get("required"), bool):   # left out when the host never said: the hop window shows "Uses"
+            one["required"] = m["required"]
+        one["client"] = m.get("client") is not False and not mid.startswith("mode:")
         out.append(one)
         if len(out) >= MAX_MODS:
             break
@@ -197,7 +248,7 @@ def clean_record(rec: dict) -> dict:
         "summary": _filtered(rec.get("summary"), 400),
         "type": rec.get("type") if rec.get("type") in TYPES else "PvE",
         "ruleset": rec.get("ruleset") if rec.get("ruleset") in RULESETS else "custom",
-        "rules": [t for t in (_filtered(x, 120) for x in (rec.get("rules") or [])[:10]) if t],
+        "rules": [t for t in (_masked(x, 120) for x in (rec.get("rules") or [])[:10]) if t],
         "discord": rec.get("discord") if isinstance(rec.get("discord"), str) and HTTPS_DISCORD.match(rec["discord"]) else None,
         "warden": rec.get("warden") if isinstance(rec.get("warden"), bool) else None,
         "language": rec.get("language") if isinstance(rec.get("language"), str) and LANG_RE.match(rec["language"]) else None,
@@ -322,6 +373,7 @@ class Listing:
         e.update(realm_id=rid, pubkey=pub.hex(), seq=seq, last_seen=now, record=rec,
                  status={"online": online_now, "players": num("players"), "bots": num("bots"),
                          "uptime_s": num("uptime_s")},
+                 who=clean_who(st.get("who")) if "who" in st else None, herokey=beat.get("herokey") is True,
                  claim=claim, relay=_text(beat.get("relay"), 253) or (self.cfg.name if self.cfg else None))
         self.entries[rid] = e
         self.dirty = True
@@ -429,6 +481,8 @@ class Listing:
         region_cfg = getattr(self.cfg, "region", "") or ""
         st = e["status"]
         seen = self.confirmed_players(rid)
+        sess = self.relay.sessions.get(rid) if self.relay is not None else None
+        herokey_ok = bool(getattr(sess, "herokey", False)) if sess is not None else bool(e.get("herokey"))
         score_players = st.get("players") if seen is None else min(st.get("players") or 0, seen)
         return {
             "schema": 1,
@@ -451,6 +505,14 @@ class Listing:
             "connect": {"kind": "web-signin", "url": f"{join}/join/{rid}", "label": "Join this realm",
                         "note": join_note(self.signup_of(rid, rec))},
             "rules": rec["rules"],
+            "rulesText": rules_text(rec["rules"]),
+            # the in-game hop window's fields (contract with WrathUnleashedUI Leyline.lua): build, players online now,
+            # who (only when the host opted in, never GMs or bots), Hero Key sign-in, uptime over 7 days (else 24 h)
+            "build": build,
+            "online": (st.get("players") or 0) if online else 0,
+            "who": list(e.get("who") or []) if online and isinstance(e.get("who"), list) else [],
+            "herokey": herokey_ok,
+            "uptime_pct": up7 if up7 is not None else up24,
             "features": [],
             "mods": list(rec.get("mods") or []),
             "media": {"icon": None, "screenshots": [], "trailer": None},

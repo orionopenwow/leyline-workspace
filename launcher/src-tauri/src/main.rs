@@ -3,11 +3,20 @@
 
 #[cfg(feature = "app")]
 fn main() {
+    mcp_first();
     leyline_lib::run();
+}
+
+/// `Leyline mcp`: the local MCP server an agent's app starts (agents.rs), on stdin/stdout, with no window.
+fn mcp_first() {
+    if std::env::args().nth(1).as_deref() == Some("mcp") {
+        std::process::exit(leyline_lib::agents::serve_stdio());
+    }
 }
 
 #[cfg(not(feature = "app"))]
 fn main() {
+    mcp_first();
     eprintln!("Leyline was built without the `app` feature: only the core library is available.");
     std::process::exit(2);
 }

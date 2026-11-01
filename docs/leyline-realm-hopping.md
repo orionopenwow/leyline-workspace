@@ -53,6 +53,129 @@ tab. "Back to Wrath" is one click in the window and on the page.
 - The kept password is in this browser's localStorage, readable by script on the game's origin.
   "Use another account" on the bar forgets it.
 
+## The realm browser in game, and the fast hop (2026-10-31)
+
+Owner, 31 Oct: "the realm swap should be able to happen in game with a list of all realms on the p2p network and a
+process to observe what mods they have etc before joining and who is there ... server hop should be as quick as
+possible to the character create / select screen of their traversing hero key account ... hopping between client
+versions should be easy too".
+
+### Where it shows
+
+- **The Leyline window** (`WrathUnleashedUI/Leyline.lua`, `/leyline`, Esc > Realm List). In the browser game: a
+  search box, the filters **In browser**, **Own files**, **Has players**, **Version** (cycles through the version
+  chips the list has), pages of 20, and **View** on each row: the preview opens beside the window. Its **Join** hops.
+  The desktop client (no page) keeps the realm's own list (`ov_leyline.lua`, the WULY protocol above, unchanged).
+- **Character select** (`GlueXML/ForeverUIGlueLeyline.lua`, listed in `ForeverUIGlueWeb.xml`; the name starts with
+  ForeverUI so `fui-overlay.py` takes it): Forever UI's **REALMS** button opens the same browser while the page offers
+  it. Without the page, or with Shift held, it does what it always did (this server's realm list; the browser also
+  has a "This server's realms" button). Without that top-bar button, a **Realms** button of our own sits top left.
+  Every step is pcall-guarded.
+
+### How the data gets into the game (the page bridge)
+
+The client can't make HTTP calls; the page does and hands the answers in through the bridge, the way the game
+folder's state goes in (`stream/www-files/wrath-page.js`, block `leyline-browse`):
+
+```
+game -> page   WUUI_LEYLINE_ASK = "list|<page>|<filters>|<search>"   filters: b in browser, o own files, p has players,
+                                                                      v<build> that version (comma separated)
+               WUUI_LEYLINE_ASK = "preview|<realm id>"               one realm's details (+ the Hero Key prefetch)
+               WUUI_LEYLINE_ASK = "launch|<realm id>"                another game version: the launcher bar
+page -> game   WUUI_LEYLINE_NET = { page, pages, total, network = {realms, players, bots}, rows = { {id, name, here,
+                 live, online, bots, build, chip, browser, own, hk, up, featured, verified, hangout, mods, desc}, ... } }
+               WUUI_LEYLINE_PREVIEW = { id, name, desc, rules, live, online, bots, who (only if shared), mods = {
+                 {name, req, client}, ... }, build, chip, up, hk ("ready"|"yes"|"no"|"unknown"), browser, own,
+                 verdict ("ok"|"own"|"launcher"|"offline"), why }
+               then WUUI_LEYLINE_ONNET(kind) and WUUI_LEYLINE_ONNET_GLUE(kind), each pcall'd
+```
+
+The page polls the ask every 0.4 s while the bridge has a VM and sets `WUUI_LEYLINE_BROWSE = 1` so the game knows it
+can ask. A page that doesn't answer within 6 s: the window clears the flag and asks the realm instead. Pages are 20
+rows, a preview at most 50 names and 32 mods (a few KB of Lua). Every string is escaped (`\ddd`) in the Lua it writes.
+
+Sources, merged by realm id: the network listing `<home>/wrath/realms.json` (staff hides, featured, the official
+order) and the relay's own listing `/api/listing/realms.json` (or `/api/mesh/realms.json` when the site's
+`mesh_realms` flag is on, falling back to the listing). Without the network listing, the relay's alone. Flags from
+`<home>/wrath/leyline/flags.json`. Cached 30 s. No cookies go to any listing.
+
+### The listing contract (what the relay listing adds per realm, read defensively)
+
+Each field is read from the record, else from its `community` object; missing or malformed = unknown, never an error.
+
+| field | type | shown as | when missing |
+|---|---|---|---|
+| `build` | `"3.3.5a"` (or the number) | the version chip; In browser / Own files; the verdict | `profile.build`, `profile.version`, else 3.3.5a |
+| `online` | int | "N players online now" | `community.lastHeartbeat.players` |
+| `who` | list of up to 50 names (only when the realm opted in) | "Who's on" | "This realm doesn't share who's on." |
+| `rules` | short text (a list is joined) | "House rules", 300 chars | "The host hasn't written house rules." |
+| `mods` | `[{id, name, required, client}]` (ids as `gamemods.py`) | Required / Optional / Uses, "(on your side)" for client ones | `required` unknown -> "Uses"; `client` guessed from `up:` / `mode:` |
+| `herokey` | bool | "Hero Key sign-in" chip; the fast hop signs in with it | no chip, no prefetch |
+| `uptime_pct` | number | "N% up lately" | `community.uptime.d7`, `.h24`, else "Uptime: new" |
+| `own_files` | bool (optional) | needs own game files | from the build |
+
+Host text (names, rules, the tagline, mod names, who) never shows a game brand word, a colour code or a version number
+(those are dropped); names in `who` must be 2 to 12 letters. The version is only ever a chip.
+
+### Versions
+
+The verdict (`verdict()` in the page; `L.Verdict` in the window for the desktop client, from `GetBuildInfo`):
+offline; **launcher** when the realm needs another game version or takes no browser players (Warden on);
+**own** when it needs own game files and this session is streamed (Join then goes through the website's own-files
+switch, `/wrath/play?mode=own&go=r:<id>`); else ok. A launcher realm is never hopped to: the preview says so plainly
+("This realm needs a different game version than this one. Open it in the Leyline launcher."), its button reads
+**Open in launcher**, and in the browser the page shows a bar with **Open in the Leyline launcher**
+(`leyline://realm/<id>`, a real click), **Get the launcher** and **Not now**. The desktop client puts the link in the
+window's copy box.
+
+### The fast hop
+
+Join (the window's, the glue's, or a row's on the realm list) still sets `WUUI_LEYLINE_HOP`; the page's watcher now
+tries `fastHop` first and only falls back to the old way (`/wrath?go=r:<id>` through the website) when it says no:
+
+1. **At the preview** (the realm says `herokey: true`, the site's `herokey_sso` flag is on, not declined in this
+   browser): the page asks the portal for an assertion, `POST /__gate?herokey=<id>` (same origin, the session cookie;
+   the same rules and limits as the hop env's). Only the website is asked; the realm learns nothing until Join.
+2. **Join**: "Going to <realm>…" covers the game with a progress bar. The page redeems the assertion at the relay
+   (`credentials: omit`, at most 6 s) and keeps the one-time login in this tab's sessionStorage
+   (`wu.leyline.pre.<id>`, `{user, pass, at, ttl}`; at = the redeem, so the realm's 2-minute window is honoured).
+3. `POST /__gate?hop=<id>` switches **this** session to that realm (`{"sso": "pre"}` when step 2 worked: the env then
+   issues no second assertion) and answers the landing page; the page `location.replace`s to it. No trip through the
+   website's sign-in, no SOAP to our realm, so a hop works even while our realm isn't answering.
+4. The landing page: `wrath-early.js` takes the kept login while it is fresh (ttl less 15 s): no redeem, no join page,
+   nothing held. The "Signing in" cover reads "Going to <realm>…" and hides at the character list, so the login
+   screen is never seen. A brand-new Hero Key account lands on an empty character list (create).
+5. Anything that fails (no ticket, the realm refuses it, an old portal, a junk answer) falls back: without "pre" the
+   env issues its own assertion as before; without a switch, the old way. The old join-page path is unchanged for
+   realms without Hero Key or with the flag off.
+
+Also: with Hero Key through the env (the old way), the wasm download no longer waits for the redeem; only its answer
+is held, so the download and the redeem overlap. "Back to <home>" is still one click: the bar and the window use the
+same switch (`POST /__gate?hop=wrath`: the Wrath login again, Dalaran on arrival), else the old way.
+
+The slice and the game page are the same origin and URL before and after a hop, so the browser cache, the
+service worker (when on) and IndexedDB keep everything already loaded; the boot itself is the fast-load work's.
+
+### Measured here, and the plan for live
+
+Local harness (the portal with a fake realm, an 80 ms round trip and 40 ms per SOAP command): the old way is 5 round
+trips and 2 SOAP commands to the landing env, median 373 ms; the fast hop is 3 round trips, median 245 ms (30 ms /
+20 ms: 181 vs 106 ms). On top of that the redeem no longer serialises with the wasm download.
+
+Live (signed in, on Wrath, in the world, a Hero Key realm listed): Join a realm from the preview, then on the new page
+`window.__wuHop.timing` gives `{via, page, charselect, sso}` (ms from Join to the page and to the character list; the
+console prints one line). Do it 5 times each way: `localStorage['wu.leyline.fasthop'] = 'off'` for the old way,
+remove it for the fast one; also once from character select (REALMS). Compare the medians; `sso` should be `pre` on
+the fast way. Also check: the listing fields show in the preview (the network agent's relay), a realm with
+`who` off says so, a realm on another version shows the launcher bar, Back is one click.
+
+### What the launcher needs (launcher/src-tauri/src/deeplink.rs)
+
+`leyline://realm/<id>` already shows the realm on the Realms page with its PLAY button. For "easy version hops" the
+launcher should: pick (or offer to add) a game folder of the build the realm needs when that link arrives (the
+listing's `build`), sign in with Hero Key when the realm has `herokey` (its `play_realm_herokey` exists), and start it
+in one click; and say plainly when no folder of that version is set up. The browser game only hands over the link.
+
 ## Wrath Unleashed (the owner's realm as a Beacon)
 
 The owner hosts it; nothing runs anywhere but on the realm's own box. `hosting/hangout/hangout-up.sh` (the

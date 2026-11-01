@@ -122,7 +122,7 @@ _PROJ_RE = re.compile(r"^/wrath/mods/p/([0-9a-f]{12})(?:/(report|hide|unhide))?$
 
 # A link the hub's rules held (stream/projects.py, stream/hub.py link_problems): said plainly, without the reasons
 QUEUED_NOTE = ("Thanks: this one waits for a person to check it before it's listed (we check licences, and keep "
-               "cheats and leaked or decompiled material off the Workshop).")
+               "cheats and leaked or decompiled material off Leyline).")
 
 
 def _load_listings():
@@ -682,7 +682,7 @@ class Workshop:
         elif in_cat:
             grid = f'<p class="wk-empty">No mods match these filters. <a href="{e(here)}">Show all</a></p>'
         else:
-            grid = '<p class="wk-empty">The Workshop is empty right now. Mods appear here once they are on the realm.</p>'
+            grid = '<p class="wk-empty">No mods here right now. Mods appear here once they are on the realm.</p>'
 
         search = (f'<form class="wk-search" method="get" action="{e(here)}" role="search">'
                   + "".join(f'<input type="hidden" name="{k}" value="{e(v)}">'
@@ -711,22 +711,22 @@ class Workshop:
                 f'<p class="wk-lede">{e(cat["line"])} {n} mod{"" if n == 1 else "s"} here.</p></header>'
                 '<section class="ly-panel" aria-labelledby="wk-mods"><h2 id="wk-mods">Mods</h2>'
                 + (filters if in_cat else "") + f'{grid}</section>{cat_grid}{fine}')
-            return self._page(f"{cat['name']} · Workshop", f"/wrath/mods/c/{cat['id']}",
-                              f"{cat['name']} · Leyline Workshop", body,
+            return self._page(f"{cat['name']} · Mods", f"/wrath/mods/c/{cat['id']}",
+                              f"{cat['name']} · Leyline Mods", body,
                               cat["line"] or "Community mods for Wrath on the Leyline network.")
         n_live = sum(1 for m in mods if installed.get(m["id"]) == m["version"])
         n_comm = sum(1 for it in items if it["source"] == "community")
         body = (
-            '<header class="ly-hero"><h1 class="wk-h1">Workshop</h1>'
-            '<p class="wk-lede">The whole Leyline catalog for Wrath: addons, graphics, game modes, maps, builds, '
-            'encounters, models, realm scripts, presets, sounds, tools and total conversions, in one open format, '
+            '<header class="ly-hero"><h1 class="wk-h1">Mods</h1>'
+            '<p class="wk-lede">Every Leyline mod for Wrath Unleashed: addons, graphics, game modes, maps, builds, '
+            'encounters, models, realm scripts, rulesets, sounds, tools and total conversions, in one open format, '
             'plus community projects, credited to the people who made them. '
             f'{n_live} of {len(mods)} are on {e(self.realm_name)} now; {n_comm} community '
             f'link{"" if n_comm == 1 else "s"}.</p>{add}</header>'
             f'{cat_grid}'
             '<section class="ly-panel" aria-labelledby="wk-mods"><h2 id="wk-mods">Mods</h2>'
             f'{filters}{grid}</section>{fine}')
-        return self._page(f"Workshop · {self.realm_name}", "/wrath/mods", f"Workshop · {self.realm_name}", body,
+        return self._page(f"Mods · {self.realm_name}", "/wrath/mods", f"Mods · {self.realm_name}", body,
                           "Community mods for Wrath on the Leyline network: addons, game modes, maps, realm scripts "
                           "and more, free, open and credited.")
 
@@ -773,7 +773,7 @@ class Workshop:
             f'play.openvanilla.app/wrath/m/{e(m["id"])}</a></p></div></div>'
             + self._credit_html({"author": m["author"], "author_url": "", "licence": m["licence"], "repo": m["repo"]})
             + '</section>')
-        return self._page(f"{m['name']} · Workshop", f"/wrath/mods/{m['id']}", f"Mod: {m['name']} · Leyline", body,
+        return self._page(f"{m['name']} · Mods", f"/wrath/mods/{m['id']}", f"Mod: {m['name']} · Leyline", body,
                           m["description"] or "A community mod for Wrath on the Leyline network.")
 
     def project_page(self, pid: str, req=None, note: str = "", status: int = 200) -> tuple[int, bytes]:
@@ -796,7 +796,7 @@ class Workshop:
                      "submitted_at": str(rec.get("submitted_at", ""))[:25], "last_checked": "",
                      "reports": len(rec.get("reports") or [])}
         if p is None:
-            return 404, self.not_found("Project not found", "No project by that link is in the Workshop.")
+            return 404, self.not_found("Project not found", "No project by that link is in Mods.")
         builds = ", ".join("Any build" if b == "any" else b for b in p["builds"])
         author = e(p["author"] or "Unknown")
         if p["author_url"]:
@@ -833,11 +833,11 @@ class Workshop:
             f'<div class="wk-detail"><div><p>{e(p["description"])}</p>'
             + (f'<p class="ly-fine" style="text-align:left">From the repo: {e(p["repo_description"])}</p>'
                if p["repo_description"] else "")
-            + f'<p class="ly-fine" style="text-align:left">A community project, linked from the Workshop. '
+            + f'<p class="ly-fine" style="text-align:left">A community project, linked from Mods. '
             f'Nothing is hosted here: the link goes to {e(p["host"])}, where its author keeps it.</p></div>'
             '<div><dl class="wk-facts">' + "".join(f'<dt>{e(k)}</dt><dd>{v}</dd>' for k, v in facts if v)
             + f'</dl><div class="wk-actions">{actions}</div></div></div>{self._credit_html(it)}</section>')
-        return status, self._page(f"{p['name']} · Workshop", f"/wrath/mods/p/{pid}", f"Project: {p['name']} · Leyline",
+        return status, self._page(f"{p['name']} · Mods", f"/wrath/mods/p/{pid}", f"Project: {p['name']} · Leyline",
                                   body, p["description"] or "A community project on the Leyline network.")
 
     def submit_page(self, req=None, error: str = "", form=None, status: int = 200, note: str = "") -> tuple[int, bytes]:
@@ -881,8 +881,8 @@ class Workshop:
                 '<p class="wk-msg" role="note">Made a mod players can install? <a href="/wrath/mods/list">List your mod</a> '
                 'instead: we check it once and the launcher installs it in one click.</p>'   # stream/listings.py
                 f'{inner}</section>')
-        return status, self._page("Add a project · Workshop", "/wrath/mods/submit", "Add your project · Leyline Workshop",
-                                  body, "Share a link to your mod, tool or server project on the Leyline Workshop.")
+        return status, self._page("Add a project · Mods", "/wrath/mods/submit", "Add your project · Leyline Mods",
+                                  body, "Share a link to your mod, tool or server project on Leyline Mods.")
 
     def credits_page(self) -> bytes:
         e = html.escape
@@ -906,8 +906,8 @@ class Workshop:
                 f'<p class="wk-lede">Thank you to every author: {len(by)} people and teams, {n} projects. '
                 'Everything here is theirs, shared under the licence each one chose.</p></header>'
                 f'<section class="ly-panel" aria-labelledby="wk-cr"><h2 id="wk-cr">Authors and projects</h2>{inner}</section>')
-        return self._page("Credits · Workshop", "/wrath/mods/credits", "Credits · Leyline Workshop", body,
-                          "Every author and project in the Leyline Workshop, thanked.")
+        return self._page("Credits · Mods", "/wrath/mods/credits", "Credits · Leyline Mods", body,
+                          "Every author and project in Leyline Mods, thanked.")
 
     def all_json(self) -> bytes:
         out = []
@@ -996,11 +996,11 @@ class Workshop:
         return 403, body.replace(b'<div class="wk-detail">', ('<p class="wk-msg" role="alert">' + html.escape(msg)
                                                               + '</p><div class="wk-detail">').encode(), 1), HTML, {}
 
-    def not_found(self, title: str = "Mod not found", text: str = "No mod by that name is in the Workshop.") -> bytes:
+    def not_found(self, title: str = "Mod not found", text: str = "No mod by that name is in Mods.") -> bytes:
         e = html.escape
         body = (f'<section class="ly-panel"><h2>{e(title)}</h2><p class="wk-empty">{e(text)} '
                 '<a href="/wrath/mods">See every mod</a></p></section>')
-        return self._page(f"Workshop · {self.realm_name}", "/wrath/mods", f"Workshop · {self.realm_name}", body)
+        return self._page(f"Mods · {self.realm_name}", "/wrath/mods", f"Mods · {self.realm_name}", body)
 
     def _file(self, *parts, limit: int) -> bytes | None:
         try:
@@ -1031,7 +1031,7 @@ class Workshop:
         if pm:
             if pm.group(2):
                 return 405, b"use the button on the page\n", "text/plain", {"Allow": "POST"}
-            notes = {"added": "Added: it's in the Workshop now. Thank you for sharing it.",
+            notes = {"added": "Added: it's in Mods now. Thank you for sharing it.",
                      "dup": "That project is already listed: here it is."}
             note = next((v for k, v in notes.items() if query.get(k)), "")
             done = (query.get("done") or [""])[0]
@@ -1043,7 +1043,7 @@ class Workshop:
         if cm:
             cat = self.category(cm.group(1)) if ID_RE.fullmatch(cm.group(1)) else None
             if cat is None:
-                return 404, self.not_found("Category not found", "No category by that name is in the Workshop."), HTML, {}
+                return 404, self.not_found("Category not found", "No category by that name is in Mods."), HTML, {}
             return 200, self.list_page(query, cat), HTML, {}
         m = _PATH_RE.fullmatch(path or "")
         if not m:

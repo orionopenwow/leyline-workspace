@@ -12,7 +12,9 @@ Anyone can host a Wrath realm (on AzerothCore) from their own PC. On Leyline a h
 | First start | 5 to 20 minutes |
 | While people play | your PC stays on |
 
-Want a realm that stays up for good (a Vanilla+ realm on a spare PC or a small server), or already run a server and want it on the realm list? See [Always-on realms](always-on.md): one command either way.
+Want a realm that stays up for good (a Vanilla+ realm on a spare PC or a small server), or already run a server and want it on the realm list? See [Keep your realm up 24/7](always-on.md): one command either way.
+
+Already run an AzerothCore or TrinityCore server and want Hero Key sign-in on it? See [Bring your server](join-network.md). Want to help carry other players' connections from your PC? See [Help carry the network](be-a-node.md).
 
 ## What you need
 
@@ -87,7 +89,7 @@ Answers can come from the environment, so it can run without prompts: `LEYLINE_N
 | `main` | A full game from level 1 at 3x experience, with the optional one-time boost to 80. |
 | `brawl` | Everyone starts at 80 in Dalaran with their class spells, riding and reputations. |
 | `progression` | 1x rates from level 1. Each character moves through the three eras of content at their own pace. No boost. |
-| `vanillaplus` | Vanilla+: the original world only, level 60, 1.5x experience; made to stay up (see [Always-on realms](always-on.md)). |
+| `vanillaplus` | Vanilla+: the original world only, level 60, 1.5x experience; made to stay up (see [Keep your realm up 24/7](always-on.md)). |
 
 ## House rules
 

@@ -11,14 +11,14 @@ No telemetry, no accounts.
 | Page | State |
 |---|---|
 | **Home** | pick a client and a realm, then PLAY: sets the client's realm address (see below; the original is kept as `<file>.leyline-backup`) and starts it. A realm of another build says which client it needs. *Browser* opens https://play.openvanilla.app/wrath. |
-| **Game clients** | add a client by folder. The build is read from the executable's version resource: 1.12.1 (5875), 2.4.3 (8606) and 3.3.5a (12340) for now; anything else (4.3.4 and 5.4.8 included, see below) is listed as **other** (realms only, no mods). No executable version: the data files decide. It checks the install looks complete and lists what is missing. Leyline never downloads a client. |
+| **Game clients** | add a client by folder. The build is read from the executable's version resource: 1.12.1 (5875), 2.4.3 (8606) and 3.3.5a (12340) for now; anything else (4.3.4 and 5.4.8 included, see below) is listed as **other** (realms only, no mods). No executable version: the data files decide. It checks the install looks complete and lists what is missing. Or drop the folder, a zip of it, or a direct https link to the player's own backup zip on the play bar's client list or Find your game files (`clientimport.rs`: progress, Cancel, zip-slip and size checks; never a torrent or magnet link). Leyline never offers a client. |
 | *The side menu* | matches the website's: Home, Realms, Mods, Host, Community, News, then Your realms, Settings and Help. Mods has the tabs Installed and Discover, Community has Friends and Hub; the old page ids (`mymods`, `discover`, `friends`) still open the right tab. Modes has no menu item: Home's featured mode and Realms › MODES open it. The website's backdrop picture sits behind the pages (fetched from play.openvanilla.app, never shipped; Settings › Background picture turns it off). |
 | **Mods › Discover** | the Workshop catalog (`/wrath/mods/all.json`): 12 categories, search, credits, links to each project's page, source and author; one-click INSTALL / UPDATE into the picked client; mods for other builds are flagged and can't be installed. |
 | **Mods › Installed** | per client: what is installed, the update ready, native code; one click to update or remove, turn off / on, UPDATE ALL; drop (or choose) a .zip, an addon folder, a .MPQ patch or a native mod (.dll, .asi; a one-time OK per mod). The title bar's pill counts Workshop updates across all clients. |
 | **Realms** | each realm as a card like the website's realm list (its icon, the gold client version, Official / Featured / Verified / New, the meta line, players with a fill bar); the official realm plus the relay's Beacons, with their server (AzerothCore, TrinityCore, CMaNGOS, vMaNGOS, MaNGOS, other), build, status and players; PLAY picks one of your clients of the realm's build (or says which is missing), sets its realm address and starts it; "Only realms my clients can play"; join a private realm with its invite link; BACK TO WRATH; put back your own realmlist. |
 | **Host** | plain-words steps: HOST A REALM (the website's /wrath/host gives the realm file), choose the host kit folder, start the realm file or the kit's host script in its own window, the realm's status from the relay. |
 | **Themes** | Settings › Themes and Mods › Discover › Themes: Dark (the default) and Light, plus theme packs (CSS and images only, checked by an allowlist) from the Workshop's `themes` category or a zip. See [docs/THEMES.md](../docs/THEMES.md). |
-| **Settings** | Wine on/off, the wine command and an optional prefix (macOS and Linux run Windows clients through Wine); updates: the Stable or Beta channel, CHECK NOW, RESTART TO UPDATE. |
+| **Settings** | Wine on/off, the wine command and an optional prefix (macOS and Linux run Windows clients through Wine); updates: Everyone (every release) or Early (test versions too), CHECK NOW, RESTART TO UPDATE. |
 
 ### Builds: what Leyline knows per client
 
@@ -39,13 +39,18 @@ and server (`profile.core`); Beacons from the host kit are AzerothCore 3.3.5a.
 
 ### Leyline's own updates
 
-Leyline checks the public repo's GitHub releases (tags `launcher-v*`) at start and every 6 hours. On the
-**stable** channel it takes releases; on **beta**, pre-releases too (a version with a `-`, such as
-`0.3.1-beta.1`). Each release carries `latest.json`, made by CI; Leyline checks that its downloads are this
+Every ship is a release for everyone (owner 31 Oct): each push to the public repo's main that changes `launcher/`
+becomes a normal release, `launcher-v<next version>` (`scripts/release_version.py`: one patch above the last
+release, or `tauri.conf.json`'s version when that is higher; stamped into the build, never committed).
+Leyline checks the public repo's GitHub releases (tags `launcher-v*`) at start and every 6 hours. On the default
+channel (**stable**, "Everyone" in Settings) it takes releases; on **beta** ("Early"), pre-releases too (a hand-pushed
+tag with a `-`, such as `0.3.1-beta.1`). Each release carries `latest.json`, made by CI; Leyline checks that its downloads are this
 release's own files, then Tauri's updater downloads the new version in the background and checks its signature
-against the public key in `tauri.conf.json`. The title bar then says **Update ready, restart**. Nothing installs
-until the player presses it, and it refuses while a game Leyline started is still open (Windows: the installer
-runs in passive mode and starts the new Leyline; macOS and Linux: Leyline restarts itself).
+against the public key in `tauri.conf.json`. The title bar then says **Update ready — restart to finish** with **Restart**.
+Left waiting, it finishes at the next start: Leyline notes the version (`update-ready.txt` in its data folder),
+downloads it again on the first check (the signature checked again) and installs it straight away ("Finishing the
+update…"). It never restarts while a game Leyline started is still open (Windows: the installer runs in passive
+mode and starts the new Leyline; macOS and Linux: Leyline restarts itself).
 
 Until the owner has run **setup\Turn on launcher updates.bat** once (see Releases), builds carry no public key and
 Leyline only links to the release page.
@@ -85,6 +90,7 @@ up to 30 seconds between reads.
 | Path | What it is |
 |---|---|
 | `ui/` | the web UI: `index.html`, `style.css`, `app.js`, and the Leyline art and font in `ui/art/`. No framework, no bundler. |
+| `src-tauri/src/clientimport.rs` | add a client from a dropped folder, zip or link to the player's own backup: download and unpack with progress and Cancel, zip-slip and size caps, then detection; torrents refused |
 | `src-tauri/src/clients.rs` | add a client by folder, detect the build (five known builds and "other"), completeness, the realm file per build with backup and restore |
 | `src-tauri/src/pe_version.rs` | the executable's file version (VS_FIXEDFILEINFO), parsed from bytes on any OS |
 | `src-tauri/src/launch.rs` | start the client in its folder; through Wine on macOS/Linux |
@@ -147,7 +153,8 @@ cargo test --no-default-features
 
 ## Releases
 
-One tag push makes a release: `launcher-v<version>`, with `<version>` exactly the one in
+Every push to the public repo's main that changes `launcher/` makes a release (see Leyline's own updates). A
+hand-pushed tag still works too: `launcher-v<version>`, with `<version>` exactly the one in
 `src-tauri/tauri.conf.json` (and `Cargo.toml`, `package.json`). The workflow (copied to the public Leyline repo's
 `.github/workflows/` by "setup\Turn on GitHub builds.bat", which also pushes the tag for the current version) then:
 

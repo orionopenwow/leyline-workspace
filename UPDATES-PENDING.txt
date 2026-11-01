@@ -483,3 +483,20 @@
 1181e foreverui In game: the Builder's Path button
 1181f addons Leyline addons download: the same for desktop players
 1181g ship Save to GitHub: launcher List your mod, Saved Dens (GitHub then rebuilds Leyline.exe)
+1182a signin Site: the side menu is back on wide screens
+1183a signin Forum: the Discord link (off until set up), HQ status line
+1184a ov112-realm-check Read-only: what is left of the 1.12 realm (for Vanilla Remastered)
+1184b ov112-data-check Read-only: what 1.12 game files are left on the server
+1185a signin Site: Play buttons are the launcher's red stone PLAY button
+1186a signin Realm hopping: fast hop to character select, Hero Key prefetch
+1186b page In game: the realm browser data and the Going to cover
+1186c foreverui In game: the realm browser and its preview, REALMS on character select
+1187a relay Network: realm list details (who is on, mods, rules, Hero Key), community nodes (off until switched on)
+1187b hostkit Host pack: Solo leveling, bring your own server to the network
+1187c signin Site: plain words, 24/7 guide, agents and network guides, HQ Network page, forum for agents
+1187d scripts Realm: plain words in build and Den messages (live reload)
+1187e foreverui In game: plain words in the Host and Leyline windows
+1187f addons Leyline addons download: the same for desktop players
+1187g ship Save to GitHub: launcher auto-update, add a game client by drop, Agents page, Solo leveling, client picker, Network tab
+1187h leyline Leyline repo: the launcher release (GitHub builds it)
+1188a build-realm-check Read-only: Builders' Realm memory, disk, what turning it on would do

@@ -1,0 +1,80 @@
+{
+ "format": "leyline-den",
+ "version": 1,
+ "kind": "stamp",
+ "name": "campfire",
+ "title": "Campfire circle",
+ "line": "A campfire with benches and stools around it.",
+ "props": [
+  {
+   "entry": 1953,
+   "x": 0,
+   "y": 0,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 24538,
+   "x": 3,
+   "y": 0,
+   "z": 0,
+   "yaw": 90
+  },
+  {
+   "entry": 24538,
+   "x": -3,
+   "y": 0,
+   "z": 0,
+   "yaw": 90
+  },
+  {
+   "entry": 24538,
+   "x": 0,
+   "y": 3,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 24538,
+   "x": 0,
+   "y": -3,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 182593,
+   "x": 2.2,
+   "y": 2.2,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 182593,
+   "x": -2.2,
+   "y": -2.2,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 179977,
+   "x": 3.2,
+   "y": 3.2,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 180575,
+   "x": -3,
+   "y": 3,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 181302,
+   "x": 3,
+   "y": -3,
+   "z": 0,
+   "yaw": 0
+  }
+ ]
+}

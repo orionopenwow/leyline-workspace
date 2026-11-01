@@ -597,7 +597,7 @@ local K = {
     SYNC_EVERY_MS = 15000,
     MAX_STEP = 10,           -- yards per .build move
     MAX_TURN = 180,
-    UNDO_DEPTH = 30,
+    UNDO_DEPTH = 50,         -- undo and redo, each (owner 2026-10-31: "the last 50 actions")
     LOAD_COOLDOWN = 5,
     MOVES_PER_SECOND = 5,
     BUILD_NAME_MAX = 24,
@@ -1718,7 +1718,7 @@ local function spawnCommand(player, word, at)
         return say(player, "That spot is outside the build area.")
     end
     local px, py, pz, po = player:GetX(), player:GetY(), player:GetZ(), player:GetO()
-    if at then px, py, pz = at.x, at.y, at.z end
+    if at then px, py, pz = at.x, at.y, at.z else px, py, pz, po = X.snapPoint(player, px, py, pz, po) end
     local okHere, whyNot = canBuildAt(player, player:GetMapId(), px, py, pz)
     if not okHere then return say(player, whyNot) end
     local guid, now = player:GetGUIDLow(), os.time()
@@ -3243,6 +3243,46 @@ function X.CMD.floor(player)
 end
 X.CMD.ground = X.CMD.floor
 
+-- Placing at your feet (a player's own game, where the camera can't leave the character): .build grid <yards> puts
+-- it on a grid (0.5, 1, 2 or 5 yards; in a Den lined up with the room's middle) and turns it to the nearest 15
+-- degrees; .build grid ground on sets it down on the ground or the room's floor under you (when that is within 3
+-- yards). Per character, until logout; off by default. Clicks in edit mode keep the client's own Snap.
+X.GRIDS = { [0] = true, [0.5] = true, [1] = true, [2] = true, [5] = true }
+X.grid, X.ground = {}, {}
+function X.snapPoint(player, x, y, z, o)
+    local guid = player:GetGUIDLow()
+    local g = X.grid[guid] or 0
+    if g > 0 then
+        local ox, oy = DEN and DEN.x or 0, DEN and DEN.y or 0
+        x = ox + math.floor((x - ox) / g + 0.5) * g
+        y = oy + math.floor((y - oy) / g + 0.5) * g
+        local step = math.pi / 12
+        o = normO(math.floor((o or 0) / step + 0.5) * step)
+    end
+    if X.ground[guid] then
+        local h = X.floorAt(player, x, y, z)
+        if h and math.abs(h - z) <= 3 then z = h end
+    end
+    return x, y, z, o
+end
+function X.CMD.grid(player, words)
+    local guid, w = player:GetGUIDLow(), (words[2] or ""):lower()
+    if w == "ground" then
+        local v = (words[3] or ""):lower()
+        X.ground[guid] = (v == "on") or (v ~= "off" and not X.ground[guid]) or nil
+        return say(player, X.ground[guid] and "Snap to ground on: what you place at your feet sits on the ground or floor."
+            or "Snap to ground off.")
+    end
+    local g = (w == "off") and 0 or tonumber(w)
+    if not g or not X.GRIDS[g] then
+        return say(player, string.format("Grid: %s, ground %s. |cffffff00.build grid 0.5|1|2|5|off|r, |cffffff00.build grid ground on|off|r.",
+            (X.grid[guid] or 0) > 0 and (X.grid[guid] .. " yd") or "off", X.ground[guid] and "on" or "off"))
+    end
+    X.grid[guid] = g > 0 and g or nil
+    say(player, g > 0 and string.format("Grid %s yd: what you place at your feet lines up, turned to the nearest 15 degrees.", g)
+        or "Grid off: props go exactly where you stand.")
+end
+
 -- layouts: e,dx,dy,dz,o,s,pt,rl|... (offsets from the area's centre, world directions; o, pt, rl in radians)
 function X.layoutEncode(list, a)
     local out = {}
@@ -4115,7 +4155,7 @@ local function showHelp(player)
     say(player, "  |cffffff00.build save <name>|r  |cffffff00.build load <name|code>|r  |cffffff00.build share <name>|r  |cffffff00.build saved|r  |cffffff00.build where|r")
     say(player, "  |cffffff00.build plot claim|r  |cffffff00.build plot add <name>|r  |cffffff00.build plot|r: your own plot to build on with friends.")
     say(player, "  |cffffff00.build redo|r  |cffffff00.build store|r / |cffffff00storage|r  |cffffff00.build group|r / |cffffff00ungroup|r  "
-        .. "|cffffff00.build floor|r  |cffffff00.build layout save|load|list <name>|r")
+        .. "|cffffff00.build floor|r  |cffffff00.build grid 1|2|5|off|r  |cffffff00.build layout save|load|list <name>|r")
     say(player, "  |cffffff00.build path <prop> from|r, walk, |cffffff00.build path <prop> to [yards apart]|r: a path of that prop on the ground.")
     if X.anyOn() then
         say(player, "  Any object: |cffffff00.build find <words>|r  |cffffff00.build models <words>|r  then |cffffff00.build spawn <key>|r")
@@ -4589,6 +4629,9 @@ end
 
 -- A Den's save file (see "A Den's save file" above): the layout as a table, a file's table checked, and placed.
 OVBuild.DenLayout, OVBuild.DenCheck, OVBuild.DenApply, OVBuild.JsonDecode = X.DenLayout, X.DenCheck, X.DenApply, X.JsonDecode
+-- OVBuild.FloorAt(player, x, y, z) -> the floor or ground height there, or nil; OVBuild.SnapPoint(player, x, y, z, o) -> the
+-- point and facing on the player's grid (.build grid): ov_den_home.lua's stamps use both.
+OVBuild.FloorAt, OVBuild.SnapPoint = X.floorAt, X.snapPoint
 
 -- OVBuild.DenUsage() -> inside used, inside cap, yard used, yard cap
 function OVBuild.DenUsage()

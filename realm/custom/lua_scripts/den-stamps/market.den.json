@@ -1,0 +1,80 @@
+{
+ "format": "leyline-den",
+ "version": 1,
+ "kind": "stamp",
+ "name": "market",
+ "title": "Market square",
+ "line": "Two stalls, a counter, crates, barrels and a lamp post.",
+ "props": [
+  {
+   "entry": 19637,
+   "x": 0,
+   "y": 5,
+   "z": 0,
+   "yaw": 270
+  },
+  {
+   "entry": 180031,
+   "x": 0,
+   "y": -5,
+   "z": 0,
+   "yaw": 90
+  },
+  {
+   "entry": 19624,
+   "x": 3,
+   "y": 0,
+   "z": 0,
+   "yaw": 180
+  },
+  {
+   "entry": 179969,
+   "x": 4.5,
+   "y": 3,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 179969,
+   "x": 4.5,
+   "y": -3,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 179967,
+   "x": -4,
+   "y": 3,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 190559,
+   "x": -4,
+   "y": -3,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 195192,
+   "x": 2,
+   "y": 2.5,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 19457,
+   "x": -3,
+   "y": 0,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 180773,
+   "x": 5.5,
+   "y": 0,
+   "z": 0,
+   "yaw": 180
+  }
+ ]
+}

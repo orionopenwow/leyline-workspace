@@ -6,6 +6,9 @@ wu-play are ever asked.
     python3 -I gamedata-caddy.py add    <Caddyfile> [<stream host>]   put the block in (idempotent)
     python3 -I gamedata-caddy.py remove <Caddyfile>                   take it out (idempotent)
     python3 -I gamedata-caddy.py status <Caddyfile>                   "on" (block in), "off", or "no-site"
+    python3 -I gamedata-caddy.py add-vr    <Caddyfile> <host>         the same for the Vanilla Remastered page's site
+    python3 -I gamedata-caddy.py remove-vr <Caddyfile>                (hosting/vanilla-remastered/vr-site-up.sh's block:
+    python3 -I gamedata-caddy.py status-vr <Caddyfile>                 /data, /data/* answer 410 there too)
 
 Exit codes: 0 done, 3 no streaming site block in the Caddyfile (then nothing on that site is served at all, so
 there is nothing to switch), 2 a broken Caddyfile (a start marker without its end marker).
@@ -94,7 +97,86 @@ def status(s: str) -> str:
     return "on" if BEGIN in s else "off"
 
 
+# The Vanilla Remastered page (the 1.12 browser slice, levels 1-20): its own site block, made by vr-site-up.sh. One
+# switch for both: gamedata-switch.sh off puts this block in too. Its own markers, so each status stays exact.
+VR_SITE_BEGIN = "# >>> Vanilla Remastered site (vr-site-up.sh)"
+VR_SITE_END = "# <<< Vanilla Remastered site"
+VR_BEGIN = "\t# >>> 1.12 game data killswitch (gamedata-switch.sh)"
+VR_END = "\t# <<< 1.12 game data killswitch"
+VR_ROUTES = ("/data", "/data/*")
+VR_BODY = ('{"error":"gamedata_off","gamedata_streaming":false,'
+           '"message":"This realm needs your own game client folder for now."}')
+
+
+def vr_block() -> str:
+    return (f"{VR_BEGIN}: no game data from this server.\n"
+            "\t# Undo: bash /srv/wrath/stream/gamedata-switch.sh on\n"
+            f"\t@gamedata_off_vr path {' '.join(VR_ROUTES)}\n"
+            "\thandle @gamedata_off_vr {\n"
+            '\t\theader Content-Type "application/json; charset=utf-8"\n'
+            '\t\theader Cache-Control "no-store"\n'
+            f"\t\trespond `{VR_BODY}` 410\n"
+            "\t}\n"
+            f"{VR_END}\n")
+
+
+def vr_strip(s: str) -> str:
+    while VR_BEGIN in s:
+        i = s.index(VR_BEGIN)
+        j = s.find(VR_END, i)
+        if j < 0:
+            raise ValueError("the 1.12 killswitch start marker has no end marker")
+        j = s.find("\n", j)
+        s = s[:i] + (s[j + 1:] if j >= 0 else "")
+    return s
+
+
+def vr_add(s: str, host: str) -> str:
+    s = vr_strip(s)
+    if VR_SITE_BEGIN not in s:
+        raise LookupError("no Vanilla Remastered site block")
+    i = s.index(VR_SITE_BEGIN)
+    j = s.find(VR_SITE_END, i)
+    if j < 0:
+        raise ValueError("the Vanilla Remastered site block has no end marker")
+    opening = f"\n{host} {{\n"
+    k = s.find(opening, i, j)
+    if k < 0:
+        raise LookupError(f"the Vanilla Remastered block has no '{host} {{' line")
+    k += len(opening)
+    return s[:k] + vr_block() + s[k:]
+
+
+def vr_status(s: str) -> str:
+    if VR_SITE_BEGIN not in s:
+        return "no-site"
+    return "on" if VR_BEGIN in s else "off"
+
+
 def main(argv: list[str]) -> int:
+    if len(argv) >= 3 and argv[1] in ("add-vr", "remove-vr", "status-vr"):
+        with open(argv[2], encoding="utf-8") as f:
+            s = f.read()
+        try:
+            if argv[1] == "status-vr":
+                print(vr_status(s))
+                return 0
+            if argv[1] == "add-vr" and len(argv) < 4:
+                print("add-vr needs the host", file=sys.stderr)
+                return 64
+            new = vr_add(s, argv[3]) if argv[1] == "add-vr" else vr_strip(s)
+        except LookupError as e:
+            print(f"  {e}: nothing to change on that site", file=sys.stderr)
+            return 3
+        except ValueError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 2
+        if new != s:
+            with open(argv[2], "r+", encoding="utf-8") as f:
+                f.seek(0)
+                f.write(new)
+                f.truncate()
+        return 0
     if len(argv) < 3 or argv[1] not in ("add", "remove", "status"):
         print(__doc__.strip().split("\n\n")[1], file=sys.stderr)
         return 64

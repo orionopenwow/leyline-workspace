@@ -77,23 +77,124 @@ The Hangout's script (`hosting/hangout/hangout-up.sh`) with these differences:
 - **A stock 1.12.1 client.** `realmlist relay.openvanilla.app:<auth port>` (the step prints it), or open its join page,
   then `realmlist relay.openvanilla.app`. Old accounts sign in with their old login. The old direct address
   (`play.openvanilla.app`) now reaches the Wrath login server and won't take a 1.12 client.
-- **The 1.12 browser play page.** Not confirmed to work, and probably not reachable as it was: since the Wrath deploy,
-  Caddy sends `/` to `/wrath/leyline` and `/play` to `/wrath`, and the page's game connection went to the old `realmd`
-  / `mangosd` names on the website's network, which now are nobody and the Wrath bridge. The `ov112-realm-check` report
-  shows the routes and the page's address settings. Making it work means pointing that page's game connection at the
-  relay's bridge (`wss://relay.openvanilla.app/ws/<realm id>/auth` and `/world`) **with the client build that was live
-  before** (never the private `leyline-client-112` merge). That is an open question below.
-- **New players.** Signup is off and the old site's account creation went through `mangosd` (now the Wrath bridge), so
-  new 1.12 accounts can't be made today. Vanilla Remastered is for returning players until that is decided.
+- **In the browser, levels 1-20** (31 Oct, below): the OG 1.12 site and game page again, as `vr-site` at
+  `https://vanilla.openvanilla.app/`, playing the levels 1-20 slice. The realm card shows "Play in your browser" once
+  the page is up (`vr-site.url`).
+- **New players.** Through the page: the OG site's own sign-up (its "Play now" Hero Key and its account creation),
+  which now reaches the Vanilla Remastered world server (`MANGOSD_HOST=vr-mangosd`) instead of the Wrath bridge.
+  Through the relay with a stock client: returning players only (signup off on the Beacon).
+
+## Levels 1-20 in the browser (owner 2026-10-31)
+
+Owner: "Vanilla Remastered planned with minimal slices for 1-20 leveling with the style we had in the og project ...
+compact for the server and working with all other features too." Yes to a second 1.12 browser slice (levels 1-20 zones
+only, behind the same game data switch); the look is the OG Open Vanilla site and in-game UI as they were.
+
+This morning's `ov112-data-remove` emptied the world server's data (volume `wenilla-realm_gamedata`, 2.4 GB) and the old
+browser stream (`/srv/client/Data`, 5.1 GB; `play.openvanilla.app/data/*` answers 410). Three steps put back only what
+is needed, from the owner's own 1.12.1 client on his PC.
+
+### Tonight's order (Leyline Control steps)
+
+| # | Step | About | What it does |
+|---|---|---|---|
+| 1 | `vr-data-check` | 1 min, read-only | Finds the PC's 1.12.1 Data folder (`%USERPROFILE%\Games\WoW-1.12.1\Data`, then `Desktop\OpenVanilla\Data`, or the step's argument; `Desktop\OpenVanilla\Data` has no archives, only loose tables and the interface), the archives' size, and the server's disk, memory, extractors and what is done. Ends `VR DATA CHECK OK`. |
+| 2 | `vr-data` | upload (5.1 GB: ~10 min at 10 MB/s, ~45 min at 2 MB/s) + 50-90 min on the server | See below. Ends `VR DATA OK`. Resumable: run it again after any stop. |
+| 3 | `ov112-realm-check`, `ov112-on` | 1 min, then 2-10 min | As above (the realm's servers as `vr-realmd` / `vr-mangosd`). |
+| 4 | `vr-beacon` | 3 min | As above (Leyline). `vr-data` already set `WrongPass.MaxCount = 0`, so it no longer refuses. |
+| 5 | **owner**: DNS | 2 min | An A record `vanilla` -> the server's address at the registrar (Squarespace). `vr-site-check` prints the exact address. |
+| 6 | `vr-site-check`, `vr-site` | 1 min, then 3 min | The page. Ends `VR SITE ON`. |
+| 7 | `signin` | 2 min | Ships `stream/network.py`: the realm card's "Play in your browser" button. |
+| (any time) | `vr-test` | 1 min | Self-check with a fresh TEST account. Ends `VR SITE TEST OK`. |
+
+No realm restart of the Wrath realm in any of these. The Vanilla Remastered world server is stopped during `vr-data`
+(it refuses to run while `vr-mangosd` runs) and started by `ov112-on`; a later settings change to it means a restart with
+the 5-minute warning (`server restart 300` on its console: it announces the countdown itself).
+
+### vr-data (`hosting/vanilla-remastered/vr-data.ps1` on the PC, `vr-data.sh` on the server)
+
+1. **Upload**: the base archives, `patch.MPQ` and `patch-2..9.MPQ` (never other servers' letter patches) to
+   `/srv/vr112/upload` (0600) in 256 MB pieces, each SSH login at least 6 s apart. An interrupted piece is sent again
+   from the last whole piece; each archive counts only when its SHA-256 on the server matches the PC's. Disk is checked
+   first (the peak: archives 5.1 GB + data 1.3 GB + the larger of the 1.5 GB temporary vmap source and the 2.8 GB slice
+   budget, + 1.5 GB margin = about 10.8 GB; 13 GB free this afternoon, before the Builders' Realm).
+2. **The job** runs on the server as the systemd unit `vr-data` (log `/srv/vr112/vr-data.log`), so a dropped connection
+   doesn't stop it; running the step again follows it. Each phase leaves a marker in `/srv/vr112/state` and is skipped
+   once done:
+   - **extract**: CMaNGOS Classic's own extractors (`ad`, `vmap_extractor`, `vmap_assembler`) from the realm's own
+     images (the `vr-mangosd` image first; nothing pulled), with no network and the archives read-only, into
+     `wenilla-realm_gamedata`: `dbc/`, `maps/`, `vmaps/` (the temporary `Buildings/` is deleted at once). **mmaps are
+     skipped** (hours on this box; `VR_MMAPS=1` builds the two continents) and turned off in the settings. If the
+     images hold no extractors, it stops here and says so (then: build them from CMaNGOS Classic at the image's commit,
+     not done tonight).
+   - **classicplus**: the Classic+ server tables (`/opt/openvanilla-classicplus/dbc`: SkillRaceClassInfo,
+     CreatureModelData, CreatureDisplayInfo) over the stock ones, stock kept as `.orig`, as `openvanilla_server_dbc.sh`
+     did. `patch-Z.MPQ` (ours, the Classic+ client content) joins the upload folder for the slice.
+   - **slice**: `vr-slice.py` in the `vr-mpq-tools:1` image (StormLib from its authors' public source, tag v9.26, built
+     on the box). `slice-112.json`: a base (interface, tables, fonts, characters, items, spells, the shared sounds,
+     transports, the racial mounts' and pets' creature folders) and tiers in order: the Alliance and night elf starts and
+     capitals, the Horde and undead starts and capitals, Westfall, Loch Modan, Redridge, Darkshore, the Barrens,
+     Silverpine, the tram, Ragefire Chasm / Wailing Caverns / the Deadmines, then music and ambience. A zone is its
+     world-map rectangle in `WorldMapArea.dbc` (+1 tile), its tiles' textures, models and buildings walked like the
+     OG stream and the Wrath slice, its minimap tiles, and the realm's own spawns inside those tiles (their model folders,
+     baked NPC skins and creature sounds; a read-only query on `classicmangos`). Tiers go in until `budgetMB` (2800) or
+     until the disk would keep less than 3 GB; the report says which tiers are in. It writes NEW archives with the
+     original names into `/srv/vr112/slice/Data`, each file in the archive it came from (`patch-Z.MPQ` copied whole),
+     so the old site's own `/data` serves the slice and nothing else.
+   - **settings** (every file backed up to `/root/vr112-conf-<time>/`): `mangosd.conf` `GridUnload = 1`,
+     `mmap.enabled = 0` (no mmaps); `aiplayerbot.conf` `MinRandomBots` / `MaxRandomBots = 0` (`VR_BOTS=N` for a
+     handful) and `RandomBotAutologin = 0`; `realmd.conf` `WrongPass.MaxCount = 0`; memory limits `vr-mangosd` 1100 MB
+     (+512 MB swap), `vr-realmd` 96 MB. It reports `SOAP.Enabled` (the page's sign-up and the self-check need it). If
+     the image's start script rewrites these from its environment, it says so: check `docker logs vr-mangosd`.
+   - **clean**: the uploaded archives are deleted (`VR_KEEP_UPLOAD=1` keeps them). The extracted data and the slice stay.
+
+### vr-site (`hosting/vanilla-remastered/vr-site-up.sh`)
+
+`vr-site` is a copy of the old site container `wenilla-realm-realm-1` (same image id: the site, sign-in and browser
+client build that were live before, never the private `leyline-client-112` merge), which keeps running untouched:
+- its game connection: `REALMD_HOST=vr-realmd`, `MANGOSD_HOST=vr-mangosd` on `vr-112` (the realm's internal network);
+  it is also on the website's network (alias `vr-site` only) so Caddy reaches it;
+- its game data: `CLIENT_DATA` = `/srv/vr112/slice/Data`, read-only;
+- its own volumes are copies (`vr-site-<name>`, made once); bind mounts are shared as they were; the game accounts
+  are in the 1.12 database as before;
+- address settings that named `play.openvanilla.app` now name its own address (their names are printed, never values).
+
+**Address: `https://vanilla.openvanilla.app/`, a subdomain, not a path.** The page reads `/data/...` and `/ws/...` from
+the root of its own address (the OG `prefetch.js`, `sw.js`, `syncread.js`, `warmup.js` all build `'/data/' + name`), and
+on `play.openvanilla.app` the root, `/data` (410 since this morning) and `/ws` belong to other pages, so a path would need
+a different client build. No existing subdomain was free for it (the Wrath stream uses `wrath.`, the relay `relay.`).
+The owner adds the DNS record; until then `vr-site` stops before touching Caddy and prints the record.
+`VR_SITE_HOST=<name>` uses another name. Google / Discord sign-in on the new address need its callback added at
+Google / Discord (the owner's consoles); the OG "Play now" Hero Key sign-in needs nothing.
+
+Self-check (also the `vr-test` step): the page answers inside and at its address; what `/data/__index` answers without
+sign-in (reported: if the OG site serves its files without sign-in, it says so); brand words on `/`, `/play`, `/game`,
+`/key`, `/login` (reported, the OG pages are as they were); then a **fresh TEST account** (`VRTEST` + 6 digits, a random
+password, never printed) made through the realm's own account command (SOAP `account create`, with the SOAP login from
+the site's own settings, handed over in a 0600 file and deleted at once), a full 1.12.1 SRP6 logon and realm list on
+`vr-realmd` and through the relay's port for this realm (when on Leyline), the world server's greeting, and the account
+deleted. Never the Chumpton account, never the owner's password. Any failure rolls back what the run made.
+
+Off: `vr-site-off` (container removed, its Caddy site out; copied volumes kept).
+
+### Memory and disk budget
+
+| | Memory | Disk |
+|---|---|---|
+| `vr-mangosd` (no random bots, grids unload, no mmaps) | limit 1100 MB (+512 swap); expect 600-900 MB | data ~1.2 GB (dbc, maps, vmaps) |
+| `vr-realmd` | 96 MB | - |
+| `vr-site` | 256 MB | slice <= 2.8 GB (budget) |
+| `wu-vr-agent` | 64 MB | - |
+| During `vr-data` only | extractors 1.5 GB limit (the realm is stopped then) | archives 5.1 GB + 1.5 GB temporary, deleted at the end |
 
 ## The game data killswitch and the 1.12 stream
 
-The killswitch (`stream/server/gamedata-switch.sh`, steps `gamedata-off` / `gamedata-on`,
-`docs/GAME-DATA-ON-OUR-SERVER.md`) covers **only the Wrath stream** (`wrath.openvanilla.app/data`, the two manifests,
-the screenshots). It does **not** cover the 1.12 site: its Caddy config (`/opt/openvanilla-classicplus/Caddyfile`) is not
-in this repo and the switch never edits it. Whatever the 1.12 site streamed before still streams, switch or not.
-`ov112-on` warns when the switch is on; `ov112-realm-check` reports what the 1.12 site answers on `/data/`. To cover it,
-the switch needs a 1.12 block too (a change for whoever owns `stream/server/`).
+One switch for both (owner 2026-10-31). `gamedata-off` (`stream/server/gamedata-switch.sh off`) now also puts a 410
+block for `/data` into the Vanilla Remastered page's Caddy site when it is installed (`/srv/vr112/site-host`), checks
+`https://<its address>/data/__index` answers 410, and with `--park` moves `/srv/vr112/slice/Data` off the served folder
+(`vr-site` restarts on an empty placeholder); `gamedata-on` undoes both; `status` shows it. `vr-site` puts the block in
+at once when the switch is already on. The Survivors slice rules stay as they are. The old site's own `/data` on
+`play.openvanilla.app` stays 410 (`ov112-data-remove`'s block).
 
 ## Checks after launch (by hand or the read-only `check` step)
 
@@ -173,6 +274,12 @@ For workstream A (`stream/network.py`) and B (`stream/hub.py`):
 - The game data killswitch: a block for the 1.12 site (`stream/server/gamedata-switch.sh`).
 
 ## Files
+
+- Levels 1-20 in the browser: `hosting/vanilla-remastered/vr-data.ps1`, `vr-data.sh`, `vr-slice.py`, `slice-112.json`,
+  `mpq-tools.Dockerfile`, `vr-site-up.sh`, `probe112.py account`, and the .bat files `Vanilla Remastered data*.bat`,
+  `Vanilla Remastered browser page*.bat`, `Vanilla Remastered self-test.bat`; the 1.12 part of
+  `stream/server/gamedata-switch.sh` / `gamedata-caddy.py`; the card button in `stream/network.py` (`vr-site.url`).
+  Tests: `hosting/vanilla-remastered/tests/test_vr_data_site.py`.
 
 - `tools/ov112-off/start-112-realm.sh` and its three .bat files (`Turn on the 1.12 realm - check.bat`,
   `Turn on the 1.12 realm.bat`, `Turn off the 1.12 realm.bat`)

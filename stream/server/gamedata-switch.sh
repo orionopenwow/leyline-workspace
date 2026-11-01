@@ -23,6 +23,10 @@
 # file when off; the sign-in gate again when on), and append one line to $WU/gamedata-switch.log.
 # A Caddy that refuses the change gets its previous Caddyfile back. Turning game data OFF never rolls the
 # flag back: a half-done "off" still keeps /data closed at the sign-in gate (wu-portal's /__auth).
+# The 1.12 browser slice (Vanilla Remastered's page, hosting/vanilla-remastered/vr-site-up.sh; owner 2026-10-31: one
+# switch for both) when it is installed (/srv/vr112/site-host): off puts a 410 block for /data in its Caddy site too
+# and --park moves /srv/vr112/slice/Data off the served folder (vr-site restarts on an empty placeholder); on undoes
+# both; status and the checks cover its address. Not installed: nothing about it changes, the report says so.
 # Ends with "GAMEDATA OFF OK" / "GAMEDATA ON OK" / "GAMEDATA STATUS OK".
 set -euo pipefail
 HERE="$(dirname "$(readlink -f "$0")")"
@@ -45,6 +49,13 @@ BY=$(printf '%s' "$BY" | tr -cd 'A-Za-z0-9 _.@-' | cut -c1-40)
 BK="${WU_BACKUPS:-/root/gamedata-backups}/$TS"
 # A file in every slice that the checks ask for (any /data name answers the same; this one is in every slice).
 SLICE_FILE="/data/DBFilesClient%5CMap.dbc"
+VR_ROOT="${VR_ROOT:-/srv/vr112}"
+VR_SLICE="$VR_ROOT/slice/Data"
+VR_SITE_C="${VR_SITE_C:-vr-site}"
+vr_host() { [ -f "$VR_ROOT/site-host" ] && tr -cd 'a-z0-9.-' < "$VR_ROOT/site-host" | head -c 100; return 0; }
+vr_caddy_state() { [ -f "$CF" ] && python3 -I "$GCADDY" status-vr "$CF" 2>/dev/null || echo "no-caddyfile"; }
+vr_restart() { docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$VR_SITE_C" && docker restart "$VR_SITE_C" >/dev/null 2>&1 \
+  && echo "  $VR_SITE_C restarted" || true; }
 
 caddy_state() { [ -f "$CF" ] && python3 -I "$GCADDY" status "$CF" 2>/dev/null || echo "no-caddyfile"; }
 code() { curl -s -o /dev/null -m 20 -w '%{http_code}' "$1" 2>/dev/null || true; }
@@ -105,6 +116,14 @@ report() {   # $1 = "before" / "after"
   echo "    /world-manifest.json     $(code "https://$STREAM_HOST/world-manifest.json")"
   echo "    /wenilla_bg.wasm (our client, stays) $(code "https://$STREAM_HOST/wenilla_bg.wasm")"
   echo "    /wrath/art/leyline-shot-city.webp (a game screenshot) $(code "https://$UPSTREAM/wrath/art/leyline-shot-city.webp")"
+  local vh; vh=$(vr_host)
+  if [ -n "$vh" ]; then
+    echo "  1.12 browser slice (Vanilla Remastered page, $vh): Caddy block $(vr_caddy_state)"
+    if [ -f "$VR_SLICE/.gamedata-parked" ]; then echo "    slice: parked (empty placeholder)"; else echo "    slice: $(size_of "$VR_SLICE")"; fi
+    echo "    https://$vh/data/__index $(code "https://$vh/data/__index")"
+  else
+    echo "  1.12 browser slice: not installed (no $VR_ROOT/site-host)"
+  fi
 }
 
 glog() {
@@ -114,11 +133,11 @@ glog() {
     && chmod 644 "$WU/portal/gamedata-last.json.tmp" && mv -f "$WU/portal/gamedata-last.json.tmp" "$WU/portal/gamedata-last.json" || true
 }
 
-caddy_apply() {   # $1 = add|remove; 0 = done (or nothing to do), 1 = Caddy refused (the old file is back)
+caddy_apply() {   # $1 = add|remove|add-vr|remove-vr [$2 host]; 0 = done (or nothing to do), 1 = Caddy refused (the old file is back)
   [ -f "$CF" ] || { echo "  no Caddyfile at $CF: nothing to change there"; return 0; }
   mkdir -p "$BK"; cp -p "$CF" "$BK/Caddyfile"
   local rc=0
-  python3 -I "$GCADDY" "$1" "$CF" "$STREAM_HOST" || rc=$?
+  python3 -I "$GCADDY" "$1" "$CF" "${2:-$STREAM_HOST}" || rc=$?
   if [ "$rc" = 3 ]; then echo "  no streaming site in the Caddyfile: $STREAM_HOST serves nothing (stream-up.sh adds the 410 block when it runs)"; return 0; fi
   [ "$rc" = 0 ] || { cat "$BK/Caddyfile" > "$CF"; echo "  could not edit $CF (left as it was)"; return 1; }
   if cmp -s "$CF" "$BK/Caddyfile"; then echo "  Caddy: already so"; return 0; fi
@@ -156,6 +175,12 @@ park() {
     [ -f "$f" ] || continue
     mv "$f" "$dest/www/"; printf '%s\t%s\n' "$f" "$dest/www/$(basename "$f")" >> "$dest/parked.txt"
   done
+  if [ -n "$(vr_host)" ] && [ -d "$VR_SLICE" ] && [ ! -f "$VR_SLICE/.gamedata-parked" ]; then
+    mkdir -p "$dest/vr112"; mv "$VR_SLICE" "$dest/vr112/Data"
+    mkdir -p "$VR_SLICE"; touch "$VR_SLICE/.gamedata-parked"; chmod -R a+rX "$VR_SLICE"
+    printf '%s\t%s\n' "$VR_SLICE" "$dest/vr112/Data" >> "$dest/parked.txt"
+    echo "  parked the 1.12 browser slice too"; vr_restart
+  fi
   echo "$dest" > "$OFFLINE/CURRENT"
   echo "  parked $n slice(s), the Forever UI overlay and the manifests in $dest (never deleted)"
   if play_running; then
@@ -184,15 +209,21 @@ unpark() {
   mv "$dest/parked.txt" "$dest/restored-$TS.txt"
   find "$dest" -mindepth 1 -type d -empty -delete 2>/dev/null || true
   echo "  the parked files are back where they were served from"
+  if [ -n "$(vr_host)" ]; then vr_restart; fi
   if play_running; then docker restart wu-play >/dev/null && echo "  wu-play restarted on the real slice"; fi
 }
 
 checks_off() {
-  local bad=0 c u
+  local bad=0 c u vh
   for u in /data/__tier/index.json "$SLICE_FILE" /boot-manifest.json; do
     c=$(code "https://$STREAM_HOST$u")
     if [ "$c" = 410 ]; then echo "  CHECK $u -> 410 Gone"; else echo "  CHECK FAILED $u -> $c (want 410)"; bad=1; fi
   done
+  vh=$(vr_host)
+  if [ -n "$vh" ]; then
+    c=$(code "https://$vh/data/__index")
+    if [ "$c" = 410 ]; then echo "  CHECK $vh/data/__index -> 410 Gone"; else echo "  CHECK FAILED $vh/data/__index -> $c (want 410)"; bad=1; fi
+  fi
   return $bad
 }
 checks_on() {
@@ -225,6 +256,7 @@ case "$cmd" in
     portal_knows
     log "2/4 Caddy: 410 Gone for the game-data routes"
     caddy_ok=1; caddy_apply add || caddy_ok=0
+    if [ -n "$(vr_host)" ]; then caddy_apply add-vr "$(vr_host)" || caddy_ok=0; fi
     log "3/4 Realm: stream accounts released"
     release_accounts
     log "4/4 Park the files"
@@ -252,6 +284,7 @@ case "$cmd" in
     unpark
     log "2/3 Caddy: the 410 block out"
     caddy_apply remove || die "Caddy refused: game data stays OFF (the flag is kept). Nothing else changed."
+    caddy_apply remove-vr || die "Caddy refused the 1.12 part: game data stays OFF there (the flag is kept)."
     log "3/3 Flag removed"
     if [ -f "$FLAG" ]; then mkdir -p "$BK"; mv -f "$FLAG" "$BK/gamedata-off"; echo "  removed (kept in $BK)"; else echo "  there was none"; fi
     sleep "${WU_SETTLE:-2}"

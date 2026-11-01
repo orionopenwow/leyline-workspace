@@ -101,6 +101,26 @@ def vr_id() -> str | None:
     return _vr["id"]
 
 
+# Its browser page (hosting/vanilla-remastered/vr-site-up.sh writes /srv/wrath/portal/vr-site.url): the OG 1.12 site at its
+# own address, levels 1-20 streamed. Until it exists, the card has no browser button (players use their own client).
+VR_SITE_FILE = os.environ.get("WU_VR_SITE_FILE", "/app/vr-site.url")
+_vrs = {"at": -1e9, "url": None}
+
+
+def vr_site_url() -> str | None:
+    """The Vanilla Remastered browser page (https://<host>/), or None. Re-read once a minute."""
+    now = time.monotonic()
+    if now - _vrs["at"] > 60:
+        _vrs["at"] = now
+        try:
+            with open(VR_SITE_FILE, encoding="utf-8") as f:
+                v = f.read(200).strip()
+            _vrs["url"] = v if re.fullmatch(r"https://[a-z0-9.-]+\.[a-z]{2,}/", v) else None
+        except OSError:
+            _vrs["url"] = None
+    return _vrs["url"]
+
+
 def offered(build, env=None) -> bool:
     v = (os.environ if env is None else env).get("LEYLINE_ALL_CLIENTS", "").strip().lower()
     return v in ("1", "true", "yes", "on") or (build or 12340) <= MAX_OFFERED_BUILD
@@ -372,6 +392,7 @@ def record_of(r: dict, sample: dict | None = None) -> dict:
             "featured": bool(r.get("featured")), "verified": bool(r.get("verified")), "official": bool(r.get("official")),
             "pinned": bool(r.get("vr") or r.get("sample")), "optional": bool(r.get("vr")),
             "note": VR_LINE if r.get("vr") else None,
+            "browserUrl": vr_site_url() if r.get("vr") else None,
             "sample": bool(r.get("sample")), "group": r.get("group", "community"),
             "sampleName": ((sample or {}).get("name") or SAMPLE_NAME) if r.get("sample") else None,
         },
@@ -509,6 +530,8 @@ def card(r: dict, join_base: str, ruleset_labels: dict, share_box=None) -> str:
     cls = "realm " + {"featured": "featured", "sample": "sample"}.get(r.get("group"), "")
     join = f'{join_base}/join/{r["id"]}'
     button = f'<a class="btn" href="{e(join)}" rel="noopener noreferrer">Join</a>'
+    if r.get("vr") and vr_site_url():   # its own browser page (the OG site), levels 1-20
+        button += f' <a class="btn" href="{e(vr_site_url())}" rel="noopener">Play in your browser</a>'
     return (f'<div class="{cls.strip()}" id="r-{e(r["id"])}"><h2>{e(r["name"])}</h2>'
             f'<div class="tags">{tags_html(r, ruleset_labels)}</div>'
             + (f'<p>{e(r["tagline"])}</p>' if r.get("tagline") else '')

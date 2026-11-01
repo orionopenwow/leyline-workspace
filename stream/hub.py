@@ -2137,7 +2137,7 @@ class Hub:
             '<p class="hb-sub-h">One launcher for every classic client and every server: your game, your realm, one click.</p>'
             # no buttons under the line (owner 2026-10-30): Download and Play are in the side menu
             '<p class="hb-note">Free and open source, for Windows, macOS and Linux. Nothing to buy.</p></section>'
-            + self.hangout_open(got) + self.live_strip(got) + self.ticker(got) + self.realm_section(got) + self.how_strip() + den_week_html() + self.counters(got, items) + self.featured_mod(items) + self.features(got)
+            + self.hangout_open(got) + self.realm_section(got) + self.how_strip() + den_week_html() + self.counters(got, items) + self.featured_mod(items) + self.features(got)
             + self.posters(got) + self.herokey_teaser(got) + self.community(items) + self.mod_strip(items) + status +
             '<p class="hb-fine">Community projects are links: nothing of theirs is hosted here. Each belongs to its '
             'authors, under the licence they chose. Leyline is an independent open-source project.</p>')
@@ -4113,6 +4113,15 @@ padding:16px 12px 14px;overflow-y:auto;overflow-x:hidden;border-right:1px solid 
 background:color-mix(in srgb,var(--lk-chrome) 90%,transparent);transition:width .2s ease;scrollbar-width:none}
 body.hb .hb-top::-webkit-scrollbar{display:none}
 body.hb .hb-brand{padding:2px 6px 12px;margin-bottom:6px;border-bottom:1px solid var(--lk-border)}
+/* the wordmark as the launcher's title bar draws it (owner 31 Oct 23:52 "match the launcher"): the 58px embossed mark, the
+   two words centred on each other with LAUNCHER spread to the name's width, clear of the fold button, which sits level with the mark */
+body.hb .hb-top .hb-brand{gap:13px;padding:2px 40px 12px 4px}
+body.hb .hb-top .hb-brand .ly-spin{--ly-spin-size:58px!important;filter:drop-shadow(-1px -1px 0 rgba(255,255,255,.22)) drop-shadow(1.5px 2px 0 rgba(0,0,0,.65)) drop-shadow(0 4px 7px rgba(0,0,0,.6))}
+body.hb .hb-top .hb-word{display:inline-grid;justify-items:center;text-align:center;line-height:1}
+body.hb .hb-top .hb-word b{font-size:25px;font-weight:800;line-height:1;letter-spacing:-.015em}
+body.hb .hb-top .hb-word i{margin:4px -.36em 0 0;font-size:11px;font-weight:700;letter-spacing:.36em}
+body.hb .hb-top .hb-word :is(b,i){text-shadow:0 -1px 0 rgba(255,255,255,.18),0 1.5px 0 rgba(0,0,0,.75),0 3px 6px rgba(0,0,0,.55)}
+body.hb:has(#hb-side:checked) .hb-top .hb-brand .ly-spin{--ly-spin-size:44px!important}
 body.hb .hb-nav{flex-direction:column;align-items:stretch;gap:2px;margin:0}
 body.hb .hb-ni{justify-content:flex-start;width:100%;padding:9px 12px;border-radius:10px;font-size:15px;gap:12px;white-space:nowrap}
 body.hb .hb-ni svg{display:block;width:20px;height:20px}
@@ -4124,7 +4133,7 @@ body.hb .hb-nav-x{display:flex;flex-direction:column;gap:2px;margin-top:10px;pad
 body.hb .hb-end{flex-direction:column;align-items:stretch;gap:8px;margin-top:auto;padding-top:14px}
 body.hb .hb-dl,body.hb .hb-signin,body.hb .hb-acct{justify-content:center;white-space:nowrap;overflow:hidden}
 body.hb{padding-left:var(--hb-side);transition:padding-left .2s ease}
-.hb-side-b{position:absolute;top:22px;right:10px;display:grid;place-items:center;width:28px;height:28px;border-radius:8px;cursor:pointer;
+.hb-side-b{position:absolute;top:33px;right:10px;display:grid;place-items:center;width:28px;height:28px;border-radius:8px;cursor:pointer;
 color:var(--lk-muted);border:1px solid var(--lk-border)}
 .hb-side-b:hover{color:var(--lk-text);border-color:var(--lk-accent)}
 .hb-side-b svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:rotate .2s}
@@ -4134,7 +4143,7 @@ body.hb:has(#hb-side:checked) .hb-top{padding:16px 10px 14px}
 body.hb:has(#hb-side:checked) :is(.hb-ni span,.hb-word,.hb-acct-n){display:none}
 body.hb:has(#hb-side:checked) .hb-ni{justify-content:center;padding:10px 0;gap:0}
 body.hb:has(#hb-side:checked) .hb-brand{justify-content:center;padding:2px 0 44px}
-body.hb:has(#hb-side:checked) .hb-side-b{top:64px;left:50%;right:auto;translate:-50% 0}
+body.hb:has(#hb-side:checked) .hb-side-b{top:72px;left:50%;right:auto;translate:-50% 0}
 body.hb:has(#hb-side:checked) .hb-side-b svg{rotate:180deg}
 body.hb:has(#hb-side:checked) .hb-dl{font-size:0;gap:0;padding:0}
 body.hb:has(#hb-side:checked) .hb-signin{font-size:0;padding:0}

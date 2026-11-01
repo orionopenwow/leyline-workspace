@@ -414,8 +414,20 @@ fn enter_world(c: &Writer, shared: &Shared, p: Pos) -> io::Result<()> {
     c.send(&SMSG_INIT_WORLD_STATES { map: Map::Kalimdor, area: AREA, sub_area: AREA, states: vec![] })?;
     let objs = shared.den.lock().unwrap().everything();
     send_creates(c, &objs)?;
-    say(c, &format!("Welcome to your Den: {} props. Type .den for the commands.", shared.den.lock().unwrap().props.len()))
+    say(c, &format!("Welcome to your Den: {} props.", shared.den.lock().unwrap().props.len()))?;
+    for l in TUTORIAL {
+        say(c, l)?;
+    }
+    Ok(())
 }
+
+/// The first-minute tutorial, said at every login (four lines: build, undo, save).
+const TUTORIAL: &[&str] = &[
+    "Quick start: 1) .den place chair  puts a chair in front of you (.den find lamp: what's there to place)",
+    "2) .den stamp inn now  puts down a whole inn (.den stamps: the others)",
+    "3) .build undo  takes the last one back",
+    "4) .den save mine  keeps your Den in a file; the launcher's Saved Dens opens it again",
+];
 
 fn send_creates(c: &Writer, objs: &[WorldObject]) -> io::Result<()> {
     for body in raw::gameobject_creates(objs, PER_UPDATE) {
@@ -448,6 +460,7 @@ fn say(c: &Writer, text: &str) -> io::Result<()> {
 }
 
 const HELP: &[&str] = &[
+    ".den place <name>: one piece in front of you (chair, lantern, house...); .den find <word>: what there is",
     ".den stamps: the stamps; .den stamp <name> now [degrees]: put one down where you stand",
     ".build undo: take the last change back",
     ".den save <name> / .den load <name> [replace|add] / .den files: your Den in a file",
@@ -483,6 +496,31 @@ fn chat(c: &Writer, shared: &Shared, p: Pos, text: &str) -> io::Result<()> {
                     apply(c, &ch)
                 }
             }
+        }
+        (".den", "find") => {
+            let q = words[2..].join(" ");
+            if q.is_empty() {
+                return say(c, "Find what? .den find chair");
+            }
+            let hits = den::find_objects(&q);
+            if hits.is_empty() {
+                return say(c, &format!("Nothing called '{q}' here."));
+            }
+            let names: Vec<&str> = hits.iter().take(12).map(|h| h.3).collect();
+            let more = if hits.len() > 12 { format!(" (and {} more)", hits.len() - 12) } else { String::new() };
+            say(c, &format!("{}{more}. .den place <name> puts one down.", names.join(", ")))
+        }
+        (".den", "place") => {
+            let q = words[2..].join(" ");
+            if q.is_empty() {
+                return say(c, "Place what? .den place chair (.den find <word> lists them)");
+            }
+            let Some(obj) = den::find_objects(&q).into_iter().next() else {
+                return say(c, &format!("Nothing called '{q}' here. .den find <word> lists what there is."));
+            };
+            let st = den::one_piece(obj);
+            let ch = shared.den.lock().unwrap().stamp(&st, p.x, p.y, p.z, p.o);
+            apply(c, &ch)
         }
         (".build", "undo") => {
             let ch = shared.den.lock().unwrap().undo();
@@ -534,7 +572,7 @@ fn chat(c: &Writer, shared: &Shared, p: Pos, text: &str) -> io::Result<()> {
                 apply(c, &ch)
             }
         },
-        (".den", _) | (".build", _) => say(c, "Den Lite knows: .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room."),
+        (".den", _) | (".build", _) => say(c, "Den Lite knows: .den place, .den find, .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room."),
         _ => c.send(&SMSG_MESSAGECHAT {
             chat_type: SMSG_MESSAGECHAT_ChatType::Say { target6: Guid::new(PLAYER_GUID) },
             language: Language::Universal,

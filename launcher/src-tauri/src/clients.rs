@@ -646,6 +646,46 @@ pub fn read_realmlist(profile: &ClientProfile) -> Option<String> {
     fs::read_to_string(profile_realm_file(profile)).ok().and_then(|t| parse_realmlist(&t))
 }
 
+/// A client's name as players see it: the folder's name without game or publisher names (an install folder is
+/// often named after the game); nothing left: "Game". Standing rule: those names never show in Leyline.
+pub fn brandless(name: &str) -> String {
+    // word by word (ASCII case-insensitive), so the rest of the name keeps its spelling
+    let words: Vec<&str> = name.split_whitespace().collect();
+    let low: Vec<String> = words.iter().map(|w| w.to_ascii_lowercase()).collect();
+    let bare = |i: usize| low[i].trim_matches(|c: char| !c.is_ascii_alphanumeric()).to_string();
+    let mut keep = Vec::new();
+    let mut i = 0;
+    while i < words.len() {
+        let w = bare(i);
+        let next = |k: usize| if i + k < words.len() { bare(i + k) } else { String::new() };
+        let skip = if w == "world" && next(1) == "of" && next(2).starts_with("warcraft") {
+            3
+        } else if w == "lich" && next(1) == "king" {
+            2
+        } else if w.contains("warcraft") || w == "wow" || w.starts_with("blizzard") {
+            1
+        } else if w == "entertainment" && i > 0 && bare(i - 1).starts_with("blizzard") {
+            1
+        } else {
+            0
+        };
+        if skip == 0 {
+            keep.push(words[i]);
+            i += 1;
+        } else {
+            i += skip;
+        }
+    }
+    let out = keep.join(" ");
+    let out = out.trim_matches(|c: char| c == '-' || c == '_' || c == ':' || c.is_whitespace()).to_string();
+    // "(3.3.5a (12340))" alone, or nothing: say Game first
+    if out.is_empty() || out.starts_with('(') || out.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        format!("Game {out}").trim().to_string()
+    } else {
+        out
+    }
+}
+
 /// A new profile from a detection. The id is unique among `existing` ids.
 pub fn new_profile(path: &Path, det: &Detection, existing: &[ClientProfile]) -> ClientProfile {
     let base = format!("c{}", det.build.version().replace('.', ""));
@@ -666,7 +706,7 @@ pub fn new_profile(path: &Path, det: &Detection, existing: &[ClientProfile]) -> 
         .filter(|n| !n.eq_ignore_ascii_case(det.build.exe_name()));
     ClientProfile {
         id,
-        name: if folder.is_empty() { label } else { format!("{folder} ({label})") },
+        name: brandless(&if folder.is_empty() { label } else { format!("{folder} ({label})") }),
         path: path.to_path_buf(),
         build: det.build,
         realmlist: det.current_realmlist.clone().unwrap_or_default(),
@@ -742,6 +782,13 @@ pub mod testutil {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn client_names_carry_no_game_names() {
+        assert_eq!(super::brandless("World of Warcraft 3.3.5a (3.3.5a (12340))"), "Game 3.3.5a (3.3.5a (12340))");
+        assert_eq!(super::brandless("My Game (3.3.5a (12340))"), "My Game (3.3.5a (12340))");
+        assert_eq!(super::brandless("Blizzard Entertainment"), "Game");
+        assert_eq!(super::brandless("wow"), "Game");
+    }
     use super::testutil::*;
     use super::*;
 

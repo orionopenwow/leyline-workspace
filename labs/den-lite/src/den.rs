@@ -733,3 +733,42 @@ mod tests {
         assert_eq!(civil(1_793_404_800).6, 6, "a Saturday");
     }
 }
+
+/// `.den find` / `.den place`: the objects whose name matches, best first (the whole name, then the start of a
+/// word, then anywhere in it; shorter names first within each).
+pub fn find_objects(q: &str) -> Vec<(u32, u8, u32, &'static str, f32)> {
+    let q = q.trim().to_lowercase();
+    if q.is_empty() {
+        return Vec::new();
+    }
+    let mut hits: Vec<(u8, usize, (u32, u8, u32, &'static str, f32))> = crate::objects::OBJECTS
+        .iter()
+        .filter_map(|o| {
+            let n = o.3.to_lowercase();
+            let rank = if n == q {
+                0
+            } else if n.split(|c: char| !c.is_alphanumeric()).any(|w| w.starts_with(&q)) || n.starts_with(&q) {
+                1
+            } else if n.contains(&q) {
+                2
+            } else {
+                return None;
+            };
+            Some((rank, n.len(), *o))
+        })
+        .collect();
+    hits.sort_by_key(|h| (h.0, h.1, h.2 .0));
+    hits.dedup_by_key(|h| h.2 .3);
+    hits.into_iter().map(|h| h.2).collect()
+}
+
+/// One object as a stamp: 3 yards in front of the player, facing the way they face.
+pub fn one_piece(o: (u32, u8, u32, &'static str, f32)) -> DenDoc {
+    DenDoc {
+        format: "leyline-den".into(),
+        version: 1,
+        title: Some(o.3.to_string()),
+        props: vec![Prop { entry: o.0 as u64, x: 3.0, ..Default::default() }],
+        ..Default::default()
+    }
+}

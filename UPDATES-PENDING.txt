@@ -560,3 +560,7 @@
 1245b page Game page: the realm bar at the top (it covered the character name box), hop and sign-in screens in the Leyline look
 1246a signin Site: Den files on the Workshop (listing format den, checked like the Den loader)
 1246b ship Launcher: Your Den (one button, Den page: play, share with friends, invite, saved Dens, packs, Workshop), Den Lite support, the Agents page's Den tools
+1246c leyline Leyline repo: the export again (the Den agent tests no longer build in realm files)
+1246d build-realm-check Builders' Realm: why entering the world drops (restarts, memory, logins)
+1247a den-lite Den Lite on this PC: builds den-lite.exe for the launcher's Your Den (place any piece by name, a quick start at login)
+1247b ship Launcher: My Den goes straight to Your Den; Wrath Unleashed plays plain (no mods window); every launch: no intro movie, no legal screens, a borderless full-screen window; game client names without game names

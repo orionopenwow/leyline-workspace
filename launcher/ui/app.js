@@ -1084,6 +1084,14 @@ function localSub(L) {
 }
 function localGo(L) {
   const step = localStep(L);
+  // My Den without a Docker Den running: Your Den's one click (Den Lite straight in, else its setup there), not
+  // the Host page (owner 1 Nov 02:46: "clicking the button doesn't launch the den")
+  if (L === DEN && step !== "play" && window.LeylineDen && window.LeylineNav) {
+    pendingLocal = null;
+    window.LeylineNav.show("den");
+    window.LeylineDen.go();
+    return;
+  }
   if (step === "play") { playLocal(L); return; }
   if (step === "folder") {
     pendingLocal = L.profile;

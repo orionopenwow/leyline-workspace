@@ -384,18 +384,14 @@ test('My Den hosted on this PC: the row plays it through its own invite link wit
   await ctx.close();
 });
 
-test('My Den not hosted: the row opens the Host page with Make my Den picked', async () => {
+test('My Den not hosted: the row opens Your Den and its one click (Den Lite straight in, else its setup there)', async () => {
   const { page, ctx, errors } = await openDen({ dir: '/home/me/kit', is_kit: true, has_windows_script: true, has_unix_script: true, problems: [], seeds: [], realm: null });
   await page.click('#pb-realm-btn');
   assert.ok((await rrows(page)).includes('My Den||Make your Den|false|'));
   await page.click('#pb-rmenu .pb-den');
-  assert.equal(await pageOn(page), 'page-host');
-  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'host_choose'));
-  assert.deepEqual((await callsOf(page, 'host_choose'))[0], { profile: 'den', clientId: 'c335a-1' });
-  await page.waitForFunction(() => document.querySelector('.hc-rs[data-profile="den"].on'));
-  assert.equal(await page.getAttribute('.hc-rs[data-profile="den"]', 'aria-checked'), 'true');
-  assert.equal(await page.textContent('#hc-start'), 'Start My Den');
-  assert.equal(await callsOf(page, 'join_invite').then((l) => l.length), 0, 'nothing joined, nothing started');
+  assert.equal(await pageOn(page), 'page-den', 'Your Den, not the Host page');
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'den_state'));
+  assert.equal(await callsOf(page, 'join_invite').then((l) => l.length), 0, 'nothing joined');
   assert.equal(await callsOf(page, 'play').then((l) => l.length), 0);
   // made since: the row plays it now
   await page.evaluate((k) => { window.__kit = k; }, DEN_KIT);

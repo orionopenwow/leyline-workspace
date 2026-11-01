@@ -134,6 +134,8 @@ STEPS = {
     "realm":   ("realm/Server pass - finder 10 and bug reports.bat", "Realm settings (5-min restart)", False),
     "foreverui": ("stream/Add Forever UI to the stream.bat", "Forever UI look (menus and character select)", False),
     "slice":   ("stream/Make mini slice.bat", "Streamed game files (30-60 min)", False),
+    # docs/INCIDENT-2026-11-01-SLICE.md: the streamed slice's files on the server, checked (read-only)
+    "slice-health": ("stream/Slice health - check.bat", "Read-only: is the streamed slice whole (key files, its tier lists, what wu-play answers)", False),
     "ship":    ("Ship to GitHub.bat", "Save everything to GitHub", True),
     "check":   ("realm/Server check.bat", "Server check (read-only)", False),
     "gm":      ("gmconsole/Install GM Console.bat", "GM console update (game keeps running)", False),

@@ -57,7 +57,7 @@ class Workflows(unittest.TestCase):
         self.assertEqual(doc["permissions"], {"contents": "read"})
         self.assertEqual(set(re.findall(r"secrets\.([A-Za-z_]+)", text)), {"GITHUB_TOKEN"})
         job = doc["jobs"]["windows"]
-        self.assertEqual(job["runs-on"], "windows-latest")
+        self.assertEqual(job["runs-on"], "windows-2022")
         self.assertEqual(job["permissions"], {"contents": "write"})
         for k in ("QT_VERSION", "AQT_VERSION", "CMAKE_VERSION", "VCPKG_TAG"):
             self.assertRegex(str(doc["env"][k]), r"^\d", k)

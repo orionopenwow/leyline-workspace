@@ -37,7 +37,8 @@ env:
 
 jobs:
   windows:
-    runs-on: windows-latest
+    # windows-2022: it has Visual Studio 2022 (on windows-latest CMake 3.31 found no Visual Studio)
+    runs-on: windows-2022
     timeout-minutes: 150
     permissions:
       contents: write

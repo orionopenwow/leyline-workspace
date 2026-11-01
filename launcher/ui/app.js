@@ -730,13 +730,15 @@ function bimpView(view, head, line) {
   $("pbd-head").textContent = head || "";
   $("pbd-head").title = head || "";
   $("pbd-line").textContent = line || "";
-  $("pbd-cancel").hidden = !(view === "run" || view === "picking");
+  $("pbd-cancel").hidden = !(view === "run" || view === "paused" || view === "picking");
+  $("pbd-pause").hidden = !(view === "run" || view === "paused");
+  if (view !== "run" && view !== "paused" && !(view === "done" && bimp.seeding)) $("pbd-nodes").hidden = true;
   $("pbd-retry").hidden = view !== "error";
   $("pbd-x").hidden = !(view === "error" || view === "done");
   if ($("pbd-play")) $("pbd-play").hidden = true;   // a realm link's Play now (realmlink.js) shows it after this
   box.classList.toggle("unknown", view === "picking" || view === "run");
-  if (view !== "run") $("pbd-fill").style.width = view === "done" ? "100%" : "0";
-  if (view !== "over" && view !== "run") $("pbd-say").textContent = [head, line].filter(Boolean).join(". ");
+  if (view !== "run" && view !== "paused") $("pbd-fill").style.width = view === "done" ? "100%" : "0";
+  if (view !== "over" && view !== "run" && view !== "paused") $("pbd-say").textContent = [head, line].filter(Boolean).join(". ");
 }
 const bimpIdle = () => { if (!bimp.running) bimpView("idle"); };
 function bimpError(e) {
@@ -744,12 +746,74 @@ function bimpError(e) {
   bimpView("error", oops(e, "That didn't work. Try again."), "");
 }
 const BIMP_WORD = { downloading: "Downloading", unpacking: "Unpacking", checking: "Checking your game folder…" };
+// The blue bar (owner 31 Oct 21:20): "Downloading <name> · 24%" over "1.2 GB / 5.0 GB · 14 MB/s · about 4 min left",
+// pause / play, and for a torrent the Nodes chip (the PCs sharing it; pressed: this PC is a node too).
 function bimpProgress(p) {
   const pct = p.total > 0 ? Math.min(100, Math.floor((p.done * 100) / p.total)) : null;
-  const line = p.line || (p.phase === "checking" ? BIMP_WORD.checking : (BIMP_WORD[p.phase] || "Working") + "…");
-  bimpView("run", line, [bimp.name, pct === null ? "" : pct + "%"].filter(Boolean).join(" · "));
-  $("pbd").classList.toggle("unknown", pct === null);
+  const raw = p.line || (p.phase === "checking" ? BIMP_WORD.checking : (BIMP_WORD[p.phase] || "Working") + "…");
+  const parts = raw.split(" · ");
+  const word = parts.length > 1 ? parts.shift() : raw;
+  const rest = parts.length && parts[0] !== raw ? parts : [];
+  if (p.sharing && p.up_speed > 0) rest.push("sharing ↑ " + bimpSpeed(p.up_speed));
+  const head = p.phase === "checking" ? raw : [word, bimp.name].filter(Boolean).join(" ") + (pct === null ? "" : " · " + pct + "%");
+  bimpView(p.paused ? "paused" : "run", head, rest.join(" · "));
+  $("pbd").classList.toggle("unknown", pct === null && !p.paused);
   $("pbd-fill").style.width = (pct === null ? 0 : pct) + "%";
+  const pp = $("pbd-pause");
+  pp.hidden = p.phase !== "downloading";
+  pp.classList.toggle("paused", !!p.paused);
+  pp.setAttribute("aria-label", p.paused ? "Go on" : "Pause");
+  pp.title = p.paused ? "Go on" : "Pause";
+  bimpNodes(p.nodes, p.seeds, !!p.sharing);
+  // the live region: now and then, not every poll
+  const now = Date.now();
+  if (!bimp.said || now - bimp.said > 15000 || p.paused !== bimp.wasPaused) {
+    $("pbd-say").textContent = [head, rest.join(", ")].filter(Boolean).join(". ");
+    bimp.said = now;
+    bimp.wasPaused = p.paused;
+  }
+}
+function bimpSpeed(bps) {
+  return bps >= 1048576 ? (bps / 1048576).toFixed(1) + " MB/s" : Math.max(1, Math.round(bps / 1024)) + " KB/s";
+}
+function bimpNodes(nodes, seeds, sharing, word) {
+  const b = $("pbd-nodes");
+  if (nodes === null || nodes === undefined) { b.hidden = true; return; }
+  b.hidden = false;
+  $("pbd-nodes-n").textContent = String(nodes);
+  $("pbd-nodes-w").textContent = word || (sharing ? (nodes === 1 ? "Node · you share" : "Nodes · you share") : (nodes === 1 ? "Node" : "Nodes"));
+  b.setAttribute("aria-pressed", sharing ? "true" : "false");
+  b.setAttribute("aria-label", `${nodes} ${nodes === 1 ? "node" : "nodes"}${seeds ? `, ${seeds} with all of it` : ""}. ` +
+    (sharing ? "You are a node: press to stop sharing." : "Press to be a node and share it too."));
+}
+$("pbd-pause").addEventListener("click", async () => {
+  const on = !$("pbd-pause").classList.contains("paused");
+  try { const p = await invoke("client_import_pause", { on }); if (bimp.running && p && p.phase === "downloading") bimpProgress(p); }
+  catch (e) { say("play-status", oops(e), "bad"); }
+});
+$("pbd-nodes").addEventListener("click", async () => {
+  const on = $("pbd-nodes").getAttribute("aria-pressed") !== "true";
+  if (!bimp.running) {   // after the download: the only thing to do is stop sharing
+    try { await invoke("client_seed_stop"); } catch (_) { /* it stops by itself when Leyline closes */ }
+    bimp.seeding = false;
+    $("pbd-nodes").hidden = true;
+    return;
+  }
+  try { const p = await invoke("client_import_share", { on }); if (p) bimpNodes(p.nodes, p.seeds, !!p.sharing); }
+  catch (e) { say("play-status", oops(e), "bad"); }
+});
+// After a torrent with Nodes on: "Sharing · 3 nodes · ↑ 120 KB/s" on the Ready box until Stop (the chip).
+async function bimpSeedPoll() {
+  clearTimeout(bimp.seedTimer);
+  let s = null;
+  try { s = await invoke("client_seed_state"); } catch (_) { /* older core: no sharing */ }
+  bimp.seeding = !!(s && s.active);
+  if (!bimp.seeding) { if ($("pbd").dataset.state === "done") $("pbd-nodes").hidden = true; return; }
+  if ($("pbd").dataset.state === "done") {
+    bimpNodes(s.nodes, 0, true, "Sharing" + (s.up_speed > 0 ? " ↑ " + bimpSpeed(s.up_speed) : ""));
+    $("pbd-nodes").title = "This PC is sharing the download it finished. Press to stop sharing.";
+  }
+  bimp.seedTimer = setTimeout(bimpSeedPoll, 1500);
 }
 async function barImport(input) {
   input = String(input || "").trim();
@@ -794,7 +858,8 @@ async function bimpPoll() {
     const where = autoConnect(p.client_id);
     if (where !== null) bimpView("done", "Ready — press PLAY", [p.client_name, where].filter(Boolean).join(" · "));
     else bimpView("done", `Added ${p.client_name || "your game"}`, "No realm plays this version yet: find one under Realms");
-    bimp.hideAt = setTimeout(bimpIdle, 15000);
+    await bimpSeedPoll();
+    if (!bimp.seeding) bimp.hideAt = setTimeout(bimpIdle, 15000);
   } else if (p.phase === "cancelled") bimpView("error", p.message || "Stopped. Nothing was added.", "");
   else bimpError(p.message);
 }
@@ -838,7 +903,7 @@ $("pbd-cancel").addEventListener("click", async () => {
 });
 $("pbd-retry").addEventListener("click", () => { const i = bimp.input; bimpView("idle"); barImport(i); });
 $("pbd-x").addEventListener("click", () => bimpView("idle"));
-$("pbd").addEventListener("click", (e) => { if ($("pbd").dataset.state === "done" && !e.target.closest("button")) bimpView("idle"); });
+$("pbd").addEventListener("click", (e) => { if ($("pbd").dataset.state === "done" && !e.target.closest("button")) { clearTimeout(bimp.seedTimer); bimpView("idle"); } });
 $("play-form").addEventListener("submit", () => { if ($("pbd").dataset.state === "done") bimpView("idle"); }, true);
 // Over the realm box: "Drop to add your game"
 function barDragOn(on) {

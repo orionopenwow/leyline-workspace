@@ -162,7 +162,7 @@ test('the backdrop: behind the content area only, under the wash; plain when it 
   assert.equal(r.b[0], r.m[0], 'starts at the content area\'s left edge, not behind the side bar');
   assert.ok(r.b[1] <= r.m[1] && r.b[1] + r.b[3] === r.m[1] + r.m[3], 'behind the content area, and up behind the see-through title bar');
   assert.ok(r.b[2] >= r.m[2], 'as wide as it, and on Home under the docked profile panel too');
-  assert.equal(r.sideBg, 'none', 'not behind the side bar');
+  assert.ok(!/leyline-shot-backdrop/.test(r.sideBg), 'not behind the side bar (the side is stone, owner 31 Oct)');
   assert.match(r.panel, /blur/, 'panels are a blurred layer over it');
   assert.equal(await page.isChecked('#set-backdrop'), true, 'on by default');
   // Settings › Background picture off: the plain colour, remembered

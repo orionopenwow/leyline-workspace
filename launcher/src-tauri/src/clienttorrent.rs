@@ -140,6 +140,47 @@ pub fn line(phase: Phase, done: u64, total: u64, bps: u64) -> String {
     parts.join(" · ")
 }
 
+/// The bar while paused: `Paused · 1.2 GB / 5.0 GB`.
+pub fn paused_line(done: u64, total: u64) -> String {
+    if total > 0 {
+        format!("Paused · {} / {}", size(done.min(total)), size(total))
+    } else if done > 0 {
+        format!("Paused · {}", size(done))
+    } else {
+        "Paused".into()
+    }
+}
+
+// ------------------------------------------------------------------------------------------------ sharing when done
+
+/// After a torrent download with Nodes on, this PC keeps sharing it (capped at `SHARE_CAP_BPS`) until the player
+/// presses Stop sharing or closes Leyline. One at a time; what the bar shows comes from here.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Seeding {
+    pub active: bool,
+    pub name: String,
+    pub nodes: u32,
+    pub uploaded: u64,
+    pub up_speed: u64,
+}
+
+fn seed_state() -> &'static std::sync::Mutex<Seeding> {
+    static S: std::sync::OnceLock<std::sync::Mutex<Seeding>> = std::sync::OnceLock::new();
+    S.get_or_init(Default::default)
+}
+static SEED_STOP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn seeding() -> bool {
+    seed_state().lock().map(|s| s.active).unwrap_or(false)
+}
+pub fn seeding_state() -> Seeding {
+    seed_state().lock().map(|s| s.clone()).unwrap_or_default()
+}
+/// Stop sharing (the bar's button); the engine closes within a second, the files stay.
+pub fn stop_seeding() {
+    SEED_STOP.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
 /// Bytes per second over the last few seconds.
 #[derive(Debug, Clone, Default)]
 pub struct Meter {
@@ -287,6 +328,7 @@ pub fn check_files(files: &[(String, u64)], caps: &Caps) -> Result<u64, String> 
 }
 
 /// What the engine is given.
+#[derive(Clone)]
 pub enum Src {
     Magnet(String),
     File(Vec<u8>),
@@ -366,7 +408,42 @@ mod engine {
             .build()
             .map_err(|e| engine_error(&e.to_string()))?;
         let work = dest.with_extension("torrent-work");
-        let res = rt.block_on(run(src, dest, &work, caps, share, job, peers));
+        // Settings › Testing › Share while downloading is where the Nodes chip starts; the player can flip it
+        job.set_share(share);
+        let mut src = src;
+        let mut resume = false;
+        let res = loop {
+            let r = rt.block_on(run(src.clone(), dest, &work, caps, job, peers, resume));
+            match r {
+                // the Nodes chip changed: the engine starts again with sharing on or off and checks what it has
+                Ok(Outcome::Restart(bytes)) => {
+                    src = Src::File(bytes);
+                    resume = true;
+                }
+                Ok(Outcome::Done(n, None)) => break Ok(n),
+                Ok(Outcome::Done(n, Some((session, handle)))) => {
+                    // keep sharing what was downloaded, on its own thread, until Stop sharing or Leyline closes
+                    let name = dest.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                    if let Ok(mut s) = seed_state().lock() {
+                        *s = Seeding { active: true, name, ..Default::default() };
+                    }
+                    SEED_STOP.store(false, std::sync::atomic::Ordering::SeqCst);
+                    job.set_swarm(None);
+                    let work = work.clone();
+                    std::thread::spawn(move || {
+                        rt.block_on(seed(session, handle));
+                        rt.shutdown_timeout(Duration::from_secs(5));
+                        let _ = fs::remove_dir_all(&work);
+                        if let Ok(mut s) = seed_state().lock() {
+                            *s = Seeding::default();
+                        }
+                    });
+                    return Ok(n);
+                }
+                Err(e) => break Err(e),
+            }
+        };
+        job.set_swarm(None);
         let _ = fs::remove_dir_all(&work);
         if res.is_err() {
             let _ = fs::remove_dir_all(dest);
@@ -375,8 +452,45 @@ mod engine {
         res
     }
 
-    async fn run(src: Src, dest: &Path, work: &Path, caps: &Caps, share: bool, job: &Job, peers: &[std::net::SocketAddr]) -> Result<u64, String> {
-        job.phase(Phase::Downloading, 0);
+    type Live = (std::sync::Arc<Session>, std::sync::Arc<librqbit::ManagedTorrent>);
+    enum Outcome {
+        /// Finished; with the engine when this PC goes on sharing.
+        Done(u64, Option<Live>),
+        /// Start the engine again (sharing changed), from these torrent bytes.
+        Restart(Vec<u8>),
+    }
+
+    fn swarm(st: &librqbit::TorrentStats) -> Option<(u32, u32, u64, u64)> {
+        let l = st.live.as_ref()?;
+        let ps = &l.snapshot.peer_stats;
+        Some((ps.live, ps.live_seeders, st.uploaded_bytes, (l.upload_speed.mbps * 1024.0 * 1024.0) as u64))
+    }
+
+    /// Share until Stop sharing; the bar reads `seeding_state`.
+    async fn seed(session: std::sync::Arc<Session>, handle: std::sync::Arc<librqbit::ManagedTorrent>) {
+        while !SEED_STOP.load(std::sync::atomic::Ordering::SeqCst) {
+            let st = handle.stats();
+            if st.error.is_some() {
+                break;
+            }
+            if let Some((n, _, up, ups)) = swarm(&st) {
+                if let Ok(mut s) = seed_state().lock() {
+                    s.nodes = n;
+                    s.uploaded = up;
+                    s.up_speed = ups;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(700)).await;
+        }
+        let _ = session.delete(handle.id().into(), false).await;
+        session.stop().await;
+    }
+
+    async fn run(src: Src, dest: &Path, work: &Path, caps: &Caps, job: &Job, peers: &[std::net::SocketAddr], resume: bool) -> Result<Outcome, String> {
+        let share = job.share_wanted();
+        if !resume {
+            job.phase(Phase::Downloading, 0);
+        }
         fs::create_dir_all(work).map_err(|e| engine_error(&e.to_string()))?;
         // a PC without IPv6 can't open the engine's [::] sockets: then IPv4 only
         let session = match Session::new_with_opts(work.to_path_buf(), options(share, !peers.is_empty())).await {
@@ -388,7 +502,8 @@ mod engine {
         let out = (|| async {
             let opts = |list_only: bool| AddTorrentOptions {
                 list_only,
-                overwrite: false,
+                // starting again after a sharing change: what is already on disk is checked and kept
+                overwrite: resume,
                 output_folder: Some(dest.display().to_string()),
                 initial_peers: (!peers.is_empty()).then(|| peers.to_vec()),
                 ..Default::default()
@@ -415,7 +530,9 @@ mod engine {
                 files.push((format!("{top}/{}", f.filename.to_vec().join("/")), f.len));
             }
             let total = check_files(&files, caps)?;
-            job.phase(Phase::Downloading, total);
+            if !resume {
+                job.phase(Phase::Downloading, total);
+            }
             // 2. The download, into the chosen folder only.
             fs::create_dir_all(dest).map_err(|e| engine_error(&e.to_string()))?;
             let handle = session
@@ -425,27 +542,50 @@ mod engine {
                 .into_handle()
                 .ok_or_else(|| engine_error("no handle"))?;
             let id = handle.id();
+            let mut paused = false;
             loop {
                 if job.cancelled() {
                     let _ = session.delete(id.into(), true).await;
                     return Err(CANCELLED.to_string());
                 }
+                // pause / play from the bar
+                let want = job.paused();
+                if want != paused {
+                    let ok = if want { session.pause(&handle).await } else { session.unpause(&handle).await };
+                    if ok.is_ok() {
+                        paused = want;
+                    }
+                }
                 let st = handle.stats();
-                job.set_done(st.progress_bytes, st.total_bytes.max(total));
+                if !paused {
+                    job.set_done(st.progress_bytes, st.total_bytes.max(total));
+                }
+                job.set_swarm(swarm(&st).or(Some((0, 0, st.uploaded_bytes, 0))));
                 if let Some(e) = st.error {
                     let _ = session.delete(id.into(), false).await;
                     return Err(engine_error(&e));
                 }
                 if st.finished {
-                    // stop seeding: the torrent leaves the engine, its files stay
+                    if share && job.share_wanted() {
+                        // a node: it goes on sharing (the caller keeps the engine)
+                        return Ok(Outcome::Done(st.progress_bytes, Some((session.clone(), handle.clone()))));
+                    }
+                    // not a node: the torrent leaves the engine, its files stay
                     let _ = session.delete(id.into(), false).await;
-                    return Ok(st.progress_bytes);
+                    return Ok(Outcome::Done(st.progress_bytes, None));
+                }
+                if job.share_wanted() != share && !paused {
+                    // the Nodes chip changed: the engine starts again with the new setting (files kept)
+                    let _ = session.delete(id.into(), false).await;
+                    return Ok(Outcome::Restart(l.torrent_bytes.to_vec()));
                 }
                 tokio::time::sleep(Duration::from_millis(400)).await;
             }
         })()
         .await;
-        session.stop().await;
+        if !matches!(out, Ok(Outcome::Done(_, Some(_)))) {
+            session.stop().await;
+        }
         out
     }
 

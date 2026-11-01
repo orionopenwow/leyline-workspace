@@ -641,6 +641,15 @@
         <span class="pbd-fill" id="pbd-fill" aria-hidden="true"></span>
         <span class="pbd-text"><span class="pbd-head" id="pbd-head"></span><span class="pbd-line" id="pbd-line"></span></span>
         <span class="sr" id="pbd-say" role="status"></span>
+        <button type="button" class="pbd-nodes" id="pbd-nodes" aria-pressed="false" hidden
+          title="Nodes: the PCs sharing this download with you. Press to be a node too: this PC shares what it has (capped), while it downloads and after, until you stop it.">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="6" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="M8.3 10.9l7.4-3.7M8.3 13.1l7.4 3.7"/></svg>
+          <span class="pbd-nodes-n" id="pbd-nodes-n">0</span><span class="pbd-nodes-w" id="pbd-nodes-w">Nodes</span>
+        </button>
+        <button type="button" class="pbd-pp" id="pbd-pause" aria-label="Pause" title="Pause" hidden>
+          <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+          <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.8v14.4a1 1 0 0 0 1.5.86l11.6-7.2a1 1 0 0 0 0-1.72L8.5 3.94A1 1 0 0 0 7 4.8z"/></svg>
+        </button>
         <button type="button" class="pbd-btn pbd-go" id="pbd-play" hidden>Play now</button>
         <button type="button" class="pbd-btn" id="pbd-retry" hidden>Try again</button>
         <button type="button" class="pbd-btn" id="pbd-cancel" hidden>Cancel</button>

@@ -418,8 +418,9 @@ IF(NOT fastnoise2_POPULATED)
   FetchContent_Populate (fastnoise2)
 ENDIF()
 
-SET(FASTNOISE2_NOISETOOL OFF)
-SET(FASTNOISE2_TESTS:BOOL OFF)
+# Forge: as cache values, so FastNoise2's own option() (its CMake 3.7 policies ignore plain variables) keeps them off
+SET(FASTNOISE2_NOISETOOL OFF CACHE BOOL "" FORCE)
+SET(FASTNOISE2_TESTS OFF CACHE BOOL "" FORCE)
 
 IF(FASTNOISE2_NOISETOOL)
   ADD_SUBDIRECTORY(${fastnoise2_SOURCE_DIR} ${fastnoise2_BINARY_DIR})

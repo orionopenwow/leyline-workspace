@@ -97,6 +97,8 @@ change line by line. Changed source files also say "Modified for Forge" in their
 - The Tracy profiler is off by default (`NOGGIT_ENABLE_TRACY_PROFILER`): when on, it listens on the network.
 - `cmake/win32_prefind.cmake`: `Boost_USE_STATIC_LIBS` can be set from the command line (CI uses Boost DLLs).
 - `CMakeLists.txt`: minimum CMake 3.16 (FetchContent and C++20 need it anyway), the `src/forge` sources.
+- `CMakeLists.txt`: FastNoise2's NoiseTool and tests are switched off as cache values (`FORCE`), so newer CMake
+  really skips them (the NoiseTool's bundled Magnum no longer configures).
 
 ### Build and release (new)
 

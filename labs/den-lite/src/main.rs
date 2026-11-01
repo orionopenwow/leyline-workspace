@@ -5,7 +5,7 @@ use den_lite::{start, Config, Gender};
 use std::path::PathBuf;
 
 const USAGE: &str = "den-lite [--dens <folder>] [--bind 127.0.0.1] [--stamps <folder>] [--password <word>] [--name <name>] \
-[--gender male|female] [--login-port 3724] [--world-port 8085] [--verbose]
+[--gender male|female] [--client <game folder>] [--login-port 3724] [--world-port 8085] [--verbose]
 
 A tiny local server for the 3.3.5a (12340) client: a white room to build in, on 127.0.0.1.
 Any account name (the launcher fills in DEN) logs in with the password (default \"den\"; also DEN_LITE_PASSWORD).
@@ -23,6 +23,7 @@ fn main() {
             "--dens" => cfg.den_dir = PathBuf::from(val()),
             "--bind" => cfg.bind = val().parse().unwrap_or_else(|_| fail("--bind is an address such as 127.0.0.1")),
             "--stamps" => cfg.stamps_dir = PathBuf::from(val()),
+            "--client" => cfg.client = Some(PathBuf::from(val())),
             "--password" => cfg.password = val(),
             "--name" => cfg.hero.name = val(),
             "--gender" => {

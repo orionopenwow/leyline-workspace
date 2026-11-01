@@ -16,6 +16,8 @@ RestartSec=10
 # exit 2 = settings missing, 3 = token or SOAP login refused: no restart loop against Discord with a bad token
 RestartPreventExitStatus=2 3
 StateDirectory=wu-discord
+# the bug intake for the bugs manifest (WU_DISCORD_BUG_INTAKE); "-": fine when the folder is not there
+ReadWritePaths=-/srv/wrath/bugs/intake
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes

@@ -5,7 +5,7 @@
   const CSRF = document.querySelector('meta[name=csrf]').content;
   const TABS = [
     ['overview', 'Overview'], ['players', 'Players'], ['updates', 'Updates'], ['streaming', 'Streaming'],
-    ['beacons', 'Beacons'], ['speed', 'Speed'], ['reports', 'Bug reports'], ['health', 'Health'], ['logs', 'Logs'],
+    ['beacons', 'Beacons'], ['speed', 'Speed'], ['reports', 'Bug reports'], ['backlog', 'Backlog'], ['health', 'Health'], ['logs', 'Logs'],
   ];
   const app = document.getElementById('app');
   let tab = 'overview';
@@ -515,6 +515,36 @@
       h('span', { class: 'muted small', text: 'players file them in game with .bug · newest first' }), bar, errs, list)];
   }
 
+  // ---- Backlog: every source in one de-duplicated list (bugs_manifest.py) ---------------------------
+  function backlog(d) {
+    const c = d.counts || { status: {}, source: {} };
+    const tiles = h('div', { class: 'tiles' },
+      tile('Open', num(c.open), `new ${num(c.status.new)} · triaged ${num(c.status.triaged)} · planned ${num(c.status.planned)}`, c.status.new ? 'warn' : 'ok'),
+      tile('Closed', num((c.status.fixed || 0) + (c.status.wontfix || 0)), `fixed ${num(c.status.fixed)} · won't fix ${num(c.status.wontfix)}`),
+      tile('Sources', Object.entries(c.source || {}).filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(' · ') || 'none yet', 'items per source'),
+      tile('Updated', d.updated ? when(d.updated) : 'never', d.every ? `rebuilt every ${Math.round(d.every / 60)} min` : 'rebuilt on demand'));
+    const bar = h('div', { class: 'row wrap' }, btn('Rebuild now', () => run('bugs_build'), 'primary'),
+      h('span', { class: 'muted small', text: 'BUGS-MANIFEST.md and backlog.json in /srv/wrath/bugs; the Control step "bugs" copies them to the PC' }));
+    const item = (it) => {
+      const sel = h('select', { class: 'st-' + it.status, 'aria-label': `status of ${it.id}` }, d.states.map((x) => h('option', { value: x, text: x })));
+      sel.value = it.status;
+      sel.addEventListener('change', () => run('bug_status', { id: it.id, status: sel.value }));
+      const w = it.where || {};
+      return h('li', { class: 'rep' + (it.status === 'new' ? ' new' : '') },
+        h('div', { class: 'rep-h' }, badge(it.area || '?', ''), h('span', { class: 'mono muted', text: it.id }),
+          h('b', { text: it.title || '' }), h('span', { class: 'grow' }),
+          h('span', { class: 'muted small', text: `${it.count} report${it.count === 1 ? '' : 's'} · ${(it.sources || []).join(', ')} · ${when(it.last)}` })),
+        h('div', { class: 'rep-t', text: it.text || '' }),
+        it.note ? h('div', { class: 'muted small', text: 'note: ' + it.note }) : null,
+        h('div', { class: 'rep-f' },
+          h('span', { class: 'muted small', text: [w.realm, w.map, w.zone, w.area, w.page].filter(Boolean).join(' · ') || '?' }),
+          h('span', { class: 'muted small', text: ' · by ' + (it.reporters || []).slice(0, 4).join(', ') }),
+          h('span', { class: 'grow' }), w.tele ? btn('Copy teleport', () => copy(w.tele, 'teleport command'), 'small') : null, sel));
+    };
+    const list = d.items.length ? h('ul', { class: 'reps' }, d.items.map(item)) : h('p', { class: 'muted', text: 'Nothing in the backlog yet. Rebuild now reads every source.' });
+    return [tiles, card('Backlog (open first, newest first)', null, bar, list)];
+  }
+
   // ---- Health -------------------------------------------------------------------------------
   function health(d) {
     const r = d.realm || {}, w = d.world || {}, db = d.database || {};
@@ -572,11 +602,12 @@
     streaming: () => '/api/streaming', beacons: (f) => '/api/beacons' + (f ? '?fresh=1' : ''),
     speed: (f) => '/api/speed' + (f ? '?fresh=1' : ''),
     reports: () => `/api/reports?status=${encodeURIComponent(ui.reports.status)}&q=${encodeURIComponent(ui.reports.q)}&tickets=${ui.reports.tickets ? 1 : 0}`,
+    backlog: () => '/api/bugs',
     health: () => '/api/health',
     logs: () => `/api/logs?c=${encodeURIComponent(ui.logs.c)}&n=${ui.logs.n}`,
   };
-  const RENDER = { overview, players, updates, streaming, beacons, speed, reports, health, logs };
-  const EVERY = { overview: 10000, players: 10000, updates: 15000, streaming: 15000, reports: 30000, health: 10000, logs: 5000 };
+  const RENDER = { overview, players, updates, streaming, beacons, speed, reports, backlog, health, logs };
+  const EVERY = { overview: 10000, players: 10000, updates: 15000, streaming: 15000, reports: 30000, backlog: 60000, health: 10000, logs: 5000 };
   let loading = 0;
   async function load(fresh) {
     const my = ++loading, t = tab;

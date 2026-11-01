@@ -11,6 +11,9 @@
 // Saved Dens, Packs and Share on the Workshop work the same for both (den_text / den_add / den_open / den_fetch on
 // whichever Den is in use). Playing the Docker Den is app.js's own (playLocal(DEN): the relay's knock, then PLAY), with
 // its account filled in on the login screen (den_prefill_account).
+// Shape the ground (host/forge.rs, host/terrain.rs): Forge, the Den's terrain editor (a GPL program of its own), is
+// got once ("Get Forge": the GPL notice and the source link first, once), then "Open in Forge" starts it on the Den's
+// tile; when it closes the launcher takes what it saved as the Den's ground and says "Terrain updated".
 // Loaded after app.js (its LOCAL, playLocal, clientForRealm, addGameFolder, readKit) and hostconsole.js.
 "use strict";
 (() => {
@@ -44,6 +47,11 @@
   let jobTimer = null;
   let sharing = false;  // the Share with friends steps are open
   let busy = false;
+  let forge = null;     // forge_state
+  let forgeBusy = "";   // "get" while Forge downloads
+  let forgeGpl = false; // the GPL notice is open
+  let forgeTimer = null;
+  const FORGE_GPL = "leyline.forgeGplSeen";
 
   const status = mk("p", "status yd-status");
   status.setAttribute("role", "status");
@@ -65,7 +73,85 @@
     try { st = await call("den_state"); } catch (e) { st = null; say(oops(e, "Your Den isn't answering. Try again."), "bad"); }
     cons = null;
     if (st && st.docker_den) { try { cons = await call("host_console"); } catch (_) { cons = null; } }
+    try { forge = await call("forge_state"); } catch (_) { forge = null; }
     paint();
+    if (forge && forge.running) followForge();
+  }
+
+  // ---------------------------------------------------------------- Shape the ground: Forge
+  async function getForge() {
+    if (!store.get(FORGE_GPL) && !forgeGpl) { forgeGpl = true; paint(); return; }   // the notice first, once
+    store.set(FORGE_GPL, "1");
+    forgeGpl = false;
+    forgeBusy = "get"; paint();
+    say("Getting Forge… (a one-time download)");
+    try { await call("forge_install"); say("Forge is ready. Open in Forge to shape your Den's ground.", "ok"); }
+    catch (e) { say(oops(e, "Forge didn't download. Try again."), "bad"); }
+    forgeBusy = "";
+    try { forge = await call("forge_state"); } catch (_) { /* as it was */ }
+    paint();
+  }
+  async function openForge() {
+    const c = own();
+    if (!c) { say("Your Den's ground is made from your own game folder. Add it on the Clients page first.", "warn"); return; }
+    try { say(await call("forge_open", { client: c.id }), "ok"); }
+    catch (e) { say(oops(e, "Forge didn't open. Try again."), "bad"); }
+    try { forge = await call("forge_state"); } catch (_) { /* as it was */ }
+    paint();
+    followForge();
+  }
+  // while Forge is open: ask every 2 seconds; once it closes, say what its close did ("Terrain updated")
+  function followForge() {
+    if (forgeTimer) return;
+    const seq0 = forge && forge.last ? forge.last.seq : 0;
+    const tick = async () => {
+      let f = null;
+      try { f = await call("forge_state"); } catch (_) { /* again */ }
+      if (f) forge = f;
+      if (forge && forge.running) { forgeTimer = setTimeout(tick, 2000); paint(); return; }
+      if (forge && forge.last && forge.last.seq > seq0) {
+        forgeTimer = null;
+        say(forge.last.message, forge.last.ok ? "ok" : "bad");
+        paint();
+        return;
+      }
+      forgeTimer = setTimeout(tick, 2000);   // closed, the ground still being taken in
+    };
+    forgeTimer = setTimeout(tick, 2000);
+  }
+  function groundTile() {
+    const box = mk("div", "");
+    const installed = !!(forge && forge.installed);
+    const running = !!(forge && forge.running);
+    // TODO(owner): the button words and the hints, his words
+    const label = running ? "Forge is open…" : forgeBusy === "get" ? "Getting Forge…" : installed ? "Open in Forge" : "Get Forge";
+    const b = btn(label, "btn small primary", installed ? openForge : getForge);
+    b.id = "yd-forge";
+    b.disabled = running || !!forgeBusy || !forge;
+    const row = mk("div", "yd-row");
+    row.append(b);
+    box.append(row);
+    if (forgeGpl && !installed) {
+      const n = mk("div", "yd-share");
+      n.id = "yd-forge-gpl";
+      n.append(mk("p", "", (forge && forge.licence) || "Forge is free software under the GNU GPL-3.0."),
+        mk("p", "yd-hint", "Its source is public, and you may share and change it under the same licence."));
+      const r = mk("div", "yd-row");
+      const go = btn("Get Forge", "btn small primary", getForge); go.id = "yd-forge-go";
+      const src = btn("Source", "btn small", () => call("open_link", { name: "forge-source" }).catch(() => say((forge && forge.source) || "", "ok")));
+      src.id = "yd-forge-src";
+      r.append(go, src, btn("Not now", "btn small", () => { forgeGpl = false; paint(); }));
+      n.append(r);
+      box.append(n);
+    }
+    if (forge && forge.last && forge.last.message) {
+      const note = mk("p", "yd-hint", forge.last.message);
+      note.id = "yd-forge-note";
+      box.append(note);
+    }
+    return tile("Shape the ground",
+      installed ? "Raise hills, paint, dig a pond, plant trees: Forge opens on your Den. Save and close it to bring your changes in."
+        : "Forge, a free terrain editor, shapes your Den's ground. One download; your own game files stay on this PC.", box);
   }
 
   // ---------------------------------------------------------------- the one click
@@ -423,6 +509,7 @@
     }
     pk.append(pl);
     grid.append(tile("Packs", "Ready-made places to build around.", pk));
+    grid.append(groundTile());
     // Share on the Workshop
     const ws = mk("div", "");
     ws.append(btn("Share on the Workshop", "btn small", () => {

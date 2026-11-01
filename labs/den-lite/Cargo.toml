@@ -16,6 +16,9 @@ wow_world_messages = { version = "0.3.0", default-features = false, features = [
 flate2 = { version = "1", default-features = false, features = ["zlib"] }
 serde = { version = "1", default-features = false, features = ["std", "derive"] }
 serde_json = { version = "1", default-features = false, features = ["std"] }
+# The Den's ground (the launcher's own MIT crate): heights from the Den's terrain delta, so props and the player
+# stand on the edited ground.
+leyline-terrain = { path = "../../launcher/src-tauri/terrain" }
 
 [profile.dev]
 debug = 0

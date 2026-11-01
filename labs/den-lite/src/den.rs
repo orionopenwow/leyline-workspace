@@ -5,6 +5,8 @@
 //! files from there open here. Nothing in a file is ever run: it is JSON, checked field by field.
 
 use crate::objects::OBJECTS;
+use leyline_terrain::delta::Delta;
+use leyline_terrain::pad::Ground;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::f32::consts::PI;
@@ -37,14 +39,38 @@ pub struct Spot {
     pub y: f32,
     /// The room's floor (ov_den.lua measures it with Map:GetHeight; Den Lite has no map files, so it is OV_DEN_Z).
     pub z: f32,
-    /// The room's half width (OV_DEN_SIZE; the den profile sets 16: a 32 x 32 yard floor).
+    /// The room's half width (a file's `room.size`; the full Den's OV_DEN_SIZE). A new Den starts at the first ring.
     pub half: f32,
 }
 
 impl Default for Spot {
     fn default() -> Self {
-        Spot { map: 1, x: 16226.2, y: 16257.0, z: 13.2, half: 16.0 }
+        Spot { map: 1, x: 16226.2, y: 16257.0, z: 13.2, half: ring_half(0) }
     }
+}
+
+/// The room grows by rings (`.den grow`, `.den size`): ring k's room is 8 (k + 1) yards from its middle to a wall,
+/// so 16, 32, 48 and 64 yards across, the full Den's sizes (OV_DEN_SIZE 8 to 32, which a file's `room.size` is).
+/// Each ring's room and its 14-yard yard sit inside the launcher's white pad (leyline-terrain `pad`: 2 x 2 chunks,
+/// 66.7 yards, then one chunk more each side per ring): sizes 1 and 2 inside the pad's first ring, 3 and 4 inside its
+/// second. Up to 4: the full Den's largest room, so a file opens the same size in both.
+pub const RING_STEP: f32 = 8.0;
+pub const RINGS: u32 = 4;
+
+/// The room's half width at a ring (0 = the first, the smallest).
+pub fn ring_half(ring: u32) -> f32 {
+    RING_STEP * (ring.min(RINGS - 1) + 1) as f32
+}
+
+/// The ring a saved size opens at: the smallest whose room is at least that big, so a file's props fit.
+pub fn ring_for(size: f64) -> u32 {
+    (0..RINGS).find(|&k| ring_half(k) as f64 >= size - 0.01).unwrap_or(RINGS - 1)
+}
+
+/// The pad rings (leyline-terrain `pad::ring_chunks`, 0 = the 2 x 2 chunks) a room ring's yard needs.
+pub fn pad_ring_for(ring: u32) -> u32 {
+    let reach = ring_half(ring) + 14.0;
+    (0..16).find(|&j| (j + 1) as f32 * leyline_terrain::CHUNK >= reach).unwrap_or(15)
 }
 
 impl Spot {
@@ -394,7 +420,7 @@ enum Undo {
     /// These props were placed (a stamp, a load in add mode): undo takes them away.
     Placed(Vec<u64>),
     /// A load that replaced the Den: undo takes the new props away and puts the old ones back.
-    Replaced { added: Vec<u64>, removed: Vec<Prop>, look: String },
+    Replaced { added: Vec<u64>, removed: Vec<Prop>, look: String, half: f32 },
 }
 
 /// What a change did, for the world server to tell the client: objects to create and guids to destroy.
@@ -414,9 +440,16 @@ pub struct Den {
     pub props: Vec<Placed>,
     pub paths: Vec<Value>,
     pub extra: Map<String, Value>,
+    /// The Den's ground from the launcher's terrain delta (`<dens>/yourden.terrain.json`), when it has one: props,
+    /// stamps and the player stand on it. Without one the floor is the fixed `spot.z` (no map files here).
+    pub ground: Option<Ground>,
+    ground_stamp: Option<(u64, Option<std::time::SystemTime>)>,
     next: u32,
     undo: Vec<Undo>,
 }
+
+/// The launcher's ground file in the Dens folder (launcher/src-tauri/src/host/terrain.rs `GROUND`).
+pub const GROUND_FILE: &str = "yourden.terrain.json";
 
 fn quiet_round(v: f64) -> f64 {
     (v * 1000.0).round() / 1000.0
@@ -424,9 +457,58 @@ fn quiet_round(v: f64) -> f64 {
 
 impl Den {
     pub fn new(spot: Spot) -> Self {
-        let mut den = Den { spot, look: LOOKS[0], room: Vec::new(), props: Vec::new(), paths: Vec::new(), extra: Map::new(), next: 1, undo: Vec::new() };
+        let mut den = Den {
+            spot,
+            look: LOOKS[0],
+            room: Vec::new(),
+            props: Vec::new(),
+            paths: Vec::new(),
+            extra: Map::new(),
+            ground: None,
+            ground_stamp: None,
+            next: 1,
+            undo: Vec::new(),
+        };
         den.build_room();
         den
+    }
+
+    /// The ground's height at (x, y): the delta's where it has heights, else the room's floor.
+    pub fn floor_at(&self, x: f32, y: f32) -> f32 {
+        self.ground.as_ref().and_then(|g| g.height_at(x, y)).unwrap_or(self.spot.z)
+    }
+
+    /// Inside the Den: within its reach, and from 12 yards under the ground there to 50 above it.
+    pub fn inside(&self, x: f32, y: f32, z: f32) -> bool {
+        let (dx, dy) = (x - self.spot.x, y - self.spot.y);
+        let g = self.floor_at(x, y);
+        (dx * dx + dy * dy).sqrt() <= self.spot.reach() && z >= g - 12.0 && z <= g + 50.0
+    }
+
+    /// Reads the ground file again when it changed (or went). Some(true): the ground is new; None: as it was.
+    /// A file that isn't a right delta is left out (the Den keeps a flat floor) and says so once.
+    pub fn reload_ground(&mut self, dir: &Path) -> Option<Result<bool, String>> {
+        let p = dir.join(GROUND_FILE);
+        let stamp = fs::metadata(&p).ok().map(|m| (m.len(), m.modified().ok()));
+        if stamp == self.ground_stamp {
+            return None;
+        }
+        self.ground_stamp = stamp;
+        if stamp.is_none() {
+            let had = self.ground.take().is_some();
+            return Some(Ok(had));
+        }
+        let read = fs::read_to_string(&p).map_err(|e| e.to_string()).and_then(|t| Delta::parse(&t).map_err(|e| e.0)).and_then(|d| Ground::from_delta(&d).map_err(|e| e.0));
+        match read {
+            Ok(g) => {
+                self.ground = Some(g);
+                Some(Ok(true))
+            }
+            Err(e) => {
+                self.ground = None;
+                Some(Err(e))
+            }
+        }
     }
 
     fn guid(&mut self, entry: u32) -> u64 {
@@ -461,7 +543,7 @@ impl Den {
             (t.entry, t.display, t.kind, t.size)
         };
         let (x, y, z) = (self.spot.x + p.x as f32, self.spot.y + p.y as f32, self.spot.z + p.z as f32);
-        if !self.spot.inside(x, y, z) {
+        if !self.inside(x, y, z) {
             return None;
         }
         let guid = self.guid(entry);
@@ -527,7 +609,10 @@ impl Den {
                 let mut p = e.clone();
                 p.x = quiet_round((x - self.spot.x) as f64 + wx);
                 p.y = quiet_round((y - self.spot.y) as f64 + wy);
-                p.z = quiet_round((z - self.spot.z) as f64 + e.z);
+                // on the ground where the piece stands (the delta's), else at the player's feet
+                let (px, py) = (x + wx as f32, y + wy as f32);
+                let base = self.ground.as_ref().and_then(|g| g.height_at(px, py)).unwrap_or(z);
+                p.z = quiet_round((base - self.spot.z) as f64 + e.z);
                 p.yaw = quiet_round((o.to_degrees() as f64 + e.yaw).rem_euclid(360.0));
                 p.group = Some(group);
                 p
@@ -556,16 +641,16 @@ impl Den {
                 let n = guids.len();
                 Change { destroyed: guids, message: format!("Undone: {n} props taken away."), ..Default::default() }
             }
-            Undo::Replaced { added, removed, look: old } => {
+            Undo::Replaced { added, removed, look: old, half } => {
                 self.props.retain(|p| !added.contains(&p.obj.guid));
                 let mut destroyed = added;
                 let mut created = Vec::new();
-                if old != self.look.name {
-                    if let Some(l) = look(&old) {
-                        self.look = l;
-                        destroyed.extend(self.build_room());
-                        created.extend(self.room.clone());
-                    }
+                let l = look(&old).unwrap_or(self.look);
+                if l.name != self.look.name || half != self.spot.half {
+                    self.look = l;
+                    self.spot.half = half;
+                    destroyed.extend(self.build_room());
+                    created.extend(self.room.clone());
                 }
                 let (made, _) = self.place(&removed);
                 let n = made.len();
@@ -606,6 +691,7 @@ impl Den {
         let mut destroyed = Vec::new();
         let mut created = Vec::new();
         let old_look = self.look.name.to_string();
+        let old_half = self.spot.half;
         let mut removed = Vec::new();
         if replace {
             for p in self.props.drain(..) {
@@ -614,13 +700,15 @@ impl Den {
             }
             self.paths = doc.paths.clone();
             self.extra = doc.extra.clone();
-            self.extra.retain(|k, _| k == "notes" || k == "door" || k == "mailbox");
-            if let Some(l) = doc.room.as_ref().and_then(|r| look(&r.look)) {
-                if l.name != self.look.name {
-                    self.look = l;
-                    destroyed.extend(self.build_room());
-                    created.extend(self.room.clone());
-                }
+            self.extra.retain(|k, _| k == "notes" || k == "door" || k == "mailbox" || k == "terrain");
+            // the file's look and size (the room grows to fit what it was saved in; it never shrinks under props)
+            let l = doc.room.as_ref().and_then(|r| look(&r.look)).unwrap_or(self.look);
+            let half = doc.room.as_ref().filter(|r| r.size.is_finite()).map(|r| ring_half(ring_for(r.size))).unwrap_or(self.spot.half);
+            if l.name != self.look.name || half != self.spot.half {
+                self.look = l;
+                self.spot.half = half;
+                destroyed.extend(self.build_room());
+                created.extend(self.room.clone());
             }
         } else {
             self.paths.extend(doc.paths.iter().cloned());
@@ -640,12 +728,59 @@ impl Den {
         let n = made.len();
         created.extend(made);
         if replace {
-            self.push_undo(Undo::Replaced { added, removed, look: old_look });
+            self.push_undo(Undo::Replaced { added, removed, look: old_look, half: old_half });
         } else if !added.is_empty() {
             self.push_undo(Undo::Placed(added));
         }
         let left = if skipped > 0 { format!(" {skipped} left out (outside the Den or unknown here).") } else { String::new() };
         Change { created, destroyed, skipped, message: format!("Opened: {n} props.{left}") }
+    }
+
+    /// The room's ring now (0 = the first).
+    pub fn ring(&self) -> u32 {
+        ring_for(self.spot.half as f64)
+    }
+
+    /// `.den size`: how big the Den is, in one line.
+    pub fn size_line(&self) -> String {
+        let (k, w) = (self.ring(), self.spot.half * 2.0);
+        let next = if k + 1 < RINGS { " .den grow makes it bigger." } else { " That's as big as it grows." };
+        format!("Your Den is size {} of {RINGS}: a {w:.0} x {w:.0} yard room, props up to {:.0} yards from its middle.{next}", k + 1, self.spot.reach())
+    }
+
+    /// `.den grow` (the next ring) and `.den size <n>` (ring n - 1): the room's floor and walls rebuilt at that size,
+    /// and what counts as inside the Den follows. Smaller only when every prop still fits.
+    pub fn resize(&mut self, ring: u32) -> Result<Change, String> {
+        if ring >= RINGS {
+            return Err(format!("Your Den grows up to size {RINGS} (a {0:.0} x {0:.0} yard room).", ring_half(RINGS - 1) * 2.0));
+        }
+        let half = ring_half(ring);
+        if half == self.spot.half {
+            return Err(format!("Your Den is size {} already.", ring + 1));
+        }
+        let old = self.spot.half;
+        self.spot.half = half;
+        let out = self.props.iter().filter(|p| !self.inside(p.obj.x, p.obj.y, p.obj.z)).count();
+        if out > 0 {
+            self.spot.half = old;
+            return Err(format!("{out} props stand outside a size {} Den: .build undo, or move them in, first.", ring + 1));
+        }
+        let destroyed = self.build_room();
+        let mut message = self.size_line();
+        if let Some(g) = &self.ground {
+            let r = self.spot.reach();
+            let covered = (0..8).all(|i| {
+                let a = i as f32 * PI / 4.0;
+                g.height_at(self.spot.x + r * a.cos(), self.spot.y + r * a.sin()).is_some()
+            });
+            if !covered {
+                message.push_str(&format!(
+                    " Your ground's white pad is smaller than that: Make the Den bigger in the launcher (Shape the ground) opens it to ring {}.",
+                    pad_ring_for(ring) + 1
+                ));
+            }
+        }
+        Ok(Change { created: self.room.clone(), destroyed, skipped: 0, message })
     }
 
     /// Every object a client entering the Den is sent: the room, then the props.
@@ -658,9 +793,51 @@ impl Den {
 mod tests {
     use super::*;
 
+    /// A ground file as the launcher writes it: the chunk the room stands in raised 10 yards (a hill under the room).
+    fn ground_dir(name: &str, up: f32) -> PathBuf {
+        use leyline_terrain::{b64, delta, pad};
+        let dir = std::env::temp_dir().join(format!("den-lite-ground-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let mut d = delta::Delta::new(pad::den_tile(), vec![152]);
+        d.chunks.push(delta::ChunkDelta { i: 152, heights: Some(b64::f32s(&[13.2 + up; 145])), ..Default::default() });
+        fs::write(dir.join(GROUND_FILE), d.to_json().unwrap()).unwrap();
+        dir
+    }
+
+    #[test]
+    fn props_and_stamps_stand_on_the_dens_ground() {
+        let dir = ground_dir("stamp", 10.0);
+        let mut den = Den::new(Spot { half: 16.0, ..Spot::default() });
+        let spot = den.spot;
+        assert_eq!(den.floor_at(spot.x, spot.y), 13.2, "no ground yet: the fixed floor");
+        assert_eq!(den.reload_ground(&dir), Some(Ok(true)));
+        assert_eq!(den.reload_ground(&dir), None, "unchanged: not read again");
+        assert!((den.floor_at(spot.x, spot.y) - 23.2).abs() < 1e-3);
+        // a piece placed by a player standing on the old floor lands on the hill
+        let st = one_piece(find_objects("chair")[0]);
+        let ch = den.stamp(&st, spot.x, spot.y, 13.2, 0.0);
+        assert_eq!(ch.created.len(), 1);
+        assert!((ch.created[0].z - 23.2).abs() < 1e-3, "{}", ch.created[0].z);
+        assert!((den.props[0].prop.z - 10.0).abs() < 1e-3, "saved relative to the room's floor");
+        // outside the ground's chunks: the player's feet, as before
+        let far = den.stamp(&st, spot.x + 25.0, spot.y, 14.0, 0.0);
+        assert!((far.created[0].z - 14.0).abs() < 1e-3);
+        // a prop 30 yards over the hill is still inside the Den (12 under to 50 over the ground)
+        assert!(den.inside(spot.x, spot.y, 23.2 + 45.0) && !den.inside(spot.x, spot.y, 23.2 - 13.0));
+        // the file goes: the flat floor again; a broken file: the flat floor, said once
+        fs::remove_file(dir.join(GROUND_FILE)).unwrap();
+        assert_eq!(den.reload_ground(&dir), Some(Ok(true)));
+        assert_eq!(den.floor_at(spot.x, spot.y), 13.2);
+        fs::write(dir.join(GROUND_FILE), "{\"format\":\"leyline-terrain\"}").unwrap();
+        assert!(matches!(den.reload_ground(&dir), Some(Err(_))));
+        assert_eq!(den.reload_ground(&dir), None);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn the_room_has_a_floor_walls_a_doorway_and_lights() {
-        let spot = Spot::default();
+        let spot = Spot { half: 16.0, ..Spot::default() };
         let plan = room_plan(&spot, &LOOKS[0]);
         let floor = plan.iter().filter(|p| p.3 == spot.z && p.0 == 188142).count();
         let lights = plan.iter().filter(|p| p.0 == 190664).count();
@@ -669,6 +846,54 @@ mod tests {
         assert_eq!(plan.len(), 64 + 2 * (8 + 6 + 8 + 8) + 4);
         let doorway = plan.iter().any(|p| p.0 == 188142 && p.3 > spot.z && (p.2 - (spot.y - 16.0)).abs() < 0.01 && (p.1 - spot.x).abs() < 4.0);
         assert!(!doorway, "the south wall's middle stays open");
+    }
+
+    #[test]
+    fn the_room_starts_small_and_grows_by_rings() {
+        let mut den = Den::new(Spot::default());
+        assert_eq!((den.ring(), den.spot.half, den.room.len()), (0, 8.0, 16 + 2 * 14 + 4), "16 x 16 yards: 4 x 4 tiles");
+        assert!(den.size_line().starts_with("Your Den is size 1 of 4: a 16 x 16 yard room, props up to 22 yards"), "{}", den.size_line());
+        let (x, y) = (den.spot.x, den.spot.y);
+        assert!(!den.inside(x + 25.0, y, 13.2));
+        let old: Vec<u64> = den.room.iter().map(|o| o.guid).collect();
+        let ch = den.resize(den.ring() + 1).unwrap();
+        assert_eq!(ch.destroyed, old, "the old room goes");
+        assert_eq!(ch.created.len(), 64 + 2 * 30 + 4, "the new one: 32 x 32 yards");
+        assert!(den.inside(x + 25.0, y, 13.2), "inside follows");
+        // the walls stand at the new half width
+        assert!(den.room.iter().any(|o| (o.x - (x + 16.0)).abs() < 0.01) && !den.room.iter().any(|o| (o.x - (x + 8.0)).abs() < 0.01));
+        assert!(den.resize(1).unwrap_err().contains("size 2 already"));
+        assert!(den.resize(4).unwrap_err().contains("up to size 4"));
+        // a prop out at 25 yards: the room can't shrink back under it
+        let chair = one_piece(find_objects("chair")[0]);
+        assert_eq!(den.stamp(&chair, x + 22.0, y, 13.2, 0.0).created.len(), 1);
+        assert!(den.resize(0).unwrap_err().starts_with("1 props stand outside a size 1 Den"));
+        assert_eq!(den.ring(), 1);
+        assert_eq!(den.resize(3).unwrap().created.len(), 256 + 2 * (16 + 14 + 16 + 16) + 4);
+        // saved with its size, opened again at it (a full-Den file's size 12: the ring that holds it, 16)
+        let doc = den.to_doc("big", 0);
+        assert_eq!(doc.room.as_ref().unwrap().size, 32.0);
+        let mut back = Den::new(Spot::default());
+        let c = back.open(&parse(&serde_json::to_string(&doc).unwrap()).unwrap(), true);
+        assert_eq!((back.spot.half, c.skipped), (32.0, 0));
+        assert_eq!(back.undo().destroyed.len(), 1 + 256 + 124 + 4, "undo: the prop and the big room go, the small one comes back");
+        assert_eq!(back.spot.half, 8.0);
+        let mut d12 = Den::new(Spot::default());
+        d12.open(&parse(r#"{"format":"leyline-den","version":1,"room":{"look":"white","size":12},"props":[]}"#).unwrap(), true);
+        assert_eq!(d12.spot.half, 16.0);
+        assert_eq!((ring_for(8.0), ring_for(8.5), ring_for(99.0)), (0, 1, 3));
+        assert_eq!((pad_ring_for(0), pad_ring_for(1), pad_ring_for(2), pad_ring_for(3)), (0, 0, 1, 1));
+    }
+
+    #[test]
+    fn growing_past_the_ground_says_so() {
+        let dir = ground_dir("grow", 0.0);
+        let mut den = Den::new(Spot::default());
+        den.reload_ground(&dir);
+        // the delta's one chunk (33 yards) holds a size 1 room's yard here, not a size 3 one's
+        let m = den.resize(2).unwrap().message;
+        assert!(m.contains("Make the Den bigger") && m.contains("ring 2"), "{m}");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -717,7 +942,8 @@ mod tests {
         let doc = parse(text).unwrap();
         let mut den = Den::new(Spot::default());
         let c = den.open(&doc, true);
-        assert_eq!(c.created.len(), 3);
+        assert_eq!(c.created.len(), 3 + 128, "the props, and the room grown to the file's size 16");
+        assert_eq!(den.props.len(), 3);
         let model = den.props.iter().find(|p| p.prop.entry == 2000004523).unwrap();
         assert_eq!((model.obj.entry, model.obj.display), (MODEL_CARRIER, 4523));
         let back = den.to_doc("house", 0);

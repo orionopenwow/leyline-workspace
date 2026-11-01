@@ -70,6 +70,9 @@ if [ "${WU_TEST:-0}" != 1 ]; then
   id -u wu-discord >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin wu-discord
   chown root:root "$ENVF"
   chown wu-discord "$DIR/mutes.txt"
+  # the bug intake folder (WU_DISCORD_BUG_INTAKE): the bridge writes, the GM console's bugs manifest reads
+  install -d -m 755 /srv/wrath/bugs
+  install -d -m 750 -o wu-discord -g root /srv/wrath/bugs/intake
 fi
 install -m 644 "$SRC/discord/deploy/wu-discord.service" "$UNIT_DIR/wu-discord.service"
 systemctl daemon-reload

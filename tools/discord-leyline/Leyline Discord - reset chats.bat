@@ -1,11 +1,11 @@
 @echo off
 setlocal
 chcp 65001 >nul
-title Leyline Discord - emojis, wipe chats, delete the archive
-rem Rebrands and resets your Discord server to Leyline. It shows the plan first and asks you to type YES.
+title Leyline Discord - wipe chats, delete the archive
+rem Redoes your Discord server to the Leyline channel plan (docs/DISCORD-PLAN.md). It shows the plan first and asks you to type YES.
 rem Before any change it backs up the server to your Desktop (Leyline-discord-backup-...).
-rem Old channels are NOT deleted: they move into a hidden, read-only ARCHIVE category.
-rem It never posts as the bot: your #welcome message is a draft text file for you to post yourself.
+rem Channels you already have are renamed and moved (history kept); the rest move into a hidden ARCHIVE.
+rem It posts nothing: it prints the first posts for you to paste yourself.
 rem
 rem You need a throwaway bot first (5 minutes, once):
 rem   1. Open https://discord.com/developers/applications and click "New Application". Name it "Leyline setup",
@@ -21,9 +21,9 @@ rem      click Reset Token again (or delete the app), so the token is dead.
 rem
 rem Extra options (add them after the .bat name in a command prompt, or edit the last python line):
 rem   --delete-archived    also delete the archived channels after the backup (asks you to type the server name)
-rem   --delete-old-roles   also delete roles that aren't Moderator/Helper/Creator/Member (asks you to type DELETE ROLES)
+rem   --delete-old-roles   also delete roles that aren't in the plan (asks you to type DELETE ROLES)
 rem   --backup-messages N  messages to back up per channel (default 1000)
-rem   --plain              channel names without the little symbols in front
+rem   --post-first-posts   let the bot post the finished first posts (no TODO(owner) left; asks you to type POST)
 cd /d "%~dp0"
 set "PYTHONIOENCODING=utf-8"
 set "PY="
@@ -34,8 +34,8 @@ if not defined PY (
   pause & exit /b 1
 )
 echo.
-echo  Leyline Discord - EMOJI NAMES, WIPE EVERY CHAT, DELETE THE ARCHIVE.
-echo  It backs up first. Then you type YES, then WIPE, then the server name (Leyline).
+echo  Leyline Discord - THE NEW LAYOUT, WIPE EVERY CHAT, DELETE THE ARCHIVE.
+echo  It backs up first. Then you type YES, then WIPE, then the server's name.
 echo  Need a bot token first? Open README.md next to this file, or read the top of this .bat (right-click, Edit).
 echo.
 %PY% discord_leyline.py --apply --wipe-history --delete-archived --backup-messages 5000 %*

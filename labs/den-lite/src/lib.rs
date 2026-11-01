@@ -5,9 +5,11 @@
 //!
 //! See README.md for what works, what is verified only by the test client, and what multi-player would need.
 
+pub mod companion;
 pub mod den;
 pub mod login;
 pub mod objects;
+pub mod play;
 pub mod raw;
 pub mod world;
 
@@ -45,6 +47,8 @@ pub struct Config {
     /// The stamps (`realm/custom/lua_scripts/den-stamps`).
     pub stamps_dir: PathBuf,
     pub spot: den::Spot,
+    /// The game's folder, for `.den mods` (the launcher's `<game>/Leyline/mods.json`); None: not shown.
+    pub client: Option<PathBuf>,
     pub verbose: bool,
 }
 
@@ -63,6 +67,7 @@ impl Default for Config {
                 .and_then(|p| p.parent().map(|d| d.join("den-stamps")))
                 .unwrap_or_else(|| PathBuf::from("den-stamps")),
             spot: den::Spot::default(),
+            client: None,
             verbose: false,
         }
     }
@@ -73,6 +78,10 @@ pub struct Shared {
     /// Account (upper case) -> the SRP6 session key the login server agreed, for the world server's auth session.
     pub sessions: Mutex<HashMap<String, [u8; 40]>>,
     pub den: Mutex<den::Den>,
+    /// The companion (one: Den Lite has one player in the world at a time).
+    pub companion: Mutex<companion::Companion>,
+    /// The player in the world now: the session's number, its writer and where the player stands.
+    pub live: Mutex<Option<(u64, world::Writer, companion::At)>>,
     world: Mutex<SocketAddr>,
     opened: Mutex<std::collections::HashSet<String>>,
 }
@@ -115,8 +124,16 @@ pub fn start(cfg: Config) -> io::Result<Running> {
     let login = TcpListener::bind((cfg.bind, cfg.login_port))?;
     let world = TcpListener::bind((cfg.bind, cfg.world_port))?;
     let (la, wa) = (login.local_addr()?, world.local_addr()?);
+    let mut d = den::Den::new(cfg.spot);
+    if let Some(Err(e)) = d.reload_ground(&cfg.den_dir) {
+        if cfg.verbose {
+            eprintln!("den-lite: the ground file isn't used: {e}");
+        }
+    }
     let shared = Arc::new(Shared {
-        den: Mutex::new(den::Den::new(cfg.spot)),
+        den: Mutex::new(d),
+        companion: Mutex::new(companion::Companion::restore(&cfg.den_dir)),
+        live: Mutex::new(None),
         cfg,
         sessions: Mutex::new(HashMap::new()),
         world: Mutex::new(wa),
@@ -126,5 +143,7 @@ pub fn start(cfg: Config) -> io::Result<Running> {
     std::thread::spawn(move || login::serve(login, s));
     let s = shared.clone();
     std::thread::spawn(move || world::serve(world, s));
+    let s = shared.clone();
+    std::thread::spawn(move || world::companion_ticker(s));
     Ok(Running { login: la, world: wa, shared })
 }

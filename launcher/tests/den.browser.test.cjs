@@ -20,7 +20,7 @@ const FAKE = (o) => {
   try { localStorage.clear(); localStorage.setItem('leyline.page', o.page || 'play'); } catch (_) { /* fine */ }
   const S = (window.__S = {
     lite: o.lite, kit: !!o.kit, docker_den: !!o.docker_den, world: o.world || 'ok', packInstalled: false,
-    dock: o.dock || 'ready', progressDone: false, clients: o.clients === false ? [] : [{ id: 'c335a-1', name: 'My Game', path: '/x', build: '3.3.5a', realmlist: '' }],
+    dock: o.dock || 'ready', progressDone: false, forge: o.forge || 'missing', forgeOpen: false, forgeLooks: 0, forgeLast: null, clients: o.clients === false ? [] : [{ id: 'c335a-1', name: 'My Game', path: '/x', build: '3.3.5a', realmlist: '' }],
   });
   const dens = [{ name: 'house', bytes: 300, props: 12, saved: '2026-11-01T01:00:00Z' }, { name: 'backup', bytes: 100, props: 3, saved: '2026-10-31T01:00:00Z' }];
   window.__TAURI__ = { core: { invoke: async (cmd, args) => {
@@ -70,6 +70,16 @@ const FAKE = (o) => {
       case 'host_invite': return 'https://relay.openvanilla.app/join/abcdefghijk2345a#INVITECODE1234567890';
       case 'join_invite': return { address: 'relay.openvanilla.app:40001', name: 'My Den' };
       case 'play': return 'Started My Game on relay.openvanilla.app:40001.';
+      // Forge (host/forge.rs): o.forge = 'missing' | 'installed'; an open Forge closes after two looks
+      case 'forge_state': {
+        if (S.forgeOpen && ++S.forgeLooks > 2) { S.forgeOpen = false; S.forgeLast = { seq: 1, ok: true, changed: true, chunks: 1, message: 'Terrain updated: 1 part of your Den changed. Start your game again to see it.' }; }
+        return { installed: S.forge === 'installed', running: !!S.forgeOpen, exe: '', sha256: '', last: S.forgeLast || null,
+          source: 'https://github.com/orionopenwow/leyline-workspace/tree/main/forge',
+          licence: 'Forge is free software under the GNU GPL-3.0, built on Noggit Red by the Noggit contributors.' };
+      }
+      case 'forge_install': S.forge = 'installed'; return '/app/forge/Forge.exe';
+      case 'forge_open': S.forgeOpen = true; S.forgeLooks = 0; return 'Forge is open on your Den.';
+      case 'open_link': return null;
       default: throw 'unknown ' + cmd;
     }
   } } };
@@ -290,6 +300,62 @@ test('no saved Dens and no packs yet: plain words, and Share on the Workshop say
   assert.match(await page.textContent('#yd'), /No packs yet/);
   await page.click('#yd button:has-text("Share on the Workshop")');
   assert.match(await statusText(page), /Save your Den first/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Shape the ground: not installed, Get Forge shows the GPL notice and source once, then installs', async () => {
+  const { page, ctx, errors } = await open({ lite: 'stopped', page: 'den', forge: 'missing' });
+  await page.waitForSelector('#yd-forge');
+  assert.ok(await page.locator('#yd .yd-tile h3', { hasText: 'Shape the ground' }).count());
+  assert.equal((await page.textContent('#yd-forge')).trim(), 'Get Forge');
+  await page.click('#yd-forge');
+  await page.waitForSelector('#yd-forge-gpl');
+  assert.match(await page.textContent('#yd-forge-gpl'), /GPL-3\.0/);
+  assert.deepEqual(await calls(page, 'forge_install'), [], 'nothing downloads before the notice is read');
+  await page.click('#yd-forge-src');
+  assert.deepEqual(await calls(page, 'open_link'), [{ name: 'forge-source' }]);
+  await page.click('#yd-forge-go');
+  await page.waitForFunction(() => document.querySelector('#yd-forge').textContent.trim() === 'Open in Forge');
+  assert.equal((await calls(page, 'forge_install')).length, 1);
+  assert.equal(await page.$('#yd-forge-gpl'), null);
+  assert.match(await statusText(page), /Forge is ready/);
+  // once: the next Get Forge (say it was removed) goes straight to the download
+  await page.evaluate(() => { window.__S.forge = 'missing'; window.LeylineDen.load(); });
+  await page.waitForFunction(() => document.querySelector('#yd-forge').textContent.trim() === 'Get Forge');
+  await page.click('#yd-forge');
+  await page.waitForFunction(() => window.__calls.filter((c) => c[0] === 'forge_install').length === 2);
+  assert.equal(await page.$('#yd-forge-gpl'), null, 'the notice shows once');
+  await noBrands(page);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Shape the ground: installed, Open in Forge, then "Terrain updated" when it closes', async () => {
+  const { page, ctx, errors } = await open({ lite: 'stopped', page: 'den', forge: 'installed' });
+  await page.waitForSelector('#yd-forge');
+  assert.equal((await page.textContent('#yd-forge')).trim(), 'Open in Forge');
+  await page.click('#yd-forge');
+  await page.waitForFunction(() => window.__calls.some((c) => c[0] === 'forge_open'));
+  assert.deepEqual(await calls(page, 'forge_open'), [{ client: 'c335a-1' }]);
+  await page.waitForFunction(() => document.querySelector('#yd-forge').textContent.trim() === 'Forge is open…');
+  assert.equal(await page.isDisabled('#yd-forge'), true, 'one Forge at a time');
+  await page.waitForSelector('#yd-forge-note', { timeout: 15000 });
+  assert.match(await page.textContent('#yd-forge-note'), /^Terrain updated/);
+  assert.match(await statusText(page), /Terrain updated/);
+  assert.equal((await page.textContent('#yd-forge')).trim(), 'Open in Forge');
+  assert.equal(await page.isDisabled('#yd-forge'), false);
+  await noBrands(page);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Shape the ground: no game folder yet says what to do, and starts nothing', async () => {
+  const { page, ctx, errors } = await open({ lite: 'stopped', page: 'den', forge: 'installed', clients: false });
+  await page.waitForSelector('#yd-forge');
+  await page.click('#yd-forge');
+  await page.waitForFunction(() => /made from your own game folder/.test(document.querySelector('#yd .yd-status').textContent));
+  assert.deepEqual(await calls(page, 'forge_open'), []);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

@@ -296,7 +296,7 @@ check("hub realm list: right under the hero, before the products and Platform St
 # launch (owner 2026-10-30): the Hangout and the Wrath realm are the same realm, one name everywhere (sampler or not)
 check("hub realm list: the home realm first, as Official, played with a plain /wrath", rows and rows[0][0] == ' data-home="1"'
       and names[0] == "Wrath Unleashed" and 'href="/wrath" aria-label="Play Wrath Unleashed in your browser"' in sec
-      and '<span class="hb-bdg o">Official</span>' in sec and "Leyline Sample Hangout" not in sec and sec.count("<b>Wrath Unleashed</b>") == 1, names)
+      and '<span class="hb-rl-k">Official realm</span>' in sec and '<span class="hb-bdg o">Official</span>' not in sec and "Leyline Sample Hangout" not in sec and sec.count("<b>Wrath Unleashed</b>") == 1, names)
 check("hub realm list: featured next, offline last, hidden realms never", set(names[1:3]) == {"Picked One", "Plain Field"}
       and names[-1] == "Sleepy Hollow" and rows[-1][3] == "0" and "Hidden Away" not in sec and "Busy Den" in names, names)
 check("hub realm list: Play in browser is the hop link, only for live realms the browser plays", f'href="/wrath?go=r:{BUSY}"' in sec

@@ -138,6 +138,7 @@ STEPS = {
     # docs/INCIDENT-2026-11-01-SLICE.md: the streamed slice's files on the server, checked (read-only)
     "slice-health": ("stream/Slice health - check.bat", "Read-only: is the streamed slice whole (key files, its tier lists, what wu-play answers)", False),
     "ship":    ("Ship to GitHub.bat", "Save everything to GitHub", True),
+    "ship-again": ("tools/ship/Save again as one fresh commit.bat", "Save to GitHub again as one fresh commit (after GitHub refused a save)", False),
     "check":   ("realm/Server check.bat", "Server check (read-only)", False),
     "gm":      ("gmconsole/Install GM Console.bat", "GM console update (game keeps running)", False),
     "bots-off": ("realm/Bots - none.bat", "No roaming bots on Wrath Unleashed (5-min warning, then a restart)", False),
@@ -200,6 +201,10 @@ STEPS = {
     "ov112-data-remove": ("tools/ov112-data/Old 1.12 data - remove.bat", "Remove the old 1.12 game files (the old site answers 410 for /data first; Wrath untouched)", False),
     "worldlog": ("tools/diag/World server log.bat", "Read-only: why the world server restarted (state, recent output, crash dumps)", False),
     "caddy-check": ("tools/security/Caddy check.bat", "Caddy and compose check: live config to the PC, secrets removed (read-only)", False),
+    # The bugs manifest (docs/BUGS-MANIFEST.md): every bug report (game, site, launcher, Discord) in one de-duplicated
+    # backlog. Uploads tools/bugs/status.json, has the GM console rebuild, copies BUGS-MANIFEST.md and backlog.json to
+    # tools/bugs/live/ (git-ignored). Touches only the bug backlog, so Autopilot may run it (READ_ONLY below).
+    "bugs": ("tools/bugs/Pull bug manifest.bat", "Bug manifest: every bug report in one list, copied to tools\\bugs\\live (statuses from tools\\bugs\\status.json go up first)", False),
     "hq-sync": ("tools/hq/HQ sync.bat", "Leyline HQ: send the recent changes and Claude's notes, fetch the owner's notes", False),
     "hqnote": ("tools/hq/HQ sync.bat", "Leyline HQ: publish Claude's notes (and sync)", False),
     "hq-inbox": ("tools/hq/HQ sync.bat", "Leyline HQ: fetch the owner's notes to Claude (and sync)", False),
@@ -208,7 +213,7 @@ STEPS = {
 # Autopilot runs only these by itself; anything else waits for "Launch all".
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
-             "vr-data-check", "vr-site-check", "release-mirror-check"}
+             "vr-data-check", "vr-site-check", "release-mirror-check", "bugs"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}
 
 # Never in a log or on the page: passwords, tokens, keys, connection strings (scrub() on every line a step prints).

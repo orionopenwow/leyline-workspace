@@ -6,7 +6,8 @@
 The pages are Markdown files in docs/leyline/ (in the repo) or in docs/leyline/ beside this file (on the
 server: $WU/portal/docs/leyline, which wu-portal sees as /app/docs/leyline; fastloop.sh installs them).
 The portal sends each page through its site_chrome(), which puts in the site's one nav (with its Docs item) and
-footer in place of the small nav here.
+footer in place of the small nav here; with the hub's front door on it passes its hub frame instead (page(frame=)),
+and the page is drawn in the hub's side menu, tokens and footer (DOCS_HUB_CSS).
 WU_DOCS_DIR overrides both.
 
 The renderer is small and safe on purpose. It knows headings, paragraphs, lists, tables, fenced code,
@@ -368,7 +369,59 @@ def _toc(current: str, heads: list) -> str:
             f'<ol>{"".join(items)}</ol></nav></aside>')
 
 
-def _shell(title: str, current: str, heads: list, body: str, css: str, meta: str) -> bytes:
+# In the hub's frame (the portal's hub_frame: the site's side menu, tokens and footer): the same contents and table of
+# contents on the hub's tokens, light and dark. The h1 is in Marcellus like every hub page (hub.STONE_CSS: .ld-doc h1).
+DOCS_HUB_CSS = """
+.ld-wrap{display:grid;grid-template-columns:230px minmax(0,1fr);gap:22px;align-items:start;max-width:1180px;margin:8px auto 40px}
+@media (max-width:860px){.ld-wrap{grid-template-columns:minmax(0,1fr);gap:14px}}
+.ld-toc{position:sticky;top:16px;background:color-mix(in srgb,var(--lk-surface) 94%,transparent);border:1px solid var(--lk-border);
+border-radius:var(--lk-r);padding:14px 10px}
+@media (max-width:860px){.ld-toc{position:static}.ld-toc>nav>ol{display:flex;flex-wrap:wrap;gap:2px 4px}.ld-toc ol ol{display:none}}
+.ld-toc p{margin:0 0 8px 8px;font-size:11.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--lk-muted)}
+.ld-toc ol{list-style:none;margin:0;padding:0}
+.ld-toc li{margin:1px 0}
+.ld-toc a{display:block;padding:5px 10px;border-radius:var(--lk-r-xs);color:var(--lk-text-2)!important;text-decoration:none;font-size:14.5px}
+.ld-toc a:hover,.ld-toc a:focus-visible{background:var(--lk-accent-soft);color:var(--lk-text)!important}
+.ld-toc a[aria-current]{background:var(--lk-accent-soft);color:var(--lk-text)!important;font-weight:650;box-shadow:inset 2px 0 0 var(--lk-accent)}
+.ld-toc ol ol{margin:2px 0 6px 12px;border-left:1px solid var(--lk-border)}
+.ld-toc ol ol a{font-size:13px;color:var(--lk-muted)!important;padding:3px 10px}
+.ld-doc{min-width:0;padding:26px 30px 30px;background:color-mix(in srgb,var(--lk-surface) 94%,transparent);border:1px solid var(--lk-border);
+border-radius:var(--lk-r);box-shadow:0 14px 36px rgba(0,0,0,.25);color:var(--lk-text)}
+@media (max-width:560px){.ld-doc{padding:20px 16px}}
+.ld-doc h1{font-size:clamp(30px,5vw,42px);line-height:1.15;margin:0 0 16px;color:var(--lk-text)}
+.ld-doc h2{font-size:23px;font-weight:700;margin:32px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--lk-border);color:var(--lk-text)}
+.ld-doc h3{font-size:18px;font-weight:700;margin:22px 0 8px;color:var(--lk-text)}
+.ld-doc h4{font-size:16px;margin:18px 0 6px;color:var(--lk-text-2)}
+.ld-doc :is(p,li){max-width:72ch;color:var(--lk-text-2)}
+.ld-doc ul,.ld-doc ol{padding-left:1.4rem}
+.ld-doc li{margin:5px 0}
+.ld-doc code{background:var(--lk-surface-2);border:1px solid var(--lk-border);border-radius:5px;padding:1px 5px;font:13.5px ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
+.ld-doc pre{background:var(--lk-surface-2);border:1px solid var(--lk-border);border-radius:var(--lk-r-sm);padding:12px 14px;overflow-x:auto;max-width:100%}
+.ld-doc pre code{background:none;border:0;padding:0;overflow-wrap:normal;white-space:pre}
+.ld-doc blockquote{margin:14px 0;padding:10px 14px;border-left:3px solid var(--lk-accent-2);background:var(--lk-accent-soft);border-radius:0 var(--lk-r-sm) var(--lk-r-sm) 0}
+.ld-doc blockquote p{margin:0}
+.ld-doc strong{color:var(--lk-text)}
+.ld-doc hr{border:0;border-top:1px solid var(--lk-border);margin:24px 0}
+.ld-scroll{overflow-x:auto;margin:12px 0;max-width:100%}
+.ld-table{width:100%;border-collapse:collapse;font-size:14.5px}
+.ld-table th{font-size:11.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--lk-muted);text-align:left;padding:9px 10px;
+border-bottom:1px solid var(--lk-border-strong);white-space:nowrap}
+.ld-table td{padding:9px 10px;border-bottom:1px solid var(--lk-border);vertical-align:top;color:var(--lk-text-2)}
+.ld-foot{color:var(--lk-muted)!important;font-size:14px;margin-top:26px}
+"""
+
+
+def _shell(title: str, current: str, heads: list, body: str, css: str, meta: str, frame=None) -> bytes:
+    """The page. frame: the portal's hub_frame-like callable (title, inner, css, meta) -> bytes or None; when it gives
+    a page, that is the page (the hub's frame), else this module's own."""
+    if frame is not None:
+        try:
+            out = frame(f"{title} · Leyline docs", f'<div class="ld-wrap">{_toc(current, heads)}'
+                        f'<article class="ld-doc">{body}</article></div>', DOCS_HUB_CSS, meta)
+            if out:
+                return out
+        except Exception:  # noqa: BLE001: this module's own page then
+            pass
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">'
             f'<title>{html.escape(title)} · Leyline docs</title>{meta}<style>{css}{DOCS_CSS}</style></head>'
@@ -377,22 +430,22 @@ def _shell(title: str, current: str, heads: list, body: str, css: str, meta: str
             f'<article class="ly-panel ld-doc">{body}</article></div></div></body></html>').encode("utf-8")
 
 
-def not_found(css: str = "") -> bytes:
+def not_found(css: str = "", frame=None) -> bytes:
     links = "".join(f'<li><a href="{page_url(n)}">{html.escape(t)}</a></li>' for n, t in PAGES)
     body = ("<h1>Not found</h1><p>There is no docs page with that name. These are the pages:</p>"
             f"<ul>{links}</ul>")
-    return _shell("Not found", "", [], body, css, "")
+    return _shell("Not found", "", [], body, css, "", frame)
 
 
-def page(path: str, css: str = "", card_meta=None, realm_name: str = "WrathUnleashed") -> tuple[int, bytes]:
-    """(status, HTML) for GET /wrath/docs and /wrath/docs/<page>. Never raises."""
+def page(path: str, css: str = "", card_meta=None, realm_name: str = "WrathUnleashed", frame=None) -> tuple[int, bytes]:
+    """(status, HTML) for GET /wrath/docs and /wrath/docs/<page>. frame: the portal's hub frame (see _shell). Never raises."""
     try:
         name = "index" if path == BASE else path[len(BASE) + 1:]
         if name not in TITLES:
-            return 404, not_found(css)
+            return 404, not_found(css, frame)
         got = load(name)
         if got is None:
-            return 404, not_found(css)
+            return 404, not_found(css, frame)
         body, heads = got
         title = TITLES[name] if name != "index" else "Leyline"
         meta = ""
@@ -404,6 +457,6 @@ def page(path: str, css: str = "", card_meta=None, realm_name: str = "WrathUnlea
         foot = ('<p class="ld-foot">These pages are in the repo at docs/leyline. '
                 '<a href="https://github.com/orionopenwow/Leyline/tree/main/docs/leyline" '
                 'rel="noopener noreferrer">Source</a></p>')
-        return 200, _shell(title, name, heads, body + foot, css, meta)
+        return 200, _shell(title, name, heads, body + foot, css, meta, frame)
     except Exception:  # noqa: BLE001: never take the portal down
         return 404, b"not found\n"

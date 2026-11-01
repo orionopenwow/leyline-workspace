@@ -192,6 +192,27 @@ impl World {
         self.send(&CMSG_MESSAGECHAT { chat_type: CMSG_MESSAGECHAT_ChatType::Say, language: Language::Common, message: text.into() });
     }
 
+    /// Frames until one matches (the ones before it are skipped).
+    fn until<T>(&mut self, mut want: impl FnMut(&Frame) -> Option<T>) -> T {
+        loop {
+            let f = self.frame();
+            if let Some(t) = want(&f) {
+                return t;
+            }
+        }
+    }
+
+    /// The next line the companion says (monster say): who says it and what.
+    fn until_she_says(&mut self) -> (u64, String, String) {
+        self.until(|f| match &f.msg {
+            Some(ServerOpcodeMessage::SMSG_MESSAGECHAT(m)) => match &m.chat_type {
+                SMSG_MESSAGECHAT_ChatType::MonsterSay { sender1, .. } => Some((m.sender.guid(), sender1.clone(), m.message.clone())),
+                _ => None,
+            },
+            _ => None,
+        })
+    }
+
     /// Frames until a system chat line arrives (the end of every command's answer); returns them and the line.
     fn until_line(&mut self) -> (Vec<Frame>, String) {
         let mut got = Vec::new();
@@ -326,9 +347,10 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
     w.send(&CMSG_PLAYER_LOGIN { guid: ch.guid });
     let (frames, welcome) = w.until_line();
     assert!(welcome.starts_with("Welcome to your Den: 0 props"), "{welcome}");
-    // the quick start: four lines, the first one places a chair
-    let tutorial: Vec<String> = (0..4).map(|_| w.until_line().1).collect();
+    // the quick start: five lines, the first one places a chair, the last grows the room and calls the companion
+    let tutorial: Vec<String> = (0..5).map(|_| w.until_line().1).collect();
     assert!(tutorial[0].contains(".den place chair") && tutorial[3].contains(".den save"), "{tutorial:?}");
+    assert!(tutorial[4].contains(".den grow") && tutorial[4].contains(".den companion"), "{tutorial:?}");
     let names: Vec<u16> = frames.iter().map(|f| f.opcode).collect();
     let at = |op: u16| names.iter().position(|&o| o == op).unwrap_or_else(|| panic!("no {op:#x} in {names:x?}"));
     // SMSG_LOGIN_VERIFY_WORLD first, then account data, ..., the player, world states, the room
@@ -357,8 +379,9 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
     assert!((position.z - 14.2).abs() < 0.01 && *running_speed == 7.0);
     assert!(names.contains(&0x02C2), "SMSG_INIT_WORLD_STATES");
     let (room, _) = objects(&frames);
-    assert_eq!(room.len(), 64 + 60 + 4, "floor, walls and lights");
-    assert_eq!(room.values().filter(|g| g.entry == 188142 && g.display == 6752).count(), 124);
+    // a new Den starts small: 16 x 16 yards
+    assert_eq!(room.len(), 16 + 28 + 4, "floor, walls and lights");
+    assert_eq!(room.values().filter(|g| g.entry == 188142 && g.display == 6752).count(), 44);
     assert_eq!(room.values().filter(|g| g.entry == 190664 && g.display == 7976).count(), 4);
     assert!(room.values().all(|g| g.scale == 2.0));
     // east and west walls are turned a quarter: their packed rotation carries z = sin(45 degrees)
@@ -448,7 +471,7 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
     let (frames, line) = w.until_line();
     let (made, gone) = objects(&frames);
     assert_eq!(line, "The room is stone now.");
-    assert_eq!(gone.len(), 128);
+    assert_eq!(gone.len(), 48);
     assert!(made.values().all(|g| [190024, 19444, 180043].contains(&g.entry)));
     // the launcher's Saved Dens > Open, while the player is in: open.json (host/dens.rs open_doc)
     std::fs::write(dir.join("open.json"), r#"{"file":"test1","id":"18f3a9c2b7e1d4a51234"}"#).unwrap();
@@ -456,7 +479,7 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
     assert_eq!(line, "Opening 'test1' from the launcher.");
     let (frames, line) = w.until_line();
     assert_eq!(line, "Opened: 10 props.");
-    assert_eq!(objects(&frames).1.len(), 10 + 98, "what was there goes, and the file's white room comes back for the stone one");
+    assert_eq!(objects(&frames).1.len(), 10 + 34, "what was there goes, and the file's white room comes back for the stone one");
     assert!(std::fs::read_to_string(dir.join(".open-done")).unwrap().contains("18f3a9c2b7e1d4a51234"));
     assert!(!srv.shared.mark_opened(&dir, "18f3a9c2b7e1d4a51234"), "each id opens once");
     w.send(&CMSG_PING { sequence_id: 7, round_time_in_ms: 0 });
@@ -513,4 +536,161 @@ fn every_stamp_and_starter_opens_with_nothing_left_out() {
         // and back out to a file with the same props
         assert_eq!(d.to_doc(&name, 0).props.len(), doc.props.len());
     }
+}
+
+/// Logs in and enters the world; the frames up to the quick start are read.
+fn into_world(srv: &den_lite::Running, addons: u32) -> World {
+    let (key, _, address) = login(srv.login, "DEN", "den").expect("login");
+    let mut w = World::connect(&address, "DEN", key, addons);
+    w.send(&CMSG_CHAR_ENUM {});
+    let ch = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_CHAR_ENUM(e)) => Some(e.characters[0].guid),
+        _ => None,
+    });
+    w.send(&CMSG_PLAYER_LOGIN { guid: ch });
+    for _ in 0..6 {
+        w.until_line();
+    }
+    w
+}
+
+fn now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
+}
+
+#[test]
+fn the_den_grows_and_the_companion_talks_with_the_assistant() {
+    let (srv, dir) = server("grow", HeroGender::Female);
+    let mut w = into_world(&srv, 2);
+    let (mx, my, mz) = (16226.2f32, 16257.0f32, 14.2f32);
+
+    // 1. the room grows by rings, is saved with its size and opens at it again
+    w.say(".den size");
+    assert!(w.until_line().1.starts_with("Your Den is size 1 of 4: a 16 x 16 yard room"));
+    w.say(".den grow");
+    let (frames, line) = w.until_line();
+    assert!(line.starts_with("Your Den is size 2 of 4: a 32 x 32 yard room, props up to 30 yards"), "{line}");
+    let (made, gone) = objects(&frames);
+    assert_eq!((made.len(), gone.len()), (128, 48), "the small room goes, the bigger one comes");
+    assert!(made.values().any(|g| (g.x - (mx + 16.0)).abs() < 0.01), "the east wall at 16 yards");
+    // a chair 25 yards out fits now (it didn't at size 1)
+    w.send(&heartbeat(mx + 22.0, my, mz, 0.0));
+    w.say(".den place wooden chair");
+    assert!(w.until_line().1.starts_with("Wooden Chair is down"));
+    w.say(".den size 1");
+    assert!(w.until_line().1.starts_with("1 props stand outside a size 1 Den"));
+    w.say(".den save grown");
+    w.until_line();
+    assert_eq!(den::read_file(&dir.join("grown.den.json")).unwrap().room.unwrap().size, 16.0);
+    w.say(".build undo");
+    w.until_line();
+    w.say(".den size 1");
+    let (frames, line) = w.until_line();
+    assert!(line.starts_with("Your Den is size 1 of 4"), "{line}");
+    assert_eq!(objects(&frames).0.len(), 48);
+    w.say(".den load grown");
+    let (frames, line) = w.until_line();
+    assert_eq!(line, "Opened: 1 props.");
+    assert_eq!(objects(&frames).0.len(), 128 + 1, "the file's size 2 room and its chair");
+    assert_eq!(srv.shared.den.lock().unwrap().spot.half, 16.0);
+    w.say(".den size 9");
+    assert!(w.until_line().1.starts_with("Sizes are 1 to 4"));
+
+    // 2. the companion: called, named, heard, answering from the assistant's file, following, staying in the Den
+    w.send(&heartbeat(mx, my, mz, 0.0));
+    w.say(".den ask a well");
+    assert_eq!(w.until_line().1, "Call your companion first: .den companion");
+    w.say(".den companion");
+    let (frames, line) = w.until_line();
+    assert!(line.starts_with("Your companion follows you."), "{line}");
+    let unit = frames
+        .iter()
+        .find_map(|f| match &f.msg {
+            Some(ServerOpcodeMessage::SMSG_UPDATE_OBJECT(u)) => u.objects.iter().find_map(|o| match o {
+                Object::CreateObject { guid3, mask2: UpdateMask::Unit(m), movement2, object_type: ObjectType::Unit } => {
+                    Some((guid3.guid(), m.clone(), movement2.clone()))
+                }
+                _ => None,
+            }),
+            _ => None,
+        })
+        .expect("her create");
+    assert_eq!(unit.0, den_lite::companion::GUID);
+    assert_eq!((unit.1.object_entry(), unit.1.unit_displayid(), unit.1.unit_factiontemplate(), unit.1.unit_flags()), (Some(32364), Some(30865), Some(35), Some(832)));
+    let Some(MovementBlock_UpdateFlag_Living::Living { position, .. }) = unit.2.update_flag.get_living() else { panic!("she isn't living") };
+    assert!(((position.x - mx).powi(2) + (position.y - my).powi(2)).sqrt() - 2.5 < 0.01, "2.5 yards from the player");
+    let hello = frames.iter().find_map(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_MESSAGECHAT(m)) if matches!(m.chat_type, SMSG_MESSAGECHAT_ChatType::MonsterSay { .. }) => Some(m.message.clone()),
+        _ => None,
+    });
+    assert!(hello.unwrap().starts_with("Hello!"));
+    // the client asks who she is
+    w.send(&CMSG_CREATURE_QUERY { creature: 32364, guid: Guid::new(den_lite::companion::GUID) });
+    let q = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_CREATURE_QUERY_RESPONSE(r)) => Some(r.clone()),
+        _ => None,
+    });
+    let found = q.found.expect("known");
+    assert_eq!((found.name1.as_str(), found.sub_name.as_str(), found.display_ids[0], found.creature_type), ("Jaina", "Your companion", 30865, 7));
+    // "Jaina, ..." near her: said aloud, and written where den_messages reads it
+    w.say("Jaina, a well by the door");
+    let (who, name, text) = w.until_she_says();
+    assert_eq!((who, name.as_str()), (den_lite::companion::GUID, "Jaina"));
+    assert!(text.starts_with("I've written that down. Nobody is reading"), "nobody has read the asks yet: {text}");
+    let cin: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("companion-in.json")).unwrap()).unwrap();
+    assert_eq!((cin["format"].clone(), cin["server"].clone(), cin["companion"].clone()), (serde_json::json!("leyline-companion"), serde_json::json!("den-lite"), serde_json::json!(true)));
+    assert_eq!(cin["asks"][0]["text"], "a well by the door");
+    assert_eq!(cin["asks"][0]["n"], 1);
+    assert_eq!(cin["asks"][0]["where"]["x"], 0.0);
+    assert_eq!((cin["owner"]["online"].clone(), cin["room"]["size"].clone()), (serde_json::json!(true), serde_json::json!(2)));
+    w.say(".den ask and a bench");
+    assert_eq!(w.until_she_says().2, "One moment, I'm still on the last one.");
+    // the assistant answers (den_say: launcher/src-tauri/src/agents/den.rs push_line) and reads the asks (read_at)
+    let line = serde_json::json!({"format": "leyline-companion", "lines": [{"n": 1, "at": now(), "text": "A well, here? I'll draw one up."}],
+        "seen": 1, "read_at": now()});
+    std::fs::write(dir.join("companion-out.json"), line.to_string()).unwrap();
+    assert_eq!(w.until_she_says().2, "A well, here? I'll draw one up.");
+    std::thread::sleep(Duration::from_millis(4100));
+    w.say(".den ask and a bench");
+    assert_eq!(w.until_she_says().2, "Let me think about that.", "someone is listening now");
+    // she follows: the player runs 12 yards east, she walks to her spot behind them
+    w.send(&heartbeat(mx + 12.0, my, mz, 0.0));
+    let mv = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_MONSTER_MOVE(m)) => Some(m.clone()),
+        _ => None,
+    });
+    assert_eq!(mv.guid.guid(), den_lite::companion::GUID);
+    let to = mv.splines[0];
+    let (sx, sy) = (mx + 12.0 + (0.75 * std::f32::consts::PI).cos() * 2.5, my + (0.75 * std::f32::consts::PI).sin() * 2.5);
+    assert!((to.x - sx).abs() < 0.01 && (to.y - sy).abs() < 0.01, "{to:?}");
+    assert!(mv.duration > 1000 && mv.duration < 3000, "{}", mv.duration);
+    // out of the Den: she stays
+    w.send(&heartbeat(mx + 40.0, my, mz, 0.0));
+    let line = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_MESSAGECHAT(m)) if matches!(m.chat_type, SMSG_MESSAGECHAT_ChatType::System { .. }) => Some(m.message.clone()),
+        _ => None,
+    });
+    assert!(line.starts_with("Your companion stays in your Den"), "{line}");
+    w.say(".den companion away");
+    assert_eq!(w.until_line().1, "Your companion isn't here.");
+
+    // 3. game modes and mods: what Den Lite can say, and what it can't run
+    w.say(".den mode");
+    let first = w.until_line().1;
+    assert!(first.starts_with("Host templates (run on this PC): levelling"), "{first}");
+    w.until_line();
+    w.until_line();
+    w.say(".den mode minigolf");
+    assert!(w.until_line().1.starts_with("Minigolf:"));
+    assert!(w.until_line().1.contains("Minigolf night template"));
+    assert!(w.until_line().1.contains("Leyline › Host › Host a mode › Minigolf night › Host"));
+    w.say(".den mods");
+    let l = w.until_line().1;
+    assert!(l.starts_with("Your game loaded 2 addons: Leyline_Addon0, Leyline_Addon1"), "{l}");
+    w.until_line();
+    assert!(w.until_line().1.contains("--client"));
+    w.send(&CMSG_LOGOUT_REQUEST {});
+    w.until(|f| matches!(f.msg, Some(ServerOpcodeMessage::SMSG_LOGOUT_COMPLETE)).then_some(()));
+    assert!(srv.shared.live.lock().unwrap().is_none());
+    let _ = std::fs::remove_dir_all(&dir);
 }

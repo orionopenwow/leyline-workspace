@@ -377,6 +377,35 @@ step).
 `"packs": ["goldshire"]` (version 1 still: older readers ignore it). Opening a file that lists packs not made on this
 PC (`dens/packs.json`) says which ones and how: "Make them from your own game folder (leyline pack build ...)".
 
+## Your Den's ground: Forge and the terrain delta (2026-11-01)
+
+**Built** (not yet tried with a real game folder; docs/NOGGIT-DEN-PLAN.md phases 1-3 and 5):
+
+- **The crate** `launcher/src-tauri/terrain` (`leyline-terrain`, MIT, written from the public format notes): reads and
+  writes the map tile (heights, normals made again, paint layers and their alpha maps in all three forms, holes, water,
+  vertex shading, placed models) and the map's tile table; the white pad (2 x 2 chunks around the room, flat at the
+  floor, grown by rings: 4, 16, 36 ... 256 chunks); `diff` (own tile + edited tile -> delta) and `apply` (own tile +
+  delta -> tile, the same bytes on every PC). The delta holds numbers and file names only.
+- **Two forms of the delta, one file name.** Leyline keeps its own form as the Den's ground
+  (`<dens>/yourden.terrain.json`, `docs/terrain-delta-leyline.schema.json`); Forge writes and reads its form
+  (`docs/terrain-delta.schema.json`, `forge/docs/DEN-MODE.md`). The crate turns one into the other
+  (`leyline_terrain::flat`). One schema in the end: owner's call.
+- **Your Den page, "Shape the ground"**: Get Forge (the GPL notice and its source link, once; the `forge-latest`
+  release's `Forge.zip`, checked against `Forge.zip.sha256`, into `<app data>/Leyline/forge/`), then Open in Forge:
+  the launcher makes `<app data>/Leyline/den-terrain/yourden/` (the Den's tile from your own files + the ground, the
+  ground in Forge's form, `locked-tiles.txt`) and starts Forge with `--game --project --map 1 --tile 1,1
+  --locked-tiles <file> [--den <newest Den file>] --name yourden --origin 16226.2,16257,13.2`. When Forge closes, what
+  it saved becomes the ground (its ground file, else the saved tile diffed against your own), only inside the open
+  area and only the Den's tile; the page says "Terrain updated".
+- **Your own game**: `Data/patch-T.MPQ` (the rebuilt tile and a `Leyline\DenGround.txt` mark) before a Den starts
+  (Den Lite, or the Docker Den once its own invite was knocked), taken out before anywhere else; a patch-T that isn't
+  ours is never touched; the Mods page never hands out T. The game reads map files at start: restart it to see a change.
+- **The Docker Den**: the same tile in `state/packs/den-terrain/server/...`, with its pack.json, `packs/tiles.json`
+  and `packs/restage`; the next start re-stages (denslice.py takes `den-terrain` before any other pack). Pathing stays
+  off (no vmaps): players collide on their own client, the server needs heights.
+- **Den Lite** reads the ground's heights: `.den place`, stamps and the spawn stand on the edited ground; it notices a
+  new ground file within 2 seconds.
+
 ## Claude in your Den, and your companion (2026-11-01)
 
 Leyline has no AI of its own: the player's own assistant (Claude Code, the Claude app, any MCP client) uses the Den

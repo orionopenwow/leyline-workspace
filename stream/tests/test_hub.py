@@ -258,14 +258,12 @@ check("footer: Docs, Download, Forum, Status, the wordmark, Join the Discord and
       and f'href="{wp.DISCORD_URL}" rel="noopener noreferrer"' in foot and "</svg>Join the Discord</a>" in foot)
 # launch (2026-10-30): the official realm (Wrath Unleashed) is the front door, the Discord everywhere
 ho = re.search(r'<section class="hb-ho[^"]*" id="hangout".*?</section>', front, re.S)
-check("launch: under the hero, Wrath Unleashed is open, Play in your browser (no Discord button here: two Discord links at most)",
-      ho and "<h2 id=\"hb-ho-h\">Wrath Unleashed is open</h2>" in ho.group(0)
-      and '<a class="hb-cta sm" href="/wrath">Play in your browser</a>' in ho.group(0)
-      and f'href="{wp.DISCORD_URL}"' not in ho.group(0) and "TODO(owner): the Hangout line" in ho.group(0)
-      and front.index('class="hb-hero"') < front.index('id="hangout"') < front.index('id="realms"'))
+# the "Wrath Unleashed is open" banner left the front page (owner 1 Nov 05:15: redundant with the realm list)
+check("launch: no hangout banner; the launcher shot, then the realm list",
+      not ho and front.index('class="hb-hero-shot"') < front.index('id="realms"'))
 cm = re.search(r'<section class="hb-sec hb-cm hb-rv" id="forum".*?</section>', front, re.S)
-check("launch: the Forum and Discord section opens with a big Join the Discord, and the Community feature section links the forum",
-      cm and cm.group(0).index('class="hb-cm-dc big"') < cm.group(0).index('class="hb-cm-g') and re.search(r'id="f-community".*?href="/wrath/leyline/forum"', front, re.S) and f'href="{wp.DISCORD_URL}"' in cm.group(0))
+check("launch: the Forum and Discord section opens with a big Join the Discord and links the forum",
+      cm and cm.group(0).index('class="hb-cm-dc big"') < cm.group(0).index('class="hb-cm-g') and 'href="/wrath/leyline/forum"' in cm.group(0) and f'href="{wp.DISCORD_URL}"' in cm.group(0))
 _main = re.sub(r'<footer class="hb-foot">.*?</footer>|<header class="hb-top">.*?</header>', "", front, flags=re.S)
 check("launch: one Discord call to action in the page body (the site chrome has the other link)",
       _main.count(f'href="{wp.DISCORD_URL}"') == 1, _main.count(f'href="{wp.DISCORD_URL}"'))
@@ -275,12 +273,20 @@ check("how it works links the plain network explainer", 'class="hb-how-more"><a 
 check("launch: the Hangout row comes first, named, labelled Official realm",
       re.search(r'<li class="hb-rl home[^"]*" data-home="1"[^>]*>.*?<b>Wrath Unleashed</b><span class="hb-rl-k">Official realm</span>', front))
 # the owner's 2026-10-30 additions: realms under the hero, the feature sections in order, how it works, the polish
-fs = re.findall(r'<section class="hb-fs hb-rv( flip)?" id="f-([a-z]+)".*?<p class="hb-eyebrow">.*?</span>([^<]+)</p><h2[^>]*>([^<]+)</h2>'
-                r'<p class="hb-lede">([^<]+)</p><ul class="hb-points">(.*?)</ul><p class="hb-fs-a">(.*?)</p></div>'
-                r'<div class="hb-fs-v">(.*?)</div></section>', front, re.S)
+FS_RE = (r'<section class="hb-fs hb-rv( flip)?" id="f-([a-z]+)".*?<p class="hb-eyebrow">.*?</span>([^<]+)</p><h2[^>]*>([^<]+)</h2>'
+         r'<p class="hb-lede">([^<]+)</p><ul class="hb-points">(.*?)</ul><p class="hb-fs-a">(.*?)</p></div>'
+         r'<div class="hb-fs-v">(.*?)</div></section>')
+# owner 1 Nov ("make sure the website is clean looking too"): the front page shows four of them (FRONT_FEATURES), the
+# launcher's story; the rest are drawn by features(only=None) and checked from there
+allf = HB.hub.features(HB.hub.realm_rows(), only=None)
+check("front page: four feature sections only (launcher, host, modes, mods), alternating, nothing repeating the realm list",
+      [(f[1], bool(f[0])) for f in re.findall(FS_RE, front, re.S)] == [("launcher", False), ("host", True), ("modes", False), ("mods", True)]
+      and 'id="f-realms"' not in front and 'id="f-forge"' not in front and 'id="f-agents"' not in front and 'id="f-community"' not in front
+      and "Your Den" in front, [f[1] for f in re.findall(FS_RE, front, re.S)])
+fs = re.findall(FS_RE, allf, re.S)
 check("feature sections: one per part of Leyline, in the recommended order", [f[1] for f in fs] == [
       "launcher", "host", "realms", "modes", "mods", "forge", "agents", "community"] and [f[2] for f in fs] == [
-      "Desktop launcher", "Server hosting software", "Realms &amp; hopping", "Minigolf &amp; game modes", "Mods",
+      "Desktop launcher", "Host a server", "Realms &amp; hopping", "Minigolf &amp; game modes", "Mods",
       "Forge", "Agents", "Community hub"], [f[1:3] for f in fs])
 check("feature sections: alternating sides (every other one flips)", [bool(f[0]) for f in fs] == [False, True] * 4)
 check("feature sections: a heading, a lede, points and a first link each", all(f[3] and f[4] and f[5].count("<li>") >= 2
@@ -293,13 +299,13 @@ check("feature sections: links to pages that exist, nothing paid", [h[0] for h i
 check("feature sections: a TODO(owner) to reorder them", "TODO(owner): the order of the products" in open(HB.__file__).read())
 check("feature sections: the game modes line from playmodes.json, Hero Key as coming", "Minigolf" in fs[3][4]
       and "Hero Key sign-in across community realms (coming)" in fs[2][5])
-check("feature sections: every one has its icon", front.count('<span class="hb-ico"><svg viewBox="0 0 24 24" aria-hidden="true">') == 8)
-feats = re.search(r'<div class="hb-feats" id="features">.*?(?=<section class="hb-sec hb-gal-s|<section class="hb-sec hb-rv" id="hosted"|<!-- TODO\(owner\): the Hero Key line)', front, re.S).group(0)
+check("feature sections: every one has its icon", allf.count('<span class="hb-ico"><svg viewBox="0 0 24 24" aria-hidden="true">') == 8)
+feats = allf
 shots = re.findall(r'<img src="/wrath/art/(leyline-ui-[a-z]+\.webp)" alt="([^"]+)" width="1240" height="760" loading="lazy"', feats)
 check("feature sections: the launcher's own pages as pictures (served, lazy, with alt text), our own panels for the rest "
       "(server software, the realm list; the Minigolf loop falls back to the Modes page without the game shots)",
-      [n for n, _ in shots] == ["leyline-ui-home.webp", "leyline-ui-modes.webp", "leyline-ui-workshop.webp"]
-      and 'class="hb-sw"' in fs[1][7] and 'class="hb-rlx"' in fs[2][7]
+      [n for n, _ in shots] == ["leyline-ui-launcher.webp", "leyline-ui-hosting.webp", "leyline-ui-modes.webp", "leyline-ui-workshop.webp"]
+      and 'class="hb-rlx"' in fs[2][7]
       and all(a for _, a in shots) and all(n in wp.ART_TYPES and not n.startswith("leyline-shot-") for n, _ in shots)
       and all(os.path.isfile(os.path.join(HERE, "www-files", "art", n)) for n, _ in shots)
       and 'class="hb-draw hb-people"' in fs[7][7] and 'class="hb-draw hb-code"' in fs[5][7] and 'class="hb-draw hb-code"' in fs[6][7]
@@ -308,9 +314,7 @@ how = re.search(r'<ol class="hb-how[^"]*" aria-label="How it works">(.*?)</ol>',
 check("how it works: three steps, launcher, game folder or browser, realm", how and re.findall(r"<b>([^<]+)</b>", how.group(1)) == [
       "Get the launcher", "Point it at your game folder", "Pick a realm"] and "play in your browser" in how.group(1)
       and "TODO(owner): the \"how it works\" wording" in front)
-order = [front.index(x) for x in ('class="hb-hero"', 'id="realms"', 'class="hb-how', 'id="features"', 'id="f-launcher"', 'id="f-agents"',
-                                  'id="status"', 'id="forum"')]
-order = [front.index(x) for x in ('class="hb-hero"', 'id="realms"', 'class="hb-how', 'id="features"', 'id="f-launcher"', 'id="f-agents"',
+order = [front.index(x) for x in ('class="hb-hero"', 'id="realms"', 'class="hb-how', 'id="features"', 'id="f-launcher"', 'id="f-mods"',
                                   'id="forum"', 'id="status"')] + [front.rindex('class="hb-fine"')]
 check("front page order: hero, realms, how it works, the feature sections, forum and Discord, the status bar, the fine print", order == sorted(order), order)
 check("realm list without a relay: our realm still there, one click", 'data-home="1"' in front and 'class="hb-play" href="/wrath"' in front
@@ -640,17 +644,22 @@ def portal_with(name):
 
 HB.hub.portal = portal_with
 fp = req("/wrath/leyline-preview")[2].decode()
-order = [fp.find(x) for x in ('class="hb-hero"', 'id="realms"', 'class="hb-how', 'class="hb-nums', 'id="features"',
-                              'id="f-agents"', 'id="hosted"', 'id="herokey"', 'id="forum"', 'id="news"', 'id="creators-top"',
+order = [fp.find(x) for x in ('class="hb-hero"', 'id="realms"', 'class="hb-how', 'id="features"',
+                              'id="f-mods"', 'id="forum"', 'id="news"', 'id="creators-top"',
                               'id="status"')] + [fp.rfind('class="hb-fine"')]
-check("front page order: hero, realms, how it works, numbers, features, hosted, the Hero Key line, forum and Discord (news, "
-      "then hot and creators), the status bar, the fine print", -1 not in order and order == sorted(order), order)
+check("front page order: hero, realms, how it works, features, forum and Discord (news, then hot and creators), the status "
+      "bar, the fine print", -1 not in order and order == sorted(order), order)
+# owner 1 Nov (fewer panels, straight to the point): the numbers, the community posters, the Hero Key line and Mods in play
+# repeated what the realm list and the gallery already show; they are off the page (their methods are checked below)
+check("front page: no numbers, no community posters, no Hero Key line, no Mods in play (owner 1 Nov)",
+      'class="hb-nums' not in fp and 'id="hosted"' not in fp and 'id="herokey"' not in fp and 'class="hb-ms ' not in fp)
+GOT, ITEMS = HB.hub.realm_rows(), HB.hub.items()
 # owner 31 Oct 23:50 ("remove this area from site"): no Live now / New this week strip and no ticker on the front page
 check("front page: no Live now / New this week strip and no ticker (owner 31 Oct)",
       'class="hb-tick"' not in fp and 'id="live"' not in fp and "New this week" not in fp, fp.count("hb-tick"))
 check("ticker: the 30 s live update refreshes its counts (same JSON, text only)", "[data-tick=" in HB.HUB_JS and "tk(c.realmId,h.players)" in HB.HUB_JS
       and 'tk("home",s.players)' in HB.HUB_JS)
-nums = re.findall(r'<b class="hb-num" data-count="(\d+)">(\d+)</b><span>([^<]+)</span>', fp)
+nums = re.findall(r'<b class="hb-num" data-count="(\d+)">(\d+)</b><span>([^<]+)</span>', HB.hub.counters(GOT, ITEMS))
 check("numbers: realms, players, mods, the final values in the page (no script, reduced motion)", [n[2] for n in nums] == [
       "realms online", "players right now", "mods, addons and tools"] and all(a == b for a, b, _ in nums)
       and int(nums[2][0]) == len([i for i in HB.hub.items() if i["source"] != "theme"]) and int(nums[1][0]) >= 44, nums)
@@ -677,14 +686,15 @@ check("no separate Mod of the week card (the featured slider and the gallery car
       'id="mod-week"' not in fp and 'class="hb-motw' not in fp and 'class="hb-pair"' not in fp
       and hot1 and hot1.group(1) == f'/wrath/leyline-preview/p/{HOT["id"].replace(":", "-")}' and hot1.group(2) == html.escape(HB.as_typed(HOT['name'], HB.neutral(HOT['name'])))
       and re.fullmatch(rf"by {re.escape(html.escape(HB.as_typed(HOT['author'], HB.neutral(HOT['author']))))} · \d+ installs? this month", hot1.group(3)), hot1.groups() if hot1 else "")
-posters = re.findall(r'<article class="hb-poster" style="--h1:(\d+);--h2:(\d+);--a:(\d+)deg;--x:(\d+)%;--y:(\d+)%;--r:(\d+)deg">(.*?)</article>', fp, re.S)
+pst = HB.hub.posters(GOT)
+posters = re.findall(r'<article class="hb-poster" style="--h1:(\d+);--h2:(\d+);--a:(\d+)deg;--x:(\d+)%;--y:(\d+)%;--r:(\d+)deg">(.*?)</article>', pst, re.S)
 names = [re.search(r"<h3>([^<]+)</h3>", p[6]).group(1) for p in posters]
 check("hosted by the community: up to three live community realms as posters (not ours, not offline)",
       names == ["Busy Den", "Old Days", "Quiet Shore"] or (len(names) == 3 and "Sleepy Hollow" not in names and "Leyline Sample Hangout" not in names), names)
-again = re.findall(r'<article class="hb-poster" style="([^"]+)"', req("/wrath/leyline-preview")[2].decode())
+again = re.findall(r'<article class="hb-poster" style="([^"]+)"', HB.hub.posters(HB.hub.realm_rows()))
 check("posters: a backdrop made from each realm's id (the same every time, different per realm), the mark only",
-      again == re.findall(r'<article class="hb-poster" style="([^"]+)"', fp) and len(set(again)) == len(again)
-      and "url(/wrath/art/leyline-crystal-256.webp)" in fp and "TODO(owner): hosts uploading their own poster image" in fp)
+      again == re.findall(r'<article class="hb-poster" style="([^"]+)"', pst) and len(set(again)) == len(again)
+      and "url(/wrath/art/leyline-crystal-256.webp)" in HB.HUB_CSS + pst + fp and "TODO(owner): hosts uploading their own poster image" in pst)
 bd = next(p[6] for p in posters if "Busy Den" in p[6])
 od = next((p[6] for p in posters if "Old Days" in p[6]), "")
 check("posters: name, tagline, tags, players, Play in the browser or Open in launcher",
@@ -697,13 +707,14 @@ if wp.admin is not None:
           re.findall(r"<b>([^<]+)</b>", newsb) == ["Realm hopping in one click", "Launcher 0.6", "Hot, rising and top"]
           and "WoW" not in newsb and newsb.count('href="/wrath/leyline-preview/news"') == 4
           and "<form" not in newsb, newsb)
-hk = re.search(r'<section class="hb-hkb hb-rv" id="herokey".*?</section>', fp, re.S).group(0)
+hkx = HB.hub.herokey_teaser(GOT)
+hk = re.search(r'<section class="hb-hkb hb-rv" id="herokey".*?</section>', hkx, re.S).group(0)
 check("Hero Key (flag off): one slim line, One key, every realm, Coming soon and one sentence; no made-up realm chips, no moving key",
       "One key, every community realm" in hk and "Coming soon" in hk and "Available now" not in hk and hk.count('<span class="hb-hkb-l">') == 1
       and 'hb-hk-c' not in fp and 'hb-hk-key' not in fp and "@keyframes hb-key" not in fp and "<a " not in hk
-      and "TODO(owner): the Hero Key line" in fp and fp.index("TODO(owner): the Hero Key line") < fp.index('id="herokey"'))
+      and "TODO(owner): the Hero Key line" in hkx and hkx.index("TODO(owner): the Hero Key line") < hkx.index('id="herokey"'))
 HK["on"] = True
-hk_on = re.search(r'<section class="hb-hkb hb-rv" id="herokey".*?</section>', req("/wrath/leyline-preview")[2].decode(), re.S).group(0)
+hk_on = re.search(r'<section class="hb-hkb hb-rv" id="herokey".*?</section>', HB.hub.herokey_teaser(HB.hub.realm_rows()), re.S).group(0)
 check("Hero Key (flag on): available now, no Coming soon", "Available now" in hk_on and "Coming soon" not in hk_on
       and 'href="/wrath/leyline-preview/realms">Pick a realm' in hk_on)
 HK["on"] = False
@@ -727,13 +738,12 @@ check("realm list: each row shows its client version as a chip (the one place th
       re.search(r'<li class="hb-rl home[^"]*" data-home="1"[^>]*><span class="hb-rl-ic home" style="--h:\d+" aria-hidden="true"><svg class="hb-crest"', fp)
       and '<span class="hb-ver" title="Game client version">3.3.5a</span>' in fp and 'class="hb-rl-bar"' in fp)
 check("the front page with all of this: no client numbers or game names", not NOPE.findall(shown(fp)), NOPE.findall(shown(fp))[:6])
-low = fp[fp.index("<!-- TODO(owner): the Hero Key line"):fp.index("</section>", fp.index('id="status"')) + 10]
-check("the lower page (Hero Key line, Community, the status bar): no game names or client numbers, no money or support links",
+low = fp[fp.index('<section class="hb-sec hb-cm'):fp.index("</section>", fp.index('id="status"')) + 10]
+check("the lower page (Community, the status bar): no game names or client numbers, no money or support links",
       low and not BANNED.findall(visible(low)) and not NOPE.findall(shown(low))
       and not re.search(r"(?i)donat|patreon|ko-fi|\bvip\b|\bshop\b|support us|buy ", low), (BANNED.findall(visible(low)), NOPE.findall(shown(low))))
-check("the lower page: three blocks only (the Hero Key line, Community, the status bar) plus Mods in play, each revealed like the rest",
-      len(re.findall(r'<section class="(hb-hkb|hb-sec hb-cm|hb-ms|hb-sbar) hb-rv"', low)) == (4 if 'class="hb-ms ' in low else 3)
-      and len(re.findall(r"<section", low)) == (4 if 'class="hb-ms ' in low else 3))
+check("the lower page: two blocks only (Community, the status bar), each revealed like the rest",
+      len(re.findall(r'<section class="(hb-sec hb-cm|hb-sbar) hb-rv"', low)) == 2 and len(re.findall(r"<section", low)) == 2)
 check("still one script, under the nonce, reading only this site's JSON", fp.count("<script") == 1
       and re.findall(r'json\("([^"]+)"\)', HB.HUB_JS) == ["/wrath/realms.json", "/wrath/status.json"] and "innerHTML" not in HB.HUB_JS)
 # signed in: the account chip instead of Sign In (the site's session, through the portal's social module)
@@ -774,12 +784,12 @@ fp = req("/wrath/leyline-preview")[2].decode()
 # is the sliding strip of mod and in-game pictures ("this place should show sliding gallery of mod images")
 check("front page: no gallery section, no Browse by category, no For creators / Host a Beacon boxes",
       'id="gallery"' not in fp and "Browse by category" not in fp and 'class="hb-two' not in fp)
-ms = re.search(r'<section class="hb-ms hb-rv" aria-labelledby="hb-ms-h">.*?</section>', fp, re.S)
+ms = re.search(r'<section class="hb-ms hb-rv" aria-labelledby="hb-ms-h">.*?</section>', HB.hub.mod_strip(HB.hub.items()), re.S)
 ms = ms.group(0) if ms else ""
 ms_imgs = re.findall(r'<li><a class="hb-ms-t" href="[^"]+"(?: rel="noopener noreferrer")?><img src="([^"]+)" alt="[^"]+" width="\d+" height="\d+" loading="lazy"', ms)
-check("mod strip: near the foot (after the community section, before the status bar and the fine print), real pictures only (mods and in game, no launcher "
+check("mod strip (off the front page since 1 Nov, the gallery has the pictures): real pictures only (mods and in game, no launcher "
       "shots, no drawn tiles), twice for the loop with the copy hidden from screen readers",
-      ms and fp.find('id="forum"') < fp.find('class="hb-ms ') < fp.find('id="status"') < fp.rfind('class="hb-fine"') and len(ms_imgs) >= 6
+      ms and 'class="hb-ms ' not in fp and len(ms_imgs) >= 6
       and not any("leyline-ui-" in u for u in ms_imgs) and '<ul class="hb-ms-l dup" aria-hidden="true" inert>' in ms
       and ms.count("<li>") == 2 * ms.split('class="hb-ms-l dup"')[0].count("<li>"), ms_imgs)
 check("mod strip: stops on hover and focus, does not move with reduced motion",
@@ -886,15 +896,15 @@ check("killswitch on: Game modes shows the launcher's Modes page instead of the 
       and req("/wrath/art/leyline-shot-minigolf.mp4")[0] == 410 and req("/wrath/art/leyline-shot-minigolf.webm")[0] == 410)
 os.remove(FLAG)
 os.environ.pop("WU_GAMEDATA_FLAG")
-check("killswitch off again: the shots are back", "leyline-shot-dalaran.webp" in req("/wrath/leyline-preview")[2].decode())
+check("killswitch off again: the shots are back", "leyline-shot-dalaran.webp" in req("/wrath/leyline-preview/gallery")[2].decode()
+      and 'id="featured-mod"' in req("/wrath/leyline-preview")[2].decode())
 
 # ---------------------------------------------------------------- the featured modpack (owner 2026-10-30: "under this show a
 # screenshot ... the CoA ultra hd modpack feature")
 coa = re.search(r'<section class="hb-coa hb-rv" id="featured-mod".*?</section>', fp, re.S)
-check("featured mod: on the front page right under the numbers, before the feature sections",
-      coa and fp.find('class="hb-nums') < fp.find('id="featured-mod"') < fp.find('id="features"')
-      and re.search(r'</section><section class="hb-coa hb-rv" id="featured-mod"', fp)
-      and fp[fp.find('class="hb-nums'):fp.find('id="featured-mod"')].count("<section") == 1)
+check("featured mod: on the front page right under how it works, before the feature sections",
+      coa and fp.find('class="hb-how') < fp.find('id="featured-mod"') < fp.find('id="features"')
+      and fp[fp.find('class="hb-how'):fp.find('id="featured-mod"')].count("<section") == 1)
 coa = coa.group(0) if coa else ""
 check("featured mod: label, title, the screenshot (served, sized, alt), a TODO for the owner's copy",
       '<p class="hb-coa-k"><span aria-hidden="true"></span>Featured mod</p>' in coa and "Conquest of Azeroth: UltraHD</h2>" in coa
@@ -932,12 +942,14 @@ kc = importlib.util.module_from_spec(cspec)
 cspec.loader.exec_module(kc)
 kit_live = {"azerothcore"} | {p["core"] for p in kc.offered_profiles({}).values()}
 kit_any = kit_live | {p["core"] for p in kc.PROFILES.values()}
-sw = re.search(r'<div class="hb-sw" role="group".*?<ul class="hb-sw-cores">.*?</ul></div>', fp, re.S)
+# the console drawing left the hosting section (owner 1 Nov 05:16: the launcher's real Host page instead); its method
+# stays (host_showcase), checked on its own
+_hs = HB.hub.host_showcase()
+sw = re.search(r'<div class="hb-sw" role="group".*?<ul class="hb-sw-cores">.*?</ul></div>', _hs, re.S)
 sw = sw.group(0) if sw else ""
 cores = re.findall(r'<li class="hb-sw-core[^"]*" data-core="([a-z]+)" data-status="([a-z]+)" title="([^"]+)"><b>([^<]+)</b><span>([^<]+)</span></li>', sw)
 check("host console (owner: \"the server GM console / health etc ... all in one host server package\"): in the hosting section",
-      'id="f-host"' in fp and sw and fp.find('id="f-host"') < fp.find('class="hb-sw"') < fp.find('id="f-realms"')
-      and "Your realm console" in sw and "Online · listed" in sw)
+      'id="f-host"' in fp and sw and 'leyline-ui-hosting.webp' in fp and "Your realm console" in sw and "Online · listed" in sw)
 check("host console: health tiles (the four services, players, uptime)",
       re.findall(r"<li><i></i>([^<]+)<span>", sw) == ["Database", "Login server", "World server", "Leyline network", "Players", "Uptime"])
 check("host console: the GM controls of the in-game Your realm window, restart with its five-minute warning",
@@ -989,8 +1001,8 @@ check("realm list: columns Realm, Type, Characters, Population; rows are links (
 full = HB.hub.realm_list_art((RROWS + [dict(RROWS[2], id="b" * 16, name="More")] * 3, {}, True, {}, {}))
 check("realm list: at most six realms, no Your realm here row when the list is full", full.count('class="hb-rlx-r') == HB.REALM_LIST_MAX
       and "Your realm here" not in full)
-check("realm list: on the front page in Realms & hopping, our own drawing (no picture, no game words or numbers)",
-      re.search(r'id="f-realms".*?<div class="hb-rlx" role="group"', fp, re.S) and "<img" not in rl and "url(" not in rl
+check("realm list: in Realms & hopping (off the front page since 1 Nov), our own drawing (no picture, no game words or numbers)",
+      re.search(r'id="f-realms".*?<div class="hb-rlx" role="group"', HB.hub.features(HB.hub.realm_rows(), only=None), re.S) and "<img" not in rl and "url(" not in rl
       and not BANNED.findall(visible(rl)) and not NOPE.findall(shown(rl)))
 check("realm list: stacks on a phone", "@media (max-width:560px){" in HB.HUB_CSS and ".hb-rlx-cols{display:none}" in HB.HUB_CSS)
 
@@ -1302,6 +1314,30 @@ check("the realm list's header: players and bots apart, from the same numbers as
       re.findall(r'data-net>[^<]*', lfp))
 check("the header's live update: our sample record left out (its count can include bots), ours from status.json",
       "if(c.sample||h.online!==true)return;" in HB.HUB_JS and "homeS=s;netLine();" in HB.HUB_JS and "j.network" not in HB.HUB_JS)
+# ---------------------------------------------------------------- the Builders' Realm is off (owner 1 Nov): on no list, by its
+# id or by its name (any marks or case, under any id), on the front page, the realm list, realms.json and the portal's own lists
+BUILD_ID = "jgt5rpofn7yaisep"
+with wp._listing_lock:
+    wp._listing["realms"] = wp._listing["realms"] + [r for r in (
+        realm_rec(BUILD_ID, "Builders' Realm", 12340, 6, tagline="Build in the world.", port=40209),
+        realm_rec("buildbuildbuildb", "BUILDERS\u2019 REALM", 12340, 2, port=40210),
+        realm_rec("renamedrenamedre", "Stone Garden", 12340, 1, port=40211)) if r]
+bpages = {p: req(p)[2].decode() for p in ("/wrath/leyline-preview", "/wrath/leyline-preview/realms",
+                                          "/wrath/leyline-preview/realms?client=browser", "/wrath/realms")}
+bjson = json.loads(req("/wrath/realms.json")[2])
+bshown = {p: [n for n in ("Builders", "BUILDERS", BUILD_ID, "buildbuildbuildb") if n in v] for p, v in bpages.items()}
+check("Builders' Realm: on no site list (front page, realm list, its filters, the portal's realm page), by id or by name",
+      not any(bshown.values()) and all("Stone Garden" in v for k, v in bpages.items() if "leyline-preview" in k), bshown)
+check("Builders' Realm: not in realms.json either (the site's live counts and the launcher read it), its players not counted",
+      not [r for r in bjson.get("realms", []) if "uild" in str(r.get("name")) or BUILD_ID in json.dumps(r)]
+      and any(r.get("name") == "Stone Garden" for r in bjson.get("realms", [])), [r.get("name") for r in bjson.get("realms", [])])
+check("Builders' Realm: hidden in hub.py and network.py alike (each without the other), never our own realm",
+      HB.retired_realm({"id": BUILD_ID, "name": "x"}) and HB.retired_realm({"id": "a" * 16, "name": "Builders Realm"})
+      and not HB.retired_realm({"id": "a" * 16, "name": "Stone Garden"}) and not HB.retired_realm({"hangout": True, "name": "Builders' Realm"})
+      and wp.network.retired({"id": BUILD_ID}) and wp.network.retired({"name": "the builders' realm"})
+      and [r["id"] for r in wp.network.listed([{"id": BUILD_ID, "name": "B"}, {"id": "c" * 16, "name": "C"}])] == ["c" * 16])
+check("Builders' Realm: a hop to it still resolves while it is up (lists only, never the relay's hop)",
+      any(r["id"] == BUILD_ID for r in wp.community_realms()[0]) and not any(r["id"] == BUILD_ID for r in wp.listed_realms()[0]))
 with wp._listing_lock:
     wp._listing.clear(); wp._listing.update(keep_listing)
 

@@ -241,6 +241,18 @@ fn point_and_play_with(
             let _ = crate::hybrid::scrub(&profile.path);
         }
     }
+    // Your Den's ground (host/terrain.rs): patch-T from the player's own files plus the Den's delta before a Den
+    // starts; taken away before anywhere else. Never stops the start: a problem is said after it.
+    let mut ground_note = String::new();
+    if profile.build == clients::Build::V335a {
+        let r = match den_ground_root(core, &realm) {
+            Some(root) => crate::host::terrain::prepare_client(&profile.path, &root).map(|_| ()),
+            None => crate::host::terrain::remove_patch(&profile.path).map(|_| ()),
+        };
+        if let Err(e) = r {
+            ground_note = format!(" (Your Den's ground: {e})");
+        }
+    }
     let plan = launch::plan(&profile, &wine, launch::Os::current())?;
     let child = launch::run(&plan).inspect_err(|_| {
         let _ = crate::hybrid::scrub(&profile.path);
@@ -251,7 +263,23 @@ fn point_and_play_with(
     if hybrid.is_ok() {
         scrub_when_closed(profile.path.clone());
     }
-    Ok((format!("Started {} on {realm}.", profile.name), hybrid))
+    Ok((format!("Started {} on {realm}.{ground_note}", profile.name), hybrid))
+}
+
+/// The Docker Den's address on this PC, once its own invite was knocked (join_invite): its plays get the Den's ground.
+static DEN_ADDRESS: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// Where the Den's ground is when `realm` is a Den: Den Lite on this PC, or the Host pack's Docker Den.
+fn den_ground_root(core: &Core, realm: &str) -> Option<PathBuf> {
+    use crate::host::lite::DenLite;
+    if realm == crate::host::lite::ADDRESS && crate::host::lite::Binary::find(&crate::settings::app_dir()).status().running {
+        return Some(crate::host::lite::root(&crate::settings::app_dir()));
+    }
+    let den = DEN_ADDRESS.lock().ok().and_then(|g| g.clone());
+    if den.as_deref() == Some(realm) {
+        return core.kit();
+    }
+    None
 }
 
 /// Point the client at the realm, then start it.
@@ -371,6 +399,15 @@ async fn join_invite(core: State<'_, Core>, client: String, link: String) -> Res
     core.client(&client)?;
     let (relay, rid, secret) = realms::parse_invite(&link).ok_or("That is not an invite link (https://<relay>/join/<realm>#<code>).")?;
     let (address, name) = blocking(move || realms::knock(&format!("https://{relay}"), &rid, &secret)).await?;
+    if let Some(k) = core.kit() {
+        let own_den = crate::host::invite(&k).as_deref() == Some(link.as_str())
+            && crate::host::inspect(Some(&k), None).realm.is_some_and(|r| r.profile == crate::host::profiles::DEN);
+        if own_den {
+            if let Ok(mut g) = DEN_ADDRESS.lock() {
+                *g = Some(address.clone());
+            }
+        }
+    }
     point_and_play(&core, &client, &address, false)?;
     Ok(Joined { address, name })
 }
@@ -422,6 +459,35 @@ fn den_join_page(app: AppHandle, core: State<Core>) -> Result<(), String> {
     let link = crate::host::invite(&kit).ok_or("Your Den has no invite link yet: start it once first.")?;
     realms::parse_invite(&link).ok_or("Your Den's invite link doesn't look right: make a new one under Realm tools.")?;
     app.opener().open_url(link, None::<&str>).map_err(|e| e.to_string())
+}
+
+/// Forge, the Den's terrain editor (host/forge.rs): installed or not, open or not, and what its last close did.
+#[tauri::command]
+fn forge_state() -> crate::host::forge::ForgeState {
+    crate::host::forge::state(&crate::settings::app_dir())
+}
+
+/// Get Forge: its release zip, checked against its sha256, unpacked into <app dir>/forge.
+#[tauri::command]
+async fn forge_install() -> Result<String, String> {
+    blocking(|| crate::host::forge::install(&crate::settings::app_dir())).await
+}
+
+/// Open in Forge: the Den's tile from the player's own files plus its ground, Forge started on it (Den mode). When
+/// Forge closes, its work becomes the Den's ground, patch-T is made again and the Docker Den's tile re-staged.
+#[tauri::command]
+async fn forge_open(core: State<'_, Core>, client: String) -> Result<String, String> {
+    let profile = core.client(&client)?;
+    if profile.build != clients::Build::V335a {
+        return Err("Your Den's ground is made from the game folder Your Den plays with: pick that one.".into());
+    }
+    blocking(move || {
+        let k = crate::p2p::cmds::kit_opt();
+        let (docker, _) = crate::p2p::cmds::docker_den(k.as_deref());
+        let kit = if docker { k } else { None };
+        crate::host::forge::open(&crate::settings::app_dir(), &profile.path, &crate::p2p::cmds::den_root(), kit)
+    })
+    .await
 }
 
 /// "Back to the official realm": point the client at it again.
@@ -1149,6 +1215,9 @@ pub fn run() {
             den_play_lite,
             den_prefill_account,
             den_join_page,
+            forge_state, // Forge, the Den's terrain editor (host/forge.rs, ui/den.js "Open in Forge")
+            forge_install,
+            forge_open,
             crate::p2p::cmds::host_den_open,
             crate::p2p::cmds::host_modes, // modes anyone can host and fork: cards, fork, change, remove, host one (host/modes.rs)
             crate::p2p::cmds::host_mode_fork,
@@ -1194,6 +1263,7 @@ pub fn run() {
             crate::social::commands::save_text_file,
             // the Forum page: reading the website's forum, opening its pages (forum.rs)
             crate::forum::commands::forum_call,
+            crate::bugs::commands::bug_report,
             crate::forum::commands::forum_post,
             crate::forum::commands::forum_open,
             // List your mod: check, list, report, edit, remove with the launcher's sign-in (listing.rs)

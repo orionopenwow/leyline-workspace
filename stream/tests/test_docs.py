@@ -247,6 +247,19 @@ try:
     check("portal: unknown page 404", st == 404, st)
     st, _, _ = get("/wrath/docs/..%2fwrath_portal.py")
     check("portal: path tricks 404", st == 404, st)
+    # the hub's front door on: the docs in the hub's frame (side menu, Docs marked, its tokens), no old bar
+    os.environ["WU_HUB_FRONT"] = "1"
+    st, b, h = get("/wrath/docs/hosting")
+    p = b.decode()
+    check("portal, hub frame: the docs page in the hub's side menu with Docs marked, no old nav or footer",
+          st == 200 and '<header class="hb-top">' in p and '<a class="hb-ni on" href="/wrath/docs" aria-current="page"' in p
+          and 'class="ly-nav"' not in p and 'class="ly-foot"' not in p and 'class="hb-foot"' in p, st)
+    check("portal, hub frame: the contents, the page and the docs' hub tokens (no painted art)",
+          'aria-label="Documentation"' in p and '<article class="ld-doc">' in p and d.DOCS_HUB_CSS in p
+          and "leyline-bg.webp" not in p and "leyline host" in p)
+    check("portal, hub frame: still no script", "<script" not in p and "script-src 'none'" in h.get("Content-Security-Policy", ""))
+    check("portal, hub frame: no game-brand names", not BANNED.search(visible(p)))
+    os.environ["WU_HUB_FRONT"] = "0"
 finally:
     srv.shutdown()
 

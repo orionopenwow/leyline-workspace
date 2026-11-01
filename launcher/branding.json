@@ -21,7 +21,9 @@
     "mirrors": [
       "https://play.openvanilla.app/wrath/leyline/releases/"
     ],
-    "_updater_key": "The updater's minisign public key is plugins.updater.pubkey in src-tauri/tauri.conf.json (Tauri reads it there)."
+    "_updater_key": "The updater's minisign public key is plugins.updater.pubkey in src-tauri/tauri.conf.json (Tauri reads it there).",
+    "_backup_pubkeys": "Spare updater public keys (base64, as tauri.conf.json's) the owner keeps the private halves of offline: a release signed with one installs too (docs/RESILIENCE.md).",
+    "backup_pubkeys": []
   },
   "release_log": {
     "_public_key": "Hex Ed25519 public key of the release-log key (docs/RESILIENCE.md, 'The release key'). Empty: the release log is not trusted yet and nothing reads it.",

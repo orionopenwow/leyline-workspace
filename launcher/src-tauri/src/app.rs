@@ -766,18 +766,32 @@ async fn run_update_check(app: AppHandle) -> UpdView {
         let res: Result<Option<(tauri_plugin_updater::Update, Vec<u8>)>, String> = async {
             let mut notes = Vec::new();
             for c in &cands {
-                let one: Result<Option<(tauri_plugin_updater::Update, Vec<u8>)>, String> = async {
-                    let endpoint: tauri::Url = c.source.manifest_url.parse().map_err(|e| format!("{e}"))?;
-                    let updater = app.updater_builder().endpoints(vec![endpoint]).map_err(|e| e.to_string())?.build().map_err(|e| e.to_string())?;
-                    let Some(up) = updater.check().await.map_err(|e| e.to_string())? else { return Ok(None) };
-                    if !update::is_newer(&up.version, env!("CARGO_PKG_VERSION")) {
-                        return Err("not newer: never installed".into());
+                // the built-in public key first, then the owner's offline backup keys (branding.json
+                // updates.backup_pubkeys), so a release signed with a backup key still installs if the main key is lost
+                let mut keys: Vec<Option<String>> = vec![None];
+                keys.extend(crate::branding::get().updates.backup_pubkeys.iter().cloned().map(Some));
+                let mut one: Result<Option<(tauri_plugin_updater::Update, Vec<u8>)>, String> = Ok(None);
+                for key in keys {
+                    one = async {
+                        let endpoint: tauri::Url = c.source.manifest_url.parse().map_err(|e| format!("{e}"))?;
+                        let mut b = app.updater_builder();
+                        if let Some(k) = key {
+                            b = b.pubkey(k);
+                        }
+                        let updater = b.endpoints(vec![endpoint]).map_err(|e| e.to_string())?.build().map_err(|e| e.to_string())?;
+                        let Some(up) = updater.check().await.map_err(|e| e.to_string())? else { return Ok(None) };
+                        if !update::is_newer(&up.version, env!("CARGO_PKG_VERSION")) {
+                            return Err("not newer: never installed".into());
+                        }
+                        // the plugin checks the download's signature against that public key
+                        let bytes = up.download(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
+                        Ok(Some((up, bytes)))
                     }
-                    // the plugin checks the download's signature against the built-in public key
-                    let bytes = up.download(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
-                    Ok(Some((up, bytes)))
+                    .await;
+                    if !matches!(&one, Err(e) if e.to_ascii_lowercase().contains("signature")) {
+                        break;
+                    }
                 }
-                .await;
                 match one {
                     Ok(Some(x)) => return Ok(Some(x)),
                     Ok(None) => notes.push(format!("{}: nothing newer", c.source.name)),

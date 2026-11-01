@@ -31,6 +31,11 @@ pub struct Updates {
     /// GitHub. Each download is still checked against the updater's public key.
     #[serde(default)]
     pub mirrors: Vec<String>,
+    /// Spare updater public keys (base64 minisign, like tauri.conf.json's): an update signed with one of these
+    /// installs too, so a lost main signing key does not strand every installed launcher. The owner makes them
+    /// offline (docs/RESILIENCE.md).
+    #[serde(default)]
+    pub backup_pubkeys: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -97,6 +102,9 @@ pub fn parse(text: &str) -> Result<Branding, String> {
     if !(k.is_empty() || (k.len() == 64 && k.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)))) {
         return Err("branding.json: release_log.public_key must be empty or 64 lower-case hex digits".into());
     }
+    if let Some(k) = b.updates.backup_pubkeys.iter().find(|k| !crate::update::pubkey_ok(k)) {
+        return Err(format!("branding.json: updates.backup_pubkeys: {k:?} is not a minisign public key"));
+    }
     if b.updates.tag_prefix.is_empty() || b.updates.tag_prefix.contains('/') {
         return Err("branding.json: updates.tag_prefix".into());
     }
@@ -157,5 +165,10 @@ mod tests {
         assert!(with(&|v| v["colours"]["accent"] = "blue".into()).is_err());
         assert!(with(&|v| v["repo"] = "noslash".into()).is_err());
         assert!(with(&|v| v["format"] = 2.into()).is_err());
+        assert!(with(&|v| v["updates"]["backup_pubkeys"] = serde_json::json!(["TODO"])).is_err());
+        let pk = serde_json::from_str::<serde_json::Value>(include_str!("../tauri.conf.json")).unwrap()["plugins"]["updater"]["pubkey"].clone();
+        if crate::update::pubkey_ok(pk.as_str().unwrap()) {
+            assert!(with(&|v| v["updates"]["backup_pubkeys"] = serde_json::json!([pk])).is_ok());
+        }
     }
 }

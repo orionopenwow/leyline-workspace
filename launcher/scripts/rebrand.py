@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Run the launcher under another name with your own keys and servers (docs/FORKING.md).
 
     python3 launcher/scripts/rebrand.py MY-BRANDING.json [--root REPO] [--dry-run]

@@ -2157,6 +2157,8 @@ class Hub:
             '<!-- TODO(owner): the hero heading and the line under it; his final wording -->'
             '<h1 id="hb-h">Every client, every server</h1>'
             '<p class="hb-sub-h">One launcher for every classic client and every server: your game, your realm, one click.</p>'
+            # new here: the one Start here path (wrath_portal.start_page), a quiet link, not a button (owner: no buttons here)
+            '<p class="hb-start"><a href="/wrath/start">New here? Start here ›</a></p>'
             # the launcher itself, right under the line (owner 1 Nov 04:50: wider, with the client list open showing every
             # client; tools/art/leyline-ui-shots: the launcher's own UI with sample folders, no game art)
             '<figure class="hb-hero-shot"><img src="/wrath/art/leyline-ui-clients.webp" width="1600" height="900" '
@@ -3300,6 +3302,8 @@ background:radial-gradient(closest-side,rgba(91,141,239,.34),rgba(139,108,240,.1
 .hb-hero-mark::after{background-image:url(/wrath/art/leyline-crystal-512.png);filter:drop-shadow(0 8px 10px rgba(0,0,0,.6)) drop-shadow(0 2px 3px rgba(0,0,0,.55))}
 .hb-hero-mark::before{filter:drop-shadow(0 12px 16px rgba(0,0,0,.6)) drop-shadow(0 3px 4px rgba(0,0,0,.5))}
 .hb-hero h1{margin:0 0 8px;font-size:clamp(22px,3vw,32px);line-height:1.1;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--lk-text-2)}
+.hb-start{margin:-8px 0 14px;font-size:15px}.hb-start a{color:var(--lk-accent);font-weight:650;text-decoration:none}
+.hb-start a:hover,.hb-start a:focus-visible{text-decoration:underline}
 .hb-sub-h{max-width:560px;margin:0 auto 18px;color:var(--lk-text-2);font-family:"Arial Rounded MT Bold","Arial Rounded MT",Arial,"Helvetica Neue",Helvetica,sans-serif;font-weight:700;letter-spacing:.005em;font-size:clamp(16px,1.9vw,18px);line-height:1.5}
 .hb-hero-shot{position:relative;margin:6px auto 22px;max-width:1180px;width:100%;border-radius:14px;
   border:1px solid rgba(214,178,94,.35);box-shadow:0 24px 60px rgba(0,0,0,.55),0 0 0 1px rgba(0,0,0,.6)}

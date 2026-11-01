@@ -1,5 +1,7 @@
 # Getting started
 
+New here? [Start here](/wrath/start) has the four ways in, one click each: play in your browser, get the launcher, make your Den, host a server. This page is the longer guide.
+
 Leyline plays with game files you already have. We never download, host or link to the game. This page gets you from nothing to playing on the official realm, Wrath Unleashed, in a few minutes.
 
 ## Four steps
@@ -31,6 +33,17 @@ The launcher has the same tips on its **Find your game files** page: open it fro
 - **Your own client.** The whole world, at your PC's full speed. Add your folder in the launcher and press **PLAY**. The official realm needs the 3.3.5a game (build 12340); other realms say which version they need.
 
 Both use the same realm, the same account and the same characters.
+
+## Your Den
+
+Your Den is your own small white room, on your PC. Open the launcher and press **Your Den**: it usually opens in a few seconds. At the login screen the account is `DEN` and the password is `den`.
+
+- **Build.** Type `.den place chair` to put a chair in front of you, or `.den stamp inn now` for a whole inn. `.build undo` takes the last one back.
+- **Save.** `.den save mine` keeps your Den in a file. The launcher's **Saved Dens** opens it again, or sends it to a friend.
+- **Grow.** `.den grow` makes the room bigger when you need more space.
+- **Invite a friend.** When you're ready, **Invite friends** on the Den page moves your Den to a server friends can join, then copies your invite link.
+
+Type `.den` in your Den for every command.
 
 ## Level 1 or boost to 80
 

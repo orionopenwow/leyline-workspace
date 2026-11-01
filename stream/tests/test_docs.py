@@ -86,6 +86,9 @@ gs = visible(pages["getting-started"])
 check("getting-started: bring your own files, where they are, browser or client, level 1 or 80, the launcher, the Discord, fixes",
       all(s in gs for s in ("We never download", "Where your files usually are", "Browser or your own client", "Level 1 or boost to 80",
                             "Find your game files", "Discord", "Common fixes")), gs[:200])
+check("getting-started: one path, Start here first (/wrath/start), then the longer guide; Your Den in plain steps",
+      pages["getting-started"].index('href="/wrath/start"') < pages["getting-started"].index("<h2")
+      and 'id="your-den"' in pages["getting-started"] and all(c in gs for c in (".den place chair", ".den save mine", ".den grow", "Invite friends")))
 check("getting-started: versions only where needed (once, for the official realm)", len(re.findall(r"\b(1\.12|2\.4\.3|3\.3\.5)", gs)) <= 1)
 check("play: the launcher sets the realm, not a hand-edited file first", "Leyline launcher" in visible(pages["play"])
       and visible(pages["play"]).find("PLAY") < visible(pages["play"]).find("realmlist.wtf"))
@@ -181,7 +184,7 @@ check("docs.py: no game-brand names", not hits, hits)
 
 # ---------------------------------------------------------------- 7. every relative link resolves
 heads_of = {n: {h[1] for h in d.load(n)[1]} for n in names}
-LOCAL_OK = ("/wrath", "/wrath/realms", "/wrath/mods", "/wrath/modes", "/wrath/armory", "/wrath/leyline", "/wrath/docs")
+LOCAL_OK = ("/wrath", "/wrath/realms", "/wrath/mods", "/wrath/modes", "/wrath/armory", "/wrath/leyline", "/wrath/docs", "/wrath/start")
 for n in names:
     src = open(os.path.join(DOCS_DIR, n + ".md"), encoding="utf-8").read()
     bad = []

@@ -20,6 +20,9 @@ app = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-dialog", "dep:tauri-plu
 # A real BitTorrent engine for game-client magnets and .torrents, used only with Settings > Testing's switch on
 # (clienttorrent.rs, owner 31 Oct; off by default). About 3.5 MB of the release binary.
 torrent-engine = ["dep:librqbit", "dep:tokio"]
+# Scripted Den recipes (agents/den.rs): Lua 5.1, compiled from C sources (mlua vendored). Off by default: without it
+# JSON template recipes work as always, and a .recipe.lua is listed but refused in plain words.
+lua-recipes = ["dep:mlua"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [], optional = true }
@@ -45,6 +48,10 @@ ring = "0.17"
 # Leyline's own updates from any source (update.rs verify_minisign): the same minisign check the updater plugin makes,
 # already in the tree through tauri-plugin-updater.
 minisign-verify = "0.3"
+# Den recipes (agents/den.rs, docs/DEN.md "Building brain"): small layout scripts run on the player's PC only, in a
+# sandboxed Lua 5.1 (the realm scripts' own Lua): math, string and table only, a memory and an instruction limit.
+# Only with the lua-recipes feature (off by default).
+mlua = { version = "0.10", default-features = false, features = ["lua51", "vendored"], optional = true }
 # The torrent engine (feature torrent-engine): rustls like the rest, upload switchable off at run time.
 librqbit = { version = "9.1.0", default-features = false, features = ["rust-tls", "disable-upload"], optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"], optional = true }

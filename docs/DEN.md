@@ -208,6 +208,8 @@ budgets). [7] The official EU forums, "Housing permissions needs a bit more". Fu
 .den builders                 who may build
 .den allow <name> build|view  (owner) a friend builds, or only looks
 .den room white|stone|wood|rebuild|clear   (owner) the room's look
+.den jaina [away]             (owner, OV_DEN_COMPANION=1) your companion comes / goes (Claude in your Den, below)
+.den ask <words>              (owner) to your companion, for your own assistant; or say "Jaina, ..." near her
 .den budget                   the room's and the yard's decor budgets
 .den save <name>              the whole Den as a layout; the owner's also goes to a file: state\dens\<name>.den.json
 .den load <name> [replace|add] (owner) opens that file: asks first when the Den has decor; replace keeps a copy as
@@ -374,6 +376,89 @@ step).
 **Den files list their packs.** A Den remembers the packs whose layouts it opened, and `.den save` writes them as
 `"packs": ["goldshire"]` (version 1 still: older readers ignore it). Opening a file that lists packs not made on this
 PC (`dens/packs.json`) says which ones and how: "Make them from your own game folder (leyline pack build ...)".
+
+## Claude in your Den, and your companion (2026-11-01)
+
+Leyline has no AI of its own: the player's own assistant (Claude Code, the Claude app, any MCP client) uses the Den
+through the launcher's local connection, `Leyline mcp` (the Agents page, [agents.md](leyline/agents.md)), with the
+same approve-first rule as everything else there. Tools (`launcher/src-tauri/src/agents/den.rs`):
+
+- **Read, at once**: `den_status` (the Den realm running, the companion out, where the owner stands, the room's
+  size and budgets in use, a build in progress, the saved Den files), `den_catalog` (what can be placed: read from
+  the kit's own `ov_build.lua` catalog with its build points, and the stamps), `den_recipes` (the building library,
+  below), `den_messages` (what the owner said to the companion).
+- **Ask, a card first**: `den_place_layout` (a `leyline-den` layout, or a recipe with settings: checked against the
+  catalog, the Den's size, the room's and yard's budgets and 400 pieces; on Approve it is saved as a Den file,
+  never over another, and goes into the Den: `add`, the default, piece by piece next to what is there; `replace`,
+  through `open.json` as the whole Den), `den_say` (a line the companion says: plain words, 200 letters, never a game
+  brand word), `den_recipe_save` (a new recipe in the library). The never list is unchanged.
+
+**The companion** (`ov_den_companion.lua`, with `OV_DEN=1` and `OV_DEN_COMPANION=1`, on in the den profile): in game
+the owner's `.den jaina` calls her (the game's own Jaina, world entry 32364: no AI, no script, no gossip, immune to
+players and creatures; a temporary summon, friendly to all). She follows at 2.5 yards, comes back to your side after
+a teleport, and goes on `.den jaina away`, on leaving the Den and on logout. `.den ask <words>` or saying "Jaina,
+<words>" within 10 yards (the owner only, one every 4 seconds) is written for the assistant with where you stood;
+she says the replies, one every 3 seconds, and the progress of a build ("Placing the tavern: 20 of 40 pieces"). The
+launcher and the website say "your companion", never her name.
+
+The realm and the launcher talk through JSON files in the saves folder (`state/dens`), never run:
+`companion-in.json` (the realm: heartbeat, owner's spot, budgets, the build in progress, the last 20 asks, the last
+line said), `companion-out.json` (the launcher: the lines to say, numbered; how far the assistant has read) and
+`companion-place.json` (the launcher: `{file, id, label}`, a saved Den file to add). An added build is checked whole
+first (`OVBuild.DenCheck`, the budgets), then placed 20 pieces at a time through `OVBuild.ImportPrefab` (the builder
+role, the Den, budgets, the paste rate): Ctrl+Z takes it back a part at a time. Pitch, roll and groups are kept by
+`replace` (the Den file) but not by `add` (prefab pieces).
+
+## Building brain: recipes (2026-11-01)
+
+What an assistant can't do is remember between sessions; what grows instead is the **building library**: named
+recipes that make a layout from a few settings. A known build costs no layout to write: `den_place_layout` with
+`recipe` and `params` builds it straight away, and the assistant is asked only for what's new. Recipes are files in
+`<host kit>/state/dens/recipes/` (share them by copying the file); five starters are built into the launcher
+(`launcher/src-tauri/den-recipes/`): **tavern** (tables with four seats, a bar of kegs, lanterns), **garden-scatter**
+(plants spread over a round bed in a sunflower spiral, nudged at random, a fence around it), **lantern-ring**, **path**
+(stones between two points, lights on alternate sides) and **market-row** (stalls with counters, goods and lamp
+posts). A file of the same name in the folder wins over a starter.
+
+A **template**, `<name>.recipe.json`, is numbers and pieces, nothing that runs:
+
+```json
+{
+ "format": "leyline-recipe", "version": 1, "name": "lantern-ring", "title": "Lantern ring", "about": "...",
+ "params": {
+  "radius": {"default": 5, "min": 1.5, "max": 20},
+  "count": {"default": 8, "min": 3, "max": 32, "whole": true},
+  "light": {"default": "lantern", "piece": true}
+ },
+ "let": [["step", "360 / count"]],
+ "pieces": [
+  {"repeat": [["i", "count"]], "let": [["a", "step * i"]], "key": "$light",
+   "x": "radius * cos(a)", "y": "radius * sin(a)", "yaw": "a"},
+  {"when": "count > 6", "key": "campfire", "x": 0, "y": 0}
+ ]
+}
+```
+
+- `params`: each setting's `default`, `min`/`max`, `whole` (a whole number), or `piece` (a catalog key; `"$name"`
+  uses it as a piece's key). A call gives only what differs; anything else is refused.
+- `let` (recipe-wide, then per piece) names values; `repeat` is up to three `[name, count]` loops (from 0); `when`
+  skips a piece; `pick` chooses a key from a list (`{"keys": [...], "by": "i % 2"}`); `x`, `y` (yards from the room's
+  middle), `z` (above the floor), `yaw` (degrees) and `scale` are numbers or expressions.
+- Expressions: numbers, names, `+ - * / % ^`, comparisons, `&& || !`, `c ? a : b`, and `sin cos tan atan2`
+  (degrees), `sqrt abs floor ceil round min max clamp`, `rand(a, b)` (a steady number in [0, 1): the same settings
+  and `seed` always give the same layout, so the card shows exactly what is placed).
+
+A **script**, `<name>.recipe.lua`, is Lua 5.1 that sets a table `recipe` (name, title, about, params as above) and a
+function `build(params)` returning pieces `{ key, x, y, z, yaw, scale }`. It runs **only on the player's PC**, in
+the launcher, sandboxed: math, string (no patterns) and table only; no files, no os, no loading code; 16 MB and a few
+million instructions at most; `rand(a, b)` and `math.random` are the steady random numbers. Never on the realm.
+Scripts need a launcher built with the `lua-recipes` Cargo feature (it compiles Lua 5.1 from C; **off by default**):
+without it a `.recipe.lua` is listed but refused in plain words ("This recipe needs scripted recipes, which aren't
+in this launcher build yet"), and `den_recipe_save` takes templates only. An example script:
+`launcher/src-tauri/den-recipes/examples/garden-scatter-script.recipe.lua`.
+
+Either way the output is checked like any other layout (the catalog, the Den, the budgets, 400 pieces), and
+`den_recipe_save` keeps only a recipe whose default settings make a layout that fits.
 
 ## Invite a friend: the path, checked (2026-10-31)
 

@@ -164,12 +164,20 @@
    "reason": "no open licence file"
   },
   {
-   "repo": "https://github.com/FusionWowCMS/FusionCMS",
-   "name": "FusionCMS",
+   "repo": "https://github.com/Helias/BG-Queue-Abuser-Viewer",
+   "name": "BG-Queue-Abuser-Viewer",
    "builds": [
     "3.3.5a"
    ],
-   "reason": "no open licence file (LICENSE.md)"
+   "reason": "no open licence file"
+  },
+  {
+   "repo": "https://github.com/Helias/WoWHead-PHP-Extractors",
+   "name": "Head PHP Extractors",
+   "builds": [
+    "3.3.5a"
+   ],
+   "reason": "no open licence file"
   },
   {
    "repo": "https://github.com/HellionOP/Lua-HardcoreMode",
@@ -263,6 +271,14 @@
   {
    "repo": "https://github.com/pangolp/mod-recruit-friend",
    "name": "Recruit Friend",
+   "builds": [
+    "3.3.5a"
+   ],
+   "reason": "no open licence file"
+  },
+  {
+   "repo": "https://github.com/pangolp/wow-lua-scripts",
+   "name": "Lua Scripts",
    "builds": [
     "3.3.5a"
    ],
@@ -417,17 +433,9 @@
   {
    "repo": "https://github.com/tdymel/ModifiedPowerAurasTBC",
    "reason": "README mentions patreon: check nothing is paywalled"
-  },
-  {
-   "repo": "https://github.com/ZythDr/Wuddle",
-   "reason": "README mentions subscription: check nothing is paywalled"
   }
  ],
  "excluded": [
-  {
-   "repo": "https://github.com/404GamerNotFound/TBC-camera-manager",
-   "reason": "nothing says it is for the game (a name match only)"
-  },
   {
    "repo": "https://github.com/a3st/RetailUI",
    "reason": "ships game-format files: RetailUI/Textures/Minimap/Calendar.blp, RetailUI/Textures/Minimap/EyeGroupFinderFlipbook.blp, RetailUI/Textures/Minimap/GuildBanner.blp"
@@ -478,7 +486,7 @@
   },
   {
    "repo": "https://github.com/astronomiwe/tbc-sdk-python",
-   "reason": "nothing says it is for the game (a name match only)"
+   "reason": "built to sell things (shop, VIP, donations or payments)"
   },
   {
    "repo": "https://github.com/Aursolstice160913-alt/resocket-mod-llm-chatter",
@@ -645,12 +653,20 @@
    "reason": "ships binaries or archives (we only link source): addons/a/1349729332-Align-1.10.zip, addons/a/ACP-3.4.9.zip, addons/a/ATT-25-[SushiWoW].zip"
   },
   {
+   "repo": "https://github.com/fondlez/wow-sounds",
+   "reason": "a repack, client patch or client download"
+  },
+  {
    "repo": "https://github.com/ForVoid48577/mod-rpocket-team-personal-loot",
    "reason": "one of a cluster of look-alike repos with identical star counts (likely a fake-star or malware-lure campaign)"
   },
   {
    "repo": "https://github.com/FrancescoBorzi/why-I-hate-wow-private-servers",
    "reason": "an essay, not a mod or tool"
+  },
+  {
+   "repo": "https://github.com/FusionWowCMS/FusionCMS",
+   "reason": "ships donation and store modules (selling things), under a licence we don't recognise as open"
   },
   {
    "repo": "https://github.com/Gel88566ight/mod-rpocket-playerbots",
@@ -662,15 +678,11 @@
   },
   {
    "repo": "https://github.com/GoldpawsStuff/AzeriteUI5",
-   "reason": "addon for another client build (Interface 11508)"
+   "reason": "made for the current game, not a classic client"
   },
   {
    "repo": "https://github.com/Grim-Batol/Paragon-Anniversary",
    "reason": "ships game-format files: clientside/Interface/Buttons/128redbutton.blp, clientside/Interface/Buttons/128redbutton9sliced.blp, clientside/Interface/Buttons/redbutton2x.blp"
-  },
-  {
-   "repo": "https://github.com/Helias/BG-Queue-Abuser-Viewer",
-   "reason": "no sign of a supported client build"
   },
   {
    "repo": "https://github.com/Helias/mod-bg-battle-for-gilneas",
@@ -683,10 +695,6 @@
   {
    "repo": "https://github.com/Helias/mod-bg-twinpeaks",
    "reason": "ships game-format files: client-side/DBFilesClient/AreaTable.dbc, client-side/DBFilesClient/AreaTrigger.dbc, client-side/DBFilesClient/BattlemasterList.dbc"
-  },
-  {
-   "repo": "https://github.com/Helias/WoWHead-PHP-Extractors",
-   "reason": "no sign of a supported client build"
   },
   {
    "repo": "https://github.com/henhouse/live-player-map",
@@ -722,7 +730,7 @@
   },
   {
    "repo": "https://github.com/Kelsidavis/WoWee",
-   "reason": "a whole replacement game client that answers anti-cheat; too close to the 2026-10-29 cease-and-desist to list without the owner's say"
+   "reason": "a whole replacement game client (also the from-scratch one with an Android build); its licence is MIT plus an added restriction against any commercial game use (since 2026-07-21), which is not an open licence; also answers anti-cheat"
   },
   {
    "repo": "https://github.com/Kirazul/Transmorpher",
@@ -734,7 +742,7 @@
   },
   {
    "repo": "https://github.com/Lh4cKg/geopayment",
-   "reason": "nothing says it is for the game (a name match only)"
+   "reason": "built to sell things (shop, VIP, donations or payments)"
   },
   {
    "repo": "https://github.com/liyunfan1223/azerothcore-wotlk",
@@ -746,7 +754,7 @@
   },
   {
    "repo": "https://github.com/m3ck0/tbc-adapter",
-   "reason": "nothing says it is for the game (a name match only)"
+   "reason": "built to sell things (shop, VIP, donations or payments)"
   },
   {
    "repo": "https://github.com/MalfurionWoW/ACore-BG-End-Announcer",
@@ -857,10 +865,6 @@
    "reason": "no sign of a supported client build"
   },
   {
-   "repo": "https://github.com/pangolp/wow-lua-scripts",
-   "reason": "no sign of a supported client build"
-  },
-  {
    "repo": "https://github.com/paradosi/postal-community-edition",
    "reason": "addon for another client build (Interface 11508, 120001, 20505, 30403, 40402, 50502)"
   },
@@ -874,7 +878,7 @@
   },
   {
    "repo": "https://github.com/PentSec/MaddonsManager",
-   "reason": "licence is not open (non-commercial or no-derivatives terms)"
+   "reason": "licence is not open (non-commercial or no-derivatives terms, or a rider on an open licence)"
   },
   {
    "repo": "https://github.com/pjerra/turtle-agent",
@@ -1050,15 +1054,15 @@
   },
   {
    "repo": "https://github.com/Zendevve/CartoMapper",
-   "reason": "licence is not open (non-commercial or no-derivatives terms)"
+   "reason": "licence is not open (non-commercial or no-derivatives terms, or a rider on an open licence)"
   },
   {
    "repo": "https://github.com/Zendevve/OmniInventory",
-   "reason": "licence is not open (non-commercial or no-derivatives terms)"
+   "reason": "licence is not open (non-commercial or no-derivatives terms, or a rider on an open licence)"
   },
   {
    "repo": "https://github.com/Zendevve/VeilHUD",
-   "reason": "licence is not open (non-commercial or no-derivatives terms)"
+   "reason": "licence is not open (non-commercial or no-derivatives terms, or a rider on an open licence)"
   },
   {
    "repo": "https://github.com/ZhengPeiRu21/mod-individual-progression",
@@ -1083,6 +1087,20 @@
   {
    "repo": "https://github.com/zyggy123/mod-duel-bet",
    "reason": "not probed; wagering, left out by choice"
+  },
+  {
+   "repo": "https://github.com/ZythDr/Wuddle",
+   "reason": "a repack, client patch or client download"
+  }
+ ],
+ "pending_new": [
+  {
+   "repo": "https://github.com/404GamerNotFound/TBC-camera-manager",
+   "name": "TBC-camera-manager",
+   "builds": [
+    "2.4.3"
+   ],
+   "category": "presets"
   }
  ]
 }

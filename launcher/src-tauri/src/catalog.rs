@@ -87,6 +87,9 @@ pub struct Project {
     pub flags: Vec<String>,
     /// What one click does, in plain words (the site's check wrote it).
     pub plan: Vec<String>,
+
+    // ---- looks only (`source: "look"`, id `look:<slug>`: graphics packs, UI looks, presets; looks.rs, mods/SPEC.md "Looks")
+    pub look: Option<crate::looks::Look>,
 }
 
 impl Project {
@@ -105,6 +108,7 @@ impl Project {
     pub fn installable(&self) -> bool {
         (self.source == "packaged" && self.download.is_some())
             || (matches!(self.source.as_str(), "upstream" | "listed") && self.install.is_some())
+            || (self.source == "look" && self.install.is_some())
     }
 }
 
@@ -118,7 +122,7 @@ pub struct Catalog {
     pub error: Option<String>,
 }
 
-fn text(s: &str, n: usize) -> String {
+pub(crate) fn text(s: &str, n: usize) -> String {
     let one: String = s.chars().filter(|c| !c.is_control() || *c == '\n').collect();
     one.trim().chars().take(n).collect()
 }
@@ -141,7 +145,7 @@ pub fn id_ok(id: &str) -> bool {
             && !s.ends_with('-')
     };
     match id.split_once(':') {
-        Some(("mod", m)) | Some(("up", m)) => slug(m),
+        Some(("mod", m)) | Some(("up", m)) | Some(("look", m)) => slug(m),
         Some(("link", h)) => h.len() == 12 && h.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
         _ => false,
     }
@@ -165,6 +169,8 @@ pub fn clean_in(mut p: Project, origin: &str, all: bool) -> Option<Project> {
         "upstream".into()
     } else if p.source == "listed" && p.id.starts_with("link:") {
         "listed".into()
+    } else if p.source == "look" && p.id.starts_with("look:") && p.look.is_some() {
+        "look".into()
     } else {
         "community".into()
     };
@@ -215,6 +221,7 @@ pub fn clean_in(mut p: Project, origin: &str, all: bool) -> Option<Project> {
             && d[origin.len()..].starts_with('/')
     });
     clean_upstream(&mut p, origin);
+    crate::looks::clean(&mut p);
     Some(p)
 }
 
@@ -225,8 +232,8 @@ fn clean_upstream(p: &mut Project, origin: &str) {
     p.tags = std::mem::take(&mut p.tags).into_iter().filter(tag).take(8).collect();
     p.licence_source = text(&p.licence_source, 80);
     clean_listed(p);
-    if p.source == "listed" {
-        return;
+    if p.source == "listed" || p.source == "look" {
+        return;   // looks: looks::clean
     }
     if p.source != "upstream" {
         p.install = None;

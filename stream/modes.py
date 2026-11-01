@@ -224,7 +224,7 @@ def page(css: str, art_url, have, card_meta, realm_name: str = "WrathUnleashed",
         + games + duels + bosses + dungeons + hangouts
         + '<p class="ly-fine">Go works for a character of the right level that is out of combat and not inside an '
         'instance; it waits for your next login for 30 minutes. In the browser, places outside the streamed areas '
-        'need your own 3.3.5a game files.</p></div>')
+        'need your own game files.</p></div>')
     meta = card_meta("/wrath/modes", f"Modes · {realm_name}")
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">'

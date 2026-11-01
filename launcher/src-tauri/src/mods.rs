@@ -1790,6 +1790,9 @@ pub fn install_project(
     if p.source == "listed" {
         return crate::listed::install(client, build, p, scratch, native_ok); // a player's listed mod, from its author (listed.rs)
     }
+    if p.source == "look" {
+        return crate::looks::install_pack(client, build, p, scratch); // a graphics pack (looks.rs; presets and UI looks: looks_apply)
+    }
     if !p.fits(build) {
         return Err(format!("{} is made for the {} client, not this {} one.", p.name, p.builds.join(" / "), build.catalog_tag()));
     }
@@ -1877,6 +1880,7 @@ pub fn with_updates(man: &Manifest, catalog: &[Project], build: Build) -> Vec<In
             let update = match p {
                 Some(p) if p.source == "upstream" => crate::upstream::update_for(m, p), // by rev (r736, 3x05...)
                 Some(p) if p.source == "listed" => crate::listed::update_for(m, p), // by the pinned rev (listed.rs)
+                Some(p) if p.source == "look" => crate::looks::update_for(m, p), // a graphics pack's release tag (looks.rs)
                 _ => p.and_then(|p| p.version.clone()).filter(|v| newer(v, &m.version)),
             };
             // TOC titles can carry colour codes and the game's brand words: My Mods shows them cleaned.

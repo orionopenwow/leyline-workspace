@@ -590,3 +590,8 @@
 1257c ship Launcher: a short first-run tour (Play, Your Den, Host, game files), Help > Show me again, one-time encouragement lines; Den Lite cheers
 1257d den-lite Den Lite again: one encouragement line for each first (visit, piece, save, grow)
 1257e leyline Leyline repo: export again so Leyline.exe gets the first-run tour
+1258a signin Site: Looks (page, front-page section with screenshots, Forever UI showcase), Host pack link from one source, no version numbers in sentences, Connect Claude on the host flow
+1258b scripts Realm scripts: Jaina in the Docker Den (stay / follow / come / tips, a built-in guide)
+1258c ship Launcher: Play solo (straight to character select), Jaina in your Den, Den autosave, Looks tab with one-click presets, smoke fixes; the Den Lite build workflow
+1258d den-lite Den Lite again: Jaina from login, autosave, play solo support
+1258e leyline Leyline repo: export again so Leyline.exe gets Play solo and Looks

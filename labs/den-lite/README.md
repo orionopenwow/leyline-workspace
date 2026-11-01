@@ -25,6 +25,9 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
   the password. A server that doesn't know the password can't finish a login. An empty password isn't an option
   either: the stock login screen won't log in without one. So the player types `den` (the launcher should say so
   next to the button, or set a password of its own with `--password`).
+- **The Den keeps itself**: within 2 seconds of any change (and at logout) the whole Den is written to
+  `<dens>/autosave.den.json`, and Den Lite opens it when it starts, so a restart brings back the room as it was
+  (nothing to undo after it). A damaged autosave is left as it is and the Den starts empty.
 - **Den files**: `.den save <name>` writes `<dens>/<name>.den.json`; `.den load <name>` reads it. Names are letters,
   digits, - and _ (up to 24), as the launcher's `host/dens.rs`.
 - **The launcher's Open**: while the player is in the world, `<dens>/open.json` (`{"file": "<name>", "id": "<id>"}`,
@@ -32,7 +35,7 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
   copy of what was there is saved as `backup`). Each id opens once, also after a restart (`<dens>/.open-done`).
 - **Stamps** come from `--stamps` (default `den-stamps` beside the program); the six in this repo are also built in.
 - **`--client <game folder>`** (optional): `.den mods` then also lists what the launcher's mod manager put in that
-  game (`<game>/Leyline/mods.json`). The launcher's `host/lite.rs` doesn't pass it yet.
+  game (`<game>/Leyline/mods.json`). The launcher's `host/lite.rs` passes the game folder Your Den plays with.
 
 ## In the game
 
@@ -50,8 +53,9 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 | `.den room white\|stone\|wood` | the room's look (`ov_den.lua` THEMES) |
 | `.den size [1-4]` | how big the Den is; with a number, the room rebuilt at that size (smaller only when every prop still fits) |
 | `.den grow` | the next size: the white room's floor and walls rebuilt bigger, and what counts as inside the Den follows |
-| `.den companion` (`.den jaina`) | your companion comes and follows you; again: back to your side |
-| `.den companion away` | she goes (also when you log out or leave the Den) |
+| `.den companion` (`.den jaina`) | your companion comes and follows you; again: back to your side. She is there from login by default (`--no-companion`: only when called) |
+| `.den companion stay\|follow\|come\|tips` | or say `Jaina, stay` (`wait`), `Jaina, follow`, `Jaina, come` (she walks over), `Jaina, tips` (`help`, `what next`): anywhere in the Den, never written down for the assistant |
+| `.den companion away` (`Jaina, go away`) | she goes until called again (leaving the Den or logging out only hides her: she is back when you are) |
 | `.den ask <words>`, or say `Jaina, <words>` within 10 yards of her | written down for your own assistant (Leyline's Agents page: `den_messages`); its `den_say` lines are hers |
 | `.den mode [id]` | Leyline's game modes and Host templates; with an id, what it is and how to run it on this PC (the full Den) |
 | `.den mods` | the addons your game loaded, and (with `--client`) the launcher's mods in it |
@@ -81,6 +85,16 @@ from this server's answer to its creature query ("Jaina", "<Your companion>" und
 a little to the left, and follows loosely: twice a second the server checks, and when her spot is more than 2 yards
 from where she is (or is going) she walks or runs there (`SMSG_MONSTER_MOVE`, one point; the server keeps her position
 along the way). A jump of more than 30 yards puts her back at your side; leaving the Den sends her off.
+
+Her manners (owner 1 Nov: "smarter companions"; `companion.rs`, all deterministic and unit tested): she never stands
+in your way (closer than 1.2 yards and stopped, she steps back to her spot), `stay` keeps her where she is (and a jump
+across the room doesn't pull her), `come` walks her over and she follows again, and past 30 yards while following she
+is put back at your side. Lines are few: one greeting at login, answers when spoken to, and once a session a nudge when
+the Den is still empty two minutes in and you have said nothing to her for a minute. With no assistant connected she
+is still a guide: an ask her built-in guide knows (`GUIDE`: placing, stamps, undo, save, load, grow, looks, mods,
+modes, Forge, friends, levelling, the assistant) gets its answer at once, and is still written down; with someone
+reading her notes (`read_at`), the assistant answers instead. `tips` picks the next step that fits the Den (a first
+piece, a first save, more room), then the general tips in turn. Den Lite has no combat, so "help me" is a tip here.
 
 She talks through the same files as the full Den, in the Dens folder, so the launcher's Den tools for your assistant
 (`launcher/src-tauri/src/agents/den.rs`) work unchanged: `companion-in.json` (written every 10 seconds and after each
@@ -185,6 +199,25 @@ forwarding every `MSG_MOVE_*` to the others with the mover's guid; chat to every
 session (the per-session writer in `world.rs` is already shareable for that); several characters per account and a
 character store; and visibility (who is near whom). For friends, the full Docker Den is the way ("share with friends").
 
+### Inviting a friend from Play solo (owner 1 Nov 14:37): what is missing, and the safe way today
+
+Today "Invite friends" on the launcher's Your Den page moves this Den to the full Docker Den (Share with friends),
+which already has the Leyline network's invite link, private by default, and a per-friend account. Den Lite itself
+can't take a friend yet, and must not be put on the relay as it is:
+
+1. **No shared password on the network.** Den Lite logs in any account name with one fixed local password. Through a
+   relay tunnel every connection arrives from 127.0.0.1, so "local only" can't be told from a friend. Needed: the
+   host's own account gets a secret of its own (made by the launcher, handed to the game by the hybrid glue as now),
+   and each friend a guest account the host's Den Lite makes (SRP verifier and salt in `<dens>/guests.json`, the
+   password made from the OS's random source and given once through the invite), with the fixed local login turned
+   off while the Den is on the network.
+2. **A tunnel without Docker.** The relay's link agent (`wu-link-agent`) runs in the Host kit's Docker; Den Lite needs
+   the same outbound connection from the launcher itself (or Den Lite), and its realm list must then name the relay's
+   address and port for the friend instead of 127.0.0.1:8085.
+3. **More than one player in the world** (the list below).
+
+Two real PCs on different networks are needed to prove any of it.
+
 ## Crates and licences
 
 | Crate | Version | Licence | Used for |
@@ -205,6 +238,6 @@ Linux x86-64. Note for Windows builds: `libz-sys` builds zlib with the C compile
    `--dens <dir> --bind 127.0.0.1` and honours `open.json`.
 2. The launcher shows the password (`den`) on the Your Den page, or passes its own `--password` and shows that.
 3. Try it with a real client on a PC with the game (the unknowns above), and fix what it wants.
-4. Then: `.den home`, the stamp mark (stakes), and model props tested. Building from the assistant (`companion-place.json`)
-   and the launcher passing `--client`.
+4. Then: `.den home`, the stamp mark (stakes), and model props tested. Building from the assistant (`companion-place.json`).
+   The launcher passes `--client` since 1 Nov.
 5. Later: move to the workspace once stable; the browser client could connect too (out of scope here).

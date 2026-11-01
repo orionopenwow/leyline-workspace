@@ -242,6 +242,38 @@ writeFile(SAVES .. "/companion-place.json", '{"file":"../../etc/passwd","id":"x1
 clock = clock + 10; tick()
 check("only Den files by name", readFile(SAVES .. "/companion-place.json") == nil and decor() == before)
 
+-- ---------------------------------------------------------------- her short commands and her own guide
+check("the short commands are whole lines", C.command("Stay") == "stay" and C.command(" wait here! ") == "stay"
+    and C.command("please follow me") == "follow" and C.command("come here, please") == "come" and C.command("what next?") == "tips"
+    and C.command("go away") == "away" and C.command("stay by the door and add a bench") == nil)
+check("her guide: plain answers to common questions", C.guide("how do I save this?"):find("^%.den save") ~= nil
+    and C.guide("where can I level? quests?"):find("Solo leveling") ~= nil and C.guide("a well by the door") == nil)
+os.remove(SAVES .. "/companion-out.json")   -- nobody reading her notes
+c = her()
+local asks0, lastN = #inDoc().asks, inDoc().asks[#inDoc().asks].n
+clock = clock + 10
+c.x = c.x + 20   -- far beyond hearing for asks: commands still reach her
+fire(18, own, "Jaina, stay", 1, 0)
+check("\"Jaina, stay\": she waits, from anywhere in the Den, and it isn't an ask", spoke("I'll wait here")
+    and inDoc().asks[#inDoc().asks].n == lastN)
+c.x = own.x + 45
+clock = clock + 10; tick()
+check("told to stay: a long way off doesn't pull her back", not c.teleported and hers() == 1)
+c.x = own.x + 20
+fire(18, own, "Jaina, come", 1, 0)
+check("\"Jaina, come\": she walks over and follows again", spoke("On my way") and c.follows == own)
+fire(18, own, "Jaina, tips", 1, 0)
+check("\"Jaina, tips\": a tip in her voice", spoke("stamp inn now"))
+c.x = own.x + 1
+clock = clock + 10
+fire(18, own, "Jaina, how do I save my den?", 1, 0)
+check("no assistant reading: her own answer at once, and it is still written down", spoke("%.den save and a name")
+    and inDoc().asks[#inDoc().asks].text == "how do I save my den?")
+cmd(own, ".den jaina stay")
+check(".den jaina stay: the same as saying it", spoke("I'll wait here"))
+cmd(own, ".den jaina follow")
+check(".den jaina follow", spoke("Right behind you"))
+
 -- ---------------------------------------------------------------- following, leaving
 own.x = DEN.x + 5
 c = her()
@@ -272,7 +304,7 @@ check("not for visitors", not said(vis, "%.den jaina"))
 OV_DEN_COMPANION_TEST = nil
 dofile(compFile)
 local C2 = OV_DEN_COMPANION_TEST
-check("after a reload: the asks and the last line said come back", C2.said == 5 and #C2.asks == 20 and C2.nextAsk == 30)
+check("after a reload: the asks and the last line said come back", C2.said == 5 and #C2.asks == 20 and C2.nextAsk == C.nextAsk and C.nextAsk == 31)
 check("no game-brand words in anything players see or she says", (function()
     local function bad(s) local l = s:lower(); return l:find("warcraft") or l:find("blizzard") or l:find("lich king") or l:find("%f[%a]wow%f[%A]") end
     for _, m in ipairs(allMsgs) do if bad(m) then return false end end

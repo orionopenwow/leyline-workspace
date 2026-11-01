@@ -113,14 +113,20 @@ pub fn sign_in(app_dir: &Path, realm: &str) -> Result<Login, String> {
 
 /// Config.wtf with `SET accountName "<user>"` (the key keeps its spelling when the line is there; added when not).
 pub fn config_wtf_with_account(text: &str, user: &str) -> String {
+    config_wtf_with(text, "accountName", user)
+}
+
+/// Config.wtf with `SET <key> "<value>"`: the first line of that key (any case) replaced, later ones dropped, or
+/// the line added at the end.
+pub fn config_wtf_with(text: &str, key: &str, value: &str) -> String {
     let mut hit = false;
     let mut lines: Vec<String> = Vec::new();
     for l in text.lines() {
         let mut w = l.split_whitespace();
         match (w.next(), w.next()) {
-            (Some(a), Some(b)) if a.eq_ignore_ascii_case("SET") && b.eq_ignore_ascii_case("accountName") => {
+            (Some(a), Some(b)) if a.eq_ignore_ascii_case("SET") && b.eq_ignore_ascii_case(key) => {
                 if !hit {
-                    lines.push(format!("SET {b} \"{user}\""));
+                    lines.push(format!("SET {b} \"{value}\""));
                 }
                 hit = true;
             }
@@ -128,26 +134,46 @@ pub fn config_wtf_with_account(text: &str, user: &str) -> String {
         }
     }
     if !hit {
-        lines.push(format!("SET accountName \"{user}\""));
+        lines.push(format!("SET {key} \"{value}\""));
     }
     lines.join("\r\n") + "\r\n"
 }
 
-/// Pre-fill the login screen's account name in the client's `WTF/Config.wtf`. Only an `HK...` name is written, and
-/// only into a client that has a `WTF` folder. Returns whether it wrote.
+/// An account name Leyline may put on the login screen: a realm's `HK...` name, or a plain local one (the Den's
+/// `DEN`, the Docker Den's GM name: 3 to 16 letters and digits). Never anything that could break the line.
+pub fn prefill_ok(user: &str) -> bool {
+    account_ok(user) || ((3..=16).contains(&user.len()) && user.bytes().all(|b| b.is_ascii_alphanumeric()))
+}
+
+fn config_wtf(client_root: &Path) -> Option<std::path::PathBuf> {
+    match crate::clients::find_rel(client_root, "WTF/Config.wtf") {
+        Some(p) => Some(p),
+        None => match crate::clients::find_rel(client_root, "WTF") {
+            Some(d) if d.is_dir() => Some(d.join("Config.wtf")),
+            _ => None,
+        },
+    }
+}
+
+/// Pre-fill the login screen's account name in the client's `WTF/Config.wtf`. Only a name [`prefill_ok`] takes is
+/// written, and only into a client that has a `WTF` folder. Returns whether it wrote. Never a password.
 pub fn set_account_name(client_root: &Path, user: &str) -> std::io::Result<bool> {
-    if !account_ok(user) {
+    set_login(client_root, user, None)
+}
+
+/// The account name and, with `realm`, the realm the client goes to after login (`SET realmName`: no realm list
+/// when it is the only one). Never a password.
+pub fn set_login(client_root: &Path, user: &str, realm: Option<&str>) -> std::io::Result<bool> {
+    if !prefill_ok(user) || realm.is_some_and(|r| r.is_empty() || r.len() > 64 || r.chars().any(|c| c.is_control() || c == '"')) {
         return Ok(false);
     }
-    let cfg = match crate::clients::find_rel(client_root, "WTF/Config.wtf") {
-        Some(p) => p,
-        None => match crate::clients::find_rel(client_root, "WTF") {
-            Some(d) if d.is_dir() => d.join("Config.wtf"),
-            _ => return Ok(false),
-        },
-    };
+    let Some(cfg) = config_wtf(client_root) else { return Ok(false) };
     let old = std::fs::read_to_string(&cfg).unwrap_or_default();
-    crate::settings::write_atomic(&cfg, config_wtf_with_account(&old, user).as_bytes())?;
+    let mut text = config_wtf_with_account(&old, user);
+    if let Some(r) = realm {
+        text = config_wtf_with(&text, "realmName", r);
+    }
+    crate::settings::write_atomic(&cfg, text.as_bytes())?;
     Ok(true)
 }
 
@@ -230,9 +256,17 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         assert!(!set_account_name(d.path(), "HKABCDEFGHIJKLMN").unwrap(), "no WTF folder: nothing written");
         std::fs::create_dir(d.path().join("WTF")).unwrap();
-        assert!(!set_account_name(d.path(), "evil\" x").unwrap(), "only an HK account name");
+        assert!(!set_account_name(d.path(), "evil\" x").unwrap(), "only a plain account name");
+        assert!(!set_account_name(d.path(), "DE").unwrap() && !set_account_name(d.path(), "a-b-c").unwrap());
         assert!(set_account_name(d.path(), "HKABCDEFGHIJKLMN").unwrap());
         let text = std::fs::read_to_string(d.path().join("WTF/Config.wtf")).unwrap();
         assert!(text.contains("SET accountName \"HKABCDEFGHIJKLMN\"") && !text.contains("Q7W8"), "never a password");
+        // the local Den's account (Den Lite's DEN, the Docker Den's GM name) and its realm
+        assert!(set_login(d.path(), "DEN", Some("Your Den")).unwrap());
+        let text = std::fs::read_to_string(d.path().join("WTF/Config.wtf")).unwrap();
+        assert!(text.contains("SET accountName \"DEN\"\r\n") && text.contains("SET realmName \"Your Den\"\r\n"), "{text}");
+        assert!(!text.to_lowercase().contains("password"));
+        assert!(!set_login(d.path(), "DEN", Some("a\"b")).unwrap(), "a realm name that would break the line");
+        assert!(set_account_name(d.path(), "Builder7").unwrap());
     }
 }

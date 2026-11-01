@@ -35,6 +35,8 @@ if exist leyline_net.py set "LINKS=%LINKS% leyline_net.py"
 if exist leyline_net.py if exist hostpack.json set "LINKS=%LINKS% hostpack.json"
 rem reviewed upstream addons for all.json (upstream_addons.py and upstream-addons.json from tools\addon-curate\curate.py), always as a pair
 if exist upstream_addons.py if exist upstream-addons.json set "LINKS=%LINKS% upstream_addons.py upstream-addons.json"
+rem Looks: /wrath/looks and the looks in all.json (looks.py and looks.json), always as a pair
+if exist looks.py if exist looks.json set "LINKS=%LINKS% looks.py looks.json"
 rem the Leyline network: the realm browser, /wrath/realms.json and realm reports (network.py)
 if exist network.py set "LINKS=%LINKS% network.py"
 rem Report a bug: /wrath/bugs and the launcher's /wrath/bugs/api/report, into the bugs manifest (bugreport.py)

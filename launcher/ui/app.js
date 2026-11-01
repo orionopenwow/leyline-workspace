@@ -51,9 +51,10 @@ let state = null;
 let catalogNames = [];
 let realmNames = [];
 
-function say(id, text, kind) {
+function say(id, text, kind, ver) {
   const s = $(id);
   s.textContent = text || "";
+  if (ver) s.append(" ", el("span", "rl-ver sm", ver));   // the version as a chip, never in the sentence
   s.className = "status" + (kind ? " " + kind : "");
 }
 // Never a raw error to the player (friendly.js): the error goes to the console, the player gets a plain line. A line
@@ -113,6 +114,8 @@ function resolvePage(page, tab) {
 }
 function show(want, noLoad, wantTab) {
   const [page, tab] = resolvePage(want, wantTab);
+  // another page starts at its top (smoke O9: Your Den from Home's banner opened scrolled, its title cut off)
+  if (page !== currentPage) { const m = document.querySelector("main"); if (m && m.scrollTo) m.scrollTo({ top: 0, behavior: "instant" }); }
   currentPage = page;
   currentTab = tab;
   document.querySelectorAll(".nav[data-page]").forEach((b) => b.classList.toggle("on", b.dataset.page === page));
@@ -263,6 +266,7 @@ function realmLabel() {
   if (isOfficial()) return officialName();
   const a = chosenRealm();
   if (localAt(a)) return localAt(a).name;   // My Den or Solo leveling
+  if (a === DEN_LITE) return DEN.name;      // Your Den on Den Lite (host/lite.rs ADDRESS)
   const r = realmsCache.find((x) => x.address === a);
   return r ? r.name : (a || "Another realm");
 }
@@ -999,6 +1003,7 @@ const LOCAL = {
     title: "A private realm on this PC for levelling alone: helper bots fill your group, dungeons scale to you" },
 };
 const DEN = LOCAL.den;
+const DEN_LITE = "127.0.0.1";   // where Den Lite plays (host/lite.rs ADDRESS)
 const localHosted = (L) => !!(kit && kit.realm && kit.realm.profile === L.profile);
 const denHosted = () => localHosted(DEN);
 function localAddress(L) {
@@ -1073,8 +1078,8 @@ function chooseClient(c) {
   saveSelection();
 }
 // the existing add flow: the game client list's own "Add a game folder…" (whatever it does), else the Clients page
-function addGameFolder(why) {
-  if (why) { say("play-status", why, "warn"); say("cl-status", why, "warn"); }
+function addGameFolder(why, ver) {
+  if (why) { say("play-status", why, "warn", ver); say("cl-status", why, "warn", ver); }
   renderClientMenu();
   const add = [...$("pb-menu").querySelectorAll(".pb-opt")].find((r) => /add a game folder/i.test(r.textContent));
   if (add) add.click(); else show("clients");
@@ -1112,7 +1117,7 @@ function localGo(L) {
   if (step === "play") { playLocal(L); return; }
   if (step === "folder") {
     pendingLocal = L.profile;
-    addGameFolder(`${L.name} plays with your own ${L.build} game folder. Add it, and setup goes on from there.`);
+    addGameFolder(`${L.name} plays with your own game folder. Add it, and setup goes on from there.`, L.build);
     return;
   }
   pendingLocal = null;
@@ -1147,7 +1152,7 @@ async function knockLocal(L) {
   const own = clientForRealm(L.profile, L.build);
   if (!own) {
     pendingLocal = L.profile;
-    addGameFolder(`${L.name} plays with your own ${L.build} game folder. Add it, then pick ${L.name} again.`);
+    addGameFolder(`${L.name} plays with your own game folder. Add it, then pick ${L.name} again.`, L.build);
     return false;
   }
   say("play-status", `Opening ${L.name}…`);
@@ -1175,6 +1180,9 @@ async function knockLocal(L) {
 }
 // PLAY with a local realm chosen: knock again first (true: stop, its next step was said)
 async function localBeforePlay() {
+  // Your Den on Den Lite (127.0.0.1): PLAY is Your Den's one click (den.js: start it, sign in by itself), never a
+  // plain start at a login screen (smoke O3)
+  if (chosenRealm() === DEN_LITE && window.LeylineDen && window.LeylineDen.where() === "lite") { window.LeylineDen.go(); return true; }
   const L = localChosen();
   if (!L || localKnocked) { localKnocked = false; return false; }
   return !(await knockLocal(L));
@@ -1182,10 +1190,11 @@ async function localBeforePlay() {
 // the bar's status line for a local realm (renderPlayBar)
 function localHint() {
   continuePending();
+  if (chosenRealm() === DEN_LITE) return { head: "READY TO PLAY", detail: "Your Den, on this PC", warn: false };
   const L = localChosen();
   if (!L) return null;
   if (kit && kit.is_kit && !localHosted(L)) return { head: `${L.name.toUpperCase()} IS NOT SET UP`, detail: "PLAY sets it up", warn: true };
-  if (!clientForRealm(L.profile, L.build)) return { head: "ADD YOUR GAME FOLDER", detail: `${L.name} needs your ${L.build} folder`, warn: true };
+  if (!clientForRealm(L.profile, L.build)) return { head: "ADD YOUR GAME FOLDER", detail: `${L.name} needs your game folder`, warn: true };
   return { head: "READY TO PLAY", detail: "On this PC", warn: false };
 }
 window.LeylineLocal = { play: (id) => (LOCAL[id] ? playLocal(LOCAL[id]) : null), names: () => Object.fromEntries(Object.values(LOCAL).map((L) => [L.profile, L.name])) };
@@ -1279,9 +1288,10 @@ function renderRealmMenu() {
       clients.push(row("pb-client-opt", fit.name, { ver: clientVersion(fit), sub: "Game client", title: `${fit.name} · ${fit.path}\nPick another game client or add a folder`,
         keepFocus: true, run: () => openClientMenu() }));
     } else {
-      const note = el("li", "pb-note", need ? `This realm plays with ${need}. No ${need} game folder yet.` : "No game folder yet.");
+      const note = el("li", "pb-note", need ? "No game folder for this realm yet." : "No game folder yet.");
+      if (need) note.append(" ", el("span", "rl-ver sm", need));
       note.setAttribute("role", "presentation");
-      clients.push(note, row("pb-act pb-add-client", "Add a game folder…", { run: () => addGameFolder(need ? `Add your ${need} game folder.` : "") }));
+      clients.push(note, row("pb-act pb-add-client", "Add a game folder…", { run: () => addGameFolder(need ? "Add your game folder for this realm." : "", need) }));
     }
   }
   const parts = [top];
@@ -1378,9 +1388,9 @@ function renderPlayBar() {
     detail = "PLAY shows where to find it, or play in your browser";
   } else if (chosenRealmBuild() && c.build !== chosenRealmBuild()) {
     const need = chosenRealmBuild();
-    head = `THIS SERVER NEEDS ${need.toUpperCase()}`; warn = true;
+    head = "THIS REALM NEEDS ANOTHER GAME FOLDER"; warn = true;   // its version: the chip beside its name
     const other = state.settings.clients.find((x) => x.build === need);
-    detail = other ? `Pick ${other.name}` : `Add a ${need} folder`;
+    detail = other ? `Pick ${other.name}` : "Add the game folder for this realm";
   } else if (!chosenRealm()) {
     head = "CHOOSE A REALM"; warn = true;
     detail = "Type the realm's address under Realms";
@@ -2012,6 +2022,11 @@ async function handleDeepLink() {
   if (link && link.action === "realm" && typeof link.id === "string") return showLinkedRealm(link.id);
   if (link && link.action === "host" && typeof link.id === "string") return showHostLink(link.id);
   if (!link || link.action !== "install" || typeof link.id !== "string") return;
+  if (link.id.startsWith("look:")) {   // the website's Looks page: Discover › Looks, that card (looks.js); nothing installs yet
+    show("mods", true, "discover");
+    if (!(window.LeylineLooks && window.LeylineLooks.focus(link.id))) say("cat-status", "That look isn't in the list here yet. Try again in a few minutes.", "warn");
+    return;
+  }
   const p = catalog.projects.find((x) => x.id === link.id);
   show("mods", true, "discover");   // the catalog was just loaded
   if (!p) { say("cat-status", "That mod isn't in the mods list here yet. Try again in a few minutes.", "warn"); return; }
@@ -2112,7 +2127,7 @@ async function showLinkedRealm(id) {
   const card = [...document.querySelectorAll("#rl-list .realm-card")].find((c) => c.querySelector(".name")?.textContent === r.name);
   if (card) { card.classList.add("linked"); card.scrollIntoView({ block: "center" }); const b = card.querySelector(".acts .btn"); if (b && !b.disabled) b.focus(); }
   const need = r.official ? "3.3.5a" : r.build;
-  if (need && BUILDS[need] && !state.settings.clients.some((x) => x.build === need)) say("rl-status", `${r.name} plays with ${need}. Add your ${need} game folder first: Add a game folder… in the play bar.`, "warn");
+  if (need && BUILDS[need] && !state.settings.clients.some((x) => x.build === need)) say("rl-status", `${r.name} needs the game files for this realm. Add that game folder first: Add a game folder… in the play bar.`, "warn", need);
   else say("rl-status", `From the website: ${r.name}. Press PLAY to join.`, "ok");
 }
 
@@ -2939,6 +2954,7 @@ window.LeylineApp = {
   news: () => news, realms: () => realmsCache, catalog: () => catalog, mode: () => mode, setMode, openLink, playHangout, HANGOUT,
   realmIcon, realmVersion, hiddenBuild, nameHue,
   state: () => state,   // addons.js: the clients
+  refresh: () => refresh().then(refreshStatus).catch(() => { /* as it was */ }),   // den.js: after Play solo, the bar shows Your Den
   pickRealm, playRealm, loadRealms, showRealm: showLinkedRealm,   // realmlink.js: paste to add, Live now
 };
 

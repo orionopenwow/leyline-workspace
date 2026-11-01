@@ -136,7 +136,7 @@ check("front page: creators and Host a Beacon", "/wrath/leyline-preview/creators
 check("front page: a TODO(owner) for the tagline, no words in the owner's voice", "TODO(owner)" in front)
 # the owner's mockup (2026-10-30): header nav, the hero, Platform Status, Community Spotlight, the footer
 # the header mirrors the launcher's pages (owner 2026-10-30: "servers, mods, addons, etc ... it should all work in browser too")
-NAV_ORDER = ["Play", "Realms", "Mods", "Addons", "Host", "Forum", "More"]   # owner 2026-10-30: "change community to forum"
+NAV_ORDER = ["Play", "Realms", "Mods", "Addons", "Looks", "Host", "Forum", "More"]   # Looks: owner 1 Nov 14:38   # owner 2026-10-30: "change community to forum"
 
 
 def header_of(page):
@@ -160,11 +160,11 @@ check("the launcher's palette: the generated tokens (the launcher's own blue, Li
       and "@media (prefers-color-scheme:light){:root{--lk-bg:#eef1f6" in HB.SITE_TOKENS_CSS
       and front.index("--lk-accent:#5b8def") < front.index(".hb-skip{") < front.index(".hb-pg{")
       and '<meta name="color-scheme" content="dark light">' in front)
-check("header: Play, Realms, Mods, Addons, Host, Forum, More (Modes, Gallery and Status out of the menu)", labels == NAV_ORDER, labels)
-hrefs = dict(re.findall(r'<a class="hb-ni[^"]*" href="([^"]+)"[^>]*><svg.*?</svg><span>([^<]+)</span>', nav, re.S)[i][::-1] for i in range(6))
+check("header: Play, Realms, Mods, Addons, Looks, Host, Forum, More (Modes, Gallery and Status out of the menu)", labels == NAV_ORDER, labels)
+hrefs = dict(re.findall(r'<a class="hb-ni[^"]*" href="([^"]+)"[^>]*><svg.*?</svg><span>([^<]+)</span>', nav, re.S)[i][::-1] for i in range(7))
 check("header: each item goes to the launcher page's web twin", hrefs == {
       "Play": "/wrath", "Realms": "/wrath/leyline-preview/realms", "Mods": "/wrath/leyline-preview/catalog",
-      "Addons": "/wrath/leyline-preview/addons", "Host": "/wrath/host",
+      "Addons": "/wrath/leyline-preview/addons", "Looks": "/wrath/looks", "Host": "/wrath/host",
       "Forum": "/wrath/leyline/forum"} and "addons" in HB.CATEGORY_IDS, hrefs)
 more = re.search(r'<details class="hb-more-d"><summary class="hb-ni[^"]*">.*?<span>More</span></summary><div class="hb-more-m">(.*?)</div></details>', nav, re.S)
 MORE_ITEMS = ["Leaderboards", "Forge", "Agents", "Docs", "News", "Join the Discord", "Creators"]   # Join the Discord under News, as in the launcher
@@ -174,7 +174,7 @@ check("header: More is a details dropdown (no script needed) with Forge, Agents,
 check("header: the phone sheet has the same items as tiles, and the download", re.findall(
       r"<span>([^<]+)</span>", re.search(r'<div class="hb-nav-x">(.*?)</div>', nav, re.S).group(1)) == MORE_ITEMS
       and 'class="hb-dl-x"' in nav and 'id="hb-menu" class="hb-menu-t"' in hd and '<label for="hb-menu" class="hb-menu-b"' in hd)
-check("header: a line icon by every item (inline SVG, currentColor)", nav.count('<svg viewBox="0 0 24 24" aria-hidden="true">') == 6 + 1 + 7 + 7
+check("header: a line icon by every item (inline SVG, currentColor)", nav.count('<svg viewBox="0 0 24 24" aria-hidden="true">') == 7 + 1 + 7 + 7
       and "stroke:currentColor" in front)
 check("header: Download (primary) and Log In (the launcher's word; the crystal on the folded rail) on the right, no item active on the front page",
       re.search(r'<div class="hb-end"><a class="hb-dl" href="https://github\.com/orionopenwow/Leyline/releases/download/launcher-latest/Leyline\.exe"[^>]*>.*?<span>Download</span></a>'
@@ -282,36 +282,53 @@ FS_RE = (r'<section class="hb-fs hb-rv( flip)?" id="f-([a-z]+)".*?<p class="hb-e
 # owner 1 Nov ("make sure the website is clean looking too"): the front page shows four of them (FRONT_FEATURES), the
 # launcher's story; the rest are drawn by features(only=None) and checked from there
 allf = HB.hub.features(HB.hub.realm_rows(), only=None)
-check("front page: four feature sections only (launcher, host, modes, mods), alternating, nothing repeating the realm list",
-      [(f[1], bool(f[0])) for f in re.findall(FS_RE, front, re.S)] == [("launcher", False), ("host", True), ("modes", False), ("mods", True)]
+check("front page: five feature sections only (launcher, looks, host, modes, mods), alternating, nothing repeating the realm list",
+      [(f[1], bool(f[0])) for f in re.findall(FS_RE, front, re.S)] == [("launcher", False), ("looks", True), ("host", False), ("modes", True), ("mods", False)]
       and 'id="f-realms"' not in front and 'id="f-forge"' not in front and 'id="f-agents"' not in front and 'id="f-community"' not in front
       and "Your Den" in front, [f[1] for f in re.findall(FS_RE, front, re.S)])
 fs = re.findall(FS_RE, allf, re.S)
 check("feature sections: one per part of Leyline, in the recommended order", [f[1] for f in fs] == [
-      "launcher", "host", "realms", "modes", "mods", "forge", "agents", "community"] and [f[2] for f in fs] == [
-      "Desktop launcher", "Host a server", "Realms &amp; hopping", "Minigolf &amp; game modes", "Mods",
+      "launcher", "looks", "host", "realms", "modes", "mods", "forge", "agents", "community"] and [f[2] for f in fs] == [
+      "Desktop launcher", "Looks", "Host a server", "Realms &amp; hopping", "Minigolf &amp; game modes", "Mods",
       "Forge", "Agents", "Community hub"], [f[1:3] for f in fs])
-check("feature sections: alternating sides (every other one flips)", [bool(f[0]) for f in fs] == [False, True] * 4)
+lks = re.findall(r'<a class="hb-lk ([a-z-]+)" href="/wrath/looks#look-([a-z0-9-]+)"><span class="lk-art ([a-z- ]+)"[^>]*>(.*?)</span><b>([^<]+)</b><span>([^<]+)</span></a>', front)
+check("front page: the Looks tiles show our own pictures where a look has one (Max, Balanced, Classic, Forever UI), never wider than the picture",
+      [x[1] for x in lks] == ["max", "balanced", "classic", "forever-ui"] and all(x[2] == "lk-pic" for x in lks)
+      and all(re.search(r'<img src="/wrath/art/looks/look-%s(?:-hud)?\.webp" alt="[^"]+" style="max-width:\d+px"' % x[1], x[3]) for x in lks), lks)
+_shots = HB.hub.game_shots_on
+HB.hub.game_shots_on = lambda: False
+drawn = HB.hub.looks_art()
+HB.hub.game_shots_on = _shots
+check("front page: with the game data killswitch on, the tiles fall back to their own drawings (different motifs, our own CSS)",
+      re.findall(r'class="lk-art (m-[a-z]+)"', drawn)[:4] == ["m-ultra", "m-balanced", "m-classic", "m-ui"] and "<img" not in drawn
+      and ".m-ultra .m-sun" in drawn)
+check("front page: the Looks tiles' words have their colour set explicitly (white on a dark scrim), not the link colour",
+      ".hb-draw .hb-lk b{font-size:15.5px;color:#fff!important" in HB.HUB_CSS and ".hb-draw .hb-lk>span:last-child{font-size:12.5px;color:#f1f3f8!important" in HB.HUB_CSS
+      and ".hb-lk::after{" in HB.HUB_CSS and "rgba(4,6,12,.82)" in HB.HUB_CSS)
+check("front page: the Looks section links each tile to its card on /wrath/looks, and See every look",
+      'href="/wrath/looks">See every look</a>' in front and all(x[1] for x in lks))
+check("feature sections: alternating sides (every other one flips)", [bool(f[0]) for f in fs] == [False, True] * 4 + [False])
 check("feature sections: a heading, a lede, points and a first link each", all(f[3] and f[4] and f[5].count("<li>") >= 2
       and 'class="hb-cta sm"' in f[6] for f in fs))
 hrefs = [re.findall(r'href="([^"]+)"', f[6]) for f in fs]
 check("feature sections: links to pages that exist, nothing paid", [h[0] for h in hrefs][1:] == [
-      "/wrath/host", "/wrath/leyline-preview/realms", "/wrath?go=mode:minigolf", "/wrath/leyline-preview/catalog?sort=hot",
+      "/wrath/looks", "/wrath/host", "/wrath/leyline-preview/realms", "/wrath?go=mode:minigolf", "/wrath/leyline-preview/catalog?sort=hot",
       "/wrath/leyline-preview/forge", "/wrath/leyline-preview/agents", "/wrath/leyline/forum"] and hrefs[0][0].startswith("https://github.com/orionopenwow/Leyline/releases")
       and not re.search(r"(?i)support|donat|\bvip\b|\bshop\b", " ".join(f[6] for f in fs)))
 check("feature sections: a TODO(owner) to reorder them", "TODO(owner): the order of the products" in open(HB.__file__).read())
-check("feature sections: the game modes line from playmodes.json, Hero Key as coming", "Minigolf" in fs[3][4]
-      and "Hero Key sign-in across community realms (coming)" in fs[2][5])
-check("feature sections: every one has its icon", allf.count('<span class="hb-ico"><svg viewBox="0 0 24 24" aria-hidden="true">') == 8)
+check("feature sections: the game modes line from playmodes.json, Hero Key as coming", "Minigolf" in fs[4][4]
+      and "Hero Key sign-in across community realms (coming)" in fs[3][5])
+check("feature sections: every one has its icon", allf.count('<span class="hb-ico"><svg viewBox="0 0 24 24" aria-hidden="true">') == 9)
 feats = allf
 shots = re.findall(r'<img src="/wrath/art/(leyline-ui-[a-z]+\.webp)" alt="([^"]+)" width="1240" height="760" loading="lazy"', feats)
 check("feature sections: the launcher's own pages as pictures (served, lazy, with alt text), our own panels for the rest "
       "(server software, the realm list; the Minigolf loop falls back to the Modes page without the game shots)",
       [n for n, _ in shots] == ["leyline-ui-launcher.webp", "leyline-ui-hosting.webp", "leyline-ui-modes.webp", "leyline-ui-workshop.webp"]
-      and 'class="hb-rlx"' in fs[2][7]
+      and 'class="hb-rlx"' in fs[3][7]
       and all(a for _, a in shots) and all(n in wp.ART_TYPES and not n.startswith("leyline-shot-") for n, _ in shots)
       and all(os.path.isfile(os.path.join(HERE, "www-files", "art", n)) for n, _ in shots)
-      and 'class="hb-draw hb-people"' in fs[7][7] and 'class="hb-draw hb-code"' in fs[5][7] and 'class="hb-draw hb-code"' in fs[6][7]
+      and 'class="hb-draw hb-people"' in fs[8][7] and 'class="hb-draw hb-code"' in fs[6][7] and 'class="hb-draw hb-code"' in fs[7][7]
+      and 'class="hb-draw hb-looks"' in fs[1][7]
       and not re.search(r"leyline-shot-|wu-load-orion|painted", feats, re.I) and not re.search(r"wu-load-orion|painted", front, re.I))
 how = re.search(r'<ol class="hb-how[^"]*" aria-label="How it works">(.*?)</ol>', front, re.S)
 check("how it works: three steps, launcher, game folder or browser, realm", how and re.findall(r"<b>([^<]+)</b>", how.group(1)) == [
@@ -1662,6 +1679,54 @@ else:
                 pg.close()
         b.close()
     HB.hub.realm_rows = real_rows
+    # the Looks tiles on the front page over the real pictures, in the light and the dark theme: each tile is shot with
+    # its words hidden, and the words' colour must reach WCAG AA (4.5:1) against the brightest pixel behind them
+    try:
+        from PIL import Image
+    except ImportError:
+        Image = None
+    if Image is None:
+        print("SKIP Looks tile contrast: Pillow is not installed")
+    else:
+        import io
+
+        def lum(c):
+            f = [(v / 255) / 12.92 if v / 255 <= .03928 else (((v / 255) + .055) / 1.055) ** 2.4 for v in c[:3]]
+            return .2126 * f[0] + .7152 * f[1] + .0722 * f[2]
+        _art = wp.ART_DIR
+        wp.ART_DIR = os.path.join(HERE, "www-files", "art")   # the real pictures (stream/www-files/art/looks/)
+        with sync_playwright() as p:
+            b = p.chromium.launch()
+            for scheme in ("light", "dark"):
+                for w in (1400, 390):
+                    pg = b.new_page(viewport={"width": w, "height": 900}, color_scheme=scheme)
+                    pg.goto(f"http://127.0.0.1:{PAGE_PORT}/wrath/leyline-preview")
+                    pg.locator("#f-looks").scroll_into_view_if_needed()
+                    pg.evaluate("""() => Promise.race([new Promise(r => setTimeout(r, 8000)), Promise.all([...document.querySelectorAll('.hb-lk img')].map(i => {
+                        i.loading = 'eager'; return i.complete && i.naturalWidth ? 0 : new Promise(r => { i.onload = r; i.onerror = r; }); }))])""")
+                    loaded = pg.evaluate("[...document.querySelectorAll('.hb-lk img')].filter(i => i.complete && i.naturalWidth).length")
+                    worst, n = 99.0, 0
+                    for t in pg.query_selector_all(".hb-lk"):
+                        t.scroll_into_view_if_needed()
+                        info = t.evaluate("""t => { const r = t.getBoundingClientRect(), out = [];
+                            for (const el of [t.querySelector(':scope > b'), t.querySelector(':scope > span:last-child')]) {
+                                const q = el.getBoundingClientRect();
+                                out.push({x: q.left - r.left, y: q.top - r.top, w: q.width, h: q.height,
+                                          c: getComputedStyle(el).color.match(/\\d+/g).slice(0, 3).map(Number)});
+                                el.style.visibility = 'hidden'; }
+                            return out; }""")
+                        im = Image.open(io.BytesIO(t.screenshot())).convert("RGB")
+                        sx = im.width / max(1, t.bounding_box()["width"])
+                        for r in info:
+                            box = im.crop((int(r["x"] * sx), int(r["y"] * sx), int((r["x"] + r["w"]) * sx), int((r["y"] + r["h"]) * sx)))
+                            bright = max(lum(px) for px in box.getdata())
+                            worst = min(worst, (lum(r["c"]) + .05) / (bright + .05))
+                        n += 1
+                    check(f"front page Looks tiles ({scheme} theme, {w}px): the words reach AA contrast over the real pictures",
+                          n >= 4 and loaded >= 4 and worst >= 4.5, (n, loaded, round(worst, 2)))
+                    pg.close()
+            b.close()
+        wp.ART_DIR = _art
 
 srv.shutdown()
 shutil.rmtree(DATA, ignore_errors=True)

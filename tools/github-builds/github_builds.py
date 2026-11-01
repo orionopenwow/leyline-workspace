@@ -10,7 +10,8 @@
    its "selected" list) and both repos (WrathUnleashed, Leyline).
 3. The workflow files, copied from tools/github-workflows/ (the source copies) and pushed with gh's credential:
      WrathUnleashed (.github/workflows/): wu-images.yml, wu-hosting.yml, forge.yml (Forge.zip on the rolling
-       release forge-latest, built when forge/ changes), and realm-scripts.yml once the deploy
+       release forge-latest, built when forge/ changes), den-lite.yml (Play solo's server on the rolling
+       release den-lite-latest, built when labs/den-lite/ changes), and realm-scripts.yml once the deploy
        secret exists ("setup\\Set up automatic deploys.bat"), so its deploy job can't fail for lack of it;
      Leyline (the public repo, <workspace>\\.repos\\leyline-public): leyline-launcher.yml. Launcher releases go
        there because players can't download release files from the private repo, and Actions minutes are free
@@ -50,7 +51,7 @@ WU_REPO_NEW = f"{OWNER}/leyline-workspace"
 LY_REPO = f"{OWNER}/Leyline"
 SRC = ROOT / "tools" / "github-workflows"
 NEED_SCOPES = ("workflow", "write:packages", "admin:org")
-WU_FILES = ("wu-images.yml", "wu-hosting.yml", "hub-index.yml", "scout.yml", "forge.yml")
+WU_FILES = ("wu-images.yml", "wu-hosting.yml", "hub-index.yml", "scout.yml", "forge.yml", "den-lite.yml")
 DEPLOY_FILE, DEPLOY_SECRET = "realm-scripts.yml", "WU_DEPLOY_SSH_KEY"
 LY_FILES = ("leyline-launcher.yml",)
 LY_TEMPLATES = ("submit-mod.yml",)                  # .github/ISSUE_TEMPLATE in Leyline: "Submit a mod" (hub index)

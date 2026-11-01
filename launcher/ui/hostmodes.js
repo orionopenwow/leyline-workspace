@@ -326,9 +326,11 @@
     if (live && live.online) {
       const box = mk("div", "hc-live on hx-live-box");
       const t = mk("div", "hc-live-t");
+      // a realm left with its mode's own name: "Duel ladder is up", not "Duel ladder runs Duel ladder"
+      const runs = live.name === live.mode.name ? `${live.name} is up` : `${live.name} runs ${live.mode.name}`;
       t.append(mk("b", "", "You're live"), mk("span", "", live.visibility === "private"
-        ? `${live.name} runs ${live.mode.name}. Send friends your invite link: they make their account there, then play.`
-        : `${live.name} runs ${live.mode.name} and is on the realm list. Send the link to anyone.`));
+        ? `${runs}. Send friends your invite link: they make their account there, then play.`
+        : `${runs} and is on the realm list. Send the link to anyone.`));
       const code = mk("code", "hc-link hx-share", live.link || "");
       code.id = "hx-share";
       t.append(code);
@@ -338,6 +340,10 @@
         try { await navigator.clipboard.writeText(live.link); ev.currentTarget.textContent = "Copied"; } catch (_) { say("Select the link and copy it.", "warn"); }
       }));
       acts.append(btn("Open the console", "btn small", () => { view = "grid"; live = null; place(); }));
+      // optional: your own Claude, as Your Den's "Ask Claude to edit it" (the Agents page, connected once)
+      const claude = btn("Connect Claude", "btn small hx-claude", () => { if (window.LeylineNav) window.LeylineNav.show("agents"); });
+      claude.title = "Your own Claude helps run your realm: connect it once on the Agents page. Every change waits for your OK.";
+      acts.append(claude);
       box.append(acts);
       sw.append(box);
     } else {

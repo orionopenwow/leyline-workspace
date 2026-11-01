@@ -448,6 +448,10 @@ pub struct Den {
     undo: Vec<Undo>,
 }
 
+/// The Den as it is now, kept by itself (every change within seconds, and at logout) and opened again when Den Lite
+/// starts (smoke O1: a Den Lite Den was lost on a restart). An ordinary Den file in the Dens folder.
+pub const AUTOSAVE: &str = "autosave";
+
 /// The launcher's ground file in the Dens folder (launcher/src-tauri/src/host/terrain.rs `GROUND`).
 pub const GROUND_FILE: &str = "yourden.terrain.json";
 
@@ -673,6 +677,27 @@ impl Den {
             extra: self.extra.clone(),
             ..Default::default()
         }
+    }
+
+    /// What the autosave compares: the whole file without its time (same text, nothing to write).
+    pub fn autosave_key(&self) -> String {
+        let mut d = self.to_doc(AUTOSAVE, 0);
+        d.saved = None;
+        serde_json::to_string(&d).unwrap_or_default()
+    }
+
+    /// At start: the autosave opened as the Den (replacing the empty room), with nothing to undo. Some(props) when
+    /// there was one to open.
+    pub fn open_autosave(&mut self, dir: &Path) -> Option<Result<usize, String>> {
+        let path = dir.join(format!("{AUTOSAVE}.den.json"));
+        if !path.is_file() {
+            return None;
+        }
+        Some(read_file(&path).map(|doc| {
+            self.open(&doc, true);
+            self.undo.clear();
+            self.props.len()
+        }))
     }
 
     /// `.den save <name>`: writes `<dir>/<name>.den.json`.

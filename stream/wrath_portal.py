@@ -296,6 +296,7 @@ hostflow = _load_module("wu_hostflow", "hostflow.py")   # /wrath/host: "+ Your s
 creations = _load_module("wu_creations", "creations.py")   # /wrath/workshop: what players made (stream/creations.py)
 leyline_net = _load_module("wu_leyline_net", "leyline_net.py")   # /wrath/leyline/flags.json + the Host pack (stream/leyline_net.py)
 upstream_addons = _load_module("wu_upstream_addons", "upstream_addons.py")   # reviewed upstream addons in all.json (stream/upstream_addons.py)
+looks_mod = _load_module("wu_looks", "looks.py")   # /wrath/looks and the looks in all.json (stream/looks.py, stream/looks.json)
 herokey_mod = _load_module("wu_herokey", "herokey_sso.py")   # Hero Key sign-in on Beacons (stream/herokey_sso.py)
 hub_mod = _load_module("wu_hub", "hub.py")   # /wrath/leyline-preview: the hidden Leyline hub (stream/hub.py)
 playmodes = _load_module("wu_playmodes", "playmodes.py")   # game modes: /wrath/modes.json, Games, ?go=mode: (stream/playmodes.py)
@@ -437,7 +438,7 @@ PLAY_SLICE = os.environ.get("WU_PLAY_SLICE", "").strip() or "mini"
 SAMPLER = os.environ.get("WU_SAMPLER") == "1"
 SAMPLER_NAME = REALM_NAME if BRAND else "Leyline Sample Hangout"
 SAMPLER_NOTE = ("Temporary: a place to try the game. Dalaran, the starting areas and every dungeon and raid stream "
-                "to your browser; add your own 3.3.5a game folder to explore the whole world. Community realms on "
+                "to your browser; add your own game folder to explore the whole world. Community realms on "
                 "Leyline are where the world opens up.")  # TODO(owner): the Sample Hangout's own pitch line
 SLICE_DIR = os.environ.get("WU_SLICE_DIR", "/app/slices")
 ART_DIR = os.environ.get("WU_ART_DIR", "/app/art")
@@ -634,7 +635,7 @@ def gamedata_state() -> dict:
 # What /data and the other game-data routes answer while the killswitch is on (the same words as Caddy's block,
 # stream/server/gamedata-caddy.py; Caddy answers first, this is the second lock).
 GAMEDATA_GONE = (json.dumps({"error": "gamedata_off", "gamedata_streaming": False,
-                             "message": "This realm needs your own game folder. Drop your 3.3.5a game folder on the game page.",
+                             "message": "This realm needs your own game folder. Drop it on the game page.",
                              "own_files": "https://play.openvanilla.app/wrath/play?mode=own"},
                             separators=(",", ":")) + "\n").encode("utf-8")
 
@@ -1129,6 +1130,9 @@ _theme_ver = {"key": None, "v": ""}
 
 # The hub's preview thumbnails (tools/hub-index/hub_index.py thumbs: a GitHub project's own preview image as a small
 # WebP, stream/www-files/art/hub-thumbs/): allowed by pattern, WebP only, nothing else from that folder.
+# Looks: our own in-game pictures for the Looks cards and the front page's Looks tiles (stream/www-files/art/looks/,
+# stream/looks.json look.previews). Game pictures: behind the game data killswitch like the leyline-shot- files.
+LOOKS_ART_RE = re.compile(r"looks/look-[a-z0-9][a-z0-9-]{0,40}\.webp")
 HUB_THUMB_RE = re.compile(r"hub-thumbs/[a-z0-9][a-z0-9._-]{0,99}__[a-z0-9][a-z0-9._-]{0,99}\.webp")
 HUB_THUMB_MAX = 200_000
 
@@ -1159,6 +1163,8 @@ def art_type(name: str) -> str:
     if not isinstance(name, str) or ".." in name:
         return ""
     if HUB_THUMB_RE.fullmatch(name):
+        return "image/webp"
+    if LOOKS_ART_RE.fullmatch(name):
         return "image/webp"
     if AVATAR_ART_RE.fullmatch(name):
         return "image/svg+xml"
@@ -1769,7 +1775,7 @@ def _sample_info() -> dict:
                 "blurb_html": f'<p>{html.escape(SAMPLER_NOTE)} (<a href="{GAME_FOLDER_HELP}">How to add your game folder</a>.)</p>'}
     return {"name": REALM_NAME, "temporary": False,
             "blurb_html": f'<p>{OFFICIAL_LEAD}: Dalaran in your browser, or the whole world with your own game files '
-                          f'(drop your 3.3.5a game folder on the game page: <a href="{GAME_FOLDER_HELP}">how</a>).</p>'}
+                          f'(drop your game folder on the game page: <a href="{GAME_FOLDER_HELP}">how</a>).</p>'}
 
 
 def realms_page(query: dict | None = None) -> bytes:
@@ -1802,7 +1808,7 @@ def realms_page(query: dict | None = None) -> bytes:
         + (f'<p>{html.escape(SAMPLER_NOTE)} '
            f'(<a href="{GAME_FOLDER_HELP}">How to add your game folder</a>.)</p>' if SAMPLER else
            f'<p>{OFFICIAL_LEAD}: Dalaran in your browser, or the whole world with your own game files '
-           f'(drop your 3.3.5a game folder on the game page: <a href="{GAME_FOLDER_HELP}">how</a>).</p>') +
+           f'(drop your game folder on the game page: <a href="{GAME_FOLDER_HELP}">how</a>).</p>') +
         '<p><a class="btn primary" href="/wrath">Play</a></p>'
         + share_box("/wrath/r/wrath") + '</div>')
     realms, ok = listed_realms()
@@ -2336,7 +2342,7 @@ def site_chrome(page: bytes, path: str, next_step: str = "play") -> bytes:
 # unchanged: the same forms, endpoints, tokens and scripts (with the page's CSP nonce, which then also runs the hub's
 # small HUB_JS). Off, or without the hub: the old frames below, as before.
 
-HUB_ACTIVE = {"play": "play", "realms": "realms", "mods": "mods", "workshop": "mods", "docs": "docs", "host": "host"}
+HUB_ACTIVE = {"play": "play", "realms": "realms", "mods": "mods", "workshop": "mods", "docs": "docs", "host": "host", "looks": "looks"}
 _HUB_DESC_RE = re.compile(rb'<meta name="description" content="Leyline: one launcher[^"]*">')
 
 
@@ -2650,7 +2656,7 @@ def leyline_page() -> bytes:
         + feat("Try it here", "A Goldshire Inn demo on this page, with no sign-up.", True)
         + feat("Builders' tools", "Build in the world with your own models, and share it on the Workshop.", True)
         + '</div></section>'
-        '<p class="ly-fine">The full world needs your own 3.3.5a game files; the browser streams only small areas '
+        '<p class="ly-fine">The full world needs your own game files; the browser streams only small areas '
         '(Dalaran, the starting zones, dungeons). '
         f'<a href="{e(LEYLINE_REPO)}" rel="noopener noreferrer">Source code</a></p>')
     meta = card_meta("/wrath/leyline", "Leyline · an open-source, community-built MMO project")
@@ -2775,6 +2781,32 @@ def start_page() -> bytes:
     body = f'<header class="ly-hero st"><h1>Start here</h1><p class="ly-lede">New to Leyline? Pick one. Every one is free, and you can do the rest later.</p></header>' \
            f'<section class="ly-panel st">{grid}{fine}</section>'
     return ly_shell(title, body, START_PATH, "", "", START_CSS, meta=meta)
+
+
+# ----------------------------------------------------------------------------------------------
+# /wrath/looks: Looks, graphics packs, UI looks and graphics presets (stream/looks.py, stream/looks.json; owner 1 Nov:
+# "make the graphical upgrades and changes a main part of our site"). Filters are links (?v=<client>&t=<type>), no
+# script. One-click looks open the launcher (leyline://install/look:<slug>); the rest link to their author's page.
+# ----------------------------------------------------------------------------------------------
+
+LOOKS_PATH = "/wrath/looks"
+
+
+def looks_page(query: dict) -> bytes:
+    """The Looks page, in the hub's frame when the front door is on, else in the Leyline look."""
+    q = {k: (v[0] if isinstance(v, list) else v) for k, v in (query or {}).items() if k in ("v", "t")}
+    labels = getattr(hub_mod, "CLIENT_LABEL", None) if hub_mod is not None else None
+    try:
+        offered = hub_mod.offered_builds() if hub_mod is not None else None
+    except Exception:   # noqa: BLE001
+        offered = None
+    inner = looks_mod.body(q, labels=labels, offered=offered, download=launcher_download(), pictures=not gamedata_off())
+    title = f"Looks · {REALM_NAME}"
+    meta = card_meta(LOOKS_PATH, "Looks · Leyline")
+    framed = hub_frame(title, inner, LOOKS_PATH, "looks", css=WU_BOX_CSS + looks_mod.CSS, meta=meta)
+    if framed is not None:
+        return framed
+    return ly_shell(title, f'<section class="ly-panel">{inner}</section>', LOOKS_PATH, "", "", WU_BOX_CSS + looks_mod.CSS, meta=meta)
 
 
 def mods_who(cookie: str, ip: str, ua: str):
@@ -2981,7 +3013,7 @@ class PageHandler(BaseHTTPRequestHandler):
     def art(self, name: str) -> None:
         """GET /wrath/art/<name>: the site art and theme, from the allow-list only, cached for a week.
         Readable from any site (fonts need CORS; it is our own art, nothing private)."""
-        if (name in GAMEDATA_ART or home_art(name)) and gamedata_off():
+        if (name in GAMEDATA_ART or home_art(name) or LOOKS_ART_RE.fullmatch(name)) and gamedata_off():
             self.send(410, GAMEDATA_GONE, "application/json; charset=utf-8")
             return
         body = art_bytes(name)
@@ -3621,6 +3653,8 @@ class PageHandler(BaseHTTPRequestHandler):
                 body = leyline_net.add_hostpack(body)   # the Host pack as a "tools" project (stream/leyline_net.py)
             if path == "/wrath/mods/all.json" and status == 200 and upstream_addons is not None:
                 body = upstream_addons.add_upstream(body)   # curated addons from their authors (tools/addon-curate)
+            if path == "/wrath/mods/all.json" and status == 200 and looks_mod is not None:
+                body = looks_mod.add_looks(body)   # Looks: graphics packs, UI looks and presets (stream/looks.py)
             if ctype.startswith("text/html"):
                 body = site_chrome(body, path)
             self.send(status, body, ctype, headers=extra)
@@ -3650,6 +3684,12 @@ class PageHandler(BaseHTTPRequestHandler):
             return
         if bugreport is not None and bugreport.match(path):   # /wrath/bugs: Report a bug (stream/bugreport.py)
             bugreport.get(self, path, query)
+            return
+        if path == LOOKS_PATH and looks_mod is not None:   # Looks: graphics packs, UI looks, presets (stream/looks.py)
+            if not browse_limit.hit(rl_bucket(self.ip()), 600):
+                self.send(429, busy_page(back=path))
+                return
+            self.send(200, looks_page(query))
             return
         if path == START_PATH:   # Start here: the one path for new players
             if not browse_limit.hit(rl_bucket(self.ip()), 600):

@@ -10,6 +10,10 @@
 --   .den companion [away]       the same (the word the launcher and the website use: they never say her name)
 --   .den ask <words>            to her, for your assistant ("a well by the door")
 --   "Jaina, <words>"            said in chat within 10 yards of her: the same
+--   "Jaina, stay" / "follow" / "come" / "tips" / "go away"   (or .den jaina stay|follow|come|tips): her own short
+--                               commands, heard anywhere in the Den, never written down for the assistant. With
+--                               nobody reading her notes, an ask her built-in guide knows (C.GUIDE) gets its answer
+--                               at once (and is still written down): she is a guide with no assistant connected.
 --
 -- The creature: entry 32364, "Lady Jaina Proudmoore" (AzerothCore world database, creature_template, checked
 -- 2026-11-01 against master): the game's own Jaina model (creature_template_model 30865, the one every 3.3.5a
@@ -53,7 +57,8 @@ local C = {
     CHUNK = tonumber(os.getenv("OV_DEN_COMPANION_CHUNK") or "") or 20, PLACE_EVERY = 6,
     FILE_MAX = 512 * 1024,
     BRAND = { "world of warcraft", "warcraft", "lich king", "blizzard" },
-    out = {},        -- owner guid -> { guid = creature guid, map }
+    out = {},        -- owner guid -> { guid = creature guid, map, stay }
+    tipN = 0,
     asks = {}, nextAsk = 1, said = 0, queue = {}, lastSay = 0, lastAsk = {}, lastBeat = 0,
     placing = nil,   -- { label, done, of, state, why, chunks, at, owner }
     lastPlace = nil, -- what the heartbeat says about the last build
@@ -192,6 +197,78 @@ function C.speak(player, text)
 end
 
 ------------------------------------------------------------------------------------------------
+-- her short commands and her own guide (the same as Den Lite's labs/den-lite/src/companion.rs)
+------------------------------------------------------------------------------------------------
+local CMDS = {
+    follow = { "follow", "follow me", "with me", "come with me", "let's go", "lets go", "heel" },
+    stay = { "stay", "stay here", "wait", "wait here", "stop", "hold", "stand still" },
+    come = { "come", "come here", "here", "to me", "come back", "over here" },
+    tips = { "help", "help me", "tip", "tips", "a tip", "hint", "what next", "what now", "what should i do", "what can i do",
+        "what do i do", "what do i do now", "ideas" },
+    away = { "go away", "bye", "goodbye", "dismiss", "leave", "go home" },
+}
+-- The whole line, so "stay by the door and add a bench" is an ask.
+function C.command(words)
+    local t = tostring(words or ""):lower():gsub("^%s+", ""):gsub("[%.!%?%s]+$", "")
+    t = t:gsub("^please%s+", ""):gsub("%s+please$", ""):gsub(",$", "")
+    for name, list in pairs(CMDS) do
+        for _, w in ipairs(list) do if t == w then return name end end
+    end
+    return nil
+end
+
+-- TODO(owner): a voice pass on the lines.
+C.GUIDE = {
+    { { "place", "put", "build", "chair", "table", "lamp", "furniture" }, "Type .den place and a name, like .den place chair. The Builder (Edit mode) moves, turns and sizes each piece." },
+    { { "stamp", "stamps", "inn", "house", "camp", "campfire" }, "Stamps are whole builds: .den stamps lists them, .den stamp inn now puts one where you stand." },
+    { { "undo", "mistake", "wrong", "remove", "delete" }, ".build undo takes the last piece or stamp back." },
+    { { "save", "keep", "file" }, ".den save and a name keeps your Den in a file. The launcher's Saved Dens opens it again." },
+    { { "load", "open", "files", "saved" }, ".den files lists your saved Dens; .den load and a name opens one." },
+    { { "grow", "bigger", "size", "room", "space", "small" }, "Your Den's size is set by its host; the launcher's Your Den page can make it bigger." },
+    { { "addon", "addons", "mod", "mods", "interface", "ui" }, "Add addons and mods on the launcher's Mods page. Your Den is a quiet place to try them." },
+    { { "mode", "modes", "minigolf", "game" }, ".den mode lists game modes and how to run one." },
+    { { "ground", "terrain", "hill", "hills", "pond", "trees", "forge" }, "To shape the ground, open Your Den in the launcher and press Open in Forge." },
+    { { "friend", "friends", "invite", "together", "share" }, "Press Invite a friend on the launcher's Your Den page: it copies your invite link." },
+    { { "level", "levelling", "leveling", "quest", "quests", "fight", "dungeon", "dungeons", "xp" }, "Your Den is for building. To level with helper bots, pick Solo leveling in the launcher." },
+    { { "claude", "assistant", "ai", "agent" }, "Connect your own assistant once on the launcher's Agents page. It builds with you after your OK." },
+    { { "follow", "stay", "come", "wait" }, "Say \"Jaina, stay\" and I wait; \"Jaina, follow\" and I come along; \"Jaina, come\" and I walk over." },
+}
+function C.guide(text)
+    local words = {}
+    for w in tostring(text or ""):lower():gmatch("[%w]+") do words[w] = true end
+    for _, g in ipairs(C.GUIDE) do
+        for _, k in ipairs(g[1]) do if words[k] then return g[2] end end
+    end
+    return nil
+end
+C.TIPS = {
+    "Try a whole build: .den stamp inn now.",
+    "Turn to face where a piece should look, then place it: it faces the way you face.",
+    "Say \"Jaina, \" and what you'd like built: your assistant reads it once it is connected on the Agents page.",
+    "Press Invite a friend in the launcher to build together.",
+}
+
+-- One command: stay (she stops where she is), follow / come (she walks to you and follows), tips, away.
+function C.order(player, what)
+    if what == "tips" then
+        C.tipN = C.tipN % #C.TIPS + 1
+        return C.speak(player, C.TIPS[C.tipN])
+    end
+    local o = C.out[player:GetGUIDLow()]
+    local c = C.find(player)
+    if not (o and c) then return say(player, "Your companion isn't here: |cffffff00.den jaina|r calls her.") end
+    if what == "away" then return C.dismiss(player) end
+    if what == "stay" then
+        o.stay = true
+        if not try(c, "MoveIdle") then try(c, "StopMoving") end
+        return C.speak(player, "I'll wait here.")
+    end
+    o.stay = nil
+    try(c, "MoveFollow", player, C.FOLLOW, C.ANGLE)
+    return C.speak(player, what == "come" and "On my way." or "Right behind you.")
+end
+
+------------------------------------------------------------------------------------------------
 -- asks: what the owner says to her, for their assistant
 ------------------------------------------------------------------------------------------------
 local function listening()
@@ -219,6 +296,8 @@ function C.ask(player, text)
     C.beat(true)
     if listening() then
         C.speak(player, "Let me think about that.")
+    elseif C.guide(text) then
+        C.speak(player, C.guide(text))   -- her own answer at once; still written down for the assistant
     else
         C.speak(player, "I've written that down. Nobody is reading my notes right now: open the Agents page in Leyline and "
             .. "ask your assistant to read what you told me.")
@@ -420,7 +499,7 @@ function C.follow(player)
     end
     if not c then C.out[player:GetGUIDLow()] = nil; C.summon(player); return end
     local dx, dy = (tonumber(try(c, "GetX")) or player:GetX()) - player:GetX(), (tonumber(try(c, "GetY")) or player:GetY()) - player:GetY()
-    if math.sqrt(dx * dx + dy * dy) > C.FAR then
+    if math.sqrt(dx * dx + dy * dy) > C.FAR and not o.stay then   -- told to stay: she stays
         local x, y, z, ori = spot(player)
         if not try(c, "NearTeleport", x, y, z, ori) then C.dismiss(player, true); C.summon(player); return end
         try(c, "MoveFollow", player, C.FOLLOW, C.ANGLE)
@@ -450,6 +529,9 @@ function C.jaina(player, words)
         if not C.dismiss(player) then say(player, "Your companion isn't here.") end
         return
     end
+    if w == "stay" or w == "wait" or w == "follow" or w == "come" or w == "tips" or w == "tip" or w == "help" then
+        return C.order(player, (w == "wait" and "stay") or ((w == "tip" or w == "help") and "tips") or w)
+    end
     if not inside(player) then return say(player, "Your companion stays in your Den: |cffffff00.den home|r first.") end
     if C.isOut(player) then
         C.dismiss(player, true)
@@ -469,6 +551,8 @@ function C.onChat(event, player, msg, msgType)
     if not text or not isOwner(player) then return end
     local c = C.find(player)
     if not c then return end
+    local cmd = C.command(text)
+    if cmd then return pcall(C.order, player, cmd) end   -- her short commands: anywhere in the Den
     local dx, dy = (tonumber(try(c, "GetX")) or player:GetX()) - player:GetX(), (tonumber(try(c, "GetY")) or player:GetY()) - player:GetY()
     if math.sqrt(dx * dx + dy * dy) > C.HEAR then return end
     pcall(C.ask, player, text)
@@ -476,7 +560,7 @@ end
 
 local function help(player, r)
     if r ~= "owner" then return end
-    say(player, "  Your companion: |cffffff00.den jaina|r (|cffffff00away|r sends her off); |cffffff00.den ask <words>|r, or say "
+    say(player, "  Your companion: |cffffff00.den jaina|r (|cffffff00stay|r, |cffffff00follow|r, |cffffff00come|r, |cffffff00tips|r; |cffffff00away|r sends her off); |cffffff00.den ask <words>|r, or say "
         .. "\"Jaina, ...\" near her: your own assistant answers and builds, after you approve in the launcher.")
 end
 

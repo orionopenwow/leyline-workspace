@@ -158,6 +158,7 @@ fn leave(shared: &Shared, id: u64) {
         *live = None;
         drop(live);
         shared.companion.lock().unwrap_or_else(|e| e.into_inner()).away();
+        shared.autosave();
     }
 }
 
@@ -453,7 +454,84 @@ fn enter_world(c: &Writer, shared: &Shared, p: Pos) -> io::Result<()> {
     for l in TUTORIAL {
         say(c, l)?;
     }
-    cheer(c, shared, "first-visit")
+    cheer(c, shared, "first-visit")?;
+    // the companion: at your side from the start (Config::companion), one short line, then quiet
+    let mut comp = shared.companion.lock().unwrap();
+    comp.arrive(now());
+    let inside = shared.den.lock().unwrap().inside(p.x, p.y, p.z);
+    if shared.cfg.companion && inside && !comp.out {
+        let at = comp.come(p, now_ms());
+        drop(comp);
+        c.send(&companion_create(at))?;
+        monster_say(c, companion::GREET)?;
+        beat_now(shared);
+    }
+    Ok(())
+}
+
+/// What the tips look at (companion::TipCtx): the Den now.
+fn tip_ctx(shared: &Shared) -> companion::TipCtx {
+    let (props, size) = { let d = shared.den.lock().unwrap(); (d.props.len(), d.ring() + 1) };
+    let saved = den::list_names(&shared.cfg.den_dir).iter().any(|n| n != "backup" && n != den::AUTOSAVE);
+    companion::TipCtx { props, saved, size }
+}
+
+/// "Jaina, stay" and the other short commands (companion::command), and `.den companion stay|follow|come|tips`.
+fn order(c: &Writer, shared: &Shared, p: Pos, cmd: companion::Cmd) -> io::Result<()> {
+    use companion::Cmd;
+    let (ms, t) = (now_ms(), now());
+    if cmd == Cmd::Help {
+        let ctx = tip_ctx(shared);
+        let mut comp = shared.companion.lock().unwrap();
+        comp.heard_now(t);
+        let tip = comp.tip(ctx);
+        let out = comp.out;
+        drop(comp);
+        return if out { monster_say(c, tip) } else { say(c, tip) };
+    }
+    let mut comp = shared.companion.lock().unwrap();
+    if !comp.out {
+        drop(comp);
+        return say(c, "Your companion isn't here: .den companion calls her.");
+    }
+    comp.heard_now(t);
+    match cmd {
+        Cmd::Stay => {
+            let here = comp.stay(ms);
+            drop(comp);
+            // she stops where she is (a walk of nothing ends the one she was on)
+            walk(c, here, here, 100, shared.companion.lock().unwrap().moves)?;
+            monster_say(c, companion::STAYING)
+        }
+        Cmd::Follow => {
+            comp.follow_on();
+            let step = comp.follow(p, ms);
+            let id = comp.moves;
+            drop(comp);
+            if let Some((from, to, d)) = step {
+                walk(c, from, to, d, id)?;
+            }
+            monster_say(c, companion::FOLLOWING)
+        }
+        Cmd::Come => {
+            let step = comp.come_walk(p, ms);
+            let id = comp.moves;
+            drop(comp);
+            if let Some((from, to, d)) = step {
+                walk(c, from, to, d, id)?;
+            }
+            monster_say(c, companion::COMING)
+        }
+        Cmd::Away => {
+            comp.dismiss();
+            drop(comp);
+            monster_say(c, companion::BYE)?;
+            c.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(companion::GUID), target_died: false })?;
+            beat_now(shared);
+            Ok(())
+        }
+        Cmd::Help => Ok(()),
+    }
 }
 
 /// An encouragement line, once ever (cheers.rs), in the middle of the screen: never in the chat frame.
@@ -464,13 +542,13 @@ fn cheer(c: &Writer, shared: &Shared, key: &str) -> io::Result<()> {
     }
 }
 
-/// The first-minute tutorial, said at every login (four lines: build, undo, save).
+/// The first-minute tutorial, said at every login (five lines: build, a stamp, undo, save, grow and the companion).
 const TUTORIAL: &[&str] = &[
     "Quick start: 1) .den place chair  puts a chair in front of you (.den find lamp: what's there to place)",
     "2) .den stamp inn now  puts down a whole inn (.den stamps: the others)",
     "3) .build undo  takes the last one back",
     "4) .den save mine  keeps your Den in a file; the launcher's Saved Dens opens it again",
-    "5) .den grow  makes the room bigger; .den companion calls your companion (say \"Jaina, ...\" to ask your assistant)",
+    "5) .den grow  makes the room bigger. Your companion helps: say \"Jaina, tips\", \"Jaina, stay\" or \"Jaina, follow\" (.den companion calls her)",
 ];
 
 fn send_creates(c: &Writer, objs: &[WorldObject]) -> io::Result<()> {
@@ -509,7 +587,7 @@ const HELP: &[&str] = &[
     ".build undo: take the last change back",
     ".den save <name> / .den load <name> [replace|add] / .den files: your Den in a file",
     ".den room white|stone|wood: the room's look; .den grow / .den size [1-4]: how big it is",
-    ".den companion [away]: your companion; .den ask <words> or \"Jaina, ...\" near her: to your assistant (Leyline's Agents page)",
+    ".den companion [stay|follow|come|tips|away]: your companion (or say \"Jaina, stay\"); .den ask <words> or \"Jaina, ...\" near her: to your assistant (Leyline's Agents page), or her own tips",
     ".den mode [id]: Leyline's game modes and how to try one on this PC; .den mods: the addons and mods in your game",
 ];
 
@@ -660,12 +738,12 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                 if !shared.companion.lock().unwrap().out {
                     return say(c, "Your companion isn't here.");
                 }
-                monster_say(c, companion::BYE)?;
-                shared.companion.lock().unwrap().away();
-                c.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(companion::GUID), target_died: false })?;
-                beat_now(shared);
-                Ok(())
+                order(c, shared, p, companion::Cmd::Away)
             }
+            "stay" | "wait" => order(c, shared, p, companion::Cmd::Stay),
+            "follow" => order(c, shared, p, companion::Cmd::Follow),
+            "come" => order(c, shared, p, companion::Cmd::Come),
+            "tips" | "tip" | "help" => order(c, shared, p, companion::Cmd::Help),
             _ => {
                 if !shared.den.lock().unwrap().inside(p.x, p.y, p.z) {
                     return say(c, "Your companion stays in your Den: come back inside first.");
@@ -713,8 +791,12 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                 message: text.into(),
                 tag: PlayerChatTag::None,
             })?;
-            // "Jaina, ..." near her: she hears it too (said aloud as usual)
+            // "Jaina, ..." near her: she hears it too (said aloud as usual). The short commands ("Jaina, come") are
+            // hers wherever she is in the Den; the rest is an ask, heard within HEAR yards.
             if let Some(words) = companion::heard(text) {
+                if let Some(cmd) = companion::command(&words) {
+                    return order(c, shared, p, cmd);
+                }
                 let comp = shared.companion.lock().unwrap();
                 let near = comp.out && {
                     let at = comp.pos(now_ms());
@@ -883,6 +965,9 @@ pub fn companion_ticker(shared: Arc<Shared>) {
         std::thread::sleep(Duration::from_millis(500));
         n += 1;
         let _ = companion_tick(&shared, n % 2 == 0);
+        if n % 4 == 0 {
+            shared.autosave(); // every 2 seconds, when the Den changed
+        }
     }
 }
 
@@ -893,17 +978,17 @@ fn companion_tick(shared: &Shared, read: bool) -> io::Result<()> {
         shared.companion.lock().unwrap().read_lines(&shared.cfg.den_dir, now);
     }
     if let Some((_, w, p)) = live {
-        if shared.companion.lock().unwrap().out {
-            let inside = shared.den.lock().unwrap().inside(p.x, p.y, p.z);
+        let (inside, props) = { let d = shared.den.lock().unwrap(); (d.inside(p.x, p.y, p.z), d.props.len()) };
+        let (out, wanted) = { let c = shared.companion.lock().unwrap(); (c.out, c.wanted) };
+        if out {
             let mut comp = shared.companion.lock().unwrap();
-            let here = comp.pos(ms);
             if !inside {
                 comp.away();
                 drop(comp);
                 w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(companion::GUID), target_died: false })?;
-                say(&w, "Your companion stays in your Den: .den companion calls her again there.")?;
+                say(&w, "Your companion stays in your Den and joins you again when you're back.")?;
                 beat_now(shared);
-            } else if ((here.x - p.x).powi(2) + (here.y - p.y).powi(2)).sqrt() > companion::FAR {
+            } else if comp.too_far(p, ms) {
                 let at = comp.come(p, ms);
                 drop(comp);
                 w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(companion::GUID), target_died: false })?;
@@ -911,7 +996,7 @@ fn companion_tick(shared: &Shared, read: bool) -> io::Result<()> {
             } else {
                 let step = comp.follow(p, ms);
                 let id = comp.moves;
-                let line = comp.next_line(now);
+                let line = comp.next_line(now).or_else(|| comp.nudge(now, props).map(String::from));
                 drop(comp);
                 if let Some((from, to, t)) = step {
                     walk(&w, from, to, t, id)?;
@@ -920,6 +1005,12 @@ fn companion_tick(shared: &Shared, read: bool) -> io::Result<()> {
                     monster_say(&w, &l)?;
                 }
             }
+        } else if wanted && inside {
+            // back in the Den: she joins you again by herself
+            let at = shared.companion.lock().unwrap().come(p, ms);
+            w.send(&companion_create(at))?;
+            monster_say(&w, companion::BACK)?;
+            beat_now(shared);
         }
     }
     let (owner, room) = beat_parts(shared);

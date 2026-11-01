@@ -39,6 +39,11 @@ fn stamps() -> PathBuf {
 }
 
 fn server(tag: &str, gender: HeroGender) -> (den_lite::Running, PathBuf) {
+    server_with(tag, gender, false)
+}
+
+/// `companion`: at the player's side from login (the program's default; the older tests call her themselves).
+fn server_with(tag: &str, gender: HeroGender, companion: bool) -> (den_lite::Running, PathBuf) {
     let dir = std::env::temp_dir().join(format!("den-lite-test-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let cfg = Config {
@@ -48,6 +53,7 @@ fn server(tag: &str, gender: HeroGender) -> (den_lite::Running, PathBuf) {
         hero: Hero { name: "Wren".into(), gender },
         den_dir: dir.clone(),
         stamps_dir: stamps(),
+        companion,
         ..Config::default()
     };
     (start(cfg).expect("den lite starts"), dir)
@@ -356,7 +362,7 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
     // the quick start: five lines, the first one places a chair, the last grows the room and calls the companion
     let tutorial: Vec<String> = (0..5).map(|_| w.until_line().1).collect();
     assert!(tutorial[0].contains(".den place chair") && tutorial[3].contains(".den save"), "{tutorial:?}");
-    assert!(tutorial[4].contains(".den grow") && tutorial[4].contains(".den companion"), "{tutorial:?}");
+    assert!(tutorial[4].contains(".den grow") && tutorial[4].contains("Jaina, tips") && tutorial[4].contains(".den companion"), "{tutorial:?}");
     let names: Vec<u16> = frames.iter().map(|f| f.opcode).collect();
     let at = |op: u16| names.iter().position(|&o| o == op).unwrap_or_else(|| panic!("no {op:#x} in {names:x?}"));
     // SMSG_LOGIN_VERIFY_WORLD first, then account data, ..., the player, world states, the room
@@ -688,6 +694,11 @@ fn the_den_grows_and_the_companion_talks_with_the_assistant() {
         _ => None,
     });
     assert!(line.starts_with("Your companion stays in your Den"), "{line}");
+    // back inside: she joins again by herself; sent away, she stays away
+    w.send(&heartbeat(mx, my, mz, 0.0));
+    assert_eq!(w.until_she_says().2, den_lite::companion::BACK);
+    w.say(".den companion away");
+    assert_eq!(w.until_she_says().2, den_lite::companion::BYE);
     w.say(".den companion away");
     assert_eq!(w.until_line().1, "Your companion isn't here.");
 
@@ -705,9 +716,237 @@ fn the_den_grows_and_the_companion_talks_with_the_assistant() {
     let l = w.until_line().1;
     assert!(l.starts_with("Your game loaded 2 addons: Leyline_Addon0, Leyline_Addon1"), "{l}");
     w.until_line();
-    assert!(w.until_line().1.contains("--client"));
+    assert!(w.until_line().1.contains("Leyline launcher"), "no command-line flag shown to a player");
     w.send(&CMSG_LOGOUT_REQUEST {});
     w.until(|f| matches!(f.msg, Some(ServerOpcodeMessage::SMSG_LOGOUT_COMPLETE)).then_some(()));
     assert!(srv.shared.live.lock().unwrap().is_none());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Logs in on `login_addr` and enters the world; returns the client and every chat line up to the quick start's end.
+fn into_world_at(login_addr: SocketAddr) -> (World, Vec<String>) {
+    let (key, _, address) = login(login_addr, "DEN", "den").expect("login");
+    let mut w = World::connect(&address, "DEN", key, 2);
+    w.send(&CMSG_CHAR_ENUM {});
+    let ch = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_CHAR_ENUM(e)) => Some(e.characters[0].guid),
+        _ => None,
+    });
+    w.send(&CMSG_PLAYER_LOGIN { guid: ch });
+    let lines = (0..6).map(|_| w.until_line().1).collect();
+    (w, lines)
+}
+
+/// The real program (what the launcher's host/lite.rs runs, with its command line), on free ports.
+struct Program(std::process::Child);
+
+impl Drop for Program {
+    /// Stopped also when a check fails, so no server is left running after the test.
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+fn run_program(dir: &std::path::Path, login_port: u16, world_port: u16) -> Program {
+    let child = std::process::Command::new(env!("CARGO_BIN_EXE_den-lite"))
+        .args(["--dens", &dir.display().to_string(), "--bind", "127.0.0.1", "--password", "den"])
+        .args(["--stamps", &stamps().display().to_string()])
+        .args(["--login-port", &login_port.to_string(), "--world-port", &world_port.to_string()])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("den-lite runs");
+    for _ in 0..100 {
+        if TcpStream::connect(("127.0.0.1", login_port)).is_ok() {
+            return Program(child);
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    panic!("den-lite never answered on {login_port}");
+}
+
+fn free_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
+}
+
+/// The release smoke (docs/smoke/2026-11-01-den-host.md): a new player's first session on the real program, then the
+/// program stopped and started again (the launcher closed, the PC restarted) and the saved Den opened.
+#[test]
+fn a_new_players_den_survives_a_restart_of_the_program() {
+    let dir = std::env::temp_dir().join(format!("den-lite-test-restart-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (lp, wp) = (free_port(), free_port());
+    let login_addr: SocketAddr = ([127, 0, 0, 1], lp).into();
+    let t0 = std::time::Instant::now();
+    let prog = run_program(&dir, lp, wp);
+    let started = t0.elapsed();
+    let (mut w, lines) = into_world_at(login_addr);
+    let in_world = t0.elapsed();
+    eprintln!("smoke: started in {started:?}, in the world at {in_world:?}");
+    for l in &lines {
+        eprintln!("smoke: login line: {l}");
+    }
+    assert!(lines[0].starts_with("Welcome to your Den: 0 props"), "{lines:?}");
+    assert!(lines.iter().any(|l| l.contains(".den place chair")), "{lines:?}");
+
+    // the quick start's own commands, as typed
+    let say = |w: &mut World, cmd: &str| -> String {
+        w.say(cmd);
+        let l = w.until_line().1;
+        eprintln!("smoke: {cmd} -> {l}");
+        l
+    };
+    assert!(say(&mut w, ".den find lamp").contains(".den place"), "the quick start's .den find lamp finds something");
+    assert!(say(&mut w, ".den place chair").contains("is down (1 props)"));
+    assert!(say(&mut w, ".den stamp inn now").contains("is down"));
+    assert!(say(&mut w, ".build undo").len() > 0);
+    w.send(&heartbeat(16226.2 - 3.0, 16257.0, 14.2, 0.0));
+    assert!(say(&mut w, ".den place lantern").contains("is down (1 props)"));
+    let saved = say(&mut w, ".den save mine");
+    assert!(saved.starts_with("Saved to a file (2 props)"), "{saved}");
+    assert_eq!(den::read_file(&dir.join("mine.den.json")).unwrap().props.len(), 2);
+
+    // the program stops (the launcher's stop: a kill) and starts again on the same folder
+    // the launcher knows it by its heartbeat and stops it with the stop file (host/lite.rs)
+    let beat = std::fs::read_to_string(dir.join("den-lite.alive")).expect("the heartbeat");
+    assert_eq!(beat.split_whitespace().nth(2), Some(lp.to_string().as_str()), "{beat}");
+    drop(w);
+    let mut prog = prog;
+    std::fs::write(dir.join("den-lite.stop"), "").unwrap();
+    let mut stopped = None;
+    for _ in 0..60 {
+        stopped = prog.0.try_wait().unwrap();
+        if stopped.is_some() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(stopped.is_some_and(|s| s.success()), "the stop file stops it");
+    assert!(!dir.join("den-lite.alive").exists() && !dir.join("den-lite.stop").exists());
+    let t1 = std::time::Instant::now();
+    let _prog = run_program(&dir, lp, wp);
+    let (mut w, lines) = into_world_at(login_addr);
+    eprintln!("smoke: restarted and back in the world in {:?}", t1.elapsed());
+    eprintln!("smoke: after the restart: {}", lines[0]);
+    assert!(say(&mut w, ".den files").contains("mine"));
+    let opened = say(&mut w, ".den load mine");
+    assert!(opened.starts_with("Opened: 2 props") || opened.contains("replace"), "{opened}");
+    if opened.contains("replace") {
+        assert_eq!(say(&mut w, ".den load mine replace"), "Opened: 2 props.");
+    }
+    assert_eq!(say(&mut w, ".den size").split(':').next().unwrap(), "Your Den is size 1 of 4");
+    assert!(say(&mut w, ".den grow").starts_with("Your Den is size 2 of 4"));
+    // the real program: she is at your side from login, so calling her answers in her own voice
+    w.say(".den companion");
+    assert_eq!(w.until_she_says().2, den_lite::companion::HERE);
+    assert!(say(&mut w, ".den mode").starts_with("Host templates"));
+    w.until_line();
+    w.until_line();
+    assert!(say(&mut w, ".den mods").starts_with("Your game loaded 2 addons"));
+    w.until_line();
+    w.until_line();
+    assert!(say(&mut w, ".den").starts_with(".den place"));
+    w.send(&CMSG_LOGOUT_REQUEST {});
+    w.until(|f| matches!(f.msg, Some(ServerOpcodeMessage::SMSG_LOGOUT_COMPLETE)).then_some(()));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The solo session's helper: she is there from login (one greeting), takes "Jaina, stay / come / follow / tips"
+/// without writing them down for the assistant, answers from her own guide with no assistant connected, stays put
+/// when told and walks over when called, and never comes back once sent away.
+#[test]
+fn the_companion_is_there_from_login_and_takes_short_commands() {
+    let (srv, dir) = server_with("helper", HeroGender::Female, true);
+    let (key, _, address) = login(srv.login, "DEN", "den").expect("login");
+    let mut w = World::connect(&address, "DEN", key, 0);
+    w.send(&CMSG_CHAR_ENUM {});
+    let ch = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_CHAR_ENUM(e)) => Some(e.characters[0].guid),
+        _ => None,
+    });
+    w.send(&CMSG_PLAYER_LOGIN { guid: ch });
+    let (mx, my, mz) = (16226.2f32, 16257.0f32, 14.2f32);
+    // her create and one greeting, after the quick start
+    let created = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_UPDATE_OBJECT(u)) => u.objects.iter().any(|o| matches!(o, Object::CreateObject { guid3, .. } if guid3.guid() == den_lite::companion::GUID)).then_some(()),
+        _ => None,
+    });
+    let _ = created;
+    assert_eq!(w.until_she_says().2, den_lite::companion::GREET);
+    assert!(srv.shared.companion.lock().unwrap().out);
+    // tips that fit: the Den is empty, so the first one places a chair (no assistant needed)
+    w.say("Jaina, tips");
+    assert!(w.until_she_says().2.contains(".den place chair"));
+    // a question her guide knows, with nobody reading her notes: her own answer, and it is still written down
+    w.say("Jaina, how do I save my den?");
+    let a = w.until_she_says().2;
+    assert!(a.starts_with(".den save"), "{a}");
+    std::thread::sleep(Duration::from_millis(600));
+    let cin: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("companion-in.json")).unwrap()).unwrap();
+    assert_eq!(cin["asks"].as_array().unwrap().len(), 1, "the command (tips) isn't an ask; the question is");
+    // stay: the player walks 12 yards, she doesn't follow
+    w.say("Jaina, stay");
+    assert_eq!(w.until_she_says().2, den_lite::companion::STAYING);
+    let id0 = srv.shared.companion.lock().unwrap().moves;
+    w.send(&heartbeat(mx + 12.0, my, mz, 0.0));
+    std::thread::sleep(Duration::from_millis(1200));
+    assert_eq!(srv.shared.companion.lock().unwrap().moves, id0, "staying");
+    // come, from 12 yards (beyond hearing for asks, but commands reach her anywhere in the Den): she walks over
+    w.say("Jaina, come here");
+    let mv = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_MONSTER_MOVE(m)) => Some(m.clone()),
+        _ => None,
+    });
+    let (sx, sy) = (mx + 12.0 + (0.75 * std::f32::consts::PI).cos() * 2.5, my + (0.75 * std::f32::consts::PI).sin() * 2.5);
+    assert!((mv.splines[0].x - sx).abs() < 0.01 && (mv.splines[0].y - sy).abs() < 0.01, "{:?}", mv.splines[0]);
+    assert_eq!(w.until_she_says().2, den_lite::companion::COMING);
+    assert_eq!(srv.shared.companion.lock().unwrap().order, den_lite::companion::Order::Follow);
+    // sent away: gone, and walking out and back in doesn't bring her
+    w.say("Jaina, go away");
+    assert_eq!(w.until_she_says().2, den_lite::companion::BYE);
+    w.send(&heartbeat(mx + 40.0, my, mz, 0.0));
+    w.send(&heartbeat(mx, my, mz, 0.0));
+    std::thread::sleep(Duration::from_millis(1200));
+    assert!(!srv.shared.companion.lock().unwrap().out);
+    w.say(".den companion tips");
+    assert!(w.until_line().1.contains(".den place chair"), "tips without her: a system line");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Smoke O1: the Den keeps itself. A piece placed is in the autosave within seconds, and a Den Lite started again on
+/// the same folder (the PC restarted) opens it: the player walks into their room as they left it, nothing to load,
+/// and undo has nothing to take back.
+#[test]
+fn the_den_is_kept_by_itself_and_open_again_after_a_restart() {
+    let dir = std::env::temp_dir().join(format!("den-lite-test-autosave-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let cfg = || Config { login_port: 0, world_port: 0, den_dir: dir.clone(), stamps_dir: stamps(), companion: false, ..Config::default() };
+    let srv = start(cfg()).unwrap();
+    assert!(!dir.join("autosave.den.json").exists(), "an empty new Den writes nothing");
+    let mut w = into_world(&srv, 0);
+    w.say(".den place wooden chair");
+    assert!(w.until_line().1.starts_with("Wooden Chair is down"));
+    w.say(".den room stone");
+    w.until_line();
+    std::thread::sleep(Duration::from_millis(2600));
+    let kept = den::read_file(&dir.join("autosave.den.json")).expect("the autosave");
+    assert_eq!((kept.props.len(), kept.room.as_ref().unwrap().look.as_str()), (1, "stone"));
+    let at = std::fs::metadata(dir.join("autosave.den.json")).unwrap().modified().unwrap();
+    std::thread::sleep(Duration::from_millis(2200));
+    assert_eq!(std::fs::metadata(dir.join("autosave.den.json")).unwrap().modified().unwrap(), at, "unchanged: not written again");
+    drop(w);
+    // started again on the same folder
+    let srv2 = start(cfg()).unwrap();
+    let mut w = into_world(&srv2, 0);
+    let d = srv2.shared.den.lock().unwrap();
+    assert_eq!((d.props.len(), d.look.name), (1, "stone"));
+    drop(d);
+    w.say(".build undo");
+    assert_eq!(w.until_line().1, "Nothing to undo.", "nothing to undo after a restart");
+    assert_eq!(srv2.shared.den.lock().unwrap().props.len(), 1);
+    // the tips don't count the autosave as a save of the player's own
+    w.say(".den companion tips");
+    assert!(w.until_line().1.contains(".den save"));
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -191,6 +191,11 @@ if [ -f upstream_addons.py ] && [ -f upstream-addons.json ]; then
   python3 -I -c 'import ast,sys,json;ast.parse(open(sys.argv[1]).read());json.load(open(sys.argv[2]))' upstream_addons.py upstream-addons.json && {
     install -m 644 upstream_addons.py "$WU/portal/upstream_addons.py"; install -m 644 upstream-addons.json "$WU/portal/upstream-addons.json"; }
 fi
+# Looks: /wrath/looks and the looks in all.json (stream/looks.py and stream/looks.json), always as a pair
+if [ -f looks.py ] && [ -f looks.json ]; then
+  python3 -I -c 'import ast,sys,json;ast.parse(open(sys.argv[1]).read());json.load(open(sys.argv[2]))' looks.py looks.json && {
+    install -m 644 looks.py "$WU/portal/looks.py"; install -m 644 looks.json "$WU/portal/looks.json"; }
+fi
 # Leyline friends and messages (/wrath/api/social, /wrath/link): optional; its store is $WU/portal-data/social.sqlite3
 if [ -f social.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' social.py && install -m 644 social.py "$WU/portal/social.py"; fi
 # the one blocklist for names (stream/namecheck.py and blocklist.json, always as a pair: social.py, profiles.py, forum.py,
@@ -269,6 +274,12 @@ if [ -d www-files/art ] && [ -f www-files/art/wu-theme.css ]; then
     install -d -m 755 "$WU/portal/art/avatars"
     find www-files/art/avatars -maxdepth 1 -type f -name '*.svg' -exec install -m 644 {} "$WU/portal/art/avatars/" \;
     echo "  portraits: $(find www-files/art/avatars -maxdepth 1 -type f -name '*.svg' | wc -l) -> $WU/portal/art/avatars"
+  fi
+  # the Looks pictures (our own in-game shots, stream/looks.json look.previews), served at /wrath/art/looks/
+  if [ -d www-files/art/looks ]; then
+    rm -rf "$WU/portal/art/looks"; install -d -m 755 "$WU/portal/art/looks"
+    find www-files/art/looks -maxdepth 1 -type f -name 'look-*.webp' -exec install -m 644 {} "$WU/portal/art/looks/" \;
+    echo "  looks pictures: $(find www-files/art/looks -maxdepth 1 -type f -name 'look-*.webp' | wc -l) -> $WU/portal/art/looks"
   fi
   if [ -d www-files/art/hub-thumbs ]; then
     rm -rf "$WU/portal/art/hub-thumbs"; install -d -m 755 "$WU/portal/art/hub-thumbs"

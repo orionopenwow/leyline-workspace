@@ -249,6 +249,96 @@ check("/wrath/start: no nav item of its own (the hub's hero and the launcher's H
       and 'href="/wrath/start"' not in nav_of(sp))
 check("/wrath/start/x is a 404", get("/wrath/start/x")[0] == 404)
 
+# ---------------------------------------------------------------- 4c. Looks (/wrath/looks): graphics packs, UI looks, presets
+LK = wp.looks_mod
+def look_cards(page):
+    return re.findall(r'<li class="lk-card" id="look-([a-z0-9-]+)" data-type="([a-z-]+)" data-how="(launcher|link)">(.*?)</div></li>', page, re.S)
+
+check("Looks: the module beside the portal is loaded", LK is not None)
+st, hd, lp = get("/wrath/looks")
+check("/wrath/looks: 200, html, no script (CSP script-src 'none')", st == 200 and hd.get("content-type", "").startswith("text/html")
+      and "<script" not in lp and "script-src 'none'" in hd.get("content-security-policy", ""), st)
+check_chrome("/wrath/looks", lp, "", next_step=False)
+cards = look_cards(lp)
+ids = [c[0] for c in cards]
+pub = [e["id"].split(":", 1)[1] for e in LK.published()]
+check("/wrath/looks: every published look, in its order, and nothing that waits for a review", ids == pub and len(ids) >= 6
+      and "elvui" not in ids and "clean-frames" not in ids, ids)
+by = {c[0]: c for c in cards}
+check("/wrath/looks: the presets install with one click, through the launcher's link",
+      all(by[k][2] == "launcher" and f'href="leyline://install/look:{k}">Install with Leyline</a>' in by[k][3] for k in ("max", "balanced", "classic")))
+check("/wrath/looks: link-only looks open their author's page (never a file), with no Install button",
+      all(c[2] == "link" and "Install with Leyline" not in c[3] and "Author's page</a>" in c[3]
+          and 'rel="noopener nofollow ugc"' in c[3] for c in cards if c[0] in ("forever-ui", "ultrahd", "epoch-water", "pfui")))
+check("/wrath/looks: each card credits its author, licence (or that none is stated) and source",
+      "Forever UI by Adrestie · GPL-2.0 · github.com" in lp and "UltraHD Graphics Modpack by the Conquest of Azeroth modpack authors · licence not stated · reddit.com" in lp
+      and all('class="lk-credit"' in c[3] for c in cards))
+check("/wrath/looks: what it changes, its size or that it needs no download, which clients (chips, in words)",
+      all('class="lk-ch"><b>Changes:</b>' in c[3] and 'class="lk-meta"' in c[3] and 'class="lk-chips"' in c[3] for c in cards)
+      and "Nothing to download" in by["max"][3] and "330 MB" in by["forever-ui"][3] and "<li>Third era</li>" in by["forever-ui"][3])
+check("/wrath/looks: no client numbers anywhere a visitor reads, chips included", not re.search(r"\b(1\.12|2\.4\.3|3\.3\.5)", visible(lp)))
+PICS = {"max", "balanced", "classic", "forever-ui"}   # our own pictures (stream/looks.json look.previews)
+check("/wrath/looks: our own pictures on the looks that have one, sized never wider than the picture, with their credit",
+      all(re.search(r'<figure class="lk-pv"><img src="/wrath/art/looks/look-%s(?:-hud)?\.webp" alt="[^"]+" width="(\d+)" height="\d+" style="max-width:\1px"' % k, by[k][3])
+          and "<figcaption>" in by[k][3] for k in PICS)
+      and "<figcaption>Screenshot by the Leyline team</figcaption>" in by["max"][3]
+      and "<figcaption>Wrath Unleashed, in game</figcaption>" in by["forever-ui"][3], [by[k][3][:200] for k in PICS])
+check("/wrath/looks: every other look its own drawing (no picture of anyone else's)",
+      all('<img' not in c[3] and 'class="lk-art m-' in c[3] for c in cards if c[0] not in PICS)
+      and 'class="lk-art m-pack"' in by["ultrahd"][3] and 'class="lk-art m-ui"' in by["dragonflight-ui"][3] and ".m-classic .m-far" in lp)
+LOOKS_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "www-files", "art", "looks")
+os.makedirs(os.path.join(ART, "looks"), exist_ok=True)
+PIC_FILES = sorted({p["src"].rsplit("/", 1)[1] for e in LK.published() for p in e["look"]["previews"]})
+for f in PIC_FILES:
+    shutil.copy(os.path.join(LOOKS_SRC, f), os.path.join(ART, "looks"))
+st, hd, pic = get("/wrath/art/looks/look-max.webp")
+check("/wrath/art/looks/<name>.webp: served from the allow-list, a real webp", st == 200 and hd.get("content-type") == "image/webp"
+      and get("/wrath/art/looks/../wu-theme.css")[0] == 404 and get("/wrath/art/looks/other.png")[0] == 404, st)
+check("the Looks pictures in the repo: each one a webp named in a published look's previews", sorted(os.listdir(LOOKS_SRC)) ==
+      PIC_FILES and len(PIC_FILES) == 7 and all(open(os.path.join(LOOKS_SRC, f), "rb").read(12)[8:] == b"WEBP" for f in os.listdir(LOOKS_SRC)))
+fu = by["forever-ui"][3]
+thumbs = re.findall(r'<li><a href="#(lk-pic-forever-ui-\d)" aria-label="([^"]+) \(larger\)"><img src="/wrath/art/looks/(look-forever-ui-[a-z]+\.webp)"', fu)
+boxes = re.findall(r'<div class="lk-lb" id="(lk-pic-forever-ui-\d)" role="dialog"[^>]*><a class="lk-lb-bg" href="#look-forever-ui" aria-label="Close"></a>'
+                   r'<figure><img src="/wrath/art/looks/([a-z-]+\.webp)" alt="([^"]+)"', lp)
+check("/wrath/looks: Forever UI shows its four in-game pictures as a strip, each opening a larger view (no script: :target)",
+      [t[2] for t in thumbs] == ["look-forever-ui-hud.webp", "look-forever-ui-charselect.webp", "look-forever-ui-character.webp",
+                                 "look-forever-ui-professions.webp"] and [b[0] for b in boxes] == [t[0] for t in thumbs]
+      and boxes[1][2] == "Character select with the Forever UI look" and ".lk-lb:target{" in lp
+      and 'href="#lk-pic-forever-ui-2">Next ›</a>' in lp and 'href="#lk-pic-forever-ui-4">‹ Previous</a>' in lp
+      and lp.index('class="lk-lb"') > lp.index('<p class="fine">')   # the full views outside the card and the box
+      and "<script" not in lp and 'class="lk-thumbs"' not in by["max"][3], (thumbs, boxes))
+FLAG = os.path.join(TMP, "gamedata-off")
+os.environ["WU_GAMEDATA_FLAG"] = FLAG
+open(FLAG, "w").write("off\n")
+st410 = get("/wrath/art/looks/look-max.webp")[0]
+lk_off = get("/wrath/looks")[2]
+os.remove(FLAG)
+check("game data killswitch: the Looks pictures answer 410 and the cards show the drawings instead", st410 == 410
+      and "/wrath/art/looks/" not in lk_off and 'class="lk-art m-ultra"' in lk_off)
+check("/wrath/looks: placeholders of others' looks link to the author's page for pictures",
+      "Pictures on the author's page" in by["ultrahd"][3] and "Pictures on the author" not in by["max"][3])
+st, _, lv = get("/wrath/looks?v=1.12")
+vids = [c[0] for c in look_cards(lv)]
+check("/wrath/looks?v=1.12: only looks for that client, and its chip marked", st == 200 and vids and all(
+      "1.12" in next(e for e in LK.published() if e["id"] == "look:" + i)["builds"] for i in vids) and "forever-ui" not in vids
+      and '<a href="/wrath/looks?v=1.12" aria-current="true">Classic era</a>' in lv, vids)
+st, _, lt = get("/wrath/looks?t=preset&v=3.3.5a")
+check("/wrath/looks?t=preset: the three presets; the type chip keeps the client", [c[0] for c in look_cards(lt)] == ["max", "balanced", "classic"]
+      and '<a href="/wrath/looks?v=3.3.5a&amp;t=preset" aria-current="true">Presets</a>' in lt)
+st, _, lx = get("/wrath/looks?t=%3Cb%3E&v=9.9")
+check("/wrath/looks: unknown filters are ignored, never echoed", st == 200 and len(look_cards(lx)) == len(cards) and "<b>" not in lx.split("<main")[-1].split('class="lk-grid"')[0].replace("<b>Client</b>", "").replace("<b>Type</b>", ""))
+check("/wrath/looks/x is a 404", get("/wrath/looks/x")[0] == 404)
+st, _, aj = get("/wrath/mods/all.json")
+try:
+    projs = {p["id"]: p for p in json.loads(aj)["projects"]}
+except (ValueError, KeyError):
+    projs = {}
+check("all.json: the published looks, source look, how each installs worked out, the credit line",
+      projs.get("look:max", {}).get("source") == "look" and projs["look:max"]["look"]["how"] == "launcher"
+      and projs.get("look:ultrahd", {}).get("look", {}).get("how") == "link" and "look:elvui" not in projs
+      and projs["look:forever-ui"]["credits"] == "Forever UI by Adrestie · GPL-2.0 · github.com"
+      and "review" in projs["look:max"] and not projs["look:max"]["review"]["notes"], sorted(projs)[:5])
+
 # ---------------------------------------------------------------- 5. share boxes and update times
 st, _, realms = get("/wrath/realms")
 boxes = re.findall(r'<details class="ly-share"><summary>Share</summary><code tabindex="0">([^<]+)</code>', realms)
@@ -295,7 +385,7 @@ for f in ("wrath_portal.py", "modes.py", "armory.py"):
 # hub's menu. Same forms, scripts and CSP as before.
 os.environ["WU_HUB_FRONT"] = "1"
 HUB_MENU = [("Play", "/wrath"), ("Realms", "/wrath/leyline/realms"), ("Mods", "/wrath/leyline/catalog"),
-            ("Addons", "/wrath/leyline/addons"), ("Host", "/wrath/host"), ("Forum", "/wrath/leyline/forum"),
+            ("Addons", "/wrath/leyline/addons"), ("Looks", "/wrath/looks"), ("Host", "/wrath/host"), ("Forum", "/wrath/leyline/forum"),
             ("Leaderboards", "/wrath/leaderboards"), ("Docs", "/wrath/docs"), ("News", "/wrath/leyline/news")]
 OLD_ITEMS = re.compile(r">(?:Workshop|Armory|Server|Play now)</a>|class=\"ly-hot\"")
 
@@ -355,6 +445,12 @@ check("framed /wrath/start: 200, the four cards, Host to our own host page, the 
       st == 200 and list(fc) == ["play", "launcher", "den", "host"] and fc["host"] == ("/wrath/host" if wp.hostflow is not None else wp.html.escape(wp.HOST_URL))
       and 'class="wu-pg wide st"' in page and "a.st-card" in page and "script-src 'none'" in hd.get("content-security-policy", ""), fc)
 check("framed /wrath/start: its link card", 'property="og:title" content="Start here · Leyline"' in page)
+st, hd, page = get("/wrath/looks")
+check_frame("framed /wrath/looks", page, "/wrath/looks")
+check("framed /wrath/looks: 200, the cards, the box styles, Get the launcher linked, no script allowed",
+      st == 200 and len(look_cards(page)) == len(LK.published()) and 'class="wu-pg wide lk"' in page and ".lk-card{" in page
+      and "Get the launcher</a>" in page and "script-src 'none'" in hd.get("content-security-policy", ""))
+check("framed /wrath/looks: its link card", 'property="og:title" content="Looks · Leyline"' in page)
 st, _, page = get("/wrath/docs/nope")
 check("framed docs 404", st == 404 and "There is no docs page with that name" in page and 'class="hb-top"' in page)
 if wp.bugreport is not None and wp.bugreport.ON:

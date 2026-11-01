@@ -523,7 +523,7 @@ def share_page(path: str, card_meta, render, realm_name: str = "WrathUnleashed",
             '<hr class="rule wu-divider">'
             f'<p class="center"><a class="btn primary" href="{e(target)}">Open in Wrath</a></p>{sheet}'
             '<p class="fine center">Taking you there now. Nothing to install: it runs in your browser '
-            '(or with your own 3.3.5a game files).</p>')
+            '(or with your own game files).</p>')
     page = render(body, meta=meta).decode("utf-8")
     if title:   # the tab title says what was shared too
         page = re.sub(r"<title>[^<]*</title>", lambda _m: f"<title>{e(title)}</title>", page, count=1)

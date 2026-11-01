@@ -1501,26 +1501,33 @@ fn messages(kit: &Path, args: &Value) -> Result<Value, String> {
 mod tests {
     use super::*;
 
-    const OV_BUILD: &str = include_str!("../../../../realm/custom/lua_scripts/ov_build.lua");
-    const DEN_ENV: &str = include_str!("../../../../realm/profiles/den.env");
+    // Read at test time, not include_str!: the public Leyline export leaves realm/ out.
+    fn repo_file(rel: &str) -> &'static str {
+        let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(rel);
+        Box::leak(fs::read_to_string(&p).unwrap_or_else(|e| panic!("{}: {e}", p.display())).into_boxed_str())
+    }
+    #[allow(non_snake_case)]
+    fn OV_BUILD() -> &'static str { repo_file("realm/custom/lua_scripts/ov_build.lua") }
+    #[allow(non_snake_case)]
+    fn DEN_ENV() -> &'static str { repo_file("realm/profiles/den.env") }
 
     /// A kit with the repo's realm scripts, stamps and den profile.
     pub(crate) fn kit_at(k: &Path) {
         let ls = k.join("realm-files").join("lua_scripts");
         fs::create_dir_all(ls.join("den-stamps")).unwrap();
-        fs::write(ls.join("ov_build.lua"), OV_BUILD).unwrap();
+        fs::write(ls.join("ov_build.lua"), OV_BUILD()).unwrap();
         let stamps = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../realm/custom/lua_scripts/den-stamps");
         for e in fs::read_dir(stamps).unwrap().flatten() {
             fs::copy(e.path(), ls.join("den-stamps").join(e.file_name())).unwrap();
         }
         fs::create_dir_all(k.join("realm-files").join("profiles")).unwrap();
-        fs::write(k.join("realm-files").join("profiles").join("den.env"), DEN_ENV).unwrap();
+        fs::write(k.join("realm-files").join("profiles").join("den.env"), DEN_ENV()).unwrap();
         fs::create_dir_all(dens::dir(k)).unwrap();
     }
 
     #[test]
     fn the_catalog_from_the_realm_script() {
-        let c = parse_catalog(OV_BUILD);
+        let c = parse_catalog(OV_BUILD());
         assert!(c.entries.len() > 350, "{}", c.entries.len());
         let lantern = c.key("lantern").unwrap();
         assert_eq!((lantern.entry, lantern.cat.as_str(), lantern.points), (179977, "lights", 2));

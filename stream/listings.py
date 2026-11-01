@@ -12,6 +12,8 @@ release file). This module pins it to one exact download on the author's own rep
     native        .dll / .asi / .exe at the top                            -> the client folder, after the player's OK
     realm-script  mod-ale Lua (Register*Event, no .toc)                    -> for realm owners (not into a game client)
     game-mode     one Leyline Modes Lua file (Mode.Title, OnStart...)      -> for the Modes editor (not into a game client)
+    den           one saved Den (<name>.den.json, "leyline-den"), a GitHub -> the launcher's Your Den › Saved Dens (Add from a
+                  release file; checked like the Den loader checks it         link); not into a game client, nothing in it runs
     loose-data    loose Interface/ or World/ game files                    -> refused for one click (pack them as a patch)
 
 Every file the launcher would install is recorded with its sha256 (and the digest of the whole list), so the launcher
@@ -64,16 +66,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 PAGE = "/wrath/mods/list"
 API = "/wrath/api/listings"
-FORMATS = ("addon", "package", "patch", "native", "realm-script", "game-mode")
+FORMATS = ("addon", "package", "patch", "native", "realm-script", "game-mode", "den")
 FORMAT_LABEL = {"addon": "Addon", "package": "Leyline mod package", "patch": "Client patch (.MPQ)",
-                "native": "Native code (.dll / .asi / .exe)", "realm-script": "Realm script", "game-mode": "Game mode",
+                "native": "Native code (.dll / .asi / .exe)", "realm-script": "Realm script", "game-mode": "Game mode", "den": "A saved Den",
                 "loose-data": "Loose game files", "unknown": "Not something Leyline can install"}
 # What the launcher puts into a game client (the rest is listed for realm owners and the Modes editor).
 CLIENT_FORMATS = ("addon", "package", "patch", "native")
 REPORT_REASONS = {"broken": "It doesn't work", "malware": "Harmful or a virus", "stolen": "Not theirs / stolen work",
                   "gamedata": "Ships game files", "cheat": "A cheat or exploit", "rude": "Rude or hateful", "spam": "Spam",
                   "other": "Something else"}
-DEFAULT_POLICY = {"auto_live": ["addon", "package", "realm-script", "game-mode"], "report_hide": 3, "big_mb": 64,
+DEFAULT_POLICY = {"auto_live": ["addon", "package", "realm-script", "game-mode", "den"], "report_hide": 3, "big_mb": 64,
                   "new_account_days": 3, "new_account_per_day": 1}
 BRAND_RE = re.compile(r"(?i:world\s*of\s*warcraft|warcraft|lich\s*king|blizzard|wotlk)|(?i:(?<![a-z])wow(?![a-z]))")
 CTRL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f​-‏‪-‮⁦-⁩]")
@@ -361,8 +363,12 @@ BAD_ASSET = re.compile(r"(?i)classic|retail|vanilla|tbc|bcc|cata|mists|mainline|
 
 
 def pick_asset(assets: list) -> dict | None:
-    """The one release file to install: a .zip or .MPQ, the one for this client when there are several."""
+    """The one release file to install: a .zip or .MPQ, the one for this client when there are several; else a release
+    whose only file Leyline knows is one saved Den (.den.json)."""
     cand = [a for a in assets if isinstance(a, dict) and str(a.get("name", "")).lower().endswith((".zip", ".mpq"))]
+    if not cand:
+        dens = [a for a in assets if isinstance(a, dict) and str(a.get("name", "")).lower().endswith(DEN_EXT)]
+        return dens[0] if len(dens) == 1 else None
     pref = [a for a in cand if GOOD_ASSET.search(a["name"])] or [a for a in cand if not BAD_ASSET.search(a["name"])]
     if len(pref) == 1 or (pref and GOOD_ASSET.search(pref[0]["name"])):
         return pref[0]
@@ -462,6 +468,14 @@ def scan(path: str, asset_name: str = "") -> list[Entry]:
     caps = RULES["caps"]
     if not zipfile.is_zipfile(path):
         name = asset_name.rsplit("/", 1)[-1]
+        if name.lower().endswith(DEN_EXT) and safe_rel(name):   # a saved Den as its own release file
+            size = os.path.getsize(path)
+            if size > DEN_MAX:
+                raise ValueError("a Den file is 512 KB at most")
+            with open(path, "rb") as f:
+                b = f.read(DEN_MAX + 1)
+            return [Entry(path=name, size=size, sha256=hashlib.sha256(b).hexdigest(), head=b[:4],
+                          text=b.decode("utf-8", "replace"))]
         if not name.lower().endswith(".mpq") or not safe_rel(name):
             raise ValueError("the download is not a zip file")
         h = hashlib.sha256()
@@ -577,12 +591,81 @@ def _patch_name(path: str) -> str:
     return path.rsplit("/", 1)[-1]
 
 
+# ------------------------------------------------------------------------------------------------ a saved Den
+# The same rules as the Den loader (launcher/src-tauri/src/host/dens.rs check, ov_den.lua): format "leyline-den",
+# version 1, at most 800 props each with a whole-number object entry, at most 100 paths, 512 KB. Stricter here: every
+# prop field is a plain number, a short word or true/false (a Den file only ever holds data, never anything that runs).
+DEN_EXT = ".den.json"
+DEN_MAX = 512 * 1024
+DEN_PROPS = 800
+DEN_PATHS = 100
+DEN_VERSION = 1
+_DEN_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,31}$")
+
+
+def _den_value_ok(v, depth: int = 0) -> bool:
+    if isinstance(v, bool) or v is None:
+        return True
+    if isinstance(v, (int, float)):
+        return abs(v) < 1e9
+    if isinstance(v, str):
+        return len(v) <= 200 and not CTRL_RE.search(v)
+    if isinstance(v, list) and depth < 2:
+        return len(v) <= 8 and all(_den_value_ok(x, depth + 1) for x in v)
+    if isinstance(v, dict) and depth < 2:
+        return len(v) <= 16 and all(isinstance(k, str) and _DEN_KEY.match(k) and _den_value_ok(x, depth + 1) for k, x in v.items())
+    return False
+
+
+def den_problems(text: str) -> tuple[list[str], int, str]:
+    """(problems, props, its own name) for a saved Den's text."""
+    if len(text.encode("utf-8")) > DEN_MAX:
+        return ["the Den file is larger than 512 KB"], 0, ""
+    try:
+        doc = json.loads(text.lstrip("\ufeff"))
+    except ValueError:
+        return ["the Den file can't be read (it isn't JSON)"], 0, ""
+    if not isinstance(doc, dict) or doc.get("format") != "leyline-den":
+        return ["it isn't a Den file (no \"format\": \"leyline-den\")"], 0, ""
+    v = doc.get("version")
+    if not isinstance(v, int) or isinstance(v, bool) or v < 1:
+        return ["the Den file has no version"], 0, ""
+    if v > DEN_VERSION:
+        return ["the Den file is from a newer Leyline than the one players have"], 0, ""
+    props = doc.get("props")
+    if not isinstance(props, list):
+        return ["the Den file has no props list"], 0, ""
+    P = []
+    if len(props) > DEN_PROPS:
+        P.append(f"a Den file holds up to {DEN_PROPS} props ({len(props)} here)")
+    for i, p in enumerate(props[:DEN_PROPS + 1]):
+        e = p.get("entry") if isinstance(p, dict) else None
+        if not isinstance(e, int) or isinstance(e, bool) or not 0 < e < 2 ** 31:
+            P.append(f"prop {i + 1} isn't a prop (no object entry)")
+            break
+        if len(p) > 32 or not all(isinstance(k, str) and _DEN_KEY.match(k) and _den_value_ok(x) for k, x in p.items()):
+            P.append(f"prop {i + 1} holds something a Den file doesn't")
+            break
+    paths = doc.get("paths")
+    if paths is not None and not (isinstance(paths, list) and len(paths) <= DEN_PATHS and all(isinstance(x, dict) and _den_value_ok(x) for x in paths)):
+        P.append(f"the Den file's paths aren't right (up to {DEN_PATHS})")
+    for k, x in doc.items():
+        if k not in ("format", "version", "props", "paths") and not (isinstance(k, str) and _DEN_KEY.match(k) and _den_value_ok(x)):
+            P.append(f"the Den file's {str(k)[:24]!r} holds something a Den file doesn't")
+            break
+    name = doc.get("name") if isinstance(doc.get("name"), str) else ""
+    return P, len(props), clean_name(name)[:24]
+
+
 def detect(entries: list[Entry]) -> str:
     """The format of a download (see the module's table)."""
     rel = [e["path"] for e in entries]
     low = [p.lower() for p in rel]
     if any(p == "mod.json" for p in low):
         return "package"
+    dens = [p for p in low if p.endswith(DEN_EXT)]
+    if len(dens) == 1 and not any(ext_of(p) in (".toc", ".lua", ".mpq") + NATIVE_CODE for p in low):
+        return "den"
     mpq = [p for p in low if p.endswith(".mpq")]
     if mpq:
         return "patch"
@@ -638,6 +721,8 @@ def analyse(entries: list[Entry], pin: dict, policy: dict | None = None) -> dict
         v = classify(p.rsplit("/", 1)[-1], True, e["head"])
         if v.startswith("refuse"):
             P.append(f"{p}: {v[8:]}")
+    if fmt == "den":
+        return _analyse_den(out, live, pin)
     if fmt == "loose-data":
         P.append("loose game files (Interface/, World/...) are not loaded by the client: pack them into a "
                  "patch-<letter>.MPQ and release that, then Leyline can install it")
@@ -837,6 +922,29 @@ def analyse(entries: list[Entry], pin: dict, policy: dict | None = None) -> dict
     return out
 
 
+
+
+def _analyse_den(out: dict, live: list, pin: dict) -> dict:
+    """A saved Den: one .den.json as a GitHub release file (byte-stable, so its sha256 is what players get), checked as
+    the Den loader checks it. Nothing goes into a game client; the launcher adds it to Saved Dens from the link."""
+    P = out["problems"]
+    den = next(e for e in live if e["path"].lower().endswith(DEN_EXT))
+    out["size"] = den["size"]
+    if pin.get("from") != "release-asset" or not str(pin.get("asset", "")).lower().endswith(DEN_EXT) or not pin.get("sha256"):
+        P.append("put the .den.json itself on a GitHub release (a release file, not inside a zip or a branch), then link "
+                 "that release")
+        return out
+    probs, props, name = den_problems(den["text"])
+    if probs:
+        P.extend(probs)
+        return out
+    out["name"] = name or clean_name(den["path"].rsplit("/", 1)[-1][: -len(DEN_EXT)])
+    out["client"] = False
+    out["den"] = {"url": pin["url"], "sha256": pin["sha256"], "size": den["size"], "props": props}
+    out["plan"] = [f"A saved Den with {props} prop(s). In the launcher: Your Den › Saved Dens › Add from a link, then Open. "
+                   "Nothing is installed into the game client and nothing in it runs."]
+    out["ok"] = True
+    return out
 
 
 # ------------------------------------------------------------------------------------------------ policy
@@ -1145,7 +1253,7 @@ def listing_record(res: dict) -> dict:
             "plan": res["plan"], "flags": res["flags"], "notes": res["notes"], "name": res["name"],
             "version": res["version"], "size": res["size"], "follow": res["pin"].get("follow", ""),
             "rev": res["pin"].get("rev", ""), "source_url": _source_url(res), "checked_at": res["checked_at"],
-            "native": bool((res["install"] or {}).get("native"))}
+            "native": bool((res["install"] or {}).get("native")), **({"den": res["den"]} if res.get("den") else {})}
 
 
 def _source_url(res: dict) -> str:
@@ -1187,6 +1295,10 @@ def all_json_fields(listing) -> dict:
            "flags": list(listing.get("flags") or [])[:8], "plan": list(listing.get("plan") or [])[:8],
            "native": bool(listing.get("native")), "version": listing.get("version") or None,
            "size": (inst or {}).get("size")}
+    d = listing.get("den") if listing.get("format") == "den" and isinstance(listing.get("den"), dict) else None
+    if d:   # a saved Den: its release file, for the launcher's Add from a link (host/yourden.rs checks it again)
+        out["den"] = {k: d.get(k) for k in ("url", "sha256", "size", "props")}
+        out["size"] = d.get("size")
     if inst and listing.get("client"):
         out["source"] = "listed"
         out["install"] = inst
@@ -1550,7 +1662,7 @@ def _preview_html(c: dict, hid: str, form: dict) -> str:
     except Exception:   # noqa: BLE001
         cats = []
     default = {"addon": "addons", "package": "addons", "patch": "graphics", "native": "tools", "realm-script": "realm-scripts",
-               "game-mode": "sandbox"}.get(c.get("format"), "addons")
+               "game-mode": "sandbox", "den": "sandbox"}.get(c.get("format"), "addons")
     if (form.get("kind") or "") == "addon":   # the launcher's or the website's "List your addon"
         default = "addons"
     # Addon or mod (docs/WORDS.md): the hub's grouped options (Addon first, then Mod with the Mods page's categories)

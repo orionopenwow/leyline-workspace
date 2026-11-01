@@ -176,6 +176,107 @@ pub fn host_den_open(name: String) -> Result<String, String> {
     host::dens::open(&kit()?, &name)
 }
 
+// ---------------------------------------------------------------- Your Den: one page, Den Lite or the Docker Den (host/yourden.rs)
+
+fn lite() -> host::lite::Binary {
+    host::lite::Binary::find(&settings::app_dir())
+}
+
+/// The chosen Host pack, if any (no error: Your Den works without one through Den Lite).
+fn kit_opt() -> Option<PathBuf> {
+    kit().ok().filter(|k| k.is_dir())
+}
+
+/// (the Host pack hosts the Den, the other realm it hosts)
+fn docker_den(k: Option<&std::path::Path>) -> (bool, Option<String>) {
+    match k.and_then(|k| host::inspect(Some(k), None).realm) {
+        Some(r) if r.profile == host::profiles::DEN => (true, None),
+        Some(r) => (false, Some(if r.name.is_empty() { "a realm".into() } else { r.name })),
+        None => (false, None),
+    }
+}
+
+/// Where Saved Dens are now: the Docker Den's files once the Host pack hosts it, else Den Lite's.
+fn den_root() -> PathBuf {
+    let k = kit_opt();
+    let (den, _) = docker_den(k.as_deref());
+    host::yourden::saves_root(k.as_deref(), den, &host::lite::root(&settings::app_dir())).0
+}
+
+/// Everything the Your Den page shows: Den Lite, the Docker Den, Saved Dens and Packs.
+#[tauri::command]
+pub async fn den_state() -> Result<host::yourden::DenState, String> {
+    use host::lite::DenLite;
+    blocking(|| {
+        let app = settings::app_dir();
+        let k = kit_opt();
+        let (den, other) = docker_den(k.as_deref());
+        let lite_root = host::lite::root(&app);
+        let (root, saves) = host::yourden::saves_root(k.as_deref(), den, &lite_root);
+        let mut roots: Vec<&std::path::Path> = vec![root.as_path()];
+        if let Some(k) = k.as_deref() {
+            if k != root.as_path() {
+                roots.push(k);
+            }
+        }
+        if lite_root != root {
+            roots.push(&lite_root);
+        }
+        Ok(host::yourden::DenState {
+            lite: lite().status(),
+            kit: k.is_some(),
+            docker_den: den,
+            other_realm: other,
+            account: if den { k.as_deref().map(host::yourden::account).unwrap_or_default() } else { String::new() },
+            saves,
+            dens: host::dens::list(&root),
+            packs: host::yourden::packs(&roots),
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn den_lite_stop() -> Result<(), String> {
+    use host::lite::DenLite;
+    blocking(|| lite().stop()).await
+}
+
+/// One Saved Den's text (Save a copy), wherever Saved Dens are now.
+#[tauri::command]
+pub fn den_text(name: String) -> Result<String, String> {
+    host::dens::text(&den_root(), &name)
+}
+
+#[tauri::command]
+pub fn den_add(file_name: String, text: String) -> Result<String, String> {
+    host::dens::add(&den_root(), &file_name, &text)
+}
+
+#[tauri::command]
+pub fn den_open(name: String) -> Result<String, String> {
+    host::dens::open(&den_root(), &name)
+}
+
+/// Add from a link: a Den shared on the Workshop (a .den.json GitHub release file), checked, into Saved Dens.
+#[tauri::command]
+pub async fn den_fetch(url: String, sha256: Option<String>) -> Result<String, String> {
+    blocking(move || host::yourden::fetch_add(&den_root(), url.trim(), sha256.as_deref(), &settings::app_dir().join("tmp"))).await
+}
+
+/// Share with friends, before the Docker Den starts: the Den Lite files into the Host pack's saves. Returns the name
+/// of the newest one there, which the page opens once the Docker Den is up (or None: Den Lite had none).
+#[tauri::command]
+pub async fn den_share_move() -> Result<Option<String>, String> {
+    use host::lite::DenLite;
+    blocking(|| {
+        let k = kit()?;
+        let _ = lite().stop();   // one Den at a time: the Lite one hands over its files
+        host::yourden::move_to_kit(&host::lite::root(&settings::app_dir()), &k)
+    })
+    .await
+}
+
 // ---------------------------------------------------------------- modes anyone can host and fork (host/modes.rs)
 
 /// The Host page's mode cards: the templates, then this Host pack's own forks (no Host pack yet: the templates).

@@ -1,0 +1,60 @@
+/* Your Den (den.js): the Home banner and the one Den page, in the theme's tokens (themes/themes.css) */
+
+/* Home: the banner, first under the hero, a little brighter than Host your own */
+.hm-sec.hm-den {
+  display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: var(--t-radius);
+  background:
+    radial-gradient(70% 140% at 0% 0%, color-mix(in srgb, var(--t-accent) 20%, transparent), transparent 62%),
+    var(--t-panel, var(--t-surface));
+  border: var(--t-border-w) solid var(--t-panel-border, var(--t-border)); box-shadow: var(--t-panel-shadow, none);
+}
+.hm-den-ic { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border-radius: 12px;
+  background: color-mix(in srgb, var(--t-accent) 18%, transparent); }
+.hm-den-ic svg { width: 26px; height: 26px; fill: none; stroke: var(--t-accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.hm-den-txt { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.hm-den-txt b { font: 700 16px var(--t-font); color: var(--t-text); }
+.hm-den-txt span { font-size: 12.5px; color: var(--t-muted); }
+.hm-den-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; justify-content: flex-end; }
+@media (max-width: 900px) { .hm-sec.hm-den { flex-wrap: wrap; } .hm-den-acts { justify-content: flex-start; } }
+
+/* the page */
+.yd .yd-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.yd .yd-head h2 { margin: 0; }
+.yd-chip { font-size: 12.5px; padding: 3px 10px; border-radius: 999px; border: var(--t-border-w) solid var(--t-border);
+  background: var(--t-surface-2); color: var(--t-text-2, var(--t-text)); }
+.yd-chip.ok { border-color: var(--t-ok); color: var(--t-ok); }
+.yd-chip.warn { border-color: var(--t-warn); color: var(--t-warn); }
+.yd-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; }
+.yd-play { min-width: 140px; font-size: 15px; }
+.yd-hint { font-size: 12.5px; color: var(--t-muted); margin: 2px 0 6px; }
+.yd-status { min-height: 1.4em; }
+.yd-status[data-kind="ok"] { color: var(--t-ok); }
+.yd-status[data-kind="warn"] { color: var(--t-warn); }
+.yd-status[data-kind="bad"] { color: var(--t-bad); }
+.yd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 10px; }
+.yd-tile { background: var(--t-surface); border: var(--t-border-w) solid var(--t-border); border-radius: var(--t-radius); padding: 12px 14px; min-width: 0; }
+.yd-tile.wide { grid-column: 1 / -1; }
+.yd-tile h3 { margin: 0 0 2px; font-size: 14px; }
+.yd-list { list-style: none; margin: 0; padding: 0; }
+.yd-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0;
+  border-top: var(--t-border-w) solid var(--t-border); }
+.yd-li-t { display: grid; gap: 1px; min-width: 0; }
+.yd-li-t .yd-hint { margin: 0; }
+.yd-link { display: flex; gap: 8px; margin-top: 6px; }
+.yd-link input { flex: 1; min-width: 0; }
+.yd-share { flex-basis: 100%; background: var(--t-surface-2); border-radius: var(--t-radius-sm, 8px); padding: 8px 12px; font-size: 13px; }
+.yd-steps-s { margin: 4px 0 6px 18px; padding: 0; }
+.yd-steps { margin-top: 8px; display: grid; gap: 8px; }
+.yd-step { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.yd-step-n { width: 26px; height: 26px; flex: none; display: grid; place-items: center; border-radius: 50%;
+  background: var(--t-surface-2); border: var(--t-border-w) solid var(--t-border); font-weight: 700; }
+.yd-step.done .yd-step-n { background: var(--t-ok); color: #fff; border-color: var(--t-ok); }
+.yd-step-t { display: grid; gap: 1px; flex: 1; min-width: 180px; }
+.yd-step-t span { font-size: 12.5px; color: var(--t-muted); }
+.yd-step-go { display: flex; gap: 8px; flex-wrap: wrap; }
+.yd-step-go input { width: 170px; }
+.yd-prog { display: grid; gap: 4px; }
+.yd-prog.bad b { color: var(--t-bad); }
+.yd-bar { height: 6px; border-radius: 3px; background: var(--t-surface-2); overflow: hidden; }
+.yd-bar i { display: block; height: 100%; background: var(--t-accent); transition: width .4s ease; }
+@media (prefers-reduced-motion: reduce) { .yd-bar i { transition: none; } }

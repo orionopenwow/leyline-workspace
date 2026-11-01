@@ -17,6 +17,8 @@
 
 pub mod console;
 pub mod dens;
+pub mod lite; // Den Lite: the built-in Den server, no Docker (an interface; the program is labs/den-lite)
+pub mod yourden; // Your Den: the one Den page, Lite or Docker, Saved Dens, Packs, Share with friends (host/yourden.rs)
 pub mod modes; // modes anyone can host and fork: the Host page's first screen (host/modes.rs)
 pub mod docker;
 pub mod network;

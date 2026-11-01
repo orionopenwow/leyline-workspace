@@ -63,6 +63,30 @@ You read them with **Read mail** (`.den mail`); **Empty it** clears the mailbox.
 **Den of the week.** Each week the Leyline team picks one Den. It shows on the website's front page, on the launcher's
 Home and in the game's Leyline window. Screenshots are links on the website only.
 
+## Your Den: one button (launcher, 2026-11-01)
+
+Owner, 1 Nov 01:46 and 01:48: Dens are local first; the white room at once, with no Docker setup; Docker only later,
+when sharing with friends. **Your Den** is in the launcher's side menu right under Home and first on Home
+(`launcher/ui/den.js`, `den.css`; core `host/yourden.rs`, `host/lite.rs`).
+
+- **Play** (one click). With **Den Lite** on this PC (the built-in Den server, `labs/den-lite`; no Docker, no database):
+  it starts, the client points at `127.0.0.1` with the account `DEN` on the login screen, and you are in the room. Without
+  Den Lite: the Docker Den's three steps on the same page (the Host pack, Docker Desktop with a short guide, Start with
+  your account name), its progress, then the first starter place opens. A Docker Den that is stopped is started first;
+  its account (the realm's GM name) is filled in on the login screen (`SET accountName` in Config.wtf).
+- **Share with friends** (Den Lite only): the same three steps; every Den Lite file is copied into the Host pack's saves
+  (`move_to_kit`: never over another file, the same text skipped) and the newest opens there unchanged. Then **Invite a
+  friend** copies the invite link and **Make my account** opens your Den's own join page in the browser.
+- **Saved Dens** (open, save a copy, add a file, add from a link), **Packs** (the recipes a pack builder leaves in
+  `state/packs/*.json`: a title and a line) and **Share on the Workshop** work the same for both: they read the Den in
+  use (the Docker Den's files once the Host pack hosts it, else Den Lite's `<app data>/Leyline/den-lite/state/dens`).
+- **Share on the Workshop**: save a copy, attach the `.den.json` to a GitHub release, and list that release with List
+  your mod (`stream/listings.py` format `den`: checked like the Den loader checks a file, data only, live at once).
+  **Add from a link** takes such a release file back (GitHub and its download hosts only, 512 KB, checked again).
+- Den Lite is an interface for now (`host/lite.rs`: available, start, stop, status, den_dir). It looks for `den-lite`
+  (`$LEYLINE_DEN_LITE`, `<app data>/Leyline/den-lite/bin/`, beside the launcher) and runs
+  `den-lite --dens <dir> --bind 127.0.0.1`; that contract is to be confirmed with labs/den-lite.
+
 ## Hosting a Den
 
 ```

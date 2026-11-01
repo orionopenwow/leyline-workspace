@@ -1183,6 +1183,43 @@ def register() -> None:
         "hq.note.close": (a_note_status("closed"), "owner", None),
         "hq.note.reopen": (a_note_status("open"), "owner", None),
     })
+    A.ACTIONS.update({k: (_dg_act(k), need, confirm) for k, (need, confirm) in DISCORD_ACTIONS.items()})
+
+
+# Content > Discord (stream/discord_growth.py, through the forum's Discord link): role needed, typed confirm
+DISCORD_ACTIONS = {"discord.preview": ("owner", None), "discord.setup": ("owner", "setup"), "discord.den": ("admin", None),
+                   "discord.mode": ("admin", None), "discord.fact.add": ("admin", None), "discord.fact.remove": ("admin", None),
+                   "discord.roles.run": ("admin", None), "discord.automod.push": ("admin", None)}
+
+
+def _growth():
+    fs = A.forum_store()
+    link = getattr(fs, "discord", None) if fs is not None else None
+    return getattr(link, "growth", None) if link is not None else None
+
+
+def _dg_act(name):
+    def fn(user, target, form):
+        g = _growth()
+        if g is None:
+            raise A.Refused("The Discord bot is off (Content > Discord says why).")
+        return g.act(name, user, target, form, A.Refused)
+    return fn
+
+
+def discord_page(user: dict) -> str:
+    """Content > Discord: what is on or off, setup, staff picks, roles, AutoMod, the last posts and problems."""
+    g = _growth()
+    if g is not None:
+        return g.hq_page(user, A)
+    fs = A.forum_store()
+    why = "the forum isn't on this portal" if fs is None else (
+        "WU_FORUM_DISCORD=1 isn't set" if os.environ.get("WU_FORUM_DISCORD", "0") != "1" else
+        "its settings are incomplete or it didn't start (docker logs wu-portal | grep forum-discord)"
+        if getattr(fs, "discord", None) is None else "discord_growth.py isn't beside forum_discord.py")
+    return (f'<section class="ly-panel"><h2>Discord</h2><p>The Discord bot is off: {e(why)}.</p><p class="fine">Everything here '
+            'stays off until the owner sets it up: docs/DISCORD.md has the checklist (the bot, its permissions, portal.env, '
+            'then Set up the Discord on this page).</p></section>')
 
 
 # ----------------------------------------------------------------------------------------------
@@ -1646,6 +1683,8 @@ def page(user: dict, tab: str, query: dict):
     if tab == "forum":
         st, body = forum_page(user, query)
         return st, "Forum", body
+    if tab == "discord":
+        return 200, "Discord", discord_page(user)
     if tab == "system":
         return 200, "Health", A.health_page(user)
     return None

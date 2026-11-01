@@ -53,6 +53,8 @@ had_forum=""
 if [ -f "$WU/portal/forum.py" ]; then cp -p "$WU/portal/forum.py" "$BK/forum.py"; had_forum=1; fi
 rm -f "$BK/forum_discord.py"
 [ ! -f "$WU/portal/forum_discord.py" ] || cp -p "$WU/portal/forum_discord.py" "$BK/forum_discord.py"
+rm -f "$BK/discord_growth.py" "$BK/discord_template.json"
+for f in discord_growth.py discord_template.json; do [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
 had_duels=""
 if [ -f "$WU/portal/duels.py" ]; then cp -p "$WU/portal/duels.py" "$BK/duels.py"; had_duels=1; fi
 had_profiles=""
@@ -98,6 +100,7 @@ put_back() {
   done
   if [ -n "$had_forum" ]; then cp -p "$BK/forum.py" "$WU/portal/forum.py"; else rm -f "$WU/portal/forum.py"; fi
   if [ -f "$BK/forum_discord.py" ]; then cp -p "$BK/forum_discord.py" "$WU/portal/forum_discord.py"; else rm -f "$WU/portal/forum_discord.py"; fi
+  for f in discord_growth.py discord_template.json; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
   if [ -n "$had_duels" ]; then cp -p "$BK/duels.py" "$WU/portal/duels.py"; else rm -f "$WU/portal/duels.py"; fi
   if [ -n "$had_profiles" ]; then cp -p "$BK/profiles.py" "$WU/portal/profiles.py"; else rm -f "$WU/portal/profiles.py"; fi
   if [ -n "$had_herokeys" ]; then cp -p "$BK/herokeys.py" "$WU/portal/herokeys.py"; else rm -f "$WU/portal/herokeys.py"; fi
@@ -191,6 +194,12 @@ if [ -f forum.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1
 # the forum's Discord link (stream/forum_discord.py): loaded by forum.py, OFF until portal.env has WU_FORUM_DISCORD=1, the
 # bot token and the channel ids (docs/FORUM.md, "The Discord link"); its tables live in forum.sqlite3
 if [ -f forum.py ] && [ -f forum_discord.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' forum_discord.py && install -m 644 forum_discord.py "$WU/portal/forum_discord.py"; fi
+# the Discord bot's growth side (stream/discord_growth.py + discord_template.json): loaded by forum_discord.py; setup,
+# live realms, Find a group, roles and AutoMod are each OFF until portal.env turns them on (docs/DISCORD.md)
+if [ -f forum_discord.py ] && [ -f discord_growth.py ] && [ -f discord_template.json ]; then
+  python3 -I -c 'import ast,sys,json;ast.parse(open(sys.argv[1]).read());json.load(open(sys.argv[2]))' discord_growth.py discord_template.json \
+    && install -m 644 discord_growth.py discord_template.json "$WU/portal/"
+fi
 # the duel leaderboards (/wrath/leaderboards, /wrath/api/leaderboards): optional; it reads $WU/portal/duels/, which
 # duels-export.py fills (realm/serverpass.sh step 1d)
 if [ -f duels.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' duels.py && install -m 644 duels.py "$WU/portal/duels.py"; fi

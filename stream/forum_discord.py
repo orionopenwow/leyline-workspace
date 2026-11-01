@@ -129,13 +129,16 @@ class Config:
         self.remove = env.get("WU_FORUM_DISCORD_UNLINKED", "remove").strip().lower() != "keep"
         self.delete_hides = env.get("WU_FORUM_DISCORD_DELETE_HIDES", "1").strip() != "0"
         self.api = env.get("WU_DISCORD_API", API_DEFAULT).strip().rstrip("/")
+        self.guild_id = env.get("WU_DISCORD_GUILD", "").strip()   # the server (stream/discord_growth.py); else from the channels
 
     def problems(self) -> list[str]:
         p = list(self.bad)
         if not self.token:
             p.append("DISCORD_BOT_TOKEN is not set")
-        if not self.channels:
-            p.append("WU_FORUM_DISCORD_CHANNELS maps no category to a channel")
+        if self.guild_id and not SNOW_RE.fullmatch(self.guild_id):
+            p.append("WU_DISCORD_GUILD is the server id (digits)")
+        if not self.channels and not self.guild_id:
+            p.append("WU_FORUM_DISCORD_CHANNELS maps no category to a channel (or set WU_DISCORD_GUILD for the bot alone)")
         if (self.app_id or self.public_key) and not (SNOW_RE.fullmatch(self.app_id) and re.fullmatch(r"[0-9a-f]{64}", self.public_key)):
             p.append("DISCORD_APP_ID (digits) and DISCORD_PUBLIC_KEY (64 hex characters) go together")
         return p
@@ -320,6 +323,7 @@ class Link:
         self.local = threading.local()
         self.ed = _load_ed25519()
         self.stop = threading.Event()
+        self.growth = None   # stream/discord_growth.py: setup, live realms, picks, Find a group, roles, AutoMod
         with store.lock:
             store.db.executescript(SCHEMA)
         if not self.meta("since"):
@@ -601,6 +605,9 @@ class Link:
             except DiscordError as e:
                 if e.kind != "notfound":
                     raise
+        elif kind.startswith("dg."):   # stream/discord_growth.py's own items
+            if self.growth is not None:
+                self.growth.deliver(kind, d)
         elif kind == "replace":   # a Discord person's message, re-posted as the forum shows it (the word filter starred words)
             pr = self.post_row(d["post"])
             if pr and pr["origin"] == "discord" and pr["state"] == "live":
@@ -704,6 +711,9 @@ class Link:
             if g and self.guild and g != self.guild:
                 log.warning("forum-discord: the channels are in more than one server; only the first one is read")
             self.guild = self.guild or g
+        if self.cfg.guild_id and self.guild and self.cfg.guild_id != self.guild:
+            log.warning("forum-discord: WU_DISCORD_GUILD is not the server the forum channels are in; using the channels' server")
+        self.guild = self.guild or self.cfg.guild_id
         if self.cfg.app_id and self.guild:
             try:
                 self.api.call("PUT", f"/applications/{self.cfg.app_id}/guilds/{self.guild}/commands", COMMANDS)
@@ -951,6 +961,8 @@ class Link:
             self.next_poll = mono + self.cfg.poll
             self.poll()
             self.drain()
+        if self.growth is not None:
+            self.growth.tick()
         if mono >= self.next_sweep:
             self.next_sweep = mono + SWEEP_EVERY
             self.sweep_some()
@@ -1050,10 +1062,36 @@ def attach(fm, store, env=None, start_thread: bool = True, urlopen=urllib.reques
         return None
     api = Api(cfg.token, cfg.api, urlopen=urlopen, site="https://" + fm._public_host())
     link = Link(fm, store, cfg, api)
+    link.growth = _growth(link, env)
     log.info("forum-discord: %r", cfg)
     if start_thread:
         threading.Thread(target=link.run, name="forum-discord", daemon=True).start()
     return link
+
+
+def _growth(link, env):
+    """stream/discord_growth.py beside this file, attached to the link (the same bot, client and outbox), or None."""
+    p = os.path.join(HERE, "discord_growth.py")
+    if not os.path.isfile(p):
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("wu_discord_growth", p)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        import types
+        return mod.attach(link, env, types.SimpleNamespace(esc=esc, DiscordError=DiscordError, group_http=mod.group_http))
+    except Exception:   # noqa: BLE001: the forum link runs without it
+        log.exception("forum-discord: discord_growth.py didn't load")
+        return None
+
+
+def group_http(fm, h) -> None:
+    """POST /wrath/forum/api/discord/group: Find a group from the launcher (stream/discord_growth.py)."""
+    g = getattr(link, "growth", None) if link is not None else None
+    if g is None:
+        fm._read_json(h)
+        return fm._jpost(h, 404, {"error": "Find a group isn't on yet."})
+    return g.fd.group_http(fm, h, link)
 
 
 def _discord_of_site(fm, h) -> str:
@@ -1099,6 +1137,8 @@ def page(fm, h, who, query: dict, note: str = "", ok: str = "", status: int = 20
         parts.append('<p>In our Discord, type <b>/link</b> in any channel and open the link it gives you (only you see it).'
                      + ('' if site_id else ' Or link Discord as a way to sign in on <a href="/wrath/profile">your profile</a>, then come back here.')
                      + '</p>')
+    if cur and link.growth is not None:   # Find a group (WU_DISCORD_LFG=1)
+        parts.append(link.growth.group_form(who, query, fm.form_token(who, "dlink"), path))
     if cur:
         parts.append(f'<form class="fm-form" method="post" action="{path}"><input type="hidden" name="t" value="{fm.form_token(who, "dlink")}">'
                      f'<p>Linked to the Discord account <b>{e(cur["dname"] or "(no name)")}</b>. Your replies in the Discord\'s forum '
@@ -1124,6 +1164,12 @@ def post(fm, h, who, form: dict) -> None:
             return page(fm, h, who, {}, "That link is old or was used already. Type /link in the Discord again.", status=400)
         link.do_link(who["acct"], info["discord"], info["dname"], form.get("c", ""))
         return page(fm, h, who, {}, ok="Linked. Your replies in the Discord's forum threads now reach the forum as you.")
+    if do == "group" and link.growth is not None:
+        try:
+            text = link.growth.group(who["acct"], form.get("realm", ""), form.get("what", ""), form.get("note", ""))
+        except fm.ForumError as ex:
+            return page(fm, h, who, {}, ex.text, status=ex.status)
+        return page(fm, h, who, {}, ok=text)
     if do == "site":
         did = _discord_of_site(fm, h)
         if not did:

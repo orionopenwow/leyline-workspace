@@ -45,6 +45,8 @@ rem the Leyline forum (/wrath/leyline/forum, /wrath/forum/api)
 if exist forum.py set "LINKS=%LINKS% forum.py"
 rem the forum's Discord link (forum_discord.py: off until portal.env turns it on; it uses ed25519_pure.py, shipped with hostflow.py)
 if exist forum.py if exist forum_discord.py set "LINKS=%LINKS% forum_discord.py"
+rem the Discord bot's growth side (discord_growth.py and discord_template.json, always as a pair: setup, live realms, Find a group, roles, AutoMod; every part off until portal.env turns it on, docs\DISCORD.md)
+if exist forum_discord.py if exist discord_growth.py if exist discord_template.json set "LINKS=%LINKS% discord_growth.py discord_template.json"
 rem the duel leaderboards (/wrath/leaderboards, /wrath/api/leaderboards; duels-export.py fills them on the realm)
 if exist duels.py set "LINKS=%LINKS% duels.py"
 rem Leyline profiles and the sign-in chooser (/wrath/signin, /wrath/profile, /wrath/avatar)
@@ -81,7 +83,7 @@ echo [1/2] Uploading...
 scp %OPTS% "%T%" %HOST%:/tmp/wu-fastloop.tgz || (echo Upload failed. If it says "timed out", wait 2 minutes and run this again. & pause & exit /b 1)
 
 echo [2/2] Applying it on the server (under a minute)...
-ssh %OPTS% %HOST% "mkdir -p /srv/wrath/fastloop && rm -rf /srv/wrath/fastloop/www-files /srv/wrath/fastloop/docs /srv/wrath/fastloop/hub && tar -xzf /tmp/wu-fastloop.tgz -C /srv/wrath/fastloop && rm -f /tmp/wu-fastloop.tgz && cd /srv/wrath/fastloop && sed -i 's/\r$//' fastloop.sh wrath_portal.py $(ls ratelimit.py links.py demo.py armory.py modes.py modes_data.py playmodes.py workshop.py creations.py hostflow.py ed25519_pure.py herokey_sso.py projects.py social.py forum.py forum_discord.py duels.py profiles.py herokeys.py network.py docs.py leyline_net.py upstream_addons.py admin.py wu-mod.py hq.py hub.py hub_rank.py listings.py 2>/dev/null) && bash fastloop.sh 2>&1 | tee fastloop.log; grep -q '^FASTLOOP OK' fastloop.log"
+ssh %OPTS% %HOST% "mkdir -p /srv/wrath/fastloop && rm -rf /srv/wrath/fastloop/www-files /srv/wrath/fastloop/docs /srv/wrath/fastloop/hub && tar -xzf /tmp/wu-fastloop.tgz -C /srv/wrath/fastloop && rm -f /tmp/wu-fastloop.tgz && cd /srv/wrath/fastloop && sed -i 's/\r$//' fastloop.sh wrath_portal.py $(ls ratelimit.py links.py demo.py armory.py modes.py modes_data.py playmodes.py workshop.py creations.py hostflow.py ed25519_pure.py herokey_sso.py projects.py social.py forum.py forum_discord.py discord_growth.py duels.py profiles.py herokeys.py network.py docs.py leyline_net.py upstream_addons.py admin.py wu-mod.py hq.py hub.py hub_rank.py listings.py 2>/dev/null) && bash fastloop.sh 2>&1 | tee fastloop.log; grep -q '^FASTLOOP OK' fastloop.log"
 if errorlevel 1 (
   echo.
   echo It did not report success; see the lines above. Anything it changed was put back.

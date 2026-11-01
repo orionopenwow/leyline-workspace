@@ -115,6 +115,10 @@ The JSON for a later launcher admin mode: `GET /wrath/admin/api/forum?view=repor
 Owner, 2026-10-31: "merge forum with discord somehow as the backend and talking". Code: `stream/forum_discord.py`
 (loaded by `forum.py`), tests: `stream/tests/test_forum_discord.py` (a fake Discord API, every flow below).
 
+The same bot also sets up the Discord's channels and roles, posts live realms, Den of the week and the featured
+mode, runs Find a group, gives roles from accounts and pushes our blocked words to AutoMod: docs/DISCORD.md (each part
+off until the owner turns it on; it needs Manage Channels and Manage Roles on top of the permissions below).
+
 **Our forum stays the source of truth.** Accounts, moderation, bans, blocked words and rate limits all stay ours.
 Discord is a live window onto it. It is **off** until the owner sets it up (the checklist below).
 

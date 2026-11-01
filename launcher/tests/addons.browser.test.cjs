@@ -167,10 +167,15 @@ test('Clients: saying no to moving your copy installs nothing', async () => {
   await ctx.close();
 });
 
-test('Mods › Installed: Our addons for the picked 3.3.5a client', async () => {
+test('Mods & Addons › Installed › Addons: the Leyline addons for the picked 3.3.5a client (never under Mods)', async () => {
   const { page, ctx, errors } = await open({ page: 'installed', addons: { 'c335a-1': { installed: '2026.1031.900' } } });
+  await page.waitForSelector('#inst-tabs .ly-tab[data-shelf="addons"]');
+  await page.click('#inst-tabs .ly-tab[data-shelf="mods"]');
+  await page.waitForFunction(() => document.getElementById('pane-installed').dataset.shelf === 'mods');
+  assert.equal(await page.locator('#ad-mods:not([hidden])').count(), 0, 'not on Installed › Mods');
+  await page.click('#inst-tabs .ly-tab[data-shelf="addons"]');
   await page.waitForSelector('#ad-mods:not([hidden]) .ad-row');
-  assert.match(await page.textContent('#ad-mods .card-head'), /OUR ADDONS/);
+  assert.match(await page.textContent('#ad-mods .card-head'), /LEYLINE ADDONS/);
   assert.deepEqual(await page.$$eval('#ad-mods .ad-list li b', (l) => l.map((x) => x.textContent)), ['Leyline Armory', 'OVQoL', 'Leyline UI']);
   assert.match(await page.textContent('#ad-mods'), /Installed and up to date/);
   assert.match(await page.textContent('#ad-mods'), /Your other addons stay as they are/);

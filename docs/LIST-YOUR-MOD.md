@@ -6,7 +6,7 @@ list one. It takes a minute.
 ## How
 
 1. Put your mod in a public repo on **GitHub**, **GitLab** or **Codeberg**.
-2. Open **List your mod**: in the launcher, Mods › Installed › **List your mod**; on the website, `/wrath/mods/list`.
+2. Open **List your mod**: in the launcher, Mods & Addons › Installed › **List your mod** (or Discover › **List your mod** / **List your addon**); the form asks whether it is an addon or a mod; on the website, `/wrath/mods/list`.
 3. Paste the link: the repo, a branch, a release, or one release file (a `.zip` or an `.MPQ`).
 4. We read it once and show you **exactly what one click will do**: which folders it adds, which files, how big.
    If something is wrong, it says what and where, so you can fix it in your repo and check again.

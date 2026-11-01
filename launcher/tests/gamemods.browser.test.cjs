@@ -1,6 +1,6 @@
-// Game mods and realms' mods (ui/gamemods.js, docs/GAME-MODS.md) in Chromium with a fake Tauri core: Mods › Discover ›
-// Game mods lists the Leyline Modes and the Workshop's game-category mods, each with what it needs and "Play it on" from
-// the realms' own mod lists (live ones only); the join offer (one click: "Get them and play") installs only catalog mods
+// Game modes and realms' mods (ui/gamemods.js, docs/GAME-MODS.md) in Chromium with a fake Tauri core: Mods & Addons ›
+// Discover › Mods › Game modes lists the Leyline Modes (above the list's own game modes), each with what it needs and
+// "Play it on" from the realms' own mod lists (live ones only); the Simple view's Game modes row has both; the join offer (one click: "Get them and play") installs only catalog mods
 // with a client part through mod_install, asks for native code per mod, and never installs without the click.
 // Screenshots go to $GAMEMODS_SHOTS when set.
 //
@@ -97,25 +97,31 @@ async function open(opts = {}, viewport) {
 const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name + '.png') }); };
 const calls = (page, name) => page.evaluate((n) => window.__calls.filter(([c]) => c === n).map(([, a]) => a), name);
 
-test('Game mods tab: the Leyline Modes and game-category mods, what each needs, Play it on from live realms', async () => {
+test('Mods › Game modes: the Leyline Modes above the game modes in the list, what each needs, Play it on from live realms', async () => {
   const { page, errors } = await open();
-  await page.click('#discover-tabs .ly-tab[data-tab="game"]');
-  await page.waitForFunction(() => document.querySelectorAll('#game-discover .gm-card').length >= 5);
-  await shot(page, 'launcher-game-mods');
+  await page.waitForSelector('#dc-rows .dc-srow[data-row="game"]');
+  const row = await page.$$eval('#dc-rows .dc-srow[data-row="game"] .gm-card', (c) => c.map((x) => x.dataset.id));
+  assert.deepEqual(row, ['mode:minigolf', 'mode:bumper-balls', 'mode:coin-dash'], 'the Simple row: the first live ones');
+  await page.click('#dc-rows .dc-srow[data-row="game"] .dc-srow-h .btn');
+  await page.waitForFunction(() => document.querySelectorAll('#game-discover .gm-card').length >= 4);
+  await shot(page, 'launcher-game-modes');
   const ids = await page.$$eval('#game-discover .gm-card', (c) => c.map((x) => x.dataset.id));
-  assert.deepEqual(ids, ['mode:minigolf', 'mode:bumper-balls', 'mode:coin-dash', 'mode:community', 'mod:dalaran-dice'], 'realm modes and game categories only');
-  const on = async (id) => page.textContent(`#game-discover .gm-card[data-id="${id}"] .gm-on`);
+  assert.deepEqual(ids, ['mode:minigolf', 'mode:bumper-balls', 'mode:coin-dash', 'mode:community'], 'the Leyline Modes (realm modes only)');
+  assert.deepEqual(await page.$$eval('#cat-grid .mod-card', (c) => c.map((x) => x.dataset.id)), ['mod:dalaran-dice'], 'then the list\'s game modes');
+  assert.equal(await page.getAttribute('#dc-smart .chip-btn:text-is("Game modes")', 'aria-pressed'), 'true');
+  const on = async (id) => page.textContent(`#dc-rows .gm-card[data-id="${id}"] .gm-on, #game-discover .gm-card[data-id="${id}"] .gm-on`);
   assert.equal(await on('mode:minigolf'), 'Play it on: Wrath Unleashed');
   assert.equal(await on('mode:coin-dash'), 'Play it on: Wrath Unleashed, Frost Haven');
-  assert.equal(await on('mod:dalaran-dice'), 'Play it on: Wrath Unleashed, Frost Haven');
-  assert.equal(await page.isVisible('#cat-grid'), false, 'the other Discover parts are hidden');
   const tags = await page.$$eval('#game-discover .gm-card[data-id="mode:minigolf"] .gm-tag', (t) => t.map((x) => x.textContent));
   assert.deepEqual(tags, ['Needs a realm that allows it', 'Plays through the Leyline addons']);
-  const dtags = await page.$$eval('#game-discover .gm-card[data-id="mod:dalaran-dice"] .gm-tag', (t) => t.map((x) => x.textContent));
-  assert.deepEqual(dtags, ['Needs a realm that allows it', 'Adds files to your game']);
-  assert.equal(await page.textContent('#game-discover .gm-card[data-id="mod:dalaran-dice"] .acts .btn.primary'), 'Install');
   assert.equal(await page.textContent('#game-discover .gm-card[data-id="mode:minigolf"] .acts .btn.primary'), 'Play');
+  // the list's own game mode as a game card (Simple view's row data): what it needs and where it plays
+  const dice = await page.evaluate(() => { const g = window.LeylineGameMods.entries().find((x) => x.id === 'mod:dalaran-dice'); return { realm: g.realm, client: g.client, on: window.LeylineGameMods.runsOn(g.id).map((r) => r.name) }; });
+  assert.deepEqual(dice, { realm: true, client: true, on: ['Wrath Unleashed', 'Frost Haven'] });
+  assert.equal(await page.evaluate(() => window.LeylineGameMods.entries().some((g) => g.id === 'mod:pings' || g.id === 'mod:hud')), false, 'an addon or a tool is never a game mode');
   assert.doesNotMatch(await page.textContent('#game-discover'), /Asleep|Coming|skating/i, 'offline realms and made-up entries never shown');
+  await page.click('#dc-smart .chip-btn:text-is("All mods")');
+  await page.waitForFunction(() => document.getElementById('game-discover').hidden);
   assert.deepEqual(errors, []);
   await page.close();
 });

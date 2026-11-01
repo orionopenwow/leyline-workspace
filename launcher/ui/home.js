@@ -507,7 +507,7 @@
     for (const o of list) {
       const row = el("button", "hs-wm");
       row.type = "button";
-      row.title = `${o.name}: open Mods › Discover`;
+      row.title = `${o.name}: open Mods & Addons › Discover`;
       row.addEventListener("click", () => go("mods", "discover"));
       const tx = el("span", "hs-wm-t");
       tx.append(el("b", "", o.name), el("i", "", [catName(o) || (o.source === "packaged" ? "Workshop" : "Community link"), o.author ? "by " + o.author : ""].filter(Boolean).join(" · ")));
@@ -689,7 +689,7 @@
     const cat = App.catalog();
     const picks = cat.projects.filter((p) => p.source === "packaged").concat(cat.projects.filter((p) => p.source !== "packaged")).slice(0, 4);
     fill("hm-mods", picks.map((p) => {
-      const c = card("hm-mod", () => go("mods", "discover"), `${p.name}: open Mods › Discover`);
+      const c = card("hm-mod", () => go("mods", "discover"), `${p.name}: open Mods & Addons › Discover`);
       const k = cat.categories.find((x) => x.id === p.category);
       const ic = el("span", "hm-ic", ([...String(p.name).trim()][0] || "?").toUpperCase());
       ic.style.setProperty("--h", String(App.nameHue(p.name)));

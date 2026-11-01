@@ -2334,7 +2334,7 @@ class Hub:
                 f'rel="noopener nofollow ugc" target="_blank">Visit the authors\' page</a></p></article>')
 
     # ---------------------------------------------------------------- the addon marketplace (upstream addons)
-    # The launcher's Mods › Discover marketplace on the web (launcher/ui/market.js): curated third-party addons the
+    # The launcher's Discover › Addons marketplace on the web (launcher/ui/market.js): curated third-party addons the
     # launcher installs straight from their author's repo (stream/upstream_addons.py, all.json source "upstream"). The
     # site never installs or hosts them: Install hands over to the launcher (leyline://install/up:<id>), Source opens the
     # author's repo. They are listed here only, never in items() (the launcher's catalog.json feed stays as it was).
@@ -2452,7 +2452,7 @@ class Hub:
         return self._shell(f"{name} · Leyline", body, BASE + "/p/" + slug, active="addons")
 
     def mk_bar(self, ups: list[dict], tag: str, works: bool, link) -> str:
-        """The marketplace's chips above the grid (market.js bar()): All addons, each kind that has an addon, and
+        """Addons' chips (market.js chips()): All addons, each kind that has an addon, and
         "Works on <the official realm>". Plain links (no script)."""
         e = html.escape
         counts: dict[str, int] = {}
@@ -3927,7 +3927,7 @@ background:var(--lk-surface-2);color:var(--lk-text-2)!important;font-size:13px;f
 .hb-chip:hover{border-color:var(--lk-border-strong);color:var(--lk-text)!important}
 .hb-chip.on{background:var(--lk-accent-soft);border-color:var(--lk-accent);color:var(--lk-text)!important}
 /* Mods, the Simple view: rows of big cards under one search box */
-.hb-smart{margin:0 0 2px}
+.hb-smart{margin:0 0 2px}.hb-filters>*,.hb-mk-bar,.hb-mk-bar .hb-chips{min-width:0}
 .hb-srow{margin:22px 0 0}.hb-srow:first-of-type{margin-top:14px}
 .hb-srow-h{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin:0 0 10px}
 .hb-srow-h h2{margin:0;font-size:18px;line-height:1.25;text-align:left}.hb-srow-h p{margin:2px 0 0;color:var(--lk-muted);font-size:13.5px}

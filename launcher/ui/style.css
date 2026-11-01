@@ -784,8 +784,15 @@ select.dc-client { field-sizing: content; width: auto; min-width: 0; max-width: 
 .dc-mf[open] summary::before { content: "\2212"; }
 .dc-mf[open] summary { margin-bottom: 8px; }
 .dc-mf-row { gap: 8px; margin: 0 0 8px; }
-#dc-more-body .mk-bar { margin: 0; }
-/* Game mods (gamemods.js) */
+/* Mods and Addons: the line that says what is on the tab, and Installed's own Mods | Addons tabs (shelf.js) */
+.shelf-line { margin: 0 0 12px; max-width: 86ch; color: var(--t-text-2); }
+.inst-tabs { margin-bottom: 10px; }
+.inst-tabs .ly-tab { display: inline-flex; align-items: center; gap: 7px; }
+.inst-tabs .badge { margin-left: 0; height: 18px; min-width: 20px; padding: 0 6px; }
+#dc-more-body .mk-more { margin: 4px 0 0; }
+/* Mods › Game modes: the Leyline Modes above the list (gamemods.js) */
+.game-box { margin: 0 0 16px; }
+.game-box .gm-h:first-child { margin-top: 0; }
 .game-box .lede { margin: 0 0 12px; color: var(--t-text-2); max-width: 72ch; }
 .gm-tags { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 0; }
 .gm-tag { padding: 1px 8px; border-radius: 999px; border: var(--t-border-w) solid var(--t-border-strong); color: var(--t-muted); font: 500 11px var(--t-font); }

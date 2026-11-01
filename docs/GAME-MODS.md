@@ -8,24 +8,29 @@ The model is Garry's Mod and Minecraft servers: **a realm says which mods it run
 ones their game needs, in one click.** Players never hunt for files, and a realm can never push anything a player's
 launcher would not install from the Workshop anyway.
 
-## The Mods page
+## The Mods and Addons pages
 
-Website `/wrath/leyline/catalog` and the launcher's Mods › Discover open on the **Simple view**: one search box and a few
-short rows of big cards (Popular, Game modes, Make it look nicer, Quality of life). **Browse everything**
-(`/catalog?view=all`, or any search or filter) is the full catalog: one search box, four smart chips (Everything, Addons,
-Game modes, Works on Wrath Unleashed), and Sort, Show, Client, From, Kind and the addon kinds under **More filters**.
-The rows are `Hub.simple_rows` (stream/hub.py) and `launcher/ui/simple.js`, with the same three lists. Routes, `all.json`
-and `catalog.json` are unchanged. A **List your mod** button (`data-slot="list-your-mod"`; the launcher calls
-`window.LeylineListMod.open()` when it exists) is the entry point for the submission flow, which lives elsewhere.
+Mods and Addons are two shelves with one rule (`docs/WORDS.md`, `launcher/ui/shelf.js`, `stream/hub.py shelf_of`):
+**Addons** are in-game interface helpers (they go in the game's AddOns folder); **Mods** are everything that changes
+the game itself. The launcher's page is **Mods & Addons** (Installed and Discover, each split into Mods and Addons;
+Discover also has Themes). The website has **Mods** (`/wrath/leyline/catalog`) and **Addons** (`/wrath/leyline/addons`),
+with the same tabs over them. Each opens on the **Simple view**: the line that says what is on it, one search box and a
+few short rows of big cards (Mods: Popular, then one row per category; Addons: Popular, Make it look nicer, Quality of
+life). **Browse everything** (`?view=all`, or any search or filter) is the full list: Mods has its categories as chips
+(Game modes, Models & textures, Realm & server modes, Engine & graphics, Sounds, Maps & builds, Tools: `MOD_GROUPS`, from
+the mods list's own categories), Addons has the marketplace's kinds; Sort, Client and From wait under **More filters**.
+Older addresses send a 301 (`catalog?cat=addons` to `/addons`, `?view=game` to `?group=game`). **List your mod** /
+**List your addon** (`data-slot="list-your-mod"`; the launcher calls `window.LeylineListMod.open(kind)`) asks which it is.
 
-## Game mods
+## Game modes
 
-**Game mods** (website tab `/catalog?view=game`, launcher Discover › Game mods) are mods that change how you play in game:
+**Game modes** (website `/catalog?group=game`, launcher Discover › Mods › Game modes) are the Mods that change how you
+play in game. The Leyline Modes show above the list's own game modes:
 
 | Kind | Id | Where it comes from | What it needs |
 |---|---|---|---|
 | Leyline Mode | `mode:<id>` | `stream/playmodes.json`, kind `realm` (minigolf, bumper balls, coin dash, community minigames) | a realm with the Leyline realm scripts (`ov_modes.lua`, `ov_golf.lua`, `ov_playmode.lua`); plays through the Leyline addons |
-| Workshop mod | `mod:<id>`, `up:<slug>` | the Workshop catalog, categories `sandbox`, `maps`, `encounters`, `conversions` | `realm`/`both` kinds: a realm that installed it; `ui`/`both`: files in your game, installed by the launcher |
+| Game mode from the list | `mod:<id>`, `up:<slug>` | the mods list, categories `sandbox`, `conversions` (a map or a boss fight has its own Mods category) | `realm`/`both` kinds: a realm that installed it; `ui`/`both`: files in your game, installed by the launcher |
 
 Each card says what it adds, whether it needs a realm that allows it, how it reaches your game, and **Play it on:** the
 live realms whose mod list names it. A future mode (skating and the like) shows as **Coming** only once it is a real

@@ -1,7 +1,7 @@
-// The addon marketplace in Mods › Discover: upstream addons (all.json source "upstream", src-tauri/src/upstream.rs),
+// The addon marketplace in Mods & Addons › Discover › Addons: upstream addons (all.json source "upstream", src-tauri/src/upstream.rs),
 // curated third-party addons the core installs straight from the author's own repo, checked file by file against
-// what a person reviewed. app.js calls in with a few lines (window.LeylineMarket): keep(p) for the filters, bar() for
-// the sub-category chips above the grid, card(p, c) for an upstream card. Everything else is here. It reads app.js's
+// what a person reviewed. app.js calls in with a few lines (window.LeylineMarket): keep(p) for the filters, card(p, c) for
+// an upstream card; simple.js takes chips() for the Addons tab's kinds. Everything else is here. It reads app.js's
 // globals (catalog, installed, installProject, openUrl, cardThumb, fitsClient, firstLine) when it is called; it loads
 // before app.js so the first Discover render already has it.
 // The core never takes a URL from here: Install sends the project id, and the core finds the entry in its own catalog.
@@ -58,38 +58,32 @@
     b.addEventListener("click", click);
     return b;
   }
-  // The chips above the grid: the sub-categories (when Show is All or Addons and UI) and "Works on <realm>".
-  function bar(cat) {
-    let box = $("mk-bar");
-    const grid = $("cat-grid");
-    if (!box && grid) {
-      box = el("div", "chips mk-bar");
-      box.id = "mk-bar";
-      box.setAttribute("role", "toolbar");
-      box.setAttribute("aria-label", "Addon types");
-      const more = $("dc-more-body");   // under Discover's More filters (index.html, simple.js)
-      if (more) more.append(box); else grid.before(box);
-    }
-    if (!box) return;
-    const ups = projects().filter((p) => p.source === "upstream");
-    const show = ups.length > 0 && (!cat || cat === "addons");
-    box.hidden = !show;
-    if (!show) {
-      if (state.sub || state.works) { state.sub = ""; state.works = false; }
-      box.replaceChildren();
-      return;
-    }
+  // Discover › Addons' chips (simple.js drawChips puts them in the full view's chip row): All addons, each kind that has
+  // an addon in the list (the curate seeds' tags, in SUBS order), and "Works on <realm>". addons: the tab's list.
+  // At most TOP kinds (the ones with the most addons, in SUBS order) are in the row; the rest wait under More filters
+  // (rest: that box), so the row stays short (owner 31 Oct: "trim search").
+  const TOP = 10;
+  function chips(addons, rest) {
+    const list = addons || projects().filter((p) => p.source === "upstream");
     const counts = {};
-    for (const p of projects()) for (const t of p.tags || []) counts[t] = (counts[t] || 0) + 1;
-    const kids = [chip("All addons", !state.sub, () => { state.sub = ""; save(); rerender(); })];
-    for (const [id, label] of SUBS) {
-      if (!counts[id]) continue;
-      kids.push(chip(label, state.sub === id, () => { state.sub = state.sub === id ? "" : id; save(); rerender(); }, `${counts[id]} addon${counts[id] === 1 ? "" : "s"}`));
+    for (const p of list) for (const t of p.tags || []) counts[t] = (counts[t] || 0) + 1;
+    const used = SUBS.filter(([id]) => counts[id] || state.sub === id);
+    const top = new Set(used.map(([id]) => id).sort((a, b) => (counts[b] || 0) - (counts[a] || 0)).slice(0, TOP));
+    if (state.sub) top.add(state.sub);
+    const one = ([id, label]) => chip(label, state.sub === id, () => { state.sub = state.sub === id ? "" : id; save(); rerender(); }, `${counts[id] || 0} addon${counts[id] === 1 ? "" : "s"}`);
+    const kids = [chip("All addons", !state.sub && !state.works, () => { state.sub = ""; state.works = false; save(); rerender(); })];
+    for (const k of used) if (top.has(k[0])) kids.push(one(k));
+    if (list.some((p) => p.source === "upstream")) {
+      const w = chip(`Works on ${realm()}`, state.works, () => { state.works = !state.works; save(); rerender(); }, `Tried on ${realm()} by our team`);
+      w.classList.add("mk-works-chip");
+      kids.push(w);
     }
-    const w = chip(`Works on ${realm()}`, state.works, () => { state.works = !state.works; save(); rerender(); }, `Tried on ${realm()} by our team`);
-    w.classList.add("mk-works-chip");
-    kids.push(w);
-    box.replaceChildren(...kids);
+    if (rest) {
+      const more = used.filter(([id]) => !top.has(id)).map(one);
+      rest.hidden = !more.length;
+      rest.replaceChildren(...(more.length ? [el("span", "hint", "More kinds")] : []), ...more);
+    }
+    return kids;
   }
 
   // ------------------------------------------------------------------ one dialog (confirms and the detail view)
@@ -135,12 +129,12 @@
     const clash = (p.conflicts || []).filter((id) => have.has(id));
     if (clash.length) {
       await ask({ title: `${p.name} can't go in beside ${clash.map(nameOf).join(", ")}`,
-        body: "They use the same addon folder. Remove the other one in Mods › Installed first.", yes: "OK", no: "Close" });
+        body: "They use the same addon folder. Remove the other one in Mods & Addons › Installed first.", yes: "OK", no: "Close" });
       return;
     }
     if (p.replaces_ui && !have.has(p.id)) {
       const ok = await ask({ title: `Install ${p.name}?`, body: `${p.name} replaces your whole interface.`,
-        warn: "It may conflict with the Leyline UI. You can turn it off or remove it in Mods › Installed at any time.", yes: "Install it" });
+        warn: "It may conflict with the Leyline UI. You can turn it off or remove it in Mods & Addons › Installed at any time.", yes: "Install it" });
       if (!ok) return;
     }
     const need = (p.requires || []).filter((id) => !have.has(id));
@@ -269,5 +263,5 @@
     return art;
   }
 
-  window.LeylineMarket = { keep, words, bar, card, detail, install, state, SUBS };
+  window.LeylineMarket = { keep, words, chips, card, detail, install, state, SUBS };
 })();

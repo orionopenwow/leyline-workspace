@@ -1,6 +1,6 @@
-// The addon marketplace in Mods › Discover (ui/market.js) in Chromium with a fake Tauri core: upstream addons
+// The addon marketplace in Mods & Addons › Discover › Addons (ui/market.js) in Chromium with a fake Tauri core: upstream addons
 // (installed from the author's repo) get their own card with the credit line, licence chip, "Works on" badge and
-// Source link; the sub-category chips and the "Works on Wrath Unleashed" filter; search by tags and folders; the
+// Source link; the kinds as the Addons tab's chips and the "Works on Wrath Unleashed" filter (never on Mods); search by tags and folders; the
 // detail view (needs, can't go with, size and files, whole-interface warning, last reviewed); Install that offers
 // what an addon needs first, refuses one beside a conflicting install, warns for a whole-UI replacement; the
 // update dot; text shown as text. Screenshots go to $MARKET_SHOTS when set.
@@ -40,7 +40,7 @@ const CATALOG = { categories: [{ id: 'addons', name: 'Addons and UI', line: '', 
     U('plates', 'Plates', { tags: ['nameplates'], conflicts: ['up:plates-old'], addons: ['PlateBuffs'] }),
     U('plates-old', 'Plates Old', { tags: ['nameplates'], conflicts: ['up:plates'], addons: ['PlateBuffs'] }),
     U('evil', '<img src=x onerror="window.__pwned=1">', { tags: ['chat'] }),
-    PK, Object.assign({}, PK, { id: 'mod:hud', name: 'Hud', category: 'tools', on_wrath: false }),
+    PK, Object.assign({}, PK, { id: 'mod:hud', name: 'Hud', category: 'tools', kind: 'realm', on_wrath: false }),
   ], from_cache: false, saved_at: 1, error: null };
 
 const FAKE = ({ catalog, installedMods }) => {
@@ -48,6 +48,7 @@ const FAKE = ({ catalog, installedMods }) => {
   try {
     localStorage.setItem('leyline.page', 'discover');
     localStorage.setItem('leyline.dcView', 'all'); localStorage.setItem('leyline.dcMore', '1');   // the full catalog, More filters open (simple.js)
+    localStorage.setItem('leyline.dcTab', 'addons');   // Discover › Addons (themes.js)
     localStorage.removeItem('leyline.mkSub');
     localStorage.removeItem('leyline.mkWorks');
   } catch (_) { /* fine */ }
@@ -121,25 +122,28 @@ test('upstream cards: credit line, licence chip, badge, Source link, text as tex
 
 test('sub-category chips, Works on filter, search by tag', async () => {
   const { page, errors } = await open();
-  const chips = await page.$$eval('#mk-bar .chip-btn', (b) => b.map((x) => x.textContent));
+  const chips = await page.$$eval('#dc-smart .chip-btn', (b) => b.map((x) => x.textContent));
   assert.deepEqual(chips, ['All addons', 'Full interfaces', 'Nameplates', 'Meters', 'Chat', 'Works on Wrath Unleashed'], 'only tags in use, in order');
-  await page.click('#mk-bar .chip-btn:text-is("Nameplates")');
+  await page.click('#dc-smart .chip-btn:text-is("Nameplates")');
   await page.waitForFunction(() => document.querySelectorAll('#cat-grid .mod-card').length === 2);
   assert.deepEqual((await names(page)).sort(), ['Plates', 'Plates Old']);
-  assert.equal(await page.getAttribute('#mk-bar .chip-btn:text-is("Nameplates")', 'aria-pressed'), 'true');
-  await page.click('#mk-bar .chip-btn:text-is("All addons")');
-  await page.click('#mk-bar .mk-works-chip');
+  assert.equal(await page.getAttribute('#dc-smart .chip-btn:text-is("Nameplates")', 'aria-pressed'), 'true');
+  await page.click('#dc-smart .chip-btn:text-is("All addons")');
+  await page.click('#dc-smart .mk-works-chip');
   await page.waitForFunction(() => document.querySelectorAll('#cat-grid .mod-card').length === 3);
   assert.deepEqual((await names(page)).sort(), ['ElvUI', 'Pings', 'Skada'], 'reviewed on the realm (and our own mods on it)');
-  await page.click('#mk-bar .mk-works-chip');
+  await page.click('#dc-smart .mk-works-chip');
   await page.fill('#cat-q', 'meters');
   await page.waitForFunction(() => document.querySelectorAll('#cat-grid .mod-card').length === 1);
   assert.deepEqual(await names(page), ['Skada'], 'search reads the sub-category');
   await page.fill('#cat-q', 'platebuffs');
   await page.waitForFunction(() => document.querySelectorAll('#cat-grid .mod-card').length === 2);
   await page.fill('#cat-q', '');
-  await page.selectOption('#cat-cat', 'cat:tools');
-  await page.waitForFunction(() => document.getElementById('mk-bar').hidden);
+  assert.ok(!(await names(page)).includes('Hud'), 'a tool is a mod: never on Addons');
+  await page.click('#discover-tabs .ly-tab[data-tab="mods"]');
+  await page.waitForFunction(() => document.getElementById('pane-discover').dataset.shelf === 'mods');
+  assert.deepEqual(await names(page), ['Hud'], 'Mods: no addon from the marketplace');
+  assert.equal(await page.locator('#dc-smart .mk-works-chip, #dc-smart .chip-btn:text-is("All addons")').count(), 0, 'no addon kinds on Mods');
   assert.deepEqual(errors, []);
   await page.close();
 });

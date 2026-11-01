@@ -22,9 +22,17 @@
   const REASONS = [["broken", "It doesn't work"], ["malware", "Harmful or a virus"], ["stolen", "Not theirs / stolen work"],
     ["gamedata", "Ships game files"], ["cheat", "A cheat or exploit"], ["rude", "Rude or hateful"], ["spam", "Spam"],
     ["other", "Something else"]];
+  // Addon or mod (docs/WORDS.md): Addon first, then Mod with its categories in the Mods tab's order (shelf.js GROUPS);
+  // the website's forms group them the same way (stream/hub.py kind_options).
   const CATS = [["addons", "Addons and UI"], ["graphics", "Shaders and graphics"], ["sandbox", "Sandbox and game modes"],
     ["realm-scripts", "Realm scripts"], ["audio", "Sounds and music"], ["tools", "Tools"], ["models", "Models and props"],
     ["maps", "Custom maps"]];
+  const ADDON_LABEL = "Addon: an in-game interface helper", MOD_LABEL = "Mod: changes the game itself";
+  function modOrder() {
+    const G = window.LeylineShelf ? window.LeylineShelf.GROUPS : [];
+    const order = G.flatMap((g) => g[2]);
+    return CATS.filter(([id]) => id !== "addons").sort((a, b) => (order.indexOf(a[0]) + 99) % 99 - (order.indexOf(b[0]) + 99) % 99);
+  }
   const DEFAULT_CAT = { addon: "addons", package: "addons", patch: "graphics", native: "tools", "realm-script": "realm-scripts", "game-mode": "sandbox" };
   const failed = (e, fb) => {
     const m = String(e);
@@ -70,8 +78,10 @@
   }
   function status() { const s = el("p", "status lm-status"); s.setAttribute("role", "status"); return s; }
 
-  function open() {
-    const d = head("List your mod");
+  let listKind = "mod";   // "addon" when it was opened from an Addons tab ("List your addon")
+  function open(kind) {
+    listKind = kind === "addon" ? "addon" : "mod";
+    const d = head(listKind === "addon" ? "List your addon" : "List your mod");
     if (!signedIn()) {
       d.append(el("p", "", "Sign in to list a mod: any player can. Paste your repo link and Leyline shows exactly what one click will install."));
       const acc = el("button", "btn primary", "Sign in"); acc.type = "button";
@@ -119,9 +129,16 @@
     out.append(ul);
     (c.flags || []).forEach((f) => out.append(el("p", "lm-flag", f)));
     (c.notes || []).forEach((n) => out.append(el("p", "small", n)));
-    const cl = el("label", "ac-label", "Category"); cl.htmlFor = "lm-cat";
+    const cl = el("label", "ac-label", "Addon or mod"); cl.htmlFor = "lm-cat";
     const cat = el("select"); cat.id = "lm-cat";
-    CATS.forEach(([id, name]) => { const o = el("option", "", name); o.value = id; if (id === (DEFAULT_CAT[c.format] || "addons")) o.selected = true; cat.append(o); });
+    const want = listKind === "addon" ? "addons" : DEFAULT_CAT[c.format] || "addons";
+    const group = (label, list) => {
+      const g = el("optgroup"); g.label = label;
+      list.forEach(([id, name]) => { const o = el("option", "", name); o.value = id; if (id === want) o.selected = true; g.append(o); });
+      cat.append(g);
+    };
+    group(ADDON_LABEL, CATS.filter(([id]) => id === "addons"));
+    group(MOD_LABEL, modOrder());
     const dl = el("label", "ac-label", "One-line description (10 to 140 characters)"); dl.htmlFor = "lm-desc";
     const desc = el("input"); desc.id = "lm-desc"; desc.maxLength = 140;
     const st = status();
@@ -208,14 +225,15 @@
     d.showModal();
   }
 
-  // ------------------------------------------------------------------ the button on Mods › Installed
+  // ------------------------------------------------------------------ the button on Mods & Addons › Installed
   function addButton() {
     if ($("mods-list-yours")) return;
     const find = document.querySelector('#pane-installed [data-page-go="discover"]');
     if (!find) return;
-    const b = el("button", "btn small", "List your mod"); b.type = "button"; b.id = "mods-list-yours";
+    const addon = document.getElementById("pane-installed")?.dataset.shelf === "addons";
+    const b = el("button", "btn small", addon ? "List your addon" : "List your mod"); b.type = "button"; b.id = "mods-list-yours";
     b.title = "List your mod for one-click install: paste your repo link";
-    b.addEventListener("click", open);
+    b.addEventListener("click", () => open(document.getElementById("pane-installed")?.dataset.shelf === "addons" ? "addon" : "mod"));
     find.after(b);
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", addButton); else addButton();

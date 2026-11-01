@@ -191,6 +191,11 @@ if [ -f upstream_addons.py ] && [ -f upstream-addons.json ]; then
   python3 -I -c 'import ast,sys,json;ast.parse(open(sys.argv[1]).read());json.load(open(sys.argv[2]))' upstream_addons.py upstream-addons.json && {
     install -m 644 upstream_addons.py "$WU/portal/upstream_addons.py"; install -m 644 upstream-addons.json "$WU/portal/upstream-addons.json"; }
 fi
+# Looks: /wrath/looks and the looks in all.json (stream/looks.py and stream/looks.json), always as a pair
+if [ -f looks.py ] && [ -f looks.json ]; then
+  python3 -I -c 'import ast,sys,json;ast.parse(open(sys.argv[1]).read());json.load(open(sys.argv[2]))' looks.py looks.json && {
+    install -m 644 looks.py "$WU/portal/looks.py"; install -m 644 looks.json "$WU/portal/looks.json"; }
+fi
 # Leyline friends and messages (/wrath/api/social, /wrath/link): optional; its store is $WU/portal-data/social.sqlite3
 if [ -f social.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' social.py && install -m 644 social.py "$WU/portal/social.py"; fi
 # the one blocklist for names (stream/namecheck.py and blocklist.json, always as a pair: social.py, profiles.py, forum.py,

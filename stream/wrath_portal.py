@@ -299,6 +299,9 @@ upstream_addons = _load_module("wu_upstream_addons", "upstream_addons.py")   # r
 herokey_mod = _load_module("wu_herokey", "herokey_sso.py")   # Hero Key sign-in on Beacons (stream/herokey_sso.py)
 hub_mod = _load_module("wu_hub", "hub.py")   # /wrath/leyline-preview: the hidden Leyline hub (stream/hub.py)
 playmodes = _load_module("wu_playmodes", "playmodes.py")   # game modes: /wrath/modes.json, Games, ?go=mode: (stream/playmodes.py)
+modepacks = _load_module("wu_modepacks", "modepack.py")   # modes anyone can host and fork: /wrath/modes/<id>, /jam (stream/modepack.py)
+if modepacks is not None:
+    modepacks.bind(lambda name: globals()[name])
 if hub_mod is not None:
     hub_mod.bind(lambda name: globals()[name])
 if hostflow is not None:
@@ -1530,6 +1533,8 @@ def clean_listing_record(rec) -> dict | None:
            "rules": [t for t in (txt(x, 120) for x in (rec.get("rules") if isinstance(rec.get("rules"), list) else [])[:10]) if t]}
     if network is not None:   # build, core, tags, region, language, uptime, score, ... (stream/network.py)
         out.update(network.extra(rec))
+    if modepacks is not None:   # the mode it runs, its credit and recipe (stream/modepack.py)
+        out["mode"] = modepacks.listing_mode(rec.get("mode"))
     return out
 
 
@@ -3247,7 +3252,11 @@ class PageHandler(BaseHTTPRequestHandler):
                 return
             self.send(200, site_chrome(modes.page(leyline_css(), art_url, art_present, card_meta, REALM_NAME,
                                                   public_host=PUBLIC_HOST,
-                                                  games=playmodes.section() if playmodes is not None else ""), path))
+                                                  games=(playmodes.section() if playmodes is not None else "")
+                                                  + (modepacks.section() if modepacks is not None else "")), path))
+            return
+        if modepacks is not None and modepacks.match(path):   # a mode's page, the mode jam (stream/modepack.py)
+            modepacks.get(self, path, query)
             return
         if path == "/wrath/modes.json" and playmodes is not None:   # the game modes catalog (stream/playmodes.py)
             if not browse_limit.hit(rl_bucket(self.ip()), 600):

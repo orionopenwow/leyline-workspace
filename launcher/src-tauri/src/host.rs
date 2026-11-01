@@ -17,6 +17,7 @@
 
 pub mod console;
 pub mod dens;
+pub mod modes; // modes anyone can host and fork: the Host page's first screen (host/modes.rs)
 pub mod docker;
 pub mod network;
 pub mod pack;

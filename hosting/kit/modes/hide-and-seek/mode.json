@@ -1,0 +1,70 @@
+{
+ "format": "leyline-mode",
+ "schema": 1,
+ "id": "hide-and-seek",
+ "name": "Hide and seek",
+ "line": "Someone hides in the city and hints come every few minutes. Find them first to win.",
+ "picture": "picture.svg",
+ "version": "1.0",
+ "author": "Leyline",
+ "based_on": null,
+ "status": "live",
+ "profile": "dalaran",
+ "scripts": [
+  "ov_events.lua"
+ ],
+ "env": {
+  "OV_EVENTS": "1",
+  "OV_EVENTS_HIDE": "1"
+ },
+ "mods": [],
+ "den": null,
+ "tags": [
+  "hangout"
+ ],
+ "settings": [
+  {
+   "key": "hide_every",
+   "label": "A round every",
+   "type": "number",
+   "min": 1,
+   "max": 12,
+   "default": 2,
+   "unit": "hours",
+   "env": "OV_EVENTS_HIDE_EVERY_H"
+  },
+  {
+   "key": "trivia",
+   "label": "Trivia too",
+   "type": "toggle",
+   "default": true,
+   "env": "OV_EVENTS_TRIVIA"
+  },
+  {
+   "key": "trivia_every",
+   "label": "Trivia every",
+   "type": "number",
+   "min": 1,
+   "max": 12,
+   "default": 2,
+   "unit": "hours",
+   "env": "OV_EVENTS_TRIVIA_EVERY_H"
+  },
+  {
+   "key": "stock",
+   "label": "Announce the world's own events",
+   "type": "toggle",
+   "default": true,
+   "env": "OV_EVENTS_STOCK"
+  },
+  {
+   "key": "min_players",
+   "label": "Players online to start a round",
+   "type": "number",
+   "min": 1,
+   "max": 20,
+   "default": 1,
+   "env": "OV_EVENTS_MIN_PLAYERS"
+  }
+ ]
+}

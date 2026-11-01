@@ -1,0 +1,45 @@
+/* Leyline Launcher: the Host page's mode cards, form and "You're live" (hostmodes.js). The host console's look
+   (hostconsole.css: .hc-sw, .hc-field, .hc-seg, .hc-prog, .hc-live) and the theme tokens only, so Light and theme packs follow. */
+.hc-pane.hx-on > .hc-setup { display: none; }
+.hx { display: block; margin: 0 0 14px; }
+.hx-sw { display: grid; gap: 12px; }
+.hx-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.hx-lede { color: var(--t-text-2); font-size: 13.5px; max-width: 70ch; }
+.hx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.hx-card {
+  display: flex; flex-direction: column; min-width: 0; overflow: hidden; border-radius: var(--t-radius-sm);
+  background: var(--hc-row, var(--t-surface-2)); border: 1px solid var(--hc-row-border, var(--t-border)); transition: border-color 0.12s, box-shadow 0.12s;
+}
+.hx-card:hover, .hx-card:focus-within { border-color: var(--t-accent); box-shadow: 0 0 0 3px var(--t-accent-soft); }
+.hx-card.soon { opacity: 0.78; }
+.hx-pic { aspect-ratio: 16 / 9; background: color-mix(in srgb, var(--t-bg) 70%, transparent); border-bottom: 1px solid var(--hc-row-border, var(--t-border)); }
+.hx-pic img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.hx-pic.small { width: 160px; flex: none; border: 1px solid var(--hc-row-border, var(--t-border)); border-radius: var(--t-radius-xs); overflow: hidden; }
+.hx-b { display: grid; gap: 5px; padding: 10px 12px 12px; flex: 1; align-content: start; }
+.hx .hx-name { margin: 0; letter-spacing: 0; text-transform: none; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font: 700 15px var(--t-font); color: var(--t-text); }
+.hx-chip { font: 700 10.5px var(--t-font); font-style: normal; padding: 1px 7px; border-radius: 999px; color: var(--hc-gold-text, var(--t-text));
+  background: color-mix(in srgb, var(--hc-gold, var(--t-accent)) 14%, transparent); border: 1px solid var(--hc-gold-line, var(--t-border)); }
+.hx-line { margin: 0; color: var(--t-text-2); font-size: 12.5px; line-height: 1.4; }
+.hx-by { margin: 0; color: var(--t-muted); font-size: 11.5px; }
+.hx-live { margin: 0; color: var(--t-muted); font: 600 11.5px var(--t-font); }
+.hx-live.on { color: var(--t-ok); }
+.hx-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: auto; padding-top: 6px; }
+.hx-head { display: grid; gap: 10px; }
+.hx-back { justify-self: start; }
+.hx-mrow { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.hx-mt { display: grid; gap: 3px; min-width: 0; flex: 1 1 240px; }
+.hx-form { display: grid; gap: 12px; max-width: 560px; }
+.hx-sets { display: grid; gap: 10px; }
+.hx-num { display: flex; align-items: center; gap: 10px; }
+.hx-num .hc-token { flex: 0 0 110px; }
+.hx-tog { grid-template-columns: auto 1fr; align-items: center; column-gap: 9px; cursor: pointer; }
+.hx-tog input { width: 16px; height: 16px; margin: 0; accent-color: var(--t-accent); }
+.hx-tog .hx-help { grid-column: 2; }
+.hx-share { margin-top: 6px; border-radius: var(--t-radius-xs); }
+.hx-live-box { flex-wrap: wrap; }
+.hx-back-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--t-muted); }
+/* the Realms page: a realm's mode and its credit */
+.rl-mode { font-size: 11.5px; color: var(--t-muted); }
+.rl-mode-b { color: var(--t-text-2); }
+@media (max-width: 560px) { .hx-pic.small { width: 100%; } }
+.hx .hx-f > .hx-help { font: 400 11.5px var(--t-font); color: var(--t-muted); }

@@ -1,5 +1,10 @@
 # Leyline Modes: write your own minigame
 
+> This page has two kinds of mode. **Minigames** (below) are Lua scripts that run inside a game, in the host's client.
+> **Mode packages** ([at the end](#mode-packages-realms-anyone-can-host-and-fork)) are whole realms: a ruleset plus settings, hosted
+> from the launcher and forked by anyone.
+
+
 A **mode** is one Lua file. Open `/modes` in game:
 - **Play solo** runs a mode on your own.
 - **Host here** opens a game where you stand and invites your party.
@@ -154,3 +159,111 @@ w 2 enter 5 add
 A script can use devices too. `Devices.Run` sets up `OnStart`, `OnTick`, `OnKey`, `OnLeave` and `OnJoin`. After it:
 - `Devices.On(id, event, function(player) ... end)` runs your code on a device event.
 - `Devices.Call(id, fn, arg, player)` calls a device's function.
+
+## Mode packages: realms anyone can host and fork
+
+A **mode package** is a realm mode: a ruleset to start from, the realm scripts it switches on, and a short form of
+settings. The launcher's **Host** page opens on a grid of them. Pick one, name your realm, change its settings, and press
+**Host**. The realm runs on your PC like any other realm, then shows **You're live** with the link to share.
+
+**Fork** copies a mode into your Host pack as your own. Its card and your realm on the realm list then say
+"based on *X* by *Y*". Fork a mode from its card, or from any realm on the Realms page that shows its mode.
+
+### The templates
+
+They live in `hosting/kit/modes/<id>/` and ship with the Host pack. Each one only switches on what the realm scripts
+already do.
+
+| Mode | Ruleset | Scripts | What its form sets |
+|---|---|---|---|
+| Classic levelling | main | `ov_main.lua`, `ov_qol.lua`, `ov_events.lua` | levelling and reputation speed, the one-time boost, events in chat |
+| Solo leveling | solo | `ov_companions.lua`, `ov_qol.lua` | levelling speed, helper bots in your party |
+| Duel ladder | brawl | `ov_duels.lua`, `ov_qol.lua` | the shortest duel that counts, rated duels per pair a day, points for a win, streak lines |
+| Hide and seek | dalaran | `ov_events.lua` | how often a round runs, trivia, the world's own events, players needed |
+| Minigolf night | dalaran | `ov_golf.lua`, `ov_modes.lua`, `ov_playmode.lua`, `ov_qol.lua` | hub teleports, duel reset |
+| My Den | den | `ov_den.lua`, `ov_build.lua` | the room's look, the building budget |
+| Survivors | (none yet) | (none) | shown as coming soon, with its credit: nothing is hosted yet |
+
+### The folder
+
+```
+mode.json          what the mode is and how a realm runs it
+picture.svg        its card picture (or picture.webp / picture.png), optional
+<name>.den.json    a Den file for its map (den ruleset only), optional
+README.md          a few lines for people who fork it, optional
+```
+
+`mode.json`:
+
+```json
+{
+ "format": "leyline-mode", "schema": 1,
+ "id": "duel-ladder", "name": "Duel ladder", "line": "Everyone at the top level. Duels count toward a rating.",
+ "picture": "picture.svg", "version": "1.0", "author": "Leyline",
+ "based_on": null,
+ "status": "live",
+ "profile": "brawl",
+ "scripts": ["ov_duels.lua", "ov_qol.lua"],
+ "env": {"OV_DUELS": "1", "OV_DUEL_RESET": "1"},
+ "mods": [],
+ "den": null,
+ "tags": ["pvp"],
+ "jam": null,
+ "settings": [
+  {"key": "min_s", "label": "Shortest duel that counts", "type": "number", "min": 5, "max": 120, "default": 15,
+   "unit": "seconds", "env": "OV_DUELS_MIN_S"},
+  {"key": "streaks", "label": "Win streak lines", "type": "toggle", "default": true, "env": "OV_DUELS_STREAKS"},
+  {"key": "look", "label": "The room's look", "type": "choice", "default": "white", "env": "OV_DEN_THEME",
+   "options": [{"value": "white", "label": "White"}, {"value": "wood", "label": "Wood"}]}
+ ]
+}
+```
+
+- **id**: a-z, 0-9 and single dashes, 2 to 32 long. **name** up to 32, **line** up to 120, **author** up to 32.
+- **based_on**: `null`, or `{"id", "author"}` of the mode it was forked from. Fork sets it.
+- **status**: `live`, or `coming` (shown, never hosted or forked).
+- **profile**: the ruleset it starts from: main, brawl, progression, casual, dalaran, vanillaplus, den or solo.
+- **scripts**: realm scripts by file name. Each one must ship in the Host pack. A package never carries a script of its own.
+- **env**: fixed settings. Only the realm scripts' `OV_` switches and the `AC_RATE_`, `AC_SKILL_GAIN_`, `AC_START_` and
+  `AC_AUTO_BALANCE_` settings. Nothing about the server itself: no databases, files, folders, ports, addresses, keys,
+  the realm's name or tests. Values are letters, digits, `.`, `_` or `-`.
+- **mods**: client mods by their realm list id (`mod:<id>`, `up:<slug>`, `mode:<id>`). They join the realm's mod list.
+- **den**: a Den file in the folder. When you host the mode, it opens in your Den.
+- **settings**: at most 12 fields. Each sets its `env` name (or a list of up to 6) to the host's answer. A toggle sets
+  `1` or `0`. A field never sets a name that **env** already sets.
+- **jam**: the id of the mode jam it is entered in.
+
+### The checks
+
+`python3 -I stream/modepack.py --check <folder>` checks a package. The launcher, the host kit and the realm list check it
+again with the same rules:
+
+- **Sizes:** `mode.json` 16 KB, a picture 256 KB, a Den file 512 KB, `README.md` 16 KB, the folder 1 MB and 6 files.
+- **Paths:** only the file names above. No folders, hidden files or links.
+- **Pictures:** an SVG has no scripts, event attributes or outside links.
+- **Words:** the name, line, author and labels go through the one blocklist (`stream/namecheck.py`). Game and publisher
+  names are refused. The team's name is kept for the templates.
+
+### How a mode reaches the realm
+
+1. **Host** checks your answers and writes `state/mode.json` in the Host pack (`launcher/src-tauri/src/host/modes.rs`).
+2. The host kit's `setup.py` (`read_mode`) puts the mode's env in `state/realm.env`, before your own Realm tools settings,
+   so those still win. It also puts the mode's credit and recipe on your realm's listing and adds its mods to the mod list.
+3. The relay lists `mode` on your realm (`hosting/relay/wurelay/listing.py` `clean_mode`). The whole recipe is listed
+   while it fits in 4 KB. Otherwise only the credit is listed, and the realm can't be forked from the list.
+
+Picking a plain ruleset with **Pick a ruleset yourself** removes `state/mode.json`.
+
+### On the website
+
+- `/wrath/modes` has a **Host a mode** section: every template, with the live realms running it.
+- `/wrath/modes/<id>` shows a mode: what it sets, the realms running it now, and its forks. A fork that a listed realm
+  runs has a page too.
+- `/wrath/modes/jam` is the **mode jam**: its theme, how to enter, and the entries. The entries are realms on the list
+  running a mode whose `jam` is the jam's id. Staff picks are marked. It is for bragging rights only, with no prizes.
+  Staff set the jam (id, theme, line, end date, picks) in the `jam` block of `stream/modepacks.json`.
+- `/wrath/modes/hosted.json` lists, per template, the realms running it, the players on them and its forks.
+
+`stream/modepacks.json` is made from the templates with `python3 -I stream/modepack.py --write`. The launcher builds it
+in, and the site serves it. `--verify` fails when it is out of date.
+

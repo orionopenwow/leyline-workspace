@@ -11,7 +11,7 @@ in the workspace; .github/workflows/leyline-launcher.yml in the Leyline repo) ru
 The version: tauri.conf.json's version is the floor (raise it there for a bigger step); otherwise one patch above the
 newest stable `launcher-v*` tag. A version with "-" in tauri.conf.json counts by its plain part: ships are always
 stable. Pre-releases (the opt-in early channel) stay what they were: a hand-pushed tag with "-" in it.
-Nothing changed under launcher/ (or stream/playmodes.json, which it builds in) since that tag: no release.
+Nothing changed under launcher/ (or stream/playmodes.json or stream/modepacks.json, which it builds in) since that tag: no release.
 Standard library only.
 """
 from __future__ import annotations
@@ -27,7 +27,7 @@ CONF = ROOT / "launcher" / "src-tauri" / "tauri.conf.json"
 CARGO = ROOT / "launcher" / "src-tauri" / "Cargo.toml"
 LOCK = ROOT / "launcher" / "src-tauri" / "Cargo.lock"
 TAG = "launcher-v"
-WATCH = ("launcher", "stream/playmodes.json")
+WATCH = ("launcher", "stream/playmodes.json", "stream/modepacks.json")   # the catalogs it builds in (modes.rs, host/modes.rs)
 PLAIN = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 
 

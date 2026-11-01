@@ -295,6 +295,44 @@ def apply_options(o, a, cfg):
             env[k] = o[k]
 
 
+# The mode this realm runs (docs/MODES.md, "Mode packages"): state/mode.json, written by the launcher's Host page when
+# the host picks a mode (launcher/src-tauri/src/host/modes.rs). Its env goes into state/realm.env (before the host's own
+# options, so Realm tools still win); its credit and recipe go on the realm list (the relay's listing.py clean_mode);
+# its client mods join the realm's mod list. The same rules as stream/modepack.py (hosting/tests/test_mode_listing.py
+# checks the patterns match): only the realm scripts' OV_ switches and a few rates, never anything about the server.
+MODE_FILE = "mode.json"
+MODE_ID_RE = re.compile(r"^[a-z](?:[a-z0-9]|-(?=[a-z0-9])){1,31}$")
+MODE_ENV_RE = re.compile(r"^(?:OV_[A-Z0-9_]{2,40}|AC_(?:RATE_|SKILL_GAIN_|START_|AUTO_BALANCE_)[A-Z0-9_]{2,40})$")
+MODE_ENV_DENY = re.compile(r"(?:DATABASE|PASS|SECRET|TOKEN|KEY|SOAP|WEBHOOK|DISCORD|URL|FILE|DIR|PATH|SAVES|TEST|HOST|"
+                           r"LEYLINE|REALM_NAME|INVITE|BRAND|ADDRESS|PORT|BIND)")
+MODE_VALUE_RE = re.compile(r"^[A-Za-z0-9._-]{1,24}$")
+MODE_SHOWN = ("id", "name", "line", "author", "version", "based_on", "profile", "scripts", "env", "mods", "tags",
+              "settings", "jam")
+
+
+def read_mode(cfg):
+    """state/mode.json for this realm's ruleset, checked: {"public": what the realm list gets, "env": [(k, v)],
+    "mods": [ids]}; None when there is none (or it is for another ruleset, or it can't be read)."""
+    try:
+        with open(path(MODE_FILE), encoding="utf-8-sig") as f:
+            m = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(m, dict) or not isinstance(m.get("id"), str) or not MODE_ID_RE.fullmatch(m["id"]):
+        return None
+    if m.get("profile") != cfg.get("profile"):
+        return None
+    env = m.get("resolved") if isinstance(m.get("resolved"), dict) else {}
+    env = [(k, v) for k, v in list(env.items())[:48] if isinstance(k, str) and MODE_ENV_RE.fullmatch(k)
+           and not MODE_ENV_DENY.search(k) and isinstance(v, str) and MODE_VALUE_RE.fullmatch(v)]
+    mods = [x for x in (m.get("mods") if isinstance(m.get("mods"), list) else [])[:8]
+            if isinstance(x, str) and MOD_ID_RE.fullmatch(x)]
+    pub = {k: m[k] for k in MODE_SHOWN if k in m}
+    if len(json.dumps(pub, separators=(",", ":"))) > 4096:   # the heartbeat stays small: then only the credit
+        pub = {k: m[k] for k in ("id", "name", "author", "version", "based_on", "jam") if k in m}
+    return {"public": pub, "env": env, "mods": mods}
+
+
 def realm_env_lines(cfg):
     """state/realm.env: the world server's own settings over the profile's (docker-compose.host.yml reads it last)."""
     e = cfg.get("realm_env") or {}
@@ -302,6 +340,10 @@ def realm_env_lines(cfg):
            "# Change them with: leyline options ... (or the launcher's Host page), then restart the realm."]
     if cfg.get("profile") in cores.PROFILES:
         return out + ["# (this core takes its ruleset's settings)"]
+    mode = read_mode(cfg)
+    if mode and mode["env"]:
+        out.append(f"# The mode: {mode['public'].get('name') or mode['public']['id']} (state/mode.json)")
+        out += [f"{k}={v}" for k, v in mode["env"]]
     if e.get("type") in TYPES:
         out.append(f"AC_GAME_TYPE={TYPES[e['type']][1]}")
     if e.get("xp"):
@@ -507,7 +549,11 @@ def beacon_record(cfg):
         return linked_fields(rec)
     rec.update(name=cfg["name"], type=rec.get("type", "PvE"), ruleset=cfg["profile"],
                warden=cfg["warden"], signup=cfg.get("signup") or "invite")
-    rec["mods"] = realm_mods(rec.get("mods"), builtin=cfg.get("profile") not in cores.PROFILES)
+    mode = read_mode(cfg)
+    rec["mode"] = mode["public"] if mode else None
+    extra = [{"id": x} for x in (mode["mods"] if mode else []) if not any(isinstance(y, dict) and y.get("id") == x for y in rec.get("mods") or [])]
+    rec["mods"] = realm_mods((rec.get("mods") if isinstance(rec.get("mods"), list) else []) + extra,
+                             builtin=cfg.get("profile") not in cores.PROFILES)
     return listing_fields(rec, cfg)
 
 

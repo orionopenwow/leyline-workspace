@@ -1001,6 +1001,11 @@ pub fn run() {
             crate::p2p::cmds::host_den_text,
             crate::p2p::cmds::host_den_add,
             crate::p2p::cmds::host_den_open,
+            crate::p2p::cmds::host_modes, // modes anyone can host and fork: cards, fork, change, remove, host one (host/modes.rs)
+            crate::p2p::cmds::host_mode_fork,
+            crate::p2p::cmds::host_mode_save,
+            crate::p2p::cmds::host_mode_remove,
+            crate::p2p::cmds::host_mode_use,
             crate::p2p::cmds::host_check,
             crate::p2p::cmds::host_tool,
             crate::p2p::cmds::host_rules,

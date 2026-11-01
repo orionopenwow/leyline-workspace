@@ -176,6 +176,45 @@ pub fn host_den_open(name: String) -> Result<String, String> {
     host::dens::open(&kit()?, &name)
 }
 
+// ---------------------------------------------------------------- modes anyone can host and fork (host/modes.rs)
+
+/// The Host page's mode cards: the templates, then this Host pack's own forks (no Host pack yet: the templates).
+#[tauri::command]
+pub fn host_modes() -> Vec<host::modes::Mode> {
+    host::modes::list(kit().ok().as_deref())
+}
+
+/// Fork this mode: a copy in the Host pack with based_on set. `listed` is a listed realm's mode recipe (checked again).
+#[tauri::command]
+pub fn host_mode_fork(id: String, listed: Option<serde_json::Value>, author: Option<String>) -> Result<host::modes::Mode, String> {
+    host::modes::fork(&kit()?, &id, listed.as_ref(), author.as_deref())
+}
+
+/// Change a fork: name, line, your name, the jam, its settings' defaults.
+#[tauri::command]
+pub fn host_mode_save(id: String, edits: serde_json::Value) -> Result<host::modes::Mode, String> {
+    host::modes::save(&kit()?, &id, &edits)
+}
+
+#[tauri::command]
+pub fn host_mode_remove(id: String) -> Result<(), String> {
+    host::modes::remove(&kit()?, &id)
+}
+
+/// Host this mode: the answers checked, state/mode.json written, its Den file opened. The page then starts the
+/// returned ruleset (host_choose, host_start_quiet). `id` None: no mode (a plain ruleset from the picker).
+#[tauri::command]
+pub fn host_mode_use(id: Option<String>, values: serde_json::Value) -> Result<Option<host::modes::UseResult>, String> {
+    let k = kit()?;
+    match id {
+        Some(id) => host::modes::use_mode(&k, &id, &values).map(Some),
+        None => {
+            host::modes::clear(&k);
+            Ok(None)
+        }
+    }
+}
+
 /// `leyline link` (Link my server.bat) in a window of its own.
 #[tauri::command]
 pub fn host_link_start() -> Result<String, String> {

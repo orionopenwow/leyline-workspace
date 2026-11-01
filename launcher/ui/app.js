@@ -2475,6 +2475,7 @@ function renderRealms() {
     else play.title = `Plays with ${fit.name}`;
     play.addEventListener("click", () => playRealm(r, play));
     acts.prepend(play);
+    if (window.LeylineHostModes) window.LeylineHostModes.realmRow(r, main, acts);   // its mode, "based on", Fork this mode (hostmodes.js)
     card.append(realmIcon(r.name, r.official), main, pop, acts);
     box.append(card);
   }

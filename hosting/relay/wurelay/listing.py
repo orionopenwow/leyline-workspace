@@ -28,7 +28,9 @@ Listing quality (2026-10-29, all optional in the beat, so older agents keep work
   (host-chosen: na-east na-west sa eu africa me asia oce), language ("en", "pt-BR"), max_players, and
   direct (the host allows direct connections). Each is checked here and dropped when it is not one of those.
   Also mods (2026-10-31, docs/GAME-MODS.md): the mods the realm runs or asks players to have, [{"id", "version"?}]
-  (clean_mods), shown on realm cards and offered by the launcher on join; names only, never files.
+  (clean_mods), shown on realm cards and offered by the launcher on join; names only, never files. And mode
+  (2026-10-31, docs/MODES.md): the mode package it runs, its credit and recipe (clean_mode), for "based on X by Y"
+  and Fork this mode.
 The listing works out the rest itself from the heartbeats: uptime over 24 h and 7 d (hourly buckets of the seconds
 a realm was seen online), "new" (first seen in the last 7 days), a coarse region estimate (the relay's own
 RELAY_REGION when the realm's tunnel answers in under 45 ms) and a fair score (players, bots counted apart and
@@ -235,6 +237,116 @@ def clean_mods(v):
     return out
 
 
+# The realm's mode (docs/MODES.md, "Mode packages"; stream/modepack.py listing_mode keeps the same rules, and the tests
+# check the patterns match): which mode it runs and who made it ("based on X by Y" on the realm list), and its recipe
+# (ruleset, script names, settings) so anyone can fork it from the list. Never a file, a script or code: script names
+# only, which a player's Host pack must already have. The whole thing at most MODE_MAX bytes, else only the credit.
+MODE_ID_RE = re.compile(r"^[a-z](?:[a-z0-9]|-(?=[a-z0-9])){1,31}$")
+MODE_VERSION_RE = re.compile(r"^[0-9]{1,4}(?:\.[0-9]{1,4}){0,3}$")
+MODE_SCRIPT_RE = re.compile(r"^ov_[a-z0-9_]{1,32}\.lua$")
+MODE_ENV_RE = re.compile(r"^(?:OV_[A-Z0-9_]{2,40}|AC_(?:RATE_|SKILL_GAIN_|START_|AUTO_BALANCE_)[A-Z0-9_]{2,40})$")
+MODE_ENV_DENY = re.compile(r"(?:DATABASE|PASS|SECRET|TOKEN|KEY|SOAP|WEBHOOK|DISCORD|URL|FILE|DIR|PATH|SAVES|TEST|HOST|"
+                           r"LEYLINE|REALM_NAME|INVITE|BRAND|ADDRESS|PORT|BIND)")
+MODE_VALUE_RE = re.compile(r"^[A-Za-z0-9._-]{1,24}$")
+MODE_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,23}$")
+MODE_PROFILES = ("main", "brawl", "progression", "casual", "dalaran", "vanillaplus", "den", "solo")
+MODE_MAX = 4096
+# The templates (hosting/kit/modes; stream/modepack.py ORDER): their author is the team's name, which no player may take.
+MODE_TEMPLATES = ("levelling", "solo-leveling", "duel-ladder", "hide-and-seek", "minigolf-night", "den", "survivors")
+
+
+def _mode_text(v, n):
+    t = _masked(v, n)
+    return t if t and not has_slur(t) else ""
+
+
+def _mode_env_ok(k):
+    return isinstance(k, str) and bool(MODE_ENV_RE.fullmatch(k)) and not MODE_ENV_DENY.search(k)
+
+
+def _mode_setting(s):
+    if not isinstance(s, dict) or not isinstance(s.get("key"), str) or not MODE_KEY_RE.fullmatch(s["key"]):
+        return None
+    envs = [s["env"]] if isinstance(s.get("env"), str) else s.get("env")
+    if not isinstance(envs, list) or not 1 <= len(envs) <= 6 or not all(_mode_env_ok(k) for k in envs):
+        return None
+    label = _mode_text(s.get("label"), 40)
+    if not label:
+        return None
+    out = {"key": s["key"], "label": label, "type": s.get("type"), "env": list(envs)}
+    h = _mode_text(s.get("help"), 120)
+    if h:
+        out["help"] = h
+    num = lambda v: isinstance(v, int) and not isinstance(v, bool)   # noqa: E731
+    if s.get("type") == "number":
+        lo, hi, d = s.get("min"), s.get("max"), s.get("default")
+        if not (num(lo) and num(hi) and num(d) and 0 <= lo <= d <= hi <= 100000):
+            return None
+        out.update(min=lo, max=hi, default=d)
+        u = _mode_text(s.get("unit"), 16)
+        if u:
+            out["unit"] = u
+    elif s.get("type") == "toggle":
+        if not isinstance(s.get("default"), bool):
+            return None
+        out["default"] = s["default"]
+    elif s.get("type") == "choice":
+        opts = []
+        for o in (s.get("options") if isinstance(s.get("options"), list) else [])[:8]:
+            v = o.get("value") if isinstance(o, dict) else None
+            lab = _mode_text(o.get("label"), 32) if isinstance(o, dict) else ""
+            if isinstance(v, str) and MODE_VALUE_RE.fullmatch(v) and lab and v not in [x["value"] for x in opts]:
+                opts.append({"value": v, "label": lab})
+        if len(opts) < 2 or s.get("default") not in [o["value"] for o in opts]:
+            return None
+        out.update(options=opts, default=s["default"])
+    else:
+        return None
+    return out
+
+
+def clean_mode(v):
+    """{"id", "name"?, "author"?, "version"?, "based_on"?, "jam"?, and the recipe while it fits: "line", "profile",
+    "scripts", "env", "mods", "tags", "settings"}; None when it isn't a mode."""
+    if not isinstance(v, dict) or not isinstance(v.get("id"), str) or not MODE_ID_RE.fullmatch(v["id"]):
+        return None
+    out = {"id": v["id"]}
+    for k, n in (("name", 32), ("author", 32)):
+        t = _mode_text(v.get(k), n)
+        team = k == "author" and t == "Leyline" and v["id"] in MODE_TEMPLATES and not v.get("based_on")
+        if t and (team or not bad_name(t)):
+            out[k] = t
+    if isinstance(v.get("version"), str) and MODE_VERSION_RE.fullmatch(v["version"]):
+        out["version"] = v["version"]
+    bo = v.get("based_on")
+    if isinstance(bo, dict) and isinstance(bo.get("id"), str) and MODE_ID_RE.fullmatch(bo["id"]) and bo["id"] != v["id"]:
+        out["based_on"] = {"id": bo["id"], "author": _mode_text(bo.get("author"), 32) or None}
+    if isinstance(v.get("jam"), str) and MODE_ID_RE.fullmatch(v["jam"]):
+        out["jam"] = v["jam"]
+    credit = dict(out)
+    line = _mode_text(v.get("line"), 120)
+    if line:
+        out["line"] = line
+    if v.get("profile") in MODE_PROFILES:
+        out["profile"] = v["profile"]
+        sc = v.get("scripts") if isinstance(v.get("scripts"), list) else []
+        out["scripts"] = [x for x in dict.fromkeys(x for x in sc[:12] if isinstance(x, str) and MODE_SCRIPT_RE.fullmatch(x))]
+        env = v.get("env") if isinstance(v.get("env"), dict) else {}
+        out["env"] = {k: x for k, x in list(env.items())[:24] if _mode_env_ok(k) and isinstance(x, str) and MODE_VALUE_RE.fullmatch(x)}
+        mods = v.get("mods") if isinstance(v.get("mods"), list) else []
+        out["mods"] = [x for x in dict.fromkeys(x for x in mods[:8] if isinstance(x, str) and MOD_ID_RE.fullmatch(x))]
+        out["tags"] = _tags(v.get("tags"))
+        sets = [_mode_setting(s) for s in (v.get("settings") if isinstance(v.get("settings"), list) else [])[:12]]
+        keys, envs, ok = set(), set(out["env"]), []
+        for s in sets:
+            if s and s["key"] not in keys and not envs & set(s["env"]):
+                keys.add(s["key"])
+                envs.update(s["env"])
+                ok.append(s)
+        out["settings"] = ok
+    return out if len(json.dumps(out, separators=(",", ":"))) <= MODE_MAX else credit
+
+
 def clean_record(rec: dict) -> dict:
     rec = rec if isinstance(rec, dict) else {}
     raw_name = _text(rec.get("name"), 32)
@@ -260,6 +372,7 @@ def clean_record(rec: dict) -> dict:
         "direct": rec.get("direct") is True,
         "signup": rec.get("signup") if rec.get("signup") in SIGNUPS else None,
         "mods": clean_mods(rec.get("mods")),
+        "mode": clean_mode(rec.get("mode")),
     }
     return out
 
@@ -515,6 +628,7 @@ class Listing:
             "uptime_pct": up7 if up7 is not None else up24,
             "features": [],
             "mods": list(rec.get("mods") or []),
+            "mode": rec.get("mode"),
             "media": {"icon": None, "screenshots": [], "trailer": None},
             "discord": rec["discord"],
             "status": {"url": f"https://{relay}/r/{rid}/status.json", "format": "openvanilla-status-1"},

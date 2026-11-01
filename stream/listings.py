@@ -1320,8 +1320,10 @@ def do(action: str, acct: str, name: str, doc: dict) -> tuple[int, dict]:
         return 503, {"error": "Listing mods is closed right now."}
     pid = str(doc.get("id", "")).removeprefix("link:")
     if action == "report":
+        # a report from a new account is kept for the moderators but never hides a listing by itself, so a few
+        # fresh accounts can't take down someone's mod (policy new_account_days)
         ok, msg = st.report(pid, {"id": acct}, str(doc.get("reason", "")), str(doc.get("note", ""))[:300],
-                            hide_after=policy()["report_hide"])
+                            hide_after=policy()["report_hide"], trusted=not svc.is_new(acct))
         return (200 if ok else 400), ({"ok": True, "message": msg} if ok else {"error": msg})
     if action == "edit":
         ok, msg = st.edit(pid, {"id": acct}, {k: str(doc.get(k, ""))[:400] for k in ("description", "category") if k in doc})
@@ -1606,7 +1608,7 @@ def hq_actions(A) -> dict:
     def approve(user, target, form):
         st, r = known(target)
         st.update_listing(target, lambda x: (x.pop("review", None), x.__setitem__("reports", []),
-                                             x.__setitem__("report_log", []),
+                                             x.__setitem__("report_log", []), x.__setitem__("hide_votes", []),
                                              x["listing"].__setitem__("state", "reviewed"),
                                              x["listing"].__setitem__("reviewed_by", str(user.get("account", ""))[:40])))
         return {"state": "waiting"}, {"state": "reviewed"}

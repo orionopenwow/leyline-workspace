@@ -347,7 +347,27 @@ check("HQ actions: approve, take down (typed confirm), updates, policy (owner)",
       "listing.update.approve", "listing.update.reject", "listing.policy"} and acts["listing.reject"][2] is True and acts["listing.policy"][1] == "owner")
 acts["listing.approve"][0]({"account": "MOD1"}, FR, {})
 rec = next(r for r in store.load() if r["id"] == FR)
-check("approve: live again, reviewed, reports cleared", not PJ.held(rec) and rec["listing"]["state"] == "reviewed" and rec["reports"] == [])
+check("approve: live again, reviewed, reports cleared", not PJ.held(rec) and rec["listing"]["state"] == "reviewed" and rec["reports"] == []
+      and rec.get("hide_votes") == [])
+for who in ("N1", "N2", "N3", "N4"):
+    store.report(FR, {"id": who}, "spam", hide_after=3, trusted=False)
+rec = next(r for r in store.load() if r["id"] == FR)
+check("reports from new accounts are kept but never hide a listing by themselves", not PJ.held(rec) and len(rec["reports"]) == 4)
+CREATED.update(Q1=NOW[0] - 3600, Q2=NOW[0] - 3600, Q3=NOW[0] - 3600)
+L._get = lambda name: {"workshop": type("W", (), {"projects": store})()}.get(name)
+_setup_was = L.setup
+L.setup = lambda: svc
+try:
+    for who in ("Q1", "Q2", "Q3"):
+        L.do("report", who, who, {"id": "link:" + FR, "reason": "spam"})
+finally:
+    L.setup = _setup_was
+rec = next(r for r in store.load() if r["id"] == FR)
+check("... also through the API: three fresh accounts can't take a mod down", not PJ.held(rec) and len(rec["reports"]) == 7, rec.get("review"))
+ok, msg = store.edit(FR, {"id": "OLDIE"}, {"description": "Unit frames with a free aimbot built in."})
+check("an edit can't slip the hub's held words past a moderator", not ok and "moderator" in msg, msg)
+ok, msg = store.edit(FR, {"id": "OLDIE"}, {"description": "Unit frames, raid frames and a cast bar."})
+check("... a plain edit saves", ok, msg)
 try:
     acts["listing.reject"][0]({"account": "MOD1"}, NAT, {})
     check("take down needs a reason", False)

@@ -596,10 +596,12 @@ class Projects:
 
     REPORT_REASONS = ("broken", "malware", "stolen", "gamedata", "cheat", "rude", "spam", "other")
 
-    def report(self, pid: str, me, reason: str = "", note: str = "", hide_after: int = 0) -> tuple[bool, str]:
+    def report(self, pid: str, me, reason: str = "", note: str = "", hide_after: int = 0,
+               trusted: bool = True) -> tuple[bool, str]:
         """One report per account. reason: one of REPORT_REASONS (else "other"); note: one line. hide_after: a listed
-        mod with this many reports from different accounts (never its author) hides itself until a moderator looks
-        (Leyline HQ, Needs you); 0 = never."""
+        mod with this many reports from different trusted accounts (never its author) hides itself until a moderator
+        looks (Leyline HQ, Needs you); 0 = never. trusted False (a new account, stream/listings.py): the report is kept
+        for the moderators but doesn't count toward hiding."""
         who = account_of(me)
         if not who:
             return False, "Sign in to report a link."
@@ -619,7 +621,10 @@ class Projects:
                         r["reports"] = (reps + [who])[-200:]
                         log_ = r.get("report_log") if isinstance(r.get("report_log"), list) else []
                         r["report_log"] = (log_ + [{"reason": reason, "note": clean_text(note, 300), "at": _now_iso(now)}])[-200:]
-                        if hide_after and isinstance(r.get("listing"), dict) and len(r["reports"]) >= hide_after and not held(r):
+                        votes = r.get("hide_votes") if isinstance(r.get("hide_votes"), list) else []
+                        if trusted:
+                            votes = r["hide_votes"] = (votes + [who])[-200:]
+                        if hide_after and isinstance(r.get("listing"), dict) and len(votes) >= hide_after and not held(r):
                             r["review"] = {"state": "pending", "by_reports": True,
                                            "reasons": [f"hidden after {len(r['reports'])} reports, until a moderator looks"]}
                             log.info("listing %s hidden by %d reports", pid, len(r["reports"]))
@@ -649,6 +654,10 @@ class Projects:
                     return False, f"Write a one-line description of {MIN_DESC} to {MAX_DESC} characters."
                 if re.search(r"(?i)https?://|www\.", d) or BRAND_RE.search(d):
                     return False, "Describe it without links or the game's brand names."
+                if [w for w in hub_problems(r.get("url", ""), [d], "", False) if w != "no open licence"]:
+                    # the hub's rules (cheats, leaked or decompiled material) would have held it for a person at submit:
+                    # an edit can't slip those words past them
+                    return False, "Those words need a moderator to check them. Describe it another way."
                 r["description"] = d
             if fields.get("category"):
                 if fields["category"] not in self.category_ids():
@@ -711,6 +720,7 @@ class Projects:
                 if r["id"] == pid:
                     r["reports"] = []
                     r["report_log"] = []
+                    r["hide_votes"] = []
                     if (r.get("review") or {}).get("by_reports"):
                         r.pop("review", None)
                     self._save(recs)

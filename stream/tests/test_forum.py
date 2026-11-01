@@ -569,5 +569,58 @@ check("the audit log: who muted, the refused ban, the API lock", any(a["action"]
       and any(a["action"] == "sanction.set" and not a["ok"] and a["who"] == "mod1" for a in aud)
       and any(a["action"] == "forum.thread.lock" and a["ok"] and a["target"] == str(TL) for a in aud))
 
+# ---------------------------------------------------------------- the same text again, and one network's new accounts
+F.seen("WR000099", "Dupe")
+NOW[0] += 100
+TA = F.new_thread("WR000099", "general", "Where do I find the dens", "Looking for a den to join, anyone around tonight?")
+NOW[0] += 100
+F.reply("WR000099", TA, "Thanks!")
+NOW[0] += 100
+try:
+    F.reply("WR000099", TA, "Thanks!"); dup_same = False
+except FM.ForumError as ex:
+    dup_same = ex.status == 400
+check("the same reply twice in one thread is refused", dup_same)
+TB = TL if not F.thread(TL)["locked"] else T1
+F.set_thread(TB, "locked", False)
+NOW[0] += 100
+F.reply("WR000099", TB, "Thanks!")
+check("a short reply in another thread is fine", True)
+NOW[0] += 100
+try:
+    F.reply("WR000099", TB, "Looking for a den to join, anyone around tonight?"); dup_long = False
+except FM.ForumError as ex:
+    dup_long = ex.status == 400 and "already" in ex.text
+check("a long post repeated in another thread is refused", dup_long)
+NOW[0] += 4000
+try:
+    F.new_thread("WR000099", "help", "Where do I find the dens", "Another try at the same title, different words."); dup_title = False
+except FM.ForumError as ex:
+    dup_title = ex.status == 400
+check("a second thread with the same title the same day is refused", dup_title)
+NOW[0] += 86400 * 2
+F.reply("WR000099", TA, "Thanks!")
+check("the same text a day later is fine", True)
+
+del wp.browse_limit.hit   # the real limiter again (memory, per network)
+wp.browse_limit.clear()
+NOW[0] += 86400
+for i in range(6):
+    ACCOUNTS[f"net{i}"] = (f"net{i}", f"Net{i}", f"WR00010{i}")
+codes = [new_thread(f"net{i}", "general", f"Fresh account number {i}", f"Hello from fresh account {i}.")[0] for i in range(5)]
+check(f"one network's new accounts: {FM.NET_NEW_THREADS_H} new threads an hour, then 429", codes == [303] * FM.NET_NEW_THREADS_H + [429], codes)
+got = []
+for n in range(FM.NET_NEW_POSTS_H):
+    NOW[0] += 61
+    got.append(reply(f"net{n % 6}", TA, f"Reply number {n} from a fresh account.")[0])
+check(f"... and {FM.NET_NEW_POSTS_H} posts an hour together (threads count), then 429",
+      got[:FM.NET_NEW_POSTS_H - FM.NET_NEW_THREADS_H] == [303] * (FM.NET_NEW_POSTS_H - FM.NET_NEW_THREADS_H)
+      and got[FM.NET_NEW_POSTS_H - FM.NET_NEW_THREADS_H] == 429, got)
+NOW[0] += 1
+st_old = reply("alice", TA, "An established account still posts from the same network.")[0]
+check("an account that isn't new still posts from that network", st_old == 303, st_old)
+check("the per-network keys are the network's /64 for IPv6", FM._net(type("H", (), {"ip": lambda s: "2001:db8:1:2::5"})()) == "2001:db8:1:2::/64")
+wp.browse_limit.hit = lambda *a, **k: True
+
 print(f"{count - fails}/{count} passed")
 sys.exit(1 if fails else 0)

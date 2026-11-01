@@ -42,7 +42,10 @@ game and company names are refused in titles (hub.py banned, the same rule as na
 
 Rate limits, per account, from the database (a restart doesn't reset them): a gap between posts, threads and posts an
 hour and a day, and the number of links in one post. An account new to the forum (first seen less than
-WU_FORUM_NEW_HOURS ago, default 72) gets the stricter set (LIMITS["new"]).
+WU_FORUM_NEW_HOURS ago, default 72) gets the stricter set (LIMITS["new"]). The same text twice within a day is refused
+(check_dup: in one thread at any length, anywhere when long or with a link; a repeated thread title too). Per network
+(IPv4 /32, IPv6 /64, in memory): every POST shares a per-minute cap, and accounts new to the forum share
+NET_NEW_THREADS_H threads and NET_NEW_POSTS_H posts an hour, so a batch of fresh accounts can't each take the new limits.
 
 Moderation: Report on every post (reasons REASONS, 10 a day). Staff hide or show posts and threads, lock, pin and merge
 a duplicate thread into another, read a poster's history and mute them from the forum (a "noforum" sanction) or ban the
@@ -107,6 +110,10 @@ LIMITS = {   # gap: seconds between posts; thread_h/d: new threads an hour/day; 
     "new": {"gap": 60, "thread_h": 1, "thread_d": 3, "post_h": 8, "post_d": 25, "links": 2},
 }
 REPORTS_PER_DAY = 10
+DUP_MIN = 40   # a repeated post this long (or with a link) is refused in any thread, within a day
+# Per network (IPv4 /32, IPv6 /64), in memory, on top of the per-account limits: what accounts new to the forum can
+# post from one network in an hour, all of them together (a batch of fresh accounts can't each take the new limits).
+NET_NEW_POSTS_H, NET_NEW_THREADS_H = 20, 4
 ACCT_RE = re.compile(r"^[A-Z0-9]{1,16}$")
 CTRL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f​-‏‪-‮⁦-⁩­͏؜ᅟᅠ឴឵᠋-᠏⁠-⁥⁪-⁯ㅤ︀-️﻿ﾠ]")   # + soft hyphen, word joiners, fillers, variation selectors, BOM (stream/namecheck.py INVISIBLE_RE)
 URL_RE = re.compile(r"https?://[^\s<>\"'`]+", re.I)
@@ -344,6 +351,20 @@ class Forum:
                 raise ForumError(429, "That's a lot of new threads for now. Reply in one, or try again later."
                                  + (" New accounts have a lower limit for their first days." if lim is LIMITS["new"] else ""))
 
+    def check_dup(self, acct: str, body: str, tid: int | None = None, title: str | None = None) -> None:
+        """The same text again within a day: refused in the same thread (any length), and anywhere when it is long or
+        carries a link (a short "Thanks!" in two threads is fine). A new thread whose title the author used today too."""
+        day = self.now() - 86400
+        if tid is not None and self.one("SELECT 1 FROM forum_posts WHERE author = ? AND thread = ? AND body = ? AND created > ? LIMIT 1",
+                                        (acct, tid, body, day)):
+            raise ForumError(400, "You already posted that in this thread.")
+        if (len(body) >= DUP_MIN or URL_RE.search(body)) and self.one(
+                "SELECT 1 FROM forum_posts WHERE author = ? AND body = ? AND created > ? LIMIT 1", (acct, body, day)):
+            raise ForumError(400, "You already posted that today. Reply in that thread instead of posting it again.")
+        if title is not None and self.one("SELECT 1 FROM forum_threads WHERE author = ? AND title_lc = ? AND created > ? AND hidden = 0 LIMIT 1",
+                                          (acct, title.lower(), day)):
+            raise ForumError(400, "You started a thread with that title today. Reply in it instead.")
+
     # ------------------------------------------------------------------ the rules for what is written
     def title_ok(self, v) -> str:
         t = clean_line(v, TITLE_MAX + 1)
@@ -378,6 +399,7 @@ class Forum:
         t, b = self.title_ok(title), self.body_ok(body)
         if not staff:
             self.check_rate(acct, True, links_in(b))
+            self.check_dup(acct, b, title=t)
         now = self.now()
         with self.lock:
             tid = self.x("INSERT INTO forum_threads (cat, title, title_lc, author, created, bumped) VALUES (?,?,?,?,?,?)",
@@ -397,6 +419,7 @@ class Forum:
         b = self.body_ok(body)
         if not staff:
             self.check_rate(acct, False, links_in(b))
+            self.check_dup(acct, b, tid=th["id"])
         now = self.now()
         with self.lock:
             pid = self.x("INSERT INTO forum_posts (thread, author, body, created, via, via_name) VALUES (?,?,?,?,?,?)",
@@ -869,9 +892,42 @@ def _int(v, default: int = 1, hi: int = 10 ** 6) -> int:
         return default
 
 
+def _net(h) -> str:
+    """The caller's network for a limit (the portal's rl_bucket: IPv4 /32, IPv6 /64, so one host can't walk its /64)."""
+    ip = h.ip()
+    rb = P("rl_bucket")
+    try:
+        return rb(ip) if callable(rb) else ip
+    except Exception:   # noqa: BLE001
+        return ip
+
+
 def _limited(h) -> bool:
     lim = P("browse_limit")
-    return lim is not None and not lim.hit(h.ip(), 600)
+    return lim is not None and not lim.hit(_net(h), 600)
+
+
+def _net_full(h, acct: str, thread: bool) -> str:
+    """The refusal when accounts new to the forum already posted a lot from this network this hour, else "". Counted
+    only for posts that went in (_net_count), so a typo in a refused post costs nothing."""
+    lim = P("browse_limit")
+    count = getattr(lim, "count", None)
+    if lim is None or not callable(count) or store is None or not store.is_new(acct):
+        return ""
+    n = _net(h)
+    if count("forum-new-post|" + n) >= NET_NEW_POSTS_H or (thread and count("forum-new-thread|" + n) >= NET_NEW_THREADS_H):
+        return "Lots of new accounts posted from your network this hour. Try again a bit later."
+    return ""
+
+
+def _net_count(h, acct: str, thread: bool) -> None:
+    lim = P("browse_limit")
+    if lim is None or not callable(getattr(lim, "count", None)) or store is None or not store.is_new(acct):
+        return
+    n = _net(h)
+    lim.hit("forum-new-post|" + n, 10 ** 6, 3600)
+    if thread:
+        lim.hit("forum-new-thread|" + n, 10 ** 6, 3600)
 
 
 def api(h, sub: str, query: dict) -> None:
@@ -1382,7 +1438,7 @@ def api_post(h, sub: str) -> None:
     if doc is None:
         return _jpost(h, 400, {"error": "Bad request."})
     lim = P("browse_limit")
-    if lim is not None and not lim.hit("forum-post|" + h.ip(), 120):
+    if lim is not None and not lim.hit("forum-post|" + _net(h), 120):
         return _jpost(h, 429, {"error": "Slow down a little."})
     try:
         who = token_viewer(h)
@@ -1396,15 +1452,20 @@ def api_post(h, sub: str) -> None:
     store.seen(who["acct"], who["name"], who["tag"], None)
     args = {k: (v if isinstance(v, (str, int)) and not isinstance(v, bool) else "") for k, v in
             ((k, doc.get(k)) for k in POST_API[sub])}
+    full = _net_full(h, who["acct"], sub == "new") if sub in ("new", "reply") else ""
+    if full:
+        return _jpost(h, 429, {"error": full})
     try:
         if sub == "new":
             tid = store.new_thread(who["acct"], args["cat"], args["title"], args["body"], False)
+            _net_count(h, who["acct"], True)
             log.info("forum: thread %d from the launcher", tid)
             return _jpost(h, 200, {"ok": True, "thread": store.thread_doc(store.thread(tid))})
         if sub == "reply":
             if not isinstance(args["thread"], (int, str)) or isinstance(args["thread"], bool):
                 raise ForumError(400, "Which thread?")
             pid = store.reply(who["acct"], args["thread"], args["body"], False)
+            _net_count(h, who["acct"], False)
             th = store.post(pid)["thread"]
             return _jpost(h, 200, {"ok": True, "post": pid, "thread": th, "page": store.page_of(pid)})
         pid = args["post"]
@@ -1429,6 +1490,9 @@ def post(h, path: str) -> None:
     form = _read_form(h)   # read first, so a refusal never resets the connection under the sender
     if not _same_site(h):
         return h.send(403, b"That form came from another site.\n", "text/plain")
+    lim = P("browse_limit")
+    if lim is not None and not lim.hit("forum-post|" + _net(h), 120):
+        return h.send(429, b"too many requests\n", "text/plain")
     if form is None:
         return h.send(400, b"That form didn't arrive in one piece.\n", "text/plain")
     try:
@@ -1448,20 +1512,30 @@ def post(h, path: str) -> None:
         if sub == "new":
             if not hmac.compare_digest(tok, form_token(who, "new")):
                 return page_new(h, who, {}, "That form timed out. Post it again.", form, 403)
+            full = "" if who["staff"] else _net_full(h, who["acct"], True)
+            if full:
+                return page_new(h, who, {}, full, form, 429)
             try:
                 tid = store.new_thread(who["acct"], form.get("cat"), form.get("title"), form.get("body"), who["staff"])
             except ForumError as ex:
                 return page_new(h, who, {}, ex.text, form, ex.status)
+            if not who["staff"]:
+                _net_count(h, who["acct"], True)
             return _see_other(h, f"{PAGE}/t/{tid}")
         m = re.fullmatch(r"t/(\d{1,9})/reply", sub)
         if m:
             tid = m.group(1)
             if not hmac.compare_digest(tok, form_token(who, "reply:" + str(int(tid)))):
                 return page_reply(h, who, tid, "That form timed out. Post it again.", form.get("body", ""), 403)
+            full = "" if who["staff"] else _net_full(h, who["acct"], False)
+            if full:
+                return page_reply(h, who, tid, full, form.get("body", ""), 429)
             try:
                 pid = store.reply(who["acct"], tid, form.get("body"), who["staff"])
             except ForumError as ex:
                 return page_reply(h, who, tid, ex.text, form.get("body", ""), ex.status)
+            if not who["staff"]:
+                _net_count(h, who["acct"], False)
             th = store.post(pid)["thread"]
             pg = store.page_of(pid)
             return _see_other(h, f"{PAGE}/t/{th}" + (f"?page={pg}" if pg > 1 else "") + f"#p{pid}")

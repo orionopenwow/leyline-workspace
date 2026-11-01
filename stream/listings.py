@@ -1530,11 +1530,26 @@ def _preview_html(c: dict, hid: str, form: dict) -> str:
         cats = []
     default = {"addon": "addons", "package": "addons", "patch": "graphics", "native": "tools", "realm-script": "realm-scripts",
                "game-mode": "sandbox"}.get(c.get("format"), "addons")
-    opts = "".join(f'<option value="{e(k["id"])}"{" selected" if k["id"] == default else ""}>{e(k["name"])}</option>' for k in cats) \
-        or f'<option value="{default}">{default}</option>'
+    if (form.get("kind") or "") == "addon":   # the launcher's or the website's "List your addon"
+        default = "addons"
+    # Addon or mod (docs/WORDS.md): the hub's grouped options (Addon first, then Mod with the Mods page's categories)
+    hub = _get("hub_mod")
+    pairs = [(k["id"], k["name"]) for k in cats if isinstance(k, dict) and k.get("id") != "themes"]
+    try:
+        opts = hub.kind_options(pairs, default) if hub is not None and pairs else ""
+    except Exception:   # noqa: BLE001
+        opts = ""
+    if not opts:
+        addon = [(i, n) for i, n in pairs if i == "addons"]
+        mods = [(i, n) for i, n in pairs if i != "addons"]
+        one = lambda i, n: f'<option value="{e(i)}"{" selected" if i == default else ""}>{e(n)}</option>'  # noqa: E731
+        opts = ((f'<optgroup label="Addon: an in-game interface helper">{"".join(one(i, n) for i, n in addon)}</optgroup>' if addon else "")
+                + (f'<optgroup label="Mod: changes the game itself">{"".join(one(i, n) for i, n in mods)}</optgroup>' if mods else "")) \
+            or f'<option value="{default}">{default}</option>'
     out.append(f'<form class="wk-form" method="post" action="{PAGE}">{hid}<input type="hidden" name="step" value="submit">'
                f'<input type="hidden" name="t" value="{e(c.get("token") or "")}"><input type="hidden" name="url" value="{e(str(form.get("url", "")))}">'
-               f'<label>Category<select name="category" required>{opts}</select></label>'
+               f'<label>Addon or mod <span class="hint">An addon is an in-game interface helper; a mod changes the game itself.</span>'
+               f'<select name="category" required>{opts}</select></label>'
                '<label>One-line description <span class="hint">What it does, in up to 140 characters.</span>'
                f'<input type="text" name="description" required minlength="10" maxlength="140" value="{e(str(form.get("description", "")))}"></label>'
                '<p class="wk-actions" style="margin:0"><button class="wk-btn violet" type="submit">List it</button></p></form>')

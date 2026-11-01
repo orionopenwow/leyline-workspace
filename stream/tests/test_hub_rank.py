@@ -292,9 +292,13 @@ check("mods.json: no brand words in names", not any(re.search(r"(?i)\bwow\b|warc
                                                      for i in call("GET", "/wrath/leyline/mods.json?limit=200")[1]["items"]))
 
 # ---- the hub catalog's sort tabs and kind filter
-st, page, h = call("GET", "/wrath/leyline-preview/catalog?sort=top&kind=theme")
-check("catalog: sort tabs (Hot, Rising, Top rated, Most installed, New, Recently updated) and kinds",
-      all(t in page for t in ("Hot", "Rising", "Top rated", "Most installed", "New", "Recently updated", "Game modes")) and
+st, _p, h0 = call("GET", "/wrath/leyline-preview/catalog?sort=top&kind=theme")
+check("catalog: the old kind filter sends a 301 to its shelf (kind=theme: Themes)", st == 301
+      and h0.get("location") == "/wrath/leyline-preview/catalog?sort=top&cat=themes", (st, h0.get("location")))
+st, page, h = call("GET", "/wrath/leyline-preview/catalog?sort=top&cat=themes")
+mods_pg = call("GET", "/wrath/leyline-preview/catalog?sort=top")[1]
+check("catalog: sort tabs (Hot, Rising, Top rated, Most installed, New, Recently updated); Mods has Game modes as a category",
+      all(t in page for t in ("Hot", "Rising", "Top rated", "Most installed", "New", "Recently updated")) and "Game modes" in mods_pg and
       ('role="tablist"' in page or 'role="group" aria-label="Sort"' in page) and h.get("x-robots-tag") == "noindex, nofollow")
 check("catalog: kind=theme lists themes only, rated first", page.find("Night Sky") != -1 and
       (page.find("Ember") == -1 or page.find("Night Sky") < page.find("Ember")) and "/p/link-" not in page)

@@ -314,6 +314,35 @@ menu.grid:Fire("OnMouseWheel", -1)
 check("the wheel scrolls a row", B.menuOffset == 3)
 menu:Hide()
 
+-- 2026-11-01: the window's rows carry a small picture per category; Recent and Favourites are one click away
+B.Refresh()
+check("every row has its category's icon (a stock icon path)", (function()
+    for _, r in ipairs(shown()) do
+        local want = "Interface\\Icons\\" .. (B.CAT_ICONS[r.item.cat] or "INV_Misc_QuestionMark")
+        if r.icon.path ~= want then return false end
+    end
+    return #shown() > 0 end)())
+check("every category has an icon", (function()
+    for i = 2, #B.CATS do if B.CATS[i] ~= "all" and not B.CAT_ICONS[B.CATS[i]] then return false end end
+    return true end)())
+win.recentBtn:Fire("OnClick")
+check("Recent: one click, the window lists what you placed", B.listMode == "recent" and win.recentBtn:GetText() == "> Recent"
+    and #shown() >= 1 and shown()[1].item == first)
+shown()[1]:Fire("OnClick", "RightButton")
+check("right-click a row: a favourite (a star on the row)", WrathUnleashedUIChar.builder.favs[first.id] == true and shown()[1].name:GetText():find("%* "))
+win.favBtn:Fire("OnClick")
+check("Favourites: one click", B.listMode == "favourites" and #shown() == 1 and shown()[1].item == first)
+shown()[1]:Fire("OnClick", "RightButton")
+check("and right-click again takes it off the list", #shown() == 0 and win.count:GetText():find("Right%-click"))
+win.favBtn:Fire("OnClick")
+check("Favourites again: back to the category", B.listMode == nil and win.catBtn:GetText() == "Category: all" and #shown() == #win.rows)
+check("Builder help: one short line, the rest behind ?", #win.info:GetText() <= 40 and win.help and #win.help.tip.lines >= 3
+    and not win.help.tip:IsShown())
+win.help:Fire("OnEnter")
+check("? shows the long help while the mouse is on it", win.help.tip:IsShown())
+win.help:Fire("OnLeave")
+check("and hides it after", not win.help.tip:IsShown())
+
 -- M3: the properties panel ----------------------------------------------------------------------------------------
 win.props:Fire("OnClick")
 local panel = B.Panel()

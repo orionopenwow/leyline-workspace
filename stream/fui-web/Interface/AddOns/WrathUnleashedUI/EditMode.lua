@@ -48,6 +48,10 @@
 --   E.BoxSelect(x1, y1, x2, y2, add)     a drag box's two ground corners, if the client draws one
 --   E.Cmd("redo")                        Ctrl+Y (or Ctrl+Shift+Z): redo, as the Redo button (also "store", "group",
 --                                        "ungroup", "floor" for the client's own keys, if it binds any)
+--
+-- The template shelf (DenHome.lua) sits under the selection card in a Den, for its owner and builders: a stamp's
+-- tile marks it, Q / E turn it, Enter or Place puts it down, Esc cancels. While a prop waits for its ground click
+-- the same keys work: Q / E turn it (sent after it lands), Esc cancels. The long help is the banner's "?".
 
 local W = WrathUnleashedUI
 local CVAR, GRID, ANGLE = "leylineEditMode", "leylineEditGrid", "leylineEditAngle"
@@ -164,14 +168,24 @@ end
 -- What the next ground click does: place a prop, paste the copy, paste a prefab, or a box corner.
 local function pend(kind, data, note)
     E.placing = (kind == "prop") and data or nil
-    E.pending = kind and { kind = kind, data = data } or nil
+    E.pending = kind and { kind = kind, data = data, turn = 0 } or nil
     if note then E.Note(note) end
 end
 
 -- From the Builder's Spawn button (or the spawn menu) while editing: the next ground click places this prop.
 function E.StartPlacing(prop)
     if not prop then return end
-    pend("prop", prop, "Click the ground where the " .. prop.name .. " goes.")
+    pend("prop", prop, prop.name .. ": click the ground. Q / E turn, Esc cancels.")
+end
+
+-- Q / E while a prop waits for its click: the turn it gets once it lands (".build turn" after the spawn).
+function E.TurnPending(deg)
+    local p = E.pending
+    if not (p and p.kind == "prop") then return false end
+    p.turn = ((p.turn or 0) + (tonumber(deg) or 0)) % 360
+    if p.turn > 180 then p.turn = p.turn - 360 end
+    E.Note(p.data.name .. ": turned " .. p.turn .. " deg. Click the ground.")
+    return true
 end
 
 function E.StartPasting() pend("paste", nil, "Click the ground where the copy goes.") end
@@ -182,7 +196,7 @@ function E.StartStack() pend("stack", nil, "Stack: click the prop the selection 
 function E.StartPath(prop, every)
     if prop then pend("path", { prop = prop, every = tonumber(every) or 3 }, "Path of " .. prop.name .. ": click where it starts.") end
 end
-function E.Cancel() pend(nil) end
+function E.Cancel(note) pend(nil, nil, note) end
 
 local function shiftDown(flag)
     if flag ~= nil then return flag and true or false end
@@ -198,6 +212,12 @@ end
 
 -- The client: Q held (true) or let go (false) while nothing is carried.
 function E.SpawnMenu(down)
+    -- placing (a stamp marked, or a prop waiting for its click): Q turns it instead
+    local H = W.DenHome
+    if H and H.Key and (H.armed or (E.pending and E.pending.kind == "prop")) then
+        if down then H.Key("Q") end
+        return
+    end
     local B = builder()
     if not (B and B.ShowMenu) then return end
     if down then B.ShowMenu(true) elseif not E.menuPinned then B.ShowMenu(false) end
@@ -218,7 +238,8 @@ function E.Clicked(x, y, z, objectId, shift)
         if p.kind == "prop" then
             pend(nil)
             cmd(string.format("spawnat %d %.2f %.2f %.2f", p.data.id, x, y, z))
-            E.Note(p.data.name .. " placed. G to carry it, V to duplicate it, or hold Q for another.")
+            if (p.turn or 0) ~= 0 then cmd("turn " .. p.turn) end
+            E.Note(p.data.name .. " placed. G carries it, V duplicates.")
         elseif p.kind == "paste" then
             pend(nil)
             cmd(string.format("pasteat %.2f %.2f %.2f", x, y, z))
@@ -345,6 +366,7 @@ end
 local KEYS = {
     "Click a prop: select it.  Shift-click: add it to the selection (or take it out)",
     "Hold Q (or Spawn menu): pick a prop, then click the ground. Right-click a prop: favourite",
+    "The shelf: a stamp's tile marks it at your feet; Q / E turn it, Enter or Place, Esc cancels",
     "Box select: click two corners.  Select mine: all yours nearby.  Copy, then Paste and click",
     "Drag an arrow to move it along, the ring to turn it; it is placed when you let go",
     "G: carry the selection (the whole group). Mouse moves it, wheel lifts it,",
@@ -373,7 +395,12 @@ local function build()
     title:SetText("EDIT MODE")
     local help = banner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     help:SetPoint("TOP", title, "BOTTOM", 0, -4)
-    help:SetText("Click select - Shift-click add - Q props - G carry - V duplicate - Del remove - Ctrl+Z undo - F7 back")
+    help:SetText("Click select - Q props - G carry - Ctrl+Z undo - F7 back")
+    -- the long help: the "?" at the banner's right (shown while the mouse is on it; a click keeps it)
+    hud.help = W.HelpButton(banner, KEYS, 560, "RIGHT", -10, 0)
+    hud.keys = hud.help.tip
+    hud.keys:ClearAllPoints()
+    hud.keys:SetPoint("TOPRIGHT", hud.help, "BOTTOMRIGHT", 0, -6)
     hud.note = banner:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     hud.note:SetPoint("TOP", banner, "BOTTOM", 0, -6)
     hud.note:SetText(E.note or "Click a prop to select it, G to carry it. Props to place new ones.")
@@ -419,7 +446,6 @@ local function build()
         E.Note("Q / E turn by " .. a .. " degrees.")
     end)
     add("Save build", 96, function() moveBuilder(true, true) E.Note("Type a name in the Builder's Build box and press Save.") end)
-    add("Keys", 64, function() if hud.keys:IsShown() then hud.keys:Hide() else hud.keys:Show() end end)
     bar(tools, "Done (F7)", 96, function() E.Set(false) end, "RIGHT", -10, 0)
 
     -- second bar: selection and the spawn menu
@@ -463,17 +489,8 @@ local function build()
     hud.den = bar(tools3, "Den", 80, function() E.ToggleDen() end, "RIGHT", -10, 0)
     hud.den:Hide()
 
-    -- keys card
-    hud.keys = panel(hud, 560, 22 + #KEYS * 16)
-    hud.keys:SetScale(scale)
-    hud.keys:SetPoint("BOTTOM", tools3, "TOP", 0, 8)
-    for i, line in ipairs(KEYS) do
-        local fs = hud.keys:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        fs:SetPoint("TOPLEFT", 14, -10 - (i - 1) * 16)
-        fs:SetJustifyH("LEFT")
-        fs:SetText(line)
-    end
-    hud.keys:Hide()
+    -- the template shelf (DenHome.lua): under the selection card, shown in a Den for its owner and builders
+    if W.DenHome and W.DenHome.BuildShelf then W.DenHome.BuildShelf(hud, card, scale) end
 
     hud:Hide()
 end
@@ -503,6 +520,7 @@ local function refreshCard()
     hud.budget:SetText(meter)
     if hud.redo then hud.redo:SetText((tonumber(s.redo or "") or 0) > 0 and ("Redo (" .. s.redo .. ")") or "Redo") end
     if hud.den then if s.den then hud.den:Show() else hud.den:Hide() end end
+    if W.DenHome and W.DenHome.ShelfRefresh then W.DenHome.ShelfRefresh() end
     if s.den == "visitor" and not E.toldVisitor then
         E.toldVisitor = true
         E.Note("You're visiting this Den. Its owner can make you a builder.")

@@ -46,6 +46,14 @@ local function inCat(c, want)
 end
 local MENU_COLS, MENU_ROWS = 3, 12
 local RECENT_MAX = 12
+-- A small picture per category on the list's rows (stock 3.3.5a icons, Interface\Icons\...).
+local ICON = "Interface\\Icons\\"
+local CAT_ICONS = { seating = "Spell_Nature_Sleep", tables = "INV_Misc_Food_15", barrels = "INV_Drink_05",
+    crates = "INV_Crate_01", lights = "INV_Torch_Lit", banners = "INV_BannerPVP_02", tents = "INV_Fabric_Linen_01",
+    fires = "Spell_Fire_Fire", fences = "Ability_Defend", nature = "Spell_Nature_Regeneration", decor = "INV_Misc_Book_09",
+    structure = "Trade_Mining", buildings = "Trade_BlackSmithing", furniture = "Trade_Tailoring", objects = "INV_Misc_Gear_01",
+    models = "Spell_Frost_WizardMark" }
+local function catIcon(cat) return ICON .. (CAT_ICONS[cat or ""] or "INV_Misc_QuestionMark") end
 
 local win, menu, panel
 local B = { catalog = {}, shown = {}, offset = 0, cat = 1, step = 4, search = "", state = {}, parts = {}, prefabs = {},
@@ -77,6 +85,37 @@ local function editBox(parent, w, maxLetters, ...)
     if maxLetters then e:SetMaxLetters(maxLetters) end
     e:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     return e
+end
+
+-- A "?" button: the long help, shown while the mouse is on it (a click keeps it open). Its own small frame, not
+-- GameTooltip: edit mode hides UIParent, and the tooltip with it.
+function W.HelpButton(parent, lines, width, ...)
+    local b = button(parent, "?", 22, nil, ...)
+    local tip = CreateFrame("Frame", nil, b)
+    width = width or 420
+    tip:SetWidth(width); tip:SetHeight(14 + #lines * 14)
+    tip:SetPoint("BOTTOMRIGHT", b, "TOPRIGHT", 0, 4)   -- above, to the left (b.tip can be put elsewhere)
+    tip:SetFrameStrata("TOOLTIP")
+    if W.Style and W.Style.Box then W.Style.Box(tip, 0.96)
+    else
+        local bg = tip:CreateTexture(nil, "BACKGROUND")
+        bg:SetTexture(0.06, 0.07, 0.09, 0.95); bg:SetAllPoints(tip)
+    end
+    tip.lines = {}
+    for i, line in ipairs(lines) do
+        local fs = tip:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        fs:SetPoint("TOPLEFT", 8, -7 - (i - 1) * 14)
+        fs:SetWidth(width - 16); fs:SetJustifyH("LEFT")
+        fs:SetText(line)
+        tip.lines[i] = fs
+    end
+    tip:Hide()
+    b.tip = tip
+    local enter, leave = b:GetScript("OnEnter"), b:GetScript("OnLeave")
+    b:SetScript("OnEnter", function(self, ...) if enter then enter(self, ...) end; tip:Show() end)
+    b:SetScript("OnLeave", function(self, ...) if leave then leave(self, ...) end; if not self.pinned then tip:Hide() end end)
+    b:SetScript("OnClick", function(self) self.pinned = not self.pinned; if self.pinned then tip:Show() else tip:Hide() end end)
+    return b
 end
 
 local function now() return (GetTime and GetTime()) or 0 end
@@ -335,6 +374,12 @@ end
 function B.Filter()
     local want, q = CATS[B.cat], B.search:lower()
     B.shown = {}
+    if B.listMode then   -- Recent or Favourites, one click from the window
+        for _, c in ipairs(B.ListFor(B.listMode, B.search)) do B.shown[#B.shown + 1] = c end
+        B.offset = 0
+        B.Refresh()
+        return
+    end
     if SEARCHED[want] then
         for _, c in ipairs((B.found[want] or {}).list or {}) do B.shown[#B.shown + 1] = c end
         B.offset = 0
@@ -363,17 +408,24 @@ function B.Refresh()
         local c = B.shown[B.offset + i]
         row.item = c
         if c then
-            row.name:SetText((c == B.pick and "|cff40ff40> |r" or "") .. c.name)
+            row.name:SetText((c == B.pick and "|cff40ff40> |r" or "") .. (store().favs[c.id] and "* " or "") .. c.name)
             row.cat:SetText(c.cat .. "  " .. (c.cost or 1) .. " pt")
+            if row.icon then row.icon:SetTexture(catIcon(c.cat)); row.icon.path = catIcon(c.cat) end
             row:Show()
         else
             row:Hide()
         end
     end
     win.catBtn:SetText("Category: " .. CATS[B.cat])
-    local f = SEARCHED[CATS[B.cat]] and B.found[CATS[B.cat]]
-    if SEARCHED[CATS[B.cat]] and n == 0 then
-        win.count:SetText("Type a word in Search, then Enter: the realm searches every " .. (CATS[B.cat] == "models" and "model." or "object."))
+    if win.recentBtn then
+        win.recentBtn:SetText((B.listMode == "recent" and "> " or "") .. "Recent")
+        win.favBtn:SetText((B.listMode == "favourites" and "> " or "") .. "Favourites")
+    end
+    local f = not B.listMode and SEARCHED[CATS[B.cat]] and B.found[CATS[B.cat]]
+    if B.listMode and n == 0 then
+        win.count:SetText(B.listMode == "recent" and "Nothing placed yet." or "Right-click a row to favourite it.")
+    elseif not B.listMode and SEARCHED[CATS[B.cat]] and n == 0 then
+        win.count:SetText("Type a word, then Enter.")
     else
         win.count:SetText((n > ROWS and string.format("%d-%d of %d", B.offset + 1, math.min(n, B.offset + ROWS), n) or "")
             .. ((f and f.more) and "  (more: Down)" or ""))
@@ -526,9 +578,9 @@ local function byIdMap()
     return m
 end
 
--- What the menu lists now: only the realm's catalog (and your prefabs), never anything else.
-function B.MenuList()
-    local tab, q = B.menuTab, B.menuSearch:lower()
+-- What a tab lists: only the realm's catalog (and your prefabs), never anything else.
+function B.ListFor(tab, search)
+    local q = tostring(search or ""):lower()
     local function match(c) return q == "" or c.name:lower():find(q, 1, true) or (c.key and c.key:find(q, 1, true)) end
     local out = {}
     if tab == "prefabs" then
@@ -567,6 +619,7 @@ function B.MenuList()
     end
     return out
 end
+function B.MenuList() return B.ListFor(B.menuTab, B.menuSearch) end
 
 function B.ToggleFavourite(c)
     if not c or c.kind == "prefab" or c.kind == "stamp" then return end
@@ -575,6 +628,7 @@ function B.ToggleFavourite(c)
     remember(c)
     setStatus(favs[c.id] and (c.name .. " is a favourite.") or (c.name .. " is no longer a favourite."))
     B.MenuRefresh()
+    if B.listMode == "favourites" then B.Filter() else B.Refresh() end
 end
 
 function B.MenuPick(item, mouse)
@@ -584,7 +638,7 @@ function B.MenuPick(item, mouse)
     if item.kind == "prefab" then
         ok = B.PastePrefab(item.name)
     elseif item.kind == "stamp" then
-        ok = W.DenHome and W.DenHome.Stamp(item.key)
+        ok = W.DenHome and W.DenHome.Stamp(item.key, editing())   -- in edit mode: as the shelf's tiles
     else
         B.pick = item
         B.Refresh()
@@ -893,9 +947,13 @@ local function buildPanel()
     button(panel, "Reset", 80, function() B.propsEditing = nil; B.PropsFill() end, "BOTTOMLEFT", 100, 30)
     panel.status = label(panel, "", "GameFontHighlightSmall", "BOTTOMLEFT", 14, 12)
     panel.status:SetWidth(310)
-    label(panel, "", "GameFontHighlightSmall", "TOPLEFT", 14, y - 120):SetText(
-        "Type exact numbers and Enter, or nudge with - and +. Angles in degrees; pitch and roll tilt the prop. "
-        .. "Align and Stack: pick the reference first (Align: the last one picked; Stack: the first).")
+    label(panel, "Type a number and Enter, or - / +.", "GameFontHighlightSmall", "TOPLEFT", 14, y - 120)
+    panel.help = W.HelpButton(panel, {
+        "Type exact numbers and Enter, or nudge with - and +.",
+        "Angles in degrees; pitch and roll tilt the prop.",
+        "Align: lines the rest up with the last one picked.",
+        "Stack on: the rest go on top of the first one picked.",
+    }, 320, "TOPRIGHT", -30, -8)
     panel:SetScript("OnShow", function() B.propsEditing = nil; B.PropsFill() end)
     panel:Hide()
 end
@@ -914,11 +972,21 @@ local function buildRow(i)
     row:SetWidth(WIN_W - 40); row:SetHeight(ROW_H - 2)
     row:SetPoint("TOPLEFT", 0, -(i - 1) * ROW_H)
     row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
-    row.name = label(row, "", "GameFontNormal", "LEFT", 4, 0)
-    row.name:SetWidth(300)
+    row.icon = row:CreateTexture(nil, "ARTWORK")
+    row.icon:SetWidth(ROW_H - 4); row.icon:SetHeight(ROW_H - 4)
+    row.icon:SetPoint("LEFT", 2, 0)
+    row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    row.name = label(row, "", "GameFontNormal", "LEFT", ROW_H + 2, 0)
+    row.name:SetWidth(296)
     row.cat = label(row, "", "GameFontHighlightSmall", "LEFT", 320, 0)
-    row:SetScript("OnClick", function(self)
-        if self.item then B.pick = self.item; B.Refresh() end
+    row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    row:SetScript("OnClick", function(self, mouse)
+        if not self.item then return end
+        if mouse == "RightButton" then B.ToggleFavourite(self.item); return end
+        B.pick = self.item; B.Refresh()
+    end)
+    row:SetScript("OnEnter", function(self)
+        if self.item then setStatus(editing() and "Double-click, then click the ground." or "Double-click to place it at your feet.") end
     end)
     row:SetScript("OnDoubleClick", function(self)
         if self.item then B.pick = self.item; B.Refresh(); B.Spawn() end
@@ -972,7 +1040,8 @@ local function build()
     end)
     win.search = search
     win.catBtn = button(win, "Category: all", 150, function()
-        B.cat = B.cat % #CATS + 1; B.Filter()
+        if B.listMode then B.listMode = nil else B.cat = B.cat % #CATS + 1 end
+        B.Filter()
     end, "TOPLEFT", 270, -42)
     win.reload = button(win, "Refresh", 70, function() B.RequestCatalog() end, "TOPRIGHT", -20, -42)
 
@@ -985,7 +1054,11 @@ local function build()
     win.rows = {}
     for i = 1, ROWS do win.rows[i] = buildRow(i) end
     local y = -72 - ROWS * ROW_H
-    win.count = label(win, "", "GameFontHighlightSmall", "TOPLEFT", 20, y - 8)
+    -- Recent and Favourites, one click away (again: back to the category)
+    local function listMode(m) B.listMode = (B.listMode ~= m) and m or nil; B.Filter() end
+    win.recentBtn = button(win, "Recent", 70, function() listMode("recent") end, "TOPLEFT", 20, y - 4)
+    win.favBtn = button(win, "Favourites", 86, function() listMode("favourites") end, "TOPLEFT", 94, y - 4)
+    win.count = label(win, "", "GameFontHighlightSmall", "TOPLEFT", 186, y - 8)
     win.menuBtn = button(win, "Spawn menu", 100, function() B.ToggleMenu() end, "TOPRIGHT", -132, y - 4)
     button(win, "Up", 50, function() B.offset = math.max(0, B.offset - ROWS); B.Refresh() end, "TOPRIGHT", -76, y - 4)
     win.down = button(win, "Down", 50, function()
@@ -1031,9 +1104,15 @@ local function build()
     win.save = button(win, "Save", 70, function() B.Save() end, "TOPLEFT", 236, y - 168)
     win.load = button(win, "Load", 70, function() B.Load() end, "TOPLEFT", 310, y - 168)
     win.share = button(win, "Share", 70, function() B.Share() end, "TOPLEFT", 384, y - 168)
-    win.info = label(win, "Save or Share your props in this area by name; Load a name or a 6-letter code where you stand.",
-        "GameFontHighlightSmall", "TOPLEFT", 22, y - 194)
-    win.info:SetWidth(WIN_W - 44)
+    win.info = label(win, "A name or a 6-letter code.", "GameFontHighlightSmall", "TOPLEFT", 22, y - 194)
+    win.info:SetWidth(WIN_W - 80)
+    win.help = W.HelpButton(win, {
+        "Build: Save or Share your props in this area by name; Load a name or a code where you stand.",
+        "Prefab: the selection, saved by name; Paste puts a copy down (in edit mode: click the ground).",
+        "Plot: Claim one, then Add a friend (or a Visitor) by name.",
+        "Recent and Favourites: one click. Right-click a row (or a spawn menu cell) to favourite it.",
+        "Every object and Models: type a word, Enter; Down loads more.",
+    }, 470, "TOPLEFT", 480, y - 190)
 
     -- prefabs: the selection, saved by name
     label(win, "Prefab", "GameFontNormal", "TOPLEFT", 20, y - 222)
@@ -1098,5 +1177,5 @@ SLASH_WUSPAWNMENU1 = "/spawnmenu"
 SlashCmdList["WUSPAWNMENU"] = function() B.ToggleMenu() end
 
 W.Builder = B
-B.Window, B.STEPS, B.CATS = function() return win end, STEPS, CATS
+B.Window, B.STEPS, B.CATS, B.CAT_ICONS, B.CatIcon = function() return win end, STEPS, CATS, CAT_ICONS, catIcon
 B.Menu, B.Panel, B.MENU_TABS = function() return menu end, function() return panel end, MENU_TABS

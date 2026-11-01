@@ -11,6 +11,15 @@
 --   * GM (the owner and builders, never visitors; only inside the Den, all back to normal on leaving): speed 1x / 2x /
 --     4x, Fly, Mark, Go to mark, Middle, Revive; the owner also Clear / Rain / Snow, Invisible and Summon a builder.
 --     Each button's one-line hint shows under the row while the mouse is on it.
+--   * The template shelf (edit mode, a Den's owner and builders): a slim row of picture tiles under the selection
+--     card, the stamps (Inn, Small house, Garden, Market, Campfire, Dock) and, for the owner, the starter places.
+--     Click a tile: ".den stamp <name>" marks it at your feet, and the mark follows you as you walk (".den stamp
+--     here", at most every 1.5 seconds, only while you move); Q / E turn it ("stamp turn 15" / "-15"), Enter or
+--     Place puts it down ("stamp place"), Esc cancels ("stamp cancel"), the same tile again cancels too. A starter
+--     place's tile waits for Enter or Place (".den start <key>", "replace" when the Den has things in it; the realm
+--     keeps a backup). The keys are override bindings (SetOverrideBindingClick, as Modes.lua) only while something is
+--     being placed; a hover shows a one-line hint under the row. The same Q / E / Esc work while a Builder prop waits
+--     for its ground click (EditMode.lua).
 -- The realm checks everything (who you are in this Den, budgets, rates). OVMOD mod "wuden", whispered to yourself:
 --   client -> server   cmd  start <key> [replace] | stamp <name> | stamp turn <deg> | stamp here|place|cancel |
 --                           visit | knock | mail [clear] | gm speed 1|2|4 | gm fly on|off | mark | go | home |
@@ -33,6 +42,18 @@ local STAMPS = {
     { key = "inn", name = "Inn", line = "A small inn: tables, kegs, lanterns, a mailbox and a fire outside." },
 }
 local STARTERS = { { "forest", "Forest glade" }, { "keep", "Dark keep" }, { "empty", "Empty" } }
+-- the shelf's tiles: stock 3.3.5a icons (Interface\Icons\...), stamps first, then the owner's starter places
+local ICON = "Interface\\Icons\\"
+local SHELF_STAMPS = { "inn", "house", "garden", "market", "campfire", "dock" }
+local SHELF_ICONS = { inn = "INV_Misc_Rune_01", house = "INV_Misc_Key_05", garden = "INV_Misc_Flower_02",
+    market = "INV_Misc_Coin_01", campfire = "Spell_Fire_Fire", dock = "Trade_Fishing",
+    forest = "Spell_Nature_Tranquility", keep = "Spell_Shadow_Twilight", empty = "INV_Misc_Note_01" }
+local STARTER_LINES = { forest = "Trees, a brook, a pond, a cottage.", keep = "A ruined tower, mist, braziers.",
+    empty = "The plain room, nothing in it." }
+local TILE, TILE_GAP = 32, 4
+local HERE_EVERY = 1.5   -- seconds between "stamp here" while you walk
+local TURN_STEP = 15
+local MARK_KEEP = 120    -- seconds: the realm's own mark lasts two minutes untouched (ov_den_home.lua)
 local GRIDS = { 0, 0.5, 1, 2, 5 }
 local NOTE_MAX = 200
 -- the GM row: { key, label, width, command (or a function of the panel), hint }; owner = only the owner sees it
@@ -95,17 +116,23 @@ function H.StampItems()
     return out
 end
 
--- A stamp picked here or in the spawn menu: the realm marks where it goes (nothing placed until Place).
-function H.Stamp(key)
-    for _, s in ipairs(STAMPS) do
-        if s.key == key then
-            denCmd("stamp " .. key)
-            H.Show(true)
-            H.SetStatus(s.name .. ": marked at your feet. Turn it, then Place.")
-            return true
-        end
-    end
-    return false
+local function stampOf(key) for _, s in ipairs(STAMPS) do if s.key == key then return s end end end
+local function clock() return (GetTime and GetTime()) or 0 end
+
+-- A stamp picked here or in the spawn menu: the realm marks where it goes (nothing placed until Place). From the
+-- shelf (or the spawn menu in edit mode) the mark also follows you and the placing keys are on; from the panel it
+-- stays where it was marked (walk around it, then Here), and the keys only in edit mode.
+function H.Stamp(key, fromShelf)
+    local s = stampOf(key)
+    if not s then return false end
+    denCmd("stamp " .. key)
+    H.armed = { kind = "stamp", key = key, name = s.name, at = clock(), follow = fromShelf and true or nil }
+    H.lastHere, H.moved = clock(), false
+    if not fromShelf then H.Show(true) end
+    H.SetStatus(s.name .. ": marked at your feet. Turn it, then Place.")
+    H.Say(s.name .. ": Q / E turn, Enter places, Esc cancels.")
+    H.UpdateKeys()
+    return true
 end
 
 function H.Grid() local g = tonumber(saved().grid) or 0; return g end
@@ -239,11 +266,11 @@ local function build()
         local col, row = (i - 1) % 3, math.floor((i - 1) / 3)
         panel.stamp[s.key] = bld(button(panel, s.name, 140, function() H.Stamp(s.key) end, "TOPLEFT", 12 + col * 146, -124 - row * 26))
     end
-    panel.turnL = bld(button(panel, "Turn left", 84, function() denCmd("stamp turn 15") end, "TOPLEFT", 12, -180))
-    panel.turnR = bld(button(panel, "Turn right", 84, function() denCmd("stamp turn -15") end, "TOPLEFT", 100, -180))
+    panel.turnL = bld(button(panel, "Turn left", 84, function() denCmd("stamp turn " .. TURN_STEP) end, "TOPLEFT", 12, -180))
+    panel.turnR = bld(button(panel, "Turn right", 84, function() denCmd("stamp turn -" .. TURN_STEP) end, "TOPLEFT", 100, -180))
     panel.here = bld(button(panel, "Here", 60, function() denCmd("stamp here") end, "TOPLEFT", 188, -180))
-    panel.place = bld(button(panel, "Place", 70, function() denCmd("stamp place") end, "TOPLEFT", 252, -180))
-    panel.cancel = bld(button(panel, "Cancel", 70, function() denCmd("stamp cancel") end, "TOPLEFT", 326, -180))
+    panel.place = bld(button(panel, "Place", 70, function() H.Place(true) end, "TOPLEFT", 252, -180))
+    panel.cancel = bld(button(panel, "Cancel", 70, function() H.Cancel(true) end, "TOPLEFT", 326, -180))
     panel.marked = label(panel, "", nil, "TOPLEFT", 14, -206)
 
     -- placing at your feet
@@ -333,6 +360,269 @@ end
 function H.Toggle() H.Show(not (panel and panel:IsShown())) end
 function H.Panel() return panel end
 
+
+-- ---------------------------------------------------------------- the template shelf (edit mode)
+local shelf
+local function E() return W.EditMode end
+local function editing() local e = E(); return e and e.IsOn and e.IsOn() end
+local function role()   -- the home line's, else the Builder state's (both the realm's)
+    local B = W.Builder
+    return H.home.role or (B and B.state and B.state.den)
+end
+local function denHasThings()
+    if H.home.started and H.home.started ~= "-" then return true end
+    local B = W.Builder
+    local st = (B and B.state) or {}
+    for _, k in ipairs({ "room", "yard" }) do
+        local used = tonumber(tostring(st[k] or ""):match("^(%d+)/") or "")
+        if used and used > 0 then return true end
+    end
+    return false
+end
+
+function H.ShelfItems()
+    local out = {}
+    for _, key in ipairs(SHELF_STAMPS) do
+        local s = stampOf(key)
+        if s then out[#out + 1] = { kind = "stamp", key = key, name = s.name, hint = s.name .. ": " .. s.line, icon = ICON .. SHELF_ICONS[key] } end
+    end
+    for _, st in ipairs(STARTERS) do
+        out[#out + 1] = { kind = "start", key = st[1], name = st[2], owner = true, icon = ICON .. SHELF_ICONS[st[1]],
+            hint = st[2] .. " (a whole Den): " .. STARTER_LINES[st[1]] }
+    end
+    return out
+end
+
+-- The line under the tiles: what is being placed, or the hovered tile's hint.
+function H.Say(text)
+    H.shelfLine = text or ""
+    if shelf then shelf.hint:SetText(H.shelfLine) end
+end
+
+local function disarm(note)
+    H.armed = nil
+    H.Say(note or "")
+    H.UpdateKeys()
+    H.ShelfRefresh()
+end
+
+-- A tile clicked: a stamp is marked (and follows you), a starter place waits for Enter or Place. The same tile
+-- again cancels.
+function H.ShelfClick(key)
+    if H.armed and H.armed.key == key then return H.Cancel() end
+    for _, it in ipairs(H.ShelfItems()) do
+        if it.key == key then
+            if it.kind == "stamp" then
+                local e = E()
+                if e and e.pending and e.Cancel then e.Cancel() end
+                return H.Stamp(key, true)
+            end
+            if role() ~= "owner" then return false end
+            if H.armed and H.armed.kind == "stamp" then denCmd("stamp cancel") end
+            H.armed = { kind = "start", key = key, name = it.name, replace = denHasThings(), at = clock() }
+            H.Say(it.name .. (H.armed.replace and ": replaces your Den (a backup is kept). Enter, or Esc." or ": Enter to start, Esc cancels."))
+            H.UpdateKeys()
+            H.ShelfRefresh()
+            return true
+        end
+    end
+    return false
+end
+
+-- Place (the shelf's, the panel's, Enter): the marked stamp goes down, or the starter place starts.
+function H.Place(fromPanel)
+    local a = H.armed
+    if a and a.kind == "start" then
+        denCmd("start " .. a.key .. (a.replace and " replace" or ""))
+        disarm(a.name .. ": on its way.")
+        return true
+    end
+    if not a and not fromPanel then return false end
+    denCmd("stamp place")
+    disarm(a and (a.name .. " placed. Ctrl+Z takes it back.") or nil)
+    return true
+end
+
+function H.Cancel(fromPanel)
+    local a = H.armed
+    if a and a.kind == "start" then disarm("Kept your Den as it is."); return true end
+    if not a and not fromPanel then
+        local e = E()
+        if e and e.pending and e.Cancel then e.Cancel("Cancelled."); H.UpdateKeys(); return true end
+        return false
+    end
+    denCmd("stamp cancel")
+    disarm(a and "Cancelled." or nil)
+    return true
+end
+
+function H.Turn(deg)
+    local a = H.armed
+    if a and a.kind == "stamp" then a.at = clock(); denCmd("stamp turn " .. deg); return true end
+    if a then return false end
+    local e = E()
+    return e and e.TurnPending and e.TurnPending(deg) or false
+end
+
+-- Something being placed: a stamp or starter from here, or a Builder prop waiting for its ground click.
+function H.Placing()
+    if H.armed then return true end
+    local e = E()
+    return (e and e.pending) and true or false
+end
+
+-- The keys while placing. key: Q, E, ENTER, ESCAPE. src: who called (the binding, or the client's own Q hook):
+-- one press seen by both counts once.
+H.lastKey = {}
+function H.Key(key, src)
+    src = src or "client"
+    local last, now = H.lastKey[key], clock()
+    if last and last.src ~= src and now - last.at < 0.2 then return false end
+    H.lastKey[key] = { src = src, at = now }
+    if key == "Q" then return H.Turn(TURN_STEP)
+    elseif key == "E" then return H.Turn(-TURN_STEP)
+    elseif key == "ENTER" then return H.Place()
+    elseif key == "ESCAPE" then return H.Cancel() end
+    return false
+end
+
+-- Override bindings to hidden buttons while placing (Modes.lua's way: a click binding gets one click as the key
+-- goes down and one as it comes up; a client that says which is believed once it said "down").
+local keyOwner, keyButtons, keyHalf, keyDownSeen = nil, {}, {}, false
+local function keyButton(key)
+    local name = "LeylineDenKey" .. key
+    if keyButtons[key] then return name end
+    local b = CreateFrame("Button", name, UIParent)
+    b:EnableMouse(false)
+    b:RegisterForClicks("AnyDown", "AnyUp")
+    b:SetScript("OnClick", function(_, _, down)
+        if down == true then keyDownSeen = true end
+        if keyDownSeen then
+            if down == true then H.Key(key, "bind") end
+        else
+            keyHalf[key] = not keyHalf[key]
+            if keyHalf[key] then H.Key(key, "bind") end
+        end
+    end)
+    keyButtons[key] = b
+    return name
+end
+H.keysOn = ""
+function H.UpdateKeys()
+    local want = {}
+    local e = E()
+    if H.armed and (H.armed.follow or H.armed.kind == "start" or editing()) then want = { "Q", "E", "ENTER", "ESCAPE" }
+    elseif e and e.pending then
+        want = e.pending.kind == "prop" and { "Q", "E", "ESCAPE" } or { "ESCAPE" }
+    end
+    local sig = table.concat(want, " ")
+    if sig == H.keysOn then return end
+    if not keyOwner then keyOwner = CreateFrame("Frame", "LeylineDenKeys", UIParent) end
+    if ClearOverrideBindings then ClearOverrideBindings(keyOwner) end
+    keyHalf = {}
+    H.keysOn = sig
+    if not SetOverrideBindingClick then return end
+    for _, k in ipairs(want) do SetOverrideBindingClick(keyOwner, true, k, keyButton(k)) end
+end
+
+local function tile(parent, it)
+    local b = CreateFrame("Button", nil, parent)
+    b:SetWidth(TILE); b:SetHeight(TILE)
+    b.icon = b:CreateTexture(nil, "ARTWORK")
+    b.icon:SetAllPoints(b)
+    b.icon:SetTexture(it.icon)
+    b.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    b.icon.path = it.icon
+    b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+    b.on = b:CreateTexture(nil, "OVERLAY")
+    b.on:SetTexture("Interface\\Buttons\\CheckButtonHilight")
+    b.on:SetBlendMode("ADD")
+    b.on:SetAllPoints(b)
+    b.on:Hide()
+    b.item, b.hint = it, it.hint
+    b:SetScript("OnClick", function() H.ShelfClick(it.key) end)
+    b:SetScript("OnEnter", function() if shelf then shelf.hint:SetText(it.hint) end end)
+    b:SetScript("OnLeave", function() if shelf then shelf.hint:SetText(H.shelfLine or "") end end)
+    return b
+end
+
+-- Built with the edit HUD (EditMode.lua): on the world frame, under the selection card.
+function H.BuildShelf(hud, card, scale)
+    if shelf then return shelf end
+    shelf = CreateFrame("Frame", "LeylineDenShelf", hud)
+    shelf:SetScale(scale or 1)
+    shelf:SetPoint("TOPLEFT", card, "BOTTOMLEFT", 0, -8)
+    local items = H.ShelfItems()
+    local nStamps = 0
+    for _, it in ipairs(items) do if it.kind == "stamp" then nStamps = nStamps + 1 end end
+    local width = 16 + #items * (TILE + TILE_GAP) + 10
+    shelf:SetWidth(width); shelf:SetHeight(TILE + 44)
+    if W.Style and W.Style.Box then W.Style.Box(shelf, 0.88)
+    else
+        local bg = shelf:CreateTexture(nil, "BACKGROUND")
+        bg:SetTexture(0.06, 0.07, 0.09, 0.88); bg:SetAllPoints(shelf)
+    end
+    shelf.tiles, shelf.starters = {}, {}
+    local x = 8
+    for i, it in ipairs(items) do
+        if i == nStamps + 1 then x = x + 10 end   -- a small gap before the starter places
+        local b = tile(shelf, it)
+        b:SetPoint("TOPLEFT", x, -8)
+        x = x + TILE + TILE_GAP
+        shelf.tiles[it.key] = b
+        if it.kind == "start" then shelf.starters[#shelf.starters + 1] = b end
+    end
+    shelf.hint = shelf:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    shelf.hint:SetPoint("TOPLEFT", 8, -TILE - 16)
+    shelf.hint:SetWidth(width - 140); shelf.hint:SetJustifyH("LEFT")
+    shelf.hint:SetText(H.shelfLine or "")
+    shelf.place = button(shelf, "Place", 56, function() H.Place() end, "TOPRIGHT", -70, -TILE - 12)
+    shelf.cancel = button(shelf, "Cancel", 60, function() H.Cancel() end, "TOPRIGHT", -8, -TILE - 12)
+    shelf:Hide()
+    H.ShelfRefresh()
+    return shelf
+end
+function H.Shelf() return shelf end
+
+-- Shown only in edit mode, in a Den, for its owner and builders; the starter places for the owner only.
+function H.ShelfRefresh()
+    if not shelf then return end
+    local r = role()
+    local on = editing() and (r == "owner" or r == "builder")
+    if not on then if shelf:IsShown() then shelf:Hide() end; return end
+    shelf:Show()
+    for _, b in ipairs(shelf.starters) do if r == "owner" then b:Show() else b:Hide() end end
+    for key, b in pairs(shelf.tiles) do if H.armed and H.armed.key == key then b.on:Show() else b.on:Hide() end end
+    if H.Placing() then shelf.cancel:Show() else shelf.cancel:Hide() end
+    if H.armed then shelf.place:Show() else shelf.place:Hide() end   -- a prop goes down with its ground click
+end
+
+-- The mark follows you: while you walk (GetUnitSpeed), "stamp here" at most every HERE_EVERY seconds, and once
+-- more after you stop. Edit mode roots your character, so there it stays put until you step out (F7) and walk.
+function H.Tick(elapsed)
+    H.tickAcc = (H.tickAcc or 0) + (elapsed or 0)
+    if H.tickAcc >= 0.25 then
+        H.tickAcc = 0
+        H.UpdateKeys()
+        H.ShelfRefresh()
+    end
+    local a = H.armed
+    if not a then return end
+    -- the realm takes an untouched mark away after two minutes; so does the shelf (and gives the keys back)
+    if clock() - (a.at or 0) > MARK_KEEP then return disarm("The mark timed out.") end
+    if a.kind ~= "stamp" or not a.follow then return end
+    if GetUnitSpeed then
+        local ok, speed = pcall(GetUnitSpeed, "player")
+        if ok and (tonumber(speed) or 0) > 0 then H.moved = true end
+    end
+    if H.moved and clock() - (H.lastHere or 0) >= HERE_EVERY then
+        H.lastHere, H.moved, a.at = clock(), false, clock()
+        denCmd("stamp here")
+    end
+end
+local ticker = CreateFrame("Frame", nil, WorldFrame or UIParent)
+ticker:SetScript("OnUpdate", function(_, elapsed) H.Tick(elapsed) end)
+
 -- ---------------------------------------------------------------- the realm's answers
 function H.OnMessage(prefix, msg, channel, sender)
     if prefix ~= "OVMOD" or type(msg) ~= "string" or channel ~= "WHISPER" then return end
@@ -343,6 +633,12 @@ function H.OnMessage(prefix, msg, channel, sender)
         local h = {}
         for k, v in data:gmatch("(%a+)=([^;]*)") do h[k] = plain(v) end
         H.home = h
+        -- the shelf's mark: seen on the realm, then gone (placed, cancelled, two minutes passed)
+        local a = H.armed
+        if a and a.kind == "stamp" then
+            if h.stamp == a.key then a.seen = true
+            elseif a.seen then disarm("") end
+        end
         H.Refresh()
     elseif name == "start" then
         H.home.role = "owner"
@@ -380,4 +676,5 @@ SLASH_LEYLINEDENHOME1 = "/denhome"
 SlashCmdList["LEYLINEDENHOME"] = function() H.Toggle() end
 
 H.STAMPS, H.STARTERS, H.GRIDS, H.GM_ALL, H.GM_OWNER = STAMPS, STARTERS, GRIDS, GM_ALL, GM_OWNER
+H.SHELF_ICONS, H.HERE_EVERY = SHELF_ICONS, HERE_EVERY
 W.DenHome = H

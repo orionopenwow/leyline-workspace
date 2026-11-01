@@ -39,6 +39,7 @@ local binds = { ["SHIFT-MOUSEWHEELUP"] = "PREVIOUSACTIONPAGE", ["SHIFT-MOUSEWHEE
     ["SHIFT-UP"] = "PREVIOUSACTIONPAGE", ["SHIFT-DOWN"] = "NEXTACTIONPAGE", ["1"] = "ACTIONBUTTON1" }
 function SetBinding(key, cmd) binds[key] = cmd end
 function GetBindingAction(key) return binds[key] or "" end
+function SetBindingClick(key, button) binds[key] = "CLICK " .. button .. ":LeftButton" end
 function SaveBindings() end
 function GetCurrentBindingSet() return 2 end
 -- bars and spellbook: 10 spells; placing sends what the server would get (CMSG_SET_ACTION_BUTTON)
@@ -147,6 +148,7 @@ check("after the fight: filled", #placedLog == 10, #placedLog)
 -- 8. the page keys: new characters get none, older characters lose them once (only while they flip pages)
 check("page keys unbound with the default keys", (binds["SHIFT-MOUSEWHEELUP"] or "") == "" and (binds["SHIFT-DOWN"] or "") == "")
 check("the bar keys are set", binds["SHIFT-1"] == "MULTIACTIONBAR1BUTTON1" and binds["1"] == "ACTIONBUTTON1")
+check("Alt+Z is the screenshot key, not a right-bar slot", binds["ALT-Z"] == "CLICK WrathUnleashedShotKey:LeftButton" and binds["ALT-X"] == "MULTIACTIONBAR3BUTTON12")
 binds["SHIFT-MOUSEWHEELUP"], binds["SHIFT-MOUSEWHEELDOWN"], binds["SHIFT-UP"] = "PREVIOUSACTIONPAGE", "NEXTACTIONPAGE", "MYMACRO"
 WrathUnleashedUIChar, frames = { keys = true, barsOn = true, defaults = true }, {}
 local keep = WrathUnleashedUIChar

@@ -54,8 +54,21 @@ const FAKE = (o) => {
           if ('setup' in a) prof.setup = a.setup;
           return { ok: true, me: { pid: 'aaaaaaaaaa', name, tag: '4821', main: '', show_main: false, offline: false, profile: { ...prof } } };
         }
+        if (args.action === 'herokey_status') return opts.webOnly ? { web_only: true, has_key: null, has_password: false }
+          : { web_only: false, has_key: true, key: '', saved: true, made: '31 Oct 2026', last_used: '31 Oct 2026, Leyline', has_password: !!window.__pw };
+        if (args.action === 'herokey_new') { if (opts.webOnly) throw 'Make a new key on the website: open Your Hero Key there.'; return { ok: true, key: 'ovk1.NewNew1234.' + 'n'.repeat(43) }; }
+        if (args.action === 'herokey_saved') return { ok: true };
+        if (args.action === 'password') { if (args.args.remove) { window.__pw = false; return { ok: true, has_password: false }; }
+          window.__pw = true; return { ok: true, has_password: true }; }
         if (args.action === 'state') return { v: 1, me: { pid: 'aaaaaaaaaa', name, tag: '4821' }, friends: [], incoming: [], outgoing: [], blocked: [] };
         throw 'unexpected social call ' + args.action;
+      case 'social_new_account': signed = true; window.__key = 'ovk1.AbCdEf1234.' + 'k'.repeat(43);
+        return { ok: true, key: window.__key, me: { pid: 'aaaaaaaaaa', name: 'Brightfeather42', tag: '1234' } };
+      case 'social_key_signin': if (!/ovk1\.AbCdEf1234/.test(args.key)) throw 'That Hero Key didn\'t work. It may have been replaced by a newer one: use your newest key.';
+        signed = true; return { ok: true, me: { pid: 'aaaaaaaaaa', name, tag: '4821' } };
+      case 'social_password_signin': if (args.password !== 'correct horse battery') throw "That name and password don't match.";
+        signed = true; return { ok: true, me: { pid: 'aaaaaaaaaa', name, tag: '4821' } };
+      case 'save_text_file': window.__file = args; return !opts.cancelSave;
       case 'forum_call': return { threads: [], categories: [] };
       case 'open_link': return null;
       default: throw 'unknown ' + cmd;
@@ -86,8 +99,8 @@ test('signed out: SIGN IN opens the chooser; only the ways the website offers', 
   await page.click('#hf-signin');
   await page.waitForSelector('#hf-code:not([hidden]) .sf-way');
   assert.deepEqual(await page.$$eval('#hf-code .sf-ways .sf-way', (b) => b.map((x) => x.dataset.via)), ['herokey', 'google']);
-  assert.equal(await page.locator('#hf-code .sf-guest').count(), 1, 'and Play as guest under them');
-  assert.match(await page.textContent('#hf-code'), /never see your password/);
+  assert.equal(await page.locator('#hf-code .sf-new').count(), 1, 'and Get your Hero Key above them');
+  assert.match(await page.textContent('#hf-code'), /every realm that accepts Hero Key/);
   await page.keyboard.press('Escape');
   assert.ok(await page.isHidden('#hf-code'), 'Escape closes it');
   await page.close();
@@ -129,7 +142,7 @@ test('the way goes to the core; the code waits; first time: the profile step, th
 test('Skip for now marks the step done and sends nothing else', async () => {
   const { page, errors } = await open({ setup: false });
   await page.click('#hf-signin');
-  await page.click('#hf-code .sf-way[data-via="herokey"]');
+  await page.click('#hf-code .sf-way[data-via="google"]');
   await page.waitForSelector('#ac-skip', { timeout: 9000 });
   await page.click('#ac-skip');
   await page.waitForSelector('#page-play.on');
@@ -141,7 +154,7 @@ test('Skip for now marks the step done and sends nothing else', async () => {
 test('a refused or expired code: why, and the chooser again; Cancel stops waiting', async () => {
   const { page, errors } = await open({ poll: 'denied' });
   await page.click('#hf-signin');
-  await page.click('#hf-code .sf-way[data-via="herokey"]');
+  await page.click('#hf-code .sf-way[data-via="google"]');
   await page.waitForSelector('#hf-code .sf-err', { timeout: 9000 });
   assert.match(await page.textContent('#hf-code .sf-err'), /refused/);
   assert.ok(await page.isVisible('#hf-code .sf-way[data-via="google"]'), 'pick again');
@@ -149,7 +162,7 @@ test('a refused or expired code: why, and the chooser again; Cancel stops waitin
   await page.click('#hf-code .sf-way[data-via="google"]');
   await page.waitForFunction(() => /expired/.test((document.querySelector('#hf-code .sf-err') || {}).textContent || ''), null, { timeout: 9000 });
   await page.evaluate(() => { window.__poll = 'pending'; });
-  await page.click('#hf-code .sf-way[data-via="herokey"]');
+  await page.click('#hf-code .sf-way[data-via="google"]');
   await page.waitForSelector('#hf-code .sx-code');
   await page.click('#hf-code button:has-text("Cancel")');
   assert.ok(await called(page, 'social_signin_cancel'));
@@ -161,7 +174,7 @@ test('a refused or expired code: why, and the chooser again; Cancel stops waitin
 test('Manage account signed out: step 1 and the same chooser on the page', async () => {
   const { page, errors } = await open({ discord: true });
   await page.evaluate(() => window.LeylineNav.show('account'));
-  await page.waitForFunction(() => document.querySelectorAll('#ac-view .sf-way').length === 3);
+  await page.waitForFunction(() => document.querySelectorAll('#ac-view .sf-way').length === 4);   // Get your Hero Key, then three
   assert.match(await page.textContent('#ac-view .ac-steps li.on'), /Sign in/);
   await page.click('#ac-view .sf-way[data-via="discord"]');
   await page.waitForSelector('#ac-view .sx-code');
@@ -193,7 +206,7 @@ test('Manage account signed in: picture, name#tag, bio; save only what changed; 
   assert.ok(await called(page, 'social_call', 'a.action === "profile" && JSON.stringify(a.args) === JSON.stringify({setup: true, bio: "Hello there"})'));
   assert.equal(await page.textContent('#ac-view .ac-me-bio'), 'Hello there');
   // the ways: named links only
-  assert.deepEqual(await page.$$eval('#ac-view .ac-ways button', (b) => b.map((x) => x.dataset.link)), ['herokey', 'linkgoogle', 'linkdiscord', 'linkedlaunchers']);
+  assert.deepEqual(await page.$$eval('#ac-view .ac-ways button', (b) => b.map((x) => x.dataset.link)), ['linkgoogle', 'linkdiscord', 'linkedlaunchers']);
   await page.click('#ac-view .ac-ways button[data-link="linkgoogle"]');
   assert.ok(await called(page, 'open_link', 'a.name === "linkgoogle"'));
   await page.click('#ac-view button:has-text("Your profile on the website")');
@@ -246,6 +259,121 @@ test('pictures load only from the website\'s avatar addresses; names are text', 
   assert.ok(!fetched.some((u) => u.startsWith('https://evil.example')), 'never fetched');
   assert.equal(await page.evaluate(() => window.__xss), undefined);
   assert.equal(await page.locator('#ac-view .ac-pics input').count(), 4, 'your initial and the presets');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Get your Hero Key: a new account right here; its key shown once, hidden until Show; Save as text file and Copy', async () => {
+  const { page, errors } = await open({ setup: false });
+  await page.click('#hf-signin');
+  await page.click('#hf-code .sf-new');
+  await page.waitForSelector('#page-account.on #ac-key .ac-keybox', { timeout: 9000 });
+  assert.ok(await called(page, 'social_new_account'));
+  assert.ok(!(await called(page, 'social_signin_start')), 'no browser');
+  const key = await page.evaluate(() => window.__key);
+  assert.equal(await page.textContent('#ac-keytext'), key.slice(0, 5) + '•'.repeat(24), 'hidden by default');
+  assert.ok(!(await page.textContent('#ac-view')).includes(key), 'the key is not on the page until Show');
+  await page.click('#ac-key-show');
+  assert.equal(await page.textContent('#ac-keytext'), key);
+  assert.equal(await page.getAttribute('#ac-key-show', 'aria-pressed'), 'true');
+  await page.click('#ac-key-show');
+  assert.notEqual(await page.textContent('#ac-keytext'), key);
+  assert.match(await page.textContent('#ac-view .ac-welcome'), /Welcome/, 'and the profile step under it');
+  await page.click('#ac-key-save');
+  await page.waitForFunction(() => /Saved Leyline Hero Key\.txt/.test(document.getElementById('ac-key-status').textContent));
+  const f = await page.evaluate(() => window.__file);
+  assert.equal(f.name, 'Leyline Hero Key.txt');
+  assert.match(f.text, /^Leyline Hero Key\r\n\r\nName: Alice#4821\r\nKey: ovk1\.AbCdEf1234\.k{43}\r\nMade: \d{1,2} \w+ \d{4}\r\n\r\nThis key signs you in to your Leyline account on Wrath Unleashed and on every realm that accepts Hero Key\./);
+  assert.doesNotMatch(f.text, /warcraft|wow|blizzard|open vanilla/i);
+  assert.ok(await called(page, 'social_call', 'a.action === "herokey_saved"'), 'saved tells the website to stop showing it');
+  await page.click('#ac-skip');
+  await page.waitForSelector('#page-play.on');
+  await page.evaluate(() => window.LeylineNav.show('account'));
+  await page.waitForSelector('#ac-key .ac-key-meta');
+  assert.equal(await page.locator('#ac-keytext').count(), 0, 'shown once: gone after leaving Manage account');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Sign in with your Hero Key in the launcher: paste it; a wrong one shows the words', async () => {
+  const { page, errors } = await open();
+  await page.click('#hf-signin');
+  await page.click('#hf-code .sf-way[data-via="herokey"]');
+  await page.waitForSelector('#sf-key');
+  assert.equal(await page.getAttribute('#sf-key', 'type'), 'password');
+  await page.fill('#sf-key', 'hello');
+  await page.click('#sf-keyform button[type=submit]');
+  assert.match(await page.textContent('#hf-code .sf-err'), /starts with ovk1/);
+  assert.ok(!(await called(page, 'social_key_signin')), 'checked before any call');
+  await page.fill('#sf-key', 'ovk1.Wrongwrong.' + 'x'.repeat(43));
+  await page.click('#sf-keyform button[type=submit]');
+  await page.waitForFunction(() => /newer one/.test((document.querySelector('#hf-code .sf-err') || {}).textContent || ''));
+  await page.fill('#sf-key', '  ovk1.AbCdEf1234.' + 'k'.repeat(43) + '\n');
+  await page.click('#sf-keyform button[type=submit]');
+  await page.waitForSelector('#hf-me-btn');
+  assert.ok(await called(page, 'social_key_signin', 'a.key.trim().startsWith("ovk1.AbCdEf1234")'));
+  assert.ok(!(await called(page, 'social_signin_start')), 'no browser');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Sign in with your name and password', async () => {
+  const { page, errors } = await open();
+  await page.click('#hf-signin');
+  await page.click('#hf-code .sf-pwlink');
+  await page.fill('#sf-pwname', 'Alice');
+  await page.fill('#sf-pw', 'x');
+  await page.click('#sf-pwform button[type=submit]');
+  assert.match(await page.textContent('#hf-code .sf-err'), /#tag/);
+  await page.fill('#sf-pwname', 'Alice#4821');
+  await page.fill('#sf-pw', 'correct horse battery');
+  await page.click('#sf-pwform button[type=submit]');
+  await page.waitForSelector('#hf-me-btn');
+  assert.ok(await called(page, 'social_password_signin', 'a.name === "Alice#4821"'));
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Manage account: Your Hero Key: when made and last used; Make a new key asks first; a password, set and removed', async () => {
+  const { page, errors } = await open({ signed: true });
+  await page.waitForSelector('#hf-me-btn');
+  await page.click('#hf-me-btn');
+  await page.click('#hf-panel [role="menuitem"]:has-text("Hero Key")');
+  await page.waitForSelector('#ac-key .ac-key-meta');
+  assert.match(await page.textContent('#ac-key'), /Your key is saved.*Made 31 Oct 2026 · Last used 31 Oct 2026, Leyline/);
+  await page.click('#ac-key-new');
+  assert.match(await page.textContent('#ac-key .ac-ask'), /old key stops working/);
+  assert.ok(!(await called(page, 'social_call', 'a.action === "herokey_new"')), 'asks first');
+  await page.click('#ac-key button:has-text("Cancel")');
+  await page.click('#ac-key-new');
+  await page.click('#ac-key-yes');
+  await page.waitForSelector('#ac-keytext');
+  await page.click('#ac-key-show');
+  assert.equal(await page.textContent('#ac-keytext'), 'ovk1.NewNew1234.' + 'n'.repeat(43));
+  assert.match(await page.textContent('#ac-key-status'), /old key no longer works/);
+  await page.click('#ac-pass summary');
+  await page.fill('#ac-pw1', 'short');
+  await page.click('#ac-pass button[type=submit]');
+  assert.match(await page.textContent('#ac-pw-status'), /at least 10/);
+  await page.fill('#ac-pw1', 'correct horse battery');
+  await page.fill('#ac-pw2', 'correct horse batterx');
+  await page.click('#ac-pass button[type=submit]');
+  assert.match(await page.textContent('#ac-pw-status'), /different/);
+  await page.fill('#ac-pw2', 'correct horse battery');
+  await page.click('#ac-pass button[type=submit]');
+  await page.waitForFunction(() => /Password saved/.test(document.getElementById('ac-pw-status').textContent));
+  assert.ok(await called(page, 'social_call', 'a.action === "password" && a.args.password === "correct horse battery"'));
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Manage account: a launcher signed in through the browser makes its new key on the website', async () => {
+  const { page, errors } = await open({ signed: true, webOnly: true });
+  await page.waitForSelector('#hf-me-btn');
+  await page.evaluate(() => window.LeylineNav.show('account'));
+  await page.waitForSelector('#ac-key button[data-link="herokey"]');
+  await page.click('#ac-key button[data-link="herokey"]');
+  assert.ok(await called(page, 'open_link', 'a.name === "herokey"'));
   assert.deepEqual(errors, []);
   await page.close();
 });

@@ -6,7 +6,7 @@
 // first, a count, requests to accept or decline, Add a friend, a plain empty state; asked when the panel opens, never a
 // live poll), quick links (My profile, My Den, Solo leveling, Forum, Settings, Help), then Manage account, Hero Key and
 // Sign out last. Esc and a click outside close it, Tab stays inside, arrows move between items, focus goes back to the
-// chip, it fits the smallest window. Signed out: Sign in opens the chooser in the same panel look, with Play as guest.
+// chip, it fits the smallest window. Signed out: Sign in opens the chooser in the same panel look, Get your Hero Key first.
 // Names and titles are text, never markup; a revoked sign-in goes back to Sign in.
 //
 //   NODE_PATH=$(npm root -g) node --test launcher/tests/social.browser.test.cjs
@@ -52,7 +52,9 @@ const FAKE = (opts) => {
           if (r && args.action === 'accept') window.__friends.push({ pid: r.pid, name: r.name, tag: r.tag, main: '', status: 'launcher', realm: '', char: '', unread: 0 });
           return { ok: true };
         }
+        if (args.action === 'herokey_status') return { web_only: false, has_key: true, key: '', saved: false, made: '31 Oct 2026', last_used: '', has_password: false };
         throw 'unexpected social call ' + args.action;
+      case 'social_new_account': signed = true; return { ok: true, key: 'ovk1.AbCdEf1234.' + 'k'.repeat(43), me: { pid: 'aaaaaaaaaa', name: 'Brightfeather42', tag: '1234' } };
       case 'forum_call':
         if (args.action === 'latest') return { threads: window.__threads.slice(0, args.args.n || 8) };
         if (args.action === 'categories') return { format: 1, categories: [{ id: 'realms', name: 'Share your realm', line: 'x', staff_only: false, threads: 1, posts: 1, last: null }] };
@@ -138,7 +140,7 @@ test('signed out: Sign in, pick a way, the code under the chip, then your name',
   assert.equal(await page.textContent('#hf-me .hf-me-st'), 'Signed out');
   await page.click('#hf-signin');
   await page.waitForSelector('#hf-code:not([hidden]) .sf-way');
-  await page.click('#hf-code .sf-way[data-via="herokey"]');
+  await page.click('#hf-code .sf-way[data-via="google"]');
   await page.waitForSelector('#hf-code .sx-code');
   assert.match(await page.textContent('#hf-code'), /BCDF-GHJK/);
   await page.waitForFunction(() => document.querySelector('#hf-me .hf-me-name') && document.querySelector('#hf-me .hf-me-name').textContent === 'Alice', null, { timeout: 9000 });
@@ -287,26 +289,28 @@ test('a guest account: told it is one, pick your own name first, save the Hero K
   assert.equal(await page.textContent('#hf-panel .ap-edit'), 'Pick your own name and picture');
   assert.match(await page.textContent('#hf-panel [role="menuitem"]:has-text("Hero Key")'), /Save it to keep this guest account/);
   await page.click('#hf-panel [role="menuitem"]:has-text("Hero Key")');
-  assert.ok(await page.evaluate(() => window.__calls.some(([c, a]) => c === 'open_link' && a.name === 'herokey')));
+  await page.waitForSelector('#page-account.on #ac-key .ac-key-meta');   // Manage account, at Your Hero Key (no browser)
+  assert.match(await page.textContent('#ac-key'), /not saved.*Make a new one/);
+  assert.ok(!(await page.evaluate(() => window.__calls.some(([c, a]) => c === 'open_link' && a.name === 'herokey'))));
   assert.deepEqual(errors, []);
   await page.close();
 });
 
-test('signed out: the chooser in the same panel look, with Play as guest; Esc closes it', async () => {
+test('signed out: the chooser in the same panel look, Get your Hero Key first; Esc closes it', async () => {
   const { page, errors } = await open();
   await page.waitForSelector('#hf-signin');
   await page.click('#hf-signin');
-  await page.waitForSelector('#hf-code.acct-panel:not([hidden]) .sf-guest');
+  await page.waitForSelector('#hf-code.acct-panel:not([hidden]) .sf-new');
   assert.equal(await page.getAttribute('#hf-signin', 'aria-expanded'), 'true');
-  assert.deepEqual(await page.$$eval('#hf-code .sf-way', (b) => b.map((x) => x.textContent)), ['Sign in with your Hero Key', 'Continue with Google', 'Play as guest']);
+  assert.deepEqual(await page.$$eval('#hf-code .sf-way', (b) => b.map((x) => x.textContent)), ['Get your Hero Key', 'Sign in with your Hero Key', 'Continue with Google']);
   await page.keyboard.press('Escape');
   assert.ok(await page.isHidden('#hf-code'));
   assert.equal(await page.evaluate(() => document.activeElement.id), 'hf-signin');
   await page.click('#hf-signin');
-  await page.click('#hf-code .sf-guest');
-  await page.waitForSelector('#hf-code .sx-code');
-  assert.match(await page.textContent('#hf-code'), /Play as guest/);
-  assert.ok(await page.evaluate(() => window.__calls.some(([c, a]) => c === 'social_signin_start' && a.via === null)), 'the website picks the way: no via');
+  await page.click('#hf-code .sf-new');
+  await page.waitForSelector('#page-account.on #ac-keytext');
+  assert.ok(await page.evaluate(() => window.__calls.some(([c]) => c === 'social_new_account')), 'a new account, right here');
+  assert.ok(!(await page.evaluate(() => window.__calls.some(([c]) => c === 'social_signin_start'))), 'no browser, no code');
   assert.deepEqual(errors, []);
   await page.close();
 });

@@ -1033,6 +1033,11 @@ pub fn run() {
             crate::social::commands::social_call,
             crate::social::commands::social_signout,
             crate::social::commands::social_ways,
+            // Your Hero Key in the launcher (Manage account; stream/herokeys.py)
+            crate::social::commands::social_key_signin,
+            crate::social::commands::social_new_account,
+            crate::social::commands::social_password_signin,
+            crate::social::commands::save_text_file,
             // the Forum page: reading the website's forum, opening its pages (forum.rs)
             crate::forum::commands::forum_call,
             crate::forum::commands::forum_post,

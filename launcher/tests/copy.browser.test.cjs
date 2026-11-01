@@ -191,7 +191,7 @@ test('Settings: Privacy in one line about the account; no Wine on Windows; Wine 
 test('one wording: sign-in, realms, the official name, original rules, Host pack; no money link', async () => {
   const { page, ctx, errors } = await open();
   assert.equal(await page.getAttribute('#tb-account', 'title'), 'Your account lives on the website: sign in, or manage it');
-  assert.equal(await page.textContent('#page-forum .fm-fine'), 'Reading here; to post, sign in on the website. Plain text and links only.');
+  assert.equal(await page.textContent('#page-forum .fm-fine'), 'Reading here; sign in on Home or Manage account to post from the launcher. Plain text and links only.');
   assert.equal((await page.textContent('.realm-add')).trim(), '+Add a realm');
   assert.equal(await page.textContent('#play-realm option[value="official"]'), 'Wrath Unleashed (the official realm)');
   assert.equal(await page.locator('[data-link="support"]').count(), 0, 'no support link at all');
@@ -201,7 +201,7 @@ test('one wording: sign-in, realms, the official name, original rules, Host pack
   // the Host page: Start is the way in, then the Guide, then the Host pack
   await go(page, 'host');
   assert.deepEqual(await page.$$eval('#page-host .page-tab', (b) => b.map((x) => [x.textContent, x.getAttribute('aria-selected')])),
-    [['Start', 'true'], ['Guide', 'false'], ['Host pack & settings', 'false']]);
+    [['Start', 'true'], ['Guide', 'false'], ['Network', 'false'], ['Host pack & settings', 'false']]);
   await page.click('#hc-tab-kit');
   const kit = await text(page, '#hc-pane-kit');
   assert.match(kit, /Choose the Host pack folder…/); assert.match(kit, /Get the Host pack/);

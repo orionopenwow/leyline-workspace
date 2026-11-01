@@ -1,10 +1,12 @@
-"""Leyline Discord rebrand (discord_leyline.py) against a fake Discord REST API on localhost.
+"""Leyline Discord redo (discord_leyline.py) against a fake Discord REST API on localhost.
 
-Covers: the preview never writes; the backup lands before the first write; matching channels are reused (history
-kept); old channels move into a hidden read-only ARCHIVE; a second run changes nothing; 429 and 5xx retries; the
-@everyone role, managed roles, roles above the bot and the owner's roles are never touched; the delete flags need their
-typed confirmations; the token never reaches the output or any file; no banned words or version numbers in any name or
-topic.
+Covers: the layout is docs/DISCORD-PLAN.md's and agrees with stream/discord_template_v2.json (so the website bot's
+Set up the Discord finds every channel afterwards); the preview never writes; the backup lands before the first write;
+channels from earlier passes (glyph names, old names) are renamed and moved with their history, not made twice; old
+channels move into a hidden read-only ARCHIVE; read-only and private permissions; a second run changes nothing; 429
+and 5xx retries; the @everyone role, managed roles, roles above the bot and the owner's roles are never touched; the
+delete flags need their typed confirmations; first posts are only posted with the flag and a typed POST, and never
+with TODO(owner) or in Start here; the token never reaches the output or any file; no banned words.
 
     python3 tools/discord-leyline/test_discord_leyline.py
 """
@@ -22,6 +24,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE / "discord_leyline.py"
+TEMPLATE = HERE.parent.parent / "stream" / "discord_template_v2.json"
 sys.path.insert(0, str(HERE))
 import discord_leyline as dl  # noqa: E402
 
@@ -79,6 +82,49 @@ def base_world(community=False):
     members = {BOT: {"user": {"id": BOT}, "roles": ["50"]}, OWNER: {"user": {"id": OWNER}, "roles": ["52"]}}
     return {"guild": guild, "roles": roles, "channels": channels, "messages": msgs, "members": members,
             "guilds": [{"id": GID, "name": guild["name"]}]}
+
+
+def reset_world(community=False):
+    """The server as the 30 Oct reset left it: glyph and emoji names, START/PLAY/CREATE/FEEDBACK, ARCHIVE, the
+    reset's four roles, and a Leyline website bot already in the server."""
+    w = base_world(community)
+    w["roles"] = [r for r in w["roles"] if r["id"] in (GID, "50", "51", "52", "55")] + [
+        {"id": "60", "name": "Moderator", "position": 9, "color": 0x8B5CF6, "hoist": True, "managed": False,
+         "permissions": "0"},
+        {"id": "61", "name": "Helper", "position": 8, "color": 0x5B8DEF, "hoist": True, "managed": False,
+         "permissions": "0"},
+        {"id": "62", "name": "Creator", "position": 7, "color": 0xA78BFA, "hoist": True, "managed": False,
+         "permissions": "0"},
+        {"id": "63", "name": "Member", "position": 6, "color": 0x93B4F5, "hoist": False, "managed": False,
+         "permissions": "0"},
+        {"id": "64", "name": "Leyline", "position": 4, "color": 0, "hoist": False, "managed": True,
+         "tags": {"bot_id": "901"}, "permissions": "0"},
+    ]
+    w["roles"][1]["position"] = 12          # the setup bot's role on top
+
+    def ch(i, name, t, parent=None, pos=0, ow=None):
+        return {"id": i, "name": name, "type": t, "parent_id": parent, "position": pos, "guild_id": GID,
+                "permission_overwrites": ow or [], "topic": "old", "rate_limit_per_user": 0}
+    ro = [{"id": GID, "type": 0, "allow": "0", "deny": str(dl.P_NO_TALK)}]
+    news = 5 if community else 0
+    w["channels"] = [
+        ch("10", "START", 4, pos=0), ch("11", "PLAY", 4, pos=1), ch("12", "CREATE", 4, pos=2),
+        ch("13", "FEEDBACK", 4, pos=3), ch("14", "ARCHIVE", 4, pos=4),
+        ch("20", "✦︱welcome", 0, "10", 0, ro), ch("21", "📣︱announcements", news, "10", 1, ro),
+        ch("22", "◆︱general", 0, "11", 0), ch("23", "🛟︱help", 0, "11", 1), ch("24", "🤝︱looking-for-group", 0, "11", 2),
+        ch("25", "🎧︱Hangout", 2, "11", 3),
+        ch("26", "🧩︱mods-and-workshop", 0, "12", 0), ch("27", "⟡︱host-a-beacon", 0, "12", 1),
+        ch("28", "📸︱showcase", 0, "12", 2),
+        ch("29", "·︱bug-reports", 0, "13", 0), ch("30", "💡︱ideas", 0, "13", 1),
+        ch("31", "old-stuff", 0, "14", 0), ch("32", "rules", 0, "14", 1),
+    ]
+    w["guild"].update(name="Leyline", system_channel_id="20", afk_channel_id=None,
+                      rules_channel_id="20" if community else None)
+    if community:
+        w["guild"]["public_updates_channel_id"] = None
+    w["messages"] = {"22": w["messages"]["20"], "30": [{"id": "300001", "content": "an idea", "author": {"id": "7"},
+                                                        "timestamp": "2026-10-30T00:00:00", "attachments": []}]}
+    return w
 
 
 class Fake:
@@ -169,6 +215,8 @@ class Fake:
                 if m == "GET":
                     return 200, w["channels"]
                 if m == "POST":
+                    if body.get("type") in (13, 15) and "COMMUNITY" not in w["guild"]["features"]:
+                        return 400, {"message": "Invalid Form Body (needs Community)"}
                     c = {"id": self.nid(), "guild_id": GID, "name": body["name"], "type": body.get("type", 0),
                          "parent_id": body.get("parent_id"), "topic": body.get("topic"),
                          "rate_limit_per_user": body.get("rate_limit_per_user", 0),
@@ -190,11 +238,23 @@ class Fake:
             rest = p[2:]
             if not rest:
                 if m == "PATCH":
+                    if "type" in body and {c["type"], body["type"]} != {0, 5}:
+                        return 400, {"message": "Invalid channel type change"}
+                    for t in body.get("available_tags") or []:
+                        t.setdefault("id", self.nid())
                     c.update(body)
                     return 200, c
                 if m == "DELETE":
                     w["channels"].remove(c)
                     return 200, c
+            if rest == ["messages"] and m == "POST":
+                msg = {"id": self.nid(), "content": body["content"], "timestamp": "2026-11-01T00:00:00",
+                       "author": {"id": BOT, "username": "Leyline setup"}, "attachments": [], "sent": body}
+                w["messages"].setdefault(c["id"], []).insert(0, msg)
+                return 200, msg
+            if rest[0] == "pins" and m == "PUT":
+                w.setdefault("pins", []).append((c["id"], rest[1]))
+                return 204, None
             if rest == ["messages"] and m == "GET":
                 msgs = w["messages"].get(c["id"], [])
                 if "before" in q:
@@ -236,12 +296,13 @@ def serve(fake):
 
 class Base(unittest.TestCase):
     community = False
+    reset = False           # start from the 30 Oct reset's server instead of an untouched one
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="leyline-discord-test-"))
         self.backups = self.tmp / "Desktop"
         self.backups.mkdir()
-        self.fake = Fake(base_world(self.community), self.backups)
+        self.fake = Fake((reset_world if self.reset else base_world)(self.community), self.backups)
         self.srv = serve(self.fake)
         self.token_file = self.tmp / "token.txt"
         self.token_file.write_text(TOKEN + "\n")
@@ -254,7 +315,7 @@ class Base(unittest.TestCase):
     def run_script(self, *args, stdin="", token_file=None):
         env = {k: v for k, v in os.environ.items() if "proxy" not in k.lower()}
         env.update(LEYLINE_DISCORD_API=f"http://127.0.0.1:{self.srv.server_address[1]}/api",
-                   LEYLINE_BACKUP_ROOT=str(self.backups), LEYLINE_STATE_FILE=str(self.tmp / "state.json"),
+                   LEYLINE_BACKUP_ROOT=str(self.backups),
                    LEYLINE_DISCORD_BACKOFF="0.01", NO_PROXY="*", PYTHONIOENCODING="utf-8")
         p = subprocess.run([sys.executable, str(SCRIPT), "--token-file", str(token_file or self.token_file), *args],
                            input=stdin, capture_output=True, text=True, env=env, timeout=120, encoding="utf-8")
@@ -266,7 +327,7 @@ class Base(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         return p
 
-    def ch(self, name_slug, types=(0, 2, 4, 5)):
+    def ch(self, name_slug, types=(0, 2, 4, 5, 13, 15)):
         hits = [c for c in self.fake.w["channels"] if dl.slug(c["name"]) == name_slug and c["type"] in types]
         self.assertEqual(len(hits), 1, f"{name_slug}: {hits}")
         return hits[0]
@@ -278,6 +339,70 @@ class Base(unittest.TestCase):
         return sorted(self.backups.glob("Leyline-discord-backup-*"))
 
 
+def plan_names():
+    return [s["name"] for _, chans in dl.LAYOUT for s in chans]
+
+
+class TestLayout(unittest.TestCase):
+    """The script's LAYOUT is DISCORD-PLAN.md's, and the same as the website bot's discord_template_v2.json."""
+    TYPES = {"text": dl.TEXT, "voice": dl.VOICE, "stage": dl.STAGE, "forum": dl.FORUM}
+
+    def setUp(self):
+        self.t = json.loads(TEMPLATE.read_text(encoding="utf-8"))
+        self.rname = {r["key"]: r["name"] for r in self.t["roles"]}
+
+    def test_categories_and_channels_match_the_template(self):
+        self.assertEqual([c for c, _ in dl.LAYOUT], [c["name"] for c in self.t["categories"]])
+        for (cat, chans), tcat in zip(dl.LAYOUT, self.t["categories"]):
+            self.assertEqual([s["full"] for s in chans], [c["name"] for c in tcat["channels"]], cat)
+            for s, c in zip(chans, tcat["channels"]):
+                n = c["name"]
+                self.assertEqual(s["full"], f"{dl.EMOJI[s['name']]}︱{s['name']}", n)
+                self.assertEqual(s["type"], self.TYPES[c.get("type", "text")], n)
+                self.assertEqual(s["topic"], c.get("topic"), n)
+                self.assertEqual(s["slow"], c.get("slowmode", 0), n)
+                self.assertEqual(s["ro"], bool(c.get("read_only")), n)
+                self.assertEqual(s["posters"], [self.rname[k] for k in c.get("posters") or []], n)
+                self.assertEqual(s["private"], [self.rname[k] for k in c.get("private") or []], n)
+                self.assertEqual(s["optional"], bool(c.get("optional")), n)
+
+    def test_roles_match_the_template(self):
+        self.assertEqual([(n, f"#{col:06x}", h) for n, col, h, *_ in dl.ROLES],
+                         [(r["name"], r["color"].lower(), bool(r.get("hoist"))) for r in self.t["roles"]])
+        for n, _, _, _, perms in dl.ROLES:
+            self.assertFalse(perms & 8, f"{n} must not get Administrator")
+
+    def test_emoji_names_and_aliases(self):
+        names = plan_names()
+        self.assertEqual(dl.GLYPH_SEP, "︱")
+        self.assertEqual(set(dl.EMOJI), set(names), "one emoji per channel")
+        for n in names:
+            self.assertEqual(dl.slug(n), n.lower().replace(" ", "-"), "base names are plain")
+            self.assertEqual(dl.slug(dl.EMOJI[n] + dl.GLYPH_SEP + n), dl.slug(n))
+            self.assertNotIn("\ufe0f", dl.EMOJI[n], "no variation selectors: the exact name must match")
+        # the 30 Oct reset's emoji stay on the channels they became
+        for old, new in (("👋", "welcome"), ("📣", "announcements"), ("💬", "hangout"), ("🛟", "launcher-help"),
+                         ("🤝", "looking-for-group"), ("🎧", "Dalaran lounge"), ("🧩", "mods-and-addons"),
+                         ("🏰", "hosting-help"), ("📸", "den-showcase"), ("🐞", "bug-reports"), ("💡", "feature-ideas")):
+            self.assertEqual(dl.EMOJI[new], old, new)
+        self.assertEqual(len(set(map(dl.slug, names))), len(names))
+        for target, aliases in dl.ALIASES.items():
+            self.assertIn(target, map(dl.slug, names))
+            self.assertEqual(aliases[0], target)
+        # the DISCORD-PLAN.md old -> new table
+        for old, new in (("general", "hangout"), ("wrath-unleashed", "hangout"), ("help", "launcher-help"),
+                         ("mods-and-workshop", "mods-and-addons"), ("mods", "mods-and-addons"),
+                         ("host-a-beacon", "hosting-help"), ("showcase", "den-showcase"),
+                         ("builders-realm", "den-showcase"), ("building-help", "den-help"),
+                         ("hangout", "dalaran-lounge")):
+            self.assertIn(old, dl.ALIASES[new], old)
+        for old, new in (("start", "start-here"), ("play", "wrath-unleashed"), ("create", "your-den"),
+                         ("build", "your-den"), ("make", "mods-&-workshop"), ("host", "host-a-server"),
+                         ("feedback", "feedback"), ("leyline", "feedback")):
+            self.assertIn(old, dl.CATEGORY_ALIASES[new], old)
+        self.assertIn("helper", dl.ROLE_ALIASES["Guide"])
+
+
 class TestPreview(Base):
     def test_preview_makes_no_writes_and_shows_the_plan(self):
         before = copy.deepcopy(self.fake.w)
@@ -287,15 +412,18 @@ class TestPreview(Base):
         self.assertEqual(self.fake.w, before)
         self.assertEqual(self.backup_dirs(), [])
         out = p.stdout
-        for s in ("PREVIEW", "rename 'OpenVanilla Wrath' -> 'Leyline'", "icon -> leyline-discord-icon-512.png",
-                  "New channels:", "category START", "🤝︱looking-for-group in PLAY",
-                  "Reused channels", "general -> 💬︱general", "General -> 🎧︱Hangout",
+        for never in ("'Leyline'", "icon", "banner", "invite background"):
+            self.assertNotIn(never, out)
+        for s in ("PREVIEW", "New channels:", "category Start here", "🤝︱looking-for-group in Wrath Unleashed",
+                  "Reused channels", "general -> 💬︱hangout", "General -> 🎧︱Dalaran lounge",
+                  "rules -> 📜︱rules (keeps its history",
                   "ov-realm-help -> ARCHIVE", "wrath-dev -> ARCHIVE", "AFK -> ARCHIVE",
-                  "create Helper", "restyle Moderator", "--delete-old-roles", "Realm-Ally",
-                  "Do these by hand", "Vanity URL", "Enable Community", "Nothing changed"):
+                  "create Guide", "rename moderator -> Moderator", "--delete-old-roles", "Realm-Ally",
+                  "feature-ideas (forum channel): needs a Community server", "Do these by hand", "Enable Community",
+                  "📣︱announcements: Moderator can post", "☕︱host-lounge: only Realm Host, Core Team, Moderator",
+                  "Nothing changed", "It posts nothing"):
             self.assertIn(s, out)
         self.assertIn("nothing (archived channels stay; --delete-archived would delete them)", out)
-        self.assertIn("Moderator can post", out)
         self.assertIn("for the server 'OpenVanilla Wrath'", out)
 
     def test_preview_with_delete_flags_lists_deletions_but_still_writes_nothing(self):
@@ -335,9 +463,8 @@ class TestApply(Base):
         self.assertEqual(set(m0), {"id", "author", "author_id", "time", "edited", "content", "pinned", "attachments"})
         self.assertEqual(m0["author"], "Ann")
         self.assertTrue(any(m["attachments"] for m in gen["messages"]))
-        self.assertTrue((b / "welcome-message.txt").exists())
-        self.assertTrue((b / "help-getting-in.txt").exists())
-        self.assertTrue((b / "what-changed.txt").exists())
+        for f in ("what-changed.txt", "first-posts.txt", "settings-for-the-bots.txt"):
+            self.assertTrue((b / f).exists(), f)
 
     def test_backup_message_limit(self):
         self.apply("--backup-messages", "120")
@@ -350,52 +477,66 @@ class TestApply(Base):
     def test_layout_reuse_and_theme(self):
         self.apply()
         w = self.fake.w
-        self.assertEqual(w["guild"]["name"], "Leyline")
-        self.assertTrue(w["guild"]["icon"])
-        self.assertIsNone(w["guild"]["banner"])                 # no BANNER feature: left for later
+        self.assertEqual(w["guild"]["name"], "OpenVanilla Wrath")       # never renamed (owner, 1 Nov)
+        self.assertIsNone(w["guild"]["icon"])                           # nor its icon or banner
+        self.assertIsNone(w["guild"]["banner"])
         self.assertIsNone(w["guild"]["afk_channel_id"])
         cats = {c["name"]: c for c in w["channels"] if c["type"] == 4}
-        for cat in ("START", "PLAY", "CREATE", "FEEDBACK", "ARCHIVE"):
+        for cat, _ in dl.LAYOUT:
             self.assertIn(cat, cats)
+        self.assertIn("ARCHIVE", cats)
         # reused, history kept: same ids
-        gen, ann, hang = self.ch("general", (0,)), self.ch("announcements"), self.ch("hangout", (2,))
-        self.assertEqual((gen["id"], ann["id"], hang["id"]), ("20", "21", "30"))
-        self.assertEqual(gen["name"], "💬︱general")
-        self.assertEqual(gen["parent_id"], cats["PLAY"]["id"])
-        self.assertEqual(gen["topic"], "Talk about anything Leyline.")
-        self.assertEqual(ann["name"], "📣︱announcements")
-        self.assertEqual(hang["name"], "🎧︱Hangout")
-        welcome = self.ch("welcome")
-        self.assertEqual(w["guild"]["system_channel_id"], welcome["id"])
-        for name, cat in (("help", "PLAY"), ("looking-for-group", "PLAY"), ("mods-and-workshop", "CREATE"),
-                          ("host-a-beacon", "CREATE"), ("showcase", "CREATE"), ("bug-reports", "FEEDBACK"),
-                          ("ideas", "FEEDBACK"), ("welcome", "START")):
-            c = self.ch(name)
-            self.assertEqual(c["parent_id"], cats[cat]["id"], name)
-            self.assertTrue(c["name"].startswith((dl.EMOJI.get(name) or dl.GLYPHS[cat]) + dl.GLYPH_SEP), c["name"])
-        self.assertEqual(self.ch("help")["rate_limit_per_user"], 10)
-        self.assertEqual(self.ch("ideas")["rate_limit_per_user"], 10)
-        self.assertEqual(self.ch("general", (0,))["rate_limit_per_user"], 0)
-        # read-only #welcome and #announcements; Moderator may post
-        mod = self.role("Moderator")
-        for c in (welcome, ann):
-            ow = dl.ow_map(c)
-            self.assertTrue(int(ow[GID]["deny"]) & dl.P_SEND)
-            self.assertFalse(int(ow[GID]["deny"]) & dl.P_VIEW)
-            self.assertTrue(int(ow[mod["id"]]["allow"]) & dl.P_SEND)
-        # order: categories START, PLAY, CREATE, FEEDBACK, ARCHIVE first
+        hang, rules, ann, voice = self.ch("hangout", (0,)), self.ch("rules"), self.ch("announcements"), \
+            self.ch("dalaran-lounge", (2,))
+        self.assertEqual((hang["id"], rules["id"], ann["id"], voice["id"]), ("20", "24", "21", "30"))
+        self.assertEqual(hang["parent_id"], cats["Wrath Unleashed"]["id"])
+        self.assertEqual(hang["topic"], dl.LAYOUT[1][1][0]["topic"])
+        self.assertEqual(voice["name"], "🎧︱Dalaran lounge")
+        self.assertEqual(w["guild"]["system_channel_id"], self.ch("welcome")["id"])
+        # every plan channel there once, plain name, right category, topic, slowmode; no forum/stage (no Community)
+        for cat, chans in dl.LAYOUT:
+            for s in chans:
+                if s["type"] in (dl.FORUM, dl.STAGE):
+                    self.assertFalse([c for c in w["channels"] if dl.slug(c["name"]) == dl.slug(s["name"]) and c["type"] != 4])
+                    continue
+                c = self.ch(dl.slug(s["name"]))
+                self.assertEqual(c["name"], s["full"])
+                self.assertEqual(c["type"], s["type"], s["name"])
+                self.assertEqual(c["parent_id"], cats[cat]["id"], s["name"])
+                if s["type"] == dl.TEXT:
+                    self.assertEqual(c["topic"], s["topic"], s["name"])
+                    self.assertEqual(c["rate_limit_per_user"] or 0, s["slow"], s["name"])
+        self.assertEqual(self.ch("den-files")["rate_limit_per_user"], 60)
+        self.assertEqual(self.ch("list-your-realm")["rate_limit_per_user"], 600)
+        # read-only: @everyone can read, not post; the named roles can post
+        mod, core, guide = self.role("Moderator"), self.role("Core Team"), self.role("Guide")
+        for name, posters in (("welcome", []), ("announcements", [core, mod]), ("events", [core, mod, guide]),
+                              ("live-realms", [])):
+            ow = dl.ow_map(self.ch(name))
+            self.assertTrue(int(ow[GID]["deny"]) & dl.P_SEND, name)
+            self.assertFalse(int(ow[GID]["deny"]) & dl.P_VIEW, name)
+            for r in posters:
+                self.assertTrue(int(ow[r["id"]]["allow"]) & dl.P_SEND, (name, r["name"]))
+        self.assertNotIn(GID, dl.ow_map(hang))
+        # private: hidden from @everyone, open to its roles only
+        host = self.role("Realm Host")
+        ow = dl.ow_map(self.ch("host-lounge"))
+        self.assertTrue(int(ow[GID]["deny"]) & dl.P_VIEW)
+        self.assertTrue(int(ow[host["id"]]["allow"]) & dl.P_VIEW)
+        self.assertNotIn(guide["id"], ow)
+        # order: the plan's categories first, then ARCHIVE
         order = [c["name"] for c in sorted((c for c in w["channels"] if c["type"] == 4), key=dl.okey)]
-        self.assertEqual(order[:5], ["START", "PLAY", "CREATE", "FEEDBACK", "ARCHIVE"])
-        play = [dl.slug(c["name"]) for c in sorted((c for c in w["channels"] if c["parent_id"] == cats["PLAY"]["id"]
-                                                     and c["type"] == 0), key=dl.okey)]
-        self.assertEqual(play, ["general", "help", "looking-for-group"])
-        # roles
+        self.assertEqual(order[:len(dl.LAYOUT) + 1], [c for c, _ in dl.LAYOUT] + ["ARCHIVE"])
+        wu = [c["name"] for c in sorted((c for c in w["channels"] if c["parent_id"] == cats["Wrath Unleashed"]["id"]),
+                                        key=dl.okey)]
+        self.assertEqual(wu, [s["full"] for s in dl.LAYOUT[1][1]])
+        # roles: all eight, in the plan's order, the existing "moderator" reused
         for name, colour, hoist, *_ in dl.ROLES:
             r = self.role(name)
             self.assertEqual((r["color"], r["hoist"]), (colour, hoist), name)
         pos = [self.role(n)["position"] for n, *_ in dl.ROLES]
         self.assertEqual(pos, sorted(pos, reverse=True))
-        self.assertEqual(self.role("Moderator")["id"], "54")     # reused, not duplicated
+        self.assertEqual(self.role("Moderator")["id"], "54")
         self.assertEqual(sum(r["name"].lower() == "moderator" for r in w["roles"]), 1)
 
     def test_archive_moves_and_hides(self):
@@ -407,7 +548,7 @@ class TestApply(Base):
         self.assertTrue(int(aow[GID]["deny"]) & dl.P_VIEW)
         self.assertTrue(int(aow[mod["id"]]["allow"]) & dl.P_VIEW)
         self.assertTrue(int(aow[mod["id"]]["deny"]) & dl.P_SEND)
-        for cid in ("22", "23", "24", "31"):
+        for cid in ("22", "23", "31"):
             c = self.fake.chan(cid)
             self.assertIsNotNone(c, cid)                        # nothing deleted
             self.assertEqual(c["parent_id"], arch["id"], cid)
@@ -429,13 +570,6 @@ class TestApply(Base):
         prev = self.run_script()
         self.assertIn("Nothing to change", prev.stdout)
 
-    def test_plain_names(self):
-        self.apply("--plain")
-        self.assertEqual(self.ch("general", (0,))["name"], "general")
-        self.assertEqual(self.ch("hangout", (2,))["name"], "Hangout")
-        self.apply()                                            # switching back to glyphs is a plain rename
-        self.assertEqual(self.ch("general", (0,))["name"], "💬︱general")
-
     def test_no_yes_no_change(self):
         p = self.run_script("--apply", stdin="yes please\n")
         self.assertEqual(p.returncode, 1)
@@ -448,6 +582,89 @@ class TestApply(Base):
             self.assertEqual(urllib.parse.unquote(headers.get("X-Audit-Log-Reason", "")), "Leyline rebrand", path)
             self.assertTrue(headers.get("User-Agent", "").startswith("DiscordBot ("))
 
+    def test_settings_for_the_bots(self):
+        p = self.apply()
+        wc, bugs = self.ch("world-chat")["id"], self.ch("bug-reports")["id"]
+        for s in (f"DISCORD_CHAT_CHANNEL_ID={wc}", f"DISCORD_BUG_CHANNEL_ID={bugs}", f"DISCORD_GUILD_ID={GID}",
+                  "WU_DISCORD_TEMPLATE=/app/discord_template_v2.json", "WU_FORUM_DISCORD_CHANNELS=news=",
+                  "WU_DISCORD_BUG_INTAKE=/srv/wrath/bugs/intake/discord.jsonl"):
+            self.assertIn(s, p.stdout)
+
+
+class TestFromTheResetPreview(Base):
+    reset = True
+    community = True
+
+    def test_preview(self):
+        p = self.run_script("--post-first-posts")
+        self.assertIn("◆︱general -> 💬︱hangout (keeps its history", p.stdout)
+        self.assertIn("✦︱welcome -> 👋︱welcome", p.stdout)
+        self.assertIn("🤝︱looking-for-group (keeps its name and history; topic)", p.stdout)
+        self.assertEqual(self.fake.writes(), [])
+
+
+class TestFromTheReset(Base):
+    """The server as the 30 Oct reset left it (glyph names, START/PLAY/CREATE/FEEDBACK), on a Community server."""
+    reset = True
+    community = True
+
+    def test_glyph_channels_are_renamed_and_moved_not_duplicated(self):
+        self.apply()
+        w = self.fake.w
+        cats = {c["name"]: c["id"] for c in w["channels"] if c["type"] == 4}
+        for cid, name, cat in (("20", "👋︱welcome", "Start here"), ("21", "📣︱announcements", "Start here"),
+                               ("32", "📜︱rules", "Start here"), ("22", "💬︱hangout", "Wrath Unleashed"),
+                               ("24", "🤝︱looking-for-group", "Wrath Unleashed"), ("23", "🛟︱launcher-help", "Feedback"),
+                               ("25", "🎧︱Dalaran lounge", "Voice"), ("26", "🧩︱mods-and-addons", "Mods & Workshop"),
+                               ("27", "🏰︱hosting-help", "Host a server"), ("28", "📸︱den-showcase", "Your Den"),
+                               ("29", "🐞︱bug-reports", "Feedback")):
+            c = self.fake.chan(cid)
+            self.assertEqual((c["name"], c["parent_id"]), (name, cats[cat]), cid)
+            self.assertEqual(sum(dl.slug(x["name"]) == dl.slug(name) for x in w["channels"]), 1, name)
+        # a channel already named right keeps its name (no rename sent)
+        self.assertFalse([x for x in self.fake.writes() if x[1] == "/channels/24" and "name" in (x[2] or {})])
+        self.assertEqual(self.fake.chan("21")["type"], 0, "announcements is a plain text channel, as Set up wants")
+        # the old categories became the plan's (same ids)
+        self.assertEqual((cats["Start here"], cats["Wrath Unleashed"], cats["Your Den"], cats["Feedback"],
+                          cats["ARCHIVE"]), ("10", "11", "12", "13", "14"))
+        # ideas can't become a forum channel: it goes to the archive with its history; feature-ideas is new
+        self.assertEqual(self.fake.chan("30")["parent_id"], "14")
+        self.assertEqual(len(w["messages"]["30"]), 1)
+        self.assertEqual(self.ch("feature-ideas")["type"], dl.FORUM)
+        self.assertEqual(self.ch("showcase-stage")["type"], dl.STAGE)
+        # Helper became Guide (same role, so whoever had it keeps it); Creator and Member left alone
+        self.assertEqual(self.role("Guide")["id"], "61")
+        self.assertFalse([r for r in w["roles"] if r["name"] == "Helper"])
+        self.assertIn("62", {r["id"] for r in w["roles"]})
+        # the Community rules channel is #rules
+        self.assertEqual(w["guild"]["rules_channel_id"], "32")
+        # forum tags, and the website bot may post in the read-only and private channels
+        forum = self.ch("forum", (15,))
+        self.assertEqual([t["name"] for t in forum["available_tags"]], [t for _, t in dl.FORUM_TAGS])
+        for name in ("live-realms", "announcements", "roadmap"):
+            self.assertTrue(int(dl.ow_map(self.ch(name))["64"]["allow"]) & dl.P_SEND, name)
+        self.assertNotIn("64", dl.ow_map(self.ch("hangout")))
+        tag = forum["available_tags"][0]["id"]
+        self.assertIn(f"WU_FORUM_DISCORD_CHANNELS=realms={forum['id']}/{tag},", self.outputs[-1])
+        # again: nothing to do
+        n = len(self.fake.writes())
+        self.apply(stdin="")
+        self.assertEqual(len(self.fake.writes()), n, [x[:3] for x in self.fake.writes()[n:]])
+
+    def test_the_website_bot_finds_every_channel_afterwards(self):
+        """Set up the Discord (stream/discord_growth.py) looks channels up by (exact name, type): all found."""
+        self.apply()
+        t = json.loads(TEMPLATE.read_text(encoding="utf-8"))
+        types = {"text": 0, "voice": 2, "stage": 13, "forum": 15}
+        seen = {(c["name"].lower(), c["type"]) for c in self.fake.w["channels"]}
+        roles = {r["name"].lower() for r in self.fake.w["roles"]}
+        for cat in t["categories"]:
+            self.assertIn((cat["name"].lower(), 4), seen, cat["name"])
+            for c in cat["channels"]:
+                self.assertIn((c["name"].lower(), types[c.get("type", "text")]), seen, c["name"])
+        for r in t["roles"]:
+            self.assertIn(r["name"].lower(), roles)
+
 
 class TestRetries(Base):
     def test_429_and_5xx_are_retried(self):
@@ -457,8 +674,8 @@ class TestRetries(Base):
         self.apply()
         self.assertEqual(self.fake.served_429, 2)
         self.assertEqual(self.fake.served_5xx, 1)
-        self.assertEqual(self.fake.w["guild"]["name"], "Leyline")
-        self.assertEqual(sum(r["name"] == "Helper" for r in self.fake.w["roles"]), 1)
+        self.assertIsNone(self.fake.w["guild"]["afk_channel_id"])
+        self.assertEqual(sum(r["name"] == "Guide" for r in self.fake.w["roles"]), 1)
 
     def test_retry_after_is_honoured(self):
         slept = []
@@ -517,7 +734,7 @@ class TestNeverTouch(Base):
         self.fake.w["members"][OWNER]["roles"].append("54")              # owner is a "moderator" too
         p = self.apply()
         self.assertEqual(self.role("moderator")["color"], 0x111111)
-        self.assertIn("keep Moderator as it is (you have this role)", p.stdout)
+        self.assertIn("keep moderator as it is (you have this role)", p.stdout)
         self.check_untouched()
 
 
@@ -538,10 +755,10 @@ class TestDeleteFlags(Base):
     def test_wipe_history_fresh_channels(self):
         self.apply("--wipe-history", stdin="YES\nWIPE\n")
         self.assertIsNone(self.fake.chan("20"), "the old general (and its messages) is gone")
-        gen = [c for c in self.fake.w["channels"] if c["name"] == "💬︱general"]
-        self.assertEqual(len(gen), 1)
+        self.assertEqual(len([c for c in self.fake.w["channels"] if c["name"] == "💬︱hangout"]), 1)
         welcome = [c for c in self.fake.w["channels"] if c["name"] == "👋︱welcome"][0]
         self.assertEqual(self.fake.w["guild"].get("system_channel_id"), welcome["id"])
+        self.assertIsNotNone(self.fake.chan("30"), "voice channels are left as they are")
         self.assertTrue(self.backup_dirs())
 
     def test_wipe_history_needs_wipe(self):
@@ -554,15 +771,14 @@ class TestDeleteFlags(Base):
         self.apply("--delete-archived", stdin="YES\nOpenVanilla Wrath\n")
         b = self.backup_dirs()[-1]
         self.assertTrue((b / "messages" / "ov-realm-help-22.json").exists())
-        for cid in ("22", "23", "24", "31", "10", "11"):
+        for cid in ("22", "23", "31", "10", "11"):
             self.assertIsNone(self.fake.chan(cid), cid)
         self.assertFalse([c for c in self.fake.w["channels"] if c["name"] == "ARCHIVE"])
-        self.assertEqual(self.fake.chan("20")["name"], "💬︱general")     # reused channels never deleted
+        self.assertEqual(self.fake.chan("20")["name"], "💬︱hangout")     # reused channels never deleted
         dels = [x for x in self.fake.writes() if x[0] == "DELETE"]
         self.assertTrue(dels and all(x[4] for x in dels))
-        # again: nothing left to delete, nothing changes
         n = len(self.fake.writes())
-        self.apply("--delete-archived", stdin="Leyline\n")
+        self.apply("--delete-archived", stdin="OpenVanilla Wrath\n")      # the name is never changed
         self.assertEqual(len(self.fake.writes()), n)
 
 
@@ -572,21 +788,71 @@ class TestCommunity(Base):
     def test_community_server(self):
         self.apply()
         g = self.fake.w["guild"]
-        welcome = self.ch("welcome")
-        self.assertEqual(g["rules_channel_id"], welcome["id"])
-        self.assertTrue(g["banner"])
-        self.assertTrue(g["icon"])
+        self.assertEqual(g["rules_channel_id"], self.ch("rules")["id"])
+        self.assertIsNone(g["banner"])                                       # BANNER feature, but never touched
+        self.assertIsNone(g["icon"])
+        self.assertIsNone(g["splash"])
+        self.assertEqual(g["name"], "OpenVanilla Wrath")
+        for m, path, body, *_ in self.fake.writes():
+            if path == f"/guilds/{GID}":
+                self.assertFalse({"name", "icon", "banner", "splash"} & set(body), body)
         mo = self.fake.chan("25")
         self.assertEqual(mo["parent_id"], "11")                             # Community updates channel left alone
         self.assertFalse(int(dl.ow_map(self.fake.chan("11")).get(GID, {}).get("deny", 0)) & dl.P_VIEW)
-        # rules channel moved to #welcome before the old one was archived
-        w = self.fake.writes()
-        i_rules = next(i for i, x in enumerate(w) if x[1] == f"/guilds/{GID}" and "rules_channel_id" in x[2])
-        i_arch = next(i for i, x in enumerate(w) if x[1] == "/channels/24")
-        self.assertLess(i_rules, i_arch)
+        self.assertEqual(self.ch("forum", (15,))["type"], dl.FORUM)
+        self.assertEqual(self.ch("showcase-stage")["type"], dl.STAGE)
+        self.assertIn("The Leyline website bot isn't in the server", self.outputs[-1])
         n = len(self.fake.writes())
         self.apply()
-        self.assertEqual(len(self.fake.writes()), n)                       # icon/banner not re-uploaded
+        self.assertEqual(len(self.fake.writes()), n)
+
+
+class TestFirstPosts(Base):
+    community = True
+
+    def posted(self):
+        return [(x[1].split("/")[2], x[2]) for x in self.fake.writes()
+                if x[0] == "POST" and x[1].endswith("/messages")]
+
+    def test_no_flag_posts_nothing_and_prints_them(self):
+        p = self.apply()
+        self.assertEqual(self.posted(), [])
+        self.assertIn("----- #welcome", p.stdout)
+        self.assertIn("----- #bug-reports", p.stdout)
+        self.assertIn("How to report a bug", p.stdout)
+
+    def test_flag_without_post_posts_nothing(self):
+        p = self.apply("--post-first-posts", stdin="YES\nyes\n")
+        self.assertEqual(self.posted(), [])
+        self.assertIn("won't post", p.stdout)
+
+    def test_flag_and_post_posts_only_finished_drafts(self):
+        prev = self.run_script("--post-first-posts")
+        self.assertIn("#welcome: left for you (has TODO(owner)", prev.stdout)
+        self.assertIn("#changelog: left for you (Start here", prev.stdout)
+        self.assertEqual(self.fake.writes(), [])
+        p = self.apply("--post-first-posts", stdin="YES\nPOST\n")
+        got = self.posted()
+        self.assertTrue(got, p.stdout)
+        start = {self.ch(s["name"])["id"] for s in dl.LAYOUT[0][1]}
+        forums = {self.ch(n, (15,))["id"] for n in ("forum", "feature-ideas")}
+        names = {c["id"]: c["name"] for c in self.fake.w["channels"]}
+        drafts = dict(dl.read_posts(dl.POSTS_FILE))
+        for cid, body in got:
+            self.assertNotIn(cid, start | forums)
+            self.assertNotIn("TODO(owner)", body["content"])
+            self.assertEqual(body["allowed_mentions"], {"parse": []})
+            self.assertTrue("TODO(owner)" not in drafts[names[cid].split("︱")[-1]])
+        self.assertIn(self.ch("bug-reports")["id"], {c for c, _ in got})
+        self.assertNotIn(self.ch("hangout")["id"], {c for c, _ in got})          # it has a TODO(owner)
+        self.assertEqual(len(self.fake.w["pins"]), len(got))
+        hosting = next(b for c, b in got if c == self.ch("hosting-help")["id"])
+        self.assertIn(f"<#{self.ch('host-templates')['id']}>", hosting["content"])     # #names become links
+        self.assertIn("----- #welcome", p.stdout)                                 # the rest printed for the owner
+        # again: already posted, nothing new
+        n = len(got)
+        self.apply("--post-first-posts", stdin="POST\n")
+        self.assertEqual(len(self.posted()), n)
 
 
 class TestGuildChoice(Base):
@@ -622,34 +888,35 @@ class TestSecretsAndWords(Base):
         for f in self.tmp.rglob("*"):
             if f.is_file() and f != self.token_file:
                 self.assertNotIn(TOKEN, f.read_text(encoding="utf-8", errors="replace"), str(f))
-        # the token only ever travels in the Authorization header
         for m, path, body, headers, _ in self.fake.log:
             self.assertNotIn(TOKEN, path + json.dumps(body))
 
-    def test_no_banned_words_or_versions(self):
-        texts = [dl.SERVER_NAME, dl.ARCHIVE, dl.WELCOME_DRAFT, dl.HELP_DRAFT]
+    def test_no_banned_words(self):
+        texts = [dl.ARCHIVE]
         for cat, chans in dl.LAYOUT:
             texts.append(cat)
-            for name, _, topic, *_ in chans:
-                texts += [name, topic or ""]
+            for s in chans:
+                texts += [s["full"], s["topic"] or ""] + s["tags"]
         texts += [n for n, *_ in dl.ROLES]
         for t in texts:
             self.assertIsNone(dl.BANNED.search(t), t)
+            self.assertIsNone(dl.MONEY.search(t), t)
         self.apply()
         for m, path, body, *_ in self.fake.writes():
             for b in (body if isinstance(body, list) else [body or {}]):
                 for k in ("name", "topic"):
                     if isinstance(b.get(k), str):
                         self.assertIsNone(dl.BANNED.search(b[k]), b[k])
-        # the guard itself catches what it should
         for bad in ("World of Warcraft", "WoW", "warcraft", "Lich King", "Blizzard", "3.3.5a", "1.12"):
             self.assertIsNotNone(dl.BANNED.search(bad), bad)
+        for bad in ("patreon.com/x", "ko-fi", "Tip me", "donate"):
+            self.assertIsNotNone(dl.MONEY.search(bad), bad)
 
-    def test_welcome_draft(self):
-        for s in (dl.LINK_PLAY, dl.LINK_LAUNCHER, dl.LINK_HOST, "TODO(owner)", "Hero Key", "password",
-                  "Be decent", "mod launcher"):
-            self.assertIn(s, dl.WELCOME_DRAFT)
-        self.assertIn("TODO(owner)", dl.HELP_DRAFT)
+    def test_posting_refuses_rule_breakers(self):
+        go, leave = dl.plan_posts([("hangout", "come play WoW"), ("hangout", "tips: ko-fi.com/x"),
+                                   ("nowhere", "hi"), ("bug-reports", "fine")])
+        self.assertEqual([n for n, *_ in go], ["bug-reports"])
+        self.assertEqual(len(leave), 3)
 
 
 if __name__ == "__main__":

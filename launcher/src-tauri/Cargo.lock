@@ -2528,6 +2528,7 @@ version = "0.3.1"
 dependencies = [
  "dirs 5.0.1",
  "flate2",
+ "leyline-terrain",
  "librqbit",
  "minisign-verify",
  "mlua",
@@ -2544,6 +2545,14 @@ dependencies = [
  "tokio",
  "ureq",
  "zip 2.6.1",
+]
+
+[[package]]
+name = "leyline-terrain"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

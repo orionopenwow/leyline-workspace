@@ -183,12 +183,12 @@ fn lite() -> host::lite::Binary {
 }
 
 /// The chosen Host pack, if any (no error: Your Den works without one through Den Lite).
-fn kit_opt() -> Option<PathBuf> {
+pub(crate) fn kit_opt() -> Option<PathBuf> {
     kit().ok().filter(|k| k.is_dir())
 }
 
 /// (the Host pack hosts the Den, the other realm it hosts)
-fn docker_den(k: Option<&std::path::Path>) -> (bool, Option<String>) {
+pub(crate) fn docker_den(k: Option<&std::path::Path>) -> (bool, Option<String>) {
     match k.and_then(|k| host::inspect(Some(k), None).realm) {
         Some(r) if r.profile == host::profiles::DEN => (true, None),
         Some(r) => (false, Some(if r.name.is_empty() { "a realm".into() } else { r.name })),
@@ -197,7 +197,7 @@ fn docker_den(k: Option<&std::path::Path>) -> (bool, Option<String>) {
 }
 
 /// Where Saved Dens are now: the Docker Den's files once the Host pack hosts it, else Den Lite's.
-fn den_root() -> PathBuf {
+pub(crate) fn den_root() -> PathBuf {
     let k = kit_opt();
     let (den, _) = docker_den(k.as_deref());
     host::yourden::saves_root(k.as_deref(), den, &host::lite::root(&settings::app_dir())).0

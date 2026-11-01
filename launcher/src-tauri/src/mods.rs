@@ -79,7 +79,7 @@ const IGNORED: &[&str] = &[".git", "__pycache__", ".ds_store", "thumbs.db", "des
 const PACKAGE_TOP: &[&str] =
     &["mod.json", "ui", "realm", "native", "assets", "tests", "readme.md", "readme.txt", "license", "license.txt", "license.md", "changelog.md"];
 /// Data/ slots for patches, in the order they are handed out. patch.MPQ, patch-2 and patch-3 are the game's own.
-const PATCH_SLOTS: &str = "456789ABCDEFGHIJKLMNOPQRSTUVWXY"; // Z is the hybrid client's own (hybrid.rs)
+const PATCH_SLOTS: &str = "456789ABCDEFGHIJKLMNOPQRSUVWXY"; // T is Your Den's ground (host/terrain.rs), Z the hybrid client's (hybrid.rs)
 /// Native code: a mod with any of these needs the player's one-time OK (owner decision: allowed, with a notice).
 pub const NATIVE_CODE_EXT: &[&str] = &[".dll", ".asi", ".exe"];
 /// What may sit next to native code in the client folder: the code and its own settings and notes.
@@ -1893,6 +1893,13 @@ pub mod tests {
     use crate::clients::testutil::{fake_1121, fake_335a, touch};
     use crate::net::testserver::serve_routes;
     use std::io::Write;
+
+    #[test]
+    fn patch_slots_never_hand_out_the_dens_ground_or_the_hybrid_clients() {
+        assert!(!PATCH_SLOTS.contains('T') && !PATCH_SLOTS.contains('Z'));
+        assert_eq!(PATCH_SLOTS.len(), 30);
+        assert_eq!(patch_slot_of("patch-T.MPQ"), None, "a patch-T is the Den's ground, never a mod's");
+    }
 
     /// A zip of (name, bytes); a name ending in '/' is a folder entry.
     pub fn zip_of(entries: &[(&str, &[u8])]) -> Vec<u8> {

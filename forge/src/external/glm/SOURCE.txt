@@ -1,0 +1,3 @@
+GLM (OpenGL Mathematics): https://github.com/g-truc/glm
+copying.txt was added for Forge from the upstream repository (it was missing from the Noggit Red tree).
+Forge uses GLM under the MIT License (one of the two licences GLM offers).

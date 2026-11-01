@@ -134,7 +134,8 @@ class SoloKitFlows(unittest.TestCase):
         self.assertIn('if /i not "%WU_PROFILE%"=="solo"', bat)
         self.assertIn("echo   solo ", bat)
         self.assertIn('if /i "%WU_PROFILE%"=="solo" set "FILES=main_unbrawl.sql modern_combos.sql"', bat)
-        self.assertNotIn(b"\n", raw.replace(b"\r\n", b""))   # CRLF throughout
+        self.assertTrue((b"\r\n" in raw and b"\n" not in raw.replace(b"\r\n", b"")) or b"\r" not in raw,
+                        "one line-ending style (LF in git, CRLF in the kit zip: tools/leyline-repo/hostkit.py)")
         for f in ("make-kit.sh", "Make host kit.bat"):
             self.assertRegex(open(os.path.join(KIT, f), encoding="utf-8").read(), r"den,? ?solo\b", f)
         self.assertIn('"solo"', open(os.path.join(REPO, "tools", "leyline-repo", "hostkit.py"), encoding="utf-8").read())

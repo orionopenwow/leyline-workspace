@@ -46,7 +46,8 @@ class DenKit(unittest.TestCase):
         bat = raw.decode()
         self.assertIn('if /i not "%WU_PROFILE%"=="den"', bat)
         self.assertIn("echo   den ", bat)
-        self.assertNotIn(b"\n", raw.replace(b"\r\n", b""))   # CRLF throughout
+        self.assertTrue((b"\r\n" in raw and b"\n" not in raw.replace(b"\r\n", b"")) or b"\r" not in raw,
+                        "one line-ending style (LF in git, CRLF in the kit zip: tools/leyline-repo/hostkit.py)")
 
     def test_kit_ships_the_den_scripts_and_editor(self):
         """make-kit copies the whole lua_scripts folder: the Den's room, the Builder, the module's Lua side and the

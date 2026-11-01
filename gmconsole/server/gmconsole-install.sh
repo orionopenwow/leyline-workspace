@@ -29,7 +29,7 @@ die() { printf '\nGMCONSOLE FAILED: %s\n' "$*" >&2; exit 1; }
 
 log "1/5 Checks"
 command -v docker >/dev/null || die "docker not found"
-for f in gmconsole.py static/app.js static/app.css gmconsole-install.sh gmconsole-uninstall.sh Dockerfile; do
+for f in gmconsole.py bugs_manifest.py static/app.js static/app.css gmconsole-install.sh gmconsole-uninstall.sh Dockerfile; do
   [ -f "$SRC/$f" ] || die "the kit has no $f"
 done
 [ -d "$WU" ] || die "$WU not found (the Wrath realm is not on this server)"
@@ -38,6 +38,7 @@ done
 [ -d "$CADDY_DIR" ] || echo "  WARNING: $CADDY_DIR not found"
 [ -S "$SOCK" ] || [ -n "${WU_DOCKER_SOCK:-}" ] || die "$SOCK is not a socket"
 python3 -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$SRC/gmconsole.py" || die "gmconsole.py does not parse"
+python3 -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$SRC/bugs_manifest.py" || die "bugs_manifest.py does not parse"
 sed -i 's/\r$//' "$SRC"/*.sh
 
 log "2/5 App files -> $APP"
@@ -50,6 +51,8 @@ if [ -d "$APP" ]; then
 fi
 install -d -m 755 "$APP" "$APP/static"
 install -m 644 "$SRC/gmconsole.py" "$APP/gmconsole.py"
+install -m 644 "$SRC/bugs_manifest.py" "$APP/bugs_manifest.py"   # the bugs manifest (docs/BUGS-MANIFEST.md)
+install -d -m 755 "$WU/bugs"                                        # its backlog and BUGS-MANIFEST.md
 install -m 644 "$SRC/static/app.js" "$SRC/static/app.css" "$APP/static/"
 # the shared look (a copy of stream/www-files/art); without it the console keeps its plain styles
 rm -rf "$APP/static/art"

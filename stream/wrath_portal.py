@@ -327,6 +327,9 @@ listings = sys.modules.get("wu_listings") or _load_module("wu_listings", "listin
 if listings is not None:
     sys.modules["wu_listings"] = listings
     listings.bind(lambda name: globals()[name])
+bugreport = _load_module("wu_bugreport", "bugreport.py")   # Report a bug: /wrath/bugs, the launcher's /wrath/bugs/api/report (stream/bugreport.py)
+if bugreport is not None:
+    bugreport.bind(lambda name: globals()[name])
 network = _load_module("wu_network", "network.py")   # the realm browser, /wrath/realms.json, realm reports (stream/network.py)
 if network is not None:
     network.bind(lambda name: globals()[name])
@@ -1115,7 +1118,7 @@ ART_TYPES = {
     "leyline-swirl-512.png": "image/png", "leyline-crystal-512.png": "image/png", "leyline-mark-512.png": "image/png",
     # the launcher's own pages for the hub's feature sections (tools/art/leyline-ui-shots.cjs: sample data, no game art)
     "leyline-ui-home.webp": "image/webp", "leyline-ui-realms.webp": "image/webp", "leyline-ui-modes.webp": "image/webp",
-    "leyline-ui-workshop.webp": "image/webp",
+    "leyline-ui-workshop.webp": "image/webp", "leyline-ui-clients.webp": "image/webp", "leyline-ui-clients-close.webp": "image/webp", "leyline-ui-launcher.webp": "image/webp", "leyline-ui-hosting.webp": "image/webp",
 }
 ART_MAX_AGE = 7 * 86400
 # Screenshots of the running game (rendered from the game's own files): the killswitch takes them off too
@@ -1291,10 +1294,22 @@ def card_meta(path: str, title: str = "") -> str:
 
 
 def render(body: str, nonce: str = "", script: str = "", wide: bool = False, meta: str = "", title: str = "",
-           current: str = "", next_step: str = "", signed_in: bool = False, chrome: bool = True) -> bytes:
-    """A page in the gold look. With chrome (the default) it carries the site's one nav (current marks the item
-    for this page) and footer, and next_step ("play" or "host") adds the closing call to action."""
+           current: str = "", next_step: str = "", signed_in: bool = False, chrome: bool = True, css: str = "",
+           path: str = "/wrath") -> bytes:
+    """A page with the site's chrome. With the hub's front door on (hub_frame) it is a card in the hub's frame: the
+    launcher's side menu, tokens, type and footer, the same as every hub page (current marks the menu item; next_step
+    is not needed there, the menu has Play and Host). Otherwise the gold look with the site's one nav and footer, and
+    next_step ("play" or "host") adds the closing call to action. css: the gold look's extra styles (the hub frame
+    styles the same classes itself, WU_BOX_CSS). path: the page's address (the frame's phone tip comes back to it)."""
     s = f'<script nonce="{nonce}">{script}</script>' if script else ""
+    if chrome:
+        full = f"{title} · {SITE_NAME}" if title else SITE_NAME
+        framed = hub_frame(full, f'<div class="wu-pg{" wide" if wide else ""}"><div class="wu-box">{body}</div></div>{s}',
+                           path, current, nonce=nonce if script else "", css=WU_BOX_CSS, meta=meta)
+        if framed is not None:
+            return framed
+    if css:
+        body = f"<style>{css}</style>{body}"
     v = theme_version()
     theme = f'<link rel="stylesheet" href="{art_url("wu-theme.css")}?v={v}">' if v and not BRAND else ""   # brand on: the flat look
     full = f"{title} · {SITE_NAME}" if title else SITE_NAME
@@ -1340,7 +1355,7 @@ def gamedata_off_page() -> bytes:
     return render(
         f'{crest(REALM_NAME)}{RULE}'
         '<p class="center">This realm needs your own game folder: it streams no game files.</p>'
-        '<p class="center">Play with your own 3.3.5a game client, or use your 3.3.5a game folder in the browser.</p>'
+        '<p class="center">Play with your own game client, or use your own game folder in the browser.</p>'
         '<p class="center"><a class="btn primary" href="/wrath">Get your game login</a></p>'
         f'<p class="fine">{html.escape(DISCORD_HELP.split(DISCORD_URL)[0])}'
         f'<a href="{DISCORD_URL}">{DISCORD_URL}</a></p>', title="Bring your game folder", current="play")
@@ -1448,13 +1463,12 @@ def account_page(display: str, user: str, password: str, nonce: str) -> bytes:
                    else '<a class="btn primary" href="/wrath/play?mode=own">Play with my game folder</a>'
                    if gamedata_off() and ownfiles_on() else '<span class="btn off">Opening soon</span>')
     if gamedata_off():   # the game data killswitch: say plainly what the browser needs now
-        dalaran_btn += ('<br><span class="fine">This realm needs your own game folder: drop your 3.3.5a game folder '
+        dalaran_btn += ('<br><span class="fine">This realm needs your own game folder: drop your own game folder '
                         f'on the game page. <a href="{GAME_FOLDER_HELP}">Where is it?</a></span>')
     pkg = (f'<li><a href="{html.escape(PACKAGE_URL)}">Download the player package</a> and unzip it.</li>'
            if PACKAGE_URL else '<li>Unzip the player package you were sent.</li>')
     dots = "\u2022" * len(password)
     body = (
-        f'<style>{REALM_CSS}</style>'
         f'<div class="top"><span class="eyebrow">{html.escape(REALM_NAME)}</span>'
         '<a class="keylink" href="/wrath/key">Your Hero Key</a></div>'
         f'{crest("Choose a realm")}<p class="sub">Signed in as {html.escape(display)}</p>{RULE}'
@@ -1468,7 +1482,7 @@ def account_page(display: str, user: str, password: str, nonce: str) -> bytes:
            '<p>Jump straight in: Dalaran, arenas, dungeons and raids, streamed to your browser. '
            'Start at level 1 or boost to 80.</p>')
         + f'<p>{dalaran_btn}</p>'
-        + (f'<p class="fine">Have a 3.3.5a game folder? Drop it on the game page (or choose it from the page menu) '
+        + (f'<p class="fine">Have your own game folder? Drop it on the game page (or choose it from the page menu) '
            f'to go anywhere, on the same characters. It is read on your computer and never uploaded. '
            f'<a href="{GAME_FOLDER_HELP}">How</a></p>' if streamed else '')
         # Warm the browser client while the player reads this page: the stream site's public
@@ -1506,7 +1520,8 @@ def account_page(display: str, user: str, password: str, nonce: str) -> bytes:
         + host_plus("account") +
         '<p class="fine"><a href="/wrath/realms">Community realms</a>: Dalaran hangouts and realms hosted by players</p>'
         '<p class="fine"><a href="/wrath/modes">Modes</a>: duels, boss fights, dungeons and hangouts, one click each</p>')
-    return render(body, nonce, COPY_JS, wide=True, title="Choose a realm", current="play", signed_in=True)
+    return render(body, nonce, COPY_JS, wide=True, title="Choose a realm", current="play", signed_in=True, css=REALM_CSS,
+                  path="/wrath/account")
 
 
 # ----------------------------------------------------------------------------------------------
@@ -2061,7 +2076,8 @@ _PAINTED_FONT = re.compile(r"@font-face\{font-family:'(?:Leyline Display|OW Cinz
 # from site_chrome() as they are sent, so they stay one place without each module knowing the site's links.
 
 HOST_URL = f"{LEYLINE_REPO}/blob/main/hosting/INSTALL-OPERATE.md"
-BUG_URL = f"{LEYLINE_REPO}/issues/new"
+# Report a bug: our own page (stream/bugreport.py, into the bugs manifest) when it is here, else a GitHub issue
+BUG_URL = bugreport.PAGE if bugreport is not None and bugreport.ON else f"{LEYLINE_REPO}/issues/new"
 SKIP_LINK = '<a class="ly-skip" href="#main">Skip to content</a>'
 
 SITE_CSS = """
@@ -2160,8 +2176,38 @@ def _nav_item(key: str, label: str, href: str, current: str, cls: str = "", exte
             + (' rel="noopener noreferrer"' if external else "") + f'>{html.escape(label)}</a>')
 
 
+def hub_nav_items() -> list | None:
+    """The hub's menu (hub.Hub.nav_items: Play, Realms, Mods, Addons, Host, Forum, then the More items) as
+    (key, label, href, external), at the front door's addresses; None when the hub's frame is off."""
+    if not hub_framed():
+        return None
+    try:
+        main, more = hub_mod.hub.nav_items()
+        out = []
+        for key, label, href, _icon in list(main) + list(more):
+            if href.startswith(hub_mod.BASE):
+                href = hub_mod.FRONT + href[len(hub_mod.BASE):]
+            out.append((key, label, href, href.startswith("https://")))
+        return out
+    except Exception:  # noqa: BLE001: the old list then
+        return None
+
+
 def site_nav(current: str = "", signed_in: bool = False) -> str:
-    """The one nav (see above). current: leyline, play, realms, modes, mods, armory or docs ("" marks nothing)."""
+    """The one nav (see above). current: leyline, play, realms, modes, mods, armory or docs ("" marks nothing).
+    With the hub's frame on, its items are the hub's menu (hub_nav_items), so the module pages still drawn in this
+    bar (modes, armory, the workshop) list the same pages as the side menu."""
+    hub_items = hub_nav_items()
+    if hub_items is not None:
+        key = HUB_ACTIVE.get(current, current)
+        links_html = "".join(_nav_item(k, label, href, key, external=x) for k, label, href, x in hub_items)
+        end = (_nav_item("profile", "Profile", "/wrath/profile", current) if signed_in and profiles is not None and profiles.store is not None
+               else "" if signed_in else _nav_item("signin", "Log In", signin_url("/wrath"), current))
+        return ('<nav class="ly-nav" id="ly-site-nav" aria-label="Leyline">'
+                + _nav_item("leyline", "Leyline", "/wrath/leyline", current, "ly-brand").replace(">Leyline</a>", ">" + spin(26) + "Leyline</a>")
+                + '<input type="checkbox" id="ly-menu" class="ly-menu-t"><label for="ly-menu" class="ly-menu-b">Menu</label>'
+                f'<div class="ly-links">{links_html}</div>'
+                + (f'<div class="ly-end">{end}</div>' if end else "") + '</nav>')
     items = [("play", "Play", "/wrath/account"), ("realms", "Realms", "/wrath/realms")]
     if modes is not None:
         items.append(("modes", "Modes", "/wrath/modes"))
@@ -2261,7 +2307,7 @@ def site_chrome(page: bytes, path: str, next_step: str = "play") -> bytes:
     already has the site nav, or isn't a page, is returned as it is. Never raises."""
     try:
         s = page.decode("utf-8")
-        if 'id="ly-site-nav"' in s or "<body" not in s or "</head>" not in s:
+        if 'id="ly-site-nav"' in s or 'data-look="leyline"' in s or "<body" not in s or "</head>" not in s:   # the hub's frame has its own
             return page
         s = _MODULE_NAV_RE.sub("", s, count=1)
         head = f"<style>{SITE_CSS}</style>"
@@ -2278,6 +2324,108 @@ def site_chrome(page: bytes, path: str, next_step: str = "play") -> bytes:
         return s.encode("utf-8")
     except Exception:  # noqa: BLE001: the page itself still goes out
         return page
+
+
+# ----------------------------------------------------------------------------------------------
+# The hub's frame for the portal's own pages (owner 2026-11-01: the whole site one product)
+# ----------------------------------------------------------------------------------------------
+#
+# With the hub's front door on (stream/hub.py: WU_HUB_FRONT, on with the brand), the play and sign-in pages (render()),
+# the docs and the 404 are drawn in Hub._shell: the launcher's stone side menu (on a phone the top bar and its Menu
+# sheet), the hub's tokens and type and its footer, so every page has the same menu as the hub. Their bodies are
+# unchanged: the same forms, endpoints, tokens and scripts (with the page's CSP nonce, which then also runs the hub's
+# small HUB_JS). Off, or without the hub: the old frames below, as before.
+
+HUB_ACTIVE = {"play": "play", "realms": "realms", "mods": "mods", "workshop": "mods", "docs": "docs", "host": "host"}
+_HUB_DESC_RE = re.compile(rb'<meta name="description" content="Leyline: one launcher[^"]*">')
+
+
+def hub_framed() -> bool:
+    return (hub_mod is not None and getattr(hub_mod, "hub", None) is not None
+            and hub_mod.hub_on() and hub_mod.front_on())
+
+
+def hub_frame(title: str, body: str, path: str, current: str = "", nonce: str = "", css: str = "", meta: str = "",
+              noindex: bool = False) -> bytes | None:
+    """body in the hub's frame (see above), or None when that frame is off or fails (the caller's own frame then).
+    current: the site nav's key for the page (nav_key), marked in the hub's menu where the menu has it. meta: the
+    page's own head tags (its link card); its description replaces the hub's. Who is signed in comes from the request
+    (hub.note_request keeps the handler), for the menu's account chip."""
+    if not hub_framed():
+        return None
+    try:
+        h = getattr(hub_mod._REQ, "handler", None)
+        hub_mod._REQ.who = hub_mod._viewer(h) if h is not None else None
+        out = hub_mod.hub._shell(title, body, path, nonce=nonce, active=HUB_ACTIVE.get(current, ""), css=css)
+        out = out.replace(hub_mod.BASE.encode(), hub_mod.FRONT.encode())   # the hub's links at the front door (as hub._Live)
+        out = out.replace(b'<meta name="robots" content="noindex">', b"")
+        if 'name="description"' in meta:
+            out = _HUB_DESC_RE.sub(b"", out, count=1)
+        head = meta + ('<meta name="robots" content="noindex">' if noindex else "")
+        return out.replace(b"<title>", head.encode("utf-8") + b"<title>", 1) if head else out
+    except Exception:  # noqa: BLE001: the page's own frame then
+        log.exception("the hub's frame failed")
+        return None
+
+
+def docs_frame(title: str, inner: str, css: str, meta: str) -> bytes | None:
+    """The docs (stream/docs.py page(frame=)) in the hub's frame, Docs marked."""
+    return hub_frame(title, inner, "/wrath/docs", "docs", css=css, meta=meta)
+
+
+# The card render() puts a page in inside the hub's frame: the hub's tokens (light and dark), Marcellus headings and
+# the stone for the main button (hub.STONE_CSS lists .wu-box), for the classes the gold pages use.
+WU_BOX_CSS = """
+.wu-pg{width:min(34rem,100%);margin:clamp(12px,4vh,40px) auto 40px;padding:0 4px}
+.wu-pg.wide{width:min(40rem,100%)}
+.wu-box{background:color-mix(in srgb,var(--lk-surface) 94%,transparent);border:1px solid var(--lk-border);border-radius:var(--lk-r);
+padding:26px 28px 24px;box-shadow:0 14px 36px rgba(0,0,0,.28);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);color:var(--lk-text)}
+.wu-box .crest{display:flex;flex-direction:column;align-items:center;gap:10px;margin:0 0 4px}
+.wu-box .ly-crest-mark{display:block;margin:0 auto}
+.wu-box h1{margin:0;font-size:30px;line-height:1.15;text-align:center;color:var(--lk-text)}
+.wu-box h2{margin:0;font-size:19px;font-weight:700;color:var(--lk-text)}
+.wu-box .sub{margin:6px 0 16px;text-align:center;color:var(--lk-text-2)}
+.wu-box .rule{display:block;height:0;width:min(300px,80%);margin:12px auto 16px;border:0;border-top:1px solid var(--lk-border)}
+.wu-box p{margin:12px 0}.wu-box .center{text-align:center}
+.wu-box :is(.fine,label,summary){color:var(--lk-muted)}.wu-box .fine{font-size:14px}
+.wu-box .err{color:var(--lk-bad);text-align:center}
+.wu-box code{background:var(--lk-surface-2);border:1px solid var(--lk-border);border-radius:6px;padding:1px 5px;font-size:.9em;overflow-wrap:anywhere}
+.wu-box ol{padding-left:1.3rem}.wu-box li{margin:5px 0}
+.wu-box :is(a.btn,button){display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:8px 16px;
+border-radius:var(--lk-r-sm);border:1px solid var(--lk-border-strong);background:var(--lk-raised);color:var(--lk-text);
+font:650 15px/1.2 var(--lk-font);text-decoration:none;cursor:pointer}
+.wu-box :is(a.btn,button):not(.primary):hover{border-color:var(--lk-accent);background:var(--lk-accent-soft)}
+.wu-box button.ghost{min-height:34px;padding:4px 12px;font-size:14px}
+.wu-box .btn.off{display:inline-flex;align-items:center;min-height:40px;padding:8px 16px;border-radius:var(--lk-r-sm);
+border:1px dashed var(--lk-border-strong);color:var(--lk-muted);cursor:default}
+.wu-box .row{display:flex;gap:8px;align-items:center;margin:6px 0 14px;flex-wrap:wrap}
+.wu-box .field{flex:1 1 9rem;min-width:0;padding:8px 10px;border-radius:var(--lk-r-sm);background:var(--lk-surface-2);
+border:1px solid var(--lk-border-strong);font:600 15px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em;overflow-wrap:anywhere}
+.wu-box :is(input:not([type=hidden]),select,textarea){box-sizing:border-box;width:100%;max-width:100%;min-height:40px;padding:8px 12px;
+border-radius:var(--lk-r-sm);border:1px solid var(--lk-border-strong);background:var(--lk-surface-2);color:var(--lk-text);font:inherit}
+.wu-box textarea{resize:vertical}
+.wu-box label{font-size:14px;font-weight:650}
+.wu-box .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:6px}
+.wu-box .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--lk-muted);font-weight:650}
+.wu-box .keylink{font-size:14px}
+body.hb .wu-box .realm{margin:14px 0;padding:16px 18px;border-radius:var(--lk-r-sm)!important;background:var(--lk-surface-2)!important}
+body.hb .wu-box .realm:first-of-type{border-color:var(--lk-gold-line)!important}
+body.hb .wu-box>.realm:only-child{margin:0;padding:0;background:none!important;border:0!important}
+.wu-box .realm p{margin:10px 0}
+.wu-box .tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0 10px;font-size:13.5px;color:var(--lk-muted)}
+.wu-box .tag{display:inline-block;padding:1px 9px;border-radius:999px;border:1px solid var(--lk-border-strong);background:var(--lk-raised);color:var(--lk-text-2)}
+.wu-box .live{color:var(--lk-ok)}
+.wu-box details{margin-top:10px}.wu-box summary{cursor:pointer;font-size:14.5px}.wu-box summary:hover{color:var(--lk-text)}
+.wu-box details[open] summary{margin-bottom:10px}
+.wu-box .end{margin:12px 0 0}.wu-box .foot{margin:20px 0 0;padding-top:14px;border-top:1px solid var(--lk-border)}
+.wu-box .ly-plus-row{justify-content:flex-start}
+body.hb .wu-box .ly-plus{min-height:40px;padding:8px 16px;border-radius:var(--lk-r-sm);border:1px solid var(--lk-border-strong);
+background:var(--lk-raised);box-shadow:none;color:var(--lk-text)!important;font:650 15px/1.2 var(--lk-font);letter-spacing:0;text-transform:none}
+body.hb .wu-box .ly-plus:hover,body.hb .wu-box .ly-plus:focus-visible{border-color:var(--lk-accent);background:var(--lk-accent-soft);box-shadow:none}
+body.hb .wu-box .ly-plus b{color:var(--lk-accent-strong)}
+@media (max-width:560px){.wu-pg{margin-top:10px}.wu-box{padding:20px 16px 18px}.wu-box h1{font-size:25px}
+.wu-box .realm{padding:14px}.wu-box .realm .btn{display:flex;width:100%;white-space:normal;text-align:center}}
+"""
 
 
 def ly_shell(title: str, body: str, path: str, current: str, next_step: str = "play", css: str = "",
@@ -2516,6 +2664,16 @@ a.ly-feat:hover,a.ly-feat:focus-visible{border-color:var(--ly-cyan);box-shadow:v
 """
 
 
+NF_CARD_CSS = """
+.nf h2{margin:18px 0 10px;font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--lk-muted)}
+.nf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.nf a.ly-feat{display:block;padding:12px 14px;border-radius:var(--lk-r-sm);border:1px solid var(--lk-border);background:var(--lk-surface-2);
+text-decoration:none;color:var(--lk-text)}
+.nf a.ly-feat:hover,.nf a.ly-feat:focus-visible{border-color:var(--lk-accent);background:var(--lk-accent-soft)}
+.nf a.ly-feat h3{margin:0 0 2px;font-size:16px;font-weight:700}.nf a.ly-feat p{margin:0;font-size:14px;color:var(--lk-text-2)}
+"""
+
+
 def not_found_page() -> bytes:
     """The 404 for any page this service doesn't have: the site nav and a way on to every main page."""
     e = html.escape
@@ -2532,12 +2690,20 @@ def not_found_page() -> bytes:
         cards.append(card("/wrath/mods", "Mods", "The Workshop: addons and realm scripts."))
     if armory is not None:
         cards.append(card("/wrath/armory", "Armory", "Look up any character on the realm."))
-    cards += [card(HOST_URL, "Host a realm", "Run your own realm on your own PC.", True),
+    cards += [card("/wrath/host", "Host a realm", "Run your own realm on your own PC.") if hub_framed() and hostflow is not None
+              else card(HOST_URL, "Host a realm", "Run your own realm on your own PC.", True),
               card(DISCORD_URL, "Discord", "Ask for help, or tell us which link brought you here.", True)]
     body = ('<header class="ly-hero nf"><h1>Not found</h1>'
             '<p class="ly-lede">Nothing lives at this address. The link may be old or mistyped. Everything else is one click away.</p>'
             '</header><section class="ly-panel" aria-labelledby="nf-go"><h2 id="nf-go">Where to next</h2>'
             f'<div class="ly-grid">{"".join(cards)}</div></section>')
+    framed = hub_frame(f"Not found · {REALM_NAME}",
+                       '<div class="wu-pg wide nf"><div class="wu-box"><h1>Not found</h1>'
+                       '<p class="sub">Nothing lives at this address. The link may be old or mistyped. Everything else is one click away.</p>'
+                       f'<h2 id="nf-go">Where to next</h2><div class="nf-grid">{"".join(cards)}</div></div></div>',
+                       "/wrath", "", css=WU_BOX_CSS + NF_CARD_CSS, noindex=True)
+    if framed is not None:
+        return framed
     return ly_shell(f"Not found · {REALM_NAME}", body, "/wrath/leyline", "", "play", NOT_FOUND_CSS, noindex=True)
 
 
@@ -3181,6 +3347,8 @@ class PageHandler(BaseHTTPRequestHandler):
         # stream site's game-folder layer (POST /__gate?layer=..., /__layer for a Caddyfile that routes it).
         split = urllib.parse.urlsplit(self.path)
         path = split.path.rstrip("/") or "/"
+        if hub_mod is not None:   # as in do_GET: the request, for pages drawn in the hub's frame (hub_frame)
+            hub_mod.note_request(self)
         if path in ("/__gate", "/__layer"):
             q = urllib.parse.parse_qs(split.query)
             if path == "/__gate" and ("hop" in q or "herokey" in q):
@@ -3214,6 +3382,9 @@ class PageHandler(BaseHTTPRequestHandler):
             return
         if network is not None and network.match(path):   # POST /wrath/realms/report (stream/network.py)
             network.post(self, path)
+            return
+        if bugreport is not None and bugreport.match(path):   # POST /wrath/bugs, /wrath/bugs/api/report (stream/bugreport.py)
+            bugreport.post(self, path)
             return
         if hub_mod is not None and hub_mod.match(path):   # POST /wrath/leyline-preview/submit (stream/hub.py)
             hub_mod.post(self, path)
@@ -3395,7 +3566,7 @@ class PageHandler(BaseHTTPRequestHandler):
             if not browse_limit.hit(rl_bucket(self.ip()), 600):
                 self.send(429, busy_page(back=path))
                 return
-            status, body = docs.page(path, leyline_css(), card_meta, REALM_NAME)
+            status, body = docs.page(path, leyline_css(), card_meta, REALM_NAME, frame=docs_frame if hub_framed() else None)
             self.send(status, site_chrome(body, path))
             return
         if hostflow is not None and hostflow.match(path):   # "+ Your server" (stream/hostflow.py)
@@ -3406,6 +3577,9 @@ class PageHandler(BaseHTTPRequestHandler):
             return
         if network is not None and network.match(path):   # /wrath/realms.json, /wrath/realms/report (stream/network.py)
             network.get(self, path, query)
+            return
+        if bugreport is not None and bugreport.match(path):   # /wrath/bugs: Report a bug (stream/bugreport.py)
+            bugreport.get(self, path, query)
             return
         if path == "/wrath/realms":
             if not browse_limit.hit(rl_bucket(self.ip()), 600):

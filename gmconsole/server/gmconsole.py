@@ -23,12 +23,16 @@ shows or writes. It never deletes characters or accounts and never drops tables.
 Bug reports: ov_bug_reports (ov_reports.lua) and gm_ticket are read; the one write is
 ov_bug_reports.status. GET /api/export/new-reports returns the new ones as JSON for a scheduled
 triage task: loopback only, "Authorization: Bearer <GM_TOKEN>" (no cookie needed).
+The bugs manifest (bugs_manifest.py): every source (game, GM tickets, site, launcher, Discord) in one
+de-duplicated backlog, $WU/bugs/backlog.json + BUGS-MANIFEST.md, rebuilt hourly (GM_BUGS_EVERY) and on
+demand; GET /api/export/bugs-manifest[?build=1] the same way as new-reports. docs/BUGS-MANIFEST.md.
 
 stdlib only (python:3.12-alpine).
 """
 import hashlib
 import hmac
 import http.client
+import importlib.util
 import json
 import os
 import re
@@ -1744,6 +1748,129 @@ def export_new_reports(q):
 
 
 # ----------------------------------------------------------------------------------------------
+# The bugs manifest (bugs_manifest.py beside this file): every bug report from every source in one
+# de-duplicated backlog, $WU/bugs/backlog.json, and $WU/bugs/BUGS-MANIFEST.md for a Claude session.
+# Sources: ov_bug_reports and gm_ticket (read here), the site / launcher intake (stream/bugreport.py,
+# $WU/portal-data/bugs/intake.jsonl) and the Discord #bug-reports intake (hosting/discord bridge,
+# $WU/bugs/intake/discord.jsonl). Rebuilt every GM_BUGS_EVERY seconds (default 3600, 0 = only on demand),
+# by Bug reports > Backlog > Rebuild, and by GET /api/export/bugs-manifest?build=1 (the Control step "bugs").
+# Statuses: the backlog's own (bug_status) and tools/bugs/status.json from the repo ($WU/bugs/status.json).
+# ----------------------------------------------------------------------------------------------
+
+BUGS_DIR = E("GM_BUGS_DIR", WU + "/bugs")
+BUG_INTAKE = [p for p in E("GM_BUG_INTAKE", WU + "/portal-data/bugs/intake.jsonl:" + BUGS_DIR + "/intake/discord.jsonl").split(":") if p]
+try:
+    BUGS_EVERY = max(0, int(E("GM_BUGS_EVERY", "3600")))
+except ValueError:
+    BUGS_EVERY = 3600
+_bugs_lock = threading.Lock()
+_bm_spec = importlib.util.spec_from_file_location("bugs_manifest", os.path.join(APP_DIR, "bugs_manifest.py"))
+BM = importlib.util.module_from_spec(_bm_spec)
+_bm_spec.loader.exec_module(BM)
+BACKLOG = os.path.join(BUGS_DIR, "backlog.json")
+MANIFEST = os.path.join(BUGS_DIR, "BUGS-MANIFEST.md")
+BUG_STATUS_FILE = os.path.join(BUGS_DIR, "status.json")
+# backlog status -> ov_bug_reports.status (the game's four), so the Reports tab agrees with the backlog
+TO_GAME_STATUS = {"new": "new", "triaged": "seen", "planned": "seen", "fixed": "fixed", "wontfix": "wontfix"}
+
+
+def bugs_build():
+    """Collect every source and rebuild the backlog and the manifest. Returns the counts."""
+    with _bugs_lock:
+        reps, problems = [], []
+        try:
+            reps += BM.from_game(query_reports(None, "", limit=5000), SLUG)
+        except ToolError:
+            problems.append("could not read ov_bug_reports")
+        try:
+            reps += BM.from_tickets(query_tickets(None, "", limit=1000), SLUG)
+        except ToolError:
+            problems.append("could not read gm_ticket")
+        reps += BM.read_intake(BUG_INTAKE)
+        c = BM.build_files(BACKLOG, MANIFEST, reps, BUG_STATUS_FILE)
+        c["problems"], c["at"] = problems, now_iso()
+        return c
+
+
+def a_bugs_build(a):
+    c = bugs_build()
+    return "backlog rebuilt: %d open, %d in all%s" % (c["open"], c["total"],
+                                                      ("; " + "; ".join(c["problems"])) if c["problems"] else "")
+
+
+def a_bug_status(a):
+    iid = str(a.get("id") or "").strip()
+    if not re.fullmatch(r"B-[0-9a-f]{8}", iid):
+        raise Bad("id: B- and 8 hex digits")
+    st = str(a.get("status") or "").strip().lower()
+    if st not in BM.STATES:
+        raise Bad("status: " + ", ".join(BM.STATES))
+    note = str(a.get("note") or "")[:300] or None
+    with _bugs_lock:
+        b = BM.load(BACKLOG)
+        try:
+            it = BM.set_status(b, iid, st, "gm", note)
+        except KeyError:
+            raise Bad("no bug %s in the backlog" % iid)
+        game = [int(r["key"].split(":", 1)[1]) for r in it["reports"] if r["key"].startswith("game:")]
+        BM.write_atomic(BACKLOG, json.dumps(b, indent=1, ensure_ascii=False) + "\n")
+        BM.write_atomic(MANIFEST, BM.render(b))
+    if game:                      # the game's own rows follow (ids are ints, the status from a fixed list)
+        gs = TO_GAME_STATUS[st]
+        try:
+            sql("acore_characters", "UPDATE ov_bug_reports SET status = '%s' WHERE id IN (%s);\n"
+                % (gs, ",".join(str(i) for i in game)))
+            with _bugs_lock:      # remember it, so the next build doesn't read it back as a GM change
+                b = BM.load(BACKLOG)
+                it = next((x for x in b["items"] if x["id"] == iid), None)
+                if it is not None:
+                    for g in game:
+                        it.setdefault("game_status", {})["game:%d" % g] = gs
+                    BM.write_atomic(BACKLOG, json.dumps(b, indent=1, ensure_ascii=False) + "\n")
+        except ToolError:
+            return "%s: %s (the game's report rows were not updated)" % (iid, st)
+    return "%s: %s" % (iid, st)
+
+
+ACTIONS["bugs_build"] = (a_bugs_build, False, ())
+ACTIONS["bug_status"] = (a_bug_status, False, ("id", "status", "note"))
+
+
+def api_bugs(q):
+    """The backlog for the console: counts and the items (open first, newest first), each trimmed."""
+    b = BM.load(BACKLOG)
+    items = sorted(b["items"], key=lambda it: (it["status"] not in BM.OPEN, -it.get("last", 0)))[:300]
+    view = [{k: it.get(k) for k in ("id", "status", "title", "area", "paths", "count", "sources", "reporters",
+                                    "first", "last", "where", "note")} | {"text": it["reports"][0]["text"] if it["reports"] else ""}
+            for it in items]
+    return {"updated": b.get("updated"), "counts": BM.counts(b), "states": BM.STATES, "items": view,
+            "every": BUGS_EVERY, "intake": BUG_INTAKE}
+
+
+def export_bugs(q):
+    """GET /api/export/bugs-manifest[?build=1]: the manifest (markdown) and the counts, for the Control step."""
+    if q.get("build") == "1":
+        bugs_build()
+    try:
+        with open(MANIFEST, encoding="utf-8") as f:
+            md = f.read()
+    except OSError:
+        md = ""
+    return {"at": now_iso(), "counts": BM.counts(BM.load(BACKLOG)), "manifest": md}
+
+
+def bugs_loop():
+    time.sleep(120)
+    while True:
+        try:
+            c = bugs_build()
+            sys.stderr.write("%s bugs manifest: %d open, %d in all\n" % (now_iso(), c["open"], c["total"]))
+        except Exception as e:   # noqa: BLE001 - the console keeps running whatever a build hits
+            sys.stderr.write("%s bugs manifest failed: %s\n" % (now_iso(), type(e).__name__))
+        time.sleep(BUGS_EVERY)
+
+
+# ----------------------------------------------------------------------------------------------
 # Health (read-only)
 # ----------------------------------------------------------------------------------------------
 
@@ -1802,8 +1929,9 @@ def api_health(q):
 GETS = {"/api/overview": api_overview, "/api/players": api_players, "/api/accounts": api_accounts,
         "/api/updates": api_updates, "/api/streaming": api_streaming, "/api/beacons": api_beacons,
         "/api/speed": api_speed, "/api/logs": api_logs, "/api/jobs": api_jobs,
-        "/api/reports": api_reports, "/api/health": api_health}
+        "/api/reports": api_reports, "/api/health": api_health, "/api/bugs": api_bugs}
 EXPORT_PATH = "/api/export/new-reports"
+EXPORTS = {EXPORT_PATH: export_new_reports, "/api/export/bugs-manifest": export_bugs}
 
 # The owner's tools on his PC (the workspace, C:\Users\campw\Desktop\Leyline): uploads still come from these.
 BATS = [
@@ -1937,8 +2065,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, b"ok\n", "text/plain")
         if u.path == "/login":
             return self.login(q.get("t", ""))
-        if u.path == EXPORT_PATH:
-            return self.export(q)
+        if u.path in EXPORTS:
+            return self.export(q, EXPORTS[u.path])
         s = self.session()
         if not s:
             if u.path.startswith("/api/"):
@@ -1960,9 +2088,10 @@ class Handler(BaseHTTPRequestHandler):
         except ToolError as e:
             return self.send(502, {"error": str(e)})
 
-    def export(self, q):
-        """GET /api/export/new-reports[?since=<id>] with "Authorization: Bearer <GM_TOKEN>" from loopback
-        only (for a scheduled triage task on the server). No cookie, no query-string token."""
+    def export(self, q, fn=None):
+        """GET /api/export/new-reports[?since=<id>] or /api/export/bugs-manifest[?build=1] with
+        "Authorization: Bearer <GM_TOKEN>" from loopback only (for a scheduled triage task on the server, and the
+        Control step "bugs" over SSH). No cookie, no query-string token."""
         if self.client_address[0] not in ("127.0.0.1", "::1", "::ffff:127.0.0.1"):
             return self.send(403, {"error": "loopback only"})
         now = time.time()
@@ -1976,7 +2105,7 @@ class Handler(BaseHTTPRequestHandler):
             time.sleep(0.5)
             return self.send(401, {"error": "Authorization: Bearer <GM_TOKEN> required"})
         try:
-            return self.send(200, export_new_reports(q))
+            return self.send(200, (fn or export_new_reports)(q))
         except Bad as e:
             return self.send(400, {"error": str(e)})
         except ToolError as e:
@@ -2057,6 +2186,8 @@ def main():
     Server.address_family = fam
     httpd = Server((BIND, PORT), Handler)
     sys.stderr.write("%s wu-gmconsole on http://%s:%d (loopback only)\n" % (now_iso(), BIND, PORT))
+    if BUGS_EVERY:
+        threading.Thread(target=bugs_loop, daemon=True).start()
     httpd.serve_forever()
 
 

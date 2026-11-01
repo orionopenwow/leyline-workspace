@@ -252,6 +252,31 @@ class DenSliceTests(unittest.TestCase):
             with mpq.Archive(os.path.join(out, "Data", "common.MPQ")) as a:
                 self.assertEqual(a.read("World\\Maps\\Kalimdor\\Kalimdor_1_1.adt"), b"PACK")
 
+    def test_den_ground_wins_and_restages(self):
+        # the launcher's host/terrain.rs stage_docker layout: packs/den-terrain/server/<tile>, its pack.json, tiles.json
+        with tempfile.TemporaryDirectory() as d:
+            game, state = os.path.join(d, "game"), os.path.join(d, "state")
+            make_game(game)
+            for pack, data in (("a-pack", b"OTHER"), ("den-terrain", b"GROUND"), ("zz", b"LAST")):
+                p = os.path.join(state, "packs", pack, "server", "World", "Maps", "Kalimdor")
+                os.makedirs(p)
+                with open(os.path.join(p, "Kalimdor_1_1.adt"), "wb") as f:
+                    f.write(data)
+            with open(os.path.join(state, "packs", "den-terrain", "pack.json"), "w") as f:
+                json.dump({"format": "leyline-pack", "version": 1, "id": "den-terrain", "tiles": [[1, 1, 1]]}, f)
+            with open(os.path.join(state, "packs", "tiles.json"), "w") as f:
+                json.dump({"tiles": [[1, 1, 1]]}, f)
+            self.assertEqual(denslice.pack_file(os.path.join(state, "packs"), "World\\Maps\\Kalimdor\\Kalimdor_1_1.adt"), b"GROUND")
+            out = os.path.join(d, "out")
+            self.assertEqual(denslice.main(["stage", "--game", game, "--out", out,
+                                            "--pack-tiles", os.path.join(state, "packs", "tiles.json")]), 0)
+            with mpq.Archive(os.path.join(out, "Data", "common.MPQ")) as a:
+                self.assertEqual(a.read("World\\Maps\\Kalimdor\\Kalimdor_1_1.adt"), b"GROUND")
+            # the kit's start re-stages when the flag is there (host-wrath-realm.sh)
+            sh = text(KIT, "host-wrath-realm.sh")
+            self.assertIn('-f "$KIT/state/packs/restage" ] && have=0', sh)
+            self.assertIn("--pack-tiles /state/packs/tiles.json", sh)
+
     def test_kit_scripts(self):
         sh = text(KIT, "host-wrath-realm.sh")
         raw = text(KIT, "Host a Wrath realm.bat", mode="rb")
@@ -265,7 +290,8 @@ class DenSliceTests(unittest.TestCase):
         # the fallback: the whole world when the Den-only data fails
         self.assertIn("taking the whole world instead", sh)
         self.assertIn("taking the whole world instead", bat)
-        self.assertTrue(raw.count(b"\r\n") > 100 and b"\n" not in raw.replace(b"\r\n", b""), "the .bat keeps CRLF")
+        self.assertTrue((b"\r\n" in raw and b"\n" not in raw.replace(b"\r\n", b"")) or b"\r" not in raw,
+                        "one line-ending style (LF in git, CRLF in the kit zip: tools/leyline-repo/hostkit.py)")
 
 
 # ---------------------------------------------------------------------------------------------- packs

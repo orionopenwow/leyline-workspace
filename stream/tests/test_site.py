@@ -168,7 +168,7 @@ def check_chrome(label, page, current, public=True, next_step=True, signed_in=Fa
     check(f"{label}: skip link to the content", 'href="#main">Skip to content' in page and 'id="main"' in page)
     foot = page.split('<footer class="ly-foot">', 1)[-1].split("</footer>", 1)[0] if '<footer class="ly-foot">' in page else ""
     check(f"{label}: footer (GitHub, Discord, Report a bug, no shop)", f'href="{wp.LEYLINE_REPO}"' in foot and f'href="{wp.DISCORD_URL}"' in foot
-          and ">Report a bug<" in foot and wp.LEYLINE_REPO + "/issues/new" in foot and "No shop. Bots are labelled." in foot)
+          and ">Report a bug<" in foot and f'href="{wp.BUG_URL}"' in foot and "No shop. Bots are labelled." in foot)
     title = re.search(r"<title>([^<]+)</title>", page)
     check(f"{label}: a title", title and title.group(1).strip())
     if public:
@@ -263,6 +263,84 @@ check("share_box escapes", "&lt;" in wp.share_box("/wrath/<x>") and "<x>" not in
 for f in ("wrath_portal.py", "modes.py", "armory.py"):
     src = open(os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), f), encoding="utf-8").read()
     check(f"no game-brand names in {f}", not BANNED.findall(src), BANNED.findall(src)[:3])
+
+# ---------------------------------------------------------------- 8. the hub's frame (front door on): one product
+# With WU_HUB_FRONT=1 (on with the brand) the play and sign-in pages, the docs and the 404 are drawn in the hub's frame
+# (hub.Hub._shell: the stone side menu, tokens, Marcellus, footer); the module pages still in the old bar list the
+# hub's menu. Same forms, scripts and CSP as before.
+os.environ["WU_HUB_FRONT"] = "1"
+HUB_MENU = [("Play", "/wrath"), ("Realms", "/wrath/leyline/realms"), ("Mods", "/wrath/leyline/catalog"),
+            ("Addons", "/wrath/leyline/addons"), ("Host", "/wrath/host"), ("Forum", "/wrath/leyline/forum"),
+            ("Leaderboards", "/wrath/leaderboards"), ("Docs", "/wrath/docs"), ("News", "/wrath/leyline/news")]
+OLD_ITEMS = re.compile(r">(?:Workshop|Armory|Server|Play now)</a>|class=\"ly-hot\"")
+
+def hub_menu(page):
+    m = re.search(r'<nav class="hb-nav"[^>]*>(.*?)</nav>', page, re.S)
+    return m.group(1) if m else ""
+
+def check_frame(label, page, active, scripts=0):
+    nav = hub_menu(page)
+    check(f"{label}: the hub's frame (side menu, footer, tokens), not the old bar",
+          page.count('<header class="hb-top">') == 1 and 'class="hb-foot"' in page and 'id="ly-site-nav"' not in page
+          and '<nav class="ly-nav"' not in page and 'class="ly-foot"' not in page and "--lk-surface" in page and 'data-look="leyline"' in page)
+    missing = [t for t, h in HUB_MENU if not re.search(r'href="%s"[^>]*><svg[^>]*>.*?</svg><span>%s</span>' % (re.escape(h), t), nav, re.S)]
+    check(f"{label}: the hub's menu items", not missing, missing)
+    check(f"{label}: none of the old menu (Workshop, Armory, Server, Play now)", not OLD_ITEMS.search(page))
+    on = re.findall(r'<a class="hb-ni on" href="([^"]+)" aria-current="page"', nav)
+    check(f"{label}: marks {active or 'nothing'}", on == ([active] if active else []), on)
+    check(f"{label}: Marcellus headings and the stone button", '"Marcellus"' in page and ".wu-box h1" in page and "stone-btn.webp" in page)
+    check(f"{label}: no preview flag, no hidden-page robots unless asked", "Preview:" not in page and "leyline-preview" not in page)
+    check(f"{label}: {scripts} script(s)", page.count("<script") == scripts, page.count("<script"))
+    bad = BANNED.findall(visible(page))
+    check(f"{label}: no game-brand names", not bad, bad)
+
+so = wp.signed_out_page().decode()
+check_frame("framed sign-in page", so, "/wrath")
+check("framed sign-in page: the same Sign in link, its link card and title", f'href="{wp.html.escape(wp.signin_url("/wrath"))}">Sign in</a>' in so
+      and 'property="og:title"' in so and "<title>Sign in · WrathUnleashed</title>" in so and so.count('name="description"') == 1)
+acct = wp.account_page("Tester", "WR1", "pw", "n0nce").decode()
+check_frame("framed account page", acct, "/wrath", scripts=2)
+check("framed account page: the realm list, the Hero Key link, the copy fields and the + Your server link",
+      "Choose a realm" in acct and 'href="/wrath/key"' in acct and 'data-copy="acct"' in acct and 'id="pw" data-v="pw"' in acct
+      and 'class="ly-plus" href="/wrath/host"' in acct and 'class="wu-pg wide"' in acct)
+check("framed account page: both scripts carry the page's nonce (COPY_JS, the hub's)",
+      acct.count('<script nonce="n0nce">') == 2 and wp.COPY_JS in acct)
+check("framed account page: the gold realm styles are not sent", wp.REALM_CSS not in acct)
+check("framed account page: no client version in a sentence (the chip stays)", ">3.3.5a</span>" in acct
+      and not re.search(r"[A-Za-z,] 3\.3\.5a|3\.3\.5a [a-z]", re.sub(r"<[^>]+>", " ", acct)))
+check_frame("framed error page", wp.error_page("x").decode(), "")
+busy = wp.busy_page(back="/wrath/realms").decode()
+check_frame("framed busy page", busy, "/wrath/leyline/realms")
+check("framed busy page: still tries again by itself", '<meta http-equiv="refresh" content="15;url=/wrath/realms">' in busy)
+st, hd, page = get("/wrath")
+check_frame("framed /wrath (signed out)", page, "/wrath", scripts=2)
+n = re.search(r"'nonce-([^']+)'", hd.get("content-security-policy", ""))
+check("framed /wrath: the saved-key script and the hub's under the response's nonce, nothing else",
+      n and page.count(f'<script nonce="{n.group(1)}">') == 2 and "/auth/key" in page and "connect-src 'self'" in hd["content-security-policy"])
+st, hd, page = get("/wrath/docs")
+check_frame("framed /wrath/docs", page, "/wrath/docs")
+check("framed /wrath/docs: 200, the table of contents and the docs' tokens, no script allowed",
+      st == 200 and 'aria-label="Documentation"' in page and 'class="ld-doc"' in page and "--lk-accent-soft" in page
+      and "leyline-bg.webp" not in page and "script-src 'none'" in hd.get("content-security-policy", ""))
+check("framed /wrath/docs: its link card", 'property="og:title" content="Leyline · Leyline docs"' in page)
+st, _, page = get("/wrath/docs/nope")
+check("framed docs 404", st == 404 and "There is no docs page with that name" in page and 'class="hb-top"' in page)
+if wp.bugreport is not None and wp.bugreport.ON:
+    st, _, bug = get("/wrath/bugs")
+    check_frame("framed /wrath/bugs", bug, "")
+    check("framed /wrath/bugs: the same page inside (sign in first, the other ways)", st == 200 and "<h1>Report a bug</h1>" in bug
+          and "/login?next=%2Fwrath%2Fbugs" in bug)
+st, hd, nf = get("/wrath/no-such-page")
+check_frame("framed 404", nf, "")
+check("framed 404: status, kept out of search, links on (Host to our own page)", st == 404 and '<meta name="robots" content="noindex">' in nf
+      and '<a class="ly-feat" href="/wrath/host">' in nf and "<h1>Not found</h1>" in nf)
+st, _, md = get("/wrath/modes")
+nav = nav_of(md)
+check("module pages in the old bar list the hub's menu", 200 == st and all(f'href="{h}"' in nav and f">{t}</a>" in nav for t, h in HUB_MENU)
+      and not OLD_ITEMS.search(nav), nav[:400])
+os.environ["WU_HUB_FRONT"] = "0"
+check("front door off: the gold frame as before", 'id="ly-site-nav"' in wp.signed_out_page().decode()
+      and 'class="hb-top"' not in wp.signed_out_page().decode())
 
 srv.shutdown()
 shutil.rmtree(TMP, ignore_errors=True)

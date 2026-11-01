@@ -271,6 +271,11 @@ pub fn parse_catalog(src: &str) -> Catalog {
 
 /// The kit's catalog (its realm scripts, as the realm runs them).
 pub fn catalog(kit: &Path) -> Result<Catalog, String> {
+    if is_lite(kit) && !scripts_dir(kit).join("ov_build.lua").is_file() {
+        return Err("The player's Den is Den Lite now, which builds by hand only (.den place, .den stamp in game): the catalog, \
+            recipes and den_place_layout need the full Den (Leyline › Host › Your Den with Docker). den_status, den_messages and \
+            den_say work here.".into());
+    }
     let src = fs::read_to_string(scripts_dir(kit).join("ov_build.lua"))
         .map_err(|_| "The player's realm files have no Builder (realm-files/lua_scripts/ov_build.lua): update the Host pack.".to_string())?;
     let c = parse_catalog(&src);
@@ -1191,9 +1196,24 @@ fn say_text(args: &Value) -> Result<String, String> {
 
 // ------------------------------------------------------------------------------------------------ the tools
 
-/// The kit, for the Den tools.
+/// Den Lite's folder (labs/den-lite, `<app dir>/den-lite`, laid out like a Host pack: host/lite.rs): its companion
+/// heartbeat says `"server": "den-lite"`.
+fn is_lite(kit: &Path) -> bool {
+    companion_in(kit).is_some_and(|v| v.get("server").and_then(Value::as_str) == Some("den-lite"))
+}
+
+/// The Den the tools work on: Den Lite's while it runs (its heartbeat is fresh), else the Host pack's; with no Host
+/// pack, Den Lite's once it has run. Den Lite writes and reads the same companion files (its src/companion.rs).
 fn den_kit(app_dir: &Path) -> Result<PathBuf, String> {
-    super::need_kit(app_dir).map_err(|_| "The player has no Den on this PC yet: Leyline › Host › Your Den sets one up.".to_string())
+    let lite = crate::host::lite::root(app_dir);
+    if is_lite(&lite) && companion_in(&lite).as_ref().is_some_and(is_fresh) {
+        return Ok(lite);
+    }
+    match super::need_kit(app_dir) {
+        Ok(k) => Ok(k),
+        Err(_) if is_lite(&lite) => Ok(lite),
+        Err(_) => Err("The player has no Den on this PC yet: Leyline › Host › Your Den sets one up.".to_string()),
+    }
 }
 
 fn used_now(kit: &Path) -> Option<(u32, u32)> {
@@ -1412,7 +1432,16 @@ doorway is in the middle of the wall at y = -half), z is height above the floor.
 against the room's points, outside (the yard, up to r yards from the middle) against the yard's.";
 
 fn status(kit: &Path) -> Value {
-    let lim = limits(kit);
+    let mut lim = limits(kit);
+    let lite = is_lite(kit);
+    if lite {
+        // Den Lite's room grows (.den grow): its heartbeat says how big it is now
+        let room = companion_in(kit).and_then(|v| v.get("room").cloned()).unwrap_or(Value::Null);
+        if let (Some(h), Some(r)) = (room.get("half").and_then(Value::as_f64), room.get("r").and_then(Value::as_f64)) {
+            lim.half = h;
+            lim.r = r;
+        }
+    }
     let set_up = kit.join("state").join("host.json").is_file();
     let (den_realm, running) = if set_up {
         let c = crate::host::console::console(kit);
@@ -1427,7 +1456,7 @@ fn status(kit: &Path) -> Value {
     let unread = asks(kit).iter().filter(|a| a["n"].as_u64().unwrap_or(0) > seen).count();
     let files: Vec<Value> = dens::list(kit).into_iter().take(50).map(|f| json!({"name": f.name, "props": f.props, "saved": f.saved})).collect();
     json!({
-        "den_set_up": set_up, "den_realm": den_realm, "realm_running": running,
+        "den_set_up": set_up || lite, "den_lite": lite, "den_realm": den_realm || lite, "realm_running": if lite { Some(fresh) } else { running },
         "companion": {"script_on": cin.is_some(), "realm_heard_from": fresh, "out": fresh && pick("companion") == json!(true),
             "unread_messages": unread, "said_up_to": pick("said")},
         "owner": if fresh { pick("owner") } else { Value::Null },
@@ -1822,6 +1851,38 @@ mod tests {
         crate::settings::save(t.app.path(), &crate::settings::Settings::default()).unwrap();
         let (ok, text) = call(&mut s, "den_status", json!({}));
         assert!(!ok && text.contains("no Den on this PC"), "{text}");
+    }
+
+    #[test]
+    fn den_lite_takes_the_companion_files_while_it_runs() {
+        let t = setup();
+        let mut s = server(t.app.path());
+        let lite = crate::host::lite::root(t.app.path());
+        fs::create_dir_all(dens::dir(&lite)).unwrap();
+        // Den Lite ran once (an old heartbeat): the Host pack's Den
+        heartbeat(&lite, json!({"server": "den-lite", "at": 5}));
+        assert_eq!(den_kit(t.app.path()).unwrap(), t.kit.path());
+        // running now, as labs/den-lite src/companion.rs writes it
+        heartbeat(&lite, json!({"server": "den-lite", "room": {"props": 0, "half": 16.0, "r": 30.0, "size": 2, "sizes": 4, "look": "white"},
+            "asks": [{"n": 1, "at": 5, "text": "a well by the door", "where": {"x": 0.0, "y": 2.5, "z": 1.0, "yaw": 90.0}}]}));
+        assert_eq!(den_kit(t.app.path()).unwrap(), lite);
+        let v: Value = serde_json::from_str(&call(&mut s, "den_status", json!({})).1).unwrap();
+        assert_eq!((v["den_lite"].clone(), v["limits"]["half"].clone(), v["companion"]["unread_messages"].clone()), (json!(true), json!(16.0), json!(1)));
+        let v: Value = serde_json::from_str(&call(&mut s, "den_messages", json!({})).1).unwrap();
+        assert_eq!(v["messages"][0]["text"], "a well by the door");
+        let h = launcher(t.app.path().to_path_buf(), true);
+        let (ok, text) = call(&mut s, "den_say", json!({"text": "A well, here?"}));
+        h.join().unwrap();
+        assert!(ok, "{text}");
+        let out: Value = serde_json::from_str(&fs::read_to_string(dens::dir(&lite).join(OUT_FILE)).unwrap()).unwrap();
+        assert_eq!((out["lines"][0]["n"].clone(), out["lines"][0]["text"].clone(), out["seen"].clone()), (json!(1), json!("A well, here?"), json!(1)));
+        assert!(!dens::dir(t.kit.path()).join(OUT_FILE).exists(), "nothing in the Host pack's Den");
+        let (ok, text) = call(&mut s, "den_catalog", json!({}));
+        assert!(!ok && text.contains("Den Lite"), "{text}");
+        // no Host pack: Den Lite's, once it has run
+        crate::settings::save(t.app.path(), &crate::settings::Settings::default()).unwrap();
+        heartbeat(&lite, json!({"server": "den-lite", "at": 5}));
+        assert_eq!(den_kit(t.app.path()).unwrap(), lite);
     }
 
     #[test]

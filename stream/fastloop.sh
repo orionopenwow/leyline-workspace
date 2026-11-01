@@ -55,8 +55,8 @@ had_forum=""
 if [ -f "$WU/portal/forum.py" ]; then cp -p "$WU/portal/forum.py" "$BK/forum.py"; had_forum=1; fi
 rm -f "$BK/forum_discord.py"
 [ ! -f "$WU/portal/forum_discord.py" ] || cp -p "$WU/portal/forum_discord.py" "$BK/forum_discord.py"
-rm -f "$BK/discord_growth.py" "$BK/discord_template.json"
-for f in discord_growth.py discord_template.json; do [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
+rm -f "$BK/discord_growth.py" "$BK/discord_template.json" "$BK/discord_template_v2.json"
+for f in discord_growth.py discord_template.json discord_template_v2.json; do [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
 had_duels=""
 if [ -f "$WU/portal/duels.py" ]; then cp -p "$WU/portal/duels.py" "$BK/duels.py"; had_duels=1; fi
 had_profiles=""
@@ -65,6 +65,8 @@ had_herokeys=""
 if [ -f "$WU/portal/herokeys.py" ]; then cp -p "$WU/portal/herokeys.py" "$BK/herokeys.py"; had_herokeys=1; fi
 had_network=""
 if [ -f "$WU/portal/network.py" ]; then cp -p "$WU/portal/network.py" "$BK/network.py"; had_network=1; fi
+rm -f "$BK/bugreport.py"
+[ ! -f "$WU/portal/bugreport.py" ] || cp -p "$WU/portal/bugreport.py" "$BK/bugreport.py"
 had_admin=""
 if [ -f "$WU/portal/admin.py" ]; then cp -p "$WU/portal/admin.py" "$BK/"; [ ! -f "$WU/portal/wu-mod.py" ] || cp -p "$WU/portal/wu-mod.py" "$BK/"; [ ! -f "$WU/portal/hq.py" ] || cp -p "$WU/portal/hq.py" "$BK/"; had_admin=1; fi
 had_hub=""
@@ -104,11 +106,12 @@ put_back() {
   done
   if [ -n "$had_forum" ]; then cp -p "$BK/forum.py" "$WU/portal/forum.py"; else rm -f "$WU/portal/forum.py"; fi
   if [ -f "$BK/forum_discord.py" ]; then cp -p "$BK/forum_discord.py" "$WU/portal/forum_discord.py"; else rm -f "$WU/portal/forum_discord.py"; fi
-  for f in discord_growth.py discord_template.json; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
+  for f in discord_growth.py discord_template.json discord_template_v2.json; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
   if [ -n "$had_duels" ]; then cp -p "$BK/duels.py" "$WU/portal/duels.py"; else rm -f "$WU/portal/duels.py"; fi
   if [ -n "$had_profiles" ]; then cp -p "$BK/profiles.py" "$WU/portal/profiles.py"; else rm -f "$WU/portal/profiles.py"; fi
   if [ -n "$had_herokeys" ]; then cp -p "$BK/herokeys.py" "$WU/portal/herokeys.py"; else rm -f "$WU/portal/herokeys.py"; fi
   if [ -n "$had_network" ]; then cp -p "$BK/network.py" "$WU/portal/network.py"; else rm -f "$WU/portal/network.py"; fi
+  if [ -f "$BK/bugreport.py" ]; then cp -p "$BK/bugreport.py" "$WU/portal/bugreport.py"; else rm -f "$WU/portal/bugreport.py"; fi
   if [ -n "$had_admin" ]; then cp -p "$BK/admin.py" "$WU/portal/admin.py"; [ ! -f "$BK/wu-mod.py" ] || cp -p "$BK/wu-mod.py" "$WU/portal/"
     if [ -f "$BK/hq.py" ]; then cp -p "$BK/hq.py" "$WU/portal/hq.py"; else rm -f "$WU/portal/hq.py"; fi
   else rm -f "$WU/portal/admin.py" "$WU/portal/wu-mod.py" "$WU/portal/hq.py"; fi
@@ -208,6 +211,10 @@ if [ -f forum.py ] && [ -f forum_discord.py ]; then python3 -I -c 'import ast,sy
 if [ -f forum_discord.py ] && [ -f discord_growth.py ] && [ -f discord_template.json ]; then
   python3 -I -c 'import ast,sys,json;ast.parse(open(sys.argv[1]).read());json.load(open(sys.argv[2]))' discord_growth.py discord_template.json \
     && install -m 644 discord_growth.py discord_template.json "$WU/portal/"
+  # the upgraded channel plan (docs/DISCORD-PLAN.md): used only when portal.env says WU_DISCORD_TEMPLATE=/app/discord_template_v2.json
+  if [ -f discord_template_v2.json ] && python3 -I -c 'import json,sys;json.load(open(sys.argv[1]))' discord_template_v2.json; then
+    install -m 644 discord_template_v2.json "$WU/portal/"
+  fi
 fi
 # the duel leaderboards (/wrath/leaderboards, /wrath/api/leaderboards): optional; it reads $WU/portal/duels/, which
 # duels-export.py fills (realm/serverpass.sh step 1d)
@@ -220,6 +227,9 @@ if [ -f herokeys.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.arg
 # the Leyline network (/wrath/realms in the network's order, /wrath/realms.json, realm reports): optional; its reports
 # live in $WU/portal-data/network (/data/network)
 if [ -f network.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' network.py && install -m 644 network.py "$WU/portal/network.py"; fi
+# Report a bug (/wrath/bugs, the launcher's /wrath/bugs/api/report): optional; reports go to $WU/portal-data/bugs/intake.jsonl,
+# which the GM console's bugs manifest reads (gmconsole/server/bugs_manifest.py, docs/BUGS-MANIFEST.md)
+if [ -f bugreport.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' bugreport.py && install -m 644 bugreport.py "$WU/portal/bugreport.py"; fi
 # the Leyline Admin Console (/wrath/admin, staff only): admin.py, and wu-mod.py for its "re-run the checker". Its files
 # live in $WU/portal-data/admin and $WU/portal-data/leyline (wu-portal's writable /data)
 if [ -f admin.py ]; then

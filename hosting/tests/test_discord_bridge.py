@@ -337,6 +337,41 @@ class BridgeFlow(unittest.TestCase):
         self.assertEqual(len([p for ch, p in d.posted if ch == "200"]), 1)
         self.assertEqual(json.loads(read(os.path.join(self.tmp, "state.json")))["bug_after"], 1)
 
+    def test_bug_intake_off_by_default(self):
+        br, d, r, _, _ = make(self.tmp)
+        br.start(); d.add("200", "the vendor in town sells nothing at all"); br.step()
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "intake", "discord.jsonl")))
+
+    def test_bug_intake_people_only_no_history_no_ids(self):
+        path = os.path.join(self.tmp, "intake", "discord.jsonl")
+        d = FakeDiscord(); d.add("200", "an old report from before the intake was on")
+        br, d, r, _, _ = make(self.tmp, {"WU_DISCORD_BUG_INTAKE": path, "DISCORD_GUILD_ID": "42"}, discord=d)
+        br.start()
+        first = d.add("200", "the quest giver in Northshire is missing, mail me at bob@example.com", author_id="77",
+                      username="bob", attachments=[{"url": "https://cdn.example/x.png"}])
+        d.add("200", "same", author_id="78", username="sue")                       # chatter: too short
+        d.add("200", "**Bug #3** from Alice", author_id="999", username="Leyline", bot=True)   # our own feed
+        d.add("200", "posted by a webhook here", webhook_id="5")
+        d.add("200", "me too, the quest giver is missing for me as well", author_id="79", username="kim", type=19,
+              message_reference={"message_id": first["id"]})
+        r.bugs.append({"id": 1, "name": "Alice", "level": 80, "map": 571, "zone": 4395, "text": "a game bug"})
+        br.step(); br.step()
+        recs = [json.loads(x) for x in read(path).splitlines()]
+        self.assertEqual([x["reporter"] for x in recs], ["bob", "kim"])
+        self.assertEqual(recs[0]["id"], "discord:" + first["id"])
+        self.assertIn("[email]", recs[0]["text"]); self.assertNotIn("bob@example.com", read(path))
+        self.assertIn("(1 file attached in Discord)", recs[0]["text"])
+        self.assertEqual(recs[0]["where"]["link"], f"https://discord.com/channels/42/200/{first['id']}")
+        self.assertEqual(recs[1]["reply_to"], "discord:" + first["id"])
+        self.assertNotIn('"77"', read(path)); self.assertNotIn("cdn.example", read(path))
+        self.assertNotIn("old report", read(path))
+
+    def test_bug_intake_settings_checked(self):
+        bad = B.Config({"DISCORD_BOT_TOKEN": TOKEN, "DISCORD_CHAT_CHANNEL_ID": "100", "SOAP_USER": "u", "SOAP_PASS": "p",
+                        "WU_DISCORD_BUG_INTAKE": "relative.jsonl"}).problems()
+        self.assertTrue(any("needs DISCORD_BUG_INTAKE_CHANNEL_ID" in p for p in bad), bad)
+        self.assertTrue(any("absolute path" in p for p in bad), bad)
+
     def test_no_bug_channel_no_bug_pull(self):
         br, d, r, _, _ = make(self.tmp, {"DISCORD_BUG_CHANNEL_ID": ""})
         br.start(); br.step()

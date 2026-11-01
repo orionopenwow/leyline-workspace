@@ -247,6 +247,205 @@ pub fn read(archive: &[u8], name: &str) -> Option<Vec<u8>> {
     None
 }
 
+// ------------------------------------------------------------------------------------------------ the player's own
+/// One of the player's own game archives, read only (the Den's ground: docs/NOGGIT-DEN-PLAN.md 2.3, the tile is made
+/// from the player's own files). Format version 0 and 1 headers (the 1.12 to 3.3.5a clients'), found at offset 0 or
+/// at any 512-byte step, or through a user-data header; the hash and block tables (and the high block table);
+/// encrypted files (the file key from the name, and the adjusted key); sectors or a single unit; stored or zlib.
+/// bzip2, PKWARE implode and the audio forms are refused with a sentence (game map tiles don't use them). Only the
+/// tables and the asked-for file are read, never the whole archive.
+pub struct GameArchive {
+    f: std::fs::File,
+    base: u64,
+    sector: usize,
+    hashes: Vec<[u32; 4]>,
+    /// (position from the archive's start, packed size, size, flags)
+    blocks: Vec<(u64, u32, u32, u32)>,
+}
+
+const FLAG_IMPLODE: u32 = 0x0000_0100;
+const FLAG_ENCRYPTED: u32 = 0x0001_0000;
+const FLAG_KEY_V2: u32 = 0x0002_0000;
+const FLAG_SINGLE: u32 = 0x0100_0000;
+const FLAG_DELETE: u32 = 0x0200_0000;
+const FLAG_CRC: u32 = 0x0400_0000;
+/// The biggest file read out of a game archive here (a map tile is under 2 MB).
+pub const GAME_FILE_MAX: u32 = 64 * 1024 * 1024;
+
+fn read_at(f: &mut std::fs::File, pos: u64, n: usize) -> Result<Vec<u8>, String> {
+    use std::io::{Read, Seek, SeekFrom};
+    f.seek(SeekFrom::Start(pos)).map_err(|e| e.to_string())?;
+    let mut b = vec![0u8; n];
+    f.read_exact(&mut b).map_err(|_| "the archive ends too early".to_string())?;
+    Ok(b)
+}
+
+fn words_of(b: &[u8]) -> Vec<u32> {
+    b.chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
+}
+
+impl GameArchive {
+    pub fn open(path: &std::path::Path) -> Result<GameArchive, String> {
+        let mut f = std::fs::File::open(path).map_err(|e| format!("Couldn't open {}: {e}", path.display()))?;
+        let len = f.metadata().map_err(|e| e.to_string())?.len();
+        let mut base = None;
+        let mut off = 0u64;
+        while off + 32 <= len && off < 1 << 30 {
+            let h = read_at(&mut f, off, 16)?;
+            if &h[..4] == b"MPQ\x1a" {
+                base = Some(off);
+                break;
+            }
+            if &h[..4] == b"MPQ\x1b" {
+                base = Some(off + u32::from_le_bytes([h[8], h[9], h[10], h[11]]) as u64);
+                break;
+            }
+            off += 512;
+        }
+        let base = base.ok_or_else(|| format!("{} isn't a game archive.", path.display()))?;
+        let h = read_at(&mut f, base, 32)?;
+        let w = |at: usize| u32::from_le_bytes([h[at], h[at + 1], h[at + 2], h[at + 3]]);
+        let (hsize, version, shift) = (w(4), u16::from_le_bytes([h[12], h[13]]), u16::from_le_bytes([h[14], h[15]]));
+        let (mut hpos, mut bpos, hn, bn) = (w(16) as u64, w(20) as u64, w(24) as usize, w(28) as usize);
+        let mut hi_bt = 0u64;
+        if version >= 1 && hsize >= 44 {
+            let x = read_at(&mut f, base + 32, 12)?;
+            hi_bt = u64::from_le_bytes(x[..8].try_into().unwrap());
+            hpos |= (u16::from_le_bytes([x[8], x[9]]) as u64) << 32;
+            bpos |= (u16::from_le_bytes([x[10], x[11]]) as u64) << 32;
+        }
+        if hn == 0 || hn > 1 << 20 || bn > 1 << 20 || shift > 16 {
+            return Err(format!("{} has tables Leyline can't read.", path.display()));
+        }
+        let mut hw = words_of(&read_at(&mut f, base + hpos, hn * 16)?);
+        decrypt(&mut hw, hash("(hash table)", 3));
+        let mut bw = words_of(&read_at(&mut f, base + bpos, bn * 16)?);
+        decrypt(&mut bw, hash("(block table)", 3));
+        let hi: Vec<u16> = if hi_bt != 0 {
+            read_at(&mut f, base + hi_bt, bn * 2)?.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect()
+        } else {
+            vec![0; bn]
+        };
+        Ok(GameArchive {
+            f,
+            base,
+            sector: 512usize << shift,
+            hashes: hw.chunks_exact(4).map(|c| [c[0], c[1], c[2], c[3]]).collect(),
+            blocks: bw.chunks_exact(4).enumerate().map(|(i, c)| (c[0] as u64 | (hi[i] as u64) << 32, c[1], c[2], c[3])).collect(),
+        })
+    }
+
+    fn find(&self, name: &str) -> Option<(u64, u32, u32, u32)> {
+        let n = self.hashes.len();
+        let (a, b) = (hash(name, 1), hash(name, 2));
+        let mut at = (hash(name, 0) as usize) % n;
+        let mut best = None;
+        for _ in 0..n {
+            let e = self.hashes[at];
+            if e[3] == 0xFFFF_FFFF {
+                break;
+            }
+            if e[3] != 0xFFFF_FFFE && e[0] == a && e[1] == b && (e[3] as usize) < self.blocks.len() {
+                let blk = self.blocks[e[3] as usize];
+                if blk.3 & FLAG_EXISTS != 0 && blk.3 & FLAG_DELETE == 0 {
+                    if e[2] & 0xFFFF == 0 {
+                        return Some(blk);
+                    }
+                    best = best.or(Some(blk));
+                }
+            }
+            at = (at + 1) % n;
+        }
+        best
+    }
+
+    /// One file, or None when the archive hasn't it.
+    pub fn read(&mut self, name: &str) -> Result<Option<Vec<u8>>, String> {
+        let Some((pos, csize, size, flags)) = self.find(name) else { return Ok(None) };
+        if size > GAME_FILE_MAX || csize > GAME_FILE_MAX.saturating_mul(2) {
+            return Err(format!("{name} is too big to read here."));
+        }
+        if flags & FLAG_IMPLODE != 0 {
+            return Err(format!("{name} is packed in an old way Leyline doesn't read."));
+        }
+        let (size, csize) = (size as usize, csize as usize);
+        let mut key = 0;
+        if flags & FLAG_ENCRYPTED != 0 {
+            let base_name = name.rsplit(['\\', '/']).next().unwrap_or(name);
+            key = hash(base_name, 3);
+            if flags & FLAG_KEY_V2 != 0 {
+                key = key.wrapping_add(pos as u32) ^ size as u32;
+            }
+        }
+        let raw = read_at(&mut self.f, self.base + pos, csize)?;
+        let unpack = |mut s: Vec<u8>, want: usize, k: Option<u32>| -> Result<Vec<u8>, String> {
+            if let Some(k) = k {
+                let mut w = words_of(&s);
+                decrypt(&mut w, k);
+                for (i, v) in w.iter().enumerate() {
+                    s[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+                }
+            }
+            if s.len() >= want {
+                return Ok(s[..want].to_vec());
+            }
+            match s.first() {
+                Some(0x02) => {
+                    let mut d = flate2::read::ZlibDecoder::new(&s[1..]);
+                    let mut out = Vec::with_capacity(want);
+                    std::io::Read::read_to_end(&mut d, &mut out).map_err(|_| format!("{name} is damaged in the archive."))?;
+                    if out.len() != want {
+                        return Err(format!("{name} is damaged in the archive."));
+                    }
+                    Ok(out)
+                }
+                Some(m) => Err(format!("{name} is packed in a way Leyline doesn't read (0x{m:02x}).")),
+                None => Err(format!("{name} is damaged in the archive.")),
+            }
+        };
+        let enc = |k: u32| (flags & FLAG_ENCRYPTED != 0).then_some(k);
+        if size == 0 {
+            return Ok(Some(Vec::new()));
+        }
+        if flags & FLAG_COMPRESS == 0 && flags & FLAG_SINGLE == 0 && flags & FLAG_ENCRYPTED == 0 {
+            return raw.get(..size).map(|s| Some(s.to_vec())).ok_or_else(|| format!("{name} is damaged in the archive."));
+        }
+        if flags & FLAG_SINGLE != 0 {
+            return unpack(raw, size, enc(key)).map(Some);
+        }
+        let n = size.div_ceil(self.sector);
+        let entries = n + 1 + usize::from(flags & FLAG_CRC != 0);
+        let offs: Vec<usize> = if flags & FLAG_COMPRESS != 0 {
+            let mut t = words_of(raw.get(..entries * 4).ok_or_else(|| format!("{name} is damaged in the archive."))?);
+            if flags & FLAG_ENCRYPTED != 0 {
+                decrypt(&mut t, key.wrapping_sub(1));
+            }
+            t.iter().take(n + 1).map(|v| *v as usize).collect()
+        } else {
+            (0..=n).map(|i| (i * self.sector).min(size)).collect()
+        };
+        let mut out = Vec::with_capacity(size);
+        for i in 0..n {
+            let s = raw.get(offs[i]..offs[i + 1]).ok_or_else(|| format!("{name} is damaged in the archive."))?.to_vec();
+            let want = (size - i * self.sector).min(self.sector);
+            out.extend(unpack(s, want, enc(key.wrapping_add(i as u32)))?);
+        }
+        Ok(Some(out))
+    }
+}
+
+/// A file from the player's own archives, the last archive in `order` that has it winning (the game's own rule:
+/// later patches over earlier ones). Archives that can't be opened are skipped.
+pub fn read_own(order: &[std::path::PathBuf], name: &str) -> Result<Option<Vec<u8>>, String> {
+    for p in order.iter().rev() {
+        let Ok(mut a) = GameArchive::open(p) else { continue };
+        if let Some(d) = a.read(name)? {
+            return Ok(Some(d));
+        }
+    }
+    Ok(None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -300,5 +499,115 @@ mod tests {
         }
         assert!(build(&[("A\\b.lua".into(), b"1".to_vec()), ("a/B.LUA".into(), b"2".to_vec())]).is_err());
         assert!(read(b"not an archive", "x").is_none());
+    }
+
+    #[test]
+    fn the_game_archive_reader_reads_ours_and_encrypted_single_and_offset_ones() {
+        let big: Vec<u8> = (0..20_000u32).flat_map(|i| format!("v {i}\n").into_bytes()).collect();
+        let a = build(&[("World\\Maps\\Kalimdor\\Kalimdor_1_1.adt".into(), big.clone()), ("x\\y.txt".into(), b"hi".to_vec())]).unwrap();
+        let d = tempfile::tempdir().unwrap();
+        // a user-data header in front (as some archives have), our archive 1024 bytes in
+        let mut shifted = b"MPQ\x1b".to_vec();
+        shifted.extend_from_slice(&[0u8; 4]);
+        shifted.extend_from_slice(&1024u32.to_le_bytes());
+        shifted.resize(1024, 0);
+        shifted.extend_from_slice(&a);
+        let p = d.path().join("common.MPQ");
+        fs_write(&p, &shifted);
+        let mut g = GameArchive::open(&p).unwrap();
+        assert_eq!(g.read("world/maps/kalimdor/KALIMDOR_1_1.ADT").unwrap().unwrap(), big);
+        assert_eq!(g.read("x\\y.txt").unwrap().unwrap(), b"hi");
+        assert!(g.read("nope").unwrap().is_none());
+        // an encrypted single-unit stored file and an encrypted compressed sector file, made by hand
+        let secret = b"encrypted bytes of a file, long enough to have words".to_vec();
+        let mut z = flate2::write::ZlibEncoder::new(Vec::new(), Compression::best());
+        z.write_all(&big).unwrap();
+        let zb = z.finish().unwrap();
+        let arch = hand_archive(&[("Data\\Secret.txt", secret.clone(), false), ("Data\\Big.adt", big.clone(), true)], &zb);
+        let q = d.path().join("patch.MPQ");
+        fs_write(&q, &arch);
+        let mut g = GameArchive::open(&q).unwrap();
+        assert_eq!(g.read("Data\\Secret.txt").unwrap().unwrap(), secret);
+        assert_eq!(g.read("Data\\Big.adt").unwrap().unwrap(), big);
+        // the order: the later archive wins
+        let other = build(&[("x\\y.txt".into(), b"patched".to_vec())]).unwrap();
+        let r = d.path().join("patch-2.MPQ");
+        fs_write(&r, &other);
+        assert_eq!(read_own(&[p.clone(), r.clone()], "x\\y.txt").unwrap().unwrap(), b"patched");
+        assert_eq!(read_own(&[r, p.clone()], "x\\y.txt").unwrap().unwrap(), b"hi");
+        assert!(read_own(&[d.path().join("missing.MPQ"), p], "nope").unwrap().is_none());
+        assert!(GameArchive::open(&d.path().join("missing.MPQ")).is_err());
+    }
+
+    fn fs_write(p: &std::path::Path, b: &[u8]) {
+        std::fs::write(p, b).unwrap();
+    }
+
+    /// An archive with (name, data, compressed-in-sectors) files: the first kind stored as one encrypted unit, the
+    /// second as one encrypted zlib sector (with the adjusted key). Built from the format's description.
+    fn hand_archive(files: &[(&str, Vec<u8>, bool)], zbig: &[u8]) -> Vec<u8> {
+        let mut out = vec![0u8; 32];
+        let mut blocks = Vec::new();
+        for (name, data, sectors) in files {
+            let pos = out.len() as u32;
+            let base = name.rsplit('\\').next().unwrap();
+            if !*sectors {
+                let key = hash(base, 3);
+                let mut body = data.clone();
+                let mut w = words_of(&body);
+                encrypt(&mut w, key);
+                for (i, v) in w.iter().enumerate() {
+                    body[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+                }
+                out.extend_from_slice(&body);
+                blocks.push([pos, body.len() as u32, data.len() as u32, FLAG_EXISTS | FLAG_SINGLE | FLAG_ENCRYPTED]);
+            } else {
+                // one sector of 4 KB is too small for 'big': use a bigger sector shift in this archive (16 -> 32 MB)
+                let size = data.len() as u32;
+                let key = hash(base, 3).wrapping_add(pos) ^ size;
+                let mut sec = vec![0x02u8];
+                sec.extend_from_slice(zbig);
+                let mut table = vec![8u32, 8 + sec.len() as u32];
+                encrypt(&mut table, key.wrapping_sub(1));
+                let mut body: Vec<u8> = table.iter().flat_map(|v| v.to_le_bytes()).collect();
+                let mut w = words_of(&sec);
+                encrypt(&mut w, key);
+                for (i, v) in w.iter().enumerate() {
+                    sec[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+                }
+                body.extend_from_slice(&sec);
+                out.extend_from_slice(&body);
+                blocks.push([pos, body.len() as u32, size, FLAG_EXISTS | FLAG_COMPRESS | FLAG_ENCRYPTED | FLAG_KEY_V2]);
+            }
+        }
+        let size = 16usize;
+        let mut table = vec![[0xFFFF_FFFFu32; 4]; size];
+        for (i, (n, _, _)) in files.iter().enumerate() {
+            let mut at = (hash(n, 0) as usize) & (size - 1);
+            while table[at][3] != 0xFFFF_FFFF {
+                at = (at + 1) & (size - 1);
+            }
+            table[at] = [hash(n, 1), hash(n, 2), 0, i as u32];
+        }
+        let mut hw: Vec<u32> = table.iter().flat_map(|e| e.iter().copied()).collect();
+        encrypt(&mut hw, hash("(hash table)", 3));
+        let mut bw: Vec<u32> = blocks.iter().flat_map(|e| e.iter().copied()).collect();
+        encrypt(&mut bw, hash("(block table)", 3));
+        let hpos = out.len() as u32;
+        out.extend(hw.iter().flat_map(|v| v.to_le_bytes()));
+        let bpos = out.len() as u32;
+        out.extend(bw.iter().flat_map(|v| v.to_le_bytes()));
+        let total = out.len() as u32;
+        let mut h = b"MPQ\x1a".to_vec();
+        for v in [32u32, total] {
+            h.extend_from_slice(&v.to_le_bytes());
+        }
+        h.extend_from_slice(&0u16.to_le_bytes());
+        h.extend_from_slice(&16u16.to_le_bytes()); // sector 512 << 16 = 32 MB: one sector holds 'big'
+        for v in [hpos, bpos, size as u32, blocks.len() as u32] {
+            h.extend_from_slice(&v.to_le_bytes());
+        }
+        out[..32].copy_from_slice(&h);
+        out
     }
 }

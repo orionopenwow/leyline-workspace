@@ -1,5 +1,9 @@
 # The Leyline Discord: the bot and its setup
 
+The next layout (1 Nov: Wrath Unleashed, Your Den, Host a server, Mods & Workshop, Claude & the companion, Feedback
+feeding the bugs manifest, Forum) is [DISCORD-PLAN.md](DISCORD-PLAN.md), opt-in with
+`WU_DISCORD_TEMPLATE=/app/discord_template_v2.json`; its first posts are [discord-initial-posts.md](discord-initial-posts.md).
+
 The growth plan's Discord section (owner, 2026-10-31: "yep do it"). Code: `stream/discord_growth.py` and
 `stream/discord_template.json`, loaded by `stream/forum_discord.py` (the forum link, docs/FORUM.md "The Discord
 link"). It is **one bot**: the same token, REST client, rate limits, outbox and worker as the forum link. Tests:

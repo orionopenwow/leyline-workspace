@@ -141,7 +141,8 @@ class HostOnWindows(unittest.IsolatedAsyncioTestCase):
                           PORTAL_URL=f"http://127.0.0.1:{self.website.server_address[1]}", WU_STREAM="0",
                           STREAM_HOST="wrath.example", WU_HOST_DIR=os.path.join(self.tmp, "hosted"),
                           WU_RELAY_LISTING=f"{self.rhttp}/api/listing/realms.json", WU_JOIN_BASE="https://relay.test",
-                          WU_LISTING_SITE_SECRET=SITE_SECRET, WU_HANGOUT_FILE=os.path.join(self.tmp, "none.id"))
+                          WU_LISTING_SITE_SECRET=SITE_SECRET, WU_HANGOUT_FILE=os.path.join(self.tmp, "none.id"),
+                          WU_PORTAL_DATA=os.path.join(self.tmp, "portal-data"))   # not /data: a CI runner can't write it
         spec = importlib.util.spec_from_file_location("wp_win_e2e", PORTAL)
         self.wp = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.wp)

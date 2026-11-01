@@ -18,7 +18,8 @@ the map has them), the tile of each starting-area point the worldserver checks b
 exits with "Failed to find map files for starting areas" unless all eight .map files are there), the Death
 Knight start (map 609, where new Death Knights stand before ov_den.lua moves them), and a pack's tiles (packs.py
 writes them to state/packs/tiles.json, and the tiles' files under state/packs/<id>/server/, read before the game
-folder's own: a pack made from another client's folder brings its own land). Vmaps and mmaps are not made at all: the Den runs with pathing off
+folder's own: a pack made from another client's folder brings its own land; the Den's ground, packs/den-terrain, before
+any other pack). Vmaps and mmaps are not made at all: the Den runs with pathing off
 (OV_PATHING=0: no vmap or mmap is read, and ExistVMap passes when vmap loading is off).
 Grid math (AzerothCore's ComputeGridCoord, and map_extractor's names): gx = 31 - floor(x / 533.333), gy = 31 -
 floor(y / 533.333); the server's file maps/<map:03><gx:02><gy:02>.map comes from World\\Maps\\<Name>\\<Name>_<gy>_<gx>.adt.
@@ -107,12 +108,18 @@ def map_names(game):
     return out
 
 
+# The Den's own ground (the launcher's host/terrain.rs: the tile the player shaped in Forge, rebuilt on their PC from
+# their own game files plus the Den's terrain delta) wins over every other pack's copy of the same tile.
+GROUND_PACK = "den-terrain"
+
+
 def pack_file(packs_dir, name):
-    """A map file a pack made (packs.py: state/packs/<id>/server/World/Maps/...), or None."""
+    """A map file a pack made (packs.py: state/packs/<id>/server/World/Maps/...), or None. The Den's ground
+    (GROUND_PACK) first, then the packs by name."""
     if not packs_dir or not os.path.isdir(packs_dir):
         return None
     rel = os.path.join(*name.split("\\"))
-    for d in sorted(os.listdir(packs_dir)):
+    for d in sorted(os.listdir(packs_dir), key=lambda n: (n != GROUND_PACK, n)):
         p = os.path.join(packs_dir, d, "server", rel)
         if os.path.isfile(p):
             with open(p, "rb") as f:

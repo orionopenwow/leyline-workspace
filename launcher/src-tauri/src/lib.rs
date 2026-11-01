@@ -15,6 +15,7 @@
 
 pub mod agents; // the Agents page and `Leyline mcp`: the player's own AI assistant, read / ask / never tiers (agents.rs)
 pub mod addons; // the Leyline addons: our own in-game addons for a 3.3.5a client (ui/addons.js)
+pub mod bugs; // Help › Report a bug: one report to the website's bug list as the signed-in player (bugs.rs)
 pub mod branding; // launcher/branding.json: name, look, update sources, release-log key (docs/FORKING.md)
 pub mod catalog;
 pub mod clientimport; // drop a game folder, a zip or a link to your own backup on the client list (clientimport.rs)
@@ -59,6 +60,8 @@ pub const BROWSER_PLAY_URL: &str = "https://play.openvanilla.app/wrath";
 /// The only pages the launcher opens in the player's browser, by name. The UI names one; it can never pass a URL.
 pub const LINKS: &[(&str, &str)] = &[
     ("play", BROWSER_PLAY_URL),
+    // Forge's source (GPL-3.0: the source beside the program; ui/den.js "Get Forge")
+    ("forge-source", host::forge::SOURCE_URL),
     ("account", "https://play.openvanilla.app/wrath"),
     // Manage account (ui/account.js): the website's profile page, the Hero Key page, linking another way, linked launchers
     ("profile", "https://play.openvanilla.app/wrath/profile"),
@@ -72,6 +75,7 @@ pub const LINKS: &[(&str, &str)] = &[
     ("mods", "https://play.openvanilla.app/wrath/mods"),
     ("discord", "https://discord.gg/hVeUxYwbkr"),
     ("forum", forum::PAGE), // the website's forum: posting happens there (forum.rs)
+    ("bugs", "https://play.openvanilla.app/wrath/bugs"), // the website's Report a bug form (signed out: Help › Report a bug)
     ("forumnew", "https://play.openvanilla.app/wrath/leyline/forum/new"),
     ("github", "https://github.com/orionopenwow/Leyline"),
     ("host", host::HOST_PAGE),
@@ -105,6 +109,7 @@ mod link_tests {
     fn the_forum_links_to_the_site() {
         assert_eq!(super::link("forum"), Some("https://play.openvanilla.app/wrath/leyline/forum"));
         assert_eq!(super::link("forumnew"), Some("https://play.openvanilla.app/wrath/leyline/forum/new"));
+        assert_eq!(super::link("bugs"), Some("https://play.openvanilla.app/wrath/bugs"));
     }
 
     #[test]

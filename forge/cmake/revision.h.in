@@ -1,0 +1,6 @@
+// This file is part of Noggit3, licensed under GNU General Public License (version 3).
+// Modified for Forge (see CHANGES-FROM-NOGGIT-RED.md): Forge's own version.
+
+#pragma once
+
+#define STRPRODUCTVER "@NOGGIT_GIT_VERSION_STRING@"

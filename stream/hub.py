@@ -1063,9 +1063,12 @@ class Hub:
             return ""
         # a fixed layer over the page's own area (right of the side menu), so the picture is centred with the hero
         return ('body.hb::before{content:"";position:fixed;top:0;bottom:0;right:0;left:var(--hb-side,0px);z-index:-1;pointer-events:none;'
-                'background:linear-gradient(180deg,rgba(11,13,20,.46),rgba(11,13,20,.74) 80%),'
+                'background:linear-gradient(180deg,rgba(11,13,20,.68),rgba(11,13,20,.86) 80%),'
                 f'url(/wrath/art/{BACKDROP}) center top/cover no-repeat;transition:left .2s ease}}'
                 'html{background:#0b0d14}body.hb{background:transparent}'
+                # the official realm's card over our Dalaran picture (a game picture: off with the killswitch too)
+                '.hb-realms .hb-rl.home{background:linear-gradient(90deg,rgba(10,12,20,.94) 0%,rgba(10,12,20,.78) 45%,rgba(10,12,20,.25) 100%),'
+                'url(/wrath/art/leyline-shot-dalaran.webp) center 30%/cover no-repeat}'
                 # Light: the same picture, faint under a pale wash (the text stays dark on light)
                 '@media (prefers-color-scheme:light){html{background:var(--lk-bg)}body.hb::before{opacity:.5;'
                 'background:linear-gradient(180deg,rgba(238,241,246,.86),rgba(238,241,246,.96) 70%),'
@@ -1532,13 +1535,17 @@ class Hub:
              ["Your own clients, found for you", "One sign-in everywhere", "Updates in the background, never mid-game",
               "Windows, macOS and Linux"],
              [(dl, "Download the launcher", True)],   # Play in your browser is the realm's own button, above
-             shot("home", "The Leyline launcher's home page: the server, your account, your game client and the PLAY button.")),
-            ("host", "Server hosting software", "Host your own realm in one click",
-             "Run a realm from your own PC, on the server software you like. The Host pack is everything in one download: "
-             "your realm, its health checks, GM controls and tools. Our code only, never game files.",
-             ["Your Den: a private place to build with friends", "Your rules, your GM account",
-              "No ports to open: it goes on the realm list by itself", "An invite link for friends"],
-             [("/wrath/host", "Start hosting", False), (BASE + "/beacon", "How hosting works", False)], host_art),
+             shot("launcher", "The Leyline launcher: its realm list open over Home, with Wrath Unleashed, Your Den, your realms and Host a server, "
+                  "and the game client, realm and PLAY button below.")),
+            ("host", "Host a server", "Pick a template, press Host",
+             "Host a realm from your own PC in one click: classic levelling, solo levelling with helper bots, a duel ladder, "
+             "hide and seek, minigolf nights and more, each a template you can host as it is or fork and change. It goes on "
+             "the realm list by itself, with an invite link for friends. Our code only, never game files.",
+             ["Templates: Host as it is, or Fork and make it yours", "Your Den: a private room on your PC to build and test with friends",
+              "No ports to open: the Leyline network lists it", "GM controls, health checks and restarts with a warning, built in"],
+             [("/wrath/host", "Start hosting", False), (BASE + "/beacon", "How hosting works", False)],
+             shot("hosting", "The launcher's Host page: What will you host? Templates as tiles (classic levelling, solo levelling, "
+                  "duel ladder, hide and seek, minigolf night, survivors), each with Host and Fork.")),
             ("realms", "Realms & hopping", "Every realm, one list",
              "Every realm on the Leyline network, hosted by players and ranked by players online, uptime and staff "
              "picks. Nothing can be bought. Hop from one realm to the next in a click.",
@@ -2150,13 +2157,20 @@ class Hub:
             '<!-- TODO(owner): the hero heading and the line under it; his final wording -->'
             '<h1 id="hb-h">Every client, every server</h1>'
             '<p class="hb-sub-h">One launcher for every classic client and every server: your game, your realm, one click.</p>'
+            # the launcher itself, right under the line (owner 1 Nov 04:50: wider, with the client list open showing every
+            # client; tools/art/leyline-ui-shots: the launcher's own UI with sample folders, no game art)
+            '<figure class="hb-hero-shot"><img src="/wrath/art/leyline-ui-clients.webp" width="1600" height="900" '
+            'alt="The Leyline launcher with its game client list open: five game clients found on this PC, each with its version, '
+            'with the featured mode on the home banner, and the realm and PLAY button below." decoding="async" fetchpriority="high">'
+            '<img class="hb-hero-close" src="/wrath/art/leyline-ui-clients-close.webp?v=2" width="679" height="756" loading="lazy" '
+            'decoding="async" alt="Close up: the game client list, every client Leyline found with its version and folder."></figure>'
             # no buttons under the line (owner 2026-10-30): Download and Play are in the side menu
             '<p class="hb-note">Free and open source, for Windows, macOS and Linux. Nothing to buy.</p></section>'
             # straight to the point (owner 1 Nov: "make sure the website is clean looking too"; the launcher's story:
             # Wrath Unleashed, your Den, your realms, Host a server): the realm, the list, how it works, the featured
             # mod, four feature sections, the forum and the status bar. The counters, the community posters, the Hero
             # Key line and Mods in play repeated what is already above them (their methods stay, off the page, to bring back).
-            + self.hangout_open(got) + self.realm_section(got) + self.how_strip() + den_week_html() + self.featured_mod(items)
+            + self.realm_section(got) + self.how_strip() + den_week_html() + self.featured_mod(items)
             + self.features(got) + self.community(items) + status +
             '<p class="hb-fine">Community projects are links: nothing of theirs is hosted here. Each belongs to its '
             'authors, under the licence they chose. Leyline is an independent open-source project.</p>')
@@ -3288,7 +3302,13 @@ background:radial-gradient(closest-side,rgba(91,141,239,.34),rgba(139,108,240,.1
 .hb-hero-mark::after{background-image:url(/wrath/art/leyline-crystal-512.png);filter:drop-shadow(0 8px 10px rgba(0,0,0,.6)) drop-shadow(0 2px 3px rgba(0,0,0,.55))}
 .hb-hero-mark::before{filter:drop-shadow(0 12px 16px rgba(0,0,0,.6)) drop-shadow(0 3px 4px rgba(0,0,0,.5))}
 .hb-hero h1{margin:0 0 8px;font-size:clamp(22px,3vw,32px);line-height:1.1;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--lk-text-2)}
-.hb-sub-h{max-width:560px;margin:0 auto 18px;color:var(--lk-text-2);font-size:clamp(15px,1.8vw,17px);line-height:1.5}
+.hb-sub-h{max-width:560px;margin:0 auto 18px;color:var(--lk-text-2);font-family:"Arial Rounded MT Bold","Arial Rounded MT",Arial,"Helvetica Neue",Helvetica,sans-serif;font-weight:700;letter-spacing:.005em;font-size:clamp(16px,1.9vw,18px);line-height:1.5}
+.hb-hero-shot{position:relative;margin:6px auto 52px;max-width:1180px;width:100%;border-radius:14px;
+  border:1px solid rgba(214,178,94,.35);box-shadow:0 24px 60px rgba(0,0,0,.55),0 0 0 1px rgba(0,0,0,.6)}
+.hb-hero-shot > img:first-child{display:block;width:100%;height:auto;border-radius:14px}
+.hb-hero-close{position:absolute;right:-18px;bottom:-34px;width:27%;height:auto;border-radius:12px;
+border:1px solid rgba(214,178,94,.55);box-shadow:0 18px 50px rgba(0,0,0,.7),0 0 0 6px rgba(11,13,20,.55)}
+@media (max-width:760px){.hb-hero-close{position:static;display:block;width:100%;margin-top:12px}}
 .hb-hero-a{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:10px 12px;margin:0}
 .hb-cta{display:inline-block;padding:13px 30px;border-radius:var(--lk-r-sm);background:var(--lk-accent);color:#fff!important;
 text-decoration:none;font-weight:700;font-size:17px;box-shadow:0 0 0 1px rgba(255,255,255,.08),0 8px 26px rgba(91,141,239,.35)}
@@ -3387,9 +3407,32 @@ color:#f3d29a!important;font-size:13px!important}
 .hb .realm{background:var(--lk-surface)!important;border:1px solid var(--lk-border)!important;border-radius:var(--lk-r)!important;box-shadow:none!important}
 .hb .tag{background:var(--lk-surface-2)!important;border-color:var(--lk-border)!important;color:var(--lk-text-2)!important}
 /* the realm list under the hero: every server on the network, one row each */
-.hb-rl-head{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:8px 16px;margin:0 0 10px}
+.hb-rl-head{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:8px 16px;margin:0 0 14px}
 .hb-rl-head h2{margin:0}
 .hb-netline{margin:2px 0 0;color:var(--lk-muted);font-size:13.5px}
+/* the realm list as its own panel (owner 1 Nov 05:15: bigger heading, the area more distinct) */
+.hb-realms{position:relative;padding:26px 28px 20px;border-radius:16px;background:linear-gradient(180deg,rgba(24,28,40,.92),rgba(14,16,24,.94));
+border:1px solid rgba(214,178,94,.32);box-shadow:0 22px 60px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.05)}
+.hb-realms .hb-rl-head h2{font-size:clamp(26px,3.2vw,36px);letter-spacing:.01em}
+.hb-realms .hb-netline{font-size:15px;color:var(--lk-text-2)}
+@media (max-width:640px){.hb-realms{padding:18px 14px 14px;border-radius:12px}}
+/* the official realm is the rack's headline (owner 1 Nov 05:23: "Wrath Unleashed isn't clear as the main part"):
+   a tall card over our Dalaran picture, a big name, the Play button first; community realms stay rows under it */
+.hb-realms .hb-rl.home{grid-template-columns:auto minmax(0,1fr) auto;align-items:end;min-height:230px;padding:28px 30px 26px;
+border:1px solid rgba(214,178,94,.6);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.08);
+background:radial-gradient(120% 140% at 85% 20%,rgba(139,108,240,.35),transparent 60%),linear-gradient(90deg,#141827,#1b2140)}
+.hb-realms .hb-rl.home .hb-rl-ic{width:64px;height:64px;align-self:start}
+.hb-realms .hb-rl.home .hb-rl-n b{display:block;font-family:Marcellus,Georgia,serif;font-weight:400;font-size:clamp(28px,3.6vw,42px);
+line-height:1.1;color:#fff;text-shadow:0 2px 14px rgba(0,0,0,.7);margin:0 0 4px}
+.hb-realms .hb-rl.home .hb-rl-m{display:block;font-size:15px;color:#d7dbe6;margin-top:6px;text-shadow:0 1px 6px rgba(0,0,0,.8)}
+.hb-realms .hb-rl.home .hb-rl-p{align-self:start;font-size:17px;padding:6px 12px;border-radius:999px;background:rgba(10,12,20,.6);
+border:1px solid rgba(79,209,139,.35)}
+.hb-realms .hb-rl.home .hb-rl-a{grid-column:2/-1;margin-top:14px;justify-content:flex-start}
+.hb-realms .hb-rl.home .hb-play{font-size:20px;padding:12px 30px}
+.hb-realms .hb-rl.home::before{content:"Official realm";position:absolute;top:16px;right:20px;display:none}
+.hb-realms .hb-rlist{display:grid;gap:10px}
+@media (max-width:640px){.hb-realms .hb-rl.home{min-height:0;padding:18px 16px;background-position:70% 30%}
+.hb-realms .hb-rl.home .hb-rl-ic{width:44px;height:44px}.hb-realms .hb-rl.home .hb-rl-a{grid-column:1/-1}}
 .hb-dot{display:inline-block;width:8px;height:8px;margin-right:7px;border-radius:50%;background:var(--lk-ok);vertical-align:1px;
 box-shadow:0 0 0 3px rgba(79,209,139,.18)}
 .hb-rf{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;font-size:13.5px;color:var(--lk-text-2)}
@@ -4190,7 +4233,7 @@ STONE_CSS = """
 @font-face{font-family:"Marcellus";font-weight:400;font-display:swap;src:url(/wrath/art/marcellus-400.woff2) format("woff2")}
 /* one title face (owner 1 Nov: "make sure the website is clean looking too"): the page and section headings and the
    PLAY-stone words in Marcellus, the launcher's lettering, not the body face or Georgia */
-body.hb :is(#hb-h,#hb-ho-h,#hb-rlh,#hb-coa-h,.hb-fs h2,#hb-cm-h,.hb-pg-h h1,.fm h1,.hf h1,.hk-card h1,.pf-card h1){
+body.hb :is(#hb-h,#hb-ho-h,#hb-rlh,#hb-coa-h,.hb-fs h2,#hb-cm-h,.hb-pg-h h1,.fm h1,.hf h1,.hk-card h1,.pf-card h1,.wu-box h1,.ld-doc h1){
 font-family:"Marcellus",Georgia,"Times New Roman",serif;font-weight:400;letter-spacing:.015em}
 body.hb :is(.hb-play,.hb-ho-a .hb-cta,.hb-top .hb-end .hb-playx){font-family:"Marcellus",Georgia,"Times New Roman",serif;font-weight:400}
 :root{--hb-stone:url(/wrath/art/stone-bar.webp) 0 0/340px 34px repeat;--hb-stone-tall:url(/wrath/art/stone-side.webp) 0 0/256px 256px repeat;
@@ -4234,21 +4277,21 @@ body.hb:has(#hb-side:checked) .hb-dl span,body.hb:has(#hb-side:checked) .hb-sign
 body.hb:has(#hb-side:checked) .hb-dl svg{display:block}
 }
 /* the main actions: the PLAY stone without its word (stone-btn.webp, a nine-slice so any label fits), gold lettering */
-body.hb :is(.hb-dl,.hb-dl-x,.hb-signin,.hb-cta:not(.hb-ho-a .hb-cta),.ly-btn:not(.hb-alt),.hk-btn.primary,.fm-btn:not(.ghost,.fm-dc .fm-btn),.hf a.dl.primary,.hb-pg .host-cta .btn.primary){
+body.hb :is(.hb-dl,.hb-dl-x,.hb-signin,.hb-cta:not(.hb-ho-a .hb-cta),.ly-btn:not(.hb-alt),.hk-btn.primary,.fm-btn:not(.ghost,.fm-dc .fm-btn),.hf a.dl.primary,.hb-pg .host-cta .btn.primary,.wu-box .btn.primary){
 align-items:center;justify-content:center;gap:8px;min-height:46px;padding:0 20px;box-sizing:border-box;
 border:11px solid transparent;border-radius:0;border-image:url(/wrath/art/stone-btn.webp) 28 30 fill/11px stretch;
 background:none!important;box-shadow:none!important;color:var(--hb-gold)!important;
 font:400 19px/1 "Marcellus",Georgia,"Times New Roman",serif;letter-spacing:.035em;text-decoration:none;
 text-shadow:0 1px 0 #2a1200,0 2px 3px rgba(0,0,0,.85);filter:drop-shadow(0 3px 6px rgba(0,0,0,.4));transition:filter .12s,transform .08s;cursor:pointer}
-body.hb :is(.hb-dl,.hb-dl-x,.hb-signin,.hb-cta:not(.hb-ho-a .hb-cta),.ly-btn:not(.hb-alt),.hk-btn.primary,.fm-btn:not(.ghost,.fm-dc .fm-btn),.hf a.dl.primary,.hb-pg .host-cta .btn.primary):hover{
+body.hb :is(.hb-dl,.hb-dl-x,.hb-signin,.hb-cta:not(.hb-ho-a .hb-cta),.ly-btn:not(.hb-alt),.hk-btn.primary,.fm-btn:not(.ghost,.fm-dc .fm-btn),.hf a.dl.primary,.hb-pg .host-cta .btn.primary,.wu-box .btn.primary):hover{
 filter:drop-shadow(0 3px 6px rgba(0,0,0,.4)) brightness(1.15)}
-body.hb :is(.hb-dl,.hb-dl-x,.hb-signin,.hb-cta:not(.hb-ho-a .hb-cta),.ly-btn:not(.hb-alt),.hk-btn.primary,.fm-btn:not(.ghost,.fm-dc .fm-btn),.hf a.dl.primary,.hb-pg .host-cta .btn.primary):active{
+body.hb :is(.hb-dl,.hb-dl-x,.hb-signin,.hb-cta:not(.hb-ho-a .hb-cta),.ly-btn:not(.hb-alt),.hk-btn.primary,.fm-btn:not(.ghost,.fm-dc .fm-btn),.hf a.dl.primary,.hb-pg .host-cta .btn.primary,.wu-box .btn.primary):active{
 filter:brightness(.9);transform:translateY(1px)}
 body.hb :is(.hb-dl,.hb-dl-x,.hb-signin,.hb-cta,.ly-btn,.hk-btn,.fm-btn,.hf a.dl,.hb-ghost,.hb-copy,.hb-menu-b,.btn,.hb-dc):focus-visible{outline:2px solid #f2c94c;outline-offset:3px}
 body.hb .hb-signin span,body.hb .hb-dl span{white-space:nowrap}
 body.hb .hb-signin img{display:none}
 body.hb :is(.hb-dl,.hb-signin){display:inline-flex}
-body.hb :is(.hb-cta:not(.hb-ho-a .hb-cta),.ly-btn:not(.hb-alt),.hk-btn.primary,.fm-btn:not(.ghost,.fm-dc .fm-btn),.hf a.dl.primary,.hb-pg .host-cta .btn.primary){display:inline-flex}
+body.hb :is(.hb-cta:not(.hb-ho-a .hb-cta),.ly-btn:not(.hb-alt),.hk-btn.primary,.fm-btn:not(.ghost,.fm-dc .fm-btn),.hf a.dl.primary,.hb-pg .host-cta .btn.primary,.wu-box .btn.primary){display:inline-flex}
 @media (max-width:560px){body.hb .hb-end .hb-dl{display:none}body.hb .hb-signin{min-height:42px;padding:0 14px;font-size:19px}}
 body.hb .hb-dl-x{text-align:center;line-height:24px}
 @supports (-webkit-background-clip:text){body.hb .hb-signin span{background:linear-gradient(180deg,#fff1a0 0%,#f9d55c 40%,#e2ab2e 75%,#b9801c 100%);
@@ -4975,6 +5018,7 @@ TURN_DAYS = 7
 def note_request(handler) -> None:
     """Called by the portal at the start of every GET: whether this visitor said "Not now" to the turn-your-phone hint
     (the ly_turn cookie), for every page drawn with Hub._shell (the hub's own, the forum, the Hero Key, Host ...)."""
+    _REQ.handler = handler   # the portal's own pages in this frame ask who is signed in through it (wrath_portal.hub_frame)
     try:
         ck = handler.headers.get("Cookie", "") or ""
         _REQ.turn_off = any(c.strip() == TURN_COOKIE + "=1" for c in ck.split(";"))

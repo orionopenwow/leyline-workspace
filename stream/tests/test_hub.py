@@ -258,11 +258,9 @@ check("footer: Docs, Download, Forum, Status, the wordmark, Join the Discord and
       and f'href="{wp.DISCORD_URL}" rel="noopener noreferrer"' in foot and "</svg>Join the Discord</a>" in foot)
 # launch (2026-10-30): the official realm (Wrath Unleashed) is the front door, the Discord everywhere
 ho = re.search(r'<section class="hb-ho[^"]*" id="hangout".*?</section>', front, re.S)
-check("launch: under the hero, Wrath Unleashed is open, Play in your browser (no Discord button here: two Discord links at most)",
-      ho and "<h2 id=\"hb-ho-h\">Wrath Unleashed is open</h2>" in ho.group(0)
-      and '<a class="hb-cta sm" href="/wrath">Play in your browser</a>' in ho.group(0)
-      and f'href="{wp.DISCORD_URL}"' not in ho.group(0) and "TODO(owner): the Hangout line" in ho.group(0)
-      and front.index('class="hb-hero"') < front.index('id="hangout"') < front.index('id="realms"'))
+# the "Wrath Unleashed is open" banner left the front page (owner 1 Nov 05:15: redundant with the realm list)
+check("launch: no hangout banner; the launcher shot, then the realm list",
+      not ho and front.index('class="hb-hero-shot"') < front.index('id="realms"'))
 cm = re.search(r'<section class="hb-sec hb-cm hb-rv" id="forum".*?</section>', front, re.S)
 check("launch: the Forum and Discord section opens with a big Join the Discord and links the forum",
       cm and cm.group(0).index('class="hb-cm-dc big"') < cm.group(0).index('class="hb-cm-g') and 'href="/wrath/leyline/forum"' in cm.group(0) and f'href="{wp.DISCORD_URL}"' in cm.group(0))
@@ -288,7 +286,7 @@ check("front page: four feature sections only (launcher, host, modes, mods), alt
 fs = re.findall(FS_RE, allf, re.S)
 check("feature sections: one per part of Leyline, in the recommended order", [f[1] for f in fs] == [
       "launcher", "host", "realms", "modes", "mods", "forge", "agents", "community"] and [f[2] for f in fs] == [
-      "Desktop launcher", "Server hosting software", "Realms &amp; hopping", "Minigolf &amp; game modes", "Mods",
+      "Desktop launcher", "Host a server", "Realms &amp; hopping", "Minigolf &amp; game modes", "Mods",
       "Forge", "Agents", "Community hub"], [f[1:3] for f in fs])
 check("feature sections: alternating sides (every other one flips)", [bool(f[0]) for f in fs] == [False, True] * 4)
 check("feature sections: a heading, a lede, points and a first link each", all(f[3] and f[4] and f[5].count("<li>") >= 2
@@ -306,8 +304,8 @@ feats = allf
 shots = re.findall(r'<img src="/wrath/art/(leyline-ui-[a-z]+\.webp)" alt="([^"]+)" width="1240" height="760" loading="lazy"', feats)
 check("feature sections: the launcher's own pages as pictures (served, lazy, with alt text), our own panels for the rest "
       "(server software, the realm list; the Minigolf loop falls back to the Modes page without the game shots)",
-      [n for n, _ in shots] == ["leyline-ui-home.webp", "leyline-ui-modes.webp", "leyline-ui-workshop.webp"]
-      and 'class="hb-sw"' in fs[1][7] and 'class="hb-rlx"' in fs[2][7]
+      [n for n, _ in shots] == ["leyline-ui-launcher.webp", "leyline-ui-hosting.webp", "leyline-ui-modes.webp", "leyline-ui-workshop.webp"]
+      and 'class="hb-rlx"' in fs[2][7]
       and all(a for _, a in shots) and all(n in wp.ART_TYPES and not n.startswith("leyline-shot-") for n, _ in shots)
       and all(os.path.isfile(os.path.join(HERE, "www-files", "art", n)) for n, _ in shots)
       and 'class="hb-draw hb-people"' in fs[7][7] and 'class="hb-draw hb-code"' in fs[5][7] and 'class="hb-draw hb-code"' in fs[6][7]
@@ -944,12 +942,14 @@ kc = importlib.util.module_from_spec(cspec)
 cspec.loader.exec_module(kc)
 kit_live = {"azerothcore"} | {p["core"] for p in kc.offered_profiles({}).values()}
 kit_any = kit_live | {p["core"] for p in kc.PROFILES.values()}
-sw = re.search(r'<div class="hb-sw" role="group".*?<ul class="hb-sw-cores">.*?</ul></div>', fp, re.S)
+# the console drawing left the hosting section (owner 1 Nov 05:16: the launcher's real Host page instead); its method
+# stays (host_showcase), checked on its own
+_hs = HB.hub.host_showcase()
+sw = re.search(r'<div class="hb-sw" role="group".*?<ul class="hb-sw-cores">.*?</ul></div>', _hs, re.S)
 sw = sw.group(0) if sw else ""
 cores = re.findall(r'<li class="hb-sw-core[^"]*" data-core="([a-z]+)" data-status="([a-z]+)" title="([^"]+)"><b>([^<]+)</b><span>([^<]+)</span></li>', sw)
 check("host console (owner: \"the server GM console / health etc ... all in one host server package\"): in the hosting section",
-      'id="f-host"' in fp and sw and fp.find('id="f-host"') < fp.find('class="hb-sw"') < fp.find('id="f-modes"')
-      and "Your realm console" in sw and "Online · listed" in sw)
+      'id="f-host"' in fp and sw and 'leyline-ui-hosting.webp' in fp and "Your realm console" in sw and "Online · listed" in sw)
 check("host console: health tiles (the four services, players, uptime)",
       re.findall(r"<li><i></i>([^<]+)<span>", sw) == ["Database", "Login server", "World server", "Leyline network", "Players", "Uptime"])
 check("host console: the GM controls of the in-game Your realm window, restart with its five-minute warning",

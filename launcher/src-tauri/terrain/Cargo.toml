@@ -1,0 +1,15 @@
+[package]
+name = "leyline-terrain"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+license = "MIT"
+publish = false
+description = "Leyline's own map tile code for the Den: read and write 3.3.5a ADT and WDT files, the Den's white pad, and the terrain delta (numbers and file names only). Written from the public file-format notes, no editor code in it."
+
+# Its own workspace root: the launcher (launcher/src-tauri) and Den Lite (labs/den-lite) use it as a path dependency.
+[workspace]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }

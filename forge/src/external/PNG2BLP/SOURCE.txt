@@ -1,0 +1,15 @@
+PNG2BLP: the PNG-to-BLP converter from wowdev/pywowlib, folder blp/PNG2BLP/native
+(https://github.com/wowdev/pywowlib/tree/master/blp/PNG2BLP/native). Its files carry no header; the
+repository is under the MIT License (LICENSE in this folder, copied from the repository root:
+https://github.com/wowdev/pywowlib/blob/master/LICENSE). Checked for Forge on 1 Nov 2026:
+Png2Blp.cpp, Quantizer.cpp and BinaryWriter.cpp are byte-identical to that folder's copies.
+
+Bundled inside it:
+- libimagequant/ (Kornel Lesinski et al., https://github.com/ImageOptim/libimagequant): GPL-3.0-or-later
+  for the changes and additions, pngquant's original licence for the base code. COPYRIGHT in that folder
+  was added for Forge from upstream tag 2.12.2 (it was missing from the Noggit Red tree). GPL-3.0-or-later
+  is compatible with Forge's GPL-3.0.
+- libpng/ (libpng licence, libpng/LICENSE).
+- pngpp/ (png++, BSD-3-Clause, pngpp/COPYING).
+- zlib/ (zlib licence, zlib/LICENSE, taken from zlib.h).
+- libtxc_dxtn/ (Roland Scheidegger, MIT-style licence in txc_dxtn.h).

@@ -11,6 +11,12 @@ Two-way bridge between the Wrath realm's World chat channel and one Discord chan
   Discord -> game   it reads DISCORD_CHAT_CHANNEL_ID with the bot token (REST, messages after the last one seen) and
                     runs "wudiscord say <hex name> <hex text>": players see "[Discord] Name: text".
   bug feed          .bug reports (ov_bug_reports) newer than the last one posted go to DISCORD_BUG_CHANNEL_ID.
+  bug intake        (off unless WU_DISCORD_BUG_INTAKE names a file) people's own messages in the bug channel
+                    (DISCORD_BUG_INTAKE_CHANNEL_ID, default DISCORD_BUG_CHANNEL_ID) are appended to that file as JSON
+                    lines for the GM console's bugs manifest (gmconsole/server/bugs_manifest.py, docs/BUGS-MANIFEST.md):
+                    the message id, time, display name, text (emails and IP addresses taken out), how many files were
+                    attached, the message it answers. Never Discord user ids. Bots, webhooks (our own feed) and muted
+                    people are skipped; it starts at the newest message (no history).
 
 Safety: nothing ever pings (allowed_mentions parse=[] on every post, and @everyone / @here / <@...> are defused in the
 text too); Discord markdown in game text is escaped; links from the game are dropped unless their host is in
@@ -31,6 +37,9 @@ Environment:
   WU_DISCORD_MUTE_FILE       the same, one per line (# comments), re-read when it changes
   WU_DISCORD_POLL            seconds between rounds (default 3)
   WU_DISCORD_STATE           where the last message / report ids are kept (default /var/lib/wu-discord/state.json)
+  WU_DISCORD_BUG_INTAKE      the bug intake file (default empty = off; the deploy suggests /srv/wrath/bugs/intake/discord.jsonl)
+  DISCORD_BUG_INTAKE_CHANNEL_ID  the channel read for it (default DISCORD_BUG_CHANNEL_ID)
+  DISCORD_GUILD_ID           optional: the server id, so the manifest can link each report's message
   WU_DISCORD_API             default https://discord.com/api/v10 (tests point it elsewhere)
   WU_DISCORD_DRY_RUN         1 = log what would be posted / said, touch neither Discord nor the realm
   WU_SITE_URL                the site named in the User-Agent Discord asks for (default https://play.openvanilla.app)
@@ -72,6 +81,12 @@ GAME_TEXT_MAX = 200        # Discord -> game, per line (ov_discord.lua caps agai
 NAME_MAX = 24
 CHAT_LINE_MAX = 300        # game -> Discord, per line
 BUG_TEXT_MAX = 600
+INTAKE_TEXT_MIN, INTAKE_TEXT_MAX = 12, 1500     # Discord -> bug intake: shorter is chatter ("same", "thanks")
+DISCORD_EPOCH_MS = 1420070400000
+_INTAKE_STRIP = [(re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+"), "[email]"),
+                 (re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b"), "[ip]"),
+                 (re.compile(r"(?i)https?://(?:\w+\.)?discord(?:app)?\.com/api/webhooks/\S+"), "[webhook link removed]"),
+                 (re.compile(r"<@[!&]?\d+>"), "@someone")]
 QUEUE_MAX = 60             # game lines waiting for Discord; older ones are dropped when Discord is slow
 POSTS_PER_WINDOW, POST_WINDOW = 4, 5.0         # Discord allows 5 per 5 s per channel; stay under
 USER_MAX, USER_WINDOW = 4, 20.0                # Discord -> game: per Discord user
@@ -277,6 +292,9 @@ class Config:
         self.announce_channel = env.get("DISCORD_ANNOUNCE_CHANNEL_ID", "").strip() or self.chat_channel
         self.realms_url = env.get("WU_DISCORD_REALMS_URL", "").strip() or site + "/wrath/realms.json"
         self.announce_every = max(60.0, float(env.get("WU_DISCORD_ANNOUNCE_EVERY", "300") or 300))
+        self.bug_intake = env.get("WU_DISCORD_BUG_INTAKE", "").strip()
+        self.bug_intake_channel = env.get("DISCORD_BUG_INTAKE_CHANNEL_ID", "").strip() or self.bug_channel
+        self.guild = env.get("DISCORD_GUILD_ID", "").strip()
 
     def problems(self) -> list[str]:
         p = []
@@ -290,6 +308,12 @@ class Config:
             p.append("WU_DISCORD_REALMS_URL must be an https address")
         if self.bug_channel and not self.bug_channel.isdigit():
             p.append("DISCORD_BUG_CHANNEL_ID must be a channel id (digits) or empty")
+        if self.bug_intake and not self.bug_intake_channel.isdigit():
+            p.append("WU_DISCORD_BUG_INTAKE needs DISCORD_BUG_INTAKE_CHANNEL_ID or DISCORD_BUG_CHANNEL_ID (a channel id)")
+        if self.bug_intake and not os.path.isabs(self.bug_intake):
+            p.append("WU_DISCORD_BUG_INTAKE must be an absolute path")
+        if self.guild and not self.guild.isdigit():
+            p.append("DISCORD_GUILD_ID must be a server id (digits) or empty")
         if not self.soap_user or not self.soap_pass:
             p.append("SOAP_USER / SOAP_PASS are not set")
         return p
@@ -297,13 +321,15 @@ class Config:
     def __repr__(self):  # never the token or the SOAP password
         return (f"Config(chat={self.chat_channel}, bugs={self.bug_channel or '-'}, soap={self.soap_url}, "
                 f"soap_user={self.soap_user}, links={sorted(self.link_allow)}, poll={self.poll}, "
-                f"announce={'on ' + self.announce_channel if self.announce else 'off'})")
+                f"announce={'on ' + self.announce_channel if self.announce else 'off'}, "
+                f"bug_intake={'on ' + self.bug_intake_channel if self.bug_intake else 'off'})")
 
 
 class State:
     def __init__(self, path: str):
         self.path = path
-        self.data = {"discord_after": None, "bug_after": None, "boot": None, "seq": 0, "announced": None}
+        self.data = {"discord_after": None, "bug_after": None, "boot": None, "seq": 0, "announced": None,
+                     "intake_after": None}
         try:
             with open(path, encoding="utf-8") as f:
                 self.data.update(json.load(f))
@@ -546,6 +572,8 @@ class Bridge:
         if self.cfg.bug_channel and self.state.data.get("bug_after") is None:   # first run: no old reports
             m = re.search(r"wudiscord bugmax (\d+)", self.soap.command("wudiscord bugmax") or "")
             self.state.data["bug_after"] = int(m.group(1)) if m else 0
+        if self.cfg.bug_intake and self.state.data.get("intake_after") is None:   # first run: no history
+            self.state.data["intake_after"] = self.discord.latest_id(self.cfg.bug_intake_channel)
         self.state.save()
 
     # -- game -> Discord --------------------------------------------------------------------------------------------
@@ -624,6 +652,28 @@ class Bridge:
                 continue
             self.soap.command(f"wudiscord say {name.encode().hex()} {text.encode().hex()}")
 
+    # -- Discord #bug-reports -> the bugs manifest's intake file (off unless WU_DISCORD_BUG_INTAKE) -------------------
+    def pull_bug_intake(self):
+        if not self.cfg.bug_intake:
+            return
+        st = self.state.data
+        out = []
+        for m in self.discord.messages_after(self.cfg.bug_intake_channel, st.get("intake_after")):
+            rec = intake_record(m, self.bot_id, self.cfg)
+            st["intake_after"] = str(m["id"])
+            if rec is not None:
+                out.append(rec)
+        if not out:
+            return
+        if self.cfg.dry_run:
+            for r in out:
+                log.info("dry run: bug intake <- %s", r["id"])
+            return
+        try:
+            write_intake(self.cfg.bug_intake, out)
+        except OSError as e:
+            log.warning("bug intake not written (%s): %s", self.cfg.bug_intake, e.strerror)
+
     # -- new realms -> Discord (off unless WU_DISCORD_ANNOUNCE_REALMS=1) ---------------------------------------------
     def announce_realms(self, now: float | None = None):
         if not self.cfg.announce or self.clock() < self.next_announce:
@@ -659,7 +709,7 @@ class Bridge:
     # -- one round --------------------------------------------------------------------------------------------------
     def step(self):
         errors = []
-        for part in (self.pull_game, self.flush, self.pull_discord, self.announce_realms):
+        for part in (self.pull_game, self.flush, self.pull_discord, self.pull_bug_intake, self.announce_realms):
             try:
                 part()
             except TransportError as e:
@@ -667,6 +717,49 @@ class Bridge:
                 log.warning("%s: %s", part.__name__, e)
         self.state.save()
         return errors
+
+
+def intake_record(m: dict, bot_id, cfg: Config) -> dict | None:
+    """A person's message in the bug channel as a bugs-manifest intake line, or None (bots, webhooks, our own feed,
+    muted people, joins and pins, and anything too short to be a report)."""
+    a = m.get("author") or {}
+    if a.get("bot") or a.get("system") or m.get("webhook_id") or str(a.get("id")) == str(bot_id or ""):
+        return None
+    if m.get("type", 0) not in (0, 19):
+        return None
+    name = display_name(m)
+    if cfg.mutes.muted(a.get("id"), a.get("username"), name):
+        return None
+    text = _CONTROL.sub(" ", str(m.get("content") or ""))
+    for rx, rep in _INTAKE_STRIP:
+        text = rx.sub(rep, text)
+    text = re.sub(r"[ \t]+", " ", text).strip()[:INTAKE_TEXT_MAX]
+    files = len(m.get("attachments") or [])
+    if len(text) < INTAKE_TEXT_MIN:
+        return None
+    if files:
+        text += f" ({files} file{'s' if files != 1 else ''} attached in Discord)"
+    try:
+        at = ((int(m["id"]) >> 22) + DISCORD_EPOCH_MS) // 1000
+    except (KeyError, ValueError, TypeError):
+        at = int(time.time())
+    where = {"page": "Discord #bug-reports"}
+    if cfg.guild:
+        where["link"] = f"https://discord.com/channels/{cfg.guild}/{cfg.bug_intake_channel}/{m['id']}"
+    rec = {"id": f"discord:{m['id']}", "source": "discord", "at": at, "reporter": name, "text": text, "where": where}
+    ref = (m.get("message_reference") or {}).get("message_id")
+    if m.get("type") == 19 and ref and str(ref).isdigit():
+        rec["reply_to"] = f"discord:{ref}"
+    return rec
+
+
+def write_intake(path: str, records: list[dict]) -> None:
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o640)
+    try:
+        os.write(fd, "".join(json.dumps(r, ensure_ascii=False, separators=(",", ":")) + "\n" for r in records).encode("utf-8"))
+    finally:
+        os.close(fd)
 
 
 def read_env_file(path: str) -> dict:

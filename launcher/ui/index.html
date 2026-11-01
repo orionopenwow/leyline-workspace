@@ -19,6 +19,7 @@
 <link rel="stylesheet" href="home.css"><!-- Home: the hero gallery and the rows below it (home.js) -->
 <link rel="stylesheet" href="agents.css"><!-- Agents: your own AI assistant, the approval card on every page (agents.js) -->
 <link rel="stylesheet" href="scrollbar.css"><!-- the page scroll bar: stone grip, bronze edge, metal caps -->
+<link rel="stylesheet" href="bugreport.css"><!-- Help › Report a bug (bugreport.js) -->
 <link rel="stylesheet" href="graphics.css"><!-- Mods & Addons › Discover › Graphics (graphics.js) -->
 <link rel="stylesheet" href="stone.css"><!-- the title bar and play bar on the owner's stone texture -->
 <link rel="stylesheet" href="slate.css"><!-- the pages on the stone: panels, cards, buttons, Realms (owner 31 Oct design pass) -->
@@ -528,6 +529,10 @@
         <button type="button" class="link" data-page-go="agents">Agents ›</button> <button type="button" class="link" data-link="agentsguide">The guide ›</button></p>
       <div class="row"><button type="button" class="btn" data-link="gettingstarted">Read the player guide</button><button type="button" class="btn" data-link="docs">Open the Leyline docs</button></div>
       <p class="hint help-dc">Lost files or need help? Ask on the Discord: the Join the Discord button at the top.</p>
+      <!-- TODO(owner): the Report a bug words, his voice -->
+      <h3>Found a bug?</h3>
+      <p class="lede">Tell us what happened: it goes straight to the list the team works through.
+        <button type="button" class="link" id="bug-open">Report a bug ›</button></p>
     </div>
   </section>
 
@@ -607,6 +612,47 @@
     <button type="button" class="btn" id="native-yes">I trust it: install</button>
     <button type="button" class="btn" id="native-no">Cancel</button>
   </div>
+</dialog>
+
+<!-- Help › Report a bug (bugreport.js): to the website's bug list as the signed-in player (bugs.rs).
+     TODO(owner): the words in this dialog, his voice -->
+<dialog class="dlg bug-dlg" id="bug-dlg" aria-labelledby="bug-title">
+  <h3 id="bug-title">Report a bug</h3>
+  <div id="bug-out" hidden>
+    <p>Log in to report a bug, or use the website's form.</p>
+    <div class="row">
+      <button type="button" class="btn primary" id="bug-login">Log in</button>
+      <button type="button" class="btn" data-link="bugs">The website's form</button>
+      <button type="button" class="btn" data-bug-close>Cancel</button>
+    </div>
+  </div>
+  <div id="bug-done" hidden>
+    <p id="bug-done-text"></p>
+    <div class="row"><button type="button" class="btn primary" data-bug-close>Close</button></div>
+  </div>
+  <form id="bug-form" hidden novalidate>
+    <label>What happened?
+      <textarea id="bug-text" maxlength="1500" placeholder="What you did, what you expected, and what happened instead"></textarea></label>
+    <p class="hint bug-count" id="bug-count"></p>
+    <label>Where
+      <select id="bug-where">
+        <option value="launcher">The launcher</option>
+        <option value="game">In the game</option>
+        <option value="den">Your Den</option>
+        <option value="host">Hosting a server</option>
+        <option value="mods">Mods &amp; Addons</option>
+        <option value="other">Somewhere else</option>
+      </select></label>
+    <label>Page and realm
+      <input id="bug-page" maxlength="120"></label>
+    <label class="check"><input type="checkbox" id="bug-log"> Include the launcher's recent log</label>
+    <p class="hint">Names in folder paths, keys and sign-in codes are taken out first. Please don't add passwords or your email.</p>
+    <p class="status" id="bug-status" role="status"></p>
+    <div class="row">
+      <button type="submit" class="btn primary" id="bug-send">Send report</button>
+      <button type="button" class="btn" data-bug-close>Cancel</button>
+    </div>
+  </form>
 </dialog>
 
 <!-- The host console's confirm, for what can't be taken back at once (kick, ban, restart, stop, a new invite link) -->
@@ -694,6 +740,7 @@
 
 </div>
 <script src="friendly.js"></script><!-- never a raw error to the player: window.LeylineFriendly -->
+<script src="bugreport.js"></script><!-- Help › Report a bug and the launcher's recent log (window.LeylineBugReport; early, to keep the log) -->
 <script src="spin.js"></script>
 <script src="avatars.js"></script><!-- the player portraits (window.LeylineAvatars; before social.js) -->
 <script src="social.js"></script>

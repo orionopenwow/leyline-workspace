@@ -2,7 +2,7 @@
 setlocal
 chcp 65001 >nul
 title Leyline Discord - preview (changes nothing)
-rem Shows exactly what the Leyline rebrand would do to your Discord server. It changes NOTHING.
+rem Shows exactly what the Leyline Discord redo (docs/DISCORD-PLAN.md) would do to your server. It changes NOTHING.
 rem
 rem Discord only lets a program change a server through a bot, so first make a throwaway one (5 minutes, once):
 rem   1. Open https://discord.com/developers/applications and click "New Application". Name it "Leyline setup",

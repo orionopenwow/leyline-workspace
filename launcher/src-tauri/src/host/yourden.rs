@@ -99,6 +99,12 @@ pub fn packs(roots: &[&Path]) -> Vec<Pack> {
 /// skipped, another of the same name is kept and this one added beside it). Returns the name the newest Lite Den has
 /// in the Host pack now, for "Open" there, or None when Den Lite had none.
 pub fn move_to_kit(lite_root: &Path, kit: &Path) -> Result<Option<String>, String> {
+    // the Den's ground (host/terrain.rs) goes along, unchanged, unless the Docker Den has its own already
+    let (from, to) = (crate::host::terrain::ground_path(lite_root), crate::host::terrain::ground_path(kit));
+    if from.is_file() && !to.exists() {
+        fs::create_dir_all(dens::dir(kit)).map_err(|e| format!("Couldn't make the Den folder: {e}"))?;
+        fs::copy(&from, &to).map_err(|e| format!("Couldn't move your Den's ground: {e}"))?;
+    }
     let mut newest = None;
     for f in dens::list(lite_root) {
         let Ok(text) = dens::text(lite_root, &f.name) else { continue };   // a broken file stays where it is
@@ -220,6 +226,15 @@ mod tests {
         fs::write(dens::dir(kit.path()).join("house.den.json"), GOOD.replace("19006", "1")).unwrap();
         assert_eq!(move_to_kit(lite.path(), kit.path()).unwrap().as_deref(), Some("house-2"), "a different house there is kept");
         assert_eq!(dens::text(kit.path(), "house-2").unwrap(), GOOD);
+        // the ground goes along once, and a Docker Den's own is kept
+        let g = crate::host::terrain::ground_path(lite.path());
+        fs::write(&g, "{\"ground\":1}").unwrap();
+        move_to_kit(lite.path(), kit.path()).unwrap();
+        let k = crate::host::terrain::ground_path(kit.path());
+        assert_eq!(fs::read_to_string(&k).unwrap(), "{\"ground\":1}");
+        fs::write(&g, "{\"ground\":2}").unwrap();
+        move_to_kit(lite.path(), kit.path()).unwrap();
+        assert_eq!(fs::read_to_string(&k).unwrap(), "{\"ground\":1}");
     }
 
     #[test]

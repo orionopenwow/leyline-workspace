@@ -9,7 +9,13 @@ Owner, 1 Nov 04:26: "Dens begin as a Local thing with local files, a very small 
 then person can host to a friend and run around, and then in the future share their sole space with others thats
 really it. its a place to test mods and all game modes locally and with friends."
 
-Status: plan, 1 Nov 2026. Nothing below is built yet unless it says **built**. Words used here: "the editor" is our
+Status: plan, 1 Nov 2026. Nothing below is built yet unless it says **built**. **Update, 1 Nov:** the editor is **Forge**
+(owner: "integrate and mesh noggit into the den editor completely ... editor's name is Forge"). It lives in this repo's
+`forge/` folder as its own GPL-3.0 program (not a separate fork repo), with the rename, the licence fixes, the Den
+mode flags and the terrain delta writer of section 1.3 (**built**, not yet run on Windows): `forge/docs/DEN-MODE.md`,
+`forge/CHANGES-FROM-NOGGIT-RED.md`, the delta schema `docs/terrain-delta.schema.json`, CI `tools/github-workflows/forge.yml`
+(release `forge-latest`). One more licence finding: Noggit Red's icon font was Font Awesome *Pro* (not
+redistributable); Forge ships Font Awesome Free instead. Words used here: "the editor" is our
 renamed Noggit Red build; players never see a game brand word (docs/WORDS.md).
 
 ---
@@ -278,7 +284,7 @@ What is missing, and what we add:
 | The assistant can't touch the ground | `den_terrain_status` (read: open chunks, heights around a point, layers, water), `den_terrain_plan` (read: preview of ops, which chunks change), `den_terrain_apply` (Ask: the card shows the ops, the chunks, "the Den restarts your game to show it"); `den_terrain_grow` (Ask: open the next ring) | den.rs, `leyline-terrain` |
 | Ground models from the assistant | ops `model add/remove/move` in `den_terrain_apply`, paths checked against the player's own archive list | same |
 | The same ops for the human | the **job brush**: `scripts/leyline_job.lua` (ours, MIT) in the editor reads `jobs/next.txt` with `read_file`, and on one left click applies it with the scripting API (`select_origin`, `vert:set_height` / `add_height`, `tex:set_alpha`, `chunk:set_hole`, `vert:set_water`, `add_m2`, `add_wmo`: all in `global.d.ts`), then writes `jobs/done.txt`. The player then saves (Ctrl+S). Use: "Claude, put a pond here" while the editor is open | the fork's scripts folder |
-| Den Lite has no companion | Den Lite gets creature creates (a unit `SMSG_UPDATE_OBJECT`, by hand like `raw.rs` does for gameobjects), follow by position updates, `SMSG_MESSAGECHAT` monster say, and the same three JSON files | labs/den-lite (phase 4b, about 400 lines) |
+| Den Lite has no companion | **Built** (1 Nov): `.den companion`, a unit create, follow by `SMSG_MONSTER_MOVE`, monster say, and `companion-in.json` / `companion-out.json` (den.rs uses Den Lite's folder while it runs); not `companion-place.json` yet (labs/den-lite README) | labs/den-lite (phase 4b) |
 
 **The ops** (one list for the assistant and the job brush, checked in `leyline-terrain`): `raise|lower {x, y, radius,
 amount, falloff}`, `flatten {x, y, radius, height}`, `smooth {x, y, radius, strength}`, `ramp {from, to, width}`,

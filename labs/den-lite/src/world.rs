@@ -2,8 +2,13 @@
 //! needs to enter the world, the Den's room and props as gameobjects, movement, and the chat commands.
 //!
 //! Frames are read and written here (the header encryption from `wow_srp`); each message body is made or read by
-//! `wow_world_messages`, except the two in `raw.rs`. One player at a time is enough for the prototype: the Den is
-//! shared state, so a second connection sees the same props, but nobody sees anybody else (see the README).
+//! `wow_world_messages`, except the two in `raw.rs`.
+//!
+//! Friends (guests.rs, owner 1 Nov): the host and their guests are in the same Den and see each other: each player
+//! in the world is created for the others (no self flag), their movement packets are passed on with the mover's
+//! guid, what they say is heard by all, logging out destroys them for the others, and every change to the Den goes
+//! to everyone. Only the host builds, unless they say `.den friends build on`. The companion and the launcher's
+//! open.json follow the host only. The remote world listener (the relay tunnel's) takes guests only.
 
 use crate::companion::{self, Asked, At};
 use crate::den::{self, Change, WorldObject};
@@ -32,13 +37,15 @@ const PER_UPDATE: usize = 40;
 pub const OUTFIT: &[(usize, u32, u32, InventoryType)] =
     &[(3, 4334, 7903, InventoryType::Body), (6, 39, 9892, InventoryType::Legs), (7, 40, 10141, InventoryType::Feet)];
 
-pub fn serve(listener: TcpListener, shared: Arc<Shared>) {
+/// `remote`: the relay tunnel's listener (guests only).
+pub fn serve(listener: TcpListener, shared: Arc<Shared>, remote: bool) {
     for stream in listener.incoming().flatten() {
         let shared = shared.clone();
         std::thread::spawn(move || {
             let _ = stream.set_nodelay(true);
             let _ = stream.set_read_timeout(Some(Duration::from_secs(300)));
-            if let Err(e) = session(stream, &shared) {
+            let remote = remote || !stream.peer_addr().map(|a| a.ip().is_loopback()).unwrap_or(false);
+            if let Err(e) = session(stream, &shared, remote) {
                 if e.kind() != io::ErrorKind::UnexpectedEof {
                     shared.log(&format!("world: {e}"));
                 }
@@ -134,6 +141,51 @@ fn parse_client(opcode: u32, body: &[u8]) -> Option<ClientOpcodeMessage> {
 /// Where the player stands (from their own movement packets).
 type Pos = At;
 
+/// The character a session plays: the host's ready-made one, or a guest's.
+#[derive(Debug, Clone)]
+pub struct Me {
+    pub guid: u64,
+    pub name: String,
+    pub gender: HeroGender,
+    pub host: bool,
+}
+
+impl Me {
+    fn host(shared: &Shared) -> Me {
+        Me { guid: PLAYER_GUID, name: shared.cfg.hero.name.clone(), gender: shared.cfg.hero.gender, host: true }
+    }
+    fn guest(g: &crate::guests::Guest) -> Me {
+        Me { guid: g.guid, name: g.name.clone(), gender: if g.guid % 2 == 0 { HeroGender::Male } else { HeroGender::Female }, host: false }
+    }
+}
+
+/// A player in the world now (Shared::players).
+#[derive(Clone)]
+pub struct Peer {
+    pub sess: u64,
+    pub me: Me,
+    pub w: Writer,
+    pub pos: At,
+}
+
+/// Every other player in the world (not `sess`).
+fn others(shared: &Shared, sess: u64) -> Vec<Peer> {
+    shared.players.lock().unwrap_or_else(|e| e.into_inner()).iter().filter(|p| p.sess != sess).cloned().collect()
+}
+
+/// A client's movement packet as the others get it: the mover's packed guid, then its movement info as sent.
+fn relay_body(guid: u64, body: &[u8]) -> Option<Vec<u8>> {
+    let mask = *body.first()?;
+    let skip = 1 + mask.count_ones() as usize;
+    if body.len() < skip {
+        return None;
+    }
+    let mut out = Vec::with_capacity(body.len() + 8);
+    raw::packed_guid(&mut out, guid);
+    out.extend_from_slice(&body[skip..]);
+    Some(out)
+}
+
 /// A session's number (the companion follows the player of the newest one).
 static SESSIONS: AtomicU64 = AtomicU64::new(1);
 
@@ -142,6 +194,7 @@ struct Sess {
     id: u64,
     /// The addon names the client listed in CMSG_AUTH_SESSION.
     addons: Vec<String>,
+    me: Me,
 }
 
 /// When a session ends however it ends: it is no longer the player in the world, and the companion goes with it.
@@ -153,6 +206,18 @@ impl Drop for LeaveOnDrop {
 }
 
 fn leave(shared: &Shared, id: u64) {
+    // gone for the others
+    let gone = {
+        let mut ps = shared.players.lock().unwrap_or_else(|e| e.into_inner());
+        let g = ps.iter().find(|p| p.sess == id).map(|p| p.me.guid);
+        ps.retain(|p| p.sess != id);
+        g
+    };
+    if let Some(g) = gone {
+        for o in others(shared, id) {
+            let _ = o.w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(g), target_died: false });
+        }
+    }
     let mut live = shared.live.lock().unwrap_or_else(|e| e.into_inner());
     if live.as_ref().is_some_and(|l| l.0 == id) {
         *live = None;
@@ -171,7 +236,7 @@ fn now_ms() -> u64 {
 }
 
 #[allow(unused_assignments)]
-fn session(s: TcpStream, shared: &Arc<Shared>) -> io::Result<()> {
+fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
     let w = Writer(Arc::new(Mutex::new((s.try_clone()?, None))));
     let mut c = Conn { s, dec: None, w };
     let seed = ProofSeed::new();
@@ -181,10 +246,16 @@ fn session(s: TcpStream, shared: &Arc<Shared>) -> io::Result<()> {
         return Err(bad("expected CMSG_AUTH_SESSION"));
     };
     let user = NormalizedString::new(&auth.username).map_err(|_| bad("bad account name"))?;
-    let key = shared.sessions.lock().unwrap().get(&user.to_string()).copied();
-    let Some(key) = key else {
+    let found = shared.sessions.lock().unwrap().get(&user.to_string()).cloned();
+    // the host's login never comes in from outside this PC (nor one made on the remote login listener in here)
+    let found = found.filter(|(_, who, from_remote)| *who != crate::login::Who::Host || (!remote && !*from_remote));
+    let Some((key, who, _)) = found else {
         c.send(&SMSG_AUTH_RESPONSE::AuthUnknownAccount)?;
         return Ok(());
+    };
+    let me = match &who {
+        crate::login::Who::Host => Me::host(shared),
+        crate::login::Who::Guest(g) => Me::guest(g),
     };
     let crypto = seed
         .into_server_header_crypto(&user, key, auth.client_proof, auth.client_seed)
@@ -199,7 +270,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>) -> io::Result<()> {
         expansion: Expansion::WrathOfTheLichKing,
     })?;
     let addons = addon_count(&auth.addon_info);
-    let sess = Sess { id: SESSIONS.fetch_add(1, Ordering::Relaxed), addons: play::addon_names(&auth.addon_info) };
+    let sess = Sess { id: SESSIONS.fetch_add(1, Ordering::Relaxed), addons: play::addon_names(&auth.addon_info), me };
     let _leave = LeaveOnDrop(shared.clone(), sess.id);
     c.send(&SMSG_ADDON_INFO {
         addons: (0..addons).map(|_| Addon { addon_type: 2, uses_crc: 1, uses_diffent_public_key: false, unknown1: 0, unknown2: 0 }).collect(),
@@ -216,34 +287,55 @@ fn session(s: TcpStream, shared: &Arc<Shared>) -> io::Result<()> {
         let Some(m) = parse_client(op, &body) else { continue };
         match m {
             ClientOpcodeMessage::CMSG_READY_FOR_ACCOUNT_DATA_TIMES => c.send(&account_times(CacheMask::GLOBAL_CACHE))?,
-            ClientOpcodeMessage::CMSG_CHAR_ENUM => c.send(&SMSG_CHAR_ENUM { characters: vec![character(shared)] })?,
+            ClientOpcodeMessage::CMSG_CHAR_ENUM => c.send(&SMSG_CHAR_ENUM { characters: vec![character(shared, &sess.me)] })?,
             ClientOpcodeMessage::CMSG_REALM_SPLIT(r) => c.send(&SMSG_REALM_SPLIT {
                 realm_id: r.realm_id,
                 state: RealmSplitState::Normal,
                 split_date: "01/01/01".into(),
             })?,
             ClientOpcodeMessage::CMSG_PLAYER_LOGIN(p) => {
-                if p.guid.guid() != PLAYER_GUID {
+                if p.guid.guid() != sess.me.guid {
                     c.send(&SMSG_CHARACTER_LOGIN_FAILED { result: WorldResult::CharLoginNoCharacter })?;
                     continue;
                 }
                 let (spot, floor) = { let d = shared.den.lock().unwrap(); (d.spot, d.floor_at(d.spot.x, d.spot.y)) };
-                let start = At { x: spot.x, y: spot.y, z: floor + 1.0, o: std::f32::consts::FRAC_PI_2 };
-                enter_world(&c.w, shared, start)?;
+                // a guest a step to the side of the host's spot
+                let side = if sess.me.host { 0.0 } else { 2.0 + (sess.me.guid % 4) as f32 };
+                let start = At { x: spot.x + side, y: spot.y, z: floor + 1.0, o: std::f32::consts::FRAC_PI_2 };
+                enter_world(&c.w, shared, &sess.me, start)?;
                 pos = Some(start);
-                *shared.live.lock().unwrap() = Some((sess.id, c.w.clone(), start));
-                _watcher = Some(watch_open(shared, c.w.clone()));
+                // the others: they see this player, this player sees them
+                for o in others(shared, sess.id) {
+                    c.send(&player_create(&o.me, o.pos, false))?;
+                    let _ = o.w.send(&player_create(&sess.me, start, false));
+                    if !sess.me.host {
+                        let _ = say(&o.w, &format!("{} is in your Den.", sess.me.name));
+                    }
+                }
+                shared.players.lock().unwrap().push(Peer { sess: sess.id, me: sess.me.clone(), w: c.w.clone(), pos: start });
+                if sess.me.host {
+                    *shared.live.lock().unwrap() = Some((sess.id, c.w.clone(), start));
+                    _watcher = Some(watch_open(shared, c.w.clone()));
+                }
             }
             ClientOpcodeMessage::CMSG_PING(p) => c.send(&SMSG_PONG { sequence_id: p.sequence_id })?,
-            ClientOpcodeMessage::CMSG_NAME_QUERY(q) if q.guid.guid() == PLAYER_GUID => c.send(&SMSG_NAME_QUERY_RESPONSE {
-                guid: q.guid,
-                character_name: shared.cfg.hero.name.clone(),
-                realm_name: String::new(),
-                race: Race::Human,
-                gender: hero_gender(shared),
-                class: Class::Warrior,
-                has_declined_names: SMSG_NAME_QUERY_RESPONSE_DeclinedNames::No,
-            })?,
+            ClientOpcodeMessage::CMSG_NAME_QUERY(q) => {
+                let g = q.guid.guid();
+                let who = if g == sess.me.guid { Some(sess.me.clone()) } else if g == PLAYER_GUID { Some(Me::host(shared)) } else {
+                    shared.players.lock().unwrap().iter().find(|p| p.me.guid == g).map(|p| p.me.clone())
+                };
+                if let Some(m) = who {
+                    c.send(&SMSG_NAME_QUERY_RESPONSE {
+                        guid: q.guid,
+                        character_name: m.name,
+                        realm_name: String::new(),
+                        race: Race::Human,
+                        gender: gender_of(m.gender),
+                        class: Class::Warrior,
+                        has_declined_names: SMSG_NAME_QUERY_RESPONSE_DeclinedNames::No,
+                    })?
+                }
+            }
             ClientOpcodeMessage::CMSG_GAMEOBJECT_QUERY(q) => {
                 let t = den::template(q.entry_id);
                 let body = raw::gameobject_query_response(q.entry_id, t.map(|t| (t.kind, t.display, t.name, t.size)));
@@ -263,7 +355,11 @@ fn session(s: TcpStream, shared: &Arc<Shared>) -> io::Result<()> {
             ClientOpcodeMessage::CMSG_CREATURE_QUERY(q) => c.send(&creature_answer(q.creature))?,
             ClientOpcodeMessage::CMSG_MESSAGECHAT(m) => {
                 if let Some(p) = pos {
-                    chat(&c.w, shared, &sess, p, &m.message)?;
+                    if sess.me.host {
+                        chat(&c.w, shared, &sess, p, &m.message)?;
+                    } else {
+                        guest_chat(&c.w, shared, &sess, p, &m.message)?;
+                    }
                 }
             }
             other => {
@@ -271,6 +367,15 @@ fn session(s: TcpStream, shared: &Arc<Shared>) -> io::Result<()> {
                     *p = n;
                     if let Some(l) = shared.live.lock().unwrap().as_mut().filter(|l| l.0 == sess.id) {
                         l.2 = n;
+                    }
+                    if let Some(me) = shared.players.lock().unwrap().iter_mut().find(|x| x.sess == sess.id) {
+                        me.pos = n;
+                    }
+                    // the others see the move
+                    if let (Ok(code), Some(b)) = (u16::try_from(op), relay_body(sess.me.guid, &body)) {
+                        for o in others(shared, sess.id) {
+                            let _ = o.w.send_raw(code, &b);
+                        }
                     }
                 }
             }
@@ -322,22 +427,22 @@ fn account_times(mask: u32) -> SMSG_ACCOUNT_DATA_TIMES {
     SMSG_ACCOUNT_DATA_TIMES { unix_time: now() as u32, unknown1: 1, mask: m }
 }
 
-fn hero_gender(shared: &Shared) -> Gender {
-    match shared.cfg.hero.gender {
+fn gender_of(g: HeroGender) -> Gender {
+    match g {
         HeroGender::Male => Gender::Male,
         HeroGender::Female => Gender::Female,
     }
 }
 
-fn display_id(shared: &Shared) -> i32 {
+fn display_id(g: HeroGender) -> i32 {
     // CreatureDisplayInfo: the human male and female player models.
-    match shared.cfg.hero.gender {
+    match g {
         HeroGender::Male => 49,
         HeroGender::Female => 50,
     }
 }
 
-pub fn character(shared: &Shared) -> Character {
+pub fn character(shared: &Shared, me: &Me) -> Character {
     let (spot, floor) = { let d = shared.den.lock().unwrap(); (d.spot, d.floor_at(d.spot.x, d.spot.y)) };
     let empty = CharacterGear { equipment_display_id: 0, inventory_type: InventoryType::NonEquip, enchantment: 0 };
     let mut equipment = [empty; 23];
@@ -345,11 +450,11 @@ pub fn character(shared: &Shared) -> Character {
         equipment[slot] = CharacterGear { equipment_display_id: display, inventory_type: inv, enchantment: 0 };
     }
     Character {
-        guid: Guid::new(PLAYER_GUID),
-        name: shared.cfg.hero.name.clone(),
+        guid: Guid::new(me.guid),
+        name: me.name.clone(),
         race: Race::Human,
         class: Class::Warrior,
-        gender: hero_gender(shared),
+        gender: gender_of(me.gender),
         skin: 0,
         face: 0,
         hair_style: 0,
@@ -370,19 +475,19 @@ pub fn character(shared: &Shared) -> Character {
     }
 }
 
-/// The player's own create: the fields a client needs to draw and control its character.
-fn player_create(shared: &Shared, p: Pos) -> SMSG_UPDATE_OBJECT {
+/// A player's create: for its own client (`own`: the self flag, it controls it) or for the others'.
+fn player_create(me: &Me, p: Pos, own: bool) -> SMSG_UPDATE_OBJECT {
     let mut b = UpdatePlayerBuilder::new()
-        .set_object_guid(Guid::new(PLAYER_GUID))
+        .set_object_guid(Guid::new(me.guid))
         .set_object_scale_x(1.0)
-        .set_unit_bytes_0(Race::Human, Class::Warrior, hero_gender(shared), Power::Rage)
+        .set_unit_bytes_0(Race::Human, Class::Warrior, gender_of(me.gender), Power::Rage)
         .set_unit_health(100)
         .set_unit_maxhealth(100)
         .set_unit_maxpower2(1000)
         .set_unit_level(1)
         .set_unit_factiontemplate(1)
-        .set_unit_displayid(display_id(shared))
-        .set_unit_nativedisplayid(display_id(shared))
+        .set_unit_displayid(display_id(me.gender))
+        .set_unit_nativedisplayid(display_id(me.gender))
         .set_unit_boundingradius(0.389)
         .set_unit_combatreach(1.5)
         .set_unit_mod_cast_speed(1.0)
@@ -392,7 +497,7 @@ fn player_create(shared: &Shared, p: Pos) -> SMSG_UPDATE_OBJECT {
         .set_unit_flags_2(0x0000_0800)
         .set_player_field_bytes(0, 0, 0, 0)
         .set_player_bytes_2(0, 0, 0, 2)
-        .set_player_bytes_3(if shared.cfg.hero.gender == HeroGender::Female { 1 } else { 0 }, 0, 0, 0)
+        .set_player_bytes_3(if me.gender == HeroGender::Female { 1 } else { 0 }, 0, 0, 0)
         .set_player_next_level_xp(400)
         .set_player_watched_faction_index(-1);
     for &(slot, entry, _, _) in OUTFIT {
@@ -417,9 +522,11 @@ fn player_create(shared: &Shared, p: Pos) -> SMSG_UPDATE_OBJECT {
     };
     SMSG_UPDATE_OBJECT {
         objects: vec![Object::CreateObject2 {
-            guid3: Guid::new(PLAYER_GUID),
+            guid3: Guid::new(me.guid),
             mask2: UpdateMask::Player(b.finalize()),
-            movement2: MovementBlock { update_flag: MovementBlock_UpdateFlag::new_self().set_living(living) },
+            movement2: MovementBlock {
+                update_flag: if own { MovementBlock_UpdateFlag::new_self() } else { MovementBlock_UpdateFlag::empty() }.set_living(living),
+            },
             object_type: ObjectType::Player,
         }],
     }
@@ -434,7 +541,7 @@ fn login_time() -> DateTime {
 
 /// What the client needs from CMSG_PLAYER_LOGIN to the world on screen, in AzerothCore's order
 /// (WorldSession::HandlePlayerLogin, Player::SendInitialPacketsBeforeAddToMap / AfterAddToMap).
-fn enter_world(c: &Writer, shared: &Shared, p: Pos) -> io::Result<()> {
+fn enter_world(c: &Writer, shared: &Shared, me: &Me, p: Pos) -> io::Result<()> {
     let (spot, floor) = { let d = shared.den.lock().unwrap(); (d.spot, d.floor_at(d.spot.x, d.spot.y)) };
     c.send(&SMSG_LOGIN_VERIFY_WORLD { map: Map::Kalimdor, position: Vector3d { x: p.x, y: p.y, z: p.z }, orientation: p.o })?;
     c.send(&account_times(CacheMask::PER_CHARACTER_CACHE))?;
@@ -446,10 +553,16 @@ fn enter_world(c: &Writer, shared: &Shared, p: Pos) -> io::Result<()> {
     c.send(&SMSG_INITIALIZE_FACTIONS { factions: vec![FactionInitializer { flag: FactionFlag::empty(), standing: 0 }; 128] })?;
     c.send(&SMSG_LOGIN_SETTIMESPEED { datetime: login_time(), timescale: 1.0 / 60.0, unknown1: 0 })?;
     c.send(&SMSG_TIME_SYNC_REQ { time_sync: 0 })?;
-    c.send(&player_create(shared, p))?;
+    c.send(&player_create(me, p, true))?;
     c.send(&SMSG_INIT_WORLD_STATES { map: Map::Kalimdor, area: AREA, sub_area: AREA, states: vec![] })?;
     let objs = shared.den.lock().unwrap().everything();
     send_creates(c, &objs)?;
+    if !me.host {
+        let host = shared.cfg.hero.name.clone();
+        say(c, &format!("Welcome to {host}'s Den. Say hello: what you say here, everyone in the Den hears."))?;
+        return say(c, if shared.guests_build.load(Ordering::Relaxed) { "You can build here too: .den place chair, .den stamp inn now, .build undo." }
+            else { "Your host builds here; .den find lamp shows what there is to place." });
+    }
     say(c, &format!("Welcome to your Den: {} props.", shared.den.lock().unwrap().props.len()))?;
     for l in TUTORIAL {
         say(c, l)?;
@@ -558,11 +671,21 @@ fn send_creates(c: &Writer, objs: &[WorldObject]) -> io::Result<()> {
     Ok(())
 }
 
-fn apply(c: &Writer, ch: &Change) -> io::Result<()> {
-    for &g in &ch.destroyed {
-        c.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(g), target_died: false })?;
+/// A change to the Den: its objects to everyone in the world (the one who made it, then the others), the line to
+/// the one who made it.
+fn apply(c: &Writer, shared: &Shared, ch: &Change) -> io::Result<()> {
+    let to_all = |w: &Writer| -> io::Result<()> {
+        for &g in &ch.destroyed {
+            w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(g), target_died: false })?;
+        }
+        send_creates(w, &ch.created)
+    };
+    to_all(c)?;
+    for p in shared.players.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+        if !Arc::ptr_eq(&p.w.0, &c.0) {
+            let _ = to_all(&p.w);
+        }
     }
-    send_creates(c, &ch.created)?;
     if !ch.message.is_empty() {
         say(c, &ch.message)?;
     }
@@ -617,7 +740,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                 Err(e) => say(c, &e),
                 Ok(st) => {
                     let ch = shared.den.lock().unwrap().stamp(&st, p.x, p.y, p.z, p.o + deg.to_radians());
-                    apply(c, &ch)?;
+                    apply(c, shared, &ch)?;
                     if ch.created.is_empty() { Ok(()) } else { cheer(c, shared, "first-piece") }
                 }
             }
@@ -645,12 +768,12 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             };
             let st = den::one_piece(obj);
             let ch = shared.den.lock().unwrap().stamp(&st, p.x, p.y, p.z, p.o);
-            apply(c, &ch)?;
+            apply(c, shared, &ch)?;
             if ch.created.is_empty() { Ok(()) } else { cheer(c, shared, "first-piece") }
         }
         (".build", "undo") => {
             let ch = shared.den.lock().unwrap().undo();
-            apply(c, &ch)
+            apply(c, shared, &ch)
         }
         (".den", "save") => {
             let r = shared.den.lock().unwrap().save(&shared.cfg.den_dir, w(2), now());
@@ -688,7 +811,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             }
             let ch = d.open(&doc, replace);
             drop(d);
-            apply(c, &ch)
+            apply(c, shared, &ch)
         }
         (".den", "room") => match den::look(w(2)) {
             None => say(c, "Looks: white, stone, wood."),
@@ -698,7 +821,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                 let destroyed = d.build_room();
                 let ch = Change { created: d.room.clone(), destroyed, skipped: 0, message: format!("The room is {} now.", l.name) };
                 drop(d);
-                apply(c, &ch)
+                apply(c, shared, &ch)
             }
         },
         (".den", "grow") | (".den", "size") => {
@@ -726,10 +849,10 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             drop(d);
             match r {
                 Ok(ch) if ring > before => {
-                    apply(c, &ch)?;
+                    apply(c, shared, &ch)?;
                     cheer(c, shared, "first-grow")
                 }
-                Ok(ch) => apply(c, &ch),
+                Ok(ch) => apply(c, shared, &ch),
                 Err(e) => say(c, &e),
             }
         }
@@ -781,16 +904,10 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             }
             Ok(())
         }
-        (".den", _) | (".build", _) => say(c, "Den Lite knows: .den place, .den find, .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room, .den grow, .den size, .den companion, .den ask, .den mode, .den mods."),
+        (".den", "friends") => friends(c, shared, w(2), w(3)),
+        (".den", _) | (".build", _) => say(c, "Den Lite knows: .den place, .den find, .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room, .den grow, .den size, .den companion, .den ask, .den mode, .den mods, .den friends."),
         _ => {
-            c.send(&SMSG_MESSAGECHAT {
-                chat_type: SMSG_MESSAGECHAT_ChatType::Say { target6: Guid::new(PLAYER_GUID) },
-                language: Language::Universal,
-                sender: Guid::new(PLAYER_GUID),
-                flags: 0,
-                message: text.into(),
-                tag: PlayerChatTag::None,
-            })?;
+            say_aloud(c, shared, sess, text)?;
             // "Jaina, ..." near her: she hears it too (said aloud as usual). The short commands ("Jaina, come") are
             // hers wherever she is in the Den; the rest is an ask, heard within HEAR yards.
             if let Some(words) = companion::heard(text) {
@@ -810,6 +927,63 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             Ok(())
         }
     }
+}
+
+/// A line said aloud: everyone in the Den hears it from the speaker (their own client first).
+fn say_aloud(c: &Writer, shared: &Shared, sess: &Sess, text: &str) -> io::Result<()> {
+    let m = SMSG_MESSAGECHAT {
+        chat_type: SMSG_MESSAGECHAT_ChatType::Say { target6: Guid::new(sess.me.guid) },
+        language: Language::Universal,
+        sender: Guid::new(sess.me.guid),
+        flags: 0,
+        message: text.chars().filter(|c| !c.is_control()).take(255).collect(),
+        tag: PlayerChatTag::None,
+    };
+    c.send(&m)?;
+    for o in others(shared, sess.id) {
+        let _ = o.w.send(&m);
+    }
+    Ok(())
+}
+
+/// `.den friends` (the host): who is here, and whether friends may build (`build on|off`). The logins themselves
+/// are made and taken back by the launcher (`den-lite guest`).
+fn friends(c: &Writer, shared: &Shared, a: &str, b: &str) -> io::Result<()> {
+    if a == "build" && (b == "on" || b == "off") {
+        shared.guests_build.store(b == "on", Ordering::Relaxed);
+        let line = if b == "on" { "Your friends can build in your Den now." } else { "Only you build in your Den now." };
+        for p in shared.players.lock().unwrap().clone() {
+            let _ = say(&p.w, line);
+        }
+        return Ok(());
+    }
+    let here: Vec<String> = shared.players.lock().unwrap().iter().filter(|p| !p.me.host).map(|p| p.me.name.clone()).collect();
+    let live = crate::guests::list(&shared.cfg.den_dir).into_iter().filter(|g| g.live(now())).count();
+    say(c, &format!(
+        "Friends here: {}. Invites that still work: {live}. They {} build (.den friends build on|off). Invite friends from the launcher's Your Den page.",
+        if here.is_empty() { "none".to_string() } else { here.join(", ") },
+        if shared.guests_build.load(Ordering::Relaxed) { "can" } else { "can't" }
+    ))
+}
+
+/// What a guest types: building only when the host allows it, never the host's own tools (saves, files, the
+/// companion, the assistant); everything else is said aloud.
+fn guest_chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Result<()> {
+    let words: Vec<String> = text.split_whitespace().map(|w| w.to_lowercase()).collect();
+    let w = |i: usize| words.get(i).map(String::as_str).unwrap_or("");
+    if !text.trim_start().starts_with('.') {
+        return say_aloud(c, shared, sess, text);
+    }
+    let builds = matches!((w(0), w(1)), (".den", "place") | (".den", "stamp") | (".build", "undo"));
+    let looks = matches!((w(0), w(1)), (".den", "find") | (".den", "stamps") | (".den", "mode") | (".den", "modes") | (".den", "mods") | (".den", "addons"))
+        || (w(0) == ".den" && w(1) == "size" && w(2).is_empty());
+    if looks || (builds && shared.guests_build.load(Ordering::Relaxed)) {
+        return chat(c, shared, sess, p, text);
+    }
+    if builds {
+        return say(c, "Your host builds here. They can let friends build too: .den friends build on.");
+    }
+    say(c, "As a guest you can: .den find, .den stamps, .den size, .den mode, .den mods (and build, when your host lets you).")
 }
 
 /// An ask for the player's assistant: written down (companion-in.json `asks`), and she answers.
@@ -1069,5 +1243,5 @@ fn check_open(shared: &Shared, w: &Writer, file: &str) -> io::Result<()> {
     }
     let ch = d.open(&doc, true);
     drop(d);
-    apply(w, &ch)
+    apply(w, shared, &ch)
 }

@@ -2755,7 +2755,10 @@ $("rl-join").addEventListener("click", async () => {
   if (!link) return say("rl-status", "Paste the invite link first.", "bad");
   try {
     const j = await invoke("join_invite", { client: c.id, link });
-    say("rl-status", `${j.name || "The realm"} is open for this PC; ${c.name} now points at ${j.address}. Press PLAY.`, "ok");
+    // a friend's Den (host/litenet.rs): the game is already starting with your own login from the link
+    if (j.guest) say("rl-status", j.guest.auto ? `Joining your friend's Den: the game signs you in by itself and opens at character select.`
+      : `Joining your friend's Den. At the login screen: account ${j.guest.account}, password ${j.guest.password}.`, "ok");
+    else say("rl-status", `${j.name || "The realm"} is open for this PC; ${c.name} now points at ${j.address}. Press PLAY.`, "ok");
     $("rl-invite").value = "";
     await refresh();
   } catch (e) { sayErr("rl-status", e); }

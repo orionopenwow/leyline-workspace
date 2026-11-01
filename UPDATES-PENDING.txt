@@ -595,3 +595,6 @@
 1258c ship Launcher: Play solo (straight to character select), Jaina in your Den, Den autosave, Looks tab with one-click presets, smoke fixes; the Den Lite build workflow
 1258d den-lite Den Lite again: Jaina from login, autosave, play solo support
 1258e leyline Leyline repo: export again so Leyline.exe gets Play solo and Looks
+1259a ship Launcher: Invite friends from your Den in one click (its own relay link, one login per friend, Stop sharing), Got an invite link? in Realms
+1259b den-lite Den Lite again: friends join through the Leyline network (one-time logins, see each other, host-only building)
+1259c leyline Leyline repo: export again so Leyline.exe gets Invite friends

@@ -199,8 +199,9 @@ fn point_and_play(core: &Core, client: &str, realm: &str, start: bool) -> Result
 /// client, `session` is handed to the login screen through Leyline's patch archive; without one, a session left
 /// from an earlier start is taken out first, so a plain start never signs in by itself. Returns whether the
 /// session went in (Err text in the second value when it didn't, with the switch on). `local`: the session is the
-/// local Den's fixed test login (host/lite.rs), handed over whatever the switch says (it is no secret and never
-/// leaves this PC).
+/// local Den's fixed test login (host/lite.rs, no secret, never leaves this PC) or a friend's Den login from their
+/// invite (one friend, hours only, taken out of the game folder when the game closes), handed over whatever the
+/// switch says.
 fn point_and_play_with(
     core: &Core,
     client: &str,
@@ -394,6 +395,19 @@ fn hybrid_status(core: State<Core>, client: String) -> Result<crate::hybrid::Sta
 struct Joined {
     address: String,
     name: String,
+    /// A friend's Den invite (host/litenet.rs): the game was started with the friend's own login.
+    guest: Option<GuestJoin>,
+}
+
+#[derive(Serialize)]
+struct GuestJoin {
+    /// The game signs in by itself (the hybrid login file, one start only).
+    auto: bool,
+    account: String,
+    /// To type at the login screen when it can't sign in by itself; empty otherwise.
+    password: String,
+    why: String,
+    message: String,
 }
 
 /// A private realm's invite link: open its door for this PC (the relay's knock), then point the client at it.
@@ -411,8 +425,95 @@ async fn join_invite(core: State<'_, Core>, client: String, link: String) -> Res
             }
         }
     }
+    // a friend's Den (Den Lite through the relay): their own one-time login, straight to character select
+    if let Some((user, pass)) = crate::host::litenet::guest_in(&link) {
+        let profile = core.client(&client)?;
+        if profile.build != clients::Build::V335a {
+            return Err("Your friend's Den plays with a 3.3.5a game folder: pick that one.".into());
+        }
+        let _ = crate::herokey::set_login(&profile.path, &user, None);
+        let s = crate::hybrid::Session { user: user.clone(), pass: pass.clone(), realm: None, enter: false };
+        let (message, hybrid) = point_and_play_with(&core, &client, &address, true, Some(s), true)?;
+        let (auto, why) = match hybrid {
+            Ok(()) => (true, String::new()),
+            Err(e) => (false, e),
+        };
+        let guest = GuestJoin { auto, account: user, password: if auto { String::new() } else { pass }, why, message };
+        return Ok(Joined { address, name, guest: Some(guest) });
+    }
     point_and_play(&core, &client, &address, false)?;
-    Ok(Joined { address, name })
+    Ok(Joined { address, name, guest: None })
+}
+
+/// What Invite friends made: the link to send (one friend, 24 hours) and the tunnel as it is now.
+#[derive(Serialize)]
+struct DenInvite {
+    link: String,
+    name: String,
+    expires: u64,
+    tunnel: crate::host::litenet::TunnelState,
+}
+
+/// Invite friends, Den Lite (owner 1 Nov: "invite a friend through the Leyline network and host locally
+/// instantly"): Den Lite started if it isn't, its tunnel to the relay up (host/litenet.rs: private, the relay only
+/// passes the game's connections through), a login made for this one friend, and the link that carries it.
+#[tauri::command]
+async fn den_invite(name: Option<String>) -> Result<DenInvite, String> {
+    use crate::host::{lite::{self, DenLite}, litenet};
+    blocking(move || {
+        let app = crate::settings::app_dir();
+        let l = lite::Binary::find(&app);
+        if !l.available() {
+            return Err("Press Play solo once first: it gets your Den's server.".to_string());
+        }
+        if !l.status().running {
+            l.start()?;
+            for _ in 0..50 {
+                if litenet::remote_ports(&l.den_dir()).is_some() && l.status().running {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+        }
+        if litenet::remote_ports(&l.den_dir()).is_none() {
+            return Err("Your Den's server is from before friends could join: update Leyline, then try again.".into());
+        }
+        let root = lite::root(&app);
+        let seed = litenet::load_or_create_key(&litenet::key_path(&root))?;
+        let secret = lite::invite_secret(&root)?;
+        let tunnel = litenet::start(litenet::Setup {
+            endpoint: litenet::Endpoint::relay(realms::RELAY),
+            relay_name: realms::RELAY.into(),
+            seed,
+            name: "Den Lite".into(),
+            invite_secret: secret.clone(),
+            den_dir: l.den_dir(),
+        });
+        let g = l.guest_add(name.as_deref())?;
+        let link = litenet::invite_link(realms::RELAY, &tunnel.realm_id, &secret, Some((&g.user, &g.pass)));
+        Ok(DenInvite { link, name: g.name, expires: g.expires, tunnel })
+    })
+    .await
+}
+
+/// The tunnel now (Your Den's Friends line).
+#[tauri::command]
+fn den_net_state() -> crate::host::litenet::TunnelState {
+    crate::host::litenet::state()
+}
+
+/// Stop sharing: the tunnel down and every friend's login taken back.
+#[tauri::command]
+async fn den_net_stop() -> Result<(), String> {
+    blocking(|| {
+        crate::host::litenet::stop();
+        let l = crate::host::lite::Binary::find(&crate::settings::app_dir());
+        if l.exe.is_some() {
+            l.guest_revoke_all()?;
+        }
+        Ok(())
+    })
+    .await
 }
 
 /// What Play solo did: the line to show, and whether the game signs in by itself (`auto`) or the login screen
@@ -1267,6 +1368,9 @@ pub fn run() {
             crate::p2p::cmds::den_fetch,
             crate::p2p::cmds::den_share_move,
             den_play_lite,
+            den_invite, // Invite friends on Den Lite: the relay tunnel and a login per friend (host/litenet.rs)
+            den_net_state,
+            den_net_stop,
             den_prefill_account,
             den_join_page,
             forge_state, // Forge, the Den's terrain editor (host/forge.rs, ui/den.js "Open in Forge")

@@ -5,6 +5,11 @@
 //! password's verifier *before* the client proves anything, so a server can't learn a new password at the first
 //! login. The launcher fills it in for the player (it writes the realmlist and can pass the account), so nobody types
 //! it. Den Lite only listens on 127.0.0.1.
+//!
+//! Friends (guests.rs): a guest account logs in with its own SRP6 verifier from `<dens>/guests.json`. The remote
+//! listener (`remote`: what the relay tunnel reaches) takes guests only, and so does any peer that isn't loopback:
+//! the host's fixed local login never works from outside this PC. Its realm list names the address friends reach the
+//! world server at (`<dens>/den-lite.public`, written by the launcher's tunnel), never 127.0.0.1.
 
 use crate::Shared;
 use std::io::{self, Write};
@@ -25,13 +30,21 @@ use wow_srp::{PublicKey, GENERATOR, LARGE_SAFE_PRIME_LITTLE_ENDIAN};
 
 pub const CLIENT_BUILD: u16 = 12340;
 
-pub fn serve(listener: TcpListener, shared: Arc<Shared>) {
+/// Who logged in: the host (the fixed local login, this PC only) or a guest (its own login).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Who {
+    Host,
+    Guest(crate::guests::Guest),
+}
+
+pub fn serve(listener: TcpListener, shared: Arc<Shared>, remote: bool) {
     for stream in listener.incoming().flatten() {
         let shared = shared.clone();
         std::thread::spawn(move || {
             let _ = stream.set_nodelay(true);
             let _ = stream.set_read_timeout(Some(Duration::from_secs(120)));
-            if let Err(e) = session(stream, &shared) {
+            let remote = remote || !stream.peer_addr().map(|a| a.ip().is_loopback()).unwrap_or(false);
+            if let Err(e) = session(stream, &shared, remote) {
                 shared.log(&format!("login: {e}"));
             }
         });
@@ -44,7 +57,11 @@ fn send<M: Message>(s: &mut TcpStream, m: &M) -> io::Result<()> {
     s.write_all(&v)
 }
 
-fn session(mut s: TcpStream, shared: &Shared) -> io::Result<()> {
+fn now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+fn session(mut s: TcpStream, shared: &Shared, remote: bool) -> io::Result<()> {
     let first = read_initial_message(&mut s).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
     let challenge = match first {
         InitialMessage::Logon(c) => c,
@@ -63,8 +80,23 @@ fn session(mut s: TcpStream, shared: &Shared) -> io::Result<()> {
         send(&mut s, &CMD_AUTH_LOGON_CHALLENGE_Server::FailUnknownAccount)?;
         return Ok(());
     };
-    let pass = NormalizedString::new(&shared.cfg.password).map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "bad local password"))?;
-    let proof = SrpVerifier::from_username_and_password(user.clone(), pass).into_proof();
+    // a guest's own login, else the host's fixed local one (this PC only)
+    let guest = crate::guests::find(&shared.cfg.den_dir, &user.to_string(), now());
+    let verifier = match &guest {
+        Some(g) => crate::guests::verifier(g),
+        None if remote => None,
+        None => {
+            let pass = NormalizedString::new(&shared.cfg.password).map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "bad local password"))?;
+            Some(SrpVerifier::from_username_and_password(user.clone(), pass))
+        }
+    };
+    let Some(verifier) = verifier else {
+        shared.log(&format!("login: {user} refused (not a guest, from outside this PC)"));
+        send(&mut s, &CMD_AUTH_LOGON_CHALLENGE_Server::FailUnknownAccount)?;
+        return Ok(());
+    };
+    let who = guest.map(Who::Guest).unwrap_or(Who::Host);
+    let proof = verifier.into_proof();
     send(
         &mut s,
         &CMD_AUTH_LOGON_CHALLENGE_Server::Success {
@@ -92,7 +124,7 @@ fn session(mut s: TcpStream, shared: &Shared) -> io::Result<()> {
             return Ok(());
         }
     };
-    shared.sessions.lock().unwrap().insert(user.to_string(), *server.session_key());
+    shared.sessions.lock().unwrap().insert(user.to_string(), (*server.session_key(), who, remote));
     shared.log(&format!("login: {} signed in", user));
     send(
         &mut s,
@@ -100,21 +132,35 @@ fn session(mut s: TcpStream, shared: &Shared) -> io::Result<()> {
     )?;
     loop {
         match ClientOpcodeMessage::read(&mut s) {
-            Ok(ClientOpcodeMessage::CMD_REALM_LIST(_)) => send(&mut s, &realm_list(shared))?,
+            Ok(ClientOpcodeMessage::CMD_REALM_LIST(_)) => send(&mut s, &realm_list(shared, remote))?,
             Ok(_) => {}
             Err(_) => return Ok(()),
         }
     }
 }
 
-pub fn realm_list(shared: &Shared) -> CMD_REALM_LIST_Server {
+/// `<dens>/den-lite.public`: "host:port", where friends reach the world server (the relay's address and this
+/// Den's world port there), written by the launcher's tunnel.
+pub const PUBLIC_FILE: &str = "den-lite.public";
+
+/// The world address a friend's client is sent to: the tunnel's, when it is a plain "host:port".
+pub fn public_address(dir: &std::path::Path) -> Option<String> {
+    let t = std::fs::read_to_string(dir.join(PUBLIC_FILE)).ok()?;
+    let t = t.trim();
+    let (h, p) = t.rsplit_once(':')?;
+    let ok = !h.is_empty() && h.len() <= 253 && h.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-') && p.parse::<u16>().is_ok_and(|p| p > 0);
+    ok.then(|| t.to_string())
+}
+
+pub fn realm_list(shared: &Shared, remote: bool) -> CMD_REALM_LIST_Server {
+    let address = if remote { public_address(&shared.cfg.den_dir).unwrap_or_else(|| shared.remote_world_address()) } else { shared.world_address() };
     CMD_REALM_LIST_Server {
         realms: vec![Realm {
             realm_type: RealmType::PlayerVsEnvironment,
             locked: false,
             flag: Realm_RealmFlag::empty(),
             name: shared.cfg.realm_name.clone(),
-            address: shared.world_address(),
+            address,
             population: Population::GreenRecommended,
             number_of_characters_on_realm: 1,
             category: RealmCategory::One,

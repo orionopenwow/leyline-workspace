@@ -950,3 +950,143 @@ fn the_den_is_kept_by_itself_and_open_again_after_a_restart() {
     assert!(w.until_line().1.contains(".den save"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Into the world on a given world address with a session key; returns the client and its character's guid.
+fn enter(address: &str, account: &str, key: [u8; 40]) -> (World, u64) {
+    let mut w = World::connect(address, account, key, 0);
+    w.send(&CMSG_CHAR_ENUM {});
+    let (guid, name) = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_CHAR_ENUM(e)) => Some((e.characters[0].guid, e.characters[0].name.clone())),
+        _ => None,
+    });
+    let _ = name;
+    w.send(&CMSG_PLAYER_LOGIN { guid });
+    (w, guid.guid())
+}
+
+/// A player create for `guid` in the frames (Some(true): with the self flag).
+fn player_created(frames: &[Frame], guid: u64) -> Option<bool> {
+    frames.iter().find_map(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_UPDATE_OBJECT(u)) => u.objects.iter().find_map(|o| match o {
+            Object::CreateObject2 { guid3, movement2, object_type: ObjectType::Player, .. } if guid3.guid() == guid => {
+                Some(movement2.update_flag.get_self())
+            }
+            _ => None,
+        }),
+        _ => None,
+    })
+}
+
+/// Friends (guests.rs, the remote listeners): a one-time guest login made for an invite gets in through the friends'
+/// listener and is sent to the tunnel's address; the host's fixed login is refused there; both players see each
+/// other, their moves and what they say, and the props; only the host builds until they allow it; logging out
+/// takes the friend away for the host; a login taken back no longer works.
+#[test]
+fn a_friend_joins_through_the_friends_listener_and_both_see_each_other() {
+    let (srv, dir) = server("friends", HeroGender::Female);
+    let (rl, rw) = srv.remote.expect("the friends' listeners");
+    assert_eq!(std::fs::read_to_string(dir.join(den_lite::REMOTE_FILE)).unwrap().trim(), format!("{} {}", rl.port(), rw.port()));
+    let g = den_lite::guests::add(&dir, Some("rowan"), "Wren", 24, now()).unwrap();
+    // the host's own login: fine here, never through the friends' listener
+    assert!(login(rl, "DEN", "den").is_err(), "the fixed local login is refused from outside");
+    assert!(login(rl, &g.user, "WRONGPASSWORD123").is_err());
+    // the tunnel's address goes in the friend's realm list
+    std::fs::write(dir.join("den-lite.public"), "relay.example.net:40001\n").unwrap();
+    let (gkey, _, gaddr) = login(rl, &g.user, &g.pass).expect("the guest's own login");
+    assert_eq!(gaddr, "relay.example.net:40001", "friends go back through the relay");
+    let (_, _, haddr) = login(srv.login, "DEN", "den").unwrap();
+    assert_eq!(haddr, srv.world.to_string(), "the host plays on this PC");
+    // the host in the world, with a chair down
+    let mut host = into_world(&srv, 0);
+    host.say(".den place wooden chair");
+    assert!(host.until_line().1.starts_with("Wooden Chair is down"));
+    // the guest's login can't use the host's world listener as the host (and the host's key isn't valid remotely)
+    let (hkey, _, _) = login(srv.login, "DEN", "den").unwrap();
+    let mut bad = World::connect(&rw.to_string(), "DEN", hkey, 0);
+    // refused: one short unencrypted answer (AUTH_UNKNOWN_ACCOUNT, 0x15), then the server hangs up
+    let mut rest = Vec::new();
+    let _ = bad.s.read_to_end(&mut rest);
+    assert!(rest.len() <= 8 && rest.last() == Some(&0x15), "the host's session can't come in on the friends' world listener: {rest:?}");
+    // the guest comes in through the friends' world listener (the tunnel connects there)
+    let (mut friend, fguid) = enter(&rw.to_string(), &g.user, gkey);
+    assert_eq!(fguid, den_lite::guests::GUID_BASE);
+    let (frames, line) = friend.until_line();
+    assert!(line.starts_with("Welcome to Wren's Den"), "{line}");
+    let (props, _) = objects(&frames);
+    assert!(props.len() > 48, "the room and the host's chair");
+    let (frames, _) = friend.until_line();
+    let _ = frames;
+    // the host sees the friend arrive (no self flag), and the friend sees the host
+    let (frames, line) = host.until_line();
+    assert_eq!(line, "Rowan is in your Den.");
+    assert_eq!(player_created(&frames, fguid), Some(false));
+    friend.send(&CMSG_NAME_QUERY { guid: Guid::new(den_lite::world::PLAYER_GUID) });
+    let n = friend.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_NAME_QUERY_RESPONSE(r)) => Some(r.character_name.clone()),
+        _ => None,
+    });
+    assert_eq!(n, "Wren");
+    // the host moves: the friend gets the move with the host's guid
+    host.send(&heartbeat(16226.2 + 3.0, 16257.0, 14.2, 0.0));
+    let mv = friend.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::MSG_MOVE_HEARTBEAT(m)) => Some(m.clone()),
+        _ => None,
+    });
+    assert_eq!((mv.guid.guid(), mv.info.position.x), (den_lite::world::PLAYER_GUID, 16226.2 + 3.0));
+    // what the friend says, the host hears from the friend
+    friend.say("hello there");
+    let heard = host.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_MESSAGECHAT(m)) if matches!(m.chat_type, SMSG_MESSAGECHAT_ChatType::Say { .. }) => Some((m.sender.guid(), m.message.clone())),
+        _ => None,
+    });
+    assert_eq!(heard, (fguid, "hello there".to_string()));
+    // only the host builds; the host's own tools are theirs
+    friend.say(".den place lantern");
+    assert!(friend.until_line().1.starts_with("Your host builds here"));
+    friend.say(".den save mine");
+    assert!(friend.until_line().1.starts_with("As a guest you can"));
+    host.say(".den friends build on");
+    assert_eq!(host.until_line().1, "Your friends can build in your Den now.");
+    assert_eq!(friend.until_line().1, "Your friends can build in your Den now.");
+    friend.say(".den place lantern");
+    assert!(friend.until_line().1.contains("is down"));
+    // the host sees the friend's lantern
+    host.until(|f| (f.opcode == 0x00A9).then_some(()));
+    host.say(".den friends");
+    assert!(host.until_line().1.starts_with("Friends here: Rowan. Invites that still work: 1."));
+    // the friend logs out: gone for the host
+    friend.send(&CMSG_LOGOUT_REQUEST {});
+    let gone = host.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_DESTROY_OBJECT(d)) if d.guid.guid() == fguid => Some(()),
+        _ => None,
+    });
+    let _ = gone;
+    assert_eq!(srv.shared.players.lock().unwrap().len(), 1);
+    // taken back: the login no longer works
+    den_lite::guests::revoke(&dir, &g.user, now()).unwrap();
+    assert!(login(rl, &g.user, &g.pass).is_err());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `den-lite guest add` (what the launcher runs): one line of JSON with the login, once; nothing secret on disk.
+#[test]
+fn the_guest_command_prints_a_login_once() {
+    let dir = std::env::temp_dir().join(format!("den-lite-test-guestcmd-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_den-lite"))
+        .args(["guest", "add", "--dens", &dir.display().to_string(), "--name", "Fen", "--hours", "2"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let pass = v["pass"].as_str().unwrap();
+    assert_eq!((v["name"].as_str(), pass.len()), (Some("Fen"), 16));
+    assert!(!std::fs::read_to_string(dir.join("guests.json")).unwrap().contains(pass));
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_den-lite")).args(["guest", "list", "--dens", &dir.display().to_string()]).output().unwrap();
+    let l: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(l[0]["name"], "Fen");
+    assert!(l[0].get("pass").is_none() && l[0].get("verifier").is_none());
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_den-lite")).args(["guest", "revoke", "--dens", &dir.display().to_string(), "all"]).output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "{\"revoked\":1}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

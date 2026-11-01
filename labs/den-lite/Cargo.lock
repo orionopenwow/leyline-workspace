@@ -66,6 +66,7 @@ name = "den-lite"
 version = "0.1.0"
 dependencies = [
  "flate2",
+ "getrandom",
  "leyline-terrain",
  "serde",
  "serde_json",

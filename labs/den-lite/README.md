@@ -199,24 +199,42 @@ forwarding every `MSG_MOVE_*` to the others with the mover's guid; chat to every
 session (the per-session writer in `world.rs` is already shareable for that); several characters per account and a
 character store; and visibility (who is near whom). For friends, the full Docker Den is the way ("share with friends").
 
-### Inviting a friend from Play solo (owner 1 Nov 14:37): what is missing, and the safe way today
+### Friends in your Den (owner 1 Nov 14:37: "invite a friend through the Leyline network ... no hassle")
 
-Today "Invite friends" on the launcher's Your Den page moves this Den to the full Docker Den (Share with friends),
-which already has the Leyline network's invite link, private by default, and a per-friend account. Den Lite itself
-can't take a friend yet, and must not be put on the relay as it is:
+The launcher's Your Den › **Invite friends** (app.rs `den_invite`):
 
-1. **No shared password on the network.** Den Lite logs in any account name with one fixed local password. Through a
-   relay tunnel every connection arrives from 127.0.0.1, so "local only" can't be told from a friend. Needed: the
-   host's own account gets a secret of its own (made by the launcher, handed to the game by the hybrid glue as now),
-   and each friend a guest account the host's Den Lite makes (SRP verifier and salt in `<dens>/guests.json`, the
-   password made from the OS's random source and given once through the invite), with the fixed local login turned
-   off while the Den is on the network.
-2. **A tunnel without Docker.** The relay's link agent (`wu-link-agent`) runs in the Host kit's Docker; Den Lite needs
-   the same outbound connection from the launcher itself (or Den Lite), and its realm list must then name the relay's
-   address and port for the friend instead of 127.0.0.1:8085.
-3. **More than one player in the world** (the list below).
+1. starts Den Lite if it isn't running, and its **tunnel** (launcher `host/litenet.rs`): the same outbound wss to the
+   relay the Host kit's agent keeps, signed with this Den's own key, **private** (only people who opened a link get
+   in; the relay keeps sha256 of the invite secret) and **signup off**. Each connection the relay opens goes to Den
+   Lite's **friends' listeners** (`Config::remote_ports`, `<dens>/den-lite.remote`), bytes untouched; the relay's
+   welcome becomes `<dens>/den-lite.public`, the address in friends' realm list;
+2. runs `den-lite guest add`: one **guest login per invite** (`src/guests.rs`: random account and password, printed
+   once; `guests.json` keeps only the SRP6 salt and verifier, the character's name and guid, the expiry, 24 hours,
+   and whether it was taken back);
+3. copies the link `https://<relay>/join/<realm id>#<invite secret>~~<account>.<password>`. The friend pastes it
+   in their launcher (Realms › Got an invite link?): `join_invite` knocks at the relay, points their game at it,
+   fills in the account and hands the login to the hybrid login file for one start, so the game opens at
+   character select on the friend's own ready-made character.
 
-Two real PCs on different networks are needed to prove any of it.
+**Stop sharing** takes the tunnel down and every friend's login back; stopping Den Lite takes the tunnel down too.
+
+The rules: the host's fixed local login is refused on the friends' listeners, from any non-loopback peer, and a
+host session can't enter the friends' world listener. Friends see the host, the props and each other, their moves
+and what they say; they build only after the host says `.den friends build on` (`.den friends`: who's here), and
+never use the host's saves, files, companion or assistant.
+
+Proved here: two headless clients in one Den (tests/client.rs), the guest command, and end to end on one PC
+(hosting/tests/test_den_lite_tunnel.py): the real relay, the launcher's tunnel, the real Den Lite and the Host kit's
+3.3.5a test client, which is cut off without the knock, refused as DEN through the relay, and enters the world with
+its own login. **Two real PCs are needed** for: a real friend's game drawing the host and its moves, both behind
+their own routers, the relay's own TLS name, the hybrid login on the friend's side, and the speed.
+
+### More players: what is still simple
+
+Everyone in the Den sees everyone (no visibility ranges: the Den is small), one character per login, no character
+store (a guest's character is made fresh at each login, in its spot by the host's), no emotes or animations passed
+on beyond movement and say, and the companion is the host's alone (friends don't see her). For a realm with more
+than that, the full Docker Den is the way.
 
 ## Crates and licences
 

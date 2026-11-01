@@ -71,7 +71,13 @@ const FAKE = (o) => {
       case 'host_progress': return S.progressDone ? { idle: false, kind: 'host', running: false, code: 0, step: 'Done', n: 8, of: 8, secs: 300, problem: null }
         : { idle: false, kind: 'host', running: true, code: null, step: 'Starting the servers', n: 5, of: 8, secs: 60, problem: null };
       case 'host_invite': return 'https://relay.openvanilla.app/join/abcdefghijk2345a#INVITECODE1234567890';
-      case 'join_invite': return { address: 'relay.openvanilla.app:40001', name: 'My Den' };
+      case 'join_invite': return /~~/.test(args.link)
+        ? { address: 'relay.openvanilla.app:40007', name: 'Den Lite', guest: { auto: true, account: 'GABCDE2345', password: '', why: '', message: 'Started.' } }
+        : { address: 'relay.openvanilla.app:40001', name: 'My Den' };
+      case 'den_invite': S.net = { running: true, connected: true, relay: 'relay.openvanilla.app', realm_id: 'kzdvvj2umnduyauf', address: 'relay.openvanilla.app', auth_port: 40006, world_port: 40007, streams: 0, last_error: '' };
+        return { link: 'https://relay.openvanilla.app/join/kzdvvj2umnduyauf#INVITESECRETINVITESECRET~~GABCDE2345.ABCDEFGH23456789', name: 'Rowan', expires: 1, tunnel: S.net };
+      case 'den_net_state': return S.net || { running: false, connected: false, relay: '', realm_id: '', address: '', auth_port: 0, world_port: 0, streams: 0, last_error: '' };
+      case 'den_net_stop': S.net = null; return null;
       case 'play': return 'Started My Game on relay.openvanilla.app:40001.';
       // Forge (host/forge.rs): o.forge = 'missing' | 'installed'; an open Forge closes after two looks
       case 'forge_state': {
@@ -230,10 +236,10 @@ test('one click from Your Den: Invite friends and Ask Claude to edit it, beside 
   const { page, ctx, errors } = await open({ lite: 'stopped', page: 'den' });
   await page.waitForSelector('#yd-play');
   assert.deepEqual(await page.$$eval('#yd .yd-acts button', (b) => b.map((x) => x.textContent)), ['Play solo', 'Invite friends', 'Ask Claude to edit it']);
-  // Den Lite: friends join a Den on Docker, so Invite friends opens those steps here
+  // Den Lite: Invite friends puts it on the network from this PC (no Docker steps; the full test is below)
   await page.click('#yd-friends');
-  await page.waitForSelector('#yd .yd-steps');
-  assert.match(await statusText(page), /three steps below/);
+  await page.waitForFunction(() => window.__calls.some((c) => c[0] === 'den_invite'));
+  assert.equal(await page.$('#yd .yd-steps'), null);
   // Ask Claude to edit it: the Agents page, where Claude is connected once
   await page.click('#yd-claude');
   assert.equal(await page.evaluate(() => document.querySelector('.page.on').id), 'page-agents');
@@ -420,6 +426,35 @@ test('Play solo on a new PC: Den Lite comes with the first click (a one-time dow
   await page.waitForFunction(() => /Your Den is open/.test(document.querySelector('#yd .yd-status').textContent));
   assert.equal(await page.$('.yd-steps'), null, 'no Host pack or Docker steps');
   assert.equal((await calls(page, 'hostpack_info')).length, 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Invite friends on Den Lite: on the network from this PC at once, a link for one friend copied, Stop sharing; the friend joins with the link', async () => {
+  const { page, ctx, errors } = await open({ lite: 'running', page: 'den' });
+  await page.waitForSelector('#yd-friends');
+  await page.click('#yd-friends');
+  await page.waitForFunction(() => /Invite link copied/.test(document.querySelector('#yd .yd-status').textContent));
+  assert.equal((await calls(page, 'den_invite')).length, 1);
+  assert.equal(await page.$('.yd-steps'), null, 'no Docker steps');
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  assert.match(clip, /^https:\/\/relay\.openvanilla\.app\/join\/kzdvvj2umnduyauf#INVITESECRETINVITESECRET~~GABCDE2345\./);
+  assert.match(await statusText(page), /play as Rowan.*24 hours/);
+  await page.waitForSelector('#yd-net');
+  assert.match(await page.textContent('#yd-net'), /On the Leyline network, private/);
+  await page.click('#yd-net-stop');
+  await page.waitForFunction(() => !document.querySelector('#yd-net'));
+  assert.equal((await calls(page, 'den_net_stop')).length, 1);
+  assert.match(await statusText(page), /off the network/);
+  // the friend: the link on the Realms page starts the game with their own login
+  await page.evaluate(() => window.LeylineNav.show('realms'));
+  await page.evaluate(() => { const d = document.getElementById('rl-other'); if (d) d.open = true; });
+  await page.fill('#rl-invite', clip);
+  await page.click('#rl-join');
+  await page.waitForFunction(() => /friend's Den/.test(document.getElementById('rl-status').textContent));
+  assert.match(await page.textContent('#rl-status'), /signs you in by itself and opens at character select/);
+  assert.equal((await calls(page, 'join_invite'))[0].link, clip);
+  await noBrands(page);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

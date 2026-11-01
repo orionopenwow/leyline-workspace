@@ -38,8 +38,8 @@ heartbeat carries the claim token.
 Settings (environment):
   WU_HOST_DIR             where pending realms are kept, one 0600 JSON file each (default /hosted, a
                           writable volume; the portal's /app is read-only)
-  WU_HOST_KIT_URL         the host kit download (shown on the start page; unset: the zip on the public
-                          Leyline repo's "host-kit" release, published by the "hostkit" step)
+  WU_HOST_KIT_URL         the Host pack download, only when there is no Host pack descriptor (kit_url(): the
+                          launcher's own source comes first, so the two can't drift)
   WU_LISTING_SITE_SECRET  the relay's RELAY_LISTING_SITE_SECRET, for claims (unset: no claims)
   WU_HOST_PER_ACCOUNT     realms one account may make (default 3)
 
@@ -65,8 +65,7 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOST_DIR = os.environ.get("WU_HOST_DIR", "/hosted")
-KIT_URL_DEFAULT = "https://github.com/orionopenwow/Leyline/releases/download/host-kit/WrathUnleashed-host-kit.zip"
-KIT_URL = os.environ.get("WU_HOST_KIT_URL") or KIT_URL_DEFAULT
+KIT_URL_FALLBACK = "https://github.com/orionopenwow/Leyline/releases/tag/host-pack"   # the release page: every pack
 SITE_SECRET = os.environ.get("WU_LISTING_SITE_SECRET", "")
 PER_ACCOUNT = int(os.environ.get("WU_HOST_PER_ACCOUNT", "3") or 3)
 MAX_TOTAL = 5000
@@ -97,6 +96,33 @@ def has_slur(text) -> bool:
         return True
     squashed = re.sub(r"[^a-z]", "", low)
     return any(len(w) >= 6 and w in squashed for w in SLURS)
+
+
+def _leyline_net():
+    """stream/leyline_net.py, for the Host pack descriptor; None without it."""
+    import sys
+    m = sys.modules.get("wu_leyline_net")
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "leyline_net.py")
+    if m is None and os.path.isfile(p):
+        try:
+            spec = importlib.util.spec_from_file_location("wu_leyline_net", p)
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            sys.modules["wu_leyline_net"] = m
+        except Exception:   # noqa: BLE001: the fallback below
+            return None
+    return m
+
+
+def kit_url() -> str:
+    """The Host pack download: the same descriptor the launcher installs from (leyline_net.hostpack(), which feeds
+    /wrath/mods/all.json and /wrath/leyline/hostpack.json), so the website and the launcher hand out one pack.
+    No descriptor: WU_HOST_KIT_URL, else the release page with every pack."""
+    ln = _leyline_net()
+    d = ln.hostpack() if ln is not None else None
+    if d and d.get("download"):
+        return d["download"]
+    return os.environ.get("WU_HOST_KIT_URL") or KIT_URL_FALLBACK
 
 
 def _namecheck():
@@ -1049,7 +1075,7 @@ def before_steps() -> str:
     return ('<ol class="hf-steps">'
             '<li><b>Get the Host pack</b><span>The Leyline launcher has it built in, or download the pack on its own.</span>'
             f'<div class="row"><a class="dl primary" href="{e(_launcher_url())}" rel="noopener noreferrer">Get the launcher</a>'
-            f'<a class="dl" href="{e(KIT_URL or GUIDE_URL)}" rel="noopener noreferrer">Host pack</a></div></li>'
+            f'<a class="dl" href="{e(kit_url())}" rel="noopener noreferrer">Host pack</a></div></li>'
             '<li><b>Get Docker</b><span>Docker Desktop runs the realm\'s servers on your PC. It is free for personal use.</span>'
             f'<div class="row"><a class="dl" href="{DOCKER_URL}" rel="noopener noreferrer">Get Docker</a></div></li>'
             '<li><b>Pick a ruleset and start</b><span>Name your realm below and press Start server. Then run the file it gives '
@@ -1087,7 +1113,7 @@ def pack_pane() -> str:
             '<section><h2>The Host pack</h2><p>Everything your PC needs to run a realm, in one folder. The launcher\'s Host '
             'page sets it up and starts it for you.</p>'
             f'<div class="row"><a class="dl primary" href="{e(_launcher_url())}" rel="noopener noreferrer">Get the launcher</a>'
-            f'<a class="dl" href="{e(KIT_URL or GUIDE_URL)}" rel="noopener noreferrer">Download the Host pack</a></div></section>'
+            f'<a class="dl" href="{e(kit_url())}" rel="noopener noreferrer">Download the Host pack</a></div></section>'
             '<section><h2>Settings</h2><p>Rates, bots, who can make accounts, region, language, tags and the player limit are '
             'under More settings on Start. The launcher\'s Host page has the same settings.</p>'
             '<div class="row"><a class="dl" href="/wrath/host#new-realm">Open the form</a></div></section>'
@@ -1137,7 +1163,7 @@ def start_page(rec: dict) -> bytes:
     rid = rec.get("realm_id")
     host = P("PUBLIC_HOST")
     join = P("JOIN_BASE")
-    kit = KIT_URL or GUIDE_URL
+    kit = kit_url()
     if downloadable(rec):
         dl = ('<div class="row">'
               f'<a class="dl" href="/wrath/host/{pid}/leyline-{pid}.bat" download>Windows (.bat)</a>'

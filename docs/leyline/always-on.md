@@ -173,8 +173,8 @@ You still need your own game files. Copy your own game folder to the server firs
 
 ```
 curl -fsSL https://get.docker.com | sh
-curl -fsSLO https://github.com/orionopenwow/Leyline/releases/download/host-kit/WrathUnleashed-host-kit.zip
-unzip WrathUnleashed-host-kit.zip && cd "Leyline host"
+curl -fsSL -o host-pack.zip https://github.com/orionopenwow/Leyline/releases/download/host-kit/WrathUnleashed-host-kit.zip
+unzip host-pack.zip && cd "Leyline host"
 export WU_GAME_DIR=/path/to/your/game
 bash leyline host --ruleset vanillaplus --public --always-on
 ```

@@ -1,10 +1,10 @@
 {
  "format": 1,
  "name": "Host pack",
- "version": "2026.1031.622",
- "download": "https://github.com/orionopenwow/Leyline/releases/download/host-pack/leyline-host-pack-2026.1031.622.zip",
- "sha256": "b867041aef4b168296086df9f77ed81efc81b888b4a3a459721322124f4bfaca",
- "size": 491181,
- "torrent": "https://github.com/orionopenwow/Leyline/releases/download/host-pack/leyline-host-pack-2026.1031.622.torrent",
- "info_hash": "2222233771155268638863f41a8f1ebdea8e0054"
+ "version": "2026.1101.549",
+ "download": "https://github.com/orionopenwow/Leyline/releases/download/host-pack/leyline-host-pack-2026.1101.549.zip",
+ "sha256": "9b613a9dfba0bea2bba5da0a3b5a14c06b18cc7b2a20bd9398abed7d2f7e8844",
+ "size": 633402,
+ "torrent": "https://github.com/orionopenwow/Leyline/releases/download/host-pack/leyline-host-pack-2026.1101.549.torrent",
+ "info_hash": "001de1a710d1f52326ec9d682c6b86ee31584fac"
 }

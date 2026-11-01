@@ -117,7 +117,9 @@ over). Records made before this change (seed v1, a website-made key) keep workin
 their key once they connect. No accounts, no passwords: the host makes the GM account on their own join
 link. With `WU_LISTING_SITE_SECRET` (= the relay's `RELAY_LISTING_SITE_SECRET`) in `portal.env`, a listed
 public realm is claimed for its account. Pending realms live in `/srv/wrath/hosted` (mounted at `/hosted`).
-`WU_HOST_KIT_URL` points the page at another host kit zip; unset, it is the published one (9.5). The
+The page's Host pack link is the pack the launcher installs (`leyline_net.hostpack()`: `$WU_LEYLINE_DIR/hostpack.json`,
+else `stream/hostpack.json`; the same descriptor as `/wrath/mods/all.json`), so the two can't drift; `WU_HOST_KIT_URL`
+is used only when there is no descriptor. The docs pages' host-kit links become the same pack. The
 "Hosting guide" link is the public `/wrath/docs/hosting`. Tests: `stream/tests/test_hostflow.py`, and the whole Windows path against the real
 relay: `hosting/tests/test_host_windows_e2e.py`.
 

@@ -245,9 +245,14 @@ check("asked the relay by the token's hash, never the token", fake_relay["pair_a
       and fake_relay["pair_asks"][-1] == hf.pair_hash(rec["claim"]) and rec["claim"] not in "".join(fake_relay["pair_asks"]))
 check("polls with a meta refresh", '<meta http-equiv="refresh" content="15">' in page)
 check("download links", f'/wrath/host/{pid}/leyline-{pid}.bat' in page and f'/wrath/host/{pid}/leyline-{pid}.sh' in page)
-KIT_ZIP = "https://github.com/orionopenwow/Leyline/releases/download/host-kit/WrathUnleashed-host-kit.zip"
-check("host kit: the published zip by default (WU_HOST_KIT_URL unset)", "WU_HOST_KIT_URL" not in os.environ
-      and hf.KIT_URL == KIT_ZIP and f'href="{KIT_ZIP}"' in page, hf.KIT_URL)
+HP = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hostpack.json")))
+KIT_ZIP = HP["download"]
+check("Host pack: the launcher's own descriptor (stream/hostpack.json, all.json), not a separate kit zip",
+      hf.kit_url() == KIT_ZIP and f'href="{KIT_ZIP}"' in page and "host-kit/" not in page
+      and KIT_ZIP.startswith("https://github.com/orionopenwow/Leyline/releases/download/host-pack/leyline-host-pack-"), hf.kit_url())
+_ln = hf._leyline_net()
+check("Host pack: the site's download is the all.json project's (what the launcher installs)",
+      json.loads(_ln.add_hostpack(b'{"projects":[]}'))["projects"][-1]["download"] == hf.kit_url())
 check("hosting guide: the public docs page, not the private repo", 'href="/wrath/docs/hosting"' in page
       and "github.com/orionopenwow/WrathUnleashed" not in page)
 check("start page: no instant-slot option", not re.search(r"(?i)instant|slot|coming soon", page))

@@ -445,7 +445,7 @@ SESSION_TTL = 12 * 3600
 CODE_TTL = 60
 DISCORD_URL = "https://discord.gg/hVeUxYwbkr"
 GAME_FOLDER_HELP = "/wrath/docs/play#use-your-own-game-folder-to-go-anywhere"
-DISCORD_HELP = ("Need help finding or setting up your own 3.3.5a game folder? Join our Discord and "
+DISCORD_HELP = ("Need help finding or setting up your own game folder? Join our Discord and "
                 "people will help: " + DISCORD_URL)
 
 ACCOUNT_RE = re.compile(r"^[A-Za-z0-9]{1,16}$")
@@ -1480,13 +1480,13 @@ def account_page(display: str, user: str, password: str, nonce: str) -> bytes:
         + '</div>'
         # 2. The whole world: own game files
         f'<div class="realm"><h2>{html.escape(REALM_NAME)}</h2>'
-        f'<div class="tags"><span class="tag">The whole world</span><span class="tag">Your own 3.3.5a files</span>{live}</div>'
-        '<p>The full game, on the same realm and with the same characters. Uses your own 3.3.5a '
+        f'<div class="tags"><span class="tag">The whole world</span><span class="tag">Your own game files</span><span class="tag">3.3.5a</span>{live}</div>'
+        '<p>The full game, on the same realm and with the same characters. Uses your own '
         'game files, read on your computer and never uploaded.</p>'
         + ('<p><a class="btn" href="/wrath/play?mode=own">Play in the browser with my game folder</a> '
            f'<a class="fine" href="{GAME_FOLDER_HELP}">Where is my game folder?</a></p>'
            if ownfiles_on() else '')
-        + '<details id="desktop"><summary>Play with your own 3.3.5a client: your game account name and password</summary>'
+        + '<details id="desktop"><summary>Play with your own game client: your game account name and password</summary>'
         '<label>Account</label><div class="row">'
         f'<div class="field" id="acct">{html.escape(user)}</div>'
         '<button class="ghost" data-copy="acct" type="button">Copy</button></div>'
@@ -1494,7 +1494,7 @@ def account_page(display: str, user: str, password: str, nonce: str) -> bytes:
         f'<div class="field" id="pw" data-v="{html.escape(password)}">{dots}</div>'
         '<button class="ghost" id="show" type="button">Show</button>'
         '<button class="ghost" data-copy="pw" type="button">Copy</button></div>'
-        f'<ol>{pkg}<li>{PLAY_STEP} and pick your own 3.3.5a game folder. '
+        f'<ol>{pkg}<li>{PLAY_STEP} and pick your own game folder. '
         'Or, in your own client: open <code>Data\\enUS\\realmlist.wtf</code> in your game folder '
         '(<code>enGB</code>, <code>deDE</code>… for other languages) and make its only line '
         f'<code>set realmlist {html.escape(PUBLIC_HOST)}</code></li>'
@@ -1721,6 +1721,14 @@ def community_realms() -> tuple[list[dict], bool]:
     return (admin.apply_realm_overrides(realms) if admin is not None else realms), ok   # staff: hidden, official
 
 
+def listed_realms() -> tuple[list[dict], bool]:
+    """community_realms() for the lists people read: the retired realms left out (the Builders' Realm, owner 1 Nov)."""
+    realms, ok = community_realms()
+    if network is not None and hasattr(network, "listed"):
+        realms = network.listed(realms)
+    return realms, ok
+
+
 def _players_text(players, bots, live) -> str:
     if not live:
         return "offline"
@@ -1752,7 +1760,7 @@ def _sample_info() -> dict:
 def realms_page(query: dict | None = None) -> bytes:
     st = realm_status()
     if network is not None:
-        realms, ok = community_realms()
+        realms, ok = listed_realms()
         pack = leyline_net.hostpack() if leyline_net is not None else None
         with _listing_lock:
             when = _listing["when"]
@@ -1782,7 +1790,7 @@ def realms_page(query: dict | None = None) -> bytes:
            f'(drop your 3.3.5a game folder on the game page: <a href="{GAME_FOLDER_HELP}">how</a>).</p>') +
         '<p><a class="btn primary" href="/wrath">Play</a></p>'
         + share_box("/wrath/r/wrath") + '</div>')
-    realms, ok = community_realms()
+    realms, ok = listed_realms()
     rows = []
     for r in realms:
         name = html.escape(r["name"])
@@ -2416,7 +2424,7 @@ def leyline_page() -> bytes:
     rows = [(SAMPLER_NAME if SAMPLER else REALM_NAME,
              "Official · temporary · level 1 or boost to 80" if SAMPLER else "Official · level 1 or boost to 80", "PvE", _nonneg(st.get("players")), _nonneg(st.get("bots")),
              bool(st.get("online")), "/wrath")]
-    realms, ok = community_realms()
+    realms, ok = listed_realms()
     with _listing_lock:
         when = _listing["when"]
     stamps = [x for x in (updated_text(st.get("updated_at"), "Realm status"),

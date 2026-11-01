@@ -39,16 +39,19 @@ sv-play (hosting/survivors/docker-compose.yml)   our wenilla-host --www <build> 
 
 ## Your steps
 
-1. **Pick the address.** A subdomain of ours, without "wow" in it. The placeholder is `survivors.openvanilla.app`
+1. **Pick the address.** A subdomain of ours, without "wow" in it. The placeholder is `survivors.leylinelauncher.com`
    (`hosting/survivors/address.txt`, the first line that is not a comment). TODO(owner): confirm or change it.
-2. **DNS.** An A record for that name pointing at the server (the same address play.openvanilla.app has). The server
+2. **DNS.** An A record for that name pointing at the server (the same address as the website, play.leylinelauncher.com after the domain move). The server
    step checks it and stops before touching Caddy when it isn't there yet.
 3. **Ship the website part.** The "signin" step (it now carries `stream/survivors.py`). `/wrath/survivors` then shows
    the page with "Coming soon".
-4. **Put the browser build on your PC.** Copy the build into `tools\survivors\dist\` (the lead hands it over; it is
-   not in git). The recorder checks it against the lock and refuses anything else.
-   Also needed there: `tools\survivors\bin\wenilla-host.exe`, the upstream host at the locked commit. If it is
-   missing, the recorder builds it (needs git and Rust; a few minutes, once).
+4. **Turn on the survivors build** ("setup\Turn on GitHub builds.bat" puts `survivors.yml` in the workspace repo;
+   it runs once by itself, or Actions > survivors > Run workflow). It makes the release `survivors-latest`: the
+   browser build, the lock with every file's SHA-256, and the upstream host for Windows, each with a `.sha256`.
+   Nothing to build or copy by hand: the recorder (step 5) downloads them into `tools\survivors\dist\` and
+   `tools\survivors\bin\` (`survivors_fetch.py`), checks every hash, and refuses a build that is not the locked one.
+   The first download also writes the build's file list into `stream/survivors/upstream.lock.json`: ship that (the
+   server checks the upload against it).
 5. **Record the game's files, on your PC, from your own client.** Run `tools\survivors\Record Survivors files.bat` and
    drag your 1.12 client's `Data` folder in when it asks (remembered after). It starts the upstream host on
    127.0.0.1 only, opens a fresh Edge window and plays the game's own autopilot: every zone once with a full crowd,
@@ -77,16 +80,26 @@ commands). It never runs `make build`, `make native`, `make fetch-data`, `script
 (those download the game client). It adds `licenses/` (upstream's licence files, its vendored kira and Lua licences,
 and `tools/survivors/licenses-index.html`) and writes every file's SHA-256 into the lock.
 
-**Status (1 Nov):** the cargo step is done (the wasm before wasm-bindgen: `cargo_wasm` in the lock, 165 MB). The
-packing is not: wasm-bindgen needs more than 6 GB of memory on this module and the build box gives a session 6.27 GB,
-so it was killed every time, even with nothing else running. The lock's `dist` is empty until a machine with about
-8 GB free runs `SV_CARGO_WASM=<that wenilla.wasm> bash tools/survivors/build-dist.sh <work dir> --write-lock` (it checks
-the file against `cargo_wasm`, then packs) or the whole script. Until then survivors-check refuses every dist ("the
-lock lists no dist files yet"), so nothing unlocked can be recorded with or uploaded.
+**Where it is built: GitHub Actions** (`tools/github-workflows/survivors.yml`, in the workspace repo
+orionopenwow/leyline-workspace). wasm-bindgen needs more than 6 GB of memory on this module, more than our build box
+gives (it was killed every time there, 1 Nov). The workspace repo is public, so its `ubuntu-24.04` runners have
+16 GB; if the repo goes private again its standard runners have 7 GB, which is too tight: then use a larger runner
+(`ubuntu-24.04-16core`-style labels on a paid plan) or a self-hosted one for the `dist` job.
+The workflow runs on a change to the lock, `build-dist.sh` or `licenses-index.html`, or by hand:
+- `dist` (ubuntu-24.04): `build-dist.sh` with the pinned toolchain (`SV_TOOLCHAIN=pinned`: Rust 1.98.1, prebuilt
+  wasm32 std) and brotli, `--write-lock`; refuses to publish if the committed lock already lists the build and this one
+  differs; survivors-check; then `survivors-dist.tgz` (sorted, time 0, gzip -n) and `upstream.lock.json`, each with a
+  `.sha256`, on `survivors-latest`, and the lock as the build artifact `survivors-lock`.
+- `windows-host` (windows-2022): the upstream `wenilla-host.exe` and `mpqx.exe` at the same commit
+  (`cargo build --release --locked`), as `wenilla-host-windows-x64.exe` / `mpqx-windows-x64.exe` + `.sha256`.
 
-Deviations from upstream's own build are listed in the lock (`deviations`): the build box could not download Rust's
-pinned toolchain, so it used the installed stable Rust with the standard library built from source; and gzip
-without a name and time (`-n`) so the hashes don't change from one build to the next. The source is unmodified.
+Before the move to CI, the build box compiled the wasm (its hash is the lock's `cargo_wasm` until the first CI run
+writes its own); `SV_CARGO_WASM=<wenilla.wasm> build-dist.sh ...` can still pack such a cargo build on a big machine.
+
+Deviations from upstream's own build are written into the lock (`deviations`) by the run that made it: gzip without a
+name and time (`-n`) so the hashes don't change from one build to the next, `licenses/` added next to the build, and,
+only on a machine that can't download Rust's pinned toolchain, stable Rust with the standard library built from
+source. The source is unmodified.
 
 ## Files
 
@@ -101,6 +114,8 @@ without a name and time (`-n`) so the hashes don't change from one build to the 
 | `tools/survivors/survivors_check.py` | survivors-check: slice vs `names.sha256`, dist vs the lock |
 | `tools/survivors/Record Survivors files.bat` | record, export, check; `quick`; `verify` |
 | `tools/survivors/build-dist.sh`, `licenses-index.html` | the browser build and its licence page |
+| `tools/survivors/survivors_fetch.py` | the owner's PC: the CI release into `dist\` and `bin\`, every hash checked |
+| `tools/github-workflows/survivors.yml` | the CI build (release `survivors-latest`) |
 
 Tests: `python3 -I stream/tests/test_survivors.py`, `python3 -I tools/survivors/test_survivors_tools.py`,
 `python3 -I hosting/tests/test_survivors_site.py`.
@@ -108,7 +123,7 @@ Tests: `python3 -I stream/tests/test_survivors.py`, `python3 -I tools/survivors/
 ## Open questions
 
 - **Permission statement** (TODO(owner)): what Aethus said about hosting it, in your words, for the page.
-- **The address** (TODO(owner)): `survivors.openvanilla.app` is a placeholder.
+- **The address** (TODO(owner)): `survivors.leylinelauncher.com` is a placeholder (the address is config: `address.txt`, nothing else names it).
 - **The logo**: the slice leaves out `Interface\Glues\Common\Glues-WoW-Logo.blp`. Whether the pick screen misses it
   visibly only shows on your PC (the verify pass). If it does, the fix is in the build, not the slice.
 - **Words in the game itself**: the page and our files carry no franchise names, but the game draws its own screens

@@ -188,6 +188,86 @@ lk = json.load(open(real))
 check("chk: the repo's lock names the upstream repo and a full sha", lk["repo"] == "https://github.com/OutThisLife/azeroth-survivors-re"
       and len(lk["sha"]) == 40)
 
+# ------------------------------------------------------------------ the fetch (the CI release, every hash checked)
+import io, tarfile
+rel = os.path.join(T, "release"); os.makedirs(rel)
+bd = os.path.join(T, "built"); os.makedirs(os.path.join(bd, "licenses"))
+for n, b in (("index.html", b"<html>"), ("wenilla_bg.wasm", b"\0asm1"), ("licenses/LICENSE-MIT", b"MIT"), ("licenses/LICENSE-APACHE", b"Apache")):
+    open(os.path.join(bd, n), "wb").write(b)
+rlock = {"repo": "https://github.com/OutThisLife/azeroth-survivors-re", "sha": "c" * 40,
+         "dist": {"files": {n: chk.sha256(os.path.join(bd, n)) for n in ("index.html", "wenilla_bg.wasm", "licenses/LICENSE-MIT", "licenses/LICENSE-APACHE")}}}
+buf = io.BytesIO()
+with tarfile.open(fileobj=buf, mode="w:gz") as t:
+    t.add(bd, arcname=".")
+assets = {"survivors-dist.tgz": buf.getvalue(), "upstream.lock.json": json.dumps(rlock).encode(),
+          "wenilla-host-windows-x64.exe": b"MZ-host", "mpqx-windows-x64.exe": b"MZ-mpqx"}
+
+
+def publish(a):
+    for n, b in a.items():
+        open(os.path.join(rel, n), "wb").write(b)
+        open(os.path.join(rel, n + ".sha256"), "w").write(hashlib.sha256(b).hexdigest() + "  " + n + "\n")
+
+
+publish(assets)
+
+
+class Rel(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+
+    def do_GET(self):
+        p = os.path.join(rel, os.path.basename(self.path))
+        b = open(p, "rb").read() if os.path.isfile(p) else None
+        self.send_response(200 if b is not None else 404)
+        self.send_header("Content-Length", str(len(b or b"")))
+        self.end_headers()
+        self.wfile.write(b or b"")
+
+
+rs = ThreadingHTTPServer(("127.0.0.1", 0), Rel)
+threading.Thread(target=rs.serve_forever, daemon=True).start()
+BASE = f"http://127.0.0.1:{rs.server_address[1]}/"
+into = os.path.join(T, "pc"); os.makedirs(into)
+mylock = os.path.join(T, "mylock.json")
+
+
+def fetch(*extra):
+    r = subprocess.run([sys.executable, "-I", os.path.join(HERE, "survivors_fetch.py"), "--base", BASE, "--lock", mylock,
+                        "--into", into, *extra], capture_output=True, text=True, timeout=60)
+    return r.returncode, r.stdout + r.stderr
+
+
+json.dump({"repo": rlock["repo"], "sha": "d" * 40, "dist": {}}, open(mylock, "w"))
+rc, out = fetch()
+check("fetch: refuses a release built from another commit", rc == 1 and "not the locked" in out, out[-300:])
+json.dump({"repo": rlock["repo"], "sha": "c" * 40, "deviations": [], "dist": {}}, open(mylock, "w"))
+rc, out = fetch()
+check("fetch: downloads, checks, unpacks", rc == 0 and out.rstrip().endswith("FETCH OK: tools\\survivors\\dist and tools\\survivors\\bin are the locked build"), out[-400:])
+check("fetch: an empty repo lock takes the release's lock (same repo and commit)", json.load(open(mylock))["dist"] == rlock["dist"])
+check("fetch: the build and the hosts in place", chk.check_dist(os.path.join(into, "dist"), mylock) == []
+      and open(os.path.join(into, "bin", "wenilla-host.exe"), "rb").read() == b"MZ-host"
+      and open(os.path.join(into, "bin", "mpqx.exe"), "rb").read() == b"MZ-mpqx")
+rc, out = fetch()
+check("fetch: again: nothing downloaded twice", rc == 0 and "already here" in out)
+open(os.path.join(rel, "wenilla-host-windows-x64.exe"), "wb").write(b"MZ-evil")
+rc, out = fetch("--force")
+check("fetch: a file that does not match its .sha256 is refused", rc == 1 and "does not match its .sha256" in out)
+check("fetch: ... and the host already here stays", open(os.path.join(into, "bin", "wenilla-host.exe"), "rb").read() == b"MZ-host")
+other = dict(rlock, dist={"files": dict(rlock["dist"]["files"], **{"index.html": "0" * 64})})
+publish(dict(assets, **{"upstream.lock.json": json.dumps(other).encode()}))
+rc, out = fetch()
+check("fetch: a release build that differs from the repo's lock is refused", rc == 1 and "not the one" in out)
+buf2 = io.BytesIO()
+with tarfile.open(fileobj=buf2, mode="w:gz") as t:
+    ti = tarfile.TarInfo("../evil.txt"); ti.size = 1; t.addfile(ti, io.BytesIO(b"x"))
+publish(dict(assets, **{"survivors-dist.tgz": buf2.getvalue()}))
+rc, out = fetch("--force")
+check("fetch: an archive path outside the folder is refused", rc == 1 and "unsafe path" in out
+      and not os.path.exists(os.path.join(into, "evil.txt")))
+r = subprocess.run([sys.executable, "-I", os.path.join(HERE, "survivors_fetch.py"), "--base", "http://example.com/", "--lock", mylock,
+                    "--into", into], capture_output=True, text=True, timeout=30)
+check("fetch: https only (loopback aside)", r.returncode == 1 and "https only" in r.stdout + r.stderr)
+
 # ------------------------------------------------------------------ the .bat
 for bat in [f for f in os.listdir(HERE) if f.endswith(".bat")]:
     b = open(os.path.join(HERE, bat), "rb").read()
@@ -197,6 +277,7 @@ for bat in [f for f in os.listdir(HERE) if f.endswith(".bat")]:
         x in low for x in ("fetch-data", "make build", "make native", "scripts\\setup.sh", "scripts/setup.sh", "archive.org")))
     check(f"{bat}: nothing from labs", "labs\\" not in low and "labs/" not in low)
     check(f"{bat}: loopback only", "0.0.0.0" not in low and "127.0.0.1:18090" in low)
+    check(f"{bat}: downloads the checked build, never builds with Rust", "survivors_fetch.py" in low and "cargo" not in low)
 
 shutil.rmtree(T, ignore_errors=True)
 print(f"\n{count - fails}/{count} passed")

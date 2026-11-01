@@ -104,7 +104,7 @@ the one-time setup files to `setup/`; `Play WotLK (one click).bat` (now `Play lo
 | `art/` | Share card and launcher screenshot renderers |
 | `creator-api/` | Writes `docs/CREATOR-API.md` and `docs/creator-api.html` from the Modes API |
 | `playerbots-specs/` | Turns playerbots talent specs into the realm's env lines |
-| `survivors/` | Azeroth Survivors on the owner's PC: `Record Survivors files.bat` (recorder, exporter, survivors-check), `build-dist.sh` (the browser build). `docs/SURVIVORS.md` |
+| `survivors/` | Azeroth Survivors on the owner's PC: `Record Survivors files.bat` (fetch of the CI build, recorder, exporter, survivors-check), `build-dist.sh` (the browser build, run by `survivors.yml` in CI). `docs/SURVIVORS.md` |
 | `workspace-move/` | `Move to Leyline.bat` + `move_to_leyline.py`: the one-folder move and the repo rename (done 2026-10-30; kept for reference, still runs from here) |
 
 ## Experimental, in place

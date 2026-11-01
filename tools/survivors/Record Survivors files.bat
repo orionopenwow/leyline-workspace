@@ -13,8 +13,9 @@ rem lists anything still missing (the next record adds it). Then hosting\survivo
 rem   Record Survivors files.bat [<Data folder>]     record (the full plan)
 rem   Record Survivors files.bat quick [<Data>]      a short plan (two zones, two classes) to try it out
 rem   Record Survivors files.bat verify              the slice alone, a short plan, gaps to out\verify\missing.txt
-rem Needs Python 3.9+, Edge (or Chrome), and tools\survivors\bin\wenilla-host.exe (the upstream host at the locked
-rem commit; without it this builds one, which needs git and Rust). Safe to run again: names add up across runs.
+rem Needs Python 3.9+ and Edge (or Chrome). The browser build and the upstream host come from this repo's GitHub
+rem release survivors-latest (made by the survivors workflow), downloaded and checked hash by hash into
+rem tools\survivors\dist and tools\survivors\bin (survivors_fetch.py; nothing to build). Safe to run again: names add up.
 cd /d "%~dp0..\.."
 set "TS=tools\survivors"
 set "OUT=%TS%\out"
@@ -26,8 +27,11 @@ set "PLAN=full"
 if /i "%~1"=="quick" (set "PLAN=quick" & shift)
 if /i "%~1"=="verify" (set "MODE=verify" & set "PLAN=quick" & shift)
 set "DIST=%TS%\dist"
+echo == the locked browser build and the upstream host (downloaded once, every file checked)
+%PY% -I "%TS%\survivors_fetch.py"
+if errorlevel 1 (echo. & echo Could not get the locked build ^(see above^). & pause & exit /b 1)
 %PY% -I "%TS%\survivors_check.py" dist "%DIST%"
-if errorlevel 1 (echo. & echo The browser build in %DIST% is not the locked one ^(see above^). Put the checked build there first. & pause & exit /b 1)
+if errorlevel 1 (echo. & echo The browser build in %DIST% is not the locked one ^(see above^). & pause & exit /b 1)
 if not exist "%OUT%" mkdir "%OUT%"
 if "%MODE%"=="verify" goto verify
 
@@ -38,8 +42,7 @@ set "DATA=%DATA:"=%"
 if not exist "%DATA%\*.MPQ" (echo No .MPQ files in "%DATA%": that is not a client's Data folder. & pause & exit /b 1)
 >"%OUT%\data-folder.txt" echo %DATA%
 set "HOSTEXE=%TS%\bin\wenilla-host.exe"
-if not exist "%HOSTEXE%" call :build
-if not exist "%HOSTEXE%" (pause & exit /b 1)
+if not exist "%HOSTEXE%" (echo %HOSTEXE% is missing ^(the download above should have put it there^). & pause & exit /b 1)
 set "HOSTARGS=--www "%DIST%" --data "%DATA%""
 set "REC=%OUT%"
 goto run
@@ -91,23 +94,4 @@ if exist "%REC%\missing.txt" for /f %%c in ('type "%REC%\missing.txt" ^| find /c
 echo.
 if "%N%"=="0" (echo Verified: the slice alone held every file the game asked for.) else (echo %N% file^(s^) the game asked for are not in the slice: %REC%\missing.txt. Run a record again ^(it adds them^), then verify again. The franchise logo is left out on purpose.)
 pause
-exit /b 0
-
-:build
-rem The upstream host at the locked commit, built on this PC (needs git and Rust: https://rustup.rs).
-where git >nul 2>&1 || (echo %HOSTEXE% is missing and git is not installed to build it. & exit /b 1)
-where cargo >nul 2>&1 || (echo %HOSTEXE% is missing and Rust is not installed to build it: https://rustup.rs & exit /b 1)
-for /f "usebackq delims=" %%s in (`%PY% -I -c "import json;print(json.load(open(r'stream\survivors\upstream.lock.json'))['sha'])"`) do set "SHA=%%s"
-for /f "usebackq delims=" %%r in (`%PY% -I -c "import json;print(json.load(open(r'stream\survivors\upstream.lock.json'))['repo'])"`) do set "REPO=%%r"
-set "SRC=%OUT%\upstream-src"
-if not exist "%SRC%\.git" git clone -q "%REPO%" "%SRC%" || exit /b 1
-git -C "%SRC%" fetch -q origin %SHA% && git -C "%SRC%" checkout -q --detach %SHA% || exit /b 1
-echo == building the upstream game host at %SHA% (a few minutes, once)
-pushd "%SRC%"
-cargo build --release -p wenilla-host --bin wenilla-host -p benilla-formats --bin mpqx
-set "RC=%ERRORLEVEL%"
-popd
-if not "%RC%"=="0" exit /b 1
-if not exist "%TS%\bin" mkdir "%TS%\bin"
-copy /y "%SRC%\target\release\wenilla-host.exe" "%TS%\bin\" >nul && copy /y "%SRC%\target\release\mpqx.exe" "%TS%\bin\" >nul
 exit /b 0

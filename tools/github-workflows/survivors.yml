@@ -1,0 +1,135 @@
+# Azeroth Survivors (docs/SURVIVORS.md): the upstream open rebuild's browser build at the commit
+# stream/survivors/upstream.lock.json pins, unmodified, and the upstream game host for the owner's recorder on Windows.
+# Built here because wasm-bindgen needs more memory on this module (over 6 GB) than our build box gives; this repo is
+# public, so ubuntu-24.04 runners have 16 GB. Only upstream's wasm build steps run (tools/survivors/build-dist.sh:
+# scripts/web-setup.sh's tools, scripts/web-build.sh's commands). Never make build / make native / make fetch-data /
+# scripts/setup.sh / scripts/fetch-data.sh: nothing here reads, downloads or holds game data.
+# Puts on the rolling release "survivors-latest" of this repo, each file with its .sha256:
+#   survivors-dist.tgz          the build + licenses/ (what sv-play serves)
+#   upstream.lock.json          the lock with every dist file's SHA-256 (commit it: stream/survivors/upstream.lock.json)
+#   wenilla-host-windows-x64.exe, mpqx-windows-x64.exe    the upstream host and extractor at the same commit
+# "Record Survivors files.bat" downloads them (tools/survivors/survivors_fetch.py) and checks every hash.
+#
+# Runs in the workspace repo. Source copy: tools/github-workflows/survivors.yml; "setup\Turn on GitHub builds.bat"
+# (tools/github-builds/github_builds.py, WU_FILES) puts it in .github/workflows/.
+# Not on every push: only when the lock, the build script or this file changes, or by hand.
+name: survivors
+on:
+  push:
+    branches: [main]
+    paths:
+      - "stream/survivors/upstream.lock.json"
+      - "tools/survivors/build-dist.sh"
+      - "tools/survivors/licenses-index.html"
+      - ".github/workflows/survivors.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: survivors-latest
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  dist:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Tools (brotli for the .br files)
+        run: sudo apt-get update -q && sudo apt-get install -y -q brotli
+
+      - name: Build (upstream's wasm steps only, at the locked commit, the pinned toolchain)
+        env:
+          SV_TOOLCHAIN: pinned
+        run: |
+          set -euo pipefail
+          cp stream/survivors/upstream.lock.json "$RUNNER_TEMP/committed.lock.json"
+          bash tools/survivors/build-dist.sh "$RUNNER_TEMP/sv" --write-lock
+
+      - name: Same as the committed lock (when it already lists the build)
+        run: |
+          python3 -I - "$RUNNER_TEMP/committed.lock.json" stream/survivors/upstream.lock.json <<'PY'
+          import json, sys
+          old, new = (json.load(open(p)) for p in sys.argv[1:3])
+          want = (old.get("dist") or {}).get("files") or {}
+          got = new["dist"]["files"]
+          if want and want != got:
+              diff = sorted(k for k in set(want) | set(got) if want.get(k) != got.get(k))
+              sys.exit("this build differs from the committed lock in: " + ", ".join(diff[:20]) + " (nothing published)")
+          print("new lock" if not want else "the build matches the committed lock, file for file")
+          PY
+
+      - name: Check the build against the lock it wrote, then pack it with checksums
+        run: |
+          set -euo pipefail
+          python3 -I tools/survivors/survivors_check.py dist "$RUNNER_TEMP/sv/dist" stream/survivors/upstream.lock.json
+          mkdir -p out
+          cp stream/survivors/upstream.lock.json out/upstream.lock.json
+          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$RUNNER_TEMP/sv/dist" -cf - . | gzip -n -9 > out/survivors-dist.tgz
+          cd out
+          for f in survivors-dist.tgz upstream.lock.json; do sha256sum "$f" | awk -v n="$f" '{print $1"  "n}' > "$f.sha256"; done
+          cat ./*.sha256
+          ls -la
+
+      - name: The lock as a build artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: survivors-lock
+          path: out/upstream.lock.json
+
+      - name: Put it on survivors-latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          sha="$(python3 -I -c 'import json;print(json.load(open("stream/survivors/upstream.lock.json"))["sha"])')"
+          ver="$(date -u +%Y.%m.%d)-${GITHUB_SHA::7}"
+          notes="Azeroth Survivors by Aethus. Open rebuild by OutThisLife, MIT or Apache-2.0. The open rebuild's browser build at upstream commit $sha, unmodified (built by $GITHUB_SHA, $ver), its licences, and the upstream game host for Windows. Every file has a .sha256. It never contains or downloads game data."
+          if gh release view survivors-latest -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit survivors-latest -R "$GITHUB_REPOSITORY" --title "Azeroth Survivors build (latest, $ver)" --notes "$notes" --prerelease=false
+          else
+            gh release create survivors-latest -R "$GITHUB_REPOSITORY" --title "Azeroth Survivors build (latest, $ver)" --notes "$notes" --target "$GITHUB_SHA" --latest=false
+          fi
+          cd out
+          gh release upload survivors-latest survivors-dist.tgz survivors-dist.tgz.sha256 upstream.lock.json upstream.lock.json.sha256 -R "$GITHUB_REPOSITORY" --clobber
+
+  windows-host:
+    # after the dist job, which makes the release
+    needs: dist
+    runs-on: windows-2022
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Build the upstream host and extractor at the locked commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="$(python -I -c 'import json;print(json.load(open("stream/survivors/upstream.lock.json"))["repo"])')"
+          sha="$(python -I -c 'import json;print(json.load(open("stream/survivors/upstream.lock.json"))["sha"])')"
+          git clone -q "$repo" "$RUNNER_TEMP/up"
+          git -C "$RUNNER_TEMP/up" checkout -q --detach "$sha"
+          cd "$RUNNER_TEMP/up"
+          cargo build --release --locked -p wenilla-host --bin wenilla-host -p benilla-formats --bin mpqx
+
+      - name: Package with checksums and put them on survivors-latest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cp "$RUNNER_TEMP/up/target/release/wenilla-host.exe" wenilla-host-windows-x64.exe
+          cp "$RUNNER_TEMP/up/target/release/mpqx.exe" mpqx-windows-x64.exe
+          for f in wenilla-host-windows-x64.exe mpqx-windows-x64.exe; do sha256sum "$f" | awk -v n="$f" '{print $1"  "n}' > "$f.sha256"; done
+          cat ./*.sha256
+          gh release upload survivors-latest wenilla-host-windows-x64.exe wenilla-host-windows-x64.exe.sha256 mpqx-windows-x64.exe mpqx-windows-x64.exe.sha256 -R "$GITHUB_REPOSITORY" --clobber

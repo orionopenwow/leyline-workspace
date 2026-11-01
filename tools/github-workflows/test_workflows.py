@@ -32,7 +32,7 @@ class Workflows(unittest.TestCase):
     def test_all_parse(self):
         names = sorted(p.name for p in HERE.glob("*.yml"))
         self.assertEqual(names, ["den-lite.yml", "forge.yml", "hub-index.yml", "leyline-launcher.yml", "realm-scripts.yml", "scout.yml",
-                                 "wu-hosting.yml", "wu-images.yml"])
+                                 "survivors.yml", "wu-hosting.yml", "wu-images.yml"])
         for n in names:
             text, doc = load(n)
             self.assertTrue(doc["name"] and doc["on"] and doc["jobs"], n)
@@ -93,6 +93,38 @@ class Workflows(unittest.TestCase):
             self.assertIn(f'"{name}"', lite, f"the launcher downloads {name}")
             self.assertNotRegex(run, r"(?i)\.mpq|\bData/")
         self.assertIn('releases/download/den-lite-latest/"', lite)
+
+    def test_survivors(self):
+        """Azeroth Survivors (docs/SURVIVORS.md): only when its lock or build script changes, or by hand; only upstream's
+        wasm build steps (never the ones that download the game client); a 16 GB runner (this repo is public); the
+        build checked against the lock and the committed lock before anything is published; every asset with its
+        sha256 on the rolling release survivors-latest, at the names tools/survivors/survivors_fetch.py downloads."""
+        text, doc = load("survivors.yml")
+        self.assertEqual(doc["on"]["push"]["paths"], ["stream/survivors/upstream.lock.json", "tools/survivors/build-dist.sh",
+                                                      "tools/survivors/licenses-index.html", ".github/workflows/survivors.yml"])
+        self.assertEqual(doc["on"]["push"]["branches"], ["main"])
+        self.assertIn("workflow_dispatch", doc["on"])
+        self.assertNotIn("pull_request", doc["on"])
+        self.assertEqual(doc["permissions"], {"contents": "read"})
+        self.assertEqual(set(re.findall(r"secrets\.([A-Za-z_]+)", text)), {"GITHUB_TOKEN"})
+        self.assertEqual(doc["jobs"]["dist"]["runs-on"], "ubuntu-24.04")
+        self.assertEqual(doc["jobs"]["windows-host"]["runs-on"], "windows-2022")
+        self.assertEqual(doc["jobs"]["windows-host"]["needs"], "dist")
+        run = "\n".join(s.get("run", "") for j in doc["jobs"].values() for s in j["steps"])
+        for bad in ("fetch-data", "make build", "make native", "scripts/setup.sh", "setup.sh", "archive.org", "--data"):
+            self.assertNotIn(bad, run, bad)
+        self.assertNotRegex(run, r"(?i)\.mpq|\bData/")
+        self.assertIn('build-dist.sh "$RUNNER_TEMP/sv" --write-lock', run)
+        self.assertLess(run.index("--write-lock"), run.index("differs from the committed lock"))
+        self.assertLess(run.index("survivors_check.py dist"), run.index("gh release upload survivors-latest"))
+        self.assertIn("-p wenilla-host --bin wenilla-host -p benilla-formats --bin mpqx", run)
+        fetch = (REPO / "tools" / "survivors" / "survivors_fetch.py").read_text(encoding="utf-8")
+        self.assertIn("releases/download/survivors-latest/", fetch)
+        for name in ("survivors-dist.tgz", "upstream.lock.json", "wenilla-host-windows-x64.exe", "mpqx-windows-x64.exe"):
+            self.assertIn(f"{name}.sha256", run, name)
+            self.assertRegex(run, rf"gh release upload survivors-latest [^\n]*{re.escape(name)} ")
+            self.assertIn(f'"{name}"', fetch, f"the owner's fetch downloads {name}")
+        self.assertIn("survivors-lock", text)   # the lock as a build artifact too
 
     def test_hub_index(self):
         """Daily and on demand; the built-in token only; PRs from the daily and review branches, never a push to main;

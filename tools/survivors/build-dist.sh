@@ -51,15 +51,18 @@ if [ -n "${SV_CARGO_WASM:-}" ]; then
   want_wasm=$(python3 -I -c 'import json,sys;print(json.load(open(sys.argv[1])).get("cargo_wasm",{}).get("sha256",""))' "$LOCK")
   [ "$(sha256sum "$SV_CARGO_WASM" | cut -d' ' -f1)" = "$want_wasm" ] || { echo "$SV_CARGO_WASM is not the locked cargo build" >&2; exit 1; }
   TOOLCHAIN=$(python3 -I -c 'import json,sys;print(json.load(open(sys.argv[1])).get("toolchain",""))' "$LOCK")
+  case "$TOOLCHAIN" in *build-std*) BUILD_STD=1;; *) BUILD_STD=0;; esac
   mkdir -p "$CARGO_TARGET_DIR/wasm32-unknown-unknown/release"
   cp "$SV_CARGO_WASM" "$CARGO_TARGET_DIR/wasm32-unknown-unknown/release/wenilla.wasm"
 elif [ "${SV_TOOLCHAIN:-}" = pinned ]; then
   TOOLCHAIN="rust $(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml) (the pin), prebuilt wasm32 std"
+  BUILD_STD=0
   rustup target add wasm32-unknown-unknown
   cargo build --profile release --target wasm32-unknown-unknown -p wenilla --no-default-features --features webgpu
 else
   export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-stable}" RUSTC_BOOTSTRAP=1
   TOOLCHAIN="$(rustc --version | cut -d' ' -f1-2) (installed stable), std built from source (-Z build-std=std,panic_abort)"
+  BUILD_STD=1
   cargo build --profile release --target wasm32-unknown-unknown -Z build-std=std,panic_abort \
     -p wenilla --no-default-features --features webgpu
 fi
@@ -78,10 +81,12 @@ for m in web/boot-manifest.json web/world-manifest.json; do if [ -f "$m" ]; then
 tools/binaryen/bin/wasm-opt -O3 --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext \
   --enable-mutable-globals --enable-reference-types --enable-multivalue "$DIST/wenilla_bg.wasm" -o "$DIST/wenilla_bg.wasm.opt"
 mv "$DIST/wenilla_bg.wasm.opt" "$DIST/wenilla_bg.wasm"
+BROTLI=none
 for f in "$DIST"/*.wasm "$DIST"/*.js; do
-  if command -v brotli >/dev/null; then brotli -f -q 5 "$f" -o "$f.br"
+  if command -v brotli >/dev/null; then brotli -f -q 5 "$f" -o "$f.br"; BROTLI=cli
   elif python3 -c 'import brotli' 2>/dev/null; then   # the same library at the same quality as upstream's brotli -q 5
     python3 -c 'import brotli,sys;open(sys.argv[2],"wb").write(brotli.compress(open(sys.argv[1],"rb").read(),quality=5))' "$f" "$f.br"
+    BROTLI=python
   fi
   gzip -kf -6 -n "$f"
 done
@@ -95,9 +100,9 @@ cp third_party/lua-src/LICENSE "$DIST/licenses/lua-LICENSE"
 sed "s/__SHA__/$SHA/g" "$HERE/licenses-index.html" > "$DIST/licenses/index.html"
 
 if [ "$WRITE" = --write-lock ]; then
-  python3 -I - "$LOCK" "$DIST" "$TOOLCHAIN" "$(git -C "$SRC" log -1 --format=%cI)" <<'PY'
+  python3 -I - "$LOCK" "$DIST" "$TOOLCHAIN" "$(git -C "$SRC" log -1 --format=%cI)" "$BUILD_STD" "$BROTLI" "$WASM" <<'PY'
 import hashlib, json, os, sys
-lock_path, dist, toolchain, committed = sys.argv[1:5]
+lock_path, dist, toolchain, committed, build_std, brotli, wasm = sys.argv[1:8]
 lock = json.load(open(lock_path))
 files, total = {}, 0
 for d, _, fs in os.walk(dist):
@@ -107,6 +112,22 @@ for d, _, fs in os.walk(dist):
         total += os.path.getsize(p)
 lock["committed"] = committed
 lock["toolchain"] = toolchain
+dev = []
+if build_std == "1":
+    dev.append("toolchain: Rust's pinned toolchain or its prebuilt wasm32 std could not be downloaded, so the installed stable "
+               "Rust built it, with std from source (RUSTC_BOOTSTRAP=1 -Z build-std=std,panic_abort). No source change; same "
+               "profile, target, features, wasm-bindgen, wasi-sdk and wasm-opt flags as scripts/web-build.sh.")
+dev.append("gzip -n (no file name or time in the .gz) so the hashes are the same from one build to the next; upstream's "
+           "web-build.sh runs gzip -kf -6 without -n.")
+if brotli == "python":
+    dev.append("brotli: the Python brotli library at quality 5 (the brotli command was not installed; same library and quality).")
+elif brotli == "none":
+    dev.append("no .br files (no brotli on the build machine): the host serves the .gz or plain files.")
+dev.append("added next to the build: licenses/ (upstream's LICENSE-MIT and LICENSE-APACHE, third_party/kira's and "
+           "third_party/lua-src's licences, and tools/survivors/licenses-index.html as index.html).")
+lock["deviations"] = dev
+lock["cargo_wasm"] = {"what": "target/wasm32-unknown-unknown/release/wenilla.wasm before wasm-bindgen (" + toolchain + ")",
+                      "sha256": hashlib.sha256(open(wasm, "rb").read()).hexdigest(), "bytes": os.path.getsize(wasm)}
 lock["dist"] = {"files": dict(sorted(files.items())), "count": len(files), "bytes": total}
 open(lock_path, "w").write(json.dumps(lock, indent=1) + "\n")
 print(f"== lock written: {len(files)} files, {total / 1048576:.1f} MB")

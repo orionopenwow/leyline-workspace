@@ -202,6 +202,8 @@
       }
     } catch (e) { say(oops(e, "Your Den didn't open. Try again."), "bad"); }
     busy = false;
+    // the play bar: the core pointed the game at Your Den, so it shows Your Den now (smoke O3)
+    if (window.LeylineApp && window.LeylineApp.refresh) window.LeylineApp.refresh();
     load();
   }
 

@@ -27,7 +27,7 @@ const FAKE = (o) => {
     calls.push([cmd, args]);
     switch (cmd) {
       case 'get_state': return { version: 'test', settings: { clients: S.clients, selected_client: S.clients[0] ? 'c335a-1' : null,
-        selected_realm: 'play.openvanilla.app', wine: { enabled: false, command: 'wine', prefix: '' } },
+        selected_realm: S.selected || 'play.openvanilla.app', wine: { enabled: false, command: 'wine', prefix: '' } },
         official_realm: 'play.openvanilla.app', browser_url: 'https://play.openvanilla.app/wrath', windows: true, data_dir: '/tmp' };
       case 'realms_list': return { realms: [], network: { realms: 0, players: 0, bots: 0 }, from_cache: false, saved_at: 1, error: null };
       case 'realm_status': return { state: 'online', ping_ms: 10, players: 0 };
@@ -50,7 +50,7 @@ const FAKE = (o) => {
         saves: S.docker_den ? 'kit' : 'lite', dens: o.noDens ? [] : dens,
         packs: o.packs ? [{ id: 'goldshire', title: 'Goldshire', line: 'The inn and the square, ready to build around.' }] : [] };
       // app.rs SoloPlay: o.auto: the hybrid glue signs in by itself (Forever UI there); else the password to type
-      case 'den_play_lite': S.lite = 'running'; return o.auto
+      case 'den_play_lite': S.lite = 'running'; S.selected = '127.0.0.1'; return o.auto
         ? { message: 'Started My Game on 127.0.0.1.', auto: true, why: '', account: 'DEN', password: '' }
         : { message: 'Started My Game on 127.0.0.1.', auto: false, why: "Forever UI's login screens aren't in this game folder yet (install Forever UI first).", account: 'DEN', password: 'den' };
       case 'den_open': return args.name;
@@ -389,6 +389,23 @@ test('Play solo: no Docker on this PC, no Solo leveling offer (nothing that cann
   await page.waitForFunction(() => window.__calls.some((c) => c[0] === 'docker_info'));
   await page.waitForTimeout(100);
   assert.equal(await page.$('#yd-solo'), null);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('after Play solo the play bar shows Your Den, and its PLAY is the same one click (smoke O3); the Den page opens at its top (O9)', async () => {
+  const { page, ctx, errors } = await open({ lite: 'stopped', auto: true });
+  await page.evaluate(() => { const m = document.querySelector('main'); if (m) m.scrollTop = 900; });
+  await page.click('#hm-den-go');
+  await page.waitForFunction(() => /Your Den is open/.test(document.querySelector('#yd .yd-status').textContent));
+  assert.equal(await page.evaluate(() => document.querySelector('main').scrollTop), 0, 'the title in view');
+  await page.waitForFunction(() => document.querySelector('#pb-realm').textContent === 'Your Den');
+  assert.equal(await page.textContent('#play-headline'), 'READY TO PLAY');
+  assert.doesNotMatch(await page.textContent('#pb-realm'), /Wrath Unleashed/);
+  // the bar's PLAY: Your Den's one click again (Den Lite, the self sign-in), not a plain start
+  await page.evaluate(() => document.getElementById('play-form').requestSubmit());
+  await page.waitForFunction(() => window.__calls.filter((c) => c[0] === 'den_play_lite').length === 2);
+  assert.equal((await calls(page, 'play')).length, 0);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

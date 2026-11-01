@@ -113,6 +113,8 @@ function resolvePage(page, tab) {
 }
 function show(want, noLoad, wantTab) {
   const [page, tab] = resolvePage(want, wantTab);
+  // another page starts at its top (smoke O9: Your Den from Home's banner opened scrolled, its title cut off)
+  if (page !== currentPage) { const m = document.querySelector("main"); if (m && m.scrollTo) m.scrollTo({ top: 0, behavior: "instant" }); }
   currentPage = page;
   currentTab = tab;
   document.querySelectorAll(".nav[data-page]").forEach((b) => b.classList.toggle("on", b.dataset.page === page));
@@ -263,6 +265,7 @@ function realmLabel() {
   if (isOfficial()) return officialName();
   const a = chosenRealm();
   if (localAt(a)) return localAt(a).name;   // My Den or Solo leveling
+  if (a === DEN_LITE) return DEN.name;      // Your Den on Den Lite (host/lite.rs ADDRESS)
   const r = realmsCache.find((x) => x.address === a);
   return r ? r.name : (a || "Another realm");
 }
@@ -999,6 +1002,7 @@ const LOCAL = {
     title: "A private realm on this PC for levelling alone: helper bots fill your group, dungeons scale to you" },
 };
 const DEN = LOCAL.den;
+const DEN_LITE = "127.0.0.1";   // where Den Lite plays (host/lite.rs ADDRESS)
 const localHosted = (L) => !!(kit && kit.realm && kit.realm.profile === L.profile);
 const denHosted = () => localHosted(DEN);
 function localAddress(L) {
@@ -1175,6 +1179,9 @@ async function knockLocal(L) {
 }
 // PLAY with a local realm chosen: knock again first (true: stop, its next step was said)
 async function localBeforePlay() {
+  // Your Den on Den Lite (127.0.0.1): PLAY is Your Den's one click (den.js: start it, sign in by itself), never a
+  // plain start at a login screen (smoke O3)
+  if (chosenRealm() === DEN_LITE && window.LeylineDen && window.LeylineDen.where() === "lite") { window.LeylineDen.go(); return true; }
   const L = localChosen();
   if (!L || localKnocked) { localKnocked = false; return false; }
   return !(await knockLocal(L));
@@ -1182,6 +1189,7 @@ async function localBeforePlay() {
 // the bar's status line for a local realm (renderPlayBar)
 function localHint() {
   continuePending();
+  if (chosenRealm() === DEN_LITE) return { head: "READY TO PLAY", detail: "Your Den, on this PC", warn: false };
   const L = localChosen();
   if (!L) return null;
   if (kit && kit.is_kit && !localHosted(L)) return { head: `${L.name.toUpperCase()} IS NOT SET UP`, detail: "PLAY sets it up", warn: true };
@@ -2939,6 +2947,7 @@ window.LeylineApp = {
   news: () => news, realms: () => realmsCache, catalog: () => catalog, mode: () => mode, setMode, openLink, playHangout, HANGOUT,
   realmIcon, realmVersion, hiddenBuild, nameHue,
   state: () => state,   // addons.js: the clients
+  refresh: () => refresh().then(refreshStatus).catch(() => { /* as it was */ }),   // den.js: after Play solo, the bar shows Your Den
   pickRealm, playRealm, loadRealms, showRealm: showLinkedRealm,   // realmlink.js: paste to add, Live now
 };
 

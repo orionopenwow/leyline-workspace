@@ -110,6 +110,12 @@ test('Looks: the tab, the cards, a preset, a pack in and out, a link, the filter
   assert.deepEqual(await page.$$eval(`${max} .lk-chips li`, (l) => l.map((x) => x.textContent)), ['1.12', '2.4.3', '3.3.5a']);
   assert.equal(await page.$eval(`${max} .lk-chips li.on`, (x) => x.textContent), '3.3.5a', 'this game version marked');
   assert.ok(await page.isDisabled('#looks-reset'), 'nothing to put back yet');
+  // each look its own drawing, the website's (stream/looks.py): Max, Classic, a UI look, a pack
+  assert.deepEqual(await page.$$eval('#looks-grid .lk-card .lk-art', (a) => a.map((x) => x.className)),
+    ['lk-art m-ultra', 'lk-art m-classic', 'lk-art m-ui', 'lk-art m-pack', 'lk-art m-pack']);
+  assert.deepEqual(await page.$$eval(`${max} .lk-art i`, (a) => a.map((x) => x.className)), ['m-sun', 'm-far', 'm-near']);
+  assert.ok(await page.$eval(`${max} .lk-art`, (a) => getComputedStyle(a).backgroundImage.includes('linear-gradient') && a.getBoundingClientRect().height > 40),
+    'the drawing is drawn (looks-art.css loaded)');
   if (process.env.SHOTS) await page.screenshot({ path: path.join(process.env.SHOTS, 'launcher-looks.png') });
   // a preset in one click
   await page.click(`${max} .lk-go`);
@@ -157,6 +163,21 @@ test('Looks: the tab, the cards, a preset, a pack in and out, a link, the filter
   assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i);
   assert.deepEqual(errors, []);
   await ctx.close();
+});
+
+test('Looks: looks-art.css is exactly the website\'s drawings (stream/looks.py MOTIF_CSS), and the motif markup matches', () => {
+  const fs = require('node:fs');
+  const py = fs.readFileSync(path.join(__dirname, '..', '..', 'stream', 'looks.py'), 'utf8');
+  const site = py.split('MOTIF_CSS = """')[1].split('"""')[0].trim();
+  const copy = fs.readFileSync(path.join(__dirname, '..', 'ui', 'looks-art.css'), 'utf8').replace(/^\/\*[\s\S]*?\*\/\n/, '').trim();
+  assert.equal(copy, site, 'copy MOTIF_CSS from stream/looks.py into launcher/ui/looks-art.css');
+  const js = fs.readFileSync(path.join(__dirname, '..', 'ui', 'looks.js'), 'utf8');
+  const block = py.split('MOTIFS = {')[1].split('\n}\n')[0];
+  for (const part of block.split(/\n    (?=")/).filter((x) => x.trim())) {
+    const k = part.match(/"([a-z]+)":/)[1];
+    const cls = [...part.matchAll(/class="([^"]+)"/g)].map((x) => x[1]);
+    assert.ok(cls.length && js.includes(JSON.stringify(cls).replace(/","/g, '", "')), `${k}: looks.js draws ${cls.join(' / ')}`);
+  }
 });
 
 test("Looks: the website's Install with Leyline opens the Looks tab at that card; nothing installs until the click", async () => {

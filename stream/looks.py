@@ -415,12 +415,12 @@ MOTIF_CSS = """
 .m-pack .m-water{left:0;right:0;bottom:0;height:42%;background:repeating-linear-gradient(180deg,rgba(160,210,255,.35) 0 2px,transparent 2px 9px),
 linear-gradient(90deg,transparent 60%,rgba(255,248,220,.35) 66% 74%,transparent 80%)}
 .lk-art.m-ui{background:radial-gradient(circle at 70% 20%,#4b3a7a,#241c3d 70%)}
-.m-ui .m-panel{left:6%;right:6%;top:10%;bottom:10%;border:2px solid rgba(255,255,255,.55);border-radius:8px;background:rgba(10,8,22,.35)}
-.m-ui .m-unit{top:18%;width:30%;height:16%;border-radius:4px;border:1px solid rgba(255,255,255,.6);
+.m-ui .m-panel{left:6%;right:6%;top:8%;bottom:24%;border:2px solid rgba(255,255,255,.55);border-radius:8px;background:rgba(10,8,22,.35)}
+.m-ui .m-unit{top:15%;width:30%;height:16%;border-radius:4px;border:1px solid rgba(255,255,255,.6);
 background:linear-gradient(180deg,#46c46a 0 50%,#3a7ee0 50% 100%)}
 .m-ui .m-unit.a{left:11%}.m-ui .m-unit.b{left:44%;width:24%;background:linear-gradient(180deg,#d9534f 0 50%,#3a7ee0 50% 100%)}
-.m-ui .m-map{right:11%;top:16%;width:15%;aspect-ratio:1;border-radius:50%;border:2px solid rgba(255,255,255,.7);background:radial-gradient(circle,#5f8f6a,#2d4a35)}
-.m-ui .m-bar{left:11%;right:11%;bottom:18%;height:15%;border-radius:3px;
+.m-ui .m-map{right:11%;top:13%;width:14%;aspect-ratio:1;border-radius:50%;border:2px solid rgba(255,255,255,.7);background:radial-gradient(circle,#5f8f6a,#2d4a35)}
+.m-ui .m-bar{left:11%;right:11%;bottom:31%;height:13%;border-radius:3px;
 background:repeating-linear-gradient(90deg,rgba(255,215,120,.85) 0 7%,rgba(0,0,0,0) 7% 8.5%)}
 """
 

@@ -38,6 +38,23 @@
     if (n < 1073741824) return `${Math.round(n / 1048576)} MB`;
     return `${(n / 1073741824).toFixed(1)} GB`;
   }
+  // Each look's own drawing, as on the website (stream/looks.py MOTIFS and motif(); the CSS is looks-art.css, a copy)
+  const MOTIFS = {
+    sky: ["m-sun", "m-far", "m-near"], pack: ["m-moon", "m-shore", "m-water"],
+    ui: ["m-panel", "m-unit a", "m-unit b", "m-map", "m-bar"],
+  };
+  const PRESET_MOTIFS = ["ultra", "high", "balanced", "classic", "low"];
+  function motif(p) {
+    const lk = p.look || {};
+    if (lk.type === "preset") return PRESET_MOTIFS.includes(lk.preset) ? lk.preset : "balanced";
+    return lk.type === "graphics-pack" ? "pack" : "ui";
+  }
+  function art(p) {
+    const m = motif(p);
+    const a = el("span", "lk-art m-" + m);
+    for (const c of MOTIFS[m] || MOTIFS.sky) a.append(el("i", c));
+    return a;
+  }
   const order = (p) => (p.look && Number.isFinite(p.look.order) ? p.look.order : 0);
 
   function take(projects) {
@@ -104,7 +121,7 @@
     if (p.id === focusId) c.classList.add("linked");
     const ph = el("div", "lk-ph " + lk.type);
     ph.setAttribute("aria-hidden", "true");
-    for (let i = 0; i < 3; i++) ph.append(el("i", "lk-d" + i));
+    ph.append(art(p));
     c.append(ph);
     const b = el("div", "lk-b");
     b.append(el("p", "lk-type", TYPES[lk.type] || "Look"), el("h3", "lk-name", p.name));

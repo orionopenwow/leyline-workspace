@@ -19,6 +19,12 @@ set "PARTS=..\play\dist-test.tgz.part00"
 if %NPARTS% GEQ 2 set "PARTS=%PARTS%+..\play\dist-test.tgz.part01"
 if %NPARTS% GEQ 3 set "PARTS=%PARTS%+..\play\dist-test.tgz.part02"
 if %NPARTS% GEQ 4 set "PARTS=%PARTS%+..\play\dist-test.tgz.part03"
+if %NPARTS% GEQ 5 set "PARTS=%PARTS%+..\play\dist-test.tgz.part04"
+if %NPARTS% GEQ 6 set "PARTS=%PARTS%+..\play\dist-test.tgz.part05"
+if %NPARTS% GEQ 7 set "PARTS=%PARTS%+..\play\dist-test.tgz.part06"
+if %NPARTS% GEQ 8 set "PARTS=%PARTS%+..\play\dist-test.tgz.part07"
+if %NPARTS% GEQ 9 set "PARTS=%PARTS%+..\play\dist-test.tgz.part08"
+if %NPARTS% GEQ 10 set "PARTS=%PARTS%+..\play\dist-test.tgz.part09"
 copy /b %PARTS% "%W%\dist.tgz" >nul || goto fail
 tar -xzf "%W%\dist.tgz" -C "%W%" || goto fail
 move "%W%\dist-test" "%W%\kit\www" >nul || goto fail

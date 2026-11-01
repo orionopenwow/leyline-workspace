@@ -12,7 +12,7 @@ if not exist "vanilla-remastered\vr-beacon-up.sh" (echo vanilla-remastered\vr-be
 where tar >nul 2>&1 || (echo tar.exe is missing ^(Windows 10 1803 or later has it^). & pause & exit /b 1)
 set "MODE="
 if /i "%~1"=="remove" set "MODE=--remove"
-set "TGZ=%TEMP%\wu-vr-beacon-src.tgz"
+set "TGZ=%TEMP%\wu-vr-beacon-src-%RANDOM%%RANDOM%.tgz"
 if exist "%TGZ%" del /q "%TGZ%"
 tar -czf "%TGZ%" --exclude=__pycache__ --exclude=*.pyc --exclude=state --exclude=tests kit/tools/wunet kit/tools/wuhost kit/tools/Dockerfile vanilla-remastered || (echo Packing failed. & pause & exit /b 1)
 ssh -i "%USERPROFILE%\.ssh\openwow" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 root@play.openvanilla.app "T=$(mktemp -d) && tar -xzf - -C $T && sed 's/\r$//' $T/vanilla-remastered/vr-beacon-up.sh > $T/vr-beacon-up.sh && bash $T/vr-beacon-up.sh $T %MODE% 2>&1 | tee /tmp/wu-vr-beacon.log; rm -rf $T; grep -q -e '^VR BEACON OK' -e '^VR BEACON REMOVED' /tmp/wu-vr-beacon.log && exit 0; exit 1" < "%TGZ%"

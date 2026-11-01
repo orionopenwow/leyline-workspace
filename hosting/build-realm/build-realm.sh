@@ -27,7 +27,8 @@
 #   2 backup   $DIR/backups/<time>/: acore_auth and the build databases (gzip, 0600), the files this run replaces
 #   3 data     acore_auth_build (views + its realm list), acore_characters_build and acore_playerbots_build (the
 #              main ones' tables, empty), the database user's rights on them
-#   4 files    profiles/build.env and custom/lua_scripts/ov_buildrealm.lua on the box; dens/ and logs/
+#   4 files    profiles/build.env, custom/lua_scripts/ov_buildrealm.lua and ov_den.lua on the box (the scripts step
+#              doesn't carry ov_den.lua; it returns at once on the main realm); dens/ and logs/
 #   5 start    wu-build-auth, then ov-ac-build-world
 #   6 health   the login server answers a logon challenge; the world server greets and stays up; the main realm's
 #              world and login servers still answer and the world server did not restart
@@ -101,7 +102,7 @@ find "$SRC" -type f \( -name '*.sh' -o -name '*.py' -o -name '*.env' -o -name '*
   -exec sed -i 's/\r$//' {} + 2>/dev/null || true
 for f in hosting/build-realm/buildprobe.py hosting/kit/tools/wunet/wire335.py hosting/kit/tools/Dockerfile \
          hosting/kit/tools/wuhost/agent.py hosting/kit/tools/wuhost/setup.py realm/profiles/build.env \
-         realm/custom/lua_scripts/ov_buildrealm.lua; do
+         realm/custom/lua_scripts/ov_buildrealm.lua realm/custom/lua_scripts/ov_den.lua; do
   [ -f "$SRC/$f" ] || die "$f is missing from the upload"
 done
 [ "${WU_TEST:-0}" = 1 ] || [ "$(id -u)" = 0 ] || die "run as root"
@@ -189,12 +190,15 @@ if [ "$UP" = 0 ]; then
 fi
 [ "${disk_mb:-0}" -ge "$MIN_DISK_MB" ] || gate "only ${disk_mb:-?} MB free in $WRATH_DIR. Nothing was changed."
 [ -n "$PY_IMG" ] || gate "no python image (python:3.12-alpine or wu-hangout-tools:1) for the self-check. Nothing was changed."
-if [ -f "$WRATH_DIR/custom/lua_scripts/ov_den.lua" ] && grep -q 'leyline-den' "$WRATH_DIR/custom/lua_scripts/ov_den.lua" 2>/dev/null \
-   && grep -q 'OVBuild.DenLayout' "$WRATH_DIR/custom/lua_scripts/ov_build.lua" 2>/dev/null; then
-  note "the box's realm scripts have the Den and its save files"
+# ov_den.lua is not in the scripts step's upload list (it only runs on a Den), so this step brings it (step 4);
+# ov_build.lua comes with the scripts step and must already have the Den's save files.
+if grep -q 'OVBuild.DenLayout' "$WRATH_DIR/custom/lua_scripts/ov_build.lua" 2>/dev/null; then
+  note "the box's ov_build.lua has the Den's save files"
 else
-  gate "the box's realm scripts are older than the Den's save files: run the scripts step first (a live reload on the main realm, no restart). Nothing was changed."
+  gate "the box's ov_build.lua is older than the Den's save files: run the scripts step first (a live reload on the main realm, no restart). Nothing was changed."
 fi
+if grep -q 'leyline-den' "$WRATH_DIR/custom/lua_scripts/ov_den.lua" 2>/dev/null; then note "the box's ov_den.lua: there"
+else note "the box's ov_den.lua: missing or old; this step installs it (it does nothing on the main realm: OV_DEN is off there)"; fi
 for d in "$AUTH_DB" "$CHARS_DB" "$BOTS_DB"; do db_exists "$d" && note "database $d: there (kept)" || note "database $d: would be made"; done
 note "ports: none published (players come through the relay $RELAY_NAME; the relay gives the realm its port pair)"
 note "already running: $WORLD_C=$(running "$WORLD_C" && echo 1 || echo 0) $AUTH_C=$(running "$AUTH_C" && echo 1 || echo 0) $AGENT_C=$(running "$AGENT_C" && echo 1 || echo 0)"
@@ -249,7 +253,7 @@ rollback() {
   for c in "${MADE[@]}"; do docker rm -f "$c" >/dev/null 2>&1 || true; done
   for d in "${MADE_DB[@]}"; do echo "DROP DATABASE IF EXISTS \`$d\`;" | sql >/dev/null 2>&1 || true; done
   for f in "${FILES_NEW[@]}"; do rm -f "$f"; done
-  for f in "$WRATH_DIR/profiles/build.env" "$WRATH_DIR/custom/lua_scripts/ov_buildrealm.lua"; do
+  for f in "$WRATH_DIR/profiles/build.env" "$WRATH_DIR/custom/lua_scripts/ov_buildrealm.lua" "$WRATH_DIR/custom/lua_scripts/ov_den.lua"; do
     [ -f "$B/$(echo "${f#/}" | tr / _)" ] && cp -p "$B/$(echo "${f#/}" | tr / _)" "$f"
   done
   remove_ids
@@ -330,6 +334,9 @@ install_file() {  # install_file SRC DST: copied when different; a new file is r
 mkdir -p "$WRATH_DIR/profiles" "$WRATH_DIR/custom/lua_scripts" "$DIR/dens" "$DIR/logs"
 install_file "$SRC/realm/profiles/build.env" "$WRATH_DIR/profiles/build.env" || fail "could not write profiles/build.env"
 install_file "$SRC/realm/custom/lua_scripts/ov_buildrealm.lua" "$WRATH_DIR/custom/lua_scripts/ov_buildrealm.lua" || fail "could not write ov_buildrealm.lua"
+[ -f "$WRATH_DIR/custom/lua_scripts/ov_den.lua" ] && [ ! -f "$B/$(echo "${WRATH_DIR#/}/custom/lua_scripts/ov_den.lua" | tr / _)" ] \
+  && cp -p "$WRATH_DIR/custom/lua_scripts/ov_den.lua" "$B/$(echo "${WRATH_DIR#/}/custom/lua_scripts/ov_den.lua" | tr / _)"
+install_file "$SRC/realm/custom/lua_scripts/ov_den.lua" "$WRATH_DIR/custom/lua_scripts/ov_den.lua" || fail "could not write ov_den.lua"
 own=$(stat -c %u:%g "$WRATH_DIR/logs/world" 2>/dev/null || echo 1000:1000)
 chown "$own" "$DIR/dens" "$DIR/logs" 2>/dev/null || true
 chmod 750 "$DIR/dens" "$DIR/logs"
@@ -426,11 +433,12 @@ for _ in $(seq 1 "$TRIES"); do
 done
 [ -n "$ok" ] || { docker logs --tail 30 "$AUTH_C" >&2 2>&1 || true; fail "the login server ($AUTH_C) does not answer a logon challenge (${out:-no answer})"; }
 note "login server: $out"
-ok=""; waited=0
+# by the clock: each probe itself can take up to ~20 s, so counting only the pauses made a 15-minute wait last hours
+ok=""; waited=0; t0=$SECONDS
 while [ "$waited" -le "$WORLD_WAIT" ]; do
   if out=$(probe "$EDGE_NET" world "$WORLD_C" 8085 2>&1); then ok=1; break; fi
   running "$WORLD_C" || break
-  sleep "$PAUSE"; waited=$((waited + (PAUSE > 0 ? PAUSE : 1)))
+  sleep "$PAUSE"; waited=$((SECONDS - t0))
 done
 [ -n "$ok" ] || { docker logs --tail 40 "$WORLD_C" >&2 2>&1 || true; fail "the world server ($WORLD_C) did not greet within ${WORLD_WAIT}s (${out:-no answer})"; }
 note "world server: $out (after about ${waited}s)"

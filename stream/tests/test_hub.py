@@ -1462,6 +1462,41 @@ home = re.search(r'<li class="hb-rl home.*?</li>\s*(?=<li|</ul>)', rl, re.S)
 check("realm list: our realm says which mods it uses (from its own config)", home and "<summary>Uses " in home.group(0)
       and "<li>Minigolf</li>" in home.group(0), home.group(0)[:300] if home else rl[:200])
 
+# ---- realm rows at a desktop window narrower than a full row (owner, 31 Oct, 800px: the name squeezed to a letter a
+# line, the meta one word a line, the actions keeping the whole row): the name stays on one line, no sideways scroll
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:
+    sync_playwright = None
+if sync_playwright is None:
+    print("SKIP realm row layout: playwright is not installed")
+else:
+    def wide_rows(query=None):
+        got = real_rows(query)
+        rows = [dict(r, address="play.openvanilla.app", kind="Official realm") if r.get("home") else r for r in got[0]]
+        rows.append({"id": "abcdefghijklmnop", "name": "Frosthaven Duelists Guild", "live": True, "players": 7,
+                     "address": "relay.openvanilla.app:8101", "tags": ["pvp"]})
+        return (rows,) + tuple(got[1:])
+    HB.hub.realm_rows = wide_rows
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        for path in ("/wrath/leyline-preview", "/wrath/leyline-preview/realms"):
+            for w in (390, 800, 1024, 1150, 1440):
+                pg = b.new_page(viewport={"width": w, "height": 900})
+                pg.goto(f"http://127.0.0.1:{PAGE_PORT}{path}")
+                got = pg.evaluate("""() => [...document.querySelectorAll('#hb-rlist .hb-rl')].map(li => {
+                    const b = li.querySelector('.hb-rl-n b'), m = li.querySelector('.hb-rl-m');
+                    const lh = parseFloat(getComputedStyle(b).lineHeight) || 22;
+                    return {name: b.textContent, lines: Math.round(b.getBoundingClientRect().height / lh),
+                            meta: Math.round(m.getBoundingClientRect().width)};
+                })""")
+                sw = pg.evaluate("document.documentElement.scrollWidth")
+                check(f"realm rows {path} at {w}px: names on one line, the meta line wide, no sideways scroll",
+                      len(got) >= 2 and all(r["lines"] == 1 and r["meta"] >= 200 for r in got) and sw <= w, (got, sw))
+                pg.close()
+        b.close()
+    HB.hub.realm_rows = real_rows
+
 srv.shutdown()
 shutil.rmtree(DATA, ignore_errors=True)
 shutil.rmtree(HUBDIR, ignore_errors=True)

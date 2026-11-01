@@ -1,0 +1,8 @@
+# The client patch series, in apply order on a fresh benilla-wotlk b9a49428 (see README.md).
+# One path per line, relative to client/patches/. "Build browser client.bat" applies exactly these.
+wotlk-web-port-wip.patch
+history/wotlk-client-20261026a.patch
+history/wotlk-client-20261026b.patch
+history/wotlk-client-20261029a.patch
+history/wotlk-client-20261031a.patch
+wotlk-client-20261031b.patch

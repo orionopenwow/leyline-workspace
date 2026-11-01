@@ -222,13 +222,19 @@ svg { flex: none; }
   margin-left: 2px; height: 28px; padding: 0 10px; display: grid; place-items: center; border-radius: 6px;
   font: 700 10.5px var(--t-font); letter-spacing: .08em; background: var(--t-accent); color: var(--t-on-accent);
 }
-/* the window buttons tucked into the top-right corner (owner 2026-10-30): flush with the edge, small, no gap */
-.winbtns { display: flex; gap: 0; align-self: flex-start; margin-left: 4px; }
-.winbtns button { width: 34px; height: 26px; border: 0; border-radius: 0; background: transparent; color: var(--t-muted); cursor: pointer; display: grid; place-items: center; }
-.winbtns button:hover { background: var(--t-raised); color: var(--t-text); }
-.winbtns #win-close:hover { background: var(--t-danger); color: #fff; }
-.winbtns #win-close { border-top-right-radius: var(--t-radius-xs); }
-.winbtns svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+/* the window buttons (owner 2026-10-31: "the yellow red and green dots style"): three round dots, minimise yellow,
+   maximise green, close red at the corner; the symbol shows on hover or keyboard focus */
+.winbtns { display: flex; gap: 6px; align-self: flex-start; margin: 7px 7px 0 6px; padding: 0; }   /* tucked into the corner (owner 31 Oct) */
+.winbtns button { width: 13px; height: 13px; padding: 0; border: 0; border-radius: 50%; cursor: pointer; display: grid; place-items: center;
+  color: transparent; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.28); transition: filter 0.12s, color 0.12s; }
+#win-min { background: #febc2e; }
+#win-max { background: #28c840; }
+#win-close { background: #ff5f57; }
+.winbtns:hover button, .winbtns button:focus-visible { color: rgba(0, 0, 0, 0.62); }
+.winbtns button:active { filter: brightness(0.85); }
+.winbtns button:focus-visible { outline: 2px solid var(--t-accent); outline-offset: 2px; }
+.winbtns svg { width: 8px; height: 8px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; }
+@media (prefers-reduced-motion: reduce) { .winbtns button { transition: none; } }
 
 /* ---------------------------------------------------------------- sidebar */
 .side {

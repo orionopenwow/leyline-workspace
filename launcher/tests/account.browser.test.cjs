@@ -54,6 +54,7 @@ const FAKE = (o) => {
           if ('setup' in a) prof.setup = a.setup;
           return { ok: true, me: { pid: 'aaaaaaaaaa', name, tag: '4821', main: '', show_main: false, offline: false, profile: { ...prof } } };
         }
+        if (args.action === 'state') return { v: 1, me: { pid: 'aaaaaaaaaa', name, tag: '4821' }, friends: [], incoming: [], outgoing: [], blocked: [] };
         throw 'unexpected social call ' + args.action;
       case 'forum_call': return { threads: [], categories: [] };
       case 'open_link': return null;
@@ -84,15 +85,16 @@ test('signed out: SIGN IN opens the chooser; only the ways the website offers', 
   const { page, errors } = await open();
   await page.click('#hf-signin');
   await page.waitForSelector('#hf-code:not([hidden]) .sf-way');
-  assert.deepEqual(await page.$$eval('#hf-code .sf-way', (b) => b.map((x) => x.dataset.via)), ['herokey', 'google']);
+  assert.deepEqual(await page.$$eval('#hf-code .sf-ways .sf-way', (b) => b.map((x) => x.dataset.via)), ['herokey', 'google']);
+  assert.equal(await page.locator('#hf-code .sf-guest').count(), 1, 'and Play as guest under them');
   assert.match(await page.textContent('#hf-code'), /never see your password/);
   await page.keyboard.press('Escape');
   assert.ok(await page.isHidden('#hf-code'), 'Escape closes it');
   await page.close();
   const o = await open({ discord: true });
   await o.page.click('#hf-signin');
-  await o.page.waitForFunction(() => document.querySelectorAll('#hf-code .sf-way').length === 3);
-  assert.deepEqual(await o.page.$$eval('#hf-code .sf-way', (b) => b.map((x) => x.textContent)), ['Sign in with your Hero Key', 'Continue with Google', 'Continue with Discord']);
+  await o.page.waitForFunction(() => document.querySelectorAll('#hf-code .sf-ways .sf-way').length === 3);
+  assert.deepEqual(await o.page.$$eval('#hf-code .sf-ways .sf-way', (b) => b.map((x) => x.textContent)), ['Sign in with your Hero Key', 'Continue with Google', 'Continue with Discord']);
   assert.deepEqual([...errors, ...o.errors], []);
   await o.page.close();
 });
@@ -173,7 +175,7 @@ test('Manage account signed in: picture, name#tag, bio; save only what changed; 
   const { page, errors } = await open({ signed: true, bio: 'Hello', avatar: 'star', discord: true });
   await page.waitForSelector('#hf-me-btn');
   await page.click('#hf-me-btn');
-  await page.click('#hf-me [role="menuitem"]:has-text("Manage account")');
+  await page.click('#hf-panel [role="menuitem"]:has-text("Manage account")');
   await page.waitForSelector('#ac-view .ac-head');
   assert.match(await page.textContent('#ac-view .ac-me-n'), /Alice#4821/);
   assert.equal(await page.textContent('#ac-view .ac-me-bio'), 'Hello');

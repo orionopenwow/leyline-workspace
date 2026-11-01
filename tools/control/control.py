@@ -95,6 +95,9 @@ def _token() -> str:
 TOKEN = _token()
 
 STEPS = {
+    # Builds the browser client on this PC (client/build-browser-client.sh under Git Bash): tools once, benilla-wotlk
+    # with client/patches/series.txt, the fat-LTO release build, packed into play\ like every build. Then "client" ships it.
+    "client-build": ("client/Build browser client.bat", "Build the browser client on this PC (about an hour; then the client step)", False),
     "client":  ("stream/Update browser client.bat", "New browser game build", False),
     "signin":  ("stream/Update sign-in and warm-up.bat", "Play page and sign-in", False),
     "page":    ("stream/Update game page.bat", "Game page only (keeps the live game build)", False),
@@ -111,6 +114,14 @@ STEPS = {
     "ov112-undo": ("tools/ov112-off/Turn 1.12 jobs back on.bat", "Undo ov112-off in full: every 1.12 job back as it was (Duels, Herald, timers too)", False),
     "vr-beacon": ("hosting/vanilla-remastered/Put Vanilla Remastered on Leyline.bat", "Vanilla Remastered on Leyline (the 1.12 realm as an official Beacon)", False),
     "vr-beacon-off": ("hosting/vanilla-remastered/Take Vanilla Remastered off Leyline.bat", "Take Vanilla Remastered off Leyline (the 1.12 realm keeps running)", False),
+    # Vanilla Remastered levels 1-20 in the browser (owner 2026-10-31): the 1.12 game data back from the owner's own
+    # client (upload, extract, the 1-20 slice, compact settings, archives deleted), and the OG 1.12 site at its own address.
+    "vr-data-check": ("hosting/vanilla-remastered/Vanilla Remastered data - check.bat", "Vanilla Remastered data: this PC's 1.12 client, the server's disk and what is done (read-only)", False),
+    "vr-data": ("hosting/vanilla-remastered/Vanilla Remastered data.bat", "Vanilla Remastered data: upload the 1.12 archives, extract, 1-20 browser slice, compact settings (long; resumable)", False),
+    "vr-site-check": ("hosting/vanilla-remastered/Vanilla Remastered browser page - check.bat", "Vanilla Remastered in the browser: what the page step would do, its address and DNS (read-only)", False),
+    "vr-site": ("hosting/vanilla-remastered/Vanilla Remastered browser page.bat", "Vanilla Remastered in the browser: the OG 1.12 site at its own address (backup, self-check, rollback)", False),
+    "vr-site-off": ("hosting/vanilla-remastered/Vanilla Remastered browser page - off.bat", "Undo: the Vanilla Remastered browser page off (the realm keeps running)", False),
+    "vr-test": ("hosting/vanilla-remastered/Vanilla Remastered self-test.bat", "Vanilla Remastered self-test: a fresh TEST account made, logged in, deleted", False),
     "ovsite": ("tools/launcher-site/Land Leyline-Launcher site.bat", "openvanilla.app: land the site and repo cleanup on Leyline-Launcher main (Pages publishes it)", False),
     "ghclean-check": ("tools/github-cleanup/GitHub cleanup - dry run.bat", "What the GitHub cleanup would delete (read-only)", False),
     "ghclean": ("tools/github-cleanup/GitHub cleanup - do it.bat", "GitHub cleanup: old releases and packages (owner's choices, 2026-10-30)", False),
@@ -181,7 +192,8 @@ STEPS = {
 # Steps that change nothing in production. With "Ask before deploys" on (control/autopilot.json "confirm"),
 # Autopilot runs only these by itself; anything else waits for "Launch all".
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
-             "fresh-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog"}
+             "fresh-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog",
+             "vr-data-check", "vr-site-check"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}
 
 # Never in a log or on the page: passwords, tokens, keys, connection strings (scrub() on every line a step prints).

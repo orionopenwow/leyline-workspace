@@ -27,7 +27,7 @@ Run these in Leyline Control, in this order. None of them restarts the main real
 
 | Step | What it does | Time |
 |---|---|---|
-| `scripts` | Puts the newest realm scripts on the server (a live reload on the main realm, no restart). Only needed if `build-realm-check` says the scripts are older than the Den's save files. | 1 min |
+| `scripts` | Puts the newest realm scripts on the server (a live reload on the main realm, no restart). Only needed if `build-realm-check` says `ov_build.lua` is older than the Den's save files. (`ov_den.lua` isn't in that step's list: `build-realm-on` brings it; it does nothing on the main realm.) | 1 min |
 | `build-realm-check` | Read-only. Memory, disk, the main realm, the relay, and what turning it on would do. | 1 min |
 | `build-realm-on` | Backup, its own databases, its login and world servers, a self-check (login answers, world greets and stays up, main realm still fine and not restarted), then the Leyline list. Any failure takes everything this run made away again. | 3 to 10 min (the world server loads for 1 to 5 minutes) |
 | `signin` | The play page learns that a hop to the Builders' Realm keeps the player's own login (`build-realm.id`). | 2 min |

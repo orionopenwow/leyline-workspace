@@ -142,7 +142,8 @@ class BuildRealm(unittest.TestCase):
         self.src = os.path.join(self.t, "src")
         for d in ("hosting/build-realm", "hosting/kit/tools/wunet", "hosting/kit/tools/wuhost"):
             shutil.copytree(os.path.join(ROOT, d), os.path.join(self.src, d), ignore=shutil.ignore_patterns("__pycache__"))
-        for f in ("hosting/kit/tools/Dockerfile", "realm/profiles/build.env", "realm/custom/lua_scripts/ov_buildrealm.lua"):
+        for f in ("hosting/kit/tools/Dockerfile", "realm/profiles/build.env", "realm/custom/lua_scripts/ov_buildrealm.lua",
+                  "realm/custom/lua_scripts/ov_den.lua"):
             os.makedirs(os.path.dirname(os.path.join(self.src, f)), exist_ok=True)
             shutil.copy(os.path.join(ROOT, f), os.path.join(self.src, f))
         p = os.path.join(self.src, "hosting/build-realm/build-realm.sh")   # a Windows checkout: CRLF
@@ -155,7 +156,6 @@ class BuildRealm(unittest.TestCase):
         lua = os.path.join(self.wrath, "custom", "lua_scripts")
         for d in (self.portal, lua, os.path.join(self.wrath, "profiles"), os.path.join(self.wrath, "logs", "world")):
             os.makedirs(d, exist_ok=True)
-        open(os.path.join(lua, "ov_den.lua"), "w").write('-- "format": "leyline-den"\n')
         open(os.path.join(lua, "ov_build.lua"), "w").write("OVBuild.DenLayout = X.DenLayout\n")
         open(os.path.join(self.wrath, "signup.env"), "w").write("SOAP_USER=WUSOAP\nSOAP_PASS=SOAPSECRET-sentinel\nSOAP_URL=x\n")
         self.mem = os.path.join(self.t, "meminfo")
@@ -195,6 +195,7 @@ class BuildRealm(unittest.TestCase):
         rc, out = self.run_it("--check")
         self.assertEqual(rc, 0, out)
         self.assertTrue(out.rstrip().endswith("BUILD REALM DRY"), out[-300:])
+        self.assertIn("ov_den.lua: missing or old; this step installs it", out)
         self.assertIn("memory available: 4000 MB", out)
         self.assertIn("ov-ac-worldserver: 2.1GiB", out)
         self.assertNotIn("WOULD STOP", out)
@@ -218,6 +219,7 @@ class BuildRealm(unittest.TestCase):
         open(os.path.join(self.wrath, "custom", "lua_scripts", "ov_build.lua"), "w").write("-- old\n")
         rc, out = self.run_it("--go")
         self.assertEqual(rc, 1, out)
+        self.assertIn("ov_build.lua is older", out)
         self.assertIn("run the scripts step first", out)
         self.assertNotIn("docker run -d", self.read("docker.log"))
 
@@ -286,6 +288,9 @@ class BuildRealm(unittest.TestCase):
         # files on the box, the listing, the id files
         self.assertTrue(os.path.exists(os.path.join(self.wrath, "profiles", "build.env")))
         self.assertTrue(os.path.exists(os.path.join(self.wrath, "custom", "lua_scripts", "ov_buildrealm.lua")))
+        self.assertEqual(open(os.path.join(self.wrath, "custom", "lua_scripts", "ov_den.lua")).read(),
+                         open(os.path.join(ROOT, "realm", "custom", "lua_scripts", "ov_den.lua")).read(),
+                         "ov_den.lua comes with this step (the scripts step doesn't carry it)")
         cfg = json.load(open(os.path.join(self.dir, "beacon", "state", "host.json")))
         self.assertTrue(cfg["official"])
         self.assertEqual((cfg["name"], cfg["auth_service"], cfg["world_service"]), ("Builders' Realm", "wu-build-auth:3724", "ov-ac-build-world:8085"))
@@ -314,6 +319,7 @@ class BuildRealm(unittest.TestCase):
         self.assertEqual(sorted(self.read("dropped.log").split()), ["acore_auth_build", "acore_characters_build", "acore_playerbots_build"])
         self.assertFalse(os.path.exists(os.path.join(self.wrath, "profiles", "build.env")))
         self.assertFalse(os.path.exists(os.path.join(self.wrath, "custom", "lua_scripts", "ov_buildrealm.lua")))
+        self.assertFalse(os.path.exists(os.path.join(self.wrath, "custom", "lua_scripts", "ov_den.lua")))
         self.assertEqual(self.ids(), [None, None])
 
     def test_out_of_memory_rolls_back(self):
@@ -365,7 +371,8 @@ class BuildRealm(unittest.TestCase):
             self.assertIn(f"bash $T/build-realm.sh $T {modes[m]}", b)
             self.assertIn(f"grep -q '^{lasts[m]}'", b)
             for f in ("hosting/build-realm", "hosting/kit/tools/wunet", "hosting/kit/tools/wuhost", "hosting/kit/tools/Dockerfile",
-                      "realm/profiles/build.env", "realm/custom/lua_scripts/ov_buildrealm.lua"):
+                      "realm/profiles/build.env", "realm/custom/lua_scripts/ov_buildrealm.lua",
+                      "realm/custom/lua_scripts/ov_den.lua"):
                 self.assertIn(f, b)
             self.assertNotRegex(b, r"(?i)world of warcraft|warcraft|blizzard")
         c = control_steps()

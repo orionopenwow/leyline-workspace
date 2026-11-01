@@ -500,3 +500,12 @@
 1187g ship Save to GitHub: launcher auto-update, add a game client by drop, Agents page, Solo leveling, client picker, Network tab
 1187h leyline Leyline repo: the launcher release (GitHub builds it)
 1188a build-realm-check Read-only: Builders' Realm memory, disk, what turning it on would do
+1189a vr-data-check Read-only: Vanilla Remastered data, this PC's 1.12 client, server disk
+1190a build-realm-check Read-only: Builders' Realm check again (brings its own Den script now)
+1193a signin Site: realm rows fit at tablet widths
+1193b ship Save to GitHub: the Windows build test fix
+1193c leyline Leyline repo: the launcher release again (GitHub builds it)
+1191a vr-data Vanilla Remastered data: upload the 1.12 archives, rebuild the server's map files, the 1-20 browser files, compact settings (long; resumable)
+1192a client-build Browser game: build the new faster-loading game on this PC (long; installs its build tools once)
+1190b build-realm-on Builders' Realm on: backup, its databases and servers, self-check, on Leyline (rollback on failure; main realm untouched)
+1190c signin Site: hops to the Builders' Realm

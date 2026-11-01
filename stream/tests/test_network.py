@@ -357,6 +357,20 @@ _c = net.card(_o[1], "https://relay.example", {})
 check("vr: card says official and hosted by Leyline for now; the version only in its chip",
       ">Official<" in _c and "hosted by Leyline for now" in _c and '<span class="tag">CMaNGOS</span>' in _c
       and '<span class="tag ver"' in _c and "1.12.1 · " not in _c, _c[:400])
+check("vr: no browser button until its page is up", "Play in your browser" not in _c and _rec["community"]["browserUrl"] is None)
+net.VR_SITE_FILE = os.path.join(os.path.dirname(net.VR_FILE), "vr-site.url")
+with open(net.VR_SITE_FILE, "w") as f:
+    f.write("https://vanilla.example.app/\n")
+net._vrs["at"] = -1e9
+_c = net.card(_o[1], "https://relay.example", {})
+check("vr: its browser page on the card and in the record (vr-site.url)",
+      'href="https://vanilla.example.app/"' in _c and "Play in your browser" in _c
+      and net.record_of(_o[1])["community"]["browserUrl"] == "https://vanilla.example.app/")
+with open(net.VR_SITE_FILE, "w") as f:
+    f.write("javascript:alert(1)\n")
+net._vrs["at"] = -1e9
+check("vr: a bad page address is ignored", net.vr_site_url() is None)
+net._vrs.update(at=1e18, url=None)
 net._vr.update(at=1e18, id=None)
 
 # ---------------------------------------------------------------- shipping: the signin step

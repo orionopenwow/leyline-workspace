@@ -3258,7 +3258,7 @@ font:700 11px/18px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-s
 .hb-rl[hidden],.hb-rlist.cap>.hb-rl:nth-child(n+9){display:none}
 .hb-rl-n b{font-size:15.5px}
 .hb-rl-n{display:flex;flex-wrap:wrap;align-items:center;gap:3px 8px;min-width:0}
-.hb-rl-n b{font-weight:650;overflow-wrap:anywhere}
+.hb-rl-n b{font-weight:650;overflow-wrap:break-word}
 .hb-rl-m{flex:1 0 100%;color:var(--lk-muted);font-size:12.5px}
 .hb-bdg{padding:0 7px;border-radius:999px;border:1px solid var(--lk-border-strong);color:var(--lk-text-2);font-size:11px;font-weight:700;letter-spacing:.04em;line-height:18px}
 .hb-bdg.o{border-color:var(--lk-accent);color:var(--lk-accent-strong)}.hb-bdg.f{border-color:var(--lk-accent-2);color:var(--lk-accent-2)}
@@ -3279,6 +3279,10 @@ code.hb-addr{padding:6px 8px;border-radius:8px;background:var(--lk-surface-2);co
 .hb-copy{min-height:30px;padding:0 10px;border-radius:8px;border:1px solid var(--lk-border-strong);background:transparent;color:var(--lk-text-2);
 font:600 12.5px var(--lk-font);cursor:pointer}.hb-copy:hover{border-color:var(--lk-accent);color:var(--lk-text)}
 .hb-rl-none{padding:14px;color:var(--lk-muted);text-align:center}
+/* a list narrower than a full row (owner's 800px window, 31 Oct: the name squeezed to one letter a line): the actions
+   go on a second line under the name, so the name and its line keep the width */
+.hb-rlist{container-type:inline-size}
+@container (max-width:1000px){.hb-rl{grid-template-columns:auto minmax(0,1fr) auto}.hb-rl-a{grid-column:2/-1;justify-content:flex-start}}
 @media (max-width:640px){.hb-rl{grid-template-columns:auto minmax(0,1fr) auto;padding:11px 12px}.hb-rl-a{grid-column:1/-1;justify-content:flex-start}}
 /* how it works: three steps in one slim strip */
 .hb-how{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;margin:22px 0;padding:0;list-style:none;counter-reset:hb-how;

@@ -61,6 +61,8 @@ html body #wenilla-boot .stage::after, #wu-loading .stage::after {
   color: transparent; filter: drop-shadow(0 2px 3px rgba(0,0,0,.9));
 }
 #wu-loading .stage::after { content: "Entering the world\2026"; }
+/* what the load waits on (wu-loading.js sets data-line from the client's load:<what>, plain words, no numbers) */
+#wu-loading .stage[data-line]::after { content: attr(data-line); }
 
 /* -- the bar: arcane blue in a gold rim, not the yellow pill ------------------------------------ */
 html body #wenilla-boot .bar, #wu-loading .bar {

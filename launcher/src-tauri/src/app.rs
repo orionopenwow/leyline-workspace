@@ -295,6 +295,55 @@ async fn join_invite(core: State<'_, Core>, client: String, link: String) -> Res
     Ok(Joined { address, name })
 }
 
+/// Your Den on Den Lite (host/lite.rs): start it when it isn't running, wait for its login port (up to 15 s), put its
+/// account in the client's Config.wtf, point the client at it and start the game.
+#[tauri::command]
+async fn den_play_lite(core: State<'_, Core>, client: String) -> Result<String, String> {
+    use crate::host::lite::{self, DenLite};
+    let profile = core.client(&client)?;
+    if profile.build != crate::clients::Build::V335a {
+        return Err("Your Den plays with a 3.3.5a game folder.".into());
+    }
+    blocking(|| {
+        let l = lite::Binary::find(&crate::settings::app_dir());
+        l.start()?;
+        for _ in 0..50 {
+            if l.status().running {
+                return Ok(());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+        Err("Den Lite started but isn't answering yet. Try again in a moment.".to_string())
+    })
+    .await?;
+    let _ = crate::herokey::set_account_name(&profile.path, lite::ACCOUNT);
+    point_and_play(&core, &client, lite::ADDRESS, true)
+}
+
+/// Your Den on the Docker Den: its account (the realm's GM name) filled in on the client's login screen, so PLAY
+/// needs only the password the player chose on the join page.
+#[tauri::command]
+fn den_prefill_account(core: State<Core>, client: String) -> Result<String, String> {
+    let profile = core.client(&client)?;
+    let kit = core.kit().ok_or("Get the Host pack first.")?;
+    let acct = crate::host::yourden::account(&kit);
+    if acct.is_empty() {
+        return Ok(String::new());
+    }
+    crate::herokey::set_account_name(&profile.path, &acct).map_err(|e| format!("Couldn't write Config.wtf: {e}"))?;
+    Ok(acct)
+}
+
+/// "Make my account": the Docker Den's own invite link (from the Host pack, never from the page) opened in the browser,
+/// where the owner makes the account they named, as friends do.
+#[tauri::command]
+fn den_join_page(app: AppHandle, core: State<Core>) -> Result<(), String> {
+    let kit = core.kit().ok_or("Get the Host pack first.")?;
+    let link = crate::host::invite(&kit).ok_or("Your Den has no invite link yet: start it once first.")?;
+    realms::parse_invite(&link).ok_or("Your Den's invite link doesn't look right: make a new one under Realm tools.")?;
+    app.opener().open_url(link, None::<&str>).map_err(|e| e.to_string())
+}
+
 /// "Back to the official realm": point the client at it again.
 #[tauri::command]
 fn back_to_official(core: State<Core>, client: String) -> Result<String, String> {
@@ -1008,6 +1057,16 @@ pub fn run() {
             crate::p2p::cmds::host_dens, // a Den's save files: list, a copy, add one, open one (host/dens.rs)
             crate::p2p::cmds::host_den_text,
             crate::p2p::cmds::host_den_add,
+            crate::p2p::cmds::den_state, // Your Den: one page, Den Lite or the Docker Den (host/yourden.rs, host/lite.rs)
+            crate::p2p::cmds::den_lite_stop,
+            crate::p2p::cmds::den_text,
+            crate::p2p::cmds::den_add,
+            crate::p2p::cmds::den_open,
+            crate::p2p::cmds::den_fetch,
+            crate::p2p::cmds::den_share_move,
+            den_play_lite,
+            den_prefill_account,
+            den_join_page,
             crate::p2p::cmds::host_den_open,
             crate::p2p::cmds::host_modes, // modes anyone can host and fork: cards, fork, change, remove, host one (host/modes.rs)
             crate::p2p::cmds::host_mode_fork,

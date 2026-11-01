@@ -187,14 +187,45 @@ find_wow() {
 client_data() {
   step "Game data for the server (from your own 3.3.5a install; nothing is downloaded or shared)"
   docker volume create ov-client-data >/dev/null
-  if docker run --rm -v ov-client-data:/d alpine:3.20 test -d /d/dbc -a -d /d/maps >/dev/null 2>&1; then
+  # The light Den (docs/DEN.md, "A light local Den"): the den profile extracts only the Den's island tiles, the
+  # starting-area tiles the server checks and the dbc (tools/wuhost/denslice.py stages them from your folder for
+  # the stock extractor). The volume is marked den-light.json; any other profile re-extracts the whole world.
+  # WU_DEN_FULL_DATA=1 takes the whole world for a Den too.
+  local light=0
+  [ "${WU_PROFILE:-}" = den ] && [ "${WU_DEN_FULL_DATA:-0}" != 1 ] && light=1
+  local have=0 marked=0
+  docker run --rm -v ov-client-data:/d alpine:3.20 test -d /d/dbc -a -d /d/maps >/dev/null 2>&1 && have=1
+  docker run --rm -v ov-client-data:/d alpine:3.20 test -f /d/den-light.json >/dev/null 2>&1 && marked=1
+  # a pack with map tiles (tools/wuhost/packs.py) asks for the Den's data again: state/packs/restage
+  [ "$light" = 1 ] && [ -f "$KIT/state/packs/restage" ] && have=0
+  if [ "$have" = 1 ] && { [ "$light" = 1 ] || [ "$marked" = 0 ]; }; then
     say "  Already extracted."
   else
     local wow
     wow="$(find_wow)" || die "No 3.3.5a game folder found. Run again with WU_GAME_DIR=/path/to/your/3.3.5a/game/folder."
-    say "  Extracting dbc + maps from $wow (a few minutes)..."
-    run docker run --rm --user root -v "$wow:/wow:ro" -v ov-client-data:/out -w /out "$WU_EXTRACT_IMAGE" \
-      /azerothcore/env/dist/bin/map_extractor -i /wow -o /out || die "Extracting the game data failed."
+    local done_light=0
+    if [ "$light" = 1 ]; then
+      say "  Den data only: the island, the starting areas and the dbc from $wow (about a minute)..."
+      docker volume rm ov-den-stage >/dev/null 2>&1 || true
+      if run docker run --rm --user root -v "$wow:/wow:ro" -v ov-den-stage:/out -v "$KIT/tools:/t:ro" -e PYTHONPATH=/t \
+           -v "$KIT/state:/state:ro" "$WU_TOOLS_IMAGE" python -m wuhost.denslice stage --game /wow --out /out \
+           --pack-tiles /state/packs/tiles.json \
+         && run docker run --rm --user root -v ov-den-stage:/wow:ro -v ov-client-data:/out -w /out "$WU_EXTRACT_IMAGE" \
+           /azerothcore/env/dist/bin/map_extractor -i /wow -o /out \
+         && run docker run --rm -v ov-den-stage:/s:ro -v ov-client-data:/d alpine:3.20 cp /s/den-slice.json /d/den-light.json; then
+        done_light=1
+        rm -f "$KIT/state/packs/restage"
+      else
+        say "  ${Y}The Den-only data didn't work out; taking the whole world instead.${N}"
+      fi
+      docker volume rm ov-den-stage >/dev/null 2>&1 || true
+    fi
+    if [ "$done_light" = 0 ]; then
+      say "  Extracting dbc + maps from $wow (a few minutes)..."
+      run docker run --rm --user root -v "$wow:/wow:ro" -v ov-client-data:/out -w /out "$WU_EXTRACT_IMAGE" \
+        /azerothcore/env/dist/bin/map_extractor -i /wow -o /out || die "Extracting the game data failed."
+      run docker run --rm -v ov-client-data:/d alpine:3.20 rm -f /d/den-light.json
+    fi
   fi
   if [ "$IMG" != "acore/ac-wotlk" ] && ! docker run --rm -v ov-client-data:/d alpine:3.20 test -d /d/dbc-stock >/dev/null 2>&1; then
     say "  All-races-all-classes data (mod-arac, pinned commit)..."

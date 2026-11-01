@@ -556,3 +556,7 @@
 1241a tidy-check Read-only: what making room on the server removes (needs Control restarted once for the new step)
 1241b tidy Make room on the server: build cache, logs over 7 days, all but the newest 3 site backups, the parked VR browser slice (owner OK 1 Nov 01:05)
 1241c slice Streamed game files with the Den tier right after Dalaran; with room for both copies it swaps over with no outage (30-60 min)
+1245a scripts Realm scripts: Den GM controls (speed, fly, mark/go, revive; owner: weather, invisible, summon). Only where Dens are on (OV_DEN=1)
+1245b page Game page: the realm bar at the top (it covered the character name box), hop and sign-in screens in the Leyline look
+1246a signin Site: Den files on the Workshop (listing format den, checked like the Den loader)
+1246b ship Launcher: Your Den (one button, Den page: play, share with friends, invite, saved Dens, packs, Workshop), Den Lite support, the Agents page's Den tools

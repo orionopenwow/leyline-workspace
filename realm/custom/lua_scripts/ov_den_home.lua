@@ -25,7 +25,8 @@
 -- Addon (WrathUnleashedUI/DenHome.lua), OVMOD mod "wuden":
 --   client -> server   home                       send me the home line
 --                      note    <text>             a note (the text as typed; cleaned here)
---   server -> client   home    started=<key|->;door=0|1;mailbox=0|1;mail=<unread>;role=<role>;stamp=<name|->;stamps=<a,b>
+--   server -> client   home    started=<key|->;door=0|1;mailbox=0|1;mail=<unread>;role=<role>;stamp=<name|->;stamps=<a,b>;
+--                              gm=<speed>,<fly 0|1>,<invisible 0|1>   (ov_den.lua's GM controls, for the Den panel's GM row)
 --                      start   forest,Forest glade;keep,Dark keep;empty,Empty      the owner's first visit: pick one
 --                      knock   <name>             someone is at your door
 --                      mail    <id>;<from>;<at>;<text>    one note (after .den mail)
@@ -304,9 +305,11 @@ end
 function H.sendHome(player)
     if not player then return end
     local p = H.pending[player:GetGUIDLow()]
-    send(player, "home", string.format("started=%s;door=%d;mailbox=%d;mail=%d;role=%s;stamp=%s;stamps=%s", setting("started") or "-",
+    local d = D()
+    local gm = d and d.GM and d.GM.line(player) or "1,0,0"
+    send(player, "home", string.format("started=%s;door=%d;mailbox=%d;mail=%d;role=%s;stamp=%s;stamps=%s;gm=%s", setting("started") or "-",
         H.spot("door") and 1 or 0, H.spot("mailbox") and 1 or 0, isOwner(player) and H.unread() or 0, role(player),
-        p and p.name or "-", table.concat(H.STAMPS, ",")))
+        p and p.name or "-", table.concat(H.STAMPS, ","), gm))
 end
 
 ------------------------------------------------------------------------------------------------

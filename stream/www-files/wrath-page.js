@@ -632,7 +632,8 @@ export function hopLoginMessage(ev, env = window.__wenilla_env || {}) {
 }
 
 const HOP_CSS = `
-  #wu-hop-bar { position: fixed; left: 50%; bottom: 8px; transform: translateX(-50%); z-index: 32; display: flex;
+  /* top centre, just under the edge (1 Nov live: at the bottom it covered character create's name box and the action bars) */
+  #wu-hop-bar { position: fixed; left: 50%; top: 40px; transform: translateX(-50%); z-index: 32; display: flex;
     gap: 6px; align-items: center; padding: 4px 6px 4px 12px; border-radius: 8px; font: 12px system-ui, sans-serif;
     background: linear-gradient(#101a2c, #070b14); border: 1px solid rgba(201,162,39,.6); color: #d8e6f5;
     box-shadow: 0 4px 16px rgba(0,0,0,.6); }

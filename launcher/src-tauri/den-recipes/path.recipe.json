@@ -1,0 +1,32 @@
+{
+ "format": "leyline-recipe",
+ "version": 1,
+ "name": "path",
+ "title": "Path",
+ "about": "A path of flat stones between two points, with lights along it on alternate sides. Points are yards from the room's middle (the doorway is at x 0, y minus the room's half width).",
+ "params": {
+  "x1": { "default": 0, "min": -45, "max": 45, "about": "where it starts" },
+  "y1": { "default": -12, "min": -45, "max": 45 },
+  "x2": { "default": 0, "min": -45, "max": 45, "about": "where it ends" },
+  "y2": { "default": -24, "min": -45, "max": 45 },
+  "spacing": { "default": 1.6, "min": 0.5, "max": 10, "about": "yards between two stones" },
+  "stone": { "default": "platform", "piece": true, "about": "the path's piece" },
+  "size": { "default": 0.35, "min": 0.1, "max": 5, "about": "the stone's size" },
+  "lights": { "default": 4, "min": 0, "max": 20, "whole": true, "about": "a light every this many stones (0: none)" },
+  "light": { "default": "lantern", "piece": true }
+ },
+ "let": [
+  ["dx", "x2 - x1"],
+  ["dy", "y2 - y1"],
+  ["len", "sqrt(dx * dx + dy * dy)"],
+  ["n", "max(1, floor(len / spacing) + 1)"],
+  ["ang", "atan2(dy, dx)"]
+ ],
+ "pieces": [
+  { "repeat": [["i", "n"]], "let": [["t", "n > 1 ? i / (n - 1) : 0"]],
+    "key": "$stone", "x": "x1 + dx * t", "y": "y1 + dy * t", "yaw": "ang", "scale": "size" },
+  { "repeat": [["i", "n"]], "when": "lights > 0 && i % max(1, lights) == 0",
+    "let": [["t", "n > 1 ? i / (n - 1) : 0"], ["side", "(floor(i / max(1, lights)) % 2) * 2 - 1"]],
+    "key": "$light", "x": "x1 + dx * t + side * 1.6 * cos(ang + 90)", "y": "y1 + dy * t + side * 1.6 * sin(ang + 90)", "yaw": "ang" }
+ ]
+}

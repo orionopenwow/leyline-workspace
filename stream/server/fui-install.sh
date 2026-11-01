@@ -24,12 +24,13 @@ OV="$ST/overlays/foreverui"
 BK="$ST/overlays/backup"
 fui() { python3 -I "$ST/fui-overlay.py" "$@"; }
 
-# The slice folders wu-play may serve (not the .new/.old/.stage of an upload in progress).
+# The slice folders wu-play may serve: slice names have no dot, so this skips every copy (.new/.stage of an upload in
+# progress, .old kept for rollback, .prev being replaced).
 slice_dirs() {
   local d
   for d in "$ST"/slices/*/; do
     d=${d%/}
-    case "$d" in *.new|*.old|*.stage) continue ;; esac
+    case "${d##*/}" in *.*) continue ;; esac
     if [ -n "$(find "$d" -maxdepth 2 -iname DBFilesClient)" ]; then echo "$d"; fi
   done
   return 0
@@ -98,29 +99,33 @@ case "$cmd" in
     n=0
     while read -r s; do
       [ -n "$s" ] || continue
-      fui apply-slice "$OV" "$s" || { [ -d "$OV.old" ] && { rm -rf "$OV"; mv "$OV.old" "$OV"; fui apply-slice "$OV" "$s" || true; }; die "could not lay Forever UI over $s (the previous state is back)"; }
+      # on a hard-link copy, checked, then renamed into place (slice_restage): a failure leaves $s as it was
+      slice_restage "$s" fui apply-slice "$OV" || { [ -d "$OV.old" ] && { rm -rf "$OV"; mv "$OV.old" "$OV"; }; slice_swapped_undo; restart_play 1; slice_swapped_done; die "could not lay Forever UI over $s: every slice is as it was, the previous overlay is back"; }
       n=$((n+1))
     done < <(slice_dirs)
     rm -rf "$OV.old"
     [ "$n" -gt 0 ] || echo "  no slice on the server yet: Make mini slice.bat lays Forever UI over it on upload"
     www_apply
     restart_play 1
+    slice_swapped_done
     echo "  disk free now: $(df -h --output=avail "$ST" | tail -1 | tr -d ' ')"
     echo "  Forever UI is on in the stream (players: ?foreverui=0 on the page for the stock look)"
     ;;
   remove)
     log "Forever UI off the streamed slice"
-    while read -r s; do [ -n "$s" ] && fui unapply-slice "$s"; done < <(slice_dirs)
+    while read -r s; do [ -n "$s" ] && { slice_restage "$s" fui unapply-slice || die "could not take Forever UI off $s (it is as it was)"; }; done < <(slice_dirs)
     if [ -f "$ST/www/boot-manifest.json" ]; then fui unapply-www "$ST/www"; fi
     rm -rf "$OV" "$OV.old"
     restart_play 0
+    slice_swapped_done
     echo "  Forever UI removed (the slice and the client are as uploaded)"
     ;;
   reapply-slice)
     name="${2:?usage: fui-install.sh reapply-slice <name> [<dir>]}"; dir="${3:-$ST/slices/$name}"
     [ -d "$OV" ] || exit 0
-    fui apply-slice "$OV" "$dir"
+    slice_restage "$dir" fui apply-slice "$OV"
     if [ -f "$ST/www/boot-manifest.json" ]; then fui apply-www "$dir" "$ST/www" "$BK"; fi
+    [ -z "$SLICE_SWAPPED" ] || { restart_play 1; slice_swapped_done; }   # a live slice (not slice-install's .stage)
     ;;
   reapply-www)
     [ -d "$OV" ] || exit 0
@@ -131,9 +136,10 @@ case "$cmd" in
     [ -d "$OV" ] || { echo "  no Forever UI overlay on the server: nothing to rename (the next install follows portal.env)"; exit 0; }
     log "Forever UI overlay: the Leyline brand $mode"
     fui brand-toc "$OV" "$mode"
-    while read -r s; do [ -n "$s" ] && fui apply-slice "$OV" "$s"; done < <(slice_dirs)
+    while read -r s; do [ -n "$s" ] && { slice_restage "$s" fui apply-slice "$OV" || die "could not lay the renamed overlay over $s (it is as it was)"; }; done < <(slice_dirs)
     www_apply
     restart_play 1
+    slice_swapped_done
     ;;
   status)
     [ -d "$OV" ] && fui check "$OV" || echo "  no Forever UI overlay on the server"

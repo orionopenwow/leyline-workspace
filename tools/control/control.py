@@ -102,6 +102,7 @@ STEPS = {
     # Builds the browser client on this PC (client/build-browser-client.sh under Git Bash): tools once, benilla-wotlk
     # with client/patches/series.txt, the fat-LTO release build, packed into play\ like every build. Then "client" ships it.
     "client-build": ("client/Build browser client.bat", "Build the browser client on this PC (about an hour; then the client step)", False),
+    "den-lite": ("tools/den-lite/Build Den Lite.bat", "Build Den Lite on this PC (the instant Den server, no Docker) for the launcher's Your Den", False),
     "client":  ("stream/Update browser client.bat", "New browser game build", False),
     "client-back": ("stream/Roll back browser client.bat", "Undo: the previous browser game build back (the server keeps one; running it again swaps back)", False),
     "signin":  ("stream/Update sign-in and warm-up.bat", "Play page and sign-in", False),
@@ -134,6 +135,8 @@ STEPS = {
     "realm":   ("realm/Server pass - finder 10 and bug reports.bat", "Realm settings (5-min restart)", False),
     "foreverui": ("stream/Add Forever UI to the stream.bat", "Forever UI look (menus and character select)", False),
     "slice":   ("stream/Make mini slice.bat", "Streamed game files (30-60 min)", False),
+    # docs/INCIDENT-2026-11-01-SLICE.md: the streamed slice's files on the server, checked (read-only)
+    "slice-health": ("stream/Slice health - check.bat", "Read-only: is the streamed slice whole (key files, its tier lists, what wu-play answers)", False),
     "ship":    ("Ship to GitHub.bat", "Save everything to GitHub", True),
     "check":   ("realm/Server check.bat", "Server check (read-only)", False),
     "gm":      ("gmconsole/Install GM Console.bat", "GM console update (game keeps running)", False),

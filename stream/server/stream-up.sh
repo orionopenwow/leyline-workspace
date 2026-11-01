@@ -44,6 +44,9 @@ find "$SLICE_DIR" -maxdepth 2 -iname 'DBFilesClient' | grep -c . >/dev/null || d
 chmod 755 "$ST/bin/wenilla-host"
 "$ST/bin/wenilla-host" --help >/dev/null 2>&1 || die "$ST/bin/wenilla-host does not run on this machine"
 echo "  slice $SLICE: $(du -sh "$SLICE_DIR" | cut -f1), $(find "$SLICE_DIR" -type f | wc -l) files"
+# Whole? (the key files, its own tier lists; slice-health.sh). A warning only: a partial slice still serves what it has.
+slice_verify "$SLICE_DIR" > "$ST/.slice-verify.log" 2>&1 \
+  || { grep -E 'PROBLEM|NOT WHOLE' "$ST/.slice-verify.log" | sed 's/^ */  WARNING: /'; echo "  WARNING: the slice is not whole: build and upload it again (Make mini slice.bat), or bash $ST/slice-install.sh --rollback $SLICE"; }
 MYIP=$(curl -s -m 10 https://api.ipify.org || true)
 DNSIP=$(getent ahostsv4 "$STREAM_HOST" | awk 'NR==1{print $1}' || true)
 if [ -z "$DNSIP" ]; then

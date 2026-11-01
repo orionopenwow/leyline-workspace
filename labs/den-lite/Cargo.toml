@@ -1,0 +1,27 @@
+[package]
+name = "den-lite"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Den Lite: a tiny local white-room server for the 3.3.5a (12340) client, built for the Leyline launcher."
+license = "MIT OR Apache-2.0"
+
+# Not a member of the launcher's workspace (yet): its own lock file and build.
+[workspace]
+
+[dependencies]
+wow_srp = { version = "0.7.0", default-features = false, features = ["srp-default-math", "wrath-header"] }
+wow_login_messages = { version = "0.5.0", default-features = false, features = ["sync"] }
+wow_world_messages = { version = "0.3.0", default-features = false, features = ["wrath", "sync", "encryption"] }
+flate2 = { version = "1", default-features = false, features = ["zlib"] }
+serde = { version = "1", default-features = false, features = ["std", "derive"] }
+serde_json = { version = "1", default-features = false, features = ["std"] }
+
+[profile.dev]
+debug = 0
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 4
+strip = true

@@ -242,6 +242,48 @@ r = fmt("https://github.com/gm/coins")
 check("a game mode", r["ok"] and r["format"] == "game-mode" and r["name"] == "Coin Dash" and not r["client"], r)
 r = fmt("https://github.com/gm/bigmode")
 check("a game mode over 14 KB: refused", not r["ok"] and any("14 KB" in p for p in r["problems"]), r["problems"])
+# a saved Den (Your Den › Share on the Workshop): one .den.json as a GitHub release file, checked like the Den loader
+DEN = json.dumps({"format": "leyline-den", "version": 1, "name": "Garden House", "saved": "2026-11-01T01:00:00Z",
+                  "room": {"look": "white", "size": 16}, "paths": [{"group": 1, "entry": 190023, "every": 4, "from": [-10, 20, 0], "to": [10, 20, 0]}],
+                  "props": [{"entry": 19006, "x": 0, "y": 24, "z": 0, "yaw": 90}, {"entry": 190023, "group": 1, "x": -10, "y": 20, "z": 0}]}).encode()
+gh_repo("den", "garden", {"README.md": "my den"}, SHA[23], release=("v1", "garden.den.json", DEN))
+pin, r = pin_and_check("https://github.com/den/garden")
+check("a release whose one file is a .den.json: that file is picked", pin["from"] == "release-asset" and pin["asset"] == "garden.den.json", pin)
+check("a saved Den: format den, not for a game client, its release file and sha256 kept for the launcher",
+      r["ok"] and r["format"] == "den" and not r["client"] and r["install"] is None and r["name"] == "Garden House"
+      and r["den"] == {"url": "https://github.com/den/garden/releases/download/v1/garden.den.json",
+                       "sha256": hashlib.sha256(DEN).hexdigest(), "size": len(DEN), "props": 2}
+      and r["flags"] == [] and any("Saved Dens" in x for x in r["plan"]), r)
+check("a saved Den's link to the file itself works too", fmt("https://github.com/den/garden/releases/download/v1/garden.den.json")["format"] == "den")
+gh_repo("den", "zipped", {"garden.den.json": DEN.decode(), "README.md": "x"}, SHA[24])
+r = fmt("https://github.com/den/zipped")
+check("a Den file inside a branch or zip: refused with how to release it", not r["ok"] and r["format"] == "den"
+      and any("release" in p for p in r["problems"]), r["problems"])
+def den_case(doc):
+    blob = (doc if isinstance(doc, str) else json.dumps(doc)).encode()
+    tag = "t" + hashlib.sha256(blob).hexdigest()[:8]
+    url = f"https://github.com/den/garden/releases/download/{tag}/x.den.json"
+    net.blobs[url] = blob
+    rel = {"tag_name": tag, "draft": False, "assets": [{"name": "x.den.json", "size": len(blob), "browser_download_url": url}]}
+    net.api_docs[("github", f"/repos/den/garden/releases/tags/{tag}")] = rel
+    return fmt(url)
+base = json.loads(DEN)
+for starter in ("forest-glade", "dark-keep"):   # the Den's own starter places (what ov_den.lua writes) pass
+    with open(os.path.join(ROOT, "realm", "custom", "lua_scripts", "den-starters", starter + ".den.json"), encoding="utf-8") as fh:
+        probs = L.den_problems(fh.read())[0]
+    check(f"the starter place {starter} passes the Den check", probs == [], probs)
+for why, doc, want in [
+        ("not JSON", "return { os.exit() }", "isn't JSON"),
+        ("another format", dict(base, format="other"), "isn't a Den file"),
+        ("a newer version", dict(base, version=2), "newer"),
+        ("no version", {k: v for k, v in base.items() if k != "version"}, "no version"),
+        ("a prop with no whole-number entry", dict(base, props=[{"entry": "1"}]), "isn't a prop"),
+        ("801 props", dict(base, props=[{"entry": 1}] * 801), "800"),
+        ("a prop holding a long script", dict(base, props=[{"entry": 1, "code": "x" * 300}]), "holds something"),
+        ("101 paths", dict(base, paths=[{"entry": 1}] * 101), "paths"),
+        ("an odd top-level field", dict(base, **{"<script>": 1}), "holds something")]:
+    r = den_case(doc)
+    check(f"a Den file with {why}: refused", not r["ok"] and any(want in p for p in r["problems"]), r["problems"])
 r = fmt("https://github.com/ld/loose")
 check("loose game files: refused with how to pack them", not r["ok"] and r["format"] == "loose-data" and "patch" in " ".join(r["problems"]))
 r = fmt("https://github.com/ld/vanilla")
@@ -347,7 +389,27 @@ check("HQ actions: approve, take down (typed confirm), updates, policy (owner)",
       "listing.update.approve", "listing.update.reject", "listing.policy"} and acts["listing.reject"][2] is True and acts["listing.policy"][1] == "owner")
 acts["listing.approve"][0]({"account": "MOD1"}, FR, {})
 rec = next(r for r in store.load() if r["id"] == FR)
-check("approve: live again, reviewed, reports cleared", not PJ.held(rec) and rec["listing"]["state"] == "reviewed" and rec["reports"] == [])
+check("approve: live again, reviewed, reports cleared", not PJ.held(rec) and rec["listing"]["state"] == "reviewed" and rec["reports"] == []
+      and rec.get("hide_votes") == [])
+for who in ("N1", "N2", "N3", "N4"):
+    store.report(FR, {"id": who}, "spam", hide_after=3, trusted=False)
+rec = next(r for r in store.load() if r["id"] == FR)
+check("reports from new accounts are kept but never hide a listing by themselves", not PJ.held(rec) and len(rec["reports"]) == 4)
+CREATED.update(Q1=NOW[0] - 3600, Q2=NOW[0] - 3600, Q3=NOW[0] - 3600)
+L._get = lambda name: {"workshop": type("W", (), {"projects": store})()}.get(name)
+_setup_was = L.setup
+L.setup = lambda: svc
+try:
+    for who in ("Q1", "Q2", "Q3"):
+        L.do("report", who, who, {"id": "link:" + FR, "reason": "spam"})
+finally:
+    L.setup = _setup_was
+rec = next(r for r in store.load() if r["id"] == FR)
+check("... also through the API: three fresh accounts can't take a mod down", not PJ.held(rec) and len(rec["reports"]) == 7, rec.get("review"))
+ok, msg = store.edit(FR, {"id": "OLDIE"}, {"description": "Unit frames with a free aimbot built in."})
+check("an edit can't slip the hub's held words past a moderator", not ok and "moderator" in msg, msg)
+ok, msg = store.edit(FR, {"id": "OLDIE"}, {"description": "Unit frames, raid frames and a cast bar."})
+check("... a plain edit saves", ok, msg)
 try:
     acts["listing.reject"][0]({"account": "MOD1"}, NAT, {})
     check("take down needs a reason", False)
@@ -537,6 +599,31 @@ for _hubv in (_HUB, None):
           and 'value="themes"' not in _ph and '<option value="addons" selected>' in _pk and ">Addon or mod <" in _ph, _ph[-900:])
 L._get = _old_get
 
+# ---------------------------------------------------------------- checks at once, and the disk they download to
+svc.check_log.clear(); svc.day_log.clear()
+held = [L.CHECKS_AT_ONCE.acquire(blocking=False) for _ in range(2)]
+ok, msg = svc.check("BUSY1", "https://github.com/alice/Frames")
+for _ in held:
+    L.CHECKS_AT_ONCE.release()
+check("two checks download at once; a third is asked to wait a minute", all(held) and not ok and "a minute" in msg, msg)
+_du = L.shutil.disk_usage
+L.shutil.disk_usage = lambda p: type("U", (), {"free": 100 * 1048576})()
+try:
+    ok, msg = svc.check("BUSY2", "https://github.com/alice/Frames")
+finally:
+    L.shutil.disk_usage = _du
+check("a check never downloads into the disk's last free space", not ok and "paused" in msg, msg)
+check("... and checks work again after both", svc.check("BUSY3", "https://github.com/alice/Frames")[0])
+
+svc.check_log.clear(); svc.day_log.clear()
+ok, rec = list_mod("OLDIE", "https://github.com/den/garden", "A garden house with a path to the pond.", "sandbox")
+check("a saved Den goes live at once (data only) under Sandbox and game modes", ok and not PJ.held(rec)
+      and rec["listing"]["format"] == "den" and rec["listing"]["den"]["props"] == 2, rec if not ok else rec.get("review"))
+f = L.all_json_fields(rec["listing"]) if ok else {}
+check("all.json: a saved Den is a link with its release file (nothing for a game client)", "source" not in f and "install" not in f
+      and f.get("format") == "den" and f.get("den", {}).get("url", "").endswith("/garden.den.json") and f["den"]["sha256"], f)
+check("no brand words in what the Den listing says", not any(L.BRAND_RE.search(x) for x in
+      [L.FORMAT_LABEL["den"]] + rec["listing"]["plan"]))
 shutil.rmtree(T, ignore_errors=True)
 print(f"\n{passed}/{passed + failed} passed")
 sys.exit(1 if failed else 0)

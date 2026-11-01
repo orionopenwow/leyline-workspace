@@ -77,6 +77,113 @@ realm_tables() {
   fi
 }
 
+# --- Live slices (slices/<name>, served by wu-play). Incident 1 Nov 2026 (docs/INCIDENT-2026-11-01-SLICE.md).
+# Rules for every script that changes a slice:
+#   * one change at a time: slice_lock (flock on slices/.lock; nested scripts see WU_SLICE_LOCKED and go on);
+#   * never in place: the change goes into a copy (slice_restage: hard links, so no second copy of the data on
+#     disk), the copy is checked (slice-health.sh --verify) and then renamed over the live folder;
+#   * a copy made by hard links shares its files with the live slice, so nothing may write a file in place:
+#     write a new file and rename it (fui-overlay.py / mods-overlay.py write_atomic), or unlink and add;
+#   * wu-play keeps serving the folder it was started on, even after a rename: a replaced folder is removed only
+#     after wu-play has been restarted onto the new one (slice_retire checks the inode it serves).
+slice_lock() {
+  [ -n "${WU_SLICE_LOCKED:-}" ] && return 0
+  mkdir -p "$ST/slices"
+  exec 9>>"$ST/slices/.lock"
+  if command -v flock >/dev/null 2>&1; then
+    flock -w "${WU_SLICE_LOCK_WAIT:-900}" 9 \
+      || die "another slice change is still running (lock $ST/slices/.lock): wait for it to finish, then run this again"
+  fi
+  export WU_SLICE_LOCKED=1
+}
+
+# 0 = the folder is whole (key files, tier lists); prints the short report. No checker on the server: 0 with a note.
+slice_verify() {
+  if [ -f "$ST/slice-health.sh" ]; then bash "$ST/slice-health.sh" --verify "$1"
+  else echo "  (no $ST/slice-health.sh: the slice was not checked)"; return 0; fi
+}
+
+# 0 = wu-play runs and serves exactly this folder (same inode; it may have been renamed since).
+play_serves() {
+  local want got
+  want=$(stat -c %i "$1" 2>/dev/null) || return 1
+  got=$(docker exec wu-play stat -c %i /slice 2>/dev/null) || return 1
+  [ -n "$got" ] && [ "$got" = "$want" ]
+}
+
+# What wu-play answers for a key file, asked from wu-portal inside the Docker network:
+# 0 = 200, 1 = another answer (printed), 2 = no answer (wu-play still starting, or no wu-portal to ask from).
+play_probe() {
+  local c="" _
+  for _ in $(seq 1 "${WU_PLAY_WAIT:-20}"); do
+    c=$(docker exec wu-portal python3 -c 'import urllib.request,urllib.error
+try: print(urllib.request.urlopen("http://wu-play:8090/data/DBFilesClient%5CSpell.dbc",timeout=15).status)
+except urllib.error.HTTPError as e: print(e.code)
+except Exception: print("none")' 2>/dev/null | tail -1)
+    [ "$c" = 200 ] && return 0
+    [ -n "$c" ] || { PLAY_PROBE="no answer"; return 2; }   # docker exec failed: nothing to ask from
+    sleep 1   # "none" (still starting) or 404 while its index builds: ask again
+  done
+  PLAY_PROBE=$c
+  case "$c" in [0-9][0-9][0-9]) return 1 ;; *) return 2 ;; esac
+}
+
+# Remove a slice folder that is not live any more (.old/.prev/.new/.stage). When wu-play still serves it (it was
+# renamed away under the running container), wu-play is restarted onto the live path first.
+slice_retire() {
+  local d=${1%/}
+  [ -e "$d" ] || return 0
+  if play_serves "$d"; then
+    docker restart wu-play >/dev/null 2>&1 && echo "  wu-play restarted onto the live slice (it still served ${d##*/})"
+  fi
+  rm -rf --one-file-system -- "$d"
+}
+
+# slice_restage <slice dir> <command> [args...]: runs `<command> [args...] <dir>.stage` on a hard-link copy of the
+# slice, checks the copy, and renames it over the live folder. A failed command or check leaves the live slice
+# exactly as it was (the copy is dropped). A folder that is itself a copy (.stage/.new) is changed directly.
+# The replaced folder is kept as <dir>.prev until slice_swapped_done (after the caller restarted wu-play).
+SLICE_SWAPPED=""
+slice_restage() {
+  local s=${1%/}; shift
+  case "$s" in *.stage|*.new) "$@" "$s"; return ;; esac
+  [ -d "$s" ] || { echo "  no slice folder $s" >&2; return 1; }
+  slice_lock
+  local stg="$s.stage" prev="$s.prev"
+  slice_retire "$stg"
+  cp -al -- "$s" "$stg" || { rm -rf -- "$stg"; echo "  could not copy $s (hard links): nothing changed" >&2; return 1; }
+  if ! "$@" "$stg"; then
+    rm -rf -- "$stg"; echo "  the change failed on a copy: ${s##*/} is as it was" >&2; return 1
+  fi
+  if ! slice_verify "$stg" >"$ST/.slice-verify.log" 2>&1; then
+    sed 's/^/  /' "$ST/.slice-verify.log" >&2
+    rm -rf -- "$stg"; echo "  the changed copy is not a whole slice: ${s##*/} is as it was" >&2; return 1
+  fi
+  slice_retire "$prev"
+  mv -T -- "$s" "$prev" || { rm -rf -- "$stg"; return 1; }
+  if ! mv -T -- "$stg" "$s"; then mv -T -- "$prev" "$s"; rm -rf -- "$stg"; return 1; fi
+  SLICE_SWAPPED="$SLICE_SWAPPED $prev"
+}
+# Undo every slice_restage of this run: each .prev (untouched) goes back into place, the changed folder is dropped.
+slice_swapped_undo() {
+  local p live
+  for p in $SLICE_SWAPPED; do
+    live=${p%.prev}
+    [ -d "$p" ] || continue
+    if [ -d "$live" ]; then mv -T -- "$live" "$live.stage"; fi
+    mv -T -- "$p" "$live" && echo "  ${live##*/}: back as it was"
+    SLICE_SWAPPED="$SLICE_SWAPPED $live.stage"
+    SLICE_SWAPPED=${SLICE_SWAPPED/ $p/}
+  done
+}
+# After the caller restarted wu-play (or chose not to): the replaced folders go (slice_retire restarts wu-play
+# first if it still serves one of them).
+slice_swapped_done() {
+  local p
+  for p in $SLICE_SWAPPED; do slice_retire "$p"; done
+  SLICE_SWAPPED=""
+}
+
 # The streamed client page takes the login from /__env.js (the gate), never from the URL.
 patch_index() {
   local IDX="$ST/www/index.html"

@@ -21,6 +21,8 @@
 #   leyline mods [add ID | remove ID]   the mods your realm runs or asks players to have (mod:<id>, up:<slug>, mode:<id>):
 #                                shown on the realm list; players' launchers offer the Workshop ones when they join
 #   leyline max-players N        the most players at once: the server's cap and the realm list's (0 = default)
+#   leyline pack list | show ID | build ID --game DIR   packs for a Den, made from YOUR own game folder (any version):
+#                                a zone's land and doodads, mounts, building sets (tools/wuhost/recipes; docs/DEN.md)
 #
 # Questions can be answered from the environment (no prompts): LEYLINE_NAME, LEYLINE_RULESET
 # (dalaran | main | brawl | progression | den, or a profile for another client in profiles/: cmangos-1.12.1, cmangos-2.4.3;
@@ -327,8 +329,42 @@ cmd_link() {
   if [ "$keep_on" = 1 ] && [ "${LEYLINE_LINK_NO_START:-0}" != 1 ]; then always_on; fi
 }
 
+cmd_pack() {   # leyline pack list | show ID | build ID [--game DIR] [--client-patch auto|always|never] (tools/wuhost/packs.py)
+  local verb="${1:-list}"; shift || true
+  case "$verb" in
+    list|show) ;;
+    build)
+      local id="${1:-}"; shift || true
+      [[ "$id" =~ ^[a-z0-9][a-z0-9-]{0,23}$ ]] || die "Usage: leyline pack build ID [--game DIR]   (leyline pack list shows the IDs)"
+      local game="${WU_GAME_DIR:-}" extra=()
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --game) [ $# -ge 2 ] || die "--game needs your game folder"; game="$2"; shift ;;
+          --client-patch) [ $# -ge 2 ] || die "--client-patch needs auto, always or never"; extra+=(--client-patch "$2"); shift ;;
+          *) die "Unknown option '$1'. Try: leyline pack build ID --game DIR" ;;
+        esac
+        shift
+      done
+      if [ -z "$game" ] && interactive; then read -r -p "Your game folder (any version you have; the one with Data/ in it): " game || true; fi
+      [ -n "$game" ] && [ -d "$game/Data" ] || die "No game folder with a Data folder in it: leyline pack build $id --game /path/to/your/game"
+      mkdir -p "$STATE/packs" "$STATE/dens"
+      say "Making the $id pack from $game (your own files; nothing is downloaded or shared)..."
+      if [ "${LEYLINE_LOCAL_TOOLS:-0}" = 1 ]; then
+        PYTHONPATH="$KIT/tools" python3 -m wuhost.packs build "$id" --game "$game" --state "$STATE" ${extra[@]+"${extra[@]}"}
+      else
+        docker run --rm --user "$(id -u):$(id -g)" -v "$game:/game:ro" -v "$STATE:/state" -v "$KIT/tools:/t:ro" -e PYTHONPATH=/t \
+          "${WU_TOOLS_IMAGE:-wu-host-tools:1}" python -m wuhost.packs build "$id" --game /game --state /state ${extra[@]+"${extra[@]}"}
+      fi
+      return ;;
+    *) die "Usage: leyline pack list | show ID | build ID [--game DIR]" ;;
+  esac
+  if [ "${LEYLINE_LOCAL_TOOLS:-0}" = 1 ]; then PYTHONPATH="$KIT/tools" python3 -m wuhost.packs "$verb" "$@"
+  else docker run --rm -v "$KIT/tools:/t:ro" -e PYTHONPATH=/t "${WU_TOOLS_IMAGE:-wu-host-tools:1}" python -m wuhost.packs "$verb" "$@"; fi
+}
+
 case "${1:-help}" in
   host|up|start) shift; cmd_host "$@" ;;
+  pack|packs) shift; cmd_pack "$@" ;;
   link) shift; cmd_link "$@" ;;
   status|show) host_sh show ;;
   gm)

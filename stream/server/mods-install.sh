@@ -27,6 +27,8 @@ if [ -f "$ST/stream-lib.sh" ]; then . "$ST/stream-lib.sh"; else
   log() { printf '\n== %s\n' "$*"; }
   die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 fi
+# Without the streaming kit there is no slice to change (step 3 is skipped); these keep the calls below valid.
+declare -F slice_restage >/dev/null || { SLICE_SWAPPED=""; slice_restage() { local s=$1; shift; "$@" "$s"; }; slice_swapped_done() { :; }; }
 LUA_DIR="${WU_LUA_DIR:-$WU/custom/lua_scripts}"
 MODS_LUA="$LUA_DIR/mods"
 PUB="${WU_MODS_PUB:-$WU/portal/mods}"
@@ -38,7 +40,7 @@ slice_dirs() {
   local d
   for d in "$ST"/slices/*/; do
     d=${d%/}
-    case "$d" in *.new|*.old|*.stage) continue ;; esac
+    case "${d##*/}" in *.*) continue ;; esac   # slice names have no dot: every copy (.new/.stage/.old/.prev) is skipped
     [ -d "$d" ] || continue
     if [ -n "$(find "$d" -maxdepth 2 -iname DBFilesClient)" ]; then echo "$d"; fi
   done
@@ -110,9 +112,10 @@ ui_rollback() {
   if [ -d "$OV.old" ]; then mv "$OV.old" "$OV"; fi
   while read -r s; do
     [ -n "$s" ] || continue
-    if [ -d "$OV" ]; then ovl apply-slice "$OV" "$s" || true; else ovl unapply-slice "$s" || true; fi
+    if [ -d "$OV" ]; then slice_restage "$s" ovl apply-slice "$OV" || true; else slice_restage "$s" ovl unapply-slice || true; fi
   done < <(slice_dirs)
   if [ -d "$OV" ]; then www_apply || true; elif [ -f "$ST/www/boot-manifest.json" ]; then ovl unapply-www "$ST/www" || true; fi
+  slice_swapped_done
   echo "  the previous mod addons are back in the stream"
 }
 
@@ -181,13 +184,15 @@ PY
       n=0
       while read -r s; do
         [ -n "$s" ] || continue
-        ovl apply-slice "$OV" "$s" || { ui_rollback; [ "$realm_changed" = 1 ] && realm_rollback "$BK"; die "could not lay the mods over $s"; }
+        # on a hard-link copy, checked, then renamed into place (slice_restage): a failure leaves $s as it was
+        slice_restage "$s" ovl apply-slice "$OV" || { ui_rollback; [ "$realm_changed" = 1 ] && realm_rollback "$BK"; die "could not lay the mods over $s"; }
         n=$((n+1))
       done < <(slice_dirs)
       [ "$n" -gt 0 ] || echo "  no slice on the server yet: Make mini slice.bat lays the mods over it on upload"
       www_apply || { ui_rollback; [ "$realm_changed" = 1 ] && realm_rollback "$BK"; die "could not list the mods in the client's boot list"; }
       rm -rf "$OV.old"
       if [ "$before" != "$after" ]; then restart_play; else echo "  addons unchanged: wu-play keeps running"; fi
+      slice_swapped_done   # the replaced copies (wu-play is moved off one it still serves first)
     else
       echo "  no streaming kit on this server ($ST): the addons are not streamed (the realm and site parts still are)"
     fi
@@ -220,8 +225,9 @@ PY
   reapply-slice)
     name="${2:?usage: mods-install.sh reapply-slice <name> [<dir>]}"; dir="${3:-$ST/slices/$name}"
     [ -d "$OV" ] || exit 0
-    ovl apply-slice "$OV" "$dir"
+    slice_restage "$dir" ovl apply-slice "$OV"
     if [ -f "$ST/www/boot-manifest.json" ]; then ovl apply-www "$dir" "$ST/www"; fi
+    [ -z "$SLICE_SWAPPED" ] || { restart_play; slice_swapped_done; }   # a live slice (not slice-install's .stage)
     ;;
   reapply-www)
     [ -d "$OV" ] || exit 0
@@ -233,9 +239,10 @@ PY
     log "mods overlay: the Leyline brand $mode"
     n=$(ovl brand-toc "$OV" "$mode" | tee /dev/stderr | grep -c ': the ' || true)
     if [ "$n" -gt 0 ]; then
-      while read -r s; do [ -n "$s" ] && ovl apply-slice "$OV" "$s"; done < <(slice_dirs)
+      while read -r s; do [ -n "$s" ] && { slice_restage "$s" ovl apply-slice "$OV" || die "could not lay the renamed overlay over $s (it is as it was)"; }; done < <(slice_dirs)
       www_apply
       restart_play
+      slice_swapped_done
     fi
     ;;
   status)

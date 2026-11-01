@@ -63,6 +63,30 @@ You read them with **Read mail** (`.den mail`); **Empty it** clears the mailbox.
 **Den of the week.** Each week the Leyline team picks one Den. It shows on the website's front page, on the launcher's
 Home and in the game's Leyline window. Screenshots are links on the website only.
 
+## Your Den: one button (launcher, 2026-11-01)
+
+Owner, 1 Nov 01:46 and 01:48: Dens are local first; the white room at once, with no Docker setup; Docker only later,
+when sharing with friends. **Your Den** is in the launcher's side menu right under Home and first on Home
+(`launcher/ui/den.js`, `den.css`; core `host/yourden.rs`, `host/lite.rs`).
+
+- **Play** (one click). With **Den Lite** on this PC (the built-in Den server, `labs/den-lite`; no Docker, no database):
+  it starts, the client points at `127.0.0.1` with the account `DEN` on the login screen, and you are in the room. Without
+  Den Lite: the Docker Den's three steps on the same page (the Host pack, Docker Desktop with a short guide, Start with
+  your account name), its progress, then the first starter place opens. A Docker Den that is stopped is started first;
+  its account (the realm's GM name) is filled in on the login screen (`SET accountName` in Config.wtf).
+- **Share with friends** (Den Lite only): the same three steps; every Den Lite file is copied into the Host pack's saves
+  (`move_to_kit`: never over another file, the same text skipped) and the newest opens there unchanged. Then **Invite a
+  friend** copies the invite link and **Make my account** opens your Den's own join page in the browser.
+- **Saved Dens** (open, save a copy, add a file, add from a link), **Packs** (the recipes a pack builder leaves in
+  `state/packs/*.json`: a title and a line) and **Share on the Workshop** work the same for both: they read the Den in
+  use (the Docker Den's files once the Host pack hosts it, else Den Lite's `<app data>/Leyline/den-lite/state/dens`).
+- **Share on the Workshop**: save a copy, attach the `.den.json` to a GitHub release, and list that release with List
+  your mod (`stream/listings.py` format `den`: checked like the Den loader checks a file, data only, live at once).
+  **Add from a link** takes such a release file back (GitHub and its download hosts only, 512 KB, checked again).
+- Den Lite is an interface for now (`host/lite.rs`: available, start, stop, status, den_dir). It looks for `den-lite`
+  (`$LEYLINE_DEN_LITE`, `<app data>/Leyline/den-lite/bin/`, beside the launcher) and runs
+  `den-lite --dens <dir> --bind 127.0.0.1`; that contract is to be confirmed with labs/den-lite.
+
 ## Hosting a Den
 
 ```
@@ -75,6 +99,32 @@ or the launcher's Host page, "Make my Den" (to add: see Launcher below). The pro
 teleports players elsewhere (`OV_MAIN`, `OV_QOL_HUB` off). The kit writes `realm-files/lua_scripts/den-invite.dat`
 (the invite link, data only, mode 0600) for the in-game "Invite a friend"; only this profile does, and leaving it
 removes the file.
+
+### A light local Den (2026-11-01)
+
+A Den doesn't need the whole world. On the den profile the kit's game-data step (`client_data` in
+`host-wrath-realm.sh`, `:extract` in `Host a Wrath realm.bat`) runs `tools/wuhost/denslice.py`: it reads **your own**
+3.3.5a archives (`tools/wuhost/mpq.py`, the standard library only) and writes a tiny game folder holding:
+
+- every dbc and `component.wow-<locale>.txt` (the server loads all the dbc; the extractor reads the build there);
+- the WDT and ADT of the 3 x 3 tiles around the island (map 1, grid 1,1: most of the ring is sea and has no tile);
+- the tile of each starting area the worldserver checks before it starts (`World.cpp`: it exits with "Failed to find
+  map files for starting areas" unless these eight `.map` files exist), and the Death Knight start (map 609);
+- the intro cameras (`Cameras\*`), and any pack's tiles (below).
+
+Then the stock extractor (`map_extractor` in `acore/ac-wotlk-tools`) runs over that folder instead of yours, so it
+converts about a dozen tiles instead of every map. No vmaps or mmaps are made: a Den runs with pathing off
+(`OV_PATHING=0`), and `ExistVMap` passes when vmap loading is off. The volume gets `den-light.json` (what went in);
+any other profile sees that mark and extracts the whole world. If anything in the light step fails, the kit says so
+and extracts the whole world as before. `WU_DEN_FULL_DATA=1` skips the light step.
+
+Size and time (estimates; to measure on a real PC): the whole world's extraction is a few minutes and about 1-2 GB of
+`maps` plus the dbc. The light one reads about 30-40 MB from your archives (the dbc, about 12 ADTs at 0.5-3 MB each),
+writes about the same, and should take well under a minute. Checked here, from AzerothCore's own source: the
+extractor's archive list and locale detection, that it lists dbc from each archive's `(listfile)` (the staged archives
+have one), that it skips tiles it can't open, the `.map` naming, and the startup check. **To verify on a real PC**: the
+extractor reading our archives (zlib sectors, v1 header), the server starting with only those tiles, and logging in.
+What doesn't shrink: the first start's database import (5-20 minutes) is the world database itself, not map data.
 
 ## The room
 
@@ -158,6 +208,8 @@ budgets). [7] The official EU forums, "Housing permissions needs a bit more". Fu
 .den builders                 who may build
 .den allow <name> build|view  (owner) a friend builds, or only looks
 .den room white|stone|wood|rebuild|clear   (owner) the room's look
+.den jaina [away]             (owner, OV_DEN_COMPANION=1) your companion comes / goes (Claude in your Den, below)
+.den ask <words>              (owner) to your companion, for your own assistant; or say "Jaina, ..." near her
 .den budget                   the room's and the yard's decor budgets
 .den save <name>              the whole Den as a layout; the owner's also goes to a file: state\dens\<name>.den.json
 .den load <name> [replace|add] (owner) opens that file: asks first when the Den has decor; replace keeps a copy as
@@ -168,6 +220,10 @@ budgets). [7] The official EU forums, "Housing permissions needs a bit more". Fu
 .den door | mailbox           (owner) the front door / mailbox is where you stand
 .den visit | knock | note <words>    anyone: to the front door, knock, a note in the mailbox
 .den mail [clear]             (owner) the notes
+.den gm speed 1|2|4 | gm fly on|off | gm revive     (owner, builders; inside the Den) GM controls
+.den mark | .den go           (owner, builders) save a spot (per character) / back to it; .den home: the middle
+.den gm weather clear|rain|snow | gm invisible on|off | gm summon <name>   (owner) the Den's weather, hidden from
+                              visitors, call over a friend who builds here (they accept a summon)
 .build grid 0.5|1|2|5|off | grid ground on|off    placing at your feet: on a grid, 15 degree facings, on the ground
 .build path <prop> from       a path: marks where you stand; walk; .build path <prop> to [yards apart, 1-20, default 3]
 .build path <prop> <x1> <y1> <z1> <x2> <y2> <z2> [every]   the same from two clicks (the Builder's Path in edit mode)
@@ -179,6 +235,24 @@ budgets). [7] The official EU forums, "Housing permissions needs a bit more". Fu
 
 In game: F7 (edit mode), the third tool bar (Group, Ungroup, Put away, Storage, Floor, Den), `/den` for the Den
 panel outside edit mode, the Builder's **Path** button (Group row) and its **buildings** category.
+
+**GM controls (1 Nov 2026).** The Den home panel (`/denhome`) has a GM row: 1x / 2x / 4x, Fly, Mark, Go to mark,
+Middle, Revive, and for the owner Clear / Rain / Snow, Invisible and Summon (a name box); each button's one-line hint
+shows under the row. Visitors don't see the row, builders don't see the owner's buttons, and the realm checks again
+(ov_den.lua, `GM`): the role, inside the Den only, four GM commands a second per player, fixed actions only (nothing
+typed is run as a GM command). Leaving the Den (the edge check) or logging out puts everything back: normal speed,
+no flying, visible, GM mode as it was, clear weather. The home line carries `gm=<speed>,<fly>,<invisible>`.
+Each core call is in pcall; a realm without it answers "not available on this realm".
+- Speed: `Unit:SetSpeed(type, rate, true)` for run, swim and flight. Fly: `Unit:SetCanFly`. Revive:
+  `Player:ResurrectPlayer(100, false)`. Mark / go: `mod_den_marks`, kept relative to the Den. Summon:
+  `Player:SummonPlayer` (a summon the friend accepts), builders only. Invisible: `Player:SetGMVisible(false)`; the core
+  turns GM mode on with it (and builders without a GM level can't see the owner either); off turns GM mode back off
+  when it was off before.
+- Weather: `Map:SetWeather(zone, type, grade)` in the Den's zone, for everyone there. The core only shows it when its
+  `game_weather` table has the zone; otherwise nothing changes (to verify on a real realm). **Fog is left out**: the
+  core's weather types are fine, rain, snow, storm, thunders and black rain, and none of them shows fog.
+- **Time of day is left out**: mod-ale has no per-player time; only a hand-made login packet could set one, and the
+  core sends the real time again on its own, so it can't be done safely.
 
 ## Buildings, doodads and paths (2026-10-31)
 
@@ -270,6 +344,122 @@ opens it to the server's own user). The room itself isn't in it (it's the look);
   too (`host/dens.rs`). One undo entry takes an opened Den back (and one more brings back what was replaced).
 - **Later**: the same file is what a Workshop "Den" item will carry (share a Den; the realm checks it the same way).
 
+## Packs: parts of the game from your own folder (2026-11-01)
+
+Leyline ships **recipes**, never game files: `hosting/kit/tools/wuhost/recipes/<id>.json`. You make a pack on your
+own PC from your own game folder (any version you have: 1.12, 2.4.3 or 3.3.5a):
+
+```
+leyline pack list
+leyline pack build goldshire --game "/path/to/your/game"
+```
+
+`tools/wuhost/packs.py` reads the recipe's tiles, files and folders from your archives and follows what each needs
+(an ADT's textures, doodads and buildings; a model's textures and skins; a building's group files and textures;
+never sound). It writes into the Den's `state/`:
+
+- `packs/<id>/server/...`: the land (ADTs) for the Den's server; `packs/tiles.json` lists every pack's tiles and
+  `packs/restage` makes the next start re-stage the light Den's data with them;
+- `packs/client/patch-L.MPQ`: the client files, only when your folder is not the 3.3.5a one you play the Den with
+  (or `--client-patch always`): copy it into your game's Data folder;
+- `dens/pack-<id>.den.json`: a recipe's layout, the doodads near its centre as model props (`.den load pack-<id>
+  add`), and `dens/packs.json`, the packs made here.
+
+Starter recipes: **goldshire** (the village's land, map 0 tiles 49-50 x 31-32, and the doodads within 28 yards of
+the inn as Den props), **mounts** (riding animals' models and textures), **human-buildings** (human town buildings
+and village doodads). A recipe holds only data: `id`, `title`, `line`, `tiles` (map + world box), `files`,
+`prefixes` (folder + extensions), `deps`, `layout` (centre, radius, max), `limits` (files, MB); anything else is
+refused. To verify in game: the doodads' facing (the positions are the usual ADT conversion), and whether the
+Den's spot can move to a pack's land (today the Den stays on the island; the land is on the server for that next
+step).
+
+**Den files list their packs.** A Den remembers the packs whose layouts it opened, and `.den save` writes them as
+`"packs": ["goldshire"]` (version 1 still: older readers ignore it). Opening a file that lists packs not made on this
+PC (`dens/packs.json`) says which ones and how: "Make them from your own game folder (leyline pack build ...)".
+
+## Claude in your Den, and your companion (2026-11-01)
+
+Leyline has no AI of its own: the player's own assistant (Claude Code, the Claude app, any MCP client) uses the Den
+through the launcher's local connection, `Leyline mcp` (the Agents page, [agents.md](leyline/agents.md)), with the
+same approve-first rule as everything else there. Tools (`launcher/src-tauri/src/agents/den.rs`):
+
+- **Read, at once**: `den_status` (the Den realm running, the companion out, where the owner stands, the room's
+  size and budgets in use, a build in progress, the saved Den files), `den_catalog` (what can be placed: read from
+  the kit's own `ov_build.lua` catalog with its build points, and the stamps), `den_recipes` (the building library,
+  below), `den_messages` (what the owner said to the companion).
+- **Ask, a card first**: `den_place_layout` (a `leyline-den` layout, or a recipe with settings: checked against the
+  catalog, the Den's size, the room's and yard's budgets and 400 pieces; on Approve it is saved as a Den file,
+  never over another, and goes into the Den: `add`, the default, piece by piece next to what is there; `replace`,
+  through `open.json` as the whole Den), `den_say` (a line the companion says: plain words, 200 letters, never a game
+  brand word), `den_recipe_save` (a new recipe in the library). The never list is unchanged.
+
+**The companion** (`ov_den_companion.lua`, with `OV_DEN=1` and `OV_DEN_COMPANION=1`, on in the den profile): in game
+the owner's `.den jaina` calls her (the game's own Jaina, world entry 32364: no AI, no script, no gossip, immune to
+players and creatures; a temporary summon, friendly to all). She follows at 2.5 yards, comes back to your side after
+a teleport, and goes on `.den jaina away`, on leaving the Den and on logout. `.den ask <words>` or saying "Jaina,
+<words>" within 10 yards (the owner only, one every 4 seconds) is written for the assistant with where you stood;
+she says the replies, one every 3 seconds, and the progress of a build ("Placing the tavern: 20 of 40 pieces"). The
+launcher and the website say "your companion", never her name.
+
+The realm and the launcher talk through JSON files in the saves folder (`state/dens`), never run:
+`companion-in.json` (the realm: heartbeat, owner's spot, budgets, the build in progress, the last 20 asks, the last
+line said), `companion-out.json` (the launcher: the lines to say, numbered; how far the assistant has read) and
+`companion-place.json` (the launcher: `{file, id, label}`, a saved Den file to add). An added build is checked whole
+first (`OVBuild.DenCheck`, the budgets), then placed 20 pieces at a time through `OVBuild.ImportPrefab` (the builder
+role, the Den, budgets, the paste rate): Ctrl+Z takes it back a part at a time. Pitch, roll and groups are kept by
+`replace` (the Den file) but not by `add` (prefab pieces).
+
+## Building brain: recipes (2026-11-01)
+
+What an assistant can't do is remember between sessions; what grows instead is the **building library**: named
+recipes that make a layout from a few settings. A known build costs no layout to write: `den_place_layout` with
+`recipe` and `params` builds it straight away, and the assistant is asked only for what's new. Recipes are files in
+`<host kit>/state/dens/recipes/` (share them by copying the file); five starters are built into the launcher
+(`launcher/src-tauri/den-recipes/`): **tavern** (tables with four seats, a bar of kegs, lanterns), **garden-scatter**
+(plants spread over a round bed in a sunflower spiral, nudged at random, a fence around it), **lantern-ring**, **path**
+(stones between two points, lights on alternate sides) and **market-row** (stalls with counters, goods and lamp
+posts). A file of the same name in the folder wins over a starter.
+
+A **template**, `<name>.recipe.json`, is numbers and pieces, nothing that runs:
+
+```json
+{
+ "format": "leyline-recipe", "version": 1, "name": "lantern-ring", "title": "Lantern ring", "about": "...",
+ "params": {
+  "radius": {"default": 5, "min": 1.5, "max": 20},
+  "count": {"default": 8, "min": 3, "max": 32, "whole": true},
+  "light": {"default": "lantern", "piece": true}
+ },
+ "let": [["step", "360 / count"]],
+ "pieces": [
+  {"repeat": [["i", "count"]], "let": [["a", "step * i"]], "key": "$light",
+   "x": "radius * cos(a)", "y": "radius * sin(a)", "yaw": "a"},
+  {"when": "count > 6", "key": "campfire", "x": 0, "y": 0}
+ ]
+}
+```
+
+- `params`: each setting's `default`, `min`/`max`, `whole` (a whole number), or `piece` (a catalog key; `"$name"`
+  uses it as a piece's key). A call gives only what differs; anything else is refused.
+- `let` (recipe-wide, then per piece) names values; `repeat` is up to three `[name, count]` loops (from 0); `when`
+  skips a piece; `pick` chooses a key from a list (`{"keys": [...], "by": "i % 2"}`); `x`, `y` (yards from the room's
+  middle), `z` (above the floor), `yaw` (degrees) and `scale` are numbers or expressions.
+- Expressions: numbers, names, `+ - * / % ^`, comparisons, `&& || !`, `c ? a : b`, and `sin cos tan atan2`
+  (degrees), `sqrt abs floor ceil round min max clamp`, `rand(a, b)` (a steady number in [0, 1): the same settings
+  and `seed` always give the same layout, so the card shows exactly what is placed).
+
+A **script**, `<name>.recipe.lua`, is Lua 5.1 that sets a table `recipe` (name, title, about, params as above) and a
+function `build(params)` returning pieces `{ key, x, y, z, yaw, scale }`. It runs **only on the player's PC**, in
+the launcher, sandboxed: math, string (no patterns) and table only; no files, no os, no loading code; 16 MB and a few
+million instructions at most; `rand(a, b)` and `math.random` are the steady random numbers. Never on the realm.
+Scripts need a launcher built with the `lua-recipes` Cargo feature (it compiles Lua 5.1 from C; **off by default**):
+without it a `.recipe.lua` is listed but refused in plain words ("This recipe needs scripted recipes, which aren't
+in this launcher build yet"), and `den_recipe_save` takes templates only. An example script:
+`launcher/src-tauri/den-recipes/examples/garden-scatter-script.recipe.lua`.
+
+Either way the output is checked like any other layout (the catalog, the Den, the budgets, 400 pieces), and
+`den_recipe_save` keeps only a recipe whose default settings make a layout that fits.
+
 ## Invite a friend: the path, checked (2026-10-31)
 
 1. The kit writes `realm-files/lua_scripts/den-invite.dat` (`return { invite = "https://<relay>/join/<realm id>#<invite
@@ -298,6 +488,7 @@ for a Den, and where we are. Object placement only: see "Terrain" below for why 
 | Any object, not a short list | `.build find <words> [page]`: every gameobject template of the realm's world database of a safe kind (no AIName or ScriptName, a display; door, generic, chair, spell focus, text, or goober without quest, event, spell or trap; never chests, traps, transports, casters, aura generators, flags, capture points, destructible buildings). 30 a page. The Builder's and the spawn menu's **Every object** | `ov_build.lua` X.CMD.find, X.safeRow (the SQL filters and Lua checks again) |
 | Any model | `.build models <words>`: every model (M2) in the host's own `GameObjectDisplayInfo.dbc`, by file name (WMO files left out). A model prop is the carrier template (`OV_BUILD_MODEL_CARRIER`, the catalog's Bottle) given that display through `GAMEOBJECT_DISPLAYID` each time it spawns; its entry is 2000000000 + the display, so copies, builds, prefabs, layouts, storage and undo carry it unchanged. The Builder's and the spawn menu's **Models** | X.CMD.models, X.readDisplays, spawn() |
 | Search, categories, recent, favourites | the catalog's search and 12 categories; Every object and Models search on the realm (Enter; Down for the next page); Recent and Favourites keep found objects and models too (per character) | `Builder.lua` |
+| Templates on a shelf | edit mode's **template shelf** (owner and builders, in a Den): a row of icon tiles under the selection card, the stamps (Inn, Small house, Garden, Market, Campfire, Dock) and the owner's starter places. A click marks the stamp at your feet (`.den stamp <name>`) and the mark follows you as you walk (`here`, at most every 1.5 s); Q / E turn it, Enter or Place puts it down, Esc (or the same tile) cancels. A starter place waits for Enter (`.den start <key> [replace]`). The same Q / E / Esc while a Builder prop waits for its ground click (Q / E: `.build turn` after it lands). The window's rows have a small icon per category; Recent and Favourites are one click; long help is behind each "?" | `DenHome.lua` (shelf), `EditMode.lua`, `Builder.lua` |
 | Exact position | Properties: X, Y, Z boxes (Enter or Apply): `.build move <id> x y z yaw pitch roll` (one prop) / `setpos` (a group) | built |
 | Nudges 0.01 to 10 yards | the Step button: 0.01, 0.1, 0.25, 1, 3, 10 yards (window and Properties' - / + on X, Y, Z) | built |
 | Full rotation | yaw, pitch, roll boxes and - / + by 1, 5, 15, 45 or 90 degrees (`.build tilt yaw|pitch|roll <deg>`, each prop about itself; `.build setrot <yaw> [pitch roll]` for a group). The quaternion is the core's (rotation0-3, `GameObject::SetWorldRotationAngles`) | pitch and roll show only with **mod-sandbox-core** on the realm image (in `sources.lock`, so the kit's image has it once rebuilt from this branch); without it they are refused or dropped with a note, never stored wrong |
@@ -316,6 +507,7 @@ for a Den, and where we are. Object placement only: see "Terrain" below for why 
 | Rotation and scale handles | pitch, roll and scale handles in the browser client | engine hooks 6 and 8 below |
 | Collision against object models, surface snap on walls | | later: engine hook 7 |
 | Terrain sculpting, texture painting, water, holes | | not planned: see Terrain |
+| Test-play controls (speed, fly, teleport to a marker, weather, hide, summon) | the Den panel's GM row and `.den gm`, `.den mark` / `go`: owner and builders, the owner's weather, invisible and summon; only in the Den, reset on leaving | built (weather to verify; no fog, no time of day: above) |
 
 Safety: every command is checked on the realm (role, area, budget, rate, numbers); the searches only ever return the
 safe kinds and every placed entry is checked again; per Den the room has 1000 build points, the yard 300, a player 400

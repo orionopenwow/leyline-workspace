@@ -553,6 +553,27 @@ cmd(own, "den allow Pal view")
 cmd(pal, "build undo")
 check("view only again: the friend can't undo it any more", last(pal):find("Can't undo") or last(pal):find("builder role"))
 
+-- ---------------------------------------------------------------- packs: a Den file lists the packs it needs
+check("a Den with no packs: its file has no packs list", doc and doc.packs == nil)
+writeFile(SAVES .. "/packs.json", '{"packs": [{"id": "goldshire", "title": "Goldshire", "version": 1}]}')
+writeFile(SAVES .. "/trip.den.json", '{"format": "leyline-den", "version": 1, "name": "trip", "props": [], '
+    .. '"packs": ["goldshire", "mounts", "Bad Id", "goldshire"]}')
+own.x, own.y, own.z = DEN.x, DEN.y, GROUND
+cmd(own, "den load trip add")
+check("opening a file with packs: the ones not made here are named, with how to make them",
+    said(own, "packs you haven't made yet: mounts%.") and said(own, "leyline pack build mounts"))
+check("the Den remembers its packs (good ids only, once each)", D.settings.packs == "goldshire.mounts")
+cmd(own, "den save trip2")
+local doc2 = OVBuild.JsonDecode(readFile(SAVES .. "/trip2.den.json") or "", 1000000)
+check("its file lists them for a friend", doc2 and doc2.version == 1 and doc2.packs and #doc2.packs == 2
+    and doc2.packs[1] == "goldshire" and doc2.packs[2] == "mounts")
+writeFile(SAVES .. "/packs.json", '{"packs": [{"id": "goldshire"}, {"id": "mounts"}]}')
+local before = #own.msgs
+cmd(own, "den load trip2 add")
+check("every pack made: nothing to say about packs", (function()
+    for i = before + 1, #own.msgs do if own.msgs[i]:find("packs you haven't made") then return false end end
+    return true end)())
+
 -- ---------------------------------------------------------------- the fake database saw only what it knows
 check("every SQL statement was one the fake database understands", #unknownSql == 0 or (function() for _, s in ipairs(unknownSql) do realPrint("  ?? " .. s) end end)())
 check("SQL only on the scripts' own tables", (function()

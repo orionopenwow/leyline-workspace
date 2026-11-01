@@ -25,6 +25,9 @@
 --   .den load <name> [replace|add] (owner) opens that file (asks first when the Den has decor; replace keeps a
 --                                 copy of what was there as "backup"); without a file, your own layout as before
 --   .den files                    the Den files saved from here (the launcher's Host page lists every one)
+--   .den gm speed 1|2|4 | gm fly on|off | gm revive | mark | go    (owner and builders, inside the Den) GM controls
+--   .den gm weather clear|rain|snow|fog | gm invisible on|off | gm summon <name>   (the owner) more of them
+--                                 all reset on leaving the Den or logging out (below, "GM controls"; docs/DEN.md)
 --
 -- The Den bar (WrathUnleashedUI/EditMode.lua) talks to this over the OVMOD channel (ov_modapi.lua), mod "wuden":
 --   client -> server   cmd      <the text after .den>
@@ -42,7 +45,10 @@
 --   mod_den_files (name, props, at): the files saved from here.
 -- mod-ale used: RegisterPlayerEvent 3 ON_LOGIN, 28 ON_MAP_CHANGE, 30 ON_FIRST_LOGIN, 42 ON_COMMAND; CreateLuaEvent;
 -- Player:Teleport / IsGM / GetGMRank / SetBindPoint / RegisterEvent / SendBroadcastMessage; Map:GetHeight;
--- GetPlayersInWorld, GetPlayerByName, CharDBQuery / CharDBExecute.
+-- GetPlayersInWorld, GetPlayerByName, CharDBQuery / CharDBExecute. GM controls (each in pcall; a missing one says
+-- "not available on this realm"): Unit:SetSpeed(type, rate, forced) / SetCanFly / IsDead, Player:SetGMVisible /
+-- SetGameMaster / ResurrectPlayer / SummonPlayer / GetZoneId, Map:SetWeather(zone, type, grade), GetMapById;
+-- RegisterPlayerEvent 4 ON_LOGOUT.
 
 if os.getenv("OV_DEN") ~= "1" then return end
 
@@ -217,6 +223,202 @@ local function toRoom(player, quiet)
     if not quiet then say(player, "That's the edge of the Den: back in the room. (|cffffff00.den|r says what's here.)") end
 end
 
+------------------------------------------------------------------------------------------------
+-- GM controls: fixed, checked actions for the owner and the builders (never visitors), only inside the Den. Nothing
+-- typed is ever run as a GM command. Each core call is in pcall: a realm without it says "not available". Speed,
+-- flying, invisibility and the owner's weather are put back when the player leaves the Den (the edge check) or
+-- logs out. Time of day is left out: mod-ale has no per-player time (only a raw packet, which the core overwrites).
+------------------------------------------------------------------------------------------------
+local GM = { RATE = 4, state = {}, calls = {}, marks = {} }
+GM.SPEEDS = { ["1"] = 1, ["2"] = 2, ["4"] = 4 }
+GM.MOVES = { 1, 3, 6 }                      -- UnitMoveType: MOVE_RUN, MOVE_SWIM, MOVE_FLIGHT
+GM.WEATHER = { clear = { 0, 0 }, rain = { 1, 0.7 }, snow = { 2, 0.7 } }   -- WeatherType, grade (Map:SetWeather)
+local NA = "That isn't available on this realm."
+
+-- obj:method(...) in pcall: true when it ran (a missing method or an error: false)
+local function call(obj, method, ...)
+    if not obj then return false end
+    local ok, fn = pcall(function() return obj[method] end)
+    if not ok or type(fn) ~= "function" then return false end
+    return (pcall(fn, obj, ...))
+end
+
+local function gmSay(player, text) say(player, text); if OVDen and OVDen.Home and OVDen.Home.sendHome then pcall(OVDen.Home.sendHome, player) end end
+
+-- a few commands a second per player
+function GM.rated(player)
+    local g, now = player:GetGUIDLow(), os.time()
+    local c = GM.calls[g]
+    if not c or c.at ~= now then c = { at = now, n = 0 }; GM.calls[g] = c end
+    c.n = c.n + 1
+    return c.n <= GM.RATE
+end
+
+-- who may: the owner always, builders (not ownerOnly), never visitors; only inside the Den
+function GM.may(player, ownerOnly)
+    local r = role(player)
+    if r == "visitor" then return nil, "The GM controls are for the Den's owner and the builders they allow." end
+    if ownerOnly and r ~= "owner" then return nil, "Only the Den's owner can do that." end
+    if not inside(player) then return nil, "Only inside the Den: |cffffff00.den home|r takes you back." end
+    return r
+end
+
+local function st(player)
+    local g = player:GetGUIDLow()
+    GM.state[g] = GM.state[g] or { speed = 1 }
+    return GM.state[g]
+end
+
+local function speedTo(player, rate)
+    if not call(player, "SetSpeed", GM.MOVES[1], rate, true) then return false end
+    for i = 2, #GM.MOVES do call(player, "SetSpeed", GM.MOVES[i], rate, true) end
+    return true
+end
+
+local function weatherTo(map, zone, w)
+    local t = GM.WEATHER[w]
+    return t and map and zone and call(map, "SetWeather", zone, t[1], t[2]) or false
+end
+
+-- "<speed>,<fly 0|1>,<invisible 0|1>" for the Den panel (the home line)
+function GM.line(player)
+    local s = GM.state[player:GetGUIDLow()] or {}
+    return string.format("%d,%d,%d", s.speed or 1, s.fly and 1 or 0, s.invisible and 1 or 0)
+end
+
+-- Everything back to normal: true when there was something to put back.
+function GM.reset(player, why)
+    local g = player:GetGUIDLow()
+    local s = GM.state[g]
+    if not s then return false end
+    GM.state[g] = nil
+    if s.speed and s.speed ~= 1 then speedTo(player, 1) end
+    if s.fly then call(player, "SetCanFly", false) end
+    if s.invisible then
+        call(player, "SetGMVisible", true)
+        if s.wasGM == false then call(player, "SetGameMaster", false) end
+    end
+    if s.weather then
+        local d, map = den(), nil
+        if d and GetMapById then
+            local ok, m = pcall(GetMapById, d.map)
+            if ok then map = m end
+        end
+        weatherTo(map, s.weather, "clear")
+    end
+    if why and (s.speed ~= 1 or s.fly or s.invisible or s.weather) then gmSay(player, why) end
+    return true
+end
+
+local function onOff(w) w = tostring(w or ""):lower(); if w == "on" then return true elseif w == "off" then return false end end
+
+function GM.speed(player, w)
+    local rate = GM.SPEEDS[tostring(w or ""):lower():gsub("x$", "")]
+    if not rate then return say(player, "Speeds: |cffffff00.den gm speed 1|r, |cffffff002|r or |cffffff004|r (times your normal run).") end
+    if not speedTo(player, rate) then return say(player, NA) end
+    st(player).speed = rate
+    gmSay(player, rate == 1 and "Normal speed." or string.format("You run %d times as fast, here in the Den.", rate))
+end
+
+function GM.fly(player, w)
+    local on = onOff(w)
+    if on == nil then return say(player, "Usage: |cffffff00.den gm fly on|r or |cffffff00off|r") end
+    if not call(player, "SetCanFly", on) then return say(player, NA) end
+    st(player).fly = on
+    gmSay(player, on and "You can fly: jump, then hold Space to rise and X to sink." or "Flying is off.")
+end
+
+function GM.weather(player, w)
+    w = tostring(w or ""):lower()
+    if w == "fog" then return say(player, "Fog isn't available on this realm: its weather has clear skies, rain and snow.") end
+    if not GM.WEATHER[w] then return say(player, "Weather: |cffffff00.den gm weather clear|r, |cffffff00rain|r or |cffffff00snow|r.") end
+    local zone = tonumber(try(player, "GetZoneId"))
+    if not (zone and weatherTo(try(player, "GetMap"), zone, w)) then return say(player, NA) end
+    st(player).weather = w ~= "clear" and zone or nil
+    gmSay(player, w == "clear" and "Clear skies over the Den." or ("The Den has " .. w .. " now (everyone here sees it; clear puts it back)."))
+end
+
+function GM.invisible(player, w)
+    local on = onOff(w)
+    if on == nil then return say(player, "Usage: |cffffff00.den gm invisible on|r or |cffffff00off|r") end
+    local s = st(player)
+    if on and not s.invisible then s.wasGM = free(player) end
+    if not call(player, "SetGMVisible", not on) then return say(player, NA) end
+    if not on and s.wasGM == false then call(player, "SetGameMaster", false) end
+    s.invisible = on or nil
+    gmSay(player, on and "Visitors can't see you now (GM mode is on while you are)." or "Everyone can see you again.")
+end
+
+function GM.summon(player, name)
+    name = tostring(name or ""):gsub("[^%a]", "")
+    if name == "" then return say(player, "Usage: |cffffff00.den gm summon <name>|r (a friend who builds here)") end
+    local allowed
+    for _, n in ipairs(B().Builders() or {}) do if n:lower() == name:lower() then allowed = true end end
+    if not allowed then
+        return say(player, name .. " isn't allowed in your Den yet: |cffffff00.den allow " .. name .. " build|r first.")
+    end
+    local ok, t = pcall(function() return GetPlayerByName and GetPlayerByName(name) end)
+    if not (ok and t) then return say(player, name .. " isn't online.") end
+    if t == player then return say(player, "That's you.") end
+    if not call(t, "SummonPlayer", player) then return say(player, NA) end
+    gmSay(player, "Asked " .. t:GetName() .. " to come: they'll see a summon to accept.")
+    say(t, player:GetName() .. " is calling you over in the Den: accept the summon to go.")
+end
+
+function GM.revive(player)
+    if try(player, "IsDead") ~= true then return say(player, "You're not dead.") end
+    if not call(player, "ResurrectPlayer", 100, false) then return say(player, NA) end
+    gmSay(player, "You're back on your feet.")
+end
+
+-- .den mark / .den go: one saved spot per character, kept relative to the Den (mod_den_marks)
+exec("CREATE TABLE IF NOT EXISTS mod_den_marks (guid INT UNSIGNED NOT NULL PRIMARY KEY, x FLOAT NOT NULL, y FLOAT NOT NULL, "
+    .. "z FLOAT NOT NULL, o FLOAT NOT NULL)")
+function GM.mark(player)
+    local d = den()
+    local g = player:GetGUIDLow()
+    local m = { player:GetX() - d.x, player:GetY() - d.y, player:GetZ() - floorZ(), tonumber(try(player, "GetO")) or 0 }
+    GM.marks[g] = m
+    exec(string.format("REPLACE INTO mod_den_marks (guid, x, y, z, o) VALUES (%d, %.2f, %.2f, %.2f, %.3f)", g, m[1], m[2], m[3], m[4]))
+    gmSay(player, "Marked this spot: |cffffff00.den go|r brings you back to it.")
+end
+
+function GM.go(player)
+    local d = den()
+    local g = player:GetGUIDLow()
+    local m = GM.marks[g]
+    if not m then
+        local q = query(string.format("SELECT x, y, z, o FROM mod_den_marks WHERE guid = %d", g))
+        if q then m = { q:GetFloat(0), q:GetFloat(1), q:GetFloat(2), q:GetFloat(3) }; GM.marks[g] = m end
+    end
+    if not m then return say(player, "No mark yet: |cffffff00.den mark|r saves where you stand.") end
+    if math.sqrt(m[1] * m[1] + m[2] * m[2]) > d.r then return say(player, "Your mark is outside the Den now: mark a new spot.") end
+    if not call(player, "Teleport", d.map, d.x + m[1], d.y + m[2], floorZ() + m[3], m[4]) then return say(player, NA) end
+    gmSay(player, "At your mark.")
+end
+
+GM.OWNER = { weather = true, invisible = true, summon = true }
+function GM.command(player, words)
+    local what = (words[2] or ""):lower()
+    local r, why = GM.may(player, GM.OWNER[what])
+    if not r then return say(player, why) end
+    if not GM.rated(player) then return say(player, "One moment: that's a lot of GM clicks at once.") end
+    if what == "speed" then return GM.speed(player, words[3])
+    elseif what == "fly" then return GM.fly(player, words[3])
+    elseif what == "weather" then return GM.weather(player, words[3])
+    elseif what == "invisible" then return GM.invisible(player, words[3])
+    elseif what == "summon" then return GM.summon(player, words[3])
+    elseif what == "revive" then return GM.revive(player)
+    elseif what == "mark" then return GM.mark(player)
+    elseif what == "go" then return GM.go(player)
+    end
+    say(player, "GM controls (here in the Den; all back to normal when you leave): |cffffff00.den gm speed 1|2|4|r, "
+        .. "|cffffff00.den gm fly on|off|r, |cffffff00.den gm revive|r, |cffffff00.den mark|r / |cffffff00.den go|r, |cffffff00.den home|r.")
+    if r == "owner" then
+        say(player, "  Owner: |cffffff00.den gm weather clear|rain|snow|r, |cffffff00.den gm invisible on|off|r, |cffffff00.den gm summon <name>|r.")
+    end
+end
+
 -- The building tools (edit mode, the Builder, the Den panel) are the Leyline UI addon (WrathUnleashedUI): the
 -- browser client has it built in; a player's own game gets it from the launcher (Addons). The addon asks for
 -- the Den's info when it loads (EditMode.lua, PLAYER_ENTERING_WORLD); whoever stays silent hears how to get it.
@@ -239,6 +441,7 @@ local function checkOne(player)
         if b and b.RoomCount() == 0 and not settings.cleared then buildRoom(player) end
         return
     end
+    GM.reset(player, "You left the Den: speed, flying and the other GM controls are back to normal.")
     if free(player) then return end
     local g, now = player:GetGUIDLow(), os.time()
     if lastBack[g] and now - lastBack[g] < BACK_COOLDOWN then return end
@@ -353,6 +556,10 @@ local function helpCommand(player)
     if r == "owner" then
         say(player, "  Owner: |cffffff00.den invite|r  |cffffff00.den allow <name> build|view|r  |cffffff00.den room white|stone|wood|rebuild|r")
         say(player, "  |cffffff00.den save <name>|r also writes a file on your PC (state\\dens); |cffffff00.den load <name> replace|add|r opens one; |cffffff00.den files|r")
+    end
+    if r ~= "visitor" then
+        say(player, "  GM controls, here in the Den: |cffffff00.den gm speed 1|2|4|r  |cffffff00.den gm fly on|off|r  |cffffff00.den gm revive|r  "
+            .. "|cffffff00.den mark|r / |cffffff00.den go|r" .. (r == "owner" and "  |cffffff00.den gm weather|r  |cffffff00.den gm invisible on|off|r  |cffffff00.den gm summon <name>|r" or ""))
     end
     if OVDen and OVDen.help then pcall(OVDen.help, player, r) end
     say(player, "  |cffffff00.den home|r takes you back to the middle of the room.")
@@ -540,6 +747,8 @@ local function run(player, text)
     local sub = (words[1] or "help"):lower()
     if not B() then return say(player, "The Builder isn't on this realm, so the Den can't work.") end
     if sub == "home" then toRoom(player, true); return say(player, "Back in the room.")
+    elseif sub == "gm" then return GM.command(player, words)
+    elseif sub == "mark" or sub == "go" then return GM.command(player, { "gm", sub })
     elseif sub == "invite" then return inviteCommand(player)
     elseif sub == "builders" then return buildersCommand(player)
     elseif sub == "allow" then return allowCommand(player, words)
@@ -590,6 +799,12 @@ end
 
 local function onMap(event, player) arrive(player) end
 
+local function onLogout(event, player)
+    if not player then return end
+    pcall(GM.reset, player)
+    GM.calls[player:GetGUIDLow()] = nil
+end
+
 -- A new character: into the room (a moment after the login, once they are in the world), the hearth set there.
 local function onFirstLogin(event, player)
     if not player then return end
@@ -605,6 +820,7 @@ local function onFirstLogin(event, player)
 end
 
 RegisterPlayerEvent(3, onLogin)        -- PLAYER_EVENT_ON_LOGIN
+RegisterPlayerEvent(4, onLogout)       -- PLAYER_EVENT_ON_LOGOUT
 RegisterPlayerEvent(28, onMap)         -- PLAYER_EVENT_ON_MAP_CHANGE
 RegisterPlayerEvent(30, onFirstLogin)  -- PLAYER_EVENT_ON_FIRST_LOGIN
 RegisterPlayerEvent(42, onCommand)     -- PLAYER_EVENT_ON_COMMAND
@@ -630,8 +846,9 @@ OVDen.extra = OVDen.extra or {}
 OVDen.Files, OVDen.settings, OVDen.setSetting, OVDen.role, OVDen.isOwner = Files, settings, setSetting, role, isOwner
 OVDen.inside, OVDen.floorZ, OVDen.decorCount, OVDen.say, OVDen.sendInfo = inside, floorZ, decorCount, say, sendInfo
 OVDen.themeOf, OVDen.buildRoom = themeOf, buildRoom
+OVDen.GM = GM
 
 -- for stream/tests/test_ov_den.lua (read only)
 OV_DEN_TEST = { THEMES = THEMES, plan = plan, buildRoom = buildRoom, inside = inside, checkAll = checkAll,
     inviteLink = inviteLink, settings = settings, run = run, role = role, heard = heard, ADDON_WAIT = ADDON_WAIT,
-    Files = Files, SAVES = SAVES }
+    Files = Files, SAVES = SAVES, GM = GM }

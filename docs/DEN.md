@@ -168,6 +168,10 @@ budgets). [7] The official EU forums, "Housing permissions needs a bit more". Fu
 .den door | mailbox           (owner) the front door / mailbox is where you stand
 .den visit | knock | note <words>    anyone: to the front door, knock, a note in the mailbox
 .den mail [clear]             (owner) the notes
+.den gm speed 1|2|4 | gm fly on|off | gm revive     (owner, builders; inside the Den) GM controls
+.den mark | .den go           (owner, builders) save a spot (per character) / back to it; .den home: the middle
+.den gm weather clear|rain|snow | gm invisible on|off | gm summon <name>   (owner) the Den's weather, hidden from
+                              visitors, call over a friend who builds here (they accept a summon)
 .build grid 0.5|1|2|5|off | grid ground on|off    placing at your feet: on a grid, 15 degree facings, on the ground
 .build path <prop> from       a path: marks where you stand; walk; .build path <prop> to [yards apart, 1-20, default 3]
 .build path <prop> <x1> <y1> <z1> <x2> <y2> <z2> [every]   the same from two clicks (the Builder's Path in edit mode)
@@ -179,6 +183,24 @@ budgets). [7] The official EU forums, "Housing permissions needs a bit more". Fu
 
 In game: F7 (edit mode), the third tool bar (Group, Ungroup, Put away, Storage, Floor, Den), `/den` for the Den
 panel outside edit mode, the Builder's **Path** button (Group row) and its **buildings** category.
+
+**GM controls (1 Nov 2026).** The Den home panel (`/denhome`) has a GM row: 1x / 2x / 4x, Fly, Mark, Go to mark,
+Middle, Revive, and for the owner Clear / Rain / Snow, Invisible and Summon (a name box); each button's one-line hint
+shows under the row. Visitors don't see the row, builders don't see the owner's buttons, and the realm checks again
+(ov_den.lua, `GM`): the role, inside the Den only, four GM commands a second per player, fixed actions only (nothing
+typed is run as a GM command). Leaving the Den (the edge check) or logging out puts everything back: normal speed,
+no flying, visible, GM mode as it was, clear weather. The home line carries `gm=<speed>,<fly>,<invisible>`.
+Each core call is in pcall; a realm without it answers "not available on this realm".
+- Speed: `Unit:SetSpeed(type, rate, true)` for run, swim and flight. Fly: `Unit:SetCanFly`. Revive:
+  `Player:ResurrectPlayer(100, false)`. Mark / go: `mod_den_marks`, kept relative to the Den. Summon:
+  `Player:SummonPlayer` (a summon the friend accepts), builders only. Invisible: `Player:SetGMVisible(false)`; the core
+  turns GM mode on with it (and builders without a GM level can't see the owner either); off turns GM mode back off
+  when it was off before.
+- Weather: `Map:SetWeather(zone, type, grade)` in the Den's zone, for everyone there. The core only shows it when its
+  `game_weather` table has the zone; otherwise nothing changes (to verify on a real realm). **Fog is left out**: the
+  core's weather types are fine, rain, snow, storm, thunders and black rain, and none of them shows fog.
+- **Time of day is left out**: mod-ale has no per-player time; only a hand-made login packet could set one, and the
+  core sends the real time again on its own, so it can't be done safely.
 
 ## Buildings, doodads and paths (2026-10-31)
 
@@ -316,6 +338,7 @@ for a Den, and where we are. Object placement only: see "Terrain" below for why 
 | Rotation and scale handles | pitch, roll and scale handles in the browser client | engine hooks 6 and 8 below |
 | Collision against object models, surface snap on walls | | later: engine hook 7 |
 | Terrain sculpting, texture painting, water, holes | | not planned: see Terrain |
+| Test-play controls (speed, fly, teleport to a marker, weather, hide, summon) | the Den panel's GM row and `.den gm`, `.den mark` / `go`: owner and builders, the owner's weather, invisible and summon; only in the Den, reset on leaving | built (weather to verify; no fog, no time of day: above) |
 
 Safety: every command is checked on the realm (role, area, budget, rate, numbers); the searches only ever return the
 safe kinds and every placed entry is checked again; per Den the room has 1000 build points, the yard 300, a player 400

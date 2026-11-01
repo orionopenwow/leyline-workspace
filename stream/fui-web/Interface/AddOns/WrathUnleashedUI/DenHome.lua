@@ -8,12 +8,16 @@
 --   * Placing at your feet: Grid off / 0.5 / 1 / 2 / 5 yards and Ground on / off (.build grid; kept per character).
 --   * Visiting: Go to the front door, Knock, and a note for the mailbox (up to 200 letters).
 --   * Mailbox (the owner): how many new notes, Read mail (the latest notes show here and in chat), Empty it.
+--   * GM (the owner and builders, never visitors; only inside the Den, all back to normal on leaving): speed 1x / 2x /
+--     4x, Fly, Mark, Go to mark, Middle, Revive; the owner also Clear / Rain / Snow, Invisible and Summon a builder.
+--     Each button's one-line hint shows under the row while the mouse is on it.
 -- The realm checks everything (who you are in this Den, budgets, rates). OVMOD mod "wuden", whispered to yourself:
 --   client -> server   cmd  start <key> [replace] | stamp <name> | stamp turn <deg> | stamp here|place|cancel |
---                           visit | knock | mail [clear]          (as typed after .den)
+--                           visit | knock | mail [clear] | gm speed 1|2|4 | gm fly on|off | mark | go | home |
+--                           gm revive | gm weather clear|rain|snow | gm invisible on|off | gm summon <name>   (after .den)
 --                      home                                       send me the home line
 --                      note <text>                                a note for the mailbox
---   server -> client   home  started=..;door=0|1;mailbox=0|1;mail=<n>;role=..;stamp=<name|->;stamps=a,b
+--   server -> client   home  started=..;door=0|1;mailbox=0|1;mail=<n>;role=..;stamp=<name|->;stamps=a,b;gm=<speed>,<fly>,<invisible>
 --                      start forest,Forest glade;...  |  knock <name>  |  mail <id>;<from>;<at>;<text>
 -- Nothing the realm sends is run; names and notes are shown as text, colour codes taken out.
 
@@ -31,6 +35,30 @@ local STAMPS = {
 local STARTERS = { { "forest", "Forest glade" }, { "keep", "Dark keep" }, { "empty", "Empty" } }
 local GRIDS = { 0, 0.5, 1, 2, 5 }
 local NOTE_MAX = 200
+-- the GM row: { key, label, width, command (or a function of the panel), hint }; owner = only the owner sees it
+local GM_ALL = {
+    { "s1", "1x", 32, "gm speed 1", "Normal run speed." },
+    { "s2", "2x", 32, "gm speed 2", "Run twice as fast, here in the Den." },
+    { "s4", "4x", 32, "gm speed 4", "Run four times as fast, here in the Den." },
+    { "fly", "Fly: off", 62, function() return "gm fly " .. ((H.gm or {}).fly and "off" or "on") end,
+        "Fly in the Den: jump, then hold Space to rise and X to sink." },
+    { "mark", "Mark", 50, "mark", "Save this spot as your mark (one per character)." },
+    { "go", "Go to mark", 76, "go", "Back to the spot you marked." },
+    { "middle", "Middle", 56, "home", "Back to the middle of the room." },
+    { "revive", "Revive", 56, "gm revive", "Back on your feet if you died." },
+}
+local GM_OWNER = {
+    { "clear", "Clear", 48, "gm weather clear", "Clear skies over the Den, for everyone here." },
+    { "rain", "Rain", 48, "gm weather rain", "Rain over the Den, for everyone here." },
+    { "snow", "Snow", 48, "gm weather snow", "Snow over the Den, for everyone here." },
+    { "invisible", "Invisible: off", 96, function() return "gm invisible " .. ((H.gm or {}).invisible and "off" or "on") end,
+        "Visitors can't see you while it's on." },
+    { "summon", "Summon", 64, function(p)
+        local n = (p.summonName:GetText() or ""):gsub("[^%a]", ""):sub(1, 12)
+        if n == "" then H.SetStatus("Type the name of a friend who builds here."); return nil end
+        return "gm summon " .. n
+    end, "Call over a friend who builds here (type their name first)." },
+}
 
 local panel
 
@@ -148,11 +176,37 @@ function H.Refresh()
         local m = H.mail[i]
         fs:SetText(m and (m.from .. ": " .. m.text) or "")
     end
+    -- the GM row: the owner and builders; the owner's buttons only for the owner
+    local sp, fl, iv = tostring(h.gm or ""):match("^(%d+),(%d),(%d)$")
+    H.gm = { speed = tonumber(sp) or 1, fly = fl == "1", invisible = iv == "1" }
+    local gmOn = owner or h.role == "builder"
+    for _, f in ipairs(panel.gmAll) do if gmOn then f:Show() else f:Hide() end end
+    for _, f in ipairs(panel.gmOwner) do if owner then f:Show() else f:Hide() end end
+    panel.gm.fly:SetText(H.gm.fly and "Fly: on" or "Fly: off")
+    panel.gm.invisible:SetText(H.gm.invisible and "Invisible: on" or "Invisible: off")
+    for _, k in ipairs({ 1, 2, 4 }) do
+        local b = panel.gm["s" .. k]
+        b:SetText((H.gm.speed == k and "[" .. k .. "x]") or (k .. "x"))
+    end
+end
+
+function H.GmClick(key)
+    if not panel then return nil end
+    for _, list in ipairs({ GM_ALL, GM_OWNER }) do
+        for _, g in ipairs(list) do
+            if g[1] == key then
+                local c = g[4]
+                if type(c) == "function" then c = c(panel) end
+                if type(c) == "string" then denCmd(c) end
+                return c
+            end
+        end
+    end
 end
 
 local function build()
     panel = CreateFrame("Frame", "LeylineDenHomePanel", UIParent)
-    panel:SetWidth(470); panel:SetHeight(470)
+    panel:SetWidth(470); panel:SetHeight(560)
     panel:SetPoint("LEFT", UIParent, "LEFT", 456, 0)
     panel:SetFrameStrata("DIALOG")
     panel:EnableMouse(true)
@@ -226,6 +280,39 @@ local function build()
         panel.notes[i] = fs
     end
 
+    -- GM controls (the owner and builders; the realm checks who, where and how often)
+    panel.gm, panel.gmAll, panel.gmOwner = {}, {}, {}
+    local gmLabel = label(panel, "GM, here in the Den (back to normal when you leave):", nil, "TOPLEFT", 14, -424)
+    panel.gmAll[#panel.gmAll + 1] = gmLabel
+    panel.gmHint = label(panel, "", nil, "TOPLEFT", 14, -494)
+    panel.gmHint:SetWidth(440)
+    panel.gmAll[#panel.gmAll + 1] = panel.gmHint
+    local function gmRow(list, into, y, gx)
+        for _, g in ipairs(list) do
+            local key, hint = g[1], g[5]
+            local b = button(panel, g[2], g[3], function() H.GmClick(key) end, "TOPLEFT", gx, y)
+            local enter, leave = b:GetScript("OnEnter"), b:GetScript("OnLeave")
+            b:SetScript("OnEnter", function(self, ...) if enter then enter(self, ...) end; panel.gmHint:SetText(hint) end)
+            b:SetScript("OnLeave", function(self, ...) if leave then leave(self, ...) end; panel.gmHint:SetText("") end)
+            b.hint = hint
+            panel.gm[key] = b
+            into[#into + 1] = b
+            gx = gx + g[3] + 4
+            if key == "invisible" then   -- the summon name box sits before Summon
+                panel.summonName = (W.Style and W.Style.Input and W.Style.Input(panel)) or CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+                panel.summonName:SetWidth(96); panel.summonName:SetHeight(20)
+                panel.summonName:SetPoint("TOPLEFT", gx + 4, y - 1)
+                panel.summonName:SetAutoFocus(false)
+                panel.summonName:SetMaxLetters(12)
+                panel.summonName:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+                into[#into + 1] = panel.summonName
+                gx = gx + 108
+            end
+        end
+    end
+    gmRow(GM_ALL, panel.gmAll, -440, 12)
+    gmRow(GM_OWNER, panel.gmOwner, -466, 12)
+
     panel.status = label(panel, H.status or "", nil, "BOTTOMLEFT", 14, 14)
     panel.status:SetWidth(360)
     button(panel, "Close", 70, function() panel:Hide() end, "BOTTOMRIGHT", -12, 10)
@@ -292,5 +379,5 @@ end)
 SLASH_LEYLINEDENHOME1 = "/denhome"
 SlashCmdList["LEYLINEDENHOME"] = function() H.Toggle() end
 
-H.STAMPS, H.STARTERS, H.GRIDS = STAMPS, STARTERS, GRIDS
+H.STAMPS, H.STARTERS, H.GRIDS, H.GM_ALL, H.GM_OWNER = STAMPS, STARTERS, GRIDS, GM_ALL, GM_OWNER
 W.DenHome = H

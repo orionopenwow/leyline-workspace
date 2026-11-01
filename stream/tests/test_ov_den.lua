@@ -2,7 +2,8 @@
 -- A Den (OV_DEN=1, realm/profiles/den.env): ov_build.lua's one build area on the island, and ov_den.lua under a fake
 -- mod-ale: the room going up from catalog props owned by the Den (free, owner-only), new characters starting in it,
 -- the edge putting people back, owner / builder / visitor, the room and yard budgets, the invite link (owner only,
--- read as data), the room's looks, the whole Den as a layout, and no game-brand names anywhere players see.
+-- read as data), the room's looks, the whole Den as a layout, the GM controls (who, where, the reset on leaving and
+-- logging out, the rate, the guards), and no game-brand names anywhere players see.
 local denFile = arg[1] or "realm/custom/lua_scripts/ov_den.lua"
 local buildFile = arg[2] or denFile:gsub("ov_den%.lua$", "ov_build.lua")
 local modapi = arg[3] or denFile:gsub("ov_den%.lua$", "ov_modapi.lua")
@@ -31,7 +32,8 @@ local maps = {}
 local GROUND = 12.6
 local function mapObj(id)
     maps[id] = maps[id] or { id = id, GetWorldObject = function(self, g) local o = objects[g]; if o and o.map == self.id then return o end end,
-        IsDungeon = function() return false end, GetHeight = function() return GROUND end }
+        IsDungeon = function() return false end, GetHeight = function() return GROUND end,
+        SetWeather = function(self, zone, kind, grade) self.weather = { zone = zone, kind = kind, grade = grade } end }
     return maps[id]
 end
 function GetMapById(id) return mapObj(id) end
@@ -80,6 +82,15 @@ local function player(over)
     function p:Teleport(m, x, y, z, o) self.map, self.x, self.y, self.z, self.o = m, x, y, z, o; self.teleports = self.teleports + 1; return true end
     function p:SetBindPoint(x, y, z, m, a) self.bind = { x = x, y = y, z = z, map = m, area = a } end
     function p:RegisterEvent(fn) fn(1, 0, 1, self); return 1 end
+    -- the GM controls' methods (Eluna: Unit:SetSpeed(type, rate, forced), SetCanFly, Player:SetGMVisible, ...)
+    function p:SetSpeed(t, r, forced) self.speeds = self.speeds or {}; self.speeds[t] = r; self.forced = forced end
+    function p:SetCanFly(on) self.canFly = on end
+    function p:SetGMVisible(on) self.gmVisible = on; if not on then self.gmOn = true end end   -- the core turns GM mode on
+    function p:SetGameMaster(on) self.gmOn = on end
+    function p:IsDead() return self.dead == true end
+    function p:ResurrectPlayer() self.dead = false end
+    function p:SummonPlayer(by) self.summonedBy = by end
+    function p:GetZoneId() return 876 end
     online[p.guid] = p
     return p
 end
@@ -329,6 +340,98 @@ do
     os.remove(path)
     check("without them: blocks at their own size on the ground", D.plan(D.THEMES.white, GROUND)[1].s == nil
         and D.plan(D.THEMES.white, GROUND)[1].z == GROUND)
+end
+
+-- ---------------------------------------------------------------- GM controls
+do
+    local function at(p, dx, dy) p.map, p.x, p.y, p.z = 1, DEN.x + dx, DEN.y + dy, GROUND end
+    local function run(p) return p.speeds and p.speeds[1] or 1 end
+    at(own, 0, 0); at(bea, 3, 0); at(vic, -3, 0)
+    own.gmOn = false
+    clock = clock + 10
+    cmd(vic, "den gm speed 2")
+    check("GM: a visitor is refused", last(vic):find("owner and the builders") and vic.speeds == nil)
+    cmd(vic, "den mark")
+    check("GM: a visitor can't mark either", last(vic):find("owner and the builders"))
+    cmd(bea, "den gm speed 2")
+    check("GM: a builder runs twice as fast (run, swim, flight; forced)", run(bea) == 2 and bea.speeds[3] == 2 and bea.speeds[6] == 2
+        and bea.forced == true and last(bea):find("twice") == nil and last(bea):find("2 times"))
+    cmd(bea, "den gm speed 3")
+    check("GM: an unknown speed is refused", last(bea):find("Speeds:") and run(bea) == 2)
+    cmd(bea, "den gm weather rain")
+    check("GM: weather is the owner's", last(bea):find("Only the Den's owner") and mapObj(1).weather == nil)
+    cmd(bea, "den gm invisible on")
+    check("GM: invisible is the owner's", last(bea):find("Only the Den's owner") and bea.gmVisible == nil)
+    clock = clock + 1
+    cmd(bea, "den gm summon Owner")
+    check("GM: summon is the owner's", last(bea):find("Only the Den's owner") and own.summonedBy == nil)
+    cmd(bea, "den gm fly on")
+    check("GM: a builder flies", bea.canFly == true and last(bea):find("hold Space"))
+    clock = clock + 1
+    at(own, 200, 0)
+    cmd(own, "den gm fly on")
+    check("GM: outside the Den, refused (even the owner)", last(own):find("Only inside the Den") and own.canFly == nil)
+    cmd(own, "den gm speed 4")
+    check("GM: speed outside, refused", run(own) == 1 and last(own):find("Only inside"))
+    at(own, 0, 0)
+    clock = clock + 1
+    cmd(own, "den gm speed 4"); cmd(own, "den gm fly on"); cmd(own, "den gm weather rain"); cmd(own, "den gm invisible on")
+    check("GM: the owner: speed 4, flying, rain over the Den's zone, invisible", run(own) == 4 and own.canFly == true
+        and mapObj(1).weather and mapObj(1).weather.zone == 876 and mapObj(1).weather.kind == 1 and own.gmVisible == false)
+    cmd(own, "den gm revive")
+    check("GM: the rate: a few a second", last(own):find("One moment") and own.dead == nil)
+    clock = clock + 1
+    cmd(own, "den gm weather fog")
+    check("GM: fog isn't there: said in plain words", last(own):find("Fog isn't available"))
+    cmd(own, "den gm summon Vic")
+    check("GM: summon someone not allowed in the Den: refused", last(own):find("isn't allowed") and vic.summonedBy == nil)
+    cmd(own, "den gm summon Bea")
+    check("GM: summon a builder: a summon to accept", bea.summonedBy == own and last(own):find("Asked Bea") and said(bea, "accept the summon"))
+    clock = clock + 1
+    bea.dead = true
+    cmd(bea, "den gm revive")
+    check("GM: revive yourself", bea.dead == false and last(bea):find("back on your feet"))
+    cmd(bea, "den gm revive")
+    check("GM: revive when alive", last(bea):find("not dead"))
+    cmd(bea, "den mark")
+    local mx, my = bea.x, bea.y
+    clock = clock + 1
+    at(bea, -5, 5)
+    cmd(bea, "den go")
+    check(".den mark / .den go: back at the mark", math.abs(bea.x - mx) < 0.01 and math.abs(bea.y - my) < 0.01 and last(bea):find("At your mark")
+        and sqlHas("^REPLACE INTO mod_den_marks"))
+    local vt = vic.teleports
+    cmd(vic, "den go")
+    check(".den go: none for a visitor", last(vic):find("owner and the builders") and vic.teleports == vt)
+    -- the home line carries the GM state for the Den panel
+    check("GM: the Den panel hears speed, flying and invisible", D.GM.line(own) == "4,1,1" and D.GM.line(vic) == "1,0,0")
+    -- leaving the Den puts it all back
+    clock = clock + 10
+    at(own, 300, 0)
+    tick()
+    check("GM: leaving the Den resets speed, flying, invisible (and GM mode), the weather", run(own) == 1 and own.canFly == false
+        and own.gmVisible == true and own.gmOn == false and mapObj(1).weather.kind == 0 and D.GM.state[1] == nil
+        and said(own, "You left the Den"))
+    check("GM: and the edge brings the owner back in", math.abs(own.x - DEN.x) < 0.01)
+    -- a guarded method: missing on this realm
+    clock = clock + 1
+    local fly = bea.SetCanFly
+    bea.SetCanFly = nil
+    cmd(bea, "den gm fly off")
+    check("GM: a method the realm lacks: not available, no error", last(bea):find("isn't available on this realm"))
+    bea.SetCanFly = fly
+    -- logging out resets
+    clock = clock + 1
+    cmd(bea, "den gm speed 4")
+    fire(4, bea)
+    check("GM: logging out resets", run(bea) == 1 and bea.canFly == false and D.GM.state[2] == nil)
+    vic.msgs = {}
+    cmd(vic, "den")
+    check("GM: a visitor's help has no GM line", not said(vic, "GM controls"))
+    cmd(bea, "den")
+    check("GM: a builder's help has it, without the owner's", said(bea, "GM controls") and not said(bea, "gm summon"))
+    cmd(own, "den gm")
+    check(".den gm: the owner's list", said(own, "gm weather clear") and said(own, "gm summon"))
 end
 
 -- ---------------------------------------------------------------- brand words, tables

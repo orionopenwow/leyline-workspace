@@ -3,7 +3,8 @@
 -- trips through ov_build.lua, ov_den.lua, ov_den_home.lua and ov_modapi.lua (fake mod-ale, a Den): the Den home
 -- panel (/denhome, the Den panel's Home), the owner's start choice (the realm's "start" opens it), Forest glade
 -- placed, the stamps (pick, turn left and right, Place, Cancel; the spawn menu's Stamps tab), the grid and ground at
--- your feet, Knock, a note for the mailbox and Read mail, and no game-brand names on screen.
+-- your feet, Knock, a note for the mailbox and Read mail, the GM row (shown by role, its hints, round trips), and no
+-- game-brand names on screen.
 local dir = arg[1] or "stream/fui-web/Interface/AddOns/WrathUnleashedUI"
 local scripts = arg[2] or "realm/custom/lua_scripts"
 
@@ -135,6 +136,12 @@ function player:GetO() return self.o end
 function player:Teleport(m, x, y, z, o) self.x, self.y, self.z, self.o = x, y, z, o; return true end
 function player:SendBroadcastMessage(m) chat[#chat + 1] = m end
 function player:SendAddonMessage(prefix, msg) fireClient(prefix, msg, "WHISPER", "Tester") end
+function player:SetSpeed(t, r) self.speeds = self.speeds or {}; self.speeds[t] = r end
+function player:SetCanFly(on) self.canFly = on end
+function player:SetGMVisible(on) self.gmVisible = on end
+function player:SetGameMaster() end
+function player:IsDead() return false end
+function player:GetZoneId() return 876 end
 local visitor = { x = 16226.2, y = 16257.0 - 10, z = GROUND, o = 0, msgs = {} }
 for k, v in pairs(player) do if type(v) == "function" then visitor[k] = v end end
 function visitor:GetGUIDLow() return 8 end
@@ -266,10 +273,47 @@ check("an empty note never leaves the panel", #sent == n0 and p.status:GetText()
 p.visit:Fire("OnClick")
 check("Go to the front door", lastSent() == "wuden\tcmd\t1/1\tvisit" and math.abs(player.x - door.x) < 0.01)
 
+-- the GM row: the owner sees it all
+local function shown(list) for _, f in ipairs(list) do if not f:IsShown() then return false end end; return true end
+local function hidden(list) for _, f in ipairs(list) do if f:IsShown() then return false end end; return true end
+check("GM row: the owner sees every button, the owner's too", p.gm.s2 and shown(p.gmAll) and shown(p.gmOwner)
+    and p.gm.summon:IsShown() and p.gm.invisible:IsShown())
+serverClock = serverClock + 10
+p.gm.s2:Fire("OnClick")
+check("GM 2x: sent as .den gm speed 2, the realm sets it, the button shows it", lastSent() == "wuden\tcmd\t1/1\tgm speed 2"
+    and player.speeds[1] == 2 and H.home.gm == "2,0,0" and p.gm.s2:GetText() == "[2x]")
+p.gm.fly:Fire("OnClick")
+check("GM Fly: on, and the button says so", sentHas("wuden\tcmd\t1/1\tgm fly on") and player.canFly == true and p.gm.fly:GetText() == "Fly: on")
+p.gm.fly:Fire("OnClick")
+check("GM Fly again: off", lastSent() == "wuden\tcmd\t1/1\tgm fly off" and player.canFly == false and p.gm.fly:GetText() == "Fly: off")
+p.gm.fly:Fire("OnEnter")
+check("GM: a button's one-line hint shows under the row", p.gmHint:GetText():find("hold Space"))
+p.gm.fly:Fire("OnLeave")
+check("and goes on leaving it", p.gmHint:GetText() == "")
+check("GM: every button has a hint", (function()
+    for _, g in ipairs(H.GM_ALL) do if not (p.gm[g[1]].hint or ""):find("%a") then return false end end
+    for _, g in ipairs(H.GM_OWNER) do if not (p.gm[g[1]].hint or ""):find("%a") then return false end end
+    return true end)())
+serverClock = serverClock + 10
+local n1 = #sent
+p.summonName:SetText("")
+p.gm.summon:Fire("OnClick")
+check("GM Summon with no name: nothing sent", #sent == n1 and p.status:GetText():find("name of a friend"))
+p.summonName:SetText("Ana!")
+p.gm.summon:Fire("OnClick")
+check("GM Summon: someone not allowed in the Den is refused", lastSent() == "wuden\tcmd\t1/1\tgm summon Ana" and chatHas("isn't allowed"))
+p.gm.s1:Fire("OnClick")
+check("GM 1x: normal speed", player.speeds[1] == 1 and p.gm.s1:GetText() == "[1x]")
+-- a builder: the row, without the owner's buttons
+fireClient("OVMOD", "wuden\thome\t1/1\tstarted=keep;door=1;mailbox=1;mail=0;role=builder;stamp=-;stamps=garden;gm=1,0,0", "WHISPER", "Tester")
+check("GM row: a builder sees speed, fly, mark, go, middle, revive, not weather, invisible or summon", shown(p.gmAll)
+    and hidden(p.gmOwner) and not p.summonName:IsShown())
+
 -- a visitor's panel: the owner's and builders' buttons are off
 fireClient("OVMOD", "wuden\thome\t1/1\tstarted=keep;door=1;mailbox=1;mail=0;role=visitor;stamp=-;stamps=garden", "WHISPER", "Tester")
 check("a visitor: start, stamps and mail buttons off", p.start.forest.enabled == false and p.stamp.garden.enabled == false
     and p.read.enabled == false and p.who:GetText() == "You're visiting this Den.")
+check("a visitor: no GM row at all", hidden(p.gmAll) and hidden(p.gmOwner))
 fireClient("OVMOD", "wuden\thome\t1/1\trole=owner;started=forest", "WHISPER", "Someone")
 check("lines from anyone else are ignored", H.home.role == "visitor")
 fireClient("OVMOD", "wuden\tknock\t1/1\t|cff00ff00Eve|r<script>", "WHISPER", "Tester")

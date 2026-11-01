@@ -325,7 +325,7 @@
 
   // ---------------------------------------------------------------- Mods & Addons › Discover: Mods | Addons | Themes
   // The old Game mods tab is Mods › Game modes now (owner 31 Oct 19:22: Mods and Addons, distinct).
-  const TABS = ["mods", "addons", "themes"];
+  const TABS = ["mods", "addons", "themes", "graphics"];   // Graphics: graphics.js (owner 31 Oct 22:58)
   let tab = "mods";
   try { const t = localStorage.getItem("leyline.dcTab"); if (TABS.includes(t)) tab = t; } catch (_) { /* fine */ }
   function showTab(t) {
@@ -340,7 +340,10 @@
     document.querySelectorAll("#discover-tabs .ly-tab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === t)));
     const d = document.getElementById("themes-discover");
     d.hidden = t !== "themes";
+    const g = document.getElementById("graphics-discover");
+    if (g) g.hidden = t !== "graphics";
     if (t === "themes") { renderDiscover(d); loadCatalog(); }
+    else if (t === "graphics") { if (g && window.LeylineGraphics) window.LeylineGraphics.show(g); }
     else if (typeof renderCatalog === "function") renderCatalog();   // Mods or Addons: the same list, the other shelf (simple.js)
   }
 
@@ -378,8 +381,8 @@
       const tabs = el("div", "ly-tabs");
       tabs.id = "discover-tabs";
       tabs.setAttribute("role", "tablist");
-      tabs.setAttribute("aria-label", "Mods, addons and themes");
-      for (const [id, label] of [["mods", "Mods"], ["addons", "Addons"], ["themes", "Themes"]]) {
+      tabs.setAttribute("aria-label", "Mods, addons, themes and graphics");
+      for (const [id, label] of [["mods", "Mods"], ["addons", "Addons"], ["themes", "Themes"], ["graphics", "Graphics"]]) {
         const b = el("button", "ly-tab", label);
         b.type = "button";
         b.dataset.tab = id;
@@ -392,6 +395,10 @@
       box.id = "themes-discover";
       box.hidden = true;
       panel.append(box);
+      const gfx = el("div", "gfx-box");
+      gfx.id = "graphics-discover";
+      gfx.hidden = true;
+      panel.append(gfx);
       showTab(tab);
     }
     document.querySelectorAll('.nav[data-page="settings"]').forEach((n) => n.addEventListener("click", () => sync().then(render).catch(() => {})));

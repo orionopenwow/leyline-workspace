@@ -18,7 +18,9 @@
 <link rel="stylesheet" href="home.css"><!-- Home: the hero gallery and the rows below it (home.js) -->
 <link rel="stylesheet" href="agents.css"><!-- Agents: your own AI assistant, the approval card on every page (agents.js) -->
 <link rel="stylesheet" href="scrollbar.css"><!-- the page scroll bar: stone grip, bronze edge, metal caps -->
+<link rel="stylesheet" href="graphics.css"><!-- Mods & Addons › Discover › Graphics (graphics.js) -->
 <link rel="stylesheet" href="stone.css"><!-- the title bar and play bar on the owner's stone texture -->
+<link rel="stylesheet" href="slate.css"><!-- the pages on the stone: panels, cards, buttons, Realms (owner 31 Oct design pass) -->
 </head>
 <body class="ly">
 <div class="frame">
@@ -325,17 +327,27 @@
       <div class="hc-pane" id="hc-pane-kit" role="tabpanel" aria-labelledby="hc-tab-kit">
       <p class="lede">Run a realm on this PC for friends or everyone. It uses your own game files. Players reach it through the Leyline network: you open no ports, and nobody sees your address. It runs while your PC is on.</p>
       <!-- TODO(owner): the host needs wording (hostconsole.js and the website's /wrath/host say the same) -->
-      <p class="hint hc-needs" id="host-needs"><b>You need:</b> Docker (a free program that runs your realm in its own space), your own game folder <span class="hc-ver">3.3.5a</span>, about 10 GB free. The first start takes 5 to 20 minutes, and your PC must stay on for others to play.</p>
-      <ol class="steps">
-        <li><b>Make your realm on the website.</b> Sign in, pick a name, a ruleset and your house rules, then download your realm file.
-          <div class="row"><button type="button" class="btn" data-link="host">Host a realm</button></div></li>
-        <li><b>Get the Host pack</b> (above), or unzip it yourself and show Leyline where it is. You also need Docker Desktop.
-          <div class="row"><button type="button" class="btn" id="host-pick">Choose the Host pack folder…</button><button type="button" class="btn" data-link="hostguide">Get the Host pack</button></div>
-          <p class="hint" id="host-kit"></p>
-          <ul class="problems" id="host-problems" hidden></ul></li>
-        <li><b>Start it.</b> The first start takes 5 to 20 minutes. Leave the window it opens running.
-          <div id="host-seeds" class="cards"></div>
-          <div class="row"><button type="button" class="btn" id="host-start" disabled>Start my realm</button></div></li>
+      <details class="hs-details"><summary>Details</summary>
+        <p class="hint hc-needs" id="host-needs"><b>You need:</b> Docker (a free program that runs your realm in its own space), your own game folder <span class="hc-ver">3.3.5a</span>, about 10 GB free. The first start takes 5 to 20 minutes, and your PC must stay on for others to play.</p></details>
+      <!-- owner 31 Oct: "quick step guides 1 2 3 and buttons to click": three numbered cards (host.js fills 1 and 2) -->
+      <ol class="steps hs-flow">
+        <li class="hs-step now" id="hs-k1">
+          <div class="hs-step-head"><span class="hs-num" aria-hidden="true">1</span><div class="hs-step-t"><b>Get ready</b><span>The Host pack and Docker: one click each.</span></div></div>
+          <div class="hs-step-body" id="hs-k1-body">
+            <div class="hs-manual"><span>Or set it up by hand:</span><button type="button" class="btn small" id="host-pick">Choose the Host pack folder…</button><button type="button" class="btn small" data-link="hostguide">Get the Host pack</button></div>
+            <ul class="problems" id="host-problems" hidden></ul>
+          </div></li>
+        <li class="hs-step" id="hs-k2">
+          <div class="hs-step-head"><span class="hs-num" aria-hidden="true">2</span><div class="hs-step-t"><b>Pick your game</b><span>Host a realm for any client you have on this PC. Players need their own client of the same version.</span></div></div>
+          <div class="hs-step-body" id="hs-k2-body"></div></li>
+        <li class="hs-step" id="hs-k3">
+          <div class="hs-step-head"><span class="hs-num" aria-hidden="true">3</span><div class="hs-step-t"><b>Start your realm</b><span>The first start takes 5 to 20 minutes. Leave the window it opens running.</span></div></div>
+          <div class="hs-step-body">
+            <div id="host-seeds" class="cards"></div>
+            <div class="hc-go"><button type="button" class="btn primary" id="host-start" disabled>Start my realm</button></div>
+            <p class="hs-alt"><span>No realm file yet? Make your realm on the website: a name, a ruleset and your house rules.</span><button type="button" class="btn small" data-link="host">Host a realm</button></p>
+            <details class="hs-details"><summary>Details</summary><p class="hint" id="host-kit"></p></details>
+          </div></li>
       </ol>
       <p class="status" id="host-status-line" role="status"></p>
       <section class="card" id="host-card" hidden>
@@ -672,6 +684,7 @@
 <script src="gamemods.js"></script><!-- Mods › Game modes and the realm's mods on join (window.LeylineGameMods; before app.js, which calls it) -->
 <script src="simple.js"></script><!-- Discover's Mods and Addons tabs: the Simple view and the smart chips (window.LeylineSimple; before app.js, which calls it) --><!-- upstream addons from their authors: chips, cards, detail (window.LeylineMarket; before app.js, which calls it) -->
 <script src="listmod.js"></script><!-- List your mod: check, list, report (window.LeylineListMod; before app.js, which calls it) -->
+<script src="graphics.js"></script><!-- Mods & Addons › Discover › Graphics: the game's own graphics settings (window.LeylineGraphics) -->
 <script src="app.js"></script>
 <script src="realmlink.js"></script><!-- paste a realm link to add it; Live now (window.LeylineRealmLink; after app.js, before home.js) -->
 <script src="addons.js"></script>

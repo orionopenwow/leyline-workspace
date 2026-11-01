@@ -191,6 +191,29 @@ check("the launcher's stone (launcher/ui/stone.css): the side menu on the tall t
       and front.index(".hb-pg{") < front.index("--hb-stone-tall")
       and all(f'"{n}":' in open(PORTAL).read() for n in ("stone-bar.webp", "stone-side.webp", "stone-btn.webp", "window-edge.png", "marcellus-400.woff2", "Marcellus-OFL.txt"))
       and all(os.path.isfile(os.path.join(HERE, "www-files", "art", n)) for n in ("stone-bar.webp", "stone-side.webp", "stone-btn.webp", "window-edge.png", "marcellus-400.woff2", "Marcellus-OFL.txt")))
+# phones (owner 2026-10-31: "sideways mode recommended on mobile, gentle encouragement ... give sidebar tool bar, match launcher view")
+cat_pg = req("/wrath/leyline-preview/catalog")[2].decode()
+check("phones upright: a gentle turn-your-phone tip under the top bar, Not now as a plain link (no script on the page)",
+      '<aside class="hb-turn" aria-label="Tip">' in cat_pg and "Turn your phone sideways for the full view" in cat_pg
+      and 'class="hb-turn-x" href="/wrath/leyline-preview/turn-later?next=/wrath/leyline-preview/catalog" rel="nofollow">Not now</a>' in cat_pg
+      and "<script" not in cat_pg and cat_pg.index('class="hb-top"') < cat_pg.index('class="hb-turn"') < cat_pg.index('<main id="main"'))
+check("the tip shows only on a touch phone in portrait; JS remembers Not now for 7 days (localStorage, the ly_turn cookie)",
+      ".hb-turn,.hb-playx{display:none}" in HB.STONE_MOBILE_CSS and "@media (orientation:portrait) and (max-width:600px) and (pointer:coarse)" in HB.STONE_MOBILE_CSS
+      and 'localStorage.setItem(TK' in HB.HUB_JS and "ly_turn=1; Max-Age=" in HB.HUB_JS and "7*864e5" in HB.HUB_JS and "STONE_MOBILE_CSS" not in cat_pg)
+st_t, h_t, _ = req("/wrath/leyline-preview/turn-later?next=/wrath/leyline-preview/catalog")
+st_e, h_e, _ = req("/wrath/leyline-preview/turn-later?next=//evil.example/x")
+check("Not now without script: 303 back to the page with the 7-day cookie; never to another site",
+      st_t == 303 and h_t.get("location") == "/wrath/leyline-preview/catalog" and "ly_turn=1; Max-Age=604800; Path=/" in h_t.get("set-cookie", "")
+      and st_e == 303 and h_e.get("location") == "/wrath/leyline-preview")
+_c = http.client.HTTPConnection("127.0.0.1", PAGE_PORT, timeout=30)
+_c.request("GET", "/wrath/leyline-preview/catalog", headers={"X-Forwarded-For": "10.9.0.1", "Cookie": "x=1; ly_turn=1"})
+_r = _c.getresponse(); _off = _r.read().decode()
+check("once dismissed (the cookie): no tip on the page", _r.status == 200 and 'class="hb-turn"' not in _off and 'class="hb-top"' in _off)
+check("phones sideways: the launcher's view: a stone icon rail with tiny labels, a compact stone top bar with Play on the PLAY stone",
+      "@media (orientation:landscape) and (max-height:500px) and (pointer:coarse)" in HB.STONE_MOBILE_CSS
+      and "var(--hb-stone-tall)" in HB.STONE_MOBILE_CSS and "body.hb .hb-nav .hb-ni{flex:none;display:flex;flex-direction:column" in HB.STONE_MOBILE_CSS
+      and '<a class="hb-playx" href="/wrath">Play</a></div></header>' in cat_pg and "play-stone.webp" in HB.STONE_MOBILE_CSS
+      and "STONE_CSS + STONE_MOBILE_CSS + DARK_ISLANDS" in open(os.path.join(HERE, "hub.py")).read())
 check("the stone chrome stays dark in Light (its words light on the stone)", ".hb-top,.hb-foot,.hb-pg-h" in HB.DARK_ISLANDS and ".hb-top,.hb-foot,.hb-pg-h" in front)
 check("header: sticky with a blur, a hairline once scrolled, none of it moving with reduced motion",
       "backdrop-filter:blur(14px)" in front and "animation-timeline:scroll(root)" in front and ".hb-top.hb-scrolled{" in front

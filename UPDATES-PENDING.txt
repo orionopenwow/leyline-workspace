@@ -527,6 +527,9 @@
 1190c signin Site: hops to the Builders' Realm
 1213a signin Site: the launcher's stone look (stone side menu, bars, red stone Log In / Download, metal panel edges), Join the Discord under News
 1210a ship Save to GitHub: launcher edge (one texture all round), button tab; Builders' Realm arena-season fix
+1214a foreverui Login screens: no stock realm wizard on a realm with no characters yet
+1214b signin Site: a hop to a realm that just came up refreshes the realm list first
+1216a ship Save to GitHub: launcher design pass (stone pages, realm cards, Host 1-2-3), Graphics tab, phone-friendly site
 1202k release-mirror Mirror releases: copy the launcher releases to the mirror (after the GitHub build)
 1203a vr-data Vanilla Remastered: build the movement maps the world server needs (long; no upload again; resumable)
 1203b ov112-on Vanilla Remastered: turn the 1-20 realm on (backup, self-check, rollback)

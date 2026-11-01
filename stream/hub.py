@@ -975,7 +975,7 @@ class Hub:
                 '<label for="hb-menu" class="hb-menu-b" aria-hidden="true">Menu</label>'
                 f'<nav class="hb-nav" aria-label="Leyline">{"".join(item(*m) for m in main)}{drop}{extra}'
                 f'<a class="hb-dl-x" href="{e(dl)}" rel="noopener noreferrer">Download the launcher</a></nav>'
-                f'<div class="hb-end">{dl_a}{acct}</div></header>')
+                f'<div class="hb-end">{dl_a}{acct}<a class="hb-playx" href="/wrath">Play</a></div></header>')
 
     def _shell(self, title: str, body: str, path: str, nonce: str = "", active: str | None = None, css: str = "") -> bytes:
         """The page around body. nonce: the CSP nonce for HUB_JS (the front page and the realm list); "" for no script.
@@ -1013,13 +1013,28 @@ class Hub:
         meta = ('<meta name="description" content="Leyline: one launcher for your own game clients and every realm, '
                 'with mods, addons, realm scripts and tools.">')
         css = ((self.portal("LOOK_VARS") or LOOK_FALLBACK) + SITE_TOKENS_CSS + (self.portal("SPIN_CSS") or "") + HUB_CSS + SITE_CSS
-               + SIDE_CSS + STONE_CSS + DARK_ISLANDS + self._backdrop() + css)
+               + SIDE_CSS + STONE_CSS + STONE_MOBILE_CSS + DARK_ISLANDS + self._backdrop() + css)
         return (f'<!doctype html><html lang="en" data-look="leyline"><head><meta charset="utf-8">'
                 f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light">'
                 f'<title>{e(title)}</title>{meta}{robots}<style>{css}</style></head>'
-                f'<body class="hb"><a class="hb-skip" href="#main">Skip to content</a>{top}'
+                f'<body class="hb"><a class="hb-skip" href="#main">Skip to content</a>{top}{self._turn_hint(path)}'
                 f'<main id="main" class="hb-main{" hb-front" if front else ""}">{flag}{sub}{body}</main>{foot}'
                 + (f'<script nonce="{e(nonce)}">{HUB_JS}</script>' if nonce else "") + '</body></html>').encode("utf-8")
+
+    def _turn_hint(self, path: str) -> str:
+        """Phones held upright (owner 2026-10-31: "sideways mode recommended on mobile, gentle encouragement"): a slim
+        stone bar under the top bar, shown by CSS only on a touch phone in portrait (STONE_MOBILE_CSS). "Not now" hides
+        it for 7 days: HUB_JS keeps that in localStorage and a cookie; with no script the link sets the cookie and comes
+        back to the page. Never covers the page; "" once dismissed (the ly_turn cookie)."""
+        if getattr(_REQ, "turn_off", False):
+            return ""
+        nxt = path if path.startswith("/wrath") and "//" not in path and "\\" not in path else (FRONT if front_on() else BASE)
+        later = (FRONT if front_on() else BASE) + "/turn-later?next=" + urllib.parse.quote(nxt, safe="/")
+        return ('<aside class="hb-turn" aria-label="Tip"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">'
+                '<rect x="8" y="2.5" width="9" height="15" rx="1.8"/><path d="M11.5 15h2"/>'
+                '<path d="M3.5 13.5a8.5 8.5 0 0 0 7.5 8"/><path d="M3 17.5l.5-4 3.6 1.7"/></svg>'
+                '<span>Turn your phone sideways for the full view</span>'
+                f'<a class="hb-turn-x" href="{html.escape(later)}" rel="nofollow">Not now</a></aside>')
 
     def _backdrop(self) -> str:
         """The site's backdrop (owner 2026-10-30: "use this as the background of the site but slightly transparent"):
@@ -4221,6 +4236,66 @@ body.hb .hb-pg-h .hb-seg{background:linear-gradient(180deg,rgba(0,0,0,.5),rgba(0
 @media (prefers-reduced-motion:reduce){body.hb :is(.hb-dl,.hb-dl-x,.hb-signin,.hb-cta,.ly-btn,.hk-btn,.fm-btn){transition:none}}
 """
 
+# Phones (owner 2026-10-31: "sideways mode recommended on mobile, gentle encouragement, format it for it, give sidebar tool
+# bar, match launcher view etc make it tight"). Upright: a slim stone tip under the top bar (Hub._turn_hint), touch phones
+# in portrait only. Sideways (a short landscape screen): the launcher's layout, tight: a slim stone icon rail on the left
+# (the side menu as a toolbar, tiny labels, the current page a sunken well, Join the Discord in it), a compact stone top
+# bar (small mark, Play on the PLAY stone, Download, Log In), the page filling the rest with tight spacing.
+STONE_MOBILE_CSS = """
+.hb-turn,.hb-playx{display:none}
+@media (orientation:portrait) and (max-width:600px) and (pointer:coarse){
+body.hb .hb-turn:not([hidden]){display:flex;align-items:center;gap:10px;margin:0;padding:6px 8px 6px 14px;color:#ece6d6;font-size:13.5px;line-height:1.3;
+background:linear-gradient(180deg,rgba(0,0,0,.34),rgba(0,0,0,.5)),var(--hb-stone);border-bottom:1px solid var(--hb-stone-edge);
+box-shadow:inset 0 1px 0 rgba(255,255,255,.05);text-shadow:0 1px 1px rgba(0,0,0,.7)}
+.hb-turn svg{width:22px;height:22px;flex:none;fill:none;stroke:#f1cf86;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.hb-turn span{flex:1 1 auto;min-width:0}
+body.hb a.hb-turn-x{flex:none;display:inline-flex;align-items:center;min-height:36px;padding:0 10px;color:#f1cf86!important;font-weight:650;text-decoration:none}
+body.hb a.hb-turn-x:hover{color:#fff!important}
+}
+@media (orientation:landscape) and (max-height:500px) and (pointer:coarse){
+:root{--hb-side:70px;--hb-bar:44px}
+body.hb{padding-left:var(--hb-side);padding-top:var(--hb-bar);font-size:14px}
+body.hb .hb-top{position:fixed;top:0;left:0;right:0;z-index:30;height:var(--hb-bar);min-height:0;flex-wrap:nowrap;gap:10px;padding:0 10px 0 12px}
+body.hb .hb-brand{gap:7px}body.hb .hb-brand .ly-spin{--ly-spin-size:30px!important}
+body.hb .hb-top .hb-word b{font-size:15px}body.hb .hb-top .hb-word i{font-size:9.5px;letter-spacing:.26em}
+body.hb :is(.hb-menu-b,.hb-side-b,.hb-dl-x,.hb-more-d){display:none!important}
+body.hb .hb-nav{display:flex!important;position:fixed;top:var(--hb-bar);left:0;bottom:0;width:var(--hb-side);margin:0;padding:6px 5px 10px;
+flex-direction:column;flex-wrap:nowrap;gap:2px;overflow-x:hidden;overflow-y:auto;scrollbar-width:none;
+background:linear-gradient(90deg,rgba(0,0,0,.18),rgba(0,0,0,.30)),var(--hb-stone-tall);border-right:1px solid var(--hb-stone-edge);
+box-shadow:inset -1px 0 0 rgba(255,255,255,.05),inset 0 1px 0 rgba(0,0,0,.6)}
+body.hb .hb-nav::-webkit-scrollbar{display:none}
+body.hb .hb-nav-x{display:contents}
+body.hb .hb-nav .hb-ni{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:100%;min-height:44px;
+padding:4px 2px;border:1px solid transparent;border-radius:8px;font-size:9.5px;line-height:1.1;font-weight:600;text-align:center;white-space:nowrap}
+body.hb .hb-nav .hb-ni:not(.on){background:none;box-shadow:none;border-color:transparent}
+body.hb .hb-nav .hb-ni span{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+body.hb .hb-nav .hb-ni svg{display:block;width:20px;height:20px}
+body.hb .hb-nav .hb-ni-dc svg{color:#8891f5}
+body.hb .hb-end{margin-left:auto;gap:8px}
+body.hb .hb-top .hb-end :is(.hb-dl,.hb-signin,.hb-playx){min-height:34px!important;padding:0 12px!important;font-size:15px!important;border-width:8px!important;border-image-width:8px!important}
+body.hb .hb-top .hb-dl svg{width:15px;height:15px}
+body.hb .hb-acct{min-height:34px;font-size:14px}
+body.hb .hb-top .hb-end .hb-playx{display:inline-flex;align-items:center;order:-1;border:8px solid transparent;border-radius:0;
+border-image:url(/wrath/art/play-stone.webp) 34 fill/8px/0;background:none;color:#f3c85a!important;text-decoration:none;
+font:700 16px/1 Georgia,"Times New Roman",serif;letter-spacing:.06em;text-transform:uppercase;padding:0 16px!important;
+text-shadow:0 1px 0 #1a0303,1px 0 0 #1a0303,-1px 0 0 #1a0303,0 -1px 0 #1a0303,0 2px 5px rgba(0,0,0,.6);filter:drop-shadow(0 2px 6px rgba(0,0,0,.45))}
+body.hb .hb-top .hb-end .hb-playx:hover{filter:drop-shadow(0 2px 6px rgba(0,0,0,.45)) brightness(1.15)}
+body.hb .hb-top .hb-end .hb-playx:focus-visible{outline:2px solid #f2c94c;outline-offset:3px}
+/* the page, tight */
+body.hb .hb-main{padding-top:10px}
+body.hb .hb-main:has(>.hb-pg),body.hb .hb-main:has(>.fm),body.hb .hb-main:has(>.hf){padding:10px 12px 18px}
+body.hb .hb-pg-h{padding:8px 14px;gap:6px 12px}body.hb .hb-pg-h h1{font-size:18px}
+body.hb .hb-pg-b{padding:12px 14px 14px}
+body.hb .hb-seg a{min-height:30px;font-size:13.5px}
+body.hb .hb-hero{padding:0 12px 10px}
+body.hb .hb-hero-mark{--ly-spin-size:110px!important}
+body.hb .hb-art{height:122px;margin:0 auto 4px}body.hb .hb-art::before{width:150px}
+body.hb .hb-hero h1{margin:0 0 4px;font-size:20px}
+body.hb .hb-sec{margin:14px 0}
+body.hb .hb-foot-in{padding:10px 14px 14px}body.hb .hb-foot-links{margin-bottom:8px}
+}
+"""
+
 # The drawings of the launcher's own windows (the host console, the in-game realm list) and the realm posters are dark
 # pictures: in Light they keep the Dark tokens, so their words stay light on dark.
 DARK_ISLANDS = ("@media (prefers-color-scheme:light){:is(.hb-sw,.hb-rlx,.hb-poster,.hb-top,.hb-foot,.hb-pg-h,.fm>.fm-head){"
@@ -4232,6 +4307,14 @@ DARK_ISLANDS = ("@media (prefers-color-scheme:light){:is(.hb-sw,.hb-rlx,.hb-post
 # /wrath/realms.json and /wrath/status.json every 30 s (the page's own numbers stay when they don't answer), and
 # the section reveal. Everything works without it: the addresses are selectable text, the filter is a GET form.
 HUB_JS = r"""(function(){
+// the turn-your-phone hint: "Not now" hides it here and for 7 days (localStorage and the ly_turn cookie the pages read)
+var turn=document.querySelector(".hb-turn");
+if(turn){var TK="leyline.turnLater",WEEK=7*864e5;
+try{var t=+localStorage.getItem(TK);if(t&&Date.now()-t<WEEK)turn.hidden=true;}catch(e){}
+var tx=turn.querySelector(".hb-turn-x");
+if(tx)tx.addEventListener("click",function(ev){ev.preventDefault();turn.hidden=true;
+try{localStorage.setItem(TK,String(Date.now()));}catch(e){}
+try{document.cookie="ly_turn=1; Max-Age="+(7*86400)+"; Path=/; SameSite=Lax"+(location.protocol==="https:"?"; Secure":"");}catch(e){}});}
 // the side menu: remember folded or open in this browser (the page works without it)
 var side=document.getElementById("hb-side");
 if(side){try{if(localStorage.getItem("leyline.side")==="folded")side.checked=true;}catch(e){}
@@ -4739,7 +4822,7 @@ def bind(lookup) -> None:
 # lives at /wrath/leyline/<page> and the old /wrath/leyline-preview/<page> addresses send a 301 there. Inside, the code
 # keeps BASE; what goes out (pages, Location headers) says /wrath/leyline (_Live).
 HUB_PAGES = ("catalog", "addons", "p", "creators", "beacon", "realms", "modes", "news", "gallery", "submit", "forge", "agents",
-             "approved.json")
+             "approved.json", "turn-later")
 
 
 # Older portal pages that now have a twin here (owner 2026-10-30: "cleanup any stray site pages, make this our main
@@ -4826,6 +4909,20 @@ def _robots(public: bool = False) -> dict:
     return {} if (public or front_on()) else {"X-Robots-Tag": "noindex, nofollow"}
 
 
+TURN_COOKIE = "ly_turn"
+TURN_DAYS = 7
+
+
+def note_request(handler) -> None:
+    """Called by the portal at the start of every GET: whether this visitor said "Not now" to the turn-your-phone hint
+    (the ly_turn cookie), for every page drawn with Hub._shell (the hub's own, the forum, the Hero Key, Host ...)."""
+    try:
+        ck = handler.headers.get("Cookie", "") or ""
+        _REQ.turn_off = any(c.strip() == TURN_COOKIE + "=1" for c in ck.split(";"))
+    except Exception:   # noqa: BLE001: the hint then shows
+        _REQ.turn_off = False
+
+
 def get(handler, path: str, query: dict) -> None:
     """GET (and HEAD) for every path match() owns. handler: the portal's request handler (send, ip)."""
     _REQ.who = None
@@ -4833,6 +4930,17 @@ def get(handler, path: str, query: dict) -> None:
     if got is None:
         return
     handler, path = got
+    if path == BASE + "/turn-later":   # "Not now" on the turn-your-phone hint, without script: 7 days, back to the page
+        nxt = (query.get("next") or [""])[0]
+        if not (nxt.startswith("/wrath") and "//" not in nxt and "\\" not in nxt and not CTRL_RE.search(nxt)):
+            nxt = FRONT if front_on() else BASE
+        handler.send_response(303)
+        handler.send_header("Location", nxt)
+        handler.send_header("Set-Cookie", f"{TURN_COOKIE}=1; Max-Age={TURN_DAYS * 86400}; Path=/; SameSite=Lax; Secure")
+        handler.send_header("Cache-Control", "no-store")
+        handler.send_header("Content-Length", "0")
+        handler.end_headers()
+        return
     limit = hub.portal("browse_limit")
     if limit is not None and not limit.hit(handler.ip(), 600):
         handler.send(429, b"too many requests\n", "text/plain")

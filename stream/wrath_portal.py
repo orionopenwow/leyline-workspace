@@ -867,10 +867,29 @@ def hop_for(query: dict) -> dict | None:
     got = links.check_go((query.get("go") or [""])[0][:40])
     if not got or got[0] != "r" or not REALM_ID_RE.match(got[1]):
         return None
-    for r in community_realms()[0]:
-        if r["id"] == got[1] and r["live"]:
-            return {"id": r["id"], "name": r["name"], "home": own_login_realm(r["id"])}
+    for attempt in (0, 1):
+        for r in community_realms()[0]:
+            if r["id"] == got[1] and r["live"]:
+                return {"id": r["id"], "name": r["name"], "home": own_login_realm(r["id"])}
+        # 2026-10-31 live: a realm that had just come up was "not live" here for up to a minute (the cached list)
+        # while the in-game browser already showed it online. Not found: refresh the list once, then look again.
+        if attempt == 0 and not refresh_listing_now():
+            break
     return None
+
+
+def refresh_listing_now(min_age: float = 10.0) -> bool:
+    """Fetch the listing now (at most LISTING_WAIT), unless it was fetched in the last min_age seconds or a
+    refresh is already running (then wait for that one). True when a newer list may be there."""
+    with _listing_lock:
+        if time.monotonic() - _listing["at"] < min_age:
+            return False
+    busy = _listing_busy
+    if busy.acquire(blocking=False):
+        _listing["busy_at"] = time.monotonic()
+        _listing_done.clear()
+        threading.Thread(target=_refresh_listing, args=(busy,), daemon=True).start()
+    return _listing_done.wait(LISTING_WAIT)
 
 
 def hop_env(sess: dict) -> dict:
@@ -3171,6 +3190,8 @@ class PageHandler(BaseHTTPRequestHandler):
         split = urllib.parse.urlsplit(self.path)
         path = split.path.rstrip("/") or "/"
         query = urllib.parse.parse_qs(split.query)
+        if hub_mod is not None:   # the turn-your-phone hint's "Not now" (cookie), for every page in the hub's look
+            hub_mod.note_request(self)
         if path == "/__auth":
             self.stream_auth()
             return

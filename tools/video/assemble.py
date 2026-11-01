@@ -406,6 +406,7 @@ def stamp(t):
 
 
 def write_srt(path, subs):
+    subs = [(a, min(b, subs[i + 1][0] - 0.05) if i + 1 < len(subs) else b, x) for i, (a, b, x) in enumerate(subs)]   # no overlaps
     with open(path, "w") as f:
         for i, (a, b, x) in enumerate(subs, 1):
             f.write(f"{i}\n{stamp(a)} --> {stamp(b)}\n{x.replace('|', chr(10))}\n\n")

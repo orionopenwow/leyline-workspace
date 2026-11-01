@@ -2,7 +2,7 @@
  "slice": "mini",
  "title": "WrathUnleashed in the browser",
  "comment": "The one streamed slice. Each tier has a stable \"key\"; \"order\" lists the keys in priority order and a tier's number is its position there (move a key to reorder, delete it to drop the tier). Tiers are exported in that order until budgetMB; maxTier is the highest tier number the server actually holds (\"Make mini slice.bat\" lowers it to what fit; the gate passes it to the realm). The realm rule reads the same file (lua/tiers_lua.py makes ov_slices_tiers.lua from it), so nothing is listed twice. A map entry is the whole map, or a \"zone\" (AreaTable id, tiles from its world-map rect), or a world \"box\" [x min, x max, y min, y max]; marginTiles widens the streamed tiles, the realm rule uses the zone or box itself. Tier 0 (base) and Dalaran are always first.",
- "maxTier": 57,
+ "maxTier": 58,
  "budgetMB": 7424,
  "lite": {
   "comment": "Item models and textures are worn by everyone (spec kits, free Armory gear) and there are too many to pick from, so all of them ship, with textures cut to their mips of at most maxPx on the long side. --export reports what that saved.",
@@ -79,6 +79,7 @@
     "mechanar",
     "arcatraz",
     "magisters-terrace",
+    "den",
     "music"
   ],
  "tiers": [
@@ -2005,6 +2006,39 @@
      "raid": true
     }
    ]
+  },
+  {
+   "key": "den",
+   "kind": "home",
+   "kindNote": "home, as Dalaran: the realm's stream rule (ov_slices.lua) lets every player stand here at any level, so a browser player in a Den is never sent away; no play entries, so the travel menu doesn't offer it.",
+   "name": "Den",
+   "notes": "The Den (owner 1 Nov 00:16: a light, fully working Den in the browser, the slice way): the sealed island in the far north-east of Kalimdor where every Den room stands (ov_build.lua DEN: map 1, 16226.2, 16257.0, game_tele 424 GMIsland), and the models of every object a Den can place: the Builder's catalog and buildings, the room's floor, wall and light blocks, and the stamps' and starter places' props. Objects found with '.build find' or '.build models' outside these are not carried (a player's own game folder shows them). Before music in order, so the budget keeps it.",
+   "maps": [
+    {
+     "id": 1,
+     "box": [
+      16046,
+      16406,
+      16077,
+      16437
+     ],
+     "marginTiles": 1,
+     "spawnBox": [
+      16046,
+      16406,
+      16077,
+      16437
+     ],
+     "boxNote": "x min, x max, y min, y max: the room (OV_DEN_SIZE up to 32 yards each way) and its yard around 16226.2, 16257.0, with room to look around: tiles Kalimdor_1_1 and its neighbours."
+    }
+   ],
+   "objects": [1558, 1670, 1953, 2109, 2130, 2148, 2371, 2413, 2489, 2552, 2562, 2686, 2687, 2695, 2711, 13948, 19001, 19002, 19004, 19005, 19006, 19007, 19010, 19013, 19014, 19028, 19029, 19031, 19035, 19057, 19064, 19243, 19253, 19255, 19256, 19258, 19260, 19262, 19277, 19286, 19294, 19295, 19299, 19301, 19302, 19311, 19312, 19358, 19362, 19365, 19367, 19387, 19388, 19389, 19392, 19393, 19394, 19395, 19397, 19404, 19410, 19412, 19413, 19416, 19419, 19429, 19430, 19434, 19435, 19436, 19439, 19444, 19445, 19454, 19455, 19457, 19458, 19459, 19460, 19461, 19466, 19469, 19477, 19478, 19483, 19485, 19494, 19504, 19506, 19507, 19508, 19509, 19510, 19511, 19513, 19514, 19516, 19519, 19520, 19521, 19522, 19532, 19537, 19583, 19604, 19607, 19608, 19609, 19610, 19619, 19624, 19626, 19627, 19628, 19629, 19630, 19631, 19632, 19633, 19635, 19637, 19638, 19640, 19658, 19659, 19660, 19661, 19664, 19665, 19840, 19863, 19897, 20724, 20818, 20939, 24388, 24538, 26480, 26491, 28611, 32372, 48403, 50910, 58624, 59850, 61919, 92527, 92703, 112068, 126050, 136924, 136929, 136930, 136931, 142947, 152080, 160846, 170592, 171674, 173016, 174681, 175444, 175471, 176004, 176093, 176561, 177140, 177684, 177724, 177905, 178304, 178425, 178557, 178558, 178647, 178904, 178934, 179118, 179694, 179966, 179967, 179969, 179970, 179972, 179973, 179976, 179977, 180007, 180030, 180031, 180032, 180034, 180035, 180039, 180042, 180043, 180322, 180352, 180414, 180432, 180473, 180575, 180698, 180765, 180766, 180767, 180768, 180773, 180774, 180775, 180776, 180777, 180778, 180853, 181058, 181063, 181064, 181065, 181066, 181067, 181075, 181077, 181087, 181103, 181128, 181244, 181245, 181246, 181289, 181301, 181302, 181305, 181361, 181396, 181505, 181506, 181507, 181509, 181824, 181917, 181959, 181962, 182014, 182036, 182059, 182076, 182077, 182079, 182080, 182093, 182186, 182251, 182314, 182341, 182353, 182354, 182366, 182593, 182598, 182608, 182654, 182762, 183105, 183200, 183355, 183492, 183496, 183753, 183992, 183993, 184038, 184284, 184306, 184493, 184592, 184593, 184613, 184657, 184671, 184696, 184717, 184731, 184733, 184854, 184855, 184856, 184857, 184858, 184863, 184866, 184924, 185003, 185004, 185005, 185007, 185106, 185107, 185294, 185318, 185542, 185901, 186173, 186281, 186307, 186422, 186475, 186678, 186680, 186681, 186682, 186695, 186709, 186717, 186808, 186809, 186983, 187083, 187114, 187117, 187118, 187123, 187457, 187591, 187708, 187771, 187912, 187988, 188020, 188021, 188048, 188050, 188067, 188073, 188076, 188142, 188179, 188227, 188287, 188346, 188347, 188348, 188436, 188437, 188438, 188439, 188468, 188701, 189289, 190023, 190024, 190094, 190095, 190117, 190190, 190215, 190395, 190559, 190589, 190615, 190664, 190665, 190666, 190670, 190689, 190692, 190694, 191475, 191476, 191706, 191886, 191887, 192044, 192123, 192199, 192547, 192548, 192722, 192723, 192724, 193007, 193215, 193216, 193217, 193218, 193219, 193612, 193613, 193614, 194008, 194237, 194279, 194281, 195000, 195192, 195198, 195318, 195319, 196871, 200337, 200338, 201752, 201774, 202218, 202564, 202835, 202839, 202872, 202891, 202892, 202924, 202926, 211022, 211062, 211063, 211064],
+   "objectsNote": "Gameobject entries whose models stream with this tier (displays.py: a tier's objects): ov_build.lua CATALOG and its buildings, ov_den.lua LOOKS (floor, wall, light), den-stamps/*.den.json and den-starters/*.den.json. stream/tests/test_den_slice.py keeps it in step with them.",
+   "capture": [
+    "Hop to a Den realm in the browser: you start in the white room.",
+    ".den start forest, then .den stamp inn now; walk around the Inn and the yard."
+   ],
+   "measuredMB": null
   },
   {
    "key": "music",

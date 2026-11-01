@@ -718,6 +718,16 @@ do
     ENV.OV_SAMPLER = nil
 end
 
+-- The Den tier (mini.json "den", owner 1 Nov: the light browser Den): a level 1 browser player in a Den room on the
+-- island (map 1, 16226, 16257) is inside the slice, so the stream rule never sends them away; just off the island is not.
+if K.den then
+    local low = player(77, 1, 16226, 16257, { level = 1, zone = 876 })
+    check("Den tier: a level 1 player in the Den room is inside", T.inSlice({ tier = ALL }, low, 1, 876, 16226, 16257))
+    check("Den tier: the yard's edge is inside too", T.inSlice({ tier = ALL }, low, 1, 876, 16226 + 60, 16257 - 60))
+    check("Den tier: far from the island is not", not T.inSlice({ tier = ALL }, low, 1, 876, 15000, 15000))
+    check("Den tier: not in the travel menu", not (TT[K.den].play and #TT[K.den].play > 0))
+end
+
 -- tiers in the script, as text for the JSON cross-check (tests/test_lua.py)
 local parts = {}
 for t = 0, TT.count - 1 do

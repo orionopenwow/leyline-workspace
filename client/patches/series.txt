@@ -5,4 +5,5 @@ history/wotlk-client-20261026a.patch
 history/wotlk-client-20261026b.patch
 history/wotlk-client-20261029a.patch
 history/wotlk-client-20261031a.patch
-wotlk-client-20261031b.patch
+history/wotlk-client-20261031b.patch
+wotlk-client-20261101a.patch

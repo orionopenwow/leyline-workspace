@@ -2,6 +2,8 @@
 
 **Peer-to-peer and torrent transfers in Leyline never carry game data and never carry a game client.**
 
+One exception, for the owner's testing and **off by default**: the "Testing switch" section below.
+
 They may carry only these:
 * Leyline itself (launcher updates);
 * mod packages that passed the Workshop checker;
@@ -96,7 +98,7 @@ leyline_net.write_flags(None, {}, limits={"seed_upload_kbps": 512, "seed_ratio_p
 `make-hostpack.py` writes a matching torrent for every Host pack, with the release file as its web seed, so
 any standard BitTorrent client can seed it today.
 
-**Not built:** the BitTorrent peer protocol (BEP 3 peers, trackers, DHT) inside the launcher. The built-in
+**Not built for packages:** the BitTorrent peer protocol (BEP 3 peers, trackers, DHT) behind `transfer::Swarm`. (Since 31 Oct the desktop app carries librqbit, but only for the testing switch below; it is not plugged in as a `Swarm` for Leyline's own packages.) The built-in
 `NoSwarm` has no peers. With the flag on, a torrent download therefore comes from its web seeds, which are our
 own HTTPS files, and is checked against the torrent's piece hashes.
 
@@ -105,6 +107,42 @@ but it brings a large async stack (tokio, its own HTTP stack and DHT) and networ
 launcher. We would also be shipping an engine nobody can switch on yet. The plan is to add it behind a cargo
 feature (`torrent-engine`) as a `Swarm` implementation once the flag is going to be switched on. It would use
 the upload cap, ratio and peer limits from `flags::Limits`, and seed only files that passed the checks above.
+
+## Testing switch (owner, 31 Oct)
+
+**Off by default.** Settings › Testing › "Allow torrent downloads of game clients (testing only)". It is saved on
+this PC only (`<app data>/Leyline/leyline-testing.json`); the site's flags file cannot turn it on, and a missing or
+broken file counts as off. Code: `launcher/src-tauri/src/clienttorrent.rs`, `clientimport.rs` (`classify_with`,
+`run_with`).
+
+**What it lifts, and only this:** the refusal of game-client downloads from a magnet link or `.torrent` that the
+player drops or pastes (on the play bar's realm box, the client list's add panel or Find your game files). With it on:
+
+* a `magnet:` link, a `.torrent` file, or an https link to one (or a link that answers with one) is downloaded with
+  a real BitTorrent engine: **librqbit 9.1** (pure Rust, `torrent-engine` cargo feature, part of the desktop app;
+  about +3.5 MB on a release build, measured on Linux with the launcher's profile). DHT and the torrent's own
+  trackers are allowed;
+* the files go only into the folder the player picked, then the client is found and added as for a zip (a torrent
+  of a zip is unpacked first).
+
+**What stays, switch on or off (safety, not policy):**
+
+* every path in the torrent is checked before anything is written (`mods::safe_rel`: no `..`, absolute paths,
+  drive letters or device names; no symbolic links; no name twice), with the zip caps (64 GB download, 400 000 files);
+* upload is **off** (`disable_upload`) unless the second box, "Share while downloading", is on; then it is capped
+  at 512 KB/s. Share is ignored while the main switch is off;
+* when the download is done the torrent is removed from the engine (files kept) and the engine stops: **nothing is
+  seeded afterwards**. Cancel removes the torrent and everything it wrote;
+* Leyline never suggests, lists or pre-fills a magnet or a source. Leyline's own servers never carry a client.
+
+With the switch off, magnets and `.torrent`s get today's sentence: "Leyline can't download game clients from
+torrents. Drop your own client folder or zip instead." Everything above this section (the closed list of kinds,
+`checker.rs`, the site flags) is unchanged: the switch does not touch Leyline's own package downloads.
+
+Not verified here: a download from a real swarm (no internet peers in the build box). The local two-peer engine test
+(`clienttorrent::engine::tests`, `--features torrent-engine -- --ignored`) needs IPv6 sockets, which the build box
+lacks; the engine itself always opens one (its UDP tracker client), so a PC with IPv6 switched off in the kernel gets
+"This PC's network settings can't run torrent downloads".
 
 ## Shared magnet links (`magnet_links`, off, hidden)
 

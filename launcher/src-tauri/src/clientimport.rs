@@ -8,9 +8,14 @@
 //!
 //! Then `clients::detect` looks at what is there and the client is added like one picked with Choose a folder.
 //!
-//! Never a magnet link or a .torrent: Leyline never moves game clients peer-to-peer (docs/P2P-AND-TORRENT.md),
-//! so those get one plain sentence (`TORRENT_REFUSAL`). Leyline never suggests or lists where to get a client;
+//! Never a magnet link or a .torrent, unless the owner's testing switch is on (Settings › Testing, off by default,
+//! `clienttorrent.rs`): Leyline never moves game clients peer-to-peer (docs/P2P-AND-TORRENT.md), so with the switch
+//! off those get one plain sentence (`TORRENT_REFUSAL`). Leyline never suggests or lists where to get a client;
 //! the link is always the player's own.
+//!
+//! The play bar's realm box takes drops too (owner 31 Oct): it asks where the game should go, turns into the
+//! progress bar (`Progress::line`: "Downloading · 1.2 GB / 5.0 GB · 14 MB/s · about 4 min left"), then picks the
+//! new client for every realm of its version.
 //!
 //! Unpacking is careful: every path is checked before anything is written (no `..`, no absolute paths, no
 //! symbolic links: zip-slip), with caps on the download, the unpacked size and the file count; a file that
@@ -24,7 +29,7 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub const TORRENT_REFUSAL: &str = "Leyline can't download game clients from torrents. Drop your own client folder or zip instead.";
 pub const CANCELLED: &str = "Stopped. Nothing was added.";
@@ -41,7 +46,7 @@ pub struct Caps {
     pub files: usize,
 }
 
-const GIB: u64 = 1 << 30;
+pub(crate) const GIB: u64 = 1 << 30;
 /// A whole client is up to about 20 GB; these leave room and still stop a runaway download or a zip bomb.
 pub const CAPS: Caps = Caps { download: 64 * GIB, unpacked: 128 * GIB, files: 400_000 };
 
@@ -52,6 +57,12 @@ pub enum Source {
     Folder { path: PathBuf },
     Zip { path: PathBuf },
     Link { url: String },
+    /// A magnet link (only with the testing switch on).
+    Magnet { uri: String, name: Option<String> },
+    /// A `.torrent` file on this PC (only with the testing switch on).
+    Torrent { path: PathBuf },
+    /// An https link to a `.torrent` (only with the testing switch on).
+    TorrentLink { url: String },
 }
 
 impl Source {
@@ -59,7 +70,9 @@ impl Source {
     pub fn name(&self) -> String {
         match self {
             Source::Folder { path } | Source::Zip { path } => path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
-            Source::Link { url } => crate::net::origin(url).map(|o| o.trim_start_matches("https://").to_string()).unwrap_or_default(),
+            Source::Link { url } | Source::TorrentLink { url } => crate::net::origin(url).map(|o| o.trim_start_matches("https://").to_string()).unwrap_or_default(),
+            Source::Torrent { path } => path.file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+            Source::Magnet { name, .. } => name.clone().unwrap_or_else(|| "the shared link".into()),
         }
     }
     /// A zip or a link is unpacked into a folder; a folder is added where it is.
@@ -74,7 +87,7 @@ fn is_torrent(s: &str) -> bool {
 }
 
 /// `%20` and friends in a file:// address.
-fn percent_decode(s: &str) -> String {
+pub(crate) fn percent_decode(s: &str) -> String {
     let b = s.as_bytes();
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
@@ -93,16 +106,34 @@ fn percent_decode(s: &str) -> String {
 }
 
 /// Say what a dropped or pasted text is: a folder, a zip, or a direct https link. The first usable line counts
-/// (a dropped link can come as a text/uri-list with `#` comment lines).
+/// (a dropped link can come as a text/uri-list with `#` comment lines). A magnet or `.torrent` is refused
+/// (`TORRENT_REFUSAL`): `classify_with(input, true)` takes them, for the testing switch.
 pub fn classify(input: &str) -> Result<Source, String> {
+    classify_with(input, false)
+}
+
+/// `classify`, with magnets and `.torrent`s taken when `torrents` (Settings › Testing) is on.
+pub fn classify_with(input: &str, torrents: bool) -> Result<Source, String> {
     let line = input.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with('#')).unwrap_or("").trim_matches('"');
     if line.is_empty() {
         return Err("Drop your game folder or a zip of it here, or paste a link to your own backup.".into());
     }
-    if is_torrent(line) {
-        return Err(TORRENT_REFUSAL.into());
-    }
     let lower = line.to_ascii_lowercase();
+    if is_torrent(line) {
+        if !torrents {
+            return Err(TORRENT_REFUSAL.into());
+        }
+        if lower.starts_with("magnet:") {
+            let m = crate::clienttorrent::parse_magnet(line)?;
+            return Ok(Source::Magnet { uri: line.to_string(), name: m.name });
+        }
+        if lower.starts_with("https://") {
+            if !crate::net::plain_https(line) {
+                return Err("That link doesn't look right. Use a direct https link.".into());
+            }
+            return Ok(Source::TorrentLink { url: line.to_string() });
+        }
+    }
     if lower.starts_with("http://") {
         return Err("Use a link that starts with https.".into());
     }
@@ -142,9 +173,15 @@ pub fn classify(input: &str) -> Result<Source, String> {
                 Some(text[i..].split("</string>").next()?.trim().to_string())
             });
             return match url {
-                Some(u) if ["https://", "http://", "magnet:"].iter().any(|p| u.to_ascii_lowercase().starts_with(p)) => classify(&u),
+                Some(u) if ["https://", "http://", "magnet:"].iter().any(|p| u.to_ascii_lowercase().starts_with(p)) => classify_with(&u, torrents),
                 _ => Err("That shortcut has no link in it.".into()),
             };
+        }
+        if ext == "torrent" {
+            if !torrents {
+                return Err(TORRENT_REFUSAL.into());
+            }
+            return Ok(Source::Torrent { path });
         }
         if ext == "zip" || head(&path).starts_with(b"PK\x03\x04") {
             return Ok(Source::Zip { path });
@@ -158,7 +195,7 @@ pub fn classify(input: &str) -> Result<Source, String> {
 }
 
 fn head(p: &Path) -> Vec<u8> {
-    let mut b = vec![0u8; 8];
+    let mut b = vec![0u8; 16];
     let n = fs::File::open(p).and_then(|mut f| f.read(&mut b)).unwrap_or(0);
     b.truncate(n);
     b
@@ -199,17 +236,35 @@ pub struct Progress {
     pub client_name: Option<String>,
     /// Where it is on disk, when done.
     pub folder: Option<String>,
+    /// Bytes per second over the last few seconds (0 when not known).
+    pub speed: u64,
+    /// The bar's one line while it runs: "Downloading · 1.2 GB / 5.0 GB · 14 MB/s · about 4 min left".
+    pub line: String,
 }
 
 #[derive(Default)]
 pub struct Job {
     cancel: AtomicBool,
     p: Mutex<Progress>,
+    /// When the phase began, and the speed meter.
+    m: Mutex<(Option<Instant>, crate::clienttorrent::Meter)>,
 }
 
 impl Job {
     pub fn snapshot(&self) -> Progress {
-        self.p.lock().map(|p| p.clone()).unwrap_or_default()
+        let mut p = self.p.lock().map(|p| p.clone()).unwrap_or_default();
+        if p.phase.busy() {
+            p.speed = self.sample(p.done);
+            p.line = crate::clienttorrent::line(p.phase, p.done, p.total, p.speed);
+        }
+        p
+    }
+    /// Note `done` now; the speed so far.
+    fn sample(&self, done: u64) -> u64 {
+        let Ok(mut m) = self.m.lock() else { return 0 };
+        let t0 = *m.0.get_or_insert_with(Instant::now);
+        m.1.push(t0.elapsed().as_millis() as u64, done);
+        m.1.bps()
     }
     pub fn cancel(&self) {
         self.cancel.store(true, Ordering::SeqCst);
@@ -217,17 +272,33 @@ impl Job {
     pub fn cancelled(&self) -> bool {
         self.cancel.load(Ordering::SeqCst)
     }
-    fn phase(&self, phase: Phase, total: u64) {
+    pub(crate) fn phase(&self, phase: Phase, total: u64) {
         if let Ok(mut p) = self.p.lock() {
             p.phase = phase;
             p.done = 0;
             p.total = total;
         }
+        if let Ok(mut m) = self.m.lock() {
+            *m = (Some(Instant::now()), Default::default());
+        }
     }
     fn add(&self, n: u64) {
+        let done = match self.p.lock() {
+            Ok(mut p) => {
+                p.done += n;
+                p.done
+            }
+            Err(_) => return,
+        };
+        self.sample(done);
+    }
+    /// The engine's own count (a torrent), and the size once it is known.
+    pub(crate) fn set_done(&self, done: u64, total: u64) {
         if let Ok(mut p) = self.p.lock() {
-            p.done += n;
+            p.done = done;
+            p.total = total;
         }
+        self.sample(done);
     }
     /// Start a new import, unless one is running.
     pub fn begin(&self) -> Result<(), String> {
@@ -464,14 +535,108 @@ pub fn free_folder(parent: &Path, name: &str) -> PathBuf {
     (2..).map(|n| parent.join(format!("{name} ({n})"))).find(|p| !p.exists()).unwrap()
 }
 
+const DOWNLOADED_NOT_A_CLIENT: &str = "It is downloaded, but no game client is in it. The right folder holds the game's program and a Data folder.";
+
+/// A `.torrent`'s first bytes.
+fn looks_like_torrent(h: &[u8]) -> bool {
+    h.starts_with(b"d8:announce") || h.starts_with(b"d4:info") || h.starts_with(b"d13:announce") || h.starts_with(b"d7:comment") || h.starts_with(b"d10:created")
+}
+
+/// The biggest zip up to two folders inside `dir` (a torrent of a zipped client).
+fn find_zip(dir: &Path) -> Option<PathBuf> {
+    let mut best: Option<(u64, PathBuf)> = None;
+    let mut level = vec![dir.to_path_buf()];
+    for _ in 0..3 {
+        let mut next = Vec::new();
+        for d in &level {
+            for e in fs::read_dir(d).into_iter().flatten().flatten() {
+                let Ok(t) = e.file_type() else { continue };
+                let p = e.path();
+                if t.is_dir() {
+                    next.push(p);
+                } else if t.is_file() && p.extension().is_some_and(|x| x.eq_ignore_ascii_case("zip")) {
+                    let len = e.metadata().map(|m| m.len()).unwrap_or(0);
+                    if best.as_ref().map_or(true, |(b, _)| len > *b) {
+                        best = Some((len, p));
+                    }
+                }
+            }
+        }
+        next.truncate(400);
+        level = next;
+    }
+    best.map(|(_, p)| p)
+}
+
+/// A torrent into a new folder under `parent`, then the client in it (or in the zip it held).
+fn from_torrent(src: crate::clienttorrent::Src, name: &str, parent: &Path, caps: &Caps, job: &Job, share: bool) -> Result<(PathBuf, Detection), String> {
+    let target = free_folder(parent, &folder_name(name));
+    crate::clienttorrent::fetch(src, &target, caps, share, job)?;
+    job.phase(Phase::Checking, 0);
+    if let Some(f) = find_client(&target) {
+        return Ok(f);
+    }
+    if let Some(z) = find_zip(&target) {
+        let into = free_folder(parent, &folder_name(&z.to_string_lossy()));
+        unzip(&z, &into, caps, job)?;
+        job.phase(Phase::Checking, 0);
+        if let Some(f) = find_client(&into) {
+            let _ = fs::remove_file(&z); // the zip came from this download: the unpacked folder is what counts
+            return Ok(f);
+        }
+        return Err(UNPACKED_NOT_A_CLIENT.into());
+    }
+    Err(DOWNLOADED_NOT_A_CLIENT.into())
+}
+
+/// A `.torrent`'s bytes: read, checked (every path, the caps), then downloaded.
+fn from_torrent_file(raw: Vec<u8>, parent: &Path, caps: &Caps, job: &Job, share: bool) -> Result<(PathBuf, Detection), String> {
+    let l = crate::clienttorrent::list_torrent(&raw)?;
+    crate::clienttorrent::check_files(&l.files, caps)?;
+    from_torrent(crate::clienttorrent::Src::File(raw), &l.name, parent, caps, job, share)
+}
+
+fn read_small(p: &Path, max: u64) -> Result<Vec<u8>, String> {
+    let f = fs::File::open(p).map_err(|e| format!("Couldn't open {}: {e}", p.display()))?;
+    let mut b = Vec::new();
+    f.take(max + 1).read_to_end(&mut b).map_err(|e| e.to_string())?;
+    if b.len() as u64 > max {
+        return Err("That torrent file is too big.".into());
+    }
+    Ok(b)
+}
+
 /// The whole import: download (a link), unpack (a zip or link) into a new folder under `parent`, find the client.
 /// `work` holds the download while it runs. Returns the client's folder and what detection found.
 pub fn run(src: &Source, parent: &Path, work: &Path, caps: &Caps, job: &Job) -> Result<(PathBuf, Detection), String> {
+    run_with(src, parent, work, caps, job, crate::clienttorrent::Testing::default())
+}
+
+/// `run`, with the testing switch as set: magnets and `.torrent`s only when it is on.
+pub fn run_with(src: &Source, parent: &Path, work: &Path, caps: &Caps, job: &Job, t: crate::clienttorrent::Testing) -> Result<(PathBuf, Detection), String> {
+    use crate::clienttorrent::{Src, MAX_TORRENT_BYTES};
+    let torrent_ok = || if t.client_torrents { Ok(()) } else { Err(TORRENT_REFUSAL.to_string()) };
     let found = |dir: &Path| -> Result<(PathBuf, Detection), String> {
         job.phase(Phase::Checking, 0);
         find_client(dir).ok_or_else(|| NOT_A_CLIENT.to_string())
     };
     match src {
+        Source::Magnet { uri, name } => {
+            torrent_ok()?;
+            from_torrent(Src::Magnet(uri.clone()), name.as_deref().unwrap_or("Game client"), parent, caps, job, t.share)
+        }
+        Source::Torrent { path } => {
+            torrent_ok()?;
+            from_torrent_file(read_small(path, MAX_TORRENT_BYTES)?, parent, caps, job, t.share)
+        }
+        Source::TorrentLink { url } => {
+            torrent_ok()?;
+            let tmp = work.join("downloads").join("game-client.torrent");
+            download(url, &tmp, MAX_TORRENT_BYTES, job)?;
+            let raw = read_small(&tmp, MAX_TORRENT_BYTES);
+            let _ = fs::remove_file(&tmp);
+            from_torrent_file(raw?, parent, caps, job, t.share)
+        }
         Source::Folder { path } => found(path),
         Source::Zip { path } => {
             let target = free_folder(parent, &folder_name(&path.to_string_lossy()));
@@ -484,6 +649,13 @@ pub fn run(src: &Source, parent: &Path, work: &Path, caps: &Caps, job: &Job) -> 
             download(url, &tmp, caps.download, job)?;
             let res = (|| {
                 let h = head(&tmp);
+                if looks_like_torrent(&h) {
+                    // a link that answers with a .torrent (a share page or a worker that redirects to one)
+                    torrent_ok()?;
+                    let raw = read_small(&tmp, MAX_TORRENT_BYTES)?;
+                    let _ = fs::remove_file(&tmp);
+                    return from_torrent_file(raw, parent, caps, job, t.share);
+                }
                 if !h.starts_with(b"PK\x03\x04") {
                     return Err(if h.starts_with(b"7z\xbc\xaf") || h.starts_with(b"Rar!") {
                         "Leyline can open zip files only. Unpack it yourself, then drop the folder.".to_string()
@@ -523,7 +695,8 @@ pub(crate) mod commands {
 
     #[tauri::command]
     pub fn client_import_check(core: Core, input: String) -> Result<Checked, String> {
-        let source = classify(&input)?;
+        let t = crate::clienttorrent::load_testing(&core.dir);
+        let source = classify_with(&input, t.client_torrents)?;
         Ok(Checked {
             name: source.name(),
             unpacks: source.unpacks(),
@@ -534,8 +707,9 @@ pub(crate) mod commands {
 
     #[tauri::command]
     pub fn client_import_start(app: AppHandle, input: String, folder: Option<String>) -> Result<(), String> {
-        let source = classify(&input)?;
         let core = app.state::<crate::app::Core>();
+        let t = crate::clienttorrent::load_testing(&core.dir);
+        let source = classify_with(&input, t.client_torrents)?;
         let parent = match folder.map(|f| f.trim().to_string()).filter(|f| !f.is_empty()) {
             Some(f) => PathBuf::from(f),
             None => core.dir.join(DEFAULT_FOLDER),
@@ -550,7 +724,7 @@ pub(crate) mod commands {
         let work = core.dir.clone();
         std::thread::spawn(move || {
             let j = job();
-            match run(&source, &parent, &work, &CAPS, j) {
+            match run_with(&source, &parent, &work, &CAPS, j, t) {
                 Ok((path, det)) => {
                     let core = app.state::<crate::app::Core>();
                     let added = core.update(|s| {
@@ -615,6 +789,34 @@ pub(crate) mod commands {
     #[tauri::command]
     pub async fn client_import_pick_folder(app: AppHandle) -> Option<String> {
         pick(app, "Choose where to unpack your game client", false).await
+    }
+
+    /// The play bar's drop: "Where should the game go?", opening at `start` (the last choice) or the data dir's
+    /// Game clients folder, which is made first so the picker can open in it.
+    #[tauri::command]
+    pub async fn client_import_pick_dest(app: AppHandle, start: Option<String>) -> Option<String> {
+        let dflt = app.state::<crate::app::Core>().dir.join(DEFAULT_FOLDER);
+        let at = start.map(PathBuf::from).filter(|p| p.is_absolute() && p.is_dir()).unwrap_or_else(|| {
+            let _ = fs::create_dir_all(&dflt);
+            dflt
+        });
+        tauri::async_runtime::spawn_blocking(move || app.dialog().file().set_title("Where should the game go?").set_directory(at).blocking_pick_folder())
+            .await
+            .ok()
+            .flatten()
+            .and_then(|p| p.into_path().ok())
+            .map(|p| p.display().to_string())
+    }
+
+    /// Settings › Testing (on this PC only; off by default).
+    #[tauri::command]
+    pub fn testing_get(core: Core) -> crate::clienttorrent::Testing {
+        crate::clienttorrent::load_testing(&core.dir)
+    }
+
+    #[tauri::command]
+    pub fn testing_set(core: Core, client_torrents: bool, share: bool) -> Result<crate::clienttorrent::Testing, String> {
+        crate::clienttorrent::save_testing(&core.dir, crate::clienttorrent::Testing { client_torrents, share })
     }
 }
 
@@ -717,6 +919,61 @@ mod tests {
             assert_eq!(classify(t).unwrap_err(), TORRENT_REFUSAL, "{t}");
         }
         assert_eq!(TORRENT_REFUSAL, "Leyline can't download game clients from torrents. Drop your own client folder or zip instead.");
+    }
+
+    #[test]
+    fn the_testing_switch_takes_magnets_and_torrents_and_off_refuses_them() {
+        let d = tempfile::tempdir().unwrap();
+        let tf = d.path().join("client.torrent");
+        fs::write(&tf, crate::p2p::torrent::make("c.zip", b"PK\x03\x04", 16 * 1024, &[])).unwrap();
+        let mag = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=My%20Client&tr=udp%3A%2F%2Ft.example%3A1";
+        // off: today's one sentence, for every kind
+        for t in [mag.to_string(), "https://files.example.com/c.torrent".into(), tf.display().to_string()] {
+            assert_eq!(classify_with(&t, false).unwrap_err(), TORRENT_REFUSAL, "{t}");
+        }
+        // on
+        assert_eq!(classify_with(mag, true).unwrap(), Source::Magnet { uri: mag.into(), name: Some("My Client".into()) });
+        assert_eq!(classify_with(mag, true).unwrap().name(), "My Client");
+        assert_eq!(classify_with("https://pub-abc.r2.dev/c.torrent?x=1", true).unwrap(), Source::TorrentLink { url: "https://pub-abc.r2.dev/c.torrent?x=1".into() });
+        assert_eq!(classify_with(&tf.display().to_string(), true).unwrap(), Source::Torrent { path: tf.clone() });
+        assert!(classify_with(&tf.display().to_string(), true).unwrap().unpacks());
+        assert!(classify_with("magnet:?dn=nohash", true).unwrap_err().contains("doesn't look right"));
+        assert!(classify_with("http://files.example.com/c.torrent", true).unwrap_err().contains("https"));
+        assert!(classify_with("/no/such/c.torrent", true).is_err());
+        // Cloudflare-style direct links are plain links
+        for u in ["https://pub-0123abcd.r2.dev/backup.zip", "https://my-files.pages.dev/b.zip", "https://dl.me.workers.dev/get?id=1"] {
+            assert_eq!(classify_with(u, true).unwrap(), Source::Link { url: u.into() });
+        }
+        // run: the switch is checked again, whatever was classified
+        let off = crate::clienttorrent::Testing::default();
+        let e = run_with(&Source::Magnet { uri: mag.into(), name: None }, d.path(), d.path(), &CAPS, &Job::default(), off).unwrap_err();
+        assert_eq!(e, TORRENT_REFUSAL);
+        let e = run_with(&Source::Torrent { path: tf.clone() }, d.path(), d.path(), &CAPS, &Job::default(), off).unwrap_err();
+        assert_eq!(e, TORRENT_REFUSAL);
+        // a link that answers with a .torrent: refused with the switch off
+        let base = serve_routes(vec![("/get", "200 OK", fs::read(&tf).unwrap())]);
+        let e = run_with(&Source::Link { url: format!("{base}/get") }, d.path(), d.path(), &CAPS, &Job::default(), off).unwrap_err();
+        assert_eq!(e, TORRENT_REFUSAL);
+        // a torrent with an unsafe path is refused before the engine starts, with the switch on
+        let on = crate::clienttorrent::Testing { client_torrents: true, share: false };
+        let bad = d.path().join("bad.torrent");
+        fs::write(&bad, crate::clienttorrent::tests::make_multi("x", &[(&["..", "..", "evil"], b"1")], 16 * 1024)).unwrap();
+        let e = run_with(&Source::Torrent { path: bad }, &d.path().join("c"), d.path(), &CAPS, &Job::default(), on).unwrap_err();
+        assert!(e.contains("unsafe path"), "{e}");
+        assert!(!d.path().join("c").join("x").exists());
+    }
+
+    #[test]
+    fn the_bar_line_follows_the_job() {
+        let job = Job::default();
+        job.phase(Phase::Downloading, 5 * GIB);
+        job.set_done(1_288_490_189, 5 * GIB);
+        let p = job.snapshot();
+        assert!(p.line.starts_with("Downloading · 1.2 GB / 5.0 GB"), "{}", p.line);
+        job.phase(Phase::Checking, 0);
+        assert_eq!(job.snapshot().line, "Checking your game folder…");
+        job.finish(Phase::Done, "Added X.".into(), None);
+        assert_eq!(job.snapshot().line, "", "the message says the end");
     }
 
     #[test]

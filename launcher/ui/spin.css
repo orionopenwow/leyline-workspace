@@ -43,3 +43,12 @@
 .titlebar .brand { gap: 15px; padding-left: 22px; }
 .brand .ly-spin { width: 48px; height: 48px; }
 .titlebar .brand b { font-size: 25px; }
+/* owner 2026-10-31 19:12: "make logo bigger, center text more horizontal and dropshadow emboss the logo": a 58px mark
+   (the 64px title bar), embossed (a light edge above-left, a dark edge and a soft shadow below-right), and the two words
+   centred on each other */
+.brand .ly-spin { width: 58px; height: 58px;
+  filter: drop-shadow(-1px -1px 0 rgba(255, 255, 255, 0.22)) drop-shadow(1.5px 2px 0 rgba(0, 0, 0, 0.65))
+          drop-shadow(0 4px 7px rgba(0, 0, 0, 0.6)); }
+.titlebar .brand { gap: 13px; padding-left: 16px; }
+.titlebar .brand span { justify-items: center; text-align: center; }
+.titlebar .brand i { margin-right: -0.36em; }

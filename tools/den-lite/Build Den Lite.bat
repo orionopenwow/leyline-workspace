@@ -1,10 +1,10 @@
 @echo off
 setlocal
 title Leyline - build Den Lite on this PC
-rem Builds Den Lite (labs\den-lite: the tiny Den server, no Docker) with the Rust tools the browser-client build
+rem Builds Den Lite (the crate in labs\den-lite: the tiny Den server, no Docker) with the Rust tools the browser-client build
 rem already installed on this PC (%LOCALAPPDATA%\Leyline\client-build\tools), and puts den-lite.exe where the
 rem launcher's Your Den looks for it: %APPDATA%\Leyline\den-lite\bin\den-lite.exe. Changes nothing else.
-cd /d "%~dp0"
+cd /d "%~dp0..\..\labs\den-lite" || (echo labs\den-lite is missing. & exit /b 1)
 set "TOOLS=%LOCALAPPDATA%\Leyline\client-build\tools"
 set "RUSTUP_HOME=%TOOLS%\rustup"
 set "CARGO_HOME=%TOOLS%\cargo"

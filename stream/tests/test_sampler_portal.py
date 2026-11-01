@@ -50,7 +50,7 @@ page = text(wp.realms_page())
 check("/wrath/realms: the official card is the Leyline Sample Hangout, temporary",
       "Leyline Sample Hangout" in page and "Temporary" in page, page[:400])
 check("/wrath/realms: says to add your own game folder for the whole world, and community realms",
-      "add your own 3.3.5a game folder to explore the whole world" in page and "Community realms on Leyline" in page)
+      "add your own game folder to explore the whole world" in page and "Community realms on Leyline" in page)
 check("/wrath/realms: no game-brand words", not BRAND.search(page))
 ly = text(wp.leyline_page())
 check("/wrath/leyline: the official row says Sample Hangout, temporary", "Leyline Sample Hangout" in ly and "temporary" in ly)

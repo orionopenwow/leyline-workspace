@@ -437,7 +437,7 @@ PLAY_SLICE = os.environ.get("WU_PLAY_SLICE", "").strip() or "mini"
 SAMPLER = os.environ.get("WU_SAMPLER") == "1"
 SAMPLER_NAME = REALM_NAME if BRAND else "Leyline Sample Hangout"
 SAMPLER_NOTE = ("Temporary: a place to try the game. Dalaran, the starting areas and every dungeon and raid stream "
-                "to your browser; add your own 3.3.5a game folder to explore the whole world. Community realms on "
+                "to your browser; add your own game folder to explore the whole world. Community realms on "
                 "Leyline are where the world opens up.")  # TODO(owner): the Sample Hangout's own pitch line
 SLICE_DIR = os.environ.get("WU_SLICE_DIR", "/app/slices")
 ART_DIR = os.environ.get("WU_ART_DIR", "/app/art")
@@ -634,7 +634,7 @@ def gamedata_state() -> dict:
 # What /data and the other game-data routes answer while the killswitch is on (the same words as Caddy's block,
 # stream/server/gamedata-caddy.py; Caddy answers first, this is the second lock).
 GAMEDATA_GONE = (json.dumps({"error": "gamedata_off", "gamedata_streaming": False,
-                             "message": "This realm needs your own game folder. Drop your 3.3.5a game folder on the game page.",
+                             "message": "This realm needs your own game folder. Drop it on the game page.",
                              "own_files": "https://play.openvanilla.app/wrath/play?mode=own"},
                             separators=(",", ":")) + "\n").encode("utf-8")
 
@@ -1769,7 +1769,7 @@ def _sample_info() -> dict:
                 "blurb_html": f'<p>{html.escape(SAMPLER_NOTE)} (<a href="{GAME_FOLDER_HELP}">How to add your game folder</a>.)</p>'}
     return {"name": REALM_NAME, "temporary": False,
             "blurb_html": f'<p>{OFFICIAL_LEAD}: Dalaran in your browser, or the whole world with your own game files '
-                          f'(drop your 3.3.5a game folder on the game page: <a href="{GAME_FOLDER_HELP}">how</a>).</p>'}
+                          f'(drop your game folder on the game page: <a href="{GAME_FOLDER_HELP}">how</a>).</p>'}
 
 
 def realms_page(query: dict | None = None) -> bytes:
@@ -1802,7 +1802,7 @@ def realms_page(query: dict | None = None) -> bytes:
         + (f'<p>{html.escape(SAMPLER_NOTE)} '
            f'(<a href="{GAME_FOLDER_HELP}">How to add your game folder</a>.)</p>' if SAMPLER else
            f'<p>{OFFICIAL_LEAD}: Dalaran in your browser, or the whole world with your own game files '
-           f'(drop your 3.3.5a game folder on the game page: <a href="{GAME_FOLDER_HELP}">how</a>).</p>') +
+           f'(drop your game folder on the game page: <a href="{GAME_FOLDER_HELP}">how</a>).</p>') +
         '<p><a class="btn primary" href="/wrath">Play</a></p>'
         + share_box("/wrath/r/wrath") + '</div>')
     realms, ok = listed_realms()
@@ -2650,7 +2650,7 @@ def leyline_page() -> bytes:
         + feat("Try it here", "A Goldshire Inn demo on this page, with no sign-up.", True)
         + feat("Builders' tools", "Build in the world with your own models, and share it on the Workshop.", True)
         + '</div></section>'
-        '<p class="ly-fine">The full world needs your own 3.3.5a game files; the browser streams only small areas '
+        '<p class="ly-fine">The full world needs your own game files; the browser streams only small areas '
         '(Dalaran, the starting zones, dungeons). '
         f'<a href="{e(LEYLINE_REPO)}" rel="noopener noreferrer">Source code</a></p>')
     meta = card_meta("/wrath/leyline", "Leyline · an open-source, community-built MMO project")

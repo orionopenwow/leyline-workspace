@@ -419,7 +419,7 @@ async fn den_play_lite(core: State<'_, Core>, client: String) -> Result<String, 
     use crate::host::lite::{self, DenLite};
     let profile = core.client(&client)?;
     if profile.build != crate::clients::Build::V335a {
-        return Err("Your Den plays with a 3.3.5a game folder.".into());
+        return Err("Your Den plays with a different game folder: pick or add it in the play bar, where its version shows.".into());
     }
     let game = profile.path.clone();
     blocking(move || {

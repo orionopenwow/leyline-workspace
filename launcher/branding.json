@@ -1,0 +1,38 @@
+{
+  "format": 1,
+  "_about": "The one place for this launcher's name, look and network addresses (docs/FORKING.md). Read at build time by launcher/src-tauri/src/branding.rs; launcher/scripts/rebrand.py copies a fork's values into the rest of launcher/.",
+  "name": "Leyline",
+  "identifier": "app.openvanilla.leyline",
+  "colours": {
+    "bg": "#12151b",
+    "text": "#eef0f4",
+    "accent": "#5b8def",
+    "accent_strong": "#7aa3f5"
+  },
+  "logo": "ui/art/leyline-mark.png",
+  "emblem": "ui/art/leyline-emblem.webp",
+  "site": "https://play.openvanilla.app",
+  "repo": "orionopenwow/Leyline",
+  "updates": {
+    "tag_prefix": "launcher-v",
+    "github_api": "https://api.github.com/repos/orionopenwow/Leyline/releases?per_page=30",
+    "github_downloads": "https://github.com/orionopenwow/Leyline/releases/download/",
+    "releases_page": "https://github.com/orionopenwow/Leyline/releases",
+    "mirrors": [
+      "https://play.openvanilla.app/wrath/leyline/releases/"
+    ],
+    "_updater_key": "The updater's minisign public key is plugins.updater.pubkey in src-tauri/tauri.conf.json (Tauri reads it there)."
+  },
+  "release_log": {
+    "_public_key": "Hex Ed25519 public key of the release-log key (docs/RESILIENCE.md, 'The release key'). Empty: the release log is not trusted yet and nothing reads it.",
+    "public_key": "",
+    "urls": [
+      "https://play.openvanilla.app/wrath/leyline/chain.json",
+      "https://github.com/orionopenwow/Leyline/releases/download/release-log/chain.json"
+    ]
+  },
+  "relays": [
+    "https://relay.openvanilla.app"
+  ],
+  "flags_url": "https://play.openvanilla.app/wrath/leyline/flags.json"
+}

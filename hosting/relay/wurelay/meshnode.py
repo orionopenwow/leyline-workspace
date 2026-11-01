@@ -10,7 +10,11 @@ What it does:
   * finds peers from the bootstrap list (RELAY_MESH_BOOTSTRAP), its peers cache (mesh-peers.json next to the state
     file) and the relay records it learns (any node with "mesh": true);
   * serves, under /api/mesh/: node, peers, summary, records (?since=<cursor>&epoch= or ?buckets=0a,ff), snapshot,
-    realms.json (the same shape as /api/listing/realms.json, built only from verified records), and push (POST).
+    realms.json (the same shape as /api/listing/realms.json, built only from verified records), and push (POST);
+  * keeps a copy of the Leyline release log (wunet/releaselog.py, "the chain": every release, Host pack and pinned
+    server source, hash-chained and signed with the release key) in release-log.json next to the state file, serves
+    it at /api/mesh/chain (?from=<n>), and every 6th round asks one peer for its head and pulls what is new. Only
+    entries signed by the release key are taken; the longest good chain wins. No key configured: no chain.
 
 Today's listing API is untouched: /api/listing/realms.json still lists only the realms with a tunnel to this relay.
 """
@@ -27,7 +31,7 @@ import time
 import urllib.error
 import urllib.request
 
-from wunet import keys, mesh
+from wunet import keys, mesh, releaselog
 
 from . import httpd, listing
 
@@ -103,6 +107,13 @@ class MeshNode:
         self.rounds = 0
         self.push_rate = collections.defaultdict(collections.deque)
         self.metrics = collections.Counter()
+        self.chain = None
+        rk = getattr(cfg, "release_log_key", "") or releaselog.shipped_key()
+        if rk:
+            self.chain = releaselog.Log(os.path.join(state_dir, "release-log.json"), rk)
+            seed = releaselog.shipped_chain(rk)
+            if seed:
+                self.chain.offer(seed)
         self.publish_self()
 
     # ---------------------------------------------------------------- peers
@@ -236,8 +247,40 @@ class MeshNode:
         if self.rounds % 6 == 1 or not fresh:
             for u in self.pick(1):
                 await self.pull(u, now)
+        if self.chain is not None and self.rounds % 6 == 3:
+            for u in self.pick(1):
+                await self.sync_chain(u)
         if self.rounds % 30 == 1:
             self.save_peers()
+
+    async def sync_chain(self, base):
+        """The release log from one peer: its head first, then only what is new (the whole chain on a fork)."""
+        if self.chain is None:
+            return ""
+        n = len(self.chain)
+        st, doc = await self.call("GET", f"{base}/api/mesh/chain?from={n}")
+        self.metrics["chain_pull"] += 1
+        if st != 200 or not isinstance(doc, dict) or doc.get("key") != self.chain.pub:
+            return ""
+        if not isinstance(doc.get("seq"), int) or doc["seq"] + 1 <= n:
+            return "kept"
+        what = self.chain.offer_more(doc.get("entries"))
+        if what.startswith("refused") and not doc.get("more"):
+            # their chain forks from ours: take all of it and let the rules choose (at most 20 pages)
+            ents, at = [], 0
+            for _ in range(20):
+                st, page = await self.call("GET", f"{base}/api/mesh/chain?from={at}")
+                if st != 200 or not isinstance(page, dict) or not isinstance(page.get("entries"), list):
+                    return what
+                ents += page["entries"]
+                at = len(ents)
+                if not page.get("more"):
+                    break
+            what = self.chain.offer({"format": releaselog.FORMAT, "key": self.chain.pub, "entries": ents})
+        if what in ("adopted", "replaced"):
+            self.metrics["chain_" + what] += 1
+            log.info("release log: %s from %s, now %d entries", what, base, len(self.chain))
+        return what
 
     async def push(self, base, recs):
         st, _ = await self.call("POST", base + "/api/mesh/push", {"records": recs, "from": self.http_base})
@@ -362,6 +405,18 @@ class MeshNode:
             return httpd.response(200, {"v": 1, "node": self.store.recs.get(self.id), "epoch": self.epoch,
                                         "records": list(self.store.recs.values())},
                                   headers=dict(pub, **{"Cache-Control": "public, max-age=30"}))
+        if rest == ["chain"] and req.method == "GET":
+            if self.chain is None:
+                return httpd.response(404, {"error": "no release log on this node"}, headers=pub)
+            try:
+                frm = int(req.query.get("from") or 0)
+            except ValueError:
+                frm = 0
+            ents = self.chain.since(frm, 500)
+            h = self.chain.head()
+            return httpd.response(200, dict(h, format=releaselog.FORMAT, entries=ents,
+                                            more=max(0, frm) + len(ents) < len(self.chain)),
+                                  headers=dict(pub, **{"Cache-Control": "public, max-age=60"}))
         if rest == ["realms.json"] and req.method == "GET":
             return httpd.response(200, self.realms_json(now), headers=dict(pub, **{"Cache-Control": "public, max-age=30"}))
         if rest == ["push"] and req.method == "POST":

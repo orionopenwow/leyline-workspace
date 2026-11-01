@@ -15,6 +15,7 @@
 
 pub mod agents; // the Agents page and `Leyline mcp`: the player's own AI assistant, read / ask / never tiers (agents.rs)
 pub mod addons; // the Leyline addons: our own in-game addons for a 3.3.5a client (ui/addons.js)
+pub mod branding; // launcher/branding.json: name, look, update sources, release-log key (docs/FORKING.md)
 pub mod catalog;
 pub mod clientimport; // drop a game folder, a zip or a link to your own backup on the client list (clientimport.rs)
 pub mod clienttorrent; // magnets and .torrents for game clients: the owner's testing switch, off by default (clienttorrent.rs)
@@ -34,6 +35,7 @@ pub mod p2p;
 pub mod pe_version;
 pub mod rankings; // Discover's sort tabs, install counts and ratings (hub rankings agent)
 pub mod realms;
+pub mod releaselog; // the signed, hash-chained release log ("the chain"; docs/RESILIENCE.md)
 pub mod settings;
 pub mod social;
 pub mod status;

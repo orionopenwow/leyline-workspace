@@ -5,7 +5,7 @@ use den_lite::{start, Config, Gender};
 use std::path::PathBuf;
 
 const USAGE: &str = "den-lite [--dens <folder>] [--bind 127.0.0.1] [--stamps <folder>] [--password <word>] [--name <name>] \
-[--gender male|female] [--client <game folder>] [--login-port 3724] [--world-port 8085] [--verbose]
+[--gender male|female] [--client <game folder>] [--login-port 3724] [--world-port 8085] [--no-companion] [--verbose]
 
 A tiny local server for the 3.3.5a (12340) client: a white room to build in, on 127.0.0.1.
 Any account name (the launcher fills in DEN) logs in with the password (default \"den\"; also DEN_LITE_PASSWORD).
@@ -36,6 +36,7 @@ fn main() {
             "--login-port" => cfg.login_port = val().parse().unwrap_or_else(|_| fail("a port is a number")),
             "--world-port" => cfg.world_port = val().parse().unwrap_or_else(|_| fail("a port is a number")),
             "--verbose" => cfg.verbose = true,
+            "--no-companion" => cfg.companion = false,
             "-h" | "--help" => {
                 println!("{USAGE}");
                 return;

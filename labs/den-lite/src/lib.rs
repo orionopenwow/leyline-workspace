@@ -50,6 +50,9 @@ pub struct Config {
     pub spot: den::Spot,
     /// The game's folder, for `.den mods` (the launcher's `<game>/Leyline/mods.json`); None: not shown.
     pub client: Option<PathBuf>,
+    /// The companion is at the player's side from login (owner 1 Nov: "she's the main helper of the game");
+    /// `--no-companion`: only when called.
+    pub companion: bool,
     pub verbose: bool,
 }
 
@@ -69,6 +72,7 @@ impl Default for Config {
                 .unwrap_or_else(|| PathBuf::from("den-stamps")),
             spot: den::Spot::default(),
             client: None,
+            companion: true,
             verbose: false,
         }
     }

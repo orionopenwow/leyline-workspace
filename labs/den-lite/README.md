@@ -50,8 +50,9 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 | `.den room white\|stone\|wood` | the room's look (`ov_den.lua` THEMES) |
 | `.den size [1-4]` | how big the Den is; with a number, the room rebuilt at that size (smaller only when every prop still fits) |
 | `.den grow` | the next size: the white room's floor and walls rebuilt bigger, and what counts as inside the Den follows |
-| `.den companion` (`.den jaina`) | your companion comes and follows you; again: back to your side |
-| `.den companion away` | she goes (also when you log out or leave the Den) |
+| `.den companion` (`.den jaina`) | your companion comes and follows you; again: back to your side. She is there from login by default (`--no-companion`: only when called) |
+| `.den companion stay\|follow\|come\|tips` | or say `Jaina, stay` (`wait`), `Jaina, follow`, `Jaina, come` (she walks over), `Jaina, tips` (`help`, `what next`): anywhere in the Den, never written down for the assistant |
+| `.den companion away` (`Jaina, go away`) | she goes until called again (leaving the Den or logging out only hides her: she is back when you are) |
 | `.den ask <words>`, or say `Jaina, <words>` within 10 yards of her | written down for your own assistant (Leyline's Agents page: `den_messages`); its `den_say` lines are hers |
 | `.den mode [id]` | Leyline's game modes and Host templates; with an id, what it is and how to run it on this PC (the full Den) |
 | `.den mods` | the addons your game loaded, and (with `--client`) the launcher's mods in it |
@@ -81,6 +82,16 @@ from this server's answer to its creature query ("Jaina", "<Your companion>" und
 a little to the left, and follows loosely: twice a second the server checks, and when her spot is more than 2 yards
 from where she is (or is going) she walks or runs there (`SMSG_MONSTER_MOVE`, one point; the server keeps her position
 along the way). A jump of more than 30 yards puts her back at your side; leaving the Den sends her off.
+
+Her manners (owner 1 Nov: "smarter companions"; `companion.rs`, all deterministic and unit tested): she never stands
+in your way (closer than 1.2 yards and stopped, she steps back to her spot), `stay` keeps her where she is (and a jump
+across the room doesn't pull her), `come` walks her over and she follows again, and past 30 yards while following she
+is put back at your side. Lines are few: one greeting at login, answers when spoken to, and once a session a nudge when
+the Den is still empty two minutes in and you have said nothing to her for a minute. With no assistant connected she
+is still a guide: an ask her built-in guide knows (`GUIDE`: placing, stamps, undo, save, load, grow, looks, mods,
+modes, Forge, friends, levelling, the assistant) gets its answer at once, and is still written down; with someone
+reading her notes (`read_at`), the assistant answers instead. `tips` picks the next step that fits the Den (a first
+piece, a first save, more room), then the general tips in turn. Den Lite has no combat, so "help me" is a tip here.
 
 She talks through the same files as the full Den, in the Dens folder, so the launcher's Den tools for your assistant
 (`launcher/src-tauri/src/agents/den.rs`) work unchanged: `companion-in.json` (written every 10 seconds and after each

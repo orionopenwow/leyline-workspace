@@ -75,12 +75,14 @@
 /* 23:23 "remove the excess bottom border, and make this corner follow the nearest bevel": no strip under the
    buttons; the tab's lower-left corner is cut at the buttons' own 45-degree bevel, so it reads as part of them. */
 .titlebar .winbtns, .winbtns {
-  /* 23:24 "this part should BE the outer edge": the buttons sit on the window's edge itself, the close button's
-     frame corner is the window's outer corner (fixed to the window, over the metal edge; nothing clips it) */
-  position: fixed !important; top: 0; right: 0; margin: 0; gap: 2px; padding: 0 0 2px 3px;
-  border: 0; border-image: none;
-  background: #343d39;
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 6px 100%, 0 calc(100% - 6px));
+  /* 23:24/23:27 "this part should BE the outer edge … a little more seamless, like this" (an in-game window's close
+     button): the buttons sit in the window's corner just inside the outer edge, and a thin run of the same edge
+     wraps their left and bottom, bevelled at the corner, so the edge, the notch and the buttons read as one piece */
+  position: fixed !important; top: 0; right: 0; margin: 0; gap: 2px; padding: 7px 7px 2px 2px;
+  border-style: solid; border-width: 0 0 3px 3px; border-color: transparent;
+  border-image: url("art/window-edge.png") 19 / 0 0 3px 3px stretch;
+  background: #2f3532;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 7px 100%, 0 calc(100% - 7px));
 }
 .winbtns button { width: 24px; height: 26px; filter: none; }
 .winbtns button:hover { filter: brightness(1.2); }
@@ -110,4 +112,4 @@
 .side .nav.nav-discord:hover { color: #fff; background: rgba(88, 101, 242, 0.22); }
 .side .nav.nav-discord:hover .dc-ic { fill: #8891f5; }
 /* the window buttons are fixed on the corner now: keep their room at the end of the title bar */
-.titlebar::after { content: ""; flex: none; width: 82px; }
+.titlebar::after { content: ""; flex: none; width: 72px; }

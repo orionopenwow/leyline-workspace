@@ -116,7 +116,7 @@ test('signed in: the profile sits in the title bar, top right, with Manage accou
     const win = document.querySelector('.titlebar .winbtns').getBoundingClientRect();
     return { inBar: !!document.getElementById('hf-me').closest('.titlebar'), top: Math.round(me.top), gap: Math.round(win.left - me.right) };
   });
-  assert.ok(r.inBar, 'in the title bar'); assert.ok(r.top < 30, 'at the top'); assert.ok(r.gap >= 0 && r.gap < 40, 'just left of the window buttons');
+  assert.ok(r.inBar, 'in the title bar'); assert.ok(r.top < 30, 'at the top'); assert.ok(r.gap >= 0 && r.gap < 40, 'just left of the window buttons (gap ' + r.gap + ')');
   await page.click('#hf-me-btn');
   assert.deepEqual(await page.$$eval('#hf-panel [role="menuitem"] .ap-item-t b', (b) => b.map((x) => x.textContent)),
     ['My profile', 'My Den', 'Solo leveling', 'Forum', 'Settings', 'Help', 'Manage account', 'Hero Key', 'Sign out']);

@@ -16,6 +16,8 @@ wow_world_messages = { version = "0.3.0", default-features = false, features = [
 flate2 = { version = "1", default-features = false, features = ["zlib"] }
 serde = { version = "1", default-features = false, features = ["std", "derive"] }
 serde_json = { version = "1", default-features = false, features = ["std"] }
+# Guest logins (src/guests.rs): the OS random source (already in the tree through wow_srp).
+getrandom = "0.2"
 # The Den's ground (the launcher's own MIT crate): heights from the Den's terrain delta, so props and the player
 # stand on the edited ground.
 leyline-terrain = { path = "../../launcher/src-tauri/terrain" }

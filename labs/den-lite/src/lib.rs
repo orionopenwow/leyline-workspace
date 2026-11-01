@@ -8,6 +8,7 @@
 pub mod cheers;
 pub mod companion;
 pub mod den;
+pub mod guests;
 pub mod login;
 pub mod objects;
 pub mod play;
@@ -50,6 +51,9 @@ pub struct Config {
     pub spot: den::Spot,
     /// The game's folder, for `.den mods` (the launcher's `<game>/Leyline/mods.json`); None: not shown.
     pub client: Option<PathBuf>,
+    /// Friends' listeners (guests only: what the launcher's relay tunnel connects to), on `bind`; 0 picks a free
+    /// port; None: no friends. Written to `<dens>/den-lite.remote` ("<login port> <world port>").
+    pub remote_ports: Option<(u16, u16)>,
     /// The companion is at the player's side from login (owner 1 Nov: "she's the main helper of the game");
     /// `--no-companion`: only when called.
     pub companion: bool,
@@ -72,6 +76,7 @@ impl Default for Config {
                 .unwrap_or_else(|| PathBuf::from("den-stamps")),
             spot: den::Spot::default(),
             client: None,
+            remote_ports: Some((0, 0)),
             companion: true,
             verbose: false,
         }
@@ -81,7 +86,13 @@ impl Default for Config {
 pub struct Shared {
     pub cfg: Config,
     /// Account (upper case) -> the SRP6 session key the login server agreed, for the world server's auth session.
-    pub sessions: Mutex<HashMap<String, [u8; 40]>>,
+    /// ... with who it is and whether it came in on the remote listener.
+    pub sessions: Mutex<HashMap<String, ([u8; 40], login::Who, bool)>>,
+    /// Everyone in the world now (world.rs Peer): the host and their guests.
+    pub players: Mutex<Vec<world::Peer>>,
+    /// Friends may build (`.den friends build on`); off at every start.
+    pub guests_build: std::sync::atomic::AtomicBool,
+    remote_world: Mutex<Option<SocketAddr>>,
     pub den: Mutex<den::Den>,
     /// The companion (one: Den Lite has one player in the world at a time).
     pub companion: Mutex<companion::Companion>,
@@ -130,15 +141,25 @@ impl Shared {
         ok
     }
 
+    /// The friends' world listener, as a last resort for their realm list (the tunnel's address belongs there).
+    pub fn remote_world_address(&self) -> String {
+        self.remote_world.lock().unwrap().map(|a| a.to_string()).unwrap_or_else(|| self.world_address())
+    }
+
     /// The realm list's address for the world server.
     pub fn world_address(&self) -> String {
         self.world.lock().unwrap().to_string()
     }
 }
 
+/// `<dens>/den-lite.remote`: "<login port> <world port>" of the friends' listeners (the launcher's tunnel reads it).
+pub const REMOTE_FILE: &str = "den-lite.remote";
+
 pub struct Running {
     pub login: SocketAddr,
     pub world: SocketAddr,
+    /// Friends' listeners (Config::remote_ports): login, world.
+    pub remote: Option<(SocketAddr, SocketAddr)>,
     pub shared: Arc<Shared>,
 }
 
@@ -147,6 +168,18 @@ pub fn start(cfg: Config) -> io::Result<Running> {
     let login = TcpListener::bind((cfg.bind, cfg.login_port))?;
     let world = TcpListener::bind((cfg.bind, cfg.world_port))?;
     let (la, wa) = (login.local_addr()?, world.local_addr()?);
+    let remote = match cfg.remote_ports {
+        Some((lp, wp)) => Some((TcpListener::bind((cfg.bind, lp))?, TcpListener::bind((cfg.bind, wp))?)),
+        None => None,
+    };
+    let remote_addrs = match &remote {
+        Some((l, w)) => Some((l.local_addr()?, w.local_addr()?)),
+        None => None,
+    };
+    if let Some((l, w)) = remote_addrs {
+        let _ = std::fs::create_dir_all(&cfg.den_dir);
+        let _ = std::fs::write(cfg.den_dir.join(REMOTE_FILE), format!("{} {}\n", l.port(), w.port()));
+    }
     let mut d = den::Den::new(cfg.spot);
     if let Some(Err(e)) = d.reload_ground(&cfg.den_dir) {
         if cfg.verbose {
@@ -165,14 +198,23 @@ pub fn start(cfg: Config) -> io::Result<Running> {
         live: Mutex::new(None),
         cfg,
         sessions: Mutex::new(HashMap::new()),
+        players: Mutex::new(Vec::new()),
+        guests_build: std::sync::atomic::AtomicBool::new(false),
+        remote_world: Mutex::new(remote_addrs.map(|r| r.1)),
         world: Mutex::new(wa),
         opened: Mutex::new(std::collections::HashSet::new()),
     });
     let s = shared.clone();
-    std::thread::spawn(move || login::serve(login, s));
+    std::thread::spawn(move || login::serve(login, s, false));
     let s = shared.clone();
-    std::thread::spawn(move || world::serve(world, s));
+    std::thread::spawn(move || world::serve(world, s, false));
+    if let Some((rl, rw)) = remote {
+        let s = shared.clone();
+        std::thread::spawn(move || login::serve(rl, s, true));
+        let s = shared.clone();
+        std::thread::spawn(move || world::serve(rw, s, true));
+    }
     let s = shared.clone();
     std::thread::spawn(move || world::companion_ticker(s));
-    Ok(Running { login: la, world: wa, shared })
+    Ok(Running { login: la, world: wa, remote: remote_addrs, shared })
 }

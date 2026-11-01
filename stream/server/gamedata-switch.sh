@@ -69,7 +69,7 @@ slice_dirs() {
   for d in "$ST"/slices/*/; do
     [ -d "$d" ] || continue
     d=${d%/}
-    case "$d" in *.new|*.old|*.stage) continue ;; esac
+    case "${d##*/}" in *.*) continue ;; esac   # slice names have no dot: copies (.new/.stage/.old/.prev) stay put
     echo "$d"
   done
   return 0
@@ -159,6 +159,7 @@ release_accounts() {
 
 park() {
   local dest="$OFFLINE/$TS" d n=0
+  declare -F slice_lock >/dev/null && slice_lock   # not while a slice upload or overlay change runs
   mkdir -p "$dest/slices" "$dest/overlays" "$dest/www"; chmod 700 "$OFFLINE"
   : > "$dest/parked.txt"
   while read -r d; do
@@ -195,6 +196,7 @@ park() {
 
 unpark() {
   [ -f "$OFFLINE/CURRENT" ] || return 0
+  declare -F slice_lock >/dev/null && slice_lock
   local dest from to
   dest=$(cat "$OFFLINE/CURRENT")
   [ -f "$dest/parked.txt" ] || die "$dest/parked.txt missing: move the parked files back by hand from $dest"

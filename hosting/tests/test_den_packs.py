@@ -265,7 +265,8 @@ class DenSliceTests(unittest.TestCase):
         # the fallback: the whole world when the Den-only data fails
         self.assertIn("taking the whole world instead", sh)
         self.assertIn("taking the whole world instead", bat)
-        self.assertTrue(raw.count(b"\r\n") > 100 and b"\n" not in raw.replace(b"\r\n", b""), "the .bat keeps CRLF")
+        self.assertTrue((b"\r\n" in raw and b"\n" not in raw.replace(b"\r\n", b"")) or b"\r" not in raw,
+                        "one line-ending style (LF in git, CRLF in the kit zip: tools/leyline-repo/hostkit.py)")
 
 
 # ---------------------------------------------------------------------------------------------- packs

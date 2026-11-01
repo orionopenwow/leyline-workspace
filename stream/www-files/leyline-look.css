@@ -108,3 +108,26 @@ html.ly-brand #wu-addons .row { border-top-color: var(--lk-border); }
 html.ly-brand body #wenilla-boot .ly-tip, html.ly-brand #wu-loading .ly-tip {
   margin-top: 16px; font: 13px/1.4 var(--lk-font); font-style: normal; color: var(--lk-muted);
 }
+
+/* -- "Signing in…" (#ow-signin) and "Going to <realm>…" (#wu-hop-go), wrath-page.js: the same flat look and spinning
+   mark as every other loading screen (owner 31 Oct 23:51: "all loading screens the same") -------------------------- */
+html.ly-brand #ow-signin, html.ly-brand #wu-hop-go {
+  background: var(--lk-bg) !important; color: var(--lk-text); font: 600 15px var(--lk-font) !important; letter-spacing: .01em !important;
+}
+html.ly-brand #ow-signin .wu-spin, html.ly-brand #wu-hop-go > div::before {
+  position: relative; display: block; width: 104px; height: 104px; margin: 0 auto 22px; border: 0; border-radius: 0;
+  background: url("art/leyline-crystal-256.webp") center / contain no-repeat; animation: none; filter: drop-shadow(0 0 14px rgba(91, 141, 239, .45));
+}
+html.ly-brand #wu-hop-go > div::before { content: ""; }
+html.ly-brand #ow-signin .wu-spin::before, html.ly-brand #wu-hop-go > div::after {
+  content: ""; position: absolute; inset: 0; background: url("art/leyline-swirl-256.webp") center / contain no-repeat;
+  animation: ly-spin-turn 7s linear infinite;
+}
+html.ly-brand #wu-hop-go > div { position: relative; }
+html.ly-brand #wu-hop-go > div::after { inset: 0 auto auto 50%; width: 104px; height: 104px; margin-left: -52px; }
+html.ly-brand #wu-hop-go .bar { height: 4px; border-radius: 2px; background: var(--lk-surface-2); }
+html.ly-brand #wu-hop-go .bar i { background: linear-gradient(90deg, var(--lk-accent), var(--lk-accent-2)); }
+html.ly-brand #wu-hop-go small { color: var(--lk-muted); font-family: var(--lk-font); }
+html.ly-brand #wu-hop-bar { background: rgba(21, 24, 31, .94); border-color: var(--lk-border); font-family: var(--lk-font); }
+html.ly-brand #wu-hop-bar b { font-family: var(--lk-font); color: var(--lk-text); }
+@media (prefers-reduced-motion: reduce) { html.ly-brand #ow-signin .wu-spin::before, html.ly-brand #wu-hop-go > div::after { animation: none; } }

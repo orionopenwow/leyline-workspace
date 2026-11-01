@@ -116,6 +116,8 @@ foreach ($line in ($st.out -split "`n")) {
   if ($p[0] -eq "file" -and $p.Count -ge 4) { $have[$p[1].ToLower()] = @{ size = [long]$p[2]; sha = $p[3] } }
   if ($p[0] -eq "part" -and $p.Count -ge 3) { $parts[$p[1].ToLower()] = [long]$p[2] }
 }
+$cleaned = ($st.out -match "(?m)^cleaned\t")
+if ($cleaned) { Say "The server already extracted the archives (and deleted them): nothing to upload. Going on with the job."; $files = @() }
 $i = 0
 foreach ($f in $files) {
   $i++

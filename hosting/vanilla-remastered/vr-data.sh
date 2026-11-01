@@ -85,6 +85,7 @@ case "$MODE" in
       esac
     done
     printf 'free\t%s\n' "$(free_mb "$UP")"
+    done_ clean && printf 'cleaned\t%s\n' "$(cat "$STATE/clean.done")"   # extracted already: no upload needed
     exit 0 ;;
   recv-chunk)
     n="${3:-}"; off="${4:-}"
@@ -161,12 +162,13 @@ report() {
   for p in "${PHASES[@]}"; do note "phase $p: $(done_ "$p" && echo "done $(cat "$STATE/$p.done")" || echo 'to do')"; done
   if systemctl is-active --quiet "$UNIT" 2>/dev/null; then note "the job is RUNNING (systemd unit $UNIT; log $LOGF)"; fi
 }
-PHASES=(extract classicplus slice settings clean)
+PHASES=(extract classicplus slice settings mmaps clean)
 OLD_DIR_REALMCTL="${VR_REALMCTL:-/opt/wenilla-realm/realmctl}"
 
 if [ "$MODE" = check ]; then
   report
   need="${3:-0}"; [[ "$need" =~ ^[0-9]+$ ]] || need=0
+  done_ clean && need=0   # the archives were used and deleted: nothing is uploaded again
   have=$(free_mb "$VR_ROOT")
   # the peak: the archives + the extracted data (~1.3 GB) + the larger of the temporary vmap source (~1.5 GB, deleted
   # before the slice is made) and the slice (budgetMB), + a margin
@@ -268,7 +270,7 @@ if ! done_ extract; then
   rm -rf "$W/Buildings"
   [ -n "$(ls "$GD/vmaps" 2>/dev/null)" ] || die "vmap_assembler wrote no vmaps (see above)"
   note "vmaps: $(ls "$GD/vmaps" | wc -l) files ($(( $(date +%s) - t0 )) s)"
-  if [ "${VR_MMAPS:-0}" = 1 ] && [ -n "$MM" ]; then
+  if false; then   # movement maps: their own phase below
     t0=$(date +%s); mkdir -p "$GD/mmaps"
     docker run --rm --network none --memory "${VR_EXTRACT_MEM:-1536m}" --cpus "${VR_EXTRACT_CPUS:-1.5}" --user 0 \
       -v "$GD:/work/tmp" -w /work/tmp --entrypoint "$MM" "$IMG" 0 --threads 2 2>&1 | tail -3 || true
@@ -276,7 +278,7 @@ if ! done_ extract; then
       -v "$GD:/work/tmp" -w /work/tmp --entrypoint "$MM" "$IMG" 1 --threads 2 2>&1 | tail -3 || true
     note "mmaps (Eastern Kingdoms, Kalimdor): $(ls "$GD/mmaps" 2>/dev/null | wc -l) files ($(( $(date +%s) - t0 )) s)"
   else
-    note "mmaps: skipped (movement maps take hours here; the settings phase turns them off). VR_MMAPS=1 builds the two continents."
+    note "mmaps: their own phase after the settings (VR_MMAPS=0 skips them; the world server will not start without them)"
   fi
   rm -rf "$W"
   # the world server's container user must read it all
@@ -400,6 +402,32 @@ if ! done_ settings; then
   done
   if running "$WORLD"; then note "!! $WORLD runs: the new settings apply at its next restart (5-minute warning first)"; fi
   mark settings
+fi
+
+# Movement maps: this core's grid loader asserts without them whatever mmap.enabled says (mangosd-start.sh holds
+# the world server until they exist), so they are built here from the maps and vmaps already in the volume. Long
+# (the two continents take the most); a second run goes on where the first stopped (MoveMapGen skips tiles it made).
+if ! done_ mmaps && [ "${VR_MMAPS:-1}" != 0 ]; then
+  log "Movement maps (the world server needs them)"
+  [ -n "$(ls "$GD/maps" 2>/dev/null)" ] && [ -n "$(ls "$GD/vmaps" 2>/dev/null)" ] || die "no maps/vmaps in $GD_VOL to build movement maps from"
+  TL=$(find_tools) || die "no CMaNGOS tools in the realm's images"
+  IMG=${TL%%$'\t'*}; T=${TL#*$'\t'}
+  MM=$(tool MoveMapGen "$T"); [ -n "$MM" ] || MM=$(tool movemapgen "$T")
+  [ -n "$MM" ] || die "the image $IMG has no MoveMapGen"
+  cpus=$(nproc 2>/dev/null || echo 2); [ "$cpus" -ge 1 ] || cpus=1; [ "$cpus" -gt "${VR_MMAP_THREADS:-2}" ] && cpus=${VR_MMAP_THREADS:-2}
+  mem=$(( $(mem_mb) - 900 )); [ "$mem" -gt 3000 ] && mem=3000; [ "$mem" -lt 1000 ] && mem=1000
+  note "MoveMapGen ($IMG), $cpus threads, memory ${mem}m; free disk $(free_mb "$VR_ROOT") MB"
+  mkdir -p "$GD/mmaps"; t0=$(date +%s)
+  docker run --rm --network none --memory "${mem}m" --cpus "$cpus" --user 0 \
+    -v "$GD:/work/tmp" -w /work/tmp --entrypoint "$MM" "$IMG" --threads "$cpus" --silent 2>&1 | tail -5 || true
+  n=$(ls "$GD/mmaps" 2>/dev/null | wc -l)
+  note "movement maps: $n files, $(du -sh "$GD/mmaps" | cut -f1) ($(( $(date +%s) - t0 )) s)"
+  ls "$GD/mmaps"/000*.mmap "$GD/mmaps"/001*.mmap >/dev/null 2>&1 || die "MoveMapGen made no maps for the two continents (see above); run the step again to go on"
+  chmod -R a+rX "$GD/mmaps"
+  for f in $(conf_files "$OLD_WORLD" mangosd.conf; conf_files "$WORLD" mangosd.conf); do
+    cp -p "$f" "$f.pre-mmaps" 2>/dev/null; conf_set "$f" mmap.enabled 1
+  done
+  mark mmaps
 fi
 
 if ! done_ clean; then

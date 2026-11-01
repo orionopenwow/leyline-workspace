@@ -24,6 +24,7 @@ Standard library only. The Caddyfile is edited in place (it is bind-mounted into
 """
 from __future__ import annotations
 
+import re
 import sys
 
 STREAM_BEGIN = "# >>> WrathUnleashed streaming (stream-up.sh)"
@@ -83,12 +84,19 @@ def add(s: str, host: str = "wrath.openvanilla.app") -> str:
     if span is None:
         raise LookupError("no streaming site block")
     i, j = span
-    opening = f"\n{host} {{\n"
-    k = s.find(opening, i, j)
+    k = _opening(s, i, j, host)
     if k < 0:
         raise LookupError(f"the streaming block has no '{host} {{' line")
-    k += len(opening)
     return s[:k] + block() + s[k:]
+
+
+def _opening(s: str, i: int, j: int, host: str) -> int:
+    """Where the body of the site block for `host` starts (after its "{" line), or -1. The address line may name
+    more than one host ("wrath.openvanilla.app, play.leylinelauncher.com {": tools/domain/domain_caddy.py)."""
+    for m in re.finditer(r"(?m)^([^\s#{][^\n{]*)\{[ \t]*\n", s[i:j]):
+        if host in [h for h in re.split(r"[\s,]+", m.group(1)) if h]:
+            return i + m.end()
+    return -1
 
 
 def status(s: str) -> str:

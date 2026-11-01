@@ -104,7 +104,7 @@ html body #wenilla-boot .err { margin-bottom: 14px; text-align: center; font: 60
 body.wu-loading #ow-dock, body.wu-loading #ow-busy { display: none !important; }
 
 /* the client's own cover (#wenilla-cover) stays under ours while wu-loading.js shows its words and progress */
-body.wu-client-cover #wenilla-cover { visibility: hidden !important; }
+body.wu-client-cover :is(#wenilla-cover, .wu-under) { visibility: hidden !important; }
 
 /* -- one tip at a time under the bar (wu-loading.js addTips) ------------------------------------- */
 html body #wenilla-boot .ly-tip, #wu-loading .ly-tip {

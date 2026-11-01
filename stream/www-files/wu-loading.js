@@ -182,7 +182,12 @@ export function installLoading(opts = {}) {
       if (!viaClient) { viaClient = true; document.body.classList.add('wu-client-cover'); }
       show('client cover');
       const label = cc.querySelector('.label');
-      const words = label && label.textContent.trim();
+      // the client's own notice over its cover ("Still loading the building under you…": a bare black box, top 18%):
+      // its words become the line, the box stays under ours (wu-loading.css .wu-under)
+      const note = [...document.body.children].find((d) => d.tagName === 'DIV' && !d.id && d.style.zIndex === '2147482000');
+      if (note && !note.classList.contains('wu-under')) note.classList.add('wu-under');
+      const words = (note && note.isConnected && note.style.display !== 'none' && note.textContent.trim())
+        || (label && label.textContent.trim());
       if (words) setLine(words);
       const fi = cc.querySelector('i');
       const w = fi && coverWidth(parseFloat(fi.style.width));

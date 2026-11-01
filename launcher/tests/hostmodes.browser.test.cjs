@@ -130,7 +130,7 @@ test('the first screen is the mode cards; Pick a ruleset yourself goes to the pi
   assert.deepEqual(cards.filter((c) => !c[3]).map((c) => c[0]), ['survivors'], 'a coming mode has no Host');
   assert.equal(await page.textContent('[data-mode="duel-ladder"] .hx-live'), '1 realm live · 7 playing');
   assert.equal(await page.textContent('[data-mode="den"] .hx-live'), '1 realm, offline now');
-  assert.equal(await page.textContent('[data-mode="duel-ladder"] .hx-by'), 'by Leyline');
+  assert.equal(await page.$('[data-mode="duel-ladder"] .hx-by'), null, 'our own modes carry no "by" line');
   assert.ok(await page.isHidden('.hc-setup'), 'the ruleset picker waits underneath');
   await shot(page, 'host-grid.png', true);
   await page.click('.hx-other');

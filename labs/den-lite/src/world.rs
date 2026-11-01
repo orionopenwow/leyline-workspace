@@ -453,7 +453,15 @@ fn enter_world(c: &Writer, shared: &Shared, p: Pos) -> io::Result<()> {
     for l in TUTORIAL {
         say(c, l)?;
     }
-    Ok(())
+    cheer(c, shared, "first-visit")
+}
+
+/// An encouragement line, once ever (cheers.rs), in the middle of the screen: never in the chat frame.
+fn cheer(c: &Writer, shared: &Shared, key: &str) -> io::Result<()> {
+    match crate::cheers::once(&shared.cfg.den_dir, key) {
+        Some(line) => c.send(&SMSG_NOTIFICATION { notification: line.into() }),
+        None => Ok(()),
+    }
 }
 
 /// The first-minute tutorial, said at every login (four lines: build, undo, save).
@@ -531,7 +539,8 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                 Err(e) => say(c, &e),
                 Ok(st) => {
                     let ch = shared.den.lock().unwrap().stamp(&st, p.x, p.y, p.z, p.o + deg.to_radians());
-                    apply(c, &ch)
+                    apply(c, &ch)?;
+                    if ch.created.is_empty() { Ok(()) } else { cheer(c, shared, "first-piece") }
                 }
             }
         }
@@ -558,7 +567,8 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             };
             let st = den::one_piece(obj);
             let ch = shared.den.lock().unwrap().stamp(&st, p.x, p.y, p.z, p.o);
-            apply(c, &ch)
+            apply(c, &ch)?;
+            if ch.created.is_empty() { Ok(()) } else { cheer(c, shared, "first-piece") }
         }
         (".build", "undo") => {
             let ch = shared.den.lock().unwrap().undo();
@@ -567,7 +577,10 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
         (".den", "save") => {
             let r = shared.den.lock().unwrap().save(&shared.cfg.den_dir, w(2), now());
             match r {
-                Ok((path, n)) => say(c, &format!("Saved to a file ({n} props): {}", path.display())),
+                Ok((path, n)) => {
+                    say(c, &format!("Saved to a file ({n} props): {}", path.display()))?;
+                    cheer(c, shared, "first-save")
+                }
                 Err(e) => say(c, &e),
             }
         }
@@ -630,9 +643,14 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                 drop(d);
                 return say(c, &l);
             };
+            let before = d.ring();
             let r = d.resize(ring);
             drop(d);
             match r {
+                Ok(ch) if ring > before => {
+                    apply(c, &ch)?;
+                    cheer(c, shared, "first-grow")
+                }
                 Ok(ch) => apply(c, &ch),
                 Err(e) => say(c, &e),
             }

@@ -5,6 +5,7 @@
 //!
 //! See README.md for what works, what is verified only by the test client, and what multi-player would need.
 
+pub mod cheers;
 pub mod companion;
 pub mod den;
 pub mod login;

@@ -169,7 +169,7 @@ class PortalAndHub(unittest.TestCase):
 
     def test_hub_front_page_hook(self):
         src = open(os.path.join(STREAM, "hub.py"), encoding="utf-8").read()
-        self.assertIn("self.how_strip() + den_week_html() + self.counters(got, items)", src)
+        self.assertIn("self.how_strip() + den_week_html() + self.featured_mod(items)", src)
         self.assertIn("def den_week_home(", open(os.path.join(STREAM, "wrath_portal.py"), encoding="utf-8").read())
 
     def test_hq_hook(self):

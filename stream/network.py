@@ -264,12 +264,34 @@ def region_of(r: dict):
     return None, False
 
 
+# Realms taken off every list (owner 1 Nov: the Builders' Realm is turned off): by relay realm id, and by name in case
+# the realm comes back under a new id. Lists only: a hop to a live realm is still the relay's business.
+RETIRED_IDS = frozenset({"jgt5rpofn7yaisep"})
+RETIRED_NAMES = frozenset({"buildersrealm", "thebuildersrealm"})
+
+
+def retired(r) -> bool:
+    """True for a realm no list shows (RETIRED_IDS / RETIRED_NAMES; the name compared without case, spaces or marks)."""
+    if not isinstance(r, dict):
+        return True
+    if r.get("id") in RETIRED_IDS:
+        return True
+    return re.sub(r"[^a-z]", "", str(r.get("name") or "").lower()) in RETIRED_NAMES
+
+
+def listed(realms) -> list[dict]:
+    """The realms a list may show: every record but the retired ones."""
+    return [r for r in (realms or []) if not retired(r)]
+
+
 def order(realms: list[dict]) -> list[dict]:
     """Sets r["group"] (featured, sample, community, offline) and sorts; see the module docstring."""
     out = []
     vr = vr_id()
     for r in realms:
         if not offered(r.get("build")):   # 4.3.4 / 5.4.8: not offered for now (MAX_OFFERED_BUILD)
+            continue
+        if retired(r) and not r.get("hangout"):   # off every list (RETIRED_IDS)
             continue
         r = dict(r)
         r["sample"] = bool(r.get("hangout"))

@@ -5,13 +5,12 @@ Built for the 2026-10-26 brief ("hide the full leyline front page thing but buil
 for people to submit their mods). Served by stream/wrath_portal.py, which loads this file from beside itself
 and runs without it.
 
-    GET  /wrath/leyline-preview               the front page: the hero (the big mark leads), the live ticker, every realm
-                                              on the network (one-click Play in browser, the desktop address, a hover
-                                              preview), how it works, the numbers, one feature section per part of
-                                              Leyline (launcher, hosting, realms, modes, mods, community, agents) on a
-                                              ley line, Hosted by the community (posters), the Hero Key line, Community
-                                              (Hot right now, Top creators, News), Mods in play, the Platform status
-                                              bar. Every hub page has the same header:
+    GET  /wrath/leyline-preview               the front page: the hero (the big mark leads), Wrath Unleashed is open,
+                                              every realm on the network (one-click Play in browser, the desktop
+                                              address, a hover preview), how it works, the featured mod, four feature
+                                              sections (launcher, hosting, modes, mods: FRONT_FEATURES) on a ley line,
+                                              Community (Hot right now, Top creators, News), the Platform status bar.
+                                              Every hub page has the same header:
                                               the launcher's pages (Play, Realms, Mods, Addons, Modes, Host, Community,
                                               More) with Download and Log In (or the account chip).
                                               No client build number or game name on any hub page
@@ -675,6 +674,11 @@ class Store:
         return {"format": 1, "approved": approved, "delisted": delisted}
 
 
+# The feature sections the front page shows (Hub.features), in their order there: the launcher's story, nothing that
+# repeats the realm list above them. Forge, Agents and the rest keep their own pages and menu items.
+FRONT_FEATURES = ("launcher", "host", "modes", "mods")
+
+
 class Hub:
     """The pages. bind() gives it the portal's helpers (ly_shell, workshop, PUBLIC_HOST, ...)."""
 
@@ -1171,7 +1175,7 @@ class Hub:
         client = client_of(r)
         name = neutral(r.get("name")) or "A realm"
         bdg = []
-        if r.get("home") or lineup_rank(r) == 0:
+        if (r.get("home") or lineup_rank(r) == 0) and not r.get("kind"):   # "Official realm" by the name says it already
             bdg.append('<span class="hb-bdg o">Official</span>')
         if r.get("featured"):
             bdg.append('<span class="hb-bdg f">Featured</span>')
@@ -1490,7 +1494,7 @@ class Hub:
         return (f'<figure class="hb-shot"><img src="/wrath/art/{name}" alt="{html.escape(alt)}" width="960" '
                 f'height="{APP_SHOTS[key]}" loading="lazy" decoding="async"></figure>')
 
-    def features(self, got=None) -> str:
+    def features(self, got=None, only=FRONT_FEATURES) -> str:
         """The feature sections, one per part of Leyline, in the recommended order (after the original site's big
         alternating showcases: #server-software, #desktop-launcher, #forge, #agents): words on one side, a picture on
         the other, the sides flipping each time, stacked on a phone. Pictures are launcher screenshots (tools/art/
@@ -1527,13 +1531,13 @@ class Hub:
              "installs mods in a click, takes you to any realm and keeps itself up to date.",
              ["Your own clients, found for you", "One sign-in everywhere", "Updates in the background, never mid-game",
               "Windows, macOS and Linux"],
-             [(dl, "Download the launcher", True), ("/wrath", "Play in your browser", False)],
+             [(dl, "Download the launcher", True)],   # Play in your browser is the realm's own button, above
              shot("home", "The Leyline launcher's home page: the server, your account, your game client and the PLAY button.")),
             ("host", "Server hosting software", "Host your own realm in one click",
              "Run a realm from your own PC, on the server software you like. The Host pack is everything in one download: "
              "your realm, its health checks, GM controls and tools. Our code only, never game files.",
-             ["Your rules, your GM account", "No ports to open: it goes on the realm list by itself",
-              "Start from the website or the launcher's Host page", "An invite link for friends"],
+             ["Your Den: a private place to build with friends", "Your rules, your GM account",
+              "No ports to open: it goes on the realm list by itself", "An invite link for friends"],
              [("/wrath/host", "Start hosting", False), (BASE + "/beacon", "How hosting works", False)], host_art),
             ("realms", "Realms & hopping", "Every realm, one list",
              "Every realm on the Leyline network, hosted by players and ranked by players online, uptime and staff "
@@ -1580,6 +1584,7 @@ class Hub:
              + (["The Discord, linked from everywhere"] if discord else []),
              [(FORUM, "Open the forum", False), (BASE + "/catalog", "Explore", False)], community_art),
         ]
+        secs = [x for x in secs if only is None or x[0] in only]   # the front page: FRONT_FEATURES only
         out = []
         for n, (icon, eyebrow, title, lede, points, acts, art) in enumerate(secs):
             btns = "".join(f'<a class="{"hb-cta sm" if k == 0 else "hb-ghost"}" href="{e(h)}"'
@@ -2147,8 +2152,12 @@ class Hub:
             '<p class="hb-sub-h">One launcher for every classic client and every server: your game, your realm, one click.</p>'
             # no buttons under the line (owner 2026-10-30): Download and Play are in the side menu
             '<p class="hb-note">Free and open source, for Windows, macOS and Linux. Nothing to buy.</p></section>'
-            + self.hangout_open(got) + self.realm_section(got) + self.how_strip() + den_week_html() + self.counters(got, items) + self.featured_mod(items) + self.features(got)
-            + self.posters(got) + self.herokey_teaser(got) + self.community(items) + self.mod_strip(items) + status +
+            # straight to the point (owner 1 Nov: "make sure the website is clean looking too"; the launcher's story:
+            # Wrath Unleashed, your Den, your realms, Host a server): the realm, the list, how it works, the featured
+            # mod, four feature sections, the forum and the status bar. The counters, the community posters, the Hero
+            # Key line and Mods in play repeated what is already above them (their methods stay, off the page, to bring back).
+            + self.hangout_open(got) + self.realm_section(got) + self.how_strip() + den_week_html() + self.featured_mod(items)
+            + self.features(got) + self.community(items) + status +
             '<p class="hb-fine">Community projects are links: nothing of theirs is hosted here. Each belongs to its '
             'authors, under the licence they chose. Leyline is an independent open-source project.</p>')
         return self._shell("Leyline", body, path, nonce)
@@ -2162,6 +2171,7 @@ class Hub:
             realms, ok = cr()
         except Exception:   # noqa: BLE001
             realms, ok = [], False
+        realms = [r for r in realms if not retired_realm(r, net)]   # the Builders' Realm: off every list (owner 1 Nov)
         rs = self.portal("realm_status")
         try:
             st = rs() if rs else {}
@@ -4178,6 +4188,11 @@ body.hb:has(#hb-side:checked) .hb-acct{padding:0 4px}
 # the other buttons are dark stone in the same grey metal. The chrome stays stone in Light too (DARK_ISLANDS).
 STONE_CSS = """
 @font-face{font-family:"Marcellus";font-weight:400;font-display:swap;src:url(/wrath/art/marcellus-400.woff2) format("woff2")}
+/* one title face (owner 1 Nov: "make sure the website is clean looking too"): the page and section headings and the
+   PLAY-stone words in Marcellus, the launcher's lettering, not the body face or Georgia */
+body.hb :is(#hb-h,#hb-ho-h,#hb-rlh,#hb-coa-h,.hb-fs h2,#hb-cm-h,.hb-pg-h h1,.fm h1,.hf h1,.hk-card h1,.pf-card h1){
+font-family:"Marcellus",Georgia,"Times New Roman",serif;font-weight:400;letter-spacing:.015em}
+body.hb :is(.hb-play,.hb-ho-a .hb-cta,.hb-top .hb-end .hb-playx){font-family:"Marcellus",Georgia,"Times New Roman",serif;font-weight:400}
 :root{--hb-stone:url(/wrath/art/stone-bar.webp) 0 0/340px 34px repeat;--hb-stone-tall:url(/wrath/art/stone-side.webp) 0 0/256px 256px repeat;
 --hb-stone-edge:#0a0908;--hb-stone-metal:rgba(196,178,140,.55);--hb-gold:#f6cf55}
 body.hb :is(.hb-top,.hb-foot,.hb-pg-h,.fm>.fm-head){color:var(--lk-text)}
@@ -4772,6 +4787,26 @@ MODE_ART = {
     "azeroth-survivors": ("leyline-mode-azeroth-survivors.webp", 483, 298,
                           "Azeroth Survivors key art: the title over a band of heroes and a moonlit castle."),
 }
+
+
+# Realms no hub list shows (owner 1 Nov: the Builders' Realm is turned off). network.py keeps the same list (retired());
+# these stay here too, so the hub hides it even beside an older network.py.
+RETIRED_REALM_IDS = frozenset({"jgt5rpofn7yaisep"})
+RETIRED_REALM_NAMES = frozenset({"buildersrealm", "thebuildersrealm"})
+
+
+def retired_realm(r, net=None) -> bool:
+    """True for a realm the hub never lists: a retired id or name, or the network module's own retired()."""
+    if not isinstance(r, dict):
+        return True
+    if r.get("hangout"):
+        return False
+    if r.get("id") in RETIRED_REALM_IDS or re.sub(r"[^a-z]", "", str(r.get("name") or "").lower()) in RETIRED_REALM_NAMES:
+        return True
+    try:
+        return bool(net is not None and hasattr(net, "retired") and net.retired(r))
+    except Exception:   # noqa: BLE001
+        return False
 
 
 def realm_type(tags) -> tuple[str, str]:

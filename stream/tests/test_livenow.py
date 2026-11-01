@@ -62,8 +62,9 @@ check("no brand words, no version numbers in the strip",
 real = HB.hub.realm_rows
 HB.hub.realm_rows = lambda query=None: got
 front = HB.hub.front_page().decode()
-check("front page carries the strip after the official realm", 'id="live"' in front
-      and front.index('id="hangout"') < front.index('id="live"'))
+# owner 31 Oct ("remove this area from site"): the strip is drawn (live_now) but no longer on the front page
+check("front page: no Live now strip (owner 31 Oct), the official realm still first", 'id="live"' not in front
+      and 'id="hangout"' in front)
 HB.hub.realm_rows = real
 
 # the realm link page under the real handler

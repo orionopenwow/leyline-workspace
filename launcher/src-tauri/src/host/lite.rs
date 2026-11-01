@@ -282,6 +282,75 @@ impl DenLite for Binary {
     }
 }
 
+// ------------------------------------------------------------------------------------------------ friends
+
+/// A friend's one-time login, as `den-lite guest add` prints it once (labs/den-lite/src/guests.rs).
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, Serialize)]
+pub struct GuestLogin {
+    pub user: String,
+    pub pass: String,
+    pub name: String,
+    pub expires: u64,
+}
+
+/// What Den Lite's `guest add` printed, checked (the shapes it makes: `G` + letters and digits, a 16-letter password).
+pub fn parse_guest(stdout: &str) -> Result<GuestLogin, String> {
+    let g: GuestLogin = serde_json::from_str(stdout.trim()).map_err(|_| "Your Den's server didn't make a login for your friend.".to_string())?;
+    let plain = |s: &str| s.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit());
+    if !(g.user.starts_with('G') && (4..=16).contains(&g.user.len()) && plain(&g.user) && g.pass.len() == 16 && plain(&g.pass)) {
+        return Err("Your Den's server made a login that doesn't look right.".into());
+    }
+    Ok(g)
+}
+
+impl Binary {
+    fn guest_cmd(&self, args: &[&str]) -> Result<String, String> {
+        let exe = self.exe.as_ref().ok_or("Den Lite isn't on this PC yet.")?;
+        let mut cmd = Command::new(exe);
+        cmd.arg("guest").args(args).arg("--dens").arg(self.den_dir()).stdin(Stdio::null());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x0800_0000);
+        }
+        let out = cmd.output().map_err(|e| format!("Den Lite didn't run: {e}"))?;
+        if !out.status.success() {
+            return Err(String::from_utf8_lossy(&out.stderr).trim().trim_start_matches("den-lite: ").to_string());
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).to_string())
+    }
+
+    /// A new login for one friend (`name`: their character; else Den Lite picks one).
+    pub fn guest_add(&self, name: Option<&str>) -> Result<GuestLogin, String> {
+        let mut a = vec!["add"];
+        if let Some(n) = name.filter(|n| !n.trim().is_empty()) {
+            a.extend(["--name", n.trim()]);
+        }
+        parse_guest(&self.guest_cmd(&a)?)
+    }
+
+    /// Every friend's login taken back.
+    pub fn guest_revoke_all(&self) -> Result<(), String> {
+        self.guest_cmd(&["revoke", "all"]).map(|_| ())
+    }
+}
+
+/// `<den-lite root>/state/den-net.json`: this Den's invite secret on the network (made once; the relay keeps only
+/// its sha256). Never shown except inside the invite link.
+pub fn invite_secret(root: &Path) -> Result<String, String> {
+    let p = root.join("state").join("den-net.json");
+    if let Some(s) = std::fs::read_to_string(&p).ok().and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v.get("secret").and_then(|s| s.as_str()).map(str::to_string))
+        .filter(|s| s.len() == 24 && s.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit()))
+    {
+        return Ok(s);
+    }
+    let s = crate::host::litenet::new_secret()?;
+    std::fs::create_dir_all(root.join("state")).map_err(|e| e.to_string())?;
+    crate::settings::write_atomic(&p, serde_json::json!({ "secret": s }).to_string().as_bytes()).map_err(|e| e.to_string())?;
+    Ok(s)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -354,5 +423,17 @@ mod tests {
         let b = Binary { exe: Some(exe), root: root(app.path()), client: None };
         let st = b.status();
         assert!(st.available && !st.can_get);
+    }
+
+    #[test]
+    fn a_friends_login_and_the_dens_invite_secret() {
+        let g = parse_guest(r#"{"user":"GABCDE2345","pass":"ABCDEFGH23456789","name":"Rowan","expires":99}"#).unwrap();
+        assert_eq!((g.user.as_str(), g.name.as_str()), ("GABCDE2345", "Rowan"));
+        assert!(parse_guest(r#"{"user":"DEN","pass":"den","name":"x","expires":1}"#).is_err(), "never the host's own login");
+        assert!(parse_guest("oops").is_err());
+        let d = tempfile::tempdir().unwrap();
+        let s = invite_secret(d.path()).unwrap();
+        assert_eq!(invite_secret(d.path()).unwrap(), s, "made once, then kept");
+        assert!(crate::realms::parse_invite(&crate::host::litenet::invite_link("relay.openvanilla.app", "kzdvvj2umnduyauf", &s, None)).is_some());
     }
 }

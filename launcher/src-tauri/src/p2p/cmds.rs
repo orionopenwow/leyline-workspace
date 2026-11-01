@@ -239,6 +239,7 @@ pub async fn den_state() -> Result<host::yourden::DenState, String> {
 #[tauri::command]
 pub async fn den_lite_stop() -> Result<(), String> {
     use host::lite::DenLite;
+    host::litenet::stop(); // friends can't reach a stopped Den
     blocking(|| lite().stop()).await
 }
 

@@ -84,6 +84,8 @@
     try { forge = await call("forge_state"); } catch (_) { forge = null; }
     paint();
     if (forge && forge.running) followForge();
+    try { net = await call("den_net_state"); } catch (_) { net = null; }
+    if (net && net.running) { paint(); followNet(); }
     // Docker on this PC: Solo leveling is offered as the bigger way to play alone (never waited for)
     if (!dock) call("docker_info").then((d) => { dock = d; paint(); }).catch(() => { /* no Docker: not offered */ });
   }
@@ -313,10 +315,44 @@
     catch (_) { say(link, "ok"); }
   }
 
-  // Invite friends: the Docker Den copies its invite link; Den Lite opens Share with friends' steps (friends join a
-  // Den on Docker), here on this page
+  // Invite friends: the Docker Den copies its invite link. Den Lite (app.rs den_invite, host/litenet.rs): your Den
+  // goes on the Leyline network from this PC at once (private: only people with a link get in; the relay only
+  // passes the game's connection through), and the link for one friend, with their own login in it, is copied.
+  let net = null;   // den_net_state
+  async function inviteLite() {
+    busy = true; paint();
+    say("Putting your Den on the Leyline network… (a few seconds)");
+    try {
+      const r = await call("den_invite", { name: null });
+      net = r.tunnel;
+      let copied = true;
+      try { await navigator.clipboard.writeText(r.link); } catch (_) { copied = false; }
+      // TODO(owner): the words
+      say(copied ? `Invite link copied: send it to one friend. In their Leyline they paste it under Realms › Got an invite link?, press Join, and play as ${r.name}. It works for 24 hours.`
+        : `Send this link to one friend: ${r.link}`, "ok");
+    } catch (e) { say(oops(e, "Your Den couldn't go on the network. Try again."), "bad"); }
+    busy = false;
+    paint();
+    followNet();
+  }
+  let netTimer = null;
+  function followNet() {
+    if (netTimer) return;
+    const tick = async () => {
+      try { net = await call("den_net_state"); } catch (_) { /* as it was */ }
+      paint();
+      netTimer = net && net.running ? setTimeout(tick, 3000) : null;
+    };
+    netTimer = setTimeout(tick, 1500);
+  }
+  async function stopSharing() {
+    try { await call("den_net_stop"); net = null; say("Your Den is off the network, and your friends' links stopped working.", "ok"); }
+    catch (e) { say(oops(e), "bad"); }
+    paint();
+  }
   function inviteFriends() {
     if (where() === "docker") { copyInvite(); return; }
+    if (where() === "lite") { inviteLite(); return; }
     sharing = true;
     paint();
     loadSetup();
@@ -472,7 +508,8 @@
     // the three things to do with your Den, one click each (owner 1 Nov: "invite friends, connect Claude to edit it")
     const invite = btn("Invite friends", "btn yd-top", inviteFriends);
     invite.id = "yd-friends";
-    invite.title = where() === "docker" ? "Copies your invite link" : "Friends join your Den on a server: a one-time setup on this PC";
+    invite.title = where() === "new" ? "Friends join your Den on a server: a one-time setup on this PC"
+      : "Copies a link for one friend: your Den goes on the Leyline network from this PC";
     // TODO(owner): the label and its tooltip, his words
     const claude = btn("Ask Claude to edit it", "btn yd-top", askClaude);
     claude.id = "yd-claude";
@@ -482,6 +519,16 @@
     root.append(head, mk("p", "lede", "Just you, on this PC: no internet or sign-in needed. A white room to build in, with your companion to help. Invite friends when you like."),
       acts, mk("p", "yd-hint yd-play-hint", where() === "lite" ? "Play solo starts your own server on this PC and opens the game at character select, with your look and addons." : where() === "docker" ? "Play solo starts it if it's stopped, then plays." : "Play solo sets it up once, then plays."), status);
     if (hint) { const hl = mk("p", "yd-hint", hint); hl.id = "yd-login-hint"; root.append(hl); }
+    // on the network (Den Lite's tunnel): one line, and Stop sharing
+    if (net && net.running) {
+      const nl = mk("div", "yd-row yd-net");
+      nl.id = "yd-net";
+      nl.append(mk("span", "yd-hint", net.connected ? `On the Leyline network, private: friends with your link can join${net.streams ? ` (${Math.ceil(net.streams / 2)} playing)` : ""}.`
+        : net.last_error ? `Not reaching the network yet: ${net.last_error}` : "Connecting to the Leyline network…"));
+      const sb = btn("Stop sharing", "btn small", stopSharing); sb.id = "yd-net-stop";
+      nl.append(sb);
+      root.append(nl);
+    }
     // the bigger way to play alone, only where Docker runs (or Solo leveling is already hosted here)
     const soloHosted = typeof kit !== "undefined" && kit && kit.realm && kit.realm.profile === "solo";
     if (soloHosted || (dock && dock.state === "ready")) {

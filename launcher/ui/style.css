@@ -233,8 +233,8 @@ svg { flex: none; }
   display: flex; gap: 2px; align-self: flex-start; margin: 0 0 0 6px; padding: 0;
 }
 .winbtns button {
-  width: 28px; height: 28px; padding: 0; border: 0; border-radius: 0; cursor: pointer; display: block;
-  background: center / contain no-repeat; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.7)); transition: filter 0.12s;
+  width: 25px; height: 28px; padding: 0; border: 0; border-radius: 0; cursor: pointer; display: block;
+  background: center / 100% 100% no-repeat; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.7)); transition: filter 0.12s;
 }
 #win-min { background-image: url("art/win-min.png"); }
 #win-max { background-image: url("art/win-max.png"); }

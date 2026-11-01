@@ -59,14 +59,38 @@
 }
 .side-foot { border-top: 1px solid rgba(0, 0, 0, 0.6); box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.05); }
 .side .nav, .side .realm-row, .side .side-label { text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6); }
-/* owner 2026-10-31 21:51: "give whole client this grey color border bordering our play button": the PLAY button's
-   own grey metal frame (art/window-frame.webp, its red face cut away) as a thin edge round the whole window, over
-   everything but the window buttons, which sit on the corner like an in-game window's close button. */
-.frame::after {
-  content: ""; position: fixed; inset: 0; z-index: 9000; pointer-events: none;
-  /* 10px: thick enough that the frame's bevelled corners read like an in-game window's (owner 21:53: "with this
-     style of edge around launcher its fine, no need for strict roundedness") */
+/* owner 2026-10-31 21:51: "give whole client this grey color border bordering our play button", then 21:57 "the border
+   needs to be outer and the window buttons top right need to be seamless with it": the PLAY button's own grey metal
+   frame (art/window-frame.webp, its red face cut away) is the window's border, outside everything, so nothing sits
+   under it; the window buttons sit in its top-right inner corner, their grey frames meeting it. */
+.frame {
+  box-sizing: border-box;
   border: 10px solid transparent;
   border-image: url("art/window-frame.webp") 22 25 / 10px stretch;
+  background-clip: padding-box;
 }
-.titlebar .winbtns, .winbtns { position: relative; z-index: 9001 !important; }
+.titlebar .winbtns, .winbtns { margin: 0 0 0 6px; gap: 1px; }
+/* owner 2026-10-31 21:59: "use the play button asset for a Log In asset": the PLAY button's stone with its word painted
+   out (art/stone-btn.webp), the gold lettering in type, as a nine-slice so it fits any width */
+@font-face { font-family: "Marcellus"; font-weight: 400; src: url("art/fonts/marcellus-latin-400-normal.woff2") format("woff2"); }
+/* 22:02 "bigger wider more accurate font": Marcellus (OFL, art/fonts) is the free face closest to the PLAY lettering;
+   gold from bright yellow to deep gold like the PLAY word, a dark edge and a drop shadow */
+.hf-me .hf-signin, #hf-signin {
+  height: 46px; min-width: 150px; padding: 0 34px; cursor: pointer; justify-content: center;
+  border: 11px solid transparent; border-image: url("art/stone-btn.webp") 28 30 fill / 11px stretch;
+  background: none; border-radius: 0; box-sizing: border-box; display: inline-flex; align-items: center;
+  font: 400 23px/1 "Marcellus", Georgia, serif; letter-spacing: 0.035em; color: #f6cf55;
+  -webkit-text-stroke: 1px #f1c24a;
+  text-shadow: 0 2px 3px rgba(0, 0, 0, 0.85);
+}
+@supports (-webkit-background-clip: text) {
+  .hf-me .hf-signin span, #hf-signin span { background: linear-gradient(180deg, #fff1a0 0%, #f9d55c 40%, #e2ab2e 75%, #b9801c 100%); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-stroke: 0.9px rgba(240, 190, 70, 0.95); filter: drop-shadow(0 0 0.6px #2a1800) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.9)); }
+}
+#hf-signin:hover { filter: brightness(1.15); }
+#hf-signin:active { filter: brightness(0.9); transform: translateY(1px); }
+#hf-signin:focus-visible { outline: 2px solid #f2c94c; outline-offset: 2px; }
+/* Join the Discord in the side menu: a menu item in Discord's colour */
+.side .nav.nav-discord { color: #c9cdfb; }
+.side .nav.nav-discord .dc-ic { fill: #5865f2; stroke: none; }
+.side .nav.nav-discord:hover { color: #fff; background: rgba(88, 101, 242, 0.22); }
+.side .nav.nav-discord:hover .dc-ic { fill: #8891f5; }

@@ -149,19 +149,21 @@ test('signed out: Sign in, pick a way, the code under the chip, then your name',
   await page.close();
 });
 
-test('the side panel is hidden: Home uses the full width; a subtle Join the Discord sits right of the search', async () => {
+test('the side panel is hidden: Home uses the full width; Join the Discord is in the side menu under News', async () => {
   const { page, errors } = await open({ signed: true, evil: true });
   await page.waitForFunction(() => document.querySelector('#hf-me .hf-me-name'));
   assert.equal(await page.textContent('#hf-me .hf-me-name'), '<b>Alice</b>', 'a name is text');
   assert.equal(await page.evaluate(() => window.__xss), undefined);
   assert.ok(await page.isHidden('#home-side'), 'the panel is hidden');
   const g = await page.evaluate(() => {
-    const s = document.getElementById('search-form').getBoundingClientRect(), d = document.getElementById('tb-discord').getBoundingClientRect();
+    const d = document.getElementById('tb-discord');
     const m = document.querySelector('main').getBoundingClientRect();
-    return { after: Math.round(d.left - s.right), sameRow: Math.abs((d.top + d.bottom) / 2 - (s.top + s.bottom) / 2) < 4, mainRight: Math.round(innerWidth - m.right) };
+    return { inSide: !!d.closest('.side nav'), afterNews: d.previousElementSibling && d.previousElementSibling.dataset.page === 'news',
+      inTitle: !!document.querySelector('.titlebar #tb-discord'), mainRight: Math.round(innerWidth - m.right) };
   });
-  assert.ok(g.after >= 0 && g.after < 60, 'right of the search'); assert.ok(g.sameRow, 'on the same row');
-  assert.equal(g.mainRight, 0, 'Home reaches the window edge again');
+  // owner 31 Oct 21:59: Join the Discord moved to the side menu, under News; the title bar keeps Log In (the PLAY stone)
+  assert.ok(g.inSide && g.afterNews && !g.inTitle, 'in the side menu, under News');
+  assert.ok(g.mainRight >= 0 && g.mainRight <= 10, 'Home reaches the window edge again (inside the metal edge)');
   assert.match(await page.textContent('#tb-discord'), /Join the Discord/);
   await page.click('#tb-discord');
   assert.ok(await page.evaluate(() => window.__calls.some(([c, a]) => c === 'open_link' && a.name === 'discord')), 'opens the Discord through openLink');

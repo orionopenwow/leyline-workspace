@@ -56,3 +56,13 @@
 .titlebar .brand b, .titlebar .brand i {
   text-shadow: 0 -1px 0 rgba(255, 255, 255, 0.18), 0 1.5px 0 rgba(0, 0, 0, 0.75), 0 3px 6px rgba(0, 0, 0, 0.55);
 }
+/* owner 2026-11-01 00:46: "lower logo a little bit, give leyline a slight texture": the mark sits 4px lower, level with
+   the middle of the two words; "Leyline" carries a faint stone grain (the side menu's stone under a light wash, clipped
+   to the letters), its emboss drawn as drop shadows so they don't show through the textured letters */
+.titlebar .brand .ly-spin { translate: 0 4px; }
+.titlebar .brand b {
+  color: transparent; text-shadow: none;
+  background: linear-gradient(rgba(255, 255, 255, 0.74), rgba(222, 226, 234, 0.74)), url("art/stone-side.webp") 0 0 / 128px;
+  -webkit-background-clip: text; background-clip: text;
+  filter: drop-shadow(0 -1px 0 rgba(255, 255, 255, 0.14)) drop-shadow(0 1.5px 0 rgba(0, 0, 0, 0.75)) drop-shadow(0 3px 5px rgba(0, 0, 0, 0.5));
+}

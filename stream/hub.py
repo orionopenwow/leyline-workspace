@@ -4122,6 +4122,10 @@ body.hb .hb-top .hb-word b{font-size:25px;font-weight:800;line-height:1;letter-s
 body.hb .hb-top .hb-word i{margin:4px -.36em 0 0;font-size:11px;font-weight:700;letter-spacing:.36em}
 body.hb .hb-top .hb-word :is(b,i){text-shadow:0 -1px 0 rgba(255,255,255,.18),0 1.5px 0 rgba(0,0,0,.75),0 3px 6px rgba(0,0,0,.55)}
 body.hb:has(#hb-side:checked) .hb-top .hb-brand .ly-spin{--ly-spin-size:44px!important}
+/* owner 1 Nov 00:46 ("lower logo a little bit, give leyline a slight texture"): the mark 4px lower, "Leyline" with a faint
+   stone grain (the side menu's stone under a light wash, clipped to the letters; the emboss as drop shadows) */
+body.hb .hb-top .hb-brand .ly-spin{translate:0 4px}
+body.hb .hb-top .hb-word b{color:transparent;text-shadow:none;background:linear-gradient(rgba(255,255,255,.74),rgba(222,226,234,.74)),url(/wrath/art/stone-side.webp) 0 0/128px;-webkit-background-clip:text;background-clip:text;filter:drop-shadow(0 -1px 0 rgba(255,255,255,.14)) drop-shadow(0 1.5px 0 rgba(0,0,0,.75)) drop-shadow(0 3px 5px rgba(0,0,0,.5))}
 body.hb .hb-nav{flex-direction:column;align-items:stretch;gap:2px;margin:0}
 body.hb .hb-ni{justify-content:flex-start;width:100%;padding:9px 12px;border-radius:10px;font-size:15px;gap:12px;white-space:nowrap}
 body.hb .hb-ni svg{display:block;width:20px;height:20px}

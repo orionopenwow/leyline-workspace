@@ -552,6 +552,8 @@
     }
     const players = stat && stat.players != null ? stat.players : null;
     setTile("players", stat && stat.online ? "ok" : "off", players != null ? `${players} online` : "–");
+    // a friend joined: two or more online (you and them; a solo realm's bots aside), one line once (guide.js)
+    if (players >= 2 && c.profile !== SOLO && window.LeylineGuide) window.LeylineGuide.moment("friend");
     setTile("uptime", c.uptime ? "ok" : "off", c.uptime || "–");
     // start or stop
     const running = (c.services || []).some((s) => s.state === "ok" || s.state === "starting");
@@ -602,6 +604,8 @@
     if (on && !c.linked) box.append(btn("Copy invite link", "btn primary", copyInvite));
     if (on) { const x = btn("", "hc-x", () => { liveWanted = false; box.hidden = true; }); x.setAttribute("aria-label", "Close"); x.textContent = "×"; box.append(x); }
     if (on && !was) box.scrollIntoView({ block: "nearest" });
+    // the first server live: this box says it here; elsewhere in the launcher one line, once (guide.js)
+    if (on && !was && window.LeylineGuide) window.LeylineGuide.moment("hosted", page.classList.contains("on"));
     if (!on && !liveTimer) liveTimer = setTimeout(() => { liveTimer = null; refresh(true); }, 10000);
   }
   let liveTimer = null;

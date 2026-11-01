@@ -23,6 +23,7 @@
 <link rel="stylesheet" href="graphics.css"><!-- Mods & Addons › Discover › Graphics (graphics.js) -->
 <link rel="stylesheet" href="stone.css"><!-- the title bar and play bar on the owner's stone texture -->
 <link rel="stylesheet" href="slate.css"><!-- the pages on the stone: panels, cards, buttons, Realms (owner 31 Oct design pass) -->
+<link rel="stylesheet" href="guide.css"><!-- the first-run tour and the one-time encouragement toast (guide.js) -->
 </head>
 <body class="ly">
 <div class="frame">
@@ -511,6 +512,8 @@
   <section class="page" id="page-help">
     <div class="panel">
       <h2>Help</h2>
+      <!-- the guide (guide.js): the first-run tour again, and the website's Start here. TODO(owner): his words -->
+      <div class="help-new"><p class="lede">New to Leyline?</p><button type="button" class="btn small" id="guide-again">Show me again</button><button type="button" class="btn small" data-link="start">Start here ›</button></div>
       <ol class="steps help-steps">
         <li><b>Get your game files.</b> Leyline plays with a game folder you already have; it can't download the game for you.
           <button type="button" class="link" data-page-go="findfiles">Can't find your files? ›</button></li>
@@ -763,5 +766,6 @@
 <script src="hostnetwork.js"></script><!-- Host: the Network tab (host/network.rs) -->
 <script src="home.js"></script>
 <script src="agents.js"></script><!-- Agents: the page and the approval card on every page (window.LeylineAgents) -->
+<script src="guide.js"></script><!-- the first-run tour, Help › Show me again, the one-time encouragement lines (window.LeylineGuide; last) -->
 </body>
 </html>

@@ -419,6 +419,17 @@ mod tests {
     }
 
     #[test]
+    fn torrents_hash_like_the_server_tools() {
+        // tools/release-mirror/release_mirror.py make_torrent gives this info-hash for the same bytes and name
+        // (test_release_mirror.py checks the same number), so a torrent made here joins the same swarm.
+        let data: Vec<u8> = (0..600_000u32).map(|i| (i * 7 % 256) as u8).collect();
+        let d = tempfile::tempdir().unwrap();
+        fs::write(d.path().join("x.tar.gz"), &data).unwrap();
+        let t = torrent_of_file(&d.path().join("x.tar.gz"), "x.tar.gz", &[]).unwrap();
+        assert_eq!(super::super::torrent::parse(&t).unwrap().info_hash_hex(), "a74c848c91be56c4acf99f4d8431bf0a009ee700");
+    }
+
+    #[test]
     fn a_wrong_infohash_is_not_seeded_and_off_empties_the_folder() {
         let pack = crate::mods::tests::zip_of(&[("host/leyline", b"#!/bin/sh\n")]);
         let mut d = json!({"format": 1, "key": pub_hex(DEV_TEST_SEED), "entries": []});

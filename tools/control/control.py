@@ -146,6 +146,11 @@ STEPS = {
     "build-realm-saves": ("hosting/build-realm/Builders realm - saves.bat", "Builders' Realm saves: copy them to this PC, send the files in its send folder", False),
     "leyline": ("tools/leyline-repo/Update Leyline repo.bat", "Leyline repo: copy and push (github.com/orionopenwow/Leyline)", False),
     "mods":  ("mods/Put mods on Wrath.bat", "Mods catalog: realm (live reload), streamed addons and /wrath/mods", False),
+    # Resilience (docs/RESILIENCE.md): after a ship, our own copy of each Leyline release, the Host pack, the addons and
+    # the upstream server source at our pinned commits, on our server with checksums and torrents (and, with the release
+    # key on this PC, the signed release log), so launchers keep updating and people keep hosting if GitHub is down.
+    "release-mirror": ("tools/release-mirror/Mirror releases.bat", "Release mirror: copy the new Leyline releases, Host pack, addons and server source to our server (after a ship)", False),
+    "release-mirror-check": ("tools/release-mirror/Mirror releases - check.bat", "Release mirror: what it would copy (read-only)", False),
     "hostkit": ("hosting/kit/Publish host kit.bat", "Host kit download (checked zip on the public Leyline release)", False),
     # The Leyline addons (addons/pack/make-addonpack.py): our in-game addons as a checked zip that the launcher installs
     # into players' own 3.3.5a folders. Run it after changing WrathUnleashedUI, OVArmory, OVQoL or the mods catalog.
@@ -193,7 +198,7 @@ STEPS = {
 # Autopilot runs only these by itself; anything else waits for "Launch all".
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog",
-             "vr-data-check", "vr-site-check"}
+             "vr-data-check", "vr-site-check", "release-mirror-check"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}
 
 # Never in a log or on the page: passwords, tokens, keys, connection strings (scrub() on every line a step prints).

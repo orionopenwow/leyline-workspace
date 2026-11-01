@@ -3,6 +3,8 @@
     GET /wrath/leyline/flags.json      the P2P/torrent feature flags (public, CORS *): every flag OFF until the
                                        admin console turns it on with write_flags()
     GET /wrath/leyline/hostpack.json   the Host pack descriptor (public, CORS *): version, download, sha256, size
+    GET /wrath/leyline/releases/...    our mirror of Leyline's releases (release_file; the portal streams them)
+    GET /wrath/leyline/chain.json      the signed release log (docs/RESILIENCE.md)
     all.json                           add_hostpack() appends the Host pack to /wrath/mods/all.json as a project of
                                        category "tools", kind "hostpack"
 
@@ -222,9 +224,75 @@ def add_hostpack(all_json: bytes, d: dict | None = None) -> bytes:
     return (json.dumps(doc, indent=1, ensure_ascii=False) + "\n").encode("utf-8")
 
 
+# ------------------------------------------------------------------------------------------------ release mirror
+# Our own copy of every Leyline release, Host pack, addons pack and pinned server-source tarball, put here by the
+# Control step "release-mirror" (tools/release-mirror/release_mirror.py) after a ship, so installed launchers keep
+# updating when GitHub is down (docs/RESILIENCE.md). Layout under $WU_LEYLINE_DIR/releases (served at
+# /wrath/leyline/releases/):
+#     latest.json                       the newest launcher's updater manifest, its downloads rewritten to here
+#     launcher-v<version>/<file>        each release's files, as on GitHub
+#     host-pack/<file>  addons/<file>  sources/<file>
+#     index.json                        {"files": {"<path>": {"size": n, "sha256": hex}}}: only these are served
+#     chain.json                        the signed release log (also at /wrath/leyline/chain.json)
+# Every download is still checked by the launcher (the updater's signature, the log's sha256): this is a copy,
+# never a source of trust. Never game data: names on the refusal list are not served even when listed.
+RELEASES_PREFIX = "/wrath/leyline/releases/"
+_REL_RE = re.compile(r"^(?:(?:launcher-v[0-9A-Za-z.+-]{1,48}|host-pack|addons|sources)/)?[A-Za-z0-9][A-Za-z0-9._+-]{0,119}$")
+_REFUSED_EXT = (".mpq", ".blp", ".m2", ".wmo", ".adt", ".dbc", ".db2", ".skin", ".anim", ".wdt", ".wdl", ".bls", ".casc")
+_TYPES = {".json": JSON, ".exe": "application/vnd.microsoft.portable-executable", ".msi": "application/x-msi",
+          ".zip": "application/zip", ".gz": "application/gzip", ".torrent": "application/x-bittorrent",
+          ".sig": "text/plain; charset=utf-8", ".appimage": "application/octet-stream", ".deb": "application/vnd.debian.binary-package",
+          ".dmg": "application/x-apple-diskimage"}
+
+
+def releases_dir() -> str:
+    return os.path.join(DIR, "releases")
+
+
+def _index(root: str) -> dict:
+    try:
+        with open(os.path.join(root, "index.json"), encoding="utf-8") as f:
+            d = json.load(f)
+        files = d.get("files")
+        return files if isinstance(files, dict) else {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def release_file(p: str, root: str | None = None):
+    """(absolute path, size, content type) of a mirrored release file for GET /wrath/leyline/releases/<rel>, or None.
+    Only names the mirror's index.json lists, with the size it lists, never a path from the URL as such."""
+    if not isinstance(p, str) or not p.startswith(RELEASES_PREFIX):
+        return None
+    rel = p[len(RELEASES_PREFIX):]
+    if ".." in rel or "\\" in rel or not _REL_RE.match(rel) or rel.lower().endswith(_REFUSED_EXT) or rel.lower().startswith("wow"):
+        return None
+    root = root or releases_dir()
+    meta = _index(root).get(rel) if rel not in ("index.json",) else {"size": None}
+    if rel == "chain.json":
+        meta = {"size": None}
+    if not isinstance(meta, dict):
+        return None
+    full = os.path.join(root, *rel.split("/"))
+    try:
+        size = os.path.getsize(full)
+    except OSError:
+        return None
+    if meta.get("size") is not None and meta["size"] != size:
+        return None                                    # half-copied or changed: not served
+    ext = os.path.splitext(rel.lower())[1]
+    return full, size, _TYPES.get(ext, "application/octet-stream")
+
+
 def serve(p: str):
-    """(status, body, content type) for our two public files (the portal sends them public, CORS *), or None
+    """(status, body, content type) for our small public files (the portal sends them public, CORS *), or None
     for any other path."""
+    if p == "/wrath/leyline/chain.json":
+        got = release_file(RELEASES_PREFIX + "chain.json")
+        if not got:
+            return 404, b'{"error":"no release log published yet"}\n', JSON
+        with open(got[0], "rb") as f:
+            return 200, f.read(4_000_000), JSON
     if p == "/wrath/leyline/flags.json":
         return 200, (json.dumps(load(), indent=1, ensure_ascii=False) + "\n").encode("utf-8"), JSON
     if p == "/wrath/leyline/hostpack.json":

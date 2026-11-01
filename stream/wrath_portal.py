@@ -2653,6 +2653,38 @@ class PageHandler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
+    def release_file(self, got) -> None:
+        """A mirrored release file (stream/leyline_net.py release_file: (path, size, type) or None), streamed in
+        1 MB pieces: installers are tens of MB. Public, CORS *, cached for a day (the names carry the version;
+        latest.json and chain.json for 5 minutes)."""
+        if not got:
+            self.send(404, b'{"error":"not on this mirror"}\n', "application/json; charset=utf-8")
+            return
+        full, size, ctype = got
+        try:
+            f = open(full, "rb")
+        except OSError:
+            self.send(404, b'{"error":"not on this mirror"}\n', "application/json; charset=utf-8")
+            return
+        with f:
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(size))
+            short = full.endswith(("latest.json", "chain.json", "index.json"))
+            self.send_header("Cache-Control", f"public, max-age={300 if short else 86400}")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            if self.command == "HEAD":
+                return
+            left = size
+            while left > 0:
+                chunk = f.read(min(1 << 20, left))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                left -= len(chunk)
+
     def redirect(self, url: str, cookie: str = "") -> None:
         self.send_response(302)
         self.send_header("Location", url)
@@ -3140,6 +3172,9 @@ class PageHandler(BaseHTTPRequestHandler):
             if got:
                 self.send(got[0], got[1], got[2], public=True)
                 return
+        if leyline_net is not None and path.startswith("/wrath/leyline/releases/") and hasattr(leyline_net, "release_file"):
+            self.release_file(leyline_net.release_file(path))   # our mirror of Leyline's releases (docs/RESILIENCE.md)
+            return
         if leyline_net is not None and path.startswith("/wrath/leyline/"):   # flags.json, hostpack.json
             got = leyline_net.serve(path)
             if got:

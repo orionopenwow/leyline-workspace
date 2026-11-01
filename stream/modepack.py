@@ -736,12 +736,13 @@ CSS = """
 .mp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
 .mp-card{display:flex;flex-direction:column;background:rgba(18,22,54,.7);border:1px solid var(--ly-line);border-radius:6px;overflow:hidden;text-decoration:none;color:inherit}
 .mp-card:hover,.mp-card:focus-visible{border-color:var(--ly-cyan);box-shadow:var(--ly-glow)}
-.mp-card img,.mp-pic{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#0b0e26 center/cover no-repeat}
+.mp-card img,.mp-pic{display:block;width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;background:#0b0e26 center/cover no-repeat}
 .mp-card .b{padding:12px 14px;display:flex;flex-direction:column;gap:6px}
 .mp-card h3,.mp-h{margin:0;font:600 18px/1.15 'Leyline Display','OW Cinzel',Impact,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--ly-cyan)}
 .mp-card p{margin:0;font-size:14px;color:var(--ly-ink)}
 .mp-by{font-size:12px;color:var(--ly-dim)}
 .mp-live{font:600 12px/1 system-ui,sans-serif;color:#5ef0a0}
+.ly h1.mp-h{font-size:clamp(26px,4.5vw,40px);line-height:1.1;margin:0 0 8px;text-align:left}
 .mp-top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:16px;align-items:start}
 @media (max-width:720px){.mp-top{grid-template-columns:1fr}}
 .mp-facts{margin:0;padding:0;list-style:none;display:grid;gap:6px;font-size:14px}
@@ -815,7 +816,7 @@ def _realm_row(r: dict, pick: bool = False) -> str:
         base = template(b["id"])
         credit = f' · based on {e(base["name"] if base else b["id"])} by {e(b.get("author") or "someone")}'
     rid = r.get("id") or ""
-    return (f'<li><span><a href="/r/{e(rid)}"><b>{e(r.get("name") or "A realm")}</b></a> '
+    return (f'<li><span><a href="/wrath/r/{e(rid)}"><b>{e(r.get("name") or "A realm")}</b></a> '
             f'<span class="mp-by">{e(m.get("name") or "")}{" by " + e(m["author"]) if m.get("author") else ""}{credit}</span></span>'
             f'{"<span class=mp-pick>Staff pick</span>" if pick else ""}<span class="mp-by">{e(who)}</span></li>')
 

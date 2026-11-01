@@ -905,14 +905,59 @@
     // a server already on this PC (host/scan.rs): put it on Leyline in one press
     ui.found = mk("div", "hc-found");
     ui.found.hidden = true;
-    ui.pickH = mk("p", "hc-bh", "Pick a ruleset");
-    sw.append(top, rune(), lede, needs, ui.ready, ui.found, ui.pickH, ui.rules, ui.den, ui.denStart, ui.form, go, ui.prog, ui.status, link, rune(), mk("p", "hc-bh", "Runs on"), coreChips(linkServer));
+    ui.pickH = mk("p", "hc-bh hc-or", "Pick a ruleset");
+    ui.pickH.hidden = true;
+    // owner 2026-10-31: "quick step guides 1 2 3 and buttons to click fields to fill": three numbered cards, the one to
+    // do now lit, the finished ones folded to a tick (paintSteps)
+    const s1 = stepCard(1, "Get ready", "The Host pack and Docker: one click each.");
+    s1.body.append(ui.ready);
+    const s2 = stepCard(2, "Pick your game", "What your realm runs. Players need a game client of the same version.");
+    s2.body.append(ui.rules, ui.den, ui.denStart);
+    const s3 = stepCard(3, "Start your realm", "Give it a name, choose who can join, then press Start.");
+    s3.body.append(ui.form, go, ui.prog);
+    ui.steps = [s1, s2, s3];
+    const flow = mk("div", "hs-flow");
+    flow.append(s1.el, s2.el, s3.el);
+    // the long lines (what a host needs, the version) behind a small Details toggle
+    const more = mk("details", "hs-details");
+    more.append(mk("summary", "", "Details"), needs);
+    sw.append(top, rune(), lede, more, ui.found, ui.pickH, flow, ui.status, link, rune(), mk("p", "hc-bh", "Runs on"), coreChips(linkServer));
     const side = mk("aside", "hc-box hc-side");
     side.append(mk("p", "hc-bh", "Guide"), guideList(true));
     wrap.append(sw, side);
     main.append(wrap);
     paintRulesets();
     paintProg();
+  }
+
+  // one numbered step: a big number (a tick once done), a title and one plain line over its body
+  function stepCard(n, title, line) {
+    const el = mk("section", "hs-step");
+    el.dataset.step = String(n);
+    const head = mk("div", "hs-step-head");
+    const num = mk("span", "hs-num", String(n));
+    num.setAttribute("aria-hidden", "true");
+    const t = mk("div", "hs-step-t");
+    const sub = mk("span", "", line);
+    t.append(mk("b", "", title), sub);
+    head.append(num, t);
+    const body = mk("div", "hs-step-body");
+    el.append(head, body);
+    return { el, body, num, sub, line };
+  }
+  // which step is now: 1 while the Host pack or Docker is missing, 2 until a ruleset is picked, then 3
+  function paintSteps() {
+    if (!ui.steps) return;
+    const ready = !!(kit && kit.is_kit) && (!dock || dock.state === "ready");
+    const now = !ready ? 1 : !picked ? 2 : 3;
+    ui.steps.forEach((s, i) => {
+      const n = i + 1, done = n === 1 ? ready : n === 2 ? ready && !!picked : false;
+      s.el.classList.toggle("now", n === now);
+      s.el.classList.toggle("done", done && n === 1);
+      s.el.classList.toggle("hs-ok", done);
+      s.num.textContent = done ? "✓" : String(n);
+      s.sub.textContent = n === 1 && done ? "The Host pack and Docker are ready." : s.line;
+    });
   }
 
   // the form: a name for the ruleset (until one is typed), who can join (a Den is always friends only), and on a Mac or
@@ -954,7 +999,7 @@
     const box = ui.found;
     if (!box) return;
     box.hidden = !found;
-    if (ui.pickH) ui.pickH.textContent = found ? "Or host a new realm" : "Pick a ruleset";
+    if (ui.pickH) { ui.pickH.textContent = found ? "Or host a new realm" : "Pick a ruleset"; ui.pickH.hidden = !found; }
     if (!found) return;
     box.replaceChildren();
     const f = found;
@@ -1141,12 +1186,13 @@
     const why = formProblem();
     ui.go.disabled = !ready || !picked || !dockOk || !!(job && job.running);
     ui.go.textContent = name ? `Start ${name}` : "Start";
-    ui.goHint.textContent = !ready ? "Get the Host pack first (step 1 above)." : !dockOk ? "Docker first (step 2 above)." : !picked ? "Pick a ruleset."
+    ui.goHint.textContent = !ready ? "Get the Host pack first (step 1 above)." : !dockOk ? "Docker first (step 1 above)." : !picked ? "Pick a ruleset."
       : why ? why
       : picked === "vanillaplus" ? "Always on: it comes back after a reboot."
       : picked === DEN ? "Then invite friends with your invite link. The first start takes 5 to 20 minutes."
       : picked === SOLO ? "Then pick Solo leveling in the play bar. The first start takes 5 to 20 minutes." : "The first start takes 5 to 20 minutes.";
     paintDenStart();
+    paintSteps();
     if (ui.den) {
       const facts = FACTS[picked];
       ui.den.hidden = !facts;
@@ -1351,6 +1397,7 @@
     };
     const haveKit = kit && kit.is_kit;
     paintReady(p, d, haveKit);
+    paintSteps();
     if (ui.ready && !ui.ready.hidden) return;   // the steps say it already: no pills in the corner
     pre.append(chip(haveKit, haveKit ? "Host pack ready" : (p && p.installed ? "Host pack: use it" : "Get the Host pack"), haveKit ? null : () => tab("kit")));
     if (d) pre.append(chip(d.state === "ready", d.state === "ready" ? "Docker ready" : (DOCK_TITLE[d.state] || "Get Docker"), d.state === "ready" ? null : dockLink(d)));

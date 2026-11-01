@@ -23,20 +23,44 @@
   // the Host page's "Host pack & settings" tab (hostconsole.js has the console and the guide)
   const panel = page && (byId("hc-pane-kit") || page.querySelector(".panel"));
   if (!panel) return;
-  const packCard = mk("section", "card");
+  // owner 2026-10-31: "quick step guides 1 2 3 and buttons to click": step 1 (Get ready) is two check rows, the Host
+  // pack and Docker, each a green tick when done or one obvious button; the version and folder sit under Details.
+  const packCard = mk("section", "hs-checks");
   packCard.id = "hp-card";
-  const head = mk("div", "card-head");
-  head.append(mk("span", "", "HOST PACK"));
-  const packLine = mk("div", "hint", "Checking…");
-  const packActs = mk("div", "row");
+  packCard.setAttribute("aria-label", "Host pack and Docker");
+  const checkRow = (title) => {
+    const r = mk("div", "hs-check");
+    const n = mk("span", "hs-check-n", "");
+    n.setAttribute("aria-hidden", "true");
+    const t = mk("div", "hs-check-t");
+    const line = mk("span", "", "Checking…");
+    t.append(mk("b", "", title), line);
+    const acts = mk("div", "hs-row-acts");
+    r.append(n, t, acts);
+    return { r, n, line, acts };
+  };
+  const packRow = checkRow("Host pack");
+  const dockRow = checkRow("Docker");
+  const packLine = packRow.line, packActs = packRow.acts, dockLine = dockRow.line, dockActs = dockRow.acts;
   const packStatus = mk("p", "status");
-  const dockLine = mk("div", "hint");
-  const dockActs = mk("div", "row");
-  packCard.append(head, mk("p", "lede",
-    "Everything you need to host, in one download. Our code only, no game files. Only hosts need it, and Docker."),
-    packLine, packActs, packStatus, dockLine, dockActs);
-  const steps = panel.querySelector("ol.steps");
-  panel.insertBefore(packCard, steps || panel.firstChild);
+  const packMore = mk("details", "hs-details");
+  const packInfo = mk("p", "hint", "");
+  packMore.append(mk("summary", "", "Details"), packInfo);
+  packCard.append(packRow.r, dockRow.r, packStatus);
+  let packOk = false, dockOk = false;
+  const setRow = (row, ok, n) => { row.r.classList.toggle("done", ok); row.n.textContent = ok ? "✓" : String(n); };
+  function paintKitSteps() {
+    const ready = packOk && dockOk;
+    const li = (k) => byId("hs-k" + k);
+    if (!li(1)) return;
+    li(1).classList.toggle("hs-ok", ready);
+    li(1).querySelector(".hs-num").textContent = ready ? "✓" : "1";
+    li(1).classList.toggle("now", !ready);
+    li(3).classList.toggle("now", ready);
+  }
+  const k1 = byId("hs-k1-body");
+  if (k1) { k1.prepend(packCard); k1.append(packMore); }
+  else { const steps = panel.querySelector("ol.steps"); panel.insertBefore(packCard, steps || panel.firstChild); }
 
   let pack = null;
   async function useKit(dir) {
@@ -48,14 +72,20 @@
     packActs.replaceChildren();
     const inst = pack.installed, av = pack.available;
     if (!inst) {
-      packLine.textContent = av ? `Not installed. Version ${av.version}${av.size ? `, ${Math.ceil(av.size / 1024)} KB` : ""}.`
-        : `Not installed. ${pack.error || "The Host pack is not listed yet."}`;
-      if (av) packActs.append(btn("Get the Host pack", "btn", install));
+      packOk = false;
+      packLine.textContent = av ? `One download${av.size ? `, ${Math.ceil(av.size / 1024)} KB` : ""}: your realm and its tools. No game files.`
+        : (pack.error || "Not listed right now: try again in a minute.");
+      packInfo.textContent = av ? `Not installed. Version ${av.version}.` : "Not installed.";
+      if (av) packActs.append(btn("Get the Host pack", "btn primary", install));
     } else {
-      packLine.textContent = `Installed: version ${inst.version}` + (pack.update && av ? `. Version ${av.version} is out.` : ".") + ` Folder: ${pack.kit_dir}`;
-      if (pack.update) packActs.append(btn(`Update to ${av.version}`, "btn", install));
-      packActs.append(btn("Use the Host pack", "btn", () => useKit(pack.kit_dir)));
+      packOk = !pack.update;
+      packLine.textContent = pack.update && av ? "A new Host pack is out." : "Installed and ready.";
+      packInfo.textContent = `Installed: version ${inst.version}` + (pack.update && av ? `. Version ${av.version} is out.` : ".") + ` Folder: ${pack.kit_dir}`;
+      if (pack.update) packActs.append(btn(`Update to ${av.version}`, "btn primary", install));
+      packActs.append(btn("Use the Host pack", "btn small", () => useKit(pack.kit_dir)));
     }
+    setRow(packRow, packOk, 1);
+    paintKitSteps();
   }
   async function install() {
     note(packStatus, "Downloading and checking the Host pack…");
@@ -72,10 +102,13 @@
     dockActs.replaceChildren();
     let d;
     try { d = await call("docker_info"); } catch (e) { dockLine.textContent = oops(e); return; }
-    dockLine.className = "hint " + (d.state === "ready" ? "ok" : "warn");
-    dockLine.textContent = (d.state === "ready" ? `Docker ${d.version || ""} is ready.` : d.help);
-    if (d.state !== "ready") dockActs.append(linkBtn("Get Docker", d.get_url.includes("engine") ? "dockerengine" : "docker"));
+    dockOk = d.state === "ready";
+    dockLine.className = dockOk ? "ok" : "warn";
+    dockLine.textContent = (dockOk ? `Docker ${d.version || ""} is ready.` : d.help);
+    if (!dockOk) { const g = linkBtn("Get Docker", d.get_url.includes("engine") ? "dockerengine" : "docker"); g.className = "btn primary"; dockActs.append(g); }
     dockActs.append(btn("Check again", "btn small", loadDocker));
+    setRow(dockRow, dockOk, 2);
+    paintKitSteps();
   }
 
   // ---------------------------------------------------------------- Host page: realm controls
@@ -196,9 +229,11 @@
   const lg = mk("label", "inline", "Realm "); lg.append(gameSel);
   const lc = mk("label", "inline", "Your client "); lc.append(clientSel);
   gRow.append(lg, lc);
-  gameCard.append(ghead, mk("p", "lede", "Host a realm for any client you have on this PC. Players need their own client of the same version."),
+  if (byId("hs-k2-body")) { gameCard.className = "hs-game"; gRow.className = "hs-fields"; lg.className = lc.className = "hc-field"; gameCard.append(gRow, gameHint, gameStatus); }
+  else gameCard.append(ghead, mk("p", "lede", "Host a realm for any client you have on this PC. Players need their own client of the same version."),
     gRow, gameHint, gameStatus);
-  panel.insertBefore(gameCard, packCard.nextSibling);
+  if (byId("hs-k2-body")) byId("hs-k2-body").prepend(gameCard);
+  else panel.insertBefore(gameCard, packCard.nextSibling);
   let offers = [];
   function showClients(keep) {
     const o = offers.find((x) => x.id === gameSel.value);

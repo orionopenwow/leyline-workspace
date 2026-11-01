@@ -49,7 +49,10 @@ const FAKE = (o) => {
         kit: S.kit || S.docker_den, docker_den: S.docker_den, other_realm: null, account: S.docker_den ? 'BEA42' : '',
         saves: S.docker_den ? 'kit' : 'lite', dens: o.noDens ? [] : dens,
         packs: o.packs ? [{ id: 'goldshire', title: 'Goldshire', line: 'The inn and the square, ready to build around.' }] : [] };
-      case 'den_play_lite': S.lite = 'running'; return 'Started My Game on 127.0.0.1.';
+      // app.rs SoloPlay: o.auto: the hybrid glue signs in by itself (Forever UI there); else the password to type
+      case 'den_play_lite': S.lite = 'running'; return o.auto
+        ? { message: 'Started My Game on 127.0.0.1.', auto: true, why: '', account: 'DEN', password: '' }
+        : { message: 'Started My Game on 127.0.0.1.', auto: false, why: "Forever UI's login screens aren't in this game folder yet (install Forever UI first).", account: 'DEN', password: 'den' };
       case 'den_open': return args.name;
       case 'den_text': return '{"format":"leyline-den","version":1,"props":[]}';
       case 'den_add': return 'friend';
@@ -111,7 +114,7 @@ test('the entries: Your Den right under Home in the side menu, and first on Home
   assert.equal((await page.textContent('.nav[data-page="den"]')).trim(), 'Your Den');
   const order = await page.$$eval('#home-more > .hm-sec', (s) => s.map((x) => x.id));
   assert.equal(order[0], 'hm-den', 'the banner leads the rows under the hero');
-  assert.equal((await page.textContent('#hm-den-go')).trim(), 'Your Den');
+  assert.equal((await page.textContent('#hm-den-go')).trim(), 'Play solo');
   await page.click('.nav[data-page="den"]');
   await page.waitForSelector('#yd-play');
   assert.match(await page.textContent('#yd-state'), /Ready on this PC: no setup needed/);
@@ -132,6 +135,7 @@ test('Den Lite: one click on Home plays straight into the room with its account'
   assert.deepEqual(await calls(page, 'den_play_lite'), [{ client: 'c335a-1' }]);
   await page.waitForFunction(() => /Your Den is open/.test(document.querySelector('#yd .yd-status').textContent));
   assert.match(await statusText(page), /account DEN, password den/);
+  assert.match(await page.textContent('#yd-login-hint'), /Forever UI/, 'how to skip typing next time');
   await page.waitForFunction(() => /Open on this PC/.test(document.querySelector('#yd-state').textContent));
   assert.deepEqual(await calls(page, 'host_start_quiet'), [], 'no Docker');
   assert.deepEqual(errors, []);
@@ -224,7 +228,7 @@ test('the Docker Den: Invite a friend, Make my account, and Play with its accoun
 test('one click from Your Den: Invite friends and Ask Claude to edit it, beside Play', async () => {
   const { page, ctx, errors } = await open({ lite: 'stopped', page: 'den' });
   await page.waitForSelector('#yd-play');
-  assert.deepEqual(await page.$$eval('#yd .yd-acts button', (b) => b.map((x) => x.textContent)), ['Play', 'Invite friends', 'Ask Claude to edit it']);
+  assert.deepEqual(await page.$$eval('#yd .yd-acts button', (b) => b.map((x) => x.textContent)), ['Play solo', 'Invite friends', 'Ask Claude to edit it']);
   // Den Lite: friends join a Den on Docker, so Invite friends opens those steps here
   await page.click('#yd-friends');
   await page.waitForSelector('#yd .yd-steps');
@@ -356,6 +360,35 @@ test('Shape the ground: no game folder yet says what to do, and starts nothing',
   await page.click('#yd-forge');
   await page.waitForFunction(() => /made from your own game folder/.test(document.querySelector('#yd .yd-status').textContent));
   assert.deepEqual(await calls(page, 'forge_open'), []);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Play solo: one click, the game signs in by itself to character select; Solo leveling offered where Docker runs', async () => {
+  const { page, ctx, errors } = await open({ lite: 'stopped', auto: true, dock: 'ready' });
+  await page.click('#hm-den-go');
+  await page.waitForFunction(() => /Your Den is open/.test(document.querySelector('#yd .yd-status').textContent));
+  assert.match(await statusText(page), /signs you in by itself and opens at character select/);
+  assert.doesNotMatch(await statusText(page), /password/, 'nothing to type');
+  assert.equal(await page.$('#yd-login-hint'), null);
+  assert.equal((await calls(page, 'den_play_lite')).length, 1, 'one click, one start');
+  // the bigger option: Solo leveling, worded as such, on the Host page with its ruleset picked
+  await page.waitForSelector('#yd-solo-go');
+  assert.match(await page.textContent('#yd-solo'), /level from 1.*helper bots.*Docker.*5 to 20 minutes/i);
+  const picked = page.evaluate(() => new Promise((r) => document.addEventListener('leyline:host-ruleset', (e) => r(e.detail), { once: true })));
+  await page.click('#yd-solo-go');
+  assert.equal((await picked).profile, 'solo');
+  await noBrands(page);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Play solo: no Docker on this PC, no Solo leveling offer (nothing that cannot work)', async () => {
+  const { page, ctx, errors } = await open({ lite: 'stopped', dock: 'missing', page: 'den' });
+  await page.waitForSelector('#yd-play');
+  await page.waitForFunction(() => window.__calls.some((c) => c[0] === 'docker_info'));
+  await page.waitForTimeout(100);
+  assert.equal(await page.$('#yd-solo'), null);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

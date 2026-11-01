@@ -192,19 +192,22 @@ fn set_wine(core: State<Core>, wine: Wine) -> Result<(), String> {
 /// Point the client at `realm` (its realm file: realmlist.wtf or Config.wtf, by build), remember it,
 /// optionally start it.
 fn point_and_play(core: &Core, client: &str, realm: &str, start: bool) -> Result<String, String> {
-    point_and_play_with(core, client, realm, start, None).map(|(m, _)| m)
+    point_and_play_with(core, client, realm, start, None, false).map(|(m, _)| m)
 }
 
 /// `point_and_play`, plus the hybrid client (docs/HYBRID-CLIENT.md): with Settings' hybrid_login on and a 3.3.5a
 /// client, `session` is handed to the login screen through Leyline's patch archive; without one, a session left
 /// from an earlier start is taken out first, so a plain start never signs in by itself. Returns whether the
-/// session went in (Err text in the second value when it didn't, with the switch on).
+/// session went in (Err text in the second value when it didn't, with the switch on). `local`: the session is the
+/// local Den's fixed test login (host/lite.rs), handed over whatever the switch says (it is no secret and never
+/// leaves this PC).
 fn point_and_play_with(
     core: &Core,
     client: &str,
     realm: &str,
     start: bool,
     session: Option<crate::hybrid::Session>,
+    local: bool,
 ) -> Result<(String, Result<(), String>), String> {
     let realm = realm.trim().to_string();
     if !clients::valid_realm_address(&realm) {
@@ -233,7 +236,7 @@ fn point_and_play_with(
         return Ok((format!("{} now points at {realm}.", profile.name), hybrid));
     }
     crate::gfx::prepare_launch(&profile)?;
-    let hybrid_on = core.snapshot().hybrid_login && profile.build == clients::Build::V335a;
+    let hybrid_on = (core.snapshot().hybrid_login || local) && profile.build == clients::Build::V335a;
     match &session {
         Some(s) if hybrid_on => hybrid = crate::hybrid::write(&profile.path, Some(s)).map(|_| ()),
         Some(_) => {}
@@ -335,7 +338,7 @@ async fn play_realm_herokey(core: State<'_, Core>, client: String, slug: String)
     let addr = blocking(move || realms::desktop_address(&r2, |relay| format!("https://{relay}"))).await?;
     // The hybrid client (Settings' hybrid_login, docs/HYBRID-CLIENT.md): the login screen signs in by itself.
     let s = crate::hybrid::Session { user: login.user.clone(), pass: login.pass.clone(), realm: None, enter: false };
-    let (_, hybrid) = point_and_play_with(&core, &client, &addr, true, Some(s))?;
+    let (_, hybrid) = point_and_play_with(&core, &client, &addr, true, Some(s), false)?;
     match hybrid {
         Ok(()) => {
             login.auto = true;
@@ -412,18 +415,40 @@ async fn join_invite(core: State<'_, Core>, client: String, link: String) -> Res
     Ok(Joined { address, name })
 }
 
-/// Your Den on Den Lite (host/lite.rs): start it when it isn't running, wait for its login port (up to 15 s), put its
-/// account in the client's Config.wtf, point the client at it and start the game.
+/// What Play solo did: the line to show, and whether the game signs in by itself (`auto`) or the login screen
+/// wants the local password typed (`why` says why not, in plain words).
+#[derive(Serialize, Debug, PartialEq)]
+struct SoloPlay {
+    message: String,
+    auto: bool,
+    why: String,
+    account: String,
+    password: String,
+}
+
+/// The local Den's sign-in for one start (crate::hybrid): Den Lite's fixed local account, its realm picked by name,
+/// left at character select (the player picks or makes the character).
+fn den_session() -> crate::hybrid::Session {
+    use crate::host::lite;
+    crate::hybrid::Session { user: lite::ACCOUNT.into(), pass: lite::PASSWORD.into(), realm: Some(lite::REALM.into()), enter: false }
+}
+
+/// Play solo: Your Den on Den Lite (host/lite.rs). Starts it when it isn't running (with this game folder, for
+/// `.den mods`), waits for its login port (up to 15 s), writes its account and realm into the client's Config.wtf
+/// (never the password), points the client at it and starts the game. With Forever UI's login screens in the game
+/// folder, the hybrid glue signs in by itself and stops at character select; without them, the login screen has
+/// the account filled in and the player types the local password.
 #[tauri::command]
-async fn den_play_lite(core: State<'_, Core>, client: String) -> Result<String, String> {
+async fn den_play_lite(core: State<'_, Core>, client: String) -> Result<SoloPlay, String> {
     use crate::host::lite::{self, DenLite};
     let profile = core.client(&client)?;
     if profile.build != crate::clients::Build::V335a {
         return Err("Your Den plays with a 3.3.5a game folder.".into());
     }
-    blocking(|| {
+    let game = profile.path.clone();
+    blocking(move || {
         let l = lite::Binary::find(&crate::settings::app_dir());
-        l.start()?;
+        l.start_for(Some(&game))?;
         for _ in 0..50 {
             if l.status().running {
                 return Ok(());
@@ -433,8 +458,18 @@ async fn den_play_lite(core: State<'_, Core>, client: String) -> Result<String, 
         Err("Den Lite started but isn't answering yet. Try again in a moment.".to_string())
     })
     .await?;
-    let _ = crate::herokey::set_account_name(&profile.path, lite::ACCOUNT);
-    point_and_play(&core, &client, lite::ADDRESS, true)
+    let _ = crate::herokey::set_login(&profile.path, lite::ACCOUNT, Some(lite::REALM));
+    let (message, hybrid) = point_and_play_with(&core, &client, lite::ADDRESS, true, Some(den_session()), true)?;
+    Ok(solo_result(message, hybrid))
+}
+
+fn solo_result(message: String, hybrid: Result<(), String>) -> SoloPlay {
+    use crate::host::lite;
+    let (auto, why) = match hybrid {
+        Ok(()) => (true, String::new()),
+        Err(e) => (false, e),
+    };
+    SoloPlay { message, auto, why, account: lite::ACCOUNT.into(), password: if auto { String::new() } else { lite::PASSWORD.into() } }
 }
 
 /// Your Den on the Docker Den: its account (the realm's GM name) filled in on the client's login screen, so PLAY
@@ -1300,4 +1335,42 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Leyline");
+}
+
+#[cfg(test)]
+mod solo_tests {
+    use super::*;
+
+    /// Play solo's sign-in: Den Lite's fixed local login goes into the hybrid archive (escaped, for one start) and
+    /// the account and realm into Config.wtf, never the password; without Forever UI's login screens nothing is
+    /// written to Data and the page shows the local password to type.
+    #[test]
+    fn play_solo_signs_in_to_the_local_den_by_itself() {
+        use crate::host::lite;
+        let s = den_session();
+        assert_eq!((s.user.as_str(), s.pass.as_str(), s.realm.as_deref(), s.enter), (lite::ACCOUNT, lite::PASSWORD, Some(lite::REALM), false),
+            "stops at character select");
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join("Data/enUS")).unwrap();
+        std::fs::create_dir_all(d.path().join("WTF")).unwrap();
+        // no Forever UI: no archive, the password is shown to type
+        let r = crate::hybrid::write(d.path(), Some(&s)).map(|_| ());
+        assert!(!d.path().join("Data").join(crate::hybrid::SLOT).exists());
+        let out = solo_result("Started.".into(), r);
+        assert!(!out.auto && out.password == lite::PASSWORD && out.why.contains("Forever UI"), "{out:?}");
+        // Forever UI's glue there: the game signs in by itself
+        let g = d.path().join("Interface/GlueXML");
+        std::fs::create_dir_all(&g).unwrap();
+        std::fs::write(g.join("GlueXML.toc"), "GlueParent.xml\r\nForeverUIGlue.xml\r\n").unwrap();
+        std::fs::write(g.join("ForeverUIGlue.xml"), "<Ui/>").unwrap();
+        let r = crate::hybrid::write(d.path(), Some(&s)).map(|_| ());
+        assert!(crate::hybrid::has_session(d.path()));
+        let out = solo_result("Started.".into(), r);
+        assert!(out.auto && out.password.is_empty() && out.why.is_empty(), "{out:?}");
+        assert!(crate::herokey::set_login(d.path(), lite::ACCOUNT, Some(lite::REALM)).unwrap());
+        let cfg = std::fs::read_to_string(d.path().join("WTF/Config.wtf")).unwrap();
+        assert!(cfg.contains("SET accountName \"DEN\"") && cfg.contains("SET realmName \"Your Den\"") && !cfg.contains("\"den\""), "{cfg}");
+        // the game closed: the session is taken out again
+        assert!(crate::hybrid::scrub(d.path()).unwrap() && !crate::hybrid::has_session(d.path()));
+    }
 }

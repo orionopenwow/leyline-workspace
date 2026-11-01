@@ -28,6 +28,8 @@ pub const ADDRESS: &str = "127.0.0.1";
 pub const ACCOUNT: &str = "DEN";
 /// Den Lite's local password (labs/den-lite `--password`; shown on the Den page beside the account).
 pub const PASSWORD: &str = "den";
+/// The one realm on Den Lite's realm list (labs/den-lite Config::realm_name).
+pub const REALM: &str = "Your Den";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct LiteStatus {
@@ -80,9 +82,14 @@ pub fn candidates(app_dir: &Path, env: Option<&str>, launcher_dir: Option<&Path>
     v
 }
 
-/// The launch line for `exe` on `den_dir`.
-pub fn command_line(den_dir: &Path) -> Vec<String> {
-    vec!["--dens".into(), den_dir.display().to_string(), "--bind".into(), ADDRESS.into(), "--password".into(), PASSWORD.into()]
+/// The launch line for `exe` on `den_dir`; with `client`, the game folder it plays with (`.den mods` lists the
+/// launcher's mods in it).
+pub fn command_line(den_dir: &Path, client: Option<&Path>) -> Vec<String> {
+    let mut v = vec!["--dens".into(), den_dir.display().to_string(), "--bind".into(), ADDRESS.into(), "--password".into(), PASSWORD.into()];
+    if let Some(c) = client {
+        v.extend(["--client".into(), c.display().to_string()]);
+    }
+    v
 }
 
 fn port_answers(port: u16) -> bool {
@@ -106,6 +113,30 @@ impl Binary {
         Binary { exe, root: root(app_dir) }
     }
 
+    /// Start it (nothing happens when it already runs), with the game folder it plays with.
+    pub fn start_for(&self, client: Option<&Path>) -> Result<(), String> {
+        let exe = self.exe.as_ref().ok_or("Den Lite isn't on this PC yet.")?;
+        if Self::child_alive() || port_answers(LOGIN_PORT) {
+            return Ok(());
+        }
+        let dir = self.den_dir();
+        std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't make the Den folder: {e}"))?;
+        let mut cmd = Command::new(exe);
+        cmd.args(command_line(&dir, client)).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        #[cfg(windows)]
+        {
+            // no console window next to the game
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+        let child = cmd.spawn().map_err(|e| format!("Den Lite didn't start: {e}"))?;
+        if let Ok(mut g) = CHILD.lock() {
+            *g = Some(child);
+        }
+        Ok(())
+    }
+
     fn child_alive() -> bool {
         let Ok(mut g) = CHILD.lock() else { return false };
         match g.as_mut().map(|c| c.try_wait()) {
@@ -125,23 +156,7 @@ impl DenLite for Binary {
     }
 
     fn start(&self) -> Result<(), String> {
-        let exe = self.exe.as_ref().ok_or("Den Lite isn't on this PC yet.")?;
-        if Self::child_alive() || port_answers(LOGIN_PORT) {
-            return Ok(());
-        }
-        let dir = self.den_dir();
-        std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't make the Den folder: {e}"))?;
-        let child = Command::new(exe)
-            .args(command_line(&dir))
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| format!("Den Lite didn't start: {e}"))?;
-        if let Ok(mut g) = CHILD.lock() {
-            *g = Some(child);
-        }
-        Ok(())
+        self.start_for(None)
     }
 
     fn stop(&self) -> Result<(), String> {
@@ -194,6 +209,7 @@ mod tests {
 
     #[test]
     fn its_command_line() {
-        assert_eq!(command_line(Path::new("/d")), ["--dens", "/d", "--bind", "127.0.0.1", "--password", "den"]);
+        assert_eq!(command_line(Path::new("/d"), None), ["--dens", "/d", "--bind", "127.0.0.1", "--password", "den"]);
+        assert_eq!(command_line(Path::new("/d"), Some(Path::new("/g"))).last().map(String::as_str), Some("/g"));
     }
 }

@@ -47,6 +47,7 @@
   let jobTimer = null;
   let sharing = false;  // the Share with friends steps are open
   let busy = false;
+  let hint = "";        // one line under the status after Play solo (how to skip typing next time)
   let forge = null;     // forge_state
   let forgeBusy = "";   // "get" while Forge downloads
   let forgeGpl = false; // the GPL notice is open
@@ -76,6 +77,13 @@
     try { forge = await call("forge_state"); } catch (_) { forge = null; }
     paint();
     if (forge && forge.running) followForge();
+    // Docker on this PC: Solo leveling is offered as the bigger way to play alone (never waited for)
+    if (!dock) call("docker_info").then((d) => { dock = d; paint(); }).catch(() => { /* no Docker: not offered */ });
+  }
+  // Solo leveling (app.js LOCAL.solo, the Host kit's "solo" ruleset): the Host page with it picked, or played when hosted
+  function soloLeveling() {
+    if (typeof localGo === "function" && typeof LOCAL !== "undefined" && LOCAL.solo) localGo(LOCAL.solo);
+    else if (window.LeylineNav) window.LeylineNav.show("host");
   }
 
   // ---------------------------------------------------------------- Shape the ground: Forge
@@ -175,12 +183,23 @@
     loadSetup();
   }
 
+  // Play solo (app.rs den_play_lite): Den Lite started on this PC, the game pointed at it and started. With Forever
+  // UI's login screens in the game folder the game signs in by itself and stops at character select (r.auto); else
+  // the login screen has the account filled in and wants the local password (a test login that never leaves this
+  // PC). No internet, website or Hero Key needed.
   async function playLite(c) {
     busy = true; paint();
     say(liteUp() ? "Opening your Den…" : "Starting your Den… (a few seconds)");
     try {
-      await call("den_play_lite", { client: c.id });
-      say(`Your Den is open. At the login screen: account ${st.lite.account || "DEN"}, password ${st.lite.password || "den"}. Press Login.`, "ok");
+      const r = await call("den_play_lite", { client: c.id });
+      if (r && typeof r === "object" && r.auto) say("Your Den is open. The game signs you in by itself and opens at character select.", "ok");
+      else {
+        const acct = (r && r.account) || (st && st.lite && st.lite.account) || "DEN";
+        const pass = (r && r.password) || (st && st.lite && st.lite.password) || "den";
+        say(`Your Den is open. At the login screen: account ${acct}, password ${pass}. Press Login.`, "ok");
+        // TODO(owner): the words; Forever UI's login screens let the game sign in by itself
+        if (r && typeof r === "object" && r.why) hint = "With Forever UI in your game folder, the game signs in by itself next time.";
+      }
     } catch (e) { say(oops(e, "Your Den didn't open. Try again."), "bad"); }
     busy = false;
     load();
@@ -437,7 +456,8 @@
     const chip = mk("span", "yd-chip " + kind, line);
     chip.id = "yd-state";
     head.append(h, chip);
-    const play = btn(busy ? "Opening…" : "Play", "btn primary yd-play", go);
+    // TODO(owner): "Play solo", his words
+    const play = btn(busy ? "Opening…" : "Play solo", "btn primary yd-play", go);
     play.id = "yd-play";
     play.disabled = busy;
     // the three things to do with your Den, one click each (owner 1 Nov: "invite friends, connect Claude to edit it")
@@ -450,8 +470,21 @@
     claude.title = "Your own Claude builds in your Den with you: connect it once on the Agents page. Every change waits for your OK.";
     const acts = mk("div", "yd-row yd-acts");
     acts.append(play, invite, claude);
-    root.append(head, mk("p", "lede", "A white room to build in, on this PC. Place anything, save it to a file, invite friends when you like."),
-      acts, mk("p", "yd-hint yd-play-hint", where() === "lite" ? "Play goes straight into your room." : where() === "docker" ? "Play starts it if it's stopped, then plays." : "Play sets it up once, then plays."), status);
+    root.append(head, mk("p", "lede", "Just you, on this PC: no internet or sign-in needed. A white room to build in, with your companion to help. Invite friends when you like."),
+      acts, mk("p", "yd-hint yd-play-hint", where() === "lite" ? "Play solo starts your own server on this PC and opens the game at character select, with your look and addons." : where() === "docker" ? "Play solo starts it if it's stopped, then plays." : "Play solo sets it up once, then plays."), status);
+    if (hint) { const hl = mk("p", "yd-hint", hint); hl.id = "yd-login-hint"; root.append(hl); }
+    // the bigger way to play alone, only where Docker runs (or Solo leveling is already hosted here)
+    const soloHosted = typeof kit !== "undefined" && kit && kit.realm && kit.realm.profile === "solo";
+    if (soloHosted || (dock && dock.state === "ready")) {
+      const sl = mk("div", "yd-row yd-solo");
+      sl.id = "yd-solo";
+      const b = btn(soloHosted ? "Play Solo leveling" : "Solo leveling", "btn small", soloLeveling);
+      b.id = "yd-solo-go";
+      // TODO(owner): the words
+      sl.append(mk("span", "yd-hint", soloHosted ? "Level from 1 on your own realm on this PC, with helper bots."
+        : "Want to level from 1 instead? Solo leveling is a full realm on this PC with helper bots and dungeons sized for you. It uses Docker; the first start takes 5 to 20 minutes."), b);
+      root.append(sl);
+    }
     const grid = mk("div", "yd-grid");
     // Share with friends (Den Lite) / Invite a friend (the Docker Den)
     if (where() === "docker") {

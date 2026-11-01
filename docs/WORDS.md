@@ -28,9 +28,43 @@ One name for each thing, everywhere players read: the launcher, the website, in-
 | **ruleset** | Vanilla+, Den, Classic levelling and the rest: how a realm plays. | preset, profile |
 | **Den** (or **your Den**) | A private room to build in with friends. The button can say "Make my Den". | My Den (in a sentence), sandbox |
 | **Modes** | Game modes: Brawl, golf, duels and the rest. | minigames, playmodes |
-| **Mods** | The list of mods and the mods in it: the launcher's Mods page and the website's Mods page. | the Workshop, the catalog, projects |
+| **Mods** | Everything that changes the game itself (see Mods and Addons below). The launcher's page is **Mods & Addons**; the website has **Mods** and **Addons**. | the Workshop, the catalog, projects, game mods |
+| **Addons** | In-game interface helpers that go in the game's AddOns folder (see below). | add-ons, UI mods, plugins |
+| **the Leyline addons** | Our own addons: game modes, golf, Edit mode, your Den. They are Addons. | |
+| **Themes** | The launcher's own looks. | skins (for the launcher) |
 | **Workshop** | Only the things players build and share in game (builds, courses, modes): Esc > Mods & Workshop > Workshop, and `.workshop`. | (don't use it for the mods list) |
-| **addons** | Only the interface add-ons that come with Leyline. | |
+
+## Mods and Addons
+
+Owner, 31 Oct: "Mods and Addons (distinct, addons are in game UI helpers and mods mod anything from engine physics to new models and game modes and server modes)". One rule, everywhere:
+
+- **Addons** are in-game interface helpers: unit frames, bags, maps, meters, quest helpers, chat, nameplates. They go in the game's AddOns folder. The addon marketplace and the Leyline addons are Addons.
+- **Mods** are everything that changes the game itself: models and textures, engine and graphics, game modes and minigames (golf, skating, Survivors), realm and server modes and realm scripts, sounds, maps, tools.
+- **Themes** are the launcher's own looks. They have their own tab next to Mods and Addons, and Settings > Themes picks one.
+
+How a list entry is sorted (`launcher/ui/shelf.js` and `stream/hub.py shelf_of`, the same rule):
+
+1. A theme is a Theme.
+2. The `addons` category, and everything from the addon marketplace, is an Addon.
+3. A game mode, a total conversion, a map or a build stays a Mod, even when all it adds is an addon folder.
+4. Anything else that is only an addon folder (type `addon`, or a packaged mod of kind `ui`) is an Addon.
+5. Everything else is a Mod.
+
+The Mods tab's categories come from the mods list's own categories:
+
+| Mods category | Mods-list categories |
+|---|---|
+| Game modes | sandbox, conversions (and the Leyline Modes) |
+| Models & textures | models |
+| Realm & server modes | realm-scripts, presets, encounters |
+| Engine & graphics | graphics (and the external graphics packs) |
+| Sounds | audio |
+| Maps & builds | maps, builds |
+| Tools | tools |
+
+The Addons tab keeps the marketplace's kinds (Unit frames, Bags, Meters...).
+
+Say "List your mod" on Mods and "List your addon" on Addons: the form then asks which it is (Addon, or Mod and its category). Search says "Search mods" or "Search addons". Each page starts with one line saying what is on it.
 | **invite link** | The link a host sends friends. | join code, share URL |
 | **your join link** | The host's own link to make their GM account. Keep it to yourself. | |
 | **GM account** | The host's own account with game master rights. Say once: "your GM account (it can run the realm from inside the game)". | admin, gm level |
@@ -46,6 +80,8 @@ One name for each thing, everywhere players read: the launcher, the website, in-
 | Players reach your realm through the Leyline relay, by its realm id: nobody sees your address and you open no ports. | Players reach your realm through the Leyline network. You open no ports, and nobody sees your address. |
 | Any core, here or elsewhere: Link my server runs only the relay agent next to it and never changes your server. | Any server software, here or elsewhere. Link my server runs a small helper next to it. It never changes your server. |
 | Can't reach the Workshop. Try again. | Can't load the mods. Try again. |
+| Mods › Discover › Game mods | Mods & Addons › Discover › Mods › Game modes |
+| Search mods, addons and themes | Search mods (on Mods), Search addons (on Addons) |
 | Play on community Beacons from the realm list | Play on community realms from the realm list |
 | Public: on the Leyline list | Public: on the realm list |
 | The relay hasn't seen your realm yet. | The Leyline network hasn't seen your realm yet. |

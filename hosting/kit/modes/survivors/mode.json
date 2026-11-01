@@ -1,0 +1,24 @@
+{
+ "format": "leyline-mode",
+ "schema": 1,
+ "id": "survivors",
+ "name": "Survivors",
+ "line": "Hold out against the waves, alone. Coming soon.",
+ "picture": "picture.svg",
+ "version": "1.0",
+ "author": "Leyline",
+ "based_on": null,
+ "status": "coming",
+ "profile": null,
+ "scripts": [],
+ "env": {},
+ "mods": [],
+ "den": null,
+ "tags": [],
+ "settings": [],
+ "credit": {
+  "by": "Aethus (original game), open rebuild by OutThisLife",
+  "license": "MIT or Apache-2.0",
+  "source": "https://github.com/OutThisLife/azeroth-survivors-re"
+ }
+}

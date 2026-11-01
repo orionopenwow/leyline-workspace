@@ -1,7 +1,7 @@
 # Leyline launcher themes
 
 A theme changes how the Leyline launcher looks: colours, corners, fonts and art. It never changes what the
-launcher does. Players pick one under **Settings › Themes**, and find more under **Mods › Discover › Themes**.
+launcher does. Players pick one under **Settings › Themes**, and find more under **Mods & Addons › Discover › Themes**.
 
 ## Built-in themes
 
@@ -165,7 +165,7 @@ you made or may share, and say their licence.
 
 | Path | What |
 |---|---|
-| `launcher/ui/themes.js` | applies the theme before the window paints; Settings › Themes and Mods › Discover › Themes |
+| `launcher/ui/themes.js` | applies the theme before the window paints; Settings › Themes and Mods & Addons › Discover › Themes |
 | `launcher/ui/style.css` | the Dark and Light looks and the `--t-*` tokens |
 | `launcher/ui/themes/themes.css` | the theme cards, tabs and the preview bar |
 | `launcher/src-tauri/src/themes.rs` | the pack format, the checker, install, list, apply, remove (`cargo test --no-default-features themes`) |

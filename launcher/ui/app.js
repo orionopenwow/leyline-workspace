@@ -583,7 +583,8 @@ async function clientImport(input) {
   cimp.checked = c;
   cimp.folder = c.default_folder;
   if (!c.unpacks) { $("cimp-what").textContent = `Adding ${c.name || "your folder"}…`; cimpStart(); return; }
-  $("cimp-what").textContent = c.kind === "link" ? `Download from ${c.name} and unpack it.` : `Unpack ${c.name}.`;
+  $("cimp-what").textContent = c.kind === "link" ? `Download from ${c.name} and unpack it.`
+    : c.kind === "zip" ? `Unpack ${c.name}.` : `Download ${c.name}.`;
   cimpDest(cimp.folder);
   cimpView("ask");
   $("cimp-go").focus();
@@ -696,12 +697,195 @@ for (const id of ["pb-client", "pb-menu", "cimp", "page-findfiles"]) {
 }
 // A link pasted while the client list, this panel or the guide is open (not into a text box).
 document.addEventListener("paste", (e) => {
+  if (e.defaultPrevented) return;   // the realm box took it (barImport)
   if (e.target && e.target.closest && e.target.closest("input, textarea, [contenteditable]")) return;
   if (!(menuOpen || !$("cimp").hidden || currentPage === "findfiles")) return;
   const t = ((e.clipboardData && e.clipboardData.getData("text")) || "").trim();
   if (t) { e.preventDefault(); clientImport(t); }
 });
 window.LeylineClientImport = { drop: clientImport, open: cimpOpen };
+
+// ------------------------------------------------------------------ the realm box takes drops too (owner 31 Oct)
+// "magnet links and zip and cloudflare stuff can be dropped in this area and autostart with folder selection and turn
+// into a loading bar with speed stats". Drop (or paste, with the box focused) a folder, a zip, an https link, or, with
+// Settings › Testing on, a magnet link or torrent file: Where should the game go? (a folder picker at the last choice),
+// then the box is the progress bar (clientimport.rs Progress.line), Cancel; when done the client is picked for every
+// realm of its version (leyline.clientFor) and the bar picks a realm of that version: Ready — press PLAY. Never
+// launches the game by itself.
+const bimp = { input: null, timer: null, running: false, name: "", hideAt: null };
+const BAR_FOLDER_KEY = "leyline.gameFolder";
+function bimpView(view, head, line) {
+  const box = $("pbd");
+  clearTimeout(bimp.hideAt);
+  if (view === "idle") { box.hidden = true; box.dataset.state = "idle"; return; }
+  box.hidden = false;
+  box.dataset.state = view;
+  $("pbd-head").textContent = head || "";
+  $("pbd-head").title = head || "";
+  $("pbd-line").textContent = line || "";
+  $("pbd-cancel").hidden = !(view === "run" || view === "picking");
+  $("pbd-retry").hidden = view !== "error";
+  $("pbd-x").hidden = !(view === "error" || view === "done");
+  box.classList.toggle("unknown", view === "picking" || view === "run");
+  if (view !== "run") $("pbd-fill").style.width = view === "done" ? "100%" : "0";
+  if (view !== "over" && view !== "run") $("pbd-say").textContent = [head, line].filter(Boolean).join(". ");
+}
+const bimpIdle = () => { if (!bimp.running) bimpView("idle"); };
+function bimpError(e) {
+  bimp.running = false;
+  bimpView("error", oops(e, "That didn't work. Try again."), "");
+}
+const BIMP_WORD = { downloading: "Downloading", unpacking: "Unpacking", checking: "Checking your game folder…" };
+function bimpProgress(p) {
+  const pct = p.total > 0 ? Math.min(100, Math.floor((p.done * 100) / p.total)) : null;
+  const line = p.line || (p.phase === "checking" ? BIMP_WORD.checking : (BIMP_WORD[p.phase] || "Working") + "…");
+  bimpView("run", line, [bimp.name, pct === null ? "" : pct + "%"].filter(Boolean).join(" · "));
+  $("pbd").classList.toggle("unknown", pct === null);
+  $("pbd-fill").style.width = (pct === null ? 0 : pct) + "%";
+}
+async function barImport(input) {
+  input = String(input || "").trim();
+  if (!input) return;
+  if (bimp.running || cimp.running) { say("play-status", "Leyline is already adding a game client.", "warn"); return; }
+  closeRealmMenu(false);
+  closeClientMenu(false);
+  bimp.input = input;
+  let c;
+  try { c = await invoke("client_import_check", { input }); } catch (e) { bimpError(e); return; }
+  bimp.name = c.name || "";
+  let folder = null;
+  if (c.unpacks) {
+    bimpView("picking", "Where should the game go?", "Pick a folder in the window that opened");
+    let last = "";
+    try { last = localStorage.getItem(BAR_FOLDER_KEY) || ""; } catch (_) { /* the default then */ }
+    try { folder = await invoke("client_import_pick_dest", { start: last || null }); } catch (e) { bimpError(e); return; }
+    if (!folder) { bimpView("idle"); return; }   // the picker was closed: nothing starts
+    try { localStorage.setItem(BAR_FOLDER_KEY, folder); } catch (_) { /* asked again next time */ }
+  }
+  bimp.running = true;
+  cimp.running = true;   // the client list's panel waits too: one import at a time
+  bimpProgress({ phase: c.unpacks ? "downloading" : "checking", done: 0, total: 0 });
+  try { await invoke("client_import_start", { input, folder }); }
+  catch (e) { cimp.running = false; bimpError(e); return; }
+  bimpPoll();
+}
+async function bimpPoll() {
+  clearTimeout(bimp.timer);
+  let p;
+  try { p = await invoke("client_import_state"); } catch (e) { cimp.running = false; bimpError(e); return; }
+  if (p.phase === "downloading" || p.phase === "unpacking" || p.phase === "checking") {
+    bimpProgress(p);
+    bimp.timer = setTimeout(bimpPoll, 400);
+    return;
+  }
+  bimp.running = false;
+  cimp.running = false;
+  if (p.phase === "done") {
+    await refresh();
+    const where = autoConnect(p.client_id);
+    if (where !== null) bimpView("done", "Ready — press PLAY", [p.client_name, where].filter(Boolean).join(" · "));
+    else bimpView("done", `Added ${p.client_name || "your game"}`, "No realm plays this version yet: find one under Realms");
+    bimp.hideAt = setTimeout(bimpIdle, 15000);
+  } else if (p.phase === "cancelled") bimpView("error", p.message || "Stopped. Nothing was added.", "");
+  else bimpError(p.message);
+}
+// The new client for every realm of its version, and a realm of that version in the bar: the official realm when it
+// fits (Wrath Unleashed), else the first realm of the list, My Den or Solo leveling of that version. Returns the
+// realm's name, or null when none fits.
+function autoConnect(id) {
+  const c = state && state.settings.clients.find((x) => x.id === id);
+  if (!c) return null;
+  const off = (realmsCache || []).find((x) => x.official);
+  const offBuild = (off && off.build) || "3.3.5a";
+  let pick = null;
+  if (offBuild === c.build) pick = { official: true };
+  else {
+    const r = (realmsCache || []).find((x) => !x.official && x.address && x.build === c.build && x.state === "live" && !hiddenBuild(x.build))
+      || (realmsCache || []).find((x) => !x.official && x.address && x.build === c.build && !hiddenBuild(x.build));
+    const L = Object.values(LOCAL).find((x) => x.build === c.build && localAddress(x));
+    if (r) pick = { official: false, address: r.address };
+    else if (L) pick = { official: false, address: localAddress(L) };
+  }
+  const v = clientChoices();   // as it was: pickRealm would note the new client for the realm it leaves
+  if (pick) pickRealm(pick);
+  // remembered for every realm of that version
+  v.realm = v.realm && typeof v.realm === "object" ? v.realm : {};
+  v.build = v.build && typeof v.build === "object" ? v.build : {};
+  if (offBuild === c.build) v.realm.official = c.id;
+  for (const r of realmsCache || []) if (!r.official && r.address && r.build === c.build) v.realm[r.address] = c.id;
+  for (const L of Object.values(LOCAL)) if (L.build === c.build) v.realm[L.profile] = c.id;
+  v.build[c.build] = c.id;
+  try { localStorage.setItem(CHOICE_KEY, JSON.stringify(v)); } catch (_) { /* fine: picked now anyway */ }
+  $("play-client").value = c.id;
+  realmChanged();
+  saveSelection();
+  const need = neededBuild();
+  return pick && mode !== "browser" && (!need || need === c.build) ? realmLabel() : null;
+}
+$("pbd-cancel").addEventListener("click", async () => {
+  if (!bimp.running) { bimpView("idle"); return; }
+  $("pbd-head").textContent = "Stopping…";
+  try { await invoke("client_import_cancel"); } catch (_) { /* it ends by itself */ }
+});
+$("pbd-retry").addEventListener("click", () => { const i = bimp.input; bimpView("idle"); barImport(i); });
+$("pbd-x").addEventListener("click", () => bimpView("idle"));
+$("pbd").addEventListener("click", (e) => { if ($("pbd").dataset.state === "done" && !e.target.closest("button")) bimpView("idle"); });
+$("play-form").addEventListener("submit", () => { if ($("pbd").dataset.state === "done") bimpView("idle"); }, true);
+// Over the realm box: "Drop to add your game"
+function barDragOn(on) {
+  if (bimp.running || $("pbd").dataset.state === "picking") return;
+  if (on) bimpView("over", "Drop to add your game", "A game folder, a zip or a link");
+  else if ($("pbd").dataset.state === "over") bimpView("idle");
+}
+function barDropAt(x, y) {
+  const r = $("pb-realm-btn").getBoundingClientRect();
+  return x >= r.left && x <= r.right && y >= r.top - 24 && y <= r.bottom;   // the box and its REALM label
+}
+{
+  const mid = $("pb-realm-btn").closest(".pb-mid");
+  mid.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    barDragOn(true);
+  });
+  mid.addEventListener("dragleave", (e) => { if (!mid.contains(e.relatedTarget)) barDragOn(false); });
+  mid.addEventListener("drop", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    barDragOn(false);
+    const t = dropText(e.dataTransfer);
+    if (t) barImport(t);
+  });
+}
+// pasted with the realm box focused (capture: before the client list's paste)
+document.addEventListener("paste", (e) => {
+  const a = document.activeElement;
+  if (!a || !a.closest || !a.closest(".pb-mid") || a.closest("input, textarea")) return;
+  const t = ((e.clipboardData && e.clipboardData.getData("text")) || "").trim();
+  if (t) { e.preventDefault(); barImport(t); }
+}, true);
+window.LeylineBarImport = { drop: barImport, dragOn: barDragOn };
+
+// Settings › Testing (clienttorrent.rs): saved on this PC only, off by default
+async function loadTesting() {
+  let t = { client_torrents: false, share: false };
+  try { t = (await invoke("testing_get")) || t; } catch (_) { /* an older core: off */ }
+  $("set-ctorrent").checked = !!t.client_torrents;
+  $("set-cshare").checked = !!t.share;
+  $("set-cshare").disabled = !t.client_torrents;
+}
+async function saveTesting() {
+  try {
+    const t = (await invoke("testing_set", { clientTorrents: $("set-ctorrent").checked, share: $("set-cshare").checked })) || {};
+    $("set-ctorrent").checked = !!t.client_torrents;
+    $("set-cshare").checked = !!t.share;
+    $("set-cshare").disabled = !t.client_torrents;
+    say("testing-status", t.client_torrents ? "On for this PC. Drop a magnet link or torrent file on the realm box." : "Off.", "ok");
+  } catch (e) { sayErr("testing-status", e); loadTesting(); }
+}
+$("set-ctorrent").addEventListener("change", saveTesting);
+$("set-cshare").addEventListener("change", saveTesting);
+loadTesting();
 
 // ------------------------------------------------------------------ the play bar's realm picker: a drop-up list
 // (owner 2026-10-30: the ONLINE / SOLO / BROWSER switch gave way to it.) Your realms first (the official one and the
@@ -2031,9 +2215,12 @@ function setupDrop() {
     const dpr = window.devicePixelRatio || 1;
     const x = pos ? pos.x / dpr : -1, y = pos ? pos.y / dpr : -1;
     const client = clientDropAt(x, y);
+    const realmBox = !client && barDropAt(x, y);
     const bar = $("play-form").getBoundingClientRect();
     const onBar = y >= bar.top && y <= bar.bottom;
     if (t === "enter" || t === "over") {
+      barDragOn(realmBox);
+      if (realmBox) { clientDragOn(false); $("drop").classList.remove("over"); return; }
       if (client) {
         if (!menuOpen && $("cimp").hidden && currentPage !== "findfiles") openClientMenu();
         clientDragOn(true);
@@ -2044,11 +2231,13 @@ function setupDrop() {
         $("drop").classList.add("over");
         if (!here) show("mods", false, "installed");
       }
-    } else if (t === "leave") { $("drop").classList.remove("over"); clientDragOn(false); }
+    } else if (t === "leave") { $("drop").classList.remove("over"); clientDragOn(false); barDragOn(false); }
     else if (t === "drop") {
       $("drop").classList.remove("over");
       clientDragOn(false);
+      barDragOn(false);
       const paths = ev.payload.paths || [];
+      if (realmBox) { if (paths[0]) barImport(paths[0]); return; }
       if (client) { if (paths[0]) clientImport(paths[0]); return; }
       if (onBar) return;
       if (!here) show("mods", false, "installed");

@@ -1,0 +1,65 @@
+{
+ "format": "leyline-mode",
+ "schema": 1,
+ "id": "duel-ladder",
+ "name": "Duel ladder",
+ "line": "Everyone at the top level. Duels count toward a rating, weekly points and a top ten.",
+ "picture": "picture.svg",
+ "version": "1.0",
+ "author": "Leyline",
+ "based_on": null,
+ "status": "live",
+ "profile": "brawl",
+ "scripts": [
+  "ov_duels.lua",
+  "ov_qol.lua"
+ ],
+ "env": {
+  "OV_DUELS": "1",
+  "OV_DUEL_RESET": "1"
+ },
+ "mods": [],
+ "den": null,
+ "tags": [
+  "pvp"
+ ],
+ "settings": [
+  {
+   "key": "min_s",
+   "label": "Shortest duel that counts",
+   "type": "number",
+   "min": 5,
+   "max": 120,
+   "default": 15,
+   "unit": "seconds",
+   "env": "OV_DUELS_MIN_S"
+  },
+  {
+   "key": "per_day",
+   "label": "Rated duels per pair a day",
+   "help": "Stops two friends farming each other.",
+   "type": "number",
+   "min": 1,
+   "max": 20,
+   "default": 3,
+   "env": "OV_DUELS_PAIR_PER_DAY"
+  },
+  {
+   "key": "win_points",
+   "label": "Points for a win",
+   "type": "number",
+   "min": 1,
+   "max": 10,
+   "default": 3,
+   "env": "OV_DUELS_WIN_POINTS"
+  },
+  {
+   "key": "streaks",
+   "label": "Win streak lines",
+   "help": "A short line to the zone at 3, 5, 10 wins in a row.",
+   "type": "toggle",
+   "default": true,
+   "env": "OV_DUELS_STREAKS"
+  }
+ ]
+}

@@ -1,0 +1,50 @@
+{
+ "format": "leyline-mode",
+ "schema": 1,
+ "id": "solo-leveling",
+ "name": "Solo leveling",
+ "line": "Just you, levelling from 1. Helper bots fill your group; dungeons scale to you.",
+ "picture": "picture.svg",
+ "version": "1.0",
+ "author": "Leyline",
+ "based_on": null,
+ "status": "live",
+ "profile": "solo",
+ "scripts": [
+  "ov_companions.lua",
+  "ov_qol.lua"
+ ],
+ "env": {},
+ "mods": [],
+ "den": null,
+ "tags": [
+  "bots"
+ ],
+ "settings": [
+  {
+   "key": "xp",
+   "label": "Levelling speed",
+   "type": "number",
+   "min": 1,
+   "max": 10,
+   "default": 2,
+   "unit": "x",
+   "env": [
+    "AC_RATE_XP_KILL",
+    "AC_RATE_XP_QUEST",
+    "AC_RATE_XP_QUEST_DF",
+    "AC_RATE_XP_EXPLORE"
+   ]
+  },
+  {
+   "key": "helpers",
+   "label": "Helper bots in your party",
+   "help": "Type .recruit party in game to fill your group.",
+   "type": "number",
+   "min": 1,
+   "max": 4,
+   "default": 4,
+   "env": "OV_COMPANIONS_PER_PLAYER"
+  }
+ ]
+}

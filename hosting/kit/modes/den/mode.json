@@ -1,0 +1,57 @@
+{
+ "format": "leyline-mode",
+ "schema": 1,
+ "id": "den",
+ "name": "My Den",
+ "line": "A private room to build in with friends: invite only, no bots.",
+ "picture": "picture.svg",
+ "version": "1.0",
+ "author": "Leyline",
+ "based_on": null,
+ "status": "live",
+ "profile": "den",
+ "scripts": [
+  "ov_den.lua",
+  "ov_build.lua"
+ ],
+ "env": {},
+ "mods": [],
+ "den": null,
+ "tags": [
+  "custom"
+ ],
+ "settings": [
+  {
+   "key": "look",
+   "label": "The room's look",
+   "type": "choice",
+   "options": [
+    {
+     "value": "white",
+     "label": "White"
+    },
+    {
+     "value": "stone",
+     "label": "Stone"
+    },
+    {
+     "value": "wood",
+     "label": "Wood"
+    }
+   ],
+   "default": "white",
+   "env": "OV_DEN_THEME"
+  },
+  {
+   "key": "budget",
+   "label": "Building budget",
+   "help": "How much each builder may place.",
+   "type": "number",
+   "min": 100,
+   "max": 5000,
+   "default": 1500,
+   "unit": "points",
+   "env": "OV_BUILD_POINTS"
+  }
+ ]
+}

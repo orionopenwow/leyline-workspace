@@ -521,6 +521,12 @@
         "one more install" (the mod, your client's build and a random one-time number; no account, nothing about you or your PC).
         It helps good mods rise in Hot and Most installed.</label>
       <p class="status" id="count-status" role="status"></p>
+      <h3>Testing</h3>
+      <p class="lede">For trying things out on this PC. Both stay off unless you turn them on.</p>
+      <label class="check"><input type="checkbox" id="set-ctorrent"> Allow torrent downloads of game clients (testing only): a magnet link or torrent
+        file you drop on the realm box downloads into the folder you pick</label>
+      <label class="check sub"><input type="checkbox" id="set-cshare"> Share while downloading (upload capped; it stops when the download is done)</label>
+      <p class="status" id="testing-status" role="status"></p>
       <h3>Your data</h3>
       <p class="lede"><span id="ver"></span>. Settings and caches live in <code id="data-dir"></code>.</p>
     </div>
@@ -605,6 +611,15 @@
         <svg class="pb-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>
       </button>
       <ul class="pb-menu pb-rmenu" id="pb-rmenu" role="listbox" aria-label="Realms" hidden></ul>
+      <!-- the realm box as a drop target (app.js barImport): drag-over, where the game goes, the progress bar, Ready -->
+      <div class="pbd" id="pbd" data-state="idle" hidden>
+        <span class="pbd-fill" id="pbd-fill" aria-hidden="true"></span>
+        <span class="pbd-text"><span class="pbd-head" id="pbd-head"></span><span class="pbd-line" id="pbd-line"></span></span>
+        <span class="sr" id="pbd-say" role="status"></span>
+        <button type="button" class="pbd-btn" id="pbd-retry" hidden>Try again</button>
+        <button type="button" class="pbd-btn" id="pbd-cancel" hidden>Cancel</button>
+        <button type="button" class="pbd-x" id="pbd-x" aria-label="Close" hidden>×</button>
+      </div>
     </div>
   </div>
   <div class="pb-right">

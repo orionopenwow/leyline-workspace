@@ -506,6 +506,8 @@
 1193b ship Save to GitHub: the Windows build test fix
 1193c leyline Leyline repo: the launcher release again (GitHub builds it)
 1191a vr-data Vanilla Remastered data: upload the 1.12 archives, rebuild the server's map files, the 1-20 browser files, compact settings (long; resumable)
+1197a ship Save to GitHub: drop links, zips and (testing switch) torrents on the realm box
+1197b leyline Leyline repo: the launcher release with drop-to-add
 1192a client-build Browser game: build the new faster-loading game on this PC (long; installs its build tools once)
 1190b build-realm-on Builders' Realm on: backup, its databases and servers, self-check, on Leyline (rollback on failure; main realm untouched)
 1190c signin Site: hops to the Builders' Realm

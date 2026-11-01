@@ -924,6 +924,9 @@ pub fn run() {
             crate::clientimport::commands::client_import_cancel,
             crate::clientimport::commands::client_import_pick_zip,
             crate::clientimport::commands::client_import_pick_folder,
+            crate::clientimport::commands::client_import_pick_dest,
+            crate::clientimport::commands::testing_get,
+            crate::clientimport::commands::testing_set,
             set_update_channel,
             crate::themes::commands::themes_list, crate::themes::commands::theme_apply, crate::themes::commands::theme_css, crate::themes::commands::theme_install, crate::themes::commands::theme_install_local, crate::themes::commands::theme_remove, crate::themes::commands::pick_theme, // themes.rs
             // Host pack, Docker, realm stop/logs/invite, P2P and torrent flags (src/p2p/cmds.rs)

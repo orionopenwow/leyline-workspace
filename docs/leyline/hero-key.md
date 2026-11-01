@@ -7,7 +7,12 @@ The website's sign-in, Hero Keys included, is run by the Leyline Launcher realm 
 ## What you can do with it today
 
 - **Sign in.** Use your Hero Key on the sign-in page. The site then shows your game account for Wrath, and makes it on the realm if needed. There are no separate Wrath accounts.
-- **See your key.** Signed in, the account page links to **Your Hero Key** at `/account/key`.
+- **Get one.** New here? **Get your Hero Key** at `/wrath/key` (or in the launcher: the profile chip, then Get your Hero Key)
+  makes your free account with a name made for you, and shows your key once: hidden until you press Show, with
+  Download as a text file and Copy. Change the name later; set a password if you want one (it signs you in to the launcher).
+- **See your key.** Signed in, **Your Hero Key** at `/wrath/key` (in the launcher: Manage account) says when it was made
+  and last used. A key is shown only when it is new: lost it? **Make a new key** (the old one stops working at once).
+- **Sign in with it in the launcher.** Paste it in the launcher's sign-in: no browser needed.
 - **Save it in your browser.** "Save in this browser" on the realm site stores the key with your browser's password manager. The next time you open `/wrath` signed out, the page reads the saved key and signs you in by itself.
 
 How the automatic sign-in works, from `stream/wrath_portal.py`:
@@ -45,8 +50,6 @@ These are in the Leyline Launcher repo, not here, so this page can't check them:
 - The exact format of a key after `ovk1.`, and how it is checked (`launcher/herokey_v2.py` in Leyline Launcher).
 - Whether the v2 challenge-and-response sign-in is live on the website, or only planned.
 - What `launcher/passport.py` in Leyline Launcher does, and whether a Hero Key will carry a player's identity across realms (a "passport").
-- How you get a Hero Key, and how to replace a lost one.
-- Whether the planned [Leyline Launcher](launcher.md) will sign in with a Hero Key.
 
 ## Keep it safe
 

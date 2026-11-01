@@ -5,7 +5,8 @@
 //! The desktop app (`app` feature) wraps these modules in Tauri commands; see `app.rs`.
 //!
 //! Leyline never offers game files: a client is the player's own folder, zip or link to their own backup
-//! (`clientimport`), and never comes peer-to-peer. It sends no telemetry: the one count
+//! (`clientimport`), and never comes peer-to-peer (except with Settings › Testing's switch, off by default:
+//! `clienttorrent`). It sends no telemetry: the one count
 //! it sends is an anonymous "this mod was installed" (a mod id, a build and a fresh random id per install, never
 //! an account or machine id; Settings turns it off: `rankings`). Its network
 //! calls: the Workshop catalog and mod zips (`catalog`, `mods`), the Leyline addons listing and zip on the public release (`addons`), the hub's rankings (`rankings`), the relay's realm list, realm lookup and
@@ -16,6 +17,7 @@ pub mod agents; // the Agents page and `Leyline mcp`: the player's own AI assist
 pub mod addons; // the Leyline addons: our own in-game addons for a 3.3.5a client (ui/addons.js)
 pub mod catalog;
 pub mod clientimport; // drop a game folder, a zip or a link to your own backup on the client list (clientimport.rs)
+pub mod clienttorrent; // magnets and .torrents for game clients: the owner's testing switch, off by default (clienttorrent.rs)
 pub mod clients;
 pub mod deeplink; // leyline://install/<id> (hub rankings agent)
 pub mod forum; // the Forum page: reading the website's forum (stream/forum.py)

@@ -75,16 +75,12 @@
 /* 23:23 "remove the excess bottom border, and make this corner follow the nearest bevel": no strip under the
    buttons; the tab's lower-left corner is cut at the buttons' own 45-degree bevel, so it reads as part of them. */
 .titlebar .winbtns, .winbtns {
-  /* 23:24/23:27 "this part should BE the outer edge … a little more seamless, like this" (an in-game window's close
-     button): the buttons sit in the window's corner just inside the outer edge, and a thin run of the same edge
-     wraps their left and bottom, bevelled at the corner, so the edge, the notch and the buttons read as one piece */
-  position: fixed !important; top: 0; right: 0; margin: 0; gap: 2px; padding: 7px 7px 2px 2px;
-  border-style: solid; border-width: 0 0 3px 3px; border-color: transparent;
-  border-image: url("art/window-edge.png") 19 / 0 0 3px 3px stretch;
-  background: #2f3532;
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 7px 100%, 0 calc(100% - 7px));
+  /* 23:29 "way too bulky, all lines should be as thin as the border": no panel; the buttons (their grey rings
+     trimmed to a thin line) sit straight inside the window's edge in the corner, 2px apart */
+  position: fixed !important; top: 7px; right: 7px; margin: 0; gap: 2px; padding: 0;
+  border: 0; border-image: none; background: none; clip-path: none;
 }
-.winbtns button { width: 24px; height: 26px; filter: none; }
+.winbtns button { width: 22px; height: 24px; filter: none; }
 .winbtns button:hover { filter: brightness(1.2); }
 
 /* owner 2026-10-31 21:59: "use the play button asset for a Log In asset": the PLAY button's stone with its word painted
@@ -112,4 +108,4 @@
 .side .nav.nav-discord:hover { color: #fff; background: rgba(88, 101, 242, 0.22); }
 .side .nav.nav-discord:hover .dc-ic { fill: #8891f5; }
 /* the window buttons are fixed on the corner now: keep their room at the end of the title bar */
-.titlebar::after { content: ""; flex: none; width: 72px; }
+.titlebar::after { content: ""; flex: none; width: 66px; }

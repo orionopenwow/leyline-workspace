@@ -204,6 +204,11 @@ note "ports: none published (players come through the relay $RELAY_NAME; the rel
 note "already running: $WORLD_C=$(running "$WORLD_C" && echo 1 || echo 0) $AUTH_C=$(running "$AUTH_C" && echo 1 || echo 0) $AGENT_C=$(running "$AGENT_C" && echo 1 || echo 0)"
 
 if [ "$MODE" = --check ]; then
+  # restarts and memory kills (a world at its memory cap drops players as they enter the world)
+  for c in "$WORLD_C" "$AUTH_C"; do
+    docker inspect -f "$c: restarts={{.RestartCount}} oom_killed={{.State.OOMKilled}} started={{.State.StartedAt}} status={{.State.Status}}" "$c" 2>/dev/null | sed 's/^/  /' || true
+  done
+  docker stats --no-stream --format '  {{.Name}}: {{.MemUsage}} cpu {{.CPUPerc}}' "$WORLD_C" "$AUTH_C" 2>/dev/null || true
   # while it runs: the last lines of its servers' logs (read-only; nothing secret: those lines are dropped)
   for c in "$WORLD_C" "$AUTH_C" "$AGENT_C"; do
     if running "$c"; then

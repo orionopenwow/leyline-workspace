@@ -433,11 +433,12 @@ for _ in $(seq 1 "$TRIES"); do
 done
 [ -n "$ok" ] || { docker logs --tail 30 "$AUTH_C" >&2 2>&1 || true; fail "the login server ($AUTH_C) does not answer a logon challenge (${out:-no answer})"; }
 note "login server: $out"
-ok=""; waited=0
+# by the clock: each probe itself can take up to ~20 s, so counting only the pauses made a 15-minute wait last hours
+ok=""; waited=0; t0=$SECONDS
 while [ "$waited" -le "$WORLD_WAIT" ]; do
   if out=$(probe "$EDGE_NET" world "$WORLD_C" 8085 2>&1); then ok=1; break; fi
   running "$WORLD_C" || break
-  sleep "$PAUSE"; waited=$((waited + (PAUSE > 0 ? PAUSE : 1)))
+  sleep "$PAUSE"; waited=$((SECONDS - t0))
 done
 [ -n "$ok" ] || { docker logs --tail 40 "$WORLD_C" >&2 2>&1 || true; fail "the world server ($WORLD_C) did not greet within ${WORLD_WAIT}s (${out:-no answer})"; }
 note "world server: $out (after about ${waited}s)"

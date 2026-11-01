@@ -95,6 +95,9 @@ def _token() -> str:
 TOKEN = _token()
 
 STEPS = {
+    # Builds the browser client on this PC (client/build-browser-client.sh under Git Bash): tools once, benilla-wotlk
+    # with client/patches/series.txt, the fat-LTO release build, packed into play\ like every build. Then "client" ships it.
+    "client-build": ("client/Build browser client.bat", "Build the browser client on this PC (about an hour; then the client step)", False),
     "client":  ("stream/Update browser client.bat", "New browser game build", False),
     "signin":  ("stream/Update sign-in and warm-up.bat", "Play page and sign-in", False),
     "page":    ("stream/Update game page.bat", "Game page only (keeps the live game build)", False),

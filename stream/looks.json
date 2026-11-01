@@ -32,7 +32,16 @@
      "Anti-aliasing"
     ],
     "uses": [],
-    "previews": [],
+    "previews": [
+     {
+      "src": "/wrath/art/looks/look-max.webp",
+      "w": 490,
+      "h": 276,
+      "alt": "A misty village path between tall trees and timber houses, in soft morning light",
+      "credit": "Screenshot by the Leyline team",
+      "basis": "ours"
+     }
+    ],
     "featured": true,
     "order": 1,
     "note": "Changes the game's own settings file. Back to the original look puts your old settings back."
@@ -71,7 +80,16 @@
      "Ground clutter"
     ],
     "uses": [],
-    "previews": [],
+    "previews": [
+     {
+      "src": "/wrath/art/looks/look-balanced.webp",
+      "w": 326,
+      "h": 183,
+      "alt": "A forest of huge trees glowing pink and purple",
+      "credit": "Screenshot by the Leyline team",
+      "basis": "ours"
+     }
+    ],
     "featured": true,
     "order": 2,
     "note": "Changes the game's own settings file. Back to the original look puts your old settings back."
@@ -109,7 +127,16 @@
      "Textures"
     ],
     "uses": [],
-    "previews": [],
+    "previews": [
+     {
+      "src": "/wrath/art/looks/look-classic.webp",
+      "w": 536,
+      "h": 302,
+      "alt": "A foggy town square at night, lit by lamps, with a bare tree",
+      "credit": "Screenshot by the Leyline team",
+      "basis": "ours"
+     }
+    ],
     "featured": true,
     "order": 3,
     "note": "Changes the game's own settings file. Back to the original look puts your old settings back."
@@ -146,7 +173,40 @@
      "Login screen"
     ],
     "uses": [],
-    "previews": [],
+    "previews": [
+     {
+      "src": "/wrath/art/looks/look-forever-ui-hud.webp",
+      "w": 796,
+      "h": 434,
+      "alt": "The game screen with the Forever UI look: action bars, unit frames, chat and minimap",
+      "credit": "Wrath Unleashed, in game",
+      "basis": "ours"
+     },
+     {
+      "src": "/wrath/art/looks/look-forever-ui-charselect.webp",
+      "w": 796,
+      "h": 434,
+      "alt": "Character select with the Forever UI look",
+      "credit": "Wrath Unleashed, in game",
+      "basis": "ours"
+     },
+     {
+      "src": "/wrath/art/looks/look-forever-ui-character.webp",
+      "w": 796,
+      "h": 434,
+      "alt": "The character window with the Forever UI look",
+      "credit": "Wrath Unleashed, in game",
+      "basis": "ours"
+     },
+     {
+      "src": "/wrath/art/looks/look-forever-ui-professions.webp",
+      "w": 796,
+      "h": 434,
+      "alt": "The professions window with the Forever UI look",
+      "credit": "Wrath Unleashed, in game",
+      "basis": "ours"
+     }
+    ],
     "featured": true,
     "order": 4,
     "note": "Its art comes from the newer client, so we never host it and the launcher does not install it yet: get it from its author's page."

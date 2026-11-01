@@ -277,11 +277,44 @@ check("/wrath/looks: what it changes, its size or that it needs no download, whi
       all('class="lk-ch"><b>Changes:</b>' in c[3] and 'class="lk-meta"' in c[3] and 'class="lk-chips"' in c[3] for c in cards)
       and "Nothing to download" in by["max"][3] and "330 MB" in by["forever-ui"][3] and "<li>Third era</li>" in by["forever-ui"][3])
 check("/wrath/looks: no client numbers anywhere a visitor reads, chips included", not re.search(r"\b(1\.12|2\.4\.3|3\.3\.5)", visible(lp)))
-check("/wrath/looks: styled placeholders, never a game picture (no previews are allowed yet)",
-      "<img" not in lp.split('class="lk-grid"')[1].split("</ul>")[0] and lp.count('class="lk-pv lk-ph ') == len(cards))
-check("/wrath/looks: each placeholder its own drawing (Max, Balanced, Classic, packs, UI looks differ)",
-      all(f'class="lk-art m-{m}"' in by[k][3] for k, m in (("max", "ultra"), ("balanced", "balanced"), ("classic", "classic"),
-                                                           ("ultrahd", "pack"), ("forever-ui", "ui"))) and ".m-classic .m-far" in lp)
+PICS = {"max", "balanced", "classic", "forever-ui"}   # our own pictures (stream/looks.json look.previews)
+check("/wrath/looks: our own pictures on the looks that have one, sized never wider than the picture, with their credit",
+      all(re.search(r'<figure class="lk-pv"><img src="/wrath/art/looks/look-%s(?:-hud)?\.webp" alt="[^"]+" width="(\d+)" height="\d+" style="max-width:\1px"' % k, by[k][3])
+          and "<figcaption>" in by[k][3] for k in PICS)
+      and "<figcaption>Screenshot by the Leyline team</figcaption>" in by["max"][3]
+      and "<figcaption>Wrath Unleashed, in game</figcaption>" in by["forever-ui"][3], [by[k][3][:200] for k in PICS])
+check("/wrath/looks: every other look its own drawing (no picture of anyone else's)",
+      all('<img' not in c[3] and 'class="lk-art m-' in c[3] for c in cards if c[0] not in PICS)
+      and 'class="lk-art m-pack"' in by["ultrahd"][3] and 'class="lk-art m-ui"' in by["dragonflight-ui"][3] and ".m-classic .m-far" in lp)
+LOOKS_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "www-files", "art", "looks")
+os.makedirs(os.path.join(ART, "looks"), exist_ok=True)
+PIC_FILES = sorted({p["src"].rsplit("/", 1)[1] for e in LK.published() for p in e["look"]["previews"]})
+for f in PIC_FILES:
+    shutil.copy(os.path.join(LOOKS_SRC, f), os.path.join(ART, "looks"))
+st, hd, pic = get("/wrath/art/looks/look-max.webp")
+check("/wrath/art/looks/<name>.webp: served from the allow-list, a real webp", st == 200 and hd.get("content-type") == "image/webp"
+      and get("/wrath/art/looks/../wu-theme.css")[0] == 404 and get("/wrath/art/looks/other.png")[0] == 404, st)
+check("the Looks pictures in the repo: each one a webp named in a published look's previews", sorted(os.listdir(LOOKS_SRC)) ==
+      PIC_FILES and len(PIC_FILES) == 7 and all(open(os.path.join(LOOKS_SRC, f), "rb").read(12)[8:] == b"WEBP" for f in os.listdir(LOOKS_SRC)))
+fu = by["forever-ui"][3]
+thumbs = re.findall(r'<li><a href="#(lk-pic-forever-ui-\d)" aria-label="([^"]+) \(larger\)"><img src="/wrath/art/looks/(look-forever-ui-[a-z]+\.webp)"', fu)
+boxes = re.findall(r'<div class="lk-lb" id="(lk-pic-forever-ui-\d)" role="dialog"[^>]*><a class="lk-lb-bg" href="#look-forever-ui" aria-label="Close"></a>'
+                   r'<figure><img src="/wrath/art/looks/([a-z-]+\.webp)" alt="([^"]+)"', lp)
+check("/wrath/looks: Forever UI shows its four in-game pictures as a strip, each opening a larger view (no script: :target)",
+      [t[2] for t in thumbs] == ["look-forever-ui-hud.webp", "look-forever-ui-charselect.webp", "look-forever-ui-character.webp",
+                                 "look-forever-ui-professions.webp"] and [b[0] for b in boxes] == [t[0] for t in thumbs]
+      and boxes[1][2] == "Character select with the Forever UI look" and ".lk-lb:target{" in lp
+      and 'href="#lk-pic-forever-ui-2">Next ›</a>' in lp and 'href="#lk-pic-forever-ui-4">‹ Previous</a>' in lp
+      and lp.index('class="lk-lb"') > lp.index('<p class="fine">')   # the full views outside the card and the box
+      and "<script" not in lp and 'class="lk-thumbs"' not in by["max"][3], (thumbs, boxes))
+FLAG = os.path.join(TMP, "gamedata-off")
+os.environ["WU_GAMEDATA_FLAG"] = FLAG
+open(FLAG, "w").write("off\n")
+st410 = get("/wrath/art/looks/look-max.webp")[0]
+lk_off = get("/wrath/looks")[2]
+os.remove(FLAG)
+check("game data killswitch: the Looks pictures answer 410 and the cards show the drawings instead", st410 == 410
+      and "/wrath/art/looks/" not in lk_off and 'class="lk-art m-ultra"' in lk_off)
 check("/wrath/looks: placeholders of others' looks link to the author's page for pictures",
       "Pictures on the author's page" in by["ultrahd"][3] and "Pictures on the author" not in by["max"][3])
 st, _, lv = get("/wrath/looks?v=1.12")

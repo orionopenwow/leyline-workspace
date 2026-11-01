@@ -291,15 +291,22 @@ check("feature sections: one per part of Leyline, in the recommended order", [f[
       "launcher", "looks", "host", "realms", "modes", "mods", "forge", "agents", "community"] and [f[2] for f in fs] == [
       "Desktop launcher", "Looks", "Host a server", "Realms &amp; hopping", "Minigolf &amp; game modes", "Mods",
       "Forge", "Agents", "Community hub"], [f[1:3] for f in fs])
-lks = re.findall(r'<a class="hb-lk ([a-z-]+)" href="/wrath/looks#look-([a-z0-9-]+)"><span class="lk-art (m-[a-z]+)" aria-hidden="true">.*?</span><b>([^<]+)</b><span>([^<]+)</span></a>', front)
-check("front page: each Looks tile its own drawing (Max, Balanced, Classic, a UI look: different motifs, our own CSS)",
-      [x[2] for x in lks][:4] == ["m-ultra", "m-balanced", "m-classic", "m-ui"] and ".m-ultra .m-sun" in front, [x[2] for x in lks])
+lks = re.findall(r'<a class="hb-lk ([a-z-]+)" href="/wrath/looks#look-([a-z0-9-]+)"><span class="lk-art ([a-z- ]+)"[^>]*>(.*?)</span><b>([^<]+)</b><span>([^<]+)</span></a>', front)
+check("front page: the Looks tiles show our own pictures where a look has one (Max, Balanced, Classic, Forever UI), never wider than the picture",
+      [x[1] for x in lks] == ["max", "balanced", "classic", "forever-ui"] and all(x[2] == "lk-pic" for x in lks)
+      and all(re.search(r'<img src="/wrath/art/looks/look-%s(?:-hud)?\.webp" alt="[^"]+" style="max-width:\d+px"' % x[1], x[3]) for x in lks), lks)
+_shots = HB.hub.game_shots_on
+HB.hub.game_shots_on = lambda: False
+drawn = HB.hub.looks_art()
+HB.hub.game_shots_on = _shots
+check("front page: with the game data killswitch on, the tiles fall back to their own drawings (different motifs, our own CSS)",
+      re.findall(r'class="lk-art (m-[a-z]+)"', drawn)[:4] == ["m-ultra", "m-balanced", "m-classic", "m-ui"] and "<img" not in drawn
+      and ".m-ultra .m-sun" in drawn)
 check("front page: the Looks tiles' words have their colour set explicitly (white on a dark scrim), not the link colour",
       ".hb-draw .hb-lk b{font-size:15.5px;color:#fff!important" in HB.HUB_CSS and ".hb-draw .hb-lk>span:last-child{font-size:12.5px;color:#f1f3f8!important" in HB.HUB_CSS
       and ".hb-lk::after{" in HB.HUB_CSS and "rgba(4,6,12,.82)" in HB.HUB_CSS)
-check("front page: the Looks section shows a few featured looks (drawn, no game picture), each a link to its card on /wrath/looks",
-      2 <= len(lks) <= 4 and [x[1] for x in lks][:3] == ["max", "balanced", "classic"] and 'href="/wrath/looks">See every look</a>' in front
-      and "<img" not in front.split('id="f-looks"')[1].split("</section>")[0], lks)
+check("front page: the Looks section links each tile to its card on /wrath/looks, and See every look",
+      'href="/wrath/looks">See every look</a>' in front and all(x[1] for x in lks))
 check("feature sections: alternating sides (every other one flips)", [bool(f[0]) for f in fs] == [False, True] * 4 + [False])
 check("feature sections: a heading, a lede, points and a first link each", all(f[3] and f[4] and f[5].count("<li>") >= 2
       and 'class="hb-cta sm"' in f[6] for f in fs))
@@ -1672,27 +1679,54 @@ else:
                 pg.close()
         b.close()
     HB.hub.realm_rows = real_rows
-    # the Looks tiles on the front page: near-white words over the scrim, in the light and the dark theme (WCAG AA:
-    # white on the scrim's darkest part, rgba(4,6,12,.82) over any of the drawings, is well past 4.5:1)
-    with sync_playwright() as p:
-        b = p.chromium.launch()
-        for scheme in ("light", "dark"):
-            pg = b.new_page(viewport={"width": 1400, "height": 900}, color_scheme=scheme)
-            pg.goto(f"http://127.0.0.1:{PAGE_PORT}/wrath/leyline-preview")
-            got = pg.evaluate("""() => [...document.querySelectorAll('.hb-lk')].map(t => {
-                const rgb = (el) => getComputedStyle(el).color.match(/\\d+/g).slice(0, 3).map(Number);
-                const lum = (c) => { const f = c.map(v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); });
-                                     return .2126 * f[0] + .7152 * f[1] + .0722 * f[2]; };
-                const bg = getComputedStyle(t, '::after').backgroundImage;
-                // the worst case behind the words: the scrim (alpha .82 of #04060c) over pure white
-                const back = [4 * .82 + 255 * .18, 6 * .82 + 255 * .18, 12 * .82 + 255 * .18];
-                const ratio = (c) => (lum(c) + .05) / (lum(back) + .05);
-                return {b: ratio(rgb(t.querySelector('b'))), s: ratio(rgb(t.querySelector(':scope > span:last-child'))), scrim: bg.includes('0.82')};
-            })""")
-            check(f"front page Looks tiles ({scheme} theme): words at AA contrast or better on the scrim, even over the brightest drawing",
-                  len(got) >= 3 and all(t["b"] >= 4.5 and t["s"] >= 4.5 and t["scrim"] for t in got), got)
-            pg.close()
-        b.close()
+    # the Looks tiles on the front page over the real pictures, in the light and the dark theme: each tile is shot with
+    # its words hidden, and the words' colour must reach WCAG AA (4.5:1) against the brightest pixel behind them
+    try:
+        from PIL import Image
+    except ImportError:
+        Image = None
+    if Image is None:
+        print("SKIP Looks tile contrast: Pillow is not installed")
+    else:
+        import io
+
+        def lum(c):
+            f = [(v / 255) / 12.92 if v / 255 <= .03928 else (((v / 255) + .055) / 1.055) ** 2.4 for v in c[:3]]
+            return .2126 * f[0] + .7152 * f[1] + .0722 * f[2]
+        _art = wp.ART_DIR
+        wp.ART_DIR = os.path.join(HERE, "www-files", "art")   # the real pictures (stream/www-files/art/looks/)
+        with sync_playwright() as p:
+            b = p.chromium.launch()
+            for scheme in ("light", "dark"):
+                for w in (1400, 390):
+                    pg = b.new_page(viewport={"width": w, "height": 900}, color_scheme=scheme)
+                    pg.goto(f"http://127.0.0.1:{PAGE_PORT}/wrath/leyline-preview")
+                    pg.locator("#f-looks").scroll_into_view_if_needed()
+                    pg.evaluate("""() => Promise.race([new Promise(r => setTimeout(r, 8000)), Promise.all([...document.querySelectorAll('.hb-lk img')].map(i => {
+                        i.loading = 'eager'; return i.complete && i.naturalWidth ? 0 : new Promise(r => { i.onload = r; i.onerror = r; }); }))])""")
+                    loaded = pg.evaluate("[...document.querySelectorAll('.hb-lk img')].filter(i => i.complete && i.naturalWidth).length")
+                    worst, n = 99.0, 0
+                    for t in pg.query_selector_all(".hb-lk"):
+                        t.scroll_into_view_if_needed()
+                        info = t.evaluate("""t => { const r = t.getBoundingClientRect(), out = [];
+                            for (const el of [t.querySelector(':scope > b'), t.querySelector(':scope > span:last-child')]) {
+                                const q = el.getBoundingClientRect();
+                                out.push({x: q.left - r.left, y: q.top - r.top, w: q.width, h: q.height,
+                                          c: getComputedStyle(el).color.match(/\\d+/g).slice(0, 3).map(Number)});
+                                el.style.visibility = 'hidden'; }
+                            return out; }""")
+                        im = Image.open(io.BytesIO(t.screenshot())).convert("RGB")
+                        sx = im.width / max(1, t.bounding_box()["width"])
+                        for r in info:
+                            box = im.crop((int(r["x"] * sx), int(r["y"] * sx), int((r["x"] + r["w"]) * sx), int((r["y"] + r["h"]) * sx)))
+                            bright = max(lum(px) for px in box.getdata())
+                            worst = min(worst, (lum(r["c"]) + .05) / (bright + .05))
+                        n += 1
+                    check(f"front page Looks tiles ({scheme} theme, {w}px): the words reach AA contrast over the real pictures",
+                          n >= 4 and loaded >= 4 and worst >= 4.5, (n, loaded, round(worst, 2)))
+                    pg.close()
+            b.close()
+        wp.ART_DIR = _art
 
 srv.shutdown()
 shutil.rmtree(DATA, ignore_errors=True)

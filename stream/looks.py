@@ -397,6 +397,7 @@ MOTIFS = {
 MOTIF_CSS = """
 .lk-art{position:absolute;inset:0;overflow:hidden;display:block}
 .lk-art i{position:absolute;display:block}
+.lk-art.lk-pic{background:#0d111b}.lk-art.lk-pic img{display:block;width:100%;height:100%;margin:0 auto;object-fit:cover}
 .lk-art.m-ultra,.lk-art.m-high{background:linear-gradient(180deg,#1f6fd1 0%,#55a7f0 38%,#bfe4ff 60%,#ffe7b0 61%,#ffe7b0 62%,#2c5d3a 62%,#1d4a2c 100%)}
 .m-ultra .m-sun,.m-high .m-sun{right:18%;top:14%;width:13%;aspect-ratio:1;border-radius:50%;background:#fffbe8;box-shadow:0 0 0 6px rgba(255,251,232,.35),0 0 30px 10px rgba(255,236,170,.7)}
 .m-ultra .m-far,.m-high .m-far{left:0;right:0;bottom:38%;height:30%;background:#3e5d86;clip-path:polygon(0 100%,10% 40%,18% 70%,30% 5%,42% 60%,52% 25%,63% 75%,75% 15%,86% 55%,100% 30%,100% 100%)}
@@ -433,6 +434,22 @@ def motif(e: dict) -> str:
     return "pack" if lk["type"] == "graphics-pack" else "ui"
 
 
+def preview(e: dict, pictures: bool = True) -> dict | None:
+    """The look's first picture (ours, or the author's under an open licence), when pictures may show."""
+    pv = e["look"].get("previews") or []
+    return pv[0] if pictures and pv else None
+
+
+def tile_art(e: dict, pictures: bool = True) -> str:
+    """The front page tile's picture: the in-game picture when there is one, else the drawing."""
+    p = preview(e, pictures)
+    if not p:
+        return art(e)
+    x = html.escape
+    return (f'<span class="lk-art lk-pic"><img src="{x(p["src"])}" alt="{x(p["alt"])}" style="max-width:{int(p["w"])}px" width="{int(p["w"])}" '
+            f'height="{int(p["h"])}" loading="lazy" decoding="async"></span>')
+
+
 def art(e: dict) -> str:
     """The look's drawing (decorative: aria-hidden)."""
     m = motif(e)
@@ -454,7 +471,8 @@ color:var(--lk-text-2,inherit);text-decoration:none;font-size:14px}
 border:1px solid var(--lk-border,rgba(255,255,255,.12));background:var(--lk-surface-2,rgba(255,255,255,.04))}
 .lk-card:target{border-color:var(--lk-accent,#7aa3f5);box-shadow:0 0 0 2px var(--lk-accent-soft,rgba(91,141,239,.3))}
 .lk-pv{position:relative;aspect-ratio:16/6;overflow:hidden;margin:0;background:linear-gradient(160deg,#1d2a44,#2c2347 55%,#3a2a3a)}
-.lk-pv img{display:block;width:100%;height:100%;object-fit:cover}
+figure.lk-pv{background:#0d111b}
+.lk-pv img{display:block;width:100%;height:100%;margin:0 auto;object-fit:cover}
 .lk-pv figcaption,.lk-ph-cap{position:absolute;z-index:1;right:8px;bottom:6px;font-size:12px;color:#fff;background:rgba(6,8,14,.78);
 padding:2px 8px;border-radius:999px}
 .lk-ph-cap a{color:inherit}
@@ -471,6 +489,20 @@ padding:2px 8px;border-radius:999px}
 .wu-box .lk-acts a.btn{min-height:36px;padding:6px 14px;font-size:14.5px}
 .lk-acts a.ext{font-size:14px}
 .lk .fine{text-align:center;margin:14px 0 0}
+.lk-thumbs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;margin:0;padding:4px;list-style:none;background:#0d111b}
+.lk-thumbs li{margin:0}.lk-thumbs a{display:block;border-radius:4px;overflow:hidden;border:1px solid rgba(255,255,255,.18)}
+.lk-thumbs a:hover,.lk-thumbs a:focus-visible{border-color:var(--lk-accent,#7aa3f5)}
+.lk-thumbs img{display:block;width:100%;height:auto;aspect-ratio:16/9;object-fit:cover}
+.lk-lb{display:none}
+.lk-lb:target{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;position:fixed;inset:0;z-index:100;padding:16px;
+background:rgba(4,6,12,.9)}
+.lk-lb-bg{position:absolute;inset:0}
+.lk-lb figure{position:relative;margin:0;max-width:min(100%,900px);display:flex;flex-direction:column;align-items:center;gap:8px}
+.lk-lb img{display:block;width:100%;height:auto;max-height:78vh;object-fit:contain;border-radius:6px}
+.lk-lb figcaption{font-size:14px;color:#f1f3f8;text-align:center}
+.lk-lb-nav{position:relative;display:flex;gap:18px;margin:0}
+.lk-lb-nav a{color:#fff;font-weight:650;padding:6px 12px;border:1px solid rgba(255,255,255,.4);border-radius:999px;text-decoration:none}
+.lk-lb-nav a:hover,.lk-lb-nav a:focus-visible{border-color:#fff}
 @media (max-width:560px){.lk-frow b{min-width:0;width:100%}}
 """
 
@@ -481,17 +513,52 @@ def _chip_link(label: str, v: str, t: str, cur: bool) -> str:
     return f'<li><a href="{html.escape(href)}"' + (' aria-current="true"' if cur else "") + f">{html.escape(label)}</a></li>"
 
 
-def card(e: dict, ups: set, labels: dict, offered) -> str:
+def gallery(e: dict, slug: str) -> str:
+    """A look with more than one picture: a strip of thumbnails under the lead picture, each opening a full view (a
+    :target lightbox, no script; Close goes back to the card, the arrows to the next picture). Works on a phone."""
+    pv = e["look"].get("previews") or []
+    if len(pv) < 2:
+        return ""
+    x = html.escape
+    n = len(pv)
+    ids = [f"lk-pic-{slug}-{i + 1}" for i in range(n)]
+    thumbs = "".join(
+        f'<li><a href="#{ids[i]}" aria-label="{x(p["alt"])} (larger)"><img src="{x(p["src"])}" alt="" width="{int(p["w"])}" '
+        f'height="{int(p["h"])}" loading="lazy" decoding="async"></a></li>' for i, p in enumerate(pv))
+    return f'<ul class="lk-thumbs" aria-label="More pictures of {x(e["name"])}">{thumbs}</ul>'
+
+
+def lightboxes(e: dict) -> str:
+    """The full views of a look's pictures (gallery's thumbnails open them), drawn outside the card and the box: a
+    fixed overlay inside a box with a backdrop blur would be clipped to it."""
+    pv = e["look"].get("previews") or []
+    if len(pv) < 2:
+        return ""
+    x = html.escape
+    slug = e["id"].split(":", 1)[1]
+    n = len(pv)
+    ids = [f"lk-pic-{slug}-{i + 1}" for i in range(n)]
+    return "".join(
+        f'<div class="lk-lb" id="{ids[i]}" role="dialog" aria-label="{x(e["name"])}: picture {i + 1} of {n}">'
+        f'<a class="lk-lb-bg" href="#look-{x(slug)}" aria-label="Close"></a><figure>'
+        f'<img src="{x(p["src"])}" alt="{x(p["alt"])}" width="{int(p["w"])}" height="{int(p["h"])}" style="max-width:min({int(p["w"])}px,100%)" '
+        f'loading="lazy" decoding="async"><figcaption>{x(p["alt"])} · {x(p["credit"])} · {i + 1} of {n}</figcaption></figure>'
+        f'<p class="lk-lb-nav"><a href="#{ids[(i - 1) % n]}">‹ Previous</a><a href="#look-{x(slug)}">Close</a>'
+        f'<a href="#{ids[(i + 1) % n]}">Next ›</a></p></div>' for i, p in enumerate(pv))
+
+
+def card(e: dict, ups: set, labels: dict, offered, pictures: bool = True) -> str:
     x = html.escape
     lk = e["look"]
     slug = e["id"].split(":", 1)[1]
     way = how(e, ups)
     page = author_page(e)
-    pv = lk.get("previews") or []
-    if pv:
-        p = pv[0]
+    p = preview(e, pictures)
+    if p:
+        # never wider than the picture itself (the owner's shots are small): the card's dark ground shows either side
         pic = (f'<figure class="lk-pv"><img src="{x(p["src"])}" alt="{x(p["alt"])}" width="{int(p["w"])}" height="{int(p["h"])}" '
-               f'loading="lazy" decoding="async"><figcaption>{x(p["credit"])}</figcaption></figure>')
+               f'style="max-width:{int(p["w"])}px" '
+               f'loading="lazy" decoding="async"><figcaption>{x(p["credit"])}</figcaption></figure>') + gallery(e, slug)
     else:
         cap = (f'<span class="lk-ph-cap"><a href="{x(page)}" rel="noopener nofollow ugc">Pictures on the author\'s page</a></span>'
                if page and e["author"] != "Leyline" else "")
@@ -520,9 +587,10 @@ def card(e: dict, ups: set, labels: dict, offered) -> str:
 
 
 def body(query: dict | None = None, items: list[dict] | None = None, labels: dict | None = None, offered=None,
-         ups: set | None = None, download: str = "") -> str:
+         ups: set | None = None, download: str = "", pictures: bool = True) -> str:
     """The Looks page's inner HTML (the portal puts it in the hub's frame). query: {"v": build, "t": type} from the
-    address (anything else is ignored). No script: the filters are links."""
+    address (anything else is ignored). No script: the filters are links. pictures: in-game pictures may show (off
+    with the game data killswitch: the drawings then)."""
     x = html.escape
     q = query or {}
     labels = labels or CLIENT_LABEL
@@ -537,7 +605,7 @@ def body(query: dict | None = None, items: list[dict] | None = None, labels: dic
     trow = "".join(_chip_link(label, v, k, t == k) for k, label in TYPE_FILTERS)
     filters = (f'<nav class="lk-filters" aria-label="Filter looks"><ul class="lk-frow"><b>Client</b>{vrow}</ul>'
                f'<ul class="lk-frow"><b>Type</b>{trow}</ul></nav>')
-    grid = (f'<ul class="lk-grid" aria-label="Looks">{"".join(card(e, ups, labels, offered) for e in shown)}</ul>' if shown else
+    grid = (f'<ul class="lk-grid" aria-label="Looks">{"".join(card(e, ups, labels, offered, pictures) for e in shown)}</ul>' if shown else
             '<p class="sub">No looks for that yet. <a href="/wrath/looks">See every look</a>.</p>')
     # TODO(owner): the heading and the line under it, his voice
     head = ('<h1>Looks</h1><p class="sub">Make the game look new: graphics packs, new interfaces and graphics presets. '
@@ -546,7 +614,8 @@ def body(query: dict | None = None, items: list[dict] | None = None, labels: dic
     fine = ('<p class="fine">Install with Leyline opens the launcher: you pick the game folder and press Install. '
             f'{dl} first if you don\'t have it. Packs from other sites are links: made and hosted by their authors, '
             'not checked or hosted by Leyline. Changed your mind? The launcher\'s Looks tab has Back to the original look.</p>')
-    return f'<div class="wu-pg wide lk"><div class="wu-box">{head}{filters}{grid}{fine}</div></div>'
+    boxes = "".join(lightboxes(e) for e in shown if pictures)
+    return f'<div class="wu-pg wide lk"><div class="wu-box">{head}{filters}{grid}{fine}</div>{boxes}</div>'
 
 
 def featured(n: int = 4, items: list[dict] | None = None, offered=None) -> list[dict]:

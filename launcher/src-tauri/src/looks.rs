@@ -46,6 +46,27 @@ pub struct Look {
     pub note: String,
     /// What the site worked out (`launcher` or `link`); the launcher works it out again (`how`).
     pub how: String,
+    /// Our own pictures (`/wrath/art/looks/look-<name>.webp`); the UI shows its bundled copy (ui/art/looks/).
+    pub previews: Vec<Preview>,
+}
+
+/// One picture of a look.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Preview {
+    pub src: String,
+    pub w: u32,
+    pub h: u32,
+    pub alt: String,
+    pub credit: String,
+}
+
+/// `/wrath/art/looks/look-<name>.webp`, the only pictures a look may name.
+pub fn preview_src_ok(src: &str) -> bool {
+    src.strip_prefix("/wrath/art/looks/look-").and_then(|r| r.strip_suffix(".webp")).is_some_and(|n| {
+        (1..=40).contains(&n.len()) && n.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
+            && n.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    })
 }
 
 fn hex64(s: &str) -> bool {
@@ -105,6 +126,12 @@ pub fn clean(p: &mut Project) {
     }
     lk.changes = std::mem::take(&mut lk.changes).into_iter().map(|c| text(&c, 32)).filter(|c| !c.is_empty()).take(12).collect();
     lk.note = text(&lk.note, 240);
+    lk.previews = std::mem::take(&mut lk.previews)
+        .into_iter()
+        .filter(|p| preview_src_ok(&p.src) && p.w > 0 && p.h > 0 && p.w <= 4000 && p.h <= 4000)
+        .map(|p| Preview { alt: text(&p.alt, 200), credit: text(&p.credit, 80), ..p })
+        .take(4)
+        .collect();
     lk.how = if lk.how == "launcher" { "launcher".into() } else { "link".into() };
     let ok = lk.kind == "graphics-pack" && p.install.as_ref().is_some_and(|i| install_ok(i, &p.repo));
     if !ok {
@@ -549,7 +576,9 @@ mod tests {
     #[test]
     fn the_catalog_keeps_looks_and_works_out_how_each_installs() {
         let v = serde_json::json!({"projects": [
-            {"id": "look:max", "source": "look", "name": "Max", "builds": ["1.12", "3.3.5a"], "look": {"type": "preset", "preset": "ultra", "how": "launcher"}},
+            {"id": "look:max", "source": "look", "name": "Max", "builds": ["1.12", "3.3.5a"], "look": {"type": "preset", "preset": "ultra", "how": "launcher",
+             "previews": [{"src": "/wrath/art/looks/look-max.webp", "w": 490, "h": 276, "alt": "A path", "credit": "Us"},
+                          {"src": "https://evil.example/x.webp", "w": 1, "h": 1}]}},
             {"id": "look:fake", "source": "look", "name": "Fake", "look": {"type": "preset", "preset": "insane"}},
             {"id": "look:water", "source": "look", "name": "Water", "repo": "https://github.com/alice/water",
              "look": {"type": "graphics-pack"},
@@ -567,7 +596,12 @@ mod tests {
         let (_, ps) = crate::catalog::parse_in(&v, "https://play.openvanilla.app", true).unwrap();
         let by = |id: &str| ps.iter().find(|p| p.id == id).unwrap().clone();
         assert_eq!(by("look:max").source, "look");
+        assert!(preview_src_ok("/wrath/art/looks/look-forever-ui-hud.webp"));
+        for bad in ["/wrath/art/looks/../x.webp", "https://evil.example/look-x.webp", "/wrath/art/looks/look-X.webp", "/wrath/art/looks/look-x.png"] {
+            assert!(!preview_src_ok(bad), "{bad}");
+        }
         assert_eq!(how(&by("look:max"), &ps), "preset");
+        assert_eq!(by("look:max").look.unwrap().previews.iter().map(|p| p.src.as_str()).collect::<Vec<_>>(), vec!["/wrath/art/looks/look-max.webp"]);
         assert_eq!(how(&by("look:fake"), &ps), "link", "a preset Leyline doesn't have is a link");
         assert_eq!(how(&by("look:water"), &ps), "pack");
         assert!(by("look:evil").install.is_none() && how(&by("look:evil"), &ps) == "link", "another repo's file");

@@ -192,6 +192,7 @@ test('a Den mode (a fork of it, or opened by id) is always private: no who-can-j
   assert.deepEqual((await calls(page, 'host_mode_use'))[0], { id: 'den', values: { look: 'wood', budget: 1500 } });
   assert.equal((await calls(page, 'host_start_quiet'))[0].answers.visibility, 'private');
   assert.equal(await page.textContent('#hx-share'), `https://relay.openvanilla.app/join/${RID}#secret`);
+  assert.match(await page.textContent('.hx-live-box .hc-live-t span'), /^My Den is up\. Send friends your invite link/, 'its own name: not "My Den runs My Den"');
   assert.deepEqual(errors, []);
 });
 

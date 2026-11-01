@@ -59,7 +59,10 @@ command -v docker >/dev/null || die "docker not found"
 [ -n "$HOST" ] || die "no address: hosting/survivors/address.txt (SV_SITE_HOST) says none"
 [[ "$HOST" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$ ]] || die "the address '$HOST' is not a host name"
 printf '%s' "$HOST" | grep -qiE 'wow|warcraft|blizzard|lich-?king' && die "the address '$HOST' has a franchise name in it (the brand rule): pick another"
-[ "$HOST" != "$PUBLIC" ] && [ "$HOST" != "wrath.openvanilla.app" ] || die "the address '$HOST' belongs to another site"
+case "$HOST" in   # the other sites' own addresses (old and new domain)
+  "$PUBLIC"|play.openvanilla.app|wrath.openvanilla.app|relay.openvanilla.app|leylinelauncher.com|www.leylinelauncher.com|play.leylinelauncher.com|relay.leylinelauncher.com)
+    die "the address '$HOST' belongs to another site";;
+esac
 
 caddy_site() {  # caddy_site add|remove|has|other: our site block in the Caddyfile (bind-mounted into Caddy)
   python3 -I - "$1" "$CF" "$HOST" "$SNIP" "$SITE_BEGIN" "$SITE_END" <<'PY'

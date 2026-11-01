@@ -23,7 +23,7 @@ def run_all() -> int:
     spec = importlib.util.spec_from_file_location("gdc", os.path.join(ROOT, "stream", "server", "gamedata-caddy.py"))
     gdc = importlib.util.module_from_spec(spec); spec.loader.exec_module(gdc)
     snip = open(os.path.join(SV, "survivors.caddy")).read()
-    site = snip.replace("__SV_HOST__", "survive.example")
+    site = snip.replace("__SV_HOST__", "survivors.leylinelauncher.com")
 
     # ------------------------------------------------------------------ the Caddy site
     check("caddy: the markers are gamedata-caddy.py's", site.startswith(gdc.SV_SITE_BEGIN) and site.rstrip().endswith(gdc.SV_SITE_END))
@@ -36,9 +36,9 @@ def run_all() -> int:
     cf = "play.openvanilla.app {\n\treverse_proxy x:1\n}\n\n" + site
     check("killswitch: no site, no-site", gdc.sv_status("play.openvanilla.app {\n}\n") == "no-site")
     check("killswitch: status off", gdc.sv_status(cf) == "off")
-    on = gdc.sv_add(cf, "survive.example")
+    on = gdc.sv_add(cf, "survivors.leylinelauncher.com")
     check("killswitch: on, first inside the site", gdc.sv_status(on) == "on"
-          and on.index("survive.example {") < on.index(gdc.SV_BEGIN) < on.index("@licenses_sv"))
+          and on.index("survivors.leylinelauncher.com {") < on.index(gdc.SV_BEGIN) < on.index("@licenses_sv"))
     check("killswitch: 410 JSON for /data and the manifests", "@gamedata_off_sv path /data /data/* /boot-manifest.json /world-manifest.json" in on
           and json.loads(re.search(r"respond `(\{.*?\})` 410", on).group(1))["error"] == "gamedata_off")
     check("killswitch: every page but the licences rests (503)", "@resting_sv not path /licenses/*" in on and "` 503\n" in on)
@@ -46,11 +46,11 @@ def run_all() -> int:
     check("killswitch: the resting page has no braces or backticks (Caddy) and no brand words",
           "{" not in rest and "}" not in rest and "`" not in rest
           and not re.search(r"warcraft|blizzard|(^|[^a-z])wow([^a-z]|$)|lich king", rest, re.I) and "resting" in rest)
-    check("killswitch: idempotent, and out byte for byte", gdc.sv_add(on, "survive.example") == on and gdc.sv_strip(on) == cf)
+    check("killswitch: idempotent, and out byte for byte", gdc.sv_add(on, "survivors.leylinelauncher.com") == on and gdc.sv_strip(on) == cf)
     check("killswitch: the Wrath and 1.12 blocks are untouched by it", gdc.status(on) == "no-site" and gdc.vr_status(on) == "no-site")
     T = tempfile.mkdtemp(prefix="sv-site-")
     p = os.path.join(T, "Caddyfile"); open(p, "w").write(cf)
-    r = subprocess.run([sys.executable, "-I", os.path.join(ROOT, "stream", "server", "gamedata-caddy.py"), "add-sv", p, "survive.example"])
+    r = subprocess.run([sys.executable, "-I", os.path.join(ROOT, "stream", "server", "gamedata-caddy.py"), "add-sv", p, "survivors.leylinelauncher.com"])
     r2 = subprocess.run([sys.executable, "-I", os.path.join(ROOT, "stream", "server", "gamedata-caddy.py"), "status-sv", p], capture_output=True, text=True)
     check("killswitch: add-sv / status-sv on the command line", r.returncode == 0 and r2.stdout.strip() == "on")
     subprocess.run([sys.executable, "-I", os.path.join(ROOT, "stream", "server", "gamedata-caddy.py"), "remove-sv", p])
@@ -64,6 +64,10 @@ def run_all() -> int:
                                                            "no-new-privileges:true", "mem_limit: 256m", ":/www:ro", ":/slice:ro")))
     check("compose: on Caddy's network, no published port", "name: wenilla-realm_default" in comp and "ports:" not in comp)
     addr = [l for l in open(os.path.join(SV, "address.txt")) if l.strip() and not l.startswith("#")][0].strip()
+    check("address.txt: the placeholder is survivors.leylinelauncher.com", addr == "survivors.leylinelauncher.com")
+    check("the address lives only in address.txt: the Caddy site and the compose file name none",
+          "leylinelauncher" not in snip.split("__SV_HOST__ {", 1)[1] and "openvanilla" not in snip.split("__SV_HOST__ {", 1)[1]
+          and not re.search(r"[a-z0-9-]+\.(com|app|org|net)\b", comp))
     check("address.txt: a placeholder with no brand word, marked TODO(owner)", "wow" not in addr.lower()
           and "TODO(owner)" in open(os.path.join(SV, "address.txt")).read())
     for bat in sorted(f for f in os.listdir(SV) if f.endswith(".bat")):
@@ -119,7 +123,7 @@ def run_all() -> int:
       */wrath/status.json) echo -n 200;;
       */licenses/LICENSE-MIT|*/licenses/) [ -n "${ON:-}" ] && echo -n 200 || echo -n 200;;
       */data/__index) [ -f "$FLAG" ] && echo -n 410 || echo -n 403;;
-      https://survive.example/) [ -f "$FLAG" ] && echo -n 503 || echo -n 302;;
+      https://survivors.leylinelauncher.com/) [ -f "$FLAG" ] && echo -n 503 || echo -n 302;;
       *) echo -n 000;;
     esac
     ''',
@@ -131,7 +135,7 @@ def run_all() -> int:
     FLAG = os.path.join(srv, "wrath", "portal", "gamedata-off")
     env = dict(os.environ, PATH=fake + ":" + os.environ["PATH"], SV_TEST="1", SV_ROOT=os.path.join(srv, "survivors"),
                WU_DIR=os.path.join(srv, "wrath"), SV_CADDYFILE=caddyfile, SV_BACKUPS=os.path.join(T, "bk"),
-               SV_SITE_HOST="survive.example", STATE=state, CALLS=calls, FLAG=FLAG)
+               SV_SITE_HOST="survivors.leylinelauncher.com", STATE=state, CALLS=calls, FLAG=FLAG)
 
 
     def run(mode, **extra):
@@ -143,18 +147,21 @@ def run_all() -> int:
     rc, out = run("--check")
     check("--check: ready, read-only", rc == 0 and out.rstrip().endswith("SV SITE DRY") and "Ready" in out
           and not os.path.exists(os.path.join(srv, "survivors", "www")), out[-600:])
-    rc, out = run("--check", SV_SITE_HOST="wowsurvive.example")
+    rc, out = run("--check", SV_SITE_HOST="wowsurvivors.leylinelauncher.com")
     check("--check: refuses an address with a franchise name in it", rc == 1 and "brand rule" in out)
-    rc, out = run("--check", SV_SITE_HOST="play.openvanilla.app")
-    check("--check: refuses another site's address", rc == 1)
+    for other in ("play.openvanilla.app", "play.leylinelauncher.com", "relay.leylinelauncher.com", "leylinelauncher.com"):
+        rc, out = run("--check", SV_SITE_HOST=other)
+        check(f"--check: refuses another site's address ({other})", rc == 1 and "another site" in out)
+    rc, out = run("--check", SV_SITE_HOST="games.example.org")
+    check("--check: any other address works (the address is config)", rc == 0 and "games.example.org" in out)
     rc, out = run("--go")
     url = os.path.join(srv, "wrath", "portal", "survivors.url")
     check("--go: on", rc == 0 and out.rstrip().endswith("SV SITE ON"), out[-800:])
     check("--go: files installed", os.path.isfile(os.path.join(srv, "survivors", "slice", "DBFilesClient", "Map.dbc"))
           and os.path.isfile(os.path.join(srv, "survivors", "www", "licenses", "LICENSE-MIT")))
     check("--go: the site block is in, with the address", gdc.sv_status(open(caddyfile).read()) == "off"
-          and "survive.example {" in open(caddyfile).read() and "__SV_HOST__" not in open(caddyfile).read())
-    check("--go: Play on: the portal's survivors.url", open(url).read() == "https://survive.example/\n")
+          and "survivors.leylinelauncher.com {" in open(caddyfile).read() and "__SV_HOST__" not in open(caddyfile).read())
+    check("--go: Play on: the portal's survivors.url", open(url).read() == "https://survivors.leylinelauncher.com/\n")
     check("--go: sv-play from the compose file", "compose -f " in open(calls).read() and "sv-play" in open(state).read())
     rc, out = run("--go")
     check("--go again (no new files to swap in twice): one site block", rc == 0 and open(caddyfile).read().count(gdc.SV_SITE_BEGIN) == 1)

@@ -127,26 +127,26 @@ check("page: no permission line until the owner writes it", sv.PERMISSION == "" 
 st, h, _ = get("/wrath/survivors/play", cookie="wr_session=good")
 check("play without an address: back to the page", st == 302 and h.get("location") == "/wrath/survivors")
 
-for bad in ("http://survive.example/", "https://survive.example/x", "https://exa mple/", "https://survive.example:8443/", "nope"):
+for bad in ("http://survivors.leylinelauncher.com/", "https://survivors.leylinelauncher.com/x", "https://exa mple/", "https://survivors.leylinelauncher.com:8443/", "nope"):
     with open(URLF, "w") as f:
         f.write(bad + "\n")
     check(f"a bad address is not used ({bad})", sv.site_url() == "")
 
 # ------------------------------------------------------------------ the address set: Play
 with open(URLF, "w") as f:
-    f.write("https://survive.example/\n")
-check("the address from the file", sv.site_url() == "https://survive.example/" and sv.site_host() == "survive.example")
+    f.write("https://survivors.leylinelauncher.com/\n")
+check("the address from the file", sv.site_url() == "https://survivors.leylinelauncher.com/" and sv.site_host() == "survivors.leylinelauncher.com")
 st, _, b = get("/wrath/survivors")
 check("page: with an address -> Play, no Coming soon", 'class="btn primary" href="/wrath/survivors/play">Play</a>' in b.decode()
       and "Coming soon" not in text(b))
-check("page: the licences link on the game's address", 'href="https://survive.example/licenses/"' in b.decode())
+check("page: the licences link on the game's address", 'href="https://survivors.leylinelauncher.com/licenses/"' in b.decode())
 st, h, _ = get("/wrath/survivors/play")
 check("play signed out: to the sign-in, and back to Play", st == 302 and "survivors" in urllib.parse.unquote(h.get("location", "")), h.get("location"))
 st, h, _ = get("/wrath/survivors/play", cookie="wr_session=bad")
 check("play with a stale sign-in: to the sign-in", st == 302 and "survivors" in urllib.parse.unquote(h.get("location", "")))
 st, h, _ = get("/wrath/survivors/play", cookie="wr_session=good")
 loc = h.get("location", "")
-check("play signed in: a one-time code to the Survivors address's gate", st == 302 and loc.startswith("https://survive.example/__gate?code="), loc)
+check("play signed in: a one-time code to the Survivors address's gate", st == 302 and loc.startswith("https://survivors.leylinelauncher.com/__gate?code="), loc)
 gst, land, ck = gate(loc)
 check("the gate: lands on / with the wu_play cookie (HttpOnly, Secure)", gst == 302 and land == "/" and ck.startswith("wu_play=")
       and "HttpOnly" in ck and "Secure" in ck)

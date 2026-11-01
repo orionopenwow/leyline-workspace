@@ -5,7 +5,8 @@
 # forward_auth asks /__auth?site=survivors for every other request). The game reads /data from the root of its own
 # address, so it can't live under a path of another site. The game data killswitch (gamedata-switch.sh) puts its
 # block first in here (gamedata-caddy.py add-sv): /data 410, every page but the licences a short "resting" page.
-# sv-site-up.sh writes this block with the address in place of __SV_HOST__; do not edit it in the Caddyfile.
+# sv-site-up.sh writes this block with the address in place of __SV_HOST__ (hosting/survivors/address.txt, e.g.
+# survivors.leylinelauncher.com); do not edit it in the Caddyfile.
 __SV_HOST__ {
 	encode zstd gzip
 	# nothing here takes a body bigger than a few bytes

@@ -1,3 +1,3 @@
 # TODO(owner): the address Azeroth Survivors gets: a subdomain with a DNS A record to the server (no "wow" in it).
 # The first line that is not a comment is used. "Put Survivors on Leyline.bat" reads it.
-survivors.openvanilla.app
+survivors.leylinelauncher.com

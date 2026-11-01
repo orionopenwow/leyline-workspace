@@ -55,6 +55,16 @@ with open(os.path.join(ART, "wu-card.webp"), "rb") as f:
     card = f.read()
 check("card: a webp file", card[:4] == b"RIFF" and card[8:12] == b"WEBP")
 
+# --- the player portraits (stream/profiles.py serves the same files at /wrath/avatar/): SVG, a week, no script
+st, h, b = get("/wrath/art/avatars/knight.svg")
+with open(os.path.join(ART, "avatars", "knight.svg"), "rb") as f:
+    same = f.read() == b
+check("art avatars/knight.svg: 200 image/svg+xml, the file, cached a week, a CSP that runs nothing",
+      st == 200 and h.get("content-type") == "image/svg+xml" and same and h.get("cache-control") == "public, max-age=604800"
+      and h.get("content-security-policy", "").startswith("default-src 'none'"), (st, h))
+for bad in ("avatars/nope.svg", "avatars/../wu-theme.css", "avatars/Knight.svg", "avatars/knight.svg.webp", "avatars/"):
+    check(f"art {bad}: refused", get("/wrath/art/" + bad)[0] == 404)
+
 # --- the allow-list blocks everything else, ../ included
 for bad in ("../wrath_portal.py", "..%2fwrath_portal.py", "%2e%2e%2fwrath_portal.py", "..%2F..%2Fetc%2Fpasswd",
             "%2fetc%2fpasswd", "wu-theme.css%00.webp", "WU-THEME.CSS", "nope.webp", "", "art/wu-theme.css",

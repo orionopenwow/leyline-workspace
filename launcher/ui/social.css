@@ -1,9 +1,7 @@
 /* Leyline Launcher: Home's profile panel (social.js) and the Forum page (forum.js). Uses style.css's tokens. */
-/* the avatar: a letter on a hue from the name */
-.sx-av { position: relative; flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center;
-  background: linear-gradient(145deg, hsl(var(--h, 220) 45% 46%), hsl(calc(var(--h, 220) + 30) 50% 30%));
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
-.sx-av b { font: 700 15px var(--t-font); color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+/* the avatar: a portrait on a slate medallion (avatars.js, art/avatars/), never a letter */
+.sx-av { position: relative; flex: none; width: 38px; height: 38px; border-radius: 50%; display: block;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.45)); }
 .sx-code { font: 700 22px/1.2 ui-monospace, Consolas, monospace; letter-spacing: 0.12em; color: var(--gold-hi); margin: 2px 0; user-select: text; }
 
 /* Home's right column: your profile on top (owner 2026-10-30: "keep the profile thing up there where it is now"), then the
@@ -11,8 +9,7 @@
 .home .card.home-side { display: flex; flex-direction: column; gap: 0; min-height: 0; padding: 0; overflow: hidden; }
 .hf-me { display: flex; align-items: center; gap: 12px; padding: 14px 14px 12px; border-bottom: var(--t-border-w) solid var(--t-panel-border); }
 .sx-av.hf-me-av { width: 44px; height: 44px; }
-.sx-av.hf-me-av b { font-size: 17px; }
-.sx-av.hf-anon { background: color-mix(in srgb, var(--t-text) 22%, var(--t-surface)); }
+.sx-av.hf-anon { opacity: .8; }
 .hf-me > div { flex: 1; min-width: 0; display: grid; gap: 1px; }
 .hf-me-pick { position: relative; }
 .hf-me-btn { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 0; border: 0; background: none; cursor: pointer; color: var(--t-text); text-align: left; }
@@ -34,7 +31,6 @@
 .home .card.home-side .sx-ft i { font-size: 12px; }
 @media (max-width: 1150px) { .home { grid-template-columns: minmax(0, 1fr) 200px; } }
 .home .card.home-side .sx-av { width: 32px; height: 32px; }
-.home .card.home-side .sx-av b { font-size: 13px; }
 /* owner 2026-10-30: "tuck the friends list up towards the top right": on Home the panel runs from just under the
    window buttons to the play bar, beside the title bar's search; its grid column stays as the space it leaves */
 body:has(#page-play.on) .home .card.home-side {
@@ -138,7 +134,6 @@ body:has(#page-play.on) .home .card.home-side {
 .fm-by { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0 0 6px; font-size: 12px; color: var(--t-muted); }
 .fm-by > b { color: var(--t-text); font-size: 13.5px; }
 .sx-av.fm-av { width: 26px; height: 26px; }
-.sx-av.fm-av b { font-size: 12px; }
 .fm-team { padding: 1px 7px; border-radius: 999px; background: var(--t-accent); color: var(--t-on-accent, #fff); font: 700 10.5px var(--t-font); }
 .fm-when { margin-left: auto; }
 .fm-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; color: var(--t-text); user-select: text; }
@@ -186,7 +181,6 @@ body:has(#page-play.on) .titlebar .winbtns { margin-left: 0; }
 .titlebar .tb-me { position: relative; display: flex; align-items: center; margin-right: 6px; }
 .titlebar .tb-me .hf-me { padding: 0; gap: 8px; border: 0; }
 .titlebar .tb-me .sx-av.hf-me-av { width: 30px; height: 30px; }
-.titlebar .tb-me .sx-av.hf-me-av b { font-size: 12.5px; }
 .titlebar .tb-me .hf-me > div { gap: 0; }
 .titlebar .tb-me .hf-me-name { font-size: 13px; }
 .titlebar .tb-me .hf-me-st { font-size: 11px; }

@@ -21,17 +21,18 @@ refuses the game and company names; here also names that pass for the team, and 
 changes of your own a day). Every signed-in account edits its profile the same way, a website guest account (username
 guest-xxxxxxxx, "Guest XXXXXXXX") included: its made name is flagged (name_generated, me.profile.name_generated) so the
 pages say "pick your own". Here: a bio (plain text, up to BIO_MAX, the word filter's words starred out, game
-and company names replaced like forum posts) and a picture: one of PRESETS (original shapes drawn here, no game art) or
-the default (your initial on a colour). Uploads and the Google/Discord picture are not offered: the portal image has no
+and company names replaced like forum posts) and a picture: one of PRESETS (round flat-graphic character portraits on a
+grey slate medallion, original art: tools/art/avatars/) or the default, a portrait picked from the display name
+(default_portrait; never a letter). Uploads and the Google/Discord picture are not offered: the portal image has no
 image library to re-encode uploads safely, and the website's /api/me does not pass the provider's picture on
 (docs/SIGN-IN.md says what each would need).
 
-    GET  /wrath/avatar/p/<preset>.svg   a preset (cached a week)
+    GET  /wrath/avatar/p/<preset>.svg   a portrait (cached a week; an old shape id gets the portrait put in its place)
     GET  /wrath/avatar/u/<pid>.svg      a player's picture by their public id (?v=<n> changes with it: cached a day;
                                         without v: five minutes)
     JSON for the launcher and the page's own script, under /wrath/api/social (stream/social.py's auth: a launcher token
     or the cookie with X-Leyline-CSRF):
-    GET  me                       ... me.profile {bio, avatar, avatar_url, setup}, avatars [{id, name, url}], ways
+    GET  me                       ... me.profile {bio, avatar, avatar_url, default_avatar, setup}, avatars [{id, name, url}], ways
     POST profile {name?, bio?, avatar?, setup?}
     GET  ways                     (no sign-in) {herokey, google, discord}: which sign-in buttons to show
 
@@ -76,46 +77,76 @@ WAYS_TTL, WAYS_TTL_FAIL = 300, 60
 PID_RE = re.compile(r"^[a-z0-9]{10}$")
 CTRL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f​-‏‪-‮⁦-⁩­͏؜ᅟᅠ឴឵᠋-᠏⁠-⁥⁪-⁯ㅤ︀-️﻿ﾠ]")   # + soft hyphen, word joiners, fillers, variation selectors, BOM (stream/namecheck.py INVISIBLE_RE)
 
-# The preset pictures: (id, name, background from, to, the shape in a 24-unit box). Original simple shapes.
+# The pictures: round flat-graphic portraits on a grey slate medallion (owner 2026-11-01: "grey slate stylize these user
+# icons and not letters ... a cool array of flat graphics art characters"), original art drawn in this repo
+# (tools/art/avatars/make_avatars.py; generic fantasy archetypes named by role, no game's characters or art), static SVG
+# files in the site art (www-files/art/avatars/ -> $WU_ART_DIR/avatars/, also served at /wrath/art/avatars/<id>.svg) and
+# the launcher (launcher/ui/art/avatars/, launcher/ui/avatars.js). (id, name), in the default-picture order: never
+# reorder, only append, or players' default pictures change.
 PRESETS = (
-    ("star", "Star", "#5b8def", "#8b6cf0", '<path d="M12 3.5l2.6 5.6 6.1.7-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.8l6.1-.7z"/>'),
-    ("moon", "Moon", "#2f3f8f", "#6c5ce7", '<path d="M15.5 3.6a8.6 8.6 0 1 0 4.9 14.6A7 7 0 0 1 15.5 3.6z"/>'),
-    ("flame", "Flame", "#f0743e", "#d6336c", '<path d="M12 2.8c.6 3.4 4.9 5.3 4.9 10.1a4.9 4.9 0 0 1-9.8 0c0-2.3 1.2-3.7 2.3-4.8.2 1.5.9 2.6 2 3.1-.6-3.1-.1-5.9.6-8.4z"/>'),
-    ("leaf", "Leaf", "#2fb37a", "#167a6b", '<path d="M19.6 4.4C10.2 4 4.4 8.6 4.6 15.4c0 1.4.4 2.7 1 3.8L4 20.8l1 1 1.7-1.6c1 .6 2.2.9 3.5.9 6.4 0 9.8-6.3 9.4-16.7zM9 16.6c1.9-3.3 4.4-5.8 7.6-7.6-2.6 2.4-4.6 5-6 8z"/>'),
-    ("peak", "Peak", "#3a7bd5", "#00a3a3", '<path d="M2.5 19.5l6.6-11 3.4 5.4 2.2-3.2 6.8 8.8z"/><path d="M9.1 8.5l1.8 2.9-1.8 1-1.6-1.2z" opacity=".55"/>'),
-    ("gem", "Gem", "#7d5fff", "#c056e0", '<path d="M7 4h10l4 5-9 11L3 9z"/><path d="M3 9h18M9 4l3 16M15 4l-3 16" fill="none" stroke="rgba(0,0,0,.25)" stroke-width="1"/>'),
-    ("sun", "Sun", "#f5a623", "#f06543", '<circle cx="12" cy="12" r="4.4"/><path d="M12 1.8v3.4M12 18.8v3.4M1.8 12h3.4M18.8 12h3.4M4.8 4.8l2.4 2.4M16.8 16.8l2.4 2.4M4.8 19.2l2.4-2.4M16.8 7.2l2.4-2.4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/>'),
-    ("bolt", "Bolt", "#f7b733", "#fc4a1a", '<path d="M13.5 2.5L5 13.4h5.6l-1.2 8.1 8.6-11h-5.7z"/>'),
-    ("wave", "Wave", "#1fa2ff", "#12d8fa", '<path d="M2 14c2.5 0 2.5-3 5-3s2.5 3 5 3 2.5-3 5-3 2.5 3 5 3v5H2z"/><path d="M2 9.5c2.5 0 2.5-3 5-3s2.5 3 5 3 2.5-3 5-3 2.5 3 5 3" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" opacity=".7"/>'),
-    ("shield", "Shield", "#4b6cb7", "#182848", '<path d="M12 2.5l8 3v6.1c0 4.8-3.3 8.6-8 10-4.7-1.4-8-5.2-8-10V5.5z"/><path d="M12 6.5v11" stroke="rgba(0,0,0,.25)" stroke-width="1.5"/>'),
-    ("crown", "Crown", "#c99a2e", "#8e5a12", '<path d="M3 8l4.5 4L12 5l4.5 7L21 8l-1.8 10H4.8z"/><rect x="4.8" y="18.6" width="14.4" height="2" rx=".6"/>'),
-    ("tree", "Tree", "#38a169", "#22543d", '<path d="M12 2.5l5.5 7.2h-2.9l4.4 5.8H13.4V21h-2.8v-5.5H5l4.4-5.8H6.5z"/>'),
+    ("alchemist", "Alchemist"), ("bard", "Bard"), ("brute", "Brute"), ("captain", "Captain"), ("cat", "Cat"),
+    ("cleric", "Cleric"), ("drake", "Drake"), ("druid", "Druid"), ("fox", "Fox"), ("golem", "Golem"), ("knight", "Knight"),
+    ("mage", "Mage"), ("monk", "Monk"), ("owl", "Owl"), ("ranger", "Ranger"), ("revenant", "Revenant"), ("rogue", "Rogue"),
+    ("shieldmaid", "Shieldmaid"), ("smith", "Smith"), ("wanderer", "Wanderer"), ("warrior", "Warrior"), ("witch", "Witch"),
+    ("wizard", "Wizard"), ("wolf", "Wolf"),
 )
 PRESET = {p[0]: p for p in PRESETS}
-INITIAL_COLOURS = (("#5b8def", "#8b6cf0"), ("#2fb37a", "#167a6b"), ("#f0743e", "#d6336c"), ("#7d5fff", "#c056e0"),
-                   ("#1fa2ff", "#3a7bd5"), ("#c99a2e", "#8e5a12"), ("#e0567a", "#8b6cf0"), ("#00a3a3", "#2f3f8f"))
+# The shapes offered before the portraits (star, moon ...): a player who picked one sees the portrait put in its place.
+LEGACY = {"star": "wizard", "moon": "witch", "flame": "smith", "leaf": "druid", "peak": "ranger", "gem": "mage",
+          "sun": "cleric", "bolt": "warrior", "wave": "captain", "shield": "knight", "crown": "shieldmaid", "tree": "wanderer"}
+PORTRAIT_MAX = 16_000
+_portraits: dict = {}
 
 
 def _now() -> float:
     return time.time()
 
 
+def default_portrait(name: str) -> str:
+    """The portrait a player gets without choosing one: picked from their display name (FNV-1a 32 of the lower-cased
+    name's UTF-8; launcher/ui/avatars.js does the same, so both show the same face), never a letter."""
+    s = (name or "").strip().lower()
+    if s in ("", "?"):
+        return "wanderer"   # no name (signed out): the hooded wanderer, as in the launcher
+    h = 0x811C9DC5
+    for byte in s.encode("utf-8"):
+        h = ((h ^ byte) * 0x01000193) & 0xFFFFFFFF
+    return PRESETS[h % len(PRESETS)][0]
+
+
+def portrait_url(name: str) -> str:
+    """The default portrait's address for a name (for people without a profile here, e.g. mod authors)."""
+    return f"{AVATAR}/p/{default_portrait(name)}.svg"
+
+
+def _art_dirs() -> list:
+    here = os.path.dirname(os.path.abspath(__file__))
+    return [os.path.join(os.environ.get("WU_ART_DIR", "/app/art"), "avatars"), os.path.join(here, "art", "avatars"),
+            os.path.join(here, "www-files", "art", "avatars")]
+
+
 def preset_svg(pid: str) -> bytes:
-    _id, name, a, b, shape = PRESET[pid]
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="256" height="256" role="img" aria-label="{name}">'
-            f'<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="{a}"/><stop offset="1" stop-color="{b}"/>'
-            f'</linearGradient></defs><rect width="64" height="64" fill="url(#g)"/>'
-            f'<g transform="translate(14 14) scale(1.5)" fill="#fff">{shape}</g></svg>').encode("utf-8")
-
-
-def initial_svg(name: str, seed: str) -> bytes:
-    ch = next((c for c in (name or "") if c.isalnum()), "?").upper()
-    a, b = INITIAL_COLOURS[int(hashlib.sha256(seed.encode()).hexdigest()[:4], 16) % len(INITIAL_COLOURS)]
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="256" height="256" role="img">'
-            f'<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="{a}"/><stop offset="1" stop-color="{b}"/>'
-            f'</linearGradient></defs><rect width="64" height="64" fill="url(#g)"/>'
-            f'<text x="32" y="42" text-anchor="middle" font-family="system-ui,Segoe UI,Arial,sans-serif" font-size="30" '
-            f'font-weight="700" fill="#fff">{html.escape(ch)}</text></svg>').encode("utf-8")
+    """A portrait's SVG from the art folder (read once), or a plain slate medallion when the file is missing."""
+    pid = LEGACY.get(pid, pid)
+    if pid not in PRESET:
+        pid = PRESETS[0][0]
+    if pid not in _portraits:
+        body = b""
+        for d in _art_dirs():
+            try:
+                with open(os.path.join(d, pid + ".svg"), "rb") as f:
+                    body = f.read(PORTRAIT_MAX + 1)
+            except OSError:
+                continue
+            if len(body) <= PORTRAIT_MAX and body.lstrip().startswith(b"<svg") and b"<script" not in body.lower():
+                break
+            body = b""
+        if not body:
+            log.warning("portrait %s missing from %s", pid, _art_dirs())
+            return (b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="96" height="96" role="img">'
+                    b'<circle cx="32" cy="32" r="31" fill="#77776f"/><circle cx="32" cy="32" r="26.5" fill="#22232a"/></svg>')
+        _portraits[pid] = body
+    return _portraits[pid]
 
 
 def clean_bio(v) -> str:
@@ -194,7 +225,7 @@ class Profiles:
         r = self.one("SELECT bio, avatar, setup, ver, updated FROM profiles WHERE acct = ?", (acct,))
         if not r:
             return {"acct": acct, "bio": "", "avatar": "", "setup": False, "ver": 1, "updated": 0}
-        return {"acct": acct, "bio": r[0], "avatar": r[1], "setup": bool(r[2]), "ver": r[3], "updated": r[4]}
+        return {"acct": acct, "bio": r[0], "avatar": LEGACY.get(r[1], r[1]), "setup": bool(r[2]), "ver": r[3], "updated": r[4]}
 
     def _hist(self, acct: str, field: str, old: str, new: str, by: str) -> None:
         self.db.execute("INSERT INTO profile_history (at, acct, field, old, new, by) VALUES (?,?,?,?,?,?)",
@@ -231,7 +262,7 @@ class Profiles:
             return self.get(acct)
 
     def note_name(self, acct: str, old: str, new: str, by: str) -> None:
-        """A name change (made in stream/social.py) goes in the same history; the default picture shows the new initial."""
+        """A name change (made in stream/social.py) goes in the same history; the default picture follows the new name."""
         if old == new:
             return
         with self.lock:
@@ -415,7 +446,8 @@ def public(acct: str, absolute: bool = True) -> dict:
     pr = store.get(acct) if store is not None else {"bio": "", "avatar": "", "setup": False}
     soc = _soc()
     p = soc.profile(acct) if soc is not None else None
-    return {"profile": {"bio": pr["bio"], "avatar": pr["avatar"], "avatar_url": avatar_url(acct, absolute), "setup": pr["setup"],
+    return {"profile": {"bio": pr["bio"], "avatar": pr["avatar"], "avatar_url": avatar_url(acct, absolute),
+                        "default_avatar": default_portrait((p or {}).get("name", "")), "setup": pr["setup"],
                         "name_generated": name_generated((p or {}).get("name", ""))},
             "avatars": avatars(absolute), "ways": ways(), "manage_url": f"https://{host()}{PROFILE}"}
 
@@ -546,11 +578,12 @@ background:var(--lk-surface-2,#1b2030);color:var(--lk-text,#fff)!important}
 border:1px solid var(--lk-border-strong,rgba(255,255,255,.2));background:var(--lk-bg,#0d1017);color:var(--lk-text,#fff);font:inherit}
 .pf-form textarea{min-height:96px;resize:vertical;line-height:1.5}
 .pf-pics{display:grid;grid-template-columns:repeat(auto-fill,minmax(58px,1fr));gap:8px;margin:0;padding:0;border:0}
-.pf-pics label{position:relative;display:block;cursor:pointer;border-radius:50%}
+.pf-pics label{position:relative;display:block;cursor:pointer;border-radius:50%;padding:3px}
 .pf-pics input{position:absolute;opacity:0;inset:0;margin:0}
-.pf-pics img{display:block;width:100%;height:auto;aspect-ratio:1;border-radius:50%;border:3px solid transparent;box-sizing:border-box}
-.pf-pics input:checked+img{border-color:var(--lk-accent-strong,#7aa3f5);box-shadow:0 0 0 2px var(--lk-bg,#0d1017) inset}
-.pf-pics input:focus-visible+img{outline:2px solid var(--lk-accent-strong,#7aa3f5);outline-offset:2px}
+.pf-pics img{display:block;width:100%;height:auto;aspect-ratio:1;transition:transform .12s ease}
+.pf-pics label:hover img{transform:scale(1.06)}
+.pf-pics label:has(input:checked){box-shadow:0 0 0 2px var(--lk-accent-strong,#d8b25a);background:rgba(216,178,90,.12)}
+.pf-pics input:focus-visible+img{outline:2px solid var(--lk-accent-strong,#d8b25a);outline-offset:2px;border-radius:50%}
 .pf-acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
 .pf-btn{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:0 18px;border-radius:var(--lk-r-sm,10px);border:0;
 background:var(--lk-accent,#5b8def);color:#fff!important;font:inherit;font-weight:700;text-decoration:none;cursor:pointer}
@@ -701,8 +734,9 @@ def go_way(h, way: str, query: dict) -> None:
 
 def _pics(current: str, name: str, pid: str) -> str:
     e = html.escape
-    out = [f'<label title="Your initial"><input type="radio" name="avatar" value=""{" checked" if not current else ""}>'
-           f'<img src="{AVATAR}/i/{e(pid)}.svg" alt="Your initial" width="64" height="64"></label>']
+    auto = PRESET[default_portrait(name)][1]
+    out = [f'<label title="Picked for you ({e(auto)})"><input type="radio" name="avatar" value=""{" checked" if not current else ""}>'
+           f'<img src="{AVATAR}/i/{e(pid)}.svg" alt="Picked for you: {e(auto)}" width="64" height="64"></label>']
     for p in PRESETS:
         out.append(f'<label title="{e(p[1])}"><input type="radio" name="avatar" value="{p[0]}"{" checked" if current == p[0] else ""}>'
                    f'<img src="{AVATAR}/p/{p[0]}.svg" alt="{e(p[1])}" width="64" height="64" loading="lazy"></label>')
@@ -810,7 +844,7 @@ def _svg(h, body: bytes, max_age: int) -> None:
 
 def serve_avatar(h, sub: str, query: dict) -> None:
     m = re.fullmatch(r"p/([a-z]{2,12})\.svg", sub)
-    if m and m.group(1) in PRESET:
+    if m and (m.group(1) in PRESET or m.group(1) in LEGACY):
         return _svg(h, preset_svg(m.group(1)), 604800)
     m = re.fullmatch(r"([ui])/([a-z0-9]{10})\.svg", sub)
     soc = _soc()
@@ -819,7 +853,7 @@ def serve_avatar(h, sub: str, query: dict) -> None:
         if acct:
             p = soc.profile(acct)
             av = store.get(acct)["avatar"] if (store is not None and m.group(1) == "u") else ""
-            body = preset_svg(av) if av in PRESET else initial_svg(p["name"], p["pid"])
+            body = preset_svg(av if av in PRESET else default_portrait(p["name"]))
             return _svg(h, body, 86400 if (query.get("v") and m.group(1) == "u") else 300)
     h.send(404, b"not found\n", "text/plain")
 

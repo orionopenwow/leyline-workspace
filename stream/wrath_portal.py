@@ -1129,6 +1129,12 @@ _theme_ver = {"key": None, "v": ""}
 HUB_THUMB_RE = re.compile(r"hub-thumbs/[a-z0-9][a-z0-9._-]{0,99}__[a-z0-9][a-z0-9._-]{0,99}\.webp")
 HUB_THUMB_MAX = 200_000
 
+# The player portraits (round character pictures on a slate medallion, original art: tools/art/avatars/), static SVG in
+# ART_DIR/avatars/ (www-files/art/avatars/); stream/profiles.py serves the same files at /wrath/avatar/. Allowed by
+# pattern: a real SVG of a sane size without script, nothing else from that folder. Cached a week like the other art.
+AVATAR_ART_RE = re.compile(r"avatars/[a-z]{2,12}\.svg")
+AVATAR_ART_MAX = 16_000
+
 
 # The launcher Home gallery's in-game screenshots (owner 2026-10-30), in ART_DIR/home/: one or more per slide id
 # (hangout.webp, browser.webp, hangout-2.webp, mode-minigolf.webp ...) and home.json, the list the launcher reads (which
@@ -1151,6 +1157,8 @@ def art_type(name: str) -> str:
         return ""
     if HUB_THUMB_RE.fullmatch(name):
         return "image/webp"
+    if AVATAR_ART_RE.fullmatch(name):
+        return "image/svg+xml"
     if name == HOME_JSON:
         return "application/json; charset=utf-8"
     if HOME_ART_RE.fullmatch(name):
@@ -1193,6 +1201,9 @@ def art_bytes(name: str) -> bytes | None:
         except (ValueError, UnicodeDecodeError):
             ok = False
         return den_week_home(body if ok else None)
+    if AVATAR_ART_RE.fullmatch(name):                       # a portrait: a real SVG, small, no script
+        ok = len(body) <= AVATAR_ART_MAX and body.lstrip().startswith(b"<svg") and b"<script" not in body.lower()
+        return body if ok else None
     webp = body[:4] == b"RIFF" and body[8:12] == b"WEBP"
     if home_art(name):                                      # a screenshot: a real WebP or JPEG of a sane size, or nothing
         jpeg = body[:3] == b"\xff\xd8\xff"
@@ -2754,12 +2765,14 @@ class PageHandler(BaseHTTPRequestHandler):
             self.send_header("Accept-Ranges", "bytes")
             if status == 206:
                 self.send_header("Content-Range", f"bytes {start}-{end}/{total}")
-        age = (ART_MAX_AGE if name in ART_TYPES else HOME_JSON_MAX_AGE if name == HOME_JSON
+        age = (ART_MAX_AGE if name in ART_TYPES or AVATAR_ART_RE.fullmatch(name) else HOME_JSON_MAX_AGE if name == HOME_JSON
                else HOME_ART_MAX_AGE if home_art(name) else 86400)
         self.send_header("Cache-Control", f"public, max-age={age}")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Cross-Origin-Resource-Policy", "cross-origin")
         self.send_header("X-Content-Type-Options", "nosniff")
+        if art_type(name) == "image/svg+xml":   # opened on its own, a picture never runs anything
+            self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)

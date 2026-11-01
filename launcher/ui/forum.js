@@ -199,8 +199,7 @@
           const a = el("article", "fm-post");
           if (p.hidden) { a.append(el("p", "fm-gone", "This post was removed by a moderator.")); posts.append(a); continue; }
           const by = el("p", "fm-by");
-          const av = el("span", "sx-av fm-av"); let h = 0; for (const ch of String(p.author)) h = (h * 31 + ch.codePointAt(0)) >>> 0;
-          av.style.setProperty("--h", h % 360); av.append(el("b", "", (String(p.author).match(/[A-Za-z0-9]/) || ["?"])[0].toUpperCase()));
+          const av = S().avatar(String(p.author || ""), "fm-av");   // the portrait from the name (avatars.js), never a letter
           by.append(av, el("b", "", String(p.author || "Someone")));
           if (p.tag) by.append(el("small", "", "#" + p.tag));
           if (p.staff) by.append(el("span", "fm-team", "Team"));

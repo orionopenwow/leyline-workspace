@@ -640,27 +640,14 @@ def portal_with(name):
 
 HB.hub.portal = portal_with
 fp = req("/wrath/leyline-preview")[2].decode()
-order = [fp.find(x) for x in ('class="hb-hero"', 'class="hb-tick"', 'id="realms"', 'class="hb-how', 'class="hb-nums', 'id="features"',
+order = [fp.find(x) for x in ('class="hb-hero"', 'id="realms"', 'class="hb-how', 'class="hb-nums', 'id="features"',
                               'id="f-agents"', 'id="hosted"', 'id="herokey"', 'id="forum"', 'id="news"', 'id="creators-top"',
                               'id="status"')] + [fp.rfind('class="hb-fine"')]
-check("front page order: hero, ticker, realms, how it works, numbers, features, hosted, the Hero Key line, forum and Discord (news, "
+check("front page order: hero, realms, how it works, numbers, features, hosted, the Hero Key line, forum and Discord (news, "
       "then hot and creators), the status bar, the fine print", -1 not in order and order == sorted(order), order)
-tick = re.search(r'<section class="hb-tick".*?</section>', fp, re.S).group(0)
-plain = re.search(r'<ul class="hb-tick-l">(.*?)</ul>', tick, re.S).group(1)
-lis = re.findall(r"<li[^>]*>(.*?)</li>", plain)
-home_li = [x for x in lis if "Busy Den" not in x and "Old Days" not in x and "Quiet Shore" not in x and "New realm" not in x]
-check("ticker: who is playing where, from the realm list's rows, most players first, then new realms",
-      [x for x in lis if x not in home_li] == ['<b class="hb-tn">30</b> playing on Busy Den', '<b class="hb-tn">12</b> playing on Old Days',
-                                              '<b class="hb-tn">2</b> playing on Quiet Shore', "New realm: Plain Field"]
-      and len(home_li) <= 1 and all(re.fullmatch(r'<b class="hb-tn">3</b> (?:playing on|in the) [^<]+', x) for x in home_li)
-      and "Sleepy Hollow" not in tick and f'data-tick="{RIDS[1]}"' in plain and 'data-tick="home"' in plain, lis)
-check("ticker: one plain list for screen readers, the looping copy aria-hidden, a heading",
-      tick.count('<ul class="hb-tick-l">') == 1 and tick.count('<ul class="hb-tick-l dup" aria-hidden="true">') == 1
-      and '<h2 id="hb-tick-h" class="hb-vh">Live on the network</h2>' in tick)
-check("ticker: a slow loop, paused on hover and focus, still and wrapped with reduced motion",
-      ".hb-tick-run{display:flex;width:max-content;animation:hb-tick 48s linear infinite}" in fp
-      and ".hb-tick:is(:hover,:focus-within) .hb-tick-run{animation-play-state:paused}" in fp
-      and re.search(r"prefers-reduced-motion:reduce\)\{.*?\.hb-tick-l\{flex-wrap:wrap.*?\.hb-tick-l\.dup\{display:none\}", fp, re.S))
+# owner 31 Oct 23:50 ("remove this area from site"): no Live now / New this week strip and no ticker on the front page
+check("front page: no Live now / New this week strip and no ticker (owner 31 Oct)",
+      'class="hb-tick"' not in fp and 'id="live"' not in fp and "New this week" not in fp, fp.count("hb-tick"))
 check("ticker: the 30 s live update refreshes its counts (same JSON, text only)", "[data-tick=" in HB.HUB_JS and "tk(c.realmId,h.players)" in HB.HUB_JS
       and 'tk("home",s.players)' in HB.HUB_JS)
 nums = re.findall(r'<b class="hb-num" data-count="(\d+)">(\d+)</b><span>([^<]+)</span>', fp)
@@ -720,11 +707,11 @@ hk_on = re.search(r'<section class="hb-hkb hb-rv" id="herokey".*?</section>', re
 check("Hero Key (flag on): available now, no Coming soon", "Available now" in hk_on and "Coming soon" not in hk_on
       and 'href="/wrath/leyline-preview/realms">Pick a realm' in hk_on)
 HK["on"] = False
-crs = re.findall(r'<li><a class="hb-crw-a" href="/wrath/leyline-preview/catalog\?q=([^"]+)" title="([^"]+)"><span class="hb-av" style="--h:\d+" '
-                 r'aria-hidden="true">.</span><b>([^<]+)</b><small>([^<]+)</small></a></li>',
+crs = re.findall(r'<li><a class="hb-crw-a" href="/wrath/leyline-preview/catalog\?q=([^"]+)" title="([^"]+)"><img class="hb-av" '
+                 r'src="/wrath/avatar/p/[a-z]+\.svg" alt="" width="44" height="44" loading="lazy"><b>([^<]+)</b><small>([^<]+)</small></a></li>',
                  re.search(r'id="creators-top".*?</div>', fp, re.S).group(0), re.S)
 crs = [(q, n, t, sm) for q, t, n, sm in crs]
-check("Top creators: a compact avatar row, up to four authors of the top mods, with counts, linking to their work in the catalog",
+check("Top creators: a compact avatar row (each a portrait from the name, never a letter), up to four authors of the top mods, with counts, linking to their work in the catalog",
       1 <= len(crs) <= 4 and HB.as_typed(HOT["author"], HB.neutral(HOT["author"])) == html.unescape(crs[0][1]) and all(re.match(r"\d+ hot mods?( · |$)", html.unescape(c[2])) for c in crs)
       and re.fullmatch(r"[5-9]\d\d installs this month", crs[0][3]) and " · Top: " in crs[0][2] and len({c[1] for c in crs}) == len(crs)
       and all(urllib.parse.unquote_plus(html.unescape(c[0])) in AUTH for c in crs), crs)

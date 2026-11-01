@@ -251,6 +251,14 @@ function inLineup(r) {
   return !!r && !r.official && (!!r.pinned || !!r.lineup || LINEUP_NAMES.includes(String(r.name || "").trim().toLowerCase()));
 }
 function officialName() { return HANGOUT.name; }
+// Realms the launcher never shows (owner 1 Nov: "hide Builders' Realm because we don't need it"; it is being turned off).
+// realms.rs leaves it out too (HIDDEN_REALM_IDS); this is the same rule, should an older core still list it.
+const HIDDEN_REALM_IDS = ["jgt5rpofn7yaisep"];
+function hiddenRealm(r) {
+  if (!r) return false;
+  const id = r.realm_id || String(r.slug || "").replace(/^c-/, "");
+  return HIDDEN_REALM_IDS.includes(id) || String(r.name || "").toLowerCase().replace(/[^a-z0-9]/g, "") === "buildersrealm";
+}
 function realmLabel() {
   if (isOfficial()) return officialName();
   const a = chosenRealm();
@@ -261,6 +269,17 @@ function realmLabel() {
 
 function saveSelection() {
   if (currentClient()) invoke("select", { client: $("play-client").value, realm: chosenRealm() }).catch(() => {});
+  if (mode !== "browser" && !isOfficial()) rememberJoined(chosenRealm());
+}
+// the community realms you played on (the realm picker's Your realms), the latest first, five at most, on this PC only
+const JOINED_KEY = "leyline.joined";
+function joinedRealms() {
+  try { const v = JSON.parse(localStorage.getItem(JOINED_KEY) || "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string" && x).slice(0, 5) : []; }
+  catch (_) { return []; }
+}
+function rememberJoined(addr) {
+  if (!addr || addr === state.official_realm || localAt(addr)) return;
+  try { localStorage.setItem(JOINED_KEY, JSON.stringify([addr, ...joinedRealms().filter((x) => x !== addr)].slice(0, 5))); } catch (_) { /* fine */ }
 }
 
 let lastStatusClass = "";
@@ -475,7 +494,7 @@ function renderClientMenu() {
     row("pb-missing", name, { ver: b, sub: "Not found", disabled: true, title: `No ${b} folder added yet: how to find it`, run: () => openFindFiles(name, b) }));
   const tail = (t) => ([...t].length > 30 ? "…" + [...t].slice(-29).join("") : t);   // the end of a long path, where the folder name is
   const mine = have.map((x) => row("pb-mine", x.name, { ver: clientVersion(x), sub: tail(x.path), selected: c && x.id === c.id, title: x.path,
-    run: () => { $("play-client").value = x.id; realmChanged(); saveSelection(); } }));
+    run: () => chooseClient(x) }));   // remembered for the realm picked, as the realm picker's client row
   const parts = [top, missing, mine].filter((g) => g.length);
   menu.replaceChildren(...parts.flatMap((g, i) => (i ? [sep(), ...g] : g)));
 }
@@ -962,21 +981,19 @@ $("set-cshare").addEventListener("change", saveTesting);
 loadTesting();
 
 // ------------------------------------------------------------------ the play bar's realm picker: a drop-up list
-// (owner 2026-10-30: the ONLINE / SOLO / BROWSER switch gave way to it.) Your realms first (the official one and the
-// one you picked before), then the live realms on the network by players, then Play in your browser, My Den and Solo
-// leveling, + Make a realm and Find more realms…, and nearest the button the game client the realm plays with. Picking
-// a realm selects it the way the side bar's Your realms does, with a client of the version it needs; browser play is
-// a row. The same keys as the client list.
-// My Den (docs/DEN.md, owner 2026-10-30) and Solo leveling (owner 2026-10-31: "add solo leveling"): the realms made
+// (owner 2026-10-30: the ONLINE / SOLO / BROWSER switch gave way to it; owner 1 Nov: kept short, renderRealmMenu.)
+// Picking a realm selects it the way the side bar's Your realms does, with a client of the version it needs. The same
+// keys as the client list.
+// Your Den (docs/DEN.md, owner 2026-10-30) and Solo leveling (owner 2026-10-31: "add solo leveling"): the realms made
 // for this PC, hosted by the host kit (its state/host.json profile "den" or "solo", read by host_info). One kit runs
-// one realm (one state/host.json, one compose project), so the two take turns: the row of the one not running offers
+// one realm (one state/host.json, one compose project), so the two take turns: the row of the one not running (Solo leveling: under Your realms once hosted) offers
 // to switch (hostconsole.js asks, then runs it on the same realm, its accounts and characters kept). Each row says its
 // next step: Needs your game folder (the add flow; setup goes on by itself once a folder of its build is in), Make your
 // Den / Set it up once (the Host page with that ruleset picked: Host pack and Docker steps, then Start), Switch from
 // <the other>, or On this PC (played as the Host page's Play would: host_invite, then join_invite: the relay's knock,
 // the client pointed at it, then PLAY). PLAY on one of them knocks again first, and never fails without saying why.
 const LOCAL = {
-  den: { name: "My Den", profile: "den", build: "3.3.5a", key: "leyline.den", mark: "den", setup: "Make your Den",
+  den: { name: "Your Den", profile: "den", build: "3.3.5a", key: "leyline.den", mark: "den", setup: "Make your Den",
     title: "A private room to build in: you and the friends you invite" },
   solo: { name: "Solo leveling", profile: "solo", build: "3.3.5a", key: "leyline.solo", mark: "solo", setup: "Set it up once",
     title: "A private realm on this PC for levelling alone: helper bots fill your group, dungeons scale to you" },
@@ -1176,6 +1193,7 @@ let rmenuOpen = false;
 const realmRowsOf = (m) => [...m.querySelectorAll(".pb-opt")];
 function pickRealm(r) {
   rememberClient(realmKey(), currentClient());   // the client used with the realm left, for next time
+  if (mode !== "browser" && !isOfficial()) rememberJoined(chosenRealm());   // the realm left stays under Your realms
   $("play-realm").value = r.official ? "official" : "custom";
   if (!r.official) $("play-custom").value = r.address || "";
   if (mode === "browser") setMode("online");
@@ -1183,6 +1201,11 @@ function pickRealm(r) {
   realmChanged();
   saveSelection();
 }
+// the picker, kept short (owner 1 Nov 03:22: "too messy lets make everything more intuitive and less redundant and
+// proper"; "we only need Wrath Unleashed and local Dens for now, and the ability to 1-click host new servers from
+// templates"): Wrath Unleashed (and the official lineup when listed) and Your Den; Your realms (only when you host one
+// or picked a community realm); Host a server… (the Host page's templates) and a quiet Play in your browser; then the
+// one game client the realm plays with (its path in the tooltip; a click opens the client list).
 function renderRealmMenu() {
   const menu = $("pb-rmenu");
   const rows = [];
@@ -1199,7 +1222,7 @@ function renderRealmMenu() {
     li.setAttribute("aria-selected", String(!!opts.selected));
     if (opts.disabled) li.setAttribute("aria-disabled", "true");
     if (opts.title) li.title = opts.title;
-    li.addEventListener("click", () => { if (opts.disabled) return; closeRealmMenu(true); opts.run(); });
+    li.addEventListener("click", () => { if (opts.disabled) return; closeRealmMenu(!opts.keepFocus); opts.run(); });
     rows.push(li);
     return li;
   };
@@ -1212,55 +1235,76 @@ function renderRealmMenu() {
     icon: realmIcon(r.name, r.official, "sm"), ver: r.official ? "3.3.5a" : realmVersion(r), sub: players(r), subCls: r.state === "live" ? "live" : "",
     kind: r.official ? HANGOUT.kind : "",
     selected: online && (r.official ? isOfficial() : !isOfficial() && r.address === here), title: r.tagline || r.name, run: () => pickRealm(r) });
-  // the official lineup first (launch): the official realm (HANGOUT) pinned at the top, labelled, then Vanilla Remastered when
-  // its record is on the list
+  const localRow = (L) => {
+    const on = localStep(L) === "play";
+    return row("pb-local pb-" + L.mark, L.name, { icon: markIcon(L.mark), ver: on ? L.build : "", sub: L === DEN ? denSub() : localSub(L), subCls: on ? "live" : "",
+      selected: localChosen() === L, title: on ? `${L.name} on this PC: play it` : L.title, run: () => localGo(L) });
+  };
+  // Wrath Unleashed (HANGOUT) labelled, the lineup when its record is on the list, then Your Den
   const off = (realmsCache || []).find((x) => x.official) || { official: true, name: officialName(), state: "live", players: null };
   const lineup = (realmsCache || []).filter((r) => inLineup(r) && r.address && !hiddenBuild(r.build));
-  const official = [realmRow(off), ...lineup.map(realmRow)];
+  const top = [realmRow(off), ...lineup.map(realmRow), localRow(DEN)];
+  // Your realms: the one this PC hosts (not the Den: it has its row) and the community realm you picked
   const mine = [];
+  const hosted = kit && kit.realm && kit.realm.profile !== DEN.profile ? kit.realm : null;
+  const hostedLocal = hosted ? Object.values(LOCAL).find((L) => L.profile === hosted.profile) : null;
+  const hostedListed = hosted && hosted.realm_id ? (realmsCache || []).find((r) => r.realm_id === hosted.realm_id && r.address) : null;
+  if (hostedLocal) mine.push(localRow(hostedLocal));
+  else if (hostedListed) mine.push(realmRow(hostedListed));
+  else if (hosted) mine.push(row("pb-realm-opt pb-hosted", hosted.name || "Your realm", { icon: realmIcon(hosted.name || "Your realm", false, "sm"), sub: "On this PC",
+    run: () => show("host") }));
+  // and the community realms you played on: the one picked now (or saved), then the ones before it
   const saved = !isOfficial() ? here : (state.settings.selected_realm && state.settings.selected_realm !== state.official_realm ? state.settings.selected_realm : "");
-  const savedRealm = saved ? realmAt(saved) : null;
-  if (saved && localAt(saved)) { /* My Den or Solo leveling: its own row below */ }
-  else if (saved && savedRealm && !inLineup(savedRealm)) mine.push(realmRow(savedRealm));
-  else if (saved && !savedRealm) mine.push(row("pb-realm-opt", saved, { icon: realmIcon(saved, false, "sm"), selected: online && !isOfficial(), sub: "Your address", run: () => pickRealm({ official: false, address: saved }) }));
-  const live = (realmsCache || []).filter((r) => !r.official && !inLineup(r) && r.state === "live" && r.address && r.address !== saved && !hiddenBuild(r.build))
-    .sort((x, y) => (y.players || 0) - (x.players || 0)).slice(0, 6).map(realmRow);
-  const other = [
-    row("pb-browser", "Play in your browser", { icon: markIcon("web"), sub: "Nothing to install", selected: !online, run: () => setMode("browser") }),
-    ...Object.values(LOCAL).map((L) => {
-      const on = localStep(L) === "play";
-      return row("pb-local pb-" + L.mark, L.name, { icon: markIcon(L.mark), ver: on ? L.build : "", sub: localSub(L), subCls: on ? "live" : "",
-        selected: localChosen() === L, title: on ? `${L.name} on this PC: play it` : L.title, run: () => localGo(L) });
-    }),
-  ];
+  for (const addr of [...new Set([saved, ...joinedRealms()].filter(Boolean))]) {
+    const r = realmAt(addr);
+    const L = localAt(addr);
+    if (L) { if (L !== DEN && L !== hostedLocal) mine.push(localRow(L)); }
+    else if (r) { if (!inLineup(r) && r !== hostedListed && !hiddenRealm(r) && !r.official) mine.push(realmRow(r)); }
+    else if (addr !== state.official_realm) mine.push(row("pb-realm-opt", addr, { icon: realmIcon(addr, false, "sm"), selected: online && !isOfficial() && addr === here, sub: "Your address",
+      run: () => pickRealm({ official: false, address: addr }) }));
+  }
   const acts = [
-    row("pb-act", "+ Make a realm", { run: () => show("host") }),
-    row("pb-act", "Find more realms…", { run: () => show("realms") }),
+    row("pb-act pb-host-act", "Host a server…", { title: "Host a realm on this PC from a template: one click", run: hostFromTemplate }),
+    row("pb-browser pb-quiet", "Play in your browser", { selected: !online, title: "The official realm in your browser: nothing to install",
+      run: () => setMode("browser") }),
   ];
-  // the game client this realm plays with: the clients of the version it needs (the picked one marked), Add a game
-  // folder… (the existing add flow); none of that version: one plain line first
+  // the game client this realm plays with: one row (its path only in the tooltip; a click opens the client list, which
+  // has Add a game folder…); none of the version it needs: one plain line and Add a game folder…
   const clients = [];
   if (online) {
     const need = neededBuild();
     const cur = currentClient();
-    const fit = state.settings.clients.filter((x) => !need || x.build === need);
-    const tail = (t) => ([...t].length > 30 ? "…" + [...t].slice(-29).join("") : t);
-    clients.push(head("Game client"));
-    if (!fit.length) {
+    const fit = cur && (!need || cur.build === need) ? cur : state.settings.clients.find((x) => !need || x.build === need);
+    if (fit) {
+      clients.push(row("pb-client-opt", fit.name, { ver: clientVersion(fit), sub: "Game client", title: `${fit.name} · ${fit.path}\nPick another game client or add a folder`,
+        keepFocus: true, run: () => openClientMenu() }));
+    } else {
       const note = el("li", "pb-note", need ? `This realm plays with ${need}. No ${need} game folder yet.` : "No game folder yet.");
       note.setAttribute("role", "presentation");
-      clients.push(note);
+      clients.push(note, row("pb-act pb-add-client", "Add a game folder…", { run: () => addGameFolder(need ? `Add your ${need} game folder.` : "") }));
     }
-    clients.push(...fit.map((x) => row("pb-client-opt", x.name, { ver: clientVersion(x), sub: tail(x.path), selected: !!cur && x.id === cur.id, title: x.path,
-      run: () => chooseClient(x) })));
-    clients.push(row("pb-act pb-add-client", "Add a game folder…", { run: () => addGameFolder(need && !fit.length ? `Add your ${need} game folder.` : "") }));
   }
-  const parts = [[head("Official"), ...official]];
+  const parts = [top];
   if (mine.length) parts.push([head("Your realms"), ...mine]);
-  if (live.length) parts.push([head("On the network"), ...live]);
-  parts.push(other, acts);
+  parts.push(acts);
   if (clients.length) parts.push(clients);
   menu.replaceChildren(...parts.flatMap((g, i) => (i ? [sep(), ...g] : g)));
+}
+// Your Den's row: what one click does now (den.js: Den Lite straight in; else the Docker Den, started if stopped)
+function denSub() {
+  const step = localStep(DEN);
+  if (step === "play") return "On this PC";
+  if (step === "folder") return "Needs your game folder";
+  const w = window.LeylineDen && window.LeylineDen.where ? window.LeylineDen.where() : "";
+  if (w === "lite") return "One click, on this PC";   // Den Lite runs beside anything the Host pack runs
+  if (step === "switch" || step === "busy") return localSub(DEN);
+  if (w === "docker") return "Stopped: one click starts it";
+  return "Make your Den";
+}
+// Host a server…: the Host page's templates (hostmodes.js: one click to host from a template)
+function hostFromTemplate() {
+  if (window.LeylineHostModes && window.LeylineHostModes.open) window.LeylineHostModes.open();
+  else show("host");
 }
 function openRealmMenu() {
   if (rmenuOpen) return;
@@ -1275,10 +1319,12 @@ function openRealmMenu() {
     if (at) at.focus();
   };
   focusPicked();
-  // My Den and Solo leveling: hosted on this PC or not, as the kit says now (the rows change only when that changed)
-  const hosted = () => (kit && kit.realm ? kit.realm.profile : "");
+  // Your Den and Solo leveling: hosted on this PC or not, as the kit says now, and where Your Den runs (den.js, read
+  // once): the rows change only when that changed
+  const hosted = () => (kit && kit.realm ? kit.realm.profile : "") + "|" + denSub();
   const had = hosted();
-  readKit().then(() => {
+  const den = window.LeylineDen && !window.LeylineDen.state() ? window.LeylineDen.load() : null;
+  Promise.all([readKit(), den]).then(() => {
     if (!rmenuOpen || hosted() === had) return;
     const i = realmRowsOf($("pb-rmenu")).indexOf(document.activeElement);
     renderRealmMenu();
@@ -1533,7 +1579,16 @@ function renderSettings() {
   $("wine-set").disabled = !!state.windows;
   if ($("set-save")) $("set-save").hidden = !!state.windows;
   $("set-count").checked = state.settings.count_installs !== false;
+  $("set-hybrid").checked = state.settings.hybrid_login === true;
 }
+$("set-hybrid").addEventListener("change", async () => {
+  const on = $("set-hybrid").checked;
+  try {
+    const msg = await invoke("set_hybrid_login", { on });
+    state.settings.hybrid_login = on;
+    say("hybrid-status", msg, "ok");
+  } catch (e) { $("set-hybrid").checked = !on; sayErr("hybrid-status", e); }
+});
 $("set-count").addEventListener("change", async () => {
   const on = $("set-count").checked;
   try {
@@ -2350,6 +2405,7 @@ async function loadRealms(quiet) {
     const l = await invoke("realms_list");
     // the core's official record (slug "official", realms.rs official()) is the Hangout; community records never are.
     // Its card keeps the record's own type (PvE): the Official badge already says what HANGOUT.kind would.
+    l.realms = l.realms.filter((r) => !hiddenRealm(r));
     realmsCache = l.realms.map((r) => (r.official && r.slug === "official" ? Object.assign({}, r, { name: HANGOUT.name }) : r));
     realmNames = l.realms.map((r) => r.name);
     const when = l.saved_at ? new Date(l.saved_at * 1000).toLocaleString() : "an earlier visit";
@@ -2651,8 +2707,9 @@ async function playRealmHeroKey(r, btn) {
   try {
     const l = await invoke("play_realm_herokey", { client: picked.id, slug: r.slug });
     const mins = Math.max(1, Math.round((l.valid_s || 600) / 60));
-    say("rl-status", `Started on ${r.name} as ${l.user}. At the login screen type this one-time password: ${l.pass} `
-      + `(it works for ${mins} minutes and is not saved).`, "ok");
+    if (l.auto) say("rl-status", `Started on ${r.name} as ${l.user}. The game signs you in by itself.`, "ok");
+    else say("rl-status", `Started on ${r.name} as ${l.user}. At the login screen type this one-time password: ${l.pass} `
+      + `(it works for ${mins} minutes and is not saved).` + (l.auto_why ? ` (Signing in by itself didn't work here: ${l.auto_why})` : ""), "ok");
     await refresh();
     renderRealms();
   } catch (e) { sayErr("rl-status", e); }

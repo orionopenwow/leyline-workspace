@@ -38,6 +38,12 @@ pub struct Login {
     pub user: String,
     pub pass: String,
     pub valid_s: u64,
+    /// The hybrid client (crate::hybrid) handed the login to the game: nothing to type. False: show `pass`.
+    #[serde(default)]
+    pub auto: bool,
+    /// Why the hybrid client didn't (with the switch on), in plain words; empty otherwise.
+    #[serde(default)]
+    pub auto_why: String,
 }
 
 /// `HK` + 14 base32 letters (upper case): the realm's account for this player's pseudonym.
@@ -102,7 +108,7 @@ pub fn redeem(t: &Ticket) -> Result<u64, String> {
 pub fn sign_in(app_dir: &Path, realm: &str) -> Result<Login, String> {
     let t = request(app_dir, realm)?;
     let valid_s = redeem(&t)?;
-    Ok(Login { realm: t.realm, user: t.user, pass: t.pass, valid_s })
+    Ok(Login { realm: t.realm, user: t.user, pass: t.pass, valid_s, auto: false, auto_why: String::new() })
 }
 
 /// Config.wtf with `SET accountName "<user>"` (the key keeps its spelling when the line is there; added when not).

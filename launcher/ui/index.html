@@ -111,13 +111,12 @@
 
     <!-- below the fold (home.js): one row each, shown once its data is in, hidden when empty -->
     <div class="home-more" id="home-more">
-      <!-- Your Den first (den.js): one click into your own white room to build in -->
+      <!-- Your Den first (den.js): Home's one Den entry, the same one click as the side menu and the play bar -->
       <section class="hm-sec hm-den" id="hm-den" aria-label="Your Den">
         <span class="hm-den-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5M6 9v11h12V9M10 20v-5h4v5"/></svg></span>
         <div class="hm-den-txt"><b>Your Den</b><span>A white room to build in, on this PC. One click and you're in.</span></div>
         <div class="hm-den-acts">
           <button type="button" class="btn primary" id="hm-den-go">Your Den</button>
-          <button type="button" class="link-s" id="hm-den-page">Saved Dens, friends, Workshop ›</button>
         </div>
       </section>
       <section class="hm-sec" id="hm-realms" aria-labelledby="hm-realms-h" hidden>
@@ -515,7 +514,7 @@
         <li><b>Get your game files.</b> Leyline plays with a game folder you already have; it can't download the game for you.
           <button type="button" class="link" data-page-go="findfiles">Can't find your files? ›</button></li>
         <li><b>Add your folder.</b> Press PLAY with no folder, or pick Add a game folder… in the play bar. Leyline reads the version itself.</li>
-        <li><b>Pick a realm.</b> The official realm is picked for you. The realm list in the play bar has the rest, or see Realms.</li>
+        <li><b>Pick a realm.</b> The official realm is picked for you. The realm list in the play bar has Your Den and the realms you host or played on; Realms lists every realm.</li>
         <li><b>Play.</b> Press PLAY. Leyline sets the realm for you and keeps your original settings as a backup.</li>
       </ol>
       <h3>Level 1 or boost to 80</h3>
@@ -574,6 +573,10 @@
       <p class="status" id="count-status" role="status"></p>
       <h3>Testing</h3>
       <p class="lede">For trying things out on this PC. Both stay off unless you turn them on.</p>
+      <label class="check"><input type="checkbox" id="set-hybrid"> Sign in by itself (testing): with Hero Key sign-in, the game's
+        login screen signs in for you, as in the browser. Needs Forever UI's login screens in the game folder. The one-time
+        password goes into Leyline's own archive in the game's Data folder for that one start, and is taken out when the game closes.</label>
+      <p class="status" id="hybrid-status" role="status"></p>
       <label class="check"><input type="checkbox" id="set-ctorrent"> Allow torrent downloads of game clients (testing only): a magnet link or torrent
         file you drop on the realm box downloads into the folder you pick</label>
       <label class="check sub"><input type="checkbox" id="set-cshare"> Share while downloading (upload capped; it stops when the download is done)</label>
@@ -617,7 +620,7 @@
 </dialog>
 
 <!-- The play bar, on every page: the client picker (a drop-up list, app.js renderClientMenu), the realm picker with one
-     status line (a drop-up list, app.js renderRealmMenu: realms, browser play, Make a realm) and PLAY. #play-client stays the model the rest of app.js reads; the list sets it. -->
+     status line (a drop-up list, app.js renderRealmMenu: Wrath Unleashed, Your Den, Host a server…, the game client) and PLAY. #play-client stays the model the rest of app.js reads; the list sets it. -->
 <form id="play-form" class="playbar">
   <div class="pb-left">
     <span class="pb-label" id="pb-client-label">GAME CLIENT</span>
@@ -692,6 +695,7 @@
 </div>
 <script src="friendly.js"></script><!-- never a raw error to the player: window.LeylineFriendly -->
 <script src="spin.js"></script>
+<script src="avatars.js"></script><!-- the player portraits (window.LeylineAvatars; before social.js) -->
 <script src="social.js"></script>
 <script src="account.js"></script>
 <script src="forum.js"></script>

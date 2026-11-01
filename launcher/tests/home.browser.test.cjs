@@ -1,6 +1,6 @@
 // The launcher's Home page (ui/home.js, ui/home.css) in Chromium with a fake Tauri core: the hero gallery (Join Wrath
 // Unleashed first, with Play now and Join the Discord, the lineup, what's on and the latest forum threads; then the featured
-// mode with its key art, what's new, browser play with the realms, hosting, your Den, a Workshop mod with its screenshots;
+// mode with its key art, what's new, browser play with the realms, hosting, a Workshop mod with its screenshots;
 // a slide without its data left out; live counts; network strings shown as text, never HTML), its dots,
 // arrows and Left / Right keys, moving on by itself and not under prefers-reduced-motion, and the rows below the fold
 // (Popular realms, Mods to try, Game modes, News, Host your own) shown with their data, hidden when empty, each click
@@ -119,7 +119,7 @@ const where = (page) => page.evaluate(() => ({ page: document.querySelector('.pa
 test('the gallery: every slide with its data, a title, one line and one button; art for the featured mode', async () => {
   const { page, ctx, errors } = await open({ ms: 600000 });
   await page.waitForFunction(() => window.LeylineHome.slides().includes('mod'));
-  assert.deepEqual(await keys(page), ['hangout', 'mode', 'news', 'browser', 'host', 'den', 'mod']);
+  assert.deepEqual(await keys(page), ['hangout', 'mode', 'news', 'browser', 'host', 'mod'], 'no Den slide: Your Den has one banner below (den.js)');
   for (const s of await page.$$('#hero-slides .hero-slide')) {
     assert.equal(await s.$$eval('.hs-title', (x) => x.length), 1);
     const want = (await s.getAttribute('data-key')) === 'hangout' ? 2 : 1;
@@ -137,10 +137,9 @@ test('the gallery: every slide with its data, a title, one line and one button; 
   assert.equal(await page.textContent('.hero-slide[data-key="news"] .hs-title'), 'EVERY CLIENT, EVERY SERVER', 'the newest entry');
   assert.equal(await page.textContent('.hero-slide[data-key="mod"] .hs-title'), 'Better Bars', 'the first packaged project');
   assert.equal(await page.textContent('.hero-slide[data-key="mod"] .hs-line'), 'Better Bars makes things better.', 'one short line');
-  assert.equal(await page.textContent('.hero-slide[data-key="den"] .hs-title'), 'Make your Den');
-  assert.equal(await page.locator('#hero-dots .hero-dot').count(), 7);
+  assert.equal(await page.locator('#hero-dots .hero-dot').count(), 6);
   assert.deepEqual(await current(page), { on: ['hangout'], dot: 0, i: 0 });
-  assert.equal(await page.locator('.hero-slide[inert]').count(), 6, 'the hidden slides take no focus');
+  assert.equal(await page.locator('.hero-slide[inert]').count(), 5, 'the hidden slides take no focus');
   const text = await page.evaluate(() => document.body.innerText);
   assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i);
   assert.deepEqual(errors, []);
@@ -151,7 +150,7 @@ test('slides without their data are left out (no catalog, no art, browser play a
   const { page, ctx, errors } = await open({ empty: true, browser: true, noArt: true, ms: 600000 });
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'mods_catalog'));
   await page.waitForFunction(() => !window.LeylineHome.slides().includes('mode'));
-  assert.deepEqual(await keys(page), ['hangout', 'news', 'host', 'den']);
+  assert.deepEqual(await keys(page), ['hangout', 'news', 'host']);
   assert.deepEqual(await page.locator('.hero-slide[data-key="hangout"] .hs-chip').allTextContents(), [], 'no counts without live realms');
   assert.equal(await page.locator('.hero-slide[data-key="hangout"] .hs-whats').count(), 0, "no what's on without the modes list");
   assert.equal(await page.locator('#hero-slides .hero-slide img.hs-art').count(), 0, 'no key art (the lineup crystal icon is not art)');
@@ -161,21 +160,19 @@ test('slides without their data are left out (no catalog, no art, browser play a
 
 test('dots, arrows and the Left / Right keys move the gallery; the buttons do what they say', async () => {
   const { page, ctx, errors } = await open({ ms: 600000 });
-  await page.waitForFunction(() => window.LeylineHome.slides().length === 7);
+  await page.waitForFunction(() => window.LeylineHome.slides().length === 6);
   await page.click('#hero-dots .hero-dot[data-i="4"]');
   assert.deepEqual(await current(page), { on: ['host'], dot: 4, i: 4 });
   await page.click('#hero-next');
   assert.equal((await current(page)).i, 5);
   await page.click('#hero-next');
-  await page.click('#hero-next');
   assert.equal((await current(page)).i, 0, 'wraps round');
   await page.click('#hero-prev');
-  assert.equal((await current(page)).i, 6);
+  assert.equal((await current(page)).i, 5);
   await page.focus('#hero-dots .hero-dot[aria-current="true"]');
   await page.keyboard.press('ArrowRight');
   assert.equal((await current(page)).i, 0);
   assert.equal(await page.evaluate(() => document.activeElement.dataset.i), '0', 'the focus follows the dot');
-  await page.keyboard.press('ArrowLeft');
   await page.keyboard.press('ArrowLeft');
   await page.keyboard.press('ArrowLeft');
   assert.deepEqual(await current(page), { on: ['host'], dot: 4, i: 4 });
@@ -185,7 +182,7 @@ test('dots, arrows and the Left / Right keys move the gallery; the buttons do wh
   assert.equal((await current(page)).i, 5);
   assert.ok(await page.evaluate(() => document.getElementById('hero').contains(document.activeElement)));
 
-  await page.evaluate(() => window.LeylineHome.show(6));
+  await page.evaluate(() => window.LeylineHome.show(5));
   await page.click('.hero-slide[data-key="mod"] .hs-go');
   assert.deepEqual(await where(page), { page: 'page-mods', panes: ['pane-discover'] });
   await page.evaluate(() => window.LeylineNav.show('play'));
@@ -402,16 +399,9 @@ test('the realms beside browser play: kind, New, version, players and a bar of h
   await ctx.close();
 });
 
-test('the Den slide opens the Host page with the Den picked; the Workshop slide shows site screenshots only', async () => {
+test('the Workshop slide shows site screenshots only', async () => {
   const { page, ctx, errors } = await open({ ms: 600000 });
   await page.waitForFunction(() => window.LeylineHome.slides().includes('mod'));
-  assert.deepEqual(await page.locator('.hero-slide[data-key="den"] .hs-steps .hs-st-t b').allTextContents(), ['A white room', 'Edit mode', 'Invite friends']);
-  await page.evaluate(() => document.addEventListener('leyline:host-ruleset', (e) => { window.__ruleset = e.detail.profile; }));
-  await showKey(page, 'den');
-  await page.click('.hero-slide[data-key="den"] .hs-go');
-  assert.equal((await where(page)).page, 'page-host');
-  assert.equal(await page.evaluate(() => window.__ruleset), 'den');
-  await page.evaluate(() => window.LeylineNav.show('play'));
 
   const mod = page.locator('.hero-slide[data-key="mod"]');
   assert.equal(await mod.locator('.hs-shot.front img').getAttribute('src'), 'https://play.openvanilla.app/wrath/mods/bars/shot/0');
@@ -469,7 +459,7 @@ test('Den of the week: from the site\'s home.json, as text; Visit shows a leylin
 test('every slide fits at 1100 px and 1400 px: words, panel and picture apart, nothing off the slide; motion only when allowed', async () => {
   for (const viewport of [{ width: 1100, height: 760 }, { width: 1400, height: 860 }]) {
     const { page, ctx, errors } = await open({ ms: 600000 }, { viewport });
-    await page.waitForFunction(() => window.LeylineHome.slides().length === 7 && document.querySelector('.hs-forum .hs-fr'));
+    await page.waitForFunction(() => window.LeylineHome.slides().length === 6 && document.querySelector('.hs-forum .hs-fr'));
     for (const k of await keys(page)) {
       await showKey(page, k);
       await page.waitForTimeout(500);
@@ -489,7 +479,7 @@ test('every slide fits at 1100 px and 1400 px: words, panel and picture apart, n
       if (r.side) { assert.ok(apart(r.side, r.body), `${k} @${viewport.width}: the panel clear of the words ${JSON.stringify(r)}`); assert.ok(inside(r.side), `${k} @${viewport.width}: the panel on the slide`); }
       if (r.ill) assert.ok(apart(r.ill, r.body), `${k} @${viewport.width}: the picture clear of the words`);
     }
-    const anim = await page.evaluate(() => { window.LeylineHome.show(6); return getComputedStyle(document.querySelector('.hero-slide.on .hs-shot.b1')).animationName; });
+    const anim = await page.evaluate(() => { window.LeylineHome.show(5); return getComputedStyle(document.querySelector('.hero-slide.on .hs-shot.b1')).animationName; });
     assert.equal(anim, 'hs-drift-a');
     assert.deepEqual(errors, []);
     await ctx.close();
@@ -521,9 +511,9 @@ test('in-game screenshots: from the site\'s home.json only, filling the slide un
   ], 'den.webp is missing (404: dropped), news lists only bad names, mode and Workshop slides keep their own pictures');
   assert.equal(await page.textContent('.hero-slide[data-key="hangout"] .hs-credit'), 'Shot by <i>Orion</i>');
   assert.equal(await page.locator('#hero .hs-credit i, #hero .hs-photo ~ b').count(), 0, 'no element made from home.json');
-  const den = page.locator('.hero-slide[data-key="den"]');
-  assert.equal(await den.evaluate((s) => s.classList.contains('has-photo')), false, 'a missing screenshot: the plain gradient');
-  assert.match(await den.evaluate((s) => getComputedStyle(s, '::before').backgroundImage), /gradient/);
+  const missing = page.locator('.hero-slide[data-key="news"]');
+  assert.equal(await missing.evaluate((s) => s.classList.contains('has-photo')), false, 'only bad names listed: the plain gradient');
+  assert.match(await missing.evaluate((s) => getComputedStyle(s, '::before').backgroundImage), /gradient/);
   assert.equal(await page.locator('.hero-slide[data-key="news"] .hs-photo').count(), 0);
   assert.equal(await page.locator('#hero-slides svg').count(), 0, 'no drawings on any slide');
   // the words turn light over a screenshot; the image fills the slide

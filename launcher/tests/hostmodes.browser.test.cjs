@@ -125,11 +125,11 @@ test('the first screen is the mode cards; Pick a ruleset yourself goes to the pi
   await page.click('.nav[data-page="host"]');
   const cards = await page.$$eval('#hx .hx-card', (l) => l.map((c) => [c.dataset.mode, c.querySelector('.hx-name').firstChild.textContent, !!c.querySelector('.hx-pic img[src^="data:image/svg+xml"]'),
     !!c.querySelector('.hx-host')]));
-  assert.deepEqual(cards.map((c) => c[0]), ['levelling', 'solo-leveling', 'duel-ladder', 'hide-and-seek', 'minigolf-night', 'den', 'survivors']);
+  assert.deepEqual(cards.map((c) => c[0]), ['levelling', 'solo-leveling', 'duel-ladder', 'hide-and-seek', 'minigolf-night', 'survivors'],
+    'no Den template: Your Den has its own page');
   assert.ok(cards.every((c) => c[2]), 'every card has its picture');
   assert.deepEqual(cards.filter((c) => !c[3]).map((c) => c[0]), ['survivors'], 'a coming mode has no Host');
   assert.equal(await page.textContent('[data-mode="duel-ladder"] .hx-live'), '1 realm live · 7 playing');
-  assert.equal(await page.textContent('[data-mode="den"] .hx-live'), '1 realm, offline now');
   assert.equal(await page.$('[data-mode="duel-ladder"] .hx-by'), null, 'our own modes carry no "by" line');
   assert.ok(await page.isHidden('.hc-setup'), 'the ruleset picker waits underneath');
   await shot(page, 'host-grid.png', true);
@@ -178,9 +178,10 @@ test('Host: the short form, checked, then the mode\'s ruleset with its answers, 
   assert.deepEqual(errors, []);
 });
 
-test('a Den mode is always private: no who-can-join, and the live link is the invite', async () => {
+test('a Den mode (a fork of it, or opened by id) is always private: no who-can-join, and the live link is the invite', async () => {
   const { page, errors } = await open();
-  await page.click('[data-mode="den"] .hx-host');
+  await page.waitForSelector('#hx .hx-card');
+  await page.evaluate(() => window.LeylineHostModes.open('den'));
   await page.waitForSelector('#hx-name');
   assert.equal(await page.locator('#hx-vis').count(), 0);
   assert.equal(await page.inputValue('.hx-f[data-key="look"] select'), 'white');

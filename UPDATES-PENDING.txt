@@ -564,3 +564,6 @@
 1246d build-realm-check Builders' Realm: why entering the world drops (restarts, memory, logins)
 1247a den-lite Den Lite on this PC: builds den-lite.exe for the launcher's Your Den (place any piece by name, a quick start at login)
 1247b ship Launcher: My Den goes straight to Your Den; Wrath Unleashed plays plain (no mods window); every launch: no intro movie, no legal screens, a borderless full-screen window; game client names without game names
+1248a build-realm-off Builders' Realm off for now (owner 1 Nov 03:27): off the network list, a 5-minute warning in game, its saves and characters kept
+1248b signin Site: player portraits instead of letter avatars (24 flat characters on grey slate; picked from the name, choose another on your profile)
+1248c ship Launcher: a simpler realm list (Wrath Unleashed, Your Den, your realms, Host a server), one way into Your Den with Invite friends and Ask Claude, the Builders' Realm hidden, player portraits, the desktop self-login test switch (off), new README screenshots

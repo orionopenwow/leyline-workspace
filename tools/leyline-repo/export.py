@@ -212,6 +212,27 @@ Leyline is a **mod launcher** and a **peer-to-peer realm network** for classic g
 - **Open source**, MIT licensed. No game data is in this repo: hosts extract what their realm needs from their
   own install, on their own PC, and it never leaves it.
 
+## The launcher
+
+<!-- TODO(owner): this section's words, your voice -->
+![The play bar's realm list in the Leyline launcher](launcher/docs/screens/play.png)
+
+The play bar at the bottom of every page is the whole play flow: pick a realm, press **Play**.
+
+- **Wrath Unleashed**, the official realm, is picked for you.
+- **Your Den** is your own room to build in, on your PC: one click and you're in. Its page has **Invite friends** and
+  **Ask Claude to edit it** (your own Claude builds with you, and every change waits for your OK).
+- **Your realms** lists the realms you host and the ones you played on, once there are any.
+- **Host a server…** opens the Host page's templates: pick one and host it in one click, then invite friends.
+- **Play in your browser** needs nothing installed.
+
+Under them is the game client the realm plays with: the launcher picks the one of the version the realm needs, and
+its list adds another game folder. **Realms** lists every realm on the network.
+
+| Your Den | Host from a template | Realms |
+|---|---|---|
+| ![Your Den](launcher/docs/screens/den.png) | ![Host a server from a template](launcher/docs/screens/host.png) | ![The realm list](launcher/docs/screens/realms.png) |
+
 ## Quick start: host a realm
 
 From the browser: sign in on the Leyline site, press **Host a realm**, choose a name and house rules, and run

@@ -254,6 +254,12 @@ if [ -d www-files/art ] && [ -f www-files/art/wu-theme.css ]; then
   find www-files/art -maxdepth 1 -type f -exec install -m 644 {} "$WU/portal/art/" \;
   echo "  art: $(find www-files/art -maxdepth 1 -type f | wc -l) files -> $WU/portal/art"
   # the hub's preview thumbnails (tools/hub-index/hub_index.py thumbs): WebP only, replaced as a set
+  # the player portraits (stream/profiles.py serves them at /wrath/avatar/, the art route at /wrath/art/avatars/)
+  if [ -d www-files/art/avatars ]; then
+    install -d -m 755 "$WU/portal/art/avatars"
+    find www-files/art/avatars -maxdepth 1 -type f -name '*.svg' -exec install -m 644 {} "$WU/portal/art/avatars/" \;
+    echo "  portraits: $(find www-files/art/avatars -maxdepth 1 -type f -name '*.svg' | wc -l) -> $WU/portal/art/avatars"
+  fi
   if [ -d www-files/art/hub-thumbs ]; then
     rm -rf "$WU/portal/art/hub-thumbs"; install -d -m 755 "$WU/portal/art/hub-thumbs"
     find www-files/art/hub-thumbs -maxdepth 1 -type f -name '*.webp' -exec install -m 644 {} "$WU/portal/art/hub-thumbs/" \;

@@ -539,6 +539,10 @@ html[data-base="light"] .pb-menu { box-shadow: 0 -10px 30px rgba(16, 24, 40, 0.1
 .pb-opt-name { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pb-opt-sub { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; font-size: 12px; color: var(--t-muted); }
 .pb-opt.pb-act { color: var(--t-accent-strong); font-size: 14px; }
+/* the realm picker's quiet rows: Play in your browser, and the game client the realm plays with */
+.pb-rmenu .pb-opt.pb-quiet { min-height: 34px; font-size: 13px; color: var(--t-muted); }
+.pb-rmenu .pb-opt.pb-quiet[aria-selected="true"] { color: var(--t-text); }
+.pb-rmenu .pb-opt.pb-client-opt { min-height: 38px; font-size: 13.5px; }
 .pb-opt.pb-missing { color: var(--t-muted); }
 .pb-opt.pb-missing .pb-opt-name, .pb-opt.pb-missing .rl-ver { opacity: 0.6; }
 .pb-sep { height: 1px; margin: 6px 0; background: var(--t-border); }

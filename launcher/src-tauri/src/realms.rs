@@ -255,6 +255,15 @@ pub fn officials() -> Vec<Realm> {
     vec![official()]
 }
 
+/// Realms the launcher leaves off every list (owner, 1 Nov 2026: the Builders' Realm is being turned off; "hide
+/// Builders' Realm because we don't need it"): by its relay realm id, and by its name should it come back under
+/// another id.
+pub const HIDDEN_REALM_IDS: &[&str] = &["jgt5rpofn7yaisep"];
+pub fn hidden_realm(rid: &str, name: &str) -> bool {
+    let plain: String = name.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_ascii_lowercase();
+    HIDDEN_REALM_IDS.contains(&rid) || plain == "buildersrealm"
+}
+
 /// A realm id: 16 base32 characters (lower case a-z, 2-7), as the relay makes them.
 pub fn realm_id_ok(s: &str) -> bool {
     s.len() == 16 && s.chars().all(|c| c.is_ascii_lowercase() || ('2'..='7').contains(&c))
@@ -346,6 +355,9 @@ pub fn parse_community_in(v: &Value, all: bool) -> Vec<Realm> {
                 return None;
             }
             let rid = c.get("realmId").and_then(Value::as_str).filter(|x| realm_id_ok(x))?.to_string();
+            if hidden_realm(&rid, &s(r, "name", 32)) {
+                return None;
+            }
             let profile = r.get("profile").cloned().unwrap_or(Value::Null);
             if listing_build(&profile).is_some_and(|b| !b.offered_in(all)) {
                 return None;
@@ -638,6 +650,18 @@ mod tests {
         assert_eq!(r[1].state, "offline");
         assert_eq!((r[0].core.as_str(), r[0].build), ("azerothcore", Some(Build::V335a)));
         assert_eq!(r[1].build, None, "no version in the record");
+    }
+
+    #[test]
+    fn the_builders_realm_is_left_out() {
+        let doc: Value = serde_json::from_str(r#"{"realms":[
+            {"name":"Builders' Realm","profile":{"version":"3.3.5a","port":40030},"community":{"realmId":"jgt5rpofn7yaisep","relay":"relay.openvanilla.app"}},
+            {"name":"builders realm","profile":{"version":"3.3.5a","port":40031},"community":{"realmId":"eeeeeeeeeeeeeeee","relay":"relay.openvanilla.app"}},
+            {"name":"Another name","profile":{"version":"3.3.5a","port":40032},"community":{"realmId":"jgt5rpofn7yaisep","relay":"relay.openvanilla.app"}},
+            {"name":"Frost Haven","profile":{"version":"3.3.5a","port":40033},"community":{"realmId":"ffffffffffffffff","relay":"relay.openvanilla.app"}}]}"#).unwrap();
+        let r = parse_community_in(&doc, true);
+        assert_eq!(r.iter().map(|x| x.name.as_str()).collect::<Vec<_>>(), ["Frost Haven"]);
+        assert!(hidden_realm("jgt5rpofn7yaisep", "") && hidden_realm("x", "Builders’ Realm") && !hidden_realm("x", "Builders' Hall"));
     }
 
     #[test]

@@ -47,22 +47,24 @@
   }
 
   // ---------------------------------------------------------------- pictures
-  function hue(name) { let h = 0; for (const ch of String(name)) h = (h * 31 + ch.codePointAt(0)) >>> 0; return h % 360; }
-  function letterOf(name) { return (String(name).match(/[A-Za-z0-9]/) || ["?"])[0].toUpperCase(); }
-  // a picture from the website (only https://play.openvanilla.app, the one place the launcher loads images from), else the
-  // letter on a hue from the name; a picture that doesn't load falls back to the letter
+  // the picture: a portrait (art/avatars/, avatars.js) on a slate medallion, never a letter. A website address: its preset
+  // shows from the local copy; a player's own address (…/avatar/u/<pid>.svg, only https://play.openvanilla.app, the one
+  // place the launcher loads images from) loads from the site, and while it loads or when it can't, the portrait picked
+  // from the name shows
   const PIC_RE = /^https:\/\/play\.openvanilla\.app\/wrath\/avatar\/[a-z]\/[a-z0-9]{2,12}\.svg(\?v=\d{1,9})?$/;
   function avatar(name, cls, url) {
-    const av = el("span", "sx-av" + (cls ? " " + cls : "")); av.style.setProperty("--h", hue(name));
-    const b = el("b", "", letterOf(name));
-    av.append(b);
-    if (url && PIC_RE.test(url)) {
-      const img = el("img"); img.alt = ""; img.decoding = "async"; img.referrerPolicy = "no-referrer";
-      img.onload = () => av.classList.add("has-pic");
-      img.onerror = () => img.remove();
+    const A = window.LeylineAvatars;
+    const av = el("span", "sx-av" + (cls ? " " + cls : ""));
+    const img = el("img"); img.alt = ""; img.decoding = "async"; img.draggable = false;
+    const local = A ? A.src(A.pick(name)) : "";
+    const preset = A && url ? A.fromUrl(url) : "";
+    if (preset) img.src = A.src(preset);
+    else if (url && PIC_RE.test(url)) {
+      img.referrerPolicy = "no-referrer";
+      if (local) { img.onerror = () => { img.onerror = null; img.src = local; }; }
       img.src = url;
-      av.append(img);
-    }
+    } else if (local) img.src = local;
+    if (img.src) av.append(img);
     return av;
   }
   const picOf = (m) => (m && m.profile && m.profile.avatar_url) || "";
@@ -286,8 +288,7 @@
   }
   const go = (fn) => () => { closePanel(false); fn(); };
   const nav = (page) => () => { if (window.LeylineNav) window.LeylineNav.show(page); };
-  // My Den and Solo leveling: the Host page with that ruleset picked, as Home's Make my Den does (home.js)
-  const ruleset = (profile) => () => { nav("host")(); document.dispatchEvent(new CustomEvent("leyline:host-ruleset", { detail: { profile } })); };
+  // no Den or Solo leveling here (owner 1 Nov: one way in): Your Den is in the side menu and the play bar
 
   function menuItem(ic, label, line, fn, cls) {
     const b = el("button", "ap-item" + (cls ? " " + cls : "")); b.type = "button"; b.setAttribute("role", "menuitem");
@@ -345,8 +346,6 @@
     const ql = el("section", "ap-sec ap-links"); ql.setAttribute("aria-label", "Quick links");
     const qm = el("div", "ap-grid"); qm.setAttribute("role", "menu"); qm.setAttribute("aria-label", "Quick links");
     qm.append(menuItem("profile", "My profile", "On the website", () => openLink("profile")),
-      menuItem("den", "My Den", "Your own room", ruleset("den")),
-      menuItem("solo", "Solo leveling", "Play alone", ruleset("solo")),
       menuItem("forum", "Forum", "Ask and share", nav("forum")),
       menuItem("settings", "Settings", "This launcher", nav("settings")),
       menuItem("help", "Help", "Guides and fixes", nav("help")));

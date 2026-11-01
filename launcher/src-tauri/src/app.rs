@@ -192,6 +192,20 @@ fn set_wine(core: State<Core>, wine: Wine) -> Result<(), String> {
 /// Point the client at `realm` (its realm file: realmlist.wtf or Config.wtf, by build), remember it,
 /// optionally start it.
 fn point_and_play(core: &Core, client: &str, realm: &str, start: bool) -> Result<String, String> {
+    point_and_play_with(core, client, realm, start, None).map(|(m, _)| m)
+}
+
+/// `point_and_play`, plus the hybrid client (docs/HYBRID-CLIENT.md): with Settings' hybrid_login on and a 3.3.5a
+/// client, `session` is handed to the login screen through Leyline's patch archive; without one, a session left
+/// from an earlier start is taken out first, so a plain start never signs in by itself. Returns whether the
+/// session went in (Err text in the second value when it didn't, with the switch on).
+fn point_and_play_with(
+    core: &Core,
+    client: &str,
+    realm: &str,
+    start: bool,
+    session: Option<crate::hybrid::Session>,
+) -> Result<(String, Result<(), String>), String> {
     let realm = realm.trim().to_string();
     if !clients::valid_realm_address(&realm) {
         return Err("That realm address does not look right (a host name, optionally :port).".into());
@@ -214,16 +228,30 @@ fn point_and_play(core: &Core, client: &str, realm: &str, start: bool) -> Result
         Ok((c.clone(), s.wine.clone()))
     })?;
     clients::write_realmlist(&profile, &realm).map_err(|e| format!("Could not write realmlist.wtf: {e}"))?;
+    let mut hybrid: Result<(), String> = Err(String::new());
     if !start {
-        return Ok(format!("{} now points at {realm}.", profile.name));
+        return Ok((format!("{} now points at {realm}.", profile.name), hybrid));
     }
     crate::gfx::prepare_launch(&profile)?;
+    let hybrid_on = core.snapshot().hybrid_login && profile.build == clients::Build::V335a;
+    match &session {
+        Some(s) if hybrid_on => hybrid = crate::hybrid::write(&profile.path, Some(s)).map(|_| ()),
+        Some(_) => {}
+        None => {
+            let _ = crate::hybrid::scrub(&profile.path);
+        }
+    }
     let plan = launch::plan(&profile, &wine, launch::Os::current())?;
-    let child = launch::run(&plan)?;
+    let child = launch::run(&plan).inspect_err(|_| {
+        let _ = crate::hybrid::scrub(&profile.path);
+    })?;
     if let Ok(mut g) = core.games.lock() {
         g.push(child);
     }
-    Ok(format!("Started {} on {realm}.", profile.name))
+    if hybrid.is_ok() {
+        scrub_when_closed(profile.path.clone());
+    }
+    Ok((format!("Started {} on {realm}.", profile.name), hybrid))
 }
 
 /// Point the client at the realm, then start it.
@@ -274,10 +302,61 @@ async fn play_realm_herokey(core: State<'_, Core>, client: String, slug: String)
     })?;
     let profile = core.client(&client)?;
     let _ = crate::herokey::set_account_name(&profile.path, &login.user);
+    let mut login = login;
     let r2 = realm.clone();
     let addr = blocking(move || realms::desktop_address(&r2, |relay| format!("https://{relay}"))).await?;
-    point_and_play(&core, &client, &addr, true)?;
+    // The hybrid client (Settings' hybrid_login, docs/HYBRID-CLIENT.md): the login screen signs in by itself.
+    let s = crate::hybrid::Session { user: login.user.clone(), pass: login.pass.clone(), realm: None, enter: false };
+    let (_, hybrid) = point_and_play_with(&core, &client, &addr, true, Some(s))?;
+    match hybrid {
+        Ok(()) => {
+            login.auto = true;
+            login.pass.clear(); // the game has it; the page has nothing to show
+        }
+        Err(e) => login.auto_why = e,
+    }
     Ok(login)
+}
+
+/// Take the one-time login out of the hybrid archive as soon as the game lets go of it (crate::hybrid::scrub fails
+/// while the game holds the archive open). The glue reads it at start, so the first try waits 90 s; then every
+/// 15 s, for at most 12 hours (the login stopped working long before; this only tidies the file).
+fn scrub_when_closed(client: PathBuf) {
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(90));
+        for _ in 0..(12 * 240) {
+            if crate::hybrid::scrub(&client).is_ok() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_secs(15));
+        }
+    });
+}
+
+/// Settings › the hybrid client (docs/HYBRID-CLIENT.md). Turning it off takes Leyline's archive out of every
+/// client it is in (someone else's archive in that slot is never touched).
+#[tauri::command]
+fn set_hybrid_login(core: State<Core>, on: bool) -> Result<String, String> {
+    let s = core.update(|s| {
+        s.hybrid_login = on;
+        Ok(s.clone())
+    })?;
+    if on {
+        return Ok("The game signs in by itself on Hero Key realms.".into());
+    }
+    let mut n = 0;
+    for c in &s.clients {
+        if crate::hybrid::remove(&c.path)? {
+            n += 1;
+        }
+    }
+    Ok(format!("Off. Leyline's login archive taken out of {n} game folder(s)."))
+}
+
+/// What the hybrid client would do with this game folder (Forever UI there, the slot free or ours).
+#[tauri::command]
+fn hybrid_status(core: State<Core>, client: String) -> Result<crate::hybrid::Status, String> {
+    Ok(crate::hybrid::status(&core.client(&client)?.path))
 }
 
 #[derive(Serialize)]
@@ -1007,6 +1086,8 @@ pub fn run() {
             mod_rate,
             mod_my_rating,
             set_count_installs,
+            set_hybrid_login,
+            hybrid_status,
             deep_link_take,
             pick_mod_file,
             pick_mod_folder,

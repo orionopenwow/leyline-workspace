@@ -1,5 +1,6 @@
-// Leyline Launcher: Your Den (docs/DEN.md "Your Den"). One button, on Home and in the side menu, into your own white room
-// to build in; one page for everything about it, each thing one click with a one-line hint.
+// Leyline Launcher: Your Den (docs/DEN.md "Your Den"). One click, from the side menu, the play bar's realm picker or Home's
+// banner (all go()), into your own white room to build in; one page for everything about it: Play, Invite friends and
+// Ask Claude to edit it on top, each thing one click with a one-line hint.
 //
 // Where the Den runs (host/yourden.rs, host/lite.rs):
 //   * Den Lite, the built-in Den server: no Docker, straight into the room. Only when the program is on this PC
@@ -116,7 +117,7 @@
         say("Opening your Den…");
         await playLocal(DEN);
         say(st.account ? `At the login screen your account ${st.account} is filled in: type your password.` : "", "ok");
-      } else say("Pick My Den in the play bar, then PLAY.", "warn");
+      } else say("Pick Your Den in the play bar, then PLAY.", "warn");
     } catch (e) { say(oops(e, "Your Den didn't start. Try again."), "bad"); }
     busy = false;
     paint();
@@ -195,6 +196,23 @@
     if (!link) { say("Your Den has no invite link yet: start it once first.", "warn"); return; }
     try { await navigator.clipboard.writeText(link); say("Invite link copied. Send it to a friend: they open it once and make their own account.", "ok"); }
     catch (_) { say(link, "ok"); }
+  }
+
+  // Invite friends: the Docker Den copies its invite link; Den Lite opens Share with friends' steps (friends join a
+  // Den on Docker), here on this page
+  function inviteFriends() {
+    if (where() === "docker") { copyInvite(); return; }
+    sharing = true;
+    paint();
+    loadSetup();
+    say("Friends join your Den on a server on this PC: a one-time setup, three steps below. Then Invite friends copies your link.", "warn");
+    const steps = root.querySelector(".yd-steps");
+    if (steps && steps.scrollIntoView) steps.scrollIntoView({ block: "nearest" });
+  }
+  // Ask Claude to edit it: the Agents page, where Claude is connected once; its Den tools (agents/den.rs) then read
+  // and build in your Den, every change after your OK
+  function askClaude() {
+    if (window.LeylineNav) window.LeylineNav.show("agents");
   }
 
   // ---------------------------------------------------------------- Saved Dens (the same for both)
@@ -335,9 +353,18 @@
     const play = btn(busy ? "Opening…" : "Play", "btn primary yd-play", go);
     play.id = "yd-play";
     play.disabled = busy;
+    // the three things to do with your Den, one click each (owner 1 Nov: "invite friends, connect Claude to edit it")
+    const invite = btn("Invite friends", "btn yd-top", inviteFriends);
+    invite.id = "yd-friends";
+    invite.title = where() === "docker" ? "Copies your invite link" : "Friends join your Den on a server: a one-time setup on this PC";
+    // TODO(owner): the label and its tooltip, his words
+    const claude = btn("Ask Claude to edit it", "btn yd-top", askClaude);
+    claude.id = "yd-claude";
+    claude.title = "Your own Claude builds in your Den with you: connect it once on the Agents page. Every change waits for your OK.";
+    const acts = mk("div", "yd-row yd-acts");
+    acts.append(play, invite, claude);
     root.append(head, mk("p", "lede", "A white room to build in, on this PC. Place anything, save it to a file, invite friends when you like."),
-      mk("div", "yd-row", undefined), status);
-    root.children[2].append(play, mk("span", "yd-hint", where() === "lite" ? "Straight into your room." : where() === "docker" ? "Starts it if it's stopped, then plays." : "Sets it up once, then plays."));
+      acts, mk("p", "yd-hint yd-play-hint", where() === "lite" ? "Play goes straight into your room." : where() === "docker" ? "Play starts it if it's stopped, then plays." : "Play sets it up once, then plays."), status);
     const grid = mk("div", "yd-grid");
     // Share with friends (Den Lite) / Invite a friend (the Docker Den)
     if (where() === "docker") {
@@ -412,8 +439,6 @@
   document.addEventListener("leyline:page", (e) => { if (e.detail && e.detail.page === "den") load(); });
   const homeGo = byId("hm-den-go");
   if (homeGo) homeGo.addEventListener("click", () => { if (window.LeylineNav) window.LeylineNav.show("den"); go(); });
-  const homeOpen = byId("hm-den-page");
-  if (homeOpen) homeOpen.addEventListener("click", () => window.LeylineNav && window.LeylineNav.show("den"));
   window.LeylineDen = { go, load, state: () => st, where };
   if (page.classList.contains("on")) load(); else paint();
 })();

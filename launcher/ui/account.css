@@ -1,10 +1,8 @@
 /* Leyline Launcher: the sign-in chooser (social.js: the title bar's pop-over and Manage account's card), the profile
    pictures, and Manage account (account.js). Uses style.css's tokens, so both themes and theme packs follow. */
 
-/* a picture from the website over the letter (the letter stays underneath while it loads, and when it can't) */
-.sx-av img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
-.sx-av.has-pic b { visibility: hidden; }
-.sx-av.has-pic { background: none; }
+/* the portrait fills its box; nothing clips it, so a prop may break out of the medallion like the art intends */
+.sx-av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; user-select: none; }
 .hf-me-pic { cursor: pointer; }
 .hf-me-pic:hover { box-shadow: 0 0 0 2px var(--t-accent-soft), inset 0 0 0 1px rgba(255,255,255,.12); }
 
@@ -64,7 +62,6 @@
 .ac-steps li.done::before { content: "\2713"; background: var(--t-accent-soft); border-color: transparent; color: var(--t-accent-strong); }
 .ac-head { display: flex; align-items: center; gap: 16px; }
 .ac-me-av .sx-av.ac-big { width: 72px; height: 72px; }
-.ac-me-av .sx-av.ac-big b { font-size: 28px; }
 .ac-me-t { min-width: 0; display: grid; gap: 2px; }
 .ac-me-t p { margin: 0; }
 .ac-me-n b { font: 800 20px var(--t-font); }
@@ -82,8 +79,7 @@
 .ac-pics legend { margin-bottom: 6px; }
 .ac-pic { position: relative; display: grid; place-items: center; cursor: pointer; border-radius: 50%; padding: 3px; }
 .ac-pic input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
-.ac-pic .sx-av.ac-pic-av { width: 46px; height: 46px; box-shadow: none; }
-.ac-pic .sx-av.ac-pic-av b { font-size: 18px; }
+.ac-pic .sx-av.ac-pic-av { width: 46px; height: 46px; }
 .ac-pic:has(input:checked) { box-shadow: 0 0 0 2px var(--t-accent-strong); }
 .ac-pic:has(input:focus-visible) { outline: 2px solid var(--t-accent-strong); outline-offset: 3px; }
 .ac-pic:hover { box-shadow: 0 0 0 2px var(--t-border-strong); }
@@ -112,8 +108,7 @@
   transition: background 0.15s, border-color 0.15s;
 }
 .titlebar .tb-me .hf-me:hover { background: color-mix(in srgb, var(--t-accent) 12%, transparent); border-color: color-mix(in srgb, var(--t-accent) 45%, transparent); }
-.titlebar .tb-me .sx-av.hf-me-av { width: 40px; height: 40px; box-shadow: 0 0 0 2px color-mix(in srgb, var(--t-accent) 55%, transparent); }
-.titlebar .tb-me .sx-av.hf-me-av b { font-size: 16px; }
+.titlebar .tb-me .sx-av.hf-me-av { width: 40px; height: 40px; }
 .titlebar .tb-me .hf-me > div { gap: 2px; }
 .titlebar .tb-me .hf-me-name { font-size: 15.5px; font-weight: 700; }
 .titlebar .tb-me .hf-me-st { font-size: 12px; color: var(--t-text-2); }
@@ -155,8 +150,7 @@ html[data-base="light"] .titlebar .tb-me { --ap-bg: var(--t-surface); --ap-line:
 /* you */
 .ap-head { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 12px; align-items: center; padding: 16px 16px 14px;
   border-bottom: 1px solid var(--ap-line); }
-.sx-av.ap-av { width: 52px; height: 52px; box-shadow: 0 0 0 2px color-mix(in srgb, var(--t-accent) 55%, transparent); }
-.sx-av.ap-av b { font-size: 20px; }
+.sx-av.ap-av { width: 52px; height: 52px; }
 .ap-who { display: grid; gap: 3px; min-width: 0; }
 .ap-who p { margin: 0; }
 .ap-name { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
@@ -198,7 +192,6 @@ html[data-base="light"] .ap-add { color: var(--t-accent); }
 .ap-f { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 5px 6px; border-radius: var(--t-radius-xs); }
 .ap-f:hover { background: color-mix(in srgb, var(--t-text) 5%, transparent); }
 .sx-av.ap-fav { width: 32px; height: 32px; }
-.sx-av.ap-fav b { font-size: 13px; }
 .ap-fdot { position: absolute; right: -2px; bottom: -2px; width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--ap-bg);
   background: var(--t-muted); z-index: 1; }
 .ap-f.st-game .ap-fdot { background: var(--t-ok); }

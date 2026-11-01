@@ -325,7 +325,7 @@
 
   // ---------------------------------------------------------------- Mods & Addons › Discover: Mods | Addons | Themes
   // The old Game mods tab is Mods › Game modes now (owner 31 Oct 19:22: Mods and Addons, distinct).
-  const TABS = ["mods", "addons", "themes", "graphics"];   // Graphics: graphics.js (owner 31 Oct 22:58)
+  const TABS = ["mods", "addons", "looks", "themes", "graphics"];   // Graphics: graphics.js (owner 31 Oct 22:58); Looks: looks.js (owner 1 Nov 14:38)
   let tab = "mods";
   try { const t = localStorage.getItem("leyline.dcTab"); if (TABS.includes(t)) tab = t; } catch (_) { /* fine */ }
   function showTab(t) {
@@ -342,8 +342,11 @@
     d.hidden = t !== "themes";
     const g = document.getElementById("graphics-discover");
     if (g) g.hidden = t !== "graphics";
+    const lk = document.getElementById("looks-discover");
+    if (lk) lk.hidden = t !== "looks";
     if (t === "themes") { renderDiscover(d); loadCatalog(); }
     else if (t === "graphics") { if (g && window.LeylineGraphics) window.LeylineGraphics.show(g); }
+    else if (t === "looks") { if (lk && window.LeylineLooks) window.LeylineLooks.show(lk); }
     else if (typeof renderCatalog === "function") renderCatalog();   // Mods or Addons: the same list, the other shelf (simple.js)
   }
 
@@ -357,13 +360,15 @@
     } catch (e) { say(String(e), "bad"); }
   }
 
-  // app.js hands the mods list through here: theme packs are listed under Discover › Themes, never as mods or addons.
+  // app.js hands the mods list through here: theme packs are listed under Discover › Themes, never as mods or addons;
+  // looks (source "look") go to Discover › Looks (looks.js) the same way.
   function takeThemes(c) {
     if (!c || !Array.isArray(c.projects)) return c;
     catalogThemes = c.projects.filter((p) => p.category === "themes");
     catalogCategory = (c.categories || []).find((k) => k.id === "themes") || catalogCategory;
+    if (window.LeylineLooks) window.LeylineLooks.take(c.projects);
     return Object.assign({}, c, {
-      projects: c.projects.filter((p) => p.category !== "themes"),
+      projects: c.projects.filter((p) => p.category !== "themes" && p.source !== "look"),
       categories: (c.categories || []).filter((k) => k.id !== "themes"),
     });
   }
@@ -381,8 +386,8 @@
       const tabs = el("div", "ly-tabs");
       tabs.id = "discover-tabs";
       tabs.setAttribute("role", "tablist");
-      tabs.setAttribute("aria-label", "Mods, addons, themes and graphics");
-      for (const [id, label] of [["mods", "Mods"], ["addons", "Addons"], ["themes", "Themes"], ["graphics", "Graphics"]]) {
+      tabs.setAttribute("aria-label", "Mods, addons, looks, themes and graphics");
+      for (const [id, label] of [["mods", "Mods"], ["addons", "Addons"], ["looks", "Looks"], ["themes", "Themes"], ["graphics", "Graphics"]]) {
         const b = el("button", "ly-tab", label);
         b.type = "button";
         b.dataset.tab = id;
@@ -399,6 +404,10 @@
       gfx.id = "graphics-discover";
       gfx.hidden = true;
       panel.append(gfx);
+      const lks = el("div", "lk-box");
+      lks.id = "looks-discover";
+      lks.hidden = true;
+      panel.append(lks);
       showTab(tab);
     }
     document.querySelectorAll('.nav[data-page="settings"]').forEach((n) => n.addEventListener("click", () => sync().then(render).catch(() => {})));

@@ -82,3 +82,12 @@ check found something for a game client. Same id (`link:<12 hex>`), plus:
 The launcher (`launcher/src-tauri/src/listed.rs`) installs it only when the block checks out (`listed::install_ok`) and
 every downloaded file matches; otherwise it shows it as a plain link. Listings that wait for a moderator, are hidden by
 reports or were taken down are not in all.json. Realm scripts and game modes stay `community` links (nothing for a client).
+
+## Looks (`source: "look"`)
+
+Graphics packs, UI looks and graphics presets from `stream/looks.json` (mods/SPEC.md "Looks"), id `look:<slug>`, category
+`graphics` or `addons`. Plus `look` (`type`, `preset`, `uses`, `changes`, `previews`, `featured`, `order`, `note`, and `how`:
+`launcher` for one click, `link` for the author's page) and, for a pinned graphics pack, `install` (`kind: files`,
+`from: release-asset`, `url` on the entry's own GitHub repo, `rev`, `sha256`, `size`, `file_count`, `strip_prefix`, `files`
+(every `.MPQ` -> sha256), `files_digest`). The launcher shows them under Mods › Discover › Looks, never in the mods list.
+

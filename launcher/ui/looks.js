@@ -1,0 +1,218 @@
+// Mods & Addons › Discover › Looks (owner 1 Nov 14:38: "make the graphical upgrades and changes a main part ... featuring
+// different looks and 1 click install on them for most clients"): graphics packs, UI looks and graphics presets from the
+// mods list's `source: "look"` entries (src-tauri/src/looks.rs, stream/looks.json). One click where the core says it can
+// (a preset, a pinned pack, a UI look whose addons are reviewed); the author's page otherwise. "Back to the original look"
+// takes every look out of that game and puts its settings back. The tab is themes.js's; themes.js hands the looks over
+// (take) so they never show in the Mods or Addons lists. The website's "Install with Leyline" lands here (focus).
+(() => {
+  "use strict";
+  const invoke = window.__TAURI__ && window.__TAURI__.core ? window.__TAURI__.core.invoke : null;
+  const el = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = text;
+    return n;
+  };
+  const TYPES = { "graphics-pack": "Graphics pack", "ui-look": "UI look", preset: "Graphics preset" };
+  const FILTERS = [["", "All looks"], ["graphics-pack", "Graphics packs"], ["ui-look", "UI looks"], ["preset", "Presets"]];
+  let looks = [];        // the catalog's looks, in their order
+  let client = "";       // the client's id
+  let st = null;         // looks_state's answer for that client
+  let type = "";
+  let focusId = "";      // a look a leyline:// link asked for
+  let busy = "";
+  let note = ["", ""];
+  let box = null;
+
+  function friendly(e) {
+    return window.LeylineFriendly && window.LeylineFriendly.say ? window.LeylineFriendly.say(e) : String(e);
+  }
+  function clients() {
+    const s = document.getElementById("play-client");
+    return s ? Array.from(s.options).filter((o) => o.value).map((o) => ({ id: o.value, name: o.textContent })) : [];
+  }
+  function size(n) {
+    if (n === null || n === undefined) return "Size on the author's page";
+    if (n === 0) return "Nothing to download";
+    if (n < 1048576) return `${Math.max(1, Math.round(n / 1024))} KB`;
+    if (n < 1073741824) return `${Math.round(n / 1048576)} MB`;
+    return `${(n / 1073741824).toFixed(1)} GB`;
+  }
+  const order = (p) => (p.look && Number.isFinite(p.look.order) ? p.look.order : 0);
+
+  function take(projects) {
+    looks = (projects || []).filter((p) => p && p.source === "look" && p.look).sort((a, b) => order(a) - order(b) || a.name.localeCompare(b.name));
+    if (box && !box.hidden) render();
+  }
+
+  async function load() {
+    const list = clients();
+    if (!client || !list.some((c) => c.id === client)) {
+      const sel = document.getElementById("play-client");
+      client = (sel && sel.value) || (list[0] && list[0].id) || "";
+    }
+    st = null;
+    if (client && invoke) {
+      try { st = await invoke("looks_state", { client }); } catch (e) { note = [friendly(e), "bad"]; }
+    }
+    render();
+  }
+
+  function howOf(p) { return (st && st.how && st.how[p.id]) || (p.look.how === "launcher" ? "" : "link"); }
+  const isOn = (p) => !!(st && Array.isArray(st.on) && st.on.includes(p.id));
+
+  async function act(p, what) {
+    if (!client) { note = ["Add your game first: drop your game folder on the realm box below.", "warn"]; render(); return; }
+    busy = p.id;
+    render();
+    try {
+      if (what === "apply") {
+        const d = await invoke("looks_apply", { client, look: p.id });
+        note = [d.said || `${p.name} is in.`, d.warnings && d.warnings.length ? "warn" : "ok"];
+      } else {
+        await invoke("looks_remove", { client, look: p.id });
+        note = [`${p.name} is out.`, "ok"];
+      }
+    } catch (e) { note = [friendly(e), "bad"]; }
+    busy = "";
+    await load();
+  }
+
+  async function reset() {
+    if (!client) return;
+    busy = "reset";
+    render();
+    try { const r = await invoke("looks_reset", { client }); note = [r.said, "ok"]; }
+    catch (e) { note = [friendly(e), "bad"]; }
+    busy = "";
+    await load();
+  }
+
+  async function openPage(p) {
+    const url = p.page || p.repo || p.author_url;
+    if (!url) return;
+    try { await invoke("open_url", { url }); note = [`Opened ${p.name}'s page in your browser.`, "ok"]; }
+    catch (e) { note = [friendly(e), "bad"]; }
+    render();
+  }
+
+  function card(p, build) {
+    const lk = p.look;
+    const c = el("article", "lk-card");
+    c.dataset.id = p.id;
+    c.dataset.type = lk.type;
+    if (p.id === focusId) c.classList.add("linked");
+    const ph = el("div", "lk-ph " + lk.type);
+    ph.setAttribute("aria-hidden", "true");
+    for (let i = 0; i < 3; i++) ph.append(el("i", "lk-d" + i));
+    c.append(ph);
+    const b = el("div", "lk-b");
+    b.append(el("p", "lk-type", TYPES[lk.type] || "Look"), el("h3", "lk-name", p.name));
+    const chips = el("ul", "lk-chips");
+    chips.setAttribute("aria-label", "Works with");
+    for (const v of p.builds || []) chips.append(el("li", v === build ? "on" : "", v));
+    b.append(chips, el("p", "lk-desc", p.description));
+    if (Array.isArray(lk.changes) && lk.changes.length) {
+      const ch = el("p", "lk-ch");
+      ch.append(el("b", "", "Changes: "), document.createTextNode(lk.changes.join(", ")));
+      b.append(ch);
+    }
+    b.append(el("p", "lk-meta", size(p.size)), el("p", "lk-credit", p.credits || `${p.name} by ${p.author}`));
+    if (lk.note) b.append(el("p", "lk-note", lk.note));
+    const acts = el("div", "lk-acts");
+    const how = howOf(p);
+    const fits = !build || !(p.builds || []).length || p.builds.includes(build);
+    const on = isOn(p);
+    if (how !== "link" && how !== "") {
+      const btn = el("button", "btn primary lk-go", how === "preset" ? (on ? "In use" : "Use") : on ? "Remove" : "Install");
+      btn.type = "button";
+      btn.disabled = !fits || !!busy || (how === "preset" && on);
+      if (busy === p.id) btn.textContent = how === "preset" ? "Saving…" : on ? "Removing…" : "Installing…";
+      btn.addEventListener("click", () => act(p, on && how !== "preset" ? "remove" : "apply"));
+      acts.append(btn);
+      if (!fits) acts.append(el("span", "lk-nofit", "Not for this game version"));
+    }
+    if (p.author !== "Leyline" && (p.page || p.repo)) {
+      const a = el("button", how === "link" ? "btn lk-page" : "lk-link lk-page", "Author's page");
+      a.type = "button";
+      a.addEventListener("click", () => openPage(p));
+      acts.append(a);
+    }
+    b.append(acts);
+    c.append(b);
+    return c;
+  }
+
+  function render() {
+    if (!box) return;
+    box.textContent = "";
+    box.append(el("p", "lk-lede", "Make your game look new: graphics packs, new interfaces and graphics presets, with credit to the people who made them. One click where Leyline can check it; the author's page for the rest."));
+    const list = clients();
+    const head = el("div", "lk-head");
+    if (list.length) {
+      const pick = el("select", "gfx-client");
+      pick.id = "looks-client";
+      pick.setAttribute("aria-label", "Game client");
+      for (const c of list) { const o = el("option", "", c.name); o.value = c.id; if (c.id === client) o.selected = true; pick.append(o); }
+      pick.addEventListener("change", () => { client = pick.value; note = ["", ""]; load(); });
+      head.append(el("span", "gfx-for", "Looks for"), pick);
+    }
+    const back = el("button", "btn lk-reset", busy === "reset" ? "Putting it back…" : "Back to the original look");
+    back.type = "button";
+    back.id = "looks-reset";
+    back.title = "Takes out every look Leyline put in this game and puts its settings back as they were";
+    back.disabled = !st || !st.changed || !!busy;
+    back.addEventListener("click", reset);
+    head.append(back);
+    box.append(head);
+    const fl = el("div", "ly-tabs lk-filter");
+    fl.setAttribute("role", "tablist");
+    fl.setAttribute("aria-label", "Kind of look");
+    for (const [k, label] of FILTERS) {
+      const b = el("button", "ly-tab", label);
+      b.type = "button";
+      b.dataset.type = k;
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", String(k === type));
+      b.addEventListener("click", () => { type = k; render(); });
+      fl.append(b);
+    }
+    box.append(fl);
+    const msg = el("p", "lk-note-line " + (note[1] || ""), note[0]);
+    msg.id = "looks-note";
+    msg.setAttribute("role", "status");
+    box.append(msg);
+    if (!list.length) box.append(el("p", "gfx-empty", "Add your game first to install a look: drop your game folder on the realm box below. You can still browse."));
+    const build = st ? st.build : "";
+    const shown = looks.filter((p) => !type || p.look.type === type);
+    if (!looks.length) { box.append(el("p", "gfx-empty", "Loading the looks…")); return; }
+    if (!shown.length) { box.append(el("p", "gfx-empty", "No looks of that kind yet.")); return; }
+    const grid = el("div", "lk-grid");
+    grid.id = "looks-grid";
+    for (const p of shown) grid.append(card(p, build));
+    box.append(grid);
+    box.append(el("p", "gfx-more", "Packs from other sites are made and hosted by their authors. Your game's settings one by one are on the Graphics tab."));
+    if (focusId) {
+      const f = grid.querySelector(`.lk-card[data-id="${CSS.escape(focusId)}"]`);
+      if (f) { f.scrollIntoView({ block: "center" }); const b = f.querySelector("button:not([disabled])"); if (b) b.focus(); }
+      focusId = "";
+    }
+  }
+
+  // a leyline://install/look:<slug> link from the website: this tab, that card, nothing installed until the click
+  function focus(id) {
+    const p = looks.find((x) => x.id === id);
+    if (!p) return false;
+    focusId = id;
+    type = "";
+    note = [`From the website: ${p.name}. ${p.look.type === "preset" ? "Press Use" : "Press Install"} to put it in your game.`, "ok"];
+    if (window.LeylineThemes) window.LeylineThemes.showTab("looks");
+    return true;
+  }
+
+  window.LeylineLooks = {
+    take, focus,
+    show: (b) => { box = b; return load(); },
+    list: () => looks.slice(),
+  };
+})();

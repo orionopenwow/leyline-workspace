@@ -240,7 +240,7 @@ do
     setup(true)
     RealmWizard.shown = true
     RealmWizard.scripts.OnShow(RealmWizard)
-    check("the stock realm wizard is skipped: on to character select", screens[#screens] == "charselect" and LeylineGlue.skipWizard == true)
+    check("the stock realm wizard is skipped: straight on to character create (no loop back through character select)", screens[#screens] == "charcreate" and LeylineGlue.skipWizard == true)
     RealmWizard, SetGlueScreen = nil, nil
 end
 print(string.format("\n%d/%d passed", pass, pass + fail))

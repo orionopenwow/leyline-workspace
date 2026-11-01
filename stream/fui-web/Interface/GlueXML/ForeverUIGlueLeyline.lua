@@ -354,15 +354,17 @@ LG.ROWS = ROWS
 
 -- No stock realm wizard (2026-10-31 live: a first visit to a realm where you have no characters yet, e.g. the
 -- Builders' Realm, showed the game's own "Choose a Realm" wizard with the old game logo). Every Leyline session
--- already has its realm, so the wizard goes straight on to character select, which takes a player with no
--- characters to character create. pcall-guarded: a failure leaves the wizard as it was.
+-- already has its realm, and the wizard only ever comes up for an account with no characters there, so it goes
+-- straight on to character create. (1 Nov live: going to character select instead looped: its empty list brought
+-- the wizard back, "Retrieving realm list" / "Retrieving character list" forever.) pcall-guarded: a failure
+-- leaves the wizard as it was.
 pcall(function()
 	local wiz = RealmWizard
 	if not (wiz and wiz.HookScript and SetGlueScreen) then return end
 	wiz:HookScript("OnShow", function(self)
 		pcall(function()
 			self:Hide()
-			SetGlueScreen("charselect")
+			SetGlueScreen("charcreate")
 		end)
 	end)
 	LG.skipWizard = true

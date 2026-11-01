@@ -1204,6 +1204,14 @@ def match(path: str) -> bool:
 
 
 def _signin(path: str) -> str:
+    # the Leyline sign-in (2026-10-31 live: Host signed out landed on the old site's /login page, with its old
+    # wording); the old address only when the portal has no Leyline sign-in
+    try:
+        fn = P("signin_url")
+        if callable(fn):
+            return fn(path)
+    except Exception:   # noqa: BLE001
+        pass
     return "/login?next=" + urllib.parse.quote(path, safe="")
 
 

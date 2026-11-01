@@ -44,10 +44,75 @@ pub fn beat_fresh(den_dir: &Path) -> bool {
     now.abs_diff(at) < 10
 }
 
+/// Where every player gets the program (smoke O10): the rolling release `den-lite-latest` of the workspace repo,
+/// built by tools/github-workflows/den-lite.yml from labs/den-lite, with a `.sha256` beside each file.
+pub const RELEASE: &str = "https://github.com/orionopenwow/leyline-workspace/releases/download/den-lite-latest/";
+/// A few MB; anything much bigger isn't it.
+const EXE_MAX: u64 = 64 * 1024 * 1024;
+
+/// The release file for an OS and CPU (`std::env::consts`), None where none is built.
+pub fn asset_for(os: &str, arch: &str) -> Option<&'static str> {
+    match (os, arch) {
+        ("windows", "x86_64") => Some("den-lite-windows-x64.exe"),
+        ("linux", "x86_64") => Some("den-lite-linux-x64"),
+        _ => None,
+    }
+}
+
+/// The release file for this PC.
+pub fn asset() -> Option<&'static str> {
+    asset_for(std::env::consts::OS, std::env::consts::ARCH)
+}
+
+/// The downloaded program put in place (`<app dir>/den-lite/bin/`) once its sha256 (`got`) is the one the release's
+/// `.sha256` file names (`want_text`); refused, and the download deleted, otherwise.
+pub fn place(app_dir: &Path, downloaded: &Path, got: &str, want_text: &str) -> Result<PathBuf, String> {
+    let refuse = |why: &str| {
+        let _ = std::fs::remove_file(downloaded);
+        Err(why.to_string())
+    };
+    let Some(want) = crate::host::forge::sha_in(want_text) else { return refuse("Your Den's server checksum file doesn't look right, so nothing was installed.") };
+    if got.to_ascii_lowercase() != want {
+        return refuse("Your Den's server download doesn't match its checksum, so nothing was installed. Try again later.");
+    }
+    let bin = root(app_dir).join("bin");
+    std::fs::create_dir_all(&bin).map_err(|e| format!("Couldn't make the Den Lite folder: {e}"))?;
+    let exe = bin.join(exe_name());
+    std::fs::rename(downloaded, &exe).or_else(|_| std::fs::copy(downloaded, &exe).map(|_| ()).and_then(|_| std::fs::remove_file(downloaded)))
+        .map_err(|e| format!("Couldn't put Your Den's server in place (is it running?): {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755));
+    }
+    let meta = serde_json::json!({ "sha256": want, "from": format!("{RELEASE}{}", asset().unwrap_or("")) });
+    let _ = std::fs::write(bin.join("den-lite.json"), serde_json::to_string_pretty(&meta).unwrap_or_default());
+    Ok(exe)
+}
+
+/// Get Den Lite on first use: this PC's release file and its checksum, checked, then put in place.
+pub fn install(app_dir: &Path) -> Result<PathBuf, String> {
+    let name = asset().ok_or("Your Den's built-in server isn't made for this kind of PC yet.")?;
+    let scratch = app_dir.join("tmp");
+    std::fs::create_dir_all(&scratch).map_err(|e| format!("Couldn't make a download folder: {e}"))?;
+    let shaf = scratch.join(format!("{name}.sha256"));
+    crate::upstream::download(&format!("{RELEASE}{name}.sha256"), &shaf, 4096).map_err(|e| format!("Couldn't get Your Den's server: {e}"))?;
+    let want = std::fs::read_to_string(&shaf).unwrap_or_default();
+    let _ = std::fs::remove_file(&shaf);
+    let file = scratch.join(name);
+    let (_, got) = crate::upstream::download(&format!("{RELEASE}{name}"), &file, EXE_MAX).map_err(|e| {
+        let _ = std::fs::remove_file(&file);
+        format!("Your Den's server didn't download: {e}")
+    })?;
+    place(app_dir, &file, &got, &want)
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct LiteStatus {
     /// The program is on this PC.
     pub available: bool,
+    /// Not here yet, but Play gets it (a release file for this PC): one small download on first use.
+    pub can_get: bool,
     /// It runs and its login port answers.
     pub running: bool,
     pub address: String,
@@ -203,6 +268,7 @@ impl DenLite for Binary {
         let available = self.available();
         LiteStatus {
             available,
+            can_get: !available && asset().is_some(),
             running: available && (Self::child_alive() || beat_fresh(&self.den_dir())) && port_answers(LOGIN_PORT),
             address: ADDRESS.into(),
             account: ACCOUNT.into(),
@@ -262,5 +328,31 @@ mod tests {
     fn its_command_line() {
         assert_eq!(command_line(Path::new("/d"), None), ["--dens", "/d", "--bind", "127.0.0.1", "--password", "den"]);
         assert_eq!(command_line(Path::new("/d"), Some(Path::new("/games/my game")))[6..], ["--client", "/games/my game"], "the game folder for .den mods");
+    }
+
+    #[test]
+    fn got_on_first_use_only_when_the_checksum_matches() {
+        assert_eq!(asset_for("windows", "x86_64"), Some("den-lite-windows-x64.exe"));
+        assert_eq!(asset_for("linux", "x86_64"), Some("den-lite-linux-x64"));
+        assert_eq!(asset_for("macos", "aarch64"), None);
+        let app = tempfile::tempdir().unwrap();
+        let dl = app.path().join("dl");
+        std::fs::write(&dl, b"program").unwrap();
+        let sha = "ab".repeat(32);
+        // a checksum that doesn't match, or a checksum file that isn't one: refused, the download gone
+        assert!(place(app.path(), &dl, &sha, &format!("{}  den-lite-windows-x64.exe", "cd".repeat(32))).unwrap_err().contains("doesn't match"));
+        assert!(!dl.exists());
+        std::fs::write(&dl, b"program").unwrap();
+        assert!(place(app.path(), &dl, &sha, "<html>not found</html>").unwrap_err().contains("doesn't look right"));
+        assert!(!dl.exists() && !root(app.path()).join("bin").join(exe_name()).exists());
+        // matching: in place where Binary::find looks
+        std::fs::write(&dl, b"program").unwrap();
+        let exe = place(app.path(), &dl, &sha.to_uppercase(), &format!("{sha}  den-lite-windows-x64.exe\n")).unwrap();
+        assert_eq!(exe, root(app.path()).join("bin").join(exe_name()));
+        assert_eq!(std::fs::read(&exe).unwrap(), b"program");
+        assert!(candidates(app.path(), None, None).contains(&exe));
+        let b = Binary { exe: Some(exe), root: root(app.path()), client: None };
+        let st = b.status();
+        assert!(st.available && !st.can_get);
     }
 }

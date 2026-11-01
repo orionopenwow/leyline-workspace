@@ -31,7 +31,7 @@ def steps(doc, job):
 class Workflows(unittest.TestCase):
     def test_all_parse(self):
         names = sorted(p.name for p in HERE.glob("*.yml"))
-        self.assertEqual(names, ["forge.yml", "hub-index.yml", "leyline-launcher.yml", "realm-scripts.yml", "scout.yml",
+        self.assertEqual(names, ["den-lite.yml", "forge.yml", "hub-index.yml", "leyline-launcher.yml", "realm-scripts.yml", "scout.yml",
                                  "wu-hosting.yml", "wu-images.yml"])
         for n in names:
             text, doc = load(n)
@@ -68,6 +68,31 @@ class Workflows(unittest.TestCase):
         self.assertIn("gh release upload forge-latest Forge.zip Forge.zip.sha256 forge-source.tar.gz", run)
         self.assertIn("SOURCE.txt", run)
         self.assertNotRegex(run, r"(?i)\.mpq|\bData/")
+
+    def test_den_lite(self):
+        """Den Lite (labs/den-lite, Play solo's server): only when it changes or by hand; tested before it is built;
+        Windows and Linux; the built-in token only; each program with its sha256 on the rolling release den-lite-latest,
+        at the names the launcher downloads (host/lite.rs asset_for)."""
+        text, doc = load("den-lite.yml")
+        self.assertEqual(doc["on"]["push"]["paths"], ["labs/den-lite/**", ".github/workflows/den-lite.yml"])
+        self.assertEqual(doc["on"]["push"]["branches"], ["main"])
+        self.assertIn("workflow_dispatch", doc["on"])
+        self.assertNotIn("pull_request", doc["on"])
+        self.assertEqual(doc["permissions"], {"contents": "read"})
+        self.assertEqual(set(re.findall(r"secrets\.([A-Za-z_]+)", text)), {"GITHUB_TOKEN"})
+        self.assertEqual(doc["jobs"]["windows"]["runs-on"], "windows-2022")
+        self.assertEqual(doc["jobs"]["linux"]["needs"], "windows")
+        lite = (REPO / "launcher" / "src-tauri" / "src" / "host" / "lite.rs").read_text(encoding="utf-8")
+        for job, name in (("windows", "den-lite-windows-x64.exe"), ("linux", "den-lite-linux-x64")):
+            j = doc["jobs"][job]
+            self.assertEqual(j["permissions"], {"contents": "write"})
+            run = "\n".join(s.get("run", "") for s in j["steps"])
+            self.assertLess(run.index("cargo test --locked"), run.index("cargo build --locked"), job)
+            self.assertIn(f"{name}.sha256", run)
+            self.assertRegex(run, rf"gh release upload den-lite-latest {re.escape(name)} {re.escape(name)}\.sha256")
+            self.assertIn(f'"{name}"', lite, f"the launcher downloads {name}")
+            self.assertNotRegex(run, r"(?i)\.mpq|\bData/")
+        self.assertIn('releases/download/den-lite-latest/"', lite)
 
     def test_hub_index(self):
         """Daily and on demand; the built-in token only; PRs from the daily and review branches, never a push to main;

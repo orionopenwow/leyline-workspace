@@ -433,7 +433,8 @@ fn den_session() -> crate::hybrid::Session {
     crate::hybrid::Session { user: lite::ACCOUNT.into(), pass: lite::PASSWORD.into(), realm: Some(lite::REALM.into()), enter: false }
 }
 
-/// Play solo: Your Den on Den Lite (host/lite.rs). Starts it when it isn't running (with this game folder, for
+/// Play solo: Your Den on Den Lite (host/lite.rs). Gets the program on first use (one small download from its
+/// release, checked against its sha256). Starts it when it isn't running (with this game folder, for
 /// `.den mods`), waits for its login port (up to 15 s), writes its account and realm into the client's Config.wtf
 /// (never the password), points the client at it and starts the game. With Forever UI's login screens in the game
 /// folder, the hybrid glue signs in by itself and stops at character select; without them, the login screen has
@@ -447,7 +448,13 @@ async fn den_play_lite(core: State<'_, Core>, client: String) -> Result<SoloPlay
     }
     let game = profile.path.clone();
     blocking(move || {
-        let l = lite::Binary::find(&crate::settings::app_dir()).with_client(&game);
+        let app = crate::settings::app_dir();
+        let mut l = lite::Binary::find(&app);
+        if !l.available() {
+            lite::install(&app)?; // first use: the release's program, its sha256 checked (host/lite.rs)
+            l = lite::Binary::find(&app);
+        }
+        let l = l.with_client(&game);
         l.start()?;
         for _ in 0..50 {
             if l.status().running {

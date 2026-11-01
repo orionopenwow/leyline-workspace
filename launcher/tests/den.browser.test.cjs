@@ -45,12 +45,12 @@ const FAKE = (o) => {
       case 'p2p_flags': return { effective: { p2p_hosting: false, limits: {} }, known: [], local: { overrides: {} }, site: {} };
       case 'social_status': return false;
       case 'den_state': return {
-        lite: { available: !!S.lite, running: S.lite === 'running', address: '127.0.0.1', account: 'DEN', den_dir: '/app/den-lite/state/dens' },
+        lite: { available: !!S.lite && S.lite !== 'get', can_get: S.lite === 'get', running: S.lite === 'running', address: '127.0.0.1', account: 'DEN', den_dir: '/app/den-lite/state/dens' },
         kit: S.kit || S.docker_den, docker_den: S.docker_den, other_realm: null, account: S.docker_den ? 'BEA42' : '',
         saves: S.docker_den ? 'kit' : 'lite', dens: o.noDens ? [] : dens,
         packs: o.packs ? [{ id: 'goldshire', title: 'Goldshire', line: 'The inn and the square, ready to build around.' }] : [] };
       // app.rs SoloPlay: o.auto: the hybrid glue signs in by itself (Forever UI there); else the password to type
-      case 'den_play_lite': S.lite = 'running'; S.selected = '127.0.0.1'; return o.auto
+      case 'den_play_lite': if (S.lite === 'get') await new Promise((r) => setTimeout(r, 400)); S.lite = 'running'; S.selected = '127.0.0.1'; return o.auto
         ? { message: 'Started My Game on 127.0.0.1.', auto: true, why: '', account: 'DEN', password: '' }
         : { message: 'Started My Game on 127.0.0.1.', auto: false, why: "Forever UI's login screens aren't in this game folder yet (install Forever UI first).", account: 'DEN', password: 'den' };
       case 'den_open': return args.name;
@@ -406,6 +406,19 @@ test('after Play solo the play bar shows Your Den, and its PLAY is the same one 
   await page.evaluate(() => document.getElementById('play-form').requestSubmit());
   await page.waitForFunction(() => window.__calls.filter((c) => c[0] === 'den_play_lite').length === 2);
   assert.equal((await calls(page, 'play')).length, 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Play solo on a new PC: Den Lite comes with the first click (a one-time download), never the Docker steps (smoke O10)', async () => {
+  const { page, ctx, errors } = await open({ lite: 'get', auto: true, page: 'den' });
+  await page.waitForSelector('#yd-play');
+  assert.match(await page.textContent('#yd-state'), /Ready on this PC: no setup needed/);
+  await page.click('#yd-play');
+  await page.waitForFunction(() => /one-time download/.test(document.querySelector('#yd .yd-status').textContent));
+  await page.waitForFunction(() => /Your Den is open/.test(document.querySelector('#yd .yd-status').textContent));
+  assert.equal(await page.$('.yd-steps'), null, 'no Host pack or Docker steps');
+  assert.equal((await calls(page, 'hostpack_info')).length, 0);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

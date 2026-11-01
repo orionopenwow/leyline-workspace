@@ -60,7 +60,10 @@
 
   // ---------------------------------------------------------------- what this PC has
   const own = () => (typeof clientForRealm === "function" ? clientForRealm("den", BUILD) : null);
-  const liteOn = () => !!(st && st.lite && st.lite.available);
+  // Den Lite here, or got by Play on first use (one small download, st.lite.can_get)
+  const liteOn = () => !!(st && st.lite && (st.lite.available || st.lite.can_get));
+  const liteHas = () => !!(st && st.lite && st.lite.available);
+  const liteGet = () => !!(st && st.lite && !st.lite.available && st.lite.can_get);
   const liteUp = () => !!(st && st.lite && st.lite.running);
   const dockerUp = () => !!(cons && (cons.services || []).some((s) => s.role === "world" && s.state === "ok"));
   // where your Den is: "lite" (Den Lite, no Docker), "docker" (the Host pack's Den), or "new" (nothing yet)
@@ -189,7 +192,7 @@
   // PC). No internet, website or Hero Key needed.
   async function playLite(c) {
     busy = true; paint();
-    say(liteUp() ? "Opening your Den…" : "Starting your Den… (a few seconds)");
+    say(liteUp() ? "Opening your Den…" : liteGet() ? "Getting your Den ready… (a one-time download of a few MB)" : "Starting your Den… (a few seconds)");
     try {
       const r = await call("den_play_lite", { client: c.id });
       if (r && typeof r === "object" && r.auto) say("Your Den is open. The game signs you in by itself and opens at character select.", "ok");
@@ -429,12 +432,12 @@
     const inp = mk("input", "");
     inp.id = "yd-acct"; inp.maxLength = 16; inp.placeholder = "Your account name"; inp.value = store.get(ACCOUNT_KEY) || "";
     inp.setAttribute("aria-label", "Your account name in your Den");
-    const sb = btn(liteOn() ? "Move my Den and start" : "Start my Den", "btn small primary");
+    const sb = btn(liteHas() ? "Move my Den and start" : "Start my Den", "btn small primary");
     sb.id = "yd-start";
     sb.disabled = !(haveKit && dockOk) || !!(job && job.running);
     sb.addEventListener("click", () => startDen(inp, sb));
     r.append(inp, sb);
-    step(3, false, "Start", liteOn() ? "Your Den moves over as it is. The first start takes 5 to 20 minutes." : "The first start takes 5 to 20 minutes.", r);
+    step(3, false, "Start", liteHas() ? "Your Den moves over as it is. The first start takes 5 to 20 minutes." : "The first start takes 5 to 20 minutes.", r);
   }
   function paintJob(box) {
     if (!job || job.idle) return;
@@ -503,7 +506,7 @@
       open.id = "yd-share";
       sb.append(open);
       if (sharing) { const steps = mk("div", "yd-steps"); paintSteps(steps); paintJob(steps); sb.append(steps); }
-      grid.append(tile("Share with friends", liteOn() ? "Moves this Den to a server friends can join. Needs Docker Desktop." : "Your Den on a server friends can join. Needs Docker Desktop.", sb, sharing ? "wide" : ""));
+      grid.append(tile("Share with friends", liteHas() ? "Moves this Den to a server friends can join. Needs Docker Desktop." : "Your Den on a server friends can join. Needs Docker Desktop.", sb, sharing ? "wide" : ""));
     }
     // Saved Dens
     const sd = mk("div", "");

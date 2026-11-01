@@ -38,7 +38,7 @@ xcopy /e /i /q /y www-files "%W%\kit\www-files" >nul || goto fail
 copy /y lua\*.* "%W%\kit\lua\" >nul || goto fail
 tar -czf "%W%\kit.tgz" -C "%W%\kit" . || goto fail
 echo Uploading the client (about 30 MB) and updating the server...
-ssh -i "%USERPROFILE%\.ssh\openwow" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 root@play.openvanilla.app "cd /srv/wrath/stream && rm -rf www.new && mkdir www.new && tar -xzf - -C www.new && (cd www.new && for f in *.sh *.py wrath_portal.py playmodes.json; do [ -f $f ] && mv -f \"$f\" ..; done; rm -rf ../www-files && mv www-files ..; cp -f lua/* ../lua/; rm -rf lua) && rm -rf www.old && mv www www.old && mv www.new/www www && rm -rf www.new && sed -i 's/\r$//' *.sh && bash stream-up.sh" < "%W%\kit.tgz" || goto fail
+ssh -i "%USERPROFILE%\.ssh\openwow" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 root@play.openvanilla.app "cd /srv/wrath/stream && rm -rf www.new && mkdir www.new && tar --no-same-owner --no-same-permissions -xzf - -C www.new && (cd www.new && for f in *.sh *.py wrath_portal.py playmodes.json; do [ -f $f ] && mv -f \"$f\" ..; done; rm -rf ../www-files && mv www-files ..; cp -f lua/* ../lua/; rm -rf lua) && rm -rf www.old && mv www www.old && mv www.new/www www && rm -rf www.new && sed -i 's/\r$//' *.sh && bash stream-up.sh" < "%W%\kit.tgz" || goto fail
 rmdir /s /q "%W%"
 echo.
 echo Done. Open https://play.openvanilla.app/wrath and press Play now.

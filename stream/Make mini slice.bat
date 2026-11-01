@@ -44,7 +44,10 @@ echo Tiers:       0 to %MAXTIER%  (budget: budgetMB in slices\%SL%.json)
 echo [1/5] Uploading the streaming kit (one connection: the server limits rapid SSH logins)...
 if not exist "%W%" mkdir "%W%"
 if exist "%W%\kit" rmdir /s /q "%W%\kit"
-mkdir "%W%\kit" "%W%\kit\bin" "%W%\kit\lua" "%W%\kit\sql" "%W%\kit\slices" "%W%\kit\www-files"
+rem The slice descriptions go to slice-defs\ on the server, never into slices\ (the live folder): slices\<name>.json
+rem there is the one that came with the installed slice (step 5: the maxTier that fit). 1 Nov 2026: the kit
+rem overwrote it with this PC's copy (all tiers) and reset the folder's permissions; docs\INCIDENT-2026-11-01-SLICE.md.
+mkdir "%W%\kit" "%W%\kit\bin" "%W%\kit\lua" "%W%\kit\sql" "%W%\kit\slice-defs" "%W%\kit\www-files"
 copy /y server\*.sh "%W%\kit\" >nul || goto fail
 copy /y server\displays.py "%W%\kit\" >nul || goto fail
 copy /y server\www-patch.py "%W%\kit\" >nul || goto fail
@@ -57,8 +60,8 @@ copy /y lua\ov_slices.lua "%W%\kit\lua\" >nul || goto fail
 copy /y lua\lfg_ids.py "%W%\kit\lua\" >nul || goto fail
 copy /y lua\tiers_lua.py "%W%\kit\lua\" >nul || goto fail
 copy /y sql\ov_stream_accounts.sql "%W%\kit\sql\" >nul || goto fail
-copy /y slices\mini.json "%W%\kit\slices\" >nul || goto fail
-if /i not "%SL%"=="mini" copy /y "slices\%SL%.json" "%W%\kit\slices\" >nul || goto fail
+copy /y slices\mini.json "%W%\kit\slice-defs\" >nul || goto fail
+if /i not "%SL%"=="mini" copy /y "slices\%SL%.json" "%W%\kit\slice-defs\" >nul || goto fail
 rem No www\ yet: use the newest browser client test build from ..\play (dist-test parts).
 if not exist "www\index.html" if exist "..\play\dist-test.tgz.part00" (
   echo        unpacking the browser client from ..\play\dist-test ...
@@ -78,12 +81,13 @@ if exist "www\index.html" if not exist "www\.uploaded" (
 )
 tar -czf "%W%\kit.tgz" -C "%W%\kit" . || goto fail
 rem The page edits (www-patch.py, via patch-index.sh) run whenever the server has a client build.
-%SSH% "mkdir -p /srv/wrath/stream && cd /srv/wrath/stream && tar -xzf - && sed -i 's/\r$//' *.sh && chmod 755 *.sh bin/wenilla-host && if [ -f www/index.html ]; then bash patch-index.sh; fi" < "%W%\kit.tgz" || goto fail
+rem Unpacked with the server's own owner and permissions (a Windows tar records every folder as writable by everyone).
+%SSH% "mkdir -p /srv/wrath/stream && cd /srv/wrath/stream && tar --no-same-owner --no-same-permissions -xzf - && chmod go-w . && sed -i 's/\r$//' *.sh && chmod 755 *.sh bin/wenilla-host && if [ -f www/index.html ]; then bash patch-index.sh; fi" < "%W%\kit.tgz" || goto fail
 if "%WWW%"=="1" echo uploaded> "www\.uploaded"
 
 echo [2/5] Asking the server what is spawned in the slice...
 if not exist "%W%" mkdir "%W%"
-%SSH% "cd /srv/wrath/stream && python3 -I displays.py slices/%SL%.json --tiers 0-%MAXTIER%" > "%W%\displays.tsv" || goto fail
+%SSH% "cd /srv/wrath/stream && python3 -I displays.py slice-defs/%SL%.json --tiers 0-%MAXTIER%" > "%W%\displays.tsv" || goto fail
 for /f %%n in ('find /c /v "" ^< "%W%\displays.tsv"') do echo        %%n creature, object and mount displays
 
 echo [3/5] Walking the game data (wenilla-host --deps)...

@@ -22,11 +22,11 @@ if [ -n "$GO" ]; then docker builder prune -af 2>&1 | tail -1 | sed 's/^/  /'; f
 echo
 echo "== 2. system logs older than 7 days"
 journalctl --disk-usage 2>/dev/null | sed 's/^/  /'
-old=$(find /var/log -type f \( -name '*.gz' -o -regex '.*\.[1-9]$' \) -mtime +7 2>/dev/null)
+old=$(find /var/log -xdev -type f \( -name '*.gz' -o -regex '.*\.[1-9]$' \) -mtime +7 2>/dev/null)
 say "rotated files older than 7 days: $(printf '%s\n' "$old" | grep -c . ) ($(printf '%s\n' "$old" | grep . | xargs -r du -ch 2>/dev/null | tail -1 | cut -f1))"
 if [ -n "$GO" ]; then
   journalctl --vacuum-time=7d 2>&1 | tail -1 | sed 's/^/  /'
-  printf '%s\n' "$old" | grep . | xargs -r rm -f
+  printf '%s\n' "$old" | grep . | while IFS= read -r f; do rm -f -- "$f"; done   # one name per line (spaces stay whole)
 fi
 echo
 echo "== 3. /root/fastloop-backups (keep the newest 3)"
@@ -35,21 +35,31 @@ if [ -d "$B" ]; then
   drop=$(ls -1dt "$B"/*/ 2>/dev/null | tail -n +4)
   say "$(ls -1d "$B"/*/ 2>/dev/null | wc -l) backups, $(size "$B"); going: $(printf '%s\n' "$drop" | grep -c .)"
   printf '%s\n' "$drop" | grep . | sed 's/^/    /'
-  if [ -n "$GO" ]; then printf '%s\n' "$drop" | grep . | while read -r d; do case "$d" in "$B"/*) rm -rf -- "$d";; esac; done; fi
+  if [ -n "$GO" ]; then printf '%s\n' "$drop" | grep . | while read -r d; do case "$d" in "$B"/*) rm -rf --one-file-system -- "$d";; esac; done; fi
 fi
 echo
 echo "== 4. /srv/vr112/slice (the parked Vanilla Remastered browser slice)"
 V=/srv/vr112/slice
-if [ -d "$V" ]; then
+# Checked 1 Nov after the stream slice lost files (docs/INCIDENT-2026-11-01-SLICE.md): neither find nor rm follows a
+# symlink, but rm -rf does go into anything mounted below; so it stays on this file system, and it refuses when
+# the folder is (or leads to) the Wrath stream, or anything is mounted under it.
+why=""
+if [ -L "$V" ]; then why="it is a symlink (to $(readlink -f "$V"))"
+elif [ -d "$V" ] && [ "$(readlink -f "$V")" != "$V" ]; then why="it resolves to $(readlink -f "$V")"
+elif [ -d "$V" ] && awk -v v="$V/" 'index($2 "/", v) == 1 && $2 "/" != v' /proc/mounts | grep -q .; then
+  why="something is mounted under it: $(awk -v v="$V/" 'index($2 "/", v) == 1 && $2 "/" != v {printf "%s ", $2}' /proc/mounts)"
+fi
+if [ -n "$why" ]; then say "REFUSED: $V: $why"; V=""; fi
+if [ -n "$V" ] && [ -d "$V" ]; then
   users=$(for c in $(docker ps --format '{{.Names}}'); do docker inspect -f '{{range .Mounts}}{{.Source}} {{end}}' "$c" | tr ' ' '\n' | grep -q "^$V" && echo "$c"; done)
   say "$(size "$V")"
   if [ -n "$users" ]; then
     say "REFUSED: running containers use it: $users"
   elif [ -n "$GO" ]; then
-    find "$V" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+    find "$V" -mindepth 1 -maxdepth 1 -exec rm -rf --one-file-system -- {} +
     say "emptied (the folder stays)"
   fi
-else
+elif [ -n "$V" ]; then
   say "not there"
 fi
 echo

@@ -3190,6 +3190,8 @@ class PageHandler(BaseHTTPRequestHandler):
         split = urllib.parse.urlsplit(self.path)
         path = split.path.rstrip("/") or "/"
         query = urllib.parse.parse_qs(split.query)
+        if hub_mod is not None:   # the turn-your-phone hint's "Not now" (cookie), for every page in the hub's look
+            hub_mod.note_request(self)
         if path == "/__auth":
             self.stream_auth()
             return

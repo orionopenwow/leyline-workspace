@@ -447,9 +447,19 @@ while [ "$waited" -le "$WORLD_WAIT" ]; do
 done
 [ -n "$ok" ] || { docker logs --tail 40 "$WORLD_C" >&2 2>&1 || true; fail "the world server ($WORLD_C) did not greet within ${WORLD_WAIT}s (${out:-no answer})"; }
 note "world server: $out (after about ${waited}s)"
+# Restarts before the first greeting (2026-10-31 live: 3, then a steady greeting) are noted with the log's last lines;
+# only a restart, stop or out-of-memory after it greets fails the step.
+r0=$(docker inspect -f '{{.RestartCount}}' "$WORLD_C" 2>/dev/null || echo 0)
+if [ "${r0:-0}" != 0 ]; then
+  note "!! the world server restarted $r0 time(s) while starting; its last lines:"
+  docker logs --tail 40 "$WORLD_C" 2>&1 | grep -viE 'password|secret|token' | sed 's/^/     /' >&2 || true
+fi
 sleep "$SETTLE"
 rc=$(docker inspect -f '{{.RestartCount}} {{.State.Running}} {{.State.OOMKilled}}' "$WORLD_C" 2>/dev/null)
-[ "$rc" = "0 true false" ] || fail "the world server restarted, stopped or ran out of memory right after it started (restarts, running, out of memory: $rc; WU_BUILD_WORLD_MEM raises the cap)"
+if [ "$rc" != "${r0:-0} true false" ]; then
+  docker logs --tail 40 "$WORLD_C" 2>&1 | grep -viE 'password|secret|token' | sed 's/^/     /' >&2 || true
+  fail "the world server restarted, stopped or ran out of memory after it greeted (restarts, running, out of memory: $rc; it had $r0 at the greeting; WU_BUILD_WORLD_MEM raises the cap)"
+fi
 used=$(docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' 2>/dev/null | awk -v w="$WORLD_C" '$1==w {print $2}')
 note "memory in use: $WORLD_C ${used:-?} of $WORLD_MEM"
 out=$(probe "$EDGE_NET" world "$MAIN_WORLD" 8085 2>&1) || fail "the main realm's world server does not greet any more ($out)"

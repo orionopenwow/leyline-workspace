@@ -72,11 +72,13 @@
   border-image: url("art/window-edge.png") 19 / 7px round;
   background-clip: padding-box;
 }
+/* 23:23 "remove the excess bottom border, and make this corner follow the nearest bevel": no strip under the
+   buttons; the tab's lower-left corner is cut at the buttons' own 45-degree bevel, so it reads as part of them. */
 .titlebar .winbtns, .winbtns {
-  margin: 0 0 0 6px; gap: 3px; padding: 0 0 3px 4px; align-self: flex-start;
-  border-style: solid; border-width: 0 0 5px 5px; border-color: transparent;
-  border-image: url("art/window-edge.png") 19 / 0 0 5px 5px round;
+  margin: 0 0 0 6px; gap: 2px; padding: 0 0 2px 3px; align-self: flex-start;
+  border: 0; border-image: none;
   background: #343d39;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 6px 100%, 0 calc(100% - 6px));
 }
 .winbtns button { width: 24px; height: 26px; filter: none; }
 .winbtns button:hover { filter: brightness(1.2); }

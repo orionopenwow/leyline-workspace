@@ -551,3 +551,8 @@
 1236a signin Site: the side menu's wordmark, mark lower and a faint stone grain on Leyline
 1236b ship Launcher: the title bar's wordmark, mark lower and a faint stone grain on Leyline
 1238a ov112-data-check Read-only: where the server's disk goes (room for a second slice copy, so the Den rebuild swaps with no outage)
+1239a client URGENT: the browser game answers 502 (the slice install removed wu-play and did not start it). Re-sends the live build and runs stream-up.sh
+1242a ship Launcher: Host page modes as small tiles, less text (owner 1 Nov 01:04)
+1241a tidy-check Read-only: what making room on the server removes (needs Control restarted once for the new step)
+1241b tidy Make room on the server: build cache, logs over 7 days, all but the newest 3 site backups, the parked VR browser slice (owner OK 1 Nov 01:05)
+1241c slice Streamed game files with the Den tier right after Dalaran; with room for both copies it swaps over with no outage (30-60 min)

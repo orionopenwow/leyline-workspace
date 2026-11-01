@@ -116,11 +116,11 @@
     const sw = mk("div", "hc-sw hx-sw");
     const top = mk("div", "hx-top");
     const id = mk("div", "hc-id");
-    id.append(mk("p", "hc-k", "Host a mode"), mk("p", "hc-t", "What will you host?"));
+    id.append(mk("p", "hc-t", "What will you host?"));
     // a plain ruleset: no mode (the kit's state/mode.json goes, so the realm list shows none)
     const other = btn("Pick a ruleset yourself", "hc-more hx-other", () => { view = "off"; place(); paint(); call("host_mode_use", { id: null, values: {} }).catch(() => {}); });
     top.append(id, other);
-    sw.append(top, mk("p", "hx-lede", "Pick a mode, name your realm and host it from this PC. Fork any mode to make it your own."));
+    sw.append(top);   // owner 1 Nov 01:04: "less info panels, straight to the point": no lede, small template tiles
     const grid = mk("div", "hx-grid");
     grid.setAttribute("role", "list");
     for (const m of modes || []) grid.append(cardOf(m));
@@ -136,14 +136,18 @@
     const h = mk("h3", "hx-name", m.name);
     if (m.own) h.append(mk("em", "hx-chip", "Yours"));
     if (m.status === "coming") h.append(mk("em", "hx-chip", "Coming soon"));
-    b.append(h, mk("p", "hx-line", m.line), credit(m));
+    b.append(h, mk("p", "hx-line", m.line));
+    // who made it: only when it isn't one of ours as shipped (a fork, or someone else's)
+    if (m.based_on || (m.author && m.author !== "Leyline")) b.append(credit(m));
     const st = stats(m.id);
-    const s = mk("p", "hx-live" + (st.live ? " on" : ""));
-    s.textContent = st.live ? `${st.live} realm${st.live === 1 ? "" : "s"} live · ${st.players} playing` : st.realms ? `${st.realms} realm${st.realms === 1 ? "" : "s"}, offline now` : "No realm runs it yet";
-    b.append(s);
+    if (st.realms) {
+      const s = mk("p", "hx-live" + (st.live ? " on" : ""));
+      s.textContent = st.live ? `${st.live} realm${st.live === 1 ? "" : "s"} live · ${st.players} playing` : `${st.realms} realm${st.realms === 1 ? "" : "s"}, offline now`;
+      b.append(s);
+    }
     const acts = mk("div", "hx-acts");
     if (m.status === "coming") {
-      if (m.credit) acts.append(mk("span", "hc-fine", `By ${m.credit.by}`));
+      if (m.credit) b.append(mk("p", "hx-by", `By ${m.credit.by}`));
     } else {
       acts.append(btn("Host", "btn small primary hx-host", () => { cur = m; view = "host"; paint(); }));
       acts.append(btn("Fork", "btn small hx-fork", (ev) => forkIt(m.id, null, ev.currentTarget)));
@@ -152,8 +156,7 @@
         acts.append(btn("Remove", "hc-more hx-remove", () => removeIt(m)));
       }
     }
-    b.append(acts);
-    c.append(pic(m), b);
+    c.append(pic(m), b, acts);
     return c;
   }
   async function forkIt(id, listed, b) {

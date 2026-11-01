@@ -57,6 +57,10 @@ ART_TYPES = {
     "wu-corner-bl.webp": "image/webp", "wu-corner-br.webp": "image/webp",
     "wu-divider.webp": "image/webp", "wu-dragon-l.webp": "image/webp", "wu-dragon-r.webp": "image/webp",
     "Cinzel-SemiBold.woff2": "font/woff2", "Cinzel-OFL.txt": "text/plain; charset=utf-8",
+    # the Leyline look (owner 1 Nov): stone, the window edge, the stone button, Marcellus, the mark
+    "stone-side.webp": "image/webp", "stone-bar.webp": "image/webp", "stone-btn.webp": "image/webp",
+    "window-edge.png": "image/png", "marcellus-400.woff2": "font/woff2", "Marcellus-OFL.txt": "text/plain; charset=utf-8",
+    "leyline-swirl-256.webp": "image/webp", "leyline-crystal-256.webp": "image/webp",
 }
 
 
@@ -186,6 +190,8 @@ STEPS = {
     "firewall-check": ("tools/security/Firewall limits - dry run.bat", "Firewall limits: what would be added (read-only)", False),
     "firewall": ("tools/security/Firewall limits - apply.bat", "Firewall limits on game, relay and web ports + fail2ban for wrong passwords", False),
     "addons-curate": ("tools/addon-curate/Curate addons.bat", "Addon marketplace: curate upstream addons from their authors (new ones wait for review; then ship + signin)", False),
+    "tidy-check": ("tools/server-tidy/Server tidy - dry run.bat", "Read-only: what making room on the server would remove, and how much", False),
+    "tidy": ("tools/server-tidy/Server tidy.bat", "Make room on the server: build cache, old logs, old site backups, the parked VR browser slice (owner OK 1 Nov)", False),
     "ov112-data-check": ("tools/ov112-data/Old 1.12 data - check.bat", "Read-only: where the old 1.12 game files are on the server, their size and who serves them", False),
     "ov112-data-remove-check": ("tools/ov112-data/Old 1.12 data - remove (dry run).bat", "Dry run: what removing the old 1.12 game files would do", False),
     "ov112-data-remove": ("tools/ov112-data/Old 1.12 data - remove.bat", "Remove the old 1.12 game files (the old site answers 410 for /data first; Wrath untouched)", False),
@@ -198,7 +204,7 @@ STEPS = {
 # Steps that change nothing in production. With "Ask before deploys" on (control/autopilot.json "confirm"),
 # Autopilot runs only these by itself; anything else waits for "Launch all".
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
-             "fresh-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog",
+             "fresh-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
              "vr-data-check", "vr-site-check", "release-mirror-check"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}
 
@@ -682,79 +688,110 @@ PAGE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Leyline Control</title>
 <style>
-/* The fallback look, readable on its own; the shared theme (/art/wu-theme.css, linked after this) adds the
-   starfield, the corner ornaments, the dragons, Cinzel and the red and gold buttons. */
-:root{--bg:#07060f;--panel:#12101e;--line:#3a2f18;--line2:#4a3b1c;--text:#ece6d6;--dim:#b4ab96;--gold:#d8b25a;--gold2:#f0d389;
---ok:#6fd88a;--bad:#ff8f80;--warn:#f5c35a;--blue:#9cc2ff;--mono:ui-monospace,SFMono-Regular,Consolas,monospace}
-*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--text);
-font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
-body{min-height:100vh;overflow-x:hidden}
-header{display:flex;align-items:center;gap:10px 14px;padding:14px 28px;flex-wrap:wrap;border-bottom:1px solid var(--line2);
-background:linear-gradient(180deg,rgba(18,14,32,.92),rgba(7,6,15,.78))}
-.brand{gap:10px}
-h1{margin:0;font-size:22px;letter-spacing:.05em;font-weight:600;color:var(--gold2);font-family:Georgia,serif;white-space:nowrap}
-.health{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
-.pill{display:flex;align-items:center;gap:7px;padding:4px 11px;border:1px solid var(--line2);border-radius:99px;
-font-size:12.5px;color:var(--dim);background:var(--panel)}
-.dot{width:8px;height:8px;border-radius:50%;background:var(--dim)}
-.dot.ok{background:var(--ok);box-shadow:0 0 8px var(--ok)}.dot.bad{background:var(--bad);box-shadow:0 0 8px var(--bad)}
-.actions{display:flex;gap:8px;flex-wrap:wrap}
-main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);gap:20px;padding:24px 28px;
-max-width:1400px;margin:0 auto}
-@media (max-width:900px){main{grid-template-columns:minmax(0,1fr)}}
-.card{background:var(--panel);border:1px solid var(--line2);border-radius:4px;padding:20px 22px;min-width:0}
-.card h2{margin:0 0 12px;font-size:15px;letter-spacing:.06em;color:var(--gold2);font-weight:600;font-family:Georgia,serif;
-padding-bottom:10px;border-bottom:1px solid var(--line)}
-.stack{display:flex;flex-direction:column;gap:20px;min-width:0}
-.item{display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+/* Leyline Control in the launcher's and the website's look (owner 1 Nov 01:09: "greatly simplify this control
+   center, more like our overall theme"): dark slate, the stone side texture, metal-edged panels, the spinning Leyline
+   mark, Marcellus titles and the red stone button. One screen: what needs you, what's next, the live output. The art
+   comes from /art (stream/www-files/art, the site's own files); without it the page still reads with its own colours. */
+@font-face{font-family:"Marcellus";src:url("/art/marcellus-400.woff2") format("woff2");font-display:swap}
+:root{--bg:#121417;--panel:rgba(14,16,19,.82);--edge:#333b38;--text:#e9ebef;--dim:#9aa1ab;--gold:#f1cf86;--gold2:#d9a73a;
+--ok:#5fd18a;--bad:#ff8378;--warn:#f2c94c;--blue:#7aa3f5;--mono:ui-monospace,SFMono-Regular,Consolas,monospace;
+--serif:"Marcellus",Georgia,serif}
+*{box-sizing:border-box}html,body{margin:0;color:var(--text);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+html{background:var(--bg)}
+body{min-height:100vh;overflow-x:hidden;background:linear-gradient(rgba(10,11,13,.72),rgba(10,11,13,.82)),url("/art/stone-side.webp") 0 0/256px,var(--bg)}
+header{display:flex;align-items:center;gap:10px 16px;padding:12px 22px;flex-wrap:wrap;
+background:linear-gradient(rgba(0,0,0,.35),rgba(0,0,0,.55)),url("/art/stone-bar.webp") center/cover,#1a1c1f;
+border-bottom:1px solid #000;box-shadow:0 1px 0 rgba(255,255,255,.05),0 6px 18px rgba(0,0,0,.45)}
+.brand{display:flex;align-items:center;gap:11px}
+.mark{position:relative;width:40px;height:40px;flex:none}
+.mark::before,.mark::after{content:"";position:absolute;inset:0;background:center/contain no-repeat}
+.mark::before{background-image:url("/art/leyline-swirl-256.webp");animation:turn 16s linear infinite}
+.mark::after{background-image:url("/art/leyline-crystal-256.webp")}
+@keyframes turn{to{transform:rotate(360deg)}}
+h1{margin:0;font:400 23px/1 var(--serif);letter-spacing:.02em;color:var(--gold);white-space:nowrap;
+text-shadow:0 -1px 0 rgba(255,255,255,.15),0 1.5px 0 #000,0 3px 6px rgba(0,0,0,.7)}
+.health{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
+.pill{display:flex;align-items:center;gap:6px;padding:3px 10px;border:1px solid var(--edge);border-radius:99px;font-size:12px;
+color:var(--dim);background:rgba(0,0,0,.45)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--dim)}
+.dot.ok{background:var(--ok);box-shadow:0 0 6px var(--ok)}.dot.bad{background:var(--bad);box-shadow:0 0 6px var(--bad)}
+.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button{font:600 13px system-ui,sans-serif;cursor:pointer;border-radius:7px;border:1px solid #3d4743;background:rgba(0,0,0,.45);
+color:var(--text);padding:7px 12px}
+button:hover:not(:disabled){border-color:#6d7a74}
+button.primary{font:400 17px/1 var(--serif);color:var(--gold);background:none;border:11px solid transparent;
+border-image:url("/art/stone-btn.webp") 28 30 fill/11px stretch;padding:2px 14px;border-radius:0;text-shadow:0 2px 2px rgba(0,0,0,.85)}
+button.primary:hover:not(:disabled){filter:brightness(1.15)}
+button:disabled{opacity:.45;cursor:not-allowed}
+#auto.primary{font-size:15px}
+.more{position:relative}
+.more summary{list-style:none;cursor:pointer;font:600 13px system-ui,sans-serif;border:1px solid #3d4743;border-radius:7px;
+padding:7px 12px;background:rgba(0,0,0,.45)}
+.more summary::-webkit-details-marker{display:none}
+.more[open] .menu{position:absolute;right:0;top:calc(100% + 6px);z-index:5;display:grid;gap:6px;padding:10px;min-width:220px;
+background:#16191c;border:1px solid var(--edge);border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.6)}
+.menu button{text-align:left;width:100%}
+main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.6fr);gap:16px;padding:18px 22px;max-width:1500px;margin:0 auto}
+@media (max-width:980px){main{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--panel);border:7px solid transparent;border-image:url("/art/window-edge.png") 19/7px round;
+background-clip:padding-box;padding:14px 16px;min-width:0}
+.card h2{margin:0 0 10px;font:400 17px/1.2 var(--serif);letter-spacing:.02em;color:var(--gold);text-shadow:0 1px 0 #000}
+.stack{display:flex;flex-direction:column;gap:16px;min-width:0}
+.youbox{margin:14px 22px 0;padding:10px 14px;border:1px solid #8a6a2c;border-radius:10px;background:rgba(242,201,76,.08)}
+.youbox h2{margin:0 0 4px;font:400 15px var(--serif);color:var(--warn)}
+.youbox:has(> #you > .empty){display:none}
+.item{display:flex;gap:10px;padding:7px 0;border-top:1px solid rgba(255,255,255,.05)}
 .item:first-of-type{border-top:0}
 .item>div{min-width:0;overflow-wrap:anywhere}
-.tag{flex:none;font-size:11.5px;padding:2px 8px;border-radius:4px;height:fit-content;border:1px solid var(--line2);
-color:var(--gold2);background:rgba(5,4,12,.7);font-family:var(--mono)}
-.sub{color:var(--dim);font-size:13px}
+.tag{flex:none;font:11px var(--mono);padding:2px 7px;border-radius:5px;height:fit-content;border:1px solid var(--edge);
+color:var(--gold);background:rgba(0,0,0,.45)}
+.sub{color:var(--dim);font-size:12.5px}
 .you .tag{color:var(--warn)}.now .tag{color:var(--blue)}.fin .tag{color:var(--ok)}
-.launch{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap}
-button{font:600 14px Georgia,serif;cursor:pointer;border-radius:4px;border:1px solid var(--gold);background:#7a1810;color:var(--gold2);
-padding:8px 14px}
-button.primary{background:linear-gradient(180deg,var(--gold2),var(--gold));color:#2a1a06;border-color:#fff0bf;padding:9px 20px}
-button.primary:disabled,button:disabled{opacity:.5;cursor:not-allowed}
-#go{padding:10px 22px}
-input{font:inherit;flex:1;min-width:180px;background:rgba(5,4,12,.85);border:1px solid var(--line2);border-radius:4px;
-color:var(--text);padding:9px 12px}
-.console{font-family:var(--mono);font-size:12.5px;background:rgba(3,2,8,.92);border:1px solid var(--line2);border-radius:4px;
-height:420px;overflow:auto;padding:12px 14px;white-space:pre-wrap;word-break:break-word;color:#d6d0c2;
-box-shadow:inset 0 2px 8px rgba(0,0,0,.6)}
-.console .err{color:var(--bad)}.console .hdr{color:var(--gold2)}.console .ok{color:var(--ok)}
-.status{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-weight:600}
-.spinner{width:14px;height:14px;border:2px solid #3a2f18;border-top-color:var(--gold2);border-radius:50%;
-animation:s 0.8s linear infinite}@keyframes s{to{transform:rotate(360deg)}}
-@media (prefers-reduced-motion:reduce){.spinner{animation:none;border-color:var(--gold2)}}
+.launch{display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap}
+input{font:inherit;flex:1;min-width:160px;background:rgba(0,0,0,.5);border:1px solid #0a0908;border-radius:7px;color:var(--text);
+padding:8px 11px;box-shadow:inset 0 2px 4px rgba(0,0,0,.6)}
+.console{font:12.5px/1.45 var(--mono);background:rgba(3,4,5,.9);border:1px solid #0a0908;border-radius:8px;height:min(62vh,640px);
+overflow:auto;padding:10px 12px;white-space:pre-wrap;word-break:break-word;color:#d3d6dc;box-shadow:inset 0 2px 8px rgba(0,0,0,.7)}
+.console .err{color:var(--bad)}.console .hdr{color:var(--gold)}.console .ok{color:var(--ok)}
+.status{display:flex;align-items:center;gap:9px;margin-bottom:8px;font-weight:600}
+.spinner{position:relative;width:16px;height:16px;flex:none}
+.spinner::before,.spinner::after{content:"";position:absolute;inset:0;background:center/contain no-repeat}
+.spinner::before{background-image:url("/art/leyline-swirl-256.webp");animation:turn 2.4s linear infinite}
+.spinner::after{background-image:url("/art/leyline-crystal-256.webp")}
+@media (prefers-reduced-motion:reduce){.mark::before,.spinner::before{animation:none}}
+details.fold>summary{cursor:pointer;font:400 15px var(--serif);color:var(--gold);list-style:none}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary::before{content:"\25B8  ";color:var(--dim)}details.fold[open]>summary::before{content:"\25BE  "}
+details.fold[open]>summary{margin-bottom:8px}
+.fold h3{margin:10px 0 4px;font:600 12px system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
 .empty{color:var(--dim);font-style:italic}
-a{color:var(--gold2)}.hist a{font-family:var(--mono);font-size:12px}
-.updated{font-size:12px;color:var(--dim);margin-top:8px}
-@media (max-width:640px){header{padding:12px 16px}.health{margin-left:0;width:100%}
-.brand{width:100%;justify-content:center}.actions{width:100%}.actions button{flex:1 1 calc(50% - 8px)}
-main{padding:16px;gap:16px}.stack{gap:16px}.card{padding:16px}h1{font-size:16px;white-space:normal;text-align:center;min-width:0}.console{height:340px}}
-</style><link rel="stylesheet" href="/art/wu-theme.css?v=__THEMEV__"></head><body class="wu">
-<header><div class="brand wu-brand"><h1>Leyline Control</h1></div>
+a{color:var(--gold)}.hist a{font:12px var(--mono)}
+.updated{font-size:12px;color:var(--dim);margin-top:6px}
+@media (max-width:640px){header{padding:10px 14px}.health{margin-left:0;width:100%}main{padding:12px;gap:12px}
+.card{padding:10px 12px}.console{height:340px}.youbox{margin:12px 12px 0}}
+</style></head><body class="ly">
+<header><div class="brand"><span class="mark" aria-hidden="true"></span><h1>Leyline Control</h1></div>
 <div class="health" id="health"></div>
 <div class="actions"><button id="auto" title="While this window is open, Claude's updates run on their own">Autopilot: …</button>
+<details class="more"><summary>More</summary><div class="menu">
+<button id="hq" title="Leyline HQ: status, what needs you, releases, notes (play.openvanilla.app/wrath/admin)">Open HQ</button>
 <button id="gmc" title="Opens the GM console (bug reports, players, health, logs) in your browser">GM console</button>
+<button id="game">Open the game</button><button id="check">Check server</button>
 <button id="ask" title="On: deploys wait for Launch all; read-only checks still run by themselves">Ask before deploys: …</button>
-<button id="hq" class="primary" title="Leyline HQ: status, what needs you, releases, notes (play.openvanilla.app/wrath/admin)">Open HQ</button>
-<button id="check">Check server</button><button id="game">Open the game</button></div></header>
+</div></details></div></header>
+<section class="youbox"><h2>Waiting on you</h2><div id="you"></div></section>
 <main>
 <div class="stack">
-  <section class="card"><h2>Waiting on you</h2><div id="you"></div></section>
-  <section class="card"><h2>Claude is working on</h2><div id="now"></div><div class="updated" id="cupd"></div></section>
-  <section class="card"><h2>Finished</h2><div id="fin"></div></section>
+  <section class="card"><h2>Up next</h2><div id="pending"></div>
+    <div class="launch"><input id="msg" placeholder="GitHub save note (only for 'Save to GitHub')">
+    <button class="primary" id="go">Launch all</button></div></section>
+  <section class="card"><details class="fold"><summary>Claude's notes</summary>
+    <h3>Working on</h3><div id="now"></div><div class="updated" id="cupd"></div>
+    <h3>Finished</h3><div id="fin"></div></details></section>
+  <section class="card hist"><details class="fold"><summary>History</summary><div id="hist"></div></details></section>
 </div>
 <div class="stack">
-  <section class="card"><h2>Ready to launch</h2><div id="pending"></div>
-    <div class="launch"><input id="msg" placeholder="GitHub save note (only used if 'Save to GitHub' is in the list)">
-    <button class="primary" id="go">Launch all</button></div></section>
   <section class="card"><h2>Live output</h2><div class="status" id="run"></div><div class="console" id="con"></div></section>
-  <section class="card hist"><h2>History</h2><div id="hist"></div></section>
 </div></main>
 <script>
 const T="__TOKEN__",H={"X-Token":T};

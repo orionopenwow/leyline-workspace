@@ -83,7 +83,15 @@ fi
 if docker ps -a --format '{{.Names}}' | grep -cx wu-play >/dev/null; then
   docker restart wu-play >/dev/null && echo "  wu-play restarted on the new slice"
 elif grep -qF "$MARK_BEGIN" "$CF" 2>/dev/null; then
-  echo "  wu-play is not running: bash $ST/stream-up.sh starts it"
+  # Streaming was set up before (the Caddy block is there): wu-play is gone because this script removed it to make
+  # room (above), so start it again now. Live 1 Nov: only a hint was printed and the browser game answered 502.
+  echo "  wu-play is not running: starting it (stream-up.sh)"
+  if (cd "$ST" && bash stream-up.sh) >/tmp/wu-stream-up.log 2>&1; then
+    echo "  wu-play started (stream-up.sh OK)"
+  else
+    tail -20 /tmp/wu-stream-up.log | sed 's/^/    /'
+    die "stream-up.sh failed: the browser game is down until it runs (bash $ST/stream-up.sh)"
+  fi
 else
   echo "  next: bash $ST/stream-up.sh"
 fi

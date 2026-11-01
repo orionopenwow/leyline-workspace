@@ -117,13 +117,17 @@ local function near(a, b) return math.abs(a - b) < 0.01 end
 
 -- ---------------------------------------------------------------- the shipped files
 local ids = catalogIds()
-check("five stamps ship: garden, market, campfire, dock, house", (function()
-    for _, n in ipairs({ "garden", "market", "campfire", "dock", "house" }) do if not H.stamp(n) then return false end end
-    return #H.STAMPS == 5 end)())
+check("six stamps ship: garden, market, campfire, dock, house, inn", (function()
+    for _, n in ipairs({ "garden", "market", "campfire", "dock", "house", "inn" }) do if not H.stamp(n) then return false end end
+    return #H.STAMPS == 6 end)())
 check("no stamp outside the list is read (no paths from players)", H.stamp("../ov_build") == nil and H.stamp("nothing") == nil)
 check("every stamp piece is a verified catalog entry", (function()
     for _, n in ipairs(H.STAMPS) do for _, e in ipairs(H.stamp(n).props) do if not ids[e.entry] then return false end end end
     return true end)())
+check("the inn stamp has an inn, a door and a mailbox", (function()
+    local r, inn = {}, false
+    for _, e in ipairs(H.stamp("inn").props) do if e.role then r[e.role] = true end; if e.entry == 19007 then inn = true end end
+    return inn and r.house and r.door and r.mailbox end)())
 check("the house stamp has a house, a door and a mailbox", (function()
     local r = {}
     for _, e in ipairs(H.stamp("house").props) do if e.role then r[e.role] = true end end
@@ -176,7 +180,7 @@ fire(3, own)
 check("first visit, empty Den: the owner is asked how it starts", said(own, "Pick how your Den starts") and addonHas(own, "^wuden\tstart\t1/1\tforest,Forest glade;keep,Dark keep;empty,Empty"))
 fire(28, own)
 check("asked once a session", (function() local n = 0; for _, m in ipairs(own.msgs) do if m:find("Pick how your Den starts") then n = n + 1 end end; return n == 1 end)())
-check("the home line goes to the addon", addonHas(own, "^wuden\thome\t1/1\tstarted=%-;door=0;mailbox=0;mail=0;role=owner;stamp=%-;stamps=garden,market,campfire,dock,house"))
+check("the home line goes to the addon", addonHas(own, "^wuden\thome\t1/1\tstarted=%-;door=0;mailbox=0;mail=0;role=owner;stamp=%-;stamps=garden,market,campfire,dock,house,inn"))
 
 local bud = player({ guid = 2, name = "Buddy" })
 cmd(bud, ".den start forest")
@@ -393,7 +397,7 @@ check(".den's help names the owner's", said(own, "%.den start forest") and said(
 check("no game-brand words in anything players see", (function()
     local function bad(s) local l = s:lower(); return l:find("warcraft") or l:find("blizzard") or l:find("lich king") or l:find("%f[%a]wow%f[%A]") end
     for _, m in ipairs(allMsgs) do if bad(m) then return false end end
-    for _, f in ipairs({ "den-starters/forest-glade", "den-starters/dark-keep", "den-stamps/garden", "den-stamps/market",
+    for _, f in ipairs({ "den-starters/forest-glade", "den-starters/dark-keep", "den-stamps/garden", "den-stamps/market", "den-stamps/inn",
         "den-stamps/campfire", "den-stamps/dock", "den-stamps/house" }) do
         if bad(readFile(dir .. "/" .. f .. ".den.json") or "") then return false end
     end

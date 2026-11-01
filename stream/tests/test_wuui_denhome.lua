@@ -221,7 +221,7 @@ local menu = _G.WrathUnleashedSpawnMenu
 local stampsTab
 for _, t in ipairs(menu.tabs) do if t.tab == "stamps" then stampsTab = t end end
 stampsTab:Fire("OnClick")
-check("the spawn menu's Stamps tab: five stamps", #B.menuItems == 5 and B.menuItems[1].kind == "stamp")
+check("the spawn menu's Stamps tab: six stamps", #B.menuItems == 6 and B.menuItems[1].kind == "stamp")
 local cell
 for _, c in ipairs(menu.cells) do if c.item and c.item.key == "campfire" then cell = c end end
 cell:Fire("OnEnter")

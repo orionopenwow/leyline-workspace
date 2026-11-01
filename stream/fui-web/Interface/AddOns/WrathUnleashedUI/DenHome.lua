@@ -26,6 +26,7 @@ local STAMPS = {
     { key = "campfire", name = "Campfire circle", line = "A campfire with benches around it." },
     { key = "dock", name = "Dock", line = "Boards out in front of you, barrels and a fishing chair." },
     { key = "house", name = "Small house", line = "A furnished cottage with a front door and a mailbox." },
+    { key = "inn", name = "Inn", line = "A small inn: tables, kegs, lanterns, a mailbox and a fire outside." },
 }
 local STARTERS = { { "forest", "Forest glade" }, { "keep", "Dark keep" }, { "empty", "Empty" } }
 local GRIDS = { 0, 0.5, 1, 2, 5 }

@@ -1,0 +1,132 @@
+{
+ "format": "leyline-den",
+ "version": 1,
+ "kind": "stamp",
+ "name": "inn",
+ "title": "Inn",
+ "line": "A small inn you walk into: tables and benches, kegs behind the bar, lanterns at the door, a mailbox and a fire outside.",
+ "props": [
+  {
+   "entry": 19007,
+   "x": 11,
+   "y": 0,
+   "z": 0,
+   "yaw": 180,
+   "role": "house"
+  },
+  {
+   "entry": 179977,
+   "x": 4.5,
+   "y": 1.2,
+   "z": 0,
+   "yaw": 0,
+   "role": "door"
+  },
+  {
+   "entry": 179977,
+   "x": 4.5,
+   "y": -1.2,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 19626,
+   "x": 4,
+   "y": -3.5,
+   "z": 0,
+   "yaw": 0,
+   "role": "mailbox"
+  },
+  {
+   "entry": 181075,
+   "x": 10,
+   "y": 2,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 24538,
+   "x": 10,
+   "y": 3.3,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 24538,
+   "x": 10,
+   "y": 0.7,
+   "z": 0,
+   "yaw": 180
+  },
+  {
+   "entry": 181075,
+   "x": 10,
+   "y": -2,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 2413,
+   "x": 8.8,
+   "y": -2,
+   "z": 0,
+   "yaw": 270
+  },
+  {
+   "entry": 2413,
+   "x": 11.2,
+   "y": -2,
+   "z": 0,
+   "yaw": 90
+  },
+  {
+   "entry": 180575,
+   "x": 13,
+   "y": 2.5,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 180575,
+   "x": 13,
+   "y": 1.6,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 179967,
+   "x": 13,
+   "y": -2.5,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 182593,
+   "x": 12,
+   "y": 0,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 181396,
+   "x": 10,
+   "y": 0,
+   "z": 0,
+   "yaw": 90
+  },
+  {
+   "entry": 180765,
+   "x": 10,
+   "y": 0,
+   "z": 2.6,
+   "yaw": 0
+  },
+  {
+   "entry": 1953,
+   "x": 3,
+   "y": 3.5,
+   "z": 0,
+   "yaw": 0
+  }
+ ]
+}

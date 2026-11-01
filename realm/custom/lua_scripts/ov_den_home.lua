@@ -3,7 +3,7 @@
 --
 --   .den start                         (owner) the starter places: Forest glade, Dark keep, Empty
 --   .den start forest|keep|empty [replace]   puts one in the Den (with decor there: asks; replace keeps a "backup")
---   .den stamps                        the stamps: garden, market, campfire, dock, house
+--   .den stamps                        the stamps: garden, market, campfire, dock, house, inn
 --   .den stamp <name> [degrees]        (builders) marks where it goes, at your feet, facing your way: stakes at its
 --                                      corners and one ahead (nothing placed yet)
 --   .den stamp turn [degrees]          turns the marked stamp (15 by default; it stays on 15 degree steps)
@@ -42,7 +42,7 @@ local H = {
         { key = "empty", name = "Empty" } },
     ALIASES = { forest = "forest", glade = "forest", ["forest-glade"] = "forest", keep = "keep", dark = "keep", ["dark-keep"] = "keep",
         empty = "empty", none = "empty", plain = "empty" },
-    STAMPS = { "garden", "market", "campfire", "dock", "house" },
+    STAMPS = { "garden", "market", "campfire", "dock", "house", "inn" },
     STAMP_MAX = 60, STAMP_SPAN = 40, FILE_MAX = 512 * 1024,
     MARKER = 180007,          -- Excavation Stake (the catalog's): the stamp's corners, spawned unsaved, never a prop
     MARK_KEEP = 120,          -- seconds a mark stays without a word

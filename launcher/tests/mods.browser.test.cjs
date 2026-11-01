@@ -143,7 +143,7 @@ test('Sort menu: every sort asks the core and shows its order', async () => {
 test('Mods and Addons tabs: Mods has its categories as chips; never an addon on Mods, never a mod on Addons; numbers on the cards', async () => {
   const { page, errors } = await open({ sort: 'top', tab: 'mods' });
   assert.equal(await page.inputValue('#cat-sort'), 'top', 'the remembered sort');
-  assert.deepEqual(await page.$$eval('#discover-tabs .ly-tab', (b) => b.map((x) => x.textContent)), ['Mods', 'Addons', 'Themes', 'Graphics']);
+  assert.deepEqual(await page.$$eval('#discover-tabs .ly-tab', (b) => b.map((x) => x.textContent)), ['Mods', 'Addons', 'Looks', 'Themes', 'Graphics']);
   assert.equal(await page.getAttribute('#cat-q', 'placeholder'), 'Search mods');
   assert.match(await page.textContent('#dc-line'), /^Mods change the game itself/);
   assert.equal(await page.locator('#cat-cat').count(), 0, 'no Show menu: the chips are the categories');

@@ -2012,6 +2012,11 @@ async function handleDeepLink() {
   if (link && link.action === "realm" && typeof link.id === "string") return showLinkedRealm(link.id);
   if (link && link.action === "host" && typeof link.id === "string") return showHostLink(link.id);
   if (!link || link.action !== "install" || typeof link.id !== "string") return;
+  if (link.id.startsWith("look:")) {   // the website's Looks page: Discover › Looks, that card (looks.js); nothing installs yet
+    show("mods", true, "discover");
+    if (!(window.LeylineLooks && window.LeylineLooks.focus(link.id))) say("cat-status", "That look isn't in the list here yet. Try again in a few minutes.", "warn");
+    return;
+  }
   const p = catalog.projects.find((x) => x.id === link.id);
   show("mods", true, "discover");   // the catalog was just loaded
   if (!p) { say("cat-status", "That mod isn't in the mods list here yet. Try again in a few minutes.", "warn"); return; }

@@ -203,7 +203,7 @@ const SCENES = {
   // the website: the forum, then the Discord
   'site-forum': async (page, rec, size) => {
     await L.wait(page, 900);
-    await L.hover(page, 'text=Welcome to the forum >> nth=0', 900).catch(() => {});
+    await L.moveTo(page, size.width * 0.55, size.height * 0.45, 900);   // a look over the categories, no scrolling
     rec.mark('thread');
     await L.wait(page, 1000);
     await L.hover(page, 'a.fm-btn:has-text("Join the Discord")', 900);

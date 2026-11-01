@@ -54,6 +54,25 @@ def setup(admin) -> None:
     A = admin
     register()
     W = _load_words()
+    dw = denweek()
+    if dw is not None:
+        dw.setup(admin)
+
+
+def denweek():
+    """stream/denweek.py beside this file (Den of the week: its HQ panel and actions), or None when it is missing."""
+    import sys
+    m = sys.modules.get("wu_denweek")
+    if m is None:
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("wu_denweek", os.path.join(os.path.dirname(os.path.abspath(__file__)), "denweek.py"))
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            sys.modules["wu_denweek"] = m
+        except Exception:   # noqa: BLE001
+            return None
+    return m
 
 
 def P(name):
@@ -1342,7 +1361,8 @@ def home(user: dict) -> str:
     return (strip_html()
             + '<div class="hq-grid"><div>'
             + f'<section class="ly-panel"><h2>Needs you</h2>{need}</section>'
-            + '</div><div>' + from_claude_html() + to_claude_html(user, back) + releases_html() + changes_html(6) + '</div></div>')
+            + '</div><div>' + from_claude_html() + to_claude_html(user, back) + (denweek().panel_html(user, back) if denweek() else "")
+            + releases_html() + changes_html(6) + '</div></div>')
 
 
 def notes_page(user: dict) -> str:

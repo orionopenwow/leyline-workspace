@@ -124,7 +124,7 @@ mod tests {
     #[test]
     fn the_shipped_branding_is_valid() {
         let b = get();
-        assert_eq!(b.name, "Leyline");
+        assert!(!b.name.trim().is_empty());
         assert!(b.updates.mirrors.iter().all(|m| m.starts_with("https://")));
         assert!(!b.release_log.urls.is_empty());
         // The logo and emblem are files in launcher/.

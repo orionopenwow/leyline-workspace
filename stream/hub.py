@@ -691,6 +691,17 @@ class Hub:
         self._health: tuple[float, str] = (-1e9, "")
         self.lock = threading.Lock()
 
+    def portrait(self, name: str) -> str:
+        """A person's default picture by name (stream/profiles.py default_portrait: one of the slate-medallion character
+        portraits, the same face the launcher shows), never a letter; the art copy when profiles are not loaded."""
+        prof = self.portal("profiles")
+        try:
+            if prof is not None:
+                return prof.portrait_url(name)
+        except Exception:   # noqa: BLE001
+            pass
+        return "/wrath/art/avatars/wanderer.svg"
+
     def health_state(self) -> str:
         """The footer's status dot: "ok" (every Platform Status source answered OK), "warn" (some didn't), "bad" (none
         did), or "" when Platform Status hasn't been read in the last 2 minutes (the front page reads it; no dot then)."""
@@ -948,9 +959,8 @@ class Hub:
         prof = prof if prof is not None and getattr(prof, "store", None) is not None else None
         if who:
             name = clean_name(who[1] or who[0]) or "Account"
-            pic = prof.avatar_url(who[0]) if prof is not None else ""
-            av = (f'<img class="hb-av" src="{e(pic)}" alt="" width="26" height="26">' if pic
-                  else f'<span class="hb-av" aria-hidden="true">{e(name[:1].upper())}</span>')
+            pic = (prof.avatar_url(who[0]) if prof is not None else "") or self.portrait(name)
+            av = f'<img class="hb-av" src="{e(pic)}" alt="" width="26" height="26">'
             acct = (f'<a class="hb-acct" href="{"/wrath/profile" if prof is not None else "/wrath/account"}" aria-label="Your account: {e(name)}">'
                     f'{av}<span class="hb-acct-n">{e(name)}</span></a>')
         else:
@@ -1834,8 +1844,8 @@ class Hub:
                     bits.append(f'{d["inst"]} install{"" if d["inst"] == 1 else "s"} this month')
                 top = as_typed(d["top"]["name"], neutral(d["top"]["name"])) or "Untitled"
                 cards.append(f'<li><a class="hb-crw-a" href="{BASE}/catalog?{e(q)}" title="{e(" · ".join(bits))} · Top: {e(top)}">'
-                             f'<span class="hb-av" style="--h:{200 + hashlib.sha256(d["q"].lower().encode()).digest()[0] % 120}" aria-hidden="true">'
-                             f'{e(d["name"][:1].upper())}</span><b>{e(d["name"])}</b>'
+                             f'<img class="hb-av" src="{e(self.portrait(d["name"]))}" alt="" width="44" height="44" loading="lazy">'
+                             f'<b>{e(d["name"])}</b>'
                              f'<small>{e(bits[-1] if d["inst"] > 0 else bits[0])}</small></a></li>')
             crs = ('<div class="hb-cm-p" id="creators-top" aria-labelledby="hb-cr-h" role="group"><h3 id="hb-cr-h" class="hb-cm-h">Top creators</h3>'
                    f'<ul class="hb-crw">{"".join(cards)}</ul></div>')
@@ -3228,7 +3238,7 @@ border:1px solid var(--lk-border-strong);background:transparent;color:var(--lk-t
 .hb-acct{gap:8px;padding:0 12px 0 4px}.hb-acct-n{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hb-av{display:grid;place-items:center;flex:none;width:32px;height:32px;border-radius:50%;font-weight:800;font-size:14px;color:#fff;
 background:linear-gradient(135deg,var(--lk-accent),var(--lk-accent-2))}
-img.hb-av{display:block;object-fit:cover;background:none}
+img.hb-av,.hb-crw img.hb-av{display:block;object-fit:contain;background:none;border-radius:0}
 .hb-menu-t{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
 .hb-menu-b{display:none;cursor:pointer;padding:7px 12px;border:1px solid var(--lk-border-strong);border-radius:var(--lk-r-sm);font-weight:600;font-size:14px}
 .hb-menu-t:focus-visible+.hb-menu-b{outline:2px solid var(--lk-accent-strong);outline-offset:2px}

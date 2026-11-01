@@ -5,6 +5,9 @@ copies it.
 
 ## Unreleased
 
+- **Character portraits instead of letters.** Every player has a round character portrait on a grey slate
+  medallion now: a knight, a ranger, a witch, a fox and twenty more, drawn for Leyline. Without a pick you get one from
+  your name (the same one on the website); choose another under Manage account › Picture.
 - **A new look.** Leyline is flat and modern now: a navy Dark theme (the default) and a Light theme, rounded cards,
   a clean sans font and the Leyline mark up top. Pick one under Settings › Themes. The painted stone and parchment
   look is gone; if you had it (or a Rounded theme), Leyline moves you to Dark or Light on its own.

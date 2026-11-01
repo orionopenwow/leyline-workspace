@@ -168,14 +168,15 @@ check("safe next: our own pages stay", PM.safe_next("/wrath/link?code=BCDF-GHJK"
 
 # ---------------------------------------------------------------- phase 2: the first-time profile
 st, hd, body, _ = req("GET", "/wrath/signin/welcome", "alice", cookies="ly_next=/wrath/leyline/forum")
-check("welcome: first time: the profile step (name, 13 pictures, bio, Skip)", st == 200 and "Welcome, Alice" in body
-      and 'data-n="2" class="on"' in body and body.count('name="avatar"') == 13 and 'name="bio"' in body and "Skip for now" in body, body[:300])
-check("welcome: the pictures are ours (/wrath/avatar), the name field is filled in", 'src="/wrath/avatar/p/star.svg"' in body
+check("welcome: first time: the profile step (name, 25 pictures: picked for you and 24 portraits, bio, Skip)", st == 200 and "Welcome, Alice" in body
+      and 'data-n="2" class="on"' in body and body.count('name="avatar"') == 25 and 'name="bio"' in body and "Skip for now" in body, body[:300])
+check("welcome: the pictures are ours (/wrath/avatar), the name field is filled in", 'src="/wrath/avatar/p/wizard.svg"' in body
+      and f'Picked for you: {PM.PRESET[PM.default_portrait("Alice")][1]}' in body
       and 'value="Alice"' in body)
 st, hd, body, _ = req("GET", "/wrath/signin/welcome", None, cookies="ly_next=/wrath")
 check("welcome: signed out (the sign-in didn't finish): the chooser with a note", st == 200 and "finish. Try again" in body and "go/herokey" in body)
 t = tok("alice", "/wrath/signin/welcome", "ly_next=/wrath/leyline/forum")
-form = {"t": t, "do": "save", "name": "Alice", "avatar": "moon", "bio": "I host a realm.\nfuck this Warcraft-free bio, WoW"}
+form = {"t": t, "do": "save", "name": "Alice", "avatar": "witch", "bio": "I host a realm.\nfuck this Warcraft-free bio, WoW"}
 st, hd, body, _ = req("POST", "/wrath/signin/welcome", "alice", dict(form, t="0" * 32), cookies="ly_next=/wrath/leyline/forum")
 check("welcome POST: a wrong form token is refused", st == 403 and "timed out" in body)
 st, _, _, _ = req("POST", "/wrath/signin/welcome", "alice", form, origin="https://evil.example", cookies="ly_next=/wrath/leyline/forum")
@@ -192,7 +193,7 @@ p = PR.get("WR000001")
 check("welcome POST: saved, then back where they came from (ly_next cleared)", st == 303 and hd.get("Location") == "/wrath/leyline/forum"
       and any(c.startswith("ly_next=;") and "Max-Age=0" in c for c in raw.get("Set-Cookie", [])), (st, hd))
 check("welcome POST: the picture, the bio (words starred, game names replaced, line break kept), setup done",
-      p["avatar"] == "moon" and p["setup"] and p["bio"].startswith("I host a realm.\n") and "****" in p["bio"]
+      p["avatar"] == "witch" and p["setup"] and p["bio"].startswith("I host a realm.\n") and "****" in p["bio"]
       and not BRAND.search(p["bio"]), p)
 check("welcome POST: the name is social.py's (with its #tag)", S.profile("WR000001")["name"] == "Alice_R")
 for nm in ("Lich_King", "War.craft", "WoWAlice", "Blizzard9", "wow", "World-of-Warcraft"):
@@ -231,20 +232,38 @@ check("welcome for the launcher's code, never set up: straight on to the code", 
       and hd.get("Location") == "/wrath/link?code=" + d["user_code"] and not PR.get("WR000003")["setup"])
 
 # ---------------------------------------------------------------- pictures
-st, hd, body, _ = req("GET", "/wrath/avatar/p/star.svg")
+st, hd, body, _ = req("GET", "/wrath/avatar/p/wizard.svg")
 check("preset: an SVG, cached a week, no script", st == 200 and hd.get("Content-Type") == "image/svg+xml"
       and "max-age=604800" in hd.get("Cache-Control", "") and "<script" not in body and body.startswith("<svg"))
-st, hd2, _, _ = req("GET", "/wrath/avatar/p/star.svg", headers={"If-None-Match": hd.get("ETag", "")})
+st, hd2, _, _ = req("GET", "/wrath/avatar/p/wizard.svg", headers={"If-None-Match": hd.get("ETag", "")})
 check("preset: ETag answers 304", st == 304)
 check("preset: every one draws", all(req("GET", f"/wrath/avatar/p/{x[0]}.svg")[0] == 200 for x in PM.PRESETS))
 check("preset: an unknown one is 404", req("GET", "/wrath/avatar/p/nope.svg")[0] == 404 and req("GET", "/wrath/avatar/p/../x")[0] == 404)
 pid_a = S.profile("WR000001")["pid"]
 url = PM.avatar_url("WR000001")
 st, hd, body, _ = req("GET", url)
-check("a player's picture by public id: their preset, cached a day with ?v", st == 200 and 'aria-label="Moon"' in body
+check("a player's picture by public id: their portrait, cached a day with ?v", st == 200 and 'aria-label="Witch"' in body
       and "max-age=86400" in hd.get("Cache-Control", "") and url.startswith(f"/wrath/avatar/u/{pid_a}.svg?v="), url)
 st, hd, body, _ = req("GET", f"/wrath/avatar/u/{S.profile('WR000002')['pid']}.svg")
-check("no picture chosen: the initial; without ?v five minutes", st == 200 and ">B</text>" in body and "max-age=300" in hd.get("Cache-Control", ""))
+bname = S.profile("WR000002")["name"]
+check("no picture chosen: the portrait picked from the name, never a letter; without ?v five minutes", st == 200
+      and f'aria-label="{PM.PRESET[PM.default_portrait(bname)][1]}"' in body and "<text" not in body
+      and "max-age=300" in hd.get("Cache-Control", ""), bname)
+check("the default from a name: stable FNV-1a, the launcher's vectors (launcher/tests/avatars.test.cjs)",
+      [PM.default_portrait(n) for n in ("Groenz", "groenz ", "Alice", "Orion", "Bob", "Ünïcode", "", "?")]
+      == ["monk", "monk", "wolf", "brute", "warrior", "wanderer", "wanderer", "wanderer"])
+check("24 portraits, each a file in the site art, small, no script", len(PM.PRESETS) == 24 and all(
+      len(PM.preset_svg(x[0])) < 4096 and b"<script" not in PM.preset_svg(x[0]) and f'aria-label="{x[1]}"'.encode() in PM.preset_svg(x[0])
+      for x in PM.PRESETS))
+st, _, body, _ = req("GET", "/wrath/avatar/p/moon.svg")
+check("an old shape id (moon) still draws: the portrait put in its place", st == 200 and 'aria-label="Witch"' in body)
+PR.db.execute("UPDATE profiles SET avatar = 'star' WHERE acct = 'WR000002'")
+check("a profile saved with an old shape id reads as its portrait", PR.get("WR000002")["avatar"] == "wizard")
+st, _, body, _ = req("GET", f"/wrath/avatar/u/{S.profile('WR000002')['pid']}.svg")
+check("... and draws it", 'aria-label="Wizard"' in body)
+PR.db.execute("UPDATE profiles SET avatar = '' WHERE acct = 'WR000002'")
+check("a portrait's address for anyone by name (mod authors, the forum without profiles)",
+      PM.portrait_url("Groenz") == "/wrath/avatar/p/monk.svg")
 check("an unknown public id is 404", req("GET", "/wrath/avatar/u/zzzzzzzzzz.svg")[0] == 404)
 
 # ---------------------------------------------------------------- the launcher's JSON
@@ -280,15 +299,16 @@ def jpost(path, doc, headers=None, who=None, origin="https://play.example"):
 
 
 st, me = jget("/wrath/api/social/me", headers=B)
-check("GET me (launcher): the profile (bio, picture, absolute picture address, setup)", st == 200 and me["me"]["profile"]["avatar"] == "moon"
+check("GET me (launcher): the profile (bio, picture, absolute picture address, setup)", st == 200 and me["me"]["profile"]["avatar"] == "witch"
       and me["me"]["profile"]["setup"] is True and me["me"]["profile"]["avatar_url"].startswith(f"https://play.example/wrath/avatar/u/{pid_a}.svg?v="), me)
-check("GET me: the presets (absolute), the ways, the manage page", len(me["avatars"]) == 12
-      and me["avatars"][0]["url"] == "https://play.example/wrath/avatar/p/star.svg" and me["ways"]["discord"] is True
+check("GET me: the portraits (absolute), the default, the ways, the manage page", len(me["avatars"]) == 24
+      and me["avatars"][0]["url"] == "https://play.example/wrath/avatar/p/alchemist.svg"
+      and me["me"]["profile"]["default_avatar"] == PM.default_portrait(me["me"]["name"]) and me["ways"]["discord"] is True
       and me["manage_url"] == "https://play.example/wrath/profile")
 st, ways = jget("/wrath/api/social/ways")
 check("GET ways: no sign-in needed", st == 200 and ways == {"herokey": True, "google": True, "discord": True})
-st, out = jpost("/wrath/api/social/profile", {"bio": "Hello there", "avatar": "gem", "setup": True}, B)
-check("POST profile (launcher): bio and picture saved, the new profile back", st == 200 and out["me"]["profile"]["avatar"] == "gem"
+st, out = jpost("/wrath/api/social/profile", {"bio": "Hello there", "avatar": "mage", "setup": True}, B)
+check("POST profile (launcher): bio and picture saved, the new profile back", st == 200 and out["me"]["profile"]["avatar"] == "mage"
       and PR.get("WR000001")["bio"] == "Hello there")
 v1 = PR.get("WR000001")["ver"]
 st, out = jpost("/wrath/api/social/profile", {"avatar": "evil"}, B)
@@ -300,7 +320,7 @@ check("POST profile: a bio that isn't text is refused", st == 400)
 st, out = jpost("/wrath/api/social/profile", {"name": "Lich King", "bio": "changed?"}, B)
 check("POST profile: a refused name changes nothing (not even the bio)", st == 400 and PR.get("WR000001")["bio"] == "Hello there")
 st, out = jpost("/wrath/api/social/profile", {"name": "AliceR", "avatar": ""}, B)
-check("POST profile: a new name and back to the initial; the picture's version moves on", st == 200 and out["me"]["name"] == "AliceR"
+check("POST profile: a new name and back to the default portrait; the picture's version moves on", st == 200 and out["me"]["name"] == "AliceR"
       and out["me"]["profile"]["avatar"] == "" and PR.get("WR000001")["ver"] > v1)
 st, out = jpost("/wrath/api/social/profile", {"bio": "x"}, who="alice")
 check("POST profile with the cookie: needs the CSRF header", st == 403)
@@ -319,12 +339,12 @@ check("profile page: who is signed in (picture, name#tag), the form, the ways, s
       and "/auth/google/start?link=1" in body and "/auth/discord/start?link=1" in body and "/wrath/link" in body and "<script" not in body)
 check("profile page: never a game or company name", not BRAND.search(re.sub(r"<[^>]+>", " ", body)))
 t = tok("alice", "/wrath/profile")
-st, hd, _, _ = req("POST", "/wrath/profile", "alice", {"t": t, "name": "AliceR", "avatar": "sun", "bio": "Sunny"})
+st, hd, _, _ = req("POST", "/wrath/profile", "alice", {"t": t, "name": "AliceR", "avatar": "cleric", "bio": "Sunny"})
 check("profile page POST: saved (303 to ?saved=1)", st == 303 and hd.get("Location") == "/wrath/profile?saved=1"
-      and PR.get("WR000001")["avatar"] == "sun")
+      and PR.get("WR000001")["avatar"] == "cleric")
 st, _, body, _ = req("GET", "/wrath/profile?saved=1", "alice")
 check("profile page: Saved.", "Saved." in body and "Sunny" in body)
-st, _, body, _ = req("POST", "/wrath/profile", "alice", {"t": t, "name": "x", "avatar": "sun", "bio": ""})
+st, _, body, _ = req("POST", "/wrath/profile", "alice", {"t": t, "name": "x", "avatar": "cleric", "bio": ""})
 check("profile page POST: a bad name shows why", st == 400 and "2 to 24" in body)
 st, _, body, _ = req("POST", "/wrath/profile", None, {"t": t, "name": "x"})
 check("profile page POST signed out: to the sign-in", st == 303)
@@ -348,7 +368,7 @@ body = wp.admin.profiles_page(user, {"q": ["AliceR#" + S.profile("WR000001")["ta
 check("admin Profiles: find by Name#tag", "AliceR" in body and "Bob" not in body)
 ok, msg = wp.admin.run_action(user, {"action": "profile.reset.avatar", "target": "WR000001"})
 check("admin: reset the picture (audited), the old one kept in the history", ok and PR.get("WR000001")["avatar"] == ""
-      and any(x["field"] == "avatar" and x["old"] == "sun" and x["by"] == "staff:WR000003" for x in PR.history("WR000001"))
+      and any(x["field"] == "avatar" and x["old"] == "cleric" and x["by"] == "staff:WR000003" for x in PR.history("WR000001"))
       and any(r.get("action") == "profile.reset.avatar" for r in wp.admin.audit_tail(20)), msg)
 ok, msg = wp.admin.run_action(user, {"action": "profile.reset.bio", "target": "WR000001"})
 check("admin: reset the bio", ok and PR.get("WR000001")["bio"] == "")
@@ -374,9 +394,9 @@ check("guest: the forum's form offers to pick a name (one click to the profile)"
 st, doc = jget("/wrath/api/social/me", who="guest1")
 check("guest: GET me says the name was made for it", st == 200 and doc["me"]["profile"]["name_generated"] is True, doc)
 t = tok("guest1", "/wrath/profile")
-st, hd, _, _ = req("POST", "/wrath/profile", "guest1", {"t": t, "name": "Orion", "avatar": "moon", "bio": "New here"})
+st, hd, _, _ = req("POST", "/wrath/profile", "guest1", {"t": t, "name": "Orion", "avatar": "witch", "bio": "New here"})
 check("guest: sets a display name, a picture and a bio", st == 303 and S.profile("WR000009")["name"] == "Orion"
-      and PR.get("WR000009")["avatar"] == "moon" and PR.get("WR000009")["bio"] == "New here")
+      and PR.get("WR000009")["avatar"] == "witch" and PR.get("WR000009")["bio"] == "New here")
 st, _, body, _ = req("GET", "/wrath/profile", "guest1")
 check("guest: the site header shows the new name at once, the line about a made name is gone",
       'class="hb-acct-n">Orion<' in body and "Your name was made for you" not in body, re.findall(r'hb-acct-n">[^<]*', body))
@@ -386,22 +406,22 @@ st, _, body, _ = req("GET", "/wrath/leyline/forum/new", "guest1")
 check("guest: the forum posts as the new name", "Post, as Orion" in body and "Pick your own name" not in body)
 for bad, why in (("Admin", "team"), ("LeylineStaff", "team"), ("Moderator7", "team"), ("Guest12345678", "guest"), ("Warcraft", "another")):
     t = tok("guest1", "/wrath/profile")
-    st, _, body, _ = req("POST", "/wrath/profile", "guest1", {"t": t, "name": bad, "avatar": "moon", "bio": ""})
+    st, _, body, _ = req("POST", "/wrath/profile", "guest1", {"t": t, "name": bad, "avatar": "witch", "bio": ""})
     check(f"names: {bad} refused ({why})", st == 400 and S.profile("WR000009")["name"] == "Orion", body[-300:])
 check("names: the same rules for the launcher's JSON", jpost("/wrath/api/social/profile", {"name": "Admin"}, who="guest1",
       headers={"X-Leyline-CSRF": doc.get("csrf", "")})[0] == 400)
 t = tok("guest1", "/wrath/profile")
-st, _, _, _ = req("POST", "/wrath/profile", "guest1", {"t": t, "name": "Orion2", "avatar": "moon", "bio": "New here"})
+st, _, _, _ = req("POST", "/wrath/profile", "guest1", {"t": t, "name": "Orion2", "avatar": "witch", "bio": "New here"})
 t = tok("guest1", "/wrath/profile")
-st2, _, _, _ = req("POST", "/wrath/profile", "guest1", {"t": t, "name": "Orion3", "avatar": "moon", "bio": "New here"})
+st2, _, _, _ = req("POST", "/wrath/profile", "guest1", {"t": t, "name": "Orion3", "avatar": "witch", "bio": "New here"})
 check("names: three changes a day", st == 303 and st2 == 303 and S.profile("WR000009")["name"] == "Orion3")
 t = tok("guest1", "/wrath/profile")
-st, _, body, _ = req("POST", "/wrath/profile", "guest1", {"t": t, "name": "Orion4", "avatar": "sun", "bio": "New here"})
+st, _, body, _ = req("POST", "/wrath/profile", "guest1", {"t": t, "name": "Orion4", "avatar": "cleric", "bio": "New here"})
 check("names: the fourth in a day waits until tomorrow (the picture isn't half-saved)", st == 400 and "tomorrow" in body
       and S.profile("WR000009")["name"] == "Orion3")
 t = tok("guest1", "/wrath/profile")
-st, _, _, _ = req("POST", "/wrath/profile", "guest1", {"t": t, "name": "Orion3", "avatar": "sun", "bio": "Still here"})
-check("names: the picture and bio still change after the name limit", st == 303 and PR.get("WR000009")["avatar"] == "sun")
+st, _, _, _ = req("POST", "/wrath/profile", "guest1", {"t": t, "name": "Orion3", "avatar": "cleric", "bio": "Still here"})
+check("names: the picture and bio still change after the name limit", st == 303 and PR.get("WR000009")["avatar"] == "cleric")
 staff = {"account": "WR000003", "name": "Mod Sam", "role": "staff", "session": "s"}
 ok, msg = wp.admin.run_action(staff, {"action": "profile.reset.name", "target": "WR000009", "confirm": "WR000009"})
 check("names: a staff reset isn't limited", ok and S.profile("WR000009")["name"] == "Player", msg)

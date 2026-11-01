@@ -707,11 +707,11 @@ hk_on = re.search(r'<section class="hb-hkb hb-rv" id="herokey".*?</section>', re
 check("Hero Key (flag on): available now, no Coming soon", "Available now" in hk_on and "Coming soon" not in hk_on
       and 'href="/wrath/leyline-preview/realms">Pick a realm' in hk_on)
 HK["on"] = False
-crs = re.findall(r'<li><a class="hb-crw-a" href="/wrath/leyline-preview/catalog\?q=([^"]+)" title="([^"]+)"><span class="hb-av" style="--h:\d+" '
-                 r'aria-hidden="true">.</span><b>([^<]+)</b><small>([^<]+)</small></a></li>',
+crs = re.findall(r'<li><a class="hb-crw-a" href="/wrath/leyline-preview/catalog\?q=([^"]+)" title="([^"]+)"><img class="hb-av" '
+                 r'src="/wrath/avatar/p/[a-z]+\.svg" alt="" width="44" height="44" loading="lazy"><b>([^<]+)</b><small>([^<]+)</small></a></li>',
                  re.search(r'id="creators-top".*?</div>', fp, re.S).group(0), re.S)
 crs = [(q, n, t, sm) for q, t, n, sm in crs]
-check("Top creators: a compact avatar row, up to four authors of the top mods, with counts, linking to their work in the catalog",
+check("Top creators: a compact avatar row (each a portrait from the name, never a letter), up to four authors of the top mods, with counts, linking to their work in the catalog",
       1 <= len(crs) <= 4 and HB.as_typed(HOT["author"], HB.neutral(HOT["author"])) == html.unescape(crs[0][1]) and all(re.match(r"\d+ hot mods?( · |$)", html.unescape(c[2])) for c in crs)
       and re.fullmatch(r"[5-9]\d\d installs this month", crs[0][3]) and " · Top: " in crs[0][2] and len({c[1] for c in crs}) == len(crs)
       and all(urllib.parse.unquote_plus(html.unescape(c[0])) in AUTH for c in crs), crs)

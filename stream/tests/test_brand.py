@@ -102,7 +102,9 @@ if wp.armory is not None:
 
 # the art as fastloop.sh installs it (www-files/art -> /wrath/art/)
 for n in os.listdir(os.path.join(STREAM, "www-files", "art")):
-    shutil.copy(os.path.join(STREAM, "www-files", "art", n), ART)
+    if os.path.isfile(os.path.join(STREAM, "www-files", "art", n)):   # the files; avatars/ is its own folder
+        shutil.copy(os.path.join(STREAM, "www-files", "art", n), ART)
+shutil.copytree(os.path.join(STREAM, "www-files", "art", "avatars"), os.path.join(ART, "avatars"), dirs_exist_ok=True)
 srv = ThreadingHTTPServer(("127.0.0.1", 0), wp.PageHandler)
 srv.daemon_threads = True
 threading.Thread(target=srv.serve_forever, daemon=True).start()

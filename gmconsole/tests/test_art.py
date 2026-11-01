@@ -44,7 +44,7 @@ def check(name, cond, extra=""):
 
 # the copy in static/art is the shared art, file for file
 art = os.path.join(SERVER, "static", "art")
-names = sorted(os.listdir(SHARED))
+names = sorted(n for n in os.listdir(SHARED) if os.path.isfile(os.path.join(SHARED, n)))   # the files; folders (avatars/, hub-thumbs/) are the site's own
 diff = [n for n in names if not os.path.exists(os.path.join(art, n))
         or open(os.path.join(art, n), "rb").read() != open(os.path.join(SHARED, n), "rb").read()]
 check("static/art matches stream/www-files/art (copy it again after an art change)", not diff and sorted(os.listdir(art)) == names, diff)

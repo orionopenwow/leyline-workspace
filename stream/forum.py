@@ -994,7 +994,7 @@ vertical-align:2px;background:var(--lk-accent-soft);color:var(--lk-accent-strong
 .fm-by{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin:0 0 8px;font-size:13px;color:var(--lk-muted)}
 .fm-by b{color:var(--lk-text);font-size:14.5px}.fm-by .fm-av{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;
 font-weight:800;font-size:13px;color:#fff;background:linear-gradient(135deg,var(--lk-accent),var(--lk-accent-2))}
-.fm-by img.fm-av{display:block;object-fit:cover;background:none}
+.fm-by img.fm-av{display:block;object-fit:contain;background:none;border-radius:0}
 .fm-by .fm-team{padding:1px 7px;border-radius:999px;background:var(--lk-accent);color:#fff;font-size:11px;font-weight:700}
 .fm-by .fm-via{padding:1px 7px;border-radius:999px;border:1px solid var(--lk-border-strong);color:var(--lk-text-2);font-size:11px;font-weight:600}
 .fm-by a{margin-left:auto;color:var(--lk-muted);font-size:12.5px}
@@ -1091,7 +1091,7 @@ def _signin_url(path: str) -> str:
 
 
 def _avatar(acct: str, name: str) -> str:
-    """The poster's picture (stream/profiles.py), else their initial."""
+    """The poster's picture (stream/profiles.py), else the default portrait for their name (never a letter)."""
     e = html.escape
     prof = P("profiles")
     if prof is not None and getattr(prof, "store", None) is not None:
@@ -1101,7 +1101,11 @@ def _avatar(acct: str, name: str) -> str:
                 return f'<img class="fm-av" src="{e(u)}" alt="" width="28" height="28" loading="lazy">'
         except Exception:   # noqa: BLE001
             pass
-    return f'<span class="fm-av" aria-hidden="true">{e(name[:1].upper())}</span>'
+    try:
+        u = prof.portrait_url(name) if prof is not None else ""
+    except Exception:   # noqa: BLE001
+        u = ""
+    return f'<img class="fm-av" src="{e(u or "/wrath/art/avatars/wanderer.svg")}" alt="" width="28" height="28" loading="lazy">'
 
 
 def _discord_card() -> str:

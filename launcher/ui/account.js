@@ -4,8 +4,8 @@
 // Signed out: the sign-in in steps (1 Sign in, 2 Your profile, 3 Play), the same chooser as the website's /wrath/signin
 // (Hero Key, Google, Discord: only the ways the website offers) and the waiting state while the browser is open; the
 // sign-in itself is social.js's (LeylineSocial). The first time after signing in: step 2, the profile, with Skip.
-// Signed in: your picture, name#tag and bio; edit the display name, the picture (your initial or one of the website's
-// preset pictures) and the bio (a guest account too: the same rules, and a line when its name is still the one made for
+// Signed in: your picture, name#tag and bio; edit the display name, the picture (the portrait picked from your name, or
+// any of the portraits: avatars.js) and the bio (a guest account too: the same rules, and a line when its name is still the one made for
 // it, me.profile.name_generated); the ways to sign in (each opens the website: the Hero Key page, link Google or Discord,
 // linked launchers); Sign out. Saving goes through the core's social_call "profile" (src-tauri/src/social.rs ACTIONS),
 // which only sends name, avatar, bio and setup. Everything from the server is shown with textContent.
@@ -25,7 +25,6 @@
   const S = () => window.LeylineSocial;
   const BIO_MAX = 300;
   const NAME_RE = /^[A-Za-z0-9_.\-À-ɏ]{2,24}$/;
-  const PRESET_RE = /^https:\/\/play\.openvanilla\.app\/wrath\/avatar\/p\/([a-z]{2,12})\.svg$/;
 
   let welcome = false, back = "play", draft = null, busy = false;
   // Your Hero Key (owner 31 Oct 19:15; stream/herokeys.py through the core's social_call): what the key is up to
@@ -64,34 +63,32 @@
   }
 
   // ---------------------------------------------------------------- signed in: the profile
+  // the pictures: "Picked for you" (the portrait from your name, the default) and every portrait (avatars.js), from the
+  // launcher's own copies, so the grid shows offline too; the website checks the id on save
+  const presetUrl = (id) => `https://play.openvanilla.app/wrath/avatar/p/${id}.svg`;
   function pictureGrid(me, extra, chosen) {
+    const A = window.LeylineAvatars;
     const fs = el("fieldset", "ac-pics");
     fs.append(el("legend", "ac-label", "Picture"));
-    const opts = [["", "Your initial", ""]];
-    for (const a of (extra.avatars || [])) {
-      const m = PRESET_RE.exec(String(a.url || ""));
-      if (m && m[1] === a.id) opts.push([a.id, String(a.name || a.id), a.url]);
-    }
-    for (const [id, name, url] of opts) {
+    const auto = A ? A.nameOf(A.pick(draft.name || me.name)) : "";
+    const opts = [["", auto ? `Picked for you (${auto})` : "Picked for you"]].concat(A ? A.list() : []);
+    const cur = A ? A.known(chosen) : chosen;
+    for (const [id, name] of opts) {
       const lab = el("label", "ac-pic"); lab.title = name;
-      const r = el("input"); r.type = "radio"; r.name = "ac-avatar"; r.value = id; r.checked = id === chosen;
+      const r = el("input"); r.type = "radio"; r.name = "ac-avatar"; r.value = id; r.checked = id === cur;
       r.setAttribute("aria-label", name);
       r.onchange = () => { draft.avatar = id; preview(me); };
-      const av = id ? S().avatar(name, "ac-pic-av", url) : S().avatar(draft.name || me.name, "ac-pic-av");
+      const av = id ? S().avatar(name, "ac-pic-av", presetUrl(id)) : S().avatar(draft.name || me.name, "ac-pic-av");
       lab.append(r, av);
       fs.append(lab);
     }
-    if (opts.length === 1) fs.append(el("p", "hint", "The pictures load from the website. They'll show when it's reachable."));
     return fs;
   }
 
   function preview(me) {
     const box = $("ac-me-av");
     if (!box) return;
-    const extra = S().extra();
-    const p = (extra.avatars || []).find((a) => a.id === draft.avatar);
-    const url = draft.avatar ? (p ? p.url : "") : (draft.avatar === (me.profile && me.profile.avatar) ? (me.profile && me.profile.avatar_url) : "");
-    box.replaceChildren(S().avatar(draft.name || me.name, "ac-big", draft.avatar === "" && me.profile && me.profile.avatar === "" ? me.profile.avatar_url : url));
+    box.replaceChildren(S().avatar(draft.name || me.name, "ac-big", draft.avatar ? presetUrl(draft.avatar) : ""));
   }
 
   function renderProfile(view, me) {

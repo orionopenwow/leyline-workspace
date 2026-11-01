@@ -412,6 +412,35 @@ def make_den_saves(cfg):
             os.chmod(d, 0o777)
     except OSError:
         pass
+    if cfg.get("profile") == "den":
+        copy_den_starters(d)
+
+
+DEN_STARTER_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,23}\.den\.json$")
+
+
+def copy_den_starters(d):
+    """The starter places (realm-files/lua_scripts/den-starters: Forest glade, Dark keep) as Saved Dens, so the
+    launcher's Den setup and Saved Dens can open them. Never over a file the host already has (their own edits win)."""
+    src = os.path.join(KIT, "realm-files", "lua_scripts", "den-starters")
+    try:
+        names = sorted(os.listdir(src))
+    except OSError:
+        return
+    for n in names:
+        dst = os.path.join(d, n)
+        if not DEN_STARTER_RE.fullmatch(n) or os.path.exists(dst):
+            continue
+        try:
+            with open(os.path.join(src, n), "rb") as f:
+                body = f.read(512 * 1024 + 1)
+            if len(body) > 512 * 1024:
+                continue
+            with open(dst + ".tmp", "wb") as f:
+                f.write(body)
+            os.replace(dst + ".tmp", dst)
+        except OSError:
+            pass
 
 
 def write_den_invite(cfg):

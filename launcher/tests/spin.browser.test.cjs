@@ -82,7 +82,7 @@ test('the header mark is the spinner, in Dark and in Light', async () => {
     assert.match(r.crystal, /leyline-crystal-256\.webp/);
     assert.equal(r.anim, 'ly-spin-turn');
     assert.equal(r.dur, '16s', 'the header turns slowly');
-    assert.equal(r.w, 58);   // owner 31 Oct: "make logo bigger"
+    assert.equal(r.w, 50);   // owner 1 Nov 00:49: 50px, centred in the 64px bar (58 crowded its edge)
     assert.equal(r.img, false, 'no still image left in the header');
     assert.deepEqual(errors, []);
     await ctx.close();

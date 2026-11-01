@@ -224,16 +224,25 @@ svg { flex: none; }
 }
 /* the window buttons (owner 2026-10-31: "the yellow red and green dots style"): three round dots, minimise yellow,
    maximise green, close red at the corner; the symbol shows on hover or keyboard focus */
-.winbtns { display: flex; gap: 6px; align-self: flex-start; margin: 9px 10px 0 6px; padding: 0; }   /* tucked into the corner (owner 31 Oct) */
-.winbtns button { width: 13px; height: 13px; padding: 0; border: 0; border-radius: 50%; cursor: pointer; display: grid; place-items: center;
-  color: transparent; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.28); transition: filter 0.12s, color 0.12s; }
-#win-min { background: #febc2e; }
-#win-max { background: #28c840; }
-#win-close { background: #ff5f57; }
-.winbtns:hover button, .winbtns button:focus-visible { color: rgba(0, 0, 0, 0.62); }
-.winbtns button:active { filter: brightness(0.85); }
-.winbtns button:focus-visible { outline: 2px solid var(--t-accent); outline-offset: 2px; }
-.winbtns svg { width: 8px; height: 8px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; }
+/* owner 31 Oct 21:26: the window buttons are the owner's red stone buttons with grey metal frames (art/win-*.png,
+   cut from the owner's picture, the gold frame turned to the launcher's grey), tucked into the top-right corner like
+   an in-game window's. */
+.winbtns {
+  /* owner 21:50 (an in-game window's corner): the buttons sit right on the corner, the close button's frame flush with
+     the window's top and right edges, its chamfer in the window's rounded corner. No housing, no gap. */
+  display: flex; gap: 2px; align-self: flex-start; margin: 0 0 0 6px; padding: 0;
+}
+.winbtns button {
+  width: 25px; height: 28px; padding: 0; border: 0; border-radius: 0; cursor: pointer; display: block;
+  background: center / 100% 100% no-repeat; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.7)); transition: filter 0.12s;
+}
+#win-min { background-image: url("art/win-min.png"); }
+#win-max { background-image: url("art/win-max.png"); }
+#win-close { background-image: url("art/win-close.png"); }
+.winbtns button:hover { filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.7)) brightness(1.22); }
+.winbtns button:active { filter: brightness(0.85); transform: translateY(1px); }
+.winbtns button:focus-visible { outline: 2px solid var(--t-accent); outline-offset: 1px; }
+.winbtns svg { display: none; }
 @media (prefers-reduced-motion: reduce) { .winbtns button { transition: none; } }
 
 /* ---------------------------------------------------------------- sidebar */
@@ -667,7 +676,7 @@ html[data-base="light"] .cimp { box-shadow: 0 -10px 30px rgba(16, 24, 40, 0.14);
 /* the realm box as a drop target (app.js barImport): it covers the realm button, the same size, and becomes the
    progress bar: the fill grows behind the words, a thin accent line under it */
 .pbd {
-  position: absolute; left: 0; right: 0; bottom: 0; height: 50px; z-index: 3; display: flex; align-items: center; gap: 10px;
+  position: absolute; left: 0; right: 0; bottom: 0; height: 60px; z-index: 3; display: flex; align-items: center; gap: 10px;
   padding: 0 8px 0 14px; overflow: hidden; border-radius: 10px; cursor: default;
   border: var(--t-border-w) solid var(--t-border-strong); background: var(--t-surface); color: var(--t-text);
 }
@@ -1070,3 +1079,40 @@ html[data-base="light"] .rl-ic.crystal { background: radial-gradient(circle at 5
 .rl-paste-row input { flex: 1 1 280px; min-width: 0; }
 .rl-paste .status:empty { display: none; }
 .pbd-btn.pbd-go { border-color: var(--t-accent); background: var(--t-accent); color: var(--t-on-accent, #fff); }
+
+/* owner 31 Oct 21:20: a download dropped on the realm box fills the whole box with a blue bar, with pause / play, the
+   numbers (got / size, speed), the time left and "Nodes" (a torrent: the PCs sharing it; press to be a node too) */
+.pbd[data-state="run"], .pbd[data-state="paused"] { border-color: #1d4ed8; background: #0c1a33; }
+.pbd[data-state="run"] .pbd-fill, .pbd[data-state="paused"] .pbd-fill {
+  border-bottom: 0;
+  background: linear-gradient(180deg, #4f8ff7 0%, #2563eb 55%, #1d4ed8 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 6px 0 14px rgba(59, 130, 246, 0.45);
+}
+.pbd[data-state="run"] .pbd-fill::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent 0, rgba(255, 255, 255, 0.16) 50%, transparent 100%) 0 0 / 120px 100% repeat-y;
+  animation: pbd-sheen 1.6s linear infinite;
+}
+@keyframes pbd-sheen { from { background-position: -120px 0; } to { background-position: 100% 0; } }
+.pbd[data-state="paused"] .pbd-fill { filter: saturate(0.45) brightness(0.8); }
+.pbd[data-state="run"] .pbd-head, .pbd[data-state="paused"] .pbd-head { color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55); }
+.pbd[data-state="run"] .pbd-line, .pbd[data-state="paused"] .pbd-line { color: #dbe7ff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55); }
+.pbd-pp, .pbd-nodes {
+  position: relative; flex: none; height: 34px; border-radius: 8px; cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.28); background: rgba(5, 12, 28, 0.55); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+}
+.pbd-pp { width: 34px; padding: 0; }
+.pbd-pp svg { width: 15px; height: 15px; fill: currentColor; }
+.pbd-pp .i-play, .pbd-pp.paused .i-pause { display: none; }
+.pbd-pp.paused .i-play { display: block; }
+.pbd-nodes { padding: 0 10px; font: 600 12.5px var(--t-font); font-variant-numeric: tabular-nums; }
+.pbd-nodes svg { width: 15px; height: 15px; fill: currentColor; stroke: currentColor; stroke-width: 1.6; }
+.pbd-nodes-n { font-weight: 800; }
+.pbd-nodes-w { color: #c9d8f7; font-weight: 600; }
+.pbd-nodes[aria-pressed="true"] { border-color: #4ade80; background: rgba(22, 101, 52, 0.55); }
+.pbd-nodes[aria-pressed="true"] .pbd-nodes-w { color: #bbf7d0; }
+.pbd-pp:hover, .pbd-nodes:hover { border-color: #fff; background: rgba(5, 12, 28, 0.75); }
+.pbd-pp:focus-visible, .pbd-nodes:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.pbd[data-state="run"] .pbd-btn, .pbd[data-state="paused"] .pbd-btn { background: rgba(5, 12, 28, 0.55); border-color: rgba(255, 255, 255, 0.28); color: #fff; }
+@media (prefers-reduced-motion: reduce) { .pbd[data-state="run"] .pbd-fill::after { animation: none; } }

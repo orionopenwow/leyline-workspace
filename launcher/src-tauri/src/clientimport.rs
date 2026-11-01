@@ -25,7 +25,7 @@ use crate::clients::{self, Detection};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -240,11 +240,30 @@ pub struct Progress {
     pub speed: u64,
     /// The bar's one line while it runs: "Downloading · 1.2 GB / 5.0 GB · 14 MB/s · about 4 min left".
     pub line: String,
+    /// Owner 31 Oct 21:20: the realm box as a full download bar with pause / play, the numbers, the time left and
+    /// "Nodes". Paused by the player (the download holds; a link picks up where it stopped).
+    pub paused: bool,
+    /// Seconds left at the current speed (none while paused or not known).
+    pub eta_secs: Option<u64>,
+    /// A torrent download: peers connected now ("Nodes") and how many of them have it all (seeds). None for a link.
+    pub nodes: Option<u32>,
+    pub seeds: Option<u32>,
+    /// This PC is a node too: it shares what it has while downloading (capped) and keeps sharing when done, until
+    /// the player turns it off or closes Leyline. Only ever on a torrent, only with Settings › Testing on.
+    pub sharing: bool,
+    /// Sent so far (sharing).
+    pub uploaded: u64,
+    pub up_speed: u64,
 }
 
 #[derive(Default)]
 pub struct Job {
     cancel: AtomicBool,
+    pause: AtomicBool,
+    /// What the player asked for with the Nodes chip; the engine follows it.
+    share: AtomicBool,
+    /// (nodes, seeds, uploaded, up speed) from the torrent engine.
+    swarm: Mutex<Option<(u32, u32, u64, u64)>>,
     p: Mutex<Progress>,
     /// When the phase began, and the speed meter.
     m: Mutex<(Option<Instant>, crate::clienttorrent::Meter)>,
@@ -254,10 +273,58 @@ impl Job {
     pub fn snapshot(&self) -> Progress {
         let mut p = self.p.lock().map(|p| p.clone()).unwrap_or_default();
         if p.phase.busy() {
-            p.speed = self.sample(p.done);
-            p.line = crate::clienttorrent::line(p.phase, p.done, p.total, p.speed);
+            p.paused = self.paused() && p.phase == Phase::Downloading;
+            p.speed = if p.paused { 0 } else { self.sample(p.done) };
+            p.line = if p.paused {
+                crate::clienttorrent::paused_line(p.done, p.total)
+            } else {
+                crate::clienttorrent::line(p.phase, p.done, p.total, p.speed)
+            };
+            p.eta_secs = if p.paused { None } else { crate::clienttorrent::secs_left(p.done, p.total, p.speed) };
         }
+        if let Ok(Some((n, sd, up, ups))) = self.swarm.lock().map(|g| *g) {
+            p.nodes = Some(n);
+            p.seeds = Some(sd);
+            p.uploaded = up;
+            p.up_speed = ups;
+        }
+        p.sharing = self.share_wanted() && p.nodes.is_some();
         p
+    }
+    /// Pause or go on (the bar's pause / play).
+    pub fn set_paused(&self, on: bool) {
+        self.pause.store(on, Ordering::SeqCst);
+        if !on {
+            // the speed starts again from now, not averaged over the pause
+            if let Ok(mut m) = self.m.lock() {
+                m.1.reset();
+            }
+        }
+    }
+    pub fn paused(&self) -> bool {
+        self.pause.load(Ordering::SeqCst)
+    }
+    /// The Nodes chip: share (be a node) or not.
+    pub fn set_share(&self, on: bool) {
+        self.share.store(on, Ordering::SeqCst);
+    }
+    pub fn share_wanted(&self) -> bool {
+        self.share.load(Ordering::SeqCst)
+    }
+    pub(crate) fn set_swarm(&self, v: Option<(u32, u32, u64, u64)>) {
+        if let Ok(mut g) = self.swarm.lock() {
+            *g = v;
+        }
+    }
+    /// Wait while paused; Err when cancelled meanwhile.
+    pub(crate) fn hold(&self) -> Result<(), String> {
+        while self.paused() {
+            if self.cancelled() {
+                return Err(CANCELLED.to_string());
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        if self.cancelled() { Err(CANCELLED.to_string()) } else { Ok(()) }
     }
     /// Note `done` now; the speed so far.
     fn sample(&self, done: u64) -> u64 {
@@ -306,8 +373,13 @@ impl Job {
         if p.phase.busy() {
             return Err("Leyline is already adding a game client.".into());
         }
+        if crate::clienttorrent::seeding() {
+            return Err("Leyline is still sharing your last download. Stop sharing first (the Nodes button), then add another.".into());
+        }
         *p = Progress { phase: Phase::Checking, ..Default::default() };
         self.cancel.store(false, Ordering::SeqCst);
+        self.pause.store(false, Ordering::SeqCst);
+        self.set_swarm(None);
         Ok(())
     }
     pub fn finish(&self, phase: Phase, message: String, added: Option<(&str, &str, &Path)>) {
@@ -352,14 +424,33 @@ pub fn download(url: &str, dest: &Path, max: u64, job: &Job) -> Result<u64, Stri
             fs::create_dir_all(d).map_err(|e| e.to_string())?;
         }
         let mut f = fs::File::create(dest).map_err(|e| format!("Couldn't save the download: {e}"))?;
-        let mut r = resp.into_reader().take(max + 1);
+        let mut r: Box<dyn Read> = Box::new(resp.into_reader());
         let mut buf = vec![0u8; 256 * 1024];
         let mut got = 0u64;
+        // a pause (or a dropped connection) picks up where it stopped: the link is asked again from that byte
+        let mut retries = 0u32;
         loop {
+            if job.paused() {
+                job.hold()?;
+                r = reopen(&agent, url, got, &mut f, job)?;
+                got = f.stream_position().map_err(|e| e.to_string())?;   // 0 when the link can't resume
+            }
             if job.cancelled() {
                 return Err(CANCELLED.to_string());
             }
-            let n = r.read(&mut buf).map_err(|e| format!("The download broke off ({e}). Try again."))?;
+            let n = match r.read(&mut buf) {
+                Ok(n) => n,
+                Err(e) => {
+                    retries += 1;
+                    if retries > 5 || job.cancelled() {
+                        return Err(format!("The download broke off ({e}). Try again."));
+                    }
+                    std::thread::sleep(Duration::from_secs(2));
+                    r = reopen(&agent, url, got, &mut f, job)?;
+                    got = f.stream_position().map_err(|e| e.to_string())?;
+                    continue;
+                }
+            };
             if n == 0 {
                 break;
             }
@@ -380,6 +471,25 @@ pub fn download(url: &str, dest: &Path, max: u64, job: &Job) -> Result<u64, Stri
         let _ = fs::remove_file(dest);
     }
     res
+}
+
+/// Ask the link again from byte `from` (after a pause or a dropped connection). A server that resumes (206) goes on
+/// appending; one that sends the whole file again (200) starts the file over, and the bar with it.
+fn reopen(agent: &ureq::Agent, url: &str, from: u64, f: &mut fs::File, job: &Job) -> Result<Box<dyn Read>, String> {
+    let resp = agent.get(url).set("Range", &format!("bytes={from}-")).call().map_err(|e| match e {
+        ureq::Error::Status(code, _) => format!("The link answered {code} when the download went on. Try again."),
+        e => format!("Couldn't reach the link again ({e}). Try again."),
+    })?;
+    if resp.status() == 206 && from > 0 {
+        f.seek(SeekFrom::Start(from)).map_err(|e| e.to_string())?;
+    } else {
+        f.set_len(0).map_err(|e| e.to_string())?;
+        f.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+        if let Ok(mut p) = job.p.lock() {
+            p.done = 0;
+        }
+    }
+    Ok(Box::new(resp.into_reader()))
 }
 
 fn zip_err(e: zip::result::ZipError) -> String {
@@ -581,7 +691,9 @@ fn from_torrent(src: crate::clienttorrent::Src, name: &str, parent: &Path, caps:
         unzip(&z, &into, caps, job)?;
         job.phase(Phase::Checking, 0);
         if let Some(f) = find_client(&into) {
-            let _ = fs::remove_file(&z); // the zip came from this download: the unpacked folder is what counts
+            if !crate::clienttorrent::seeding() {
+                let _ = fs::remove_file(&z); // the zip came from this download: the unpacked folder is what counts
+            }
             return Ok(f);
         }
         return Err(UNPACKED_NOT_A_CLIENT.into());
@@ -766,7 +878,38 @@ pub(crate) mod commands {
 
     #[tauri::command]
     pub fn client_import_cancel() {
+        job().set_paused(false);
         job().cancel();
+    }
+
+    /// The bar's pause / play.
+    #[tauri::command]
+    pub fn client_import_pause(on: bool) -> Progress {
+        job().set_paused(on);
+        job().snapshot()
+    }
+
+    /// The bar's Nodes chip: be a node (share, capped) or not. Torrents with Settings › Testing on only.
+    #[tauri::command]
+    pub fn client_import_share(core: Core, on: bool) -> Result<Progress, String> {
+        if on && !crate::clienttorrent::load_testing(&core.dir).client_torrents {
+            return Err("Sharing needs Settings › Testing › torrent downloads on.".into());
+        }
+        job().set_share(on);
+        if !on {
+            crate::clienttorrent::stop_seeding();
+        }
+        Ok(job().snapshot())
+    }
+
+    /// Sharing after the download finished (Nodes on): what the bar shows, and Stop sharing.
+    #[tauri::command]
+    pub fn client_seed_state() -> crate::clienttorrent::Seeding {
+        crate::clienttorrent::seeding_state()
+    }
+    #[tauri::command]
+    pub fn client_seed_stop() {
+        crate::clienttorrent::stop_seeding();
     }
 
     async fn pick(app: AppHandle, title: &'static str, zip: bool) -> Option<String> {
@@ -1087,6 +1230,93 @@ mod tests {
         let e = download(&format!("{base}/my%20backup.zip"), &d.path().join("x.part"), 100, &Job::default()).unwrap_err();
         assert!(e.contains("bigger than"), "{e}");
         assert!(!d.path().join("x.part").exists());
+    }
+
+    /// A tiny server that honours `Range: bytes=N-` (206), like Cloudflare R2 and most file hosts.
+    fn serve_ranged(body: Vec<u8>) -> String {
+        use std::net::TcpListener;
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for s in l.incoming() {
+                let Ok(mut s) = s else { continue };
+                let mut buf = Vec::new();
+                let mut chunk = [0u8; 2048];
+                while !buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match s.read(&mut chunk) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => buf.extend_from_slice(&chunk[..n]),
+                    }
+                }
+                let head = String::from_utf8_lossy(&buf).to_ascii_lowercase();
+                let from = head.lines().find_map(|l| l.strip_prefix("range: bytes=")).and_then(|v| v.trim_end_matches('-').trim().trim_end_matches('-').parse::<usize>().ok());
+                let _ = match from {
+                    Some(f) if f < body.len() => {
+                        write!(s, "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len() - f).and_then(|_| s.write_all(&body[f..]))
+                    }
+                    _ => write!(s, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).and_then(|_| s.write_all(&body)),
+                };
+            }
+        });
+        format!("http://127.0.0.1:{port}")
+    }
+
+    #[test]
+    fn pause_holds_and_a_link_goes_on_from_the_same_byte() {
+        let d = tempfile::tempdir().unwrap();
+        let body: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+        let base = serve_ranged(body.clone());
+        // what a pause leaves: the first 120 000 bytes on disk; going on asks for the rest only (206) and appends
+        let part = d.path().join("dl.part");
+        fs::write(&part, &body[..120_000]).unwrap();
+        let mut f = fs::OpenOptions::new().write(true).open(&part).unwrap();
+        let agent = ureq::AgentBuilder::new().build();
+        let job = Job::default();
+        let mut r = reopen(&agent, &format!("{base}/c.zip"), 120_000, &mut f, &job).unwrap();
+        let mut rest = Vec::new();
+        r.read_to_end(&mut rest).unwrap();
+        assert_eq!(rest.len(), 180_000, "only the rest is sent again");
+        f.write_all(&rest).unwrap();
+        drop(f);
+        assert_eq!(fs::read(&part).unwrap(), body);
+        // a whole download that starts paused waits, then finishes once play is pressed
+        let job = std::sync::Arc::new(Job::default());
+        job.phase(Phase::Downloading, 0);
+        job.set_paused(true);
+        let j2 = job.clone();
+        let t0 = Instant::now();
+        std::thread::spawn(move || { std::thread::sleep(Duration::from_millis(400)); j2.set_paused(false); });
+        let got = download(&format!("{base}/c.zip"), &d.path().join("dl2.part"), CAPS.download, &job).unwrap();
+        assert!(t0.elapsed() >= Duration::from_millis(350), "it held while paused");
+        assert_eq!(got, body.len() as u64);
+        assert_eq!(fs::read(d.path().join("dl2.part")).unwrap(), body);
+        // the bar while paused, and Cancel while paused stops it
+        job.set_paused(true);
+        job.set_done(1_288_490_189, 5 * GIB);
+        let p = job.snapshot();
+        assert!(p.paused);
+        assert_eq!(p.line, "Paused · 1.2 GB / 5.0 GB");
+        assert_eq!(p.eta_secs, None);
+        assert_eq!(p.speed, 0);
+        assert!(p.nodes.is_none() && !p.sharing, "a link has no Nodes");
+        job.cancel();
+        assert_eq!(job.hold().unwrap_err(), CANCELLED);
+    }
+
+    #[test]
+    fn nodes_come_from_the_engine_and_sharing_follows_the_chip() {
+        let job = Job::default();
+        job.phase(Phase::Downloading, 100);
+        job.set_swarm(Some((12, 4, 1000, 2048)));
+        let p = job.snapshot();
+        assert_eq!((p.nodes, p.seeds, p.uploaded, p.up_speed), (Some(12), Some(4), 1000, 2048));
+        assert!(!p.sharing);
+        job.set_share(true);
+        assert!(job.snapshot().sharing);
+        job.begin().unwrap_err(); // still busy
+        job.finish(Phase::Done, "Added.".into(), None);
+        job.begin().unwrap();
+        assert!(job.snapshot().nodes.is_none(), "a new import starts without the last swarm");
     }
 
     #[test]

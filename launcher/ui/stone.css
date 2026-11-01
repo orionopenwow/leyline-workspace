@@ -3,7 +3,7 @@
    with the same new theme"): art/stone-bar.webp is the picture made seamless (its edges cross-faded, no mirrored
    join), tiled at its own size under a light shade. The play bar's pickers are wells sunk into the stone, their
    drop-up lists are stone panels with a dark metal edge, and the search box matches. */
-:root { --stone: url("art/stone-bar.webp") 0 0 / 340px 34px repeat; --stone-edge: #0a0908; --stone-metal: rgba(196, 178, 140, 0.55); }
+:root { --stone: url("art/stone-bar.webp") 0 0 / 340px 34px repeat; --stone-tall: url("art/stone-side.webp") 0 0 / 256px 256px repeat; --stone-edge: #0a0908; --stone-metal: rgba(196, 178, 140, 0.55); }
 .frame::before {
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.26)), var(--stone);
   -webkit-backdrop-filter: none; backdrop-filter: none;
@@ -39,3 +39,58 @@
 .pb-client.pb-realm { padding: 0 14px 0 12px; gap: 12px; }
 .pb-realm-txt { gap: 4px; }
 .pb-realm .rl-ic { width: 34px; height: 34px; }
+/* owner 2026-10-31 21:20: the side panel "the grey slate thing we did to the footer and header": the same stone, a
+   little darker so the page names stay easy to read, with a dark metal seam against the page. The bar's strip is 34px
+   tall and banded when it repeats down a tall panel, so the side uses art/stone-side.webp: a 256px tile in the
+   strip's own colours and grain, seamless both ways. */
+.side {
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.30)), var(--stone-tall);
+  border-right: 1px solid var(--stone-edge);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.05);
+}
+.side .nav:hover, .side .realm-row:hover, .side .realm-add:hover { background: rgba(0, 0, 0, 0.32); }
+.side .nav.on {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.36));
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 0 0 1px var(--stone-edge);
+}
+.side .realm-row.on {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.36));
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 0 0 1px var(--stone-edge);
+}
+.side-foot { border-top: 1px solid rgba(0, 0, 0, 0.6); box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.05); }
+.side .nav, .side .realm-row, .side .side-label { text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6); }
+/* owner 2026-10-31 21:51: "give whole client this grey color border bordering our play button", then 21:57 "the border
+   needs to be outer and the window buttons top right need to be seamless with it": the PLAY button's own grey metal
+   frame (art/window-frame.webp, its red face cut away) is the window's border, outside everything, so nothing sits
+   under it; the window buttons sit in its top-right inner corner, their grey frames meeting it. */
+.frame {
+  box-sizing: border-box;
+  border: 10px solid transparent;
+  border-image: url("art/window-frame.webp") 22 25 / 10px stretch;
+  background-clip: padding-box;
+}
+.titlebar .winbtns, .winbtns { margin: 0 0 0 6px; gap: 1px; }
+/* owner 2026-10-31 21:59: "use the play button asset for a Log In asset": the PLAY button's stone with its word painted
+   out (art/stone-btn.webp), the gold lettering in type, as a nine-slice so it fits any width */
+@font-face { font-family: "Marcellus"; font-weight: 400; src: url("art/fonts/marcellus-latin-400-normal.woff2") format("woff2"); }
+/* 22:02 "bigger wider more accurate font": Marcellus (OFL, art/fonts) is the free face closest to the PLAY lettering;
+   gold from bright yellow to deep gold like the PLAY word, a dark edge and a drop shadow */
+.hf-me .hf-signin, #hf-signin {
+  height: 46px; min-width: 150px; padding: 0 34px; cursor: pointer; justify-content: center;
+  border: 11px solid transparent; border-image: url("art/stone-btn.webp") 28 30 fill / 11px stretch;
+  background: none; border-radius: 0; box-sizing: border-box; display: inline-flex; align-items: center;
+  font: 400 23px/1 "Marcellus", Georgia, serif; letter-spacing: 0.035em; color: #f6cf55;
+  -webkit-text-stroke: 1px #f1c24a;
+  text-shadow: 0 2px 3px rgba(0, 0, 0, 0.85);
+}
+@supports (-webkit-background-clip: text) {
+  .hf-me .hf-signin span, #hf-signin span { background: linear-gradient(180deg, #fff1a0 0%, #f9d55c 40%, #e2ab2e 75%, #b9801c 100%); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-stroke: 0.9px rgba(240, 190, 70, 0.95); filter: drop-shadow(0 0 0.6px #2a1800) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.9)); }
+}
+#hf-signin:hover { filter: brightness(1.15); }
+#hf-signin:active { filter: brightness(0.9); transform: translateY(1px); }
+#hf-signin:focus-visible { outline: 2px solid #f2c94c; outline-offset: 2px; }
+/* Join the Discord in the side menu: a menu item in Discord's colour */
+.side .nav.nav-discord { color: #c9cdfb; }
+.side .nav.nav-discord .dc-ic { fill: #5865f2; stroke: none; }
+.side .nav.nav-discord:hover { color: #fff; background: rgba(88, 101, 242, 0.22); }
+.side .nav.nav-discord:hover .dc-ic { fill: #8891f5; }

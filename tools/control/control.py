@@ -99,6 +99,7 @@ STEPS = {
     # with client/patches/series.txt, the fat-LTO release build, packed into play\ like every build. Then "client" ships it.
     "client-build": ("client/Build browser client.bat", "Build the browser client on this PC (about an hour; then the client step)", False),
     "client":  ("stream/Update browser client.bat", "New browser game build", False),
+    "client-back": ("stream/Roll back browser client.bat", "Undo: the previous browser game build back (the server keeps one; running it again swaps back)", False),
     "signin":  ("stream/Update sign-in and warm-up.bat", "Play page and sign-in", False),
     "page":    ("stream/Update game page.bat", "Game page only (keeps the live game build)", False),
     "frontpage": ("tools/front-page/Front page as home - on.bat", "The site's home (play.openvanilla.app/) opens the Leyline front page", False),

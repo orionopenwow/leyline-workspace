@@ -463,7 +463,7 @@
     if (!signedIn || !me) {
       const t = el("div", "hf-me-t");
       t.append(el("b", "hf-me-name", "Leyline"), el("span", "hf-me-st", "Signed out"));
-      const b = el("button", "btn small primary hf-signin", "Sign in"); b.type = "button"; b.id = "hf-signin";
+      const b = el("button", "hf-signin"); b.append(el("span", "", "Log In")); b.type = "button"; b.id = "hf-signin";   // the PLAY stone (owner 31 Oct 21:59)
       b.title = "Sign in on the website, in your browser";   // neutral: the chooser lists only the ways the website offers
       b.setAttribute("aria-haspopup", "dialog");
       b.onclick = () => {

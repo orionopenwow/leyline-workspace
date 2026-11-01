@@ -134,7 +134,7 @@ test('no painted art, display font or old theme names in the window', async () =
       return { urls, fonts: [...fonts], text: document.body.innerText, brand: document.querySelector('.titlebar .brand').innerText,
         mark: getComputedStyle(document.querySelector('.titlebar .brand .ly-spin'), '::before').backgroundImage };
     });
-    assert.ok(!r.urls.some((u) => /art\/kit|parchment|stone(?!-bar)|play\.png|crest/.test(u)), r.urls.join('\n'));
+    assert.ok(!r.urls.some((u) => /art\/kit|parchment|stone(?!-bar|-side|-btn)|play\.png|crest/.test(u)), r.urls.join('\n'));
     assert.ok(r.urls.some((u) => /leyline-mark-512\.png/.test(u)), 'the Home card has the Leyline mark');
     assert.ok(!r.fonts.some((f) => /Cinzel|Leyline Display|Impact/.test(f)), r.fonts.join(' | '));
     assert.equal(r.brand.replace(/\s+/g, ' ').trim().toLowerCase(), 'leyline launcher');

@@ -67,6 +67,10 @@ const FAKE = ({ clients, theme }) => {
       }
       case 'client_import_pick_dest': return window.__pick ? await window.__pick : DEFAULT_DIR;
       case 'client_import_start': window.__imp = { phase: 'downloading', done: 0, total: 0, message: '', line: 'Downloading · finding the download…' }; return null;
+      case 'client_import_pause': window.__imp = { ...window.__imp, paused: args.on, line: args.on ? 'Paused · 1.2 GB / 5.0 GB' : window.__imp.line }; return JSON.parse(JSON.stringify(window.__imp));
+      case 'client_import_share': window.__imp = { ...window.__imp, sharing: args.on }; return JSON.parse(JSON.stringify(window.__imp));
+      case 'client_seed_state': return { ...(window.__seed || { active: false, name: '', nodes: 0, uploaded: 0, up_speed: 0 }) };
+      case 'client_seed_stop': window.__seed = null; return null;
       case 'client_import_state': return JSON.parse(JSON.stringify(window.__imp));
       case 'client_import_cancel': window.__imp = { phase: 'cancelled', done: 0, total: 0, message: 'Stopped. Nothing was added.' }; return null;
       case 'play': throw 'the test never plays';
@@ -145,16 +149,20 @@ for (const scheme of ['dark', 'light']) {
     assert.equal(await page.evaluate(() => localStorage.getItem('leyline.gameFolder')), '/mnt/games2', 'the choice is remembered');
     // downloading, with speed and time left
     await page.evaluate(() => { window.__imp = { phase: 'downloading', done: 1288490189, total: 5368709120, speed: 14680064, line: 'Downloading · 1.2 GB / 5.0 GB · 14 MB/s · about 5 min left', message: '' }; });
-    await page.waitForFunction(() => document.getElementById('pbd-head').textContent.includes('14 MB/s'));
-    assert.equal(await page.textContent('#pbd-head'), 'Downloading · 1.2 GB / 5.0 GB · 14 MB/s · about 5 min left');
-    assert.equal(await page.textContent('#pbd-line'), 'pub-1a2b.r2.dev · 24%');
+    await page.waitForFunction(() => document.getElementById('pbd-line').textContent.includes('14 MB/s'));
+    assert.equal(await page.textContent('#pbd-head'), 'Downloading pub-1a2b.r2.dev · 24%');
+    assert.equal(await page.textContent('#pbd-line'), '1.2 GB / 5.0 GB · 14 MB/s · about 5 min left');
+    assert.ok(await page.isVisible('#pbd-pause'), 'pause / play while downloading');
+    assert.equal(await page.isVisible('#pbd-nodes'), false, 'no Nodes for a link');
     assert.equal(await page.evaluate(() => document.getElementById('pbd-fill').style.width), '24%');
     assert.ok(await page.isVisible('#pbd-cancel'));
     await shot(page, `bar-${scheme}-downloading`);
     // unpacking, checking
     await page.evaluate(() => { window.__imp = { phase: 'unpacking', done: 2147483648, total: 4294967296, line: 'Unpacking · 2.0 GB / 4.0 GB · about 2 min left', message: '' }; });
     await page.waitForFunction(() => document.getElementById('pbd-head').textContent.startsWith('Unpacking'));
-    assert.equal(await page.textContent('#pbd-line'), 'pub-1a2b.r2.dev · 50%');
+    assert.equal(await page.textContent('#pbd-head'), 'Unpacking pub-1a2b.r2.dev · 50%');
+    assert.equal(await page.textContent('#pbd-line'), '2.0 GB / 4.0 GB · about 2 min left');
+    assert.equal(await page.isVisible('#pbd-pause'), false, 'unpacking is not paused');
     await shot(page, `bar-${scheme}-unpacking`);
     await page.evaluate(() => { window.__imp = { phase: 'checking', done: 0, total: 0, line: 'Checking your game folder…', message: '' }; });
     await page.waitForFunction(() => document.getElementById('pbd-head').textContent === 'Checking your game folder…');
@@ -271,8 +279,65 @@ test('Testing switch: off, a magnet gets the refusal; on (Settings › Testing),
   await page.waitForFunction(() => document.getElementById('pbd').dataset.state === 'run');
   const start = await page.evaluate(() => window.__calls.find(([c]) => c === 'client_import_start')[1]);
   assert.deepEqual(start, { input: mag, folder: '/home/me/.local/share/Leyline/Game clients' });
-  assert.equal(await page.textContent('#pbd-head'), 'Downloading · finding the download…');
+  assert.equal(await page.textContent('#pbd-head'), 'Downloading My Client');
+  assert.equal(await page.textContent('#pbd-line'), 'finding the download…');
   assert.equal(await page.isVisible('#cimp'), false, 'the client list panel stays shut');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('a torrent: the blue bar, pause / play, Nodes; pressed, this PC shares and keeps sharing when done until stopped', async () => {
+  const { page, ctx, errors } = await open({});
+  await page.evaluate(() => { window.__testing = { client_torrents: true, share: false }; });
+  await drop(page, 'magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=My+Client');
+  await page.waitForFunction(() => document.getElementById('pbd').dataset.state === 'run');
+  await page.evaluate(() => { window.__imp = { phase: 'downloading', done: 1288490189, total: 5368709120, speed: 14680064, eta_secs: 293,
+    line: 'Downloading · 1.2 GB / 5.0 GB · 14 MB/s · about 5 min left', nodes: 12, seeds: 4, sharing: false, message: '' }; });
+  await page.waitForFunction(() => !document.getElementById('pbd-nodes').hidden);
+  assert.equal(await page.textContent('#pbd-head'), 'Downloading My Client · 24%');
+  assert.equal(await page.textContent('#pbd-line'), '1.2 GB / 5.0 GB · 14 MB/s · about 5 min left');
+  assert.equal(await page.textContent('#pbd-nodes-n'), '12');
+  assert.equal(await page.textContent('#pbd-nodes-w'), 'Nodes');
+  assert.equal(await page.getAttribute('#pbd-nodes', 'aria-pressed'), 'false');
+  assert.match(await page.getAttribute('#pbd-nodes', 'aria-label'), /12 nodes, 4 with all of it/);
+  // the fill is the blue bar across the whole box
+  const fill = await page.evaluate(() => { const f = document.getElementById('pbd-fill'); const b = document.getElementById('pbd').getBoundingClientRect();
+    const r = f.getBoundingClientRect(); return { h: Math.round(r.height), bh: Math.round(b.height), bg: getComputedStyle(f).backgroundImage, w: f.style.width }; });
+  assert.ok(fill.h >= fill.bh - 2, 'the fill is the full height of the box');
+  assert.match(fill.bg, /rgb\(37, 99, 235\)/, 'blue');
+  assert.equal(fill.w, '24%');
+  await shot(page, 'bar-torrent-downloading');
+  // pause / play
+  await page.click('#pbd-pause');
+  assert.deepEqual(await page.evaluate(() => window.__calls.filter(([c]) => c === 'client_import_pause').pop()[1]), { on: true });
+  await page.waitForFunction(() => document.getElementById('pbd').dataset.state === 'paused');
+  assert.equal(await page.textContent('#pbd-line'), '1.2 GB / 5.0 GB');
+  assert.equal(await page.getAttribute('#pbd-pause', 'aria-label'), 'Go on');
+  assert.ok(await page.isVisible('#pbd-cancel'), 'Cancel while paused');
+  await shot(page, 'bar-torrent-paused');
+  await page.evaluate(() => { window.__imp.paused = false; window.__imp.line = 'Downloading · 1.2 GB / 5.0 GB · 14 MB/s · about 5 min left'; });
+  await page.click('#pbd-pause');
+  assert.deepEqual(await page.evaluate(() => window.__calls.filter(([c]) => c === 'client_import_pause').pop()[1]), { on: false });
+  await page.waitForFunction(() => document.getElementById('pbd').dataset.state === 'run');
+  // be a node
+  await page.click('#pbd-nodes');
+  assert.deepEqual(await page.evaluate(() => window.__calls.filter(([c]) => c === 'client_import_share').pop()[1]), { on: true });
+  await page.evaluate(() => { window.__imp.up_speed = 204800; });
+  await page.waitForFunction(() => document.getElementById('pbd-line').textContent.includes('sharing ↑ 200 KB/s'));
+  assert.equal(await page.getAttribute('#pbd-nodes', 'aria-pressed'), 'true');
+  assert.equal(await page.textContent('#pbd-nodes-w'), 'Nodes · you share');
+  await shot(page, 'bar-torrent-node');
+  // done, still sharing: the Ready box keeps the chip and does not close by itself; the chip stops sharing
+  await page.evaluate(() => { window.__seed = { active: true, name: 'My Client', nodes: 5, uploaded: 1000, up_speed: 102400 }; window.__finish('My Client', '3.3.5a', 'c335a-9'); });
+  await page.waitForFunction(() => document.getElementById('pbd').dataset.state === 'done');
+  await page.waitForFunction(() => !document.getElementById('pbd-nodes').hidden && document.getElementById('pbd-nodes-w').textContent.startsWith('Sharing'));
+  assert.equal(await page.textContent('#pbd-nodes-n'), '5');
+  assert.equal(await page.textContent('#pbd-nodes-w'), 'Sharing ↑ 100 KB/s');
+  assert.equal(await page.isVisible('#pbd-pause'), false);
+  await shot(page, 'bar-torrent-sharing');
+  await page.click('#pbd-nodes');
+  assert.ok(await page.evaluate(() => window.__calls.some(([c]) => c === 'client_seed_stop')));
+  assert.equal(await page.isVisible('#pbd-nodes'), false);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

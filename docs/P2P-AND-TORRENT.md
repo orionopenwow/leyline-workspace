@@ -175,6 +175,17 @@ opened the same way at start.
 `launcher/src-tauri/tauri.conf.json`: `"plugins": {"deep-link": {"desktop": {"schemes": ["leyline", "magnet"]}}}`.
 It would make Leyline a `magnet:` handler on the player's PC, which is visible, so it waits for the owner.
 
+## Sharing Leyline's own files (`share_own_files`, off)
+
+"Help share Leyline's own files" (`launcher/src-tauri/src/p2p/share.rs`, docs/RESILIENCE.md): a PC that opts in
+keeps copies of the files the signed release log names (launcher installers, Host packs, Leyline addons, upstream
+server source tarballs at our pinned commits) and seeds them, upload capped. Off three ways: the site flag, this
+PC's own "On" (Host > Advanced) and an upload cap above zero (`flags::share_allowed`). The allow-list is the log:
+a file is kept and seeded only when its name and sha256 are in a signed entry, it passes the refusal list (source
+tarballs are checked inside, `checker::check_targz`) and its torrent (made here, single file, 256 KiB pieces, the
+same bytes as `tools/release-mirror`) hashes to the log's info-hash. Anything else in the folder is removed; turned
+off, the folder is emptied. Seeding uses the librqbit engine (feature `torrent-engine`); never game data.
+
 ## Direct connections: the rule
 
 Today every player reaches a hosted realm through the relay. The relay hides the host's home address and
@@ -213,4 +224,4 @@ runs only when `p2p_hosting` is on. The STUN server sees the PC's public IP addr
 * the flags hash, tamper detection, cache and local overrides;
 * magnet links: good and bad links, off means off, unknown info-hashes refused, the download path.
 
-The flags hash vector (`20affec2…`) is the same in the Rust and Python tests.
+The flags hash vector (`28a527aa…`, with `share_own_files`) is the same in the Rust and Python tests.

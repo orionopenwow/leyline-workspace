@@ -222,6 +222,16 @@ class CrossLanguage(unittest.TestCase):
         self.assertEqual(len(rl.verify(v["chain"], DEV_PUB)), 3)
 
 
+class Keys(unittest.TestCase):
+    def test_the_shipped_key_is_the_launchers(self):
+        # launcher/branding.json and wunet/release-log.json name the same release key (launcher/scripts/rebrand.py
+        # writes both); empty until the owner makes it, and never the dev key
+        with open(os.path.join(os.path.dirname(ROOT), "launcher", "branding.json"), encoding="utf-8") as f:
+            want = json.load(f)["release_log"]["public_key"]
+        self.assertEqual(rl.shipped_key() or "", want)
+        self.assertNotEqual(want, DEV_PUB)
+
+
 class Cli(unittest.TestCase):
     def test_keygen_append_verify_never_prints_the_secret(self):
         with tempfile.TemporaryDirectory() as d:

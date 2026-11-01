@@ -57,6 +57,7 @@ ALLOW = [
     "stream/www-files/art/leyline-*",             # the Leyline art, leyline-display-OFL.txt included
     "mods/SPEC.md",                               # the mod package format
     "docs/leyline",                               # the Leyline docs (also served at /wrath/docs)
+    "docs/FORKING.md",                            # how a community rebuilds it all under another name (the fork kit)
     "launcher",                                   # the Leyline desktop launcher (Tauri 2: web UI over a Rust core)
 ]
 # The top folders the export owns in the target: it deletes stale files only below these.

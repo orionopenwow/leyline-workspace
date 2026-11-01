@@ -292,6 +292,15 @@ content:
 
 ---
 
+## 11. The release log over the mesh
+
+Relays with the mesh on keep a copy of the signed release log (`wunet/releaselog.py`, docs/RESILIENCE.md) in
+`release-log.json` beside their state, serve it at `GET /api/mesh/chain?from=<n>` (the head, `seq`, and up to 500
+entries after `n`), and every 6th gossip round ask one peer for its head and pull only what is new (the whole chain
+when it forks from theirs). Entries are taken only when signed by the release key (`RELAY_RELEASE_LOG_KEY`, or
+`wunet/release-log.json`); the longest good chain wins; a shorter, broken or re-signed copy is refused. Launchers
+read it from our site, the GitHub release `release-log`, the seed relays and (with `mesh_realms`) mesh peers.
+
 ## Scale evidence (simulation)
 
 `python3 hosting/mesh-sim/meshsim.py` (seed 7, about 60 s on this 2-CPU box; `--quick` for 1k and 10k only). It

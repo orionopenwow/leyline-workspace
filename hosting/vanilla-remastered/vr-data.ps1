@@ -60,7 +60,7 @@ if (-not (Get-Command tar -ErrorAction SilentlyContinue)) { Fail "tar.exe is mis
 # ------------------------------------------------------------------------------ 1. the Data folder
 $cands = @()
 if ($Data) { $cands += $Data }
-$cands += @((Join-Path $env:USERPROFILE "Games\WoW-1.12.1\Data"), (Join-Path $env:USERPROFILE "Desktop\OpenVanilla\Data"),
+$cands += @((Join-Path $env:USERPROFILE "Desktop\VanillaClassic\Data"), (Join-Path $env:USERPROFILE "Games\WoW-1.12.1\Data"), (Join-Path $env:USERPROFILE "Desktop\OpenVanilla\Data"),
             (Join-Path $env:USERPROFILE "Games\1.12.1\Data"), "C:\Games\1.12.1\Data")
 $DataDir = $null
 foreach ($c in $cands) { if ($c -and (Test-Path (Join-Path $c "dbc.MPQ"))) { $DataDir = $c; break } }

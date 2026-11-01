@@ -17,8 +17,8 @@ def check(name, ok, got=None):
 
 doc = json.load(open(os.path.join(ROOT, "stream", "slices", "mini.json"), encoding="utf-8"))
 den = next((t for t in doc["tiers"] if t["key"] == "den"), None)
-check("mini.json has the Den tier, in order, before music (the budget keeps it)",
-      den is not None and "den" in doc["order"] and doc["order"].index("den") < doc["order"].index("music"))
+check("mini.json has the Den tier, right after Dalaran (the budget always keeps it)",
+      den is not None and doc["order"][:3] == ["base", "dalaran", "den"])
 check("kind home: the stream rule lets every player stay in a Den; no travel entries", den["kind"] == "home" and not den.get("play"))
 check("maxTier covers every tier", doc["maxTier"] == len(doc["order"]) - 1, doc["maxTier"])
 

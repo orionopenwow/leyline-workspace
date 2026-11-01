@@ -24,6 +24,7 @@
  "order": [
     "base",
     "dalaran",
+    "den",
     "stormwind",
     "orgrimmar",
     "northshire",
@@ -79,7 +80,6 @@
     "mechanar",
     "arcatraz",
     "magisters-terrace",
-    "den",
     "music"
   ],
  "tiers": [
@@ -2012,7 +2012,7 @@
    "kind": "home",
    "kindNote": "home, as Dalaran: the realm's stream rule (ov_slices.lua) lets every player stand here at any level, so a browser player in a Den is never sent away; no play entries, so the travel menu doesn't offer it.",
    "name": "Den",
-   "notes": "The Den (owner 1 Nov 00:16: a light, fully working Den in the browser, the slice way): the sealed island in the far north-east of Kalimdor where every Den room stands (ov_build.lua DEN: map 1, 16226.2, 16257.0, game_tele 424 GMIsland), and the models of every object a Den can place: the Builder's catalog and buildings, the room's floor, wall and light blocks, and the stamps' and starter places' props. Objects found with '.build find' or '.build models' outside these are not carried (a player's own game folder shows them). Before music in order, so the budget keeps it.",
+   "notes": "The Den (owner 1 Nov 00:16: a light, fully working Den in the browser, the slice way): the sealed island in the far north-east of Kalimdor where every Den room stands (ov_build.lua DEN: map 1, 16226.2, 16257.0, game_tele 424 GMIsland), and the models of every object a Den can place: the Builder's catalog and buildings, the room's floor, wall and light blocks, and the stamps' and starter places' props. Objects found with '.build find' or '.build models' outside these are not carried (a player's own game folder shows them). Right after Dalaran in order (1 Nov 00:49: at the end, the budget left it out), so it always fits.",
    "maps": [
     {
      "id": 1,

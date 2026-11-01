@@ -245,3 +245,16 @@ test('Realms: the count says community realms; Mods › Discover offline: one li
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('no client version in a sentence about game folders (the version is a chip beside it)', () => {
+  const fs = require('node:fs');
+  const dir = path.join(__dirname, '..', 'ui');
+  const bad = [];
+  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.js'))) {
+    fs.readFileSync(path.join(dir, f), 'utf8').split('\n').forEach((l, i) => {
+      if (/^\s*\/\//.test(l)) return;
+      if (/\b\d\.\d+\.\d+[a-z]?\s+(game )?(folder|files)\b/.test(l) || /`[^`]*\$\{[^}]*\b(build|need|BUILD)\}\s+(game )?folder[^`]*`/.test(l)) bad.push(`${f}:${i + 1}: ${l.trim()}`);
+    });
+  }
+  assert.deepEqual(bad, []);
+});

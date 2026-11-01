@@ -190,7 +190,7 @@ def hostpack_project(d: dict, public_base: str = "https://play.openvanilla.app")
     """The Host pack as an all.json project (mods/all-json.md), category "tools", kind "hostpack"."""
     return {
         "id": "mod:host-pack", "source": "packaged", "name": d["name"],
-        "description": "Host your own 3.3.5a realm from this PC with Docker: the scripts, the realm tooling and "
+        "description": "Host your own realm from this PC with Docker: the scripts, the realm tooling and "
                        "the relay agent. Our code only, no game data. Leyline installs and updates it from the Host page.",
         "category": "tools", "builds": ["3.3.5a"], "author": "Leyline", "author_url": "", "licence": "MIT",
         "repo": "https://github.com/orionopenwow/Leyline", "page": public_base + "/wrath/docs/hosting",

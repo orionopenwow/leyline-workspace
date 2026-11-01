@@ -30,6 +30,7 @@ pub mod host;
 pub mod launch;
 pub mod listed; // listed mods: what players list with "List your mod", installed from the author (stream/listings.py)
 pub mod listing; // List your mod from the launcher: check, list, report, edit, remove (stream/listings.py)
+pub mod looks; // Looks: graphics packs, UI looks and presets in one click, and back to the original look (looks.rs)
 pub mod modes; // the Modes page: game modes one click away (modes agent)
 pub mod mods;
 pub mod mpq; // a small MPQ writer for the hybrid client's patch archive (our files and Forever UI's glue only)

@@ -287,7 +287,36 @@ _cache: dict[str, tuple[float, str, list]] = {}
 _lock = threading.Lock()
 
 
+# The pages' Host pack link (the old host-kit release, kept in the markdown) becomes the pack the launcher installs:
+# leyline_net.hostpack(), the same descriptor as /wrath/mods/all.json and /wrath/host (hostflow.kit_url()).
+OLD_KIT_URL = "https://github.com/orionopenwow/Leyline/releases/download/host-kit/WrathUnleashed-host-kit.zip"
+
+
+def kit_url() -> str:
+    try:
+        import importlib.util
+        import sys
+        m = sys.modules.get("wu_leyline_net")
+        if m is None:
+            spec = importlib.util.spec_from_file_location("wu_leyline_net", os.path.join(os.path.dirname(os.path.abspath(__file__)), "leyline_net.py"))
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            sys.modules["wu_leyline_net"] = m
+        d = m.hostpack()
+        return d["download"] if d and d.get("download") else OLD_KIT_URL
+    except Exception:   # noqa: BLE001: the link as written
+        return OLD_KIT_URL
+
+
 def load(name: str) -> tuple[str, list] | None:
+    """(HTML, headings) for an allow-listed page, with the current Host pack link; None when it is missing."""
+    got = _load(name)
+    if got is None:
+        return None
+    return got[0].replace(OLD_KIT_URL, kit_url()), got[1]
+
+
+def _load(name: str) -> tuple[str, list] | None:
     """(HTML, headings) for an allow-listed page, cached until its file changes; None when it is missing."""
     if name not in TITLES:
         return None

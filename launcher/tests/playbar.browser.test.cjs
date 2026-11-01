@@ -94,7 +94,8 @@ test('the picker: the client and its version; the drop-up list in its three grou
   assert.equal(await page.inputValue('#play-client'), 'c1121-1');
   assert.equal(await page.textContent('#pb-client-ver'), '1.12.1');
   assert.ok(await page.evaluate(() => window.__calls.some(([c, a]) => c === 'select' && a.client === 'c1121-1')), 'saved');
-  assert.match(await page.textContent('#play-headline'), /NEEDS 3\.3\.5A/, 'the official realm runs 3.3.5a');
+  assert.equal(await page.textContent('#play-headline'), 'THIS REALM NEEDS ANOTHER GAME FOLDER');
+  assert.equal(await page.textContent('#pb-realm-ver'), '3.3.5a', 'the official realm runs 3.3.5a: the chip beside its name');
   assert.equal(await page.textContent('#pb-detail'), 'Pick My Wrath');
   const text = await page.evaluate(() => document.body.innerText);
   assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i);
@@ -430,7 +431,8 @@ test('Your Den hosted but no 3.3.5a folder: Clients, with what to add', async ()
   await page.click('#pb-realm-btn');
   await page.click('#pb-rmenu .pb-den');
   assert.equal(await pageOn(page), 'page-clients');
-  assert.match(await page.textContent('#cl-status'), /3\.3\.5a game folder/);
+  assert.match(await page.textContent('#cl-status'), /Your Den plays with your own game folder\./);
+  assert.equal(await page.textContent('#cl-status .rl-ver'), '3.3.5a');
   assert.equal(await callsOf(page, 'join_invite').then((l) => l.length), 0);
   assert.deepEqual(errors, []);
   await ctx.close();

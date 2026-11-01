@@ -1,0 +1,461 @@
+{
+ "format": 1,
+ "about": "Looks: graphics packs, UI looks and graphics presets (stream/looks.py, mods/SPEC.md \"Looks\"). Only reviewed entries are published (on /wrath/looks and in /wrath/mods/all.json as source \"look\"). Nothing here is hosted by us: one-click installs come from the author's own release with a pinned sha256 (install), from reviewed curated addons (look.uses), or are the launcher's own settings (look.preset). Edit with tools/looks/looks.py (check, list, approve, pin).",
+ "looks": [
+  {
+   "id": "look:max",
+   "source": "look",
+   "name": "Max",
+   "description": "Everything turned up: the farthest view, the sharpest textures and filtering, high shadows, thick grass and full weather. For a strong graphics card.",
+   "category": "graphics",
+   "builds": [
+    "1.12",
+    "2.4.3",
+    "3.3.5a"
+   ],
+   "author": "Leyline",
+   "author_url": "https://github.com/orionopenwow",
+   "licence": "MIT",
+   "licence_source": "ours",
+   "repo": "https://github.com/orionopenwow/Leyline",
+   "page": "",
+   "size": 0,
+   "look": {
+    "type": "preset",
+    "preset": "ultra",
+    "changes": [
+     "View distance",
+     "Textures",
+     "Shadows",
+     "Ground clutter",
+     "Weather",
+     "Anti-aliasing"
+    ],
+    "uses": [],
+    "previews": [],
+    "featured": true,
+    "order": 1,
+    "note": "Changes the game's own settings file. Back to the original look puts your old settings back."
+   },
+   "review": {
+    "by": "Claude",
+    "at": "2026-11-01T15:00:00Z",
+    "notes": "Ours: the Graphics page's Ultra settings."
+   }
+  },
+  {
+   "id": "look:balanced",
+   "source": "look",
+   "name": "Balanced",
+   "description": "A good look that stays smooth on most computers: a long view, soft shadows, sharp textures and a little less grass.",
+   "category": "graphics",
+   "builds": [
+    "1.12",
+    "2.4.3",
+    "3.3.5a"
+   ],
+   "author": "Leyline",
+   "author_url": "https://github.com/orionopenwow",
+   "licence": "MIT",
+   "licence_source": "ours",
+   "repo": "https://github.com/orionopenwow/Leyline",
+   "page": "",
+   "size": 0,
+   "look": {
+    "type": "preset",
+    "preset": "balanced",
+    "changes": [
+     "View distance",
+     "Textures",
+     "Shadows",
+     "Ground clutter"
+    ],
+    "uses": [],
+    "previews": [],
+    "featured": true,
+    "order": 2,
+    "note": "Changes the game's own settings file. Back to the original look puts your old settings back."
+   },
+   "review": {
+    "by": "Claude",
+    "at": "2026-11-01T15:00:00Z",
+    "notes": "Ours: the Graphics page's Balanced settings."
+   }
+  },
+  {
+   "id": "look:classic",
+   "source": "look",
+   "name": "Classic",
+   "description": "The game the way it looked on day one: the original view distance, no extra shadows, plain filtering and the soft full-screen glow.",
+   "category": "graphics",
+   "builds": [
+    "1.12",
+    "2.4.3",
+    "3.3.5a"
+   ],
+   "author": "Leyline",
+   "author_url": "https://github.com/orionopenwow",
+   "licence": "MIT",
+   "licence_source": "ours",
+   "repo": "https://github.com/orionopenwow/Leyline",
+   "page": "",
+   "size": 0,
+   "look": {
+    "type": "preset",
+    "preset": "classic",
+    "changes": [
+     "View distance",
+     "Shadows",
+     "Textures"
+    ],
+    "uses": [],
+    "previews": [],
+    "featured": true,
+    "order": 3,
+    "note": "Changes the game's own settings file. Back to the original look puts your old settings back."
+   },
+   "review": {
+    "by": "Claude",
+    "at": "2026-11-01T15:00:00Z",
+    "notes": "Ours: the new Classic preset in gfx.rs."
+   }
+  },
+  {
+   "id": "look:forever-ui",
+   "source": "look",
+   "name": "Forever UI",
+   "description": "A modern interface for the classic client: new action bars, unit frames, bags, a new login screen and character select. The browser game already uses it.",
+   "category": "addons",
+   "builds": [
+    "3.3.5a"
+   ],
+   "author": "Adrestie",
+   "author_url": "https://github.com/Adrestie",
+   "licence": "GPL-2.0",
+   "licence_source": "the repo's licence (its code); its art comes from the newer client and has no licence of its own",
+   "repo": "https://github.com/Adrestie/mod-forever-ui",
+   "page": "https://github.com/Adrestie/mod-forever-ui",
+   "size": 346030080,
+   "look": {
+    "type": "ui-look",
+    "preset": "",
+    "changes": [
+     "Interface",
+     "Action bars",
+     "Unit frames",
+     "Login screen"
+    ],
+    "uses": [],
+    "previews": [],
+    "featured": true,
+    "order": 4,
+    "note": "Its art comes from the newer client, so we never host it and the launcher does not install it yet: get it from its author's page."
+   },
+   "review": {
+    "by": "Claude",
+    "at": "2026-11-01T15:00:00Z",
+    "notes": "Link only: already our default look in the browser stream (play/Install Forever UI.bat fetches it from the author)."
+   }
+  },
+  {
+   "id": "look:dragonflight-ui",
+   "source": "look",
+   "name": "DragonflightUI",
+   "description": "Modern-styled unit frames, cast bar and chat over the classic interface.",
+   "category": "addons",
+   "builds": [
+    "3.3.5a"
+   ],
+   "author": "yuritsuki",
+   "author_url": "https://github.com/yuritsuki",
+   "licence": "MIT",
+   "licence_source": "LICENSE",
+   "repo": "https://github.com/yuritsuki/WoW-DragonflightUI",
+   "page": "https://github.com/yuritsuki/WoW-DragonflightUI",
+   "size": 7387881,
+   "look": {
+    "type": "ui-look",
+    "preset": "",
+    "changes": [
+     "Unit frames",
+     "Chat",
+     "Interface"
+    ],
+    "uses": [
+     "up:dragonflightui"
+    ],
+    "previews": [],
+    "featured": false,
+    "order": 10,
+    "note": ""
+   },
+   "review": {
+    "by": "Claude",
+    "at": "2026-11-01T15:00:00Z",
+    "notes": "One click once up:dragonflightui is approved in the addon curation (its .blp art needs a look first); a link until then."
+   }
+  },
+  {
+   "id": "look:pfui",
+   "source": "look",
+   "name": "pfUI",
+   "description": "A complete, clean replacement interface: unit frames, bars, bags, chat and nameplates in one, set up in game.",
+   "category": "addons",
+   "builds": [
+    "1.12",
+    "2.4.3"
+   ],
+   "author": "shagu",
+   "author_url": "https://github.com/shagu",
+   "licence": "MIT",
+   "licence_source": "LICENSE",
+   "repo": "https://github.com/shagu/pfUI",
+   "page": "https://github.com/shagu/pfUI",
+   "size": null,
+   "look": {
+    "type": "ui-look",
+    "preset": "",
+    "changes": [
+     "Interface",
+     "Unit frames",
+     "Action bars",
+     "Chat",
+     "Minimap"
+    ],
+    "uses": [],
+    "previews": [],
+    "featured": false,
+    "order": 11,
+    "note": "Replaces your whole interface. Get it from its author's page; one click comes when our addon checks cover these clients."
+   },
+   "review": {
+    "by": "Claude",
+    "at": "2026-11-01T15:00:00Z",
+    "notes": "Link only: MIT, archived (read only) since June 2026; the addon curation only covers the third-era client today."
+   }
+  },
+  {
+   "id": "look:ultrahd",
+   "source": "look",
+   "name": "UltraHD Graphics Modpack",
+   "description": "Higher-resolution textures, new models, richer lighting and denser foliage for the classic client, made for the Conquest community client.",
+   "category": "graphics",
+   "builds": [
+    "3.3.5a"
+   ],
+   "author": "the Conquest of Azeroth modpack authors",
+   "author_url": "",
+   "licence": "",
+   "licence_source": "",
+   "repo": "",
+   "page": "https://www.reddit.com/r/wowservers/comments/1xiqhdg/conquest_of_azeroth_ultrahd_graphics_modpack/",
+   "size": null,
+   "look": {
+    "type": "graphics-pack",
+    "preset": "",
+    "changes": [
+     "Textures",
+     "Character models",
+     "Lighting",
+     "Foliage"
+    ],
+    "uses": [],
+    "previews": [],
+    "featured": true,
+    "order": 5,
+    "note": "External download, made and hosted by its authors; not checked or hosted by Leyline."
+   },
+   "review": {
+    "by": "Claude",
+    "at": "2026-11-01T15:00:00Z",
+    "notes": "Link only, the owner's exception of 2026-10-30 (tools/hub-index/external-packs.json)."
+   }
+  },
+  {
+   "id": "look:epoch-water",
+   "source": "look",
+   "name": "Epoch water",
+   "description": "Clearer, livelier water for lakes, rivers and the sea. One small patch file.",
+   "category": "graphics",
+   "builds": [
+    "3.3.5a"
+   ],
+   "author": "the Project Epoch team (shared by ZythDr)",
+   "author_url": "https://github.com/ZythDr",
+   "licence": "",
+   "licence_source": "README: \"free for anyone to use, even other servers\" (no licence file)",
+   "repo": "https://github.com/ZythDr/EpochWater",
+   "page": "https://github.com/ZythDr/EpochWater",
+   "size": null,
+   "look": {
+    "type": "graphics-pack",
+    "preset": "",
+    "changes": [
+     "Water"
+    ],
+    "uses": [],
+    "previews": [],
+    "featured": false,
+    "order": 12,
+    "note": "External download, made and hosted by its authors; not checked or hosted by Leyline."
+   },
+   "review": {
+    "by": "Claude",
+    "at": "2026-11-01T15:00:00Z",
+    "notes": "Link only, like the UltraHD link (owner 2026-10-30: 'and other similar'). The repo has no release to pin, so no one click."
+   }
+  },
+  {
+   "id": "look:elvui",
+   "source": "look",
+   "name": "ElvUI",
+   "description": "A complete replacement interface: unit frames, action bars, bags, chat, nameplates and data texts in one package you set up in game.",
+   "category": "addons",
+   "builds": [
+    "3.3.5a"
+   ],
+   "author": "the ElvUI backport team",
+   "author_url": "https://github.com/ElvUI-WotLK",
+   "licence": "",
+   "licence_source": "",
+   "repo": "https://github.com/ElvUI-WotLK/ElvUI",
+   "page": "https://github.com/ElvUI-WotLK/ElvUI",
+   "size": 8671119,
+   "look": {
+    "type": "ui-look",
+    "preset": "",
+    "changes": [
+     "Interface",
+     "Unit frames",
+     "Action bars",
+     "Chat"
+    ],
+    "uses": [
+     "up:elvui"
+    ],
+    "previews": [],
+    "featured": false,
+    "order": 13,
+    "note": "Replaces your whole interface; may conflict with the Leyline UI."
+   },
+   "review": {
+    "by": "",
+    "at": "",
+    "notes": "Needs the owner: no licence; the curated entry lists a missing file; replaces the whole UI."
+   }
+  },
+  {
+   "id": "look:aurora",
+   "source": "look",
+   "name": "Aurora",
+   "description": "A clean, flat look for the default interface windows.",
+   "category": "addons",
+   "builds": [
+    "3.3.5a"
+   ],
+   "author": "Bunny67",
+   "author_url": "https://github.com/Bunny67",
+   "licence": "",
+   "licence_source": "",
+   "repo": "https://github.com/Bunny67/Aurora",
+   "page": "https://github.com/Bunny67/Aurora",
+   "size": 646711,
+   "look": {
+    "type": "ui-look",
+    "preset": "",
+    "changes": [
+     "Windows",
+     "Interface"
+    ],
+    "uses": [
+     "up:aurora"
+    ],
+    "previews": [],
+    "featured": false,
+    "order": 14,
+    "note": ""
+   },
+   "review": {
+    "by": "",
+    "at": "",
+    "notes": "Needs the owner: no licence, and one .blp named like stock art (Aurora/Media/UI-LFG-ICON-ROLES.blp)."
+   }
+  },
+  {
+   "id": "look:clean-frames",
+   "source": "look",
+   "name": "Clean frames",
+   "description": "A lighter interface in one click: slim unit frames, movable action bars and a modern minimap, from three addons.",
+   "category": "addons",
+   "builds": [
+    "3.3.5a"
+   ],
+   "author": "bkader and s0h2x",
+   "author_url": "https://github.com/bkader",
+   "licence": "",
+   "licence_source": "",
+   "repo": "https://github.com/bkader/RUF-WoTLK",
+   "page": "",
+   "size": 6015959,
+   "look": {
+    "type": "ui-look",
+    "preset": "",
+    "changes": [
+     "Unit frames",
+     "Action bars",
+     "Minimap"
+    ],
+    "uses": [
+     "up:ruf",
+     "up:dominos",
+     "up:pretty-minimap"
+    ],
+    "previews": [],
+    "featured": false,
+    "order": 15,
+    "note": "Three addons from their authors: RUF Unit Frames, Dominos and Pretty Minimap."
+   },
+   "review": {
+    "by": "",
+    "at": "",
+    "notes": "Needs the owner: a look we name made of three approved addons whose repos state no licence."
+   }
+  },
+  {
+   "id": "look:reforged",
+   "source": "look",
+   "name": "Project Reforged",
+   "description": "A library of small graphics patches for the classic-era client you pick one by one: character models, creatures, water and more.",
+   "category": "graphics",
+   "builds": [
+    "1.12"
+   ],
+   "author": "the Project Reforged contributors",
+   "author_url": "",
+   "licence": "",
+   "licence_source": "",
+   "repo": "",
+   "page": "https://projectreforged.github.io/downloads/turtle/",
+   "size": null,
+   "look": {
+    "type": "graphics-pack",
+    "preset": "",
+    "changes": [
+     "Character models",
+     "Creatures",
+     "Water"
+    ],
+    "uses": [],
+    "previews": [],
+    "featured": false,
+    "order": 16,
+    "note": "External download, made and hosted by its authors; not checked or hosted by Leyline."
+   },
+   "review": {
+    "by": "",
+    "at": "",
+    "notes": "Needs the owner: no licence stated, download hosts not named, and its page is made for one community client."
+   }
+  }
+ ]
+}

@@ -444,7 +444,7 @@ async fn den_play_lite(core: State<'_, Core>, client: String) -> Result<SoloPlay
     use crate::host::lite::{self, DenLite};
     let profile = core.client(&client)?;
     if profile.build != crate::clients::Build::V335a {
-        return Err("Your Den plays with a 3.3.5a game folder.".into());
+        return Err("Your Den plays with a different game folder: pick or add it in the play bar, where its version shows.".into());
     }
     let game = profile.path.clone();
     blocking(move || {
@@ -1220,6 +1220,10 @@ pub fn run() {
             crate::gfx::commands::gfx_set,
             crate::gfx::commands::gfx_preset,
             crate::gfx::commands::gfx_restore,
+            crate::looks::commands::looks_state,
+            crate::looks::commands::looks_apply,
+            crate::looks::commands::looks_remove,
+            crate::looks::commands::looks_reset,
             crate::clientimport::commands::client_import_check,
             crate::clientimport::commands::client_import_start,
             crate::clientimport::commands::client_import_state,

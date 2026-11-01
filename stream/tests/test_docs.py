@@ -53,6 +53,12 @@ for n in names:
     check(f"{n}: current page marked", f'href="{d.page_url(n)}" aria-current="page"' in page)
     check(f"{n}: no script, no inline handlers", "<script" not in page.lower() and not re.search(r"\son[a-z]+=", page))
     check(f"{n}: link card for its own URL", f'content="https://x{d.page_url(n)}"' in page)
+import json as _json
+_hp = _json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hostpack.json")))["download"]
+for n in ("hosting", "always-on", "join-network"):
+    check(f"{n}: the Host pack link is the pack the launcher installs (stream/hostpack.json), not the old host-kit zip",
+          _hp in pages[n] and "host-kit/WrathUnleashed-host-kit.zip" not in pages[n])
+check("always-on: the curl line saves the zip it unzips", "-o host-pack.zip" in pages["always-on"] and "unzip host-pack.zip" in pages["always-on"])
 status, body = d.page("/wrath/docs")
 check("/wrath/docs is the overview", status == 200 and b"What&#x27;s live and what&#x27;s planned" in body)
 

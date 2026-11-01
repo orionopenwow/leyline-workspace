@@ -117,7 +117,7 @@
     const need = r.official ? "3.3.5a" : r.build;
     const st = App.state();
     const have = !need || (st && st.settings.clients.some((c) => c.build === need));
-    tell(where, have ? "ok" : "warn", `Added ${name} to Your realms.`, have ? "Press Play now to start." : `It plays with your own ${need} game folder: add it first.`, r);
+    tell(where, have ? "ok" : "warn", `Added ${name} to Your realms.`, have ? "Press Play now to start." : "It needs the game files for this realm: add that game folder first.", r);
   }
   async function playNow(btn) {
     const r = pending;

@@ -56,7 +56,11 @@
 
   const status = mk("p", "status yd-status");
   status.setAttribute("role", "status");
-  function say(text, kind) { status.textContent = text || ""; status.dataset.kind = kind || ""; }
+  function say(text, kind, ver) {
+    status.textContent = text || "";
+    if (ver) status.append(" ", mk("span", "rl-ver sm", ver));   // the version as a chip, never in the sentence
+    status.dataset.kind = kind || "";
+  }
 
   // ---------------------------------------------------------------- what this PC has
   const own = () => (typeof clientForRealm === "function" ? clientForRealm("den", BUILD) : null);
@@ -173,8 +177,8 @@
     if (!st) await load();
     const c = own();
     if (!c) {
-      if (typeof addGameFolder === "function") addGameFolder(`Your Den plays with your own ${BUILD} game folder. Add it, then press Your Den again.`);
-      say(`Your Den plays with your own ${BUILD} game folder. Add it on the Clients page, then press Your Den again.`, "warn");
+      if (typeof addGameFolder === "function") addGameFolder("Your Den plays with your own game folder. Add it, then press Your Den again.", BUILD);
+      say("Your Den plays with your own game folder. Add it on the Clients page, then press Your Den again.", "warn", BUILD);
       return;
     }
     const w = where();

@@ -68,7 +68,7 @@ test('Graphics: the tab, a preset, a change saved, back to how it was', async ()
   await page.evaluate(() => { const t = document.querySelector('.page-tab[data-tab="discover"]'); if (t) t.click(); });
   await page.waitForSelector('#discover-tabs .ly-tab[data-tab="graphics"]');
   const tabs = await page.$$eval('#discover-tabs .ly-tab', (b) => b.map((x) => x.textContent));
-  assert.deepEqual(tabs, ['Mods', 'Addons', 'Themes', 'Graphics']);
+  assert.deepEqual(tabs, ['Mods', 'Addons', 'Looks', 'Themes', 'Graphics']);
   await page.click('#discover-tabs .ly-tab[data-tab="graphics"]');
   await page.waitForSelector('#gfx-farclip');
   assert.equal(await page.inputValue('#gfx-farclip'), '777');

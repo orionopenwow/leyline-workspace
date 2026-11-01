@@ -124,12 +124,14 @@ test('a new player (no game folder, no Host pack, no Docker): every row says its
   const rows = await rrows(page);
   assert.equal(await row(page, 'Your Den'), 'Your Den||Needs your game folder|false');
   assert.equal(await row(page, 'Solo leveling'), undefined, 'Solo leveling is on the Host page, not in the picker');
-  assert.deepEqual(rows.slice(-2), ['! This realm plays with 3.3.5a. No 3.3.5a game folder yet.', 'Add a game folder…|||false']);
+  assert.deepEqual(rows.slice(-2), ['! No game folder for this realm yet. 3.3.5a', 'Add a game folder…|||false']);
+  assert.equal(await page.textContent('#pb-rmenu .pb-note .rl-ver'), '3.3.5a', 'the version as a chip');
   await shot(page, 'first-run-dropup-dark');
   // Your Den with no folder: the add flow, and it says what for
   await page.click('#pb-rmenu .pb-den');
   await page.waitForFunction(() => document.querySelector('#page-clients.on'));
-  assert.match(await page.textContent('#cl-status'), /Your Den plays with your own 3\.3\.5a game folder/);
+  assert.match(await page.textContent('#cl-status'), /^Your Den plays with your own game folder\. .* 3\.3\.5a$/);
+  assert.equal(await page.textContent('#cl-status .rl-ver'), '3.3.5a', 'the version as a chip, not in the sentence');
   assert.doesNotMatch(await page.evaluate(() => document.body.innerText), BRANDS);
   assert.deepEqual(errors, []);
   await ctx.close();
@@ -247,14 +249,15 @@ test('the game client part: one row, the version the realm needs, picked by itse
   assert.equal(await page.inputValue('#play-client'), 'c335a-2', 'Busy Den keeps its own');
   // a 2.4.3 realm with no 2.4.3 folder: one plain line and Add a game folder…; the bar says the same
   await pick('Outland Rest');
-  assert.deepEqual(await bar(page), ['THIS SERVER NEEDS 2.4.3', 'Add a 2.4.3 folder']);
+  assert.deepEqual(await bar(page), ['THIS REALM NEEDS ANOTHER GAME FOLDER', 'Add the game folder for this realm']);
+  assert.equal(await page.textContent('#pb-realm-ver'), '2.4.3', 'its version: the chip beside its name');
   await page.click('#pb-realm-btn');
   rows = await rrows(page);
-  assert.deepEqual(rows.slice(-2), ['! This realm plays with 2.4.3. No 2.4.3 game folder yet.', 'Add a game folder…|||false']);
+  assert.deepEqual(rows.slice(-2), ['! No game folder for this realm yet. 2.4.3', 'Add a game folder…|||false']);
   await shot(page, 'client-none-dark');
   await page.click('#pb-rmenu .pb-add-client');
   assert.ok(await page.isVisible('#pb-menu') || (await pageOn(page)) === 'page-clients', 'the existing add flow');
-  assert.match(await page.textContent('#play-status'), /Add your 2\.4\.3 game folder/);
+  assert.match(await page.textContent('#play-status'), /^Add your game folder for this realm\. 2\.4\.3$/);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -267,7 +270,7 @@ test('a leyline://realm/<id> link (the in-game realm browser) picks that realm w
   await ctx.close();
   const b = await open({ clients: [WRATH], deep: { action: 'realm', id: 'tttttttttttttttt' } });
   await b.page.waitForFunction(() => document.getElementById('pb-realm').textContent === 'Outland Rest');
-  assert.match(await b.page.textContent('#rl-status'), /Outland Rest plays with 2\.4\.3\. Add your 2\.4\.3 game folder first/);
+  assert.match(await b.page.textContent('#rl-status'), /^Outland Rest needs the game files for this realm\. Add that game folder first.* 2\.4\.3$/);
   assert.deepEqual([...errors, ...b.errors], []);
   await b.ctx.close();
 });

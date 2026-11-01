@@ -146,7 +146,8 @@ test('no game folder: Play says so and opens the add flow', async () => {
   const { page, ctx, errors } = await open({ lite: 'stopped', clients: false, page: 'den' });
   await page.waitForSelector('#yd-play');
   await page.click('#yd-play');
-  await page.waitForFunction(() => /3\.3\.5a game folder/.test(document.querySelector('#yd .yd-status').textContent));
+  await page.waitForFunction(() => /Your Den plays with your own game folder\./.test(document.querySelector('#yd .yd-status').textContent));
+  assert.equal(await page.textContent('#yd .yd-status .rl-ver'), '3.3.5a', 'the version as a chip, not in the sentence');
   assert.deepEqual(await calls(page, 'den_play_lite'), []);
   assert.deepEqual(errors, []);
   await ctx.close();

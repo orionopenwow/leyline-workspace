@@ -249,3 +249,28 @@ moderators take down.
 `X-Leyline-CSRF` from `GET /wrath/api/listings/mine`): `check {url}`, `submit {t, category, description, builds?}`,
 `report {id, reason, note?}`, `edit {id, description?, category?}`, `remove {id}`; `GET mine`. The page
 `/wrath/mods/list` does the same with plain forms.
+
+## Looks (graphics packs, UI looks and graphics presets)
+
+A main section of the site (`/wrath/looks`, owner 1 Nov 14:38) and the launcher (Mods › Discover › Looks). One list,
+`stream/looks.json`, edited with `tools/looks/looks.py` (`check`, `list`, `approve`, `unapprove`, `pin`); the rules are
+`stream/looks.py` (`problems`). Each entry is an all.json project with `source: "look"`, id `look:<slug>`, and a `look`
+object: `type` (`graphics-pack`, `ui-look`, `preset`), `preset` (a launcher graphics preset id: gfx.rs `PRESETS`),
+`uses` (curated addons `up:<slug>` a UI look installs), `changes` (words from `looks.CHANGES`), `previews`, `featured`,
+`order`, `note`. Only reviewed entries (`review.by`) are served. all.json adds `look.how` and `credits`.
+
+| How it installs | When | What one click does (launcher `looks.rs`) |
+|---|---|---|
+| preset | `type: preset` | the game's `WTF/Config.wtf`, through gfx.rs (a copy of the file is kept first) |
+| graphics pack | an `install` block (listed-mod shape, `kind: files`): the entry's own GitHub release file (`.MPQ` or `.zip`), its sha256, every `.MPQ` in it with its sha256 (`looks.py pin`) | the patches into free `Data/patch-<X>.MPQ` slots (never T, the Den's ground, or Z, the hybrid client's), as `look:<slug>` in `Leyline/mods.json` |
+| UI look | `look.uses`, every one reviewed and published in `stream/upstream-addons.json` | each addon from its author (`upstream.rs`); the look remembers which it put in |
+| link only | anything else (no licence, no release file, a file host, native code, our checks don't cover that client yet) | opens the author's page |
+
+**Back to the original look** (launcher): removes every look Leyline put in that client (and only those addons it put in
+for a look) and puts the game's settings file back as it was before Leyline first changed it.
+
+**Pictures**: only ones we made (`basis: "ours"`) or the author's under an open licence (`basis: "licence"`), served from
+our own `/wrath/art/looks/`; otherwise a drawn placeholder and a link to the author's page. Never game data, never a copy
+of anyone's pack: nothing is hosted, ever. Words follow the site rules: no brand words, no client numbers (the chips say
+which clients, in the hub's era words on the site).
+

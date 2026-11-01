@@ -138,6 +138,10 @@ test('a realm set up on this PC: the Host page is its console', async () => {
   assert.ok(await page.isHidden('.hc-top-acts button:has-text("Start")') && await page.isVisible('.hc-top-acts button:has-text("Stop")'));
   assert.doesNotMatch(await page.textContent('#page-host'), NO_BRANDS);
   assert.equal(await page.locator('#page-host input[type="password"]').count(), 0, 'Leyline never asks for a password');
+  // optional: Connect Claude, as Your Den's Ask Claude: the Agents page
+  assert.match(await page.textContent('.hc-claude-row'), /^Connect Claude Optional:/);
+  await page.click('.hc-claude');
+  assert.equal(await page.evaluate(() => document.querySelector('.page.on').id), 'page-agents');
   assert.deepEqual(errors, []);
 });
 

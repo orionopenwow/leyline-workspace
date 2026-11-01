@@ -103,6 +103,11 @@ pub const PRESETS: &[(&str, &str, &[(&str, &str)])] = &[
     ("low", "Low", &[("farclip", "377"), ("groundEffectDensity", "16"), ("groundEffectDist", "70"), ("environmentDetail", "0.5"),
         ("extShadowQuality", "0"), ("baseMip", "1"), ("textureFilteringMode", "0"), ("gxMultisample", "1"), ("weatherDensity", "0"),
         ("spellEffectLevel", "0"), ("ffxGlow", "0"), ("ffxDeath", "0")]),
+    // Classic (Looks, owner 1 Nov 14:38): the game as it looked on day one: the original view, no extra shadows, plain
+    // filtering and no smoothing, with the soft full-screen glow.
+    ("classic", "Classic", &[("farclip", "777"), ("groundEffectDensity", "64"), ("groundEffectDist", "70"), ("environmentDetail", "1"),
+        ("extShadowQuality", "0"), ("baseMip", "0"), ("textureFilteringMode", "1"), ("gxMultisample", "1"), ("weatherDensity", "2"),
+        ("spellEffectLevel", "2"), ("ffxGlow", "1"), ("ffxDeath", "1")]),
     ("balanced", "Balanced", &[("farclip", "777"), ("groundEffectDensity", "64"), ("groundEffectDist", "100"), ("environmentDetail", "1"),
         ("extShadowQuality", "1"), ("baseMip", "0"), ("textureFilteringMode", "2"), ("gxMultisample", "1"), ("weatherDensity", "1"),
         ("spellEffectLevel", "1"), ("ffxGlow", "1"), ("ffxDeath", "1")]),

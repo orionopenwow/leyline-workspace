@@ -108,7 +108,7 @@ test('Mods & Addons: Installed and Discover tabs, each with Mods | Addons; the F
   assert.deepEqual((await where(page)).panes, ['pane-discover']);
   assert.ok(await page.evaluate(() => window.__calls.some(([c]) => c === 'mods_catalog')), 'Discover loads the Workshop');
   // the Discover features are all there: the Mods | Addons | Themes tabs, the Sort menu
-  assert.deepEqual(await page.$$eval('#discover-tabs .ly-tab', (b) => b.map((x) => x.textContent)), ['Mods', 'Addons', 'Themes', 'Graphics']);
+  assert.deepEqual(await page.$$eval('#discover-tabs .ly-tab', (b) => b.map((x) => x.textContent)), ['Mods', 'Addons', 'Looks', 'Themes', 'Graphics']);
   assert.deepEqual(await page.$$eval('#cat-sort option', (o) => o.map((x) => x.textContent)), ['Hot', 'Rising', 'Top rated', 'Most installed', 'This month', 'New', 'Updated']);
   await page.click('#discover-tabs [data-tab="themes"]');
   assert.ok(await page.isVisible('#themes-discover'));

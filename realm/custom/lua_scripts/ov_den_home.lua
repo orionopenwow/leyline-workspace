@@ -557,6 +557,9 @@ function H.wrapFiles()
     d.Files.open = function(player, name, c, doc, replace)
         local n = open0(player, name, c, doc, replace)
         H.fromDoc(doc)
+        for _, st in ipairs(H.STARTERS) do   -- a starter place opened from the launcher counts as the pick
+            if st.file and st.file == name and replace then set("started", st.key) end
+        end
         if player then H.sendHome(player) end
         return n
     end

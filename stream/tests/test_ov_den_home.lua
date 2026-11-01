@@ -370,6 +370,19 @@ clock = clock + 10
 cmd(own, ".den load home1 replace")
 check("opening it again doesn't double the notes", #H.notes == 2)
 
+-- ---------------------------------------------------------------- the launcher's Den setup: open.json names a starter place
+do
+    local f = assert(io.open(SAVES .. "/forest-glade.den.json", "w"))
+    f:write(readFile(dir .. "/den-starters/forest-glade.den.json")); f:close()
+    f = assert(io.open(SAVES .. "/open.json", "w")); f:write('{"file": "forest-glade", "id": "abc123"}'); f:close()
+    D.settings.started = nil
+    clock = clock + 10
+    own.map, own.x, own.y, own.z = 1, DEN.x, DEN.y, GROUND
+    for _, e in ipairs(luaEvents) do if e.delay == 2000 then for _ = 1, 5 do e.fn() end end end
+    check("the launcher's starter place opens in the Den and counts as the pick", D.settings.started == "forest"
+        and readFile(SAVES .. "/open.json") == nil)
+end
+
 -- ---------------------------------------------------------------- help, words, SQL
 clear(vis)
 cmd(vis, ".den")

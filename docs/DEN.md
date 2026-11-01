@@ -15,6 +15,54 @@ invite, bad files); **not yet run on a real PC with Docker**: this build machine
 real worldserver can't start here. The owner's 10-minute test is at the bottom. Engine hooks: 1 to 5 below are in the
 browser client since patch 20261026a; 6 to 10 are still to do.
 
+## Player guide
+
+**Making your Den.** In the launcher, Host, pick **My Den**, then **Start your Den as**: **Forest glade** (trees, a brook
+of reeds to a moonwell pond, a small cottage, warm lanterns), **Dark keep** (a ruined tower behind a rock arch, mist,
+lanterns and braziers) or **Empty** (the plain room). Press Start. The place is there the first time you step in. If you
+skip it, the Den asks you on your first visit; you can also pick again later: type `.den start forest`, `.den start keep`
+or `.den start empty` (add `replace` when your Den already has things in it: a copy of it is kept as "backup").
+
+**Your windows.** `/den` is the Den panel (invite a friend, who may build, save and load). Its **Home** button (or
+`/denhome`) opens the home panel: the start choice, stamps, the grid, visiting and the mailbox. `/builder` is the build
+window; in edit mode hold Q for the spawn menu.
+
+**Stamps: whole areas in one go.** A stamp is a small ready-made area: **Garden**, **Market square**, **Campfire
+circle**, **Dock** and **Small house**. Pick one (the home panel, or the spawn menu's **Stamps** tab). Nothing is placed
+yet: stakes mark its corners, and a lone stake shows its front. **Turn left** / **Turn right** turn it 15 degrees,
+**Here** moves the mark to where you stand, **Place** puts it down, **Cancel** takes the mark away. Each piece lands on
+the ground or floor under it. One undo (Ctrl+Z) takes the whole stamp back. In chat: `.den stamps`, `.den stamp garden`,
+`.den stamp turn`, `.den stamp place`.
+
+**Placing that feels good.**
+- Grid: the home panel's **Grid** button goes off, 0.5, 1, 2 and 5 yards (`.build grid 2`). What you place at your feet
+  lines up with the room and turns to the nearest 15 degrees. In edit mode the **Snap** button does the same for clicks.
+- Ground: **Ground on** (`.build grid ground on`) sets what you place at your feet on the ground or floor under you.
+- Turning: 15 degree steps (Q / E while carrying, the Turn buttons).
+- Copy and paste: select, **Copy**, then **Paste** where you click (or at your feet).
+- Undo and redo: the last 50 changes, Ctrl+Z and Ctrl+Y (`.build undo`, `.build redo`).
+- The palette: search, categories (with **Furniture**: seats, tables, beds, rugs), **Favourites** (right-click a prop)
+  and **Recent**.
+- Before placing: a stamp shows its stakes first. A single prop has no see-through preview in this game: in the browser
+  game edit mode places exactly where you click and the handles move it after; on your own game it goes at your feet
+  and the arrows nudge it.
+
+**A house you live in.** The **Small house** stamp is a cottage with its furniture already inside (bed, table, chairs,
+rug, lantern), a front door and a mailbox. Furnish it more from the **Furniture** tab. The starter places come with a
+house, a door and a mailbox too. The owner can move them: stand there and type `.den door` or `.den mailbox`.
+
+**Visitors.** Friends join with your invite link and look around; they build only if you let them (`/den`, their name,
+**Can build**). A visitor can:
+- **Go to the front door** (`.den visit`),
+- **Knock** (`.den knock`): you hear a knock and see who it is; nobody home, they are told to leave a note,
+- **Leave a note** in your mailbox (`.den note <words>`, one a minute, up to 200 letters).
+
+You read them with **Read mail** (`.den mail`); **Empty it** clears the mailbox. Notes are saved with your Den
+(`.den save`) and come back when you open that save.
+
+**Den of the week.** Each week the Leyline team picks one Den. It shows on the website's front page, on the launcher's
+Home and in the game's Leyline window. Screenshots are links on the website only.
+
 ## Hosting a Den
 
 ```
@@ -76,7 +124,7 @@ what the official newest housing system does (sources at the bottom), and our st
 | Rotate in 15 degree steps (basic) | Turn button (15/45/90), Q/E while carrying | built | [1][3] |
 | Rotate on any axis (advanced gimbal) | yaw, pitch, roll stored (`mod_builder_prop_tilt`); pitch and roll show only with mod-sandbox-core | built (tilt needs the module on the realm image) | [1] |
 | Scale within generous limits | 0.1 to 5 in a Den (0.5 to 2.5 elsewhere; `OV_BUILD_SCALE_MIN/_MAX`), stored (`mod_builder_prop_scale`) | built; in-place resize needs the module or the engine (below) | [1][2] |
-| Grid snap, shown and toggled; the grid shrinks on small surfaces | Snap 0 / 0.5 / 1 / 2 yards (client CVar) | built; surface-sized grid: engine hook | [1][3] |
+| Grid snap, shown and toggled; the grid shrinks on small surfaces | Snap 0 / 0.5 / 1 / 2 / 5 yards (client CVar); at your feet `.build grid` (with 15 degree facings) | built; surface-sized grid: engine hook | [1][3] |
 | Snap to surfaces: rugs to floors, paintings to walls, ceilings | `.build floor` puts the selection down on the floor below | built for floors; walls and ceilings: engine hook (raycast) | [1][3] |
 | Small decor parents to big decor (books move with the shelf) | groups: `.build group`, a click on one selects them all | built (an explicit group, not automatic) | [1][3] |
 | Collision on (basic), clipping on (advanced) | no collision checks: everything clips (advanced mode's rule) | later (needs model bounds) | [1][2] |
@@ -85,14 +133,14 @@ what the official newest housing system does (sources at the bottom), and our st
 | Clean-up: click to send back to storage | Put away (`.build store`) | built | [2] |
 | Decor storage of owned items | storage per character (`mod_builder_storage`), a Storage tab with counts; placing one takes it out | built (the catalog itself stays free: creative) | [2][4] |
 | Multi-select | Shift-click, box select, Select mine, group ops as one undo entry | built (box drag and Shift-click: engine hooks) | not documented for Midnight; ours anyway |
-| Undo and redo | `.build undo` / `redo`, 30 deep, Ctrl+Z / Ctrl+Y | built (Ctrl+Y: engine hook) | not documented for Midnight; ours anyway |
+| Undo and redo | `.build undo` / `redo`, 50 deep, Ctrl+Z / Ctrl+Y | built (Ctrl+Y: engine hook) | not documented for Midnight; ours anyway |
 | Copy, paste, duplicate (an addon adds these in Midnight) | Copy, Paste at a click, Duplicate (V) | built (Ctrl+C/V: engine hook) | [5] |
 | Layouts: save, load, share at room, plot or house level | `.den save/load <name> [replace|add]`: the whole Den with size, tilt, locks, hidden props, groups and paths, kept in the realm and **in a file on the host's PC** (below); builds and prefabs share as 6-letter codes | built; sharing Den files on the Workshop: later (same format) | [4] |
 | Inside and outside are separate | the room (inside the walls) and its yard | built | [1] |
 | Budgets (placement budget, room limit; outside smaller, rising with house level) | build points per prop; two Den budgets, room 1000 and yard 300 (`OV_DEN_INSIDE_POINTS`, `_OUTSIDE_POINTS`) | built (no levels) | [1][4][6] |
 | Floorplan: add rooms | one room | later | [2] |
 | Visitor permissions (neighbours, guild, friends, party) and visitor codes | invite link only (the realm is private); view, build, owner (`.den allow <name> build|view`); the host's allow list | built | [4][7] |
-| Guest book | none | later | [4] |
+| Guest book | the mailbox: visitors' notes, kept in the save file; a front door to knock on | built | [4] |
 
 Sources (read 2026-10-30): [1] A fan news site (Tavern), "Decorating Preview for Player Housing in Midnight". [2] Icy Veins,
 "Player Housing: Interior Customization Guide". [3] Icy Veins, "Midnight's Player Housing: A Deep Dive into Basic
@@ -115,6 +163,12 @@ budgets). [7] The official EU forums, "Housing permissions needs a bit more". Fu
 .den load <name> [replace|add] (owner) opens that file: asks first when the Den has decor; replace keeps a copy as
                               "backup"; without a file (or for a builder) your own layout as before
 .den files / .den layouts     the files saved from here / your layouts
+.den start forest|keep|empty [replace]   (owner) a starter place (asks first when there is decor)
+.den stamps | stamp <name> [deg] | stamp turn [deg] | stamp here | stamp place | stamp cancel | stamp <name> now
+.den door | mailbox           (owner) the front door / mailbox is where you stand
+.den visit | knock | note <words>    anyone: to the front door, knock, a note in the mailbox
+.den mail [clear]             (owner) the notes
+.build grid 0.5|1|2|5|off | grid ground on|off    placing at your feet: on a grid, 15 degree facings, on the ground
 .build path <prop> from       a path: marks where you stand; walk; .build path <prop> to [yards apart, 1-20, default 3]
 .build path <prop> <x1> <y1> <z1> <x2> <y2> <z2> [every]   the same from two clicks (the Builder's Path in edit mode)
 .build redo | store | storage | group | ungroup | floor | layout save|load|list|delete <name> [replace]
@@ -144,6 +198,39 @@ panel outside edit mode, the Builder's **Path** button (Group row) and its **bui
   yards; every piece checked like a paste (role, area, budgets, rate). The pieces are one group (a click selects the
   whole path) and one undo entry (undo and redo keep it one group); the path itself (prop, spacing, ends) is kept in
   `mod_builder_paths` and goes into the save file. Good path props: Platform, small; a rug; lanterns; fences.
+
+## Starter places, stamps, door and mailbox (2026-10-31, the growth plan)
+
+`realm/custom/lua_scripts/ov_den_home.lua` (OV_DEN=1), on top of `ov_den.lua` (its `OVDen` hook table: more `.den`
+commands, help lines, the save file wrapped) and `ov_build.lua` (`OVBuild.ImportPrefab` places every stamp with every
+check; `OVBuild.FloorAt`, `OVBuild.SnapPoint`). Files, data only (read by the realm's strict JSON reader, never run):
+
+- `den-starters/forest-glade.den.json`, `dark-keep.den.json`: Den save files (format `leyline-den`, version 1, `kind:
+  "starter"`), positions from the Den's middle; `room.look` wood / stone. They ship in the Host pack with the scripts;
+  setup (`hosting/kit/tools/wuhost/setup.py` `copy_den_starters`) copies them into `state/dens` for a Den, never over the
+  host's own copy, so the launcher's **Start your Den as** opens one like a Saved Den (`host_den_open`, after the first
+  start). Both fit a room of half width 12 or 16 and the default budgets (tests).
+- `den-stamps/garden|market|campfire|dock|house.den.json`: up to 60 props within 40 yards; x ahead of you, y to your
+  left. `"role": "door" | "mailbox" | "house"` marks pieces; the owner's house stamp moves the front door and mailbox.
+- The mark: Excavation Stake (180007) at the stamp's corners and one ahead, spawned unsaved, never a prop, gone on
+  place, cancel, logout or after two minutes. In the browser client a true see-through ghost of every piece is an
+  engine hook (below); the stakes work on any game.
+- Notes: `mod_den_notes` (100 kept); colour codes, links, quotes and backslashes taken out. The save file carries
+  `notes`, `door` and `mailbox` (relative); opening a file brings them back without doubling notes.
+- Knock: anyone within 15 yards of the front door (anywhere without one), once every 30 seconds; the owner (any GM
+  online) gets a pink line and the addon's knock (a sound and a line on screen). It's a message, not a real whisper.
+
+Object ids: only the realm's own catalog (`ov_build.lua` CATALOG, checked against the world database's
+`gameobject_template` when it was added, and dropped at load when this realm hasn't one). How each looks, its size next
+to the others, and the house's inside (the furniture offsets) are **to verify in game**. Not possible from here: a
+night sky or real fog for the Dark keep (the sky is the client's own), flowing water for the brook or under the dock (no
+water object in the catalog), a door that opens (no door object in the catalog: the door is a spot).
+
+**Den of the week**: `stream/denweek.py`. HQ Home has the panel (staff: mod and up; actions `den.week.set`,
+`den.week.clear`, audited): name, maker, one line, up to four https screenshot links, an optional Visit link (https or
+`leyline://realm/<id>`). The site's front page shows a card; `/wrath/art/home/home.json` carries it as `den_week` for the
+launcher's Home slide and for `realm/custom/leyline-fetch.py`, which writes it into `leyline-realms.dat` for the in-game
+Leyline window (a `W:` line). Pictures are never shown or copied: links only.
 
 ## The save file (2026-10-31)
 
@@ -215,12 +302,12 @@ for a Den, and where we are. Object placement only: see "Terrain" below for why 
 | Nudges 0.01 to 10 yards | the Step button: 0.01, 0.1, 0.25, 1, 3, 10 yards (window and Properties' - / + on X, Y, Z) | built |
 | Full rotation | yaw, pitch, roll boxes and - / + by 1, 5, 15, 45 or 90 degrees (`.build tilt yaw|pitch|roll <deg>`, each prop about itself; `.build setrot <yaw> [pitch roll]` for a group). The quaternion is the core's (rotation0-3, `GameObject::SetWorldRotationAngles`) | pitch and roll show only with **mod-sandbox-core** on the realm image (in `sources.lock`, so the kit's image has it once rebuilt from this branch); without it they are refused or dropped with a note, never stored wrong |
 | Scale per object | Size box and - / + by 0.1, 0.1 to 5 in a Den, kept in `mod_builder_prop_scale`, put back on every spawn | built |
-| Snap: grid | edit mode's Snap (0, 0.5, 1, 2 yards) | built (browser client) |
+| Snap: grid | edit mode's Snap (0, 0.5, 1, 2, 5 yards); `.build grid` at your feet | built |
 | Snap: to the floor, onto another object | `.build floor`; **Stack**: `.build stack` (the rest of the selection set on top of the first picked), `stackon <id>`, edit mode's Stack then a click on the prop, from the models' bounds | built (bounds need the host's dbc) |
 | Align | `.build align x|y|z` (on the last picked), `align top|bottom` (faces, from the bounds) | built |
 | Copy, paste, duplicate | Copy, Paste (at your feet or a click), Duplicate (V) | built |
 | Multi-select, group move and rotate | Shift-click, box select, Select mine, groups; every op on the whole selection, one undo entry | built |
-| Undo / redo history | 30 deep each, per character; a GM's rollback from the op log, after restarts too | built |
+| Undo / redo history | 50 deep each, per character; a GM's rollback from the op log, after restarts too | built |
 | Lock | `.build lock / unlock`: no move, turn, size, delete or clear until unlocked (stored, shared by the Den's builders) | built |
 | Hide / show | `.build hide`, `show`, `show all`: out of the world and back, kept on file | built |
 | Measure | `.build measure`: one prop from you (and its height and width from the bounds), or first to last picked: dx, dy, dz, the straight line and on the ground | built |
@@ -283,6 +370,9 @@ Everything below already has its addon side; the client calls the hook or sends 
 10. **A gameobject's display from its fields.** Model props (`.build models`) are the carrier template with
    `GAMEOBJECT_DISPLAYID` (field 8) set to another display: the client must draw the model of the field's display
    (on create and on a values update), not the template's, and fetch that model if the stream hasn't got it.
+11. **Ghost preview.** With a prop picked in the spawn menu (and while a stamp is marked: the home line's `stamp=`),
+   draw the model see-through under the cursor, on the Snap grid, turned by Q / E in 15 degree steps, before the click
+   that places it (`.build spawnat`). The stakes (`.den stamp`) are the fallback every game has.
 
 ## Requests
 

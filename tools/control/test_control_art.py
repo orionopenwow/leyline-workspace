@@ -37,7 +37,8 @@ def check(name, cond, extra=""):
 
 
 for name, ctype in (("wu-theme.css", "text/css"), ("wu-load-orion.webp", "image/webp"), ("wu-corner-br.webp", "image/webp"),
-                    ("wu-dragon-l.webp", "image/webp"), ("Cinzel-SemiBold.woff2", "font/woff2")):
+                    ("wu-dragon-l.webp", "image/webp"), ("Cinzel-SemiBold.woff2", "font/woff2"), ("stone-btn.webp", "image/webp"),
+                    ("window-edge.png", "image/png"), ("marcellus-400.woff2", "font/woff2"), ("leyline-swirl-256.webp", "image/webp")):
     st, h, b = get("/art/" + name)
     with open(os.path.join(ART, name), "rb") as f:
         same = f.read() == b
@@ -53,11 +54,14 @@ check("art: another Host is refused", st == 403)
 # the page: the theme linked, and every id and the script exactly as before
 st, h, b = get("/?t=" + ctl.TOKEN)
 page = b.decode()
-check("page: 200, themed", st == 200 and '<body class="wu">' in page and re.search(r'/art/wu-theme\.css\?v=[0-9a-f]{10}"', page))
+check("page: 200, in the Leyline look (stone, the window edge, the stone button, Marcellus, the mark)", st == 200 and '<body class="ly">' in page
+      and all(f'/art/{a}' in page for a in ("stone-side.webp", "window-edge.png", "stone-btn.webp", "marcellus-400.woff2", "leyline-swirl-256.webp")))
 ids = ["health", "auto", "gmc", "check", "game", "you", "now", "cupd", "fin", "pending", "msg", "go", "run", "con", "hist"]
 check("page: every id the script uses is there once", all(page.count(f'id="{i}"') == 1 for i in ids))
-check("page: the header says Leyline Control with the dragons", 'class="brand wu-brand"><h1>Leyline Control</h1>' in page)
-check("page: Launch all is the gold one", 'class="primary" id="go">Launch all' in page)
+check("page: the header says Leyline Control beside the mark", '<span class="mark" aria-hidden="true"></span><h1>Leyline Control</h1>' in page)
+check("page: one screen: what needs you, Up next, the live output; notes and history folded", 'id="you"' in page and '<h2>Up next</h2>' in page
+      and '<h2>Live output</h2>' in page and page.count('<details class="fold">') == 2 and '<details class="more">' in page)
+check("page: Launch all is the stone one", 'class="primary" id="go">Launch all' in page)
 check("page: Autopilot ON turns gold (the script sets .primary)", 'a.className=s.autopilot?"primary":""' in page)
 check("page: CSP keeps everything on this PC", "default-src 'self'" in h.get("content-security-policy", ""))
 st, h, b = get("/")

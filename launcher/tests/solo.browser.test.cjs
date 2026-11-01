@@ -1,11 +1,11 @@
 // The play bar's realm drop-up (ui/app.js "the play bar's realm picker") for Solo leveling, the game client part and
 // the first-run steps (owner 31 Oct: "add solo leveling and choose client here and make setup flawless and easy";
 // "hopping between client versions should be easy too"), in Chromium with a fake Tauri core:
-//   * Solo leveling beside My Den: Set it up once (the Host page with it picked), Needs your game folder (the add
-//     flow, then setup goes on by itself), Switch from My Den (one realm per PC: asked, then run on the same realm),
-//     On this PC (the invite knock, then PLAY; PLAY again knocks again); not answering: the Host page says Start;
-//   * the Game client part: the clients of the version the realm needs, the picked one marked, Add a game folder…;
-//     none of that version: one plain line; picking a realm of another version takes a client of that version by
+//   * Solo leveling: set up from the Host page (not a picker row; owner 1 Nov), Switch from the Docker Den (one realm
+//     per PC: asked, then run on the same realm), On this PC under Your realms (the invite knock, then PLAY; PLAY again
+//     knocks again); not answering: the Host page says Start; Your Den with no folder: the add flow, saying what for;
+//   * the Game client part: one row, the client of the version the realm needs (its path in the tooltip; a click opens
+//     the client list); none of that version: one plain line and Add a game folder…; picking a realm of another version takes a client of that version by
 //     itself, per realm and per version remembered; a leyline://realm/<id> link picks it with the right client;
 //   * the bar's status line says the same next step; no brand names; screenshots dark and light (SOLO_SHOTS).
 //
@@ -122,43 +122,33 @@ test('a new player (no game folder, no Host pack, no Docker): every row says its
   assert.deepEqual(await bar(page), ['ADD YOUR GAME FOLDER', 'PLAY shows where to find it, or play in your browser']);
   await page.click('#pb-realm-btn');
   const rows = await rrows(page);
-  assert.equal(await row(page, 'My Den'), 'My Den||Needs your game folder|false');
-  assert.equal(await row(page, 'Solo leveling'), 'Solo leveling||Needs your game folder|false');
-  assert.deepEqual(rows.slice(rows.indexOf('# Game client')), ['# Game client', '! This realm plays with 3.3.5a. No 3.3.5a game folder yet.', 'Add a game folder…|||false']);
+  assert.equal(await row(page, 'Your Den'), 'Your Den||Needs your game folder|false');
+  assert.equal(await row(page, 'Solo leveling'), undefined, 'Solo leveling is on the Host page, not in the picker');
+  assert.deepEqual(rows.slice(-2), ['! This realm plays with 3.3.5a. No 3.3.5a game folder yet.', 'Add a game folder…|||false']);
   await shot(page, 'first-run-dropup-dark');
-  // Solo leveling with no folder: the add flow, and it says what for
-  await page.click('#pb-rmenu .pb-solo');
-  assert.equal(await pageOn(page), 'page-clients');
-  assert.match(await page.textContent('#cl-status'), /Solo leveling plays with your own 3\.3\.5a game folder/);
-  // the folder is added: setup goes on by itself, to the Host page with Solo leveling picked (Host pack, Docker steps first)
-  await page.evaluate((w) => { window.__st.settings.clients.push(w); window.__st.settings.selected_client = w.id; return refresh(); }, WRATH);
-  await page.waitForFunction(() => document.querySelector('#page-host.on') && document.querySelector('.hc-rs[data-profile="solo"].on'));
-  assert.deepEqual((await callsOf(page, 'host_choose'))[0], { profile: 'solo', clientId: 'c335a-1' });
-  assert.equal(await page.textContent('#hc-start'), 'Start Solo leveling');
-  assert.ok(await page.isVisible('#hc-get-pack'), 'step 1: the Host pack');
-  assert.match(await page.textContent('.hc-ready'), /Get Docker/, 'step 2: Docker, in plain words');
-  assert.match(await page.textContent('.hc-den'), /Helper bots/);
-  assert.equal(await page.isVisible('#hc-vis'), false, 'always private: no public choice');
-  await shot(page, 'first-run-host-solo-dark');
+  // Your Den with no folder: the add flow, and it says what for
+  await page.click('#pb-rmenu .pb-den');
+  await page.waitForFunction(() => document.querySelector('#page-clients.on'));
+  assert.match(await page.textContent('#cl-status'), /Your Den plays with your own 3\.3\.5a game folder/);
   assert.doesNotMatch(await page.evaluate(() => document.body.innerText), BRANDS);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
 
-test('Solo leveling not set up: Set it up once opens the Host page with it picked; nothing starts', async () => {
+test('Solo leveling, from the Host page: it picked there with its facts; nothing starts', async () => {
   for (const scheme of ['dark', 'light']) {
     const { page, ctx, errors } = await open({ kit: KIT(null) }, scheme);
     await page.click('#pb-realm-btn');
-    assert.equal(await row(page, 'Solo leveling'), 'Solo leveling||Set it up once|false');
-    assert.equal(await page.locator('#pb-rmenu .pb-solo .pb-solo-ic svg').count(), 1, 'its sword mark');
+    assert.equal(await row(page, 'Solo leveling'), undefined);
     await shot(page, 'dropup-' + scheme);
-    await page.click('#pb-rmenu .pb-solo');
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => { window.LeylineNav.show('host'); document.dispatchEvent(new CustomEvent('leyline:host-ruleset', { detail: { profile: 'solo' } })); });
     assert.equal(await pageOn(page), 'page-host');
     await page.waitForFunction(() => document.querySelector('.hc-rs[data-profile="solo"].on'));
     assert.equal(await page.inputValue('#hc-name'), 'Solo leveling');
     assert.match(await page.textContent('.hc-rs[data-profile="solo"] .hc-rs-l'), /Helper bots fill your group/);
     if (await page.isVisible('#hc-gm')) await page.fill('#hc-gm', 'soloone');   // a Mac or Linux kit asks for your account name
-  assert.match(await page.textContent('#page-host'), /Then pick Solo leveling in the play bar/);
+    assert.match(await page.textContent('#page-host'), /Then pick Solo leveling in the play bar/);
     assert.equal((await callsOf(page, 'host_start_quiet')).length, 0);
     await shot(page, 'host-solo-' + scheme);
     assert.deepEqual(errors, []);
@@ -166,11 +156,12 @@ test('Solo leveling not set up: Set it up once opens the Host page with it picke
   }
 });
 
-test('Solo leveling on this PC: the row plays it (knock, then PLAY); PLAY again knocks again; the bar names it', async () => {
+test('Solo leveling on this PC: under Your realms; the row plays it (knock, then PLAY); PLAY again knocks again; the bar names it', async () => {
   const { page, ctx, errors } = await open({ kit: KIT('solo', 'Solo leveling'), clients: [VANILLA, WRATH] });
   await page.click('#pb-realm-btn');
-  assert.equal(await row(page, 'Solo leveling'), 'Solo leveling|3.3.5a|On this PC|false');
-  assert.equal(await row(page, 'My Den'), 'My Den||Switch from Solo leveling|false', 'one realm per PC: the other offers to switch');
+  const rows = await rrows(page);
+  assert.deepEqual(rows.slice(rows.indexOf('# Your realms'), rows.indexOf('# Your realms') + 2), ['# Your realms', 'Solo leveling|3.3.5a|On this PC|false']);
+  assert.equal(await row(page, 'Your Den'), 'Your Den||Switch from Solo leveling|false', 'one realm per PC: the Docker Den would take its place');
   await page.click('#pb-rmenu .pb-solo');
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'play'));
   assert.deepEqual(await callsOf(page, 'join_invite'), [{ client: 'c335a-1', link: 'https://relay.openvanilla.app/join/abcdefghijk2345a#k3y' }], 'the 3.3.5a folder, not the picked 1.12.1 one');
@@ -184,6 +175,7 @@ test('Solo leveling on this PC: the row plays it (knock, then PLAY); PLAY again 
   assert.equal((await callsOf(page, 'join_invite')).length, 2, 'PLAY knocks again first');
   await page.click('#pb-realm-btn');
   assert.equal(await row(page, 'Solo leveling'), 'Solo leveling|3.3.5a|On this PC|true');
+  assert.equal((await rrows(page)).filter((x) => x.startsWith('Solo leveling|')).length, 1, 'once');
   assert.ok(!(await rrows(page)).some((x) => x.startsWith('relay.openvanilla.app:40007')), 'not again as an address');
   await shot(page, 'solo-playing-dark');
   assert.deepEqual(errors, []);
@@ -202,11 +194,10 @@ test('Solo leveling on this PC but stopped: PLAY never fails silently: the Host 
   await ctx.close();
 });
 
-test('My Den on this PC, Solo leveling picked: one realm per PC, so it asks, then switches the same realm', async () => {
+test('the Docker Den on this PC, Solo leveling asked for: one realm per PC, so it asks, then switches the same realm', async () => {
   const { page, ctx, errors } = await open({ kit: KIT('den', 'My Den') });
-  await page.click('#pb-realm-btn');
-  assert.equal(await row(page, 'Solo leveling'), 'Solo leveling||Switch from My Den|false');
-  await page.click('#pb-rmenu .pb-solo');
+  const ask = () => page.evaluate(() => { window.LeylineNav.show('host'); document.dispatchEvent(new CustomEvent('leyline:host-ruleset', { detail: { profile: 'solo' } })); });
+  await ask();
   await page.waitForSelector('#hc-confirm[open]');
   assert.equal(await page.textContent('#hc-confirm-title'), 'Switch to Solo leveling?');
   assert.match(await page.textContent('#hc-confirm-body'), /one realm at a time, and it runs My Den now/);
@@ -214,9 +205,7 @@ test('My Den on this PC, Solo leveling picked: one realm per PC, so it asks, the
   await page.click('#hc-confirm-no');
   await page.waitForFunction(() => /Kept My Den/.test(document.querySelector('#page-host').textContent));
   assert.equal((await callsOf(page, 'host_start_quiet')).length, 0, 'no: nothing changes');
-  await page.click('.nav[data-page="play"]');
-  await page.click('#pb-realm-btn');
-  await page.click('#pb-rmenu .pb-solo');
+  await ask();
   await page.waitForSelector('#hc-confirm[open]');
   await page.click('#hc-confirm-yes');
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'host_start_quiet'));
@@ -226,27 +215,29 @@ test('My Den on this PC, Solo leveling picked: one realm per PC, so it asks, the
   await ctx.close();
 });
 
-test('the game client part: the version the realm needs, picked by itself when you hop; per realm and per version remembered', async () => {
+test('the game client part: one row, the version the realm needs, picked by itself when you hop; per realm and per version remembered', async () => {
   const { page, ctx, errors } = await open({ clients: [WRATH, VANILLA, WRATH2] });
+  const pick = (name) => page.evaluate((n) => pickRealm(realmsCache.find((r) => r.name === n)), name);   // as the Realms page or a link does
   await page.click('#pb-realm-btn');
   let rows = await rrows(page);
-  assert.deepEqual(rows.slice(rows.indexOf('# Game client')), ['# Game client', 'My Wrath|3.3.5a|C:\\Games\\Wrath|true', 'Wrath copy|3.3.5a|D:\\Wrath2|false', 'Add a game folder…|||false'],
-    'only the 3.3.5a folders for a 3.3.5a realm');
-  // a 1.12.1 realm: My Vanilla by itself, its chip in the picker
+  assert.deepEqual(rows.slice(-1), ['My Wrath|3.3.5a|Game client|false'], 'one row: the 3.3.5a folder for a 3.3.5a realm');
+  assert.equal(await page.getAttribute('#pb-rmenu .pb-client-opt', 'title'), 'My Wrath · C:\\Games\\Wrath\nPick another game client or add a folder');
+  // a 1.12.1 realm (the lineup): My Vanilla by itself, its chip in the picker
   await page.click('#pb-rmenu >> text=Vanilla Remastered');
   assert.equal(await page.inputValue('#play-client'), 'c1121-1');
   assert.equal(await page.textContent('#pb-client-ver'), '1.12.1');
   assert.equal(await page.textContent('#pb-realm-ver'), '1.12.1');
   assert.equal((await bar(page))[0], 'READY TO PLAY');
-  // back to the official realm: the 3.3.5a one used there
   await page.click('#pb-realm-btn');
+  assert.deepEqual((await rrows(page)).slice(-1), ['My Vanilla|1.12.1|Game client|false']);
+  // back to the official realm: the 3.3.5a one used there
   await page.click('#pb-rmenu >> text=Wrath Unleashed');
   assert.equal(await page.inputValue('#play-client'), 'c335a-1');
-  // Busy Den with the second 3.3.5a folder, picked here; remembered for Busy Den only
+  // Busy Den with the second 3.3.5a folder, picked from the client row's list; remembered for Busy Den only
+  await pick('Busy Den');
   await page.click('#pb-realm-btn');
-  await page.click('#pb-rmenu >> text=Busy Den');
-  await page.click('#pb-realm-btn');
-  await page.click('#pb-rmenu .pb-client-opt >> text=Wrath copy');
+  await page.click('#pb-rmenu .pb-client-opt');
+  await page.click('#pb-menu .pb-mine >> text=Wrath copy');
   assert.equal(await page.inputValue('#play-client'), 'c335a-2');
   await page.click('#pb-realm-btn');
   await page.click('#pb-rmenu >> text=Wrath Unleashed');
@@ -255,12 +246,11 @@ test('the game client part: the version the realm needs, picked by itself when y
   await page.click('#pb-rmenu >> text=Busy Den');
   assert.equal(await page.inputValue('#play-client'), 'c335a-2', 'Busy Den keeps its own');
   // a 2.4.3 realm with no 2.4.3 folder: one plain line and Add a game folder…; the bar says the same
-  await page.click('#pb-realm-btn');
-  await page.click('#pb-rmenu >> text=Outland Rest');
+  await pick('Outland Rest');
   assert.deepEqual(await bar(page), ['THIS SERVER NEEDS 2.4.3', 'Add a 2.4.3 folder']);
   await page.click('#pb-realm-btn');
   rows = await rrows(page);
-  assert.deepEqual(rows.slice(rows.indexOf('# Game client')), ['# Game client', '! This realm plays with 2.4.3. No 2.4.3 game folder yet.', 'Add a game folder…|||false']);
+  assert.deepEqual(rows.slice(-2), ['! This realm plays with 2.4.3. No 2.4.3 game folder yet.', 'Add a game folder…|||false']);
   await shot(page, 'client-none-dark');
   await page.click('#pb-rmenu .pb-add-client');
   assert.ok(await page.isVisible('#pb-menu') || (await pageOn(page)) === 'page-clients', 'the existing add flow');

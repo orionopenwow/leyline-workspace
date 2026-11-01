@@ -6,7 +6,7 @@
 //
 // The gallery: first, the launch slide (Join the official realm, App.HANGOUT: Play now and Join the Discord, with the official
 // lineup, what's on and the latest forum threads beside it); then one slide per highlight (the featured mode, what's
-// new, browser play with the realms on the network, hosting, your Den, a Workshop mod with its screenshots), each a big
+// new, browser play with the realms on the network, hosting, a Workshop mod with its screenshots), each a big
 // title, one short line, a row of live counts and one button, over the owner's in-game screenshot (fetched from the
 // site, a plain gradient until it is in or when there is none) and beside a glass panel; a slide
 // without its data is left out. It moves on every 7 s, stops while the pointer is over it or something in it has
@@ -84,11 +84,8 @@
     // (d) hosting
     out.push({ key: "host", kicker: "Host", title: "Host a realm, up 24/7", line: "Vanilla+ or your own rules, on the Leyline network.",
       chips: hostChips, photo: true, side: hostSteps, cta: "Start hosting", run: () => go("host") });
-    // (e) your Den (docs/DEN.md): the Host page with Make my Den picked, as the play bar's My Den does when there is none
-    // TODO(owner): the Den slide's kicker, title, line and chips, his words.
-    out.push({ key: "den", kicker: "Your own room", title: "Make your Den", line: "A plain white room on your PC. Build it up in edit mode, then invite your friends.",
-      chips: () => [{ t: "Private, invite only" }, { t: "Up to 10 friends" }, { t: "Hundreds of props" }],
-      photo: true, side: denSteps, cta: "Make my Den", run: makeDen });
+    // (e) Your Den has no slide (owner 1 Nov: one way in, less redundant): the side menu, the play bar's realm picker
+    // and Home's one banner below (#hm-den, den.js) all call the same one click (window.LeylineDen.go).
     // (e2) Den of the week (stream/denweek.py: staff pick it in HQ; it rides in the site's home.json): a player's Den,
     // its maker and one line. Screenshots are links on the website only; Visit shows a leyline://realm/ Den on Realms.
     if (denWeek) {
@@ -106,10 +103,6 @@
     return out;
   }
   let artFailed = false;
-  function makeDen() {
-    go("host");
-    document.dispatchEvent(new CustomEvent("leyline:host-ruleset", { detail: { profile: "den" } }));
-  }
 
   // ---- live chips above the kicker: counts from the realm list and the Workshop (a reserved row, so nothing moves)
   function hangoutChips() {
@@ -199,13 +192,6 @@
     img.src = a.url;
     s.append(img);
     if (a.credit) s.append(el("small", "hs-credit", a.credit));
-  }
-
-  // the Den slide's right side: three steps, as the host slide's
-  function denSteps() {
-    // TODO(owner): the three step names
-    return stepsCard("Your Den in three steps", [["A white room", "Yours, on this PC"], ["Edit mode", "Place, move and stack props"],
-      ["Invite friends", "Send them the Den's link"]]);
   }
 
   const SLASH = { minigolf: "/golf" };   // the rest start from /modes (the Hangout's line); TODO(owner): each mode's own command

@@ -123,7 +123,8 @@
     sw.append(top);   // owner 1 Nov 01:04: "less info panels, straight to the point": no lede, small template tiles
     const grid = mk("div", "hx-grid");
     grid.setAttribute("role", "list");
-    for (const m of modes || []) grid.append(cardOf(m));
+    // no Den template here (owner 1 Nov: one way in): Your Den has its own page (den.js); a fork of it is yours and shows
+    for (const m of (modes || []).filter((x) => x.own || x.profile !== "den")) grid.append(cardOf(m));
     if (!(modes || []).length) grid.append(mk("p", "hc-fine", "Loading the modes…"));
     sw.append(grid, mk("p", "status hx-status"));
     root.append(sw);

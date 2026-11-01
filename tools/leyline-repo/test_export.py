@@ -107,6 +107,8 @@ try:
           all(s in readme for s in ("leyline host", "relay", "Open source", "browser",
                                     "https://github.com/orionopenwow/WrathUnleashed", "## Layout", "## Quick start")))
     check("README: no brand words", not ex.brand_hits("README.md", readme.encode()))
+    shots = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", readme)
+    check("README: its launcher screenshots are exported with it", shots and all((out1 / p).is_file() for p in shots))
     gi = (out1 / ".gitignore").read_text()
     check(".gitignore: state, .env, keys, game data", all(s in gi for s in ("**/state/", ".env", "*.pem", "*.mpq", "*.blp")))
     check("--list-exec: the leyline command and the shell scripts", "hosting/kit/leyline" in res["exec"]

@@ -9,6 +9,9 @@ wu-play are ever asked.
     python3 -I gamedata-caddy.py add-vr    <Caddyfile> <host>         the same for the Vanilla Remastered page's site
     python3 -I gamedata-caddy.py remove-vr <Caddyfile>                (hosting/vanilla-remastered/vr-site-up.sh's block:
     python3 -I gamedata-caddy.py status-vr <Caddyfile>                 /data, /data/* answer 410 there too)
+    python3 -I gamedata-caddy.py add-sv    <Caddyfile> <host>         the same for Azeroth Survivors' site
+    python3 -I gamedata-caddy.py remove-sv <Caddyfile>                (hosting/survivors/sv-site-up.sh's block: /data,
+    python3 -I gamedata-caddy.py status-sv <Caddyfile>                 the manifests 410, every page a "resting" page)
 
 Exit codes: 0 done, 3 no streaming site block in the Caddyfile (then nothing on that site is served at all, so
 there is nothing to switch), 2 a broken Caddyfile (a start marker without its end marker).
@@ -153,18 +156,94 @@ def vr_status(s: str) -> str:
     return "on" if VR_BEGIN in s else "off"
 
 
+# Azeroth Survivors (docs/SURVIVORS.md): its own site block, made by hosting/survivors/sv-site-up.sh. The same switch:
+# off puts this block first inside it, so the game files and the manifests answer 410 and every page but the licences
+# answers a short "resting" page (the game is nothing without its files). Its own markers, so each status stays exact.
+SV_SITE_BEGIN = "# >>> Azeroth Survivors site (sv-site-up.sh)"
+SV_SITE_END = "# <<< Azeroth Survivors site"
+SV_BEGIN = "\t# >>> Survivors game data killswitch (gamedata-switch.sh)"
+SV_END = "\t# <<< Survivors game data killswitch"
+SV_ROUTES = ("/data", "/data/*", "/boot-manifest.json", "/world-manifest.json")
+SV_BODY = ('{"error":"gamedata_off","gamedata_streaming":false,'
+           '"message":"Azeroth Survivors is resting. Please check back soon."}')
+# No braces (Caddy placeholders) and no backticks (the respond quoting) in here: style attributes only.
+SV_RESTING = ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
+              '<meta name="viewport" content="width=device-width,initial-scale=1"><title>Azeroth Survivors</title></head>'
+              '<body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0e1a;color:#e8ecff;'
+              'font:16px/1.5 system-ui,sans-serif;text-align:center"><main style="padding:24px;max-width:520px">'
+              '<h1 style="font-size:28px;margin:0 0 8px">Azeroth Survivors is resting</h1>'
+              '<p style="margin:0 0 16px">The game is taking a short rest. Please check back soon.</p>'
+              '<p style="margin:0"><a style="color:#8fd3ff" href="https://play.openvanilla.app/wrath/survivors">Back to Leyline</a>'
+              '</p></main></body></html>')
+
+
+def sv_block() -> str:
+    return (f"{SV_BEGIN}: no game data from this server, the game rests.\n"
+            "\t# Undo: bash /srv/wrath/stream/gamedata-switch.sh on\n"
+            f"\t@gamedata_off_sv path {' '.join(SV_ROUTES)}\n"
+            "\thandle @gamedata_off_sv {\n"
+            '\t\theader Content-Type "application/json; charset=utf-8"\n'
+            '\t\theader Cache-Control "no-store"\n'
+            f"\t\trespond `{SV_BODY}` 410\n"
+            "\t}\n"
+            "\t@resting_sv not path /licenses/*\n"
+            "\thandle @resting_sv {\n"
+            '\t\theader Content-Type "text/html; charset=utf-8"\n'
+            '\t\theader Cache-Control "no-store"\n'
+            f"\t\trespond `{SV_RESTING}` 503\n"
+            "\t}\n"
+            f"{SV_END}\n")
+
+
+def sv_strip(s: str) -> str:
+    while SV_BEGIN in s:
+        i = s.index(SV_BEGIN)
+        j = s.find(SV_END, i)
+        if j < 0:
+            raise ValueError("the Survivors killswitch start marker has no end marker")
+        j = s.find("\n", j)
+        s = s[:i] + (s[j + 1:] if j >= 0 else "")
+    return s
+
+
+def sv_add(s: str, host: str) -> str:
+    s = sv_strip(s)
+    if SV_SITE_BEGIN not in s:
+        raise LookupError("no Azeroth Survivors site block")
+    i = s.index(SV_SITE_BEGIN)
+    j = s.find(SV_SITE_END, i)
+    if j < 0:
+        raise ValueError("the Azeroth Survivors site block has no end marker")
+    opening = f"\n{host} {{\n"
+    k = s.find(opening, i, j)
+    if k < 0:
+        raise LookupError(f"the Azeroth Survivors block has no '{host} {{' line")
+    k += len(opening)
+    return s[:k] + sv_block() + s[k:]
+
+
+def sv_status(s: str) -> str:
+    if SV_SITE_BEGIN not in s:
+        return "no-site"
+    return "on" if SV_BEGIN in s else "off"
+
+
 def main(argv: list[str]) -> int:
-    if len(argv) >= 3 and argv[1] in ("add-vr", "remove-vr", "status-vr"):
+    if len(argv) >= 3 and argv[1] in ("add-vr", "remove-vr", "status-vr", "add-sv", "remove-sv", "status-sv"):
         with open(argv[2], encoding="utf-8") as f:
             s = f.read()
+        sv = argv[1].endswith("-sv")
         try:
-            if argv[1] == "status-vr":
-                print(vr_status(s))
+            if argv[1] in ("status-vr", "status-sv"):
+                print(sv_status(s) if sv else vr_status(s))
                 return 0
-            if argv[1] == "add-vr" and len(argv) < 4:
-                print("add-vr needs the host", file=sys.stderr)
+            if argv[1] in ("add-vr", "add-sv") and len(argv) < 4:
+                print(f"{argv[1]} needs the host", file=sys.stderr)
                 return 64
-            new = vr_add(s, argv[3]) if argv[1] == "add-vr" else vr_strip(s)
+            if sv:
+                new = sv_add(s, argv[3]) if argv[1] == "add-sv" else sv_strip(s)
+            else:
+                new = vr_add(s, argv[3]) if argv[1] == "add-vr" else vr_strip(s)
         except LookupError as e:
             print(f"  {e}: nothing to change on that site", file=sys.stderr)
             return 3

@@ -266,7 +266,7 @@ class BuildRealm(unittest.TestCase):
             self.assertNotIn(secret, out)
         # containers: no published port, the main realm's images, caps, the save folder, the scripts read-only
         world = self.read("args_ov-ac-build-world")
-        for need in ("--memory 1024m", "--env-file " + os.path.join(self.dir, "world.env"), "--label leyline.build=1",
+        for need in ("--memory 1536m", "--env-file " + os.path.join(self.dir, "world.env"), "--label leyline.build=1",
                      "type=volume,src=ov-client-data,dst=/azerothcore/env/dist/data,readonly",
                      f"type=bind,src={self.wrath}/custom/lua_scripts,dst=/azerothcore/lua_scripts,readonly",
                      f"type=bind,src={self.dir}/dens,dst=/azerothcore/dens", "ov/ac-wotlk-worldserver:custom"):

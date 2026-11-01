@@ -447,8 +447,8 @@ async fn den_play_lite(core: State<'_, Core>, client: String) -> Result<SoloPlay
     }
     let game = profile.path.clone();
     blocking(move || {
-        let l = lite::Binary::find(&crate::settings::app_dir());
-        l.start_for(Some(&game))?;
+        let l = lite::Binary::find(&crate::settings::app_dir()).with_client(&game);
+        l.start()?;
         for _ in 0..50 {
             if l.status().running {
                 return Ok(());

@@ -32,7 +32,7 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
   copy of what was there is saved as `backup`). Each id opens once, also after a restart (`<dens>/.open-done`).
 - **Stamps** come from `--stamps` (default `den-stamps` beside the program); the six in this repo are also built in.
 - **`--client <game folder>`** (optional): `.den mods` then also lists what the launcher's mod manager put in that
-  game (`<game>/Leyline/mods.json`). The launcher's `host/lite.rs` doesn't pass it yet.
+  game (`<game>/Leyline/mods.json`). The launcher's `host/lite.rs` passes the game folder Your Den plays with.
 
 ## In the game
 
@@ -216,6 +216,6 @@ Linux x86-64. Note for Windows builds: `libz-sys` builds zlib with the C compile
    `--dens <dir> --bind 127.0.0.1` and honours `open.json`.
 2. The launcher shows the password (`den`) on the Your Den page, or passes its own `--password` and shows that.
 3. Try it with a real client on a PC with the game (the unknowns above), and fix what it wants.
-4. Then: `.den home`, the stamp mark (stakes), and model props tested. Building from the assistant (`companion-place.json`)
-   and the launcher passing `--client`.
+4. Then: `.den home`, the stamp mark (stakes), and model props tested. Building from the assistant (`companion-place.json`).
+   The launcher passes `--client` since 1 Nov.
 5. Later: move to the workspace once stable; the browser client could connect too (out of scope here).

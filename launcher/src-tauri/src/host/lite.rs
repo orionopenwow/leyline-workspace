@@ -30,6 +30,19 @@ pub const ACCOUNT: &str = "DEN";
 pub const PASSWORD: &str = "den";
 /// The one realm on Den Lite's realm list (labs/den-lite Config::realm_name).
 pub const REALM: &str = "Your Den";
+/// `<den dir>/den-lite.alive`: "<pid> <unix seconds> <login port>", written by Den Lite every 2 seconds. It tells a
+/// Den Lite left running from an earlier launcher (not this launcher's child) from another server on the login port.
+pub const ALIVE: &str = "den-lite.alive";
+/// `<den dir>/den-lite.stop`: Den Lite stops when this file appears (how a Den Lite that isn't our child is stopped).
+pub const STOP: &str = "den-lite.stop";
+
+/// Den Lite's heartbeat in `den_dir` is under 10 seconds old.
+pub fn beat_fresh(den_dir: &Path) -> bool {
+    let Ok(t) = std::fs::read_to_string(den_dir.join(ALIVE)) else { return false };
+    let Some(at) = t.split_whitespace().nth(1).and_then(|a| a.parse::<u64>().ok()) else { return false };
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    now.abs_diff(at) < 10
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct LiteStatus {
@@ -82,8 +95,7 @@ pub fn candidates(app_dir: &Path, env: Option<&str>, launcher_dir: Option<&Path>
     v
 }
 
-/// The launch line for `exe` on `den_dir`; with `client`, the game folder it plays with (`.den mods` lists the
-/// launcher's mods in it).
+/// The launch line for `exe` on `den_dir`; with the game folder, `.den mods` also lists the launcher's mods in it.
 pub fn command_line(den_dir: &Path, client: Option<&Path>) -> Vec<String> {
     let mut v = vec!["--dens".into(), den_dir.display().to_string(), "--bind".into(), ADDRESS.into(), "--password".into(), PASSWORD.into()];
     if let Some(c) = client {
@@ -103,6 +115,8 @@ static CHILD: Mutex<Option<Child>> = Mutex::new(None);
 pub struct Binary {
     pub exe: Option<PathBuf>,
     pub root: PathBuf,
+    /// The game folder it is started for (`--client`), if known.
+    pub client: Option<PathBuf>,
 }
 
 impl Binary {
@@ -110,31 +124,13 @@ impl Binary {
         let env = std::env::var("LEYLINE_DEN_LITE").ok();
         let here = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf));
         let exe = candidates(app_dir, env.as_deref(), here.as_deref()).into_iter().find(|p| p.is_file());
-        Binary { exe, root: root(app_dir) }
+        Binary { exe, root: root(app_dir), client: None }
     }
 
-    /// Start it (nothing happens when it already runs), with the game folder it plays with.
-    pub fn start_for(&self, client: Option<&Path>) -> Result<(), String> {
-        let exe = self.exe.as_ref().ok_or("Den Lite isn't on this PC yet.")?;
-        if Self::child_alive() || port_answers(LOGIN_PORT) {
-            return Ok(());
-        }
-        let dir = self.den_dir();
-        std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't make the Den folder: {e}"))?;
-        let mut cmd = Command::new(exe);
-        cmd.args(command_line(&dir, client)).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
-        #[cfg(windows)]
-        {
-            // no console window next to the game
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            cmd.creation_flags(CREATE_NO_WINDOW);
-        }
-        let child = cmd.spawn().map_err(|e| format!("Den Lite didn't start: {e}"))?;
-        if let Ok(mut g) = CHILD.lock() {
-            *g = Some(child);
-        }
-        Ok(())
+    /// Started for this game folder: `.den mods` lists the launcher's mods in it.
+    pub fn with_client(mut self, game: &Path) -> Binary {
+        self.client = Some(game.to_path_buf());
+        self
     }
 
     fn child_alive() -> bool {
@@ -156,7 +152,29 @@ impl DenLite for Binary {
     }
 
     fn start(&self) -> Result<(), String> {
-        self.start_for(None)
+        let exe = self.exe.as_ref().ok_or("Den Lite isn't on this PC yet.")?;
+        let dir = self.den_dir();
+        if Self::child_alive() || beat_fresh(&dir) {
+            return Ok(()); // ours, or one left running from before the launcher was closed
+        }
+        if port_answers(LOGIN_PORT) {
+            return Err(format!("Another server on this PC is using the login port ({LOGIN_PORT}), so your Den can't start. Stop that server, then press Play again."));
+        }
+        std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't make the Den folder: {e}"))?;
+        let mut cmd = Command::new(exe);
+        cmd.args(command_line(&dir, self.client.as_deref())).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        #[cfg(windows)]
+        {
+            // no console window next to the game
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+        let child = cmd.spawn().map_err(|e| format!("Den Lite didn't start: {e}"))?;
+        if let Ok(mut g) = CHILD.lock() {
+            *g = Some(child);
+        }
+        Ok(())
     }
 
     fn stop(&self) -> Result<(), String> {
@@ -166,6 +184,18 @@ impl DenLite for Binary {
                 let _ = c.wait();
             }
         }
+        // one left running from an earlier launcher: asked to stop through its folder, then a few seconds to go
+        let dir = self.den_dir();
+        if beat_fresh(&dir) {
+            std::fs::write(dir.join(STOP), b"").map_err(|e| format!("Couldn't stop Den Lite: {e}"))?;
+            for _ in 0..30 {
+                if !port_answers(LOGIN_PORT) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            let _ = std::fs::remove_file(dir.join(ALIVE));
+        }
         Ok(())
     }
 
@@ -173,7 +203,7 @@ impl DenLite for Binary {
         let available = self.available();
         LiteStatus {
             available,
-            running: available && Self::child_alive() && port_answers(LOGIN_PORT),
+            running: available && (Self::child_alive() || beat_fresh(&self.den_dir())) && port_answers(LOGIN_PORT),
             address: ADDRESS.into(),
             account: ACCOUNT.into(),
             password: PASSWORD.into(),
@@ -198,7 +228,7 @@ mod tests {
         assert_eq!(c[1], app.path().join("den-lite").join("bin").join(exe_name()));
         assert_eq!(c[2], Path::new("/apps/leyline").join(exe_name()));
         assert_eq!(candidates(app.path(), Some(""), None).len(), 1, "an empty override is no override");
-        let b = Binary { exe: None, root: root(app.path()) };
+        let b = Binary { exe: None, root: root(app.path()), client: None };
         assert!(!b.available());
         assert!(b.start().unwrap_err().contains("isn't on this PC"));
         let s = b.status();
@@ -208,8 +238,29 @@ mod tests {
     }
 
     #[test]
+    fn a_den_lite_from_an_earlier_launcher_is_known_by_its_heartbeat() {
+        let app = tempfile::tempdir().unwrap();
+        let b = Binary { exe: Some(app.path().join("den-lite")), root: root(app.path()), client: None };
+        let dir = b.den_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!beat_fresh(&dir), "no heartbeat");
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        std::fs::write(dir.join(ALIVE), format!("4242 {now} 3724\n")).unwrap();
+        assert!(beat_fresh(&dir));
+        assert!(b.start().is_ok(), "it runs already: nothing to start");
+        std::fs::write(dir.join(ALIVE), format!("4242 {} 3724\n", now - 60)).unwrap();
+        assert!(!beat_fresh(&dir), "a minute old: it stopped (or the PC restarted)");
+        std::fs::write(dir.join(ALIVE), "garbage").unwrap();
+        assert!(!beat_fresh(&dir));
+        // stop: the stop file for the one that isn't ours
+        std::fs::write(dir.join(ALIVE), format!("4242 {now} 3724\n")).unwrap();
+        b.stop().unwrap();
+        assert!(dir.join(STOP).exists() && !dir.join(ALIVE).exists());
+    }
+
+    #[test]
     fn its_command_line() {
         assert_eq!(command_line(Path::new("/d"), None), ["--dens", "/d", "--bind", "127.0.0.1", "--password", "den"]);
-        assert_eq!(command_line(Path::new("/d"), Some(Path::new("/g"))).last().map(String::as_str), Some("/g"));
+        assert_eq!(command_line(Path::new("/d"), Some(Path::new("/games/my game")))[6..], ["--client", "/games/my game"], "the game folder for .den mods");
     }
 }

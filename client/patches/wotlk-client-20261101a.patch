@@ -1,0 +1,644 @@
+diff --git a/crates/benilla-app/src/cursor.rs b/crates/benilla-app/src/cursor.rs
+index 60a01bca..a64f5479 100644
+--- a/crates/benilla-app/src/cursor.rs
++++ b/crates/benilla-app/src/cursor.rs
+@@ -314,7 +314,7 @@ mod other {
+         mut commands: Commands,
+         cursor: Res<super::DisplayedCursor>,
+         cursors: Option<Res<CursorImages>>,
+-        script: Option<NonSend<benilla_ui::script::UiScript>>,
++        mut script: Option<NonSendMut<benilla_ui::script::UiScript>>,
+         world_assets: Option<ResMut<WorldAssets>>,
+         mut images: ResMut<Assets<Image>>,
+         mut payload_cursors: ResMut<PayloadCursorImages>,
+@@ -328,11 +328,24 @@ mod other {
+         let Some(window) = window else {
+             return;
+         };
++        let held = script.as_ref().is_some_and(|s| s.cursor_payload().is_some());
+         let held_icon = script
+             .as_ref()
+             .and_then(|s| payload_icon(s, screen.covering()));
++        // Tell the VM whether the held payload is what the mouse shows: an item held under the
++        // plain arrow never raises the delete confirm (`world_drop_click`).
++        let mut report = |shown: bool| {
++            if let Some(s) = script.as_mut() {
++                s.set_cursor_icon_shown(shown);
++            }
++        };
++        if !held {
++            // Nothing held: an icon that failed while still streaming in gets a fresh try next time.
++            decode_failed.clear();
++        }
+         if let Some(icon) = held_icon {
+             if last_set.as_deref() == Some(icon.as_str()) {
++                report(true);
+                 return; // already showing this icon
+             }
+             if !payload_cursors.0.contains_key(&icon) && !decode_failed.contains(&icon) {
+@@ -353,10 +366,13 @@ mod other {
+             if let Some(handle) = payload_cursors.0.get(&icon) {
+                 set_custom_cursor(&mut commands, *window, handle.clone());
+                 *last_set = Some(icon);
++                report(true);
+                 return;
+             }
+             // Decode failed: fall through to the mode cursor.
+         }
++        // No icon, an icon that did not decode, or the loading cover: the plain arrow shows.
++        report(false);
+ 
+         let Some(cursors) = cursors else {
+             return;
+diff --git a/crates/benilla-app/src/vplates.rs b/crates/benilla-app/src/vplates.rs
+index 44d5b771..24583425 100644
+--- a/crates/benilla-app/src/vplates.rs
++++ b/crates/benilla-app/src/vplates.rs
+@@ -119,8 +119,9 @@ const SKULL_SIZE: f32 = 0.01;
+ const RAID_ICON_SIZE: f32 = 0.02;
+ 
+ /// The modern look, in logical px (uiScale-blind like the rest): a 110x12 bar in a one-pixel
+-/// border, a cast bar below, the name and level above and beside.
+-const MODERN_PLATES: bool = true;
++/// border, a cast bar below, the name and level above and beside. Off: the stock plate (the
++/// `Nameplate-Border` art over the reaction-tinted fill) is the default look (owner, 1 Nov).
++const MODERN_PLATES: bool = false;
+ const MODERN_BAR: Vec2 = Vec2::new(110.0, 12.0);
+ const MODERN_BORDER_PX: f32 = 1.0;
+ const MODERN_CAST_H: f32 = 8.0;
+@@ -598,8 +599,9 @@ fn drive_vplates(
+         } else {
+             world.backport.non_target_alpha
+         };
+-        // The modern look colours an enemy player's bar by class; NPCs keep the reaction colour.
+-        let tint = match (MODERN_PLATES && is_player && !friendly)
++        // An enemy player's bar takes its class colour (3.3.5a's class-coloured plates), in either
++        // look; NPCs keep the reaction colour.
++        let tint = match (is_player && !friendly)
+             .then(|| store.and_then(|s| s.0.unit_class()).and_then(class_colour))
+             .flatten()
+         {
+@@ -1124,6 +1126,15 @@ mod tests {
+         );
+     }
+ 
++    /// The owner's report (1 Nov): the default plate is the stock one (the border art over the
++    /// tinted fill), and an enemy player's bar takes its class colour in it too.
++    #[test]
++    fn the_stock_plate_is_the_default_look() {
++        const { assert!(!MODERN_PLATES) };
++        assert_eq!(class_colour(3), Some([0.67, 0.83, 0.45]), "a hunter's green");
++        assert_eq!(class_colour(10), None, "no class 10: the reaction colour stands");
++    }
++
+     #[test]
+     fn plate_tint_matches_the_byte_order() {
+         assert_eq!(plate_tint(1, false), PLATE_HOSTILE);
+diff --git a/crates/benilla-ui/src/script/char_stats.rs b/crates/benilla-ui/src/script/char_stats.rs
+index dc2baa1c..36903592 100644
+--- a/crates/benilla-ui/src/script/char_stats.rs
++++ b/crates/benilla-ui/src/script/char_stats.rs
+@@ -379,6 +379,8 @@ impl super::UiScript {
+         let changed = {
+             let mut model = self.model_mut();
+             model.inventory_slots = slots;
++            // A held worn item that left its slot is stale: it goes back, never deleted.
++            super::cursor::drop_stale_cursor_item(&mut model);
+             recompute_inventory_alerts(&mut model)
+         };
+         for event in alert_events(changed) {
+diff --git a/crates/benilla-ui/src/script/container.rs b/crates/benilla-ui/src/script/container.rs
+index 1ed3121e..09834cd6 100644
+--- a/crates/benilla-ui/src/script/container.rs
++++ b/crates/benilla-ui/src/script/container.rs
+@@ -162,6 +162,8 @@ impl super::UiScript {
+                 model.containers.remove(&bag);
+             }
+         }
++        // A held item whose source slot no longer holds it is stale: it goes back, never deleted.
++        cursor::drop_stale_cursor_item(&mut model);
+     }
+ 
+     /// Push `HasKey()`'s answer: whether the player owns a `BagFamily` key item anywhere.
+diff --git a/crates/benilla-ui/src/script/cursor.rs b/crates/benilla-ui/src/script/cursor.rs
+index 561ce43c..32b14ac8 100644
+--- a/crates/benilla-ui/src/script/cursor.rs
++++ b/crates/benilla-ui/src/script/cursor.rs
+@@ -271,6 +271,41 @@ pub enum WorldPick {
+     Object,
+ }
+ 
++/// Whether a held item still sits in the slot it was picked from. The source keeps the item
++/// (locked) for as long as it is held, so a slot that now holds nothing or another item means the
++/// item moved under the cursor (a server swap, an auto-equip, a bag update): the payload is stale,
++/// and a destroy by that `(bag, slot)` would hit whatever is there now.
++pub(crate) fn held_item_at_source(model: &Model, item: &CursorItem) -> bool {
++    if item.bag == EQUIPMENT_BAG {
++        return usize::try_from(item.slot)
++            .ok()
++            .and_then(|i| model.inv_slot("player", i))
++            .is_some_and(|s| s.item_id == item.item_id);
++    }
++    model
++        .containers
++        .get(&item.bag)
++        .and_then(|c| c.slots.get(&item.slot))
++        .is_some_and(|s| s.item_id == item.item_id)
++}
++
++/// Whether the player can see the held item at the mouse: it has an icon, the host is not
++/// reporting the plain arrow in its place, and it still sits in its source slot.
++fn held_item_visible(model: &Model, item: &CursorItem) -> bool {
++    item.texture.as_deref().is_some_and(|t| !t.is_empty())
++        && model.cursor_icon_shown != Some(false)
++        && held_item_at_source(model, item)
++}
++
++/// Drop a held item that went stale ([`held_item_at_source`]): a plain clear, so its source
++/// unlocks and nothing is destroyed. Called after every bag and inventory update.
++pub(crate) fn drop_stale_cursor_item(model: &mut Model) {
++    let stale = matches!(&model.cursor, Some(CursorPayload::Item(item)) if !held_item_at_source(model, item));
++    if stale {
++        clear_cursor(model);
++    }
++}
++
+ /// A left click on the world with a payload held, press and release both over the world and no
+ /// drag (`0x495300`); returns whether it was consumed. Over an `Object` (`0x492ce0`) nothing
+ /// drops and the click selects. Over `Terrain` (`0x492c90`) or `Nothing` (`0x492d30`) an item
+@@ -281,11 +316,19 @@ pub enum WorldPick {
+ ///
+ /// Deviation: on `Terrain` the reference keeps a spell, action, macro or pet action on the left
+ /// button; we clear them, because otherwise a spell has no left-click way off the cursor.
++///
++/// Deviation: an item the player cannot see held ([`held_item_visible`]: no icon, an icon that
++/// did not load, or a stale payload whose item has moved) goes back to its slot instead of asking
++/// to destroy it. Players lost worn gear to a destroy popup raised for a cursor that looked empty.
+ pub(crate) fn world_drop_click(model: &mut Model) -> bool {
+     match (&model.cursor, model.world_pick) {
+         (Some(CursorPayload::Item(item)), WorldPick::Terrain | WorldPick::Nothing) => {
+             let item = item.clone();
+-            queue_delete_item_confirm(model, &item);
++            if held_item_visible(model, &item) {
++                queue_delete_item_confirm(model, &item);
++            } else {
++                clear_cursor(model);
++            }
+             true
+         }
+         (
+@@ -337,12 +380,18 @@ pub(crate) fn split_container_item(model: &mut Model, bag: i64, slot: u32, count
+ }
+ 
+ /// `DeleteCursorItem()`, the delete popup's accept: a held item queues its `(bag, slot, count)`
+-/// destroy, count 0 for the whole stack, and clears; anything else is a no-op.
++/// destroy, count 0 for the whole stack, and clears; anything else is a no-op. A held item no
++/// longer in its source slot destroys nothing: the destroy names a slot, not the item, so it
++/// would hit whatever moved in. It clears instead.
+ pub(crate) fn delete_cursor_item(model: &mut Model) {
+     let Some(CursorPayload::Item(item)) = &model.cursor else {
+         return;
+     };
+     let item = item.clone();
++    if !held_item_at_source(model, &item) {
++        clear_cursor(model);
++        return;
++    }
+     model.cursor = None;
+     model
+         .container_destroys
+@@ -379,6 +428,12 @@ impl super::UiScript {
+         take_cursor_item_for_sale(&mut self.model_mut())
+     }
+ 
++    /// The host's report of whether the held payload's icon is what the mouse shows
++    /// ([`Model::cursor_icon_shown`]); the plain arrow over a held item is `false`.
++    pub fn set_cursor_icon_shown(&mut self, shown: bool) {
++        set_field!(self, cursor_icon_shown, Some(shown));
++    }
++
+     /// `ClearCursor()` from Rust, which the app calls on a right-click over empty world: both
+     /// reference legs there (`0x492c90`, `0x492d30`) call `ClearCursor(1, 1)` (`0x495190`).
+     pub fn clear_cursor_payload(&mut self) {
+@@ -770,12 +825,14 @@ mod tests {
+             );
+         }
+ 
++        // A visibly held item, still in its source slot.
++        s.set_container(0, Some(one_item_backpack()));
+         let item = CursorPayload::Item(CursorItem {
+             bar_placeable: true,
+             bag: 0,
+             slot: 1,
+             item_id: 117,
+-            texture: None,
++            texture: Some("Interface\\Icons\\INV_Misc_Food_16".into()),
+             link: None,
+             count: None,
+             quality: None,
+@@ -922,4 +979,127 @@ mod tests {
+         }));
+         assert!(info(&s).is_empty(), "no template, no answer (`0x5153a9`)");
+     }
++
++    /// The `DELETE_ITEM_CONFIRM`s queued since the last drain.
++    fn delete_confirms(s: &UiScript) -> usize {
++        s.model_ref()
++            .pending_events
++            .iter()
++            .filter(|(e, _)| e == "DELETE_ITEM_CONFIRM")
++            .count()
++    }
++
++    /// A world click with the backpack's jerky held, after `prepare` ran on the held item.
++    fn world_drop_after(prepare: impl FnOnce(&mut UiScript)) -> UiScript {
++        use super::{world_drop_click, WorldPick};
++        let mut s = UiScript::new().unwrap();
++        s.set_container(0, Some(one_item_backpack()));
++        s.run("PickupContainerItem(0, 1)").unwrap();
++        assert!(s.cursor_item().is_some(), "the pickup took");
++        prepare(&mut s);
++        s.model_mut().pending_events.clear();
++        s.model_mut().world_pick = WorldPick::Terrain;
++        world_drop_click(&mut s.model_mut());
++        s
++    }
++
++    /// The owner's report (1 Nov): the destroy box came up "when nothing was selected". It asks
++    /// only for an item the player can see on the cursor; one with the plain arrow goes back.
++    #[test]
++    fn a_visibly_held_item_still_asks_to_destroy() {
++        let s = world_drop_after(|s| s.set_cursor_icon_shown(true));
++        assert_eq!(delete_confirms(&s), 1);
++        assert!(s.cursor_item().is_some(), "held for the popup");
++    }
++
++    #[test]
++    fn an_item_with_no_icon_goes_back_instead_of_asking() {
++        let mut s = world_drop_after(|s| {
++            if let Some(CursorPayload::Item(i)) = s.model_mut().cursor.as_mut() {
++                i.texture = None;
++            }
++        });
++        assert_eq!(delete_confirms(&s), 0, "no destroy box for an invisible item");
++        assert!(s.cursor_payload().is_none(), "the item went back to its slot");
++        assert!(s.take_container_destroys().is_empty());
++    }
++
++    #[test]
++    fn an_item_under_the_plain_arrow_goes_back_instead_of_asking() {
++        // The host could not show the icon (not loaded yet, or the loading cover is up).
++        let s = world_drop_after(|s| s.set_cursor_icon_shown(false));
++        assert_eq!(delete_confirms(&s), 0);
++        assert!(s.cursor_payload().is_none());
++    }
++
++    /// The server moved the held item away (a swap, an auto-equip): the cursor drops it at the
++    /// bag update, so the next world click is a plain click.
++    #[test]
++    fn a_bag_update_that_moves_the_held_item_clears_the_cursor() {
++        let mut s = UiScript::new().unwrap();
++        s.set_container(0, Some(one_item_backpack()));
++        s.run("PickupContainerItem(0, 1)").unwrap();
++        // Same slot, another item: the jerky moved and something else landed there.
++        let mut bag = one_item_backpack();
++        bag.slots.get_mut(&1).unwrap().item_id = 2512;
++        s.set_container(0, Some(bag));
++        assert!(s.cursor_payload().is_none(), "the stale payload cleared");
++        // The slot emptied entirely.
++        s.set_container(0, Some(one_item_backpack()));
++        s.run("PickupContainerItem(0, 1)").unwrap();
++        let mut bag = one_item_backpack();
++        bag.slots.clear();
++        s.set_container(0, Some(bag));
++        assert!(s.cursor_payload().is_none());
++        // An update that leaves the held item where it was keeps it held.
++        s.set_container(0, Some(one_item_backpack()));
++        s.run("PickupContainerItem(0, 1)").unwrap();
++        s.set_container(0, Some(one_item_backpack()));
++        assert!(s.cursor_item().is_some(), "an unrelated update keeps the pickup");
++    }
++
++    /// A worn item picked off the doll, then replaced in that slot (an auto-equip swapped another
++    /// bow in): the cursor clears, so no destroy can reach the new bow.
++    #[test]
++    fn an_inventory_update_that_replaces_the_held_worn_item_clears_the_cursor() {
++        use crate::script::InvSlotView;
++        let bow = |id: u32| InvSlotView {
++            item_id: id,
++            icon: Some("Interface\\Icons\\INV_Weapon_Bow_02".into()),
++            count: 1,
++            equip_slots: vec![18],
++            ..Default::default()
++        };
++        let mut s = UiScript::new().unwrap();
++        let mut slots: crate::script::InventorySlots = Default::default();
++        slots[18] = Some(bow(2504));
++        s.set_inventory_slots(slots.clone());
++        assert!(s.eval::<bool>("return PickupInventoryItem(18)").unwrap());
++        s.set_inventory_slots(slots.clone());
++        assert!(s.cursor_item().is_some(), "the same bow still worn: still held");
++        slots[18] = Some(bow(2506));
++        s.set_inventory_slots(slots);
++        assert!(s.cursor_payload().is_none(), "another bow in the slot: cleared");
++    }
++
++    /// `DeleteCursorItem` names a slot, not an item: with the held item gone from it, it destroys
++    /// nothing, whatever moved in.
++    #[test]
++    fn delete_cursor_item_refuses_a_stale_payload() {
++        let mut s = UiScript::new().unwrap();
++        s.set_container(0, Some(one_item_backpack()));
++        s.run("PickupContainerItem(0, 1)").unwrap();
++        // Bypass the update guard, as a popup accepted in the same frame as the move would.
++        s.model_mut()
++            .containers
++            .get_mut(&0)
++            .unwrap()
++            .slots
++            .get_mut(&1)
++            .unwrap()
++            .item_id = 2512;
++        s.run("DeleteCursorItem()").unwrap();
++        assert!(s.take_container_destroys().is_empty(), "nothing destroyed");
++        assert!(s.cursor_payload().is_none(), "and the cursor cleared");
++    }
+ }
+diff --git a/crates/benilla-ui/src/script/cursor/drag.rs b/crates/benilla-ui/src/script/cursor/drag.rs
+index 4f309a5d..cc631d11 100644
+--- a/crates/benilla-ui/src/script/cursor/drag.rs
++++ b/crates/benilla-ui/src/script/cursor/drag.rs
+@@ -91,6 +91,31 @@ mod tests {
+     use crate::script::cursor::{CursorItem, CursorPayload};
+     use crate::script::UiScript;
+ 
++
++    /// The held jerky's source: backpack slot 1, which a world drop checks it is still in, with
++    /// its icon, so it is visibly held.
++    fn seat_jerky(s: &mut UiScript) {
++        let mut slots = std::collections::HashMap::new();
++        slots.insert(
++            1,
++            crate::script::container::ContainerSlot {
++                item_id: 117,
++                count: 1,
++                texture: Some("Interface\\Icons\\INV_Misc_Food_16".into()),
++                ..Default::default()
++            },
++        );
++        s.set_container(
++            0,
++            Some(crate::script::container::ContainerState {
++                bag_family: 0,
++                name: Some("Backpack".into()),
++                num_slots: 16,
++                slots,
++            }),
++        );
++    }
++
+     fn drag_script() -> UiScript {
+         let mut s = UiScript::new().unwrap();
+         s.set_screen_size(800.0, 600.0);
+@@ -226,12 +251,13 @@ mod tests {
+         )
+         .unwrap();
+         s.resolve();
++        seat_jerky(&mut s);
+         s.set_cursor_for_test(CursorPayload::Item(CursorItem {
+             bar_placeable: true,
+             bag: 0,
+             slot: 1,
+             item_id: 117,
+-            texture: None,
++            texture: Some("Interface\\Icons\\INV_Misc_Food_16".into()),
+             link: Some("|cffffffff|Hitem:117|h[Tough Jerky]|h|r".into()),
+             count: None,
+             quality: Some(3),
+@@ -276,12 +302,13 @@ mod tests {
+         )
+         .unwrap();
+         s.resolve();
++        seat_jerky(&mut s);
+         s.set_cursor_for_test(CursorPayload::Item(CursorItem {
+             bar_placeable: true,
+             bag: 0,
+             slot: 1,
+             item_id: 117,
+-            texture: None,
++            texture: Some("Interface\\Icons\\INV_Misc_Food_16".into()),
+             link: None, // no link ⇒ an empty name, not an error
+             count: None,
+             quality: None, // unknown quality ⇒ 0
+@@ -314,12 +341,13 @@ mod tests {
+         )
+         .unwrap();
+         s.resolve();
++        seat_jerky(&mut s);
+         s.set_cursor_for_test(CursorPayload::Item(CursorItem {
+             bar_placeable: true,
+             bag: 0,
+             slot: 1,
+             item_id: 117,
+-            texture: None,
++            texture: Some("Interface\\Icons\\INV_Misc_Food_16".into()),
+             link: None,
+             count: None,
+             quality: None,
+diff --git a/crates/benilla-ui/src/script/model.rs b/crates/benilla-ui/src/script/model.rs
+index 46e4f914..d3ec17bb 100644
+--- a/crates/benilla-ui/src/script/model.rs
++++ b/crates/benilla-ui/src/script/model.rs
+@@ -615,6 +615,10 @@ pub(crate) struct Model {
+     /// The world pick under the cursor (`[this+0x350]`): a world click drops no payload on an
+     /// object, only an item on terrain, and anything over nothing.
+     pub(crate) world_pick: cursor::WorldPick,
++    /// Whether the host is showing the held payload's icon at the mouse: `None` while no host
++    /// reports it (tests, captures), `Some(false)` when the icon did not resolve and the plain
++    /// arrow shows. An item the player cannot see held never raises the delete confirm.
++    pub(crate) cursor_icon_shown: Option<bool>,
+     /// Held-item bag moves, sent as `CMSG_SWAP_INV_ITEM` or `CMSG_SPLIT_ITEM`.
+     pub(crate) container_moves: Vec<container::ContainerMove>,
+     /// `(bag, slot)` clicks made in repair mode.
+@@ -1391,6 +1395,7 @@ impl Model {
+             cursor_grid_shown: false,
+             pet_grid_shown: false,
+             world_pick: cursor::WorldPick::default(),
++            cursor_icon_shown: None,
+             container_moves: Vec::new(),
+             container_repairs: Vec::new(),
+             item_pick_armed: false,
+diff --git a/crates/benilla-ui/src/script/nameplate.rs b/crates/benilla-ui/src/script/nameplate.rs
+index b88e644e..b4e139c0 100644
+--- a/crates/benilla-ui/src/script/nameplate.rs
++++ b/crates/benilla-ui/src/script/nameplate.rs
+@@ -41,9 +41,9 @@ pub const BAR_FILL_TEXTURE: &str = "Interface\\TargetingFrame\\UI-TargetingFrame
+ pub const MODERN_FILL_TEXTURE: &str = "Interface\\TargetingFrame\\UI-StatusBar";
+ /// The elite dragon, the modern look's seventh region.
+ pub const ELITE_TEXTURE: &str = "Interface\\Tooltips\\EliteNameplateIcon";
+-/// The modern border, plain and target-lit.
++/// The modern border, which also backs the missing health. The target is lit by the fill's
++/// brighten, never by repainting this: it lies under the fill, so a white one would whiten the bar.
+ const MODERN_BORDER: [f32; 4] = [0.0, 0.0, 0.0, 0.85];
+-const MODERN_BORDER_TARGET: [f32; 4] = [1.0, 1.0, 1.0, 0.95];
+ /// The cast bar's fill, a cast and a channel.
+ const CAST_COLOUR: [f32; 4] = [1.0, 0.7, 0.0, 1.0];
+ const CHANNEL_COLOUR: [f32; 4] = [0.3, 0.85, 0.3, 1.0];
+@@ -569,8 +569,7 @@ impl Plate {
+         }
+ 
+         // The modern extras, after everything the 1.12 order names.
+-        let modern = modern.then(|| Self::create_modern(model, frame, strata, effects));
+-
++        let modern = modern.then(|| Self::create_modern(model, frame, bar, strata, effects));
+ 
+         // Born retired and hidden: addons tell a live plate from a pooled one by `IsShown()`.
+         effects
+@@ -603,14 +602,17 @@ impl Plate {
+     fn create_modern(
+         model: &mut Model,
+         frame: FrameHandle,
++        bar: FrameHandle,
+         strata: crate::order::Strata,
+         effects: &mut SyncEffects,
+     ) -> ModernParts {
+-        // The flat border under the bar (the bar's level is below the plate's, so BACKGROUND).
++        // The flat border, on the bar's own BACKGROUND so the fill draws over it. On the plate it
++        // would draw over the whole bar: the plate's level is above the bar's, and the draw walks
++        // levels before layers.
+         let frame_border = model
+             .arena
+-            .create_region(frame, RegionKind::Texture, DrawLayer::Background, 0)
+-            .expect("live plate");
++            .create_region(bar, RegionKind::Texture, DrawLayer::Background, 0)
++            .expect("live bar");
+         model.region_data.entry(frame_border).or_default().fill = Some(MODERN_BORDER);
+         let elite = texture(model, frame, DrawLayer::Overlay, ELITE_TEXTURE, BlendMode::Blend);
+         model.region_data.entry(elite).or_default().hidden = true;
+@@ -944,8 +946,8 @@ impl Plate {
+         model.nameplates.plates[i].last = Some(state.clone());
+     }
+ 
+-    /// The modern extras' per-frame writes: the border lights for the target, the dragon, the
+-    /// cast bar.
++    /// The modern extras' per-frame writes: the dragon and the cast bar (the target is lit by the
++    /// fill's brighten, as in the stock look).
+     fn drive_modern(
+         model: &mut Model,
+         m: ModernParts,
+@@ -953,15 +955,7 @@ impl Plate {
+         last: Option<&PlateState>,
+         effects: &mut SyncEffects,
+     ) {
+-        let (border, elite, cast, cast_fill, cast_icon) =
+-            (m.frame_border, m.elite, m.cast, m.cast_fill, m.cast_icon);
+-        if last.is_none_or(|l| l.target != state.target) {
+-            model.region_data.entry(border).or_default().fill = Some(if state.target {
+-                MODERN_BORDER_TARGET
+-            } else {
+-                MODERN_BORDER
+-            });
+-        }
++        let (elite, cast, cast_fill, cast_icon) = (m.elite, m.cast, m.cast_fill, m.cast_icon);
+         if last.is_none_or(|l| l.elite != state.elite) {
+             model.region_data.entry(elite).or_default().hidden = !state.elite;
+         }
+diff --git a/crates/benilla-ui/src/script/tests/nameplate.rs b/crates/benilla-ui/src/script/tests/nameplate.rs
+index 4322c570..27969177 100644
+--- a/crates/benilla-ui/src/script/tests/nameplate.rs
++++ b/crates/benilla-ui/src/script/tests/nameplate.rs
+@@ -780,14 +780,14 @@ fn the_modern_plate_keeps_the_abi_and_draws_its_cast_and_dragon() {
+         "#,
+         )
+         .unwrap();
+-    assert_eq!(got.0, 8, "six 1.12 regions, then the flat border and the dragon");
++    assert_eq!(got.0, 7, "six 1.12 regions, then the dragon (the flat border is the bar's)");
+     assert_eq!(got.1, 2, "the health bar, then the cast bar");
+     assert_eq!(got.2, "Interface\\Tooltips\\Nameplate-Border");
+     assert!(!got.3, "the stock border art is hidden under the modern look");
+     assert_eq!((got.4, got.5), (110.0, 12.0), "the 110x12 bar");
+     assert!((got.6 - 0.25).abs() < 1e-6 && got.7, "the cast shows its progress");
+     let dragon: bool = s
+-        .eval("local p = WorldFrame:GetChildren() return select(8, p:GetRegions()):IsShown() == 1")
++        .eval("local p = WorldFrame:GetChildren() return select(7, p:GetRegions()):IsShown() == 1")
+         .unwrap();
+     assert!(dragon, "an elite shows the dragon");
+ 
+@@ -800,3 +800,77 @@ fn the_modern_plate_keeps_the_abi_and_draws_its_cast_and_dragon() {
+         .unwrap();
+     assert!(!cast_shown);
+ }
++
++/// The plate's textured and solid quads in draw order: (path, colour).
++fn plate_quads(s: &UiScript) -> Vec<(Option<String>, Option<[f32; 4]>)> {
++    use crate::script::QuadContent;
++    s.extract()
++        .iter()
++        .filter_map(|q| match &q.content {
++            QuadContent::Texture { path, color, .. } => Some((path.clone(), *color)),
++            _ => None,
++        })
++        .collect()
++}
++
++/// The owner's report (1 Nov): a targeted wolf's bar was solid white and every other bar near
++/// black. The stock look draws the reaction-tinted fill under the `Nameplate-Border` art, and
++/// the target is lit by brightening that fill, never by painting over it.
++#[test]
++fn the_stock_plate_draws_a_red_fill_under_the_border_and_lights_the_target_red() {
++    let mut s = vm();
++    let mut wolf = plate("Young Wolf", 30.0, 40.0);
++    wolf.target = true;
++    wolf.lit = true;
++    drive(&mut s, &[wolf]);
++    let quads = plate_quads(&s);
++    let fill = quads
++        .iter()
++        .position(|(p, _)| p.as_deref() == Some(crate::script::nameplate::BAR_FILL_TEXTURE))
++        .unwrap_or_else(|| panic!("no bar fill quad in {quads:?}"));
++    let border = quads
++        .iter()
++        .position(|(p, _)| p.as_deref() == Some(crate::script::nameplate::BORDER_TEXTURE))
++        .unwrap_or_else(|| panic!("no border quad in {quads:?}"));
++    assert!(fill < border, "the fill draws first, the border caps it: {quads:?}");
++    let c = quads[fill].1.expect("the fill is tinted");
++    assert!(c[0] >= 1.0 && c[1] == 0.0 && c[2] == 0.0, "lit hostile is a brighter red, got {c:?}");
++    assert!(
++        !quads.iter().any(|(p, c)| p.is_none() && c.is_some_and(|c| c[..3] == [1.0, 1.0, 1.0])),
++        "no white box over the bar: {quads:?}"
++    );
++}
++
++/// The modern look's flat border sits under the fill (on the bar's own BACKGROUND), so the bar
++/// keeps its colour, and a target leaves it dark.
++#[test]
++fn the_modern_border_draws_under_the_fill_and_never_turns_white() {
++    let mut s = vm();
++    let g = PlateGeometry {
++        modern: true,
++        width: 112.0,
++        height: 14.0,
++        bar_width: 110.0,
++        bar_height: 12.0,
++        ..geometry()
++    };
++    let mut wolf = plate("Young Wolf", 30.0, 40.0);
++    wolf.target = true;
++    wolf.lit = true;
++    s.sync_nameplates(g, &[wolf]);
++    s.resolve();
++    let quads = plate_quads(&s);
++    let fill = quads
++        .iter()
++        .position(|(p, _)| p.as_deref() == Some(crate::script::nameplate::MODERN_FILL_TEXTURE))
++        .unwrap_or_else(|| panic!("no bar fill quad in {quads:?}"));
++    let back = quads
++        .iter()
++        .position(|(p, c)| p.is_none() && c.is_some_and(|c| c[..3] == [0.0, 0.0, 0.0]))
++        .unwrap_or_else(|| panic!("no flat border quad in {quads:?}"));
++    assert!(back < fill, "the flat border must draw before the fill: {quads:?}");
++    assert!(
++        !quads.iter().any(|(p, c)| p.is_none() && c.is_some_and(|c| c[..3] == [1.0, 1.0, 1.0])),
++        "the target's border is not repainted white: {quads:?}"
++    );
++}

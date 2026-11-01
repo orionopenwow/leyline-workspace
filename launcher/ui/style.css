@@ -227,7 +227,16 @@ svg { flex: none; }
 /* owner 31 Oct 21:26: the window buttons are the owner's red stone buttons with grey metal frames (art/win-*.png,
    cut from the owner's picture, the gold frame turned to the launcher's grey), tucked into the top-right corner like
    an in-game window's. */
-.winbtns { display: flex; gap: 3px; align-self: flex-start; margin: 4px 4px 0 6px; padding: 0; }
+.winbtns {
+  display: flex; gap: 2px; align-self: flex-start; margin: 0 0 0 6px; padding: 2px 2px 4px 5px;
+  /* owner 21:48 "tucked into the roundedness of the launcher": a stone housing flush in the window's top-right
+     corner, its outer corner following the window's own rounding (Windows rounds it about 8px), its inner corner
+     curving the other way like an in-game window's button notch */
+  border-radius: 0 8px 0 11px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0.45)), var(--stone, #1c1a17);
+  box-shadow: inset 1px -1px 0 rgba(255, 255, 255, 0.06), -1px 1px 0 rgba(0, 0, 0, 0.8), -2px 2px 6px rgba(0, 0, 0, 0.45);
+}
+.winbtns #win-close { border-top-right-radius: 7px; }
 .winbtns button {
   width: 24px; height: 24px; padding: 0; border: 0; border-radius: 3px; cursor: pointer; display: block;
   background: center / contain no-repeat; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.7)); transition: filter 0.12s;

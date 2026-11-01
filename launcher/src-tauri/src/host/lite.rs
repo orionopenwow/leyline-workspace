@@ -93,9 +93,13 @@ pub fn candidates(app_dir: &Path, env: Option<&str>, launcher_dir: Option<&Path>
     v
 }
 
-/// The launch line for `exe` on `den_dir`.
-pub fn command_line(den_dir: &Path) -> Vec<String> {
-    vec!["--dens".into(), den_dir.display().to_string(), "--bind".into(), ADDRESS.into(), "--password".into(), PASSWORD.into()]
+/// The launch line for `exe` on `den_dir`; with the game folder, `.den mods` also lists the launcher's mods in it.
+pub fn command_line(den_dir: &Path, client: Option<&Path>) -> Vec<String> {
+    let mut v = vec!["--dens".into(), den_dir.display().to_string(), "--bind".into(), ADDRESS.into(), "--password".into(), PASSWORD.into()];
+    if let Some(c) = client {
+        v.extend(["--client".into(), c.display().to_string()]);
+    }
+    v
 }
 
 fn port_answers(port: u16) -> bool {
@@ -109,6 +113,8 @@ static CHILD: Mutex<Option<Child>> = Mutex::new(None);
 pub struct Binary {
     pub exe: Option<PathBuf>,
     pub root: PathBuf,
+    /// The game folder it is started for (`--client`), if known.
+    pub client: Option<PathBuf>,
 }
 
 impl Binary {
@@ -116,7 +122,13 @@ impl Binary {
         let env = std::env::var("LEYLINE_DEN_LITE").ok();
         let here = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf));
         let exe = candidates(app_dir, env.as_deref(), here.as_deref()).into_iter().find(|p| p.is_file());
-        Binary { exe, root: root(app_dir) }
+        Binary { exe, root: root(app_dir), client: None }
+    }
+
+    /// Started for this game folder: `.den mods` lists the launcher's mods in it.
+    pub fn with_client(mut self, game: &Path) -> Binary {
+        self.client = Some(game.to_path_buf());
+        self
     }
 
     fn child_alive() -> bool {
@@ -148,7 +160,7 @@ impl DenLite for Binary {
         }
         std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't make the Den folder: {e}"))?;
         let child = Command::new(exe)
-            .args(command_line(&dir))
+            .args(command_line(&dir, self.client.as_deref()))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -211,7 +223,7 @@ mod tests {
         assert_eq!(c[1], app.path().join("den-lite").join("bin").join(exe_name()));
         assert_eq!(c[2], Path::new("/apps/leyline").join(exe_name()));
         assert_eq!(candidates(app.path(), Some(""), None).len(), 1, "an empty override is no override");
-        let b = Binary { exe: None, root: root(app.path()) };
+        let b = Binary { exe: None, root: root(app.path()), client: None };
         assert!(!b.available());
         assert!(b.start().unwrap_err().contains("isn't on this PC"));
         let s = b.status();
@@ -223,7 +235,7 @@ mod tests {
     #[test]
     fn a_den_lite_from_an_earlier_launcher_is_known_by_its_heartbeat() {
         let app = tempfile::tempdir().unwrap();
-        let b = Binary { exe: Some(app.path().join("den-lite")), root: root(app.path()) };
+        let b = Binary { exe: Some(app.path().join("den-lite")), root: root(app.path()), client: None };
         let dir = b.den_dir();
         std::fs::create_dir_all(&dir).unwrap();
         assert!(!beat_fresh(&dir), "no heartbeat");
@@ -243,6 +255,7 @@ mod tests {
 
     #[test]
     fn its_command_line() {
-        assert_eq!(command_line(Path::new("/d")), ["--dens", "/d", "--bind", "127.0.0.1", "--password", "den"]);
+        assert_eq!(command_line(Path::new("/d"), None), ["--dens", "/d", "--bind", "127.0.0.1", "--password", "den"]);
+        assert_eq!(command_line(Path::new("/d"), Some(Path::new("/games/my game")))[6..], ["--client", "/games/my game"], "the game folder for .den mods");
     }
 }

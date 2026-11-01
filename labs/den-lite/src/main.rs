@@ -4,6 +4,11 @@
 use den_lite::{start, Config, Gender};
 use std::path::PathBuf;
 
+/// `<dens>/den-lite.alive`: "<pid> <unix seconds> <login port>", written every 2 seconds while Den Lite runs.
+const ALIVE: &str = "den-lite.alive";
+/// `<dens>/den-lite.stop`: when it appears, Den Lite stops (the launcher's Stop, Share with friends).
+const STOP: &str = "den-lite.stop";
+
 const USAGE: &str = "den-lite [--dens <folder>] [--bind 127.0.0.1] [--stamps <folder>] [--password <word>] [--name <name>] \
 [--gender male|female] [--client <game folder>] [--login-port 3724] [--world-port 8085] [--verbose]
 
@@ -52,11 +57,24 @@ fn main() {
     if !cfg.bind.is_loopback() {
         eprintln!("den-lite: listening on {} (not only this PC): anyone who can reach it logs in with the password", cfg.bind);
     }
+    let dens = cfg.den_dir.clone();
+    let _ = std::fs::create_dir_all(&dens);
     match start(cfg) {
         Ok(r) => {
             println!("Den Lite: login {} , world {} . Stop with Ctrl+C.", r.login, r.world);
+            // The launcher's host/lite.rs knows this Den Lite by its heartbeat (also after the launcher was closed and
+            // opened again: then it isn't the launcher's child) and stops it with the stop file.
+            let (alive, stop) = (dens.join(ALIVE), dens.join(STOP));
+            let _ = std::fs::remove_file(&stop);
             loop {
-                std::thread::park();
+                let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+                let _ = std::fs::write(&alive, format!("{} {at} {}\n", std::process::id(), r.login.port()));
+                if stop.exists() {
+                    let _ = std::fs::remove_file(&stop);
+                    let _ = std::fs::remove_file(&alive);
+                    std::process::exit(0);
+                }
+                std::thread::sleep(std::time::Duration::from_secs(2));
             }
         }
         Err(e) => fail(&format!("can't start: {e}")),

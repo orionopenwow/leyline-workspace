@@ -763,7 +763,7 @@ fn a_new_players_den_survives_a_restart_of_the_program() {
     assert!(lines.iter().any(|l| l.contains(".den place chair")), "{lines:?}");
 
     // the quick start's own commands, as typed
-    let mut say = |w: &mut World, cmd: &str| -> String {
+    let say = |w: &mut World, cmd: &str| -> String {
         w.say(cmd);
         let l = w.until_line().1;
         eprintln!("smoke: {cmd} -> {l}");
@@ -780,8 +780,22 @@ fn a_new_players_den_survives_a_restart_of_the_program() {
     assert_eq!(den::read_file(&dir.join("mine.den.json")).unwrap().props.len(), 2);
 
     // the program stops (the launcher's stop: a kill) and starts again on the same folder
+    // the launcher knows it by its heartbeat and stops it with the stop file (host/lite.rs)
+    let beat = std::fs::read_to_string(dir.join("den-lite.alive")).expect("the heartbeat");
+    assert_eq!(beat.split_whitespace().nth(2), Some(lp.to_string().as_str()), "{beat}");
     drop(w);
-    drop(prog);
+    let mut prog = prog;
+    std::fs::write(dir.join("den-lite.stop"), "").unwrap();
+    let mut stopped = None;
+    for _ in 0..60 {
+        stopped = prog.0.try_wait().unwrap();
+        if stopped.is_some() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(stopped.is_some_and(|s| s.success()), "the stop file stops it");
+    assert!(!dir.join("den-lite.alive").exists() && !dir.join("den-lite.stop").exists());
     let t1 = std::time::Instant::now();
     let _prog = run_program(&dir, lp, wp);
     let (mut w, lines) = into_world_at(login_addr);

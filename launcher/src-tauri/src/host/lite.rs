@@ -28,6 +28,19 @@ pub const ADDRESS: &str = "127.0.0.1";
 pub const ACCOUNT: &str = "DEN";
 /// Den Lite's local password (labs/den-lite `--password`; shown on the Den page beside the account).
 pub const PASSWORD: &str = "den";
+/// `<den dir>/den-lite.alive`: "<pid> <unix seconds> <login port>", written by Den Lite every 2 seconds. It tells a
+/// Den Lite left running from an earlier launcher (not this launcher's child) from another server on the login port.
+pub const ALIVE: &str = "den-lite.alive";
+/// `<den dir>/den-lite.stop`: Den Lite stops when this file appears (how a Den Lite that isn't our child is stopped).
+pub const STOP: &str = "den-lite.stop";
+
+/// Den Lite's heartbeat in `den_dir` is under 10 seconds old.
+pub fn beat_fresh(den_dir: &Path) -> bool {
+    let Ok(t) = std::fs::read_to_string(den_dir.join(ALIVE)) else { return false };
+    let Some(at) = t.split_whitespace().nth(1).and_then(|a| a.parse::<u64>().ok()) else { return false };
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    now.abs_diff(at) < 10
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct LiteStatus {
@@ -126,10 +139,13 @@ impl DenLite for Binary {
 
     fn start(&self) -> Result<(), String> {
         let exe = self.exe.as_ref().ok_or("Den Lite isn't on this PC yet.")?;
-        if Self::child_alive() || port_answers(LOGIN_PORT) {
-            return Ok(());
-        }
         let dir = self.den_dir();
+        if Self::child_alive() || beat_fresh(&dir) {
+            return Ok(()); // ours, or one left running from before the launcher was closed
+        }
+        if port_answers(LOGIN_PORT) {
+            return Err(format!("Another server on this PC is using the login port ({LOGIN_PORT}), so your Den can't start. Stop that server, then press Play again."));
+        }
         std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't make the Den folder: {e}"))?;
         let child = Command::new(exe)
             .args(command_line(&dir))
@@ -151,6 +167,18 @@ impl DenLite for Binary {
                 let _ = c.wait();
             }
         }
+        // one left running from an earlier launcher: asked to stop through its folder, then a few seconds to go
+        let dir = self.den_dir();
+        if beat_fresh(&dir) {
+            std::fs::write(dir.join(STOP), b"").map_err(|e| format!("Couldn't stop Den Lite: {e}"))?;
+            for _ in 0..30 {
+                if !port_answers(LOGIN_PORT) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            let _ = std::fs::remove_file(dir.join(ALIVE));
+        }
         Ok(())
     }
 
@@ -158,7 +186,7 @@ impl DenLite for Binary {
         let available = self.available();
         LiteStatus {
             available,
-            running: available && Self::child_alive() && port_answers(LOGIN_PORT),
+            running: available && (Self::child_alive() || beat_fresh(&self.den_dir())) && port_answers(LOGIN_PORT),
             address: ADDRESS.into(),
             account: ACCOUNT.into(),
             password: PASSWORD.into(),
@@ -190,6 +218,27 @@ mod tests {
         assert!(!s.available && !s.running);
         assert_eq!(s.account, ACCOUNT);
         assert_eq!(b.den_dir(), app.path().join("den-lite").join("state").join("dens"), "the same layout as a Host pack");
+    }
+
+    #[test]
+    fn a_den_lite_from_an_earlier_launcher_is_known_by_its_heartbeat() {
+        let app = tempfile::tempdir().unwrap();
+        let b = Binary { exe: Some(app.path().join("den-lite")), root: root(app.path()) };
+        let dir = b.den_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!beat_fresh(&dir), "no heartbeat");
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        std::fs::write(dir.join(ALIVE), format!("4242 {now} 3724\n")).unwrap();
+        assert!(beat_fresh(&dir));
+        assert!(b.start().is_ok(), "it runs already: nothing to start");
+        std::fs::write(dir.join(ALIVE), format!("4242 {} 3724\n", now - 60)).unwrap();
+        assert!(!beat_fresh(&dir), "a minute old: it stopped (or the PC restarted)");
+        std::fs::write(dir.join(ALIVE), "garbage").unwrap();
+        assert!(!beat_fresh(&dir));
+        // stop: the stop file for the one that isn't ours
+        std::fs::write(dir.join(ALIVE), format!("4242 {now} 3724\n")).unwrap();
+        b.stop().unwrap();
+        assert!(dir.join(STOP).exists() && !dir.join(ALIVE).exists());
     }
 
     #[test]

@@ -51,7 +51,7 @@
 
 local W = WrathUnleashedUI
 local CVAR, GRID, ANGLE = "leylineEditMode", "leylineEditGrid", "leylineEditAngle"
-local GRIDS = { 0, 0.5, 1, 2 }
+local GRIDS = { 0, 0.5, 1, 2, 5 }
 local ANGLES = { 15, 45, 90 }
 local TAG_PATTERN = "%[Builder%]"
 
@@ -628,6 +628,8 @@ local function buildDen()
     bar(den, "Budget", 70, function() E.DenCmd("budget") end, "TOPLEFT", lx + 20, -196)
     bar(den, "Back to the room", 130, function() E.DenCmd("home") end, "BOTTOMLEFT", 12, 10)
     bar(den, "Builder", 80, function() if W.ToggleBuilder then W.ToggleBuilder() end end, "BOTTOMLEFT", 146, 10)
+    -- the Den's home (DenHome.lua): starter places, stamps, the grid at your feet, the front door, the mailbox
+    den.home = bar(den, "Home", 70, function() if W.DenHome then W.DenHome.Toggle() end end, "BOTTOMLEFT", 230, 10)
     bar(den, "Close", 70, function() den:Hide() end, "BOTTOMRIGHT", -12, 10)
     if UISpecialFrames then tinsert(UISpecialFrames, "LeylineDenPanel") end
     _G.LeylineDenPanel = den

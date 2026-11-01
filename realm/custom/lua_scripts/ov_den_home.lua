@@ -263,7 +263,8 @@ end
 
 -- A note's text: printable letters only, no colour codes or links, no quotes or backslashes for SQL; nil when empty.
 function H.cleanNote(s)
-    s = tostring(s or ""):gsub("|", ""):gsub("[%c\\]", " "):gsub("'", "\226\128\153"):gsub("%s+", " ")
+    s = tostring(s or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|H.-|h", ""):gsub("|T.-|t", ""):gsub("|", "")
+    s = s:gsub("[%c\\]", " "):gsub("'", "\226\128\153"):gsub("%s+", " ")
     s = s:gsub("^ ", ""):gsub(" $", "")
     if #s > H.NOTE_LEN then s = s:sub(1, H.NOTE_LEN) end
     s = s:gsub("[\192-\255][\128-\191]*$", function(t) local n = t:byte(1) >= 240 and 4 or t:byte(1) >= 224 and 3 or 2; return #t == n and t or "" end)

@@ -35,8 +35,15 @@ local TURN = 15
 -- places any safe object and any model of the host's own game files), and their lists are the realm's answers.
 -- "buildings" (houses, inns, towers: a Den's catalog only) shows only when the realm's catalog has them.
 local CATS = { "all", "seating", "tables", "barrels", "crates", "lights", "banners", "tents", "fires", "fences", "nature", "decor",
-    "structure", "buildings", "objects", "models" }
+    "structure", "buildings", "furniture", "objects", "models" }
 local SEARCHED = { objects = "find", models = "models" }
+-- "furniture" (a house's palette) isn't a realm category either: the seating and tables, and the beds, rugs, the rack
+-- and the book from decor. "stamps" (the spawn menu's tab) are a Den's ready-made areas (DenHome.lua, .den stamp).
+local FURNITURE_IDS = { [13948] = true, [19504] = true, [181396] = true, [181077] = true, [188346] = true, [188347] = true,
+    [188348] = true, [19635] = true, [2695] = true }
+local function inCat(c, want)
+    return want == "all" or c.cat == want or (want == "furniture" and (c.cat == "seating" or c.cat == "tables" or FURNITURE_IDS[c.id] == true))
+end
 local MENU_COLS, MENU_ROWS = 3, 12
 local RECENT_MAX = 12
 
@@ -335,7 +342,7 @@ function B.Filter()
         return
     end
     for _, c in ipairs(B.catalog) do
-        if (want == "all" or c.cat == want) and (q == "" or c.name:lower():find(q, 1, true) or c.key:find(q, 1, true)) then
+        if inCat(c, want) and (q == "" or c.name:lower():find(q, 1, true) or c.key:find(q, 1, true)) then
             B.shown[#B.shown + 1] = c
         end
     end
@@ -507,9 +514,9 @@ end
 
 -- ---------------------------------------------------------------- the spawn menu (hold Q in edit mode)
 
-local MENU_TABS = { "favourites", "recent", "prefabs", "storage", "all" }
+local MENU_TABS = { "favourites", "recent", "prefabs", "stamps", "storage", "all" }
 for i = 2, #CATS do MENU_TABS[#MENU_TABS + 1] = CATS[i] end
-local TAB_TEXT = { favourites = "Favourites", recent = "Recent", prefabs = "Prefabs", storage = "Storage", all = "All props",
+local TAB_TEXT = { favourites = "Favourites", recent = "Recent", prefabs = "Prefabs", stamps = "Stamps", storage = "Storage", all = "All props",
     objects = "Every object", models = "Models" }
 local function tabText(t) return TAB_TEXT[t] or (t:sub(1, 1):upper() .. t:sub(2)) end
 
@@ -526,6 +533,10 @@ function B.MenuList()
     local out = {}
     if tab == "prefabs" then
         for _, f in ipairs(B.prefabs) do if match(f) then out[#out + 1] = f end end
+        return out
+    end
+    if tab == "stamps" then
+        for _, st in ipairs((W.DenHome and W.DenHome.StampItems()) or {}) do if match(st) then out[#out + 1] = st end end
         return out
     end
     if SEARCHED[tab] then return (B.found[tab] or {}).list or {} end
@@ -548,7 +559,7 @@ function B.MenuList()
     end
     local favs = store().favs
     for _, c in ipairs(B.catalog) do
-        local inTab = tab == "all" or c.cat == tab or (tab == "favourites" and favs[c.id])
+        local inTab = inCat(c, tab) or (tab == "favourites" and favs[c.id])
         if inTab and match(c) then out[#out + 1] = c end
     end
     if tab == "favourites" then
@@ -558,7 +569,7 @@ function B.MenuList()
 end
 
 function B.ToggleFavourite(c)
-    if not c or c.kind == "prefab" then return end
+    if not c or c.kind == "prefab" or c.kind == "stamp" then return end
     local favs = store().favs
     favs[c.id] = (not favs[c.id]) or nil
     remember(c)
@@ -572,6 +583,8 @@ function B.MenuPick(item, mouse)
     local ok
     if item.kind == "prefab" then
         ok = B.PastePrefab(item.name)
+    elseif item.kind == "stamp" then
+        ok = W.DenHome and W.DenHome.Stamp(item.key)
     else
         B.pick = item
         B.Refresh()
@@ -611,6 +624,7 @@ function B.MenuRefresh()
         if B.menuTab == "favourites" then empty = "No favourites yet: right-click a prop to add it."
         elseif B.menuTab == "recent" then empty = "Props you spawn show up here."
         elseif B.menuTab == "prefabs" then empty = "No prefabs yet: select props, then Save in the Builder's Prefab row."
+        elseif B.menuTab == "stamps" then empty = "Stamps are ready-made areas for a Den: a garden, a market, a campfire, a dock, a house."
         elseif B.menuTab == "storage" then empty = "Nothing put away: select props, then Put away (edit mode's tool bar)."
         elseif SEARCHED[B.menuTab] then empty = "Type a word in Search, then Enter: the realm searches every "
             .. (B.menuTab == "models" and "model" or "object") .. " it has."
@@ -622,7 +636,7 @@ end
 
 local function buildMenu()
     menu = CreateFrame("Frame", "WrathUnleashedSpawnMenu", UIParent)
-    menu:SetWidth(580); menu:SetHeight(500)
+    menu:SetWidth(580); menu:SetHeight(540)
     menu:SetPoint("CENTER")
     menu:SetFrameStrata("DIALOG")
     menu:EnableMouse(true)
@@ -675,6 +689,7 @@ local function buildMenu()
                 local it = self.item
                 if not it then return end
                 if it.kind == "prefab" then setStatus(string.format("%s: %d props. Click to paste it.", it.name, it.count or 0))
+                elseif it.kind == "stamp" then setStatus(it.name .. ": " .. (it.line or "") .. " Click to mark where it goes.")
                 else setStatus(string.format("%s: %d build point%s. Click to place it, right-click to favourite it.",
                     it.name, it.cost or 1, (it.cost or 1) == 1 and "" or "s")) end
             end)

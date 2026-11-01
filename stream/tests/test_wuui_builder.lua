@@ -271,8 +271,19 @@ local function cellsShown() local n = 0; for _, c in ipairs(menu.cells) do if c:
 check("All props: a page of the realm's catalog", B.menuTab == "all" and cellsShown() == #menu.cells and menu.cells[1].item == B.catalog[1])
 local tabOf = {}
 for _, t in ipairs(menu.tabs) do tabOf[t.tab] = t end
-check("tabs: favourites, recent, prefabs, storage, all and every category", tabOf.favourites and tabOf.recent and tabOf.prefabs
-    and tabOf.storage and tabOf.all and tabOf.seating and tabOf.decor and tabOf.structure and #menu.tabs == 5 + #B.CATS - 1)
+check("tabs: favourites, recent, prefabs, stamps, storage, all and every category", tabOf.favourites and tabOf.recent and tabOf.prefabs
+    and tabOf.stamps and tabOf.storage and tabOf.all and tabOf.seating and tabOf.decor and tabOf.structure and tabOf.furniture
+    and #menu.tabs == 6 + #B.CATS - 1)
+tabOf.furniture:Fire("OnClick")
+check("Furniture: seating, tables, beds and rugs, nothing else", cellsShown() > 0 and (function()
+    local bed = false
+    for _, c in ipairs(B.menuItems) do
+        if not (c.cat == "seating" or c.cat == "tables" or c.id == 19504 or c.id == 13948 or c.id == 181396 or c.id == 181077
+            or c.id == 188346 or c.id == 188347 or c.id == 188348 or c.id == 19635 or c.id == 2695) then return false end
+        if c.id == 19504 then bed = true end
+    end
+    return bed end)())
+tabOf.all:Fire("OnClick")
 tabOf.lights:Fire("OnClick")
 check("a category tab", cellsShown() > 0 and (function() for _, c in ipairs(menu.cells) do if c.item and c.item.cat ~= "lights" then return false end end; return true end)())
 menu.search:SetText("brazier"); menu.search:Fire("OnTextChanged")

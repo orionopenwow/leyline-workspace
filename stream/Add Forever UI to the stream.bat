@@ -24,7 +24,7 @@ set "KEY=%USERPROFILE%\.ssh\openwow"
 set "HOST=root@play.openvanilla.app"
 set "SSH=ssh -i "%KEY%" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 %HOST%"
 set "KIT=%~dp0server"
-for %%f in (fui-install.sh fui-overlay.py slice-install.sh patch-index.sh) do if not exist "%KIT%\%%f" (echo server\%%f is missing next to this file. & goto fail)
+for %%f in (fui-install.sh fui-overlay.py slice-install.sh patch-index.sh stream-lib.sh slice-health.sh) do if not exist "%KIT%\%%f" (echo server\%%f is missing next to this file. & goto fail)
 
 rem The workspace folder (Desktop\Leyline, before the move Desktop\WrathUnleashed; where play\Install Forever UI.bat keeps foreverui-installed.txt).
 set "WU="
@@ -77,7 +77,7 @@ echo Forever UI from: !SRC!
 rem 2. Only Forever UI's files, in game-path layout (Interface\...), plus the server scripts.
 if exist "!STG!" rmdir /s /q "!STG!"
 mkdir "!STG!\kit" "!STG!\foreverui\Interface\AddOns\ForeverUI" "!STG!\foreverui\Interface\ForeverUI" "!STG!\foreverui\Interface\GlueXML"
-for %%f in (fui-install.sh fui-overlay.py slice-install.sh patch-index.sh) do copy /y "%KIT%\%%f" "!STG!\kit\" >nul || goto fail
+for %%f in (fui-install.sh fui-overlay.py slice-install.sh patch-index.sh stream-lib.sh slice-health.sh) do copy /y "%KIT%\%%f" "!STG!\kit\" >nul || goto fail
 set "F=!STG!\foreverui\Interface"
 if "!MODE!"=="repo" (
   xcopy /e /i /y /q "!SRC!\data\addon\ForeverUI" "!F!\AddOns\ForeverUI\" >nul || goto fail
@@ -108,7 +108,7 @@ for /f %%m in ('powershell -NoProfile -Command "[math]::Round(!BYTES! / 1MB)"') 
 echo Packing !NFILES! files ^(about !MB! MB^)...
 
 rem 3. One SSH: the tar goes in on stdin; the server checks its disk, unpacks, backs up and lays it over.
-set "REMOTE=set -e; ST=/srv/wrath/stream; test -f $ST/stream-lib.sh || { echo The streaming kit is not on the server yet: run Make mini slice.bat first.; exit 1; }; mkdir -p $ST/overlays; need=$((!BYTES! + 2147483648)); avail=$(( $(df --output=avail -k $ST/overlays | tail -1) * 1024 )); if [ $avail -lt $need ]; then echo Not enough disk on the server: $((avail/1048576)) MB free, $((need/1048576)) MB needed.; exit 1; fi; U=$(mktemp -d $ST/overlays/.upload.XXXXXX); trap 'rm -rf $U' EXIT; tar -x -C $U -f - --no-same-owner --no-same-permissions; sed -i 's/\r$//' $U/kit/*.sh; bash $U/kit/fui-install.sh install $U"
+set "REMOTE=set -e; ST=/srv/wrath/stream; test -f $ST/stream-lib.sh || { echo The streaming kit is not on the server yet: run Make mini slice.bat first.; exit 1; }; mkdir -p $ST/overlays; need=$((!BYTES! + 2147483648)); avail=$(( $(df --output=avail -k $ST/overlays | tail -1) * 1024 )); if [ $avail -lt $need ]; then echo Not enough disk on the server: $((avail/1048576)) MB free, $((need/1048576)) MB needed.; exit 1; fi; U=$(mktemp -d $ST/overlays/.upload.XXXXXX); trap 'rm -rf $U' EXIT; tar -x -C $U -f - --no-same-owner --no-same-permissions; sed -i 's/\r$//' $U/kit/*.sh; install -m 0755 $U/kit/stream-lib.sh $U/kit/slice-health.sh $ST/; bash $U/kit/fui-install.sh install $U"
 echo Uploading to the stream (one connection)...
 rem (%%-expansion here, not !: the two sides of a pipe run in new cmd instances without delayed expansion)
 tar -cf - -C "%STG%" kit foreverui | %SSH% "%REMOTE%" || goto fail

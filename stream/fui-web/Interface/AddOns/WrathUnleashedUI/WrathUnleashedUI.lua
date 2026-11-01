@@ -354,6 +354,18 @@ f:SetScript("OnEvent", function(_, event, level, msg, channel)
     fillIn(FILL_DELAY)
 end)
 
+-- The plain destroy prompt (grey and white items: one Accept) becomes the typed one (DELETE) the game uses for blue
+-- and better items. Cancel or Esc leaves the item on the cursor as the game does; nothing else changes.
+function W.SafeDestroy()
+    local d = StaticPopupDialogs
+    if type(d) ~= "table" or type(d.DELETE_GOOD_ITEM) ~= "table" then return false end
+    if d.DELETE_ITEM ~= d.DELETE_GOOD_ITEM then
+        W.plainDestroy = W.plainDestroy or d.DELETE_ITEM
+        d.DELETE_ITEM = d.DELETE_GOOD_ITEM
+    end
+    return true
+end
+
 -- The one-time defaults, on a Leyline realm only (W.WhenLeyline at login).
 function W.LeylineDefaults()
     local c = char()
@@ -368,6 +380,15 @@ function W.LeylineDefaults()
             pcall(SetCVar, "autoLootDefault", "1")
         end
         if CameraZoomOut then pcall(CameraZoomOut, 50) end
+    end
+    -- Items are never lost to one click (owner 1 Nov: a starting bow went to the world-drop prompt): every
+    -- destroy asks for the word DELETE, as the game already does for blue and better items, and the action
+    -- bars are locked once per character (Shift-drag still moves a button), so a click never lifts one.
+    W.SafeDestroy()
+    if not c.barLock then
+        c.barLock = true
+        if SetCVar then pcall(SetCVar, "lockActionBars", "1") end
+        if LOCK_ACTIONBAR ~= nil then LOCK_ACTIONBAR = "1" end
     end
     -- Talent planner: 3.3.5's own preview mode (plan points, then Learn), on for everyone.
     if SetCVar then pcall(SetCVar, "previewTalents", "1"); pcall(SetCVar, "previewPetTalents", "1") end

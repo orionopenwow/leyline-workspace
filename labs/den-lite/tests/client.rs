@@ -114,6 +114,8 @@ fn login(addr: SocketAddr, account: &str, password: &str) -> Result<([u8; 40], S
 struct World {
     s: TcpStream,
     c: ClientCrypto,
+    /// The middle-of-the-screen lines so far (SMSG_NOTIFICATION: the encouragement moments, cheers.rs).
+    notes: Vec<String>,
 }
 
 /// What a server frame was: its opcode, its body, and the crate's reading of it (not for the two read by hand).
@@ -172,14 +174,18 @@ impl World {
         let mut v = Vec::new();
         auth.write_unencrypted_client(&mut v).unwrap();
         s.write_all(&v).unwrap();
-        World { s, c }
+        World { s, c, notes: Vec::new() }
     }
 
     fn frame(&mut self) -> Frame {
         let h = self.c.read_and_decrypt_server_header(&mut self.s).expect("a frame");
         let mut body = vec![0u8; h.size as usize - 2];
         self.s.read_exact(&mut body).unwrap();
-        Frame { opcode: h.opcode, msg: reparse(h.opcode, &body), body }
+        let msg = reparse(h.opcode, &body);
+        if let Some(ServerOpcodeMessage::SMSG_NOTIFICATION(n)) = &msg {
+            self.notes.push(n.notification.clone());
+        }
+        Frame { opcode: h.opcode, msg, body }
     }
 
     fn send<M: ClientMessage>(&mut self, m: &M) {
@@ -440,6 +446,16 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
     let (frames, line) = w.until_line();
     let (_, gone) = objects(&frames);
     assert_eq!(gone.len(), 10, "{line}");
+    // the encouragement moments (cheers.rs): first visit, first piece, first save, each once, never in the chat frame
+    assert_eq!(w.notes.len(), 3, "{:?}", w.notes);
+    assert_eq!(w.notes.iter().map(|n| den_lite::cheers::LINES.iter().position(|(_, l)| l == n)).collect::<Vec<_>>(),
+               vec![Some(0), Some(1), Some(2)], "{:?}", w.notes);
+    w.say(".den save test2");
+    w.until_line();
+    w.say(".den files");
+    w.until_line();
+    assert_eq!(w.notes.len(), 3, "a second save says nothing more");
+    let _ = std::fs::remove_file(dir.join("test2.den.json"));
     assert!(stamp_guids.iter().all(|g| gone.contains(g)));
 
     w.say(".den load test1");
@@ -577,6 +593,7 @@ fn the_den_grows_and_the_companion_talks_with_the_assistant() {
     w.send(&heartbeat(mx + 22.0, my, mz, 0.0));
     w.say(".den place wooden chair");
     assert!(w.until_line().1.starts_with("Wooden Chair is down"));
+    assert!(w.notes.iter().any(|n| n == den_lite::cheers::LINES[3].1), "the first grow: one line ({:?})", w.notes);
     w.say(".den size 1");
     assert!(w.until_line().1.starts_with("1 props stand outside a size 1 Den"));
     w.say(".den save grown");

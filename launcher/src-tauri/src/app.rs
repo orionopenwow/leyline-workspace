@@ -726,6 +726,13 @@ fn mod_native_confirm(core: State<Core>, key: String) -> Result<(), String> {
     })
 }
 
+/// The launcher's guide (ui/guide.js): the first-run tour or a one-time encouragement line was shown, so it never
+/// shows again. Only a short key is kept (Settings::seen).
+#[tauri::command]
+fn guide_seen(core: State<Core>, key: String) -> Result<(), String> {
+    core.update(|s| if s.mark_seen(&key) { Ok(()) } else { Err("That is not a guide step.".into()) })
+}
+
 #[derive(Serialize)]
 struct ModUpdate {
     client: String,
@@ -1147,6 +1154,7 @@ pub fn run() {
             mod_set_enabled,
             mod_uninstall,
             mod_native_confirm,
+            guide_seen, // the first-run tour and the one-time encouragement lines (ui/guide.js)
             mods_updates,
             mods_ranked, // Discover's sort tabs, ratings, leyline:// links (rankings.rs, deeplink.rs)
             mod_rate,

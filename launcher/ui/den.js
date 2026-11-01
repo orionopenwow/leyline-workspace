@@ -267,6 +267,7 @@
       if (typeof readKit === "function") await readKit();
       await load();
       say(thenPlay ? "Your Den is up." : "Your Den is up and ready for friends: make your account on its join page, then Invite a friend.", "ok");
+      if (!thenPlay && window.LeylineGuide) window.LeylineGuide.moment("hosted");   // your Den, live for friends: one line, once (guide.js)
       if (thenPlay) playDocker();
     } else if (job && !job.idle) say(job.problem || "Setting up stopped. Try again.", "bad");
   }

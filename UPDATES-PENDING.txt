@@ -581,3 +581,12 @@
 1254a bugs Release check: rebuild the bug list on the server and copy it here (is the test report 594d507b1708 in it?)
 1254b ship-again Save to GitHub (the den agent tests now skip in the public repo copy)
 1254c leyline Leyline repo: export again so its launcher build goes green and Leyline.exe gets today's launcher work
+1255a signin Site: the client close-up inset taken off the hero shot
+# replaced by 1256a: 1255b foreverui Game menu (Esc): one column, Realm List / Customize UI / Help Request no longer on top of each other, the menu fits its buttons
+1256a foreverui In game (again, the last try stopped on the server): Esc menu in one column; destroying any item asks for DELETE; action bars locked so a click never lifts a button
+1256b foreverui In game: Report a bug in the Esc menu (a box; Send files it with where you are)
+1257a signin Site: Start here (/wrath/start), four cards; "New here? Start here" on the front page; the getting-started guide points to it
+1257b scripts Realm scripts: the once-a-day tip names your Den and hosting in one line (live reload)
+1257c ship Launcher: a short first-run tour (Play, Your Den, Host, game files), Help > Show me again, one-time encouragement lines; Den Lite cheers
+1257d den-lite Den Lite again: one encouragement line for each first (visit, piece, save, grow)
+1257e leyline Leyline repo: export again so Leyline.exe gets the first-run tour

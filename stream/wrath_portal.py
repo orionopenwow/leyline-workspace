@@ -2707,6 +2707,76 @@ def not_found_page() -> bytes:
     return ly_shell(f"Not found · {REALM_NAME}", body, "/wrath/leyline", "", "play", NOT_FOUND_CSS, noindex=True)
 
 
+# ----------------------------------------------------------------------------------------------
+# /wrath/start: "Start here", the one path for new players (the hub's hero and the launcher's Help link it). Four short
+# cards, each one link to the real place. The longer player guide (docs/leyline/getting-started.md) points here first.
+# ----------------------------------------------------------------------------------------------
+
+START_PATH = "/wrath/start"
+START_DEN = "/wrath/docs/getting-started#your-den"   # the Den lives in the launcher: the guide's Your Den says how
+START_LAUNCHER = "https://github.com/orionopenwow/Leyline/releases"   # without the hub: its releases page
+
+# (key, title, line, the link's words). TODO(owner): the four cards' words, his voice
+START_CARDS = (
+    ("play", "Play in your browser", "Wrath Unleashed, the official realm. Nothing to install: hang out, level up, meet people.", "Play now"),
+    ("launcher", "Get the launcher", "Free for Windows, macOS and Linux. It uses the game folder you already have; every realm is one click.", "Download"),
+    ("den", "Make your Den", "Your own small white room on your PC. Build, save, grow it, then invite a friend.", "How Dens work"),
+    ("host", "Host a server", "Run your own realm from a template, in one click. Friends join with your invite link.", "Host a server"),
+)
+
+START_CSS = """
+.st h1{text-align:center}.st .sub{text-align:center}
+.st-grid,.wu-box ol.st-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:18px 0 6px;padding:0;list-style:none}
+@media (max-width:560px){.st-grid,.wu-box ol.st-grid{grid-template-columns:minmax(0,1fr)}}
+.ly-panel.st{max-width:46rem;margin-left:auto;margin-right:auto}
+.st-grid li{margin:0;min-width:0}
+a.st-card{display:flex;flex-direction:column;gap:6px;height:100%;box-sizing:border-box;padding:16px 16px 14px;border-radius:var(--lk-r-sm,10px);
+border:1px solid var(--lk-border,rgba(255,255,255,.12));background:var(--lk-surface-2,rgba(255,255,255,.04));color:var(--lk-text,inherit);text-decoration:none}
+a.st-card:hover,a.st-card:focus-visible{border-color:var(--lk-accent,#7aa3f5);background:var(--lk-accent-soft,rgba(91,141,239,.14))}
+.st-n{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;font:700 13px/1 var(--lk-font,inherit);
+color:var(--lk-accent,#7aa3f5);border:1px solid currentColor}
+a.st-card h2{margin:2px 0 0;font-size:18px;text-align:left}
+a.st-card p{margin:0;flex:1;font-size:14.5px;line-height:1.45;color:var(--lk-text-2,inherit)}
+.st-go{font-weight:700;color:var(--lk-accent,#7aa3f5)}
+.st .fine{text-align:center;margin:14px 0 0}
+@media (prefers-reduced-motion:reduce){a.st-card{transition:none}}
+"""
+
+
+def start_links() -> dict:
+    """Where each card goes: the real place for each, never a made-up page."""
+    host = "/wrath/host" if hub_framed() and hostflow is not None else HOST_URL
+    return {"play": "/wrath", "launcher": launcher_download() or START_LAUNCHER, "den": START_DEN, "host": host}
+
+
+def start_page() -> bytes:
+    """Start here: four cards (Play in your browser, Get the launcher, Make your Den, Host a server), in the hub's frame
+    when the front door is on, else in the Leyline look."""
+    e = html.escape
+    links = start_links()
+    items = []
+    for i, (key, title, line, go) in enumerate(START_CARDS, 1):
+        href = links[key]
+        ext = href.startswith("https://")
+        rel = ' rel="noopener noreferrer"' if ext else ""
+        items.append(f'<li><a class="st-card" id="st-{key}" href="{e(href)}"{rel}><span class="st-n" aria-hidden="true">{i}</span>'
+                     f'<h2>{e(title)}</h2><p>{e(line)}</p><span class="st-go">{e(go)} ›</span></a></li>')
+    grid = f'<ol class="st-grid" aria-label="Four ways in">{"".join(items)}</ol>'
+    # TODO(owner): the heading and the line under it, his voice
+    head = '<h1>Start here</h1><p class="sub">New to Leyline? Pick one. Every one is free, and you can do the rest later.</p>'
+    fine = ('<p class="fine">Want more? The <a href="/wrath/docs/getting-started">player guide</a> has the details, and the '
+            f'<a href="{e(DISCORD_URL)}" rel="noopener noreferrer">Discord</a> has people to help.</p>')
+    title = f"Start here · {REALM_NAME}"
+    meta = card_meta(START_PATH, "Start here · Leyline")
+    framed = hub_frame(title, f'<div class="wu-pg wide st"><div class="wu-box">{head}{grid}{fine}</div></div>', START_PATH, "",
+                       css=WU_BOX_CSS + START_CSS, meta=meta)
+    if framed is not None:
+        return framed
+    body = f'<header class="ly-hero st"><h1>Start here</h1><p class="ly-lede">New to Leyline? Pick one. Every one is free, and you can do the rest later.</p></header>' \
+           f'<section class="ly-panel st">{grid}{fine}</section>'
+    return ly_shell(title, body, START_PATH, "", "", START_CSS, meta=meta)
+
+
 def mods_who(cookie: str, ip: str, ua: str):
     """The Workshop's sign-in check: the /api/me answer, None when signed out; raises when the site is down."""
     if "wr_session=" not in cookie:
@@ -3580,6 +3650,12 @@ class PageHandler(BaseHTTPRequestHandler):
             return
         if bugreport is not None and bugreport.match(path):   # /wrath/bugs: Report a bug (stream/bugreport.py)
             bugreport.get(self, path, query)
+            return
+        if path == START_PATH:   # Start here: the one path for new players
+            if not browse_limit.hit(rl_bucket(self.ip()), 600):
+                self.send(429, busy_page(back=path))
+                return
+            self.send(200, start_page())
             return
         if path == "/wrath/realms":
             if not browse_limit.hit(rl_bucket(self.ip()), 600):

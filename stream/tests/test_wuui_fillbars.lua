@@ -29,6 +29,9 @@ function UnitName() return "Me" end
 function UnitClass() return "Warrior", "WARRIOR" end
 local cvars = {}
 function SetCVar(k, v) cvars[k] = v end
+local GOOD = { text = 'type DELETE', hasEditBox = 1 }
+local PLAIN = { text = 'destroy?' }
+StaticPopupDialogs = { DELETE_ITEM = PLAIN, DELETE_GOOD_ITEM = GOOD }
 function GetCVar() return nil end
 local toggled = 0
 function SetActionBarToggles() toggled = toggled + 1 end
@@ -83,6 +86,8 @@ end
 reset(1)
 fire("PLAYER_ENTERING_WORLD"); hello()
 check("level 1: no ask", asked == 0)
+check("Leyline realm: destroying any item asks for DELETE", StaticPopupDialogs.DELETE_ITEM == GOOD)
+check("Leyline realm: action bars locked once", cvars.lockActionBars == "1" and WrathUnleashedUIChar.barLock == true)
 level = 80
 fire("PLAYER_LEVEL_UP", 80)
 run(30)
@@ -171,6 +176,7 @@ local accepted = 0
 function AcceptQuest() accepted = accepted + 1 end
 binds = { ["1"] = "ACTIONBUTTON1", ["8"] = "ACTIONBUTTON8", ["SHIFT-MOUSEWHEELUP"] = "PREVIOUSACTIONPAGE" }
 cvars, toggled = {}, 0
+StaticPopupDialogs.DELETE_ITEM = PLAIN
 reset(80)
 fire("PLAYER_ENTERING_WORLD")
 -- our own ask comes back to us on any server (a whisper to oneself): it is not an answer
@@ -185,6 +191,7 @@ check("no hello: no setting changed", next(cvars) == nil and toggled == 0)
 check("no hello: no key bound or cleared", binds["8"] == "ACTIONBUTTON8" and binds["SHIFT-1"] == nil and binds["SHIFT-MOUSEWHEELUP"] == "PREVIOUSACTIONPAGE")
 check("no hello: no bars filled, nothing asked", #placedLog == 0 and asked == 0)
 check("no hello: no quest taken", accepted == 0)
+check("no hello: the destroy prompt is the game's own", StaticPopupDialogs.DELETE_ITEM == PLAIN)
 check("no hello: nothing marked done", WrathUnleashedUIChar == nil or (not WrathUnleashedUIChar.defaults and not WrathUnleashedUIChar.keys and not WrathUnleashedUIChar.barsOn))
 
 -- 11. the hello: applied once; a second hello (or the brand word) does not apply it again

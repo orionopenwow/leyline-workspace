@@ -224,6 +224,31 @@ check("404: other unknown paths too", get("/nope")[0] == 404 and "Not found" in 
 check("404: art files stay a plain 404", get("/wrath/art/nothing.webp")[0] == 404 and "<nav" not in get("/wrath/art/nothing.webp")[2])
 check("404: a path with markup is not echoed", "<b>" not in get("/wrath/%3Cb%3Ehi")[2])
 
+# ---------------------------------------------------------------- 4b. Start here (/wrath/start): the one path for new players
+def start_cards(page):
+    return re.findall(r'<a class="st-card" id="st-([a-z]+)" href="([^"]+)"(?: rel="noopener noreferrer")?><span class="st-n" aria-hidden="true">\d</span>'
+                      r'<h2>([^<]+)</h2><p>([^<]+)</p><span class="st-go">([^<]+) ›</span></a>', page)
+
+st, hd, sp = get("/wrath/start")
+check("/wrath/start: 200, html, no script (CSP script-src 'none')", st == 200 and hd.get("content-type", "").startswith("text/html")
+      and "<script" not in sp and "script-src 'none'" in hd.get("content-security-policy", ""), st)
+check_chrome("/wrath/start", sp, "", next_step=False)
+cards = start_cards(sp)
+links = {k: h for k, h, *_ in cards}
+check("/wrath/start: four cards in order (Play in your browser, Get the launcher, Make your Den, Host a server)",
+      [c[2] for c in cards] == ["Play in your browser", "Get the launcher", "Make your Den", "Host a server"], cards)
+check("/wrath/start: each card is one link to the real place", links.get("play") == "/wrath" and links.get("den") == "/wrath/docs/getting-started#your-den"
+      and links.get("host") == wp.html.escape(wp.HOST_URL) and links.get("launcher", "").startswith("https://github.com/orionopenwow/Leyline/releases")
+      and sp.count('class="st-card"') == 4, links)
+check("/wrath/start: short words (a line each), no client numbers", all(len(c[3]) <= 120 for c in cards)
+      and not re.search(r"\b(1\.12|2\.4\.3|3\.3\.5)", visible(sp)))
+check("/wrath/start: the longer guide and the Discord, once each", sp.count('href="/wrath/docs/getting-started"') == 1
+      and f'href="{wp.DISCORD_URL}"' in sp.split('class="ly-foot"')[0])
+check("/wrath/start: its own link card and title", "<title>Start here · " in sp and 'content="https://play.example/wrath/start"' in sp)
+check("/wrath/start: no nav item of its own (the hub's hero and the launcher's Help link it)", wp.nav_key("/wrath/start") == ""
+      and 'href="/wrath/start"' not in nav_of(sp))
+check("/wrath/start/x is a 404", get("/wrath/start/x")[0] == 404)
+
 # ---------------------------------------------------------------- 5. share boxes and update times
 st, _, realms = get("/wrath/realms")
 boxes = re.findall(r'<details class="ly-share"><summary>Share</summary><code tabindex="0">([^<]+)</code>', realms)
@@ -323,6 +348,13 @@ check("framed /wrath/docs: 200, the table of contents and the docs' tokens, no s
       st == 200 and 'aria-label="Documentation"' in page and 'class="ld-doc"' in page and "--lk-accent-soft" in page
       and "leyline-bg.webp" not in page and "script-src 'none'" in hd.get("content-security-policy", ""))
 check("framed /wrath/docs: its link card", 'property="og:title" content="Leyline · Leyline docs"' in page)
+st, hd, page = get("/wrath/start")
+check_frame("framed /wrath/start", page, "")
+fc = {k: h for k, h, *_ in start_cards(page)}
+check("framed /wrath/start: 200, the four cards, Host to our own host page, the hub's card styles, no script allowed",
+      st == 200 and list(fc) == ["play", "launcher", "den", "host"] and fc["host"] == ("/wrath/host" if wp.hostflow is not None else wp.html.escape(wp.HOST_URL))
+      and 'class="wu-pg wide st"' in page and "a.st-card" in page and "script-src 'none'" in hd.get("content-security-policy", ""), fc)
+check("framed /wrath/start: its link card", 'property="og:title" content="Start here · Leyline"' in page)
 st, _, page = get("/wrath/docs/nope")
 check("framed docs 404", st == 404 and "There is no docs page with that name" in page and 'class="hb-top"' in page)
 if wp.bugreport is not None and wp.bugreport.ON:

@@ -59,6 +59,8 @@ rm -f "$BK/discord_growth.py" "$BK/discord_template.json" "$BK/discord_template_
 for f in discord_growth.py discord_template.json discord_template_v2.json; do [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
 had_duels=""
 if [ -f "$WU/portal/duels.py" ]; then cp -p "$WU/portal/duels.py" "$BK/duels.py"; had_duels=1; fi
+had_survivors=""
+if [ -f "$WU/portal/survivors.py" ]; then cp -p "$WU/portal/survivors.py" "$BK/survivors.py"; had_survivors=1; fi
 had_profiles=""
 if [ -f "$WU/portal/profiles.py" ]; then cp -p "$WU/portal/profiles.py" "$BK/profiles.py"; had_profiles=1; fi
 had_herokeys=""
@@ -108,6 +110,7 @@ put_back() {
   if [ -f "$BK/forum_discord.py" ]; then cp -p "$BK/forum_discord.py" "$WU/portal/forum_discord.py"; else rm -f "$WU/portal/forum_discord.py"; fi
   for f in discord_growth.py discord_template.json discord_template_v2.json; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
   if [ -n "$had_duels" ]; then cp -p "$BK/duels.py" "$WU/portal/duels.py"; else rm -f "$WU/portal/duels.py"; fi
+  if [ -n "$had_survivors" ]; then cp -p "$BK/survivors.py" "$WU/portal/survivors.py"; else rm -f "$WU/portal/survivors.py"; fi
   if [ -n "$had_profiles" ]; then cp -p "$BK/profiles.py" "$WU/portal/profiles.py"; else rm -f "$WU/portal/profiles.py"; fi
   if [ -n "$had_herokeys" ]; then cp -p "$BK/herokeys.py" "$WU/portal/herokeys.py"; else rm -f "$WU/portal/herokeys.py"; fi
   if [ -n "$had_network" ]; then cp -p "$BK/network.py" "$WU/portal/network.py"; else rm -f "$WU/portal/network.py"; fi
@@ -219,6 +222,9 @@ fi
 # the duel leaderboards (/wrath/leaderboards, /wrath/api/leaderboards): optional; it reads $WU/portal/duels/, which
 # duels-export.py fills (realm/serverpass.sh step 1d)
 if [ -f duels.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' duels.py && install -m 644 duels.py "$WU/portal/duels.py"; fi
+# Azeroth Survivors' page and its address's gate (/wrath/survivors, /__auth?site=survivors): optional; its address is
+# $WU/portal/survivors.url (hosting/survivors/sv-site-up.sh)
+if [ -f survivors.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' survivors.py && install -m 644 survivors.py "$WU/portal/survivors.py"; fi
 # Leyline profiles and the sign-in chooser (/wrath/signin, /wrath/profile, /wrath/avatar): optional; its store is
 # $WU/portal-data/profiles.sqlite3
 if [ -f profiles.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' profiles.py && install -m 644 profiles.py "$WU/portal/profiles.py"; fi

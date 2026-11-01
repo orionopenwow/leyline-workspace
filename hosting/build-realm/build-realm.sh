@@ -215,8 +215,8 @@ if [ "$MODE" = --check ]; then
   if running "$WORLD_C"; then
     echo; echo "== $WORLD_C: connections, logins and kicks (the last 6000 lines, filtered)"
     docker logs --tail 6000 "$WORLD_C" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' \
-      | grep -iE 'socket|auth|session|account|logged|login|kick|disconnect|reject|denied|realm|character|enum|addon|ban|version|build' \
-      | grep -viE 'password|passwd|secret|token|sessionkey|config:|> using|loading|loaded' | tail -40 | sed 's/^/     /' || true
+      | grep -iE 'socket|auth|session|account|logged|login|kick|disconnect|reject|denied|realm|character|enum|addon|ban|version|build|prepare|statement|table|column|sql|error' \
+      | grep -viE 'password|passwd|secret|token|sessionkey|config:|> using|loading|loaded|MoveSplineInitArgs' | tail -40 | sed 's/^/     /' || true
   fi
   # the world's own log files (SQL errors never reach the console: a failing login query just hangs the client)
   if [ -d "$DIR/logs" ]; then
@@ -226,8 +226,8 @@ if [ "$MODE" = --check ]; then
       [ -f "$f" ] || continue
       n=$(grep -ciE 'error|fail|doesn.t exist|unknown column|denied' "$f" 2>/dev/null || true)
       echo "     -- $(basename "$f"): $n error lines; the last ones:"
-      grep -iE 'error|fail|doesn.t exist|unknown column|denied' "$f" 2>/dev/null | grep -viE 'password|passwd|secret|token|sessionkey' \
-        | tail -12 | cut -c1-300 | sed 's/^/        /' || true
+      grep -iE 'error|fail|doesn.t exist|unknown column|denied|prepare|statement|table|query|sql' "$f" 2>/dev/null \
+        | grep -viE 'password|passwd|secret|token|sessionkey|MoveSplineInitArgs|velocity' | tail -25 | cut -c1-300 | sed 's/^/        /' || true
     done
   fi
   if running "$AUTH_C"; then

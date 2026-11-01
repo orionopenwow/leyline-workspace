@@ -1,33 +1,23 @@
-/* The launcher's page scroll bar (owner 2026-10-31: the screenshot of a stone-and-bronze bar): a dark well with a bronze
-   edge, a square stone grip with a bevel, and a metal cap with a small stud at each end. Drawn in CSS (no picture), for
-   the page itself (main); small panels keep their thin bars. The standard scrollbar-color/-width must be "auto" here or
-   Chromium (the launcher's webview) ignores the ::-webkit-scrollbar parts. */
+/* The launcher's page scroll bar (owner 2026-10-31: "use this as the launcher scroll bar, its mine"): the owner's own
+   art, cut into four parts (art/scroll-top, -thumb, -track, -bottom: the brown edge left off), drawn at 20px wide.
+   The caps are the end buttons; the track repeats; the grip stretches by its middle. For the page itself (main); small
+   panels keep their thin bars. scrollbar-color/-width must be "auto" here or Chromium (the launcher's webview) ignores
+   the ::-webkit-scrollbar parts. */
 html body main { scrollbar-width: auto; scrollbar-color: auto; }
-main::-webkit-scrollbar { width: 16px; }
-main::-webkit-scrollbar-track {
-  background:
-    linear-gradient(90deg, #6b4513 0, #b07a2c 1px, #8a5a1c 2px, #3a2408 3px, transparent 3px),
-    linear-gradient(90deg, #0b0a09, #15130f 45%, #0b0a09);
-  border-left: 1px solid #000; border-right: 1px solid #000;
-}
+main::-webkit-scrollbar { width: 20px; }
+main::-webkit-scrollbar-track { background: url("art/scroll-track.png") center top / 100% auto repeat-y #0c0c0c; }
 main::-webkit-scrollbar-thumb {
-  min-height: 28px;
-  background: linear-gradient(180deg, #7d817d 0, #5e625f 18%, #4a4e4c 60%, #3a3d3c 100%);
-  border: 2px solid #151716; border-left-width: 4px; border-radius: 2px;
-  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.28), inset -1px -1px 0 rgba(0, 0, 0, 0.55);
+  min-height: 24px;
+  border-style: solid; border-width: 5px 0; border-color: transparent;
+  border-image: url("art/scroll-thumb.png") 6 0 fill / 5px 0 stretch;
 }
-main::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #8d918d 0, #6c706d 18%, #555957 60%, #424544 100%); }
-main::-webkit-scrollbar-thumb:active { filter: brightness(0.9); }
-/* the end caps: dark metal with a bevelled stud; one button at each end, no arrows */
-main::-webkit-scrollbar-button:single-button:vertical:decrement,
+main::-webkit-scrollbar-thumb:hover { filter: brightness(1.18); }
+main::-webkit-scrollbar-thumb:active { filter: brightness(0.92); }
+main::-webkit-scrollbar-button:single-button:vertical:decrement {
+  display: block; height: 18px; background: url("art/scroll-top.png") center / 100% 100% no-repeat;
+}
 main::-webkit-scrollbar-button:single-button:vertical:increment {
-  display: block; height: 18px;
-  background:
-    radial-gradient(circle at 50% 50%, #9aa3a6 0 1.5px, #3d4446 2.2px, transparent 3px),
-    linear-gradient(45deg, transparent 31%, #2c3133 32% 68%, transparent 69%),
-    linear-gradient(-45deg, transparent 31%, #4a5254 32% 68%, transparent 69%),
-    linear-gradient(180deg, #2a2e2f, #141617);
-  border: 1px solid #000; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  display: block; height: 18px; background: url("art/scroll-bottom.png") center / 100% 100% no-repeat;
 }
 main::-webkit-scrollbar-button:vertical:start:increment, main::-webkit-scrollbar-button:vertical:end:decrement { display: none; }
-main::-webkit-scrollbar-corner { background: #0b0a09; }
+main::-webkit-scrollbar-corner { background: #0c0c0c; }

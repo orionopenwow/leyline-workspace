@@ -52,3 +52,7 @@
 .titlebar .brand { gap: 13px; padding-left: 16px; }
 .titlebar .brand span { justify-items: center; text-align: center; }
 .titlebar .brand i { margin-right: -0.36em; }
+/* owner 2026-10-31 19:14: "emboss and drop shadow the typography too": the same light-above, dark-below edge as the mark */
+.titlebar .brand b, .titlebar .brand i {
+  text-shadow: 0 -1px 0 rgba(255, 255, 255, 0.18), 0 1.5px 0 rgba(0, 0, 0, 0.75), 0 3px 6px rgba(0, 0, 0, 0.55);
+}

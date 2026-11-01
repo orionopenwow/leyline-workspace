@@ -302,14 +302,19 @@ note "$AUTH_DB: $(echo "$tables" | grep -cvE '^(realmlist|ov_.*|mod_.*)$') views
 clone_schema() {  # clone_schema FROM TO: the tables (empty), and the rows of the small bookkeeping tables
   local from="$1" to="$2" n
   n=$(echo "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$to';" | sql) || return 1
-  if [ "${n:-0}" != 0 ]; then note "$to: already has its tables (kept as they are)"; return 0; fi
-  dump --no-data "$from" | sed -E 's/ AUTO_INCREMENT=[0-9]+//' | docker exec -i "$DB_C" sh -c 'MYSQL_PWD="${MYSQL_ROOT_PASSWORD:-}" exec mysql -uroot "$1"' sql "$to" || return 1
-  for t in updates updates_include worldstates; do
+  if [ "${n:-0}" != 0 ]; then
+    note "$to: already has its tables (kept as they are)"
+  else
+    dump --no-data "$from" | sed -E 's/ AUTO_INCREMENT=[0-9]+//' | docker exec -i "$DB_C" sh -c 'MYSQL_PWD="${MYSQL_ROOT_PASSWORD:-}" exec mysql -uroot "$1"' sql "$to" || return 1
+  fi
+  # The rows the world server needs at start (2026-10-31 live: "active_arena_season can't be empty" stopped it),
+  # topped up every run, so a database made by an earlier run gets them too.
+  for t in updates updates_include worldstates active_arena_season; do
     if [ "$(echo "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$from' AND table_name = '$t';" | sql)" = 1 ]; then
       echo "INSERT IGNORE INTO \`$to\`.\`$t\` SELECT * FROM \`$from\`.\`$t\`;" | sql >/dev/null || return 1
     fi
   done
-  note "$to: the tables of $from, empty (its update records copied)"
+  note "$to: the tables of $from, empty (its update records and the arena season copied)"
 }
 clone_schema acore_characters "$CHARS_DB" || fail "could not make $CHARS_DB"
 if db_exists acore_playerbots; then clone_schema acore_playerbots "$BOTS_DB" || fail "could not make $BOTS_DB"; fi

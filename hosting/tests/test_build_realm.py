@@ -240,6 +240,8 @@ class BuildRealm(unittest.TestCase):
         self.assertNotRegex(sql, r"(?m)^(UPDATE|INSERT INTO|DELETE FROM|DROP|ALTER) `?acore_(auth|characters|world)`?\.",
                             "the main realm's databases are never written by the script")
         self.assertIn("INSERT IGNORE INTO `acore_characters_build`.`updates` SELECT * FROM `acore_characters`.`updates`;", sql)
+        # 2026-10-31 live: an empty active_arena_season stopped the world server at start
+        self.assertIn("INSERT IGNORE INTO `acore_characters_build`.`active_arena_season` SELECT * FROM `acore_characters`.`active_arena_season`;", sql)
         self.assertIn("GRANT ALL PRIVILEGES ON `acore_characters_build`.* TO 'acore'@'%';", sql)
         self.assertIn("--no-data acore_characters", self.read("docker.log"))
         # settings: this realm's databases and switches, 0600, nothing of the main realm's game switches, never printed

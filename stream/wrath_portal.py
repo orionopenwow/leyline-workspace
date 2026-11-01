@@ -300,6 +300,9 @@ herokey_mod = _load_module("wu_herokey", "herokey_sso.py")   # Hero Key sign-in 
 hub_mod = _load_module("wu_hub", "hub.py")   # /wrath/leyline-preview: the hidden Leyline hub (stream/hub.py)
 playmodes = _load_module("wu_playmodes", "playmodes.py")   # game modes: /wrath/modes.json, Games, ?go=mode: (stream/playmodes.py)
 modepacks = _load_module("wu_modepacks", "modepack.py")   # modes anyone can host and fork: /wrath/modes/<id>, /jam (stream/modepack.py)
+survivors = _load_module("wu_survivors", "survivors.py")   # Azeroth Survivors: /wrath/survivors and its own address's gate (stream/survivors.py)
+if survivors is not None:
+    survivors.bind(lambda name: globals()[name])
 if modepacks is not None:
     modepacks.bind(lambda name: globals()[name])
 if hub_mod is not None:
@@ -3134,7 +3137,9 @@ class PageHandler(BaseHTTPRequestHandler):
 
     def stream_session(self) -> dict | None:
         sid = cookie_value(self.headers.get("Cookie", ""), "wu_play")
-        return sessions.get(sid) if sid and len(sid) < 128 else None
+        sess = sessions.get(sid) if sid and len(sid) < 128 else None
+        # an Azeroth Survivors session (stream/survivors.py) opens only its own address, never the Wrath stream
+        return None if sess and sess.get("mode") == "survivors" else sess
 
     def stream_auth(self) -> None:
         """GET /__auth: Caddy forward_auth. The original request is in X-Forwarded-Uri."""
@@ -3428,6 +3433,12 @@ class PageHandler(BaseHTTPRequestHandler):
         if hub_mod is not None:   # the turn-your-phone hint's "Not now" (cookie), for every page in the hub's look
             hub_mod.note_request(self)
         if path == "/__auth":
+            if (query.get("site") or [""])[0] == "survivors":   # the Azeroth Survivors address (stream/survivors.py)
+                if survivors is not None:
+                    survivors.site_auth(self)
+                else:
+                    self.send(403, b"not here\n", "text/plain")
+                return
             self.stream_auth()
             return
         if path == "/__gate":
@@ -3531,6 +3542,9 @@ class PageHandler(BaseHTTPRequestHandler):
                                                   public_host=PUBLIC_HOST,
                                                   games=(playmodes.section() if playmodes is not None else "")
                                                   + (modepacks.section() if modepacks is not None else "")), path))
+            return
+        if survivors is not None and survivors.match(path):   # Azeroth Survivors' page and Play (stream/survivors.py)
+            survivors.get(self, path, query)
             return
         if modepacks is not None and modepacks.match(path):   # a mode's page, the mode jam (stream/modepack.py)
             modepacks.get(self, path, query)

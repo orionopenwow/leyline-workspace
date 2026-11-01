@@ -16,7 +16,7 @@ set "KIT=%~dp0..\stream\server"
 if not exist "%~dp0catalog" (echo The catalog folder is missing next to this file. & goto fail)
 if not exist "%~dp0wu-mod.py" (echo wu-mod.py is missing next to this file. & goto fail)
 if not exist "%~dp0categories.json" (echo categories.json is missing next to this file. & goto fail)
-for %%f in (mods-install.sh mods-overlay.py) do if not exist "%KIT%\%%f" (echo ..\stream\server\%%f is missing. & goto fail)
+for %%f in (mods-install.sh mods-overlay.py stream-lib.sh slice-health.sh) do if not exist "%KIT%\%%f" (echo ..\stream\server\%%f is missing. & goto fail)
 if not exist "%KEY%" (echo SSH key %KEY% not found. & goto fail)
 
 rem 1. A quick check here first when Python is installed (the server checks again before it changes anything).
@@ -35,10 +35,12 @@ mkdir "%STG%\kit" "%STG%\catalog"
 copy /y "%~dp0wu-mod.py" "%STG%\kit\" >nul || goto fail
 copy /y "%~dp0categories.json" "%STG%\kit\" >nul || goto fail
 copy /y "%KIT%\mods-install.sh" "%STG%\kit\" >nul || goto fail
+copy /y "%KIT%\stream-lib.sh" "%STG%\kit\" >nul || goto fail
+copy /y "%KIT%\slice-health.sh" "%STG%\kit\" >nul || goto fail
 copy /y "%KIT%\mods-overlay.py" "%STG%\kit\" >nul || goto fail
 xcopy /e /i /y /q "%~dp0catalog" "%STG%\catalog\" >nul || goto fail
 echo Uploading the catalog (one connection)...
-tar -cf - -C "%STG%" kit catalog | ssh -i "%KEY%" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 %HOST% "U=$(mktemp -d /tmp/wu-mods.XXXXXX) && tar -x -C $U -f - --no-same-owner && sed -i 's/\r$//' $U/kit/mods-install.sh && bash $U/kit/mods-install.sh install $U 2>&1 | tee /tmp/wu-mods.log; rm -rf $U; grep -q '^MODS OK' /tmp/wu-mods.log"
+tar -cf - -C "%STG%" kit catalog | ssh -i "%KEY%" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 %HOST% "U=$(mktemp -d /tmp/wu-mods.XXXXXX) && tar -x -C $U -f - --no-same-owner && sed -i 's/\r$//' $U/kit/*.sh && install -m 0755 $U/kit/stream-lib.sh $U/kit/slice-health.sh /srv/wrath/stream/ && bash $U/kit/mods-install.sh install $U 2>&1 | tee /tmp/wu-mods.log; rm -rf $U; grep -q '^MODS OK' /tmp/wu-mods.log"
 if errorlevel 1 (echo. & echo It did not report success; see above. Anything it changed was put back. & goto fail)
 rmdir /s /q "%STG%"
 echo.

@@ -167,18 +167,31 @@ check("header: each item goes to the launcher page's web twin", hrefs == {
       "Addons": "/wrath/leyline-preview/addons", "Host": "/wrath/host",
       "Forum": "/wrath/leyline/forum"} and "addons" in HB.CATEGORY_IDS, hrefs)
 more = re.search(r'<details class="hb-more-d"><summary class="hb-ni[^"]*">.*?<span>More</span></summary><div class="hb-more-m">(.*?)</div></details>', nav, re.S)
-check("header: More is a details dropdown (no script needed) with Forge, Agents, Docs, News, Creators",
-      more and re.findall(r"<span>([^<]+)</span>", more.group(1)) == ["Leaderboards", "Forge", "Agents", "Docs", "News", "Creators"]
+MORE_ITEMS = ["Leaderboards", "Forge", "Agents", "Docs", "News", "Join the Discord", "Creators"]   # Join the Discord under News, as in the launcher
+check("header: More is a details dropdown (no script needed) with Forge, Agents, Docs, News, Join the Discord, Creators",
+      more and re.findall(r"<span>([^<]+)</span>", more.group(1)) == MORE_ITEMS
       and "#status" not in more.group(1) and "/gallery" not in more.group(1))
 check("header: the phone sheet has the same items as tiles, and the download", re.findall(
-      r"<span>([^<]+)</span>", re.search(r'<div class="hb-nav-x">(.*?)</div>', nav, re.S).group(1)) == ["Leaderboards", "Forge", "Agents", "Docs", "News", "Creators"]
+      r"<span>([^<]+)</span>", re.search(r'<div class="hb-nav-x">(.*?)</div>', nav, re.S).group(1)) == MORE_ITEMS
       and 'class="hb-dl-x"' in nav and 'id="hb-menu" class="hb-menu-t"' in hd and '<label for="hb-menu" class="hb-menu-b"' in hd)
-check("header: a line icon by every item (inline SVG, currentColor)", nav.count('<svg viewBox="0 0 24 24" aria-hidden="true">') == 6 + 1 + 6 + 6
+check("header: a line icon by every item (inline SVG, currentColor)", nav.count('<svg viewBox="0 0 24 24" aria-hidden="true">') == 6 + 1 + 7 + 7
       and "stroke:currentColor" in front)
-check("header: Download (primary) and Sign In (the crystal) on the right, no item active on the front page",
-      re.search(r'<div class="hb-end"><a class="hb-dl" href="https://github\.com/orionopenwow/Leyline/releases/download/launcher-latest/Leyline\.exe"[^>]*>.*?Download</a>'
-                r'<a class="hb-signin" href="/login\?next=%2Fwrath"><img src="/wrath/art/leyline-crystal-128.png"', hd, re.S)
+check("header: Download (primary) and Log In (the launcher's word; the crystal on the folded rail) on the right, no item active on the front page",
+      re.search(r'<div class="hb-end"><a class="hb-dl" href="https://github\.com/orionopenwow/Leyline/releases/download/launcher-latest/Leyline\.exe"[^>]*>.*?<span>Download</span></a>'
+                r'<a class="hb-signin" href="/login\?next=%2Fwrath"><img src="/wrath/art/leyline-crystal-128.png" alt="" width="26" height="26"><span>Log In</span></a>', hd, re.S)
       and on == [] and 'aria-current="page"' not in hd)
+check("header: Join the Discord under News (the launcher's side menu), the portal's link, opened safely",
+      re.search(r'<a class="hb-ni hb-ni-dc" href="%s" rel="noopener noreferrer" title="Join the Discord"><svg' % re.escape(html.escape(wp.DISCORD_URL)), nav)
+      and nav.index('<span>News</span>') < nav.index('<span>Join the Discord</span>') < nav.index('<span>Creators</span>'))
+check("the launcher's stone (launcher/ui/stone.css): the side menu on the tall tile, the bars on the strip, the current page a "
+      "sunken well, Log In and Download on the red stone in Marcellus, panels in the grey metal edge; the art allowed by the portal",
+      "--hb-stone-tall:url(/wrath/art/stone-side.webp) 0 0/256px 256px repeat" in front and "var(--hb-stone)" in HB.STONE_CSS
+      and "border-image:url(/wrath/art/stone-btn.webp) 28 30 fill/11px stretch" in front and "url(/wrath/art/marcellus-400.woff2)" in front
+      and "border-image:url(/wrath/art/window-edge.png) 19/6px round" in front and "inset 0 2px 4px rgba(0,0,0,.6)" in front
+      and front.index(".hb-pg{") < front.index("--hb-stone-tall")
+      and all(f'"{n}":' in open(PORTAL).read() for n in ("stone-bar.webp", "stone-side.webp", "stone-btn.webp", "window-edge.png", "marcellus-400.woff2", "Marcellus-OFL.txt"))
+      and all(os.path.isfile(os.path.join(HERE, "www-files", "art", n)) for n in ("stone-bar.webp", "stone-side.webp", "stone-btn.webp", "window-edge.png", "marcellus-400.woff2", "Marcellus-OFL.txt")))
+check("the stone chrome stays dark in Light (its words light on the stone)", ".hb-top,.hb-foot,.hb-pg-h" in HB.DARK_ISLANDS and ".hb-top,.hb-foot,.hb-pg-h" in front)
 check("header: sticky with a blur, a hairline once scrolled, none of it moving with reduced motion",
       "backdrop-filter:blur(14px)" in front and "animation-timeline:scroll(root)" in front and ".hb-top.hb-scrolled{" in front
       and "hb-scrolled" in HB.HUB_JS and re.search(r"prefers-reduced-motion:reduce\)\{[^}]*animation:none!important\}.*?\.hb-top\{border-bottom-color", front, re.S))

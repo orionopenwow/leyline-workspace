@@ -13,7 +13,7 @@ and runs without it.
                                               (Hot right now, Top creators, News), Mods in play, the Platform status
                                               bar. Every hub page has the same header:
                                               the launcher's pages (Play, Realms, Mods, Addons, Modes, Host, Community,
-                                              More) with Download and Sign In (or the account chip).
+                                              More) with Download and Log In (or the account chip).
                                               No client build number or game name on any hub page
                                               (neutral(), CLIENT_LABEL, COMPAT; stream/tests/test_hub.py checks)
     GET  /wrath/leyline-preview/catalog       Mods (everything that changes the game itself; shelf_of), filtered by plain
@@ -925,9 +925,18 @@ class Hub:
         home = FRONT if front_on() else BASE
         main, more = self.nav_items()
 
+        # Join the Discord sits under News, as in the launcher's side menu (owner 2026-10-31); only with a real link
+        d = self.portal("DISCORD_URL") or ""
+        if d.startswith("https://"):
+            at = next((i + 1 for i, m in enumerate(more) if m[0] == "news"), len(more))
+            more = more[:at] + [("discord", "Join the Discord", d, "discord")] + more[at:]
+
         def item(key, label, href, icon, cls="hb-ni"):
             on = key == active
+            if key == "discord":
+                cls += " hb-ni-dc"
             return (f'<a class="{cls}{" on" if on else ""}" href="{e(href)}"' + (' aria-current="page"' if on else "")
+                    + (' rel="noopener noreferrer"' if href.startswith("https://") else "")
                     + f' title="{e(label)}"><svg viewBox="0 0 24 24" aria-hidden="true">{NAV_ICONS[icon]}</svg><span>{e(label)}</span></a>')
         more_on = any(k == active for k, *_ in more)
         drop = (f'<details class="hb-more-d"><summary class="hb-ni{" on" if more_on else ""}">'
@@ -946,11 +955,13 @@ class Hub:
                     f'{av}<span class="hb-acct-n">{e(name)}</span></a>')
         else:
             sin = prof.signin_url("/wrath") if prof is not None else "/login?next=%2Fwrath"
+            # Log In on the launcher's red stone (owner 2026-10-31: the launcher's wording and look); the crystal shows
+            # only on the folded rail
             acct = (f'<a class="hb-signin" href="{e(sin)}"><img src="/wrath/art/leyline-crystal-128.png" alt="" width="26" height="26">'
-                    'Sign In</a>')
+                    '<span>Log In</span></a>')
         dl = self._download()
         dl_a = (f'<a class="hb-dl" href="{e(dl)}" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true">'
-                f'{NAV_ICONS["download"]}</svg>Download</a>')
+                f'{NAV_ICONS["download"]}</svg><span>Download</span></a>')
         # A top bar like a website (owner 2026-10-31: "fit for the website"): the brand, the launcher's pages, Download and
         # the account. On a phone Menu opens the same items as a sheet (no script needed).
         # On a wide screen the header is the launcher's side menu (owner 2026-10-30: "make all the tools come from the side by
@@ -1002,7 +1013,7 @@ class Hub:
         meta = ('<meta name="description" content="Leyline: one launcher for your own game clients and every realm, '
                 'with mods, addons, realm scripts and tools.">')
         css = ((self.portal("LOOK_VARS") or LOOK_FALLBACK) + SITE_TOKENS_CSS + (self.portal("SPIN_CSS") or "") + HUB_CSS + SITE_CSS
-               + SIDE_CSS + DARK_ISLANDS + self._backdrop() + css)
+               + SIDE_CSS + STONE_CSS + DARK_ISLANDS + self._backdrop() + css)
         return (f'<!doctype html><html lang="en" data-look="leyline"><head><meta charset="utf-8">'
                 f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light">'
                 f'<title>{e(title)}</title>{meta}{robots}<style>{css}</style></head>'
@@ -4118,9 +4129,101 @@ body.hb:has(#hb-side:checked) .hb-acct{padding:0 4px}
 @media (prefers-reduced-motion:reduce){body.hb,body.hb .hb-top,.hb-side-b svg{transition:none}}
 """
 
+# The launcher's stone look on the site (owner 2026-10-31: "stylize and furnish the site with new background texture
+# style where relevant like sidebar and other areas, keep the site up to consistency with launcher features"): the same
+# art and rules as launcher/ui/stone.css. The side menu on the 256px stone tile (stone-side.webp, seamless both ways), the
+# phone top bar and the footer on the 34px stone strip (stone-bar.webp), each under a dark shade so the words stay easy
+# to read; the current page a well sunk into the stone. The page panels have the launcher window's grey metal edge
+# (window-edge.png, mitred, 6px). The main actions (Download, Log In, Get the launcher, the Hero Key's Download) are the
+# PLAY stone with its word painted out (stone-btn.webp) and gold Marcellus lettering (SIL OFL 1.1, Marcellus-OFL.txt);
+# the other buttons are dark stone in the same grey metal. The chrome stays stone in Light too (DARK_ISLANDS).
+STONE_CSS = """
+@font-face{font-family:"Marcellus";font-weight:400;font-display:swap;src:url(/wrath/art/marcellus-400.woff2) format("woff2")}
+:root{--hb-stone:url(/wrath/art/stone-bar.webp) 0 0/340px 34px repeat;--hb-stone-tall:url(/wrath/art/stone-side.webp) 0 0/256px 256px repeat;
+--hb-stone-edge:#0a0908;--hb-stone-metal:rgba(196,178,140,.55);--hb-gold:#f6cf55}
+body.hb :is(.hb-top,.hb-foot,.hb-pg-h,.fm>.fm-head){color:var(--lk-text)}
+/* the top bar (phones and tablets) and the footer: the stone strip */
+body.hb .hb-top{background:linear-gradient(180deg,rgba(0,0,0,.10),rgba(0,0,0,.34)),var(--hb-stone);-webkit-backdrop-filter:none;backdrop-filter:none;
+border-bottom:1px solid var(--hb-stone-edge);box-shadow:inset 0 -1px 0 rgba(255,255,255,.05),0 4px 16px rgba(0,0,0,.35);animation:none}
+body.hb .hb-foot{background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(0,0,0,.36)),var(--hb-stone);border-top:1px solid var(--hb-stone-edge);
+box-shadow:inset 0 1px 0 rgba(255,255,255,.07)}
+.hb-foot-links a,.hb-social a:not(.hb-dc),.hb-foot-fine,.hb-health{text-shadow:0 1px 1px rgba(0,0,0,.6)}
+body.hb :is(.hb-foot-links,.hb-social) a:not(.hb-dc){color:#ddd6c4}
+body.hb :is(.hb-foot-links,.hb-social) a:not(.hb-dc):hover{color:#fff}
+.hb-top :is(.hb-ni,.hb-mi,.hb-brand){text-shadow:0 1px 1px rgba(0,0,0,.6)}
+body.hb .hb-top :is(.hb-ni,.hb-mi):hover,body.hb .hb-more-d[open] summary{background:rgba(0,0,0,.32)}
+body.hb .hb-top :is(.hb-ni,.hb-mi).on{background:linear-gradient(180deg,rgba(0,0,0,.5),rgba(0,0,0,.36));
+box-shadow:inset 0 2px 4px rgba(0,0,0,.6),0 1px 0 rgba(255,255,255,.06),inset 0 0 0 1px var(--hb-stone-edge)}
+body.hb .hb-top .hb-ni.on svg{color:var(--lk-gold)}
+body.hb .hb-top .hb-ni.on::after{display:none}
+/* the More drop-down and the phone sheet: stone panels with a dark metal edge, the tiles wells in it */
+.hb-more-m{background:linear-gradient(180deg,rgba(0,0,0,.5),rgba(0,0,0,.62)),var(--hb-stone);border:1px solid var(--hb-stone-edge);
+box-shadow:0 0 0 1px rgba(196,178,140,.18),0 14px 34px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.06)}
+@media (max-width:1080px){body.hb .hb-nav .hb-ni:not(.on){background:linear-gradient(180deg,rgba(0,0,0,.42),rgba(0,0,0,.28));border-color:var(--hb-stone-edge);
+box-shadow:inset 0 1px 3px rgba(0,0,0,.5),0 1px 0 rgba(255,255,255,.05)}
+.hb-nav .hb-ni svg{color:var(--lk-gold)}body.hb .hb-nav .hb-ni.on{border-color:var(--hb-stone-metal)}}
+/* Join the Discord (under News): a menu item in Discord's colour, as in the launcher */
+.hb-ni-dc{color:#c9cdfb!important}.hb-ni-dc svg{color:#8891f5;opacity:1!important}
+.hb-ni-dc:hover{color:#fff!important;background:rgba(88,101,242,.22)!important}
+/* the side menu (wide screens): the tall stone tile, a dark metal seam against the page */
+@media (min-width:1081px){
+body.hb .hb-top{background:linear-gradient(90deg,rgba(0,0,0,.18),rgba(0,0,0,.30)),var(--hb-stone-tall);border-right:1px solid var(--hb-stone-edge);
+border-bottom:0;box-shadow:inset -1px 0 0 rgba(255,255,255,.05),4px 0 18px rgba(0,0,0,.28)}
+body.hb .hb-brand{border-bottom:1px solid rgba(0,0,0,.6);box-shadow:0 1px 0 rgba(255,255,255,.05)}
+body.hb .hb-nav-x{border-top:1px solid rgba(0,0,0,.6);box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+body.hb .hb-ni.on{box-shadow:inset 0 2px 4px rgba(0,0,0,.6),0 1px 0 rgba(255,255,255,.06),inset 0 0 0 1px var(--hb-stone-edge)}
+.hb-side-b{border-color:var(--hb-stone-edge);background:linear-gradient(180deg,rgba(0,0,0,.42),rgba(0,0,0,.28));box-shadow:inset 0 1px 3px rgba(0,0,0,.55)}
+.hb-side-b:hover{border-color:var(--hb-stone-metal)}
+body.hb:has(#hb-side:checked) .hb-signin img{display:block;transform:none;width:22px;height:22px}
+body.hb:has(#hb-side:checked) :is(.hb-dl,.hb-signin){min-width:0;padding:0;justify-content:center}
+body.hb:has(#hb-side:checked) .hb-dl span,body.hb:has(#hb-side:checked) .hb-signin span{display:none}
+body.hb:has(#hb-side:checked) .hb-dl svg{display:block}
+}
+/* the main actions: the PLAY stone without its word (stone-btn.webp, a nine-slice so any label fits), gold lettering */
+body.hb :is(.hb-dl,.hb-dl-x,.hb-signin,.hb-cta:not(.hb-ho-a .hb-cta),.ly-btn:not(.hb-alt),.hk-btn.primary,.fm-btn:not(.ghost,.fm-dc .fm-btn),.hf a.dl.primary,.hb-pg .host-cta .btn.primary){
+align-items:center;justify-content:center;gap:8px;min-height:46px;padding:0 20px;box-sizing:border-box;
+border:11px solid transparent;border-radius:0;border-image:url(/wrath/art/stone-btn.webp) 28 30 fill/11px stretch;
+background:none!important;box-shadow:none!important;color:var(--hb-gold)!important;
+font:400 19px/1 "Marcellus",Georgia,"Times New Roman",serif;letter-spacing:.035em;text-decoration:none;
+text-shadow:0 1px 0 #2a1200,0 2px 3px rgba(0,0,0,.85);filter:drop-shadow(0 3px 6px rgba(0,0,0,.4));transition:filter .12s,transform .08s;cursor:pointer}
+body.hb :is(.hb-dl,.hb-dl-x,.hb-signin,.hb-cta:not(.hb-ho-a .hb-cta),.ly-btn:not(.hb-alt),.hk-btn.primary,.fm-btn:not(.ghost,.fm-dc .fm-btn),.hf a.dl.primary,.hb-pg .host-cta .btn.primary):hover{
+filter:drop-shadow(0 3px 6px rgba(0,0,0,.4)) brightness(1.15)}
+body.hb :is(.hb-dl,.hb-dl-x,.hb-signin,.hb-cta:not(.hb-ho-a .hb-cta),.ly-btn:not(.hb-alt),.hk-btn.primary,.fm-btn:not(.ghost,.fm-dc .fm-btn),.hf a.dl.primary,.hb-pg .host-cta .btn.primary):active{
+filter:brightness(.9);transform:translateY(1px)}
+body.hb :is(.hb-dl,.hb-dl-x,.hb-signin,.hb-cta,.ly-btn,.hk-btn,.fm-btn,.hf a.dl,.hb-ghost,.hb-copy,.hb-menu-b,.btn,.hb-dc):focus-visible{outline:2px solid #f2c94c;outline-offset:3px}
+body.hb .hb-signin span,body.hb .hb-dl span{white-space:nowrap}
+body.hb .hb-signin img{display:none}
+body.hb :is(.hb-dl,.hb-signin){display:inline-flex}
+body.hb :is(.hb-cta:not(.hb-ho-a .hb-cta),.ly-btn:not(.hb-alt),.hk-btn.primary,.fm-btn:not(.ghost,.fm-dc .fm-btn),.hf a.dl.primary,.hb-pg .host-cta .btn.primary){display:inline-flex}
+@media (max-width:560px){body.hb .hb-end .hb-dl{display:none}body.hb .hb-signin{min-height:42px;padding:0 14px;font-size:19px}}
+body.hb .hb-dl-x{text-align:center;line-height:24px}
+@supports (-webkit-background-clip:text){body.hb .hb-signin span{background:linear-gradient(180deg,#fff1a0 0%,#f9d55c 40%,#e2ab2e 75%,#b9801c 100%);
+-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none;filter:drop-shadow(0 0 .6px #2a1200) drop-shadow(0 2px 2px rgba(0,0,0,.9))}}
+body.hb .hb-signin{font-size:22px}
+body.hb .hb-dl svg{width:18px;height:18px;stroke-width:2.2;filter:drop-shadow(0 1px 1px #2a1200)}
+body.hb :is(.hb-cta.sm:not(.hb-ho-a .hb-cta),.hk-btn.primary.small){min-height:40px;padding:0 14px;font-size:16px;border-width:9px;border-image-width:9px}
+body.hb .hb-pg .hb-actions .hb-cta.sm{min-height:46px;font-size:18px}
+/* the other buttons: dark stone in the grey metal edge of the launcher's window */
+body.hb :is(.hb-ghost,.hb-copy,.hb-menu-b,.ly-btn.hb-alt,.hk-btn:not(.primary),.fm-btn.ghost,.fm-dc .fm-btn,.hb-pg .hb-search button,.hb-social a.hb-dc,.hb-pg .host-cta .btn:not(.primary),.hf a.dl:not(.primary)){
+border:4px solid transparent;border-radius:0;border-image:url(/wrath/art/window-edge.png) 19/4px round;background-clip:padding-box;
+background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(0,0,0,.34)),var(--hb-stone)!important;color:#ece6d6!important;
+text-shadow:0 1px 1px rgba(0,0,0,.75);box-shadow:inset 0 1px 0 rgba(255,255,255,.08);text-decoration:none}
+body.hb :is(.hb-ghost,.hb-copy,.hb-menu-b,.ly-btn.hb-alt,.hk-btn:not(.primary),.fm-btn.ghost,.fm-dc .fm-btn,.hb-pg .hb-search button,.hb-social a.hb-dc,.hb-pg .host-cta .btn:not(.primary),.hf a.dl:not(.primary)):hover{
+filter:brightness(1.22);color:#fff!important}
+.hb-menu-t:checked+.hb-menu-b{filter:brightness(.85)}
+body.hb :is(.hb-ghost,.hb-copy,.hk-btn:not(.primary),.fm-btn.ghost):active{transform:translateY(1px);filter:brightness(.9)}
+/* the page panels: the grey metal edge, the header strip the stone */
+body.hb :is(.hb-pg,.fm,.hk-card,.hb-ho){border:6px solid transparent;border-radius:0;border-image:url(/wrath/art/window-edge.png) 19/6px round;background-clip:padding-box}
+body.hb :is(.hb-pg-h,.fm>.fm-head){border-radius:0;border-bottom:1px solid var(--hb-stone-edge);
+background:linear-gradient(180deg,rgba(0,0,0,.30),rgba(0,0,0,.46)),var(--hb-stone);box-shadow:inset 0 -1px 0 rgba(255,255,255,.05)}
+body.hb :is(.hb-pg-h,.fm>.fm-head) h1{text-shadow:0 1px 2px rgba(0,0,0,.7)}
+body.hb .hb-pg-h .hb-seg{background:linear-gradient(180deg,rgba(0,0,0,.5),rgba(0,0,0,.36));border-color:var(--hb-stone-edge);box-shadow:inset 0 2px 4px rgba(0,0,0,.6),0 1px 0 rgba(255,255,255,.06)}
+@media (prefers-reduced-motion:reduce){body.hb :is(.hb-dl,.hb-dl-x,.hb-signin,.hb-cta,.ly-btn,.hk-btn,.fm-btn){transition:none}}
+"""
+
 # The drawings of the launcher's own windows (the host console, the in-game realm list) and the realm posters are dark
 # pictures: in Light they keep the Dark tokens, so their words stay light on dark.
-DARK_ISLANDS = ("@media (prefers-color-scheme:light){:is(.hb-sw,.hb-rlx,.hb-poster){"
+DARK_ISLANDS = ("@media (prefers-color-scheme:light){:is(.hb-sw,.hb-rlx,.hb-poster,.hb-top,.hb-foot,.hb-pg-h,.fm>.fm-head){"
                 + SITE_TOKENS_CSS.split("{", 1)[1].split("}", 1)[0].split(";--lk-r:")[0] + ";color-scheme:dark}"
                 ".hb-ho,.hb-cm-dc.big{background:linear-gradient(110deg,var(--lk-accent-soft),transparent 75%),var(--lk-surface)}}")
 
@@ -4398,6 +4501,8 @@ NAV_ICONS = {
     "download": '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
     "key": '<circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/>',
     "gallery": '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/>',
+    "discord": '<path d="M4 6.5C4 5.1 5.1 4 6.5 4h11C18.9 4 20 5.1 20 6.5v8c0 1.4-1.1 2.5-2.5 2.5H11l-4.5 3.5V17h0C5.1 17 4 15.9 4 14.5z"/>'
+               '<circle cx="9" cy="10.5" r="1.2"/><circle cx="15" cy="10.5" r="1.2"/>',
     "leaderboards": '<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8M10 17h4"/>',
 }
 # The gallery (Hub.gallery_tiles). Our in-game screenshots (stream/www-files/art, checked by eye: no logo, no game name;

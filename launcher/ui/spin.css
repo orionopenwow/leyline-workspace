@@ -56,3 +56,23 @@
 .titlebar .brand b, .titlebar .brand i {
   text-shadow: 0 -1px 0 rgba(255, 255, 255, 0.18), 0 1.5px 0 rgba(0, 0, 0, 0.75), 0 3px 6px rgba(0, 0, 0, 0.55);
 }
+/* owner 2026-11-01 00:46: "lower logo a little bit, give leyline a slight texture": "Leyline" carries a faint stone grain (the side menu's stone under a light wash, clipped
+   to the letters), its emboss drawn as drop shadows so they don't show through the textured letters */
+/* 00:49 ("still misaligned, change and size it if you need to"): 58px in the 64px bar crowded its bottom edge (and the
+   4px drop pushed it over); 50px, centred on the bar and on the two words, no offset */
+.titlebar .brand .ly-spin { width: 50px; height: 50px; translate: none; align-self: center; }
+.titlebar .brand b {
+  color: transparent; text-shadow: none;
+  background: linear-gradient(rgba(255, 255, 255, 0.74), rgba(222, 226, 234, 0.74)), url("art/stone-side.webp") 0 0 / 128px;
+  -webkit-background-clip: text; background-clip: text;
+  filter: drop-shadow(0 -1px 0 rgba(255, 255, 255, 0.14)) drop-shadow(0 1.5px 0 rgba(0, 0, 0, 0.75)) drop-shadow(0 3px 5px rgba(0, 0, 0, 0.5));
+}
+/* owner 2026-11-01 00:51: "dropshadow and emboss the title typography too": a clear emboss (a light edge above-left,
+   a dark carved edge below-right) and a deeper drop shadow, on both words */
+.titlebar .brand b {
+  filter: drop-shadow(-0.5px -1px 0 rgba(255, 255, 255, 0.35)) drop-shadow(1px 1.5px 0 rgba(0, 0, 0, 0.9))
+          drop-shadow(0 4px 6px rgba(0, 0, 0, 0.7));
+}
+.titlebar .brand i {
+  text-shadow: -0.5px -1px 0 rgba(255, 240, 200, 0.3), 1px 1.5px 0 rgba(0, 0, 0, 0.9), 0 3px 6px rgba(0, 0, 0, 0.7);
+}

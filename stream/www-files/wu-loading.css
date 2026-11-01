@@ -102,3 +102,15 @@ html body #wenilla-boot .err { margin-bottom: 14px; text-align: center; font: 60
 
 /* while a loading screen is up, the page's own links stay out of the way */
 body.wu-loading #ow-dock, body.wu-loading #ow-busy { display: none !important; }
+
+/* the client's own cover (#wenilla-cover) stays under ours while wu-loading.js shows its words and progress */
+body.wu-client-cover :is(#wenilla-cover, .wu-under) { visibility: hidden !important; }
+
+/* -- one tip at a time under the bar (wu-loading.js addTips) ------------------------------------- */
+html body #wenilla-boot .ly-tip, #wu-loading .ly-tip {
+  margin-top: 14px; min-height: 2.6em; text-align: center; font: italic 13px/1.35 Georgia, serif; color: #cdbf9a;
+  opacity: .9; transition: opacity .4s ease, transform .4s ease; animation: ly-tip-float 4s ease-in-out infinite;
+}
+html body #wenilla-boot .ly-tip.out, #wu-loading .ly-tip.out { opacity: 0; transform: translateY(4px); }
+@keyframes ly-tip-float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -3px; } }
+@media (prefers-reduced-motion: reduce) { html body #wenilla-boot .ly-tip, #wu-loading .ly-tip { animation: none; } }

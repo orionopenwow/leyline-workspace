@@ -38,6 +38,15 @@ for h in play.openvanilla.app play.openwow.app wrath.openvanilla.app duels.openv
   printf '  %-30s %s\n' "$h" "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://$h/data/__index")"
 done
 echo
+echo "== where else the space is (read-only; 1 Nov: room for a second slice copy)"
+docker system df 2>/dev/null | sed 's/^/  /'
+for d in /root/fastloop-backups /root/page-backups /srv/wrath/build-realm/backups /srv/wrath/stream/slices /srv/wrath/stream/slices.old* \
+         /srv/wrath/backups /root/backups /var/backups /var/log /tmp /root/vr-later /srv/vr; do
+  [ -e "$d" ] && printf '  %-8s %s\n' "$(du -sh "$d" 2>/dev/null | cut -f1)" "$d"
+done
+echo "  the biggest folders two levels under /srv, /opt and /root:"
+du -h --max-depth=2 /srv /opt /root 2>/dev/null | sort -rh | head -25 | sed 's/^/    /'
+echo
 echo "== disk"
 df -h / | tail -1
 echo

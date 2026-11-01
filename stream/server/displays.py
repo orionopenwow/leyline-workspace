@@ -270,6 +270,19 @@ def objects_sql(entries: set[int], label: str) -> str:
             f"WHERE t.entry IN ({ids}) AND t.displayId <> 0;\n")
 
 
+def tier_objects_sql(doc: dict, tiers: set[int]) -> list[tuple[str, int]]:
+    """[(sql, tier)] for every chosen tier with an "objects" list of gameobject entries (whole numbers only)."""
+    out = []
+    for n, t in ordered_tiers(doc):
+        objs = t.get("objects")
+        if n not in tiers or not isinstance(objs, list):
+            continue
+        entries = {int(e) for e in objs if isinstance(e, int) and not isinstance(e, bool) and 0 < e < 10**7}
+        if entries:
+            out.append((objects_sql(entries, str(n)), n))
+    return out
+
+
 def transports_sql(doc: dict, tiers: set[int], base: str | None) -> str:
     """Ships, zeppelins and gunships (gameobject type 15, the `transports` table) go to the base:
     the server shows a continent's transports to everyone on it, wherever they are, and they cross
@@ -467,6 +480,16 @@ def main(argv: list[str]) -> int:
             sys.stdout.write(out)
         except subprocess.CalledProcessError as e:
             print(f"{what}: NOT included: " + (e.stderr or "").strip()[:200], file=sys.stderr)
+    # A tier's own "objects" (gameobject entries): their models go to that tier, wherever they end up placed. The
+    # Den tier lists every object a Den can place (the room's blocks, the Builder's catalog, the stamps), which are
+    # spawned by players at any time, so no spawn query finds them.
+    for sql, n in tier_objects_sql(doc, tiers):
+        try:
+            out = run(sql)
+            print(f"tier {n} objects: {len(out.splitlines())} displays", file=sys.stderr)
+            sys.stdout.write(out)
+        except subprocess.CalledProcessError as e:
+            print(f"tier {n} objects: NOT included: " + (e.stderr or "").strip()[:200], file=sys.stderr)
     if label is not None:
         # Fail soft: the spawns above are already out; the slice is still good without mounts.
         try:

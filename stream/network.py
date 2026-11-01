@@ -759,9 +759,18 @@ def report_page(account: str, rid: str, r: dict | None, msg: str = "", done: boo
     return render(body, title="Report a realm")
 
 
+def _net(h) -> str:
+    """The caller's network for a limit (the portal's rl_bucket: IPv4 /32, IPv6 /64)."""
+    ip, rb = h.ip(), P("rl_bucket")
+    try:
+        return rb(ip) if callable(rb) else ip
+    except Exception:   # noqa: BLE001
+        return ip
+
+
 def get(h, path: str, query: dict) -> None:
     lim = P("browse_limit")
-    if lim is not None and not lim.hit(h.ip(), 600):
+    if lim is not None and not lim.hit(_net(h), 600):
         h.send(429, b'{"error":"too many requests"}\n', "application/json")
         return
     if path == "/wrath/realms.json":
@@ -797,7 +806,7 @@ def post(h, path: str) -> None:
         h.send(405, b"method not allowed\n", "text/plain")
         return
     lim = P("gate_limit")
-    if lim is not None and not lim.hit("realm-report:" + h.ip(), 20):
+    if lim is not None and not lim.hit("realm-report:" + _net(h), 20):
         h.send(429, P("busy_page")(back="/wrath/realms"))
         return
     origin = h.headers.get("Origin", "")

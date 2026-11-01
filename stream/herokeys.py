@@ -353,10 +353,15 @@ def unseal(token: str, blob: bytes) -> str | None:
     return bytes(a ^ b for a, b in zip(ct, _stream(k, nonce, len(ct)))).decode("utf-8", "replace")
 
 
+# scrypt takes 16 MB a call and wu-portal has 128 MB: at most a few at once, whatever the number of callers
+_KDF = threading.BoundedSemaphore(3)
+
+
 def hash_password(pw: str) -> str:
     salt = secrets.token_bytes(16)
     try:
-        d = hashlib.scrypt(pw.encode(), salt=salt, n=2 ** 14, r=8, p=1, dklen=32)
+        with _KDF:
+            d = hashlib.scrypt(pw.encode(), salt=salt, n=2 ** 14, r=8, p=1, dklen=32)
         return f"scrypt$16384$8$1${salt.hex()}${d.hex()}"
     except (AttributeError, ValueError):   # an OpenSSL without scrypt
         d = hashlib.pbkdf2_hmac("sha256", pw.encode(), salt, 300000)
@@ -368,7 +373,10 @@ def check_password(pw: str, stored: str) -> bool:
         parts = stored.split("$")
         if parts[0] == "scrypt":
             n, r, p, salt, want = int(parts[1]), int(parts[2]), int(parts[3]), bytes.fromhex(parts[4]), bytes.fromhex(parts[5])
-            got = hashlib.scrypt(pw.encode(), salt=salt, n=n, r=r, p=p, dklen=len(want))
+            if n > 2 ** 15 or r > 8 or p > 1:
+                return False   # never more work than we store
+            with _KDF:
+                got = hashlib.scrypt(pw.encode(), salt=salt, n=n, r=r, p=p, dklen=len(want))
         elif parts[0] == "pbkdf2":
             it, salt, want = int(parts[1]), bytes.fromhex(parts[2]), bytes.fromhex(parts[3])
             got = hashlib.pbkdf2_hmac("sha256", pw.encode(), salt, it)

@@ -36,7 +36,8 @@ Routes (stream/wrath_portal.py routes them here):
     GET  /wrath/api/listings/mine            the caller's listings and their state
 
 Settings (environment): WU_LISTING_FETCH_MAX (bytes fetched for a check, default 300 MB), WU_LISTING_CHECKS_HOUR (per
-account, 10), WU_LISTING_CHECKS_DAY (everyone, 400), WU_LISTING_RULES (the rules file), WU_GITHUB_TOKEN (GitHub API
+account, 10; CHECKS_AT_ONCE downloads at a time, never into the disk's last DISK_SPARE), WU_LISTING_CHECKS_DAY
+(everyone, 400), WU_LISTING_RULES (the rules file), WU_GITHUB_TOKEN (GitHub API
 only), WU_GITHUB_API / WU_GITLAB_API / WU_CODEBERG_API (tests). Standard library only.
 """
 from __future__ import annotations
@@ -87,6 +88,8 @@ WINDOWS_DEVICES = {"con", "prn", "aux", "nul"} | {f"com{i}" for i in range(1, 10
 # The launcher's own limits for what goes into a client (launcher/src-tauri/src/mods.rs).
 MAX_PATCH = 1024 * 1048576
 NATIVE_CODE = (".dll", ".asi", ".exe")
+CHECKS_AT_ONCE = threading.BoundedSemaphore(2)   # downloads being checked at the same time (each up to the fetch cap)
+DISK_SPARE = 512 * 1048576   # free space a check leaves on the disk it downloads to
 NATIVE_SIDE = (".ini", ".conf", ".cfg", ".json", ".toml", ".txt", ".md")
 PACKAGE_TOP = ("mod.json", "ui", "realm", "native", "assets", "tests", "readme.md", "readme.txt", "license", "license.txt",
                "license.md", "changelog.md")
@@ -967,6 +970,22 @@ class Listings:
         cap = min(self.fetch_max, RULES["caps"]["download"] + MAX_PATCH)
         if isinstance(pin.get("size"), int) and pin["size"] > cap:
             return f"That download is {_mb(pin['size'])}: bigger than Leyline checks ({_mb(cap)})."
+        # each check can write a download of up to `cap` to disk: a few at once, and never into the last free space
+        if not CHECKS_AT_ONCE.acquire(blocking=False):
+            return "Lots of mods are being checked right now. Please try again in a minute."
+        try:
+            try:
+                free = shutil.disk_usage(tempfile.gettempdir()).free
+            except OSError:
+                free = None
+            if free is not None and free < cap + DISK_SPARE:
+                log.warning("listing check refused: %d MB free for downloads", free // 1048576)
+                return "Checking mods is paused for a moment. Please try again later."
+            return self._fetch_and_analyse(src, pin, cap)
+        finally:
+            CHECKS_AT_ONCE.release()
+
+    def _fetch_and_analyse(self, src: dict, pin: dict, cap: int) -> dict | str:
         work = tempfile.mkdtemp(prefix="wu-listing-")
         try:
             dest = os.path.join(work, "download")
@@ -1320,8 +1339,10 @@ def do(action: str, acct: str, name: str, doc: dict) -> tuple[int, dict]:
         return 503, {"error": "Listing mods is closed right now."}
     pid = str(doc.get("id", "")).removeprefix("link:")
     if action == "report":
+        # a report from a new account is kept for the moderators but never hides a listing by itself, so a few
+        # fresh accounts can't take down someone's mod (policy new_account_days)
         ok, msg = st.report(pid, {"id": acct}, str(doc.get("reason", "")), str(doc.get("note", ""))[:300],
-                            hide_after=policy()["report_hide"])
+                            hide_after=policy()["report_hide"], trusted=not svc.is_new(acct))
         return (200 if ok else 400), ({"ok": True, "message": msg} if ok else {"error": msg})
     if action == "edit":
         ok, msg = st.edit(pid, {"id": acct}, {k: str(doc.get(k, ""))[:400] for k in ("description", "category") if k in doc})
@@ -1606,7 +1627,7 @@ def hq_actions(A) -> dict:
     def approve(user, target, form):
         st, r = known(target)
         st.update_listing(target, lambda x: (x.pop("review", None), x.__setitem__("reports", []),
-                                             x.__setitem__("report_log", []),
+                                             x.__setitem__("report_log", []), x.__setitem__("hide_votes", []),
                                              x["listing"].__setitem__("state", "reviewed"),
                                              x["listing"].__setitem__("reviewed_by", str(user.get("account", ""))[:40])))
         return {"state": "waiting"}, {"state": "reviewed"}

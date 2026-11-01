@@ -65,9 +65,9 @@ DEFAULT_NAME="Builders' Realm"                          # TODO(owner): the final
 NAME="${WU_BUILD_NAME:-$DEFAULT_NAME}"
 TAGLINE="${WU_BUILD_TAGLINE:-For approved builders: build together, save, share.}"
 SUMMARY="${WU_BUILD_SUMMARY:-The official realm for building. Approved builders sign in with their website login and build in one big shared room; their work saves and can go to a Den or to the main realm.}"
-WORLD_MEM="${WU_BUILD_WORLD_MEM:-1024m}"
+WORLD_MEM="${WU_BUILD_WORLD_MEM:-1536m}"   # 2026-10-31 live: at 1024m it loaded to ~935 MB and kept restarting
 AUTH_MEM="${WU_BUILD_AUTH_MEM:-96m}"
-MIN_FREE_MB="${WU_BUILD_MIN_FREE_MB:-1300}"
+MIN_FREE_MB="${WU_BUILD_MIN_FREE_MB:-1800}"
 MIN_DISK_MB="${WU_BUILD_MIN_DISK_MB:-2000}"
 WORLD_WAIT="${WU_BUILD_WORLD_WAIT:-900}"
 WARN_SECS="${WU_BUILD_WARN_SECS:-300}"
@@ -204,6 +204,37 @@ note "ports: none published (players come through the relay $RELAY_NAME; the rel
 note "already running: $WORLD_C=$(running "$WORLD_C" && echo 1 || echo 0) $AUTH_C=$(running "$AUTH_C" && echo 1 || echo 0) $AGENT_C=$(running "$AGENT_C" && echo 1 || echo 0)"
 
 if [ "$MODE" = --check ]; then
+  # while it runs: the last lines of its servers' logs (read-only; nothing secret: those lines are dropped)
+  for c in "$WORLD_C" "$AUTH_C" "$AGENT_C"; do
+    if running "$c"; then
+      echo; echo "== the last lines of $c"
+      docker logs --tail 50 "$c" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -viE 'password|passwd|secret|token|sessionkey' | sed 's/^/     /' || true
+    fi
+  done
+  # the players' connections and logins (the last 50 lines are mostly the world's start-up and its creature noise)
+  if running "$WORLD_C"; then
+    echo; echo "== $WORLD_C: connections, logins and kicks (the last 6000 lines, filtered)"
+    docker logs --tail 6000 "$WORLD_C" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' \
+      | grep -iE 'socket|auth|session|account|logged|login|kick|disconnect|reject|denied|realm|character|enum|addon|ban|version|build|prepare|statement|table|column|sql|error' \
+      | grep -viE 'password|passwd|secret|token|sessionkey|config:|> using|loading|loaded|MoveSplineInitArgs' | tail -40 | sed 's/^/     /' || true
+  fi
+  # the world's own log files (SQL errors never reach the console: a failing login query just hangs the client)
+  if [ -d "$DIR/logs" ]; then
+    echo; echo "== $DIR/logs: files, and their last error lines"
+    ls -la "$DIR/logs" 2>/dev/null | sed 's/^/     /' | head -20
+    for f in "$DIR"/logs/*.log; do
+      [ -f "$f" ] || continue
+      n=$(grep -ciE 'error|fail|doesn.t exist|unknown column|denied' "$f" 2>/dev/null || true)
+      echo "     -- $(basename "$f"): $n error lines; the last ones:"
+      grep -iE 'error|fail|doesn.t exist|unknown column|denied|prepare|statement|table|query|sql' "$f" 2>/dev/null \
+        | grep -viE 'password|passwd|secret|token|sessionkey|MoveSplineInitArgs|velocity' | tail -25 | cut -c1-300 | sed 's/^/        /' || true
+    done
+  fi
+  if running "$AUTH_C"; then
+    echo; echo "== $AUTH_C: logins (filtered)"
+    docker logs --tail 3000 "$AUTH_C" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -iE 'account|login|logon|reconnect|banned|unknown|fail|proof|realm' \
+      | grep -viE 'password|passwd|secret|token|sessionkey|config:' | tail -20 | sed 's/^/     /' || true
+  fi
   echo; echo "Would: back up acore_auth (and the build databases) to $DIR/backups/<time>/, make $AUTH_DB / $CHARS_DB / $BOTS_DB,"
   echo "start $AUTH_C and $WORLD_C (realm id $REALM_ID, no published port, the main realm untouched), check them and the"
   echo "main realm, then list \"$NAME\" on Leyline through the relay ($AGENT_C), and roll back on any failure."

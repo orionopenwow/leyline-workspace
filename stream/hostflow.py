@@ -1204,6 +1204,14 @@ def match(path: str) -> bool:
 
 
 def _signin(path: str) -> str:
+    # the Leyline sign-in (2026-10-31 live: Host signed out landed on the old site's /login page, with its old
+    # wording); the old address only when the portal has no Leyline sign-in
+    try:
+        fn = P("signin_url")
+        if callable(fn):
+            return fn(path)
+    except Exception:   # noqa: BLE001
+        pass
     return "/login?next=" + urllib.parse.quote(path, safe="")
 
 
@@ -1241,8 +1249,20 @@ def _not_found(h):
                                   'account. <a href="/wrath/host">Your realms</a></p></section>'))
 
 
+def _net(ip: str) -> str:
+    """The network a limit counts (the portal's rl_bucket: IPv4 /32, IPv6 /64), so one host can't walk its /64."""
+    try:
+        rb = P("rl_bucket")
+    except Exception:   # noqa: BLE001
+        rb = None
+    try:
+        return rb(ip) if callable(rb) else ip
+    except Exception:   # noqa: BLE001
+        return ip
+
+
 def get(h, path: str) -> None:
-    if not P("page_limit").hit(h.ip(), 120):
+    if not P("page_limit").hit(_net(h.ip()), 120):
         h.send(429, P("busy_page")(back=path))
         return
     m_dl, m_start = DL_RE.match(path), START_RE.match(path)
@@ -1312,7 +1332,7 @@ def post(h, path: str) -> None:
         h.send(405, b"method not allowed\n", "text/plain")
         return
     ip = h.ip()
-    if not P("gate_limit").hit("host:" + ip, POSTS_PER_MIN):
+    if not P("gate_limit").hit("host:" + _net(ip), POSTS_PER_MIN):
         h.send(429, P("busy_page")(back="/wrath/host"))
         return
     origin = h.headers.get("Origin", "")

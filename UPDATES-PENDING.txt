@@ -533,3 +533,21 @@
 1219a ship Save to GitHub: window buttons wrapped by the edge in the corner, darker faces
 1221a foreverui Login screens: the Leyline file at last (realm browser on character select, no stock realm wizard)
 1202k release-mirror Mirror releases: copy the launcher releases to the mirror (after the GitHub build)
+1222a build-realm-check Read-only: Builders' Realm check with its servers' last log lines (why the world connection drops)
+1223a signin Site: Host, signed out, goes to the Leyline sign-in
+1224a build-realm-off Builders' Realm off (nobody on it; a 5-minute warning if anyone is), data kept
+1224b build-realm-on Builders' Realm on again with a 1536 MB world cap (it kept restarting at 1024 MB)
+1225a build-realm-check Builders' Realm hangs on the character list: world logs
+1226a signin Site: spam protection (forum duplicates, per-network caps for new accounts, listing report brigading, IPv6 /64), bounded mod checks and scrypt
+1227a page Game page: every loading screen in the Leyline look (spinning mark, blue bar, floating tips); the client's yellow cover hidden under it
+1228a signin Site: Live now / New this week strip and ticker removed from the front page; side menu wordmark as in the launcher
+1229a signin Portal: play sessions survive a restart, so later site deploys stop signing players out mid-game (this one is the last that does)
+1230a page Game page: the client's loading notice folds into the Leyline loading cover
+1231a build-realm-check Read-only: why a browser hop to the Builders' Realm hangs on the character list (world logins, filtered)
+1232a build-realm-check Read-only: the Builders' world log files' error lines (a failing login query hangs the character list)
+1233a build-realm-check Read-only: the Builders' world's statement/table/SQL lines (why the character list never answers)
+1234a slice Streamed game files with the new Den tier (the Den island and the Den objects' models; owner OK 1 Nov 00:20). 30-60 min; nothing switches over if it fails
+1235a foreverui Login screens: a realm where you have no characters goes straight to character create (fixes the Builders' Realm / Den hop loop)
+1236a signin Site: the side menu's wordmark, mark lower and a faint stone grain on Leyline
+1236b ship Launcher: the title bar's wordmark, mark lower and a faint stone grain on Leyline
+1238a ov112-data-check Read-only: where the server's disk goes (room for a second slice copy, so the Den rebuild swaps with no outage)

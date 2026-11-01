@@ -79,7 +79,7 @@ const IGNORED: &[&str] = &[".git", "__pycache__", ".ds_store", "thumbs.db", "des
 const PACKAGE_TOP: &[&str] =
     &["mod.json", "ui", "realm", "native", "assets", "tests", "readme.md", "readme.txt", "license", "license.txt", "license.md", "changelog.md"];
 /// Data/ slots for patches, in the order they are handed out. patch.MPQ, patch-2 and patch-3 are the game's own.
-const PATCH_SLOTS: &str = "456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const PATCH_SLOTS: &str = "456789ABCDEFGHIJKLMNOPQRSTUVWXY"; // Z is the hybrid client's own (hybrid.rs)
 /// Native code: a mod with any of these needs the player's one-time OK (owner decision: allowed, with a notice).
 pub const NATIVE_CODE_EXT: &[&str] = &[".dll", ".asi", ".exe"];
 /// What may sit next to native code in the client folder: the code and its own settings and notes.
@@ -2237,7 +2237,8 @@ pub mod tests {
         let bad = write(d.path(), "patch-B.MPQ", b"nope");
         assert!(install_local_t(c.path(), Build::V335a, &bad).unwrap_err().contains("not an MPQ"));
         assert_eq!(patch_slot_of("patch-2.MPQ"), None);
-        assert_eq!(patch_slot_of("PATCH-z.mpq"), Some('Z'));
+        assert_eq!(patch_slot_of("PATCH-y.mpq"), Some('Y'));
+        assert_eq!(patch_slot_of("patch-Z.MPQ"), None, "Z is the hybrid client's own");
         // Turn off and on, then remove: the player's own patch-4 stays.
         let key = load(c.path()).mods[0].key.clone();
         set_enabled(c.path(), &key, false).unwrap();

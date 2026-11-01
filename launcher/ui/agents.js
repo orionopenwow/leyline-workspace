@@ -33,9 +33,18 @@
     realm_stop: "Stop your own realm",
     forum_new_thread: "Post a forum thread as you",
     forum_reply: "Reply on the forum as you",
+    den_status: "Your Den: if it runs, where you stand, its budgets and saved Dens",
+    den_catalog: "What can be placed in a Den",
+    den_recipes: "Your building library (recipes)",
+    den_messages: "What you said to your companion in your Den",
+    den_place_layout: "Build in your Den (a preview card first; Ctrl+Z takes it back)",
+    den_say: "A line your companion says in your Den",
+    den_recipe_save: "Add a recipe to your building library",
   };
-  const READ = ["realm_status", "realms_list", "my_clients", "catalog_search", "host_status", "host_logs", "forum_my_threads"];
-  const ASK = ["mod_install", "mod_remove", "realm_start", "realm_stop", "forum_new_thread", "forum_reply"];
+  const READ = ["realm_status", "realms_list", "my_clients", "catalog_search", "host_status", "host_logs", "forum_my_threads",
+    "den_status", "den_catalog", "den_recipes", "den_messages"];
+  const ASK = ["mod_install", "mod_remove", "realm_start", "realm_stop", "forum_new_thread", "forum_reply",
+    "den_place_layout", "den_say", "den_recipe_save"];
   const NEVER = ["Sign in, see or change a password, a Hero Key or your account", "Anything with money",
     "Delete files, remove a game client, wipe a realm", "Make your realm public, open its sign-up, or make invites",
     "Kick, ban or unban players, or change who may join", "Change your realm list address, or your launcher's updates",

@@ -29,6 +29,8 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+
+pub mod den; // the Den tools: Claude in the player's Den, its companion, the building brain (agents/den.rs)
 use std::fs;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -114,6 +116,30 @@ pub const TOOLS: &[Tool] = &[
     Tool { name: "forum_reply", title: "Reply on the forum", tier: Tier::Ask,
         description: "Asks the player: reply to a forum thread as the player.",
         props: r#"{"thread": {"type": "integer"}, "body": {"type": "string", "maxLength": 5000}}"#, required: &["thread", "body"] },
+    // Your Den (agents/den.rs; docs/DEN.md "Claude in your Den" and "Building brain")
+    Tool { name: "den_status", title: "My Den", tier: Tier::Read,
+        description: "The player's Den (their own building realm on this PC): is it running, is their companion out, where the player stands, the room's size and decor budgets in use, a build in progress, and the saved Den files. Positions are yards from the room's middle.",
+        props: "{}", required: &[] },
+    Tool { name: "den_catalog", title: "What a Den can hold", tier: Tier::Read,
+        description: "What can be placed in a Den: categories (no arguments), or the pieces of one category or matching a query (key, entry, name, build points). Also the stamps and the Den's limits.",
+        props: r#"{"category": {"type": "string"}, "query": {"type": "string"}}"#, required: &[] },
+    Tool { name: "den_recipes", title: "The building library", tier: Tier::Read,
+        description: "The building library: named recipes that make layouts from a few settings (a tavern, a garden, a ring of lanterns, a path, a market row, and the player's own). With a name (and params) it returns the recipe's layout. Use a recipe instead of writing a layout when one fits: it costs no layout to write.",
+        props: r#"{"name": {"type": "string"}, "params": {"type": "object"}}"#, required: &[] },
+    Tool { name: "den_messages", title: "What I said to my companion", tier: Tier::Read,
+        description: "What the player said to their companion in their Den (in game), newest last, numbered, with where they stood. Without `after`, the ones not read yet. Answer with den_say; build with den_place_layout.",
+        props: r#"{"after": {"type": "integer", "minimum": 0}}"#, required: &[] },
+    Tool { name: "den_place_layout", title: "Build in my Den", tier: Tier::Ask,
+        description: "Asks the player: build in their Den. Either `layout` (a leyline-den object: {\"props\": [{\"key\" or \"entry\", \"x\", \"y\", \"z\", \"yaw\", \"scale\"}]}, yards from the room's middle, z above the floor, yaw in degrees; pieces from den_catalog) or `recipe` with `params` (den_recipes). Checked against the catalog, the Den's size and its decor budgets; saved as a Den file. mode \"add\" (default) adds it next to what is there, piece by piece, while the player is in the Den; \"replace\" opens it as the whole Den (a backup is kept). `label` names it in game (\"the tavern\").",
+        props: r#"{"layout": {"type": "object"}, "recipe": {"type": "string"}, "params": {"type": "object"}, "name": {"type": "string", "maxLength": 24}, "label": {"type": "string", "maxLength": 40}, "mode": {"type": "string", "enum": ["add", "replace"]}}"#,
+        required: &[] },
+    Tool { name: "den_say", title: "My companion says", tier: Tier::Ask,
+        description: "Asks the player: a line their companion says in their Den, in game (up to 200 letters, plain words).",
+        props: r#"{"text": {"type": "string", "maxLength": 200}}"#, required: &["text"] },
+    Tool { name: "den_recipe_save", title: "Add to the building library", tier: Tier::Ask,
+        description: "Asks the player: save a new recipe in their building library, so the next build like it needs no layout written. Either `recipe` (a JSON template: params, let, pieces; docs/DEN.md \"Building brain\") or `script` (Lua 5.1 text that sets `recipe` and a function build(params) returning pieces; it runs only on the player's PC, sandboxed). It must make a layout that fits a Den with its default settings.",
+        props: r#"{"name": {"type": "string", "maxLength": 24}, "recipe": {"type": "object"}, "script": {"type": "string", "maxLength": 65536}}"#,
+        required: &["name"] },
 ];
 
 /// What agents can never do: there is no tool for any of it. (Shown on the Agents page; the tests check none exists.)
@@ -548,7 +574,8 @@ pub fn read_tool(app_dir: &Path, name: &str, args: &Value, home: Option<&Path>) 
                 .collect();
             Ok(json!({"threads": threads}))
         }
-        _ => Err("Unknown tool.".into()),
+        // the Den's own files: positions, pieces, the player's own words to their companion (no addresses or accounts)
+        n => den::read(app_dir, n, args).unwrap_or_else(|| Err("Unknown tool.".into())),
     }
 }
 
@@ -626,7 +653,7 @@ pub fn describe(app_dir: &Path, name: &str, args: &Value) -> Result<Card, String
                 lines: vec![format!("In thread #{th}"), format!("Text: {}", short(body, 600)), "Everyone can read it.".into()],
             })
         }
-        _ => Err("Unknown tool.".into()),
+        n => den::describe(app_dir, n, args).unwrap_or_else(|| Err("Unknown tool.".into())),
     }
 }
 
@@ -1027,7 +1054,7 @@ pub(crate) mod commands {
                 let v = crate::forum::post(dir, "reply", a).map_err(signed)?;
                 Ok(format!("Replied (post #{}).", v.get("post").map(|x| x.to_string()).unwrap_or_default()))
             }
-            _ => Err("Unknown tool.".into()),
+            n => super::den::run(dir, n, a).unwrap_or_else(|| Err("Unknown tool.".into())),
         }
     }
 
@@ -1086,7 +1113,8 @@ mod tests {
             assert!(tool(n).is_none(), "{n}");
         }
         let ask: Vec<&str> = TOOLS.iter().filter(|t| t.tier == Tier::Ask).map(|t| t.name).collect();
-        assert_eq!(ask, ["mod_install", "mod_remove", "realm_start", "realm_stop", "forum_new_thread", "forum_reply"]);
+        assert_eq!(ask, ["mod_install", "mod_remove", "realm_start", "realm_stop", "forum_new_thread", "forum_reply",
+            "den_place_layout", "den_say", "den_recipe_save"]);
         for t in TOOLS {
             let j = tool_json(t);
             assert_eq!(j["annotations"]["readOnlyHint"], json!(t.tier == Tier::Read), "{}", t.name);
@@ -1098,7 +1126,9 @@ mod tests {
                 assert!(t.description.starts_with("Asks the player"), "{}", t.name);
             }
         }
-        let text = format!("{INSTRUCTIONS} {}", NEVER.join(" ")).to_lowercase();
+        let descs: Vec<&str> = TOOLS.iter().flat_map(|t| [t.title, t.description]).collect();
+        let text = format!("{INSTRUCTIONS} {} {}", NEVER.join(" "), descs.join(" ")).to_lowercase();
+        assert!(!text.contains("jaina"), "the launcher says \"your companion\", never her name");
         for bad in ["warcraft", "blizzard", "lich king", " wow"] {
             assert!(!text.contains(bad));
         }

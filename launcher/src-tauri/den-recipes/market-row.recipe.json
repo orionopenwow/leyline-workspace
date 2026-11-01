@@ -1,0 +1,30 @@
+{
+ "format": "leyline-recipe",
+ "version": 1,
+ "name": "market-row",
+ "title": "Market row",
+ "about": "A row of market stalls: a vendor tent with a counter in front, goods beside it, and a lamp post between two stalls. Good in the yard.",
+ "params": {
+  "x": { "default": 0, "min": -40, "max": 40, "about": "the row's middle: yards from the room's middle" },
+  "y": { "default": -20, "min": -40, "max": 40 },
+  "stalls": { "default": 3, "min": 1, "max": 8, "whole": true },
+  "spacing": { "default": 6, "min": 4, "max": 12, "about": "yards between two stalls" },
+  "dir": { "default": 0, "min": -360, "max": 360, "about": "the row runs this way, in degrees (0: along x)" },
+  "tent": { "default": "humanvendorten", "piece": true }
+ },
+ "let": [
+  ["fx", "cos(dir - 90)"],
+  ["fy", "sin(dir - 90)"]
+ ],
+ "pieces": [
+  { "repeat": [["i", "stalls"]], "let": [["d", "(i - (stalls - 1) / 2) * spacing"]],
+    "key": "$tent", "x": "x + d * cos(dir)", "y": "y + d * sin(dir)", "yaw": "dir - 90" },
+  { "repeat": [["i", "stalls"]], "let": [["d", "(i - (stalls - 1) / 2) * spacing"]],
+    "key": "shopcounter", "x": "x + d * cos(dir) + 2.2 * fx", "y": "y + d * sin(dir) + 2.2 * fy", "yaw": "dir - 90" },
+  { "repeat": [["i", "stalls"], ["g", "2"]], "let": [["d", "(i - (stalls - 1) / 2) * spacing + (g * 2 - 1) * 1.6"]],
+    "pick": { "keys": ["crate", "applebarrel", "basketofcorn", "barrel"], "by": "i * 2 + g" },
+    "x": "x + d * cos(dir) + 2.4 * fx", "y": "y + d * sin(dir) + 2.4 * fy", "yaw": "dir" },
+  { "repeat": [["i", "stalls - 1"]], "let": [["d", "(i + 0.5 - (stalls - 1) / 2) * spacing"]],
+    "key": "lamppost", "x": "x + d * cos(dir) + 2.6 * fx", "y": "y + d * sin(dir) + 2.6 * fy", "yaw": "dir - 90" }
+ ]
+}

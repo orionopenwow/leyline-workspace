@@ -45,6 +45,9 @@ ring = "0.17"
 # Leyline's own updates from any source (update.rs verify_minisign): the same minisign check the updater plugin makes,
 # already in the tree through tauri-plugin-updater.
 minisign-verify = "0.3"
+# Den recipes (agents/den.rs, docs/DEN.md "Building brain"): small layout scripts run on the player's PC only, in a
+# sandboxed Lua 5.1 (the realm scripts' own Lua): math, string and table only, a memory and an instruction limit.
+mlua = { version = "0.10", default-features = false, features = ["lua51", "vendored"] }
 # The torrent engine (feature torrent-engine): rustls like the rest, upload switchable off at run time.
 librqbit = { version = "9.1.0", default-features = false, features = ["rust-tls", "disable-upload"], optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"], optional = true }

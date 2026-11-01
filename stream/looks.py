@@ -402,7 +402,7 @@ color:var(--lk-text-2,inherit);text-decoration:none;font-size:14px}
 .lk-card{display:flex;flex-direction:column;min-width:0;border-radius:var(--lk-r-sm,10px);overflow:hidden;
 border:1px solid var(--lk-border,rgba(255,255,255,.12));background:var(--lk-surface-2,rgba(255,255,255,.04))}
 .lk-card:target{border-color:var(--lk-accent,#7aa3f5);box-shadow:0 0 0 2px var(--lk-accent-soft,rgba(91,141,239,.3))}
-.lk-pv{position:relative;aspect-ratio:16/8;overflow:hidden;margin:0;background:linear-gradient(160deg,#1d2a44,#2c2347 55%,#3a2a3a)}
+.lk-pv{position:relative;aspect-ratio:16/6;overflow:hidden;margin:0;background:linear-gradient(160deg,#1d2a44,#2c2347 55%,#3a2a3a)}
 .lk-pv img{display:block;width:100%;height:100%;object-fit:cover}
 .lk-pv figcaption,.lk-ph-cap{position:absolute;right:8px;bottom:6px;font-size:12px;color:#e8ecf5;background:rgba(10,12,18,.55);
 padding:2px 8px;border-radius:999px}
@@ -417,9 +417,9 @@ padding:2px 8px;border-radius:999px}
 .lk-hill.b{right:-12%;width:80%;height:62%;background:#1b4038}
 .lk-fr{border:2px solid rgba(255,255,255,.7);border-radius:6px;background:rgba(255,255,255,.08)}
 .lk-fr.a{left:8%;top:14%;width:30%;height:22%}.lk-fr.b{right:8%;top:14%;width:30%;height:22%}
-.lk-row{left:22%;right:22%;bottom:12%;height:14%;border-radius:4px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.7) 0 9%,transparent 9% 11%)}
-.lk-ph-name{position:absolute;left:12px;bottom:8px;font:700 18px/1.1 var(--lk-font,inherit);color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+.lk-row{left:8%;right:60%;bottom:12%;height:14%;border-radius:4px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.7) 0 9%,transparent 9% 11%)}
 .lk-b{display:flex;flex-direction:column;gap:6px;padding:12px 14px 14px;flex:1}
+.wu-box .lk-b p,.wu-box .lk-b h2{margin:0}
 .lk-type{margin:0;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--lk-muted,#9aa3b5);font-weight:650}
 .lk-card h2{margin:0;font-size:18px;text-align:left}
 .lk-chips{display:flex;flex-wrap:wrap;gap:5px;margin:0;padding:0;list-style:none}
@@ -456,7 +456,7 @@ def card(e: dict, ups: set, labels: dict, offered) -> str:
         cap = (f'<span class="lk-ph-cap"><a href="{x(page)}" rel="noopener nofollow ugc">Pictures on the author\'s page</a></span>'
                if page and e["author"] != "Leyline" else "")
         pic = (f'<div class="lk-pv lk-ph {x(lk["type"])}" aria-hidden="{"false" if cap else "true"}">{_PH[lk["type"]]}'
-               f'<span class="lk-ph-name">{x(e["name"])}</span>{cap}</div>')
+               f'{cap}</div>')
     chips = "".join(f"<li>{x(labels.get(b, b))}</li>" for b in e["builds"] if b in offered)
     acts = []
     if way == "launcher":

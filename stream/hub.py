@@ -3566,7 +3566,7 @@ background:linear-gradient(135deg,hsl(var(--h) 70% 62%),hsl(calc(var(--h) + 40) 
 .hb-lk{position:relative;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;min-height:96px;padding:12px;border-radius:var(--lk-r-sm);
 color:#fff;text-decoration:none;overflow:hidden;background:linear-gradient(160deg,#1d2a44,#2c2347 55%,#3a2a3a);border:1px solid rgba(255,255,255,.08)}
 .hb-lk.preset{background:linear-gradient(160deg,#16314a,#1e4a5c 60%,#2a5e5a)}.hb-lk.ui-look{background:linear-gradient(160deg,#2a2240,#3b2d5c 60%,#4d3a6b)}
-.hb-lk b{font-size:15.5px;text-shadow:0 1px 3px rgba(0,0,0,.5)}.hb-lk span{font-size:12px;opacity:.85}
+.hb-draw .hb-lk b{font-size:15.5px;color:#fff!important;text-shadow:0 1px 3px rgba(0,0,0,.5)}.hb-draw .hb-lk span{font-size:12px;color:#e6e9f2!important;opacity:.9}
 a.hb-lk:hover,a.hb-lk:focus-visible{border-color:var(--lk-accent)}
 .hb-code{overflow:auto;font:13.5px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--lk-text-2);white-space:pre}
 .hb-code s{text-decoration:none;color:var(--lk-accent-2);font-weight:700}.hb-code u{text-decoration:none;color:var(--lk-accent-strong)}

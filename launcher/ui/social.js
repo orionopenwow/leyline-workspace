@@ -288,8 +288,7 @@
   }
   const go = (fn) => () => { closePanel(false); fn(); };
   const nav = (page) => () => { if (window.LeylineNav) window.LeylineNav.show(page); };
-  // My Den and Solo leveling: the Host page with that ruleset picked, as Home's Make my Den does (home.js)
-  const ruleset = (profile) => () => { nav("host")(); document.dispatchEvent(new CustomEvent("leyline:host-ruleset", { detail: { profile } })); };
+  // no Den or Solo leveling here (owner 1 Nov: one way in): Your Den is in the side menu and the play bar
 
   function menuItem(ic, label, line, fn, cls) {
     const b = el("button", "ap-item" + (cls ? " " + cls : "")); b.type = "button"; b.setAttribute("role", "menuitem");
@@ -347,8 +346,6 @@
     const ql = el("section", "ap-sec ap-links"); ql.setAttribute("aria-label", "Quick links");
     const qm = el("div", "ap-grid"); qm.setAttribute("role", "menu"); qm.setAttribute("aria-label", "Quick links");
     qm.append(menuItem("profile", "My profile", "On the website", () => openLink("profile")),
-      menuItem("den", "My Den", "Your own room", ruleset("den")),
-      menuItem("solo", "Solo leveling", "Play alone", ruleset("solo")),
       menuItem("forum", "Forum", "Ask and share", nav("forum")),
       menuItem("settings", "Settings", "This launcher", nav("settings")),
       menuItem("help", "Help", "Guides and fixes", nav("help")));

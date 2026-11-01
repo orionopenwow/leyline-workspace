@@ -211,6 +211,29 @@ test('the Docker Den: Invite a friend, Make my account, and Play with its accoun
   await ctx.close();
 });
 
+test('one click from Your Den: Invite friends and Ask Claude to edit it, beside Play', async () => {
+  const { page, ctx, errors } = await open({ lite: 'stopped', page: 'den' });
+  await page.waitForSelector('#yd-play');
+  assert.deepEqual(await page.$$eval('#yd .yd-acts button', (b) => b.map((x) => x.textContent)), ['Play', 'Invite friends', 'Ask Claude to edit it']);
+  // Den Lite: friends join a Den on Docker, so Invite friends opens those steps here
+  await page.click('#yd-friends');
+  await page.waitForSelector('#yd .yd-steps');
+  assert.match(await statusText(page), /three steps below/);
+  // Ask Claude to edit it: the Agents page, where Claude is connected once
+  await page.click('#yd-claude');
+  assert.equal(await page.evaluate(() => document.querySelector('.page.on').id), 'page-agents');
+  await noBrands(page);
+  await ctx.close();
+  // the Docker Den: Invite friends copies the invite link
+  const d = await open({ docker_den: true, kit: true, page: 'den' });
+  await d.page.waitForSelector('#yd-friends');
+  await d.page.click('#yd-friends');
+  await d.page.waitForFunction(() => /Invite link copied/.test(document.querySelector('#yd .yd-status').textContent));
+  assert.match(await d.page.evaluate(() => navigator.clipboard.readText()), /^https:\/\/relay\.openvanilla\.app\/join\//);
+  assert.deepEqual([...errors, ...d.errors], []);
+  await d.ctx.close();
+});
+
 test('the Docker Den stopped: one click starts it, then plays', async () => {
   const { page, ctx, errors } = await open({ docker_den: true, kit: true, world: 'stopped', page: 'den' });
   await page.waitForSelector('#yd-play');

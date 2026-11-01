@@ -2,8 +2,9 @@
 // Tauri core: the client picker opens a drop-up list (actions on top, the families with no folder greyed "Not found",
 // your folders nearest the button with the picked one marked), a greyed row opens Find your game files, picking a
 // row changes the client, the keyboard (Up / Down / Home / End / Enter / Esc) and a click outside, the realm picker (a
-// drop-up list of realms, browser play, My Den, Make a realm, Find more; picking selects and saves; My Den plays the
-// Den this PC hosts, or opens the Host page with Make my Den picked), no mode switch, no
+// short drop-up list: Wrath Unleashed and Your Den, Your realms only when there are any, Host a server…, a quiet Play
+// in your browser, one game client row; never the Builders' Realm; picking selects and saves; Your Den plays the Den
+// this PC hosts, or opens Your Den and its one click), no mode switch, no
 // version text in the bar, and the guide: plain words, no download links, browser play.
 //
 //   NODE_PATH=$(npm root -g) node --test launcher/tests/playbar.browser.test.cjs
@@ -16,11 +17,11 @@ const { chromium } = require('playwright');
 const INDEX = 'file://' + path.join(__dirname, '..', 'ui', 'index.html');
 const PICTURE = path.join(__dirname, '..', 'ui', 'art', 'leyline-bg.webp');
 
-const FAKE = ({ clients }) => {
+const FAKE = ({ clients, saved }) => {
   const calls = (window.__calls = []);
   try { localStorage.removeItem('leyline.page'); localStorage.setItem('leyline.mode', 'online'); } catch (_) { /* fine */ }
   const list = clients || [];
-  const st = { version: 'test', settings: { clients: list, selected_client: list[0] ? list[0].id : null, selected_realm: 'play.openvanilla.app',
+  const st = { version: 'test', settings: { clients: list, selected_client: list[0] ? list[0].id : null, selected_realm: saved || 'play.openvanilla.app',
     wine: { enabled: false, command: 'wine', prefix: '' } }, official_realm: 'play.openvanilla.app', browser_url: 'https://play.openvanilla.app/wrath', windows: true, data_dir: '/tmp' };
   window.__TAURI__ = { core: { invoke: async (cmd, args) => {
     calls.push([cmd, args]);
@@ -190,14 +191,17 @@ const NET = [
   { slug: 'c-a', realm_id: 'a', name: 'Small Den', state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: [], players: 3, bots: 0, address: 'relay.openvanilla.app:40001' },
   { slug: 'c-b', realm_id: 'b', name: 'Busy Den', state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: [], players: 30, bots: 0, address: 'relay.openvanilla.app:40002' },
   { slug: 'c-c', realm_id: 'c', name: 'Asleep', state: 'offline', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: [], players: 0, bots: 0, address: 'relay.openvanilla.app:40004' },
+  // being turned off (owner 1 Nov): never shown, by its id or its name
+  { slug: 'c-jgt5rpofn7yaisep', realm_id: 'jgt5rpofn7yaisep', name: 'Busiest', state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: [], players: 90, bots: 0, address: 'relay.openvanilla.app:40030' },
+  { slug: 'c-d', realm_id: 'd', name: "Builders' Realm", state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: [], players: 9, bots: 0, address: 'relay.openvanilla.app:40031' },
 ];
-async function openNet(net = NET) {
+async function openNet(net = NET, saved) {
   const ctx = await browser.newContext({ colorScheme: 'dark', viewport: { width: 1400, height: 860 } });
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.route('https://play.openvanilla.app/**', (r) => r.fulfill({ path: PICTURE, contentType: 'image/webp' }));
-  await page.addInitScript(FAKE, { clients: TWO });
+  await page.addInitScript(FAKE, { clients: TWO, saved });
   await page.addInitScript((net) => {
     const inner = window.__TAURI__.core.invoke;
     window.__TAURI__.core.invoke = async (cmd, args) => {
@@ -208,7 +212,7 @@ async function openNet(net = NET) {
   }, net);
   await page.goto(INDEX);
   await page.waitForFunction(() => window.LeylineNav && document.querySelector('#page-play.on') && window.__calls.some(([c]) => c === 'realms_list'));
-  await page.waitForFunction(() => document.getElementById('pb-realm').textContent === 'Wrath Unleashed');
+  await page.waitForFunction((want) => document.getElementById('pb-realm').textContent === want, saved ? 'Busy Den' : 'Wrath Unleashed');
   return { page, ctx, errors };
 }
 const rrows = (page) => page.$$eval('#pb-rmenu > li', (l) => l.map((x) => (x.classList.contains('pb-sep') ? '---' : x.classList.contains('pb-head') ? '# ' + x.textContent
@@ -216,34 +220,30 @@ const rrows = (page) => page.$$eval('#pb-rmenu > li', (l) => l.map((x) => (x.cla
   : [x.querySelector('.pb-opt-name').textContent, (x.querySelector('.rl-ver') || {}).textContent || '', (x.querySelector('.pb-opt-sub') || {}).textContent || '',
     x.getAttribute('aria-selected'), x.getAttribute('aria-disabled') || ''].join('|'))));
 
-test('the realm picker: a drop-up list of your realms, live realms, browser play, My Den, Make a realm and Find more', async () => {
+test('the realm picker: Wrath Unleashed and Your Den, Host a server…, Play in your browser, one game client row', async () => {
   const { page, ctx, errors } = await openNet();
   assert.equal(await page.isVisible('#pb-rmenu'), false);
   await page.click('#pb-realm-btn');
   assert.equal(await page.getAttribute('#pb-realm-btn', 'aria-expanded'), 'true');
   assert.equal(await page.getAttribute('#pb-rmenu', 'role'), 'listbox');
   assert.deepEqual(await rrows(page), [
-    '# Official', 'Wrath Unleashed|3.3.5a|5 playing|true|', '---',
-    '# On the network', 'Busy Den|3.3.5a|30 playing|false|', 'Small Den|3.3.5a|3 playing|false|', '---',
-    'Play in your browser||Nothing to install|false|', 'My Den||Make your Den|false|', 'Solo leveling||Set it up once|false|', '---',
-    '+ Make a realm|||false|', 'Find more realms…|||false|', '---',
-    '# Game client', 'My Wrath|3.3.5a|C:\\Games\\Wrath|true|', 'Add a game folder…|||false|',
-  ], 'live realms by players; offline ones left out; the client it plays with nearest the button');
+    'Wrath Unleashed|3.3.5a|5 playing|true|', 'Your Den||Make your Den|false|', '---',
+    'Host a server…|||false|', 'Play in your browser|||false|', '---',
+    'My Wrath|3.3.5a|Game client|false|',
+  ], 'no realms of the network, no Solo leveling, no Make a realm or Find more; the client the realm plays with nearest the button');
+  assert.equal(await page.getAttribute('#pb-rmenu .pb-client-opt', 'title'), 'My Wrath · C:\\Games\\Wrath\nPick another game client or add a folder', 'its path only in the tooltip');
+  assert.doesNotMatch(await page.textContent('#pb-rmenu'), /Builders|Busiest|Solo leveling|Find more|Make a realm|Add a game folder/);
   assert.equal(await page.evaluate(() => document.activeElement.querySelector('.pb-opt-name').textContent), 'Wrath Unleashed', 'the picked row has the focus');
   const r = await page.evaluate(() => [document.getElementById('pb-rmenu').getBoundingClientRect(), document.getElementById('pb-realm-btn').getBoundingClientRect()].map((b) => [b.top, b.bottom]));
   assert.ok(r[0][1] <= r[1][0] && r[0][0] >= 0, 'a drop-up');
-  // pick Busy Den: selected like the side bar's Your realms does, and saved
-  await page.click('#pb-rmenu >> text=Busy Den');
+  // the client row opens the client list (other folders, Add a game folder…)
+  await page.click('#pb-rmenu .pb-client-opt');
   assert.equal(await page.isVisible('#pb-rmenu'), false);
-  assert.equal(await page.inputValue('#play-realm'), 'custom');
-  assert.equal(await page.inputValue('#play-custom'), 'relay.openvanilla.app:40002');
-  assert.equal(await page.textContent('#pb-realm'), 'Busy Den');
-  assert.ok(await page.evaluate(() => window.__calls.some(([c, a]) => c === 'select' && a.realm === 'relay.openvanilla.app:40002')), 'saved');
+  assert.ok(await page.isVisible('#pb-menu'), 'the client list');
+  assert.ok(await page.locator('#pb-menu .pb-opt', { hasText: 'Add a game folder…' }).count());
+  await page.keyboard.press('Escape');
+  // browser play is a quiet row; the picker says so; a realm row turns it back off
   await page.click('#pb-realm-btn');
-  const now = await rrows(page);
-  assert.ok(now.includes('Busy Den|3.3.5a|30 playing|true|'), 'now under Your realms, marked');
-  assert.ok(!now.slice(now.indexOf('# On the network')).some((x) => x.startsWith('Busy Den')), 'not twice');
-  // browser play is a row; the picker says so; a realm row turns it back off
   await page.click('#pb-rmenu >> text=Play in your browser');
   assert.equal(await page.textContent('#pb-realm'), 'In your browser');
   assert.equal(await page.textContent('#play-headline'), 'READY · NOTHING TO INSTALL');
@@ -251,19 +251,41 @@ test('the realm picker: a drop-up list of your realms, live realms, browser play
   assert.equal(await page.evaluate(() => window.LeylineApp.mode()), 'browser');
   await page.click('#pb-realm-btn');
   assert.equal(await page.getAttribute('#pb-rmenu .pb-browser', 'aria-selected'), 'true');
-  assert.equal(await page.locator('#pb-rmenu .pb-solo .pb-solo-ic svg').count(), 1, 'Solo leveling, with its sword mark');
-  assert.equal(await page.locator('#pb-rmenu .pb-head', { hasText: 'Game client' }).count(), 0, 'no game client in the browser');
+  assert.equal(await page.locator('#pb-rmenu .pb-client-opt').count(), 0, 'no game client in the browser');
   await page.click('#pb-rmenu >> text=Wrath Unleashed');
   assert.equal(await page.evaluate(() => window.LeylineApp.mode()), 'online');
   assert.equal(await page.inputValue('#play-realm'), 'official');
   assert.equal(await page.textContent('#pb-realm'), 'Wrath Unleashed');
-  // the bottom rows
+  // Host a server…: the Host page's templates
   await page.click('#pb-realm-btn');
-  await page.click('#pb-rmenu >> text=+ Make a realm');
+  await page.click('#pb-rmenu >> text=Host a server…');
   assert.equal(await pageOn(page), 'page-host');
+  // the Builders' Realm is nowhere: not on Realms, not on Home
+  await page.evaluate(() => window.LeylineNav.show('realms'));
+  await page.waitForFunction(() => /Busy Den/.test(document.getElementById('rl-list').textContent));
+  assert.doesNotMatch(await page.evaluate(() => document.body.innerText), /Builders|Busiest/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('the realm picker: Your realms only when there are any, the community realm you picked marked', async () => {
+  const { page, ctx, errors } = await openNet(NET, 'relay.openvanilla.app:40002');
   await page.click('#pb-realm-btn');
-  await page.click('#pb-rmenu >> text=Find more realms…');
-  assert.equal(await pageOn(page), 'page-realms');
+  assert.deepEqual(await rrows(page), [
+    'Wrath Unleashed|3.3.5a|5 playing|false|', 'Your Den||Make your Den|false|', '---',
+    '# Your realms', 'Busy Den|3.3.5a|30 playing|true|', '---',
+    'Host a server…|||false|', 'Play in your browser|||false|', '---',
+    'My Wrath|3.3.5a|Game client|false|',
+  ]);
+  await page.click('#pb-rmenu >> text=Wrath Unleashed');
+  assert.equal(await page.inputValue('#play-realm'), 'official');
+  await page.click('#pb-realm-btn');
+  assert.ok((await rrows(page)).includes('Busy Den|3.3.5a|30 playing|false|'), 'still under Your realms once you left it');
+  await page.click('#pb-rmenu >> text=Busy Den');
+  assert.equal(await page.inputValue('#play-realm'), 'custom');
+  assert.equal(await page.inputValue('#play-custom'), 'relay.openvanilla.app:40002');
+  assert.equal(await page.textContent('#pb-realm'), 'Busy Den');
+  assert.ok(await page.evaluate(() => window.__calls.some(([c, a]) => c === 'select' && a.realm === 'relay.openvanilla.app:40002')), 'saved');
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -273,7 +295,7 @@ test('the realm picker: the official lineup first, Wrath Unleashed labelled Offi
   const { page, ctx, errors } = await openNet([Object.assign({}, NET[0], { name: 'Leyline Sample Hangout' }), NET[1], NET[2], vr, NET[3]]);
   await page.click('#pb-realm-btn');
   const rows = await rrows(page);
-  assert.deepEqual(rows.slice(0, 4), ['# Official', 'Wrath Unleashed|3.3.5a|5 playing|true|', 'Vanilla Remastered|1.12.1|2 playing|false|', '---'],
+  assert.deepEqual(rows.slice(0, 4), ['Wrath Unleashed|3.3.5a|5 playing|true|', 'Vanilla Remastered|1.12.1|2 playing|false|', 'Your Den||Make your Den|false|', '---'],
     'one name for the official realm whatever the list calls it; the lineup pinned under it');
   assert.ok(!rows.slice(4).some((x) => x.startsWith('Vanilla Remastered')), 'not twice');
   assert.equal(await page.textContent('#pb-rmenu .pb-opt-kind'), 'Official realm');
@@ -291,14 +313,15 @@ test('the realm picker by keyboard: Up opens, arrows and Home / End, Enter picks
   await page.keyboard.press('ArrowUp');
   assert.ok(await page.isVisible('#pb-rmenu'));
   await page.keyboard.press('ArrowDown');
-  assert.equal(await page.evaluate(() => document.activeElement.querySelector('.pb-opt-name').textContent), 'Busy Den');
+  assert.equal(await page.evaluate(() => document.activeElement.querySelector('.pb-opt-name').textContent), 'Your Den');
   await page.keyboard.press('End');
-  assert.equal(await page.evaluate(() => document.activeElement.querySelector('.pb-opt-name').textContent), 'Add a game folder…');
+  assert.equal(await page.evaluate(() => document.activeElement.querySelector('.pb-opt-name').textContent), 'My Wrath');
   await page.keyboard.press('Home');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
-  assert.equal(await page.textContent('#pb-realm'), 'Small Den');
+  assert.equal(await page.textContent('#pb-realm'), 'In your browser');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'pb-realm-btn', 'the focus back on the button');
   await page.keyboard.press('ArrowUp');
   await page.keyboard.press('Escape');
@@ -359,11 +382,11 @@ async function openDen(hostKit, clients = [TWO[1], TWO[0]]) {
 }
 const callsOf = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([c]) => c === cmd).map(([, a]) => a), cmd);
 
-test('My Den hosted on this PC: the row plays it through its own invite link with the 3.3.5a client', async () => {
+test('Your Den hosted on this PC: the row plays it through its own invite link with the 3.3.5a client', async () => {
   const { page, ctx, errors } = await openDen(DEN_KIT);
   await page.click('#pb-realm-btn');
-  const den = (await rrows(page)).find((x) => x.startsWith('My Den'));
-  assert.equal(den, 'My Den|3.3.5a|On this PC|false|', 'its version, and on this PC');
+  const den = (await rrows(page)).find((x) => x.startsWith('Your Den'));
+  assert.equal(den, 'Your Den|3.3.5a|On this PC|false|', 'its version, and on this PC');
   assert.equal(await page.locator('#pb-rmenu .pb-den .pb-den-ic svg').count(), 1, 'the house mark');
   await page.click('#pb-rmenu .pb-den');
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'play'));
@@ -372,22 +395,22 @@ test('My Den hosted on this PC: the row plays it through its own invite link wit
   assert.deepEqual(await callsOf(page, 'play'), [{ client: 'c335a-1', realm: 'relay.openvanilla.app:40007' }], 'then PLAY, on the Wrath folder');
   assert.equal(await page.inputValue('#play-client'), 'c335a-1');
   assert.equal(await page.inputValue('#play-custom'), 'relay.openvanilla.app:40007');
-  assert.equal(await page.textContent('#pb-realm'), 'My Den', 'the bar names it');
+  assert.equal(await page.textContent('#pb-realm'), 'Your Den', 'the bar names it');
   assert.equal(await page.textContent('#pb-realm-ver'), '3.3.5a');
   assert.ok(await page.evaluate(() => document.querySelector('#pb-realm-ic.pb-mark-ic svg')), 'and shows the house mark');
   await page.click('#pb-realm-btn');
   const rows = await rrows(page);
-  assert.ok(rows.includes('My Den|3.3.5a|On this PC|true|'), 'now marked');
+  assert.ok(rows.includes('Your Den|3.3.5a|On this PC|true|'), 'now marked');
   assert.ok(!rows.some((x) => x.startsWith('relay.openvanilla.app:40007')), 'not again as an address under Your realms');
   assert.equal(await pageOn(page), 'page-play');
   assert.deepEqual(errors, []);
   await ctx.close();
 });
 
-test('My Den not hosted: the row opens Your Den and its one click (Den Lite straight in, else its setup there)', async () => {
+test('Your Den not hosted: the row opens Your Den and its one click (Den Lite straight in, else its setup there)', async () => {
   const { page, ctx, errors } = await openDen({ dir: '/home/me/kit', is_kit: true, has_windows_script: true, has_unix_script: true, problems: [], seeds: [], realm: null });
   await page.click('#pb-realm-btn');
-  assert.ok((await rrows(page)).includes('My Den||Make your Den|false|'));
+  assert.ok((await rrows(page)).includes('Your Den||Make your Den|false|'));
   await page.click('#pb-rmenu .pb-den');
   assert.equal(await pageOn(page), 'page-den', 'Your Den, not the Host page');
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'den_state'));
@@ -402,7 +425,7 @@ test('My Den not hosted: the row opens Your Den and its one click (Den Lite stra
   await ctx.close();
 });
 
-test('My Den hosted but no 3.3.5a folder: Clients, with what to add', async () => {
+test('Your Den hosted but no 3.3.5a folder: Clients, with what to add', async () => {
   const { page, ctx, errors } = await openDen(DEN_KIT, [TWO[1]]);
   await page.click('#pb-realm-btn');
   await page.click('#pb-rmenu .pb-den');

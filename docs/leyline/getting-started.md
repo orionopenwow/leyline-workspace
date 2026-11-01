@@ -6,7 +6,7 @@ Leyline plays with game files you already have. We never download, host or link 
 
 1. **Get your game files.** Find the game folder on your PC, or put back a copy you kept. See [Where your files usually are](#where-your-files-usually-are).
 2. **Add your folder.** In the Leyline launcher, press **PLAY** or pick **Add a game folder…** in the play bar. The launcher reads the version itself.
-3. **Pick a realm.** The official realm is picked for you. The play bar's realm list has the others, or open **Realms**.
+3. **Pick a realm.** The official realm is picked for you. The play bar's realm list also has **Your Den** (your own room to build in, one click), the realms you host or played on, and **Host a server…**; **Realms** lists every realm.
 4. **Play.** Press **PLAY**. The launcher points your game at the realm and keeps your original settings as a backup.
 
 No files at all? You can still play in your browser: see [Browser or your own client](#browser-or-your-own-client).

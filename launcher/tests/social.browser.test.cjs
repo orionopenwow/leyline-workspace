@@ -4,7 +4,7 @@
 // open friends list, other stuff and sign out manage account etc"): the whole chip opens a panel joined to it: you
 // (picture, name#tag, Online, Change name or picture; a guest account is told to pick its own), your friends (online
 // first, a count, requests to accept or decline, Add a friend, a plain empty state; asked when the panel opens, never a
-// live poll), quick links (My profile, My Den, Solo leveling, Forum, Settings, Help), then Manage account, Hero Key and
+// live poll), quick links (My profile, Forum, Settings, Help; Your Den is in the side menu and the play bar), then Manage account, Hero Key and
 // Sign out last. Esc and a click outside close it, Tab stays inside, arrows move between items, focus goes back to the
 // chip, it fits the smallest window. Signed out: Sign in opens the chooser in the same panel look, Get your Hero Key first.
 // Names and titles are text, never markup; a revoked sign-in goes back to Sign in.
@@ -119,7 +119,7 @@ test('signed in: the profile sits in the title bar, top right, with Manage accou
   assert.ok(r.inBar, 'in the title bar'); assert.ok(r.top < 30, 'at the top'); assert.ok(r.gap >= 0 && r.gap < 40, 'just left of the window buttons (gap ' + r.gap + ')');
   await page.click('#hf-me-btn');
   assert.deepEqual(await page.$$eval('#hf-panel [role="menuitem"] .ap-item-t b', (b) => b.map((x) => x.textContent)),
-    ['My profile', 'My Den', 'Solo leveling', 'Forum', 'Settings', 'Help', 'Manage account', 'Hero Key', 'Sign out']);
+    ['My profile', 'Forum', 'Settings', 'Help', 'Manage account', 'Hero Key', 'Sign out']);
   await page.click('#hf-panel [role="menuitem"]:has-text("Manage account")');
   await page.waitForSelector('#hf-panel', { state: 'detached' });
   // Manage account is a page in the launcher now (account.js), not the website
@@ -272,9 +272,6 @@ test('no friends yet: plain words with your own name and tag; the links go where
   await page.click('#hf-me-btn');
   await page.click('#hf-panel [role="menuitem"]:has-text("Settings")');
   await page.waitForSelector('#page-settings.on');
-  await page.click('#hf-me-btn');
-  await page.click('#hf-panel [role="menuitem"]:has-text("My Den")');
-  await page.waitForSelector('#page-host.on');
   await page.click('#hf-me-btn');
   await page.click('#hf-panel .ap-edit');
   await page.waitForSelector('#page-account.on');

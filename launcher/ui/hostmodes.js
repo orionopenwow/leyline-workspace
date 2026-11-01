@@ -340,6 +340,10 @@
         try { await navigator.clipboard.writeText(live.link); ev.currentTarget.textContent = "Copied"; } catch (_) { say("Select the link and copy it.", "warn"); }
       }));
       acts.append(btn("Open the console", "btn small", () => { view = "grid"; live = null; place(); }));
+      // optional: your own Claude, as Your Den's "Ask Claude to edit it" (the Agents page, connected once)
+      const claude = btn("Connect Claude", "btn small hx-claude", () => { if (window.LeylineNav) window.LeylineNav.show("agents"); });
+      claude.title = "Your own Claude helps run your realm: connect it once on the Agents page. Every change waits for your OK.";
+      acts.append(claude);
       box.append(acts);
       sw.append(box);
     } else {

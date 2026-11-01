@@ -342,7 +342,12 @@
       li.append(b);
       ui.tools.append(li);
     }
-    right.append(chHead, ui.chk, ui.chkSum, mk("p", "hc-bh hc-gap", "Realm tools"), ui.tools);
+    // optional: your own Claude, as Your Den's "Ask Claude to edit it" (the Agents page, connected once)
+    const claude = btn("Connect Claude", "btn small hc-claude", () => { if (window.LeylineNav) window.LeylineNav.show("agents"); });
+    claude.title = "Your own Claude helps run your realm: connect it once on the Agents page. Every change waits for your OK.";
+    const claudeRow = mk("p", "hc-fine hc-claude-row");
+    claudeRow.append(claude, document.createTextNode(" Optional: your own Claude helps run it, after your OK."));
+    right.append(chHead, ui.chk, ui.chkSum, mk("p", "hc-bh hc-gap", "Realm tools"), ui.tools, claudeRow);
     cols.append(gmBox, right);
 
     ui.drawer = mk("div", "hc-drawer");

@@ -34,3 +34,8 @@
   border-color: var(--stone-edge);
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.65), 0 1px 0 rgba(255, 255, 255, 0.06);
 }
+/* owner 2026-10-31 20:11: the realm box "seems too slim": both pickers 60px tall with a little more room inside */
+.pb-client, .pb-client.pb-realm { height: 60px; }
+.pb-client.pb-realm { padding: 0 14px 0 12px; gap: 12px; }
+.pb-realm-txt { gap: 4px; }
+.pb-realm .rl-ic { width: 34px; height: 34px; }

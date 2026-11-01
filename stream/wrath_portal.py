@@ -1130,6 +1130,9 @@ _theme_ver = {"key": None, "v": ""}
 
 # The hub's preview thumbnails (tools/hub-index/hub_index.py thumbs: a GitHub project's own preview image as a small
 # WebP, stream/www-files/art/hub-thumbs/): allowed by pattern, WebP only, nothing else from that folder.
+# Looks: our own in-game pictures for the Looks cards and the front page's Looks tiles (stream/www-files/art/looks/,
+# stream/looks.json look.previews). Game pictures: behind the game data killswitch like the leyline-shot- files.
+LOOKS_ART_RE = re.compile(r"looks/look-[a-z0-9][a-z0-9-]{0,40}\.webp")
 HUB_THUMB_RE = re.compile(r"hub-thumbs/[a-z0-9][a-z0-9._-]{0,99}__[a-z0-9][a-z0-9._-]{0,99}\.webp")
 HUB_THUMB_MAX = 200_000
 
@@ -1160,6 +1163,8 @@ def art_type(name: str) -> str:
     if not isinstance(name, str) or ".." in name:
         return ""
     if HUB_THUMB_RE.fullmatch(name):
+        return "image/webp"
+    if LOOKS_ART_RE.fullmatch(name):
         return "image/webp"
     if AVATAR_ART_RE.fullmatch(name):
         return "image/svg+xml"
@@ -2795,7 +2800,7 @@ def looks_page(query: dict) -> bytes:
         offered = hub_mod.offered_builds() if hub_mod is not None else None
     except Exception:   # noqa: BLE001
         offered = None
-    inner = looks_mod.body(q, labels=labels, offered=offered, download=launcher_download())
+    inner = looks_mod.body(q, labels=labels, offered=offered, download=launcher_download(), pictures=not gamedata_off())
     title = f"Looks · {REALM_NAME}"
     meta = card_meta(LOOKS_PATH, "Looks · Leyline")
     framed = hub_frame(title, inner, LOOKS_PATH, "looks", css=WU_BOX_CSS + looks_mod.CSS, meta=meta)
@@ -3008,7 +3013,7 @@ class PageHandler(BaseHTTPRequestHandler):
     def art(self, name: str) -> None:
         """GET /wrath/art/<name>: the site art and theme, from the allow-list only, cached for a week.
         Readable from any site (fonts need CORS; it is our own art, nothing private)."""
-        if (name in GAMEDATA_ART or home_art(name)) and gamedata_off():
+        if (name in GAMEDATA_ART or home_art(name) or LOOKS_ART_RE.fullmatch(name)) and gamedata_off():
             self.send(410, GAMEDATA_GONE, "application/json; charset=utf-8")
             return
         body = art_bytes(name)

@@ -49,6 +49,46 @@
     if (lk.type === "preset") return PRESET_MOTIFS.includes(lk.preset) ? lk.preset : "balanced";
     return lk.type === "graphics-pack" ? "pack" : "ui";
   }
+  // Our own pictures, bundled (art/looks/, a copy of stream/www-files/art/looks/; looks.browser.test.cjs checks they match).
+  // The catalog names them by their website address; only these files are ever shown.
+  const PICS = ["look-balanced.webp", "look-classic.webp", "look-forever-ui-character.webp", "look-forever-ui-charselect.webp",
+    "look-forever-ui-hud.webp", "look-forever-ui-professions.webp", "look-max.webp"];
+  function pics(p) {
+    const pv = (p.look && Array.isArray(p.look.previews)) ? p.look.previews : [];
+    return pv.map((x) => Object.assign({}, x, { file: String(x.src || "").replace(/^\/wrath\/art\/looks\//, "") }))
+      .filter((x) => PICS.includes(x.file)).map((x) => Object.assign(x, { url: "art/looks/" + x.file }));
+  }
+  function img(x, cls) {
+    const i = el("img", cls || "");
+    i.src = x.url; i.alt = x.alt || ""; i.width = x.w || 0; i.height = x.h || 0; i.loading = "lazy"; i.decoding = "async";
+    if (x.w) i.style.maxWidth = x.w + "px";   // never wider than the picture itself
+    return i;
+  }
+  // a larger view of one picture: Previous, Next, Close (Esc too)
+  function viewer(p, list, at) {
+    const old = document.getElementById("looks-view");
+    if (old) old.remove();
+    const v = el("div", "lk-view");
+    v.id = "looks-view";
+    v.setAttribute("role", "dialog");
+    v.setAttribute("aria-modal", "true");
+    v.setAttribute("aria-label", `${p.name}: picture ${at + 1} of ${list.length}`);
+    const x = list[at];
+    const fig = el("figure", "");
+    fig.append(img(x), el("figcaption", "", `${x.alt} · ${x.credit} · ${at + 1} of ${list.length}`));
+    const nav = el("div", "lk-view-nav");
+    const go = (label, to) => { const b = el("button", "btn", label); b.type = "button"; b.addEventListener("click", to); nav.append(b); return b; };
+    const close = () => { v.remove(); document.removeEventListener("keydown", key); };
+    function key(ev) { if (ev.key === "Escape") close(); }
+    if (list.length > 1) go("‹ Previous", () => { close(); viewer(p, list, (at + list.length - 1) % list.length); });
+    const c = go("Close", close);
+    if (list.length > 1) go("Next ›", () => { close(); viewer(p, list, (at + 1) % list.length); });
+    v.addEventListener("click", (ev) => { if (ev.target === v) close(); });
+    document.addEventListener("keydown", key);
+    v.append(fig, nav);
+    document.body.append(v);
+    c.focus();
+  }
   function art(p) {
     const m = motif(p);
     const a = el("span", "lk-art m-" + m);
@@ -119,10 +159,28 @@
     c.dataset.id = p.id;
     c.dataset.type = lk.type;
     if (p.id === focusId) c.classList.add("linked");
-    const ph = el("div", "lk-ph " + lk.type);
-    ph.setAttribute("aria-hidden", "true");
-    ph.append(art(p));
+    const list = pics(p);
+    const ph = el("div", "lk-ph " + lk.type + (list.length ? " pic" : ""));
+    if (list.length) {
+      ph.append(img(list[0]), el("span", "lk-ph-cap", list[0].credit || ""));
+    } else {
+      ph.setAttribute("aria-hidden", "true");
+      ph.append(art(p));
+    }
     c.append(ph);
+    if (list.length > 1) {   // a strip of the look's pictures, each opening a larger view
+      const strip = el("div", "lk-thumbs");
+      strip.setAttribute("aria-label", `More pictures of ${p.name}`);
+      list.forEach((x, i) => {
+        const b = el("button", "lk-thumb");
+        b.type = "button";
+        b.setAttribute("aria-label", `${x.alt} (larger)`);
+        b.append(img(x));
+        b.addEventListener("click", () => viewer(p, list, i));
+        strip.append(b);
+      });
+      c.append(strip);
+    }
     const b = el("div", "lk-b");
     b.append(el("p", "lk-type", TYPES[lk.type] || "Look"), el("h3", "lk-name", p.name));
     const chips = el("ul", "lk-chips");

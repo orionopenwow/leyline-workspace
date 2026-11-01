@@ -33,7 +33,7 @@ class Flags(unittest.TestCase):
     def test_same_hash_as_the_launcher(self):
         # launcher/src-tauri/src/p2p/flags.rs tests::site_file_is_hash_checked builds the same document.
         d = ln.make_doc({"torrent_downloads": True}, updated_at="2026-10-29T00:00:00Z")
-        self.assertEqual(d["sha256"], "20affec29fa6541d09d81479ec436d351671096f3a8c6cfe0c50245724b7c39a")
+        self.assertEqual(d["sha256"], "28a527aa70f32b2555d257766e1e1af7b3b7529330b08e0542abca94dc2fb11a")
 
     def test_writer(self):
         doc = ln.write_flags(self.p, {"torrent_downloads": True}, by="Admin<script>")

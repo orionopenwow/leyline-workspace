@@ -734,6 +734,11 @@ async fn run_update_check(app: AppHandle) -> UpdView {
         blocking(move || {
             let mesh_on = crate::p2p::flags::current(&dir).mesh_realms;
             let _ = crate::releaselog::refresh(&dir, mesh_on);
+            // "Help share Leyline's own files" (p2p/share.rs): off unless the site offers it and this PC turned it on
+            std::thread::spawn({
+                let dir = dir.clone();
+                move || drop(crate::p2p::share::run(&dir))
+            });
             let log = crate::releaselog::trusted_key().map(|k| crate::releaselog::load(&dir, k));
             let srcs = update::sources(&info, &crate::branding::get().updates.mirrors, log.as_ref());
             Ok(update::candidates(&srcs, env!("CARGO_PKG_VERSION"), &update::this_platform(), &|u| net::get(u, net::TIMEOUT).map(String::into_bytes)))

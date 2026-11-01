@@ -29,6 +29,7 @@ pub const KNOWN: &[(&str, &str)] = &[
     ("relay_volunteer", "Help the network: relay for others (only when you turn it on for this PC)"),
     ("herokey_sso", "Sign in to community realms with your Hero Key (no account per realm)"),
     ("magnet_links", "Open shared magnet links, only for Leyline's own checked packages"),
+    ("share_own_files", "Help share Leyline's own files: our signed installers, Host packs, addons and server source code (uses your upload; only when you turn it on for this PC)"),
 ];
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,6 +61,9 @@ pub struct Flags {
     /// Shared `magnet:` links (`p2p::magnet`): opened only when the info-hash is one of Leyline's own checked
     /// packages in the catalog. Off: every magnet link is ignored.
     pub magnet_links: bool,
+    /// "Help share Leyline's own files" (`p2p::share`): seed the files the signed release log names, never
+    /// anything else. Like `relay_volunteer` it never starts on the site's word alone: see `share_allowed`.
+    pub share_own_files: bool,
     pub limits: Limits,
     /// STUN servers for the NAT check (`host:port`), only used when `p2p_hosting` is on.
     pub stun: Vec<String>,
@@ -77,6 +81,7 @@ impl Flags {
             "relay_volunteer" => self.relay_volunteer,
             "herokey_sso" => self.herokey_sso,
             "magnet_links" => self.magnet_links,
+            "share_own_files" => self.share_own_files,
             _ => return None,
         })
     }
@@ -91,6 +96,7 @@ impl Flags {
             "relay_volunteer" => self.relay_volunteer = on,
             "herokey_sso" => self.herokey_sso = on,
             "magnet_links" => self.magnet_links = on,
+            "share_own_files" => self.share_own_files = on,
             _ => {}
         }
     }
@@ -219,6 +225,12 @@ pub fn volunteer_allowed(site: &Flags, local: &Local) -> bool {
     site.relay_volunteer && local.overrides.get("relay_volunteer") == Some(&true)
 }
 
+/// "Help share Leyline's own files" needs the site to offer it (so the owner can stop it everywhere), this PC's
+/// own "On", and an upload cap above zero. Off by default on all three.
+pub fn share_allowed(site: &Flags, local: &Local) -> bool {
+    site.share_own_files && local.overrides.get("share_own_files") == Some(&true) && local.limits.as_ref().is_some_and(|l| l.seed_upload_kbps > 0)
+}
+
 /// Site flags with this PC's overrides on top.
 pub fn effective(site: &Flags, local: &Local) -> Flags {
     let mut f = site.clone();
@@ -305,7 +317,7 @@ pub mod tests {
     fn site_file_is_hash_checked() {
         let good = doc(&[("torrent_downloads", true)]);
         // The same document from stream/leyline_net.py make_doc() (stream/tests/test_leyline_net.py checks it too).
-        assert_eq!(good["sha256"], "20affec29fa6541d09d81479ec436d351671096f3a8c6cfe0c50245724b7c39a");
+        assert_eq!(good["sha256"], "28a527aa70f32b2555d257766e1e1af7b3b7529330b08e0542abca94dc2fb11a");
         assert!(check(&good).is_ok());
         let f = from_doc(&good);
         assert!(f.torrent_downloads && !f.p2p_hosting);

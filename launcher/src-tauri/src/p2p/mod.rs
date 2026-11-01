@@ -10,6 +10,8 @@
 //!   replace the relay (`p2p_hosting`).
 //! * `mesh`: the realm list from the Leyline mesh (signed records from peers and seed relays, verified here) and
 //!   the relay chosen per realm (`mesh_realms`, `mesh_relays`). See docs/LEYLINE-MESH.md.
+//! * `share`: "Help share Leyline's own files" (`share_own_files`): seed only what the signed release log names
+//!   (installers, Host packs, addons, upstream server source). See docs/RESILIENCE.md.
 //!
 //! See docs/P2P-AND-TORRENT.md.
 
@@ -21,6 +23,7 @@ pub mod magnet;
 pub mod mesh;
 pub mod nat;
 pub mod sha1;
+pub mod share;
 pub mod torrent;
 pub mod transfer;
 

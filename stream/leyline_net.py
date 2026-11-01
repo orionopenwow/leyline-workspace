@@ -48,7 +48,9 @@ KNOWN = ("p2p_hosting", "torrent_downloads", "torrent_seeding", "webrtc_presence
          # a community realm with the website account; off = the realm's own join page, as before
          "herokey_sso",
          # shared magnet: links in the launcher (p2p/magnet.rs), only for Leyline's own checked packages
-         "magnet_links")
+         "magnet_links",
+         # "Help share Leyline's own files" (p2p/share.rs): offered to players; each PC still turns it on for itself
+         "share_own_files")
 LIMITS = {"seed_upload_kbps": 100_000, "seed_ratio_pct": 1000, "max_peers": 200}
 DEFAULT_STUN = ["stun.cloudflare.com:3478"]
 _STUN_RE = re.compile(r"^[A-Za-z0-9.-]{1,253}:[0-9]{1,5}$")

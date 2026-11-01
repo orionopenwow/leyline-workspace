@@ -36,6 +36,9 @@ dirs = "5"
 ureq = { version = "2", default-features = false, features = ["tls"] }
 # Mods: reading zips (deflate only, no other codecs) and checking the catalog's sha256.
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# Source tarballs (.tar.gz) of pinned server software, checked inside like a zip (p2p/checker.rs). Already in the
+# tree through zip.
+flate2 = "1"
 sha2 = "0.10"
 # The Leyline mesh (src/p2p/mesh.rs): Ed25519 checks of signed realm records. Already in the tree through rustls.
 ring = "0.17"

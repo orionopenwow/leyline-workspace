@@ -237,7 +237,7 @@ impl Known {
         match self.kind {
             Kind::ThemePack => crate::themes::MAX_PACK,
             Kind::HostPack => crate::host::pack::MAX_PACK,
-            Kind::ModPackage | Kind::LauncherUpdate => crate::mods::MAX_DOWNLOAD,
+            Kind::ModPackage | Kind::LauncherUpdate | Kind::SharedFile => crate::mods::MAX_DOWNLOAD,
         }
     }
 }

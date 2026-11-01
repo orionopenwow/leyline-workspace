@@ -676,7 +676,9 @@ mod tests {
         assert_eq!(classify(&renamed.display().to_string()).unwrap(), Source::Zip { path: renamed.clone() }, "by its first bytes");
         assert!(classify(&seven.display().to_string()).unwrap_err().contains("zip files only"));
         assert!(classify(&txt.display().to_string()).unwrap_err().contains("isn't a zip"));
-        assert!(classify("/no/such/place").unwrap_err().contains("can't find"));
+        // an absolute path that isn't there ("/no/such/place" isn't absolute on Windows: no drive letter)
+        let missing = if cfg!(windows) { "C:\\no\\such\\place" } else { "/no/such/place" };
+        assert!(classify(missing).unwrap_err().contains("can't find"));
         // a link dragged out of a browser as a shortcut file
         let url = d.path().join("backup.url");
         fs::write(&url, "[InternetShortcut]\r\nURL=https://files.example.com/mine.zip\r\n").unwrap();

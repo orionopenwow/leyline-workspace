@@ -725,32 +725,83 @@ async fn run_update_check(app: AppHandle) -> UpdView {
         ..Default::default()
     });
     core.allow(info.url.clone());
-    let want = info.newer.then(|| info.manifest_url.clone()).flatten().filter(|_| mode == "auto");
+    // Every source that offers a newer Leyline, in order: GitHub's release, our own mirror, the mirrors the signed
+    // release log names (update::sources; docs/RESILIENCE.md). Each manifest is checked here (downloads only from
+    // that source, never a version at or below this one); each download is checked by the updater plugin against
+    // the public key in tauri.conf.json, so a mirror can be down or wrong but can't push a bad build.
+    let (cands, src_notes) = {
+        let (dir, info) = (core.dir.clone(), info.clone());
+        blocking(move || {
+            let mesh_on = crate::p2p::flags::current(&dir).mesh_realms;
+            let _ = crate::releaselog::refresh(&dir, mesh_on);
+            // "Help share Leyline's own files" (p2p/share.rs): off unless the site offers it and this PC turned it on
+            std::thread::spawn({
+                let dir = dir.clone();
+                move || drop(crate::p2p::share::run(&dir))
+            });
+            let log = crate::releaselog::trusted_key().map(|k| crate::releaselog::load(&dir, k));
+            let srcs = update::sources(&info, &crate::branding::get().updates.mirrors, log.as_ref());
+            Ok(update::candidates(&srcs, env!("CARGO_PKG_VERSION"), &update::this_platform(), &|u| net::get(u, net::TIMEOUT).map(String::into_bytes)))
+        })
+        .await
+        .unwrap_or_default()
+    };
+    let mut info = info;
+    if let (false, Some(c)) = (info.newer, cands.first()) {
+        // GitHub did not answer (or had nothing): a mirror did
+        info.newer = true;
+        info.latest = Some(c.manifest.version.clone());
+    }
+    let best = cands.first().map(|c| c.manifest.version.clone());
+    let want = (mode == "auto" && !cands.is_empty()).then_some(());
     let already = core.upd.lock().ok().and_then(|u| u.pending.as_ref().map(|(p, _)| p.version.clone()));
     if let Ok(mut u) = core.upd.lock() {
         u.view.checking = false;
         u.view.checked_at = Some(now_secs());
-        u.view.error = info.error.clone();
-        u.view.downloading = want.is_some() && already.as_deref() != info.latest.as_deref();
+        u.view.error = info.error.clone().filter(|_| cands.is_empty()).or_else(|| (cands.is_empty() && info.newer && !src_notes.is_empty()).then(|| src_notes.join("; ")));
+        u.view.downloading = want.is_some() && already != best;
         u.view.info = Some(info.clone());
     }
-    if let (Some(url), true) = (want, already.as_deref() != info.latest.as_deref()) {
+    if let (Some(()), true) = (want, already != best) {
         let res: Result<Option<(tauri_plugin_updater::Update, Vec<u8>)>, String> = async {
-            // Leyline's own check of the manifest first: this repo's release downloads only, signed.
-            let mtext = blocking({
-                let url = url.clone();
-                move || net::get(&url, net::TIMEOUT)
-            })
-            .await?;
-            let m = update::parse_manifest(&mtext)?;
-            if update::cmp_versions(&m.version, info.latest.as_deref().unwrap_or("")) != Some(std::cmp::Ordering::Equal) {
-                return Err("The update manifest names another version than its release.".into());
+            let mut notes = Vec::new();
+            for c in &cands {
+                // the built-in public key first, then the owner's offline backup keys (branding.json
+                // updates.backup_pubkeys), so a release signed with a backup key still installs if the main key is lost
+                let mut keys: Vec<Option<String>> = vec![None];
+                keys.extend(crate::branding::get().updates.backup_pubkeys.iter().cloned().map(Some));
+                let mut one: Result<Option<(tauri_plugin_updater::Update, Vec<u8>)>, String> = Ok(None);
+                for key in keys {
+                    one = async {
+                        let endpoint: tauri::Url = c.source.manifest_url.parse().map_err(|e| format!("{e}"))?;
+                        let mut b = app.updater_builder();
+                        if let Some(k) = key {
+                            b = b.pubkey(k);
+                        }
+                        let updater = b.endpoints(vec![endpoint]).map_err(|e| e.to_string())?.build().map_err(|e| e.to_string())?;
+                        let Some(up) = updater.check().await.map_err(|e| e.to_string())? else { return Ok(None) };
+                        if !update::is_newer(&up.version, env!("CARGO_PKG_VERSION")) {
+                            return Err("not newer: never installed".into());
+                        }
+                        // the plugin checks the download's signature against that public key
+                        let bytes = up.download(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
+                        Ok(Some((up, bytes)))
+                    }
+                    .await;
+                    if !matches!(&one, Err(e) if e.to_ascii_lowercase().contains("signature")) {
+                        break;
+                    }
+                }
+                match one {
+                    Ok(Some(x)) => return Ok(Some(x)),
+                    Ok(None) => notes.push(format!("{}: nothing newer", c.source.name)),
+                    Err(e) => notes.push(format!("{}: {e}", c.source.name)),
+                }
             }
-            let endpoint: tauri::Url = url.parse().map_err(|e| format!("{e}"))?;
-            let updater = app.updater_builder().endpoints(vec![endpoint]).map_err(|e| e.to_string())?.build().map_err(|e| e.to_string())?;
-            let Some(up) = updater.check().await.map_err(|e| e.to_string())? else { return Ok(None) };
-            let bytes = up.download(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
-            Ok(Some((up, bytes)))
+            if notes.iter().all(|n| n.ends_with("nothing newer")) {
+                return Ok(None);
+            }
+            Err(notes.join("; "))
         }
         .await;
         if let Ok(mut u) = core.upd.lock() {
@@ -950,6 +1001,11 @@ pub fn run() {
             crate::p2p::cmds::host_den_text,
             crate::p2p::cmds::host_den_add,
             crate::p2p::cmds::host_den_open,
+            crate::p2p::cmds::host_modes, // modes anyone can host and fork: cards, fork, change, remove, host one (host/modes.rs)
+            crate::p2p::cmds::host_mode_fork,
+            crate::p2p::cmds::host_mode_save,
+            crate::p2p::cmds::host_mode_remove,
+            crate::p2p::cmds::host_mode_use,
             crate::p2p::cmds::host_check,
             crate::p2p::cmds::host_tool,
             crate::p2p::cmds::host_rules,
@@ -982,6 +1038,11 @@ pub fn run() {
             crate::social::commands::social_call,
             crate::social::commands::social_signout,
             crate::social::commands::social_ways,
+            // Your Hero Key in the launcher (Manage account; stream/herokeys.py)
+            crate::social::commands::social_key_signin,
+            crate::social::commands::social_new_account,
+            crate::social::commands::social_password_signin,
+            crate::social::commands::save_text_file,
             // the Forum page: reading the website's forum, opening its pages (forum.rs)
             crate::forum::commands::forum_call,
             crate::forum::commands::forum_post,

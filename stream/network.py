@@ -539,7 +539,7 @@ def card(r: dict, join_base: str, ruleset_labels: dict, share_box=None) -> str:
             + ('<details><summary>House rules</summary><ol>'
                + "".join(f'<li>{e(x)}</li>' for x in r["rules"]) + '</ol></details>' if r.get("rules") else '')
             + f'<p>{button} <a class="report" href="/wrath/realms/report?realm={e(r["id"])}" rel="nofollow">Report</a></p>'
-            + (share_box(f'/wrath/r/{r["id"]}') if share_box else '') + '</div>')
+            + (share_box(f'/wrath/r/{r["id"][:8]}') if share_box else '') + '</div>')
 
 
 def sample_card(st: dict, rec: dict | None, share_box=None, sample: dict | None = None) -> str:

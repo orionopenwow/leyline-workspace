@@ -1,0 +1,63 @@
+{
+  "format": 1,
+  "about": "The Leyline Discord's channels and roles (the growth plan, owner 2026-10-31). HQ > Content > Discord > Set up the Discord makes what is missing, found by name; it never deletes, renames or changes anything already there. stream/discord_growth.py reads this file; docs/DISCORD.md explains each field.",
+  "roles": [
+    {"key": "core_team", "name": "Core Team", "color": "#e0c068", "hoist": true, "staff": true},
+    {"key": "moderator", "name": "Moderator", "color": "#c4523d", "hoist": true, "staff": true},
+    {"key": "guide", "name": "Guide", "color": "#5fb3a8", "hoist": true, "staff": true},
+    {"key": "realm_host", "name": "Realm Host", "color": "#3f9f6f", "hoist": false, "auto": "realm_host"},
+    {"key": "mode_maker", "name": "Mode Maker", "color": "#c58b2a", "hoist": false, "auto": "mode_maker"},
+    {"key": "builder", "name": "Builder", "color": "#a0763a", "hoist": false, "auto": "builder"},
+    {"key": "den_architect", "name": "Den Architect", "color": "#b05fc4", "hoist": false, "auto": "den_architect", "keep": true},
+    {"key": "node_keeper", "name": "Node Keeper", "color": "#3d7fc4", "hoist": false, "auto": "node_keeper"}
+  ],
+  "categories": [
+    {"key": "start", "name": "Start here", "channels": [
+      {"key": "welcome", "name": "welcome", "topic": "New here? Start with rules, then pick your roles.", "read_only": true},
+      {"key": "rules", "name": "rules", "topic": "Be kind. No game files, no selling, no ads. One ban covers your whole Leyline account.", "read_only": true},
+      {"key": "roles", "name": "roles", "topic": "Pick what you do. Some roles you earn by hosting, making modes and building.", "read_only": true},
+      {"key": "announcements", "name": "announcements", "topic": "News from the Leyline team.", "read_only": true, "posters": ["core_team", "moderator"]}
+    ]},
+    {"key": "play", "name": "Play", "channels": [
+      {"key": "looking_for_group", "name": "looking-for-group", "topic": "Find people to play with. Find a group on the website posts here too.", "bot_posts": true},
+      {"key": "wrath_unleashed", "name": "wrath-unleashed", "topic": "Talk about Wrath Unleashed, our own realm."},
+      {"key": "live_realms", "name": "live-realms", "topic": "Realms on the Leyline network as they go live.", "read_only": true, "bot_posts": true},
+      {"key": "events", "name": "events", "topic": "Weekly Dalaran events and community happenings.", "read_only": true, "posters": ["core_team", "moderator", "guide"]}
+    ]},
+    {"key": "build", "name": "Build", "channels": [
+      {"key": "den_showcase", "name": "den-showcase", "topic": "Show your Den. Den of the week is posted here.", "bot_posts": true},
+      {"key": "builders_realm", "name": "builders-realm", "topic": "The Builders' Realm: plans, requests, progress."},
+      {"key": "building_help", "name": "building-help", "topic": "Questions about the Den and building tools."}
+    ]},
+    {"key": "make", "name": "Make", "channels": [
+      {"key": "modes_and_forks", "name": "modes-and-forks", "topic": "Game modes and forks. The featured mode is posted here.", "bot_posts": true},
+      {"key": "mods", "name": "mods", "topic": "Mods for the game client and realms."},
+      {"key": "addons", "name": "addons", "topic": "Addons: share, ask, report problems."},
+      {"key": "mode_jam", "name": "mode-jam", "topic": "The monthly mode jam. Bragging rights only, no prizes."},
+      {"key": "scripting_help", "name": "scripting-help", "topic": "Help with realm scripts and mode files."},
+      {"key": "jam_judges", "name": "jam-judges", "topic": "Mode Makers judge the mode jam here.", "private": ["mode_maker", "core_team", "moderator"]}
+    ]},
+    {"key": "host", "name": "Host", "channels": [
+      {"key": "hosting_help", "name": "hosting-help", "topic": "Help hosting a realm with the Host pack."},
+      {"key": "list_your_realm", "name": "list-your-realm", "topic": "Tell people about your realm. One post every 10 minutes.", "slowmode": 600},
+      {"key": "nodes", "name": "nodes", "topic": "Help carry the network: running a node."},
+      {"key": "host_lounge", "name": "host-lounge", "topic": "For people who host a listed realm.", "private": ["realm_host", "core_team", "moderator"]},
+      {"key": "node_keepers", "name": "node-keepers", "topic": "Network changes, first.", "private": ["node_keeper", "core_team"]}
+    ]},
+    {"key": "leyline", "name": "Leyline", "channels": [
+      {"key": "bug_reports", "name": "bug-reports", "topic": "Found a bug? Say what you did and what happened."},
+      {"key": "ideas", "name": "ideas", "topic": "Ideas for Leyline."},
+      {"key": "launcher_help", "name": "launcher-help", "topic": "Help with the Leyline launcher."},
+      {"key": "roadmap", "name": "roadmap", "topic": "What the core team is working on next.", "private": ["core_team"]},
+      {"key": "mod_room", "name": "mod-room", "topic": "Moderators and guides.", "private": ["moderator", "guide", "core_team"]}
+    ]},
+    {"key": "voice", "name": "Voice", "channels": [
+      {"key": "dalaran_lounge", "name": "Dalaran lounge", "type": "voice"},
+      {"key": "group_room_1", "name": "Group room 1", "type": "voice"},
+      {"key": "group_room_2", "name": "Group room 2", "type": "voice"},
+      {"key": "group_room_3", "name": "Group room 3", "type": "voice"},
+      {"key": "showcase_stage", "name": "Showcase stage", "type": "stage", "optional": true, "topic": "Monthly showcases."}
+    ]}
+  ],
+  "posts": {"live": "live_realms", "den": "den_showcase", "mode": "modes_and_forks", "lfg": "looking_for_group"}
+}

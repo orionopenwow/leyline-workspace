@@ -511,6 +511,32 @@ h = H("POST", L.PAGE, ("step=check&csrf=" + csrf + "&url=https%3A%2F%2Fgithub.co
 L.post(h, L.PAGE)
 check("page: a refused check says why and offers Check again", "lm-bad" in h.sent[1] and ".m2" in h.sent[1] and "Check again" in h.sent[1])
 
+# ---- Addon or mod (owner 31 Oct 19:22; docs/WORDS.md): the form says which it is, Addon first, then Mod's categories
+_HUB = load("wu_hub_for_listings", "hub.py")
+_cats = json.load(open(os.path.join(STREAM, "..", "mods", "categories.json")))["categories"]
+
+
+class _FakeWs:
+    @staticmethod
+    def categories():
+        return (_cats, {})
+
+
+_old_get = L._get
+_ok_check = {"ok": True, "name": "x", "plan": ["Adds an addon folder"], "token": "t" * 32}
+for _hubv in (_HUB, None):
+    L._get = lambda n, _h=_hubv: _FakeWs if n == "workshop" else _h if n == "hub_mod" else None
+    _ph = L._preview_html(dict(_ok_check, format="addon"), "", {})
+    _pm = L._preview_html(dict(_ok_check, format="realm-script"), "", {})
+    _pk = L._preview_html(dict(_ok_check, format="patch"), "", {"kind": "addon"})
+    check("List your mod: Addon or mod as two groups (Addon first), themes left out, the default from what it is"
+          + (" (the hub's options)" if _hubv else " (without the hub)"),
+          '<optgroup label="Addon: an in-game interface helper"><option value="addons" selected>' in _ph
+          and '<optgroup label="Mod: changes the game itself">' in _ph and _ph.index("Addon: an") < _ph.index("Mod: changes")
+          and '<option value="realm-scripts" selected>' in _pm and '<option value="addons">' in _pm
+          and 'value="themes"' not in _ph and '<option value="addons" selected>' in _pk and ">Addon or mod <" in _ph, _ph[-900:])
+L._get = _old_get
+
 shutil.rmtree(T, ignore_errors=True)
 print(f"\n{passed}/{passed + failed} passed")
 sys.exit(1 if failed else 0)

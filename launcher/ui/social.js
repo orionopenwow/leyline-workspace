@@ -31,8 +31,12 @@
   const emit = (name, detail) => document.dispatchEvent(new CustomEvent(name, { detail }));
 
   let me = null, extra = {}, signedIn = false, code = "", ways = null;
-  // the sign-in in progress: stage idle | choose | waiting | error; via: the way picked; note: what went wrong
-  const flow = { stage: "idle", via: "", note: "" };
+  // the sign-in in progress: stage idle | choose | waiting | busy | error; via: the way picked; note: what went wrong;
+  // form: the in-launcher form open in the chooser ("" | "key": paste your Hero Key | "password": name#tag and password)
+  const flow = { stage: "idle", via: "", note: "", form: "" };
+  // Get your Hero Key (owner 31 Oct 19:15): a new account's key, made just now, to show once in Manage account
+  // ({key, name}); never kept anywhere but this page's memory, and dropped once the player leaves Manage account
+  let fresh = null;
   let runId = 0;
 
   function say(text, kind) {
@@ -85,8 +89,18 @@
   const wayOn = (k) => !ways || ways[k] === true || k === "herokey";
 
   // The chooser and the waiting state, built into box (the title bar's pop-over, or Manage account's card).
+  // Owner 31 Oct 19:15: Get your Hero Key first (a new account made right here, its key shown in Manage account), then
+  // Sign in with your Hero Key (paste it here: no browser), Google or Discord (the website, in your browser), and a
+  // name-and-password sign-in for players who set one. stream/herokeys.py answers the in-launcher ones.
   function buildFlow(box, big) {
     box.textContent = "";
+    if (flow.stage === "busy") {
+      const w = el("div", "sf-wait");
+      const sp = el("span", "ly-spin"); sp.setAttribute("aria-hidden", "true");
+      const t = el("div", "sf-wait-t"); t.append(el("b", "", flow.via === "new" ? "Making your account…" : "Signing in…"));
+      w.append(sp, t); box.append(w);
+      return;
+    }
     if (flow.stage === "waiting") {
       const w = el("div", "sf-wait");
       const sp = el("span", "ly-spin"); sp.setAttribute("aria-hidden", "true");
@@ -110,26 +124,102 @@
       box.append(p);
     }
     if (!big) box.append(el("p", "sf-h", "Sign in to Leyline"));
+    // new here: an account and its Hero Key, right here
+    const nw = el("button", "sf-way sf-new"); nw.type = "button"; nw.dataset.via = "new";
+    nw.append(svg(WAY_ICON.herokey), el("span", "", "Get your Hero Key"));
+    nw.onclick = newAccount;
+    box.append(nw, el("p", "sf-fine sf-new-t", "New here? This makes your free account with a name made for you. Change the name any time."));
+    const or = el("p", "sf-or"); or.append(el("span", "", "or sign in"));
+    box.append(or);
     const list = el("div", "sf-ways");
     for (const [k, , label] of WAYS) {
       if (!wayOn(k)) continue;
       const b = el("button", "sf-way sf-" + k); b.type = "button"; b.dataset.via = k;
       b.append(svg(WAY_ICON[k]), el("span", "", label));
+      if (k === "herokey") {
+        b.setAttribute("aria-expanded", String(flow.form === "key")); b.setAttribute("aria-controls", "sf-keyform");
+        b.onclick = () => { flow.form = flow.form === "key" ? "" : "key"; flow.note = ""; rebuild(box, big, "#sf-key"); };
+        list.append(b);
+        if (flow.form === "key") list.append(keyForm(box, big));
+        continue;
+      }
       b.onclick = () => signIn(k);
       list.append(b);
     }
     box.append(list);
-    // the title bar's panel: a guest account too (the website's Play as guest: no password, a Hero Key made at once)
-    if (!big) {
-      const or = el("p", "sf-or"); or.append(el("span", "", "or"));
-      const g = el("button", "sf-way sf-guest"); g.type = "button"; g.dataset.via = "guest";
-      g.append(svg('<circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5"/>'), el("span", "", "Play as guest"));
-      g.onclick = () => signIn("guest");
-      box.append(or, g);
-    }
-    box.append(el("p", "sf-fine", "Opens the website in your browser. New here? Google" + (wayOn("discord") ? " or Discord" : "")
-      + (big ? "" : " or a guest account") + " makes your free account. We never see your password."));
+    const pw = el("button", "link-s sf-pwlink", "Sign in with your name and password"); pw.type = "button";
+    pw.setAttribute("aria-expanded", String(flow.form === "password"));
+    pw.onclick = () => { flow.form = flow.form === "password" ? "" : "password"; flow.note = ""; rebuild(box, big, "#sf-pwname"); };
+    box.append(pw);
+    if (flow.form === "password") box.append(passwordForm(box, big));
+    box.append(el("p", "sf-fine", "Google" + (wayOn("discord") ? " and Discord open" : " opens") + " the website in your browser. "
+      + "One account works on Wrath Unleashed and every realm that accepts Hero Key."));
   }
+
+  function rebuild(box, big, focus) {
+    buildFlow(box, big);
+    const f = focus && box.querySelector(focus); if (f) f.focus();
+  }
+
+  // Sign in with your Hero Key, pasted here (the core sends it once to the website and keeps only the sign-in token)
+  function keyForm(box, big) {
+    const f = el("form", "sf-form"); f.id = "sf-keyform"; f.noValidate = true;
+    const lab = el("label", "sf-label", "Your Hero Key"); lab.htmlFor = "sf-key";
+    const i = el("input"); i.id = "sf-key"; i.type = "password"; i.autocomplete = "off"; i.spellcheck = false; i.placeholder = "ovk1.";
+    i.maxLength = 400;
+    const go = el("button", "btn small primary", "Sign in"); go.type = "submit";
+    const row = el("div", "sf-form-row"); row.append(i, go);
+    f.append(lab, row, el("p", "sf-fine", "Paste the whole line from your key file. It starts with ovk1."));
+    f.onsubmit = (e) => {
+      e.preventDefault();
+      const v = i.value.trim();
+      if (!/ovk1\./.test(v)) { flow.note = "That doesn't look like a Hero Key. It starts with ovk1. Paste the whole line."; flow.stage = "error"; rebuild(box, big, "#sf-key"); return; }
+      quickSignIn("key", () => invoke("social_key_signin", { key: v }));
+    };
+    return f;
+  }
+
+  function passwordForm(box, big) {
+    const f = el("form", "sf-form"); f.id = "sf-pwform"; f.noValidate = true;
+    const l1 = el("label", "sf-label", "Your name and #tag"); l1.htmlFor = "sf-pwname";
+    const n = el("input"); n.id = "sf-pwname"; n.type = "text"; n.autocomplete = "username"; n.spellcheck = false; n.placeholder = "Alice#1234"; n.maxLength = 40;
+    const l2 = el("label", "sf-label", "Password"); l2.htmlFor = "sf-pw";
+    const p = el("input"); p.id = "sf-pw"; p.type = "password"; p.autocomplete = "current-password"; p.maxLength = 128;
+    const go = el("button", "btn small primary", "Sign in"); go.type = "submit";
+    const row = el("div", "sf-form-row"); row.append(p, go);
+    f.append(l1, n, l2, row, el("p", "sf-fine", "Set a password in Manage account once you're signed in."));
+    f.onsubmit = (e) => {
+      e.preventDefault();
+      if (!/^[^#\s]{2,24}#\d{4}$/.test(n.value.trim()) || !p.value) { flow.note = "Type your name with its #tag, like Alice#1234, and your password."; flow.stage = "error"; rebuild(box, big, "#sf-pwname"); return; }
+      quickSignIn("password", () => invoke("social_password_signin", { name: n.value.trim(), password: p.value }));
+    };
+    return f;
+  }
+
+  // The in-launcher sign-ins (a key, a password, a new account): no browser, no code to approve.
+  async function quickSignIn(via, call) {
+    const id = ++runId;
+    flow.via = via; flow.stage = "busy"; flow.note = "";
+    renderCode();
+    try {
+      const out = await call();
+      if (id !== runId) return;
+      flow.stage = "idle"; flow.form = ""; signedIn = true;
+      if (via === "new" && out && out.key) {
+        fresh = { key: String(out.key), name: out.me ? `${out.me.name}#${out.me.tag}` : "" };
+      }
+      renderCode();
+      await loadMe();
+      if (via === "new" || (me && me.profile && me.profile.setup === false)) {
+        if (window.LeylineNav) window.LeylineNav.show("account");
+        emit("leyline:welcome", {});
+      } else say("Signed in.", "ok");
+    } catch (e) {
+      if (id !== runId) return;
+      flow.stage = "error"; flow.note = String(e); renderCode();
+    }
+  }
+  function newAccount() { quickSignIn("new", () => invoke("social_new_account")); }
 
   // ---------------------------------------------------------------- the title bar's chip and its account panel
   // Owner 31 Oct 18:36: "make this popout menu from profile icon more consistent and in line with the module at top,
@@ -267,7 +357,7 @@
     // the account, Sign out last
     const ac = el("div", "ap-acct"); ac.setAttribute("role", "menu"); ac.setAttribute("aria-label", "Account");
     ac.append(menuItem("manage", "Manage account", "Name, picture, bio and ways to sign in", manage),
-      menuItem("key", "Hero Key", guest ? "Save it to keep this guest account" : "Signs you in on any device", () => openLink("herokey"), guest ? "warn" : ""));
+      menuItem("key", "Hero Key", guest ? "Save it to keep this guest account" : "See it, save it, make a new one", manageKey, guest ? "warn" : ""));
     const sep = el("div", "ap-sep"); sep.setAttribute("role", "separator");
     ac.append(sep, menuItem("out", "Sign out", "", signOut, "ap-out"));
     p.append(ac);
@@ -401,12 +491,14 @@
     if (wasOpen) openPanel(false);
   }
   function manage() { if (window.LeylineNav) window.LeylineNav.show("account"); }
+  // the panel's Hero Key: Manage account, at its Hero Key card
+  function manageKey() { manage(); emit("leyline:focus-key", {}); }
 
   // the pop-over under the chip: the chooser, then the code while the browser is open
   function renderCode() {
     const box = $("hf-code");
     if (box) {
-      const open = !signedIn && (flow.stage === "choose" || flow.stage === "waiting" || flow.stage === "error")
+      const open = !signedIn && (flow.stage === "choose" || flow.stage === "waiting" || flow.stage === "error" || flow.stage === "busy")
         && !(window.LeylineNav && window.LeylineNav.current().page === "account");
       box.hidden = !open;
       if (open) buildFlow(box, false); else box.textContent = "";
@@ -481,7 +573,7 @@
   }
 
   async function signOut() {
-    signedIn = false; me = null;
+    signedIn = false; me = null; fresh = null;
     await invoke("social_signout").catch(() => {});
     renderMe(); say("Signed out. The sign-in was revoked on the website too.", "ok");
     emit("leyline:me", { me: null, signedIn: false });
@@ -556,5 +648,6 @@
   document.addEventListener("leyline:page", (ev) => { if ((ev.detail || {}).page !== "account" || flow.stage !== "idle") renderCode(); });
 
   window.LeylineSocial = { refresh: loadMe, me: () => me, extra: () => extra, signedIn: () => signedIn, signIn, signOut, cancelSignIn,
-    loadLatest, flow: () => ({ ...flow, code }), ways: () => ways, loadWays, buildFlow, avatar, setMe, openLink };
+    loadLatest, flow: () => ({ ...flow, code }), ways: () => ways, loadWays, buildFlow, avatar, setMe, openLink,
+    newAccount, freshKey: () => fresh, dropFreshKey: () => { fresh = null; } };
 })();

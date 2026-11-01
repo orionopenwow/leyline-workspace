@@ -119,6 +119,8 @@ class Config:
         self.mesh_public_http = e("RELAY_MESH_HTTP", "")        # empty: https://<name>
         self.mesh_every = _env_int("RELAY_MESH_EVERY", 10)
         self.mesh_fanout = _env_int("RELAY_MESH_FANOUT", 3)
+        # the release log's public key (wunet/release-log.json, the same key as launcher/branding.json): empty = no chain
+        self.release_log_key = e("RELAY_RELEASE_LOG_KEY", "")
         self.volunteer = e("RELAY_VOLUNTEER", "0") == "1"
         # Community nodes (wurelay/nodes.py, docs/leyline/be-a-node.md). On a seed: RELAY_NODE_REGISTRY=1 takes node
         # registrations, checks their health and serves /api/nodes.json. On a node: RELAY_NODE_DIR is the folder the

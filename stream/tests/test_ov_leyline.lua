@@ -193,6 +193,31 @@ check("official: the O flag", mLine and mLine:match("^M:vrvrvrvrvrvrvrvr:[A-Z]*O
 check("official: other realms unchanged", plainR and plainR:match(":Plain$") ~= nil)
 check("official: the label is never doubled", T.officialName({ official = true, name = "X · Official" }) == "X · Official")
 
+-- Den of the week (leyline-fetch.py's den_week from the site's home.json): a W line after N, as text
+write(datFile, 'return { updated = 1000000, den_week = { title = "Mossy\\058 Hollow", by = "Ana", line = "A pond, lanterns\\124cff" }, '
+    .. 'realms = {\n  { id = "cccccccccccccccc", name = "Plain", ruleset = "main", live = true, players = 1 },\n} }\n')
+T.cache.at = -1e9
+clock = clock + 60
+me.sent = {}
+serverEvents[30](30, me, 7, "WULY", "L", me)
+all = msgs(me, true)
+check("Den of the week: a W line between N and E, colons and bars gone", all[#all - 1] == "W:Mossy  Hollow:Ana:A pond, lanterns cff"
+    or all[#all - 1] == "W:Mossy Hollow:Ana:A pond, lanterns cff", all[#all - 1])
+check("...the network line still before it", all[#all - 2]:match("^N:") ~= nil and all[#all]:match("^E:") ~= nil)
+write(datFile, 'return { updated = 1000000, den_week = { title = "My WoW place", by = "Ana", line = "" }, '
+    .. 'realms = {\n  { id = "cccccccccccccccc", name = "Plain", ruleset = "main", live = true, players = 1 },\n} }\n')
+T.cache.at = -1e9
+clock = clock + 60
+me.sent = {}
+serverEvents[30](30, me, 7, "WULY", "L", me)
+check("a brand word in its name: no W line", not table.concat(msgs(me, true), "\n"):find("\nW:"))
+write(datFile, 'return { updated = 1000000, den_week = { title = os }, realms = {} }\n')
+T.cache.at = -1e9
+clock = clock + 60
+me.sent = {}
+serverEvents[30](30, me, 7, "WULY", "L", me)
+check("anything but data in the file: refused whole", msgs(me)[1] == "U:Realm list unavailable")
+
 -- missing file
 os.remove(datFile)
 T.cache.at = -1e9

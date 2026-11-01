@@ -54,9 +54,11 @@ ALLOW = [
     "realm/custom/lua_scripts/ov_discord.lua",    # the Discord bridge's realm half
     "stream/links.py",                            # short share links (/r /h /q /m /u)
     "stream/playmodes.json",                      # the mode catalog the launcher builds in (modes.rs include_str!)
+    "stream/modepacks.json",                      # the mode templates the launcher builds in (host/modes.rs include_str!)
     "stream/www-files/art/leyline-*",             # the Leyline art, leyline-display-OFL.txt included
     "mods/SPEC.md",                               # the mod package format
     "docs/leyline",                               # the Leyline docs (also served at /wrath/docs)
+    "docs/FORKING.md",                            # how a community rebuilds it all under another name (the fork kit)
     "launcher",                                   # the Leyline desktop launcher (Tauri 2: web UI over a Rust core)
 ]
 # The top folders the export owns in the target: it deletes stale files only below these.
@@ -255,6 +257,7 @@ panel); run those there.
 | `mods/SPEC.md` | the mod package format |
 | `docs/leyline/` | the Leyline docs: play, mods, publishing, hosting, launcher, Hero Key, other servers, commands |
 | `stream/playmodes.json` | the game-mode catalog the launcher builds in |
+| `stream/modepacks.json` | the mode templates (realms anyone can host and fork) the launcher builds in |
 | `launcher/` | the Leyline desktop launcher (Windows, macOS, Linux): clients, mods, realms, hosting. Build steps in `launcher/README.md` |
 
 The Mods & Workshop panel (`ModsPanel.lua`) uses the rest of the WrathUnleashed UI addon, so it stays in

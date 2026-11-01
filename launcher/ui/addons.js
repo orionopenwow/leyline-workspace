@@ -1,5 +1,5 @@
 // The Leyline addons (src-tauri/src/addons.rs): our own in-game addons in a player's 3.3.5a game folder. Install /
-// Update / Remove per client on Game Clients and in Mods › Installed ("Our addons"), the setup step when a 3.3.5a
+// Update / Remove per client on Game Clients and in Mods & Addons › Installed › Addons ("Leyline addons"), the setup step when a 3.3.5a
 // client is added, the offer when PLAY goes to the official realm without them (with "Don't ask again"), update on
 // start (Settings, on by default). app.js calls in through window.LeylineAddons with a few lines; everything else is
 // here. The core never takes a URL from here: it fetches the listing itself and checks every file.
@@ -207,7 +207,8 @@
     if (acts) card.insertBefore(slot, acts); else card.append(slot);
   }
 
-  // Mods › Installed: app.js renderInstalled calls renderMods(c) with the picked client.
+  // Mods & Addons › Installed › Addons (they are Addons: docs/WORDS.md): app.js renderInstalled calls renderMods(c) with
+  // the picked client; on Installed › Mods they stay out of sight.
   let modsClient = null;
   function renderMods(c) {
     modsClient = c || null;
@@ -217,14 +218,15 @@
     if (!sec) {
       sec = el("section", "ad-mods");
       sec.id = "ad-mods";
-      sec.setAttribute("aria-label", "Our addons");
+      sec.setAttribute("aria-label", "Leyline addons");
       const drop = $("drop");
       (drop || list).parentElement.insertBefore(sec, drop || list);   // first on the tab: above the drop zone
     }
-    sec.hidden = !c || c.build !== "3.3.5a";
+    const pane = $("pane-installed");
+    sec.hidden = !c || c.build !== "3.3.5a" || !!(pane && pane.dataset.shelf === "mods");
     if (sec.hidden) return;
     const head = el("div", "card-head ad-mods-head");
-    head.append(el("span", "", "OUR ADDONS"));
+    head.append(el("span", "", "LEYLINE ADDONS"));
     const body = el("div", "ad-mods-body");
     body.append(row(c, false));
     const names = ov && ov.pack ? ov.pack.addons : [];

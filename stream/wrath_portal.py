@@ -26,6 +26,8 @@ Two listeners, both inside Docker networks only (never published on the host):
          GET /wrath/status.json  public realm status for the website's Beacons page, the launcher
                                and the GM console (CORS *, cached 30 s, at most one SOAP call per
                                30 s however many visitors ask)
+         GET /wrath/key, POST /wrath/key/start|signin   Your Hero Key (stream/herokeys.py): see it, save it, make a
+                               new one; a new account or a Hero Key sign-in. The website's /account/key redirects here
          GET /wrath/admin[/...], POST /wrath/admin/act   staff only: the Leyline Admin Console (stream/admin.py,
                                docs/ADMIN-CONSOLE.md); GET /wrath/leyline/{flags,channel,news,themes,realm-overrides}.json
                                are its public feeds for the launcher
@@ -297,6 +299,9 @@ upstream_addons = _load_module("wu_upstream_addons", "upstream_addons.py")   # r
 herokey_mod = _load_module("wu_herokey", "herokey_sso.py")   # Hero Key sign-in on Beacons (stream/herokey_sso.py)
 hub_mod = _load_module("wu_hub", "hub.py")   # /wrath/leyline-preview: the hidden Leyline hub (stream/hub.py)
 playmodes = _load_module("wu_playmodes", "playmodes.py")   # game modes: /wrath/modes.json, Games, ?go=mode: (stream/playmodes.py)
+modepacks = _load_module("wu_modepacks", "modepack.py")   # modes anyone can host and fork: /wrath/modes/<id>, /jam (stream/modepack.py)
+if modepacks is not None:
+    modepacks.bind(lambda name: globals()[name])
 if hub_mod is not None:
     hub_mod.bind(lambda name: globals()[name])
 if hostflow is not None:
@@ -307,6 +312,9 @@ if social is not None:
 profiles = _load_module("wu_profiles", "profiles.py")   # /wrath/signin, /wrath/profile, /wrath/avatar (stream/profiles.py)
 if profiles is not None:
     profiles.bind(lambda name: globals()[name])
+herokeys = _load_module("wu_herokeys", "herokeys.py")   # /wrath/key: Your Hero Key, for the site and the launcher (stream/herokeys.py)
+if herokeys is not None:
+    herokeys.bind(lambda name: globals()[name])
 forum = _load_module("wu_forum", "forum.py")   # the Leyline forum: /wrath/leyline/forum, /wrath/forum/api (stream/forum.py)
 if forum is not None:
     forum.bind(lambda name: globals()[name])
@@ -1088,6 +1096,19 @@ def home_art(name: str) -> bool:
     return isinstance(name, str) and bool(HOME_ART_RE.fullmatch(name)) and ".." not in name
 
 
+def den_week_home(body: bytes | None) -> bytes | None:
+    """home.json with the Den of the week added as "den_week" (stream/denweek.py: staff pick it in HQ; links and words
+    only, no pictures), for the launcher's Home and the in-game Leyline window (realm/custom/leyline-fetch.py)."""
+    m = sys.modules.get("wu_denweek") or _load_module("wu_denweek", "denweek.py")
+    if m is None:
+        return body
+    sys.modules["wu_denweek"] = m
+    try:
+        return m.merge_home(body)
+    except Exception:   # noqa: BLE001
+        return body
+
+
 def art_bytes(name: str) -> bytes | None:
     """One file from the allow-list in ART_DIR, or None (not listed, or missing). Never a path from the URL."""
     if not art_type(name):
@@ -1096,7 +1117,7 @@ def art_bytes(name: str) -> bytes | None:
         with open(os.path.join(ART_DIR, name), "rb") as f:
             body = f.read(4_000_000)
     except OSError:
-        return None
+        return den_week_home(None) if name == HOME_JSON else None
     if name in ART_TYPES:
         return body
     if name == HOME_JSON:                                   # the list: a JSON object or nothing
@@ -1104,7 +1125,7 @@ def art_bytes(name: str) -> bytes | None:
             ok = len(body) <= HOME_JSON_MAX and isinstance(json.loads(body.decode("utf-8")), dict)
         except (ValueError, UnicodeDecodeError):
             ok = False
-        return body if ok else None
+        return den_week_home(body if ok else None)
     webp = body[:4] == b"RIFF" and body[8:12] == b"WEBP"
     if home_art(name):                                      # a screenshot: a real WebP or JPEG of a sane size, or nothing
         jpeg = body[:3] == b"\xff\xd8\xff"
@@ -1357,7 +1378,7 @@ def account_page(display: str, user: str, password: str, nonce: str) -> bytes:
     body = (
         f'<style>{REALM_CSS}</style>'
         f'<div class="top"><span class="eyebrow">{html.escape(REALM_NAME)}</span>'
-        '<a class="keylink" href="/account/key">Your Hero Key</a></div>'
+        '<a class="keylink" href="/wrath/key">Your Hero Key</a></div>'
         f'{crest("Choose a realm")}<p class="sub">Signed in as {html.escape(display)}</p>{RULE}'
         # 1. Dalaran: the streamed mini version
         + (f'<div class="realm"><h2>{SAMPLER_NAME}</h2>'
@@ -1512,6 +1533,8 @@ def clean_listing_record(rec) -> dict | None:
            "rules": [t for t in (txt(x, 120) for x in (rec.get("rules") if isinstance(rec.get("rules"), list) else [])[:10]) if t]}
     if network is not None:   # build, core, tags, region, language, uptime, score, ... (stream/network.py)
         out.update(network.extra(rec))
+    if modepacks is not None:   # the mode it runs, its credit and recipe (stream/modepack.py)
+        out["mode"] = modepacks.listing_mode(rec.get("mode"))
     return out
 
 
@@ -1582,9 +1605,19 @@ def _refresh_listing(busy=None) -> None:
             if ok:
                 _listing["realms"] = realms
                 _listing["when"] = time.time()
+        if ok and links is not None and hasattr(links, "note_players"):
+            links.note_players(realms)   # "New this week" needs a player in the last day (stream/links.py)
     finally:   # always, or no refresh ever runs again and the list freezes
         busy.release()
         _listing_done.set()
+
+
+def launcher_download() -> str:
+    """The launcher's download (the hub's Download button), for "Get the launcher" on realm links."""
+    try:
+        return hub_mod.hub._download() if hub_mod is not None else ""
+    except Exception:   # noqa: BLE001 - links.py's own default then
+        return ""
 
 
 def community_realms() -> tuple[list[dict], bool]:
@@ -1694,7 +1727,7 @@ def realms_page(query: dict | None = None) -> bytes:
             + ('<details><summary>House rules</summary><ol>'
                + "".join(f'<li>{html.escape(x)}</li>' for x in r["rules"]) + '</ol></details>' if r["rules"] else '')
             + f'<p>{button}</p>'
-            + share_box(f'/wrath/r/{r["id"]}') + '</div>')
+            + share_box(f'/wrath/r/{r["id"][:8]}') + '</div>')
     if rows:
         community = "".join(rows)
         if not ok:
@@ -2648,6 +2681,38 @@ class PageHandler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
+    def release_file(self, got) -> None:
+        """A mirrored release file (stream/leyline_net.py release_file: (path, size, type) or None), streamed in
+        1 MB pieces: installers are tens of MB. Public, CORS *, cached for a day (the names carry the version;
+        latest.json and chain.json for 5 minutes)."""
+        if not got:
+            self.send(404, b'{"error":"not on this mirror"}\n', "application/json; charset=utf-8")
+            return
+        full, size, ctype = got
+        try:
+            f = open(full, "rb")
+        except OSError:
+            self.send(404, b'{"error":"not on this mirror"}\n', "application/json; charset=utf-8")
+            return
+        with f:
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(size))
+            short = full.endswith(("latest.json", "chain.json", "index.json"))
+            self.send_header("Cache-Control", f"public, max-age={300 if short else 86400}")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            if self.command == "HEAD":
+                return
+            left = size
+            while left > 0:
+                chunk = f.read(min(1 << 20, left))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                left -= len(chunk)
+
     def redirect(self, url: str, cookie: str = "") -> None:
         self.send_response(302)
         self.send_header("Location", url)
@@ -3022,6 +3087,9 @@ class PageHandler(BaseHTTPRequestHandler):
         if profiles is not None and profiles.match(path):   # the profile forms (stream/profiles.py)
             profiles.post(self, path)
             return
+        if herokeys is not None and herokeys.match(path):   # Your Hero Key's forms (stream/herokeys.py)
+            herokeys.post(self, path)
+            return
         if social is not None and social.match(path):   # Leyline friends and messages (stream/social.py)
             social.post(self, path)
             return
@@ -3116,6 +3184,9 @@ class PageHandler(BaseHTTPRequestHandler):
         if profiles is not None and profiles.match(path):   # sign-in, profile and pictures (stream/profiles.py)
             profiles.get(self, path, query)
             return
+        if herokeys is not None and herokeys.match(path):   # Your Hero Key (stream/herokeys.py)
+            herokeys.get(self, path, query)
+            return
         twin = hub_mod.twin(path, query) if hub_mod is not None and hasattr(hub_mod, "twin") else None
         if twin:   # an older page with a twin on the Leyline front door (stream/hub.py TWINS): one site, one page each
             self.send_response(301)
@@ -3129,6 +3200,9 @@ class PageHandler(BaseHTTPRequestHandler):
             if got:
                 self.send(got[0], got[1], got[2], public=True)
                 return
+        if leyline_net is not None and path.startswith("/wrath/leyline/releases/") and hasattr(leyline_net, "release_file"):
+            self.release_file(leyline_net.release_file(path))   # our mirror of Leyline's releases (docs/RESILIENCE.md)
+            return
         if leyline_net is not None and path.startswith("/wrath/leyline/"):   # flags.json, hostpack.json
             got = leyline_net.serve(path)
             if got:
@@ -3169,7 +3243,8 @@ class PageHandler(BaseHTTPRequestHandler):
                                             REALM_NAME, community_realms,
                                             who=armory.card_line if armory is not None else None,
                                             mods=workshop.mod if workshop else None,
-                                            made=creations.card_item if creations is not None else None))
+                                            made=creations.card_item if creations is not None else None,
+                                            labels=RULESET_LABELS, host=PUBLIC_HOST, get_launcher=launcher_download()))
             return
         if path == "/wrath/modes" and modes is not None:
             if not browse_limit.hit(rl_bucket(self.ip()), 600):
@@ -3177,7 +3252,11 @@ class PageHandler(BaseHTTPRequestHandler):
                 return
             self.send(200, site_chrome(modes.page(leyline_css(), art_url, art_present, card_meta, REALM_NAME,
                                                   public_host=PUBLIC_HOST,
-                                                  games=playmodes.section() if playmodes is not None else ""), path))
+                                                  games=(playmodes.section() if playmodes is not None else "")
+                                                  + (modepacks.section() if modepacks is not None else "")), path))
+            return
+        if modepacks is not None and modepacks.match(path):   # a mode's page, the mode jam (stream/modepack.py)
+            modepacks.get(self, path, query)
             return
         if path == "/wrath/modes.json" and playmodes is not None:   # the game modes catalog (stream/playmodes.py)
             if not browse_limit.hit(rl_bucket(self.ip()), 600):
@@ -3429,8 +3508,12 @@ def main() -> int:
         social.setup()   # the store in /data and the realm bridge thread (stream/social.py)
     if profiles is not None:
         profiles.setup()   # the profiles' store in /data (stream/profiles.py)
+    if herokeys is not None:
+        herokeys.setup()   # the launchers' website sessions and passwords in /data (stream/herokeys.py)
     if forum is not None:
         forum.setup()   # the forum's store in /data (stream/forum.py)
+    if links is not None and hasattr(links, "load_last"):   # when each realm last had players ("New this week")
+        links.load_last(os.path.join(os.environ.get("WU_PORTAL_DATA", "/data"), "realm-last-player.json"))
     try:
         page.serve_forever()
     except KeyboardInterrupt:

@@ -1,7 +1,8 @@
-// Mods › Discover made simple (ui/simple.js) in Chromium with a fake Tauri core: the Simple view by default (one search
-// box, short rows of big cards: Popular, Game modes, Make it look nicer, Quality of life), typing a search opens the
-// full catalog with the words in its one search box, Browse everything / See all / ‹ Simple, the few smart chips, and
-// Sort, Show, Only for and the addon kinds under More filters. Screenshots go to $SIMPLE_SHOTS when set.
+// Mods & Addons › Discover made simple (ui/simple.js) in Chromium with a fake Tauri core: the Simple view by default on
+// both tabs (the line that says what is on the tab, one search box, short rows of big cards: Mods has Popular and one
+// row per category, Addons has Popular, Make it look nicer, Quality of life), typing a search opens the full list with
+// the words in its one search box, Browse everything / See all / ‹ Simple, each tab's own chips (Mods: its categories;
+// Addons: the marketplace's kinds), and Sort and Only for under More filters. Screenshots go to $SIMPLE_SHOTS when set.
 //
 //   NODE_PATH=$(npm root -g) node --test launcher/tests/simple.browser.test.cjs
 'use strict';
@@ -25,11 +26,12 @@ const CATALOG = { categories: [{ id: 'addons', name: 'Addons and UI' }, { id: 's
     U('frames', 'Frames', ['unit-frames']), U('bags', 'Bagger', ['bags']), U('plates', 'Plates', ['nameplates']), U('meter', 'Meter', ['meters'])],
   from_cache: false, saved_at: 1, error: null };
 
-const FAKE = ({ catalog, view }) => {
+const FAKE = ({ catalog, view, tab }) => {
   const calls = (window.__calls = []);
   try {
     localStorage.setItem('leyline.page', 'discover');
     if (view) localStorage.setItem('leyline.dcView', view); else localStorage.removeItem('leyline.dcView');
+    if (tab) localStorage.setItem('leyline.dcTab', tab); else localStorage.removeItem('leyline.dcTab');
     localStorage.removeItem('leyline.dcMore'); localStorage.removeItem('leyline.mkSub'); localStorage.removeItem('leyline.mkWorks');
   } catch (_) { /* fine */ }
   window.__TAURI__ = { core: { invoke: async (cmd, args) => {
@@ -67,16 +69,36 @@ async function open(opts = {}, viewport) {
 const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name + '.png') }); };
 const rowNames = (page, key) => page.$$eval(`#dc-rows .dc-srow[data-row="${key}"] .mod-card .name`, (n) => n.map((x) => x.textContent));
 
-test('the Simple view first: one search box, rows of big cards, the full toolbar hidden', async () => {
+const names = (page, sel) => page.$$eval(sel || '#cat-grid .mod-card .name', (n) => n.map((x) => x.textContent));
+const heads = (page) => page.$$eval('#dc-rows .dc-srow h3', (h) => h.map((x) => x.textContent));
+const tabTo = async (page, t) => {
+  await page.click(`#discover-tabs .ly-tab[data-tab="${t}"]`);
+  await page.waitForFunction((x) => document.getElementById('pane-discover').dataset.shelf === x, t);
+};
+
+test('the Simple view first, on Mods and on Addons: the line, one search box, rows of big cards, the full toolbar hidden', async () => {
   const { page, errors } = await open();
   await page.waitForSelector('#dc-rows .dc-srow');
-  await shot(page, 'launcher-simple');
+  await shot(page, 'launcher-simple-mods');
   assert.equal(await page.getAttribute('#pane-discover', 'data-view'), 'simple');
-  assert.deepEqual(await page.$$eval('#dc-rows .dc-srow h3', (h) => h.map((x) => x.textContent)), ['Popular', 'Game modes', 'Make it look nicer', 'Quality of life']);
+  assert.equal(await page.getAttribute('#pane-discover', 'data-shelf'), 'mods', 'Mods first');
+  assert.match(await page.textContent('#dc-line'), /^Mods change the game itself/);
+  assert.equal(await page.getAttribute('#dc-sq', 'placeholder'), 'Search mods');
+  assert.equal(await page.textContent('#dc-list-mod'), 'List your mod');
+  assert.deepEqual(await heads(page), ['Popular', 'Game modes', 'Tools'], 'Mods: Popular, then its categories with something in them');
   assert.deepEqual(await rowNames(page, 'game'), ['Dalaran Dice']);
+  assert.deepEqual(await rowNames(page, 'tools'), ['Hud']);
+  assert.deepEqual((await rowNames(page, 'popular')).sort(), ['Dalaran Dice', 'Hud'], 'no addon on Mods');
+  await tabTo(page, 'addons');
+  await shot(page, 'launcher-simple-addons');
+  assert.match(await page.textContent('#dc-line'), /^Addons are in-game interface helpers/);
+  assert.equal(await page.getAttribute('#dc-sq', 'placeholder'), 'Search addons');
+  assert.equal(await page.textContent('#dc-list-mod'), 'List your addon');
+  assert.deepEqual(await heads(page), ['Popular', 'Make it look nicer', 'Quality of life']);
   assert.deepEqual((await rowNames(page, 'looks')).sort(), ['Frames', 'Plates']);
   assert.deepEqual((await rowNames(page, 'qol')).sort(), ['Bagger', 'Pings']);
-  assert.ok((await rowNames(page, 'popular')).length <= 4);
+  const all = await names(page, '#dc-rows .mod-card .name');
+  assert.ok(!all.includes('Dalaran Dice') && !all.includes('Hud'), 'no mod on Addons');
   assert.equal(await page.isVisible('#dc-sq'), true);
   for (const id of ['#cat-q', '#cat-sort', '#cat-grid', '#dc-smart']) assert.equal(await page.isVisible(id), false, id + ' hidden');
   assert.equal(await page.locator('#pane-discover input[type="search"]:visible').count(), 1, 'one search box');
@@ -84,8 +106,8 @@ test('the Simple view first: one search box, rows of big cards, the full toolbar
   await page.close();
 });
 
-test('typing a search opens the full catalog with the words; ‹ Simple goes back', async () => {
-  const { page, errors } = await open();
+test('typing a search opens the full list with the words; ‹ Simple goes back', async () => {
+  const { page, errors } = await open({ tab: 'addons' });
   await page.type('#dc-sq', 'bag');
   await page.waitForFunction(() => document.getElementById('pane-discover').dataset.view === 'all');
   assert.equal(await page.inputValue('#cat-q'), 'bag');
@@ -99,40 +121,44 @@ test('typing a search opens the full catalog with the words; ‹ Simple goes bac
   await page.close();
 });
 
-test('full view: four smart chips, everything else under More filters; See all opens a row', async () => {
+test('full view: Mods has its categories as chips, Addons the marketplace kinds; Sort waits under More filters', async () => {
   const { page, errors } = await open();
   await page.click('#dc-rows .dc-srow[data-row="game"] .dc-srow-h .btn');
-  assert.equal(await page.getAttribute('#pane-discover', 'data-tab'), 'game', 'the Game modes row opens the Game mods tab');
-  await page.click('#discover-tabs .ly-tab[data-tab="mods"]');
-  await page.click('#dc-rows .dc-srow[data-row="qol"] .dc-srow-h .btn');
   await page.waitForFunction(() => document.getElementById('pane-discover').dataset.view === 'all');
-  assert.deepEqual((await page.$$eval('#cat-grid .mod-card .name', (n) => n.map((x) => x.textContent))).sort(), ['Bagger', 'Frames', 'Meter', 'Pings', 'Plates'], 'See all: the row\'s category');
-  await page.click('#dc-smart .chip-btn:text-is("Game modes")');
-  assert.deepEqual(await page.$$eval('#dc-smart .chip-btn', (b) => b.map((x) => x.textContent)), ['Everything', 'Addons', 'Game modes', 'Works on Wrath Unleashed']);
+  assert.equal(await page.getAttribute('#pane-discover', 'data-tab'), 'mods', 'Game modes is a category of Mods');
+  assert.deepEqual(await page.$$eval('#dc-smart .chip-btn', (b) => b.map((x) => x.textContent)), ['All mods', 'Game modes', 'Tools']);
   assert.equal(await page.getAttribute('#dc-smart .chip-btn:text-is("Game modes")', 'aria-pressed'), 'true');
+  assert.deepEqual(await names(page), ['Dalaran Dice']);
+  await shot(page, 'launcher-mods-game-modes');
+  await page.click('#dc-smart .chip-btn:text-is("All mods")');
+  await page.waitForFunction(() => document.querySelectorAll('#cat-grid .mod-card').length === 2);
   assert.equal(await page.isVisible('#cat-sort'), false, 'Sort is under More filters');
-  await page.click('#dc-smart .chip-btn:text-is("Everything")');
-  await page.waitForFunction(() => document.querySelectorAll('#cat-grid .mod-card').length === 7);
+  await tabTo(page, 'addons');
+  assert.deepEqual(await page.$$eval('#dc-smart .chip-btn', (b) => b.map((x) => x.textContent)),
+    ['All addons', 'Unit frames', 'Nameplates', 'Meters', 'Bags', 'Works on Wrath Unleashed']);
+  await page.waitForFunction(() => document.querySelectorAll('#cat-grid .mod-card').length === 5);
+  await page.click('#dc-smart .chip-btn:text-is("Bags")');
+  await page.waitForFunction(() => document.querySelectorAll('#cat-grid .mod-card').length === 1);
+  assert.deepEqual(await names(page), ['Bagger']);
   await page.click('#dc-more summary');
   await shot(page, 'launcher-more-filters');
   assert.equal(await page.isVisible('#cat-sort'), true);
-  assert.equal(await page.isVisible('#cat-cat'), true);
-  assert.equal(await page.locator('#dc-more #mk-bar').count(), 1, 'the addon kinds are in More filters');
-  await page.click('#dc-smart .chip-btn:text-is("Addons")');
+  assert.equal(await page.locator('#cat-cat, #mk-bar').count(), 0, 'no Show menu, no second row of kinds');
+  await page.click('#dc-smart .chip-btn:text-is("All addons")');
   await page.waitForFunction(() => document.querySelectorAll('#cat-grid .mod-card').length === 5);
   assert.deepEqual(errors, []);
   await page.close();
 });
 
 test('Browse everything from the Simple view; phone width keeps one column', async () => {
-  const { page, errors } = await open({}, { width: 390, height: 844 });
+  const { page, errors } = await open({ tab: 'addons' }, { width: 390, height: 844 });
   await page.waitForSelector('#dc-rows .dc-srow');
   await shot(page, 'launcher-simple-390');
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
   assert.equal(overflow, false, 'no sideways scroll');
   await page.click('#dc-all');
   await page.waitForFunction(() => document.getElementById('pane-discover').dataset.view === 'all');
-  assert.equal(await page.locator('#cat-grid .mod-card').count(), 7);
+  assert.equal(await page.locator('#cat-grid .mod-card').count(), 5, 'every addon');
   assert.deepEqual(errors, []);
   await page.close();
 });

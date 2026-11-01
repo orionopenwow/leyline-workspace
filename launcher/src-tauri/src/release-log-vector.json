@@ -1,0 +1,22 @@
+{
+ "about": "Signed with releaselog.DEV_TEST_SEED (TESTS ONLY). Written by hosting/tests/test_release_log.py; checked by launcher/src-tauri/src/releaselog.rs.",
+ "pub": "69ded7d6388ed7e20b3e0f7760f97679cf5a6a89ab785a00141a4b0cdd74ff52",
+ "chain": {
+  "format": 1,
+  "key": "69ded7d6388ed7e20b3e0f7760f97679cf5a6a89ab785a00141a4b0cdd74ff52",
+  "entries": [
+   {
+    "entry": "{\"files\":[{\"name\":\"Leyline_0.9.0_x64-setup.exe\",\"sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"size\":1040},{\"name\":\"latest.json\",\"sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"size\":812}],\"infohash\":\"3333333333333333333333333333333333333333\",\"kind\":\"launcher\",\"magnet\":\"magnet:?xt=urn:btih:3333333333333333333333333333333333333333\",\"mirrors\":[\"https://play.openvanilla.app/wrath/leyline/releases/\",\"https://mirror.example.org/leyline/\"],\"name\":\"Leyline\",\"prev\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"seq\":0,\"time\":1761900000,\"v\":1,\"version\":\"0.9.0\"}",
+    "sig": "0bcc5163930b2b3903f7bb0b8e12f19a94b851283afd338236500b43ecbb0ef4efae9cb72ecd0a691399e85ffadf0efd2b0d910e06a3767f7c0277c77e07b10f"
+   },
+   {
+    "entry": "{\"files\":[{\"name\":\"leyline-host-pack-0.3.1.zip\",\"sha256\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"size\":5000},{\"name\":\"leyline-host-pack-0.3.1.zip.torrent\",\"sha256\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"size\":300}],\"infohash\":\"6666666666666666666666666666666666666666\",\"kind\":\"hostpack\",\"mirrors\":[],\"name\":\"Host pack\",\"prev\":\"80d1c0155b47fa1cb3d8fe5ee4a978f2ef93c3407e63aa5d5aaa6337abb6c55b\",\"seq\":1,\"time\":1761900060,\"v\":1,\"version\":\"0.3.1\"}",
+    "sig": "51ca7194a735835df0a3e2431b5febdc9098defbfaf1869ed1037e35a4fe10c0e5623cf5ecbe3d0f98ba2a5162a817862dc1ecfc881b4c5bb9e450ffe315d900"
+   },
+   {
+    "entry": "{\"files\":[{\"name\":\"mangos-classic-5731249195520323cb5fb9aa29761d4f033272ce.tar.gz\",\"sha256\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"size\":9000}],\"kind\":\"source\",\"mirrors\":[\"https://play.openvanilla.app/wrath/leyline/releases/\"],\"name\":\"mangos-classic\",\"prev\":\"c1c6b3ac4bf9e0dd2908c1fbcf68633ab69c020679a1e29a2dec70b9f680a744\",\"seq\":2,\"source\":{\"commit\":\"5731249195520323cb5fb9aa29761d4f033272ce\",\"repo\":\"https://github.com/cmangos/mangos-classic\"},\"time\":1761900120,\"v\":1,\"version\":\"5731249\"}",
+    "sig": "9291c700852cd519550c80ebb64f84caff3a11c243252410818b784f2b74ae9b20f0f3fd5d428f7217f9e4c8287df8797053ff0aac43ebd3ef30f94827ce2a00"
+   }
+  ]
+ }
+}

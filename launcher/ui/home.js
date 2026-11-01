@@ -89,6 +89,15 @@
     out.push({ key: "den", kicker: "Your own room", title: "Make your Den", line: "A plain white room on your PC. Build it up in edit mode, then invite your friends.",
       chips: () => [{ t: "Private, invite only" }, { t: "Up to 10 friends" }, { t: "Hundreds of props" }],
       photo: true, side: denSteps, cta: "Make my Den", run: makeDen });
+    // (e2) Den of the week (stream/denweek.py: staff pick it in HQ; it rides in the site's home.json): a player's Den,
+    // its maker and one line. Screenshots are links on the website only; Visit shows a leyline://realm/ Den on Realms.
+    if (denWeek) {
+      const v = /^leyline:\/\/realm\/([a-z2-7]{16})$/.exec(denWeek.visit);
+      const visit = v && App.showRealm ? () => App.showRealm(v[1]) : null;
+      out.push({ key: "denweek", kicker: "Den of the week", title: denWeek.title, line: `by ${denWeek.by}` + (denWeek.line ? `. ${denWeek.line}` : ""),
+        photo: false, side: denWeekSide, cta: visit ? "Visit" : "See it on the website", run: visit || (() => App.openLink("account")),
+        cta2: visit ? "See it on the website" : undefined, run2: visit ? () => App.openLink("account") : undefined });
+    }
     // (f) a Workshop mod: the first packaged one, its screenshot in front of three more
     const cat = App.catalog();
     const p = cat.projects.find((x) => x.source === "packaged");
@@ -144,7 +153,8 @@
   // Only that folder, only plain file names; alt and credit are shown as text. With no manifest, or a picture that fails,
   // the slide keeps its plain gradient. Several files for a slide take turns, one a day.
   const HOME_ART = SITE_ORIGIN + "/wrath/art/home/";
-  let homeArt = null;      // null: not read (yet, or it failed); else { id: [{ url, alt, credit }] }
+  let homeArt = null;
+  let denWeek = null;      // home.json's "den_week" (stream/denweek.py), checked here: { title, by, line, shots, visit }      // null: not read (yet, or it failed); else { id: [{ url, alt, credit }] }
   const ART_FILE = /^[a-z0-9][a-z0-9-]{0,40}\.(?:webp|jpg)$/;
   const clip = (v, n) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, n) : "");
   function readHomeArt(j) {
@@ -165,7 +175,9 @@
     try {
       const r = await fetch(HOME_ART + "home.json", { credentials: "omit", referrerPolicy: "no-referrer" });
       if (!r.ok) return;
-      homeArt = readHomeArt(await r.json());
+      const j = await r.json();
+      homeArt = readHomeArt(j);
+      denWeek = readDenWeek(j);
     } catch (_) { return; }
     build();
   }
@@ -393,6 +405,23 @@
       ["Press Start", "The Host pack runs it on this PC"], ["Listed in a minute", "No ports to open, your address stays hidden"],
       ["Invite friends", "Share the link, or go public"]]);
   }
+  // Den of the week from home.json: plain short text only (shown with textContent), the links checked by shape
+  function readDenWeek(j) {
+    const d = j && typeof j === "object" && j.den_week && typeof j.den_week === "object" ? j.den_week : null;
+    if (!d) return null;
+    const title = clip(d.title, 40), by = clip(d.by, 24);
+    if (!title || !by) return null;
+    const shots = (Array.isArray(d.shots) ? d.shots : []).filter((u) => typeof u === "string" && /^https:\/\/[^\s"<>]{1,300}$/.test(u)).slice(0, 4);
+    const visit = typeof d.visit === "string" && /^(?:https:\/\/[^\s"<>]{1,300}|leyline:\/\/realm\/[a-z2-7]{16})$/.test(d.visit) ? d.visit : "";
+    return { title, by, line: clip(d.line, 140), shots, visit };
+  }
+  // the Den of the week slide's right side: who made it, where the screenshots are, how to visit
+  function denWeekSide() {
+    const n = denWeek ? denWeek.shots.length : 0;
+    return stepsCard("Den of the week", [["Made by", denWeek ? denWeek.by : ""],
+      ["Screenshots", n ? `${n} on the website` : "On the website"],
+      ["Visit", denWeek && /^leyline:/.test(denWeek.visit) ? "Opens it on Realms" : "From the website"]]);
+  }
   function stepsCard(title, steps) {
     const box = el("div", "hs-side hs-steps");
     box.append(el("div", "hs-side-h", title));
@@ -478,7 +507,7 @@
     for (const o of list) {
       const row = el("button", "hs-wm");
       row.type = "button";
-      row.title = `${o.name}: open Mods › Discover`;
+      row.title = `${o.name}: open Mods & Addons › Discover`;
       row.addEventListener("click", () => go("mods", "discover"));
       const tx = el("span", "hs-wm-t");
       tx.append(el("b", "", o.name), el("i", "", [catName(o) || (o.source === "packaged" ? "Workshop" : "Community link"), o.author ? "by " + o.author : ""].filter(Boolean).join(" · ")));
@@ -621,26 +650,46 @@
     cue();
   }
 
+  // Live now (owner 31 Oct): the busiest player realms by players then uptime, each with its mode badge and Play; New
+  // this week: realms new on the list with a player in the last day (realmlink.js). Once the list is in, an empty row
+  // says so in plain words instead of hiding.
+  let realmsIn = false;
+  function realmCard(r, RL) {
+    const c = el("div", "hm-card hm-realm hm-lv");
+    const ver = App.realmVersion(r);
+    let chip = null;
+    if (ver) { chip = el("span", "rl-ver sm", ver); chip.title = "Game client version"; }
+    const t = txt(r.name, r.players ? `${r.players} playing` : "Online", chip);
+    t.lastChild.classList.add("hm-live");
+    t.append(el("span", "hm-mode-bdg", RL.modeLabel(r)));
+    const b = el("button", "btn small primary hm-play", "Play");
+    b.type = "button";
+    b.title = `Play on ${r.name}`;
+    b.addEventListener("click", () => RL.play(r, b));
+    c.append(App.realmIcon(r.name, false), t, b);
+    return c;
+  }
+  function emptyRow(id, text) {
+    $(id + "-row").replaceChildren(el("p", "hm-empty", text));
+    $(id).hidden = false;
+    cue();
+  }
   function renderRealms() {
-    const live = App.realms().filter((r) => r.state === "live" && !App.hiddenBuild(r.build)).slice(0, 4);
-    fill("hm-realms", live.map((r) => {
-      const c = card("hm-realm", () => go("realms"), `${r.name}: open Realms`);
-      const ver = App.realmVersion(r);
-      let chip = null;
-      if (ver) { chip = el("span", "rl-ver sm", ver); chip.title = "Game client version"; }
-      const line = r.players != null ? `${r.players} playing` : "Online";
-      const t = txt(r.name, line, chip);
-      t.lastChild.classList.add("hm-live");
-      c.append(App.realmIcon(r.name, r.official), t);
-      return c;
-    }));
+    const RL = window.LeylineRealmLink;
+    if (!RL) return;
+    const live = RL.liveNow(4);
+    const fresh = RL.newThisWeek(4);
+    if (live.length) fill("hm-realms", live.map((r) => realmCard(r, RL)));
+    else if (realmsIn) emptyRow("hm-realms", "No player realms are up right now. Check back soon, or host your own.");
+    if (fresh.length) fill("hm-new", fresh.map((r) => realmCard(r, RL)));
+    else if (realmsIn) emptyRow("hm-new", "No new realms with players this week yet.");
   }
 
   function renderMods() {
     const cat = App.catalog();
     const picks = cat.projects.filter((p) => p.source === "packaged").concat(cat.projects.filter((p) => p.source !== "packaged")).slice(0, 4);
     fill("hm-mods", picks.map((p) => {
-      const c = card("hm-mod", () => go("mods", "discover"), `${p.name}: open Mods › Discover`);
+      const c = card("hm-mod", () => go("mods", "discover"), `${p.name}: open Mods & Addons › Discover`);
       const k = cat.categories.find((x) => x.id === p.category);
       const ic = el("span", "hm-ic", ([...String(p.name).trim()][0] || "?").toUpperCase());
       ic.style.setProperty("--h", String(App.nameHue(p.name)));
@@ -706,7 +755,7 @@
   if (main) main.addEventListener("scroll", cue, { passive: true });
 
   // ---------------------------------------------------------------- data in
-  document.addEventListener("leyline:realms", () => { renderRealms(); build(); });
+  document.addEventListener("leyline:realms", () => { realmsIn = true; renderRealms(); build(); });
   document.addEventListener("leyline:catalog", () => { build(); renderMods(); });
   document.addEventListener("leyline:modes", () => { build(); renderModes(); });
   document.addEventListener("leyline:news", () => { build(); renderNewsRow(); });   // the website's news feed came in (app.js loadNews)
@@ -714,6 +763,7 @@
   build();
   loadForum();
   loadHomeArt();
+  realmsIn = App.realms().length > 0;   // the list may be in before this file ran
   renderRealms();
   renderMods();
   renderModes();

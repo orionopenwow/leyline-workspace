@@ -16,9 +16,12 @@ and runs without it.
                                               More) with Download and Sign In (or the account chip).
                                               No client build number or game name on any hub page
                                               (neutral(), CLIENT_LABEL, COMPAT; stream/tests/test_hub.py checks)
-    GET  /wrath/leyline-preview/catalog       everything, filtered by plain links and a GET form (no script):
-                                              ?build=1.12|2.4.3|3.3.5a &cat=<category>|themes (4.3.4, 5.4.8 hidden: HIDDEN_BUILDS)
-                                              &source=workshop|index|theme &q=<text> &sort=score|name|updated &page=N
+    GET  /wrath/leyline-preview/catalog       Mods (everything that changes the game itself; shelf_of), filtered by plain
+                                              links and a GET form (no script): ?group=<MOD_GROUPS key> &cat=<category>|themes
+                                              ?build=1.12|2.4.3|3.3.5a (4.3.4, 5.4.8 hidden: HIDDEN_BUILDS)
+                                              &source=workshop|index|external &q=<text> &sort=score|name|updated &page=N;
+                                              ?cat=themes is Themes. Older addresses get a 301 (catalog_redirect)
+    GET  /wrath/leyline-preview/addons        Addons (in-game interface helpers): the same, with &tag=<kind> &works=1
     GET  /wrath/leyline-preview/p/<id>        one item (id: link-<12 hex>, mod-<mod id>, theme-<id>)
     GET  /wrath/leyline-preview/creators      for creators: the docs, how the index works, how to submit
     GET  /wrath/leyline-preview/beacon        Host a Beacon (your own realm on the Leyline list)
@@ -148,6 +151,24 @@ BANNED_RE = re.compile(
 
 def banned(text: str) -> bool:
     return bool(BANNED_RE.search(text or ""))
+
+
+def den_week_html() -> str:
+    """The front page's Den of the week card (stream/denweek.py: staff pick it in HQ), or "" when none is picked."""
+    m = sys.modules.get("wu_denweek")
+    if m is None:
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("wu_denweek", os.path.join(os.path.dirname(os.path.abspath(__file__)), "denweek.py"))
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            sys.modules["wu_denweek"] = m
+        except Exception:   # noqa: BLE001
+            return ""
+    try:
+        return m.section_html()
+    except Exception:   # noqa: BLE001
+        return ""
 
 
 # The hub pages never show a client build number or the game's name (the owner, 2026-10-30: "not mention client numbers
@@ -889,7 +910,7 @@ class Hub:
         etc ... cause it should all work in browser too"): (main, more). Each (key, label, href, icon)."""
         home = FRONT if front_on() else BASE
         main = [("play", "Play", "/wrath", "play"), ("realms", "Realms", BASE + "/realms", "realms"),
-                ("mods", "Mods", BASE + "/catalog", "mods"), ("addons", "Addons", BASE + "/catalog?cat=addons", "addons"),
+                ("mods", "Mods", BASE + "/catalog", "mods"), ("addons", "Addons", BASE + "/addons", "addons"),
                 ("host", "Host", "/wrath/host", "host"),
                 ("forum", "Forum", FORUM, "forum")]   # owner 2026-10-30: "change community to forum"
         # the duel leaderboards (stream/duels.py; owner 2026-10-31: "leaderboards on site") lead the More menu
@@ -955,7 +976,7 @@ class Hub:
         top = self._header(ACTIVE.get(path.split("?")[0], "mods" if path.startswith(BASE + "/p/") else "") if active is None else active)
         sub = "" if (front or front_on()) else (f'<nav class="hb-sub" aria-label="Hub">'
                + "".join(f'<a href="{BASE}{h}"' + (' aria-current="page" class="on"' if path == BASE + h else "") + f">{t}</a>"
-                         for h, t in (("", "Hub"), ("/realms", "Realms"), ("/modes", "Modes"), ("/catalog", "Mods"), ("/gallery", "Gallery"),
+                         for h, t in (("", "Hub"), ("/realms", "Realms"), ("/modes", "Modes"), ("/catalog", "Mods"), ("/addons", "Addons"), ("/gallery", "Gallery"),
                                       ("/news", "News"), ("/creators", "Creators"), ("/beacon", "Host a realm"),
                                       ("/submit", "Submit a mod")))
                + "</nav>")
@@ -1261,6 +1282,43 @@ class Hub:
                 '<p class="hb-ho-l">Everyone meets in Dalaran: say hello, try minigolf and the game modes, then head out together. '
                 'Nothing to install.</p></div>'
                 '<p class="hb-ho-a"><a class="hb-cta sm" href="/wrath">Play in your browser</a></p></section>')
+
+    LIVE_CSS = (".hb-lv{margin:0 0 18px}.hb-lv-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:12px}"
+                ".hb-lv h2{margin:0 0 8px;font-size:15px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--lk-text-2)}"
+                ".hb-lv-l{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}"
+                ".hb-lv-l li{display:flex;align-items:center;gap:10px;min-height:44px;padding:6px 10px;border:1px solid var(--lk-border);"
+                "border-radius:var(--lk-r-sm);background:var(--lk-surface)}"
+                ".hb-lv-n{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;color:var(--lk-text)!important;text-decoration:none}"
+                ".hb-lv-n:hover{text-decoration:underline}.hb-lv-p{color:var(--lk-text-2);font-size:13px;white-space:nowrap}"
+                ".hb-lv-l .hb-play{flex:none;margin-left:auto}.hb-lv-l .hb-bdg{white-space:nowrap}.hb-lv-e{margin:0;color:var(--lk-muted);font-size:14px}"
+                "@media (max-width:560px){.hb-lv-l li{flex-wrap:wrap;row-gap:4px}.hb-lv-n{flex-basis:100%}}")
+
+    def live_strip(self, got) -> str:
+        """Live now (owner 31 Oct): the busiest player realms right now (players online, then uptime) and New this week
+        (first seen in the last 7 days, a player online in the last day; stream/links.py), each with its mode badge and
+        Play. Plain-word empty states. No realm list at all: nothing."""
+        lk = self.portal("links")
+        if not got or lk is None or not hasattr(lk, "live_now"):
+            return ""
+        e = html.escape
+        rows, labels = got[0], self.portal("RULESET_LABELS") or {}
+
+        def items(rs):
+            out = []
+            for r in rs:
+                it = lk.live_item(r, labels)
+                n = it["players"]
+                out.append(f'<li><a class="hb-lv-n" href="{e(it["link"])}">{e(neutral(it["name"]) or "A realm")}</a>'
+                           f'<span class="hb-bdg">{e(it["mode"])}</span>'
+                           f'<span class="hb-lv-p">{e(f"{n} playing" if n else "Online")}</span>'
+                           f'<a class="hb-play" href="{e(it["play"])}">Play</a></li>')
+            return "".join(out)
+        busy, fresh = items(lk.live_now(rows)), items(lk.new_this_week(rows))
+        return ('<section class="hb-lv hb-rv" id="live" aria-label="Live now"><style>' + self.LIVE_CSS + '</style><div class="hb-lv-g">'
+                '<div><h2>Live now</h2>' + (f'<ul class="hb-lv-l">{busy}</ul>' if busy else
+                '<p class="hb-lv-e">No player realms are up right now. Check back soon, or host your own.</p>') + '</div>'
+                '<div><h2>New this week</h2>' + (f'<ul class="hb-lv-l">{fresh}</ul>' if fresh else
+                '<p class="hb-lv-e">No new realms with players this week yet.</p>') + '</div></div></section>')
 
     def how_strip(self) -> str:
         e = html.escape
@@ -2053,7 +2111,7 @@ class Hub:
             '<p class="hb-sub-h">One launcher for every classic client and every server: your game, your realm, one click.</p>'
             # no buttons under the line (owner 2026-10-30): Download and Play are in the side menu
             '<p class="hb-note">Free and open source, for Windows, macOS and Linux. Nothing to buy.</p></section>'
-            + self.hangout_open(got) + self.ticker(got) + self.realm_section(got) + self.how_strip() + self.counters(got, items) + self.featured_mod(items) + self.features(got)
+            + self.hangout_open(got) + self.live_strip(got) + self.ticker(got) + self.realm_section(got) + self.how_strip() + den_week_html() + self.counters(got, items) + self.featured_mod(items) + self.features(got)
             + self.posters(got) + self.herokey_teaser(got) + self.community(items) + self.mod_strip(items) + status +
             '<p class="hb-fine">Community projects are links: nothing of theirs is hosted here. Each belongs to its '
             'authors, under the licence they chose. Leyline is an independent open-source project.</p>')
@@ -2276,7 +2334,7 @@ class Hub:
                 f'rel="noopener nofollow ugc" target="_blank">Visit the authors\' page</a></p></article>')
 
     # ---------------------------------------------------------------- the addon marketplace (upstream addons)
-    # The launcher's Mods › Discover marketplace on the web (launcher/ui/market.js): curated third-party addons the
+    # The launcher's Discover › Addons marketplace on the web (launcher/ui/market.js): curated third-party addons the
     # launcher installs straight from their author's repo (stream/upstream_addons.py, all.json source "upstream"). The
     # site never installs or hosts them: Install hands over to the launcher (leyline://install/up:<id>), Source opens the
     # author's repo. They are listed here only, never in items() (the launcher's catalog.json feed stays as it was).
@@ -2382,7 +2440,7 @@ class Hub:
         if i["repo"]:
             acts.append(f'<a class="hb-ghost" href="{e(i["repo"])}" rel="noopener noreferrer nofollow ugc">Source</a>')
         acts.append(f'<a class="hb-ghost" href="{e(self._download())}" rel="noopener noreferrer">Get the launcher</a>')
-        body = (f'<nav class="hb-crumb" aria-label="Where you are"><a href="{BASE}/catalog?cat=addons">Addons</a></nav>'
+        body = (f'<nav class="hb-crumb" aria-label="Where you are"><a href="{BASE}/addons">Addons</a></nav>'
                 f'<article class="hb-pg hb-mk-item"><header class="hb-pg-h"><div class="hb-pg-t"><h1>{e(name)}</h1>'
                 + (self.works_badge() if i["works"] else "") + "</div></header>"
                 f'<div class="hb-pg-b"><div class="hb-mk-top">{self.item_pic(i)}<div>'
@@ -2394,7 +2452,7 @@ class Hub:
         return self._shell(f"{name} · Leyline", body, BASE + "/p/" + slug, active="addons")
 
     def mk_bar(self, ups: list[dict], tag: str, works: bool, link) -> str:
-        """The marketplace's chips above the grid (market.js bar()): All addons, each kind that has an addon, and
+        """Addons' chips (market.js chips()): All addons, each kind that has an addon, and
         "Works on <the official realm>". Plain links (no script)."""
         e = html.escape
         counts: dict[str, int] = {}
@@ -2413,16 +2471,20 @@ class Hub:
               + f'>Works on {e(HANGOUT_NAME)}</a>')
         return f'<nav class="hb-mk-bar" aria-label="Addon types"><div class="hb-chips">{"".join(chips)}</div>{wk}</nav>'
 
-    # ---------------------------------------------------------------- Mods, the Simple view (owner 31 Oct: "simple section")
-    # /catalog with no filters: a few short rows of big cards (Popular, Game modes, Make it look nicer, Quality of life)
-    # and one search box. The full catalog with every filter is /catalog?view=all ("Browse everything"), and any filter
-    # or search goes there too. The launcher's Discover does the same (launcher/ui/simple.js), with the same rows.
+    # ---------------------------------------------------------------- Mods and Addons, the Simple view (owner 31 Oct)
+    # /catalog (Mods) and /addons (Addons) with no filters: a few short rows of big cards and one search box. The full
+    # list with every filter is ?view=all ("Browse everything"), and any filter or search goes there too. The launcher's
+    # Discover does the same (launcher/ui/simple.js), with the same rows. Mods and Addons never share a card (shelf_of).
     SIMPLE_ROW_N = 3
+    SHELF_HOME = {"mods": BASE + "/catalog", "addons": BASE + "/addons"}
 
-    def simple_rows(self, items: list, ups: list, metrics: dict | None = None) -> list[tuple[str, str, str, str, list]]:
-        """[(key, title, line, see-all href, [items])]: the Simple view's rows, each up to SIMPLE_ROW_N, empty ones
-        left out. Popular is the top of everything; an item is in one of the other rows at most (the first that takes it)."""
-        pool = [i for i in items if i["source"] != "external"] + list(ups)
+    def simple_rows(self, items: list, ups: list, metrics: dict | None = None,
+                    shelf: str = "mods") -> list[tuple[str, str, str, str, list]]:
+        """[(key, title, line, see-all href, [items])]: the Simple view's rows for Mods or Addons, each up to
+        SIMPLE_ROW_N, empty ones left out. Popular is the top of the shelf; an item is in one of the other rows at most
+        (the first that takes it). Mods: Popular, then one row per category (MOD_GROUPS). Addons: Popular, Make it look
+        nicer, Quality of life."""
+        pool = [i for i in list(items) + list(ups) if i["source"] != "external" and shelf_of(i) == shelf]
         metrics = metrics or {}
 
         def pop(i):
@@ -2431,19 +2493,21 @@ class Hub:
             return (-n, -float(i.get("score") or 0), i["name"].lower(), i["id"])
         pool.sort(key=pop)
         tags = lambda i: set(i.get("tags") or [])   # noqa: E731
-        rows = [
-            ("game", "Game modes", "Minigames and mods that change how you play.", f"{BASE}/catalog?cat=sandbox",
-             lambda i: i["category"] in GAME_CATS),
-            ("looks", "Make it look nicer", "Interfaces, frames, nameplates and looks for the launcher.", f"{BASE}/catalog?cat=themes",
-             lambda i: i["category"] in ("themes", "graphics") or bool(tags(i) & LOOK_TAGS) or bool(i.get("replaces_ui"))),
-            ("qol", "Quality of life", "Small helpers: bags, quests, maps, chat and more.", f"{BASE}/catalog?cat=addons",
-             lambda i: bool(tags(i) & QOL_TAGS) or (i["category"] == "addons" and not tags(i))),
-        ]
+        home = self.SHELF_HOME.get(shelf, BASE + "/catalog")
+        if shelf == "addons":
+            rows = [
+                ("looks", "Make it look nicer", "Interfaces, frames and nameplates.", f"{home}?view=all",
+                 lambda i: bool(tags(i) & LOOK_TAGS) or bool(i.get("replaces_ui"))),
+                ("qol", "Quality of life", "Small helpers: bags, quests, maps, chat and more.", f"{home}?view=all",
+                 lambda i: bool(tags(i) & QOL_TAGS) or not tags(i)),
+            ]
+        else:
+            rows = [(k, n, line, f"{home}?group={k}", (lambda i, k=k: mod_group(i) == k)) for k, n, _c, line in MOD_GROUPS]
         used: set[str] = set()   # the themed rows never repeat a card (Popular may show one of theirs)
         out = []
-        popular = [i for i in pool if i["category"] != "themes"][:self.SIMPLE_ROW_N]
+        popular = pool[:self.SIMPLE_ROW_N]
         if popular:
-            out.append(("popular", "Popular", "What players pick most.", f"{BASE}/catalog?view=all", popular))
+            out.append(("popular", "Popular", "What players pick most.", f"{home}?view=all", popular))
         for key, title, line, href, fits in rows:
             got = [i for i in pool if i["id"] not in used and fits(i)][:self.SIMPLE_ROW_N]
             if got:
@@ -2451,55 +2515,58 @@ class Hub:
                 out.append((key, title, line, href, got))
         return out
 
-    def simple_page(self) -> bytes:
-        """The Simple view of Mods (see above): one search box, the rows, Browse everything."""
+    def simple_page(self, shelf: str = "mods") -> bytes:
+        """The Simple view of Mods or Addons (see above): the one-line explanation, one search box, the rows, Browse
+        everything."""
         e = html.escape
         rk = self.portal("hub_rank")
         rk = rk if rk is not None and getattr(rk, "store", None) is not None else None
         items = self.items()
         metrics = rk.store.metrics(items) if rk else {}
-        rows = self.simple_rows(items, self.upstream(), metrics)
-        seg = self.mods_tabs("")
+        rows = self.simple_rows(items, self.upstream(), metrics, shelf)
+        home = self.SHELF_HOME[shelf]
+        title = "Addons" if shelf == "addons" else "Mods"
+        seg = self.mods_tabs(shelf)
 
         def one(i):
             return self.upstream_card(i) if i["source"] == "upstream" else self.card(i, metrics.get(i["id"]) if rk else None, rk)
-        games = self.game_mods()
-        if games:   # the Game modes row is the Game mods section's first cards (with where to play them)
+        games = self.game_mods() if shelf == "mods" else []
+        if games:   # the Game modes row is the Leyline Modes and game mods, with where to play them
             realms = self.mod_realms()
             gcards = "".join(self.game_card(g, realms) for g in [g for g in games if g["status"] == "live"][:self.SIMPLE_ROW_N])
             rows = [r for r in rows if r[0] != "game"]
             rows.insert(1 if rows and rows[0][0] == "popular" else 0,
-                        ("game", "Game modes", "Minigames and mods that change how you play.", f"{BASE}/catalog?view=game", gcards))
+                        ("game", "Game modes", MOD_GROUPS[0][3], f"{home}?group=game", gcards))
         secs = "".join(
             f'<section class="hb-srow" id="row-{key}" aria-labelledby="hb-sr-{key}"><div class="hb-srow-h"><div>'
-            f'<h2 id="hb-sr-{key}">{e(title)}</h2><p>{e(line)}</p></div><a class="hb-ghost sm" href="{e(href)}">See all</a></div>'
+            f'<h2 id="hb-sr-{key}">{e(title_)}</h2><p>{e(line)}</p></div><a class="hb-ghost sm" href="{e(href)}">See all</a></div>'
             f'<div class="hb-grid hb-big">{got if isinstance(got, str) else "".join(one(i) for i in got)}</div></section>'
-            for key, title, line, href, got in rows)
+            for key, title_, line, href, got in rows)
+        word = title.lower()
         if not secs:
-            secs = f'<p class="hb-empty">Nothing here yet. <a href="{BASE}/submit">Submit a mod</a> to fill it.</p>'
-        body = (f'<section class="hb-pg hb-cat hb-simple" aria-labelledby="hb-pg-h"><header class="hb-pg-h"><div class="hb-pg-t">'
-                f'<h1 id="hb-pg-h">Mods</h1>{seg}</div>'
-                f'<a class="hb-ghost hb-pg-x" href="{BASE}/submit" data-slot="list-your-mod">List your mod</a></header><div class="hb-pg-b">'
-                f'<form class="hb-search" method="get" action="{BASE}/catalog" role="search">'
-                '<label for="hb-q" class="hb-vh">Search mods</label><input id="hb-q" name="q" type="search" maxlength="60" '
-                'placeholder="Search mods, addons and themes"><button type="submit">Search</button></form>'
-                f'{secs}<p class="hb-sall"><a class="hb-cta sm" href="{BASE}/catalog?view=all">Browse everything</a>'
-                '<span>Every mod, with all the filters.</span></p></div></section>'
+            secs = f'<p class="hb-empty">Nothing here yet. <a href="{BASE}/submit">List yours</a> to fill it.</p>'
+        body = (f'<section class="hb-pg hb-cat hb-simple" data-shelf="{shelf}" aria-labelledby="hb-pg-h"><header class="hb-pg-h">'
+                f'<div class="hb-pg-t"><h1 id="hb-pg-h">{title}</h1>{seg}</div>'
+                f'<a class="hb-ghost hb-pg-x" href="{BASE}/submit{"?kind=addon" if shelf == "addons" else ""}" data-slot="list-your-mod">List your {word[:-1]}</a></header>'
+                f'<div class="hb-pg-b"><p class="hb-lede hb-shelf-line">{e(SHELF_LINE[shelf])}</p>'
+                f'<form class="hb-search" method="get" action="{home}" role="search">'
+                f'<label for="hb-q" class="hb-vh">Search {word}</label><input id="hb-q" name="q" type="search" maxlength="60" '
+                f'placeholder="Search {word}"><button type="submit">Search</button></form>'
+                f'{secs}<p class="hb-sall"><a class="hb-cta sm" href="{home}?view=all">Browse everything</a>'
+                f'<span>Every {word[:-1]}, with all the filters.</span></p></div></section>'
                 + f'<p class="hb-get">Installing needs the Leyline launcher on this PC. <a href="{e(self._download())}" '
                   'rel="noopener noreferrer">Get the launcher</a></p>'
                 + (f"<style>{rk.RANK_CSS}</style>" if rk else ""))
-        return self._shell("Mods · Leyline", body, BASE + "/catalog", active="mods")
+        return self._shell(f"{title} · Leyline", body, home, active=shelf)
 
     def mods_tabs(self, cur: str) -> str:
-        """The Mods panel's tabs: Discover (the Simple view), Game mods, Addons, Themes."""
+        """The tabs over Mods, Addons and Themes (the launcher's Discover has the same three)."""
         e = html.escape
-        tabs = [("", "Discover", ""), ("game", "Game mods", "?view=game"), ("addons", "Addons", "?cat=addons"),
-                ("themes", "Themes", "?cat=themes")]
-        return ('<nav class="hb-seg" aria-label="Mods">' + "".join(
-            f'<a href="{e(f"{BASE}/catalog{q}")}"' + (' class="on" aria-current="page"' if c == cur else "")
-            + f">{t}</a>" for c, t, q in tabs if c != "game" or GM is not None) + "</nav>")
+        tabs = [("mods", "Mods", f"{BASE}/catalog"), ("addons", "Addons", f"{BASE}/addons"), ("themes", "Themes", f"{BASE}/catalog?cat=themes")]
+        return ('<nav class="hb-seg" aria-label="Mods, addons and themes">' + "".join(
+            f'<a href="{e(h)}"' + (' class="on" aria-current="page"' if c == cur else "") + f">{t}</a>" for c, t, h in tabs) + "</nav>")
 
-    # ---------------------------------------------------------------- Game mods (stream/gamemods.py, docs/GAME-MODS.md)
+    # ---------------------------------------------------------------- Mods › Game modes (stream/gamemods.py, docs/GAME-MODS.md)
     def _modes(self) -> list:
         pm = self.portal("playmodes")
         try:
@@ -2512,11 +2579,14 @@ class Hub:
         return GM.official(self.workshop(), self._modes()) if GM is not None else []
 
     def game_mods(self) -> list[dict]:
-        """The Game mods section's entries, the brand words taken out of their text (a bad one is left out)."""
+        """Mods › Game modes' entries (the Leyline Modes and the mods list's game modes), the brand words taken out of
+        their text (a bad one is left out)."""
         if GM is None:
             return []
         out = []
         for g in GM.entries(self._modes(), self.workshop()):
+            if g["kind"] == "mod" and mod_group(g.get("project") or {}) != "game":
+                continue   # Mods › Game modes only: a map or a boss fight has its own category, an addon is under Addons
             name, line = neutral(clean_line(g["name"], 64)), neutral(clean_line(g["line"], 240))
             if name and not banned(name + " " + line):
                 out.append(dict(g, name=name, line=line))
@@ -2571,56 +2641,88 @@ class Hub:
                 f'<h3>{e(g["name"])}</h3><p class="hb-desc">{e(g["line"])}</p><p class="hb-meta">{"".join(tags)}</p>{where}'
                 f'<div class="hb-dc-foot"><span></span><span class="hb-dc-acts">{"".join(acts)}</span></div></article>')
 
-    def game_page(self) -> bytes:
-        """Mods › Game mods: everything that changes how you play in game, and where to play it."""
+    def modes_strip(self) -> str:
+        """Mods › Game modes, above the list: the Leyline Modes (they are not in the mods list), each with where to play it."""
         e = html.escape
+        modes = [g for g in self.game_mods() if g["kind"] == "mode"]
+        if not modes:
+            return ""
         realms = self.mod_realms()
-        ents = self.game_mods()
-        live = [g for g in ents if g["status"] == "live"]
-        soon = [g for g in ents if g["status"] == "coming"]
-        grid = "".join(self.game_card(g, realms) for g in live)
-        body = (f'<section class="hb-pg hb-cat hb-game" aria-labelledby="hb-pg-h"><header class="hb-pg-h"><div class="hb-pg-t">'
-                f'<h1 id="hb-pg-h">Game mods</h1>{self.mods_tabs("game")}</div>'
-                f'<a class="hb-ghost hb-pg-x" href="{BASE}/submit" data-slot="list-your-mod">List your mod</a></header><div class="hb-pg-b">'
-                '<p class="hb-lede">Mods that change how you play in game: minigames, game modes and more. Some need a realm '
-                'that allows them. Realms say which mods they use, and the Leyline launcher adds the ones your game needs '
-                'when you join.</p>'
-                + (f'<div class="hb-grid hb-big">{grid}</div>' if grid else '<p class="hb-empty">No game mods are listed right now.</p>')
-                + (f'<h2 class="hb-gm-h">Coming</h2><div class="hb-grid hb-big">{"".join(self.game_card(g, realms) for g in soon)}</div>' if soon else "")
-                + '<p class="hb-fine">Host a realm and pick its mods: <code>leyline mods add &lt;id&gt;</code> in the Host pack folder. '
-                f'<a href="{e(self._download())}" rel="noopener noreferrer">Get the launcher</a> to add a realm\'s mods automatically.</p>'
-                "</div></section>")
-        return self._shell("Game mods · Leyline", body, BASE + "/catalog", active="mods")
+        live = [g for g in modes if g["status"] == "live"]
+        soon = [g for g in modes if g["status"] == "coming"]
+        return ('<section class="hb-gm-s" id="leyline-modes" aria-labelledby="hb-gm-h"><h2 id="hb-gm-h">Leyline Modes</h2>'
+                '<p class="hb-ext-lede">Game modes that run on any realm with the Leyline realm scripts. Some need a realm '
+                'that allows them: realms say which mods they use, and the launcher adds what your game needs when you join.</p>'
+                + (f'<div class="hb-grid hb-big">{"".join(self.game_card(g, realms) for g in live)}</div>' if live else "")
+                + (f'<h3 class="hb-gm-h">Coming</h3><div class="hb-grid hb-big">{"".join(self.game_card(g, realms) for g in soon)}</div>'
+                   if soon else "")
+                + '<p class="hb-fine">Host a realm and pick its mods: <code>leyline mods add &lt;id&gt;</code> in the Host pack '
+                f'folder. <a href="{e(self._download())}" rel="noopener noreferrer">Get the launcher</a> to add a realm\'s mods '
+                'automatically.</p></section>')
 
-    def catalog_page(self, query: dict) -> bytes:
-        """The launcher's Mods › Discover on the web: one panel with its tabs (Discover, Addons, Themes), the search and
-        the filters as plain links (no script), the addon marketplace's chips on Addons, and the cards: Install hands
-        over to the launcher (leyline://install/<id>); nothing installs from the website. With no filter at all (and no
-        ?view=all) it is the Simple view (simple_page)."""
+    def catalog_redirect(self, path: str, query: dict) -> str | None:
+        """Where an older Mods address lives now, or None. Mods and Addons are two pages (owner 31 Oct 19:22): the old
+        catalog?cat=addons (and its marketplace filters, ?kind=addon, ?source=upstream) is /addons; ?view=game (the old
+        Game mods tab) and ?kind=mode are Mods › Game modes; ?kind=theme and ?source=theme are Themes."""
+        q = {k: v[0] for k, v in (query or {}).items() if v}
+        if path == BASE + "/addons":
+            if q.get("cat") == "addons" or q.get("kind") == "addon":
+                rest = {k: v for k, v in q.items() if k not in ("cat", "kind")}
+                return BASE + "/addons" + "?" + urllib.parse.urlencode(rest or {"view": "all"})
+            return None
+        if path != BASE + "/catalog":
+            return None
+        kind, cat, src = q.get("kind", ""), q.get("cat", ""), q.get("source", "")
+        if cat == "addons" or kind == "addon" or src == "upstream" or (not cat and (q.get("tag") or q.get("works"))):
+            rest = {k: v for k, v in q.items() if k not in ("cat", "kind", "group")}
+            return BASE + "/addons?" + urllib.parse.urlencode(rest or {"view": "all"})
+        if q.get("view") == "game" or kind == "mode":
+            rest = {k: v for k, v in q.items() if k not in ("view", "kind", "cat")}
+            return BASE + "/catalog?" + urllib.parse.urlencode({**rest, "group": "game"})
+        if kind == "theme" or src == "theme":
+            rest = {k: v for k, v in q.items() if k not in ("kind", "source", "cat")}
+            return BASE + "/catalog?" + urllib.parse.urlencode({**rest, "cat": "themes"})
+        if kind:
+            rest = {k: v for k, v in q.items() if k != "kind"}
+            return BASE + "/catalog?" + urllib.parse.urlencode(rest or {"view": "all"})
+        return None
+
+    def catalog_page(self, query: dict, shelf: str = "mods") -> bytes:
+        """The launcher's Mods & Addons › Discover on the web: Mods (/catalog), Addons (/addons) or Themes
+        (/catalog?cat=themes), each with the tabs over the three, the one-line explanation, the search and the filters as
+        plain links (no script), and the cards: Install hands over to the launcher (leyline://install/<id>); nothing installs
+        from the website. Mods has its categories as chips (MOD_GROUPS), Addons the marketplace's kinds. With no filter at
+        all (and no ?view=all) it is the Simple view (simple_page). Older addresses are sent on by catalog_redirect."""
         e = html.escape
         q1 = lambda k: (query.get(k) or [""])[0][:80]   # noqa: E731
-        if q1("view") == "game" and GM is not None:
-            return self.game_page()
-        if q1("view") != "all" and not any(q1(k) for k in ("build", "cat", "source", "q", "sort", "tag", "works", "kind", "page")):
-            return self.simple_page()
-        build, cat, source, text, sort = offered_tag(q1("build")), q1("cat"), q1("source"), clean_line(q1("q"), 60), q1("sort") or "score"
-        cat = cat if cat in CATEGORY_IDS + ["themes"] else ""
-        source = source if source in ("workshop", "index", "theme", "external", "upstream") else ""
-        tag = q1("tag") if q1("tag") in MK_SUB_NAME else ""
-        works = q1("works") == "1"
+        cat = q1("cat")
+        if shelf == "mods" and cat == "themes":
+            shelf = "themes"
+        filters_on = any(q1(k) for k in ("build", "cat", "group", "source", "q", "sort", "tag", "works", "page"))
+        if shelf != "themes" and q1("view") != "all" and not filters_on:
+            return self.simple_page(shelf)
+        home = self.SHELF_HOME.get(shelf, BASE + "/catalog")
+        build, text, sort = offered_tag(q1("build")), clean_line(q1("q"), 60), q1("sort") or "score"
+        mod_cats = [c for c in CATEGORY_IDS if c != "addons"]
+        cat = cat if (shelf == "mods" and cat in mod_cats) or (shelf == "themes" and cat == "themes") else ""
+        group = q1("group") if shelf == "mods" and q1("group") in MOD_GROUP_NAME else ""
+        sources = {"mods": ("workshop", "index", "external"), "addons": ("workshop", "upstream", "index"), "themes": ()}[shelf]
+        source = q1("source") if q1("source") in sources else ""
+        tag = q1("tag") if shelf == "addons" and q1("tag") in MK_SUB_NAME else ""
+        works = shelf == "addons" and q1("works") == "1"
         rk = self.portal("hub_rank")
         rk = rk if rk is not None and getattr(rk, "store", None) is not None else None
         ranked_sorts = [s for s, _ in rk.SORT_LABELS] if rk else []
         sort = sort if sort in ("score", "name", "updated") or sort in ranked_sorts else "score"
-        kind = q1("kind") if rk and q1("kind") in rk.KINDS else ""
         try:
             page = max(1, min(500, int(q1("page") or 1)))
         except ValueError:
             page = 1
-        items = self.items()
-        ups_all = self.upstream()
-        ext = self.external() if not kind and source in ("", "external") and not (tag or works) else []
-        ups = ups_all if not kind and source in ("", "upstream") and cat in ("", "addons") else []
+        all_items = self.items()
+        items = [i for i in all_items if shelf_of(i) == shelf]
+        ups_all = self.upstream() if shelf == "addons" else []
+        ext = [x for x in self.external() if shelf_of(x) == shelf] if shelf == "mods" and source in ("", "external") else []
+        ups = ups_all if source in ("", "upstream") else []
         if source in ("external", "upstream"):
             items = []
         if tag or works:   # the marketplace's own filters: upstream addons only (the launcher's chips do the same)
@@ -2631,12 +2733,15 @@ class Hub:
                 lst = [i for i in lst if build in i["builds"] or "any" in i["builds"]]
             if cat:
                 lst = [i for i in lst if i["category"] == cat]
+            if group:
+                lst = [i for i in lst if mod_group(i) == group]
             if text:
                 words = text.lower().split()
                 lst = [i for i in lst if all(w in (i["name"] + " " + i["summary"] + " " + i.get("description", "") + " " + i["author"]
                                                    + " " + " ".join(MK_SUB_NAME.get(t, t) for t in i.get("tags") or [])
                                                    + " " + " ".join(i.get("addons") or [])).lower() for w in words)]
             return lst
+        counts_pool = keep([i for i in items if source in ("", i["source"])] + ext) if shelf == "mods" else []
         items, ext, ups = keep(items), keep(ext), keep(ups)
         if tag:
             ups = [u for u in ups if tag in u["tags"]]
@@ -2644,9 +2749,7 @@ class Hub:
             ups = [u for u in ups if u["works"]]
         if source and source not in ("external", "upstream"):
             items = [i for i in items if i["source"] == source]
-        if kind:
-            items = [i for i in items if rk.kind_of(i) == kind]
-        metrics = rk.store.metrics(self.items()) if rk else {}
+        metrics = rk.store.metrics(all_items) if rk else {}
         items = items + ups
         if sort == "name":
             items.sort(key=lambda i: (i["name"].lower(), i["id"]))
@@ -2664,11 +2767,11 @@ class Hub:
         shown = items[(page - 1) * self.PER_PAGE: page * self.PER_PAGE]
 
         def link(**over):
-            cur = {"build": build, "cat": cat, "source": source, "kind": kind, "q": text, "sort": sort if sort != "score" else "",
-                   "tag": tag, "works": "1" if works else ""}
+            cur = {"build": build, "cat": cat if shelf != "themes" else "themes", "group": group, "source": source, "q": text,
+                   "sort": sort if sort != "score" else "", "tag": tag, "works": "1" if works else ""}
             cur.update(over)
             qs = urllib.parse.urlencode({k: v for k, v in cur.items() if v})
-            return f"{BASE}/catalog?" + (qs or "view=all")   # no filter left: still the full catalog, not the Simple view
+            return f"{home}?" + (qs or "view=all")   # no filter left: still the full list, not the Simple view
 
         def chips(key, opts, cur):
             return "".join(f'<a class="hb-chip{" on" if v == cur else ""}" href="{e(link(**{key: v, "page": ""}))}"'
@@ -2678,18 +2781,15 @@ class Hub:
             return (f'<div class="hb-frow"><span class="hb-flabel">{e(label)}</span>'
                     f'<p role="group" aria-label="{e(label)}">{inner}</p></div>')
         f_build = chips("build", [("", "Every client")] + [(b, CLIENT_LABEL[b]) for b in offered_builds()], build)
-        f_cat = chips("cat", [("", "All")] + CATEGORIES + [THEMES], cat)
-        f_src = chips("source", [("", "Everything"), ("workshop", "Ready to install"), ("upstream", "From the authors"),
-                                 ("index", "Community"), ("theme", "Themes"), ("external", EXTERNAL_LABEL)], source)
+        src_names = {"workshop": "Ready to install", "upstream": "From the authors", "index": "Community", "external": EXTERNAL_LABEL}
+        f_src = frow("From", chips("source", [("", "Everything")] + [(s, src_names[s]) for s in sources], source)) if sources else ""
         if rk:
             f_sort = chips("sort", [("", "Best")] + rk.SORT_LABELS + [("name", "A to Z")], sort if sort != "score" else "")
-            f_kind = frow("Kind", chips("kind", [("", "Every kind")] + rk.KIND_LABELS, kind))
         else:
             f_sort = chips("sort", [("", "Best"), ("name", "A to Z"), ("updated", "Recently updated")], sort if sort != "score" else "")
-            f_kind = ""
         hidden = "".join(f'<input type="hidden" name="{k}" value="{e(v)}">' for k, v in
-                         (("build", build), ("cat", cat), ("source", source), ("kind", kind), ("sort", sort if sort != "score" else ""),
-                          ("tag", tag), ("works", "1" if works else "")) if v)
+                         (("build", build), ("cat", cat), ("group", group), ("source", source),
+                          ("sort", sort if sort != "score" else ""), ("tag", tag), ("works", "1" if works else "")) if v)
         nav = ""
         if pages > 1:
             nav = ('<nav class="hb-pages" aria-label="Pages">'
@@ -2698,55 +2798,64 @@ class Hub:
                    + (f'<a href="{e(link(page=str(page + 1)))}">Next</a>' if page < pages else "") + "</nav>")
         grid = "".join(self.upstream_card(i) if i["source"] == "upstream" else self.card(i, metrics.get(i["id"]) if rk else None, rk)
                        for i in shown) or (
-            "" if source == "external" else
+            "" if source == "external" or (group == "game" and self.modes_strip()) else
             '<p class="hb-empty">Nothing here yet. '
-            + (f'<a href="{BASE}/submit">Submit a mod</a> to fill it.' if cat != "themes" else "Theme packs are on the way.") + "</p>")
-        group = ""
+            + (f'<a href="{BASE}/submit">List yours</a> to fill it.' if shelf != "themes" else "Theme packs are on the way.") + "</p>")
+        ext_s = ""
         if ext and page == 1:
-            group = ('<section class="hb-ext-s" id="external" aria-labelledby="hb-ext-h">'
+            ext_s = ('<section class="hb-ext-s" id="external" aria-labelledby="hb-ext-h">'
                      f'<h2 id="hb-ext-h">{e(EXTERNAL_LABEL)}</h2><p class="hb-ext-lede">Packs made and hosted by their authors. '
                      'Leyline only links to their own pages: it hasn\'t checked them, doesn\'t host them and can\'t install them.</p>'
                      f'<div class="hb-grid">{"".join(self.ext_card(x) for x in ext)}</div></section>')
         elif source == "external":
-            group = '<p class="hb-empty">No external packs here.</p>'
+            ext_s = '<p class="hb-empty">No external packs here.</p>'
         total += len(ext)
-        title = {"addons": "Addons", "themes": "Themes"}.get(cat, "Mods")
-        seg = self.mods_tabs(cat if cat in ("addons", "themes") else "")
-        mk = self.mk_bar([u for u in ups_all if (not build or build in u["builds"] or "any" in u["builds"])], tag, works, link) \
-            if ups_all and cat in ("", "addons") and source in ("", "upstream") else ""
-        unfiltered = not (build or cat or source or kind or text or tag or works)
-        more_on = bool(build or source or kind or tag or (sort != "score"))
-        lede = {"addons": f"Addons for your game client, many straight from their authors. Install opens the Leyline launcher on "
-                          f"this PC.",
-                "themes": "Looks for the Leyline launcher. Install opens the launcher on this PC."}.get(
-            cat, "Mods, addons, realm scripts and tools. Install opens the Leyline launcher on this PC.")
-        # A few smart chips (one click each); every other filter waits under More filters (owner 31 Oct: "trim search")
-        smart = [("", "Everything", link(cat="", works="", tag="", page=""), not cat and not works),
-                 ("addons", "Addons", link(cat="addons", works="", page=""), cat == "addons" and not works),
-                 ("sandbox", "Game modes", link(cat="sandbox", works="", tag="", page=""), cat == "sandbox"),
-                 ("works", f"Works on {HANGOUT_NAME}", link(works="" if works else "1", page=""), works)]
-        f_smart = "".join(f'<a class="hb-chip{" on" if on else ""}{" hb-mk-works" if k == "works" else ""}" href="{e(href)}"'
-                          + (' aria-current="true"' if on else "") + f">{e(label)}</a>" for k, label, href, on in smart)
-        filters = (f'<div class="hb-filters"><div class="hb-chips hb-smart" role="group" aria-label="Show">{f_smart}</div>'
+        title = {"addons": "Addons", "themes": "Themes"}[shelf] if shelf != "mods" else "Mods"
+        word = title.lower()
+        unfiltered = not (build or cat or group or source or text or tag or works)
+        more_on = bool(build or source or (sort != "score"))
+        lede = SHELF_LINE.get(shelf, "Looks for the Leyline launcher. Install opens the launcher on this PC.")
+        # The tab's own categories as chips, one click each; every other filter waits under More filters
+        if shelf == "mods":
+            n_of: dict[str, int] = {}
+            for i in counts_pool:
+                g = mod_group(i)
+                if g:
+                    n_of[g] = n_of.get(g, 0) + 1
+            if self.game_mods():
+                n_of["game"] = n_of.get("game", 0) or 1   # the Leyline Modes alone fill it
+            smart = [("", "All mods", link(group="", cat="", page=""), not group and not cat)]
+            smart += [(k, n, link(group=k, cat="", page=""), group == k) for k, n, _c, _l in MOD_GROUPS
+                      if n_of.get(k) or group == k]
+            f_smart = ('<div class="hb-chips hb-smart" role="group" aria-label="Mods by kind">'
+                       + "".join(f'<a class="hb-chip{" on" if on else ""}" href="{e(href)}"' + (' aria-current="true"' if on else "")
+                                 + f">{e(label)}</a>" for _k, label, href, on in smart) + "</div>")
+        elif shelf == "addons":
+            f_smart = self.mk_bar([u for u in ups_all if (not build or build in u["builds"] or "any" in u["builds"])], tag, works,
+                                  link) if ups_all and source in ("", "upstream") else ""
+        else:
+            f_smart = ""
+        filters = (f'<div class="hb-filters">{f_smart}'
                    f'<details class="hb-fmore"{" open" if more_on else ""}><summary>More filters</summary>'
-                   f'{frow("Sort", f_sort)}{frow("Show", f_cat)}{frow("Client", f_build)}{frow("From", f_src)}{f_kind}{mk}'
-                   '</details></div>')
-        body = (f'<section class="hb-pg hb-cat" aria-labelledby="hb-pg-h"><header class="hb-pg-h"><div class="hb-pg-t">'
-                f'<h1 id="hb-pg-h">{title}</h1>{seg}</div>'
-                f'<a class="hb-ghost hb-pg-x" href="{BASE}/submit" data-slot="list-your-mod">List your mod</a></header><div class="hb-pg-b">'
-                f'<p class="hb-lede">{e(lede)}</p>'
-                f'<form class="hb-search" method="get" action="{BASE}/catalog" role="search">{hidden}'
-                f'<label for="hb-q" class="hb-vh">Search</label><input id="hb-q" name="q" type="search" value="{e(text)}" maxlength="60" '
-                f'placeholder="Search {title.lower()}">'
+                   f'{frow("Sort", f_sort)}{frow("Client", f_build)}{f_src}</details></div>')
+        strip = self.modes_strip() if group == "game" and page == 1 and not (build or source or text) else ""
+        body = (f'<section class="hb-pg hb-cat" data-shelf="{shelf}" aria-labelledby="hb-pg-h"><header class="hb-pg-h"><div class="hb-pg-t">'
+                f'<h1 id="hb-pg-h">{title}</h1>{self.mods_tabs(shelf)}</div>'
+                + (f'<a class="hb-ghost hb-pg-x" href="{BASE}/submit{"?kind=addon" if shelf == "addons" else ""}" data-slot="list-your-mod">List your {word[:-1]}</a>'
+                   if shelf != "themes" else "") + '</header><div class="hb-pg-b">'
+                f'<p class="hb-lede hb-shelf-line">{e(lede)}</p>'
+                f'<form class="hb-search" method="get" action="{home}" role="search">{hidden}'
+                f'<label for="hb-q" class="hb-vh">Search {word}</label><input id="hb-q" name="q" type="search" value="{e(text)}" maxlength="60" '
+                f'placeholder="Search {word}">'
                 '<button type="submit">Search</button></form>'
                 f'<p class="hb-count">{total} items' + (f' for the {e(CLIENT_LABEL[build].lower())}' if build and build != "any" else "") + '</p>'
-                + filters
-                + (self.featured_strip(self.items()) if page == 1 and unfiltered else "")
-                + (f'<div class="hb-grid">{grid}</div>' if grid else "") + f'{group}{nav}</div></section>'
+                + filters + strip
+                + (self.featured_strip([i for i in all_items if shelf_of(i) == "mods"]) if page == 1 and unfiltered and shelf == "mods" else "")
+                + (f'<div class="hb-grid">{grid}</div>' if grid else "") + f'{ext_s}{nav}</div></section>'
                 + f'<p class="hb-get">Installing needs the Leyline launcher on this PC. <a href="{e(self._download())}" '
                   'rel="noopener noreferrer">Get the launcher</a></p>'
                 + (f"<style>{rk.RANK_CSS}</style>" if rk else ""))
-        return self._shell("Mods · Leyline", body, BASE + "/catalog", active="addons" if cat == "addons" else "mods")
+        return self._shell(f"{title} · Leyline", body, home, active=shelf if shelf != "themes" else "mods")
 
     def item_page(self, slug: str, handler=None, query: dict | None = None) -> tuple[int, bytes]:
         e = html.escape
@@ -2758,7 +2867,10 @@ class Hub:
             return 200, self.external_page(i, slug)
         if i["source"] == "upstream":
             return 200, self.upstream_page(i, slug)
+        sh = shelf_of(i)
         rows = [("Works with", ", ".join(CLIENT_LABEL.get(b, "Any client") for b in i["builds"])),
+                ("Kind", {"addons": "Addon: an in-game interface helper", "themes": "Theme: a look for the launcher"}.get(
+                    sh, "Mod: " + (MOD_GROUP_NAME.get(mod_group(i)) or "changes the game itself"))),
                 ("Category", dict(CATEGORIES + [THEMES]).get(i["category"], i["category"])),
                 ("Author", neutral(i["author"]) or "unknown"), ("Licence", neutral(i.get("licence")) or "not stated")]
         if isinstance(i.get("stars"), int) and not isinstance(i.get("stars"), bool):
@@ -2799,7 +2911,7 @@ class Hub:
         body = (f'<article class="ly-panel hb-item">{self.item_pic(i)}<h1>{e(name)}</h1><p class="hb-sum">{e(summary)}</p>{desc}'
                 f'<table class="ly-table">{table}</table><p class="hb-actions">{" ".join(acts)}</p>'
                 f'<p class="hb-fine">{e(how)}</p></article>{panel}')
-        return 200, self._shell(f"{name} · Leyline", body, BASE + "/p/" + slug)
+        return 200, self._shell(f"{name} · Leyline", body, BASE + "/p/" + slug, active="addons" if sh == "addons" else "mods")
 
     def item_pic(self, i: dict) -> str:
         """An item page's picture: the Workshop screenshot, else the preview thumbnail with its credit under it, else the
@@ -2953,24 +3065,25 @@ class Hub:
             return self._shell("Submitted · Leyline", body, BASE + "/submit")
         opt = lambda v, label, cur: f'<option value="{e(v)}"{" selected" if v == cur else ""}>{e(label)}</option>'  # noqa: E731
         builds = "".join(opt(b, CLIENT_LABEL[b], form.get("build", "")) for b in offered_builds() + ["any"])
-        cats = "".join(opt(c, n, form.get("category", "")) for c, n in CATEGORIES)
+        cats = kind_options(CATEGORIES, form.get("category", ""))
         err = f'<p class="hb-err" role="alert">{e(msg)}</p>' if msg else ""
-        body = ('<section class="ly-panel"><h1>Submit a mod</h1>'
-                '<p>Add an open project to the list: an addon, a realm module or script, a tool, a ruleset. '
-                'We only need the link; the rest is read from the repo. No account, no email.</p>'
+        body = ('<section class="ly-panel"><h1>Submit a mod or an addon</h1>'
+                '<p>Add an open project to the list. An <b>addon</b> is an in-game interface helper (it goes in the game\'s '
+                'AddOns folder). A <b>mod</b> changes the game itself: models, graphics, game modes, realm scripts, sounds, '
+                'maps, tools. We only need the link; the rest is read from the repo. No account, no email.</p>'
                 f'{err}<form class="hb-form" method="post" action="{BASE}/submit">'
                 f'<label for="s-repo">Repo link (GitHub, GitLab or Codeberg)</label>'
                 f'<input id="s-repo" name="repo" required maxlength="300" placeholder="https://github.com/you/your-mod" '
                 f'value="{e(form.get("repo", ""))}">'
                 f'<label for="s-build">Made for</label><select id="s-build" name="build">{builds}</select>'
-                f'<label for="s-cat">Category</label><select id="s-cat" name="category">{cats}</select>'
+                f'<label for="s-cat">Addon or mod, and its category</label><select id="s-cat" name="category">{cats}</select>'
                 f'<label for="s-note">A short note for the reviewers (optional)</label>'
                 f'<textarea id="s-note" name="note" maxlength="{self.MAX_NOTE}" rows="3">{e(form.get("note", ""))}</textarea>'
                 '<label class="hb-hp" aria-hidden="true">Leave empty <input name="website" tabindex="-1" autocomplete="off"></label>'
                 '<button class="ly-btn" type="submit">Submit</button></form>'
                 '<p class="hb-fine">Please don\'t put names, emails or other personal details in the note. '
                 'The rules are on the <a href="' + BASE + '/creators">creators page</a>.</p></section>')
-        return self._shell("Submit a mod · Leyline", body, BASE + "/submit")
+        return self._shell("Submit a mod or an addon · Leyline", body, BASE + "/submit")
 
     # ---------------------------------------------------------------- submissions
     def _rate_ok(self, ip: str, now: float) -> bool:
@@ -3814,7 +3927,7 @@ background:var(--lk-surface-2);color:var(--lk-text-2)!important;font-size:13px;f
 .hb-chip:hover{border-color:var(--lk-border-strong);color:var(--lk-text)!important}
 .hb-chip.on{background:var(--lk-accent-soft);border-color:var(--lk-accent);color:var(--lk-text)!important}
 /* Mods, the Simple view: rows of big cards under one search box */
-.hb-smart{margin:0 0 2px}
+.hb-smart{margin:0 0 2px}.hb-filters>*,.hb-mk-bar,.hb-mk-bar .hb-chips{min-width:0}
 .hb-srow{margin:22px 0 0}.hb-srow:first-of-type{margin-top:14px}
 .hb-srow-h{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin:0 0 10px}
 .hb-srow-h h2{margin:0;font-size:18px;line-height:1.25;text-align:left}.hb-srow-h p{margin:2px 0 0;color:var(--lk-muted);font-size:13.5px}
@@ -4318,6 +4431,68 @@ MK_SUBS = (("full-ui", "Full interfaces"), ("unit-frames", "Unit frames"), ("rai
            ("chat", "Chat"), ("social", "Groups and friends"), ("class", "Class"), ("professions", "Professions"), ("pvp", "PvP"),
            ("skins", "Skins"), ("libraries", "Libraries"), ("quality-of-life", "Quality of life"))
 MK_SUB_NAME = dict(MK_SUBS)
+# Mods and Addons (docs/WORDS.md; owner 31 Oct 19:22: "Mods and Addons (distinct, addons are in game UI helpers and mods mod
+# anything from engine physics to new models and game modes and server modes)"). One rule for every page; the launcher keeps
+# the same one in launcher/ui/shelf.js (stream/tests/test_hub.py checks they match).
+#   addons  in-game interface helpers that go in the game's AddOns folder (the addon marketplace, the Leyline addons)
+#   mods    everything that changes the game itself: models and textures, engine and graphics, game modes and minigames,
+#           realm and server modes and realm scripts, sounds, maps, tools
+#   themes  the launcher's own looks
+SHELF_GAME_CATS = ("sandbox", "conversions", "maps", "builds")   # a game mode or a map stays a mod even as an addon folder
+# The Mods page's categories, from the mods list's own (mods/categories.json): (key, label, categories, line)
+MOD_GROUPS = (
+    ("game", "Game modes", ("sandbox", "conversions"), "Minigames and modes that change how you play."),
+    ("models", "Models & textures", ("models",), "New creatures, mounts, props and buildings."),
+    ("realm", "Realm & server modes", ("realm-scripts", "presets", "encounters"),
+     "Realm scripts, server rules and boss fights, for realms that run them."),
+    ("engine", "Engine & graphics", ("graphics",), "Lighting, sky, water and graphics packs."),
+    ("sounds", "Sounds", ("audio",), "Music, ambience and sound packs."),
+    ("maps", "Maps & builds", ("maps", "builds"), "New zones, arenas and saved builds."),
+    ("tools", "Tools", ("tools",), "Helpers for hosts and makers: map viewers, log readers, overlays."),
+)
+MOD_GROUP_OF = {c: k for k, _n, cats, _l in MOD_GROUPS for c in cats}
+MOD_GROUP_NAME = {k: n for k, n, _c, _l in MOD_GROUPS}
+SHELF_LINE = {
+    "mods": "Mods change the game itself: models and textures, graphics, game modes, realm and server modes, sounds and "
+            "maps. Interface helpers are under Addons.",
+    "addons": "Addons are in-game interface helpers: unit frames, bags, maps, meters, quest helpers. They go in your "
+              "game's AddOns folder. Anything that changes the game itself is under Mods.",
+}
+
+
+def kind_options(cats, cur: str = "") -> str:
+    """The <option>s for a "what is it" select: Addon first, then Mod with its categories in the Mods page's order
+    (the submit form here, listings.py's List your mod, the launcher's listmod.js do the same)."""
+    e = html.escape
+    names = dict(cats)
+    opt = lambda v: f'<option value="{e(v)}"{" selected" if v == cur else ""}>{e(names[v])}</option>'  # noqa: E731
+    order = [c for _k, _n, cs, _l in MOD_GROUPS for c in cs if c in names]
+    order += [c for c in names if c not in order and c not in ("addons", "themes")]
+    return ((f'<optgroup label="Addon: an in-game interface helper">{opt("addons")}</optgroup>' if "addons" in names else "")
+            + '<optgroup label="Mod: changes the game itself">' + "".join(opt(c) for c in order) + "</optgroup>")
+
+
+def shelf_of(i: dict) -> str:
+    """"mods", "addons" or "themes" for a catalog item (the hub's item shape or an all.json project)."""
+    if not isinstance(i, dict):
+        return "mods"
+    if i.get("category") == "themes" or i.get("source") == "theme" or i.get("type") == "theme":
+        return "themes"
+    if i.get("category") == "addons" or i.get("source") == "upstream":
+        return "addons"
+    if i.get("category") in SHELF_GAME_CATS:
+        return "mods"
+    ws = i.get("ws") if isinstance(i.get("ws"), dict) else {}
+    if i.get("type") == "addon" or i.get("kind") == "ui" or ws.get("kind") == "ui":
+        return "addons"
+    return "mods"
+
+
+def mod_group(i: dict) -> str:
+    """The Mods page's category key of an item ("" for an addon, a theme or an unknown category)."""
+    return MOD_GROUP_OF.get(i.get("category"), "") if shelf_of(i) == "mods" else ""
+
+
 # The Simple view's rows (Hub.simple_rows; the launcher's simple.js keeps the same three lists): game-changing
 # categories, the addon kinds that change how the game looks, and the small helpers.
 GAME_CATS = ("sandbox", "maps", "encounters", "conversions")
@@ -4409,7 +4584,7 @@ def population(live: bool, players) -> tuple[str, str]:
             return word, cls
     return "Full", "full"
 # The header item each hub page highlights (the catalog: Addons when filtered to them, else Mods; an item page: Mods).
-ACTIVE = {BASE + "/realms": "realms", BASE + "/catalog": "mods", BASE + "/submit": "mods", BASE + "/modes": "modes",
+ACTIVE = {BASE + "/realms": "realms", BASE + "/catalog": "mods", BASE + "/addons": "addons", BASE + "/submit": "mods", BASE + "/modes": "modes",
           BASE + "/beacon": "host", BASE + "/news": "news", BASE + "/creators": "creators", BASE + "/gallery": "gallery",
           BASE + "/forge": "forge", BASE + "/agents": "agents",
           FRONT + "/gallery": "gallery"}
@@ -4458,7 +4633,7 @@ def bind(lookup) -> None:
 # The hub's pages under the front door (owner 2026-10-30: "make this our main one"): with WU_HUB_FRONT on, every hub page
 # lives at /wrath/leyline/<page> and the old /wrath/leyline-preview/<page> addresses send a 301 there. Inside, the code
 # keeps BASE; what goes out (pages, Location headers) says /wrath/leyline (_Live).
-HUB_PAGES = ("catalog", "p", "creators", "beacon", "realms", "modes", "news", "gallery", "submit", "forge", "agents",
+HUB_PAGES = ("catalog", "addons", "p", "creators", "beacon", "realms", "modes", "news", "gallery", "submit", "forge", "agents",
              "approved.json")
 
 
@@ -4474,11 +4649,15 @@ def twin(path: str, query: dict) -> str | None:
         return None
     if path.startswith("/wrath/mods/c/") and path.count("/") == 4:
         cat = path.rsplit("/", 1)[1]
+        if cat == "addons":
+            return FRONT + "/addons?view=all"
         return FRONT + "/catalog" + ("?cat=" + urllib.parse.quote(cat) if cat in CATEGORY_IDS + ["themes"] else "")
     if path not in TWINS:
         return None
     to, keep = TWINS[path]
     q = {k: v for k, v in (query or {}).items() if keep is None or k in keep}
+    if to == "/catalog" and (q.get("cat") or [""])[0] == "addons":   # Addons is its own page
+        to, q = "/addons", {k: v for k, v in q.items() if k != "cat"} or {"view": ["all"]}
     qs = urllib.parse.urlencode(q, doseq=True)
     return FRONT + to + ("?" + qs if qs else "")
 
@@ -4570,8 +4749,16 @@ def get(handler, path: str, query: dict) -> None:
         nonce = secrets.token_urlsafe(16)
         handler.send(200, hub.gallery_page(query, path, nonce), nonce=nonce, headers=_robots())
         return
-    if path == BASE + "/catalog":
-        handler.send(200, hub.catalog_page(query), headers=_robots())
+    if path in (BASE + "/catalog", BASE + "/addons"):
+        to = hub.catalog_redirect(path, query)   # an older Mods address (catalog?cat=addons, ?view=game, ?kind=...)
+        if to:
+            handler.send_response(301)
+            handler.send_header("Location", to)
+            handler.send_header("Content-Length", "0")
+            handler.send_header("Cache-Control", "public, max-age=3600")
+            handler.end_headers()
+            return
+        handler.send(200, hub.catalog_page(query, "addons" if path == BASE + "/addons" else "mods"), headers=_robots())
         return
     if path == BASE + "/creators":
         handler.send(200, hub.creators_page(), headers=_robots())
@@ -4597,7 +4784,8 @@ def get(handler, path: str, query: dict) -> None:
         return
     if path == BASE + "/submit":
         done = (query.get("done") or [""])[0] == "1"
-        handler.send(200, hub.submit_page(done=done), headers=_robots())
+        pre = {"category": "addons"} if (query.get("kind") or [""])[0] == "addon" else None   # "List your addon"
+        handler.send(200, hub.submit_page(form=pre, done=done), headers=_robots())
         return
     if path.startswith(BASE + "/p/"):
         status, body = hub.item_page(path[len(BASE + "/p/"):], handler, query)

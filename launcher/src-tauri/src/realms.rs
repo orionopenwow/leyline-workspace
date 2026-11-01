@@ -93,6 +93,9 @@ pub struct Realm {
     /// offers the client ones it finds in the Workshop catalog when the player joins (ui/gamemods.js); `mod_install`
     /// looks each id up in the core's own catalog, so a realm can never name a URL or a file.
     pub mods: Vec<RealmMod>,
+    /// The mode the realm runs (docs/MODES.md, "Mode packages"): its credit ("based on X by Y") and, when the listing
+    /// carries the whole recipe, `forkable` and `recipe` for Fork this mode (host/modes.rs from_listing, checked there).
+    pub mode: Option<Value>,
 }
 
 /// One entry of a realm's mod list.
@@ -411,6 +414,7 @@ pub fn parse_community_in(v: &Value, all: bool) -> Vec<Realm> {
                 report_url: Some(format!("{REPORT_BASE}{rid}")),
                 temporary: false,
                 mods: parse_mods(r.get("mods")),
+                mode: crate::host::modes::from_listing(r.get("mode")),
                 realm_id: Some(rid),
             })
         })

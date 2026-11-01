@@ -90,6 +90,15 @@
   const SOLO = "solo";
   const SOLO_FACTS = [["Private", "just you, on this PC"], ["Helper bots", "type .recruit party to fill your group"], ["Dungeons", "scaled to the group you bring"]];
   const FACTS = { den: DEN_FACTS, solo: SOLO_FACTS };
+  // How a new Den starts (owner 2026-10-31: "forest theme, dark theme starting areas"): a starter place the Host pack
+  // ships (realm/custom/lua_scripts/den-starters, copied into state/dens at setup), opened once the Den is up
+  // (host_den_open, as Saved Dens' Open), or Empty. In game, .den start (or /den > Home) picks again.
+  const DEN_STARTS = [["forest-glade", "Forest glade", "Trees, a brook to a pond, a small cottage, warm lanterns."],
+    ["dark-keep", "Dark keep", "A ruined tower, mist, lanterns and braziers."], ["empty", "Empty", "The plain room, yours to fill."]];
+  const DEN_START_KEY = "leyline.denStart", DEN_PENDING_KEY = "leyline.denStartPending";
+  const store = { get: (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } },
+    set: (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (_) { /* private window */ } } };
+  let denStart = DEN_STARTS.some(([k]) => k === store.get(DEN_START_KEY)) ? store.get(DEN_START_KEY) : "forest-glade";
   // the realms made for this PC alone (the play bar's rows): always private. One Host pack hosts one realm, so these
   // two take turns on it (switchTo: the same realm, its accounts and characters kept)
   const LOCAL_IDS = [DEN, SOLO];
@@ -881,6 +890,7 @@
     ui.den = mk("ul", "hc-den");
     ui.den.setAttribute("aria-label", "My Den");
     ui.den.hidden = true;
+    ui.denStart = denStartPicker();
     ui.status = mk("p", "status hc-status");
     ui.status.setAttribute("role", "status");
     const link = mk("div", "hc-linkcard");
@@ -896,7 +906,7 @@
     ui.found = mk("div", "hc-found");
     ui.found.hidden = true;
     ui.pickH = mk("p", "hc-bh", "Pick a ruleset");
-    sw.append(top, rune(), lede, needs, ui.ready, ui.found, ui.pickH, ui.rules, ui.den, ui.form, go, ui.prog, ui.status, link, rune(), mk("p", "hc-bh", "Runs on"), coreChips(linkServer));
+    sw.append(top, rune(), lede, needs, ui.ready, ui.found, ui.pickH, ui.rules, ui.den, ui.denStart, ui.form, go, ui.prog, ui.status, link, rune(), mk("p", "hc-bh", "Runs on"), coreChips(linkServer));
     const side = mk("aside", "hc-box hc-side");
     side.append(mk("p", "hc-bh", "Guide"), guideList(true));
     wrap.append(sw, side);
@@ -1051,9 +1061,50 @@
     jobTimer = null;
     if (job && !job.idle && job.code === 0) {
       liveWanted = true;
+      openDenStart();
       say(job.kind === "link" ? "Linked. Checking the realm list…" : "Your realm is up. Checking the network…", "ok");
       if (typeof loadHost === "function") loadHost();   // app.js: read the kit again (it now hosts a realm: the console)
     }
+  }
+
+  // the Den's starting place, once its first start is done: opened like a Saved Den (the realm puts it in when you
+  // are in your Den), only for the start that asked for it
+  async function openDenStart() {
+    const name = store.get(DEN_PENDING_KEY);
+    if (!name) return;
+    store.set(DEN_PENDING_KEY, null);
+    const label = (DEN_STARTS.find(([k]) => k === name) || [name, name])[1];
+    try { await call("host_den_open", { name }); say(`Your Den starts as ${label}: it's there when you step in.`, "ok"); }
+    catch (_) { say(`Pick ${label} in game: type .den start (or /den, then Home).`, "warn"); }
+  }
+  function paintDenStart() {
+    if (!ui.denStart) return;
+    ui.denStart.hidden = picked !== DEN;
+    for (const b of ui.denStart.querySelectorAll(".hc-ds")) {
+      const on = b.dataset.start === denStart;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-checked", String(on));
+    }
+  }
+  function denStartPicker() {
+    const box = mk("div", "hc-denstart");
+    box.hidden = true;
+    const h = mk("p", "hc-bh", "Start your Den as");
+    h.id = "hc-denstart-h";
+    const row = mk("div", "hc-rulesets");
+    row.setAttribute("role", "radiogroup");
+    row.setAttribute("aria-labelledby", "hc-denstart-h");
+    for (const [key, title, line] of DEN_STARTS) {
+      const b = btn("", "hc-ds", () => { denStart = key; store.set(DEN_START_KEY, key); paintDenStart(); });
+      b.setAttribute("role", "radio");
+      b.dataset.start = key;
+      const top = mk("span", "hc-rs-h");
+      top.append(mk("b", "", title));
+      b.append(top, mk("span", "hc-rs-l", line));
+      row.append(b);
+    }
+    box.append(h, row);
+    return box;
   }
 
   function paintRulesets() {
@@ -1095,6 +1146,7 @@
       : picked === "vanillaplus" ? "Always on: it comes back after a reboot."
       : picked === DEN ? "Then invite friends with your invite link. The first start takes 5 to 20 minutes."
       : picked === SOLO ? "Then pick Solo leveling in the play bar. The first start takes 5 to 20 minutes." : "The first start takes 5 to 20 minutes.";
+    paintDenStart();
     if (ui.den) {
       const facts = FACTS[picked];
       ui.den.hidden = !facts;
@@ -1120,6 +1172,7 @@
     try {
       const o = (offers || []).find((x) => x.id === picked);
       await call("host_choose", { profile: picked, clientId: o && o.clients[0] ? o.clients[0].id : null });
+      store.set(DEN_PENDING_KEY, picked === DEN && denStart !== "empty" ? denStart : null);
       await call("host_start_quiet", { answers: answers() });
       job = { idle: false, kind: "host", running: true, code: null, step: "Getting ready", n: 0, of: 8, secs: 0, problem: null };
       followJob();

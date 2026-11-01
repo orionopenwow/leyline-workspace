@@ -354,6 +354,7 @@ local function helpCommand(player)
         say(player, "  Owner: |cffffff00.den invite|r  |cffffff00.den allow <name> build|view|r  |cffffff00.den room white|stone|wood|rebuild|r")
         say(player, "  |cffffff00.den save <name>|r also writes a file on your PC (state\\dens); |cffffff00.den load <name> replace|add|r opens one; |cffffff00.den files|r")
     end
+    if OVDen and OVDen.help then pcall(OVDen.help, player, r) end
     say(player, "  |cffffff00.den home|r takes you back to the middle of the room.")
 end
 
@@ -552,6 +553,8 @@ local function run(player, text)
     elseif sub == "layouts" then return B().Run(player, "layout list")
     elseif sub == "files" then return filesCommand(player)
     end
+    local extra = OVDen and OVDen.extra[sub]   -- ov_den_home.lua: start, stamp, knock, note, mail, visit
+    if extra then return extra(player, words, text) end
     helpCommand(player)
 end
 
@@ -619,6 +622,14 @@ end
 
 -- after a restart (or a Lua reload): the Builder knows the floor at once
 if B() and settings.floor then B().SetFloor(floorZ()) end
+
+-- OVDen (global): what ov_den_home.lua (starter places, stamps, the door, the mailbox) builds on. extra[sub] are
+-- more .den commands (run as fn(player, words, text)); help(player, role) adds lines to .den's help.
+OVDen = rawget(_G, "OVDen") or {}
+OVDen.extra = OVDen.extra or {}
+OVDen.Files, OVDen.settings, OVDen.setSetting, OVDen.role, OVDen.isOwner = Files, settings, setSetting, role, isOwner
+OVDen.inside, OVDen.floorZ, OVDen.decorCount, OVDen.say, OVDen.sendInfo = inside, floorZ, decorCount, say, sendInfo
+OVDen.themeOf, OVDen.buildRoom = themeOf, buildRoom
 
 -- for stream/tests/test_ov_den.lua (read only)
 OV_DEN_TEST = { THEMES = THEMES, plan = plan, buildRoom = buildRoom, inside = inside, checkAll = checkAll,

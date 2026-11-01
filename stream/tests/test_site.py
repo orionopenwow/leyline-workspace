@@ -205,7 +205,7 @@ check_chrome("busy page", wp.busy_page(back="/wrath/realms").decode(), "realms",
 check_chrome("streaming off page", wp.stream_off_page().decode(), "play", public=False, next_step=False)
 acct = wp.account_page("Tester", "WR1", "pw", "n").decode()
 check_chrome("account page (signed in)", acct, "play", public=False, next_step=False, signed_in=True)
-check("account page: still the realm list and the Hero Key link", "Choose a realm" in acct and 'href="/account/key"' in acct
+check("account page: still the realm list and the Hero Key link", "Choose a realm" in acct and 'href="/wrath/key"' in acct
       and 'class="wu-panel wide"' in acct)
 check("account page: no Sign in once signed in", ">Sign in</a>" not in nav_of(acct))
 check("the gold pages keep their themed body", '<body class="wu">' in wp.signed_out_page().decode())
@@ -227,8 +227,8 @@ check("404: a path with markup is not echoed", "<b>" not in get("/wrath/%3Cb%3Eh
 # ---------------------------------------------------------------- 5. share boxes and update times
 st, _, realms = get("/wrath/realms")
 boxes = re.findall(r'<details class="ly-share"><summary>Share</summary><code tabindex="0">([^<]+)</code>', realms)
-check("realms: a share box per realm card", boxes == ["https://play.example/wrath/r/wrath", "https://play.example/wrath/r/abcdefghijklmnop",
-      "https://play.example/wrath/r/qrstuvwxyz234567", "https://play.example/wrath/r/aaaaaaaaaaaaaaaa"], boxes)
+check("realms: a share box per realm card", boxes == ["https://play.example/wrath/r/wrath", "https://play.example/wrath/r/abcdefgh",
+      "https://play.example/wrath/r/qrstuvwx", "https://play.example/wrath/r/aaaaaaaa"], boxes)   # short links (8 letters), 31 Oct
 check("realms: every share link is a real share link", all(wp.links.parse(b.split("play.example", 1)[1]) for b in boxes))
 check("realms: status time shown", 'Realm status <time datetime="2026-10-25T10:20:30Z">10:20 UTC</time>' in realms)
 check("realms: community list time shown", re.search(r'Community list <time datetime="[^"]+">\d\d:\d\d UTC</time>', realms))

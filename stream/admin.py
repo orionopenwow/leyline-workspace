@@ -1198,7 +1198,7 @@ HQ_TABS = (("", "Home"), ("inbox", "Needs you"), ("players", "Players"), ("forum
            ("network", "Network"),
            ("releases", "Releases"), ("content", "Content"), ("game", "Game"), ("system", "System"))
 CONTENT_TABS = (("catalog", "Catalog"), ("workshop", "Workshop"), ("hub", "Index"), ("themes", "Themes"),
-                ("profiles", "Profiles"), ("words", "Blocked words"), ("reports", "All reports"))
+                ("profiles", "Profiles"), ("words", "Blocked words"), ("discord", "Discord"), ("reports", "All reports"))
 SYSTEM_TABS = (("health", "Health"), ("numbers", "Numbers"), ("flags", "Flags"), ("staff", "Staff"), ("audit", "Audit"))
 TAB_GROUP = dict([(k, "content") for k, _ in CONTENT_TABS] + [(k, "system") for k, _ in SYSTEM_TABS]
                  + [("person", "players"), ("notes", "")])

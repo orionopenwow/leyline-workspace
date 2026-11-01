@@ -322,6 +322,48 @@ test('no realm yet: the setup start (Vanilla+ always on, Link my server) and the
   assert.deepEqual(errors, []);
 });
 
+test('Make my Den: how it starts (Forest glade, Dark keep, Empty), opened once the Den is up', async () => {
+  const { page, errors } = await open(false);
+  await page.waitForFunction(() => document.querySelectorAll('.hc-rs').length === 5);
+  assert.equal(await page.isVisible('.hc-denstart'), false, 'only for a Den');
+  await page.click('.hc-rs[data-profile="den"]');
+  await page.waitForSelector('.hc-denstart:not([hidden])');
+  assert.equal(await page.textContent('.hc-denstart .hc-bh'), 'Start your Den as');
+  assert.deepEqual(await page.$$eval('.hc-denstart .hc-ds', (l) => l.map((x) => [x.dataset.start, x.querySelector('b').textContent, x.getAttribute('aria-checked')])),
+    [['forest-glade', 'Forest glade', 'true'], ['dark-keep', 'Dark keep', 'false'], ['empty', 'Empty', 'false']]);
+  await page.click('.hc-denstart .hc-ds[data-start="dark-keep"]');
+  assert.equal(await page.getAttribute('.hc-denstart .hc-ds[data-start="dark-keep"]', 'aria-checked'), 'true');
+  assert.equal(await page.evaluate(() => localStorage.getItem('leyline.denStart')), 'dark-keep', 'kept for next time');
+  await page.click('.hc-rs[data-profile="main"]');
+  assert.equal(await page.isVisible('.hc-denstart'), false);
+  await page.click('.hc-rs[data-profile="den"]');
+  await page.fill('#hc-gm', 'denboss');
+  await page.screenshot({ path: process.env.SHOT_DIR ? path.join(process.env.SHOT_DIR, 'den-start.png') : '/dev/null' }).catch(() => {});
+  await page.evaluate(() => { window.__jobSteps = 2; });
+  await page.click('#hc-start');
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'host_den_open'), null, { timeout: 15000 });
+  assert.deepEqual((await calls(page, 'host_den_open')).map((a) => a.name), ['dark-keep']);
+  assert.equal(await page.evaluate(() => localStorage.getItem('leyline.denStartPending')), null, 'opened once');
+  assert.doesNotMatch(await page.textContent('#page-host'), NO_BRANDS);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Make my Den, Empty: nothing opened', async () => {
+  const { page, errors } = await open(false);
+  await page.waitForFunction(() => document.querySelectorAll('.hc-rs').length === 5);
+  await page.click('.hc-rs[data-profile="den"]');
+  await page.click('.hc-denstart .hc-ds[data-start="empty"]');
+  await page.fill('#hc-gm', 'denboss');
+  await page.evaluate(() => { window.__jobSteps = 2; });
+  await page.click('#hc-start');
+  await page.waitForFunction(() => window.__jobDone, null, { timeout: 15000 });
+  await page.waitForTimeout(500);
+  assert.equal((await calls(page, 'host_den_open')).length, 0);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test('Make my Den: private and invite-only, no bots, no player limit; picked from the play bar; its console', async () => {
   const { page, errors } = await open(false);
   await page.waitForFunction(() => document.querySelectorAll('.hc-rs').length === 5);

@@ -299,6 +299,19 @@ check("the sample: Leyline Sample Hangout · temporary (you are here)", rows[2].
     and rows[2].name:GetText():find("you are here"))
 check("estimated region marked, new badge", rows[4].rules:GetText():find("Oceania%?") and rows[4].name:GetText():find("New"))
 check("status: the network line", win.status:GetText():find("^4 realms · 14 players online"))
+check("no Den of the week: none said", not win.status:GetText():find("Den of the week"))
+list({ "B:1:0", "R:this:1:3:0:main:WrathUnleashed", "N:1:3:0", "W:Mossy Hollow:Ana:A pond and lanterns", "E:1" })
+check("Den of the week: said after the network line", win.status:GetText():find("Den of the week: Mossy Hollow by Ana%.$") ~= nil
+    and L.denWeek and L.denWeek.line == "A pond and lanterns")
+list({ "B:1:0", "R:this:1:3:0:main:WrathUnleashed", "N:1:3:0", "W:broken", "E:1" })
+check("a broken W line: none said", not win.status:GetText():find("Den of the week") and L.denWeek == nil)
+list({ "B:6:0", "R:this:1:3:0:main:WrathUnleashed", "M:this:S:0:-:12340:-:-:-:hangout",
+    "R:cccccccccccccccc:1:9:0:main:Plain", "M:cccccccccccccccc:-:30:88:12340:na-east:en:-:pvp",
+    "R:dddddddddddddddd:1:0:0:main:Picked", "M:dddddddddddddddd:FV:12:97:5875:eu:de:100:pvp,rp",
+    "R:eeeeeeeeeeeeeeee:1:2:0:dalaran:Hangout relay", "M:eeeeeeeeeeeeeeee:S:50:-:12340:-:-:-:hangout",
+    "R:ffffffffffffffff:1:0:0:custom:Far Away", "M:ffffffffffffffff:NE:5:-:12340:oce:-:-:",
+    "R:gggggggggggggggg:0:0:0:main:Sleepy", "M:gggggggggggggggg:-:0:40:12340:eu:-:-:rp",
+    "N:4:14:0", "E:6" })
 L.Cycle("tag")
 check("filter Rules: PvP (the first tag any realm has)", win.filters.tag:GetText() == "Rules: PvP" and #L.realms == 3
     and L.realms[2].id == "this")

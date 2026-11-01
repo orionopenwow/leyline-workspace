@@ -312,6 +312,19 @@ button.hc-pill:hover { background: color-mix(in srgb, currentColor 10%, transpar
   border: 1px solid var(--hc-row-border); background: var(--hc-inset); color: var(--t-muted);
 }
 .hc-den b { font-weight: 700; color: var(--t-text); }
+/* Make my Den: how it starts (a starter place or empty) */
+.hc-denstart { margin-top: 14px; }
+.hc-denstart[hidden] { display: none; }
+.hc-denstart .hc-bh { margin: 0 0 8px; }
+.hc-denstart .hc-rulesets { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.hc-ds {
+  display: grid; gap: 3px; align-content: start; text-align: left; padding: 10px 12px; border-radius: var(--t-radius-sm); cursor: pointer;
+  background: var(--hc-row); border: 1px solid var(--hc-row-border); color: var(--t-text); font: 13px var(--t-font);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.hc-ds:hover { border-color: var(--t-accent); }
+.hc-ds.on { border-color: var(--t-accent); box-shadow: 0 0 0 1px var(--t-accent), 0 0 0 4px var(--t-accent-soft); }
+@media (prefers-reduced-motion: reduce) { .hc-ds { transition: none; } }
 .hc-linkcard {
   display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; padding: 12px 14px;
   border-radius: var(--t-radius-sm); border: 1px dashed var(--t-border-strong);

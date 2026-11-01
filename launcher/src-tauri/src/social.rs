@@ -45,7 +45,77 @@ pub const ACTIONS: &[(&str, &str, &str, &[&str])] = &[
     ("report", "POST", "report", &["pid", "reason", "note"]),
     // Hero Key sign-in to a community realm (crate::herokey, docs/HERO-KEY-SSO.md)
     ("herokey", "POST", "herokey", &["realm"]),
+    // Your Hero Key (stream/herokeys.py, Manage account): what the key is up to, a new key, saved, an optional password
+    ("herokey_status", "GET", "herokey", &[]),
+    ("herokey_new", "POST", "herokey/new", &[]),
+    ("herokey_saved", "POST", "herokey/saved", &[]),
+    ("password", "POST", "password", &["password", "remove"]),
 ];
+
+/// A Hero Key as the website makes them: `ovk1.`, a 10-character id, a dot and 43 base64url characters.
+pub fn key_ok(k: &str) -> bool {
+    let Some(rest) = k.strip_prefix("ovk1.") else { return false };
+    let Some((id, sec)) = rest.split_once('.') else { return false };
+    id.len() == 10
+        && id.bytes().all(|b| b.is_ascii_alphanumeric())
+        && sec.len() == 43
+        && sec.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+/// The key in whatever the player pasted (spaces and line breaks taken out), or None.
+pub fn find_key(pasted: &str) -> Option<String> {
+    let joined: String = pasted.chars().filter(|c| !c.is_whitespace()).take(400).collect();
+    let at = joined.find("ovk1.")?;
+    let k: String = joined[at..].chars().take(5 + 10 + 1 + 43).collect();
+    key_ok(&k).then_some(k)
+}
+
+/// A call that signs in (no token yet): the answer's token is kept, the rest (me, and a new account's key) goes back.
+fn sign_in_call(dir: &Path, path: &str, body: &Value) -> Result<Value, String> {
+    let r = post_json(agent(TIMEOUT).post(&format!("{}/{path}", base())), body).map_err(|e| match e {
+        // a refused key or password is the server's own words, not "signed_out"
+        ureq::Error::Status(401, resp) => resp
+            .into_string()
+            .ok()
+            .and_then(|b| serde_json::from_str::<Value>(&b).ok())
+            .and_then(|v| v.get("error").and_then(Value::as_str).map(|s| s.chars().take(200).collect()))
+            .unwrap_or_else(|| "That didn't work.".into()),
+        e => failure(e),
+    })?;
+    let mut v = read_json(r)?;
+    save_token(dir, v.get("token").and_then(Value::as_str).unwrap_or(""))?;
+    if let Some(o) = v.as_object_mut() {
+        o.remove("token");
+    }
+    Ok(v)
+}
+
+/// Sign in with a pasted Hero Key (the key goes to the website once, over https, and is not kept here).
+pub fn sign_in_key(dir: &Path, pasted: &str) -> Result<Value, String> {
+    let key = find_key(pasted).ok_or("That doesn't look like a Hero Key. It starts with ovk1. Paste the whole line.")?;
+    sign_in_call(dir, "herokey/signin", &serde_json::json!({ "key": key }))
+}
+
+/// A new account (a made-up name, its Hero Key): {key, me}. The key is shown to the player once and not kept here.
+pub fn new_account(dir: &Path) -> Result<Value, String> {
+    sign_in_call(dir, "account/new", &serde_json::json!({}))
+}
+
+/// Sign in with Name#1234 and the password the player set.
+pub fn sign_in_password(dir: &Path, name: &str, password: &str) -> Result<Value, String> {
+    if name.len() > 40 || password.len() > 128 || password.is_empty() {
+        return Err("Type your name with its #tag and your password.".into());
+    }
+    sign_in_call(dir, "password/signin", &serde_json::json!({ "name": name.trim(), "password": password }))
+}
+
+/// The file name the save dialog offers: ours, or a plain one ending in .txt.
+pub fn text_file_name(name: &str) -> String {
+    let clean: String = name.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.')).take(60).collect();
+    let clean = clean.trim().trim_start_matches('.').to_string();
+    let stem = clean.strip_suffix(".txt").unwrap_or(&clean).trim();
+    if stem.is_empty() { "Leyline Hero Key.txt".into() } else { format!("{stem}.txt") }
+}
 
 /// The API base: the official one, or LEYLINE_SOCIAL_API for a test server (https, or http on this PC only).
 pub fn base() -> String {
@@ -398,6 +468,43 @@ pub mod commands {
         blocking(ways).await
     }
 
+    /// Sign in with a pasted Hero Key (Manage account, the account panel).
+    #[tauri::command]
+    pub async fn social_key_signin(key: String) -> Result<Value, String> {
+        blocking(move || sign_in_key(&dir(), &key)).await
+    }
+
+    /// Get your Hero Key: a new account; the answer carries the key to show once.
+    #[tauri::command]
+    pub async fn social_new_account() -> Result<Value, String> {
+        blocking(|| new_account(&dir())).await
+    }
+
+    /// Sign in with Name#1234 and a password.
+    #[tauri::command]
+    pub async fn social_password_signin(name: String, password: String) -> Result<Value, String> {
+        blocking(move || sign_in_password(&dir(), &name, &password)).await
+    }
+
+    /// Save as text file: the native save dialog, then the text (a Hero Key's .txt; at most 4 KB). false: cancelled.
+    #[tauri::command]
+    pub async fn save_text_file(app: AppHandle, name: String, text: String) -> Result<bool, String> {
+        use tauri_plugin_dialog::DialogExt;
+        if text.len() > 4096 {
+            return Err("That's too long for a key file.".into());
+        }
+        let file = text_file_name(&name);
+        let picked = tauri::async_runtime::spawn_blocking(move || {
+            app.dialog().file().set_title("Save your Hero Key").set_file_name(&file).add_filter("Text file", &["txt"]).blocking_save_file()
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        let Some(path) = picked.and_then(|p| p.into_path().ok()) else { return Ok(false) };
+        let path = if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("txt")) { path } else { path.with_extension("txt") };
+        std::fs::write(&path, text.as_bytes()).map_err(|e| format!("Couldn't save the file: {e}"))?;
+        Ok(true)
+    }
+
     #[tauri::command]
     pub async fn social_signout() -> Result<(), String> {
         blocking(|| {
@@ -484,6 +591,38 @@ mod tests {
     fn ways_are_booleans_and_the_hero_key_is_always_there() {
         assert_eq!(sanitize_ways(&json!({"google": true, "discord": "yes", "evil": true})), json!({"herokey": true, "google": true, "discord": false}));
         assert_eq!(sanitize_ways(&Value::Null), json!({"herokey": true, "google": false, "discord": false}));
+    }
+
+    #[test]
+    fn hero_keys_are_checked_before_they_go_anywhere() {
+        let k = format!("ovk1.AbCdEf1234.{}", "a_b-".repeat(10) + "xyz");
+        assert!(key_ok(&k));
+        assert_eq!(find_key(&format!("  Key: {}\n{}  ", &k[..30], &k[30..])), Some(k.clone()));
+        assert!(!key_ok("ovk1.short.x") && !key_ok(&k.replace("ovk1", "ovk2")) && !key_ok(&format!("{k}!")));
+        assert_eq!(find_key("hello"), None);
+        let d = tempfile::tempdir().unwrap();
+        assert!(sign_in_key(d.path(), "not a key").unwrap_err().contains("ovk1."));
+        assert!(sign_in_password(d.path(), "Alice#1234", "").is_err());
+        assert_eq!(load_token(d.path()), None);
+    }
+
+    #[test]
+    fn hero_key_actions_send_only_their_fields() {
+        assert_eq!(request_for("herokey_status", &json!({"x": 1})).unwrap(), ("GET", "herokey".to_string(), None));
+        let (m, p, b) = request_for("herokey_new", &json!({"key": "ovk1.x"})).unwrap();
+        assert_eq!((m, p.as_str(), b.unwrap()), ("POST", "herokey/new", json!({})));
+        let (_, p, b) = request_for("password", &json!({"password": "correct horse", "token": "t"})).unwrap();
+        assert_eq!((p.as_str(), b.unwrap()), ("password", json!({"password": "correct horse"})));
+        assert!(request_for("account/new", &json!({})).is_err(), "signing in has its own commands");
+    }
+
+    #[test]
+    fn the_text_file_is_always_a_plain_txt() {
+        assert_eq!(text_file_name("Leyline Hero Key.txt"), "Leyline Hero Key.txt");
+        assert_eq!(text_file_name("../../etc/passwd"), "etcpasswd.txt");
+        assert_eq!(text_file_name(""), "Leyline Hero Key.txt");
+        assert_eq!(text_file_name(".bashrc"), "bashrc.txt");
+        assert_eq!(text_file_name("C:\\Windows\\evil.exe"), "CWindowsevil.exe.txt");
     }
 
     #[test]

@@ -131,6 +131,37 @@ class DenProfile(unittest.TestCase):
         self.assertIn('os.getenv("OV_DEN_SAVES") or "/azerothcore/dens"',
                       open(os.path.join(REPO, "realm", "custom", "lua_scripts", "ov_den.lua"), encoding="utf-8").read())
 
+    def test_den_starters_become_saved_dens(self):
+        """The starter places ship in realm-files/lua_scripts/den-starters; setup puts them in state/dens (never over
+        the host's own copy) so the launcher's Den setup can open one; other rulesets get none."""
+        src = os.path.join(self.kit, "realm-files", "lua_scripts", "den-starters")
+        os.makedirs(src)
+        shipped = os.path.join(REPO, "realm", "custom", "lua_scripts", "den-starters")
+        for n in ("forest-glade.den.json", "dark-keep.den.json"):
+            with open(os.path.join(shipped, n), "rb") as f, open(os.path.join(src, n), "wb") as g:
+                g.write(f.read())
+        with open(os.path.join(src, "Bad Name.den.json"), "w") as f:
+            f.write("{}")
+        self.run_cmd("init", "--name", "My Den", "--profile", "den")
+        d = os.path.join(self.kit, "state", "dens")
+        self.assertEqual(sorted(n for n in os.listdir(d) if n.endswith(".den.json")), ["dark-keep.den.json", "forest-glade.den.json"])
+        doc = json.load(open(os.path.join(d, "forest-glade.den.json"), encoding="utf-8"))
+        self.assertEqual((doc["format"], doc["version"], doc["kind"]), ("leyline-den", 1, "starter"))
+        with open(os.path.join(d, "forest-glade.den.json"), "w") as f:
+            f.write('{"mine": 1}')
+        self.run_cmd("init", "--profile", "den")
+        self.assertEqual(open(os.path.join(d, "forest-glade.den.json")).read(), '{"mine": 1}', "the host's own copy wins")
+        other = tempfile.mkdtemp(prefix="wu-den2-")
+        os.makedirs(os.path.join(other, "realm-files", "lua_scripts", "den-starters"))
+        os.environ["WU_KIT"] = other
+        import importlib
+        from wuhost import setup
+        self.setup = importlib.reload(setup)
+        with open(os.path.join(other, "realm-files", "lua_scripts", "den-starters", "dark-keep.den.json"), "w") as f:
+            f.write("{}")
+        self.run_cmd("init", "--name", "Hang", "--profile", "dalaran", "--visibility", "private")
+        self.assertFalse(any(n.endswith(".den.json") for n in os.listdir(os.path.join(other, "state", "dens"))))
+
     def test_other_profiles_never_write_it(self):
         self.run_cmd("init", "--name", "Hang", "--profile", "dalaran", "--visibility", "private")
         self.assertFalse(os.path.exists(self.dat()))

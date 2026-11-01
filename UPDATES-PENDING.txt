@@ -508,6 +508,19 @@
 1191a vr-data Vanilla Remastered data: upload the 1.12 archives, rebuild the server's map files, the 1-20 browser files, compact settings (long; resumable)
 1197a ship Save to GitHub: drop links, zips and (testing switch) torrents on the realm box
 1197b leyline Leyline repo: the launcher release with drop-to-add
+1202a relay Relay: tonight's network and hop updates
+1202b hostkit Host kit: modes, Den, release log
+1202c signin Site: Hero Key, share links, Live now, stone buttons, side menu
+1202d scripts Realm scripts: Den, builder, Leyline hop (live reload, no restart)
+1202e foreverui In-game UI: builder, Den home, realm browser
+1202f addons Addons: refresh the list
+1202g ov112-realm-check Vanilla Remastered: check before turning the realm on
+1202j ship Save to GitHub: tonight's deploy fixes (client patches on this PC)
 1192a client-build Browser game: build the new faster-loading game on this PC (long; installs its build tools once)
 1190b build-realm-on Builders' Realm on: backup, its databases and servers, self-check, on Leyline (rollback on failure; main realm untouched)
 1190c signin Site: hops to the Builders' Realm
+1202k release-mirror Mirror releases: copy the launcher releases to the mirror (after the GitHub build)
+1203a vr-data Vanilla Remastered: build the movement maps the world server needs (long; no upload again; resumable)
+1203b ov112-on Vanilla Remastered: turn the 1-20 realm on (backup, self-check, rollback)
+1203c vr-beacon Vanilla Remastered: list it on Leyline
+1203d vr-site-check Vanilla Remastered page: check (needs the vanilla DNS record)

@@ -54,6 +54,25 @@ def setup(admin) -> None:
     A = admin
     register()
     W = _load_words()
+    dw = denweek()
+    if dw is not None:
+        dw.setup(admin)
+
+
+def denweek():
+    """stream/denweek.py beside this file (Den of the week: its HQ panel and actions), or None when it is missing."""
+    import sys
+    m = sys.modules.get("wu_denweek")
+    if m is None:
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("wu_denweek", os.path.join(os.path.dirname(os.path.abspath(__file__)), "denweek.py"))
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            sys.modules["wu_denweek"] = m
+        except Exception:   # noqa: BLE001
+            return None
+    return m
 
 
 def P(name):
@@ -1183,6 +1202,43 @@ def register() -> None:
         "hq.note.close": (a_note_status("closed"), "owner", None),
         "hq.note.reopen": (a_note_status("open"), "owner", None),
     })
+    A.ACTIONS.update({k: (_dg_act(k), need, confirm) for k, (need, confirm) in DISCORD_ACTIONS.items()})
+
+
+# Content > Discord (stream/discord_growth.py, through the forum's Discord link): role needed, typed confirm
+DISCORD_ACTIONS = {"discord.preview": ("owner", None), "discord.setup": ("owner", "setup"), "discord.den": ("admin", None),
+                   "discord.mode": ("admin", None), "discord.fact.add": ("admin", None), "discord.fact.remove": ("admin", None),
+                   "discord.roles.run": ("admin", None), "discord.automod.push": ("admin", None)}
+
+
+def _growth():
+    fs = A.forum_store()
+    link = getattr(fs, "discord", None) if fs is not None else None
+    return getattr(link, "growth", None) if link is not None else None
+
+
+def _dg_act(name):
+    def fn(user, target, form):
+        g = _growth()
+        if g is None:
+            raise A.Refused("The Discord bot is off (Content > Discord says why).")
+        return g.act(name, user, target, form, A.Refused)
+    return fn
+
+
+def discord_page(user: dict) -> str:
+    """Content > Discord: what is on or off, setup, staff picks, roles, AutoMod, the last posts and problems."""
+    g = _growth()
+    if g is not None:
+        return g.hq_page(user, A)
+    fs = A.forum_store()
+    why = "the forum isn't on this portal" if fs is None else (
+        "WU_FORUM_DISCORD=1 isn't set" if os.environ.get("WU_FORUM_DISCORD", "0") != "1" else
+        "its settings are incomplete or it didn't start (docker logs wu-portal | grep forum-discord)"
+        if getattr(fs, "discord", None) is None else "discord_growth.py isn't beside forum_discord.py")
+    return (f'<section class="ly-panel"><h2>Discord</h2><p>The Discord bot is off: {e(why)}.</p><p class="fine">Everything here '
+            'stays off until the owner sets it up: docs/DISCORD.md has the checklist (the bot, its permissions, portal.env, '
+            'then Set up the Discord on this page).</p></section>')
 
 
 # ----------------------------------------------------------------------------------------------
@@ -1305,7 +1361,8 @@ def home(user: dict) -> str:
     return (strip_html()
             + '<div class="hq-grid"><div>'
             + f'<section class="ly-panel"><h2>Needs you</h2>{need}</section>'
-            + '</div><div>' + from_claude_html() + to_claude_html(user, back) + releases_html() + changes_html(6) + '</div></div>')
+            + '</div><div>' + from_claude_html() + to_claude_html(user, back) + (denweek().panel_html(user, back) if denweek() else "")
+            + releases_html() + changes_html(6) + '</div></div>')
 
 
 def notes_page(user: dict) -> str:
@@ -1522,7 +1579,8 @@ def realms_wrap(user: dict) -> str:
 NET_SWITCHES = (("herokey_sso", "Hero Key sign-in on community realms"),
                 ("relay_volunteer", "Offer Help carry the network in the launcher"),
                 ("mesh_relays", "Players use community nodes when they are closer"),
-                ("mesh_realms", "Launchers read the realm list from the mesh"))
+                ("mesh_realms", "Launchers read the realm list from the mesh"),
+                ("share_own_files", "Offer Help share Leyline's own files in the launcher"))
 
 
 def _relay_base() -> str:
@@ -1646,6 +1704,8 @@ def page(user: dict, tab: str, query: dict):
     if tab == "forum":
         st, body = forum_page(user, query)
         return st, "Forum", body
+    if tab == "discord":
+        return 200, "Discord", discord_page(user)
     if tab == "system":
         return 200, "Health", A.health_page(user)
     return None

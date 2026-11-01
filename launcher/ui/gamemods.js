@@ -1,6 +1,6 @@
-// Game mods (owner 31 Oct: "a client mod section like future skating and golf ... like minecraft style adaptations and
-// downloads and like gmod too"): Mods › Discover › Game mods lists what changes play in game (the Leyline Modes, and
-// Workshop mods in a game category), what each needs and the live realms that run it ("Play it on: ..."), from the
+// Game modes (owner 31 Oct: "a client mod section like future skating and golf ... like minecraft style adaptations and
+// downloads and like gmod too"; 19:22: they are Mods, never Addons): Mods & Addons › Discover › Mods › Game modes lists
+// what changes play in game (the Leyline Modes, and the mods list's game modes: shelf.js group "game"), what each needs and the live realms that run it ("Play it on: ..."), from the
 // realms' own mod lists (realms.rs Realm.mods; docs/GAME-MODS.md). The same lists drive the join offer: when a player
 // joins a realm whose list names client mods this client lacks, beforeJoin() asks ONCE ("This realm uses X, Y") and
 // installs them through the core's own mod_install (catalog ids only: the core finds each in its own Workshop catalog
@@ -74,7 +74,8 @@
       out.push({ id: "mode:" + m.id, mode: m, name: m.title, line: m.line, status: m.status === "coming" ? "coming" : "live", realm: true, addon: true, client: false, kind: "mode" });
     }
     for (const p of projects()) {
-      if (!GAME_CATS.includes(p.category) || !["packaged", "upstream"].includes(p.source)) continue;
+      if (!["packaged", "upstream"].includes(p.source)) continue;
+      if (window.LeylineShelf ? window.LeylineShelf.group(p) !== "game" : !GAME_CATS.includes(p.category)) continue;   // a mod, in Game modes
       const s = side(p.id, p);
       out.push({ id: p.id, project: p, name: p.name, line: p.description || "", status: p.status === "coming" ? "coming" : "live",
         realm: s !== "client", addon: false, client: s !== "realm", kind: "mod" });
@@ -89,7 +90,7 @@
     const art = el("article", "mod-card dc-card gm-card");
     art.dataset.id = g.id;
     const thumb = typeof cardThumb === "function" ? cardThumb(g.project || { id: g.id, name: g.name, category: "sandbox" }) : el("div", "dc-thumb");
-    thumb.append(el("span", "dc-tag", g.kind === "mode" ? "Leyline Mode" : "Workshop mod"));
+    thumb.append(el("span", "dc-tag", g.kind === "mode" ? "Leyline Mode" : "Game mode"));
     const body = el("div", "dc-body");
     body.append(el("b", "name", g.name));
     const line = typeof firstLine === "function" ? firstLine(g.line) : g.line;
@@ -146,15 +147,17 @@
     return art;
   }
 
+  // Mods › Game modes in the full list: the Leyline Modes (they are not in the mods list), above the list's own game
+  // modes (app.js draws those as ordinary cards).
   function render() {
     const box = $("game-discover");
     if (!box) return;
-    const list = entries();
+    const list = entries().filter((g) => g.kind === "mode");
     const live = list.filter((g) => g.status === "live"), soon = list.filter((g) => g.status === "coming");
-    const kids = [el("p", "lede", "Mods that change how you play in game. Some need a realm that allows them: realms say which mods they use, and Leyline adds the ones your game needs when you join.")];
+    const kids = [el("h3", "gm-h", "Leyline Modes"), el("p", "lede", "Game modes that run on any realm with the Leyline realm scripts. Some need a realm that allows them: realms say which mods they use, and Leyline adds the ones your game needs when you join.")];
     const grid = el("div", "mod-grid dc-grid dc-big");
     for (const g of live) grid.append(card(g));
-    kids.push(live.length ? grid : el("p", "hint dc-empty", "No game mods are listed right now."));
+    kids.push(live.length ? grid : el("p", "hint dc-empty", "No Leyline Modes are listed right now."));
     if (soon.length) {
       kids.push(el("h3", "gm-h", "Coming"));
       const g2 = el("div", "mod-grid dc-grid dc-big");
@@ -231,7 +234,7 @@
       title: `${r.name} uses ${names.length === 1 ? names[0] : names.length + " mods your game doesn't have"}`,
       body: `This realm uses ${names.join(", ")}. Get them and play?`,
       list: names,
-      fine: "Leyline downloads them and checks every file first. Remove them any time in Mods › Installed.",
+      fine: "Leyline downloads them and checks every file first. Remove them any time in Mods & Addons › Installed.",
       yes: "Get them and play", no: "Play without them",
     });
     if (a === "cancel") return { go: false, leyline };

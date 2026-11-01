@@ -252,7 +252,7 @@ class HostOnWindows(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((st, doc), (200, {"realm_id": rid, "online": True}))
         page = await self.status_text(pid)
         self.assertRegex(page, r"Online(, listed|: joining the realm list)")
-        self.assertIn(f"https://play.openvanilla.app/wrath/r/{rid}", page)
+        self.assertIn(f"https://play.openvanilla.app/wrath/r/{rid[:8]}", page)   # the short link (8 letters), 31 Oct
         self.assertIn(f"https://relay.test/join/{rid}#{rec['invite_secret']}~{rec['host_secret']}", page)
         self.assertEqual(self.hf.load(pid)["realm_id"], rid)
 

@@ -27,6 +27,8 @@
 --                                                                    for this realm. The id: OV_LEYLINE_SELF_ID, else
 --                                                                    the host kit's host-realm.dat (ov_hostctl.lua)
 --                      N:<realms>:<players>:<bots>                   the network line (online now), before E
+--                      W:<title>:<by>:<line>                         Den of the week (leyline-fetch's den_week, from the
+--                                                                    site's home.json; stream/denweek.py), before E
 --                      E:<count>                                     the list is complete
 --                      U:Realm list unavailable                      the file is missing or unreadable
 --   client -> server   H:<id|wrath>                                  hop there (the window's Join / its home button)
@@ -90,7 +92,7 @@ end
 local DATA_WORDS = { ["return"] = true, ["true"] = true, ["false"] = true, updated = true, realms = true, id = true,
     name = true, ruleset = true, live = true, players = true, bots = true, score = true, up = true, build = true,
     region = true, est = true, lang = true, maxp = true, tags = true, featured = true, verified = true, new = true,
-    sample = true, official = true }
+    sample = true, official = true, den_week = true, title = true, by = true, line = true }
 local BUILDS = { [5875] = true, [8606] = true, [12340] = true, [15595] = true, [18414] = true }
 local REGIONS = { ["na-east"] = true, ["na-west"] = true, sa = true, eu = true, africa = true, me = true, asia = true,
     oce = true }
@@ -116,7 +118,17 @@ local function cleanLang(s)
     return nil
 end
 
-local cache = { at = -1e9, list = nil, updated = nil }
+local cache = { at = -1e9, list = nil, updated = nil, den = nil }
+
+-- Den of the week's words: one line, no colour codes, colons or bars (the message's separators), no brand words.
+local function denText(s, n)
+    if type(s) ~= "string" then return "" end
+    s = s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("[%z\1-\31\127|:]", " ")
+    for _, p in ipairs(BRANDS) do if s:find(p) then return "" end end
+    s = s:gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")
+    if #s > n then s = s:sub(1, n):gsub("[\128-\191]*$", ""):gsub("[\192-\255]$", "") end
+    return s
+end
 
 -- The file as { updated = epoch, realms = { {id, name, ruleset, live, players, bots}, ... } }, or nil.
 local function readFile()
@@ -157,16 +169,21 @@ local function readFile()
                 official = r.official == true and r.sample ~= true }
         end
     end
-    return list, count(doc.updated)
+    local den
+    if type(doc.den_week) == "table" then
+        local d = { title = denText(doc.den_week.title, 40), by = denText(doc.den_week.by, 24), line = denText(doc.den_week.line, 140) }
+        if d.title ~= "" and d.by ~= "" then den = d end
+    end
+    return list, count(doc.updated), den
 end
 
 local function realms()
     local t = os.time()
     if t - cache.at >= CACHE_SECONDS then
         cache.at = t
-        cache.list, cache.updated = readFile()
+        cache.list, cache.updated, cache.den = readFile()
     end
-    return cache.list, cache.updated
+    return cache.list, cache.updated, cache.den
 end
 
 local function isBot(p)
@@ -228,7 +245,7 @@ local function selfId()
 end
 
 local function sendList(player)
-    local list, updated = realms()
+    local list, updated, den = realms()
     if not list then return send(player, "U:" .. UNAVAILABLE) end
     local mine = selfId()
     local own
@@ -255,6 +272,7 @@ local function sendList(player)
         if r.live and not (r.sample and isSample) then n, p, b = n + 1, p + (r.players or 0), b + (r.bots or 0) end
     end
     send(player, string.format("N:%d:%d:%d", n, p, b))
+    if den then send(player, "W:" .. den.title .. ":" .. den.by .. ":" .. den.line) end
     send(player, "E:" .. (#list + 1))
 end
 

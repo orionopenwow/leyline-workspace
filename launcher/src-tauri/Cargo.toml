@@ -36,9 +36,15 @@ dirs = "5"
 ureq = { version = "2", default-features = false, features = ["tls"] }
 # Mods: reading zips (deflate only, no other codecs) and checking the catalog's sha256.
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# Source tarballs (.tar.gz) of pinned server software, checked inside like a zip (p2p/checker.rs). Already in the
+# tree through zip.
+flate2 = "1"
 sha2 = "0.10"
 # The Leyline mesh (src/p2p/mesh.rs): Ed25519 checks of signed realm records. Already in the tree through rustls.
 ring = "0.17"
+# Leyline's own updates from any source (update.rs verify_minisign): the same minisign check the updater plugin makes,
+# already in the tree through tauri-plugin-updater.
+minisign-verify = "0.3"
 # The torrent engine (feature torrent-engine): rustls like the rest, upload switchable off at run time.
 librqbit = { version = "9.1.0", default-features = false, features = ["rust-tls", "disable-upload"], optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"], optional = true }

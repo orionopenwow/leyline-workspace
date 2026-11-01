@@ -39,9 +39,10 @@
 /* signed in: the profile form on the left, the ways to sign in and Sign out beside it */
 .ac .ac-view.ac-two { max-width: 1060px; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
 .ac .ac-view.ac-two .ac-head { grid-column: 1 / -1; }
-.ac .ac-view.ac-two .ac-form { grid-column: 1; grid-row: 2 / span 2; }
-.ac .ac-view.ac-two .ac-ways { grid-column: 2; grid-row: 2; }
-.ac .ac-view.ac-two .ac-out { grid-column: 2; grid-row: 3; }
+.ac .ac-view.ac-two .ac-form { grid-column: 1; grid-row: 2 / span 3; }
+.ac .ac-view.ac-two .ac-key { grid-column: 2; grid-row: 2; }
+.ac .ac-view.ac-two .ac-ways { grid-column: 2; grid-row: 3; }
+.ac .ac-view.ac-two .ac-out { grid-column: 2; grid-row: 4; }
 @media (max-width: 1100px) { .ac .ac-view.ac-two { grid-template-columns: minmax(0, 1fr); max-width: 640px; }
   .ac .ac-view.ac-two > * { grid-column: 1 !important; grid-row: auto !important; } }
 .ac-card { padding: 18px 20px; }
@@ -264,3 +265,38 @@ html[data-base="light"] .ap-item:hover .ap-ic, html[data-base="light"] .ap-item:
   .ap-sec { padding: 10px 10px 8px; }
   .ap-acct { padding: 6px 10px 8px; }
 }
+
+/* Your Hero Key (owner 31 Oct 19:15): Get your Hero Key first in the chooser, the paste and password forms, and Manage
+   account's key card (hidden until Show; Save as text file, Copy; Make a new key asks first; the optional password) */
+.sf-way.sf-new { width: 100%; background: var(--t-accent); border-color: transparent; color: var(--t-on-accent); }
+.sf-way.sf-new:hover { background: var(--t-accent-strong); }
+.sf-way.sf-herokey { background: var(--t-raised); border-color: var(--t-border-strong); color: var(--t-text); }
+.sf-way.sf-herokey:hover { background: var(--t-raised); border-color: var(--t-accent); }
+.sf-way.sf-herokey[aria-expanded="true"] { border-color: var(--t-accent); }
+.sf-new-t { margin: 6px 0 0; }
+.sf-form { display: grid; gap: 6px; padding: 10px 12px; border-radius: var(--t-radius-sm); background: color-mix(in srgb, var(--t-bg) 55%, transparent);
+  border: var(--t-border-w) solid var(--t-border); }
+.sf-form .sf-fine { margin: 0; }
+.sf-label { font: 650 12.5px var(--t-font); color: var(--t-text); }
+.sf-form input { width: 100%; min-width: 0; box-sizing: border-box; padding: 8px 10px; border-radius: var(--t-radius-xs);
+  border: var(--t-border-w) solid var(--t-border-strong); background: var(--t-surface, var(--t-raised)); color: var(--t-text); font: 13.5px var(--t-font); }
+.sf-form input:focus-visible { outline: 2px solid var(--t-accent); outline-offset: 0; border-color: transparent; }
+.sf-form-row { display: flex; gap: 8px; align-items: center; }
+.sf-form-row input { flex: 1; }
+.sf-pwlink { display: block; margin: 10px auto 0; font-size: 12.5px; }
+.ac-key .hint { margin: 0 0 4px; }
+.ac-keybox { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; padding: 10px 12px; border-radius: var(--t-radius-sm);
+  background: color-mix(in srgb, var(--t-bg) 65%, transparent); border: var(--t-border-w) solid var(--t-border-strong); }
+.ac-keytext { flex: 1; min-width: 0; font: 600 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere;
+  color: var(--t-text); user-select: all; }
+.ac-keytext.dots { letter-spacing: .16em; color: var(--t-muted); user-select: none; }
+.ac-key-meta { margin: 6px 0 0; font-size: 12.5px; color: var(--t-muted); }
+.ac-key-meta b { color: var(--t-text-2); font-weight: 600; }
+.ac-key-new .ac-ask { flex: 1 1 100%; margin: 0; font-size: 13px; color: var(--t-warn); }
+.ac-key .status { margin: 6px 0 0; min-height: 1.2em; }
+.ac-pass { margin-top: 12px; border-top: var(--t-border-w) solid var(--t-border); padding-top: 10px; }
+.ac-pass summary { cursor: pointer; font: 650 13.5px var(--t-font); color: var(--t-text-2); }
+.ac-pass-f { display: grid; gap: 6px; margin-top: 8px; }
+.ac-pass-f input { width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: var(--t-radius-sm);
+  border: var(--t-border-w) solid var(--t-border-strong); background: color-mix(in srgb, var(--t-bg) 70%, transparent); color: var(--t-text); font: 14px var(--t-font); }
+.ac-pass-f input:focus-visible { outline: 2px solid var(--t-accent); outline-offset: 0; border-color: transparent; }

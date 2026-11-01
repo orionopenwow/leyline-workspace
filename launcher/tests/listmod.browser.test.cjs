@@ -103,6 +103,13 @@ test('List your mod: check a link, see what one click installs, list it', async 
   const plan = await page.$$eval('#lm-dlg .lm-plan li', (l) => l.map((x) => x.textContent));
   assert.match(plan[0], /fingerprint/);
   assert.match(plan[1], /Interface\/AddOns: Frames/);
+  // Addon or mod (docs/WORDS.md): Addon first, then Mod with the Mods tab's categories; an addon folder starts on Addon
+  assert.equal(await page.textContent('label[for="lm-cat"]'), 'Addon or mod');
+  assert.deepEqual(await page.$$eval('#lm-cat optgroup', (g) => g.map((x) => x.label)), ['Addon: an in-game interface helper', 'Mod: changes the game itself']);
+  assert.deepEqual(await page.$$eval('#lm-cat optgroup:first-child option', (o) => o.map((x) => x.value)), ['addons']);
+  assert.deepEqual(await page.$$eval('#lm-cat optgroup:last-child option', (o) => o.map((x) => x.value)),
+    ['sandbox', 'models', 'realm-scripts', 'graphics', 'audio', 'maps', 'tools'], 'in the Mods tab\'s order');
+  assert.equal(await page.inputValue('#lm-cat'), 'addons');
   await shot(page, 'listmod-check');
   await page.fill('#lm-desc', 'Unit frames, rebuilt for raids.');
   await page.click('#lm-dlg button:text-is("List it")');

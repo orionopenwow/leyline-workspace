@@ -358,6 +358,27 @@ class DataStep(Stubbed):
         self.assertNotEqual(r.returncode, 0)
 
 
+    def test_after_clean_no_upload_and_movement_maps_are_built(self):
+        st = os.path.join(self.root, "state")
+        os.makedirs(st, exist_ok=True)
+        for p in ("extract", "classicplus", "slice", "settings", "clean"):
+            with open(os.path.join(st, p + ".done"), "w") as f:
+                f.write("2026-10-31T00:00:00Z\n")
+        r = self.data("recv-status")
+        self.assertIn(b"cleaned\t", r.stdout)              # the PC side skips the 5 GB upload
+        r = self.data("check", "999999999")
+        self.assertIn(b"VR DATA CHECK OK", r.stdout)       # the archive size no longer counts
+        for d in ("maps", "vmaps"):
+            os.makedirs(os.path.join(self.st, "gd", d), exist_ok=True)
+            open(os.path.join(self.st, "gd", d, "0004331.map"), "w").close()
+        r = self.data("job")
+        out = r.stdout.decode()
+        self.assertIn("Movement maps (the world server needs them)", out)
+        self.assertIn("no CMaNGOS tools", out)             # the stub has no MoveMapGen: stops, nothing marked
+        self.assertFalse(os.path.exists(os.path.join(st, "mmaps.done")))
+        self.assertNotEqual(r.returncode, 0)
+
+
 class SiteStep(Stubbed):
     def setUp(self):
         super().setUp()

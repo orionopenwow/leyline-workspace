@@ -263,6 +263,17 @@ pub fn pubkey_ok(s: &str) -> bool {
 /// Parse and check latest.json. Platforms with a download outside this repo's releases, or without a
 /// signature, are refused (the whole manifest, so a half-bad one is never used).
 pub fn parse_manifest(text: &str) -> Result<Manifest, String> {
+    let m = parse_manifest_from(text, DOWNLOAD_PREFIX)?;
+    if let Some((k, a)) = m.platforms.iter().find(|(_, a)| !net::plain_https(&a.url)) {
+        return Err(format!("{k}: the download is not in this release ({})", a.url));
+    }
+    Ok(m)
+}
+
+/// The same checks for a manifest from any update source: every download under
+/// `<download_prefix><tag prefix><version>/` of that source (GitHub's releases, our mirror, a mirror the signed
+/// release log names). The prefix comes from this build (branding.json) or the release log, never from the reply.
+pub fn parse_manifest_from(text: &str, download_prefix: &str) -> Result<Manifest, String> {
     let m: Manifest = serde_json::from_str(text).map_err(|e| format!("not an update manifest: {e}"))?;
     if parse_version(&m.version).is_none() {
         return Err(format!("the manifest's version {:?} is not a version", m.version));
@@ -274,8 +285,8 @@ pub fn parse_manifest(text: &str) -> Result<Manifest, String> {
         if !k.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_')) {
             return Err(format!("odd platform name {k:?}"));
         }
-        let tag = format!("{DOWNLOAD_PREFIX}{TAG_PREFIX}{}/", m.version.trim_start_matches('v'));
-        if !a.url.starts_with(&tag) || !net::plain_https(&a.url) || a.url.contains("..") {
+        let tag = format!("{download_prefix}{TAG_PREFIX}{}/", m.version.trim_start_matches('v'));
+        if !a.url.starts_with(&tag) || a.url.contains("..") || a.url.chars().any(|c| c.is_whitespace() || c.is_control()) {
             return Err(format!("{k}: the download is not in this release ({})", a.url));
         }
         if !signature_ok(&a.signature) {
@@ -288,6 +299,152 @@ pub fn parse_manifest(text: &str) -> Result<Manifest, String> {
 /// The manifest's download for this platform, if it has one.
 pub fn asset_for<'a>(m: &'a Manifest, key: &str) -> Option<&'a PlatformAsset> {
     m.platforms.get(key)
+}
+
+// ------------------------------------------------------------------------------------------------ several sources
+
+/// One place an update can come from. Whatever it is, the download is installed only when its signature checks
+/// against the updater's public key (tauri.conf.json): a source can be down or wrong, it can't push a bad build.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Source {
+    /// Plain words for the Settings page: "GitHub", "our server", "mirror m.example.org".
+    pub name: String,
+    pub manifest_url: String,
+    /// Downloads in its manifest must be under `<download_prefix><tag prefix><version>/`.
+    pub download_prefix: String,
+    /// The manifest's sha256, when the signed release log names it.
+    pub manifest_sha256: Option<String>,
+    /// The version the manifest must say (GitHub: its release's tag; the release log: its entry).
+    pub expect_version: Option<String>,
+}
+
+fn host_of(u: &str) -> String {
+    net::origin(u).map(|o| o.split("://").nth(1).unwrap_or("").to_string()).unwrap_or_default()
+}
+
+/// The sources to try, in order: GitHub's release (when the release check found one), then our own mirrors
+/// (branding.json), then the mirrors the signed release log names for its newest launcher above `current`.
+pub fn sources(info: &UpdateInfo, mirrors: &[String], log: Option<&crate::releaselog::Chain>) -> Vec<Source> {
+    let mut out = Vec::new();
+    if let (true, Some(url)) = (info.newer, info.manifest_url.as_ref()) {
+        out.push(Source { name: "GitHub".into(), manifest_url: url.clone(), download_prefix: DOWNLOAD_PREFIX.into(), manifest_sha256: None, expect_version: info.latest.clone() });
+    }
+    for m in mirrors.iter().filter(|m| net::plain_https(m) && m.ends_with('/')) {
+        out.push(Source { name: format!("mirror {}", host_of(m)), manifest_url: format!("{m}{MANIFEST_NAME}"), download_prefix: m.clone(), manifest_sha256: None, expect_version: None });
+    }
+    if let Some(e) = log.and_then(|c| c.newest_launcher_above(&info.current)) {
+        let sha = e.files.iter().find(|f| f.name == MANIFEST_NAME).map(|f| f.sha256.clone());
+        for m in &e.mirrors {
+            let url = format!("{m}{TAG_PREFIX}{}/{MANIFEST_NAME}", e.version);
+            if out.iter().any(|s| s.manifest_url == url) {
+                continue;
+            }
+            out.push(Source { name: format!("release log, {}", host_of(m)), manifest_url: url, download_prefix: m.clone(), manifest_sha256: sha.clone(), expect_version: Some(e.version.clone()) });
+        }
+    }
+    out
+}
+
+/// A source whose manifest passed every check and offers a version above the running one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Candidate {
+    pub source: Source,
+    pub manifest: Manifest,
+}
+
+/// Fetch and check each source's manifest. Kept in source order: a source that is down, answers junk, names
+/// another version than it should, points its downloads elsewhere, or offers a version that is not above
+/// `current` (never a downgrade) is left out with a note.
+pub fn candidates(sources: &[Source], current: &str, platform: &str, fetch: &dyn Fn(&str) -> Result<Vec<u8>, String>) -> (Vec<Candidate>, Vec<String>) {
+    use sha2::{Digest, Sha256};
+    let (mut good, mut notes) = (Vec::new(), Vec::new());
+    for s in sources {
+        let r = (|| {
+            let body = fetch(&s.manifest_url)?;
+            if body.len() > 256 * 1024 {
+                return Err("the manifest is too big".to_string());
+            }
+            if let Some(want) = &s.manifest_sha256 {
+                if &net::hex(&Sha256::digest(&body)) != want {
+                    return Err("the manifest is not the one the release log names".into());
+                }
+            }
+            let m = parse_manifest_from(&String::from_utf8_lossy(&body), &s.download_prefix)?;
+            if let Some(v) = &s.expect_version {
+                if cmp_versions(&m.version, v) != Some(Ordering::Equal) {
+                    return Err(format!("the manifest says {} but this source is for {v}", m.version));
+                }
+            }
+            if !is_newer(&m.version, current) {
+                return Err(format!("{} is not newer than this Leyline ({current}): never installed", m.version));
+            }
+            if asset_for(&m, platform).is_none() {
+                return Err(format!("no download for {platform}"));
+            }
+            Ok(m)
+        })();
+        match r {
+            Ok(m) => good.push(Candidate { source: s.clone(), manifest: m }),
+            Err(e) => notes.push(format!("{}: {e}", s.name)),
+        }
+    }
+    (good, notes)
+}
+
+/// Try candidates in order until one works (`try_one`: download and check the signature). The first that works
+/// wins; every failure is noted.
+pub fn first_good<T>(cands: &[Candidate], mut try_one: impl FnMut(&Candidate) -> Result<T, String>) -> Result<(usize, T), Vec<String>> {
+    let mut notes = Vec::new();
+    for (i, c) in cands.iter().enumerate() {
+        match try_one(c) {
+            Ok(t) => return Ok((i, t)),
+            Err(e) => notes.push(format!("{}: {e}", c.source.name)),
+        }
+    }
+    Err(notes)
+}
+
+/// Standard base64 (with or without padding) to bytes.
+pub fn b64decode(s: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(s.len() * 3 / 4);
+    let (mut buf, mut bits) = (0u32, 0u32);
+    for c in s.trim().bytes() {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            b'=' => break,
+            b'\r' | b'\n' => continue,
+            _ => return None,
+        } as u32;
+        buf = (buf << 6) | v;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+            buf &= (1 << bits) - 1;
+        }
+    }
+    Some(out)
+}
+
+/// The updater's own check, here in Rust so it can be tested with fake sources and used for files that do not go
+/// through the updater plugin: `data` signed (minisign, as `tauri signer` makes it) by the key whose base64 public
+/// key file is `pubkey_b64`; `sig_b64` as latest.json carries it.
+pub fn verify_minisign(pubkey_b64: &str, data: &[u8], sig_b64: &str) -> Result<(), String> {
+    let pk_text = b64decode(pubkey_b64).and_then(|b| String::from_utf8(b).ok()).ok_or("the public key is not base64")?;
+    let sig_text = b64decode(sig_b64).and_then(|b| String::from_utf8(b).ok()).ok_or("the signature is not base64")?;
+    let pk = minisign_verify::PublicKey::decode(&pk_text).map_err(|e| format!("the public key is not a minisign key ({e})"))?;
+    let sig = minisign_verify::Signature::decode(&sig_text).map_err(|e| format!("not a minisign signature ({e})"))?;
+    pk.verify(data, &sig, false).map_err(|_| "the signature does not match: not installed".to_string())
+}
+
+/// The public key built into this app (tauri.conf.json `plugins.updater.pubkey`).
+pub fn built_in_pubkey() -> String {
+    let conf: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap_or(Value::Null);
+    conf["plugins"]["updater"]["pubkey"].as_str().unwrap_or("").to_string()
 }
 
 #[cfg(test)]
@@ -426,6 +583,181 @@ mod tests {
         assert!(parse_manifest(&good.replace("\"0.3.0\"", "\"three\"")).is_err());
         assert!(parse_manifest(r#"{"version":"0.3.0","platforms":{}}"#).unwrap_err().contains("no downloads"));
         assert!(parse_manifest("<html>").is_err());
+    }
+
+    // A minisign key and signatures made for these tests only (hosting-side generator: python cryptography +
+    // hashlib.blake2b, the minisign "ED" prehashed format the Tauri signer writes). Not the release key.
+    const TEST_PUB: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDA4MDcwNjA1MDQwMzAyMDEKUldRQkFnTUVCUVlIQ09wS2JHUGluRklLdnZWUWV4TXV4Zm1WUjNhdXZyNTdra0llNm1rVVJ0SXMK";
+    const TEST_SIG_GOOD: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRQkFnTUVCUVlIQ0YwWnFtcjkraVNlbkpua0ZNbjBEaFplSk0vcVJXMmVJWHF5K0xIRlhTbjdWOTNjQWR1QXhldTJBT05tUHBIK3VnN3pXQUJKMlNLTVF6ajl6M2czcXdrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzYxOTAwMDAwCWZpbGU6TGV5bGluZV8wLjkuMF94NjQtc2V0dXAuZXhlCjZOeTVKOXdxRFh0THBIS3lZWURxYXFzVkNyOGluUFUzajQ1eDF4cXBVREd5MmJwL1pqeW5BdnpOM3F0T2xDMzZvZllQR1lBbDZoMFpId0VQdkNjL0JBPT0K";
+    /// The same bundle signed by another key that carries the right key id: a mirror trying to push its own build.
+    const TEST_SIG_BAD: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRQkFnTUVCUVlIQ0wweTB1L0FERFh2NDdhUUhRQmRwU1JzZi9KTDlPL1czaFh6d0hobk41a1gyWlMxUVpUc3lKeUhKZ0NvcFgwUGZnM3dnY3RkaUlIWTdvMmJIaitaSVFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzYxOTAwMDAwCWZpbGU6TGV5bGluZV8wLjkuMF94NjQtc2V0dXAuZXhlCmh5YmR5MXU1bmprcnFxUlJmblFmU284VStpUEN1MkJmNS9nbk1CTzQvRXRTUWJKeGc2RnJMTDhOdHEyNGxnd1RuVFJocGhMMFRmaGx3cW1iazFocER3PT0K";
+
+    fn bundle() -> Vec<u8> {
+        b"LEYLINE TEST BUNDLE 0.9.0\n".repeat(40)
+    }
+
+    fn mirror_manifest(prefix: &str, version: &str, sig: &str) -> Vec<u8> {
+        json!({"version": version, "notes": "", "pub_date": "2026-10-31T12:00:00Z", "platforms": {
+            "windows-x86_64": {"signature": sig, "url": format!("{prefix}launcher-v{version}/Leyline_{version}_x64-setup.exe")},
+            "linux-x86_64": {"signature": sig, "url": format!("{prefix}launcher-v{version}/Leyline_{version}_amd64.AppImage")}}})
+        .to_string()
+        .into_bytes()
+    }
+    use serde_json::json;
+
+    #[test]
+    fn minisign_signatures_are_checked_here_as_the_updater_does() {
+        assert!(verify_minisign(TEST_PUB, &bundle(), TEST_SIG_GOOD).is_ok());
+        assert!(verify_minisign(TEST_PUB, &bundle(), TEST_SIG_BAD).unwrap_err().contains("does not match"));
+        let mut changed = bundle();
+        changed[3] ^= 1;
+        assert!(verify_minisign(TEST_PUB, &changed, TEST_SIG_GOOD).is_err(), "one changed byte");
+        assert!(verify_minisign("not base64!", &bundle(), TEST_SIG_GOOD).is_err());
+        // the real built-in key decodes as a minisign key (and does not verify a test signature)
+        let real = built_in_pubkey();
+        if pubkey_ok(&real) {
+            assert!(verify_minisign(&real, &bundle(), TEST_SIG_GOOD).is_err());
+            let txt = String::from_utf8(b64decode(&real).unwrap()).unwrap();
+            assert!(minisign_verify::PublicKey::decode(&txt).is_ok());
+        }
+        assert_eq!(b64decode("aGVsbG8=").unwrap(), b"hello");
+        assert_eq!(b64decode("aGVsbG8").unwrap(), b"hello");
+    }
+
+    #[test]
+    fn several_sources_one_down_one_bad_signature_one_good() {
+        // Three update sources: the first is down, the second serves a build whose signature is not ours, the third
+        // serves the real one. The update comes from the third; nothing from the second is ever accepted.
+        let dead = dead_url().replace("/x.json", "/");
+        // Build the servers so each manifest names its own address: bind first, then serve.
+        let (bad_base, bad_tx) = lazy_server();
+        let (good_base, good_tx) = lazy_server();
+        bad_tx.send(vec![
+            ("/r/latest.json".to_string(), mirror_manifest(&format!("{bad_base}/r/"), "0.9.0", TEST_SIG_BAD)),
+            ("/r/launcher-v0.9.0/Leyline_0.9.0_amd64.AppImage".to_string(), bundle()),
+            ("/r/launcher-v0.9.0/Leyline_0.9.0_x64-setup.exe".to_string(), bundle()),
+        ]).unwrap();
+        good_tx.send(vec![
+            ("/r/latest.json".to_string(), mirror_manifest(&format!("{good_base}/r/"), "0.9.0", TEST_SIG_GOOD)),
+            ("/r/launcher-v0.9.0/Leyline_0.9.0_amd64.AppImage".to_string(), bundle()),
+            ("/r/launcher-v0.9.0/Leyline_0.9.0_x64-setup.exe".to_string(), bundle()),
+        ]).unwrap();
+        let info = UpdateInfo { current: "0.3.1".into(), ..Default::default() };
+        let mirrors = vec![dead, format!("{bad_base}/r/"), format!("{good_base}/r/")];
+        let srcs: Vec<Source> = mirrors.iter().map(|m| Source { name: m.clone(), manifest_url: format!("{m}latest.json"), download_prefix: m.clone(), manifest_sha256: None, expect_version: None }).collect();
+        // (sources() itself only takes https mirrors; these test servers are plain http on 127.0.0.1)
+        assert!(sources(&info, &mirrors, None).is_empty());
+        let fetch = |u: &str| -> Result<Vec<u8>, String> {
+            let r = ureq::get(u).timeout(std::time::Duration::from_secs(5)).call().map_err(|e| e.to_string())?;
+            let mut v = Vec::new();
+            std::io::Read::read_to_end(&mut r.into_reader(), &mut v).map_err(|e| e.to_string())?;
+            Ok(v)
+        };
+        let (cands, notes) = candidates(&srcs, "0.3.1", "linux-x86_64", &fetch);
+        assert_eq!(cands.len(), 2, "{notes:?}");
+        assert_eq!(notes.len(), 1, "the dead one: {notes:?}");
+        let (i, bytes) = first_good(&cands, |c| {
+            let a = asset_for(&c.manifest, "linux-x86_64").unwrap();
+            let data = fetch(&a.url)?;
+            verify_minisign(TEST_PUB, &data, &a.signature)?;
+            Ok(data)
+        })
+        .unwrap();
+        assert_eq!(cands[i].source.download_prefix, format!("{good_base}/r/"), "the good mirror wins");
+        assert_eq!(bytes, bundle());
+        // only the bad one: nothing is installed
+        let only_bad = vec![cands[0].clone()];
+        assert!(first_good(&only_bad, |c| {
+            let a = asset_for(&c.manifest, "linux-x86_64").unwrap();
+            verify_minisign(TEST_PUB, &fetch(&a.url)?, &a.signature)
+        }).unwrap_err()[0].contains("does not match"));
+    }
+
+    /// A test server bound now, given its routes later (so a manifest can name the server's own address).
+    fn lazy_server() -> (String, std::sync::mpsc::Sender<Vec<(String, Vec<u8>)>>) {
+        use std::io::{Read, Write};
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://127.0.0.1:{}", l.local_addr().unwrap().port());
+        let (tx, rx) = std::sync::mpsc::channel::<Vec<(String, Vec<u8>)>>();
+        std::thread::spawn(move || {
+            let routes = rx.recv().unwrap();
+            for s in l.incoming() {
+                let Ok(mut s) = s else { continue };
+                let mut buf = vec![0u8; 4096];
+                let n = s.read(&mut buf).unwrap_or(0);
+                let head = String::from_utf8_lossy(&buf[..n]).to_string();
+                let path = head.split_whitespace().nth(1).unwrap_or("").to_string();
+                match routes.iter().find(|(p, _)| *p == path) {
+                    Some((_, body)) => {
+                        let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                        let _ = s.write_all(body);
+                    }
+                    None => {
+                        let _ = write!(s, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                    }
+                }
+            }
+        });
+        (base, tx)
+    }
+
+    #[test]
+    fn never_a_downgrade_and_never_another_sources_downloads() {
+        let p = "https://m.example.org/r/";
+        let fetch_with = |body: Vec<u8>| move |_: &str| -> Result<Vec<u8>, String> { Ok(body.clone()) };
+        let src = Source { name: "m".into(), manifest_url: format!("{p}latest.json"), download_prefix: p.into(), manifest_sha256: None, expect_version: None };
+        // an older or equal version than the running one is never a candidate
+        for v in ["0.3.0", "0.3.1", "0.3.1-beta.9"] {
+            let (c, n) = candidates(&[src.clone()], "0.3.1", "linux-x86_64", &fetch_with(mirror_manifest(p, v, TEST_SIG_GOOD)));
+            assert!(c.is_empty() && n[0].contains("never installed"), "{v}: {n:?}");
+        }
+        let (c, _) = candidates(&[src.clone()], "0.3.1", "linux-x86_64", &fetch_with(mirror_manifest(p, "0.3.2", TEST_SIG_GOOD)));
+        assert_eq!(c.len(), 1);
+        // a mirror whose manifest points its downloads somewhere else
+        let (c, n) = candidates(&[src.clone()], "0.3.1", "linux-x86_64", &fetch_with(mirror_manifest("https://evil.example.com/r/", "0.3.2", TEST_SIG_GOOD)));
+        assert!(c.is_empty() && n[0].contains("not in this release"), "{n:?}");
+        // a source for a given version that answers another
+        let mut s2 = src.clone();
+        s2.expect_version = Some("0.3.3".into());
+        let (c, n) = candidates(&[s2], "0.3.1", "linux-x86_64", &fetch_with(mirror_manifest(p, "0.3.2", TEST_SIG_GOOD)));
+        assert!(c.is_empty() && n[0].contains("this source is for 0.3.3"), "{n:?}");
+        // a manifest the release log names by hash, and one it does not
+        let body = mirror_manifest(p, "0.3.2", TEST_SIG_GOOD);
+        let mut s3 = src.clone();
+        s3.manifest_sha256 = Some(net::hex(&<sha2::Sha256 as sha2::Digest>::digest(&body)));
+        assert_eq!(candidates(&[s3.clone()], "0.3.1", "linux-x86_64", &fetch_with(body.clone())).0.len(), 1);
+        let (c, n) = candidates(&[s3], "0.3.1", "linux-x86_64", &fetch_with(mirror_manifest(p, "0.3.2", TEST_SIG_BAD)));
+        assert!(c.is_empty() && n[0].contains("release log"), "{n:?}");
+        // no download for this PC
+        let (c, n) = candidates(&[src], "0.3.1", "darwin-aarch64", &fetch_with(mirror_manifest(p, "0.3.2", TEST_SIG_GOOD)));
+        assert!(c.is_empty() && n[0].contains("no download"), "{n:?}");
+    }
+
+    #[test]
+    fn the_sources_in_order() {
+        let m = "https://m.example.org/r/";
+        let log = crate::releaselog::verify(
+            &crate::releaselog::tests::launcher_chain(crate::releaselog::tests::DEV_TEST_SEED, &["0.3.4", "0.3.5"], "https://peer.example.net/leyline/"),
+            &crate::releaselog::tests::pub_hex(crate::releaselog::tests::DEV_TEST_SEED),
+        )
+        .unwrap();
+        let info = UpdateInfo { current: "0.3.1".into(), newer: true, latest: Some("0.3.5".into()),
+            manifest_url: Some("https://github.com/orionopenwow/Leyline/releases/download/launcher-v0.3.5/latest.json".into()), ..Default::default() };
+        let s = sources(&info, &[m.to_string(), "http://plain.example.org/".into()], Some(&log));
+        let names: Vec<&str> = s.iter().map(|x| x.name.as_str()).collect();
+        assert_eq!(names, ["GitHub", "mirror m.example.org", "release log, peer.example.net"]);
+        assert_eq!(s[0].expect_version.as_deref(), Some("0.3.5"));
+        assert_eq!(s[1].manifest_url, "https://m.example.org/r/latest.json");
+        assert_eq!(s[2].manifest_url, "https://peer.example.net/leyline/launcher-v0.3.5/latest.json");
+        assert_eq!(s[2].manifest_sha256.as_deref(), Some("cd".repeat(32).as_str()));
+        // GitHub down (no release found): our mirror and the log still offer the update
+        let off = UpdateInfo { current: "0.3.1".into(), error: Some("offline".into()), ..Default::default() };
+        assert_eq!(sources(&off, &[m.to_string()], Some(&log)).len(), 2);
+        // nothing above the running version in the log: no log source
+        let new = UpdateInfo { current: "0.3.5".into(), ..Default::default() };
+        assert_eq!(sources(&new, &[], Some(&log)).len(), 0);
+        // the shipped mirrors are all https folders
+        assert!(crate::branding::get().updates.mirrors.iter().all(|m| net::plain_https(m) && m.ends_with('/')));
     }
 
     #[test]

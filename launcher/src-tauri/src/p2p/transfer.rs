@@ -26,6 +26,8 @@ pub enum Kind {
     ThemePack,
     HostPack,
     LauncherUpdate,
+    /// A file the signed release log names, fetched for "Help share Leyline's own files" (`p2p::share`).
+    SharedFile,
 }
 
 /// What to fetch. `sha256` is required: an unhashed download is never accepted.

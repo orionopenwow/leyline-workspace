@@ -20,6 +20,9 @@ small Lua data file next to the realm scripts, atomically:
     --from FILE          read a listing from a local JSON file instead (tests)
 
 On any failure the old file is left as it is (the window shows its age) and the exit code is 1.
+Den of the week (stream/denweek.py, staff pick it in HQ) rides in the site's home.json as "den_week"; its name, maker
+and one line go into the file too (OV_LEYLINE_HOME_JSON, default https://play.openvanilla.app/wrath/art/home/home.json;
+"" = skip; never fails the run): den_week = { title = "...", by = "...", line = "..." } before realms.
 The file holds only: return { updated = N, realms = { { id = "...", name = "...", ruleset = "...",
 live = true, players = N, bots = N, score = N, up = N, build = N, region = "...", est = true, lang = "...",
 maxp = N, tags = "pvp,rp", featured = true, verified = true, new = true, sample = true }, ... } } (the fields after
@@ -111,7 +114,36 @@ def vr_id():
     return id_from("OV_LEYLINE_VR", VR_FILE)
 
 
-def render(doc, now, home=None, vr=None) -> str:
+HOME_JSON = os.environ.get("OV_LEYLINE_HOME_JSON", "https://play.openvanilla.app/wrath/art/home/home.json")
+
+
+def den_week(doc):
+    """home.json's den_week as {title, by, line}: short, one line, no brand words, no colons or bars; None for none."""
+    d = doc.get("den_week") if isinstance(doc, dict) else None
+    if not isinstance(d, dict):
+        return None
+    out = {}
+    for k, n in (("title", 40), ("by", 24), ("line", 140)):
+        v = d.get(k)
+        v = re.sub(r"\s+", " ", re.sub(r"[\x00-\x1f\x7f|:]", " ", v)).strip()[:n].strip() if isinstance(v, str) else ""
+        out[k] = "" if BRANDS.search(v) else v
+    return out if out["title"] and out["by"] else None
+
+
+def fetch_den_week():
+    """The Den of the week from the site, or None (no address, the site down, nothing picked). Never raises."""
+    if not HOME_JSON:
+        return None
+    try:
+        req = urllib.request.Request(HOME_JSON, headers={"Accept": "application/json", "User-Agent": "leyline-fetch"})
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+            raw = r.read(64_001)
+        return den_week(json.loads(raw.decode("utf-8"))) if len(raw) <= 64_000 else None
+    except Exception:  # noqa: BLE001 - the realm list matters more
+        return None
+
+
+def render(doc, now, home=None, vr=None, den=None) -> str:
     recs = doc.get("realms") if isinstance(doc, dict) else None
     if not isinstance(recs, list):
         raise ValueError("not a listing")
@@ -140,7 +172,9 @@ def render(doc, now, home=None, vr=None) -> str:
         f += [f"{k} = {lua_str(r[k])}" for k in ("region", "lang", "tags") if r[k]]
         f += [f"{k} = true" for k in ("est", "featured", "verified", "new", "sample", "official") if r.get(k)]
         lines.append("  { " + ", ".join(f) + " },")
-    return f"return {{ updated = {int(now)}, realms = {{\n" + "\n".join(lines) + "\n} }\n"
+    dw = (f'den_week = {{ title = {lua_str(den["title"])}, by = {lua_str(den["by"])}, line = {lua_str(den["line"])} }}, '
+          if den else "")
+    return f"return {{ updated = {int(now)}, {dw}realms = {{\n" + "\n".join(lines) + "\n} }\n"
 
 
 def main(argv):
@@ -164,7 +198,7 @@ def main(argv):
             raise last or ValueError("no listing")
     if len(raw) > MAX_BYTES:
         raise ValueError("listing too large")
-    text = render(json.loads(raw.decode("utf-8")), time.time(), home_id(), vr_id())
+    text = render(json.loads(raw.decode("utf-8")), time.time(), home_id(), vr_id(), None if len(argv) == 3 else fetch_den_week())
     d = os.path.dirname(os.path.abspath(OUT))
     fd, tmp = tempfile.mkstemp(dir=d, prefix=".leyline-")
     try:

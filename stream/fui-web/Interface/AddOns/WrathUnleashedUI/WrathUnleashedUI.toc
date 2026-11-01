@@ -12,6 +12,7 @@ Collections.lua
 BarLayout.lua
 Builder.lua
 EditMode.lua
+DenHome.lua
 Golf.lua
 ModeAPI.lua
 Modes.lua

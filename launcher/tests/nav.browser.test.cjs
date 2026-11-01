@@ -74,7 +74,7 @@ const where = (page) => page.evaluate(() => ({
 test('the side menu matches the website, with the same line icons', async () => {
   const { page, ctx, errors } = await open();
   const items = await page.$$eval('aside nav .nav', (b) => b.map((x) => [x.dataset.page, x.textContent.trim().replace(/\d+$/, '')]));
-  assert.deepEqual(items, [['play', 'Home'], ['realms', 'Realms'], ['mods', 'Mods'], ['host', 'Host'], ['forum', 'Forum'], ['news', 'News']]);
+  assert.deepEqual(items, [['play', 'Home'], ['realms', 'Realms'], ['mods', 'Mods & Addons'], ['host', 'Host'], ['forum', 'Forum'], ['news', 'News']]);
   assert.equal(await page.locator('aside nav .nav svg').count(), 6, 'each with its line icon');
   const foot = await page.$$eval('.side-foot .nav:not([hidden])', (b) => b.map((x) => x.dataset.page));
   assert.deepEqual(foot, ['settings', 'agents', 'help']);
@@ -92,17 +92,21 @@ test('the side menu matches the website, with the same line icons', async () => 
   await ctx.close();
 });
 
-test('Mods: Installed and Discover tabs; the Forum (no tabs, no Friends); the arrow keys', async () => {
+test('Mods & Addons: Installed and Discover tabs, each with Mods | Addons; the Forum (no tabs, no Friends); the arrow keys', async () => {
   const { page, ctx, errors } = await open();
   await page.click('.nav[data-page="mods"]');
   assert.deepEqual(await where(page), { nav: ['mods'], page: ['page-mods'], panes: ['pane-installed'] });
+  assert.equal(await page.textContent('#page-mods h2'), 'Mods & Addons');
+  assert.deepEqual(await page.$$eval('#inst-tabs .ly-tab', (b) => b.map((x) => x.textContent.replace(/\d+$/, ''))), ['Mods', 'Addons'], 'Installed is split too');
+  await page.click('#inst-tabs .ly-tab[data-shelf="addons"]');
+  assert.equal(await page.getAttribute('#pane-installed', 'data-shelf'), 'addons');
+  assert.equal(await page.textContent('#mods-find'), 'Find addons');
   await page.click('#tab-mods-discover');
   assert.deepEqual((await where(page)).panes, ['pane-discover']);
   assert.ok(await page.evaluate(() => window.__calls.some(([c]) => c === 'mods_catalog')), 'Discover loads the Workshop');
-  // the Discover features are all there: the Themes sub-tab, the Sort and Show menus
-  assert.deepEqual(await page.$$eval('#discover-tabs .ly-tab', (b) => b.map((x) => x.textContent)), ['Mods', 'Game mods', 'Themes']);
+  // the Discover features are all there: the Mods | Addons | Themes tabs, the Sort menu
+  assert.deepEqual(await page.$$eval('#discover-tabs .ly-tab', (b) => b.map((x) => x.textContent)), ['Mods', 'Addons', 'Themes']);
   assert.deepEqual(await page.$$eval('#cat-sort option', (o) => o.map((x) => x.textContent)), ['Hot', 'Rising', 'Top rated', 'Most installed', 'This month', 'New', 'Updated']);
-  assert.equal(await page.$$eval('#cat-cat option', (o) => o[0].textContent.replace(/ \(\d+\)$/, '')), 'All');
   await page.click('#discover-tabs [data-tab="themes"]');
   assert.ok(await page.isVisible('#themes-discover'));
   await page.click('#discover-tabs [data-tab="mods"]');
@@ -111,9 +115,10 @@ test('Mods: Installed and Discover tabs; the Forum (no tabs, no Friends); the ar
   await page.keyboard.press('ArrowRight');
   assert.deepEqual((await where(page)).panes, ['pane-installed']);
   assert.equal(await page.evaluate(() => document.activeElement.id), 'tab-mods-installed');
-  // FIND MODS on Installed goes to Discover
+  // FIND ADDONS on Installed › Addons goes to Discover › Addons
   await page.click('#pane-installed [data-page-go="discover"]');
   assert.deepEqual((await where(page)).panes, ['pane-discover']);
+  assert.equal(await page.getAttribute('#pane-discover', 'data-tab'), 'addons');
   // a page remembers its last tab
   await page.click('.nav[data-page="forum"]');
   assert.deepEqual(await where(page), { nav: ['forum'], page: ['page-forum'], panes: [] });

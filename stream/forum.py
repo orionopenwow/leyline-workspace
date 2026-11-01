@@ -1419,6 +1419,8 @@ def api_post(h, sub: str) -> None:
 def post(h, path: str) -> None:
     if store is not None and path == API + "/discord/interactions" and _fd is not None:
         return _fd.interactions_http(_ME, h)
+    if store is not None and path == API + "/discord/group" and _fd is not None:   # Find a group (stream/discord_growth.py)
+        return _fd.group_http(_ME, h)
     if store is not None and path.startswith(API + "/"):
         return api_post(h, path[len(API):].strip("/"))
     if store is None or path == API or path.startswith(API + "/"):

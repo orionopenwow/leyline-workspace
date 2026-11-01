@@ -280,9 +280,12 @@ test('the rows below the fold: realms, mods, modes, news and hosting, each landi
   assert.ok(await page.isVisible('#home-cue'), 'More below');
 
   const names = (id) => page.$$eval(`#${id}-row .hm-name`, (n) => n.map((x) => x.textContent));
-  assert.deepEqual(await names('hm-realms'), ['Wrath Unleashed', 'Busy Den', 'Old Keep', 'Quiet Glade'], 'live realms, no hidden builds, four at most');
+  // Live now (realmlink.js): player realms only, by players then uptime, no hidden builds, four at most, each with Play
+  assert.deepEqual(await names('hm-realms'), ['Busy Den', 'Old Keep', 'Fifth Live', 'Quiet Glade'], 'live player realms, no hidden builds, four at most');
   assert.deepEqual(await page.$$eval('#hm-realms-row .hm-card', (c) => c.map((x) => [x.querySelector('.rl-ver').textContent, x.querySelector('.hm-line').textContent])),
-    [['3.3.5a', '5 playing'], ['3.3.5a', '30 playing'], ['1.12.1', '3 playing'], ['3.3.5a', 'Online']]);
+    [['3.3.5a', '30 playing'], ['1.12.1', '3 playing'], ['3.3.5a', '1 playing'], ['3.3.5a', 'Online']]);
+  assert.equal(await page.locator('#hm-realms-row .hm-card .hm-play').count(), 4, 'each with Play');
+  assert.deepEqual(await names('hm-new'), ['Busy Den'], 'New this week: new on the list, players now');
   assert.deepEqual(await names('hm-mods'), ['Better Bars', 'Map Plus', 'One Bag', 'Fifth Mod'], 'packaged first, four at most');
   assert.equal(await page.textContent('#hm-mods-row .hm-card .hm-line'), 'Interface');
   assert.equal(await page.locator('#hm-modes-row .hm-card').count(), 4);
@@ -294,9 +297,6 @@ test('the rows below the fold: realms, mods, modes, news and hosting, each landi
   await page.click('#home-cue');
   await page.waitForFunction(() => document.querySelector('main').scrollTop > 100);
   const back = () => page.evaluate(() => window.LeylineNav.show('play'));
-  await page.click('#hm-realms-row .hm-card >> nth=1');
-  assert.equal((await where(page)).page, 'page-realms');
-  await back();
   await page.click('#hm-mods-row .hm-card >> nth=0');
   assert.deepEqual(await where(page), { page: 'page-mods', panes: ['pane-discover'] });
   await back();
@@ -319,13 +319,14 @@ test('the rows below the fold: realms, mods, modes, news and hosting, each landi
   await ctx.close();
 });
 
-test('rows without data stay hidden; Host your own is always there', async () => {
+test('rows without data stay hidden (Live now and New this week say so in words); Host your own is always there', async () => {
   const { page, ctx, errors } = await open({ empty: true, ms: 600000 });
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'realms_list') && window.__calls.some(([c]) => c === 'modes_list'));
   await page.waitForTimeout(200);
-  const hidden = await page.evaluate(() => ['hm-realms', 'hm-mods', 'hm-modes', 'hm-news', 'hm-host'].map((id) => document.getElementById(id).hidden));
-  assert.deepEqual(hidden, [true, true, true, false, false], 'only News (built in) and Host your own');
+  const hidden = await page.evaluate(() => ['hm-realms', 'hm-new', 'hm-mods', 'hm-modes', 'hm-news', 'hm-host'].map((id) => document.getElementById(id).hidden));
+  assert.deepEqual(hidden, [false, false, true, true, false, false], 'the realm rows with their empty line, News (built in) and Host your own');
   assert.equal(await page.locator('#hm-realms-row .hm-card').count(), 0);
+  assert.equal(await page.textContent('#hm-realms-row'), 'No player realms are up right now. Check back soon, or host your own.');
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -430,6 +431,39 @@ test('the Den slide opens the Host page with the Den picked; the Workshop slide 
   assert.deepEqual(await where(page), { page: 'page-mods', panes: ['pane-discover'] });
   assert.deepEqual(errors, []);
   await ctx.close();
+});
+
+test('Den of the week: from the site\'s home.json, as text; Visit shows a leyline:// Den on Realms, else the website', async () => {
+  const pick = { title: 'Mossy <b>Hollow</b>', by: 'Ana', line: 'A cottage by a moonwell pond.',
+    shots: ['https://i.example.org/a.png', 'javascript:alert(1)', 'https://i.example.org/b.png'], visit: 'leyline://realm/abcdefghijk2345a' };
+  const { page, ctx, errors } = await open({ ms: 600000, homeArt: { slides: {}, den_week: pick } });
+  await page.waitForFunction(() => window.LeylineHome.slides().includes('denweek'));
+  const s = page.locator('.hero-slide[data-key="denweek"]');
+  assert.equal(await s.locator('h2, .hs-title').first().textContent(), 'Mossy <b>Hollow</b>', 'shown as text, never HTML');
+  assert.equal(await s.locator('b:text("Hollow")').count(), 0);
+  assert.match(await s.textContent(), /Den of the week/);
+  assert.match(await s.textContent(), /by Ana\. A cottage by a moonwell pond\./);
+  assert.deepEqual(await s.locator('.hs-steps .hs-st-t i').allTextContents(), ['Ana', '2 on the website', 'Opens it on Realms']);
+  assert.equal(await s.locator('img').count(), 0, 'no screenshot shown as a picture');
+  await showKey(page, 'denweek');
+  if (process.env.SHOT_DIR) await page.screenshot({ path: path.join(process.env.SHOT_DIR, 'den-week-home.png') });
+  await s.locator('.hs-go').click();
+  assert.equal((await where(page)).page, 'page-realms');
+  await page.evaluate(() => window.LeylineNav.show('play'));
+  await showKey(page, 'denweek');
+  await s.locator('.hs-go2').click();
+  assert.ok(await page.evaluate(() => window.__calls.some(([c, a]) => c === 'open_link' && a.name === 'account')));
+  assert.deepEqual(errors, []);
+  await ctx.close();
+
+  const bad = await open({ ms: 600000, homeArt: { slides: {}, den_week: { title: '', by: 'Ana' } } });
+  await bad.page.waitForTimeout(400);
+  assert.ok(!(await bad.page.evaluate(() => window.LeylineHome.slides())).includes('denweek'), 'no name: no slide');
+  await bad.ctx.close();
+  const web = await open({ ms: 600000, homeArt: { slides: {}, den_week: { title: 'Keep', by: 'Bo', visit: 'https://relay.example.org/join/x' } } });
+  await web.page.waitForFunction(() => window.LeylineHome.slides().includes('denweek'));
+  assert.equal(await web.page.locator('.hero-slide[data-key="denweek"] .hs-go').textContent(), 'See it on the website');
+  await web.ctx.close();
 });
 
 test('every slide fits at 1100 px and 1400 px: words, panel and picture apart, nothing off the slide; motion only when allowed', async () => {

@@ -28,6 +28,8 @@ had_modes=""
 if [ -f "$WU/portal/modes.py" ]; then cp -p "$WU/portal/modes.py" "$BK/"; [ ! -f "$WU/portal/modes_data.py" ] || cp -p "$WU/portal/modes_data.py" "$BK/"; had_modes=1; fi
 had_play=""
 if [ -f "$WU/portal/playmodes.py" ]; then cp -p "$WU/portal/playmodes.py" "$BK/"; [ ! -f "$WU/portal/playmodes.json" ] || cp -p "$WU/portal/playmodes.json" "$BK/"; had_play=1; fi
+had_mpk=""
+if [ -f "$WU/portal/modepack.py" ]; then cp -p "$WU/portal/modepack.py" "$BK/"; [ ! -f "$WU/portal/modepacks.json" ] || cp -p "$WU/portal/modepacks.json" "$BK/"; had_mpk=1; fi
 had_workshop=""
 if [ -f "$WU/portal/workshop.py" ]; then cp -p "$WU/portal/workshop.py" "$BK/workshop.py"; had_workshop=1; fi
 had_creations=""
@@ -53,10 +55,14 @@ had_forum=""
 if [ -f "$WU/portal/forum.py" ]; then cp -p "$WU/portal/forum.py" "$BK/forum.py"; had_forum=1; fi
 rm -f "$BK/forum_discord.py"
 [ ! -f "$WU/portal/forum_discord.py" ] || cp -p "$WU/portal/forum_discord.py" "$BK/forum_discord.py"
+rm -f "$BK/discord_growth.py" "$BK/discord_template.json"
+for f in discord_growth.py discord_template.json; do [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
 had_duels=""
 if [ -f "$WU/portal/duels.py" ]; then cp -p "$WU/portal/duels.py" "$BK/duels.py"; had_duels=1; fi
 had_profiles=""
 if [ -f "$WU/portal/profiles.py" ]; then cp -p "$WU/portal/profiles.py" "$BK/profiles.py"; had_profiles=1; fi
+had_herokeys=""
+if [ -f "$WU/portal/herokeys.py" ]; then cp -p "$WU/portal/herokeys.py" "$BK/herokeys.py"; had_herokeys=1; fi
 had_network=""
 if [ -f "$WU/portal/network.py" ]; then cp -p "$WU/portal/network.py" "$BK/network.py"; had_network=1; fi
 had_admin=""
@@ -81,6 +87,8 @@ put_back() {
   else rm -f "$WU/portal/modes.py" "$WU/portal/modes_data.py"; fi
   if [ -n "$had_play" ]; then cp -p "$BK/playmodes.py" "$WU/portal/playmodes.py"; [ ! -f "$BK/playmodes.json" ] || cp -p "$BK/playmodes.json" "$WU/portal/playmodes.json"
   else rm -f "$WU/portal/playmodes.py" "$WU/portal/playmodes.json"; fi
+  if [ -n "$had_mpk" ]; then cp -p "$BK/modepack.py" "$WU/portal/modepack.py"; [ ! -f "$BK/modepacks.json" ] || cp -p "$BK/modepacks.json" "$WU/portal/modepacks.json"
+  else rm -f "$WU/portal/modepack.py" "$WU/portal/modepacks.json"; fi
   if [ -n "$had_workshop" ]; then cp -p "$BK/workshop.py" "$WU/portal/workshop.py"; else rm -f "$WU/portal/workshop.py"; fi
   if [ -n "$had_creations" ]; then cp -p "$BK/creations.py" "$WU/portal/creations.py"; else rm -f "$WU/portal/creations.py"; fi
   if [ -n "$had_docs" ]; then cp -p "$BK/docs.py" "$WU/portal/docs.py"; else rm -f "$WU/portal/docs.py"; fi
@@ -96,8 +104,10 @@ put_back() {
   done
   if [ -n "$had_forum" ]; then cp -p "$BK/forum.py" "$WU/portal/forum.py"; else rm -f "$WU/portal/forum.py"; fi
   if [ -f "$BK/forum_discord.py" ]; then cp -p "$BK/forum_discord.py" "$WU/portal/forum_discord.py"; else rm -f "$WU/portal/forum_discord.py"; fi
+  for f in discord_growth.py discord_template.json; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
   if [ -n "$had_duels" ]; then cp -p "$BK/duels.py" "$WU/portal/duels.py"; else rm -f "$WU/portal/duels.py"; fi
   if [ -n "$had_profiles" ]; then cp -p "$BK/profiles.py" "$WU/portal/profiles.py"; else rm -f "$WU/portal/profiles.py"; fi
+  if [ -n "$had_herokeys" ]; then cp -p "$BK/herokeys.py" "$WU/portal/herokeys.py"; else rm -f "$WU/portal/herokeys.py"; fi
   if [ -n "$had_network" ]; then cp -p "$BK/network.py" "$WU/portal/network.py"; else rm -f "$WU/portal/network.py"; fi
   if [ -n "$had_admin" ]; then cp -p "$BK/admin.py" "$WU/portal/admin.py"; [ ! -f "$BK/wu-mod.py" ] || cp -p "$BK/wu-mod.py" "$WU/portal/"
     if [ -f "$BK/hq.py" ]; then cp -p "$BK/hq.py" "$WU/portal/hq.py"; else rm -f "$WU/portal/hq.py"; fi
@@ -127,6 +137,11 @@ fi
 if [ -f playmodes.py ] && [ -f playmodes.json ]; then
   python3 -I -c 'import ast,sys,json;ast.parse(open(sys.argv[1]).read());json.load(open(sys.argv[2]))' playmodes.py playmodes.json \
     && python3 -I playmodes.py --check playmodes.json >/dev/null && install -m 644 playmodes.py playmodes.json "$WU/portal/"
+fi
+# modes anyone can host and fork (/wrath/modes/<id>, /wrath/modes/jam): modepack.py and its catalog, optional, always as a pair
+if [ -f modepack.py ] && [ -f modepacks.json ]; then
+  python3 -I -c 'import ast,sys,json;ast.parse(open(sys.argv[1]).read());json.load(open(sys.argv[2]))' modepack.py modepacks.json \
+    && install -m 644 modepack.py modepacks.json "$WU/portal/"
 fi
 # the guest pass (demo.py): off unless portal.env has WU_GUEST_DEMO=1
 if [ -f demo.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' demo.py && install -m 644 demo.py "$WU/portal/demo.py"; fi
@@ -188,12 +203,20 @@ if [ -f forum.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1
 # the forum's Discord link (stream/forum_discord.py): loaded by forum.py, OFF until portal.env has WU_FORUM_DISCORD=1, the
 # bot token and the channel ids (docs/FORUM.md, "The Discord link"); its tables live in forum.sqlite3
 if [ -f forum.py ] && [ -f forum_discord.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' forum_discord.py && install -m 644 forum_discord.py "$WU/portal/forum_discord.py"; fi
+# the Discord bot's growth side (stream/discord_growth.py + discord_template.json): loaded by forum_discord.py; setup,
+# live realms, Find a group, roles and AutoMod are each OFF until portal.env turns them on (docs/DISCORD.md)
+if [ -f forum_discord.py ] && [ -f discord_growth.py ] && [ -f discord_template.json ]; then
+  python3 -I -c 'import ast,sys,json;ast.parse(open(sys.argv[1]).read());json.load(open(sys.argv[2]))' discord_growth.py discord_template.json \
+    && install -m 644 discord_growth.py discord_template.json "$WU/portal/"
+fi
 # the duel leaderboards (/wrath/leaderboards, /wrath/api/leaderboards): optional; it reads $WU/portal/duels/, which
 # duels-export.py fills (realm/serverpass.sh step 1d)
 if [ -f duels.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' duels.py && install -m 644 duels.py "$WU/portal/duels.py"; fi
 # Leyline profiles and the sign-in chooser (/wrath/signin, /wrath/profile, /wrath/avatar): optional; its store is
 # $WU/portal-data/profiles.sqlite3
 if [ -f profiles.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' profiles.py && install -m 644 profiles.py "$WU/portal/profiles.py"; fi
+# Your Hero Key (/wrath/key; the launcher's Get your Hero Key): optional; its store is $WU/portal-data/herokeys.sqlite3
+if [ -f herokeys.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' herokeys.py && install -m 644 herokeys.py "$WU/portal/herokeys.py"; fi
 # the Leyline network (/wrath/realms in the network's order, /wrath/realms.json, realm reports): optional; its reports
 # live in $WU/portal-data/network (/data/network)
 if [ -f network.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' network.py && install -m 644 network.py "$WU/portal/network.py"; fi
@@ -324,6 +347,33 @@ else
   echo "  streaming is off (no streaming block): nothing to change; stream-up.sh adds it next time"
 fi
 
+echo "== Caddy: the website's own Hero Key page opens the Leyline one (/account/key -> /wrath/key)"
+if [ -f "$WU/portal/herokeys.py" ] && ! grep -q "leyline-herokey-page" "$CF"; then
+  cp -p "$CF" "$BK/Caddyfile.hk"
+  if python3 -I - "$CF" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+anchor = "\thandle {\n\t\treverse_proxy ovlive-realm:8090"
+if anchor not in s:
+    print("  the site block has no catch-all handle for the website: left as it is"); sys.exit(3)
+add = ("\t# leyline-herokey-page: Your Hero Key is the Leyline page (stream/herokeys.py); the website's forms stay its own\n"
+       "\t@hkpage {\n\t\tmethod GET\n\t\tpath /account/key\n\t}\n"
+       "\tredir @hkpage /wrath/key?{query} 302\n")
+s = s.replace(anchor, add + anchor, 1)
+open(p, "w").write(s)
+print("  added")
+PY
+  then
+    if ! caddy_reload; then
+      cat "$BK/Caddyfile.hk" > "$CF"; caddy_reload || true
+      echo "  WARNING: Caddy refused the Hero Key redirect; the old Caddyfile is back (the new page still works at /wrath/key)"
+    fi
+  fi
+else
+  echo "  already there (or herokeys.py isn't installed)"
+fi
+
 echo "== check"
 sleep 2
 c1=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://wrath.openvanilla.app/warm.html || true)
@@ -352,6 +402,8 @@ c11p=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app
 echo "  /wrath/avatar/p/star.svg    Leyline profiles and sign-in (200 = on): $c11p"
 c11=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/admin || true)
 echo "  /wrath/admin Admin Console (302 to sign-in = on): $c11"
+c11k=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -m 20 https://play.openvanilla.app/account/key || true)
+echo "  /account/key (302 to /wrath/key = the Leyline Hero Key page): $c11k"
 c12=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/leyline-preview || true)
 echo "  /wrath/leyline-preview hidden hub (200 = on): $c12"
 echo "  warm.html (public): $c1   /data (must stay gated, 302/401/403): $c2   /wrath signed out (200 = saved-key page): $c3"

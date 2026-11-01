@@ -25,6 +25,8 @@ if exist armory.py set "LINKS=%LINKS% armory.py"
 if exist modes.py if exist modes_data.py set "LINKS=%LINKS% modes.py modes_data.py"
 rem the game modes (/wrath/modes.json, Games on /wrath/modes, ?go=mode:): playmodes.py and its catalog, always as a pair
 if exist playmodes.py if exist playmodes.json set "LINKS=%LINKS% playmodes.py playmodes.json"
+rem modes anyone can host and fork (/wrath/modes/<id>, /wrath/modes/jam): modepack.py and its catalog, always as a pair
+if exist modepack.py if exist modepacks.json set "LINKS=%LINKS% modepack.py modepacks.json"
 if exist workshop.py set "LINKS=%LINKS% workshop.py"
 if exist creations.py set "LINKS=%LINKS% creations.py"
 if exist projects.py set "LINKS=%LINKS% projects.py"
@@ -45,10 +47,14 @@ rem the Leyline forum (/wrath/leyline/forum, /wrath/forum/api)
 if exist forum.py set "LINKS=%LINKS% forum.py"
 rem the forum's Discord link (forum_discord.py: off until portal.env turns it on; it uses ed25519_pure.py, shipped with hostflow.py)
 if exist forum.py if exist forum_discord.py set "LINKS=%LINKS% forum_discord.py"
+rem the Discord bot's growth side (discord_growth.py and discord_template.json, always as a pair: setup, live realms, Find a group, roles, AutoMod; every part off until portal.env turns it on, docs\DISCORD.md)
+if exist forum_discord.py if exist discord_growth.py if exist discord_template.json set "LINKS=%LINKS% discord_growth.py discord_template.json"
 rem the duel leaderboards (/wrath/leaderboards, /wrath/api/leaderboards; duels-export.py fills them on the realm)
 if exist duels.py set "LINKS=%LINKS% duels.py"
 rem Leyline profiles and the sign-in chooser (/wrath/signin, /wrath/profile, /wrath/avatar)
 if exist profiles.py set "LINKS=%LINKS% profiles.py"
+rem Your Hero Key (/wrath/key, and the launcher's Get your Hero Key: herokeys.py; the site's /account/key goes there)
+if exist herokeys.py set "LINKS=%LINKS% herokeys.py"
 rem the Leyline Admin Console (admin.py, /wrath/admin) and the mod checker it can re-run (mods\wu-mod.py)
 if exist admin.py if exist ..\mods\wu-mod.py copy /y "..\mods\wu-mod.py" wu-mod.py >nul
 if exist admin.py set "LINKS=%LINKS% admin.py"
@@ -79,7 +85,7 @@ echo [1/2] Uploading...
 scp %OPTS% "%T%" %HOST%:/tmp/wu-fastloop.tgz || (echo Upload failed. If it says "timed out", wait 2 minutes and run this again. & pause & exit /b 1)
 
 echo [2/2] Applying it on the server (under a minute)...
-ssh %OPTS% %HOST% "mkdir -p /srv/wrath/fastloop && rm -rf /srv/wrath/fastloop/www-files /srv/wrath/fastloop/docs /srv/wrath/fastloop/hub && tar -xzf /tmp/wu-fastloop.tgz -C /srv/wrath/fastloop && rm -f /tmp/wu-fastloop.tgz && cd /srv/wrath/fastloop && sed -i 's/\r$//' fastloop.sh wrath_portal.py $(ls ratelimit.py links.py demo.py armory.py modes.py modes_data.py playmodes.py workshop.py creations.py hostflow.py ed25519_pure.py herokey_sso.py projects.py social.py forum.py forum_discord.py duels.py profiles.py network.py docs.py leyline_net.py upstream_addons.py admin.py wu-mod.py hq.py hub.py hub_rank.py listings.py 2>/dev/null) && bash fastloop.sh 2>&1 | tee fastloop.log; grep -q '^FASTLOOP OK' fastloop.log"
+ssh %OPTS% %HOST% "mkdir -p /srv/wrath/fastloop && rm -rf /srv/wrath/fastloop/www-files /srv/wrath/fastloop/docs /srv/wrath/fastloop/hub && tar -xzf /tmp/wu-fastloop.tgz -C /srv/wrath/fastloop && rm -f /tmp/wu-fastloop.tgz && cd /srv/wrath/fastloop && sed -i 's/\r$//' fastloop.sh wrath_portal.py $(ls ratelimit.py links.py demo.py armory.py modes.py modes_data.py playmodes.py modepack.py workshop.py creations.py hostflow.py ed25519_pure.py herokey_sso.py projects.py social.py forum.py forum_discord.py discord_growth.py duels.py profiles.py herokeys.py network.py docs.py leyline_net.py upstream_addons.py admin.py wu-mod.py hq.py hub.py hub_rank.py listings.py 2>/dev/null) && bash fastloop.sh 2>&1 | tee fastloop.log; grep -q '^FASTLOOP OK' fastloop.log"
 if errorlevel 1 (
   echo.
   echo It did not report success; see the lines above. Anything it changed was put back.

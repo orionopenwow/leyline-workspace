@@ -218,6 +218,8 @@
   async function beforeJoin(r, c, sayFn) {
     const GO = { go: true, leyline: false };
     if (!r || !c) return GO;
+    // The official realm plays plain for now, straight in: no mods asked for (owner 1 Nov 02:48)
+    if (r.official) return GO;
     if (!projects().length) return GO;   // no catalog yet: nothing we could check, PLAY goes on
     let have = [];
     try { have = ((await invoke("mods_installed", { client: c.id })) || {}).mods || []; } catch (_) { have = []; }

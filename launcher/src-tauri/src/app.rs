@@ -217,6 +217,7 @@ fn point_and_play(core: &Core, client: &str, realm: &str, start: bool) -> Result
     if !start {
         return Ok(format!("{} now points at {realm}.", profile.name));
     }
+    crate::gfx::prepare_launch(&profile)?;
     let plan = launch::plan(&profile, &wine, launch::Os::current())?;
     let child = launch::run(&plan)?;
     if let Ok(mut g) = core.games.lock() {

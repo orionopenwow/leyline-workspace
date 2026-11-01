@@ -115,7 +115,13 @@ pub fn load(dir: &Path) -> Settings {
     let p = dir.join(FILE_NAME);
     match fs::read(&p) {
         Ok(b) => match serde_json::from_slice::<Settings>(&b) {
-            Ok(s) => s,
+            Ok(mut s) => {
+                // names saved before the rule (a folder named after the game) are cleaned on load
+                for c in &mut s.clients {
+                    c.name = crate::clients::brandless(&c.name);
+                }
+                s
+            }
             Err(_) => {
                 let _ = fs::rename(&p, dir.join(format!("{FILE_NAME}.broken")));
                 Settings::default()

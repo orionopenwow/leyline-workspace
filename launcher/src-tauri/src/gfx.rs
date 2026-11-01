@@ -244,7 +244,55 @@ pub fn write(c: &ClientProfile, values: &BTreeMap<String, String>) -> Result<Sta
     let tmp = p.with_extension("wtf.leyline-tmp");
     fs::write(&tmp, apply(&old, &set)).map_err(|e| format!("Couldn't save the settings: {e}"))?;
     fs::rename(&tmp, &p).map_err(|e| format!("Couldn't save the settings: {e}"))?;
+    if set.keys().any(|k| k.eq_ignore_ascii_case("gxWindow") || k.eq_ignore_ascii_case("gxMaximize")) {
+        let _ = fs::write(window_chosen_mark(&p), b"the player set the window on the Graphics page\n");
+    }
     Ok(read(c))
+}
+
+/// The player chose the window on the Graphics page: launches leave gxWindow / gxMaximize as they set them.
+fn window_chosen_mark(p: &Path) -> PathBuf {
+    p.with_file_name("Config.wtf.leyline-window")
+}
+
+/// What every launch sets (owner 1 Nov 02:50): no intro movie, the legal screens already read, and a borderless
+/// window over the whole screen (gxWindow 1, gxMaximize 1) so the game doesn't switch the screen's resolution;
+/// unless the player picked the window on the Graphics page, which then stays as they set it.
+pub fn launch_values(window_chosen: bool) -> BTreeMap<String, String> {
+    let mut set: BTreeMap<String, String> =
+        [("movie", "0"), ("readEULA", "1"), ("readTOS", "1"), ("readScanning", "1"), ("readContest", "1"), ("showToolsUI", "0")]
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+    if !window_chosen {
+        set.insert("gxWindow".into(), "1".into());
+        set.insert("gxMaximize".into(), "1".into());
+    }
+    set
+}
+
+/// Before a launch: `launch_values` written into Config.wtf (a copy of the file as it was is kept the first time).
+/// Builds Leyline has no settings for are left alone.
+pub fn prepare_launch(c: &ClientProfile) -> Result<(), String> {
+    if tweaks(c.build).is_empty() {
+        return Ok(());
+    }
+    let p = config_path(c);
+    let old = fs::read_to_string(&p).unwrap_or_default();
+    let new = apply(&old, &launch_values(window_chosen_mark(&p).exists()));
+    if new == old {
+        return Ok(());
+    }
+    if let Some(d) = p.parent() {
+        fs::create_dir_all(d).map_err(|e| format!("Couldn't open the game's settings folder: {e}"))?;
+    }
+    let b = backup_of(&p);
+    if !b.exists() {
+        fs::write(&b, &old).map_err(|e| format!("Couldn't keep a copy of the settings: {e}"))?;
+    }
+    let tmp = p.with_extension("wtf.leyline-tmp");
+    fs::write(&tmp, new).map_err(|e| format!("Couldn't save the settings: {e}"))?;
+    fs::rename(&tmp, &p).map_err(|e| format!("Couldn't save the settings: {e}"))
 }
 
 pub fn preset(c: &ClientProfile, id: &str) -> Result<State, String> {
@@ -311,6 +359,29 @@ mod tests {
         let mut c: ClientProfile = serde_json::from_value(serde_json::json!({"id":"c1","name":"Mine","path":dir,"build":"3.3.5a"})).unwrap();
         c.build = build;
         c
+    }
+
+    #[test]
+    fn a_launch_skips_the_movie_and_opens_a_borderless_window_unless_the_player_chose_one() {
+        let d = tempfile::tempdir().unwrap();
+        fs::create_dir_all(d.path().join("WTF")).unwrap();
+        let cfg = d.path().join("WTF/Config.wtf");
+        fs::write(&cfg, "SET realmlist \"x\"\r\nSET gxWindow \"0\"\r\nSET gxResolution \"1024x768\"\r\n").unwrap();
+        let c = client(d.path(), Build::V335a);
+        prepare_launch(&c).unwrap();
+        let v = parse(&fs::read_to_string(&cfg).unwrap());
+        assert_eq!((v["movie"].as_str(), v["readeula"].as_str(), v["readtos"].as_str()), ("0", "1", "1"));
+        assert_eq!((v["gxwindow"].as_str(), v["gxmaximize"].as_str()), ("1", "1"));
+        assert_eq!(v["realmlist"], "x", "the rest kept");
+        assert!(fs::read_to_string(backup_of(&cfg)).unwrap().contains("gxWindow \"0\""), "a copy of the file as it was");
+        // the Graphics page's choice wins from then on
+        write(&c, &BTreeMap::from([("gxWindow".to_string(), "0".to_string())])).unwrap();
+        prepare_launch(&c).unwrap();
+        assert_eq!(parse(&fs::read_to_string(&cfg).unwrap())["gxwindow"], "0");
+        // a version Leyline has no settings for is left alone
+        let e = tempfile::tempdir().unwrap();
+        prepare_launch(&client(e.path(), Build::V548)).unwrap();
+        assert!(!e.path().join("WTF/Config.wtf").exists());
     }
 
     #[test]

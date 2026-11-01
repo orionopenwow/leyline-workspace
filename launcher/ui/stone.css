@@ -59,3 +59,14 @@
 }
 .side-foot { border-top: 1px solid rgba(0, 0, 0, 0.6); box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.05); }
 .side .nav, .side .realm-row, .side .side-label { text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6); }
+/* owner 2026-10-31 21:51: "give whole client this grey color border bordering our play button": the PLAY button's
+   own grey metal frame (art/window-frame.webp, its red face cut away) as a thin edge round the whole window, over
+   everything but the window buttons, which sit on the corner like an in-game window's close button. */
+.frame::after {
+  content: ""; position: fixed; inset: 0; z-index: 9000; pointer-events: none;
+  /* 10px: thick enough that the frame's bevelled corners read like an in-game window's (owner 21:53: "with this
+     style of edge around launcher its fine, no need for strict roundedness") */
+  border: 10px solid transparent;
+  border-image: url("art/window-frame.webp") 22 25 / 10px stretch;
+}
+.titlebar .winbtns, .winbtns { position: relative; z-index: 9001 !important; }

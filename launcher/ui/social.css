@@ -180,16 +180,17 @@ body:has(#page-play.on) main { margin-right: 0; }
 body:has(#page-play.on) .titlebar .winbtns { margin-left: 0; }
 @media (max-width: 1150px) { body:has(#page-play.on) main { margin-right: 0; } body:has(#page-play.on) .titlebar .winbtns { margin-left: 0; } }
 
+/* Join the Discord (owner 2026-10-31: "discord purple and with discord icon"): Discord's own blurple and its logo */
 .titlebar .tb-discord {
-  display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; margin-left: 4px;
-  border: var(--t-border-w) solid color-mix(in srgb, var(--t-accent) 30%, transparent); border-radius: 999px;
-  background: color-mix(in srgb, var(--t-accent) 9%, transparent); color: var(--t-text-2);
-  font: 600 12.5px var(--t-font); white-space: nowrap; cursor: pointer; transition: background .15s, color .15s, border-color .15s;
+  display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px 0 11px; margin-left: 4px;
+  border: 0; border-radius: 999px; background: #5865f2; color: #fff;
+  font: 600 12.5px var(--t-font); white-space: nowrap; cursor: pointer; transition: background .15s, box-shadow .15s;
+  box-shadow: 0 2px 10px rgba(88, 101, 242, 0.35);
 }
-.titlebar .tb-discord svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.titlebar .tb-discord svg circle { fill: currentColor; stroke: none; }
-.titlebar .tb-discord:hover, .titlebar .tb-discord:focus-visible { color: var(--t-text); background: color-mix(in srgb, var(--t-accent) 18%, transparent); border-color: color-mix(in srgb, var(--t-accent) 55%, transparent); outline: none; }
-@media (max-width: 1000px) { .titlebar .tb-discord span { display: none; } .titlebar .tb-discord { padding: 0 8px; } }
+.titlebar .tb-discord svg { width: 18px; height: 18px; fill: currentColor; stroke: none; }
+.titlebar .tb-discord:hover, .titlebar .tb-discord:focus-visible { background: #4752c4; box-shadow: 0 2px 14px rgba(88, 101, 242, 0.55); outline: none; }
+.titlebar .tb-discord:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+@media (max-width: 1000px) { .titlebar .tb-discord span { display: none; } .titlebar .tb-discord { padding: 0 9px; } }
 
 .titlebar .tb-me { position: relative; display: flex; align-items: center; margin-right: 6px; }
 .titlebar .tb-me .hf-me { padding: 0; gap: 8px; border: 0; }

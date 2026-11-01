@@ -578,3 +578,6 @@
 1253c ship-again Save to GitHub again as one fresh commit (GitHub refused the last save: fake test keys looked real; fixed). Also brings the Forge / Shape the ground launcher update
 1253a signin Site: the play, sign-in, account, bug report and docs pages in the same stone look as the rest of the site; the Discord channel names with their emoji for the bot
 1253b den-lite Den Lite again: .den grow (the room grows ring by ring), your companion follows and talks (Ask Claude works), .den mode / .den mods
+1254a bugs Release check: rebuild the bug list on the server and copy it here (is the test report 594d507b1708 in it?)
+1254b ship-again Save to GitHub (the den agent tests now skip in the public repo copy)
+1254c leyline Leyline repo: export again so its launcher build goes green and Leyline.exe gets today's launcher work

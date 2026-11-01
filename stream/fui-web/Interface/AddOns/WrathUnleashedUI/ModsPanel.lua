@@ -306,7 +306,7 @@ local MENU_GAP = 25
 -- a gap; Return to Game. The frame's height follows the number of buttons.
 local MENU_ORDER = { "GameMenuButtonOptions", "GameMenuButtonSoundOptions", "GameMenuButtonUIOptions",
     "GameMenuButtonMacOptions", "GameMenuButtonRatings", "GameMenuButtonKeybindings", "GameMenuButtonMacros",
-    "GameMenuButtonAddOns", "GameMenuButtonRealmList" }
+    "GameMenuButtonAddOns", "GameMenuButtonRealmList", "GameMenuButtonBugReport" }
 local MENU_TAIL = { "GameMenuButtonLogout", "GameMenuButtonQuit" }
 local MENU_LAST = "GameMenuButtonContinue"
 local function call(o, m, ...)
@@ -316,8 +316,39 @@ local function call(o, m, ...)
     end
 end
 local function shownButton(b) return b and call(b, "IsShown") ~= false end
+-- Report a bug (release goal 4): a box for what happened; Send files it with the realm's .bug (ov_reports.lua: where
+-- you are, level, class go with it; the bug list on the site and in HQ picks it up). Leyline realms only: another
+-- server has no .bug, so the button stays hidden there.
+local BUG_MAX = 250   -- a chat line is 255 with ".bug "
+if StaticPopupDialogs then
+    StaticPopupDialogs.WU_BUG_REPORT = {
+        text = "Report a bug\n\nWhat happened? Where you are is sent with it.",
+        button1 = "Send", button2 = "Cancel",
+        hasEditBox = 1, maxLetters = BUG_MAX,
+        OnAccept = function(self) W.SendBug(self.editBox and self.editBox:GetText()) end,
+        EditBoxOnEnterPressed = function(self)
+            local p = self:GetParent(); W.SendBug(self:GetText()); if p then p:Hide() end
+        end,
+        EditBoxOnEscapePressed = function(self) local p = self:GetParent(); if p then p:Hide() end end,
+        OnShow = function(self) if self.editBox then self.editBox:SetText(""); self.editBox:SetFocus() end end,
+        timeout = 0, whileDead = 1, hideOnEscape = 1,
+    }
+end
+function W.SendBug(text)
+    text = tostring(text or ""):gsub("[\r\n]+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+    if #text < 3 then return false end
+    if #text > BUG_MAX then text = text:sub(1, BUG_MAX) end
+    if SendChatMessage then pcall(SendChatMessage, ".bug " .. text, "SAY") end
+    return true
+end
+function W.ShowBugReport()
+    if StaticPopup_Show then StaticPopup_Show("WU_BUG_REPORT") end
+end
+
 function W.LayoutGameMenu()
     if not GameMenuFrame then return nil end
+    local bug = _G["GameMenuButtonBugReport"]
+    if bug then if W.LeylineRealm then call(bug, "Show") else call(bug, "Hide") end end
     local seen, list = {}, {}
     for _, n in ipairs(MENU_ORDER) do
         local b = _G[n]
@@ -400,6 +431,15 @@ function W.AddMenuButtons()
             if W.ShowRealmList then W.ShowRealmList() elseif W.ToggleLeyline then W.ToggleLeyline() end
         end)
         GameMenuFrame:SetHeight(GameMenuFrame:GetHeight() + MENU_GAP)
+    end
+    if not _G["GameMenuButtonBugReport"] then
+        local bug = CreateFrame("Button", "GameMenuButtonBugReport", GameMenuFrame, "GameMenuButtonTemplate")
+        bug:SetText("Report a bug")
+        bug:SetScript("OnClick", function()
+            PlaySound("igMainMenuOption")
+            HideUIPanel(GameMenuFrame)
+            W.ShowBugReport()
+        end)
     end
     if ForeverUI and ForeverUI.GameMenu and ForeverUI.GameMenu.Layout then ForeverUI.GameMenu.Layout() end
     W.LayoutGameMenu()

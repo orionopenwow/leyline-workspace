@@ -43,6 +43,7 @@ function CreateFrame(kind, name, parent) return new(kind, name, parent) end
 UIParent = new("Frame", "UIParent")
 GameMenuFrame = new("Frame", "GameMenuFrame"); GameMenuFrame.h = 300
 UISpecialFrames = {}
+StaticPopupDialogs = {}
 function tinsert(t, v) table.insert(t, v) end
 SlashCmdList = {}
 function PlaySound() end
@@ -67,18 +68,31 @@ local ok, err = pcall(dofile, dir .. "/ModsPanel.lua")
 check("ModsPanel.lua loads" .. (ok and "" or (": " .. tostring(err))), ok)
 local W = WrathUnleashedUI
 GameMenuFrame:Show()
+check("another server: no Report a bug (it has no .bug)", GameMenuButtonBugReport and not GameMenuButtonBugReport.shown)
+W.LeylineRealm = true
+GameMenuFrame:Show()
 local function below(b, other, gap) return b.point and b.point[2] == other and b.point[3] == "BOTTOM" and b.point[5] == gap end
 check("Mods & Workshop under Macros", below(GameMenuButtonAddOns, GameMenuButtonMacros, -1))
 check("Realm List under Mods & Workshop", below(GameMenuButtonRealmList, GameMenuButtonAddOns, -1))
-check("Customize UI under Realm List (no longer on top of it)", below(custom, GameMenuButtonRealmList, -1))
+check("Report a bug under Realm List", below(GameMenuButtonBugReport, GameMenuButtonRealmList, -1))
+check("Customize UI under Report a bug (no longer on top of Realm List)", below(custom, GameMenuButtonBugReport, -1))
 check("Help Request under Customize UI", below(help, custom, -1))
 check("a hidden button is left alone", hidden.point == nil)
 check("Logout a gap below the last one", below(GameMenuButtonLogout, help, -16))
 check("Exit under Logout, Return to Game a gap below", below(GameMenuButtonQuit, GameMenuButtonLogout, -1)
     and below(GameMenuButtonContinue, GameMenuButtonQuit, -16))
--- 37 + 9 buttons * 21 + 8 + (21+16) + (21+1) + (21+16) + 22
-check("the frame fits every button", GameMenuFrame.h == 37 + 9 * 21 + 8 + 37 + 22 + 37 + 22, GameMenuFrame.h)
+-- 37 + 10 buttons * 21 + 9 + (21+16) + (21+1) + (21+16) + 22
+check("the frame fits every button", GameMenuFrame.h == 37 + 10 * 21 + 9 + 37 + 22 + 37 + 22, GameMenuFrame.h)
 GameMenuFrame:Show()
-check("opening it again lays out the same", below(help, custom, -1) and GameMenuFrame.h == 37 + 9 * 21 + 8 + 37 + 22 + 37 + 22)
+check("opening it again lays out the same", below(help, custom, -1) and GameMenuFrame.h == 37 + 10 * 21 + 9 + 37 + 22 + 37 + 22)
+-- the box: Send files it with .bug, one line, capped
+local said
+function SendChatMessage(msg, kind) said = { msg, kind } end
+check("Send: .bug with the text", W.SendBug("  the wolf\nhas no bar ") and said[1] == ".bug the wolf has no bar" and said[2] == "SAY")
+said = nil
+check("Send: nothing for an empty box", W.SendBug("  ") == false and said == nil)
+W.SendBug(string.rep("x", 400))
+check("Send: capped to one chat line", #said[1] == 255)
+check("the box is a popup with a text field", StaticPopupDialogs and StaticPopupDialogs.WU_BUG_REPORT.hasEditBox == 1)
 print(pass .. "/" .. (pass + fail) .. " passed")
 if fail > 0 then os.exit(1) end

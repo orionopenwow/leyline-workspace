@@ -32,7 +32,7 @@ env:
   QT_ARCH: "win64_msvc2019_64"
   AQT_VERSION: "3.1.21"
   CMAKE_VERSION: "3.31.6"
-  VCPKG_TAG: "2025.01.13"
+  VCPKG_TAG: "2025.10.17"
   VCPKG_TRIPLET: "x64-windows"
 
 jobs:

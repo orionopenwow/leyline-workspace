@@ -433,6 +433,38 @@ test('the Den slide opens the Host page with the Den picked; the Workshop slide 
   await ctx.close();
 });
 
+test('Den of the week: from the site\'s home.json, as text; Visit shows a leyline:// Den on Realms, else the website', async () => {
+  const pick = { title: 'Mossy <b>Hollow</b>', by: 'Ana', line: 'A cottage by a moonwell pond.',
+    shots: ['https://i.example.org/a.png', 'javascript:alert(1)', 'https://i.example.org/b.png'], visit: 'leyline://realm/abcdefghijk2345a' };
+  const { page, ctx, errors } = await open({ ms: 600000, homeArt: { slides: {}, den_week: pick } });
+  await page.waitForFunction(() => window.LeylineHome.slides().includes('denweek'));
+  const s = page.locator('.hero-slide[data-key="denweek"]');
+  assert.equal(await s.locator('h2, .hs-title').first().textContent(), 'Mossy <b>Hollow</b>', 'shown as text, never HTML');
+  assert.equal(await s.locator('b:text("Hollow")').count(), 0);
+  assert.match(await s.textContent(), /Den of the week/);
+  assert.match(await s.textContent(), /by Ana\. A cottage by a moonwell pond\./);
+  assert.deepEqual(await s.locator('.hs-steps .hs-st-t i').allTextContents(), ['Ana', '2 on the website', 'Opens it on Realms']);
+  assert.equal(await s.locator('img').count(), 0, 'no screenshot shown as a picture');
+  await showKey(page, 'denweek');
+  await s.locator('.hs-go').click();
+  assert.equal((await where(page)).page, 'page-realms');
+  await page.evaluate(() => window.LeylineNav.show('play'));
+  await showKey(page, 'denweek');
+  await s.locator('.hs-go2').click();
+  assert.ok(await page.evaluate(() => window.__calls.some(([c, a]) => c === 'open_link' && a.name === 'account')));
+  assert.deepEqual(errors, []);
+  await ctx.close();
+
+  const bad = await open({ ms: 600000, homeArt: { slides: {}, den_week: { title: '', by: 'Ana' } } });
+  await bad.page.waitForTimeout(400);
+  assert.ok(!(await bad.page.evaluate(() => window.LeylineHome.slides())).includes('denweek'), 'no name: no slide');
+  await bad.ctx.close();
+  const web = await open({ ms: 600000, homeArt: { slides: {}, den_week: { title: 'Keep', by: 'Bo', visit: 'https://relay.example.org/join/x' } } });
+  await web.page.waitForFunction(() => window.LeylineHome.slides().includes('denweek'));
+  assert.equal(await web.page.locator('.hero-slide[data-key="denweek"] .hs-go').textContent(), 'See it on the website');
+  await web.ctx.close();
+});
+
 test('every slide fits at 1100 px and 1400 px: words, panel and picture apart, nothing off the slide; motion only when allowed', async () => {
   for (const viewport of [{ width: 1100, height: 760 }, { width: 1400, height: 860 }]) {
     const { page, ctx, errors } = await open({ ms: 600000 }, { viewport });

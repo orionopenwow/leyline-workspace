@@ -224,7 +224,7 @@ svg { flex: none; }
 }
 /* the window buttons (owner 2026-10-31: "the yellow red and green dots style"): three round dots, minimise yellow,
    maximise green, close red at the corner; the symbol shows on hover or keyboard focus */
-.winbtns { display: flex; gap: 6px; align-self: flex-start; margin: 7px 7px 0 6px; padding: 0; }   /* tucked into the corner (owner 31 Oct) */
+.winbtns { display: flex; gap: 6px; align-self: flex-start; margin: 9px 10px 0 6px; padding: 0; }   /* tucked into the corner (owner 31 Oct) */
 .winbtns button { width: 13px; height: 13px; padding: 0; border: 0; border-radius: 50%; cursor: pointer; display: grid; place-items: center;
   color: transparent; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.28); transition: filter 0.12s, color 0.12s; }
 #win-min { background: #febc2e; }

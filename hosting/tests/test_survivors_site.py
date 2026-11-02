@@ -68,8 +68,8 @@ def run_all() -> int:
     check("the address lives only in address.txt: the Caddy site and the compose file name none",
           "leylinelauncher" not in snip.split("__SV_HOST__ {", 1)[1] and "openvanilla" not in snip.split("__SV_HOST__ {", 1)[1]
           and not re.search(r"[a-z0-9-]+\.(com|app|org|net)\b", comp))
-    check("address.txt: a placeholder with no brand word, marked TODO(owner)", "wow" not in addr.lower()
-          and "TODO(owner)" in open(os.path.join(SV, "address.txt")).read())
+    # settled 2 Nov (survivors.leylinelauncher.com, in DNS): no brand word, one of our names
+    check("address.txt: our own subdomain, no brand word", "wow" not in addr.lower() and addr.endswith(".leylinelauncher.com"))
     for bat in sorted(f for f in os.listdir(SV) if f.endswith(".bat")):
         b = open(os.path.join(SV, bat), "rb").read()
         check(f"{bat}: CRLF only, nothing from labs", b.count(b"\n") == b.count(b"\r\n") > 10 and b"labs" not in b)

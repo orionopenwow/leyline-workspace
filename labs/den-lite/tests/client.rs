@@ -437,13 +437,19 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
     assert!((position.z - 14.2).abs() < 0.01 && *running_speed == 7.0);
     assert!(names.contains(&0x02C2), "SMSG_INIT_WORLD_STATES");
     let (room, _) = objects(&frames);
-    // a new Den starts small: 16 x 16 yards
-    assert_eq!(room.len(), 16 + 28 + 4, "floor, walls and lights");
-    assert_eq!(room.values().filter(|g| g.entry == 188142 && g.display == 6752).count(), 44);
-    assert_eq!(room.values().filter(|g| g.entry == 190664 && g.display == 7976).count(), 4);
-    assert!(room.values().all(|g| g.scale == 2.0));
+    // a new Den is the open white plane: no room pieces (owner 1 Nov 20:55), the launcher's white ground is the floor
+    assert_eq!(room.len(), 0, "no ice-block room");
+    // a room is still there to choose: stone
+    w.say(".den room stone");
+    let (frames, _) = w.until_line();
+    let (room, _) = objects(&frames);
+    assert_eq!(room.values().filter(|g| g.entry == 180043).count(), 4, "its lights");
     // east and west walls are turned a quarter: their packed rotation carries z = sin(45 degrees)
     assert!(room.values().any(|g| (g.o - std::f32::consts::FRAC_PI_2).abs() < 1e-4 && g.rotation == (0.70710677f32 * (1 << 20) as f32) as u64));
+    w.say(".den room white");
+    let (frames, _) = w.until_line();
+    let (_, gone) = objects(&frames);
+    assert!(!gone.is_empty(), "back to the open plane: the stone room goes");
 
     // walk 3 yards east, 2 north, facing east; then a stamp at our feet
     let (px, py, pz) = (16226.2 + 3.0, 16257.0 + 2.0, 14.2);
@@ -539,7 +545,7 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
     let (frames, line) = w.until_line();
     let (made, gone) = objects(&frames);
     assert_eq!(line, "The room is stone now.");
-    assert_eq!(gone.len(), 48);
+    assert_eq!(gone.len(), 0, "from the open plane: nothing to take down");
     assert!(made.values().all(|g| [190024, 19444, 180043].contains(&g.entry)));
     // the launcher's Saved Dens > Open, while the player is in: open.json (host/dens.rs open_doc)
     std::fs::write(dir.join("open.json"), r#"{"file":"test1","id":"18f3a9c2b7e1d4a51234"}"#).unwrap();
@@ -639,8 +645,8 @@ fn the_den_grows_and_the_companion_talks_with_the_assistant() {
     let (frames, line) = w.until_line();
     assert!(line.starts_with("Your Den is size 2 of 4: a 32 x 32 yard room, props up to 30 yards"), "{line}");
     let (made, gone) = objects(&frames);
-    assert_eq!((made.len(), gone.len()), (128, 48), "the small room goes, the bigger one comes");
-    assert!(made.values().any(|g| (g.x - (mx + 16.0)).abs() < 0.01), "the east wall at 16 yards");
+    assert_eq!((made.len(), gone.len()), (0, 0), "the open plane: only the size changes");
+    let _ = mx;
     // a chair 25 yards out fits now (it didn't at size 1)
     w.send(&heartbeat(mx + 22.0, my, mz, 0.0));
     w.say(".den place wooden chair");
@@ -656,11 +662,11 @@ fn the_den_grows_and_the_companion_talks_with_the_assistant() {
     w.say(".den size 1");
     let (frames, line) = w.until_line();
     assert!(line.starts_with("Your Den is size 1 of 4"), "{line}");
-    assert_eq!(objects(&frames).0.len(), 48);
+    assert_eq!(objects(&frames).0.len(), 0);
     w.say(".den load grown");
     let (frames, line) = w.until_line();
     assert_eq!(line, "Opened: 1 props.");
-    assert_eq!(objects(&frames).0.len(), 128 + 1, "the file's size 2 room and its chair");
+    assert_eq!(objects(&frames).0.len(), 1, "the file's chair (the white Den has no room pieces)");
     assert_eq!(srv.shared.den.lock().unwrap().spot.half, 16.0);
     w.say(".den size 9");
     assert!(w.until_line().1.starts_with("Sizes are 1 to 4"));
@@ -1059,7 +1065,7 @@ fn a_friend_joins_through_the_friends_listener_and_both_see_each_other() {
     let (frames, line) = friend.until_line();
     assert!(line.starts_with("Welcome to Wren's Den"), "{line}");
     let (props, _) = objects(&frames);
-    assert!(props.len() > 48, "the room and the host's chair");
+    assert!(!props.is_empty(), "the host's chair");
     let (frames, _) = friend.until_line();
     let _ = frames;
     // the host sees the friend arrive (no self flag), and the friend sees the host

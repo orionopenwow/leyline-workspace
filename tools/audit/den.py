@@ -180,7 +180,7 @@ async def _run(ctx, rec, exe):
             rec.add(F, "The world packets read cleanly", FAIL, "; ".join(s.parse_errors[:3]), "Tell Claude this line.")
         elif me and me["fields"].get(p.U_LEVEL) == 1 and me["fields"].get(p.P_VISIBLE_ITEM_1 + 2 * p.SLOT_SHIRT):
             rec.add(F, "Your character and the room arrive", PASS,
-                    f"level 1, dressed, {sum(1 for o in s.objects.values() if o['type'] == p.TYPE_GAMEOBJECT)} room pieces")
+                    f"level 1, dressed, on the open white Den ({sum(1 for o in s.objects.values() if o['type'] == p.TYPE_GAMEOBJECT)} pieces)")
         else:
             rec.add(F, "Your character and the room arrive", FAIL, "the player's create is missing or undressed",
                     "Tell Claude this line.")

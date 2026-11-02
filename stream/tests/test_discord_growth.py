@@ -16,7 +16,9 @@ website and from the launcher with a Bearer token, the rate limit, the word filt
 accounts (Realm Host from a hosted realm listed 7 days, recorded facts, a person not in the server, idempotent, a role
 staff gave by hand never taken, taken back when the fact goes, unlinked people lose the bot's roles, Den Architect kept,
 resumable after Discord fails mid-way, the audit log); AutoMod (off, made, updated, a 403 explained, pushed again only
-when the words change); HQ's Discord tab; the token never in a log; and the deploy step ships both files.
+when the words change); listed mods (WU_DISCORD_MODS: off posts nothing, a new listing and an applied update post
+once each, never again after a restart, the hourly cap holds and releases in order, the word and brand filters, Discord
+down or a throwing bot never stops a listing); HQ's Discord tab; the token never in a log; and the deploy step ships both files.
 
     python3 -I stream/tests/test_discord_growth.py stream/wrath_portal.py
 """
@@ -618,8 +620,133 @@ rule = next(iter(D["rules"].values()))
 check("a new blocked word: the rule updated (not a second one), Discord's off switch kept", len(D["rules"]) == 1
       and "grobble" in rule["trigger_metadata"]["keyword_filter"] and rule["enabled"] is False, rule)
 
+# ------------------------------------------------------------------------------------------- listed mods
+LS = wp.listings
+LS.setup()
+PS = LS._projects_store()
+check("listed mods: the portal has the listings store", PS is not None)
+SHA_A, SHA_B = "a" * 40, "b" * 40
+
+
+def put_listing(pid, title, rev=SHA_A, version="1.0", waiting=False, **kw):
+    rec = {"id": pid, "key": "github.com/alice/" + pid, "url": "https://github.com/alice/" + pid, "host": "github.com",
+           "forge": "github", "title": title, "author": "alice", "submitted_by": "Alice", "submitter": "WR000001",
+           "description": "Tidy unit frames for raids.", "category": "addons", "builds": ["3.3.5a"], "hidden": False,
+           "reports": [], "report_log": [], "submitted_at": "2026-11-01T00:00:00Z",
+           "listing": {"format": "addon", "label": "Addon", "client": True, "name": title, "version": version, "rev": rev,
+                       "follow": "branch:main", "state": "community", "checked_at": "2026-11-01T00:00:00Z",
+                       "install": {"kind": "addon", "rev": rev, "files": {"Frames/Frames.lua": "0" * 64}}}}
+    if waiting:
+        rec["review"] = {"state": "pending", "reasons": ["a new account"]}
+    rec.update(kw)
+    with PS._locked():
+        recs = [r for r in PS.load() if r["id"] != pid]
+        PS._save(recs + [rec])
+    return rec
+
+
+def mod_msgs():
+    return D["msgs"].get(G.mapped("channel", "mods"), [])
+
+
+def plain(m):
+    return re.sub(r"\\(.)", r"\1", m["content"])   # without Discord's escapes
+
+
+def mod_rows():
+    return F.q("SELECT ref, status FROM dg_posts WHERE kind = 'mod' ORDER BY id")
+
+
+MODS_ENV = dict(ENV, WU_DISCORD_MODS="1", WU_DISCORD_MODS_PER_HOUR="3")
+check("the template sends mod posts to the mods channel (v2: mods-and-addons)", T["posts"].get("mod") == "mods" and G.mapped("channel", "mods")
+      and json.load(open(os.path.join(STREAM, "discord_template_v2.json"), encoding="utf-8"))["posts"].get("mod") == "mods_and_addons")
+_cfg_before = G.cfg
+G.cfg = DGM.Config(ENV)
+check("mods: off by default", G.cfg.mods is False and G.cfg.mods_per_hour == 6)
+put_listing("111111111111", "Tidy Frames", waiting=True)
+ok, msg = wp.admin.run_action(MOD, {"action": "listing.approve", "target": "111111111111"})
+L.drain()
+check("flag off: a listing going live posts nothing and records nothing", ok and not mod_msgs() and not mod_rows(), (msg, mod_rows()))
+G.cfg = DGM.Config(MODS_ENV)
+put_listing("222222222222", "Raid Frames", waiting=True)
+ok, msg = wp.admin.run_action(MOD, {"action": "listing.approve", "target": "222222222222"})
+L.drain()
+m = mod_msgs()
+check("a new listing (a moderator's approve): one post in mods: name, version, revision, what it is, the author, its page",
+      ok and len(m) == 1 and plain(m[0]).startswith("**Raid Frames** v1.0 (aaaaaaa) is listed · by **alice**")
+      and "New addon: Tidy unit frames for raids." in plain(m[0])
+      and "https://play.example/wrath/mods/p/222222222222" in m[0]["content"]
+      and m[0]["components"][0]["components"][0]["url"] == "https://play.example/wrath/mods/p/222222222222", (msg, m))
+check("... no pings, no link previews", m and m[0]["allowed_mentions"] == {"parse": []} and m[0]["flags"] == 4)
+check("... once: the same revision again is a duplicate", LS._announce("222222222222", "new") == "dup" and len(mod_msgs()) == 1)
+G_restart = DGM.attach(L, MODS_ENV, G.fd)
+check("... and after a restart (a new bot on the same database) still not posted again",
+      G_restart.mod_listed(next(r for r in PS.load() if r["id"] == "222222222222"), "new") == "dup" and len(mod_rows()) == 1)
+with PS._locked():
+    recs = list(PS.load())
+    r = next(x for x in recs if x["id"] == "222222222222")
+    r["listing"]["pending_update"] = dict(r["listing"], version="1.1", rev=SHA_B, install={"kind": "addon", "rev": SHA_B, "files": {"Frames/Frames.lua": "1" * 64}},
+                                          checked_at="2026-11-02T00:00:00Z", why=["a .blp"], diff={"added": 0, "removed": 0, "changed": 1})
+    PS._save(recs)
+ok, msg = wp.admin.run_action(MOD, {"action": "listing.update.approve", "target": "222222222222"})
+L.drain()
+m = mod_msgs()
+check("an update applied: one post, with what changed (the listing's own update data)", ok and len(m) == 2
+      and plain(m[1]).startswith("**Raid Frames** v1.1 (bbbbbbb) is updated · by **alice**") and "v1.0 → v1.1 · 1 file changed" in plain(m[1]), (msg, m[-1:]))
+check("... once", LS._announce("222222222222", "update") == "dup" and len(mod_msgs()) == 2)
+for i in range(3):
+    put_listing(f"33333333333{i}", f"Bag Helper {i}")
+res = [LS._announce(f"33333333333{i}", "new") for i in range(3)]
+L.drain()
+check("the hourly cap (WU_DISCORD_MODS_PER_HOUR=3): the rest held, not posted", res == ["sent", "held", "held"] and len(mod_msgs()) == 3, res)
+G.next_mods = 0
+G.tick()
+L.drain()
+check("... still held while the hour is full", len(mod_msgs()) == 3)
+NOW[0] += 3601
+G.next_mods = 0
+G.tick()
+L.drain()
+check("... sent in order once the hour allows", [x["content"].split("**")[1] for x in mod_msgs()[3:]] == ["Bag Helper 1", "Bag Helper 2"], mod_msgs()[3:])
+put_listing("444444444440", "Quest Log Plus")
+put_listing("444444444441", "Quest Log Extra")
+res = [LS._announce("444444444440", "new"), LS._announce("444444444441", "new")]
+NOW[0] += 7 * 3600
+G.next_mods = 0
+G.tick()
+L.drain()
+check("a post held longer than 6 hours is dropped, not posted late", res == ["sent", "held"] and len(mod_msgs()) == 6
+      and mod_rows()[-1][1] == "not posted (too many that hour)", (res, mod_rows()[-2:]))
+put_listing("555555555550", "Warcraft Frames")
+put_listing("555555555551", "Shit Frames")
+put_listing("555555555552", "Clean Frames", description="Frames for every fucking raid.")
+res = [LS._announce(p, "new") for p in ("555555555550", "555555555551", "555555555552")]
+L.drain()
+check("the brand and word filters: bad names are recorded, never posted", res[:2] == ["blocked", "blocked"] and len(mod_msgs()) == 7
+      and not any("Warcraft" in x["content"] or "Shit" in x["content"] for x in mod_msgs()), res)
+check("... a bad word in the description leaves the description out", "fucking" not in mod_msgs()[-1]["content"] and "New addon" in mod_msgs()[-1]["content"],
+      mod_msgs()[-1]["content"])
+with lock:
+    D["fail"].append((r"POST /channels/\d+/messages", 503, {"message": "down"}))
+put_listing("666666666666", "Map Pins", waiting=True)
+ok, msg = wp.admin.run_action(MOD, {"action": "listing.approve", "target": "666666666666"})
+L.drain()
+rec6 = next(r for r in PS.load() if r["id"] == "666666666666")
+check("Discord down: the listing still goes live; the post waits in the outbox", ok and rec6["listing"]["state"] == "reviewed"
+      and not rec6.get("review") and len(mod_msgs()) == 7 and mod_rows()[-1][1] == "retrying", (msg, mod_rows()[-1:]))
+NOW[0] += 900
+L.drain()
+check("... and goes out when Discord is back", len(mod_msgs()) == 8 and "Map Pins" in mod_msgs()[-1]["content"])
+G.mod_listed = lambda rec, kind: 1 / 0
+put_listing("777777777777", "Bag Sorter", waiting=True)
+ok, msg = wp.admin.run_action(MOD, {"action": "listing.approve", "target": "777777777777"})
+del G.mod_listed
+check("a bot that throws never stops a listing going live", ok and next(r for r in PS.load() if r["id"] == "777777777777")["listing"]["state"] == "reviewed", msg)
+G.cfg = _cfg_before
+
 # ------------------------------------------------------------------------------------------- HQ
 st, title, body = HQ.page(ADMIN, "discord", {})
+check("HQ's Discord tab lists the mods switch", "WU_DISCORD_MODS" in body)
 check("HQ's Discord tab: on and off, setup, picks, roles, AutoMod, the last posts", st == 200 and "Set up the Discord" in body
       and "WU_DISCORD_FEED" in body and "Last posts" in body and "wants a group" in body and "Record a fact" in body
       and "Push the words now" in body, body[:500])

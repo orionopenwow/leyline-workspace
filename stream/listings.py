@@ -26,6 +26,11 @@ modes that raise no flag go live; native code, patches, textures (.blp), texture
 new accounts and anything the hub's word rules catch wait. A refused check (game data, nested archives, unsafe paths,
 forbidden realm Lua...) is not listed at all.
 
+Discord (stream/discord_growth.py, WU_DISCORD_MODS=1): a listing that goes live (at submit, or when a moderator
+approves it) and an update that is applied (the hourly refresher, or HQ's Approve the update) are handed to the bot's
+mod_listed() for a post in the Discord's mods channel, once per revision. _announce() never raises and never waits on
+Discord (the post goes through the bot's outbox), so a listing never depends on Discord.
+
 Listings are stored as community projects (stream/projects.py records with a "listing" object): the same ids
 (link:<12 hex>), the same all.json, ratings and Hot/Rising/Top (stream/hub_rank.py), reports into HQ.
 
@@ -1014,6 +1019,7 @@ class Listings:
         self.per_hour = int(os.environ.get("WU_LISTING_CHECKS_HOUR", "10") or 10)
         self.per_day = int(os.environ.get("WU_LISTING_CHECKS_DAY", "400") or 400)
         self.fetch_max = int(os.environ.get("WU_LISTING_FETCH_MAX", str(300 * 1048576)) or 300 * 1048576)
+        self.announce = _announce         # (pid, "new" | "update"): the Discord post (stream/discord_growth.py), never raises
 
     def store(self):
         p = self.projects
@@ -1171,6 +1177,8 @@ class Listings:
         ok, rec = st.submit(me, f, listing=listing, hold=why if state == "waiting" else [])
         if ok:
             log.info("listing %s: %s (%s) %s", rec["id"], res["format"], state, "; ".join(why)[:200])
+            if not held(rec):
+                self.announce(rec["id"], "new")
         return ok, rec
 
     # -------------------------------------------------- updates
@@ -1210,6 +1218,7 @@ class Listings:
                 "changed": sum(1 for p in set(old_files) & set(new_files) if old_files[p] != new_files[p])}
         if state == "live" and res["ok"]:
             st.update_listing(rec["id"], lambda r: _apply_update(r, new, diff))
+            self.announce(rec["id"], "update")
             return "updated"
         new["why"], new["diff"], new["rev"] = why, diff, pin["rev"]
         st.update_listing(rec["id"], lambda r: r["listing"].__setitem__("pending_update", new))
@@ -1267,8 +1276,49 @@ def _source_url(res: dict) -> str:
 
 def _apply_update(r: dict, new: dict, diff: dict) -> None:
     keep = {k: r["listing"].get(k) for k in ("state", "source_url", "follow")}
-    r["listing"] = dict(new, **{k: v for k, v in keep.items() if v}, updated_at=new["checked_at"], last_diff=diff)
+    old_version = r["listing"].get("version")
+    r["listing"] = dict(new, **{k: v for k, v in keep.items() if v}, updated_at=new["checked_at"], last_diff=diff,
+                        last_change=change_line(old_version, new.get("version"), diff, new.get("rev", "")))
     r["listing"].pop("pending_update", None)
+
+
+def change_line(old_version, new_version, diff: dict, rev: str = "") -> str:
+    """One line on what an update changed, from the listing's own data: "1.0 -> 1.1 · 2 files changed, 1 added"."""
+    old_v, new_v = (clean_text(str(v or ""), 24).lstrip("vV") for v in (old_version, new_version))
+    if new_v and old_v and new_v != old_v:
+        head = f"v{old_v} → v{new_v}"
+    elif re.fullmatch(r"[0-9a-f]{40}", rev or ""):
+        head = f"New revision {rev[:7]}"
+    else:
+        head = f"New release {clean_text(rev, 24)}" if rev else "A new version"
+    d = diff if isinstance(diff, dict) else {}
+    n = lambda k: int(d.get(k) or 0) if str(d.get(k) or 0).isdigit() else 0   # noqa: E731
+    files = lambda c, w: f"{c} file{'' if c == 1 else 's'} {w}"   # noqa: E731
+    parts = [files(n(k), w) for k, w in (("changed", "changed"), ("added", "added"), ("removed", "removed")) if n(k)]
+    return head + (" · " + ", ".join(parts) if parts else "")
+
+
+def held(rec: dict) -> bool:
+    return (rec.get("review") or {}).get("state") == "pending" if isinstance(rec.get("review"), dict) else False
+
+
+def _announce(pid: str, kind: str) -> str:
+    """A listing went live ("new") or an update was applied ("update"): the Discord bot's post in mods
+    (stream/discord_growth.py mod_listed, WU_DISCORD_MODS=1). Never raises, never waits on Discord."""
+    try:
+        fm = _get("forum")
+        link = getattr(getattr(fm, "store", None), "discord", None) if fm is not None else None
+        g = getattr(link, "growth", None) if link is not None else None
+        if g is None or not hasattr(g, "mod_listed") or not g.cfg.mods:
+            return ""
+        st = _projects_store()
+        rec = next((r for r in st.load() if r.get("id") == pid), None) if st is not None else None
+        if rec is None or rec.get("hidden") or held(rec) or not isinstance(rec.get("listing"), dict):
+            return ""
+        return g.mod_listed(rec, kind)
+    except Exception:   # noqa: BLE001: the listing never depends on Discord
+        log.exception("listing %s: the Discord post failed", pid)
+        return ""
 
 
 def _iso(t: float) -> str:
@@ -1295,6 +1345,8 @@ def all_json_fields(listing) -> dict:
            "flags": list(listing.get("flags") or [])[:8], "plan": list(listing.get("plan") or [])[:8],
            "native": bool(listing.get("native")), "version": listing.get("version") or None,
            "size": (inst or {}).get("size")}
+    if listing.get("updated_at"):   # the last update the site applied, and one line on what it changed
+        out["updated"] = {"at": listing["updated_at"], "change": listing.get("last_change") or ""}
     d = listing.get("den") if listing.get("format") == "den" and isinstance(listing.get("den"), dict) else None
     if d:   # a saved Den: its release file, for the launcher's Add from a link (host/yourden.rs checks it again)
         out["den"] = {k: d.get(k) for k in ("url", "sha256", "size", "props")}
@@ -1738,10 +1790,13 @@ def hq_actions(A) -> dict:
 
     def approve(user, target, form):
         st, r = known(target)
+        was_waiting = held(r) and not (r.get("review") or {}).get("by_reports")
         st.update_listing(target, lambda x: (x.pop("review", None), x.__setitem__("reports", []),
                                              x.__setitem__("report_log", []), x.__setitem__("hide_votes", []),
                                              x["listing"].__setitem__("state", "reviewed"),
                                              x["listing"].__setitem__("reviewed_by", str(user.get("account", ""))[:40])))
+        if was_waiting:
+            (service.announce if service is not None else _announce)(target, "new")
         return {"state": "waiting"}, {"state": "reviewed"}
 
     def reject(user, target, form):
@@ -1760,6 +1815,7 @@ def hq_actions(A) -> dict:
         if not isinstance(upd, dict):
             raise A.Refused("No update is waiting.")
         st.update_listing(target, lambda x: _apply_update(x, {k: v for k, v in upd.items() if k not in ("why", "diff")}, upd.get("diff") or {}))
+        (service.announce if service is not None else _announce)(target, "update")
         return {"rev": r["listing"].get("rev")}, {"rev": upd.get("rev")}
 
     def up_reject(user, target, form):

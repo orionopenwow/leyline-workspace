@@ -27,9 +27,15 @@ portal.env (docs/DISCORD.md has the checklist); nothing here ever posts on its o
   automod      WU_DISCORD_AUTOMOD=1: our blocked words (stream/namecheck.py: slurs, sexual terms, profanity, the owner's
                words) as one Discord AutoMod keyword rule, "Leyline blocked words", made or updated (never deleted;
                turning it off in Discord is respected). Pushed when the list changes and once a day.
+  mods         WU_DISCORD_MODS=1: a listed mod (stream/listings.py, List your mod) that goes live, new or as an update,
+               gets a post in mods: its name, version and revision, one line on what changed (the listing's own update
+               data), its author, and its page (/wrath/mods/p/<id>). One post per listing revision (dg_posts.ref, so a
+               restart never posts it again); at most WU_DISCORD_MODS_PER_HOUR (6) an hour, the rest held and sent in
+               order as the hour allows (dropped after MOD_HOLD, 6 hours); names that fail the word or brand filter
+               are recorded, never posted. listings.py calls mod_listed() and never waits on Discord or its errors.
 
 Tables (forum.sqlite3): dg_map (what setup found or made), dg_realms (the feed's memory), dg_posts (every post, its
-state), dg_facts, dg_given (roles the bot gave), dg_picks. Standard library only.
+state; a mod post's ref is <listing id>@<revision>), dg_facts, dg_given (roles the bot gave), dg_picks. Standard library only.
 """
 from __future__ import annotations
 
@@ -64,6 +70,8 @@ BACK_AFTER = 6 * 3600          # a realm away this long is announced again when 
 PENDING_FOR = 3600             # a card the hourly cap held back is dropped after this
 FEED_EVERY = 60
 HOST_DAYS = 7
+MOD_HOLD = 6 * 3600            # a mod post the hourly cap held back is dropped after this
+PID_RE = re.compile(r"^[0-9a-f]{12}$")
 RULE_NAME = "Leyline blocked words"
 ACCT_RE = re.compile(r"^[A-Z0-9]{1,16}$")
 KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
@@ -112,6 +120,8 @@ class Config:
         self.roles = on("WU_DISCORD_ROLES")
         self.roles_hour = _int(env.get("WU_DISCORD_ROLES_HOUR"), 4, 0, 23)
         self.automod = on("WU_DISCORD_AUTOMOD")
+        self.mods = on("WU_DISCORD_MODS")
+        self.mods_per_hour = _int(env.get("WU_DISCORD_MODS_PER_HOUR"), 6, 1, 60)
         self.template = env.get("WU_DISCORD_TEMPLATE", "").strip() or TEMPLATE_FILE
 
 
@@ -209,6 +219,7 @@ class Growth:
             self.store.db.executescript(SCHEMA)
         self.next_feed = 0.0
         self.next_check = 0.0
+        self.next_mods = 0.0
 
     # -- small helpers ---------------------------------------------------------------------------------------------
     def now(self) -> int:
@@ -287,6 +298,9 @@ class Growth:
         if self.cfg.feed and mono >= self.next_feed:
             self.next_feed = mono + FEED_EVERY
             self.feed_tick()
+        if self.cfg.mods and mono >= self.next_mods:
+            self.next_mods = mono + FEED_EVERY
+            self.mods_tick()
         if mono >= self.next_check:
             self.next_check = mono + 300
             t = self.now()
@@ -415,14 +429,15 @@ class Growth:
 
     # -- posts -----------------------------------------------------------------------------------------------------
     def queue_post(self, kind: str, ref: str, what: str, content: str, button: tuple[str, str] | None = None,
-                   send: bool = True) -> int:
-        """A post recorded (dg_posts) and, when send, handed to the outbox. Its id."""
+                   send: bool = True, status: str = "") -> int:
+        """A post recorded (dg_posts) and, when send, handed to the outbox. Its id. status: what to record when not
+        sent ("held": waits for the hourly cap; "not posted (...)": never sent)."""
         body = {"content": content[:2000], "allowed_mentions": {"parse": []}, "flags": SUPPRESS_EMBEDS}
         if button and button[1]:
             body["components"] = [{"type": 1, "components": [{"type": 2, "style": 5, "label": button[0][:80], "url": button[1]}]}]
         pid = int(self.store.x("INSERT INTO dg_posts (at, kind, ref, channel, body, status) VALUES (?,?,?,?,?,?)",
                                (self.now(), kind, ref[:64], what, json.dumps(body, separators=(",", ":")),
-                                "waiting" if send else "not posted (WU_DISCORD_FEED is off)")))
+                                "waiting" if send else (status or "not posted (WU_DISCORD_FEED is off)"))))
         if send:
             self.link.enqueue("dg.post", 0, id=pid)
         return pid
@@ -459,7 +474,7 @@ class Growth:
         return out
 
     def sent_since(self, kind: str, since: int, ref: str = "") -> int:
-        q = "SELECT COUNT(*) FROM dg_posts WHERE kind = ? AND at > ? AND status NOT LIKE 'not posted%'"
+        q = "SELECT COUNT(*) FROM dg_posts WHERE kind = ? AND at > ? AND status NOT LIKE 'not posted%' AND status != 'held'"
         args = [kind, since]
         if ref:
             q += " AND ref = ?"
@@ -546,6 +561,74 @@ class Growth:
 
     def post_live(self, r: dict) -> int:
         return self.queue_post("live", r["id"], "live", self.live_text(r), ("Play", self.realm_url(r)))
+
+    # -- listed mods -----------------------------------------------------------------------------------------------
+    @staticmethod
+    def mod_ref(pid: str, rev: str) -> str:
+        """The one-post-per-revision key (dg_posts.ref, at most 64 characters)."""
+        ref = f"{pid}@{rev}"
+        return ref if len(ref) <= 64 else f"{pid}@#{hashlib.sha256(rev.encode()).hexdigest()[:24]}"
+
+    def _ok_text(self, v, n: int) -> str:
+        c = self.fm.clean_line(v, n)
+        return c if c and not self.text_problem(c) else ""
+
+    def mod_text(self, rec: dict, kind: str) -> tuple[str, str]:
+        """(the post, its page link) for a listed mod's record (stream/projects.py, with its "listing")."""
+        esc, ok = self.fd.esc, self._ok_text
+        lst = rec.get("listing") if isinstance(rec.get("listing"), dict) else {}
+        name = ok(rec.get("title") or lst.get("name"), 80)
+        ver = ok(str(lst.get("version") or ""), 24).lstrip("vV")
+        rev = str(lst.get("rev") or (lst.get("install") or {}).get("rev") or "")
+        short = rev[:7] if re.fullmatch(r"[0-9a-f]{40}", rev) else ok(rev, 24)
+        label = " ".join(x for x in ((f"v{ver}" if ver else ""), (f"({short})" if short and short.lstrip("vV") != ver else "")) if x)
+        author = ok(rec.get("author") or rec.get("submitted_by"), 60)
+        url = self.site_link(f"/wrath/mods/p/{rec['id']}")
+        what = ok(lst.get("label"), 40)
+        head = f"**{esc(name)}**" + (f" {esc(label)}" if label else "") + (" is listed" if kind == "new" else " is updated")
+        if kind == "new":
+            desc = ok(rec.get("description"), 200)
+            line = "New " + (what[:1].lower() + what[1:] if what else "mod") + (f": {desc}" if desc else "")
+        else:
+            line = ok(lst.get("last_change"), 200) or "A new version."
+        text = head + (f" · by **{esc(author)}**" if author else "") + f"\n{esc(line)}" + (f"\n[See the mod](<{url}>)" if url else "")
+        return text, url
+
+    def mod_listed(self, rec: dict, kind: str = "new") -> str:
+        """A listed mod went live (kind "new") or an update of it was applied ("update"): a post in mods, once per
+        revision. What happened: "off", "dup", "sent" (in the outbox), "held" (the hourly cap), "blocked" (the word or
+        brand filter), "bad". The post goes through the outbox, so Discord being down never reaches the caller."""
+        if not self.cfg.mods:
+            return "off"
+        pid = str((rec or {}).get("id") or "")
+        lst = rec.get("listing") if isinstance(rec.get("listing"), dict) else None
+        if not PID_RE.fullmatch(pid) or lst is None or rec.get("hidden"):
+            return "bad"
+        rev = str(lst.get("rev") or (lst.get("install") or {}).get("rev") or lst.get("checked_at") or "")
+        ref = self.mod_ref(pid, rev)
+        if self.store.one("SELECT 1 FROM dg_posts WHERE kind = 'mod' AND ref = ? LIMIT 1", (ref,)):
+            return "dup"
+        name = self.fm.clean_line(rec.get("title") or lst.get("name"), 80)
+        text, url = self.mod_text(rec, kind)
+        if not name or self.text_problem(name):
+            self.queue_post("mod", ref, "mod", text, ("See the mod", url), send=False, status="not posted (blocked words)")
+            return "blocked"
+        room = (self.cfg.mods_per_hour - self.sent_since("mod", self.now() - 3600) > 0
+                and not self.store.one("SELECT 1 FROM dg_posts WHERE kind = 'mod' AND status = 'held' LIMIT 1"))
+        self.queue_post("mod", ref, "mod", text, ("See the mod", url), send=room, status="held")
+        return "sent" if room else "held"
+
+    def mods_tick(self) -> None:
+        """Held mod posts go out in order as the hourly cap allows; any held longer than MOD_HOLD are dropped."""
+        t = self.now()
+        self.store.x("UPDATE dg_posts SET status = 'not posted (too many that hour)' WHERE kind = 'mod' AND status = 'held' AND at < ?",
+                     (t - MOD_HOLD,))
+        budget = self.cfg.mods_per_hour - self.sent_since("mod", t - 3600)
+        if budget <= 0:
+            return
+        for (pid,) in self.store.q("SELECT id FROM dg_posts WHERE kind = 'mod' AND status = 'held' ORDER BY id LIMIT ?", (budget,)):
+            self.store.x("UPDATE dg_posts SET status = 'waiting', at = ? WHERE id = ?", (t, pid))
+            self.link.enqueue("dg.post", 0, id=pid)
 
     # -- staff picks -----------------------------------------------------------------------------------------------
     def pick(self, kind: str, by: dict, acct: str, title: str, link: str, line: str) -> tuple[dict, dict]:
@@ -843,7 +926,7 @@ class Growth:
         n = self.store.one("SELECT COUNT(*) FROM fd_outbox WHERE kind LIKE 'dg.%'")[0]
         errs = [r[0] for r in self.store.q("SELECT error FROM fd_outbox WHERE kind LIKE 'dg.%' AND error != '' ORDER BY id LIMIT 5")]
         return {"guild": self.link.guild, "feed": self.cfg.feed, "lfg": self.cfg.lfg, "roles": self.cfg.roles,
-                "automod": self.cfg.automod, "template": self.template_error or "ok", "waiting": n, "errors": errs,
+                "automod": self.cfg.automod, "mods": self.cfg.mods, "template": self.template_error or "ok", "waiting": n, "errors": errs,
                 "setup": self.jmeta("setup"), "roles_last": self.jmeta("roles_last"), "automod_last": self.jmeta("automod"),
                 "channels": int(self.store.one("SELECT COUNT(*) FROM dg_map WHERE kind = 'channel'")[0]),
                 "roles_mapped": int(self.store.one("SELECT COUNT(*) FROM dg_map WHERE kind = 'role'")[0])}
@@ -909,7 +992,9 @@ class Growth:
                  f'(at most {self.cfg.feed_per_hour} realm cards an hour)</li>'
                  f'<li>{chip(st["lfg"])} Find a group <code>WU_DISCORD_LFG</code></li>'
                  f'<li>{chip(st["roles"])} Roles from accounts, nightly at {self.cfg.roles_hour:02d}:00 UTC <code>WU_DISCORD_ROLES</code></li>'
-                 f'<li>{chip(st["automod"])} AutoMod with our blocked words <code>WU_DISCORD_AUTOMOD</code></li></ul>')
+                 f'<li>{chip(st["automod"])} AutoMod with our blocked words <code>WU_DISCORD_AUTOMOD</code></li>'
+                 f'<li>{chip(st["mods"])} Listed mods, new and updated, in mods <code>WU_DISCORD_MODS</code> '
+                 f'(at most {self.cfg.mods_per_hour} an hour)</li></ul>')
         if st["template"] != "ok":
             feats += f'<p class="hq-warn">The template didn\'t load: {e(st["template"])}</p>'
         errs = ([self.link.last_error] if self.link.last_error else []) + st["errors"]

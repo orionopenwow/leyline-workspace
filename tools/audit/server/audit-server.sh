@@ -78,8 +78,12 @@ else
     say world_restart ok "no restart in the last hour"
   fi
 fi
-oomk=$( (journalctl -k --since "-24h" 2>/dev/null || dmesg 2>/dev/null) | grep -ciE 'out of memory|oom-kill|killed process' || true)
-if [ "${oomk:-0}" -gt 0 ]; then say oom bad "$oomk out-of-memory lines in the kernel log in the last 24 h"
+klog=$( (journalctl -k --since "-24h" 2>/dev/null || dmesg 2>/dev/null) | grep -iE 'out of memory|oom-kill|killed process' || true)
+oomk=$(printf '%s\n' "$klog" | grep -c . || true)
+# which programs were killed (names only; 2 Nov: the count alone didn't say whether it was the realm or a capped helper)
+oomwho=$(printf '%s\n' "$klog" | sed -n 's/.*[Kk]illed process [0-9]* (\([^)]*\)).*/\1/p' | sort | uniq -c | sort -rn | awk '{printf "%s%s x%s", (NR>1?", ":""), $2, $1}' | cut -c1-120)
+cg=$(printf '%s\n' "$klog" | grep -ci 'memory cgroup' || true)
+if [ "${oomk:-0}" -gt 0 ]; then say oom bad "$oomk out-of-memory lines in the kernel log in the last 24 h${oomwho:+ (killed: $oomwho)}$( [ "${cg:-0}" -gt 0 ] && echo "; $cg of them a container's own memory cap")"
 else say oom ok "no out-of-memory kills in the last 24 h"; fi
 soapinfo=$(soap "server info" 2>&1 | head -3 | tr '\n' ' ')
 if printf '%s' "$soapinfo" | grep -qiE 'uptime|players|connected'; then say soap ok "$(printf '%s' "$soapinfo" | cut -c1-200)"

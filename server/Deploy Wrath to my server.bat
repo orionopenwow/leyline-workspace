@@ -42,6 +42,15 @@ if exist "%UP%\kit" rmdir /s /q "%UP%\kit"
 mkdir "%UP%\kit" "%UP%\kit\sql" "%UP%\kit\custom"
 for %%f in (docker-compose.prod.yml deploy.sh rollback.sh set-realm-address.sh backup.sh restore.sh soap-cmd.sh) do copy /y "%%f" "%UP%\kit\" >nul || goto fail
 xcopy /e /i /q /y portal "%UP%\kit\portal" >nul || goto fail
+rem The website as it is today (owner 2 Nov: "fix new site on server"): the kit's portal folder only keeps the account
+rem helper; the sign-in page and every module come from ..\stream, the same files "Update sign-in and warm-up.bat" sends,
+rem so a fresh server never comes up with an old copy of the site.
+set "S=%~dp0..\stream"
+if not exist "%S%\wrath_portal.py" (echo ..\stream\wrath_portal.py is missing. & pause & exit /b 1)
+copy /y "%S%\wrath_portal.py" "%UP%\kit\portal\" >nul || goto fail
+for %%m in (ratelimit links demo armory modes modes_data playmodes modepack workshop creations hostflow ed25519_pure herokey_sso projects social forum forum_discord discord_growth duels survivors profiles herokeys network bugreport docs leyline_net upstream_addons admin hq hub hub_rank listings) do if exist "%S%\%%m.py" copy /y "%S%\%%m.py" "%UP%\kit\portal\" >nul
+for %%j in (playmodes modepacks looks hostpack blocklist upstream-addons discord_template discord_template_v2) do if exist "%S%\%%j.json" copy /y "%S%\%%j.json" "%UP%\kit\portal\" >nul
+xcopy /e /i /q /y "%S%\www-files\art" "%UP%\kit\portal\art" >nul || goto fail
 copy /y "%R%\modules.env" "%UP%\kit\" >nul || goto fail
 xcopy /e /i /q /y "%R%\profiles" "%UP%\kit\profiles" >nul || goto fail
 xcopy /e /i /q /y "%R%\custom\lua_scripts" "%UP%\kit\custom\lua_scripts" >nul || goto fail

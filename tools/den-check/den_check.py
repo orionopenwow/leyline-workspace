@@ -992,8 +992,9 @@ def blp_is_ours(b):
         return False
     kind, comp, depth, _atype, mips, w, h = struct.unpack_from("<IBBBBII", b, 4)
     off0, size0 = struct.unpack_from("<I", b, 20)[0], struct.unpack_from("<I", b, 84)[0]
-    return (kind, comp, depth, mips) == (1, 1, 0, 1) and w == h and size0 == w * h and off0 == 1172 \
-        and b[148:151] == b"\xff\xff\xff" and not any(b[off0:off0 + size0])
+    # our made one (palette or DXT1), or the light snow texture from the player's own archives the launcher puts at
+    # our name (2 Nov: the game drew the made ones green): any whole BLP2 with mips
+    return kind == 1 and comp in (1, 2, 3) and mips in (1, 2) and w > 0 and h > 0 and off0 >= 148 and len(b) >= off0 + size0
 
 
 def ground_lines(rep, detail, patch_t=None):

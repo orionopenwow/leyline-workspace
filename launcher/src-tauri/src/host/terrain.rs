@@ -224,13 +224,44 @@ fn after_slot(client: &Path) -> Vec<PathBuf> {
     v
 }
 
+/// The bytes that go in patch-T at our texture's name: a light ground texture from the player's OWN archives (a snow
+/// tileset, found through their archives' listfiles), else our own made white one. 2 Nov 02:53: the game drew our made
+/// texture (palette and DXT1 alike) as bright green, its sign for a texture it can't use; one of its own always works.
+pub fn den_texture(client: &Path) -> Vec<u8> {
+    let order = archive_order(client);
+    let mut names: Vec<String> = Vec::new();
+    for p in order.iter().rev() {
+        let Ok(mut a) = crate::mpq::GameArchive::open(p) else { continue };
+        let Ok(Some(list)) = a.read("(listfile)") else { continue };
+        for l in String::from_utf8_lossy(&list).lines() {
+            let n = l.trim();
+            let low = n.to_ascii_lowercase();
+            if low.starts_with("tileset\\") && low.ends_with(".blp") && !low.ends_with("_s.blp") && low.contains("snow")
+                && !["rock", "dirt", "grass", "ice", "road", "path", "mud", "stone", "trans", "blend"].iter().any(|w| low.contains(w))
+            {
+                names.push(n.to_string());
+            }
+        }
+    }
+    names.sort_by_key(|n| (n.len(), n.to_ascii_lowercase()));
+    names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+    for n in names.iter().take(8) {
+        if let Ok(Some(b)) = crate::mpq::read_own(&order, n) {
+            if b.starts_with(b"BLP2") {
+                return b;
+            }
+        }
+    }
+    pad::pad_texture()
+}
+
 /// Besides the tile, what the Den's patch-T holds: our white texture; the player's own sky tables with the sky over
 /// the Den white (`leyline_terrain::dbc::white_sky`); the player's own AreaTable with the Den's zone called "Your
 /// Den". Each table only when it reads and has the shape Leyline knows: else that part is left out (the ground is
 /// still white) and the status says why. Never fails.
 pub fn den_extras(client: &Path, d: &Delta, tile: &[u8]) -> (Vec<(String, Vec<u8>)>, GroundStatus) {
     use leyline_terrain::dbc::{self, Dbc};
-    let mut files: Vec<(String, Vec<u8>)> = vec![(pad::PAD_TEXTURE.to_string(), pad::pad_texture())];
+    let mut files: Vec<(String, Vec<u8>)> = vec![(pad::PAD_TEXTURE.to_string(), den_texture(client))];
     let mut st = GroundStatus { open: d.open.len(), ..Default::default() };
     let centre = d.pad.as_ref().and_then(|p| p.centre).map(|c| (c[0], c[1])).unwrap_or((pad::DEN.0, pad::DEN.1));
     let t = leyline_terrain::adt::Adt::parse(tile, None).ok();
@@ -464,7 +495,7 @@ pub fn workspace(app: &Path, client: &Path, den_root: &Path) -> Result<(Workspac
     let tex: PathBuf = pad::PAD_TEXTURE.split('\\').collect();
     let tex = dir.join(tex);
     fs::create_dir_all(tex.parent().unwrap()).map_err(err)?;
-    crate::settings::write_atomic(&tex, &pad::pad_texture()).map_err(err)?;
+    crate::settings::write_atomic(&tex, &den_texture(client)).map_err(err)?;
     // the ground as Forge reads it (forge/docs/DEN-MODE.md): it keeps base, open and pad from this file
     crate::settings::write_atomic(&dir.join(format!("{GROUND}.terrain.json")), flat_text.as_bytes()).map_err(err)?;
     // the tiles Forge may save: one "x,y" a line (DEN-MODE.md `--locked-tiles <file>`)

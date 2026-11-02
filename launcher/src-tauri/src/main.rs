@@ -4,6 +4,11 @@
 #[cfg(feature = "app")]
 fn main() {
     mcp_first();
+    // `Leyline den-play [--test]`: My Den with no launcher window (the owner's den-test step; denclick.rs)
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(cli) = leyline_lib::denclick::parse_cli(&args) {
+        std::process::exit(leyline_lib::den_play_cli(cli));
+    }
     leyline_lib::run();
 }
 

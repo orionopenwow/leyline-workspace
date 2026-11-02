@@ -105,6 +105,13 @@ STEPS = {
     # with client/patches/series.txt, the fat-LTO release build, packed into play\ like every build. Then "client" ships it.
     "client-build": ("client/Build browser client.bat", "Build the browser client on this PC (about an hour; then the client step)", False),
     "den-lite": ("tools/den-lite/Build Den Lite.bat", "Build Den Lite on this PC (the instant Den server, no Docker) for the launcher's Your Den", False),
+    # My Den, one click into the world on this PC's own game (tools/den-check/den_check.py): den-check looks (read-only:
+    # the game folder, Leyline's login archive, Config.wtf, Den Lite and a sign-in through the exact steps on a Den Lite
+    # of its own); den-test runs the real thing unattended (Leyline.exe den-play --test: Den Lite, the game, signed in,
+    # the white island, a screenshot, closed again) and leaves tools\den-check\logs\den-test-latest.txt and .png.
+    "den-check": ("tools/den-check/Den check.bat", "My Den check (read-only): game folder, login archive, Config.wtf, Den Lite and a test sign-in", False),
+    "den-test": ("tools/den-check/Den test.bat", "My Den test: starts your game by itself, signs in, the white island, a screenshot, closes it (logs in tools\\den-check\\logs)", False),
+    "den-test-invite": ("tools/den-check/Den test - invite.bat", "My Den test with a friend: as den-test, and a test friend joins through the friends' listener", False),
     "client":  ("stream/Update browser client.bat", "New browser game build", False),
     "client-back": ("stream/Roll back browser client.bat", "Undo: the previous browser game build back (the server keeps one; running it again swaps back)", False),
     "signin":  ("stream/Update sign-in and warm-up.bat", "Play page and sign-in", False),
@@ -218,7 +225,7 @@ STEPS = {
 # Autopilot runs only these by itself; anything else waits for "Launch all".
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
-             "vr-data-check", "vr-site-check", "release-mirror-check", "bugs", "audit"}
+             "vr-data-check", "vr-site-check", "release-mirror-check", "bugs", "audit", "den-check"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}
 
 # Never in a log or on the page: passwords, tokens, keys, connection strings (scrub() on every line a step prints).

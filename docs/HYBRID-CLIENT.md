@@ -15,6 +15,23 @@ real Windows PC yet.** The one test that decides most of the design is T1 below.
 Words: this document is for the owner and contributors. Nothing a player sees (glue text, launcher text) carries a
 game brand name or a version number; the glue's tip lines are the browser's own list (`stream/www-files/wu-loading.js`).
 
+## My Den, one click (1 Nov, after the owner's test at 16:39)
+
+The owner's start stopped at the login screen with only `DEN` filled in because `hybrid::write` needs Forever UI's
+login screens in the game folder (their `GlueXML.toc`): on his folder the archive was never written, so nothing
+signed in (and even then the Den's handoff stopped at character select). Now (`launcher/src-tauri/src/denclick.rs`):
+
+- **Stock game (any folder):** the launcher signs in with its own keys, posted to the game window only for the step
+  Den Lite's milestone log (`den-lite.events`) says didn't happen: the local password at the login screen, OK at the
+  realm list, Enter World at character select (Den Lite's ready-made character). Every step has a timeout.
+- **Where the game takes changed login screens** (Forever UI's glue in the folder): our login screen code goes first
+  (account `DENAUTO`, "Your Den", a character made if there is none, straight into the world), the keys only fill in.
+  A game that closes on it (a game program that checks its login screen files, T1) is remembered
+  (`<game>/Leyline/glue-refused`) and started again without it. The archive goes in `Data\patch-Z.MPQ` and
+  `Data\<locale>\patch-<locale>-Z.MPQ` (whichever folder wins). The handoff is taken out when the game closes.
+- **Testing on the owner's PC:** Control `den-check` (read-only) and `den-test` (unattended: `Leyline.exe den-play
+  --test`, a screenshot, logs in `tools\den-check\logs`), `den-test-invite` (a test friend joins too).
+
 ## Verdicts
 
 | # | Question | Verdict | What decides it |

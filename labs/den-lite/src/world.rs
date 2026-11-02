@@ -12,7 +12,7 @@
 
 use crate::companion::{self, Asked, At};
 use crate::den::{self, Change, WorldObject};
-use crate::{play, raw};
+use crate::{ovmod, play, raw};
 use crate::{Gender as HeroGender, Shared};
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -278,22 +278,41 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
     c.send(&SMSG_CLIENTCACHE_VERSION { version: 0 })?;
     c.send(&SMSG_TUTORIAL_FLAGS { tutorial_data: [u32::MAX; 8] })?;
     shared.log(&format!("world: {user} connected"));
+    shared.event("world_auth", &user.to_string(), "");
 
     let mut pos: Option<Pos> = None;
     // the open.json _watcher runs while this is Some (dropping it stops the thread)
     let mut _watcher: Option<StopOnDrop> = None;
+    // the Builder's selection (ovmod.rs), whether this session moved yet and was answered by the addon channel
+    let mut sel = ovmod::Sel::default();
+    let (mut moved_once, mut ready) = (false, false);
     loop {
         let (op, body) = c.read()?;
+        if op == ovmod::CMSG_MESSAGECHAT {
+            if let Some(m) = ovmod::parse_addon(&body) {
+                addon(&c.w, shared, &sess, pos, &mut sel, &mut ready, &m)?;
+                continue;
+            }
+        }
         let Some(m) = parse_client(op, &body) else { continue };
         match m {
             ClientOpcodeMessage::CMSG_READY_FOR_ACCOUNT_DATA_TIMES => c.send(&account_times(CacheMask::GLOBAL_CACHE))?,
-            ClientOpcodeMessage::CMSG_CHAR_ENUM => c.send(&SMSG_CHAR_ENUM { characters: vec![character(shared, &sess.me)] })?,
+            ClientOpcodeMessage::CMSG_CHAR_ENUM => {
+                c.send(&SMSG_CHAR_ENUM { characters: vec![character(shared, &sess.me)] })?;
+                shared.event("char_enum", &sess.me.name, "1");
+            }
+            // Den Lite keeps its one ready-made character: a made one is "made" and the list shows that one
+            ClientOpcodeMessage::CMSG_CHAR_CREATE(_) => {
+                c.send(&SMSG_CHAR_CREATE { result: WorldResult::CharCreateSuccess })?;
+                shared.event("char_create", &sess.me.name, "");
+            }
             ClientOpcodeMessage::CMSG_REALM_SPLIT(r) => c.send(&SMSG_REALM_SPLIT {
                 realm_id: r.realm_id,
                 state: RealmSplitState::Normal,
                 split_date: "01/01/01".into(),
             })?,
             ClientOpcodeMessage::CMSG_PLAYER_LOGIN(p) => {
+                shared.event("player_login", &sess.me.name, "");
                 if p.guid.guid() != sess.me.guid {
                     c.send(&SMSG_CHARACTER_LOGIN_FAILED { result: WorldResult::CharLoginNoCharacter })?;
                     continue;
@@ -304,10 +323,14 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 let start = At { x: spot.x + side, y: spot.y, z: floor + 1.0, o: std::f32::consts::FRAC_PI_2 };
                 enter_world(&c.w, shared, &sess.me, start)?;
                 pos = Some(start);
+                shared.event("in_world", &sess.me.name, &format!("{:.1} {:.1} {:.1}", start.x, start.y, start.z));
                 // the others: they see this player, this player sees them
                 for o in others(shared, sess.id) {
                     c.send(&player_create(&o.me, o.pos, false))?;
-                    let _ = o.w.send(&player_create(&sess.me, start, false));
+                    shared.event("peer_seen", &sess.me.name, &o.me.name);
+                    if o.w.send(&player_create(&sess.me, start, false)).is_ok() {
+                        shared.event("peer_seen", &o.me.name, &sess.me.name);
+                    }
                     if !sess.me.host {
                         let _ = say(&o.w, &format!("{} is in your Den.", sess.me.name));
                     }
@@ -345,6 +368,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 c.send(&SMSG_UPDATE_ACCOUNT_DATA_COMPLETE { data_type: u.data_type, unknown1: 0 })?
             }
             ClientOpcodeMessage::CMSG_LOGOUT_REQUEST => {
+                shared.event("logout", &sess.me.name, "");
                 // out of the world first (the companion goes with the player), then the client is told
                 leave(shared, sess.id);
                 pos = None;
@@ -365,6 +389,10 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
             other => {
                 if let (Some(p), Some(n)) = (pos.as_mut(), moved(&other)) {
                     *p = n;
+                    if !moved_once {
+                        moved_once = true;
+                        shared.event("first_move", &sess.me.name, "");
+                    }
                     if let Some(l) = shared.live.lock().unwrap().as_mut().filter(|l| l.0 == sess.id) {
                         l.2 = n;
                     }
@@ -381,6 +409,56 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
             }
         }
     }
+}
+
+/// An addon message (ovmod.rs): the in-game Den panel and Builder against this Den.
+fn addon(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Pos>, sel: &mut ovmod::Sel, ready: &mut bool, m: &ovmod::AddonMsg) -> io::Result<()> {
+    if m.prefix != ovmod::PREFIX {
+        return Ok(());
+    }
+    let label: String = m.text.split('\t').take(2).collect::<Vec<_>>().join(" ");
+    shared.event("addon", &sess.me.name, &label);
+    let here = pos.map(|p| ovmod::Here { x: p.x, y: p.y, z: p.z, o: p.o });
+    let can = sess.me.host || shared.guests_build.load(Ordering::Relaxed);
+    let outs = {
+        let mut d = shared.den.lock().unwrap_or_else(|e| e.into_inner());
+        ovmod::handle(&mut d, sel, here, m, sess.me.host, can)
+    };
+    for o in outs {
+        match o {
+            ovmod::Out::Addon(md, name, data) => {
+                for b in ovmod::answer_bodies(sess.me.guid, &md, &name, &data) {
+                    c.send_raw(ovmod::SMSG_MESSAGECHAT, &b)?;
+                }
+            }
+            ovmod::Out::Say(t) => say(c, &t)?,
+            ovmod::Out::Change(ch) => apply(c, shared, &ch)?,
+            ovmod::Out::DenCmd(t) => {
+                if let Some(p) = pos {
+                    chat(c, shared, sess, p, &format!(".den {t}"))?;
+                }
+            }
+            ovmod::Out::Ask(what) => ask_launcher(c, shared, &what)?,
+            ovmod::Out::Ready => {
+                if !*ready {
+                    *ready = true;
+                    shared.event("builder_ready", &sess.me.name, "");
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Ask the launcher for an invite link or to open Forge (ovmod::ASK_FILE); its answer comes back through
+/// `watch_open`. Without a launcher watching, the line says what to press there instead.
+fn ask_launcher(c: &Writer, shared: &Shared, what: &str) -> io::Result<()> {
+    ovmod::ask(&shared.cfg.den_dir, what);
+    shared.event("ask", "", what);
+    say(c, match what {
+        "invite" => "Making an invite link for one friend... It shows in your Den panel (/den) in a few seconds. (Or press Invite friends in the launcher.)",
+        _ => "Opening Forge to shape your Den's ground... (Or press Shape the ground in the launcher.) Your game shows the new ground after a restart.",
+    })
 }
 
 /// A movement packet's new position (the client moves itself; the server keeps where it is).
@@ -563,7 +641,7 @@ fn enter_world(c: &Writer, shared: &Shared, me: &Me, p: Pos) -> io::Result<()> {
         return say(c, if shared.guests_build.load(Ordering::Relaxed) { "You can build here too: .den place chair, .den stamp inn now, .build undo." }
             else { "Your host builds here; .den find lamp shows what there is to place." });
     }
-    say(c, &format!("Welcome to your Den: {} props.", shared.den.lock().unwrap().props.len()))?;
+    say(c, &format!("Welcome to your Den: {} props. {BUILDER_HINT}", shared.den.lock().unwrap().props.len()))?;
     for l in TUTORIAL {
         say(c, l)?;
     }
@@ -703,6 +781,9 @@ fn say(c: &Writer, text: &str) -> io::Result<()> {
         tag: PlayerChatTag::None,
     })
 }
+
+/// The in-game tools, at every login of the host (the Leyline UI's Builder and Den panel talk to Den Lite: ovmod.rs).
+pub const BUILDER_HINT: &str = "Builder: F7 or /builder (place, move, turn, delete, undo). Den panel: /den (Invite a friend, Shape the ground, save and load). Or type .den invite / .den forge.";
 
 const HELP: &[&str] = &[
     ".den place <name>: one piece in front of you (chair, lantern, house...); .den find <word>: what there is",
@@ -905,7 +986,8 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             Ok(())
         }
         (".den", "friends") => friends(c, shared, w(2), w(3)),
-        (".den", _) | (".build", _) => say(c, "Den Lite knows: .den place, .den find, .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room, .den grow, .den size, .den companion, .den ask, .den mode, .den mods, .den friends."),
+        (".den", "invite") | (".den", "forge") => ask_launcher(c, shared, w(1)),
+        (".den", _) | (".build", _) => say(c, "Den Lite knows: .den place, .den find, .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room, .den grow, .den size, .den companion, .den ask, .den mode, .den mods, .den friends, .den invite, .den forge."),
         _ => {
             say_aloud(c, shared, sess, text)?;
             // "Jaina, ..." near her: she hears it too (said aloud as usual). The short commands ("Jaina, come") are
@@ -1219,6 +1301,22 @@ fn watch_open(shared: &Arc<Shared>, w: Writer) -> StopOnDrop {
                 if say(&w, l).is_err() {
                     break;
                 }
+            }
+            // the launcher's answer to the game's ask (ovmod.rs): the invite link into the Den panel, or a line
+            let sent = match ovmod::take_answer(&dir) {
+                Some(ovmod::Answer::Invite(link)) => {
+                    let me = PLAYER_GUID;
+                    let mut ok = say(&w, "Your invite link is in the Den panel (/den): Ctrl+C copies it. Give it to one friend.").is_ok();
+                    for b in ovmod::answer_bodies(me, "wuden", "invite", &link) {
+                        ok &= w.send_raw(ovmod::SMSG_MESSAGECHAT, &b).is_ok();
+                    }
+                    ok
+                }
+                Some(ovmod::Answer::Say(t)) => say(&w, &t).is_ok(),
+                None => true,
+            };
+            if !sent {
+                break;
             }
             for _ in 0..20 {
                 if flag.load(Ordering::Relaxed) {

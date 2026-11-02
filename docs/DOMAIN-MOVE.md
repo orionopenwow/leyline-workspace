@@ -31,14 +31,11 @@ Owner, 1 Nov 2026: the domain was bought at 16:11 (registrar and DNS: Squarespac
 2. **Check.** In Control, run **domain-check** ("Domain move - check"). It changes nothing. It prints the
    server's IP, whether each of the four names already points at it, whether ports 80 and 443 reach Caddy, and the
    records above. DNS takes 10 to 30 minutes. Run it again until it says **READY**.
-3. **Google and Discord sign-in.** Add the new redirect addresses. Keep the old ones.
+3. **Google sign-in.** Add the new redirect address. Keep the old one. (Discord sign-in is not used any more: nothing to change there.)
    - Google Cloud console > APIs & Services > Credentials > the OAuth client > Authorized redirect URIs: add
      `https://leylinelauncher.com/auth/google/callback`. If "Authorized JavaScript origins" lists the old site, add
      `https://leylinelauncher.com` there too. OAuth consent screen > Authorized domains: add `leylinelauncher.com`,
      and change the home page and privacy links there to the new name.
-   - Discord developer portal > the application > OAuth2 > Redirects: add
-     `https://leylinelauncher.com/auth/discord/callback`. If an Interactions Endpoint URL is set, it can stay as it
-     is (it keeps working) or become `https://leylinelauncher.com/wrath/forum/api/discord/interactions`.
 4. **Ship today's update** (Claude does this: the sign-in, realm scripts and relay steps), so the server has the code
    that knows both names.
 5. **Turn it on.** Run **domain-on** ("Domain move - on"). It backs everything up, adds the new names (Caddy gets

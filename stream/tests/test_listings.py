@@ -164,6 +164,9 @@ store = PJ.Projects(data_dir=DATA, categories=["addons", "graphics", "tools", "r
 NOW = [1_800_000_000.0]
 CREATED = {"OLDIE": 0, "NEWBIE": NOW[0] - 3600}
 svc = L.Listings(store, net=net, now=lambda: NOW[0], accounts=lambda a: CREATED.get(a, 0))
+ANN = []   # the Discord hook (stream/discord_growth.py mod_listed through _announce): what went live, and how
+_announce_real = L._announce
+svc.announce = L._announce = lambda pid, kind: ANN.append((pid, kind)) or "sent"
 store.now = lambda: NOW[0]
 store.per_day = 20   # the Workshop's links-a-day limit applies to listings too; checked last below
 
@@ -334,6 +337,15 @@ L.set_policy({"auto_live": ["package"]})
 ok, rec = list_mod("OLDIE", "https://github.com/rs/events", "Server events for a small realm.", "realm-scripts")
 check("the owner's policy: realm scripts no longer go live at once", ok and PJ.held(rec), rec)
 L.set_policy({})
+check("Discord hook: only the listing that went live is announced (as new), never a held one", ANN == [(FR, "new")], ANN)
+LEAK = next(r["id"] for r in store.load() if r["url"].endswith("/leak/client-decompiled"))
+ANN.clear()
+_g = L._get
+L._get = lambda name: {"workshop": type("W", (), {"projects": store})()}.get(name)
+L.hq_actions(type("A", (), {"Refused": ValueError}))["listing.approve"][0]({"account": "MOD1"}, LEAK, {})
+L._get = _g
+check("Discord hook: a moderator's approve of a waiting listing announces it as new", ANN == [(LEAK, "new")], ANN)
+ANN.clear()
 check("the policy file round-trips and is cleaned", L.policy() == L.DEFAULT_POLICY and L.clean_policy({"report_hide": 999, "auto_live": ["x", "addon"]})
       == dict(L.DEFAULT_POLICY, auto_live=["addon"]))
 svc.check_log.clear()
@@ -457,11 +469,20 @@ check("Rising: installs this week far above last week", m["link:" + FR]["rising"
 
 # ---------------------------------------------------------------- updates when the author pushes
 gh_repo("alice", "Frames", {"Frames.toc": TOC, "Frames.lua": "print('v2')\n"}, SHA[23])
+check("Discord hook: the author listing their mod again is announced as new (the bot posts once per revision)", ANN == [(FR, "new")], ANN)
+ANN.clear()
 check("a branch-following listing picks up a safe push and applies it", svc.refresh_one(next(r for r in store.load() if r["id"] == FR)) == "updated")
 rec = next(r for r in store.load() if r["id"] == FR)
 check("... the new commit, new hashes, kept state", rec["listing"]["install"]["rev"] == SHA[23] and rec["listing"]["state"] == "reviewed"
       and rec["listing"]["install"]["files"]["Frames/Frames.lua"] == hashlib.sha256(b"print('v2')\n").hexdigest()
       and rec["listing"]["last_diff"]["changed"] == 1)
+check("... announced to the Discord once, as an update, with one line on what changed", ANN == [(FR, "update")]
+      and rec["listing"]["last_change"] == f"New revision {SHA[23][:7]} · 1 file changed", (ANN, rec["listing"].get("last_change")))
+mine = next(p for p in json.loads(w.all_json())["projects"] if p["id"] == "link:" + FR)
+check("all.json: the listed mod's Updated line (when, what changed)", mine.get("updated") == {"at": rec["listing"]["updated_at"],
+      "change": rec["listing"]["last_change"]}, mine.get("updated"))
+check("change_line: versions, files, plurals", L.change_line("1.0", "v1.1", {"changed": 2, "added": 1, "removed": 0}) == "v1.0 → v1.1 · 2 files changed, 1 file added"
+      and L.change_line("2", "2", {}, "v2b") == "New release v2b" and L.change_line(None, None, None) == "A new version")
 check("... and nothing new means same", svc.refresh_one(rec) == "same")
 gh_repo("alice", "Frames", {"Frames.toc": TOC, "Frames.lua": "x", "Media/x.blp": b"BLP2xxxx"}, SHA[24])
 check("a push that raises a flag waits as a pending update", svc.refresh_one(rec) == "pending")
@@ -474,6 +495,17 @@ check("Needs you: the update waits", any(x["id"] == "listing-up:" + FR for x in 
 acts["listing.update.approve"][0]({"account": "MOD1"}, FR, {})
 rec = next(r for r in store.load() if r["id"] == FR)
 check("approving the update makes it the install", rec["listing"]["install"]["rev"] == SHA[24] and "pending_update" not in rec["listing"])
+check("... a pending update is announced only once a moderator applies it", ANN == [(FR, "update"), (FR, "update")], ANN)
+
+# the real hook never lets Discord reach the listing: a bot that throws, or no bot at all
+_get_was = L._get
+boom = type("G", (), {"cfg": type("C", (), {"mods": True})(), "mod_listed": lambda self, rec, kind: 1 / 0})()
+L._get = lambda name: {"workshop": type("W", (), {"projects": store})(),
+                       "forum": type("F", (), {"store": type("S", (), {"discord": type("D", (), {"growth": boom})()})()})()}.get(name)
+check("_announce: a Discord bot that throws is logged, never raised", _announce_real(FR, "update") == "")
+L._get = lambda name: None
+check("_announce: no forum or no bot: nothing", _announce_real(FR, "new") == "")
+L._get = _get_was
 gh_repo("alice", "Frames", {"Frames.toc": TOC, "Frames.lua": "x", "m.m2": b"MD20xxxx"}, SHA[25])
 check("a push that fails the checks waits too (the old one stays)", svc.refresh_one(rec) == "pending"
       and next(r for r in store.load() if r["id"] == FR)["listing"]["install"]["rev"] == SHA[24])

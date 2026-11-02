@@ -22,6 +22,7 @@ The bot only does what portal.env turns on, and Set up the Discord only runs whe
 | Find a group | `WU_DISCORD_LFG=1` | "Alice wants a group for Goblin Brawl (Brawl)" in **looking-for-group**, with their Discord mention (no ping), a note and a Join button. From the website (the forum's Discord page, `/wrath/leyline/forum/discord`, `?group=<realm id>` picks the realm) or the launcher (`POST /wrath/forum/api/discord/group {realm?, what?, note?}`, Bearer token). Linked accounts only, no sanctions, the word and brand filters, one per account every `WU_DISCORD_LFG_GAP` minutes (30), `WU_DISCORD_LFG_PER_HOUR` (20) in all |
 | Roles from accounts | `WU_DISCORD_ROLES=1` | Once a night at `WU_DISCORD_ROLES_HOUR` UTC (4) linked people get the roles their Leyline facts earn (below). Every change is in HQ's audit log |
 | AutoMod | `WU_DISCORD_AUTOMOD=1` | Our blocked words (Content > Blocked words: slurs, sexual terms, profanity, the owner's words) as one Discord AutoMod keyword rule, "Leyline blocked words". Updated when the list changes and once a day; never deleted; turning it off in Discord is respected |
+| Listed mods | `WU_DISCORD_MODS=1` | A mod listed with **List your mod** (stream/listings.py) that goes live, or an update of one that is applied, gets a post in **mods** (the v2 plan: **mods-and-addons**): "**Raid Frames** v1.1 (abc1234) is updated · by **alice**", one line on what changed from the listing's own data ("v1.0 → v1.1 · 2 files changed, 1 file added"; a new one: "New addon: <its one-line description>"), and a See the mod button to `/wrath/mods/p/<id>` on our site. When: a listing that goes live at once on submit, a waiting one a moderator approves, an update the hourly check applies, an update a moderator approves in HQ. Once per listing revision, kept in the database (a restart never posts it again). At most `WU_DISCORD_MODS_PER_HOUR` (6) an hour; the rest wait and go out in order, and one waiting more than 6 hours is dropped. Names caught by the word or brand filter are recorded in Last posts, never posted (a description they catch is left out). Discord being down never holds up a listing: the post waits in the outbox. Packaged Workshop mods and hub submissions are not posted (they go live outside the portal: the mods step and the index pipeline) |
 
 Every post: no pings, no link previews, the host's markdown shown as typed, links only to our own site or the
 realm's own join link. Realms named with the game's name, flagged by the relay or hidden by staff are never posted.
@@ -89,8 +90,9 @@ powers and can't be pinged; `auto` names the fact that earns one, `keep` keeps i
    WU_DISCORD_LFG=1         # Find a group
    WU_DISCORD_ROLES=1       # roles from accounts, nightly
    WU_DISCORD_AUTOMOD=1     # needs Manage Server (step 3)
+   WU_DISCORD_MODS=1        # listed mods, new and updated, in mods
    ```
-   Optional: `WU_DISCORD_FEED_PER_HOUR` (4), `WU_DISCORD_LFG_GAP` (30 minutes), `WU_DISCORD_LFG_PER_HOUR` (20),
+   Optional: `WU_DISCORD_FEED_PER_HOUR` (4), `WU_DISCORD_MODS_PER_HOUR` (6), `WU_DISCORD_LFG_GAP` (30 minutes), `WU_DISCORD_LFG_PER_HOUR` (20),
    `WU_DISCORD_ROLES_HOUR` (4, UTC), `WU_DISCORD_TEMPLATE` (another template file).
 9. Check HQ > Content > Discord: each part on, "Last posts", "Last problem". Press **Run the role sync now** and
    **Push the words now** once to see them work.

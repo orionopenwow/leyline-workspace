@@ -66,7 +66,8 @@ No chat spam (owner 1 Nov 23:46; `src/notice.rs`): with the Leyline UI's Den bar
 hello `wuden hello`), what Den Lite says that nobody typed for (the welcome, Jaina's one greeting, the encouragement
 moments, the Builder's and the bar's answers, the launcher's answers, a friend in your Den) is a toast in the bar
 (`wuden toast <kind>|<text>`), and the bar hears every save (`wuden saved auto|<name>`) and a status line. Without a
-hello within `--ui-wait` milliseconds of entering (4000; a game without the addon), the old way: the welcome and five
+hello within `--ui-wait` milliseconds (4000) of the game being in the world (its first SET_ACTIVE_MOVER, time sync
+answer or move after the loading screen; at most `--ui-load`, 30000, after Enter World), the old way: the welcome and five
 quick-start lines in the chat. Typed `.den` commands always answer in the chat. Other chat is said back as your own
 line. One creature, the companion; no combat, spells, quests or loot.
 

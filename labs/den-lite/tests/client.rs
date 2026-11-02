@@ -56,6 +56,7 @@ fn server_with(tag: &str, gender: HeroGender, companion: bool) -> (den_lite::Run
         companion,
         // no Den bar in these tests: the old lines come after a short wait; every encouragement moment, no gap
         ui_wait_ms: 300,
+        ui_load_ms: 300,
         cheer_gap: 0,
         ..Config::default()
     };
@@ -812,6 +813,8 @@ fn run_program(dir: &std::path::Path, login_port: u16, world_port: u16) -> Progr
         .args(["--dens", &dir.display().to_string(), "--bind", "127.0.0.1", "--password", "den"])
         .args(["--stamps", &stamps().display().to_string()])
         .args(["--login-port", &login_port.to_string(), "--world-port", &world_port.to_string()])
+        // this test's game sends no "past the loading screen" packet and has no Den bar: the old lines soon
+        .args(["--ui-load", "500"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
@@ -980,7 +983,7 @@ fn the_companion_is_there_from_login_and_takes_short_commands() {
 fn the_den_is_kept_by_itself_and_open_again_after_a_restart() {
     let dir = std::env::temp_dir().join(format!("den-lite-test-autosave-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let cfg = || Config { login_port: 0, world_port: 0, den_dir: dir.clone(), stamps_dir: stamps(), companion: false, ..Config::default() };
+    let cfg = || Config { login_port: 0, world_port: 0, den_dir: dir.clone(), stamps_dir: stamps(), companion: false, ui_load_ms: 300, ..Config::default() };
     let srv = start(cfg()).unwrap();
     assert!(!dir.join("autosave.den.json").exists(), "an empty new Den writes nothing");
     let mut w = into_world(&srv, 0);
@@ -1259,7 +1262,7 @@ fn the_den_test_types_through_the_dens_folder_not_the_keyboard() {
     use den_lite::testctl::{CMD_FILE, OUT_FILE};
     let dir = std::env::temp_dir().join(format!("den-lite-test-testctl-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let cfg = Config { login_port: 0, world_port: 0, den_dir: dir.clone(), stamps_dir: stamps(), companion: false, test_control: true, ui_wait_ms: 300, ..Config::default() };
+    let cfg = Config { login_port: 0, world_port: 0, den_dir: dir.clone(), stamps_dir: stamps(), companion: false, test_control: true, ui_wait_ms: 300, ui_load_ms: 300, ..Config::default() };
     let srv = start(cfg).expect("den lite starts");
     let mut w = into_world(&srv, 2);
     w.send(&heartbeat(16226.2, 16257.0, 14.2, 0.0));
@@ -1361,7 +1364,7 @@ fn chat_lines(frames: &[Frame]) -> Vec<String> {
 fn with_the_den_bar_nothing_spams_the_chat() {
     let dir = std::env::temp_dir().join(format!("den-lite-test-bar-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let cfg = Config { login_port: 0, world_port: 0, den_dir: dir.clone(), stamps_dir: stamps(), companion: true, ui_wait_ms: 8000, cheer_gap: 0, ..Config::default() };
+    let cfg = Config { login_port: 0, world_port: 0, den_dir: dir.clone(), stamps_dir: stamps(), companion: true, ui_wait_ms: 8000, ui_load_ms: 8000, cheer_gap: 0, ..Config::default() };
     let srv = start(cfg).expect("den lite starts");
     let (key, _, address) = login(srv.login, "DEN", "den").expect("login");
     let mut w = World::connect(&address, "DEN", key, 3);
@@ -1465,6 +1468,30 @@ fn without_the_den_bar_the_old_lines_after_a_short_wait() {
     assert_eq!(w.notes, vec![den_lite::cheers::LINES[0].1.to_string()]);
     let evs = den_lite::events::read(&dir);
     assert!(evs.iter().any(|l| l.ev == "notice" && l.detail == "chat cheer") && !evs.iter().any(|l| l.ev == "den_ui"));
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+
+    // a long loading screen doesn't count: the wait starts when the game is in the world (its first move here)
+    let dir = std::env::temp_dir().join(format!("den-lite-test-loading-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let cfg = Config { login_port: 0, world_port: 0, den_dir: dir.clone(), stamps_dir: stamps(), companion: false, ui_wait_ms: 300, ui_load_ms: 60_000, ..Config::default() };
+    let srv = start(cfg).expect("den lite starts");
+    let (key, _, address) = login(srv.login, "DEN", "den").expect("login");
+    let mut w = World::connect(&address, "DEN", key, 0);
+    w.send(&CMSG_CHAR_ENUM {});
+    let ch = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_CHAR_ENUM(e)) => Some(e.characters[0].guid),
+        _ => None,
+    });
+    w.send(&CMSG_PLAYER_LOGIN { guid: ch });
+    std::thread::sleep(Duration::from_millis(1200));
+    assert!(!den_lite::events::read(&dir).iter().any(|l| l.ev == "notice"), "still loading: nothing said yet");
+    w.send(&heartbeat(16226.2, 16257.0, 14.2, 0.0));
+    let t = std::time::Instant::now();
+    assert!(w.until_line().1.starts_with("Welcome to your Den"));
+    assert!(t.elapsed() < Duration::from_secs(3), "soon after the game is in the world");
+    assert!(den_lite::events::read(&dir).iter().any(|l| l.ev == "loaded"));
     drop(w);
     drop(srv);
     let _ = std::fs::remove_dir_all(&dir);

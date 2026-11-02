@@ -4,8 +4,9 @@
 //! addon message `wuden toast <kind>|<text>` (ovmod.rs), instead of system lines in the chat.
 //!
 //! The bar says hello when it opens (`wuden hello <version>`). Until it has, what would be said waits; when no hello
-//! came within `Config::ui_wait_ms` of entering the world (a game without the addon, or an older one), it is said in
-//! the chat after all, the long way (the quick start's lines). Commands the player typed (`.den ...`) still answer in
+//! came within `Config::ui_wait_ms` of the game being in the world (its first CMSG_SET_ACTIVE_MOVER, time sync answer
+//! or move after the loading screen; at the latest `Config::ui_load_ms` after Enter World) (a game without the addon,
+//! or an older one), it is said in the chat after all, the long way (the quick start's lines). Commands the player typed (`.den ...`) still answer in
 //! the chat: they typed them. What the bar or the Builder asked for (an addon message) answers in the bar.
 //!
 //! The rest of this file is plain bookkeeping, so it is tested here; world.rs sends.
@@ -76,6 +77,7 @@ struct Waiting {
     sess: u64,
     due_ms: u64,
     items: Vec<Item>,
+    loaded: bool,
 }
 
 /// Which sessions have the bar, and what waits for a session's hello.
@@ -97,11 +99,23 @@ pub enum Route {
 }
 
 impl Notices {
-    /// A session entered the world: what it is told waits until `due_ms` for the bar's hello.
+    /// A session entered the world: what it is told waits until `due_ms` at the latest for the bar's hello.
     pub fn entered(&mut self, sess: u64, due_ms: u64) {
         self.ui.remove(&sess);
         self.waiting.retain(|w| w.sess != sess);
-        self.waiting.push(Waiting { sess, due_ms, items: Vec::new() });
+        self.waiting.push(Waiting { sess, due_ms, items: Vec::new(), loaded: false });
+    }
+
+    /// The game is past its loading screen: the wait ends at `due_ms` now (if that is sooner). True the first time.
+    pub fn loaded(&mut self, sess: u64, due_ms: u64) -> bool {
+        match self.waiting.iter_mut().find(|w| w.sess == sess && !w.loaded) {
+            Some(w) => {
+                w.loaded = true;
+                w.due_ms = w.due_ms.min(due_ms);
+                true
+            }
+            None => false,
+        }
     }
 
     pub fn has_ui(&self, sess: u64) -> bool {
@@ -219,8 +233,11 @@ mod tests {
     #[test]
     fn no_hello_in_time_the_old_way() {
         let mut n = Notices::default();
-        n.entered(3, 4000);
+        n.entered(3, 30_000);
         n.route(3, &Item::line("info", "Welcome."));
+        assert!(n.due(3999).is_empty(), "still on the loading screen");
+        assert!(n.loaded(3, 4000), "in the world: 4 s from now");
+        assert!(!n.loaded(3, 9000), "once");
         assert!(n.due(3999).is_empty());
         let d = n.due(4000);
         assert_eq!(d.len(), 1);

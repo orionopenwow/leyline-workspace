@@ -295,8 +295,16 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
     // the Builder's selection (ovmod.rs), whether this session moved yet and was answered by the addon channel
     let mut sel = ovmod::Sel::default();
     let (mut moved_once, mut ready) = (false, false);
+    // past the loading screen (notice.rs: the Den bar's hello is waited for from then)
+    let mut loaded = false;
     loop {
         let (op, body) = c.read()?;
+        if !loaded && pos.is_some() && (op == 0x026A || op == 0x0391 || raw_move(op, &body).is_some()) {
+            loaded = shared.notices.lock().unwrap_or_else(|e| e.into_inner()).loaded(sess.id, now_ms() + shared.cfg.ui_wait_ms);
+            if loaded {
+                shared.event("loaded", &sess.me.name, &format!("{op:#x}"));
+            }
+        }
         if op == ovmod::CMSG_MESSAGECHAT {
             if let Some(m) = ovmod::parse_addon(&body) {
                 addon(&c.w, shared, &sess, pos, &mut sel, &mut ready, &m)?;
@@ -358,6 +366,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 enter_world(&c.w, shared, &sess.me, start)?;
                 arrive(&c.w, shared, &sess, start)?;
                 pos = Some(start);
+                loaded = false;
                 shared.event("in_world", &sess.me.name, &format!("{:.1} {:.1} {:.1}", start.x, start.y, start.z));
                 // the others: they see this player, this player sees them
                 for o in others(shared, sess.id) {
@@ -796,7 +805,7 @@ fn enter_world(c: &Writer, shared: &Shared, me: &Me, p: Pos) -> io::Result<()> {
 /// without the bar gets the old lines (the welcome and the quick start) after `Config::ui_wait_ms`.
 fn arrive(c: &Writer, shared: &Shared, sess: &Sess, p: Pos) -> io::Result<()> {
     let me = &sess.me;
-    shared.notices.lock().unwrap_or_else(|e| e.into_inner()).entered(sess.id, now_ms() + shared.cfg.ui_wait_ms);
+    shared.notices.lock().unwrap_or_else(|e| e.into_inner()).entered(sess.id, now_ms() + shared.cfg.ui_load_ms);
     if !me.host {
         let host = shared.cfg.hero.name.clone();
         let builds = shared.guests_build.load(Ordering::Relaxed);

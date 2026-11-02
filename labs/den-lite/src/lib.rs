@@ -64,8 +64,10 @@ pub struct Config {
     pub verbose: bool,
     /// The den-test's commands through the Dens folder (testctl.rs); only with a loopback `bind`.
     pub test_control: bool,
-    /// How long what Den Lite says on entering waits for the Den bar's hello before it goes in the chat (notice.rs).
+    /// How long what Den Lite says on entering waits for the Den bar's hello before it goes in the chat (notice.rs),
+    /// from the game being in the world; and at most from Enter World (a long loading screen).
     pub ui_wait_ms: u64,
+    pub ui_load_ms: u64,
     /// The encouragement moments: at most one every this many seconds (notice.rs cheer_ok).
     pub cheer_gap: u64,
 }
@@ -91,6 +93,7 @@ impl Default for Config {
             verbose: false,
             test_control: false,
             ui_wait_ms: 4000,
+            ui_load_ms: 30_000,
             cheer_gap: 180,
         }
     }

@@ -9,6 +9,8 @@
 //!   tiles;
 //! * [`flat`]: the same delta in the form Forge writes and reads (whole chunks, additions and moves of models by id),
 //!   turned into ours and back;
+//! * [`blp`]: our own one-colour texture (BLP2, palette, every mip level), the Den's white ground;
+//! * [`dbc`]: the player's own game tables edited on their PC: the Den's white sky (Light*) and its name (AreaTable);
 //! * [`pad`]: the Den's white pad (2 x 2 chunks flattened and painted, grown by rings) and [`pad::Ground`], the ground
 //!   height at a point from a delta alone (Den Lite).
 //!
@@ -20,6 +22,8 @@
 
 pub mod adt;
 pub mod b64;
+pub mod blp;
+pub mod dbc;
 pub mod delta;
 pub mod flat;
 pub mod pad;

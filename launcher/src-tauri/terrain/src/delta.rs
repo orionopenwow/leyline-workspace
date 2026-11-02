@@ -669,6 +669,9 @@ pub fn apply_to(delta: &Delta, a: &mut Adt) -> Result<()> {
         if let Some(h) = &c.heights {
             let v = b64::to_f32s(h, 145).ok_or_else(|| Error("bad heights".into()))?;
             a.chunks[i].set_abs_heights(&v);
+            // the baked shadow (MCSH) was for the ground before: on the Den's white plane it was the island's
+            // trees' dark patches
+            a.chunks[i].shadow = None;
             moved[i] = true;
         }
         if let Some(ls) = &c.layers {

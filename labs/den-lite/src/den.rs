@@ -116,7 +116,9 @@ pub struct Look {
 }
 
 pub const LOOKS: &[Look] = &[
-    Look { name: "white", floor: 188142, wall: 188142, light: 190664, tile: 4.0, rows: 2 },
+    // white: no room at all (owner 1 Nov 20:55: the ice blocks froze him in; "a nearly infinite plane of flat white
+    // ground"): the launcher's white ground is the floor, nothing stands on it until you place something
+    Look { name: "white", floor: 0, wall: 0, light: 0, tile: 4.0, rows: 0 },
     Look { name: "stone", floor: 190024, wall: 19444, light: 180043, tile: 4.0, rows: 1 },
     Look { name: "wood", floor: 190615, wall: 211062, light: 179977, tile: 4.0, rows: 1 },
 ];
@@ -151,6 +153,9 @@ pub fn room_plan(spot: &Spot, l: &Look) -> Vec<(u32, f32, f32, f32, f32)> {
     let offs: Vec<f32> = (1..=n).map(|i| -half + tile * (i as f32 - 0.5)).collect();
     let fz = spot.z;
     let mut out = Vec::new();
+    if l.floor == 0 && l.wall == 0 && l.light == 0 {
+        return out;   // the open plane: no pieces
+    }
     for &ox in &offs {
         for &oy in &offs {
             out.push((l.floor, spot.x + ox, spot.y + oy, fz, 0.0));
@@ -948,30 +953,32 @@ mod tests {
     #[test]
     fn the_room_has_a_floor_walls_a_doorway_and_lights() {
         let spot = Spot { half: 16.0, ..Spot::default() };
-        let plan = room_plan(&spot, &LOOKS[0]);
-        let floor = plan.iter().filter(|p| p.3 == spot.z && p.0 == 188142).count();
-        let lights = plan.iter().filter(|p| p.0 == 190664).count();
+        assert!(room_plan(&spot, &look("white").unwrap()).is_empty(), "white: the open plane, no pieces");
+        let stone = look("stone").unwrap();
+        let plan = room_plan(&spot, &stone);
+        let floor = plan.iter().filter(|p| p.3 == spot.z && p.0 == stone.floor).count();
+        let lights = plan.iter().filter(|p| p.0 == stone.light).count();
         assert_eq!(floor, 64, "8 x 8 tiles of 4 yards");
         assert_eq!(lights, 4);
-        assert_eq!(plan.len(), 64 + 2 * (8 + 6 + 8 + 8) + 4);
-        let doorway = plan.iter().any(|p| p.0 == 188142 && p.3 > spot.z && (p.2 - (spot.y - 16.0)).abs() < 0.01 && (p.1 - spot.x).abs() < 4.0);
+        assert_eq!(plan.len(), 64 + (8 + 6 + 8 + 8) + 4);
+        let doorway = plan.iter().any(|p| p.0 == stone.wall && p.3 > spot.z && (p.2 - (spot.y - 16.0)).abs() < 0.01 && (p.1 - spot.x).abs() < 4.0);
         assert!(!doorway, "the south wall's middle stays open");
     }
 
     #[test]
     fn the_room_starts_small_and_grows_by_rings() {
         let mut den = Den::new(Spot::default());
-        assert_eq!((den.ring(), den.spot.half, den.room.len()), (0, 8.0, 16 + 2 * 14 + 4), "16 x 16 yards: 4 x 4 tiles");
+        assert_eq!((den.ring(), den.spot.half, den.room.len()), (0, 8.0, 0), "white: the open plane, no pieces");
         assert!(den.size_line().starts_with("Your Den is size 1 of 4: a 16 x 16 yard room, props up to 22 yards"), "{}", den.size_line());
         let (x, y) = (den.spot.x, den.spot.y);
         assert!(!den.inside(x + 25.0, y, 13.2));
         let old: Vec<u64> = den.room.iter().map(|o| o.guid).collect();
         let ch = den.resize(den.ring() + 1).unwrap();
         assert_eq!(ch.destroyed, old, "the old room goes");
-        assert_eq!(ch.created.len(), 64 + 2 * 30 + 4, "the new one: 32 x 32 yards");
+        assert_eq!(ch.created.len(), 0, "the open plane: nothing to build");
         assert!(den.inside(x + 25.0, y, 13.2), "inside follows");
         // the walls stand at the new half width
-        assert!(den.room.iter().any(|o| (o.x - (x + 16.0)).abs() < 0.01) && !den.room.iter().any(|o| (o.x - (x + 8.0)).abs() < 0.01));
+        assert_eq!(den.spot.half, 16.0);
         assert!(den.resize(1).unwrap_err().contains("size 2 already"));
         assert!(den.resize(4).unwrap_err().contains("up to size 4"));
         // a prop out at 25 yards: the room can't shrink back under it
@@ -979,14 +986,14 @@ mod tests {
         assert_eq!(den.stamp(&chair, x + 22.0, y, 13.2, 0.0).created.len(), 1);
         assert!(den.resize(0).unwrap_err().starts_with("1 props stand outside a size 1 Den"));
         assert_eq!(den.ring(), 1);
-        assert_eq!(den.resize(3).unwrap().created.len(), 256 + 2 * (16 + 14 + 16 + 16) + 4);
+        assert_eq!(den.resize(3).unwrap().created.len(), 0);
         // saved with its size, opened again at it (a full-Den file's size 12: the ring that holds it, 16)
         let doc = den.to_doc("big", 0);
         assert_eq!(doc.room.as_ref().unwrap().size, 32.0);
         let mut back = Den::new(Spot::default());
         let c = back.open(&parse(&serde_json::to_string(&doc).unwrap()).unwrap(), true);
         assert_eq!((back.spot.half, c.skipped), (32.0, 0));
-        assert_eq!(back.undo().destroyed.len(), 1 + 256 + 124 + 4, "undo: the prop and the big room go, the small one comes back");
+        assert_eq!(back.undo().destroyed.len(), 1, "undo: the prop goes (the white Den has no room pieces), the size goes back");
         assert_eq!(back.spot.half, 8.0);
         let mut d12 = Den::new(Spot::default());
         d12.open(&parse(r#"{"format":"leyline-den","version":1,"room":{"look":"white","size":12},"props":[]}"#).unwrap(), true);
@@ -1009,7 +1016,8 @@ mod tests {
     #[test]
     fn the_looks_and_stamps_entries_are_known() {
         for l in LOOKS {
-            assert!(template(l.floor).is_some() && template(l.wall).is_some() && template(l.light).is_some());
+            let open = l.floor == 0 && l.wall == 0 && l.light == 0;
+            assert!(open || (template(l.floor).is_some() && template(l.wall).is_some() && template(l.light).is_some()), "{}", l.name);
         }
         assert_eq!(template(188142).unwrap().display, 6752);
         assert_eq!(template(190664).unwrap().display, 7976);
@@ -1052,7 +1060,7 @@ mod tests {
         let doc = parse(text).unwrap();
         let mut den = Den::new(Spot::default());
         let c = den.open(&doc, true);
-        assert_eq!(c.created.len(), 3 + 128, "the props, and the room grown to the file's size 16");
+        assert_eq!(c.created.len(), 3, "the props (the white Den has no room pieces)");
         assert_eq!(den.props.len(), 3);
         let model = den.props.iter().find(|p| p.prop.entry == 2000004523).unwrap();
         assert_eq!((model.obj.entry, model.obj.display), (MODEL_CARRIER, 4523));

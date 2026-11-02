@@ -624,3 +624,5 @@
 1265b den-lite Den Lite with the Den test's command channel (off unless a test starts it)
 1265c foreverui Leyline UI: no combat-log box in Your Den
 1265d addons Leyline addons for desktop players: no combat-log box in Your Den
+1266a ship Your Den as an open white plane (the launcher rebuilds on GitHub)
+1266b den-lite Den Lite: the white Den has no ice-block room

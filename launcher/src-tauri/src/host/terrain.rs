@@ -155,11 +155,29 @@ pub fn own_tile(client: &Path, tile: &TileRef) -> Result<(Vec<u8>, AlphaMode), S
 }
 
 /// The white pad on the player's own tile (the first ground).
+/// The whole tile (owner 1 Nov 20:55: "a nearly infinite plane of flat white ground"): 533 yards a side, flat and
+/// white, the island's water gone. The pad's texture only when the player's own archives have it, else the light
+/// ground the tile already uses under the Den (never a missing texture).
+pub const FIRST_RING: u32 = 15;
+
 pub fn first_ground(client: &Path) -> Result<Delta, String> {
     let tile = pad::den_tile();
     let (base, _) = own_tile(client, &tile)?;
-    let p = delta::Pad { height: pad::DEN.2, texture: pad::PAD_TEXTURE.into(), centre: None };
-    pad::make_pad(&base, tile, p, 0).map_err(|e| e.0)
+    let order = archive_order(client);
+    let texture = if mpq::read_own(&order, pad::PAD_TEXTURE).ok().flatten().is_some() {
+        pad::PAD_TEXTURE.to_string()
+    } else {
+        leyline_terrain::adt::Adt::parse(&base, None)
+            .ok()
+            .and_then(|a| {
+                let block = pad::pad_block(&tile, (pad::DEN.0, pad::DEN.1));
+                let c = &a.chunks[(block.0 * 16 + block.1) as usize];
+                c.layers.first().and_then(|l| a.textures.get(l.texture as usize).cloned())
+            })
+            .unwrap_or_else(|| pad::PAD_TEXTURE.to_string())
+    };
+    let p = delta::Pad { height: pad::DEN.2, texture, centre: None };
+    pad::make_pad(&base, tile, p, FIRST_RING).map_err(|e| e.0)
 }
 
 /// The ground, made the first time it is asked for.
@@ -219,10 +237,22 @@ pub fn remove_patch(client: &Path) -> Result<bool, String> {
 /// Before a Den starts: patch-T from the player's own files plus the Den's ground (none yet: nothing, and an old one
 /// taken away). Returns the tile's sha256 when one was written.
 pub fn prepare_client(client: &Path, den_root: &Path) -> Result<Option<String>, String> {
-    let Some(d) = load(den_root)? else {
-        remove_patch(client)?;
-        return Ok(None);
-    };
+    // the first Den start makes the white ground (before: only the first Open in Forge did, so a new Den stood on
+    // the bare island inside a room of ice blocks)
+    let mut d = ground_or_pad(client, den_root)?;
+    // a ground from before (the 4-chunk pad, maybe shaped since): opened to the whole tile, what was made kept
+    if d.pad.is_some() && d.open.len() < 256 && d.base != "blank" {
+        if let Ok((base, _)) = own_tile(client, &d.tile) {
+            let mut g = d.clone();
+            while let Ok(n) = pad::grow(&base, &g) {
+                g = n;
+            }
+            if g.open.len() > d.open.len() {
+                save(den_root, &g)?;
+                d = g;
+            }
+        }
+    }
     let tile = build_tile(client, &d)?;
     let sha = sha_hex(&tile);
     write_patch(client, &[(d.tile.adt_path(), tile)])?;
@@ -514,12 +544,11 @@ pub(crate) mod tests {
     fn the_first_ground_is_the_pad_and_patch_t_holds_exactly_the_dens_tile() {
         let g = game();
         let dens = tempfile::tempdir().unwrap();
-        assert_eq!(prepare_client(g.path(), dens.path()).unwrap(), None, "no ground yet: no patch");
-        assert!(!g.path().join("Data").join(SLOT).exists());
-        let d = ground_or_pad(g.path(), dens.path()).unwrap();
-        assert_eq!(d.open.len(), 4);
-        assert!(ground_path(dens.path()).is_file());
+        assert!(!ground_path(dens.path()).is_file());
         let sha = prepare_client(g.path(), dens.path()).unwrap().unwrap();
+        assert!(ground_path(dens.path()).is_file(), "the first Den start makes the white ground");
+        let d = ground_or_pad(g.path(), dens.path()).unwrap();
+        assert_eq!(d.open.len(), 256, "the whole tile");
         let a = fs::read(g.path().join("Data").join(SLOT)).unwrap();
         let tile = mpq::read(&a, &d.tile.adt_path()).unwrap();
         assert_eq!(sha_hex(&tile), sha);
@@ -566,12 +595,12 @@ pub(crate) mod tests {
         assert_eq!((handed.base.as_str(), handed.open.clone()), ("own:1/1/1", d.open.clone()), "Forge gets the base and the open area");
         // closed without saving: nothing
         assert_eq!(import(g.path(), dens.path(), &ws).unwrap(), Imported { from: "tile".into(), ..Default::default() });
-        // a hill on the pad (152) and one outside it (0); another tile saved too
+        // a hill on the pad (152) and one at the tile's corner (0, open too: the ground is the whole tile); another tile saved too
         hill(&ws, &[152, 0], 10.0);
         fs::write(ws.adt.with_file_name("Kalimdor_2_1.adt"), b"x").unwrap();
         let r = import(g.path(), dens.path(), &ws).unwrap();
         assert!(r.changed && r.from == "tile");
-        assert_eq!((r.chunks, r.ignored), (1, 1));
+        assert_eq!((r.chunks, r.ignored), (2, 0));
         assert_eq!(r.other_tiles, vec!["Kalimdor_2_1.adt".to_string()]);
         let now = load(dens.path()).unwrap().unwrap();
         assert!(dens::dir(dens.path()).join("yourden.terrain.prev.json").is_file(), "the one before is kept");

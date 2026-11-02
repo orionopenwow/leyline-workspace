@@ -211,7 +211,7 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
     }
     let autosaved = d.autosave_key();
     let events = events::Events::new(&cfg.den_dir);
-    events.note("start", "", &la.port().to_string());
+    events.note("start", "", &format!("{}{}", la.port(), if cfg.test_control { " test" } else { "" }));
     let shared = Arc::new(Shared {
         events,
         den: Mutex::new(d),

@@ -824,10 +824,12 @@ pub fn den_play_cli(cli: crate::denclick::Cli) -> i32 {
         Ok(w) => w,
         Err(e) => return fail(e),
     };
-    let st = match den_launch(&core, &client) {
-        Ok((_, st)) => st,
+    let (launch_msg, st) = match den_launch(&core, &client) {
+        Ok((p, st)) => (p.message, st),
         Err(e) => return fail(e),
     };
+    // the white ground (host/terrain.rs patch-T) while the game runs: for the test's report
+    let ground = crate::host::terrain::slot(&game).map(|(_, ours)| ours).unwrap_or(false);
     let out = den_watch(st, cli.test.then_some(cli.hold));
     if cli.test && !was {
         let _ = lite::Binary::find(&settings::app_dir()).stop();
@@ -838,6 +840,8 @@ pub fn den_play_cli(cli: crate::denclick::Cli) -> i32 {
             v["closed"] = true.into();
             v["den_lite_stopped"] = (cli.test && !was).into();
             v["den_lite_restarted"] = restarted.into();
+            v["launch"] = launch_msg.clone().into();
+            v["ground"] = ground.into();
             let _ = settings::write_atomic(&root.join(crate::denclick::REPORT), v.to_string().as_bytes());
         }
     }

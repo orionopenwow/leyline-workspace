@@ -431,6 +431,7 @@ pub mod win {
     const VK_BACK: u32 = 0x08;
     const VK_RETURN: u32 = 0x0D;
     const VK_W: u32 = 0x57;
+    const VK_UP: u32 = 0x26;
     const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
     const STILL_ACTIVE: u32 = 259;
 
@@ -440,6 +441,7 @@ pub mod win {
         fn IsWindowVisible(h: Hwnd) -> i32;
         fn GetClassNameW(h: Hwnd, buf: *mut u16, n: i32) -> i32;
         fn PostMessageW(h: Hwnd, msg: u32, w: usize, l: isize) -> i32;
+        fn SetForegroundWindow(h: Hwnd) -> i32;
         fn MapVirtualKeyW(code: u32, map: u32) -> u32;
         fn OpenProcess(access: u32, inherit: i32, pid: u32) -> isize;
         fn GetExitCodeProcess(h: isize, code: *mut u32) -> i32;
@@ -540,7 +542,16 @@ pub mod win {
                 ok & key(h, VK_RETURN, 0)
             }
             Key::Enter => key(h, VK_RETURN, 0),
-            Key::Forward => key(h, VK_W, 400),
+            // the game in front first (a game in the background may not move on posted keys), then W, then the
+            // up arrow (both move forward unless the player rebound them)
+            Key::Forward => {
+                // SAFETY: bringing the game's own window to the front
+                unsafe { SetForegroundWindow(h) };
+                std::thread::sleep(std::time::Duration::from_millis(150));
+                let a = key(h, VK_W, 400);
+                gap();
+                a & key(h, VK_UP, 400)
+            }
         }
     }
 }

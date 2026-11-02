@@ -647,3 +647,5 @@
 1271b ship Save tonight's site and Discord changes to GitHub
 1273a ship The Den test updates Leyline's addons first (the launcher rebuilds on GitHub)
 1273b ship Den Lite: the characters list again (the launcher and Den Lite rebuild on GitHub)
+1275a ship Your Den round 3: white ground as DXT1, combat-log box closed, the character can move (the launcher and Den Lite rebuild)
+1275b addons Leyline addons: the combat-log box closed where this client shows it

@@ -22,7 +22,9 @@ const OLD_PAD_TEXTURES: &[&str] = &["Tileset\\Generic\\White.blp"];
 
 /// Our texture's bytes (what goes in patch-T at [`PAD_TEXTURE`]).
 pub fn pad_texture() -> Vec<u8> {
-    crate::blp::solid(PAD_TEXTURE_SIZE, PAD_TEXTURE_BGRA).expect("a power of two")
+    // DXT1 white (RGB565 0xFFFF): the form the game's own terrain textures use
+    let _ = PAD_TEXTURE_BGRA;
+    crate::blp::solid_dxt1(PAD_TEXTURE_SIZE, 0xFFFF).expect("a power of two")
 }
 
 /// The Den's tile: Kalimdor_1_1.

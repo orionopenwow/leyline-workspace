@@ -800,6 +800,12 @@ fn enter_world(c: &Writer, shared: &Shared, me: &Me, p: Pos) -> io::Result<()> {
     c.send(&SMSG_LOGIN_SETTIMESPEED { datetime: login_time(), timescale: 1.0 / 60.0, unknown1: 0 })?;
     c.send(&SMSG_TIME_SYNC_REQ { time_sync: 0 })?;
     c.send(&player_create(me, p, true))?;
+    // the game moves the character only while it has the control of it (SMSG_CLIENT_CONTROL_UPDATE, 0x159: packed
+    // guid, allow): said once, as AzerothCore's Player::SetClientControl does (2 Nov: the real game never moved)
+    let mut ctl = Vec::new();
+    crate::raw::packed_guid(&mut ctl, me.guid);
+    ctl.push(1);
+    c.send_raw(0x159, &ctl)?;
     c.send(&SMSG_INIT_WORLD_STATES { map: Map::Kalimdor, area: AREA, sub_area: AREA, states: vec![] })?;
     let objs = shared.den.lock().unwrap().everything();
     send_creates(c, &objs)?;

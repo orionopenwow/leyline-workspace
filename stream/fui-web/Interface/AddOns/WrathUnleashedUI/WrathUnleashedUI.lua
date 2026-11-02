@@ -697,9 +697,12 @@ function W.DenQuiet(text)
     return type(text) == "string" and text:find("Blizzard_CombatLog", 1, true) ~= nil and W.InDen()
 end
 local function denQuietBox()
-    local d = BasicMessageDialog
-    local t = d and (d.Text or _G["BasicMessageDialogText"])
-    if d and d:IsShown() and t and t.GetText and W.DenQuiet(t:GetText()) then d:Hide() end
+    -- message() shows ScriptErrors (ScriptErrorsText) in this client; BasicMessageDialog in later ones
+    for _, pair in ipairs({ { "BasicMessageDialog", "BasicMessageDialogText" }, { "ScriptErrors", "ScriptErrorsText" } }) do
+        local d = _G[pair[1]]
+        local t = d and (d.Text or _G[pair[2]])
+        if d and d.IsShown and d:IsShown() and t and t.GetText and W.DenQuiet(t:GetText()) then d:Hide() end
+    end
 end
 -- message() shows the box (FrameXML BasicControls.xml); a secure post-hook taints nothing that calls it
 if hooksecurefunc and type(message) == "function" then

@@ -147,6 +147,9 @@ STEPS = {
     # Azeroth Survivors at its own address (docs/SURVIVORS.md, steps 7 and "Off again"). The recording before it
     # (tools\survivors\Record Survivors files.bat) asks for your Data folder and plays in a browser window for about
     # 45 minutes, so it stays a double-click and is not a step here.
+    # owner 2 Nov "do the record": the same double-click as a step, now that tools\survivors\out\data-folder.txt names
+    # the 1.12 Data folder (no question). An Edge window plays for about 45 minutes, then asks for one pass by hand.
+    "sv-record": ("tools/survivors/Record Survivors files.bat", "Azeroth Survivors: record the game files it uses from your 1.12 folder (an Edge window, about 45 min, then one short pass by hand)", False),
     "sv-site-check": ("hosting/survivors/Put Survivors on Leyline - check.bat", "Azeroth Survivors: its address and DNS, and whether the build and your recorded files are ready (read-only)", False),
     "sv-site": ("hosting/survivors/Put Survivors on Leyline.bat", "Azeroth Survivors on: upload the build and your recorded files, its own site behind the sign-in, self-check, then Play (rollback on failure)", False),
     "sv-site-off": ("hosting/survivors/Put Survivors on Leyline - off.bat", "Undo: Azeroth Survivors off (Play off, its site out; the files stay on the server)", False),

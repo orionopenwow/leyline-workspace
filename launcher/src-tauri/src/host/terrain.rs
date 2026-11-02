@@ -261,7 +261,8 @@ pub fn den_texture(client: &Path) -> Vec<u8> {
 /// still white) and the status says why. Never fails.
 pub fn den_extras(client: &Path, d: &Delta, tile: &[u8]) -> (Vec<(String, Vec<u8>)>, GroundStatus) {
     use leyline_terrain::dbc::{self, Dbc};
-    let mut files: Vec<(String, Vec<u8>)> = vec![(pad::PAD_TEXTURE.to_string(), den_texture(client))];
+    let made = std::env::var("LEYLINE_DEN_TEX").is_ok_and(|v| v == "made");
+    let mut files: Vec<(String, Vec<u8>)> = vec![(pad::PAD_TEXTURE.to_string(), if made { pad::pad_texture() } else { den_texture(client) })];
     let mut st = GroundStatus { open: d.open.len(), ..Default::default() };
     let centre = d.pad.as_ref().and_then(|p| p.centre).map(|c| (c[0], c[1])).unwrap_or((pad::DEN.0, pad::DEN.1));
     let t = leyline_terrain::adt::Adt::parse(tile, None).ok();
@@ -278,7 +279,10 @@ pub fn den_extras(client: &Path, d: &Delta, tile: &[u8]) -> (Vec<(String, Vec<u8
         let b = mpq::read_own(&order, &format!("DBFilesClient\\{n}"))?.ok_or_else(|| format!("your game has no {n}"))?;
         Dbc::parse(&b).map_err(|e| format!("{n}: {}", e.0))
     };
-    st.sky = match (table(SKY_TABLES[0]), table(SKY_TABLES[2])) {
+    // the den-test's variants (tools/den-check "Den test - variants.bat"): LEYLINE_DEN_SKY=0 leaves the sky as the
+    // game's own, LEYLINE_DEN_AREA=0 the zone's name (2 Nov: the ground drew green, to find which part does it)
+    let off = |k: &str| std::env::var(k).is_ok_and(|v| v == "0");
+    st.sky = if off("LEYLINE_DEN_SKY") { "the game's own (the test asked)".into() } else { match (table(SKY_TABLES[0]), table(SKY_TABLES[2])) {
         (Ok(l), Ok(ib)) => match dbc::white_sky(&l, table(SKY_TABLES[1]).ok().as_ref(), &ib, d.tile.map, centre.0, centre.1) {
             Ok(s) => {
                 files.push((format!("DBFilesClient\\{}", SKY_TABLES[2]), s.int_band.write()));
@@ -290,8 +294,10 @@ pub fn den_extras(client: &Path, d: &Delta, tile: &[u8]) -> (Vec<(String, Vec<u8
             Err(e) => format!("the game's own ({})", e.0),
         },
         (Err(e), _) | (_, Err(e)) => format!("the game's own ({e})"),
-    };
-    st.area = if st.area_id == 0 {
+    } };
+    st.area = if off("LEYLINE_DEN_AREA") {
+        "the game's own (the test asked)".into()
+    } else if st.area_id == 0 {
         "the game's own (the Den's chunk has no zone)".into()
     } else {
         match table(AREA_TABLE).and_then(|a| dbc::rename_area(&a, st.area_id, dbc::DEN_NAME).map_err(|e| e.0)) {

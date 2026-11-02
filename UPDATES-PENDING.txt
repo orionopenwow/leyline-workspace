@@ -650,3 +650,5 @@
 1275a ship Your Den round 3: white ground as DXT1, combat-log box closed, the character can move (the launcher and Den Lite rebuild)
 1275b addons Leyline addons: the combat-log box closed where this client shows it
 1277a ship Your Den: the ground texture from your own game files (the launcher rebuilds on GitHub)
+1279a ship Den test variants and the addon's clues (the launcher rebuilds on GitHub)
+1279b addons Leyline addons: the box closed in more places; clues for the Den test

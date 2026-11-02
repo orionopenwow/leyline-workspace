@@ -140,14 +140,24 @@ pub fn explain(id: &str) -> Vec<String> {
 
 /// The addon names in the client's CMSG_AUTH_SESSION list (u32 size, then zlib: u32 count, then each: name,
 /// has-key byte, crc, extra crc), plain names only, up to 512.
-pub fn addon_names(blob: &[u8]) -> Vec<String> {
+/// The addon list's bytes: the message crate hands them over already decompressed (u32 count, then each addon);
+/// a raw CMSG_AUTH_SESSION tail (u32 size, then zlib) is decompressed here. (1 Nov 23:43: reading the crate's
+/// bytes as zlib gave 0 addons, so Den Lite answered none and the game called its own combat log addon "Banned".)
+pub fn addon_bytes(blob: &[u8]) -> Vec<u8> {
     use flate2::read::ZlibDecoder;
-    let mut out = Vec::new();
-    if blob.len() < 4 {
-        return out;
+    if blob.len() >= 6 {
+        let mut b = Vec::new();
+        if ZlibDecoder::new(&blob[4..]).take(64 * 1024).read_to_end(&mut b).is_ok() && b.len() >= 4 {
+            return b;
+        }
     }
-    let mut b = Vec::new();
-    if ZlibDecoder::new(&blob[4..]).take(64 * 1024).read_to_end(&mut b).is_err() || b.len() < 4 {
+    blob.to_vec()
+}
+
+pub fn addon_names(blob: &[u8]) -> Vec<String> {
+    let mut out = Vec::new();
+    let b = addon_bytes(blob);
+    if b.len() < 4 {
         return out;
     }
     let n = (u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize).min(512);
@@ -169,13 +179,9 @@ pub fn addon_names(blob: &[u8]) -> Vec<String> {
 /// The addons whose key CRC isn't the standard one (AzerothCore sends those its public key; Den Lite doesn't):
 /// for the den-test's report.
 pub fn addon_odd_crcs(blob: &[u8]) -> Vec<String> {
-    use flate2::read::ZlibDecoder;
     let mut out = Vec::new();
-    if blob.len() < 4 {
-        return out;
-    }
-    let mut b = Vec::new();
-    if ZlibDecoder::new(&blob[4..]).take(64 * 1024).read_to_end(&mut b).is_err() || b.len() < 4 {
+    let b = addon_bytes(blob);
+    if b.len() < 4 {
         return out;
     }
     let n = (u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize).min(512);
@@ -235,6 +241,22 @@ pub fn mods_lines(addons: &[String], client: Option<&Path>) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_addon_list_reads_as_the_message_crate_hands_it_over() {
+        // u32 count, then name\0, enabled u8, crc u32, unknown u32 (already decompressed)
+        let mut b = 2u32.to_le_bytes().to_vec();
+        for (n, crc) in [("Blizzard_CombatLog", 0x4C1C_776Du32), ("ForeverUI", 0x1234_5678)] {
+            b.extend_from_slice(n.as_bytes());
+            b.push(0);
+            b.push(1);
+            b.extend_from_slice(&crc.to_le_bytes());
+            b.extend_from_slice(&0u32.to_le_bytes());
+        }
+        assert_eq!(addon_names(&b), vec!["Blizzard_CombatLog".to_string(), "ForeverUI".to_string()]);
+        assert_eq!(crate::world::addon_count(&b), 2);
+        assert_eq!(addon_odd_crcs(&b), vec!["ForeverUI=12345678".to_string()]);
+    }
+
     use super::*;
 
     #[test]

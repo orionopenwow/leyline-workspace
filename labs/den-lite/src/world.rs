@@ -296,7 +296,32 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 continue;
             }
         }
-        let Some(m) = parse_client(op, &body) else { continue };
+        let Some(m) = parse_client(op, &body) else {
+            // a movement packet the message crate didn't read (the real game's, 1 Nov 23:43: not one move seen):
+            // where the player went, read by hand (packed guid, flags, flags2, time, x, y, z, o)
+            if let (Some(p), Some(n)) = (pos.as_mut(), raw_move(op, &body)) {
+                *p = n;
+                if !moved_once {
+                    moved_once = true;
+                    shared.event("first_move", &sess.me.name, "raw");
+                }
+                if let Some(l) = shared.live.lock().unwrap().as_mut().filter(|l| l.0 == sess.id) {
+                    l.2 = n;
+                }
+                if let Some(me) = shared.players.lock().unwrap().iter_mut().find(|x| x.sess == sess.id) {
+                    me.pos = n;
+                }
+                if let (Ok(code), Some(b)) = (u16::try_from(op), relay_body(sess.me.guid, &body)) {
+                    for o in others(shared, sess.id) {
+                        let _ = o.w.send_raw(code, &b);
+                    }
+                }
+            } else if raw_move(op, &body).is_some() && !moved_once {
+                moved_once = true;
+                shared.event("first_move", &sess.me.name, "raw");
+            }
+            continue;
+        };
         match m {
             ClientOpcodeMessage::CMSG_READY_FOR_ACCOUNT_DATA_TIMES => c.send(&account_times(CacheMask::GLOBAL_CACHE))?,
             ClientOpcodeMessage::CMSG_CHAR_ENUM => {
@@ -484,17 +509,27 @@ fn moved(m: &ClientOpcodeMessage) -> Option<Pos> {
     [v.x, v.y, v.z, i.orientation].iter().all(|f| f.is_finite()).then_some(At { x: v.x, y: v.y, z: v.z, o: i.orientation })
 }
 
+/// A client movement packet read by hand: MSG_MOVE_START_FORWARD (0x0B5) .. SET_WALK_MODE (0x0C3), FALL_LAND ..
+/// STOP_SWIM (0x0C9 - 0x0CB), SET_FACING / SET_PITCH (0x0DA, 0x0DB) and HEARTBEAT (0x0EE): packed guid, u32 flags,
+/// u16 flags2, u32 time, then x, y, z, orientation.
+pub fn raw_move(op: u32, body: &[u8]) -> Option<Pos> {
+    if !matches!(op, 0x0B5..=0x0C3 | 0x0C9..=0x0CB | 0x0DA | 0x0DB | 0x0EE) {
+        return None;
+    }
+    let mask = *body.first()?;
+    let at = 1 + mask.count_ones() as usize + 4 + 2 + 4;
+    let f = |k: usize| body.get(at + 4 * k..at + 4 * k + 4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+    let (x, y, z, o) = (f(0)?, f(1)?, f(2)?, f(3)?);
+    [x, y, z, o].iter().all(|v| v.is_finite() && v.abs() < 1.0e6).then_some(At { x, y, z, o })
+}
+
 /// How many addons the client listed in CMSG_AUTH_SESSION (u32 size, then zlib: u32 count, the addons...).
 pub fn addon_count(blob: &[u8]) -> usize {
-    use flate2::read::ZlibDecoder;
-    if blob.len() < 4 {
+    let b = play::addon_bytes(blob);
+    if b.len() < 4 {
         return 0;
     }
-    let mut out = Vec::new();
-    if ZlibDecoder::new(&blob[4..]).take(64 * 1024).read_to_end(&mut out).is_err() || out.len() < 4 {
-        return 0;
-    }
-    (u32::from_le_bytes([out[0], out[1], out[2], out[3]]) as usize).min(512)
+    (u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize).min(512)
 }
 
 fn account_times(mask: u32) -> SMSG_ACCOUNT_DATA_TIMES {

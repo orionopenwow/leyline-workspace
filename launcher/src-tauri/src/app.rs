@@ -243,8 +243,8 @@ fn point_and_play_with(
     let hybrid_on = (core.snapshot().hybrid_login || local) && profile.build == clients::Build::V335a;
     match &session {
         Some(s) if hybrid_on => hybrid = crate::hybrid::write(&profile.path, Some(s)).map(|_| ()),
-        Some(_) => {}
-        None => {
+        // the switch off: no sign-in from an earlier start stays in the folder either (2 Nov)
+        _ => {
             let _ = crate::hybrid::scrub(&profile.path);
         }
     }
@@ -290,15 +290,55 @@ fn den_ground_root(core: &Core, realm: &str) -> Option<PathBuf> {
     None
 }
 
-/// Point the client at the realm, then start it.
+/// Point the client at the realm, then start it. On the official realm, signed in on Home, the game signs in by
+/// itself and opens at character select (`play_official`).
 #[tauri::command]
-fn play(core: State<Core>, client: String, realm: String) -> Result<String, String> {
+async fn play(core: State<'_, Core>, client: String, realm: String) -> Result<String, String> {
+    if crate::addresses::is_official_realm(realm.trim()) {
+        return play_official(&core, &client, &realm).await;
+    }
     point_and_play(&core, &client, &realm, true)
 }
 
+/// PLAY on the official realm (owner 2 Nov: "goes to the loginscreen instead of skipping to character select after
+/// realm"), the way Your Den does: the player's own login from the website (crate::herokey::official_login, the
+/// launcher's token; nothing asked when signed out), its account name in Config.wtf, and the login handed to the
+/// login screen for this one start (crate::hybrid, `enter: false`: it stops at character select). Where that can't
+/// be (a folder without the changed login screens, the switch off), the account name is still filled in. Never stops
+/// the start: a failed sign-in is said after it.
+async fn play_official(core: &Core, client: &str, realm: &str) -> Result<String, String> {
+    let profile = core.client(client)?;
+    let mut login: Result<crate::herokey::GameLogin, String> = Err("signed_out".into());
+    if profile.build == clients::Build::V335a {
+        let dir = core.dir.clone();
+        login = blocking(move || crate::herokey::official_login(&dir)).await;
+    }
+    let session = login.as_ref().ok().map(|l| {
+        let _ = crate::herokey::set_account_name(&profile.path, &l.user);
+        crate::hybrid::Session { user: l.user.clone(), pass: l.pass.clone(), realm: None, enter: false }
+    });
+    let asked = login.map(|_| ());
+    let (message, hybrid) = point_and_play_with(core, client, realm, true, session, false)?;
+    Ok(message + &official_note(&asked, &hybrid))
+}
+
+/// What PLAY on the official realm adds to "Started …": how the player gets past the login screen. `login`: the
+/// website's login ("signed_out" when not signed in on Home); `hybrid`: whether the login screen got it.
+fn official_note(login: &Result<(), String>, hybrid: &Result<(), String>) -> String {
+    const PW: &str = "type your game password at the login screen (the website's Play page shows it, under your own game client).";
+    match (login, hybrid) {
+        (Ok(()), Ok(())) => " It signs you in by itself and opens at character select.".into(),
+        (Ok(()), Err(e)) if e.is_empty() => format!(" Your account name is filled in: {PW}"),
+        (Ok(()), Err(e)) => format!(" Your account name is filled in: {PW} (Signing in by itself didn't work here: {e})"),
+        (Err(e), _) if e == "signed_out" => " Sign in on Home (top right) and PLAY signs you in by itself.".into(),
+        (Err(e), _) => format!(" Signing in by itself didn't work ({e}): {PW}"),
+    }
+}
+
 /// Play on a realm from the Realms page: the official realm or a listed Beacon (its relay address). `client` is
-/// the player's pick; when its build does not fit the realm, one of their clients that fits is used, or the
-/// reply says which build is missing.
+/// the player's pick, and exactly that client starts: when its version can't play the realm, the reply says which
+/// folder to pick (realms::pick_client; owner 2 Nov, no silent swap). The official realm signs in by itself as PLAY
+/// does (`play_official`).
 #[tauri::command]
 async fn play_realm(core: State<'_, Core>, client: String, slug: String) -> Result<String, String> {
     let dir = core.dir.clone();
@@ -309,7 +349,7 @@ async fn play_realm(core: State<'_, Core>, client: String, slug: String) -> Resu
     };
     let r2 = realm.clone();
     let addr = blocking(move || realms::desktop_address(&r2, |relay| format!("https://{relay}"))).await?;
-    let mut msg = point_and_play(&core, &client, &addr, true)?;
+    let mut msg = if realm.official { play_official(&core, &client, &addr).await? } else { point_and_play(&core, &client, &addr, true)? };
     if !realm.official && realm.state != "live" {
         msg.push_str(" The list says this realm is offline right now, so it may not answer.");
     }
@@ -378,7 +418,7 @@ fn set_hybrid_login(core: State<Core>, on: bool) -> Result<String, String> {
         Ok(s.clone())
     })?;
     if on {
-        return Ok("The game signs in by itself on Hero Key realms.".into());
+        return Ok("The game signs in by itself on Wrath Unleashed and Hero Key realms.".into());
     }
     let mut n = 0;
     for c in &s.clients {
@@ -1749,6 +1789,48 @@ pub fn run() {
 #[cfg(test)]
 mod solo_tests {
     use super::*;
+
+    /// PLAY on the official realm (owner 2 Nov): what the player reads after "Started …", in each case, in plain
+    /// words with no version number and never a password.
+    #[test]
+    fn play_on_the_official_realm_says_how_it_gets_past_the_login_screen() {
+        let ok: Result<(), String> = Ok(());
+        let n = official_note(&ok, &Ok(()));
+        assert!(n.contains("signs you in by itself") && n.contains("character select"), "{n}");
+        let n = official_note(&ok, &Err(String::new()));
+        assert!(n.contains("account name is filled in") && !n.contains("didn't work"), "the switch off: {n}");
+        let n = official_note(&ok, &Err("Forever UI's login screens aren't in this game folder yet".into()));
+        assert!(n.contains("account name is filled in") && n.contains("didn't work here: Forever UI"), "{n}");
+        let n = official_note(&Err("signed_out".into()), &Err(String::new()));
+        assert!(n.contains("Sign in on Home"), "{n}");
+        let n = official_note(&Err("The website isn't answering".into()), &Err(String::new()));
+        assert!(n.contains("didn't work (The website") && n.contains("game password"), "{n}");
+        for n in [official_note(&ok, &Ok(())), official_note(&ok, &Err(String::new())), official_note(&Err("signed_out".into()), &Ok(()))] {
+            assert!(!n.chars().any(|c| c.is_ascii_digit()) && !n.to_lowercase().contains("warcraft"), "{n}");
+        }
+    }
+
+    /// The official realm's login goes into the hybrid archive for one start, as Your Den's does, with `enter: false`
+    /// (it stops at character select), and comes out again with the scrub; Config.wtf gets the account name only.
+    #[test]
+    fn the_official_login_goes_in_for_one_start_and_out_again() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join("Data/enUS")).unwrap();
+        std::fs::create_dir_all(d.path().join("WTF")).unwrap();
+        let g = d.path().join("Interface/GlueXML");
+        std::fs::create_dir_all(&g).unwrap();
+        std::fs::write(g.join("GlueXML.toc"), "GlueParent.xml\r\nForeverUIGlue.xml\r\n").unwrap();
+        std::fs::write(g.join("ForeverUIGlue.xml"), "<Ui/>").unwrap();
+        let l = crate::herokey::parse_game_login(&serde_json::json!({"ok": true, "user": "WR000123", "pass": "Q7W8E9R2T3Y4U5I6"})).unwrap();
+        assert!(crate::herokey::set_account_name(d.path(), &l.user).unwrap());
+        let s = crate::hybrid::Session { user: l.user.clone(), pass: l.pass.clone(), realm: None, enter: false };
+        assert!(crate::hybrid::session_lua(Some(&s)).unwrap().contains("enter = false"), "character select, not the world");
+        crate::hybrid::write(d.path(), Some(&s)).unwrap();
+        assert!(crate::hybrid::has_session(d.path()));
+        let cfg = std::fs::read_to_string(d.path().join("WTF/Config.wtf")).unwrap();
+        assert!(cfg.contains("SET accountName \"WR000123\"") && !cfg.contains("Q7W8"), "{cfg}");
+        assert!(crate::hybrid::scrub(d.path()).unwrap() && !crate::hybrid::has_session(d.path()), "gone after the start");
+    }
 
     /// My Den's sign-in: Den Lite's fixed local login goes into the hybrid archive (escaped, for one start) and
     /// the account and realm into Config.wtf, never the password; without Forever UI's login screens nothing is

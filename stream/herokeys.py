@@ -26,6 +26,10 @@ The JSON, under /wrath/api/social (stream/social.py's sign-in: the launcher's to
     POST herokey/new                a new key (the old one stops working): {key}
     POST herokey/saved              the player saved it (downloaded, copied): the service stops showing it
     POST password {password} | {remove: true}   an optional password for signing in to the launcher
+    POST game/login                 (the launcher's token only) the player's own game login on Wrath Unleashed, for one
+                                    start of their desktop game: {user, pass}. The launcher hands it to the game's login
+                                    screen (launcher/src-tauri/src/hybrid.rs) and keeps nothing (owner 2 Nov: "skip to
+                                    character select"). The same login the /wrath page shows and /__env.js gives.
 The name itself is POST profile {name} (stream/profiles.py set_name: the blocklist, at most 3 changes a day).
 
 The launcher and the service: a launcher has no website cookie, so a launcher that signed in here (a new account, a key)
@@ -321,6 +325,20 @@ def game_account(cookie: str, ip: str, ua: str) -> str:
     return user.upper()
 
 
+def game_login(cookie: str, ip: str, ua: str) -> tuple[str, str]:
+    """(account, password) of the signed-in player's game account, as the service's /api/play has them. Refused
+    "web_only" when that website session ended; Down when the service doesn't answer."""
+    getter = P("portal_get")
+    st, play = getter("/api/play", cookie, ip, ua) if getter else (0, {})
+    if st in (401, 403) or 300 <= st < 400:
+        raise Refused(409, "web_only")
+    user = str(play.get("user", "")) if isinstance(play, dict) else ""
+    pw = str(play.get("pass", "")) if isinstance(play, dict) else ""
+    if st != 200 or not re.fullmatch(r"[A-Za-z0-9]{1,16}", user) or not re.fullmatch(r"[\x21-\x7e]{1,16}", pw):
+        raise Down(f"api/play {st}")
+    return user.upper(), pw
+
+
 def realm_logout(cookie: str, ip: str, ua: str) -> None:
     realm("POST", "/logout", cookie, ip, ua, {})
 
@@ -497,7 +515,8 @@ def password_problem(pw, name: str = "") -> str:
 # ------------------------------------------------------------------ the JSON (from stream/social.py)
 NO_AUTH = ("account/new", "herokey/signin", "password/signin")
 WITH_AUTH_GET = ("herokey",)
-WITH_AUTH_POST = ("herokey/new", "herokey/saved", "password")
+WITH_AUTH_POST = ("herokey/new", "herokey/saved", "password", "game/login")
+GAME_LOGINS_PER_HOUR = 30        # per account: one per PLAY
 
 
 def handles(sub: str, method: str, authed: bool) -> bool:
@@ -662,6 +681,31 @@ def api(h, sub: str, method: str, acct: str | None, how: str, extra: str, doc: d
             if store is not None:
                 store.note(acct, "key.saved", "launcher" if how == "token" else "web")
             return send(200, {"ok": True}, passed_on(sc) if how == "cookie" else [])
+        if sub == "game/login":   # the launcher's PLAY on Wrath Unleashed: signs in by itself (owner 2 Nov)
+            if how != "token":   # the website shows it on its own page; this call is the launcher's only
+                return send(404, {"error": "Unknown call."}, [])
+            if not _hit("glogin|" + acct, GAME_LOGINS_PER_HOUR, 3600):
+                return send(429, {"error": "Too many starts this hour. Type your password at the login screen."}, [])
+            again = {"error": "Sign in again on Home to play without typing your password.", "web_only": True}
+            try:
+                jar, kept = _jar_for(how, extra, acct, h)
+                user, pw = game_login(jar, ip, ua)
+            except Refused:
+                if store is not None and store.session(extra, acct):
+                    store.forget(extra)   # that website session ended: the launcher signs in again
+                return send(409, again, [])
+            if user != acct:
+                return send(409, again, [])
+            ensure = P("ensure_account")
+            if ensure is not None:
+                try:
+                    ensure(user, pw)   # the account is on the realm with this password (as /wrath/play does)
+                except Exception:   # noqa: BLE001: SoapError and friends
+                    log.warning("herokeys: game/login: the realm didn't answer")
+                    return send(503, {"error": "The realm isn't answering right now. Try again shortly."}, [])
+            if store is not None:
+                store.note(acct, "game.login", "launcher")
+            return send(200, {"ok": True, "user": user, "pass": pw}, [])
         if sub == "password":
             if store is None:
                 return send(404, {"error": "Passwords are off here."}, [])

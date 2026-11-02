@@ -32,6 +32,26 @@ signed in (and even then the Den's handoff stopped at character select). Now (`l
 - **Testing on the owner's PC:** Control `den-check` (read-only) and `den-test` (unattended: `Leyline.exe den-play
   --test`, a screenshot, logs in `tools\den-check\logs`), `den-test-invite` (a test friend joins too).
 
+## PLAY on Wrath Unleashed (2 Nov)
+
+Owner: "goes to the loginscreen instead of skipping to character select after realm". PLAY on the official realm
+(the play bar, or Play on its Realms card) now signs in the way Your Den does:
+
+- Signed in on Home, the launcher asks the website for the player's own game login (`POST
+  /wrath/api/social/game/login`, the launcher's token only; `stream/herokeys.py`). It is the login the website already
+  owns for the player (`WR000123`) and shows on its Play page; the browser game gets the same one from `/__env.js`.
+  It is not in the UI's `social::ACTIONS`, so the page never sees it.
+- `app.rs play_official`: the account name into `WTF/Config.wtf`, then the login into `patch-Z.MPQ` for this one
+  start with `enter: false` (character select), scrubbed when the game closes, as for every hybrid start.
+- `hybrid_login` is on by default now (settings schema 2 turns it on once for files saved before). It only acts in a
+  folder that qualifies (`hybrid::status`: Forever UI's login screens there, the slot free or ours, never refused);
+  elsewhere the start is the plain one with the account name filled in, and the line says to type the password.
+- Needs the portal deploy of `stream/herokeys.py` and `stream/social.py`; until then the launcher says the website
+  can't do it yet and starts the game as before.
+- Not done: a stock folder (no Forever UI) still stops at the login screen with the name filled in. The Den's key
+  driver (`denclick.rs`) could type the password there on Windows, but it follows Den Lite's milestone log, which the
+  official realm doesn't write.
+
 ## Verdicts
 
 | # | Question | Verdict | What decides it |

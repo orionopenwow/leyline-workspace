@@ -405,6 +405,23 @@ st, _, _, _, d = req("GET", "/wrath/api/social/herokey", headers={"Authorization
 check("/wrath/link lends the browser's session: the launcher sees the key", st == 200 and d["web_only"] is False and d["has_key"], d)
 check("another account's token can't use that session", HS.session(tok3, lacct) is None)
 
+# PLAY on Wrath Unleashed from the launcher (owner 2 Nov): the player's own game login, for one start
+ensured = []
+wp_ensure = wp.ensure_account
+wp.ensure_account = lambda u, p: ensured.append(u)
+st, _, _, _, d = req("POST", "/wrath/api/social/game/login", js={}, headers=B)
+check("game/login: the launcher gets its own account's game login", st == 200 and d.get("user") == lacct and d.get("pass") == "p" * 16
+      and ensured == [lacct], (st, d))
+st, _, _, _, d = req("POST", "/wrath/api/social/game/login", web, js={}, headers={"X-Leyline-CSRF": csrf})
+check("game/login: never for a website cookie (the launcher's token only)", st == 404, (st, d))
+st, _, _, _, d = req("POST", "/wrath/api/social/game/login", js={}, headers={"Authorization": "Bearer " + S.issue_token(acct1, "t2")})
+check("game/login: a launcher with no website session is told to sign in on the web", st == 409 and d.get("web_only") is True, (st, d))
+wp.ensure_account = lambda u, p: (_ for _ in ()).throw(wp.SoapError("down", "x"))
+st, _, _, _, d = req("POST", "/wrath/api/social/game/login", js={}, headers=B)
+check("game/login: the realm down: plain words, no login", st == 503 and "pass" not in d, (st, d))
+wp.ensure_account = wp_ensure
+check("game/login: the password is never logged", "p" * 16 not in LOGS.getvalue())
+
 # sign out ends the launcher's own session, not a borrowed one
 n_sess = len(R["sessions"])
 st, _, _, _, d = req("POST", "/wrath/api/social/token/revoke", js={}, headers=B)

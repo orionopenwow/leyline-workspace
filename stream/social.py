@@ -1304,7 +1304,7 @@ def get(h, path: str, query: dict) -> None:
 
 
 SANCTION_ACTIVITY = {"send": "message", "request": "message", "accept": "message", "profile": "profile",
-                     "herokey": "realm", "report": "staff"}   # "staff": only a suspension stops it
+                     "herokey": "realm", "game/login": "realm", "report": "staff"}   # "staff": only a suspension stops it
 
 
 def _sanctioned(acct: str, sub: str) -> str:

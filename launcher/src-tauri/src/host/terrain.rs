@@ -332,6 +332,7 @@ fn write_den_patch(client: &Path, den_root: &Path, d: &Delta, tile: Vec<u8>, whi
     let sha = sha_hex(&tile);
     let (extras, mut st) = den_extras(client, d, &tile);
     st.whitened = whitened;
+    let mut extra_white: Vec<(String, Vec<u8>)> = Vec::new();
     // the tile as the game gets it: painted with the snow texture's own name from the player's archives (2 Nov: every
     // texture at our new name drew green, ours and theirs alike; a name the game already knows does not)
     let tile = if std::env::var("LEYLINE_DEN_TEX").is_ok_and(|v| v == "made") {
@@ -345,6 +346,12 @@ fn write_den_patch(client: &Path, den_root: &Path, d: &Delta, tile: Vec<u8>, whi
                     hit = true;
                 }
                 if hit {
+                    // and our white texture at that name (and its specular twin), so the known name draws white
+                    // (2 Nov 04:54: the snow name drew, as the game's own furrowed brown field)
+                    extra_white.push((n.clone(), pad::pad_texture()));
+                    if let Some(stem) = n.strip_suffix(".blp").or_else(|| n.strip_suffix(".BLP")) {
+                        extra_white.push((format!("{stem}_s.blp"), pad::pad_texture()));
+                    }
                     st.texture_name = Some(n);
                     t.write()
                 } else {
@@ -356,6 +363,7 @@ fn write_den_patch(client: &Path, den_root: &Path, d: &Delta, tile: Vec<u8>, whi
     };
     let mut files = vec![(d.tile.adt_path(), tile)];
     files.extend(extras);
+    files.extend(extra_white);
     write_patch(client, &files)?;
     if let Ok(t) = serde_json::to_string_pretty(&st) {
         let _ = crate::settings::write_atomic(&status_path(den_root), t.as_bytes());

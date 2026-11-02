@@ -184,6 +184,9 @@ pub struct GroundStatus {
     pub models: usize,
     /// "white", or why the sky is the game's own.
     pub sky: String,
+    /// The game's own texture name the ground is painted with (the snow tileset), when one was found.
+    #[serde(default)]
+    pub texture_name: Option<String>,
     /// The zone's name the game shows ("Your Den"), or why it is the game's own.
     pub area: String,
     pub area_id: u32,
@@ -229,6 +232,17 @@ fn after_slot(client: &Path) -> Vec<PathBuf> {
 /// texture (palette and DXT1 alike) as bright green, its sign for a texture it can't use; one of its own always works.
 pub fn den_texture(client: &Path) -> Vec<u8> {
     let order = archive_order(client);
+    if let Some(n) = den_texture_name(client) {
+        if let Ok(Some(b)) = crate::mpq::read_own(&order, &n) {
+            return b;
+        }
+    }
+    pad::pad_texture()
+}
+
+/// The light snow ground texture of the player's own archives the Den uses (found through their listfiles), if any.
+pub fn den_texture_name(client: &Path) -> Option<String> {
+    let order = archive_order(client);
     let mut names: Vec<String> = Vec::new();
     for p in order.iter().rev() {
         let Ok(mut a) = crate::mpq::GameArchive::open(p) else { continue };
@@ -245,14 +259,7 @@ pub fn den_texture(client: &Path) -> Vec<u8> {
     }
     names.sort_by_key(|n| (n.len(), n.to_ascii_lowercase()));
     names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
-    for n in names.iter().take(8) {
-        if let Ok(Some(b)) = crate::mpq::read_own(&order, n) {
-            if b.starts_with(b"BLP2") {
-                return b;
-            }
-        }
-    }
-    pad::pad_texture()
+    names.into_iter().take(8).find(|n| crate::mpq::read_own(&order, n).ok().flatten().is_some_and(|b| b.starts_with(b"BLP2")))
 }
 
 /// Besides the tile, what the Den's patch-T holds: our white texture; the player's own sky tables with the sky over
@@ -325,6 +332,28 @@ fn write_den_patch(client: &Path, den_root: &Path, d: &Delta, tile: Vec<u8>, whi
     let sha = sha_hex(&tile);
     let (extras, mut st) = den_extras(client, d, &tile);
     st.whitened = whitened;
+    // the tile as the game gets it: painted with the snow texture's own name from the player's archives (2 Nov: every
+    // texture at our new name drew green, ours and theirs alike; a name the game already knows does not)
+    let tile = if std::env::var("LEYLINE_DEN_TEX").is_ok_and(|v| v == "made") {
+        tile
+    } else {
+        match (den_texture_name(client), leyline_terrain::adt::Adt::parse(&tile, None)) {
+            (Some(n), Ok(mut t)) => {
+                let mut hit = false;
+                for name in t.textures.iter_mut().filter(|x| x.eq_ignore_ascii_case(pad::PAD_TEXTURE)) {
+                    *name = n.clone();
+                    hit = true;
+                }
+                if hit {
+                    st.texture_name = Some(n);
+                    t.write()
+                } else {
+                    tile
+                }
+            }
+            _ => tile,
+        }
+    };
     let mut files = vec![(d.tile.adt_path(), tile)];
     files.extend(extras);
     write_patch(client, &files)?;

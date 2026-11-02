@@ -113,10 +113,11 @@ STEPS = {
     # My Den, one click into the world on this PC's own game (tools/den-check/den_check.py): den-check looks (read-only:
     # the game folder, Leyline's login archive, Config.wtf, Den Lite and a sign-in through the exact steps on a Den Lite
     # of its own); den-test runs the real thing unattended (Leyline.exe den-play --test: Den Lite, the game, signed in,
-    # the white island, a screenshot, closed again) and leaves tools\den-check\logs\den-test-latest.txt and .png.
+    # the white island, then the Den's smoke test through Den Lite's command files, a screenshot, closed again) and
+    # leaves tools\den-check\logs\den-test-latest.txt and .png.
     "den-check": ("tools/den-check/Den check.bat", "My Den check (read-only): game folder, login archive, Config.wtf, Den Lite and a test sign-in", False),
-    "den-test": ("tools/den-check/Den test.bat", "My Den test: starts your game by itself, signs in, the white island, a screenshot, closes it (logs in tools\\den-check\\logs)", False),
-    "den-test-invite": ("tools/den-check/Den test - invite.bat", "My Den test with a friend: as den-test, and a test friend joins through the friends' listener", False),
+    "den-test": ("tools/den-check/Den test.bat", "My Den test: starts your game by itself, signs in, then builds, saves and loads, the white room, Forge's files, a shareable Den file, an invite a test friend signs in with, the autosave; a screenshot, closes it (logs in tools\\den-check\\logs)", False),
+    "den-test-invite": ("tools/den-check/Den test - invite.bat", "My Den test (the same as den-test: it always invites a test friend now)", False),
     "client":  ("stream/Update browser client.bat", "New browser game build", False),
     "client-back": ("stream/Roll back browser client.bat", "Undo: the previous browser game build back (the server keeps one; running it again swaps back)", False),
     "signin":  ("stream/Update sign-in and warm-up.bat", "Play page and sign-in", False),

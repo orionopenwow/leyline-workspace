@@ -51,7 +51,7 @@
   --t-gold-bg: rgba(217, 164, 65, 0.12);
   --t-gold-border: rgba(217, 164, 65, 0.45);
   /* the website's backdrop behind the content area (not the menus): app.js shows it once it has loaded */
-  --t-backdrop: url("https://play.openvanilla.app/wrath/art/leyline-shot-backdrop.webp");
+  --t-backdrop: url("https://leylinelauncher.com/wrath/art/leyline-shot-backdrop.webp");   /* = app.js BACKDROP_URL (addresses.js) */
   --t-backdrop-wash: linear-gradient(180deg, rgba(9, 11, 17, 0.52), rgba(9, 11, 17, 0.8) 80%);
   color-scheme: dark;
 }

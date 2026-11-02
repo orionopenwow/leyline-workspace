@@ -770,7 +770,7 @@ class Workshop:
             f'<a class="wk-btn" href="/wrath?go=m:{e(m["id"])}">Play</a></div>'
             + (f'<p class="wk-sum">sha256 {e(m["sha256"])}</p>' if m["sha256"] and m["zip"] else "")
             + f'<p class="ly-fine" style="text-align:left">Share: <a href="/wrath/m/{e(m["id"])}">'
-            f'play.openvanilla.app/wrath/m/{e(m["id"])}</a></p></div></div>'
+            f'{e(PUBLIC_BASE.split("://", 1)[-1])}/wrath/m/{e(m["id"])}</a></p></div></div>'
             + self._credit_html({"author": m["author"], "author_url": "", "licence": m["licence"], "repo": m["repo"]})
             + '</section>')
         return self._page(f"{m['name']} · Mods", f"/wrath/mods/{m['id']}", f"Mod: {m['name']} · Leyline", body,

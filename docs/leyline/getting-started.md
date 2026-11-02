@@ -29,7 +29,7 @@ The launcher has the same tips on its **Find your game files** page: open it fro
 
 ## Browser or your own client
 
-- **In your browser.** Pick **Play in your browser** in the launcher's realm list, or open [play.openvanilla.app/wrath](https://play.openvanilla.app/wrath). Nothing to install, no game files needed. The browser streams Dalaran, the capitals, the starting areas, arenas, dungeons and raids. Drop your own game folder on the game page to go anywhere: see [Play](play.md#use-your-own-game-folder-to-go-anywhere).
+- **In your browser.** Pick **Play in your browser** in the launcher's realm list, or open [leylinelauncher.com/wrath](https://leylinelauncher.com/wrath). Nothing to install, no game files needed. The browser streams Dalaran, the capitals, the starting areas, arenas, dungeons and raids. Drop your own game folder on the game page to go anywhere: see [Play](play.md#use-your-own-game-folder-to-go-anywhere).
 - **Your own client.** The whole world, at your PC's full speed. Add your folder in the launcher and press **PLAY**. The official realm needs the Wrath-era game {{v:3.3.5a (12340)}}; other realms say which version they need.
 
 Both use the same realm, the same account and the same characters.
@@ -62,5 +62,5 @@ Ask on the [Discord](https://discord.gg/hVeUxYwbkr). People there help find a ga
 - **The realm needs a different version.** The play bar says which one. Add that game folder, or pick a realm for the one you have.
 - **The game can't connect.** Check the status dot in the launcher's title bar. If the realm is up, delete the `Cache` folder next to the game and start it again.
 - **You changed the realm by hand before.** Realms › **…** › **Use my own realmlist** puts back what you had.
-- **Wrong account or password.** Sign in at [play.openvanilla.app/wrath](https://play.openvanilla.app/wrath): the account page shows your game account.
-- **Still stuck?** The [Discord](https://discord.gg/hVeUxYwbkr), or the [Forum](https://play.openvanilla.app/wrath/leyline/forum).
+- **Wrong account or password.** Sign in at [leylinelauncher.com/wrath](https://leylinelauncher.com/wrath): the account page shows your game account.
+- **Still stuck?** The [Discord](https://discord.gg/hVeUxYwbkr), or the [Forum](https://leylinelauncher.com/wrath/leyline/forum).

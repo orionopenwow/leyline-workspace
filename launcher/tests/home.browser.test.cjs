@@ -28,8 +28,8 @@ const FAKE = ({ empty, browser, ms, modes, noClients, forumDown, forumWait }) =>
   const base = { official: false, kind: 'PvE', state: 'live', version: '3.3.5a', core: 'azerothcore', build: '3.3.5a', tags: [],
     players: 0, bots: 0, max_players: null, address: null };
   const R = (o) => Object.assign({}, base, o);
-  const realms = empty ? [R({ slug: 'official', name: 'Wrath Unleashed', official: true, state: 'offline', address: 'play.openvanilla.app' })] : [
-    R({ slug: 'official', name: 'Wrath Unleashed', official: true, players: 5, address: 'play.openvanilla.app' }),
+  const realms = empty ? [R({ slug: 'official', name: 'Wrath Unleashed', official: true, state: 'offline', address: 'leylinelauncher.com' })] : [
+    R({ slug: 'official', name: 'Wrath Unleashed', official: true, players: 5, address: 'leylinelauncher.com' }),
     R({ slug: 'c-a', realm_id: 'a', name: 'Busy Den', players: 30, max_players: 60, is_new: true, kind: 'Fun', address: 'relay.openvanilla.app:40002' }),
     R({ slug: 'c-b', realm_id: 'b', name: 'Old Keep', build: '1.12.1', version: '1.12.1', players: 3, address: 'relay.openvanilla.app:40003' }),
     R({ slug: 'c-c', realm_id: 'c', name: 'Hidden Cata', build: '4.3.4', version: '4.3.4', players: 9 }),
@@ -47,8 +47,8 @@ const FAKE = ({ empty, browser, ms, modes, noClients, forumDown, forumWait }) =>
     calls.push([cmd, args]);
     switch (cmd) {
       case 'get_state': return { version: 'test', settings: { clients: noClients ? [] : [{ id: 'c335a-1', name: 'My Wrath', path: '/x', build: '3.3.5a', realmlist: '' }],
-        selected_client: 'c335a-1', selected_realm: 'play.openvanilla.app', wine: { enabled: false, command: 'wine', prefix: '' } },
-        official_realm: 'play.openvanilla.app', browser_url: 'https://play.openvanilla.app/wrath', windows: true, data_dir: '/tmp' };
+        selected_client: 'c335a-1', selected_realm: 'leylinelauncher.com', wine: { enabled: false, command: 'wine', prefix: '' } },
+        official_realm: 'leylinelauncher.com', browser_url: 'https://leylinelauncher.com/wrath', windows: true, data_dir: '/tmp' };
       case 'realms_list': return { realms, network: { realms: 5, players: 48, bots: 0 }, from_cache: false, saved_at: 1, error: null };
       case 'realm_status': return { state: 'online', ping_ms: 10, players: 5 };
       case 'mods_catalog': return Object.assign({ from_cache: false, saved_at: 1, error: null }, catalog);
@@ -92,10 +92,10 @@ async function open(opts = {}, ctxOpts = {}) {
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.route('https://play.openvanilla.app/**', (r) => r.fulfill({ path: PICTURE, contentType: 'image/webp' }));
+  await page.route('https://leylinelauncher.com/**', (r) => r.fulfill({ path: PICTURE, contentType: 'image/webp' }));
   if (opts.noArt) await page.route('**/art/modes/**', (r) => r.abort());
   // the site's Home screenshots: home.json as given (none: the site answers 404), a listed file missing: 404
-  await page.route('https://play.openvanilla.app/wrath/art/home/**', (r) => {
+  await page.route('https://leylinelauncher.com/wrath/art/home/**', (r) => {
     const name = r.request().url().split('/wrath/art/home/')[1];
     window_requests.push(name);
     if (name === 'home.json') return opts.homeArt ? r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' },
@@ -217,7 +217,7 @@ test('the launch slide: Play now selects Wrath Unleashed and plays; Join the Dis
   await page.click('.hero-slide[data-key="hangout"] .hs-go');
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'play'));
   assert.equal(await page.inputValue('#play-realm'), 'official');
-  assert.deepEqual(await page.evaluate(() => window.__calls.find(([c]) => c === 'play')[1]), { client: 'c335a-1', realm: 'play.openvanilla.app' }, 'the 3.3.5a client on the Hangout');
+  assert.deepEqual(await page.evaluate(() => window.__calls.find(([c]) => c === 'play')[1]), { client: 'c335a-1', realm: 'leylinelauncher.com' }, 'the 3.3.5a client on the Hangout');
   assert.equal(await page.textContent('#pb-realm'), 'Wrath Unleashed');
   assert.deepEqual(errors, []);
   await ctx.close();
@@ -404,18 +404,18 @@ test('the Workshop slide shows site screenshots only', async () => {
   await page.waitForFunction(() => window.LeylineHome.slides().includes('mod'));
 
   const mod = page.locator('.hero-slide[data-key="mod"]');
-  assert.equal(await mod.locator('.hs-shot.front img').getAttribute('src'), 'https://play.openvanilla.app/wrath/mods/bars/shot/0');
+  assert.equal(await mod.locator('.hs-shot.front img').getAttribute('src'), 'https://leylinelauncher.com/wrath/mods/bars/shot/0');
   assert.equal(await mod.locator('.hs-shot.front .hs-shot-cap b').textContent(), 'Better Bars');
   assert.deepEqual(await mod.locator('.hs-more .hs-wm b').allTextContents(), ['Map Plus', 'One Bag', 'Fifth Mod', 'Linked Thing']);
   assert.deepEqual(await mod.locator('.hs-chip').allTextContents(), ['4 ready to install', '2 categories']);
   const srcs = await page.$$eval('#hero img', (i) => i.map((x) => x.getAttribute('src')));
-  assert.ok(srcs.every((u) => u.startsWith('https://play.openvanilla.app/wrath/') || u.startsWith('art/')), 'pictures from the site or the launcher only: ' + srcs.join(' '));
+  assert.ok(srcs.every((u) => u.startsWith('https://leylinelauncher.com/wrath/') || u.startsWith('art/')), 'pictures from the site or the launcher only: ' + srcs.join(' '));
   assert.deepEqual(await page.evaluate(() => [
     window.LeylineHome.thumbUrl({ id: 'x', thumb: 'https://evil.example/a.png' }),
     window.LeylineHome.thumbUrl({ id: 'x', thumb: '/wrath/../etc/passwd' }),
     window.LeylineHome.thumbUrl({ id: 'x', screenshots: ['/wrath/mods/x/shot/2'] }),
     window.LeylineHome.thumbUrl({ id: 'link:1', source: 'community', repo: 'https://github.com/Some/Repo' }),
-  ]), ['', '', 'https://play.openvanilla.app/wrath/mods/x/shot/2', 'https://play.openvanilla.app/wrath/art/hub-thumbs/some__repo.webp']);
+  ]), ['', '', 'https://leylinelauncher.com/wrath/mods/x/shot/2', 'https://leylinelauncher.com/wrath/art/hub-thumbs/some__repo.webp']);
   await showKey(page, 'mod');
   await mod.locator('.hs-more .hs-wm').first().click();
   assert.deepEqual(await where(page), { page: 'page-mods', panes: ['pane-discover'] });
@@ -505,9 +505,9 @@ test('in-game screenshots: from the site\'s home.json only, filling the slide un
   await page.waitForFunction(() => document.querySelector('.hero-slide[data-key="hangout"].has-photo') && document.querySelector('.hero-slide[data-key="host"].has-photo'));
   const shots = await page.$$eval('#hero .hs-photo', (i) => i.map((x) => [x.closest('.hero-slide').dataset.key, x.getAttribute('src'), x.getAttribute('alt')]));
   assert.deepEqual(shots.sort(), [
-    ['browser', 'https://play.openvanilla.app/wrath/art/home/browser.webp', 'In a tab'],
-    ['hangout', 'https://play.openvanilla.app/wrath/art/home/hangout.webp', 'Players <b>in</b> Dalaran'],
-    ['host', 'https://play.openvanilla.app/wrath/art/home/host.webp', 'A realm'],
+    ['browser', 'https://leylinelauncher.com/wrath/art/home/browser.webp', 'In a tab'],
+    ['hangout', 'https://leylinelauncher.com/wrath/art/home/hangout.webp', 'Players <b>in</b> Dalaran'],
+    ['host', 'https://leylinelauncher.com/wrath/art/home/host.webp', 'A realm'],
   ], 'den.webp is missing (404: dropped), news lists only bad names, mode and Workshop slides keep their own pictures');
   assert.equal(await page.textContent('.hero-slide[data-key="hangout"] .hs-credit'), 'Shot by <i>Orion</i>');
   assert.equal(await page.locator('#hero .hs-credit i, #hero .hs-photo ~ b').count(), 0, 'no element made from home.json');
@@ -526,14 +526,14 @@ test('in-game screenshots: from the site\'s home.json only, filling the slide un
   });
   assert.deepEqual(fit, { fill: 'cover', w: true, h: true, title: 'rgb(255, 255, 255)', dots: true });
   // the minigolf tile gets its listed picture
-  assert.equal(await page.getAttribute('.hs-mt[data-mode="minigolf"] .hs-mt-pic img', 'src'), 'https://play.openvanilla.app/wrath/art/home/mode-minigolf.webp');
+  assert.equal(await page.getAttribute('.hs-mt[data-mode="minigolf"] .hs-mt-pic img', 'src'), 'https://leylinelauncher.com/wrath/art/home/mode-minigolf.webp');
   assert.ok(window_requests.every((n) => /^(home\.json|[a-z0-9-]+\.webp)$/.test(n)), window_requests.join(' '));
   assert.ok(!window_requests.includes('bad.webp') && !window_requests.some((n) => n.includes('news')), 'only listed, well-named files');
   assert.deepEqual(await page.evaluate(() => {
     const H = window.LeylineHome;
     return [H.HOME_ART, Object.keys(H.readHomeArt({ slides: { a: { file: 'a.webp' }, b: [{ file: 'b.png' }], c: [{ file: 'c/d.webp' }], 'e-2': [{ file: 'e-2.jpg' }] } })),
       H.readHomeArt(null), H.readHomeArt({ slides: { a: [{ file: 'a.webp', alt: 5, credit: 'x'.repeat(300) }] } }).a[0].credit.length];
-  }), ['https://play.openvanilla.app/wrath/art/home/', ['a', 'e-2'], {}, 120]);
+  }), ['https://leylinelauncher.com/wrath/art/home/', ['a', 'e-2'], {}, 120]);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

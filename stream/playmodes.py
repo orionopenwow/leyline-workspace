@@ -2,7 +2,7 @@
 section of /wrath/modes, and the one-click play intent. For stream/wrath_portal.py; standard library only.
 
 The catalog is the one list the launcher's Modes page (launcher/src-tauri/src/modes.rs fetches
-https://play.openvanilla.app/wrath/modes.json) and the site show. Each entry:
+https://leylinelauncher.com/wrath/modes.json) and the site show. Each entry:
 
     id        a-z, 0-9 and dashes, 2-24 long
     title     a short name;  line  one plain sentence about it

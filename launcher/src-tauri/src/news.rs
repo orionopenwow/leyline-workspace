@@ -1,4 +1,4 @@
-//! The News page (`ui/app.js` renderNews): the website's news feed, `https://play.openvanilla.app/wrath/leyline/news.json`
+//! The News page (`ui/app.js` renderNews): the website's news feed, `https://leylinelauncher.com/wrath/leyline/news.json`
 //! (the admin console publishes it: `stream/admin.py` feed, `{"format": 1, "updated_at", "posts": [{id, date, tag, title,
 //! items[]}]}`).
 //!
@@ -13,7 +13,7 @@ use std::path::Path;
 use std::time::Duration;
 
 /// The site's news feed.
-pub const URL: &str = "https://play.openvanilla.app/wrath/leyline/news.json";
+pub const URL: &str = crate::site!("/wrath/leyline/news.json");
 pub const CACHE_FILE: &str = "news-cache.json";
 pub const TIMEOUT: Duration = Duration::from_secs(8);
 /// At most this many posts, and this many points a post.
@@ -96,7 +96,7 @@ mod tests {
 
     #[test]
     fn the_feed_is_the_sites_own() {
-        assert_eq!(URL, "https://play.openvanilla.app/wrath/leyline/news.json");
+        assert_eq!(URL, "https://leylinelauncher.com/wrath/leyline/news.json");
     }
 
     #[test]

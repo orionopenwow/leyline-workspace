@@ -606,3 +606,8 @@
 1261d addons Leyline addons for desktop players: the same Den panel update
 1261e signin Site: guides without version numbers in sentences (version chips); Survivors page (Coming soon)
 1261f leyline Leyline repo: export again so Leyline.exe gets My Den one click
+1262a signin Site: knows leylinelauncher.com and the old names (pages keep the old names until domain-on)
+1262b scripts Realm scripts: the site address follows the domain switch (live reload)
+1262c relay Relay: accepts the new names too
+1262d ship Launcher: new addresses first, old as fallback; domain-check / domain-on / domain-off steps
+1262e leyline Leyline repo: export again so Leyline.exe gets the new addresses

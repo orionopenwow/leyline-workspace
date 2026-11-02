@@ -152,7 +152,7 @@ for _, f in ipairs(created) do
 end
 check("four links", #links == 4)
 links[1]:Fire("OnClick")
-check("first link copies the Workshop site", box.text == "https://play.openvanilla.app/wrath/mods")
+check("first link copies the Workshop site", box.text == "https://leylinelauncher.com/wrath/mods")
 
 WU_MOD_CATALOG = nil
 panel.RefreshWorkshop()

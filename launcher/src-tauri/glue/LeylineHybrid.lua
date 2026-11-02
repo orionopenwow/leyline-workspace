@@ -29,7 +29,7 @@ local TIPS = {
 	"Your Hero Key signs you in on any realm in the network. No password to remember.",
 	"Build in your Den: drop a stamp like the Inn, then move, turn and undo each piece.",
 	"Type /shot to hide the interface for a clean screenshot.",
-	"Ideas, questions or a realm to share? The forum is open at play.openvanilla.app.",
+	"Ideas, questions or a realm to share? The forum is open at leylinelauncher.com.",
 	"Host your own realm from the Leyline launcher in three steps.",
 }
 local WAIT_LOGIN, WAIT_SELECT, WAIT_ENTER, WAIT_CREATE = 20, 45, 20, 20

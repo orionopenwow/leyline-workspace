@@ -687,6 +687,15 @@ def P(name):
         return None
 
 
+def _our_origin(origin: str) -> bool:
+    """An Origin that is this site, on its new name or its old one (docs/DOMAIN-MOVE.md)."""
+    try:
+        known = P("SITE_ORIGINS")
+    except Exception:   # noqa: BLE001
+        known = None
+    return origin in (known or {f"https://{_public_host()}"})
+
+
 def _public_host() -> str:
     return P("PUBLIC_HOST") or "play.openvanilla.app"
 
@@ -874,7 +883,7 @@ def _same_site(h) -> bool:
     if sfs == "cross-site":
         return False
     origin = h.headers.get("Origin", "")
-    if origin and origin != f"https://{_public_host()}" and not (origin == "null" and sfs == "same-origin"):
+    if origin and not _our_origin(origin) and not (origin == "null" and sfs == "same-origin"):
         return False
     return True
 

@@ -44,7 +44,7 @@ tar -cf - -C "%STG%" kit catalog | ssh -i "%KEY%" -o StrictHostKeyChecking=accep
 if errorlevel 1 (echo. & echo It did not report success; see above. Anything it changed was put back. & goto fail)
 rmdir /s /q "%STG%"
 echo.
-echo Done: the mods are live. See them at https://play.openvanilla.app/wrath/mods
+echo Done: the mods are live. See them at https://leylinelauncher.com/wrath/mods
 echo In the game: Esc ^> Mods ^& Workshop ^> Workshop (players reload the page to get new addons).
 pause
 exit /b 0

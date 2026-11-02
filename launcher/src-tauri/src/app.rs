@@ -231,7 +231,10 @@ fn point_and_play_with(
         c.realmlist = realm.clone();
         Ok((c.clone(), s.wine.clone()))
     })?;
-    clients::write_realmlist(&profile, &realm).map_err(|e| format!("Could not write realmlist.wtf: {e}"))?;
+    // The official realm on either of its names: the new one, or the old one on a computer that cannot resolve the
+    // new name yet (addresses.rs). Both reach the same server.
+    let written = if crate::addresses::is_official_realm(&realm) { crate::addresses::official_realm().to_string() } else { realm.clone() };
+    clients::write_realmlist(&profile, &written).map_err(|e| format!("Could not write realmlist.wtf: {e}"))?;
     let mut hybrid: Result<(), String> = Err(String::new());
     if !start {
         return Ok((format!("{} now points at {realm}.", profile.name), hybrid));
@@ -887,7 +890,7 @@ async fn realm_status(realm: String, status_url: Option<String>) -> Result<statu
     let url = match status_url {
         Some(u) if realms::status_url_ok(&u) => Some(u),
         Some(_) => return Err("Not a realm status address.".into()),
-        None => (status::host_port(&realm).0 == OFFICIAL_REALM).then(|| status::OFFICIAL_STATUS_URL.to_string()),
+        None => crate::addresses::is_official_realm(&status::host_port(&realm).0).then(|| status::OFFICIAL_STATUS_URL.to_string()),
     };
     blocking(move || Ok(status::check(&realm, url.as_deref()))).await
 }

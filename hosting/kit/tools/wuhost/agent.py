@@ -33,7 +33,7 @@ import time
 import urllib.error
 import urllib.request
 
-from wunet import herokey, keys, mux, ws
+from wunet import domains, herokey, keys, mux, ws
 
 from . import cores
 from wunet.mux import CLOSE, DATA, OPEN
@@ -414,8 +414,16 @@ class Agent:
 
     async def session(self):
         url = self.cfg["relay_url"]
-        self.ws = await ws.connect(url, headers={"User-Agent": VERSION}, ssl_context=self.ssl_context,
-                                   max_message=mux.MAX_CHUNK * 2)
+        try:
+            self.ws = await ws.connect(url, headers={"User-Agent": VERSION}, ssl_context=self.ssl_context,
+                                       max_message=mux.MAX_CHUNK * 2)
+        except (OSError, asyncio.TimeoutError):
+            old = domains.fallback(url)   # the relay's new name not reachable yet: its old one (docs/DOMAIN-MOVE.md)
+            if not old:
+                raise
+            log.info("relay %s not reachable; trying %s", url, old)
+            self.ws = await ws.connect(old, headers={"User-Agent": VERSION}, ssl_context=self.ssl_context,
+                                       max_message=mux.MAX_CHUNK * 2)
         op, msg = await asyncio.wait_for(self.ws.recv(), 15)
         ch = json.loads(msg)
         hello = {"realm_id": self.cfg["realm_id"], "pubkey": self.pub.hex(), "challenge": ch["challenge"],
@@ -780,6 +788,11 @@ class Agent:
                 return r.status, r.read()
         except urllib.error.HTTPError as e:
             return e.code, e.read()
+        except OSError:
+            old = domains.fallback(url)   # no answer on the new name: the old one (docs/DOMAIN-MOVE.md)
+            if not old:
+                raise
+            return self._http_post(old, body)
 
     def beat(self, status):
         self.seq = max(self.seq + 1, int(time.time() * 1000))

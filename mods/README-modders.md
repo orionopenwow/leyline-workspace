@@ -128,7 +128,7 @@ half is installed (the realm half needs the realm).
 
 Send the zip and its sha256 to the WrathUnleashed team. Realm mods get a human review first. An approved mod goes into
 `mods/catalog/<your id>/`; the next `mods` step puts it on the realm and in the streamed client, and it shows up on the
-Workshop at https://play.openvanilla.app/wrath/mods with its own page, download and share link (`/wrath/m/<your id>`).
+Workshop at https://leylinelauncher.com/wrath/mods with its own page, download and share link (`/wrath/m/<your id>`).
 In the game, Esc > Mods & Workshop > Workshop lists it, with an on/off switch for its addon.
 
 `mods/catalog/` has three examples: Dalaran Dice (this template), Pings (a realm half and an addon talking over OVMOD)

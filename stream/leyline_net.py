@@ -56,7 +56,8 @@ KNOWN = ("p2p_hosting", "torrent_downloads", "torrent_seeding", "webrtc_presence
 LIMITS = {"seed_upload_kbps": 100_000, "seed_ratio_pct": 1000, "max_peers": 200}
 DEFAULT_STUN = ["stun.cloudflare.com:3478"]
 _STUN_RE = re.compile(r"^[A-Za-z0-9.-]{1,253}:[0-9]{1,5}$")
-PACK_ORIGINS = ("https://play.openvanilla.app/", "https://github.com/orionopenwow/Leyline/releases/download/")
+PACK_ORIGINS = ("https://leylinelauncher.com/", "https://play.openvanilla.app/",   # the site on both names (DOMAIN-MOVE.md)
+                "https://github.com/orionopenwow/Leyline/releases/download/")
 _VER_RE = re.compile(r"^[0-9]+(\.[0-9]+){0,2}$")
 _SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 JSON = "application/json; charset=utf-8"
@@ -186,7 +187,7 @@ ALL_JSON_KEYS = ("id", "source", "name", "description", "category", "builds", "a
                  "permissions", "on_wrath", "download", "sha256", "featured")
 
 
-def hostpack_project(d: dict, public_base: str = "https://play.openvanilla.app") -> dict:
+def hostpack_project(d: dict, public_base: str = "https://leylinelauncher.com") -> dict:
     """The Host pack as an all.json project (mods/all-json.md), category "tools", kind "hostpack"."""
     return {
         "id": "mod:host-pack", "source": "packaged", "name": d["name"],

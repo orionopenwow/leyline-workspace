@@ -136,7 +136,7 @@ with the reason shown:
 
 The pack is checked when it is installed and again every time it loads. The launcher's window only loads
 scripts that ship with the app, fonts from itself or `data:`, and images from itself, `data:` or the website's
-own origin (https://play.openvanilla.app, for its backdrop picture); a pack's `url()` can only name its own files,
+own origin (https://leylinelauncher.com and its old name https://play.openvanilla.app, for its backdrop picture); a pack's `url()` can only name its own files,
 so a theme can't load anything from the internet.
 
 ### Try it

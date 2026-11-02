@@ -7,6 +7,7 @@ import json
 import re
 import time
 import urllib.request
+import urllib.error
 
 from wunet import mesh
 
@@ -15,8 +16,18 @@ UA = "wu-host-mesh/1"
 
 def _get(url, timeout=8):
     req = urllib.request.Request(url, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read(8 << 20).decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read(8 << 20).decode("utf-8"))
+    except urllib.error.HTTPError:
+        raise
+    except OSError:
+        from wunet import domains   # no answer on the relay's new name: its old one (docs/DOMAIN-MOVE.md)
+        old = domains.fallback(url)
+        if not old:
+            raise
+        with urllib.request.urlopen(urllib.request.Request(old, headers={"User-Agent": UA}), timeout=timeout) as r:
+            return json.loads(r.read(8 << 20).decode("utf-8"))
 
 
 def fetch_relays(bootstrap: str, get=_get, now=None) -> list:

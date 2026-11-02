@@ -20,7 +20,7 @@ if not defined WU_LOCAL_IMAGE set "WU_LOCAL_IMAGE=ov/ac-wotlk"
 if not defined WU_LOCAL_TAG set "WU_LOCAL_TAG=custom"
 if not defined WU_TOOLS_PREBUILT set "WU_TOOLS_PREBUILT=ghcr.io/orionopenwow/wu-host-tools:1"
 set "WU_TOOLS_IMAGE=wu-host-tools:1"
-if not defined WU_RELAY set "WU_RELAY=relay.openvanilla.app"
+if not defined WU_RELAY set "WU_RELAY=relay.leylinelauncher.com"
 set "ARAC_REPO=https://github.com/heyitsbench/mod-arac"
 set "ARAC_COMMIT=3f605e09c656eb3b620ef2d70c7ef61808c1cfb0"
 set COMPOSE=docker compose -f "%~dp0docker-compose.host.yml" --project-directory "%~dp0."
@@ -76,7 +76,7 @@ if not defined WU_VISIBILITY (
   set "D=private"
   if defined WU_OLD_VIS if /i not "%WU_PROFILE%"=="den" if /i not "%WU_PROFILE%"=="solo" set "D=!WU_OLD_VIS!"
   echo   private  only friends with your invite link can join
-  echo   public   listed in Beacons on openvanilla.app for everyone
+  echo   public   listed in Beacons on leylinelauncher.com for everyone
   set "WU_VISIBILITY=!D!"
   set /p "WU_VISIBILITY=Private or public [!D!]: "
 )

@@ -88,7 +88,7 @@ local function loadPasses()
     end
 end
 
-local function say(p, msg) p:SendBroadcastMessage(TAG .. msg) end
+local function say(p, msg) p:SendBroadcastMessage(TAG .. ((OVMod and OVMod.Names) and OVMod.Names(msg) or msg)) end   -- the names of now (OVMod.Names)
 
 local function inInn(p)
     if p:GetMapId() ~= INN[1] then return false end

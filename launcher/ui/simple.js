@@ -211,7 +211,7 @@
     if ($("dc-list-mod")) $("dc-list-mod").addEventListener("click", () => {
       const kind = shelf() === "addons" ? "addon" : "mod";
       if (window.LeylineListMod && typeof window.LeylineListMod.open === "function") window.LeylineListMod.open(kind);
-      else if (typeof openUrl === "function") openUrl("https://play.openvanilla.app/wrath/leyline/submit" + (kind === "addon" ? "?kind=addon" : ""));
+      else if (typeof openUrl === "function") openUrl(window.LeylineAddresses.site("/wrath/leyline/submit") + (kind === "addon" ? "?kind=addon" : ""));
     });
     const more = $("dc-more");
     if (more) {

@@ -88,7 +88,7 @@ class Config:
         self.trusted_proxies = e("RELAY_TRUSTED_PROXIES", "127.0.0.1/32,::1/128")
         self.allow_file = e("RELAY_ALLOW_FILE", "")             # realm ids; empty = open registration
         self.block_file = e("RELAY_BLOCK_FILE", "")             # realm ids refused and delisted (re-read every minute)
-        # Leyline HQ's block feed (https://play.openvanilla.app/wrath/leyline/relay-block.json, stream/admin.py): polled
+        # Leyline HQ's block feed (https://<site>/wrath/leyline/relay-block.json, stream/admin.py): polled
         # every minute when set. RELAY_BLOCK_FEED_KEY: the HMAC key (WU_RELAY_FEED_KEY on the portal); when set, an
         # unsigned or wrongly signed feed is ignored. At most RELAY_BLOCK_FEED_MAX_NEW new ids are taken per update (the
         # rest on the next ones), at most 500 in all; the block file's lines still block, and its "allow <id>" lines win.
@@ -96,13 +96,16 @@ class Config:
         self.block_feed_key = e("RELAY_BLOCK_FEED_KEY", "")
         self.block_feed_max_new = _env_int("RELAY_BLOCK_FEED_MAX_NEW", 10)
         self.site_origins = [o for o in e("RELAY_SITE_ORIGINS", domains.SITE).split(",") if o]
+        # the website on both its names, whatever relay.env lists (docs/DOMAIN-MOVE.md: the old names keep working)
+        self.site_origins += [o for o in domains.SITE_ORIGINS if o not in self.site_origins]
         self.site_url = e("RELAY_SITE_URL", domains.SITE)
         # Join pages: the relay serves /join/<id> itself, so links work without the website.
         self.join_base = e("RELAY_JOIN_BASE", "")   # empty = https://<name>
         # The browser game's own sites: they may frame /join/<id>?hop=1 and open the hop bridge. A WebSocket
         # whose Origin is neither one of these nor a site origin is refused (no Origin: a native tool, allowed
         # as raw TCP is).
-        self.play_origins = [o for o in e("RELAY_PLAY_ORIGINS", f"https://wrath.{domains.DOMAIN},https://play.{domains.DOMAIN}").split(",") if o]
+        self.play_origins = [o for o in e("RELAY_PLAY_ORIGINS", ",".join(domains.PLAY_ORIGINS)).split(",") if o]
+        self.play_origins += [o for o in domains.PLAY_ORIGINS if o not in self.play_origins]   # both names
 
         self.listing = e("RELAY_LISTING", "1") == "1"
         self.listing_site_secret = e("RELAY_LISTING_SITE_SECRET", "")

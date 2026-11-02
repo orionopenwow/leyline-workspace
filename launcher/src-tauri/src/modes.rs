@@ -1,11 +1,11 @@
 //! The Modes page (`ui/modes.js`): every game mode one click away.
 //!
-//! The list is the site's `https://play.openvanilla.app/wrath/modes.json` (the catalog `stream/playmodes.json`, checked
+//! The list is the site's `https://leylinelauncher.com/wrath/modes.json` (the catalog `stream/playmodes.json`, checked
 //! by `stream/playmodes.py`). It is cached like the other listings; with no network and no cache yet, the copy built
 //! into Leyline (the same file) is used, so the page is never empty. Entries that fail the checks here are left out.
 //!
 //! PLAY follows the Home page's play setting:
-//! * **Browser**: a realm mode opens `https://play.openvanilla.app/wrath?go=mode:<id>`. The site signs the player in
+//! * **Browser**: a realm mode opens `https://leylinelauncher.com/wrath?go=mode:<id>`. The site signs the player in
 //!   and records the mode for their game account (`ovplay go`); the realm starts it after login
 //!   (`realm/custom/lua_scripts/ov_playmode.lua`). An offline mode opens its page on the site.
 //! * **Desktop**: [`prepare_desktop`] writes a small addon, `Interface/AddOns/LeylinePlay/`, into the player's own
@@ -29,7 +29,7 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
 /// The site's catalog.
-pub const URL: &str = "https://play.openvanilla.app/wrath/modes.json";
+pub const URL: &str = crate::site!("/wrath/modes.json");
 /// The copy built into this Leyline (the repo's catalog), used when there is no network and no cache.
 pub const BUILTIN: &str = include_str!("../../../stream/playmodes.json");
 pub const CACHE_FILE: &str = "modes-cache.json";
@@ -429,15 +429,15 @@ mod tests {
     fn links_are_built_from_the_catalog() {
         let all = builtin();
         let get = |id: &str| all.iter().find(|x| x.id == id).unwrap().clone();
-        assert_eq!(browser_url(&get("minigolf")).as_deref(), Some("https://play.openvanilla.app/wrath?go=mode:minigolf"));
-        assert_eq!(browser_url(&get("coin-dash")).as_deref(), Some("https://play.openvanilla.app/wrath?go=mode:coin-dash"));
+        assert_eq!(browser_url(&get("minigolf")).as_deref(), Some("https://leylinelauncher.com/wrath?go=mode:minigolf"));
+        assert_eq!(browser_url(&get("coin-dash")).as_deref(), Some("https://leylinelauncher.com/wrath?go=mode:coin-dash"));
         assert_eq!(browser_url(&get("brawl")), None, "a realm type: the Host page instead");
         assert_eq!(browser_url(&get("azeroth-survivors")), None, "coming soon: no Play");
-        assert_eq!(browser_url(&get("transmog")).as_deref(), Some("https://play.openvanilla.app/wrath"), "in game: Play opens the game");
+        assert_eq!(browser_url(&get("transmog")).as_deref(), Some("https://leylinelauncher.com/wrath"), "in game: Play opens the game");
         assert!(cmd_ok(".hub keys") && !cmd_ok(".hub") && !cmd_ok(".hub a b") && !cmd_ok(".gm on") && !cmd_ok(".hub Keys"));
         let mut s = get("azeroth-survivors");
         s.status = "live".into();
-        assert_eq!(browser_url(&s).as_deref(), Some("https://play.openvanilla.app/wrath/survivors"));
+        assert_eq!(browser_url(&s).as_deref(), Some("https://leylinelauncher.com/wrath/survivors"));
         let mut odd = get("minigolf");
         odd.start.go = Some("mode:other".into());
         assert_eq!(browser_url(&odd), None);

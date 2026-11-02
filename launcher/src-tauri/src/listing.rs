@@ -10,9 +10,9 @@ use serde_json::Value;
 use std::time::Duration;
 
 /// The official listings API.
-pub const API_BASE: &str = "https://play.openvanilla.app/wrath/api/listings";
+pub const API_BASE: &str = crate::site!("/wrath/api/listings");
 /// The website's List your mod page (opened in the browser when signed out).
-pub const PAGE: &str = "https://play.openvanilla.app/wrath/mods/list";
+pub const PAGE: &str = crate::site!("/wrath/mods/list");
 /// A check fetches the mod once on the server.
 pub const CHECK_TIMEOUT: Duration = Duration::from_secs(90);
 pub const TIMEOUT: Duration = Duration::from_secs(10);

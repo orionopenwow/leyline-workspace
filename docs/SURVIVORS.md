@@ -14,7 +14,7 @@ Apache-2.0." The permission statement is **TODO(owner)** (`PERMISSION` in `strea
 ## How it fits together
 
 ```
-play.openvanilla.app/wrath/survivors        the page (stream/survivors.py): credit, Play / Coming soon / Resting
+leylinelauncher.com/wrath/survivors        the page (stream/survivors.py): credit, Play / Coming soon / Resting
         | Play (signed in)                  a survivors-mode play session + one-time code
         v
 https://<address>/__gate?code=...           wu-portal swaps it for the wu_play cookie on that address, lands on /
@@ -28,7 +28,7 @@ sv-play (hosting/survivors/docker-compose.yml)   our wenilla-host --www <build> 
 ```
 
 - The game reads `GET {origin}/data/<name>` and `/data/__index`, with the base hard-coded to the page's own origin.
-  That is why it needs **its own address** and can't live under a path of play.openvanilla.app.
+  That is why it needs **its own address** and can't live under a path of leylinelauncher.com.
 - No game account, no realm: a Survivors session is its own kind ("SV-" + your login, no password). It never opens the
   Wrath stream, and a Wrath session never opens Survivors.
 - The game data killswitch (`stream/server/gamedata-switch.sh off`) covers it: Caddy answers 410 for `/data` and the

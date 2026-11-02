@@ -366,6 +366,15 @@ def bind(getter) -> None:
     _get = getter
 
 
+def _our_origin(origin: str) -> bool:
+    """An Origin that is this site, on its new name or its old one (docs/DOMAIN-MOVE.md)."""
+    try:
+        known = P("SITE_ORIGINS")
+    except Exception:   # noqa: BLE001
+        known = None
+    return origin in (known or {f"https://{P('PUBLIC_HOST')}"})
+
+
 def P(name):
     return _get(name)
 
@@ -685,7 +694,7 @@ def status_of(rec: dict) -> tuple[str, str, bool]:
 # ----------------------------------------------------------------------------------------------
 
 def relay_host() -> str:
-    return urllib.parse.urlsplit(P("JOIN_BASE")).hostname or "relay.openvanilla.app"
+    return urllib.parse.urlsplit(P("JOIN_BASE")).hostname or "relay.leylinelauncher.com"
 
 
 def seed_b64(rec: dict) -> str:
@@ -1362,7 +1371,7 @@ def post(h, path: str) -> None:
         h.send(429, P("busy_page")(back="/wrath/host"))
         return
     origin = h.headers.get("Origin", "")
-    if origin and origin != f"https://{P('PUBLIC_HOST')}" and not (origin == "null" and h.headers.get("Sec-Fetch-Site", "") == "same-origin"):   # null: no-referrer pages (Caddy)
+    if origin and not _our_origin(origin) and not (origin == "null" and h.headers.get("Sec-Fetch-Site", "") == "same-origin"):   # null: no-referrer pages (Caddy)
         h.send(403, P("error_page")("That form came from another site."))
         return
     form = read_form(h)

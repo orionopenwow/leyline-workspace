@@ -1,7 +1,7 @@
 //! Feature flags for the P2P and torrent features. Everything ships OFF.
 //!
 //! Two layers:
-//! * the site's file, `https://play.openvanilla.app/wrath/leyline/flags.json` (written by the admin console
+//! * the site's file, `https://leylinelauncher.com/wrath/leyline/flags.json` (written by the admin console
 //!   through `stream/leyline_net.py: write_flags`), checked by its sha256 and cached for offline use;
 //! * this PC's own overrides (Settings > Advanced), in `<app data>/leyline-flags-local.json`.
 //!
@@ -14,7 +14,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-pub const URL: &str = "https://play.openvanilla.app/wrath/leyline/flags.json";
+pub const URL: &str = crate::site!("/wrath/leyline/flags.json");
 pub const FORMAT: u64 = 1;
 pub const LOCAL_FILE: &str = "leyline-flags-local.json";
 

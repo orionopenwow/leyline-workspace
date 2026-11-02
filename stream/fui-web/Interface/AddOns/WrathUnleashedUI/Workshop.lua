@@ -15,7 +15,7 @@ local W = WrathUnleashedUI
 local PREFIX, MOD = "OVMOD", "wuws"
 local ROWS, ROW_H, PAGE_W = 5, 40, 436
 local ANSWER_WAIT = 6
-local SITE = "https://play.openvanilla.app/wrath/workshop"
+local SITE = "https://leylinelauncher.com/wrath/workshop"
 
 local KINDS = { { "all", "All" }, { "course", "Courses" }, { "mode", "Modes" }, { "build", "Builds" }, { "mine", "Mine" } }
 local SORTS = { { "plays", "Most played" }, { "rating", "Top rated" }, { "new", "New" } }

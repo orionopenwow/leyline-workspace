@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 
 pub const FALLBACK_URL: &str = "https://github.com/orionopenwow/Leyline/releases/download/host-pack/hostpack.json";
 /// Where a pack may be downloaded from (prefixes).
-pub const ORIGINS: &[&str] = &["https://play.openvanilla.app/", "https://github.com/orionopenwow/Leyline/releases/download/"];
+pub const ORIGINS: &[&str] = &[crate::site!("/"), "https://play.openvanilla.app/", "https://github.com/orionopenwow/Leyline/releases/download/"];
 pub const MAX_PACK: u64 = 64 * 1024 * 1024;
 const MAX_FILES: usize = 5000;
 /// Kept across updates: one host's own realm.

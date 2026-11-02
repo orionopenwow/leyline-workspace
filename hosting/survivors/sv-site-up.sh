@@ -63,6 +63,14 @@ case "$HOST" in   # the other sites' own addresses (old and new domain)
   "$PUBLIC"|play.openvanilla.app|wrath.openvanilla.app|relay.openvanilla.app|leylinelauncher.com|www.leylinelauncher.com|play.leylinelauncher.com|relay.leylinelauncher.com)
     die "the address '$HOST' belongs to another site";;
 esac
+# ... and every other name in the one list (tools/domain/addresses.json, uploaded with this script; docs/DOMAIN-MOVE.md)
+if [ -f "$SRC/tools/domain/addresses.json" ] && python3 -I - "$SRC/tools/domain/addresses.json" "$HOST" <<'PY'
+import json, sys
+a = json.load(open(sys.argv[1], encoding="utf-8"))
+taken = {v.get(k) for p, v in a.items() if isinstance(v, dict) and p != "survivors" for k in ("new", "old", "to")}
+sys.exit(0 if sys.argv[2] in taken else 1)
+PY
+then die "the address '$HOST' belongs to another site"; fi
 
 caddy_site() {  # caddy_site add|remove|has|other: our site block in the Caddyfile (bind-mounted into Caddy)
   python3 -I - "$1" "$CF" "$HOST" "$SNIP" "$SITE_BEGIN" "$SITE_END" <<'PY'

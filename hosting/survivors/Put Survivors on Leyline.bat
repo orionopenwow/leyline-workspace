@@ -13,7 +13,7 @@ echo %SVH%| findstr /r /x /c:"[a-z0-9][a-z0-9.-]*" >nul || (echo The address "%S
 echo Azeroth Survivors' address: %SVH%
 set "TGZ=%TEMP%\leyline-sv-%RANDOM%%RANDOM%.tgz"
 if exist "%TGZ%" del /q "%TGZ%"
-set "PARTS=hosting/survivors/sv-site-up.sh hosting/survivors/survivors.caddy hosting/survivors/docker-compose.yml tools/survivors/survivors_check.py stream/server/gamedata-caddy.py stream/survivors/upstream.lock.json"
+set "PARTS=hosting/survivors/sv-site-up.sh hosting/survivors/survivors.caddy hosting/survivors/docker-compose.yml tools/survivors/survivors_check.py stream/server/gamedata-caddy.py stream/survivors/upstream.lock.json tools/domain/addresses.json"
 if /i "%~1"=="noupload" goto pack_plain
 rem The build and the slice from this PC: survivors-check first (nothing goes up that does not match the lock and names.sha256).
 set PY=py -3

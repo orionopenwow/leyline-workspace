@@ -1087,6 +1087,15 @@ def bind(getter) -> None:
     _get = getter
 
 
+def _our_origin(origin: str) -> bool:
+    """An Origin that is this site, on its new name or its old one (docs/DOMAIN-MOVE.md)."""
+    try:
+        known = P("SITE_ORIGINS")
+    except Exception:   # noqa: BLE001
+        known = None
+    return origin in (known or {f"https://{P('PUBLIC_HOST')}"})
+
+
 def P(name):
     return _get(name)
 
@@ -1206,7 +1215,7 @@ def _auth(h, post: bool):
             _json(h, 403, {"error": "That came from another site."})
             return None
         origin = h.headers.get("Origin", "")
-        if origin and origin != f"https://{P('PUBLIC_HOST')}" and not (origin == "null" and h.headers.get("Sec-Fetch-Site", "") == "same-origin"):
+        if origin and not _our_origin(origin) and not (origin == "null" and h.headers.get("Sec-Fetch-Site", "") == "same-origin"):
             _json(h, 403, {"error": "That came from another site."})
             return None
     try:
@@ -1523,7 +1532,7 @@ def link_page(h, query: dict, note: str = "", typed: str = "") -> None:
 
 def link_post(h) -> None:
     origin = h.headers.get("Origin", "")
-    if (origin and origin != f"https://{P('PUBLIC_HOST')}" and not (origin == "null" and h.headers.get("Sec-Fetch-Site", "") == "same-origin")) or h.headers.get("Sec-Fetch-Site", "") == "cross-site":
+    if (origin and not _our_origin(origin) and not (origin == "null" and h.headers.get("Sec-Fetch-Site", "") == "same-origin")) or h.headers.get("Sec-Fetch-Site", "") == "cross-site":
         return _page(h, 403, "Link the launcher", "<p>That form came from another site.</p>")
     try:
         n = int(h.headers.get("Content-Length", "0"))

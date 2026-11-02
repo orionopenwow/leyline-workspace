@@ -44,6 +44,22 @@ class StepPaths(unittest.TestCase):
         for gone in ("ovrename", "ovland"):
             self.assertNotIn(gone, steps)
 
+    def test_domain_move_steps(self):
+        """The move to leylinelauncher.com (docs/DOMAIN-MOVE.md): check is read-only, on and off are not."""
+        steps = control_steps()
+        tree = ast.parse(read("tools/control/control.py"))
+        ro = next(ast.literal_eval(n.value) for n in tree.body
+                  if isinstance(n, ast.Assign) and any(getattr(t, "id", "") == "READ_ONLY" for t in n.targets))
+        for step, mode in (("domain-check", "check"), ("domain-on", "on"), ("domain-off", "off")):
+            bat, title, interactive = steps[step]
+            self.assertEqual(win(bat), f"tools/domain/Domain move - {mode}.bat")
+            self.assertFalse(interactive)
+            self.assertIn(f'"%~dp0Domain move.bat" {mode}', read(bat))
+        self.assertIn("domain-check", ro)
+        self.assertNotIn("domain-on", ro)
+        self.assertNotIn("domain-off", ro)
+        self.assertIn("read-only", steps["domain-check"][1])
+
     def test_update_bat_steps_exist(self):
         bats = re.findall(r'if /i "%STEP%"=="([^"]+)"\s+\(?set "BAT=([^"]+)"', read("UPDATE.bat"))
         self.assertGreater(len(bats), 10)

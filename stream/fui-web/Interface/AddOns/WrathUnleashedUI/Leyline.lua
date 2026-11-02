@@ -54,7 +54,7 @@
 
 local W = WrathUnleashedUI
 -- The public site. Links are PUBLIC_BASE .. "/r/<id>"; a future Leyline domain is this one line.
-local PUBLIC_BASE = "https://play.openvanilla.app"
+local PUBLIC_BASE = "https://leylinelauncher.com"
 local THIS_REALM_PATH = "/wrath"
 local PREFIX = "WULY"
 local HOME_REALM = "WrathUnleashed"       -- GetRealmName() on Wrath itself (W.Brand.home while the brand is on)

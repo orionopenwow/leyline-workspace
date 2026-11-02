@@ -250,7 +250,7 @@ for f in ("Update sign-in and warm-up.bat", "fastloop.sh", os.path.join("server"
     check(f"deploy: {f} carries playmodes.py and playmodes.json", "playmodes.py" in t and "playmodes.json" in t)
 rs = open(os.path.join(REPO, "launcher", "src-tauri", "src", "modes.rs"), encoding="utf-8").read()
 check("the launcher's built-in copy is this file", 'include_str!("../../../stream/playmodes.json")' in rs)
-check("the launcher reads /wrath/modes.json", "https://play.openvanilla.app/wrath/modes.json" in rs)
+check("the launcher reads /wrath/modes.json", 'crate::site!("/wrath/modes.json")' in rs)
 
 print(f"\n{passed}/{passed + failed} passed")
 sys.exit(0 if failed == 0 else 1)

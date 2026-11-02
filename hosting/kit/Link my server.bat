@@ -16,7 +16,7 @@ rem LEYLINE_LINK_CLIENT (vanilla, tbc or wrath), LEYLINE_LINK_TAGLINE, LEYLINE_L
 cd /d "%~dp0"
 if not defined WU_TOOLS_PREBUILT set "WU_TOOLS_PREBUILT=ghcr.io/orionopenwow/wu-host-tools:1"
 set "WU_TOOLS_IMAGE=wu-host-tools:1"
-if not defined WU_RELAY set "WU_RELAY=relay.openvanilla.app"
+if not defined WU_RELAY set "WU_RELAY=relay.leylinelauncher.com"
 set "LC=wu-link-agent"
 
 docker version >nul 2>&1 || (echo Docker Desktop is not running. Start it ^(or install it from docker.com^), then run this again. & pause & exit /b 1)
@@ -112,7 +112,7 @@ echo   Connected to the Leyline relay.
 echo.
 echo == Done
 for /f "usebackq tokens=2 delims=:, " %%I in (`findstr /c:"\"realm_id\"" "state\host.json"`) do set "RID=%%~I"
-echo   Your server shows on the Leyline realm list within a minute: https://play.openvanilla.app/wrath/r/!RID!
+echo   Your server shows on the Leyline realm list within a minute: https://leylinelauncher.com/wrath/r/!RID!
 echo   Nothing on your server was changed. Two things to know:
 echo   - Players arrive at your login server through the relay; the realm address your server hands out must
 echo     already work for players ^(the one they use today^). Leyline leaves it alone.

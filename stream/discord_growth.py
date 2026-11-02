@@ -502,7 +502,7 @@ class Growth:
         short = r.get("short") or r.get("share")
         if isinstance(short, str) and SHORT_RE.fullmatch(short):
             return f"{self.link.site()}/r/{short}"
-        relay = r.get("relay") if isinstance(r.get("relay"), str) and HOST_RE.fullmatch(r["relay"]) else "relay.openvanilla.app"
+        relay = r.get("relay") if isinstance(r.get("relay"), str) and HOST_RE.fullmatch(r["relay"]) else "relay.leylinelauncher.com"
         return f"https://{relay}/join/{r['id']}"
 
     def feed_tick(self) -> None:

@@ -141,6 +141,11 @@ pub fn load(dir: &Path) -> Settings {
                 for c in &mut s.clients {
                     c.name = crate::clients::brandless(&c.name);
                 }
+                // the official realm saved under its old name (before the move to leylinelauncher.com) is the
+                // official realm still: shown and chosen as such (addresses.rs)
+                if crate::addresses::is_official_realm(&s.selected_realm) {
+                    s.selected_realm = crate::OFFICIAL_REALM.into();
+                }
                 s
             }
             Err(_) => {

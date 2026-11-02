@@ -15,7 +15,7 @@ use std::path::Path;
 use std::time::Duration;
 
 /// The official endpoint.
-pub const API: &str = "https://play.openvanilla.app/wrath/bugs/api/report";
+pub const API: &str = crate::site!("/wrath/bugs/api/report");
 pub const TIMEOUT: Duration = Duration::from_secs(8);
 /// The site's limits (stream/bugreport.py MIN_TEXT, TEXT_MAX, PAGE_MAX, APP_MAX, FORM_MAX).
 pub const MIN_TEXT: usize = 10;
@@ -290,11 +290,10 @@ pub fn send(dir: &Path, args: &Value, version: &str) -> Result<Value, String> {
         .timeout_write(TIMEOUT)
         .user_agent(concat!("Leyline/", env!("CARGO_PKG_VERSION")))
         .build();
-    let r = agent
-        .post(&api())
-        .set("Authorization", &format!("Bearer {token}"))
-        .set("Content-Type", "application/json")
-        .send_string(&body.to_string());
+    let auth = format!("Bearer {token}");
+    let r = crate::addresses::try_both(&api(), |u| {
+        agent.post(u).set("Authorization", &auth).set("Content-Type", "application/json").send_string(&body.to_string())
+    });
     match r {
         Ok(resp) => {
             let v: Value = resp.into_string().ok().and_then(|b| serde_json::from_str(&b).ok()).unwrap_or(Value::Null);

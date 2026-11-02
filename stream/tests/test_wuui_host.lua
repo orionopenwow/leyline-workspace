@@ -105,7 +105,7 @@ local tmp = os.tmpname()
 local hostFile = tmp .. ".dat"
 local function write(path, text) local f = assert(io.open(path, "wb")); f:write(text); f:close() end
 write(hostFile, 'return { realm_id = "abcdefghijklmnop", visibility = "public", signup = "open", bots = 40, '
-    .. 'herokey = false, rates = "3/1/2", join = "https://relay.openvanilla.app/join/abcdefghijklmnop" }\n')
+    .. 'herokey = false, rates = "3/1/2", join = "https://relay.leylinelauncher.com/join/abcdefghijklmnop" }\n')
 local realGetenv = os.getenv
 os.getenv = function(k) if k == "OV_HOST_FILE" then return hostFile end return realGetenv(k) end
 local serverClock = 1000000
@@ -279,7 +279,7 @@ check("main with bots, rates, level 1 start", H.Validate(o) == nil)
 local q = H.Query(o)
 check("query carries every choice", q == "core=azerothcore&preset=main&name=Den&type=rppvp&xp=5&loot=2&start=level1&bots=40"
     .. "&vis=private&signup=invite&herokey=on&region=eu&lang=pt-BR&tags=pvp%2Crp&max=100")
-check("links: website and launcher", H.WebLink(o) == "https://play.openvanilla.app/wrath/host?" .. q
+check("links: website and launcher", H.WebLink(o) == "https://leylinelauncher.com/wrath/host?" .. q
     and H.DeepLink(o) == "leyline://host?" .. q and H.ManageLink("bots") == "leyline://host?manage=bots"
     and H.ManageLink("evil") == nil)
 o.start = "fast"
@@ -368,7 +368,7 @@ hwin.control.refresh:Fire("OnClick")
 local st = H.status
 check("GM status: uptime, players, bots, the host kit's facts", st.gm and st.up == "3725" and st.players == "3" and st.bots == "0"
     and st.listed == "1" and st.signup == "open" and st.botsCfg == "40" and st.rates == "3/1/2" and st.herokey == "off"
-    and st.invite == "https://relay.openvanilla.app/join/abcdefghijklmnop" and hwin.control.restart:IsShown())
+    and st.invite == "https://relay.leylinelauncher.com/join/abcdefghijklmnop" and hwin.control.restart:IsShown())
 check("status text", hwin.control.status:GetText():find("^Up 1h 2m") and hwin.control.status:GetText():find("On the realm list: yes"))
 local function act(btnOrFn)
     serverClock = serverClock + 3; clock = clock + 2

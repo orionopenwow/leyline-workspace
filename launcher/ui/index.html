@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="spin.css"><!-- the spinning mark: the header logo and every loading state (spin.js) -->
 <!-- themes (themes agent): Dark (style.css) or Light; the Themes section; themes.js applies the theme before paint -->
+<script src="addresses.js"></script><!-- the site, the game and the relay on their new and old names (window.LeylineAddresses; first) -->
 <link rel="stylesheet" href="themes/themes.css"><script src="themes.js"></script>
 <link rel="stylesheet" href="social.css"><!-- Home's profile panel (social.js) and the Forum page (forum.js) -->
 <link rel="stylesheet" href="account.css"><!-- the sign-in chooser (social.js) and Manage account (account.js) -->
@@ -282,7 +283,7 @@
       <form class="rl-paste" id="rl-paste" autocomplete="off">
         <label for="rl-paste-in">Paste a realm link or address</label>
         <div class="rl-paste-row">
-          <input id="rl-paste-in" placeholder="play.openvanilla.app/wrath/r/… or realm.example.org:3724" spellcheck="false">
+          <input id="rl-paste-in" placeholder="leylinelauncher.com/r/… or realm.example.org:3724" spellcheck="false">
           <button type="submit" class="btn small">Add</button>
           <button type="button" class="btn small primary" id="rl-paste-play" hidden>Play now</button>
         </div>
@@ -303,7 +304,7 @@
         <summary>Got an invite link or another realm address?</summary>
       <h3>A private realm</h3>
       <p class="lede">Got an invite link? Paste it here and Leyline points your client at that realm. Make your account on the link's page first; a link to a friend's Den needs nothing more.</p>
-      <div class="row"><input id="rl-invite" placeholder="https://relay.openvanilla.app/join/…#…" autocomplete="off" spellcheck="false"><button type="button" class="btn" id="rl-join">Join</button></div>
+      <div class="row"><input id="rl-invite" placeholder="https://relay.leylinelauncher.com/join/…#…" autocomplete="off" spellcheck="false"><button type="button" class="btn" id="rl-join">Join</button></div>
       <h3>Another realm</h3>
       <div class="form">
         <label>Play on
@@ -562,7 +563,7 @@
       </form>
       <h3>Background</h3>
       <label class="check"><input type="checkbox" id="set-backdrop"> Background picture: the website's picture behind the pages, under a soft wash
-        (fetched from play.openvanilla.app when Leyline starts; the plain colour when it is off or offline)</label>
+        (fetched from leylinelauncher.com when Leyline starts; the plain colour when it is off or offline)</label>
       <h3>Updates</h3>
       <p class="lede">Leyline updates itself: it downloads new versions in the background, then says Update ready. Press Restart when you like, or it finishes the next time you open Leyline. It never restarts while your game is open.</p>
       <div class="form">

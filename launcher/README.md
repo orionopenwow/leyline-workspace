@@ -10,9 +10,9 @@ No telemetry, no accounts.
 
 | Page | State |
 |---|---|
-| **Home** | pick a client and a realm, then PLAY: sets the client's realm address (see below; the original is kept as `<file>.leyline-backup`) and starts it. A realm of another build says which client it needs. *Browser* opens https://play.openvanilla.app/wrath. |
+| **Home** | pick a client and a realm, then PLAY: sets the client's realm address (see below; the original is kept as `<file>.leyline-backup`) and starts it. A realm of another build says which client it needs. *Browser* opens https://leylinelauncher.com/wrath. |
 | **Game clients** | add a client by folder. The build is read from the executable's version resource: 1.12.1 (5875), 2.4.3 (8606) and 3.3.5a (12340) for now; anything else (4.3.4 and 5.4.8 included, see below) is listed as **other** (realms only, no mods). No executable version: the data files decide. It checks the install looks complete and lists what is missing. Or drop the folder, a zip of it, or a direct https link to the player's own backup zip on the play bar's client list or Find your game files (`clientimport.rs`: progress, Cancel, zip-slip and size checks; never a torrent or magnet link). Leyline never offers a client. |
-| *The side menu* | matches the website's: Home, Realms, Mods, Host, Community, News, then Your realms, Settings and Help. Mods has the tabs Installed and Discover, Community has Friends and Hub; the old page ids (`mymods`, `discover`, `friends`) still open the right tab. Modes has no menu item: Home's featured mode and Realms › MODES open it. The website's backdrop picture sits behind the pages (fetched from play.openvanilla.app, never shipped; Settings › Background picture turns it off). |
+| *The side menu* | matches the website's: Home, Realms, Mods, Host, Community, News, then Your realms, Settings and Help. Mods has the tabs Installed and Discover, Community has Friends and Hub; the old page ids (`mymods`, `discover`, `friends`) still open the right tab. Modes has no menu item: Home's featured mode and Realms › MODES open it. The website's backdrop picture sits behind the pages (fetched from leylinelauncher.com, never shipped; Settings › Background picture turns it off). |
 | **Mods › Discover** | the Workshop catalog (`/wrath/mods/all.json`): 12 categories, search, credits, links to each project's page, source and author; one-click INSTALL / UPDATE into the picked client; mods for other builds are flagged and can't be installed. |
 | **Mods › Installed** | per client: what is installed, the update ready, native code; one click to update or remove, turn off / on, UPDATE ALL; drop (or choose) a .zip, an addon folder, a .MPQ patch or a native mod (.dll, .asi; a one-time OK per mod). The title bar's pill counts Workshop updates across all clients. |
 | **Realms** | each realm as a card like the website's realm list (its icon, the gold client version, Official / Featured / Verified / New, the meta line, players with a fill bar); the official realm plus the relay's Beacons, with their server (AzerothCore, TrinityCore, CMaNGOS, vMaNGOS, MaNGOS, other), build, status and players; PLAY picks one of your clients of the realm's build (or says which is missing), sets its realm address and starts it; "Only realms my clients can play"; join a private realm with its invite link; BACK TO WRATH; put back your own realmlist. |
@@ -72,7 +72,7 @@ Leyline only links to the release page.
 
 ### Realms: how a desktop client reaches a Beacon
 
-The relay gives each realm its own TCP login port; `set realmlist relay.openvanilla.app:<port>` reaches it, and
+The relay gives each realm its own TCP login port; `set realmlist relay.leylinelauncher.com:<port>` reaches it, and
 the realm advertises the relay's world port, so the client stays on the relay. The listing record carries it
 (`profile.address`, `profile.port`); otherwise `GET https://<relay>/api/realms/<id>` gives `auth_port`. Private
 realms let in an address that knocked with the invite (`POST /api/realms/<id>/knock`), which the invite box does.

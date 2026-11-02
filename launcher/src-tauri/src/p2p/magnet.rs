@@ -247,7 +247,7 @@ fn btih_of(p: &Value) -> Option<String> {
 }
 
 fn on_site(u: &str, origin: &str) -> bool {
-    u.len() <= 400 && !u.chars().any(|c| c.is_whitespace() || c.is_control()) && net::origin(u).as_deref() == Some(origin) && u[origin.len()..].starts_with('/')
+    u.len() <= 400 && !u.chars().any(|c| c.is_whitespace() || c.is_control()) && crate::addresses::site_path(u, origin).is_some()
 }
 
 /// The packages an all.json document lets a magnet link name: packaged mods, theme packs and the Host pack with a

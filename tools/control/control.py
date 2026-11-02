@@ -116,7 +116,7 @@ STEPS = {
     "client-back": ("stream/Roll back browser client.bat", "Undo: the previous browser game build back (the server keeps one; running it again swaps back)", False),
     "signin":  ("stream/Update sign-in and warm-up.bat", "Play page and sign-in", False),
     "page":    ("stream/Update game page.bat", "Game page only (keeps the live game build)", False),
-    "frontpage": ("tools/front-page/Front page as home - on.bat", "The site's home (play.openvanilla.app/) opens the Leyline front page", False),
+    "frontpage": ("tools/front-page/Front page as home - on.bat", "The site's home (/) opens the Leyline front page", False),
     "frontpage-off": ("tools/front-page/Front page as home - off.bat", "Undo: the site's home opens the game's sign-in page again", False),
     "ov112-check": ("tools/ov112-off/Turn off 1.12 jobs - dry run.bat", "1.12 Open Vanilla jobs: what would be turned off (read-only)", False),
     "ov112-off": ("tools/ov112-off/Turn off 1.12 jobs - do it.bat", "Turn off the 1.12 Open Vanilla jobs (crons, timers, containers; backup in /root)", False),
@@ -156,7 +156,13 @@ STEPS = {
     "bots-off": ("realm/Bots - none.bat", "No roaming bots on Wrath Unleashed (5-min warning, then a restart)", False),
     "bots-on": ("realm/Bots - back on.bat", "Undo: the roaming bots back on Wrath Unleashed (5-min warning, then a restart)", False),
     "lean":    ("realm/Lean server.bat", "Lean server: fewer bots, idle areas unload (5-min restart)", False),
-    "relay": ("hosting/relay/Deploy relay.bat", "Beacons relay (relay.openvanilla.app)", False),
+    "relay": ("hosting/relay/Deploy relay.bat", "Beacons relay (the relay's site, its port book kept)", False),
+    # The move to leylinelauncher.com (owner 1 Nov 2026; docs/DOMAIN-MOVE.md): the site, play. for the game, relay.
+    # for the relay. Old names keep working forever (page loads 301; APIs, /data, /ws and tunnels answer as before).
+    # Order: Squarespace DNS -> domain-check -> Google/Discord redirect URIs -> domain-on -> test -> launcher release.
+    "domain-check": ("tools/domain/Domain move - check.bat", "Domain move: the server IP, DNS for the four new names, ports 80/443 and the Squarespace records to add (read-only)", False),
+    "domain-on": ("tools/domain/Domain move - on.bat", "Domain move ON: leylinelauncher.com live, self-checked, then old page loads 301 (rollback on failure)", False),
+    "domain-off": ("tools/domain/Domain move - off.bat", "Undo the domain move: every name back as it was", False),
     "hangout": ("hosting/hangout/Deploy Dalaran hangout.bat", "Wrath Unleashed on Leyline (the realm as a Beacon)", False),
     "hangout-off": ("hosting/hangout/Take Dalaran hangout off Leyline.bat", "Take Wrath Unleashed off Leyline", False),
     # The Builders' Realm (owner 2026-10-31: an official realm just for building, open to approved builders;
@@ -225,7 +231,7 @@ STEPS = {
 # Autopilot runs only these by itself; anything else waits for "Launch all".
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
-             "vr-data-check", "vr-site-check", "release-mirror-check", "bugs", "audit", "den-check"}
+             "vr-data-check", "vr-site-check", "release-mirror-check", "bugs", "audit", "den-check", "domain-check"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}
 
 # Never in a log or on the page: passwords, tokens, keys, connection strings (scrub() on every line a step prints).

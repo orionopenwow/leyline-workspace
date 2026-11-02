@@ -18,7 +18,7 @@ Version 0.3 adds every client build, every server type and self-updates. See [Ge
 
 ## Mods
 
-Discover reads the Workshop list at `https://play.openvanilla.app/wrath/mods/all.json` (see `mods/all-json.md`). It shows the same projects as the [Workshop](https://play.openvanilla.app/wrath/mods): packaged mods, which Leyline can install, and community links, which you get from their own page.
+Discover reads the Workshop list at `https://leylinelauncher.com/wrath/mods/all.json` (see `mods/all-json.md`). It shows the same projects as the [Workshop](https://leylinelauncher.com/wrath/mods): packaged mods, which Leyline can install, and community links, which you get from their own page.
 
 - **Per client.** Every install goes into one client folder. A mod made for the other build is flagged and can't be installed. "Only mods for this client" hides them.
 - **Where files go.** UI addons go to `Interface\AddOns\<Name>`. A client patch goes to a free `Data\patch-<X>.MPQ` slot (4 to 9, then A to Z; the game's own patch files are never touched). A mod package's realm half (`realm/`) is not for a client and is left out.
@@ -32,10 +32,10 @@ Decided for now: every mod is allowed, with no review queue and no code signing.
 
 ## Realms
 
-The Realms page lists the official realm first, then the Beacons from the relay's listing (`https://relay.openvanilla.app/api/listing/realms.json`), with their status, players and bots counted apart, and house rules.
+The Realms page lists the official realm first, then the Beacons from the relay's listing (`https://relay.leylinelauncher.com/api/listing/realms.json`), with their status, players and bots counted apart, and house rules.
 
 - **PLAY** writes the client's `realmlist.wtf` (and the `realmList` line of `WTF\Config.wtf` on the Wrath-era game {{v:3.3.5a}}, when it has one), then starts the game. Your original files are kept as `.leyline-backup` the first time.
-- **A Beacon** is reached through the relay. The relay gives each realm its own login port, so its realmlist is `relay.openvanilla.app:<port>`. The listing carries that address; when it doesn't, Leyline asks the relay (`/api/realms/<id>`). The relay's public ports 40000 to 40999 must be open for this. The relay's setup opens them in its firewall; a cloud firewall in front of the box must allow them too.
+- **A Beacon** is reached through the relay. The relay gives each realm its own login port, so its realmlist is `relay.leylinelauncher.com:<port>`. The listing carries that address; when it doesn't, Leyline asks the relay (`/api/realms/<id>`). The relay's public ports 40000 to 40999 must be open for this. The relay's setup opens them in its firewall; a cloud firewall in front of the box must allow them too.
 - **Your account** on a Beacon is made on its join page in your browser ("Make an account"), so your password never leaves the browser.
 - **A private realm**: paste its invite link under "A private realm". Leyline does what opening the link does (the relay's "knock" for this PC's address, valid 24 hours) and points your client at the realm.
 - **BACK TO WRATH** points the client at the official realm again. **MY OWN REALMLIST** puts back the files you had before Leyline.
@@ -48,7 +48,7 @@ Beacons run the Wrath-era game {{v:3.3.5a}}, so they need that game.
 
 Hosting runs on your own PC. There are no hosted slots on our servers: the realm runs only while your PC does. See [Hosting](hosting.md) for the Host pack itself.
 
-1. **HOST A REALM** opens [play.openvanilla.app/wrath/host](https://play.openvanilla.app/wrath/host). Sign in, choose a name, a ruleset and house rules, and download your realm file (`leyline-<realm id>.bat` for Windows, `.sh` for Mac and Linux).
+1. **HOST A REALM** opens [leylinelauncher.com/wrath/host](https://leylinelauncher.com/wrath/host). Sign in, choose a name, a ruleset and house rules, and download your realm file (`leyline-<realm id>.bat` for Windows, `.sh` for Mac and Linux).
 2. Unzip the Host pack and choose its folder in Leyline. You also need Docker Desktop.
 3. Leyline finds your realm file, in the kit or in Downloads, and copies it into the kit. START runs it in a window of its own. After the first run, START MY REALM runs the kit's own host script (`Host a Wrath realm.bat`, or `leyline host`).
 4. Leyline shows the realm's status from the relay: online, on the realm list, players and bots, and its realmlist address.

@@ -22,6 +22,11 @@
 
 const SAFETY_MS = 180000;
 const FIRST_LINE = 'Entering the world…';
+// The site and relay that go with this game page (docs/DOMAIN-MOVE.md; the names: tools/domain/addresses.json): the
+// game on play.leylinelauncher.com talks to leylinelauncher.com, on its old name (wrath.openvanilla.app, and anywhere
+// else) to play.openvanilla.app. Same backends either way; the sign-in stays on the name it was made on.
+const NEW_GAME_HOST = 'play.leylinelauncher.com';
+const onNewName = () => { try { return location.hostname === NEW_GAME_HOST; } catch (_) { return false; } };
 const TIP_MS = 7000;
 
 // One short tip at a time under the bar, on every loading screen (owner 31 Oct 23:51: "all loading screens the
@@ -32,7 +37,7 @@ export const TIPS = [
   'Build in your Den: drop a stamp like the Inn, then move, turn and undo each piece.',
   'Type /shot to hide the interface for a clean screenshot.',
   'What loads once stays in your browser, so the next visit is faster.',
-  'Ideas, questions or a realm to share? The forum is open at play.openvanilla.app.',
+  'Ideas, questions or a realm to share? The forum is open at ' + (onNewName() ? 'leylinelauncher.com' : 'play.openvanilla.app') + '.',
   'Host your own realm from the Leyline launcher in three steps.',
 ];
 

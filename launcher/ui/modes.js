@@ -1,5 +1,5 @@
 // Leyline Launcher: the Modes page. Every game mode one click away, over the Rust core's modes commands
-// (src-tauri/src/modes.rs), which read the site's catalog (https://play.openvanilla.app/wrath/modes.json, cached,
+// (src-tauri/src/modes.rs), which read the site's catalog (https://leylinelauncher.com/wrath/modes.json, cached,
 // with a copy built into Leyline).
 //
 // Loaded before app.js: it adds its own page, so app.js's navigation and its client pickers (.client-pick) pick it up
@@ -22,7 +22,7 @@
     return e;
   };
   const KIND = { realm: "On our realm", offline: "No server", "realm-type": "Its own realm type", "in-game": "In game" };
-  const OFFICIAL = "play.openvanilla.app";
+  const OFFICIAL = window.LeylineAddresses.SITE_HOST;
   // Key art shipped with the launcher (art/modes/), by mode id: on the mode's card and, for the featured mode, as a
   // banner on Home. A mode without art, or art that fails to load, simply has none (the card and Home as before).
   const ART = {

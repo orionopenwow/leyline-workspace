@@ -72,7 +72,7 @@
 <script>
 "use strict";
 (() => {
-  const RELAY_DEFAULT = "https://relay.openvanilla.app";
+  const RELAY_DEFAULT = "https://relay.leylinelauncher.com";   // relay.openvanilla.app answers too
   const parts = location.pathname.split("/").filter(Boolean);
   const qs = new URLSearchParams(location.search);
   const realmId = (parts[0] === "join" && parts[1]) || qs.get("r") || "";

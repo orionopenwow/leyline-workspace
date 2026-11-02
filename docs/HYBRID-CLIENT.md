@@ -5,7 +5,7 @@ server test and join server thing in the client and the browser and have them bo
 the forever u.i as the default for the launcher as well 1:1".
 
 Goal: when Leyline starts the player's own stock desktop client (build 12340), it behaves like the browser game at
-wrath.openvanilla.app: no intro movie, no login typing, straight to character select (or into the world), our
+play.leylinelauncher.com: no intro movie, no login typing, straight to character select (or into the world), our
 loading screens, Forever UI as the interface, and the same "hop to another realm" flow.
 
 Status (2026-11-01, branch `agent/hybrid-client`): research done; a first prototype is built and tested on Linux

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
-pub const URL: &str = "https://play.openvanilla.app/wrath/mods/all.json";
+pub const URL: &str = crate::site!("/wrath/mods/all.json");
 pub const MAX_PROJECTS: usize = 2000;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -152,7 +152,8 @@ pub fn id_ok(id: &str) -> bool {
 }
 
 /// One project made safe to show, or None when it is not a real entry. `origin` is the catalog's own site
-/// (`https://play.openvanilla.app`): a download anywhere else is dropped.
+/// (`https://leylinelauncher.com`; its old name counts as the same site, addresses.rs): a download anywhere else is
+/// dropped.
 pub fn clean(p: Project, origin: &str) -> Option<Project> {
     clean_in(p, origin, crate::clients::all_clients())
 }
@@ -217,8 +218,7 @@ pub fn clean_in(mut p: Project, origin: &str, all: bool) -> Option<Project> {
         p.source == "packaged"
             && d.len() <= 400
             && !d.chars().any(|c| c.is_whitespace() || c.is_control())
-            && net::origin(d).as_deref() == Some(origin)
-            && d[origin.len()..].starts_with('/')
+            && crate::addresses::site_path(d, origin).is_some()
     });
     clean_upstream(&mut p, origin);
     crate::looks::clean(&mut p);

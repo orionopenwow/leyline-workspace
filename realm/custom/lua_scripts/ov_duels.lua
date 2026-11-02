@@ -69,7 +69,7 @@ local function isBot(p)
     local name = try(p, "GetAccountName")
     return type(name) == "string" and name:upper():find("^RNDBOT") ~= nil
 end
-local function say(p, text) if p then try(p, "SendBroadcastMessage", TAG .. text) end end
+local function say(p, text) if p then try(p, "SendBroadcastMessage", TAG .. ((OVMod and OVMod.Names) and OVMod.Names(text) or text)) end end
 local function esc(s) return (tostring(s or ""):gsub("[%z\1-\31]", ""):gsub("\\", "\\\\"):gsub("'", "''")) end
 local function weekKey(t) return os.date("!%Y-%W", t or now()) end      -- the season: Monday 00:00 UTC
 local function dayKey(t) return os.date("!%Y-%m-%d", t or now()) end

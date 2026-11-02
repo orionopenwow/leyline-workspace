@@ -39,6 +39,14 @@ recreate_portal() {
 
 caddy_reload() { (cd "$CADDY_DIR" && docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile); }
 
+# The domain move (tools/domain/domain.sh, docs/DOMAIN-MOVE.md): after our block was rewritten (old name only), the
+# new name and the 301 for old page loads go back on it. Nothing when the move is off.
+DOMAIN_DIR="${WU_DOMAIN_DIR:-$WU/domain}"
+domain_reapply() {
+  [ -f "$DOMAIN_DIR/domain.json" ] && [ -f "$DOMAIN_DIR/domain_caddy.py" ] || return 0
+  python3 -I "$DOMAIN_DIR/domain_caddy.py" reapply "$CF" "$DOMAIN_DIR/domain.json" "$DOMAIN_DIR/addresses.json"
+}
+
 # Remove our site block (between the markers) from the Caddyfile, in place (it is bind-mounted).
 caddy_strip() {
   python3 -I - "$CF" "$MARK_BEGIN" "$MARK_END" <<'PY'

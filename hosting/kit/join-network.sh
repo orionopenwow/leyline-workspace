@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Leyline: bring a server you already run onto the Leyline network, with Hero Key sign-in.
 # For AzerothCore and TrinityCore servers of the Wrath client (others: not yet; use "Link my server" to list them without it).
-# Guide: https://play.openvanilla.app/wrath/docs/join-network
+# Guide: https://leylinelauncher.com/wrath/docs/join-network
 #
 #   bash join-network.sh            a few questions, then your server is listed and takes Hero Key sign-in
 #   bash join-network.sh test       Test Hero Key sign-in: a full dry run, nothing kept
@@ -23,7 +23,7 @@ cd "$(dirname "$0")"
 DIR="$(pwd)"
 PREBUILT="${WU_TOOLS_PREBUILT:-ghcr.io/orionopenwow/wu-host-tools:1}"
 IMAGE="${WU_TOOLS_IMAGE:-wu-host-tools:1}"
-RELAY="${WU_RELAY:-relay.openvanilla.app}"
+RELAY="${WU_RELAY:-relay.leylinelauncher.com}"   # relay.openvanilla.app answers too (docs/DOMAIN-MOVE.md)
 LC=wu-link-agent
 
 say() { printf '%s\n' "$*"; }
@@ -132,7 +132,7 @@ selftest || say "  Some steps of the test did not pass yet: each line above says
 RID="$(sed -n 's/.*"realm_id": *"\([a-z2-7]*\)".*/\1/p' state/host.json | head -1)"
 say ""
 say "== Done"
-say "  Your server is on the Leyline realm list within a minute: https://play.openvanilla.app/wrath/r/$RID"
+say "  Your server is on the Leyline realm list within a minute: https://leylinelauncher.com/wrath/r/$RID"
 say "  - Players arrive through the relay at your login server; the realm address your server hands out must already"
 say "    work for players. Leyline leaves your realm list alone."
 say "  - Relay players all come from the helper's address: set WrongPass.MaxCount = 0 in authserver.conf (the relay"

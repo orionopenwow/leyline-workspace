@@ -5,7 +5,7 @@ link, keep their home IP hidden behind our relay, and (optionally) list it in Be
 How to install and run it: `INSTALL-OPERATE.md`. Nothing here is deployed, pushed or published.
 
 ```
- host's PC (Docker, no open ports)                       relay.openvanilla.app                players
+ host's PC (Docker, no open ports)                       relay.leylinelauncher.com            players
  ┌──────────────────────────────────────────┐            ┌──────────────────────────┐
  │ internal network (no internet)           │  one wss   │ /agent  (tunnel, 443)    │
  │  mysql ─ authserver:3724 ─ world:8085    │◀──────────▶│ :3724   shared, by knock │◀── stock 3.3.5a client
@@ -79,10 +79,10 @@ jitter; a new tunnel replaces the old one; ports survive reconnects and relay re
 kept in the relay's state file. The agent writes `realmlist.address/localAddress = relay IPv4`,
 `port = world` (the authserver is on an internet-less network, so it gets an IP, not a name). Players:
 
-* `set realmlist relay.openvanilla.app` (shared port 3724, routed by the player's IP to the realm
+* `set realmlist relay.leylinelauncher.com` (shared port 3724, routed by the player's IP to the realm
   whose join page that IP opened most recently, valid 24 h), or
-* `set realmlist relay.openvanilla.app:40000` (the realm's own auth port, no knock needed for public realms).
-* Browser/desktop Leyline client: `wss://relay.openvanilla.app/r/<realm-id>/ws/<port>`
+* `set realmlist relay.leylinelauncher.com:40000` (the realm's own auth port, no knock needed for public realms).
+* Browser/desktop Leyline client: `wss://relay.leylinelauncher.com/r/<realm-id>/ws/<port>`
   (3724/8085 or the realm's pair; `?invite=` or `/r/<id>/i/<secret>/ws/<port>` for private realms).
 
 **Private realms**: the relay holds only sha256(secret). A raw-TCP player gets in only from an IP

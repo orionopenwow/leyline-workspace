@@ -152,7 +152,7 @@ local fresh = {}     -- player guid -> true during a character's first login
 local doors = {}     -- map -> pos looked up in areatrigger_teleport (false: none)
 
 local function now() return os.time() end
-local function say(player, text) player:SendBroadcastMessage(TAG .. text) end
+local function say(player, text) player:SendBroadcastMessage(TAG .. ((OVMod and OVMod.Names) and OVMod.Names(text) or text)) end
 
 local function try(obj, method, ...)
     if not obj then return nil end

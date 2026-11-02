@@ -30,7 +30,7 @@ const FAKE = (o) => {
     localStorage.clear();
     localStorage.setItem('leyline.page', o.page || 'play');
     localStorage.setItem('leyline.mode', 'online');
-    localStorage.setItem('leyline.joined', JSON.stringify(['relay.openvanilla.app:40002']));
+    localStorage.setItem('leyline.joined', JSON.stringify(['relay.leylinelauncher.com:40002']));
     for (const [k, v] of Object.entries(o.ls || {})) localStorage.setItem(k, v);
   } catch (_) { /* fine */ }
   const clients = [
@@ -43,16 +43,16 @@ const FAKE = (o) => {
   const RID = 'emberemberember2';
   const mode = (id) => { const m = o.modes.find((x) => x.id === id); return m ? { id: m.id, name: m.name, author: m.author, forkable: true, recipe: m } : null; };
   const baseRealms = [
-    { slug: 'official', name: 'Wrath Unleashed', official: true, state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: [], players: 42, bots: 120, address: 'play.openvanilla.app', mods: [] },
-    { slug: 'c-aaaa', realm_id: 'aaaaaaaaaaaaaaaa', name: 'Frost Haven', state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: ['pve'], players: 17, bots: 30, address: 'relay.openvanilla.app:40002', mods: [], tagline: 'A friendly levelling realm', mode: mode('levelling') },
-    { slug: 'c-bbbb', realm_id: 'bbbbbbbbbbbbbbbb', name: 'Duel Town', state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: ['pvp'], players: 7, bots: 0, address: 'relay.openvanilla.app:40003', mods: [], mode: mode('duel-ladder') },
-    { slug: 'c-dddd', realm_id: 'dddddddddddddddd', name: 'Putt Party', state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: ['fun'], players: 5, bots: 0, address: 'relay.openvanilla.app:40004', mods: [], mode: mode('minigolf-night') },
+    { slug: 'official', name: 'Wrath Unleashed', official: true, state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: [], players: 42, bots: 120, address: 'leylinelauncher.com', mods: [] },
+    { slug: 'c-aaaa', realm_id: 'aaaaaaaaaaaaaaaa', name: 'Frost Haven', state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: ['pve'], players: 17, bots: 30, address: 'relay.leylinelauncher.com:40002', mods: [], tagline: 'A friendly levelling realm', mode: mode('levelling') },
+    { slug: 'c-bbbb', realm_id: 'bbbbbbbbbbbbbbbb', name: 'Duel Town', state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: ['pvp'], players: 7, bots: 0, address: 'relay.leylinelauncher.com:40003', mods: [], mode: mode('duel-ladder') },
+    { slug: 'c-dddd', realm_id: 'dddddddddddddddd', name: 'Putt Party', state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: ['fun'], players: 5, bots: 0, address: 'relay.leylinelauncher.com:40004', mods: [], mode: mode('minigolf-night') },
   ];
   let hosted = null;   // { realm_id, name, visibility, relay, profile } once Host finishes
   const realms = () => {
     const l = JSON.parse(JSON.stringify(baseRealms));
     if (hosted) l.splice(1, 0, { slug: 'c-' + RID, realm_id: RID, name: hosted.name, state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore',
-      tags: ['pve'], players: 1, bots: 0, address: 'relay.openvanilla.app:40077', mods: [], mode: mode('levelling'), tagline: 'New on the network' });
+      tags: ['pve'], players: 1, bots: 0, address: 'relay.leylinelauncher.com:40077', mods: [], mode: mode('levelling'), tagline: 'New on the network' });
     return l;
   };
   const S = { forgeOpen: false, forgeLooks: 0, forgeLast: null, jobAt: undefined, answers: null };
@@ -60,8 +60,8 @@ const FAKE = (o) => {
   window.__TAURI__ = { core: { invoke: async (cmd, args) => {
     calls.push([cmd, args]);
     switch (cmd) {
-      case 'get_state': return { version: '0.9', settings: { clients, selected_client: 'c335a-1', selected_realm: 'play.openvanilla.app',
-        wine: { enabled: false, command: 'wine', prefix: '' } }, official_realm: 'play.openvanilla.app', browser_url: 'https://play.openvanilla.app/wrath', windows: true, data_dir: 'C:\\Users\\me\\AppData\\Leyline' };
+      case 'get_state': return { version: '0.9', settings: { clients, selected_client: 'c335a-1', selected_realm: 'leylinelauncher.com',
+        wine: { enabled: false, command: 'wine', prefix: '' } }, official_realm: 'leylinelauncher.com', browser_url: 'https://leylinelauncher.com/wrath', windows: true, data_dir: 'C:\\Users\\me\\AppData\\Leyline' };
       case 'realms_list': { const r = realms(); return { realms: r, network: { realms: r.length - 1, players: r.reduce((a, x) => a + x.players, 0) - 42, bots: 150 }, from_cache: false, saved_at: 1, error: null }; }
       case 'realm_status': return { state: 'online', ping_ms: 24, players: 42 };
       case 'mods_catalog': return Object.assign({ from_cache: false, saved_at: 1, error: null }, o.catalog || { categories: [], projects: [] });
@@ -81,7 +81,7 @@ const FAKE = (o) => {
       case 'open_link': case 'open_url': case 'save_text_file': return null;
       // hosting (the Host page's templates)
       case 'host_info': return { dir: '/kit', is_kit: true, has_windows_script: true, has_unix_script: true, problems: [], seeds: [],
-        realm: hosted || (o.dockerDen ? { realm_id: 'denden2denden2de', name: 'My Den', visibility: 'private', relay: 'relay.openvanilla.app', profile: 'den' } : null) };
+        realm: hosted || (o.dockerDen ? { realm_id: 'denden2denden2de', name: 'My Den', visibility: 'private', relay: 'relay.leylinelauncher.com', profile: 'den' } : null) };
       case 'host_modes': return JSON.parse(JSON.stringify(o.modes));
       case 'host_mode_use': if (!args.id) return null; { const m = o.modes.find((x) => x.id === args.id); return { profile: m.profile, name: m.name, den: null }; }
       case 'host_profiles': return [[{ id: 'main', label: 'x', version: '3.3.5a', core: 'azerothcore', in_kit: true, clients: [{ id: 'c335a-1', name: 'Northrend', path: '/g' }], note: null }], null];
@@ -91,14 +91,14 @@ const FAKE = (o) => {
         if (S.jobAt === undefined) return { idle: true, kind: '', running: false, code: null, step: '', n: 0, of: 0, secs: 0, problem: null };
         const n = Math.min(++S.jobAt, 3);
         const done = n >= 3;
-        if (done && !hosted) hosted = { realm_id: RID, name: (S.answers && S.answers.name) || 'Ember Vale', visibility: 'public', relay: 'relay.openvanilla.app', profile: 'main' };
+        if (done && !hosted) hosted = { realm_id: RID, name: (S.answers && S.answers.name) || 'Ember Vale', visibility: 'public', relay: 'relay.leylinelauncher.com', profile: 'main' };
         return { idle: false, kind: 'host', running: !done, code: done ? 0 : null, step: done ? 'Done' : ['Getting the helper', 'Starting the servers'][n - 1], n, of: 3, secs: n * 30, problem: null };
       }
       case 'host_console': return { set_up: !!hosted, linked: false, name: hosted ? hosted.name : '', realm_id: hosted ? RID : '', profile: 'main', core: 'azerothcore',
-        visibility: 'public', signup: 'open', herokey: false, claim_sent: false, browser: true, max_players: 0, relay: 'relay.openvanilla.app', relay_connected: true,
-        relay_error: null, docker: true, services: o.dockerDen ? [{ role: 'world', state: 'ok' }] : [], uptime: '1 min', gm: true, gm_note: null, invite: 'https://relay.openvanilla.app/join/' + RID + '#a1b2c3' };
+        visibility: 'public', signup: 'open', herokey: false, claim_sent: false, browser: true, max_players: 0, relay: 'relay.leylinelauncher.com', relay_connected: true,
+        relay_error: null, docker: true, services: o.dockerDen ? [{ role: 'world', state: 'ok' }] : [], uptime: '1 min', gm: true, gm_note: null, invite: 'https://relay.leylinelauncher.com/join/' + RID + '#a1b2c3' };
       case 'host_status': return { realm_id: args.realmId, online: true, name: hosted ? hosted.name : '', visibility: 'public', players: 1, bots: 0, listed: true };
-      case 'host_invite': return 'https://relay.openvanilla.app/join/' + (o.denInvite ? 'denden2denden2de' : RID) + '#k7f3q9';
+      case 'host_invite': return 'https://relay.leylinelauncher.com/join/' + (o.denInvite ? 'denden2denden2de' : RID) + '#k7f3q9';
       case 'host_gm': return 'gm=1\nup=60\nplayers=0\nbots=0\nrestart=0\nallow=off\nallowed=0\nvis=public\nmotd=-';
       case 'host_scan': return null;
       case 'host_listing': return { tags: [], region: null, language: null, max_players: null, direct: false };
@@ -112,20 +112,20 @@ const FAKE = (o) => {
       case 'social_ways': return { herokey: true, google: true, discord: true };
       case 'forum_call': return { threads: [], categories: [] };
       case 'social_call': {
-        S.prof = S.prof || { bio: 'Builds small houses by the sea.', avatar: 'ranger', avatar_url: 'https://play.openvanilla.app/wrath/avatar/p/ranger.svg', setup: true };
+        S.prof = S.prof || { bio: 'Builds small houses by the sea.', avatar: 'ranger', avatar_url: 'https://leylinelauncher.com/wrath/avatar/p/ranger.svg', setup: true };
         const me = () => ({ pid: 'kkkkkkkkkk', name: 'Kestrel', tag: '1290', main: '', show_main: false, offline: false, profile: Object.assign({}, S.prof) });
-        if (args.action === 'me') return { me: me(), avatars: [], ways: { herokey: true, google: true, discord: true }, manage_url: 'https://play.openvanilla.app/wrath/profile' };
+        if (args.action === 'me') return { me: me(), avatars: [], ways: { herokey: true, google: true, discord: true }, manage_url: 'https://leylinelauncher.com/wrath/profile' };
         if (args.action === 'profile') {
           const a = args.args;
-          if ('avatar' in a) { S.prof.avatar = a.avatar; S.prof.avatar_url = 'https://play.openvanilla.app/wrath/avatar/p/' + a.avatar + '.svg'; }
+          if ('avatar' in a) { S.prof.avatar = a.avatar; S.prof.avatar_url = 'https://leylinelauncher.com/wrath/avatar/p/' + a.avatar + '.svg'; }
           if ('bio' in a) S.prof.bio = a.bio;
           return { ok: true, me: me() };
         }
         if (args.action === 'state') return { v: 1, me: { pid: 'kkkkkkkkkk', name: 'Kestrel', tag: '1290' }, incoming: [], outgoing: [], blocked: [], friends: [
-          { pid: 'bbbbbbbbbb', name: 'Bramble', tag: '4655', main: '', status: 'game', realm: 'Frost Haven', char: 'Thistle', unread: 0, profile: { avatar_url: 'https://play.openvanilla.app/wrath/avatar/p/druid.svg' } },
-          { pid: 'cccccccccc', name: 'Wren', tag: '5521', main: '', status: 'launcher', realm: '', char: '', unread: 0, profile: { avatar_url: 'https://play.openvanilla.app/wrath/avatar/p/owl.svg' } },
-          { pid: 'dddddddddd', name: 'Moss', tag: '3301', main: '', status: 'game', realm: 'Wrath Unleashed', char: 'Fennick', unread: 0, profile: { avatar_url: 'https://play.openvanilla.app/wrath/avatar/p/fox.svg' } },
-          { pid: 'eeeeeeeeee', name: 'Juniper', tag: '7712', main: '', status: 'offline', realm: '', char: '', unread: 0, profile: { avatar_url: 'https://play.openvanilla.app/wrath/avatar/p/witch.svg' } },
+          { pid: 'bbbbbbbbbb', name: 'Bramble', tag: '4655', main: '', status: 'game', realm: 'Frost Haven', char: 'Thistle', unread: 0, profile: { avatar_url: 'https://leylinelauncher.com/wrath/avatar/p/druid.svg' } },
+          { pid: 'cccccccccc', name: 'Wren', tag: '5521', main: '', status: 'launcher', realm: '', char: '', unread: 0, profile: { avatar_url: 'https://leylinelauncher.com/wrath/avatar/p/owl.svg' } },
+          { pid: 'dddddddddd', name: 'Moss', tag: '3301', main: '', status: 'game', realm: 'Wrath Unleashed', char: 'Fennick', unread: 0, profile: { avatar_url: 'https://leylinelauncher.com/wrath/avatar/p/fox.svg' } },
+          { pid: 'eeeeeeeeee', name: 'Juniper', tag: '7712', main: '', status: 'offline', realm: '', char: '', unread: 0, profile: { avatar_url: 'https://leylinelauncher.com/wrath/avatar/p/witch.svg' } },
         ] };
         return {};
       }

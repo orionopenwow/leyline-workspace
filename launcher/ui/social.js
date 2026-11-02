@@ -48,10 +48,10 @@
 
   // ---------------------------------------------------------------- pictures
   // the picture: a portrait (art/avatars/, avatars.js) on a slate medallion, never a letter. A website address: its preset
-  // shows from the local copy; a player's own address (…/avatar/u/<pid>.svg, only https://play.openvanilla.app, the one
+  // shows from the local copy; a player's own address (…/avatar/u/<pid>.svg, only the site (https://leylinelauncher.com, or its old name), the one
   // place the launcher loads images from) loads from the site, and while it loads or when it can't, the portrait picked
   // from the name shows
-  const PIC_RE = /^https:\/\/play\.openvanilla\.app\/wrath\/avatar\/[a-z]\/[a-z0-9]{2,12}\.svg(\?v=\d{1,9})?$/;
+  const PIC_RE = /^https:\/\/(leylinelauncher\.com|play\.openvanilla\.app)\/wrath\/avatar\/[a-z]\/[a-z0-9]{2,12}\.svg(\?v=\d{1,9})?$/;   // either name
   function avatar(name, cls, url) {
     const A = window.LeylineAvatars;
     const av = el("span", "sx-av" + (cls ? " " + cls : ""));

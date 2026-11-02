@@ -69,7 +69,7 @@ A trip from a link waits 30 minutes. It waits while you are in combat, dead, or 
 |---|---|
 | `.armory <words>` | searches item names, rare and better, best item level first |
 | `.armory give <id>` | puts that item in your bags, in the areas where Armory gear is allowed. One item a second. |
-| `.armory off`, `.armory on` | hides this character from the [web armory](https://play.openvanilla.app/wrath/armory), or shows it again. The site drops it within 5 minutes. |
+| `.armory off`, `.armory on` | hides this character from the [web armory](https://leylinelauncher.com/wrath/armory), or shows it again. The site drops it within 5 minutes. |
 | `.armory privacy` | says whether this character is on the web armory |
 | `/armory` | opens the Armory window (the OVArmory addon) |
 
@@ -115,7 +115,7 @@ GM only: `.build grant <name>`, `.build revoke <name>`, `.build purge <name>`.
 
 ## Commands from mods
 
-These come with the example mods in the [catalog](https://play.openvanilla.app/wrath/mods), when a realm runs them.
+These come with the example mods in the [catalog](https://leylinelauncher.com/wrath/mods), when a realm runs them.
 
 | Command | Mod | What it does |
 |---|---|---|

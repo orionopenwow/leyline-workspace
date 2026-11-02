@@ -4,7 +4,7 @@ There are three ways to play Wrath: streamed in the browser, in the browser with
 
 ## Sign in
 
-1. Open [play.openvanilla.app/wrath](https://play.openvanilla.app/wrath).
+1. Open [leylinelauncher.com/wrath](https://leylinelauncher.com/wrath).
 2. Sign in with your [Hero Key](hero-key.md) or Google (or Discord, when the site offers it).
 3. The site makes your game account for you. There are no separate Wrath accounts to ask for.
 
@@ -67,9 +67,9 @@ You need your own game install: the official realm runs the Wrath-era game {{v:3
 1. Get the [Leyline launcher](launcher.md) and open it.
 2. Add your game folder: press **PLAY**, or pick **Add a game folder…** in the play bar. The launcher reads the version itself.
 3. Press **PLAY**. The launcher points your game at the realm (your original realm setting is kept as a backup) and starts it.
-4. Log in with your game account: sign in at [play.openvanilla.app/wrath](https://play.openvanilla.app/wrath) and open **Play with the desktop client or the player package** to see your account name and password.
+4. Log in with your game account: sign in at [leylinelauncher.com/wrath](https://leylinelauncher.com/wrath) and open **Play with the desktop client or the player package** to see your account name and password.
 
-**Without the launcher.** Open `Data\enUS\realmlist.wtf` (or `Data\enGB\...`) in a text editor, change the line to `set realmlist play.openvanilla.app`, delete the `Cache` folder next to the game, then start it.
+**Without the launcher.** Open `Data\enUS\realmlist.wtf` (or `Data\enGB\...`) in a text editor, change the line to `set realmlist leylinelauncher.com`, delete the `Cache` folder next to the game, then start it.
 
 The player package has a `Play` .bat file that asks for your game folder once and opens the game in your browser. It only reads your own files, on your PC.
 
@@ -77,13 +77,13 @@ Other versions play on community realms of their own build, and the launcher pic
 
 ## Community realms
 
-Players host their own realms on Leyline. See them at [play.openvanilla.app/wrath/realms](https://play.openvanilla.app/wrath/realms), with their rules and player counts.
+Players host their own realms on Leyline. See them at [leylinelauncher.com/wrath/realms](https://leylinelauncher.com/wrath/realms), with their rules and player counts.
 
 To join one:
 
-1. Open its **Join** link. It looks like `https://relay.openvanilla.app/join/<realm id>`.
+1. Open its **Join** link. It looks like `https://relay.leylinelauncher.com/join/<realm id>`.
 2. Make an account on that page. Your password is turned into a login key in your browser. The relay and the host never see it.
-3. In the launcher, paste the invite link under Realms › **Got an invite link?** and press **Join**. Without the launcher, set the realm list to the line the join page shows. That is `set realmlist relay.openvanilla.app`, or the same with the realm's own port, such as `relay.openvanilla.app:40000`.
+3. In the launcher, paste the invite link under Realms › **Got an invite link?** and press **Join**. Without the launcher, set the realm list to the line the join page shows. That is `set realmlist relay.leylinelauncher.com`, or the same with the realm's own port, such as `relay.leylinelauncher.com:40000`.
 
 For a private realm, open the invite link on the same PC and internet connection you play from. The invite lasts 24 hours for that address.
 
@@ -100,9 +100,9 @@ Short links open a page with a preview card and a button into the game. After si
 | `/wrath/m/<mod id>` | a mod on the Workshop |
 | `/wrath/u/<character>` | a player's armory page |
 
-The [Modes hub](https://play.openvanilla.app/wrath/modes) lists every duel spot, raid, dungeon and hangout as one link each. If you can't go yet (in combat, too low a level), the realm keeps the trip for 30 minutes. Type `.go` when you are ready. See [Commands](commands.md#getting-around).
+The [Modes hub](https://leylinelauncher.com/wrath/modes) lists every duel spot, raid, dungeon and hangout as one link each. If you can't go yet (in combat, too low a level), the realm keeps the trip for 30 minutes. Type `.go` when you are ready. See [Commands](commands.md#getting-around).
 
-The [web armory](https://play.openvanilla.app/wrath/armory) shows character sheets. It never shows bots or characters whose player typed `.armory off`.
+The [web armory](https://leylinelauncher.com/wrath/armory) shows character sheets. It never shows bots or characters whose player typed `.armory off`.
 
 ## Guest pass
 

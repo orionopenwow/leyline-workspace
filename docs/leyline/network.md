@@ -23,4 +23,4 @@ A plain guide for players: what happens when you pick a realm, and what we never
 9. **Dens are private rooms.** A Den is a small, invite-only realm to build in with friends. It is never on the public list.
 10. **What we never do.** We never ship, upload or share game files: every host and player uses the game folder they already have. We never sell places on the list, and bots are always counted apart from players.
 
-Want to run one? See [Hosting](hosting.md). Something wrong with a realm? Use **Report** on its card on the [realm list](https://play.openvanilla.app/wrath/realms).
+Want to run one? See [Hosting](hosting.md). Something wrong with a realm? Use **Report** on its card on the [realm list](https://leylinelauncher.com/wrath/realms).

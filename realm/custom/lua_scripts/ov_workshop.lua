@@ -82,7 +82,7 @@ local function try(obj, method, ...)
     local ok, a = pcall(fn, obj, ...)
     if ok then return a end
 end
-local function say(player, text) try(player, "SendBroadcastMessage", TAG .. text) end
+local function say(player, text) try(player, "SendBroadcastMessage", TAG .. ((OVMod and OVMod.Names) and OVMod.Names(text) or text)) end
 local function send(player, name, data) if player then OVMod.Send(player, MOD, name, data or "") end end
 local function isGM(player) return (tonumber(try(player, "GetGMRank")) or 0) > 0 end
 local function exec(sql) if CharDBExecute then pcall(CharDBExecute, sql) end end

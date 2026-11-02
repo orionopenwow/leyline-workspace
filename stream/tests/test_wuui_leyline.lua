@@ -130,8 +130,8 @@ local W = assert(WrathUnleashedUI)
 local L = assert(W.Leyline, "W.Leyline")
 check("builds nothing until opened", L.Window() == nil)
 check("/leyline and /realms", SLASH_WULEYLINE1 == "/leyline" and SLASH_WULEYLINE2 == "/realms" and SlashCmdList.WULEYLINE)
-check("one public base for links", L.PUBLIC_BASE == "https://play.openvanilla.app"
-    and L.Link("abcdefghijklmnop") == "https://play.openvanilla.app/r/abcdefghijklmnop")
+check("one public base for links", L.PUBLIC_BASE == "https://leylinelauncher.com"
+    and L.Link("abcdefghijklmnop") == "https://leylinelauncher.com/r/abcdefghijklmnop")
 
 -- Esc > Realm List (its own button, independent of Mods & Workshop)
 local realmBtn = _G.GameMenuButtonRealmList
@@ -168,17 +168,17 @@ check("offline realm", rows[3].state:GetText():find("offline") and rows[3].playe
 check("status: the network line (this realm + the live ones)", win.status:GetText():find("^2 realms · 9 players online · 2 bots"))
 
 rows[2].copyBtn:Fire("OnClick")
-check("Copy link fills the box with /r/<id>", win.copy:GetText() == "https://play.openvanilla.app/r/abcdefghijklmnop")
+check("Copy link fills the box with /r/<id>", win.copy:GetText() == "https://leylinelauncher.com/r/abcdefghijklmnop")
 win.copy:SetText("typed over"); win.copy:Fire("OnTextChanged")
-check("the box can't be typed over", win.copy:GetText() == "https://play.openvanilla.app/r/abcdefghijklmnop")
+check("the box can't be typed over", win.copy:GetText() == "https://leylinelauncher.com/r/abcdefghijklmnop")
 local before = #sent
 rows[3].join:Fire("OnClick")
 check("Join on an offline realm: says so, no hop", win.info:GetText():find("^Quiet Corner is offline")
-    and win.copy:GetText() == "https://play.openvanilla.app/r/qrstuvwxyz234567" and #sent == before and WUUI_LEYLINE_HOP == nil
+    and win.copy:GetText() == "https://leylinelauncher.com/r/qrstuvwxyz234567" and #sent == before and WUUI_LEYLINE_HOP == nil
     and L.hopping == nil)
 rows[1].join:Fire("OnClick")
 check("Join on this realm: you're here", win.info:GetText():find("^You're on WrathUnleashed")
-    and win.copy:GetText() == "https://play.openvanilla.app/wrath")
+    and win.copy:GetText() == "https://leylinelauncher.com/wrath")
 
 local function says(parent, pat)
     for _, f in ipairs(created) do
@@ -213,7 +213,7 @@ check("Join: the realm echoes it back (the page's cue)", echoes[1] == "H:abcdefg
 check("Join: the page's fallback global is set", WUUI_LEYLINE_HOP == "abcdefghijklmnop")
 check("Join: says it's hopping, and the account step", win.info:GetText():find("^Hopping to Frost Haven")
     and win.info:GetText():find("make an account"))
-check("Join still puts the link in the box", win.copy:GetText() == "https://play.openvanilla.app/r/abcdefghijklmnop")
+check("Join still puts the link in the box", win.copy:GetText() == "https://leylinelauncher.com/r/abcdefghijklmnop")
 check("the realm drops a malformed hop", (function()
     local n = #echoes
     serverClock = serverClock + 5
@@ -340,7 +340,7 @@ check("Report with nothing picked: says how", win.info:GetText():find("^Pick a c
 shown()[3]:Fire("OnClick")
 win.report:Fire("OnClick")
 check("Report: the website's report link for the picked realm", win.copy:GetText() ==
-    "https://play.openvanilla.app/wrath/realms/report?realm=cccccccccccccccc" and win.info:GetText():find("^Open this link to report Plain"))
+    "https://leylinelauncher.com/wrath/realms/report?realm=cccccccccccccccc" and win.info:GetText():find("^Open this link to report Plain"))
 check("no Report for the sample", L.Report(L.realms[2]) == false)
 check("a malformed M line is ignored", (function()
     list({ "B:1:0", "R:hhhhhhhhhhhhhhhh:1:1:0:main:X", "M:hhhhhhhhhhhhhhhh:<script>:1:1:1:x:y:z:w", "E:1" })
@@ -366,7 +366,7 @@ L.Refresh()
 check("this row: Join by link in the desktop client (listed, live, no page)",
     shown()[1].join:GetText() == "Join by link")
 shown()[1].copyBtn:Fire("OnClick")
-check("desktop: Copy link gives the relay link", win.copy:GetText() == "https://play.openvanilla.app/r/kkkkkkkkkkkkkkkk")
+check("desktop: Copy link gives the relay link", win.copy:GetText() == "https://leylinelauncher.com/r/kkkkkkkkkkkkkkkk")
 list({ "B:3:0", "R:this:1:4:0:main:Wrath Unleashed", "M:this:-:0:-:12340:-:-:-:",
     "R:kkkkkkkkkkkkkkkk:0:0:0:dalaran:Wrath Unleashed", "M:kkkkkkkkkkkkkkkk:N:40:-:12340:-:-:-:hangout", "E:3" })
 check("listing offline: no Join by link", #L.realms == 1 and shown()[1].join:GetText() == "You're here")

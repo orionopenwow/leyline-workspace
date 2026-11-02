@@ -25,7 +25,7 @@
   if (!page || !main) return;
 
   // the website's share link for a realm (stream/links.py /wrath/r/<id>: the full id, or its short form once that ships)
-  const SHARE = (rid) => `https://play.openvanilla.app/wrath/r/${rid}`;
+  const SHARE = (rid) => window.LeylineAddresses.site(`/wrath/r/${rid}`);
   // the realms made for this PC alone are always private (hostconsole.js LOCAL_IDS, host/profiles.rs private_profile)
   const PRIVATE = ["den", "solo"];
   const NAME_OK = /^[A-Za-z0-9 _'-]{1,32}$/;

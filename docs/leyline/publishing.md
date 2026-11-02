@@ -17,7 +17,7 @@ python3 wu-mod.py pack my-mod -o dist
 
 ## 2. Submit a link
 
-Use one path: **Add your project** on the Workshop, at [/wrath/mods/submit](https://play.openvanilla.app/wrath/mods/submit). Sign in, paste your project's public repo link (GitHub, GitLab or Codeberg), pick a category and the client it works with, and write one line about it.
+Use one path: **Add your project** on the Workshop, at [/wrath/mods/submit](https://leylinelauncher.com/wrath/mods/submit). Sign in, paste your project's public repo link (GitHub, GitLab or Codeberg), pick a category and the client it works with, and write one line about it.
 
 - Most links are listed straight away, credited to you and to the repo's author.
 - A link goes to a person's review queue instead of the list when its repo has no open licence, when its text names the game or its publisher, or when it looks like decompiled, leaked, repack or cheat material. You hear nothing more until it is checked; nothing of yours is lost.
@@ -40,7 +40,7 @@ Backups are made first. The step ends with `MODS OK`.
 
 ## 4. Where players find it
 
-- **The Workshop**: [play.openvanilla.app/wrath/mods](https://play.openvanilla.app/wrath/mods). It opens on a grid of the [categories](mods.md#categories) with a count for each, then the mods. Search with `?q=` (name, description, category). Filter by kind (`?kind=ui`, `realm` or `both`) or by permission (`?perm=chat`, or `?perm=none` for no realm permissions).
+- **The Workshop**: [leylinelauncher.com/wrath/mods](https://leylinelauncher.com/wrath/mods). It opens on a grid of the [categories](mods.md#categories) with a count for each, then the mods. Search with `?q=` (name, description, category). Filter by kind (`?kind=ui`, `realm` or `both`) or by permission (`?perm=chat`, or `?perm=none` for no realm permissions).
 - **A category**: `/wrath/mods/c/<category id>`, for example `/wrath/mods/c/addons`. Your mod sits on the shelf its `category` names.
 - **Its own page**: `/wrath/mods/<id>`, with what it does, its permissions in plain words, screenshots, the zip, and "Already on Wrath" when the realm runs it.
 - **The zip**: `/wrath/mods/<id>/download`.

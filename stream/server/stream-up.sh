@@ -186,6 +186,7 @@ if [ -f "$WU/portal/gamedata-off" ]; then
   python3 -I "$ST/gamedata-caddy.py" add "$CF" "$STREAM_HOST" || die "game data is switched off but gamedata-caddy.py could not add its 410 block (bash $ST/gamedata-switch.sh status)"
   echo "  game data is switched off here (gamedata-switch.sh): /data and the manifests answer 410"
 fi
+domain_reapply || die "the domain move's names could not go back on the block (python3 -I $DOMAIN_DIR/domain_caddy.py status $CF)"
 if ! caddy_reload; then
   cat "$WU/Caddyfile.stream-backup" > "$CF"
   caddy_reload || true

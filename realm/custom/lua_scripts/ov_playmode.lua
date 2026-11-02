@@ -64,7 +64,7 @@ local function try(obj, method, ...)
     if ok then return a end
     return nil
 end
-local function say(player, text) try(player, "SendBroadcastMessage", TAG .. text) end
+local function say(player, text) try(player, "SendBroadcastMessage", TAG .. ((OVMod and OVMod.Names) and OVMod.Names(text) or text)) end
 local function authExec(s) if AuthDBExecute then pcall(AuthDBExecute, s) end end
 local function authQuery(s)
     if not AuthDBQuery then return nil end

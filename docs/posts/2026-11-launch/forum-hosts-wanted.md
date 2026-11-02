@@ -13,7 +13,7 @@ TODO(owner): one line on why community realms matter to you.
 
 ## One click
 
-Get the **Host pack** from https://play.openvanilla.app/wrath/host or the launcher's **Host** page, pick a ruleset, press **Start**.
+Get the **Host pack** from https://leylinelauncher.com/wrath/host or the launcher's **Host** page, pick a ruleset, press **Start**.
 
 The Host pack hosts a realm for the game client it finds on your PC: original era, burning-crusade era, or the third era. Rulesets for a realm that stays up:
 
@@ -56,7 +56,7 @@ Honestly:
 
 Renting instead? A small Linux server with 4 GB of memory, 2 cores and 30 GB of disk is enough. Copy your own game folder to it first.
 
-The step-by-step for keeping a realm up (sleep settings, Docker at start-up, updates, power cuts): https://play.openvanilla.app/wrath/docs/always-on
+The step-by-step for keeping a realm up (sleep settings, Docker at start-up, updates, power cuts): https://leylinelauncher.com/wrath/docs/always-on
 
 ## Get listed, get featured
 

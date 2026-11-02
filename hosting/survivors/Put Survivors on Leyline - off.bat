@@ -13,7 +13,7 @@ echo %SVH%| findstr /r /x /c:"[a-z0-9][a-z0-9.-]*" >nul || (echo The address "%S
 echo Azeroth Survivors' address: %SVH%
 set "TGZ=%TEMP%\leyline-sv-%RANDOM%%RANDOM%.tgz"
 if exist "%TGZ%" del /q "%TGZ%"
-set "PARTS=hosting/survivors/sv-site-up.sh hosting/survivors/survivors.caddy hosting/survivors/docker-compose.yml tools/survivors/survivors_check.py stream/server/gamedata-caddy.py stream/survivors/upstream.lock.json"
+set "PARTS=hosting/survivors/sv-site-up.sh hosting/survivors/survivors.caddy hosting/survivors/docker-compose.yml tools/survivors/survivors_check.py stream/server/gamedata-caddy.py stream/survivors/upstream.lock.json tools/domain/addresses.json"
 tar -czf "%TGZ%" --exclude=__pycache__ %PARTS% || (echo Packing failed. & pause & exit /b 1)
 ssh -i "%USERPROFILE%\.ssh\openwow" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 root@play.openvanilla.app "mkdir -p /srv/survivors && T=$(mktemp -d -p /srv/survivors upload.XXXXXX) && tar -xzf - -C $T && sed 's/\r$//' $T/hosting/survivors/sv-site-up.sh > $T/sv-site-up.sh && SV_SITE_HOST=%SVH% bash $T/sv-site-up.sh $T --off 2>&1 | tee /tmp/sv-site.log; rm -rf $T; grep -q '^SV SITE OFF' /tmp/sv-site.log" < "%TGZ%"
 set "RC=%ERRORLEVEL%"

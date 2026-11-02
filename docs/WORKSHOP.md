@@ -3,7 +3,7 @@
 The Workshop is one list of what players made on the realm: **minigolf courses**, **modes** and **builds**. Anyone can find your work there and play it in one click, in game or from the web.
 
 - **In game:** Esc > Mods & Workshop > **Workshop** (or `/workshop`).
-- **On the web:** <https://play.openvanilla.app/wrath/workshop>. Every item has its own page and a share link (`/wrath/w/<id>`).
+- **On the web:** <https://leylinelauncher.com/wrath/workshop>. Every item has its own page and a share link (`/wrath/w/<id>`).
 
 ## Publish
 

@@ -255,7 +255,7 @@ class RelayDeploy(unittest.TestCase):
         if not os.path.exists(ctl_path):
             self.skipTest("the control panel lives in the WrathUnleashed repo")
         ctl = open(ctl_path).read()
-        self.assertIn('"relay": ("hosting/relay/Deploy relay.bat", "Beacons relay (relay.openvanilla.app)", False)', ctl)
+        self.assertIn('"relay": ("hosting/relay/Deploy relay.bat", "Beacons relay (the relay\'s site, its port book kept)", False)', ctl)
 
     def test_script_syntax(self):
         subprocess.run(["bash", "-n", SCRIPT], check=True)

@@ -58,7 +58,7 @@ Graphics presets (Max, Balanced, Classic), new interfaces and HD packs, with cre
 
 **Links**
 
-- Start here: https://play.openvanilla.app/wrath/start
+- Start here: https://leylinelauncher.com/wrath/start
 - Source: https://github.com/orionopenwow/Leyline
 
 It's early, and some of it is rough. Bug reports and blunt feedback are welcome here or in the game (Esc, then Report a bug).

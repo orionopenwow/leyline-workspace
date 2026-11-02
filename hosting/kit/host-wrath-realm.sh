@@ -39,7 +39,7 @@ WU_TOOLS_IMAGE="${WU_TOOLS_IMAGE:-wu-host-tools:1}"
 WU_EXTRACT_IMAGE="${WU_EXTRACT_IMAGE:-acore/ac-wotlk-tools:master}"
 # Leyline's addresses live in one file (tools/wunet/leyline.env: LEYLINE_DOMAIN=...).
 LEYLINE_DOMAIN="${LEYLINE_DOMAIN:-$(sed -n 's/^LEYLINE_DOMAIN=\([^ #]*\).*/\1/p' "$KIT/tools/wunet/leyline.env" 2>/dev/null | head -1)}"
-LEYLINE_DOMAIN="${LEYLINE_DOMAIN:-openvanilla.app}"
+LEYLINE_DOMAIN="${LEYLINE_DOMAIN:-leylinelauncher.com}"
 WU_RELAY="${WU_RELAY:-${LEYLINE_RELAY:-relay.$LEYLINE_DOMAIN}}"
 ARAC_REPO="https://github.com/heyitsbench/mod-arac"
 ARAC_COMMIT="3f605e09c656eb3b620ef2d70c7ef61808c1cfb0"      # = realm/custom/sources.lock

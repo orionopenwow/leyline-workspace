@@ -438,7 +438,7 @@ def youtube():
         ClipSeg("w-mods", ("mods", -0.2), ("discover", 1.0)),
         ClipSeg("w-mods", ("install", -1.2), ("install", 1.5)),
         ClipSeg("w-forum", 1.2, ("discord", 1.4)),
-        CardSeg(3.8, "Free and open source", "play.openvanilla.app"),
+        CardSeg(3.8, "Free and open source", "leylinelauncher.com"),
     ]
     return S, segs
 
@@ -450,7 +450,7 @@ def reel(kind):
     title = {"play": "Play in one click", "den": "Your Den", "host": "Host your own server"}[kind]
     R = lambda name, a, b, zoom=None: ReelSeg(ClipSeg(name, a, b, box, zoom), title)
     st = lambda f, d, frm, to: StillSeg(os.path.join(ART, f), d, frm, to, card=card)
-    end = CardSeg(3.0, "Free and open source", "play.openvanilla.app", tall=True)
+    end = CardSeg(3.0, "Free and open source", "leylinelauncher.com", tall=True)
     if kind == "play":
         segs = [CardSeg(1.8, tall=True),
                 R("t-home", ("hero", -1.6), ("clicked", 1.6), [(0.3, 0.5, 0.5, 1.0), (1.6, 0.64, 0.8, 1.45)]),

@@ -182,7 +182,14 @@ if [ ! -f "$DIR/relay.env" ]; then
   note "wrote $DIR/relay.env with a new listing site secret (not shown; the website's claim service needs it later)"
 fi
 chmod 600 "$DIR/relay.env"
-kv_set "$DIR/relay.env" RELAY_NAME "$HOST"
+# The name the relay gives out (realm lists, join links): the new one once the domain move is on (tools/domain);
+# the Caddy block below keeps $HOST as its first name either way.
+PUBLIC_NAME="$HOST"
+if [ -f "${WU_DOMAIN_DIR:-/srv/wrath/domain}/domain.json" ] && [ -f "${WU_DOMAIN_DIR:-/srv/wrath/domain}/addresses.json" ]; then
+  PUBLIC_NAME=$(python3 -I -c 'import json,sys;a=json.load(open(sys.argv[1]));print(a["relay"]["new"] if a["relay"]["old"]==sys.argv[2] else sys.argv[2])' \
+    "${WU_DOMAIN_DIR:-/srv/wrath/domain}/addresses.json" "$HOST" 2>/dev/null || echo "$HOST")
+fi
+kv_set "$DIR/relay.env" RELAY_NAME "$PUBLIC_NAME"
 kv_set "$DIR/relay.env" RELAY_HTTP_BIND "$BIND"
 kv_set "$DIR/relay.env" RELAY_TRUSTED_PROXIES "127.0.0.1/32,$SUBNET"
 kv_set "$DIR/relay.env" RELAY_SHARED_AUTH_PORT "$SHARED"
@@ -274,6 +281,12 @@ $HOST {
 }
 $MARK_END
 EOF
+# The domain move (tools/domain/domain.sh): the new name and the 301 for old page loads back on the block.
+DOMAIN_DIR="${WU_DOMAIN_DIR:-/srv/wrath/domain}"
+if [ -f "$DOMAIN_DIR/domain.json" ] && [ -f "$DOMAIN_DIR/domain_caddy.py" ]; then
+  python3 -I "$DOMAIN_DIR/domain_caddy.py" reapply "$CF" "$DOMAIN_DIR/domain.json" "$DOMAIN_DIR/addresses.json" \
+    || { cat "$BK/Caddyfile" > "$CF"; caddy_reload || true; rollback; die "the domain move's names could not go back on the relay's block; rolled back."; }
+fi
 if ! caddy_reload; then
   cat "$BK/Caddyfile" > "$CF"
   caddy_reload || true

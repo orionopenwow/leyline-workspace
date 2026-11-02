@@ -1,5 +1,7 @@
 // Leyline Launcher UI. Plain JS over the Rust core's commands (src-tauri/src/app.rs).
 "use strict";
+// the site, the game and the relay on their new and old names (addresses.js; docs/DOMAIN-MOVE.md)
+const ADDR = window.LeylineAddresses;
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -15,9 +17,9 @@ const invoke = window.__TAURI__ && window.__TAURI__.core
   ? window.__TAURI__.core.invoke
   : async (cmd) => {
       if (cmd === "get_state") {
-        return { version: "preview", settings: { clients: [], selected_client: null, selected_realm: "play.openvanilla.app",
-          wine: { enabled: true, command: "wine", prefix: "" } }, official_realm: "play.openvanilla.app",
-          browser_url: "https://play.openvanilla.app/wrath", windows: false, data_dir: "(app data folder)" };
+        return { version: "preview", settings: { clients: [], selected_client: null, selected_realm: ADDR.SITE_HOST,
+          wine: { enabled: true, command: "wine", prefix: "" } }, official_realm: ADDR.SITE_HOST,
+          browser_url: ADDR.site("/wrath"), windows: false, data_dir: "(app data folder)" };
       }
       throw "This is a preview page: open it in the Leyline app.";
     };
@@ -158,7 +160,7 @@ window.LeylineNav = { show, current: () => ({ page: currentPage, tab: currentTab
 // app. It sits behind the content area only (not the side bar or the menus), under the theme's wash
 // (--t-backdrop-wash). Until it loads, if it fails, or with Settings › Background picture off: the plain colour.
 // The window's CSP allows images from exactly this origin (tauri.conf.json img-src).
-const BACKDROP_URL = "https://play.openvanilla.app/wrath/art/leyline-shot-backdrop.webp";
+const BACKDROP_URL = ADDR.site("/wrath/art/leyline-shot-backdrop.webp");
 let backdropTried = false;
 function backdropOn() {
   try { return localStorage.getItem("leyline.backdrop") !== "off"; } catch (_) { return true; }
@@ -173,8 +175,15 @@ function applyBackdrop() {
   backdropTried = true;
   const img = new Image();
   img.decoding = "async";
-  img.addEventListener("load", () => { box.dataset.loaded = "1"; if (backdropOn()) box.classList.add("has-pic"); });
-  img.addEventListener("error", () => { box.dataset.loaded = "0"; box.classList.remove("has-pic"); });
+  img.addEventListener("load", () => {
+    if (img.dataset.retried) box.style.setProperty("--t-backdrop", `url("${img.src}")`);   // came from the old name
+    box.dataset.loaded = "1"; if (backdropOn()) box.classList.add("has-pic");
+  });
+  img.addEventListener("error", () => {
+    const old = ADDR.oldName(img.src);   // the new name not reachable yet: the old one, once (docs/DOMAIN-MOVE.md)
+    if (old !== img.src && !img.dataset.retried) { img.dataset.retried = "1"; img.src = old; return; }
+    box.dataset.loaded = "0"; box.classList.remove("has-pic");
+  });
   img.src = BACKDROP_URL;
 }
 if ($("set-backdrop")) {
@@ -242,6 +251,8 @@ async function refresh() {
 
 // ------------------------------------------------------------------ realm: the chosen realm, the rows, live status
 function isOfficial() { return $("play-realm").value === "official"; }
+// the official realm's address on either of its names (leylinelauncher.com, or play.openvanilla.app saved before the move)
+function isOfficialAddr(a) { return a === state.official_realm || ADDR.isOfficialRealm(a); }
 function chosenRealm() { return isOfficial() ? state.official_realm : $("play-custom").value.trim(); }
 // The official realm (launch, owner 2026-10-30; renamed "Wrath Unleashed" for now, owner 2026-10-30 23:32): where
 // everyone meets in Dalaran. One name everywhere, whatever the listing calls it (the Sample Hangout, the realm's own
@@ -282,7 +293,7 @@ function joinedRealms() {
   catch (_) { return []; }
 }
 function rememberJoined(addr) {
-  if (!addr || addr === state.official_realm || localAt(addr)) return;
+  if (!addr || isOfficialAddr(addr) || localAt(addr)) return;
   try { localStorage.setItem(JOINED_KEY, JSON.stringify([addr, ...joinedRealms().filter((x) => x !== addr)].slice(0, 5))); } catch (_) { /* fine */ }
 }
 
@@ -313,7 +324,7 @@ function renderRealmRows() {
   };
   add(officialName(), true, "3.3.5a");
   const saved = state.settings.selected_realm;
-  const custom = !isOfficial() ? chosenRealm() : (saved && saved !== state.official_realm ? saved : "");
+  const custom = !isOfficial() ? chosenRealm() : (saved && !isOfficialAddr(saved) ? saved : "");
   if (custom) {
     const beacon = realmsCache.find((x) => x.address === custom);
     if (localAt(custom)) add(localAt(custom).name, false, localAt(custom).build);   // this PC's Den or Solo leveling (the play bar's rows)
@@ -416,7 +427,7 @@ function renderPlay() {
   renderClientMenu();
   if ($("play-empty")) $("play-empty").hidden = s.clients.length !== 0;
   if ($("client-change")) $("client-change").textContent = s.clients.length ? "Change game folder" : "Add your game folder";
-  const official = !s.selected_realm || s.selected_realm === state.official_realm;
+  const official = !s.selected_realm || isOfficialAddr(s.selected_realm);
   $("play-realm").value = official ? "official" : "custom";
   $("play-custom").value = official ? "" : s.selected_realm;
   realmChanged();
@@ -1263,13 +1274,13 @@ function renderRealmMenu() {
   else if (hosted) mine.push(row("pb-realm-opt pb-hosted", hosted.name || "Your realm", { icon: realmIcon(hosted.name || "Your realm", false, "sm"), sub: "On this PC",
     run: () => show("host") }));
   // and the community realms you played on: the one picked now (or saved), then the ones before it
-  const saved = !isOfficial() ? here : (state.settings.selected_realm && state.settings.selected_realm !== state.official_realm ? state.settings.selected_realm : "");
+  const saved = !isOfficial() ? here : (state.settings.selected_realm && !isOfficialAddr(state.settings.selected_realm) ? state.settings.selected_realm : "");
   for (const addr of [...new Set([saved, ...joinedRealms()].filter(Boolean))]) {
     const r = realmAt(addr);
     const L = localAt(addr);
     if (L) { if (L !== DEN && L !== hostedLocal) mine.push(localRow(L)); }
     else if (r) { if (!inLineup(r) && r !== hostedListed && !hiddenRealm(r) && !r.official) mine.push(realmRow(r)); }
-    else if (addr !== state.official_realm) mine.push(row("pb-realm-opt", addr, { icon: realmIcon(addr, false, "sm"), selected: online && !isOfficial() && addr === here, sub: "Your address",
+    else if (!isOfficialAddr(addr)) mine.push(row("pb-realm-opt", addr, { icon: realmIcon(addr, false, "sm"), selected: online && !isOfficial() && addr === here, sub: "Your address",
       run: () => pickRealm({ official: false, address: addr }) }));
   }
   const acts = [
@@ -1813,11 +1824,12 @@ async function rateProject(p, n, box) {
 // Workshop's first screenshot of a packaged mod (/wrath/mods/<id>/shot/0), else the hub's copy of a GitHub repo's
 // preview (/wrath/art/hub-thumbs/<owner>__<repo>.webp). Only from the site itself (the window's CSP allows no other
 // host). Lazy; while it loads, and when there is none (a 404), the tile drawn from the name shows.
-const SITE = "https://play.openvanilla.app";
+const SITE = ADDR.SITE;
 function siteImage(u) {
   if (typeof u !== "string" || !u) return "";
   if (/^\/wrath\/[A-Za-z0-9._~\/-]+$/.test(u) && !u.includes("..")) return SITE + u;
-  if (u.startsWith(SITE + "/") && /^[A-Za-z0-9._~\/:-]+$/.test(u) && !u.includes("..")) return u;
+  // on either of the site's names (a catalog fetched on the old one lists its pictures there)
+  if ((u.startsWith(SITE + "/") || u.startsWith(ADDR.OLD_SITE + "/")) && /^[A-Za-z0-9._~\/:-]+$/.test(u) && !u.includes("..")) return u;
   return "";
 }
 function thumbUrl(p) {

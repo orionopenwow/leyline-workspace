@@ -32,7 +32,7 @@
   const go = (page, tab) => window.LeylineNav.show(page, false, tab);
   const firstSentence = (s) => String(s || "").trim().split(/(?<=[.!?])\s+/)[0];
   const AUTO_MS = Number(window.LEYLINE_HERO_MS) || 7000;   // a test may shorten it
-  const SITE_ORIGIN = "https://play.openvanilla.app";   // the only place pictures come from (the window's CSP agrees)
+  const SITE_ORIGIN = window.LeylineAddresses.SITE;   // the only place pictures come from (the window's CSP agrees)
   const reduced = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : { matches: false };
 
   // ---------------------------------------------------------------- the slides
@@ -145,7 +145,7 @@
   // are, per slide id (tools/site-art/publish_home_art.py writes it): { "slides": { "hangout": [{ "file", "alt", "credit" }] } }.
   // Only that folder, only plain file names; alt and credit are shown as text. With no manifest, or a picture that fails,
   // the slide keeps its plain gradient. Several files for a slide take turns, one a day.
-  const HOME_ART = SITE_ORIGIN + "/wrath/art/home/";
+  let HOME_ART = SITE_ORIGIN + "/wrath/art/home/";   // the old name instead when the new one can't be reached (loadHomeArt)
   let homeArt = null;
   let denWeek = null;      // home.json's "den_week" (stream/denweek.py), checked here: { title, by, line, shots, visit }      // null: not read (yet, or it failed); else { id: [{ url, alt, credit }] }
   const ART_FILE = /^[a-z0-9][a-z0-9-]{0,40}\.(?:webp|jpg)$/;
@@ -166,7 +166,13 @@
   }
   async function loadHomeArt() {
     try {
-      const r = await fetch(HOME_ART + "home.json", { credentials: "omit", referrerPolicy: "no-referrer" });
+      const get = (base) => fetch(base + "home.json", { credentials: "omit", referrerPolicy: "no-referrer" });
+      let r;
+      try { r = await get(HOME_ART); }
+      catch (_) {   // no answer on the new name (docs/DOMAIN-MOVE.md): the old one, once; the pictures then come from there
+        HOME_ART = window.LeylineAddresses.oldName(HOME_ART);
+        r = await get(HOME_ART);
+      }
       if (!r.ok) return;
       const j = await r.json();
       homeArt = readHomeArt(j);

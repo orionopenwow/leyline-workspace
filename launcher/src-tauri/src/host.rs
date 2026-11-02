@@ -36,7 +36,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-pub const HOST_PAGE: &str = "https://play.openvanilla.app/wrath/host";
+pub const HOST_PAGE: &str = crate::site!("/wrath/host");
 pub const WINDOWS_SCRIPT: &str = "Host a Wrath realm.bat";
 pub const UNIX_SCRIPT: &str = "host-wrath-realm.sh";
 pub const LEYLINE_SCRIPT: &str = "leyline";

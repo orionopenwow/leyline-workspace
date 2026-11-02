@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-pub const SITE: &str = "https://play.openvanilla.app";
+pub const SITE: &str = crate::site!("");
 pub const FEED_PATH: &str = "/wrath/leyline/mods.json?sort=hot&limit=1000";
 pub const INSTALL_PATH: &str = "/wrath/api/hub/install";
 pub const RATE_PATH: &str = "/wrath/api/hub/rate";
@@ -293,11 +293,11 @@ pub fn rate(app_dir: &Path, base: &str, project: &str, stars: u8) -> Result<Valu
         return Err("Pick 1 to 5 stars.".into());
     }
     let token = crate::social::load_token(app_dir).ok_or("signed_out")?;
-    let r = agent()
-        .post(&format!("{base}{RATE_PATH}"))
-        .set("Authorization", &format!("Bearer {token}"))
-        .set("Content-Type", "application/json")
-        .send_string(&json!({"id": project, "stars": stars}).to_string())
+    let auth = format!("Bearer {token}");
+    let body = json!({"id": project, "stars": stars}).to_string();
+    let r = crate::addresses::try_both(&format!("{base}{RATE_PATH}"), |u| {
+        agent().post(u).set("Authorization", &auth).set("Content-Type", "application/json").send_string(&body)
+    })
         .map_err(api_error)?;
     serde_json::from_str(&r.into_string().map_err(|e| e.to_string())?).map_err(|e| format!("not JSON: {e}"))
 }
@@ -306,10 +306,8 @@ pub fn rate(app_dir: &Path, base: &str, project: &str, stars: u8) -> Result<Valu
 pub fn mine(app_dir: &Path, base: &str, project: &str) -> u8 {
     let Some(token) = crate::social::load_token(app_dir) else { return 0 };
     let url = format!("{base}{ME_PATH}?id={}", project.replace(':', "%3A"));
-    agent()
-        .get(&url)
-        .set("Authorization", &format!("Bearer {token}"))
-        .call()
+    let auth = format!("Bearer {token}");
+    crate::addresses::try_both(&url, |u| agent().get(u).set("Authorization", &auth).call())
         .ok()
         .and_then(|r| r.into_string().ok())
         .and_then(|b| serde_json::from_str::<Value>(&b).ok())

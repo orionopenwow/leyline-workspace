@@ -11,7 +11,7 @@
   },
   "logo": "ui/art/leyline-mark.png",
   "emblem": "ui/art/leyline-emblem.webp",
-  "site": "https://play.openvanilla.app",
+  "site": "https://leylinelauncher.com",
   "repo": "orionopenwow/Leyline",
   "updates": {
     "tag_prefix": "launcher-v",
@@ -33,8 +33,10 @@
       "https://github.com/orionopenwow/Leyline/releases/download/release-log/chain.json"
     ]
   },
+  "_relays": "The relay on its new name first, then its old one (docs/DOMAIN-MOVE.md: the old names answer forever).",
   "relays": [
+    "https://relay.leylinelauncher.com",
     "https://relay.openvanilla.app"
   ],
-  "flags_url": "https://play.openvanilla.app/wrath/leyline/flags.json"
+  "flags_url": "https://leylinelauncher.com/wrath/leyline/flags.json"
 }

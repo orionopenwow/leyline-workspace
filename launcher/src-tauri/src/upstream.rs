@@ -296,8 +296,7 @@ pub fn url_ok(inst: &Install, repo: &str, origin: &str, mirror_allowed: bool) ->
         return mirror_allowed
             && inst.sha256.as_deref().is_some_and(hex64)
             && (local_test || net::plain_https(u))
-            && net::origin(u).as_deref() == Some(origin)
-            && u[origin.len()..].starts_with("/wrath/mods/");
+            && crate::addresses::site_path(u, origin).is_some_and(|p| p.starts_with("/wrath/mods/"));
     }
     let Some((host, o, r)) = repo_parts(repo) else { return false };
     match (inst.from.as_str(), host) {
@@ -405,7 +404,7 @@ pub fn download(url: &str, dest: &Path, max: u64) -> Result<(u64, String), Strin
     let mut at = url.to_string();
     let mut resp = None;
     for _ in 0..6 {
-        let r = match agent().get(&at).call() {
+        let r = match crate::addresses::try_both(&at, |u| agent().get(u).call()) {
             Ok(r) => r,
             Err(ureq::Error::Status(code, _)) => return Err(format!("the author's site answered {code}")),
             Err(e) => return Err(e.to_string()),

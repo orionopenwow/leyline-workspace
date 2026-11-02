@@ -200,7 +200,18 @@ impl Endpoint {
     }
 }
 
+/// `connect_one`, and once more on the relay's old name when its new one cannot be reached (addresses.rs).
 fn connect(ep: &Endpoint) -> Result<Box<dyn Io>, String> {
+    connect_one(ep).or_else(|e| {
+        let old = crate::addresses::PAIRS.iter().find(|(n, _)| ep.host.eq_ignore_ascii_case(n)).map(|(_, o)| *o);
+        match old {
+            Some(o) => connect_one(&Endpoint { host: o.into(), ..ep.clone() }),
+            None => Err(e),
+        }
+    })
+}
+
+fn connect_one(ep: &Endpoint) -> Result<Box<dyn Io>, String> {
     let addr = (ep.host.as_str(), ep.port).to_socket_addrs().map_err(|e| e.to_string())?.next().ok_or("no address for the relay")?;
     let tcp = TcpStream::connect_timeout(&addr, Duration::from_secs(10)).map_err(|e| format!("the relay didn't answer: {e}"))?;
     let _ = tcp.set_nodelay(true);

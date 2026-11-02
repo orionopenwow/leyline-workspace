@@ -13,6 +13,8 @@
 //! invite knock (`realms`, `host`), the official realm's status file (`status`), the website's forum, read only
 //! (`forum`), and GitHub's release list (`update`). Each has an 8 second timeout; the listings fall back to a cached copy.
 
+#[macro_use]
+pub mod addresses; // the public names: site, game, relay, new first with the old ones as fallback (docs/DOMAIN-MOVE.md)
 pub mod agents; // the Agents page and `Leyline mcp`: the player's own AI assistant, read / ask / never tiers (agents.rs)
 pub mod addons; // the Leyline addons: our own in-game addons for a 3.3.5a client (ui/addons.js)
 pub mod bugs; // Help › Report a bug: one report to the website's bug list as the signed-in player (bugs.rs)
@@ -53,39 +55,40 @@ mod app;
 #[cfg(feature = "app")]
 pub use app::run;
 
-/// The official realm address the player kit uses (`labs/players/README.txt`).
-pub const OFFICIAL_REALM: &str = "play.openvanilla.app";
+/// The official realm's realmlist (desktop players): `leylinelauncher.com`. `play.openvanilla.app` reaches the same
+/// server forever; `addresses::official_realm()` picks the old one on a computer that cannot resolve the new one yet.
+pub const OFFICIAL_REALM: &str = addresses::SITE_HOST;
 /// The browser client.
-pub const BROWSER_PLAY_URL: &str = "https://play.openvanilla.app/wrath";
+pub const BROWSER_PLAY_URL: &str = crate::site!("/wrath");
 
 /// The only pages the launcher opens in the player's browser, by name. The UI names one; it can never pass a URL.
 pub const LINKS: &[(&str, &str)] = &[
     ("play", BROWSER_PLAY_URL),
     // Forge's source (GPL-3.0: the source beside the program; ui/den.js "Get Forge")
     ("forge-source", host::forge::SOURCE_URL),
-    ("account", "https://play.openvanilla.app/wrath"),
+    ("account", crate::site!("/wrath")),
     // Manage account (ui/account.js): the website's profile page, the Hero Key page, linking another way, linked launchers
-    ("profile", "https://play.openvanilla.app/wrath/profile"),
-    ("herokey", "https://play.openvanilla.app/account/key"),
-    ("linkgoogle", "https://play.openvanilla.app/auth/google/start?link=1"),
-    ("linkdiscord", "https://play.openvanilla.app/auth/discord/start?link=1"),
-    ("linkedlaunchers", "https://play.openvanilla.app/wrath/link"),
-    ("news", "https://play.openvanilla.app/wrath/leyline/news"),
-    ("docs", "https://play.openvanilla.app/wrath/docs"),
-    ("start", "https://play.openvanilla.app/wrath/start"), // Start here: the four ways in (Help, the tour; stream/wrath_portal.py)
-    ("gettingstarted", "https://play.openvanilla.app/wrath/docs/getting-started"), // the player guide (Help, Find your game files)
-    ("mods", "https://play.openvanilla.app/wrath/mods"),
+    ("profile", crate::site!("/wrath/profile")),
+    ("herokey", crate::site!("/account/key")),
+    ("linkgoogle", crate::site!("/auth/google/start?link=1")),
+    ("linkdiscord", crate::site!("/auth/discord/start?link=1")),
+    ("linkedlaunchers", crate::site!("/wrath/link")),
+    ("news", crate::site!("/wrath/leyline/news")),
+    ("docs", crate::site!("/wrath/docs")),
+    ("start", crate::site!("/wrath/start")), // Start here: the four ways in (Help, the tour; stream/wrath_portal.py)
+    ("gettingstarted", crate::site!("/wrath/docs/getting-started")), // the player guide (Help, Find your game files)
+    ("mods", crate::site!("/wrath/mods")),
     ("discord", "https://discord.gg/hVeUxYwbkr"),
     ("forum", forum::PAGE), // the website's forum: posting happens there (forum.rs)
-    ("bugs", "https://play.openvanilla.app/wrath/bugs"), // the website's Report a bug form (signed out: Help › Report a bug)
-    ("forumnew", "https://play.openvanilla.app/wrath/leyline/forum/new"),
+    ("bugs", crate::site!("/wrath/bugs")), // the website's Report a bug form (signed out: Help › Report a bug)
+    ("forumnew", crate::site!("/wrath/leyline/forum/new")),
     ("github", "https://github.com/orionopenwow/Leyline"),
     ("host", host::HOST_PAGE),
-    ("hostguide", "https://play.openvanilla.app/wrath/docs/hosting"), // the Host pack and its settings
-    ("agentsguide", "https://play.openvanilla.app/wrath/docs/agents"), // Agents and Help: docs/leyline/agents.md
-    ("hostdocs", "https://play.openvanilla.app/wrath/docs/hosting"), // the host console's guide (host/console.rs)
-    ("alwayson", "https://play.openvanilla.app/wrath/docs/always-on"),
-    ("network", "https://play.openvanilla.app/wrath/docs/network"), // the host guide's first item: how the network works
+    ("hostguide", crate::site!("/wrath/docs/hosting")), // the Host pack and its settings
+    ("agentsguide", crate::site!("/wrath/docs/agents")), // Agents and Help: docs/leyline/agents.md
+    ("hostdocs", crate::site!("/wrath/docs/hosting")), // the host console's guide (host/console.rs)
+    ("alwayson", crate::site!("/wrath/docs/always-on")),
+    ("network", crate::site!("/wrath/docs/network")), // the host guide's first item: how the network works
     ("themes", "https://github.com/orionopenwow/WrathUnleashed/blob/main/docs/THEMES.md"), // themes agent
     ("modders", "https://github.com/orionopenwow/WrathUnleashed/blob/main/mods/README-modders.md"),
     ("releases", update::RELEASES_PAGE),
@@ -109,35 +112,35 @@ mod link_tests {
 
     #[test]
     fn the_forum_links_to_the_site() {
-        assert_eq!(super::link("forum"), Some("https://play.openvanilla.app/wrath/leyline/forum"));
-        assert_eq!(super::link("forumnew"), Some("https://play.openvanilla.app/wrath/leyline/forum/new"));
-        assert_eq!(super::link("bugs"), Some("https://play.openvanilla.app/wrath/bugs"));
+        assert_eq!(super::link("forum"), Some("https://leylinelauncher.com/wrath/leyline/forum"));
+        assert_eq!(super::link("forumnew"), Some("https://leylinelauncher.com/wrath/leyline/forum/new"));
+        assert_eq!(super::link("bugs"), Some("https://leylinelauncher.com/wrath/bugs"));
     }
 
     #[test]
     fn manage_account_links_to_the_site() {
-        assert_eq!(super::link("profile"), Some("https://play.openvanilla.app/wrath/profile"));
-        assert_eq!(super::link("herokey"), Some("https://play.openvanilla.app/account/key"));
-        assert_eq!(super::link("linkgoogle"), Some("https://play.openvanilla.app/auth/google/start?link=1"));
-        assert_eq!(super::link("linkdiscord"), Some("https://play.openvanilla.app/auth/discord/start?link=1"));
-        assert_eq!(super::link("linkedlaunchers"), Some("https://play.openvanilla.app/wrath/link"));
+        assert_eq!(super::link("profile"), Some("https://leylinelauncher.com/wrath/profile"));
+        assert_eq!(super::link("herokey"), Some("https://leylinelauncher.com/account/key"));
+        assert_eq!(super::link("linkgoogle"), Some("https://leylinelauncher.com/auth/google/start?link=1"));
+        assert_eq!(super::link("linkdiscord"), Some("https://leylinelauncher.com/auth/discord/start?link=1"));
+        assert_eq!(super::link("linkedlaunchers"), Some("https://leylinelauncher.com/wrath/link"));
     }
 
     #[test]
     fn news_and_the_player_guide_link_to_the_site_and_nothing_asks_for_money() {
-        assert_eq!(super::link("news"), Some("https://play.openvanilla.app/wrath/leyline/news"));
-        assert_eq!(super::link("gettingstarted"), Some("https://play.openvanilla.app/wrath/docs/getting-started"));
-        assert_eq!(super::link("start"), Some("https://play.openvanilla.app/wrath/start"));
+        assert_eq!(super::link("news"), Some("https://leylinelauncher.com/wrath/leyline/news"));
+        assert_eq!(super::link("gettingstarted"), Some("https://leylinelauncher.com/wrath/docs/getting-started"));
+        assert_eq!(super::link("start"), Some("https://leylinelauncher.com/wrath/start"));
         assert!(super::link("support").is_none());
         assert!(super::LINKS.iter().all(|(_, u)| !u.contains("ko-fi") && !u.contains("patreon")));
     }
 
     #[test]
     fn the_host_guide_links_to_the_site_docs() {
-        assert_eq!(super::link("hostdocs"), Some("https://play.openvanilla.app/wrath/docs/hosting"));
-        assert_eq!(super::link("hostguide"), Some("https://play.openvanilla.app/wrath/docs/hosting"));
-        assert_eq!(super::link("alwayson"), Some("https://play.openvanilla.app/wrath/docs/always-on"));
-        assert_eq!(super::link("network"), Some("https://play.openvanilla.app/wrath/docs/network"));
+        assert_eq!(super::link("hostdocs"), Some("https://leylinelauncher.com/wrath/docs/hosting"));
+        assert_eq!(super::link("hostguide"), Some("https://leylinelauncher.com/wrath/docs/hosting"));
+        assert_eq!(super::link("alwayson"), Some("https://leylinelauncher.com/wrath/docs/always-on"));
+        assert_eq!(super::link("network"), Some("https://leylinelauncher.com/wrath/docs/network"));
         let mut names: Vec<&str> = super::LINKS.iter().map(|(n, _)| *n).collect();
         names.sort();
         names.dedup();

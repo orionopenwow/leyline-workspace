@@ -65,7 +65,7 @@
   // ---------------------------------------------------------------- signed in: the profile
   // the pictures: "Picked for you" (the portrait from your name, the default) and every portrait (avatars.js), from the
   // launcher's own copies, so the grid shows offline too; the website checks the id on save
-  const presetUrl = (id) => `https://play.openvanilla.app/wrath/avatar/p/${id}.svg`;
+  const presetUrl = (id) => window.LeylineAddresses.site(`/wrath/avatar/p/${id}.svg`);
   function pictureGrid(me, extra, chosen) {
     const A = window.LeylineAvatars;
     const fs = el("fieldset", "ac-pics");

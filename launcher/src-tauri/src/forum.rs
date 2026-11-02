@@ -14,9 +14,9 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 /// The official forum's JSON.
-pub const API_BASE: &str = "https://play.openvanilla.app/wrath/forum/api";
+pub const API_BASE: &str = crate::site!("/wrath/forum/api");
 /// The forum's pages on the website (New thread, a thread, Reply open there).
-pub const PAGE: &str = "https://play.openvanilla.app/wrath/leyline/forum";
+pub const PAGE: &str = crate::site!("/wrath/leyline/forum");
 pub const TIMEOUT: Duration = Duration::from_secs(8);
 /// What the player reads when the forum can't be reached (never the network library's text).
 pub const UNREACHABLE: &str = "The forum isn't reachable right now. Try again, or ask on the Discord.";
@@ -230,9 +230,9 @@ mod tests {
 
     #[test]
     fn pages_are_the_forums_own_and_links_only_ones_it_sent() {
-        assert_eq!(page_for("home", "").unwrap(), "https://play.openvanilla.app/wrath/leyline/forum");
-        assert_eq!(page_for("new", "dens").unwrap(), "https://play.openvanilla.app/wrath/leyline/forum/new?c=dens");
-        assert_eq!(page_for("reply", "7").unwrap(), "https://play.openvanilla.app/wrath/leyline/forum/t/7/reply");
+        assert_eq!(page_for("home", "").unwrap(), "https://leylinelauncher.com/wrath/leyline/forum");
+        assert_eq!(page_for("new", "dens").unwrap(), "https://leylinelauncher.com/wrath/leyline/forum/new?c=dens");
+        assert_eq!(page_for("reply", "7").unwrap(), "https://leylinelauncher.com/wrath/leyline/forum/t/7/reply");
         assert!(page_for("thread", "7x").is_err());
         assert!(page_for("link", "https://evil.example/").is_err());
         remember(&json!({"posts": [{"parts": [{"t": "see "}, {"u": "https://docs.example/a"}, {"u": "javascript:alert(1)"}]}]}));

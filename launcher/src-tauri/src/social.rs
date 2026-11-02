@@ -4,7 +4,7 @@
 //!
 //! The server is the Wrath portal's `/wrath/api/social` (`stream/social.py`); docs/SOCIAL.md has the whole picture.
 //! Sign-in is the website's own, in the player's browser: the launcher asks for a device code, opens
-//! `https://play.openvanilla.app/wrath/link?code=XXXX-XXXX`, the player approves it there (signed in with Google or
+//! `https://leylinelauncher.com/wrath/link?code=XXXX-XXXX`, the player approves it there (signed in with Google or
 //! their Hero Key), and the launcher's next poll gets a session token. Only that token is kept, in
 //! `<app data>/social-session.json` (0600 on Mac/Linux): never a password. It is revocable on the link page, and
 //! "Sign out" here revokes it on the server too.
@@ -20,7 +20,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 /// The official server's social API.
-pub const API_BASE: &str = "https://play.openvanilla.app/wrath/api/social";
+pub const API_BASE: &str = crate::site!("/wrath/api/social");
 /// Where the session token lives, in the app data folder.
 pub const SESSION_FILE: &str = "social-session.json";
 pub const TIMEOUT: Duration = Duration::from_secs(8);
@@ -72,7 +72,7 @@ pub fn find_key(pasted: &str) -> Option<String> {
 
 /// A call that signs in (no token yet): the answer's token is kept, the rest (me, and a new account's key) goes back.
 fn sign_in_call(dir: &Path, path: &str, body: &Value) -> Result<Value, String> {
-    let r = post_json(agent(TIMEOUT).post(&format!("{}/{path}", base())), body).map_err(|e| match e {
+    let r = crate::addresses::try_both(&format!("{}/{path}", base()), |u| post_json(agent(TIMEOUT).post(u), body)).map_err(|e| match e {
         // a refused key or password is the server's own words, not "signed_out"
         ureq::Error::Status(401, resp) => resp
             .into_string()
@@ -225,7 +225,7 @@ pub fn open_url(verify_url: &str, via: Option<&str>) -> String {
 
 /// Which ways the website offers right now ({herokey, google, discord}: booleans only), no sign-in needed.
 pub fn ways() -> Result<Value, String> {
-    let v = read_json(agent(TIMEOUT).get(&format!("{}/ways", base())).call().map_err(failure)?)?;
+    let v = read_json(crate::addresses::try_both(&format!("{}/ways", base()), |u| agent(TIMEOUT).get(u).call()).map_err(failure)?)?;
     Ok(sanitize_ways(&v))
 }
 
@@ -250,7 +250,9 @@ pub struct SignIn {
 pub fn verify_url_ok(url: &str, user_code: &str) -> bool {
     let b = base();
     let site = b.trim_end_matches("/api/social");
-    url == format!("{site}/link?code={user_code}") && code_ok(user_code)
+    let want = format!("{site}/link?code={user_code}");
+    // on either of the site's names: a sign-in started on the old one (addresses.rs fallback) is shown there
+    (url == want || crate::addresses::fallback(&want).as_deref() == Some(url)) && code_ok(user_code)
 }
 
 fn code_ok(c: &str) -> bool {
@@ -260,7 +262,7 @@ fn code_ok(c: &str) -> bool {
 
 /// Ask the server for a device code.
 pub fn start() -> Result<Pending, String> {
-    let v = read_json(post_json(agent(TIMEOUT).post(&format!("{}/device/start", base())), &serde_json::json!({})).map_err(failure)?)?;
+    let v = read_json(crate::addresses::try_both(&format!("{}/device/start", base()), |u| post_json(agent(TIMEOUT).post(u), &serde_json::json!({}))).map_err(failure)?)?;
     let s = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_string();
     let p = Pending {
         device_code: s("device_code"),
@@ -281,8 +283,8 @@ pub fn poll(dir: &Path, p: &Pending) -> Result<String, String> {
     if Instant::now() > p.until {
         return Ok("expired".into());
     }
-    let req = agent(TIMEOUT).post(&format!("{}/device/poll", base()));
-    let v = read_json(post_json(req, &serde_json::json!({ "device_code": p.device_code })).map_err(failure)?)?;
+    let body = serde_json::json!({ "device_code": p.device_code });
+    let v = read_json(crate::addresses::try_both(&format!("{}/device/poll", base()), |u| post_json(agent(TIMEOUT).post(u), &body)).map_err(failure)?)?;
     match v.get("status").and_then(Value::as_str).unwrap_or("") {
         "ok" => {
             save_token(dir, v.get("token").and_then(Value::as_str).unwrap_or(""))?;
@@ -328,11 +330,14 @@ pub fn call(dir: &Path, action: &str, args: &Value) -> Result<Value, String> {
     let a = agent(if action == "events" { LONG_POLL } else { TIMEOUT });
     let url = format!("{}/{path}", base());
     let auth = format!("Bearer {token}");
-    let res = if method == "GET" {
-        a.get(&url).set("Authorization", &auth).call()
-    } else {
-        post_json(a.post(&url).set("Authorization", &auth), &body.unwrap_or(Value::Null))
-    };
+    let body = body.unwrap_or(Value::Null);
+    let res = crate::addresses::try_both(&url, |u| {
+        if method == "GET" {
+            a.get(u).set("Authorization", &auth).call()
+        } else {
+            post_json(a.post(u).set("Authorization", &auth), &body)
+        }
+    });
     match res {
         Ok(r) => read_json(r),
         Err(e) => {
@@ -350,8 +355,8 @@ pub fn call(dir: &Path, action: &str, args: &Value) -> Result<Value, String> {
 /// server's own words on a refusal. `url` is built by the caller from its fixed base, never from the UI.
 pub fn post_as_player(dir: &Path, url: &str, body: &Value) -> Result<Value, String> {
     let token = load_token(dir).ok_or("signed_out")?;
-    let req = agent(TIMEOUT).post(url).set("Authorization", &format!("Bearer {token}"));
-    match post_json(req, body) {
+    let auth = format!("Bearer {token}");
+    match crate::addresses::try_both(url, |u| post_json(agent(TIMEOUT).post(u).set("Authorization", &auth), body)) {
         Ok(r) => read_json(r),
         Err(e) => {
             let msg = failure(e);
@@ -368,10 +373,10 @@ pub fn post_as_player(dir: &Path, url: &str, body: &Value) -> Result<Value, Stri
 pub fn call_as_player(dir: &Path, url: &str, body: Option<&Value>, read: Duration) -> Result<Value, String> {
     let token = load_token(dir).ok_or("signed_out")?;
     let auth = format!("Bearer {token}");
-    let r = match body {
-        Some(b) => post_json(agent(read).post(url).set("Authorization", &auth), b),
-        None => agent(read).get(url).set("Authorization", &auth).call(),
-    };
+    let r = crate::addresses::try_both(url, |u| match body {
+        Some(b) => post_json(agent(read).post(u).set("Authorization", &auth), b),
+        None => agent(read).get(u).set("Authorization", &auth).call(),
+    });
     match r {
         Ok(r) => read_json(r),
         Err(e) => {
@@ -387,8 +392,8 @@ pub fn call_as_player(dir: &Path, url: &str, body: Option<&Value>, read: Duratio
 /// Sign out: revoke the token on the server (best effort) and forget it here.
 pub fn sign_out(dir: &Path) {
     if let Some(token) = load_token(dir) {
-        let req = agent(TIMEOUT).post(&format!("{}/token/revoke", base())).set("Authorization", &format!("Bearer {token}"));
-        let _ = post_json(req, &serde_json::json!({}));
+        let auth = format!("Bearer {token}");
+        let _ = crate::addresses::try_both(&format!("{}/token/revoke", base()), |u| post_json(agent(TIMEOUT).post(u).set("Authorization", &auth), &serde_json::json!({})));
     }
     forget(dir);
 }
@@ -563,7 +568,8 @@ mod tests {
 
     #[test]
     fn the_approval_page_must_be_ours() {
-        assert!(verify_url_ok("https://play.openvanilla.app/wrath/link?code=BCDF-GHJK", "BCDF-GHJK"));
+        assert!(verify_url_ok("https://leylinelauncher.com/wrath/link?code=BCDF-GHJK", "BCDF-GHJK"));
+        assert!(verify_url_ok("https://play.openvanilla.app/wrath/link?code=BCDF-GHJK", "BCDF-GHJK"));   // the old name
         assert!(!verify_url_ok("https://evil.example/wrath/link?code=BCDF-GHJK", "BCDF-GHJK"));
         assert!(!verify_url_ok("https://play.openvanilla.app/wrath/link?code=BCDF-GHJK&x=1", "BCDF-GHJK"));
         assert!(!verify_url_ok("https://play.openvanilla.app/wrath/link?code=ABCD-EFGH", "ABCD-EFGH"));

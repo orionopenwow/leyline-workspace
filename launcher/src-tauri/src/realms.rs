@@ -22,18 +22,18 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-pub const URL: &str = "https://relay.openvanilla.app/api/listing/realms.json";
+pub const URL: &str = crate::relay!("/api/listing/realms.json");
 /// The website's network listing (stream/network.py), tried first.
-pub const NETWORK_URL: &str = "https://play.openvanilla.app/wrath/realms.json";
+pub const NETWORK_URL: &str = crate::site!("/wrath/realms.json");
 /// Where a player reports a realm (signed in on the website).
-pub const REPORT_BASE: &str = "https://play.openvanilla.app/wrath/realms/report?realm=";
+pub const REPORT_BASE: &str = crate::site!("/wrath/realms/report?realm=");
 /// The official realm's name (owner 2026-10-30 23:32: "Wrath Unleashed" for now; the UI's own copy is ui/app.js
 /// HANGOUT). The network listing's `sample` block can name it otherwise (`apply_sample`).
 pub const SAMPLE_NAME: &str = "Wrath Unleashed";
 /// The rules tags a listing may carry, in order.
 pub const TAGS: &[&str] = &["blizzlike", "boosted", "custom", "pvp", "rp", "hangout", "bots"];
 pub const REGIONS: &[&str] = &["na-east", "na-west", "sa", "eu", "africa", "me", "asia", "oce"];
-pub const RELAY: &str = "relay.openvanilla.app";
+pub const RELAY: &str = crate::addresses::RELAY_HOST;
 pub const LOOKUP_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// One realm as the Realms page shows it.
@@ -769,7 +769,7 @@ mod tests {
         assert_eq!((p.tags.clone(), p.region.as_deref(), p.region_estimated, p.language.as_deref(), p.max_players),
                    (vec!["pvp".to_string(), "rp".to_string()], Some("eu"), false, Some("de"), Some(100)));
         assert_eq!((p.uptime_24h, p.uptime_7d, p.featured, p.verified, p.direct, p.build), (Some(95), Some(96), true, true, false, Some(Build::V1121)));
-        assert_eq!(p.report_url.as_deref(), Some("https://play.openvanilla.app/wrath/realms/report?realm=dddddddddddddddd"));
+        assert_eq!(p.report_url.as_deref(), Some("https://leylinelauncher.com/wrath/realms/report?realm=dddddddddddddddd"));
         let b = &r[2];
         assert_eq!((b.region.as_deref(), b.region_estimated, b.is_new, b.uptime_24h, b.score), (Some("na-east"), true, true, None, 80.5));
         let junk = &r[3];

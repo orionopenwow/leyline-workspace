@@ -9,7 +9,7 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::time::{Duration, Instant};
 
 /// The official realm's status file.
-pub const OFFICIAL_STATUS_URL: &str = "https://play.openvanilla.app/wrath/status.json";
+pub const OFFICIAL_STATUS_URL: &str = crate::site!("/wrath/status.json");
 /// The login port when an address names none.
 pub const DEFAULT_PORT: u16 = 3724;
 pub const PING_TIMEOUT: Duration = Duration::from_secs(3);

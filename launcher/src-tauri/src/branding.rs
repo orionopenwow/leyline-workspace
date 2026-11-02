@@ -143,6 +143,7 @@ mod tests {
         assert_eq!(crate::update::RELEASES_PAGE, b.updates.releases_page);
         assert_eq!(crate::update::TAG_PREFIX, b.updates.tag_prefix);
         assert_eq!(crate::p2p::flags::URL, b.flags_url);
+        assert_eq!(crate::addresses::SITE, b.site);   // the public names live in addresses.rs (docs/DOMAIN-MOVE.md)
         assert_eq!(crate::p2p::mesh::SEEDS.iter().map(|s| s.to_string()).collect::<Vec<_>>(), b.relays);
         let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         assert_eq!(conf["productName"], b.name.as_str());

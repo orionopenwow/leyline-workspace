@@ -52,7 +52,7 @@ fn mtime(p: &Path) -> Option<u64> {
 /// GET `url` as text, failing after `timeout`.
 pub fn get(url: &str, timeout: Duration) -> Result<String, String> {
     let agent = ureq::AgentBuilder::new().timeout(timeout).user_agent(concat!("Leyline/", env!("CARGO_PKG_VERSION"))).build();
-    agent.get(url).call().map_err(|e| e.to_string())?.into_string().map_err(|e| e.to_string())
+    crate::addresses::try_both(url, |u| agent.get(u).call()).map_err(|e| e.to_string())?.into_string().map_err(|e| e.to_string())
 }
 
 /// A JSON document fetched with a cache fallback.
@@ -132,16 +132,15 @@ fn api_error(e: ureq::Error) -> String {
 
 /// GET `url` as JSON (no cache): for small live lookups such as a relay realm.
 pub fn get_json(url: &str, timeout: Duration) -> Result<Value, String> {
-    let body = agent(timeout, timeout).get(url).call().map_err(api_error)?.into_string().map_err(|e| e.to_string())?;
+    let a = agent(timeout, timeout);
+    let body = crate::addresses::try_both(url, |u| a.get(u).call()).map_err(api_error)?.into_string().map_err(|e| e.to_string())?;
     serde_json::from_str(&body).map_err(|e| format!("not JSON: {e}"))
 }
 
 /// POST a JSON body and read a JSON reply.
 pub fn post_json(url: &str, body: &Value, timeout: Duration) -> Result<Value, String> {
-    let reply = agent(timeout, timeout)
-        .post(url)
-        .set("Content-Type", "application/json")
-        .send_string(&body.to_string())
+    let a = agent(timeout, timeout);
+    let reply = crate::addresses::try_both(url, |u| a.post(u).set("Content-Type", "application/json").send_string(&body.to_string()))
         .map_err(api_error)?
         .into_string()
         .map_err(|e| e.to_string())?;
@@ -153,7 +152,8 @@ pub fn post_json(url: &str, body: &Value, timeout: Duration) -> Result<Value, St
 pub fn download(url: &str, dest: &Path, max: u64, connect: Duration, read: Duration) -> Result<(u64, String), String> {
     use sha2::{Digest, Sha256};
     use std::io::{Read, Write};
-    let resp = agent(connect, read).get(url).call().map_err(api_error)?;
+    let a = agent(connect, read);
+    let resp = crate::addresses::try_both(url, |u| a.get(u).call()).map_err(api_error)?;
     if let Some(n) = resp.header("Content-Length").and_then(|v| v.trim().parse::<u64>().ok()) {
         if n > max {
             return Err(format!("the download is {} MB, more than the {} MB limit", n / 1_048_576, max / 1_048_576));

@@ -2,7 +2,7 @@
 //
 // What can be pasted (the Realms page's "Paste a realm link or address" box, or the play bar's realm box, whose drop and
 // paste handler in app.js, barImport, asks here first):
-//   https://play.openvanilla.app/wrath/r/<short>   a realm's share link (stream/links.py; /r/<short> too). short = the
+//   https://leylinelauncher.com/wrath/r/<short>   a realm's share link (stream/links.py; /r/<short> too). short = the
 //                                                  first 8 letters of its realm id, or the whole id, or "official"
 //   leyline://realm/<id>                           the website's Open in Leyline (deeplink.rs takes the same)
 //   https://<relay>/join/<id>                      a realm's join link (an invite's #secret is ignored here)
@@ -47,7 +47,7 @@
       const host = url.hostname.toLowerCase();
       const path = url.pathname.replace(/\/+$/, "");
       m = /^\/(?:wrath\/)?r\/([a-z0-9-]{1,32})$/.exec(path);
-      if (m && /(^|\.)openvanilla\.app$/.test(host)) {
+      if (m && (/(^|\.)openvanilla\.app$/.test(host) || window.LeylineAddresses.isSiteHost(host))) {   // either name
         const s = m[1];
         if (["official", "wrath", "wrathunleashed"].includes(s)) return { kind: "official" };
         return ID.test(s) ? { kind: "id", id: s, via: "link" } : SHORT.test(s) ? { kind: "short", short: s } : null;

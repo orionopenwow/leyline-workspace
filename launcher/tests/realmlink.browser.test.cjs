@@ -26,13 +26,13 @@ const REALMS = [
   { slug: 'c-gonedddddddddddd', realm_id: 'gonedddddddddddd', name: 'Gone Realm', official: false, state: 'offline', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: [], players: null, bots: 0, address: 'relay.openvanilla.app:40004', ruleset: 'custom', is_new: true },
 ];
 
-const FAKE = ({ theme, realms, clients, seen }) => {
+const FAKE = ({ theme, realms, clients, seen, savedRealm, officialRealm }) => {
   const calls = (window.__calls = []);
   try { localStorage.clear(); localStorage.setItem('leyline.mode', 'online'); } catch (_) { /* fine */ }
   if (theme === 'light') localStorage.setItem('leyline.theme', JSON.stringify({ id: 'light', kind: 'light' }));
   if (seen) localStorage.setItem('leyline.lastPlayers', JSON.stringify(seen));
-  const st = { version: 'test', settings: { clients, selected_client: clients[0] ? clients[0].id : null, selected_realm: 'play.openvanilla.app',
-    wine: { enabled: false, command: 'wine', prefix: '' } }, official_realm: 'play.openvanilla.app', browser_url: 'https://play.openvanilla.app/wrath', windows: true, data_dir: '/tmp' };
+  const st = { version: 'test', settings: { clients, selected_client: clients[0] ? clients[0].id : null, selected_realm: savedRealm || 'play.openvanilla.app',
+    wine: { enabled: false, command: 'wine', prefix: '' } }, official_realm: officialRealm || 'play.openvanilla.app', browser_url: 'https://play.openvanilla.app/wrath', windows: true, data_dir: '/tmp' };
   window.__st = st;
   window.__TAURI__ = { core: { invoke: async (cmd, args) => {
     calls.push([cmd, args]);
@@ -115,6 +115,26 @@ test('parse: each link kind, and junk', async () => {
   assert.deepEqual(got.addr, { kind: 'address', address: 'relay.example.org:3724' });
   assert.deepEqual(got.ip, { kind: 'address', address: '10.0.0.5:3725' });
   for (const k of ['other', 'words', 'word', 'port0', 'zip']) assert.equal(got[k], null, k);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('the new names (docs/DOMAIN-MOVE.md): links on leylinelauncher.com, and the official realm saved under its old name', async () => {
+  const { page, ctx, errors } = await open({ savedRealm: 'play.openvanilla.app', officialRealm: 'leylinelauncher.com' });
+  const got = await page.evaluate(() => {
+    const p = window.LeylineRealmLink.parse;
+    return { short: p('https://leylinelauncher.com/wrath/r/frostpea'), official: p('leylinelauncher.com/wrath/r/official'),
+      join: p('https://relay.leylinelauncher.com/join/quietccccccccccc#secret'), lookalike: p('https://leylinelauncher.com.evil.example/r/frostpea'),
+      A: window.LeylineAddresses };
+  });
+  assert.deepEqual(got.short, { kind: 'short', short: 'frostpea' });
+  assert.deepEqual(got.official, { kind: 'official' });
+  assert.deepEqual(got.join, { kind: 'id', id: 'quietccccccccccc', via: 'join' });
+  assert.equal(got.lookalike, null);
+  assert.equal(got.A.SITE, 'https://leylinelauncher.com');
+  // the play bar shows the old saved name as the official realm, not as "Your address"
+  assert.equal((await picked(page)).realm, 'official');
+  assert.equal(await page.locator('.pb-realm-opt', { hasText: 'play.openvanilla.app' }).count(), 0);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

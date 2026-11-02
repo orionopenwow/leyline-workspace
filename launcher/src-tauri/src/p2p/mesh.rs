@@ -22,7 +22,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use super::flags::{canonical, Flags};
 
 /// The seed relays: always tried, last. TODO(owner): more seeds as they come up.
-pub const SEEDS: &[&str] = &["https://relay.openvanilla.app"];
+pub const SEEDS: &[&str] = &[crate::relay!(""), "https://relay.openvanilla.app"];   // the relay on both names (addresses.rs)
 /// Staff keys whose signed blocks count (hex Ed25519 public keys). TODO(owner): the staff key, once made.
 pub const STAFF_KEYS: &[&str] = &[];
 pub const REALM_TTL: u64 = 15 * 60;

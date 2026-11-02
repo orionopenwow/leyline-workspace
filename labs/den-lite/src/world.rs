@@ -280,7 +280,13 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
     let sess = Sess { id: SESSIONS.fetch_add(1, Ordering::Relaxed), addons: play::addon_names(&auth.addon_info), me };
     let _leave = LeaveOnDrop(shared.clone(), sess.id);
     c.send(&SMSG_ADDON_INFO {
-        addons: (0..addons).map(|_| Addon { addon_type: 2, uses_crc: 1, uses_diffent_public_key: false, unknown1: 0, unknown2: 0 }).collect(),
+        // one entry per addon only when every key CRC is the standard one (AzerothCore would send its public key for
+        // the others, which Den Lite doesn't have): the real game (2 Nov 01:00) sent 23 addons with CRC 0, and answered
+        // without keys it never asked for its characters. With none listed it plays (the combat log box is closed by
+        // the Leyline UI in the Den).
+        addons: (0..if play::addon_odd_crcs(&auth.addon_info).is_empty() { addons } else { 0 })
+            .map(|_| Addon { addon_type: 2, uses_crc: 1, uses_diffent_public_key: false, unknown1: 0, unknown2: 0 })
+            .collect(),
     })?;
     c.send(&SMSG_CLIENTCACHE_VERSION { version: 0 })?;
     c.send(&SMSG_TUTORIAL_FLAGS { tutorial_data: [u32::MAX; 8] })?;

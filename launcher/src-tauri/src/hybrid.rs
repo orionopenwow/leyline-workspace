@@ -381,14 +381,14 @@ mod tests {
         assert!(!d.path().join("Data").join(SLOT).exists());
     }
 
-    /// tools/den-check/fixtures/patch-Z-sample.MPQ is exactly what this writer makes for the stand-in folder above
+    /// tools/den-check/fixtures/patch-Z-sample.bin is exactly what this writer makes for the stand-in folder above
     /// (our own files only), so tools/den-check's own reader and an independent one are tested against the real
     /// output. `LEYLINE_WRITE_FIXTURES=1 cargo test` writes it again after a change to the writer or the glue.
     #[test]
     fn the_den_check_sample_archive_is_this_writers_output() {
         let d = client();
         let bytes = mpq::build(&bundle(d.path(), None).unwrap()).unwrap();
-        let fx = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/den-check/fixtures/patch-Z-sample.MPQ");
+        let fx = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/den-check/fixtures/patch-Z-sample.bin");
         if std::env::var("LEYLINE_WRITE_FIXTURES").is_ok() {
             fs::create_dir_all(fx.parent().unwrap()).unwrap();
             fs::write(&fx, &bytes).unwrap();

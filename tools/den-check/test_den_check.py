@@ -3,7 +3,7 @@
 
     python3 -I tools/den-check/test_den_check.py
 
-* the MPQ reader opens the archive the launcher's writer makes (fixtures/patch-Z-sample.MPQ, kept equal to the
+* the MPQ reader opens the archive the launcher's writer makes (fixtures/patch-Z-sample.bin, kept equal to the
   writer's output by launcher/src-tauri/src/hybrid.rs), finds its login screen list and the empty handoff;
 * `check` on a stand-in game folder: what it says with our archive, with a sign-in left in it, with another mod's;
 * the headless client against a real Den Lite, when one is built here (DEN_LITE_BIN, or labs/den-lite's build in
@@ -26,7 +26,7 @@ sys.path.insert(0, str(HERE))
 import den_check  # noqa: E402
 import mpqlite  # noqa: E402
 
-FIXTURE = HERE / "fixtures" / "patch-Z-sample.MPQ"
+FIXTURE = HERE / "fixtures" / "patch-Z-sample.bin"
 
 
 def quiet(fn, *a):

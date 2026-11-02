@@ -142,6 +142,24 @@ class Pages(unittest.TestCase):
         self.assertTrue({"low", "classic", "balanced", "ultra"} <= web.launcher_presets())
 
 
+class Guides(unittest.TestCase):
+    """The guides (/wrath/docs, stream/docs.py) and the audit keep one rule: no game version in a sentence."""
+
+    def test_same_rule_as_test_docs(self):
+        src = (ROOT / "stream" / "tests" / "test_docs.py").read_text(encoding="utf-8")
+        self.assertIn(f'VERSION = re.compile(r"{common.VERSION.pattern}")', src)
+
+    def test_every_guide_passes_the_audits_check(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("wu_docs_audit", ROOT / "stream" / "docs.py")
+        d = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(d)
+        for name, _ in d.PAGES:
+            st, body = d.page("/wrath/docs" + ("" if name == "index" else "/" + name))
+            self.assertEqual(st, 200, name)
+            self.assertEqual(web.page_problems(body.decode())["version"], [], name)
+
+
 class Settings(unittest.TestCase):
     def test_sane_and_not(self):
         d = tempfile.mkdtemp()
@@ -234,9 +252,7 @@ class FakeRun(unittest.TestCase):
         for blob in (text, report_txt, report_html):
             self.assertNotIn(fakes.FAKE_PASSWORD, blob)
         fails = [l for l in text.splitlines() if l.startswith("FAIL")]
-        # the guides (/wrath/docs) still name client versions in sentences: a real finding, reported on its own line
-        allowed = [l for l in fails if "the guides, /wrath/docs" in l]
-        self.assertEqual(fails, allowed, "\n".join(fails))
+        self.assertEqual(fails, [], "\n".join(fails))
         for must in ("PASS  Wrath Unleashed: Target a creature and start melee", "PASS  Wrath Unleashed: Mount up",
                      "PASS  Wrath Unleashed: Boost to level 80", "PASS  Wrath Unleashed: The level-1 test character is deleted again",
                      "PASS  Bug reports: In game", "PASS  Forum: Categories load", "PASS  Looks: Looks in the catalog",

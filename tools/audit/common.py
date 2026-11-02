@@ -28,7 +28,8 @@ BANNED = re.compile(r"(?i)world of warcraft|\bwow\b|warcraft|lich king|blizzard"
 SERVER_ERROR = re.compile(r"Traceback \(most recent call last\)|Internal Server Error|502 Bad Gateway|"
                           r"503 Service Unavailable|\bNoneType\b|\bKeyError\b|\bAttributeError\b")
 # A client version in a sentence (version chips are short and stand alone, so they are not sentences).
-VERSION = re.compile(r"\b(?:3\.3\.5a?|1\.12(?:\.[0-9])?|2\.4\.3|[0-9]\.[0-9]{1,2}\.[0-9][a-z]?)\b")
+# Build numbers too (12340, 5875, 8606, ...). stream/tests/test_docs.py keeps the same rule for the guides.
+VERSION = re.compile(r"\b(?:3\.3\.5a?|1\.12(?:\.[0-9])?|2\.4\.3|[0-9]\.[0-9]{1,2}\.[0-9][a-z]?|12340|5875|8606|15595|18414)\b")
 
 
 @dataclass

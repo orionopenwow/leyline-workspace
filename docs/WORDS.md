@@ -71,7 +71,7 @@ Say "List your mod" on Mods and "List your addon" on Addons: the form then asks 
 | **Hero Key** | One account for every Leyline realm. | SSO |
 | **the original client** / **the Wrath client** | The game clients, by what they play. | client version numbers in sentences |
 | **your game folder** | The folder where the player's own game is. | WoW dir, install dir, data path |
-| **the website** | play.openvanilla.app. | the portal, the hub, the site |
+| **the website** | leylinelauncher.com. | the portal, the hub, the site |
 
 ## Before and after
 

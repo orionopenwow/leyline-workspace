@@ -47,7 +47,7 @@ Each record is a Beacons schema 1 record plus a `community` block:
 
 Text from the host has fixed limits: name up to 32 characters, tagline 80, summary 400, up to 10 rules of 120, and a Discord link only as `https://discord.gg/...`. Readers should show it as text, never as HTML. Players and bots are separate numbers; bots are never added to players.
 
-A realm's own status uses the same `openvanilla-status-1` idea. Wrath's is at [play.openvanilla.app/wrath/status.json](https://play.openvanilla.app/wrath/status.json): realm, online, players, bots, queue, uptime and build.
+A realm's own status uses the same `openvanilla-status-1` idea. Wrath's is at [leylinelauncher.com/wrath/status.json](https://leylinelauncher.com/wrath/status.json): realm, online, players, bots, queue, uptime and build.
 
 The full schema is `hosting/site/SCHEMA-community.md` in the repo.
 

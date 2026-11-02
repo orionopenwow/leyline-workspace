@@ -14,7 +14,7 @@ I'm the dev of Leyline, a free and open source launcher. We run one realm oursel
 
 **How it works**
 
-Get the Host pack (https://play.openvanilla.app/wrath/host), pick a ruleset (Vanilla+, True Vanilla, Progression, Classic levelling), press Start. Already run a server? "Link my server" lists it without changing it.
+Get the Host pack (https://leylinelauncher.com/wrath/host), pick a ruleset (Vanilla+, True Vanilla, Progression, Classic levelling), press Start. Already run a server? "Link my server" lists it without changing it.
 
 - **Your server, your files.** Game data is read from your own game folder, on your PC. Nothing is downloaded from us.
 - **Listed in about a minute.** A public realm shows on the realm list by itself.
@@ -25,7 +25,7 @@ Get the Host pack (https://play.openvanilla.app/wrath/host), pick a ruleset (Van
 
 **What you need:** Docker, your own game folder, 8 GB of memory (16 is comfier), about 30 GB of disk, and a PC that stays on. First start is 5 to 20 minutes; original-era and burning-crusade-era realms build on your PC the first time, which can take an hour or more, once. A small rented server (4 GB, 2 cores) works too.
 
-Always-on guide: https://play.openvanilla.app/wrath/docs/always-on
+Always-on guide: https://leylinelauncher.com/wrath/docs/always-on
 
 Questions welcome. I'll answer here.
 

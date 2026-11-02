@@ -57,9 +57,9 @@ us in: the data is four plain tables.
   Reply and Report work right in the app: `forum_post` in `src-tauri/src/forum.rs` sends the launcher's own Leyline
   sign-in token (`Authorization: Bearer`, the device-code token from `stream/social.py`). Signed out, New thread and
   Reply open the website's pages in the browser, as before.
-- **In the game and on the Discord**: the address to share is `play.openvanilla.app/wrath/leyline/forum`. The
+- **In the game and on the Discord**: the address to share is `leylinelauncher.com/wrath/leyline/forum`. The
   in-game login line (`ov_discord.lua` `WELCOME`, the owner's words) still names `.wu` and the Discord only. Adding
-  "or the forum: play.openvanilla.app/wrath/leyline/forum" there is a one-line change that needs a Lua reload on the
+  "or the forum: leylinelauncher.com/wrath/leyline/forum" there is a one-line change that needs a Lua reload on the
   realm, so it wasn't made here. TODO(owner): say if you want it, and add the address to the Discord's welcome or
   rules channel if you want it there (we never post on the Discord ourselves).
 - **Guests**: a website guest account (made by "Play as guest", with a Hero Key) reads and posts like anyone else.
@@ -184,7 +184,7 @@ server's active threads, and only threads with new messages are read.
 2. **Bot** tab: copy the token (Reset Token). Turn on **Message Content Intent**; without it, Discord sends empty
    texts. No other intent is needed.
 3. **General Information > Interactions Endpoint URL**:
-   `https://play.openvanilla.app/wrath/forum/api/discord/interactions` (Discord checks it once the portal has the
+   `https://leylinelauncher.com/wrath/forum/api/discord/interactions` (Discord checks it once the portal has the
    settings below, so do step 6 first, then save this).
 4. **OAuth2 > URL Generator**: scopes **bot** and **applications.commands**; bot permissions **View Channel, Send
    Messages, Send Messages in Threads, Create Public Threads, Read Message History, Manage Messages, Manage Threads**

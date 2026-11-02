@@ -110,7 +110,7 @@ ratings (`stream/hub_rank.py`): one sign-in for everything the launcher does.
 
 
 1. The launcher calls `POST device/start`. It opens `verify_url`
-   (`https://play.openvanilla.app/wrath/link?code=BCDF-GHJK`) in the system browser.
+   (`https://leylinelauncher.com/wrath/link?code=BCDF-GHJK`) in the system browser.
 2. `/wrath/link`:
    - signed out, it goes to the website's sign-in (`/login?next=...`) and comes back;
    - signed in, it shows the code with **Approve** and **Not me**. The form carries an HMAC token tied to

@@ -19,16 +19,16 @@ No shop, nothing to buy. Bots are always labelled as bots.
 
 ## New here?
 
-**Start here:** https://play.openvanilla.app/wrath/start
+**Start here:** https://leylinelauncher.com/wrath/start
 
-Four ways in, one click each: play in your browser, get the launcher, make your Den, host a server. The longer guide is at https://play.openvanilla.app/wrath/docs/getting-started
+Four ways in, one click each: play in your browser, get the launcher, make your Den, host a server. The longer guide is at https://leylinelauncher.com/wrath/docs/getting-started
 
 ## Found a bug?
 
 Pick whichever is closest:
 
 - **In the game:** Esc, then **Report a bug**. Say what happened; where you are is sent with it. Or type `.bug` and what happened.
-- **On the website:** **Report a bug** at the bottom of every page, or https://play.openvanilla.app/wrath/bugs
+- **On the website:** **Report a bug** at the bottom of every page, or https://leylinelauncher.com/wrath/bugs
 - **In the launcher:** Help, then **Report a bug**.
 
 What helps most: what you did, what you expected, what happened instead, and where (realm and zone, launcher page or website page). Never post passwords, your email or your Hero Key. Found an exploit? Tell a moderator privately.

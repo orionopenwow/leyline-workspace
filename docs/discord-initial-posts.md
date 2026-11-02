@@ -19,10 +19,10 @@ TODO(owner): your opening line, in your own words (who you are, why you made Ley
 **Leyline** is an open-source launcher and realm network. Play in your browser with nothing to install, build your own Den, host a realm for your friends, and share mods in one click.
 
 **Start here**
-- Play in your browser: https://play.openvanilla.app/wrath
-- Get the launcher: https://play.openvanilla.app/wrath/leyline
-- Host your own realm: https://play.openvanilla.app/wrath/host
-- The forum: https://play.openvanilla.app/wrath/leyline/forum
+- Play in your browser: https://leylinelauncher.com/wrath
+- Get the launcher: https://leylinelauncher.com/wrath/leyline
+- Host your own realm: https://leylinelauncher.com/wrath/host
+- The forum: https://leylinelauncher.com/wrath/leyline/forum
 
 **Where to go**
 - Wrath Unleashed, our own realm: #hangout and #levelling, live game chat in #world-chat
@@ -196,7 +196,7 @@ TODO(owner): the first templates to post (one message each), or a line saying th
 3. When it says **Online**, copy your **invite link** and send it to your friends.
 4. Want strangers to find it? Make it **public**: it shows in the realm list and in #live-realms.
 
-Hosting on a server instead of your PC? The Host pack and its guide: https://play.openvanilla.app/wrath/host
+Hosting on a server instead of your PC? The Host pack and its guide: https://leylinelauncher.com/wrath/host
 
 **Asking for help?** Say what you tried, what you see, and paste the result of the **health check** from the Host page. Never post passwords, tokens or your settings files.
 ```
@@ -236,7 +236,7 @@ Network changes are posted here first, before they ship. Thanks for keeping a no
 ```
 Made a mod, an addon or a game mode? Put it on the Workshop and post the link here with a line about what it does. The team looks at every one.
 
-How: in the launcher, **Mods** > **List your mod**, or on the website: https://play.openvanilla.app/wrath/mods
+How: in the launcher, **Mods** > **List your mod**, or on the website: https://leylinelauncher.com/wrath/mods
 
 One post every 10 minutes. Data and scripts only, no game files.
 ```
@@ -324,7 +324,7 @@ A screenshot helps.
 
 Other ways:
 - In the game: **.bug** and what happened, e.g. **.bug the quest giver in Northshire has no ! over his head** (it saves where you are)
-- On the website: https://play.openvanilla.app/wrath/bugs
+- On the website: https://leylinelauncher.com/wrath/bugs
 
 Never post passwords, your email or your Hero Key. Found an exploit? Tell a Moderator privately instead.
 ```
@@ -344,7 +344,7 @@ Help with the Leyline launcher: installing, signing in, updates, finding your ga
 
 Say what you tried, what you see, and which system you're on. A screenshot helps. Never post your password or Hero Key.
 
-Get the launcher: https://play.openvanilla.app/wrath/leyline
+Get the launcher: https://leylinelauncher.com/wrath/leyline
 ```
 
 ---
@@ -354,7 +354,7 @@ Get the launcher: https://play.openvanilla.app/wrath/leyline
 ### #forum
 
 ```
-This is the Leyline forum, live: https://play.openvanilla.app/wrath/leyline/forum
+This is the Leyline forum, live: https://leylinelauncher.com/wrath/leyline/forum
 
 New forum threads appear here as posts, and replies go both ways. To reply from Discord, link your Leyline account first: type **/link** here. Unlinked replies are taken off with a private note.
 

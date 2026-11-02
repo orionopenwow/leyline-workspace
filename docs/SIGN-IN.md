@@ -102,7 +102,8 @@ Nothing below types a password or makes an account on another service for you.
       3. `cd /opt/wenilla-realm && docker compose up -d realm`, and keep `/etc/openvanilla-discord-off` so the Herald
          bot stays off. (`bash discord_off.sh on` would also start the bot: don't use it for this.)
       4. In the Discord developer portal, the application's OAuth2 redirect must list
-         `https://play.openvanilla.app/auth/discord/callback` (it did when Discord sign-in was on).
+         `https://leylinelauncher.com/auth/discord/callback` and, kept, `https://play.openvanilla.app/auth/discord/callback`
+         (docs/DOMAIN-MOVE.md).
       Within 5 minutes the Discord button appears on /wrath/signin and in the launcher. To hide it again:
       `DISCORD_SIGNIN=off` and restart the realm service.
 - [ ] Read the sign-in and welcome words (TODO(owner) in stream/profiles.py).

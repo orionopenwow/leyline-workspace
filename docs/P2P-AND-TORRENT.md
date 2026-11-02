@@ -24,7 +24,7 @@ A refused file is deleted and never installed. The same list runs when the Host 
 
 Everything ships **off**. Two layers decide:
 
-1. **The site's file**, `https://play.openvanilla.app/wrath/leyline/flags.json`:
+1. **The site's file**, `https://leylinelauncher.com/wrath/leyline/flags.json`:
 
    ```json
    {

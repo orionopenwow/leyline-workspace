@@ -6,14 +6,14 @@ Ready for the owner to post himself. Nobody else posts these anywhere.
 
 Open each one signed out, then signed in.
 
-- [ ] **Start here** answers: https://play.openvanilla.app/wrath/start (four cards, each link works)
-- [ ] **Host page** answers with the Host pack button: https://play.openvanilla.app/wrath/host (it only shows when the site's front door is on; otherwise the Host links fall back to the GitHub guide)
+- [ ] **Start here** answers: https://leylinelauncher.com/wrath/start (four cards, each link works)
+- [ ] **Host page** answers with the Host pack button: https://leylinelauncher.com/wrath/host (it only shows when the site's front door is on; otherwise the Host links fall back to the GitHub guide)
 - [ ] **The Host pack download** on that page is the current one (not the 26 Oct zip)
-- [ ] **The always-on guide** answers: https://play.openvanilla.app/wrath/docs/always-on
-- [ ] **The forum** answers at https://play.openvanilla.app/wrath/leyline/forum (note: /wrath/forum is only its API) and has the categories Share your realm, Mods & addons, Dens & builds, Help, General, Announcements
-- [ ] **Report a bug** works in all three places: Esc menu in the game, https://play.openvanilla.app/wrath/bugs (and the footer link), the launcher's Help menu
-- [ ] **Looks** answers: https://play.openvanilla.app/wrath/looks
-- [ ] **Browser play** loads: https://play.openvanilla.app/wrath
+- [ ] **The always-on guide** answers: https://leylinelauncher.com/wrath/docs/always-on
+- [ ] **The forum** answers at https://leylinelauncher.com/wrath/leyline/forum (note: /wrath/forum is only its API) and has the categories Share your realm, Mods & addons, Dens & builds, Help, General, Announcements
+- [ ] **Report a bug** works in all three places: Esc menu in the game, https://leylinelauncher.com/wrath/bugs (and the footer link), the launcher's Help menu
+- [ ] **Looks** answers: https://leylinelauncher.com/wrath/looks
+- [ ] **Browser play** loads: https://leylinelauncher.com/wrath
 - [ ] **The Discord invite** still works: https://discord.gg/hVeUxYwbkr
 - [ ] **A real host test** passed on your own PC: a public realm shows on the list, and a friend outside your network joins (smoke 1 Nov, "The owner must test on a real PC", item 7)
 

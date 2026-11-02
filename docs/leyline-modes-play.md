@@ -1,12 +1,12 @@
 # Leyline Modes: every game mode one click away
 
 The launcher's **Modes** page (after Realms) and the **Games** section at the top of
-[/wrath/modes](https://play.openvanilla.app/wrath/modes) list the same game modes, from one catalog.
+[/wrath/modes](https://leylinelauncher.com/wrath/modes) list the same game modes, from one catalog.
 
 ## The catalog
 
 `stream/playmodes.json`, checked by `python3 -I stream/playmodes.py --check` (and by `stream/tests/test_playmodes.py`).
-The site serves it at `https://play.openvanilla.app/wrath/modes.json`. The launcher (`launcher/src-tauri/src/modes.rs`)
+The site serves it at `https://leylinelauncher.com/wrath/modes.json`. The launcher (`launcher/src-tauri/src/modes.rs`)
 reads that, keeps the last good copy, and falls back to the copy built into Leyline (the same file, `include_str!`).
 
 Each entry: `id`, `title`, `line` (one plain sentence), `kind`, `players` `{min, max or null}`, `status`
@@ -25,7 +25,7 @@ starts: the mode's own OVMOD message), run the tests. The test fails if the two 
 
 ## One click in the browser: `?go=mode:<id>`
 
-1. PLAY opens `https://play.openvanilla.app/wrath?go=mode:<id>`.
+1. PLAY opens `https://leylinelauncher.com/wrath?go=mode:<id>`.
 2. The portal signs the player in as usual. `remember_go` (stream/wrath_portal.py) sees `mode:`, checks the id
    against the catalog's live realm modes, and sends one SOAP console command for that game account:
    `ovplay go <ACCOUNT> <id>` (at most 20 a minute per account, the same as other go intents).
@@ -76,10 +76,10 @@ Deployed first: `scripts` (ov_playmode.lua, ov_golf/ov_modes unchanged), `foreve
 `signin` (wrath_portal.py, modes.py, playmodes.py, playmodes.json).
 
 ```sh
-curl -s https://play.openvanilla.app/wrath/modes.json | python3 -m json.tool | head -20     # schema 1, 7 modes
-curl -s https://play.openvanilla.app/wrath/modes | grep -c 'id="mode-'                       # 7
+curl -s https://leylinelauncher.com/wrath/modes.json | python3 -m json.tool | head -20     # schema 1, 7 modes
+curl -s https://leylinelauncher.com/wrath/modes | grep -c 'id="mode-'                       # 7
 ```
 
-In the owner's browser, signed in: open `https://play.openvanilla.app/wrath?go=mode:coin-dash`, pick a character,
+In the owner's browser, signed in: open `https://leylinelauncher.com/wrath?go=mode:coin-dash`, pick a character,
 enter the world. About 7 s later chat says `[Play] Starting Coin Dash.` and Coin Dash runs. On the realm console:
 `ovplay go <ACCOUNT> minigolf` answers `ovplay ok: ... (10 min)`. In game: `.playmode` lists the modes.

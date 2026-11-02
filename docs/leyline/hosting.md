@@ -25,7 +25,7 @@ Already run an AzerothCore or TrinityCore server and want Hero Key sign-in on it
 
 ## Get the Host pack
 
-1. Download the Host pack: [the Host pack zip](https://github.com/orionopenwow/Leyline/releases/download/host-kit/WrathUnleashed-host-kit.zip). The same link is on the site's host page, [play.openvanilla.app/wrath/host](https://play.openvanilla.app/wrath/host).
+1. Download the Host pack: [the Host pack zip](https://github.com/orionopenwow/Leyline/releases/download/host-kit/WrathUnleashed-host-kit.zip). The same link is on the site's host page, [leylinelauncher.com/wrath/host](https://leylinelauncher.com/wrath/host).
 2. Unzip it anywhere you keep things. You get the Host pack's folder.
 3. Start Docker and wait until it says it is running.
 4. Windows: double-click `Host a Wrath realm.bat` in that folder. macOS or Linux: open a terminal in it and run `bash leyline host`. Made a realm on the site's host page first? Put its file (`leyline-<id>.bat` or `.sh`) in the folder and run that instead.
@@ -144,7 +144,7 @@ Keep `state/` and `.env`. They are the realm's identity: its key, invite and pas
 The relay sits between players and hosted realms.
 
 - **Tunnel.** The realm opens one WebSocket out to `wss://relay.../agent`. The relay sends a challenge and the realm signs it with its own Ed25519 key. The realm id is made from that key, so there are no accounts or shared tokens to register.
-- **Addresses.** Each realm gets a fixed pair of ports on the relay: auth and world. A stock client uses `set realmlist relay.openvanilla.app` or the realm's own auth port. The browser client uses `wss://relay.openvanilla.app/r/<realm id>/ws/<port>`.
+- **Addresses.** Each realm gets a fixed pair of ports on the relay: auth and world. A stock client uses `set realmlist relay.leylinelauncher.com` or the realm's own auth port. The browser client uses `wss://relay.leylinelauncher.com/r/<realm id>/ws/<port>`.
 - **Accounts.** The join page computes the login key (SRP6 salt and verifier) in your browser and sends only that. Neither the relay nor the host sees the password.
 - **Limits.** Per realm: 128 connections and 512 KB/s. Per player address: 8 connections a realm, 40 new connections a minute. 3 new realms per address an hour. A blocklist removes an abusive realm within a minute.
 - **Privacy.** Hosts never see player addresses, and players never see the host's. Logs keep addresses only as a salted daily hash.
@@ -154,7 +154,7 @@ The relay is Python with the standard library (plus optional `cryptography`). It
 
 ## The realm list
 
-[play.openvanilla.app/wrath/realms](https://play.openvanilla.app/wrath/realms) shows Wrath first, then every public Beacon from the relay's listing: name, ruleset, players and bots counted apart, house rules and a **Join** link. A slow or dead relay never slows the page.
+[leylinelauncher.com/wrath/realms](https://leylinelauncher.com/wrath/realms) shows Wrath first, then every public Beacon from the relay's listing: name, ruleset, players and bots counted apart, house rules and a **Join** link. A slow or dead relay never slows the page.
 
 In the game, Esc, then Mods & Workshop, then Leyline realms (or `/leyline`) shows the same list. **Copy link** gives you the realm's share link. Hopping to another realm from inside the game is planned.
 

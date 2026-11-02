@@ -1,8 +1,8 @@
 # Hero Key
 
-A Hero Key is a way to sign in to the website without a password. It is one of the two sign-in options at [play.openvanilla.app/wrath](https://play.openvanilla.app/wrath). The other is Google.
+A Hero Key is a way to sign in to the website without a password. It is one of the two sign-in options at [leylinelauncher.com/wrath](https://leylinelauncher.com/wrath). The other is Google.
 
-The website's sign-in, Hero Keys included, is run by the Leyline Launcher realm service on play.openvanilla.app. That service is a sibling project and is not in this repo. This page says what this repo shows and marks the rest "to confirm".
+The website's sign-in, Hero Keys included, is run by the Leyline Launcher realm service on leylinelauncher.com. That service is a sibling project and is not in this repo. This page says what this repo shows and marks the rest "to confirm".
 
 ## What you can do with it today
 

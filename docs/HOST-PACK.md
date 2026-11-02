@@ -82,7 +82,7 @@ dismiss, hide or flag.
 * **The fallback** is the release's own `hostpack.json`:
   `https://github.com/orionopenwow/Leyline/releases/download/host-pack/hostpack.json`.
 
-Leyline accepts a download only from `https://play.openvanilla.app/` or the `orionopenwow/Leyline` release
+Leyline accepts a download only from the website (`https://leylinelauncher.com/`, or its old name `https://play.openvanilla.app/`) or the `orionopenwow/Leyline` release
 downloads, and only with a 64-hex sha256. Versions are `YYYY.MMDD.HHMM` (UTC), so a newer build always
 compares newer.
 

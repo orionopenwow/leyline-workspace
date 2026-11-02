@@ -1,6 +1,6 @@
 # Hero Key sign-in for Beacons (cross-server login)
 
-One identity, the Hero Key (the website account at play.openvanilla.app), signs a player in to any community realm
+One identity, the Hero Key (the website account at leylinelauncher.com), signs a player in to any community realm
 (Beacon) on the Leyline network. No account per realm, no password kept in the browser. It works in the browser game
 (a Leyline hop) and in the launcher.
 
@@ -36,7 +36,7 @@ use the realm's join page and the login kept in `localStorage`, as in `docs/leyl
    - the assertion, signed with the site key (context `leyline-herokey-sso-v1`):
 
      ```
-     {"v": 1, "iss": "play.openvanilla.app", "kid": "<16 hex>", "aud": "<realm id>", "sub": "<26 base32>",
+     {"v": 1, "iss": "leylinelauncher.com", "kid": "<16 hex>", "aud": "<realm id>", "sub": "<26 base32>",
       "salt": "<64 hex>", "verifier": "<64 hex>", "login_ttl": 120, "nonce": "<32 hex>", "iat": <unix>, "exp": iat+120}
      ```
 

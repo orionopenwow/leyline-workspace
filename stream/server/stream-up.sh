@@ -9,7 +9,7 @@
 #                     and the Dungeon Finder ids: ov_slices_tiers.lua, ov_slices_lfg.lua)
 #   4 sign-in gate    the new wrath_portal.py in /srv/wrath/portal, WU_STREAM=1, WU_OWNFILES=1
 #                     ("Play with my own game files" uses the same site), wu-portal recreated
-#   5 slice host      container wu-play: wenilla-host --only-listed on the slice, 256 MB, read-only
+#   5 slice host      container wu-play: wenilla-host --only-listed on the slice, 512 MB, read-only
 #   6 Caddy           a site block for wrath.openvanilla.app (backup kept; restored if Caddy refuses)
 set -euo pipefail
 . "$(dirname "$(readlink -f "$0")")/stream-lib.sh"
@@ -105,7 +105,7 @@ echo "  wu-portal up, WU_STREAM=1"
 log "5/6 Slice host (wu-play)"
 docker image inspect debian:bookworm-slim >/dev/null 2>&1 || docker pull -q debian:bookworm-slim >/dev/null
 docker rm -f wu-play >/dev/null 2>&1 || true
-docker run -d --name wu-play --restart unless-stopped --memory 256m --cpus 1.5 \
+docker run -d --name wu-play --restart unless-stopped --memory 512m --cpus 1.5 \
   --network "$NET" --read-only --cap-drop ALL --security-opt no-new-privileges --user 65534:65534 \
   -v "$ST/www:/www:ro" -v "$SLICE_DIR:/slice:ro" -v "$ST/bin/wenilla-host:/usr/local/bin/wenilla-host:ro" \
   debian:bookworm-slim /usr/local/bin/wenilla-host --www /www --patch /slice --only-listed \

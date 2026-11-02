@@ -698,7 +698,7 @@ function W.DenQuiet(text)
 end
 local function denQuietBox()
     -- message() shows ScriptErrors (ScriptErrorsText) in this client; BasicMessageDialog in later ones
-    for _, pair in ipairs({ { "BasicMessageDialog", "BasicMessageDialogText" }, { "ScriptErrors", "ScriptErrorsText" },
+    for _, pair in ipairs({ { "BasicScriptErrors", "BasicScriptErrorsText" }, { "BasicMessageDialog", "BasicMessageDialogText" }, { "ScriptErrors", "ScriptErrorsText" },
         { "StaticPopup1", "StaticPopup1Text" }, { "StaticPopup2", "StaticPopup2Text" }, { "StaticPopup3", "StaticPopup3Text" },
         { "StaticPopup4", "StaticPopup4Text" } }) do
         local d = _G[pair[1]]
@@ -726,6 +726,11 @@ end
 local function denDiag()
     local f = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
     diagSend("focus:" .. ((f and f.GetName and f:GetName()) or (f and "unnamed") or "none"))
+    -- what the game thinks of the character (2 Nov: it never moved, with a real keyboard either)
+    local sp = GetUnitSpeed and select(3, pcall(GetUnitSpeed, "player"))
+    diagSend(string.format("me:speed=%s falling=%s dead=%s control=%s", tostring(sp),
+        tostring(IsFalling and IsFalling()), tostring(UnitIsDeadOrGhost and UnitIsDeadOrGhost("player")),
+        tostring(HasFullControl and HasFullControl())))
     if not EnumerateFrames then return end
     local n, fr = 0, EnumerateFrames()
     while fr and n < 3 do

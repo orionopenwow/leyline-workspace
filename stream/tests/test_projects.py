@@ -368,8 +368,9 @@ check("all.json: format 1, CORS *", doc.get("format") == 1 and hd.get("Access-Co
 check("all.json: the 13 categories and the builds", [c["id"] for c in doc.get("categories", [])] == CAT_IDS and doc.get("builds") == ["3.3.5a", "1.12", "any"])
 # Reviewed upstream addons (stream/upstream_addons.py, stream/upstream-addons.json) are merged in too: their own
 # shape (test_upstream_addons.py covers it). The two kinds this file makes keep the one schema.
+# The Looks (stream/looks.py, source "look") are merged in the same way, in their own shape (test_looks.py).
 _up = [p for p in ps if p.get("source") == "upstream"]
-_own = [p for p in ps if p.get("source") != "upstream"]
+_own = [p for p in ps if p.get("source") not in ("upstream", "look")]
 check("all.json: both kinds in one schema", {p["source"] for p in _own} == {"packaged", "community"} and all(set(p) == keys for p in _own))
 _hp = [p for p in _own if p["id"] == "mod:host-pack"]   # the Host pack (stream/hostpack.json), a tools project in the same shape
 check("all.json: every project once", len(_own) == 3 + len(records()) + len(_hp) and len({p["id"] for p in ps}) == len(ps)

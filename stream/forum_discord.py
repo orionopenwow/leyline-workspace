@@ -1107,6 +1107,16 @@ def _discord_of_site(fm, h) -> str:
     return str(v) if SNOW_RE.fullmatch(str(v or "")) else ""
 
 
+def _site_offers_discord(fm) -> bool:
+    """True only while the website's own sign-in offers Discord (stream/profiles.py ways()). Discord sign-in is not
+    used (owner, 1 Nov), so the "link Discord on your profile" hint is left out unless the website turns it back on."""
+    try:
+        pm = fm.P("profiles")
+        return bool(pm is not None and pm.ways().get("discord"))
+    except Exception:   # noqa: BLE001
+        return False
+
+
 def page(fm, h, who, query: dict, note: str = "", ok: str = "", status: int = 200) -> None:
     """GET /wrath/leyline/forum/discord[?c=<code>]: link this Discord account, or see and undo the link."""
     e = html.escape
@@ -1135,7 +1145,7 @@ def page(fm, h, who, query: dict, note: str = "", ok: str = "", status: int = 20
                          '<p>You signed in to the website with Discord. Link that Discord account, so your replies there reach the forum?</p>'
                          '<div class="fm-acts"><button class="fm-btn" type="submit" name="do" value="site">Link my Discord</button></div></form>')
         parts.append('<p>In our Discord, type <b>/link</b> in any channel and open the link it gives you (only you see it).'
-                     + ('' if site_id else ' Or link Discord as a way to sign in on <a href="/wrath/profile">your profile</a>, then come back here.')
+                     + ('' if site_id or not _site_offers_discord(fm) else ' Or link Discord as a way to sign in on <a href="/wrath/profile">your profile</a>, then come back here.')
                      + '</p>')
     if cur and link.growth is not None:   # Find a group (WU_DISCORD_LFG=1)
         parts.append(link.growth.group_form(who, query, fm.form_token(who, "dlink"), path))

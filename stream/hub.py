@@ -1571,7 +1571,7 @@ class Hub:
              "installs mods in a click, takes you to any realm and keeps itself up to date.",
              ["Your own clients, found for you", "One sign-in everywhere", "Updates in the background, never mid-game",
               "Windows, macOS and Linux"],
-             [(dl, "Download the launcher", True)],   # Play in your browser is the realm's own button, above
+             [(dl, "Download the launcher", True), (LAUNCHER_OTHER, "macOS and Linux", True)],   # Play in your browser is the realm's own button, above
              shot("launcher", "The Leyline launcher: its realm list open over Home, with Wrath Unleashed, Your Den, your realms and Host a server, "
                   "and the game client, realm and PLAY button below.")),
             ("looks", "Looks", "Make the game look new",
@@ -2211,7 +2211,7 @@ class Hub:
             'alt="The Leyline launcher with its game client list open: five game clients found on this PC, each with its version, '
             'with the featured mode on the home banner, and the realm and PLAY button below." decoding="async" fetchpriority="high"></figure>'
             # no buttons under the line (owner 2026-10-30): Download and Play are in the side menu
-            '<p class="hb-note">Free and open source, for Windows, macOS and Linux. Nothing to buy.</p></section>'
+            f'<p class="hb-note">Free and open source, for Windows, <a href="{LAUNCHER_OTHER}" rel="noopener noreferrer">macOS and Linux</a>. Nothing to buy.</p></section>'
             # straight to the point (owner 1 Nov: "make sure the website is clean looking too"; the launcher's story:
             # Wrath Unleashed, your Den, your realms, Host a server): the realm, the list, how it works, the featured
             # mod, four feature sections, the forum and the status bar. The counters, the community posters, the Hero
@@ -3245,6 +3245,9 @@ class Hub:
 RELEASES = "https://github.com/orionopenwow/Leyline/releases"
 # The launcher as one file, no installer (owner 2026-10-30): GitHub builds it from main (the workflow's portable job)
 LAUNCHER_EXE = RELEASES + "/download/launcher-latest/Leyline.exe"
+# macOS (.dmg) and Linux (.AppImage, .deb): the newest versioned release (the workflow marks it latest). Leyline.exe is
+# Windows only, so every "Windows, macOS and Linux" line links these too.
+LAUNCHER_OTHER = RELEASES + "/latest"
 # the launcher's Dark tokens, when the hub runs without the portal (the portal's LOOK_VARS is the one copy)
 LOOK_FALLBACK = (":root{--lk-bg:#15181f;--lk-chrome:#181b23;--lk-surface:#1e222b;--lk-surface-2:#252a35;--lk-raised:#2c3240;"
                  "--lk-border:#2c313c;--lk-border-strong:#3c4352;--lk-text:#eef0f4;--lk-text-2:#c8cdd7;--lk-muted:#9aa1ae;"

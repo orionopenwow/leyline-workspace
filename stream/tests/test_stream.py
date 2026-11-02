@@ -83,7 +83,7 @@ def check(name, cond, extra=""):
 st, h, b = get("/wrath")
 check("signed out /wrath: saved-key sign-in page", st == 200 and b"AUTO" not in b and b"/auth/key" in b and "connect-src 'self'" in (h.get("content-security-policy") or h.get("Content-Security-Policy") or ""))
 st, h, b = get("/wrath/play?mini=mini")
-check("signed out: sign-in page", st == 200 and b"Sign in with Google" in b)
+check("signed out: sign-in page", st == 200 and b">Sign in</a>" in b and (b"/login?next=" in b or b"/wrath/signin" in b))
 check("signed out: no realm mark", not any(c.startswith("ovstream") for c in soap["commands"]))
 
 # --- unknown slice
@@ -197,7 +197,7 @@ st, h, b = get("/wrath/account", cookie="wr_session=good")
 check("own: realm list shows both ways to play", b"<h2>Dalaran</h2>" in b and b"Play in the browser with my game folder" in b
       and b"/wrath/play?mode=own" in b and b"/wrath/play?mini=mini" in b)
 st, h, b = get("/wrath/play?mode=own", ip="10.1.0.1")
-check("own: signed out -> sign-in page", st == 200 and b"Sign in with Google" in b)
+check("own: signed out -> sign-in page", st == 200 and b">Sign in</a>" in b and (b"/login?next=" in b or b"/wrath/signin" in b))
 stream_code = wp.sessions.create("WR000123", "Pa55word1234abcd", "mini", 4)
 stream_sid = wp.sessions.redeem(stream_code)
 before = len(soap["commands"])

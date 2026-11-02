@@ -655,3 +655,5 @@
 1280a den-test-variants Three Den tests to find what draws the Den green (about 10 min)
 1281a ship Your Den: ground painted with the game's own snow texture name (the launcher rebuilds)
 1281b addons Leyline addons: the box closed by its real name; the character's state for the Den test
+1283a ship Your Den: white at the known texture name, the box hidden wherever it is (the launcher rebuilds)
+1283b addons Leyline addons: the box that held the keys hidden

@@ -696,7 +696,23 @@ end
 function W.DenQuiet(text)
     return type(text) == "string" and text:find("Blizzard_CombatLog", 1, true) ~= nil and W.InDen()
 end
+-- any shown frame one of whose texts names the combat log, in the Den (2 Nov 04:54: the box is BasicScriptErrors and
+-- its text isn't the named region we looked at; that box also keeps the keys, so the character couldn't walk)
+local function denQuietAny()
+    if not EnumerateFrames or not W.InDen() then return end
+    local fr = EnumerateFrames()
+    while fr do
+        if fr.IsShown and fr:IsShown() and fr.GetRegions and fr ~= UIParent and fr ~= WorldFrame then
+            for _, r in ipairs({ fr:GetRegions() }) do
+                local t = r and r.GetText and r:GetText()
+                if type(t) == "string" and t:find("Blizzard_CombatLog", 1, true) then fr:Hide(); break end
+            end
+        end
+        fr = EnumerateFrames(fr)
+    end
+end
 local function denQuietBox()
+    pcall(denQuietAny)
     -- message() shows ScriptErrors (ScriptErrorsText) in this client; BasicMessageDialog in later ones
     for _, pair in ipairs({ { "BasicScriptErrors", "BasicScriptErrorsText" }, { "BasicMessageDialog", "BasicMessageDialogText" }, { "ScriptErrors", "ScriptErrorsText" },
         { "StaticPopup1", "StaticPopup1Text" }, { "StaticPopup2", "StaticPopup2Text" }, { "StaticPopup3", "StaticPopup3Text" },
@@ -716,7 +732,7 @@ denQuiet:RegisterEvent("PLAYER_LOGIN")
 denQuiet:RegisterEvent("PLAYER_ENTERING_WORLD")
 -- and when it comes up later in the load (the den-test's screenshot, 1 Nov 22:35: still up after the world showed):
 -- watched for 20 seconds after entering the world
-local quietLeft, diagAt = 0, nil
+local quietLeft, diagAt, quietTick = 0, nil, 0
 -- the den-test's clues (2 Nov: the box stayed and the character never moved): 4 s after entering the Den, the names
 -- of shown frames whose text names the combat log and what holds the keyboard, to Den Lite's log (addon messages to
 -- ourselves; names only)
@@ -755,5 +771,6 @@ denQuiet:SetScript("OnUpdate", function(_, dt)
     end
     if quietLeft <= 0 then return end
     quietLeft = quietLeft - (dt or 0)
-    denQuietBox()
+    quietTick = (quietTick or 0) + (dt or 0)
+    if quietTick >= 0.5 then quietTick = 0; denQuietBox() end
 end)

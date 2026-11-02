@@ -186,7 +186,7 @@ check("header: Join the Discord under News (the launcher's side menu), the porta
 check("the launcher's stone (launcher/ui/stone.css): the side menu on the tall tile, the bars on the strip, the current page a "
       "sunken well, Log In and Download on the red stone in Marcellus, panels in the grey metal edge; the art allowed by the portal",
       "--hb-stone-tall:url(/wrath/art/stone-side.webp) 0 0/256px 256px repeat" in front and "var(--hb-stone)" in HB.STONE_CSS
-      and "border-image:url(/wrath/art/stone-btn.webp) 28 30 fill/11px stretch" in front and "url(/wrath/art/marcellus-400.woff2)" in front
+      and "border-image:url(/wrath/art/stone-btn.webp) 28 30 fill/8px stretch" in front and "url(/wrath/art/marcellus-400.woff2)" in front
       and "border-image:url(/wrath/art/window-edge.png) 19/6px round" in front and "inset 0 2px 4px rgba(0,0,0,.6)" in front
       and front.index(".hb-pg{") < front.index("--hb-stone-tall")
       and all(f'"{n}":' in open(PORTAL).read() for n in ("stone-bar.webp", "stone-side.webp", "stone-btn.webp", "window-edge.png", "marcellus-400.woff2", "Marcellus-OFL.txt"))

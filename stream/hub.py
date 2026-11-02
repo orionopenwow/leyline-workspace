@@ -4047,7 +4047,7 @@ padding:0 10px!important;filter:drop-shadow(0 4px 10px rgba(0,0,0,.45));transiti
 .hb-ghost{background:var(--lk-surface-2);border:1px solid var(--lk-border-strong);color:var(--lk-text)!important}
 .hb-ghost:hover{background:var(--lk-raised);border-color:var(--lk-accent)}
 .hb-play.sm,.hb-inst.sm,.hb-ghost.sm{min-height:30px;padding:0 11px;font-size:13px;border-radius:8px}
-.hb-play.sm{border-width:9px;border-image-width:9px;border-radius:0;padding:0 6px!important}
+.hb-play.sm{border-width:7px;border-image-width:7px;border-radius:0;padding:0 6px!important}
 .hb-cta{box-shadow:0 8px 22px color-mix(in srgb,var(--lk-accent) 30%,transparent)}
 .hb .ly-btn.hb-alt{background:var(--lk-surface-2);border:1px solid var(--lk-border-strong);color:var(--lk-text)!important}
 .hb-vh{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -4358,7 +4358,7 @@ body.hb:has(#hb-side:checked) .hb-dl svg{display:block}
 /* the main actions: the PLAY stone without its word (stone-btn.webp, a nine-slice so any label fits), gold lettering */
 body.hb :is(.hb-dl,.hb-dl-x,.hb-signin,.hb-cta:not(.hb-ho-a .hb-cta),.ly-btn:not(.hb-alt),.hk-btn.primary,.fm-btn:not(.ghost,.fm-dc .fm-btn),.hf a.dl.primary,.hb-pg .host-cta .btn.primary,.wu-box .btn.primary){
 align-items:center;justify-content:center;gap:8px;min-height:46px;padding:0 20px;box-sizing:border-box;
-border:11px solid transparent;border-radius:0;border-image:url(/wrath/art/stone-btn.webp) 28 30 fill/11px stretch;
+border:8px solid transparent;border-radius:0;border-image:url(/wrath/art/stone-btn.webp) 28 30 fill/8px stretch;
 background:none!important;box-shadow:none!important;color:var(--hb-gold)!important;
 font:400 19px/1 "Marcellus",Georgia,"Times New Roman",serif;letter-spacing:.035em;text-decoration:none;
 text-shadow:0 1px 0 #2a1200,0 2px 3px rgba(0,0,0,.85);filter:drop-shadow(0 3px 6px rgba(0,0,0,.4));transition:filter .12s,transform .08s;cursor:pointer}
@@ -4377,11 +4377,11 @@ body.hb .hb-dl-x{text-align:center;line-height:24px}
 -webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none;filter:drop-shadow(0 0 .6px #2a1200) drop-shadow(0 2px 2px rgba(0,0,0,.9))}}
 body.hb .hb-signin{font-size:22px}
 body.hb .hb-dl svg{width:18px;height:18px;stroke-width:2.2;filter:drop-shadow(0 1px 1px #2a1200)}
-body.hb :is(.hb-cta.sm:not(.hb-ho-a .hb-cta),.hk-btn.primary.small){min-height:40px;padding:0 14px;font-size:16px;border-width:9px;border-image-width:9px}
+body.hb :is(.hb-cta.sm:not(.hb-ho-a .hb-cta),.hk-btn.primary.small){min-height:40px;padding:0 14px;font-size:16px;border-width:7px;border-image-width:7px}
 body.hb .hb-pg .hb-actions .hb-cta.sm{min-height:46px;font-size:18px}
 /* the other buttons: dark stone in the grey metal edge of the launcher's window */
 body.hb :is(.hb-ghost,.hb-copy,.hb-menu-b,.ly-btn.hb-alt,.hk-btn:not(.primary),.fm-btn.ghost,.fm-dc .fm-btn,.hb-pg .hb-search button,.hb-social a.hb-dc,.hb-pg .host-cta .btn:not(.primary),.hf a.dl:not(.primary)){
-border:4px solid transparent;border-radius:0;border-image:url(/wrath/art/window-edge.png) 19/4px round;background-clip:padding-box;
+border:3px solid transparent;border-radius:0;border-image:url(/wrath/art/window-edge.png) 19/3px round;background-clip:padding-box;
 background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(0,0,0,.34)),var(--hb-stone)!important;color:#ece6d6!important;
 text-shadow:0 1px 1px rgba(0,0,0,.75);box-shadow:inset 0 1px 0 rgba(255,255,255,.08);text-decoration:none}
 body.hb :is(.hb-ghost,.hb-copy,.hb-menu-b,.ly-btn.hb-alt,.hk-btn:not(.primary),.fm-btn.ghost,.fm-dc .fm-btn,.hb-pg .hb-search button,.hb-social a.hb-dc,.hb-pg .host-cta .btn:not(.primary),.hf a.dl:not(.primary)):hover{

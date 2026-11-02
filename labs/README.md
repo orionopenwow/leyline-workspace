@@ -23,7 +23,7 @@ Some prototypes are wired into live scripts, tests or the client build, so movin
 They stay in place and are listed in `docs/REPO-MAP.md` under "Experimental, in place":
 the extra realm profiles (`realm/profiles/brawl.env`, `progression.env`, `casual.env` and their SQL), the mesh
 simulator (`hosting/mesh-sim/`), the P2P/torrent and mesh flags (all OFF, `stream/leyline_net.py`), the guest
-demo (`stream/demo.py`, OFF), the test-build launchers in `play/` (smooth frames, nameplates, Azeroth Survivors),
+demo (`stream/demo.py`, OFF), the test-build launchers in `play/` (newest test build, Azeroth Survivors),
 and the Hordes of Azeroth work (only on its own branch).
 
 ## done/: finished one-shot tools

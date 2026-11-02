@@ -657,3 +657,5 @@
 1281b addons Leyline addons: the box closed by its real name; the character's state for the Den test
 1283a ship Your Den: white at the known texture name, the box hidden wherever it is (the launcher rebuilds)
 1283b addons Leyline addons: the box that held the keys hidden
+1285a ship Your Den: Den Lite answers the game's ask for its key bindings (W did nothing without them)
+1285b addons Leyline addons: error boxes closed in the Den, default keys if walking has none

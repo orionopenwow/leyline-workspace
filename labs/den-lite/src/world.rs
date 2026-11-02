@@ -311,6 +311,26 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 shared.event("loaded", &sess.me.name, &format!("{op:#x}"));
             }
         }
+        // the game's own settings (accdata.rs): unanswered, it had no key bindings and the character never moved
+        if op == crate::accdata::CMSG_REQUEST && body.len() >= 4 {
+            let t = u32::from_le_bytes([body[0], body[1], body[2], body[3]]);
+            if t < crate::accdata::TYPES {
+                let a = crate::accdata::answer(&shared.cfg.den_dir, &user.to_string(), &sess.me.name, sess.me.guid, t);
+                shared.event("account_data", &sess.me.name, &format!("ask {t} {}", if a.len() > 20 { "kept" } else { "none kept" }));
+                c.send_raw(crate::accdata::SMSG_UPDATE, &a)?;
+            }
+            continue;
+        }
+        if op == crate::accdata::CMSG_UPDATE {
+            if let Some(t) = crate::accdata::store(&shared.cfg.den_dir, &user.to_string(), &sess.me.name, &body) {
+                shared.event("account_data", &sess.me.name, &format!("kept {t}"));
+                let mut done = Vec::with_capacity(8);
+                done.extend_from_slice(&t.to_le_bytes());
+                done.extend_from_slice(&0u32.to_le_bytes());
+                c.send_raw(crate::accdata::SMSG_COMPLETE, &done)?;
+            }
+            continue;
+        }
         if op == ovmod::CMSG_MESSAGECHAT {
             if let Some(m) = ovmod::parse_addon(&body) {
                 addon(&c.w, shared, &sess, pos, &mut sel, &mut ready, &m)?;
@@ -344,7 +364,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
             continue;
         };
         match m {
-            ClientOpcodeMessage::CMSG_READY_FOR_ACCOUNT_DATA_TIMES => c.send(&account_times(CacheMask::GLOBAL_CACHE))?,
+            ClientOpcodeMessage::CMSG_READY_FOR_ACCOUNT_DATA_TIMES => c.send(&account_times(shared, &user.to_string(), &sess.me.name, CacheMask::GLOBAL_CACHE))?,
             ClientOpcodeMessage::CMSG_CHAR_ENUM => {
                 c.send(&SMSG_CHAR_ENUM { characters: vec![character(shared, &sess.me)] })?;
                 shared.event("char_enum", &sess.me.name, "1");
@@ -369,7 +389,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 // a guest a step to the side of the host's spot
                 let side = if sess.me.host { 0.0 } else { 2.0 + (sess.me.guid % 4) as f32 };
                 let start = At { x: spot.x + side, y: spot.y, z: floor + 1.0, o: std::f32::consts::FRAC_PI_2 };
-                enter_world(&c.w, shared, &sess.me, start)?;
+                enter_world(&c.w, shared, &user.to_string(), &sess.me, start)?;
                 arrive(&c.w, shared, &sess, start)?;
                 pos = Some(start);
                 loaded = false;
@@ -662,11 +682,13 @@ pub fn addon_count(blob: &[u8]) -> usize {
     (u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize).min(512)
 }
 
-fn account_times(mask: u32) -> SMSG_ACCOUNT_DATA_TIMES {
+/// The times of the game's own settings Den Lite keeps (accdata.rs; 0: none kept, the game uses its defaults).
+fn account_times(shared: &Shared, account: &str, character: &str, mask: u32) -> SMSG_ACCOUNT_DATA_TIMES {
+    let kept = crate::accdata::times(&shared.cfg.den_dir, account, character, mask);
     let mut m = CacheMask::default();
     for (i, d) in m.data_mut().iter_mut().enumerate() {
         if mask & (1 << i) != 0 {
-            *d = Some(0);
+            *d = Some(kept.get(i).copied().unwrap_or(0));
         }
     }
     SMSG_ACCOUNT_DATA_TIMES { unix_time: now() as u32, unknown1: 1, mask: m }
@@ -786,10 +808,10 @@ fn login_time() -> DateTime {
 
 /// What the client needs from CMSG_PLAYER_LOGIN to the world on screen, in AzerothCore's order
 /// (WorldSession::HandlePlayerLogin, Player::SendInitialPacketsBeforeAddToMap / AfterAddToMap).
-fn enter_world(c: &Writer, shared: &Shared, me: &Me, p: Pos) -> io::Result<()> {
+fn enter_world(c: &Writer, shared: &Shared, account: &str, me: &Me, p: Pos) -> io::Result<()> {
     let (spot, floor) = { let d = shared.den.lock().unwrap(); (d.spot, d.floor_at(d.spot.x, d.spot.y)) };
     c.send(&SMSG_LOGIN_VERIFY_WORLD { map: Map::Kalimdor, position: Vector3d { x: p.x, y: p.y, z: p.z }, orientation: p.o })?;
-    c.send(&account_times(CacheMask::PER_CHARACTER_CACHE))?;
+    c.send(&account_times(shared, account, &me.name, CacheMask::PER_CHARACTER_CACHE))?;
     c.send(&SMSG_FEATURE_SYSTEM_STATUS { complaint_status: ComplaintStatus::EnabledWithAutoIgnore, voice_chat_enabled: false })?;
     // no message of the day: it is a line in the chat (the Den bar or the welcome says hello instead)
     c.send(&SMSG_MOTD { motds: vec![] })?;

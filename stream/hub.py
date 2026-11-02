@@ -2262,8 +2262,10 @@ class Hub:
                  row("tag", "Rules", [(t, TAG_WORDS.get(t, net.TAG_LABEL[t])) for t in fc["tag"]]),
                  row("region", "Region", [(g, net.REGION_LABEL[g]) for g in fc["region"]]),
                  row("lang", "Language", [(x, net.LANGS.get(x, x)) for x in fc["lang"]])]
-        now = (f'<a href="{e(qs(now=None))}">everyone</a> <a class="on" href="#">has players now</a>' if f.get("now")
-               else f'<a class="on" href="#">everyone</a> <a href="{e(qs(now=True))}">has players now</a>')
+        # the current choice links to itself (like "any" above), never a dead "#"
+        on_now = bool(f.get("now"))
+        now = (f'<a href="{e(qs(now=None))}"' + ("" if on_now else ' class="on"') + '>everyone</a> '
+               f'<a href="{e(qs(now=True))}"' + (' class="on"' if on_now else "") + '>has players now</a>')
         parts.append("<span>Show:</span> " + now)
         return '<nav class="net-filters" aria-label="Filter realms">' + "".join(f"<div>{p}</div>" for p in parts if p) + "</nav>"
 
@@ -2378,7 +2380,7 @@ class Hub:
             out.append(f'<article><small>{e(tag)}{" · " if tag and date else ""}{e(date)}</small><h2>{e(title)}</h2>'
                        + (f'<ul>{"".join(f"<li>{e(x)}</li>" for x in items if x)}</ul>' if any(items) else "") + "</article>")
         body = ('<section class="hb-head"><h1>News</h1><p>What changed in the launcher, the realms and the browser game.</p></section>'
-                + (f'<div class="hb-news">{"".join(out)}</div>' if out else '<p class="hb-empty">No news posts yet.</p>'))
+                + (f'<div class="hb-news">{"".join(out)}</div>' if out else '<div class="hb-news"><article><p class="hb-empty hb-c">No news posts yet.</p></article></div>'))
         return self._shell("News · Leyline", body, BASE + "/news")
 
     def card(self, i: dict, m: dict | None = None, rk=None) -> str:
@@ -3448,7 +3450,7 @@ color:#f3d29a!important;font-size:13px!important}
 .hb-item-pic img,.hb-item-pic .hb-gt-art{display:grid;width:100%;height:auto;aspect-ratio:2/1;object-fit:cover}
 .hb-item-pic figcaption{padding:5px 10px;font-size:12px;color:var(--lk-muted)}
 .hb-item h1{text-align:left}.hb-sum{font-size:17px}.hb-repo{color:var(--lk-muted)}
-.hb-list li{margin:4px 0}.hb-empty{color:var(--lk-muted)}
+.hb-list li{margin:4px 0}.hb-empty{color:var(--lk-muted)}.hb-empty.hb-c{margin:0;text-align:center}
 .hb .realm{background:var(--lk-surface)!important;border:1px solid var(--lk-border)!important;border-radius:var(--lk-r)!important;box-shadow:none!important}
 .hb .tag{background:var(--lk-surface-2)!important;border-color:var(--lk-border)!important;color:var(--lk-text-2)!important}
 /* the realm list under the hero: every server on the network, one row each */
@@ -3812,6 +3814,7 @@ transition:opacity .25s ease,transform .25s ease}
 @media (max-width:640px){.hb-gal{grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:124px;gap:8px}
 .hb-gt:not(.big,.wide) :is(.hb-gt-l,.hb-gt-c i,.hb-gt-x){display:none}
 .hb-gt-c{padding:26px 10px 9px}.hb-gt-c b{font-size:13.5px}.hb-gal.strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px) and (hover:none){.hb-gt:not(.big,.wide) .hb-gt-art.gen b{transform:translateY(-24px)}}
 /* the lightbox (HUB_JS builds it; without script each tile is a plain link) */
 html.hb-lb-on{overflow:hidden}
 .hb-lb{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:clamp(8px,3vw,36px);background:rgba(8,10,14,.88);

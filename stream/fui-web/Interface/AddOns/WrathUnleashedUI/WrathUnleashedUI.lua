@@ -709,4 +709,12 @@ end
 local denQuiet = CreateFrame("Frame")
 denQuiet:RegisterEvent("PLAYER_LOGIN")
 denQuiet:RegisterEvent("PLAYER_ENTERING_WORLD")
-denQuiet:SetScript("OnEvent", denQuietBox)
+-- and when it comes up later in the load (the den-test's screenshot, 1 Nov 22:35: still up after the world showed):
+-- watched for 20 seconds after entering the world
+local quietLeft = 0
+denQuiet:SetScript("OnEvent", function() denQuietBox(); quietLeft = 20 end)
+denQuiet:SetScript("OnUpdate", function(_, dt)
+    if quietLeft <= 0 then return end
+    quietLeft = quietLeft - (dt or 0)
+    denQuietBox()
+end)

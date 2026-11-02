@@ -58,7 +58,11 @@ def page_problems(page: str) -> dict:
     m = SERVER_ERROR.search(page)
     if m:
         out["error"].append(m.group(0))
+    # the legal disclaimer ("not affiliated with or endorsed by <publisher>") stays (owner 1 Nov 21:14)
+    disclaimer = re.compile(r"(?i)affiliated with or endorsed by\s*$")
     for m in BANNED.finditer(text + " " + title):
+        if m.start() < len(text) and disclaimer.search(text[max(0, m.start() - 40):m.start()]):
+            continue
         out["banned"].append(text[max(0, m.start() - 30):m.end() + 30] if m.start() < len(text) else title[:80])
     for ln in lines:
         if len(ln.split()) >= 5 and VERSION.search(ln):

@@ -279,6 +279,8 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
     c.send(&SMSG_TUTORIAL_FLAGS { tutorial_data: [u32::MAX; 8] })?;
     shared.log(&format!("world: {user} connected"));
     shared.event("world_auth", &user.to_string(), "");
+    let odd = play::addon_odd_crcs(&auth.addon_info);
+    shared.event("addon_crcs", &user.to_string(), &format!("{} of {addons} not standard{}{}", odd.len(), if odd.is_empty() { "" } else { ": " }, odd.join(" ")));
 
     let mut pos: Option<Pos> = None;
     // the open.json _watcher runs while this is Some (dropping it stops the thread)

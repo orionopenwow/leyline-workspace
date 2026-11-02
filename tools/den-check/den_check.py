@@ -1046,6 +1046,16 @@ def test(args, rep):
     rpt = read_json(root / "den-click.json") or rpt
     milestones(rep, events(den_dir, rpt["start"]), rpt["start"], [tuple(a) for a in rpt.get("actions", [])])
     rep.add("INFO", "outcome", str(rpt.get("outcome")))
+    if "launch" in rpt:
+        rep.add("INFO", "the launcher said", str(rpt.get("launch"))[:300])
+        rep.ok(bool(rpt.get("ground")), "the white ground (the open plane) was put in the game",
+               "your Den's ground in Data/patch-T.MPQ",
+               "The launcher couldn't make your Den's white ground: see 'the launcher said' above and send this log.")
+    crcs = [e for e in events(den_dir, rpt["start"]) if e.get("ev") == "addon_crcs"]
+    if crcs:
+        rep.add("INFO", "the game's addon list (key checks)", str(crcs[-1].get("detail"))[:300])
+    starts = [e for e in events(den_dir, rpt["start"] - 120_000) if e.get("ev") == "start"]
+    rep.add("INFO", "Den Lite's start", (str(starts[-1].get("detail")) + (" (with the test's channel)" if str(starts[-1].get("detail", "")).endswith(" test") else " (WITHOUT the test's channel)")) if starts else "no start in its log in the last 2 minutes (one was already running)")
     if rpt.get("phase") == "in_world" or steps.rows:
         print("")
         print("In your Den:")

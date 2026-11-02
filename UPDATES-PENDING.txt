@@ -630,3 +630,8 @@
 1266d addons Leyline addons for desktop players: the UI size fits your screen, no jumps
 1266e mods Browser realm: the same addons
 1266f scripts Realm scripts reload: the in-game .bug command answers again (owner OK 1 Nov 21:14)
+1268a ship Den test round 2 and the site sweep fixes (the launcher rebuilds on GitHub)
+1268b den-lite Den Lite: notes the game's addon key checks for the Den test
+1268c signin Website: small fixes from the overnight sweep (realm filter, gallery on phones, empty News)
+1268d addons Leyline addons: the combat-log box closed in Your Den
+1268e mods Browser realm: the same addons

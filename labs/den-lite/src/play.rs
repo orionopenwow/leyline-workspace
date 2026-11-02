@@ -166,6 +166,35 @@ pub fn addon_names(blob: &[u8]) -> Vec<String> {
     out
 }
 
+/// The addons whose key CRC isn't the standard one (AzerothCore sends those its public key; Den Lite doesn't):
+/// for the den-test's report.
+pub fn addon_odd_crcs(blob: &[u8]) -> Vec<String> {
+    use flate2::read::ZlibDecoder;
+    let mut out = Vec::new();
+    if blob.len() < 4 {
+        return out;
+    }
+    let mut b = Vec::new();
+    if ZlibDecoder::new(&blob[4..]).take(64 * 1024).read_to_end(&mut b).is_err() || b.len() < 4 {
+        return out;
+    }
+    let n = (u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize).min(512);
+    let mut at = 4;
+    for _ in 0..n {
+        let Some(end) = b[at..].iter().position(|&c| c == 0).map(|e| at + e) else { break };
+        let name = String::from_utf8_lossy(&b[at..end]).to_string();
+        if end + 6 > b.len() {
+            break;
+        }
+        let crc = u32::from_le_bytes([b[end + 2], b[end + 3], b[end + 4], b[end + 5]]);
+        if crc != 0x4C1C_776D {
+            out.push(format!("{}={crc:08x}", name.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_').take(40).collect::<String>()));
+        }
+        at = end + 1 + 1 + 4 + 4;
+    }
+    out
+}
+
 /// `.den mods`: the addons the game loaded, and the launcher's mod list when the game folder is known.
 pub fn mods_lines(addons: &[String], client: Option<&Path>) -> Vec<String> {
     let (stock, own): (Vec<&String>, Vec<&String>) = addons.iter().partition(|a| a.to_ascii_lowercase().starts_with("blizzard_"));

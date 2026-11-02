@@ -78,8 +78,17 @@ ground** (also `.den invite`, `.den forge`) are asked of the launcher through `<
 
 `<dens>/den-lite.events` (new at every start; `src/events.rs`): one JSON line per step on the way in
 (`login_challenge`, `auth_ok`, `realm_list`, `world_auth`, `char_enum`, `char_create`, `player_login`, `in_world`,
-`first_move`, `builder_ready`, `ask`, `peer_seen`, `logout`), never a password. The launcher's one-click sign-in
+`first_move`, `builder_ready`, `ask`, `peer_seen`, `logout`), and what happens in the Den (`den_change`, `den_save`,
+`den_load`, `autosave`, `answer`, `test_cmd`), never a password or an invite link. The launcher's one-click sign-in
 (`launcher/src-tauri/src/denclick.rs`) and the owner's `den-test` (tools/den-check) read it.
+
+### The den-test's commands (`src/testctl.rs`)
+
+Started for a test (`--test-control`, or `DEN_LITE_TEST_CONTROL=1`, which the launcher's `den-play --test` sets; only
+on 127.0.0.1), Den Lite takes chat commands from `<dens>/den-lite.test-cmd` (`{"id": n, "cmd": ".den place chair"}`)
+while the player is in the world and runs them as if they had been typed, so the test never depends on the game
+window having the keyboard. Only `.den` / `.build` commands. Each one's lines and changes go to
+`<dens>/den-lite.test-out` (one JSON line: `said`, `created`, `destroyed`, `props`, `look`, `size`).
 
 ### Growing: the white room's sizes
 

@@ -141,7 +141,7 @@ def page(results, meta: dict) -> str:
             + (f'<div class="act">Next: {e(r.action)}</div>' if r.status == FAIL and r.action else "") + "</td></tr>"
             for r in rs)
         groups.append(f'<details{" open" if n[FAIL] else ""}><summary>{e(feat)}: '
-                      f'{"red" if n[FAIL] else "green"}</summary><table>{rows}</table></details>')
+                      f'{"red" if n[FAIL] else ("green" if n[PASS] else "skipped")}</summary><table>{rows}</table></details>')
     manual = "".join(f'<li><b>{e(t)}</b><span class="w">Where: {e(w)}</span><span class="g">Good: {e(g)}</span></li>'
                      for t, w, g in MANUAL)
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -149,7 +149,7 @@ def page(results, meta: dict) -> str:
 <body><main>
 <h1>Leyline release audit</h1>
 <div class="dim">{e(meta.get('when', ''))} · {meta.get('secs', 0):.0f} seconds · {e(meta.get('mode', 'live'))} · {e(meta.get('where', ''))}</div>
-<div class="verdict {'ok' if ok else 'bad'}">{'Every automated check passed' if ok else f'{c[FAIL]} checks failed'}
+<div class="verdict {'ok' if ok else 'bad'}">{'Every automated check passed' if ok else f'{c[FAIL]} check{"s" if c[FAIL] != 1 else ""} failed'}
  <span class="dim">({c[PASS]} passed, {c[FAIL]} failed, {c[SKIP]} skipped)</span></div>
 <div class="next"><b>Next:</b> {e(next_action(results))}</div>
 <h2>Only you can check these</h2>

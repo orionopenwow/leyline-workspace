@@ -29,7 +29,7 @@ KEY_PAGES = [
     ("Azeroth Survivors", "/wrath/survivors", r"(?i)survivors"),
     ("Hero Key", "/wrath/key", r"(?i)hero key|key"),
     ("Hosting guide", "/wrath/docs/hosting", r"<h1|<h2"),
-    ("Play page", "/wrath", r"(?i)<html"),
+    ("Play", "/wrath", r"(?i)<html"),
 ]
 NO_FETCH = re.compile(r"^/(?:wrath/play|__gate|logout|login|auth|api/auth|wrath/admin|wrath/survivors/play)(?:[/?]|$)"
                       r"|[?&](?:go|code|t)=")

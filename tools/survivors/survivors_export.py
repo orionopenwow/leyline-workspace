@@ -13,8 +13,8 @@ Writes <folder>/slice/ (the files), <folder>/names.sha256 ("<sha256>  <name>", o
 <folder>/export.json (counts, bytes, what was left out). A fresh slice each time: <folder>/slice.new, swapped in at
 the end, so a failed run leaves the last good slice alone.
 
-Left out on purpose (never in the slice): Interface\\Glues\\Common\\Glues-WoW-Logo.blp (the brand rule: the game shows
-no franchise logo; the verify pass shows whether the game misses it), and any name that is not a plain relative
+Left out on purpose (never in the slice): Interface\\Glues\\Common\\Glues-WoW-Logo.blp and
+Interface\\Glues\\Mainmenu\\Glues-BlizzardLogo.blp (the brand rule: the game shows no franchise logo; the verify pass shows whether the game misses it), and any name that is not a plain relative
 game path.
 Standard library only (Python 3.9+). Last line: "EXPORT OK: ..." or an error (exit 1).
 """
@@ -32,7 +32,9 @@ import sys
 import tempfile
 import urllib.parse
 
-LEAVE_OUT = {"interface\\glues\\common\\glues-wow-logo.blp"}
+# The franchise logos the client asks for on its glue screens (both are in upstream's boot-manifest.json, so the
+# boot prefetch alone puts them in every recording).
+LEAVE_OUT = {"interface\\glues\\common\\glues-wow-logo.blp", "interface\\glues\\mainmenu\\glues-blizzardlogo.blp"}
 NAME_RE = re.compile(r"^[A-Za-z0-9 _\-.()'&+!,\[\]]+(\\[A-Za-z0-9 _\-.()'&+!,\[\]]+)*$")
 
 

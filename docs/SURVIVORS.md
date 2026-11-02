@@ -50,8 +50,8 @@ sv-play (hosting/survivors/docker-compose.yml)   our wenilla-host --www <build> 
    browser build, the lock with every file's SHA-256, and the upstream host for Windows, each with a `.sha256`.
    Nothing to build or copy by hand: the recorder (step 5) downloads them into `tools\survivors\dist\` and
    `tools\survivors\bin\` (`survivors_fetch.py`), checks every hash, and refuses a build that is not the locked one.
-   The first download also writes the build's file list into `stream/survivors/upstream.lock.json`: ship that (the
-   server checks the upload against it).
+   The lock in the repo already lists the first CI build's files (taken from the `survivors-latest` release, 2 Nov), so
+   the server checks the upload against the same list; a newer build that differs is refused until the lock moves.
 5. **Record the game's files, on your PC, from your own client.** Run `tools\survivors\Record Survivors files.bat` and
    drag your 1.12 client's `Data` folder in when it asks (remembered after). It starts the upstream host on
    127.0.0.1 only, opens a fresh Edge window and plays the game's own autopilot: every zone once with a full crowd,
@@ -61,8 +61,8 @@ sv-play (hosting/survivors/docker-compose.yml)   our wenilla-host --www <build> 
    `names.sha256`. Nothing is uploaded. `... quick` is a 5-minute try-out.
 6. **Verify, still on your PC.** `Record Survivors files.bat verify` plays the slice alone through the same host the
    server runs (`stream\bin\wenilla-host.exe --only-listed`). Anything still missing lands in
-   `out\verify\missing.txt`; run step 5 again and it adds those. The franchise logo is left out on purpose and shows up
-   there; that one is expected.
+   `out\verify\missing.txt`; run step 5 again and it adds those. The two franchise logos (`Glues-WoW-Logo.blp`,
+   `Glues-BlizzardLogo.blp`) are left out on purpose and show up there; those are expected.
 7. **Upload and turn on.** `hosting\survivors\Put Survivors on Leyline - check.bat` first (read-only: DNS, what is
    ready). Then `Put Survivors on Leyline.bat`: survivors-check on your PC, the upload, survivors-check again on the
    server, sv-play, the Caddy site, a self-check, and only then Play on `/wrath/survivors`. It rolls back if any step
@@ -124,7 +124,9 @@ Tests: `python3 -I stream/tests/test_survivors.py`, `python3 -I tools/survivors/
 
 - **Permission statement** (TODO(owner)): what Aethus said about hosting it, in your words, for the page.
 - **The address** (TODO(owner)): `survivors.leylinelauncher.com` is a placeholder (the address is config: `address.txt`, nothing else names it).
-- **The logo**: the slice leaves out `Interface\Glues\Common\Glues-WoW-Logo.blp`. Whether the pick screen misses it
+- **The logos**: the slice leaves out `Interface\Glues\Common\Glues-WoW-Logo.blp` and
+  `Interface\Glues\Mainmenu\Glues-BlizzardLogo.blp` (both are in upstream's `boot-manifest.json`, so every recording
+  asks for them; the exporter, survivors-check and the server's self-check all refuse them). Whether the pick screen misses it
   visibly only shows on your PC (the verify pass). If it does, the fix is in the build, not the slice.
 - **Words in the game itself**: the page and our files carry no franchise names, but the game draws its own screens
   from the client's art and tables; check the pick screen and the results screen for any franchise name or logo

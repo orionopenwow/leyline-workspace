@@ -32,7 +32,8 @@ def load(name):
 rec, exp, chk = load("survivors_rec"), load("survivors_export"), load("survivors_check")
 T = tempfile.mkdtemp(prefix="sv-tools-")
 FILES = {"dbfilesclient\\map.dbc": b"WDBC-map", "creature\\wolf\\wolf.m2": b"MD20-wolf",
-         "interface\\glues\\common\\glues-wow-logo.blp": b"BLP2-logo", "sound\\x y\\hit (1).wav": b"RIFF"}
+         "interface\\glues\\common\\glues-wow-logo.blp": b"BLP2-logo", "sound\\x y\\hit (1).wav": b"RIFF",
+         "interface\\glues\\mainmenu\\glues-blizzardlogo.blp": b"BLP2-maker-logo"}
 
 
 class Fake(BaseHTTPRequestHandler):
@@ -91,13 +92,15 @@ check("rec: /data goes back no-store (the browser cache never hides a name)", h.
 get("/data/dbfilesclient%5Cmap.DBC")
 get("/data/Creature/Wolf/Wolf.m2")
 get("/data/Interface%5CGlues%5CCommon%5CGlues-WoW-Logo.blp")
+get("/data/Interface%5CGlues%5CMainmenu%5CGlues-BlizzardLogo.blp")
 st, _, _ = get("/data/World%5CMaps%5CNope.adt")
 check("rec: a name the client lacks passes the 404 through", st == 404)
 get("/data/__index")
 get("/data/Creature%5CWolf%5CWolf.m2", "HEAD")
 names = open(os.path.join(out, "recorded.txt"), encoding="utf-8").read().split("\n")[:-1]
 check("rec: each served name once, in any case, first spelling kept, backslashes",
-      names == ["DBFilesClient\\Map.dbc", "Creature\\Wolf\\Wolf.m2", "Interface\\Glues\\Common\\Glues-WoW-Logo.blp"], names)
+      names == ["DBFilesClient\\Map.dbc", "Creature\\Wolf\\Wolf.m2", "Interface\\Glues\\Common\\Glues-WoW-Logo.blp",
+                "Interface\\Glues\\Mainmenu\\Glues-BlizzardLogo.blp"], names)
 check("rec: the missing name in missing.txt", open(os.path.join(out, "missing.txt")).read() == "World\\Maps\\Nope.adt\n")
 check("rec: __index is not a game file", "__index" not in open(os.path.join(out, "recorded.txt")).read()
       and "__index" in open(os.path.join(out, "requests.log")).read())
@@ -105,7 +108,7 @@ st, h, b = get("/__rec/")
 check("rec: the recorder page, isolated, with the plan", st == 200 and b"survivors_auto=Mage:late&survivors_map=" in b
       and h.get("cross-origin-opener-policy") == "same-origin" and b"__PLAN__" not in b)
 st, _, b = get("/__rec/stats")
-check("rec: stats", json.loads(b)["names"] == 3 and json.loads(b)["missing"] == 1)
+check("rec: stats", json.loads(b)["names"] == 4 and json.loads(b)["missing"] == 1)
 full = rec.plan("full")
 qs = [p["q"] for p in full if p["q"]]
 check("rec: the full plan covers all 16 zones and all 9 classes, the results screen and a hand pass",
@@ -117,7 +120,7 @@ get("/__rec/note", "POST", json.dumps({"done": True, "evil": "x" * 10}).encode()
 check("rec: the page's done ends the session; notes keep only known fields", done.is_set()
       and "evil" not in open(os.path.join(out, "passes.json")).read())
 log2 = rec.Log(out)
-check("rec: a second session starts from what is there (names add up)", len(log2.seen["recorded.txt"]) == 3)
+check("rec: a second session starts from what is there (names add up)", len(log2.seen["recorded.txt"]) == 4)
 r = subprocess.run([sys.executable, "-I", os.path.join(HERE, "survivors_rec.py"), "--listen", "0.0.0.0:18999", "--out", out],
                    capture_output=True, text=True, timeout=20)
 check("rec: refuses to listen beyond this PC", r.returncode == 2)
@@ -134,14 +137,15 @@ sl = os.path.join(out, "slice")
 have = sorted(os.path.relpath(os.path.join(d, f), sl).replace(os.sep, "/") for d, _, fs in os.walk(sl) for f in fs)
 check("exp: exactly the recorded files, folders per name, first spelling", have == ["Creature/Wolf/Wolf.m2", "DBFilesClient/Map.dbc",
                                                                                    "Sound/X Y/Hit (1).wav"], have)
-check("exp: the franchise logo is left out", not any("logo" in x.lower() for x in have))
+check("exp: the franchise logos are left out", not any("logo" in x.lower() for x in have))
 sums = open(os.path.join(out, "names.sha256"), encoding="utf-8").read()
 check("exp: names.sha256, sorted, sha256 + two spaces + name", sums.splitlines() == [
     f"{hashlib.sha256(b'MD20-wolf').hexdigest()}  Creature\\Wolf\\Wolf.m2",
     f"{hashlib.sha256(b'WDBC-map').hexdigest()}  DBFilesClient\\Map.dbc",
     f"{hashlib.sha256(b'RIFF').hexdigest()}  Sound\\X Y\\Hit (1).wav"], sums)
 rep = json.load(open(os.path.join(out, "export.json")))
-check("exp: the report: left out, not refused silently", rep["left_out"] == ["Interface\\Glues\\Common\\Glues-WoW-Logo.blp"]
+check("exp: the report: left out, not refused silently", rep["left_out"] == ["Interface\\Glues\\Common\\Glues-WoW-Logo.blp",
+                                                                                 "Interface\\Glues\\Mainmenu\\Glues-BlizzardLogo.blp"]
       and len(rep["refused_names"]) == 4 and rep["files"] == 3)
 for bad in ("..\\x", "a\\..\\b", "C:\\x", "\\x", "a\\\\b", ".git\\config", "a\\b.", "a\\<b>", ""):
     check(f"exp: {bad!r} is not a plain game path", exp.clean(bad) is None)
@@ -163,11 +167,14 @@ with open(os.path.join(sl, "DBFilesClient", "Map.dbc"), "ab") as f:
     f.write(b"!")
 os.makedirs(os.path.join(sl, "Interface", "Glues", "Common"))
 open(os.path.join(sl, "Interface", "Glues", "Common", "Glues-WoW-Logo.blp"), "wb").write(b"x")
+os.makedirs(os.path.join(sl, "Interface", "Glues", "MainMenu"))
+open(os.path.join(sl, "Interface", "Glues", "MainMenu", "Glues-BlizzardLogo.blp"), "wb").write(b"x")
 os.remove(os.path.join(sl, "Sound", "X Y", "Hit (1).wav"))
 bad = chk.check_slice(sl, os.path.join(out, "names.sha256"))
 check("chk: changed, extra, missing and never-allowed files all found",
       any("changed" in b and "map.dbc" in b for b in bad) and any("missing" in b and "hit (1).wav" in b for b in bad)
-      and any("not in names.sha256" in b and "logo" in b for b in bad) and any("brand rule" in b for b in bad), bad)
+      and any("not in names.sha256" in b and "logo" in b for b in bad) and any("brand rule" in b and "wow-logo" in b for b in bad)
+      and any("brand rule" in b and "blizzardlogo" in b for b in bad), bad)
 dist = os.path.join(T, "dist")
 os.makedirs(os.path.join(dist, "licenses"))
 for n, b in (("index.html", b"<html>"), ("wenilla_bg.wasm", b"\0asm"), ("licenses/LICENSE-MIT", b"MIT"),

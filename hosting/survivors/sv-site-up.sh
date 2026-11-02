@@ -214,7 +214,9 @@ ok=""
 for _ in $(seq 1 30); do [ "$(inside /index.html)" = 200 ] && { ok=1; break; }; sleep 1; done
 [ -n "$ok" ] || { docker logs --tail 20 "$SITE" >&2 2>&1 || true; fail "sv-play does not serve the page"; }
 c=$(inside /data/__index); [ "$c" = 200 ] || fail "sv-play does not list the slice (/data/__index -> $c)"
-c=$(inside "/data/Interface%5CGlues%5CCommon%5CGlues-WoW-Logo.blp"); [ "$c" = 404 ] || fail "sv-play serves the franchise logo ($c): the slice must not hold it"
+for logo in Common%5CGlues-WoW-Logo.blp Mainmenu%5CGlues-BlizzardLogo.blp; do
+  c=$(inside "/data/Interface%5CGlues%5C$logo"); [ "$c" = 404 ] || fail "sv-play serves a franchise logo ($c): the slice must not hold it"
+done
 note "sv-play serves the page and the slice; anything else is a 404"
 
 log "4/6 Caddy: https://$HOST"

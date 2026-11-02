@@ -711,8 +711,36 @@ local function denQuietAny()
         fr = EnumerateFrames(fr)
     end
 end
+-- 2 Nov 15:52: the ground drew white, but an "Okay" box still sat in the middle with no combat-log text the 0.5 s
+-- watch could see. In the Den the game's error boxes are closed whatever they say (their text goes to Den Lite's log)
+local denBoxSeen = {}
+local function denCloseErrorBoxes()
+    if not W.InDen() then return end
+    for _, pair in ipairs({ { "BasicScriptErrors", "BasicScriptErrorsText" }, { "ScriptErrors", "ScriptErrorsText" } }) do
+        local d = _G[pair[1]]
+        if d and d.IsShown and d:IsShown() then
+            local t = d.Text or _G[pair[2]]
+            local text = t and t.GetText and t:GetText() or ""
+            if not denBoxSeen[pair[1] .. text] and SendAddonMessage and UnitName then
+                denBoxSeen[pair[1] .. text] = true
+                pcall(SendAddonMessage, "OVMOD", "wudiag\tclosed:" .. pair[1] .. ":" .. tostring(text):sub(1, 120):gsub("[\t\n]", " ") .. "\t1/1\t", "WHISPER", UnitName("player"))
+            end
+            d:Hide()
+        end
+    end
+end
+-- 2 Nov: the Den's game had no key bindings at all (no bindings-cache.wtf; Den Lite never answered the game's ask for
+-- them, fixed in Den Lite's accdata.rs): W did nothing. If walking forward still has no key, the game's defaults
+local function denKeys()
+    if not W.InDen() or not GetBindingKey or not LoadBindings then return end
+    if GetBindingKey("MOVEFORWARD") then return end
+    pcall(LoadBindings, DEFAULT_BINDINGS or 0)
+    if SaveBindings then pcall(SaveBindings, ACCOUNT_BINDINGS or 1) end
+end
+W.DenKeys = denKeys
 local function denQuietBox()
     pcall(denQuietAny)
+    pcall(denCloseErrorBoxes)
     -- message() shows ScriptErrors (ScriptErrorsText) in this client; BasicMessageDialog in later ones
     for _, pair in ipairs({ { "BasicScriptErrors", "BasicScriptErrorsText" }, { "BasicMessageDialog", "BasicMessageDialogText" }, { "ScriptErrors", "ScriptErrorsText" },
         { "StaticPopup1", "StaticPopup1Text" }, { "StaticPopup2", "StaticPopup2Text" }, { "StaticPopup3", "StaticPopup3Text" },
@@ -740,6 +768,8 @@ local function diagSend(what)
     if SendAddonMessage and UnitName then pcall(SendAddonMessage, "OVMOD", "wudiag\t" .. tostring(what):gsub("[\t\n]", " ") .. "\t1/1\t", "WHISPER", UnitName("player")) end
 end
 local function denDiag()
+    diagSend("keys:forward=" .. tostring(GetBindingKey and GetBindingKey("MOVEFORWARD")) .. " W=" .. tostring(GetBindingAction and GetBindingAction("W"))
+        .. " set=" .. tostring(GetCurrentBindingSet and GetCurrentBindingSet()))
     local f = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
     diagSend("focus:" .. ((f and f.GetName and f:GetName()) or (f and "unnamed") or "none"))
     -- what the game thinks of the character (2 Nov: it never moved, with a real keyboard either)
@@ -763,13 +793,17 @@ local function denDiag()
         fr = EnumerateFrames(fr)
     end
 end
-denQuiet:SetScript("OnEvent", function() denQuietBox(); quietLeft = 20; diagAt = W.InDen() and 4 or nil end)
+denQuiet:SetScript("OnEvent", function() pcall(denKeys); denQuietBox(); quietLeft = 20; diagAt = W.InDen() and 4 or nil end)
 denQuiet:SetScript("OnUpdate", function(_, dt)
     if diagAt then
         diagAt = diagAt - (dt or 0)
         if diagAt <= 0 then diagAt = nil; pcall(denDiag) end
     end
-    if quietLeft <= 0 then return end
+    if quietLeft <= 0 then
+        quietTick = (quietTick or 0) + (dt or 0)
+        if quietTick >= 2 then quietTick = 0; pcall(denCloseErrorBoxes) end
+        return
+    end
     quietLeft = quietLeft - (dt or 0)
     quietTick = (quietTick or 0) + (dt or 0)
     if quietTick >= 0.5 then quietTick = 0; denQuietBox() end

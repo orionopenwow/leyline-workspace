@@ -48,6 +48,8 @@ for a in "$@"; do u="$a"; done
 case "$u" in
   http://*/healthz) [ -f "$S/fail_health" ] && exit 7; [ -f "$S/running" ] || exit 7; echo ok ;;
   http://*/api/listing/realms.json) echo '{"schema":1,"realms":[]}' ;;
+  http://*/api/mesh/node) [ -f "$S/fail_mesh" ] && exit 7; echo '{"host":"relay.openvanilla.app","pubkey":"abcdef0123456789"}' ;;
+  http://*/api/mesh/realms.json) echo '{"schema":1,"realms":[]}' ;;
   https://*/healthz) printf 200 ;;
   *) exit 6 ;;
 esac
@@ -137,6 +139,8 @@ class RelayDeploy(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(os.stat(os.path.join(self.dir, "relay.env")).st_mode), 0o600)
         self.assertNotIn("\r", self.read(self.dir, "relay.env") + self.read(self.dir, "compose.yml"))
         self.assertEqual(self.read(self.portal, "relay-listing.url"), "http://172.18.0.1:8099/api/listing/realms.json\n")
+        # the mesh, step 1 (owner 2 Nov): on in relay.env, checked after the start
+        self.assertEqual(self.relay_env().get("RELAY_MESH"), "1")
         # rerun once DNS is there: completes, same secret
         rc, out = self.run_up()
         self.assertEqual(rc, 0, out)

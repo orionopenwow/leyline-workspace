@@ -196,6 +196,13 @@ kv_set "$DIR/relay.env" RELAY_SHARED_AUTH_PORT "$SHARED"
 kv_set "$DIR/relay.env" RELAY_PORT_MIN "$PMIN"
 kv_set "$DIR/relay.env" RELAY_PORT_MAX "$PMAX"
 note "relay.env: RELAY_HTTP_BIND=$BIND RELAY_SHARED_AUTH_PORT=$SHARED RELAY_PORT_MIN/MAX=$PMIN-$PMAX"
+# The Leyline mesh, step 1 (docs/LEYLINE-MESH.md "The order"; owner 2 Nov: "yes add the bigger network"): this relay
+# keeps and swaps the network's signed records. Launchers still read today's listing until the site's mesh_realms
+# flag (step 2). WU_RELAY_MESH=0 turns it off again on the next run.
+MESH="${WU_RELAY_MESH:-1}"
+kv_set "$DIR/relay.env" RELAY_MESH "$MESH"
+kv_set "$DIR/relay.env" RELAY_MESH_BOOTSTRAP "https://$PUBLIC_NAME"
+note "relay.env: RELAY_MESH=$MESH"
 
 log "4/7 Image wu-relay:1"
 if ! docker build -q -f "$SRC/relay/Dockerfile" -t wu-relay:1 "$SRC" >/dev/null; then
@@ -235,6 +242,19 @@ lim=$(docker inspect -f '{{.HostConfig.Memory}}' wu-relay 2>/dev/null || echo 0)
 note "memory limit $(( lim / 1048576 )) MB, in use $(docker stats --no-stream --format '{{.MemUsage}}' wu-relay 2>/dev/null || echo '?')"
 curl -fsS -m 3 "http://$BIND/api/listing/realms.json" | python3 -I -c 'import json,sys;d=json.load(sys.stdin);print("  listing ok:", len(d["realms"]), "community realm(s)")' \
   || { rollback; die "the listing API (/api/listing/realms.json) did not answer; rolled back."; }
+if [ "$MESH" = 1 ]; then
+  ok=""
+  for _ in $(seq 1 "$TRIES"); do
+    if curl -fsS -m 3 "http://$BIND/api/mesh/node" >/dev/null 2>&1; then ok=1; break; fi
+    sleep "$PAUSE"
+  done
+  [ -n "$ok" ] || { docker logs --tail 30 wu-relay >&2 2>&1 || true; rollback; die "the mesh is on but /api/mesh/node did not answer; rolled back."; }
+  note "mesh node ok: $(curl -fsS -m 3 "http://$BIND/api/mesh/node" | python3 -I -c 'import json,sys;d=json.load(sys.stdin);print(str(d.get("host") or d.get("http") or "?"), "key", str(d.get("pubkey") or d.get("node") or "?")[:12]+"...")' 2>/dev/null || echo answered)"
+  # the mesh's own list next to today's (the same realms once the first beats have gone round; a short gap is normal)
+  a=$(curl -fsS -m 3 "http://$BIND/api/listing/realms.json" | python3 -I -c 'import json,sys;print(len(json.load(sys.stdin)["realms"]))' 2>/dev/null || echo "?")
+  b=$(curl -fsS -m 3 "http://$BIND/api/mesh/realms.json" | python3 -I -c 'import json,sys;print(len(json.load(sys.stdin)["realms"]))' 2>/dev/null || echo "?")
+  note "realms: listing $a, mesh $b (the mesh fills in as realms send their next beat, within a minute)"
+fi
 # The play page's realm list (stream/wrath_portal.py, /wrath/realms) reads the listing straight from here,
 # not through DNS: wu-portal is on the same Docker network as Caddy and reads this file at each refresh.
 if [ -d "$PORTAL_DIR" ]; then

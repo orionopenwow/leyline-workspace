@@ -182,7 +182,7 @@ already do.
 | Hide and seek | dalaran | `ov_events.lua` | how often a round runs, trivia, the world's own events, players needed |
 | Minigolf night | dalaran | `ov_golf.lua`, `ov_modes.lua`, `ov_playmode.lua`, `ov_qol.lua` | hub teleports, duel reset |
 | My Den | den | `ov_den.lua`, `ov_build.lua` | the room's look, the building budget |
-| Survivors | (none yet) | (none) | shown as coming soon, with its credit: nothing is hosted yet |
+| Survivors | (none) | (none) | not a realm mode: Azeroth Survivors runs in the browser at its own address (`docs/SURVIVORS.md`); coming soon until the owner turns it on |
 
 ### The folder
 

@@ -5,8 +5,11 @@
 --
 -- With a session: the login screen signs in by itself with the one-time login the realm made for this start
 -- (DefaultServerLogin, as the stock Login button does), under a cover with the spinning Leyline mark, a bar and a
--- tip, until character select is up; the realm is picked by name when the realm list shows; with `enter`, the
--- last character enters the world. Without a session nothing here runs, and the screens are Forever UI's own.
+-- tip, until character select is up; the realm is picked by name when the realm list shows (the only one, when
+-- the name isn't there); with `enter`, the last character enters the world, and with none, one is made first
+-- (`name`, else Wren: a human, as Den Lite's own) and then enters. Without a session nothing here runs, and the
+-- screens are the stock ones (or Forever UI's: it keeps the stock screens' names, so the same frames are watched).
+-- Works with or without Forever UI's glue: only stock glue functions and frame names are used.
 --
 -- Rules: the password is read once into a local, the global is cleared at once, and the local is dropped as soon
 -- as it was handed over. Every step is pcall-guarded; anything unexpected (an error dialog, a timeout) takes the
@@ -29,7 +32,18 @@ local TIPS = {
 	"Ideas, questions or a realm to share? The forum is open at play.openvanilla.app.",
 	"Host your own realm from the Leyline launcher in three steps.",
 }
-local WAIT_LOGIN, WAIT_SELECT, WAIT_ENTER = 20, 45, 20
+local WAIT_LOGIN, WAIT_SELECT, WAIT_ENTER, WAIT_CREATE = 20, 45, 20, 20
+-- the plain words for why signing in by itself stopped (shown on the normal screen, never the password)
+local WHY = {
+	["dialog"] = "the server answered with a message",
+	["no login screen"] = "the login screen didn't show",
+	["no character select"] = "character select didn't show",
+	["left character select"] = "character select closed",
+	["no character"] = "there was no character to play",
+	["character create"] = "making a character didn't finish",
+	["enter world"] = "entering the world didn't start",
+	["login call failed"] = "the login screen didn't take it",
+}
 local MARK = "Interface\\Glues\\Leyline\\LeylineMark"
 
 local function shown(f) return f and f.IsShown and f:IsShown() end
@@ -109,27 +123,65 @@ local function coverTick(now)
 end
 
 -- ---------- the steps
+local note
+local function say(text)
+	pcall(function()
+		if not note then
+			note = CreateFrame("Frame", "LeylineHybridNote", GlueParent or UIParent)
+			note:SetFrameStrata("DIALOG")
+			note:SetAllPoints()
+			note.line = note:CreateFontString(nil, "OVERLAY")
+			note.line:SetFont("Fonts\\FRIZQT__.TTF", 13)
+			note.line:SetTextColor(1, 0.86, 0.5)
+			note.line:SetWidth(640)
+			note.line:SetPoint("TOP", note, "TOP", 0, -18)
+		end
+		note.line:SetText(text)
+		note:Show()
+		L.noteUntil = GetTime() + 20
+	end)
+end
+
 local function giveUp(why)
 	L.state, L.why = "done", why
 	S = nil
 	coverDown()
+	say("Signing in by itself stopped: " .. (WHY[why] or "something unexpected happened") .. ". Carry on here as usual.")
 end
 
 local function pickRealm()
 	if type(S.realm) ~= "string" or S.realm == "" then return false end
 	local ok, hit = pcall(function()
 		local cats = { GetRealmCategories() }
+		local all = {}
 		for c = 1, math.max(#cats, 1) do
 			for i = 1, (GetNumRealms(c) or 0) do
 				if GetRealmInfo(c, i) == S.realm then
 					ChangeRealm(c, i)
 					return true
 				end
+				all[#all + 1] = { c, i }
 			end
+		end
+		-- not by its name, but the only realm there is: that one (a Den lists one)
+		if #all == 1 then
+			ChangeRealm(all[1][1], all[1][2])
+			return true
 		end
 		return false
 	end)
 	return ok and hit
+end
+
+-- A character like Den Lite's own (a human; 2 male, 3 female), then CreateCharacter, as the stock Create button.
+local function createCharacter()
+	local name = (type(S.name) == "string" and S.name:match("^%a+$") and #S.name <= 12) and S.name or "Wren"
+	return pcall(function()
+		if SetSelectedRace then SetSelectedRace(1) end
+		if SetSelectedSex then SetSelectedSex(3) end
+		if SetSelectedClass then SetSelectedClass(1) end
+		CreateCharacter(name)
+	end)
 end
 
 local function step(now)
@@ -167,8 +219,25 @@ local function step(now)
 			pcall(EnterWorld)
 			L.state, L.t = "entering", now
 			S = nil
+		elseif now - L.t > 3 and not L.created and SetGlueScreen and CreateCharacter then
+			-- no character yet: make one, then back here to enter
+			L.created = true
+			coverUp("Making your character...")
+			if not pcall(SetGlueScreen, "charcreate") then return giveUp("character create") end
+			L.state, L.t = "create", now
 		elseif now - L.t > WAIT_ENTER then
 			giveUp("no character")
+		end
+	elseif L.state == "create" then
+		if shown(GlueDialog) then
+			giveUp("character create")
+		elseif shown(CharacterCreate) and not L.sentCreate then
+			L.sentCreate = true
+			if not createCharacter() then return giveUp("character create") end
+		elseif shown(CharacterSelect) and L.sentCreate then
+			L.state, L.t = "select", now        -- the list now has it: enter
+		elseif now - L.t > WAIT_CREATE then
+			giveUp("character create")
 		end
 	elseif L.state == "entering" then
 		-- the game's own loading screen follows; if it doesn't (a dialog, a refusal), the cover goes
@@ -183,5 +252,6 @@ driver:SetScript("OnUpdate", function(self)
 	local ok, err = pcall(step, now)
 	if not ok then giveUp("error: " .. tostring(err)) end
 	coverTick(now)
-	if L.state == "done" and not shown(cover) then self:SetScript("OnUpdate", nil) end
+	if note and L.noteUntil and now > L.noteUntil then pcall(note.Hide, note); L.noteUntil = nil end
+	if L.state == "done" and not shown(cover) and not L.noteUntil then self:SetScript("OnUpdate", nil) end
 end)

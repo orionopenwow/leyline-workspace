@@ -598,3 +598,11 @@
 1259a ship Launcher: Invite friends from your Den in one click (its own relay link, one login per friend, Stop sharing), Got an invite link? in Realms
 1259b den-lite Den Lite again: friends join through the Leyline network (one-time logins, see each other, host-only building)
 1259c leyline Leyline repo: export again so Leyline.exe gets Invite friends
+1260a client-build Browser game build with client patch 20261101a: no destroy box for an item you are not visibly holding; enemy nameplates back to red/yellow/green bars in the normal frame (about an hour)
+1260b client Ship that browser game build (undo: client-back)
+1261a ship Launcher: My Den signs in and enters the world by itself (no typing), the Den builder works in your Den, Invite a friend and Shape the ground from in game; the release audit and den-check / den-test steps
+1261b den-lite Den Lite again: step log for den-test, builder and Den panel support, character create, in-game invite and Forge requests
+1261c foreverui In game: the Den panel gets Shape the ground and accepts Den invite links (browser game)
+1261d addons Leyline addons for desktop players: the same Den panel update
+1261e signin Site: guides without version numbers in sentences (version chips); Survivors page (Coming soon)
+1261f leyline Leyline repo: export again so Leyline.exe gets My Den one click

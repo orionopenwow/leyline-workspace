@@ -44,6 +44,8 @@ PORT = int(os.environ.get("WU_CONTROL_PORT", "8097"))
 AUTO = ROOT / "control" / "autopilot.json"
 LAST = ROOT / "control" / "last-run.json"
 LAST_CHECK = ROOT / "control" / "last-check.json"    # the last server check: {at, id, ok} (Leyline HQ shows it)
+AUDIT_HTML = ROOT / "logs" / "audit-latest.html"     # the release audit's report (tools/audit, docs/AUDIT.md)
+AUDIT_TXT = ROOT / "logs" / "audit-latest.txt"
 HQ_URL = "https://play.openvanilla.app/wrath/admin"   # Leyline HQ: the one place online (stream/hq.py)
 QUIET = "--quiet" in sys.argv                         # started at Windows sign-in: no browser tab
 TOKEN_FILE = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "WrathUnleashed" / "control-token"
@@ -103,6 +105,13 @@ STEPS = {
     # with client/patches/series.txt, the fat-LTO release build, packed into play\ like every build. Then "client" ships it.
     "client-build": ("client/Build browser client.bat", "Build the browser client on this PC (about an hour; then the client step)", False),
     "den-lite": ("tools/den-lite/Build Den Lite.bat", "Build Den Lite on this PC (the instant Den server, no Docker) for the launcher's Your Den", False),
+    # My Den, one click into the world on this PC's own game (tools/den-check/den_check.py): den-check looks (read-only:
+    # the game folder, Leyline's login archive, Config.wtf, Den Lite and a sign-in through the exact steps on a Den Lite
+    # of its own); den-test runs the real thing unattended (Leyline.exe den-play --test: Den Lite, the game, signed in,
+    # the white island, a screenshot, closed again) and leaves tools\den-check\logs\den-test-latest.txt and .png.
+    "den-check": ("tools/den-check/Den check.bat", "My Den check (read-only): game folder, login archive, Config.wtf, Den Lite and a test sign-in", False),
+    "den-test": ("tools/den-check/Den test.bat", "My Den test: starts your game by itself, signs in, the white island, a screenshot, closes it (logs in tools\\den-check\\logs)", False),
+    "den-test-invite": ("tools/den-check/Den test - invite.bat", "My Den test with a friend: as den-test, and a test friend joins through the friends' listener", False),
     "client":  ("stream/Update browser client.bat", "New browser game build", False),
     "client-back": ("stream/Roll back browser client.bat", "Undo: the previous browser game build back (the server keeps one; running it again swaps back)", False),
     "signin":  ("stream/Update sign-in and warm-up.bat", "Play page and sign-in", False),
@@ -140,6 +149,9 @@ STEPS = {
     "ship":    ("Ship to GitHub.bat", "Save everything to GitHub", True),
     "ship-again": ("tools/ship/Save again as one fresh commit.bat", "Save to GitHub again as one fresh commit (after GitHub refused a save)", False),
     "check":   ("realm/Server check.bat", "Server check (read-only)", False),
+    # The release audit (docs/AUDIT.md): every feature as a new player meets it, the report in logs/audit-latest.html.
+    # Read only but for the audit's own AUDIT account and its test characters, and a Den Lite temp folder on this PC.
+    "audit":   ("tools/audit/Release audit.bat", "Release audit (read-only, ~10 min)", False),
     "gm":      ("gmconsole/Install GM Console.bat", "GM console update (game keeps running)", False),
     "bots-off": ("realm/Bots - none.bat", "No roaming bots on Wrath Unleashed (5-min warning, then a restart)", False),
     "bots-on": ("realm/Bots - back on.bat", "Undo: the roaming bots back on Wrath Unleashed (5-min warning, then a restart)", False),
@@ -213,7 +225,7 @@ STEPS = {
 # Autopilot runs only these by itself; anything else waits for "Launch all".
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
-             "vr-data-check", "vr-site-check", "release-mirror-check", "bugs"}
+             "vr-data-check", "vr-site-check", "release-mirror-check", "bugs", "audit", "den-check"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}
 
 # Never in a log or on the page: passwords, tokens, keys, connection strings (scrub() on every line a step prints).
@@ -433,6 +445,8 @@ def run_all(ship_message: str, items=None, record=True) -> None:
             # it commits as "Leyline update <date> <time>". Empty lines only clear "press any key".
             feed = "\n" * 8
             env = dict(os.environ)
+            if item["step"] == "audit" and not item.get("open"):
+                env["LEYLINE_AUDIT_NO_OPEN"] = "1"      # only the Release audit button opens the report by itself
             if interactive:
                 env["WU_SHIP_AUTO"] = env["LEYLINE_SHIP_AUTO"] = "1"
                 note = (ship_message or "").replace("!", "").replace("%", "").replace('"', "'").strip()
@@ -487,6 +501,17 @@ def run_all(ship_message: str, items=None, record=True) -> None:
         with lock:
             state["running"] = None
         emit("state", {})
+
+
+def audit_state() -> dict | None:
+    """The last release audit: when, and its result line (logs/audit-latest.txt's second line), or None."""
+    try:
+        at = AUDIT_HTML.stat().st_mtime
+        lines = AUDIT_TXT.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    result = lines[1][len("Result: "):] if len(lines) > 1 and lines[1].startswith("Result: ") else ""
+    return {"at": time.strftime("%d %b %H:%M", time.localtime(at)), "result": result, "green": result.startswith("ALL GREEN")}
 
 
 def write_last_check(sid: str, ok: bool) -> None:
@@ -617,7 +642,13 @@ class H(http.server.BaseHTTPRequestHandler):
             return self._send(200, json.dumps({"pending": pending(), "history": history(),
                                                "claude": claude_status(), "running": running,
                                                "health": health, "health_at": at, "lines": lines,
-                                               "autopilot": autopilot_on(), "confirm": confirm_on()}))
+                                               "autopilot": autopilot_on(), "confirm": confirm_on(),
+                                               "audit": audit_state()}))
+        if path == "/audit":
+            try:
+                return self._send(200, AUDIT_HTML.read_bytes(), "text/html; charset=utf-8")
+            except OSError:
+                return self._send(404, "No release audit yet: press Release audit.", "text/plain")
         if path == "/api/log":
             name = self.path.split("name=", 1)[-1]
             f = (LOGS / os.path.basename(urllib.request.unquote(name)))
@@ -676,6 +707,12 @@ class H(http.server.BaseHTTPRequestHandler):
             item = {"id": "check-" + time.strftime("%Y%m%d-%H%M%S"), "step": "check",
                     "title": STEPS["check"][1], "note": "", "known": True}
             if not start_run("", [item], False, "Server check"):
+                return self._send(409, '{"error":"already running"}')
+            return self._send(200, '{"ok":true}')
+        if self.path == "/api/audit":
+            item = {"id": "audit-" + time.strftime("%Y%m%d-%H%M%S"), "step": "audit",
+                    "title": STEPS["audit"][1], "note": "", "known": True, "open": True}
+            if not start_run("", [item], False, "Release audit"):
                 return self._send(409, '{"error":"already running"}')
             return self._send(200, '{"ok":true}')
         if self.path == "/api/gm-console":
@@ -781,6 +818,8 @@ a{color:var(--gold)}.hist a{font:12px var(--mono)}
 <header><div class="brand"><span class="mark" aria-hidden="true"></span><h1>Leyline Control</h1></div>
 <div class="health" id="health"></div>
 <div class="actions"><button id="auto" title="While this window is open, Claude's updates run on their own">Autopilot: …</button>
+<button id="audit" title="Checks every feature as a new player would (about 10 minutes, read-only), then opens the report">Release audit</button>
+<a id="areport" class="sub" href="#" target="_blank" hidden></a>
 <details class="more"><summary>More</summary><div class="menu">
 <button id="hq" title="Leyline HQ: status, what needs you, releases, notes (play.openvanilla.app/wrath/admin)">Open HQ</button>
 <button id="gmc" title="Opens the GM console (bug reports, players, health, logs) in your browser">GM console</button>
@@ -819,11 +858,13 @@ $("cupd").textContent=c.updated?`Updated ${c.updated}`:"";
 list($("pending"),(s.pending||[]).map(p=>({tag:p.step,text:p.title,detail:p.note})),"","Nothing to launch. You're up to date.");
 const a=$("auto");a.textContent=s.autopilot?"Autopilot: ON":"Autopilot: OFF";a.className=s.autopilot?"primary":"";a.dataset.on=s.autopilot?"1":"";
 const q=$("ask");q.textContent=s.confirm?"Ask before deploys: ON":"Ask before deploys: OFF";q.dataset.on=s.confirm?"1":"";
-$("go").disabled=!!s.running||!(s.pending||[]).length;
+$("go").disabled=!!s.running||!(s.pending||[]).length;$("audit").disabled=!!s.running;
+const ar=$("areport");if(s.audit){ar.hidden=false;ar.href=`/audit?t=${T}`;ar.textContent=`Last audit ${s.audit.at}: ${s.audit.green?"all green":s.audit.result}`;ar.style.color=s.audit.green?"var(--ok)":"var(--bad)"}else ar.hidden=true;
 $("run").innerHTML=s.running?`<span class="spinner"></span>${esc(s.running.title||"Running")}…`:'<span class="sub">Idle</span>';
 $("hist").innerHTML=(s.history||[]).map(x=>`<div class="item fin"><span class="tag">${esc(x.step)}</span><div>${esc(x.note||x.id)} ${x.log?`<a href="/api/log?t=${T}&name=${encodeURIComponent(x.log)}" target="_blank">log</a>`:""}</div></div>`).join("")||'<div class="empty">No runs yet.</div>';
 if(!$("con").childElementCount&&s.lines)s.lines.forEach(line)}
 $("go").onclick=async()=>{$("con").innerHTML="";const r=await fetch("/api/launch",{method:"POST",headers:{...H,"Content-Type":"application/json"},body:JSON.stringify({message:$("msg").value})});if(!r.ok)alert("Couldn't start: "+(await r.text()));refresh()};
+$("audit").onclick=async()=>{$("con").innerHTML="";const r=await fetch("/api/audit",{method:"POST",headers:H});if(!r.ok)alert("Busy: "+(await r.text()));refresh()};
 $("check").onclick=async()=>{$("con").innerHTML="";const r=await fetch("/api/check",{method:"POST",headers:H});if(!r.ok)alert("Busy: "+(await r.text()));refresh()};
 $("auto").onclick=async()=>{await fetch("/api/autopilot",{method:"POST",headers:{...H,"Content-Type":"application/json"},body:JSON.stringify({on:!$("auto").dataset.on})});refresh()};
 $("gmc").onclick=async()=>{const r=await fetch("/api/gm-console",{method:"POST",headers:H});if(!r.ok)alert("Couldn't open it: "+(await r.text()))};

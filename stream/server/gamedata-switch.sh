@@ -27,6 +27,10 @@
 # switch for both) when it is installed (/srv/vr112/site-host): off puts a 410 block for /data in its Caddy site too
 # and --park moves /srv/vr112/slice/Data off the served folder (vr-site restarts on an empty placeholder); on undoes
 # both; status and the checks cover its address. Not installed: nothing about it changes, the report says so.
+# Azeroth Survivors (hosting/survivors/sv-site-up.sh, docs/SURVIVORS.md) when it is installed (/srv/survivors/site-host): off
+# puts its block in its Caddy site too (/data and the manifests 410, every page but the licences a short resting page)
+# and --park moves /srv/survivors/slice off the served folder (sv-play restarts on an empty placeholder); on undoes both.
+# The Survivors page on the website says Resting while the flag is there (stream/survivors.py).
 # Ends with "GAMEDATA OFF OK" / "GAMEDATA ON OK" / "GAMEDATA STATUS OK".
 set -euo pipefail
 HERE="$(dirname "$(readlink -f "$0")")"
@@ -54,6 +58,12 @@ VR_SLICE="$VR_ROOT/slice/Data"
 VR_SITE_C="${VR_SITE_C:-vr-site}"
 vr_host() { [ -f "$VR_ROOT/site-host" ] && tr -cd 'a-z0-9.-' < "$VR_ROOT/site-host" | head -c 100; return 0; }
 vr_caddy_state() { [ -f "$CF" ] && python3 -I "$GCADDY" status-vr "$CF" 2>/dev/null || echo "no-caddyfile"; }
+SV_ROOT="${SV_ROOT:-/srv/survivors}"
+SV_SLICE="$SV_ROOT/slice"
+sv_host() { [ -f "$SV_ROOT/site-host" ] && tr -cd 'a-z0-9.-' < "$SV_ROOT/site-host" | head -c 100; return 0; }
+sv_caddy_state() { [ -f "$CF" ] && python3 -I "$GCADDY" status-sv "$CF" 2>/dev/null || echo "no-caddyfile"; }
+sv_restart() { docker ps --format '{{.Names}}' 2>/dev/null | grep -qx sv-play && docker restart sv-play >/dev/null 2>&1 \
+  && echo "  sv-play restarted" || true; }
 vr_restart() { docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$VR_SITE_C" && docker restart "$VR_SITE_C" >/dev/null 2>&1 \
   && echo "  $VR_SITE_C restarted" || true; }
 
@@ -124,6 +134,14 @@ report() {   # $1 = "before" / "after"
   else
     echo "  1.12 browser slice: not installed (no $VR_ROOT/site-host)"
   fi
+  local sh; sh=$(sv_host)
+  if [ -n "$sh" ]; then
+    echo "  Azeroth Survivors ($sh): Caddy block $(sv_caddy_state)"
+    if [ -f "$SV_SLICE/.gamedata-parked" ]; then echo "    slice: parked (empty placeholder)"; else echo "    slice: $(size_of "$SV_SLICE")"; fi
+    echo "    https://$sh/data/__index $(code "https://$sh/data/__index")"
+  else
+    echo "  Azeroth Survivors: not installed (no $SV_ROOT/site-host)"
+  fi
 }
 
 glog() {
@@ -133,7 +151,7 @@ glog() {
     && chmod 644 "$WU/portal/gamedata-last.json.tmp" && mv -f "$WU/portal/gamedata-last.json.tmp" "$WU/portal/gamedata-last.json" || true
 }
 
-caddy_apply() {   # $1 = add|remove|add-vr|remove-vr [$2 host]; 0 = done (or nothing to do), 1 = Caddy refused (the old file is back)
+caddy_apply() {   # $1 = add|remove|add-vr|remove-vr|add-sv|remove-sv [$2 host]; 0 = done (or nothing to do), 1 = Caddy refused (the old file is back)
   [ -f "$CF" ] || { echo "  no Caddyfile at $CF: nothing to change there"; return 0; }
   mkdir -p "$BK"; cp -p "$CF" "$BK/Caddyfile"
   local rc=0
@@ -182,6 +200,12 @@ park() {
     printf '%s\t%s\n' "$VR_SLICE" "$dest/vr112/Data" >> "$dest/parked.txt"
     echo "  parked the 1.12 browser slice too"; vr_restart
   fi
+  if [ -n "$(sv_host)" ] && [ -d "$SV_SLICE" ] && [ ! -f "$SV_SLICE/.gamedata-parked" ]; then
+    mkdir -p "$dest/survivors"; mv "$SV_SLICE" "$dest/survivors/slice"
+    mkdir -p "$SV_SLICE"; touch "$SV_SLICE/.gamedata-parked"; chmod -R a+rX "$SV_SLICE"
+    printf '%s\t%s\n' "$SV_SLICE" "$dest/survivors/slice" >> "$dest/parked.txt"
+    echo "  parked the Azeroth Survivors slice too"; sv_restart
+  fi
   echo "$dest" > "$OFFLINE/CURRENT"
   echo "  parked $n slice(s), the Forever UI overlay and the manifests in $dest (never deleted)"
   if play_running; then
@@ -212,6 +236,7 @@ unpark() {
   find "$dest" -mindepth 1 -type d -empty -delete 2>/dev/null || true
   echo "  the parked files are back where they were served from"
   if [ -n "$(vr_host)" ]; then vr_restart; fi
+  if [ -n "$(sv_host)" ]; then sv_restart; fi
   if play_running; then docker restart wu-play >/dev/null && echo "  wu-play restarted on the real slice"; fi
 }
 
@@ -222,6 +247,11 @@ checks_off() {
     if [ "$c" = 410 ]; then echo "  CHECK $u -> 410 Gone"; else echo "  CHECK FAILED $u -> $c (want 410)"; bad=1; fi
   done
   vh=$(vr_host)
+  if [ -n "$vh" ]; then
+    c=$(code "https://$vh/data/__index")
+    if [ "$c" = 410 ]; then echo "  CHECK $vh/data/__index -> 410 Gone"; else echo "  CHECK FAILED $vh/data/__index -> $c (want 410)"; bad=1; fi
+  fi
+  vh=$(sv_host)
   if [ -n "$vh" ]; then
     c=$(code "https://$vh/data/__index")
     if [ "$c" = 410 ]; then echo "  CHECK $vh/data/__index -> 410 Gone"; else echo "  CHECK FAILED $vh/data/__index -> $c (want 410)"; bad=1; fi
@@ -259,6 +289,7 @@ case "$cmd" in
     log "2/4 Caddy: 410 Gone for the game-data routes"
     caddy_ok=1; caddy_apply add || caddy_ok=0
     if [ -n "$(vr_host)" ]; then caddy_apply add-vr "$(vr_host)" || caddy_ok=0; fi
+    if [ -n "$(sv_host)" ]; then caddy_apply add-sv "$(sv_host)" || caddy_ok=0; fi
     log "3/4 Realm: stream accounts released"
     release_accounts
     log "4/4 Park the files"
@@ -287,6 +318,7 @@ case "$cmd" in
     log "2/3 Caddy: the 410 block out"
     caddy_apply remove || die "Caddy refused: game data stays OFF (the flag is kept). Nothing else changed."
     caddy_apply remove-vr || die "Caddy refused the 1.12 part: game data stays OFF there (the flag is kept)."
+    caddy_apply remove-sv || die "Caddy refused the Azeroth Survivors part: it stays resting (the flag is kept)."
     log "3/3 Flag removed"
     if [ -f "$FLAG" ]; then mkdir -p "$BK"; mv -f "$FLAG" "$BK/gamedata-off"; echo "  removed (kept in $BK)"; else echo "  there was none"; fi
     sleep "${WU_SETTLE:-2}"

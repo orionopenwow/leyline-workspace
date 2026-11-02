@@ -2,7 +2,7 @@
 
 This is the full reference for the Leyline mod package, format 0.1. It matches `mods/SPEC.md` in the repo. The checker, `mods/wu-mod.py check`, enforces every rule on this page.
 
-A mod can change the UI (a standard 3.3.5a addon), the realm (mod-ale Lua on the AzerothCore 3.3.5a server), or both.
+A mod can change the UI (a standard addon for the Wrath-era game {{v:3.3.5a}}), the realm (mod-ale Lua on the AzerothCore server for it), or both.
 
 ## The package
 
@@ -11,7 +11,7 @@ A mod is a folder, or a zip of one, with a `mod.json` at the top.
 ```
 dalaran-dice/
   mod.json            required
-  ui/DalaranDice/     a 3.3.5a addon: DalaranDice.toc, .lua, .xml   (kind "ui" or "both")
+  ui/DalaranDice/     an addon: DalaranDice.toc, .lua, .xml        (kind "ui" or "both")
   realm/*.lua         mod-ale Lua                                    (kind "realm" or "both")
   assets/             your own or licensed files, with assets/CREDITS.txt
   tests/              optional fake-ALE tests (not installed)
@@ -91,7 +91,7 @@ Permissions apply to realm code only. A realm mod may only use what it declares.
 - Every file the TOC lists must exist. Names are case-sensitive in the browser client.
 - XML must be well formed. `<Script file>` and `<Include file>` must point to real files.
 - Lua must parse as Lua 5.1.
-- The addon runs in the client's addon sandbox with the stock 3.3.5a API.
+- The addon runs in the client's addon sandbox with the stock game's addon API {{v:3.3.5a}}.
 
 ## Assets
 

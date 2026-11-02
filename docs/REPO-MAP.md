@@ -58,6 +58,7 @@ the one-time setup files to `setup/`; `Play WotLK (one click).bat` (now `Play lo
 | `discord/` | The Discord bridge | yes |
 | `hangout/` | Wrath Unleashed as a Beacon on Leyline (Autopilot `hangout`, `hangout-off`) | no |
 | `vanilla-remastered/` | The old 1.12 realm as the official Beacon "Vanilla Remastered" (Autopilot `vr-beacon`, `vr-beacon-off`; the realm itself: `ov112-on` in `tools/ov112-off/`). `docs/VANILLA-REMASTERED.md` | no |
+| `survivors/` | Azeroth Survivors at its own address: `sv-site-up.sh`, the Caddy site, the `sv-play` compose service, `Put Survivors on Leyline.bat` (+ `- check`, `- off`). `docs/SURVIVORS.md` | no |
 | `pack/` | `make-hostpack.py`: the host kit as a versioned download for the launcher's Host page | no |
 | `mesh-sim/` | The mesh simulator (realm list and relays without us), used by `tests/test_mesh.py`. Experimental, in place | no |
 | `site/` | The join page and the community-record schema | no |
@@ -76,6 +77,7 @@ the one-time setup files to `setup/`; `Play WotLK (one click).bat` (now `Play lo
 | `network.py`, `leyline_net.py`, `links.py` | The realm browser and listing, the P2P/torrent and mesh flags (all OFF), short share links |
 | `social.py`, `herokey_sso.py`, `ed25519_pure.py` | Friends and messages, Hero Key sign-in for Beacons |
 | `workshop.py`, `creations.py`, `projects.py`, `modes.py`, `modes_data.py`, `playmodes.py`, `playmodes.json` | Mods Workshop, creations, linked projects, the Modes hub and play modes |
+| `survivors.py`, `survivors/upstream.lock.json` | Azeroth Survivors' page (`/wrath/survivors`) and its address's sign-in gate; the locked upstream build |
 | `armory.py`, `admin.py`, `docs.py` | Web armory, the admin console, the docs pages |
 | `demo.py` | The guest demo (OFF unless `WU_GUEST_DEMO=1`). Experimental, in place |
 | `www-files/` | The game page, sign-in page and site art |
@@ -102,6 +104,7 @@ the one-time setup files to `setup/`; `Play WotLK (one click).bat` (now `Play lo
 | `art/` | Share card and launcher screenshot renderers |
 | `creator-api/` | Writes `docs/CREATOR-API.md` and `docs/creator-api.html` from the Modes API |
 | `playerbots-specs/` | Turns playerbots talent specs into the realm's env lines |
+| `survivors/` | Azeroth Survivors on the owner's PC: `Record Survivors files.bat` (fetch of the CI build, recorder, exporter, survivors-check), `build-dist.sh` (the browser build, run by `survivors.yml` in CI). `docs/SURVIVORS.md` |
 | `workspace-move/` | `Move to Leyline.bat` + `move_to_leyline.py`: the one-folder move and the repo rename (done 2026-10-30; kept for reference, still runs from here) |
 
 ## Experimental, in place

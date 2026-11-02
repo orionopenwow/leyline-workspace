@@ -38,9 +38,20 @@ local function world()
 		GetNumRealms = function() return #(W.realms or {}) end,
 		GetRealmInfo = function(_, i) return W.realms[i] end,
 		ChangeRealm = function(c, i) W.calls[#W.calls + 1] = "realm " .. c .. " " .. i end,
+		SetGlueScreen = function(n) W.calls[#W.calls + 1] = "screen " .. n; if W.onScreen then W.onScreen(n) end end,
+		SetSelectedRace = function(r) W.race = r end,
+		SetSelectedSex = function(x) W.sex = x end,
+		SetSelectedClass = function(c) W.class = c end,
+		CreateCharacter = function(n) W.calls[#W.calls + 1] = "create " .. n; if W.onCreate then W.onCreate(n) end end,
 	}
-	env.AccountLogin, env.CharacterSelect, env.GlueDialog, env.RealmList, env.GlueParent =
-		frame("AccountLogin"), frame("CharacterSelect"), frame("GlueDialog"), frame("RealmList"), frame("GlueParent")
+	env.AccountLogin, env.CharacterSelect, env.GlueDialog, env.RealmList, env.GlueParent, env.CharacterCreate =
+		frame("AccountLogin"), frame("CharacterSelect"), frame("GlueDialog"), frame("RealmList"), frame("GlueParent"), frame("CharacterCreate")
+	-- Forever UI's glue, when a case puts it in: it keeps the stock screens and adds its own frames and table
+	function W.foreverui()
+		env.ForeverUIGlue = { version = "test" }
+		env.CharacterSelectUI = frame("CharacterSelectUI")
+		env.ForeverUICharacterSelectNavBar = frame("ForeverUICharacterSelectNavBar")
+	end
 	W.env = env
 	function W.load(session)
 		env.LEYLINE_SESSION = session
@@ -56,8 +67,9 @@ local function world()
 		end
 	end
 	function W.screen(name)
-		for _, k in ipairs({ "AccountLogin", "CharacterSelect", "RealmList" }) do env[k].shown = (k == name) end
+		for _, k in ipairs({ "AccountLogin", "CharacterSelect", "RealmList", "CharacterCreate" }) do env[k].shown = (k == name) end
 	end
+	function W.note() return W.LeylineHybridNote and W.LeylineHybridNote.shown and W.LeylineHybridNote.line.text end
 	function W.cover() return W.LeylineHybridCover and W.LeylineHybridCover.shown end
 	return W
 end
@@ -142,13 +154,14 @@ case("enter: the last character enters the world once", function()
 	assert(not W.cover(), "and goes if nothing happens")
 end)
 
-case("enter with no character: stays on character select", function()
+case("enter with no character: asks for the create screen once, stops when it never shows", function()
 	local W = world()
 	local s = copy(SESSION); s.enter = true
 	W.load(s)
 	W.screen("AccountLogin"); W.tick()
-	W.screen("CharacterSelect"); W.chars = 0; W.tick(1, 25)
-	eq(#W.calls, 1); assert(not W.cover())
+	W.screen("CharacterSelect"); W.chars = 0; W.tick(1, 30)
+	eq(W.calls[2], "screen charcreate"); eq(#W.calls, 2, "once"); assert(not W.cover())
+	eq(W.env.LeylineHybrid.why, "character create")
 end)
 
 case("a broken session table is ignored", function()
@@ -158,6 +171,82 @@ case("a broken session table is ignored", function()
 		W.screen("AccountLogin"); W.tick(0.1, 5)
 		eq(#W.calls, 0)
 	end
+end)
+
+-- My Den (app.rs den_session): DENAUTO with the local password, "Your Den", enter = true
+local DEN = { user = "DENAUTO", pass = "den", realm = "Your Den", enter = true }
+
+local function denFlow(W, chars)
+	W.load(copy(DEN))
+	W.realms = { "Your Den" }
+	W.chars = chars
+	-- the game: CharacterCreate opens on SetGlueScreen, and CreateCharacter brings back character select with one
+	W.onScreen = function(n) if n == "charcreate" then W.screen("CharacterCreate") end end
+	W.onCreate = function() W.chars = 1; W.screen("CharacterSelect") end
+	W.screen("AccountLogin"); W.tick(0.1, 3)
+	eq(W.calls[1], "login DENAUTO den", "signed in")
+	assert(W.cover(), "the login screen is hidden under the cover")
+	W.screen("RealmList"); W.tick(0.1, 3)
+	eq(W.calls[2], "realm 1 1", "Your Den picked")
+	W.screen("CharacterSelect"); W.tick(0.1, 60)
+end
+
+for _, fui in ipairs({ false, true }) do
+	local tag = fui and " (with Forever UI's glue)" or " (stock glue)"
+	case("Den: login, realm, character select, enter" .. tag, function()
+		local W = world()
+		if fui then W.foreverui() end
+		denFlow(W, 1)
+		eq(W.calls[3], "enter"); eq(#W.calls, 3, "nothing else")
+		assert(W.cover(), "cover over the game's own loading screen")
+	end)
+	case("Den: no character: one is made, then enter" .. tag, function()
+		local W = world()
+		if fui then W.foreverui() end
+		denFlow(W, 0)
+		eq(W.calls[3], "screen charcreate"); eq(W.calls[4], "create Wren")
+		eq(W.race, 1); eq(W.sex, 3); eq(W.class, 1)
+		eq(W.calls[5], "enter"); eq(#W.calls, 5)
+	end)
+end
+
+case("Den: the only realm is picked when its name isn't on the list", function()
+	local W = world()
+	W.load(copy(DEN))
+	W.realms = { "Another name" }
+	W.screen("AccountLogin"); W.tick()
+	W.screen("RealmList"); W.tick(0.1, 2)
+	eq(W.calls[2], "realm 1 1")
+	-- two realms, neither ours: the list stays for the player
+	local W2 = world()
+	W2.load(copy(DEN))
+	W2.realms = { "A", "B" }
+	W2.screen("AccountLogin"); W2.tick()
+	W2.screen("RealmList"); W2.tick(0.1, 2)
+	eq(#W2.calls, 1); assert(not W2.cover(), "the list shows")
+end)
+
+case("Den: making a character that doesn't finish stops with a plain line", function()
+	local W = world()
+	W.load(copy(DEN))
+	W.onScreen = function(n) if n == "charcreate" then W.screen("CharacterCreate") end end
+	W.onCreate = function() end           -- the server never answers
+	W.screen("AccountLogin"); W.tick()
+	W.screen("CharacterSelect"); W.chars = 0; W.tick(1, 30)
+	eq(W.env.LeylineHybrid.why, "character create")
+	assert(not W.cover(), "the normal screen again")
+	local n = W.note()
+	assert(n and n:find("making a character didn't finish", 1, true), tostring(n))
+	assert(not n:find("den", 1, true), "never the password")
+	W.tick(1, 25)
+	assert(not W.note(), "the line goes after a while")
+end)
+
+case("every stop says why on the normal screen", function()
+	local W = world()
+	W.load(copy(SESSION))
+	W.tick(1, 25)
+	assert(W.note() and W.note():find("login screen didn't show", 1, true))
 end)
 
 if failed > 0 then print(failed .. " failed"); os.exit(1) end

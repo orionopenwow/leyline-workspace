@@ -1,0 +1,18 @@
+{
+ "repo": "https://github.com/OutThisLife/azeroth-survivors-re",
+ "sha": "72048f4056e2a57d99234e4fb658179e577d1d92",
+ "source": "unmodified",
+ "toolchain": "rustc 1.97.0 (installed stable), std built from source (-Z build-std=std,panic_abort)",
+ "deviations": [
+  "toolchain: the build box cannot download Rust's pinned 1.98.1 or its prebuilt wasm32 std (static.rust-lang.org unreachable), so the installed stable Rust built it, with std from source (RUSTC_BOOTSTRAP=1 -Z build-std=std,panic_abort; the same way client/build-browser-client.sh builds our own client). No source change; same profile (release), target, features (webgpu, no defaults), wasm-bindgen 0.2.122, wasi-sdk 27 and binaryen 130 wasm-opt -O3 flags as scripts/web-build.sh.",
+  "gzip -n (no file name or time in the .gz) so the hashes are the same from one build to the next; upstream's web-build.sh runs gzip -kf -6 without -n.",
+  "brotli: the Python brotli library at quality 5 when the brotli command is not installed (the same library and quality as upstream's brotli -q 5).",
+  "added next to the build: licenses/ (upstream's LICENSE-MIT and LICENSE-APACHE, third_party/kira's and third_party/lua-src's licences, and tools/survivors/licenses-index.html as index.html)."
+ ],
+ "cargo_wasm": {
+  "what": "target/wasm32-unknown-unknown/release/wenilla.wasm before wasm-bindgen (cargo build --profile release --target wasm32-unknown-unknown -Z build-std=std,panic_abort -p wenilla --no-default-features --features webgpu, rustc 1.97.0 stable)",
+  "sha256": "13f039538a7d0776178b49ba52888d970c1a9dfec854c3d7a2e0f77855d886fb",
+  "bytes": 165055570
+ },
+ "dist": {}
+}

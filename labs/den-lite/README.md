@@ -65,6 +65,22 @@ boots, standing in the middle of the Den on the GM island (map 1, 16226.2, 16257
 every login five chat lines are a quick start (place a chair, put down the inn, undo, save, grow and the companion).
 Other chat is said back as your own line. One creature, the companion; no combat, spells, quests or loot.
 
+### The Leyline UI's Den panel and Builder, and asks for the launcher
+
+The Leyline UI (WrathUnleashedUI: `/den`, F7 or `/builder`) talks to Den Lite over the realm's addon channel
+(`OVMOD`, `src/ovmod.rs`), as it talks to the full Den's `ov_den.lua` / `ov_build.lua`: the Den panel's info, Save,
+Load, the room's look; the Builder's catalog (the props Den Lite knows, in the Builder's categories), Spawn, Near,
+move x/y/z, exact numbers, turn, tilt, size, Delete and Undo (all autosaved). **Invite a friend** and **Shape the
+ground** (also `.den invite`, `.den forge`) are asked of the launcher through `<dens>/den-lite.ask`; its answer
+(`den-lite.answer`) comes back into the game: the link into the Den panel, or a line.
+
+### The milestone log
+
+`<dens>/den-lite.events` (new at every start; `src/events.rs`): one JSON line per step on the way in
+(`login_challenge`, `auth_ok`, `realm_list`, `world_auth`, `char_enum`, `char_create`, `player_login`, `in_world`,
+`first_move`, `builder_ready`, `ask`, `peer_seen`, `logout`), never a password. The launcher's one-click sign-in
+(`launcher/src-tauri/src/denclick.rs`) and the owner's `den-test` (tools/den-check) read it.
+
 ### Growing: the white room's sizes
 
 A new Den is the smallest room: **size 1, 16 x 16 yards** (props up to 22 yards from its middle: the room and a yard

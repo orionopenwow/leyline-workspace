@@ -272,6 +272,27 @@ try:
 finally:
     srv.shutdown()
 
+# ---------------------------------------------------------------- 8b. no game version in a sentence
+# Owner rule: no client version numbers in prose; a guide that must name the game writes {{v:3.3.5a}}, shown as the
+# version chip. The same rule as the release audit's (tools/audit/common.py VERSION, tools/audit/web.py visible_lines):
+# sentences of five words or more, outside code and outside the chip.
+VERSION = re.compile(r"\b(?:3\.3\.5a?|1\.12(?:\.[0-9])?|2\.4\.3|[0-9]\.[0-9]{1,2}\.[0-9][a-z]?|12340|5875|8606|15595|18414)\b")
+def sentences(page):
+    t = re.sub(r"(?is)<(script|style|code|pre|kbd|textarea|svg)\b.*?</\1>", " ", page)
+    t = re.sub(r'(?is)<(span|b|small|em|i|sup)\b[^>]*class="[^"]*\b(?:chip|ver|version|badge|tag|pill)\b[^"]*"[^>]*>.*?</\1>', " ", t)
+    t = re.sub(r"(?i)<br\s*/?>|</(?:p|li|h[1-6]|div|td|th|dt|dd|section|article|header|footer|figcaption|label|button|a)>", "\n", t)
+    t = html.unescape(re.sub(r"<[^>]+>", " ", t))
+    return [re.sub(r"\s+", " ", x).strip() for x in t.split("\n") if x.strip()]
+chip = d.inline("needs {{v:3.3.5a (12340)}} and {{v:<b>}}")
+check("{{v:...}} is the version chip, escaped, and nothing else is", chip.startswith('needs <span class="ver" title="Game version">3.3.5a (12340)</span>')
+      and "<b>" not in chip, chip)
+in_prose = []
+for n in names:
+    st, body = d.page("/wrath/docs" + ("" if n == "index" else "/" + n))
+    in_prose += [f"{n}: {l[:90]}" for l in sentences(body.decode()) if len(l.split()) >= 5 and VERSION.search(l)]
+check("no game version or build number in a guide sentence (only in the chip or in code)", not in_prose, in_prose[:5])
+check("the guides that name the game use the chip", sum(open(os.path.join(DOCS_DIR, f + ".md"), encoding="utf-8").read().count("{{v:") for f in names) >= 20)
+
 # ---------------------------------------------------------------- 9. shipped with the sign-in step
 fl = open(os.path.join(STREAM, "fastloop.sh"), encoding="utf-8").read()
 check("fastloop.sh: installs docs.py and docs/leyline, backs them up",

@@ -45,6 +45,9 @@ labs/players/wow-folder.txt
 *.log
 logs.txt
 charfix-diagnose.txt
+# reports the read-only server checks write beside themselves
+server/server-report.txt
+server/native-client-report.txt
 dev/merge-help/
 __pycache__/
 

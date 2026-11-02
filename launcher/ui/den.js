@@ -192,22 +192,22 @@
     loadSetup();
   }
 
-  // Play solo (app.rs den_play_lite): Den Lite started on this PC, the game pointed at it and started. With Forever
-  // UI's login screens in the game folder the game signs in by itself and stops at character select (r.auto); else
-  // the login screen has the account filled in and wants the local password (a test login that never leaves this
-  // PC). No internet, website or Hero Key needed.
+  // My Den (app.rs den_play_lite): Den Lite started on this PC, the game pointed at it and started, then signed in
+  // and taken into the world by itself (r.auto): Leyline's login screen code where the game takes it, else the
+  // launcher's own keys (denclick.rs). Only where neither can (not Windows), the login screen has the account
+  // filled in and wants the local password (a test login that never leaves this PC). No internet needed.
   async function playLite(c) {
     busy = true; paint();
     say(liteUp() ? "Opening your Den…" : liteGet() ? "Getting your Den ready… (a one-time download of a few MB)" : "Starting your Den… (a few seconds)");
     try {
       const r = await call("den_play_lite", { client: c.id });
-      if (r && typeof r === "object" && r.auto) say("Your Den is open. The game signs you in by itself and opens at character select.", "ok");
+      if (r && typeof r === "object" && r.auto) say("Your Den is opening. The game signs you in and takes you straight to your Den.", "ok");
       else {
         const acct = (r && r.account) || (st && st.lite && st.lite.account) || "DEN";
         const pass = (r && r.password) || (st && st.lite && st.lite.password) || "den";
         say(`Your Den is open. At the login screen: account ${acct}, password ${pass}. Press Login.`, "ok");
-        // TODO(owner): the words; Forever UI's login screens let the game sign in by itself
-        if (r && typeof r === "object" && r.why) hint = "With Forever UI in your game folder, the game signs in by itself next time.";
+        // TODO(owner): the words
+        if (r && typeof r === "object" && r.why) hint = "On Windows the launcher signs you in by itself.";
       }
     } catch (e) { say(oops(e, "Your Den didn't open. Try again."), "bad"); }
     busy = false;

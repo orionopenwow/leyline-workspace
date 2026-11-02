@@ -8,9 +8,10 @@ Goal: when Leyline starts the player's own stock desktop client (build 12340), i
 play.leylinelauncher.com: no intro movie, no login typing, straight to character select (or into the world), our
 loading screens, Forever UI as the interface, and the same "hop to another realm" flow.
 
-Status (2026-11-01, branch `agent/hybrid-client`): research done; a first prototype is built and tested on Linux
-(the MPQ writer, the glue sign-in hook, launcher wiring behind a switch that is off). **Nothing here has run on a
-real Windows PC yet.** The one test that decides most of the design is T1 below.
+Status (2026-11-02): merged into the launcher. The switch is Settings › "Sign in by itself: PLAY on Wrath Unleashed", on by
+default since 2 Nov (it only acts on a folder whose login screens are Forever UI's). PLAY on Wrath Unleashed uses it to
+sign in and land at character select (see "PLAY on Wrath Unleashed" below); Your Den and a friend's Den invite use it
+too. Still open: the T1 test on a stock Windows game (does it take the changed login screens).
 
 Words: this document is for the owner and contributors. Nothing a player sees (glue text, launcher text) carries a
 game brand name or a version number; the glue's tip lines are the browser's own list (`stream/www-files/wu-loading.js`).
@@ -254,7 +255,7 @@ the names the client itself writes into `WTF/Config.wtf`. Also used: `accountNam
 To check on the PC (T5): that a brand-new folder with no `Config.wtf` doesn't override these on its first hardware
 check (`hwDetect`), and that the window covers the taskbar.
 
-## Prototype: what is on the branch
+## What was built (first on the branch `agent/hybrid-client`, now in the launcher)
 
 - `launcher/src-tauri/src/mpq.rs`, `hybrid.rs`, `glue/LeylineHybrid.{xml,lua}`, `glue/LeylineMark.tga` (our mark),
   `glue/test_hybrid_glue.lua`.

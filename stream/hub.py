@@ -1,4 +1,4 @@
-"""The Leyline hub (hidden preview): one catalog of the Workshop, the community index and theme packs.
+"""The Leyline hub (the front page and the catalog, live on leylinelauncher.com): one catalog of the Workshop, the community index and theme packs.
 
 Built for the 2026-10-26 brief ("hide the full leyline front page thing but build it out for now") and the
 2026-10-29 one (an auto-populated index of open mods for every client build the launcher supports, and a way

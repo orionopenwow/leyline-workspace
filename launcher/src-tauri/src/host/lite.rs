@@ -1,9 +1,9 @@
-//! Den Lite: the tiny built-in Den server (no Docker, no database; `labs/den-lite`, a separate crate still being
-//! prototyped). Your Den starts it and plays straight into the white room; "Share with friends" moves the same Den to
+//! Den Lite: the tiny built-in Den server (no Docker, no database; `labs/den-lite`, its own crate, built by CI as
+//! the `den-lite-latest` release). Your Den starts it and signs in by itself into the white world; "Share with friends" moves the same Den to
 //! the full Docker Den (host/yourden.rs `move_to_kit`).
 //!
 //! This is only the launcher's side of it: the [`DenLite`] interface and a [`Binary`] that looks for the program and
-//! runs it. Nothing here links the prototype's code. Until a `den-lite` program is found, `available()` is false and
+//! runs it. Nothing here links Den Lite's code. Until a `den-lite` program is found, `available()` is false and
 //! the launcher offers the Docker Den instead.
 //!
 //! The contract the program is expected to keep (to be confirmed with labs/den-lite before it ships):

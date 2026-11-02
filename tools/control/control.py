@@ -51,7 +51,7 @@ ANSWERS = ROOT / "control" / "owner-answers.json"     # the owner's Done / answe
 DROP_MAX = 200 * 1024 * 1024
 AUDIT_HTML = ROOT / "logs" / "audit-latest.html"     # the release audit's report (tools/audit, docs/AUDIT.md)
 AUDIT_TXT = ROOT / "logs" / "audit-latest.txt"
-HQ_URL = "https://play.openvanilla.app/wrath/admin"   # Leyline HQ: the one place online (stream/hq.py)
+HQ_URL = "https://leylinelauncher.com/wrath/admin"   # Leyline HQ: the one place online (stream/hq.py)
 QUIET = "--quiet" in sys.argv                         # started at Windows sign-in: no browser tab
 TOKEN_FILE = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "WrathUnleashed" / "control-token"
 # The shared look (stream/www-files/art: wu-theme.css, the starfield, corners, dragons, divider, Cinzel), the same
@@ -272,9 +272,9 @@ def scrub(line: str) -> str:
         line = rx.sub(rep, line)
     return line
 CHECKS = [
-    ("Play page", "https://play.openvanilla.app/wrath"),
-    ("Game files", "https://wrath.openvanilla.app/data/__tier/index.json"),
-    ("Client", "https://wrath.openvanilla.app/boot-manifest.json"),
+    ("Play page", "https://leylinelauncher.com/wrath"),
+    ("Game files", "https://play.leylinelauncher.com/data/__tier/index.json"),
+    ("Client", "https://play.leylinelauncher.com/boot-manifest.json"),
 ]
 
 state = {"running": None, "lines": [], "health": {}, "health_at": 0, "auto_failed": None}

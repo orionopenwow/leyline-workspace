@@ -124,6 +124,9 @@ if MODE == "old":
     out = wp.legacy_body(html, "text/html; charset=utf-8", OLD["site"])
     check("before the move: new names in a page become the old ones",
           out == b'<a href="https://play.openvanilla.app/wrath/docs">x</a> wrath.openvanilla.app relay.openvanilla.app', out)
+    keep = b'https://survivors.leylinelauncher.com/licenses/ a.leylinelauncher.com.example leylinelauncher.community'
+    check("before the move: other names that contain a new one are left alone", wp.legacy_body(keep, "text/html", OLD["site"]) == keep,
+          wp.legacy_body(keep, "text/html", OLD["site"]))
     check("before the move: pictures are left alone", wp.legacy_body(b"\x89PNG leylinelauncher.com", "image/png", "x") == b"\x89PNG leylinelauncher.com")
 else:
     doc = b'{"download":"https://leylinelauncher.com/wrath/mods/x/download","page":"https://leylinelauncher.com/wrath/mods/x"}'

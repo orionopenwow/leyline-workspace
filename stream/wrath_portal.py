@@ -3002,7 +3002,10 @@ def status_with_gamedata(body: bytes) -> bytes:
 
 # Before the move (LEYLINE_DOMAIN_MOVE unset), pages and documents that already say the new names (the docs, the
 # modules' texts) show the old ones: longest names first, so play.leylinelauncher.com becomes wrath.openvanilla.app.
-_NEW_TO_OLD = tuple((n.encode(), o.encode()) for n, o in sorted(ADDRESSES.values(), key=lambda p: -len(p[0])))
+# Whole names only: survivors.leylinelauncher.com (its own address) is left alone.
+_NEW_TO_OLD_MAP = {n.encode(): o.encode() for n, o in ADDRESSES.values()}
+_NEW_NAME_RE = re.compile(rb"(?<![A-Za-z0-9.-])(" + b"|".join(re.escape(n) for n in sorted(_NEW_TO_OLD_MAP, key=len, reverse=True))
+                          + rb")(?![A-Za-z0-9-])")
 _TEXT_TYPES = ("text/", "application/json", "application/javascript", "image/svg+xml")
 
 
@@ -3017,9 +3020,7 @@ def legacy_body(body: bytes, ctype: str, host: str) -> bytes:
     if not DOMAIN_MOVED:
         if b"leylinelauncher.com" not in body:
             return body
-        for new, old in _NEW_TO_OLD:
-            body = body.replace(new, old)
-        return body
+        return _NEW_NAME_RE.sub(lambda m: _NEW_TO_OLD_MAP[m.group(1)], body)
     if PUBLIC_HOST == OLD_SITE_HOST or not ctype.startswith("application/json"):
         return body
     if host.split(":")[0].strip().lower() != OLD_SITE_HOST:

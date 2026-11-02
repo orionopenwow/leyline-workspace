@@ -66,7 +66,8 @@ sv-play (hosting/survivors/docker-compose.yml)   our wenilla-host --www <build> 
 7. **Upload and turn on.** `hosting\survivors\Put Survivors on Leyline - check.bat` first (read-only: DNS, what is
    ready). Then `Put Survivors on Leyline.bat`: survivors-check on your PC, the upload, survivors-check again on the
    server, sv-play, the Caddy site, a self-check, and only then Play on `/wrath/survivors`. It rolls back if any step
-   fails. `noupload` re-serves what is already there.
+   fails. `noupload` re-serves what is already there. In Leyline Control the same three are the steps
+   `sv-site-check` (read-only), `sv-site` and `sv-site-off`.
 8. **When you are happy:** set the catalog entry to `"status": "live"` in `stream/playmodes.json` (and its tests) so the
    Modes page and the launcher show it as playable. Until then it says Coming soon there, and the page has Play.
 

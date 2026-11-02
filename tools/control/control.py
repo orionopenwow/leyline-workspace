@@ -143,6 +143,12 @@ STEPS = {
     "vr-site": ("hosting/vanilla-remastered/Vanilla Remastered browser page.bat", "Vanilla Remastered in the browser: the OG 1.12 site at its own address (backup, self-check, rollback)", False),
     "vr-site-off": ("hosting/vanilla-remastered/Vanilla Remastered browser page - off.bat", "Undo: the Vanilla Remastered browser page off (the realm keeps running)", False),
     "vr-test": ("hosting/vanilla-remastered/Vanilla Remastered self-test.bat", "Vanilla Remastered self-test: a fresh TEST account made, logged in, deleted", False),
+    # Azeroth Survivors at its own address (docs/SURVIVORS.md, steps 7 and "Off again"). The recording before it
+    # (tools\survivors\Record Survivors files.bat) asks for your Data folder and plays in a browser window for about
+    # 45 minutes, so it stays a double-click and is not a step here.
+    "sv-site-check": ("hosting/survivors/Put Survivors on Leyline - check.bat", "Azeroth Survivors: its address and DNS, and whether the build and your recorded files are ready (read-only)", False),
+    "sv-site": ("hosting/survivors/Put Survivors on Leyline.bat", "Azeroth Survivors on: upload the build and your recorded files, its own site behind the sign-in, self-check, then Play (rollback on failure)", False),
+    "sv-site-off": ("hosting/survivors/Put Survivors on Leyline - off.bat", "Undo: Azeroth Survivors off (Play off, its site out; the files stay on the server)", False),
     "ovsite": ("tools/launcher-site/Land Leyline-Launcher site.bat", "openvanilla.app: land the site and repo cleanup on Leyline-Launcher main (Pages publishes it)", False),
     "ghclean-check": ("tools/github-cleanup/GitHub cleanup - dry run.bat", "What the GitHub cleanup would delete (read-only)", False),
     "ghclean": ("tools/github-cleanup/GitHub cleanup - do it.bat", "GitHub cleanup: old releases and packages (owner's choices, 2026-10-30)", False),
@@ -237,7 +243,7 @@ STEPS = {
 # Autopilot runs only these by itself; anything else waits for "Launch all".
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
-             "vr-data-check", "vr-site-check", "release-mirror-check", "bugs", "audit", "den-check", "domain-check"}
+             "vr-data-check", "vr-site-check", "sv-site-check", "release-mirror-check", "bugs", "audit", "den-check", "domain-check"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}
 
 # Never in a log or on the page: passwords, tokens, keys, connection strings (scrub() on every line a step prints).

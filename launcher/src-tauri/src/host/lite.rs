@@ -176,6 +176,10 @@ fn port_answers(port: u16) -> bool {
 
 static CHILD: Mutex<Option<Child>> = Mutex::new(None);
 
+/// Set by the owner's den-test (`den-play --test`): the Den Lite it starts takes the test's commands through its Dens
+/// folder (labs/den-lite testctl.rs, `DEN_LITE_TEST_CONTROL=1`; an older Den Lite just ignores it). Never for play.
+pub static TEST_CONTROL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// The program on this PC (found by [`candidates`]), run as a child of the launcher.
 pub struct Binary {
     pub exe: Option<PathBuf>,
@@ -228,6 +232,11 @@ impl DenLite for Binary {
         std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't make the Den folder: {e}"))?;
         let mut cmd = Command::new(exe);
         cmd.args(command_line(&dir, self.client.as_deref())).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        if TEST_CONTROL.load(std::sync::atomic::Ordering::Relaxed) {
+            cmd.env("DEN_LITE_TEST_CONTROL", "1");
+        } else {
+            cmd.env_remove("DEN_LITE_TEST_CONTROL");
+        }
         #[cfg(windows)]
         {
             // no console window next to the game

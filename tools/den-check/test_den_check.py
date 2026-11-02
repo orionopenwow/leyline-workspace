@@ -18,6 +18,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -153,6 +154,15 @@ class Check(unittest.TestCase):
         self.assertIn("INFO Forever UI's login screens: in Interface\\GlueXML", out)
         self.assertIn("this game refused Leyline's login screen once", out)
 
+    def test_loose_copies_of_the_games_own_addons_are_named(self):
+        rep, out = self.run_check()
+        self.assertIn("INFO copies of the game's own addons in Interface\\AddOns: none", out)
+        for n in ("Blizzard_CombatLog", "AzerothAdmin", "MiniGM"):
+            (self.game / "Interface" / "AddOns" / n).mkdir(parents=True)
+        rep, out = self.run_check()
+        self.assertIn("INFO copies of the game's own addons in Interface\\AddOns: Blizzard_CombatLog: the likeliest cause", out)
+        self.assertNotIn("AzerothAdmin", out, "other addons are no business of this line")
+
     def test_no_launcher_settings(self):
         shutil.rmtree(self.app)
         rep, out = self.run_check()
@@ -173,6 +183,209 @@ class AgainstDenLite(unittest.TestCase):
         self.assertEqual((bad[0][0], bad[0][1]), ("sign in", False))
         self.assertIn("wrong password", bad[0][2])
         self.assertEqual(len(bad), 1, "it stops at the first failure")
+
+
+def free_port():
+    import socket
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    p = s.getsockname()[1]
+    s.close()
+    return p
+
+
+class DenSteps(unittest.TestCase):
+    """The Den's smoke test (den_check.den_steps) against a real Den Lite started for a test, with this test's
+    headless game as the host in the world and a stand-in for the launcher's answers (an invite link made with
+    `den-lite guest add`, Forge's files reported as made). Everything but the real game window."""
+
+    def setUp(self):
+        self.bin = den_lite_bin()
+        if not self.bin:
+            self.skipTest("no Den Lite built here (cargo build in labs/den-lite, or DEN_LITE_BIN)")
+        self.env = os.environ.get("DEN_LITE_BIN")
+        os.environ["DEN_LITE_BIN"] = str(self.bin)
+        self.d = Path(tempfile.mkdtemp(prefix="den-steps-"))
+        self.root = self.d / "den-lite"
+        self.dens = self.root / "state" / "dens"
+        self.dens.mkdir(parents=True)
+        self.lp, self.wp = free_port(), free_port()
+        self.p = den_check.subprocess.Popen([str(self.bin), "--dens", str(self.dens), "--bind", "127.0.0.1", "--login-port", str(self.lp),
+                                             "--world-port", str(self.wp), "--password", "den", "--no-companion", "--test-control"],
+                                            stdin=den_check.subprocess.DEVNULL, stdout=den_check.subprocess.DEVNULL, stderr=den_check.subprocess.DEVNULL)
+        den_check.wait_for(lambda: den_check.port_open(self.lp), 5, 0.1)
+        import threading
+        import wowclient
+        K, realms = wowclient.login("127.0.0.1", self.lp, "DEN", "den")
+        self.w = wowclient.World(realms[0][1], "DEN", K)
+        self.w.until(wowclient.SMSG_AUTH_RESPONSE)
+        self.w.send(wowclient.CMSG_CHAR_ENUM)
+        b = self.w.until(wowclient.SMSG_CHAR_ENUM)
+        self.w.send(wowclient.CMSG_PLAYER_LOGIN, den_check.struct.pack("<Q", den_check.struct.unpack_from("<Q", b, 1)[0]))
+        self.w.until(wowclient.SMSG_LOGIN_VERIFY_WORLD)
+        self.w.s.settimeout(None)
+        self.stop = threading.Event()
+
+        def drain():   # the host's game reads what Den Lite sends it
+            try:
+                while True:
+                    self.w.frame()
+            except Exception:  # noqa: BLE001 - the socket closed
+                pass
+
+        def launcher():  # the launcher's test answers (app.rs den_watch with a test)
+            while not self.stop.is_set():
+                ask = den_check.read_json(self.dens / "den-lite.ask")
+                if ask:
+                    (self.dens / "den-lite.ask").unlink()
+                    if ask["ask"] == "invite":
+                        r = den_check.subprocess.run([str(self.bin), "guest", "add", "--dens", str(self.dens), "--name", "Rowan"], capture_output=True, text=True)
+                        g = json.loads(r.stdout)
+                        self.link = "https://relay.example.test/join/kzdvvj2umnduyauf#ABCDEFGHJKLMNPQRSTUVWXYZ~~%s.%s" % (g["user"], g["pass"])
+                        (self.root / "den-click.invite").write_text(json.dumps({"link": self.link}))
+                        (self.dens / "den-lite.answer").write_text(json.dumps({"id": ask["id"], "invite": self.link}))
+                    else:
+                        (self.root / "den-click.forge.json").write_text(json.dumps({"ok": True, "installed": False, "opened": False, "tile": "32,32",
+                                                                                     "tile_bytes": 4096, "den_file": "smoketest.den.json"}))
+                        (self.dens / "den-lite.answer").write_text(json.dumps({"id": ask["id"], "say": "Test: Forge's files are ready."}))
+                time.sleep(0.1)
+
+        threading.Thread(target=drain, daemon=True).start()
+        threading.Thread(target=launcher, daemon=True).start()
+
+    def tearDown(self):
+        if not getattr(self, "bin", None):
+            return
+        self.stop.set()
+        try:
+            self.w.s.shutdown(2)
+        except OSError:
+            pass
+        self.w.close()
+        self.p.terminate()
+        self.p.wait(5)
+        if self.env is None:
+            os.environ.pop("DEN_LITE_BIN", None)
+        else:
+            os.environ["DEN_LITE_BIN"] = self.env
+        shutil.rmtree(self.d, ignore_errors=True)
+
+    def test_every_step_passes_and_the_den_is_left_as_it_was(self):
+        ch = den_check.FileChannel(self.dens)
+        # the owner's Den before the test: one lantern, the stone room, and a backup of their own
+        self.assertEqual(ch.send(".den place lantern")["props"], 1)
+        ch.send(".den room stone")
+        (self.dens / "backup.den.json").write_text("my own backup")
+        rep = den_check.Report()
+        _, out = quiet(den_check.den_steps, rep, ch, self.dens, self.root, {den_check.TEST_MARK}, den_check.now_ms() - 1000)
+        text = rep.text()
+        self.assertEqual(rep.failed(), [], out)
+        for line in ("PASS build: place a piece: .den place chair", "PASS build: Den Lite logged it: den_change +1 -0", "PASS build: .build undo takes it back",
+                     "PASS save: .den save smoketest: smoketest.den.json, 1 props", "PASS load: .den load smoketest replace", "PASS save: the test save removed",
+                     "PASS room: the white room: The room is white now.", "PASS room: its size: Your Den is size 1 of 4",
+                     "PASS Forge: the Den asked the launcher", "PASS Forge: the editor's files: your Den's tile 32,32", "INFO Forge (the editor): not installed",
+                     "PASS Forge: the answer reached your game", "PASS share: a Den file the site takes: the site's own check passes (1 props)",
+                     "TODO share: upload a Den from Leyline: not built yet",
+                     "PASS invite: a link for one friend: https://relay.example.test/join/kzdv...#(secret hidden)~~G",
+                     "PASS invite: the link went into your Den panel", "PASS invite: a friend signs in with it: as Rowan", "PASS invite: your game was shown the friend: seen by Wren",
+                     "PASS invite: the friend's login taken back: {\"revoked\":1}",
+                     "PASS autosave: Den Lite kept the Den by itself"):
+            self.assertIn(line, text)
+        m = den_check.INVITE_RE.match(self.link)
+        self.assertNotIn(m.group(3), text, "never the Den's secret")
+        self.assertNotIn(m.group(5), out, "never the friend's password")
+        # left as it was: the lantern, the stone room, the owner's backup, no test save, no friend's login
+        state = ch.send(".den size")
+        self.assertEqual((state["props"], state["look"]), (1, "stone"))
+        self.assertEqual((self.dens / "backup.den.json").read_text(), "my own backup")
+        self.assertFalse((self.dens / "smoketest.den.json").exists())
+        self.assertFalse((self.root / "den-click.invite").exists())
+        live = den_check.subprocess.run([str(self.bin), "guest", "list", "--dens", str(self.dens)], capture_output=True, text=True).stdout
+        self.assertEqual(json.loads(live), [], "the friend's login is taken back")
+        # and the log check finds a secret where it would be
+        rep2 = den_check.Report()
+        (self.d / "leak.log").write_text("link " + self.link)
+        quiet(den_check.no_secrets_in_logs, rep2, [m.group(3)], [self.d / "leak.log"], "")
+        self.assertIn("FAIL invite: its secret is in no log: leak.log", rep2.text())
+
+    def test_an_older_launcher_never_gets_the_asks_and_a_silent_den_lite_stops_the_steps(self):
+        rep = den_check.Report()
+        _, out = quiet(den_check.den_steps, rep, den_check.FileChannel(self.dens), self.dens, self.root, set(), den_check.now_ms())
+        fails = [r[1] for r in rep.failed()]
+        self.assertEqual(fails, ["Forge: the editor's files", "invite: a link for one friend"], out)
+        self.assertIn("PASS autosave: Den Lite kept the Den by itself (1 props)", rep.text(), "kept while the piece was down")
+        self.assertFalse((self.root / "den-click.forge.json").exists())
+        # a Den Lite that doesn't take the test's commands: one FAIL, the rest SKIP
+        quiet_ch = den_check.FileChannel(self.d / "nowhere")
+        (self.d / "nowhere").mkdir()
+        orig = den_check.FileChannel.send
+        den_check.FileChannel.send = lambda self, cmd, wait=10.0: orig(self, cmd, 0.3)
+        try:
+            rep = den_check.Report()
+            quiet(den_check.den_steps, rep, quiet_ch, self.d / "nowhere", self.root, {den_check.TEST_MARK}, den_check.now_ms())
+        finally:
+            den_check.FileChannel.send = orig
+        self.assertEqual([r[1] for r in rep.failed()], ["the test's commands"])
+        self.assertTrue(all(r[0] == "SKIP" for r in rep.rows[1:]), rep.text())
+
+
+class Pieces(unittest.TestCase):
+    def test_invite_links_are_checked_and_never_shown_whole(self):
+        good = "https://relay.leylinelauncher.com/join/kzdvvj2umnduyauf#ABCDEFGHJKLMNPQRSTUVWXYZ~~GAB12.ABCDEFGH23456789"
+        self.assertTrue(den_check.INVITE_RE.match(good))
+        r = den_check.redact(good)
+        self.assertEqual(r, "https://relay.leylinelauncher.com/join/kzdv...#(secret hidden)~~GA...(password hidden)")
+        for bad in ("", "https://relay/join/x#y", good.replace("~~", "~"), good + " ", "http" + good[5:], good.replace("kzdv", "KZDV")):
+            self.assertIsNone(den_check.INVITE_RE.match(bad), bad)
+            self.assertNotIn("ABCDEFGHJK", den_check.redact(bad))
+
+    def test_todo_lines_dont_fail_the_test(self):
+        rep = den_check.Report()
+        quiet(rep.add, "TODO", "share: upload a Den from Leyline", "not built yet", "Today: ...")
+        code, out = quiet(rep.end, "DEN TEST")
+        self.assertEqual(code, 0)
+        self.assertIn("Not built yet (doesn't fail the test): share: upload a Den from Leyline", out)
+        self.assertIn("DEN TEST PASS", out)
+
+    def test_the_newest_den_lite_only_when_its_checksum_matches(self):
+        import hashlib
+        d = Path(tempfile.mkdtemp())
+        try:
+            root = d / "den-lite"
+            exe = root / "bin" / den_check.exe_name("den-lite")
+            new = b"the newest den lite"
+            sha = hashlib.sha256(new).hexdigest()
+            calls = []
+
+            def fetch(url, limit):
+                calls.append(url)
+                if url.endswith(".sha256"):
+                    return ("%s  %s\n" % (sha, den_check.den_lite_asset())).encode()
+                return served[0]
+            served = [new]
+            rep = den_check.Report()
+            quiet(den_check.den_lite_update, rep, root, fetch)
+            self.assertEqual(exe.read_bytes(), new)
+            self.assertIn("put in place", rep.text())
+            rep = den_check.Report()
+            quiet(den_check.den_lite_update, rep, root, fetch)
+            self.assertIn("already here", rep.text())
+            self.assertEqual(len(calls), 3, "no second download when it's the same")
+            sha = "0" * 64
+            served = [b"something else"]
+            rep = den_check.Report()
+            quiet(den_check.den_lite_update, rep, root, fetch)
+            self.assertIn("doesn't match its checksum", rep.text())
+            self.assertEqual(exe.read_bytes(), new, "a bad download is never put in place")
+
+            def offline(url, limit):
+                raise OSError("no network")
+            rep = den_check.Report()
+            quiet(den_check.den_lite_update, rep, root, offline)
+            self.assertIn("couldn't check", rep.text())
+            self.assertEqual(rep.failed(), [])
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
 
 
 class Milestones(unittest.TestCase):

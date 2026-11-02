@@ -20,6 +20,11 @@
 //! | `addon` | an addon message from the game (detail: its mod and name; never its data) |
 //! | `ask` | the game asked the launcher for something (detail: `invite` or `forge`) |
 //! | `peer_seen` | one player was shown to another (who: the one seeing; detail: the one seen) |
+//! | `answer` | the launcher's answer went into the game (detail: `invite` or `say`; never the link) |
+//! | `den_change` | the Den changed: a piece placed or taken back, a load, the room rebuilt (detail: `+<made> -<gone>`) |
+//! | `den_save` / `den_load` | `.den save <name>` / `.den load <name>` (detail: the name, and `replace` or `add`) |
+//! | `autosave` | the Den was written to `autosave.den.json` (detail: how many props) |
+//! | `test_cmd` | the den-test sent a command (testctl.rs; detail: its first two words) |
 //! | `logout` | the game logged out |
 //!
 //! Nothing secret is ever written: no password, no session key, no addon data.

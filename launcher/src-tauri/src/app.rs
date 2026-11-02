@@ -468,6 +468,12 @@ async fn den_invite(name: Option<String>) -> Result<DenInvite, String> {
 
 /// Invite friends, now (the button, and "Invite a friend" in the game's Den panel through Den Lite's ask).
 fn den_invite_now(name: Option<&str>) -> Result<DenInvite, String> {
+    den_invite_with(name, true)
+}
+
+/// `tunnel`: false for the owner's den-test: the same login and link, but the relay tunnel isn't started (the
+/// test's friend comes in on this PC, through Den Lite's friends' listener).
+fn den_invite_with(name: Option<&str>, tunnel: bool) -> Result<DenInvite, String> {
     use crate::host::{lite::{self, DenLite}, litenet};
     {
         let app = crate::settings::app_dir();
@@ -490,14 +496,19 @@ fn den_invite_now(name: Option<&str>) -> Result<DenInvite, String> {
         let root = lite::root(&app);
         let seed = litenet::load_or_create_key(&litenet::key_path(&root))?;
         let secret = lite::invite_secret(&root)?;
-        let tunnel = litenet::start(litenet::Setup {
-            endpoint: litenet::Endpoint::relay(realms::RELAY),
-            relay_name: realms::RELAY.into(),
-            seed,
-            name: "Den Lite".into(),
-            invite_secret: secret.clone(),
-            den_dir: l.den_dir(),
-        });
+        let tunnel = if tunnel {
+            litenet::start(litenet::Setup {
+                endpoint: litenet::Endpoint::relay(realms::RELAY),
+                relay_name: realms::RELAY.into(),
+                seed,
+                name: "Den Lite".into(),
+                invite_secret: secret.clone(),
+                den_dir: l.den_dir(),
+            })
+        } else {
+            let public = litenet::public_key(&seed)?;
+            litenet::TunnelState { relay: realms::RELAY.into(), realm_id: litenet::realm_id(&public), ..Default::default() }
+        };
         let g = l.guest_add(name)?;
         let link = litenet::invite_link(realms::RELAY, &tunnel.realm_id, &secret, Some((&g.user, &g.pass)));
         Ok(DenInvite { link, name: g.name, expires: g.expires, tunnel })
@@ -613,14 +624,32 @@ fn den_watch(st: DenStart, test: Option<u64>) -> crate::denclick::Outcome {
     let den_dir = crate::host::dens::dir(&root);
     let mut st = st;
     let game_path = st.game.clone();
+    let testing = test.is_some();
+    let test_root = root.clone();
     let mut asks = move || {
         let Some((id, what)) = denclick::take_ask(&den_dir_for_asks()) else { return };
         let d = den_dir_for_asks();
         match what.as_str() {
-            "invite" => match den_invite_now(None) {
-                Ok(i) => denclick::answer(&d, id, Some(&i.link), None),
+            "invite" => match den_invite_with(None, !testing) {
+                Ok(i) => {
+                    if testing {
+                        // for the den-test only, which reads it once and removes it (never into a log)
+                        let _ = crate::settings::write_atomic(&test_root.join(denclick::INVITE_FILE), serde_json::json!({ "link": i.link }).to_string().as_bytes());
+                    }
+                    denclick::answer(&d, id, Some(&i.link), None)
+                }
                 Err(e) => denclick::answer(&d, id, None, Some(&format!("No invite link: {e}"))),
             },
+            _ if testing => {
+                let r = forge_test(&app, &game_path, &crate::p2p::cmds::den_root());
+                let line = if r["ok"] == true {
+                    "Test: Forge's files for your Den are ready (Forge isn't opened during a test).".to_string()
+                } else {
+                    format!("Test: Forge's files couldn't be made: {}", r["error"].as_str().unwrap_or("?"))
+                };
+                let _ = crate::settings::write_atomic(&test_root.join(denclick::FORGE_REPORT), r.to_string().as_bytes());
+                denclick::answer(&d, id, None, Some(&line));
+            }
             _ => {
                 let r = crate::host::forge::open(&app, &game_path, &crate::p2p::cmds::den_root(), None);
                 let line = match r {
@@ -658,6 +687,11 @@ fn den_watch(st: DenStart, test: Option<u64>) -> crate::denclick::Outcome {
             let until = std::time::Instant::now() + std::time::Duration::from_secs(hold);
             while std::time::Instant::now() < until && game.alive() && !shot.exists() {
                 asks();
+                // the test's fallback when its Den Lite doesn't take commands from the Dens folder: a typed line
+                if let Some((id, line)) = denclick::take_type(&root) {
+                    let ok = denclick::type_chat(st.pid, &line);
+                    let _ = crate::settings::write_atomic(&root.join(denclick::TYPED_FILE), serde_json::json!({ "id": id, "ok": ok }).to_string().as_bytes());
+                }
                 std::thread::sleep(std::time::Duration::from_millis(250));
             }
             let _ = std::fs::remove_file(&shot);
@@ -678,6 +712,28 @@ fn den_watch(st: DenStart, test: Option<u64>) -> crate::denclick::Outcome {
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
     out
+}
+
+/// The den-test's "Shape the ground": what Open in Forge makes before it starts Forge (host/terrain.rs `workspace`:
+/// the Den's tile, its ground file in Forge's form, the one tile Forge may save, the newest Den file to draw), made
+/// and checked, but Forge itself is never started by a test.
+fn forge_test(app: &Path, game: &Path, den_root: &Path) -> serde_json::Value {
+    use crate::host::{forge, terrain};
+    let st = forge::state(app);
+    match terrain::workspace(app, game, den_root) {
+        Ok((ws, d)) => {
+            let ground = ws.dir.join(format!("{}.terrain.json", terrain::GROUND));
+            let tile = std::fs::metadata(&ws.adt).map(|m| m.len()).unwrap_or(0);
+            let args = terrain::forge_args(game, &ws, &d);
+            serde_json::json!({
+                "ok": tile > 0 && ground.is_file() && ws.locked.is_file(), "installed": st.installed, "opened": false,
+                "workspace": ws.dir.display().to_string(), "tile_bytes": tile, "ground": ground.is_file(), "locked": ws.locked.is_file(),
+                "den_file": ws.den_file.as_ref().and_then(|f| f.file_name()).map(|n| n.to_string_lossy().to_string()),
+                "map": d.tile.map, "tile": format!("{},{}", d.tile.x, d.tile.y), "args": args.len(),
+            })
+        }
+        Err(e) => serde_json::json!({ "ok": false, "installed": st.installed, "opened": false, "error": e }),
+    }
 }
 
 fn den_dir_for_asks() -> PathBuf {
@@ -728,6 +784,7 @@ async fn den_play_lite(core: State<'_, Core>, client: String) -> Result<SoloPlay
 pub fn den_play_cli(cli: crate::denclick::Cli) -> i32 {
     use crate::host::lite::{self, DenLite};
     std::hint::black_box(crate::denclick::CLI_MARK.as_ptr());
+    std::hint::black_box(crate::denclick::TEST_MARK.as_ptr());
     let dir = settings::app_dir();
     let core = Core {
         settings: Mutex::new(settings::load(&dir)),
@@ -752,6 +809,17 @@ pub fn den_play_cli(cli: crate::denclick::Cli) -> i32 {
         Ok(p) => p.path,
         Err(e) => return fail(e),
     };
+    // the test's Den Lite takes its commands through the Dens folder (labs/den-lite testctl.rs): one already running
+    // doesn't, so it is restarted for the test (and stopped after it, as one the test started)
+    let mut restarted = false;
+    if cli.test {
+        lite::TEST_CONTROL.store(true, std::sync::atomic::Ordering::Relaxed);
+        let l = lite::Binary::find(&settings::app_dir());
+        if l.status().running {
+            let _ = l.stop();
+            restarted = true;
+        }
+    }
     let was = match den_lite_up(&game) {
         Ok(w) => w,
         Err(e) => return fail(e),
@@ -769,6 +837,7 @@ pub fn den_play_cli(cli: crate::denclick::Cli) -> i32 {
         if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&t) {
             v["closed"] = true.into();
             v["den_lite_stopped"] = (cli.test && !was).into();
+            v["den_lite_restarted"] = restarted.into();
             let _ = settings::write_atomic(&root.join(crate::denclick::REPORT), v.to_string().as_bytes());
         }
     }

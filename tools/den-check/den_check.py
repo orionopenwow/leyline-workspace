@@ -82,6 +82,7 @@ MILESTONES = [
     ("in_world", "in the world (the white island)"),
     ("first_move", "first movement"),
     ("builder_ready", "the Leyline UI's Den panel and Builder answered"),
+    ("den_ui", "the Den bar opened (Build, Shape ground, Play, Save, Invite)"),
 ]
 
 
@@ -472,6 +473,7 @@ FIXES = {
     "in_world": "Entering the world didn't finish: send logs\\den-test-latest.txt and the screenshot.",
     "first_move": "The game didn't take the test's step forward (it may not have had the keys): send the log.",
     "builder_ready": "The Leyline UI didn't talk to Den Lite: install the Leyline addons in the launcher (Mods), then run den-test again.",
+    "den_ui": "The Den bar didn't open (an older Leyline UI: Den Lite's lines went to the chat): update the Leyline addons in the launcher (Mods), then run den-test again.",
 }
 
 
@@ -496,6 +498,15 @@ def event_after(den_dir, name, since, detail=None):
 
 def now_ms():
     return int(time.time() * 1000)
+
+
+def shown_where(den_dir, since):
+    """Where Den Lite showed a line it wasn't typed for (labs/den-lite notice.rs, its "notice" event): a toast in the
+    Den bar, or the chat when the game has no Den bar (an older Leyline UI)."""
+    e = wait_for(lambda: event_after(den_dir, "notice", since), 2, 0.1)
+    if not e:
+        return "a line in the game's chat (an older Den Lite)"
+    return "shown in the Den bar" if str(e.get("detail", "")).startswith("toast") else "a line in the game's chat (no Den bar: update the Leyline addons)"
 
 
 class FileChannel:
@@ -778,7 +789,7 @@ def den_steps(rep, ch, den_dir, root, launcher=None, start=None):
             rep.add("INFO", "Forge (the editor)", "installed (not opened by the test)" if fr.get("installed") else
                     "not installed: Your Den > Shape the ground > Get Forge (the test doesn't need it)")
         ans = wait_for(lambda: event_after(den_dir, "answer", t, "say"), 6) if fr is not None else None
-        rep.ok(ans is not None, "Forge: the answer reached your game", "a line in the game's chat" if ans else "not seen",
+        rep.ok(ans is not None, "Forge: the answer reached your game", shown_where(den_dir, ans["t"]) if ans else "not seen",
                "Den Lite didn't pass the launcher's answer into the game: send logs\\den-test-latest.txt.")
         try:
             rep_file.unlink()
@@ -840,7 +851,7 @@ def den_steps(rep, ch, den_dir, root, launcher=None, start=None):
                "The launcher didn't make an invite link: open Your Den in the launcher once, then run den-test again."
                if not inv else "The invite link isn't in the right shape: send logs\\den-test-latest.txt.")
         ans = wait_for(lambda: event_after(den_dir, "answer", t, "invite"), 6) if inv else None
-        rep.ok(ans is not None, "invite: the link went into your Den panel", "passed into the game" if ans else "not seen",
+        rep.ok(ans is not None, "invite: the link went into your Den panel", ("passed into the game, " + shown_where(den_dir, ans["t"])) if ans else "not seen",
                "Den Lite didn't pass the link into the game: send logs\\den-test-latest.txt.")
         if m:
             name = guest_name(den_dir, m.group(4))

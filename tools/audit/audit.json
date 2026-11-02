@@ -1,0 +1,21 @@
+{
+  "_doc": "The release audit's settings (tools/audit/audit.py, docs/AUDIT.md). Addresses: each name is tried new first, then old. tools/domain/addresses.json, when it is there, is the one list and wins over the copy below (same shape).",
+  "addresses": {
+    "site":  {"new": "leylinelauncher.com",       "old": "play.openvanilla.app"},
+    "game":  {"new": "play.leylinelauncher.com",  "old": "wrath.openvanilla.app"},
+    "relay": {"new": "relay.leylinelauncher.com", "old": "relay.openvanilla.app"},
+    "realmlist": {"new": "leylinelauncher.com",   "old": "play.openvanilla.app"}
+  },
+  "ssh": {"user": "root", "key": "~/.ssh/openwow", "host": "realmlist"},
+  "realm_name": "Wrath Unleashed",
+  "audit_account": "AUDIT",
+  "releases": {
+    "launcher_api": "https://api.github.com/repos/orionopenwow/Leyline/releases/tags/launcher-latest",
+    "launcher_exe": "https://github.com/orionopenwow/Leyline/releases/download/launcher-latest/Leyline.exe",
+    "den_lite": "https://github.com/orionopenwow/leyline-workspace/releases/download/den-lite-latest/",
+    "den_lite_windows": "den-lite-windows-x64.exe",
+    "den_lite_linux": "den-lite-linux-x64"
+  },
+  "survivors_address_file": "hosting/survivors/address.txt",
+  "max_pages": 220
+}

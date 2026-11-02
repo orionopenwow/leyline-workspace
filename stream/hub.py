@@ -676,6 +676,11 @@ class Store:
 
 # The feature sections the front page shows (Hub.features), in their order there: the launcher's story, nothing that
 # repeats the realm list above them. Forge, Agents and the rest keep their own pages and menu items.
+# The site is dark on every screen (owner 1 Nov 19:59: "mobile site broken no background its white": phones set to
+# light showed the pale theme without the backdrop). The light rules stay for paper only.
+LIGHT_MQ = "@media (prefers-color-scheme:light)"
+LIGHT_OFF = "@media print and (prefers-color-scheme:light)"
+
 FRONT_FEATURES = ("launcher", "looks", "host", "modes")   # Looks: a main section (owner 1 Nov 14:38); Mods off the front (owner 1 Nov 19:49)
 
 
@@ -1030,11 +1035,12 @@ class Hub:
         css = ((self.portal("LOOK_VARS") or LOOK_FALLBACK) + SITE_TOKENS_CSS + (self.portal("SPIN_CSS") or "") + HUB_CSS + SITE_CSS
                + SIDE_CSS + STONE_CSS + STONE_MOBILE_CSS + DARK_ISLANDS + self._backdrop() + css)
         return (f'<!doctype html><html lang="en" data-look="leyline"><head><meta charset="utf-8">'
-                f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light">'
+                f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">'
                 f'<title>{e(title)}</title>{meta}{robots}<style>{css}</style></head>'
                 f'<body class="hb"><a class="hb-skip" href="#main">Skip to content</a>{top}{self._turn_hint(path)}'
                 f'<main id="main" class="hb-main{" hb-front" if front else ""}">{flag}{sub}{body}</main>{foot}'
-                + (f'<script nonce="{e(nonce)}">{HUB_JS}</script>' if nonce else "") + '</body></html>').encode("utf-8")
+                + (f'<script nonce="{e(nonce)}">{HUB_JS}</script>' if nonce else "") + '</body></html>').replace(
+                    LIGHT_MQ, LIGHT_OFF).encode("utf-8")
 
     def _turn_hint(self, path: str) -> str:
         """Phones held upright (owner 2026-10-31: "sideways mode recommended on mobile, gentle encouragement"): a slim
@@ -4401,6 +4407,14 @@ box-shadow:inset 0 1px 0 rgba(255,255,255,.05);text-shadow:0 1px 1px rgba(0,0,0,
 body.hb a.hb-turn-x{flex:none;display:inline-flex;align-items:center;min-height:36px;padding:0 10px;color:#f1cf86!important;font-weight:650;text-decoration:none}
 body.hb a.hb-turn-x:hover{color:#fff!important}
 }
+/* phones: the top bar (and the side menu held sideways) slide away while you scroll down, back as soon as you scroll up
+   (owner 1 Nov 20:00); never while the menu is open */
+@media (max-width:1080px),(pointer:coarse) and (max-height:500px){
+body.hb .hb-top,body.hb .hb-nav{transition:transform .25s ease}
+html.hb-bars-off body.hb:not(:has(#hb-menu:checked)) .hb-top{transform:translateY(-110%)}
+@media (orientation:landscape) and (max-height:500px) and (pointer:coarse){
+html.hb-bars-off body.hb:not(:has(#hb-menu:checked)) .hb-nav{transform:translateX(-110%)}}}
+@media (prefers-reduced-motion:reduce){body.hb .hb-top,body.hb .hb-nav{transition:none}}
 @media (orientation:landscape) and (max-height:500px) and (pointer:coarse){
 :root{--hb-side:70px;--hb-bar:44px}
 body.hb{padding-left:var(--hb-side);padding-top:var(--hb-bar);font-size:14px}
@@ -4493,6 +4507,12 @@ if(!still&&"IntersectionObserver" in window){
 var top=d.querySelector(".hb-top");
 if(top&&!(window.CSS&&CSS.supports&&CSS.supports("animation-timeline: scroll()"))){
   var edge=function(){top.classList.toggle("hb-scrolled",scrollY>8);};edge();addEventListener("scroll",edge,{passive:true});}
+// phones: hide the bars while scrolling down, show them on the way up or near the top
+(function(){var y0=scrollY,acc=0,pend=0;var f=function(){pend=0;var y=scrollY,dy=y-y0;y0=y;
+  if(y<70){root.classList.remove("hb-bars-off");acc=0;return;}acc=(dy>0)===(acc>0)?acc+dy:dy;
+  if(acc>24)root.classList.add("hb-bars-off");else if(acc<-16)root.classList.remove("hb-bars-off");};
+  addEventListener("scroll",function(){if(!pend){pend=1;requestAnimationFrame(f);}},{passive:true});
+  d.addEventListener("focusin",function(ev){if(ev.target.closest&&ev.target.closest(".hb-top,.hb-nav"))root.classList.remove("hb-bars-off");});})();
 d.addEventListener("click",function(ev){d.querySelectorAll("details.hb-more-d[open]").forEach(function(x){if(!x.contains(ev.target))x.open=false;});});
 d.addEventListener("keydown",function(ev){if(ev.key!=="Escape")return;d.querySelectorAll("details.hb-more-d[open]").forEach(function(x){
   x.open=false;var s=x.querySelector("summary");if(s)s.focus();});});

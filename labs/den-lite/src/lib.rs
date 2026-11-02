@@ -15,6 +15,7 @@ pub mod login;
 pub mod objects;
 pub mod play;
 pub mod raw;
+pub mod testctl;
 pub mod world;
 
 use std::collections::HashMap;
@@ -60,6 +61,8 @@ pub struct Config {
     /// `--no-companion`: only when called.
     pub companion: bool,
     pub verbose: bool,
+    /// The den-test's commands through the Dens folder (testctl.rs); only with a loopback `bind`.
+    pub test_control: bool,
 }
 
 impl Default for Config {
@@ -81,6 +84,7 @@ impl Default for Config {
             remote_ports: Some((0, 0)),
             companion: true,
             verbose: false,
+            test_control: false,
         }
     }
 }
@@ -146,6 +150,7 @@ impl Shared {
         let ok = d.save(&self.cfg.den_dir, den::AUTOSAVE, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|t| t.as_secs()).unwrap_or(0)).is_ok();
         if ok {
             *last = key;
+            self.event("autosave", "", &format!("{} props", d.props.len()));
         }
         ok
     }
@@ -173,7 +178,12 @@ pub struct Running {
 }
 
 /// Binds both ports and serves them on background threads.
-pub fn start(cfg: Config) -> io::Result<Running> {
+pub fn start(mut cfg: Config) -> io::Result<Running> {
+    // the test's commands come from a file anyone on this PC could write: never on a Den others can reach
+    if cfg.test_control && !cfg.bind.is_loopback() {
+        eprintln!("den-lite: test commands are only for a Den on 127.0.0.1; they stay off");
+        cfg.test_control = false;
+    }
     let login = TcpListener::bind((cfg.bind, cfg.login_port))?;
     let world = TcpListener::bind((cfg.bind, cfg.world_port))?;
     let (la, wa) = (login.local_addr()?, world.local_addr()?);

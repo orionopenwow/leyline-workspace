@@ -12,7 +12,7 @@
 
 use crate::companion::{self, Asked, At};
 use crate::den::{self, Change, WorldObject};
-use crate::{ovmod, play, raw};
+use crate::{ovmod, play, raw, testctl};
 use crate::{Gender as HeroGender, Shared};
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -752,6 +752,10 @@ fn send_creates(c: &Writer, objs: &[WorldObject]) -> io::Result<()> {
 /// A change to the Den: its objects to everyone in the world (the one who made it, then the others), the line to
 /// the one who made it.
 fn apply(c: &Writer, shared: &Shared, ch: &Change) -> io::Result<()> {
+    if !ch.created.is_empty() || !ch.destroyed.is_empty() {
+        shared.event("den_change", "", &format!("+{} -{}", ch.created.len(), ch.destroyed.len()));
+        testctl::note_change(ch.created.len(), ch.destroyed.len());
+    }
     let to_all = |w: &Writer| -> io::Result<()> {
         for &g in &ch.destroyed {
             w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(g), target_died: false })?;
@@ -772,6 +776,7 @@ fn apply(c: &Writer, shared: &Shared, ch: &Change) -> io::Result<()> {
 
 /// A system line in the chat frame.
 fn say(c: &Writer, text: &str) -> io::Result<()> {
+    testctl::note_said(text);
     c.send(&SMSG_MESSAGECHAT {
         chat_type: SMSG_MESSAGECHAT_ChatType::System { target6: Guid::new(0) },
         language: Language::Universal,
@@ -860,6 +865,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             let r = shared.den.lock().unwrap().save(&shared.cfg.den_dir, w(2), now());
             match r {
                 Ok((path, n)) => {
+                    shared.event("den_save", "", w(2));
                     say(c, &format!("Saved to a file ({n} props): {}", path.display()))?;
                     cheer(c, shared, "first-save")
                 }
@@ -892,6 +898,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             }
             let ch = d.open(&doc, replace);
             drop(d);
+            shared.event("den_load", "", &format!("{name} {}", if replace { "replace" } else { "add" }));
             apply(c, shared, &ch)
         }
         (".den", "room") => match den::look(w(2)) {
@@ -1311,6 +1318,8 @@ fn watch_open(shared: &Arc<Shared>, w: Writer) -> StopOnDrop {
             // the launcher's answer to the game's ask (ovmod.rs): the invite link into the Den panel, or a line
             let sent = match ovmod::take_answer(&dir) {
                 Some(ovmod::Answer::Invite(link)) => {
+                    // never the link itself in the log: it holds the Den's secret and the friend's password
+                    shared.event("answer", "", "invite");
                     let me = PLAYER_GUID;
                     let mut ok = say(&w, "Your invite link is in the Den panel (/den): Ctrl+C copies it. Give it to one friend.").is_ok();
                     for b in ovmod::answer_bodies(me, "wuden", "invite", &link) {
@@ -1318,7 +1327,10 @@ fn watch_open(shared: &Arc<Shared>, w: Writer) -> StopOnDrop {
                     }
                     ok
                 }
-                Some(ovmod::Answer::Say(t)) => say(&w, &t).is_ok(),
+                Some(ovmod::Answer::Say(t)) => {
+                    shared.event("answer", "", "say");
+                    say(&w, &t).is_ok()
+                }
                 None => true,
             };
             if !sent {
@@ -1328,11 +1340,33 @@ fn watch_open(shared: &Arc<Shared>, w: Writer) -> StopOnDrop {
                 if flag.load(Ordering::Relaxed) {
                     return;
                 }
+                if shared.cfg.test_control {
+                    if let Some((id, cmd)) = testctl::take(&dir) {
+                        if test_command(&shared, &w, id, &cmd).is_err() {
+                            return;
+                        }
+                    }
+                }
                 std::thread::sleep(Duration::from_millis(100));
             }
         }
     });
     StopOnDrop(stop)
+}
+
+/// One of the den-test's commands (testctl.rs), run as the host typing it where they stand, and what it said and
+/// did written to `den-lite.test-out`.
+fn test_command(shared: &Shared, w: &Writer, id: u64, cmd: &str) -> io::Result<()> {
+    let Some((sess_id, _, p)) = shared.live.lock().unwrap_or_else(|e| e.into_inner()).clone() else { return Ok(()) };
+    let sess = Sess { id: sess_id, addons: Vec::new(), me: Me::host(shared) };
+    shared.event("test_cmd", "", &cmd.split_whitespace().take(2).collect::<Vec<_>>().join(" "));
+    let (r, cap) = testctl::capture(|| chat(w, shared, &sess, p, cmd));
+    let (props, look, size) = { let d = shared.den.lock().unwrap_or_else(|e| e.into_inner()); (d.props.len(), d.look.name, d.ring() + 1) };
+    testctl::write_out(&shared.cfg.den_dir, &serde_json::json!({
+        "id": id, "cmd": cmd, "said": cap.said, "created": cap.created, "destroyed": cap.destroyed,
+        "props": props, "look": look, "size": size, "t": now_ms(), "ok": r.is_ok(),
+    }));
+    r
 }
 
 fn check_open(shared: &Shared, w: &Writer, file: &str) -> io::Result<()> {

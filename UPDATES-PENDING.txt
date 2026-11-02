@@ -619,3 +619,8 @@
 1264a ship Save tonight's fixes to GitHub (the launcher rebuilds with the My Den test fix)
 1264b signin Website: Looks big, Host clearer, Mods off the front page
 1264c den-lite Den Lite: quiet about other servers' GM-addon commands
+1264e signin Website on phones: dark everywhere, bars hide while scrolling down
+1265a ship Save the full Den test (the launcher and Den Lite rebuild on GitHub)
+1265b den-lite Den Lite with the Den test's command channel (off unless a test starts it)
+1265c foreverui Leyline UI: no combat-log box in Your Den
+1265d addons Leyline addons for desktop players: no combat-log box in Your Den

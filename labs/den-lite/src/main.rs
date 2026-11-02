@@ -10,12 +10,13 @@ const ALIVE: &str = "den-lite.alive";
 const STOP: &str = "den-lite.stop";
 
 const USAGE: &str = "den-lite [--dens <folder>] [--bind 127.0.0.1] [--stamps <folder>] [--password <word>] [--name <name>] \
-[--gender male|female] [--client <game folder>] [--login-port 3724] [--world-port 8085] [--no-companion] [--no-friends]
+[--gender male|female] [--client <game folder>] [--login-port 3724] [--world-port 8085] [--no-companion] [--no-friends] [--test-control]
 den-lite guest add|list|revoke --dens <folder> [--name <name>] [--hours 24] [--verbose]
 
 A tiny local server for the 3.3.5a (12340) client: a white room to build in, on 127.0.0.1.
 Any account name (the launcher fills in DEN) logs in with the password (default \"den\"; also DEN_LITE_PASSWORD).
-Stamps come from --stamps (default: den-stamps beside the program), else the ones built in.";
+Stamps come from --stamps (default: den-stamps beside the program), else the ones built in.
+--test-control (or DEN_LITE_TEST_CONTROL=1): the den-test's commands through the Dens folder (127.0.0.1 only).";
 
 /// `den-lite guest add|list|revoke --dens <folder> ...`: friends' logins (guests.rs), for the launcher's Invite
 /// friends. `add [--name <name>] [--hours 24] [--host <host's character>]` prints {"user","pass","name","expires"}
@@ -64,6 +65,10 @@ fn main() {
     if let Ok(p) = std::env::var("DEN_LITE_PASSWORD") {
         cfg.password = p;
     }
+    // the launcher's `den-play --test` (an environment variable, so an older Den Lite just ignores it)
+    if std::env::var("DEN_LITE_TEST_CONTROL").is_ok_and(|v| v == "1") {
+        cfg.test_control = true;
+    }
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         let mut val = || args.next().unwrap_or_else(|| fail(&format!("{a} needs a value")));
@@ -86,6 +91,7 @@ fn main() {
             "--verbose" => cfg.verbose = true,
             "--no-companion" => cfg.companion = false,
             "--no-friends" => cfg.remote_ports = None,
+            "--test-control" => cfg.test_control = true,
             "-h" | "--help" => {
                 println!("{USAGE}");
                 return;

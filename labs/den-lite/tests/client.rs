@@ -1236,3 +1236,76 @@ fn one_click_lands_in_the_den_with_the_builder_ready() {
     drop(srv);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// The den-test's commands through the Dens folder (testctl.rs): what each said and did comes back in
+/// den-lite.test-out, the events show the build, the save, the load and the autosave; off unless asked for.
+#[test]
+fn the_den_test_types_through_the_dens_folder_not_the_keyboard() {
+    use den_lite::testctl::{CMD_FILE, OUT_FILE};
+    let dir = std::env::temp_dir().join(format!("den-lite-test-testctl-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let cfg = Config { login_port: 0, world_port: 0, den_dir: dir.clone(), stamps_dir: stamps(), companion: false, test_control: true, ..Config::default() };
+    let srv = start(cfg).expect("den lite starts");
+    let mut w = into_world(&srv, 2);
+    w.send(&heartbeat(16226.2, 16257.0, 14.2, 0.0));
+    let send = |id: u64, cmd: &str| -> serde_json::Value {
+        let tmp = dir.join("cmd.tmp");
+        std::fs::write(&tmp, serde_json::json!({"id": id, "cmd": cmd}).to_string()).unwrap();
+        std::fs::rename(&tmp, dir.join(CMD_FILE)).unwrap();
+        for _ in 0..80 {
+            let out = std::fs::read_to_string(dir.join(OUT_FILE)).unwrap_or_default();
+            if let Some(v) = out.lines().filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok()).find(|v| v["id"] == id) {
+                return v;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        panic!("no answer to {cmd}");
+    };
+    let size = send(1, ".den size");
+    assert_eq!((size["props"].as_u64(), size["look"].as_str(), size["size"].as_u64()), (Some(0), Some("white"), Some(1)), "{size}");
+    assert!(size["said"][0].as_str().unwrap().contains("16"), "{size}");
+    let placed = send(2, ".den place chair");
+    assert!(placed["created"].as_u64().unwrap() >= 1 && placed["props"] == 1, "{placed}");
+    let undone = send(3, ".build undo");
+    assert!(undone["destroyed"].as_u64().unwrap() >= 1 && undone["props"] == 0, "{undone}");
+    send(4, ".den place lantern");
+    let saved = send(5, ".den save smoketest");
+    assert!(saved["said"][0].as_str().unwrap().starts_with("Saved to a file (1 props)"), "{saved}");
+    let text = std::fs::read_to_string(dir.join("smoketest.den.json")).unwrap();
+    assert!(text.contains("\"leyline-den\""));
+    let loaded = send(6, ".den load smoketest replace");
+    assert_eq!(loaded["props"], 1, "{loaded}");
+    assert!(dir.join("backup.den.json").is_file(), "a replacing load keeps a backup");
+    let room = send(7, ".den room stone");
+    assert!(room["said"].as_array().unwrap().iter().any(|l| l == "The room is stone now.") && room["look"] == "stone", "{room}");
+    send(8, ".den room white");
+    // only Den commands: anything else is refused and answered at once
+    let refused = send(9, "hello everyone");
+    assert_eq!(refused["refused"], true);
+    // the autosave follows within a few seconds
+    let mut saw = false;
+    for _ in 0..50 {
+        if den_lite::events::read(&dir).iter().any(|l| l.ev == "autosave") {
+            saw = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(saw, "an autosave event");
+    let evs = den_lite::events::read(&dir);
+    for want in ["test_cmd", "den_change", "den_save", "den_load"] {
+        assert!(evs.iter().any(|l| l.ev == want), "{want}");
+    }
+    assert!(evs.iter().any(|l| l.ev == "den_load" && l.detail == "smoketest replace"));
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+
+    // without test control the file is never taken
+    let (srv, dir) = server("testctl-off", HeroGender::Female);
+    let _w = into_world(&srv, 0);
+    std::fs::write(dir.join(CMD_FILE), r#"{"id":1,"cmd":".den place chair"}"#).unwrap();
+    std::thread::sleep(Duration::from_millis(2500));
+    assert!(dir.join(CMD_FILE).exists() && !dir.join(OUT_FILE).exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}

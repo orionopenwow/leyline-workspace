@@ -1,11 +1,13 @@
 @echo off
 setlocal
 title Leyline - den-test (starts your game by itself)
-rem The real My Den, unattended: the launcher's own My Den code (Leyline.exe den-play --test) starts Den Lite and
-rem your game, signs in, waits for the white island, takes a screenshot, then closes the game and Den Lite and takes
-rem the one-time sign-in out. PASS / FAIL per step with times. Logs: tools\den-check\logs\den-test-latest.txt and .png
-rem   Den test.bat            the Den alone
-rem   Den test.bat invite     also a friend (a test login through the friends' listener) joins, and your game sees them
+rem The real My Den, unattended: the newest Den Lite, then the launcher's own My Den code (Leyline.exe den-play --test)
+rem starts Den Lite and your game, signs in, waits for the white island, then the Den's smoke test: place a piece and
+rem undo it, save and load a test Den (removed after), the white room and its size, Forge's files for your Den (Forge
+rem isn't opened), the saved Den checked as the site checks a shared one, an invite link and a test friend who signs
+rem in with it, the autosave. Then a screenshot, the game and Den Lite closed, the one-time sign-in out. Your Den is
+rem left as it was. PASS / FAIL per step with the fix. Logs: tools\den-check\logs\den-test-latest.txt and .png
+rem   Den test.bat            all of it (Den test - invite.bat does the same: the invite is always in)
 cd /d "%~dp0..\.."
 set "PY="
 where py >nul 2>&1 && set "PY=py -3"

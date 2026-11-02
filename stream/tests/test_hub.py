@@ -156,10 +156,10 @@ check("side menu (owner 2026-10-31: keep the side menu): wide screens get the la
       and front.index(HB.SITE_CSS.strip()[:40]) < front.index("--hb-side:236px")
       and "@media (max-width:1080px){.hb-side-t,.hb-side-b{display:none}}" in front)
 check("the launcher's palette: the generated tokens (the launcher's own blue, Light by the system) before the hub's styles",
-      HB.SITE_TOKENS_CSS.strip() in front and "--lk-accent:#5b8def" in HB.SITE_TOKENS_CSS and "#3592cf" not in HB.SITE_TOKENS_CSS
+      HB.SITE_TOKENS_CSS.strip().replace(HB.LIGHT_MQ, HB.LIGHT_OFF) in front and "--lk-accent:#5b8def" in HB.SITE_TOKENS_CSS and "#3592cf" not in HB.SITE_TOKENS_CSS
       and "@media (prefers-color-scheme:light){:root{--lk-bg:#eef1f6" in HB.SITE_TOKENS_CSS
       and front.index("--lk-accent:#5b8def") < front.index(".hb-skip{") < front.index(".hb-pg{")
-      and '<meta name="color-scheme" content="dark light">' in front)
+      and '<meta name="color-scheme" content="dark">' in front and "@media (prefers-color-scheme:light)" not in front)
 check("header: Play, Realms, Mods, Addons, Looks, Host, Forum, More (Modes, Gallery and Status out of the menu)", labels == NAV_ORDER, labels)
 hrefs = dict(re.findall(r'<a class="hb-ni[^"]*" href="([^"]+)"[^>]*><svg.*?</svg><span>([^<]+)</span>', nav, re.S)[i][::-1] for i in range(7))
 check("header: each item goes to the launcher page's web twin", hrefs == {

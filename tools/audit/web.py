@@ -172,7 +172,10 @@ def check_pages(ctx, rec):
 
     with ThreadPoolExecutor(8) as pool:
         res = list(pool.map(lambda u: (u, ctx.get(u, timeout=20, max_bytes=1 << 16)), sorted(pics)[:150]))
-    bad = [(u, r.status or r.error) for u, r in res if r.status != 200]
+    # a script or stylesheet behind the sign-in gate (the game's own /assets) is fine; a picture must load
+    pic = re.compile(r"\.(?:webp|png|jpe?g|gif|svg|avif|ico)$", re.I)
+    bad = [(u, r.status or r.error) for u, r in res
+           if r.status != 200 and not (r.status in GATED and not pic.search(urllib.parse.urlsplit(u).path))]
     rec.add(F, "Pictures load", PASS if not bad else FAIL, f"{len(res)} pictures" +
             (": " + ", ".join(f"{urllib.parse.urlsplit(u).path} {c}" for u, c in bad[:4]) if bad else ""),
             "Tell Claude these pictures (missing art: the signin or homeart step).")

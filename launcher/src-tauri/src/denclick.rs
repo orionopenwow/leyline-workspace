@@ -18,6 +18,12 @@
 //!
 //! While the game runs the launcher also answers what the game asks of it (`den-lite.ask`, labs/den-lite ovmod.rs):
 //! "Invite a friend" (a link for one friend, back into the Den panel) and "Shape the ground" (Forge opens).
+//!
+//! In the owner's den-test (`den-play --test`) the asks are answered without side effects outside this PC: the invite
+//! link is made without starting the relay tunnel and left for the test in [`INVITE_FILE`] (the test reads it, never
+//! prints its secret, and removes it), and "Shape the ground" gets Forge's files ready without opening Forge
+//! ([`FORGE_REPORT`]). The test types through Den Lite's own command files (labs/den-lite testctl.rs); only when that
+//! Den Lite is too old does it ask the launcher to type a line into the game window ([`TYPE_FILE`], Windows only).
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -33,6 +39,16 @@ pub const LOG: &str = "den-click.log";
 pub const REPORT: &str = "den-click.json";
 /// In the launcher program, so tools/den-check can tell a launcher that has `den-play` from an older one.
 pub const CLI_MARK: &str = "leyline-den-play-v1";
+/// In the launcher program when den-play --test answers the asks as a test (FORGE_REPORT, INVITE_FILE, TYPE_FILE).
+pub const TEST_MARK: &str = "leyline-den-test-v2";
+/// `<den-lite root>/den-click.forge.json`: the test's "Shape the ground": Forge's files made, Forge not opened.
+pub const FORGE_REPORT: &str = "den-click.forge.json";
+/// `<den-lite root>/den-click.invite`: the test's invite link (`{"link": ...}`); the den-test removes it at once.
+pub const INVITE_FILE: &str = "den-click.invite";
+/// `<den-lite root>/den-click.type`: `{"id": n, "line": ".den place chair"}`, a chat line to type (the fallback).
+pub const TYPE_FILE: &str = "den-click.type";
+/// `<den-lite root>/den-click.typed`: `{"id": n, "ok": bool}`, after it was typed.
+pub const TYPED_FILE: &str = "den-click.typed";
 
 /// One line of Den Lite's log.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -353,6 +369,20 @@ pub fn answer(den_dir: &Path, id: u64, invite: Option<&str>, say: Option<&str>) 
     let _ = crate::settings::write_atomic(&den_dir.join("den-lite.answer"), v.to_string().as_bytes());
 }
 
+/// The test's chat line to type (TYPE_FILE), taken: only `.den` / `.build` commands, one plain line.
+pub fn take_type(root: &Path) -> Option<(u64, String)> {
+    let p = root.join(TYPE_FILE);
+    let t = std::fs::read_to_string(&p).ok()?;
+    let _ = std::fs::remove_file(&p);
+    let v: serde_json::Value = serde_json::from_str(&t).ok()?;
+    let id = v.get("id")?.as_u64()?;
+    let line = v.get("line")?.as_str()?.trim().to_string();
+    let ok = line.len() <= 120
+        && line.chars().all(|c| c == ' ' || c.is_ascii_graphic())
+        && (line.starts_with(".den ") || line == ".den" || line.starts_with(".build "));
+    ok.then_some((id, line))
+}
+
 // ------------------------------------------------------------------------------------------------ the CLI
 
 /// `Leyline den-play [--test] [--client <id>] [--hold <seconds>]`: My Den from the command line (the owner's
@@ -476,6 +506,21 @@ pub mod win {
         }
     }
 
+    /// Enter (opens the chat box), the line, Enter: as a player types a command.
+    pub fn type_chat(pid: u32, line: &str) -> bool {
+        let Some(h) = window(pid) else { return false };
+        let gap = || std::thread::sleep(std::time::Duration::from_millis(30));
+        let mut ok = key(h, VK_RETURN, 0);
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        for c in line.encode_utf16() {
+            // SAFETY: a character message to the game's own window
+            ok &= unsafe { PostMessageW(h, WM_CHAR, c as usize, 1) } != 0;
+            gap();
+        }
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        ok & key(h, VK_RETURN, 0)
+    }
+
     pub fn send(pid: u32, k: Key, password: &str) -> bool {
         let Some(h) = window(pid) else { return false };
         let gap = || std::thread::sleep(std::time::Duration::from_millis(30));
@@ -497,6 +542,19 @@ pub mod win {
             Key::Enter => key(h, VK_RETURN, 0),
             Key::Forward => key(h, VK_W, 400),
         }
+    }
+}
+
+/// A chat line typed into the game window (the test's fallback; Windows only).
+pub fn type_chat(pid: u32, line: &str) -> bool {
+    #[cfg(windows)]
+    {
+        win::type_chat(pid, line)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (pid, line);
+        false
     }
 }
 
@@ -738,5 +796,14 @@ mod tests {
         std::fs::write(d.path().join(EVENTS), "{\"t\":5,\"ev\":\"auth_ok\"}\n{\"t\":20,\"ev\":\"auth_ok\",\"detail\":\"remote\"}\nnot json\n{\"t\":30,\"ev\":\"char_enum\"}\n").unwrap();
         let e = events_since(d.path(), 10);
         assert_eq!(e.iter().map(|e| e.ev.as_str()).collect::<Vec<_>>(), ["char_enum"]);
+        // the test's typed line: Den commands only
+        assert!(take_type(d.path()).is_none());
+        std::fs::write(d.path().join(TYPE_FILE), r#"{"id":3,"line":".den place chair"}"#).unwrap();
+        assert_eq!(take_type(d.path()), Some((3, ".den place chair".into())));
+        assert!(!d.path().join(TYPE_FILE).exists());
+        for bad in ["/run os.exit()", "hello", ".den\nx", ".server info"] {
+            std::fs::write(d.path().join(TYPE_FILE), serde_json::json!({"id": 4, "line": bad}).to_string()).unwrap();
+            assert_eq!(take_type(d.path()), None, "{bad}");
+        }
     }
 }

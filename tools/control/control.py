@@ -117,6 +117,7 @@ STEPS = {
     # leaves tools\den-check\logs\den-test-latest.txt and .png.
     "den-check": ("tools/den-check/Den check.bat", "My Den check (read-only): game folder, login archive, Config.wtf, Den Lite and a test sign-in", False),
     "den-test": ("tools/den-check/Den test.bat", "My Den test: starts your game by itself, signs in, then builds, saves and loads, the white room, Forge's files, a shareable Den file, an invite a test friend signs in with, the autosave; a screenshot, closes it (logs in tools\\den-check\\logs)", False),
+    "den-test-variants": ("tools/den-check/Den test - variants.bat", "Three Den tests to find what draws the Den green: our made texture; the game's own sky; the game's own sky and zone name (logs\\den-test-made/nosky/plain)", False),
     "den-test-invite": ("tools/den-check/Den test - invite.bat", "My Den test (the same as den-test: it always invites a test friend now)", False),
     "client":  ("stream/Update browser client.bat", "New browser game build", False),
     "client-back": ("stream/Roll back browser client.bat", "Undo: the previous browser game build back (the server keeps one; running it again swaps back)", False),

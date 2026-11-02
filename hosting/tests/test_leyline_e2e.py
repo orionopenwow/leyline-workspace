@@ -339,13 +339,18 @@ class OneDomainLine(unittest.TestCase):
     def test_domains_come_from_leyline_env(self):
         from wunet import domains
         d = domains.load({})
-        self.assertEqual(d, {"domain": "openvanilla.app", "relay": "relay.openvanilla.app",
-                             "site": "https://openvanilla.app", "join": "https://relay.openvanilla.app"})
+        self.assertEqual(d, {"domain": "leylinelauncher.com", "relay": "relay.leylinelauncher.com",
+                             "site": "https://leylinelauncher.com", "game": "https://play.leylinelauncher.com",
+                             "join": "https://relay.leylinelauncher.com",
+                             "old": {"site": "https://play.openvanilla.app", "game": "https://wrath.openvanilla.app",
+                                     "relay": "relay.openvanilla.app"}})
         d = domains.load({"LEYLINE_DOMAIN": "leyline.example"})
         self.assertEqual((d["relay"], d["site"], d["join"]),
                          ("relay.leyline.example", "https://leyline.example", "https://relay.leyline.example"))
         env = open(domains.FILE).read()
-        self.assertEqual([ln for ln in env.splitlines() if ln and not ln.startswith("#")], ["LEYLINE_DOMAIN=openvanilla.app"])
+        self.assertEqual([ln for ln in env.splitlines() if ln and not ln.startswith("#")],
+                         ["LEYLINE_DOMAIN=leylinelauncher.com", "LEYLINE_OLD_SITE=https://play.openvanilla.app",
+                          "LEYLINE_OLD_GAME=https://wrath.openvanilla.app", "LEYLINE_OLD_RELAY=relay.openvanilla.app"])
         # no hard-coded domain left in the host kit's and relay's code paths
         for p in ("kit/tools/wuhost/setup.py", "kit/tools/wuhost/agent.py", "relay/wurelay/relay.py",
                   "relay/wurelay/listing.py", "kit/leyline", "kit/host-wrath-realm.sh"):

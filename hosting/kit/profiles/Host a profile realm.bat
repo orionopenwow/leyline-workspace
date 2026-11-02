@@ -11,7 +11,7 @@ set "PD=%~dp0%WU_PROFILE%\"
 for %%I in ("%~dp0..") do set "KIT=%%~fI"
 cd /d "%KIT%"
 if not defined WU_TOOLS_IMAGE set "WU_TOOLS_IMAGE=wu-host-tools:1"
-if not defined WU_RELAY set "WU_RELAY=relay.openvanilla.app"
+if not defined WU_RELAY set "WU_RELAY=relay.leylinelauncher.com"
 if not defined WU_VISIBILITY set "WU_VISIBILITY=private"
 if not defined WU_NAME set "WU_NAME=My Leyline Realm"
 if not exist "%PD%profile.lock" (echo This kit has no profiles\%WU_PROFILE% folder. Download the full kit again. & pause & exit /b 1)

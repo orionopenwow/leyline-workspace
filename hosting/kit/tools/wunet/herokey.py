@@ -8,7 +8,7 @@ alone (another realm gets a different one for the same player).
 
 An assertion (every field is signed):
 
-    {"v": 1, "iss": "play.openvanilla.app", "kid": "<16 hex>", "aud": "<realm id>", "sub": "<26 base32>",
+    {"v": 1, "iss": "leylinelauncher.com", "kid": "<16 hex>", "aud": "<realm id>", "sub": "<26 base32>",
      "salt": "<64 hex>", "verifier": "<64 hex>", "login_ttl": 120, "nonce": "<32 hex>", "iat": <unix>, "exp": <unix>}
 
     sig = Ed25519(site key, "leyline-herokey-sso-v1\\n" + canonical JSON)   (wunet/keys.sign_doc)

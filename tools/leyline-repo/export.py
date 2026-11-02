@@ -103,7 +103,7 @@ def citation(rel: str, data: bytes):
 
 
 # Public config that carries an .env name: allowed only by exact path, and only with these keys.
-PUBLIC_ENV = {"hosting/kit/tools/wunet/leyline.env": {"LEYLINE_DOMAIN"}}
+PUBLIC_ENV = {"hosting/kit/tools/wunet/leyline.env": {"LEYLINE_DOMAIN", "LEYLINE_OLD_SITE", "LEYLINE_OLD_GAME", "LEYLINE_OLD_RELAY"}}   # names only (docs/DOMAIN-MOVE.md)
 
 BANNED = [re.compile(r"world\s+of\s+warcraft", re.I), re.compile(r"warcraft", re.I),
           re.compile(r"lich\s+king", re.I), re.compile(r"blizzard", re.I), re.compile(r"\bWoW\b")]

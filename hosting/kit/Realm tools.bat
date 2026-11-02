@@ -13,7 +13,7 @@ echo   2  friend     make a game account for a friend
 echo   3  newinvite  make a new invite link (the old one stops working)
 echo   4  public     list the realm in Beacons
 echo   5  private    friends with the link only
-echo   6  claim      link the realm to your Hero Key account (token from openvanilla.app)
+echo   6  claim      link the realm to your Hero Key account (token from leylinelauncher.com)
 echo   7  signup     who may make accounts on the join page (invite / open / off)
 echo   8  logs       the last lines of every server's log
 echo   9  rules      after editing state\rules.txt or state\beacon.json: update the realm list text
@@ -44,7 +44,7 @@ pause & exit /b 0
 pause & exit /b 0
 :claim
 set "K=%~2"
-if "%K%"=="" set /p "K=Claim token from openvanilla.app: "
+if "%K%"=="" set /p "K=Claim token from leylinelauncher.com: "
 %T% claim %K% && echo Done. The site sees the token on your realm's status page within a minute.
 pause & exit /b 0
 :signup

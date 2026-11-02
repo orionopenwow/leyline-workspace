@@ -41,6 +41,9 @@ set -euo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOSTSH="$KIT/host-wrath-realm.sh"
 STATE="$KIT/state"
+# the website's address (tools/wunet/leyline.env: https://<LEYLINE_DOMAIN>; docs/DOMAIN-MOVE.md)
+LEYLINE_DOMAIN="${LEYLINE_DOMAIN:-$(sed -n 's/^LEYLINE_DOMAIN=\([^ #]*\).*/\1/p' "$KIT/tools/wunet/leyline.env" 2>/dev/null | head -1)}"
+LEYLINE_SITE="${LEYLINE_SITE:-https://${LEYLINE_DOMAIN:-leylinelauncher.com}}"
 
 if [ -t 1 ]; then B=$'\033[1m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[31m'; N=$'\033[0m'; else B=""; G=""; Y=""; R=""; N=""; fi
 say()  { printf '%s\n' "$*"; }
@@ -261,7 +264,7 @@ cmd_link() {
       say "Linked server: $(state_get name)   realm id $(state_get realm_id)"
       say "Agent:  $(docker ps -a --filter "name=^$LINK_C\$" --format '{{.Status}}' 2>/dev/null | head -1)"
       say "Relay:  $([ "$(link_state connected)" = true ] && echo connected || echo 'not connected yet')   realm list: $(link_state listing_status)"
-      say "Page:   https://play.${LEYLINE_DOMAIN:-openvanilla.app}/wrath/r/$(state_get realm_id)"
+      say "Page:   ${LEYLINE_SITE}/wrath/r/$(state_get realm_id)"
       return ;;
     stop) docker stop "$LINK_C" >/dev/null 2>&1 || true; say "Stopped. Your server shows as offline on the list at once and leaves it after 6 hours. Start again: leyline link"; return ;;
     remove)
@@ -316,7 +319,7 @@ cmd_link() {
     else say "  ${Y}Not connected yet: check this machine is online (docker logs $LINK_C).${N}"; fi
   fi
   step "Done"
-  say "  Your server shows on the Leyline realm list within a minute: https://play.${LEYLINE_DOMAIN:-openvanilla.app}/wrath/r/$(state_get realm_id)"
+  say "  Your server shows on the Leyline realm list within a minute: ${LEYLINE_SITE}/wrath/r/$(state_get realm_id)"
   say "  Nothing on your server was changed. Two things to know:"
   say "  - Players arrive at your login server through the relay; the realm address your server hands out must"
   say "    already work for players (it's the one they use today). Leyline leaves it alone."

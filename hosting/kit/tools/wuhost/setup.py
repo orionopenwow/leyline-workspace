@@ -2,7 +2,7 @@
 /kit (so the host's PC needs Docker only, no Python).
 
   python -m wuhost.setup init --name "Frost Haven" --profile main --visibility private
-         [--image ghcr.io/... --tag stable] [--relay relay.openvanilla.app] [--site https://openvanilla.app]
+         [--image ghcr.io/... --tag stable] [--relay relay.leylinelauncher.com] [--site https://leylinelauncher.com]
          [--bots 40]
   python -m wuhost.setup show                       the invite link, login, status (plain text)
   python -m wuhost.setup get                        earlier answers as KEY=VALUE (for the .bat)
@@ -1092,7 +1092,7 @@ def cmd_link(a):
     if not os.path.exists(path("rules.txt")) or a.rules_file:
         with open(path("rules.txt"), "w", encoding="utf-8") as f:
             f.write(RULES_HELP + "".join(r + "\n" for r in rules))
-    print(json.dumps({"realm_id": rid, "name": name, "page": f"https://play.{domains.DOMAIN}/wrath/r/{rid}"}))
+    print(json.dumps({"realm_id": rid, "name": name, "page": f"{domains.SITE}/wrath/r/{rid}"}))
 
 
 BRAND_RE = re.compile(r"(?i)world\s*of\s*warcraft|\bwow\b|warcraft|lich\s*king|blizzard")
@@ -1278,7 +1278,14 @@ def pin_site_key(site, get=None):
             if e.code == 404:
                 return None
             raise
-    doc = (get or _get)(url)
+    try:
+        doc = (get or _get)(url)
+    except OSError:   # the new name not reachable yet (no DNS): the old one (docs/DOMAIN-MOVE.md)
+        old = domains.fallback(url)
+        if not old:
+            raise
+        url = old
+        doc = (get or _get)(url)
     if not isinstance(doc, dict):
         return []
     pubs = [k.get("pub") for k in doc.get("keys") or [] if isinstance(k, dict) and k.get("use") in ("current", "next")]

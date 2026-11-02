@@ -988,6 +988,9 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
         (".den", "friends") => friends(c, shared, w(2), w(3)),
         (".den", "invite") | (".den", "forge") => ask_launcher(c, shared, w(1)),
         (".den", _) | (".build", _) => say(c, "Den Lite knows: .den place, .den find, .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room, .den grow, .den size, .den companion, .den ask, .den mode, .den mods, .den friends, .den invite, .den forge."),
+        // Another server's commands (GM addons send ".server info", ".account onlinelist" on login): not said
+        // aloud, and nothing to answer in a Den.
+        (w0, _) if w0.starts_with('.') => Ok(()),
         _ => {
             say_aloud(c, shared, sess, text)?;
             // "Jaina, ..." near her: she hears it too (said aloud as usual). The short commands ("Jaina, come") are
@@ -1055,6 +1058,9 @@ fn guest_chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> i
     let w = |i: usize| words.get(i).map(String::as_str).unwrap_or("");
     if !text.trim_start().starts_with('.') {
         return say_aloud(c, shared, sess, text);
+    }
+    if !matches!(w(0), ".den" | ".build") {
+        return Ok(());
     }
     let builds = matches!((w(0), w(1)), (".den", "place") | (".den", "stamp") | (".build", "undo"));
     let looks = matches!((w(0), w(1)), (".den", "find") | (".den", "stamps") | (".den", "mode") | (".den", "modes") | (".den", "mods") | (".den", "addons"))

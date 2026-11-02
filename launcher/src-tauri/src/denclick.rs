@@ -103,6 +103,12 @@ pub struct Timing {
     pub total_max: u64,
 }
 
+/// The test's step: after the Leyline UI answers, and again if no movement shows.
+const MOVE_SETTLE: u64 = 2_500;
+const MOVE_NO_UI: u64 = 8_000;
+const MOVE_RETRY: u64 = 3_000;
+const MOVE_TRIES: u32 = 3;
+
 pub const TIMING: Timing = Timing {
     first_password: 5_000,
     first_password_glue: 20_000,
@@ -127,7 +133,7 @@ pub struct Driver {
     pub passwords: u32,
     pub realm_enters: u32,
     pub enters: u32,
-    moved: bool,
+    moves: u32,
     /// What it did, for the log: (ms from start, what).
     pub log: Vec<(u64, String)>,
 }
@@ -138,7 +144,7 @@ fn last<'a>(evs: &'a [Ev], name: &str) -> Option<&'a Ev> {
 
 impl Driver {
     pub fn new(start: u64, glue: bool, test: bool) -> Driver {
-        Driver { glue, test, start, t: TIMING, window_at: None, last_send: 0, passwords: 0, realm_enters: 0, enters: 0, moved: false, log: Vec::new() }
+        Driver { glue, test, start, t: TIMING, window_at: None, last_send: 0, passwords: 0, realm_enters: 0, enters: 0, moves: 0, log: Vec::new() }
     }
 
     fn note(&mut self, now: u64, what: impl Into<String>) {
@@ -157,12 +163,23 @@ impl Driver {
     }
 
     pub fn step(&mut self, now: u64, window: bool, evs: &[Ev]) -> Act {
-        if last(evs, "in_world").is_some() {
-            if self.test && !self.moved && last(evs, "first_move").is_none() {
-                self.moved = true;
-                return self.send(now, Key::Forward, "in the world: one step for the test");
+        if let Some(w) = last(evs, "in_world") {
+            if !self.test || last(evs, "first_move").is_some() {
+                return Act::Done;
             }
-            return Act::Done;
+            // The world is still loading when the server says "in the world": wait until the Leyline UI has
+            // answered (its load screen is gone) or a few seconds, then step, and again if no movement shows.
+            let ui = last(evs, "builder_ready").or_else(|| last(evs, "addon")).map(|e| e.t);
+            let ready_at = ui.map(|t| t + MOVE_SETTLE).unwrap_or(w.t + MOVE_NO_UI).max(w.t + MOVE_SETTLE);
+            if self.moves >= MOVE_TRIES {
+                return if now >= self.last_send + MOVE_RETRY { Act::Done } else { Act::Wait };
+            }
+            if now < ready_at || (self.moves > 0 && now < self.last_send + MOVE_RETRY) {
+                return Act::Wait;
+            }
+            self.moves += 1;
+            let why = if self.moves == 1 { "in the world: one step for the test".to_string() } else { format!("in the world: step again ({} of {MOVE_TRIES})", self.moves) };
+            return self.send(now, Key::Forward, &why);
         }
         if now.saturating_sub(self.start) > self.t.total_max {
             return self.give_up(now, "not in the world after 150 seconds");
@@ -648,9 +665,25 @@ mod tests {
     #[test]
     fn the_test_takes_one_step_in_the_world() {
         let mut d = Driver::new(0, false, true);
+        let mut evs = vec![ev(10, "in_world")];
+        assert_eq!(d.step(100, true, &evs), Act::Wait, "the world is still loading");
+        evs.push(ev(1_000, "builder_ready"));
+        assert_eq!(d.step(2_000, true, &evs), Act::Wait, "the UI just answered");
+        assert_eq!(d.step(3_600, true, &evs), Act::Send(Key::Forward));
+        assert_eq!(d.step(4_000, true, &evs), Act::Wait, "waits to see it");
+        assert_eq!(d.step(6_700, true, &evs), Act::Send(Key::Forward), "again when nothing moved");
+        evs.push(ev(6_900, "first_move"));
+        assert_eq!(d.step(7_000, true, &evs), Act::Done);
+        // without the UI: a longer wait, then at most three steps
+        let mut d = Driver::new(0, false, true);
         let evs = vec![ev(10, "in_world")];
-        assert_eq!(d.step(100, true, &evs), Act::Send(Key::Forward));
-        assert_eq!(d.step(200, true, &evs), Act::Done, "once");
+        assert_eq!(d.step(5_000, true, &evs), Act::Wait);
+        let sent = (0..40).map(|i| d.step(8_100 + i * 500, true, &evs)).filter(|a| *a == Act::Send(Key::Forward)).count();
+        assert_eq!(sent, 3);
+        assert_eq!(d.step(40_000, true, &evs), Act::Done);
+        // not a test: done at once
+        let mut d = Driver::new(0, false, false);
+        assert_eq!(d.step(100, true, &evs), Act::Done);
     }
 
     #[test]

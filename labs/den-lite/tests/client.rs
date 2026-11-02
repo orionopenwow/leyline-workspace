@@ -1111,6 +1111,10 @@ fn a_friend_joins_through_the_friends_listener_and_both_see_each_other() {
     // taken back: the login no longer works
     den_lite::guests::revoke(&dir, &g.user, now()).unwrap();
     assert!(login(rl, &g.user, &g.pass).is_err());
+    // the log says the host's game was shown the friend (den-test --invite reads this)
+    let ev = den_lite::events::read(&dir);
+    assert!(ev.iter().any(|e| e.ev == "peer_seen" && e.who == "Wren" && e.detail == g.name), "{ev:?}");
+    assert!(ev.iter().any(|e| e.ev == "auth_ok" && e.who == g.user && e.detail == "remote"));
     let _ = std::fs::remove_dir_all(&dir);
 }
 

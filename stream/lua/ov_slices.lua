@@ -78,7 +78,9 @@ local SAMPLER_BYOC = "The " .. SAMPLER_NAME .. " streams Dalaran, the starting a
 local SAMPLER_SHORT = "Add your own game folder to explore the whole world"
 local SAMPLER_WELCOME = "|cff66ccff[Leyline]|r Welcome to the " .. SAMPLER_NAME .. " (temporary). "
     .. "Try it out here; community realms on Leyline are where the world opens up."
-local function byoc() return sampler() and SAMPLER_BYOC or BYOC end
+-- the names of now (ov_modapi.lua OVMod.Names: the new ones once the domain move is on)
+local function names(s) return (OVMod and OVMod.Names) and OVMod.Names(s) or s end
+local function byoc() return names(sampler() and SAMPLER_BYOC or BYOC) end
 local function byocShort() return sampler() and SAMPLER_SHORT or BYOC_SHORT end
 
 -- Dalaran (game_tele "Dalaran") is home at every tier: tier 1 of every slice.
@@ -261,7 +263,7 @@ local function tell(p, guid, long)
     local t = now()
     if (lastSent[guid] or 0) + 60 <= t then
         lastSent[guid] = t
-        p:SendBroadcastMessage(TAG .. (long or byoc()))
+        p:SendBroadcastMessage(TAG .. (long and names(long) or byoc()))
         p:SendAreaTriggerMessage(byocShort())
     end
 end
@@ -552,7 +554,7 @@ local function onLogin(event, player)
         player:SendBroadcastMessage(TAG .. "In the browser you live in " .. placeNames(f, player) .. " until level "
             .. lowLevel() .. "; then the Dungeon Finder opens. Type .play for the menu. "
             .. (sampler() and "Add your own game folder to explore the whole world" or "To go everywhere, drop "
-            .. "your own 3.3.5a game folder on the game page") .. " (how: " .. HELP .. ").")
+            .. "your own 3.3.5a game folder on the game page") .. " (how: " .. names(HELP) .. ").")
     end
 end
 

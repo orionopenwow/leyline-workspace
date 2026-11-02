@@ -19,22 +19,22 @@ const FAKE = ({ page, modes }) => {
   const base = { official: false, kind: "PvE", ruleset: "main", state: "live", version: "3.3.5a", core: "azerothcore", build: "3.3.5a",
     tags: [], region: null, region_estimated: false, language: null, max_players: null, uptime_24h: null, uptime_7d: null,
     is_new: false, score: 0, featured: false, verified: false, direct: false, rules: [], claimed: true, players: 0, bots: 0,
-    tagline: "", summary: "", join_url: null, discord: null, relay: "relay.openvanilla.app" };
-  const R = (o) => Object.assign({}, base, o, { report_url: o.official ? null : "https://play.openvanilla.app/wrath/realms/report?realm=" + o.realm_id });
+    tagline: "", summary: "", join_url: null, discord: null, relay: "relay.leylinelauncher.com" };
+  const R = (o) => Object.assign({}, base, o, { report_url: o.official ? null : "https://leylinelauncher.com/wrath/realms/report?realm=" + o.realm_id });
   const realms = [
-    R({ slug: "official", name: "Wrath Unleashed", official: true, tagline: "Our own realm: drop in and say hello.", address: "play.openvanilla.app", group: "official", players: 4, bots: 10 }),
+    R({ slug: "official", name: "Wrath Unleashed", official: true, tagline: "Our own realm: drop in and say hello.", address: "leylinelauncher.com", group: "official", players: 4, bots: 10 }),
     R({ slug: "c-dddddddddddddddd", realm_id: "dddddddddddddddd", name: "Old Days", featured: true, verified: true, core: "vmangos",
-        tags: ["pvp", "rp"], region: "eu", language: "en", uptime_7d: 97, players: 12, address: "relay.openvanilla.app:40020", group: "featured" }),
+        tags: ["pvp", "rp"], region: "eu", language: "en", uptime_7d: 97, players: 12, address: "relay.leylinelauncher.com:40020", group: "featured" }),
     R({ slug: "c-bbbbbbbbbbbbbbbb", realm_id: "bbbbbbbbbbbbbbbb", name: "Busy Den", tags: ["bots"], region: "na-east", is_new: true,
-        players: 30, bots: 40, max_players: 100, uptime_24h: 99, address: "relay.openvanilla.app:40011", group: "community" }),
+        players: 30, bots: 40, max_players: 100, uptime_24h: 99, address: "relay.leylinelauncher.com:40011", group: "community" }),
     R({ slug: "c-eeeeeeeeeeeeeeee", realm_id: "eeeeeeeeeeeeeeee", name: "Lantern Isle", tags: ["custom"], region: "oce",
-        players: 7, uptime_7d: 92, address: "relay.openvanilla.app:40031", group: "community" }),
-    R({ slug: "c-ffffffffffffffff", realm_id: "ffffffffffffffff", name: "Quiet Meadow", tags: ["rp"], region: "eu", players: 3, address: "relay.openvanilla.app:40033", group: "community" }),
+        players: 7, uptime_7d: 92, address: "relay.leylinelauncher.com:40031", group: "community" }),
+    R({ slug: "c-ffffffffffffffff", realm_id: "ffffffffffffffff", name: "Quiet Meadow", tags: ["rp"], region: "eu", players: 3, address: "relay.leylinelauncher.com:40033", group: "community" }),
   ];
   const P = (id, name, desc, extra) => Object.assign({ id, source: "packaged", name, description: desc, category: "addons",
     builds: ["3.3.5a"], author: "Leyline", author_url: "", licence: "MIT", repo: "", page: "", credits: name + " by Leyline · MIT",
     stars: null, last_push: "", version: "1.0.0", kind: "ui", permissions: [], on_wrath: false,
-    download: "https://play.openvanilla.app/wrath/mods/" + id.slice(4) + "/download", sha256: "ab".repeat(32), size: 1000 }, extra || {});
+    download: "https://leylinelauncher.com/wrath/mods/" + id.slice(4) + "/download", sha256: "ab".repeat(32), size: 1000 }, extra || {});
   const catalog = { categories: [{ id: "addons", name: "Addons and UI", line: "", icon: "" }, { id: "sandbox", name: "Sandbox and game modes", line: "", icon: "" },
     { id: "tools", name: "Tools", line: "", icon: "" }],
     projects: [P("mod:quest-lens", "Quest Lens", "Shows where your quests are on the map."),
@@ -51,8 +51,8 @@ const FAKE = ({ page, modes }) => {
   window.__TAURI__ = { core: { invoke: async (cmd, args) => {
     switch (cmd) {
       case "get_state": return { version: "", settings: { clients: [{ id: "c-1", name: "My game", path: "/games/mine", build: "3.3.5a", realmlist: "" }],
-        selected_client: "c-1", selected_realm: "play.openvanilla.app", wine: { enabled: false, command: "wine", prefix: "" }, count_installs: true },
-        official_realm: "play.openvanilla.app", browser_url: "https://play.openvanilla.app/wrath", windows: false, data_dir: "/tmp" };
+        selected_client: "c-1", selected_realm: "leylinelauncher.com", wine: { enabled: false, command: "wine", prefix: "" }, count_installs: true },
+        official_realm: "leylinelauncher.com", browser_url: "https://leylinelauncher.com/wrath", windows: false, data_dir: "/tmp" };
       case "realms_list": return { realms, network: { realms: 5, players: 56, bots: 50 }, from_cache: false, saved_at: 1, error: null };
       case "realm_status": return { state: "online", players: 4, bots: 10, ping_ms: 38 };
       case "p2p_flags": return { effective: { p2p_hosting: false, limits: {} }, known: [], local: { overrides: {} }, site: {} };

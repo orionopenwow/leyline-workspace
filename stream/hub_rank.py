@@ -428,6 +428,15 @@ _get = lambda name: None   # noqa: E731
 store: Ranks | None = None
 
 
+def _our_origin(origin: str) -> bool:
+    """An Origin that is this site, on its new name or its old one (docs/DOMAIN-MOVE.md)."""
+    try:
+        known = _get("SITE_ORIGINS")
+    except Exception:   # noqa: BLE001
+        known = None
+    return origin in (known or {f"https://{_get('PUBLIC_HOST') or 'play.openvanilla.app'}"})
+
+
 def bind(getter) -> None:
     global _get
 
@@ -551,7 +560,7 @@ def _cross_site(h) -> bool:
     if h.headers.get("Sec-Fetch-Site", "") == "cross-site":
         return True
     origin = h.headers.get("Origin", "")
-    return (bool(origin) and origin != f"https://{_get('PUBLIC_HOST') or 'play.openvanilla.app'}"
+    return (bool(origin) and not _our_origin(origin)
             and not (origin == "null" and h.headers.get("Sec-Fetch-Site", "") == "same-origin"))
 
 

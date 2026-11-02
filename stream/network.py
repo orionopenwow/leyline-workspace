@@ -151,6 +151,15 @@ def bind(getter) -> None:
     _get = getter
 
 
+def _our_origin(origin: str) -> bool:
+    """An Origin that is this site, on its new name or its old one (docs/DOMAIN-MOVE.md)."""
+    try:
+        known = P("SITE_ORIGINS")
+    except Exception:   # noqa: BLE001
+        known = None
+    return origin in (known or {f"https://{P('PUBLIC_HOST') or 'play.openvanilla.app'}"})
+
+
 def P(name):
     try:
         return _get(name) if _get else None
@@ -390,7 +399,7 @@ def facets(realms: list[dict]) -> dict:
 # ----------------------------------------------------------------------------------------------- JSON
 def record_of(r: dict, sample: dict | None = None) -> dict:
     """One display realm as a schema-1 listing record (what the launcher's realms.rs reads)."""
-    relay = r.get("relay") or "relay.openvanilla.app"
+    relay = r.get("relay") or "relay.leylinelauncher.com"
     rid = r["id"]
     return {
         "schema": 1, "slug": "c-" + rid, "name": r.get("name", ""), "official": False,
@@ -832,7 +841,7 @@ def post(h, path: str) -> None:
         h.send(429, P("busy_page")(back="/wrath/realms"))
         return
     origin = h.headers.get("Origin", "")
-    if origin and origin != f"https://{P('PUBLIC_HOST') or 'play.openvanilla.app'}" and not (origin == "null" and h.headers.get("Sec-Fetch-Site", "") == "same-origin"):
+    if origin and not _our_origin(origin) and not (origin == "null" and h.headers.get("Sec-Fetch-Site", "") == "same-origin"):
         h.send(403, P("error_page")("That form came from another site."))
         return
     form = _form(h)

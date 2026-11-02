@@ -113,7 +113,7 @@ local function remember(t) if t then seen[#seen + 1] = t end return t end
 -- ---------------------------------------------------------------- no page (the desktop client)
 check("no page: streamed line", remember(G.Line()):find(G.STREAMED, 1, true) ~= nil)
 check("no page: the help says it is for the browser game", remember(G.Help()):find("In the browser game", 1, true)
-    and G.Help():find("play.openvanilla.app/wrath/docs/play", 1, true))
+    and G.Help():find("leylinelauncher.com/wrath/docs/play", 1, true))
 check("Esc menu shows the status line", G.menuLine and G.menuLine.parent == GameMenuFrame and G.menuLine.text:find(G.STREAMED, 1, true))
 local ok, msg = G.Ask()
 check("Ask sets the page's global", ok and WUUI_GAMEFOLDER_ASK == "pick" and remember(msg):find("folder picker"))

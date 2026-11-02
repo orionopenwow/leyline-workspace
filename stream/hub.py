@@ -1166,7 +1166,7 @@ class Hub:
         for r in shown:
             if r["sample"]:
                 continue
-            port, relay = r.get("port"), r.get("relay") or "relay.openvanilla.app"
+            port, relay = r.get("port"), r.get("relay") or "relay.leylinelauncher.com"
             rest.append({**r, "home": False, "address": f"{relay}:{port}" if port else ""})
         rest.sort(key=lineup_rank)   # stable: the network's order inside each group
         t = hub_totals([home] + rest)   # every realm, before the filters; bots apart from players

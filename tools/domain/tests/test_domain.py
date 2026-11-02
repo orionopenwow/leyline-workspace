@@ -426,6 +426,49 @@ exit 0''')
         self.assertEqual(self.read(self.cf), CADDYFILE)
 
 
+class Components(unittest.TestCase):
+    """Every component's own copy of the names agrees with addresses.json (the one list)."""
+    def src(self, rel):
+        with open(os.path.join(ROOT, rel), encoding="utf-8") as f:
+            return f.read()
+
+    def test_the_portal(self):
+        s = self.src("stream/wrath_portal.py")
+        for p in dc.PARTS:
+            self.assertIn(f'"{p}": ("{A[p]["new"]}", "{A[p]["old"]}")', s)
+
+    def test_the_launcher(self):
+        s = self.src("launcher/src-tauri/src/addresses.rs")
+        for const, p, k in (("SITE_HOST", "site", "new"), ("GAME_HOST", "game", "new"), ("RELAY_HOST", "relay", "new"),
+                            ("OLD_SITE_HOST", "site", "old"), ("OLD_GAME_HOST", "game", "old"), ("OLD_RELAY_HOST", "relay", "old")):
+            self.assertIn(f'pub const {const}: &str = "{A[p][k]}";', s)
+        self.assertIn(f'concat!("https://{A["site"]["new"]}", $path)', s)
+        self.assertIn(f'concat!("https://{A["relay"]["new"]}", $path)', s)
+        ui = self.src("launcher/ui/addresses.js")
+        self.assertIn(f'const SITE_HOST = "{A["site"]["new"]}";', ui)
+        self.assertIn(f'const OLD_SITE_HOST = "{A["site"]["old"]}";', ui)
+
+    def test_the_host_pack(self):
+        env = self.src("hosting/kit/tools/wunet/leyline.env")
+        self.assertIn(f"LEYLINE_DOMAIN={A['site']['new']}\n", env)
+        self.assertIn(f"LEYLINE_OLD_SITE=https://{A['site']['old']}\n", env)
+        self.assertIn(f"LEYLINE_OLD_GAME=https://{A['game']['old']}\n", env)
+        self.assertIn(f"LEYLINE_OLD_RELAY={A['relay']['old']}\n", env)
+        self.assertEqual(A["game"]["new"], "play." + A["site"]["new"])     # the kit derives play. and relay.
+        self.assertEqual(A["relay"]["new"], "relay." + A["site"]["new"])
+
+    def test_the_game_page_and_the_realm(self):
+        for f in ("stream/www-files/wrath-page.js", "stream/www-files/ownfiles.js", "stream/www-files/wu-loading.js"):
+            self.assertIn(f"const NEW_GAME_HOST = '{A['game']['new']}';", self.src(f), f)
+        page = self.src("stream/www-files/wrath-page.js")
+        self.assertIn(f"onNewName() ? 'https://{A['site']['new']}' : 'https://{A['site']['old']}'", page)
+        lua = self.src("realm/custom/lua_scripts/ov_modapi.lua")
+        for p in dc.PARTS:
+            self.assertIn(f'gsub("{A[p]["old"].replace(".", "%.")}", "{A[p]["new"]}")', lua)
+        self.assertIn("leyline-domain.on", lua)
+        self.assertIn("custom/lua_scripts/leyline-domain.on", self.src("tools/domain/domain.sh"))
+
+
 class Bats(unittest.TestCase):
     def test_the_three_steps(self):
         wrap = open(os.path.join(TOOLS, "Domain move.bat"), encoding="utf-8").read()

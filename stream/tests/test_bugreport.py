@@ -243,7 +243,7 @@ class DiscordPlan(unittest.TestCase):
         self.assertNotRegex(text, r"(?i)world\s*of\s*warcraft|\bwow\b|warcraft|lich\s*king|blizzard")
         self.assertNotRegex(text, r"\b\d+\.\d+(\.\d+)?[a-z]?\b", "no version numbers")
         hosts = {urllib.parse.urlsplit(u).hostname for u in re.findall(r"https?://[^\s)`]+", text)}
-        self.assertLessEqual(hosts, {"play.openvanilla.app", "discord.gg", "discord.com", "reddit.com", "www.reddit.com"})
+        self.assertLessEqual(hosts, {"leylinelauncher.com", "play.openvanilla.app", "discord.gg", "discord.com", "reddit.com", "www.reddit.com"})
         self.assertNotRegex(text, r"(?i)patreon|ko-?fi|paypal|donat|\btips?\b|buy me")
         self.assertIn("TODO(owner)", text)
         for need in ("How to report a bug", "How to share your Den", "How to host your own realm", "**The rules**"):

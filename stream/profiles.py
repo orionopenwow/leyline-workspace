@@ -290,6 +290,15 @@ def bind(getter) -> None:
     _get = getter
 
 
+def _our_origin(origin: str) -> bool:
+    """An Origin that is this site, on its new name or its old one (docs/DOMAIN-MOVE.md)."""
+    try:
+        known = P("SITE_ORIGINS")
+    except Exception:   # noqa: BLE001
+        known = None
+    return origin in (known or {f"https://{host()}"})
+
+
 def P(name):
     try:
         return _get(name) if _get else None
@@ -679,7 +688,7 @@ def _same_site(h) -> bool:
     if sfs == "cross-site":
         return False
     origin = h.headers.get("Origin", "")
-    return not origin or origin == f"https://{host()}" or (origin == "null" and sfs == "same-origin")
+    return not origin or _our_origin(origin) or (origin == "null" and sfs == "same-origin")
 
 
 def _steps(on: int) -> str:

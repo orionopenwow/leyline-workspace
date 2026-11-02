@@ -11,7 +11,7 @@ local W = WrathUnleashedUI
 local PANEL_W, PANEL_H, ROW_H, ROWS = 460, 470, 22, 12
 
 local WORKSHOP = {
-    { "Every mod", "https://play.openvanilla.app/wrath/mods" },
+    { "Every mod", "https://leylinelauncher.com/wrath/mods" },
     { "Make a mod", "https://github.com/orionopenwow/WrathUnleashed/tree/main/mods" },
     { "This realm's code", "https://github.com/orionopenwow/WrathUnleashed" },
     { "Forever UI (GPL-2)", "https://github.com/Adrestie/mod-forever-ui" },

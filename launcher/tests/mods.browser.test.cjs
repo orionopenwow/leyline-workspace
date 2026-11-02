@@ -19,7 +19,7 @@ const INDEX = 'file://' + path.join(__dirname, '..', 'ui', 'index.html');
 const P = (id, name, extra) => Object.assign({ id, source: 'packaged', name, description: name + ' does things.', category: 'addons',
   builds: ['3.3.5a'], author: 'Someone', author_url: '', licence: 'MIT', repo: '', page: '', credits: `${name} by Someone · MIT`,
   stars: null, last_push: '', version: '1.0.0', kind: 'ui', permissions: [], on_wrath: false,
-  download: `https://play.openvanilla.app/wrath/mods/${id.slice(4)}/download`, sha256: 'ab'.repeat(32), size: 1000 }, extra || {});
+  download: `https://leylinelauncher.com/wrath/mods/${id.slice(4)}/download`, sha256: 'ab'.repeat(32), size: 1000 }, extra || {});
 const CATALOG = { categories: [{ id: 'addons', name: 'Addons and UI', line: '', icon: '' }, { id: 'sandbox', name: 'Sandbox and game modes', line: '', icon: '' },
   { id: 'tools', name: 'Tools', line: '', icon: '' }],
   projects: [
@@ -58,9 +58,9 @@ const FAKE = ({ catalog, metrics, order, link, signedOut, noRanks, installedMods
     switch (cmd) {
       case 'get_state': return { version: 'test', settings: { clients: [
           { id: 'c335a-1', name: 'My Wrath', path: '/x', build: '3.3.5a', realmlist: '' }],
-        selected_client: 'c335a-1', selected_realm: 'play.openvanilla.app', wine: { enabled: true, command: 'wine', prefix: '' },
+        selected_client: 'c335a-1', selected_realm: 'leylinelauncher.com', wine: { enabled: true, command: 'wine', prefix: '' },
         count_installs: true },
-        official_realm: 'play.openvanilla.app', browser_url: 'https://play.openvanilla.app/wrath', windows: false, data_dir: '/tmp' };
+        official_realm: 'leylinelauncher.com', browser_url: 'https://leylinelauncher.com/wrath', windows: false, data_dir: '/tmp' };
       case 'mods_catalog': return catalog;
       case 'mods_ranked': {
         if (noRanks) throw 'offline';
@@ -253,7 +253,7 @@ test('pictures: the catalog field, the Workshop screenshot, the drawn tile on er
   const cat = JSON.parse(JSON.stringify(CATALOG));
   cat.projects[0].thumb = '/wrath/art/hub-thumbs/someone__alpha.webp';             // a catalog picture (site path)
   cat.projects[1].thumb = 'https://elsewhere.example/bravo.png';                     // another host: never used
-  cat.projects[1].page = 'https://play.openvanilla.app/wrath/mods/bravo';
+  cat.projects[1].page = 'https://leylinelauncher.com/wrath/mods/bravo';
   cat.projects[4].repo = 'https://github.com/Owner/Repo';
   const page = await browser.newPage();
   const errors = [];
@@ -272,12 +272,12 @@ test('pictures: the catalog field, the Workshop screenshot, the drawn tile on er
   await page.waitForFunction(() => document.querySelectorAll('#cat-grid .mod-card').length > 0);
   // Alpha: the catalog's picture, loaded
   await page.waitForFunction(() => document.querySelector('#cat-grid .mod-card[data-id="mod:alpha"] .dc-thumb').classList.contains('has-img'));
-  assert.equal(await card(page, 'mod:alpha').locator('.dc-thumb img').getAttribute('src'), 'https://play.openvanilla.app/wrath/art/hub-thumbs/someone__alpha.webp');
+  assert.equal(await card(page, 'mod:alpha').locator('.dc-thumb img').getAttribute('src'), 'https://leylinelauncher.com/wrath/art/hub-thumbs/someone__alpha.webp');
   assert.equal(await card(page, 'mod:alpha').locator('.dc-thumb img').getAttribute('loading'), 'lazy');
   // Bravo: not the other host; the Workshop's first screenshot, a 404, so the drawn tile stays
   await page.waitForFunction(() => !document.querySelector('#cat-grid .mod-card[data-id="mod:bravo"] .dc-thumb img'));
   assert.ok(!asked.some((u) => u.includes('elsewhere.example')), 'never another host');
-  assert.ok(asked.includes('https://play.openvanilla.app/wrath/mods/bravo/shot/0'), 'the Workshop screenshot was tried');
+  assert.ok(asked.includes('https://leylinelauncher.com/wrath/mods/bravo/shot/0'), 'the Workshop screenshot was tried');
   assert.equal(await card(page, 'mod:bravo').locator('.dc-gen b').textContent(), 'B');
   assert.ok(await card(page, 'mod:bravo').locator('.dc-gen svg path').count() === 1, 'a category glyph');
   assert.ok(await card(page, 'mod:bravo').locator('.dc-gen').isVisible());
@@ -287,13 +287,13 @@ test('pictures: the catalog field, the Workshop screenshot, the drawn tile on er
   await tabTo(page, 'mods');
   await page.waitForFunction(() => document.querySelector('#cat-grid .mod-card[data-id="link:0123456789ab"]'));
   await page.waitForTimeout(100);
-  assert.ok(asked.includes('https://play.openvanilla.app/wrath/art/hub-thumbs/owner__repo.webp'));
-  assert.ok(asked.every((u) => u.startsWith('https://play.openvanilla.app/')), 'only the site');
+  assert.ok(asked.includes('https://leylinelauncher.com/wrath/art/hub-thumbs/owner__repo.webp'));
+  assert.ok(asked.every((u) => u.startsWith('https://leylinelauncher.com/') || u.startsWith('https://play.openvanilla.app/')), 'only the site (on either of its names)');
   await tabTo(page, 'addons');
   // a click on the card (not its button) opens the page; INSTALL still installs
   await card(page, 'mod:bravo').locator('.desc').click();
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'open_url'));
-  assert.deepEqual(await calls(page, 'open_url'), [{ url: 'https://play.openvanilla.app/wrath/mods/bravo' }]);
+  assert.deepEqual(await calls(page, 'open_url'), [{ url: 'https://leylinelauncher.com/wrath/mods/bravo' }]);
   await card(page, 'mod:bravo').locator('.acts .btn').click();
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'mod_install'));
   assert.deepEqual(await calls(page, 'mod_install'), [{ client: 'c335a-1', project: 'mod:bravo' }]);

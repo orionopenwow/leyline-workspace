@@ -249,8 +249,8 @@ def links_in(text: str) -> list[str]:
 # (LEYLINE_BRAND=1 in portal.env, realm/brand.sh on), the site shows these pages with the words they had before:
 # (page, the new words, the old words). Delete this table once the brand is on for good.
 UNTIL_FLIP = (
-    ("hero-key", "is run by the Leyline Launcher realm service on play.openvanilla.app.",
-     "is run by the Open Vanilla realm service on play.openvanilla.app."),
+    ("hero-key", "is run by the Leyline Launcher realm service on leylinelauncher.com.",
+     "is run by the Open Vanilla realm service on leylinelauncher.com."),
     ("hero-key", "These are in the Leyline Launcher repo, not here,",
      "These are in the Open Vanilla repo, not here,"),
     ("hero-key", "(`launcher/herokey_v2.py` in Leyline Launcher)",

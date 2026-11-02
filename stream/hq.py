@@ -1589,7 +1589,7 @@ def _relay_base() -> str:
     except Exception:   # noqa: BLE001
         u = ""
     m = re.match(r"^(https?://[A-Za-z0-9.:-]+)/api/listing/realms\.json$", u)
-    return m.group(1) if m else "https://relay.openvanilla.app"
+    return m.group(1) if m else "https://relay.leylinelauncher.com"
 
 
 REASON_BOX = ('<input type="text" name="reason" maxlength="200" placeholder="why (staff only)" aria-label="Reason" '

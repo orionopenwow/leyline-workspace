@@ -21,7 +21,7 @@ local W = WrathUnleashedUI
 local H = {}
 W.Host = H
 
-local PUBLIC_BASE = "https://play.openvanilla.app"
+local PUBLIC_BASE = "https://leylinelauncher.com"
 local WIN_W, WIN_H, ROW = 560, 632, 26
 local PAGE_WAIT = 8          -- seconds: the page didn't take the hand-over by then = no page (the desktop client)
 local SEND_EVERY = 1         -- seconds between control messages from this window (the realm limits too)

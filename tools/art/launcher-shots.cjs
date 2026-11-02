@@ -15,7 +15,7 @@ const MODES = CAT.modes.map((m) => ({ id: m.id, name: m.name, line: m.line, vers
 
 const FAKE = (o) => {
   const calls = (window.__calls = []);
-  try { localStorage.clear(); localStorage.setItem('leyline.page', o.page || 'play'); localStorage.setItem('leyline.mode', 'online'); localStorage.setItem('leyline.joined', JSON.stringify(['relay.openvanilla.app:40002'])); } catch (_) { /* fine */ }
+  try { localStorage.clear(); localStorage.setItem('leyline.page', o.page || 'play'); localStorage.setItem('leyline.mode', 'online'); localStorage.setItem('leyline.joined', JSON.stringify(['relay.leylinelauncher.com:40002'])); } catch (_) { /* fine */ }
   const clients = [
     { id: 'c335a-1', name: 'Northrend', path: 'C:\\Games\\Northrend', build: '3.3.5a', realmlist: '' },
     { id: 'c1121-1', name: 'Classic', path: 'C:\\Games\\Classic', build: '1.12.1', realmlist: '' },
@@ -24,16 +24,16 @@ const FAKE = (o) => {
     { id: 'c548-1', name: 'Misty Isles', path: 'C:\\Games\\Misty Isles', build: '5.4.8', realmlist: '' },
   ];
   const realms = [
-    { slug: 'official', name: 'Wrath Unleashed', official: true, state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: [], players: 42, bots: 120, address: 'play.openvanilla.app', mods: [] },
-    { slug: 'c-jgt5rpofn7yaisep', realm_id: 'jgt5rpofn7yaisep', name: "Builders' Realm", state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: ['custom'], players: 3, bots: 0, address: 'relay.openvanilla.app:40030', mods: [] },
-    { slug: 'c-aaaa', realm_id: 'aaaaaaaaaaaaaaaa', name: 'Frost Haven', state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: ['pve'], players: 17, bots: 30, address: 'relay.openvanilla.app:40002', mods: [], tagline: 'A friendly levelling realm' },
-    { slug: 'c-bbbb', realm_id: 'bbbbbbbbbbbbbbbb', name: 'Duel Town', state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: ['pvp'], players: 7, bots: 0, address: 'relay.openvanilla.app:40003', mods: [] },
+    { slug: 'official', name: 'Wrath Unleashed', official: true, state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: [], players: 42, bots: 120, address: 'leylinelauncher.com', mods: [] },
+    { slug: 'c-jgt5rpofn7yaisep', realm_id: 'jgt5rpofn7yaisep', name: "Builders' Realm", state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: ['custom'], players: 3, bots: 0, address: 'relay.leylinelauncher.com:40030', mods: [] },
+    { slug: 'c-aaaa', realm_id: 'aaaaaaaaaaaaaaaa', name: 'Frost Haven', state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: ['pve'], players: 17, bots: 30, address: 'relay.leylinelauncher.com:40002', mods: [], tagline: 'A friendly levelling realm' },
+    { slug: 'c-bbbb', realm_id: 'bbbbbbbbbbbbbbbb', name: 'Duel Town', state: 'live', build: '3.3.5a', version: '3.3.5a', core: 'azerothcore', tags: ['pvp'], players: 7, bots: 0, address: 'relay.leylinelauncher.com:40003', mods: [] },
   ];
   window.__TAURI__ = { core: { invoke: async (cmd, args) => {
     calls.push([cmd, args]);
     switch (cmd) {
-      case 'get_state': return { version: '0.9', settings: { clients, selected_client: 'c335a-1', selected_realm: 'play.openvanilla.app',
-        wine: { enabled: false, command: 'wine', prefix: '' } }, official_realm: 'play.openvanilla.app', browser_url: 'https://play.openvanilla.app/wrath', windows: true, data_dir: 'C:\\Users\\me\\AppData\\Leyline' };
+      case 'get_state': return { version: '0.9', settings: { clients, selected_client: 'c335a-1', selected_realm: 'leylinelauncher.com',
+        wine: { enabled: false, command: 'wine', prefix: '' } }, official_realm: 'leylinelauncher.com', browser_url: 'https://leylinelauncher.com/wrath', windows: true, data_dir: 'C:\\Users\\me\\AppData\\Leyline' };
       case 'realms_list': return { realms: JSON.parse(JSON.stringify(realms)), network: { realms: 3, players: 66, bots: 150 }, from_cache: false, saved_at: 1, error: null };
       case 'realm_status': return { state: 'online', ping_ms: 24, players: 42 };
       case 'mods_catalog': return { categories: [], projects: [], from_cache: false, saved_at: 1, error: null };

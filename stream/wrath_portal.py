@@ -2,12 +2,12 @@
 """WrathUnleashed sign-in bridge (Python 3 standard library only).
 
 Players sign in with the website's own sign-in (Google or a Hero Key, served by the Open Vanilla
-realm service at play.openvanilla.app). This service then shows them their Wrath (3.3.5a) game
+realm service on the site, PUBLIC_HOST). This service then shows them their Wrath (3.3.5a) game
 login. There are no separate Wrath accounts to hand out.
 
 Two listeners, both inside Docker networks only (never published on the host):
 
-  :8091  the page, behind the site's Caddy at https://play.openvanilla.app/wrath
+  :8091  the page, behind the site's Caddy at https://<PUBLIC_HOST>/wrath
          GET /wrath            signed out: a button to the site's sign-in (Google or Hero Key)
                                signed in:  the player's game account name and password
          GET /wrath/healthz    200 when AzerothCore's SOAP answers
@@ -49,7 +49,7 @@ password when it already exists). Accounts from the 1.12 days therefore carry ov
 
 Play in the browser, streamed (a small "mini" slice of the game, never the full client):
 
-  on play.openvanilla.app (Caddy routes /wrath* here):
+  on the site, PUBLIC_HOST (Caddy routes /wrath* here):
          GET /wrath/play?mini=<slug>   signed in: marks the game account as a stream account on
                                the realm (SOAP "ovstream mark", handled by lua/ov_slices.lua,
                                which keeps it inside the slice), opens a 12 h play session and
@@ -104,7 +104,9 @@ Settings (environment, /srv/wrath/portal.env):
   SOAP_USER, SOAP_PASS   AzerothCore GM level 3 account for SOAP (required; deploy.sh makes it)
   AC_SOAP_URL            default http://ov-ac-worldserver:7878/
   PORTAL_URL             default http://ovlive-realm:8090 (the Open Vanilla realm service)
-  PUBLIC_HOST            default play.openvanilla.app
+  PUBLIC_HOST            the site's name (default: ADDRESSES below, by LEYLINE_DOMAIN_MOVE)
+  LEYLINE_DOMAIN_MOVE    1 = the new names (leylinelauncher.com, play. for the game, relay. for the relay) are the
+                         ones pages say; the old ones keep working (tools/domain/domain.sh on|off sets it). Default 0
   REALM_NAME             default WrathUnleashed (ignored while LEYLINE_BRAND=1)
   LEYLINE_BRAND          1 = the Leyline names everywhere people read them: the site is "Leyline", the main realm
                          "Wrath Unleashed" (LEYLINE_REALM_NAME overrides). Default 0: exactly as before.
@@ -118,7 +120,7 @@ Settings (environment, /srv/wrath/portal.env):
   WU_HANDLER_TIMEOUT     seconds a caller may sit idle on its socket (reading or writing) before it is dropped (30)
   SOAP_TIMEOUT           seconds for one AzerothCore SOAP call, and the longest one waits for its turn (8)
   WU_STREAM              1 = browser streaming on, 0 = off (default 0)
-  STREAM_HOST            default wrath.openvanilla.app
+  STREAM_HOST            the game's name (default: ADDRESSES below, by LEYLINE_DOMAIN_MOVE)
   STREAM_SLICES          the slice names /wrath/play accepts (default mini)
   WU_SLICE_DIR           where <slice>.json lives (default /app/slices; maxTier is read from it)
   WU_GAMEDATA_FLAG       the killswitch's flag file (default /app/gamedata-off = /srv/wrath/portal/gamedata-off);
@@ -128,8 +130,8 @@ Settings (environment, /srv/wrath/portal.env):
   WU_RELAY_LISTING       the Beacons relay's listing for GET /wrath/realms. Unset: the URL in
                          /app/relay-listing.url (the relay step writes the relay's address on the Docker
                          network there, so the list works without DNS), else
-                         https://relay.openvanilla.app/api/listing/realms.json
-  WU_JOIN_BASE           where a community realm's Join link goes (default https://relay.openvanilla.app,
+                         https://<the relay's name>/api/listing/realms.json
+  WU_JOIN_BASE           where a community realm's Join link goes (default https://<the relay's name>,
                          which serves /join/<realm id> itself)
   WU_HANGOUT_REALM       the relay realm id of the official realm's Beacon: this realm itself, reached as a Leyline
                          Beacon through the relay (hosting/hangout/hangout-up.sh). Unset: the id in
@@ -368,7 +370,30 @@ SOAP_USER = os.environ.get("SOAP_USER", "")
 SOAP_PASS = os.environ.get("SOAP_PASS", "")
 AC_SOAP_URL = os.environ.get("AC_SOAP_URL", "http://ov-ac-worldserver:7878/")
 PORTAL_URL = os.environ.get("PORTAL_URL", "http://ovlive-realm:8090").rstrip("/")
-PUBLIC_HOST = os.environ.get("PUBLIC_HOST", "play.openvanilla.app")
+# --- Public addresses: the one place for the site, the game and the relay (docs/DOMAIN-MOVE.md; the same list is
+# tools/domain/addresses.json). Each part has its new name and the old one it had before the move to
+# leylinelauncher.com. LEYLINE_DOMAIN_MOVE=1 in portal.env (tools/domain/domain.sh on|off sets it) makes the new names
+# the ones every page, link and redirect says; both names are accepted either way (origins, the game's frame, the
+# gate), and launcher documents fetched on the old site name keep the old name in their links, so launchers already
+# installed (which only download from the name they fetched from) never break. PUBLIC_HOST and STREAM_HOST in
+# portal.env still win.
+ADDRESSES = {   # part: (new, old)
+    "site": ("leylinelauncher.com", "play.openvanilla.app"),
+    "game": ("play.leylinelauncher.com", "wrath.openvanilla.app"),
+    "relay": ("relay.leylinelauncher.com", "relay.openvanilla.app"),
+}
+DOMAIN_MOVED = os.environ.get("LEYLINE_DOMAIN_MOVE", "0").strip() == "1"
+
+
+def address(part: str) -> str:
+    """The name players read for this part now (the new one once the move is on)."""
+    return ADDRESSES[part][0 if DOMAIN_MOVED else 1]
+
+
+PUBLIC_HOST = os.environ.get("PUBLIC_HOST", "").strip() or address("site")
+SITE_HOSTS = frozenset({PUBLIC_HOST, *ADDRESSES["site"]})
+SITE_ORIGINS = frozenset(f"https://{h}" for h in SITE_HOSTS)
+OLD_SITE_HOST = ADDRESSES["site"][1]
 # The Leyline brand switch (owner 2026-10-30): LEYLINE_BRAND=1 in portal.env (realm/brand.sh on|off sets it) shows
 # every player- and visitor-facing name as Leyline and the main realm as "Wrath Unleashed" (OFFICIAL_REALM_NAME; owner
 # 2026-10-30 23:32, "for now"; LEYLINE_REALM_NAME in portal.env overrides it). Unset or 0 (the default):
@@ -428,7 +453,9 @@ BRIDGE_PORT = int(os.environ.get("BRIDGE_PORT", "7878"))
 # Duels and Warfront run their own realm services on the same network with other account lists).
 BRIDGE_HOST = os.environ.get("BRIDGE_HOST", "ovlive-realm")
 
-STREAM_HOST = os.environ.get("STREAM_HOST", "wrath.openvanilla.app")
+STREAM_HOST = os.environ.get("STREAM_HOST", "").strip() or address("game")
+GAME_HOSTS = frozenset({STREAM_HOST, *ADDRESSES["game"]})
+GAME_ORIGINS = frozenset(f"https://{h}" for h in GAME_HOSTS)
 STREAM_SLICES = {x.strip() for x in os.environ.get("STREAM_SLICES", "mini").split(",") if x.strip()}
 # The slice behind "Play now" and every ?mini=mini link (stream/server/slice-serve.sh sets it; default mini), so
 # the Leyline Sample Hangout's "sampler" slice can be served without changing a link.
@@ -636,7 +663,7 @@ def gamedata_state() -> dict:
 # stream/server/gamedata-caddy.py; Caddy answers first, this is the second lock).
 GAMEDATA_GONE = (json.dumps({"error": "gamedata_off", "gamedata_streaming": False,
                              "message": "This realm needs your own game folder. Drop it on the game page.",
-                             "own_files": "https://play.openvanilla.app/wrath/play?mode=own"},
+                             "own_files": f"https://{PUBLIC_HOST}/wrath/play?mode=own"},
                             separators=(",", ":")) + "\n").encode("utf-8")
 
 
@@ -1541,13 +1568,14 @@ def account_page(display: str, user: str, password: str, nonce: str) -> bytes:
 # from this service's own status (never from the relay).
 
 RELAY_LISTING = os.environ.get("WU_RELAY_LISTING", "")
-RELAY_LISTING_DEFAULT = "https://relay.openvanilla.app/api/listing/realms.json"
+RELAY_HOST = address("relay")
+RELAY_LISTING_DEFAULT = f"https://{RELAY_HOST}/api/listing/realms.json"
 # Written by the relay step (hosting/relay/deploy/relay-up.sh) into /srv/wrath/portal (mounted at /app):
 # the relay's address on the Docker network, so the list works before DNS and without a container restart.
 RELAY_LISTING_FILE = os.environ.get("WU_RELAY_LISTING_FILE", "/app/relay-listing.url")
-JOIN_BASE = os.environ.get("WU_JOIN_BASE", "https://relay.openvanilla.app").rstrip("/")
+JOIN_BASE = (os.environ.get("WU_JOIN_BASE", "").strip() or f"https://{RELAY_HOST}").rstrip("/")
 # Realm hops: the relay's browser bridge (wss://<relay>/ws/<realm id>/auth and /world, hosting/relay/wurelay).
-RELAY_WS = os.environ.get("WU_RELAY_WS", "wss://relay.openvanilla.app").rstrip("/")
+RELAY_WS = (os.environ.get("WU_RELAY_WS", "").strip() or f"wss://{RELAY_HOST}").rstrip("/")
 HANGOUT_REALM = os.environ.get("WU_HANGOUT_REALM", "").strip()
 HANGOUT_FILE = os.environ.get("WU_HANGOUT_FILE", "/app/hangout-realm.id")
 _hangout = {"at": -1e9, "id": None}
@@ -2969,6 +2997,33 @@ def status_with_gamedata(body: bytes) -> bytes:
     return (json.dumps(doc, separators=(",", ":")) + "\n").encode("utf-8")
 
 
+# Before the move (LEYLINE_DOMAIN_MOVE unset), pages and documents that already say the new names (the docs, the
+# modules' texts) show the old ones: longest names first, so play.leylinelauncher.com becomes wrath.openvanilla.app.
+_NEW_TO_OLD = tuple((n.encode(), o.encode()) for n, o in sorted(ADDRESSES.values(), key=lambda p: -len(p[0])))
+_TEXT_TYPES = ("text/", "application/json", "application/javascript", "image/svg+xml")
+
+
+def legacy_body(body: bytes, ctype: str, host: str) -> bytes:
+    """The body with the names that work today (docs/DOMAIN-MOVE.md).
+    Before the move: every new name back to its old one, in text, JSON and scripts.
+    After it: a JSON document asked for on the old site name keeps the site's links on the old name. Launchers
+    already installed fetch their catalog, the Host pack listing and the rest there and refuse a download from any
+    other site; on the new name the body is unchanged."""
+    if not ctype.startswith(_TEXT_TYPES):
+        return body
+    if not DOMAIN_MOVED:
+        if b"leylinelauncher.com" not in body:
+            return body
+        for new, old in _NEW_TO_OLD:
+            body = body.replace(new, old)
+        return body
+    if PUBLIC_HOST == OLD_SITE_HOST or not ctype.startswith("application/json"):
+        return body
+    if host.split(":")[0].strip().lower() != OLD_SITE_HOST:
+        return body
+    return body.replace(f"https://{PUBLIC_HOST}/".encode(), f"https://{OLD_SITE_HOST}/".encode())
+
+
 class PageHandler(BaseHTTPRequestHandler):
     server_version = "wrath-portal"
     sys_version = ""
@@ -2985,6 +3040,7 @@ class PageHandler(BaseHTTPRequestHandler):
              public: bool = False, same_origin: bool = False, connect: bool = False,
              headers: dict | None = None) -> None:
         body = brand_body(body, ctype)   # the Leyline brand switch (off: unchanged)
+        body = legacy_body(body, ctype, self.headers.get("Host", ""))   # launcher documents on the old site name
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
@@ -3003,7 +3059,7 @@ class PageHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy",
                          f"default-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self'; media-src 'self'; font-src 'self'; "
                          f"script-src {script}; "
-                         f"frame-src https://{STREAM_HOST}; "
+                         f"frame-src {' '.join(sorted(GAME_ORIGINS))}; "
                          + ("connect-src 'self'; " if connect else "") +
                          "form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
         self.end_headers()
@@ -3152,7 +3208,7 @@ class PageHandler(BaseHTTPRequestHandler):
         self.redirect(f"https://{STREAM_HOST}/__gate?code={urllib.parse.quote(code)}{go_param(query or {})}")
 
     def stream_play(self, query: dict) -> None:
-        """GET /wrath/play?mini=<slug> on play.openvanilla.app (?mode=own: own_play)."""
+        """GET /wrath/play?mini=<slug> on the site (?mode=own: own_play)."""
         if (query.get("mode") or [""])[0] == OWN:
             self.own_play(query)
             return
@@ -3275,7 +3331,7 @@ class PageHandler(BaseHTTPRequestHandler):
         if not gate_limit.hit("hop:" + rl_bucket(self.ip()), 30):
             self.json_reply(429, {"ok": False, "why": "too many requests"})
             return
-        if self.headers.get("Origin", "") != f"https://{STREAM_HOST}":
+        if self.headers.get("Origin", "") not in GAME_ORIGINS:
             self.json_reply(403, {"ok": False, "why": "same-origin only"})
             return
         if not self.headers.get("Content-Type", "").lower().startswith("application/json"):
@@ -3338,7 +3394,7 @@ class PageHandler(BaseHTTPRequestHandler):
         if not gate_limit.hit("layer:" + rl_bucket(self.ip()), 40):
             self.json_reply(429, {"ok": False, "state": "unknown", "why": "too many requests"})
             return
-        if self.headers.get("Origin", "") != f"https://{STREAM_HOST}":
+        if self.headers.get("Origin", "") not in GAME_ORIGINS:
             self.json_reply(403, {"ok": False, "state": "unknown", "why": "same-origin only"})
             return
         if not self.headers.get("Content-Type", "").lower().startswith("application/json"):

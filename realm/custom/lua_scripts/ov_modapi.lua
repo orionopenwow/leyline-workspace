@@ -196,6 +196,36 @@ function OVMod.BrandOn()
     return brandOn
 end
 
+-- The move to leylinelauncher.com (docs/DOMAIN-MOVE.md): tools/domain/domain.sh on writes the flag file
+-- OV_DOMAIN_FILE (default /azerothcore/lua_scripts/leyline-domain.on), looked at no more than every 30 s, like the
+-- brand's (OV_LEYLINE_DOMAIN=1|0 on the world server wins). While it is there, OVMod.Names(text) says the new names:
+-- play.openvanilla.app -> leylinelauncher.com (the site and the desktop realmlist), wrath. -> play.leylinelauncher.com
+-- (the game), relay. -> relay.leylinelauncher.com. The scripts' texts keep the old names: they work either way.
+local DOMAIN_FILE = os.getenv("OV_DOMAIN_FILE") or "/azerothcore/lua_scripts/leyline-domain.on"
+local domainAt, domainOn = -1e9, false
+
+function OVMod.DomainOn()
+    local v = os.getenv("OV_LEYLINE_DOMAIN")
+    if v == "1" then return true end
+    if v == "0" then return false end
+    local now = os.time()
+    if now - domainAt >= BRAND_CACHE then
+        domainAt = now
+        local f = io.open(DOMAIN_FILE, "rb")
+        domainOn = f ~= nil
+        if f then f:close() end
+    end
+    return domainOn
+end
+
+function OVMod.Names(text)
+    if type(text) ~= "string" or not OVMod.DomainOn() then return text end
+    local s = text:gsub("wrath%.openvanilla%.app", "play.leylinelauncher.com")
+    s = s:gsub("relay%.openvanilla%.app", "relay.leylinelauncher.com")
+    s = s:gsub("play%.openvanilla%.app", "leylinelauncher.com")
+    return s
+end
+
 local function plainName(s, fallback)
     s = type(s) == "string" and s:gsub("[%z\1-\31\127|\t]", ""):sub(1, 32) or ""
     return s ~= "" and s or fallback

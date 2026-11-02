@@ -13,7 +13,7 @@
   ],
   "categories": [
     {"key": "start", "name": "Start here", "channels": [
-      {"key": "welcome", "name": "👋︱welcome", "topic": "New here? Read this, then the rules. Play in your browser at play.openvanilla.app.", "read_only": true},
+      {"key": "welcome", "name": "👋︱welcome", "topic": "New here? Read this, then the rules. Play in your browser at leylinelauncher.com.", "read_only": true},
       {"key": "rules", "name": "📜︱rules", "topic": "Be kind. No game files, no selling, no ads. One ban covers your whole Leyline account.", "read_only": true},
       {"key": "announcements", "name": "📣︱announcements", "topic": "News from the Leyline team. Forum announcements show up here too.", "read_only": true, "posters": ["core_team", "moderator"], "bot_posts": true},
       {"key": "changelog", "name": "📝︱changelog", "topic": "What changed in the launcher, from its release notes. Posted automatically.", "read_only": true, "posters": ["core_team"], "bot_posts": true}
@@ -57,7 +57,7 @@
       {"key": "launcher_help", "name": "🛟︱launcher-help", "topic": "Help with the Leyline launcher: installing, signing in, updates."}
     ]},
     {"key": "forum", "name": "Forum", "channels": [
-      {"key": "forum", "name": "📚︱forum", "topic": "The Leyline forum, live: new threads and replies from play.openvanilla.app/wrath/leyline/forum. Reply here once your account is linked (/link).", "type": "forum", "bot_posts": true}
+      {"key": "forum", "name": "📚︱forum", "topic": "The Leyline forum, live: new threads and replies from leylinelauncher.com/wrath/leyline/forum. Reply here once your account is linked (/link).", "type": "forum", "bot_posts": true}
     ]},
     {"key": "team", "name": "Team", "channels": [
       {"key": "roadmap", "name": "🧭︱roadmap", "topic": "What the core team is working on next.", "private": ["core_team"]},

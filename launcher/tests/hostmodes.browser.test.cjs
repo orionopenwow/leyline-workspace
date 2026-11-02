@@ -31,7 +31,7 @@ const FAKE = (opts) => {
     based_on: { id: 'duel-ladder', author: 'Leyline' } });
   delete recipe.picture;
   const listed = [
-    { slug: 'official', name: 'Wrath Unleashed', official: true, state: 'live', version: '3.3.5a', build: '3.3.5a', core: 'azerothcore', tags: [], players: 5, bots: 0, address: 'play.openvanilla.app', mods: [], mode: null },
+    { slug: 'official', name: 'Wrath Unleashed', official: true, state: 'live', version: '3.3.5a', build: '3.3.5a', core: 'azerothcore', tags: [], players: 5, bots: 0, address: 'leylinelauncher.com', mods: [], mode: null },
     { slug: 'c-aaaa', realm_id: 'aaaaaaaaaaaaaaaa', name: 'Duel Town', official: false, state: 'live', version: '3.3.5a', build: '3.3.5a', core: 'azerothcore', tags: [], players: 7, bots: 0, mods: [],
       mode: { id: 'duel-ladder', name: 'Duel ladder', author: 'Leyline', forkable: true, recipe: modes.find((m) => m.id === 'duel-ladder') } },
     { slug: 'c-bbbb', realm_id: 'bbbbbbbbbbbbbbbb', name: 'Ann Arena', official: false, state: 'live', version: '3.3.5a', build: '3.3.5a', core: 'azerothcore', tags: [], players: 3, bots: 0, mods: [],
@@ -42,8 +42,8 @@ const FAKE = (opts) => {
   window.__TAURI__ = { core: { invoke: async (cmd, args) => {
     calls.push([cmd, args]);
     switch (cmd) {
-      case 'get_state': return { version: 'test', settings: { clients: [{ id: 'c1', name: 'Mine', path: '/g', build: '3.3.5a' }], selected_client: 'c1', selected_realm: 'play.openvanilla.app',
-        wine: { enabled: false, command: 'wine', prefix: '' } }, official_realm: 'play.openvanilla.app', browser_url: 'https://play.openvanilla.app/wrath', windows: false, data_dir: '/tmp' };
+      case 'get_state': return { version: 'test', settings: { clients: [{ id: 'c1', name: 'Mine', path: '/g', build: '3.3.5a' }], selected_client: 'c1', selected_realm: 'leylinelauncher.com',
+        wine: { enabled: false, command: 'wine', prefix: '' } }, official_realm: 'leylinelauncher.com', browser_url: 'https://leylinelauncher.com/wrath', windows: false, data_dir: '/tmp' };
       case 'deep_link_take': return null;
       case 'host_modes': if (opts.noModes) throw 'unknown host_modes'; return JSON.parse(JSON.stringify(modes));
       case 'host_mode_fork': {
@@ -170,7 +170,7 @@ test('Host: the short form, checked, then the mode\'s ruleset with its answers, 
   await shot(page, 'host-starting.png');
   await page.waitForSelector('.hx-live-box', { timeout: 15000 });
   assert.equal(await page.textContent('.hx-live-box .hc-live-t b'), "You're live");
-  assert.equal(await page.textContent('#hx-share'), `https://play.openvanilla.app/wrath/r/${RID}`);
+  assert.equal(await page.textContent('#hx-share'), `https://leylinelauncher.com/wrath/r/${RID}`);
   assert.match(await page.textContent('.hx-live-box'), /Duel Town Two runs Duel ladder and is on the realm list/);
   await shot(page, 'host-live.png', true);
   await page.click('.hx-live-box button:has-text("Open the console")');

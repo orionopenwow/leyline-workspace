@@ -16,7 +16,7 @@ local G = {}
 local ASK_WAIT = 8   -- seconds: the ask still pending after this = no page took it
 local STREAMED = "Streamed: Dalaran, capitals, starting areas"
 local WHOLE = "Whole world: your game folder"
-local HELP = "play.openvanilla.app/wrath/docs/play"
+local HELP = "leylinelauncher.com/wrath/docs/play"
 
 local function now() return (GetTime and GetTime()) or 0 end
 

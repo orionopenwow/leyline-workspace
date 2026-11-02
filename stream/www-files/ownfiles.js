@@ -35,10 +35,16 @@
 // the browser kept the permission, else after one click. Firefox/Safari: no persistent folder
 // handles, so the folder is dropped (or chosen) each visit. Nothing is ever uploaded.
 
+// The site and relay that go with this game page (docs/DOMAIN-MOVE.md; the names: tools/domain/addresses.json): the
+// game on play.leylinelauncher.com talks to leylinelauncher.com, on its old name (wrath.openvanilla.app, and anywhere
+// else) to play.openvanilla.app. Same backends either way; the sign-in stays on the name it was made on.
+const NEW_GAME_HOST = 'play.leylinelauncher.com';
+const onNewName = () => { try { return location.hostname === NEW_GAME_HOST; } catch (_) { return false; } };
+const SITE_ORIGIN = onNewName() ? 'https://leylinelauncher.com' : 'https://play.openvanilla.app';
 const DB_NAME = 'wu-ownfiles';
 const STORE = 'kv';
-const STREAM_URL = 'https://play.openvanilla.app/wrath/play?mini=mini';
-export const HELP_URL = 'https://play.openvanilla.app/wrath/docs/play#use-your-own-game-folder-to-go-anywhere';
+const STREAM_URL = SITE_ORIGIN + '/wrath/play?mini=mini';
+export const HELP_URL = SITE_ORIGIN + '/wrath/docs/play#use-your-own-game-folder-to-go-anywhere';
 const DATA_PREFIX = '/data/';
 const ARENA_INITIAL = 16 * 1024 * 1024;
 const RELOAD_KEY = 'wu-layer';         // sessionStorage: a folder was chosen, the page reloads to use it

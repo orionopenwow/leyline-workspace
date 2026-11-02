@@ -89,7 +89,7 @@ FORUM_TAGS = [("realms", "Share your realm"), ("mods", "Mods & addons"), ("dens"
 
 LAYOUT = [
     ("Start here", [
-        C("welcome", topic="New here? Read this, then the rules. Play in your browser at play.openvanilla.app.",
+        C("welcome", topic="New here? Read this, then the rules. Play in your browser at leylinelauncher.com.",
           ro=True),
         C("rules", topic="Be kind. No game files, no selling, no ads. One ban covers your whole Leyline account.",
           ro=True),
@@ -149,7 +149,7 @@ LAYOUT = [
     ]),
     ("Forum", [
         C("forum", FORUM, topic="The Leyline forum, live: new threads and replies from "
-                                "play.openvanilla.app/wrath/leyline/forum. Reply here once your account is linked "
+                                "leylinelauncher.com/wrath/leyline/forum. Reply here once your account is linked "
                                 "(/link).", tags=[t for _, t in FORUM_TAGS]),
     ]),
     ("Team", [

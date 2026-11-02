@@ -17,7 +17,7 @@
 //     in the world (ahead.js, needs the bridge); the service worker switch (sw-register.js,
 //     opt-in: ?sw=1 or /sw-config.json); the slim boot list is wrath-early.js's.
 //   * Busy realm: a small, dismissible note when the realm is down or has a queue
-//     (play.openvanilla.app/wrath/status.json, wrath_portal.py).
+//     (<site>/wrath/status.json, wrath_portal.py).
 //   * Corner logo on the glue screens: off until the owner gives an image (CONFIG.logoUrl).
 //   * Touch controls (touch.js, touch-driver.js) on touch screens or with ?touch=1; the mouse
 //     fixes (input.js) everywhere; a connected controller starts the bridge's gamepad mapper.
@@ -36,6 +36,12 @@
 const BASE = new URL('./', import.meta.url).href;
 
 // The owner's choices. Empty = that part stays off.
+// The site and relay that go with this game page (docs/DOMAIN-MOVE.md; the names: tools/domain/addresses.json): the
+// game on play.leylinelauncher.com talks to leylinelauncher.com, on its old name (wrath.openvanilla.app, and anywhere
+// else) to play.openvanilla.app. Same backends either way; the sign-in stays on the name it was made on.
+const NEW_GAME_HOST = 'play.leylinelauncher.com';
+const onNewName = () => { try { return location.hostname === NEW_GAME_HOST; } catch (_) { return false; } };
+const SITE_ORIGIN = onNewName() ? 'https://leylinelauncher.com' : 'https://play.openvanilla.app';
 export const CONFIG = {
   // TODO(owner): a WrathUnleashed logo image for the glue screens' top-left corner (a path under
   // the served www, e.g. 'wu-corner-logo.webp'; about 14% of the screen height). Empty: no logo.
@@ -49,9 +55,9 @@ export const CONFIG = {
   // ?loadart=orion on the page address tries it for one visit.
   loadingArt: '',
   // the realm's public status (wrath_portal.py GET /wrath/status.json, CORS *)
-  statusUrl: 'https://play.openvanilla.app/wrath/status.json',
+  statusUrl: SITE_ORIGIN + '/wrath/status.json',
   // where a realm hop and "Back to Wrath" go (a hop session's env.home wins: wrath_portal.py hop_env)
-  homeUrl: 'https://play.openvanilla.app',
+  homeUrl: SITE_ORIGIN,
 };
 
 const STYLE_ID = 'wu-page-style';
@@ -772,7 +778,7 @@ const BRAND_ONE = /\b(world\s+of\s+warcraft|warcraft|lich\s+king|blizzard|wow)\b
 const VERSION_WORDS = /\b\d+\.\d+\.\d+[a-z]?\b/gi;
 const PRE_KEY = 'wu.leyline.pre.';
 const T0_KEY = 'wu.leyline.hop.t0';
-const RELAY_DEFAULT = 'https://relay.openvanilla.app';
+const RELAY_DEFAULT = onNewName() ? 'https://relay.leylinelauncher.com' : 'https://relay.openvanilla.app';
 
 /** Host text as players see it: one line, no colour codes, no brand words, no version numbers, at most n chars. */
 export function hostText(v, n) {

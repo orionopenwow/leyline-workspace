@@ -3034,12 +3034,12 @@ def same_site(h) -> bool:
     sfs = h.headers.get("Sec-Fetch-Site", "")
     if sfs and sfs != "same-origin":
         return False
-    site = f"https://{P('PUBLIC_HOST') or 'play.openvanilla.app'}"
+    sites = P("SITE_ORIGINS") or {f"https://{P('PUBLIC_HOST') or 'play.openvanilla.app'}"}   # both names (DOMAIN-MOVE.md)
     origin = h.headers.get("Origin", "")
     if origin:
-        return origin == site or (origin == "null" and sfs == "same-origin")
+        return origin in sites or (origin == "null" and sfs == "same-origin")
     ref = h.headers.get("Referer", "")
-    return ref == site or ref.startswith(site + "/")
+    return any(ref == site or ref.startswith(site + "/") for site in sites)
 
 
 def post(h, path: str) -> None:

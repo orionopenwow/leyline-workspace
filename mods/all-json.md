@@ -2,7 +2,7 @@
 
 One list of every Workshop project: our packaged mods and the community links, in one schema. The
 Leyline Launcher (`launcher/`) and the in-game window read it so they show the same list as
-https://play.openvanilla.app/wrath/mods. It is public, `Access-Control-Allow-Origin: *`, no sign-in.
+https://leylinelauncher.com/wrath/mods. It is public, `Access-Control-Allow-Origin: *`, no sign-in.
 
 ```json
 {
@@ -22,12 +22,12 @@ https://play.openvanilla.app/wrath/mods. It is public, `Access-Control-Allow-Ori
       "author_url": "",
       "licence": "MIT",
       "repo": "https://github.com/orionopenwow/WrathUnleashed/tree/main/mods/catalog/pings",
-      "page": "https://play.openvanilla.app/wrath/mods/pings",
+      "page": "https://leylinelauncher.com/wrath/mods/pings",
       "credits": "Pings by WrathUnleashed · MIT · github.com",
       "stars": null, "last_push": "",
       "submitted_by": "", "submitted_at": "", "last_checked": "",
       "version": "0.1.0", "kind": "both", "permissions": ["chat", "timers"], "on_wrath": true,
-      "download": "https://play.openvanilla.app/wrath/mods/pings/download",
+      "download": "https://leylinelauncher.com/wrath/mods/pings/download",
       "sha256": "..."
     },
     {
@@ -40,7 +40,7 @@ https://play.openvanilla.app/wrath/mods. It is public, `Access-Control-Allow-Ori
       "author": "alice", "author_url": "https://github.com/alice",
       "licence": "MIT",
       "repo": "https://github.com/alice/frame-kit",
-      "page": "https://play.openvanilla.app/wrath/mods/p/3f9a0c12bd47",
+      "page": "https://leylinelauncher.com/wrath/mods/p/3f9a0c12bd47",
       "credits": "frame-kit by alice · MIT · github.com",
       "stars": 42, "last_push": "2026-10-20T10:00:00Z",
       "submitted_by": "Alice", "submitted_at": "2026-10-25T11:58:00Z", "last_checked": "2026-10-25T11:58:00Z",

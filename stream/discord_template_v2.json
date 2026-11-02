@@ -71,5 +71,5 @@
       {"key": "showcase_stage", "name": "🎤︱Showcase stage", "type": "stage", "optional": true, "topic": "Monthly showcases."}
     ]}
   ],
-  "posts": {"live": "live_realms", "den": "den_showcase", "mode": "modes_and_forks", "lfg": "looking_for_group"}
+  "posts": {"live": "live_realms", "den": "den_showcase", "mode": "modes_and_forks", "lfg": "looking_for_group", "mod": "mods_and_addons"}
 }

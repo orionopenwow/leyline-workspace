@@ -77,6 +77,7 @@ check found something for a game client. Same id (`link:<12 hex>`), plus:
 | `state` | `community` ("Community · not reviewed") or `reviewed` (a moderator approved it) |
 | `flags`, `plan` | what the check flagged (a moderator looked first), and what one click does in plain words |
 | `native`, `blp`, `size`, `file_count`, `version` | native code (the launcher asks first), `.blp` author art, the installed size |
+| `updated` | the last update the site applied: `at` (ISO time) and `change`, one line on what changed ("v1.0 → v1.1 · 2 files changed"). Missing until the first update |
 | `install` | `kind` (`addon`: addon folders, installed like an upstream addon, with `folders` and `blp`; `files`: staged and checked like a dropped zip: patches, native code, a package's client half), `from` (`release-asset` or `commit-archive`), `url` (the listing's own repo), `rev`, `sha256` (release files only), `size`, `file_count`, `strip_prefix`, `files` (path -> sha256 of every installed file), `files_digest` |
 
 The launcher (`launcher/src-tauri/src/listed.rs`) installs it only when the block checks out (`listed::install_ok`) and

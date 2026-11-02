@@ -643,3 +643,5 @@
 1270d mods Browser realm: the same addons
 1270e server-fix Server: streamed-file folders root-only; a read-only look at why .bug didn't answer
 1270f signin Website: macOS and Linux downloads linked, join pages without version numbers in sentences
+1271a signin Website: thinner button edges; Discord posts for listed mods (off until WU_DISCORD_MODS=1)
+1271b ship Save tonight's site and Discord changes to GitHub

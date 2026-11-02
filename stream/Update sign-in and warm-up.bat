@@ -57,6 +57,8 @@ rem the upgraded Discord channel plan (docs\DISCORD-PLAN.md), opt-in with WU_DIS
 if exist discord_growth.py if exist discord_template_v2.json set "LINKS=%LINKS% discord_template_v2.json"
 rem the duel leaderboards (/wrath/leaderboards, /wrath/api/leaderboards; duels-export.py fills them on the realm)
 if exist duels.py set "LINKS=%LINKS% duels.py"
+rem Azeroth Survivors' page and its address's gate (/wrath/survivors, /__auth?site=survivors)
+if exist survivors.py set "LINKS=%LINKS% survivors.py"
 rem Leyline profiles and the sign-in chooser (/wrath/signin, /wrath/profile, /wrath/avatar)
 if exist profiles.py set "LINKS=%LINKS% profiles.py"
 rem Your Hero Key (/wrath/key, and the launcher's Get your Hero Key: herokeys.py; the site's /account/key goes there)
@@ -91,7 +93,7 @@ echo [1/2] Uploading...
 scp %OPTS% "%T%" %HOST%:/tmp/wu-fastloop.tgz || (echo Upload failed. If it says "timed out", wait 2 minutes and run this again. & pause & exit /b 1)
 
 echo [2/2] Applying it on the server (under a minute)...
-ssh %OPTS% %HOST% "mkdir -p /srv/wrath/fastloop && rm -rf /srv/wrath/fastloop/www-files /srv/wrath/fastloop/docs /srv/wrath/fastloop/hub && tar -xzf /tmp/wu-fastloop.tgz -C /srv/wrath/fastloop && rm -f /tmp/wu-fastloop.tgz && cd /srv/wrath/fastloop && sed -i 's/\r$//' fastloop.sh wrath_portal.py $(ls ratelimit.py links.py demo.py armory.py modes.py modes_data.py playmodes.py modepack.py workshop.py creations.py hostflow.py ed25519_pure.py herokey_sso.py projects.py social.py forum.py forum_discord.py discord_growth.py duels.py profiles.py herokeys.py network.py bugreport.py docs.py leyline_net.py upstream_addons.py admin.py wu-mod.py hq.py hub.py hub_rank.py listings.py 2>/dev/null) && bash fastloop.sh 2>&1 | tee fastloop.log; grep -q '^FASTLOOP OK' fastloop.log"
+ssh %OPTS% %HOST% "mkdir -p /srv/wrath/fastloop && rm -rf /srv/wrath/fastloop/www-files /srv/wrath/fastloop/docs /srv/wrath/fastloop/hub && tar -xzf /tmp/wu-fastloop.tgz -C /srv/wrath/fastloop && rm -f /tmp/wu-fastloop.tgz && cd /srv/wrath/fastloop && sed -i 's/\r$//' fastloop.sh wrath_portal.py $(ls ratelimit.py links.py demo.py armory.py modes.py modes_data.py playmodes.py modepack.py workshop.py creations.py hostflow.py ed25519_pure.py herokey_sso.py projects.py social.py forum.py forum_discord.py discord_growth.py duels.py survivors.py profiles.py herokeys.py network.py bugreport.py docs.py leyline_net.py upstream_addons.py admin.py wu-mod.py hq.py hub.py hub_rank.py listings.py 2>/dev/null) && bash fastloop.sh 2>&1 | tee fastloop.log; grep -q '^FASTLOOP OK' fastloop.log"
 if errorlevel 1 (
   echo.
   echo It did not report success; see the lines above. Anything it changed was put back.

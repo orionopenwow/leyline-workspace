@@ -194,9 +194,12 @@ class Upload(unittest.TestCase):
                 self.go(run)
             self.assertFalse([c for c in calls if c[0] == "release" and c[1] != "view"])
 
-    def test_the_site_links_this_file(self):
+    def test_the_site_links_the_host_pack(self):
+        # 1 Nov: the website hands out the same Host pack as the launcher (hostflow.kit_url() reads the shared
+        # descriptor), not this older host-kit file, which stays published for old links only.
         src = (REPO / "stream" / "hostflow.py").read_text()
-        self.assertIn(f'"{hostkit.URL}"', src)
+        self.assertIn("def kit_url()", src)
+        self.assertNotIn(f'"{hostkit.URL}"', src)
 
     def test_bat(self):
         bat = (KIT / "Publish host kit.bat").read_text()

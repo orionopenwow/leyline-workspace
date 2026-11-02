@@ -30,7 +30,7 @@ The launcher has the same tips on its **Find your game files** page: open it fro
 ## Browser or your own client
 
 - **In your browser.** Pick **Play in your browser** in the launcher's realm list, or open [leylinelauncher.com/wrath](https://leylinelauncher.com/wrath). Nothing to install, no game files needed. The browser streams Dalaran, the capitals, the starting areas, arenas, dungeons and raids. Drop your own game folder on the game page to go anywhere: see [Play](play.md#use-your-own-game-folder-to-go-anywhere).
-- **Your own client.** The whole world, at your PC's full speed. Add your folder in the launcher and press **PLAY**. The official realm needs the 3.3.5a game (build 12340); other realms say which version they need.
+- **Your own client.** The whole world, at your PC's full speed. Add your folder in the launcher and press **PLAY**. The official realm needs the Wrath-era game {{v:3.3.5a (12340)}}; other realms say which version they need.
 
 Both use the same realm, the same account and the same characters.
 

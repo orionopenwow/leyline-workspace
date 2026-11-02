@@ -80,6 +80,7 @@ fn session(mut s: TcpStream, shared: &Shared, remote: bool) -> io::Result<()> {
         send(&mut s, &CMD_AUTH_LOGON_CHALLENGE_Server::FailUnknownAccount)?;
         return Ok(());
     };
+    shared.event("login_challenge", &user.to_string(), if remote { "remote" } else { "local" });
     // a guest's own login, else the host's fixed local one (this PC only)
     let guest = crate::guests::find(&shared.cfg.den_dir, &user.to_string(), now());
     let verifier = match &guest {
@@ -120,19 +121,24 @@ fn session(mut s: TcpStream, shared: &Shared, remote: bool) -> io::Result<()> {
         Ok(v) => v,
         Err(_) => {
             shared.log(&format!("login: wrong password for {}", user));
+            shared.event("auth_fail", &user.to_string(), "wrong password");
             send(&mut s, &CMD_AUTH_LOGON_PROOF_Server::FailIncorrectPassword)?;
             return Ok(());
         }
     };
     shared.sessions.lock().unwrap().insert(user.to_string(), (*server.session_key(), who, remote));
     shared.log(&format!("login: {} signed in", user));
+    shared.event("auth_ok", &user.to_string(), if remote { "remote" } else { "local" });
     send(
         &mut s,
         &CMD_AUTH_LOGON_PROOF_Server::Success { account_flag: AccountFlag::empty(), hardware_survey_id: 0, server_proof, unknown: 0 },
     )?;
     loop {
         match ClientOpcodeMessage::read(&mut s) {
-            Ok(ClientOpcodeMessage::CMD_REALM_LIST(_)) => send(&mut s, &realm_list(shared, remote))?,
+            Ok(ClientOpcodeMessage::CMD_REALM_LIST(_)) => {
+                send(&mut s, &realm_list(shared, remote))?;
+                shared.event("realm_list", &user.to_string(), "");
+            }
             Ok(_) => {}
             Err(_) => return Ok(()),
         }

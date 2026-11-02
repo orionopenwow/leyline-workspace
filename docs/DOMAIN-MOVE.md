@@ -23,6 +23,9 @@ Owner, 1 Nov 2026: the domain was bought at 16:11 (registrar and DNS: Squarespac
    | A | `relay` | the server's IPv4 |
    | A | `www` | the server's IPv4 |
 
+   Optional 5th record, only when Azeroth Survivors goes live (docs/SURVIVORS.md): A, Host `survivors`, the same
+   IPv4 (`survivors.leylinelauncher.com`; the check step prints it too, but does not wait for it).
+
    AAAA only if the check step says the server has IPv6, and then only for `play` and `www`. Never for `@` or
    `relay`: desktop game clients only speak IPv4.
 2. **Check.** In Control, run **domain-check** ("Domain move - check"). It changes nothing. It prints the
@@ -70,7 +73,9 @@ Undo at any time: **domain-off** ("Domain move - off"). Every name goes back as 
   and `tools/domain/tests/test_domain.py` checks them against it: the website (`stream/wrath_portal.py` `ADDRESSES`),
   the launcher (`launcher/src-tauri/src/addresses.rs`, `site!` / `relay!` build every address; `launcher/ui/addresses.js`),
   the host pack and relay (`hosting/kit/tools/wunet/leyline.env`, `domains.py`), the game page
-  (`stream/www-files/*.js`), the realm scripts (`ov_modapi.lua` `OVMod.Names`).
+  (`stream/www-files/*.js`), the realm scripts (`ov_modapi.lua` `OVMod.Names`). The release audit (`tools/audit`)
+  reads the list itself; Azeroth Survivors' address is in it too (`hosting/survivors/address.txt` must say the same,
+  and its step refuses any name in the list as its own).
 - **Caddy** (`/opt/openvanilla-classicplus/Caddyfile`, not in the repo; `tools/domain/domain_caddy.py`). The new
   names are added to the existing site blocks (`play.openvanilla.app, leylinelauncher.com {`), so both names reach the
   same backends and every other script still finds its block; `www` gets its own small block. The 301 is only for

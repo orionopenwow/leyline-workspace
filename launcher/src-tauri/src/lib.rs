@@ -24,6 +24,7 @@ pub mod clientimport; // drop a game folder, a zip or a link to your own backup 
 pub mod clienttorrent; // magnets and .torrents for game clients: the owner's testing switch, off by default (clienttorrent.rs)
 pub mod clients;
 pub mod deeplink; // leyline://install/<id> (hub rankings agent)
+pub mod denclick; // My Den in one click on the desktop game: sign-in keys, the game's asks, the den-play command (denclick.rs)
 pub mod gfx; // Mods & Addons › Graphics: the client's own graphics settings in Config.wtf (gfx.rs)
 pub mod forum; // the Forum page: reading the website's forum (stream/forum.py)
 pub mod herokey; // Hero Key sign-in to community realms (docs/HERO-KEY-SSO.md; the herokey_sso flag)
@@ -53,7 +54,7 @@ pub mod upstream; // upstream addons: curated third-party addons installed from 
 #[cfg(feature = "app")]
 mod app;
 #[cfg(feature = "app")]
-pub use app::run;
+pub use app::{den_play_cli, run};
 
 /// The official realm's realmlist (desktop players): `leylinelauncher.com`. `play.openvanilla.app` reaches the same
 /// server forever; `addresses::official_realm()` picks the old one on a computer that cannot resolve the new one yet.

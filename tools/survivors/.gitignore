@@ -1,0 +1,5 @@
+# The owner's PC: the browser build, the hosts, and everything recorded or exported from his own client.
+# None of it goes into git: game files never do.
+dist/
+bin/
+out/

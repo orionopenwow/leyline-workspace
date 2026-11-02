@@ -9,7 +9,7 @@ Version 0.3 adds every client build, every server type and self-updates. See [Ge
 | Page | What you can do |
 |---|---|
 | **Home** | Pick a client and a realm, then PLAY. Or play Wrath in the browser. |
-| **Game clients** | Add a client folder you already have: 1.12.1 (5875), 2.4.3 (8606) or 3.3.5a (12340) for now. Leyline reads the build from the game's .exe and checks the install is complete. Any other build shows as "other": it can play realms, but gets no mods. Or drop your game folder, a zip of it, or a direct link to your own backup zip on the play bar's game client list (or on Find your game files): a progress bar shows the download and the unpacking, Cancel stops it, and the client is added. Never from a torrent. |
+| **Game clients** | Add a client folder you already have, for now one of these: {{v:1.12.1 (5875)}} {{v:2.4.3 (8606)}} {{v:3.3.5a (12340)}}. Leyline reads the build from the game's .exe and checks the install is complete. Any other build shows as "other": it can play realms, but gets no mods. Or drop your game folder, a zip of it, or a direct link to your own backup zip on the play bar's game client list (or on Find your game files): a progress bar shows the download and the unpacking, Cancel stops it, and the client is added. Never from a torrent. |
 | **Discover** | Browse the Workshop: categories, search, credits, links to each project's page, source and author. Install a mod into the client you pick. |
 | **My Mods** | See what is installed in each client. One click to update or remove; turn mods off and on; UPDATE ALL. Drop a .zip, an addon folder, a .MPQ patch or a native mod (.dll, .asi, after a one-time OK) to add your own. |
 | **Realms** | The official realm and every community Beacon, with their server (AzerothCore, TrinityCore, CMaNGOS, vMaNGOS, MaNGOS), build, status and player counts. PLAY picks one of your clients of the right build, sets its realm address and starts the game, or says which client is missing. Join a private realm with its invite link. |
@@ -22,7 +22,7 @@ Discover reads the Workshop list at `https://leylinelauncher.com/wrath/mods/all.
 
 - **Per client.** Every install goes into one client folder. A mod made for the other build is flagged and can't be installed. "Only mods for this client" hides them.
 - **Where files go.** UI addons go to `Interface\AddOns\<Name>`. A client patch goes to a free `Data\patch-<X>.MPQ` slot (4 to 9, then A to Z; the game's own patch files are never touched). A mod package's realm half (`realm/`) is not for a client and is left out.
-- **Checks.** A download is capped at 60 MB and its sha256 must match the catalog. Every zip and folder is checked with the same UI rules as `wu-mod.py` and the website's addon drop: a `<Name>/<Name>.toc` with the client's Interface number (11200 for 1.12, 20400 for 2.4.3, 30300 for 3.3.5a, 40300 for 4.3.4, 50400 for 5.4.8), every file the TOC lists present, `<Script>` and `<Include>` pointing at real files, addon file types only, no game data (checked by extension and by the file's first bytes), 10 MB a file, 50 MB in all, 2000 files. A mod package may not carry `.MPQ` files: a patch comes on its own.
+- **Checks.** A download is capped at 60 MB and its sha256 must match the catalog. Every zip and folder is checked with the same UI rules as `wu-mod.py` and the website's addon drop: a `<Name>/<Name>.toc` with the client's Interface number (`11200` {{v:1.12}}, `20400` {{v:2.4.3}}, `30300` {{v:3.3.5a}}, `40300` {{v:4.3.4}}, `50400` {{v:5.4.8}}), every file the TOC lists present, `<Script>` and `<Include>` pointing at real files, addon file types only, no game data (checked by extension and by the file's first bytes), 10 MB a file, 50 MB in all, 2000 files. A mod package may not carry `.MPQ` files: a patch comes on its own.
 - **Contained.** Zips are unpacked into a staging folder inside the client first, with zip-slip, symbolic-link, password and size checks. Nothing is ever written outside the client folder, or through a link that leads out of it. An addon folder Leyline did not install is never overwritten.
 - **Clean removal.** Each client keeps a list of every file Leyline put in it, in `Leyline\mods.json` inside the client folder. Removing a mod removes exactly those files, and the last removal takes the `Leyline` folder away too. Files you added to an addon's folder yourself are kept, and the game's own saved settings in `WTF` stay.
 - **Off and on.** A turned-off mod's files wait in `Leyline\disabled\` inside the client, where the game does not look.
@@ -34,15 +34,15 @@ Decided for now: every mod is allowed, with no review queue and no code signing.
 
 The Realms page lists the official realm first, then the Beacons from the relay's listing (`https://relay.leylinelauncher.com/api/listing/realms.json`), with their status, players and bots counted apart, and house rules.
 
-- **PLAY** writes the client's `realmlist.wtf` (and the `realmList` line of `WTF\Config.wtf` on 3.3.5a, when it has one), then starts the game. Your original files are kept as `.leyline-backup` the first time.
+- **PLAY** writes the client's `realmlist.wtf` (and the `realmList` line of `WTF\Config.wtf` on the Wrath-era game {{v:3.3.5a}}, when it has one), then starts the game. Your original files are kept as `.leyline-backup` the first time.
 - **A Beacon** is reached through the relay. The relay gives each realm its own login port, so its realmlist is `relay.leylinelauncher.com:<port>`. The listing carries that address; when it doesn't, Leyline asks the relay (`/api/realms/<id>`). The relay's public ports 40000 to 40999 must be open for this. The relay's setup opens them in its firewall; a cloud firewall in front of the box must allow them too.
 - **Your account** on a Beacon is made on its join page in your browser ("Make an account"), so your password never leaves the browser.
 - **A private realm**: paste its invite link under "A private realm". Leyline does what opening the link does (the relay's "knock" for this PC's address, valid 24 hours) and points your client at the realm.
 - **BACK TO WRATH** points the client at the official realm again. **MY OWN REALMLIST** puts back the files you had before Leyline.
 
-Where the realm address goes: 1.12 reads `realmlist.wtf` next to the game; 2.4.3 and 3.3.5a read `Data/<locale>/realmlist.wtf`; 4.3.4 and 5.4.8 read `SET realmlist` in `WTF/Config.wtf`. Leyline keeps your original as a backup the first time.
+Where the realm address goes: {{v:1.12}} reads `realmlist.wtf` next to the game; {{v:2.4.3}} {{v:3.3.5a}} read `Data/<locale>/realmlist.wtf`; {{v:4.3.4}} {{v:5.4.8}} read `SET realmlist` in `WTF/Config.wtf`. Leyline keeps your original as a backup the first time.
 
-Beacons run 3.3.5a, so they need a 3.3.5a client.
+Beacons run the Wrath-era game {{v:3.3.5a}}, so they need that game.
 
 ## Hosting
 

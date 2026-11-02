@@ -334,6 +334,8 @@ exit 0''')
         self.assertIn("no AAAA", out)
         self.assertIn(f"{NEW['relay']} -> nothing yet", out)
         self.assertIn("WAITING FOR DNS", out)
+        self.assertRegex(out, rf"Optional, only when Azeroth Survivors goes live.*\n +Type A +Host survivors +Data {re.escape(IP)}")
+        self.assertIn(f"{A['survivors']['new']}: missing", out)   # optional: not part of READY
         self.assertIn(f"https://{NEW['site']}/auth/google/callback", out)
         self.assertIn("PUBLIC_URL ALLOWED_ORIGINS", out)
         self.assertNotIn("s3cr3t", out + r.stderr)
@@ -456,6 +458,15 @@ class Components(unittest.TestCase):
         self.assertIn(f"LEYLINE_OLD_RELAY={A['relay']['old']}\n", env)
         self.assertEqual(A["game"]["new"], "play." + A["site"]["new"])     # the kit derives play. and relay.
         self.assertEqual(A["relay"]["new"], "relay." + A["site"]["new"])
+
+    def test_survivors(self):
+        with open(os.path.join(ROOT, "hosting", "survivors", "address.txt"), encoding="utf-8") as f:
+            first = next(l.strip() for l in f if l.strip() and not l.startswith("#"))
+        self.assertEqual(first, A["survivors"]["new"])
+        self.assertIn("tools/domain/addresses.json", self.src("hosting/survivors/sv-site-up.sh"))
+        for b in ("Put Survivors on Leyline.bat", "Put Survivors on Leyline - check.bat", "Put Survivors on Leyline - off.bat"):
+            self.assertIn("tools/domain/addresses.json", self.src("hosting/survivors/" + b), b)
+        self.assertNotIn("old", A["survivors"])          # nothing to fall back to: it never had another name
 
     def test_the_game_page_and_the_realm(self):
         for f in ("stream/www-files/wrath-page.js", "stream/www-files/ownfiles.js", "stream/www-files/wu-loading.js"):

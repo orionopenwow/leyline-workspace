@@ -4,5 +4,6 @@
   "game":  {"new": "play.leylinelauncher.com",  "old": "wrath.openvanilla.app"},
   "relay": {"new": "relay.leylinelauncher.com", "old": "relay.openvanilla.app"},
   "www":   {"new": "www.leylinelauncher.com",   "to": "leylinelauncher.com"},
-  "realmlist": {"new": "leylinelauncher.com",   "old": "play.openvanilla.app"}
+  "realmlist": {"new": "leylinelauncher.com",   "old": "play.openvanilla.app"},
+  "survivors": {"new": "survivors.leylinelauncher.com", "_doc": "Azeroth Survivors' own address (docs/SURVIVORS.md), only once it goes live; no old name. hosting/survivors/address.txt says the same (tested)."}
 }

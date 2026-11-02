@@ -154,32 +154,78 @@ fn data_dir(client: &Path) -> Result<PathBuf, String> {
     crate::clients::find_ci(client, "Data").filter(|d| d.is_dir()).ok_or_else(|| "This game folder has no Data folder.".into())
 }
 
+/// `<game>/Leyline/glue-refused` (app.rs den_watch): this game closed on our login screen code once (a game
+/// program that checks its login screen files), so the archive is never written for it again.
+pub fn refused_marker(client: &Path) -> PathBuf {
+    client.join("Leyline").join("glue-refused")
+}
+
+/// The locale folders under Data (`enUS`, `deDE`...): the game reads `Data/<locale>/patch-<locale>-<X>.MPQ` too.
+pub fn locales(client: &Path) -> Vec<String> {
+    let Ok(data) = data_dir(client) else { return Vec::new() };
+    let mut v: Vec<String> = fs::read_dir(&data)
+        .map(|rd| rd.flatten().filter(|e| e.path().is_dir()).map(|e| e.file_name().to_string_lossy().to_string()).collect())
+        .unwrap_or_default();
+    v.retain(|n| n.len() == 4 && n[..2].bytes().all(|b| b.is_ascii_lowercase()) && n[2..].bytes().all(|b| b.is_ascii_uppercase()));
+    v.sort();
+    v
+}
+
+fn ours_at(p: &Path) -> bool {
+    let len = fs::metadata(p).map(|m| m.len()).unwrap_or(u64::MAX);
+    len <= OURS_MAX && fs::read(p).ok().is_some_and(|b| mpq::read(&b, OUR_LUA_NAME).is_some())
+}
+
 /// The slot's path when it is free or holds an archive Leyline wrote; why not, otherwise.
 pub fn slot(client: &Path) -> Result<(PathBuf, bool), String> {
     let data = data_dir(client)?;
     let Some(p) = crate::clients::find_ci(&data, SLOT) else { return Ok((data.join(SLOT), false)) };
-    let len = fs::metadata(&p).map(|m| m.len()).unwrap_or(u64::MAX);
-    let ours = len <= OURS_MAX && fs::read(&p).ok().is_some_and(|b| mpq::read(&b, OUR_LUA_NAME).is_some());
-    if ours {
+    if ours_at(&p) {
         Ok((p, true))
     } else {
         Err(format!("Data/{SLOT} belongs to another mod (Forever UI's own installer puts one there), so Leyline leaves it alone."))
     }
 }
 
+/// Every place our archive goes: `Data/patch-Z.MPQ`, and the same archive as `Data/<locale>/patch-<locale>-Z.MPQ`
+/// for each locale folder (sources disagree on whether the root or the locale patches win over each other; with
+/// both, ours is the last word either way). A locale slot holding someone else's archive is left out.
+pub fn slots(client: &Path) -> Result<Vec<(PathBuf, bool)>, String> {
+    let mut v = vec![slot(client)?];
+    let data = data_dir(client)?;
+    for loc in locales(client) {
+        let Some(dir) = crate::clients::find_ci(&data, &loc) else { continue };
+        let name = format!("patch-{loc}-Z.MPQ");
+        match crate::clients::find_ci(&dir, &name) {
+            None => v.push((dir.join(name), false)),
+            Some(p) if ours_at(&p) => v.push((p, true)),
+            Some(_) => {}
+        }
+    }
+    Ok(v)
+}
+
 /// Whether this session is in our archive now (tests and the status line).
 pub fn has_session(client: &Path) -> bool {
-    let Ok((p, true)) = slot(client) else { return false };
-    fs::read(&p).ok().and_then(|b| mpq::read(&b, SESSION_NAME)).is_some_and(|s| s.as_slice() != NO_SESSION.as_bytes())
+    let Ok(all) = slots(client) else { return false };
+    all.iter()
+        .filter(|(_, ours)| *ours)
+        .any(|(p, _)| fs::read(p).ok().and_then(|b| mpq::read(&b, SESSION_NAME)).is_some_and(|s| s.as_slice() != NO_SESSION.as_bytes()))
 }
 
 /// Write the archive for this start. Fails, changing nothing, when Forever UI's glue isn't there, the slot is
-/// someone else's, or the game holds the archive open (it is running).
+/// someone else's, the game refused our login screen code before, or the game holds the archive open (it is
+/// running). Returns the root slot's path.
 pub fn write(client: &Path, s: Option<&Session>) -> Result<PathBuf, String> {
-    let (p, _) = slot(client)?;
+    if s.is_some() && refused_marker(client).exists() {
+        return Err("This game doesn't take Leyline's login screen (it closed on it once).".into());
+    }
+    let all = slots(client)?;
     let bytes = mpq::build(&bundle(client, s)?)?;
-    crate::settings::write_atomic(&p, &bytes).map_err(|e| format!("Couldn't write Data/{SLOT} (is the game still running?): {e}"))?;
-    Ok(p)
+    for (p, _) in &all {
+        crate::settings::write_atomic(p, &bytes).map_err(|e| format!("Couldn't write {} (is the game still running?): {e}", p.display()))?;
+    }
+    Ok(all[0].0.clone())
 }
 
 /// Take the session out (the archive stays, with the empty one). Ok(true): it was taken out; Ok(false): there was
@@ -191,13 +237,25 @@ pub fn scrub(client: &Path) -> Result<bool, String> {
     write(client, None).map(|_| true)
 }
 
-/// Take our archive away (the switch turned off). Someone else's is never touched.
+/// Take our archive away (the switch turned off), from every slot. Someone else's is never touched.
 pub fn remove(client: &Path) -> Result<bool, String> {
-    match slot(client) {
-        Ok((p, true)) => fs::remove_file(&p).map(|_| true).map_err(|e| format!("Couldn't remove Data/{SLOT}: {e}")),
-        Ok((_, false)) => Ok(false),
-        Err(_) => Ok(false),
+    let mut any = false;
+    let all = slots(client).or_else(|_| {
+        // the root slot is someone else's: our locale ones still go
+        let data = data_dir(client)?;
+        Ok::<_, String>(locales(client).into_iter().filter_map(|l| {
+            let p = crate::clients::find_ci(&data, &l)?.join(format!("patch-{l}-Z.MPQ"));
+            let ours = ours_at(&p);
+            Some((p, ours))
+        }).collect())
+    }).unwrap_or_default();
+    for (p, ours) in all {
+        if ours {
+            fs::remove_file(&p).map_err(|e| format!("Couldn't remove {}: {e}", p.display()))?;
+            any = true;
+        }
     }
+    Ok(any)
 }
 
 pub fn status(client: &Path) -> Status {
@@ -296,6 +354,47 @@ mod tests {
         assert!(remove(d.path()).unwrap());
         assert!(!p.exists());
         assert!(!remove(d.path()).unwrap());
+    }
+
+    #[test]
+    fn the_same_archive_goes_in_the_locale_folder_too_and_a_refusal_is_remembered() {
+        let d = client();
+        assert_eq!(locales(d.path()), ["enUS"]);
+        fs::create_dir_all(d.path().join("Data/Cache")).unwrap(); // not a locale
+        assert_eq!(locales(d.path()), ["enUS"]);
+        write(d.path(), Some(&sess())).unwrap();
+        let root = fs::read(d.path().join("Data").join(SLOT)).unwrap();
+        let loc = fs::read(d.path().join("Data/enUS/patch-enUS-Z.MPQ")).unwrap();
+        assert_eq!(root, loc, "one archive in both places");
+        assert!(scrub(d.path()).unwrap());
+        assert_eq!(mpq::read(&fs::read(d.path().join("Data/enUS/patch-enUS-Z.MPQ")).unwrap(), SESSION_NAME).unwrap(), NO_SESSION.as_bytes(), "scrubbed in both");
+        // someone else's locale patch is left alone, ours still goes in the root
+        fs::write(d.path().join("Data/enUS/patch-enUS-Z.MPQ"), b"theirs").unwrap();
+        write(d.path(), Some(&sess())).unwrap();
+        assert_eq!(fs::read(d.path().join("Data/enUS/patch-enUS-Z.MPQ")).unwrap(), b"theirs");
+        assert!(remove(d.path()).unwrap());
+        assert_eq!(fs::read(d.path().join("Data/enUS/patch-enUS-Z.MPQ")).unwrap(), b"theirs");
+        // the game closed on our login screen code once: never written with a session again
+        fs::create_dir_all(d.path().join("Leyline")).unwrap();
+        fs::write(refused_marker(d.path()), "x").unwrap();
+        assert!(write(d.path(), Some(&sess())).unwrap_err().contains("doesn't take"));
+        assert!(!d.path().join("Data").join(SLOT).exists());
+    }
+
+    /// tools/den-check/fixtures/patch-Z-sample.bin is exactly what this writer makes for the stand-in folder above
+    /// (our own files only), so tools/den-check's own reader and an independent one are tested against the real
+    /// output. `LEYLINE_WRITE_FIXTURES=1 cargo test` writes it again after a change to the writer or the glue.
+    #[test]
+    fn the_den_check_sample_archive_is_this_writers_output() {
+        let d = client();
+        let bytes = mpq::build(&bundle(d.path(), None).unwrap()).unwrap();
+        let fx = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/den-check/fixtures/patch-Z-sample.bin");
+        if std::env::var("LEYLINE_WRITE_FIXTURES").is_ok() {
+            fs::create_dir_all(fx.parent().unwrap()).unwrap();
+            fs::write(&fx, &bytes).unwrap();
+        }
+        let Ok(have) = fs::read(&fx) else { return }; // not in a crate-only checkout
+        assert!(have == bytes, "the sample archive is out of date: run LEYLINE_WRITE_FIXTURES=1 cargo test the_den_check_sample");
     }
 
     #[test]

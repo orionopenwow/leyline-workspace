@@ -94,7 +94,10 @@ def resolve(url: str) -> str | None:
     return None
 
 
-_INLINE = re.compile(r"`([^`]+)`|\*\*(.+?)\*\*|\[([^\]]+)\]\(([^)\s]+)\)")
+_INLINE = re.compile(r"`([^`]+)`|\*\*(.+?)\*\*|\[([^\]]+)\]\(([^)\s]+)\)|\{\{v:([0-9A-Za-z.() -]{1,24})\}\}")
+# A game version is never in a sentence (owner rule: "no client version numbers in prose"): a guide that must say
+# which game a thing needs writes {{v:3.3.5a}} and the page shows the small version chip, as the site's other pages.
+VERSION_CHIP = '<span class="ver" title="Game version">{}</span>'
 
 
 def inline(text: str, links: bool = True) -> str:
@@ -104,7 +107,9 @@ def inline(text: str, links: bool = True) -> str:
         if m.group(3) is not None and not links:
             continue
         out.append(html.escape(text[pos:m.start()]))
-        if m.group(1) is not None:
+        if m.group(5) is not None:
+            out.append(VERSION_CHIP.format(html.escape(m.group(5).strip())))
+        elif m.group(1) is not None:
             out.append(f"<code>{html.escape(m.group(1))}</code>")
         elif m.group(2) is not None:
             out.append(f"<strong>{inline(m.group(2), links)}</strong>")
@@ -340,6 +345,8 @@ def _load(name: str) -> tuple[str, list] | None:
 
 
 DOCS_CSS = """
+.ld-doc .ver{display:inline-block;padding:0 7px;border-radius:6px;border:1px solid currentColor;font-size:.8em;line-height:1.5;
+vertical-align:.08em;opacity:.85;white-space:nowrap}
 .ld-wrap{display:grid;grid-template-columns:230px minmax(0,1fr);gap:22px;align-items:start}
 @media (max-width:860px){.ld-wrap{grid-template-columns:minmax(0,1fr)}}
 .ld-toc{position:sticky;top:64px;background:rgba(10,12,34,.82);border:1px solid var(--ly-line);border-radius:8px;padding:14px 12px;margin:18px 0}
@@ -401,6 +408,8 @@ def _toc(current: str, heads: list) -> str:
 # In the hub's frame (the portal's hub_frame: the site's side menu, tokens and footer): the same contents and table of
 # contents on the hub's tokens, light and dark. The h1 is in Marcellus like every hub page (hub.STONE_CSS: .ld-doc h1).
 DOCS_HUB_CSS = """
+.ld-doc .ver{display:inline-block;padding:0 7px;border-radius:6px;border:1px solid var(--lk-border);color:var(--lk-muted);
+font-size:.8em;line-height:1.5;vertical-align:.08em;white-space:nowrap}
 .ld-wrap{display:grid;grid-template-columns:230px minmax(0,1fr);gap:22px;align-items:start;max-width:1180px;margin:8px auto 40px}
 @media (max-width:860px){.ld-wrap{grid-template-columns:minmax(0,1fr);gap:14px}}
 .ld-toc{position:sticky;top:16px;background:color-mix(in srgb,var(--lk-surface) 94%,transparent);border:1px solid var(--lk-border);

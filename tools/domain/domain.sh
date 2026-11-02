@@ -48,6 +48,9 @@ for p in ("site", "game", "relay"):
         print(f"{k.upper()}_{p.upper()}={a[p][k]}")
 assert ok.match(a["www"]["new"])
 print(f"WWW={a['www']['new']}")
+sv = (a.get("survivors") or {}).get("new", "")
+assert sv == "" or ok.match(sv)
+print(f"SURVIVORS={sv}")
 PY
 )"
 
@@ -115,6 +118,10 @@ EOF
  No AAAA for @ or relay: desktop game clients only speak IPv4 (realmlist).
 EOF
   else echo " This server has no IPv6: no AAAA records."; fi
+  if [ -n "$SURVIVORS" ]; then
+    echo " Optional, only when Azeroth Survivors goes live (docs/SURVIVORS.md):"
+    printf '   Type A     Host %-7s Data %s\n' "${SURVIVORS%.leylinelauncher.com}" "$ip"
+  fi
   echo "====================================================================="
 }
 
@@ -167,6 +174,10 @@ if [ "$MODE" = check ]; then
     for k in RELAY_NAME RELAY_SITE_URL RELAY_SITE_ORIGINS RELAY_PLAY_ORIGINS; do note "$k=$(kv_get "$RELAY_DIR/relay.env" "$k")"; done
     note "'on' restarts the relay once (open tunnels reconnect by themselves within a minute)"
   else note "no relay on this box ($RELAY_DIR/relay.env): skipped"; fi
+  if [ -n "$SURVIVORS" ]; then
+    log "optional: Azeroth Survivors' address"
+    s=$(dns_state "$SURVIVORS"); note "$SURVIVORS: ${s/wrong:/points at } (needed only when Survivors goes live: Put Survivors on Leyline)"
+  fi
   log "state"
   note "$(cat "$DSTATE/domain.json" 2>/dev/null || echo 'never turned on')"
   records

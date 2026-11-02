@@ -15,7 +15,7 @@ use crate::update::{self, Channel, UpdateInfo};
 use crate::{launch, status, BROWSER_PLAY_URL, OFFICIAL_REALM};
 use serde::Serialize;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Child;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -264,6 +264,7 @@ fn point_and_play_with(
     let child = launch::run(&plan).inspect_err(|_| {
         let _ = crate::hybrid::scrub(&profile.path);
     })?;
+    LAST_GAME_PID.store(child.id(), std::sync::atomic::Ordering::Relaxed);
     if let Ok(mut g) = core.games.lock() {
         g.push(child);
     }
@@ -462,8 +463,13 @@ struct DenInvite {
 /// passes the game's connections through), a login made for this one friend, and the link that carries it.
 #[tauri::command]
 async fn den_invite(name: Option<String>) -> Result<DenInvite, String> {
+    blocking(move || den_invite_now(name.as_deref())).await
+}
+
+/// Invite friends, now (the button, and "Invite a friend" in the game's Den panel through Den Lite's ask).
+fn den_invite_now(name: Option<&str>) -> Result<DenInvite, String> {
     use crate::host::{lite::{self, DenLite}, litenet};
-    blocking(move || {
+    {
         let app = crate::settings::app_dir();
         let l = lite::Binary::find(&app);
         if !l.available() {
@@ -492,11 +498,10 @@ async fn den_invite(name: Option<String>) -> Result<DenInvite, String> {
             invite_secret: secret.clone(),
             den_dir: l.den_dir(),
         });
-        let g = l.guest_add(name.as_deref())?;
+        let g = l.guest_add(name)?;
         let link = litenet::invite_link(realms::RELAY, &tunnel.realm_id, &secret, Some((&g.user, &g.pass)));
         Ok(DenInvite { link, name: g.name, expires: g.expires, tunnel })
-    })
-    .await
+    }
 }
 
 /// The tunnel now (Your Den's Friends line).
@@ -530,48 +535,244 @@ struct SoloPlay {
     password: String,
 }
 
-/// The local Den's sign-in for one start (crate::hybrid): Den Lite's fixed local account, its realm picked by name,
-/// left at character select (the player picks or makes the character).
+/// The local Den's sign-in for one start (crate::hybrid): Den Lite's local password under our login screen code's own
+/// account name (crate::denclick::GLUE_ACCOUNT, so Den Lite's log shows which way the game came in), its realm
+/// picked by name, and straight into the world (a character made first when there is none).
 fn den_session() -> crate::hybrid::Session {
     use crate::host::lite;
-    crate::hybrid::Session { user: lite::ACCOUNT.into(), pass: lite::PASSWORD.into(), realm: Some(lite::REALM.into()), enter: false }
+    crate::hybrid::Session { user: crate::denclick::GLUE_ACCOUNT.into(), pass: lite::PASSWORD.into(), realm: Some(lite::REALM.into()), enter: true }
 }
 
-/// Play solo: Your Den on Den Lite (host/lite.rs). Gets the program on first use (one small download from its
-/// release, checked against its sha256). Starts it when it isn't running (with this game folder, for
-/// `.den mods`), waits for its login port (up to 15 s), writes its account and realm into the client's Config.wtf
-/// (never the password), points the client at it and starts the game. With Forever UI's login screens in the game
-/// folder, the hybrid glue signs in by itself and stops at character select; without them, the login screen has
-/// the account filled in and the player types the local password.
+/// Den Lite on this PC, started for this game folder when it isn't running, its login port answering (up to 15 s).
+/// Got on first use (one small download from its release, checked against its sha256). True: it was already running.
+fn den_lite_up(game: &Path) -> Result<bool, String> {
+    use crate::host::lite::{self, DenLite};
+    let app = crate::settings::app_dir();
+    let mut l = lite::Binary::find(&app);
+    if !l.available() {
+        lite::install(&app)?; // first use: the release's program, its sha256 checked (host/lite.rs)
+        l = lite::Binary::find(&app);
+    }
+    let l = l.with_client(game);
+    let was = l.status().running;
+    l.start()?;
+    for _ in 0..50 {
+        if l.status().running {
+            return Ok(was);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
+    Err("Den Lite started but isn't answering yet. Try again in a moment.".to_string())
+}
+
+/// The process id of the game the last start began (point_and_play_with).
+static LAST_GAME_PID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// One My Den start the launcher signs in for (crate::denclick).
+struct DenStart {
+    pid: u32,
+    glue: bool,
+    game: PathBuf,
+    profile: ClientProfile,
+    wine: crate::settings::Wine,
+}
+
+/// My Den's start, after Den Lite is up: its account and realm in Config.wtf (never the password), the handoff for
+/// our login screen code (one start, local only) unless this game refused it before, the client pointed at
+/// 127.0.0.1 and started. Returns what the page shows and the start for crate::denclick to drive.
+fn den_launch(core: &Core, client: &str) -> Result<(SoloPlay, DenStart), String> {
+    use crate::host::lite;
+    let profile = core.client(client)?;
+    let _ = crate::herokey::set_login(&profile.path, lite::ACCOUNT, Some(lite::REALM));
+    let refused = crate::hybrid::refused_marker(&profile.path).exists();
+    let session = if refused { None } else { Some(den_session()) };
+    let (message, hybrid) = point_and_play_with(core, client, lite::ADDRESS, true, session, true)?;
+    let glue = hybrid.is_ok();
+    let st = DenStart { pid: LAST_GAME_PID.load(std::sync::atomic::Ordering::Relaxed), glue, game: profile.path.clone(), profile, wine: core.snapshot().wine };
+    let keys = cfg!(windows);
+    let why = match (&hybrid, refused) {
+        (Ok(()), _) => String::new(),
+        (Err(_), true) => "This game doesn't take Leyline's login screen, so the launcher signs you in.".into(),
+        (Err(e), false) => e.clone(),
+    };
+    let mut play = solo_result(message, if glue || keys { Ok(()) } else { Err(why.clone()) });
+    if !glue && keys {
+        play.why = why; // said in the log; the page shows nothing to type
+    }
+    Ok((play, st))
+}
+
+/// After a My Den start: signs in (crate::denclick::drive) unless our login screen code did, answers the game's
+/// asks (Invite a friend, Shape the ground) while it runs, and takes the handoff out when it closes. A game that
+/// refused our login screen code is started once more without it. `test`: the den-test step's hold (seconds).
+fn den_watch(st: DenStart, test: Option<u64>) -> crate::denclick::Outcome {
+    use crate::denclick::{self, Driver, Outcome, Process};
+    use crate::host::lite;
+    let app = crate::settings::app_dir();
+    let root = lite::root(&app);
+    let den_dir = crate::host::dens::dir(&root);
+    let mut st = st;
+    let game_path = st.game.clone();
+    let mut asks = move || {
+        let Some((id, what)) = denclick::take_ask(&den_dir_for_asks()) else { return };
+        let d = den_dir_for_asks();
+        match what.as_str() {
+            "invite" => match den_invite_now(None) {
+                Ok(i) => denclick::answer(&d, id, Some(&i.link), None),
+                Err(e) => denclick::answer(&d, id, None, Some(&format!("No invite link: {e}"))),
+            },
+            _ => {
+                let r = crate::host::forge::open(&app, &game_path, &crate::p2p::cmds::den_root(), None);
+                let line = match r {
+                    Ok(_) => "Forge is open: shape your Den's ground there. Close it when you're done; restart your game to walk on it.".to_string(),
+                    Err(e) => format!("Forge didn't open: {e}"),
+                };
+                denclick::answer(&d, id, None, Some(&line));
+            }
+        }
+    };
+    let start = denclick::now_ms();
+    let mut out = denclick::drive(&mut Process(st.pid), &den_dir, &root, Driver::new(start, st.glue, test.is_some()), lite::PASSWORD, st.pid, &mut asks);
+    if out == Outcome::GlueRefused {
+        // the game closed on our login screen code: never again for this game, and once more without it
+        let m = crate::hybrid::refused_marker(&st.game);
+        let _ = std::fs::create_dir_all(m.parent().unwrap_or(&st.game));
+        let _ = std::fs::write(&m, "This game closed on Leyline's login screen code; My Den signs in with the launcher's keys.\n");
+        let _ = crate::hybrid::remove(&st.game);
+        if let Ok(plan) = launch::plan(&st.profile, &st.wine, launch::Os::current()) {
+            if let Ok(child) = launch::run(&plan) {
+                st.pid = child.id();
+                st.glue = false;
+                let start = denclick::now_ms();
+                out = denclick::drive(&mut Process(st.pid), &den_dir, &root, Driver::new(start, false, test.is_some()), lite::PASSWORD, st.pid, &mut asks);
+                std::mem::forget(child); // the game runs on; it isn't the launcher's to stop
+            }
+        }
+    }
+    let mut game = Process(st.pid);
+    use crate::denclick::Game;
+    match test {
+        // den-test: wait for the step's screenshot (den-click.shot), then close the game
+        Some(hold) => {
+            let shot = denclick::shot_marker(&root);
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(hold);
+            while std::time::Instant::now() < until && game.alive() && !shot.exists() {
+                asks();
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
+            let _ = std::fs::remove_file(&shot);
+            close_game(st.pid);
+        }
+        None => {
+            while game.alive() {
+                asks();
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+        }
+    }
+    // the handoff out as soon as the game lets go of the archive
+    for _ in 0..40 {
+        if crate::hybrid::scrub(&st.game).is_ok() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    out
+}
+
+fn den_dir_for_asks() -> PathBuf {
+    crate::host::dens::dir(&crate::host::lite::root(&crate::settings::app_dir()))
+}
+
+/// Close the game the test started (it is the test's own start).
+fn close_game(pid: u32) {
+    if pid == 0 {
+        return;
+    }
+    let mut c = if cfg!(windows) {
+        let mut c = std::process::Command::new("taskkill");
+        c.args(["/PID", &pid.to_string(), "/F"]);
+        c
+    } else {
+        let mut c = std::process::Command::new("kill");
+        c.arg(pid.to_string());
+        c
+    };
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        c.creation_flags(0x0800_0000);
+    }
+    let _ = c.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
+}
+
+/// Play solo: Your Den on Den Lite (host/lite.rs), one click into the world. Den Lite started for this game folder
+/// (gets it on first use), then [`den_launch`] starts the game and [`den_watch`] signs in by itself: with our login
+/// screen code where the game takes it, else with the launcher's keys (crate::denclick), straight into the Den.
 #[tauri::command]
 async fn den_play_lite(core: State<'_, Core>, client: String) -> Result<SoloPlay, String> {
-    use crate::host::lite::{self, DenLite};
     let profile = core.client(&client)?;
     if profile.build != crate::clients::Build::V335a {
         return Err("Your Den plays with a different game folder: pick or add it in the play bar, where its version shows.".into());
     }
     let game = profile.path.clone();
-    blocking(move || {
-        let app = crate::settings::app_dir();
-        let mut l = lite::Binary::find(&app);
-        if !l.available() {
-            lite::install(&app)?; // first use: the release's program, its sha256 checked (host/lite.rs)
-            l = lite::Binary::find(&app);
+    blocking(move || den_lite_up(&game)).await?;
+    let (play, st) = den_launch(&core, &client)?;
+    std::thread::spawn(move || den_watch(st, None));
+    Ok(play)
+}
+
+/// `Leyline den-play [--test] [--client <id>] [--hold <s>]` (crate::denclick::parse_cli): My Den from the command
+/// line, with no window of the launcher's own: the owner's den-test step (tools/den-check). Writes
+/// `<den-lite root>/den-click.json` / `den-click.log`; exits 0 when the game reached the world.
+pub fn den_play_cli(cli: crate::denclick::Cli) -> i32 {
+    use crate::host::lite::{self, DenLite};
+    std::hint::black_box(crate::denclick::CLI_MARK.as_ptr());
+    let dir = settings::app_dir();
+    let core = Core {
+        settings: Mutex::new(settings::load(&dir)),
+        dir,
+        known_urls: Mutex::new(HashSet::new()),
+        mods_lock: Arc::new(Mutex::new(())),
+        games: Mutex::new(Vec::new()),
+        upd: Mutex::new(UpdState::default()),
+        deep_link: Mutex::new(None),
+    };
+    let root = lite::root(&settings::app_dir());
+    let fail = |why: String| {
+        let r = crate::denclick::Report { phase: "done".into(), outcome: format!("Stopped({why:?})"), start: crate::denclick::now_ms(), ..Default::default() };
+        crate::denclick::write_report(&root, &r);
+        1
+    };
+    let s = core.snapshot();
+    let pick = cli.client.clone().or(s.selected_client.clone()).filter(|id| s.client(id).is_some_and(|c| c.build == clients::Build::V335a))
+        .or_else(|| s.clients.iter().find(|c| c.build == clients::Build::V335a).map(|c| c.id.clone()));
+    let Some(client) = pick else { return fail("no game folder for Your Den in the launcher".into()) };
+    let game = match core.client(&client) {
+        Ok(p) => p.path,
+        Err(e) => return fail(e),
+    };
+    let was = match den_lite_up(&game) {
+        Ok(w) => w,
+        Err(e) => return fail(e),
+    };
+    let st = match den_launch(&core, &client) {
+        Ok((_, st)) => st,
+        Err(e) => return fail(e),
+    };
+    let out = den_watch(st, cli.test.then_some(cli.hold));
+    if cli.test && !was {
+        let _ = lite::Binary::find(&settings::app_dir()).stop();
+    }
+    // the report's last word: closed
+    if let Ok(t) = std::fs::read_to_string(root.join(crate::denclick::REPORT)) {
+        if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&t) {
+            v["closed"] = true.into();
+            v["den_lite_stopped"] = (cli.test && !was).into();
+            let _ = settings::write_atomic(&root.join(crate::denclick::REPORT), v.to_string().as_bytes());
         }
-        let l = l.with_client(&game);
-        l.start()?;
-        for _ in 0..50 {
-            if l.status().running {
-                return Ok(());
-            }
-            std::thread::sleep(std::time::Duration::from_millis(300));
-        }
-        Err("Den Lite started but isn't answering yet. Try again in a moment.".to_string())
-    })
-    .await?;
-    let _ = crate::herokey::set_login(&profile.path, lite::ACCOUNT, Some(lite::REALM));
-    let (message, hybrid) = point_and_play_with(&core, &client, lite::ADDRESS, true, Some(den_session()), true)?;
-    Ok(solo_result(message, hybrid))
+    }
+    if out == crate::denclick::Outcome::InWorld { 0 } else { 1 }
 }
 
 fn solo_result(message: String, hybrid: Result<(), String>) -> SoloPlay {
@@ -1459,15 +1660,15 @@ pub fn run() {
 mod solo_tests {
     use super::*;
 
-    /// Play solo's sign-in: Den Lite's fixed local login goes into the hybrid archive (escaped, for one start) and
+    /// My Den's sign-in: Den Lite's fixed local login goes into the hybrid archive (escaped, for one start) and
     /// the account and realm into Config.wtf, never the password; without Forever UI's login screens nothing is
-    /// written to Data and the page shows the local password to type.
+    /// written to Data (the launcher's keys sign in instead: denclick.rs).
     #[test]
     fn play_solo_signs_in_to_the_local_den_by_itself() {
         use crate::host::lite;
         let s = den_session();
-        assert_eq!((s.user.as_str(), s.pass.as_str(), s.realm.as_deref(), s.enter), (lite::ACCOUNT, lite::PASSWORD, Some(lite::REALM), false),
-            "stops at character select");
+        assert_eq!((s.user.as_str(), s.pass.as_str(), s.realm.as_deref(), s.enter), (crate::denclick::GLUE_ACCOUNT, lite::PASSWORD, Some(lite::REALM), true),
+            "straight into the world, under the login screen code's own account name");
         let d = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(d.path().join("Data/enUS")).unwrap();
         std::fs::create_dir_all(d.path().join("WTF")).unwrap();

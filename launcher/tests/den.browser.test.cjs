@@ -141,7 +141,7 @@ test('Den Lite: one click on Home plays straight into the room with its account'
   assert.deepEqual(await calls(page, 'den_play_lite'), [{ client: 'c335a-1' }]);
   await page.waitForFunction(() => /Your Den is open/.test(document.querySelector('#yd .yd-status').textContent));
   assert.match(await statusText(page), /account DEN, password den/);
-  assert.match(await page.textContent('#yd-login-hint'), /Forever UI/, 'how to skip typing next time');
+  assert.match(await page.textContent('#yd-login-hint'), /signs you in by itself/, 'where it signs in by itself');
   await page.waitForFunction(() => /Open on this PC/.test(document.querySelector('#yd-state').textContent));
   assert.deepEqual(await calls(page, 'host_start_quiet'), [], 'no Docker');
   assert.deepEqual(errors, []);
@@ -375,7 +375,7 @@ test('Play solo: one click, the game signs in by itself to character select; Sol
   const { page, ctx, errors } = await open({ lite: 'stopped', auto: true, dock: 'ready' });
   await page.click('#hm-den-go');
   await page.waitForFunction(() => /Your Den is open/.test(document.querySelector('#yd .yd-status').textContent));
-  assert.match(await statusText(page), /signs you in by itself and opens at character select/);
+  assert.match(await statusText(page), /signs you in and takes you straight to your Den/);
   assert.doesNotMatch(await statusText(page), /password/, 'nothing to type');
   assert.equal(await page.$('#yd-login-hint'), null);
   assert.equal((await calls(page, 'den_play_lite')).length, 1, 'one click, one start');

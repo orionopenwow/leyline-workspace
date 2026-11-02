@@ -20,7 +20,7 @@ Our own realm is Wrath Unleashed, the official realm, which gets our client addi
 | Part | Status | Where to read |
 |---|---|---|
 | Wrath in the browser (streamed Dalaran area, sign-in with Google or a Hero Key) | Live | [Play](play.md) |
-| Wrath with your own 3.3.5a client | Live | [Play](play.md#with-your-own-client) |
+| Wrath with your own game {{v:3.3.5a}} | Live | [Play](play.md#with-your-own-client) |
 | In-game commands (.wu, .bug, .stuck, .recruit, .buddy, .go, .armory and more) | Live on Wrath | [Commands](commands.md) |
 | Mod format 0.1 and the `wu-mod.py` checker | Live | [Mod format](mods.md) |
 | The Workshop at /wrath/mods and the in-game Workshop tab | Live | [Publishing](publishing.md) |
@@ -32,7 +32,7 @@ Our own realm is Wrath Unleashed, the official realm, which gets our client addi
 | The relay (tunnels, join pages, listing) | Live | [Hosting](hosting.md#the-relay) |
 | How the network fits together, for players | Live | [The network](network.md) |
 | Discord bridge | Built, off until the owner sets it up | [Hosting](hosting.md#discord-bridge) |
-| Drop your own 3.3.5a game folder on the streamed page to go anywhere | Built | [Play](play.md#use-your-own-game-folder-to-go-anywhere) |
+| Drop your own game folder {{v:3.3.5a}} on the streamed page to go anywhere | Built | [Play](play.md#use-your-own-game-folder-to-go-anywhere) |
 | Play in the browser with your own game folder | Built, behind a switch | [Play](play.md#in-the-browser-with-your-own-game-folder) |
 | Goldshire Inn guest pass (no sign-up) | Built, off by default | [Play](play.md#guest-pass) |
 | Realm claims with a Hero Key (listing and website) | Built | [Hero Key](hero-key.md) |

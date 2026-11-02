@@ -136,7 +136,8 @@ pub const STAYING: &str = "I'll wait here.";
 pub const FOLLOWING: &str = "Right behind you.";
 pub const COMING: &str = "On my way.";
 pub const BACK: &str = "Back with you.";
-/// Once a session, when the Den is still empty a while after login and the player has said nothing to her.
+/// Once a session, when the Den is still empty a while after login and the player has said nothing to her. Not said
+/// since 1 Nov 23:47 (owner: "not spam the chat"; she speaks only when spoken to; the Den bar's intro shows the way).
 pub const NUDGE: &str = "Want a start? Try .den place chair, or say \"Jaina, tips\".";
 /// Seconds after login before the one nudge, and how quiet the player must have been with her.
 pub const NUDGE_AFTER: u64 = 120;

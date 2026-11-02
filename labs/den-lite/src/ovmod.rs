@@ -4,6 +4,10 @@
 //! yourself, `OVMOD` `\t` `<mod>\t<name>\t<i>/<n>\t<data>`. On the full Den the realm's `ov_den.lua` (mod `wuden`)
 //! and `ov_build.lua` (mod `wubuild`) answer; here this file does, for what Den Lite can do:
 //!
+//! * `wuden hello <version>` (the Den bar, DenBar.lua, notice.rs): from now on what Den Lite says that nobody typed
+//!   for is a toast in the bar (`wuden toast <kind>|<text>`), and the bar is told `wuden status`
+//!   (`role=..;props=..;saved=<seconds ago>|-`), and `wuden saved auto|<name>` after each save; `wuden status` asks
+//!   again;
 //! * `wuden info` -> `role=..;theme=..;builders=-;invite=1`; `wuden cmd <text>` -> the `.den <text>` chat command,
 //!   plus `invite` and `forge` (asked of the launcher: [`ASK_FILE`] / [`ANSWER_FILE`]);
 //! * `wubuild catalog` (the props Den Lite knows, in the Builder's categories), `wubuild state` (the selection) and
@@ -121,6 +125,10 @@ pub enum Out {
     Ask(String),
     /// The first answer to the panel or the Builder (the `builder_ready` milestone).
     Ready,
+    /// The Den bar is here (notice.rs): what waited for it, and the status line.
+    Hello,
+    /// The status line again.
+    Status,
 }
 
 /// Where the player stands and faces (world coordinates, radians).
@@ -374,6 +382,8 @@ pub fn handle(d: &mut Den, sel: &mut Sel, here: Option<Here>, msg: &AddonMsg, ow
     let Some((md, name, data)) = split(&msg.text) else { return Vec::new() };
     let role = if owner { "owner" } else if can_build { "builder" } else { "visitor" };
     match (md, name) {
+        ("wuden", "hello") => vec![Out::Hello, Out::Ready],
+        ("wuden", "status") => vec![Out::Status],
         ("wuden", "info") => vec![Out::Addon("wuden".into(), "info".into(), format!("role={role};theme={};builders=-;invite={}", d.look.name, owner as u8)), Out::Ready],
         ("wuden", "cmd") => {
             let w = data.split_whitespace().next().unwrap_or("").to_ascii_lowercase();
@@ -526,6 +536,8 @@ mod tests {
         assert_eq!(handle(&mut d, &mut sel, None, &m("wubuild\tcmd\t1/1\tsnap on"), true, true), vec![Out::Addon("wubuild".into(), "snap".into(), "on".into())]);
         assert!(matches!(&handle(&mut d, &mut sel, None, &m("wubuild\tcmd\t1/1\tsnap on"), false, false)[0], Out::Addon(_, _, a) if a.starts_with("off,role")));
         assert!(handle(&mut d, &mut sel, None, &AddonMsg { prefix: "Other".into(), text: "x".into() }, true, true).is_empty());
+        assert_eq!(handle(&mut d, &mut sel, None, &m("wuden\thello\t1/1\t1"), true, true), vec![Out::Hello, Out::Ready], "the Den bar");
+        assert_eq!(handle(&mut d, &mut sel, None, &m("wuden\tstatus\t1/1\t"), false, false), vec![Out::Status]);
     }
 
     #[test]

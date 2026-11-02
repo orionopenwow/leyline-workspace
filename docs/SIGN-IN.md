@@ -89,7 +89,11 @@ be kept, that sweep needs `AND NOT EXISTS (SELECT 1 FROM hero_keys ...)` in the 
 Nothing below types a password or makes an account on another service for you.
 
 - [ ] Google: already on (the website has offered it for months). Nothing to do.
-- [ ] Discord sign-in (TODO(owner)): the website has Discord sign-in built in; it was switched off on 2026-10-22
+- [x] Discord sign-in: **not used** (owner, 1 Nov release goals: "Hero Key sign-in (Google sign-in); Discord sign-in
+      is NOT used"). Keep `DISCORD_SIGNIN=off` in `/opt/wenilla-realm/.env`: the site's chooser and the launcher only
+      show a Discord button when the website's own `/login` offers it, so with it off no Discord button appears
+      anywhere. The steps below are kept only for the record, in case that ever changes.
+      The website has Discord sign-in built in; it was switched off on 2026-10-22
       ("discord is only a join button now"). The Discord application it used still exists (its id and secret are in
       `/opt/wenilla-realm/.env`). To turn sign-in back on WITHOUT the Herald bot (we never post on the Discord):
       1. On the server, in `/opt/wenilla-realm/.env`: `DISCORD_SIGNIN=on` (or delete the line), and check

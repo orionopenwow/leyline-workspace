@@ -54,6 +54,10 @@ fn server_with(tag: &str, gender: HeroGender, companion: bool) -> (den_lite::Run
         den_dir: dir.clone(),
         stamps_dir: stamps(),
         companion,
+        // no Den bar in these tests: the old lines come after a short wait; every encouragement moment, no gap
+        ui_wait_ms: 300,
+        ui_load_ms: 300,
+        cheer_gap: 0,
         ..Config::default()
     };
     (start(cfg).expect("den lite starts"), dir)
@@ -746,9 +750,13 @@ fn the_den_grows_and_the_companion_talks_with_the_assistant() {
         _ => None,
     });
     assert!(line.starts_with("Your companion stays in your Den"), "{line}");
-    // back inside: she joins again by herself; sent away, she stays away
+    // back inside: she joins again by herself, quietly (she speaks when spoken to); sent away, she stays away
     w.send(&heartbeat(mx, my, mz, 0.0));
-    assert_eq!(w.until_she_says().2, den_lite::companion::BACK);
+    w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_UPDATE_OBJECT(u)) => u.objects.iter().any(|o| matches!(o, Object::CreateObject { guid3, .. } if guid3.guid() == den_lite::companion::GUID)).then_some(()),
+        Some(ServerOpcodeMessage::SMSG_MESSAGECHAT(m)) if matches!(m.chat_type, SMSG_MESSAGECHAT_ChatType::MonsterSay { .. }) => panic!("she said {:?}", m.message),
+        _ => None,
+    });
     w.say(".den companion away");
     assert_eq!(w.until_she_says().2, den_lite::companion::BYE);
     w.say(".den companion away");
@@ -805,6 +813,8 @@ fn run_program(dir: &std::path::Path, login_port: u16, world_port: u16) -> Progr
         .args(["--dens", &dir.display().to_string(), "--bind", "127.0.0.1", "--password", "den"])
         .args(["--stamps", &stamps().display().to_string()])
         .args(["--login-port", &login_port.to_string(), "--world-port", &world_port.to_string()])
+        // this test's game sends no "past the loading screen" packet and has no Den bar: the old lines soon
+        .args(["--ui-load", "500"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
@@ -973,7 +983,7 @@ fn the_companion_is_there_from_login_and_takes_short_commands() {
 fn the_den_is_kept_by_itself_and_open_again_after_a_restart() {
     let dir = std::env::temp_dir().join(format!("den-lite-test-autosave-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let cfg = || Config { login_port: 0, world_port: 0, den_dir: dir.clone(), stamps_dir: stamps(), companion: false, ..Config::default() };
+    let cfg = || Config { login_port: 0, world_port: 0, den_dir: dir.clone(), stamps_dir: stamps(), companion: false, ui_load_ms: 300, ..Config::default() };
     let srv = start(cfg()).unwrap();
     assert!(!dir.join("autosave.den.json").exists(), "an empty new Den writes nothing");
     let mut w = into_world(&srv, 0);
@@ -1224,6 +1234,8 @@ fn one_click_lands_in_the_den_with_the_builder_ready() {
     let link = "https://relay.openvanilla.app/join/kzdvvj2umnduyauf#ABCDEFGHJKLMNPQRSTUVWXYZ~~GABCDE2345.ABCDEFGH23456789";
     std::fs::write(dir.join(den_lite::ovmod::ANSWER_FILE), format!("{{\"id\":1,\"invite\":\"{link}\"}}")).unwrap();
     assert_eq!(w.until_addon("wuden", "invite"), link);
+    // no Den bar's hello in this game (an older addon): the line in the chat, after the link
+    assert!(w.until_line().1.starts_with("Your invite link is in the Den panel"));
     // Shape the ground: asked too
     w.say(".den forge");
     assert!(w.until_line().1.starts_with("Opening Forge"));
@@ -1250,7 +1262,7 @@ fn the_den_test_types_through_the_dens_folder_not_the_keyboard() {
     use den_lite::testctl::{CMD_FILE, OUT_FILE};
     let dir = std::env::temp_dir().join(format!("den-lite-test-testctl-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let cfg = Config { login_port: 0, world_port: 0, den_dir: dir.clone(), stamps_dir: stamps(), companion: false, test_control: true, ..Config::default() };
+    let cfg = Config { login_port: 0, world_port: 0, den_dir: dir.clone(), stamps_dir: stamps(), companion: false, test_control: true, ui_wait_ms: 300, ui_load_ms: 300, ..Config::default() };
     let srv = start(cfg).expect("den lite starts");
     let mut w = into_world(&srv, 2);
     w.send(&heartbeat(16226.2, 16257.0, 14.2, 0.0));
@@ -1313,5 +1325,174 @@ fn the_den_test_types_through_the_dens_folder_not_the_keyboard() {
     std::fs::write(dir.join(CMD_FILE), r#"{"id":1,"cmd":".den place chair"}"#).unwrap();
     std::thread::sleep(Duration::from_millis(2500));
     assert!(dir.join(CMD_FILE).exists() && !dir.join(OUT_FILE).exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Frames until the addon answer `wuden <name>` (one part); returns the frames before it and its data.
+fn until_den(w: &mut World, name: &str) -> (Vec<Frame>, String) {
+    let want = format!("OVMOD\twuden\t{name}\t1/1\t");
+    let mut got = Vec::new();
+    loop {
+        let f = w.frame();
+        if let Some(d) = addon_text(&f).and_then(|t| t.strip_prefix(&want).map(String::from)) {
+            return (got, d);
+        }
+        got.push(f);
+    }
+}
+
+/// The system lines and her lines among frames (what the chat frame would show).
+fn chat_lines(frames: &[Frame]) -> Vec<String> {
+    frames
+        .iter()
+        .filter_map(|f| match &f.msg {
+            Some(ServerOpcodeMessage::SMSG_MESSAGECHAT(m))
+                if matches!(m.chat_type, SMSG_MESSAGECHAT_ChatType::System { .. } | SMSG_MESSAGECHAT_ChatType::MonsterSay { .. }) =>
+            {
+                Some(m.message.clone())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// The Den bar (WrathUnleashedUI DenBar.lua; notice.rs; owner 1 Nov 23:46: "make it make sense, not spam the chat"):
+/// once the bar says hello, what Den Lite says that nobody typed for is a toast in the bar: the welcome, Jaina's one
+/// greeting, the Builder's answers, the invite link being made and ready, the launcher's answer, a save from the
+/// bar, the autosave; never a chat line. What the player types still answers in the chat.
+#[test]
+fn with_the_den_bar_nothing_spams_the_chat() {
+    let dir = std::env::temp_dir().join(format!("den-lite-test-bar-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let cfg = Config { login_port: 0, world_port: 0, den_dir: dir.clone(), stamps_dir: stamps(), companion: true, ui_wait_ms: 8000, ui_load_ms: 8000, cheer_gap: 0, ..Config::default() };
+    let srv = start(cfg).expect("den lite starts");
+    let (key, _, address) = login(srv.login, "DEN", "den").expect("login");
+    let mut w = World::connect(&address, "DEN", key, 3);
+    w.send(&CMSG_CHAR_ENUM {});
+    let ch = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_CHAR_ENUM(e)) => Some(e.characters[0].guid),
+        _ => None,
+    });
+    w.send(&CMSG_PLAYER_LOGIN { guid: ch });
+    // the bar opens and says hello (DenBar.lua at PLAYER_ENTERING_WORLD): its status, then what waited for it
+    w.addon("OVMOD", "wuden\thello\t1/1\t1");
+    let (frames, status) = until_den(&mut w, "status");
+    assert_eq!(status, "role=owner;props=0;saved=-");
+    assert!(chat_lines(&frames).is_empty(), "nothing in the chat on the way in: {:?}", chat_lines(&frames));
+    let (frames, welcome) = until_den(&mut w, "toast");
+    assert_eq!(welcome, format!("cheer|{}", den_lite::cheers::LINES[0].1), "the first visit's one line");
+    let (more, greet) = until_den(&mut w, "toast");
+    assert_eq!(greet, format!("jaina|{}", den_lite::companion::GREET), "her one greeting, as a toast");
+    assert!(chat_lines(&frames).is_empty() && chat_lines(&more).is_empty() && w.notes.is_empty(), "{:?}", w.notes);
+
+    // the Builder (a bar's answer): the change for everyone, its line a toast
+    w.send(&heartbeat(16226.2, 16257.0, 14.2, 0.0));
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tspawn 2413");
+    let (frames, placed) = until_den(&mut w, "toast");
+    assert!(placed.starts_with("info|Placed."), "{placed}");
+    let (made, _) = objects(&frames);
+    assert_eq!(made.len(), 1, "the chair is there");
+    // the autosave tells the bar ("Saved 2 s ago"), nothing in the chat
+    let (frames, auto) = until_den(&mut w, "saved");
+    assert_eq!(auto, "auto");
+    assert!(chat_lines(&frames).is_empty(), "{:?}", chat_lines(&frames));
+    w.addon("OVMOD", "wuden\tstatus\t1/1\t");
+    let (_, status) = until_den(&mut w, "status");
+    assert!(status.starts_with("role=owner;props=1;saved="), "{status}");
+
+    // the bar's Save: the line a toast, and the bar hears the name
+    w.addon("OVMOD", "wuden\tcmd\t1/1\tsave mine");
+    let (frames, name) = until_den(&mut w, "saved");
+    assert_eq!(name, "mine");
+    let (more, a) = until_den(&mut w, "toast");
+    let (more2, b) = until_den(&mut w, "toast");
+    let mut two = [a, b];
+    two.sort();
+    assert_eq!(two[0], format!("cheer|{}", den_lite::cheers::LINES[2].1), "the first save's line");
+    assert!(two[1].starts_with("info|Saved to a file (1 props)"), "{two:?}");
+    assert!(chat_lines(&frames).is_empty() && chat_lines(&more).is_empty() && chat_lines(&more2).is_empty());
+
+    // Invite (the bar's button): being made, then the link and its toast
+    w.addon("OVMOD", "wuden\tcmd\t1/1\tinvite");
+    let (frames, making) = until_den(&mut w, "toast");
+    assert!(making.starts_with("info|Making an invite link"), "{making}");
+    assert!(chat_lines(&frames).is_empty());
+    let link = "https://relay.openvanilla.app/join/kzdvvj2umnduyauf#ABCDEFGHJKLMNPQRSTUVWXYZ~~GABCDE2345.ABCDEFGH23456789";
+    std::fs::write(dir.join(den_lite::ovmod::ANSWER_FILE), format!("{{\"id\":1,\"invite\":\"{link}\"}}")).unwrap();
+    let (_, got) = until_den(&mut w, "invite");
+    assert_eq!(got, link);
+    let (frames, ready) = until_den(&mut w, "toast");
+    assert!(ready.starts_with("ok|Your invite link is ready"), "{ready}");
+    assert!(chat_lines(&frames).is_empty());
+
+    // Shape ground (the bar's button) and the launcher's answer: toasts
+    w.addon("OVMOD", "wuden\tcmd\t1/1\tforge");
+    assert!(until_den(&mut w, "toast").1.starts_with("info|Opening Forge"));
+    std::fs::write(dir.join(den_lite::ovmod::ANSWER_FILE), r#"{"id":2,"say":"Forge is open on your Den's tile."}"#).unwrap();
+    let (frames, said) = until_den(&mut w, "toast");
+    assert_eq!(said, "info|Forge is open on your Den's tile.");
+    assert!(chat_lines(&frames).is_empty());
+
+    // typed: the chat, as always
+    w.say(".den forge");
+    assert!(w.until_line().1.starts_with("Opening Forge"));
+    let evs = den_lite::events::read(&dir);
+    assert!(evs.iter().any(|l| l.ev == "den_ui"), "the bar's hello is in the events");
+    assert!(evs.iter().any(|l| l.ev == "notice" && l.detail == "toast cheer"));
+    assert!(!evs.iter().any(|l| l.ev == "notice" && l.detail.starts_with("chat")), "nothing the old way");
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A game without the bar (or an older one): after the wait, the old way: the welcome and the quick start in the
+/// chat, the first visit's line in the middle of the screen, her greeting as her line.
+#[test]
+fn without_the_den_bar_the_old_lines_after_a_short_wait() {
+    let (srv, dir) = server_with("nobar", HeroGender::Female, true);
+    let (key, _, address) = login(srv.login, "DEN", "den").expect("login");
+    let mut w = World::connect(&address, "DEN", key, 0);
+    w.send(&CMSG_CHAR_ENUM {});
+    let ch = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_CHAR_ENUM(e)) => Some(e.characters[0].guid),
+        _ => None,
+    });
+    let t = std::time::Instant::now();
+    w.send(&CMSG_PLAYER_LOGIN { guid: ch });
+    let (_, welcome) = w.until_line();
+    assert!(t.elapsed() >= Duration::from_millis(300), "it waited for a hello first");
+    assert!(welcome.starts_with("Welcome to your Den: 0 props"), "{welcome}");
+    let quick: Vec<String> = (0..5).map(|_| w.until_line().1).collect();
+    assert!(quick[0].starts_with("Quick start: 1) .den place chair"), "{quick:?}");
+    assert_eq!(w.until_she_says().2, den_lite::companion::GREET);
+    assert_eq!(w.notes, vec![den_lite::cheers::LINES[0].1.to_string()]);
+    let evs = den_lite::events::read(&dir);
+    assert!(evs.iter().any(|l| l.ev == "notice" && l.detail == "chat cheer") && !evs.iter().any(|l| l.ev == "den_ui"));
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+
+    // a long loading screen doesn't count: the wait starts when the game is in the world (its first move here)
+    let dir = std::env::temp_dir().join(format!("den-lite-test-loading-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let cfg = Config { login_port: 0, world_port: 0, den_dir: dir.clone(), stamps_dir: stamps(), companion: false, ui_wait_ms: 300, ui_load_ms: 60_000, ..Config::default() };
+    let srv = start(cfg).expect("den lite starts");
+    let (key, _, address) = login(srv.login, "DEN", "den").expect("login");
+    let mut w = World::connect(&address, "DEN", key, 0);
+    w.send(&CMSG_CHAR_ENUM {});
+    let ch = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_CHAR_ENUM(e)) => Some(e.characters[0].guid),
+        _ => None,
+    });
+    w.send(&CMSG_PLAYER_LOGIN { guid: ch });
+    std::thread::sleep(Duration::from_millis(1200));
+    assert!(!den_lite::events::read(&dir).iter().any(|l| l.ev == "notice"), "still loading: nothing said yet");
+    w.send(&heartbeat(16226.2, 16257.0, 14.2, 0.0));
+    let t = std::time::Instant::now();
+    assert!(w.until_line().1.starts_with("Welcome to your Den"));
+    assert!(t.elapsed() < Duration::from_secs(3), "soon after the game is in the world");
+    assert!(den_lite::events::read(&dir).iter().any(|l| l.ev == "loaded"));
+    drop(w);
+    drop(srv);
     let _ = std::fs::remove_dir_all(&dir);
 }

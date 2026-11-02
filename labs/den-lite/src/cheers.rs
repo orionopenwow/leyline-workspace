@@ -3,8 +3,10 @@
 //! kept in `<dens>/.cheers-done` (one key a line), so a restart never says it again. The launcher's own moments
 //! (your first server live, a friend joins, your first mod) are in launcher/ui/guide.js.
 //!
-//! The line shows in the middle of the screen (SMSG_NOTIFICATION), not in the chat frame, so it never pushes the
-//! answer to a command out of view and it fades by itself.
+//! The line is a toast in the Den bar (notice.rs), or without the bar in the middle of the screen (SMSG_NOTIFICATION),
+//! never in the chat frame, so it never pushes the answer to a command out of view and it fades by itself. Rarely: at
+//! most one every `Config::cheer_gap` seconds (owner, 1 Nov 23:47: not stacked); one that comes too soon waits for a
+//! later moment of its kind (it isn't marked said).
 
 use std::io::Write;
 use std::path::Path;
@@ -19,6 +21,13 @@ pub const LINES: &[(&str, &str)] = &[
 ];
 
 const FILE: &str = ".cheers-done";
+
+/// The line for `key` when it hasn't been said yet in this Den folder (nothing is marked). Unknown keys: None.
+pub fn unsaid(dir: &Path, key: &str) -> Option<&'static str> {
+    let line = LINES.iter().find(|(k, _)| *k == key).map(|(_, l)| *l)?;
+    let done = std::fs::read_to_string(dir.join(FILE)).map(|t| t.lines().any(|l| l == key)).unwrap_or(false);
+    (!done).then_some(line)
+}
 
 /// The line for `key` the first time it is asked for in this Den folder, then None. Unknown keys: None.
 pub fn once(dir: &Path, key: &str) -> Option<&'static str> {
@@ -41,7 +50,9 @@ mod tests {
     fn each_line_once_kept_across_restarts() {
         let d = std::env::temp_dir().join(format!("den-lite-cheers-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
+        assert_eq!(unsaid(&d, "first-save"), Some("Saved. Your Den is safe in a file now."));
         assert_eq!(once(&d, "first-save"), Some("Saved. Your Den is safe in a file now."));
+        assert_eq!(unsaid(&d, "first-save"), None);
         assert_eq!(once(&d, "first-save"), None);
         assert!(once(&d, "first-piece").is_some());
         assert_eq!(once(&d, "nope"), None);

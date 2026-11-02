@@ -736,6 +736,74 @@ impl Adt {
             ch.n_doodad_refs = nd;
         }
     }
+
+    /// Takes every model and building out of these chunks (the Den: nothing of the island left standing on its
+    /// ground). Their MCRF lists are emptied; a placement no chunk refers to any more goes from MDDF / MODF, the
+    /// names no placement uses go from MMDX / MWMO, and the other chunks' references are renumbered. Returns how many
+    /// (doodads, buildings) went.
+    pub fn clear_placements(&mut self, chunks: &[u16]) -> (usize, usize) {
+        for &i in chunks {
+            if let Some(c) = self.chunks.get_mut(i as usize) {
+                c.refs.clear();
+                c.n_doodad_refs = 0;
+            }
+        }
+        let (nd, nw) = (self.doodads.len(), self.wmos.len());
+        let mut used_d = vec![false; nd];
+        let mut used_w = vec![false; nw];
+        for c in &self.chunks {
+            let k = (c.n_doodad_refs as usize).min(c.refs.len());
+            c.refs[..k].iter().filter(|&&r| (r as usize) < nd).for_each(|&r| used_d[r as usize] = true);
+            c.refs[k..].iter().filter(|&&r| (r as usize) < nw).for_each(|&r| used_w[r as usize] = true);
+        }
+        // old index -> new index, for the placements that stay
+        let remap = |used: &[bool]| -> Vec<Option<u32>> {
+            let mut n = 0u32;
+            used.iter().map(|&u| u.then(|| {
+                n += 1;
+                n - 1
+            })).collect()
+        };
+        let (md, mw) = (remap(&used_d), remap(&used_w));
+        for c in self.chunks.iter_mut() {
+            let k = (c.n_doodad_refs as usize).min(c.refs.len());
+            let ds: Vec<u32> = c.refs[..k].iter().filter_map(|&r| md.get(r as usize).copied().flatten()).collect();
+            let ws: Vec<u32> = c.refs[k..].iter().filter_map(|&r| mw.get(r as usize).copied().flatten()).collect();
+            c.n_doodad_refs = ds.len() as u32;
+            c.refs = ds.into_iter().chain(ws).collect();
+        }
+        let mut i = 0;
+        self.doodads.retain(|_| {
+            i += 1;
+            used_d[i - 1]
+        });
+        let mut i = 0;
+        self.wmos.retain(|_| {
+            i += 1;
+            used_w[i - 1]
+        });
+        // the names lists, without the ones nothing uses
+        let compact = |names: &mut Vec<String>, idx: Vec<&mut u32>| {
+            let mut keep = vec![false; names.len()];
+            for n in &idx {
+                if let Some(k) = keep.get_mut(**n as usize) {
+                    *k = true;
+                }
+            }
+            let m = remap(&keep);
+            for n in idx {
+                *n = m.get(*n as usize).copied().flatten().unwrap_or(0);
+            }
+            let mut j = 0;
+            names.retain(|_| {
+                j += 1;
+                keep[j - 1]
+            });
+        };
+        compact(&mut self.m2_names, self.doodads.iter_mut().map(|d| &mut d.name).collect());
+        compact(&mut self.wmo_names, self.wmos.iter_mut().map(|w| &mut w.name).collect());
+        (nd - self.doodads.len(), nw - self.wmos.len())
+    }
 }
 
 fn guess_alpha(b: &[u8], spots: &[(usize, usize)]) -> Option<AlphaMode> {
@@ -1351,6 +1419,34 @@ pub(crate) mod tests {
         assert!(t.chunks[den].refs[..t.chunks[den].n_doodad_refs as usize].contains(&0));
         let with_hut: Vec<usize> = (0..256).filter(|&i| t.chunks[i].refs[t.chunks[i].n_doodad_refs as usize..].contains(&0)).collect();
         assert!(with_hut.len() >= 4 && with_hut.contains(&den), "{with_hut:?}");
+    }
+
+    #[test]
+    fn placements_go_from_cleared_chunks_and_the_tile_stays_valid() {
+        let mut t = sample();
+        let den = 9 * 16 + 8;
+        let hut: Vec<u16> = (0..256u16).filter(|&i| t.chunks[i as usize].refs[t.chunks[i as usize].n_doodad_refs as usize..].contains(&0)).collect();
+        // the Den's chunk only: the tree there goes; the hut is still referred to by its other chunks, so it stays
+        let (d, w) = t.clear_placements(&[den as u16]);
+        assert_eq!((d, w), (1, 0));
+        assert_eq!(t.doodads.len(), 1);
+        assert_eq!(t.m2_names, vec!["World\\Leyline\\Rock.m2".to_string()], "the unused name went, the rock's renumbered");
+        assert_eq!(t.doodads[0].name, 0);
+        assert_eq!(t.doodads[0].uid, 0x7F00_0002);
+        assert!(t.chunks[den].refs.is_empty() && t.chunks[den].n_doodad_refs == 0);
+        let rock_chunk = t.chunks.iter().position(|c| c.n_doodad_refs == 1).unwrap();
+        assert_eq!(t.chunks[rock_chunk].refs[0], 0, "renumbered from 1 to 0");
+        // the tile reads back the same (refs and names consistent)
+        let back = Adt::parse(&t.write(), None).unwrap();
+        assert_eq!((back.doodads.clone(), back.m2_names.clone(), back.wmos.len()), (t.doodads.clone(), t.m2_names.clone(), 1));
+        // every chunk: nothing left
+        let all: Vec<u16> = (0..256).collect();
+        assert_eq!(t.clear_placements(&all), (1, 1));
+        assert!(t.doodads.is_empty() && t.wmos.is_empty() && t.m2_names.is_empty() && t.wmo_names.is_empty());
+        assert!(t.chunks.iter().all(|c| c.refs.is_empty()));
+        let back = Adt::parse(&t.write(), None).unwrap();
+        assert!(back.doodads.is_empty() && back.wmos.is_empty() && back.chunks.iter().all(|c| c.refs.is_empty()));
+        assert!(!hut.is_empty());
     }
 
     #[test]

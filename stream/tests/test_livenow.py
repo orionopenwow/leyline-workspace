@@ -63,8 +63,10 @@ real = HB.hub.realm_rows
 HB.hub.realm_rows = lambda query=None: got
 front = HB.hub.front_page().decode()
 # owner 31 Oct ("remove this area from site"): the strip is drawn (live_now) but no longer on the front page
+# (the "is open" band under the hero went in the 1 Nov redesign: the official realm now leads the realm list itself)
+_at = lambda name: front.find(f">{name}<")
 check("front page: no Live now strip (owner 31 Oct), the official realm still first", 'id="live"' not in front
-      and 'id="hangout"' in front)
+      and 0 <= _at(HB.HANGOUT_NAME) < _at("Frost Peak"), (_at(HB.HANGOUT_NAME), _at("Frost Peak")))
 HB.hub.realm_rows = real
 
 # the realm link page under the real handler

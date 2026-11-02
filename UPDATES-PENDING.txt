@@ -637,4 +637,9 @@
 1268e mods Browser realm: the same addons
 1269b ship Survivors fixes, Control's Survivors steps, Den Lite: the game's addon list read right (no more Banned box)
 1269d den-lite Den Lite: the addon list read right, movement read by hand
-1269c audit Release audit (read-only, ~10 min)
+1270a ship Your Den: our own white ground, island models gone, white sky, the name Your Den; Shape the ground gets Forge by itself
+1270b den-lite Den Lite: Den mode (no chat spam, the Den bar's toasts, Jaina quiet)
+1270c addons Leyline addons: the Den bar, first-time intro and play mode
+1270d mods Browser realm: the same addons
+1270e server-fix Server: streamed-file folders root-only; a read-only look at why .bug didn't answer
+1270f signin Website: macOS and Linux downloads linked, join pages without version numbers in sentences

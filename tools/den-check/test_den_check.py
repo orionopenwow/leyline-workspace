@@ -223,6 +223,8 @@ class DenSteps(unittest.TestCase):
         b = self.w.until(wowclient.SMSG_CHAR_ENUM)
         self.w.send(wowclient.CMSG_PLAYER_LOGIN, den_check.struct.pack("<Q", den_check.struct.unpack_from("<Q", b, 1)[0]))
         self.w.until(wowclient.SMSG_LOGIN_VERIFY_WORLD)
+        # the Den bar's hello (WrathUnleashedUI DenBar.lua): Den Lite's own lines are toasts in it from now on
+        self.w.addon("Wren", "OVMOD", "wuden\thello\t1/1\t1")
         self.w.s.settimeout(None)
         self.stop = threading.Event()
 
@@ -284,7 +286,7 @@ class DenSteps(unittest.TestCase):
                      "PASS save: .den save smoketest: smoketest.den.json, 1 props", "PASS load: .den load smoketest replace", "PASS save: the test save removed",
                      "PASS room: the white room: The room is white now.", "PASS room: its size: Your Den is size 1 of 4",
                      "PASS Forge: the Den asked the launcher", "PASS Forge: the editor's files: your Den's tile 32,32", "INFO Forge (the editor): not installed",
-                     "PASS Forge: the answer reached your game", "PASS share: a Den file the site takes: the site's own check passes (1 props)",
+                     "PASS Forge: the answer reached your game: shown in the Den bar", "PASS share: a Den file the site takes: the site's own check passes (1 props)",
                      "TODO share: upload a Den from Leyline: not built yet",
                      "PASS invite: a link for one friend: https://relay.example.test/join/kzdv...#(secret hidden)~~G",
                      "PASS invite: the link went into your Den panel", "PASS invite: a friend signs in with it: as Rowan", "PASS invite: your game was shown the friend: seen by Wren",
@@ -394,7 +396,7 @@ class Milestones(unittest.TestCase):
         evs = [{"t": start + 9000, "ev": "login_challenge", "who": "DEN"}, {"t": start + 9050, "ev": "auth_ok", "who": "DEN"},
                {"t": start + 9060, "ev": "realm_list"}, {"t": start + 9100, "ev": "world_auth"}, {"t": start + 9200, "ev": "char_enum"},
                {"t": start + 12000, "ev": "player_login"}, {"t": start + 15000, "ev": "in_world"}, {"t": start + 15500, "ev": "first_move"},
-               {"t": start + 16000, "ev": "builder_ready"}, {"t": start + 1, "ev": "auth_ok", "detail": "remote"}]
+               {"t": start + 16000, "ev": "builder_ready"}, {"t": start + 16010, "ev": "den_ui"}, {"t": start + 1, "ev": "auth_ok", "detail": "remote"}]
         actions = [(4000, "the game window is open"), (9000, "send Password: login screen: the local password"), (11500, "send Enter: character select: Enter World")]
         rep = den_check.Report()
         quiet(den_check.milestones, rep, evs, start, actions)
@@ -402,12 +404,75 @@ class Milestones(unittest.TestCase):
         self.assertIn("PASS the game window opened: 4.0 s", text)
         self.assertIn("PASS the game asked to sign in: 9.0 s, by the launcher's keys", text)
         self.assertIn("PASS in the world (the white island): 15.0 s", text)
+        self.assertIn("PASS the Den bar opened (Build, Shape ground, Play, Save, Invite): 16.0 s", text)
         self.assertIn("send Password: login screen: the local password; send Enter", text)
         self.assertEqual(rep.failed(), [])
         rep = den_check.Report()
         quiet(den_check.milestones, rep, [dict(evs[0], who="DENAUTO")], start, actions)
         self.assertIn("by Leyline's login screen", rep.text())
         self.assertIn("FAIL in the world (the white island): not seen", rep.text())
+
+
+def white_blp(size=64):
+    """The launcher's white texture, the same layout (terrain crate blp.rs `solid`)."""
+    import struct
+    levels = size.bit_length()
+    offs, sizes, at = [], [], 1172
+    for lv in range(levels):
+        s = max(size >> lv, 1)
+        offs.append(at)
+        sizes.append(s * s)
+        at += s * s
+    head = b"BLP2" + struct.pack("<IBBBBII", 1, 1, 0, 0, 1, size, size)
+    head += struct.pack("<16I", *(offs + [0] * (16 - levels))) + struct.pack("<16I", *(sizes + [0] * (16 - levels)))
+    return head + b"\xff\xff\xff\xff" * 256 + bytes(at - 1172)
+
+
+class DenWorld(unittest.TestCase):
+    def test_the_dens_world_lines(self):
+        good = {"texture_ours": True, "open": 256, "island_models": 0, "models": 2, "sky": "white", "area": "Your Den", "area_id": 876, "hidden_by": []}
+        rep = den_check.Report()
+        quiet(den_check.ground_lines, rep, good)
+        text = rep.text()
+        self.assertIn("PASS white ground texture is ours", text)
+        self.assertIn("PASS no buildings/trees on the Den tile: the island's models are gone, 2 of yours stay", text)
+        self.assertIn("PASS sky/area: Your Den", text)
+        self.assertEqual(rep.failed(), [])
+        # the sky left as the game's own (its tables couldn't be read): the ground lines still pass, the sky's fails
+        # with the reason; something read after our archive: said
+        bad = dict(good, sky="the game's own (your game has no Light.dbc)", area="the game's own (x)", island_models=3, models=3,
+                   hidden_by=["patch-Z.MPQ: DBFilesClient\\AreaTable.dbc"], whitened="256 parts painted white")
+        rep = den_check.Report()
+        quiet(den_check.ground_lines, rep, bad)
+        text = rep.text()
+        self.assertIn("FAIL no buildings/trees on the Den tile: 3 of the island's models still stand", text)
+        self.assertIn("FAIL sky/area: Your Den: sky: the game's own (your game has no Light.dbc); area: the game's own (x)", text)
+        self.assertIn("INFO an archive read after the Den's hides part of it: patch-Z.MPQ", text)
+        self.assertIn("INFO your Den's ground from before: made white: 256 parts painted white", text)
+        self.assertIn("PASS white ground texture is ours", text)
+        # an older launcher: one line, no failure
+        rep = den_check.Report()
+        quiet(den_check.ground_lines, rep, None)
+        self.assertEqual([r[0] for r in rep.rows], ["INFO"])
+        # patch-T not readable: the texture line fails
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "patch-T.MPQ"
+            p.write_bytes(b"not an archive")
+            rep = den_check.Report()
+            quiet(den_check.ground_lines, rep, good, p)
+            self.assertIn("FAIL white ground texture is ours: it isn't in Data\\patch-T.MPQ", rep.text())
+
+    def test_our_texture_is_told_from_others(self):
+        self.assertTrue(den_check.blp_is_ours(white_blp(64)))
+        self.assertTrue(den_check.blp_is_ours(white_blp(256)))
+        grey = bytearray(white_blp(64))
+        grey[148:152] = b"\x80\x80\x80\xff"
+        self.assertFalse(den_check.blp_is_ours(bytes(grey)))
+        dxt = bytearray(white_blp(64))
+        dxt[8] = 2
+        self.assertFalse(den_check.blp_is_ours(bytes(dxt)))
+        self.assertFalse(den_check.blp_is_ours(b"BLP1" + bytes(2000)))
+        self.assertFalse(den_check.blp_is_ours(None))
 
 
 class Control(unittest.TestCase):

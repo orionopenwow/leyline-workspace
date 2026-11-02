@@ -12,6 +12,7 @@ pub mod events;
 pub mod guests;
 pub mod ovmod;
 pub mod login;
+pub mod notice;
 pub mod objects;
 pub mod play;
 pub mod raw;
@@ -63,6 +64,12 @@ pub struct Config {
     pub verbose: bool,
     /// The den-test's commands through the Dens folder (testctl.rs); only with a loopback `bind`.
     pub test_control: bool,
+    /// How long what Den Lite says on entering waits for the Den bar's hello before it goes in the chat (notice.rs),
+    /// from the game being in the world; and at most from Enter World (a long loading screen).
+    pub ui_wait_ms: u64,
+    pub ui_load_ms: u64,
+    /// The encouragement moments: at most one every this many seconds (notice.rs cheer_ok).
+    pub cheer_gap: u64,
 }
 
 impl Default for Config {
@@ -85,6 +92,9 @@ impl Default for Config {
             companion: true,
             verbose: false,
             test_control: false,
+            ui_wait_ms: 4000,
+            ui_load_ms: 30_000,
+            cheer_gap: 180,
         }
     }
 }
@@ -110,6 +120,12 @@ pub struct Shared {
     opened: Mutex<std::collections::HashSet<String>>,
     /// `<dens>/den-lite.events`: the milestones on the way in (events.rs).
     pub events: events::Events,
+    /// Who has the Den bar, and what waits for its hello (notice.rs).
+    pub notices: Mutex<notice::Notices>,
+    /// When the last encouragement moment was said (unix seconds; notice::cheer_ok).
+    pub last_cheer: Mutex<u64>,
+    /// When the autosave last wrote (unix seconds; 0: not in this run), for the Den bar's "Saved 12 s ago".
+    pub autosaved_at: std::sync::atomic::AtomicU64,
 }
 
 impl Shared {
@@ -150,6 +166,8 @@ impl Shared {
         let ok = d.save(&self.cfg.den_dir, den::AUTOSAVE, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|t| t.as_secs()).unwrap_or(0)).is_ok();
         if ok {
             *last = key;
+            let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|t| t.as_secs()).unwrap_or(0);
+            self.autosaved_at.store(t, std::sync::atomic::Ordering::Relaxed);
             self.event("autosave", "", &format!("{} props", d.props.len()));
         }
         ok
@@ -225,6 +243,9 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
         remote_world: Mutex::new(remote_addrs.map(|r| r.1)),
         world: Mutex::new(wa),
         opened: Mutex::new(std::collections::HashSet::new()),
+        notices: Mutex::new(notice::Notices::default()),
+        last_cheer: Mutex::new(0),
+        autosaved_at: std::sync::atomic::AtomicU64::new(0),
     });
     let s = shared.clone();
     std::thread::spawn(move || login::serve(login, s, false));

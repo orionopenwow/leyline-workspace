@@ -12,6 +12,7 @@
 
 use crate::companion::{self, Asked, At};
 use crate::den::{self, Change, WorldObject};
+use crate::notice::{self, Item, Old, Route};
 use crate::{ovmod, play, raw, testctl};
 use crate::{Gender as HeroGender, Shared};
 use std::io::{self, Read, Write};
@@ -72,6 +73,11 @@ impl Writer {
             None => m.write_unencrypted_server(&mut v)?,
         }
         g.0.write_all(&v)
+    }
+
+    /// This connection, as notice.rs keeps lines for it.
+    fn addr(&self) -> usize {
+        Arc::as_ptr(&self.0) as *const () as usize
     }
 
     fn send_raw(&self, opcode: u16, body: &[u8]) -> io::Result<()> {
@@ -206,6 +212,7 @@ impl Drop for LeaveOnDrop {
 }
 
 fn leave(shared: &Shared, id: u64) {
+    shared.notices.lock().unwrap_or_else(|e| e.into_inner()).gone(id);
     // gone for the others
     let gone = {
         let mut ps = shared.players.lock().unwrap_or_else(|e| e.into_inner());
@@ -288,8 +295,16 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
     // the Builder's selection (ovmod.rs), whether this session moved yet and was answered by the addon channel
     let mut sel = ovmod::Sel::default();
     let (mut moved_once, mut ready) = (false, false);
+    // past the loading screen (notice.rs: the Den bar's hello is waited for from then)
+    let mut loaded = false;
     loop {
         let (op, body) = c.read()?;
+        if !loaded && pos.is_some() && (op == 0x026A || op == 0x0391 || raw_move(op, &body).is_some()) {
+            loaded = shared.notices.lock().unwrap_or_else(|e| e.into_inner()).loaded(sess.id, now_ms() + shared.cfg.ui_wait_ms);
+            if loaded {
+                shared.event("loaded", &sess.me.name, &format!("{op:#x}"));
+            }
+        }
         if op == ovmod::CMSG_MESSAGECHAT {
             if let Some(m) = ovmod::parse_addon(&body) {
                 addon(&c.w, shared, &sess, pos, &mut sel, &mut ready, &m)?;
@@ -349,7 +364,9 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 let side = if sess.me.host { 0.0 } else { 2.0 + (sess.me.guid % 4) as f32 };
                 let start = At { x: spot.x + side, y: spot.y, z: floor + 1.0, o: std::f32::consts::FRAC_PI_2 };
                 enter_world(&c.w, shared, &sess.me, start)?;
+                arrive(&c.w, shared, &sess, start)?;
                 pos = Some(start);
+                loaded = false;
                 shared.event("in_world", &sess.me.name, &format!("{:.1} {:.1} {:.1}", start.x, start.y, start.z));
                 // the others: they see this player, this player sees them
                 for o in others(shared, sess.id) {
@@ -359,7 +376,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                         shared.event("peer_seen", &o.me.name, &sess.me.name);
                     }
                     if !sess.me.host {
-                        let _ = say(&o.w, &format!("{} is in your Den.", sess.me.name));
+                        let _ = notify(&o.w, shared, o.sess, o.me.guid, Item::line("ok", format!("{} is in your Den.", sess.me.name)));
                     }
                 }
                 shared.players.lock().unwrap().push(Peer { sess: sess.id, me: sess.me.clone(), w: c.w.clone(), pos: start });
@@ -451,6 +468,11 @@ fn addon(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Pos>, sel: &mut o
         let mut d = shared.den.lock().unwrap_or_else(|e| e.into_inner());
         ovmod::handle(&mut d, sel, here, m, sess.me.host, can)
     };
+    // what the bar or the Builder asked for answers in the bar (notice.rs), never in the chat
+    quietly(c, shared, sess.id, sess.me.guid, || addon_outs(c, shared, sess, pos, ready, outs))
+}
+
+fn addon_outs(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Pos>, ready: &mut bool, outs: Vec<ovmod::Out>) -> io::Result<()> {
     for o in outs {
         match o {
             ovmod::Out::Addon(md, name, data) => {
@@ -472,9 +494,111 @@ fn addon(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Pos>, sel: &mut o
                     shared.event("builder_ready", &sess.me.name, "");
                 }
             }
+            ovmod::Out::Hello => {
+                let held = shared.notices.lock().unwrap_or_else(|e| e.into_inner()).hello(sess.id);
+                shared.event("den_ui", &sess.me.name, "");
+                send_addon(c, sess.me.guid, "wuden", "status", &status_line(shared, sess))?;
+                for it in held {
+                    toast(c, shared, sess.me.guid, &it)?;
+                }
+            }
+            ovmod::Out::Status => send_addon(c, sess.me.guid, "wuden", "status", &status_line(shared, sess))?,
         }
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------- the Den bar (notice.rs): no chat spam
+
+/// The Den bar's status line: your role, how many props, how long since the Den was last kept.
+fn status_line(shared: &Shared, sess: &Sess) -> String {
+    let role = if sess.me.host { "owner" } else if shared.guests_build.load(Ordering::Relaxed) { "builder" } else { "visitor" };
+    let props = shared.den.lock().unwrap_or_else(|e| e.into_inner()).props.len();
+    let at = shared.autosaved_at.load(Ordering::Relaxed);
+    let saved = if at == 0 { "-".to_string() } else { now().saturating_sub(at).to_string() };
+    format!("role={role};props={props};saved={saved}")
+}
+
+fn send_addon(c: &Writer, guid: u64, md: &str, name: &str, data: &str) -> io::Result<()> {
+    for b in ovmod::answer_bodies(guid, md, name, data) {
+        c.send_raw(ovmod::SMSG_MESSAGECHAT, &b)?;
+    }
+    Ok(())
+}
+
+/// One toast in the session's Den bar.
+fn toast(c: &Writer, shared: &Shared, guid: u64, item: &Item) -> io::Result<()> {
+    let Some(t) = &item.toast else { return Ok(()) };
+    shared.event("notice", "", &format!("toast {}", item.kind));
+    send_addon(c, guid, "wuden", "toast", &notice::toast_data(item.kind, t))
+}
+
+/// The old way, for a game without the bar: chat lines, her line, the middle of the screen.
+fn old_way(c: &Writer, shared: &Shared, item: &Item) -> io::Result<()> {
+    if !item.old.is_empty() {
+        shared.event("notice", "", &format!("chat {}", item.kind));
+    }
+    for o in &item.old {
+        match o {
+            Old::Line(t) => say(c, t)?,
+            Old::Jaina(t) => monster_say(c, t)?,
+            Old::Middle(t) => c.send(&SMSG_NOTIFICATION { notification: t.clone() })?,
+        }
+    }
+    Ok(())
+}
+
+/// Something nobody typed for, to one session: a toast in its Den bar, held until the bar's hello, or the old way.
+fn notify(c: &Writer, shared: &Shared, sess: u64, guid: u64, item: Item) -> io::Result<()> {
+    let route = shared.notices.lock().unwrap_or_else(|e| e.into_inner()).route(sess, &item);
+    match route {
+        Route::Toast => toast(c, shared, guid, &item),
+        Route::Held => Ok(()),
+        Route::Old => old_way(c, shared, &item),
+    }
+}
+
+/// To the host in the world now (the launcher's answers, the companion, the autosave).
+fn notify_host(shared: &Shared, item: Item) -> io::Result<()> {
+    let live = shared.live.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|l| (l.0, l.1.clone()));
+    match live {
+        Some((sess, w)) => notify(&w, shared, sess, PLAYER_GUID, item),
+        None => Ok(()),
+    }
+}
+
+/// Data for the session's Den bar only (nothing in the chat when it isn't there): `wuden <name> <data>`.
+fn bar_data(c: &Writer, shared: &Shared, sess: u64, guid: u64, name: &str, data: &str) -> io::Result<()> {
+    if shared.notices.lock().unwrap_or_else(|e| e.into_inner()).has_ui(sess) {
+        send_addon(c, guid, "wuden", name, data)?;
+    }
+    Ok(())
+}
+
+/// `f`, with the system lines it says to `c` turned into toasts when the session has the Den bar (else said).
+fn quietly(c: &Writer, shared: &Shared, sess: u64, guid: u64, f: impl FnOnce() -> io::Result<()>) -> io::Result<()> {
+    if !shared.notices.lock().unwrap_or_else(|e| e.into_inner()).has_ui(sess) {
+        return f();
+    }
+    let (r, lines) = notice::keeping(c.addr(), f);
+    for l in lines.iter().take(3) {
+        let warn = ["can't", "Only ", "Nothing", "Select ", "Pick ", "Usage", "couldn't", "doesn't"].iter().any(|w| l.contains(w));
+        toast(c, shared, guid, &Item::line(if warn { "warn" } else { "info" }, l.clone()))?;
+    }
+    r
+}
+
+/// Twice a second (companion_ticker): a session whose bar didn't say hello in time is told the old way.
+fn notices_due(shared: &Shared) {
+    let due = shared.notices.lock().unwrap_or_else(|e| e.into_inner()).due(now_ms());
+    for (sess, items) in due {
+        let w = shared.players.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|p| p.sess == sess).map(|p| p.w.clone());
+        if let Some(w) = w {
+            for it in &items {
+                let _ = old_way(&w, shared, it);
+            }
+        }
+    }
 }
 
 /// Ask the launcher for an invite link or to open Forge (ovmod::ASK_FILE); its answer comes back through
@@ -483,7 +607,7 @@ fn ask_launcher(c: &Writer, shared: &Shared, what: &str) -> io::Result<()> {
     ovmod::ask(&shared.cfg.den_dir, what);
     shared.event("ask", "", what);
     say(c, match what {
-        "invite" => "Making an invite link for one friend... It shows in your Den panel (/den) in a few seconds. (Or press Invite friends in the launcher.)",
+        "invite" => "Making an invite link for one friend... It shows in the Den bar (and the Den panel, /den) in a few seconds. (Or press Invite friends in the launcher.)",
         _ => "Opening Forge to shape your Den's ground... (Or press Shape the ground in the launcher.) Your game shows the new ground after a restart.",
     })
 }
@@ -661,7 +785,8 @@ fn enter_world(c: &Writer, shared: &Shared, me: &Me, p: Pos) -> io::Result<()> {
     c.send(&SMSG_LOGIN_VERIFY_WORLD { map: Map::Kalimdor, position: Vector3d { x: p.x, y: p.y, z: p.z }, orientation: p.o })?;
     c.send(&account_times(CacheMask::PER_CHARACTER_CACHE))?;
     c.send(&SMSG_FEATURE_SYSTEM_STATUS { complaint_status: ComplaintStatus::EnabledWithAutoIgnore, voice_chat_enabled: false })?;
-    c.send(&SMSG_MOTD { motds: vec!["Welcome to your Den.".into()] })?;
+    // no message of the day: it is a line in the chat (the Den bar or the welcome says hello instead)
+    c.send(&SMSG_MOTD { motds: vec![] })?;
     c.send(&SMSG_BINDPOINTUPDATE { position: Vector3d { x: spot.x, y: spot.y, z: floor + 1.0 }, map: Map::Kalimdor, area: AREA })?;
     c.send(&SMSG_INITIAL_SPELLS { unknown1: 0, initial_spells: vec![], cooldowns: vec![] })?;
     c.send(&SMSG_ACTION_BUTTONS::Initial { data: [ActionButton { action: 0, action_type: 0, misc: 0 }; 144] })?;
@@ -672,18 +797,36 @@ fn enter_world(c: &Writer, shared: &Shared, me: &Me, p: Pos) -> io::Result<()> {
     c.send(&SMSG_INIT_WORLD_STATES { map: Map::Kalimdor, area: AREA, sub_area: AREA, states: vec![] })?;
     let objs = shared.den.lock().unwrap().everything();
     send_creates(c, &objs)?;
+    Ok(())
+}
+
+/// What a player is told on entering (after enter_world): the welcome, the first visit's cheer and the companion's
+/// one greeting. Nothing in the chat: they wait for the Den bar's hello and are toasts there (notice.rs); a game
+/// without the bar gets the old lines (the welcome and the quick start) after `Config::ui_wait_ms`.
+fn arrive(c: &Writer, shared: &Shared, sess: &Sess, p: Pos) -> io::Result<()> {
+    let me = &sess.me;
+    shared.notices.lock().unwrap_or_else(|e| e.into_inner()).entered(sess.id, now_ms() + shared.cfg.ui_load_ms);
     if !me.host {
         let host = shared.cfg.hero.name.clone();
-        say(c, &format!("Welcome to {host}'s Den. Say hello: what you say here, everyone in the Den hears."))?;
-        return say(c, if shared.guests_build.load(Ordering::Relaxed) { "You can build here too: .den place chair, .den stamp inn now, .build undo." }
-            else { "Your host builds here; .den find lamp shows what there is to place." });
+        let builds = shared.guests_build.load(Ordering::Relaxed);
+        return notify(c, shared, sess.id, me.guid, Item {
+            kind: "info",
+            toast: Some(format!("Welcome to {host}'s Den. What you say here, everyone in the Den hears.")),
+            old: vec![
+                Old::Line(format!("Welcome to {host}'s Den. Say hello: what you say here, everyone in the Den hears.")),
+                Old::Line(if builds { "You can build here too: .den place chair, .den stamp inn now, .build undo." }
+                    else { "Your host builds here; .den find lamp shows what there is to place." }.into()),
+            ],
+        });
     }
-    say(c, &format!("Welcome to your Den: {} props. {BUILDER_HINT}", shared.den.lock().unwrap().props.len()))?;
-    for l in TUTORIAL {
-        say(c, l)?;
-    }
-    cheer(c, shared, "first-visit")?;
-    // the companion: at your side from the start (Config::companion), one short line, then quiet
+    let n = shared.den.lock().unwrap().props.len();
+    let first = cheer_line(shared, "first-visit");
+    let mut old = vec![Old::Line(format!("Welcome to your Den: {n} props. {BUILDER_HINT}"))];
+    old.extend(TUTORIAL.iter().map(|l| Old::Line(l.to_string())));
+    old.extend(first.map(|l| Old::Middle(l.into())));
+    let toast = first.map(String::from).unwrap_or_else(|| if n == 0 { "Welcome back to your Den.".into() } else { format!("Welcome back: {n} props, as you left them.") });
+    notify(c, shared, sess.id, me.guid, Item { kind: if first.is_some() { "cheer" } else { "info" }, toast: Some(toast), old })?;
+    // the companion: at your side from the start (Config::companion), one greeting, then quiet until spoken to
     let mut comp = shared.companion.lock().unwrap();
     comp.arrive(now());
     let inside = shared.den.lock().unwrap().inside(p.x, p.y, p.z);
@@ -691,7 +834,7 @@ fn enter_world(c: &Writer, shared: &Shared, me: &Me, p: Pos) -> io::Result<()> {
         let at = comp.come(p, now_ms());
         drop(comp);
         c.send(&companion_create(at))?;
-        monster_say(c, companion::GREET)?;
+        notify(c, shared, sess.id, me.guid, Item::jaina(companion::GREET))?;
         beat_now(shared);
     }
     Ok(())
@@ -762,10 +905,20 @@ fn order(c: &Writer, shared: &Shared, p: Pos, cmd: companion::Cmd) -> io::Result
     }
 }
 
-/// An encouragement line, once ever (cheers.rs), in the middle of the screen: never in the chat frame.
-fn cheer(c: &Writer, shared: &Shared, key: &str) -> io::Result<()> {
-    match crate::cheers::once(&shared.cfg.den_dir, key) {
-        Some(line) => c.send(&SMSG_NOTIFICATION { notification: line.into() }),
+/// An encouragement line, once ever (cheers.rs) and rarely (notice::cheer_ok: one that comes too soon waits for a
+/// later moment of its kind): the line, now marked said.
+fn cheer_line(shared: &Shared, key: &str) -> Option<&'static str> {
+    crate::cheers::unsaid(&shared.cfg.den_dir, key)?;
+    if !notice::cheer_ok(&mut shared.last_cheer.lock().unwrap_or_else(|e| e.into_inner()), now(), shared.cfg.cheer_gap) {
+        return None;
+    }
+    crate::cheers::once(&shared.cfg.den_dir, key)
+}
+
+/// An encouragement moment: a toast in the Den bar, or the middle of the screen; never in the chat frame.
+fn cheer(c: &Writer, shared: &Shared, sess: &Sess, key: &str) -> io::Result<()> {
+    match cheer_line(shared, key) {
+        Some(line) => notify(c, shared, sess.id, sess.me.guid, Item::cheer(line)),
         None => Ok(()),
     }
 }
@@ -811,9 +964,12 @@ fn apply(c: &Writer, shared: &Shared, ch: &Change) -> io::Result<()> {
     Ok(())
 }
 
-/// A system line in the chat frame.
+/// A system line in the chat frame (or, while Den Lite answers the Den bar, a toast there: notice::keeping).
 fn say(c: &Writer, text: &str) -> io::Result<()> {
     testctl::note_said(text);
+    if notice::kept(c.addr(), text) {
+        return Ok(());
+    }
     c.send(&SMSG_MESSAGECHAT {
         chat_type: SMSG_MESSAGECHAT_ChatType::System { target6: Guid::new(0) },
         language: Language::Universal,
@@ -864,7 +1020,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                 Ok(st) => {
                     let ch = shared.den.lock().unwrap().stamp(&st, p.x, p.y, p.z, p.o + deg.to_radians());
                     apply(c, shared, &ch)?;
-                    if ch.created.is_empty() { Ok(()) } else { cheer(c, shared, "first-piece") }
+                    if ch.created.is_empty() { Ok(()) } else { cheer(c, shared, sess, "first-piece") }
                 }
             }
         }
@@ -892,7 +1048,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             let st = den::one_piece(obj);
             let ch = shared.den.lock().unwrap().stamp(&st, p.x, p.y, p.z, p.o);
             apply(c, shared, &ch)?;
-            if ch.created.is_empty() { Ok(()) } else { cheer(c, shared, "first-piece") }
+            if ch.created.is_empty() { Ok(()) } else { cheer(c, shared, sess, "first-piece") }
         }
         (".build", "undo") => {
             let ch = shared.den.lock().unwrap().undo();
@@ -904,7 +1060,9 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                 Ok((path, n)) => {
                     shared.event("den_save", "", w(2));
                     say(c, &format!("Saved to a file ({n} props): {}", path.display()))?;
-                    cheer(c, shared, "first-save")
+                    let name = path.file_name().and_then(|f| f.to_str()).unwrap_or("").trim_end_matches(".den.json").to_string();
+                    bar_data(c, shared, sess.id, sess.me.guid, "saved", &name)?;
+                    cheer(c, shared, sess, "first-save")
                 }
                 Err(e) => say(c, &e),
             }
@@ -975,7 +1133,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             match r {
                 Ok(ch) if ring > before => {
                     apply(c, shared, &ch)?;
-                    cheer(c, shared, "first-grow")
+                    cheer(c, shared, sess, "first-grow")
                 }
                 Ok(ch) => apply(c, shared, &ch),
                 Err(e) => say(c, &e),
@@ -1271,8 +1429,13 @@ pub fn companion_ticker(shared: Arc<Shared>) {
         std::thread::sleep(Duration::from_millis(500));
         n += 1;
         let _ = companion_tick(&shared, n % 2 == 0);
-        if n % 4 == 0 {
-            shared.autosave(); // every 2 seconds, when the Den changed
+        notices_due(&shared);
+        // every 2 seconds, when the Den changed; the Den bar shows "Saved 2 s ago"
+        if n % 4 == 0 && shared.autosave() {
+            let live = shared.live.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|l| (l.0, l.1.clone()));
+            if let Some((sess, w)) = live {
+                let _ = bar_data(&w, &shared, sess, PLAYER_GUID, "saved", "auto");
+            }
         }
     }
 }
@@ -1284,7 +1447,7 @@ fn companion_tick(shared: &Shared, read: bool) -> io::Result<()> {
         shared.companion.lock().unwrap().read_lines(&shared.cfg.den_dir, now);
     }
     if let Some((_, w, p)) = live {
-        let (inside, props) = { let d = shared.den.lock().unwrap(); (d.inside(p.x, p.y, p.z), d.props.len()) };
+        let inside = shared.den.lock().unwrap().inside(p.x, p.y, p.z);
         let (out, wanted) = { let c = shared.companion.lock().unwrap(); (c.out, c.wanted) };
         if out {
             let mut comp = shared.companion.lock().unwrap();
@@ -1292,7 +1455,7 @@ fn companion_tick(shared: &Shared, read: bool) -> io::Result<()> {
                 comp.away();
                 drop(comp);
                 w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(companion::GUID), target_died: false })?;
-                say(&w, "Your companion stays in your Den and joins you again when you're back.")?;
+                notify_host(shared, Item::line("info", "Your companion stays in your Den and joins you again when you're back."))?;
                 beat_now(shared);
             } else if comp.too_far(p, ms) {
                 let at = comp.come(p, ms);
@@ -1302,7 +1465,8 @@ fn companion_tick(shared: &Shared, read: bool) -> io::Result<()> {
             } else {
                 let step = comp.follow(p, ms);
                 let id = comp.moves;
-                let line = comp.next_line(now).or_else(|| comp.nudge(now, props).map(String::from));
+                // only the assistant's answers (she was asked): no tips nobody asked for (owner, 1 Nov 23:46)
+                let line = comp.next_line(now);
                 drop(comp);
                 if let Some((from, to, t)) = step {
                     walk(&w, from, to, t, id)?;
@@ -1312,10 +1476,9 @@ fn companion_tick(shared: &Shared, read: bool) -> io::Result<()> {
                 }
             }
         } else if wanted && inside {
-            // back in the Den: she joins you again by herself
+            // back in the Den: she joins you again by herself, quietly
             let at = shared.companion.lock().unwrap().come(p, ms);
             w.send(&companion_create(at))?;
-            monster_say(&w, companion::BACK)?;
             beat_now(shared);
         }
     }
@@ -1335,7 +1498,9 @@ fn watch_open(shared: &Arc<Shared>, w: Writer) -> StopOnDrop {
     std::thread::spawn(move || {
         while !flag.load(Ordering::Relaxed) {
             if let Some((file, id)) = den::open_request(&dir) {
-                if shared.mark_opened(&dir, &id) && check_open(&shared, &w, &file).is_err() {
+                // the launcher asked: its lines are toasts in the Den bar (notice.rs), when the host has it
+                let sess = shared.live.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|l| l.0).unwrap_or(0);
+                if shared.mark_opened(&dir, &id) && quietly(&w, &shared, sess, PLAYER_GUID, || check_open(&shared, &w, &file)).is_err() {
                     break;
                 }
             }
@@ -1343,12 +1508,12 @@ fn watch_open(shared: &Arc<Shared>, w: Writer) -> StopOnDrop {
             // the game itself shows it after a restart (its map files load at start)
             let changed = shared.den.lock().unwrap().reload_ground(&dir);
             let line = match changed {
-                Some(Ok(true)) => Some("Your Den's ground changed: new props stand on it now. Restart your game to see it."),
-                Some(Err(_)) => Some("Your Den's ground file couldn't be read: props stand on the flat floor."),
+                Some(Ok(true)) => Some(Item::line("ok", "Your Den's ground changed: new props stand on it now. Restart your game to see it.")),
+                Some(Err(_)) => Some(Item::line("warn", "Your Den's ground file couldn't be read: props stand on the flat floor.")),
                 _ => None,
             };
             if let Some(l) = line {
-                if say(&w, l).is_err() {
+                if notify_host(&shared, l).is_err() {
                     break;
                 }
             }
@@ -1358,15 +1523,20 @@ fn watch_open(shared: &Arc<Shared>, w: Writer) -> StopOnDrop {
                     // never the link itself in the log: it holds the Den's secret and the friend's password
                     shared.event("answer", "", "invite");
                     let me = PLAYER_GUID;
-                    let mut ok = say(&w, "Your invite link is in the Den panel (/den): Ctrl+C copies it. Give it to one friend.").is_ok();
+                    let mut ok = true;
                     for b in ovmod::answer_bodies(me, "wuden", "invite", &link) {
                         ok &= w.send_raw(ovmod::SMSG_MESSAGECHAT, &b).is_ok();
                     }
+                    ok &= notify_host(&shared, Item {
+                        kind: "ok",
+                        toast: Some("Your invite link is ready: Ctrl+C copies it. Give it to one friend.".into()),
+                        old: vec![Old::Line("Your invite link is in the Den panel (/den): Ctrl+C copies it. Give it to one friend.".into())],
+                    }).is_ok();
                     ok
                 }
                 Some(ovmod::Answer::Say(t)) => {
                     shared.event("answer", "", "say");
-                    say(&w, &t).is_ok()
+                    notify_host(&shared, Item::line("info", t)).is_ok()
                 }
                 None => true,
             };

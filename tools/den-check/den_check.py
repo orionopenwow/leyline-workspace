@@ -82,6 +82,7 @@ MILESTONES = [
     ("in_world", "in the world (the white island)"),
     ("first_move", "first movement"),
     ("builder_ready", "the Leyline UI's Den panel and Builder answered"),
+    ("den_ui", "the Den bar opened (Build, Shape ground, Play, Save, Invite)"),
 ]
 
 
@@ -472,6 +473,7 @@ FIXES = {
     "in_world": "Entering the world didn't finish: send logs\\den-test-latest.txt and the screenshot.",
     "first_move": "The game didn't take the test's step forward (it may not have had the keys): send the log.",
     "builder_ready": "The Leyline UI didn't talk to Den Lite: install the Leyline addons in the launcher (Mods), then run den-test again.",
+    "den_ui": "The Den bar didn't open (an older Leyline UI: Den Lite's lines went to the chat): update the Leyline addons in the launcher (Mods), then run den-test again.",
 }
 
 
@@ -496,6 +498,15 @@ def event_after(den_dir, name, since, detail=None):
 
 def now_ms():
     return int(time.time() * 1000)
+
+
+def shown_where(den_dir, since):
+    """Where Den Lite showed a line it wasn't typed for (labs/den-lite notice.rs, its "notice" event): a toast in the
+    Den bar, or the chat when the game has no Den bar (an older Leyline UI)."""
+    e = wait_for(lambda: event_after(den_dir, "notice", since), 2, 0.1)
+    if not e:
+        return "a line in the game's chat (an older Den Lite)"
+    return "shown in the Den bar" if str(e.get("detail", "")).startswith("toast") else "a line in the game's chat (no Den bar: update the Leyline addons)"
 
 
 class FileChannel:
@@ -778,7 +789,7 @@ def den_steps(rep, ch, den_dir, root, launcher=None, start=None):
             rep.add("INFO", "Forge (the editor)", "installed (not opened by the test)" if fr.get("installed") else
                     "not installed: Your Den > Shape the ground > Get Forge (the test doesn't need it)")
         ans = wait_for(lambda: event_after(den_dir, "answer", t, "say"), 6) if fr is not None else None
-        rep.ok(ans is not None, "Forge: the answer reached your game", "a line in the game's chat" if ans else "not seen",
+        rep.ok(ans is not None, "Forge: the answer reached your game", shown_where(den_dir, ans["t"]) if ans else "not seen",
                "Den Lite didn't pass the launcher's answer into the game: send logs\\den-test-latest.txt.")
         try:
             rep_file.unlink()
@@ -840,7 +851,7 @@ def den_steps(rep, ch, den_dir, root, launcher=None, start=None):
                "The launcher didn't make an invite link: open Your Den in the launcher once, then run den-test again."
                if not inv else "The invite link isn't in the right shape: send logs\\den-test-latest.txt.")
         ans = wait_for(lambda: event_after(den_dir, "answer", t, "invite"), 6) if inv else None
-        rep.ok(ans is not None, "invite: the link went into your Den panel", "passed into the game" if ans else "not seen",
+        rep.ok(ans is not None, "invite: the link went into your Den panel", ("passed into the game, " + shown_where(den_dir, ans["t"])) if ans else "not seen",
                "Den Lite didn't pass the link into the game: send logs\\den-test-latest.txt.")
         if m:
             name = guest_name(den_dir, m.group(4))
@@ -971,6 +982,53 @@ def den_lite_update(rep, root, fetch=_fetch):
 
 # ------------------------------------------------------------------------------------------------ test
 
+DEN_TEXTURE = "Tileset\\Leyline\\DenWhite.blp"
+
+
+def blp_is_ours(b):
+    """Our white texture (launcher terrain crate blp.rs): BLP2, type 1, palette, no alpha, mips; the palette's first
+    colour white and every pixel using it."""
+    if not b or len(b) < 1172 or b[:4] != b"BLP2":
+        return False
+    kind, comp, depth, _atype, mips, w, h = struct.unpack_from("<IBBBBII", b, 4)
+    off0, size0 = struct.unpack_from("<I", b, 20)[0], struct.unpack_from("<I", b, 84)[0]
+    return (kind, comp, depth, mips) == (1, 1, 0, 1) and w == h and size0 == w * h and off0 == 1172 \
+        and b[148:151] == b"\xff\xff\xff" and not any(b[off0:off0 + size0])
+
+
+def ground_lines(rep, detail, patch_t=None):
+    """The Den's world, from the launcher's report (`ground_detail`, host/terrain.rs GroundStatus) and our patch-T:
+    the white texture is ours, nothing of the island stands on the tile, the sky and the zone's name. Only the
+    picture shows what the game drew."""
+    if not isinstance(detail, dict) or not detail:
+        rep.add("INFO", "the Den's world", "the launcher doesn't say (an older launcher)")
+        return
+    tex = None
+    if patch_t is not None:
+        try:
+            tex = mpqlite.Archive(str(patch_t)).read(DEN_TEXTURE)
+        except Exception:  # noqa: BLE001 - read below as "not there"
+            tex = None
+    ours = bool(detail.get("texture_ours")) and (patch_t is None or blp_is_ours(tex))
+    rep.ok(ours, "white ground texture is ours",
+           "%s in Data\\patch-T.MPQ, made by the launcher (not a game file)" % DEN_TEXTURE if ours else
+           "the Den's chunk isn't painted with it" if not detail.get("texture_ours") else "it isn't in Data\\patch-T.MPQ",
+           "Start My Den once more (it paints the ground again); still not: send this log.")
+    left = int(detail.get("island_models", -1))
+    mine = int(detail.get("models", 0)) - max(left, 0)
+    rep.ok(left == 0, "no buildings/trees on the Den tile",
+           ("the island's models are gone" + (", %d of yours stay" % mine if mine > 0 else "")) if left == 0 else "%s of the island's models still stand" % left,
+           "Send this log (the launcher should take them off at the start).")
+    sky, area = str(detail.get("sky", "")), str(detail.get("area", ""))
+    good = sky == "white" and area == "Your Den"
+    rep.ok(good, "sky/area: Your Den", "white sky, the zone called Your Den (the picture shows it)" if good else "sky: %s; area: %s" % (sky or "?", area or "?"),
+           "The ground is still white. Send this log: it says why the sky or the name stayed the game's own.")
+    for h in detail.get("hidden_by") or []:
+        rep.add("INFO", "an archive read after the Den's hides part of it", str(h)[:200])
+    if detail.get("whitened"):
+        rep.add("INFO", "your Den's ground from before", "made white: %s" % str(detail["whitened"])[:200])
+
+
 def test(args, rep):
     app = Path(args.app_dir) if args.app_dir else app_dir()
     root = app / "den-lite"
@@ -1051,6 +1109,8 @@ def test(args, rep):
         rep.ok(bool(rpt.get("ground")), "the white ground (the open plane) was put in the game",
                "your Den's ground in Data/patch-T.MPQ",
                "The launcher couldn't make your Den's white ground: see 'the launcher said' above and send this log.")
+        data = find_ci(Path(c["path"]), "Data")
+        ground_lines(rep, rpt.get("ground_detail"), find_ci(data, "patch-T.MPQ") if data else None)
     crcs = [e for e in events(den_dir, rpt["start"]) if e.get("ev") == "addon_crcs"]
     if crcs:
         rep.add("INFO", "the game's addon list (key checks)", str(crcs[-1].get("detail"))[:300])

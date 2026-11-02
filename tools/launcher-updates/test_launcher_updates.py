@@ -104,7 +104,9 @@ class LauncherUpdates(unittest.TestCase):
         rc, out = self.go(FakeGitHub(secret=True))
         self.assertEqual(rc, 1)
         self.assertIn("--new-key", out)
-        self.assertTrue(json.loads(self.conf.read_text())["plugins"]["updater"]["pubkey"].startswith("TODO"))
+        # the file is left as it was (the real one already carries the live public key, so not "TODO" any more)
+        with open(lu.CONF, encoding="utf-8") as f:
+            self.assertEqual(self.conf.read_text(), f.read())
         gh = FakeGitHub(secret=True)
         rc, out = self.go(gh, "--new-key")
         self.assertEqual(rc, 0, out)

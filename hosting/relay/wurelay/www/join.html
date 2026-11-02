@@ -34,7 +34,7 @@
 <body>
 <main data-hop-origins="">
   <h1 id="name">Joining a realm…</h1>
-  <p class="sub" id="sub">A Beacon: a 3.3.5a realm hosted by a player, reached through the Leyline relay.</p>
+  <p class="sub" id="sub">A Beacon: a realm hosted by a player, reached through the Leyline relay. <span class="pill" id="client-chip" title="The game client this realm needs">3.3.5a</span></p>
 
   <div class="card" id="state-card">
     <h2>1. This computer is let in</h2>
@@ -71,10 +71,11 @@
 
   <div class="card" id="play-card" hidden>
     <h2>3. Play</h2>
-    <p id="client-note">Use your own 3.3.5a game files. In the game folder, open <code>Data\enUS\realmlist.wtf</code> (or your language's folder) and make it this one line:</p>
+    <p id="client-note">Use your own game files for the client named at the top. In the game folder, open <code>Data\enUS\realmlist.wtf</code> (or your language's folder) and make it this one line:</p>
     <div class="line"><code id="realmlist">set realmlist …</code><button class="ghost" data-copy="realmlist">Copy</button></div>
     <ol class="small">
       <li>Start the game and log in with the account from step 2.</li>
+      <li>Have the Leyline launcher? Skip the file: in Leyline, open Realms, then <b>Got an invite link?</b>, and paste the link you opened this page with. Leyline points your game at this realm and plays it.</li>
       <li>Opening this page let your internet connection in for <span id="hours">24</span> hours. After that, open the invite link again.</li>
       <li id="alt-line">If the shared address doesn't work for you, use this one instead:<br><code id="realmlist-port"></code></li>
     </ol>
@@ -139,10 +140,10 @@
   // back to 18414 (or window.LEYLINE_ALL_CLIENTS = true) to name them again.
   const MAX_OFFERED_BUILD = 12340;
   const CLIENTS = {
-    "1.12.1": [5875, "the 1.12 client", "<code>realmlist.wtf</code> in the game folder"],
-    "2.4.3": [8606, "the 2.4.3 client", "<code>Data\\enUS\\realmlist.wtf</code> (or your language's folder)"],
-    "4.3.4": [15595, "the 4.3.4 client", "<code>WTF\\Config.wtf</code> (the line starting with SET realmlist)"],
-    "5.4.8": [18414, "the 5.4.8 client", "<code>WTF\\Config.wtf</code> (the line starting with SET realmlist)"],
+    "1.12.1": [5875, "the classic client", "<code>realmlist.wtf</code> in the game folder"],
+    "2.4.3": [8606, "the first expansion's client", "<code>Data\\enUS\\realmlist.wtf</code> (or your language's folder)"],
+    "4.3.4": [15595, "a later client", "<code>WTF\\Config.wtf</code> (the line starting with SET realmlist)"],
+    "5.4.8": [18414, "a later client", "<code>WTF\\Config.wtf</code> (the line starting with SET realmlist)"],
   };
   function forClient(build) {
     const all = CLIENTS[build];
@@ -153,8 +154,11 @@
       return;
     }
     const c = all.slice(1);
-    $("sub").textContent = `A Beacon: a ${build} realm hosted by a player, reached through the Leyline relay. You need ${c[0]}.`;
-    $("client-note").innerHTML = `This realm needs ${c[0]}: use your own ${build} game files. Open ${c[1]} and make it this one line:`;
+    // the version only as a chip (never in a sentence)
+    $("sub").textContent = `A Beacon: a realm hosted by a player, reached through the Leyline relay. You need ${c[0]}. `;
+    const chip = document.createElement("span"); chip.className = "pill"; chip.id = "client-chip"; chip.textContent = build;
+    $("sub").append(chip);
+    $("client-note").innerHTML = `This realm needs ${c[0]}: use your own game files for it. Open ${c[1]} and make it this one line:`;
   }
 
   async function start() {
@@ -183,7 +187,7 @@
     ev.preventDefault();
     const user = $("u").value.trim(), pass = $("p").value;
     if (!/^[A-Za-z0-9]{3,16}$/.test(user)) return say($("acct-msg"), "Account names are 3–16 letters or digits.", "bad");
-    if (!/^[\x21-\x7e]{8,16}$/.test(pass)) return say($("acct-msg"), "Passwords are 8–16 plain characters: letters, digits and symbols, no spaces or accents (the 3.3.5a client's limit).", "bad");
+    if (!/^[\x21-\x7e]{8,16}$/.test(pass)) return say($("acct-msg"), "Passwords are 8–16 plain characters: letters, digits and symbols, no spaces or accents (the game's own limit).", "bad");
     $("mk").disabled = true; say($("acct-msg"), "Making your account…");
     try {
       const salt = crypto.getRandomValues(new Uint8Array(32));
@@ -205,7 +209,7 @@
     ev.preventDefault();
     const user = $("su").value.trim(), pass = $("sp").value;
     if (!/^[A-Za-z0-9]{3,16}$/.test(user)) return say($("signin-msg"), "Account names are 3–16 letters or digits.", "bad");
-    if (!/^[\x21-\x7e]{1,16}$/.test(pass)) return say($("signin-msg"), "That doesn't look like a 3.3.5a password (1–16 plain characters).", "bad");
+    if (!/^[\x21-\x7e]{1,16}$/.test(pass)) return say($("signin-msg"), "That doesn't look like a game password (1–16 plain characters).", "bad");
     say($("signin-msg"), handBack(user, pass) ? "Taking you in…" : "Open this from the game to sign in there.", "ok");
     $("sp").value = "";
   });

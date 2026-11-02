@@ -61,9 +61,15 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 | `.den mods` | the addons your game loaded, and (with `--client`) the launcher's mods in it |
 
 The character is a ready-made human (female by default, `--gender male`), level 1, in a white shirt, trousers and
-boots, standing in the middle of the Den on the GM island (map 1, 16226.2, 16257.0, floor 13.2: `game_tele` 424). At
-every login five chat lines are a quick start (place a chair, put down the inn, undo, save, grow and the companion).
-Other chat is said back as your own line. One creature, the companion; no combat, spells, quests or loot.
+boots, standing in the middle of the Den on the GM island (map 1, 16226.2, 16257.0, floor 13.2: `game_tele` 424).
+No chat spam (owner 1 Nov 23:46; `src/notice.rs`): with the Leyline UI's Den bar (WrathUnleashedUI `DenBar.lua`, its
+hello `wuden hello`), what Den Lite says that nobody typed for (the welcome, Jaina's one greeting, the encouragement
+moments, the Builder's and the bar's answers, the launcher's answers, a friend in your Den) is a toast in the bar
+(`wuden toast <kind>|<text>`), and the bar hears every save (`wuden saved auto|<name>`) and a status line. Without a
+hello within `--ui-wait` milliseconds (4000) of the game being in the world (its first SET_ACTIVE_MOVER, time sync
+answer or move after the loading screen; at most `--ui-load`, 30000, after Enter World), the old way: the welcome and five
+quick-start lines in the chat. Typed `.den` commands always answer in the chat. Other chat is said back as your own
+line. One creature, the companion; no combat, spells, quests or loot.
 
 ### The Leyline UI's Den panel and Builder, and asks for the launcher
 
@@ -114,8 +120,8 @@ along the way). A jump of more than 30 yards puts her back at your side; leaving
 Her manners (owner 1 Nov: "smarter companions"; `companion.rs`, all deterministic and unit tested): she never stands
 in your way (closer than 1.2 yards and stopped, she steps back to her spot), `stay` keeps her where she is (and a jump
 across the room doesn't pull her), `come` walks her over and she follows again, and past 30 yards while following she
-is put back at your side. Lines are few: one greeting at login, answers when spoken to, and once a session a nudge when
-the Den is still empty two minutes in and you have said nothing to her for a minute. With no assistant connected she
+is put back at your side. Lines are few: one greeting at login (a toast in the Den bar), then only answers when spoken
+to (no tips or nudges nobody asked for, and nothing when she rejoins you). With no assistant connected she
 is still a guide: an ask her built-in guide knows (`GUIDE`: placing, stamps, undo, save, load, grow, looks, mods,
 modes, Forge, friends, levelling, the assistant) gets its answer at once, and is still written down; with someone
 reading her notes (`read_at`), the assistant answers instead. `tips` picks the next step that fits the Den (a first
@@ -146,6 +152,7 @@ game. Addons are client-side, so the Den is a quiet place to try them; mods with
 | `src/login.rs` | the login server: SRP6 (`wow_srp`), protocol 8 (`wow_login_messages`), the realm list |
 | `src/world.rs` | the world server: auth session, character list, the login sequence, movement, chat commands, open.json, the companion's messages and her ticker |
 | `src/den.rs` | the room plan (`ov_den.lua` `plan`) and its sizes (rings), stamps, undo, the save file and its checks (`OVBuild.DenCheck`, `host/dens.rs`) |
+| `src/notice.rs` | the Den bar's toasts instead of chat lines: who has the bar, what waits for its hello, the old way after the wait, cheers at most one every three minutes |
 | `src/companion.rs` | the companion: following, asks and lines, the `companion-in.json` / `companion-out.json` files |
 | `src/play.rs` | `.den mode` (the built-in mode lists) and `.den mods` (the client's addon list, the launcher's `mods.json`) |
 | `src/raw.rs` | the two messages written by hand (gameobject creates, the gameobject query answer); why is at the top of the file |

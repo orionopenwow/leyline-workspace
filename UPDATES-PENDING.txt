@@ -626,3 +626,7 @@
 1265d addons Leyline addons for desktop players: no combat-log box in Your Den
 1266a ship Your Den as an open white plane (the launcher rebuilds on GitHub)
 1266b den-lite Den Lite: the white Den has no ice-block room
+1266c ship UI size fits the screen on the desktop game (save to GitHub)
+1266d addons Leyline addons for desktop players: the UI size fits your screen, no jumps
+1266e mods Browser realm: the same addons
+1266f scripts Realm scripts reload: the in-game .bug command answers again (owner OK 1 Nov 21:14)

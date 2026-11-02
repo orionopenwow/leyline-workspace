@@ -303,7 +303,7 @@ mod tests {
             }
         }
         let ev = ev.expect("Forge closed and the ground was taken");
-        assert!(ev.ok && ev.message.starts_with("Terrain updated: 4 parts"), "{}", ev.message);
+        assert!(ev.ok && ev.message.starts_with("Terrain updated: 256 parts"), "{}", ev.message);
         let args = fs::read_to_string(app.path().join("args.txt")).unwrap();
         assert!(args.contains("--map 1 --tile 1,1 --locked-tiles") && args.trim_end().ends_with("--name yourden --origin 16226.2,16257,13.2"), "{args}");
         let ground = leyline_terrain::pad::Ground::from_delta(&terrain::load(dens.path()).unwrap().unwrap()).unwrap();

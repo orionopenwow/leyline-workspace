@@ -7,7 +7,7 @@ Anyone can host a Wrath realm (on AzerothCore) from their own PC. On Leyline a h
 | You need | |
 |---|---|
 | Docker | Docker Desktop, or Docker Engine on Linux |
-| Your own game folder | the 3.3.5a client |
+| Your own game folder | the Wrath-era game {{v:3.3.5a}} |
 | Free disk | about 10 GB |
 | First start | 5 to 20 minutes |
 | While people play | your PC stays on |

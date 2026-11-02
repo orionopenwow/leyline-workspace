@@ -26,7 +26,7 @@ A new character picks once: start at level 1, or take a one-time boost to 80 wit
 
 Streamed play keeps you in Dalaran, the capitals and the starting areas. With your own game folder, the same browser tab plays the whole world, on the same realm and the same characters.
 
-**Which folder.** The folder you start the 3.3.5a game from. It holds a `Data` folder with `common.MPQ`, `lichking.MPQ`, the `patch` files and a language folder such as `enUS`, `enGB` or `deDE`. You can give the game folder itself or just its `Data` folder. It must be build 12340: the page reads the build from the files, and a 1.12 or 2.4.3 folder is refused. If you don't know where it is, search your computer for `lichking.MPQ`; the folder two levels up is the game folder.
+**Which folder.** The folder you start the Wrath-era game {{v:3.3.5a}} from. It holds a `Data` folder with `common.MPQ`, `lichking.MPQ`, the `patch` files and a language folder such as `enUS`, `enGB` or `deDE`. You can give the game folder itself or just its `Data` folder. It must be that exact build {{v:3.3.5a (12340)}}: the page reads the build from the files, and an older game's folder {{v:1.12}} {{v:2.4.3}} is refused. If you don't know where it is, search your computer for `lichking.MPQ`; the folder two levels up is the game folder.
 
 **How.**
 
@@ -45,7 +45,7 @@ The Leyline window and the line under the Esc menu say **Whole world: your game 
 **If something goes wrong.**
 
 - *"No common.MPQ found"*: you gave a different folder. Give the game folder or its `Data` folder.
-- *"This is a 1.12 game folder"* or *"This folder is build …"*: it is not a 3.3.5a (12340) folder. A 1.12 client plays on community realms of its own build: see the Realms list.
+- A message that the folder is an older game, or another build: it is not the Wrath-era game's folder {{v:3.3.5a (12340)}}. An older game {{v:1.12}} plays on community realms of its own build: see the Realms list.
 - *"lichking.MPQ is missing"* or *"One archive is not enough"*: the folder is incomplete. Give the whole folder, not single files.
 - *"Your browser asks once more"*: press **Use my game folder** and allow reading the folder. If you said no by mistake, press **Choose folder** and pick it again.
 - *"Back to streamed play"*: the browser stopped reading the folder (it was moved, the game was patched while you played, or the permission was taken back). Reload the page to use it again.
@@ -62,7 +62,7 @@ This option is built but sits behind a switch on the server (`WU_OWNFILES=1`). W
 
 ## With your own client
 
-You need your own game install: the official realm runs the 3.3.5a game (build 12340). We don't provide game files; see [Getting started](getting-started.md#where-your-files-usually-are) for where they usually are.
+You need your own game install: the official realm runs the Wrath-era game {{v:3.3.5a (12340)}}. We don't provide game files; see [Getting started](getting-started.md#where-your-files-usually-are) for where they usually are.
 
 1. Get the [Leyline launcher](launcher.md) and open it.
 2. Add your game folder: press **PLAY**, or pick **Add a game folder…** in the play bar. The launcher reads the version itself.

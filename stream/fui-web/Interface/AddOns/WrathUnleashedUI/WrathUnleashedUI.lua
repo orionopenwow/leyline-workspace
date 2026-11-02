@@ -496,3 +496,32 @@ function W.ShotKey()
 end
 SLASH_WUSHOT1, SLASH_WUSHOT2 = "/shot", "/hideui"
 SlashCmdList["WUSHOT"] = function() W.ScreenshotMode() end
+
+-- ---------------------------------------------------------------- Your Den: one message kept quiet
+-- In Your Den (the launcher's own Den on this PC, realm "Your Den") the owner's den-test (1 Nov) showed the game's
+-- "Couldn't load Blizzard_CombatLog: Banned" box over the world at login: the game refused its own combat log addon
+-- (most likely a loose copy of it in the game folder's Interface\AddOns; tools/den-check names those). A Den has no
+-- combat, so in the Den only that one box is closed again; anywhere else, and any other message, it stays.
+W.DEN_REALM = "Your Den"
+function W.InDen()
+    if not GetRealmName then return false end
+    local ok, name = pcall(GetRealmName)
+    return ok and name == W.DEN_REALM
+end
+function W.DenQuiet(text)
+    return type(text) == "string" and text:find("Blizzard_CombatLog", 1, true) ~= nil and W.InDen()
+end
+local function denQuietBox()
+    local d = BasicMessageDialog
+    local t = d and (d.Text or _G["BasicMessageDialogText"])
+    if d and d:IsShown() and t and t.GetText and W.DenQuiet(t:GetText()) then d:Hide() end
+end
+-- message() shows the box (FrameXML BasicControls.xml); a secure post-hook taints nothing that calls it
+if hooksecurefunc and type(message) == "function" then
+    hooksecurefunc("message", function(text) if W.DenQuiet(text) then denQuietBox() end end)
+end
+-- and when the box was up before this addon loaded
+local denQuiet = CreateFrame("Frame")
+denQuiet:RegisterEvent("PLAYER_LOGIN")
+denQuiet:RegisterEvent("PLAYER_ENTERING_WORLD")
+denQuiet:SetScript("OnEvent", denQuietBox)

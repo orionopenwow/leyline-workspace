@@ -282,14 +282,15 @@ FS_RE = (r'<section class="hb-fs hb-rv( flip)?" id="f-([a-z]+)".*?<p class="hb-e
 # owner 1 Nov ("make sure the website is clean looking too"): the front page shows four of them (FRONT_FEATURES), the
 # launcher's story; the rest are drawn by features(only=None) and checked from there
 allf = HB.hub.features(HB.hub.realm_rows(), only=None)
-check("front page: five feature sections only (launcher, looks, host, modes, mods), alternating, nothing repeating the realm list",
-      [(f[1], bool(f[0])) for f in re.findall(FS_RE, front, re.S)] == [("launcher", False), ("looks", True), ("host", False), ("modes", True), ("mods", False)]
+check("front page: four feature sections only (launcher, looks, host, modes; Mods off, owner 1 Nov 19:49), alternating, nothing repeating the realm list",
+      [(f[1], bool(f[0])) for f in re.findall(FS_RE, front, re.S)] == [("launcher", False), ("looks", True), ("host", False), ("modes", True)]
+      and 'id="f-mods"' not in front
       and 'id="f-realms"' not in front and 'id="f-forge"' not in front and 'id="f-agents"' not in front and 'id="f-community"' not in front
       and "Your Den" in front, [f[1] for f in re.findall(FS_RE, front, re.S)])
 fs = re.findall(FS_RE, allf, re.S)
 check("feature sections: one per part of Leyline, in the recommended order", [f[1] for f in fs] == [
       "launcher", "looks", "host", "realms", "modes", "mods", "forge", "agents", "community"] and [f[2] for f in fs] == [
-      "Desktop launcher", "Looks", "Host a server", "Realms &amp; hopping", "Minigolf &amp; game modes", "Mods",
+      "Desktop launcher", "Looks", "Host your own server", "Realms &amp; hopping", "Minigolf &amp; game modes", "Mods",
       "Forge", "Agents", "Community hub"], [f[1:3] for f in fs])
 lks = re.findall(r'<a class="hb-lk ([a-z-]+)" href="/wrath/looks#look-([a-z0-9-]+)"><span class="lk-art ([a-z- ]+)"[^>]*>(.*?)</span><b>([^<]+)</b><span>([^<]+)</span></a>', front)
 check("front page: the Looks tiles show our own pictures where a look has one (Max, Balanced, Classic, Forever UI), never wider than the picture",
@@ -334,7 +335,7 @@ how = re.search(r'<ol class="hb-how[^"]*" aria-label="How it works">(.*?)</ol>',
 check("how it works: three steps, launcher, game folder or browser, realm", how and re.findall(r"<b>([^<]+)</b>", how.group(1)) == [
       "Get the launcher", "Point it at your game folder", "Pick a realm"] and "play in your browser" in how.group(1)
       and "TODO(owner): the \"how it works\" wording" in front)
-order = [front.index(x) for x in ('class="hb-hero"', 'id="realms"', 'class="hb-how', 'id="features"', 'id="f-launcher"', 'id="f-mods"',
+order = [front.index(x) for x in ('class="hb-hero"', 'id="realms"', 'class="hb-how', 'id="features"', 'id="f-launcher"', 'id="f-modes"',
                                   'id="forum"', 'id="status"')] + [front.rindex('class="hb-fine"')]
 check("front page order: hero, realms, how it works, the feature sections, forum and Discord, the status bar, the fine print", order == sorted(order), order)
 check("realm list without a relay: our realm still there, one click", 'data-home="1"' in front and 'class="hb-play" href="/wrath"' in front
@@ -665,7 +666,7 @@ def portal_with(name):
 HB.hub.portal = portal_with
 fp = req("/wrath/leyline-preview")[2].decode()
 order = [fp.find(x) for x in ('class="hb-hero"', 'id="realms"', 'class="hb-how', 'id="features"',
-                              'id="f-mods"', 'id="forum"', 'id="news"', 'id="creators-top"',
+                              'id="f-modes"', 'id="forum"', 'id="news"', 'id="creators-top"',
                               'id="status"')] + [fp.rfind('class="hb-fine"')]
 check("front page order: hero, realms, how it works, features, forum and Discord (news, then hot and creators), the status "
       "bar, the fine print", -1 not in order and order == sorted(order), order)

@@ -676,7 +676,7 @@ class Store:
 
 # The feature sections the front page shows (Hub.features), in their order there: the launcher's story, nothing that
 # repeats the realm list above them. Forge, Agents and the rest keep their own pages and menu items.
-FRONT_FEATURES = ("launcher", "looks", "host", "modes", "mods")   # Looks: a main section (owner 1 Nov 14:38)
+FRONT_FEATURES = ("launcher", "looks", "host", "modes")   # Looks: a main section (owner 1 Nov 14:38); Mods off the front (owner 1 Nov 19:49)
 
 
 class Hub:
@@ -1479,7 +1479,17 @@ class Hub:
         tiles = "".join(
             f'<a class="hb-lk {e(x["look"]["type"])}" href="/wrath/looks#look-{e(x["id"].split(":", 1)[1])}">{lk.tile_art(x, shots)}'
             f'<b>{e(neutral(x["name"]))}</b><span>{e(lk.TYPES[x["look"]["type"]])}</span></a>' for x in picks)
-        return f'<div class="hb-draw hb-looks"><style>{lk.MOTIF_CSS}</style>{tiles}</div>'
+        # the big picture (owner 1 Nov 19:49: "more prominent, full size screen of the graphics update"): the first look
+        # with a picture, full width over the tiles; HUB_JS swaps it when a tile is pressed (and slowly by itself)
+        big = next(((x, lk.preview(x, shots)) for x in picks if lk.preview(x, shots)), None)
+        stage = ""
+        if big:
+            x, pv = big
+            stage = (f'<figure class="hb-lkx" data-lkx><img src="{e(pv["src"])}" alt="{e(pv["alt"])}" width="{int(pv["w"])}" '
+                     f'height="{int(pv["h"])}" loading="lazy" decoding="async"><figcaption><b>{e(neutral(x["name"]))}</b>'
+                     f'<span>{e(lk.TYPES[x["look"]["type"]])}</span><a href="/wrath/looks#look-{e(x["id"].split(":", 1)[1])}" '
+                     f'class="hb-lkx-go">Get this look</a></figcaption></figure>')
+        return f'{stage}<div class="hb-draw hb-looks"><style>{lk.MOTIF_CSS}</style>{tiles}</div>'
 
     def modes_art(self, shot) -> str:
         """The "Game modes" picture: the owner's Minigolf recording (our mode on our realm) as a muted loop that HUB_JS
@@ -1565,13 +1575,15 @@ class Hub:
              ["Presets for every client: Max, Balanced or Classic", "New interfaces from their authors",
               "HD packs linked to their makers' own pages", "Back to the original look, any time"],
              [("/wrath/looks", "See every look", False)], self.looks_art()),
-            ("host", "Host a server", "Pick a template, press Host",
-             "Host a realm from your own PC in one click: classic levelling, solo levelling with helper bots, a duel ladder, "
-             "hide and seek, minigolf nights and more, each a template you can host as it is or fork and change. It goes on "
-             "the realm list by itself, with an invite link for friends. Our code only, never game files.",
-             ["Templates: Host as it is, or Fork and make it yours", "Your Den: a private room on your PC to build and test with friends",
-              "No ports to open: the Leyline network lists it", "GM controls, health checks and restarts with a warning, built in"],
-             [("/wrath/host", "Start hosting", False), (BASE + "/beacon", "How hosting works", False)],
+            ("host", "Host your own server", "Run your own server, in one click",
+             # TODO(owner): the hosting words, his voice
+             "Yes, you can host your own server. Install the launcher, open Host, pick a template and press Host: your "
+             "server runs on your PC and goes on the realm list by itself, with an invite link for friends. Classic "
+             "levelling, solo levelling with helper bots, a duel ladder, hide and seek, minigolf nights and more, each "
+             "as it is or forked and changed. Our code only, never game files.",
+             ["Your own server on your own PC, free, no ports to open", "Templates: Host as it is, or Fork and make it yours", "Your Den: a private room on your PC to build and test with friends",
+              "The Leyline network lists it and lets friends in", "GM controls, health checks and restarts with a warning, built in"],
+             [("/wrath/host", "Host your server", False), (BASE + "/beacon", "How hosting works", False)],
              shot("hosting", "The launcher's Host page: What will you host? Templates as tiles (classic levelling, solo levelling, "
                   "duel ladder, hide and seek, minigolf night, survivors), each with Host and Fork.")),
             ("realms", "Realms & hopping", "Every realm, one list",
@@ -3573,6 +3585,26 @@ color:#fff;text-decoration:none;overflow:hidden;background:linear-gradient(160de
 .hb-draw .hb-lk>b,.hb-draw .hb-lk>span:last-child{position:relative;z-index:1}
 .hb-draw .hb-lk b{font-size:15.5px;color:#fff!important;text-shadow:0 1px 3px rgba(0,0,0,.7)}.hb-draw .hb-lk>span:last-child{font-size:12.5px;color:#f1f3f8!important}
 a.hb-lk:hover,a.hb-lk:focus-visible{border-color:var(--lk-accent)}
+#f-looks{grid-template-columns:minmax(0,1fr);padding:64px 0 56px;gap:26px}
+#f-looks .hb-fs-t{order:0;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:0 48px;align-items:start}
+#f-looks .hb-fs-t>*{grid-column:1}#f-looks .hb-points{grid-column:2;grid-row:2/4;margin-top:8px}
+#f-looks .hb-fs-a{grid-column:2;grid-row:4}
+#f-looks h2{font-size:clamp(28px,4.2vw,42px)}
+#f-looks .hb-looks{grid-template-columns:repeat(4,minmax(0,1fr));padding:0;background:none;border:0;box-shadow:none;margin-top:12px}
+#f-looks .hb-lk.on{border-color:var(--lk-accent);box-shadow:0 0 0 2px var(--lk-accent)}
+.hb-lkx{position:relative;margin:0;aspect-ratio:16/9;max-height:78vh;width:100%;border-radius:18px;overflow:hidden;background:#05070c;
+box-shadow:0 30px 80px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.08)}
+.hb-lkx img{display:block;width:100%;height:100%;object-fit:cover;transition:opacity .35s ease}
+.hb-lkx.swap img{opacity:0}
+.hb-lkx figcaption{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:flex-end;flex-wrap:wrap;gap:4px 14px;padding:60px 28px 22px;
+background:linear-gradient(180deg,rgba(4,6,12,0),rgba(4,6,12,.86));color:#fff}
+.hb-lkx b{font-size:clamp(22px,3vw,32px);font-weight:800;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.7)}
+.hb-lkx span{color:#e6e9f0;font-size:15px;padding-bottom:5px}
+.hb-lkx-go{margin-left:auto;padding:9px 16px;border-radius:10px;background:var(--lk-accent);color:#fff!important;font-weight:700;text-decoration:none}
+.hb-lkx-go:hover,.hb-lkx-go:focus-visible{filter:brightness(1.12)}
+@media (max-width:860px){#f-looks .hb-fs-t{grid-template-columns:minmax(0,1fr)}#f-looks .hb-points,#f-looks .hb-fs-a{grid-column:1;grid-row:auto}
+#f-looks .hb-looks{grid-template-columns:repeat(2,minmax(0,1fr))}.hb-lkx{border-radius:12px}.hb-lkx figcaption{padding:40px 16px 14px}}
+@media (prefers-reduced-motion:reduce){.hb-lkx img{transition:none}}
 .hb-code{overflow:auto;font:13.5px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--lk-text-2);white-space:pre}
 .hb-code s{text-decoration:none;color:var(--lk-accent-2);font-weight:700}.hb-code u{text-decoration:none;color:var(--lk-accent-strong)}
 .hb-code q{quotes:none;color:var(--lk-ok)}
@@ -4438,6 +4470,20 @@ if(side){try{if(localStorage.getItem("leyline.side")==="folded")side.checked=tru
 side.addEventListener("change",function(){try{localStorage.setItem("leyline.side",side.checked?"folded":"open");}catch(e){}});}
 "use strict";
 var d=document,root=d.documentElement;root.classList.add("hb-js");
+// the Looks picture: a tile shows its look big (a modified click still opens the Looks page); slowly by itself until
+// someone presses one, never with reduced motion or while the pointer is on it
+(function(){var st=d.querySelector("[data-lkx]"),tl=d.querySelectorAll("#f-looks a.hb-lk");if(!st||!tl.length)return;
+var im=st.querySelector("img"),nb=st.querySelector("b"),ns=st.querySelector("span"),go=st.querySelector(".hb-lkx-go"),cur=-1,auto=true,hov=false;
+function show(i){var a=tl[i],p=a.querySelector("img");if(!p)return false;cur=i;
+for(var k=0;k<tl.length;k++)tl[k].classList.toggle("on",k===i);
+st.classList.add("swap");setTimeout(function(){im.src=p.getAttribute("src");im.alt=p.alt;im.removeAttribute("width");im.removeAttribute("height");
+nb.textContent=a.querySelector("b").textContent;ns.textContent=a.querySelector("span:last-child").textContent;go.href=a.getAttribute("href");
+st.classList.remove("swap");},180);return true;}
+for(var i=0;i<tl.length;i++){(function(i){if(tl[i].querySelector("img")&&tl[i].querySelector("img").getAttribute("src")===im.getAttribute("src")&&cur<0){cur=i;tl[i].classList.add("on");}
+tl[i].addEventListener("click",function(ev){if(ev.ctrlKey||ev.metaKey||ev.shiftKey||ev.button)return;if(show(i)){ev.preventDefault();auto=false;}});})(i);}
+st.addEventListener("mouseenter",function(){hov=true;});st.addEventListener("mouseleave",function(){hov=false;});
+var calm=window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches;
+if(!calm)setInterval(function(){if(!auto||hov||d.hidden)return;for(var n=1;n<=tl.length;n++){if(show((cur+n)%tl.length))return;}},6000);})();
 var still=!!(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches);
 if(!still&&"IntersectionObserver" in window){
   var io=new IntersectionObserver(function(es){es.forEach(function(x){if(x.isIntersecting){x.target.classList.add("in");io.unobserve(x.target);}});},{rootMargin:"0px 0px -6% 0px"});

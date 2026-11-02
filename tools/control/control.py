@@ -7,6 +7,8 @@ Serves a page on http://127.0.0.1:8097 (this PC only) and opens it. The page sho
   * Live: the realm, Play page and game files answering (checked from this PC every 30 s).
   * Claude: what Claude is working on, what is waiting for you, what finished (control/claude-status.json,
     which Claude keeps up to date in this folder).
+  * Waiting on you: each thing Claude needs, with its own buttons (Do it: runs a step; Open the page; Open the
+    folder; Add files: saved in control/inbox for Claude; an answer box; Done), answers in control/owner-answers.json.
   * Ready to launch: the steps in UPDATES-PENDING.txt not yet in UPDATES-DONE.txt; "Launch all" runs them in
     order (the same steps UPDATE.bat runs) and streams each step's output live; it stops at a failure.
   * History: finished steps with their logs (logs/<id>-<step>.log).
@@ -44,6 +46,9 @@ PORT = int(os.environ.get("WU_CONTROL_PORT", "8097"))
 AUTO = ROOT / "control" / "autopilot.json"
 LAST = ROOT / "control" / "last-run.json"
 LAST_CHECK = ROOT / "control" / "last-check.json"    # the last server check: {at, id, ok} (Leyline HQ shows it)
+INBOX = ROOT / "control" / "inbox"                  # files the owner drops for Claude (Waiting on you: Add files)
+ANSWERS = ROOT / "control" / "owner-answers.json"     # the owner's Done / answers to Waiting on you, for Claude
+DROP_MAX = 200 * 1024 * 1024
 AUDIT_HTML = ROOT / "logs" / "audit-latest.html"     # the release audit's report (tools/audit, docs/AUDIT.md)
 AUDIT_TXT = ROOT / "logs" / "audit-latest.txt"
 HQ_URL = "https://play.openvanilla.app/wrath/admin"   # Leyline HQ: the one place online (stream/hq.py)
@@ -568,6 +573,41 @@ def check_health() -> None:
         time.sleep(30)
 
 
+def _safe_name(n: str) -> str:
+    n = re.sub(r"[^A-Za-z0-9._ -]+", "_", os.path.basename(str(n or "")))[:120].strip(" .")
+    return n or "file"
+
+
+def _safe_dir(d: str) -> Path:
+    parts = [re.sub(r"[^A-Za-z0-9_-]+", "_", x)[:40] for x in str(d or "").replace("\\", "/").split("/") if x not in ("", ".", "..")]
+    return INBOX.joinpath(*parts[:3]) if parts else INBOX
+
+
+def save_answer(item_id: str, done: bool, text: str = "", files=None) -> None:
+    """The owner's Done / answer / files for one Waiting on you item, for Claude (control/owner-answers.json)."""
+    try:
+        doc = json.loads(ANSWERS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        doc = {}
+    a = doc.setdefault(str(item_id)[:80], {})
+    a["at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    if done:
+        a["done"] = True
+    if text:
+        a["text"] = text[:4000]
+    if files:
+        a["files"] = sorted(set(a.get("files", []) + list(files)))
+    ANSWERS.parent.mkdir(parents=True, exist_ok=True)
+    ANSWERS.write_text(json.dumps(doc, indent=1), encoding="utf-8")
+
+
+def answers() -> dict:
+    try:
+        return json.loads(ANSWERS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
 def token_ok(t: str) -> bool:
     return bool(t) and hmac.compare_digest(t.encode(), TOKEN.encode())
 
@@ -649,7 +689,7 @@ class H(http.server.BaseHTTPRequestHandler):
                                                "claude": claude_status(), "running": running,
                                                "health": health, "health_at": at, "lines": lines,
                                                "autopilot": autopilot_on(), "confirm": confirm_on(),
-                                               "audit": audit_state()}))
+                                               "audit": audit_state(), "answers": answers()}))
         if path == "/audit":
             try:
                 return self._send(200, AUDIT_HTML.read_bytes(), "text/html; charset=utf-8")
@@ -690,6 +730,27 @@ class H(http.server.BaseHTTPRequestHandler):
         if not self._authed():
             return self._send(403, '{"error":"forbidden"}')
         n = int(self.headers.get("Content-Length") or 0)
+        if self.path.startswith("/api/drop"):
+            # a file for Claude: /api/drop?id=<item>&dir=<folder>&name=<file name>, the raw bytes as the body
+            qs = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            if n <= 0 or n > DROP_MAX:
+                return self._send(413, '{"error":"empty or over 200 MB"}')
+            d = _safe_dir((qs.get("dir") or [""])[0])
+            d.mkdir(parents=True, exist_ok=True)
+            name = _safe_name((qs.get("name") or [""])[0])
+            dest = d / name
+            left = n
+            with open(dest, "wb") as f:
+                while left > 0:
+                    chunk = self.rfile.read(min(left, 1 << 20))
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    left -= len(chunk)
+            rel = dest.relative_to(ROOT).as_posix()
+            save_answer((qs.get("id") or ["files"])[0], False, files=[rel])
+            emit("state", {})
+            return self._send(200, json.dumps({"ok": True, "saved": rel}))
         body = json.loads(self.rfile.read(n) or b"{}") if n else {}
         if self.path == "/api/launch":
             msg = str(body.get("message") or "")[:200].replace("\n", " ")
@@ -729,6 +790,37 @@ class H(http.server.BaseHTTPRequestHandler):
             subprocess.Popen(["cmd", "/c", "start", "Leyline GM Console", "cmd", "/k", "call", str(bat)],
                              cwd=str(bat.parent), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             return self._send(200, '{"ok":true}')
+        if self.path == "/api/answer":
+            save_answer(str(body.get("id") or "")[:80] or "note", bool(body.get("done")), str(body.get("text") or ""))
+            emit("state", {})
+            return self._send(200, '{"ok":true}')
+        if self.path == "/api/do":
+            # a Waiting on you button: run its step now, open its page, or open its folder
+            step = str(body.get("run") or "")
+            if step:
+                if step not in STEPS:
+                    return self._send(400, '{"error":"unknown step"}')
+                item = {"id": step + "-" + time.strftime("%Y%m%d-%H%M%S"), "step": step, "title": STEPS[step][1],
+                        "note": "", "known": True, "open": True}
+                if not start_run("", [item], False, STEPS[step][1]):
+                    return self._send(409, '{"error":"already running"}')
+                return self._send(200, '{"ok":true}')
+            url = str(body.get("open") or "")
+            if url:
+                if not url.startswith("https://"):
+                    return self._send(400, '{"error":"https links only"}')
+                webbrowser.open(url)
+                return self._send(200, '{"ok":true}')
+            folder = str(body.get("folder") or "")
+            if folder:
+                f = (ROOT / folder).resolve() if folder != "inbox" else INBOX
+                if ROOT not in f.parents and f != ROOT and f != INBOX:
+                    return self._send(400, '{"error":"only folders in Leyline"}')
+                f.mkdir(parents=True, exist_ok=True)
+                if os.name == "nt":
+                    os.startfile(str(f))   # noqa: S606 (the owner's own Explorer)
+                return self._send(200, '{"ok":true}')
+            return self._send(400, '{"error":"nothing to do"}')
         if self.path == "/api/open-game":
             webbrowser.open("https://play.openvanilla.app/wrath")
             return self._send(200, '{"ok":true}')
@@ -820,6 +912,12 @@ a{color:var(--gold)}.hist a{font:12px var(--mono)}
 .updated{font-size:12px;color:var(--dim);margin-top:6px}
 @media (max-width:640px){header{padding:10px 14px}.health{margin-left:0;width:100%}main{padding:12px;gap:12px}
 .card{padding:10px 12px}.console{height:340px}.youbox{margin:12px 12px 0}}
+.dos{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+.dos button.sm{font-size:15px}
+.drop{display:inline-flex;align-items:center;min-height:36px;padding:6px 14px;border:1px dashed var(--gold2);border-radius:8px;cursor:pointer;
+color:var(--gold);background:rgba(0,0,0,.35);font-weight:600}.drop.over{background:rgba(241,207,134,.15)}
+.dos textarea{font:inherit;flex:1 1 100%;min-height:52px;background:rgba(0,0,0,.5);border:1px solid #0a0908;border-radius:7px;color:var(--text);padding:8px 11px}
+.youbox h2+p{margin:0 0 6px;color:var(--dim);font-size:12.5px}
 </style></head><body class="ly">
 <header><div class="brand"><span class="mark" aria-hidden="true"></span><h1>Leyline Control</h1></div>
 <div class="health" id="health"></div>
@@ -832,7 +930,7 @@ a{color:var(--gold)}.hist a{font:12px var(--mono)}
 <button id="game">Open the game</button><button id="check">Check server</button>
 <button id="ask" title="On: deploys wait for Launch all; read-only checks still run by themselves">Ask before deploys: …</button>
 </div></details></div></header>
-<section class="youbox"><h2>Waiting on you</h2><div id="you"></div></section>
+<section class="youbox"><h2>Waiting on you</h2><p>Everything Claude needs from you shows up here, with its button. Nothing else to look for.</p><div id="you"></div></section>
 <main>
 <div class="stack">
   <section class="card"><h2>Up next</h2><div id="pending"></div>
@@ -856,9 +954,33 @@ function line(t){const c=$("con"),d=document.createElement("div");d.textContent=
 if(/^=====/.test(t))d.className="hdr";else if(/^!!|FAILED|error/i.test(t))d.className="err";else if(/^== .*done|OK$/.test(t))d.className="ok";
 const stick=c.scrollTop+c.clientHeight>=c.scrollHeight-30;c.appendChild(d);if(stick)c.scrollTop=c.scrollHeight}
 let last=null;
+function youList(items,ans){const el=$("you");items=(items||[]).filter(i=>{const o=typeof i==="string"?{text:i}:i;return !(o.id&&ans[o.id]&&ans[o.id].done)});
+if(!items.length){el.innerHTML='<div class="empty">Nothing. You\'re clear.</div>';return}
+if(el.contains(document.activeElement)&&document.activeElement.tagName==="TEXTAREA")return;
+el.innerHTML=items.map((i,n)=>{const o=typeof i==="string"?{text:i}:i,a=o.id?ans[o.id]||{}:{},id=esc(o.id||"");
+const b=[];if(o.run)b.push(`<button class="primary sm" data-do="run" data-v="${esc(o.run)}">${esc(o.button||"Do it")}</button>`);
+if(o.open)b.push(`<button data-do="open" data-v="${esc(o.open)}">${esc(o.open_label||"Open the page")}</button>`);
+if(o.folder)b.push(`<button data-do="folder" data-v="${esc(o.folder)}">${esc(o.folder_label||"Open the folder")}</button>`);
+if(o.drop)b.push(`<label class="drop" data-dir="${esc(o.drop)}" data-id="${id}">${esc(o.drop_label||"Add files (or drop them here)")}<input type="file" multiple hidden></label>`);
+if(o.id&&o.ask)b.push(`<textarea data-id="${id}" rows="2" placeholder="${esc(o.ask)}">${esc(a.text||"")}</textarea><button data-do="send" data-id="${id}">Send</button>`);
+if(o.id)b.push(`<button data-do="done" data-id="${id}">Done</button>`);
+const got=(a.files||[]).length?`<div class="sub">Got: ${a.files.map(esc).join(", ")}</div>`:"";
+return `<div class="item you"><span class="tag">${esc(o.tag||n+1)}</span><div><b>${esc(o.text)}</b>${o.detail?`<div class="sub">${esc(o.detail)}</div>`:""}${got}${b.length?`<div class="dos">${b.join("")}</div>`:""}</div></div>`}).join("")}
+async function post(u,b){const r=await fetch(u,{method:"POST",headers:{...H,"Content-Type":"application/json"},body:JSON.stringify(b)});if(!r.ok)alert("Couldn't: "+(await r.text()));refresh()}
+async function sendFiles(lab,files){for(const f of files){lab.firstChild.textContent=`Sending ${f.name}…`;
+const r=await fetch(`/api/drop?id=${encodeURIComponent(lab.dataset.id||"files")}&dir=${encodeURIComponent(lab.dataset.dir||"")}&name=${encodeURIComponent(f.name)}`,{method:"POST",headers:H,body:f});
+if(!r.ok)alert(`Couldn't send ${f.name}: `+(await r.text()))}refresh()}
+$("you").addEventListener("click",e=>{const t=e.target.closest("button[data-do]");if(!t)return;const d=t.dataset.do;
+if(d==="run"){$("con").innerHTML="";post("/api/do",{run:t.dataset.v})}else if(d==="open")post("/api/do",{open:t.dataset.v});
+else if(d==="folder")post("/api/do",{folder:t.dataset.v});else if(d==="done")post("/api/answer",{id:t.dataset.id,done:true});
+else if(d==="send"){const ta=$("you").querySelector(`textarea[data-id="${CSS.escape(t.dataset.id)}"]`);post("/api/answer",{id:t.dataset.id,text:ta?ta.value:""})}});
+$("you").addEventListener("change",e=>{const i=e.target;if(i.type==="file"&&i.files.length)sendFiles(i.closest("label"),[...i.files])});
+$("you").addEventListener("dragover",e=>{if(e.target.closest(".drop")){e.preventDefault();e.target.closest(".drop").classList.add("over")}});
+$("you").addEventListener("dragleave",e=>{const l=e.target.closest(".drop");if(l)l.classList.remove("over")});
+$("you").addEventListener("drop",e=>{const l=e.target.closest(".drop");if(!l)return;e.preventDefault();l.classList.remove("over");sendFiles(l,[...e.dataTransfer.files])});
 async function refresh(){const r=await fetch("/api/state",{headers:H});if(!r.ok)return;const s=await r.json();last=s;
 const h=$("health");h.innerHTML=Object.entries(s.health||{}).map(([k,v])=>`<span class="pill"><span class="dot ${v.ok?"ok":"bad"}"></span>${esc(k)}${v.ms!=null?` · ${v.ms} ms`:` · ${esc(v.code)}`}</span>`).join("")||'<span class="pill">checking…</span>';
-const c=s.claude||{};list($("you"),c.waiting_on_you,"you","Nothing. You're clear.");
+const c=s.claude||{};youList(c.waiting_on_you,s.answers||{});
 list($("now"),c.now,"now",c.note||"Idle.");list($("fin"),c.done,"fin","Nothing yet.");
 $("cupd").textContent=c.updated?`Updated ${c.updated}`:"";
 list($("pending"),(s.pending||[]).map(p=>({tag:p.step,text:p.title,detail:p.note})),"","Nothing to launch. You're up to date.");

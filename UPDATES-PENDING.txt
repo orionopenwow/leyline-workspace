@@ -611,3 +611,11 @@
 1262c relay Relay: accepts the new names too
 1262d ship Launcher: new addresses first, old as fallback; domain-check / domain-on / domain-off steps
 1262e leyline Leyline repo: export again so Leyline.exe gets the new addresses
+1263a domain-check Domain move: the four new names point at the server, ports 80/443 (read-only)
+1263b domain-on Domain move ON: leylinelauncher.com live, self-checked, old page links redirect (undo: domain-off)
+1263c foreverui In game: the site links say leylinelauncher.com
+1263d addons Leyline addons for desktop players: the new site name
+1263e mods Mods catalog: the new site name
+1264a ship Save tonight's fixes to GitHub (the launcher rebuilds with the My Den test fix)
+1264b signin Website: Looks big, Host clearer, Mods off the front page
+1264c den-lite Den Lite: quiet about other servers' GM-addon commands

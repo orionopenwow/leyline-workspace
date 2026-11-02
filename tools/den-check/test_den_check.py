@@ -465,12 +465,11 @@ class DenWorld(unittest.TestCase):
     def test_our_texture_is_told_from_others(self):
         self.assertTrue(den_check.blp_is_ours(white_blp(64)))
         self.assertTrue(den_check.blp_is_ours(white_blp(256)))
-        grey = bytearray(white_blp(64))
-        grey[148:152] = b"\x80\x80\x80\xff"
-        self.assertFalse(den_check.blp_is_ours(bytes(grey)))
+        # since 2 Nov: any whole BLP2 at our name counts (the launcher may put the player's own snow texture there)
         dxt = bytearray(white_blp(64))
         dxt[8] = 2
-        self.assertFalse(den_check.blp_is_ours(bytes(dxt)))
+        self.assertTrue(den_check.blp_is_ours(bytes(dxt)))
+        self.assertFalse(den_check.blp_is_ours(bytes(white_blp(64))[:1200]), "cut short")
         self.assertFalse(den_check.blp_is_ours(b"BLP1" + bytes(2000)))
         self.assertFalse(den_check.blp_is_ours(None))
 

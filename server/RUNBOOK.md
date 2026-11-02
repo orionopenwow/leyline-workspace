@@ -419,7 +419,7 @@ tail -f /srv/wrath/logs/world/Server.log
 | Lua scripts (mod-ale) | copy into `/srv/wrath/custom/lua_scripts/`, then `sudo ./soap-cmd.sh "reload ale"` (or type `.reload ale` in game as GM). Check `logs/world/Server.log` for "Reloading ALE" and Lua errors. SOAP may answer with an error text even though the reload ran | nothing |
 | Settings (`modules.env`, `profiles/*.env`, `OV_PROFILE`, `OV_PATHING` in `.env`) | edit, then `docker compose up -d ac-worldserver` (compose sees the change and recreates the container). Warn first: `sudo ./soap-cmd.sh "server restart 120"` | a 1-3 minute restart |
 | Settings in `docker-compose.prod.yml` | edit, then `docker compose up -d` | restart of the changed service |
-| Website | edit files in `/srv/wrath/site/` | nothing |
+| Website | the placeholder site: edit files in `/srv/wrath/site/`. The Leyline website itself (sign-in, hub, docs) is `wu-portal`, run from `stream/`: the `signin` step ("Update sign-in and warm-up.bat"); a fresh `Deploy Wrath to my server.bat` takes the same files from `stream/` (its `portal/` folder only keeps the account helper) | nothing |
 | Sign-up limits / Turnstile | edit `signup.env`, `sudo systemctl restart wu-signup` | nothing |
 
 Before any SQL change: `sudo systemctl start wu-backup` (a dump takes a minute or two).

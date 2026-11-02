@@ -63,29 +63,47 @@ You read them with **Read mail** (`.den mail`); **Empty it** clears the mailbox.
 **Den of the week.** Each week the Leyline team picks one Den. It shows on the website's front page, on the launcher's
 Home and in the game's Leyline window. Screenshots are links on the website only.
 
-## Your Den: one button (launcher, 2026-11-01)
+## Your Den: one button (launcher, 2026-11-01; as built on 2026-11-02)
 
-Owner, 1 Nov 01:46 and 01:48: Dens are local first; the white room at once, with no Docker setup; Docker only later,
+Owner, 1 Nov 01:46 and 01:48: Dens are local first; the white world at once, with no Docker setup; Docker only later,
 when sharing with friends. **Your Den** is in the launcher's side menu right under Home and first on Home
 (`launcher/ui/den.js`, `den.css`; core `host/yourden.rs`, `host/lite.rs`).
 
-- **Play** (one click). With **Den Lite** on this PC (the built-in Den server, `labs/den-lite`; no Docker, no database):
-  it starts, the client points at `127.0.0.1` with the account `DEN` on the login screen, and you are in the room. Without
-  Den Lite: the Docker Den's three steps on the same page (the Host pack, Docker Desktop with a short guide, Start with
+- **Play solo** (one click). With **Den Lite** (the built-in Den server, `labs/den-lite`; no Docker, no database): the
+  launcher gets it on first use (the release `den-lite-latest`, checked against its checksum, into
+  `<app data>/Leyline/den-lite/bin/`), starts it, points the game at `127.0.0.1` and signs in by itself
+  (`denclick.rs`: our login screen code where the game takes it, else the launcher types the local password and the
+  Enters for you), then enters the world. You stand on an open white plane (the whole tile flat and white, made by the
+  launcher at the first Den start: `host/terrain.rs`); nothing stands on it until you place something. Without Den
+  Lite: the Docker Den's three steps on the same page (the Host pack, Docker Desktop with a short guide, Start with
   your account name), its progress, then the first starter place opens. A Docker Den that is stopped is started first;
   its account (the realm's GM name) is filled in on the login screen (`SET accountName` in Config.wtf).
-- **Share with friends** (Den Lite only): the same three steps; every Den Lite file is copied into the Host pack's saves
-  (`move_to_kit`: never over another file, the same text skipped) and the newest opens there unchanged. Then **Invite a
-  friend** copies the invite link and **Make my account** opens your Den's own join page in the browser.
-- **Saved Dens** (open, save a copy, add a file, add from a link), **Packs** (the recipes a pack builder leaves in
-  `state/packs/*.json`: a title and a line) and **Share on the Workshop** work the same for both: they read the Den in
-  use (the Docker Den's files once the Host pack hosts it, else Den Lite's `<app data>/Leyline/den-lite/state/dens`).
+- **The Den bar** (the Leyline UI's `DenBar.lua`): opens by itself at the top of the screen in Your Den, with **Build**
+  (F7: the Builder), **Shape ground** (Forge), **Play** (F8: the tools hidden, just you and your Den), **Save** (a save
+  by name), **Invite** (one link for one friend, into a copy box) and **Help** (the intro cards again). F7 and F8 only
+  when the game has them free, else Ctrl+F7 / Ctrl+F8. Den Lite's own lines are toasts under the bar, not chat.
+- **Autosave.** Den Lite writes the whole Den to `autosave.den.json` within 2 seconds of any change and at logout,
+  and opens it at the next start; the bar says "Saved 12 s ago".
+- **Key bindings kept.** Den Lite answers the game's ask for its own settings (key bindings, macros, chat layout) and
+  keeps what the game uploads in `<dens>/account-data/` (`labs/den-lite/src/accdata.rs`, 2 Nov), so the keys someone
+  sets are there the next time.
+- **Invite friends**: one link per friend, through the Leyline network from this PC: Den Lite's own relay tunnel
+  (`host/litenet.rs`), private, one login per invite (labs/den-lite/README.md, "Friends in your Den"). **Stop sharing**
+  takes it down. **Share with friends** (Den Lite only) instead moves the Den to the Docker Den: the same three steps;
+  every Den Lite file is copied into the Host pack's saves (`move_to_kit`: never over another file, the same text
+  skipped) and the newest opens there unchanged. Then **Invite a friend** copies the invite link and **Make my account**
+  opens your Den's own join page in the browser.
+- **Shape the ground**: Forge, got on the first press (below, "Your Den's ground").
+- **Saved Dens** (open, save a copy, add a file, add from a link; the autosave is listed too), **Packs** (the recipes
+  a pack builder leaves in `state/packs/*.json`: a title and a line) and **Share on the Workshop** work the same for
+  both: they read the Den in use (the Docker Den's files once the Host pack hosts it, else Den Lite's
+  `<app data>/Leyline/den-lite/state/dens`).
 - **Share on the Workshop**: save a copy, attach the `.den.json` to a GitHub release, and list that release with List
   your mod (`stream/listings.py` format `den`: checked like the Den loader checks a file, data only, live at once).
   **Add from a link** takes such a release file back (GitHub and its download hosts only, 512 KB, checked again).
-- Den Lite is an interface for now (`host/lite.rs`: available, start, stop, status, den_dir). It looks for `den-lite`
+- Den Lite's side of the contract (`host/lite.rs`: available, start, stop, status, den_dir): it looks for `den-lite`
   (`$LEYLINE_DEN_LITE`, `<app data>/Leyline/den-lite/bin/`, beside the launcher) and runs
-  `den-lite --dens <dir> --bind 127.0.0.1`; that contract is to be confirmed with labs/den-lite.
+  `den-lite --dens <dir> --bind 127.0.0.1` (plus `--client <game folder>`).
 
 ## Hosting a Den
 
@@ -379,7 +397,8 @@ PC (`dens/packs.json`) says which ones and how: "Make them from your own game fo
 
 ## Your Den's ground: Forge and the terrain delta (2026-11-01)
 
-**Built** (not yet tried with a real game folder; docs/NOGGIT-DEN-PLAN.md phases 1-3 and 5):
+**Built** (docs/NOGGIT-DEN-PLAN.md phases 1-3 and 5; the white ground has been tried in a real game since 2 Nov, see
+"The white ground" below in this section):
 
 - **The crate** `launcher/src-tauri/terrain` (`leyline-terrain`, MIT, written from the public format notes): reads and
   writes the map tile (heights, normals made again, paint layers and their alpha maps in all three forms, holes, water,
@@ -390,8 +409,9 @@ PC (`dens/packs.json`) says which ones and how: "Make them from your own game fo
   (`<dens>/yourden.terrain.json`, `docs/terrain-delta-leyline.schema.json`); Forge writes and reads its form
   (`docs/terrain-delta.schema.json`, `forge/docs/DEN-MODE.md`). The crate turns one into the other
   (`leyline_terrain::flat`). One schema in the end: owner's call.
-- **Your Den page, "Shape the ground"**: Get Forge (the GPL notice and its source link, once; the `forge-latest`
-  release's `Forge.zip`, checked against `Forge.zip.sha256`, into `<app data>/Leyline/forge/`), then Open in Forge:
+- **Your Den page, "Shape the ground"** (and the Den bar's **Shape ground**, `.den forge`): the first time it gets Forge
+  by itself (1 Nov, `host/forge.rs`: the `forge-latest` release's `Forge.zip`, checked against `Forge.zip.sha256`,
+  into `<app data>/Leyline/forge/`; the page's Get Forge shows the GPL notice and its source link), then opens it:
   the launcher makes `<app data>/Leyline/den-terrain/yourden/` (the Den's tile from your own files + the ground, the
   ground in Forge's form, `locked-tiles.txt`) and starts Forge with `--game --project --map 1 --tile 1,1
   --locked-tiles <file> [--den <newest Den file>] --name yourden --origin 16226.2,16257,13.2`. When Forge closes, what
@@ -405,6 +425,11 @@ PC (`dens/packs.json`) says which ones and how: "Make them from your own game fo
   off (no vmaps): players collide on their own client, the server needs heights.
 - **Den Lite** reads the ground's heights: `.den place`, stamps and the spawn stand on the edited ground; it notices a
   new ground file within 2 seconds.
+- **The white ground** (1 and 2 Nov, `host/terrain.rs`): the whole Den tile is flat and white, made at the first Den
+  start (older small pads are opened up), with the island's own models off it. `patch-T` carries our own white
+  texture, stored at the name of a snow texture the game already knows (a texture at a new name drew green), and,
+  from the player's own tables edited on this PC, a white sky and the zone name "Your Den". What went in is in
+  `<dens>/yourden.ground-status.json`; `den-check` (tools/den-check) reports it.
 
 ## Claude in your Den, and your companion (2026-11-01)
 

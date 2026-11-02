@@ -97,6 +97,22 @@ Players place props in build areas. GMs can always build. Others can build once 
 
 GM only: `.build grant <name>`, `.build revoke <name>`, `.build purge <name>`.
 
+## Your Den
+
+In your Den the bar at the top has Build (F7), Shape ground, Play (F8), Save, Invite and Help. When F7 or F8 is already bound to something in your game, it is Ctrl+F7 or Ctrl+F8. The same in chat:
+
+| Command | What it does |
+|---|---|
+| `.den` | every Den command |
+| `.den place <name>` | one piece in front of you (`chair`, `lantern`, `house`...) |
+| `.den find <word>` | the pieces whose name has that word |
+| `.den stamps`, `.den stamp <name> now` | the stamps, and one put down where you stand |
+| `.den save <name>`, `.den load <name>`, `.den files` | your Den in a file, opened again, and the list |
+| `.den grow`, `.den size` | more space, and how big your Den is |
+| `.den companion` | your companion comes and follows you |
+| `.den invite` | a link for one friend |
+| `.den forge` | Shape ground: opens Forge on your Den's ground |
+
 ## Discord
 
 | Command | What it does |

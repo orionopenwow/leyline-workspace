@@ -8,14 +8,14 @@ cleanup on 2026-11-02. Leyline is the mod launcher and the P2P realm network; ou
 
 | Product | Source | Built by | Ships to |
 |---|---|---|---|
-| **Website, portal and hub** | `stream/` (`wrath_portal.py` and the modules beside it, `www-files/`, `fui-web/`), `docs/leyline/` (served at `/wrath/docs`) | nothing to build | our server, by the steps `signin`, `page`, `foreverui` (`stream/fastloop.sh`, `stream/*.bat`) |
+| **Website, portal and hub** (leylinelauncher.com) | `stream/` (`wrath_portal.py` and the modules beside it, `www-files/`, `fui-web/`), `docs/leyline/` (served at `/wrath/docs`) | nothing to build | our server, by the steps `signin`, `page`, `foreverui` (`stream/fastloop.sh`, `stream/*.bat`) |
 | **Browser game** | `client/` (`get-source.sh`, `patches/series.txt` on benilla-wotlk) | `client-build` step (`client/build-browser-client.sh`) into `play/dist-test.tgz.part*` | our server, `client` step (`client-back` undoes it); streamed files by `slice` |
 | **Leyline launcher** | `launcher/` (Tauri 2: `ui/` is the bundled page, `src-tauri/` the Rust core) | GitHub Actions `leyline-launcher.yml` in the public repo `orionopenwow/Leyline` | GitHub releases `launcher-v*` + `latest.json` (the self-updater); `tools/leyline-repo/export.py` (step `leyline`) copies it to the public repo |
 | **Den Lite** | `labs/den-lite/` (Rust crate, MIT) | `den-lite.yml` (CI), or the `den-lite` step on the PC | release `den-lite-latest`; the launcher downloads it on the first Play solo |
 | **Host pack / host kit** | `hosting/kit/`, `hosting/pack/make-hostpack.py`, `hosting/relay/` | `hostkit` step; realm images by `wu-images.yml` (ghcr.io) | the public Leyline release; the launcher's Host page and `/wrath/host` |
 | **Leyline addons** | `addons/`, `stream/fui-web/` (WrathUnleashedUI) | `addons` step (`addons/pack/`) | the public Leyline release; the launcher installs them |
 | **Forge** (Den ground editor, GPL-3.0, from Noggit Red) | `forge/` | `forge.yml` (Windows) | release `forge-latest` (`Forge.zip` + source tarball); the launcher starts `Forge.exe` |
-| **Azeroth Survivors** | upstream build pinned by `stream/survivors/upstream.lock.json`; `tools/survivors/` (recorder) | `survivors.yml` (`tools/survivors/build-dist.sh`) | its own address, `sv-site` step (`hosting/survivors/`); page `stream/survivors.py` |
+| **Azeroth Survivors** | upstream build pinned by `stream/survivors/upstream.lock.json`; `tools/survivors/` (recorder) | `survivors.yml` (`tools/survivors/build-dist.sh`) | its own address (survivors.leylinelauncher.com), `sv-site` step (`hosting/survivors/`); page `stream/survivors.py` |
 | **Realm** (Wrath Unleashed) | `realm/` (AzerothCore in Docker, `custom/` modules and Lua) | `wu-images.yml`; Lua by `realm-scripts.yml` | our server: `scripts`/`realm` steps, live Lua reload from CI |
 | **Mods catalog** | `mods/` (`SPEC.md`, `wu-mod.py`, `catalog/`, `template/`) | `mods` step | realm, streamed addons and `/wrath/mods` |
 | **GM console** | `gmconsole/` | `gm` step | our server (owner only) |
@@ -32,7 +32,7 @@ cleanup on 2026-11-02. Leyline is the mod launcher and the P2P realm network; ou
 | `mods/`, `addons/` | The mod format, checker and catalog; our in-game addons and their pack |
 | `forge/` | Forge, its own GPL program (`forge/README.md`); `forge/src/external/` is vendored third-party code |
 | `play/` | Local play on the PC: `Play locally (one click).bat`, `Install Forever UI.bat`, `Play 3.3.5a in browser.bat`, `Play test build.bat` and `Play Azeroth Survivors.bat` (the newest `dist-test` build) |
-| `server/` | Our server's first-deploy kit: Caddy, `deploy.sh`, rollback, backups, sign-up service, `RUNBOOK.md` |
+| `server/` | Our server's first-deploy kit: Caddy, `deploy.sh`, rollback, backups, sign-up service, `RUNBOOK.md`. `Deploy Wrath to my server.bat` takes the website from `stream/`; `portal/` only keeps the account helper |
 | `gmconsole/` | The owner-only GM console |
 | `tools/` | Ops tools, one folder per job. `control/control.py` (`STEPS`) is the control window and Autopilot; `github-workflows/` holds the workflow sources `setup\Turn on GitHub builds.bat` installs; `leyline-repo/` the public export; `cleanup/REMOVE.txt` takes moved files off the PC |
 | `setup/` | One-time setup bats (Autopilot at start-up, GitHub builds, launcher updates, automatic deploys) |
@@ -44,7 +44,7 @@ cleanup on 2026-11-02. Leyline is the mod launcher and the P2P realm network; ou
 
 ## Root files
 
-`README.md`; `Leyline Control.bat` (the control window); `UPDATE.bat` with `UPDATES-PENDING.txt` and
+`README.md`; `Leyline Control.bat` (Leyline Control, the owner's one place: Waiting on you with its buttons, the update queue and every step); `UPDATE.bat` with `UPDATES-PENDING.txt` and
 `UPDATES-DONE.txt` (the update queue); `Ship to GitHub.bat` (step `ship`); `Ship the Leyline launcher.bat`;
 `Open Leyline Launcher.bat`; `.gitignore` (game data, builds, secrets, machine state, caches).
 

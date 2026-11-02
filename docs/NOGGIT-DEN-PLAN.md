@@ -18,6 +18,11 @@ mode flags and the terrain delta writer of section 1.3 (**built**, not yet run o
 redistributable); Forge ships Font Awesome Free instead. Words used here: "the editor" is our
 renamed Noggit Red build; players never see a game brand word (docs/WORDS.md).
 
+**Update, 2 Nov:** what is in use is in docs/DEN.md ("Your Den: one button" and "Your Den's ground"): the launcher gets
+Forge by itself on the first Shape the ground (the Den bar's **Shape ground** asks the launcher the same), and the Den's
+tile is an open white plane in `patch-T` (our white texture at a known snow texture's name, a white sky, the zone name
+"Your Den"). Sections below that say "to build" may be out of date; DEN.md wins.
+
 ---
 
 ## One page
@@ -341,8 +346,8 @@ and, in the browser client, the ghost of each prop (hook 11, DEN.md).
 - **Memory (7.6 GB box).** The Builders' Realm world server is capped at 1 GB (BUILD-REALM.md; the brief says 1.5 GB:
   to check with `build-realm-check`); switching it off frees that. The main world server, MariaDB, the portal and
   Caddy share the rest. **To measure** on the box (`build-realm-check` prints memory): the main world server's peak
-  with 50 players in Dalaran; aim to keep 1.5 GB available. `server/server-report.txt` in the repo is an old report
-  (7.6 GiB total, 1.5 GiB available, swap full) and must not be taken as today's numbers.
+  with 50 players in Dalaran; aim to keep 1.5 GB available. An old server report (7.6 GiB total, 1.5 GiB
+  available, swap full; taken out of the repo on 2 Nov) must not be taken as today's numbers.
 
 ## 7. The code: crates, files, sizes
 

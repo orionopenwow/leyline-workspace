@@ -1,11 +1,15 @@
 # Play in the browser, streamed (WrathUnleashed 3.3.5a)
 
-Signed-in players press **Play in your browser** on `https://play.openvanilla.app/wrath` and play a
-small "mini" slice of the game at `https://wrath.openvanilla.app`, with no download and no game
+Signed-in players press **Play in your browser** on `https://leylinelauncher.com/wrath` and play a
+small "mini" slice of the game at `https://play.leylinelauncher.com`, with no download and no game
 files of their own. The game files come from the server, but only the slice: Dalaran, the two
 capitals, the starter areas, and the instances of the tiers that fit in the disk budget. The full
 client is never hosted. The realm keeps browser players inside the slice. To go anywhere else, they
 play with their own game files: in the browser too ("Play with my own game files", below).
+
+Names: since the domain move (docs/DOMAIN-MOVE.md) the site is `leylinelauncher.com` and the game
+`play.leylinelauncher.com`. The old names (`play.openvanilla.app`, `wrath.openvanilla.app`) still answer: page loads
+are redirected, and the server's Caddy blocks, scripts and self-checks keep them as their first name.
 
 Three PC tools: **Size report.bat** (what every part of the game would cost on the server),
 **Make mini slice.bat** (build and upload the slice) and **Upload a mini slice.bat**.
@@ -13,12 +17,12 @@ Three PC tools: **Size report.bat** (what every part of the game would cost on t
 ## How it works
 
 ```
-play.openvanilla.app/wrath/play?mini=mini   (wu-portal: signed in? mark the account on the realm,
+leylinelauncher.com/wrath/play?mini=mini    (wu-portal: signed in? mark the account on the realm,
         |                                    12 h session, one-time 60 s code)
         v
-wrath.openvanilla.app/__gate?code=...       (wu-portal: code -> HttpOnly Secure SameSite=Lax cookie wu_play)
+play.leylinelauncher.com/__gate?code=...    (wu-portal: code -> HttpOnly Secure SameSite=Lax cookie wu_play)
         v
-wrath.openvanilla.app/                      Caddy forward_auth -> wu-portal /__auth (cookie valid?)
+play.leylinelauncher.com/                   Caddy forward_auth -> wu-portal /__auth (cookie valid?)
    /__env.js  -> wu-portal                  window.__wenilla_env = {user, pass, host}: auto-login
    /, /data/*, /ws/3724, /ws/8085 -> wu-play   wenilla-host --only-listed: the slice and nothing else,
                                             WebSockets relayed to play.openvanilla.app:3724/8085
@@ -35,7 +39,7 @@ in game: lua/ov_slices.lua                  a marked account that leaves the sli
   account outside its tiers is sent back to Dalaran (resurrected if dead). It gets a whisper and a
   centre-screen message: *"This part of the world isn't streamed to the browser. Drop your own 3.3.5a
   game folder on the game page (or Esc > Mods & Workshop > Leyline realms > Use my game folder) to go
-  anywhere: it is read on your computer, nothing is uploaded. How: play.openvanilla.app/wrath/docs/play
+  anywhere: it is read on your computer, nothing is uploaded. How: leylinelauncher.com/wrath/docs/play
   - or ask on our Discord: https://discord.gg/hVeUxYwbkr"* (centre: *"Not streamed: drop your 3.3.5a
   game folder on the page to go here"*). On Northrend (map 571),
   only zone 4395 (Dalaran, including the Underbelly and the Violet Citadel) counts as inside. Dalaran
@@ -218,7 +222,7 @@ this. The export report shows the MB saved and the full size per tier.
    `/srv/wrath/stream/slices/mini`.
 4. **Turn it on** (once, on the server): `bash /srv/wrath/stream/stream-up.sh`. You can run it again
    safely. It checks everything first and prints what to fix.
-5. **Try it**: sign in at https://play.openvanilla.app/wrath and press **Play in your browser**.
+5. **Try it**: sign in at https://leylinelauncher.com/wrath and press **Play in your browser**.
 6. **Better accuracy** (optional): run **Record a capture.bat** `<label>` for each place, then
    **Make mini slice.bat** again.
 7. **Off switch**: `bash /srv/wrath/stream/stream-switch.sh off`. `/wrath/play` then says "Streaming
@@ -228,9 +232,11 @@ this. The export report shows the MB saved and the full size per tier.
    page and the Caddyfile and unloads the realm rule. The slice files stay; delete
    `/srv/wrath/stream/slices/mini` to free the disk.
 
-**Keep it after a redeploy**: `deploy.sh` and its .bat upload `wrath/server/portal/wrath_portal.py`
-again. Copy `stream/wrath_portal.py` over that file, or run `stream-up.sh` again after a deploy. With
-`WU_STREAM=0`, the new page behaves exactly like the old one.
+**After a redeploy**: `server/Deploy Wrath to my server.bat` takes the website from `stream/` (`wrath_portal.py`, the
+modules beside it, their data and art: the same files "Update sign-in and warm-up.bat" sends); `server/portal/` only
+keeps the account helper (`soap_account_sql.py`). So a fresh deploy already has this page. Run `stream-up.sh` again
+after a deploy for the streaming parts (Caddy, wu-play, the realm rule). `WU_STREAM=0` (the default until `stream-up.sh`
+sets 1) keeps streaming off.
 
 ## What it costs
 
@@ -258,7 +264,7 @@ sharing. Without the SSH answer it still runs and says creatures are not counted
 ## Play with my own game files (in the browser)
 
 The account page shows **Play with my own game files** (WU_OWNFILES=1, set by stream-up.sh). It opens
-the same site, `https://wrath.openvanilla.app/?ownfiles=1`, with a session that has **no realm mark**
+the same site, `https://play.leylinelauncher.com/?ownfiles=1`, with a session that has **no realm mark**
 (the whole world; an earlier stream mark is cleared) and **no /data from the server** (`/__auth`
 answers 403 for /data; the page, its scripts and `/ws` are allowed). The page (`ownfiles.js`) asks for
 the player's own 3.3.5a folder and reads it locally; nothing is uploaded. It works with streaming
@@ -375,7 +381,7 @@ Operator, once (`server/demo-pool.sh` explains each step):
 |---|---|
 | `bin/wenilla-host` | Linux x86_64 host (glibc ≥ 2.34; runs in debian:bookworm-slim, glibc 2.36) |
 | `bin/wenilla-host.exe` | Windows host, for `--deps`, `--export` and `--record` on your PC |
-| `wrath_portal.py` | the sign-in page with the gate (a copy of `wrath/server/portal/wrath_portal.py` plus streaming) |
+| `wrath_portal.py` | the website's sign-in page and router, with the gate (the only copy: `server/Deploy Wrath to my server.bat` and "Update sign-in and warm-up.bat" both send this file) |
 | `lua/ov_slices.lua`, `lua/lfg_ids.py`, `lua/tiers_lua.py` | the realm rule, the Dungeon Finder id/level table maker, the tier table maker (mini.json → `ov_slices_tiers.lua`) |
 | `sql/ov_stream_accounts.sql` | the mark table (acore_auth) |
 | `slices/mini.json` (+ boot manifests) | the slice description, tiers, capture lists |

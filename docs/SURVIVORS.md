@@ -39,10 +39,10 @@ sv-play (hosting/survivors/docker-compose.yml)   our wenilla-host --www <build> 
 
 ## Your steps
 
-1. **Pick the address.** A subdomain of ours, without "wow" in it. The placeholder is `survivors.leylinelauncher.com`
-   (`hosting/survivors/address.txt`, the first line that is not a comment). TODO(owner): confirm or change it.
-2. **DNS.** An A record for that name pointing at the server (the same address as the website, play.leylinelauncher.com after the domain move). The server
-   step checks it and stops before touching Caddy when it isn't there yet.
+1. **The address.** `survivors.leylinelauncher.com` (`hosting/survivors/address.txt`, the first line that is not a
+   comment), Azeroth Survivors' own address in the one address list (`tools/domain/addresses.json`).
+2. **DNS.** Done 2 Nov: an A record for that name pointing at the server (the same address as the website). The server
+   step checks it and stops before touching Caddy when it isn't there.
 3. **Ship the website part.** The "signin" step (it now carries `stream/survivors.py`). `/wrath/survivors` then shows
    the page with "Coming soon".
 4. **Turn on the survivors build** ("setup\Turn on GitHub builds.bat" puts `survivors.yml` in the workspace repo;
@@ -124,7 +124,8 @@ Tests: `python3 -I stream/tests/test_survivors.py`, `python3 -I tools/survivors/
 ## Open questions
 
 - **Permission statement** (TODO(owner)): what Aethus said about hosting it, in your words, for the page.
-- **The address** (TODO(owner)): `survivors.leylinelauncher.com` is a placeholder (the address is config: `address.txt`, nothing else names it).
+- **The address**: `survivors.leylinelauncher.com`, with its DNS record since 2 Nov (the address is config: `address.txt` and
+  `tools/domain/addresses.json`, tested to match).
 - **The logos**: the slice leaves out `Interface\Glues\Common\Glues-WoW-Logo.blp` and
   `Interface\Glues\Mainmenu\Glues-BlizzardLogo.blp` (both are in upstream's `boot-manifest.json`, so every recording
   asks for them; the exporter, survivors-check and the server's self-check all refuse them). Whether the pick screen misses it

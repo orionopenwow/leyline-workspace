@@ -13,8 +13,14 @@ files are read on their PC by the kit's extractor, and nothing is ever downloade
 
 ## For hosts
 
+The Host page today (`launcher/ui/hostconsole.js`, `hostmodes.js`): first the modes anyone can host, then three
+numbered steps, **Get ready** (the Host pack and Docker, one click each), **Pick your game** and **Start your realm**,
+or **Link my server**; once a realm is set up, the realm's console (its state, Start and Stop, GM controls, the health
+check, the realm tools). The card and button names in the list below are from the first version of the page; some
+have new names now.
+
 1. In Leyline, open **Host**. The **HOST PACK** card says whether the pack is installed and whether a newer one is out.
-2. Press **GET THE HOST PACK**. Leyline:
+2. Press **Get the Host pack**. Leyline:
    1. downloads it;
    2. checks its sha256 and the refusal list;
    3. unpacks it into its own app data folder (`<app data>/Leyline/hostpack/kit`);

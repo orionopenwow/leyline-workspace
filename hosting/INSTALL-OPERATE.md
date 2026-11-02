@@ -3,6 +3,11 @@
 For the owner. What each piece is, how to try it on your PC today, what going live takes (and
 which steps need your OK), and how to run it afterwards. Design: `README.md`.
 
+Names: since the domain move (docs/DOMAIN-MOVE.md) the relay is `relay.leylinelauncher.com` and the site
+`leylinelauncher.com`. The old names (`relay.openvanilla.app`, `play.openvanilla.app`) still answer for what is already
+installed, and the server's Caddy blocks and scripts keep them as their first name, so the server sections below
+name them as they are on the box.
+
 ## 1. What goes where
 
 | Folder | Goes to | What |
@@ -14,15 +19,17 @@ which steps need your OK), and how to run it afterwards. Design: `README.md`.
 | `tools/github-workflows/` (source copies) | `.github/workflows/`, put there by `setup\Turn on GitHub builds.bat` | tests (`wu-hosting.yml`) and the image build (`wu-images.yml`: publishes on a push to main, see 9.4) in WrathUnleashed; `leyline-launcher.yml` in the public Leyline repo |
 | `tests/` | with the code | unit tests, docker end-to-end, soak |
 
-The zip players download is published by the Autopilot step `hostkit` (`kit/Publish host kit.bat`, see 9.5):
-https://github.com/orionopenwow/Leyline/releases/download/host-kit/WrathUnleashed-host-kit.zip, the link the
-site's host page uses. For a local copy, `Make host kit.bat` (run from `WrathUnleashed\host\`) still fills
+The zip players download is the **Host pack**, published by the Autopilot step `hostkit` (`kit/Publish host
+kit.bat`, see 9.5): a versioned zip on the public release `host-pack`, named by `stream/hostpack.json`, the one link
+the site's host page, the docs and the launcher all use. The same step still puts the older fixed-name zip on the
+`host-kit` release (`WrathUnleashed-host-kit.zip`) for old links. For a local copy, `Make host kit.bat` (run from the
+kit's copy in `Desktop\Leyline\host\`, with `..\realm` beside it) still fills
 `realm-files\` from `..\realm\` (profiles, `modules.env`, Lua, the profile SQL, the build recipe) and zips it.
 
 ## 2. Try it on your PC (nothing public, nothing deployed)
 
-The kit talks to `relay.openvanilla.app`, which doesn't exist yet. To see the whole thing work on
-your PC now, run the end-to-end test: it starts a private relay in Docker, the host kit against
+The kit talks to `relay.leylinelauncher.com` (falling back to the old name). To see the whole thing work on
+your PC without it, run the end-to-end test: it starts a private relay in Docker, the host kit against
 your real AzerothCore images and your extracted game data, and headless players that make an
 account on the join API, create a character, enter the world and log out, first private, then
 public from a fresh "IP":
@@ -166,7 +173,7 @@ data extraction (minutes), database import (5-20 min). It ends with the invite l
 own GM login (`state\host-login.txt`).
 
 Friends open the link once on the PC they play from, make an account on that page, and set
-`set realmlist relay.openvanilla.app` in `Data\enUS\realmlist.wtf`.
+`set realmlist relay.leylinelauncher.com` in `Data\enUS\realmlist.wtf` (the launcher does this for them).
 
 | Do | Windows | macOS/Linux |
 |---|---|---|
@@ -216,13 +223,13 @@ who reinstalls with the same `state\` keeps the same id, ports and listing.
 ## 7. Known limits and open questions
 
 1. **`set realmlist host:port` on the stock 3.3.5a client** is used for the per-realm auth port.
-   The shared port 3724 (`set realmlist relay.openvanilla.app`) avoids depending on it and is what
+   The shared port 3724 (`set realmlist relay.leylinelauncher.com`) avoids depending on it and is what
    the join page shows first. The world connection always uses the realm list's `ip:port`, which
    every 3.3.5a client supports. Verify once with a real client on your PC (section 2, then a
    manual login with the printed realmlist lines).
 2. **wenilla-host** (`crates/wenilla-host`) only proxies `/ws/3724` and `/ws/8085` to a fixed
    upstream, so it can't follow the realm's relay ports. The browser client needs no wenilla-host
-   for relayed realms: point its WebSocket base at `wss://relay.openvanilla.app/r/<realm-id>`
+   for relayed realms: point its WebSocket base at `wss://relay.leylinelauncher.com/r/<realm-id>`
    (private: `/r/<id>/i/<secret>`), and the relay maps both the standard and the realm's own
    ports. If a desktop flow must go through wenilla-host, it needs an `--allow-port` flag (one line
    in `ws.rs`'s allowlist); not changed here (read-only tree).
@@ -260,7 +267,7 @@ runs on the box:
   `relay.openvanilla.app` is added to the site's Caddyfile (backup first, restored if Caddy refuses).
   `RELAY_TRUSTED_PROXIES` lets the relay read `X-Forwarded-For` from that bridge only.
 * **Ports**: game ports 40000-40999 on the host network. 3724 is the realm's own authserver here, so the
-  shared port is off (`RELAY_SHARED_AUTH_PORT=0`): players use `set realmlist relay.openvanilla.app:<port>`
+  shared port is off (`RELAY_SHARED_AUTH_PORT=0`): players use `set realmlist relay.leylinelauncher.com:<port>`
   (the join page shows it), which needs the 7.1 check with a real client. ufw is opened if active; a
   Hetzner Cloud Firewall, if any, needs TCP 40000-40999 by hand (below).
 * **Are the game ports reachable?** After the SSH part, the relay step (and every server check) runs
@@ -324,9 +331,9 @@ signed heartbeat, and the realm list shows it as "House rules".
 
 ### 9.3 The realm list on the play page
 
-`https://play.openvanilla.app/wrath/realms` (linked from the play and sign-in pages): the official realm first
+`https://leylinelauncher.com/wrath/realms` (linked from the play and sign-in pages): the official realm first
 (its own status), then the public community realms from the relay's `/api/listing/realms.json` with name,
-ruleset, players (and bots), house rules and a **Join** link (`https://relay.openvanilla.app/join/<id>`).
+ruleset, players (and bots), house rules and a **Join** link (`https://relay.leylinelauncher.com/join/<id>`).
 The list is fetched in the background and cached (60 s; 30 s after a failure); a page waits at most 2.5 s,
 and only before the very first fetch, so a slow or dead relay never slows the play page. The relay step
 writes the relay's address on the Docker network to `/srv/wrath/portal/relay-listing.url`, so the list
@@ -378,5 +385,7 @@ or token. Anything flagged stops it before the upload. It uploads to the release
 `orionopenwow/Leyline` (made on first use, the file replaced after) with the owner's gh sign-in (a release needs no
 workflow permission), checks the link answers without signing in, and prints it:
 https://github.com/orionopenwow/Leyline/releases/download/host-kit/WrathUnleashed-host-kit.zip
-(`stream/hostflow.py`'s default). The Leyline repo must exist first (step `leyline`). Run it again whenever the
+Then it builds the same kit as the Host pack (`hosting/pack/make-hostpack.py --upload --write-site`: the versioned zip,
+its torrent and `hostpack.json` on the release `host-pack`, and `stream/hostpack.json`, which the `signin` step
+deploys; the site, its docs and the launcher hand out that pack). The Leyline repo must exist first (step `leyline`). Run it again whenever the
 realm files change.

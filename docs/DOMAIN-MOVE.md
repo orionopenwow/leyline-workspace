@@ -2,6 +2,10 @@
 
 Owner, 1 Nov 2026: the domain was bought at 16:11 (registrar and DNS: Squarespace Domains).
 
+Status, 2 Nov: the site runs on `leylinelauncher.com`, with `play.`, `relay.` and `www.`; the old names answer only as
+redirects (page loads) or for what is already installed (launchers, host packs, desktop realmlists).
+`survivors.leylinelauncher.com` is Azeroth Survivors' own address (its DNS record was added 2 Nov; docs/SURVIVORS.md).
+
 | Part | New name (what players read) | Old name (answers forever) |
 |---|---|---|
 | The website (its `/` opens the Leyline front page) | `leylinelauncher.com` | `play.openvanilla.app` |
@@ -23,8 +27,8 @@ Owner, 1 Nov 2026: the domain was bought at 16:11 (registrar and DNS: Squarespac
    | A | `relay` | the server's IPv4 |
    | A | `www` | the server's IPv4 |
 
-   Optional 5th record, only when Azeroth Survivors goes live (docs/SURVIVORS.md): A, Host `survivors`, the same
-   IPv4 (`survivors.leylinelauncher.com`; the check step prints it too, but does not wait for it).
+   A 5th record for Azeroth Survivors (docs/SURVIVORS.md): A, Host `survivors`, the same IPv4
+   (`survivors.leylinelauncher.com`; added 2 Nov). The check step prints it too, but does not wait for it.
 
    AAAA only if the check step says the server has IPv6, and then only for `play` and `www`. Never for `@` or
    `relay`: desktop game clients only speak IPv4.

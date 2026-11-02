@@ -8,7 +8,7 @@ Leyline plays with game files you already have. We never download, host or link 
 
 1. **Get your game files.** Find the game folder on your PC, or put back a copy you kept. See [Where your files usually are](#where-your-files-usually-are).
 2. **Add your folder.** In the Leyline launcher, press **PLAY** or pick **Add a game folder…** in the play bar. The launcher reads the version itself.
-3. **Pick a realm.** The official realm is picked for you. The play bar's realm list also has **Your Den** (your own room to build in, one click), the realms you host or played on, and **Host a server…**; **Realms** lists every realm.
+3. **Pick a realm.** The official realm is picked for you. The play bar's realm list also has **Your Den** (your own white world to build in, one click), the realms you host or played on, and **Host a server…**; **Realms** lists every realm.
 4. **Play.** Press **PLAY**. The launcher points your game at the realm and keeps your original settings as a backup.
 
 No files at all? You can still play in your browser: see [Browser or your own client](#browser-or-your-own-client).
@@ -36,14 +36,18 @@ Both use the same realm, the same account and the same characters.
 
 ## Your Den
 
-Your Den is your own small white room, on your PC. Open the launcher and press **Your Den**: it usually opens in a few seconds. At the login screen the account is `DEN` and the password is `den`.
+Your Den is your own white world to build in, on your PC. Open the launcher, go to **Your Den** and press **Play solo**. One click: the launcher starts your Den on this PC, signs you in and takes you into the world. The first time, it downloads the small Den program first. No internet or sign-in is needed after that.
 
-- **Build.** Type `.den place chair` to put a chair in front of you, or `.den stamp inn now` for a whole inn. `.build undo` takes the last one back.
-- **Save.** `.den save mine` keeps your Den in a file. The launcher's **Saved Dens** opens it again, or sends it to a friend.
-- **Grow.** `.den grow` makes the room bigger when you need more space.
-- **Invite a friend.** When you're ready, **Invite friends** on the Den page moves your Den to a server friends can join, then copies your invite link.
+In your Den a bar at the top of the screen has everything:
 
-Type `.den` in your Den for every command.
+- **Build** (F7). Place anything from the catalog: search, then move, turn or delete it. Undo takes the last change back. In chat, `.den place chair` puts a chair in front of you, and `.den stamp inn now` a whole inn. `.build undo` takes the last one back.
+- **Shape ground.** Opens Forge, the world editor, on your Den's ground: raise hills, dig, paint. The first time, the launcher gets Forge for you. Your game shows the new ground after a restart.
+- **Play** (F8). Hides the tools so you just walk your Den. F8 again brings them back.
+- **Save.** Your Den saves itself as you go, and the bar says when. **Save** keeps a copy under a name, like `.den save mine`. The launcher's **Saved Dens** opens it again, or sends it to a friend.
+- **Invite.** Makes one link for one friend. Send it: they open it in their launcher and join you here, through the Leyline network. The launcher's **Invite friends** does the same.
+- **Help.** The short intro again.
+
+`.den grow` gives you more space when you need it. Your game's own key bindings are kept in your Den. Type `.den` in your Den for every command.
 
 ## Level 1 or boost to 80
 

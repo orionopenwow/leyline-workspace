@@ -3,7 +3,7 @@
 
     py -3 tools\\audit\\audit.py                 on the owner's PC (Leyline Control: Release audit, or the step "audit")
     python3 tools/audit/audit.py --fake          anywhere else: the site's own code and fake servers on 127.0.0.1
-    ... --only site,downloads,server,hosting,wrath,den,launcher   --no-boost   --logs <folder>
+    ... --only site,downloads,server,hosting,wrath,herokey,den,launcher   --no-boost   --logs <folder>
 
 Prints one PASS / FAIL / SKIP line per check and writes logs/audit-latest.txt and logs/audit-latest.html (green or
 red per feature, what failed, the one next action, and the short list only a person can check). Read only, except
@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import FAIL, ROOT, Ctx, Recorder, load_config, short  # noqa: E402
 import report  # noqa: E402
 
-SECTIONS = ["site", "downloads", "server", "hosting", "wrath", "den", "launcher"]
+SECTIONS = ["site", "downloads", "server", "hosting", "wrath", "herokey", "den", "launcher"]
 
 
 def main(argv=None) -> int:
@@ -74,6 +74,9 @@ def main(argv=None) -> int:
                     import wrath
                     pw = server.audit_account(ctx, rec)
                     wrath.run(ctx, rec, cfg["audit_account"], pw)
+                elif name == "herokey":
+                    import herokey
+                    herokey.run(ctx, rec)
                 elif name == "den":
                     import den
                     den.run(ctx, rec)

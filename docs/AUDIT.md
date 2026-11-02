@@ -88,6 +88,44 @@ next) and what the boost writes for its own character (`ov_boosts`, `ov_main_cho
 character can't be boosted again, and after 10 boosts the account's kits run out: the boost still levels, which
 is what is checked). `--no-boost` leaves the boost out.
 
+### Hero Key
+
+Owner, 2 Nov: "need a robust hero key audit so people can use it, log in, reset it, change their username, full
+functionality so it never fails." The section `herokey` (`tools/audit/herokey.py`, feature "Hero Key" in the report)
+walks the journey a new player takes, live on the website, through the same calls the launcher and the Hero Key page
+use (`stream/herokeys.py`). Each line is its own PASS / FAIL / SKIP with what to do.
+
+| Check | What it does |
+|---|---|
+| Get a Hero Key | POST `account/new {audit: true}`: a token, a key (`ovk1.`...) and a made-up name that passes the name rules |
+| Status: the key while new, then saved | GET `herokey` shows the new key; POST `herokey/saved`; then the key is no longer shown |
+| Sign in with the key | POST `herokey/signin {key}`: a new token, the same account |
+| Sign in on the website's page | `/wrath/key`'s own form (its form token and cookie), POST `/wrath/key/signin`: the session cookie, then the signed-in card |
+| Signed out on the website: the old cookie gets the signed-out card | the website's sign-out, then the old cookie on `/wrath/key`: the signed-out card, never a redirect back to itself |
+| A new key: the old one stops working | POST `herokey/new`: the old key is refused with words, the new one signs in |
+| A pasted key with spaces, a line break and OVK1. still signs in | the new key pasted the way people paste it |
+| Change your name | POST `profile {name}` with a fresh `Auditor...` name, read back from `me` (one change a run: the limit is 3 a day) |
+| A refused name gets plain words | too short, a company name, a team name: each a 400 with a readable message |
+| Password: set, sign in, remove | a random 16-character password, `password/signin {name#tag, password}`, `{remove: true}`, then refused |
+| Sign out: the token stops working | `token/revoke`, then `me` answers 401 |
+| A wrong key and a garbage body get plain refusals | a made-up key: 401 with words; a broken body: 400; never a 5xx |
+| The test account is cleaned up | the run's other tokens revoked, then POST `audit/close`: the account's profile, history, launcher sign-ins, kept sessions and password are removed and its token stops working |
+
+Limits it keeps: one new account a run (the site allows 3 an hour per network: a fourth run in the hour is a SKIP)
+and two keys (the one the account is born with and one reset; the service allows 10 new keys an hour). About six key
+sign-ins and two password sign-ins a run, inside the 10 in 15 minutes per network. Keys, tokens and passwords are
+never in a line or the report: the recorder hides them and the lines show at most `ovk1.ab…`.
+
+The cleanup is a server piece (`stream/herokeys.py`): `account/new {audit: true}` marks the new account as the
+audit's at birth (no existing account can be marked), and `audit/close` works only with that account's own launcher
+token, within a day of its birth, and only while it has no friend, request, block, message or report, so it never
+takes anything from another player. The website service's own guest account and its last key stay (the service has
+no way to remove one). `WU_AUDIT_CLOSE=0` on the site turns `audit/close` off; until the site has the newest
+herokeys.py (the Control step `signin`), the cleanup line is red and each run leaves one test account.
+
+`LEYLINE_AUDIT_HEROKEY=0` skips the section; `--only herokey` runs just it. With `--fake` it runs against the site's
+own code and a fake sign-in service (`tools/audit/fakes.py SignInService`).
+
 ## Running it elsewhere
 
 ```

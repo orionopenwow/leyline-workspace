@@ -1,6 +1,8 @@
 """The audit's fake world, for CI and for a run anywhere but the owner's PC (audit.py --fake):
 
   * the website: the site's own code (stream/wrath_portal.py) on 127.0.0.1 with fake data (signed out, no realm);
+  * the website's sign-in service (the Rust site's Hero Key part: guest accounts, keys kept as hashes, a new key
+    revokes the old one, shown until saved, /auth/key, /logout), so the Hero Key section runs the real herokeys.py;
   * the relay: a listing with Wrath Unleashed on it and a join page;
   * GitHub: the launcher, Host pack and Den Lite release files with matching checksums (Den Lite: the real program
     when DEN_LITE_BIN is set, so the Den section runs it);
@@ -15,10 +17,13 @@ import hashlib
 import io
 import json
 import os
+import re
+import secrets
 import struct
 import sys
 import tempfile
 import threading
+import urllib.parse
 import zipfile
 import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -126,7 +131,134 @@ def relay():
                   f"/join/{WU_ID}": (200, "text/html; charset=utf-8", b"<!doctype html><html><body>Join</body></html>")})
 
 
-def portal(tmp: Path, relay_base: str, hostpack: dict):
+# ---------------------------------------------------------------------- the website's sign-in service
+KEY_ABC = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+
+
+class SignInService:
+    """The Rust site's sign-in as stream/herokeys.py sees it (stream/tests/test_herokeys.py has the same fake)."""
+
+    def __init__(self):
+        self.users, self.sessions, self.keys, self.play, self.lock = {}, {}, {}, {}, threading.Lock()
+        svc = self
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def jar(self):
+                return dict(p.strip().partition("=")[::2] for p in self.headers.get("Cookie", "").split(";") if "=" in p)
+
+            def reply(self, st, body=b"", ctype="text/html", cookies=(), loc=None):
+                body = body.encode() if isinstance(body, str) else body
+                self.send_response(st)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(body)))
+                for c in cookies:
+                    self.send_header("Set-Cookie", c)
+                if loc:
+                    self.send_header("Location", loc)
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self):
+                with svc.lock:
+                    svc.get(self)
+
+            def do_POST(self):
+                n = int(self.headers.get("Content-Length", "0") or 0)
+                form = dict(urllib.parse.parse_qsl(self.rfile.read(n).decode()))
+                with svc.lock:
+                    svc.post(self, form)
+
+        self.srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        self.srv.daemon_threads = True
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.base = f"http://127.0.0.1:{self.srv.server_address[1]}"
+
+    def mint(self, uid):
+        kid = "".join(secrets.choice(KEY_ABC) for _ in range(10))
+        sec = secrets.token_urlsafe(32)
+        for k in self.keys.values():
+            if k["uid"] == uid:
+                k["revoked"] = True
+        self.keys[kid] = {"uid": uid, "hash": hashlib.sha256(f"{kid}\n{sec}".encode()).hexdigest(), "revoked": False, "saved": False}
+        return f"ovk1.{kid}.{sec}"
+
+    def verify(self, key):
+        m = re.fullmatch(r"ovk1\.([A-Za-z0-9]{10})\.([A-Za-z0-9_-]{43})", key or "")
+        k = self.keys.get(m.group(1)) if m else None
+        if not k or k["revoked"] or k["hash"] != hashlib.sha256(f"{m.group(1)}\n{m.group(2)}".encode()).hexdigest():
+            return None
+        return k["uid"]
+
+    def active(self, uid):
+        return next((kid for kid, k in self.keys.items() if k["uid"] == uid and not k["revoked"]), None)
+
+    def session(self, uid):
+        t = secrets.token_urlsafe(24)
+        self.sessions[t] = {"uid": uid, "csrf": secrets.token_hex(8)}
+        return f"wr_session={t}; Path=/; HttpOnly; Secure; SameSite=Lax"
+
+    def get(self, h):
+        s = self.sessions.get(h.jar().get("wr_session", ""))
+        if not s:
+            return h.reply(303, loc="/login") if h.path.startswith("/account") else h.reply(401)
+        u = self.users[s["uid"]]
+        if h.path == "/api/me":
+            return h.reply(200, json.dumps({"username": u["username"], "display_name": u["display"]}), "application/json")
+        if h.path == "/api/play":
+            return h.reply(200, json.dumps({"user": u["acct"]}), "application/json")
+        if h.path.startswith("/account/key"):
+            key = self.play.get(h.jar().get("wr_herokey_play", ""))
+            if key and self.verify(key) != s["uid"]:
+                key = None
+            kid = self.active(s["uid"])
+            saved = bool(kid and self.keys[kid]["saved"])
+            page = ((f'<code id="keytext">{key}</code>' if key else "")
+                    + ('<div class="ok">Your Hero Key is saved.</div>' if saved and not key else "")
+                    + "<span>Key made <b>1 Nov 2026</b></span><span>Last used <b>1 Nov 2026</b></span>"
+                    + f'<form><input type="hidden" name="_csrf" value="{s["csrf"]}"></form>')
+            return h.reply(200, page)
+        h.reply(404)
+
+    def post(self, h, form):
+        if h.headers.get("Sec-Fetch-Site") not in ("same-origin", "none"):
+            return h.reply(403, "cross-site")
+        if h.path == "/auth/key":
+            uid = self.verify(form.get("key", ""))
+            if not uid:
+                return h.reply(200, "<p class=err>That Hero Key didn't work.</p>")
+            return h.reply(303, loc="/account/key?back=1", cookies=[self.session(uid)])
+        if h.path == "/auth/guest":
+            uid = len(self.users) + 1
+            self.users[uid] = {"username": f"guest-{uid:08d}", "display": f"Guest {uid:08d}", "acct": f"AUDITHK{uid:04d}"}
+            pc = secrets.token_hex(8)
+            self.play[pc] = self.mint(uid)
+            return h.reply(303, loc="/", cookies=[self.session(uid), f"wr_guest=g{uid}; Path=/; HttpOnly; Secure; SameSite=Lax",
+                                                  f"wr_herokey_play={pc}; Path=/; HttpOnly; Secure; SameSite=Lax"])
+        s = self.sessions.get(h.jar().get("wr_session", ""))
+        if not s:
+            return h.reply(303, loc="/login")
+        if h.path == "/logout":
+            self.sessions = {k: v for k, v in self.sessions.items() if v is not s}
+            return h.reply(303, loc="/", cookies=["wr_session=; Path=/; Max-Age=0"])
+        if form.get("_csrf") != s["csrf"]:
+            return h.reply(403, "form token mismatch")
+        if h.path == "/account/key/mint.json":
+            pc = secrets.token_hex(8)
+            self.play[pc] = self.mint(s["uid"])
+            return h.reply(200, json.dumps({"key": self.play[pc]}), "application/json",
+                           cookies=[f"wr_herokey_play={pc}; Path=/; HttpOnly; Secure; SameSite=Lax"])
+        if h.path == "/account/key/saved":
+            kid = self.active(s["uid"])
+            if kid:
+                self.keys[kid]["saved"] = True
+            return h.reply(200, json.dumps({"saved": True}), "application/json", cookies=["wr_herokey_play=; Path=/; Max-Age=0"])
+        h.reply(404)
+
+
+def portal(tmp: Path, relay_base: str, hostpack: dict, signin_base: str = "http://127.0.0.1:9"):
     """The site's own code, as test_site.py runs it, with fake data."""
     mods, arm, data, ley = (tmp / d for d in ("mods", "armory", "data", "leyline"))
     for d in (mods / "files", arm / "c", data, ley):
@@ -137,7 +269,7 @@ def portal(tmp: Path, relay_base: str, hostpack: dict):
          "description": "A test entry."}]}))
     (mods / "files" / "audit-mod-1.0.0.zip").write_bytes(b"PK")
     (arm / "index.json").write_text(json.dumps({"updated": 0, "chars": []}))
-    os.environ.update(SOAP_USER="WUSOAP", SOAP_PASS="x", AC_SOAP_URL="http://127.0.0.1:9/", PORTAL_URL="http://127.0.0.1:9",
+    os.environ.update(SOAP_USER="WUSOAP", SOAP_PASS="x", AC_SOAP_URL="http://127.0.0.1:9/", PORTAL_URL=signin_base,
                       WU_STREAM="0", STREAM_HOST="play.example", PUBLIC_HOST="site.example", WU_MODS_DIR=str(mods),
                       WU_ARMORY_DIR=str(arm), WU_ART_DIR=str(ROOT / "stream" / "www-files" / "art"),
                       WU_PORTAL_DATA=str(data), WU_LEYLINE_DIR=str(ley),
@@ -378,19 +510,20 @@ class Fakes:
         self.tmp = Path(tempfile.mkdtemp(prefix="leyline-audit-fake-"))
         self.gh_srv, self.gh, hostpack = github(self.tmp)
         self.relay_srv, self.relay = relay()
-        self.site_srv, self.site = portal(self.tmp, self.relay, hostpack)
+        self.signin = SignInService()
+        self.site_srv, self.site = portal(self.tmp, self.relay, hostpack, self.signin.base)
         self.loop = asyncio.new_event_loop()
         threading.Thread(target=self.loop.run_forever, daemon=True).start()
         self.wrath = asyncio.run_coroutine_threadsafe(FakeWrath().start(), self.loop).result(10)
 
     def ctx_args(self):
-        fake = {"site": self.site, "relay": self.relay, "auth": f"127.0.0.1:{self.wrath.realm.auth_port}",
+        fake = {"site": self.site, "relay": self.relay, "signin": self.signin.base, "auth": f"127.0.0.1:{self.wrath.realm.auth_port}",
                 "ssh_checks": SSH_CHECKS, "ssh_account": SSH_ACCOUNT}
         rewrite = [("https://github.com/", self.gh + "/gh/"), ("https://api.github.com/", self.gh + "/api/")]
         return fake, rewrite
 
     def close(self):
-        for s in (self.gh_srv, self.relay_srv, self.site_srv):
+        for s in (self.gh_srv, self.relay_srv, self.site_srv, self.signin.srv):
             s.shutdown()
             s.server_close()
         self.loop.call_soon_threadsafe(self.loop.stop)

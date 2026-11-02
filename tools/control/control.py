@@ -252,7 +252,11 @@ SECRET_RES = [
 ]
 
 
+ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")   # terminal colours (the server's logs): shown as junk on the page
+
+
 def scrub(line: str) -> str:
+    line = ANSI.sub("", line)
     for rx, rep in SECRET_RES:
         line = rx.sub(rep, line)
     return line

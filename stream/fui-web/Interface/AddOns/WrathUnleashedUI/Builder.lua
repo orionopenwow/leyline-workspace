@@ -1177,5 +1177,6 @@ SLASH_WUSPAWNMENU1 = "/spawnmenu"
 SlashCmdList["WUSPAWNMENU"] = function() B.ToggleMenu() end
 
 W.Builder = B
+B.SetStatus = setStatus   -- the Den bar (DenBar.lua) shows Den Lite's answers here too
 B.Window, B.STEPS, B.CATS, B.CAT_ICONS, B.CatIcon = function() return win end, STEPS, CATS, CAT_ICONS, catIcon
 B.Menu, B.Panel, B.MENU_TABS = function() return menu end, function() return panel end, MENU_TABS

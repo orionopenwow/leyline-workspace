@@ -223,6 +223,8 @@ class DenSteps(unittest.TestCase):
         b = self.w.until(wowclient.SMSG_CHAR_ENUM)
         self.w.send(wowclient.CMSG_PLAYER_LOGIN, den_check.struct.pack("<Q", den_check.struct.unpack_from("<Q", b, 1)[0]))
         self.w.until(wowclient.SMSG_LOGIN_VERIFY_WORLD)
+        # the Den bar's hello (WrathUnleashedUI DenBar.lua): Den Lite's own lines are toasts in it from now on
+        self.w.addon("Wren", "OVMOD", "wuden\thello\t1/1\t1")
         self.w.s.settimeout(None)
         self.stop = threading.Event()
 
@@ -284,7 +286,7 @@ class DenSteps(unittest.TestCase):
                      "PASS save: .den save smoketest: smoketest.den.json, 1 props", "PASS load: .den load smoketest replace", "PASS save: the test save removed",
                      "PASS room: the white room: The room is white now.", "PASS room: its size: Your Den is size 1 of 4",
                      "PASS Forge: the Den asked the launcher", "PASS Forge: the editor's files: your Den's tile 32,32", "INFO Forge (the editor): not installed",
-                     "PASS Forge: the answer reached your game", "PASS share: a Den file the site takes: the site's own check passes (1 props)",
+                     "PASS Forge: the answer reached your game: shown in the Den bar", "PASS share: a Den file the site takes: the site's own check passes (1 props)",
                      "TODO share: upload a Den from Leyline: not built yet",
                      "PASS invite: a link for one friend: https://relay.example.test/join/kzdv...#(secret hidden)~~G",
                      "PASS invite: the link went into your Den panel", "PASS invite: a friend signs in with it: as Rowan", "PASS invite: your game was shown the friend: seen by Wren",
@@ -394,7 +396,7 @@ class Milestones(unittest.TestCase):
         evs = [{"t": start + 9000, "ev": "login_challenge", "who": "DEN"}, {"t": start + 9050, "ev": "auth_ok", "who": "DEN"},
                {"t": start + 9060, "ev": "realm_list"}, {"t": start + 9100, "ev": "world_auth"}, {"t": start + 9200, "ev": "char_enum"},
                {"t": start + 12000, "ev": "player_login"}, {"t": start + 15000, "ev": "in_world"}, {"t": start + 15500, "ev": "first_move"},
-               {"t": start + 16000, "ev": "builder_ready"}, {"t": start + 1, "ev": "auth_ok", "detail": "remote"}]
+               {"t": start + 16000, "ev": "builder_ready"}, {"t": start + 16010, "ev": "den_ui"}, {"t": start + 1, "ev": "auth_ok", "detail": "remote"}]
         actions = [(4000, "the game window is open"), (9000, "send Password: login screen: the local password"), (11500, "send Enter: character select: Enter World")]
         rep = den_check.Report()
         quiet(den_check.milestones, rep, evs, start, actions)
@@ -402,6 +404,7 @@ class Milestones(unittest.TestCase):
         self.assertIn("PASS the game window opened: 4.0 s", text)
         self.assertIn("PASS the game asked to sign in: 9.0 s, by the launcher's keys", text)
         self.assertIn("PASS in the world (the white island): 15.0 s", text)
+        self.assertIn("PASS the Den bar opened (Build, Shape ground, Play, Save, Invite): 16.0 s", text)
         self.assertIn("send Password: login screen: the local password; send Enter", text)
         self.assertEqual(rep.failed(), [])
         rep = den_check.Report()

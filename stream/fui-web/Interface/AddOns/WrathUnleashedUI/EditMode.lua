@@ -691,8 +691,11 @@ function E.OnDenMessage(prefix, msg, channel, sender)
         E.inviteLink = data
         if not den then buildDen() end
         den.link:SetText(data)
-        den.link:SetFocus()
-        den.link:HighlightText()
+        -- the keyboard only when the panel is open (the Den bar, DenBar.lua, has its own copy box)
+        if den:IsShown() then
+            den.link:SetFocus()
+            den.link:HighlightText()
+        end
         E.Note("Your invite link is in the Den panel: Ctrl+C copies it. Give it only to friends.")
     end
 end

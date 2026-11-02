@@ -1106,6 +1106,8 @@ def test(args, rep):
     rep.add("INFO", "outcome", str(rpt.get("outcome")))
     if "launch" in rpt:
         rep.add("INFO", "the launcher said", str(rpt.get("launch"))[:300])
+        if rpt.get("addons"):
+            rep.add("INFO", "Leyline addons", str(rpt.get("addons"))[:200])
         rep.ok(bool(rpt.get("ground")), "the white ground (the open plane) was put in the game",
                "your Den's ground in Data/patch-T.MPQ",
                "The launcher couldn't make your Den's white ground: see 'the launcher said' above and send this log.")

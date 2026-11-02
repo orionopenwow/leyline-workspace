@@ -809,6 +809,20 @@ pub fn den_play_cli(cli: crate::denclick::Cli) -> i32 {
         Ok(p) => p.path,
         Err(e) => return fail(e),
     };
+    // Leyline's own addons up to date first, as the launcher window does when it starts (the Den bar is in them;
+    // 2 Nov: the den-test's game still had the addons from before the Den bar)
+    let mut addons_note = String::new();
+    let app_dir = settings::app_dir();
+    if crate::addons::prefs(&app_dir).auto_update {
+        if let (Some(d), Ok(p)) = (crate::addons::available(&app_dir, crate::addons::DESCRIPTOR_URL).pack, core.client(&client)) {
+            for (_, r) in crate::addons::auto_update(&[p], &d, &app_dir) {
+                addons_note = match r {
+                    Ok(done) => format!("Leyline addons updated to {}", done.version),
+                    Err(e) => format!("Leyline addons not updated: {e}"),
+                };
+            }
+        }
+    }
     // the test's Den Lite takes its commands through the Dens folder (labs/den-lite testctl.rs): one already running
     // doesn't, so it is restarted for the test (and stopped after it, as one the test started)
     let mut restarted = false;
@@ -841,6 +855,7 @@ pub fn den_play_cli(cli: crate::denclick::Cli) -> i32 {
             v["den_lite_stopped"] = (cli.test && !was).into();
             v["den_lite_restarted"] = restarted.into();
             v["launch"] = launch_msg.clone().into();
+            v["addons"] = addons_note.clone().into();
             v["ground"] = ground.into();
             // what the Den's patch-T holds: our white texture, the island's models gone, the sky and the zone's name
             v["ground_detail"] = serde_json::to_value(crate::host::terrain::last_status(&root)).unwrap_or_default();

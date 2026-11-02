@@ -635,3 +635,6 @@
 1268c signin Website: small fixes from the overnight sweep (realm filter, gallery on phones, empty News)
 1268d addons Leyline addons: the combat-log box closed in Your Den
 1268e mods Browser realm: the same addons
+1269b ship Survivors fixes, Control's Survivors steps, Den Lite: the game's addon list read right (no more Banned box)
+1269d den-lite Den Lite: the addon list read right, movement read by hand
+1269c audit Release audit (read-only, ~10 min)

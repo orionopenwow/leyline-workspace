@@ -21,7 +21,7 @@ import os
 import re
 import sys
 
-NEVER = {"interface\\glues\\common\\glues-wow-logo.blp"}
+NEVER = {"interface\\glues\\common\\glues-wow-logo.blp", "interface\\glues\\mainmenu\\glues-blizzardlogo.blp"}
 LICENSES = ("licenses/LICENSE-MIT", "licenses/LICENSE-APACHE")
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_LOCK = os.path.join(HERE, "..", "..", "stream", "survivors", "upstream.lock.json")

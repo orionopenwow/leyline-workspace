@@ -842,6 +842,8 @@ pub fn den_play_cli(cli: crate::denclick::Cli) -> i32 {
             v["den_lite_restarted"] = restarted.into();
             v["launch"] = launch_msg.clone().into();
             v["ground"] = ground.into();
+            // what the Den's patch-T holds: our white texture, the island's models gone, the sky and the zone's name
+            v["ground_detail"] = serde_json::to_value(crate::host::terrain::last_status(&root)).unwrap_or_default();
             let _ = settings::write_atomic(&root.join(crate::denclick::REPORT), v.to_string().as_bytes());
         }
     }

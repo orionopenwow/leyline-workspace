@@ -421,7 +421,7 @@ mod tests {
         assert_eq!(t.water.as_ref().unwrap()[151].layers[0].kind, 1);
         assert_eq!(t.chunks[0].holes, own.chunks[0].holes);
         let ms = models_of(&t, ORIGIN);
-        assert_eq!(ms.len(), 4, "the base's three and the new tree");
+        assert_eq!(ms.len(), 3, "the base's rock and hut (its tree on the pad went with the pad) and the new tree");
         let tree = ms.iter().find(|m| m.uid == Some(0x7F00_0100)).unwrap();
         assert!((tree.pos[0] - 3.0).abs() < 1e-3 && tree.scale == Some(1.25));
         let hut = ms.iter().find(|m| m.uid == Some(0x7F00_0003)).unwrap();

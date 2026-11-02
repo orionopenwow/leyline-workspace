@@ -971,6 +971,53 @@ def den_lite_update(rep, root, fetch=_fetch):
 
 # ------------------------------------------------------------------------------------------------ test
 
+DEN_TEXTURE = "Tileset\\Leyline\\DenWhite.blp"
+
+
+def blp_is_ours(b):
+    """Our white texture (launcher terrain crate blp.rs): BLP2, type 1, palette, no alpha, mips; the palette's first
+    colour white and every pixel using it."""
+    if not b or len(b) < 1172 or b[:4] != b"BLP2":
+        return False
+    kind, comp, depth, _atype, mips, w, h = struct.unpack_from("<IBBBBII", b, 4)
+    off0, size0 = struct.unpack_from("<I", b, 20)[0], struct.unpack_from("<I", b, 84)[0]
+    return (kind, comp, depth, mips) == (1, 1, 0, 1) and w == h and size0 == w * h and off0 == 1172 \
+        and b[148:151] == b"\xff\xff\xff" and not any(b[off0:off0 + size0])
+
+
+def ground_lines(rep, detail, patch_t=None):
+    """The Den's world, from the launcher's report (`ground_detail`, host/terrain.rs GroundStatus) and our patch-T:
+    the white texture is ours, nothing of the island stands on the tile, the sky and the zone's name. Only the
+    picture shows what the game drew."""
+    if not isinstance(detail, dict) or not detail:
+        rep.add("INFO", "the Den's world", "the launcher doesn't say (an older launcher)")
+        return
+    tex = None
+    if patch_t is not None:
+        try:
+            tex = mpqlite.Archive(str(patch_t)).read(DEN_TEXTURE)
+        except Exception:  # noqa: BLE001 - read below as "not there"
+            tex = None
+    ours = bool(detail.get("texture_ours")) and (patch_t is None or blp_is_ours(tex))
+    rep.ok(ours, "white ground texture is ours",
+           "%s in Data\\patch-T.MPQ, made by the launcher (not a game file)" % DEN_TEXTURE if ours else
+           "the Den's chunk isn't painted with it" if not detail.get("texture_ours") else "it isn't in Data\\patch-T.MPQ",
+           "Start My Den once more (it paints the ground again); still not: send this log.")
+    left = int(detail.get("island_models", -1))
+    mine = int(detail.get("models", 0)) - max(left, 0)
+    rep.ok(left == 0, "no buildings/trees on the Den tile",
+           ("the island's models are gone" + (", %d of yours stay" % mine if mine > 0 else "")) if left == 0 else "%s of the island's models still stand" % left,
+           "Send this log (the launcher should take them off at the start).")
+    sky, area = str(detail.get("sky", "")), str(detail.get("area", ""))
+    good = sky == "white" and area == "Your Den"
+    rep.ok(good, "sky/area: Your Den", "white sky, the zone called Your Den (the picture shows it)" if good else "sky: %s; area: %s" % (sky or "?", area or "?"),
+           "The ground is still white. Send this log: it says why the sky or the name stayed the game's own.")
+    for h in detail.get("hidden_by") or []:
+        rep.add("INFO", "an archive read after the Den's hides part of it", str(h)[:200])
+    if detail.get("whitened"):
+        rep.add("INFO", "your Den's ground from before", "made white: %s" % str(detail["whitened"])[:200])
+
+
 def test(args, rep):
     app = Path(args.app_dir) if args.app_dir else app_dir()
     root = app / "den-lite"
@@ -1051,6 +1098,8 @@ def test(args, rep):
         rep.ok(bool(rpt.get("ground")), "the white ground (the open plane) was put in the game",
                "your Den's ground in Data/patch-T.MPQ",
                "The launcher couldn't make your Den's white ground: see 'the launcher said' above and send this log.")
+        data = find_ci(Path(c["path"]), "Data")
+        ground_lines(rep, rpt.get("ground_detail"), find_ci(data, "patch-T.MPQ") if data else None)
     crcs = [e for e in events(den_dir, rpt["start"]) if e.get("ev") == "addon_crcs"]
     if crcs:
         rep.add("INFO", "the game's addon list (key checks)", str(crcs[-1].get("detail"))[:300])

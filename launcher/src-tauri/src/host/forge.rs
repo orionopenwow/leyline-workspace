@@ -194,7 +194,14 @@ pub fn open(app: &Path, client: &Path, den_root: &Path, docker_kit: Option<PathB
     if running() {
         return Err("Forge is already open.".into());
     }
-    let exe = find_exe(&dir(app)).ok_or("Forge isn't on this PC yet: Get Forge first.")?;
+    // the first Shape the ground gets Forge by itself (owner 1 Nov 23:51: the editor there when you ask for it)
+    let exe = match find_exe(&dir(app)) {
+        Some(e) => e,
+        None => {
+            install(app).map_err(|e| format!("Couldn't get Forge: {e}"))?;
+            find_exe(&dir(app)).ok_or("Forge downloaded but its program isn't there: try Shape the ground again.")?
+        }
+    };
     let (ws, d) = terrain::workspace(app, client, den_root)?;
     let child = Command::new(&exe)
         .args(terrain::forge_args(client, &ws, &d))

@@ -94,5 +94,44 @@ check("Send: nothing for an empty box", W.SendBug("  ") == false and said == nil
 W.SendBug(string.rep("x", 400))
 check("Send: capped to one chat line", #said[1] == 255)
 check("the box is a popup with a text field", StaticPopupDialogs and StaticPopupDialogs.WU_BUG_REPORT.hasEditBox == 1)
+-- The UI size slider (owner 1 Nov 20:56, the desktop UI "jumping"): opening the page shows the size and sets
+-- nothing; only the player's own move sets one; Fit to screen gives it back to the screen.
+local owns, fits = {}, 0
+W.CurrentScale = function() return 0.71 end
+W.ModernScale = function() return 0.71 end
+W.IsBrowser = function() return false end
+W.SetOwnScale = function(k) owns[#owns + 1] = k; return true end
+W.FitToScreen = function() fits = fits + 1; return true end
+function Frame:SetValue(v)
+    self.value = v
+    if self.scripts.OnValueChanged then self.scripts.OnValueChanged(self, v) end
+end
+function Frame:GetValue() return self.value end
+function Frame:GetName() return self.name end
+local plainCreate = CreateFrame
+function CreateFrame(kind, name, parent, ...)   -- OptionsSliderTemplate's Low / High / Text strings
+    local f = plainCreate(kind, name, parent, ...)
+    if kind == "Slider" and name then
+        for _, s in ipairs({ "Low", "High", "Text" }) do new("FontString", name .. s) end
+    end
+    return f
+end
+local built = pcall(W.ShowModsTab, 1)
+local slider = WrathUnleashedUIScaleSlider
+check("the Mods panel builds with its size slider", built and slider ~= nil)
+if slider then
+    local page = slider.parent
+    if page.scripts.OnShow then page.scripts.OnShow(page) end
+    check("opening the page shows the size and sets none", slider.value == 0.71 and #owns == 0)
+    slider.scripts.OnMouseDown(slider)
+    slider:SetValue(0.8)
+    check("while dragging: nothing set yet", #owns == 0)
+    slider.scripts.OnMouseUp(slider)
+    check("let go: the player's size", #owns == 1 and owns[1] == 0.8)
+    local fit
+    for _, kid in ipairs(page.kids) do if kid.text == "Fit to screen" then fit = kid end end
+    if fit and fit.scripts.OnClick then fit.scripts.OnClick(fit) end
+    check("Fit to screen: back to the screen's size, shown, not saved as the player's", fits == 1 and slider.value == 0.71 and #owns == 1)
+end
 print(pass .. "/" .. (pass + fail) .. " passed")
 if fail > 0 then os.exit(1) end

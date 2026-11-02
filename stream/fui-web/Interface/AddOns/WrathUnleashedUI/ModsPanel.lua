@@ -57,21 +57,29 @@ local function buildInterface(page)
     _G[s:GetName() .. "Low"]:SetText("Smaller")
     _G[s:GetName() .. "High"]:SetText("Bigger")
     local value = label(page, "", "GameFontHighlightSmall", "LEFT", s, "RIGHT", 12, 0)
-    local dragging = false
+    -- Only the player's own moves set a size: showing the value (opening the page, Fit to screen) sets nothing
+    -- (SetValue runs OnValueChanged; before 1 Nov opening the page saved its value as the player's own size).
+    local dragging, showing = false, false
+    local function show(k)
+        showing = true
+        s:SetValue(k)
+        showing = false
+        value:SetText(string.format("%d%%", math.floor(k * 100 + 0.5)))
+    end
     s:SetScript("OnValueChanged", function(self, v)
         v = math.floor(v * 100 + 0.5) / 100
         value:SetText(string.format("%d%%", v * 100))
-        if dragging then return end
-        W.ApplyScale(v)
+        if dragging or showing then return end
+        W.SetOwnScale(v)
     end)
     s:SetScript("OnMouseDown", function() dragging = true end)
-    s:SetScript("OnMouseUp", function(self) dragging = false; W.ApplyScale(self:GetValue()) end)
-    page.slider = s
-    button(page, "Modern size", 120, function()
-        local k = W.ModernScale()
-        W.ApplyScale(k); s:SetValue(k)
+    s:SetScript("OnMouseUp", function(self) dragging = false; W.SetOwnScale(self:GetValue()) end)
+    page.slider, page.showScale = s, show
+    button(page, "Fit to screen", 120, function()
+        W.FitToScreen()
+        show(W.IsBrowser() and W.CurrentScale() or W.ModernScale())
     end, "TOPLEFT", 20, -78)
-    label(page, "Modern size matches today's games: the UI is the same share of the screen at any window size.",
+    label(page, "Fit to screen picks the size from your screen and keeps the bars on it when the window changes.",
         "GameFontHighlightSmall", "TOPLEFT", 20, -106):SetWidth(PANEL_W - 60)
 
     label(page, "Action bars", "GameFontNormal", "TOPLEFT", 16, -150)
@@ -93,7 +101,7 @@ local function buildInterface(page)
     label(page, "Main bar 1-7 and F G T Z X (8 9 0 - = are left free). The bar above it: Shift + those keys. "
         .. "The next bar: Ctrl +. The right bar: Alt +.", "GameFontHighlightSmall", "TOPLEFT", 20, -300):SetWidth(PANEL_W - 60)
     page:SetScript("OnShow", function()
-        s:SetValue((WrathUnleashedUIDB and WrathUnleashedUIDB.uiScale) or tonumber(GetCVar and GetCVar("uiScale") or "") or 1)
+        show(W.CurrentScale and W.CurrentScale() or 1)
     end)
 end
 

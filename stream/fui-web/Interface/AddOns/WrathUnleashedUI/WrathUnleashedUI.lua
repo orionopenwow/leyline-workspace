@@ -40,29 +40,215 @@ function W.SetBrand(realm)
     for _, fn in ipairs(brandWatchers) do pcall(fn, W.Brand) end
 end
 
--- UI size. Retail's "pixel perfect" makes the UI 768 units tall whatever the window, so a 253-unit minimap
--- ring is about a quarter of the screen height. The browser client gives UIParent the window's own
--- height, so everything draws about 1.3x too big; this scale puts it back. The slider in Esc > Mods &
--- Workshop changes it (saved per account); "Modern size" goes back to this default.
-W.SCALE_MIN, W.SCALE_MAX = 0.5, 1.2
-function W.ModernScale()
-    local h = (GetScreenHeight and GetScreenHeight() or 768) * (UIParent:GetScale() or 1)
-    if not h or h <= 0 then return 1 end
-    local k = 768 / h
-    if k < W.SCALE_MIN then k = W.SCALE_MIN elseif k > W.SCALE_MAX then k = W.SCALE_MAX end
-    return math.floor(k * 100 + 0.5) / 100
-end
--- Through the game's own setting (Esc > Interface > Use UI Scale), never UIParent:SetScale: the browser
--- client draws a SetScale on UIParent only partly (sizes, not positions), which pushed the left edge off
--- screen (live 2026-10-25 01:10). The client applies the uiScale CVar itself.
-function W.ApplyScale(k)
-    if InCombatLockdown and InCombatLockdown() then return false end
-    if k < W.SCALE_MIN then k = W.SCALE_MIN elseif k > W.SCALE_MAX then k = W.SCALE_MAX end
-    if SetCVar then pcall(SetCVar, "useUiScale", "1"); pcall(SetCVar, "uiScale", string.format("%.2f", k)) end
+-- ---------------------------------------------------------------- UI size
+-- Owner 1 Nov 20:56, the desktop game in Your Den and on Wrath Unleashed: "the UI is completely destroyed ... the UI
+-- scale, the client scale to immediately adapt to player screens and not jump all over the place". His shot
+-- (1896x1071): Forever UI's bottom row (action bar, micro menu, bags, ~1440 UI units with its gryphons) at an
+-- effective scale of ~1.2, wider than the screen: the bar's left end off screen and both gryphons, which Forever UI
+-- keeps on screen, pushed in over the bar instead of sitting at its ends. What did it, all desktop-only:
+--  * the old login line `UIParent:SetScale(1)` whenever UIParent's scale wasn't 1. In the browser that is always
+--    1; on the desktop UIParent's scale IS the game's UI size (0.9 by itself above 853 px), so every login on a
+--    Leyline realm made the UI bigger a moment after entering the world, and the game put its own size back at the
+--    next window or scale change: the jumps;
+--  * Esc > Mods & Workshop wrote its slider's value back as the player's choice whenever the page opened (SetValue
+--    runs OnValueChanged), and "Modern size" computed 768 / UIParent's height, the browser's math (its UIParent is
+--    the window's height in pixels): on the desktop that is always 1.0, and the slider goes to 1.2;
+--  * nothing chose a size for the screen, so a 16:9 screen at 1.0 or more can't hold the row.
+-- Now: one size from the real screen (W.FitScale), chosen when the addon loads, before the world is drawn,
+-- through the game's own UI scale (never UIParent:SetScale: the browser draws that only partly, live 2026-10-25),
+-- set only when it differs, so the game lays out once; after a window resize again, once, only if the size changes.
+-- A size the player picks (the slider, or the game's own Interface options) is theirs and stays. In the browser the
+-- client already sizes the UI from the window every frame (its "pixel" mode), so the addon leaves it alone there.
+W.SCALE_MIN, W.SCALE_MAX = 0.5, 1.2     -- the slider's range
+W.FIT_MIN, W.FIT_MAX = 0.64, 1.0         -- the automatic size: today's games' range (the game's own slider's)
+W.ROW_HALF = 724                         -- half of Forever UI's bottom row with its gryphons, when it can't be measured
+W.FIT_MARGIN = 8                         -- UI units kept free at each screen edge
+
+local function scaleDB()
     WrathUnleashedUIDB = WrathUnleashedUIDB or {}
-    WrathUnleashedUIDB.uiScale = k
+    return WrathUnleashedUIDB
+end
+local function cvar(name)
+    if not GetCVar then return nil end
+    local ok, v = pcall(GetCVar, name)
+    if ok then return v end
+end
+
+-- The browser client has its own "uiScaleMode" setting (pixel / manual); the desktop game has no such setting.
+function W.IsBrowser()
+    local v = cvar("uiScaleMode")
+    return type(v) == "string" and v ~= ""
+end
+
+-- Half the width the bottom row needs, in UI units from the screen's centre: Forever UI's measured row
+-- (ForeverUI.BottomRow, every micro button included) plus the gryphons' overhang, else the stock main bar.
+function W.RowHalf()
+    local F = ForeverUI
+    local half
+    local row = type(F) == "table" and F.BottomRow
+    if type(row) == "table" and tonumber(row.left) and tonumber(row.right) then
+        local over = 124                                  -- a 154-unit gryphon, 30 of it over the bar
+        local caps = F.ActionBarEndCaps
+        if type(caps) == "table" and caps.left and caps.left.GetWidth and tonumber(caps.inset) then
+            local w = caps.left:GetWidth()
+            if w and w > 0 then over = w - caps.inset end
+        end
+        half = math.max(-row.left, row.right) + over
+    elseif MainMenuBar and MainMenuBar.GetWidth then
+        half = (MainMenuBar:GetWidth() or 0) / 2
+    end
+    if not half or half <= 0 then half = W.ROW_HALF end
+    return half + W.FIT_MARGIN
+end
+
+-- The UI size for a window w x h pixels: as today's games (one UI unit per pixel, 768 / height, between 0.64 and
+-- 1.0), and never so big that a row `half` UI units each side of the centre leaves the screen. Two decimals,
+-- rounded down.
+function W.FitScale(w, h, half)
+    w, h = tonumber(w), tonumber(h)
+    if not w or not h or w <= 0 or h <= 0 then return nil end
+    half = tonumber(half) or (W.ROW_HALF + W.FIT_MARGIN)
+    local k = 768 / h
+    if k < W.FIT_MIN then k = W.FIT_MIN elseif k > W.FIT_MAX then k = W.FIT_MAX end
+    local fit = 768 * (w / h) / (2 * half)               -- the screen is 768 * w / h / k units wide
+    if fit < k then k = fit end
+    k = math.floor(k * 100 + 1e-6) / 100
+    if k < W.SCALE_MIN then k = W.SCALE_MIN end
+    return k
+end
+
+-- The window in pixels: gxResolution (the browser answers its canvas's size there too) when it has the window's
+-- shape (GetScreenWidth / GetScreenHeight, in UI units). A maximized window can keep an old setting: then the
+-- window's shape at the height the game's own automatic size (0.9) stands for.
+function W.ScreenPixels()
+    local sw = GetScreenWidth and GetScreenWidth()
+    local sh = GetScreenHeight and GetScreenHeight()
+    local aspect = (sw and sh and sw > 0 and sh > 0) and sw / sh or nil
+    local rw, rh = tostring(cvar("gxResolution") or ""):match("^(%d+)x(%d+)")
+    rw, rh = tonumber(rw), tonumber(rh)
+    if rw and rh and rw > 0 and rh > 0 then
+        if not aspect or math.abs(rw / rh - aspect) / aspect < 0.03 then return rw, rh end
+    end
+    if aspect then return aspect * 853, 853 end
+    return nil
+end
+
+-- The size in use now: the player's own, else the game's setting (the browser's pixel mode: 768 / its height).
+function W.CurrentScale()
+    local own = scaleDB().uiScaleOwn
+    if type(own) == "number" then return own end
+    if W.IsBrowser() and cvar("uiScaleMode") == "pixel" then
+        local _, h = W.ScreenPixels()
+        if h then return math.max(0.3, math.min(1, math.floor(768 / h * 100 + 0.5) / 100)) end
+    end
+    return tonumber(cvar("uiScale") or "") or 1
+end
+-- The size that fits this screen (the old name, kept for callers).
+function W.ModernScale()
+    local w, h = W.ScreenPixels()
+    return W.FitScale(w, h, W.RowHalf()) or 1
+end
+
+local applying, lastSet = false, nil
+local function setScale(k)
+    if not SetCVar then return end
+    applying, lastSet = true, k
+    pcall(SetCVar, "useUiScale", "1")
+    pcall(SetCVar, "uiScale", string.format("%.2f", k))
+    applying = false
+end
+
+local fitPending = false
+-- The fitting size, set only when it isn't the one already in use (desktop, the fit on, no size of the player's).
+-- True when it changed something.
+function W.ApplyFit()
+    if W.IsBrowser() then return false end
+    local db = scaleDB()
+    if db.uiScaleOwn ~= nil or not db.uiFit then return false end
+    if InCombatLockdown and InCombatLockdown() then fitPending = true; return false end
+    fitPending = false
+    local w, h = W.ScreenPixels()
+    local k = W.FitScale(w, h, W.RowHalf())
+    if not k then return false end
+    db.uiScaleAuto = k
+    local now = tonumber(cvar("uiScale") or "")
+    if cvar("useUiScale") == "1" and now and math.abs(now - k) < 0.005 then return false end   -- already: nothing moves
+    setScale(k)
     return true
 end
+
+-- The player's own size (the slider): kept as it is at any window size, until "Fit to screen".
+function W.SetOwnScale(k)
+    k = tonumber(k)
+    if not k then return false end
+    if InCombatLockdown and InCombatLockdown() then return false end
+    if k < W.SCALE_MIN then k = W.SCALE_MIN elseif k > W.SCALE_MAX then k = W.SCALE_MAX end
+    k = math.floor(k * 100 + 0.5) / 100
+    scaleDB().uiScaleOwn = k
+    setScale(k)
+    return true
+end
+W.ApplyScale = W.SetOwnScale
+
+-- "Fit to screen": back to the size from the screen (desktop), or to the browser client's own pixel mode.
+function W.FitToScreen()
+    local db = scaleDB()
+    db.uiScaleOwn = nil
+    if W.IsBrowser() then
+        if SetCVar then pcall(SetCVar, "uiScaleMode", "pixel") end
+        return true
+    end
+    db.uiFit = true
+    W.ApplyFit()
+    return true
+end
+
+-- A size changed in the game's own Interface options (or by a /console line) while the fit was on is the player's.
+local function noticePlayer()
+    if applying or W.IsBrowser() then return end
+    local db = scaleDB()
+    if db.uiScaleOwn ~= nil or not db.uiFit then return end
+    if cvar("useUiScale") == "0" then db.uiScaleOwn = "game"; return end   -- "Use UI Scale" unticked: the game's own
+    local now = tonumber(cvar("uiScale") or "")
+    local mine = lastSet or db.uiScaleAuto
+    if now and mine and math.abs(now - mine) >= 0.005 then db.uiScaleOwn = now end
+end
+
+local scaleFrame = CreateFrame("Frame")
+for _, e in ipairs({ "ADDON_LOADED", "DISPLAY_SIZE_CHANGED", "UI_SCALE_CHANGED", "CVAR_UPDATE", "PLAYER_REGEN_ENABLED" }) do
+    scaleFrame:RegisterEvent(e)
+end
+local function fitNextFrame()
+    -- a resize sends several events: one look, a frame later
+    scaleFrame:SetScript("OnUpdate", function(self)
+        self:SetScript("OnUpdate", nil)
+        W.ApplyFit()
+    end)
+end
+scaleFrame:SetScript("OnEvent", function(self, event, arg1)
+    if event == "ADDON_LOADED" then
+        if arg1 ~= ADDON then return end
+        local db = scaleDB()
+        -- Before this version a size was saved whenever the Mods page opened: not a choice, so it goes.
+        if (tonumber(db.uiScaleV) or 0) < 2 then db.uiScale, db.uiScaleV = nil, 2 end
+        if W.IsBrowser() then return end
+        if db.uiFit then
+            W.ApplyFit()              -- the loading screen: before anything is drawn
+        elseif db.uiScaleOwn == nil and W.WhenLeyline then
+            -- the first time, on a Leyline realm only (another server's game is left as it is)
+            W.WhenLeyline(function()
+                local d = scaleDB()
+                if d.uiScaleOwn == nil and not d.uiFit then d.uiFit = true; W.ApplyFit() end
+            end)
+        end
+    elseif event == "DISPLAY_SIZE_CHANGED" then
+        fitNextFrame()
+    elseif event == "UI_SCALE_CHANGED" or event == "CVAR_UPDATE" then
+        noticePlayer()
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if fitPending then W.ApplyFit() end
+    end
+end)
 
 -- Chat lines wait a few seconds after login for the realm's brand word (W.SettleBrand), so the tag is the right one.
 local held, settled = {}, false
@@ -392,9 +578,8 @@ function W.LeylineDefaults()
     end
     -- Talent planner: 3.3.5's own preview mode (plan points, then Learn), on for everyone.
     if SetCVar then pcall(SetCVar, "previewTalents", "1"); pcall(SetCVar, "previewPetTalents", "1") end
-    -- Undo the first version's UIParent:SetScale (it cut off the left edge); the default size now
-    -- comes from the client, and the slider sets the game's own UI scale.
-    if UIParent:GetScale() ~= 1 and not WrathUnleashedUIDB.uiScale then UIParent:SetScale(1) end
+    -- (No UIParent:SetScale here any more: on the desktop UIParent's scale is the game's UI size, and setting it
+    -- back to 1 made the UI jump bigger after every login; the size is the game's own setting, see "UI size".)
     WrathUnleashedUIDB.scale = nil
     if not c.barsOn then
         barsOn()

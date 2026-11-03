@@ -750,6 +750,11 @@ fn aid_send(c: &Writer, shared: &Shared, sess: &Sess, sel: &ovmod::Sel, aids: &g
     for g in &out.destroy {
         c.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(*g), target_died: false })?;
     }
+    // the selection's glow (GAMEOBJECT_DYNAMIC) after its create; the far camera (gizmo.rs, farsight.rs)
+    for (g, flags) in &out.glow {
+        c.send_raw(raw::SMSG_UPDATE_OBJECT, &raw::gameobject_dynamic(*g, *flags))?;
+    }
+    aid_far(c, sess, out.far)?;
     for (name, data) in &out.addon {
         send_addon(c, sess.me.guid, "wubuild", name, data)?;
     }
@@ -767,9 +772,29 @@ fn aid_send(c: &Writer, shared: &Shared, sess: &Sess, sel: &ovmod::Sel, aids: &g
     Ok(())
 }
 
+/// The far camera's object (farsight.rs): made there and the view on it; moved with a short flying spline; the view
+/// given back and the object gone.
+fn aid_far(c: &Writer, sess: &Sess, far: Option<gizmo::FarOut>) -> io::Result<()> {
+    use crate::{farsight, flight};
+    match far {
+        None => Ok(()),
+        Some(gizmo::FarOut::Show(at)) => {
+            c.send(&farsight::create(farsight::at(at)))?;
+            c.send_raw(flight::SMSG_SPLINE_MOVE_SET_FLYING, &flight::guid_body(farsight::GUID))?;
+            c.send_raw(flight::SMSG_SPLINE_MOVE_GRAVITY_DISABLE, &flight::guid_body(farsight::GUID))?;
+            c.send_raw(raw::SMSG_UPDATE_OBJECT, &raw::farsight(sess.me.guid, farsight::GUID))
+        }
+        Some(gizmo::FarOut::Move(from, to)) => c.send_raw(flight::SMSG_MONSTER_MOVE, &farsight::move_body(from, to, (now_ms() & 0xFFFF_FFFF) as u32)),
+        Some(gizmo::FarOut::Off) => {
+            c.send_raw(raw::SMSG_UPDATE_OBJECT, &raw::farsight(sess.me.guid, 0))?;
+            c.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(farsight::GUID), target_died: false })
+        }
+    }
+}
+
 /// The player moved: an armed copy that isn't on the cursor follows them (gizmo.rs `follow_player`).
 fn aid_follow(c: &Writer, shared: &Shared, sess: &Sess, sel: &ovmod::Sel, aids: &mut gizmo::Aids, n: Pos) -> io::Result<()> {
-    if aids.armed.is_none() || aids.cursor.is_some() {
+    if aids.armed.is_none() || !aids.follow {
         return Ok(());
     }
     let here = ovmod::Here { x: n.x, y: n.y, z: n.z, o: n.o };
@@ -813,7 +838,7 @@ fn aid_packet(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Pos>, sel: &
     let Some(guid) = body.get(..8).map(|b| u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])) else { return Ok(true) };
     let out = {
         let d = shared.den.lock().unwrap_or_else(|e| e.into_inner());
-        gizmo::use_object(&d, sel, aids, guid, shared.build_look.load(Ordering::Relaxed))
+        gizmo::use_object(&d, sel, aids, guid, shared.build_look.load(Ordering::Relaxed), now_ms())
     };
     if out != gizmo::AidOut::default() {
         shared.event("aid_use", &sess.me.name, &format!("{}", guid & 0xFF_FFFF));
@@ -1189,6 +1214,7 @@ fn enter_world(c: &Writer, shared: &Shared, account: &str, me: &Me, p: Pos) -> i
     let looks = if me.host { shared.gear.lock().unwrap_or_else(|e| e.into_inner()).clone() } else { None };
     c.send(&player_create_as(me, p, true, sandbox::kit_for(shared, me).as_ref(), looks.as_ref()))?;
     c.send_raw(movewatch::SMSG_TIME_SYNC_REQ, &movewatch::time_sync_body(0))?;
+    sandbox::after_create(c, shared, me)?;
     c.send(&SMSG_INIT_WORLD_STATES { map, area, sub_area: area, states: vec![] })?;
     let objs = shared.den.lock().unwrap().everything();
     send_creates(c, shared, &objs)?;
@@ -1245,6 +1271,7 @@ fn arrive_far(c: &Writer, shared: &Shared, sess: &Sess, t: &places::Trip) -> io:
     let looks = if me.host { shared.gear.lock().unwrap_or_else(|e| e.into_inner()).clone() } else { None };
     c.send(&player_create_as(me, at, true, sandbox::kit_for(shared, me).as_ref(), looks.as_ref()))?;
     c.send_raw(movewatch::SMSG_TIME_SYNC_REQ, &movewatch::time_sync_body(0))?;
+    sandbox::after_create(c, shared, me)?;
     c.send(&SMSG_INIT_WORLD_STATES { map: wmap(t.map), area, sub_area: area, states: vec![] })?;
     if t.map == spot.map {
         let objs = shared.den.lock().unwrap_or_else(|e| e.into_inner()).everything();
@@ -1775,7 +1802,8 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
         }
         // the Dojo (dojo.rs): the training ring, dummies, flying, speed
         (".den", "dojo") => dojo_cmd(c, shared, sess, p, &words[2..]),
-        (".den", "class") => sandbox::class_cmd(c, shared, sess, w(2), w(3)),
+        (".den", "class") => sandbox::class_cmd(c, shared, sess, w(2), &words.iter().skip(3).cloned().collect::<Vec<_>>().join(" ")),
+        (".den", "spec") | (".den", "bars") | (".den", "gearset") => dojo_cmd(c, shared, sess, p, &words[1..]),
         (".den", "gear") | (".den", "looks") => sandbox::gear_cmd(c, shared, sess, &words[2..]),
         (".den", "mounts") | (".den", "mount") => sandbox::mounts_cmd(c, shared, sess, w(2), w(3)),
         (".den", "fly") => fly(c, shared, sess, w(2)),
@@ -1994,6 +2022,12 @@ fn companion_create(at: At) -> SMSG_UPDATE_OBJECT {
 
 /// CMSG_CREATURE_QUERY: her name (what the client shows over her), "<Your companion>" under it, humanoid, her model.
 fn creature_answer(entry: u32) -> SMSG_CREATURE_QUERY_RESPONSE {
+    if let Some(a) = crate::farsight::creature(entry) {
+        return a;
+    }
+    if let Some(pet) = sandbox::pet_answer(entry) {
+        return pet;
+    }
     if let Some((_, display, name, _)) = dojo::dummy(entry) {
         return SMSG_CREATURE_QUERY_RESPONSE {
             creature_entry: entry,
@@ -2007,7 +2041,7 @@ fn creature_answer(entry: u32) -> SMSG_CREATURE_QUERY_RESPONSE {
                 type_flags: 0,
                 creature_type: 9, // mechanical
                 creature_family: CreatureFamily::None,
-                creature_rank: 0,
+                creature_rank: sandbox::rank_of(entry),
                 kill_credit1: 0,
                 kill_credit2: 0,
                 display_ids: [display, 0, 0, 0],

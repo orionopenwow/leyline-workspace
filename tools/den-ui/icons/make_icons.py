@@ -272,6 +272,29 @@ def _(p):
     p.line((38, 38), (54, 54))
 
 
+
+# ---------------------------------------------------------------- the Dojo's loadout (Dojo.lua)
+@icon("bars")
+def _(p):   # an action bar: two rows of buttons
+    for y in (14, 36):
+        for x in (8, 22, 36, 50):
+            p.rect(x - 4, y, x + 8, y + 12, w=10, r=2)
+
+
+@icon("gearset")
+def _(p):   # a breastplate: shoulders, the chest, the waist
+    p.line((14, 12), (24, 8), (32, 16), (40, 8), (50, 12), (54, 26), (46, 30), (46, 54), (18, 54), (18, 30), (10, 26), close=True)
+    p.line((32, 16), (32, 40))
+
+
+@icon("range")
+def _(p):   # a target at the end of a line of ticks
+    p.circle(48, 32, 10)
+    p.dot(48, 32, 3)
+    p.line((6, 32), (34, 32))
+    for x in (8, 18, 28):
+        p.line((x, 24), (x, 40), w=8)
+
 # ---------------------------------------------------------------- categories
 @icon("all")
 def _(p):   # four squares
@@ -480,6 +503,141 @@ def _(p):   # a dashed box
     for a, b in (((10, 10), (24, 10)), ((40, 10), (54, 10)), ((10, 54), (24, 54)), ((40, 54), (54, 54)),
                  ((10, 10), (10, 24)), ((10, 40), (10, 54)), ((54, 10), (54, 24)), ((54, 40), (54, 54))):
         p.line(a, b)
+
+
+# ---------------------------------------------------------------- the selection panel's pad and quick buttons (owner 3 Nov:
+# "it should function like this": his LANDSCAPE editor's MOVE · TURN · SIZE pad and quick row)
+def _arrow(p, a):
+    """A short bold arrow pointing at `a` degrees (0: right, 90: down)."""
+    r = math.radians(a)
+    x0, y0 = 32 - 15 * math.cos(r), 32 - 15 * math.sin(r)
+    x1, y1 = 32 + 9 * math.cos(r), 32 + 9 * math.sin(r)
+    p.line((x0, y0), (x1, y1))
+    p.head(32 + 17 * math.cos(r), 32 + 17 * math.sin(r), a, 15)
+
+
+@icon("up")
+def _(p):
+    _arrow(p, -90)
+
+
+@icon("down")
+def _(p):
+    _arrow(p, 90)
+
+
+@icon("left")
+def _(p):
+    _arrow(p, 180)
+
+
+@icon("right")
+def _(p):
+    _arrow(p, 0)
+
+
+@icon("turnleft")
+def _(p):   # an arc turning to the left
+    p.arc(32, 34, 17, 220, 470)
+    p.head(19, 20, 240, 11)
+
+
+@icon("turnright")
+def _(p):   # an arc turning to the right
+    p.arc(32, 34, 17, 70, 320)
+    p.head(45, 20, -60, 11)
+
+
+@icon("liftup")
+def _(p):   # a bar with an arrow rising from it
+    p.line((14, 10), (50, 10))
+    p.line((32, 54), (32, 24))
+    p.head(32, 20, -90, 12)
+
+
+@icon("liftdown")
+def _(p):   # an arrow onto a bar
+    p.line((14, 54), (50, 54))
+    p.line((32, 10), (32, 40))
+    p.head(32, 44, 90, 12)
+
+
+@icon("smaller")
+def _(p):   # a small box in a dashed big one
+    for a, b in (((8, 8), (18, 8)), ((46, 8), (56, 8)), ((8, 56), (18, 56)), ((46, 56), (56, 56)),
+                 ((8, 8), (8, 18)), ((8, 46), (8, 56)), ((56, 8), (56, 18)), ((56, 46), (56, 56))):
+        p.line(a, b, w=12)
+    p.rect(22, 22, 42, 42, r=3)
+
+
+@icon("bigger")
+def _(p):   # a big box with corners pushed out
+    p.rect(14, 14, 50, 50, r=4)
+    p.line((6, 16), (6, 6), (16, 6), w=12)
+    p.line((48, 58), (58, 58), (58, 48), w=12)
+
+
+@icon("bring")
+def _(p):   # a ring with a dot: here
+    p.circle(32, 32, 20)
+    p.dot(32, 32, 7)
+
+
+@icon("tilt")
+def _(p):   # a leaning post over a level line
+    p.line((10, 54), (54, 54))
+    p.line((22, 54), (40, 12))
+    p.arc(22, 54, 18, 270, 330, w=12)
+
+
+@icon("upright")
+def _(p):   # a straight post with a right angle
+    p.line((10, 54), (54, 54))
+    p.line((32, 54), (32, 10))
+    p.line((32, 42), (44, 42), (44, 54), w=12)
+
+
+@icon("settle")
+def _(p):   # a box with a short drop onto the line
+    p.line((8, 56), (56, 56))
+    p.rect(20, 24, 44, 46, r=4)
+    p.line((32, 4), (32, 14), w=12)
+    p.head(32, 18, 90, 8)
+
+
+@icon("random")
+def _(p):   # a die
+    p.rect(10, 10, 54, 54, r=9)
+    for x, y in ((22, 22), (42, 22), (32, 32), (22, 42), (42, 42)):
+        p.dot(x, y, 4.5)
+
+
+@icon("centre")
+def _(p):   # crosshairs
+    p.circle(32, 32, 16)
+    for a, b in (((32, 4), (32, 18)), ((32, 46), (32, 60)), ((4, 32), (18, 32)), ((46, 32), (60, 32))):
+        p.line(a, b)
+
+
+@icon("reset")
+def _(p):   # an arc back with its arrow
+    p.arc(32, 32, 19, 140, 400)
+    p.head(15, 41, 125, 11)
+
+
+@icon("swap")
+def _(p):   # two arrows, one each way
+    p.line((10, 22), (48, 22))
+    p.head(52, 22, 0, 11)
+    p.line((54, 42), (16, 42))
+    p.head(12, 42, 180, 11)
+
+
+@icon("camera")
+def _(p):   # an eye over a ground line: the view from up high
+    p.line((6, 56), (58, 56))
+    p.d.ellipse((*P(10, 14), *P(54, 38)), outline=W, width=LW)
+    p.dot(32, 26, 6)
 
 
 def tga(im: Image.Image) -> bytes:

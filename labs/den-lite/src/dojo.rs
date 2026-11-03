@@ -86,15 +86,41 @@ pub const KIND_DUMMIES: &[(u32, u32, &str, u8, Kind)] = &[
     (900_003, 27510, "Wounded Dummy", 80, Kind::Healer),
     (900_004, 27510, "Sparring Dummy", 80, Kind::Tank),
     (900_005, 27510, "Practice Boss", 83, Kind::Boss),
+    (900_006, 27510, "Novice's Training Dummy", 77, Kind::Light),
+    (900_007, 27510, "Heavy Training Dummy", 83, Kind::Heavy),
+    (900_008, 27510, "Wounded Friend", 80, Kind::Group),
 ];
 
+/// The range (`.den dojo range`): a dummy 40 yards ahead of you and small markers between, each named by its
+/// distance from the dummy (mouse over one, or turn friendly name plates on), so you can stand at 5, 10, 20 or 30
+/// yards and see what reaches. (entry, display, name, level, kind, x ahead of you.)
+pub const RANGE: &[(u32, u32, &str, u8, Kind, f32)] = &[
+    (900_010, 27510, "5 yards", 1, Kind::Marker, 35.0),
+    (900_011, 27510, "10 yards", 1, Kind::Marker, 30.0),
+    (900_012, 27510, "20 yards", 1, Kind::Marker, 20.0),
+    (900_013, 27510, "30 yards", 1, Kind::Marker, 10.0),
+    (900_014, 27510, "Range Dummy", 80, Kind::Target, 40.0),
+];
+/// The markers' size (the dummy's model, small).
+pub const MARKER_SCALE: f32 = 0.35;
+
 pub fn dummy(entry: u32) -> Option<(u32, u32, &'static str, u8)> {
-    DUMMIES.iter().copied().find(|d| d.0 == entry).or_else(|| KIND_DUMMIES.iter().find(|d| d.0 == entry).map(|d| (d.0, d.1, d.2, d.3)))
+    DUMMIES
+        .iter()
+        .copied()
+        .find(|d| d.0 == entry)
+        .or_else(|| KIND_DUMMIES.iter().find(|d| d.0 == entry).map(|d| (d.0, d.1, d.2, d.3)))
+        .or_else(|| RANGE.iter().find(|d| d.0 == entry).map(|d| (d.0, d.1, d.2, d.3)))
 }
 
 /// A dummy's kind by its entry (the training dummies: Target).
 pub fn kind_of(entry: u32) -> Kind {
-    KIND_DUMMIES.iter().find(|d| d.0 == entry).map(|d| d.4).unwrap_or(Kind::Target)
+    KIND_DUMMIES.iter().find(|d| d.0 == entry).map(|d| d.4).or_else(|| RANGE.iter().find(|d| d.0 == entry).map(|d| d.4)).unwrap_or(Kind::Target)
+}
+
+/// One of the range's (its markers and its dummy).
+pub fn is_range(entry: u32) -> bool {
+    RANGE.iter().any(|d| d.0 == entry)
 }
 
 /// The entry a kind goes up with.
@@ -111,6 +137,10 @@ pub fn kind_spots(kind: Kind) -> Vec<(f32, f32)> {
         Kind::Healer => vec![(2.0, 3.0)],
         Kind::Tank => vec![(3.0, 0.0)],
         Kind::Boss => vec![(12.0, 0.0)],
+        Kind::Light => vec![(5.0, 2.6)],
+        Kind::Heavy => vec![(5.0, -2.6)],
+        Kind::Group => vec![(4.0, 4.0), (5.0, 5.4), (3.0, 5.4), (6.0, 4.0), (2.0, 4.0)],
+        Kind::Marker => RANGE.iter().map(|r| (r.5, 0.0)).collect(),
         _ => vec![(5.0, 0.0)],
     }
 }
@@ -246,17 +276,20 @@ impl Dojo {
     /// The dummies of one kind (combat.rs Kind) in front of `p` (or in the ring), standing at `z`; the old ones of
     /// that kind are taken down first: their guids, and the new ones.
     pub fn place_kind(&mut self, p: At, kind: Kind, z: f32) -> (Vec<u64>, Vec<Dummy>) {
-        let gone: Vec<u64> = self.dummies.iter().filter(|d| d.kind == kind).map(|d| d.guid).collect();
-        self.dummies.retain(|d| d.kind != kind);
-        let base = self.ring.map(|r| At { x: r.x - r.o.cos() * 4.0, y: r.y - r.o.sin() * 4.0, ..r }).unwrap_or(p);
-        let entry = entry_of(kind);
+        let range = kind == Kind::Marker;
+        let gone: Vec<u64> = self.dummies.iter().filter(|d| if range { is_range(d.entry) } else { d.kind == kind && !is_range(d.entry) }).map(|d| d.guid).collect();
+        self.dummies.retain(|d| !gone.contains(&d.guid));
+        // the range is laid out from where you stand, the rest in the ring when there is one
+        let base = if range { p } else { self.ring.map(|r| At { x: r.x - r.o.cos() * 4.0, y: r.y - r.o.sin() * 4.0, ..r }).unwrap_or(p) };
         let made: Vec<Dummy> = kind_spots(kind)
             .into_iter()
-            .map(|(x, y)| {
+            .enumerate()
+            .map(|(i, (x, y))| {
+                let entry = if range { RANGE[i.min(RANGE.len() - 1)].0 } else { entry_of(kind) };
                 let w = local(base, x, y);
                 self.next_dummy += 1;
                 let at = At { z, o: (base.o + PI).rem_euclid(2.0 * PI), ..w };
-                Dummy { guid: creature_guid(entry, 0x100 + self.next_dummy), entry, at, kind, home: at, step: 0 }
+                Dummy { guid: creature_guid(entry, 0x100 + self.next_dummy), entry, at, kind: kind_of(entry), home: at, step: 0 }
             })
             .collect();
         self.dummies.extend(made.iter().copied());
@@ -890,6 +923,33 @@ mod tests {
                              ("build a pier", "dock"), ("build a cottage", "house"), ("make a bazaar", "market"), ("build a castle", "castle")] {
             assert_eq!(build_words(said).as_deref(), Some(name), "{said}");
         }
+    }
+
+    #[test]
+    fn the_range_is_a_dummy_forty_yards_out_with_markers_between() {
+        let mut d = Dojo::default();
+        let p = At { x: 0.0, y: 0.0, z: 0.0, o: 0.0 };
+        let (gone, made) = d.place_kind(p, Kind::Marker, 1.0);
+        assert!(gone.is_empty());
+        assert_eq!(made.len(), 5);
+        let far = made.iter().find(|m| m.entry == 900_014).unwrap();
+        assert_eq!((far.kind, far.at.x.round(), far.at.z), (Kind::Target, 40.0, 1.0));
+        for m in made.iter().filter(|m| m.kind == Kind::Marker) {
+            let name = dummy(m.entry).unwrap().2;
+            let yards: f32 = name.split(' ').next().unwrap().parse().unwrap();
+            assert!((far.at.x - m.at.x - yards).abs() < 0.01, "{name} at {}", m.at.x);
+        }
+        // again: the old range comes down, the other dummies stay
+        let (_, pack) = d.place_kind(p, Kind::Pack, 1.0);
+        let (gone, made2) = d.place_kind(p, Kind::Marker, 1.0);
+        assert_eq!(gone.len(), 5);
+        assert_eq!(d.dummies.len(), pack.len() + made2.len());
+        for k in [Kind::Light, Kind::Heavy, Kind::Group] {
+            let (_, m) = d.place_kind(p, k, 1.0);
+            assert!(!m.is_empty() && m.iter().all(|x| x.kind == k), "{k:?}");
+        }
+        assert_eq!(dummy(900_006).map(|x| x.3), Some(77));
+        assert_eq!(dummy(900_007).map(|x| x.3), Some(83));
     }
 
     #[test]

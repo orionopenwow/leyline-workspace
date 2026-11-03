@@ -498,6 +498,8 @@ enum Undo {
     Edited { guid: u64, before: Prop },
     /// One prop deleted (the Builder): undo puts it back.
     Deleted(Prop),
+    /// Several props changed at once (Swap "All of this kind"): undo puts each back as it was, keeping its object.
+    EditedMany(Vec<(u64, Prop)>),
 }
 
 /// What `.build redo` does again: the change an undo took back (the Builder's Redo n).
@@ -509,6 +511,8 @@ enum Redo {
     Edit { guid: u64, after: Prop },
     /// A delete an undo put back: deleted again.
     Delete(u64),
+    /// Several props' change an undo put back: done again.
+    EditMany(Vec<(u64, Prop)>),
 }
 
 /// What a change did, for the world server to tell the client: objects to create and guids to destroy.
@@ -853,6 +857,51 @@ impl Den {
         Ok(Change { created: vec![obj], destroyed: vec![guid], ..Default::default() })
     }
 
+    /// One change to several props at once (the Builder's Swap "All of this kind"): each object destroyed and made
+    /// again with its own guid, and **one** undo step for them all. A locked prop, or one the change would put
+    /// outside the Den, is left as it is; an error when none changed.
+    pub fn edit_many(&mut self, guids: &[u64], f: impl Fn(&mut Prop)) -> Result<Change, String> {
+        let mut before = Vec::new();
+        let mut ch = Change::default();
+        for &g in guids {
+            let Some(b) = self.placed(g).map(|p| p.prop.clone()) else { continue };
+            if b.locked == Some(true) {
+                continue;
+            }
+            let mut p = b.clone();
+            f(&mut p);
+            p.x = quiet_round(p.x);
+            p.y = quiet_round(p.y);
+            p.z = quiet_round(p.z);
+            p.yaw = quiet_round(p.yaw.rem_euclid(360.0));
+            if let Some(obj) = self.set_prop(g, p) {
+                before.push((g, b));
+                ch.destroyed.push(g);
+                ch.created.push(obj);
+            }
+        }
+        if before.is_empty() {
+            return Err("Nothing changed (locked, or it wouldn't fit in your Den).".into());
+        }
+        self.push_undo(Undo::EditedMany(before));
+        Ok(ch)
+    }
+
+    /// Puts each (guid, prop) in place, keeping the guids: the change and what each was before.
+    fn set_many(&mut self, list: Vec<(u64, Prop)>) -> (Change, Vec<(u64, Prop)>) {
+        let mut ch = Change::default();
+        let mut was = Vec::new();
+        for (g, p) in list {
+            let Some(b) = self.placed(g).map(|x| x.prop.clone()) else { continue };
+            if let Some(obj) = self.set_prop(g, p) {
+                was.push((g, b));
+                ch.destroyed.push(g);
+                ch.created.push(obj);
+            }
+        }
+        (ch, was)
+    }
+
     /// The Builder's Lock / Unlock: a locked prop can't be moved, turned, sized or deleted until it is unlocked; kept
     /// in the Den file (`locked`). Nothing changes in the world, so there is nothing to undo.
     pub fn set_lock(&mut self, guid: u64, on: bool) -> Result<(), String> {
@@ -944,6 +993,15 @@ impl Den {
                 }
                 None => Change { message: "Nothing to redo (that prop is gone).".into(), ..Default::default() },
             },
+            Redo::EditMany(list) => {
+                let (mut ch, was) = self.set_many(list);
+                if was.is_empty() {
+                    return Change { message: "Nothing to redo (those props are gone).".into(), ..Default::default() };
+                }
+                self.undo_keep(Undo::EditedMany(was));
+                ch.message = "Redone.".into();
+                ch
+            }
         }
     }
 
@@ -971,6 +1029,14 @@ impl Den {
                 Some(obj) => Change { created: vec![obj], destroyed: vec![guid], message: "Undone: the prop is back where it was.".into(), ..Default::default() },
                 None => Change { message: "Undone (that prop is gone).".into(), ..Default::default() },
             },
+            Undo::EditedMany(list) => {
+                let (mut ch, was) = self.set_many(list);
+                if !was.is_empty() {
+                    self.redo.push(Redo::EditMany(was));
+                }
+                ch.message = format!("Undone: {} props back as they were.", ch.created.len());
+                ch
+            }
             Undo::Deleted(prop) => {
                 let (made, _) = self.place(&[prop]);
                 if let Some(o) = made.first() {

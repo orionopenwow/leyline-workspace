@@ -74,7 +74,12 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 | `.den dojo parse 1\|3\|5`, `reset`, `refill`, `cooldowns`, `fight on\|off`, `best`, `dps` | a timed parse (best per class kept), everything full again, your power, your cooldowns, dummies hitting back, your bests, your numbers now |
 | `.den gear <item>...` / `<slot> <item\|none>` / `list <slot> [page]` / `reset` | any item's look on you, in its slot (several at once; a second one-hand weapon in the off hand); looks: `thunderfury`, `shadowmourne`, `warglaives`, `sulfuras`, `valanyr` |
 | `.den mounts` / `list [page]` / `off` | every mount your game has, in your spellbook; cast one to ride (again, or its buff right-clicked, to get off); flying ones fly with `.den fly on` |
-| `.den class <class> [level]` | any class (warrior, paladin, hunter, rogue, priest, deathknight, shaman, mage, warlock, druid) at any level (80 if none), every spell it learns, its bar; `.den class` alone: the list |
+| `.den class <class> [spec] [level]` | any class (warrior, paladin, hunter, rogue, priest, deathknight, shaman, mage, warlock, druid) and spec at any level (80 if none): its spellbook, talents and every bar at once; `.den class` alone: the list |
+| `.den spec [<spec>]` | the class's three specs, or that spec at once (its talents, spellbook and bars) |
+| `.den bars [list\|save <name>\|use <name>\|reset\|delete <name>]` | named bar loadouts for the class and spec, kept in the Dens folder |
+| `.den gearset [list\|t1-t10\|<yours>\|save <name>\|delete <name>\|off]` | a whole look at once: the class and spec's raid tier from your own game's tables, or one of your saved sets; weapons are real items |
+| `.den dojo levels\|light\|heavy\|group\|range` | dummies three levels below and above you, the healing range (five friends), distance markers |
+| `.den dojo demo [seconds] [kind]`, `invulnerable on\|off`, `meter reset`, `pet off` | a practice run (your main bar cast for you, a number at the end), nothing hurts you, the meters again, your pet away |
 | `.den fly on\|off` / `.den speed 1-5` | fly (jump, then Space to rise, X to sink) / run and fly faster |
 | `.den jaina build <stamp>`, or say `Jaina, build a garden` (a tavern, a forge, a reading nook...) | she walks into its middle and builds it the way a person would (big pieces first, small last, things on tables at the end), casting at each piece, then steps back to look at it (`dojo` is the training ring; docs/DEN-STAMPS.md) |
 | `.den go <place>` / `.den go <map> <x> <y> <z>` | anywhere your game has: capitals, starting towns, Goldshire, Dalaran... (`.den places`); `.den go den` back to your Den ("Den anywhere", below) |
@@ -330,75 +335,98 @@ game: the flying and the speed; whether her cast shows from `SMSG_SPELL_START` /
 Next (plan only): a dungeon queue with companions and raid training (the full Den), Jaina building recipes the
 assistant writes, and `.glb` models as props (docs/DEN.md, "The Dojo").
 
-### Placing with the mouse: the live preview, the gizmo, select by right-click (3 Nov)
+### Placing with the mouse: pick, follow, click, selected; the handles; snap out (3 Nov)
 
-The owner's asks (3 Nov 10:29 - 10:36): "when mousing over ground in game, it shows a preview of where it will land",
-"show the actual prop moving around, not a placement circle, make it a live preview", "the 3 directional arrows",
-"hovering over an object makes it glow; you can click it, select it ... right-click options to delete". The stock
-3.3.5a client gives an addon **no cursor-to-world call** and has no gameobject hover event, so a prop can't literally
-stick to the cursor the way an editor's does. What Den Lite (`src/gizmo.rs`) and the Leyline UI (`Gizmo.lua`) build
-from what the client does have:
+The owner's asks (3 Nov): "show the actual prop moving around, not a placement circle", "the 3 directional arrows",
+"hovering over an object makes it glow", and then his own editor's video: "it should function like this ... until it
+works identically", "the 'snap out' camera mode working for sure too and infinite camera zoom out from character". The
+stock 3.3.5a client gives an addon **no cursor-to-world call** and no gameobject hover event, so Den Lite
+(`src/gizmo.rs`, `src/farsight.rs`) and the Leyline UI (`Gizmo.lua`, `Builder.lua`) build the video's flow from what
+the client does have. In the video's order:
 
-- **Build mode** (`wubuild cmd mode build|play`; the UI sends it in Your Den on Den Lite when not in play mode): every
-  prop is created again with the goober type in `GAMEOBJECT_BYTES_1` **under its build twin's entry** (the prop's entry
-  with bit 24 set, `gizmo::twin`; the guid keeps the prop's own). The client keeps each entry's query answer and went by
-  that cached type, not the type byte (owner's den-features 3 Nov: no glow), so the twin is a new entry it must ask
-  for, and `CMSG_GAMEOBJECT_QUERY` answers a twin as a goober with the prop's own model, name and size
-  (`gizmo::query_any`; how many twins were asked: `twin_queries` in the den-test's answers). The client then highlights a prop under the mouse (its own interact glow and cursor) and a
-  right-click sends `CMSG_GAMEOBJ_USE`: Den Lite selects it, puts the gizmo around it and tells the UI `wubuild
-  picked <id>` (and the state); the UI opens its menu at the cursor (Delete, Duplicate, Move, Rotate, Bigger, Smaller,
-  Snap to floor, Lock, Copy, Properties). Play mode shows the props as they are again (a right-click there is left to
-  the game). A left click on empty ground in build mode clears the selection (`selclear`; not when the game shows an
-  object's name under the mouse). **Left-clicking a gameobject can't select it**: the client never tells the server.
-- **The live preview** (`preview <entry>` from a gallery pick, `preview move` for the selected prop): a copy of the
-  real prop (same entry and model; its own guid, not selectable) stands 2.5 yards in front and follows you; the UI
-  puts the camera in a known pose (the **build camera**: your own view saved in view 5 and put back on leaving; view 2
-  reset, zoomed all the way in, then out 12 yards) and, while the cursor is over the world, sends its screen point about
-  10 times a second (`hover <u> <v> <aspect> <distance>`). Den Lite knows where you stand and face (your movement
-  packets) and casts the ray from the camera through that point onto the ground (`gizmo::project`), snapped to the
-  grid and set on the ground (a moved prop keeps its height over it). A left click on the world (`commit`) puts the
-  real prop exactly where the copy is (or moves the selected one there: one undo); it stays armed until Esc or a right
-  click (`preview off`). `preview turn <deg>` turns the copy, `follow` gives it back to the in-front place, `where`
-  answers `wubuild ghost x,y,z,deg`.
-- **Moving a gameobject, what the client accepts**: in 3.3.5a a gameobject's place is only in the movement block of
-  its create (`UPDATEFLAG_STATIONARY_POSITION`); its update fields have no position (1.12's `GAMEOBJECT_POS_X ..` were
-  dropped in 2.0) and a values update can't move it; transports move only along their path. So each move of the copy
-  is a **create under the other of two guids, then the destroy of the old one** (the Builder's own moves destroy and
-  create the same guid, with a frame between). At most one redraw per 100 ms; the place Commit uses is always the
-  newest. An `UPDATETYPE_MOVEMENT` block (type 1) for a gameobject is untested and left out.
-- **The exact click** (the ground-target cursor, as a fallback and as the calibration's truth): the player knows one
-  spell, Flare (1543, in `SMSG_INITIAL_SPELLS`; ground-targeted, `TARGET_FLAG_DEST_LOCATION`; its cost is a share of
-  base mana, which a warrior hasn't, so the client's own cost check passes). While armed the UI binds G to a secure
-  button that casts it: the game's own circle follows the mouse on the ground and a click sends `CMSG_CAST_SPELL` with
-  the exact world point. Den Lite never casts it: it places (or moves) the armed prop there and answers
-  `SMSG_CAST_FAILED` with `SPELL_FAILED_DONT_REPORT` (nothing on screen) and `SMSG_CLEAR_COOLDOWN`. A cast of any other
-  spell goes on as before.
-- **The gizmo** (`gizmo on|off`, on in build mode): three small flags around the selected prop, made by Den Lite as
-  goobers of its own entries (990001 - 990003, answered in `CMSG_GAMEOBJECT_QUERY`): **X: the red Warsong Flag (display
-  5913), Y: the green Netherstorm Flag (7153), Z: the blue Silverwing Flag (5912)**, half size, 1.8 yards out (Z above).
-  A right-click on a flag picks its axis (`wubuild axis x|y|z`); the UI then binds the mouse wheel (only then) to the
-  Builder's `move <axis> <step>`. They follow the prop (made anew when it moves) and go with the selection.
-- **Selection verbs** (for the Builder's selection panel; the state line's `caps=` lists every verb this Den Lite
-  answers, `locked=0|1` the selection's lock): `selnext` (the next prop by distance from where the round started,
-  wrapping), `selkind` (every prop of the selection's kind: Delete, moves, turns and Snap to floor take them all, one
-  undo step each), `lock` / `unlock` (a locked prop refuses moves and Delete; `locked` in the Den file).
-- **Nothing holds the keyboard**: the UI's override bindings (Esc, G, the wheel) exist only while armed, while an axis
-  is picked or while the menu is open, and are cleared after; WASD and the camera's mouse drags are never taken (the
-  world-click hook only watches `WorldFrame`'s mouse-up: a click is under 0.3 s and 6 pixels).
+1. **Pick a card** (the gallery, bottom left: the category column, search, A-Z, Spin, named cards; the picked card
+   gets a gold edge): `preview <entry>`. The selection panel shows it **in hand · click the ground** with its model on
+   top. Nothing appears in front of you: the prop shows only once the cursor is over the ground (`follow` still puts
+   it in front, for the keyboard's Enter).
+2. **The real prop follows the cursor**: while the cursor is over the world the addon sends its screen point about 10
+   times a second (`hover <u> <v> <aspect> <zoom>`); Den Lite casts the ray from the build camera through it onto the
+   ground (`gizmo::project`, snapped to the grid, standing on the ground) and shows a copy of the real prop (same entry
+   and model; not selectable) there. A gameobject's place is only in its create (`UPDATEFLAG_STATIONARY_POSITION`; no
+   position in its update fields since 2.0), so each move is a create under the other of two guids, then the destroy
+   of the old one: never a frame without it, at most one redraw per 100 ms.
+3. **One left click places it and ends placing** (`commit`): the real prop where the copy was, and it is the
+   **selection at once**: Den Lite answers `placed <id>`, `aim off` and the state, puts the glow, the handles and the
+   halo on it, and the panel opens on it. **Shift+click** (`commit keep`) places it and keeps it in hand; Esc or a right
+   click puts it away (`preview off`).
+4. **The glow** (why this one): in 3.3.5a a gameobject's highlight is drawn by the client from `GAMEOBJECT_DYNAMIC`'s
+   low flags, the ones a server sets on a quest object: `GO_DYNFLAG_LO_ACTIVATE` (0x01) and `GO_DYNFLAG_LO_SPARKLE`
+   (0x08, the glitter round the whole model). Den Lite sends them in a values update (`raw::gameobject_dynamic`) to the
+   selected prop only, again after every create of it (a move, a turn or a size makes it anew and a create clears it),
+   and 0 when it is let go. Under it a **halo**: the game's own "Crate Highlight" model (display 2233, the glow round a
+   quest crate) as an object of Den Lite's (entry 990010), as wide as the prop's footprint. Build mode still shows every
+   prop as a goober under its **build twin's** entry (the client highlights it under the mouse; a right-click sends
+   `CMSG_GAMEOBJ_USE`: selected, `picked <id>`, the menu at the cursor). A left click on a gameobject tells the server
+   nothing in this client, so selecting stays a right-click; a left click on empty ground lets go (`selclear`).
+5. **The handles**: red X, green Y at the prop's foot along the world's axes and blue over its top (up), set out from
+   its box (the player's own `GameObjectDisplayInfo`, else its size). The client can't tint a gameobject and has no red,
+   green and blue arrow models, so the handles are the three coloured flags (Warsong 5913, Netherstorm 7153,
+   Silverwing 5912). **Right-click a handle**: grabbed (`grab x|y|z`; the real prop hidden for you, its glowing copy in
+   its place); the hover stream then moves it **along that axis to the point of the axis line nearest the cursor's ray**
+   (`gizmo::along`), live, at most a redraw per 100 ms, and the status says "Moving Cottage +4.45 yd along X"; the wheel
+   steps it by the panel's step (`grab nudge`); a left click drops it (one change, one undo: "Moved Cottage +4.45 yd
+   along X."), Esc or a right click puts it back (`grab off`).
+6. **The selection panel** (the video's, in the Leyline look, our own icons from `tools/den-ui/icons/make_icons.py`):
+   the model on top (right-drag turns it, the wheel zooms) with its size, the name and "selected", three tabs (the
+   panel must fit above the action bars on a 768-unit screen): **Piece**: POSITION X / Y / Z in red, green and blue
+   (type and Enter, or - / + and the wheel); MOVE · TURN · SIZE from where you stand (the pad: turn left, forward,
+   turn right / left, bring here, right / smaller, back, bigger; lift up and down; the step 0.1 / 0.5 / 1 / 5 yd: Den
+   Lite's `step fwd|back|left|right|up|down <yd>`, `grow`, `bring`); ROTATION · SIZE (turn, tilt, roll by 15 / 45 /
+   90; size; the sliders); the quick buttons (tilt, upright, to ground, settle, random, centre, duplicate, reset,
+   delete; Apply). **Swap · keys**: SWAP WITH the gallery's last pick (`swap <entry>`; All of this kind: `swapkind
+   <entry>`, every prop of its kind, one undo), Lock, Copy, Paste, More, and the keys. **Select**: Nearest, Next, All of
+   its kind, Clear; Shift+right-click adds (`seladd`). **Keys only while something is selected**: Del delete, U copy,
+   Ins swap, Shift+Ins all of its kind, `,` `.` turn, Page Up / Down lift, Home bring here, End to ground, Ctrl+Z /
+   Ctrl+Shift+Z undo and redo, Tab, Esc, numpad + / - size. Never WASD, Q / E or the arrows.
+7. **Snap out**: one key (J, or the first of K, F9, F10 nothing else uses) or **View** on the rail. Den Lite makes an
+   invisible unit nobody can click (`farsight.rs`: entry 990020, display 11686) up and back over where you stand, sets
+   the player's **`PLAYER_FARSIGHT`** (field 624) on it, as the game's own Far Sight and Mind Vision do, and the client's
+   camera goes there; the same key gives it back (far sight 0, the object gone). The object sits on the build camera's
+   own line of sight, 35 yards further back (`gizmo::far_spot`), so the middle of the screen stays on the same ground
+   and the ray stays exact (`Aids::view`: the build camera with the extra distance, from the far focus). While it is
+   out the arrow keys pan it (`cam pan`, a short flying spline), and placing, dragging and selecting work from there.
+8. **Zoom out without end**: in build mode the addon zooms the game's camera itself (2 yards a notch) so it always
+   knows the distance (sent as `cam zoom`, used by the ray), with `cameraDistanceMax` raised to 50 (given back on
+   leaving). Past the game's own limit each notch goes to Den Lite (`cam far 1`): the same far-sight object, further back
+   each notch (8 yards plus a quarter of how far out it is, up to 1500); zooming in comes back the same way and, at 0,
+   the view is yours again.
 
-What is proven here, and what needs the owner's PC: the ray, the copy's two-guid moves, Commit, the exact click's
-cast and its silent answer, the gizmo, the goober look and right-click selection are tested in `gizmo.rs`, `ovmod.rs`,
-`raw.rs` and the headless client (`the_editors_preview_gizmo_selection_and_exact_click`), the UI in
-`stream/tests/test_wuui_gizmo.lua`, den-check's parts in `test_den_check.py`. **On the real game, to see**: that the
-build twins give the highlight and the right-click (den-check's `build mode: props light up under the mouse` says how
-many goober looks the game asked for); that
-Flare's cursor shows for this character and the silent failure leaves no cooldown; that `SaveView` / `SetView` /
-`ResetView` / `CameraZoomIn` / `CameraZoomOut` aren't protected; the flags' colours. **The build camera's numbers are
-first guesses** (field of view 90 degrees across the diagonal, pivot 2 yards over the feet, 12 yards back, 0.5 rad
-down) until **den-check's hover calibration** runs on the owner's PC (`Den features.bat`: the real cursor at six points
-of the game window, at each the preview's place and, by pressing G and clicking, the game's own point; the camera
-fitted to them, printed and saved to `<dens>/den-lite.camera.json`, used from the next Den start). Until then the copy
-can land a few yards from the cursor; the exact click (G) is always exact.
+**The exact click** stays as the fallback and the calibration's truth: while placing, G starts the ground-target cursor
+of Flare (1543, taught in `SMSG_INITIAL_SPELLS`); its `CMSG_CAST_SPELL` carries the exact point; Den Lite places there
+(and stays in hand, for the calibration's six clicks), answers `SPELL_FAILED_DONT_REPORT` and clears the cooldown.
+
+**Nothing holds the keyboard**: the override bindings (Esc, G, the wheel, the snap key, the arrows while snapped out, the
+selection's keys) exist only in build mode and only while needed. A camera drag while placing, dragging or snapped
+out puts the build camera's pose back (view 2, saved at the counted zoom).
+
+The verbs (`caps=` lists them all): `preview <entry> [u v aspect zoom]`, `preview move|turn|off`, `hover`, `follow`,
+`commit [keep]`, `grab x|y|z|nudge <yd>|off`, `axis`, `gizmo on|off`, `mode build|play`, `where`, `cam snap [off]|far
+<n>|pan <dir> <yd>|zoom <yd>|off|where`, and the panel's `step`, `grow`, `bring`, `ground`, `settle`, `upright`,
+`random`, `centre`, `reset`, `swap`, `swapkind`, `seladd`. Answers: `aim`, `axis`, `picked`, `placed`, `drag`, `moved`,
+`cam`, `mode`, `ghost`, `state`.
+
+What is proven here, and what needs the owner's PC: the ray, the axis-drag point, place-then-select, the glow's values
+update, the far view's pose and its far-sight packets are unit-tested in `gizmo.rs`, `raw.rs` and `ovmod.rs`, and over
+the wire in the headless client (`the_editors_pick_place_select_drag_and_snap_out`); the UI in
+`stream/tests/test_wuui_gizmo.lua`, `_builder`, `_denlayout`; den-check's run in `test_den_check.py`. **On the real
+game, to see** (den-check's `Den features.bat` photographs each step): that the sparkle and the halo show on the
+selected prop; that `PLAYER_FARSIGHT` on a unit of Den Lite's moves the camera (and the flying spline moves it); that
+the camera's target height on that object matches (`far_pivot` in the camera file, 0 until calibrated); that
+`cameraDistanceMax` 50 really lets the camera to 50 yards (the zoom count assumes it); that `CameraZoomIn` / `Out`,
+`SaveView` / `SetView` / `ResetView` aren't protected; the flags' colours. **The build camera's numbers are first
+guesses** (field of view 90 degrees across the diagonal, pivot 2 yards over the feet, 0.5 rad down) until **den-check's
+hover calibration** runs on the owner's PC (the real cursor at six points, at each the copy's place and, by pressing G
+and clicking, the game's own point; the camera fitted, saved to `<dens>/den-lite.camera.json`, used from the next Den
+start). Until then the copy can land a few yards from the cursor; the exact click (G) is always exact.
 ### Any gear, every mount (3 Nov, owner 10:40: "allow all mounts, all gear")
 
 - **Gear** (`src/gear.rs`): the look only. The character's visible item fields (`PLAYER_VISIBLE_ITEM_n_ENTRYID`,
@@ -462,8 +490,8 @@ game's own messages that your spells and swings land on the Dojo's dummies and t
   ("12345 damage in 20.4 s: 605 per second."). Nothing hurts you unless a dummy hits back, and you never fall (back
   to full instead).
 
-**What is approximate.** No talents, procs, gear, stats, resistances, misses, dodges or blocks; a 10 % critical chance
-(spells 1.5 times, swings 2 times). Damage: the spell's base points and dice from your own `Spell.dbc` with its points
+**What is approximate.** Talents, gear tiers, misses, armour, procs and pets: the next section (3 Nov, evening); no resistances,
+parries or blocks; a 10 % critical chance without gear or talents (spells 1.5 times, swings 2 times). Damage: the spell's base points and dice from your own `Spell.dbc` with its points
 per level, plus a spell power of 15 a level (casters; 5 others) times the cast time over 3.5 s; weapon strikes: a
 weapon's damage by level plus attack power (30 a level for melee) over 14 per second of swing. Health and mana by
 level (`classes::stats`). Effects other than damage, heals, auras, energize and combo points (summons, teleports,
@@ -471,8 +499,9 @@ dispels, pets, totems, crowd control) succeed visually and do nothing. Death kni
 need a weapon equipped (many warrior and rogue strikes, hunters' shots) may be refused by the game itself: Den Lite's
 character carries no items.
 
-**What needs the full Den** (real AzerothCore): real stats and gear, talents, procs, pets, creatures that fight back
-for real, duels and fighting a friend, quests and loot.
+**What needs the full Den** (real AzerothCore): real stats from items, every talent's own effect (spell modifiers),
+pets with their own spells and talents, creatures that fight back for real, duels and fighting a friend, quests and
+loot.
 
 **The tables** (all the player's own, `src/spells.rs`): `Spell.dbc`, `SkillLineAbility.dbc`, `SpellCastTimes.dbc`,
 `SpellDuration.dbc`, `SpellRadius.dbc`, checked against their 3.3.5a shapes. The launcher copies them from the player's
@@ -491,6 +520,75 @@ points, the stance bar) after a class change without relogging; whether the game
 weapon; whether the dummies' neutral faction lets every spell target them; how the missiles, the boss's circle (a
 ground-targeted fire spell's own look, `combat::BOSS_SPELL`) and the auras look; whether the spellbook shows the
 spells without the class's skill lines in the player's fields.
+
+### Specs, bars, gear sets and the test range (3 Nov, evening)
+
+Owner (3 Nov): "spellbook placement loadout instant on bars, gear sets selector, full featureset for Dens to work and
+better combat and test range dojo features". The whole list, what is next and the research: docs/DEN-FEATURES.md.
+
+- **Specs and bars** (`src/specs.rs`, `classes.rs`): every class has its three specs (`.den class mage fire`,
+  `.den spec frost`). A spec gets every bar filled at once (3.3.5a's button numbers): the rotation on 1-6 and area
+  spells or big cooldowns on 7-12, cooldowns and defensives on the bottom left bar, utility (interrupts, crowd
+  control, the auto attack) on the bottom right, mounts on the right bar, buffs, heals and every other spell on the
+  second right bar and the main bar's second page; the stance and form bars (a warrior's three stances, a druid's
+  cat, prowl, bear and moonkin, a rogue's stealth, a priest's shadowform) get the spec's own list. The four extra bars
+  are switched on (PLAYER_FIELD_BYTES' third byte). TODO(owner): the layouts are a first pass from the usual builds.
+- **Talents**: with the player's own `Talent.dbc` and `TalentTab.dbc` (the launcher now copies them, `host/lite.rs`
+  GAME_TABLES), the spec's tree is filled top to bottom as a level-80 player would (abilities first, every rank, the
+  tree's last talent at 51, the rest in the second tree; 5 points a row and every prerequisite kept), the talents'
+  spells are learnt, the other trees' abilities left out, and the game's talent frame is told (SMSG_TALENTS_INFO, as
+  AzerothCore's Player::BuildPlayerTalentsInfoData). Their passives count in the sandbox: damage and healing per
+  cent, critical chance, procs (PROC_TRIGGER_SPELL: their own spell cast at the target, once a second at most).
+  Spell modifiers (SPELL_AURA_ADD_PCT_MODIFIER and the like) don't.
+- **Bar loadouts**: `.den bars save aoe`, `use`, `reset`, `delete`; up to ten per class and spec, kept in
+  `den-lite.class.json` with the player's own button changes (now per class and spec).
+- **Gear sets** (`src/gearsets.rs`): `.den gearset t7` puts the class's raid set of that tier on (T1-T10: found by name
+  in the player's own `ItemSet.dbc`, the spec's version first: healer, caster, fighter or tank), the slots the set
+  has no piece for and the weapons from the same era's items of the right kind (Item.dbc), at once for everyone in the
+  Den. `.den gearset save <name>` keeps what you wear (`den-lite.gearsets.json`). The tier also counts in the numbers
+  (`classes::geared`: health, power, spell or attack power, weapon damage, critical chance, hit: tier 7 and up is
+  hit-capped; a tank's armour and avoidance).
+- **Weapons are real items** (`src/pets.rs`): the main hand, off hand and ranged are created as item objects in the
+  player's inventory slots, and the game's CMSG_ITEM_QUERY_SINGLE gets its answer ("Dojo Staff": Item.dbc has no
+  names), so spells that need a weapon can be cast.
+- **Better combat** (`src/combat.rs`): misses and dodges against higher levels only (spells 5, 6, 17 per cent; weapons
+  5.5, 6, 8 and a 6.5 per cent dodge at +3; less your hit), glancing blows (auto attacks at +3), armour on physical
+  hits (the heavy dummy and the boss: about two fifths off), the combat log's miss lines (SMSG_SPELLLOGMISS and the
+  go's miss list), runic power from rune strikes, healing on its own meter (`dps` and `hps` in the panel's readout,
+  `.den dojo meter reset`), your own heals counted.
+- **Pets** (`src/pets.rs`, combat.rs): a summon your class has (Summon Imp, Call Pet, Raise Dead, Summon Water
+  Elemental, Feral Spirit...) brings a pet: its create (summoned and created by you), its bar (SMSG_PET_SPELLS: Attack,
+  Follow, Stay, its spell, Aggressive, Defensive, Passive, as AzerothCore's CharmInfo), it follows you, fights what
+  you fight (casters cast their bolt), its damage counts with yours; its bar's buttons work (CMSG_PET_ACTION),
+  Dismiss Pet sends it away. Spells with a reagent (a warlock's Soul Shard) are refused by the game itself.
+- **The test range**: `.den dojo levels` (a dummy three levels below you without armour and a boss-level one with
+  heavy armour and the skull), `group` (the healing range: five friends losing health, the first faster, a big hit
+  on one now and then), `range` (a dummy 40 yards out, small markers named by their distance: 5, 10, 20, 30 yards),
+  `demo [seconds] [kind]` (a practice run: your main bar cast for you at the dummy, cooldowns and damage over time
+  first, ending with your number; the den-check's timed parse), `invulnerable on` (nothing hurts you). The boss now
+  also casts at you every 15 seconds (3 s, a shadow bolt's look): kick it (any interrupt, silence or stun) or it hits
+  for a quarter of your health; its result says how many you interrupted. Bests are kept per class and spec.
+- **The Dojo panel** (WrathUnleashedUI `Dojo.lua`): two pages, Train (the old rows, the Range row: Levels, Group,
+  Range, Run, Safe) and Loadout (class and spec pickers and Be, Mounts; your saved bars: Use, Save, Reset; gear: the
+  tiers your game has and your sets: Wear, Save, Off; a name box for Save). Den Lite answers `wuden loadout
+  class=..;spec=..;specs=..;bars=..;saved=..;set=..;tiers=..;mine=..`.
+
+Tested here: unit tests (specs.rs: every class's three specs, the bars, a level-80 build on made-up talent trees, the
+talents message byte for byte; gearsets.rs: tiers by role, the filled slots and weapons, saved sets; pets.rs: the
+creates, the pet bar, the item answer field by field against the message crate's own reading; combat.rs: misses and
+armour only against higher levels, procs once a second, the boss's cast kicked, healing meters and the healing range,
+a pet that follows and fights, a practice run's number; classes.rs: loadouts, gear tiers), the headless clients
+(`a_class_and_spec_fill_the_spellbook_talents_and_every_bar_and_loadouts_come_back`,
+`a_gear_set_changes_every_visible_slot_and_its_weapons_are_real_items`,
+`a_practice_run_has_a_number_the_boss_is_kicked_and_a_pet_comes_and_goes`), the Lua panel tests and the den-check's
+Dojo steps (`dojo_features`). This container can't fetch crates: the std-side modules' tests ran here under plain
+rustc with a stand-in JSON crate; CI's `cargo test --locked` must confirm the rest (sandbox.rs, world.rs hooks, the
+headless clients).
+
+**Only the real game can show**: whether the game takes the talent frame from SMSG_TALENTS_INFO without a relog,
+shows the four extra bars from the field, fills the stance bars as it swaps forms; whether it accepts the item
+objects as equipped weapons (Backstab, Auto Shot), the pet's create, frame and bar, and the boss's skull; how the
+markers look (the dummy's model, small).
 
 ## How it works
 

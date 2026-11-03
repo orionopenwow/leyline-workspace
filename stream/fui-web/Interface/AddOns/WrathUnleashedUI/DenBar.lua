@@ -348,12 +348,14 @@ end
 D.RAIL = {
     { "select", "select", "Select", "Select: the prop nearest you", function() D.Tool("select") end },
     { "build", "place", "Build", "Build: the gallery of props", function() D.Tool("place") end },
-    { "move", "move", "Move", "Move the selection (arrows, PgUp / PgDn)", function() D.Tool("move") end },
-    { "rotate", "rotate", "Rotate", "Turn the selection (Q / E)", function() D.Tool("rotate") end },
+    { "move", "move", "Move", "Move the selection: drag a coloured handle, the pad, PgUp / PgDn", function() D.Tool("move") end },
+    { "rotate", "rotate", "Rotate", "Turn the selection (, and .)", function() D.Tool("rotate") end },
     { "stamps", "stamp", "Stamps", "Stamps: ready-made areas", function() D.Tool("stamps") end },
     { "path", "path", "Path", "Path: a line of the picked prop", function() D.Tool("path") end },
     { "ground", "ground", "Ground", "Shape the ground (opens Forge)", function() D.ShapeGround() end, "Shape ground" },
     { "dojo", "dojo", "Dojo", "The training grounds", function() if W.Dojo then W.Dojo.Toggle() end end },
+    -- snap out (owner 3 Nov): the view up and back over where you stand, and back (Gizmo.lua; its key says the tooltip)
+    { "view", "camera", "View", "Snap out: the view from up high, and back", function() if W.Gizmo and W.Gizmo.Snap then W.Gizmo.Snap() end end },
 }
 
 -- A rail button: the icon and its name under it (a short screen: the icon alone, the name in the tooltip).

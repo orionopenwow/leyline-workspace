@@ -8,7 +8,10 @@
     py -3 tools/den-check/den_check.py features                    `test`, then the Den editor's feature test (den_features,
                                                                     below): every editor action through the Leyline UI's own
                                                                     buttons, a screenshot after each (logs/den-features/);
-                                                                    then the placement aids (aids_features) and, on
+                                                                    then the Dojo's combat (dojo_features: a class and
+                                                                    spec fill the bars, a gear set, a practice run's
+                                                                    number, the boss's circle, the range), then the
+                                                                    placement aids (aids_features) and, on
                                                                     Windows, the build camera's hover calibration
                                                                     (the real cursor moved: leave the mouse alone)
     py -3 tools/den-check/den_check.py test                        the real thing, unattended: the newest Den Lite,
@@ -1282,6 +1285,129 @@ def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
         rep.add("INFO", "your Den after the feature test", "put back as it was (%s props)" % props())
 
 
+# ------------------------------------------------------------------------------------------------ the Dojo's combat
+# Owner 3 Nov: "spellbook placement loadout instant on bars, gear sets selector ... better combat and test range dojo
+# features". dojo_features drives Den Lite's sandbox (labs/den-lite sandbox.rs, combat.rs) through its own commands
+# and reads its events: a class and spec fill the spellbook and every bar, a bar loadout is kept and put back, a gear
+# set changes the look, a practice run (Den Lite casts your main bar at a dummy) ends with a number, the boss marks the
+# ground and casts, the range goes up. A picture after each. Your class, bars and look are put back after.
+
+DOJO_CLASS = ("mage", "fire", 80)
+DOJO_TIERS = ("t10", "t7", "t3", "t1")
+
+
+def event_like(den_dir, name, since, prefix=""):
+    """The first Den Lite event `name` at or after `since` whose detail starts with `prefix`."""
+    for e in events(den_dir, since):
+        if e.get("ev") == name and str(e.get("detail", "")).startswith(prefix):
+            return e
+    return None
+
+
+def dojo_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0, run_secs=15):
+    den_dir, outdir = Path(den_dir), Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    n = [0]
+
+    def shot(name):
+        n[0] += 1
+        out = outdir / ("dojo-%02d-%s.png" % (n[0], name))
+        ok, _ = shoot(out)
+        return out.name if ok else None
+
+    def ev(name, since, prefix="", secs=None):
+        return wait_for(lambda: event_like(den_dir, name, since, prefix), wait if secs is None else secs)
+
+    def cmd(line):
+        t = now_ms()
+        r = ch.send(line)
+        time.sleep(settle)
+        return t, r
+
+    if ch.send(".den size") is None:
+        rep.add("SKIP", "the Dojo's combat test", "Den Lite didn't take the test's commands")
+        return False
+    before = read_json(den_dir / "den-lite.class.json") or {}
+    kept = stash([den_dir / "den-lite.class.json", den_dir / "den-lite.gear.json", den_dir / "den-lite.gearsets.json", den_dir / "dojo-best.json"])
+    cmd(".den gearset save dojo-before")
+    try:
+        # 1. a class and spec: the spellbook and every bar at once
+        cls, spec, level = DOJO_CLASS
+        t, _ = cmd(".den class %s %s %d" % (cls, spec, level))
+        e = ev("class", t, cls)
+        bits = str((e or {}).get("detail", "")).split()
+        spells = int(bits[2]) if len(bits) > 2 and bits[2].isdigit() else 0
+        filled = int(bits[4]) if len(bits) > 4 and bits[4].isdigit() else 0
+        points = bits[5] if len(bits) > 5 else "?"
+        pic = shot("class")
+        rep.ok(e is not None and spells >= 10 and filled >= 20, "dojo: a class and spec fill the spellbook and every bar",
+               "%s %s %s: %d spells, %d buttons, %s talent points%s" % (cls, spec, level, spells, filled, points, (", " + pic) if pic else ""),
+               "No spells or bars: start Your Den from the launcher (it copies your game's spell tables), then run den-features again." if e else
+               "Den Lite didn't take .den class: send logs\\den-features-latest.txt.")
+        if points in ("0", "?"):
+            rep.add("INFO", "dojo: talents", "no talent points: the launcher copies Talent.dbc and TalentTab.dbc when Your Den starts (an older launcher doesn't)")
+        t, _ = cmd(".den spec frost")
+        e = ev("spec", t, cls)
+        rep.ok(e is not None, "dojo: another spec at once", (e or {}).get("detail", "no change"), "Den Lite didn't take .den spec: send logs\\den-features-latest.txt.")
+        shot("spec-frost")
+        # 2. a bar loadout kept and put back
+        t, _ = cmd(".den bars save dojotest")
+        saved = ev("bars", t, "save")
+        t, _ = cmd(".den bars use dojotest")
+        used = ev("bars", t, "use")
+        rep.ok(saved is not None and used is not None, "dojo: a bar loadout saved and put back", "dojotest",
+               "Den Lite didn't keep the bar: send logs\\den-features-latest.txt.")
+        cmd(".den bars delete dojotest")
+        # 3. a gear set: the look changes for everyone
+        got = None
+        for tier in DOJO_TIERS:
+            t, _ = cmd(".den gearset %s" % tier)
+            got = ev("gearset", t, tier, secs=wait / 2)
+            if got:
+                break
+        bits = str((got or {}).get("detail", "")).split()
+        slots = int(bits[2]) if len(bits) > 2 and bits[2].isdigit() else 0
+        pic = shot("gearset")
+        rep.ok(got is not None and slots >= 6, "dojo: a gear set changes the look", "%s: %d slots%s" % ((got or {}).get("detail", "none"), slots, (", " + pic) if pic else ""),
+               "No gear set: the launcher copies your game's Item.dbc and ItemSet.dbc when Your Den starts; update the launcher, then run den-features again.")
+        # 4. a practice run: a number
+        cmd(".den dojo dummies 1")
+        t, _ = cmd(".den dojo demo %d target" % run_secs)
+        time.sleep(min(run_secs / 2.0, 8))
+        pic = shot("practice-run")
+        e = ev("demo", t, "", secs=run_secs + 10)
+        bits = str((e or {}).get("detail", "")).split()
+        dps = int(bits[2]) if len(bits) > 2 and bits[2].isdigit() else 0
+        rep.ok(e is not None and dps > 0, "dojo: a timed practice run ends with a number",
+               "%s per second over %s s%s" % (dps, bits[0] if bits else "?", (", " + pic) if pic else ""),
+               "No number: the spells didn't land (send logs\\den-features-latest.txt and the picture).")
+        # 5. the boss: its circle (and its cast)
+        cmd(".den dojo boss")
+        t, _ = cmd(".den dojo demo 12 boss")
+        circle = ev("dojo", t, "boss circle", secs=14)
+        pic = shot("boss-circle")
+        cast = event_like(den_dir, "dojo", t, "boss cast")
+        rep.ok(circle is not None, "dojo: the boss marks the ground under you", "%s%s" % ("and casts at you" if cast else "no cast seen", (", " + pic) if pic else ""),
+               "The boss didn't fight: send logs\\den-features-latest.txt.")
+        # 6. the range
+        t, _ = cmd(".den dojo range")
+        e = ev("dojo", t, "range")
+        pic = shot("range")
+        rep.ok(e is not None, "dojo: the range (a dummy 40 yards out, markers)", "%s%s" % ((e or {}).get("detail", "none"), (", " + pic) if pic else ""),
+               "The range didn't go up: send logs\\den-features-latest.txt.")
+        return True
+    finally:
+        # as you were: the dummies down, your class, spec and look
+        ch.send(".den dojo clear")
+        if before.get("class"):
+            spec_before = (before.get("specs") or {}).get(before["class"], "")
+            ch.send(".den class %s %s %s" % (before["class"], spec_before, before.get("level", 80)))
+        ch.send(".den gearset dojo-before")
+        ch.send(".den gearset delete dojo-before")
+        unstash(kept)
+        rep.add("INFO", "your class and look after the Dojo test", "put back as they were")
+
+
 # ------------------------------------------------------------------------------------------------ the placement aids
 # Owner 3 Nov 10:29 - 10:36: a live preview of the prop under the mouse, the three arrows, select by hovering and
 # clicking. Den Lite labs/den-lite src/gizmo.rs, the Leyline UI's Gizmo.lua. aids_features drives them through the
@@ -1301,7 +1427,8 @@ SCAN_G = 0x22
 
 def project(cam, player, u, v, aspect, floor):
     """gizmo.rs `project`, the same numbers: where the cursor at (u, v) (-1 .. 1, right and up) points on the ground at
-    height `floor`, the build camera `cam` behind the player at (x, y, z, facing). None: no ground within 60 yards."""
+    height `floor`, the build camera `cam` behind the player at (x, y, z, facing). None: no ground within 60 yards past
+    the camera's own distance (gizmo.rs REACH + dist: the far view looks from further back)."""
     x, y, z, o = player
     so, co = math.sin(o), math.cos(o)
     fwd, right = (co, so, 0.0), (so, -co, 0.0)
@@ -1320,7 +1447,7 @@ def project(cam, player, u, v, aspect, floor):
     if t <= 0:
         return None
     px, py = eye[0] + d[0] * t, eye[1] + d[1] * t
-    return (px, py) if math.hypot(px - x, py - y) <= 60.0 else None
+    return (px, py) if math.hypot(px - x, py - y) <= 60.0 + cam["dist"] else None
 
 
 def camera_error(cam, samples):
@@ -1406,10 +1533,12 @@ def aids_of(answer):
 
 
 def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
-    """The placement aids through the Leyline UI's own test actions, a picture after each: build mode (props shown
-    as things the game highlights), the live preview (the copy in front, then where the cursor's ray lands), a click
-    places it, Esc, the gizmo's three flags around the selection, the wheel along a picked axis, the menu's
-    Duplicate, play mode. Your Den is saved first and put back after."""
+    """The editor's flow as the owner's video shows it (3 Nov: "it should function like this"), through the Leyline UI's
+    own test actions, a picture after each step: build mode (props shown as things the game highlights); a gallery
+    card picked (in hand, nothing in front of you); the real prop following the cursor; one click places it and it is
+    selected at once (its glow, its handles and the halo); a handle dragged along X (moved N yd) and dropped; the wheel
+    along a picked axis; Swap with another card; the menu's Duplicate; snap out and back; the wheel past the game's
+    zoom limit and back; play mode. Your Den is saved first and put back after."""
     den_dir, outdir = Path(den_dir), Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     n = [0]
@@ -1419,6 +1548,9 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
         out = outdir / ("aids-%02d-%s.png" % (n[0], name))
         ok, _ = shoot(out)
         return out.name if ok else None
+
+    def with_pic(text, pic):
+        return text + ((", " + pic) if pic else "")
 
     def ui(action):
         r = ch.send(".den ui %s" % action)
@@ -1438,6 +1570,7 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
     if "aids" not in first:
         rep.add("SKIP", "the placement aids", "this Den Lite is from before them: update Den Lite (the launcher puts the newest in)")
         return False
+    newer = "cam" in (aids_of(first) or {})
     before = den_dir / ("%s-before.den.json" % AIDS_SAVE)
     kept = stash([before, den_dir / "backup.den.json"])
     ch.send(".den save %s-before" % AIDS_SAVE)
@@ -1462,52 +1595,111 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
                "The Leyline UI didn't start build mode: update the Leyline addons and Den Lite, then run den-features again.")
         if look is None:
             rep.add("INFO", "build mode: the props' goober looks", "this Den Lite is from before them (3 Nov): update Den Lite for the glow under the mouse")
-        # the live preview: armed, in front; then the cursor's point
+        if not newer:
+            rep.add("INFO", "the editor's new flow", "this Den Lite is from before one-click placing, the handles' drag and snap out (3 Nov): update Den Lite")
+        # 1. a card picked: in hand (the panel says so), nothing in front of you
         ui("gizmo arm 2413")
         a = aids()
-        pic = shot("preview")
-        rep.ok(str(a.get("armed", "")).startswith("place,2413") and a.get("ghost"), "preview: the prop's copy in front of you",
-               "armed %s, the copy at %s%s" % (a.get("armed"), a.get("ghost"), (", " + pic) if pic else ""),
-               "Den Lite showed no copy: send logs\\den-features-latest.txt.")
-        g0 = a.get("ghost")
+        pic = shot("pick")
+        rep.ok(str(a.get("armed", "")).startswith("place,2413") and (not newer or not a.get("ghost")), "pick: the card in hand",
+               with_pic("armed %s, nothing shown until the cursor is on the ground" % a.get("armed"), pic),
+               "Den Lite didn't take the pick: send logs\\den-features-latest.txt.")
+        # 2. the real prop follows the cursor on the ground
         ui("gizmo hover 0.25 -0.35")
         a = aids()
         cur = a.get("cursor") or []
-        pic = shot("preview-hover")
-        rep.ok(len(cur) >= 2 and abs(cur[0] - 0.25) < 0.01 and abs(cur[1] + 0.35) < 0.01 and a.get("ghost") and a.get("ghost") != g0,
-               "preview: the copy goes where the cursor points", "now at %s%s" % (a.get("ghost"), (", " + pic) if pic else ""),
-               "The copy didn't move to the cursor's point: send logs\\den-features-latest.txt.")
+        g1 = a.get("ghost")
+        ui("gizmo hover 0.1 -0.3")
+        a = aids()
+        pic = shot("follow")
+        rep.ok(len(cur) >= 2 and abs(cur[0] - 0.25) < 0.01 and abs(cur[1] + 0.35) < 0.01 and g1 and a.get("ghost") and a.get("ghost") != g1,
+               "follow: the real prop goes where the cursor points", with_pic("at %s, then %s" % (g1, a.get("ghost")), pic),
+               "The prop didn't follow the cursor: send logs\\den-features-latest.txt.")
+        # 3. one click: placed and selected at once (glow, handles, halo), placing over
         p0 = props() or 0
         t = now_ms()
         ui("gizmo commit")
         ev = wait_for(lambda: event_after(den_dir, "den_change", t), wait)
-        rep.ok(ev is not None and (props() or 0) == p0 + 1, "preview: a click places it there", (ev or {}).get("detail", "nothing placed"),
-               "Den Lite didn't place the prop: send logs\\den-features-latest.txt.")
-        ui("gizmo cancel")
         a = aids()
-        rep.ok(a.get("armed") == "off" and not a.get("ghost"), "preview: Esc takes the copy away", "armed %s" % a.get("armed"),
-               "The copy stayed: send logs\\den-features-latest.txt.")
-        # the gizmo: the selection's three flags, the wheel along an axis
-        ui("select")
-        a = aids()
-        pic = shot("gizmo")
-        rep.ok(a.get("gizmo") == 3, "gizmo: three flags around the selected prop (red X, green Y, blue Z)",
-               "%s flags, prop %s%s" % (a.get("gizmo"), a.get("sel"), (", " + pic) if pic else ""),
-               "No flags around the selection: send logs\\den-features-latest.txt and the picture.")
+        pic = shot("placed-selected")
+        placed = ev is not None and (props() or 0) == p0 + 1
+        if newer:
+            ok = placed and a.get("armed") == "off" and a.get("sel") is not None and a.get("glow") == a.get("sel") and int(a.get("gizmo") or 0) >= 3
+            rep.ok(ok, "click: placed, and selected at once (it glows, its handles)",
+                   with_pic("prop %s, glow on %s, %s handles and the halo, placing over (%s)" % (a.get("sel"), a.get("glow"), max(0, int(a.get("gizmo") or 0) - 1), a.get("armed")), pic),
+                   "Placed %s; armed %s, glow %s, gizmo %s: send logs\\den-features-latest.txt and the picture." % (placed, a.get("armed"), a.get("glow"), a.get("gizmo")))
+        else:
+            rep.ok(placed, "click: placed there", (ev or {}).get("detail", "nothing placed"), "Den Lite didn't place the prop: send logs\\den-features-latest.txt.")
+            ui("gizmo cancel")
+        # 4. a handle dragged along X: the prop follows the cursor along it; a click drops it
+        if newer:
+            ui("gizmo grab x")
+            a = aids()
+            grabbed = str(a.get("armed", "")).startswith("axis,")
+            ui("gizmo hover 0.4 -0.3")
+            a = aids()
+            pic = shot("dragging")
+            moved = float(a.get("drag") or 0.0)
+            t = now_ms()
+            ui("gizmo commit")
+            ev = wait_for(lambda: event_after(den_dir, "den_change", t), wait)
+            pic2 = shot("drag-dropped")
+            rep.ok(grabbed and abs(moved) > 0.05 and ev is not None, "drag: a handle moves it along X, a click drops it",
+                   "moved %+.2f yd along X%s%s" % (moved, (", " + pic) if pic else "", (", " + pic2) if pic2 else ""),
+                   "Grabbed %s, moved %.2f, dropped %s: send logs\\den-features-latest.txt and the pictures." % (grabbed, moved, ev is not None))
+        else:
+            ui("select")
+        # the wheel along a picked axis (a step at a time)
         ui("gizmo axis z")
         t = now_ms()
         ui("gizmo wheel 1")
         ev = wait_for(lambda: event_after(den_dir, "den_change", t), wait)
-        pic = shot("gizmo-moved")
+        pic = shot("wheel-step")
         rep.ok(ev is not None and aids().get("axis") == "z", "gizmo: the wheel moves it along the picked axis",
-               "axis z, %s%s" % ((ev or {}).get("detail", "no change"), (", " + pic) if pic else ""),
+               with_pic("axis z, %s" % (ev or {}).get("detail", "no change"), pic),
                "The wheel didn't move the prop: send logs\\den-features-latest.txt.")
         ui("gizmo axis off")
+        # 5. Swap with: another card picked, Ins
+        if newer:
+            ui("pick 1670")
+            t = now_ms()
+            ui("key insert")
+            ev = wait_for(lambda: event_after(den_dir, "den_change", t), wait)
+            pic = shot("swap")
+            rep.ok(ev is not None, "swap: the selection becomes the gallery's pick", with_pic((ev or {}).get("detail", "no change"), pic),
+                   "Swap did nothing: send logs\\den-features-latest.txt.")
+            ui("gizmo cancel")
         # the right-click menu's Duplicate (the menu opens at the cursor on a right-click in the game)
         p0 = props() or 0
         ui("gizmo menu 2")
         got = wait_for(lambda: (props() or 0) == p0 + 1, wait, 0.5)
         rep.ok(bool(got), "menu: Duplicate", "%s -> %s props" % (p0, props()), "The menu's Duplicate did nothing: send logs\\den-features-latest.txt.")
+        if newer:
+            # 6. snap out: the view up and back over you (Den Lite's camera object), and back
+            ui("gizmo snap")
+            a = aids()
+            pic = shot("snap-out")
+            out = str(a.get("cam", "")).startswith("far,") and a.get("far_at")
+            rep.ok(bool(out), "snap out: the view from up high", with_pic("%s, the camera object at %s" % (a.get("cam"), a.get("far_at")), pic),
+                   "The view didn't go out: send logs\\den-features-latest.txt and the picture.")
+            ui("gizmo snap")
+            a = aids()
+            pic = shot("snap-back")
+            rep.ok(a.get("cam") == "near", "snap out: and back to you", with_pic(str(a.get("cam")), pic),
+                   "The view stayed out: press the snap-out key (or View on the rail) and send logs\\den-features-latest.txt.")
+            # 7. the wheel past the game's own zoom limit: Den Lite's far view; and back in
+            ui("gizmo zoom 40")
+            a = aids()
+            pic = shot("zoom-far")
+            far = str(a.get("cam", "")).split(",")
+            back = float(far[1]) if len(far) > 1 and far[0] == "far" else 0.0
+            rep.ok(back > 0, "zoom: out past the game's limit", with_pic("%.0f yd further than the game's own camera goes" % back, pic),
+                   "The zoom stopped at the game's limit: send logs\\den-features-latest.txt.")
+            ui("gizmo zoom -60")
+            a = aids()
+            pic = shot("zoom-back")
+            rep.ok(a.get("cam") == "near", "zoom: and back to you", with_pic(str(a.get("cam")), pic),
+                   "The far view stayed: send logs\\den-features-latest.txt.")
         # play mode: plain again
         t = now_ms()
         ui("gizmo build off")
@@ -2145,6 +2337,10 @@ def test(args, rep):
                 den_features(steps, FileChannel(den_dir), den_dir, lambda out: screenshot(pid, out), logs / "den-features")
             except Exception as e:  # noqa: BLE001 - the game still gets its picture and is closed
                 steps.add("FAIL", "the editor's feature test", "stopped: %s" % str(e)[:200], "Send logs\\den-test-latest.txt.")
+            try:
+                dojo_features(steps, FileChannel(den_dir), den_dir, lambda out: screenshot(pid, out), logs / "den-features")
+            except Exception as e:  # noqa: BLE001 - the game still gets its picture and is closed
+                steps.add("FAIL", "the Dojo's combat test", "stopped: %s" % str(e)[:200], "Send logs\\den-test-latest.txt.")
             try:
                 aids_features(steps, FileChannel(den_dir), den_dir, lambda out: screenshot(pid, out), logs / "den-features")
                 hover_calibration(steps, FileChannel(den_dir), den_dir, lambda out: screenshot(pid, out), logs / "den-features", win_mouse(pid))

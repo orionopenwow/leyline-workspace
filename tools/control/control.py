@@ -253,6 +253,8 @@ STEPS = {
     "fresh-check": ("tools/fresh-history/Fresh history - dry run.bat", "Fresh Leyline history: what it would do (read-only)", False),
     "fresh-leyline-check": ("tools/fresh-history/Fresh history - Leyline repo (dry run).bat", "The public Leyline repo's history as Orion: what it would do (read-only)", False),
     "wipe-releases": ("tools/fresh-history/Wipe old releases - Leyline repo.bat", "Old launcher releases off the public Leyline repo (the newest, launcher-latest, host-pack, host-kit and leyline-addons kept)", False),
+    "retag-leyline-check": ("tools/fresh-history/Retag - Leyline repo (dry run).bat", "The public Leyline repo's release tags still on old commits by someone else: which would move (read-only)", False),
+    "retag-leyline": ("tools/fresh-history/Retag - Leyline repo.bat", "Those release tags moved onto Orion's main (releases and files kept; old tags backed up on the Desktop); needs tools\\fresh-history\\CONFIRM-retag", False),
     "fresh-leyline": ("tools/fresh-history/Fresh history - Leyline repo.bat", "The public Leyline repo's main as one commit by Orion (releases kept; backup on the Desktop)", False),
     "fresh-history": ("tools/fresh-history/Fresh history - do it.bat", "The workspace repo's main as one commit by Orion (releases kept; backup on the Desktop)", False),
     # ovrename / ovland (the OpenVanilla repo's rename to Leyline-Launcher, 2026-10-29) are done for good: the tool is in
@@ -305,7 +307,7 @@ STEPS = {
 # Steps that change nothing in production. With "Ask before deploys" on (control/autopilot.json "confirm"),
 # Autopilot runs only these by itself; anything else waits for "Launch all".
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
-             "fresh-check", "fresh-leyline-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
+             "fresh-check", "fresh-leyline-check", "retag-leyline-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
              "vr-data-check", "vr-site-check", "sv-site-check", "release-mirror-check", "fork-check", "bugs", "audit", "den-check", "domain-check",
              "discord-preview", "discord-check", "apply-check", "feedback"}
 # Steps only the owner starts, by hand, from their own panel (never Autopilot, Launch all or a Waiting on you button)

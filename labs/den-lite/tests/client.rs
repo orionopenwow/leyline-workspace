@@ -1792,6 +1792,27 @@ fn single_go(f: &Frame) -> Option<(u64, u8)> {
 }
 
 /// Frames until a one-part addon answer `wubuild <name>`: the frames before it and its data.
+/// The last whole `wubuild <name>` answer in frames already read (its parts joined; the state line is often more
+/// than one part), or None.
+fn aid_parts(frames: &[Frame], name: &str) -> Option<String> {
+    let want = format!("OVMOD\twubuild\t{name}\t");
+    let (mut parts, mut whole) = (Vec::new(), None);
+    for f in frames {
+        let Some(rest) = addon_text(f).and_then(|t| t.strip_prefix(&want).map(String::from)) else { continue };
+        let Some((pn, data)) = rest.split_once('\t') else { continue };
+        let Some((i, n)) = pn.split_once('/') else { continue };
+        let (Ok(i), Ok(n)) = (i.parse::<usize>(), n.parse::<usize>()) else { continue };
+        if i == 1 {
+            parts.clear();
+        }
+        parts.push(data.to_string());
+        if i == n && parts.len() == n {
+            whole = Some(parts.concat());
+        }
+    }
+    whole
+}
+
 fn until_aid(w: &mut World, name: &str) -> (Vec<Frame>, String) {
     let want = format!("OVMOD\twubuild\t{name}\t1/1\t");
     let mut got = Vec::new();
@@ -1862,7 +1883,7 @@ fn the_editors_preview_gizmo_selection_and_exact_click() {
     assert_eq!(x.1.display, 5913);
     assert!(x.1.x > s0.x + 3.0, "beside the chair, along x");
     assert!(w.until_addon("wubuild", "state").contains(&format!("sel={id},2413")));
-    // a flag right-clicked: its axis; its entry answers the query as a goober
+    // a handle right-clicked: its axis grabbed (the next test drags it); its entry answers the query as a goober
     let y = flags.iter().find(|f| f.1.entry == 990_002).unwrap().0;
     w.raw(gizmo::CMSG_GAMEOBJ_USE, &y.to_le_bytes());
     assert_eq!(until_aid(&mut w, "axis").1, "y");
@@ -1879,7 +1900,8 @@ fn the_editors_preview_gizmo_selection_and_exact_click() {
     let here = den_lite::ovmod::Here { x: s0.x, y: s0.y, z: s0.z, o: 0.0 };
     let want = gizmo::project(&Camera { dist: 12.0, ..Camera::default() }, here, 0.1, -0.2, 1.7778, s0.z).unwrap();
     assert!((at[0] - want.0).abs() < 0.02 && (at[1] - want.1).abs() < 0.02, "{at:?} {want:?}");
-    w.addon("OVMOD", "wubuild\tcmd\t1/1\tcommit");
+    // Shift+click: placed, still armed for the exact click below (a plain click ends placing: the next test)
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tcommit keep");
     let mut st = w.until_addon("wubuild", "state");
     while !st.contains("mine=2/") {
         st = w.until_addon("wubuild", "state");
@@ -1910,6 +1932,123 @@ fn the_editors_preview_gizmo_selection_and_exact_click() {
     assert_eq!(until_aid(&mut w, "aim").1, "off");
     let evs = std::fs::read_to_string(dir.join("den-lite.events")).unwrap_or_default();
     assert!(evs.contains("aid_click") && evs.contains("aid_use") && evs.contains("build_mode"), "{evs}");
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The editor's flow as the owner's video shows it (3 Nov), over the wire: a gallery pick arms the real prop, which
+/// shows where the cursor is (no copy before that); one click places it and ends placing; the new prop is the
+/// selection at once (its GAMEOBJECT_DYNAMIC glow in a values update, the handles and the halo, `placed`); a handle
+/// right-clicked and the cursor moved drags the prop along that axis and a click drops it ("Moved ... yd along X",
+/// one undo); a left click on empty ground (`selclear`) takes the glow off; snap out puts the view on Den Lite's
+/// camera object (an invisible unit, PLAYER_FARSIGHT on it) and the same key gives it back.
+#[test]
+fn the_editors_pick_place_select_drag_and_snap_out() {
+    use den_lite::gizmo::{self, GLOW};
+    let (srv, dir) = server("flow", HeroGender::Female);
+    let mut w = into_world(&srv, 2);
+    let s0 = Spot::default();
+    w.send(&heartbeat(s0.x, s0.y, s0.z, 0.0));
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tmode build");
+    assert_eq!(until_aid(&mut w, "mode").1, "build");
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tgizmo on");
+
+    // the pick: armed, nothing shown until the cursor is over the ground; the hover rides along with the pick
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tpreview 2413");
+    let (frames, aim) = until_aid(&mut w, "aim");
+    assert_eq!(aim, format!("place,2413,{}", gizmo::PLACE_SPELL));
+    assert!(objects(&frames).0.is_empty(), "no copy in front of you");
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\thover 0.15 -0.25 1.7778 12");
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\twhere");
+    let (frames, at) = until_aid(&mut w, "ghost");
+    let at: Vec<f32> = at.split(',').map(|v| v.parse().unwrap()).collect();
+    let copy: Vec<(u64, Go)> = objects(&frames).0.into_iter().filter(|(g, _)| gizmo::is_ghost(*g)).collect();
+    assert_eq!(copy.len(), 1, "the real prop's copy under the cursor");
+    assert_eq!((copy[0].1.entry, copy[0].1.display), (2413, 39));
+
+    // one click: placed there, placing over, the new prop selected and glowing
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tcommit");
+    let (frames, placed) = until_aid(&mut w, "placed");
+    let id: u64 = placed.parse().unwrap();
+    let chair = (0xF110u64 << 48) | (2413u64 << 24) | id;
+    let (made, gone) = objects(&frames);
+    let real = made.get(&chair).expect("the chair made");
+    assert!((real.x - at[0]).abs() < 0.02 && (real.y - at[1]).abs() < 0.02);
+    assert!(gone.contains(&copy[0].0), "the copy goes once the real one is there");
+    let mut glow = None;
+    let mut handles = Vec::new();
+    let mut frames2 = frames;
+    // the state may come before "placed" (aid_send's order): look in what came already, else wait for it
+    let st = match aid_parts(&frames2, "state") {
+        Some(st) => st,
+        None => w.until_addon("wubuild", "state"),
+    };
+    for f in &frames2 {
+        if let Some((g, v)) = values(f) {
+            if g == chair {
+                glow = v.get(&(den_lite::raw::GAMEOBJECT_DYNAMIC as u16)).copied();
+            }
+        }
+    }
+    for (g, o) in objects(&frames2).0 {
+        if (990_001..=990_003).contains(&(o.entry as u32)) {
+            handles.push((g, o));
+        }
+    }
+    assert_eq!(glow, Some(GLOW), "the selection glows (GAMEOBJECT_DYNAMIC)");
+    assert_eq!(handles.len(), 3, "the three handles");
+    assert!(st.contains(&format!("sel={id},2413")), "{st}");
+
+    // grab the X handle and drag: the copy along x, then a click drops it there
+    let xh = handles.iter().find(|h| h.1.entry == 990_001).unwrap().0;
+    w.raw(gizmo::CMSG_GAMEOBJ_USE, &xh.to_le_bytes());
+    assert_eq!(until_aid(&mut w, "aim").1, format!("axis,{id},x"));
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\thover 0.3 -0.1 1.7778 12");
+    let drag = until_aid(&mut w, "drag").1;
+    assert!(drag.starts_with("x,"), "{drag}");
+    let s: f32 = drag[2..].parse().unwrap();
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tcommit");
+    let moved = until_aid(&mut w, "moved").1;
+    assert_eq!(moved, format!("x,{s:+.2}"));
+    let mut st = w.until_addon("wubuild", "state");
+    while !st.contains("pos=") {
+        st = w.until_addon("wubuild", "state");
+    }
+    let pos: Vec<f32> = st.split("pos=").nth(1).unwrap().split(';').next().unwrap().split(',').map(|v| v.parse().unwrap()).collect();
+    assert!((pos[0] - (real.x + s)).abs() < 0.03 && (pos[1] - real.y).abs() < 0.03, "moved along x only: {st}");
+    assert!(st.contains("undo=2;"), "one undo step for the drop: {st}");
+
+    // a click on empty ground: deselected, the glow off
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tselclear");
+    let off = w.until(|f| values(f).filter(|(g, _)| *g == chair).map(|(_, v)| v.get(&(den_lite::raw::GAMEOBJECT_DYNAMIC as u16)).copied()));
+    assert_eq!(off, Some(0));
+
+    // snap out: the camera object (an invisible unit) and the view on it; again: the view back, the object gone
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tcam zoom 12");
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tcam snap");
+    let (frames, cam) = until_aid(&mut w, "cam");
+    assert!(cam.starts_with("far,35.0,1,"), "{cam}");
+    let units = unit_creates(&frames);
+    assert!(units.iter().any(|u| u.0 == den_lite::farsight::GUID && u.1 == den_lite::farsight::ENTRY as i32), "{units:?}");
+    let far = frames.iter().filter_map(values).find(|(_, v)| v.contains_key(&(den_lite::raw::PLAYER_FARSIGHT as u16)));
+    let (_, v) = far.expect("PLAYER_FARSIGHT set");
+    let target = v[&(den_lite::raw::PLAYER_FARSIGHT as u16)] as u64 | (v[&(den_lite::raw::PLAYER_FARSIGHT as u16 + 1)] as u64) << 32;
+    assert_eq!(target, den_lite::farsight::GUID);
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tcam pan fwd 6");
+    let (frames, _) = until_aid(&mut w, "cam");
+    assert!(frames.iter().any(|f| f.opcode == den_lite::flight::SMSG_MONSTER_MOVE), "the view glides");
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tcam snap");
+    let (frames, cam) = until_aid(&mut w, "cam");
+    assert_eq!(cam, "near");
+    let back = frames.iter().filter_map(values).find(|(_, v)| v.contains_key(&(den_lite::raw::PLAYER_FARSIGHT as u16))).unwrap().1;
+    assert_eq!(back[&(den_lite::raw::PLAYER_FARSIGHT as u16)], 0);
+    assert!(frames.iter().any(|f| matches!(&f.msg, Some(ServerOpcodeMessage::SMSG_DESTROY_OBJECT(d)) if d.guid.guid() == den_lite::farsight::GUID)));
+    // the wheel past the client's limit: the same object, further each notch
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tcam far 2");
+    assert!(until_aid(&mut w, "cam").1.starts_with("far,"));
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tcam far -2");
+    assert_eq!(until_aid(&mut w, "cam").1, "near");
     drop(w);
     drop(srv);
     let _ = std::fs::remove_dir_all(&dir);
@@ -1995,7 +2134,7 @@ fn the_class_picker_and_the_dummies_take_spells_and_swings() {
     assert_eq!(bar[0], 1, "a change of bars");
     assert_eq!(u32::from_le_bytes(bar[1..5].try_into().unwrap()), 143, "Fireball first");
     let line = w.until_line().1;
-    assert!(line.starts_with("You are a level 80 Mage now"), "{line}");
+    assert!(line.starts_with("You are a level 80 Fire Mage now"), "{line}");
     let kept = std::fs::read_to_string(dir.join(den_lite::classes::FILE)).unwrap();
     assert!(kept.contains("\"mage\""));
 
@@ -2323,6 +2462,267 @@ fn the_den_goes_anywhere_near_and_far_and_each_place_keeps_its_den() {
     w.say(".den size city");
     let (_, line) = until_said(&mut w, "Your Den is size 7 of 7");
     assert!(line.contains("city-size"), "{line}");
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The tables of the sandbox tests below, as the launcher copies the player's own (made-up rows): the sample's
+/// spells, a kick (Counterspell), Summon Imp, and two talent trees for the mage (fire: a five-rank passive, then
+/// Blast Wave; arcane: a passive), and their TalentTab rows.
+fn combat_tables(dir: &std::path::Path) {
+    use den_lite::spells::fake;
+    let _ = std::fs::create_dir_all(dir);
+    let mut rows = fake::sample();
+    rows.push(fake::Row { id: 2139, name: "Counterspell".into(), level: 24, cast_index: 1, recovery: 24_000, school: 64, effects: vec![(68, 0, 1, 6, 0, 0, 0, 0)], ..Default::default() });
+    rows.push(fake::Row { id: 688, name: "Summon Imp".into(), level: 1, cast_index: 1, school: 32, effects: vec![(56, 0, 1, 1, 0, 0, 0, 416)], ..Default::default() });
+    rows.push(fake::Row { id: 9100, name: "Blast Wave".into(), level: 30, cast_index: 1, gcd: 1500, school: 4, effects: vec![(2, 600, 100, 22, 0, 0, 0, 0)], ..Default::default() });
+    rows.push(fake::Row { id: 9300, name: "Arcane Focus".into(), level: 10, attributes: 0x40, cast_index: 1, school: 64, effects: vec![(6, 1, 1, 1, 57, 0, 0, 0)], ..Default::default() });
+    for k in 0..5u32 {
+        rows.push(fake::Row { id: 7000 + k, name: "Burning Soul".into(), level: 10, attributes: 0x40, cast_index: 1, school: 4, effects: vec![(6, 1, 1, 1, 57, 0, 0, 0)], ..Default::default() });
+    }
+    let mut abilities = fake::ABILITIES.to_vec();
+    abilities.extend([(237, 2139, 128, 0), (8, 688, 128, 0), (8, 9100, 128, 0), (237, 9300, 128, 0)]);
+    std::fs::write(dir.join(den_lite::spells::SPELL), fake::spells(&rows)).unwrap();
+    std::fs::write(dir.join(den_lite::spells::SKILL_LINE_ABILITY), fake::abilities(&abilities)).unwrap();
+    std::fs::write(dir.join(den_lite::spells::CAST_TIMES), fake::four(&fake::CAST_TIMES)).unwrap();
+    std::fs::write(dir.join(den_lite::spells::DURATIONS), fake::four(&fake::DURATIONS)).unwrap();
+    std::fs::write(dir.join(den_lite::spells::RADIUS), fake::four(&[])).unwrap();
+    let filler: &[u32] = &[7000, 7001, 7002, 7003, 7004];
+    let talents = den_lite::specs::fake::talents(&[(1, 41, 0, 0, filler, 0, 0), (2, 41, 1, 1, &[9100], 0, 0), (10, 61, 0, 0, &[9300], 0, 0)]);
+    std::fs::write(dir.join(den_lite::specs::TALENT), talents).unwrap();
+    std::fs::write(dir.join(den_lite::specs::TALENT_TAB), den_lite::specs::fake::tabs(&[(61, 128, 0), (41, 128, 1), (81, 128, 2)])).unwrap();
+    den_lite::spells::forget();
+}
+
+fn spell_ids(b: &[u8]) -> Vec<u32> {
+    let n = u16::from_le_bytes([b[1], b[2]]) as usize;
+    (0..n).map(|k| u32::from_le_bytes(b[3 + 6 * k..7 + 6 * k].try_into().unwrap())).collect()
+}
+
+fn button(bar: &[u8], i: usize) -> u32 {
+    u32::from_le_bytes(bar[1 + 4 * i..5 + 4 * i].try_into().unwrap())
+}
+
+/// Specs and bars (owner 3 Nov: "spellbook placement loadout instant on bars"): `.den class mage fire 80` sends the
+/// class's fields (the four extra bars shown), the spec's spellbook (its talents' spells), every bar (the rotation
+/// first, the buff on the second right bar) and the talents (SMSG_TALENTS_INFO); `.den spec arcane` another spec
+/// at once (fire's talent ability gone); a bar saved by name comes back after a change; all kept in the Dens folder.
+#[test]
+fn a_class_and_spec_fill_the_spellbook_talents_and_every_bar_and_loadouts_come_back() {
+    let (srv, dir) = server("spec", HeroGender::Male);
+    combat_tables(&dir);
+    let mut w = into_world(&srv, 0);
+    w.send(&heartbeat(16226.2, 16257.0, 13.25, 0.0));
+    w.say(".den class mage fire 80");
+    let me = den_lite::world::PLAYER_GUID;
+    let mut fields = None;
+    let spells = w.until(|f| {
+        if let Some((g, v)) = values(f) {
+            if g == me && v.contains_key(&den_lite::combat::field::BYTES_0) {
+                fields = Some(v);
+            }
+        }
+        (f.opcode == 0x012A).then(|| f.body.clone())
+    });
+    let fields = fields.expect("the class's fields");
+    assert_eq!(fields[&153], 0x000F_0000, "the four extra action bars shown");
+    let ids = spell_ids(&spells);
+    assert!(ids.contains(&9100) && ids.contains(&7004) && ids.contains(&143), "fire's talents and the class's spells: {ids:?}");
+    let bar = w.until(|f| (f.opcode == 0x0129).then(|| f.body.clone()));
+    assert_eq!(bar[0], 1, "a change of bars");
+    assert_eq!(button(&bar, 0), 143, "Fireball first");
+    assert_eq!(button(&bar, 36), 1459, "the buff on the second right bar");
+    assert!((0..144).filter(|i| button(&bar, *i) != 0).count() >= 6);
+    let t = w.until(|f| (f.opcode == 0x04C0).then(|| f.body.clone()));
+    assert_eq!((t[0], t[5], t[6]), (0, 1, 0), "a player's talents, one spec, the first");
+    let n = t[7] as usize;
+    let taken: Vec<(u32, u8)> = (0..n).map(|k| (u32::from_le_bytes(t[8 + 5 * k..12 + 5 * k].try_into().unwrap()), t[12 + 5 * k])).collect();
+    assert!(taken.contains(&(1, 4)) && taken.contains(&(2, 0)) && taken.contains(&(10, 0)), "five ranks, Blast Wave, arcane's: {taken:?}");
+    let line = until_said(&mut w, "You are a level 80").1;
+    assert!(line.starts_with("You are a level 80 Fire Mage now") && line.contains("7 talent points"), "{line}");
+
+    // another spec: its own spellbook and talents
+    w.say(".den spec arcane");
+    let spells = w.until(|f| (f.opcode == 0x012A).then(|| f.body.clone()));
+    let ids = spell_ids(&spells);
+    assert!(!ids.contains(&9100) && ids.contains(&9300), "fire's talent ability isn't arcane's: {ids:?}");
+    assert!(until_said(&mut w, "Arcane Mage now").1.contains("every bar filled"));
+
+    // a bar loadout: saved, a button changed, put back
+    w.say(".den bars save aoe");
+    let saved = w.until(|f| (f.opcode == 0x0129).then(|| f.body.clone()));
+    assert_eq!(until_said(&mut w, "Saved").1, "Saved your bar as 'aoe'.");
+    w.raw(0x128, &[0, 0x58, 0x08, 0, 0]);
+    w.say(".den bars use aoe");
+    let back = w.until(|f| (f.opcode == 0x0129).then(|| f.body.clone()));
+    assert_eq!(&back[1..], &saved[1..], "the saved bar, every button");
+    assert_eq!(until_said(&mut w, "Your 'aoe'").1, "Your 'aoe' bar is on.");
+    w.say(".den bars");
+    assert!(w.until_line().1.contains("aoe"));
+    let kept = std::fs::read_to_string(dir.join(den_lite::classes::FILE)).unwrap();
+    assert!(kept.contains("\"arcane\"") && kept.contains("\"aoe\""), "{kept}");
+    let evs = den_lite::events::read(&dir);
+    assert!(evs.iter().any(|l| l.ev == "class" && l.detail.starts_with("mage 80 ") && l.detail.contains(" fire ")));
+    assert!(evs.iter().any(|l| l.ev == "spec" && l.detail.starts_with("mage arcane")));
+    assert!(evs.iter().any(|l| l.ev == "bars" && l.detail == "save aoe"));
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Gear sets (owner 3 Nov: "gear sets selector"): `.den gearset t10` puts the class's tier set on (its pieces, the
+/// slots it has none for from the same era, a staff and a wand), in every visible slot at once; the weapons are
+/// real items (their creates, the inventory fields) the game can ask about (SMSG_ITEM_QUERY_SINGLE_RESPONSE, read
+/// by the message crate); saved by name, off, and back on.
+#[test]
+fn a_gear_set_changes_every_visible_slot_and_its_weapons_are_real_items() {
+    let (srv, dir) = server("gearset", HeroGender::Female);
+    combat_tables(&dir);
+    std::fs::write(dir.join(den_lite::gearsets::ITEM_SET), den_lite::gearsets::fake::sets(&[(803, "Bloodmage's Regalia", &[51281, 51284, 51283, 51280, 51282])])).unwrap();
+    std::fs::write(
+        dir.join(den_lite::gear::ITEM_TABLE),
+        den_lite::gearsets::fake::items(&[
+            (51281, 4, 1, 200, 1), (51284, 4, 1, 201, 3), (51283, 4, 1, 202, 20), (51280, 4, 1, 203, 10), (51282, 4, 1, 204, 7),
+            (50000, 4, 1, 300, 6), (50731, 2, 10, 500, 17), (50033, 2, 19, 502, 26),
+        ]),
+    )
+    .unwrap();
+    let mut w = into_world(&srv, 0);
+    let me = den_lite::world::PLAYER_GUID;
+    let vis = den_lite::gear::VISIBLE_ITEM;
+    w.say(".den class mage fire 80");
+    until_said(&mut w, "You are a level 80");
+    w.say(".den gearset");
+    let line = w.until_line().1;
+    assert!(line.contains("t10") && line.contains("Fire"), "{line}");
+    w.say(".den gearset t10");
+    let v = w.until(|f| values(f).filter(|(g, v)| *g == me && v.contains_key(&vis)).map(|(_, v)| v));
+    assert_eq!((v[&vis], v[&(vis + 4)], v[&(vis + 8)]), (51281, 51284, 51283), "the set's head, shoulders, chest");
+    assert_eq!(v[&(vis + 10)], 50000, "the waist it has no piece for: the era's cloth");
+    assert_eq!((v[&(vis + 30)], v[&(vis + 34)]), (50731, 50033), "a staff and a wand");
+    let mut made = Vec::new();
+    let inv = w.until(|f| {
+        if let Some(ServerOpcodeMessage::SMSG_UPDATE_OBJECT(u)) = &f.msg {
+            for o in &u.objects {
+                if let Object::CreateObject { guid3, mask2: UpdateMask::Item(m), .. } = o {
+                    made.push((guid3.guid(), m.object_entry().unwrap_or(0)));
+                }
+            }
+        }
+        values(f).filter(|(g, v)| *g == me && v.contains_key(&(324 + 30))).map(|(_, v)| v)
+    });
+    let staff = made.iter().find(|m| m.1 == 50731).expect("the staff made real").0;
+    assert!(made.iter().any(|m| m.1 == 50033), "{made:?}");
+    assert_eq!(inv[&(324 + 30)], staff as u32, "the main hand holds it");
+    let line = until_said(&mut w, "Tier 10").1;
+    assert!(line.contains("Bloodmage's Regalia"), "{line}");
+    // the game asks about it: the crate reads the answer
+    w.raw(0x056, &50731u32.to_le_bytes());
+    let (item, name) = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_ITEM_QUERY_SINGLE_RESPONSE(r)) => Some((r.item, r.found.as_ref().map(|x| x.name1.clone()))),
+        _ => None,
+    });
+    assert_eq!((item, name.as_deref()), (50731, Some("Dojo Staff")));
+    // saved, off (the weapons go), back on
+    w.say(".den gearset save raid");
+    assert_eq!(until_said(&mut w, "Saved").1, "Saved what you wear as 'raid'.");
+    assert!(std::fs::read_to_string(dir.join(den_lite::gearsets::FILE)).unwrap().contains("\"raid\""));
+    w.say(".den gearset off");
+    let gone = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_DESTROY_OBJECT(d)) => Some(d.guid.guid()),
+        _ => None,
+    });
+    assert!(made.iter().any(|m| m.0 == gone), "a weapon item taken back");
+    until_said(&mut w, "Back in your own outfit");
+    w.say(".den gearset raid");
+    let v = w.until(|f| values(f).filter(|(g, v)| *g == me && v.contains_key(&vis)).map(|(_, v)| v));
+    assert_eq!(v[&vis], 51281);
+    assert!(until_said(&mut w, "Your 'raid'").1.ends_with("set is on."));
+    let evs = den_lite::events::read(&dir);
+    assert!(evs.iter().any(|l| l.ev == "gearset" && l.detail.starts_with("t10 10 ")));
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The test range (owner 3 Nov: "better combat and test range dojo features"): a practice run (your bar cast for
+/// you at a dummy) ends with a number; the boss casts at you and a kick stops it, then marks the ground; a pet comes
+/// with its bar, answers to its name, and goes.
+#[test]
+fn a_practice_run_has_a_number_the_boss_is_kicked_and_a_pet_comes_and_goes() {
+    let (srv, dir) = server("practice", HeroGender::Male);
+    combat_tables(&dir);
+    let mut w = into_world(&srv, 0);
+    w.send(&heartbeat(16226.2, 16257.0, 13.25, 0.0));
+    w.say(".den class mage fire 80");
+    until_said(&mut w, "You are a level 80");
+    w.say(".den dojo dummies 1");
+    let (frames, _) = w.until_line();
+    assert_eq!(unit_creates(&frames).len(), 1);
+    w.say(".den dojo demo 5");
+    until_said(&mut w, "A 5 second practice run");
+    let mut casts = 0;
+    let line = loop {
+        let (frames, line) = w.until_line();
+        casts += frames.iter().filter(|f| f.opcode == 0x0131).count();
+        if line.starts_with("Practice run done") {
+            break line;
+        }
+    };
+    let dps: u32 = line.split(", ").nth(1).and_then(|x| x.split(' ').next()).and_then(|x| x.parse().ok()).unwrap_or(0);
+    assert!(casts >= 1 && dps > 0, "{casts} casts: {line}");
+
+    // the boss: one hit starts it; its cast at you, kicked
+    w.say(".den dojo boss");
+    let (frames, _) = w.until_line();
+    let boss = unit_creates(&frames).into_iter().find(|u| u.1 == 900_005).expect("the boss").0;
+    w.say(".den dojo cooldowns");
+    w.until_line();
+    w.raw(0x12E, &cast_at(5, 2136, boss));
+    let spell_of = |b: &[u8], who: u64| -> Option<u32> {
+        let mut at = 0;
+        (den_lite::combat::read_packed(b, &mut at) == Some(who)).then_some(())?;
+        den_lite::combat::read_packed(b, &mut at);
+        Some(u32::from_le_bytes(b.get(at + 1..at + 5)?.try_into().ok()?))
+    };
+    w.until(|f| (f.opcode == 0x0131 && spell_of(&f.body, boss) == Some(den_lite::combat::BOSS_CAST_SPELL)).then_some(()));
+    w.raw(0x12E, &cast_at(6, 2139, boss));
+    let stopped = w.until(|f| (f.opcode == 0x0133).then(|| f.body.clone()));
+    let mut at = 0;
+    assert_eq!(den_lite::combat::read_packed(&stopped, &mut at), Some(boss), "the boss's cast stopped");
+    w.until(|f| (f.opcode == 0x0131 && spell_of(&f.body, boss) == Some(den_lite::combat::BOSS_SPELL)).then_some(()));
+    // the circle's warning comes with the boss's spell or just after it
+    while !w.notes.iter().any(|n| n.starts_with("Fire at your feet")) {
+        w.frame();
+    }
+    assert!(w.notes.iter().any(|n| n == "Interrupted!"), "{:?}", w.notes);
+
+    // a pet: its create (read by the crate), its bar, its name, then dismissed from the bar
+    w.raw(0x12E, &cast_at(7, 688, 0));
+    let pet = w.until(|f| unit_creates(std::slice::from_ref(f)).into_iter().find(|u| u.1 == 416).map(|u| u.0));
+    let bar = w.until(|f| (f.opcode == 0x0179).then(|| f.body.clone()));
+    assert_eq!(u64::from_le_bytes(bar[..8].try_into().unwrap()), pet);
+    w.send(&CMSG_CREATURE_QUERY { creature: 416, guid: Guid::new(pet) });
+    let name = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_CREATURE_QUERY_RESPONSE(r)) if r.creature_entry == 416 => Some(r.found.as_ref().map(|x| x.name1.clone())),
+        _ => None,
+    });
+    assert_eq!(name.as_deref(), Some("Imp"));
+    let mut act = pet.to_le_bytes().to_vec();
+    act.extend_from_slice(&(3u32 | 7 << 24).to_le_bytes());
+    act.extend_from_slice(&0u64.to_le_bytes());
+    w.raw(0x175, &act);
+    let gone = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_DESTROY_OBJECT(d)) => Some(d.guid.guid()),
+        _ => None,
+    });
+    assert_eq!(gone, pet);
+    let evs = den_lite::events::read(&dir);
+    assert!(evs.iter().any(|l| l.ev == "demo"));
+    assert!(evs.iter().any(|l| l.ev == "dojo" && l.detail == "boss kicked"));
+    assert!(evs.iter().any(|l| l.ev == "dojo" && l.detail == "boss circle"));
+    assert!(evs.iter().any(|l| l.ev == "pet" && l.detail.starts_with("Imp")));
     drop(w);
     drop(srv);
     let _ = std::fs::remove_dir_all(&dir);

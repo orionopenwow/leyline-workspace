@@ -48,13 +48,14 @@ G.PAGES = {
         ".den companion calls her. Say \"Jaina, stay\", \"Jaina, follow\" or \"Jaina, tips\"." } },
     { "dojo", "The Dojo", "dojo", "The Dojo", {
         "Dojo on the bar opens the training panel. .den dojo builds a ring with three training dummies.",
-        "Practice: Pack (five dummies), Mover, Healer, Tank, Boss. Your damage per second shows as you hit.",
-        "Session: 1m, 3m or 5m for a timed parse. Reset fills everything again. Fight makes dummies hit back.",
-        ".den dojo best shows your bests. .den dojo clear takes the dummies down.",
+        "Practice: Pack, Mover, Healer, Tank, Boss (move out of its circles, interrupt its cast). Your numbers show as you hit.",
+        "Range: Levels (dummies below and above you), Group (heal five), Range (40 yards), Run (your bar cast for you), Safe.",
+        "Session: 1m, 3m or 5m for a timed parse. Reset fills everything again. .den dojo best shows your bests.",
         ".den fly on lets you fly: jump, then Space to rise and X to sink. .den speed 1 to 5 runs faster." } },
     { "class", "Class, mounts, looks", "class", "Class, mounts and looks", {
-        ".den class mage 80 makes you a mage at level 80, with its spells. Any class, any level.",
-        ".den class on its own lists the classes. The Dojo panel has a class picker too: pick one, then Be.",
+        ".den class mage fire 80: a Fire mage at level 80, its spells, talents and every bar at once. .den spec frost: another spec.",
+        ".den bars save aoe keeps your bar; .den bars use aoe puts it back. The Dojo's Loadout page has all of it.",
+        ".den gearset t7: your class's raid set. .den gearset save mine keeps what you wear. .den gearset off: your own outfit.",
         ".den mounts puts every mount in your spellbook. Cast one to ride. .den mounts off ends it.",
         ".den gear and an item's name puts its look on you. .den gear reset takes the looks off." } },
     { "invite", "Invite a friend", "invite", "Invite a friend", {

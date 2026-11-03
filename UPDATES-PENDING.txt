@@ -780,3 +780,8 @@
 1315n den-features  Den feature test again: build mode glow, the invite link with every way in
 1316a signin  Website: the profile page says Log out
 1316b ship  Save as Orion: the fresh computer test (fresh-test, fresh-sandbox), the seeded realm plan (the launcher builds after this)
+1317a den-lite  Den Lite rebuilt: place like LANDSCAPE (pick, follow, click places and selects), the glow, axis handles, Swap, snap-out camera and zoom past the limit; specs and bars, gear sets, pets, the test range
+1317b addons  Leyline addons: the new selection panel and drawer, snap out (J), the Dojo's Train and Loadout pages
+1317c foreverui  Browser game: the same
+1317d ship  Save as Orion: the Den editor like the video, combat and Dojo, retag steps (the launcher builds after this)
+1317e retag-leyline-check  Leyline repo: which release tags still point at old commits by someone else (read-only)

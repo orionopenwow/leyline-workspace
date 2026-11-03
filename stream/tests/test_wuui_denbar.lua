@@ -176,7 +176,8 @@ check("the slim strip: Undo / Redo, Menu, Snap, the turn steps, Play, ?, Files, 
     and bar.playBtn:GetText() == "Play (F7)" and bar.help:GetText() == "?" and bar.save:GetText() == "Files"
     and bar.invite:GetText() == "Invite" and bar.close:GetText() == "x" and bar.title:GetText() == "BUILD")
 check("build mode's mark: a thin gold edge round the screen", _G.LeylineDenBuildEdge:IsShown() and #_G.LeylineDenBuildEdge.lines == 4)
-check("the tool rail: Select, Build (F7), Move, Rotate, Stamps, Path, Ground, Dojo; no step stack (owner's shot)", D.Rail():IsShown()
+check("the tool rail: Select, Build (F7), Move, Rotate, Stamps, Path, Ground, Dojo, View (snap out); no step stack (owner's shot)", D.Rail():IsShown()
+    and bar.view and bar.view:GetText() == "View" and bar.view.edLabel:find("Snap out")
     and bar.select:GetText() == "Select" and bar.build:GetText() == "Build" and bar.move:GetText() == "Move"
     and bar.rotate:GetText() == "Rotate" and bar.ground:GetText() == "Shape ground" and bar.stamps:GetText() == "Stamps"
     and bar.path:GetText() == "Path" and #bar.steps == 0 and bar.build.iconPath:find("^Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\", 1, false) and not bar.select.iconPath:find("Interface\\Icons", 1, true)

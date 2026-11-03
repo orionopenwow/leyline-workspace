@@ -55,7 +55,7 @@ pub mod upstream; // upstream addons: curated third-party addons installed from 
 #[cfg(feature = "app")]
 mod app;
 #[cfg(feature = "app")]
-pub use app::{den_play_cli, run};
+pub use app::{den_play_cli, play_test_cli, run};
 
 /// The official realm's realmlist (desktop players): `leylinelauncher.com`. `play.openvanilla.app` reaches the same
 /// server forever; `addresses::official_realm()` picks the old one on a computer that cannot resolve the new one yet.

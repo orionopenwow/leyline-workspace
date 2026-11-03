@@ -9,6 +9,16 @@ fn main() {
     if let Some(cli) = leyline_lib::denclick::parse_cli(&args) {
         std::process::exit(leyline_lib::den_play_cli(cli));
     }
+    // `Leyline play-test --official [--hold <s>]`: PLAY on the official realm with no launcher window (the owner's
+    // client-smoke step; playtest.rs)
+    match leyline_lib::playtest::parse_cli(&args) {
+        Some(Ok(cli)) => std::process::exit(leyline_lib::play_test_cli(cli)),
+        Some(Err(e)) => {
+            eprintln!("{e}");
+            std::process::exit(2);
+        }
+        None => {}
+    }
     leyline_lib::run();
 }
 

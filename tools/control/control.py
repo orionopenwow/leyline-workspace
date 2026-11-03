@@ -124,6 +124,8 @@ STEPS = {
     # the white island, then the Den's smoke test through Den Lite's command files, a screenshot, closed again) and
     # leaves tools\den-check\logs\den-test-latest.txt and .png.
     "den-check": ("tools/den-check/Den check.bat", "My Den check (read-only): game folder, login archive, Config.wtf, Den Lite and a test sign-in", False),
+    "client-smoke": ("tools/client-smoke/Client smoke test.bat", "Client smoke test: your game started as PLAY starts it on Wrath Unleashed (the launcher's sign-in skips the login screen), a screenshot every few seconds, then closed and the sign-in taken out (logs\\client-smoke)", False),
+    "client-smoke-world": ("tools/client-smoke/Client smoke test - world.bat", "Client smoke test, on into the world with your last character (logs\\client-smoke)", False),
     "den-test": ("tools/den-check/Den test.bat", "My Den test: starts your game by itself, signs in, then builds, saves and loads, the white room, Forge's files, a shareable Den file, an invite a test friend signs in with, the autosave; a screenshot, closes it (logs in tools\\den-check\\logs)", False),
     "den-test-variants": ("tools/den-check/Den test - variants.bat", "Three Den tests to find what draws the Den green: our made texture; the game's own sky; the game's own sky and zone name (logs\\den-test-made/nosky/plain)", False),
     "den-test-invite": ("tools/den-check/Den test - invite.bat", "My Den test (the same as den-test: it always invites a test friend now)", False),

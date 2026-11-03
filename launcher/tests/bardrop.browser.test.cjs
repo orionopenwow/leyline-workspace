@@ -256,7 +256,7 @@ test('Testing switch: off, a magnet gets the refusal; on (Settings › Testing),
   // Settings › Testing: off by default, share needs the first switch
   await page.evaluate(() => window.LeylineNav.show('settings'));
   const settings = await page.textContent('#page-settings');
-  assert.match(settings, /Allow torrent downloads of game clients \(testing only\)/);
+  assert.match(settings, /Allow torrent downloads of game folders \(testing only\)/);
   assert.equal(await page.isChecked('#set-ctorrent'), false);
   assert.equal(await page.isDisabled('#set-cshare'), true);
   assert.doesNotMatch(settings, /world of warcraft|\bwow\b|warcraft|lich king|blizzard|magnet:\?/i);

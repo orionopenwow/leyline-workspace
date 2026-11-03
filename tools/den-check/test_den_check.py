@@ -507,6 +507,48 @@ class DenWorld(unittest.TestCase):
         rep = den_check.Report()
         quiet(den_check.ground_lines, rep, dict(good, sky="the area's own (your game has no Light.dbc)"))
         self.assertIn("FAIL sky: the Elwynn sky: the sky is the area's own (your game has no Light.dbc)", rep.text())
+        # a launcher from before the Elwynn sky (owner's PC 3 Nov 11:20): said so, with the fix
+        rep = den_check.Report()
+        quiet(den_check.ground_lines, rep, dict(good, sky="the area's own"))
+        self.assertIn("FAIL sky: the Elwynn sky: the sky is the area's own: this launcher is from before the Elwynn sky", rep.text())
+        self.assertIn("Update the launcher", rep.text())
+        # the launcher says so, but patch-T has no Light.dbc; then with it; then hidden by a later archive
+        real = den_check.mpqlite.Archive
+
+        class Fake:
+            names_ = []
+
+            def __init__(self, path):
+                pass
+
+            def names(self):
+                return Fake.names_
+        try:
+            den_check.mpqlite.Archive = Fake
+            Fake.names_ = ["World\\Maps\\Kalimdor\\Kalimdor_1_1.adt"]
+            rep = den_check.Report()
+            quiet(den_check.ground_lines, rep, good, "patch-T.MPQ")
+            self.assertIn("FAIL sky: the Elwynn sky: the launcher says the Elwynn sky, but Data\\patch-T.MPQ has no Light.dbc", rep.text())
+            Fake.names_.append("DBFilesClient\\Light.dbc")
+            rep = den_check.Report()
+            quiet(den_check.ground_lines, rep, good, "patch-T.MPQ")
+            self.assertIn("PASS sky: the Elwynn sky: Elwynn Forest's blue sky over the Den (your own Light.dbc, in Data\\patch-T.MPQ)", rep.text())
+            rep = den_check.Report()
+            quiet(den_check.ground_lines, rep, dict(good, hidden_by=["patch-Z.MPQ: DBFilesClient\\Light.dbc"]), "patch-T.MPQ")
+            self.assertIn("FAIL sky: the Elwynn sky: an archive read after the Den's has its own Light.dbc: patch-Z.MPQ", rep.text())
+            # a language whose own patches win (ruRU) with a Light.dbc: said
+            with tempfile.TemporaryDirectory() as t:
+                (Path(t) / "ruRU").mkdir()
+                (Path(t) / "ruRU" / "patch-ruRU-3.MPQ").write_bytes(b"x")
+                (Path(t) / "enUS").mkdir()
+                self.assertEqual(den_check.locale_light(t), "ruRU\\patch-ruRU-3.MPQ")
+                rep = den_check.Report()
+                quiet(den_check.ground_lines, rep, good, "patch-T.MPQ", t)
+                self.assertIn("FAIL sky: the Elwynn sky: your game's language reads its own Light.dbc after the Den's", rep.text())
+                os.rename(Path(t) / "ruRU", Path(t) / "deDE")
+                self.assertIsNone(den_check.locale_light(t))
+        finally:
+            den_check.mpqlite.Archive = real
         # no grass in this game; something read after our archive; a ground from before
         bad = dict(good, grass=False, island_models=3, models=3, hidden_by=["patch-Z.MPQ: World\\Maps\\x.adt"], whitened="256 parts painted grass")
         rep = den_check.Report()
@@ -645,10 +687,13 @@ class FakeDenEditor:
         if w[:3] == [".den", "jaina", "build"]:
             if "stamps" in self.broken:
                 return {"props": self.props, "said": []}
-            self.stamped = 20
-            self.props += 20
-            self.ev("den_change", "+20 -0")
-            self.ev("dojo", "built 20")
+            if "stamps-part" in self.broken:
+                self.stamped = 4
+            else:
+                self.stamped = den_check.stamp_pieces(w[3]) or 20
+            self.props += self.stamped
+            self.ev("den_change", "+%d -0" % self.stamped)
+            self.ev("dojo", "built %d" % self.stamped)
             return {"props": self.props, "said": []}
         if w[:2] == [".build", "undo"]:
             self.props -= getattr(self, "stamped", 0)
@@ -756,6 +801,13 @@ class Features(unittest.TestCase):
         rep, _, _ = self.run_it(broken=("stamps",))
         fails = {r[1] for r in rep.rows if r[0] == "FAIL"}
         self.assertIn("stamp: campfire", fails)
+        # only part of it inside the room: failed, with the count
+        rep, _, _ = self.run_it(broken=("stamps-part",))
+        fails = {r[1]: r for r in rep.rows if r[0] == "FAIL"}
+        self.assertIn("stamp: inn", fails)
+        self.assertIn("4 pieces of 34", fails["stamp: inn"][2])
+        self.assertEqual(den_check.stamp_pieces("nook"), 15)
+        self.assertIsNone(den_check.stamp_pieces("no-such-stamp"))
 
     def test_a_broken_feature_fails_with_the_fix(self):
         rep, _, _ = self.run_it(broken=("place", "overlap"))
@@ -812,7 +864,8 @@ class FakeAids:
     def send(self, cmd, wait=10.0):
         w = cmd.split()
         if cmd == ".den size":
-            return {"props": self.props, "aids": dict(self.aids)}
+            look = "build" if self.aids["mode"] == "build" and "look" not in self.broken else "play"
+            return {"props": self.props, "aids": dict(self.aids), "look_mode": look, "twin_queries": getattr(self, "twins", 0)}
         if w[:2] in ([".den", "save"], [".den", "load"]):
             if w[1] == "save":
                 (self.dens / ("%s.den.json" % w[2])).write_text("{}")
@@ -826,6 +879,8 @@ class FakeAids:
         if act == "build":
             self.aids["mode"] = "play" if a[2:] == ["off"] else "build"
             self.ev("build_mode", self.aids["mode"])
+            if self.aids["mode"] == "build":
+                self.twins = getattr(self, "twins", 0) + 3
         elif act == "arm":
             self.aids.update(armed="place,%s,1543" % a[2], ghost=[self.player[0] + 2.5, self.player[1], 13.2, 0.0])
         elif act == "hover":
@@ -913,6 +968,7 @@ class PlacementAids(unittest.TestCase):
                      "preview: a click places it there", "preview: Esc takes the copy away", "gizmo: three flags around the selected prop (red X, green Y, blue Z)",
                      "gizmo: the wheel moves it along the picked axis", "menu: Duplicate", "play mode: props plain again"):
             self.assertIn(want, names)
+        self.assertIn("the game asked for 3 of their goober looks", [r for r in rep.rows if r[1] == "build mode: props light up under the mouse"][0][2])
         for s in ("build-mode", "preview", "preview-hover", "gizmo", "gizmo-moved"):
             self.assertTrue(any(x.endswith("-%s.png" % s) for x in self.shots), s)
         self.assertFalse((self.dens / "aidstest-before.den.json").exists(), "the test's save removed")
@@ -923,6 +979,13 @@ class PlacementAids(unittest.TestCase):
             den_check.aids_features(rep, FakeAids(self.dens, broken={"hover", "select"}), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
         fails = {r[1] for r in rep.rows if r[0] == "FAIL"}
         self.assertEqual(fails, {"preview: the copy goes where the cursor points", "gizmo: three flags around the selected prop (red X, green Y, blue Z)"})
+        # Den Lite never took the build look: failed, with what it said
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, FakeAids(self.dens, broken={"look"}), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
+        row = [r for r in rep.rows if r[1] == "build mode: props light up under the mouse"][0]
+        self.assertEqual(row[0], "FAIL")
+        self.assertTrue(row[2].startswith("Den Lite's look: play; the event: "), row[2])
         # a Den Lite from before the aids: skipped, said
         class Old(FakeAids):
             def send(self, cmd, wait=10.0):

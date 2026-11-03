@@ -147,6 +147,10 @@ fn reparse(opcode: u16, body: &[u8]) -> Option<ServerOpcodeMessage> {
     if matches!(opcode, 0x0E2 | 0x343 | 0x344 | 0x381 | 0x131 | 0x132) {
         return None;
     }
+    // the editor's exact click (gizmo.rs): the one spell the player knows, and its silent answer, written by hand
+    if matches!(opcode, 0x12A | 0x130 | 0x1DE) {
+        return None;
+    }
     if opcode == 0x00DD && body.get(1 + body.first().map_or(0, |m| m.count_ones() as usize) + 17) == Some(&4) {
         return None;
     }
@@ -1733,6 +1737,136 @@ fn the_dojo_flies_speeds_and_jaina_builds_piece_by_piece() {
     let evs = den_lite::events::read(&dir);
     assert!(evs.iter().any(|l| l.ev == "dojo_ack" && l.detail.starts_with("fly ")), "the ack is in the events");
     assert!(evs.iter().any(|l| l.ev == "dojo" && l.detail.starts_with("built ")));
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// One gameobject created alone in an update (the aids' own creates, build mode's look): its guid and the type the
+/// client is told (GAMEOBJECT_BYTES_1's second byte: the block's last field).
+fn single_go(f: &Frame) -> Option<(u64, u8)> {
+    let b = &f.body;
+    if f.opcode != 0x00A9 || b.len() < 12 || b[0..4] != [1, 0, 0, 0] || b[4] != 2 {
+        return None;
+    }
+    let (mask, mut g, mut at) = (b[5], 0u64, 6);
+    for i in 0..8 {
+        if mask & (1 << i) != 0 {
+            g |= (b[at] as u64) << (i * 8);
+            at += 1;
+        }
+    }
+    Some((g, b[b.len() - 3]))
+}
+
+/// Frames until a one-part addon answer `wubuild <name>`: the frames before it and its data.
+fn until_aid(w: &mut World, name: &str) -> (Vec<Frame>, String) {
+    let want = format!("OVMOD\twubuild\t{name}\t1/1\t");
+    let mut got = Vec::new();
+    loop {
+        let f = w.frame();
+        if let Some(d) = addon_text(&f).and_then(|t| t.strip_prefix(&want).map(String::from)) {
+            return (got, d);
+        }
+        got.push(f);
+    }
+}
+
+/// The editor's placement aids (gizmo.rs) over the wire: build mode shows props as goobers; a right-click on one
+/// (CMSG_GAMEOBJ_USE) selects it and the gizmo's three flags come up; a right-click on a flag picks its axis; the
+/// live preview's copy goes where the cursor's ray lands and Commit places the prop there; the exact click (the
+/// ground-target cursor's CMSG_CAST_SPELL with a destination) places one where the click was, answered silently.
+#[test]
+fn the_editors_preview_gizmo_selection_and_exact_click() {
+    use den_lite::gizmo::{self, Camera, PLACE_SPELL};
+    let (srv, dir) = server("aids", HeroGender::Female);
+    let mut w = into_world(&srv, 2);
+    let s0 = Spot::default();
+    w.send(&heartbeat(s0.x, s0.y, s0.z, 0.0));
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tspawn 2413");
+    let mut st = w.until_addon("wubuild", "state");
+    while !st.contains("n=1;") {
+        st = w.until_addon("wubuild", "state");
+    }
+    let id: u64 = st.split("sel=").nth(1).unwrap().split(',').next().unwrap().parse().unwrap();
+    let chair = (0xF110u64 << 48) | (2413u64 << 24) | id;
+
+    // build mode: the chair shown again as a goober (the client highlights it and lets you right-click it)
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tmode build");
+    let (frames, mode) = until_aid(&mut w, "mode");
+    assert_eq!(mode, "build");
+    assert_eq!(frames.iter().filter_map(single_go).find(|g| g.0 == chair), Some((chair, 10)), "a goober in build mode");
+    assert!(frames.iter().any(|f| matches!(&f.msg, Some(ServerOpcodeMessage::SMSG_DESTROY_OBJECT(d)) if d.guid.guid() == chair)));
+    // play mode: as it is again (a chair: type 7, right-click sits); then back to build mode
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tmode play");
+    let (frames, mode) = until_aid(&mut w, "mode");
+    assert_eq!(mode, "play");
+    assert_eq!(frames.iter().filter_map(single_go).find(|g| g.0 == chair), Some((chair, 7)), "a chair in play mode");
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tmode build");
+    assert_eq!(until_aid(&mut w, "mode").1, "build");
+
+    // the gizmo on; a right-click on the chair selects it: the addon is told to open its menu
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tgizmo on");
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tselclear");
+    w.until_addon("wubuild", "state");
+    w.raw(gizmo::CMSG_GAMEOBJ_USE, &chair.to_le_bytes());
+    let (frames, picked) = until_aid(&mut w, "picked");
+    assert_eq!(picked, id.to_string());
+    let (made, _) = objects(&frames);
+    let flags: Vec<(u64, &Go)> = made.iter().filter(|(_, g)| (990_001..=990_003).contains(&g.entry)).map(|(k, g)| (*k, g)).collect();
+    assert_eq!(flags.len(), 3, "the gizmo's three flags: {made:?}");
+    let x = flags.iter().find(|f| f.1.entry == 990_001).unwrap();
+    assert_eq!(x.1.display, 5913);
+    assert!(x.1.x > s0.x + 3.0, "beside the chair, along x");
+    assert!(w.until_addon("wubuild", "state").contains(&format!("sel={id},2413")));
+    // a flag right-clicked: its axis; its entry answers the query as a goober
+    let y = flags.iter().find(|f| f.1.entry == 990_002).unwrap().0;
+    w.raw(gizmo::CMSG_GAMEOBJ_USE, &y.to_le_bytes());
+    assert_eq!(until_aid(&mut w, "axis").1, "y");
+    w.send(&CMSG_GAMEOBJECT_QUERY { entry_id: 990_002, guid: Guid::new(y) });
+    let q = w.until(|f| (f.opcode == GO_QUERY_RESPONSE).then(|| f.body.clone()));
+    assert_eq!((u32::from_le_bytes(q[0..4].try_into().unwrap()), u32::from_le_bytes(q[4..8].try_into().unwrap()), u32::from_le_bytes(q[8..12].try_into().unwrap())), (990_002, 10, 7153));
+
+    // the live preview: armed, the cursor's ray, Commit
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tpreview 2413");
+    assert_eq!(until_aid(&mut w, "aim").1, format!("place,2413,{PLACE_SPELL}"));
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\thover 0.1 -0.2 1.7778 12");
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\twhere");
+    let at: Vec<f32> = until_aid(&mut w, "ghost").1.split(',').map(|v| v.parse().unwrap()).collect();
+    let here = den_lite::ovmod::Here { x: s0.x, y: s0.y, z: s0.z, o: 0.0 };
+    let want = gizmo::project(&Camera { dist: 12.0, ..Camera::default() }, here, 0.1, -0.2, 1.7778, s0.z).unwrap();
+    assert!((at[0] - want.0).abs() < 0.02 && (at[1] - want.1).abs() < 0.02, "{at:?} {want:?}");
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tcommit");
+    let mut st = w.until_addon("wubuild", "state");
+    while !st.contains("mine=2/") {
+        st = w.until_addon("wubuild", "state");
+    }
+    let pos: Vec<f32> = st.split("pos=").nth(1).unwrap().split(';').next().unwrap().split(',').map(|v| v.parse().unwrap()).collect();
+    assert!((pos[0] - at[0]).abs() < 0.02 && (pos[1] - at[1]).abs() < 0.02, "placed where the copy was: {st}");
+
+    // the exact click: Flare's cast with a destination, never cast; the prop placed there
+    let mut b = vec![4u8];
+    b.extend_from_slice(&PLACE_SPELL.to_le_bytes());
+    b.push(0);
+    b.extend_from_slice(&gizmo::DEST_LOCATION.to_le_bytes());
+    b.push(0);
+    for v in [s0.x - 4.0, s0.y + 5.0, s0.z] {
+        b.extend_from_slice(&v.to_le_bytes());
+    }
+    w.raw(gizmo::CMSG_CAST_SPELL, &b);
+    let fail = w.until(|f| (f.opcode == gizmo::SMSG_CAST_FAILED).then(|| f.body.clone()));
+    assert_eq!(fail, vec![4, 0x07, 0x06, 0, 0, gizmo::SPELL_FAILED_DONT_REPORT], "silent: no message, no cooldown");
+    let mut st = w.until_addon("wubuild", "state");
+    while !st.contains("mine=3/") {
+        st = w.until_addon("wubuild", "state");
+    }
+    assert!(st.contains(&format!("pos={:.2},{:.2},", s0.x - 4.0, s0.y + 5.0)), "{st}");
+
+    // Esc: the copy goes, nothing armed
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tpreview off");
+    assert_eq!(until_aid(&mut w, "aim").1, "off");
+    let evs = std::fs::read_to_string(dir.join("den-lite.events")).unwrap_or_default();
+    assert!(evs.contains("aid_click") && evs.contains("aid_use") && evs.contains("build_mode"), "{evs}");
     drop(w);
     drop(srv);
     let _ = std::fs::remove_dir_all(&dir);

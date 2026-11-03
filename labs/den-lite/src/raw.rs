@@ -70,8 +70,14 @@ pub fn packed_rotation(q: [f32; 4]) -> u64 {
     (z | (y << 21) | (x << 42)) as u64
 }
 
-/// One create block for a gameobject.
+/// One create block for a gameobject, as it is.
 pub fn gameobject_block(out: &mut Vec<u8>, o: &WorldObject) {
+    gameobject_block_shown(out, o, o.kind, 0)
+}
+
+/// One create block for a gameobject with the type and flags the client is told (the editor's build mode shows
+/// props as goobers: gizmo.rs `shown`).
+pub fn gameobject_block_shown(out: &mut Vec<u8>, o: &WorldObject, kind: u8, flags: u32) {
     out.push(UPDATETYPE_CREATE_OBJECT);
     packed_guid(out, o.guid);
     out.push(TYPEID_GAMEOBJECT);
@@ -91,11 +97,11 @@ pub fn gameobject_block(out: &mut Vec<u8>, o: &WorldObject) {
     fields[OBJECT_FIELD_ENTRY] = Some(o.entry);
     fields[OBJECT_FIELD_SCALE_X] = Some(o.scale.to_bits());
     fields[GAMEOBJECT_DISPLAYID] = Some(o.display);
-    fields[GAMEOBJECT_FLAGS] = Some(0);
+    fields[GAMEOBJECT_FLAGS] = Some(flags);
     // the parent rotation: identity (no transport)
     fields[GAMEOBJECT_PARENTROTATION + 3] = Some(1.0f32.to_bits());
     // state ready, the type, art kit 0, anim progress 100
-    fields[GAMEOBJECT_BYTES_1] = Some(GO_STATE_READY as u32 | (o.kind as u32) << 8 | 100 << 24);
+    fields[GAMEOBJECT_BYTES_1] = Some(GO_STATE_READY as u32 | (kind as u32) << 8 | 100 << 24);
     let mut mask = 0u32;
     for (i, f) in fields.iter().enumerate() {
         if f.is_some() {
@@ -117,6 +123,21 @@ pub fn gameobject_creates(objs: &[WorldObject], per: usize) -> Vec<Vec<u8>> {
             out.extend_from_slice(&(chunk.len() as u32).to_le_bytes());
             for o in chunk {
                 gameobject_block(&mut out, o);
+            }
+            out
+        })
+        .collect()
+}
+
+/// As [`gameobject_creates`], each object's type and flags from `shown`.
+pub fn gameobject_creates_shown(objs: &[WorldObject], per: usize, shown: impl Fn(&WorldObject) -> (u8, u32)) -> Vec<Vec<u8>> {
+    objs.chunks(per.max(1))
+        .map(|chunk| {
+            let mut out = Vec::with_capacity(4 + chunk.len() * 80);
+            out.extend_from_slice(&(chunk.len() as u32).to_le_bytes());
+            for o in chunk {
+                let (kind, flags) = shown(o);
+                gameobject_block_shown(&mut out, o, kind, flags);
             }
             out
         })
@@ -156,6 +177,21 @@ pub fn gameobject_query_response(entry: u32, found: Option<(u8, u32, &str, f32)>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_type_and_flags_the_client_is_told() {
+        let o = WorldObject { guid: 0xF110_0009_6D00_0001, entry: 2413, display: 39, kind: 7, scale: 1.0, x: 1.0, y: 2.0, z: 3.0, o: 0.0, pitch: 0.0, roll: 0.0 };
+        let (mut a, mut b) = (Vec::new(), Vec::new());
+        gameobject_block(&mut a, &o);
+        gameobject_block_shown(&mut b, &o, 10, 0x10);
+        assert_eq!(a.len(), b.len());
+        // the values end: ..., flags (field 9), the rotation (10 ..= 13, only 13 set), bytes_1 (17)
+        let tail = |v: &[u8], k: usize| u32::from_le_bytes(v[v.len() - 4 * k..v.len() - 4 * k + 4].try_into().unwrap());
+        assert_eq!((tail(&a, 1) >> 8) & 0xFF, 7, "as it is: a chair");
+        assert_eq!((tail(&b, 1) >> 8) & 0xFF, 10, "a goober");
+        assert_eq!((tail(&a, 3), tail(&b, 3)), (0, 0x10), "the flags");
+        assert_eq!(gameobject_creates_shown(std::slice::from_ref(&o), 8, |o| (o.kind, 0)), gameobject_creates(std::slice::from_ref(&o), 8));
+    }
 
     #[test]
     fn packed_guids() {

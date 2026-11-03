@@ -11,6 +11,7 @@ pub mod companion;
 pub mod den;
 pub mod dojo;
 pub mod events;
+pub mod gizmo;
 pub mod guests;
 pub mod ovmod;
 pub mod login;
@@ -137,6 +138,11 @@ pub struct Shared {
     pub moves: Mutex<Option<movewatch::Watch>>,
     /// The Dojo (dojo.rs): fly, speed, the training dummies and Jaina's build in progress (the host's).
     pub dojo: Mutex<dojo::Dojo>,
+    /// The editor's build mode (gizmo.rs `mode build`): props are shown as goobers the client highlights and lets
+    /// you right-click; off: as they are.
+    pub build_look: std::sync::atomic::AtomicBool,
+    /// The host's placement aids as the den-test reads them (gizmo::view).
+    pub aid_view: Mutex<serde_json::Value>,
 }
 
 impl Shared {
@@ -266,6 +272,8 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
         autosaved_at: std::sync::atomic::AtomicU64::new(0),
         moves: Mutex::new(None),
         dojo: Mutex::new(dojo::Dojo::default()),
+        build_look: std::sync::atomic::AtomicBool::new(false),
+        aid_view: Mutex::new(serde_json::Value::Null),
     });
     let s = shared.clone();
     std::thread::spawn(move || login::serve(login, s, false));

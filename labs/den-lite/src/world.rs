@@ -13,7 +13,7 @@
 use crate::companion::{self, Asked, At};
 use crate::den::{self, Change, WorldObject};
 use crate::notice::{self, Item, Old, Route};
-use crate::{dojo, movewatch, ovmod, play, raw, testctl};
+use crate::{dojo, gizmo, movewatch, ovmod, play, raw, testctl};
 use crate::{Gender as HeroGender, Shared};
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -305,6 +305,8 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
     let mut _watcher: Option<StopOnDrop> = None;
     // the Builder's selection (ovmod.rs), whether this session moved yet and was answered by the addon channel
     let mut sel = ovmod::Sel::default();
+    // the editor's placement aids (gizmo.rs): the live preview, the gizmo, the exact click
+    let mut aids = gizmo::Aids::new(gizmo::Camera::load(&shared.cfg.den_dir));
     let (mut moved_once, mut ready) = (false, false);
     // what the game does with its character (movewatch.rs: the events and `.den where`)
     let mut watch: Option<movewatch::Watch> = None;
@@ -394,9 +396,16 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
             }
             continue;
         }
+        // the editor's exact click (the ground-target cursor's cast) and a right-click on a prop or a gizmo flag
+        // (gizmo.rs); a cast of any other spell goes on as before
+        if pos.is_some() && (op == gizmo::CMSG_CAST_SPELL || op == gizmo::CMSG_GAMEOBJ_USE || op == gizmo::CMSG_GAMEOBJ_REPORT_USE) {
+            if aid_packet(&c.w, shared, &sess, pos, &mut sel, &mut aids, op, &body)? {
+                continue;
+            }
+        }
         if op == ovmod::CMSG_MESSAGECHAT {
             if let Some(m) = ovmod::parse_addon(&body) {
-                addon(&c.w, shared, &sess, pos, &mut sel, &mut ready, &m)?;
+                addon(&c.w, shared, &sess, pos, &mut sel, &mut aids, &mut ready, &m)?;
                 continue;
             }
         }
@@ -407,6 +416,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 *p = n;
                 moved_once = true;
                 track(shared, &sess, &mut watch, op, &body, n);
+                aid_follow(&c.w, shared, &sess, &sel, &mut aids, n)?;
                 if let Some(l) = shared.live.lock().unwrap().as_mut().filter(|l| l.0 == sess.id) {
                     l.2 = n;
                 }
@@ -510,7 +520,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
             }
             ClientOpcodeMessage::CMSG_GAMEOBJECT_QUERY(q) => {
                 let t = den::template(q.entry_id);
-                let body = raw::gameobject_query_response(q.entry_id, t.map(|t| (t.kind, t.display, t.name, t.size)));
+                let body = raw::gameobject_query_response(q.entry_id, t.map(|t| (t.kind, t.display, t.name, t.size)).or_else(|| gizmo::query(q.entry_id)));
                 c.send_raw(raw::SMSG_GAMEOBJECT_QUERY_RESPONSE, &body)?;
             }
             ClientOpcodeMessage::CMSG_UPDATE_ACCOUNT_DATA(u) => {
@@ -524,6 +534,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                     }
                 }
                 // out of the world first (the companion goes with the player), then the client is told
+                gizmo::clear(&mut aids);
                 leave(shared, sess.id);
                 pos = None;
                 _watcher = None;
@@ -545,6 +556,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                     *p = n;
                     moved_once = true;
                     track(shared, &sess, &mut watch, op, &body, n);
+                    aid_follow(&c.w, shared, &sess, &sel, &mut aids, n)?;
                     if let Some(l) = shared.live.lock().unwrap().as_mut().filter(|l| l.0 == sess.id) {
                         l.2 = n;
                     }
@@ -564,20 +576,137 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
 }
 
 /// An addon message (ovmod.rs): the in-game Den panel and Builder against this Den.
-fn addon(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Pos>, sel: &mut ovmod::Sel, ready: &mut bool, m: &ovmod::AddonMsg) -> io::Result<()> {
+#[allow(clippy::too_many_arguments)]
+fn addon(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Pos>, sel: &mut ovmod::Sel, aids: &mut gizmo::Aids, ready: &mut bool, m: &ovmod::AddonMsg) -> io::Result<()> {
     if m.prefix != ovmod::PREFIX {
         return Ok(());
     }
-    let label: String = m.text.split('\t').take(2).collect::<Vec<_>>().join(" ");
-    shared.event("addon", &sess.me.name, &label);
     let here = pos.map(|p| ovmod::Here { x: p.x, y: p.y, z: p.z, o: p.o });
     let can = sess.me.host || shared.guests_build.load(Ordering::Relaxed);
-    let outs = {
+    // the placement aids' verbs (gizmo.rs): hover comes about 10 a second, so it isn't written to the events
+    if let Some(("wubuild", "cmd", data)) = ovmod::split(&m.text) {
+        if gizmo::is_aid(data) {
+            let Some(h) = here else { return Ok(()) };
+            if !data.trim_start().to_ascii_lowercase().starts_with("hover") {
+                shared.event("addon", &sess.me.name, &format!("wubuild aid {}", data.split_whitespace().take(2).collect::<Vec<_>>().join(" ")));
+            }
+            let out = {
+                let mut d = shared.den.lock().unwrap_or_else(|e| e.into_inner());
+                gizmo::cmd(&mut d, sel, aids, h, data, can, now_ms())
+            };
+            return quietly(c, shared, sess.id, sess.me.guid, || aid_send(c, shared, sess, sel, aids, out));
+        }
+    }
+    let label: String = m.text.split('\t').take(2).collect::<Vec<_>>().join(" ");
+    shared.event("addon", &sess.me.name, &label);
+    let (outs, follow) = {
         let mut d = shared.den.lock().unwrap_or_else(|e| e.into_inner());
-        ovmod::handle(&mut d, sel, here, m, sess.me.host, can)
+        let outs = ovmod::handle(&mut d, sel, here, m, sess.me.host, can);
+        // the gizmo goes where the selection now is (a move, a pick, a delete)
+        (outs, gizmo::sync(&d, sel, aids))
     };
     // what the bar or the Builder asked for answers in the bar (notice.rs), never in the chat
-    quietly(c, shared, sess.id, sess.me.guid, || addon_outs(c, shared, sess, pos, ready, outs))
+    quietly(c, shared, sess.id, sess.me.guid, || {
+        addon_outs(c, shared, sess, pos, ready, outs)?;
+        aid_send(c, shared, sess, sel, aids, follow)
+    })
+}
+
+/// What the aids do (gizmo.rs AidOut): the Den's change for everyone, build mode's look for everyone, this player's
+/// own objects (the copy, the gizmo: made, then the old ones taken away), the addon's lines, the state.
+fn aid_send(c: &Writer, shared: &Shared, sess: &Sess, sel: &ovmod::Sel, aids: &gizmo::Aids, out: gizmo::AidOut) -> io::Result<()> {
+    if let Some(ch) = &out.change {
+        apply(c, shared, ch)?;
+    }
+    if let Some(build) = out.look {
+        if shared.build_look.swap(build, Ordering::Relaxed) != build {
+            // every prop shown again in the new look, to everyone in the Den
+            let objs: Vec<WorldObject> = shared.den.lock().unwrap_or_else(|e| e.into_inner()).props.iter().map(|p| p.obj.clone()).collect();
+            shared.event("build_mode", &sess.me.name, if build { "build" } else { "play" });
+            for p in shared.players.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+                for o in &objs {
+                    let _ = p.w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(o.guid), target_died: false });
+                }
+                let _ = send_creates(&p.w, shared, &objs);
+            }
+        }
+    }
+    if !out.create.is_empty() {
+        send_creates(c, shared, &out.create)?;
+    }
+    for g in &out.destroy {
+        c.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(*g), target_died: false })?;
+    }
+    for (name, data) in &out.addon {
+        send_addon(c, sess.me.guid, "wubuild", name, data)?;
+    }
+    if out.state {
+        let role = if sess.me.host { "owner" } else if shared.guests_build.load(Ordering::Relaxed) { "builder" } else { "visitor" };
+        let st = ovmod::state(&shared.den.lock().unwrap_or_else(|e| e.into_inner()), sel, role);
+        send_addon(c, sess.me.guid, "wubuild", "state", &st)?;
+    }
+    for s in &out.say {
+        say(c, s)?;
+    }
+    if sess.me.host {
+        *shared.aid_view.lock().unwrap_or_else(|e| e.into_inner()) = gizmo::view(aids, sel, shared.build_look.load(Ordering::Relaxed));
+    }
+    Ok(())
+}
+
+/// The player moved: an armed copy that isn't on the cursor follows them (gizmo.rs `follow_player`).
+fn aid_follow(c: &Writer, shared: &Shared, sess: &Sess, sel: &ovmod::Sel, aids: &mut gizmo::Aids, n: Pos) -> io::Result<()> {
+    if aids.armed.is_none() || aids.cursor.is_some() {
+        return Ok(());
+    }
+    let here = ovmod::Here { x: n.x, y: n.y, z: n.z, o: n.o };
+    let out = gizmo::follow_player(&shared.den.lock().unwrap_or_else(|e| e.into_inner()), sel, aids, here, now_ms());
+    if out == gizmo::AidOut::default() {
+        return Ok(());
+    }
+    aid_send(c, shared, sess, sel, aids, out)
+}
+
+/// The exact click's cast (CMSG_CAST_SPELL of gizmo::PLACE_SPELL with a destination) and a right-click on a
+/// gameobject (CMSG_GAMEOBJ_USE): true when it was the aids' (nothing else then sees it).
+#[allow(clippy::too_many_arguments)]
+fn aid_packet(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Pos>, sel: &mut ovmod::Sel, aids: &mut gizmo::Aids, op: u32, body: &[u8]) -> io::Result<bool> {
+    let Some(p) = pos else { return Ok(false) };
+    let here = ovmod::Here { x: p.x, y: p.y, z: p.z, o: p.o };
+    let can = sess.me.host || shared.guests_build.load(Ordering::Relaxed);
+    if op == gizmo::CMSG_CAST_SPELL {
+        let Some(cast) = gizmo::parse_cast(body).filter(|c| c.spell == gizmo::PLACE_SPELL) else { return Ok(false) };
+        // never cast: no message, no cooldown, no visual
+        c.send_raw(gizmo::SMSG_CAST_FAILED, &gizmo::cast_failed_body(&cast))?;
+        c.send_raw(gizmo::SMSG_CLEAR_COOLDOWN, &gizmo::clear_cooldown_body(gizmo::PLACE_SPELL, sess.me.guid))?;
+        let Some(at) = cast.dest else { return Ok(true) };
+        shared.event("aid_click", &sess.me.name, &format!("{:.2} {:.2} {:.2}", at[0], at[1], at[2]));
+        // with the last hover: one sample for the build camera's calibration (den-check fits it)
+        if let Some(s) = gizmo::sample(aids, here, at).filter(|_| shared.cfg.test_control) {
+            if let (Ok(line), Ok(mut f)) = (serde_json::to_string(&s), std::fs::OpenOptions::new().create(true).append(true).open(shared.cfg.den_dir.join(gizmo::SAMPLES_FILE))) {
+                let _ = writeln!(f, "{line}");
+            }
+        }
+        let out = {
+            let mut d = shared.den.lock().unwrap_or_else(|e| e.into_inner());
+            gizmo::dest(&mut d, sel, aids, at[0], at[1], now_ms(), can)
+        };
+        quietly(c, shared, sess.id, sess.me.guid, || aid_send(c, shared, sess, sel, aids, out))?;
+        return Ok(true);
+    }
+    if op == gizmo::CMSG_GAMEOBJ_REPORT_USE {
+        return Ok(true);
+    }
+    let Some(guid) = body.get(..8).map(|b| u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])) else { return Ok(true) };
+    let out = {
+        let d = shared.den.lock().unwrap_or_else(|e| e.into_inner());
+        gizmo::use_object(&d, sel, aids, guid)
+    };
+    if out != gizmo::AidOut::default() {
+        shared.event("aid_use", &sess.me.name, &format!("{}", guid & 0xFF_FFFF));
+    }
+    quietly(c, shared, sess.id, sess.me.guid, || aid_send(c, shared, sess, sel, aids, out))?;
+    Ok(true)
 }
 
 fn addon_outs(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Pos>, ready: &mut bool, outs: Vec<ovmod::Out>) -> io::Result<()> {
@@ -923,7 +1052,8 @@ fn enter_world(c: &Writer, shared: &Shared, account: &str, me: &Me, p: Pos) -> i
     // no message of the day: it is a line in the chat (the Den bar or the welcome says hello instead)
     c.send(&SMSG_MOTD { motds: vec![] })?;
     c.send(&SMSG_BINDPOINTUPDATE { position: Vector3d { x: spot.x, y: spot.y, z }, map: Map::Kalimdor, area: AREA })?;
-    c.send(&SMSG_INITIAL_SPELLS { unknown1: 0, initial_spells: vec![], cooldowns: vec![] })?;
+    // one spell: the editor's exact click (gizmo.rs PLACE_SPELL, never cast)
+    c.send_raw(gizmo::SMSG_INITIAL_SPELLS, &gizmo::initial_spells_body(&[gizmo::PLACE_SPELL]))?;
     c.send(&SMSG_ACTION_BUTTONS::Initial { data: [ActionButton { action: 0, action_type: 0, misc: 0 }; 144] })?;
     c.send(&SMSG_INITIALIZE_FACTIONS { factions: vec![FactionInitializer { flag: FactionFlag::empty(), standing: 0 }; 128] })?;
     c.send(&SMSG_LOGIN_SETTIMESPEED { datetime: login_time(), timescale: 1.0 / 60.0, unknown1: 0 })?;
@@ -935,7 +1065,7 @@ fn enter_world(c: &Writer, shared: &Shared, account: &str, me: &Me, p: Pos) -> i
     c.send_raw(movewatch::SMSG_TIME_SYNC_REQ, &movewatch::time_sync_body(0))?;
     c.send(&SMSG_INIT_WORLD_STATES { map: Map::Kalimdor, area: AREA, sub_area: AREA, states: vec![] })?;
     let objs = shared.den.lock().unwrap().everything();
-    send_creates(c, &objs)?;
+    send_creates(c, shared, &objs)?;
     Ok(())
 }
 
@@ -1071,8 +1201,11 @@ const TUTORIAL: &[&str] = &[
     "5) .den grow  makes the room bigger. Your companion helps: say \"Jaina, tips\", \"Jaina, stay\" or \"Jaina, follow\" (.den companion calls her)",
 ];
 
-fn send_creates(c: &Writer, objs: &[WorldObject]) -> io::Result<()> {
-    for body in raw::gameobject_creates(objs, PER_UPDATE) {
+/// Gameobject creates, each shown as the editor's mode says (gizmo.rs `shown`: in build mode props are goobers the
+/// client highlights and lets you right-click).
+fn send_creates(c: &Writer, shared: &Shared, objs: &[WorldObject]) -> io::Result<()> {
+    let build = shared.build_look.load(Ordering::Relaxed);
+    for body in raw::gameobject_creates_shown(objs, PER_UPDATE, |o| gizmo::shown(o, build)) {
         c.send_raw(raw::SMSG_UPDATE_OBJECT, &body)?;
     }
     Ok(())
@@ -1089,7 +1222,7 @@ fn apply(c: &Writer, shared: &Shared, ch: &Change) -> io::Result<()> {
         for &g in &ch.destroyed {
             w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(g), target_died: false })?;
         }
-        send_creates(w, &ch.created)
+        send_creates(w, shared, &ch.created)
     };
     to_all(c)?;
     for p in shared.players.lock().unwrap_or_else(|e| e.into_inner()).clone() {
@@ -1819,6 +1952,7 @@ fn test_command(shared: &Shared, w: &Writer, id: u64, cmd: &str) -> io::Result<(
         "id": id, "cmd": cmd, "said": cap.said, "created": cap.created, "destroyed": cap.destroyed,
         "props": props, "look": look, "size": size, "t": now_ms(), "ok": r.is_ok(),
         "pos": [p.x, p.y, p.z], "ground": ground, "on_ground": (p.z - ground).abs() <= movewatch::ON_GROUND, "me": me,
+        "aids": shared.aid_view.lock().unwrap_or_else(|e| e.into_inner()).clone(),
     }));
     r
 }
@@ -2017,7 +2151,7 @@ fn jaina_build(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, name: &str) -> 
     testctl::note_change(ch.created.len(), 0);
     // friends see it at once; the host watches her build it
     for o in others(shared, sess.id) {
-        let _ = send_creates(&o.w, &ch.created);
+        let _ = send_creates(&o.w, shared, &ch.created);
     }
     let ms = now_ms();
     let walked = {
@@ -2133,7 +2267,7 @@ fn dojo_tick(shared: &Shared) -> io::Result<()> {
                     w.send_raw(dojo::SMSG_MONSTER_MOVE, &dojo::facing_body(companion::GUID, here, id, facing))?;
                     w.send_raw(dojo::SMSG_SPELL_GO, &dojo::spell_go_body(companion::GUID, dojo::BUILD_SPELL, ms as u32, [obj.x, obj.y, obj.z]))?;
                 }
-                send_creates(&w, std::slice::from_ref(&obj))?;
+                send_creates(&w, shared, std::slice::from_ref(&obj))?;
             }
             dojo::Step::Done { shown } => {
                 shared.companion.lock().unwrap_or_else(|e| e.into_inner()).follow_on();

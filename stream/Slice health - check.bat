@@ -4,6 +4,8 @@ title Leyline - is the streamed slice whole? (read-only)
 rem Read-only: every slice folder on the server (slices\<name>, and any .old/.new/.stage/.prev copy), its file count
 rem per folder, the key files (DBFilesClient\Spell.dbc, Map.dbc, AreaTable.dbc, Interface\GlueXML\GlueXML.toc) and
 rem how many of the names in its own tier lists (.tiers) are on disk; then what wu-play serves and what it answers.
+rem Also: every playable race and gender's model and skins (PROBLEM when missing), the CharSections textures and the
+rem shapeshift form models (WARN), and the game files players' browsers missed most ("most missed game files").
 rem Changes nothing. Saved to logs\slice-health-latest.txt. One SSH login.
 rem PROBLEM lines say what is wrong; the last line is "SLICE HEALTH DONE: OK" or "SLICE HEALTH DONE: PROBLEMS".
 rem After a bad slice: bash /srv/wrath/stream/slice-install.sh --rollback mini   (when slices\mini.old is whole),

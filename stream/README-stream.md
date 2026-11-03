@@ -102,6 +102,7 @@ The kit's order (the owner's priority; tier numbers are positions, so they follo
 | tiers | key(s) | what | maps |
 |---|---|---|---|
 | 0 | `base` | login, character create (all races/classes), UI, spell effects, sounds, item models (lite textures), every player mount | DBC, Interface, Character, Item, Spells..., `"mounts": true` |
+| after the starting areas | `pets` | every tameable beast (hunter pets) | none, `"pets": true` |
 | 1 | `dalaran` | Dalaran, the Underbelly, the Violet Citadel | 571, tiles under zone 4395 + 1 margin |
 | 2 | `arenas` | the five arenas | 559, 562, 572, 617, 618 |
 | 3 | `violet-hold-toc` | Violet Hold, Trial of the Champion | 608, 650 |
@@ -164,8 +165,21 @@ this. The export report shows the MB saved and the full size per tier.
    summons (SPELL_EFFECT_SUMMON 28, SUMMON_PET 56: warlock demons, ghouls and Army of the Dead,
    the water elemental, shadowfiend, treants, totems, companion pets...), following what a spell
    triggers or a channel casts; the object summons (portals, soulwells, fishing bobbers: effects 50,
-   76, 104-107); and the race totem models (`player_totem_model`). Hunter pets are whatever beast
-   was tamed (thousands of displays), so they are left to the tiers that spawn them.
+   76, 104-107); and the race totem models (`player_totem_model`).
+   **What players turn into** (3 Nov 2026: druids in a form, ghost wolves and ghosts showed no
+   model, because nothing spawns those): aura 36 (shapeshift) of the same player spells, its form's
+   models from SpellShapeshiftForm.dbc plus every CreatureDisplayInfo row sharing the model (the
+   race and colour variants the core picks), aura 56 (transform: polymorph, hex, costumes) as
+   creature entries, and the core's Ghost and night elf wisp spells. All in the base.
+   **Hunter pets** are whatever beast was tamed, so the `pets` tier (`"pets": true`, right after
+   the starting areas) takes every tameable beast (`type_flags & 1`, a family): the Sample
+   Hangout's level-80 bots bring theirs to Dalaran. A tier's `"creatures"` list takes the models of
+   creatures scripts summon (the Spirit Healer, Dalaran's event rabbit, the battleground Spirit
+   Guides, the Den companion). The build log's step 2 prints each count.
+   **Checking it**: `slice-health.sh` (Control `slice-health`) fails a slice without every playable
+   race and gender's model and skins, warns about missing CharSections textures and form models,
+   and lists the game files players' browsers missed most (wrath-page.js posts each 404 to
+   `/__gate?missing=1`; wu-portal counts them in `portal-data/stream/slice-misses.json`).
    **Transports**: every type-15 game object (ships, zeppelins, gunships, the icebreaker) goes to
    the base, because the server shows a continent's transports to everyone on it; elevators and
    lifts (type 11) go to the tier whose map they are on, the whole map rather than its spawnBox.

@@ -22,6 +22,7 @@
 //   * Touch controls (touch.js, touch-driver.js) on touch screens or with ?touch=1; the mouse
 //     fixes (input.js) everywhere; a connected controller starts the bridge's gamepad mapper.
 //   * window.owdiag (wu-diag.js): loaded on first use, or at once with ?diag=1.
+//   * Slice misses (missReporter): the game files the slice lacked, told to the server for "Slice health - check.bat".
 //
 // Not ported (1.12 only): the Workshop addons button and ?addon= links, Warfront ?mode=, the Duels
 // ?friend= / ?watch= / ?room= links, the login queue's "While you wait" grid (Wrath's page has no
@@ -1235,6 +1236,43 @@ export function watchBrowse(wenilla, { env = window.__wenilla_env || {}, net = m
 // with the form filled in, in a new tab (a click: a page can't open tabs on its own). Nothing is sent anywhere until
 // the host signs in there and presses Start server. The poll also sets WUUI_PAGE = true, which tells the addon it
 // runs in the browser game (the desktop client has no page; it shows a leyline:// link instead).
+/** The slice's misses, told to the server: each game file this session asked for that the streamed slice does not
+ * have (wrath-early.js window.__wuMissing: a 404 from the slice, seen in game as a missing model or texture), POSTed
+ * to /__gate?missing=1 (wrath_portal.py) once per name, at most MISS_BATCH names a time, every minute and when the tab
+ * is hidden. "Slice health - check.bat" lists the most missed names, so what the slice lacks shows without a
+ * screenshot. Not with your own game folder (?ownfiles=1) or ?nomissreport=1; the portal answers 403 for anything
+ * but a streamed session, and the reporter stops on 400/403/404/410. */
+export const MISS_BATCH = 100;
+export function missReporter({ missing = window.__wuMissing, fetchFn = (...a) => fetch(...a), everyMs = 60000,
+  setIntervalFn = (f, ms) => setInterval(f, ms), listen = (t, f) => addEventListener(t, f),
+  hidden = () => globalThis.document?.visibilityState === 'hidden', search = location.search } = {}) {
+  if (!missing || typeof missing.keys !== 'function' || /[?&](ownfiles|nomissreport)=1/.test(search || '')) return null;
+  const sent = new Set();
+  const state = { sent, stopped: false, busy: false, posts: 0 };
+  state.send = async (keepalive = false) => {
+    if (state.busy || state.stopped) return 0;
+    const names = [];
+    for (const n of missing.keys()) {
+      if (typeof n !== 'string' || sent.has(n)) continue;
+      sent.add(n);
+      if (n.length <= 200) names.push(n);
+      if (names.length >= MISS_BATCH) break;
+    }
+    if (!names.length) return 0;
+    state.busy = true;
+    try {
+      const r = await fetchFn('/__gate?missing=1', { method: 'POST', credentials: 'same-origin', keepalive,
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ names }) });
+      state.posts++;
+      if (r && [400, 403, 404, 410].includes(r.status)) state.stopped = true;   // not streamed, or an older portal
+    } catch { /* offline: those names are not sent again */ } finally { state.busy = false; }
+    return names.length;
+  };
+  state.timer = setIntervalFn(() => { state.send(); }, everyMs);
+  listen('visibilitychange', () => { if (hidden()) state.send(true); });
+  return state;
+}
+
 export const HOST_TAKE = 'WUUI_PAGE = true; local h = WUUI_LEYLINE_HOST; WUUI_LEYLINE_HOST = nil; return h';
 const HOST_PRESETS = { azerothcore: ['dalaran', 'main', 'brawl', 'progression', 'vanillaplus'], cmangos: ['cmangos-1.12.1', 'cmangos-2.4.3'] };
 const HOST_REGIONS = ['na-east', 'na-west', 'sa', 'eu', 'africa', 'me', 'asia', 'oce'];
@@ -1450,6 +1488,7 @@ export async function install(wenilla) {
     status.hop = watchHops(wenilla, { fast: fastHopOn() ? (t) => fastHop(t, { net: status.browse && status.browse.net }) : null });
   });
   step('hop timing', () => { status.hopTiming = hopTiming(wenilla); });
+  step('slice misses', () => { if (!window.__wenilla_env?.hop) status.misses = missReporter(); });
   step('host your own', () => { status.host = watchHostAsk(wenilla); });
   step('game folder', () => { if (!window.__wenilla_env?.hop) status.folder = watchGameFolder(wenilla); });
   const ui = () => step('leyline hop page', () => { hopUi(); });

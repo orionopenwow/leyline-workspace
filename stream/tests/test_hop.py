@@ -16,7 +16,8 @@ os.environ.update(SOAP_USER="WUSOAP", SOAP_PASS="x", AC_SOAP_URL=f"http://127.0.
                   PORTAL_URL=f"http://127.0.0.1:{REALM_PORT}", WU_SLICE_DIR=slices, WU_STREAM="1", WU_OWNFILES="1",
                   STREAM_HOST="wrath.example", WU_RELAY_LISTING=f"http://127.0.0.1:{RELAY_PORT}/api/listing/realms.json",
                   WU_JOIN_BASE="https://relay.example", WU_RELAY_WS="wss://relay.example",
-                  WU_HANGOUT_REALM="hangouthangout22", WU_LEYLINE_DIR=tempfile.mkdtemp())
+                  WU_HANGOUT_REALM="hangouthangout22", WU_LEYLINE_DIR=tempfile.mkdtemp(),
+                  WU_SLICE_MISSES=os.path.join(tempfile.mkdtemp(), "stream", "slice-misses.json"))
 BUILD_FILE = os.path.join(tempfile.mkdtemp(), "build-realm.id")   # the Builders' Realm (hosting/build-realm)
 with open(BUILD_FILE, "w") as f:
     f.write("buildersrealm234\n")
@@ -321,6 +322,33 @@ check("fast hop without pre: the env issues its own, as before", "hop_sso" in en
 wp.leyline_net.write_flags(None, {"herokey_sso": False}, by="test")
 codes = [post(f"/__gate?hop={OFF}", cookie=ck, ip="10.0.1.12")[0] for _ in range(32)]
 check("fast hop: rate limited per IP", codes[-1] == 429 and codes[0] == 404, codes[-3:])
+
+# --- the slice's misses: POST /__gate?missing=1 (wrath-page.js missReporter), counted for slice-health.sh
+msid = fresh_sid()
+mck = f"wu_play={msid}"
+names = ["Creature\\DruidCat\\DruidCat.m2", "creature/druidcat/druidcat00.skin", "../etc/passwd", "no-extension",
+         "x" * 300 + ".m2", 5, "Creature\\DruidCat\\DruidCat.m2"]
+body = json.dumps({"names": names}).encode()
+check("misses: refused from another origin", post("/__gate?missing=1", body, cookie=mck, origin="https://evil.example", ip="10.0.2.1")[0] == 403)
+check("misses: refused without a streamed session", post("/__gate?missing=1", body, ip="10.0.2.1")[0] == 403)
+check("misses: JSON only", post("/__gate?missing=1", body, cookie=mck, ctype="text/plain", ip="10.0.2.1")[0] == 415)
+check("misses: too large refused", post("/__gate?missing=1", b"{" + b" " * 40000 + b"}", cookie=mck, ip="10.0.2.1")[0] == 413)
+st, doc = post("/__gate?missing=1", body, cookie=mck, ip="10.0.2.1")
+check("misses: a streamed session's names are counted, junk, repeats and path tricks dropped", st == 200 and doc.get("noted") == 2, (st, doc))
+saved = json.load(open(os.environ["WU_SLICE_MISSES"]))
+cat = saved["names"].get("creature\\druidcat\\druidcat.m2", {})
+check("misses: written to WU_SLICE_MISSES at once the first time, per name (case and slash folded), with the slice",
+      cat.get("n") == 1 and cat.get("slices") == ["mini"] and saved["names"]["creature\\druidcat\\druidcat00.skin"]["n"] == 1
+      and len(saved["names"]) == 2, saved)
+post("/__gate?missing=1", json.dumps({"names": ["Creature\\Wolf\\Wolf.m2"]}).encode(), cookie=mck, ip="10.0.2.1")
+wp.slice_misses.flush()
+check("misses: later reports kept in memory and written by the flush", "creature\\wolf\\wolf.m2" in json.load(open(os.environ["WU_SLICE_MISSES"]))["names"])
+codes = [post("/__gate?missing=1", body, cookie=mck, ip="10.0.2.2")[0] for _ in range(14)]
+check("misses: rate limited per IP", codes[0] == 200 and codes[-1] == 429, codes)
+m = wp.SliceMisses(os.path.join(tempfile.mkdtemp(), "m.json"))
+m.MAX = 2
+m.note(["A\\a.m2", "B\\b.m2", "C\\c.m2"], "mini", now=100)
+check("misses: at most MAX names", sorted(m.names) == ["a\\a.m2", "b\\b.m2"])
 
 print(f"\n{count - fails}/{count} passed")
 sys.exit(1 if fails else 0)

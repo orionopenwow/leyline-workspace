@@ -619,8 +619,7 @@ def main(argv: list[str]) -> int:
                 print("mounts: NOT included, the model query failed: " + (e.stderr or "").strip()[:300],
                       file=sys.stderr)
                 out = ""
-            if out:
-                print(f"mounts: {len(out.splitlines())} displays for tier {label} ({notes})", file=sys.stderr)
+            print(f"mounts: {len(out.splitlines())} displays for tier {label} ({notes})", file=sys.stderr)
             sys.stdout.write(out)
             # Player pets, guardians, totems, companions and summoned objects: the same filter.
             try:

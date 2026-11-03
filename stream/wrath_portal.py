@@ -94,6 +94,9 @@ Play in the browser, streamed (a small "mini" slice of the game, never the full 
          POST /__gate?herokey=<realm id>     a Hero Key assertion for this session's account and that realm
                                (the herokey_sso flag on), fetched when the realm's preview opens; the page
                                redeems it at the relay on Join. Same rules as the hop env's.
+         POST /__gate?missing=1  {"names": [...]}: game files this streamed session asked for and the slice
+                               does not have (wrath-page.js missReporter), counted in WU_SLICE_MISSES
+                               (portal-data/stream/slice-misses.json); "Slice health - check.bat" lists the top.
   The off switch: WU_STREAM=0 (the default until stream-up.sh sets 1). /wrath/play then says
   streaming is off and /__auth refuses the game data.
   The game data killswitch (stream/server/gamedata-switch.sh, docs/GAME-DATA-ON-OUR-SERVER.md): while the flag
@@ -3230,6 +3233,100 @@ herokey_limit = _Window(3600, global_keys=("hk-all",))   # Hero Key sign-in asse
 armory_limit = _Window(60)   # armory searches: 30 a minute per address, on top of page_limit
 
 
+# The slice's misses (POST /__gate?missing=1, wrath-page.js missReporter): each game file a streamed session asked for
+# that the slice does not have (a 404 from wu-play, which shows as a missing model or texture), counted per name in
+# portal-data/stream/slice-misses.json on the host. "Slice health - check.bat" lists the most missed names.
+SLICE_MISSES = os.environ.get("WU_SLICE_MISSES", "/data/stream/slice-misses.json")
+MISS_NAME_RE = re.compile(r"^[A-Za-z0-9 _\-.\\'()&+,!$]{1,200}$")
+
+
+class SliceMisses:
+    """{lower name: {name, n, first, last, slices}}, at most MAX names; written at most every SAVE_S seconds."""
+    MAX = 5000
+    SAVE_S = 30
+
+    def __init__(self, path: str):
+        self.path = path
+        self.lock = threading.Lock()
+        self.names: dict | None = None
+        self.dirty = False
+        self.saved = 0.0
+        self.timer: threading.Timer | None = None
+
+    def _load(self) -> None:
+        if self.names is not None:
+            return
+        try:
+            with open(self.path, encoding="utf-8") as f:
+                doc = json.load(f)
+            self.names = {k: v for k, v in (doc.get("names") or {}).items() if isinstance(k, str) and isinstance(v, dict)}
+        except (OSError, ValueError, AttributeError):
+            self.names = {}
+
+    @staticmethod
+    def clean(raw) -> str | None:
+        if not isinstance(raw, str):
+            return None
+        name = raw.strip().replace("/", "\\")
+        last = name.rsplit("\\", 1)[-1]
+        if not MISS_NAME_RE.match(name) or ".." in name or name.startswith("\\") or "." not in last:
+            return None
+        return name
+
+    def note(self, names, slice_name: str = "", now: float | None = None) -> int:
+        now = int(now if now is not None else time.time())
+        n = 0
+        with self.lock:
+            self._load()
+            once = set()   # a name twice in one report counts once
+            for raw in names[:100] if isinstance(names, list) else []:
+                name = self.clean(raw)
+                if not name or name.lower() in once:
+                    continue
+                key = name.lower()
+                once.add(key)
+                e = self.names.get(key)
+                if e is None:
+                    if len(self.names) >= self.MAX:
+                        continue
+                    e = self.names[key] = {"name": name, "n": 0, "first": now, "slices": []}
+                e["n"] = int(e.get("n") or 0) + 1
+                e["last"] = now
+                sl = e.setdefault("slices", [])
+                if slice_name and slice_name not in sl and len(sl) < 4:
+                    sl.append(slice_name)
+                n += 1
+            if n:
+                self.dirty = True
+                if now - self.saved >= self.SAVE_S:
+                    self._save(now)
+                elif self.timer is None:
+                    self.timer = threading.Timer(self.SAVE_S, self.flush)
+                    self.timer.daemon = True
+                    self.timer.start()
+        return n
+
+    def flush(self) -> None:
+        with self.lock:
+            self.timer = None
+            if self.dirty:
+                self._save(int(time.time()))
+
+    def _save(self, now: int) -> None:
+        try:
+            os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+            tmp = self.path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"updated": now, "names": self.names}, f, separators=(",", ":"))
+            os.replace(tmp, self.path)
+            self.dirty, self.saved = False, now
+        except OSError as e:
+            log.warning("slice misses: cannot write %s: %s", self.path, e)
+
+
+slice_misses = SliceMisses(SLICE_MISSES)
+
+
 _health = {"at": 0.0, "ok": False, "kind": ""}
 _health_lock = threading.Lock()
 
@@ -3799,6 +3896,37 @@ class PageHandler(BaseHTTPRequestHandler):
             remember_go(sess["user"], {"go": ["r:" + target]})   # the official realm's Beacon: Dalaran on arrival
         self.json_reply(200, {"ok": True, "land": base + "go=r:" + target, "name": hop["name"]})
 
+    def stream_missing(self) -> None:
+        """POST /__gate?missing=1 on the stream site: {"names": [...]} the game files this streamed session missed
+        (wrath-page.js missReporter), counted in SLICE_MISSES. Same origin, JSON, a streamed session only."""
+        if not gate_limit.hit("miss:" + rl_bucket(self.ip()), 10):
+            self.json_reply(429, {"ok": False, "why": "too many requests"})
+            return
+        if self.headers.get("Origin", "") not in GAME_ORIGINS:
+            self.json_reply(403, {"ok": False, "why": "same-origin only"})
+            return
+        if not self.headers.get("Content-Type", "").lower().startswith("application/json"):
+            self.json_reply(415, {"ok": False, "why": "JSON only"})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = -1
+        if length < 0 or length > 32768:
+            self.json_reply(413, {"ok": False, "why": "too large"})
+            return
+        try:
+            body = json.loads(self.rfile.read(length) or b"{}")
+        except ValueError:
+            body = {}
+        sess = self.stream_session()
+        if not sess or sess.get("mode") != "stream" or sess.get("hop"):
+            self.json_reply(403, {"ok": False, "why": "not a streamed session"})
+            return
+        names = body.get("names") if isinstance(body, dict) else None
+        n = slice_misses.note(names if isinstance(names, list) else [], str(sess.get("slice") or "")[:40])
+        self.json_reply(200, {"ok": True, "noted": n})
+
     def stream_layer(self, query: dict) -> None:
         """POST /__gate?layer=on|off|beat on the stream site: the game-folder layer (see the module doc)."""
         op = (query.get("layer") or [""])[0]
@@ -3928,6 +4056,8 @@ class PageHandler(BaseHTTPRequestHandler):
             q = urllib.parse.parse_qs(split.query)
             if path == "/__gate" and ("hop" in q or "herokey" in q):
                 self.stream_hop(q)   # the in-game realm browser: fast hop, Hero Key prefetch
+            elif path == "/__gate" and "missing" in q:
+                self.stream_missing()   # the slice's misses (wrath-page.js missReporter, slice-health.sh)
             else:
                 self.stream_layer(q)
             return

@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "about": "Loadout templates (stream/loadouts.py, docs/LOADOUTS.md): ready-made starter loadouts for the launcher's Mods & Addons › Loadouts and the site's /loadouts. Items are catalog ids of REVIEWED, published entries only (stream/upstream-addons.json) or leyline:addons; a pending id is never shown (loadouts.py drops it, test_loadouts.py fails on it). gfx is a launcher graphics preset (gfx.rs PRESETS). The launcher keeps the same list in ui/loadouts.js TEMPLATES (the test checks both match).",
+  "about": "Loadout templates (stream/loadouts.py, launcher/src-tauri/src/loadouts.rs): ready-made starter loadouts for the launcher's Mods & Addons › Loadouts and the site's /loadouts. Items are catalog ids of REVIEWED, published entries only (stream/upstream-addons.json) or leyline:addons; a pending id is never shown (loadouts.py drops it, test_loadouts.py fails on it). gfx is a launcher graphics preset (gfx.rs PRESETS). The launcher keeps the same list in ui/loadouts.js TEMPLATES (the test checks both match).",
   "templates": [
     {"id": "official", "name": "Official realm", "line": "The Leyline addons for game modes, golf and your Den, with balanced graphics.",
      "items": ["leyline:addons"], "gfx": "balanced", "builds": ["3.3.5a"]},

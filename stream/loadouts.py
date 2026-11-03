@@ -1,6 +1,6 @@
 """Loadouts on the website (owner 3 Nov 2026: "Encourage downloading mods onto one's own client: style / loadout for
 clients. Make that part intuitive so people can load various versions of their games, templates and other people's
-realms without losing game file access and ease"). docs/LOADOUTS.md has the whole model; standard library only.
+realms without losing game file access and ease"). The launcher side is launcher/src-tauri/src/loadouts.rs and ui/loadouts.js; standard library only.
 
 A loadout is a named set of mods, addons and a graphics preset for one game folder in the launcher (launcher/src-tauri/
 src/loadouts.rs). Switching turns Leyline's own installs on and off; the game's files are never touched, and Clean (every

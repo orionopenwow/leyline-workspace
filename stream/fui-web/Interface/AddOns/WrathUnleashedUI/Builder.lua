@@ -599,6 +599,10 @@ local function setTileModel(t, c)
             t.modelPath = path
             if t.model.ClearModel then pcall(t.model.ClearModel, t.model) end
             pcall(t.model.SetModel, t.model, path)
+            -- a plain Model frame has no light of its own: without one every model draws black (3 Nov, the
+            -- owner's gallery was black tiles). Ambient plus a key light from the front-left, as the
+            -- character screens light theirs.
+            if t.model.SetLight then pcall(t.model.SetLight, t.model, 1, 0, -0.5, -0.7, -0.5, 0.75, 1, 1, 1, 0.9, 1, 0.95, 0.85) end
             local cam = tonumber(fitConf().cam)
             if cam then pcall(t.model.SetCamera, t.model, cam) end
             local scale, z = B.TileFit(c.size)

@@ -34,7 +34,7 @@ REPO = Path(__file__).resolve().parents[2]
 ADDON = "stream/fui-web/Interface/AddOns/WrathUnleashedUI"
 
 # The allow-list: folders (copied whole, minus refusals), single files, and globs. Paths as in this repo.
-# Public = the launcher, the host kit, the relay and their docs (docs/REPO-MAP.md, "Rules of thumb"). Never labs/,
+# Public = the launcher, the host kit, the relay and their docs (docs/REPO-MAP.md marks them "public"). Never labs/,
 # client/ (our client patches), server/, tools/ or the Autopilot files: those stay in the private repo.
 ALLOW = [
     "hosting/relay",                              # the relay (wurelay, its Dockerfile and deploy scripts)

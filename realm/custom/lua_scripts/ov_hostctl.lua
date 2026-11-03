@@ -477,6 +477,230 @@ function ACTIONS.cancel(player)
     ok(player, "Restart cancelled.")
 end
 
+-- ---------------------------------------------------------------- the GM command center's sandbox (console only)
+-- The launcher's GM command center (launcher/ui/gmcenter.js, host/console.rs sandbox_data) for the host's own world:
+-- "sandbox" with data "<verb>\t<arg>\t<name>" (name empty: the realm's GM who is online). Fixed verbs, each with a
+-- checked argument; nothing typed is ever run as a GM command. Not on the in-game window's channel (no OVMOD handler):
+-- only the console's queue, which only the realm's own PC can reach. Spawns are temporary (half an hour) and "clear"
+-- takes back every one this made.
+local SANDBOX_TELE = { dalaran = "Dalaran", stormwind = "Stormwind", orgrimmar = "Orgrimmar", ironforge = "Ironforge",
+    undercity = "Undercity", thunderbluff = "ThunderBluff", darnassus = "Darnassus", silvermoon = "Silvermoon",
+    exodar = "Exodar", shattrath = "Shattrath", gmisland = "GMIsland" }
+local SANDBOX_WEATHER = { clear = { 0, 0 }, rain = { 1, 0.7 }, snow = { 2, 0.7 }, storm = { 3, 0.7 } }
+local SPAWN_MS, FIND_MAX = 1800000, 15
+local spawned = {}   -- { kind = "creature" | "object", guid = <GetGUID()> }, newest last, at most 200
+H.SANDBOX_TELE = SANDBOX_TELE
+
+local function worldQuery(sql)
+    if not WorldDBQuery then return nil end
+    local okq, q = pcall(WorldDBQuery, sql)
+    if okq then return q end
+end
+
+-- The search words: letters, digits, spaces and dashes only, 2 to 30 (the console checked them too).
+function H.SandboxWords(s)
+    local w = tostring(s or ""):gsub("[^%w %-]", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")
+    if #w < 2 or #w > 30 then return nil end
+    return w
+end
+
+-- Whom a control acts on: the named character (online), else the realm's GM who is online (the host).
+local function sandboxWho(player, name)
+    if name and name ~= "" then
+        local n = H.CleanName(name)
+        if not n then return nil, "A character name: letters only." end
+        local p = GetPlayerByName and GetPlayerByName(n)
+        if not p then return nil, n .. " isn't online." end
+        if player ~= CONSOLE and p ~= player and gmLevel(p) >= gmLevel(player) then return nil, "Not a GM of your level or higher." end
+        return p
+    end
+    if player ~= CONSOLE then return player end
+    local okl, list = pcall(GetPlayersInWorld)
+    if okl and type(list) == "table" then
+        for _, p in ipairs(list) do
+            if gmLevel(p) >= GM_LEVEL and not isBot(p) then return p end
+        end
+    end
+    return nil, "Log in to your world with your GM character first (or type a character's name)."
+end
+
+local function found(sql, what)
+    local q = worldQuery(sql)
+    local rows = {}
+    if q then
+        repeat
+            local entry, name = tonumber(q:GetString(0)), tostring(q:GetString(1) or ""):gsub("[%c|\t]", " ")
+            if entry then rows[#rows + 1] = math.floor(entry) .. "\t" .. name:sub(1, 48) end
+        until #rows >= FIND_MAX or not q:NextRow()
+    end
+    if #rows == 0 then return nil, "No " .. what .. " by that name." end
+    return table.concat(rows, "\n")
+end
+
+local function remember(kind, obj)
+    local g = obj and try(obj, "GetGUID")
+    if g == nil then return end
+    spawned[#spawned + 1] = { kind = kind, guid = g }
+    if #spawned > 200 then table.remove(spawned, 1) end
+end
+
+-- the game's clock for everyone online (SMSG_LOGIN_SETTIMESPEED, 0x042): the hour asked for, until they log in again
+local function sendTime(hour)
+    if not CreatePacket then return false end
+    local t = os.date("*t")
+    local packed = (t.year - 2000) * 16777216 + (t.month - 1) * 1048576 + (t.day - 1) * 16384 + (t.wday - 1) * 2048 + hour * 64
+    local okl, list = pcall(GetPlayersInWorld)
+    if not (okl and type(list) == "table") then return false end
+    for _, p in ipairs(list) do
+        local okp, pk = pcall(CreatePacket, 0x042, 12)
+        if okp and pk then
+            try(pk, "WriteULong", packed)
+            try(pk, "WriteFloat", 0.01666667)
+            try(pk, "WriteULong", 0)
+            try(p, "SendPacket", pk)
+        end
+    end
+    return true
+end
+
+local SANDBOX = {}
+function SANDBOX.tele(player, p, arg)
+    local to = SANDBOX_TELE[arg]
+    if not to then return err(player, "Pick a place from the list.") end
+    if not RunCommand then return err(player, "This realm can't teleport from here.") end
+    pcall(RunCommand, "tele name " .. p:GetName() .. " " .. to)
+    ok(player, p:GetName() .. " is on the way to " .. to .. ".")
+end
+function SANDBOX.weather(player, p, arg)
+    local w = SANDBOX_WEATHER[arg]
+    if not w then return err(player, "Clear, rain, snow or storm.") end
+    local map = try(p, "GetMap")
+    if not map then return err(player, "This realm can't change the weather.") end
+    try(map, "SetWeather", try(p, "GetZoneId"), w[1], w[2])
+    ok(player, "The weather where " .. p:GetName() .. " stands: " .. arg .. ".")
+end
+function SANDBOX.time(player, p, arg)
+    local h = tonumber(arg)
+    if not h or h < 0 or h > 23 or h % 1 ~= 0 then return err(player, "An hour from 0 to 23.") end
+    if not sendTime(h) then return err(player, "This realm can't set the time.") end
+    ok(player, string.format("It is %02d:00 for everyone online (until they log in again).", h))
+end
+function SANDBOX.speed(player, p, arg)
+    local n = tonumber(arg)
+    if not n or n < 1 or n > 5 or n % 1 ~= 0 then return err(player, "Speed: 1 to 5 times.") end
+    for _, kind in ipairs({ 1, 2, 3, 6 }) do try(p, "SetSpeed", kind, n, true) end   -- run, run back, swim, flight
+    ok(player, p:GetName() .. " moves at " .. n .. "x.")
+end
+function SANDBOX.fly(player, p, arg)
+    if arg ~= "on" and arg ~= "off" then return err(player, "Fly: on or off.") end
+    try(p, "SetCanFly", arg == "on")
+    ok(player, p:GetName() .. (arg == "on" and " can fly (jump, then Space rises)." or " is back on the ground."))
+end
+function SANDBOX.level(player, p, arg)
+    local n = tonumber(arg)
+    if not n or n < 1 or n > 80 or n % 1 ~= 0 then return err(player, "A level from 1 to 80.") end
+    if not RunCommand then return err(player, "This realm can't set levels from here.") end
+    pcall(RunCommand, "character level " .. p:GetName() .. " " .. n)
+    ok(player, p:GetName() .. " is level " .. n .. ".")
+end
+function SANDBOX.item(player, p, arg)
+    local e = tonumber(arg)
+    local q = e and worldQuery("SELECT name FROM item_template WHERE entry = " .. math.floor(e))
+    if not q then return err(player, "No item with that number.") end
+    if not try(p, "AddItem", math.floor(e), 1) then return err(player, p:GetName() .. "'s bags are full.") end
+    ok(player, p:GetName() .. " got " .. tostring(q:GetString(0)) .. ".")
+end
+function SANDBOX.revive(player, p)
+    if not try(p, "IsDead") then return ok(player, p:GetName() .. " is alive.") end
+    try(p, "ResurrectPlayer", 100)
+    ok(player, p:GetName() .. " is back on their feet.")
+end
+function SANDBOX.heal(player, p)
+    local max = try(p, "GetMaxHealth")
+    if max then try(p, "SetHealth", max) end
+    ok(player, p:GetName() .. " is at full health.")
+end
+function SANDBOX.kill(player, p)
+    local t = try(p, "GetSelection")
+    if not t or try(t, "GetTypeId") ~= 3 then return err(player, "Target a creature in the game first (players can't be killed from here).") end
+    if try(t, "IsDead") then return ok(player, "It is already dead.") end
+    try(p, "Kill", t)
+    ok(player, tostring(try(t, "GetName") or "It") .. " is dead.")
+end
+function SANDBOX.clear(player, p)
+    local map, n = try(p, "GetMap"), 0
+    for i = #spawned, 1, -1 do
+        local s = spawned[i]
+        local obj = map and try(map, "GetWorldObject", s.guid)
+        if obj then
+            if s.kind == "creature" then try(obj, "DespawnOrUnsummon", 0) else
+                if try(obj, "Despawn") == nil then try(obj, "RemoveFromWorld", false) end
+            end
+            n = n + 1
+        end
+        table.remove(spawned, i)
+    end
+    ok(player, n == 0 and "Nothing of yours to clear here." or ("Cleared " .. n .. " thing" .. (n == 1 and "" or "s") .. " you spawned."))
+end
+SANDBOX["find-creature"] = function(player, p, arg)
+    local w = H.SandboxWords(arg)
+    if not w then return err(player, "Type 2 to 30 letters to search for.") end
+    local list, no = found("SELECT entry, name FROM creature_template WHERE name LIKE '%" .. w .. "%' ORDER BY entry LIMIT " .. FIND_MAX, "creature")
+    if not list then return err(player, no) end
+    ok(player, list)
+end
+SANDBOX["find-object"] = function(player, p, arg)
+    local w = H.SandboxWords(arg)
+    if not w then return err(player, "Type 2 to 30 letters to search for.") end
+    -- doors, plain objects, chairs, spell foci only: never chests, traps or anything that runs a script
+    local list, no = found("SELECT entry, name FROM gameobject_template WHERE name LIKE '%" .. w .. "%' AND type IN (0, 5, 7, 8) "
+        .. "AND ScriptName = '' AND AIName = '' ORDER BY entry LIMIT " .. FIND_MAX, "object")
+    if not list then return err(player, no) end
+    ok(player, list)
+end
+SANDBOX["find-item"] = function(player, p, arg)
+    local w = H.SandboxWords(arg)
+    if not w then return err(player, "Type 2 to 30 letters to search for.") end
+    local list, no = found("SELECT entry, name FROM item_template WHERE name LIKE '%" .. w .. "%' ORDER BY Quality DESC, entry LIMIT " .. FIND_MAX, "item")
+    if not list then return err(player, no) end
+    ok(player, list)
+end
+SANDBOX["spawn-creature"] = function(player, p, arg)
+    local e = tonumber(arg)
+    local q = e and worldQuery("SELECT name FROM creature_template WHERE entry = " .. math.floor(e))
+    if not q then return err(player, "No creature with that number.") end
+    local x, y, z, o = try(p, "GetX"), try(p, "GetY"), try(p, "GetZ"), try(p, "GetO")
+    local c = x and try(p, "SpawnCreature", math.floor(e), x + 3 * math.cos(o or 0), y + 3 * math.sin(o or 0), z, (o or 0) + math.pi, 3, SPAWN_MS)
+    if not c then return err(player, "It couldn't be placed here.") end
+    remember("creature", c)
+    ok(player, tostring(q:GetString(0)) .. " is beside " .. p:GetName() .. " for half an hour (Clear takes it back).")
+end
+SANDBOX["spawn-object"] = function(player, p, arg)
+    local e = tonumber(arg)
+    local q = e and worldQuery("SELECT name FROM gameobject_template WHERE entry = " .. math.floor(e) .. " AND type IN (0, 5, 7, 8) AND ScriptName = '' AND AIName = ''")
+    if not q then return err(player, "No object like that with that number.") end
+    local x, y, z, o = try(p, "GetX"), try(p, "GetY"), try(p, "GetZ"), try(p, "GetO")
+    local g = x and try(p, "SummonGameObject", math.floor(e), x + 3 * math.cos(o or 0), y + 3 * math.sin(o or 0), z, o or 0, SPAWN_MS / 1000)
+    if not g then return err(player, "It couldn't be placed here.") end
+    remember("object", g)
+    ok(player, tostring(q:GetString(0)) .. " is beside " .. p:GetName() .. " for half an hour (Clear takes it back).")
+end
+H.SANDBOX_VERBS = {}
+for k in pairs(SANDBOX) do H.SANDBOX_VERBS[#H.SANDBOX_VERBS + 1] = k end
+table.sort(H.SANDBOX_VERBS)
+
+function ACTIONS.sandbox(player, data)
+    local verb, arg, name = (data or ""):match("^([%a%-]+)\t([^\t]*)\t?(.*)$")
+    local fn = verb and SANDBOX[verb]
+    if not fn then return err(player, "That is not a sandbox control.") end
+    -- searches need nobody online; everything else acts on a character
+    if verb:match("^find%-") then return fn(player, nil, arg) end
+    local p, why = sandboxWho(player, name)
+    if not p then return err(player, why) end
+    log("sandbox " .. verb .. " on " .. tostring(try(p, "GetName")) .. " by " .. tostring(try(player, "GetName")))
+    fn(player, p, arg)
+end
+
 -- One entry for every action: GM check first, then the rate limit, then the action.
 function H.Handle(player, action, data)
     if not player then return false end

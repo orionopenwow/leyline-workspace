@@ -219,10 +219,21 @@ pub fn copy_places(client: &Path, den_dir: &Path) -> Vec<String> {
     made
 }
 
-/// The tables Den Lite's sandbox combat and class picker read (labs/den-lite `spells.rs` FILES, `gear.rs`): the
-/// player's own spells, their skill lines, cast times, durations, radii, and items (their looks), from their own game
-/// archives into the Dens folder, as [`model_table`]. Never shipped; written only when changed. How many are there.
-pub const GAME_TABLES: [&str; 6] = ["Spell.dbc", "SkillLineAbility.dbc", "SpellCastTimes.dbc", "SpellDuration.dbc", "SpellRadius.dbc", "Item.dbc"];
+/// The tables Den Lite's sandbox combat and class picker read (labs/den-lite `spells.rs` FILES, `gear.rs`,
+/// `specs.rs` FILES, `gearsets.rs`): the player's own spells, their skill lines, cast times, durations, radii, items
+/// (their looks), talents and their trees, and the armour sets, from their own game archives into the Dens folder,
+/// as [`model_table`]. Never shipped; written only when changed. How many are there.
+pub const GAME_TABLES: [&str; 9] = [
+    "Spell.dbc",
+    "SkillLineAbility.dbc",
+    "SpellCastTimes.dbc",
+    "SpellDuration.dbc",
+    "SpellRadius.dbc",
+    "Item.dbc",
+    "Talent.dbc",
+    "TalentTab.dbc",
+    "ItemSet.dbc",
+];
 
 pub fn game_tables(client: &Path, den_dir: &Path) -> usize {
     let order = super::terrain::archive_order(client);

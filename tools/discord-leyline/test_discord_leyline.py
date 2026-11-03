@@ -312,8 +312,9 @@ class Base(unittest.TestCase):
         self.srv.shutdown()
         self.srv.server_close()
 
-    def run_script(self, *args, stdin="", token_file=None):
-        env = {k: v for k, v in os.environ.items() if "proxy" not in k.lower()}
+    def run_script(self, *args, stdin="", token_file=None, extra_env=None):
+        env = {k: v for k, v in os.environ.items() if "proxy" not in k.lower() and not k.startswith("LEYLINE_")}
+        env.update(extra_env or {})
         env.update(LEYLINE_DISCORD_API=f"http://127.0.0.1:{self.srv.server_address[1]}/api",
                    LEYLINE_BACKUP_ROOT=str(self.backups),
                    LEYLINE_DISCORD_BACKOFF="0.01", NO_PROXY="*", PYTHONIOENCODING="utf-8")
@@ -1011,6 +1012,91 @@ class TestSecretsAndWords(Base):
                                    ("nowhere", "hi"), ("bug-reports", "fine")])
         self.assertEqual([n for n, *_ in go], ["bug-reports"])
         self.assertEqual(len(leave), 3)
+
+
+class TestFromControl(Base):
+    """Leyline Control's Discord steps: --from-control never asks, --yes-from-control is Control's do it (the owner
+    typed YES in Control), --bot-settings only looks; and the token is in none of their output."""
+    CTL = {"LEYLINE_CONTROL_STEP": "discord-apply"}
+
+    def preview_changes(self, p):
+        import re
+        m = re.search(r"^(\d+) change\(s\)\.$", p.stdout, re.M)
+        self.assertTrue(m, p.stdout)
+        return int(m.group(1))
+
+    def test_preview_never_asks_or_writes(self):
+        p = self.run_script("--from-control")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("PREVIEW (nothing will change)", p.stdout)
+        self.assertIn("Leyline Control > Discord > Do it", p.stdout)
+        self.assertGreater(self.preview_changes(p), 0)
+        self.assertEqual(self.fake.writes(), [])
+
+    def test_no_token_file_stops_instead_of_asking(self):
+        p = self.run_script("--from-control", token_file=self.tmp / "missing.txt")
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("Leyline Control > Discord", p.stdout + p.stderr)
+        self.assertNotIn("Bot token:", p.stdout + p.stderr)
+        self.assertEqual(self.fake.log, [])
+
+    def test_yes_from_control_backs_up_then_applies(self):
+        n = self.preview_changes(self.run_script("--from-control"))
+        p = self.run_script("--yes-from-control", extra_env={**self.CTL, "LEYLINE_DISCORD_EXPECT_CHANGES": str(n)})
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("You typed YES in Leyline Control", p.stdout)
+        self.assertNotIn("Type YES", p.stdout)
+        writes = self.fake.writes()
+        self.assertTrue(writes)
+        self.assertTrue(all(w[4] for w in writes), "a write before the backup")
+        self.assertEqual(len(self.backup_dirs()), 1)
+        p =self.run_script("--from-control")
+        self.assertIn("Nothing to change", p.stdout)
+
+    def test_yes_from_control_only_from_the_step(self):
+        p = self.run_script("--yes-from-control", extra_env={"LEYLINE_DISCORD_EXPECT_CHANGES": "5"})
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("only works from Leyline Control", p.stdout)
+        p = self.run_script("--yes-from-control", extra_env=self.CTL)            # no count from the preview
+        self.assertNotEqual(p.returncode, 0)
+        for flag in ("--delete-archived", "--wipe-history", "--delete-old-roles", "--post-first-posts"):
+            p = self.run_script("--yes-from-control", flag, extra_env={**self.CTL, "LEYLINE_DISCORD_EXPECT_CHANGES": "1"})
+            self.assertNotEqual(p.returncode, 0, flag)
+        self.assertEqual(self.fake.writes(), [])
+        self.assertEqual(self.backup_dirs(), [])
+
+    def test_stops_when_the_server_changed_since_the_preview(self):
+        n = self.preview_changes(self.run_script("--from-control"))
+        p = self.run_script("--yes-from-control", extra_env={**self.CTL, "LEYLINE_DISCORD_EXPECT_CHANGES": str(n + 1)})
+        self.assertEqual(p.returncode, 3, p.stdout)
+        self.assertIn("Run the preview again", p.stdout)
+        self.assertEqual(self.fake.writes(), [])
+        self.assertEqual(self.backup_dirs(), [])
+
+    def test_bot_settings_only_look(self):
+        self.apply()
+        before = len(self.fake.writes())
+        p = self.run_script("--from-control", "--bot-settings")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("WU_DISCORD_GUILD=1", p.stdout)
+        self.assertIn("DISCORD_CHAT_CHANNEL_ID=", p.stdout)
+        self.assertNotIn("<made when you run Do it>", p.stdout)
+        self.assertEqual(len(self.fake.writes()), before)
+        self.assertNotEqual(self.run_script("--bot-settings", "--apply").returncode, 0)
+
+    def test_token_never_in_control_output(self):
+        n = self.preview_changes(self.run_script("--from-control"))
+        self.run_script("--yes-from-control", extra_env={**self.CTL, "LEYLINE_DISCORD_EXPECT_CHANGES": str(n)})
+        self.run_script("--from-control", "--bot-settings")
+        self.assertEqual(len(self.outputs), 3)
+        for out in self.outputs:
+            self.assertIn("token", out.lower())                    # it does talk about the token...
+            self.assertNotIn(TOKEN, out)                           # ...never shows it
+            for part in TOKEN.split("."):
+                self.assertNotIn(part, out)
+        for f in self.tmp.rglob("*"):
+            if f.is_file() and f != self.token_file:
+                self.assertNotIn(TOKEN, f.read_text(encoding="utf-8", errors="replace"), str(f))
 
 
 if __name__ == "__main__":

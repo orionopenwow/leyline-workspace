@@ -56,6 +56,9 @@ check("words: the brand-word rule is the hub's", all(bool(LK._BANNED.search(t)) 
 gfx = open(os.path.join(ROOT, "launcher", "src-tauri", "src", "gfx.rs"), encoding="utf-8").read()
 check("presets: the ids are gfx.rs PRESETS", sorted(re.findall(r'^    \("([a-z]+)", "[A-Z][a-z]+", &\[', gfx, re.M)) == sorted(LK.PRESETS),
       re.findall(r'^    \("([a-z]+)", "[A-Z][a-z]+", &\[', gfx, re.M))
+check("presets: every gfx.rs preset has a look entry (one click from Looks), reviewed or waiting",
+      sorted({e['look']['preset'] for e in items if e['look']['type'] == 'preset'}) == sorted(LK.PRESETS),
+      sorted({e['look']['preset'] for e in items if e['look']['type'] == 'preset'}))
 check("presets: Max, Balanced and Classic map to the launcher's ultra, balanced and classic",
       {e["name"]: e["look"]["preset"] for e in pub if e["look"]["type"] == "preset"} == {"Max": "ultra", "Balanced": "balanced", "Classic": "classic"})
 

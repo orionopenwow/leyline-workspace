@@ -148,6 +148,86 @@
    }
   },
   {
+   "id": "look:performance",
+   "source": "look",
+   "name": "Performance",
+   "description": "The smoothest it gets, for older computers and laptops: a shorter view, plain texture filtering, no extra shadows, light grass and weather.",
+   "category": "graphics",
+   "builds": [
+    "1.12",
+    "2.4.3",
+    "3.3.5a"
+   ],
+   "author": "Leyline",
+   "author_url": "https://github.com/orionopenwow",
+   "licence": "MIT",
+   "licence_source": "ours",
+   "repo": "https://github.com/orionopenwow/Leyline",
+   "page": "",
+   "size": 0,
+   "look": {
+    "type": "preset",
+    "preset": "low",
+    "changes": [
+     "View distance",
+     "Shadows",
+     "Ground clutter",
+     "Weather",
+     "Spell effects"
+    ],
+    "uses": [],
+    "previews": [],
+    "featured": false,
+    "order": 17,
+    "note": "Changes the game's own settings file. Back to the original look puts your old settings back."
+   },
+   "review": {
+    "by": "",
+    "at": "",
+    "notes": "Ours: the Graphics page's Performance settings, offered as a look. Waits for the owner (a screenshot to add, and the wording)."
+   }
+  },
+  {
+   "id": "look:high",
+   "source": "look",
+   "name": "High",
+   "description": "A step below Max: a long view, sharp filtering, strong shadows, thicker grass and smooth edges, for a good graphics card.",
+   "category": "graphics",
+   "builds": [
+    "1.12",
+    "2.4.3",
+    "3.3.5a"
+   ],
+   "author": "Leyline",
+   "author_url": "https://github.com/orionopenwow",
+   "licence": "MIT",
+   "licence_source": "ours",
+   "repo": "https://github.com/orionopenwow/Leyline",
+   "page": "",
+   "size": 0,
+   "look": {
+    "type": "preset",
+    "preset": "high",
+    "changes": [
+     "View distance",
+     "Textures",
+     "Shadows",
+     "Ground clutter",
+     "Anti-aliasing"
+    ],
+    "uses": [],
+    "previews": [],
+    "featured": false,
+    "order": 18,
+    "note": "Changes the game's own settings file. Back to the original look puts your old settings back."
+   },
+   "review": {
+    "by": "",
+    "at": "",
+    "notes": "Ours: the Graphics page's High settings, offered as a look. Waits for the owner (a screenshot to add, and the wording)."
+   }
+  },
+  {
    "id": "look:forever-ui",
    "source": "look",
    "name": "Forever UI",
@@ -360,9 +440,9 @@
     "note": "External download, made and hosted by its authors; not checked or hosted by Leyline."
    },
    "review": {
-    "by": "Claude",
-    "at": "2026-11-01T15:00:00Z",
-    "notes": "Link only, like the UltraHD link (owner 2026-10-30: 'and other similar'). The repo has no release to pin, so no one click."
+    "by": "",
+    "at": "",
+    "notes": "Taken back to pending 2 Nov: its download points at a repo of olive-spore-734, an account on tools/hub-index/blocklist.json (look-alike lure cluster). A person checks the download before it is listed again. Was: link only, like the UltraHD link (owner 2026-10-30: 'and other similar')."
    }
   },
   {

@@ -29,6 +29,13 @@ It posts nothing unless you add --post-first-posts AND type POST: then only the 
 that have no TODO(owner) left, never in Start here. Otherwise it prints the drafts for you to paste yourself.
 Running it twice changes nothing the second time.
 
+From Leyline Control (tools/control/control.py, its Discord panel): --from-control never asks anything (the token only
+from token.txt, which Control saves; any question stops it instead). --yes-from-control is Control's "do it": the owner
+typed YES in Control after reading the preview there, so the script doesn't ask again. It works only when Control runs
+it as its discord-apply step (LEYLINE_CONTROL_STEP=discord-apply), still backs up first, and stops, changing nothing,
+when the plan no longer has the preview's number of changes (LEYLINE_DISCORD_EXPECT_CHANGES). --bot-settings
+(Control's discord-check) prints the settings lines for the website bot and the game bridge and changes nothing.
+
 Python 3 standard library only. The token is never printed, logged or written anywhere by this script.
 """
 import argparse
@@ -1106,12 +1113,18 @@ def backup(api, gid, n_messages):
     return out
 
 
+NONINTERACTIVE = False      # --from-control / --yes-from-control: never wait for typing (Control has no window)
+CONTROL_STEP = "discord-apply"
+
+
 def read_token(path):
     tok = ""
     if path and Path(path).is_file():
         tok = Path(path).read_text(encoding="utf-8-sig").strip()
         if tok:
             say(f"Using the bot token from {Path(path).name} (not shown).")
+    if not tok and NONINTERACTIVE:
+        raise SystemExit("No bot token saved. In Leyline Control > Discord, paste the bot token and press Save.")
     if not tok:
         say("Paste the bot token (Developer Portal -> your app -> Bot -> Reset Token -> Copy).")
         say("It won't show while you paste. Press Enter after.")
@@ -1126,6 +1139,9 @@ def read_token(path):
 
 
 def ask(prompt):
+    if NONINTERACTIVE:
+        say(prompt.rstrip() + " (no answer: run from Leyline Control, which can't type here)")
+        return ""
     try:
         return input(prompt)
     except EOFError:
@@ -1144,6 +1160,9 @@ def pick_guild(api, given):
     say("The bot is in more than one server:")
     for g in guilds:
         say(f"  {g['id']}  {g['name']}")
+    if NONINTERACTIVE:
+        raise SystemExit("The bot is in more than one server. Kick it from the others (or run the .bat with "
+                         "--guild <id>). Nothing changed.")
     gid = ask("Type the id of the server to change: ").strip()
     if gid not in {g["id"] for g in guilds}:
         raise SystemExit("That id isn't one of them. Nothing changed.")
@@ -1174,7 +1193,33 @@ def main(argv=None):
                     help="delete roles that aren't in the new set (asks you to type DELETE ROLES)")
     ap.add_argument("--plain", action="store_true", help=argparse.SUPPRESS)     # names are always plain now
     ap.add_argument("--token-file", default=str(HERE / "token.txt"), help=argparse.SUPPRESS)
+    ap.add_argument("--from-control", action="store_true",
+                    help="run from Leyline Control: never asks anything (token from token.txt only)")
+    ap.add_argument("--yes-from-control", action="store_true",
+                    help="Leyline Control's discord-apply step only: the owner already typed YES in Control")
+    ap.add_argument("--bot-settings", action="store_true",
+                    help="print the settings lines for the website bot and the game bridge (changes nothing)")
     o = ap.parse_args(argv)
+    global NONINTERACTIVE
+    expect = None
+    if o.yes_from_control:
+        if os.environ.get("LEYLINE_CONTROL_STEP") != CONTROL_STEP:
+            say("--yes-from-control only works from Leyline Control (Discord > Do it). Nothing changed.")
+            return 2
+        if o.delete_archived or o.wipe_history or o.delete_old_roles or o.post_first_posts or o.bot_settings:
+            say("--yes-from-control never deletes, wipes or posts. Nothing changed.")
+            return 2
+        try:
+            expect = int(os.environ.get("LEYLINE_DISCORD_EXPECT_CHANGES", ""))
+        except ValueError:
+            say("Leyline Control didn't say how many changes the preview showed. Run the preview again. "
+                "Nothing changed.")
+            return 2
+        o.apply = True
+    if o.bot_settings and o.apply:
+        say("--bot-settings only looks; it can't go with --apply. Nothing changed.")
+        return 2
+    NONINTERACTIVE = bool(o.from_control or o.yes_from_control)
 
     try:
         tok = read_token(o.token_file)
@@ -1196,6 +1241,13 @@ def main(argv=None):
         plan.run()
         old_name = plan.original_name
         say("")
+        if o.bot_settings:
+            say(f"Settings for the bots on the server {old_name!r} (channel ids, not secrets; this changed nothing):")
+            for line in plan.ids_for_the_bots():
+                say("  " + line)
+            if plan.changes:
+                say(f"({plan.changes} change(s) are still to do: the ids marked <made when you run Do it> come then.)")
+            return 0
         say(("PREVIEW (nothing will change)" if not o.apply else "PLAN") + f" for the server {old_name!r}:")
         plan.report()
         if o.post_first_posts:
@@ -1211,12 +1263,19 @@ def main(argv=None):
 
         if not o.apply:
             say("")
-            say("This was a preview. Nothing changed. To do it: run 'Leyline Discord - do it.bat'.")
+            say("This was a preview. Nothing changed. To do it: Leyline Control > Discord > Do it (or run "
+                "'Leyline Discord - do it.bat').")
             say(f"Before any change it backs up the server to your Desktop (last {o.backup_messages} messages "
                 "per channel). It posts nothing; it prints the first posts for you to paste yourself.")
             return 0
 
-        if plan.changes:
+        if expect is not None and plan.changes != expect:
+            say(f"\nStopped: the preview you confirmed showed {expect} change(s), but the server now needs "
+                f"{plan.changes}. Someone changed it since. Run the preview again in Leyline Control. Nothing changed.")
+            return 3
+        if expect is not None:
+            say(f"\nYou typed YES in Leyline Control for these {plan.changes} change(s) to {old_name!r}.")
+        elif plan.changes:
             if ask(f"\nType YES to make these {plan.changes} change(s) to {old_name!r}: ").strip() != "YES":
                 say("Stopped. Nothing changed.")
                 return 1

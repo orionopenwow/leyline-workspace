@@ -12,6 +12,9 @@ Serves a page on http://127.0.0.1:8097 (this PC only) and opens it. The page sho
   * Ready to launch: the steps in UPDATES-PENDING.txt not yet in UPDATES-DONE.txt; "Launch all" runs them in
     order (the same steps UPDATE.bat runs) and streams each step's output live; it stops at a failure.
   * History: finished steps with their logs (logs/<id>-<step>.log).
+  * Discord: the Discord redo's bot token (pasted once, saved on this PC only in tools/discord-leyline/token.txt,
+    git-ignored, never shown back, never in a log), Preview (read-only), and Do it: only after a fresh preview, and
+    only when the owner types YES under it; never from Autopilot, Launch all or a Waiting on you button.
   * Autopilot (switch in the header, remembered in control/autopilot.json): while this window is open, new
     steps Claude adds to UPDATES-PENDING.txt run on their own within a minute, and a read-only server check
     runs every 3 hours (logs/check-auto-*.log), so Claude can read the results without asking you. A failed
@@ -51,6 +54,11 @@ ANSWERS = ROOT / "control" / "owner-answers.json"     # the owner's Done / answe
 DROP_MAX = 200 * 1024 * 1024
 AUDIT_HTML = ROOT / "logs" / "audit-latest.html"     # the release audit's report (tools/audit, docs/AUDIT.md)
 AUDIT_TXT = ROOT / "logs" / "audit-latest.txt"
+# The Discord redo (tools/discord-leyline): the bot token box and the preview / do it / bot settings steps
+DISCORD_DIR = ROOT / "tools" / "discord-leyline"
+DISCORD_TOKEN = DISCORD_DIR / "token.txt"            # git-ignored; the script reads it; Control never shows it
+DISCORD_DOC = ROOT / "control" / "discord.json"      # the last preview's summary, the last do it and bot settings
+DISCORD_FRESH = 3600                                  # Do it needs a preview from the last hour
 HQ_URL = "https://leylinelauncher.com/wrath/admin"   # Leyline HQ: the one place online (stream/hq.py)
 QUIET = "--quiet" in sys.argv                         # started at Windows sign-in: no browser tab
 TOKEN_FILE = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "WrathUnleashed" / "control-token"
@@ -234,6 +242,9 @@ STEPS = {
     "firewall-check": ("tools/security/Firewall limits - dry run.bat", "Firewall limits: what would be added (read-only)", False),
     "firewall": ("tools/security/Firewall limits - apply.bat", "Firewall limits on game, relay and web ports + fail2ban for wrong passwords", False),
     "addons-curate": ("tools/addon-curate/Curate addons.bat", "Addon marketplace: curate upstream addons from their authors (new ones wait for review; then ship + signin)", False),
+    # The daily mods and addons run (docs/MODS-DAILY.md): curate, new thumbnails, checks, then what waits for review.
+    # It never approves anything; scouting and the index gate run in the cloud.
+    "mods-daily": ("tools/hub-index/Mods daily.bat", "Mods & addons daily: curate addons, new thumbnails, check the lists (everything new waits for your review; then ship + signin)", False),
     "tidy-check": ("tools/server-tidy/Server tidy - dry run.bat", "Read-only: what making room on the server would remove, and how much", False),
     "server-fix": ("tools/server-fix/Server fix.bat", "Server fix: the streamed-file folders root-only; a read-only look at why .bug didn't answer (no restart)", False),
     "tidy": ("tools/server-tidy/Server tidy.bat", "Make room on the server: build cache, old logs, old site backups, the parked VR browser slice (owner OK 1 Nov)", False),
@@ -246,6 +257,12 @@ STEPS = {
     # backlog. Uploads tools/bugs/status.json, has the GM console rebuild, copies BUGS-MANIFEST.md and backlog.json to
     # tools/bugs/live/ (git-ignored). Touches only the bug backlog, so Autopilot may run it (READ_ONLY below).
     "bugs": ("tools/bugs/Pull bug manifest.bat", "Bug manifest: every bug report in one list, copied to tools\\bugs\\live (statuses from tools\\bugs\\status.json go up first)", False),
+    # The Discord redo (tools/discord-leyline/README.md), from the Discord panel (the bot token pasted there, saved in
+    # tools\discord-leyline\token.txt). discord-apply runs only from that panel: after a preview from the last hour, when
+    # the owner types YES under its summary (OWNER_ONLY below); it backs up the server to the Desktop first.
+    "discord-preview": ("tools/discord-leyline/Control - Discord preview.bat", "Discord redo preview: what would change on your server (read-only)", False),
+    "discord-apply": ("tools/discord-leyline/Control - Discord do it.bat", "Discord redo, done: the server backed up to your Desktop, then the changes the preview showed", False),
+    "discord-check": ("tools/discord-leyline/Control - Discord bot settings.bat", "Discord bot settings: the channel ids for the website bot and the game bridge (read-only)", False),
     "hq-sync": ("tools/hq/HQ sync.bat", "Leyline HQ: send the recent changes and Claude's notes, fetch the owner's notes", False),
     "hqnote": ("tools/hq/HQ sync.bat", "Leyline HQ: publish Claude's notes (and sync)", False),
     "hq-inbox": ("tools/hq/HQ sync.bat", "Leyline HQ: fetch the owner's notes to Claude (and sync)", False),
@@ -254,7 +271,10 @@ STEPS = {
 # Autopilot runs only these by itself; anything else waits for "Launch all".
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "fresh-leyline-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
-             "vr-data-check", "vr-site-check", "sv-site-check", "release-mirror-check", "bugs", "audit", "den-check", "domain-check"}
+             "vr-data-check", "vr-site-check", "sv-site-check", "release-mirror-check", "bugs", "audit", "den-check", "domain-check",
+             "discord-preview", "discord-check"}
+# Steps only the owner starts, by hand, from their own panel (never Autopilot, Launch all or a Waiting on you button)
+OWNER_ONLY = {"discord-apply"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}
 
 # Never in a log or on the page: passwords, tokens, keys, connection strings (scrub() on every line a step prints).
@@ -266,14 +286,38 @@ SECRET_RES = [
     (re.compile(r"(?i)\b((?:mysql|postgres(?:ql)?|mongodb|redis|amqp|https?)://[^:/\s@]+:)[^@\s]+@"), r"\1[hidden]@"),
     (re.compile(r"(?i)(DatabaseInfo\s*=\s*\"?[^;\"]*;[^;\"]*;[^;\"]*;)[^;\"]*"), r"\1[hidden]"),
     (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*"), "[hidden private key]"),
+    # a Discord bot token's shape (the saved one is also hidden by its exact text, below)
+    (re.compile(r"\b[MNO][A-Za-z0-9_-]{22,30}\.[A-Za-z0-9_-]{5,8}\.[A-Za-z0-9_-]{25,}"), "[hidden]"),
 ]
 
 
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")   # terminal colours (the server's logs): shown as junk on the page
 
 
+_dsecret = {"at": None, "tok": ""}
+
+
+def discord_secret() -> str:
+    """The saved Discord bot token, read again only when token.txt changes (scrub() hides it in every line)."""
+    try:
+        st = DISCORD_TOKEN.stat()
+        at = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return ""
+    if _dsecret["at"] != at:
+        try:
+            _dsecret["tok"] = DISCORD_TOKEN.read_text(encoding="utf-8-sig").strip()
+        except OSError:
+            _dsecret["tok"] = ""
+        _dsecret["at"] = at
+    return _dsecret["tok"]
+
+
 def scrub(line: str) -> str:
     line = ANSI.sub("", line)
+    tok = discord_secret()
+    if len(tok) >= 8 and tok in line:
+        line = line.replace(tok, "[hidden]")
     for rx, rep in SECRET_RES:
         line = rx.sub(rep, line)
     return line
@@ -466,6 +510,14 @@ def run_all(ship_message: str, items=None, record=True) -> None:
                 state["auto_failed"] = pending_stamp()
                 write_last([item["id"]], False, item["step"])
                 return
+            if item["step"] in OWNER_ONLY and not item.get("owner_confirmed"):
+                emit("line", f"!! '{item['step']}' runs only from Leyline Control's Discord panel, after you read the "
+                             "preview and type YES there. It was not run.")
+                emit("result", {"ok": False, "step": item["step"]})
+                if record:
+                    state["auto_failed"] = pending_stamp()
+                write_last([item["id"]], False, item["step"])
+                return
             bat, title, interactive = STEPS[item["step"]]
             with lock:
                 state["running"] = item
@@ -487,6 +539,13 @@ def run_all(ship_message: str, items=None, record=True) -> None:
                     env.pop(k, None)
                 if note:
                     env["WU_SHIP_MSG"] = env["LEYLINE_SHIP_MSG"] = note
+            for k in ("LEYLINE_CONTROL_STEP", "LEYLINE_DISCORD_EXPECT_CHANGES"):
+                env.pop(k, None)
+            if item["step"].startswith("discord-"):
+                env["LEYLINE_CONTROL_STEP"] = item["step"]
+                env["PYTHONIOENCODING"] = "utf-8"
+                if item["step"] == "discord-apply":
+                    env["LEYLINE_DISCORD_EXPECT_CHANGES"] = str(int(item["expect"]))
             log = LOGS / f"{item['id']}-{item['step']}.log"
             with open(log, "w", encoding="utf-8") as lf:
                 p = subprocess.Popen(["cmd", "/c", "call", str(ROOT / bat)], cwd=str(ROOT), env=env,
@@ -506,6 +565,8 @@ def run_all(ship_message: str, items=None, record=True) -> None:
                 rc = p.wait()
             if item["step"] == "check":
                 write_last_check(item["id"], rc == 0)
+            if item["step"].startswith("discord-"):
+                discord_record(item, rc, log)
             if rc != 0:
                 emit("line", f"!! {title} failed (exit {rc}). Send Claude a screenshot, or the log: logs/{log.name}")
                 emit("result", {"ok": False, "step": item["step"]})
@@ -539,6 +600,139 @@ def run_all(ship_message: str, items=None, record=True) -> None:
         with lock:
             state["running"] = None
         emit("state", {})
+
+
+def clean_discord_token(raw) -> str:
+    """The pasted bot token, tidied (quotes, a "Bot " in front), or "" when it can't be one."""
+    t = str(raw or "").strip().strip('"').strip("'").strip()
+    if t.lower().startswith("bot "):
+        t = t[4:].strip()
+    return t if 30 <= len(t) <= 200 and re.fullmatch(r"[A-Za-z0-9._-]+", t) else ""
+
+
+def discord_token_status() -> dict:
+    """Only whether a token is saved and its last 4 characters: the page never gets the token itself."""
+    t = discord_secret()
+    return {"saved": bool(t), "last4": t[-4:] if len(t) >= 30 else ""}
+
+
+def save_discord_token(tok: str) -> None:
+    DISCORD_TOKEN.parent.mkdir(parents=True, exist_ok=True)
+    tmp = DISCORD_TOKEN.with_name("token.txt.tmp")
+    tmp.write_text(tok + "\n", encoding="utf-8")
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass
+    os.replace(tmp, DISCORD_TOKEN)
+
+
+def remove_discord_token() -> None:
+    for f in (DISCORD_TOKEN, DISCORD_TOKEN.with_name("token.txt.tmp")):
+        try:
+            f.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def discord_doc() -> dict:
+    try:
+        d = json.loads(DISCORD_DOC.read_text(encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def discord_summary(log: Path) -> dict:
+    """What the preview's log says: the server, the number of changes, and each change by section (the lines
+    discord_leyline.py's report prints: a "Section:" title, then "  * change" or "    note")."""
+    out = {"server": "", "changes": None, "items": [], "error": ""}
+    try:
+        lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return out
+    section, in_report = "", False
+    for ln in lines:
+        m = re.match(r"^PREVIEW \(nothing will change\) for the server (['\"])(.*)\1:$", ln)
+        if m:
+            out["server"], in_report = m.group(2), True
+            continue
+        m = re.match(r"^(\d+) change\(s\)\.$", ln)
+        if m and in_report:
+            out["changes"] = int(m.group(1))
+            in_report = False
+            continue
+        if ln.startswith("Nothing to change") and in_report:
+            out["changes"], in_report = 0, False
+            continue
+        if in_report:
+            if ln and not ln.startswith(" ") and ln.endswith(":"):
+                section = ln[:-1]
+            elif ln.startswith("  * "):
+                out["items"].append({"section": section, "text": ln[4:], "change": True})
+            elif ln.startswith("    ") and ln.strip():
+                out["items"].append({"section": section, "text": ln.strip(), "change": False})
+        elif ln.startswith("Stopped") or "Discord didn't accept" in ln or ln.startswith("No bot token"):
+            out["error"] = ln.strip()
+    out["items"] = out["items"][:400]
+    return out
+
+
+def discord_record(item: dict, rc: int, log: Path) -> None:
+    """After a Discord step: the preview's summary (for the panel and for Do it), or how the last do it / bot
+    settings went. A successful do it uses the preview up, so the next one needs a new preview."""
+    key = {"discord-preview": "preview", "discord-apply": "apply", "discord-check": "check"}.get(item["step"])
+    if not key:
+        return
+    d = discord_doc()
+    rec = {"id": item["id"], "at": time.time(), "ok": rc == 0, "log": log.name}
+    if key == "preview":
+        rec.update(discord_summary(log))
+        rec["ok"] = rc == 0 and rec["changes"] is not None
+    if key == "apply":
+        rec["changes"] = item.get("expect")
+        if rc == 0 and isinstance(d.get("preview"), dict):
+            d["preview"]["used"] = True
+    if key == "check":
+        try:
+            rec["lines"] = [l for l in log.read_text(encoding="utf-8", errors="replace").splitlines()
+                            if l.startswith("  ")][:20]
+        except OSError:
+            rec["lines"] = []
+    d[key] = rec
+    try:
+        DISCORD_DOC.parent.mkdir(parents=True, exist_ok=True)
+        DISCORD_DOC.write_text(json.dumps(d, indent=1), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def discord_ready(d: dict | None = None) -> tuple[dict | None, str]:
+    """The preview Do it would carry out, or why there is none."""
+    p = (d if d is not None else discord_doc()).get("preview")
+    if not discord_token_status()["saved"]:
+        return None, "Save the bot token first."
+    if not isinstance(p, dict) or not p.get("ok"):
+        return None, "Run the preview first."
+    if p.get("used"):
+        return None, "That preview was done. Run the preview again."
+    if time.time() - float(p.get("at") or 0) > DISCORD_FRESH:
+        return None, "The preview is over an hour old. Run it again."
+    if not p.get("changes"):
+        return None, "Nothing to change: the server is already done."
+    return p, ""
+
+
+def discord_state() -> dict:
+    d = discord_doc()
+    p, why = discord_ready(d)
+    out = {"token": discord_token_status(), "ready": bool(p), "why": why}
+    for k in ("preview", "apply", "check"):
+        if isinstance(d.get(k), dict):
+            r = dict(d[k])
+            r["when"] = time.strftime("%d %b %H:%M", time.localtime(float(r.get("at") or 0)))
+            out[k] = r
+    return out
 
 
 def audit_state() -> dict | None:
@@ -716,7 +910,8 @@ class H(http.server.BaseHTTPRequestHandler):
                                                "claude": claude_status(), "running": running,
                                                "health": health, "health_at": at, "lines": lines,
                                                "autopilot": autopilot_on(), "confirm": confirm_on(),
-                                               "audit": audit_state(), "answers": answers()}))
+                                               "audit": audit_state(), "answers": answers(),
+                                               "discord": discord_state()}))
         if path == "/audit":
             try:
                 return self._send(200, AUDIT_HTML.read_bytes(), "text/html; charset=utf-8")
@@ -757,6 +952,8 @@ class H(http.server.BaseHTTPRequestHandler):
         if not self._authed():
             return self._send(403, '{"error":"forbidden"}')
         n = int(self.headers.get("Content-Length") or 0)
+        if self.path.startswith("/api/discord/"):
+            return self._discord(n)
         if self.path.startswith("/api/drop"):
             # a file for Claude: /api/drop?id=<item>&dir=<folder>&name=<file name>, the raw bytes as the body
             qs = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -827,6 +1024,8 @@ class H(http.server.BaseHTTPRequestHandler):
             if step:
                 if step not in STEPS:
                     return self._send(400, '{"error":"unknown step"}')
+                if step in OWNER_ONLY:
+                    return self._send(400, '{"error":"that one runs only from the Discord panel, after you type YES"}')
                 item = {"id": step + "-" + time.strftime("%Y%m%d-%H%M%S"), "step": step, "title": STEPS[step][1],
                         "note": "", "known": True, "open": True}
                 if not start_run("", [item], False, STEPS[step][1]):
@@ -852,6 +1051,56 @@ class H(http.server.BaseHTTPRequestHandler):
             webbrowser.open("https://play.openvanilla.app/wrath")
             return self._send(200, '{"ok":true}')
         self._send(404, '{"error":"not found"}')
+
+
+    def _discord(self, n: int):
+        """The Discord panel: save / remove the bot token, and Do it. Stricter than the other POSTs: the session token
+        in the X-Token header only (never the cookie or the link), a JSON body, same-origin, small."""
+        if not token_ok(self.headers.get("X-Token", "")):
+            return self._send(403, '{"error":"forbidden"}')
+        if self.headers.get("Sec-Fetch-Site", "same-origin") not in ("same-origin", "none"):
+            return self._send(403, '{"error":"forbidden"}')
+        if not (self.headers.get("Content-Type") or "").startswith("application/json"):
+            return self._send(415, '{"error":"json only"}')
+        if n > 4096:
+            return self._send(413, '{"error":"too big"}')
+        try:
+            body = json.loads(self.rfile.read(n) or b"{}") if n > 0 else {}
+        except ValueError:
+            return self._send(400, '{"error":"bad json"}')
+        if not isinstance(body, dict):
+            return self._send(400, '{"error":"bad json"}')
+        if self.path == "/api/discord/token":
+            tok = clean_discord_token(body.get("token"))
+            body.clear()
+            if not tok:
+                return self._send(400, json.dumps({"error": "That doesn't look like a bot token. In the Developer "
+                                                   "Portal: your app > Bot > Reset Token > Copy, then paste it here."}))
+            try:
+                save_discord_token(tok)
+            except OSError as e:
+                return self._send(500, json.dumps({"error": f"Couldn't save it ({type(e).__name__})."}))
+            emit("state", {})
+            return self._send(200, json.dumps({"ok": True, "token": discord_token_status()}))
+        if self.path == "/api/discord/token-remove":
+            remove_discord_token()
+            emit("state", {})
+            return self._send(200, json.dumps({"ok": True, "token": discord_token_status()}))
+        if self.path == "/api/discord/apply":
+            p, why = discord_ready()
+            if not p:
+                return self._send(409, json.dumps({"error": why}))
+            if str(body.get("confirm") or "").strip() != "YES":
+                return self._send(400, json.dumps({"error": "Type YES to go ahead."}))
+            if str(body.get("preview") or "") != p["id"]:
+                return self._send(409, json.dumps({"error": "There is a newer preview. Read it, then type YES again."}))
+            item = {"id": "discord-apply-" + time.strftime("%Y%m%d-%H%M%S"), "step": "discord-apply",
+                    "title": STEPS["discord-apply"][1], "note": f"after preview {p['id']}", "known": True,
+                    "owner_confirmed": True, "expect": int(p["changes"])}
+            if not start_run("", [item], False, "Discord redo"):
+                return self._send(409, '{"error":"already running"}')
+            return self._send(200, '{"ok":true}')
+        return self._send(404, '{"error":"not found"}')
 
 
 PAGE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -945,6 +1194,10 @@ a{color:var(--gold)}.hist a{font:12px var(--mono)}
 color:var(--gold);background:rgba(0,0,0,.35);font-weight:600}.drop.over{background:rgba(241,207,134,.15)}
 .dos textarea{font:inherit;flex:1 1 100%;min-height:52px;background:rgba(0,0,0,.5);border:1px solid #0a0908;border-radius:7px;color:var(--text);padding:8px 11px}
 .youbox h2+p{margin:0 0 6px;color:var(--dim);font-size:12.5px}
+#dtok.ok{color:var(--ok)}#dtok.no{color:var(--warn)}
+.dsum{margin-top:10px}.dsum ul{margin:4px 0 0;padding-left:18px;max-height:260px;overflow:auto}.dsum li.n{color:var(--dim);list-style:none}
+.dsum .sec{font-weight:600;margin-top:6px}.dgo{margin-top:10px;padding:10px;border:1px solid #8a6a2c;border-radius:8px;background:rgba(242,201,76,.06)}
+.dgo input{max-width:140px;flex:0 1 140px}
 </style></head><body class="ly">
 <header><div class="brand"><span class="mark" aria-hidden="true"></span><h1>Leyline Control</h1></div>
 <div class="health" id="health"></div>
@@ -963,6 +1216,18 @@ color:var(--gold);background:rgba(0,0,0,.35);font-weight:600}.drop.over{backgrou
   <section class="card"><h2>Up next</h2><div id="pending"></div>
     <div class="launch"><input id="msg" placeholder="GitHub save note (only for 'Save to GitHub')">
     <button class="primary" id="go">Launch all</button></div></section>
+  <section class="card" id="discord"><h2>Discord</h2>
+    <div class="sub">The Discord redo (tools\discord-leyline\README.md). Bot token: <b id="dtok">…</b></div>
+    <div class="launch"><input id="dtokin" type="password" autocomplete="off" spellcheck="false" aria-label="Discord bot token"
+      placeholder="Discord bot token: paste it here"><button id="dsave">Save</button><button id="drm">Remove</button></div>
+    <div class="sub">Kept on this PC only (tools\discord-leyline\token.txt, never on GitHub), never shown again, never in a log.</div>
+    <div class="dos"><button class="primary sm" id="dprev" title="Shows what would change on your server. Changes nothing.">Preview</button>
+      <button id="dcheck" title="The channel ids for the website bot and the game bridge. Changes nothing.">Bot settings</button></div>
+    <div class="dsum" id="dsum"></div>
+    <div class="dgo" id="dgo" hidden><div id="dask"></div>
+      <div class="launch"><input id="dyes" autocomplete="off" placeholder="Type YES"><button class="primary" id="dapply">Do it</button></div>
+      <div class="sub">It backs up the server to your Desktop first (Leyline-discord-backup-...). It posts nothing.</div></div>
+    <div class="sub" id="dwhy"></div><div class="dsum" id="dlast"></div></section>
   <section class="card"><details class="fold"><summary>Claude's notes</summary>
     <h3>Working on</h3><div id="now"></div><div class="updated" id="cupd"></div>
     <h3>Finished</h3><div id="fin"></div></details></section>
@@ -1017,7 +1282,37 @@ $("go").disabled=!!s.running||!(s.pending||[]).length;$("audit").disabled=!!s.ru
 const ar=$("areport");if(s.audit){ar.hidden=false;ar.href=`/audit?t=${T}`;ar.textContent=`Last audit ${s.audit.at}: ${s.audit.green?"all green":s.audit.result}`;ar.style.color=s.audit.green?"var(--ok)":"var(--bad)"}else ar.hidden=true;
 $("run").innerHTML=s.running?`<span class="spinner"></span>${esc(s.running.title||"Running")}…`:'<span class="sub">Idle</span>';
 $("hist").innerHTML=(s.history||[]).map(x=>`<div class="item fin"><span class="tag">${esc(x.step)}</span><div>${esc(x.note||x.id)} ${x.log?`<a href="/api/log?t=${T}&name=${encodeURIComponent(x.log)}" target="_blank">log</a>`:""}</div></div>`).join("")||'<div class="empty">No runs yet.</div>';
+discordPanel(s);
 if(!$("con").childElementCount&&s.lines)s.lines.forEach(line)}
+const logLink=n=>n?` <a href="/api/log?t=${T}&name=${encodeURIComponent(n)}" target="_blank">log</a>`:"";
+let dprevKey="";
+function discordPanel(s){const d=s.discord||{},t=d.token||{},busy=!!s.running,el=$("dtok");
+el.textContent=t.saved?`saved${t.last4?` (ends ${t.last4})`:""}`:"not saved";el.className=t.saved?"ok":"no";
+$("drm").disabled=!t.saved;$("dprev").disabled=busy||!t.saved;$("dcheck").disabled=busy||!t.saved;
+const p=d.preview,key=p?p.id+(p.used?"u":""):"";
+if(key!==dprevKey){dprevKey=key;let h="";
+if(p){const head=p.ok?`Last preview ${esc(p.when)}: <b>${p.changes} change(s)</b> to ${esc(p.server)}${p.used?" (done since)":""}`:`Last preview ${esc(p.when)} didn't finish${p.error?`: ${esc(p.error)}`:""}`;
+h=`<div>${head}${logLink(p.log)}</div>`;const its=p.items||[];
+if(its.length){let sec=null,body="";for(const i of its){if(i.section!==sec){if(sec!==null)body+="</ul>";sec=i.section;body+=`<div class="sec">${esc(sec)}</div><ul>`}
+body+=`<li${i.change?"":' class="n"'}>${esc(i.text)}</li>`}body+="</ul>";
+h+=`<details class="fold"${p.ok&&!p.used?" open":""}><summary>What would change</summary>${body}</details>`}}
+$("dsum").innerHTML=h||'<div class="empty">No preview yet. Save the token, then press Preview.</div>'}
+$("dgo").hidden=!d.ready;$("dapply").disabled=busy;
+if(d.ready)$("dask").innerHTML=`Read the preview above. To make these <b>${p.changes} change(s)</b> to ${esc(p.server)}, type YES and press Do it.`;
+$("dwhy").textContent=d.ready||!t.saved&&!p?"":d.why||"";
+const a=d.apply,c=d.check;let l="";
+if(a)l+=`<div>Last do it ${esc(a.when)}: ${a.ok?'<span style="color:var(--ok)">done</span>':'<span style="color:var(--bad)">stopped</span>'}${logLink(a.log)}${a.ok?" Then press Bot settings, and kick the bot when you're finished.":""}</div>`;
+if(c)l+=`<div>Bot settings ${esc(c.when)}:${logLink(c.log)}${(c.lines||[]).length?`<pre class="console" style="height:auto;max-height:220px">${esc(c.lines.join("\n"))}</pre>`:""}</div>`;
+$("dlast").innerHTML=l}
+async function dpost(u,b){const r=await fetch(u,{method:"POST",headers:{...H,"Content-Type":"application/json"},body:JSON.stringify(b||{})});
+if(!r.ok){let m=await r.text();try{m=JSON.parse(m).error||m}catch(e){}alert(m)}refresh();return r.ok}
+$("dsave").onclick=async()=>{const i=$("dtokin"),v=i.value;if(!v.trim()){alert("Paste the bot token first.");return}i.value="";await dpost("/api/discord/token",{token:v})};
+$("dtokin").addEventListener("keydown",e=>{if(e.key==="Enter")$("dsave").click()});
+$("drm").onclick=()=>{if(confirm("Remove the saved Discord bot token from this PC?"))dpost("/api/discord/token-remove")};
+$("dprev").onclick=()=>{$("con").innerHTML="";post("/api/do",{run:"discord-preview"})};
+$("dcheck").onclick=()=>{$("con").innerHTML="";post("/api/do",{run:"discord-check"})};
+$("dapply").onclick=async()=>{const p=(last&&last.discord||{}).preview;if(!p)return;$("con").innerHTML="";
+if(await dpost("/api/discord/apply",{preview:p.id,confirm:$("dyes").value.trim()}))$("dyes").value=""};
 $("go").onclick=async()=>{$("con").innerHTML="";const r=await fetch("/api/launch",{method:"POST",headers:{...H,"Content-Type":"application/json"},body:JSON.stringify({message:$("msg").value})});if(!r.ok)alert("Couldn't start: "+(await r.text()));refresh()};
 $("audit").onclick=async()=>{$("con").innerHTML="";const r=await fetch("/api/audit",{method:"POST",headers:H});if(!r.ok)alert("Busy: "+(await r.text()));refresh()};
 $("check").onclick=async()=>{$("con").innerHTML="";const r=await fetch("/api/check",{method:"POST",headers:H});if(!r.ok)alert("Busy: "+(await r.text()));refresh()};

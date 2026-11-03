@@ -52,6 +52,7 @@ set BAD=0
 for /f "delims=" %%F in ('git diff --cached --name-only --diff-filter=AM') do if /i not "%%F"=="Ship to GitHub.bat" (
   findstr /m /r /c:"BEGIN [A-Z]* PRIVATE KEY" /c:"SOAP_PASS=[^$ ]" /c:"MYSQL_ROOT_PASSWORD=[^$ ]" /c:"GM_TOKEN=[A-Za-z0-9]" /c:"client_secret" "%%F" >nul 2>&1 && (echo   SECRET? %%F & set BAD=1)
   echo %%F| findstr /i /r "\.mpq$ \.blp$ \.m2$ \.wmo$ \.adt$ \.dbc$ \.exe$" >nul && (echo   GAME DATA / BINARY? %%F & set BAD=1)
+  echo %%F| findstr /i /r "token\.txt$" >nul && (echo   SECRET? %%F & set BAD=1)
 )
 if "!BAD!"=="1" (git reset -q & echo. & echo Stopped: the files above look like secrets or game data. Nothing was saved. Ask Claude. & goto fail)
 echo   clean

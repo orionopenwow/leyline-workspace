@@ -17,12 +17,32 @@ against Discord's terms. So you make a throwaway bot, use it for ten minutes, th
 hosting-help, nodes, list-your-realm). Nothing is deleted. Then press **Set up the Discord** in HQ once, so the
 website bot learns the new channels, and paste the new first posts.
 
+## The easy way: Leyline Control > Discord
+
+Make and invite the bot (steps 1-3 below), then everything else is in **Leyline Control** (`Leyline Control.bat`),
+in its **Discord** panel:
+
+1. **Paste the token in Leyline Control > Discord** and press **Save**. It is kept on this PC only, in `token.txt`
+   next to this README (git-ignored, so it never goes to GitHub). Control never shows it again: it only says
+   "saved (ends abcd)" or "not saved", and it is hidden from every log. Only the script uses it, to talk to Discord.
+2. **Preview**. Changes nothing. The panel then lists every change it would make, by section (its log is linked).
+3. **Do it**. Read the list, type `YES` in the box under it, press **Do it**. It backs up the server to your Desktop
+   first, then makes exactly those changes. It needs a preview from the last hour, and stops, changing nothing, if
+   the server changed since that preview (run Preview again). Autopilot and Launch all never run it.
+4. **Bot settings**. Changes nothing: shows the lines with your channel ids for the website bot and the game bridge
+   (step 7 below).
+5. When you're finished, kick the bot (step 9) and press **Remove** in the panel.
+
+The extra options (`--delete-archived`, `--wipe-history`, `--post-first-posts`...) are not in Control: they each ask
+you to type a word, so they stay with the .bat files below.
+
 ## The steps (about 30 minutes)
 
 1. **Make the bot.** Open <https://discord.com/developers/applications> > **New Application**, name it
    `Leyline setup`, tick the box, **Create**. Left menu > **Bot** > **Reset Token** > **Copy**. That token is the
-   bot's password. Paste it when the script asks (it hides it), or save it in `token.txt` next to the script (that
-   file is never put on GitHub). Nothing else ever writes the token anywhere.
+   bot's password. Paste it in **Leyline Control > Discord** (the easy way, above), or when the script asks (it
+   hides it), or save it in `token.txt` next to the script (that file is never put on GitHub). Nothing else ever
+   writes the token anywhere.
 2. **Invite it.** Left menu > **OAuth2** > **OAuth2 URL Generator** > tick **bot**, then under Bot Permissions tick
    **Administrator**. Open the URL at the bottom, pick your server, **Authorize**. In Discord: **Server Settings >
    Roles**, drag `Leyline setup` to the **top**.
@@ -127,6 +147,12 @@ and no money or tip links (no Patreon, Ko-fi, PayPal, donations). The script's n
 and `--post-first-posts` refuses any draft that breaks it. Please keep to it in what you write too.
 
 ## For developers
+
+`Control - Discord preview.bat`, `Control - Discord do it.bat` and `Control - Discord bot settings.bat` are Leyline
+Control's steps `discord-preview`, `discord-apply` and `discord-check` (tools/control/control.py); they never ask
+anything (`--from-control`). `--yes-from-control` works only when Control runs it as `discord-apply`
+(`LEYLINE_CONTROL_STEP`), never with the delete, wipe or post options, and with the preview's number of changes
+(`LEYLINE_DISCORD_EXPECT_CHANGES`). `python3 -I tools/control/test_control_discord.py` tests the panel end to end.
 
 `python3 tools/discord-leyline/test_discord_leyline.py` runs the tests against a fake Discord on localhost
 (`LEYLINE_DISCORD_API` points the script at it). `LAYOUT` in the script and `stream/discord_template_v2.json` must

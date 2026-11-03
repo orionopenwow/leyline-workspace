@@ -1529,6 +1529,553 @@
    ],
    "description": "The playerbot system for CMaNGOS realms: bots that fill the world, battlegrounds and dungeons, or play your own alts.",
    "found": "celguar/mangosbot-bots README (moved here), 2026-10-30"
+  },
+  {
+   "repo": "https://github.com/doitsujin/dxvk",
+   "category": "graphics",
+   "type": "tool",
+   "name": "DXVK",
+   "builds": [
+    "1.12",
+    "2.4.3",
+    "3.3.5a"
+   ],
+   "author": "DXVK contributors",
+   "description": "Runs the client's Direct3D on Vulkan: steadier frame times on many modern graphics cards, and the usual way to play under Wine or Proton on Linux.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/Corfirean/modern-wow-renderer",
+   "category": "graphics",
+   "type": "tool",
+   "name": "Modern Renderer (original)",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "The original Direct3D 9 proxy that adds modern lighting, fog, water, weather and post-processing; the Modern Renderer already listed is built from it. Tested on one community's modified client first.",
+   "found": "GitHub search, 2026-11-02; kasperfriend/friends-graphics' README is this project's README"
+  },
+  {
+   "repo": "https://github.com/Stormhand-dev/Lexara---HD-Font-Renderer-for-WoW-3.3.5",
+   "category": "graphics",
+   "type": "tool",
+   "name": "Lexara HD fonts",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "Sharper, resolution-independent text across the interface.",
+   "skip": "commits built binaries (dinput8.dll, skia.dll, source.7z) to the repo, and it is a DLL loaded into the client: link-out only if the owner decides so",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/crosire/reshade",
+   "category": "graphics",
+   "type": "tool",
+   "name": "ReShade",
+   "builds": [
+    "1.12",
+    "2.4.3",
+    "3.3.5a"
+   ],
+   "description": "Post-processing for any game: sharpening, colour, ambient occlusion and depth of field from shader presets.",
+   "skip": "describes itself as an injector, which the cheats rule refuses by that word; listed only if the owner waives it (docs/MODS-DAILY.md, TODO(owner))",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/tdymel/DPSMate",
+   "category": "addons",
+   "type": "addon",
+   "name": "DPSMate",
+   "builds": [
+    "1.12"
+   ],
+   "description": "A detailed combat analysis meter: damage, healing, absorbs, deaths, interrupts and more, in many modes.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/tdymel/ModifiedPowerAuras",
+   "category": "addons",
+   "type": "addon",
+   "name": "Modified Power Auras",
+   "builds": [
+    "1.12"
+   ],
+   "description": "Build on-screen alerts for buffs, debuffs, cooldowns and procs, with animations and sounds.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/SabineWren/Quiver",
+   "category": "addons",
+   "type": "addon",
+   "name": "Quiver",
+   "builds": [
+    "1.12"
+   ],
+   "description": "A hunter toolkit: auto shot and swing timers, aspect and trap trackers, and range indicators.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/tdymel/VCB",
+   "category": "addons",
+   "type": "addon",
+   "name": "VCB",
+   "builds": [
+    "1.12"
+   ],
+   "description": "A highly configurable buff frame that groups short and long buffs, with timers and borders.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/ScottHamper/chatsuey",
+   "category": "addons",
+   "type": "addon",
+   "name": "ChatSuey",
+   "builds": [
+    "1.12"
+   ],
+   "description": "Small chat improvements, each on its own: arrow-key editing, clickable channel names, links and more.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/moiian/ImmersiveDialogUI",
+   "category": "addons",
+   "type": "addon",
+   "name": "Immersive Dialog",
+   "builds": [
+    "1.12"
+   ],
+   "description": "Turns quest and gossip windows into a cinematic conversation view.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/Jslquintero/DialogUI",
+   "category": "addons",
+   "type": "addon",
+   "name": "DialogUI",
+   "builds": [
+    "1.12"
+   ],
+   "description": "A cleaner, larger quest and gossip dialogue window with keyboard shortcuts.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/EinBaum/SuperIgnore",
+   "category": "addons",
+   "type": "addon",
+   "name": "SuperIgnore",
+   "builds": [
+    "1.12"
+   ],
+   "description": "An ignore list without a limit, with a spam blocker for chat.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/refaim/SoloRaidTargetIcons",
+   "category": "addons",
+   "type": "addon",
+   "name": "Solo Raid Target Icons",
+   "builds": [
+    "1.12"
+   ],
+   "description": "Put raid target marks on creatures when you play alone, from the default target menu.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/moiian/FFXIVCrossHotbar",
+   "category": "addons",
+   "type": "addon",
+   "name": "Cross Hotbar",
+   "builds": [
+    "1.12"
+   ],
+   "description": "A gamepad-style cross hotbar: two sets of four buttons on each side, switched with triggers.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/refaim/MobStats",
+   "category": "addons",
+   "type": "addon",
+   "name": "MobStats",
+   "builds": [
+    "1.12"
+   ],
+   "description": "Shows a creature's stats, armour and resistances in its tooltip, in plain numbers.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/Medeah/Egnar",
+   "category": "addons",
+   "type": "addon",
+   "name": "Egnar",
+   "builds": [
+    "1.12"
+   ],
+   "description": "A range indicator for hunters: dead zone, melee and shooting range at a glance.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/Arthur-Helias/ZonesLevel",
+   "category": "addons",
+   "type": "addon",
+   "name": "ZonesLevel",
+   "builds": [
+    "1.12"
+   ],
+   "description": "Shows the level range of the zone under your mouse on the world map.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/EinBaum/MapTarget",
+   "category": "addons",
+   "type": "addon",
+   "name": "MapTarget",
+   "builds": [
+    "1.12"
+   ],
+   "description": "Minimap tracking improvements for hunters.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/EinBaum/DisableEscape",
+   "category": "addons",
+   "type": "addon",
+   "name": "DisableEscape",
+   "builds": [
+    "1.12"
+   ],
+   "description": "Stops the Escape key from cancelling group invites and summons by accident.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/Bagan95/FadeFrameUI",
+   "category": "addons",
+   "type": "addon",
+   "name": "FadeFrameUI",
+   "builds": [
+    "1.12"
+   ],
+   "description": "Fades the interface out after a few seconds out of combat and brings it back when you need it.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/MDGitHubRepo/CallOfElements",
+   "category": "addons",
+   "type": "addon",
+   "name": "Call of Elements",
+   "builds": [
+    "1.12"
+   ],
+   "description": "A shaman totem bar and timer set, with totem sets you switch in one click.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/BlackHobbiT/necrosis-twow",
+   "category": "addons",
+   "type": "addon",
+   "name": "Necrosis",
+   "builds": [
+    "1.12"
+   ],
+   "description": "The warlock helper: soul shard counter, a sphere for stones and demons, and timers for your spells.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/rissole/Magnify-WotLK",
+   "category": "addons",
+   "type": "addon",
+   "name": "Magnify",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "Zoom and pan the world map with the mouse wheel and drag, like a modern map.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/Homerocker/HomeCheck",
+   "category": "addons",
+   "type": "addon",
+   "name": "HomeCheck",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "Tracks raid cooldowns such as rebirths, innervates and defensive spells in bars.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/SamuelLira99/Profession-Capper",
+   "category": "addons",
+   "type": "addon",
+   "name": "Profession Capper",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "Shows the cheapest and quickest way to level a crafting profession, step by step.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/stevemcqueenz/pfQuest-Reforged",
+   "category": "addons",
+   "type": "addon",
+   "name": "pfQuest Reforged",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "pfQuest with a complete quest database for this client: objectives, givers and items on your map.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/ggb00/BistooltipRenewed",
+   "category": "addons",
+   "type": "addon",
+   "name": "BiS Tooltip Renewed",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "Shows on item tooltips which classes and specs count the item as best in slot.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/bkader/ElvinCDs",
+   "category": "addons",
+   "type": "addon",
+   "name": "ElvinCDs",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "Tracks important raid cooldowns, such as rebirths and soulstones, in small bars.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/bkader/KTracker",
+   "category": "addons",
+   "type": "addon",
+   "name": "KTracker",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "Icons that show when a spell or item is ready, or a buff or debuff is up or missing.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/Bagan95/FadeFrameUI-WOTLK",
+   "category": "addons",
+   "type": "addon",
+   "name": "FadeFrameUI (third era)",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "Fades the interface out after a few seconds out of combat and brings it back when you need it.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/heyitsbench/thecollector",
+   "category": "addons",
+   "type": "addon",
+   "name": "The Collector",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "Lists the mounts, companions and titles your character is still missing, with where they come from.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/faralaks/wow-questvoice",
+   "category": "addons",
+   "type": "addon",
+   "name": "QuestVoice",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "Reads quest text aloud with generated voices, so questing plays like an audiobook.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/tdymel/DPSMateWOTLK",
+   "category": "addons",
+   "type": "addon",
+   "name": "DPSMate (third era)",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "The DPSMate combat analysis meter, for the third-era client.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/gitdalisar/addon-Faction-Free-Unit-Popup",
+   "category": "addons",
+   "type": "addon",
+   "name": "Faction Free Unit Popup",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "Adds whisper and invite to the right-click menu of players from the other faction, for realms that let factions group.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/dh-harald/Bagzen",
+   "category": "addons",
+   "type": "addon",
+   "name": "Bagzen",
+   "builds": [
+    "1.12",
+    "3.3.5a"
+   ],
+   "description": "All your bags in one clean window, sorted into sections, with search.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/napnapnapnap/wowsimsexporter-wotlk-335",
+   "category": "addons",
+   "type": "addon",
+   "name": "Sim Exporter",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "Exports your gear and talents as text for the community combat simulators.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/refaim/snapjaw",
+   "category": "tools",
+   "type": "tool",
+   "name": "snapjaw",
+   "builds": [
+    "1.12",
+    "3.3.5a"
+   ],
+   "description": "A command-line addon manager that installs and updates addons straight from their git repos.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/refaim/Vanilla-WoW-Lua-Definitions",
+   "category": "tools",
+   "type": "tool",
+   "name": "Lua definitions for addon makers",
+   "builds": [
+    "1.12"
+   ],
+   "description": "Type definitions of the classic-era addon API for editors with a Lua language server: completion and checks while you write an addon.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/avirar/acore-data",
+   "category": "tools",
+   "type": "tool",
+   "name": "acore-data",
+   "needs": "AzerothCore",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "An MCP server for AzerothCore realms: one query interface over the client tables, the world database and navigation data, for builders and agents.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/Fersantos1975/AzerCore-Ops",
+   "category": "tools",
+   "type": "module",
+   "name": "AzerCore Ops",
+   "needs": "AzerothCore",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "A realm module and in-game panel for admins and game masters: realm health, player issues and fixes from one window.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/Calmoran/mod-heimdall",
+   "category": "tools",
+   "type": "module",
+   "name": "Heimdall tickets",
+   "needs": "AzerothCore",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "Bridges in-game game master tickets to a Discord channel, with replies going back to the player.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/PMZFX/mod-homebrew-gm",
+   "category": "tools",
+   "type": "module",
+   "name": "Homebrew GM",
+   "needs": "AzerothCore",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "A focused in-game game master panel and a protected server bridge, for small realms with playerbots.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/AlsoNotMehh/mod-account-bound",
+   "category": "realm-scripts",
+   "type": "module",
+   "name": "Account Bound",
+   "needs": "AzerothCore",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "Shares achievements, mounts, pets, titles, reputations and more across a player's characters, each part switched on or off.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/Maddnes95/mod-ilvl-scaling",
+   "category": "encounters",
+   "type": "module",
+   "name": "Item Level Scaling",
+   "needs": "AzerothCore",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "Scales creature difficulty and loot to the average item level of the real players in the group.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/azerothcore/mod-qr-code",
+   "category": "realm-scripts",
+   "type": "module",
+   "name": "QR codes in chat",
+   "needs": "AzerothCore",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "Shows a scannable QR code to a player in chat, with no addon or client files: handy for links to a realm's site.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/Souicia/mod-character-order",
+   "category": "realm-scripts",
+   "type": "module",
+   "name": "Character Order",
+   "needs": "AzerothCore",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "Lets players reorder the characters on their account from an in-game menu, and keeps that order.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/Sass42/Shapeshifter",
+   "category": "sandbox",
+   "type": "module",
+   "name": "Shapeshifter",
+   "needs": "AzerothCore",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "Turn into a boss or creature for fun: its model, name, size and abilities, from a menu.",
+   "found": "GitHub search, 2026-11-02"
+  },
+  {
+   "repo": "https://github.com/buildthehomelab/wow-mod-forever-journal",
+   "category": "realm-scripts",
+   "type": "module",
+   "name": "Journal",
+   "needs": "AzerothCore",
+   "builds": [
+    "3.3.5a"
+   ],
+   "description": "A realm module and addon that add a modern adventure journal: dungeons and raids with bosses, abilities and loot, in one window.",
+   "found": "GitHub search, 2026-11-02"
   }
  ]
 }

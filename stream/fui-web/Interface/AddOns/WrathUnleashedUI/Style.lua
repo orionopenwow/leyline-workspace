@@ -346,6 +346,13 @@ function S.EdPanel(frame, alpha, fill)
     return frame
 end
 
+-- The panel's edge in another colour (gold: what is on / build mode).
+function S.EdEdge(frame, c)
+    if not frame.edEdge then frame.edEdge = border(frame, c or ED.edge) end
+    for _, t in ipairs(frame.edEdge) do t:SetTexture(unpackC(c or ED.edge)) end
+    frame.edEdgeColour = c
+end
+
 -- A small-caps label: upper case, small, muted (or gold).
 function S.EdLabel(parent, text, gold, ...)
     local fs = S.EdText(parent, S.ED_SIZE.label)

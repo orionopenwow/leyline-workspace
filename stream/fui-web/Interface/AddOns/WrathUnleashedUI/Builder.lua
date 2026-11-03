@@ -57,10 +57,10 @@ local WIN_W = PAD + CAT_W + PAD + COLS * TILE + (COLS - 1) * GAP + PAD
 local function winHeight(rows) return HEAD_H + rows * (TILE + NAME_H + GAP) - GAP + FOOT_H end
 local WIN_H = winHeight(ROWS)
 -- Where the editor's windows go, clear of the game's own frames (UI units): the rail under the player frame, the
--- gallery right of the rail and above the chat (its top is 215 at the stock place), the popover under the minimap and
+-- gallery right of the rail and above the chat (its top is 215 at the stock place), the selection's panel left of the minimap and
 -- left of the side bars, the status pill above the action bars.
 local LAYOUT = { railX = 8, railTop = 118, railW = 64, galleryX = 80, galleryBottom = 232, topMargin = 56, galleryTop = 112,
-    propsRight = 104, propsTop = 206, pillBottom = 152 }
+    propsRight = 204, propsTop = 56, pillBottom = 152 }
 local ANSWER_WAIT = 6
 local STEPS = { 0.01, 0.1, 0.25, 1, 3, 10 }    -- the move step, in yards
 local STEP_PRESETS = { 2, 3, 4, 5 }             -- the rail's presets (indices into STEPS): 0.1, 0.25, 1, 3
@@ -283,6 +283,10 @@ local function parseState(data)
     local id, entry, name = (s.sel or ""):match("^(%d+),(%d+),(.*)$")
     s.selName = name
     s.selId = tonumber(id or "")
+    s.selEntry = tonumber(entry or "")
+    -- caps: the verbs a newer server adds (selnext, selkind, lock on Den Lite...), so the editor offers only what it does
+    s.can = {}
+    for v in (s.caps or ""):gmatch("[%w]+") do s.can[v:lower()] = true end
     s.count = tonumber(s.n or "") or (name and 1 or 0)
     local x, y, z, t, sc = (s.pos or ""):match("^(%-?[%d%.]+),(%-?[%d%.]+),(%-?[%d%.]+),(%-?[%d%.]+),([%d%.]+)$")
     if x then s.p = { x = tonumber(x), y = tonumber(y), z = tonumber(z), turn = tonumber(t), scale = tonumber(sc) } end
@@ -396,8 +400,12 @@ local function dispatch(name, data)
         end
         if files and B.state.code and B.state.code ~= "-" then files.code:SetText(B.state.code) end
         refreshMeter()
-        -- something new selected while the editor is open: its properties pop up (and go when nothing is)
-        if B.state.selId and B.state.selId ~= was and win and win:IsShown() and not (panel and panel:IsShown()) then
+        -- something new selected while the editor is up (the gallery open, just placed, or a Den in build mode): its
+        -- panel pops up (and goes when nothing is)
+        local D = W.DenBar
+        local up = (win and win:IsShown()) or (B.placedAt and now() - B.placedAt < 8)
+            or (D and D.IsActive and D.IsActive() and not D.play)
+        if B.state.selId and B.state.selId ~= was and up and not (panel and panel:IsShown()) then
             B.ShowProps(true); B.propsAuto = true
         elseif not B.state.selId and B.propsAuto and panel and panel:IsShown() then
             B.ShowProps(false)
@@ -948,17 +956,34 @@ function B.ToggleFavourite(c)
     if B.tab == "favourites" then B.Filter() else B.Refresh() end
 end
 
--- One click on a tile: picked (the gold edge), and the status says what it is.
+-- One click on a tile: picked (the gold edge) AND armed: the next placement is this prop, no other click needed.
+-- The pill says "Place: Barrel — click Place or press Enter / double-click"; Enter places it in front of you (Place
+-- and a double-click too); Esc or Clear lets it go. After placing, the realm selects the new prop and its panel opens.
 function B.Choose(item)
     if not item then return false end
     B.pick = item
     B.mode = "place"
-    if item.kind == "prefab" then setStatus(string.format("%s: %d props. Double-click to paste it.", item.name, item.count or 0))
-    elseif item.kind == "stamp" then setStatus(item.name .. ": " .. (item.line or "") .. " Double-click to mark where it goes.")
-    else setStatus(string.format("%s: %d build point%s. Double-click to place it, right-click to favourite it.",
+    B.Arm(item)
+    if item.kind == "prefab" then setStatus(string.format("%s: %d props. Enter or double-click pastes it.", item.name, item.count or 0))
+    elseif item.kind == "stamp" then setStatus(item.name .. ": " .. (item.line or "") .. " Enter or double-click marks where it goes.")
+    else setStatus(string.format("%s: %d build point%s. Enter or double-click places it; right-click: a favourite.",
         item.name, item.cost or 1, (item.cost or 1) == 1 and "" or "s")) end
     B.Refresh()
     return true
+end
+
+-- Armed: the picked prop waits for Enter (or Place, or a double-click). B.Arm(nil) lets it go.
+function B.Arm(item)
+    B.armed = item
+    B.BindArmKeys(item ~= nil)
+    if refreshPill then refreshPill() end
+    return item ~= nil
+end
+function B.Armed() return B.armed end
+function B.PlaceArmed()
+    local it = B.armed
+    if not it then B.BindArmKeys(false); return false end
+    return B.Place(it)
 end
 
 -- Places the picked prop: in front of you (Den Lite: 3 yards ahead), or in edit mode where you click next.
@@ -972,9 +997,13 @@ function B.Spawn()
     -- In edit mode the next click on the ground places it (EditMode.lua); otherwise at your feet.
     if editing() then
         W.EditMode.StartPlacing(B.pick)
+        B.placedAt = now()
+        B.Arm(nil)
         setStatus("Click the ground where it goes.")
         return true
     end
+    B.placedAt = now()
+    B.Arm(nil)
     return B.Command("spawn " .. B.pick.id)
 end
 
@@ -986,6 +1015,9 @@ function B.Place(item)
         ok = B.PastePrefab(item.name)
     elseif item.kind == "stamp" then
         ok = W.DenHome and W.DenHome.Stamp(item.key, editing())   -- in edit mode: as the shelf's tiles
+    end
+    if item.kind then
+        B.Arm(nil)
     else
         B.pick = item
         B.Refresh()
@@ -1017,7 +1049,7 @@ function B.SetStep(i)
     i = tonumber(i)
     if not i or not STEPS[i] then return false end
     B.step = i
-    if panel then panel.stepBtn:SetText("Step " .. STEPS[B.step] .. " yd") end
+    if panel then panel.stepBtn:SetText("Step " .. STEPS[B.step] .. " yd"); for si, c in pairs(panel.stepChips or {}) do c:SetActive(si == B.step) end end
     if refreshPill then refreshPill() end
     chromeRefresh()
     return true
@@ -1027,7 +1059,7 @@ function B.SetAngle(deg)
         if a == tonumber(deg) then
             B.angle = i
             if SetCVar then pcall(SetCVar, "leylineEditAngle", tostring(a)) end   -- edit mode's Q / E follow
-            if panel then panel.angle:SetText("Turn " .. a .. "°") end
+            if panel then panel.angle:SetText("Turn " .. a .. "°"); for d, c in pairs(panel.angleChips or {}) do c:SetActive(d == a) end end
             if refreshPill then refreshPill() end
             chromeRefresh()
             return true
@@ -1090,6 +1122,66 @@ function B.MoveTo(pid, x, y, z, yaw, pitch, roll)
         text = text .. string.format(" %.1f %.1f", pitch, roll)
     end
     return B.Command(text)
+end
+
+-- ---------------------------------------------------------------- selecting
+-- Does the realm do this verb? The full Den (ov_build.lua) does lock and the rest; Den Lite says what it adds in the
+-- state's caps= (selnext: Tab cycles the props near you; selkind: every prop of the selection's kind; lock).
+local FULL_VERBS = { lock = true, unlock = true }
+function B.Can(verb)
+    local s = B.state
+    if s.can and s.can[verb] then return true end
+    return s.lite ~= "1" and FULL_VERBS[verb] == true
+end
+
+-- Esc: nothing selected, the panel closed, a waiting pick let go.
+function B.Deselect()
+    B.Arm(nil)
+    if B.state.selId then B.Command("selclear") end
+    B.ShowProps(false)
+    setStatus("Nothing selected.")
+    return true
+end
+
+-- Tab: the next prop near you (the realm's selnext); a realm without it: the nearest (Near).
+function B.SelectNext()
+    if B.Can("selnext") then return B.Command("selnext") end
+    setStatus("Selected the nearest prop (Tab cycles once Den Lite has selnext).")
+    return B.Command("near")
+end
+
+-- Every prop of the selection's kind (the realm's selkind).
+function B.SelectKind()
+    if not B.state.selId then setStatus("Select a prop first."); return false end
+    if not B.Can("selkind") then setStatus("Selecting all of a kind needs a Den update."); return false end
+    return B.Command("selkind")
+end
+
+-- Lock: it can't be moved or deleted by accident (the full Den; Den Lite once it says caps=lock).
+function B.Lock()
+    if not B.Can("lock") then setStatus("Lock needs a Den update."); return false end
+    return B.Command("lock")
+end
+
+-- The selection's size in yards: the catalog's box of its kind times its size (or nil when the box isn't known).
+function B.SelSize(s)
+    s = s or B.state
+    local e = s.selEntry
+    if not e then return nil end
+    local c
+    for _, it in ipairs(B.catalog) do if it.id == e then c = it; break end end
+    if not c then local k = B.known and B.known[e]; c = k end
+    local box = c and c.size
+    if not box then return nil end
+    local k = (s.p and s.p.scale) or 1
+    return { w = box.w * k, d = box.d * k, h = box.h * k }
+end
+function B.SizeText(s)
+    local z = B.SelSize(s)
+    s = s or B.state
+    local k = (s.p and s.p.scale) or 1
+    if not z then return s.p and string.format("Size %.2f (its box isn't known)", k) or "" end
+    return string.format("%.2f x %.2f x %.2f yd   (size %.2f)", z.w, z.d, z.h, k)
 end
 
 -- ---------------------------------------------------------------- Files: builds, prefabs, the plot
@@ -1174,14 +1266,16 @@ local MODE_TEXT = { select = "Select", place = "Place", move = "Move", rotate = 
 -- "Place · Barrel · snap 1 yd · 15° · 3 props selected"
 function B.StatusLine()
     local s = B.state
+    if B.armed then
+        return "Place: " .. B.armed.name .. " · click Place, or press Enter / double-click"
+    end
     local parts = { MODE_TEXT[B.mode or "place"] or "Place" }
     if B.pick and (B.mode == "place" or B.mode == nil) then parts[#parts + 1] = B.pick.name end
     if (B.mode == "move") then parts[#parts + 1] = "step " .. STEPS[B.step] .. " yd" end
     local g = B.Snap()
     parts[#parts + 1] = "snap " .. ((g and g > 0) and (g .. " yd") or "off")
     parts[#parts + 1] = ANGLE_STEPS[B.angle] .. "°"
-    if s.count and s.count > 1 then parts[#parts + 1] = s.count .. " props selected"
-    elseif s.selName then parts[#parts + 1] = s.selName .. " selected" end
+    if s.count and s.count > 1 then parts[#parts + 1] = s.count .. " props selected" end
     if s.den and s.room then parts[#parts + 1] = "room " .. s.room
     elseif s.mine then parts[#parts + 1] = "props " .. s.mine end
     return table.concat(parts, " · ")
@@ -1206,6 +1300,19 @@ local function buildPill()
     local m = S().ED.muted
     pill.note:SetTextColor(m[1], m[2], m[3])
     pill.note:SetText(B.status or "")
+    -- the selection, boxed in gold at the pill's right: its name (and how many)
+    pill.sel = CreateFrame("Button", nil, pill)
+    pill.sel:SetHeight(30)
+    pill.sel:SetPoint("LEFT", pill, "RIGHT", 6, 0)
+    S().EdPanel(pill.sel, 0.9, S().ED.panel2)
+    S().EdEdge(pill.sel, S().ED.gold)
+    pill.sel.label = S().EdText(pill.sel, S().ED_SIZE.text)
+    pill.sel.label:SetPoint("CENTER", 0, 0)
+    local g = S().ED.gold
+    pill.sel.label:SetTextColor(g[1], g[2], g[3])
+    pill.sel:SetScript("OnClick", function() B.ShowProps(true) end)
+    pill.sel.edLabel = "The selection: its panel"
+    pill.sel:Hide()
     pill:SetScript("OnUpdate", function()
         if B.statusAt and now() - B.statusAt > NOTE_SECS and pill.note:GetText() ~= "" then pill.note:SetText("") end
     end)
@@ -1224,6 +1331,20 @@ refreshPill = function()
     local pw = math.max(math.min(420, most), math.min(most, (w or (#line * 7)) + 40))
     pill:SetWidth(pw)
     pill.line:SetWidth(pw - 24)
+    -- the selection's box, and the pill's edge gold while building in a Den (build mode), the subtle edge elsewhere
+    local s = B.state
+    local name = s.selName and ((s.count or 1) > 1 and (s.count .. " selected: " .. s.selName) or s.selName)
+    if name then
+        pill.sel.label:SetText(name)
+        local tw = pill.sel.label.GetStringWidth and tonumber((pill.sel.label:GetStringWidth())) or (#name * 7)
+        pill.sel:SetWidth(math.min(240, tw + 24))
+        pill.sel.label:SetWidth(math.min(240, tw + 24) - 16)
+        pill.sel:Show()
+    else
+        pill.sel:Hide()
+    end
+    local building = D and D.IsActive and D.IsActive() and not D.play
+    S().EdEdge(pill, building and S().ED.gold or S().ED.edge)
 end
 function B.Pill() if not pill then buildPill() end return pill end
 -- a note over the pill (a toast's colour, or muted): DenBar.lua's toasts and the Builder's own hints
@@ -1251,6 +1372,22 @@ function B.PropsFill()
     local s = B.state
     local p = s.p
     panel.title2:SetText(p and ((s.count or 1) > 1 and (s.count .. " props (numbers for the last one)") or (s.selName or "")) or "Nothing selected")
+    panel.size:SetText(p and B.SizeText(s) or "Click a prop, Nearest, or place one from the gallery.")
+    for si, c in pairs(panel.stepChips or {}) do c:SetActive(si == B.step) end
+    for a, c in pairs(panel.angleChips or {}) do c:SetActive(a == ANGLE_STEPS[B.angle]) end
+    local lockOk = B.Can("lock")
+    if panel.actions.Lock then
+        if lockOk then panel.actions.Lock:Enable() else panel.actions.Lock:Disable() end
+        panel.actions.Lock.edLabel = lockOk and "Lock: it can't be moved or deleted by accident" or "Lock needs a Den update"
+    end
+    if panel.sel and panel.sel.Kind then
+        if B.Can("selkind") then panel.sel.Kind:Enable() else panel.sel.Kind:Disable() end
+        panel.sel.Kind.edLabel = B.Can("selkind") and "Every prop of this kind" or "Needs a Den update"
+    end
+    if p then
+        if panel.turnSlider then panel.turnSlider:Put((p.turn or 0) % 360); panel.turnText:SetText(string.format("%.0f°", (p.turn or 0) % 360)) end
+        if panel.scaleSlider then panel.scaleSlider:Put(math.max(0.1, math.min(5, p.scale or 1))) end
+    end
     if B.propsEditing then return end
     for _, f in ipairs(FIELDS) do
         local v = p and p[f[1]]
@@ -1358,15 +1495,25 @@ B.KEYS = {
     UP = function() return B.Nudge("x", 1) end, DOWN = function() return B.Nudge("x", -1) end,
     PAGEUP = function() return B.Nudge("z", 1) end, PAGEDOWN = function() return B.Nudge("z", -1) end,
     Q = function() return B.Nudge("turn", 1) end, E = function() return B.Nudge("turn", -1) end,
+    ["="] = function() return B.Nudge("scale", 1) end, ["-"] = function() return B.Nudge("scale", -1) end,
+    NUMPADPLUS = function() return B.Nudge("scale", 1) end, NUMPADMINUS = function() return B.Nudge("scale", -1) end,
     DELETE = function() return B.Command("delete") end,
+    TAB = function() return B.SelectNext() end,
+    ESCAPE = function() return B.Deselect() end,
     ["CTRL-Z"] = function() return B.Command("undo") end, ["CTRL-Y"] = function() return B.Command("redo") end,
     ["CTRL-C"] = function() return B.Command("copy") end, ["CTRL-V"] = function() return B.Paste() end,
     ["CTRL-D"] = function() return B.Command("dup") end,
+    -- while a picked prop waits to be placed (B.Arm): Enter places it
+    ENTER = function() return B.PlaceArmed() end, NUMPADENTER = function() return B.PlaceArmed() end,
 }
-local KEY_ORDER = { "LEFT", "RIGHT", "UP", "DOWN", "PAGEUP", "PAGEDOWN", "Q", "E", "DELETE", "CTRL-Z", "CTRL-Y", "CTRL-C", "CTRL-V", "CTRL-D" }
-local keyOwner
+local KEY_ORDER = { "LEFT", "RIGHT", "UP", "DOWN", "PAGEUP", "PAGEDOWN", "Q", "E", "=", "-", "NUMPADPLUS", "NUMPADMINUS", "DELETE", "TAB",
+    "ESCAPE", "CTRL-Z", "CTRL-Y", "CTRL-C", "CTRL-V", "CTRL-D" }
+local ARM_KEYS = { "ENTER", "NUMPADENTER" }
+B.KEY_ORDER, B.ARM_KEYS = KEY_ORDER, ARM_KEYS
+local keyOwner, armOwner
+-- a hidden button per key, named from the key ("-" and "=" are keys too)
 local function keyButton(key)
-    local name = "LeylinePropKey" .. key:gsub("%-", "")
+    local name = "LeylinePropKey" .. key:gsub("[^%w]", function(c) return string.format("%02X", c:byte()) end)
     if _G[name] then return name end
     local b = CreateFrame("Button", name, UIParent)
     b:EnableMouse(false)
@@ -1374,6 +1521,8 @@ local function keyButton(key)
     b:SetScript("OnClick", function(_, _, down) if down ~= false then B.KEYS[key]() end end)
     return name
 end
+B.KeyButton = keyButton
+-- The selection's keys while its panel is open (not in the browser's edit mode, whose camera has its own keys).
 function B.BindKeys(on)
     if not SetOverrideBindingClick or not ClearOverrideBindings then return false end
     if not keyOwner then keyOwner = CreateFrame("Frame", "LeylinePropKeys", UIParent) end
@@ -1384,6 +1533,18 @@ function B.BindKeys(on)
         B.keysOn = true
     end
     return B.keysOn == true
+end
+-- Enter while a picked prop waits to be placed (and given back as soon as it is placed or let go).
+function B.BindArmKeys(on)
+    if not SetOverrideBindingClick or not ClearOverrideBindings then return false end
+    if not armOwner then armOwner = CreateFrame("Frame", "LeylineArmKeys", UIParent) end
+    ClearOverrideBindings(armOwner)
+    B.armKeysOn = nil
+    if on and not (InCombatLockdown and InCombatLockdown()) then
+        for _, k in ipairs(ARM_KEYS) do SetOverrideBindingClick(armOwner, true, k, keyButton(k)) end
+        B.armKeysOn = true
+    end
+    return B.armKeysOn == true
 end
 
 -- Chips in a row, as wide as their words, wrapping at maxW: { {text, fn, key}, ... } -> the chips by key (or text).
@@ -1403,7 +1564,68 @@ local function flow(parent, list, x0, y0, maxW, into)
 end
 B.Flow = flow
 
-local PANEL_W = 352
+-- The selection's panel (owner 3 Nov: "a window to nudge and rotate / settings / how big object is and better selection
+-- features"): its name and size in yards; MOVE x / y / z with - / + and the step (0.1 / 0.25 / 1 / 3 yd); ROTATE turn,
+-- pitch, roll with the turn step (15 / 45 / 90) and a slider for the turn; SIZE with a slider; Apply, Snap to floor,
+-- Duplicate, Delete, Lock; SELECT nearest, next (Tab), all of its kind, clear. The mouse wheel over a box nudges it.
+-- Keys while it is open: arrows / PgUp / PgDn move, Q / E turn, + / - size, Del, Ctrl+D, Tab next, Esc lets go.
+local PANEL_W, PANEL_PAD, COL_W = 420, 14, 132
+local function section(parent, text, y)
+    local fs = smallCaps(parent, text, true, "TOPLEFT", PANEL_PAD, y)
+    local rule = solid(parent, "BORDER", S().ED.edge)
+    rule:SetHeight(1)
+    rule:SetPoint("LEFT", fs, "RIGHT", 8, 0); rule:SetPoint("RIGHT", parent, "RIGHT", -PANEL_PAD, 0)
+    rule:SetPoint("TOP", parent, "TOP", 0, y - 7)
+    return fs
+end
+-- a field: its letter, -, the number, + (the wheel over the number or the buttons nudges it)
+local function field(f, x, y)
+    local key = f[1]
+    panel.rowLabel[key] = smallCaps(panel, f[3] or f[2], false, "TOPLEFT", x, y - 7)
+    local lx = x + 18
+    if f[3] and #f[3] > 1 then lx = x + 40 end
+    panel.minus[key] = chip(panel, "-", 24, function() B.Nudge(key, -1) end, "TOPLEFT", lx, y)
+    local e = editBox(panel, COL_W - (lx - x) - 58, 12, "TOPLEFT", lx + 26, y)
+    e:SetHeight(28)
+    e:SetScript("OnEditFocusGained", function() B.propsEditing = true end)
+    e:SetScript("OnEnterPressed", function(self) self:ClearFocus(); B.ApplyProps() end)
+    panel.box[key] = e
+    panel.plus[key] = chip(panel, "+", 24, function() B.Nudge(key, 1) end, "TOPLEFT", lx + 26 + (COL_W - (lx - x) - 58) + 2, y)
+    for _, w in ipairs({ e, panel.minus[key], panel.plus[key] }) do
+        if w.EnableMouseWheel then w:EnableMouseWheel(true) end
+        w:SetScript("OnMouseWheel", function(_, delta) B.Nudge(key, (tonumber(delta) or 0) > 0 and 1 or -1) end)
+    end
+end
+-- a slider in the editor look: a track, a gold thumb; onCommit when let go (not every frame: one change to the realm)
+local function slider(parent, w, lo, hi, step, onCommit, ...)
+    local sl = CreateFrame("Slider", nil, parent)
+    sl:SetWidth(w); sl:SetHeight(18)
+    if sl.SetOrientation then sl:SetOrientation("HORIZONTAL") end
+    sl:SetMinMaxValues(lo, hi)
+    if sl.SetValueStep then sl:SetValueStep(step) end
+    local track = solid(sl, "BACKGROUND", { 1, 1, 1, 0.12 })
+    track:SetHeight(4); track:SetPoint("LEFT", 0, 0); track:SetPoint("RIGHT", 0, 0)
+    local thumb = sl:CreateTexture(nil, "OVERLAY")
+    thumb:SetTexture(W.Style.WHITE or "Interface\\Buttons\\WHITE8X8")
+    local g = S().ED.gold
+    thumb:SetVertexColor(g[1], g[2], g[3], 1)
+    thumb:SetWidth(10); thumb:SetHeight(18)
+    if sl.SetThumbTexture then sl:SetThumbTexture(thumb) end
+    sl.thumb = thumb
+    sl:EnableMouse(true)
+    if sl.EnableMouseWheel then sl:EnableMouseWheel(true) end
+    sl:SetScript("OnMouseUp", function(self) local v = tonumber((self:GetValue())); if v and not self.setting then onCommit(v) end end)
+    sl:SetScript("OnMouseWheel", function(self, delta)
+        local v = tonumber((self:GetValue())) or lo
+        v = math.max(lo, math.min(hi, v + ((tonumber(delta) or 0) > 0 and step or -step)))
+        self:Put(v)
+        onCommit(v)
+    end)
+    sl.Put = function(self, v) self.setting = true; self:SetValue(v); self.setting = nil end
+    if select("#", ...) > 0 then sl:SetPoint(...) end
+    return sl
+end
+
 local function buildPanel()
     panel = CreateFrame("Frame", "WrathUnleashedPropsFrame", UIParent)
     panel:SetWidth(PANEL_W)
@@ -1415,99 +1637,166 @@ local function buildPanel()
     panel:SetScript("OnDragStart", panel.StartMoving)
     panel:SetScript("OnDragStop", panel.StopMovingOrSizing)
     S().EdPanel(panel, 0.92, S().ED.panel2)
-    smallCaps(panel, "Selection", true, "TOPLEFT", 12, -10)
+    local P = PANEL_PAD
+    smallCaps(panel, "Selection", true, "TOPLEFT", P, -12)
+    panel.close = chip(panel, "x", 28, function() B.ShowProps(false) end, "TOPRIGHT", -8, -8)
+    panel.close.edLabel = "Close (Esc lets go of the selection)"
     panel.title2 = S().EdText(panel, S().ED_SIZE.title)
-    panel.title2:SetPoint("TOPLEFT", 12, -28)
-    panel.title2:SetWidth(PANEL_W - 70); panel.title2:SetJustifyH("LEFT")
-    panel.close = chip(panel, "x", 28, function() B.ShowProps(false) end, "TOPRIGHT", -6, -6)
+    panel.title2:SetPoint("TOPLEFT", P, -32)
+    panel.title2:SetWidth(PANEL_W - 2 * P - 70); panel.title2:SetJustifyH("LEFT")
+    panel.title2:SetHeight(18)
+    panel.size = S().EdText(panel, S().ED_SIZE.small)
+    panel.size:SetPoint("TOPLEFT", P, -54)
+    panel.size:SetWidth(PANEL_W - 2 * P); panel.size:SetJustifyH("LEFT")
+    local m = S().ED.muted
+    panel.size:SetTextColor(m[1], m[2], m[3])
     panel.box, panel.minus, panel.plus, panel.rowLabel = {}, {}, {}, {}
-    -- three rows of three: position, rotation, then size and the two steps
-    for i, f in ipairs(FIELDS) do
-        local col, row = (i - 1) % 3, math.floor((i - 1) / 3)
-        local x, y = 12 + col * 112, -54 - row * 58
-        panel.rowLabel[f[1]] = smallCaps(panel, f[2], false, "TOPLEFT", x, y)
-        panel.minus[f[1]] = chip(panel, "-", 24, function() B.Nudge(f[1], -1) end, "TOPLEFT", x, y - 18)
-        local e = editBox(panel, 60, 12, "TOPLEFT", x + 26, y - 19)
-        e:SetHeight(26)
-        e:SetScript("OnEditFocusGained", function() B.propsEditing = true end)
-        e:SetScript("OnEnterPressed", function(self) self:ClearFocus(); B.ApplyProps() end)
-        panel.box[f[1]] = e
-        panel.plus[f[1]] = chip(panel, "+", 24, function() B.Nudge(f[1], 1) end, "TOPLEFT", x + 88, y - 18)
-    end
-    smallCaps(panel, "Steps", false, "TOPLEFT", 124, -170)
-    panel.stepBtn = chip(panel, "Step " .. STEPS[B.step] .. " yd", 100, function()
-        B.SetStep(B.step % #STEPS + 1)
-    end, "TOPLEFT", 124, -188)
+
+    -- MOVE: the step presets and the step chip (it cycles every step, 0.01 to 10 yd)
+    local y = -80
+    section(panel, "Move", y)
+    panel.stepChips = {}
+    local x = PANEL_W - P
+    panel.stepBtn = chip(panel, "Step " .. STEPS[B.step] .. " yd", 96, function() B.SetStep(B.step % #STEPS + 1) end)
+    panel.stepBtn.edLabel = "The move step: click for the next"
     panel.step = panel.stepBtn
+    for i = #STEP_PRESETS, 1, -1 do
+        local si = STEP_PRESETS[i]
+        local c = chip(panel, tostring(STEPS[si]), 40, function() B.SetStep(si) end)
+        c.edLabel = "Move by " .. STEPS[si] .. " yd"
+        x = x - 40
+        c:SetPoint("TOPRIGHT", panel, "TOPLEFT", x + 40, y + 6)
+        x = x - 4
+        panel.stepChips[si] = c
+    end
+    panel.stepBtn:Hide()   -- the presets show the step; the chip stays for the keys' text and older callers
+    y = y - 28
+    for i, f in ipairs({ { "x", "X" }, { "y", "Y" }, { "z", "Z" } }) do field(f, P + (i - 1) * COL_W, y) end
+
+    -- ROTATE: the turn step, then turn / pitch / roll and the turn's slider
+    y = y - 44
+    section(panel, "Rotate", y)
+    panel.angleChips = {}
+    x = PANEL_W - P
+    for i = 3, 1, -1 do
+        local a = ({ 15, 45, 90 })[i]
+        local c = chip(panel, a .. "°", 44, function() B.SetAngle(a) end)
+        c.edLabel = "Q / E turn by " .. a .. "°"
+        x = x - 44
+        c:SetPoint("TOPRIGHT", panel, "TOPLEFT", x + 44, y + 6)
+        x = x - 4
+        panel.angleChips[a] = c
+    end
     panel.angle = chip(panel, "Turn " .. ANGLE_STEPS[B.angle] .. "°", 100, function()
         B.SetAngle(ANGLE_STEPS[B.angle % #ANGLE_STEPS + 1])
-    end, "TOPLEFT", 236, -188)
+    end)
+    panel.angle:Hide()
+    y = y - 28
+    for i, f in ipairs({ { "turn", "Turn", "Turn" }, { "pitch", "Pitch", "Tilt" }, { "roll", "Roll", "Roll" } }) do field(f, P + (i - 1) * COL_W, y) end
+    y = y - 36
+    panel.turnSlider = slider(panel, PANEL_W - 2 * P - 60, 0, 360, 5, function(v)
+        local p = B.state.p
+        if not p then return end
+        panel.box.turn:SetText(string.format("%.0f", v))
+        B.ApplyProps()
+    end, "TOPLEFT", P, y - 4)
+    panel.turnText = S().EdText(panel, S().ED_SIZE.small)
+    panel.turnText:SetPoint("TOPRIGHT", -P, y - 6)
+    panel.turnText:SetTextColor(m[1], m[2], m[3])
+
+    -- SIZE: the number and a slider (0.1 to 5)
+    y = y - 32
+    section(panel, "Size", y)
+    y = y - 28
+    field({ "scale", "Size", "" }, P, y)
+    panel.scaleSlider = slider(panel, PANEL_W - 2 * P - COL_W - 8, 0.1, 5, 0.05, function(v)
+        if not B.state.p then return end
+        panel.box.scale:SetText(string.format("%.2f", v))
+        B.ApplyProps()
+    end, "TOPLEFT", P + COL_W + 8, y - 5)
+
     -- what you do with it (Undo and Redo are on the top strip)
-    local y
-    panel.actions, y = flow(panel, {
-        { "Apply", function() B.ApplyProps() end }, { "Duplicate", function() B.Command("dup") end },
-        { "Copy", function() B.Command("copy") end }, { "Paste", function() B.Paste() end },
-        { "Floor", function() B.Command("floor") end }, { "Delete", function() B.Command("delete") end },
+    y = y - 44
+    section(panel, "Actions", y)
+    local ay
+    panel.actions, ay = flow(panel, {
+        { "Apply", function() B.ApplyProps() end }, { "Snap to floor", function() B.Command("floor") end, "Floor" },
+        { "Duplicate", function() B.Command("dup") end }, { "Delete", function() B.Command("delete") end },
+        { "Lock", function() B.Lock() end }, { "Copy", function() B.Command("copy") end }, { "Paste", function() B.Paste() end },
         { "More", function() B.PropsMore() end },
-    }, 12, -228, PANEL_W - 24)
+    }, P, y - 20, PANEL_W - 2 * P)
     panel.apply = panel.actions.Apply
+    panel.actions.Floor.edLabel = "Down onto the ground under it"
+    panel.actions.Duplicate.edLabel = "A copy next to it (Ctrl+D)"
+    panel.actions.Delete.edLabel = "Delete it (Del)"
+
+    -- SELECT: nearest, the next near you (Tab), all of its kind, nothing
+    y = ay - 16
+    section(panel, "Select", y)
+    local sy
+    panel.sel, sy = flow(panel, {
+        { "Nearest", function() B.Command("near") end, "Near" }, { "Next (Tab)", function() B.SelectNext() end, "Next" },
+        { "All of its kind", function() B.SelectKind() end, "Kind" }, { "Clear (Esc)", function() B.Deselect() end, "Clear" },
+    }, P, y - 20, PANEL_W - 2 * P)
     panel.hint = S().EdText(panel, S().ED_SIZE.small)
-    panel.hint:SetPoint("TOPLEFT", 12, y - 8)
-    panel.hint:SetWidth(PANEL_W - 24); panel.hint:SetJustifyH("LEFT")
-    local m = S().ED.muted
+    panel.hint:SetPoint("TOPLEFT", P, sy - 12)
+    panel.hint:SetWidth(PANEL_W - 2 * P); panel.hint:SetJustifyH("LEFT")
     panel.hint:SetTextColor(m[1], m[2], m[3])
-    panel.hint:SetText("Arrows move · PgUp / PgDn up, down · Q / E turn · Del deletes · Ctrl+Z / Ctrl+Y undo, redo")
+    panel.hint:SetText("Arrows move · PgUp / PgDn up, down · Q / E turn · + / - size · Del · Ctrl+D copy · Tab next · Esc let go")
+    panel.hint:SetHeight(34)
     panel.status = S().EdText(panel, S().ED_SIZE.small)
-    panel.status:SetPoint("TOPLEFT", 12, y - 40)
-    panel.status:SetWidth(PANEL_W - 24); panel.status:SetJustifyH("LEFT")
-    panel:SetHeight(-(y - 40) + 24)
+    panel.status:SetPoint("TOPLEFT", P, sy - 50)
+    panel.status:SetWidth(PANEL_W - 2 * P); panel.status:SetJustifyH("LEFT")
+    panel.status:SetHeight(18)
+    panel:SetHeight(-(sy - 50) + 30)
     -- More: the rest of the selection's tools (what only the full Den does is hidden on Den Lite)
     panel.tools = {}
     panel.more = CreateFrame("Frame", nil, panel)
     panel.more:SetWidth(PANEL_W)
-    panel.more:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
-    panel.more:ClearAllPoints()
     panel.more:SetPoint("TOPLEFT", panel, "BOTTOMLEFT", 0, -4)
     S().EdPanel(panel.more, 0.92, S().ED.panel2)
     local function cmdFn(c) return function() B.Command(c) end end
     local _, my = flow(panel.more, {
-        { "Select nearest", cmdFn("near"), "Near" }, { "Select my last", cmdFn("selall"), "Select mine" }, { "Clear", cmdFn("selclear") },
-        { "Lock", cmdFn("lock"), nil, "full" }, { "Unlock", cmdFn("unlock"), nil, "full" }, { "Hide", cmdFn("hide"), nil, "full" },
+        { "Select my last", cmdFn("selall"), "Select mine" },
+        { "Unlock", cmdFn("unlock"), nil, "full" }, { "Hide", cmdFn("hide"), nil, "full" },
         { "Show all", cmdFn("show all"), nil, "full" }, { "Measure", cmdFn("measure"), nil, "full" },
         { "Align X", cmdFn("align x"), nil, "full" }, { "Align Y", cmdFn("align y"), nil, "full" }, { "Align Z", cmdFn("align z"), nil, "full" },
         { "Bottoms", cmdFn("align bottom"), nil, "full" }, { "Stack on", B.Stack, nil, "full" },
         { "Group", cmdFn("group"), nil, "full" }, { "Ungroup", cmdFn("ungroup"), nil, "full" }, { "Put away", cmdFn("store"), nil, "full" },
-    }, 12, -10, PANEL_W - 24, panel.tools)
+    }, P, -12, PANEL_W - 2 * P, panel.tools)
+    panel.tools.Near = panel.sel.Near
+    panel.tools.Clear = panel.sel.Clear
+    panel.tools.Lock = panel.actions.Lock
     panel.tools.Duplicate = panel.actions.Duplicate
     panel.tools.Floor = panel.actions.Floor
     panel.tools.Undo = chip(panel.more, "Undo", 60, cmdFn("undo")); panel.tools.Undo:Hide()
     panel.tools.Redo = chip(panel.more, "Redo", 60, cmdFn("redo")); panel.tools.Redo:Hide()
-    panel.more:SetHeight(-my + 12)
+    panel.more:SetHeight(-my + 14)
     panel.more:SetScript("OnShow", function()
         local lite = B.state.lite == "1"
         local list = {}
-        for _, k in ipairs({ "Near", "Select mine", "Clear", "Lock", "Unlock", "Hide", "Show all", "Measure", "Align X", "Align Y",
-            "Align Z", "Bottoms", "Stack on", "Group", "Ungroup", "Put away" }) do
+        for _, k in ipairs({ "Select mine", "Unlock", "Hide", "Show all", "Measure", "Align X", "Align Y", "Align Z", "Bottoms", "Stack on",
+            "Group", "Ungroup", "Put away" }) do
             local c = panel.tools[k]
             if c then if lite and c.only == "full" then c:Hide() else c:Show(); list[#list + 1] = c end end
         end
-        local x, yy = 12, -10
+        local xx, yy = P, -12
         for _, c in ipairs(list) do
             local w = tonumber((c:GetWidth())) or 60
-            if x > 12 and x + w > PANEL_W - 12 then x, yy = 12, yy - S().ED_SIZE.chip - 6 end
-            c:ClearAllPoints(); c:SetPoint("TOPLEFT", panel.more, "TOPLEFT", x, yy)
-            x = x + w + 6
+            if xx > P and xx + w > PANEL_W - P then xx, yy = P, yy - S().ED_SIZE.chip - 6 end
+            c:ClearAllPoints(); c:SetPoint("TOPLEFT", panel.more, "TOPLEFT", xx, yy)
+            xx = xx + w + 6
         end
-        panel.more:SetHeight(-(yy - S().ED_SIZE.chip) + 12)
+        panel.more:SetHeight(-(yy - S().ED_SIZE.chip) + 14)
     end)
     panel.more:Hide()
     panel.help = W.HelpButton(panel, {
-        "Type exact numbers and Enter, or nudge with - and +.",
-        "Angles in degrees; pitch and roll tilt the prop.",
-        "Arrows move it by the step; Page Up / Down lift it; Q / E turn it.",
-        "Del deletes it; Ctrl+C / Ctrl+V copy and paste; Ctrl+D duplicates.",
-        "Align: lines the rest up with the last one picked (the full Den).",
-    }, 420, "TOPRIGHT", -40, -6)
+        "Type exact numbers and Enter, or nudge with - and + (or the mouse wheel over them).",
+        "Angles in degrees; tilt and roll lean the prop. The slider turns it all the way round.",
+        "Arrows move it by the step; Page Up / Down lift it; Q / E turn it; + / - size it.",
+        "Del deletes it; Ctrl+D duplicates; Tab selects the next; Esc lets go.",
+        "Size is its width x depth x height in yards.",
+    }, 460, "TOPRIGHT", -40, -8)
     panel:SetScript("OnShow", function() B.propsEditing = nil; B.PropsFill(); B.BindKeys(true) end)
     panel:SetScript("OnHide", function() B.BindKeys(false); B.propsAuto = nil end)
     panel:Hide()

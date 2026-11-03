@@ -362,6 +362,16 @@ Options, in the order recommended:
 
 ## 5. Decisions the owner must make
 
+**Owner's answers, 3 Nov 03:11** (these replace the recommendations below where they differ):
+- **D1 Survivors:** stays served for now, behind an easy off switch (one flag turns the served mode off and points
+  players to the local mode). Not retired.
+- **D2 Browser:** serves Dalaran **and the starting zones as now, plus dungeons**; after that, the own-files card
+  (drag in your game folder, or get the client).
+- **D3 Queue:** yes, as written (250 real players, bots step back while there's a line, 180 s reconnect grace).
+- **D4 Seeds:** no new server. A **lightweight relay** on our box keeps a seed alive (no anchor realm copy on our
+  server).
+- **D5 Mod links:** yes to Suggest → scan → owner approval → catalog; the `magnet:` handler later.
+
 | # | Decision | Recommendation |
 |---|---|---|
 | **D1** | Survivors: stop serving it, make it a local launcher mode from the player's own game folder? Then retire `sv-site` (it deletes things) | **Yes, local only** |

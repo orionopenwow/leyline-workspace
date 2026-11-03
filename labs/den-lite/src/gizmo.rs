@@ -674,7 +674,8 @@ pub fn bodies(d: &Den) -> Vec<pick::Body> {
     d.props.iter().filter(|p| p.prop.hidden != Some(true)).map(|p| body_of(&p.obj)).collect()
 }
 
-fn body_of(o: &WorldObject) -> pick::Body {
+/// One prop as the ray sees it (see [`bodies`]).
+pub fn body_of(o: &WorldObject) -> pick::Body {
     let s = if o.scale.is_finite() && o.scale > 0.0 { o.scale } else { 1.0 };
     let (hx, hy, h, bottom) = match crate::models::box_of(o.display) {
         Some((w, dp, h, z)) if w > 0.0 && dp > 0.0 && h > 0.0 => (w / 2.0 * s, dp / 2.0 * s, h * s, z * s),

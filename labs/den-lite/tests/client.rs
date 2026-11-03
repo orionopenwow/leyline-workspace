@@ -2054,6 +2054,89 @@ fn the_editors_pick_place_select_drag_and_snap_out() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// The mouse, picked by Den Lite (gizmo.rs, pick.rs; owner 3 Nov: "clicking objects, having them highlighted, moving
+/// them around easily"), over the wire: in build mode the hover with nothing in hand makes the prop under the cursor
+/// glow (GAMEOBJECT_DYNAMIC) and names it (`hovered`), and leaving it takes the glow off; a click selects it
+/// (`selected`, the state) and a click on the sky clears; a press on it and the cursor moved drags it, the spot
+/// grabbed staying under the cursor, and letting go puts it there in one undo step.
+#[test]
+fn the_mouse_hovers_clicks_and_drags_props_in_build_mode() {
+    use den_lite::gizmo::{self, Camera, GLOW};
+    use den_lite::ovmod::Here;
+    use den_lite::pick;
+    let (srv, dir) = server("mouse", HeroGender::Female);
+    let mut w = into_world(&srv, 2);
+    let s0 = Spot::default();
+    w.send(&heartbeat(s0.x, s0.y, s0.z, 0.0));
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tgrid off");
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tspawn 2413");
+    let mut frames = Vec::new();
+    while aid_parts(&frames, "state").map_or(true, |st| !st.contains("n=1;")) {
+        frames.push(w.frame());
+    }
+    let (made, _) = objects(&frames);
+    let (chair, go) = made.iter().find(|(_, g)| g.entry == 2413).map(|(k, g)| (*k, g.clone())).expect("the chair made");
+    let id = chair & 0xFF_FFFF;
+    let obj = den::WorldObject { guid: chair, entry: 2413, display: go.display as u32, kind: 7, scale: go.scale, x: go.x, y: go.y, z: go.z, o: go.o, pitch: 0.0, roll: 0.0 };
+    // where the chair is on the screen from the build camera (the player at s0 facing +x, the client's zoom 12)
+    let here = Here { x: s0.x, y: s0.y, z: s0.z, o: 0.0 };
+    let cam = Camera { dist: 12.0, ..Camera::default() };
+    let [u, v] = gizmo::screen(&cam, here, [go.x, go.y, go.z + 0.5], 1.7778).expect("the chair in view");
+    let at = |u: f32, v: f32| format!("{u:.4} {v:.4} 1.7778 12");
+    let dynamic = |frames: &[Frame]| {
+        frames.iter().filter_map(values).filter(|(g, _)| *g == chair).filter_map(|(_, v)| v.get(&(den_lite::raw::GAMEOBJECT_DYNAMIC as u16)).copied()).last()
+    };
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tmode build");
+    assert_eq!(until_aid(&mut w, "mode").1, "build");
+
+    // the cursor over it: it glows and is named; off it (after the 100 ms): the glow goes
+    w.addon("OVMOD", &format!("wubuild\tcmd\t1/1\thover {}", at(u, v)));
+    let (frames, hovered) = until_aid(&mut w, "hovered");
+    assert_eq!(hovered, format!("{id} Wooden Chair"));
+    assert_eq!(dynamic(&frames), Some(GLOW), "the prop under the cursor glows");
+    std::thread::sleep(Duration::from_millis(150));
+    w.addon("OVMOD", &format!("wubuild\tcmd\t1/1\thover {}", at(0.0, 0.95)));
+    let (frames, hovered) = until_aid(&mut w, "hovered");
+    assert_eq!(hovered, "-");
+    assert_eq!(dynamic(&frames), Some(0), "and stops when the cursor leaves it");
+
+    // a click on it selects it; a click on the sky clears
+    w.addon("OVMOD", &format!("wubuild\tcmd\t1/1\tclick {}", at(u, v)));
+    assert_eq!(until_aid(&mut w, "selected").1, id.to_string());
+    assert!(w.until_addon("wubuild", "state").contains(&format!("sel={id},2413")));
+    w.addon("OVMOD", &format!("wubuild\tcmd\t1/1\tclick {}", at(0.0, 0.95)));
+    assert_eq!(until_aid(&mut w, "selected").1, "-");
+    let st = w.until_addon("wubuild", "state");
+    assert!(st.contains("sel=-;"), "{st}");
+    let undo_of = |st: &str| -> usize { st.split("undo=").nth(1).and_then(|r| r.split(';').next()).and_then(|n| n.parse().ok()).unwrap_or(usize::MAX) };
+    let undo0 = undo_of(&st);
+
+    // press on it and move: it follows the cursor, the grabbed spot under it; let go: there, one undo step
+    w.addon("OVMOD", &format!("wubuild\tcmd\t1/1\tdrag {}", at(u, v)));
+    assert_eq!(until_aid(&mut w, "grabbed").1, id.to_string());
+    let (e, d) = gizmo::ray(&cam, here, u, v, 1.7778).unwrap();
+    let (_, t) = pick::pick(e, d, &[gizmo::body_of(&obj)], 100.0).expect("the ray hits the chair");
+    let grip = pick::grip(e, d, t, [go.x, go.y, go.z]).unwrap();
+    let (u2, v2) = (u + 0.2, v - 0.05);
+    let (e2, d2) = gizmo::ray(&cam, here, u2, v2, 1.7778).unwrap();
+    let want = pick::follow(e2, d2, &grip, 100.0).unwrap();
+    w.addon("OVMOD", &format!("wubuild\tcmd\t1/1\thover {}", at(u2, v2)));
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tcommit");
+    let mut st = w.until_addon("wubuild", "state");
+    while undo_of(&st) != undo0 + 1 {
+        st = w.until_addon("wubuild", "state");
+    }
+    let pos: Vec<f32> = st.split("pos=").nth(1).unwrap().split(';').next().unwrap().split(',').map(|v| v.parse().unwrap()).collect();
+    assert!((pos[0] - want[0]).abs() < 0.05 && (pos[1] - want[1]).abs() < 0.05, "dropped where the cursor took it: {pos:?} {want:?}");
+    assert!(((pos[0] - go.x).powi(2) + (pos[1] - go.y).powi(2)).sqrt() > 1.0, "it moved: {pos:?}");
+    assert!(st.contains(&format!("sel={id},2413")), "the dragged prop is the selection: {st}");
+    let evs = std::fs::read_to_string(dir.join("den-lite.events")).unwrap_or_default();
+    assert!(evs.contains("wubuild aid click") && evs.contains("wubuild aid drag"), "{evs}");
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// A unit's create in some frames: (guid, entry, health, max health, faction).
 fn unit_creates(frames: &[Frame]) -> Vec<(u64, i32, i32, i32, i32)> {
     let mut v = Vec::new();

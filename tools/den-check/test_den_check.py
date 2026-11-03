@@ -14,6 +14,7 @@ import ast
 import contextlib
 import io
 import json
+import math
 import os
 import shutil
 import sys
@@ -756,6 +757,185 @@ class Control(unittest.TestCase):
         for bat in ("Den check.bat", "Den test.bat", "Den test - invite.bat", "Den features.bat"):
             self.assertIn(b"\r\n", (HERE / bat).read_bytes(), bat + " has Windows line ends")
 
+
+
+class FakeAids:
+    """Den Lite and the Leyline UI's Gizmo.lua for aids_features / hover_calibration: `.den ui gizmo ...` does what the
+    addon's test action would, `.den size` answers with the aids (gizmo.rs `view`), the events as Den Lite writes them.
+    `true_cam`: the camera the game really has (the exact clicks land by it); `cam`: the one Den Lite's preview uses."""
+
+    def __init__(self, dens, true_cam=None, cam=None, broken=()):
+        self.dens, self.props, self.broken = Path(dens), 2, set(broken)
+        self.true_cam, self.cam = true_cam or dict(den_check.CAMERA), cam or dict(den_check.CAMERA)
+        self.player = [16226.2, 16257.0, 13.2, 0.0]
+        self.aids = {"armed": "off", "ghost": None, "at": None, "cursor": None, "axis": None, "gizmo": 0, "sel": None, "mode": "play"}
+        self.screen = (0.0, 0.0)
+
+    def ev(self, name, detail=""):
+        with open(self.dens / "den-lite.events", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"t": den_check.now_ms(), "ev": name, "who": "", "detail": detail}) + "\n")
+
+    def hover(self, u, v):
+        if self.aids["armed"] == "off":
+            return
+        self.aids["cursor"] = [u, v, 16 / 9]
+        hit = den_check.project(self.cam, self.player, u, v, 16 / 9, self.player[2])
+        if hit:
+            self.aids["ghost"] = [hit[0], hit[1], self.player[2], 0.0]
+
+    def send(self, cmd, wait=10.0):
+        w = cmd.split()
+        if cmd == ".den size":
+            return {"props": self.props, "aids": dict(self.aids)}
+        if w[:2] in ([".den", "save"], [".den", "load"]):
+            if w[1] == "save":
+                (self.dens / ("%s.den.json" % w[2])).write_text("{}")
+            return {"props": self.props}
+        a = w[2:]
+        if a and a[0] == "select" and "select" not in self.broken:
+            self.aids.update(sel=7, gizmo=3)
+        if a[:1] != ["gizmo"] or (len(a) > 1 and a[1] in self.broken):
+            return {"props": self.props}
+        act = a[1]
+        if act == "build":
+            self.aids["mode"] = "play" if a[2:] == ["off"] else "build"
+            self.ev("build_mode", self.aids["mode"])
+        elif act == "arm":
+            self.aids.update(armed="place,%s,1543" % a[2], ghost=[self.player[0] + 2.5, self.player[1], 13.2, 0.0])
+        elif act == "hover":
+            self.hover(float(a[2]), float(a[3]))
+        elif act == "commit":
+            self.props += 1
+            self.ev("den_change", "+1 -0")
+        elif act == "cancel":
+            self.aids.update(armed="off", ghost=None, cursor=None)
+        elif act == "axis":
+            self.aids["axis"] = None if a[2] == "off" else a[2]
+        elif act == "wheel":
+            self.ev("den_change", "+1 -1")
+        elif act == "menu" and a[2] == "2":
+            self.props += 1
+            self.ev("den_change", "+1 -0")
+        return {"props": self.props, "said": []}
+
+
+class FakeMouse:
+    """The real cursor for hover_calibration: move() puts it at a window point (the addon then sends its hover:
+    u from the left, v up), aim_click() is the game's exact click: Den Lite writes the sample where the true camera
+    says the point is."""
+
+    def __init__(self, den, dens):
+        self.den, self.dens = den, Path(dens)
+
+    def move(self, fx, fy):
+        self.uv = (2 * fx - 1, 1 - 2 * fy)
+        self.den.hover(*self.uv)
+        return ""
+
+    def aim_click(self):
+        d = den_check.project(self.den.true_cam, self.den.player, self.uv[0], self.uv[1], 16 / 9, 13.2)
+        if d:
+            with open(self.dens / den_check.SAMPLES_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"u": self.uv[0], "v": self.uv[1], "aspect": 16 / 9, "dist": 12.0, "player": self.den.player,
+                                    "dest": [d[0], d[1], 13.2]}) + "\n")
+        return ""
+
+
+class PlacementAids(unittest.TestCase):
+    def setUp(self):
+        self.d = Path(tempfile.mkdtemp(prefix="den-aids-"))
+        self.addCleanup(shutil.rmtree, self.d, True)
+        self.dens = self.d / "dens"
+        self.dens.mkdir()
+        (self.dens / "den-lite.events").write_text("")
+        self.shots = []
+
+    def shoot(self, out):
+        self.shots.append(out.name)
+        out.write_bytes(b"png")
+        return True, str(out)
+
+    def test_the_ray_is_den_lites(self):
+        # gizmo.rs the_ray_through_the_middle_lands_ahead_and_the_sides_mirror: the same numbers
+        cam = den_check.CAMERA
+        x, y = den_check.project(cam, (100.0, 50.0, 10.0, 0.0), 0.0, 0.0, 16 / 9, 10.0)
+        self.assertAlmostEqual(x, 100.0 + cam["pivot"] / math.tan(cam["pitch"]), places=3)
+        self.assertAlmostEqual(y, 50.0, places=3)
+        _, yr = den_check.project(cam, (100.0, 50.0, 10.0, 0.0), 0.5, 0.0, 16 / 9, 10.0)
+        _, yl = den_check.project(cam, (100.0, 50.0, 10.0, 0.0), -0.5, 0.0, 16 / 9, 10.0)
+        self.assertTrue(yr < 50.0 < yl and abs((50 - yr) - (yl - 50)) < 1e-6)
+        self.assertIsNone(den_check.project(cam, (100.0, 50.0, 10.0, 0.0), 0.0, 1.0, 16 / 9, 10.0), "above the horizon")
+
+    def test_the_camera_is_fitted_from_clicks(self):
+        true = {"fov": 1.2, "pivot": 1.6, "dist": 9.0, "pitch": 0.42}
+        samples = []
+        for (fx, fy) in den_check.CAL_POINTS:
+            u, v = 2 * fx - 1, 1 - 2 * fy
+            d = den_check.project(true, (0.0, 0.0, 5.0, 0.7), u, v, 1.6, 5.0)
+            samples.append({"u": u, "v": v, "aspect": 1.6, "player": [0.0, 0.0, 5.0, 0.7], "dest": [d[0], d[1], 5.0]})
+        self.assertGreater(den_check.camera_error(den_check.CAMERA, samples), 0.5, "the guesses are off")
+        cam, err = den_check.fit_camera(samples)
+        self.assertLess(err, 0.05, "fitted: %s %.3f" % (cam, err))
+
+    def test_every_aid_passes_with_a_picture(self):
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, FakeAids(self.dens), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
+        self.assertEqual([r for r in rep.rows if r[0] == "FAIL"], [])
+        names = [r[1] for r in rep.rows if r[0] == "PASS"]
+        for want in ("build mode: props light up under the mouse", "preview: the prop's copy in front of you", "preview: the copy goes where the cursor points",
+                     "preview: a click places it there", "preview: Esc takes the copy away", "gizmo: three flags around the selected prop (red X, green Y, blue Z)",
+                     "gizmo: the wheel moves it along the picked axis", "menu: Duplicate", "play mode: props plain again"):
+            self.assertIn(want, names)
+        for s in ("build-mode", "preview", "preview-hover", "gizmo", "gizmo-moved"):
+            self.assertTrue(any(x.endswith("-%s.png" % s) for x in self.shots), s)
+        self.assertFalse((self.dens / "aidstest-before.den.json").exists(), "the test's save removed")
+
+    def test_a_broken_aid_fails_with_its_fix(self):
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, FakeAids(self.dens, broken={"hover", "select"}), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
+        fails = {r[1] for r in rep.rows if r[0] == "FAIL"}
+        self.assertEqual(fails, {"preview: the copy goes where the cursor points", "gizmo: three flags around the selected prop (red X, green Y, blue Z)"})
+        # a Den Lite from before the aids: skipped, said
+        class Old(FakeAids):
+            def send(self, cmd, wait=10.0):
+                return {"props": 1}
+        rep = den_check.Report()
+        den_check.aids_features(rep, Old(self.dens), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
+        self.assertEqual(rep.rows[0][0], "SKIP")
+
+    def test_hover_calibration_fits_and_saves_the_camera(self):
+        true = {"fov": 1.25, "pivot": 1.7, "dist": 10.0, "pitch": 0.45}
+        den = FakeAids(self.dens, true_cam=true)
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            got = den_check.hover_calibration(rep, den, self.dens, self.shoot, self.d / "shots", FakeMouse(den, self.dens), settle=0, wait=0.3)
+        self.assertIsNotNone(got)
+        cam, err = got
+        self.assertLess(err, 0.1)
+        text = rep.text()
+        self.assertIn("PASS hover calibration: the camera fitted: fov", text)
+        self.assertIn("INFO hover calibration: before: the preview was", text)
+        saved = json.loads((self.dens / den_check.CAMERA_FILE).read_text())
+        self.assertEqual(set(saved), {"fov", "pivot", "dist", "pitch"})
+        self.assertEqual(sum(1 for s in self.shots if s.startswith("calibrate-")), len(den_check.CAL_POINTS))
+        self.assertEqual(den.aids["mode"], "play", "build mode left again")
+        # clicks not measured (G didn't start the cursor): failed, nothing saved
+        (self.dens / den_check.CAMERA_FILE).unlink()
+
+        class Deaf(FakeMouse):
+            def aim_click(self):
+                return ""
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertIsNone(den_check.hover_calibration(rep, FakeAids(self.dens), self.dens, self.shoot, self.d / "shots", Deaf(den, self.dens), settle=0, wait=0.2))
+        self.assertIn("FAIL hover calibration: 0 of 6 clicks measured", rep.text())
+        self.assertFalse((self.dens / den_check.CAMERA_FILE).exists())
+        # off Windows: skipped
+        rep = den_check.Report()
+        den_check.hover_calibration(rep, den, self.dens, self.shoot, self.d / "shots", None)
+        self.assertEqual(rep.rows[0][0], "SKIP")
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

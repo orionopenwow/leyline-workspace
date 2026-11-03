@@ -157,7 +157,15 @@ pub struct Sel {
     pub clip: Option<den::Prop>,
     /// Snap: what Spawn and Paste put down lands on this grid (yards; 0 off).
     pub grid: f64,
+    /// `selkind`: the other props selected with `guid` (every one with its entry); Delete and the moves and turns
+    /// take them all. Any other change of the selection empties it.
+    pub more: Vec<u64>,
+    /// `selnext`: where the round started (the props in order of their distance from here, wrapping).
+    pub round: Option<[f32; 3]>,
 }
+
+/// The verbs this Den Lite answers (the state's `caps=`: the editor hides a button whose verb isn't here).
+pub const CAPS: &str = "spawn,near,move,setpos,turn,setturn,tilt,scale,setscale,delete,undo,redo,copy,paste,dup,selall,pick,selclear,floor,grid,spawnat,find,models,save,load,selnext,selkind,lock,unlock,preview,hover,follow,commit,axis,gizmo,mode,where";
 
 /// The Builder's categories (Builder.lua CATS) by words in a prop's name; None: not offered in the catalog.
 pub fn category(name: &str) -> Option<&'static str> {
@@ -262,7 +270,7 @@ fn guid_of(d: &Den, id: u64) -> Option<u64> {
 pub fn state(d: &Den, sel: &Sel, role: &str) -> String {
     let n = d.props.len();
     let mut s = format!(
-        "mine={n}/{MAX_PROPS};pts={n}/{MAX_PROPS};undo={};redo={};stored=0;grp=0;den={role};room={n}/{MAX_PROPS};yard=0/0;core=1;lite=1;grid={};clip={};area=den;code=-;",
+        "mine={n}/{MAX_PROPS};pts={n}/{MAX_PROPS};undo={};redo={};stored=0;grp=0;den={role};room={n}/{MAX_PROPS};yard=0/0;core=1;lite=1;grid={};clip={};area=den;code=-;caps={CAPS};",
         d.undo_depth(),
         d.redo_depth(),
         sel.grid,
@@ -272,9 +280,12 @@ pub fn state(d: &Den, sel: &Sel, role: &str) -> String {
         Some(p) => {
             let name = den::template(p.obj.entry).map(|t| t.name).unwrap_or("Prop").replace([';', ',', '|'], "");
             let id = prop_id(p.obj.guid);
+            let ids: Vec<String> = std::iter::once(id).chain(sel.more.iter().filter(|g| d.placed(**g).is_some()).map(|g| prop_id(*g))).map(|i| i.to_string()).collect();
+            let ids = ids.join(",");
             s.push_str(&format!(
-                "sel={id},{},{name};n=1;pos={:.2},{:.2},{:.2},{:.0},{:.2};rot={:.0},{:.0},{:.0};ids={id};gids={id};",
+                "sel={id},{},{name};n={};pos={:.2},{:.2},{:.2},{:.0},{:.2};rot={:.0},{:.0},{:.0};ids={ids};gids={ids};locked={};",
                 p.prop.entry,
+                1 + sel.more.iter().filter(|g| d.placed(**g).is_some()).count(),
                 p.obj.x,
                 p.obj.y,
                 p.obj.z,
@@ -282,7 +293,8 @@ pub fn state(d: &Den, sel: &Sel, role: &str) -> String {
                 p.obj.scale,
                 p.prop.yaw,
                 p.prop.pitch.unwrap_or(0.0),
-                p.prop.roll.unwrap_or(0.0)
+                p.prop.roll.unwrap_or(0.0),
+                (p.prop.locked == Some(true)) as u8
             ));
         }
         None => s.push_str("sel=-;n=0;ids=;gids=;"),
@@ -297,7 +309,7 @@ fn num(s: Option<&&str>) -> Option<f64> {
 const BUILDER_HELP: &str = "Den Lite's Builder: place a prop from the gallery, Near picks the closest, then move (x, y, z), turn, tilt, size, Copy, Paste, Duplicate, Delete, Undo and Redo. Your Den keeps itself; Files saves it by name.";
 
 /// What only the full Den does: Den Lite says so plainly (the editor hides these on Den Lite: the state's `lite=1`).
-const FULL_ONLY: &[&str] = &["group", "ungroup", "store", "lock", "unlock", "hide", "show", "measure", "align", "stack", "path", "prefab", "plot", "share", "selbox", "stackon", "pasteat", "placeat"];
+const FULL_ONLY: &[&str] = &["group", "ungroup", "store", "hide", "show", "measure", "align", "stack", "path", "prefab", "plot", "share", "selbox", "stackon", "pasteat", "placeat"];
 
 /// (x, y) on the grid around the Den's middle (yards; 0: as it is).
 fn snap(g: f64, v: f32, mid: f32) -> f32 {
@@ -306,9 +318,87 @@ fn snap(g: f64, v: f32, mid: f32) -> f32 {
 
 /// One Builder command (`wubuild cmd <text>`) on the Den. `can` is false for a friend who may not build.
 pub fn builder_cmd(d: &mut Den, sel: &mut Sel, here: Here, text: &str, can: bool) -> Vec<Out> {
+    let verb = text.split_whitespace().next().map(|v| v.to_ascii_lowercase()).unwrap_or_default();
+    let was = sel.guid;
+    let out = match verb.as_str() {
+        "selnext" | "selkind" | "lock" | "unlock" => selection_cmd(d, sel, here, &verb, can),
+        // the props selected with `selkind` too: Delete and the moves and turns take them all
+        "delete" | "move" | "turn" | "tilt" | "floor" if !sel.more.is_empty() && !(verb == "move" && text.split_whitespace().count() >= 6) => {
+            let mut v = builder_one(d, sel, here, text, can);
+            let more = std::mem::take(&mut sel.more);
+            let keep = sel.guid;
+            for g in &more {
+                if d.placed(*g).is_none() {
+                    continue;
+                }
+                sel.guid = Some(*g);
+                v.extend(builder_one(d, sel, here, text, can).into_iter().filter(|o| matches!(o, Out::Change(_))));
+            }
+            sel.guid = keep;
+            if verb != "delete" {
+                sel.more = more.into_iter().filter(|g| d.placed(*g).is_some()).collect();
+            }
+            v
+        }
+        _ => builder_one(d, sel, here, text, can),
+    };
+    // a selection changed any other way: the extra ones and the round go
+    if sel.guid != was && verb != "selnext" && verb != "selkind" {
+        sel.more.clear();
+        sel.round = None;
+    }
+    if sel.guid.is_none() {
+        sel.more.clear();
+    }
+    out
+}
+
+/// `selnext`, `selkind`, `lock`, `unlock`.
+fn selection_cmd(d: &mut Den, sel: &mut Sel, here: Here, verb: &str, can: bool) -> Vec<Out> {
+    let name = |d: &Den, g: u64| d.placed(g).and_then(|p| den::template(p.obj.entry)).map(|t| t.name).unwrap_or("a prop");
+    match verb {
+        "selnext" => {
+            if d.props.is_empty() {
+                return vec![Out::Say("Nothing placed yet.".into())];
+            }
+            // the round: the props by their distance from where it started (the selection then, else you)
+            let at = sel.round.unwrap_or_else(|| sel.guid.and_then(|g| d.placed(g)).map(|p| [p.obj.x, p.obj.y, p.obj.z]).unwrap_or([here.x, here.y, here.z]));
+            sel.round = Some(at);
+            let dist = |p: &den::Placed| (p.obj.x - at[0]).powi(2) + (p.obj.y - at[1]).powi(2) + (p.obj.z - at[2]).powi(2);
+            let mut order: Vec<(f32, u64)> = d.props.iter().map(|p| (dist(p), p.obj.guid)).collect();
+            order.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal).then(a.1.cmp(&b.1)));
+            let i = sel.guid.and_then(|g| order.iter().position(|o| o.1 == g)).map(|i| (i + 1) % order.len()).unwrap_or(0);
+            let g = order[i].1;
+            sel.guid = Some(g);
+            sel.more.clear();
+            vec![Out::Say(format!("Selected {} ({} of {}).", name(&*d, g), i + 1, order.len()))]
+        }
+        "selkind" => match sel.guid.and_then(|g| d.placed(g)).map(|p| p.obj.entry) {
+            Some(entry) => {
+                let g0 = sel.guid;
+                sel.more = d.props.iter().filter(|p| p.obj.entry == entry && Some(p.obj.guid) != g0).map(|p| p.obj.guid).collect();
+                vec![Out::Say(format!("Selected every {}: {} props.", name(&*d, g0.unwrap_or(0)), sel.more.len() + 1))]
+            }
+            None => vec![Out::Say("Select a prop first (Near picks the closest).".into())],
+        },
+        _ => {
+            if !can {
+                return vec![Out::Say("Only the Den's owner builds here (they can let friends: .den friends build on).".into())];
+            }
+            let on = verb == "lock";
+            let Some(g) = sel.guid else { return vec![Out::Say("Select a prop first (Near picks the closest).".into())] };
+            let all: Vec<u64> = std::iter::once(g).chain(sel.more.iter().copied()).collect();
+            let n = all.iter().filter(|g| d.set_lock(**g, on).is_ok()).count();
+            vec![Out::Say(if on { format!("Locked {n}: it can't be moved or deleted until you Unlock it.") } else { format!("Unlocked {n}.") })]
+        }
+    }
+}
+
+/// One Builder command on the one selected prop.
+fn builder_one(d: &mut Den, sel: &mut Sel, here: Here, text: &str, can: bool) -> Vec<Out> {
     let w: Vec<&str> = text.split_whitespace().collect();
     let verb = w.first().map(|v| v.to_ascii_lowercase()).unwrap_or_default();
-    let looks = matches!(verb.as_str(), "help" | "near" | "selclear" | "" | "catalog" | "copy" | "find" | "models" | "pick" | "select" | "selall" | "grid");
+    let looks = matches!(verb.as_str(), "help" | "near" | "selclear" | "" | "catalog" | "copy" | "find" | "models" | "pick" | "select" | "selall" | "grid" | "selnext" | "selkind");
     if !can && !looks {
         return vec![Out::Say("Only the Den's owner builds here (they can let friends: .den friends build on).".into())];
     }
@@ -769,6 +859,64 @@ mod tests {
         assert!(state(&d, &sel, "owner").contains("lite=1;grid=2;"));
         let m = AddonMsg { prefix: "OVMOD".into(), text: "wuden\treport\t1/1\tgallery tiles=20 model=18".into() };
         assert_eq!(handle(&mut d, &mut sel, None, &m, true, true), vec![Out::Report("gallery tiles=20 model=18".into())]);
+    }
+
+    #[test]
+    fn select_next_every_one_of_a_kind_lock_and_the_caps() {
+        let mut d = Den::new(den::Spot::default());
+        let s0 = den::Spot::default();
+        let here = Here { x: s0.x, y: s0.y, z: s0.z, o: 0.0 };
+        let mut sel = Sel::default();
+        // three chairs and a barrel, 1, 2, 4 and 3 yards along x
+        let a = d.spawn(2413, s0.x + 1.0, s0.y, s0.z, 0.0).unwrap().guid;
+        let b = d.spawn(2413, s0.x + 2.0, s0.y, s0.z, 0.0).unwrap().guid;
+        let c = d.spawn(2413, s0.x + 4.0, s0.y, s0.z, 0.0).unwrap().guid;
+        let barrel = crate::objects::OBJECTS.iter().find(|o| o.3.to_lowercase().contains("barrel")).unwrap().0;
+        let k = d.spawn(barrel, s0.x + 3.0, s0.y, s0.z, 0.0).unwrap().guid;
+        // the round from the selection, by distance, wrapping
+        sel.guid = Some(a);
+        let mut seen = Vec::new();
+        for _ in 0..5 {
+            builder_cmd(&mut d, &mut sel, here, "selnext", true);
+            seen.push(sel.guid.unwrap());
+        }
+        assert_eq!(seen, vec![b, k, c, a, b], "nearest first from where the round started, then around again");
+        // every chair: Delete and moves take them all
+        sel.guid = Some(a);
+        let o = builder_cmd(&mut d, &mut sel, here, "selkind", true);
+        assert!(matches!(&o[0], Out::Say(t) if t.contains("3 props")), "{o:?}");
+        let st = state(&d, &sel, "owner");
+        assert!(st.contains("n=3;") && st.contains(&format!("ids={},{},{};", prop_id(a), prop_id(b), prop_id(c))), "{st}");
+        builder_cmd(&mut d, &mut sel, here, "move z 1", true);
+        assert!([a, b, c].iter().all(|g| (d.placed(*g).unwrap().prop.z - 1.0).abs() < 1e-6), "all three up");
+        assert_eq!(d.placed(k).unwrap().prop.z, 0.0, "not the barrel");
+        // lock: no move, no delete, kept in the file; unlock
+        sel.more.clear();
+        sel.guid = Some(a);
+        builder_cmd(&mut d, &mut sel, here, "lock", true);
+        assert!(d.locked(a) && state(&d, &sel, "owner").contains("locked=1;"));
+        let o = builder_cmd(&mut d, &mut sel, here, "move x 1", true);
+        assert!(matches!(&o[0], Out::Say(t) if t == den::LOCKED), "{o:?}");
+        let o = builder_cmd(&mut d, &mut sel, here, "delete", true);
+        assert!(matches!(&o[0], Out::Say(t) if t == den::LOCKED) && d.placed(a).is_some());
+        assert!(d.to_doc("x", 0).props.iter().any(|p| p.locked == Some(true)), "in the Den file");
+        assert!(matches!(&builder_cmd(&mut d, &mut sel, here, "unlock", false)[0], Out::Say(t) if t.contains("owner")), "a visitor can't");
+        builder_cmd(&mut d, &mut sel, here, "unlock", true);
+        assert!(!d.locked(a));
+        builder_cmd(&mut d, &mut sel, here, "delete", true);
+        assert!(d.placed(a).is_none());
+        // any other selection empties the kind and the round
+        sel.guid = Some(b);
+        builder_cmd(&mut d, &mut sel, here, "selkind", true);
+        builder_cmd(&mut d, &mut sel, here, &format!("pick {}", prop_id(k)), true);
+        assert!(sel.more.is_empty() && sel.round.is_none());
+        // the caps: every verb this Den Lite answers
+        let st = state(&d, &sel, "owner");
+        let caps: Vec<&str> = st.split("caps=").nth(1).unwrap().split(';').next().unwrap().split(',').collect();
+        for v in ["selnext", "selkind", "lock", "unlock", "preview", "hover", "commit", "axis", "gizmo", "mode", "spawn", "delete"] {
+            assert!(caps.contains(&v), "{v} in caps");
+        }
+        assert!(!FULL_ONLY.iter().any(|v| caps.contains(v)), "nothing only the full Den does");
     }
 
     #[test]

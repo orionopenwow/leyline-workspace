@@ -300,6 +300,9 @@ pub fn cmd(d: &mut Den, sel: &mut Sel, a: &mut Aids, here: Here, text: &str, can
                 let Some(p) = sel.guid.and_then(|g| d.placed(g)).cloned() else {
                     return AidOut::default().said("Select a prop first (right-click it in build mode, or Near).");
                 };
+                if p.prop.locked == Some(true) {
+                    return AidOut::default().said(den::LOCKED);
+                }
                 let mut out = cancel(d, a);
                 out.addon.clear();
                 a.armed = Some(Armed::Move(p.obj.guid));
@@ -524,15 +527,19 @@ pub fn dest(d: &mut Den, sel: &mut Sel, a: &mut Aids, x: f32, y: f32, now: u64, 
     out
 }
 
-/// A right-click on a gameobject (CMSG_GAMEOBJ_USE): a gizmo flag picks its axis; a prop is selected (the addon
-/// opens its menu at the cursor: `picked <id>`).
-pub fn use_object(d: &Den, sel: &mut Sel, a: &mut Aids, guid: u64) -> AidOut {
+/// A right-click on a gameobject (CMSG_GAMEOBJ_USE): a gizmo flag picks its axis; in build mode a prop is selected
+/// (the addon opens its menu at the cursor: `picked <id>`); in play mode a prop is left to the game.
+pub fn use_object(d: &Den, sel: &mut Sel, a: &mut Aids, guid: u64, build: bool) -> AidOut {
     if let Some(ax) = gizmo_axis(guid) {
         a.axis = Some(ax);
         return AidOut::default().tell("axis", ax.to_string());
     }
-    if d.placed(guid).is_none() {
+    if !build || d.placed(guid).is_none() {
         return AidOut::default();
+    }
+    if sel.guid != Some(guid) {
+        sel.more.clear();
+        sel.round = None;
     }
     sel.guid = Some(guid);
     let mut out = AidOut { state: true, ..Default::default() };
@@ -816,7 +823,7 @@ mod tests {
         assert!(out.create.iter().all(|o| !old.contains(&o.guid)) && out.create.len() == 3);
         // a flag right-clicked: its axis
         let y = out.create.iter().find(|o| o.entry == 990_002).unwrap().guid;
-        let o = use_object(&d, &mut sel, &mut a, y);
+        let o = use_object(&d, &mut sel, &mut a, y, false);
         assert_eq!(o.addon, vec![("axis".to_string(), "y".to_string())]);
         assert_eq!(a.axis, Some('y'));
         assert_eq!(query(990_003), Some((GOOBER, 5912, "Move along Z", GIZMO_SCALE)));
@@ -837,11 +844,13 @@ mod tests {
         assert_eq!(shown(&obj, true), (GOOBER, 0), "highlighted, usable");
         assert_eq!(shown(&obj, false), (obj.kind, 0), "in play as it is");
         cmd(&mut d, &mut sel, &mut a, here, "gizmo on", true, 0);
-        let out = use_object(&d, &mut sel, &mut a, obj.guid);
+        assert_eq!(use_object(&d, &mut sel, &mut a, obj.guid, false), AidOut::default(), "play mode: left to the game");
+        assert_eq!(sel.guid, None);
+        let out = use_object(&d, &mut sel, &mut a, obj.guid, true);
         assert_eq!(sel.guid, Some(obj.guid));
         assert!(out.state && out.create.len() == 3);
         assert!(out.addon.contains(&("picked".into(), (obj.guid & 0xFF_FFFF).to_string())));
-        assert_eq!(use_object(&d, &mut sel, &mut a, 12345), AidOut::default(), "not ours: nothing");
+        assert_eq!(use_object(&d, &mut sel, &mut a, 12345, true), AidOut::default(), "not ours: nothing");
         assert_eq!(cmd(&mut d, &mut sel, &mut a, here, "mode play", true, 0).look, Some(false));
     }
 

@@ -700,7 +700,7 @@ fn aid_packet(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Pos>, sel: &
     let Some(guid) = body.get(..8).map(|b| u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])) else { return Ok(true) };
     let out = {
         let d = shared.den.lock().unwrap_or_else(|e| e.into_inner());
-        gizmo::use_object(&d, sel, aids, guid)
+        gizmo::use_object(&d, sel, aids, guid, shared.build_look.load(Ordering::Relaxed))
     };
     if out != gizmo::AidOut::default() {
         shared.event("aid_use", &sess.me.name, &format!("{}", guid & 0xFF_FFFF));

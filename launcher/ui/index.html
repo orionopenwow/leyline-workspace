@@ -761,6 +761,13 @@
       </div>
     </div>
   </div>
+  <!-- the official realm has a line (status.json, docs/QUEUE.md): the other ways in (app.js renderQueueCard) -->
+  <div class="pb-queue" id="pb-queue" role="region" aria-label="Skip the line" hidden>
+    <b class="pbq-head">Busy right now</b><span class="pbq-line" id="pbq-line"></span>
+    <span class="pbq-why">Skip the line, and help make room for more players:</span>
+    <span class="pbq-btns"><button type="button" class="btn small" id="pbq-pc" hidden>Play with your game folder</button><button type="button" class="btn small" id="pbq-host">Host your own realm</button><button type="button" class="btn small" id="pbq-node">Become a node</button></span>
+    <button type="button" class="pbq-x" id="pbq-x" aria-label="Not now" title="Not now">×</button>
+  </div>
   <div class="pb-right">
     <button type="submit" class="play" id="play-go"><span class="sr">Play</span></button>
     <span class="caption" id="play-caption">ONLINE</span>

@@ -95,6 +95,7 @@ pub const LINKS: &[(&str, &str)] = &[
     ("hostdocs", crate::site!("/wrath/docs/hosting")), // the host console's guide (host/console.rs)
     ("alwayson", crate::site!("/wrath/docs/always-on")),
     ("network", crate::site!("/wrath/docs/network")), // the host guide's first item: how the network works
+    ("beanode", crate::site!("/wrath/docs/be-a-node")), // Become a node: the play bar's skip-the-line card (docs/QUEUE.md)
     ("themes", "https://github.com/orionopenwow/WrathUnleashed/blob/main/docs/THEMES.md"), // themes agent
     ("modders", "https://github.com/orionopenwow/WrathUnleashed/blob/main/mods/README-modders.md"),
     ("releases", update::RELEASES_PAGE),

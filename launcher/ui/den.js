@@ -617,5 +617,6 @@
   const homeGo = byId("hm-den-go");
   if (homeGo) homeGo.addEventListener("click", () => { if (window.LeylineNav) window.LeylineNav.show("den"); go(); });
   window.LeylineDen = { go, load, state: () => st, where };
-  if (page.classList.contains("on")) load(); else paint();
+  // Your Den's state read once at the start too (not only on its page): the play bar's PLAY and the realm picker go by it
+  if (page.classList.contains("on")) load(); else { paint(); call("den_state").then((x) => { if (!st) { st = x; paint(); } }).catch(() => { /* asked again on go() */ }); }
 })();

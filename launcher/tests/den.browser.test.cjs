@@ -19,7 +19,7 @@ const FAKE = (o) => {
   const calls = (window.__calls = []);
   try { localStorage.clear(); localStorage.setItem('leyline.page', o.page || 'play'); } catch (_) { /* fine */ }
   const S = (window.__S = {
-    lite: o.lite, kit: !!o.kit, docker_den: !!o.docker_den, world: o.world || 'ok', packInstalled: false,
+    lite: o.lite, selected: o.selected, kit: !!o.kit, docker_den: !!o.docker_den, world: o.world || 'ok', packInstalled: false,
     dock: o.dock || 'ready', progressDone: false, forge: o.forge || 'missing', forgeOpen: false, forgeLooks: 0, forgeLast: null, clients: o.clients === false ? [] : [{ id: 'c335a-1', name: 'My Game', path: '/x', build: '3.3.5a', realmlist: '' }],
   });
   const dens = [{ name: 'house', bytes: 300, props: 12, saved: '2026-11-01T01:00:00Z' }, { name: 'backup', bytes: 100, props: 3, saved: '2026-10-31T01:00:00Z' }];
@@ -415,6 +415,17 @@ test('after Play solo the play bar shows Your Den, and its PLAY is the same one 
   await page.evaluate(() => document.getElementById('play-form').requestSubmit());
   await page.waitForFunction(() => window.__calls.filter((c) => c[0] === 'den_play_lite').length === 2);
   assert.equal((await calls(page, 'play')).length, 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('the launcher opened with Your Den picked: PLAY goes straight into the Den, never a plain start at the login screen (owner 2 Nov 20:48)', async () => {
+  const { page, ctx, errors } = await open({ lite: 'stopped', auto: true, selected: '127.0.0.1' });
+  await page.waitForFunction(() => document.querySelector('#pb-realm').textContent === 'Your Den');
+  // the Den page never opened: PLAY in the bar
+  await page.evaluate(() => document.getElementById('play-form').requestSubmit());
+  await page.waitForFunction(() => window.__calls.some((c) => c[0] === 'den_play_lite'));
+  assert.equal((await calls(page, 'play')).length, 0, 'no plain start');
   assert.deepEqual(errors, []);
   await ctx.close();
 });

@@ -687,3 +687,4 @@
 1304a ship Save as Orion: the new taskbar icon (the Leyline mark on slate), and Leyline-Launcher gets the same version after Leyline
 1305a signin  Site: the realm list split into Official realms and Community realms, each with the hosting guide link
 1305b ship  Save as Orion: the launcher's Official / Community realm tabs, Your Den only in the realm picker next to Play; Leyline-Launcher copies from its own clean folder
+1306a ship  Save as Orion: Your Den's PLAY goes straight into the Den when the launcher opens with it picked (it stopped at the login screen)

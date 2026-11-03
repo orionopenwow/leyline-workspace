@@ -47,11 +47,12 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 
 | Command | What it does |
 |---|---|
-| `.den` | the commands |
+| `.den` (`.den commands`) | the commands |
+| `.den help` (`.den guide`) | opens the Leyline UI's Den guide (a paged help window: WrathUnleashedUI `Guide.lua`, also `/den guide`); without the UI, the commands |
 | `.den place <name>` | one piece 3 yards in front of you, facing as you face (`chair`, `lantern`, `house`...: whole name first, then a word's start) |
 | `.den find <word>` | the pieces whose name has that word (12 shown) |
 | `.den stamps` | the stamps |
-| `.den stamp <name> now [degrees]` | puts a stamp down where you stand, facing as you face (15 degree steps); `x` ahead of you, `y` to your left, as `ov_den_home.lua` |
+| `.den stamp <name> now [degrees]` | puts a stamp down where you stand, facing as you face (15 degree steps); `x` ahead of you, `y` to your left, as `ov_den_home.lua`. Near the Den's edge it is moved toward the middle until all of it is inside (`Den::fit_stamp`; every built-in stamp fits the size 1 room) |
 | `.build undo` | takes the last stamp or load back (50 deep) |
 | `.den save <name>` | the whole Den to a file (the room is its look; the props are in it) |
 | `.den load <name> [replace\|add]` | opens a file; asks first when the Den has props; `replace` keeps a copy as `backup`, and one undo brings the old Den back |
@@ -336,8 +337,11 @@ stick to the cursor the way an editor's does. What Den Lite (`src/gizmo.rs`) and
 from what the client does have:
 
 - **Build mode** (`wubuild cmd mode build|play`; the UI sends it in Your Den on Den Lite when not in play mode): every
-  prop is created again with the goober type in `GAMEOBJECT_BYTES_1` (the query answer, which the client caches, keeps
-  the template's own type). The client then highlights a prop under the mouse (its own interact glow and cursor) and a
+  prop is created again with the goober type in `GAMEOBJECT_BYTES_1` **under its build twin's entry** (the prop's entry
+  with bit 24 set, `gizmo::twin`; the guid keeps the prop's own). The client keeps each entry's query answer and went by
+  that cached type, not the type byte (owner's den-features 3 Nov: no glow), so the twin is a new entry it must ask
+  for, and `CMSG_GAMEOBJECT_QUERY` answers a twin as a goober with the prop's own model, name and size
+  (`gizmo::query_any`; how many twins were asked: `twin_queries` in the den-test's answers). The client then highlights a prop under the mouse (its own interact glow and cursor) and a
   right-click sends `CMSG_GAMEOBJ_USE`: Den Lite selects it, puts the gizmo around it and tells the UI `wubuild
   picked <id>` (and the state); the UI opens its menu at the cursor (Delete, Duplicate, Move, Rotate, Bigger, Smaller,
   Snap to floor, Lock, Copy, Properties). Play mode shows the props as they are again (a right-click there is left to
@@ -383,7 +387,8 @@ What is proven here, and what needs the owner's PC: the ray, the copy's two-guid
 cast and its silent answer, the gizmo, the goober look and right-click selection are tested in `gizmo.rs`, `ovmod.rs`,
 `raw.rs` and the headless client (`the_editors_preview_gizmo_selection_and_exact_click`), the UI in
 `stream/tests/test_wuui_gizmo.lua`, den-check's parts in `test_den_check.py`. **On the real game, to see**: that the
-goober type in the update field gives the highlight and the right-click (not only the cached template's type); that
+build twins give the highlight and the right-click (den-check's `build mode: props light up under the mouse` says how
+many goober looks the game asked for); that
 Flare's cursor shows for this character and the silent failure leaves no cooldown; that `SaveView` / `SetView` /
 `ResetView` / `CameraZoomIn` / `CameraZoomOut` aren't protected; the flags' colours. **The build camera's numbers are
 first guesses** (field of view 90 degrees across the diagonal, pivot 2 yards over the feet, 12 yards back, 0.5 rad

@@ -1072,6 +1072,30 @@ def view_checks(rep, report, ui, shot, which, label):
            "The model didn't turn or zoom: send logs\\den-features-latest.txt and the pictures.")
 
 
+GUIDE_PAGES = 10   # at least: Build and Play, gallery, placing, selecting, stamps, Dojo, class, invite, keys (Guide.lua)
+
+
+def guide_checks(rep, ch, report, ui, shot):
+    """The Den guide (WrathUnleashedUI Guide.lua): Guide on the bar opens it at its first page, Next turns it, and
+    `.den help` in the chat opens it (Den Lite answers `wuden guide open` when the game has the Leyline UI)."""
+    ui("guide close")
+    ui("guide")
+    g = report("guide").get("guide", {})
+    pic = shot("guide")
+    rep.ok(g.get("open") == "1" and int(g.get("pages", "0") or 0) >= GUIDE_PAGES, "guide: Guide on the Den bar opens it",
+           "page %s of %s%s" % (g.get("page"), g.get("pages"), (", " + pic) if pic else "") if g else "no guide in the addon's report",
+           "Update the Leyline addons, then run den-features again.")
+    ui("guide next")
+    g2 = report("guide-next").get("guide", {})
+    rep.ok(g2.get("page") == "2", "guide: Next turns the page", "page %s (%s)" % (g2.get("page"), g2.get("key")), "Send logs\\den-features-latest.txt.")
+    ui("guide close")
+    said = " ".join(str(x) for x in ((ch.send(".den help") or {}).get("said") or []))
+    g3 = report("guide-help").get("guide", {})
+    rep.ok(g3.get("open") == "1", "guide: .den help opens it", said[:120] or "nothing said",
+           "Update Den Lite and the Leyline addons, then run den-features again.")
+    ui("guide close")
+
+
 def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
     """The Den editor, feature by feature, through the Leyline UI's own buttons (Den Lite's `.den ui <action>` asks the
     addon to press them: DenBar.lua D.TestAction), a screenshot after each into `outdir`, PASS / FAIL from Den Lite's
@@ -1231,6 +1255,8 @@ def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
                 r = report(name)
                 opened = r.get("open", {}).get("_text", "")
                 rep.add("INFO", "panel: %s" % name, (opened or "-")[:150] + ((", " + pic) if pic else ""))
+        # the Den guide: the bar's Guide button opens it, its pages turn, `.den help` opens it too
+        guide_checks(rep, ch, report, ui, shot)
         # 7. every stamp, built by Jaina (or put down at once without her), a picture of each, then taken back
         stamp_pictures(rep, ch, den_dir, shot, wait)
 

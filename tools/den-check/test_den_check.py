@@ -673,6 +673,7 @@ class FakeDenEditor:
         self.dens, self.props, self.play, self.clip, self.broken = Path(dens), 3, False, False, set(broken)
         self.kind = "fake"
         self.views = {"tile": [0.0, 1.0], "preview": [0.0, 1.0]}
+        self.guide = [False, 1]
 
     def view(self, which):
         turn, zoom = self.views[which]
@@ -707,6 +708,10 @@ class FakeDenEditor:
             return {"props": self.props, "said": []}
         if cmd == ".den size":
             return {"props": self.props, "said": ["Your Den: a 16 yard room."]}
+        if cmd == ".den help":
+            if "guide" not in self.broken:
+                self.guide = [True, 1]
+            return {"props": self.props, "said": ["The Den guide is open (Guide on the Den bar). .den commands lists the commands."]}
         if w[:2] == [".den", "save"]:
             (self.dens / ("%s.den.json" % w[2])).write_text('{"format": "leyline-den", "props": []}')
             return {"props": self.props}
@@ -722,6 +727,7 @@ class FakeDenEditor:
             self.report(["gallery shown=1 tiles=20 model=18 icon=2 empty=0 rows=4 cols=5 tile=92",
                          "catalog n=180 model=150 boxed=150 wmo=25 none=5", "nomodel Baked Bread,Bottle",
                          "view tile=%s preview=%s previewShown=1 spin=1" % (self.view("tile"), self.view("preview")),
+                         "guide open=%d page=%d pages=11 key=x" % (1 if self.guide[0] else 0, self.guide[1]),
                          "state sel=Barrel n=1 undo=4 redo=0 clip=%d grid=0 lite=1 mode=place tab=all pick=-" % self.clip,
                          "open LeylineDenBar,LeylineDenRail", "overlaps " + ov, "pill Place · snap off · 15°",
                          "screen 1923x1082 uiscale=0.71 play=%s rail=labelled" % str(self.play).lower()])
@@ -742,6 +748,13 @@ class FakeDenEditor:
             (self.dens / ("%s.den.json" % a[1])).write_text("{}")
         elif act == "open":
             self.ev("den_load", a[1] + " replace")
+        elif act == "guide" and "guide" not in self.broken:
+            if a[1:2] == ["close"]:
+                self.guide[0] = False
+            elif a[1:2] == ["next"]:
+                self.guide[1] += 1
+            else:
+                self.guide = [True, 1]
         elif act == "view" and "view" not in self.broken:
             v = self.views[a[1]]
             if a[2] == "turn":
@@ -810,6 +823,17 @@ class Features(unittest.TestCase):
         fails = {r[1] for r in rep.rows if r[0] == "FAIL"}
         self.assertIn("gallery tiles: from the side", fails)
         self.assertIn("the selection's preview: right-drag turns it, the wheel zooms", fails)
+
+    def test_the_guide_opens_turns_and_answers_den_help(self):
+        rep, shots, _ = self.run_it()
+        rows = {r[1]: r for r in rep.rows}
+        for name in ("guide: Guide on the Den bar opens it", "guide: Next turns the page", "guide: .den help opens it"):
+            self.assertEqual(rows[name][0], "PASS", rows[name])
+        self.assertTrue(any(x.endswith("-guide.png") for x in shots))
+        rep, _, _ = self.run_it(broken=("guide",))
+        fails = {r[1] for r in rep.rows if r[0] == "FAIL"}
+        self.assertIn("guide: Guide on the Den bar opens it", fails)
+        self.assertIn("guide: .den help opens it", fails)
 
     def test_the_stamp_list_is_the_shipped_stamps(self):
         shipped = sorted(p.name.split(".")[0] for p in (HERE.parent.parent / "realm" / "custom" / "lua_scripts" / "den-stamps").glob("*.den.json"))

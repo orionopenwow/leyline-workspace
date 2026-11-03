@@ -52,6 +52,7 @@ pub const SMSG_SPELLNONMELEEDAMAGELOG: u16 = 0x250;
 pub const SMSG_SPELL_FAILED_OTHER: u16 = 0x2A6;
 pub const SMSG_UPDATE_COMBO_POINTS: u16 = 0x39D;
 pub const SMSG_AURA_UPDATE: u16 = 0x496;
+pub const SMSG_SPELLLOGMISS: u16 = 0x24B;
 pub const CMSG_CANCEL_MOUNT_AURA: u32 = 0x375;
 /// UNIT_FIELD_MOUNTDISPLAYID; UNIT_FLAG_MOUNT with the player's own UNIT_FLAG_PLAYER_CONTROLLED.
 pub const MOUNT_DISPLAY: u16 = 69;
@@ -139,6 +140,19 @@ pub const BOSS_RADIUS: f32 = 5.0;
 pub const BOSS_SPELL: u32 = 2120;
 /// A dummy that hits back swings this often for this share of your health.
 pub const HIT_BACK_MS: u64 = 2000;
+/// The boss's cast to interrupt: every so often (the first a few seconds in), how long it casts, its look (a shadow
+/// bolt's own: only its look; to see on the real game).
+pub const BOSS_CAST_EVERY_MS: u64 = 15_000;
+pub const BOSS_CAST_FIRST_MS: u64 = 1500;
+pub const BOSS_CAST_MS: u32 = 3000;
+pub const BOSS_CAST_SPELL: u32 = 686;
+/// Heavy armour (the boss and the boss-level dummy): about two fifths off a level-80 player's physical hits.
+pub const HEAVY_ARMOR: u32 = 10_643;
+/// A proc fires at most this often (each passive's own).
+pub const PROC_ICD_MS: u64 = 1000;
+/// SpellMissInfo: miss, dodge.
+pub const MISS: u8 = 1;
+pub const DODGE: u8 = 3;
 
 /// What kind of dummy a unit is (dojo.rs puts them up).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -154,29 +168,43 @@ pub enum Kind {
     Healer,
     /// One that hits back (tank practice).
     Tank,
-    /// The practice boss: dies, with timed circles to move out of.
+    /// The practice boss: dies, with timed circles to move out of and a cast to interrupt.
     Boss,
     /// The companion: friendly, never hurt.
     Friend,
+    /// A dummy three levels below you, no armour (the low end of a level spread).
+    Light,
+    /// A boss-level dummy (three levels above you), heavy armour: misses, dodges and armour count.
+    Heavy,
+    /// The healing range: a group of five friends taking damage, one more than the others.
+    Group,
 }
 
 impl Kind {
     pub fn hostile(self) -> bool {
-        !matches!(self, Kind::Healer | Kind::Friend)
+        !matches!(self, Kind::Healer | Kind::Friend | Kind::Group)
+    }
+    /// Armour against physical damage.
+    pub fn armor(self) -> u32 {
+        match self {
+            Kind::Heavy | Kind::Boss => HEAVY_ARMOR,
+            _ => 0,
+        }
     }
     /// FactionTemplate: 7 (neutral to all: yellow, attackable), 14 (hostile: the ones that hit back), 35 (friendly).
     pub fn faction(self) -> u32 {
         match self {
             Kind::Tank | Kind::Boss => 14,
-            Kind::Healer | Kind::Friend => 35,
+            Kind::Healer | Kind::Friend | Kind::Group => 35,
             _ => 7,
         }
     }
     pub fn max_health(self, level: u32) -> u32 {
         match self {
-            Kind::Target | Kind::Mover | Kind::Tank => 5_000_000,
+            Kind::Target | Kind::Mover | Kind::Tank | Kind::Light | Kind::Heavy => 5_000_000,
             Kind::Pack => 1_000_000,
             Kind::Healer => 20_000 + 250 * level,
+            Kind::Group => 15_000 + 200 * level,
             Kind::Boss => 1500 * level.max(1) + 30_000,
             Kind::Friend => 100,
         }
@@ -185,6 +213,7 @@ impl Kind {
     pub fn start_health(self, level: u32) -> u32 {
         match self {
             Kind::Healer => self.max_health(level) * 3 / 10,
+            Kind::Group => self.max_health(level) * 6 / 10,
             k => k.max_health(level),
         }
     }
@@ -197,16 +226,22 @@ impl Kind {
             Kind::Tank => "tank",
             Kind::Boss => "boss",
             Kind::Friend => "friend",
+            Kind::Light => "light",
+            Kind::Heavy => "heavy",
+            Kind::Group => "group",
         }
     }
     pub fn from_word(w: &str) -> Option<Kind> {
         Some(match w {
             "target" | "targets" | "single" | "dummy" | "dummies" => Kind::Target,
-            "pack" | "aoe" | "group" => Kind::Pack,
+            "pack" | "aoe" => Kind::Pack,
             "mover" | "moving" | "walker" => Kind::Mover,
             "healer" | "heal" | "healing" | "wounded" => Kind::Healer,
             "tank" | "defence" | "defense" | "hitter" => Kind::Tank,
             "boss" => Kind::Boss,
+            "light" | "low" | "novice" => Kind::Light,
+            "heavy" | "high" | "raider" | "armoured" | "armored" => Kind::Heavy,
+            "group" | "healers" | "party" | "raid" | "healrange" | "healing range" => Kind::Group,
             _ => return None,
         })
     }
@@ -236,8 +271,11 @@ pub enum Out {
     Dps(String),
     /// A timed parse is over (dojo.rs keeps the best per class).
     Parse { minutes: u32, dps: u32, total: u64, secs: f32 },
-    /// The boss is down (the best time per class).
-    Boss { secs: f32, hits: u32 },
+    /// The boss is down (the best time per class): the time, how often the circles caught you, the casts you
+    /// interrupted of how many.
+    Boss { secs: f32, hits: u32, kicked: u32, casts: u32 },
+    /// The practice run is over (`.den dojo demo`): its numbers.
+    Demo { secs: f32, total: u64, dps: u32 },
 }
 
 /// CMSG_CAST_SPELL as read.
@@ -372,8 +410,25 @@ pub fn attack_stop_body(attacker: u64, victim: u64) -> Vec<u8> {
 
 /// HITINFO_AFFECTS_VICTIM | (crit: HITINFO_CRITICALHIT).
 pub fn swing_body(attacker: u64, victim: u64, damage: u32, crit: bool) -> Vec<u8> {
+    swing_outcome_body(attacker, victim, damage, 0x2 | if crit { 0x80 } else { 0 }, 1)
+}
+
+/// How a swing went (hit info, victim state): a hit, a critical hit, a glancing blow (HITINFO_GLANCING 0x4000), a
+/// miss (HITINFO_MISS 0x10, no damage), a dodge (VICTIMSTATE_DODGE 2).
+pub fn swing_outcome(crit: bool, glancing: bool, miss: bool, dodge: bool) -> (u32, u8) {
+    if miss {
+        (0x10, 0)
+    } else if dodge {
+        (0x0, 2)
+    } else {
+        (0x2 | if crit { 0x80 } else { 0 } | if glancing { 0x4000 } else { 0 }, 1)
+    }
+}
+
+/// SMSG_ATTACKERSTATEUPDATE: hit info, packed attacker and victim, damage, overkill, one physical part (school,
+/// float and whole damage, then the absorbed and resisted parts' absence), the victim's state, two u32.
+pub fn swing_outcome_body(attacker: u64, victim: u64, damage: u32, hit: u32, state: u8) -> Vec<u8> {
     let mut b = Vec::with_capacity(48);
-    let hit: u32 = 0x2 | if crit { 0x80 } else { 0 };
     b.extend_from_slice(&hit.to_le_bytes());
     packed_guid(&mut b, attacker);
     packed_guid(&mut b, victim);
@@ -383,9 +438,22 @@ pub fn swing_body(attacker: u64, victim: u64, damage: u32, crit: bool) -> Vec<u8
     b.extend_from_slice(&1u32.to_le_bytes()); // physical
     b.extend_from_slice(&(damage as f32).to_le_bytes());
     b.extend_from_slice(&damage.to_le_bytes());
-    b.push(1); // VICTIMSTATE_HIT
+    b.push(state); // VICTIMSTATE_HIT 1, DODGE 2, a miss 0
     b.extend_from_slice(&0u32.to_le_bytes());
     b.extend_from_slice(&0u32.to_le_bytes());
+    b
+}
+
+/// SMSG_SPELLLOGMISS (the combat log's miss line): spell, the caster's full guid, a 0, one target: its full guid
+/// and why (SpellMissInfo: 1 miss, 3 dodge).
+pub fn spell_miss_body(spell: u32, caster: u64, target: u64, why: u8) -> Vec<u8> {
+    let mut b = Vec::with_capacity(22);
+    b.extend_from_slice(&spell.to_le_bytes());
+    b.extend_from_slice(&caster.to_le_bytes());
+    b.push(0);
+    b.extend_from_slice(&1u32.to_le_bytes());
+    b.extend_from_slice(&target.to_le_bytes());
+    b.push(why);
     b
 }
 
@@ -460,7 +528,12 @@ pub fn start_body(caster: u64, r: &CastReq, cast_ms: u32, power: u32) -> Vec<u8>
 /// SMSG_SPELL_GO from `caster`: the units hit (full guids), none missed, the targets, the power left (`power`:
 /// Some for the player's own casts), a 0 after a place.
 pub fn go_body(caster: u64, r: &CastReq, time_ms: u32, hits: &[u64], power: Option<u32>) -> Vec<u8> {
-    let mut b = Vec::with_capacity(64 + hits.len() * 8);
+    go_body_missed(caster, r, time_ms, hits, &[], power)
+}
+
+/// ... with the units missed: each its full guid and why (SpellMissInfo).
+pub fn go_body_missed(caster: u64, r: &CastReq, time_ms: u32, hits: &[u64], missed: &[(u64, u8)], power: Option<u32>) -> Vec<u8> {
+    let mut b = Vec::with_capacity(64 + hits.len() * 8 + missed.len() * 9);
     packed_guid(&mut b, caster);
     packed_guid(&mut b, caster);
     b.push(r.count);
@@ -473,7 +546,12 @@ pub fn go_body(caster: u64, r: &CastReq, time_ms: u32, hits: &[u64], power: Opti
     for h in hits {
         b.extend_from_slice(&h.to_le_bytes());
     }
-    b.push(0);
+    let missed = &missed[..missed.len().min(255)];
+    b.push(missed.len() as u8);
+    for (g, why) in missed {
+        b.extend_from_slice(&g.to_le_bytes());
+        b.push(*why);
+    }
     write_targets(&mut b, r.mask, r.unit, r.src, r.dest);
     if let Some(p) = power {
         b.extend_from_slice(&p.to_le_bytes());
@@ -640,6 +718,35 @@ pub fn weapon_hit(st: &Stats, roll: u32) -> u32 {
     (w + st.attack_power as f32 / 14.0 * st.attack_ms as f32 / 1000.0).round().max(1.0) as u32
 }
 
+/// The share of a physical hit armour takes away (3.3.5a: armour / (armour + 400 + 85 level, + 4.5 x 85 per level
+/// over 59)), at most three quarters.
+pub fn armor_reduction(armor: u32, level: u32) -> f32 {
+    if armor == 0 {
+        return 0.0;
+    }
+    let l = level.max(1) as f32;
+    let k = 400.0 + 85.0 * l + if l > 59.0 { 4.5 * 85.0 * (l - 59.0) } else { 0.0 };
+    (armor as f32 / (armor as f32 + k)).min(0.75)
+}
+
+/// Against a target `diff` levels above you: the chance (per cent) to miss and to be dodged, less your hit. The
+/// sandbox's simplification: no misses against your own level or lower (you're hit-capped against them); against
+/// higher levels the game's own numbers (spells 5, 6, 17 per cent; weapons 5.5, 6, 8 and a 6.5 per cent dodge at +3).
+/// Tier 7 gear and up is hit- and expertise-capped (hit 100).
+pub fn miss_chances(diff: i32, spell: bool, hit: f32) -> (f32, f32) {
+    if diff <= 0 {
+        return (0.0, 0.0);
+    }
+    let d = diff.min(3) as usize;
+    let (miss, dodge) = if spell { ([0.0, 5.0, 6.0, 17.0][d], 0.0) } else { ([0.0, 5.5, 6.0, 8.0][d], [0.0, 5.5, 6.0, 6.5][d]) };
+    ((miss - hit).max(0.0), if hit >= 100.0 { 0.0 } else { dodge })
+}
+
+/// A spell that stops a cast (SPELL_EFFECT_INTERRUPT_CAST 68, a silence 27 or a stun 12): what a kick is.
+pub fn interrupts(s: &Spell) -> bool {
+    s.effects.iter().any(|e| e.kind == 68 || (e.kind == 6 && matches!(e.aura, 12 | 27)))
+}
+
 /// The numbers without a class chosen: the ready-made level-1 character (as its create: 100 health, rage 1000).
 pub fn plain_stats() -> Stats {
     Stats { level: 1, health: 100, power: classes::RAGE, max_power: 1000, attack_ms: 2000, min_dmg: 2.0, max_dmg: 4.0, attack_power: 30, spell_power: 5 }
@@ -734,6 +841,27 @@ pub struct BossFight {
     pub circle: Option<([f32; 3], u64)>,
     pub hits: u32,
     count: u8,
+    /// Its cast to interrupt: the next, and the one going (when it lands, its count).
+    pub next_cast: u64,
+    pub casting: Option<(u64, u8)>,
+    pub kicked: u32,
+    pub casts: u32,
+}
+
+impl BossFight {
+    fn new(guid: u64, now: u64) -> BossFight {
+        BossFight { guid, start: now, next_circle: now + BOSS_EVERY_MS / 2, circle: None, hits: 0, count: 0, next_cast: now + BOSS_CAST_FIRST_MS, casting: None, kicked: 0, casts: 0 }
+    }
+}
+
+/// A practice run (`.den dojo demo`): Den Lite casts your main bar's rotation at a dummy for you, a timed parse.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Demo {
+    pub target: u64,
+    pub start: u64,
+    pub until: u64,
+    pub total: u64,
+    count: u8,
 }
 
 /// The player's fight (the host's: one player fights in a Den).
@@ -767,6 +895,17 @@ pub struct Combat {
     /// Spells known besides the class's (`.den mounts`: every mount).
     pub extra: Vec<u32>,
     speed_counter: u32,
+    /// Critical chance, hit, bonuses and procs (the gear's tier, the talents' passives).
+    pub mods: classes::Mods,
+    /// Nothing hurts you (`.den dojo invulnerable`).
+    pub god: bool,
+    /// Healing done (the damage meter's twin).
+    pub heals: Meter,
+    /// The misses' own dice (the others' rolls stay as they were).
+    rng2: u64,
+    proc_ready: HashMap<u32, u64>,
+    in_proc: bool,
+    pub demo: Option<Demo>,
 }
 
 impl Combat {
@@ -798,6 +937,13 @@ impl Combat {
             gos: 0,
             extra: Vec::new(),
             speed_counter: 0x4000_0000,
+            mods: classes::Mods::default(),
+            god: false,
+            heals: Meter::default(),
+            rng2: 0x2545_F491_4F6C_DD1D,
+            proc_ready: HashMap::new(),
+            in_proc: false,
+            demo: None,
         }
     }
 
@@ -815,13 +961,52 @@ impl Combat {
         (x >> 32) as u32
     }
 
+    /// A second die, for misses and procs (so a fight without them rolls as it always did).
+    fn roll2(&mut self) -> u32 {
+        let mut x = self.rng2;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.rng2 = x;
+        (x >> 32) as u32
+    }
+
+    /// A chance in per cent, on the second die.
+    fn chance(&mut self, pct: f32) -> bool {
+        pct > 0.0 && ((self.roll2() % 10_000) as f32) < pct * 100.0
+    }
+
     fn crit(&mut self) -> bool {
-        self.roll() % 100 < 10
+        self.roll() % 100 < self.mods.crit.round().clamp(0.0, 100.0) as u32
+    }
+
+    /// Does a hit on `g` miss (or get dodged)? Against higher levels only (miss_chances).
+    fn missed(&mut self, units: &[Unit], g: u64, spell: bool) -> Option<u8> {
+        let u = units.iter().find(|u| u.guid == g)?;
+        if !u.kind.hostile() {
+            return None;
+        }
+        let (miss, dodge) = miss_chances(u.level as i32 - self.stats.level as i32, spell, self.mods.hit);
+        if self.chance(miss) {
+            Some(MISS)
+        } else if self.chance(dodge) {
+            Some(DODGE)
+        } else {
+            None
+        }
+    }
+
+    /// Damage after the bonuses and the target's armour (physical only).
+    fn dealt(&self, units: &[Unit], g: u64, dmg: f32, school: u32) -> u32 {
+        let armor = units.iter().find(|u| u.guid == g).map(|u| u.kind.armor()).unwrap_or(0);
+        let phys = if school & 1 != 0 || school == 0 { 1.0 - armor_reduction(armor, self.stats.level) } else { 1.0 };
+        (dmg * (1.0 + self.mods.dmg_pct / 100.0) * phys).max(1.0) as u32
     }
 
     /// A class chosen (or none): full health and power, nothing going on.
     pub fn set_kit(&mut self, kit: Option<Kit>) {
         self.stats = kit.as_ref().map(|k| k.stats).unwrap_or_else(plain_stats);
+        self.mods = kit.as_ref().map(|k| k.mods.clone()).unwrap_or_default();
         self.kit = kit;
         self.entered();
     }
@@ -837,8 +1022,10 @@ impl Combat {
         self.combo = (0, 0);
         self.form = 0;
         self.meter = Meter::default();
+        self.heals = Meter::default();
         self.boss = None;
         self.parse = None;
+        self.demo = None;
     }
 
     fn start_power(&self) -> f32 {
@@ -1037,8 +1224,39 @@ impl Combat {
         let mut hits: Vec<u64> = per.iter().flatten().copied().collect();
         hits.sort_unstable();
         hits.dedup();
+        // a harmful spell can miss (or be dodged) against a higher level: those units take none of it
+        let mut missed: Vec<(u64, u8)> = Vec::new();
+        if harmful(&s) {
+            let weaponish = s.dmg_class == 2 || s.dmg_class == 3 || s.effects.iter().any(is_weapon);
+            for &g in &hits {
+                if let Some(why) = self.missed(units, g, !weaponish) {
+                    missed.push((g, why));
+                }
+            }
+            if !missed.is_empty() {
+                hits.retain(|g| !missed.iter().any(|m| m.0 == *g));
+                for p in per.iter_mut() {
+                    p.retain(|g| !missed.iter().any(|m| m.0 == *g));
+                }
+            }
+        }
         self.gos = self.gos.wrapping_add(1);
-        out.push(Out::Pkt(SMSG_SPELL_GO, go_body(self.me, &r, now as u32, &hits, Some(self.power as u32))));
+        out.push(Out::Pkt(SMSG_SPELL_GO, go_body_missed(self.me, &r, now as u32, &hits, &missed, Some(self.power as u32))));
+        for &(g, why) in &missed {
+            out.push(Out::Pkt(SMSG_SPELLLOGMISS, spell_miss_body(s.id, self.me, g, why)));
+        }
+        // runic power from a rune strike (the sandbox's: ten a strike)
+        if self.stats.power == classes::RUNIC && s.rune_cost != 0 && s.power_type != classes::RUNIC as i32 {
+            self.power = (self.power + 100.0).min(self.stats.max_power as f32);
+        }
+        // a kick on the boss while it casts: its cast stops
+        if interrupts(&s) {
+            if let (Some(g), Some(b)) = (target, self.boss.as_ref()) {
+                if b.guid == g && b.casting.is_some() && hits.contains(&g) {
+                    out.extend(self.boss_kicked(now));
+                }
+            }
+        }
         if s.recovery > 0 || s.category_recovery > 0 {
             let cd = s.recovery.max(s.category_recovery);
             self.cooldowns.insert(s.id, now + cd as u64);
@@ -1080,8 +1298,9 @@ impl Combat {
                         dmg *= combo as i32;
                     }
                     let crit = self.crit();
-                    let dmg = (dmg.max(1) as f32 * if crit { 1.5 } else { 1.0 }) as u32;
+                    let dmg = self.dealt(units, g, dmg.max(1) as f32 * if crit { 1.5 } else { 1.0 }, s.school_mask);
                     out.extend(self.hurt(now, units, g, s.id, dmg, s.school_mask, crit, false));
+                    out.extend(self.procs(now, me, units, book, g));
                 } else if is_heal(e) {
                     let amount = match e.kind {
                         136 => self.max_of(g) * value.max(0) as u32 / 100,
@@ -1090,6 +1309,7 @@ impl Combat {
                     };
                     let crit = self.crit();
                     let amount = if crit { amount * 3 / 2 } else { amount };
+                    let amount = (amount as f32 * (1.0 + self.mods.heal_pct / 100.0)) as u32;
                     out.extend(self.heal(now, g, s.id, amount, crit, None));
                 } else if e.kind == 30 {
                     // energize: power back
@@ -1185,21 +1405,16 @@ impl Combat {
             h.swing_next = now + HIT_BACK_MS;
         }
         // a training dummy never falls: refilled at a tenth
-        if !boss && h.kind != Kind::Healer && h.cur < h.max / 10 {
+        if !boss && h.kind.hostile() && h.cur < h.max / 10 {
             h.cur = h.max;
         }
         let (cur, max) = (h.cur, h.max);
         out.push(Out::Pkt(SMSG_UPDATE_OBJECT, values_body(u.guid, &[(field::HEALTH, cur)])));
-        let healing = u.kind == Kind::Healer;
+        let healing = delta < 0;
         let amount = delta.unsigned_abs();
-        if self.meter.total == 0 || self.meter.healing != healing {
-            self.meter = Meter { first: now, last: now, total: 0, healing, name: dummy_name(u.kind).into(), shown: 0 };
-        }
-        self.meter.total += amount;
-        self.meter.last = now;
-        if now >= self.meter.shown + READOUT_MS {
-            self.meter.shown = now;
-            out.push(Out::Dps(self.meter.line(false)));
+        out.extend(self.count(now, healing, amount, dummy_name(u.kind)));
+        if let Some(d) = self.demo.as_mut() {
+            d.total += amount;
         }
         if let Some(p) = self.parse.as_mut() {
             if p.start == 0 {
@@ -1210,18 +1425,21 @@ impl Combat {
         }
         if boss {
             if self.boss.as_ref().map(|b| b.guid) != Some(u.guid) {
-                self.boss = Some(BossFight { guid: u.guid, start: now, next_circle: now + BOSS_EVERY_MS / 2, circle: None, hits: 0, count: 0 });
-                out.push(Out::Middle("The boss turns to you. Watch the ground!".into()));
+                self.boss = Some(BossFight::new(u.guid, now));
+                out.push(Out::Middle("The boss turns to you. Watch the ground, and interrupt its cast!".into()));
             }
             if cur == 0 {
-                let b = self.boss.take().unwrap_or(BossFight { guid: u.guid, start: now, next_circle: 0, circle: None, hits: 0, count: 0 });
+                let b = self.boss.take().unwrap_or(BossFight::new(u.guid, now));
+                if b.casting.is_some() {
+                    out.push(Out::Pkt(SMSG_SPELL_FAILED_OTHER, interrupted_body(b.guid, b.count, BOSS_CAST_SPELL, fail::INTERRUPTED)));
+                }
                 let secs = (now.saturating_sub(b.start)) as f32 / 1000.0;
                 if self.swing.is_some_and(|s| s.0 == u.guid) {
                     out.extend(self.stop());
                 }
                 // UNIT_DYNFLAG_DEAD (0x20): the game shows it fallen
                 out.push(Out::Pkt(SMSG_UPDATE_OBJECT, values_body(u.guid, &[(field::HEALTH, 0), (field::DYNAMIC_FLAGS, 0x20)])));
-                out.push(Out::Boss { secs, hits: b.hits });
+                out.push(Out::Boss { secs, hits: b.hits, kicked: b.kicked, casts: b.casts });
                 out.push(Out::Event("dojo", format!("boss down {secs:.1}s {} hits", b.hits)));
             }
         }
@@ -1244,6 +1462,9 @@ impl Combat {
         if g == self.me {
             self.health = (self.health + done).min(self.stats.health);
             out.push(self.me_update());
+            if done > 0 {
+                out.extend(self.count(now, true, done as u64, "yourself"));
+            }
         } else if let Some(h) = self.hp.get(&g).copied() {
             let u = Unit { guid: g, at: At::default(), kind: h.kind, level: 1 };
             if done > 0 {
@@ -1251,6 +1472,84 @@ impl Combat {
             }
         }
         out
+    }
+
+    /// Damage or healing done, on its meter; the Dojo panel's readout at most once a second.
+    fn count(&mut self, now: u64, healing: bool, amount: u64, name: &str) -> Vec<Out> {
+        let m = if healing { &mut self.heals } else { &mut self.meter };
+        if m.total == 0 {
+            *m = Meter { first: now, last: now, total: 0, healing, name: name.into(), shown: 0 };
+        }
+        m.total += amount;
+        m.last = now;
+        let shown = self.meter.shown.max(self.heals.shown);
+        if now >= shown + READOUT_MS {
+            self.meter.shown = now;
+            self.heals.shown = now;
+            return vec![Out::Dps(self.readout(false))];
+        }
+        Vec::new()
+    }
+
+    /// The Dojo panel's line: `dps=..;total=..;secs=..;dummy=..;hps=..;healed=..[;done=1]`.
+    pub fn readout(&self, done: bool) -> String {
+        let (d, h) = (&self.meter, &self.heals);
+        let name = if d.total > 0 || h.total == 0 { &d.name } else { &h.name };
+        let secs = if d.total > 0 { d.secs() } else { h.secs() };
+        format!(
+            "dps={};total={};secs={:.1};dummy={};hps={};healed={}{}",
+            if d.total > 0 { d.per_sec() } else { 0 },
+            d.total,
+            secs,
+            name,
+            if h.total > 0 { h.per_sec() } else { 0 },
+            h.total,
+            if done { ";done=1" } else { "" }
+        )
+    }
+
+    /// `.den dojo meter reset`: both meters cleared.
+    pub fn reset_meters(&mut self) -> Vec<Out> {
+        self.meter = Meter::default();
+        self.heals = Meter::default();
+        vec![Out::Dps("dps=0;total=0;secs=0;dummy=-;hps=0;healed=0".into())]
+    }
+
+    /// A direct hit on `g`: the passives' procs (each its chance, at most once a second each), cast for you at it
+    /// (their own SPELL_GO, so their look shows; never a proc from a proc).
+    fn procs(&mut self, now: u64, me: At, units: &[Unit], book: &Book, g: u64) -> Vec<Out> {
+        let mut out = Vec::new();
+        if self.in_proc || self.mods.procs.is_empty() {
+            return out;
+        }
+        for (_, trigger, chance) in self.mods.procs.clone() {
+            if self.proc_ready.get(&trigger).is_some_and(|t| now < *t) || !self.chance(chance as f32) {
+                continue;
+            }
+            let Some(t) = book.spell(trigger).cloned() else { continue };
+            self.proc_ready.insert(trigger, now + PROC_ICD_MS);
+            self.in_proc = true;
+            let target = if harmful(&t) { Some(g) } else { Some(self.me) };
+            let r = CastReq { count: 0, spell: trigger, mask: TF_UNIT, unit: target, src: None, dest: None };
+            out.extend(self.go(now, me, units, book, r, t, target));
+            self.in_proc = false;
+            out.push(Out::Event("proc", format!("{trigger}")));
+        }
+        out
+    }
+
+    /// The boss's cast was interrupted.
+    fn boss_kicked(&mut self, _now: u64) -> Vec<Out> {
+        let Some(b) = self.boss.as_mut() else { return Vec::new() };
+        let Some((_, count)) = b.casting.take() else { return Vec::new() };
+        b.kicked += 1;
+        let guid = b.guid;
+        vec![
+            Out::Pkt(SMSG_SPELL_FAILURE, interrupted_body(guid, count, BOSS_CAST_SPELL, fail::INTERRUPTED)),
+            Out::Pkt(SMSG_SPELL_FAILED_OTHER, interrupted_body(guid, count, BOSS_CAST_SPELL, fail::INTERRUPTED)),
+            Out::Middle("Interrupted!".into()),
+            Out::Event("dojo", "boss kicked".into()),
+        ]
     }
 
     fn free_slot(&self, unit: u64) -> u8 {
@@ -1476,14 +1775,31 @@ impl Combat {
                             self.swing = Some((g, now + every, ranged));
                             let crit = self.crit();
                             let r = self.roll();
-                            let dmg = weapon_hit(&self.stats, r) * if crit { 2 } else { 1 };
+                            let raw = weapon_hit(&self.stats, r) * if crit { 2 } else { 1 };
+                            // against a higher level: misses, dodges, glancing blows (auto attacks, a quarter less)
+                            let missed = self.missed(units, g, false);
+                            let glancing = missed.is_none() && !crit && u.level > self.stats.level + 2 && self.chance(24.0);
+                            let dmg = if missed.is_some() { 0 } else { self.dealt(units, g, raw as f32 * if glancing { 0.75 } else { 1.0 }, 1) };
                             if ranged {
                                 let req = CastReq { count: 0, spell: classes::AUTO_SHOT, mask: TF_UNIT, unit: Some(g), src: None, dest: None };
-                                out.push(Out::Pkt(SMSG_SPELL_GO, go_body(self.me, &req, now as u32, &[g], None)));
-                                out.extend(self.hurt(now, units, g, classes::AUTO_SHOT, dmg, 1, crit, false));
+                                match missed {
+                                    Some(why) => {
+                                        out.push(Out::Pkt(SMSG_SPELL_GO, go_body_missed(self.me, &req, now as u32, &[], &[(g, why)], None)));
+                                        out.push(Out::Pkt(SMSG_SPELLLOGMISS, spell_miss_body(classes::AUTO_SHOT, self.me, g, why)));
+                                    }
+                                    None => {
+                                        out.push(Out::Pkt(SMSG_SPELL_GO, go_body(self.me, &req, now as u32, &[g], None)));
+                                        out.extend(self.hurt(now, units, g, classes::AUTO_SHOT, dmg, 1, crit, false));
+                                        out.extend(self.procs(now, me, units, book, g));
+                                    }
+                                }
                             } else {
-                                out.push(Out::Pkt(SMSG_ATTACKERSTATEUPDATE, swing_body(self.me, g, dmg, crit)));
-                                out.extend(self.took(now, &u, dmg as i64));
+                                let (hit, state) = swing_outcome(crit, glancing, missed == Some(MISS), missed == Some(DODGE));
+                                out.push(Out::Pkt(SMSG_ATTACKERSTATEUPDATE, swing_outcome_body(self.me, g, dmg, hit, state)));
+                                if dmg > 0 {
+                                    out.extend(self.took(now, &u, dmg as i64));
+                                    out.extend(self.procs(now, me, units, book, g));
+                                }
                                 if self.stats.power == classes::RAGE {
                                     self.power = (self.power + 100.0).min(self.stats.max_power as f32);
                                 }
@@ -1533,14 +1849,23 @@ impl Combat {
                 out.push(self.me_update());
             }
         }
-        // the fight is over: its numbers
-        if self.meter.total > 0 && now >= self.meter.last + IDLE_MS && self.parse.as_ref().map_or(true, |p| p.start == 0) {
-            let m = std::mem::take(&mut self.meter);
-            let what = if m.healing { "healing" } else { "damage" };
-            out.push(Out::Dps(m.line(true)));
-            out.push(Out::Say(format!("{} {what} in {:.1} s: {} per second.", m.total, m.secs(), m.per_sec())));
-            out.push(Out::Event("dps", m.line(true)));
+        // the fight is over: its numbers (damage, healing, or both)
+        let last = self.meter.last.max(self.heals.last);
+        if (self.meter.total > 0 || self.heals.total > 0) && now >= last + IDLE_MS && self.parse.as_ref().map_or(true, |p| p.start == 0) && self.demo.is_none() {
+            let line = self.readout(true);
+            let (m, h) = (std::mem::take(&mut self.meter), std::mem::take(&mut self.heals));
+            let mut parts = Vec::new();
+            if m.total > 0 {
+                parts.push(format!("{} damage in {:.1} s: {} per second", m.total, m.secs(), m.per_sec()));
+            }
+            if h.total > 0 {
+                parts.push(format!("{} healing in {:.1} s: {} per second", h.total, h.secs(), h.per_sec()));
+            }
+            out.push(Out::Dps(line.clone()));
+            out.push(Out::Say(format!("{}.", parts.join("; "))));
+            out.push(Out::Event("dps", line));
         }
+        out.extend(self.demo_tick(now, me, units, book));
         if let Some(p) = self.parse.clone() {
             if p.start > 0 && now >= p.start + p.minutes as u64 * 60_000 {
                 self.parse = None;
@@ -1549,6 +1874,7 @@ impl Combat {
                 out.push(Out::Parse { minutes: p.minutes, dps, total: p.total, secs });
                 out.extend(self.stop());
                 self.meter = Meter::default();
+                self.heals = Meter::default();
             }
         }
         out
@@ -1565,6 +1891,23 @@ impl Combat {
                     x.swing_next = now + 1000;
                     // bleeds a fiftieth a second, never below a twentieth (always something to heal)
                     x.cur = x.cur.saturating_sub(x.max / 50).max(x.max / 20);
+                    out.push(Out::Pkt(SMSG_UPDATE_OBJECT, values_body(u.guid, &[(field::HEALTH, x.cur)])));
+                }
+            }
+            if u.kind == Kind::Group && now >= h.swing_next {
+                // the healing range: each loses a little every second, one (the first: the "tank") more, and now and
+                // then one of them takes a big hit
+                let big = self.roll2() % 5 == 0;
+                let who = self.roll2() % 5;
+                let first = units.iter().find(|x| x.kind == Kind::Group).map(|x| x.guid) == Some(u.guid);
+                let nth = units.iter().filter(|x| x.kind == Kind::Group).position(|x| x.guid == u.guid).unwrap_or(0) as u32;
+                if let Some(x) = self.hp.get_mut(&u.guid) {
+                    x.swing_next = now + 1000;
+                    let mut loss = x.max / if first { 40 } else { 100 };
+                    if big && who == nth {
+                        loss += x.max / 6;
+                    }
+                    x.cur = x.cur.saturating_sub(loss).max(x.max / 20);
                     out.push(Out::Pkt(SMSG_UPDATE_OBJECT, values_body(u.guid, &[(field::HEALTH, x.cur)])));
                 }
             }
@@ -1599,7 +1942,7 @@ impl Combat {
                         }
                     }
                 }
-            } else if now >= b.next_circle {
+            } else if b.casting.is_none() && now >= b.next_circle {
                 b.next_circle = now + BOSS_EVERY_MS;
                 b.count = b.count.wrapping_add(1);
                 let at = [me.x, me.y, me.z];
@@ -1615,6 +1958,37 @@ impl Combat {
                 write_targets(&mut body, r.mask, None, None, r.dest);
                 out.push(Out::Pkt(SMSG_SPELL_START, body));
                 out.push(Out::Middle("Fire at your feet: move out!".into()));
+                out.push(Out::Event("dojo", "boss circle".into()));
+            }
+            // its cast at you: interrupt it (a kick, a silence, a stun) before it lands
+            match b.casting {
+                Some((due, count)) if now >= due => {
+                    b.casting = None;
+                    let r = CastReq { count, spell: BOSS_CAST_SPELL, mask: TF_UNIT, unit: Some(self.me), src: None, dest: None };
+                    out.push(Out::Pkt(SMSG_SPELL_GO, go_body(b.guid, &r, now as u32, &[self.me], None)));
+                    out.push(Out::Middle("Its cast hit you: interrupt it next time.".into()));
+                    let dmg = self.stats.health / 4;
+                    out.push(Out::Pkt(SMSG_SPELLNONMELEEDAMAGELOG, spell_damage_body(self.me, b.guid, BOSS_CAST_SPELL, if self.god { 0 } else { dmg }, 0, 32, false)));
+                    out.extend(self.hurt_me(now, dmg));
+                }
+                None if b.circle.is_none() && now >= b.next_cast => {
+                    b.next_cast = now + BOSS_CAST_EVERY_MS;
+                    b.count = b.count.wrapping_add(1);
+                    b.casts += 1;
+                    b.casting = Some((now + BOSS_CAST_MS as u64, b.count));
+                    let mut body = Vec::new();
+                    packed_guid(&mut body, b.guid);
+                    packed_guid(&mut body, b.guid);
+                    body.push(b.count);
+                    body.extend_from_slice(&BOSS_CAST_SPELL.to_le_bytes());
+                    body.extend_from_slice(&CAST_FLAG_START.to_le_bytes());
+                    body.extend_from_slice(&BOSS_CAST_MS.to_le_bytes());
+                    write_targets(&mut body, TF_UNIT, Some(self.me), None, None);
+                    out.push(Out::Pkt(SMSG_SPELL_START, body));
+                    out.push(Out::Middle("The boss is casting: interrupt it!".into()));
+                    out.push(Out::Event("dojo", "boss cast".into()));
+                }
+                _ => {}
             }
             self.boss = Some(b);
         }
@@ -1625,6 +1999,11 @@ impl Combat {
     fn hurt_me(&mut self, now: u64, dmg: u32) -> Vec<Out> {
         self.last_hurt = now;
         let mut out = Vec::new();
+        if self.god {
+            return out;
+        }
+        // a tank's armour and avoidance (the gear's tier)
+        let dmg = (dmg as f32 * (1.0 - armor_reduction(self.mods.armor, 83).min(0.6)) * (1.0 - self.mods.avoid / 100.0)) as u32;
         if dmg >= self.health {
             self.health = self.stats.health;
             out.push(Out::Middle("That would have been the end of you. Back to full.".into()));
@@ -1632,6 +2011,90 @@ impl Combat {
             self.health -= dmg;
         }
         out.push(self.me_update());
+        out
+    }
+
+    /// `.den dojo demo [seconds]`: Den Lite casts your main bar at `target` for you (a short timed parse, and a way
+    /// to see a rotation); the meters start again.
+    pub fn start_demo(&mut self, now: u64, target: u64, secs: u32) {
+        self.meter = Meter::default();
+        self.heals = Meter::default();
+        self.demo = Some(Demo { target, start: now, until: now + secs.clamp(5, 300) as u64 * 1000, total: 0, count: 100 });
+    }
+
+    /// The practice run's next cast: of the main bar's spells that suit the target (harmful at a dummy, heals at a
+    /// friend), those with a cooldown when ready and damage or healing over time not on it yet first, then the rest
+    /// in the bar's order; the auto attack on too. At its end: its numbers.
+    fn demo_tick(&mut self, now: u64, me: At, units: &[Unit], book: &Book) -> Vec<Out> {
+        let Some(d) = self.demo.clone() else { return Vec::new() };
+        if now >= d.until {
+            self.demo = None;
+            let mut out = self.stop();
+            let secs = (d.until - d.start) as f32 / 1000.0;
+            let dps = (d.total as f32 / secs).round() as u32;
+            out.push(Out::Dps(self.readout(true)));
+            out.push(Out::Demo { secs, total: d.total, dps });
+            self.meter = Meter::default();
+            self.heals = Meter::default();
+            return out;
+        }
+        if self.casting.is_some() || self.channel.is_some() || now + SLACK_MS < self.gcd_until {
+            return Vec::new();
+        }
+        let Some(u) = units.iter().find(|u| u.guid == d.target).copied() else {
+            self.demo = None;
+            return vec![Out::Say("The practice run stopped: its dummy is gone.".into())];
+        };
+        let mut out = Vec::new();
+        let hostile = u.kind.hostile();
+        if hostile && self.swing.is_none() {
+            let ranged = self.knows(classes::AUTO_SHOT) && book.spell(classes::AUTO_SHOT).is_some();
+            if ranged || dist(me, u.at) <= MELEE + 1.0 {
+                out.extend(self.attack(now, units, u.guid));
+                if ranged {
+                    if let Some(sw) = self.swing.as_mut() {
+                        sw.2 = true;
+                    }
+                    out.retain(|o| !matches!(o, Out::Pkt(SMSG_ATTACKSTART, _)));
+                }
+            }
+        }
+        let bar: Vec<u32> = self.kit.as_ref().map(|k| k.buttons.iter().take(12).filter(|b| *b >> 24 == 0).map(|b| b & 0x00FF_FFFF).collect()).unwrap_or_default();
+        let on_target = self.auras_on(u.guid);
+        let mut best: Option<(u8, usize, u32)> = None;
+        for (i, &id) in bar.iter().enumerate() {
+            if id == 0 || id == classes::ATTACK || id == classes::AUTO_SHOT || !self.knows(id) {
+                continue;
+            }
+            let Some(s) = book.spell(id) else { continue };
+            let heals = s.effects.iter().any(|e| is_heal(e) || is_hot(e));
+            let fits = if hostile { harmful(s) } else { heals && !harmful(s) };
+            let odd = s.passive() || s.effects.iter().any(|e| matches!(e.kind, 28 | 56) || (e.kind == 6 && matches!(e.aura, 36 | 78)));
+            if !fits || odd || self.cooldowns.get(&id).is_some_and(|t| now + SLACK_MS < *t) || self.cost(s) > self.power + 0.5 {
+                continue;
+            }
+            let over_time = s.effects.iter().any(|e| is_dot(e) || is_hot(e));
+            if over_time && on_target.contains(&id) {
+                continue;
+            }
+            let score = if s.recovery > 0 || s.category_recovery > 0 { 0 } else if over_time { 1 } else { 2 };
+            if best.is_none_or(|b| (score, i) < (b.0, b.1)) {
+                best = Some((score, i, id));
+            }
+        }
+        if let Some((_, _, id)) = best {
+            let count = d.count.wrapping_add(1).max(100);
+            if let Some(x) = self.demo.as_mut() {
+                x.count = count;
+            }
+            let r = CastReq { count, spell: id, mask: TF_UNIT, unit: Some(u.guid), src: None, dest: None };
+            let got = self.cast(now, me, units, book, r);
+            if got.iter().any(|o| matches!(o, Out::Pkt(SMSG_CAST_FAILED, _))) {
+                // not now (out of range, ...): try again in a moment
+                self.gcd_until = self.gcd_until.max(now + 500);
+            }
+            out.extend(got);
+        }
         out
     }
 
@@ -1657,6 +2120,9 @@ pub fn dummy_name(k: Kind) -> &'static str {
         Kind::Tank => "Sparring Dummy",
         Kind::Boss => "Practice Boss",
         Kind::Friend => "Companion",
+        Kind::Light => "Novice's Training Dummy",
+        Kind::Heavy => "Raider's Training Dummy",
+        Kind::Group => "Wounded Friend",
     }
 }
 
@@ -1669,7 +2135,6 @@ mod tests {
     use super::*;
     use crate::classes::{Pick, CLASSES};
     use crate::spells::fake;
-    use std::collections::BTreeMap;
 
     fn book() -> Book {
         fake::book()
@@ -1974,7 +2439,7 @@ mod tests {
         let out = c.heal(2000, DUMMY, 2061, 500, false, None);
         assert_eq!(ops(&out)[0], SMSG_SPELLHEALLOG);
         assert_eq!(c.hp[&DUMMY].cur, before + 500);
-        assert!(c.meter.healing && c.meter.total == 500);
+        assert!(c.heals.healing && c.heals.total == 500 && c.meter.total == 0);
     }
 
     #[test]
@@ -2099,5 +2564,221 @@ mod tests {
         assert!(!c.mounted());
         let run = body(&off, crate::dojo::SMSG_FORCE_RUN_SPEED_CHANGE);
         assert_eq!(f32::from_le_bytes(run[7..11].try_into().unwrap()), 7.0);
+    }
+    /// The sample's tables with a kick (Counterspell: interrupts) and a proc's spell.
+    fn book_plus() -> Book {
+        let mut rows = fake::sample();
+        rows.push(fake::Row { id: 2139, name: "Counterspell".into(), level: 24, cast_index: 1, recovery: 24_000, school: 64, effects: vec![(68, 0, 1, 6, 0, 0, 0, 0)], ..Default::default() });
+        rows.push(fake::Row { id: 9999, name: "Impact".into(), level: 1, cast_index: 1, school: 4, effects: vec![(2, 100, 1, 6, 0, 0, 0, 0)], ..Default::default() });
+        Book::from_bytes(Some(&fake::spells(&rows)), Some(&fake::abilities(&fake::ABILITIES)), Some(&fake::four(&fake::CAST_TIMES)), Some(&fake::four(&fake::DURATIONS)), None)
+    }
+
+    fn knows_too(c: &mut Combat, id: u32) {
+        let k = c.kit.as_mut().unwrap();
+        k.spells.push(id);
+        k.spells.sort_unstable();
+    }
+
+    #[test]
+    fn misses_and_armour_only_against_higher_levels() {
+        assert!((armor_reduction(HEAVY_ARMOR, 80) - 0.411).abs() < 0.01, "{}", armor_reduction(HEAVY_ARMOR, 80));
+        assert_eq!(armor_reduction(0, 80), 0.0);
+        assert_eq!(miss_chances(0, true, 0.0), (0.0, 0.0));
+        assert_eq!(miss_chances(-3, false, 0.0), (0.0, 0.0));
+        assert_eq!(miss_chances(3, true, 0.0), (17.0, 0.0));
+        assert_eq!(miss_chances(3, false, 0.0), (8.0, 6.5));
+        assert_eq!(miss_chances(3, true, 100.0), (0.0, 0.0), "hit-capped");
+        let b = book();
+        let count = |c: &mut Combat, us: &[Unit]| {
+            let mut missed = 0;
+            for k in 0..60u64 {
+                c.cooldowns.clear();
+                c.gcd_until = 0;
+                c.power = c.stats.max_power as f32;
+                let out = c.cast(k * 10_000, here(), us, &b, on(2136, DUMMY));
+                missed += out.iter().filter(|o| matches!(o, Out::Pkt(SMSG_SPELLLOGMISS, _))).count();
+            }
+            missed
+        };
+        let mut c = mage(&b);
+        assert_eq!(count(&mut c, &units(Kind::Target)), 0, "your own level: never");
+        let heavy = vec![Unit { level: 83, kind: Kind::Heavy, ..units(Kind::Target)[0] }];
+        let m = count(&mut c, &heavy);
+        assert!(m > 2 && m < 25, "about 17 per cent of 60: {m}");
+        c.mods.hit = 100.0;
+        assert_eq!(count(&mut c, &heavy), 0, "hit-capped gear");
+        // a miss: the go names it, nothing is taken off
+        c.mods.hit = -1000.0;
+        c.cooldowns.clear();
+        c.gcd_until = 0;
+        let before = c.hp[&DUMMY].cur;
+        let out = c.cast(900_000, here(), &heavy, &b, on(2136, DUMMY));
+        let go = body(&out, SMSG_SPELL_GO);
+        let mut at = 0;
+        read_packed(&go, &mut at);
+        read_packed(&go, &mut at);
+        at += 1 + 4 + 4 + 4;
+        assert_eq!((go[at], go[at + 1]), (0, 1), "no unit hit, one missed");
+        assert_eq!(u64::from_le_bytes(go[at + 2..at + 10].try_into().unwrap()), DUMMY);
+        assert_eq!(go[at + 10], MISS);
+        assert_eq!(c.hp[&DUMMY].cur, before);
+        assert_eq!(spell_miss_body(2136, 1, DUMMY, MISS).len(), 26);
+        // a weapon's swings against heavy armour: less
+        let mut w = Combat::new(1);
+        w.seed(5);
+        w.set_kit(classes::kit(&b, &Pick { class: 1, level: 80, ..Default::default() }));
+        w.mods.hit = 100.0;
+        let near = |k: Kind, l: u32| vec![Unit { guid: DUMMY, at: At { x: 2.0, ..here() }, kind: k, level: l }];
+        let total = |w: &mut Combat, us: &[Unit]| -> u64 {
+            w.hp.clear();
+            w.attack(0, us, DUMMY);
+            let mut t = 0;
+            for now in (0..=60_000).step_by(100) {
+                for o in w.tick(now, here(), us, &b) {
+                    if let Out::Pkt(SMSG_ATTACKERSTATEUPDATE, x) = o {
+                        let mut at = 4;
+                        if read_packed(&x, &mut at) == Some(1) {
+                            read_packed(&x, &mut at);
+                            t += u32::from_le_bytes(x[at..at + 4].try_into().unwrap()) as u64;
+                        }
+                    }
+                }
+            }
+            w.stop();
+            t
+        };
+        let light = total(&mut w, &near(Kind::Light, 77));
+        let heavy = total(&mut w, &near(Kind::Heavy, 83));
+        assert!(heavy * 10 < light * 8, "armour and glancing blows: {heavy} vs {light}");
+    }
+
+    #[test]
+    fn a_passives_proc_casts_its_spell_at_most_once_a_second() {
+        let b = book_plus();
+        let mut c = mage(&b);
+        c.mods.procs = vec![(1, 9999, 100)];
+        let us = units(Kind::Target);
+        let out = c.cast(0, here(), &us, &b, on(2136, DUMMY));
+        let gos: Vec<u32> = out.iter().filter_map(|o| if let Out::Pkt(SMSG_SPELL_GO, x) = o { let mut at = 0; read_packed(x, &mut at); read_packed(x, &mut at); Some(u32::from_le_bytes(x[at + 1..at + 5].try_into().unwrap())) } else { None }).collect();
+        assert_eq!(gos, vec![2136, 9999], "the proc's own go after the hit");
+        assert!(out.iter().any(|o| matches!(o, Out::Event("proc", d) if d == "9999")));
+        c.cooldowns.clear();
+        c.gcd_until = 0;
+        let again = c.cast(500, here(), &us, &b, on(2136, DUMMY));
+        assert!(!again.iter().any(|o| matches!(o, Out::Event("proc", _))), "not again within a second");
+        c.cooldowns.clear();
+        c.gcd_until = 0;
+        assert!(c.cast(1600, here(), &us, &b, on(2136, DUMMY)).iter().any(|o| matches!(o, Out::Event("proc", _))));
+    }
+
+    #[test]
+    fn the_boss_casts_at_you_and_a_kick_stops_it() {
+        let b = book_plus();
+        let mut c = mage(&b);
+        knows_too(&mut c, 2139);
+        let boss = 0xF130_0000_0100_0999u64;
+        let us = vec![Unit { guid: boss, at: At { x: 10.0, ..here() }, kind: Kind::Boss, level: 80 }];
+        c.unit_health(&us[0]);
+        c.hurt(0, &us, boss, 133, 100, 4, false, false);
+        let mut cast_at = None;
+        for t in (50..=BOSS_CAST_FIRST_MS + 100).step_by(50) {
+            for o in c.tick(t, At { x: -30.0, ..here() }, &us, &b) {
+                if let Out::Pkt(SMSG_SPELL_START, x) = &o {
+                    let mut at = 0;
+                    read_packed(x, &mut at);
+                    read_packed(x, &mut at);
+                    if u32::from_le_bytes(x[at + 1..at + 5].try_into().unwrap()) == BOSS_CAST_SPELL {
+                        cast_at = Some(t);
+                    }
+                }
+            }
+        }
+        assert!(cast_at.is_some() && c.boss.as_ref().unwrap().casting.is_some(), "the boss casts");
+        // the kick: its cast fails, counted
+        let out = c.cast(BOSS_CAST_FIRST_MS + 200, here(), &us, &b, on(2139, boss));
+        assert!(ops(&out).contains(&SMSG_SPELL_FAILURE), "{out:?}");
+        let f = body(&out, SMSG_SPELL_FAILURE);
+        let mut at = 0;
+        assert_eq!(read_packed(&f, &mut at), Some(boss));
+        assert!(out.iter().any(|o| matches!(o, Out::Middle(m) if m == "Interrupted!")));
+        assert_eq!((c.boss.as_ref().unwrap().kicked, c.boss.as_ref().unwrap().casts), (1, 1));
+        // the next one lands: it hurts you
+        let full = c.health;
+        let mut landed = false;
+        for t in (BOSS_CAST_FIRST_MS + 250..=BOSS_CAST_FIRST_MS + BOSS_CAST_EVERY_MS + BOSS_CAST_MS as u64 + 4000).step_by(50) {
+            for o in c.tick(t, At { x: -30.0, ..here() }, &us, &b) {
+                landed |= matches!(&o, Out::Middle(m) if m.starts_with("Its cast hit you"));
+            }
+        }
+        assert!(landed && c.health < full, "{} of {full}", c.health);
+        let max = c.hp[&boss].max;
+        let out = c.hurt(60_000, &us, boss, 133, max, 4, false, false);
+        assert!(out.iter().any(|o| matches!(o, Out::Boss { kicked: 1, casts: 2, .. })), "{out:?}");
+        // invulnerable: nothing hurts
+        c.god = true;
+        let h = c.health;
+        assert!(c.hurt_me(70_000, 5000).is_empty() && c.health == h);
+    }
+
+    #[test]
+    fn healing_counts_on_its_own_meter_with_yourself_and_the_group() {
+        let mut c = Combat::new(1);
+        let b = Book::default();
+        c.health = 50;
+        c.heal(1000, 1, 2061, 30, false, None);
+        assert_eq!((c.heals.total, c.meter.total), (30, 0));
+        assert!(c.readout(false).contains(";hps=") && c.readout(false).contains("healed=30"));
+        // the group: five friends, bleeding, the first more
+        let us: Vec<Unit> = (0..5u64).map(|k| Unit { guid: DUMMY + k, at: At { x: 3.0, y: k as f32, ..here() }, kind: Kind::Group, level: 80 }).collect();
+        for u in &us {
+            let h = c.unit_health(u);
+            assert_eq!(h.cur, h.max * 6 / 10);
+        }
+        assert!(!Kind::Group.hostile() && Kind::Group.faction() == 35);
+        for t in (0..=5000).step_by(50) {
+            c.tick(t, here(), &us, &b);
+        }
+        let first = c.hp[&DUMMY].cur;
+        assert!(first < c.hp[&DUMMY].max * 6 / 10, "they lose health");
+        assert!(us.iter().skip(1).all(|u| c.hp[&u.guid].cur > first), "the first (the tank) loses more");
+        let out = c.heal(6000, DUMMY + 1, 2061, 1000, false, None);
+        assert!(ops(&out).contains(&SMSG_SPELLHEALLOG) && c.heals.total == 1030);
+        assert_eq!(c.reset_meters().len(), 1);
+        assert_eq!(c.heals.total, 0);
+        for k in [Kind::Light, Kind::Heavy, Kind::Group] {
+            assert_eq!(Kind::from_word(k.word()), Some(k));
+        }
+        assert_eq!(Kind::Heavy.armor(), HEAVY_ARMOR);
+    }
+
+    #[test]
+    fn a_practice_run_casts_the_bar_for_you_and_ends_with_its_numbers() {
+        let b = book();
+        let mut c = mage(&b);
+        let us = units(Kind::Target);
+        c.unit_health(&us[0]);
+        c.start_demo(0, DUMMY, 20);
+        let mut casts: Vec<u32> = Vec::new();
+        let mut done = None;
+        for t in (0..=21_000).step_by(50) {
+            for o in c.tick(t, here(), &us, &b) {
+                match o {
+                    Out::Pkt(SMSG_SPELL_START, x) => {
+                        let mut at = 0;
+                        read_packed(&x, &mut at);
+                        read_packed(&x, &mut at);
+                        casts.push(u32::from_le_bytes(x[at + 1..at + 5].try_into().unwrap()));
+                    }
+                    Out::Demo { secs, total, dps } => done = Some((secs, total, dps)),
+                    _ => {}
+                }
+            }
+        }
+        assert!(casts.contains(&143) && casts.contains(&2136), "Fireball and Fire Blast when it's ready: {casts:?}");
+        assert!(!casts.contains(&1459), "not the buff at a dummy");
+        let (secs, total, dps) = done.expect("its numbers");
+        assert_eq!(secs, 20.0);
+        assert!(total > 5000 && dps == (total as f32 / 20.0).round() as u32, "{total} {dps}");
+        assert!(c.demo.is_none());
     }
 }

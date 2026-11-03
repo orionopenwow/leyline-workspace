@@ -39,6 +39,7 @@ html[data-base="light"] .gate-card { background: var(--t-surface); }
 .gate-lede { margin: 0 0 14px; color: var(--t-text-2); font-size: 13.5px; line-height: 1.5; }
 .gate-ways { display: grid; gap: 8px; }
 .gate .btn.primary.gate-big { width: 100%; height: 46px; font-size: 17px; }
+.gate .btn.gate-big:not(.primary):not(.gate-guest-go) { width: 100%; height: 42px; font-size: 15px; }
 .gate-under { margin: 0 0 4px; text-align: center; }
 .gate .sf-way { width: 100%; min-height: 42px; font-size: 14px; }
 .gate .sf-or { margin: 14px 0 10px; }

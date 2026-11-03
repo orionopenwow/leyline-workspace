@@ -271,11 +271,12 @@ r = subprocess.run([sys.executable, "-I", os.path.join(HERE, "server/displays.py
 lines = sorted(r.stdout.split("\n")[:-1])
 check("mounts: main() prints the spawns, then the mounts as tier-0 lines", r.returncode == 0 and lines == sorted(
     ["c\t571\t100\t1", "g\t0\t900\t0", "g\t571\t901\t1", "c\t0\t4589\t0", "g\t0\t8000\t0"]
-    + [f"c\t0\t{e * 10}\t0" for e in (500, 502, 503, 505, 600, 601, 701, 702)]), (r.returncode, lines, r.stderr[-300:]))
+    + [f"c\t0\t{e * 10}\t0" for e in (500, 502, 503, 505, 600, 601, 701, 702)]
+    + [f"c\t0\t{e * 10}\t0" for e in (6491, 721)]), (r.returncode, lines, r.stderr[-300:]))  # base and Dalaran "creatures"
 check("mounts: says what it read", "mounts:" in r.stderr and "4 mount spells" in r.stderr, r.stderr.strip()[-200:])
 r = subprocess.run([sys.executable, "-I", os.path.join(HERE, "server/displays.py"), slice_file, "--tiers", "0-1", "--dbc", dbcdir, "--no-mounts"],
                    capture_output=True, text=True, env=env)
-check("mounts: --no-mounts (no mounts or summons; transports of tier 1 only)", r.returncode == 0 and r.stdout == "c\t571\t100\t1\ng\t571\t901\t1\n", r.stdout)
+check("mounts: --no-mounts (no mounts or summons; transports of tier 1 only; the tiers' scripted creatures stay)", r.returncode == 0 and r.stdout == "c\t571\t100\t1\ng\t571\t901\t1\nc\t0\t64910\t0\nc\t0\t7210\t0\n", r.stdout)
 r = subprocess.run([sys.executable, "-I", os.path.join(HERE, "server/displays.py"), slice_file, "--tiers", "0-1", "--dbc", os.path.join(tmp, "nowhere")],
                    capture_output=True, text=True, env=dict(env, WU_DBC_DIR=os.path.join(tmp, "nowhere2")))
 check("mounts: no Spell.dbc anywhere fails soft (spawns kept, exit 0, a clear message naming the places tried)",

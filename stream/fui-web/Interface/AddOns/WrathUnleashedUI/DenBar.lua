@@ -11,7 +11,8 @@
 --                   name, builds, prefabs, the plot: Builder.lua), Invite and x (play mode; out of edit mode).
 --   the tool rail (LeylineDenRail), down the left: Select, Build (F7: the gallery of props, Builder.lua), Move and
 --                   Rotate (the selection's popover), Shape ground (asks the launcher to open Forge on the Den's
---                   ground: ".den forge"), Stamps, Path, and the move step's presets (0.1, 0.25, 1, 3 yd).
+--                   ground: ".den forge"), Stamps, Path, Dojo (the training grounds' panel: Dojo.lua), and the move
+--                   step's presets (0.1, 0.25, 1, 3 yd).
 --   Play (F8)       play mode: every editor window, the shelf and the handles go away and you just walk your Den;
 --                   the strip shrinks to one button. F8 again, that button, or Esc > Back to building returns.
 --   Save            a save by name (".den save <name>", Files > This Den); the autosave keeps the Den anyway, and the
@@ -372,6 +373,7 @@ local function buildBar()
     tool("ground", "Spell_Nature_Earthquake", "Shape ground", function() D.ShapeGround() end)
     tool("stamps", "INV_Misc_Map_01", "Stamps", function() D.Tool("stamps") end)
     tool("path", "Ability_Tracking", "Path", function() D.Tool("path") end)
+    tool("dojo", "Ability_Warrior_BattleShout", "Dojo", function() if W.Dojo then W.Dojo.Toggle() end end)
     bar.build.edLabel = "Build"
     y = y - 4
     bar.stepLabel = S().EdLabel(rail, "Step", false, "TOP", rail, "TOP", 0, y)
@@ -387,7 +389,7 @@ local function buildBar()
         y = y - 26
     end
     rail:SetHeight(-y + 2)
-    for _, k in ipairs({ "select", "build", "move", "rotate", "ground", "stamps", "path" }) do
+    for _, k in ipairs({ "select", "build", "move", "rotate", "ground", "stamps", "path", "dojo" }) do
         bar[k].edTipAt, bar[k].edTipTo = "LEFT", "RIGHT"
     end
     rail:Hide()
@@ -458,6 +460,7 @@ function D.Paint()
         bar.path:SetActive(b.mode == "path")
         for _, c in ipairs(bar.steps) do c:SetActive(c.step == b.step) end
     end
+    bar.dojo:SetActive(W.Dojo and W.Dojo.IsOpen and W.Dojo.IsOpen() or false)
     -- what is only for a Den: the ground, Play, Invite
     for _, k in ipairs({ "ground", "playBtn", "invite" }) do if D.active then bar[k]:Show() else bar[k]:Hide() end end
 end

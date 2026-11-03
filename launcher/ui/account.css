@@ -290,6 +290,7 @@ html[data-base="light"] .ap-item:hover .ap-ic, html[data-base="light"] .ap-item:
 .ac-pass { margin-top: 12px; border-top: var(--t-border-w) solid var(--t-border); padding-top: 10px; }
 .ac-pass summary { cursor: pointer; font: 650 13.5px var(--t-font); color: var(--t-text-2); }
 .ac-pass-f { display: grid; gap: 6px; margin-top: 8px; }
+.ac-otherpc .ac-steps-list { margin: 8px 0 4px; padding-left: 20px; display: grid; gap: 4px; color: var(--t-text-2); font-size: 13.5px; }
 .ac-pass-f input { width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: var(--t-radius-sm);
   border: var(--t-border-w) solid var(--t-border-strong); background: color-mix(in srgb, var(--t-bg) 70%, transparent); color: var(--t-text); font: 14px var(--t-font); }
 .ac-pass-f input:focus-visible { outline: 2px solid var(--t-accent); outline-offset: 0; border-color: transparent; }

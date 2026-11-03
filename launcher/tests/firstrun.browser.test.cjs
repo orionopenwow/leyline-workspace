@@ -97,7 +97,7 @@ const FAKE = () => {
       case 'modes_list': return { modes: [], from_cache: false, builtin: false, saved_at: null, error: null };
       // PLAY on the official realm, signed out (app.rs official_note) or signed in
       case 'play': case 'play_realm': return 'Started My Wrath on Wrath Unleashed.' + (signed ? ' It signs you in by itself and opens at character select.'
-        : ' Sign in on Home (top right) and PLAY signs you in by itself.');
+        : ' Log in to Leyline and PLAY signs you in by itself.');
       case 'open_browser_play': return null;
       // the Leyline addons
       case 'addons_status': return addonsStatus();
@@ -261,7 +261,7 @@ test('a brand-new player, start to end: tour, game folders, realms, PLAY, Your D
   await step(page, errors, 'first-launch', SMALL, async () => {
     await page.waitForSelector('#gd-tour');
     assert.equal(await pageOn(page), 'page-play');
-    assert.equal(await page.textContent('#pb-client-name'), 'No game client');
+    assert.equal(await page.textContent('#pb-client-name'), 'No game folder');
   });
 
   // 2. the tour: four steps (Find your game files is the last, with no game folder), then Done

@@ -11,6 +11,10 @@ Two halves:
    data folder, a game folder added, signed in with a test Hero Key, PLAY on Wrath Unleashed, character select, then
    the world. Most of it runs by itself from Leyline Control as the step `first-run-test`; the owner watches one screen.
 
+**3 Nov:** built. `Leyline play-test --fresh --game <folder>` (main.rs, app.rs), `GET audit/presence` (stream/herokeys.py),
+`tools/first-run/first_run.py` with `First run test.bat` and the Control step `first-run-test` (PASS / FAIL per phase,
+unit-tested with fakes in `tools/first-run/test_first_run.py`). The owner's manual checklist is docs/OWNER-TEST-PLAN.md.
+
 Rules this test keeps: no game or publisher names on any screen; nothing typed by a person into a sign-in; no account
 made by a person's route (the audit's own test-account API, `account/new {audit: true}` and `audit/close`, is the one
 allowed way, as `tools/audit/herokey.py` does it); keys and passwords never on a command line, in a log or a report.
@@ -43,8 +47,9 @@ move its call to just after step 1.
 | A test Hero Key | `tools/audit/herokey.py`: `POST /wrath/api/social/account/new {"audit": true}` → token, key, made-up name; `POST audit/close` with the token closes it | there |
 | Headless game client | `tools/audit/play335.py`: the 3.3.5a protocol (char enum, char create, enter world, chat) | there |
 | The real launcher, no window | `Leyline den-play --test` (denclick.rs): Your Den, signed in, into the world, report in `den-click.json` | there (Your Den only) |
-| `Leyline play-test` | `launcher/src-tauri/src/playtest.rs`: the arguments and names, parsing tested | **contract only**: not called from main.rs yet |
-| Control step `first-run-test` | tools/control/control.py `STEPS` | to add |
+| `Leyline play-test` | `playtest.rs` (arguments), main.rs (`--fresh`: an empty data folder), app.rs `play_test_cli` (`--game` added when new, the test key from `LEYLINE_TEST_HEROKEY`, PLAY, report) | there (3 Nov) |
+| Presence | `GET /wrath/api/social/audit/presence` (stream/herokeys.py; the audit's test account only) | there (3 Nov; deploy with `signin`) |
+| Control step `first-run-test` | tools/control/control.py `STEPS`, tools/first-run/first_run.py | there (3 Nov) |
 
 ## 3. The plan: `first-run-test`
 

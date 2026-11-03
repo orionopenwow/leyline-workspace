@@ -723,3 +723,11 @@
 1312f addons  Leyline addons: screenshot mode (Alt+Z) no longer takes the keyboard, so W/A/S/D still walk
 1312g signin  Site: the browser queue (a fair line past WU_PLAY_CAPACITY seats, default 250; You are #N page; Skip the line; Play on your own PC after a browser pass)
 1312h ship  Save as Orion: the sign-in cover (Logging you in over the game while it signs in), Busy queue N in the launcher, the roadmap, toolkit and succession docs, fork-check
+1312i scripts-reload  Realm: level-1 characters get Apprentice Riding and their race mount on first login (under-20s catch up), .mount; .wu lists it (live reload, no restart)
+1312j signin  Site: Hero Key test presence for the first-run test, the browser game reports missed model files, Log in wording
+1312k addons  Leyline addons: the Dojo panel on the Den rail
+1312l foreverui  Browser game: the Dojo panel
+1312m den-lite  Den Lite rebuilt: the Dojo (.den dojo, fly, speed, Jaina builds sets piece by piece)
+1312n ship  Save as Orion: the Dojo, level-1 mounts, the new-machine fixes and first-run-test, the slice model fix, the owner test plan
+1312o slice  Browser game files rebuilt: shapeshift forms, transforms, ghost/wisp, hunter pets, summoned creatures (fixes missing models)
+1312p slice-health  Check the rebuilt browser game files (player models now checked; most-missed list)

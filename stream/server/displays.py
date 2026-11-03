@@ -44,6 +44,21 @@ beast was tamed, so they are not listed. Transports (game object type 15: ships,
 gunships) go to the base, since the server shows them continent-wide; elevators and lifts (type 11)
 go to the tier whose map they are on, the whole map, not only the spawnBox.
 --no-mounts leaves them out; --all-mounts takes every aura-78 spell (NPC and quest mounts too).
+
+What a player character turns into goes to the same tier (3 Nov 2026: druids, shamans and ghosts were
+missing in the browser, because nothing spawns those models and the slice only had what is spawned):
+- shapeshift forms: aura 36 (SPELL_AURA_MOD_SHAPESHIFT) of the players' spells, EffectMiscValue = the
+  form, whose models are SpellShapeshiftForm.dbc's CreatureDisplayID columns (cat, bear, travel, aquatic,
+  moonkin, tree, flight forms, ghost wolf...). Every CreatureDisplayInfo row that shares one of those
+  models goes along, so the per-race and per-colour variants the core picks itself are in too;
+- transforms: aura 56 (SPELL_AURA_TRANSFORM), EffectMiscValue = a creature entry (polymorph, hex, the
+  costume items and toys), its models from the database like a mount's;
+- the ghost: the spells the core casts on a dead player (CORE_SPELLS: Ghost, the night elf wisp) are
+  followed the same way.
+A tier with "pets": true takes every tameable beast's models (creature_template type_flags & 1, a family):
+hunter pets are whatever beast was tamed, and the Sample Hangout's level-80 bots bring theirs to Dalaran.
+A tier's "creatures" list (creature entries) takes those models: creatures a script summons (Lua events,
+the Den companion, spirit healers and guides at graveyards), which no spawn query finds.
 """
 import json
 import os
@@ -149,6 +164,14 @@ LEARNS = (36, 32, 64, 140, 141, 142, 148, 151, 160)
 TRIGGER_AURAS = (23, 42)
 SUMMONS = (28, 56)                         # SPELL_EFFECT_SUMMON, SPELL_EFFECT_SUMMON_PET: a creature
 OBJECT_SUMMONS = (50, 76, 104, 105, 106, 107)  # TRANS_DOOR, SUMMON_OBJECT_WILD, SUMMON_OBJECT_SLOT1-4
+AURA_SHAPESHIFT, AURA_TRANSFORM = 36, 56   # SPELL_AURA_MOD_SHAPESHIFT (misc: form), SPELL_AURA_TRANSFORM (misc: entry)
+# SpellShapeshiftForm.dbc (SpellShapeshiftFormfmt, 35 columns): ID 0, Name 2-17, Flags 19, CreatureType 20,
+# CombatRoundTime 22, CreatureDisplayID[4] 23-26, PresetSpellID[8] 27-34.
+FORM_FIELDS, FORM_DISPLAYS = 35, (23, 24, 25, 26)
+# CreatureDisplayInfo.dbc (16 columns): ID 0, ModelID 1 (CreatureModelData), ...
+CDI_FIELDS, CDI_MODEL = 16, 1
+# Spells the core casts on players itself, not in any spellbook: Ghost (8326) and the night elf's wisp (20584).
+CORE_SPELLS = (8326, 20584)
 DBC_DIR = "/azerothcore/env/dist/data"     # docker-compose.prod.yml's AC_DATA_DIR (and the image's)
 HOST_DBC = "/srv/wrath/client-data/dbc"    # bound into the ov-client-data volume (RUNBOOK step 4)
 WORLDSERVER = "ov-ac-worldserver"
@@ -239,6 +262,71 @@ def summon_entries(spells: dict[int, tuple], player: set[int] | None, effects=SU
     return out, n
 
 
+def aura_values(spells: dict[int, tuple], player: set[int] | None, aura: int) -> set[int]:
+    """Every EffectMiscValue of `aura` in the players' spells (and what they go on to cast); None: every spell's.
+    Shapeshift forms (36) and transforms (56)."""
+    pool = set(spells) if player is None else reach(spells, player)
+    return {m for sid in pool for e, a, m in zip(spells[sid][0], spells[sid][1], spells[sid][2])
+            if e and a == aura and m > 0}
+
+
+def parse_forms(data: bytes) -> dict[int, set[int]]:
+    """SpellShapeshiftForm.dbc: {form id: its CreatureDisplayIDs}."""
+    base, _, n, size = dbc_records(data, FORM_FIELDS, "SpellShapeshiftForm.dbc")
+    out = {}
+    for r in range(n):
+        o = base + r * size
+        ids = {struct.unpack_from("<i", data, o + 4 * c)[0] for c in FORM_DISPLAYS}
+        out[struct.unpack_from("<I", data, o)[0]] = {d for d in ids if d > 0}
+    return out
+
+
+def parse_display_models(data: bytes) -> dict[int, int]:
+    """CreatureDisplayInfo.dbc: {display id: model id}."""
+    base, _, n, size = dbc_records(data, CDI_FIELDS, "CreatureDisplayInfo.dbc")
+    return {struct.unpack_from("<I", data, base + r * size)[0]: struct.unpack_from("<i", data, base + r * size + 4 * CDI_MODEL)[0]
+            for r in range(n)}
+
+
+def form_displays(forms: dict[int, set[int]], wanted: set[int], models: dict[int, int] | None) -> set[int]:
+    """The displays of the `wanted` forms, and every display sharing a model with one of them (the race
+    and colour variants the core picks for a druid's forms)."""
+    got = {d for f in wanted for d in forms.get(f, ())}
+    if models:
+        same = {models[d] for d in got if models.get(d, 0) > 0}
+        got |= {d for d, m in models.items() if m in same}
+    return got
+
+
+def pets_sql(label: str, template_model: bool = True) -> str:
+    """Every tameable beast's models (hunter pets): type_flags & 1 (CREATURE_TYPE_FLAG_TAMEABLE) and a family."""
+    lab = "'" + label.replace("'", "") + "'"
+    cond = "(t.type_flags & 1) <> 0 AND t.family <> 0"
+    if template_model:
+        return (f"SELECT DISTINCT 'c', 0, m.CreatureDisplayID, {lab} FROM creature_template t JOIN creature_template_model m "
+                f"ON m.CreatureID = t.entry WHERE {cond} AND m.CreatureDisplayID <> 0;\n")
+    return " UNION ".join(f"SELECT DISTINCT 'c', 0, t.modelid{i}, {lab} FROM creature_template t WHERE {cond} "
+                          f"AND t.modelid{i} <> 0" for i in range(1, 5)) + ";\n"
+
+
+def tier_flag(doc: dict, tiers: set[int], flag: str) -> list[int]:
+    """The chosen tiers with `flag` true."""
+    return [n for n, t in ordered_tiers(doc) if n in tiers and t.get(flag) is True]
+
+
+def tier_entries(doc: dict, tiers: set[int], key: str) -> list[tuple[int, set[int]]]:
+    """[(tier, entries)] for every chosen tier with a `key` list of entries (whole numbers only)."""
+    out = []
+    for n, t in ordered_tiers(doc):
+        vals = t.get(key)
+        if n not in tiers or not isinstance(vals, list):
+            continue
+        entries = {int(e) for e in vals if isinstance(e, int) and not isinstance(e, bool) and 0 < e < 10**7}
+        if entries:
+            out.append((n, entries))
+    return out
+
+
 def mounts_sql(entries: set[int], label: str, template_model: bool = True, accessories: bool = True) -> str:
     """The models of these creatures and of the passengers they carry, and the other-gender model
     the server may pick instead (creature_model_info.DisplayID_Other_Gender)."""
@@ -272,15 +360,13 @@ def objects_sql(entries: set[int], label: str) -> str:
 
 def tier_objects_sql(doc: dict, tiers: set[int]) -> list[tuple[str, int]]:
     """[(sql, tier)] for every chosen tier with an "objects" list of gameobject entries (whole numbers only)."""
-    out = []
-    for n, t in ordered_tiers(doc):
-        objs = t.get("objects")
-        if n not in tiers or not isinstance(objs, list):
-            continue
-        entries = {int(e) for e in objs if isinstance(e, int) and not isinstance(e, bool) and 0 < e < 10**7}
-        if entries:
-            out.append((objects_sql(entries, str(n)), n))
-    return out
+    return [(objects_sql(e, str(n)), n) for n, e in tier_entries(doc, tiers, "objects")]
+
+
+def tier_creatures_sql(doc: dict, tiers: set[int], template_model: bool = True) -> list[tuple[str, int]]:
+    """[(sql, tier)] for every chosen tier with a "creatures" list of creature entries: the creatures scripts
+    summon (no spawn row), their models and other-gender models."""
+    return [(mounts_sql(e, str(n), template_model, False), n) for n, e in tier_entries(doc, tiers, "creatures")]
 
 
 def transports_sql(doc: dict, tiers: set[int], base: str | None) -> str:
@@ -405,6 +491,8 @@ def ints(rows: list[list[str]]) -> set[int]:
 
 
 PLAYER_SUMMONS: dict[str, set[int]] = {"c": set(), "g": set()}
+# What players turn into: "forms" = display ids (SpellShapeshiftForm), "transforms" = creature entries.
+PLAYER_SHAPES: dict[str, set[int]] = {"forms": set(), "transforms": set()}
 
 
 def player_mounts(argv: list[str], all_mounts: bool) -> tuple[set[int] | None, str]:
@@ -440,6 +528,19 @@ def player_mounts(argv: list[str], all_mounts: bool) -> tuple[set[int] | None, s
         objs, no = summon_entries(spells, player, OBJECT_SUMMONS)
         notes.append(f"{np} summon spells -> {len(pets)} creatures, {no} -> {len(objs)} objects")
         PLAYER_SUMMONS["c"], PLAYER_SUMMONS["g"] = pets, objs
+        shapes = player | {s for s in CORE_SPELLS if s in spells}
+        PLAYER_SHAPES["transforms"] = aura_values(spells, shapes, AURA_TRANSFORM)
+        wanted = aura_values(spells, shapes, AURA_SHAPESHIFT)
+        fdbc, cdbc = read("SpellShapeshiftForm.dbc"), read("CreatureDisplayInfo.dbc")
+        try:
+            forms = parse_forms(fdbc) if fdbc else {}
+            models = parse_display_models(cdbc) if cdbc else None
+            PLAYER_SHAPES["forms"] = form_displays(forms, wanted, models)
+            notes.append(f"{len(wanted)} shapeshift forms -> {len(PLAYER_SHAPES['forms'])} displays"
+                         + ("" if fdbc else " (no SpellShapeshiftForm.dbc)") + ("" if cdbc else " (no CreatureDisplayInfo.dbc: no variants)")
+                         + f", {len(PLAYER_SHAPES['transforms'])} transform creatures")
+        except ValueError as e:
+            notes.append(f"shapeshift forms NOT included: {e}")
     taxi = set()
     tx = read("TaxiNodes.dbc")
     try:
@@ -490,6 +591,16 @@ def main(argv: list[str]) -> int:
             sys.stdout.write(out)
         except subprocess.CalledProcessError as e:
             print(f"tier {n} objects: NOT included: " + (e.stderr or "").strip()[:200], file=sys.stderr)
+    # A tier's own "creatures" (creature entries a script summons) and the "pets" tier (every tameable beast).
+    jobs = [(sql, f"tier {n} creatures") for sql, n in tier_creatures_sql(doc, tiers, has_model_table)]
+    jobs += [(pets_sql(str(n), has_model_table), f"tier {n} hunter pets") for n in tier_flag(doc, tiers, "pets")]
+    for sql, what in jobs:
+        try:
+            out = run(sql)
+            print(f"{what}: {len(out.splitlines())} displays", file=sys.stderr)
+            sys.stdout.write(out)
+        except subprocess.CalledProcessError as e:
+            print(f"{what}: NOT included: " + (e.stderr or "").strip()[:200], file=sys.stderr)
     if label is not None:
         # Fail soft: the spawns above are already out; the slice is still good without mounts.
         try:
@@ -508,8 +619,7 @@ def main(argv: list[str]) -> int:
                 print("mounts: NOT included, the model query failed: " + (e.stderr or "").strip()[:300],
                       file=sys.stderr)
                 out = ""
-            if out:
-                print(f"mounts: {len(out.splitlines())} displays for tier {label} ({notes})", file=sys.stderr)
+            print(f"mounts: {len(out.splitlines())} displays for tier {label} ({notes})", file=sys.stderr)
             sys.stdout.write(out)
             # Player pets, guardians, totems, companions and summoned objects: the same filter.
             try:
@@ -521,6 +631,17 @@ def main(argv: list[str]) -> int:
             except subprocess.CalledProcessError as e:
                 print("summons: NOT included, the model query failed: " + (e.stderr or "").strip()[:300],
                       file=sys.stderr)
+            # What players turn into: shapeshift forms (display ids from the DBCs) and transforms (creatures).
+            forms = "".join(f"c\t0\t{d}\t{label}\n" for d in sorted(PLAYER_SHAPES["forms"]))
+            try:
+                tf = run(mounts_sql(PLAYER_SHAPES["transforms"], label, has_model_table, False))
+            except subprocess.CalledProcessError as e:
+                print("transforms: NOT included, the model query failed: " + (e.stderr or "").strip()[:300],
+                      file=sys.stderr)
+                tf = ""
+            print(f"forms and transforms: {len(PLAYER_SHAPES['forms'])} form and {len(tf.splitlines())} transform "
+                  f"displays for tier {label}", file=sys.stderr)
+            sys.stdout.write(forms + tf)
     return 0
 
 

@@ -1,6 +1,6 @@
 ## Interface: 30300
 ## Title: WrathUnleashed UI
-## Notes: WrathUnleashed's defaults for the browser realm: modern UI size, every action bar on, a level 80's bars filled, Esc > Mods & Workshop (the Workshop: /workshop), Collections (Shift-P), the Builder (/builder: a gallery of turning 3D props), edit mode (F7 or /edit), Your Den's editor (the top strip, the tool rail, Files, Invite: /denbar), minigolf (/golf), modes, the script editor and the device editor (/modes, /modes edit, /modes devices), the Leyline realms (/leyline) and your game folder (/folder) and your bots (/comp).
+## Notes: WrathUnleashed's defaults for the browser realm: modern UI size, every action bar on, a level 80's bars filled, Esc > Mods & Workshop (the Workshop: /workshop), Collections (Shift-P), the Builder (/builder: a gallery of turning 3D props), edit mode (F7 or /edit), Your Den's editor (the top strip, the tool rail, Files, Invite: /denbar), the Dojo (/dojo), minigolf (/golf), modes, the script editor and the device editor (/modes, /modes edit, /modes devices), the Leyline realms (/leyline) and your game folder (/folder) and your bots (/comp).
 ## Author: WrathUnleashed
 ## OptionalDeps: ForeverUI
 ## SavedVariables: WrathUnleashedUIDB
@@ -14,6 +14,7 @@ Builder.lua
 EditMode.lua
 DenHome.lua
 DenBar.lua
+Dojo.lua
 Golf.lua
 ModeAPI.lua
 Modes.lua

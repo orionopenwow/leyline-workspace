@@ -95,13 +95,13 @@ let browser;
 test.before(async () => { browser = await chromium.launch(); });
 test.after(async () => { await browser.close(); });
 
-async function open(opts, extra) {
+async function open(opts, extra, arg) {
   const page = await browser.newPage({ viewport: { width: 1400, height: 860 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.route('https://play.openvanilla.app/**', (r) => r.abort());
   await page.addInitScript(FAKE, opts || {});
-  if (extra) await page.addInitScript(extra);
+  if (extra) await page.addInitScript(extra, arg);
   await page.goto(INDEX);
   return { page, errors };
 }
@@ -119,7 +119,8 @@ test('signed out: the launcher opens and works; Log In top right invites; the di
   await page.click('#hf-signin');
   await page.waitForSelector('#gate-browser');
   assert.ok(await gateOpen(page));
-  assert.match(await page.textContent('#gate-browser'), /Sign in with your browser/);
+  assert.match(await page.textContent('#gate-browser'), /Log in with your browser/);
+  assert.doesNotMatch(await page.textContent('#gate'), /Sign in|Sign out|Signing in/, 'the word is Log in');
   assert.match(await page.textContent('#gate'), /Instant launcher recognition/);
   assert.match(await page.textContent('#gate-new'), /Create a guest account/);
   const text = await page.textContent('#gate');
@@ -240,7 +241,7 @@ test('a sign-in kept from before: straight in, offline too (never locked out)', 
   const { page, errors } = await open({ signed: true, offline: true });
   await page.waitForSelector('#hf-retry');
   assert.equal(await gateOpen(page), false);
-  assert.equal(await page.textContent('#hf-me .hf-me-name'), 'Signed in');
+  assert.equal(await page.textContent('#hf-me .hf-me-name'), 'Logged in');
   assert.match(await page.textContent('#hf-me .hf-me-st'), /Offline/);
   assert.equal(await page.locator('#hf-signin').count(), 0, 'no Log In: the sign-in is kept');
   assert.deepEqual(errors, []);
@@ -370,6 +371,135 @@ test('signed out, the realm card Play on the official realm signs in first, then
   await page.click('#gate-go');
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'play_realm'));
   assert.deepEqual(await callsOf(page, 'play_realm'), [{ client: 'c335a-1', slug: 'official' }]);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+// ------------------------------------------------------------------------------- a new machine, in as few clicks as can be
+// (owner 3 Nov: "hero key intuitive, few steps as possible to get everywhere. Can log in and out ... everything makes
+// sense on new machine"). Each way in counts the clicks in the launcher (a browser's own approve and a file picker not
+// counted); the numbers are the most each may take, so a change that adds a step fails here.
+function counter(page) {
+  let n = 0;
+  return { click: async (sel) => { n += 1; await page.click(sel); }, get n() { return n; }, reset() { n = 0; } };
+}
+const KEPT = { path: 'C:\\Users\\me\\Downloads\\Leyline Hero Key.txt', name: 'Alice#4821' };
+
+test('back on the same PC after Log out: the kept Hero Key file is one click, "Log in as Alice#4821" (never by itself)', async () => {
+  const { page, errors } = await open({}, (k) => {
+    localStorage.setItem('leyline.signedOutAt', String(Date.now()));
+    window.__found = { path: k.path, name: k.name, mtime_ms: Date.now() - 60000 };
+  }, KEPT);
+  await page.waitForSelector('#hf-signin');
+  await page.waitForTimeout(500);
+  assert.deepEqual(await callsOf(page, 'social_key_file'), [], 'a file from before the Log out is not used by itself');
+  const c = counter(page);
+  await c.click('#hf-signin');
+  await page.waitForSelector('#gate-again');
+  assert.equal(await page.textContent('#gate-again'), 'Log in as Alice#4821');
+  assert.match(await page.textContent('#gate-pane'), /With Leyline Hero Key\.txt from your Downloads/);
+  assert.ok(await page.evaluate(() => document.activeElement && document.activeElement.id === 'gate-again'), 'it has the focus: Enter logs in');
+  assert.equal(await page.getAttribute('#gate-browser', 'class'), 'btn gate-big', 'one primary button');
+  await c.click('#gate-again');
+  await page.waitForSelector('#hf-me-btn');
+  assert.equal(c.n, 2, 'Log In, Log in as …');
+  assert.deepEqual(await callsOf(page, 'social_key_file'), [{ path: KEPT.path }]);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('no kept key file: no "Log in as", the browser way is the primary button', async () => {
+  const { page, errors } = await open();
+  await page.click('#hf-signin');
+  await page.waitForSelector('#gate-browser');
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('#gate-again').count(), 0);
+  assert.equal(await page.getAttribute('#gate-browser', 'class'), 'btn primary gate-big');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('new machine click counts: browser 2, guest 2, key file in Downloads 0, log out 2, guest login saved 3, PLAY signed out 2', async () => {
+  // the browser: Log In, Log in with your browser (then approve in the browser); in by itself
+  let { page, errors } = await open();
+  let c = counter(page);
+  await c.click('#hf-signin');
+  await c.click('#gate-browser');
+  await page.waitForSelector('#hf-me-btn', { timeout: 8000 });
+  assert.equal(c.n, 2, 'browser');
+  // Log out: the chip, Log out
+  c.reset();
+  await c.click('#hf-me-btn');
+  await c.click('#hf-panel .ap-out');
+  await page.waitForSelector('#hf-signin');
+  assert.equal(c.n, 2, 'log out');
+  assert.deepEqual(errors, []);
+  await page.close();
+
+  // a guest account: Log In, Create a guest account; then its login saved: the chip, Hero Key, Save as text file
+  ({ page, errors } = await open());
+  c = counter(page);
+  await c.click('#hf-signin');
+  await c.click('#gate-new');
+  await page.waitForSelector('#hf-me-btn');
+  assert.equal(c.n, 2, 'guest');
+  c.reset();
+  await c.click('#hf-me-btn');
+  await c.click('#hf-panel [role="menuitem"]:has-text("Hero Key")');
+  await page.waitForSelector('#ac-guest-save');
+  await c.click('#ac-guest-save');
+  await page.waitForFunction(() => !!window.__savedText);
+  assert.equal(c.n, 3, 'guest login saved as a text file');
+  assert.match(await page.evaluate(() => window.__savedText), /Log in to the Leyline launcher/);
+  assert.deepEqual(errors, []);
+  await page.close();
+
+  // the Hero Key file in Downloads (the website's Create a Hero Key saved it): no click at all
+  ({ page, errors } = await open({}, (k) => { window.__found = { path: k.path, name: k.name, mtime_ms: Date.now() }; }, KEPT));
+  await page.waitForSelector('#hf-me-btn');
+  assert.deepEqual(await callsOf(page, 'social_key_file'), [{ path: KEPT.path }], 'key file: 0 clicks');
+  assert.deepEqual(errors, []);
+  await page.close();
+
+  // PLAY on the official realm signed out, a key file kept from before: PLAY, Log in as …, and the game starts
+  ({ page, errors } = await open({}, (k) => {
+    localStorage.setItem('leyline.signedOutAt', String(Date.now()));
+    window.__found = { path: k.path, name: k.name, mtime_ms: Date.now() - 60000 };
+  }, KEPT));
+  await page.waitForFunction(() => window.__calls.some(([x]) => x === 'realms_list'));
+  c = counter(page);
+  await c.click('#play-go');
+  await page.waitForSelector('#gate-again');
+  await c.click('#gate-again');
+  await page.waitForFunction(() => window.__calls.some(([x]) => x === 'play'), null, { timeout: 8000 });
+  assert.equal(c.n, 2, 'PLAY signed out');
+  assert.deepEqual(await callsOf(page, 'play'), [{ client: 'c335a-1', realm: OFFICIAL }]);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Settings › Your account: signed out it opens Log in; a guest is told to save the login and lands on it; the P2P part is last', async () => {
+  const { page, errors } = await open();
+  await page.click('.nav[data-page="settings"]');
+  await page.waitForSelector('#page-settings.on');
+  assert.match(await page.textContent('#set-acct-line'), /Not logged in/);
+  const first = await page.evaluate(() => document.querySelector('#page-settings .panel h3').textContent);
+  assert.equal(first, 'Your account', 'Settings opens on the account, not the advanced peer-to-peer part');
+  await page.click('#set-acct');
+  await page.waitForSelector('#gate-new');
+  await page.click('#gate-new');
+  await page.waitForSelector('#hf-me-btn');
+  await page.click('.nav[data-page="settings"]');
+  await page.waitForFunction(() => /isn't saved yet/.test(document.getElementById('set-acct-line').textContent));
+  assert.equal(await page.textContent('#set-acct'), 'Save your login');
+  // guest → its login, from Settings: Your account, Save as text file (2 clicks from Settings)
+  await page.click('#set-acct');
+  await page.waitForSelector('#ac-guest-save');
+  await page.click('#ac-guest-save');
+  await page.waitForFunction(() => !!window.__savedText);
+  await page.click('.nav[data-page="settings"]');
+  await page.waitForFunction(() => /Logged in as Brightfeather42#1234/.test(document.getElementById('set-acct-line').textContent));
+  assert.equal(await page.textContent('#set-acct'), 'Your login and Hero Key');
   assert.deepEqual(errors, []);
   await page.close();
 });

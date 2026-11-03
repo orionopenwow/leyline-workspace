@@ -102,7 +102,7 @@
       const av = el("div", "ac-me-av"); av.id = "ac-me-av";
       const t = el("div", "ac-me-t");
       const n = el("p", "ac-me-n"); n.append(el("b", "", me.name), el("span", "", me.tag ? "#" + me.tag : ""));
-      t.append(n, el("p", "hint", "Signed in on this launcher"));
+      t.append(n, el("p", "hint", "Logged in on this launcher"));
       if (prof.bio) t.append(el("p", "ac-me-bio", prof.bio));
       head.append(av, t);
       view.append(head);
@@ -163,8 +163,8 @@
     view.append(wc);
 
     const so = el("section", "card ac-card ac-out");
-    const sot = el("div"); sot.append(el("h3", "", "Sign out"), el("p", "hint", "Signs this launcher out and revokes its sign-in on the website."));
-    const sob = el("button", "btn", "Sign out"); sob.type = "button"; sob.id = "ac-signout";
+    const sot = el("div"); sot.append(el("h3", "", "Log out"), el("p", "hint", "Logs this launcher out and revokes its sign-in on the website."));
+    const sob = el("button", "btn", "Log out"); sob.type = "button"; sob.id = "ac-signout";
     sob.onclick = () => S().signOut();
     const web = el("button", "link-s", "Your profile on the website ›"); web.type = "button"; web.onclick = () => S().openLink("profile");
     so.append(sot, el("div", "ac-acts", ""), web);
@@ -214,7 +214,7 @@
   function keyText(name, key) {
     const day = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
     return `Leyline Hero Key\r\n\r\nName: ${name}\r\nKey: ${key}\r\nMade: ${day}\r\n\r\n`
-      + "This key signs you in to your Leyline account on Wrath Unleashed and on every realm that accepts Hero Key. "
+      + "This key logs you in to your Leyline account on Wrath Unleashed and on every realm that accepts Hero Key. "
       + "Keep it private, like a password.\r\n";
   }
   function keyStatus(text, kind) {
@@ -242,13 +242,13 @@
   function loginText(g) {
     const day = new Date(g.at || Date.now()).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
     return `Leyline Hero Key\r\n\r\nName: ${g.name}\r\n` + (g.pass ? `Password: ${g.pass}\r\n` : "") + `Key: ${g.key}\r\nMade: ${day}\r\n\r\n`
-      + "Sign in to the Leyline launcher with your name (and its #tag) and password, or drop this file on its sign-in. "
-      + "The key signs you in on the website, Wrath Unleashed and every realm that accepts Hero Key. Keep this file private, like a password.\r\n";
+      + "Log in to the Leyline launcher with your name (and its #tag) and password, or drop this file on its Log in screen. "
+      + "The key logs you in on the website, Wrath Unleashed and every realm that accepts Hero Key. Keep this file private, like a password.\r\n";
   }
   let guestShown = false;
   function guestBox(g) {
     const wrap = el("div", "ac-guest"); wrap.id = "ac-guest";
-    wrap.append(el("p", "hint", "Your guest login. Save it so you can sign in anywhere: it's kept on this PC only until you do."));
+    wrap.append(el("p", "hint", "Your guest login. Save it so you can log in anywhere: it's kept on this PC only until you do."));
     const row = (label, id, value, secret) => {
       const r = el("div", "ac-keybox ac-cred");
       r.append(el("span", "ac-cred-l", label));
@@ -275,7 +275,7 @@
         if (!ok) return;
         await keySaved();
         try { localStorage.removeItem(GUEST); } catch (_) { /* fine */ }
-        keyStatus(`Saved ${FILE}. Sign in anywhere with your name and password, or with the file.`, "ok");
+        keyStatus(`Saved ${FILE}. Log in anywhere with your name and password, or with the file.`, "ok");
         document.dispatchEvent(new CustomEvent("leyline:guest", { detail: { saved: true } }));
         render();
       } catch (e) { keyStatus(String(e), "bad"); }
@@ -341,7 +341,7 @@
       b.onclick = () => S().openLink("herokey");
       const a = el("div", "ac-acts"); a.append(b); c.append(a);
     } else {
-      c.append(el("p", "hint", keyState.has_key ? (keyState.saved ? "Your key is saved. It signs you in on any device, here and on the website."
+      c.append(el("p", "hint", keyState.has_key ? (keyState.saved ? "Your key is saved. It logs you in on any device, here and on the website."
         : "Your key was made but not saved, so it can't be shown again. Make a new one and save it.") : "You don't have a key yet."));
       const meta = el("p", "ac-key-meta");
       if (keyState.made) meta.append(el("span", "", "Made "), el("b", "", keyState.made));
@@ -365,8 +365,22 @@
     }
     const st = el("p", "status" + (keyNote[1] ? " " + keyNote[1] : ""), keyNote[0]); st.id = "ac-key-status"; st.setAttribute("role", "status");
     c.append(st);
-    if (!welcome) c.append(passwordBox(me));
+    if (!welcome) c.append(passwordBox(me), otherPc(me));
     return c;
+  }
+
+  // Your account on another PC (owner 3 Nov: "share character ... everything makes sense on new machine"): the same
+  // account, never a shared one. Characters live on the realm, so the account is all that moves.
+  function otherPc(me) {
+    const d = el("details", "ac-pass ac-otherpc"); d.id = "ac-otherpc";
+    d.append(el("summary", "", "Play on another PC"));
+    const ol = el("ol", "ac-steps-list");
+    ol.append(el("li", "", `Here: Save as text file (${FILE}), or set a password above.`),
+      el("li", "", `On the other PC: put ${FILE} in its Downloads folder and open Leyline. It logs you in by itself.`),
+      el("li", "", `No file? Log In there with ${me.tag ? `${me.name}#${me.tag}` : "your name and #tag"} and your password, or with your browser.`));
+    d.append(ol, el("p", "hint", "Your characters are on the realm, not on this PC: they're there wherever you log in. "
+      + "Your key and password are yours alone: to play with someone, add them as a friend or invite them to your Den."));
+    return d;
   }
 
   function passwordBox(me) {
@@ -481,6 +495,35 @@
     const box = $("ac-flow");
     if (box) S().buildFlow(box, true); else render();
   });
+
+  // Settings › Your account: to the Hero Key card (signed in) or the Log in screen; a guest's unsaved login is said
+  function settingsAccount() {
+    const line = $("set-acct-line"), btn = $("set-acct");
+    if (!line || !btn) return;
+    const s = S(), me = s && s.me();
+    const name = me ? (me.tag ? `${me.name}#${me.tag}` : me.name) : "";
+    const guest = me ? guestLogin(name) : null;
+    if (!s || !s.signedIn()) {
+      line.textContent = "Not logged in. Log in to keep your progress and play online.";
+      btn.textContent = "Log in";
+    } else if (guest) {
+      line.textContent = `Your guest login (${name}) isn't saved yet: save it as a text file to log in again or on another PC.`;
+      btn.textContent = "Save your login";
+    } else {
+      line.textContent = `Logged in as ${name || "you"}. Your password and Hero Key: save them, or use them to log in on another PC.`;
+      btn.textContent = "Your login and Hero Key";
+    }
+    line.classList.toggle("warn", !!guest);
+  }
+  const sab = $("set-acct");
+  if (sab) sab.addEventListener("click", () => {
+    const s = S();
+    if (!s || !s.signedIn()) { if (window.LeylineGate) window.LeylineGate.show(""); return; }
+    if (window.LeylineNav) window.LeylineNav.show("account");
+    document.dispatchEvent(new CustomEvent("leyline:focus-key", {}));
+  });
+  for (const ev of ["leyline:me", "leyline:guest", "leyline:page"]) document.addEventListener(ev, settingsAccount);
+  settingsAccount();
 
   window.LeylineAccount = { render, welcome: () => welcome };
 })();

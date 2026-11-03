@@ -31,6 +31,9 @@ The JSON, under /wrath/api/social (stream/social.py's sign-in: the launcher's to
                                     screen (launcher/src-tauri/src/hybrid.rs) and keeps nothing (owner 2 Nov: "skip to
                                     character select"). The same login the /wrath page shows and /__env.js gives.
     POST audit/close                (the launcher's token only) the release audit closes its own test account; see below
+    GET  audit/presence             (the launcher's token only, the audit's test account only) where that account's game
+                                    got to on Wrath Unleashed, for the first-run test (docs/FIRST-RUN-TEST.md 3.2):
+                                    {account_online, in_world, character, map, login_given}; 404 for any other account
 The name itself is POST profile {name} (stream/profiles.py set_name: the blocklist, at most 3 changes a day).
 
 The launcher and the service: a launcher has no website cookie, so a launcher that signed in here (a new account, a key)
@@ -296,7 +299,7 @@ def mint(cookie: str, csrf: str, ip: str, ua: str) -> tuple[str, list[str]]:
     if st == 429:
         raise Refused(429, "You've made a few keys this hour. Wait a while and try again.")
     if st in (401, 403) or 300 <= st < 400:
-        raise Refused(401, "Your website sign-in ran out. Sign in again.")
+        raise Refused(401, "Your website sign-in ran out. Log in again.")
     if st != 200:
         raise Down(f"mint {st}")
     try:
@@ -315,7 +318,7 @@ def mark_saved(cookie: str, csrf: str, ip: str, ua: str) -> list[str]:
     # 2 Nov audit: "saved" answered 200 here while the service still showed the key: a refusal (a stale form token,
     # a moved form) was taken for success. Only a 2xx or a redirect back to the key page counts now.
     if st in (401, 403):
-        raise Refused(401, "Your website sign-in ran out. Sign in again.")
+        raise Refused(401, "Your website sign-in ran out. Log in again.")
     if not (200 <= st < 400):
         raise Down(f"saved {st}")
     return sc
@@ -347,7 +350,7 @@ def new_guest(ip: str, ua: str) -> list[str]:
     if "Too many" in body:
         raise Refused(429, "Too many new accounts from here. Wait an hour and try again.")
     if "off on this realm" in body:
-        raise Refused(403, "New accounts are paused right now. Sign in with Google instead.")
+        raise Refused(403, "New accounts are paused right now. Log in with Google instead.")
     raise Refused(403, "Couldn't make an account right now. Try again shortly.")
 
 
@@ -548,7 +551,7 @@ def text_file(name: str, key: str, day: str | None = None, password: str = "") -
     pw = f"Password: {password}\r\n" if password else ""
     return (f"Leyline Hero Key\r\n\r\nName: {name}\r\n{pw}Key: {key}\r\nMade: {day}\r\n\r\n"
             "Log in to the Leyline launcher with your name (and its #tag) and password, or drop this file on its sign-in. "
-            "The key signs you in on the website, Wrath Unleashed and every realm that accepts Hero Key. "
+            "The key logs you in on the website, Wrath Unleashed and every realm that accepts Hero Key. "
             "Keep this file private, like a password.\r\n")
 
 
@@ -573,9 +576,12 @@ def password_problem(pw, name: str = "") -> str:
 
 # ------------------------------------------------------------------ the JSON (from stream/social.py)
 NO_AUTH = ("account/new", "herokey/signin", "password/signin")
-WITH_AUTH_GET = ("herokey",)
+WITH_AUTH_GET = ("herokey", "audit/presence")
 WITH_AUTH_POST = ("herokey/new", "herokey/saved", "password", "game/login", "audit/close")
 GAME_LOGINS_PER_HOUR = 30        # per account: one per PLAY
+PRESENCE_PER_HOUR = 600          # per account: the first-run test asks every 2 s for a few minutes
+PRESENCE_CACHE_SECS = 2.0        # the realm console is asked at most this often, whoever asks
+LOGIN_GIVEN_SECS = 900           # a game/login this recent counts as "the launcher handed the game its login"
 
 
 def handles(sub: str, method: str, authed: bool) -> bool:
@@ -636,6 +642,68 @@ def close_audit_account(acct: str, token: str, ip: str, ua: str) -> tuple[int, s
     soc.forget_account(acct)   # its launcher sign-ins (this token too) and its profile
     log.info("herokeys: the release audit closed its test account")
     return 200, "Closed."
+
+
+_presence_cache: dict = {"at": 0.0, "text": None}
+_presence_lock = threading.Lock()
+
+
+def online_list_text() -> str | None:
+    """The realm console's `account onlinelist` (the characters in the world now), cached a moment; None when the
+    realm doesn't answer. A fixed command: nothing of the caller's goes into it."""
+    soap = P("ac_soap")
+    if soap is None:
+        return None
+    with _presence_lock:
+        now = time.monotonic()
+        if _presence_cache["text"] is not None and now - _presence_cache["at"] < PRESENCE_CACHE_SECS:
+            return _presence_cache["text"]
+        try:
+            text = str(soap("account onlinelist") or "")
+        except Exception:   # noqa: BLE001: SoapError and friends: the realm didn't answer
+            return None
+        _presence_cache.update(at=now, text=text)
+        return text
+
+
+def parse_online(text: str, acct: str) -> dict | None:
+    """The row of `account onlinelist` for this account: {character, map}, or None when it isn't there. The console's
+    rows are cells in [..] or between | (AzerothCore has printed both): account, character, IP, map, zone, ..."""
+    want = (acct or "").upper()
+    if not want:
+        return None
+    for line in (text or "").splitlines():
+        cells = [c.strip() for c in re.split(r"[\[\]|]", line) if c.strip() and not set(c.strip()) <= set("-=")]
+        if any(c.lower() == "character" for c in cells):   # the header row
+            continue
+        for i, c in enumerate(cells):
+            if c.upper() != want or i + 1 >= len(cells):
+                continue
+            char = cells[i + 1]
+            if not re.fullmatch(r"[^\W\d_]{2,12}", char):
+                continue
+            nums = [int(x) for x in cells[i + 2:] if re.fullmatch(r"\d{1,5}", x)]
+            return {"character": char, "map": nums[0] if nums else None}
+    return None
+
+
+def presence(acct: str) -> tuple[int, dict]:
+    """GET audit/presence: where the audit's own test account's game got to (status, doc)."""
+    if store is None or store.audit_born(acct) is None:
+        return 404, {"error": "Unknown call."}
+    given = False
+    try:
+        r = store.q("SELECT MAX(at) FROM hk_events WHERE acct = ? AND what = 'game.login'", (acct,))
+        given = bool(r and r[0][0] and time.time() - r[0][0] < LOGIN_GIVEN_SECS)
+    except Exception:   # noqa: BLE001
+        given = False
+    text = online_list_text()
+    if text is None:
+        return 503, {"error": "The realm isn't answering right now. Try again shortly.", "login_given": given}
+    row = parse_online(text, acct)
+    # the console lists characters in the world: one there means the game passed character select too
+    return 200, {"account_online": row is not None, "in_world": row is not None, "character": row["character"] if row else None,
+                 "map": row["map"] if row else None, "login_given": given}
 
 
 _new_locks: dict[str, threading.Lock] = {}
@@ -837,7 +905,7 @@ def api(h, sub: str, method: str, acct: str | None, how: str, extra: str, doc: d
                 return send(404, {"error": "Unknown call."}, [])
             if not _hit("glogin|" + acct, GAME_LOGINS_PER_HOUR, 3600):
                 return send(429, {"error": "Too many starts this hour. Type your password at the login screen."}, [])
-            again = {"error": "Sign in again on Home to play without typing your password.", "web_only": True}
+            again = {"error": "Log in again (Log In, top right) to play without typing your password.", "web_only": True}
             try:
                 jar, kept = _jar_for(how, extra, acct, h)
                 user, pw = game_login(jar, ip, ua)
@@ -873,6 +941,13 @@ def api(h, sub: str, method: str, acct: str | None, how: str, extra: str, doc: d
             store.set_password(acct, pw)
             store.note(acct, "password.set", how)
             return send(200, {"ok": True, "has_password": True}, [])
+        if sub == "audit/presence" and method == "GET":   # the first-run test (tools/first-run/first_run.py)
+            if how != "token":
+                return send(404, {"error": "Unknown call."}, [])
+            if not _hit("presence|" + acct, PRESENCE_PER_HOUR, 3600):
+                return send(429, {"error": "Slow down a little."}, [])
+            st, doc = presence(acct)
+            return send(st, doc, [])
         if sub == "audit/close":
             if how != "token":
                 return send(404, {"error": "Unknown call."}, [])
@@ -1035,7 +1110,7 @@ JS = r"""
     var dlb=document.getElementById('hk-dl');
     if(dlb) dlb.addEventListener('click',function(){
       var day=new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
-      var text='Leyline Hero Key\r\n\r\nName: '+who+'\r\nKey: '+key+'\r\nMade: '+day+'\r\n\r\nThis key signs you in to your Leyline account on Wrath Unleashed and on every realm that accepts Hero Key. Keep it private, like a password.\r\n';
+      var text='Leyline Hero Key\r\n\r\nName: '+who+'\r\nKey: '+key+'\r\nMade: '+day+'\r\n\r\nThis key logs you in to your Leyline account on Wrath Unleashed and on every realm that accepts Hero Key. Keep it private, like a password.\r\n';
       var a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([text],{type:'text/plain'}));
       a.download='Leyline Hero Key.txt'; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(function(){ URL.revokeObjectURL(a.href); },5000);
@@ -1141,7 +1216,7 @@ WHAT_IS = ('<details><summary>What is a Hero Key?</summary><ul class="hk-what">'
            '<li>It is your login: one line of text that starts with ovk1. Whoever has it can sign in as you.</li>'
            '<li>Save it when it is made: download the text file, keep it in a password manager, or keep it in this browser.</li>'
            '<li>We keep only a fingerprint of it, so we can never show or send it to you again.</li>'
-           '<li>Lost it? Sign in with Google if you linked it, then make a new key. A new key stops the old one at once.</li>'
+           '<li>Lost it? Log in with Google if you linked it, then make a new key. A new key stops the old one at once.</li>'
            '<li>One account works on Wrath Unleashed, in the launcher and on every realm that accepts Hero Key.</li></ul></details>')
 
 DOWN_CARD = ('<section class="hk-card"><h1>Your Hero Key</h1><p>The website\'s sign-in isn\'t answering right now. '
@@ -1171,7 +1246,7 @@ def page(h, query: dict, note: str = "", ok: str = "", status: int = 200, cookie
     if not who and "wr_session=" in cookie:   # a stale website cookie: cleared, and said plainly
         cookies = list(cookies or []) + [STALE_SESSION]
         if not note and not ok:
-            ok = "Your sign-in ran out. Sign in again with your Hero Key."
+            ok = "Your sign-in ran out. Log in again with your Hero Key."
     msg = (f'<p class="hk-msg err" role="alert">{e(note)}</p>' if note else "") + (f'<p class="hk-msg" role="status">{e(ok)}</p>' if ok else "")
     if not who:
         anon = _anon_token(h)
@@ -1188,7 +1263,7 @@ def page(h, query: dict, note: str = "", ok: str = "", status: int = 200, cookie
         except Exception:   # noqa: BLE001
             google = True
         inner = (f'{msg}<section class="hk-card" id="hk-out" aria-labelledby="hk-t">'
-                 '<h1 id="hk-t">Log in</h1><p>Sign in with your Hero Key.</p>'
+                 '<h1 id="hk-t">Log in</h1><p>Log in with your Hero Key.</p>'
                  f'<form method="post" action="{SIGNIN}" id="hk-login"><input type="hidden" name="t" value="{t2}">'
                  '<label class="hk-drop" for="hk-file"><input id="hk-file" type="file" accept=".txt,text/plain" class="hk-sr">'
                  '<b>Drop your key file here</b><span>or choose it (Leyline Hero Key.txt)</span></label>'
@@ -1203,7 +1278,7 @@ def page(h, query: dict, note: str = "", ok: str = "", status: int = 200, cookie
                  'password and Hero Key wait on this page to save when you like.</p>'
                  f'<form method="post" action="{START}" class="hk-acts" id="hk-start"' + (' data-go="1"' if (query.get("guest") or [""])[0] else "") + f'><input type="hidden" name="t" value="{t1}">'
                  f'<button class="hk-btn primary" type="submit">{KEY_ICON}Create a guest account</button></form>'
-                 '<p class="hk-fine">Using the Leyline launcher? Sign in with your browser there: it recognises you here at once.</p>'
+                 '<p class="hk-fine">Using the Leyline launcher? Log in with your browser there: it recognises you here at once.</p>'
                  + WHAT_IS +
                  '</section>')
         return _shell(h, inner, status, set_c)

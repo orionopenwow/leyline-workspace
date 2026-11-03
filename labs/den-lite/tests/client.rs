@@ -142,6 +142,14 @@ fn reparse(opcode: u16, body: &[u8]) -> Option<ServerOpcodeMessage> {
     if opcode == 0x0096 && body.get(1..5) == Some(&[0xFF; 4]) {
         return None; // an addon whisper (LANG_ADDON): the crate has no such language; read by hand (addon_text)
     }
+    // the Dojo's messages, written by hand (dojo.rs): fly, speed, her casts, and her turning where she stands
+    // (SMSG_MONSTER_MOVE with the facing-angle type): read by hand in the Dojo's test
+    if matches!(opcode, 0x0E2 | 0x343 | 0x344 | 0x381 | 0x131 | 0x132) {
+        return None;
+    }
+    if opcode == 0x00DD && body.get(1 + body.first().map_or(0, |m| m.count_ones() as usize) + 17) == Some(&4) {
+        return None;
+    }
     let size = body.len() + 2;
     let mut v = Vec::with_capacity(size + 3);
     if size > 0x7FFF {
@@ -218,6 +226,14 @@ impl World {
         let mut v = Vec::new();
         self.c.encrypter().write_encrypted_client_header(&mut v, (body.len() + 4) as u16, 0x0095).unwrap();
         v.extend_from_slice(&body);
+        self.s.write_all(&v).unwrap();
+    }
+
+    /// A client frame written by hand (the Dojo's acks, as the game sends them).
+    fn raw(&mut self, opcode: u32, body: &[u8]) {
+        let mut v = Vec::new();
+        self.c.encrypter().write_encrypted_client_header(&mut v, (body.len() + 4) as u16, opcode).unwrap();
+        v.extend_from_slice(body);
         self.s.write_all(&v).unwrap();
     }
 
@@ -1512,6 +1528,174 @@ fn without_the_den_bar_the_old_lines_after_a_short_wait() {
     assert!(w.until_line().1.starts_with("Welcome to your Den"));
     assert!(t.elapsed() < Duration::from_secs(3), "soon after the game is in the world");
     assert!(den_lite::events::read(&dir).iter().any(|l| l.ev == "loaded"));
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The Dojo (dojo.rs, owner 3 Nov): flying and speed with the game's acks, "Jaina, build a garden" piece by piece
+/// with her casts, the training ring with its dummies, what needs the full Den, the dummies down and the ring
+/// undone, and the Den bar's Dojo line.
+#[test]
+fn the_dojo_flies_speeds_and_jaina_builds_piece_by_piece() {
+    let (srv, dir) = server_with("dojo", HeroGender::Female, true);
+    let (key, _, address) = login(srv.login, "DEN", "den").expect("login");
+    let mut w = World::connect(&address, "DEN", key, 0);
+    w.send(&CMSG_CHAR_ENUM {});
+    let ch = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_CHAR_ENUM(e)) => Some(e.characters[0].guid),
+        _ => None,
+    });
+    w.send(&CMSG_PLAYER_LOGIN { guid: ch });
+    assert_eq!(w.until_she_says().2, den_lite::companion::GREET);
+    let (mx, my, mz) = (16226.2f32, 16257.0f32, 13.25f32);
+    w.send(&heartbeat(mx, my, mz, 0.0));
+
+    // fly: the game is told it may (the player's packed guid, a counter); its ack is read: counted, and where it is
+    w.say(".den fly on");
+    let fly = w.until(|f| (f.opcode == 0x343).then(|| f.body.clone()));
+    assert_eq!(&fly[..2], &[0x01, 0x01], "the player's packed guid");
+    let n = u32::from_le_bytes(fly[2..6].try_into().unwrap());
+    assert!(w.until_line().1.starts_with("You can fly"));
+    let mut ack = fly.clone();
+    ack.extend_from_slice(&0x0100_0000u32.to_le_bytes());
+    ack.extend_from_slice(&0u16.to_le_bytes());
+    ack.extend_from_slice(&5000u32.to_le_bytes());
+    for v in [mx, my, mz + 3.0, 0.0f32] {
+        ack.extend_from_slice(&v.to_le_bytes());
+    }
+    ack.extend_from_slice(&0f32.to_le_bytes());
+    w.raw(0x345, &ack);
+    // speed: run and flight, three times the normal 7 yards a second
+    w.say(".den speed 3");
+    let run = w.until(|f| (f.opcode == 0x0E2).then(|| f.body.clone()));
+    assert_eq!(f32::from_le_bytes(run[7..11].try_into().unwrap()), 21.0);
+    let flight = w.until(|f| (f.opcode == 0x381).then(|| f.body.clone()));
+    assert_eq!(f32::from_le_bytes(flight[6..10].try_into().unwrap()), 21.0);
+    assert!(w.until_line().1.contains("3 times as fast"));
+    {
+        let d = srv.shared.dojo.lock().unwrap();
+        assert_eq!(d.acks.0, 1, "the fly ack was read");
+        assert!(d.fly && d.speed_now() == 3);
+    }
+    let live = srv.shared.live.lock().unwrap().as_ref().map(|l| l.2).unwrap();
+    assert!((live.z - (mz + 3.0)).abs() < 1e-4, "the ack says where the character is");
+    w.say(".den speed 9");
+    assert!(w.until_line().1.starts_with("Speeds are 1 to 5"));
+    w.say(".den fly off");
+    let off = w.until(|f| (f.opcode == 0x344).then(|| f.body.clone()));
+    assert_eq!(u32::from_le_bytes(off[2..6].try_into().unwrap()), n + 3, "a new counter each time");
+    assert!(w.until_line().1.starts_with("Flying is off"));
+
+    // "Jaina, build a garden": she walks over and says so; the pieces are in the Den at once (one undo), and the
+    // game is shown them one by one, each after her turn to it and her cast at its spot
+    w.send(&heartbeat(mx, my, mz, 0.0));
+    let t0 = std::time::Instant::now();
+    w.say("Jaina, build a garden");
+    let mv = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_MONSTER_MOVE(m)) => Some(m.clone()),
+        _ => None,
+    });
+    assert_eq!(mv.guid.guid(), den_lite::companion::GUID);
+    assert_eq!(w.until_she_says().2, den_lite::dojo::ON_IT);
+    let placed = srv.shared.den.lock().unwrap().props.len();
+    assert!(placed > 3, "the garden is in the Den: {placed}");
+    let mut frames = Vec::new();
+    loop {
+        let f = w.frame();
+        if let Some(ServerOpcodeMessage::SMSG_MESSAGECHAT(m)) = &f.msg {
+            if matches!(m.chat_type, SMSG_MESSAGECHAT_ChatType::MonsterSay { .. }) {
+                assert_eq!(m.message, den_lite::dojo::BUILT);
+                break;
+            }
+        }
+        frames.push(f);
+    }
+    let took = t0.elapsed();
+    let (made, _) = objects(&frames);
+    assert_eq!(made.len(), placed, "every piece appeared");
+    let starts = frames.iter().filter(|f| f.opcode == 0x131).count();
+    let gos: Vec<&Frame> = frames.iter().filter(|f| f.opcode == 0x132).collect();
+    let turns = frames.iter().filter(|f| f.opcode == 0x0DD && f.msg.is_none()).count();
+    assert_eq!((starts, gos.len(), turns), (1, placed, placed), "one cast started, then a turn and a cast per piece");
+    assert!(took >= Duration::from_millis(den_lite::dojo::PIECE_MS * (placed as u64 - 1)), "one at a time: {took:?}");
+    let first_go = frames.iter().position(|f| f.opcode == 0x132).unwrap();
+    let first_piece = frames.iter().position(|f| matches!(&f.msg, Some(ServerOpcodeMessage::SMSG_UPDATE_OBJECT(_)))).unwrap();
+    assert!(first_go < first_piece, "her cast, then the piece");
+    // her cast is aimed at a piece's spot (the go's place target: its last 13 bytes are x, y, z and a 0)
+    let g = &gos[0].body;
+    let gx = f32::from_le_bytes(g[g.len() - 13..g.len() - 9].try_into().unwrap());
+    let gy = f32::from_le_bytes(g[g.len() - 9..g.len() - 5].try_into().unwrap());
+    assert!(made.values().any(|o| (o.x - gx).abs() < 1e-3 && (o.y - gy).abs() < 1e-3), "aimed at a piece");
+    assert!(w.until_line().1.contains("is up"), "the line when she is done");
+
+    // .den dojo: the training ring the same way, then three training dummies standing in it
+    w.say(".den dojo");
+    let mut frames = Vec::new();
+    loop {
+        let f = w.frame();
+        if let Some(ServerOpcodeMessage::SMSG_MESSAGECHAT(m)) = &f.msg {
+            if matches!(m.chat_type, SMSG_MESSAGECHAT_ChatType::MonsterSay { .. }) && m.message == den_lite::dojo::BUILT_DOJO {
+                break;
+            }
+        }
+        frames.push(f);
+    }
+    let ring = srv.shared.den.lock().unwrap().props.len() - placed;
+    assert!(ring >= 20, "the ring's pieces: {ring}");
+    assert_eq!(objects(&frames).0.len(), ring);
+    let dummies: Vec<u64> = frames
+        .iter()
+        .filter_map(|f| match &f.msg {
+            Some(ServerOpcodeMessage::SMSG_UPDATE_OBJECT(u)) => Some(
+                u.objects
+                    .iter()
+                    .filter_map(|o| match o {
+                        Object::CreateObject { guid3, object_type: ObjectType::Unit, .. } => Some(guid3.guid()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        })
+        .flatten()
+        .filter(|g| (g >> 24) & 0xFF_FFFF == 31144)
+        .collect();
+    assert_eq!(dummies.len(), 3, "three training dummies");
+    assert!(w.until_line().1.contains("is up"));
+    w.send(&CMSG_CREATURE_QUERY { creature: 31144, guid: Guid::new(dummies[0]) });
+    let q = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_CREATURE_QUERY_RESPONSE(r)) => Some(r.clone()),
+        _ => None,
+    });
+    let found = q.found.expect("a training dummy");
+    assert_eq!(found.name1, "Grandmaster's Training Dummy");
+    assert!(!den_lite::companion::branded(&found.name1));
+
+    // what needs a combat engine says so; the dummies come down; one undo takes the ring back
+    w.say(".den dojo boss");
+    assert!(w.until_line().1.contains("needs the full Den"));
+    w.say(".dojo clear");
+    let (frames, line) = w.until_line();
+    assert!(line.starts_with("3 dummies down"), "{line}");
+    let mut gone = objects(&frames).1;
+    gone.sort();
+    let mut want = dummies.clone();
+    want.sort();
+    assert_eq!(gone, want);
+    w.say(".build undo");
+    let (frames, _) = w.until_line();
+    assert_eq!(objects(&frames).1.len(), ring, "the ring undone in one");
+
+    // the Den bar's Dojo panel asks for its line
+    w.addon("OVMOD", "wuden\thello\t1/1\t1");
+    let _ = until_den(&mut w, "status");
+    w.addon("OVMOD", "wuden\tcmd\t1/1\tdojo status");
+    let (_, line) = until_den(&mut w, "dojo");
+    assert_eq!(line, "server=lite;fly=0;speed=3;dummies=0;ring=1;building=0");
+    let evs = den_lite::events::read(&dir);
+    assert!(evs.iter().any(|l| l.ev == "dojo_ack" && l.detail.starts_with("fly ")), "the ack is in the events");
+    assert!(evs.iter().any(|l| l.ev == "dojo" && l.detail.starts_with("built ")));
     drop(w);
     drop(srv);
     let _ = std::fs::remove_dir_all(&dir);

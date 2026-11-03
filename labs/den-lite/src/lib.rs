@@ -9,6 +9,7 @@ pub mod accdata;
 pub mod cheers;
 pub mod companion;
 pub mod den;
+pub mod dojo;
 pub mod events;
 pub mod guests;
 pub mod ovmod;
@@ -131,6 +132,8 @@ pub struct Shared {
     pub autosaved_at: std::sync::atomic::AtomicU64,
     /// What the host's game did with its character this time in the world (movewatch.rs: `.den where`).
     pub moves: Mutex<Option<movewatch::Watch>>,
+    /// The Dojo (dojo.rs): fly, speed, the training dummies and Jaina's build in progress (the host's).
+    pub dojo: Mutex<dojo::Dojo>,
 }
 
 impl Shared {
@@ -257,6 +260,7 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
         last_cheer: Mutex::new(0),
         autosaved_at: std::sync::atomic::AtomicU64::new(0),
         moves: Mutex::new(None),
+        dojo: Mutex::new(dojo::Dojo::default()),
     });
     let s = shared.clone();
     std::thread::spawn(move || login::serve(login, s, false));
@@ -270,5 +274,7 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
     }
     let s = shared.clone();
     std::thread::spawn(move || world::companion_ticker(s));
+    let s = shared.clone();
+    std::thread::spawn(move || world::dojo_ticker(s));
     Ok(Running { login: la, world: wa, remote: remote_addrs, shared })
 }

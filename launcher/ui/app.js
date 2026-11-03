@@ -475,7 +475,7 @@ function renderPlay() {
     o.value = c.id;
     sel.append(o);
   }
-  if (s.clients.length === 0) sel.append(el("option", "", "No game client yet"));
+  if (s.clients.length === 0) sel.append(el("option", "", "No game folder yet"));
   if (s.selected_client) sel.value = s.selected_client;
   sel.disabled = s.clients.length === 0;
   renderClientMenu();
@@ -536,7 +536,7 @@ function clientBadge(c) { const v = clientVersion(c); return v && !String((c && 
 function renderClientMenu() {
   if (!state) return;
   const c = currentClient();
-  $("pb-client-name").textContent = c ? c.name : "No game client";
+  $("pb-client-name").textContent = c ? c.name : "No game folder";
   $("pb-client").classList.toggle("empty", !c);
   const v = clientBadge(c);
   $("pb-client-ver").hidden = !v;
@@ -1736,7 +1736,7 @@ function renderClientPickers() {
       o.value = c.id;
       sel.append(o);
     }
-    if (!state.settings.clients.length) sel.append(el("option", "", "No game client yet"));
+    if (!state.settings.clients.length) sel.append(el("option", "", "No game folder yet"));
     sel.disabled = !state.settings.clients.length;
     if (state.settings.selected_client) sel.value = state.settings.selected_client;
   });

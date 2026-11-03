@@ -125,17 +125,17 @@ test('signed in: the profile sits in the title bar, top right, with Manage accou
   assert.ok(r.inBar, 'in the title bar'); assert.ok(r.top < 30, 'at the top'); assert.ok(r.gap >= 0 && r.gap < 40, 'just left of the window buttons (gap ' + r.gap + ')');
   await page.click('#hf-me-btn');
   assert.deepEqual(await page.$$eval('#hf-panel [role="menuitem"] .ap-item-t b', (b) => b.map((x) => x.textContent)),
-    ['My profile', 'Forum', 'Settings', 'Help', 'Manage account', 'Hero Key', 'Sign out']);
+    ['My profile', 'Forum', 'Settings', 'Help', 'Manage account', 'Hero Key', 'Log out']);
   await page.click('#hf-panel [role="menuitem"]:has-text("Manage account")');
   await page.waitForSelector('#hf-panel', { state: 'detached' });
   // Manage account is a page in the launcher now (account.js), not the website
   await page.waitForSelector('#page-account.on');
   assert.ok(!(await page.evaluate(() => window.__calls.some(([c, a]) => c === 'open_link' && a.name === 'account'))));
   await page.click('#hf-me-btn');
-  await page.click('#hf-panel [role="menuitem"]:has-text("Sign out")');
+  await page.click('#hf-panel [role="menuitem"]:has-text("Log out")');
   await page.waitForSelector('#hf-signin');
   assert.ok(await page.evaluate(() => window.__calls.some(([c]) => c === 'social_signout')));
-  assert.match(await page.textContent('#hf-status'), /Signed out/);
+  assert.match(await page.textContent('#hf-status'), /Logged out/);
   assert.deepEqual(errors, []);
   await page.close();
 });
@@ -213,11 +213,11 @@ test('the panel: joined to the chip, opens and closes (Esc, outside, the chip), 
   await page.keyboard.press('Shift+Tab');
   assert.ok(await page.evaluate(() => !!document.activeElement.closest('#hf-panel')));
   // arrows move between the menu items
-  await page.focus('#hf-panel [role="menuitem"]:has-text("Sign out")');
+  await page.focus('#hf-panel [role="menuitem"]:has-text("Log out")');
   await page.keyboard.press('ArrowDown');
   assert.match(await page.evaluate(() => document.activeElement.textContent), /^My profile/);
   await page.keyboard.press('ArrowUp');
-  assert.match(await page.evaluate(() => document.activeElement.textContent), /^Sign out/);
+  assert.match(await page.evaluate(() => document.activeElement.textContent), /^Log out/);
   // Esc closes, focus back on the chip
   await page.keyboard.press('Escape');
   await page.waitForSelector('#hf-panel', { state: 'detached' });

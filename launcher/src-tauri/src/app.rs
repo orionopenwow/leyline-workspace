@@ -1097,8 +1097,11 @@ pub fn play_test_cli(cli: crate::playtest::Cli) -> i32 {
         let _ = settings::write_atomic(&dir.join(crate::playtest::REPORT), serde_json::to_string_pretty(rep).unwrap_or_default().as_bytes());
         1
     };
-    if cli.fresh {
-        return fail(&mut rep, "--fresh isn't in this launcher yet: the test uses this PC's launcher and its sign-in".into());
+    // --fresh (main.rs pointed the data folder at an empty one): nothing of a launcher already here may be in it
+    let had_settings = dir.join(settings::FILE_NAME).exists();
+    rep["fresh"] = serde_json::json!({ "asked": cli.fresh, "empty": !had_settings });
+    if cli.fresh && had_settings {
+        return fail(&mut rep, "--fresh needs an empty data folder: this one already has a launcher's settings".into());
     }
     let core = Core {
         settings: Mutex::new(settings::load(&dir)),
@@ -1109,8 +1112,41 @@ pub fn play_test_cli(cli: crate::playtest::Cli) -> i32 {
         upd: Mutex::new(UpdState::default()),
         deep_link: Mutex::new(None),
     };
-    let s = core.snapshot();
     let same = |a: &std::path::Path, b: &std::path::Path| a.to_string_lossy().trim_end_matches(['\\', '/']).eq_ignore_ascii_case(b.to_string_lossy().trim_end_matches(['\\', '/']));
+    // --game a folder the launcher doesn't have yet (a fresh data folder has none): added as Find your game files does
+    if let Some(g) = &cli.game {
+        if !core.snapshot().clients.iter().any(|c| same(&c.path, g)) {
+            let added = clients::detect(g).map_err(|e| e.to_string()).and_then(|det| {
+                core.update(|s| {
+                    let profile = clients::new_profile(g, &det, &s.clients);
+                    s.clients.push(profile.clone());
+                    if s.selected_client.is_none() {
+                        s.selected_client = Some(profile.id.clone());
+                    }
+                    Ok(serde_json::json!({ "build": profile.build.version(), "complete": det.complete, "missing": det.missing }))
+                })
+            });
+            match added {
+                Ok(a) => rep["added"] = a,
+                Err(e) => return fail(&mut rep, format!("couldn't add the game folder: {e}")),
+            }
+        }
+    }
+    // the test Hero Key (the first-run tool's test account), only from the environment: signed in, then forgotten
+    if let Some(key) = std::env::var_os(crate::playtest::KEY_ENV) {
+        std::env::remove_var(crate::playtest::KEY_ENV);
+        let key = key.to_string_lossy().to_string();
+        let out = crate::social::sign_in_key(&dir, &key);
+        drop(key);
+        match out {
+            Ok(v) => {
+                let me = v.get("me").cloned().unwrap_or_default();
+                rep["key_signin"] = serde_json::json!({ "ok": true, "name": me.get("name").cloned().unwrap_or_default() });
+            }
+            Err(e) => return fail(&mut rep, format!("the test Hero Key didn't sign in: {e}")),
+        }
+    }
+    let s = core.snapshot();
     let pick = match &cli.game {
         Some(g) => s.clients.iter().find(|c| same(&c.path, g)).map(|c| c.id.clone()),
         None => s.selected_client.clone().filter(|id| s.client(id).is_some_and(|c| c.build == clients::Build::V335a))

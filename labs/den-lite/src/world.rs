@@ -13,7 +13,7 @@
 use crate::companion::{self, Asked, At};
 use crate::den::{self, Change, WorldObject};
 use crate::notice::{self, Item, Old, Route};
-use crate::{movewatch, ovmod, play, raw, testctl};
+use crate::{dojo, movewatch, ovmod, play, raw, testctl};
 use crate::{Gender as HeroGender, Shared};
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -234,6 +234,7 @@ fn leave(shared: &Shared, id: u64) {
             shared.event("moves", &shared.cfg.hero.name, &w.summary());
         }
         shared.companion.lock().unwrap_or_else(|e| e.into_inner()).away();
+        shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).job = None;
         shared.autosave();
     }
 }
@@ -333,6 +334,30 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 }
             }
         }
+        // the game's answers to the Dojo's fly and speed changes (dojo.rs): counted for the log, and where the
+        // character is (nothing waits for them)
+        if dojo::ACKS.contains(&op) {
+            let what = match op {
+                dojo::CMSG_MOVE_SET_CAN_FLY_ACK => "fly",
+                dojo::CMSG_FORCE_RUN_SPEED_CHANGE_ACK => "run speed",
+                _ => "flight speed",
+            };
+            if sess.me.host {
+                let mut d = shared.dojo.lock().unwrap_or_else(|e| e.into_inner());
+                if op == dojo::CMSG_MOVE_SET_CAN_FLY_ACK { d.acks.0 += 1 } else { d.acks.1 += 1 }
+            }
+            shared.event("dojo_ack", &sess.me.name, &format!("{what} {}", dojo::ack_counter(&body).unwrap_or(0)));
+            if let (Some(p), Some(n)) = (pos.as_mut(), dojo::ack_pos(&body)) {
+                *p = n;
+                if let Some(l) = shared.live.lock().unwrap().as_mut().filter(|l| l.0 == sess.id) {
+                    l.2 = n;
+                }
+                if let Some(me) = shared.players.lock().unwrap().iter_mut().find(|x| x.sess == sess.id) {
+                    me.pos = n;
+                }
+            }
+            continue;
+        }
         // the game's own settings (accdata.rs): unanswered, it had no key bindings and the character never moved
         if op == crate::accdata::CMSG_REQUEST && body.len() >= 4 {
             let t = u32::from_le_bytes([body[0], body[1], body[2], body[3]]);
@@ -372,7 +397,8 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 if let Some(me) = shared.players.lock().unwrap().iter_mut().find(|x| x.sess == sess.id) {
                     me.pos = n;
                 }
-                if let (Ok(code), Some(b)) = (u16::try_from(op), relay_body(sess.me.guid, &body)) {
+                // the others see the move (not the game's own "I fly now", which is only for the server)
+                if let (Ok(code), Some(b), true) = (u16::try_from(op), relay_body(sess.me.guid, &body), op != dojo::CMSG_MOVE_SET_FLY) {
                     for o in others(shared, sess.id) {
                         let _ = o.w.send_raw(code, &b);
                     }
@@ -420,6 +446,14 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 watch = Some(w);
                 enter_world(&c.w, shared, &user.to_string(), &sess.me, start)?;
                 arrive(&c.w, shared, &sess, start)?;
+                // the Dojo: the game starts on foot at its normal speed; the training dummies up are shown
+                if sess.me.host {
+                    shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).entered();
+                }
+                let dummies = shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).dummies.clone();
+                for d in &dummies {
+                    c.send(&dummy_create(d))?;
+                }
                 pos = Some(start);
                 loaded = false;
                 shared.event("in_world", &sess.me.name, &format!("{:.1} {:.1} {:.1}", start.x, start.y, start.z));
@@ -692,10 +726,11 @@ fn moved(m: &ClientOpcodeMessage) -> Option<Pos> {
 }
 
 /// A client movement packet read by hand: MSG_MOVE_START_FORWARD (0x0B5) .. SET_WALK_MODE (0x0C3), FALL_LAND ..
-/// STOP_SWIM (0x0C9 - 0x0CB), SET_FACING / SET_PITCH (0x0DA, 0x0DB) and HEARTBEAT (0x0EE): packed guid, u32 flags,
-/// u16 flags2, u32 time, then x, y, z, orientation.
+/// STOP_SWIM (0x0C9 - 0x0CB), SET_FACING / SET_PITCH (0x0DA, 0x0DB), HEARTBEAT (0x0EE) and, flying (the Dojo's
+/// `.den fly`), CMSG_MOVE_SET_FLY (0x346), START_ASCEND / STOP_ASCEND (0x359, 0x35A) and START_DESCEND (0x3A7):
+/// packed guid, u32 flags, u16 flags2, u32 time, then x, y, z, orientation.
 pub fn raw_move(op: u32, body: &[u8]) -> Option<Pos> {
-    if !matches!(op, 0x0B5..=0x0C3 | 0x0C9..=0x0CB | 0x0DA | 0x0DB | 0x0EE) {
+    if !matches!(op, 0x0B5..=0x0C3 | 0x0C9..=0x0CB | 0x0DA | 0x0DB | 0x0EE | 0x346 | 0x359 | 0x35A | 0x3A7) {
         return None;
     }
     let mask = *body.first()?;
@@ -1069,11 +1104,16 @@ const HELP: &[&str] = &[
     ".den room white|stone|wood: the room's look; .den grow / .den size [1-4]: how big it is",
     ".den companion [stay|follow|come|tips|away]: your companion (or say \"Jaina, stay\"); .den ask <words> or \"Jaina, ...\" near her: to your assistant (Leyline's Agents page), or her own tips",
     ".den mode [id]: Leyline's game modes and how to try one on this PC; .den mods: the addons and mods in your game",
+    ".den dojo: a training ring with dummies (your companion builds it); .den fly on|off; .den speed 1-5; \"Jaina, build a garden\" (.den dojo help: more)",
 ];
 
 fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Result<()> {
     let words: Vec<String> = text.split_whitespace().map(|w| w.to_lowercase()).collect();
     let w = |i: usize| words.get(i).map(String::as_str).unwrap_or("");
+    // `.dojo ...` is `.den dojo ...` (the full Den's ov_dojo.lua has both)
+    if w(0) == ".dojo" {
+        return chat(c, shared, sess, p, &format!(".den dojo {}", words[1..].join(" ")));
+    }
     match (w(0), w(1)) {
         (".den", "") | (".den", "help") => {
             for l in HELP {
@@ -1227,7 +1267,15 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                 Err(e) => say(c, &e),
             }
         }
+        // the Dojo (dojo.rs): the training ring, dummies, flying, speed
+        (".den", "dojo") => dojo_cmd(c, shared, sess, p, &words[2..]),
+        (".den", "fly") => fly(c, shared, sess, w(2)),
+        (".den", "speed") => speed(c, shared, sess, w(2)),
         (".den", "companion") | (".den", "jaina") => match w(2) {
+            "build" | "make" => match dojo::build_words(&words[2..].join(" ")) {
+                Some(name) => jaina_build(c, shared, sess, p, &name),
+                None => say(c, "Build what? .den jaina build garden (.den stamps lists them; dojo is the training ring)."),
+            },
             "away" | "dismiss" | "bye" | "go" => {
                 if !shared.companion.lock().unwrap().out {
                     return say(c, "Your companion isn't here.");
@@ -1277,7 +1325,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
         }
         (".den", "friends") => friends(c, shared, w(2), w(3)),
         (".den", "invite") | (".den", "forge") => ask_launcher(c, shared, w(1)),
-        (".den", _) | (".build", _) => say(c, "Den Lite knows: .den place, .den find, .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room, .den grow, .den size, .den companion, .den ask, .den mode, .den mods, .den friends, .den invite, .den forge."),
+        (".den", _) | (".build", _) => say(c, "Den Lite knows: .den place, .den find, .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room, .den grow, .den size, .den companion, .den ask, .den mode, .den mods, .den friends, .den invite, .den forge, .den dojo, .den fly, .den speed."),
         // Another server's commands (GM addons send ".server info", ".account onlinelist" on login): not said
         // aloud, and nothing to answer in a Den.
         (w0, _) if w0.starts_with('.') => Ok(()),
@@ -1286,6 +1334,10 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             // "Jaina, ..." near her: she hears it too (said aloud as usual). The short commands ("Jaina, come") are
             // hers wherever she is in the Den; the rest is an ask, heard within HEAR yards.
             if let Some(words) = companion::heard(text) {
+                // "Jaina, build a garden": she builds a stamp (dojo.rs), wherever she is in the Den
+                if let Some(name) = dojo::build_words(&words) {
+                    return jaina_build(c, shared, sess, p, &name);
+                }
                 if let Some(cmd) = companion::command(&words) {
                     return order(c, shared, p, cmd);
                 }
@@ -1433,6 +1485,31 @@ fn companion_create(at: At) -> SMSG_UPDATE_OBJECT {
 
 /// CMSG_CREATURE_QUERY: her name (what the client shows over her), "<Your companion>" under it, humanoid, her model.
 fn creature_answer(entry: u32) -> SMSG_CREATURE_QUERY_RESPONSE {
+    if let Some((_, display, name, _)) = dojo::dummy(entry) {
+        return SMSG_CREATURE_QUERY_RESPONSE {
+            creature_entry: entry,
+            found: Some(SMSG_CREATURE_QUERY_RESPONSE_found {
+                name1: name.into(),
+                name2: String::new(),
+                name3: String::new(),
+                name4: String::new(),
+                sub_name: String::new(),
+                description: String::new(),
+                type_flags: 0,
+                creature_type: 9, // mechanical
+                creature_family: CreatureFamily::None,
+                creature_rank: 0,
+                kill_credit1: 0,
+                kill_credit2: 0,
+                display_ids: [display, 0, 0, 0],
+                health_multiplier: 1.0,
+                mana_multiplier: 1.0,
+                racial_leader: 0,
+                quest_items: [0; 6],
+                movement_id: 0,
+            }),
+        };
+    }
     if entry != companion::ENTRY {
         return SMSG_CREATURE_QUERY_RESPONSE { creature_entry: entry | 0x8000_0000, found: None };
     }
@@ -1684,4 +1761,320 @@ fn check_open(shared: &Shared, w: &Writer, file: &str) -> io::Result<()> {
     let ch = d.open(&doc, true);
     drop(d);
     apply(w, shared, &ch)
+}
+
+// ---------------------------------------------------------------- the Dojo (dojo.rs): training grounds without combat
+
+/// The Den bar's Dojo panel line (`wuden dojo <line>`), only when the bar is there.
+fn dojo_line(c: &Writer, shared: &Shared, sess: &Sess) -> io::Result<()> {
+    let line = shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).line();
+    bar_data(c, shared, sess.id, sess.me.guid, "dojo", &line)
+}
+
+/// `.den fly on|off` (alone: switches it): the game lets the character fly, or lands it.
+fn fly(c: &Writer, shared: &Shared, sess: &Sess, w: &str) -> io::Result<()> {
+    let cur = shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).fly;
+    let on = if w.is_empty() {
+        !cur
+    } else {
+        match dojo::on_off(w) {
+            Some(b) => b,
+            None => return say(c, "Usage: .den fly on or .den fly off (.den fly alone switches it)."),
+        }
+    };
+    let n = {
+        let mut d = shared.dojo.lock().unwrap_or_else(|e| e.into_inner());
+        d.fly = on;
+        d.counter()
+    };
+    let op = if on { dojo::SMSG_MOVE_SET_CAN_FLY } else { dojo::SMSG_MOVE_UNSET_CAN_FLY };
+    c.send_raw(op, &dojo::can_fly_body(sess.me.guid, n))?;
+    shared.event("dojo", &sess.me.name, if on { "fly on" } else { "fly off" });
+    say(c, if on { "You can fly: jump, then hold Space to rise and X to sink. .den fly off lands you." } else { "Flying is off: you come down where you are." })?;
+    dojo_line(c, shared, sess)
+}
+
+/// `.den speed 1-5`: run and flight speed, times your normal.
+fn speed(c: &Writer, shared: &Shared, sess: &Sess, w: &str) -> io::Result<()> {
+    if w.is_empty() {
+        let n = shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).speed_now();
+        return say(c, &format!("Your speed: {n} (.den speed 1 to {}).", dojo::MAX_SPEED));
+    }
+    let n = match dojo::speed_arg(w) {
+        Ok(n) => n,
+        Err(e) => return say(c, &e),
+    };
+    let (a, b) = {
+        let mut d = shared.dojo.lock().unwrap_or_else(|e| e.into_inner());
+        d.speed = n;
+        (d.counter(), d.counter())
+    };
+    c.send_raw(dojo::SMSG_FORCE_RUN_SPEED_CHANGE, &dojo::run_speed_body(sess.me.guid, a, dojo::BASE_RUN * n as f32))?;
+    c.send_raw(dojo::SMSG_FORCE_FLIGHT_SPEED_CHANGE, &dojo::flight_speed_body(sess.me.guid, b, dojo::BASE_FLIGHT * n as f32))?;
+    shared.event("dojo", &sess.me.name, &format!("speed {n}"));
+    say(c, &if n == 1 { "Normal speed.".to_string() } else { format!("You run and fly {n} times as fast (.den speed 1: normal).") })?;
+    dojo_line(c, shared, sess)
+}
+
+const DOJO_HELP: &[&str] = &[
+    ".den dojo: a training ring beside you, built by your companion, with three training dummies in it (or .dojo)",
+    ".den dojo dummies [1-5]: training dummies (in the ring, or in front of you); .den dojo clear: the dummies down",
+    ".den fly on|off: fly (jump, then Space to rise, X to sink); .den speed 1-5: run and fly faster",
+    ".den jaina build <stamp>, or say \"Jaina, build a garden\": she walks over and builds it piece by piece",
+    "On the full Den (Leyline > Host > Your Den): dummies that count your damage, bosses, a duel ring, a new look.",
+];
+
+/// `.den dojo [ring|dummies [n]|clear|fly|speed|build <stamp>|status|help]`.
+fn dojo_cmd(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, args: &[String]) -> io::Result<()> {
+    let a = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+    match a(0) {
+        "" | "ring" | "here" | "on" => jaina_build(c, shared, sess, p, "dojo"),
+        "dummies" | "dummy" | "dummys" => {
+            let n = a(1).parse::<usize>().unwrap_or(3);
+            let made = dummies_up(shared, p, n);
+            say(c, &format!("{made} training dummies up. Den Lite has no combat: they stand still for practice and pictures (the full Den counts your damage)."))?;
+            dojo_line(c, shared, sess)
+        }
+        "clear" | "off" | "down" => {
+            let (gone, building) = {
+                let mut d = shared.dojo.lock().unwrap_or_else(|e| e.into_inner());
+                (d.clear_dummies(), d.job.take().is_some())
+            };
+            for pl in shared.players.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+                for &g in &gone {
+                    let _ = pl.w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(g), target_died: false });
+                }
+            }
+            if building {
+                shared.companion.lock().unwrap_or_else(|e| e.into_inner()).follow_on();
+            }
+            shared.event("dojo", &sess.me.name, &format!("clear {}", gone.len()));
+            say(c, &format!("{} dummies down{}. The ring stays: .build undo takes it back.", gone.len(), if building { ", the build stopped" } else { "" }))?;
+            dojo_line(c, shared, sess)
+        }
+        "fly" => fly(c, shared, sess, a(1)),
+        "speed" => speed(c, shared, sess, a(1)),
+        "build" | "jaina" | "make" => match dojo::build_words(&args.join(" ")).or_else(|| (a(0) == "jaina").then(|| "dojo".into())) {
+            Some(name) => jaina_build(c, shared, sess, p, &name),
+            None => say(c, "Build what? .den dojo build garden (.den stamps lists them)."),
+        },
+        "status" => dojo_line(c, shared, sess),
+        "boss" | "bosses" | "duel" | "duels" | "dps" | "meter" | "look" | "barber" | "best" | "queue" | "dungeon" | "raid" => {
+            say(c, &format!("That {}. Here: .den dojo, .den dojo dummies, .den fly, .den speed, \"Jaina, build ...\".", dojo::FULL_ONLY))?;
+            dojo_line(c, shared, sess)
+        }
+        _ => {
+            for l in DOJO_HELP {
+                say(c, l)?;
+            }
+            dojo_line(c, shared, sess)
+        }
+    }
+}
+
+/// `n` training dummies (the old ones down first) for everyone in the world: how many went up.
+fn dummies_up(shared: &Shared, p: Pos, n: usize) -> usize {
+    // never the Den's lock and the Dojo's together (dojo_tick takes them one after the other too)
+    let at = shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).ring.unwrap_or(p);
+    let z = shared.den.lock().unwrap_or_else(|e| e.into_inner()).floor_at(at.x, at.y);
+    let (gone, made) = {
+        let mut d = shared.dojo.lock().unwrap_or_else(|e| e.into_inner());
+        (d.clear_dummies(), d.place_dummies(p, n, dojo::DUMMIES[0].0, z))
+    };
+    for pl in shared.players.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+        for &g in &gone {
+            let _ = pl.w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(g), target_died: false });
+        }
+        for m in &made {
+            let _ = pl.w.send(&dummy_create(m));
+        }
+    }
+    shared.event("dojo", "", &format!("dummies {}", made.len()));
+    made.len()
+}
+
+/// `.den jaina build <stamp>` / "Jaina, build a garden" / `.den dojo` (the stamp "dojo": the training ring, then its
+/// dummies): the stamp goes into the Den at once (saved, one undo) in front of the player; with the companion out
+/// she walks over and the game is shown it piece by piece (dojo_ticker), else all at once.
+fn jaina_build(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, name: &str) -> io::Result<()> {
+    let ring = name == "dojo" || name == "ring" || name == "training";
+    let st = if ring { den::parse(dojo::DOJO_STAMP) } else { den::read_stamp(&shared.cfg.stamps_dir, name) };
+    let st = match st {
+        Ok(st) => st,
+        Err(e) => return say(c, &format!("{e} .den stamps lists them; dojo is the training ring.")),
+    };
+    let out = shared.companion.lock().unwrap_or_else(|e| e.into_inner()).out;
+    if shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).job.is_some() {
+        return if out { monster_say(c, dojo::BUSY) } else { say(c, dojo::BUSY) };
+    }
+    // in front of the player (snapped to the stamps' 15 degree steps), its middle far enough that it all fits there
+    let step = std::f32::consts::PI / 12.0;
+    let o = ((p.o / step).round() * step).rem_euclid(2.0 * std::f32::consts::PI);
+    let me = At { o, ..p };
+    let far = dojo::reach(&st.props.iter().map(|e| (e.x, e.y)).collect::<Vec<_>>());
+    let mid = dojo::ahead(me, far);
+    // on the ground there (a player flying overhead builds on the ground, not in the air)
+    let (origin, stand) = {
+        let d = shared.den.lock().unwrap_or_else(|e| e.into_inner());
+        let origin = At { z: d.floor_at(mid.x, mid.y), ..mid };
+        let s = dojo::stand_spot(me, origin);
+        (origin, At { z: d.floor_at(s.x, s.y), ..s })
+    };
+    let ch = shared.den.lock().unwrap_or_else(|e| e.into_inner()).stamp(&st, origin.x, origin.y, origin.z, o);
+    if ch.created.is_empty() {
+        return say(c, &ch.message);
+    }
+    if ring {
+        shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).ring = Some(origin);
+    }
+    let title = st.title.clone().or(st.name.clone()).unwrap_or_else(|| name.to_string());
+    shared.event("dojo", &sess.me.name, &format!("build {name} {}", ch.created.len()));
+    if !out {
+        // no companion out: all of it at once, as a stamp
+        apply(c, shared, &ch)?;
+        if ring {
+            dummies_up(shared, p, 3);
+        }
+        say(c, "(Call your companion, .den companion, and she builds it for you piece by piece.)")?;
+        return dojo_line(c, shared, sess);
+    }
+    shared.event("den_change", "", &format!("+{} -0", ch.created.len()));
+    testctl::note_change(ch.created.len(), 0);
+    // friends see it at once; the host watches her build it
+    for o in others(shared, sess.id) {
+        let _ = send_creates(&o.w, &ch.created);
+    }
+    let ms = now_ms();
+    let walked = {
+        let mut comp = shared.companion.lock().unwrap_or_else(|e| e.into_inner());
+        comp.heard_now(now());
+        comp.go_stay(stand, ms).map(|w| (w, comp.moves))
+    };
+    let walk_ms = match walked {
+        Some(((from, to, d), id)) => {
+            walk(c, from, to, d, id)?;
+            d as u64
+        }
+        None => 0,
+    };
+    monster_say(c, dojo::ON_IT)?;
+    let mut job = dojo::Job::new(stand, origin, ch.created, ms, walk_ms, &title);
+    job.then_dummies = ring;
+    shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).job = Some(job);
+    dojo_line(c, shared, sess)
+}
+
+/// The training dummy's create: a unit like the companion's (dojo::DUMMIES: its entry, model and level), friendly,
+/// standing still. Den Lite has no combat: nothing ever hits it.
+fn dummy_create(d: &dojo::Dummy) -> SMSG_UPDATE_OBJECT {
+    let (entry, display, _, level) = dojo::dummy(d.entry).unwrap_or(dojo::DUMMIES[0]);
+    let guid = Guid::new(d.guid);
+    let mask = UpdateUnitBuilder::new()
+        .set_object_guid(guid)
+        .set_object_entry(entry as i32)
+        .set_object_scale_x(1.0)
+        .set_unit_bytes_0(Race::Human, Class::Warrior, Gender::Male, Power::Rage)
+        .set_unit_health(100)
+        .set_unit_maxhealth(100)
+        .set_unit_level(level.into())
+        .set_unit_factiontemplate(35)
+        .set_unit_flags(832)
+        .set_unit_boundingradius(0.389)
+        .set_unit_combatreach(1.5)
+        .set_unit_displayid(display as i32)
+        .set_unit_nativedisplayid(display as i32)
+        .set_unit_bytes_1(UnitStandState::Stand, 0, 0, 0)
+        .set_unit_mod_cast_speed(1.0)
+        .set_unit_npc_flags(0)
+        .set_unit_hoverheight(1.0)
+        .finalize();
+    let living = MovementBlock_UpdateFlag_Living::Living {
+        backwards_flight_speed: 4.5,
+        backwards_running_speed: 4.5,
+        backwards_swimming_speed: 2.5,
+        fall_time: 0.0,
+        flags: MovementBlock_MovementFlags::empty(),
+        flight_speed: 7.0,
+        orientation: d.at.o,
+        pitch_rate: std::f32::consts::PI,
+        position: Vector3d { x: d.at.x, y: d.at.y, z: d.at.z },
+        running_speed: 7.0,
+        swimming_speed: 4.722222,
+        timestamp: 0,
+        turn_rate: std::f32::consts::PI,
+        walking_speed: 2.5,
+    };
+    SMSG_UPDATE_OBJECT {
+        objects: vec![Object::CreateObject {
+            guid3: guid,
+            mask2: UpdateMask::Unit(mask),
+            movement2: MovementBlock { update_flag: MovementBlock_UpdateFlag::empty().set_living(living) },
+            object_type: ObjectType::Unit,
+        }],
+    }
+}
+
+/// Every 50 ms for as long as Den Lite runs: the companion's build in progress (dojo::Job), shown to the host.
+pub fn dojo_ticker(shared: Arc<Shared>) {
+    loop {
+        std::thread::sleep(Duration::from_millis(50));
+        let _ = dojo_tick(&shared);
+    }
+}
+
+fn dojo_tick(shared: &Shared) -> io::Result<()> {
+    if shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).job.is_none() {
+        return Ok(());
+    }
+    let live = shared.live.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let Some((sess_id, w, p)) = live else {
+        shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).job = None;
+        return Ok(());
+    };
+    let ms = now_ms();
+    // the props still in the Den (an undo while she builds takes the rest back), before the Dojo's lock
+    let placed: std::collections::HashSet<u64> = shared.den.lock().unwrap_or_else(|e| e.into_inner()).props.iter().map(|x| x.obj.guid).collect();
+    let (steps, done) = {
+        let mut d = shared.dojo.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(job) = d.job.as_mut() else { return Ok(()) };
+        let steps = job.due(ms, |g| placed.contains(&g));
+        let done = steps.iter().any(|s| matches!(s, dojo::Step::Done { .. })).then(|| (job.title.clone(), job.then_dummies));
+        if done.is_some() {
+            d.job = None;
+        }
+        (steps, done)
+    };
+    let out = shared.companion.lock().unwrap_or_else(|e| e.into_inner()).out;
+    for s in steps {
+        match s {
+            dojo::Step::Start { ms: cast, at } => {
+                if out {
+                    w.send_raw(dojo::SMSG_SPELL_START, &dojo::spell_start_body(companion::GUID, dojo::BUILD_SPELL, cast, at))?;
+                }
+            }
+            dojo::Step::Piece { obj, facing } => {
+                if out {
+                    let (here, id) = shared.companion.lock().unwrap_or_else(|e| e.into_inner()).face(facing, ms);
+                    w.send_raw(dojo::SMSG_MONSTER_MOVE, &dojo::facing_body(companion::GUID, here, id, facing))?;
+                    w.send_raw(dojo::SMSG_SPELL_GO, &dojo::spell_go_body(companion::GUID, dojo::BUILD_SPELL, ms as u32, [obj.x, obj.y, obj.z]))?;
+                }
+                send_creates(&w, std::slice::from_ref(&obj))?;
+            }
+            dojo::Step::Done { shown } => {
+                shared.companion.lock().unwrap_or_else(|e| e.into_inner()).follow_on();
+                let (title, ring) = done.clone().unwrap_or_default();
+                shared.event("dojo", "", &format!("built {shown}"));
+                if ring {
+                    dummies_up(shared, p, 3);
+                }
+                if out {
+                    monster_say(&w, if ring { dojo::BUILT_DOJO } else { dojo::BUILT })?;
+                }
+                notify_host(shared, Item::line("ok", format!("{title} is up ({shown} props). .build undo takes it back.")))?;
+                let line = shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).line();
+                bar_data(&w, shared, sess_id, PLAYER_GUID, "dojo", &line)?;
+            }
+        }
+    }
+    Ok(())
 }

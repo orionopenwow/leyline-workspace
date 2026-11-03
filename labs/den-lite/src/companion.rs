@@ -373,6 +373,27 @@ impl Companion {
         Some(self.walk_to(now, spot(p), ms))
     }
 
+    /// The Dojo's builds (dojo.rs): she walks to `target` and waits there (stay) until told to follow again.
+    pub fn go_stay(&mut self, target: At, ms: u64) -> Option<(At, At, u32)> {
+        if !self.out {
+            return None;
+        }
+        self.order = Order::Stay;
+        let now = self.pos(ms);
+        let (from, to, d) = self.walk_to(now, target, ms);
+        // she arrives facing the way the build wants, not the way she walked
+        self.to.o = target.o;
+        Some((from, At { o: target.o, ..to }, d))
+    }
+
+    /// She turns where she stands (the Dojo's builds: to each piece): where she is, and the spline id to use.
+    pub fn face(&mut self, o: f32, ms: u64) -> (At, u32) {
+        let here = At { o, ..self.pos(ms) };
+        (self.from, self.to, self.start, self.arrive) = (here, here, ms, ms);
+        self.moves += 1;
+        (here, self.moves)
+    }
+
     fn walk_to(&mut self, now: At, target: At, ms: u64) -> (At, At, u32) {
         let d = dist(now, target);
         let speed = if d > 6.0 { RUN } else { WALK };
@@ -639,5 +660,23 @@ mod tests {
         assert_eq!(c.nudge(5000, 0), None, "once");
         c.arrive(9000);
         assert_eq!(c.nudge(9000 + NUDGE_AFTER + NUDGE_QUIET, 0), Some(NUDGE), "a new session");
+    }
+
+    #[test]
+    fn she_walks_to_a_build_waits_there_and_turns() {
+        let mut c = Companion::default();
+        assert_eq!(c.go_stay(At::default(), 0), None, "not out: no walk");
+        let p = At { x: 0.0, y: 0.0, z: 0.0, o: 0.0 };
+        c.come(p, 0);
+        let target = At { x: 10.0, y: 0.0, z: 0.0, o: 2.0 };
+        let (_, to, ms) = c.go_stay(target, 1000).expect("a walk");
+        assert!(dist(to, target) < 1e-4 && (to.o - 2.0).abs() < 1e-6 && ms > 1000);
+        assert_eq!(c.order, Order::Stay);
+        // she waits there: the player walking off doesn't pull her
+        assert_eq!(c.follow(At { x: -20.0, ..p }, 1000 + ms as u64), None);
+        let id = c.moves;
+        let (here, sid) = c.face(0.5, 1000 + ms as u64);
+        assert!(dist(here, target) < 1e-4 && (here.o - 0.5).abs() < 1e-6 && sid == id + 1);
+        assert_eq!(c.pos(5000 + ms as u64).o, 0.5);
     }
 }

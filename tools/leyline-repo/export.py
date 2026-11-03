@@ -476,6 +476,10 @@ def export(src: Path, target: Path, dry: bool = False, out=print) -> dict:
     files[".gitignore"] = (GITIGNORE.encode(), False)
 
     missing = missing_includes(files)
+    # the Leyline repo's launcher workflow installs from the lockfiles (npm ci, cargo --locked; security review 2 Nov)
+    if "launcher/package.json" in files:
+        missing += [f"{lock}: the launcher workflow builds from it" for lock in
+                    ("launcher/package-lock.json", "launcher/src-tauri/Cargo.lock") if lock not in files]
     if missing:
         raise Refused("the launcher builds in files the export leaves out (its build would fail):\n  "
                       + "\n  ".join(missing))

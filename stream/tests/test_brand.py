@@ -17,6 +17,7 @@ TMP = tempfile.mkdtemp(prefix="wu-brand-")
 MODS, ARM, ART = (os.path.join(TMP, d) for d in ("mods", "armory", "art"))
 for d in (os.path.join(MODS, "files"), os.path.join(ARM, "c"), ART):
     os.makedirs(d)
+os.environ["WU_DL_PROBE"] = "0"   # stream/downloads.py never asks GitHub in a test
 os.environ.update(SOAP_USER="WUSOAP", SOAP_PASS="x", AC_SOAP_URL="http://127.0.0.1:9/", PORTAL_URL="http://127.0.0.1:9",
                   WU_STREAM="0", STREAM_HOST="wrath.example", PUBLIC_HOST="play.example", WU_MODS_DIR=MODS,
                   WU_ARMORY_DIR=ARM, WU_ART_DIR=ART, WU_RELAY_LISTING="http://127.0.0.1:9/api/listing/realms.json",
@@ -113,7 +114,7 @@ def get(path, ip="203.0.113.5"):
     c.request("GET", path, headers={"X-Forwarded-For": ip}); r = c.getresponse()
     return r.status, {k.lower(): v for k, v in r.getheaders()}, r.read().decode("utf-8", "replace")
 
-PAGES = ["/wrath", "/wrath/leyline", "/wrath/realms", "/wrath/modes", "/wrath/mods", "/wrath/mods/pings", "/wrath/armory",
+PAGES = ["/wrath", "/wrath/leyline", "/wrath/download", "/wrath/start", "/wrath/realms", "/wrath/modes", "/wrath/mods", "/wrath/mods/pings", "/wrath/armory",
          "/wrath/armory/Arthas", "/wrath/armory/Nobody", "/wrath/q/258", "/wrath/u/Arthas", "/wrath/r/wrath",
          "/wrath/m/pings", "/wrath/demo", "/wrath/docs", "/wrath/docs/mods", "/wrath/docs/play", "/wrath/docs/hosting",
          "/wrath/docs/hero-key", "/wrath/docs/publishing", "/wrath/workshop", "/wrath/host", "/wrath/link",

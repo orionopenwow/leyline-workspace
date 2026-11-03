@@ -50,6 +50,8 @@ deploys); local play is in `play\`.
 - **Open the launcher:** double-click `Open Leyline Launcher.bat`. No installer: it keeps one file, `.launcher\Leyline.exe`,
   fresh from the `launcher-latest` release (GitHub builds it after every launcher change) and opens it.
   `Open Leyline Launcher.bat rebuild` builds it on this PC instead (Node.js and Rust).
+- **Download options for players:** the site's `/wrath/download` (`stream/downloads.py`): Leyline.exe, the installers,
+  the portable zip, macOS, Linux, every release, the source and the SHA-256 checksums with how to verify them.
 - **Release the launcher:** `Ship the Leyline launcher.bat`.
 - **Host a realm:** `hosting/kit/Host a Leyline realm.bat`, or `/wrath/host` on the site. Guide:
   `hosting/INSTALL-OPERATE.md`.

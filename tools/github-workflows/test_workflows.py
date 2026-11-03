@@ -301,6 +301,20 @@ class Workflows(unittest.TestCase):
         self.assertIn("'release'", doc["concurrency"]["group"])
         self.assertNotRegex(text, r"never downloads")
 
+    def test_launcher_pinned_builds(self):
+        # security review 2 Nov (F2): the signing key runs beside the build tools, so they come from the lockfiles
+        text, doc = load("leyline-launcher.yml")
+        self.assertNotRegex(text, r"npm install\b")
+        self.assertEqual(text.count("npm ci --no-audit --no-fund"), 3)
+        self.assertIn("cargo test --locked", text)
+        self.assertIn("npx tauri build --no-bundle -- --locked", text)
+        for j in ("release", "release-macos"):
+            act = [s for s in doc["jobs"][j]["steps"] if s.get("uses", "").startswith("tauri-apps/tauri-action")][0]
+            self.assertTrue(act["with"]["args"].endswith(" -- --locked"), j)
+        self.assertTrue((REPO / "launcher" / "package-lock.json").is_file(), "npm ci needs the lockfile")
+        self.assertTrue((REPO / "launcher" / "src-tauri" / "Cargo.lock").is_file())
+        self.assertNotIn("package-lock.json", (REPO / "launcher" / ".gitignore").read_text())
+
     def test_launcher_downloads_and_checksums(self):
         # owner 2 Nov: download options (the exe, a zip, ...) and a SHA256SUMS file per release (stream/downloads.py)
         text, doc = load("leyline-launcher.yml")

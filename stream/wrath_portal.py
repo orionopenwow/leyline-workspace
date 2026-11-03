@@ -300,6 +300,7 @@ leyline_net = _load_module("wu_leyline_net", "leyline_net.py")   # /wrath/leylin
 upstream_addons = _load_module("wu_upstream_addons", "upstream_addons.py")   # reviewed upstream addons in all.json (stream/upstream_addons.py)
 looks_mod = _load_module("wu_looks", "looks.py")   # /wrath/looks and the looks in all.json (stream/looks.py, stream/looks.json)
 herokey_mod = _load_module("wu_herokey", "herokey_sso.py")   # Hero Key sign-in on Beacons (stream/herokey_sso.py)
+downloads_mod = _load_module("wu_downloads", "downloads.py")   # /wrath/download and the Download choice (stream/downloads.py)
 hub_mod = _load_module("wu_hub", "hub.py")   # /wrath/leyline-preview: the hidden Leyline hub (stream/hub.py)
 playmodes = _load_module("wu_playmodes", "playmodes.py")   # game modes: /wrath/modes.json, Games, ?go=mode: (stream/playmodes.py)
 modepacks = _load_module("wu_modepacks", "modepack.py")   # modes anyone can host and fork: /wrath/modes/<id>, /jam (stream/modepack.py)
@@ -1756,11 +1757,16 @@ def _refresh_listing(busy=None) -> None:
 
 
 def launcher_download() -> str:
-    """The launcher's download (the hub's Download button), for "Get the launcher" on realm links."""
+    """The launcher's Windows file (the hub's _download(): Leyline.exe, or the release the admin console published)."""
     try:
         return hub_mod.hub._download() if hub_mod is not None else ""
     except Exception:   # noqa: BLE001 - links.py's own default then
         return ""
+
+
+def download_link() -> str:
+    """Where every "Get the launcher" goes: the download page with every option (stream/downloads.py), else the file."""
+    return DOWNLOAD_PATH if downloads_mod is not None else launcher_download()
 
 
 def community_realms() -> tuple[list[dict], bool]:
@@ -2801,7 +2807,7 @@ a.st-card p{margin:0;flex:1;font-size:14.5px;line-height:1.45;color:var(--lk-tex
 def start_links() -> dict:
     """Where each card goes: the real place for each, never a made-up page."""
     host = "/wrath/host" if hub_framed() and hostflow is not None else HOST_URL
-    return {"play": "/wrath", "launcher": launcher_download() or START_LAUNCHER, "den": START_DEN, "host": host}
+    return {"play": "/wrath", "launcher": download_link() or START_LAUNCHER, "den": START_DEN, "host": host}
 
 
 def start_page() -> bytes:
@@ -2833,6 +2839,30 @@ def start_page() -> bytes:
 
 
 # ----------------------------------------------------------------------------------------------
+# /wrath/download: every way to get the launcher (owner 2 Nov: "for the download button on site and everywhere lets have
+# options, like head to git to get zip, get the exe, etc"): Windows first, the installer, the zip, macOS, Linux, every
+# release and the source on GitHub, the checksums and how to verify. The header's Download links here. No script.
+# ----------------------------------------------------------------------------------------------
+
+DOWNLOAD_PATH = "/wrath/download"
+
+
+def download_page() -> bytes | None:
+    """The download page in the hub's frame when the front door is on, else in the Leyline look; None without
+    downloads.py (the caller then sends the releases page)."""
+    if downloads_mod is None:
+        return None
+    inner = downloads_mod.page_body(launcher_download())
+    title = f"Download · {REALM_NAME}"
+    meta = card_meta(DOWNLOAD_PATH, "Download Leyline")
+    framed = hub_frame(title, f'<div class="wu-pg wide"><div class="wu-box">{inner}</div></div>', DOWNLOAD_PATH, "",
+                       css=WU_BOX_CSS + downloads_mod.CSS, meta=meta)
+    if framed is not None:
+        return framed
+    return ly_shell(title, f'<section class="ly-panel">{inner}</section>', DOWNLOAD_PATH, "", "", WU_BOX_CSS + downloads_mod.CSS, meta=meta)
+
+
+# ----------------------------------------------------------------------------------------------
 # /wrath/looks: Looks, graphics packs, UI looks and graphics presets (stream/looks.py, stream/looks.json; owner 1 Nov:
 # "make the graphical upgrades and changes a main part of our site"). Filters are links (?v=<client>&t=<type>), no
 # script. One-click looks open the launcher (leyline://install/look:<slug>); the rest link to their author's page.
@@ -2849,7 +2879,7 @@ def looks_page(query: dict) -> bytes:
         offered = hub_mod.offered_builds() if hub_mod is not None else None
     except Exception:   # noqa: BLE001
         offered = None
-    inner = looks_mod.body(q, labels=labels, offered=offered, download=launcher_download(), pictures=not gamedata_off())
+    inner = looks_mod.body(q, labels=labels, offered=offered, download=download_link(), pictures=not gamedata_off())
     title = f"Looks · {REALM_NAME}"
     meta = card_meta(LOOKS_PATH, "Looks · Leyline")
     framed = hub_frame(title, inner, LOOKS_PATH, "looks", css=WU_BOX_CSS + looks_mod.CSS, meta=meta)
@@ -3710,7 +3740,7 @@ class PageHandler(BaseHTTPRequestHandler):
                                             who=armory.card_line if armory is not None else None,
                                             mods=workshop.mod if workshop else None,
                                             made=creations.card_item if creations is not None else None,
-                                            labels=RULESET_LABELS, host=PUBLIC_HOST, get_launcher=launcher_download()))
+                                            labels=RULESET_LABELS, host=PUBLIC_HOST, get_launcher=download_link()))
             return
         if path == "/wrath/modes" and modes is not None:
             if not browse_limit.hit(rl_bucket(self.ip()), 600):
@@ -3780,6 +3810,16 @@ class PageHandler(BaseHTTPRequestHandler):
                 self.send(429, busy_page(back=path))
                 return
             self.send(200, looks_page(query))
+            return
+        if path in (DOWNLOAD_PATH, DOWNLOAD_PATH + "/"):   # every download option (stream/downloads.py)
+            if not browse_limit.hit(rl_bucket(self.ip()), 600):
+                self.send(429, busy_page(back=path))
+                return
+            pg = download_page()
+            if pg is None:
+                self.redirect(START_LAUNCHER)
+                return
+            self.send(200, pg)
             return
         if path == START_PATH:   # Start here: the one path for new players
             if not browse_limit.hit(rl_bucket(self.ip()), 600):

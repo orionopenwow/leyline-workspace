@@ -57,6 +57,8 @@ rm -f "$BK/forum_discord.py"
 [ ! -f "$WU/portal/forum_discord.py" ] || cp -p "$WU/portal/forum_discord.py" "$BK/forum_discord.py"
 rm -f "$BK/discord_growth.py" "$BK/discord_template.json" "$BK/discord_template_v2.json"
 for f in discord_growth.py discord_template.json discord_template_v2.json; do [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
+had_downloads=""
+if [ -f "$WU/portal/downloads.py" ]; then cp -p "$WU/portal/downloads.py" "$BK/downloads.py"; had_downloads=1; fi
 had_duels=""
 if [ -f "$WU/portal/duels.py" ]; then cp -p "$WU/portal/duels.py" "$BK/duels.py"; had_duels=1; fi
 had_survivors=""
@@ -109,6 +111,7 @@ put_back() {
   if [ -n "$had_forum" ]; then cp -p "$BK/forum.py" "$WU/portal/forum.py"; else rm -f "$WU/portal/forum.py"; fi
   if [ -f "$BK/forum_discord.py" ]; then cp -p "$BK/forum_discord.py" "$WU/portal/forum_discord.py"; else rm -f "$WU/portal/forum_discord.py"; fi
   for f in discord_growth.py discord_template.json discord_template_v2.json; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
+  if [ -n "$had_downloads" ]; then cp -p "$BK/downloads.py" "$WU/portal/downloads.py"; else rm -f "$WU/portal/downloads.py"; fi
   if [ -n "$had_duels" ]; then cp -p "$BK/duels.py" "$WU/portal/duels.py"; else rm -f "$WU/portal/duels.py"; fi
   if [ -n "$had_survivors" ]; then cp -p "$BK/survivors.py" "$WU/portal/survivors.py"; else rm -f "$WU/portal/survivors.py"; fi
   if [ -n "$had_profiles" ]; then cp -p "$BK/profiles.py" "$WU/portal/profiles.py"; else rm -f "$WU/portal/profiles.py"; fi
@@ -224,6 +227,8 @@ if [ -f forum_discord.py ] && [ -f discord_growth.py ] && [ -f discord_template.
     install -m 644 discord_template_v2.json "$WU/portal/"
   fi
 fi
+# the download page and the Download choice (/wrath/download, stream/downloads.py): optional (without it Download is the file)
+if [ -f downloads.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' downloads.py && install -m 644 downloads.py "$WU/portal/downloads.py"; fi
 # the duel leaderboards (/wrath/leaderboards, /wrath/api/leaderboards): optional; it reads $WU/portal/duels/, which
 # duels-export.py fills (realm/serverpass.sh step 1d)
 if [ -f duels.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' duels.py && install -m 644 duels.py "$WU/portal/duels.py"; fi

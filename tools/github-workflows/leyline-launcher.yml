@@ -21,6 +21,10 @@
 # installed launcher downloads it in the background and offers Restart.
 # A hand-pushed tag still works: its version (launcher-v0.3.0 -> 0.3.0) must match tauri.conf.json, and a version with
 # a "-" (0.3.1-beta.1) is published as a pre-release, which only the opt-in early channel installs.
+# Pinned builds (security review 2 Nov, F2: the updater signing key is in the same job as the build tools): npm ci
+# installs exactly launcher/package-lock.json (the Tauri CLI), and cargo runs --locked against src-tauri/Cargo.lock
+# (`tauri build ... -- --locked` passes it to cargo build; release_version.py stamp writes the version into both
+# Cargo.toml and Cargo.lock, so the lock still matches after the stamp).
 # One run at a time per kind (pull requests apart): a release is never made twice, and a run that finds its release
 # already finished (latest.json there) builds nothing.
 name: leyline launcher
@@ -74,7 +78,7 @@ jobs:
           workspaces: launcher/src-tauri
       - name: cargo test (core, no webview)
         working-directory: launcher/src-tauri
-        run: cargo test --no-default-features
+        run: cargo test --locked --no-default-features
 
   # The simple way in (owner 2026-10-30: "why do we have to go through an installer? lets make this way simpler"):
   # every push to main builds one portable Leyline.exe (no installer: double-click and it runs; Windows 10 and 11 already
@@ -107,8 +111,8 @@ jobs:
         working-directory: launcher
         shell: bash
         run: |
-          npm install --no-audit --no-fund
-          npx tauri build --no-bundle
+          npm ci --no-audit --no-fund
+          npx tauri build --no-bundle -- --locked
           cp src-tauri/target/release/leyline.exe ../Leyline.exe
       - name: The portable zip and the checksums
         shell: bash
@@ -242,7 +246,7 @@ jobs:
         run: $(command -v python3 || command -v python) launcher/scripts/release_version.py stamp "${{ needs.create-release.outputs.stamp }}"
       - name: Install the Tauri CLI
         working-directory: launcher
-        run: npm install
+        run: npm ci --no-audit --no-fund
       - name: Updater signing on or off
         id: sign
         shell: bash
@@ -264,7 +268,7 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.id }}
           includeUpdaterJson: ${{ needs.create-release.outputs.signed == 'true' }}
           updaterJsonPreferNsis: true
-          args: ${{ matrix.args }} ${{ steps.sign.outputs.args }}
+          args: ${{ matrix.args }} ${{ steps.sign.outputs.args }} -- --locked
 
   release-macos:
     needs: create-release
@@ -291,7 +295,7 @@ jobs:
         run: $(command -v python3 || command -v python) launcher/scripts/release_version.py stamp "${{ needs.create-release.outputs.stamp }}"
       - name: Install the Tauri CLI
         working-directory: launcher
-        run: npm install
+        run: npm ci --no-audit --no-fund
       - name: Updater signing on or off
         id: sign
         shell: bash
@@ -312,7 +316,7 @@ jobs:
           projectPath: launcher
           releaseId: ${{ needs.create-release.outputs.id }}
           includeUpdaterJson: ${{ needs.create-release.outputs.signed == 'true' }}
-          args: --target universal-apple-darwin --bundles app,dmg ${{ steps.sign.outputs.args }}
+          args: --target universal-apple-darwin --bundles app,dmg ${{ steps.sign.outputs.args }} -- --locked
 
   # SHA256SUMS.txt on every release (owner 2 Nov: a checksums file per release, linked from the site's download page):
   # once the builds are attached, download every file of the release, hash it here and attach the list. Runs after

@@ -189,7 +189,7 @@ check("Join and Report on community realms", f'href="https://relay.example/join/
 check("filters: plain links", 'href="/wrath/realms?tag=pvp"' in page and 'href="/wrath/realms?build=1.12.1"' in page
       and 'href="/wrath/realms?region=eu"' in page and 'href="/wrath/realms?lang=de"' in page and 'href="/wrath/realms?now=1"' in page)
 check("Host your own: three steps and the links", 'id="host-your-own"' in page and page.count("<li>", page.find('id="host-your-own"')) >= 3
-      and 'href="/wrath/leyline">Get the launcher' in page and 'href="/wrath/host"' in page and "TODO(owner)" in page)
+      and 'href="/wrath/download">Get the launcher' in page and 'href="/wrath/host"' in page and "TODO(owner)" in page)
 check("the order is explained: nothing can be bought", "nothing can be bought" in page)
 st, _, pvp = req("GET", "/wrath/realms?tag=pvp")
 check("filter tag=pvp: pvp realms, the sample stays", st == 200 and "Busy Den" in pvp and "Picked One" in pvp
@@ -330,7 +330,7 @@ check("hub realms page: the form's filters on the server", st == 200 and "<b>Pic
 st, _, none = req("GET", "/wrath/leyline-preview/realms?client=own&tag=bots")
 check("hub realms page: no match says so", "No realms match these filters" in none)
 st, _, beacon = req("GET", "/wrath/leyline-preview/beacon")
-check("hub Host a Beacon: the launcher's Host page and the website", 'href="/wrath/leyline">Get the launcher' in beacon
+check("hub Host a Beacon: the launcher's Host page and the website", 'href="/wrath/download">Get the launcher' in beacon
       and 'href="/wrath/host"' in beacon)
 
 # ---------------------------------------------------------------- Warden (Browser players off) is carried for the hub

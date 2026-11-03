@@ -11,6 +11,7 @@ TMP = tempfile.mkdtemp(prefix="wu-site-")
 MODS, ARM, ART = (os.path.join(TMP, d) for d in ("mods", "armory", "art"))
 for d in (os.path.join(MODS, "files"), os.path.join(ARM, "c"), ART):
     os.makedirs(d)
+os.environ["WU_DL_PROBE"] = "0"   # stream/downloads.py never asks GitHub in a test
 os.environ.update(SOAP_USER="WUSOAP", SOAP_PASS="x", AC_SOAP_URL="http://127.0.0.1:9/", PORTAL_URL="http://127.0.0.1:9",
                   WU_STREAM="0", STREAM_HOST="wrath.example", PUBLIC_HOST="play.example", WU_MODS_DIR=MODS,
                   WU_ARMORY_DIR=ARM, WU_ART_DIR=ART, WU_RELAY_LISTING="http://127.0.0.1:9/api/listing/realms.json",
@@ -238,8 +239,21 @@ links = {k: h for k, h, *_ in cards}
 check("/wrath/start: four cards in order (Play in your browser, Get the launcher, Make your Den, Host a server)",
       [c[2] for c in cards] == ["Play in your browser", "Get the launcher", "Make your Den", "Host a server"], cards)
 check("/wrath/start: each card is one link to the real place", links.get("play") == "/wrath" and links.get("den") == "/wrath/docs/getting-started#your-den"
-      and links.get("host") == wp.html.escape(wp.HOST_URL) and links.get("launcher", "").startswith("https://github.com/orionopenwow/Leyline/releases")
+      and links.get("host") == wp.html.escape(wp.HOST_URL) and links.get("launcher") == "/wrath/download"
       and sp.count('class="st-card"') == 4, links)
+
+# ---------------------------------------------------------------- 4c. /wrath/download: every way to get the launcher
+st, hd, dp = get("/wrath/download")
+check("/wrath/download: 200, html, no script (CSP script-src 'none')", st == 200 and hd.get("content-type", "").startswith("text/html")
+      and "<script" not in dp and "script-src 'none'" in hd.get("content-security-policy", ""), st)
+check_chrome("/wrath/download", dp, "", next_step=False)
+check("/wrath/download: Download for Windows first, every row, Verify your download, the trust line",
+      "<h1>Download Leyline</h1>" in dp and "Download for Windows" in dp
+      and re.findall(r'<li class="dl-opt" id="dl-([a-z]+)"', dp) == ["windows", "installer", "macos", "linux", "github", "checksums"]
+      and 'id="verify"' in dp and "certutil -hashfile Leyline.exe SHA256" in dp
+      and "Open source. Built on GitHub from the public code. Check the SHA-256 before you run it." in dp)
+check("/wrath/download: no brand words, no client numbers", not BANNED.search(visible(dp))
+      and not re.search(r"\b(1\.12|2\.4\.3|3\.3\.5)", visible(dp)))
 check("/wrath/start: short words (a line each), no client numbers", all(len(c[3]) <= 120 for c in cards)
       and not re.search(r"\b(1\.12|2\.4\.3|3\.3\.5)", visible(sp)))
 check("/wrath/start: the longer guide and the Discord, once each", sp.count('href="/wrath/docs/getting-started"') == 1
@@ -449,7 +463,7 @@ st, hd, page = get("/wrath/looks")
 check_frame("framed /wrath/looks", page, "/wrath/looks")
 check("framed /wrath/looks: 200, the cards, the box styles, Get the launcher linked, no script allowed",
       st == 200 and len(look_cards(page)) == len(LK.published()) and 'class="wu-pg wide lk"' in page and ".lk-card{" in page
-      and "Get the launcher</a>" in page and "script-src 'none'" in hd.get("content-security-policy", ""))
+      and 'href="/wrath/download" rel="noopener noreferrer">Get the launcher</a>' in page and "script-src 'none'" in hd.get("content-security-policy", ""))
 check("framed /wrath/looks: its link card", 'property="og:title" content="Looks · Leyline"' in page)
 st, _, page = get("/wrath/docs/nope")
 check("framed docs 404", st == 404 and "There is no docs page with that name" in page and 'class="hb-top"' in page)

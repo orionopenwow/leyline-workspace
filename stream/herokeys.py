@@ -81,6 +81,7 @@ log = logging.getLogger("wrath-portal.herokeys")
 PAGE = "/wrath/key"
 START = PAGE + "/start"
 SIGNIN = PAGE + "/signin"
+PLAY_PAGE = "/wrath"         # a new guest account goes straight here
 SAVED = PAGE + "/saved"     # the login card's "Save in this browser" form lands here: a browser offers to keep the login
 WELCOME_PAGE = "/wrath/signin/welcome"   # stream/profiles.py WELCOME: Your profile, then on to where you were going
 FORM_MAX = 2048
@@ -214,8 +215,15 @@ def merge(jar: dict, set_cookies: list[str]) -> dict:
 
 
 def passed_on(set_cookies: list[str]) -> list[str]:
-    """The service's cookies the browser should get (its session, guest and new-key cookies), as it sent them."""
-    return [c for c in set_cookies if c.split("=", 1)[0].strip() in KEEP_COOKIES]
+    """The service's cookies the browser should get (its session, guest and new-key cookies), as it sent them, but
+    without a Domain: the site answers on two names (leylinelauncher.com and the old one), and a cookie for the other
+    name is dropped by the browser, which left a new account signed out (owner 2 Nov 23:18)."""
+    out = []
+    for c in set_cookies:
+        if c.split("=", 1)[0].strip() not in KEEP_COOKIES:
+            continue
+        out.append("; ".join(a for a in (x.strip() for x in c.split(";")) if a and not a.lower().startswith("domain=")))
+    return out
 
 
 def realm(method: str, path: str, cookie: str, ip: str, ua: str, form: dict | None = None, script: bool = False):
@@ -967,7 +975,7 @@ JS = r"""
   if(kept&&use){ use.hidden=false; use.addEventListener('click',function(){ inp.value=kept; f.requestSubmit ? f.requestSubmit() : f.submit(); }); }
 })();
 (function(){
-  // the login just made (made_page): Show, Copy, Download, Save in this browser
+  // your login (login_card): Show, Copy, Download, Save in this browser
   var root=document.getElementById('hk-made'); if(!root) return;
   var csrf=root.getAttribute('data-csrf')||'', st=document.getElementById('hk-mstatus');
   var pw=document.getElementById('hk-mpw'), name=document.getElementById('hk-mname'), told=false;
@@ -1012,7 +1020,8 @@ JS = r"""
       var ok=function(){ say('Copied. Keep it somewhere safe.','ok'); saved(); };
       if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(key).then(ok,function(){ draw(true); say('Select the key and copy it.','bad'); });
       else { draw(true); say('Select the key and copy it.','bad'); } });
-    document.getElementById('hk-dl').addEventListener('click',function(){
+    var dlb=document.getElementById('hk-dl');
+    if(dlb) dlb.addEventListener('click',function(){
       var day=new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
       var text='Leyline Hero Key\r\n\r\nName: '+who+'\r\nKey: '+key+'\r\nMade: '+day+'\r\n\r\nThis key signs you in to your Leyline account on Wrath Unleashed and on every realm that accepts Hero Key. Keep it private, like a password.\r\n';
       var a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([text],{type:'text/plain'}));
@@ -1178,10 +1187,11 @@ def page(h, query: dict, note: str = "", ok: str = "", status: int = 200, cookie
                  + (f'<p class="hk-or"><span>or</span></p><div class="hk-acts">'
                     '<a class="hk-btn" href="/wrath/signin/go/google?next=%2Fwrath%2Fkey">Continue with Google</a></div>' if google else "")
                  + '<h2 id="new" style="margin-top:22px">New here?</h2>'
-                 '<p>Create a Hero Key: your free account in one click, no email. A name and a password are made for you at once; download them '
-                 'and the Leyline launcher logs you in by itself. Change either any time.</p>'
+                 '<p>Create a guest account: free, one click, no email. You\'re signed in and playing at once; your name, '
+                 'password and Hero Key wait on this page to save when you like.</p>'
                  f'<form method="post" action="{START}" class="hk-acts"><input type="hidden" name="t" value="{t1}">'
-                 f'<button class="hk-btn primary" type="submit">{KEY_ICON}Create a Hero Key</button></form>'
+                 f'<button class="hk-btn primary" type="submit">{KEY_ICON}Create a guest account</button></form>'
+                 '<p class="hk-fine">Using the Leyline launcher? Sign in with your browser there: it recognises you here at once.</p>'
                  + WHAT_IS +
                  '</section>')
         return _shell(h, inner, status, set_c)
@@ -1195,13 +1205,15 @@ def page(h, query: dict, note: str = "", ok: str = "", status: int = 200, cookie
     # after a new key: on to the profile step (stream/profiles.py WELCOME: set up once, then where you were going)
     cont = WELCOME_PAGE if (query.get("new") or [""])[0] or cookie_dict(cookie).get("ly_next") else ""
     if info["key"]:
-        body = ('<p>Save it now: download it or copy it. For your safety it is shown only this once.</p>'
-                f'<div class="hk-key"><code id="hk-keytext" class="hk-dots" data-key="{e(info["key"])}" aria-label="Your Hero Key">'
-                f'{e(info["key"][:5])}••••••••••••••••••••••••</code>'
-                '<button class="hk-btn small" id="hk-show" type="button" aria-pressed="false" aria-controls="hk-keytext">Show</button></div>'
-                '<div class="hk-acts"><button class="hk-btn primary" id="hk-dl" type="button">Download as a text file</button>'
-                '<button class="hk-btn" id="hk-copy" type="button">Copy</button>'
-                '<button class="hk-btn" id="hk-keep" type="button">Keep it in this browser</button></div>'
+        pw = ""
+        if store is not None and not store.has_password(acct):   # a guest's first look here: a password made for it now
+            pw = make_password()
+            try:
+                store.set_password(acct, pw)
+            except Exception:   # noqa: BLE001: the key still signs in
+                log.warning("herokeys: couldn't set a password")
+                pw = ""
+        body = (login_card(full, info["key"], pw, csrf)
                 + (f'<div class="hk-acts"><a class="hk-btn primary" href="{e(cont)}">I saved it: continue</a></div>' if cont else ""))
     else:
         state = ("Your key is saved. Use it to sign in on any device and in the launcher." if info["saved"] else
@@ -1238,42 +1250,35 @@ def page(h, query: dict, note: str = "", ok: str = "", status: int = 200, cookie
     _shell(h, inner, status, relay, (acct, p["name"]))
 
 
-def made_page(h, out: dict, pw: str) -> None:
-    """Right after Create a Hero Key (owner 2 Nov 23:18: "it should more immediately created the log in and pass code
-    hidden, can be shown, and download as txt file, save in browser as login, and then the launcher auto detects that
-    after download"): this answer to the form itself, not a redirect, so the login shows even before the new session
-    cookie is kept. The name#tag, the password hidden until Show, Download (name, password, key), Save in this browser
-    (the browser's own password manager), Copy, Continue."""
+def login_card(full: str, key: str, pw: str, csrf: str) -> str:
+    """Your login, while the key isn't saved (owner 2 Nov 23:18 / 23:31: retrieve the name, password and text file):
+    the name#tag, the password made for it hidden until Show, Download as a text file (name, password, key), Save in
+    this browser (the browser's own password manager), the key itself under Show."""
     e = html.escape
-    me = _me(out["acct"])
-    full = f'{me["name"]}#{me["tag"]}' if me.get("tag") else (me.get("name") or "")
-    mod = P("social")
-    sess = session_from(out["cookies"])
-    csrf = mod.csrf_for(sess) if (mod is not None and getattr(mod, "store", None) is not None and sess) else ""
     day = time.strftime("%d %B %Y", time.gmtime()).lstrip("0")
-    txt = text_file(full, out["key"], day, pw)
+    txt = text_file(full, key, day, pw)
     pw_row = (f'<label for="hk-mpw">Password</label><div class="hk-key"><input id="hk-mpw" name="password" type="password" readonly '
               f'autocomplete="new-password" value="{e(pw)}" aria-describedby="hk-mpw-h">'
               '<button class="hk-btn small" id="hk-mshow" type="button" aria-pressed="false" aria-controls="hk-mpw">Show</button>'
               '<button class="hk-btn small" id="hk-mcopy" type="button">Copy</button></div>'
-              '<p class="hk-fine" id="hk-mpw-h">Shown only here. Change it any time under More on this page.</p>'
-              if pw else '<p class="hk-fine">Log in with the Hero Key in the file (a password can be set under More).</p>')
-    inner = (f'<section class="hk-card" id="hk-made" data-csrf="{e(csrf)}" aria-labelledby="hk-t">'
-             '<h1 id="hk-t">Your login is ready</h1>'
-             "<p>You're logged in. Save it now: download the file, and let this browser keep it.</p>"
-             f'<form method="post" action="{SAVED}" id="hk-mform" autocomplete="on">'
-             f'<label for="hk-mname">Name</label><div class="hk-key"><input id="hk-mname" name="username" type="text" readonly '
-             f'autocomplete="username" value="{e(full)}"></div>'
-             f'{pw_row}'
-             f'<div class="hk-acts"><button class="hk-btn primary" id="hk-mdl" type="button" data-text="{e(txt)}">Download as a text file</button>'
-             '<button class="hk-btn" id="hk-msave" type="submit">Save in this browser</button></div></form>'
-             '<p class="hk-status" id="hk-mstatus" role="status"></p>'
-             f'<p class="hk-fine">Downloaded as {e(FILE_NAME)}, the Leyline launcher finds it in Downloads and logs you in by itself. '
-             'Anyone with the file can log in as you: keep it private.</p>'
-             f'<div class="hk-acts"><a class="hk-btn" href="{e(WELCOME_PAGE)}">Continue</a></div>'
-             f'{WHAT_IS}</section>')
-    _shell(h, inner, 200, list(out["cookies"]), (out["acct"], me.get("name") or ""))
-
+              '<p class="hk-fine" id="hk-mpw-h">Made for you just now and shown only here: save it. Change it any time under More.</p>'
+              if pw else '<p class="hk-fine">Your password was set before; change it under More. The key below signs you in too.</p>')
+    return (f'<div id="hk-made" data-csrf="{e(csrf)}">'
+            "<p>Save your login now, so you can sign in anywhere: download the file, and let this browser keep it.</p>"
+            f'<form method="post" action="{SAVED}" id="hk-mform" autocomplete="on">'
+            f'<label for="hk-mname">Name</label><div class="hk-key"><input id="hk-mname" name="username" type="text" readonly '
+            f'autocomplete="username" value="{e(full)}"></div>'
+            f'{pw_row}'
+            f'<div class="hk-acts"><button class="hk-btn primary" id="hk-mdl" type="button" data-text="{e(txt)}">Download as a text file</button>'
+            '<button class="hk-btn" id="hk-msave" type="submit">Save in this browser</button></div></form>'
+            '<label>Hero Key</label>'
+            f'<div class="hk-key"><code id="hk-keytext" class="hk-dots" data-key="{e(key)}" aria-label="Your Hero Key">'
+            f'{e(key[:5])}••••••••••••••••••••••••</code>'
+            '<button class="hk-btn small" id="hk-show" type="button" aria-pressed="false" aria-controls="hk-keytext">Show</button>'
+            '<button class="hk-btn small" id="hk-copy" type="button">Copy</button></div>'
+            '<p class="hk-status" id="hk-mstatus" role="status"></p>'
+            f'<p class="hk-fine">Downloaded as {e(FILE_NAME)}, the Leyline launcher finds it in Downloads and signs you in by itself. '
+            'Anyone with the file can sign in as you: keep it private.</p></div>')
 
 def _read_form(h) -> dict | None:
     try:
@@ -1331,16 +1336,12 @@ def post(h, path: str) -> None:
     ip, ua = h.ip(), h.headers.get("User-Agent", "")
     try:
         if path == START:
+            # a guest account (owner 2 Nov 23:31: "Guest accounts go through normal hero key creation process and auto log
+            # into launcher and play, and then they can be recommended to go to settings to retrieve their user name and
+            # pass and text file"): made, signed in, on to play; its login waits on this page until saved
             out = new_account(ip, ua)
-            pw = ""
-            if store is not None:
-                pw = make_password()
-                try:
-                    store.set_password(out["acct"], pw)
-                except Exception:   # noqa: BLE001: the key still signs in; the card says so
-                    log.warning("herokeys: couldn't set a new account's password")
-                    pw = ""
-            return made_page(h, out, pw)
+            nxt = cookie_dict(h.headers.get("Cookie", "")).get("ly_next", "")
+            return _go(h, WELCOME_PAGE if nxt else PLAY_PAGE + "?guest=1", out["cookies"])
         out = key_signin(form.get("key"), ip, ua)
         if store is not None:
             store.note(out["acct"], "signin.key", "web")

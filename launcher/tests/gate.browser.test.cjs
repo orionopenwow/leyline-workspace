@@ -119,7 +119,9 @@ test('signed out: the launcher opens and works; Log In top right invites; the di
   await page.click('#hf-signin');
   await page.waitForSelector('#gate-browser');
   assert.ok(await gateOpen(page));
-  assert.equal(await page.getAttribute('#gate-tab-login', 'aria-selected'), 'true');
+  assert.match(await page.textContent('#gate-browser'), /Sign in with your browser/);
+  assert.match(await page.textContent('#gate'), /Instant launcher recognition/);
+  assert.match(await page.textContent('#gate-new'), /Create a guest account/);
   const text = await page.textContent('#gate');
   assert.doesNotMatch(text, /discord/i, 'no Discord sign-in, even when the website offers it');
   assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i);
@@ -186,28 +188,30 @@ test('Google, name and password, the Hero Key file or paste; a file without a ke
   await page.close();
 });
 
-test('Sign up: Create my login makes the account and a password; hidden until Show; Save as text file has name, password and key', async () => {
+test('Create a guest account: signed in and on at once; the login waits in Manage account until saved as a text file', async () => {
   const { page, errors } = await open();
   await page.click('#hf-signin');
-  await page.click('#gate-tab-signup');
   await page.click('#gate-new');
-  await page.waitForSelector('#gate-made');
+  await page.waitForSelector('#hf-me-btn');
+  assert.equal(await gateOpen(page), false, 'nothing to read first: straight in');
   const pw = await page.evaluate(() => window.__pw);
-  assert.match(pw, /^[a-z2-9]{4}(-[a-z2-9]{4}){3}$/, 'a made password, easy to read');
-  assert.equal(await page.textContent('#gate-made-name'), 'Brightfeather42#1234');
-  assert.doesNotMatch(await page.textContent('#gate-made'), new RegExp(pw), 'hidden until Show');
-  await page.click('#gate-made-show');
-  assert.equal(await page.textContent('#gate-made-pass'), pw);
-  await page.click('#gate-made-save');
+  assert.match(pw, /^[a-z2-9]{4}(-[a-z2-9]{4}){3}$/, 'a password made for it, easy to read');
+  assert.equal(await page.textContent('#hf-me .hf-me-name'), 'Brightfeather42');
+  assert.match(await page.textContent('#gate-toast'), /You're in as Brightfeather42#1234\. Save your login any time: Manage account/);
+  assert.equal(await page.locator('#page-account').evaluate((e) => e.classList.contains('on')), false, 'no trip to Manage account');
+  await page.click('#gate-toast');   // the reminder opens Manage account › Your login
+  await page.waitForSelector('#ac-guest');
+  assert.equal(await page.textContent('#ac-guest-name'), 'Brightfeather42#1234');
+  assert.doesNotMatch(await page.textContent('#ac-guest'), new RegExp(pw), 'hidden until Show');
+  await page.click('#ac-guest-show');
+  assert.equal(await page.textContent('#ac-guest-pass'), pw);
+  await page.click('#ac-guest-save');
   await page.waitForFunction(() => !!window.__savedText);
   const t = await page.evaluate(() => window.__savedText);
   assert.match(t, /Name: Brightfeather42#1234/);
   assert.ok(t.includes(`Password: ${pw}`) && t.includes('Key: ovk1.NewNew1234.'));
-  assert.ok(await page.evaluate(() => window.__calls.some(([c, a]) => c === 'social_call' && a.action === 'herokey_saved')));
-  await page.click('#gate-made-go');
-  assert.equal(await gateOpen(page), false);
-  assert.equal(await page.textContent('#hf-me .hf-me-name'), 'Brightfeather42');
-  assert.equal(await page.locator('#page-account').evaluate((e) => e.classList.contains('on')), false, 'no trip to Manage account');
+  await page.waitForFunction(() => !document.getElementById('ac-guest'));
+  assert.equal(await page.evaluate(() => localStorage.getItem('leyline.guestLogin')), null, 'forgotten on this PC once saved');
   assert.deepEqual(errors, []);
   await page.close();
 });

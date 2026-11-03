@@ -288,7 +288,8 @@ test('pictures: the catalog field, the Workshop screenshot, the drawn tile on er
   await page.waitForFunction(() => document.querySelector('#cat-grid .mod-card[data-id="link:0123456789ab"]'));
   await page.waitForTimeout(100);
   assert.ok(asked.includes('https://leylinelauncher.com/wrath/art/hub-thumbs/owner__repo.webp'));
-  assert.ok(asked.every((u) => u.startsWith('https://leylinelauncher.com/') || u.startsWith('https://play.openvanilla.app/')), 'only the site (on either of its names)');
+  assert.ok(asked.every((u) => u.startsWith('https://leylinelauncher.com/') || u.startsWith('https://play.openvanilla.app/')
+    || u === 'https://melty.gg/brand/melty-wordmark-white.png'), 'only the site (on either of its names), and Melty\'s own logo on Home');
   await tabTo(page, 'addons');
   // a click on the card (not its button) opens the page; INSTALL still installs
   await card(page, 'mod:bravo').locator('.desc').click();

@@ -90,7 +90,9 @@ async function open(opts, size) {
   // signed out, the sign-in screen (gate.js, gate.browser.test.cjs) covers the launcher: these tests are the launcher
   // behind it, as after its Continue without signing in
   await page.waitForFunction(() => window.LeylineSocial && window.LeylineSocial.checked());
-  await page.evaluate(() => window.LeylineGate.skip());
+  // these test the title bar's own pop-over chooser (social.js), the way in when the sign-in dialog (gate.js, its own
+  // tests) isn't there
+  await page.evaluate(() => { window.LeylineGate.skip(); window.LeylineGate = undefined; });
   return { page, errors };
 }
 
@@ -141,7 +143,7 @@ test('signed in: the profile sits in the title bar, top right, with Manage accou
 test('signed out: Sign in, pick a way, the code under the chip, then your name', async () => {
   const { page, errors } = await open();
   await page.waitForSelector('#hf-signin');
-  assert.equal(await page.textContent('#hf-me .hf-me-st'), 'Signed out');
+  assert.equal(await page.textContent('#hf-me .hf-me-st'), 'Play online, keep your progress');
   await page.click('#hf-signin');
   await page.waitForSelector('#hf-code:not([hidden]) .sf-way');
   await page.click('#hf-code .sf-way[data-via="google"]');

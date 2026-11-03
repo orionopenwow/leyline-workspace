@@ -151,7 +151,7 @@ class Realm(BaseHTTPRequestHandler):
             uid = r_user()
             key = r_mint(uid)
             pc = secrets.token_hex(8); R["play"][pc] = key
-            return self.reply(303, loc="/", cookies=[f"wr_session={r_session(uid)}; Path=/; HttpOnly; Secure; SameSite=Lax",
+            return self.reply(303, loc="/", cookies=[f"wr_session={r_session(uid)}; Domain=play.openvanilla.app; Path=/; HttpOnly; Secure; SameSite=Lax",
                                                      f"wr_guest=g{uid}; Path=/; Max-Age=34560000; HttpOnly; Secure; SameSite=Lax",
                                                      f"wr_herokey_play={pc}; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax"])
         s = self.sess()
@@ -255,8 +255,8 @@ def visible(body):
 # ---------------------------------------------------------------- signed out
 st, hd, body, sc, _ = req("GET", "/wrath/key")
 card = body[body.find('<div class="hk">'):body.find("<script nonce")]
-check("page signed out: 200, one card: Log in (key file, paste, the key kept here), Google, then Sign up (Create a Hero Key)", st == 200
-      and ">Log in</h1>" in body and "Drop your key file here" in body and 'id="hk-usesaved"' in body and "Create a Hero Key" in body
+check("page signed out: 200, one card: Log in (key file, paste, the key kept here), Google, then Create a guest account", st == 200
+      and ">Log in</h1>" in body and "Drop your key file here" in body and 'id="hk-usesaved"' in body and "Create a guest account" in body
       and 'action="/wrath/key/start"' in body and 'action="/wrath/key/signin"' in body
       and body.index("/wrath/key/signin") < body.index("go/google") < body.index("/wrath/key/start"), body[:300])
 check("page signed out: What is a Hero Key? (your login, save it, a fingerprint only, lost it, one account)",
@@ -281,9 +281,10 @@ check("start: another site's form is refused", st == 403)
 st, _, _, _, _ = req("POST", "/wrath/key/start", anon, {"t": t_start}, sfs="cross-site")
 check("start: cross-site is refused", st == 403)
 n_users = len(R["users"])
-st, hd, mbody, sc, _ = req("POST", "/wrath/key/start", anon, {"t": t_start})
-check("start: a new account, its login shown at once (not a redirect: owner 2 Nov 23:18)", st == 200 and 'id="hk-made"' in mbody
+st, hd, _, sc, _ = req("POST", "/wrath/key/start", anon, {"t": t_start})
+check("start: a guest account, signed in and straight on to play (owner 2 Nov 23:31)", st == 303 and hd.get("Location") == "/wrath?guest=1"
       and len(R["users"]) == n_users + 1, (st, hd))
+check("start: the cookies carry no Domain (the site answers on two names)", not any("domain=" in c.lower() for c in sc), sc)
 check("start: the service's own cookies come back (session, guest, the new key's), never wr_herokey",
       {c.split("=")[0] for c in sc} == {"wr_session", "wr_guest", "wr_herokey_play"}, sc)
 check("start: the service saw the player's own address (its limits per network hold)", R["seen"][-1][2] == "10.0.0.7")
@@ -292,6 +293,7 @@ acct1 = R["users"][max(R["users"])]["acct"]
 name1 = S.profile(acct1)["name"]
 check("start: a made-up readable name like Brightfeather42, through the name rules", re.fullmatch(r"[A-Z][a-z]+[a-z]+\d\d", name1)
       and wp.profiles.name_problem(name1) == "", name1)
+st, _, mbody, _, _ = req("GET", "/wrath/key", jar_add(anon, sc))
 mpw = (re.search(r'id="hk-mpw" name="password" type="password" readonly autocomplete="new-password" value="([^"]+)"', mbody) or [None, ""])[1]
 check("start: a password made with it (4 groups of 4, easy to read), hidden until Show", re.fullmatch(r"[a-z2-9]{4}(-[a-z2-9]{4}){3}", mpw)
       and ">Show<" in mbody and mpw not in visible(mbody), mpw)
@@ -312,7 +314,7 @@ check("saved: another site's form is refused", st == 403)
 st, hd, body, sc, _ = req("GET", "/wrath/key?new=1", web)
 key1 = (re.search(r'data-key="(ovk1\.[^"]+)"', body) or [None, ""])[1]
 check("page: the new key, hidden by default (dots), with Show, Download as a text file and Copy", key1 and 'class="hk-dots"' in body
-      and ">Show<" in body and "Download as a text file" in body and ">Copy<" in body and "Welcome! Your account is ready" in body, body[-1500:])
+      and ">Show<" in body and "Download as a text file" in body and ">Copy<" in body, body[-1500:])
 check("page: the key isn't in the visible text (only Show reveals it)", key1 not in visible(body).replace(key1[:5], ""))
 check("page: the name with its #tag, and the text file's words in the script (name, key, date, what it is)",
       f'data-name="{name1}#' in body and "Leyline Hero Key.txt" in body and "Made: " in body and "every realm that accepts Hero Key" in body)
@@ -503,7 +505,7 @@ check("stale: the session ran out inside the cache minute: the signed-out card, 
       and "Location" not in hd and "Sign in with your Hero Key" in body and "ran out" in body, (st, hd.get("Location")))
 check("stale: the dead website cookie is cleared", any(c.startswith("wr_session=;") and "Max-Age=0" in c and "Path=/" in c for c in sc), sc)
 st, hd, body, sc, _ = req("GET", "/wrath/key", "wr_session=junk")
-check("stale: a junk session cookie: the signed-out card and the cookie cleared", st == 200 and "Create a Hero Key" in body
+check("stale: a junk session cookie: the signed-out card and the cookie cleared", st == 200 and "Create a guest account" in body
       and any(c.startswith("wr_session=;") for c in sc), (st, sc))
 st, _, _, _, d = req("GET", "/wrath/api/social/herokey", "wr_session=junk")
 check("stale: the cookie API says sign in (401), plainly", st == 401 and d.get("error"), (st, d))

@@ -1312,9 +1312,10 @@ mod tests {
         // Reads: the core (ipc) and exactly one file on the website (on its new and its old name, addresses.rs), the
         // list of Home's screenshots (ui/home.js HOME_ART); a pack's CSS can't reach it (the checker refuses every http(s) url()).
         assert_eq!(dir("connect-src"), "connect-src ipc: http://ipc.localhost https://leylinelauncher.com/wrath/art/home/home.json https://play.openvanilla.app/wrath/art/home/home.json");
-        // Images: the app, data: (packs are inlined) and the website on its two names only, the backdrop picture
-        // (ui/app.js BACKDROP_URL). Pack CSS still can't name it: the checker refuses every http(s) url().
-        assert_eq!(dir("img-src"), "img-src 'self' data: https://leylinelauncher.com https://play.openvanilla.app");   // both names (DOMAIN-MOVE.md)
+        // Images: the app, data: (packs are inlined), the website on its two names, the backdrop picture
+        // (ui/app.js BACKDROP_URL), and Melty's own logo on Home (ui/home.js meltyPane). Pack CSS still can't name any
+        // of them: the checker refuses every http(s) url().
+        assert_eq!(dir("img-src"), "img-src 'self' data: https://leylinelauncher.com https://play.openvanilla.app https://melty.gg");   // both names (DOMAIN-MOVE.md)
         for d in ["font-src", "style-src"] {
             let v = dir(d);
             assert!(!v.contains("http:") && !v.contains("https:") && !v.contains('*') && !v.contains("unsafe-eval"), "{v}");

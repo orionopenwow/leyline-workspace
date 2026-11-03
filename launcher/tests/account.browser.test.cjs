@@ -94,7 +94,9 @@ async function open(opts) {
   // signed out, the sign-in screen (gate.js, gate.browser.test.cjs) covers the launcher: these tests are the launcher
   // behind it, as after its Continue without signing in
   await page.waitForFunction(() => window.LeylineSocial && window.LeylineSocial.checked());
-  await page.evaluate(() => window.LeylineGate.skip());
+  // these test the title bar's own pop-over chooser (social.js), the way in when the sign-in dialog (gate.js, its own
+  // tests) isn't there
+  await page.evaluate(() => { window.LeylineGate.skip(); window.LeylineGate = undefined; });
   return { page, errors, fetched };
 }
 const called = (page, cmd, pred) => page.evaluate(([c, p]) => window.__calls.some(([x, a]) => x === c && (!p || new Function('a', 'return ' + p)(a))), [cmd, pred || '']);

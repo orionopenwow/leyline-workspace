@@ -224,9 +224,11 @@ async function step(page, errors, name, size, check) {
   if (SHOTS) await page.screenshot({ path: path.join(SHOTS, `${nn}-${name}.png`) });
 }
 
-// THE SIGN-IN, in one place: the sign-in screen (gate.js: people log in first). A test Hero Key, pasted there.
+// THE SIGN-IN, in one place: the title bar's Log In opens the sign-in dialog (gate.js); a test Hero Key, pasted there.
 const TEST_KEY = 'ovk1.TestTestAa.' + 'k'.repeat(43);
 async function signIn(page) {
+  if (!(await page.evaluate(() => window.LeylineGate.isOpen()))) await page.click('#hf-signin');
+  await page.click('#gate-keylink');
   await page.waitForSelector('#gate-key');
   await page.fill('#gate-key', TEST_KEY);
   await page.click('#gate-keyform button[type="submit"]');
@@ -246,10 +248,12 @@ test('a brand-new player, start to end: tour, game folders, realms, PLAY, Your D
   await page.goto(INDEX);
   await page.waitForFunction(() => window.LeylineNav && window.LeylineApp && window.LeylineApp.state());
 
-  // 0. the sign-in screen first: nothing of the launcher until logged in
+  // 0. the launcher at once, signed out (owner 2 Nov 23:14): Log In top right invites; it opens the sign-in dialog
   await step(page, errors, 'sign-in', SMALL, async () => {
+    await page.waitForSelector('#hf-signin');
+    assert.equal(await page.evaluate(() => document.querySelector('.frame').inert), false, 'the launcher works signed out');
+    await page.click('#hf-signin');
     await page.waitForSelector('#gate-browser');
-    assert.equal(await page.evaluate(() => document.querySelector('.frame').inert), true);
   });
   await signIn(page);
 

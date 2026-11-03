@@ -137,6 +137,7 @@ test('the official realm without a list from the site: its own (modes it runs, W
 // ------------------------------------------------------------------ joining a realm: the one-click offer
 async function playOn(page, name) {
   await page.click('.nav[data-page="realms"]');
+  await page.click(name === 'Wrath Unleashed' ? '#rl-tab-official' : '#rl-tab-community');   // the community realms have their own tab
   await page.waitForFunction(() => document.querySelectorAll('#rl-list .realm-card').length > 0);
   const card = page.locator('#rl-list .realm-card', { has: page.locator(`.name:text-is("${name}")`) });
   await card.locator('.rl-play').click();
@@ -146,7 +147,9 @@ async function playOn(page, name) {
 test('realm cards say how many mods a realm uses (bad ids never counted)', async () => {
   const { page, errors } = await open();
   await page.click('.nav[data-page="realms"]');
-  await page.waitForFunction(() => document.querySelectorAll('#rl-list .realm-card .rl-mods').length === 3);
+  await page.waitForFunction(() => document.querySelectorAll('#rl-list .realm-card .rl-mods').length === 1);   // Official: Wrath Unleashed
+  await page.click('#rl-tab-community');
+  await page.waitForFunction(() => document.querySelectorAll('#rl-list .realm-card .rl-mods').length === 2);
   const card = page.locator('#rl-list .realm-card', { has: page.locator('.name:text-is("Frost Haven")') });
   assert.equal(await card.locator('.rl-mods').textContent(), 'Uses 4 mods');
   assert.equal(await card.locator('.rl-mods').getAttribute('title'), 'Coin Dash, Dalaran Dice 0.1.0, Hud, not-in-catalog');

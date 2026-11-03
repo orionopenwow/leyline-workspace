@@ -263,6 +263,7 @@ test('the realm picker: Wrath Unleashed and Your Den, Host a server…, Play in 
   assert.equal(await pageOn(page), 'page-host');
   // the Builders' Realm is nowhere: not on Realms, not on Home
   await page.evaluate(() => window.LeylineNav.show('realms'));
+  await page.click('#rl-tab-community');
   await page.waitForFunction(() => /Busy Den/.test(document.getElementById('rl-list').textContent));
   assert.doesNotMatch(await page.evaluate(() => document.body.innerText), /Builders|Busiest/);
   assert.deepEqual(errors, []);

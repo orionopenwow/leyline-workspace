@@ -113,15 +113,17 @@ const calls = (page, cmd) => page.evaluate((c) => window.__calls.filter((x) => x
 const statusText = (page) => page.textContent('#yd .yd-status');
 const noBrands = async (page) => assert.doesNotMatch(await page.evaluate(() => document.body.innerText), BRANDS);
 
-test('the entries: Your Den right under Home in the side menu, and first on Home', async () => {
+test('the entries: Your Den in the realm list next to PLAY (not the side menu), and first on Home', async () => {
   const { page, ctx, errors } = await open({ lite: 'stopped' });
   const nav = await page.$$eval('aside nav .nav[data-page]', (b) => b.map((x) => x.dataset.page));
-  assert.deepEqual(nav.slice(0, 2), ['play', 'den']);
-  assert.equal((await page.textContent('.nav[data-page="den"]')).trim(), 'Your Den');
+  assert.ok(!nav.includes('den'), 'no side menu item (owner 2026-11-02)');
+  await page.click('#pb-realm-btn');
+  assert.ok(await page.locator('#pb-rmenu', { hasText: 'Your Den' }).count(), 'the realm list has it');
+  await page.keyboard.press('Escape');
   const order = await page.$$eval('#home-more > .hm-sec', (s) => s.map((x) => x.id));
   assert.equal(order[0], 'hm-den', 'the banner leads the rows under the hero');
   assert.equal((await page.textContent('#hm-den-go')).trim(), 'Play solo');
-  await page.click('.nav[data-page="den"]');
+  await page.evaluate(() => window.LeylineNav.show('den'));   // the page itself still opens (Home's banner, the realm list)
   await page.waitForSelector('#yd-play');
   assert.match(await page.textContent('#yd-state'), /Ready on this PC: no setup needed/);
   for (const t of ['Share with friends', 'Saved Dens', 'Packs', 'Share on the Workshop']) {

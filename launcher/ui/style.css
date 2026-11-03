@@ -976,6 +976,10 @@ select.rl-client { field-sizing: content; width: auto; min-width: 0; max-width: 
 .net-line { display: flex; align-items: center; gap: 7px; margin: 0 0 10px; font-size: 12.5px; color: var(--t-muted); font-weight: 500; }
 .net-line:not(:empty)::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--t-ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--t-ok) 22%, transparent); }
 #page-realms #rl-status:empty { display: none; }
+/* Official realms | Community realms: the open tab's own count line and one quiet line about the other list */
+.rl-tab-note { margin: 12px 0 0; font-size: 12.5px; color: var(--t-muted); }
+.rl-tab-note .link-s { font-size: 12.5px; }
+.rl-host-acts .rl-host-guide { margin-left: 4px; font-size: 12.5px; white-space: nowrap; }
 /* Host your own: one slim banner */
 .rl-host-banner {
   display: flex; align-items: center; gap: 14px; margin: 16px 0 0; padding: 12px 14px; border-radius: var(--t-radius);

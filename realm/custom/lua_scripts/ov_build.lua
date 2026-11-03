@@ -98,7 +98,8 @@
 -- (ov_modapi.lua), mod "wubuild":
 --   client -> server   cmd       <the text after .build>         runs it exactly as the dot command
 --                      catalog                                   asks for the catalog
---   server -> client   catalog   id,key,category,name,points;...  the props that exist on this realm
+--   server -> client   catalog   id,key,category,name,points[,model];...  the props that exist on this realm (model:
+--                                 the path in the server's own GameObjectDisplayInfo, for the gallery's 3D tiles)
 --                      state     sel=<id>,<entry>,<name>;mine=<n>/<cap>;area=<name>;code=<code>;n=<selected>;ids=<id id ...>;
 --                                pos=<x>,<y>,<z>,<deg>,<size>;pts=<used>/<cap>;tier=<tier>;
 --                                plot=<id>,<owner>,<your role>,<props>/<cap>,<points>/<cap> (or -);clip=<copied>;
@@ -1599,11 +1600,26 @@ do
 end
 
 -- id,key,category,name,points;... (the server's allowlist: the window and the spawn menu show only these)
+-- A prop's model for the Builder's gallery (Builder.lua: a turning 3D tile): the path in the server's own
+-- GameObjectDisplayInfo (X.display, read from the host's own game files; never shipped), with backslashes, as the
+-- catalog's optional 6th field. Nil for a WMO (a tile can't draw one), an unknown display or an odd path: that tile
+-- shows its category's icon. An older addon reads the first five fields and ignores the rest.
+function X.modelOf(c)
+    local m = c and c.display and X.display and X.display(c.display)
+    if not m or m.wmo or not m.path then return nil end
+    local path = m.path:gsub("/", "\\")
+    if #path > 160 or not path:match("^[%w_%-%. '\\]+$") or path:find("%.%.") then return nil end
+    return path
+end
 local function catalogText()
     local out = {}
-    for _, c in ipairs(CATALOG) do out[#out + 1] = c.id .. "," .. c.key .. "," .. c.cat .. "," .. c.name:gsub("[,;]", "") .. "," .. c.cost end
+    for _, c in ipairs(CATALOG) do
+        local m = X.modelOf(c)
+        out[#out + 1] = c.id .. "," .. c.key .. "," .. c.cat .. "," .. c.name:gsub("[,;]", "") .. "," .. c.cost .. (m and ("," .. m) or "")
+    end
     return table.concat(out, ";")
 end
+X.catalogText = catalogText
 
 local function prefabsOf(guid)
     local out = {}
@@ -3606,7 +3622,8 @@ function X.sendFound(player, kind, page, more, items)
     if not OVMod then return end
     local out = { string.format("%s,%d,%d", kind, page, more and 1 or 0) }
     for _, c in ipairs(items) do
-        out[#out + 1] = string.format("%d,%s,%s,%s,%d", c.id, c.key, c.cat, (c.name:gsub("[,;]", "")), c.cost or 1)
+        local m = X.modelOf and X.modelOf(c)
+        out[#out + 1] = string.format("%d,%s,%s,%s,%d", c.id, c.key, c.cat, (c.name:gsub("[,;]", "")), c.cost or 1) .. (m and ("," .. m) or "")
     end
     pcall(OVMod.Send, player, MOD, "found", table.concat(out, ";"))
 end

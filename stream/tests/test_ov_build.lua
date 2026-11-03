@@ -1390,6 +1390,17 @@ do
     clock = clock + 1
     cmd(dora, "build models house")
     check("models: WMO files are left out", last(dora):find("Nothing matches"))
+    -- 2026-11-03: the catalog's optional 6th field, the model path the gallery's 3D tiles draw (Builder.lua)
+    do
+        local c1, c2 = T.CATALOG()[1], T.CATALOG()[2]
+        local d1, d2 = c1.display, c2.display
+        c1.display, c2.display = 900, 901
+        local text = T.catalogText()
+        check("catalog: a prop's model path from the server's own dbc, as a 6th field", text:find(
+            c1.id .. "," .. c1.key .. "," .. c1.cat .. ",", 1, true) and text:find(",world\\generic\\garden\\bench01.mdx;", 1, true))
+        check("catalog: a WMO display sends no model (5 fields)", text:find(";" .. c2.id .. "," .. c2.key .. "," .. c2.cat .. "," .. c2.name:gsub("[,;]", "") .. "," .. c2.cost .. ";", 1, true))
+        c1.display, c2.display = d1, d2
+    end
     clock = clock + 1
     cmd(dora, "build spawn m900")
     local bench = newest(70)

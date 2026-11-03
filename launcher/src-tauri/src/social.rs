@@ -64,9 +64,15 @@ pub fn key_ok(k: &str) -> bool {
 
 /// The key in whatever the player pasted (spaces and line breaks taken out), or None.
 pub fn find_key(pasted: &str) -> Option<String> {
-    let joined: String = pasted.chars().filter(|c| !c.is_whitespace()).take(400).collect();
-    let at = joined.find("ovk1.")?;
-    let k: String = joined[at..].chars().take(5 + 10 + 1 + 43).collect();
+    // spaces, line breaks and invisible characters (zero-width, BOM, soft hyphen) out; the prefix in any case
+    let joined: String = pasted
+        .chars()
+        .filter(|c| !c.is_whitespace() && !matches!(c, '\u{200b}'..='\u{200d}' | '\u{2060}' | '\u{feff}' | '\u{00ad}'))
+        .take(400)
+        .collect();
+    let at = joined.to_ascii_lowercase().find("ovk1.")?;
+    let mut k: String = joined[at..].chars().take(5 + 10 + 1 + 43).collect();
+    k.replace_range(..5, "ovk1.");
     key_ok(&k).then_some(k)
 }
 
@@ -606,6 +612,8 @@ mod tests {
         assert_eq!(find_key(&format!("  Key: {}\n{}  ", &k[..30], &k[30..])), Some(k.clone()));
         assert!(!key_ok("ovk1.short.x") && !key_ok(&k.replace("ovk1", "ovk2")) && !key_ok(&format!("{k}!")));
         assert_eq!(find_key("hello"), None);
+        // 2 Nov: a pasted key with an upper-case prefix and a zero-width space still signs in
+        assert_eq!(find_key(&format!("OVK1.{}\u{200b}", &k[5..])), Some(k.clone()));
         let d = tempfile::tempdir().unwrap();
         assert!(sign_in_key(d.path(), "not a key").unwrap_err().contains("ovk1."));
         assert!(sign_in_password(d.path(), "Alice#1234", "").is_err());

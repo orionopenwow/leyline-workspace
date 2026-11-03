@@ -730,10 +730,10 @@ fn the_den_grows_and_the_companion_talks_with_the_assistant() {
 
     // 1. the room grows by rings, is saved with its size and opens at it again
     w.say(".den size");
-    assert!(w.until_line().1.starts_with("Your Den is size 1 of 4: a 16 x 16 yard room"));
+    assert!(w.until_line().1.starts_with("Your Den is size 1 of 7: a 16 x 16 yard room"));
     w.say(".den grow");
     let (frames, line) = w.until_line();
-    assert!(line.starts_with("Your Den is size 2 of 4: a 32 x 32 yard room, props up to 30 yards"), "{line}");
+    assert!(line.starts_with("Your Den is size 2 of 7: a 32 x 32 yard room, props up to 30 yards"), "{line}");
     let (made, gone) = objects(&frames);
     assert_eq!((made.len(), gone.len()), (0, 0), "the open plane: only the size changes");
     let _ = mx;
@@ -751,7 +751,7 @@ fn the_den_grows_and_the_companion_talks_with_the_assistant() {
     w.until_line();
     w.say(".den size 1");
     let (frames, line) = w.until_line();
-    assert!(line.starts_with("Your Den is size 1 of 4"), "{line}");
+    assert!(line.starts_with("Your Den is size 1 of 7"), "{line}");
     assert_eq!(objects(&frames).0.len(), 0);
     w.say(".den load grown");
     let (frames, line) = w.until_line();
@@ -983,8 +983,8 @@ fn a_new_players_den_survives_a_restart_of_the_program() {
     if opened.contains("replace") {
         assert_eq!(say(&mut w, ".den load mine replace"), "Opened: 2 props.");
     }
-    assert_eq!(say(&mut w, ".den size").split(':').next().unwrap(), "Your Den is size 1 of 4");
-    assert!(say(&mut w, ".den grow").starts_with("Your Den is size 2 of 4"));
+    assert_eq!(say(&mut w, ".den size").split(':').next().unwrap(), "Your Den is size 1 of 7");
+    assert!(say(&mut w, ".den grow").starts_with("Your Den is size 2 of 7"));
     // the real program: she is at your side from login, so calling her answers in her own voice
     w.say(".den companion");
     assert_eq!(w.until_she_says().2, den_lite::companion::HERE);
@@ -1252,7 +1252,7 @@ fn one_click_lands_in_the_den_with_the_builder_ready() {
     let (srv, dir) = server("oneclick", HeroGender::Female);
     let ev = |dir: &std::path::Path| den_lite::events::read(dir).into_iter().map(|l| l.ev).collect::<Vec<_>>();
     // at start: "start" (and "models", how many prop models it knows, when the game's table is there)
-    assert_eq!(ev(&dir).into_iter().filter(|e| e != "models").collect::<Vec<_>>(), ["start"]);
+    assert_eq!(ev(&dir).into_iter().filter(|e| e != "models" && e != "my_models").collect::<Vec<_>>(), ["start"]);
     // the login screen code signs in as DENAUTO (the launcher's keys: DEN, as Config.wtf fills in)
     let (key, _, address) = login(srv.login, "DENAUTO", "den").expect("login");
     let mut w = World::connect(&address, "DENAUTO", key, 3);

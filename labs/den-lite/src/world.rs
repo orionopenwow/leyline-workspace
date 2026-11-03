@@ -1268,8 +1268,14 @@ fn kept_places(shared: &Shared) -> Vec<(String, String, den::Spot)> {
         .into_iter()
         .filter_map(|n| {
             let doc = den::read_file(&dir.join(format!("{n}.den.json"))).ok()?;
-            let (spot, name, _) = den::place_of(&doc)?;
-            Some((n, name, spot))
+            match den::place_of(&doc) {
+                Some((spot, name, _)) => Some((n, name, spot)),
+                // the first Den (the island) is kept without a place of its own
+                None => {
+                    let home = den::Spot::default();
+                    (n == places::key(home.map, home.x, home.y)).then(|| (n, "your first Den".to_string(), home))
+                }
+            }
         })
         .collect()
 }

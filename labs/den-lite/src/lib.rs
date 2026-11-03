@@ -29,6 +29,7 @@ pub mod places;
 pub mod play;
 pub mod mymodels;
 pub mod raw;
+pub mod specs;
 pub mod spells;
 pub mod stamps;
 pub mod testctl;

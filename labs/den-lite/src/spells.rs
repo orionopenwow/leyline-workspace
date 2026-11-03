@@ -34,6 +34,8 @@ pub mod col {
     pub const RECOVERY_TIME: usize = 29;
     pub const CATEGORY_RECOVERY_TIME: usize = 30;
     pub const INTERRUPT_FLAGS: usize = 31;
+    pub const PROC_FLAGS: usize = 34;
+    pub const PROC_CHANCE: usize = 35;
     pub const MAX_LEVEL: usize = 37;
     pub const BASE_LEVEL: usize = 38;
     pub const SPELL_LEVEL: usize = 39;
@@ -101,6 +103,9 @@ pub struct Spell {
     pub recovery: u32,
     pub category_recovery: u32,
     pub interrupt_flags: u32,
+    /// What makes a passive's proc fire (ProcFlags) and how often (per cent).
+    pub proc_flags: u32,
+    pub proc_chance: u32,
     pub max_level: u32,
     pub base_level: u32,
     pub spell_level: u32,
@@ -231,6 +236,8 @@ pub fn spell_from_row(t: &Table, r: &[u8]) -> Spell {
         recovery: u(RECOVERY_TIME),
         category_recovery: u(CATEGORY_RECOVERY_TIME),
         interrupt_flags: u(INTERRUPT_FLAGS),
+        proc_flags: u(PROC_FLAGS),
+        proc_chance: u(PROC_CHANCE),
         max_level: u(MAX_LEVEL),
         base_level: u(BASE_LEVEL),
         spell_level: u(SPELL_LEVEL),
@@ -395,6 +402,7 @@ pub mod fake {
         pub attributes: u32,
         pub attributes_ex: u32,
         pub duration_index: u32,
+        pub proc_chance: u32,
         /// (effect, base, die, target a, aura, amplitude, trigger, misc)
         pub effects: Vec<(u32, i32, i32, u32, u32, u32, u32, i32)>,
     }
@@ -417,6 +425,8 @@ pub mod fake {
             v[col::ATTRIBUTES] = r.attributes;
             v[col::ATTRIBUTES_EX] = r.attributes_ex;
             v[col::DURATION_INDEX] = r.duration_index;
+            v[col::PROC_CHANCE] = r.proc_chance;
+            v[col::PROC_FLAGS] = if r.proc_chance > 0 { 0x0001_0014 } else { 0 };
             for (k, e) in r.effects.iter().enumerate().take(3) {
                 v[col::EFFECT + k] = e.0;
                 v[col::EFFECT_BASE_POINTS + k] = e.1 as u32;

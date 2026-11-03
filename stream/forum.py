@@ -816,7 +816,9 @@ def viewer(h) -> dict | None:
     adm = P("admin")
     if adm is not None:
         try:
-            staff = bool(adm.role_of(adm.account_of(me), lambda: user))
+            role = adm.role_of(adm.account_of(me), lambda: user)
+            # helpers (stream/admin.py's lowest role) only review submissions: no forum staff powers or badge
+            staff = bool(role) and (not hasattr(adm, "rank") or adm.rank(role) >= adm.rank("mod"))
         except Exception:   # noqa: BLE001
             staff = False
     who = {"acct": acct, "name": name, "tag": tag, "staff": staff, "session": sess, "display": display}

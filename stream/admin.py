@@ -300,10 +300,12 @@ def env_staff() -> set[str]:
     return _csv_env("WU_ADMIN_STAFF") | _csv_env("WU_MODS_ADMINS")
 
 
-# owner > admin > mod (docs/ADMIN-CONSOLE.md, "Roles"). Mods: reports, hiding, resets, kicks and mutes. Admins: everything
-# a mod does plus approvals, sanctions, bans, realms and news. The owner: flags, staff, releases and notes to Claude.
-RANK = {"mod": 1, "admin": 2, "owner": 3}
-ROLES = ("mod", "admin")
+# owner > admin > mod > helper (docs/ADMIN-CONSOLE.md, "Roles"; staffdesk.ROLE_TABLE). Helpers: Review's submissions and
+# feedback, notes only. Mods: reports, hiding, resets, kicks and mutes, approving clean links. Admins: everything a mod
+# does plus approvals, sanctions, bans, realms and news. The owner: flags, staff, releases, upgrades, undo, notes to Claude.
+RANK = {"helper": 1, "mod": 2, "admin": 3, "owner": 4}
+ROLES = ("helper", "mod", "admin")
+HELPER_TABS = ("", "review", "submissions", "feedback")   # the pages a helper opens (staffdesk.py); everything else 403
 
 
 def rank(role: str) -> int:
@@ -346,7 +348,7 @@ def gm_level(game_user: str) -> int:
 
 
 def role_of(account: str, game_user_fn=None) -> str:
-    """"owner", "admin", "mod" or "" for a website account id. game_user_fn() -> the game account name (asked only
+    """"owner", "admin", "mod", "helper" or "" for a website account id. game_user_fn() -> the game account name (asked only
     when the GM-level rule is needed). The staff file names a role per person (an entry without one, from before
     roles, is an admin); WU_ADMIN_STAFF are admins; WU_MODS_ADMINS and game GMs are mods."""
     if not account:
@@ -1194,13 +1196,16 @@ TABS = (("", "Dashboard"), ("catalog", "Catalog"), ("workshop", "Workshop"), ("h
         ("forum", "Forum"), ("profiles", "Profiles"), ("health", "Health"), ("staff", "Staff"), ("audit", "Audit"))
 # Leyline HQ's menu (stream/hq.py): nine plain words; Content and System open their own short row. Forum is its own
 # section (owner 2026-10-31: "making sure forum moderation is in my ultimate admin control panel").
-HQ_TABS = (("", "Home"), ("inbox", "Needs you"), ("players", "Players"), ("forum", "Forum"), ("realms", "Realms"),
+HQ_TABS = (("", "Home"), ("inbox", "Needs you"), ("review", "Review"), ("players", "Players"), ("forum", "Forum"), ("realms", "Realms"),
            ("network", "Network"),
            ("releases", "Releases"), ("content", "Content"), ("game", "Game"), ("system", "System"))
 CONTENT_TABS = (("catalog", "Catalog"), ("workshop", "Workshop"), ("hub", "Index"), ("themes", "Themes"),
                 ("profiles", "Profiles"), ("words", "Blocked words"), ("discord", "Discord"), ("reports", "All reports"))
 SYSTEM_TABS = (("health", "Health"), ("numbers", "Numbers"), ("flags", "Flags"), ("staff", "Staff"), ("audit", "Audit"))
+# HQ > Review (stream/staffdesk.py): submitted links, the feedback digest, upgrades
+REVIEW_TABS = (("submissions", "Submissions"), ("feedback", "Feedback"), ("upgrades", "Upgrades"))
 TAB_GROUP = dict([(k, "content") for k, _ in CONTENT_TABS] + [(k, "system") for k, _ in SYSTEM_TABS]
+                 + [(k, "review") for k, _ in REVIEW_TABS]
                  + [("person", "players"), ("notes", "")])
 
 
@@ -1232,22 +1237,38 @@ def flash_sig(kind: str, text: str) -> str:
     return hmac.new(_secret(), f"flash|{kind}|{text}".encode(), hashlib.sha256).hexdigest()[:16]
 
 
-def _nav(tab: str) -> str:
+def _review_label(v: str) -> str:
+    """Review, with how many submitted links wait (stream/linkqueue.py)."""
+    q = P("linkqueue")
+    try:
+        n = q.counts()["pending"] if q is not None else 0
+    except Exception:   # noqa: BLE001
+        n = 0
+    return f"{v} ({n})" if n else v
+
+
+def _nav(tab: str, role: str = "") -> str:
+    helper = role == "helper"
+    review = REVIEW_TABS if staffdesk is not None else ()
     if hq is None:
+        tabs = TABS[:1] + review + TABS[1:]
         return "".join(f'<a href="/wrath/admin{"/" + k if k else ""}"{" class=on" if k == tab else ""}>{e(v)}</a>'
-                       for k, v in TABS)
+                       for k, v in tabs if not helper or k in HELPER_TABS)
     group = TAB_GROUP.get(tab, tab)
-    first = {"content": "catalog", "system": "health"}
+    first = {"content": "catalog", "system": "health", "review": "submissions"}
     main = "".join(f'<a href="/wrath/admin{"/" + first.get(k, k) if k else ""}"{" class=on aria-current=page" if k == group else ""}>'
-                   f'{e(v)}</a>' for k, v in HQ_TABS)
-    sub = {"content": CONTENT_TABS, "system": SYSTEM_TABS}.get(group)
+                   f'{e(_review_label(v) if k == "review" else v)}</a>' for k, v in HQ_TABS
+                   if (k != "review" or review) and (not helper or k in HELPER_TABS))
+    sub = {"content": CONTENT_TABS, "system": SYSTEM_TABS, "review": review}.get(group)
+    if sub and helper:
+        sub = tuple((k, v) for k, v in sub if k in HELPER_TABS)
     row = ('</nav><nav class="ad-top ad-sub" aria-label="' + e(group.title()) + '">' + "".join(
         f'<a href="/wrath/admin/{k}"{" class=on aria-current=page" if k == tab else ""}>{e(v)}</a>' for k, v in sub)) if sub else ""
     return main + row
 
 
 def shell(user: dict, tab: str, title: str, body: str, nonce: str, query: dict | None = None) -> bytes:
-    nav = _nav(tab)
+    nav = _nav(tab, user.get("role", ""))
     q = query or {}
     msg = ""
     sig = (q.get("m") or [""])[0]
@@ -2127,14 +2148,18 @@ def staff_page(user: dict) -> str:
     grant = act(user, "staff.grant", "new", "Grant", back,
                 '<input type="text" name="account" maxlength="64" placeholder="account id" aria-label="Account id" required>'
                 '<input type="text" name="name" maxlength="40" placeholder="name (for this list)" aria-label="Name">'
-                '<select name="role" aria-label="Role"><option value="mod">mod</option><option value="admin">admin</option></select>') if owner else ""
+                '<select name="role" aria-label="Role"><option value="helper">helper</option><option value="mod" selected>mod</option>'
+                '<option value="admin">admin</option></select>') if owner else ""
     gm = gm_min()
-    return (f'<section class="ly-panel"><h2>Staff</h2><p class="fine">Three roles. <b>Mods</b> handle reports, hide things, '
-            f'reset profiles, kick and mute in the game. <b>Admins</b> do that and approve, sanction, ban, and look after '
-            f'realms and news. <b>The owner</b> also changes flags, staff and releases. Owners come from WU_ADMIN_OWNERS. '
+    table = staffdesk.role_table() if staffdesk is not None else ""
+    return (f'<section class="ly-panel"><h2>Staff</h2><p class="fine">Four roles. <b>Helpers</b> look through submitted links '
+            f'and feedback and leave notes. <b>Mods</b> also approve clean links, handle reports, hide things, reset profiles, '
+            f'kick and mute in the game. <b>Admins</b> do that and approve, sanction, ban, and look after realms and news. '
+            f'<b>The owner</b> also changes flags, staff, releases and upgrades, and can undo any approval. Owners come from '
+            f'WU_ADMIN_OWNERS. '
             f'{"Game accounts with GM level " + str(gm) + " or more on the realm are mods." if gm else "The GM-level rule is off."} '
             f'Someone without access sees their own account id on the staff-only page.</p>'
-            f'<table class="ly-table"><tbody>{"".join(rows)}</tbody></table>{grant}</section>')
+            f'<table class="ly-table"><tbody>{"".join(rows)}</tbody></table>{grant}{table}</section>')
 
 
 def audit_page(user: dict, query: dict) -> str:
@@ -2635,7 +2660,7 @@ def a_staff_grant(user, target, form):
     name = _clean_line(form.get("name"), 40)
     role = form.get("role") or "mod"
     if role not in ROLES:
-        raise Refused("Pick mod or admin.")
+        raise Refused("Pick helper, mod or admin.")
     if acct in owners():
         raise Refused("That account is an owner already (WU_ADMIN_OWNERS).")
     with _lock:
@@ -2747,9 +2772,10 @@ def run_action(user: dict, form: dict) -> tuple[bool, str]:
         return False, "Unknown action."
     fn, need, _ = ACTIONS[action]
     if not can(user, need):
-        note = "owner only" if need == "owner" else "admins only"
+        note = {"owner": "owner only", "admin": "admins only"}.get(need, "mods and up")
         audit(user, action, target, None, None, ok=False, note=note)
-        return False, "Only the owner can do that." if need == "owner" else "Only admins (and the owner) can do that."
+        return False, {"owner": "Only the owner can do that.", "admin": "Only admins (and the owner) can do that."}.get(
+            need, "Only moderators (and up) can do that.")
     want = expected_confirm(action, target, form)
     if want is not None and str(form.get("confirm") or "").strip() != want:
         audit(user, action, target, None, None, ok=False, note="confirm text did not match")
@@ -2772,7 +2798,7 @@ def run_action(user: dict, form: dict) -> tuple[bool, str]:
 # ----------------------------------------------------------------------------------------------
 
 FEEDS = {"/wrath/leyline/channel.json", "/wrath/leyline/news.json", "/wrath/leyline/realm-overrides.json",
-         "/wrath/leyline/relay-block.json"}
+         "/wrath/leyline/relay-block.json", "/wrath/leyline/version.json"}
 FLAGS_FEED = "/wrath/leyline/flags.json"   # served here only while stream/leyline_net.py is not in the portal
 _MOD_PAGE = re.compile(r"^/wrath/admin/catalog/mod/([a-z][a-z0-9-]{1,31})$")
 
@@ -2793,6 +2819,9 @@ def feed(path: str) -> bytes:
                "posts": [{k: p[k] for k in ("id", "date", "tag", "title", "items") if k in p} for p in d["posts"] if not p.get("hidden")][:20]}
     elif path.endswith("/relay-block.json"):
         doc = relay_block_feed()
+    elif path.endswith("/version.json"):   # the launcher version policy (stream/staffdesk.py)
+        doc = (staffdesk.version_doc() if staffdesk is not None
+               else {"format": 1, "current": (channel_doc().get("stable") or {}).get("version"), "minimum": None})
     else:
         ov = realm_overrides()
         doc = {"format": 1, "updated_at": _read_json(_apath("realm-overrides.json"), {}).get("updated_at"),
@@ -2929,6 +2958,11 @@ def _load_hq():
 
 def page_body(user: dict, path: str, tab: str, query: dict) -> tuple[int, str, str, str]:
     """(status, tab, title, body) for one console page."""
+    if staffdesk is not None:
+        got = staffdesk.page(user, tab, query)
+        if got is not None:
+            st, title, body = got
+            return st, ("submissions" if tab in ("review", "") else tab), title, body
     if hq is not None:
         got = hq.page(user, tab, query)
         if got is not None:
@@ -2989,10 +3023,17 @@ def get(h, path: str, query: dict) -> None:
     if not limits.hit("get:" + user["account"], PAGES_PER_MIN):
         h.send(429, page_simple("Slow down", "Too many pages in a minute."), headers=NOINDEX)
         return
+    tab = path[len("/wrath/admin/"):] if path.startswith("/wrath/admin/") else ""
+    if user["role"] == "helper" and ((api and path != "/wrath/admin/api/me") or (not api and tab not in HELPER_TABS)):
+        msg = "Helpers see Review: Submissions and Feedback."
+        if api:
+            h.send(403, (json.dumps({"ok": False, "error": msg}) + "\n").encode(), "application/json; charset=utf-8", headers=NOINDEX)
+        else:
+            h.send(403, page_simple("Helpers see Review", msg), headers=NOINDEX)
+        return
     if api:
         hq.api_get(h, user, path[len("/wrath/admin/api/"):], query)
         return
-    tab = path[len("/wrath/admin/"):] if path.startswith("/wrath/admin/") else ""
     status, tab, title, body = page_body(user, path, tab, query)
     nonce = secrets.token_urlsafe(16)
     h.send(status, shell(user, tab, title, body, nonce, query), nonce=nonce, headers=NOINDEX)
@@ -3088,4 +3129,21 @@ def post(h, path: str) -> None:
     h.end_headers()
 
 
+def _load_staffdesk():
+    """stream/staffdesk.py beside this file: HQ > Review (submitted links, feedback, upgrades) and the role table."""
+    p = os.path.join(HERE, "staffdesk.py")
+    if not os.path.isfile(p):
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("wu_staffdesk", p)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.setup(_Self())
+        return mod
+    except Exception:   # noqa: BLE001
+        log.exception("staffdesk.py did not load: no Review pages")
+        return None
+
+
+staffdesk = _load_staffdesk()
 hq = _load_hq()

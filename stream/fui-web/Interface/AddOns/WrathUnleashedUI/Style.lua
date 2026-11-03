@@ -290,7 +290,9 @@ S.ICONS = { "all", "banners", "barrels", "build", "buildings", "class", "close",
     "search", "seating", "select", "snap", "stamp", "storage", "structure", "tables", "tents", "undo",
     -- the selection panel's pad and quick buttons, Swap and the snap-out camera
     "up", "down", "left", "right", "turnleft", "turnright", "liftup", "liftdown", "smaller", "bigger", "bring", "tilt",
-    "upright", "settle", "random", "centre", "reset", "swap", "camera" }
+    "upright", "settle", "random", "centre", "reset", "swap", "camera",
+    -- the Dojo's loadout
+    "bars", "gearset", "range" }
 local iconSet = {}
 for _, n in ipairs(S.ICONS) do iconSet[n] = true end
 function S.Icon(name) return S.ICON_DIR .. (iconSet[name or ""] and name or "noimage") end

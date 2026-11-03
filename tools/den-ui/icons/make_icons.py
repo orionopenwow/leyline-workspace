@@ -272,6 +272,29 @@ def _(p):
     p.line((38, 38), (54, 54))
 
 
+
+# ---------------------------------------------------------------- the Dojo's loadout (Dojo.lua)
+@icon("bars")
+def _(p):   # an action bar: two rows of buttons
+    for y in (14, 36):
+        for x in (8, 22, 36, 50):
+            p.rect(x - 4, y, x + 8, y + 12, w=10, r=2)
+
+
+@icon("gearset")
+def _(p):   # a breastplate: shoulders, the chest, the waist
+    p.line((14, 12), (24, 8), (32, 16), (40, 8), (50, 12), (54, 26), (46, 30), (46, 54), (18, 54), (18, 30), (10, 26), close=True)
+    p.line((32, 16), (32, 40))
+
+
+@icon("range")
+def _(p):   # a target at the end of a line of ticks
+    p.circle(48, 32, 10)
+    p.dot(48, 32, 3)
+    p.line((6, 32), (34, 32))
+    for x in (8, 18, 28):
+        p.line((x, 24), (x, 40), w=8)
+
 # ---------------------------------------------------------------- categories
 @icon("all")
 def _(p):   # four squares

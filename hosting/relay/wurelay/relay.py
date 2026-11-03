@@ -1148,6 +1148,10 @@ class Relay:
 
     def api_knock(self, req, rid):
         h = self.cors(req)
+        # security review 2 Nov (F5): a knock reroutes this IP's shared-port login, so a web page from another site must
+        # not be able to send one (a "simple" text/plain POST needs no preflight). The launcher sends no Origin.
+        if not self.ws_origin_ok(req):
+            return httpd.response(403, {"error": "knocks come from the launcher or the Leyline site"}, headers=h)
         if not self.knock_rate.hit(req.ip, self.cfg.knocks_per_ip_min):
             return httpd.response(429, {"error": "slow down"}, headers=h)
         doc = req.json()
@@ -1168,6 +1172,8 @@ class Relay:
 
     async def api_account(self, req, rid):
         h = self.cors(req)
+        if not self.ws_origin_ok(req):   # F5: the same rule as knock (no account made from another site's page)
+            return httpd.response(403, {"error": "accounts are made from the launcher or the Leyline site"}, headers=h)
         doc = req.json()
         s = self.sessions.get(rid)
         if not s:

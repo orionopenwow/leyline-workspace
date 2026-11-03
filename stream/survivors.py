@@ -216,5 +216,5 @@ def site_auth(h) -> None:
     if data:
         h.send(403, b"sign in on the Leyline site first\n", "text/plain")
         return
-    pub = portal("PUBLIC_HOST") or "play.openvanilla.app"
+    pub = portal("PUBLIC_HOST") or "leylinelauncher.com"
     h.redirect(f"https://{pub}/wrath/survivors" + ("" if _off() else "/play"))

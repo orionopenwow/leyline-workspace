@@ -105,6 +105,6 @@ if errorlevel 1 (
 )
 del /q "%T%" 2>nul
 echo.
-echo Done. Open https://play.openvanilla.app/wrath signed out: a Hero Key saved in this browser signs you in.
+echo Done. Open https://leylinelauncher.com/wrath signed out: a Hero Key saved in this browser signs you in.
 pause
 exit /b 0

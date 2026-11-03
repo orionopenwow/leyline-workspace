@@ -1063,13 +1063,18 @@ function D.Report(what)
             r.model, r.icon, r.empty, r.rows, r.cols, r.tile)
         lines[#lines + 1] = string.format("catalog n=%d model=%d boxed=%d wmo=%d none=%d", r.catalog, r.withModel, r.boxed, r.wmo, r.none)
         if #r.missing > 0 then lines[#lines + 1] = "nomodel " .. table.concat(r.missing, ","):sub(1, 180) end
-        -- what this client's model frames have of a side view's methods (one line a frame type), and the framing on now
-        if b.ModelApi then for _, l in ipairs(b.ModelApi()) do lines[#lines + 1] = "modelapi " .. l end end
-        if b.FitConf then
-            local f = b.FitConf()
+        -- the model views (a tile and the selection's preview): their frame type (a side view: PlayerModel), the
+        -- player's own turn and zoom, the facing they are drawn at
+        if b.ViewFacing then
             local t1 = b.Window and b.Window() and b.Window().tiles and b.Window().tiles[1]
-            lines[#lines + 1] = string.format("fit frame=%s pitch=%s view=%s fit=%s cam=%s pitched=%s", tostring(f.frame), tostring(f.pitch),
-                tostring(f.view), tostring(f.fit), tostring(f.cam), tostring(t1 and t1.pitched or false))
+            local pv = b.preview
+            local function view(v)
+                if not (v and v.model) then return "none" end
+                return string.format("%s,%s,%.2f,%.2f,%.2f", tostring(v.model.kind or "?"), v.modelPath and "1" or "0", v.turn or 0, v.zoom or 1,
+                    b.ViewFacing(v))
+            end
+            lines[#lines + 1] = string.format("view tile=%s preview=%s previewShown=%s spin=%s", view(t1), view(pv),
+                (pv and pv:IsShown()) and "1" or "0", b.spin and "1" or "0")
         end
     end
     local s = (b and b.state) or {}
@@ -1114,9 +1119,16 @@ function D.TestAction(text)
     if a == "gallery" then if not (b.Window() and b.Window():IsShown()) then bar.build:Click() end; if w[2] then b.ShowTab(w[2]) end; return true end
     if a == "nogallery" then if b.Window() then b.Window():Hide() end; return true end
     if a == "tab" then return b.ShowTab(w[2] or "all") end
-    if a == "fit" then   -- "fit frame=PlayerModel cam=0 ..." (Builder.lua B.SetFit's words), the older "fit fill dx dy dz unit scaledPos cam", or "reset"
-        if (w[2] or ""):find("=") then return b.SetFit(table.concat(w, " ", 2)) end
-        return b.SetFit(w[2], w[3], w[4], w[5], w[6], w[7], w[8])
+    if a == "view" then   -- "view tile|preview turn <degrees>" / "view tile|preview zoom <wheel clicks>": what a right-drag and the wheel do
+        local v = w[2] == "preview" and b.preview or (b.Window() and b.Window().tiles and b.Window().tiles[1])
+        local n = tonumber(w[4]) or 0
+        if w[3] == "turn" then return b.ViewTurn(v, math.rad(n)) end
+        if w[3] == "zoom" then
+            local ok = false
+            for _ = 1, math.min(10, math.abs(n)) do ok = b.ViewZoom(v, n) or ok end
+            return ok
+        end
+        return false
     end
     if a == "page" then return b.Page(tonumber(w[2]) or 1) end
     if a == "pick" or a == "place" then

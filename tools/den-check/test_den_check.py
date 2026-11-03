@@ -672,6 +672,12 @@ class FakeDenEditor:
     def __init__(self, dens, broken=()):
         self.dens, self.props, self.play, self.clip, self.broken = Path(dens), 3, False, False, set(broken)
         self.kind = "fake"
+        self.views = {"tile": [0.0, 1.0], "preview": [0.0, 1.0]}
+
+    def view(self, which):
+        turn, zoom = self.views[which]
+        frame = "Model" if "topdown" in self.broken else "PlayerModel"
+        return "%s,1,%.2f,%.2f,%.2f" % (frame, turn, zoom, 0.6 + turn)
 
     def ev(self, name, detail=""):
         with open(self.dens / "den-lite.events", "a", encoding="utf-8") as f:
@@ -715,8 +721,7 @@ class FakeDenEditor:
             ov = "LeylineDenBar/MinimapCluster" if "overlap" in self.broken else "none"
             self.report(["gallery shown=1 tiles=20 model=18 icon=2 empty=0 rows=4 cols=5 tile=92",
                          "catalog n=180 model=150 boxed=150 wmo=25 none=5", "nomodel Baked Bread,Bottle",
-                         "modelapi Model Pitch=0 Roll=0 Camera=1", "modelapi PlayerModel Pitch=0 Camera=1 PortraitZ=1",
-                         "fit frame=Model pitch=-1.57 view=auto fit=box cam=nil pitched=false",
+                         "view tile=%s preview=%s previewShown=1 spin=1" % (self.view("tile"), self.view("preview")),
                          "state sel=Barrel n=1 undo=4 redo=0 clip=%d grid=0 lite=1 mode=place tab=all pick=-" % self.clip,
                          "open LeylineDenBar,LeylineDenRail", "overlaps " + ov, "pill Place · snap off · 15°",
                          "screen 1923x1082 uiscale=0.71 play=%s rail=labelled" % str(self.play).lower()])
@@ -737,6 +742,12 @@ class FakeDenEditor:
             (self.dens / ("%s.den.json" % a[1])).write_text("{}")
         elif act == "open":
             self.ev("den_load", a[1] + " replace")
+        elif act == "view" and "view" not in self.broken:
+            v = self.views[a[1]]
+            if a[2] == "turn":
+                v[0] = (v[0] + math.radians(float(a[3]))) % (2 * math.pi)
+            else:
+                v[1] = min(3.0, v[1] * 1.15 ** int(a[3]))
         elif act == "play":
             self.play = True
         elif act == "build":
@@ -783,15 +794,22 @@ class Features(unittest.TestCase):
         self.assertEqual(len(den_check.STAMP_NAMES), len(set(den_check.STAMP_NAMES)))
         self.assertFalse((dens / "featuretest.den.json").exists() or (dens / "featuretest-before.den.json").exists(), "the test's saves removed")
 
-    def test_the_side_view_sweep_settles_in_one_run(self):
+    def test_tiles_and_preview_from_the_side_turned_and_zoomed(self):
         rep, shots, _ = self.run_it()
-        fits = [x for x in shots if "-fit-" in x]
-        self.assertLessEqual(len(den_check.FIT_SWEEP), 8)
-        self.assertEqual(len(fits), len(den_check.FIT_SWEEP), fits)
-        self.assertEqual(len({l for l, _ in den_check.FIT_SWEEP}), len(den_check.FIT_SWEEP))
-        self.assertTrue(any("frame=PlayerModel" in a for _, a in den_check.FIT_SWEEP))
-        api = [r[2] for r in rep.rows if r[1] == "gallery: a model frame's methods"]
-        self.assertEqual(api, ["Model Pitch=0 Roll=0 Camera=1", "PlayerModel Pitch=0 Camera=1 PortraitZ=1"])
+        rows = {r[1]: r for r in rep.rows}
+        for label in ("gallery tiles", "the selection's preview"):
+            self.assertEqual(rows["%s: from the side" % label][0], "PASS")
+            self.assertEqual(rows["%s: right-drag turns it, the wheel zooms" % label][0], "PASS", rows["%s: right-drag turns it, the wheel zooms" % label])
+        self.assertTrue(any(x.endswith("-tile-turned-zoomed.png") for x in shots) and any(x.endswith("-preview-turned-zoomed.png") for x in shots))
+        self.assertFalse(any("-fit-" in x for x in shots), "the sweep is gone")
+        self.assertFalse(hasattr(den_check, "FIT_SWEEP"))
+        self.assertEqual(den_check.parse_view("PlayerModel,1,1.57,1.32,2.17")["zoom"], 1.32)
+        self.assertEqual(den_check.parse_view("nope"), {})
+        # top-down tiles, or turn/zoom that doesn't work: failed
+        rep, _, _ = self.run_it(broken=("topdown", "view"))
+        fails = {r[1] for r in rep.rows if r[0] == "FAIL"}
+        self.assertIn("gallery tiles: from the side", fails)
+        self.assertIn("the selection's preview: right-drag turns it, the wheel zooms", fails)
 
     def test_the_stamp_list_is_the_shipped_stamps(self):
         shipped = sorted(p.name.split(".")[0] for p in (HERE.parent.parent / "realm" / "custom" / "lua_scripts" / "den-stamps").glob("*.den.json"))

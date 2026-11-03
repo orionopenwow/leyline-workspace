@@ -74,7 +74,7 @@ function Frame:CreateTexture() return new("Texture", nil, self) end
 local models = 0
 function CreateFrame(kind, name, parent)
     local f = new(kind, name, parent); frames[#frames + 1] = f
-    if kind == "Model" then models = models + 1 end
+    if kind == "Model" or kind == "PlayerModel" then models = models + 1 end
     return f
 end
 
@@ -146,7 +146,7 @@ check("/builder opens the gallery and asks for the catalog", win:IsShown() and s
 fireClient("wubuild\tcatalog\t1/2\t" .. data:sub(1, half))
 fireClient("wubuild\tcatalog\t2/2\t" .. data:sub(half + 1))
 check("53 props arrive", #B.catalog == 53)
-check("20 Model frames, made once", models == 20 and #win.tiles == 20)
+check("20 model frames (PlayerModel: a side view), made once", models == 20 and #win.tiles == 20 and win.tiles[1].model.kind == "PlayerModel")
 
 -- the model paths
 local byId = {}
@@ -165,49 +165,16 @@ check("1-20 of 53", win.count:GetText() == "1-20 of 53")
 local t1 = tileOf(1001)
 check("a tile with a model: SetModel(path), shown, the icon hidden", t1.model.modelFile == byId[1001].model and t1.model:IsShown() and not t1.icon:IsShown())
 check("a tile's model is lit (a Model frame without a light draws black)", t1.model.light == 1)
--- the framing (the old wiki's Model:SetPosition: (0,0,0) the frame's bottom-left; one unit the screen's height, as the
--- owner's PC showed it, 3 Nov sweep 4)
-local diag = 981
-local TW = 88 / diag
-check("a model's tile: in the tile's middle, the frame's own units (about 0.044 across)", t1.model.pos
-    and math.abs(t1.model.pos[1] - TW / 2) < 1e-9 and t1.model.pos[3] == 0 and t1.model.mscale < TW, table.concat(t1.model.pos or {}, ","))
-B.SetFit(0.5, 0.25, 0, 0.5, "height", "1", 0)
-local s1 = t1.model.mscale
-check("SetFit re-frames the tiles shown: by a part of the tile, the unit, positions over the scale, a camera",
-    t1.model.pos and math.abs(t1.model.pos[1] - 0.75 * (88 / 981) / s1) < 1e-9 and math.abs(t1.model.pos[3] - 0.5 * (88 / 981) / s1) < 1e-9
-    and t1.model.camera == 0 and WrathUnleashedUIDB.den.fit.fill == 0.5 and WrathUnleashedUIDB.den.fit.scaledPos == true)
-B.SetFit("reset")
-check("SetFit reset: the default again", WrathUnleashedUIDB.den.fit == nil and math.abs(t1.model.pos[1] - TW / 2) < 1e-9)
--- framed again once laid out: before its frame has a size there is nothing to frame by; shown or sized, it is framed
--- on the next frames, and again when the screen changes
+-- the framing: the PlayerModel's own camera (owner's PC sweep 3 Nov: the side view), scale 1 at 0,0,0; shown again or
+-- resized it keeps that framing
+check("a model's tile: its own framing (scale 1 at 0,0,0)", t1.model.pos and t1.model.pos[1] == 0 and t1.model.pos[2] == 0
+    and t1.model.pos[3] == 0 and t1.model.mscale == 1, table.concat(t1.model.pos or {}, ","))
+check("the sweep's tuning is gone", B.SetFit == nil and B.ModelApi == nil and B.TileFit == nil)
 do
     local m = t1.model
-    m.pos = nil; m.w = 0
-    B.RefitSoon(t1)
-    check("no size yet: not framed (nothing to frame by)", m.pos == nil)
-    m.w = 88
-    win.grid:Fire("OnUpdate", 0.01)
-    check("the next frame, laid out: framed", m.pos and math.abs(m.pos[1] - TW / 2) < 1e-9)
     m.pos = nil
-    win.grid:Fire("OnUpdate", 0.01)
-    check("and once more the frame after (the model loads late)", m.pos ~= nil)
-    m.pos = nil
-    win.grid:Fire("OnUpdate", 0.01)
-    check("then left alone while nothing changes", m.pos == nil)
-    m:Hide(); m:Show()
-    check("shown again: framed on show", m.pos ~= nil)
-    m.pos = nil
-    m.w, m.h = 120, 120; m:Fire("OnSizeChanged", 120, 120)
-    check("resized: framed by its new size", m.pos and math.abs(m.pos[1] - 60 / diag) < 1e-9)
-    m.w, m.h = 88, 88
-    win.grid:Fire("OnUpdate", 0.01); win.grid:Fire("OnUpdate", 0.01); win.grid:Fire("OnUpdate", 0.01)
-    m.pos = nil
-    screenH = 768
-    win.grid:Fire("OnUpdate", 0.01)
-    local W2 = 88 / 768
-    check("the screen's size or UI scale changed: framed again", m.pos and math.abs(m.pos[1] - W2 / 2) < 1e-9)
-    screenH = 981
-    win.grid:Fire("OnUpdate", 0.01)
+    m:Hide(); m:Show(); m:Fire("OnShow")
+    check("shown again: framed on show", m.pos ~= nil and m.pos[1] == 0)
 end
 local t4 = tileOf(1004)
 check("a WMO's tile: the building icon on purpose, and why", not t4.model:IsShown() and t4.icon:IsShown() and t4.icon.path == "Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\buildings"

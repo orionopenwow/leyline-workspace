@@ -1029,27 +1029,47 @@ def parse_report(lines):
         kv = {k: v for k, v in re.findall(r"(\w+)=(\S*)", rest)}
         kv["_text"] = rest
         out[head] = kv
-        # a head that comes more than once (modelapi: one line a frame type): every line, in order
+        # a head that comes more than once: every line, in order
         out.setdefault("_lines", {}).setdefault(head, []).append(rest)
     return out
 
 
-# den-features' sweep for the gallery's model tiles (Builder.lua B.FIT / B.SetFit; `.den ui fit <word=value ...>`). The
-# owner's PC (3 Nov) showed whole models but from straight above: a plain Model frame puts a doodad's "up" toward you.
-# One run settles how this client gives a side view: each picture changes ONE thing from the default (a Model frame,
-# tipped back a quarter turn by SetPitch where the client has it, framed on the box's middle). The report's "modelapi"
-# lines say which methods each frame type has; "fit" what was on. Pick the picture with benches seen from the side and
-# set its words as Builder.lua's B.FIT.
-FIT_SWEEP = [
-    ("1-model-default", "default"),                              # Model; SetPitch(-90deg) if the client has it
-    ("2-model-camera0", "cam=0"),                                # + the model's own camera 0
-    ("3-playermodel", "frame=PlayerModel"),                      # a PlayerModel frame, the same framing
-    ("4-playermodel-camera0", "frame=PlayerModel cam=0"),        # a PlayerModel, camera 0
-    ("5-playermodel-own", "frame=PlayerModel fit=own"),          # a PlayerModel framing it itself (scale 1 at 0,0,0)
-    ("6-dressup", "frame=DressUpModel"),                         # a DressUpModel frame, the same framing
-    ("7-dressup-own", "frame=DressUpModel fit=own"),             # a DressUpModel framing it itself
-    ("8-model-top-no-pitch", "pitch=off view=top"),              # the old top view, now centred (the fallback)
-]
+# The gallery's tiles and the selection's preview show props from the SIDE: a PlayerModel framed by its own camera
+# (the owner's PC sweep of 3 Nov, picture "fit-5-playermodel-own"; Builder.lua B.VIEW_FRAME). In either, a right-drag
+# turns the model and the wheel zooms (owner 3 Nov). The report's "view" line: tile=<frame>,<has model>,<turn>,<zoom>,
+# <facing> and the same for the preview.
+VIEW_FRAME = "PlayerModel"
+
+
+def parse_view(text):
+    """A view's part of the report ("PlayerModel,1,1.57,1.32,2.17") as a dict, or {}."""
+    parts = str(text or "").split(",")
+    if len(parts) < 5:
+        return {}
+    try:
+        return {"frame": parts[0], "model": parts[1] == "1", "turn": float(parts[2]), "zoom": float(parts[3]), "facing": float(parts[4])}
+    except ValueError:
+        return {}
+
+
+def view_checks(rep, report, ui, shot, which, label):
+    """The model view `which` ("tile" / "preview"): from the side, then turned 90 degrees and zoomed in two wheel clicks
+    by the addon's own handlers (DenBar.lua `view` action), a picture of it."""
+    v = parse_view(report(which).get("view", {}).get(which))
+    if not v:
+        rep.add("FAIL", "%s: from the side" % label, "no view in the addon's report", "Update the Leyline addons, then run den-features again.")
+        return
+    rep.ok(v["frame"] == VIEW_FRAME and v["model"], "%s: from the side" % label,
+           "a %s with its own framing%s" % (v["frame"], "" if v["model"] else ", but no model in it"),
+           "Send the pictures in logs\\den-features (the tiles should show props from the side).")
+    ui("view %s turn 90" % which)
+    ui("view %s zoom 2" % which)
+    after = parse_view(report(which + "-turned").get("view", {}).get(which))
+    pic = shot("%s-turned-zoomed" % which)
+    ok = bool(after) and abs(((after["turn"] - v["turn"]) % 6.2832) - 1.5708) < 0.05 and after["zoom"] > v["zoom"] * 1.2
+    rep.ok(ok, "%s: right-drag turns it, the wheel zooms" % label,
+           ("turned to %.2f rad, zoom %.2f%s" % (after["turn"], after["zoom"], (", " + pic) if pic else "")) if after else "no view after",
+           "The model didn't turn or zoom: send logs\\den-features-latest.txt and the pictures.")
 
 
 def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
@@ -1130,14 +1150,8 @@ def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
                "Check your 3.3.5a game folder in the launcher, then run den-features again." % ("it is there" if table else "it is missing"))
         if "nomodel" in r:
             rep.add("INFO", "gallery: props without a model in your files", r["nomodel"]["_text"][:180])
-        # the tiles' framing (3 Nov: lit, but each tile showed a close-up): the framings of FIT_SWEEP, a picture
-        # each, then the default again. Compare logs\den-features\fit-* and set the best in Builder.lua B.FIT.
-        for l in dict.fromkeys(r.get("_lines", {}).get("modelapi", [])):
-            rep.add("INFO", "gallery: a model frame's methods", l)
-        for label, args in FIT_SWEEP:
-            ui("fit " + ("reset" if args == "default" else args))
-            shot("fit-" + label)
-        ui("fit reset")
+        # the tiles: from the side, and a right-drag / the wheel on one
+        view_checks(rep, report, ui, shot, "tile", "gallery tiles")
         ui("page 1")
         shot("gallery-page2")
         ui("tab all")
@@ -1168,6 +1182,7 @@ def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
         rep.ok(sel not in ("-", ""), "select: the prop nearest you", sel, "Select picked nothing: send logs\\den-features-latest.txt.")
         ui("props")
         shot("selected")
+        view_checks(rep, report, ui, shot, "preview", "the selection's preview")
         for action, what in (("nudge z 1", "move: up by the step (the popover's +)"), ("nudge x -1", "move: back along x"),
                              ("key q", "turn: Q"), ("nudge turn 1", "turn: the popover's +"), ("nudge scale 1", "size: the popover's +")):
             t = now_ms()

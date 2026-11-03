@@ -468,6 +468,13 @@ end
 
 -- ---------------------------------------------------------------- what a tab lists
 
+-- The catalog's item with this entry (or one known from before), nil when there is none.
+function B.ById(id)
+    id = tonumber(id)
+    for _, c in ipairs(B.catalog) do if c.id == id then return c end end
+    return B.known and B.known[id] or nil
+end
+
 local function byIdMap()
     local m = {}
     for _, c in ipairs(B.catalog) do m[c.id] = c end
@@ -577,220 +584,125 @@ local function paintTile(t)
 end
 B.PaintTile = paintTile
 
--- How a tile frames its model. A Model frame has no "fit" of its own, and for a model without a camera of its own (every
--- doodad) its space is the frame's, not the model's (the old wiki, Widget API Model:SetPosition): (0, 0, 0) is the
--- frame's BOTTOM-LEFT corner, x goes right, y up, z toward you; one unit is a length of the screen (the owner's sweep
--- 4, 3 Nov: its height), and SetModelScale sizes the model in those units. The model's own axes go straight onto the
--- frame's: its x right, its y up, its z (a doodad's "up") toward you. So a plain Model frame shows a doodad from
--- straight above (owner's shot 3 Nov: "a bench is a plank seen from the ceiling"), and SetFacing (a turn about the
--- model's z) spins it in the tile's plane. A side view needs the model tipped back a quarter turn (Model:SetPitch,
--- where the client has it: the tile tries it) or a frame whose camera looks across (PlayerModel / DressUpModel, or a
--- camera of the model's own: SetCamera). Which of these the 3.3.5a client does is what FIT_SWEEP in
--- tools/den-check/den_check.py settles in one run on the owner's PC (eight labelled pictures, one change each), and
--- the den-test's report says which of these methods each frame type has (B.ModelApi).
--- Framing: the model's box (Den Lite sends its size in yards from the game's own tables: w, d, h and the bottom z) is
--- scaled to B.FIT.fill of the tile (the footprint's diagonal, so it still fits as it turns) and put in the tile's
--- middle in both axes: seen from the side, its box's middle height on the tile's middle; seen from above the footprint
--- is round the model's origin, so the origin on the middle (the old framing lowered every top view by half its
--- height: the models sat at the tile's bottom edge). The frame's size is known only once it is laid out, so the
--- framing is applied again on show, on a size change and on the next two frames (B.TileTick), and whenever the
--- screen's size or UI scale changes.
--- Tunable on a PC without a new addon (WrathUnleashedUIDB.den.fit, set by B.SetFit / the test's ".den ui fit"):
--- fill; dx / dy / dz (a part of the tile); unit ("height", "width", "diag"); scaledPos; cam (SetCamera); frame
--- ("Model", "PlayerModel", "DressUpModel": the tiles are made again of that type); pitch (radians, SetPitch where the
--- client has it; "off" none); view ("auto": from the side when tipped or not a plain Model, else from above; "side";
--- "top"); fit ("box": the framing above; "own": scale 1 at (0, 0, 0), the frame's own camera frames it).
-B.FIT = { v = 3, fill = 0.8, dx = 0, dy = 0, dz = 0, unit = "height", scaledPos = false, frame = "Model", pitch = -math.pi / 2,
-    view = "auto", fit = "box" }
-B.FRAMES = { Model = true, PlayerModel = true, DressUpModel = true }
-local NO_SIZE = { w = 1, d = 1, h = 1.2, z = 0 }   -- a prop whose size is unknown: about a crate's
-local function fitConf()
-    local d = type(WrathUnleashedUIDB) == "table" and type(WrathUnleashedUIDB.den) == "table" and WrathUnleashedUIDB.den.fit
-    -- a framing saved by an earlier sweep (v 1 or 2) is not this kind: the default
-    if type(d) ~= "table" or d.v ~= 3 then return B.FIT end
-    for k, v in pairs(B.FIT) do if d[k] == nil then d[k] = v end end
-    return d
-end
-B.FitConf = fitConf
+-- How a tile shows its model: from the SIDE. The owner's PC sweep (3 Nov, den-features "fit-5-playermodel-own"): a
+-- plain Model frame shows a doodad from straight above (its "up" toward you; no SetPitch on any 3.3.5a model frame),
+-- PlayerModel and DressUpModel framed by hand came out empty, but a PlayerModel left to frame the model itself
+-- (scale 1 at 0, 0, 0: its own camera) shows props from the side. So every tile, and the selection's larger
+-- preview, is that: a PlayerModel, its own framing. SetFacing turns it about its up axis (Spin, or a right-drag).
+-- A client where a PlayerModel can't be made falls back to a plain Model.
+-- Owner 3 Nov: in a model window (a tile, the preview) hold the RIGHT mouse button and drag to turn the model; the
+-- wheel over it zooms in and out (only over that window: the camera keeps the wheel everywhere else). Spin still
+-- turns them all; a turn of your own is added to it. Shift + wheel over a tile pages the gallery as before.
+B.VIEW_FRAME = "PlayerModel"
+B.ZOOM_MIN, B.ZOOM_MAX, B.ZOOM_STEP = 0.5, 3.0, 1.15
+B.TURN_PER_PX = 0.02                      -- radians a UI unit of right-drag
+local DRAG_SLOP = 3                       -- UI units before a right-press is a drag (a click stays a click)
 
--- The tile's width and height in the Model frame's units (or nil while it is not laid out yet).
-function B.FrameUnits(m, conf)
-    if not (m and m.GetWidth) then return nil end
-    local s = (m.GetEffectiveScale and tonumber(m:GetEffectiveScale())) or 1
-    local w, h = (tonumber(m:GetWidth()) or 0) * s, (tonumber(m:GetHeight()) or 0) * s
-    if w <= 0 or h <= 0 then return nil end
-    local us = (UIParent and UIParent.GetEffectiveScale and tonumber(UIParent:GetEffectiveScale())) or 1
-    local sw = ((GetScreenWidth and tonumber(GetScreenWidth())) or 0) * us
-    local sh = ((GetScreenHeight and tonumber(GetScreenHeight())) or 0) * us
-    local unit = (conf or fitConf()).unit
-    local len = unit == "height" and sh or unit == "width" and sw or math.sqrt(sw * sw + sh * sh)
-    if not len or len <= 0 then return nil end
-    return w / len, h / len
+-- A model frame of the view's kind on `parent` (a PlayerModel; a plain Model where that can't be made).
+local function newViewModel(parent)
+    local ok, m = pcall(CreateFrame, B.VIEW_FRAME, nil, parent)
+    if not ok or not m then ok, m = pcall(CreateFrame, "Model", nil, parent) end
+    m.kind = (ok and m and m.kind) or B.VIEW_FRAME
+    return m
 end
 
--- Is this framing a side view? (view "auto": tipped back by SetPitch, or a frame type that isn't a plain Model)
-function B.SideView(conf, pitched)
-    local f = conf or fitConf()
-    if f.view == "side" then return true end
-    if f.view == "top" then return false end
-    return pitched == true or (f.frame or "Model") ~= "Model"
+-- A view's facing now: Spin's (or the resting three-quarter view) plus the player's own turn.
+function B.ViewFacing(v)
+    return ((B.spin and B.facing or REST_FACING) or REST_FACING) + ((v and v.turn) or 0)
 end
 
--- The framing of a model of `size` in a frame of W x H units: its scale and SetPosition(x, y, z). side: seen from the
--- side (the box's middle height on the tile's middle), else from above (the origin on the middle).
-function B.TileFit(size, W, H, conf, side)
-    local f = conf or fitConf()
-    if type(size) ~= "table" then size = NO_SIZE end
-    W, H = tonumber(W) or 0.055, tonumber(H) or 0.055
-    if side == nil then side = B.SideView(f) end
-    local sw, sd, sh = tonumber(size.w) or 0, tonumber(size.d) or 0, tonumber(size.h) or 0
-    local foot = math.sqrt(sw * sw + sd * sd)                           -- the footprint's diagonal: it fits as it turns
-    local ext = math.max(side and math.max(foot, sh) or foot, 0.05)
-    local fill = tonumber(f.fill) or B.FIT.fill
-    local scale = math.max(1e-4, fill * math.min(W, H) / ext)
-    local mid = (tonumber(size.z) or 0) + sh / 2
-    local x = W / 2 + (tonumber(f.dx) or 0) * W
-    local y = H / 2 + (tonumber(f.dy) or 0) * H
-    if side then y = y - mid * scale end
-    local z = (tonumber(f.dz) or 0) * W
-    if f.scaledPos then x, y, z = x / scale, y / scale, z / scale end
-    return scale, x, y, z
+-- The model of view `v` (a tile, the preview) framed by its own camera at the view's zoom, turned.
+local function applyView(v)
+    local m = v and v.model
+    if not (m and v.modelPath) then return false end
+    pcall(m.SetModelScale, m, v.zoom or 1)
+    pcall(m.SetPosition, m, 0, 0, 0)
+    pcall(m.SetFacing, m, B.ViewFacing(v))
+    return true
+end
+B.ApplyView = applyView
+
+-- Zoom view `v` by the wheel's `delta` (up: nearer), kept between B.ZOOM_MIN and B.ZOOM_MAX.
+function B.ViewZoom(v, delta)
+    if not (v and v.modelPath) then return false end
+    local z = (v.zoom or 1) * ((tonumber(delta) or 0) > 0 and B.ZOOM_STEP or 1 / B.ZOOM_STEP)
+    v.zoom = math.max(B.ZOOM_MIN, math.min(B.ZOOM_MAX, z))
+    applyView(v)
+    return true
 end
 
--- What each model frame type has of the methods a side view could use: "Model pitch=1 cam=1 ..." (the den-test's
--- report, so one run on the owner's PC says what his client has).
-B.API_PROBE = { "SetPitch", "SetRoll", "SetRotation", "SetCamera", "SetCustomCamera", "SetCameraPosition", "SetCameraDistance",
-    "SetPortraitZoom", "SetCamDistanceScale", "SetDisplayInfo", "SetCreature" }
-function B.ModelApi()
-    local out = {}
-    for _, kind in ipairs({ "Model", "PlayerModel", "DressUpModel" }) do
-        local ok, m = pcall(CreateFrame, kind, nil, UIParent)
-        if ok and m then
-            if m.Hide then m:Hide() end
-            local has = {}
-            for _, fn in ipairs(B.API_PROBE) do has[#has + 1] = fn:gsub("^Set", ""):sub(1, 9) .. "=" .. (type(m[fn]) == "function" and "1" or "0") end
-            out[#out + 1] = kind .. " " .. table.concat(has, " ")
-        else
-            out[#out + 1] = kind .. " none"
+-- Turn view `v` by `rad` (a right-drag; the test's `.den ui view turn`).
+function B.ViewTurn(v, rad)
+    if not (v and v.modelPath) then return false end
+    v.turn = ((v.turn or 0) + (tonumber(rad) or 0)) % (2 * math.pi)
+    applyView(v)
+    return true
+end
+
+local function cursorX(f)
+    local x = GetCursorPosition and GetCursorPosition()
+    local s = (f and f.GetEffectiveScale and tonumber(f:GetEffectiveScale())) or 1
+    return x and (tonumber(x) or 0) / math.max(0.01, s) or nil
+end
+
+-- Right-drag to turn, the wheel to zoom, on `host` (the frame that gets the mouse) for view `v`. Returns a function
+-- for the host's OnUpdate (the drag follows the cursor). `pageWheel(delta)`: what Shift + wheel does instead.
+function B.AttachViewMouse(host, v, pageWheel)
+    if host.EnableMouseWheel then host:EnableMouseWheel(true) end
+    local function down(self, button)
+        if button ~= "RightButton" or not v.modelPath then return end
+        v.drag = { x = cursorX(self), turn = v.turn or 0 }
+        v.dragged = nil
+    end
+    local function up(self, button)
+        if button == "RightButton" and v.drag then v.drag = nil end
+    end
+    if host.HookScript and host:GetScript("OnMouseDown") then host:HookScript("OnMouseDown", down) else host:SetScript("OnMouseDown", down) end
+    if host.HookScript and host:GetScript("OnMouseUp") then host:HookScript("OnMouseUp", up) else host:SetScript("OnMouseUp", up) end
+    host:SetScript("OnMouseWheel", function(_, delta)
+        if pageWheel and IsShiftKeyDown and IsShiftKeyDown() then pageWheel(delta); return end
+        B.ViewZoom(v, delta)
+    end)
+    return function(self)
+        local d = v.drag
+        if not d then return end
+        if IsMouseButtonDown and not IsMouseButtonDown("RightButton") then v.drag = nil; return end
+        local x = cursorX(self)
+        if not (x and d.x) then return end
+        local dx = x - d.x
+        if math.abs(dx) > DRAG_SLOP then v.dragged = true end
+        if v.dragged then
+            v.turn = (d.turn + dx * B.TURN_PER_PX) % (2 * math.pi)
+            applyView(v)
         end
     end
-    return out
 end
 
--- The tile's model frame of a type (made once per type, the others hidden): t.model is the one in use.
-local function tileModel(t, kind)
-    kind = B.FRAMES[kind or ""] and kind or "Model"
-    t.models = t.models or {}
-    if not t.models[kind] then
-        local ok, m = pcall(CreateFrame, kind, nil, t)
-        if not ok or not m then ok, m = pcall(CreateFrame, "Model", nil, t) end
+-- The tile's model frame (made once).
+local function tileModel(t)
+    if not t.model then
+        local m = newViewModel(t)
         m:SetWidth(TILE - 4); m:SetHeight(TILE - 4)
         m:SetPoint("TOPLEFT", 2, -2)
         m:Hide()
-        m:SetScript("OnShow", function() if t.model == m then B.RefitSoon(t) end end)
-        m:SetScript("OnSizeChanged", function() if t.model == m then B.RefitSoon(t) end end)
-        m.kind = kind
-        t.models[kind] = m
+        m:SetScript("OnShow", function() applyView(t) end)
+        t.model = m
     end
-    local m = t.models[kind]
-    if t.model and t.model ~= m then
-        if t.model.ClearModel then pcall(t.model.ClearModel, t.model) end
-        t.model:Hide()
-        t.modelPath = nil
-    end
-    t.model = m
-    if t.top and m.GetFrameLevel then
-        local lv = m:GetFrameLevel()
+    if t.top and t.model.GetFrameLevel then
+        local lv = t.model:GetFrameLevel()
         if type(lv) == "number" then t.top:SetFrameLevel(lv + 2) end
     end
-    return m
+    return t.model
 end
 B.TileModel = tileModel
 
--- Frame the tile's model now (from the Model frame's size as it is laid out now); false while it has no size yet.
-local function applyFit(t)
-    local m, c = t.model, t.item
-    if not (t.modelPath and c and c.model == t.modelPath) then return false end
-    local conf = fitConf()
-    local W, H = B.FrameUnits(m, conf)
-    if not W then return false end
-    local cam = tonumber(conf.cam)
-    if cam then pcall(m.SetCamera, m, cam) end
-    local pitch = tonumber(conf.pitch)
-    t.pitched = nil
-    if pitch and type(m.SetPitch) == "function" then t.pitched = pcall(m.SetPitch, m, pitch) or nil end
-    if conf.fit == "own" then
-        pcall(m.SetModelScale, m, 1)
-        pcall(m.SetPosition, m, 0, 0, 0)
-    else
-        local scale, x, y, z = B.TileFit(c.size, W, H, conf, B.SideView(conf, t.pitched))
-        pcall(m.SetModelScale, m, scale)
-        pcall(m.SetPosition, m, x, y, z)
-    end
-    pcall(m.SetFacing, m, B.facing or REST_FACING)
-    t.fitW, t.fitH = W, H
-    return true
-end
-B.ApplyFit = applyFit
-
--- Each frame (the grid's OnUpdate): a tile given a model, shown or resized is framed again on the next two frames
--- (its size and the model are ready only then), and every tile when the screen's size or UI scale changes.
+-- Each frame (the grid's OnUpdate): Spin, and a right-drag on a tile.
 function B.TileTick(elapsed)
     if not win then return end
     for _, t in ipairs(win.tiles) do
-        if t.modelPath and t:IsShown() then
-            if (t.refit or 0) > 0 then
-                if applyFit(t) then t.refit = t.refit - 1 end
-            else
-                local W, H = B.FrameUnits(t.model)
-                if W and (W ~= t.fitW or H ~= t.fitH) then applyFit(t) end
-            end
-        end
+        if t.drag and t.dragTick then t.dragTick(t) end
     end
     B.Turntable(elapsed)
-end
-
-local function refitSoon(t) t.refit = 2; applyFit(t) end
-B.RefitSoon = refitSoon
-
--- The test's (and a curious player's) way to try a framing, saved and applied to the tiles shown:
---   B.SetFit("frame=PlayerModel cam=0 fit=own")   words: fill dx dy dz unit scaled cam frame pitch view fit
---   B.SetFit(fill, dx, dy, dz, unit, scaledPos, cam)  (the older way)
---   B.SetFit("reset") / B.SetFit("default")          the default again
--- (tools/den-check den-features sweeps FIT_SWEEP and takes a picture of each.)
-function B.SetFit(fill, dx, dy, dz, unit, scaledPos, cam)
-    WrathUnleashedUIDB = type(WrathUnleashedUIDB) == "table" and WrathUnleashedUIDB or {}
-    WrathUnleashedUIDB.den = type(WrathUnleashedUIDB.den) == "table" and WrathUnleashedUIDB.den or {}
-    local f
-    if fill == "reset" or fill == "default" or fill == nil or fill == "" then
-        f = nil
-    elseif type(fill) == "string" and fill:find("=") then
-        f = { v = 3 }
-        for k, v in fill:gmatch("(%a+)=(%S+)") do
-            k = k:lower()
-            if k == "fill" or k == "dx" or k == "dy" or k == "dz" then f[k] = tonumber(v)
-            elseif k == "unit" then f.unit = (v == "height" or v == "width") and v or "diag"
-            elseif k == "scaled" then f.scaledPos = v == "1"
-            elseif k == "cam" then f.cam = tonumber(v)
-            elseif k == "frame" then f.frame = B.FRAMES[v] and v or "Model"
-            elseif k == "pitch" then f.pitch = tonumber(v) or false
-            elseif k == "view" then f.view = (v == "side" or v == "top") and v or "auto"
-            elseif k == "fit" then f.fit = v == "own" and "own" or "box" end
-        end
-    else
-        local u = tostring(unit or "diag")
-        f = { v = 3, fill = tonumber(fill) or B.FIT.fill, dx = tonumber(dx) or 0, dy = tonumber(dy) or 0,
-            dz = tonumber(dz) or 0, unit = (u == "height" or u == "width") and u or "diag",
-            scaledPos = (scaledPos == true or scaledPos == "1" or scaledPos == 1), cam = tonumber(cam) }
-    end
-    WrathUnleashedUIDB.den.fit = f
-    local conf = fitConf()
-    local w = B.Window and B.Window()
-    if w and w.tiles then
-        for _, t in ipairs(w.tiles) do tileModel(t, conf.frame); t.modelPath = nil end
-    end
-    if B.Refresh then B.Refresh() end
-    return true
 end
 
 local function setTileModel(t, c)
@@ -800,13 +712,14 @@ local function setTileModel(t, c)
         t.model:Show()
         if t.modelPath ~= path then
             t.modelPath = path
+            t.turn, t.zoom, t.drag = 0, 1, nil      -- a new prop: as it comes, your own turn and zoom start again
             if t.model.ClearModel then pcall(t.model.ClearModel, t.model) end
             pcall(t.model.SetModel, t.model, path)
             -- a plain Model frame has no light of its own: without one every model draws black (3 Nov, the
             -- owner's gallery was black tiles). Ambient plus a key light from the front-left, as the
             -- character screens light theirs.
             if t.model.SetLight then pcall(t.model.SetLight, t.model, 1, 0, -0.5, -0.7, -0.5, 0.75, 1, 1, 1, 0.9, 1, 0.95, 0.85) end
-            refitSoon(t)
+            applyView(t)
         end
         t.icon:Hide()
         t.badge:Show()
@@ -925,16 +838,20 @@ function B.SetSpin(on)
     store().spin = B.spin
     if not B.spin then
         B.facing = REST_FACING
-        if win then for _, t in ipairs(win.tiles) do if t.modelPath then pcall(t.model.SetFacing, t.model, B.facing) end end end
+        if win then for _, t in ipairs(win.tiles) do if t.modelPath then pcall(t.model.SetFacing, t.model, B.ViewFacing(t)) end end end
+        if B.preview and B.preview.modelPath then applyView(B.preview) end
     end
     B.Refresh()
 end
+-- Spin: every model shown turns (the tiles and the preview), each with its own turn added.
 function B.Turntable(elapsed)
-    if not B.spin or not win then return end
+    if not B.spin then return end
     B.facing = ((B.facing or REST_FACING) + (tonumber(elapsed) or 0) * SPIN_SPEED) % (2 * math.pi)
-    for _, t in ipairs(win.tiles) do
-        if t.modelPath and t:IsShown() then pcall(t.model.SetFacing, t.model, B.facing) end
+    for _, t in ipairs((win and win.tiles) or {}) do
+        if t.modelPath and t:IsShown() then pcall(t.model.SetFacing, t.model, B.ViewFacing(t)) end
     end
+    local v = B.preview
+    if v and v.modelPath and v.model:IsShown() then pcall(v.model.SetFacing, v.model, B.ViewFacing(v)) end
 end
 function B.SetAZ(on) B.az = on and true or false; store().az = B.az; B.offset = 0; B.Filter() end
 
@@ -1376,10 +1293,35 @@ local FIELDS = { { "x", "X" }, { "y", "Y" }, { "z", "Z" }, { "turn", "Turn" }, {
     { "scale", "Size" } }
 local ANGLE_FIELDS = { turn = true, pitch = true, roll = true }
 
+-- The preview beside the selection panel: the selected prop's model (the catalog's), or hidden when it has none.
+function B.PreviewFill()
+    local pv = panel and panel.preview
+    if not pv then return end
+    local s = B.state
+    local c = s.p and s.selEntry and (B.ById and B.ById(s.selEntry))
+    local path = c and c.model
+    if not path then
+        if pv.modelPath then pv.modelPath = nil; if pv.model.ClearModel then pcall(pv.model.ClearModel, pv.model) end end
+        pv:Hide()
+        return
+    end
+    pv:Show()
+    pv.model:Show()
+    if pv.modelPath ~= path then
+        pv.modelPath = path
+        pv.turn, pv.zoom, pv.drag = 0, 1, nil
+        if pv.model.ClearModel then pcall(pv.model.ClearModel, pv.model) end
+        pcall(pv.model.SetModel, pv.model, path)
+        if pv.model.SetLight then pcall(pv.model.SetLight, pv.model, 1, 0, -0.5, -0.7, -0.5, 0.75, 1, 1, 1, 0.9, 1, 0.95, 0.85) end
+    end
+    applyView(pv)
+end
+
 function B.PropsFill()
     if not panel then return end
     local s = B.state
     local p = s.p
+    B.PreviewFill()
     panel.title2:SetText(p and ((s.count or 1) > 1 and (s.count .. " props (numbers for the last one)") or (s.selName or "")) or "Nothing selected")
     panel.size:SetText(p and B.SizeText(s) or "Click a prop, Nearest, or place one from the gallery.")
     for si, c in pairs(panel.stepChips or {}) do c:SetActive(si == B.step) end
@@ -1809,6 +1751,31 @@ local function buildPanel()
         "Del deletes it; Ctrl+D duplicates; Tab selects the next; Esc lets go.",
         "Size is its width x depth x height in yards.",
     }, 460, "TOPRIGHT", -40, -8)
+    -- the selection's model, larger, from the side, beside the panel (right-drag turns it, the wheel zooms)
+    local PV = 176
+    local pv = CreateFrame("Frame", "WrathUnleashedPreviewFrame", panel)
+    pv:SetWidth(PV); pv:SetHeight(PV + 34)
+    pv:SetPoint("TOPRIGHT", panel, "TOPLEFT", -6, 0)
+    pv.outside = true
+    pv:EnableMouse(true)
+    S().EdPanel(pv, 0.92, S().ED.panel2)
+    pv.model = newViewModel(pv)
+    pv.model:SetWidth(PV - 12); pv.model:SetHeight(PV - 12)
+    pv.model:SetPoint("TOPLEFT", 6, -6)
+    pv.model:SetScript("OnShow", function() applyView(pv) end)
+    pv.hint = S().EdText(pv, S().ED_SIZE.small)
+    pv.hint:SetPoint("BOTTOMLEFT", 8, 6)
+    pv.hint:SetWidth(PV - 16); pv.hint:SetHeight(34); pv.hint:SetJustifyH("LEFT")
+    pv.hint:SetTextColor(m[1], m[2], m[3])
+    pv.hint:SetText("Right-drag to turn it. Wheel to zoom.")
+    local pvTick = B.AttachViewMouse(pv, pv)
+    pv:SetScript("OnUpdate", function(self, elapsed)
+        pvTick(self)
+        -- Spin while the gallery (whose tick turns everything) is closed
+        if not (win and win:IsShown()) then B.Turntable(elapsed) end
+    end)
+    pv:Hide()
+    panel.preview, B.preview = pv, pv
     panel:SetScript("OnShow", function() B.propsEditing = nil; B.PropsFill(); B.BindKeys(true) end)
     panel:SetScript("OnHide", function() B.BindKeys(false); B.propsAuto = nil end)
     panel:Hide()
@@ -1969,9 +1936,9 @@ local function buildTile(i)
     t.top = CreateFrame("Frame", nil, t)
     t.top:SetWidth(TILE); t.top:SetHeight(TILE)
     t.top:SetPoint("TOPLEFT", 0, 0)
-    -- the model, turning: a frame of the framing's type (B.FIT.frame), framed again once it is shown and laid out
-    -- (its size, and so its units, are known only then)
-    tileModel(t, fitConf().frame)
+    -- the model, from the side, turning (Spin; a right-drag turns it, the wheel zooms: B.AttachViewMouse)
+    tileModel(t)
+    t.dragTick = B.AttachViewMouse(t, t, function(delta) B.Scroll(-delta) end)
     -- the edge: rounded, over the model (gold when picked)
     t.edges = {}
     if t.top.SetBackdrop then
@@ -2000,7 +1967,11 @@ local function buildTile(i)
     t:RegisterForDrag("LeftButton")
     t:SetScript("OnClick", function(self, mouse)
         if not self.item then return end
-        if mouse == "RightButton" then B.ToggleFavourite(self.item); return end
+        if mouse == "RightButton" then
+            -- a right-drag turned the model: not a right-click
+            if self.dragged then self.dragged = nil; return end
+            B.ToggleFavourite(self.item); return
+        end
         B.Choose(self.item)
     end)
     t:SetScript("OnDoubleClick", function(self) if self.item then B.Place(self.item) end end)

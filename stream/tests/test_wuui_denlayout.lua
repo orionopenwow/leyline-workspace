@@ -248,57 +248,55 @@ do
     check("a path without a size still shows", byId[2109].model == "World\\Generic\\Flowers01.mdx" and byId[2109].size == nil)
     local function tile(id) for _, t in ipairs(B.Window().tiles) do if t:IsShown() and t.item and t.item.id == id then return t end end end
     local t = tile(2413)
-    -- the Model frame's units (the old wiki's Model:SetPosition; the owner's PC: the screen's height): the tile's size over it
-    local W, H = B.FrameUnits(t.model)
-    local diag = GetScreenHeight()
-    check("a tile's units: its size over the screen's height (a 88-unit tile about 0.09)", W and math.abs(W - t.model:GetWidth() / diag) < 1e-9
-        and W > 0.02 and W < 0.1 and math.abs(H - W) < 1e-9, W)
-    -- the fake's Model frame has SetPitch: the tile is tipped back a quarter turn, a side view
-    check("the tile tips its model back a quarter turn where the client can (SetPitch): seen from the side", t.pitched == true)
-    local scale, x, y, z = B.TileFit(byId[2413].size, W, H, nil, true)
-    local chairExt = math.max(math.sqrt(0.5 ^ 2 + 0.5 ^ 2), 1.1)
-    check("the chair's tile: SetModel, then scaled so its turning box is 0.8 of the tile, its middle at the tile's middle",
-        t.model.model == "World\\Generic\\Chair01.mdx" and t.model:IsShown() and math.abs(t.model.mscale - scale) < 1e-9
-        and math.abs(scale - 0.8 * W / chairExt) < 1e-9 and math.abs(t.model.mpos[1] - W / 2) < 1e-9
-        and math.abs(t.model.mpos[2] - (H / 2 - 0.55 * scale)) < 1e-9 and t.model.mpos[3] == 0,
-        table.concat(t.model.mpos or {}, ","))
-    local tc = tile(1558)
-    check("a small candle is scaled up more than the chair", tc.model.mscale > t.model.mscale)
+    -- from the side (owner's PC sweep, 3 Nov: "fit-5-playermodel-own"): a PlayerModel, framed by its own camera
+    check("the chair's tile: a PlayerModel given the chair, its own framing (scale 1 at 0,0,0), shown",
+        t.model.kind == "PlayerModel" and t.model.model == "World\\Generic\\Chair01.mdx" and t.model:IsShown() and t.model.mscale == 1
+        and t.model.mpos and t.model.mpos[1] == 0 and t.model.mpos[2] == 0 and t.model.mpos[3] == 0, t.model.kind)
     check("the house: the home stone, 'building'", tile(19006).icon.path == "Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\buildings" and tile(19006).why:GetText() == "building"
         and not tile(19006).model:IsShown())
     check("the bread: its category's icon, 'no preview'", tile(2562).icon.path == "Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\decor" and tile(2562).why:GetText() == "no preview")
-    WrathUnleashedUIDB.den.fit = { yards = 0.06, x = 0, lift = 0.5, y = 0 }   -- what the first sweeps left saved on the PC
-    local s1, x1 = B.TileFit(byId[2413].size, W, H, nil, true)
-    check("a framing saved by the first sweeps is ignored: the default", s1 == scale and x1 == x)
-    WrathUnleashedUIDB.den.fit = { v = 2, fill = 0.4 }
-    check("a framing saved by the earlier sweeps (v 2) is ignored too", (B.TileFit(byId[2413].size, W, H, nil, true)) == scale)
-    WrathUnleashedUIDB.den.fit = { v = 3, fill = 0.4, dx = 0.25, dy = -0.25, dz = 0.5, cam = 0 }
-    local s2, x2, y2, z2 = B.TileFit(byId[2413].size, W, H, nil, true)
-    check("the fit can be tuned on a PC (WrathUnleashedUIDB.den.fit): fill and moves by a part of the tile",
-        math.abs(s2 - scale / 2) < 1e-9 and math.abs(x2 - 0.75 * W) < 1e-9 and math.abs(y2 - (0.25 * H - 0.55 * s2)) < 1e-9
-        and math.abs(z2 - 0.5 * W) < 1e-9)
-    WrathUnleashedUIDB.den.fit.scaledPos = true
-    local s3, x3 = B.TileFit(byId[2413].size, W, H, nil, true)
-    check("scaledPos: the position over the model's scale", math.abs(x3 - x2 / s3) < 1e-9)
-    WrathUnleashedUIDB.den.fit = nil
-    -- seen from above (a plain Model frame without SetPitch): the footprint fills the tile, the origin on its middle in
-    -- both axes (the old framing lowered it by half its height: the owner's tiles sat at the bottom edge)
-    local s4, x4, y4 = B.TileFit(byId[2413].size, W, H, nil, false)
-    check("from above: the footprint's diagonal fills 0.8, the origin on the tile's middle in both axes",
-        math.abs(s4 - 0.8 * W / math.sqrt(0.5)) < 1e-9 and math.abs(x4 - W / 2) < 1e-9 and math.abs(y4 - H / 2) < 1e-9)
-    check("view auto: a side view when tipped back or not a plain Model frame", B.SideView(B.FIT, true) and not B.SideView(B.FIT, false)
-        and B.SideView({ frame = "PlayerModel", view = "auto" }) and not B.SideView({ frame = "PlayerModel", view = "top" }))
-    -- the sweep's words: a frame type makes the tiles again of that type; "own" leaves the framing to its camera
-    B.SetFit("frame=PlayerModel cam=0 fit=own")
-    F.tick(0.1)
-    local tp = tile(2413)
-    check("SetFit frame=PlayerModel: the tile's model is a PlayerModel now, scale 1 at 0,0,0, camera 0, the Model hidden",
-        tp.model.kind == "PlayerModel" and tp.model.model == "World\\Generic\\Chair01.mdx" and tp.model.mscale == 1
-        and tp.model.mpos[1] == 0 and tp.model.camera == 0 and not tp.models.Model:IsShown(), tp.model.kind)
-    B.SetFit("reset")
-    check("SetFit reset: a plain Model again", tile(2413).model.kind == "Model" and tile(2413).model:IsShown() and WrathUnleashedUIDB.den.fit == nil)
-    local api = B.ModelApi()
-    check("the model API report: a line per frame type, each method 0 or 1", #api == 3 and api[1]:match("^Model Pitch=[01] ") and api[2]:match("^PlayerModel "))
+    -- the wheel over a tile zooms that tile only; Shift + wheel pages; the grid's wheel is the gallery's
+    local other = tile(1670)
+    t:GetScript("OnMouseWheel")(t, 1)
+    check("the wheel over a tile zooms its model in (that tile only)", math.abs(t.model.mscale - B.ZOOM_STEP) < 1e-9 and other.model.mscale == 1)
+    for _ = 1, 30 do t:GetScript("OnMouseWheel")(t, 1) end
+    check("zoom stops at its most", math.abs(t.model.mscale - B.ZOOM_MAX) < 1e-9)
+    for _ = 1, 40 do t:GetScript("OnMouseWheel")(t, -1) end
+    check("and at its least", math.abs(t.model.mscale - B.ZOOM_MIN) < 1e-9)
+    -- a right-drag turns it (the cursor moves while the right button is held); a right-click is still a favourite
+    B.SetSpin(false)
+    local f0 = t.model.facing
+    F.cursor = { 500, 300 }; F.buttons = { RightButton = true }
+    t:GetScript("OnMouseDown")(t, "RightButton")
+    F.cursor = { 560, 300 }
+    B.Window().grid:GetScript("OnUpdate")(B.Window().grid, 0.016)
+    check("a right-drag turns the tile's model by the cursor's way", t.model.facing and math.abs(t.model.facing - f0 - 60 * B.TURN_PER_PX) < 1e-6,
+        tostring(t.model.facing) .. " " .. tostring(f0))
+    F.buttons = {}
+    t:GetScript("OnMouseUp")(t, "RightButton")
+    local favs = 0
+    for _ in pairs((WrathUnleashedUIDB.den or {}).favs or {}) do favs = favs + 1 end
+    t:Fire("OnClick", "RightButton")
+    local favs2 = 0
+    for _ in pairs((WrathUnleashedUIDB.den or {}).favs or {}) do favs2 = favs2 + 1 end
+    check("the right-button up after a drag is not a favourite click", favs2 == favs)
+    B.SetSpin(true)
+    F.tick(0.5)
+    check("Spin still turns it, its own turn added", math.abs(t.model.facing - (B.facing + t.turn)) < 1e-6)
+    -- the selection's larger preview, beside the panel: the selected prop's model, from the side; the same mouse
+    F.toClient("wubuild\tstate\t1/1\tmine=1/800;undo=1;redo=0;den=owner;room=1/800;yard=0/0;core=1;lite=1;grid=0;clip=0;area=den;code=-;"
+        .. "sel=41,2413,Wooden Chair;n=1;pos=1.00,2.00,3.00,0,1.00;rot=0,0,0;ids=41;gids=41;")
+    W.DenBar.TestAction("props")
+    local pv = B.preview
+    check("the preview: shown beside the panel with the chair, a PlayerModel at its own framing", pv and pv:IsShown() and pv.model.kind == "PlayerModel"
+        and pv.model.model == "World\\Generic\\Chair01.mdx" and pv.model.mscale == 1, pv and tostring(pv.modelPath))
+    pv:GetScript("OnMouseWheel")(pv, 1); pv:GetScript("OnMouseWheel")(pv, 1)
+    check("the wheel over the preview zooms it", math.abs(pv.model.mscale - B.ZOOM_STEP ^ 2) < 1e-9)
+    check("the den-test's view actions: turn and zoom", W.DenBar.TestAction("view preview turn 90") and math.abs(pv.turn - math.pi / 2) < 1e-6
+        and W.DenBar.TestAction("view tile zoom 2"))
+    F.toClient("wubuild\tstate\t1/1\tmine=1/800;undo=1;redo=0;den=owner;room=1/800;yard=0/0;core=1;lite=1;grid=0;clip=0;area=den;code=-;"
+        .. "sel=42,2562,Baked Bread;n=1;pos=1.00,2.00,3.00,0,1.00;rot=0,0,0;ids=42;gids=42;")
+    check("a prop without a model: no preview", not pv:IsShown())
 end
 
 -- ---------------------------------------------------------------- the chat: the Den's system lines go to the pill

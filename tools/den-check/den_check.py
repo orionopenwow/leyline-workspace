@@ -987,7 +987,7 @@ def parse_report(lines):
 
 
 # den-features' framing sweep for the gallery's model tiles: (yards the largest side is scaled to, depth, lift)
-FIT_SWEEP = [(0.4, 0, 0), (0.15, 0, 0), (1.6, -6, 0), (1.6, 6, 0), (0.8, -3, 0)]
+FIT_SWEEP = [(0.06, 0, 0), (0.03, 0, 0), (0.15, -1, 0), (0.15, 1, 0), (0.15, -2, 0), (0.15, 2, 0), (0.4, 2.5, 0)]
 
 
 def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):

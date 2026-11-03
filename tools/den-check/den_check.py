@@ -7,7 +7,10 @@
                                                                     its own on spare ports, a scratch folder)
     py -3 tools/den-check/den_check.py features                    `test`, then the Den editor's feature test (den_features,
                                                                     below): every editor action through the Leyline UI's own
-                                                                    buttons, a screenshot after each (logs/den-features/)
+                                                                    buttons, a screenshot after each (logs/den-features/);
+                                                                    then the placement aids (aids_features) and, on
+                                                                    Windows, the build camera's hover calibration
+                                                                    (the real cursor moved: leave the mouse alone)
     py -3 tools/den-check/den_check.py test                        the real thing, unattended: the newest Den Lite,
                                                                     then the launcher's own My Den (Leyline.exe
                                                                     den-play --test) starts Den Lite and the game,

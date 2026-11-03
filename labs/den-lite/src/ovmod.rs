@@ -17,8 +17,11 @@
 //!   `tilt pitch|roll`, `scale <id> <s>`, `setscale`, `delete`, `undo`, `redo`, `copy`, `paste`, `dup`, `selall`
 //!   (your last prop: Den Lite selects one at a time), `pick <id>`, `floor`, `grid <yd>|off`, `spawnat <entry> x y z`,
 //!   `find <word>` / `models <word>` (answered `wubuild found`), `selclear`, `save`, `load`, `help`;
+//!   `selnext`, `selkind`, `lock`, `unlock` (the selection panel), the placement aids' `preview`, `hover`, `follow`,
+//!   `commit`, `axis`, `gizmo`, `mode`, `where` (gizmo.rs, handled in world.rs before this file sees them);
 //!   `snap on|off` (edit mode's gate: the host yes, guests no unless `.den friends build on`). The state says `lite=1`:
-//!   the editor then hides what only the full Den does (groups, storage, prefabs, plots, align, stack, lock, hide).
+//!   the editor then hides what only the full Den does (groups, storage, prefabs, plots, align, stack, hide); `caps=` lists
+//!   every verb answered here.
 //! * `wuden report <text>` (the addon's own check, asked by the den-test's `.den ui report`, world.rs): written to the
 //!   events (`ui_report`) and `<dens>/den-lite.ui-report` while the test's channel is on.
 //!

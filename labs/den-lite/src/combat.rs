@@ -1678,7 +1678,7 @@ mod tests {
     fn mage(b: &Book) -> Combat {
         let mut c = Combat::new(1);
         c.seed(7);
-        c.set_kit(classes::kit(b, &Pick { class: 8, level: 80, buttons: BTreeMap::new() }));
+        c.set_kit(classes::kit(b, &Pick { class: 8, level: 80, ..Default::default() }));
         c
     }
 
@@ -1930,7 +1930,7 @@ mod tests {
         let b = book();
         let mut c = Combat::new(1);
         c.seed(3);
-        c.set_kit(classes::kit(&b, &Pick { class: 1, level: 80, buttons: BTreeMap::new() }));
+        c.set_kit(classes::kit(&b, &Pick { class: 1, level: 80, ..Default::default() }));
         let us = vec![Unit { guid: DUMMY, at: At { x: 2.0, y: 0.0, z: 0.0, o: 0.0 }, kind: Kind::Target, level: 80 }];
         let out = c.attack(0, &us, DUMMY);
         assert_eq!(ops(&out), vec![SMSG_ATTACKSTART]);

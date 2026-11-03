@@ -640,11 +640,11 @@ mod tests {
 
     #[test]
     fn the_class_fields_say_class_power_and_level() {
-        let k = Kit { class: 8, stats: classes::stats(classes::by_word("mage").unwrap(), 80), spells: vec![], buttons: vec![] };
+        let k = Kit::plain(8, classes::stats(classes::by_word("mage").unwrap(), 80));
         let f = class_fields(&k, true);
         assert_eq!(f[0], (combat::field::BYTES_0, 1 | 8 << 8 | 1 << 16));
         assert!(f.contains(&(combat::field::POWER1, 11620)) && f.contains(&(combat::field::LEVEL, 80)));
-        let dk = Kit { class: 6, stats: classes::stats(classes::by_word("dk").unwrap(), 80), spells: vec![], buttons: vec![] };
+        let dk = Kit::plain(6, classes::stats(classes::by_word("dk").unwrap(), 80));
         let f = class_fields(&dk, false);
         assert_eq!(f[0].1 >> 24, 6, "runic power");
         assert!(f.contains(&(combat::field::POWER1 + 6, 1000)));

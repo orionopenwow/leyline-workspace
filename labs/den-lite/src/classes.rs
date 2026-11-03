@@ -12,6 +12,7 @@
 //! rage, energy or runic power) are the class's, with simple numbers by level ([`stats`]). The choice is kept in the
 //! Dens folder ([`FILE`]) with the player's own changes to the bar, per class.
 
+use crate::specs;
 use crate::spells::{Book, Spell};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -227,73 +228,225 @@ pub fn main_bar(book: &Book, c: &ClassDef, known: &[u32]) -> Vec<u32> {
     bar
 }
 
-/// The class chosen, kept in the Dens folder, with the player's own bar per class (button -> packed action).
+/// The class chosen, kept in the Dens folder, with the spec per class, the player's own bar per class and spec
+/// (button -> packed action; "mage-fire", or the class alone from before specs), and the named bar loadouts.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Pick {
     pub class: u8,
     pub level: u32,
     pub buttons: BTreeMap<String, BTreeMap<u8, u32>>,
+    /// class word -> spec word.
+    pub specs: BTreeMap<String, String>,
+    /// "class-spec" -> name -> the whole bar (buttons that aren't empty).
+    pub loadouts: BTreeMap<String, BTreeMap<String, BTreeMap<u8, u32>>>,
+    /// "class-spec" -> the loadout last put on.
+    pub active: BTreeMap<String, String>,
+}
+
+/// How many named loadouts a class and spec keeps.
+pub const MAX_LOADOUTS: usize = 10;
+
+/// A loadout's name: letters, digits, spaces, - and _ (24 at most), lower case; None: nothing left.
+pub fn loadout_name(s: &str) -> Option<String> {
+    let n: String = s.trim().to_lowercase().chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '_')).take(24).collect();
+    let n = n.trim().to_string();
+    (!n.is_empty()).then_some(n)
+}
+
+fn button_map(v: &Value) -> BTreeMap<u8, u32> {
+    let mut one = BTreeMap::new();
+    if let Some(bs) = v.as_object() {
+        for (k, a) in bs {
+            if let (Ok(b), Some(a)) = (k.parse::<u8>(), a.as_u64()) {
+                if (b as usize) < BUTTONS {
+                    one.insert(b, a as u32);
+                }
+            }
+        }
+    }
+    one
+}
+
+fn map_value(m: &BTreeMap<u8, u32>) -> Value {
+    Value::Object(m.iter().map(|(b, a)| (b.to_string(), json!(*a))).collect())
 }
 
 impl Pick {
     pub fn class_def(&self) -> Option<&'static ClassDef> {
         by_id(self.class)
     }
+    /// The spec chosen for the class (or its default).
+    pub fn spec_def(&self) -> Option<&'static specs::SpecDef> {
+        let c = self.class_def()?;
+        self.specs.get(c.word).and_then(|w| specs::by_word(c.id, w)).or_else(|| specs::default_of(c.id))
+    }
+    /// "mage-fire": the key of the class and spec's own bar and loadouts.
+    pub fn key(&self) -> String {
+        match (self.class_def(), self.spec_def()) {
+            (Some(c), Some(s)) => format!("{}-{}", c.word, s.word),
+            (Some(c), None) => c.word.to_string(),
+            _ => String::new(),
+        }
+    }
     pub fn load(dir: &Path) -> Option<Pick> {
         let t = std::fs::read_to_string(dir.join(FILE)).ok()?;
         let v: Value = serde_json::from_str(t.trim_start_matches('\u{feff}')).ok()?;
         let c = by_word(v.get("class")?.as_str()?)?;
         let level = v.get("level").and_then(Value::as_u64).unwrap_or(MAX_LEVEL as u64).clamp(1, MAX_LEVEL as u64) as u32;
-        let mut buttons = BTreeMap::new();
+        let mut p = Pick { class: c.id, level, ..Default::default() };
         if let Some(m) = v.get("buttons").and_then(Value::as_object) {
-            for (class, bs) in m {
-                let Some(bs) = bs.as_object() else { continue };
-                let mut one = BTreeMap::new();
-                for (k, a) in bs {
-                    if let (Ok(b), Some(a)) = (k.parse::<u8>(), a.as_u64()) {
-                        if (b as usize) < BUTTONS {
-                            one.insert(b, a as u32);
-                        }
-                    }
-                }
-                buttons.insert(class.clone(), one);
+            for (k, bs) in m {
+                p.buttons.insert(k.clone(), button_map(bs));
             }
         }
-        Some(Pick { class: c.id, level, buttons })
+        if let Some(m) = v.get("specs").and_then(Value::as_object) {
+            for (k, w) in m {
+                if let (Some(cd), Some(w)) = (by_word(k), w.as_str()) {
+                    if let Some(sd) = specs::by_word(cd.id, w) {
+                        p.specs.insert(cd.word.to_string(), sd.word.to_string());
+                    }
+                }
+            }
+        }
+        if let Some(m) = v.get("loadouts").and_then(Value::as_object) {
+            for (k, named) in m {
+                let Some(named) = named.as_object() else { continue };
+                let one: BTreeMap<String, BTreeMap<u8, u32>> =
+                    named.iter().filter_map(|(n, bs)| loadout_name(n).map(|n| (n, button_map(bs)))).take(MAX_LOADOUTS).collect();
+                p.loadouts.insert(k.clone(), one);
+            }
+        }
+        if let Some(m) = v.get("active").and_then(Value::as_object) {
+            for (k, n) in m {
+                if let Some(n) = n.as_str().and_then(loadout_name) {
+                    p.active.insert(k.clone(), n);
+                }
+            }
+        }
+        Some(p)
     }
     pub fn save(&self, dir: &Path) -> bool {
         let Some(c) = self.class_def() else { return false };
-        let buttons: serde_json::Map<String, Value> = self
-            .buttons
+        let buttons: serde_json::Map<String, Value> = self.buttons.iter().map(|(k, bs)| (k.clone(), map_value(bs))).collect();
+        let specs: serde_json::Map<String, Value> = self.specs.iter().map(|(k, w)| (k.clone(), json!(w.as_str()))).collect();
+        let loadouts: serde_json::Map<String, Value> = self
+            .loadouts
             .iter()
-            .map(|(k, bs)| (k.clone(), Value::Object(bs.iter().map(|(b, a)| (b.to_string(), json!(a))).collect())))
+            .map(|(k, named)| (k.clone(), Value::Object(named.iter().map(|(n, bs)| (n.clone(), map_value(bs))).collect())))
             .collect();
-        let v = json!({"class": c.word, "level": self.level, "buttons": buttons});
+        let active: serde_json::Map<String, Value> = self.active.iter().map(|(k, n)| (k.clone(), json!(n.as_str()))).collect();
+        let v = json!({"class": c.word, "level": self.level, "buttons": Value::Object(buttons), "specs": Value::Object(specs),
+            "loadouts": Value::Object(loadouts), "active": Value::Object(active)});
         let _ = std::fs::create_dir_all(dir);
         crate::companion::write_json(dir, FILE, &v)
     }
-    /// The player put something on a button (CMSG_SET_ACTION_BUTTON): kept for this class.
+    /// The player put something on a button (CMSG_SET_ACTION_BUTTON): kept for this class and spec.
     pub fn set_button(&mut self, button: u8, packed: u32) {
-        if (button as usize) < BUTTONS {
-            if let Some(c) = self.class_def() {
-                self.buttons.entry(c.word.to_string()).or_default().insert(button, packed);
-            }
+        if (button as usize) < BUTTONS && self.class_def().is_some() {
+            let k = self.key();
+            self.buttons.entry(k).or_default().insert(button, packed);
         }
+    }
+    /// The player's own buttons for this class and spec (from before specs: the class's).
+    pub fn own(&self) -> Option<&BTreeMap<u8, u32>> {
+        let c = self.class_def()?;
+        self.buttons.get(&self.key()).or_else(|| self.buttons.get(c.word))
+    }
+    /// `.den spec <word>`: the class's spec (None: no such spec for this class).
+    pub fn set_spec(&mut self, w: &str) -> Option<&'static specs::SpecDef> {
+        let c = self.class_def()?;
+        let s = specs::by_word(c.id, w)?;
+        self.specs.insert(c.word.to_string(), s.word.to_string());
+        Some(s)
+    }
+    /// The loadouts of this class and spec, by name.
+    pub fn loadout_names(&self) -> Vec<String> {
+        self.loadouts.get(&self.key()).map(|m| m.keys().cloned().collect()).unwrap_or_default()
+    }
+    /// `.den bars save <name>`: the whole bar now (from the kit) kept by that name. Err: why not.
+    pub fn save_loadout(&mut self, name: &str, buttons: &[u32]) -> Result<String, String> {
+        let n = loadout_name(name).ok_or("Name it: .den bars save <name> (letters and digits).")?;
+        let k = self.key();
+        let named = self.loadouts.entry(k.clone()).or_default();
+        if !named.contains_key(&n) && named.len() >= MAX_LOADOUTS {
+            return Err(format!("{MAX_LOADOUTS} loadouts at most for a spec: .den bars delete <name> first."));
+        }
+        named.insert(n.clone(), buttons.iter().enumerate().filter(|(_, a)| **a != 0).map(|(b, a)| (b as u8, *a)).collect());
+        self.active.insert(k, n.clone());
+        Ok(n)
+    }
+    /// `.den bars use <name>`: that loadout becomes the bar (every button: what it has, or empty).
+    pub fn use_loadout(&mut self, name: &str) -> Result<String, String> {
+        let n = loadout_name(name).ok_or("Which loadout? .den bars list")?;
+        let k = self.key();
+        let saved = self.loadouts.get(&k).and_then(|m| m.get(&n)).cloned().ok_or_else(|| format!("No loadout called '{n}' for this spec. .den bars list"))?;
+        let all: BTreeMap<u8, u32> = (0..BUTTONS as u8).map(|b| (b, saved.get(&b).copied().unwrap_or(0))).collect();
+        self.buttons.insert(k.clone(), all);
+        self.active.insert(k, n.clone());
+        Ok(n)
+    }
+    /// `.den bars reset`: the spec's own layout again (the player's changes for this spec dropped).
+    pub fn reset_bars(&mut self) {
+        let k = self.key();
+        self.buttons.remove(&k);
+        if let Some(c) = self.class_def() {
+            self.buttons.remove(c.word);
+        }
+        self.active.remove(&k);
+    }
+    pub fn delete_loadout(&mut self, name: &str) -> bool {
+        let Some(n) = loadout_name(name) else { return false };
+        let k = self.key();
+        if self.active.get(&k) == Some(&n) {
+            self.active.remove(&k);
+        }
+        self.loadouts.get_mut(&k).is_some_and(|m| m.remove(&n).is_some())
     }
 }
 
-/// What the world sends for the chosen class: its numbers, its spells, its 144 buttons (packed).
+/// The numbers that aren't Stats: critical chance and hit (per cent), damage and healing done (per cent more),
+/// armour, a tank's avoidance (per cent), and the passives' procs ((passive, spell it fires, chance)).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Mods {
+    pub crit: f32,
+    pub hit: f32,
+    pub dmg_pct: f32,
+    pub heal_pct: f32,
+    pub armor: u32,
+    pub avoid: f32,
+    pub procs: Vec<(u32, u32, u32)>,
+}
+
+impl Default for Mods {
+    fn default() -> Mods {
+        Mods { crit: 10.0, hit: 0.0, dmg_pct: 0.0, heal_pct: 0.0, armor: 0, avoid: 0.0, procs: Vec::new() }
+    }
+}
+
+/// What the world sends for the chosen class: its numbers, its spells, its 144 buttons (packed), the spec, the
+/// talents taken and the gear's tier (gearsets.rs: 0 none).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Kit {
     pub class: u8,
     pub stats: Stats,
     pub spells: Vec<u32>,
     pub buttons: Vec<u32>,
+    pub spec: &'static str,
+    pub talents: specs::Build,
+    pub mods: Mods,
+    pub tier: u8,
 }
 
 impl Kit {
     pub fn class_def(&self) -> &'static ClassDef {
         by_id(self.class).unwrap_or(&CLASSES[0])
+    }
+    pub fn spec_def(&self) -> Option<&'static specs::SpecDef> {
+        specs::by_word(self.class, self.spec)
+    }
+    /// A kit with only these (tests, and a class without tables).
+    pub fn plain(class: u8, stats: Stats) -> Kit {
+        Kit { class, stats, spells: Vec::new(), buttons: Vec::new(), spec: "", talents: Vec::new(), mods: Mods::default(), tier: 0 }
     }
 }
 
@@ -302,19 +455,81 @@ pub fn packed(action: u32, kind: u8) -> u32 {
     (action & 0x00FF_FFFF) | (kind as u32) << 24
 }
 
-pub fn kit(book: &Book, pick: &Pick) -> Option<Kit> {
-    let c = pick.class_def()?;
-    let spells = learn(book, c, pick.level);
-    let mut buttons = vec![0u32; BUTTONS];
-    for (i, id) in main_bar(book, c, &spells).into_iter().enumerate() {
-        buttons[i] = packed(id, 0);
+/// The item level a gear tier stands for (gearsets.rs: 1-10 the raid tiers; 0 none).
+pub fn tier_ilvl(tier: u8) -> f32 {
+    const IL: [f32; 11] = [0.0, 66.0, 76.0, 88.0, 120.0, 133.0, 146.0, 213.0, 226.0, 245.0, 264.0];
+    IL[tier.min(10) as usize]
+}
+
+/// The numbers with a gear tier on (a sandbox's: per item level, scaled by the character's level): more health and
+/// power, spell power for casters and healers, attack power and weapon damage for the others, critical chance and
+/// hit (tier 7 and up: the hit cap), armour and avoidance for tanks. Tier 0: the numbers as they were.
+pub fn geared(c: &ClassDef, role: specs::Role, level: u32, tier: u8, st: Stats) -> (Stats, Mods) {
+    use specs::Role::*;
+    let g = tier_ilvl(tier) * (level.clamp(1, MAX_LEVEL) as f32 / MAX_LEVEL as f32);
+    let mut st = st;
+    let mut m = Mods::default();
+    if g <= 0.0 {
+        return (st, m);
     }
-    if let Some(own) = pick.buttons.get(c.word) {
+    st.health += (g * if role == Tank { 80.0 } else { 60.0 }) as u32;
+    if c.power == MANA {
+        st.max_power += (g * 40.0) as u32;
+    }
+    match role {
+        Caster | Healer => st.spell_power += (g * 7.0) as u32,
+        _ => {
+            st.attack_power += (g * 12.0) as u32;
+            st.min_dmg *= 1.0 + g / 100.0;
+            st.max_dmg *= 1.0 + g / 100.0;
+            st.spell_power += g as u32;
+        }
+    }
+    m.crit = 10.0 + g / 12.0;
+    m.hit = if tier >= 7 { 100.0 } else { g / 30.0 };
+    m.armor = (g * if role == Tank { 120.0 } else if c.id == 1 || c.id == 2 || c.id == 6 { 40.0 } else { 15.0 }) as u32;
+    m.avoid = if role == Tank { (g / 8.0).min(40.0) } else { 0.0 };
+    (st, m)
+}
+
+/// The kit: the class, its spec (the one picked, else the class's default), the spells at the level (the spec's
+/// talents with the tables), the spec's bars with the player's own buttons on top, the numbers with the gear's
+/// tier, the passives' bonuses.
+pub fn kit_with(book: &Book, talents: &specs::Talents, pick: &Pick, tier: u8, mounts: &[u32]) -> Option<Kit> {
+    let c = pick.class_def()?;
+    let class_spells = learn(book, c, pick.level);
+    let mut buttons = vec![0u32; BUTTONS];
+    let (spells, spec, build) = match pick.spec_def() {
+        Some(sd) => {
+            let build = if talents.is_empty() { Vec::new() } else { talents.build(book, sd, pick.level) };
+            let spells = specs::spec_spells(book, talents, &class_spells, c.id, &build);
+            buttons = specs::layout(book, sd, &spells, mounts);
+            (spells, sd.word, build)
+        }
+        None => {
+            for (i, id) in main_bar(book, c, &class_spells).into_iter().enumerate() {
+                buttons[i] = packed(id, 0);
+            }
+            (class_spells, "", Vec::new())
+        }
+    };
+    if let Some(own) = pick.own() {
         for (&b, &a) in own {
             buttons[b as usize] = a;
         }
     }
-    Some(Kit { class: c.id, stats: stats(c, pick.level), spells, buttons })
+    let role = pick.spec_def().map(|s| s.role).unwrap_or(if c.melee { specs::Role::Melee } else { specs::Role::Caster });
+    let (stats, mut mods) = geared(c, role, pick.level, tier, stats(c, pick.level));
+    let p = specs::passives(book, &spells);
+    mods.crit += p.crit;
+    mods.dmg_pct += p.dmg_pct;
+    mods.heal_pct += p.heal_pct;
+    mods.procs = p.procs;
+    Some(Kit { class: c.id, stats, spells, buttons, spec, talents: build, mods, tier })
+}
+
+pub fn kit(book: &Book, pick: &Pick) -> Option<Kit> {
+    kit_with(book, &specs::Talents::default(), pick, 0, &[])
 }
 
 /// SMSG_INITIAL_SPELLS: u8 0, u16 count, each u32 spell and u16 0, then u16 0 cooldowns.
@@ -351,11 +566,12 @@ pub fn read_set_button(body: &[u8]) -> Option<(u8, u32)> {
 /// `.den class` alone: the classes, and what you are.
 pub fn list_line(pick: Option<&Pick>) -> String {
     let words: Vec<&str> = CLASSES.iter().map(|c| c.word).collect();
-    let now = match pick.and_then(|p| p.class_def().map(|c| (c, p.level))) {
-        Some((c, l)) => format!("You are a level {l} {}. ", c.name),
+    let now = match pick.and_then(|p| p.class_def().map(|c| (c, p.level, p.spec_def()))) {
+        Some((c, l, Some(s))) => format!("You are a level {l} {} {}. ", s.name, c.name),
+        Some((c, l, None)) => format!("You are a level {l} {}. ", c.name),
         None => "You are a level 1 character with no class spells yet. ".into(),
     };
-    format!("{now}.den class <class> [level 1-80]: {}.", words.join(", "))
+    format!("{now}.den class <class> [spec] [level 1-80]: {}. .den spec: the specs.", words.join(", "))
 }
 
 #[cfg(test)]
@@ -421,7 +637,7 @@ mod tests {
         let known = learn(&b, mage, 80);
         let bar = main_bar(&b, mage, &known);
         assert_eq!(&bar[..4], &[143, 5143, 2136, 1459], "Fireball, Arcane Missiles, Fire Blast, Arcane Intellect in the bar's order");
-        let mut pick = Pick { class: 8, level: 80, buttons: BTreeMap::new() };
+        let mut pick = Pick { class: 8, level: 80, ..Default::default() };
         pick.set_button(5, packed(2136, 0));
         let k = kit(&b, &pick).unwrap();
         assert_eq!(k.buttons.len(), BUTTONS);
@@ -449,14 +665,76 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("den-lite-pick-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         assert!(Pick::load(&dir).is_none());
-        let mut p = Pick { class: 6, level: 70, buttons: BTreeMap::new() };
+        let mut p = Pick { class: 6, level: 70, ..Default::default() };
         p.set_button(2, 49909);
         p.set_button(200, 1);
         assert!(p.save(&dir));
         let back = Pick::load(&dir).unwrap();
         assert_eq!(back, p);
-        assert_eq!(back.buttons["deathknight"].len(), 1);
-        assert!(list_line(Some(&back)).starts_with("You are a level 70 Death Knight."));
+        assert_eq!(back.buttons["deathknight-frost"].len(), 1);
+        assert!(list_line(Some(&back)).starts_with("You are a level 70 Frost Death Knight."), "{}", list_line(Some(&back)));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn a_spec_its_bars_and_named_loadouts() {
+        let b = book();
+        let mut p = Pick { class: 8, level: 80, ..Default::default() };
+        assert_eq!(p.spec_def().map(|s| s.word), Some("fire"), "the class's default spec");
+        assert_eq!(p.key(), "mage-fire");
+        assert!(p.set_spec("frost").is_some() && p.set_spec("holy").is_none());
+        assert_eq!(p.key(), "mage-frost");
+        let k = kit(&b, &p).unwrap();
+        assert_eq!((k.spec, k.buttons.len()), ("frost", BUTTONS));
+        assert_eq!(k.buttons[specs::RIGHT2], 1459, "the buff on the second right bar");
+        // save the bar now as "aoe", change a button, put "aoe" back on: the button as it was
+        let first = k.buttons.clone();
+        assert_eq!(p.save_loadout("AoE!", &first), Ok("aoe".to_string()));
+        p.set_button(0, packed(1459, 0));
+        assert_eq!(kit(&b, &p).unwrap().buttons[0], 1459);
+        assert_eq!(p.use_loadout("aoe"), Ok("aoe".to_string()));
+        assert_eq!(kit(&b, &p).unwrap().buttons, first);
+        assert!(p.use_loadout("nope").is_err() && p.save_loadout("  !! ", &first).is_err());
+        assert_eq!(p.loadout_names(), vec!["aoe".to_string()]);
+        // another spec has its own
+        p.set_spec("fire");
+        assert!(p.loadout_names().is_empty());
+        p.set_spec("frost");
+        p.set_button(3, packed(2136, 0));
+        p.reset_bars();
+        assert_eq!(kit(&b, &p).unwrap().buttons, first, "reset: the spec's layout again");
+        assert!(p.delete_loadout("aoe") && !p.delete_loadout("aoe"));
+        for i in 0..MAX_LOADOUTS {
+            assert!(p.save_loadout(&format!("l{i}"), &first).is_ok());
+        }
+        assert!(p.save_loadout("one more", &first).is_err());
+        // kept
+        let dir = std::env::temp_dir().join(format!("den-lite-loadouts-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(p.save(&dir));
+        let back = Pick::load(&dir).unwrap();
+        assert_eq!(back, p);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn gear_tiers_raise_the_numbers_by_role() {
+        let mage = by_word("mage").unwrap();
+        let war = by_word("warrior").unwrap();
+        let base = stats(mage, 80);
+        let (same, m0) = geared(mage, specs::Role::Caster, 80, 0, base);
+        assert_eq!((same, m0.clone()), (base, Mods::default()));
+        let (t10, m) = geared(mage, specs::Role::Caster, 80, 10, base);
+        assert!(t10.spell_power > base.spell_power + 1500 && t10.health > base.health && t10.max_power > base.max_power);
+        assert!(m.crit > 25.0 && m.hit >= 100.0, "{m:?}");
+        let (t1, m1) = geared(mage, specs::Role::Caster, 80, 1, base);
+        assert!(t1.spell_power < t10.spell_power && m1.hit < 10.0);
+        let wb = stats(war, 80);
+        let (wt, wm) = geared(war, specs::Role::Tank, 80, 10, wb);
+        assert!(wt.attack_power > wb.attack_power && wt.max_dmg > wb.max_dmg && wm.avoid > 20.0 && wm.armor > 20_000);
+        let (low, _) = geared(mage, specs::Role::Caster, 40, 10, stats(mage, 40));
+        assert!(low.spell_power - stats(mage, 40).spell_power < t10.spell_power - base.spell_power, "less at a lower level");
+        let p = Pick { class: 8, level: 80, ..Default::default() };
+        let k = kit_with(&book(), &specs::Talents::default(), &p, 10, &[]).unwrap();
+        assert_eq!((k.tier, k.stats.spell_power), (10, t10.spell_power));
     }
 }

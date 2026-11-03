@@ -438,7 +438,9 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
     let Some(MovementBlock_UpdateFlag_Living::Living { position, running_speed, .. }) = player.1.update_flag.get_living() else {
         panic!("the player isn't living")
     };
-    assert!((position.z - 14.2).abs() < 0.01 && *running_speed == 7.0);
+    // on the ground, not a yard above it (3 Nov: a game that didn't move its character showed it floating)
+    assert!((position.z - (13.2 + den_lite::movewatch::SPAWN_LIFT)).abs() < 0.01 && *running_speed == 7.0, "{}", position.z);
+    assert!(names.contains(&0x0159), "the game is told it has control of its character");
     assert!(names.contains(&0x02C2), "SMSG_INIT_WORLD_STATES");
     let (room, _) = objects(&frames);
     // a new Den is the open white plane: no room pieces (owner 1 Nov 20:55), the launcher's white ground is the floor
@@ -457,7 +459,25 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
 
     // walk 3 yards east, 2 north, facing east; then a stamp at our feet
     let (px, py, pz) = (16226.2 + 3.0, 16257.0 + 2.0, 14.2);
+    // the game says it took its character (as the real one does once the world is on screen): told once more that it
+    // has control, and unrooted
+    w.send(&CMSG_SET_ACTIVE_MOVER { guid: Guid::new(den_lite::world::PLAYER_GUID) });
+    let ctl = w.until(|f| (f.opcode == 0x0159).then(|| f.body.clone()));
+    assert_eq!(ctl, den_lite::movewatch::control_body(den_lite::world::PLAYER_GUID));
+    let unroot = w.until(|f| (f.opcode == 0x00EA).then(|| f.body.clone()));
+    assert_eq!(unroot, den_lite::movewatch::unroot_body(den_lite::world::PLAYER_GUID, 0));
     w.send(&heartbeat(px, py, pz, 0.0));
+    // where we stand against the ground, and what the server saw of our moves
+    w.say(".den where");
+    let (_, line) = w.until_line();
+    assert!(line.starts_with("You stand at 16229.2, 16259.0, 14.20: 1.00 above the ground (the ground 13.20, the fixed floor)."), "{line}");
+    assert!(line.contains("the game took its character") && line.contains("walked (3.6 yards)"), "{line}");
+    let ev = den_lite::events::read(&dir);
+    let detail = |name: &str| ev.iter().find(|l| l.ev == name).map(|l| l.detail.clone()).unwrap_or_else(|| panic!("no {name} in {ev:?}"));
+    assert!(detail("spawn").contains("on the ground (+0.05), nearest prop none"), "{}", detail("spawn"));
+    assert_eq!(detail("mover"), "the game moves its character");
+    assert!(detail("first_move").starts_with("HEARTBEAT, z 14.20"), "{}", detail("first_move"));
+    assert!(detail("walked").starts_with("3.6 yards by HEARTBEAT"), "{}", detail("walked"));
     w.say(".den stamp campfire now");
     let (frames, line) = w.until_line();
     assert!(line.starts_with("Campfire circle is down (10 props)"), "{line}");

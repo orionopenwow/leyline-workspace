@@ -15,7 +15,13 @@
 //! | `char_create` | the game made a character (Den Lite keeps its ready-made one) |
 //! | `player_login` | the game asked to enter the world with the character |
 //! | `in_world` | the world was sent: the player stands in the Den |
-//! | `first_move` | the first movement from the game in this session |
+//! | `spawn` | where the player comes in against the ground under it, where that height came from, the nearest prop |
+//! | `mover` | the game said it moves its character (CMSG_SET_ACTIVE_MOVER); Den Lite then tells it once more that it has control |
+//! | `first_move` | the first movement from the game in this session (which packet, the flags that hold a character up or still, z against the ground) |
+//! | `move_flags` | a movement flag that holds the character up or still (root, no gravity, hover, flying...), the first time |
+//! | `landed` | the game's character landed (FALL_LAND), z against the ground |
+//! | `walked` | the character got a yard or more from where it came in (z against the ground) |
+//! | `moves` | at logout or when the game closes: what the game did with its character (movewatch.rs `Watch::summary`) |
 //! | `builder_ready` | the in-game Den panel or Builder asked Den Lite (addon channel) and was answered |
 //! | `addon` | an addon message from the game (detail: its mod and name; never its data) |
 //! | `ask` | the game asked the launcher for something (detail: `invite` or `forge`) |
@@ -69,7 +75,7 @@ impl Events {
             return;
         }
         let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
-        let line = serde_json::json!({ "t": t, "ev": clean(ev, 24), "who": clean(who, 32), "detail": clean(detail, 120) });
+        let line = serde_json::json!({ "t": t, "ev": clean(ev, 24), "who": clean(who, 32), "detail": clean(detail, 200) });
         if let Some(f) = g.0.as_mut() {
             if writeln!(f, "{line}").and_then(|_| f.flush()).is_ok() {
                 g.1 += 1;

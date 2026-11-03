@@ -180,7 +180,10 @@ impl Driver {
 
     pub fn step(&mut self, now: u64, window: bool, evs: &[Ev]) -> Act {
         if let Some(w) = last(evs, "in_world") {
-            if !self.test || last(evs, "first_move").is_some() {
+            // the test's step is taken when Den Lite saw the character walk (`walked`, labs/den-lite movewatch.rs): a
+            // first move alone can be the game landing or turning (3 Nov: the den-test passed while the character
+            // hung in the air and never walked)
+            if !self.test || last(evs, "walked").is_some() {
                 return Act::Done;
             }
             // The world is still loading when the server says "in the world": wait until the Leyline UI has
@@ -645,7 +648,7 @@ mod tests {
                 // a stock client with realmName set goes on by itself; here the first Enter is the realm list's
                 (Key::Enter, 1) if self.stock => ["world_auth", "char_enum"].iter().for_each(|e| self.log(e)),
                 (Key::Enter, _) => ["player_login", "in_world"].iter().for_each(|e| self.log(e)),
-                (Key::Forward, _) => self.log("first_move"),
+                (Key::Forward, _) => ["first_move", "walked"].iter().for_each(|e| self.log(e)),
             }
             true
         }
@@ -741,8 +744,12 @@ mod tests {
         assert_eq!(d.step(3_600, true, &evs), Act::Send(Key::Forward));
         assert_eq!(d.step(4_000, true, &evs), Act::Wait, "waits to see it");
         assert_eq!(d.step(6_700, true, &evs), Act::Send(Key::Forward), "again when nothing moved");
+        // a first move alone (the game landing, or turning) isn't the step: once more after the wait
         evs.push(ev(6_900, "first_move"));
-        assert_eq!(d.step(7_000, true, &evs), Act::Done);
+        assert_eq!(d.step(7_000, true, &evs), Act::Wait);
+        assert_eq!(d.step(9_800, true, &evs), Act::Send(Key::Forward), "the character didn't walk yet");
+        evs.push(ev(10_000, "walked"));
+        assert_eq!(d.step(10_100, true, &evs), Act::Done);
         // without the UI: a longer wait, then at most three steps
         let mut d = Driver::new(0, false, true);
         let evs = vec![ev(10, "in_world")];

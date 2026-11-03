@@ -13,6 +13,7 @@ pub mod events;
 pub mod guests;
 pub mod ovmod;
 pub mod login;
+pub mod movewatch;
 pub mod notice;
 pub mod objects;
 pub mod play;
@@ -127,6 +128,8 @@ pub struct Shared {
     pub last_cheer: Mutex<u64>,
     /// When the autosave last wrote (unix seconds; 0: not in this run), for the Den bar's "Saved 12 s ago".
     pub autosaved_at: std::sync::atomic::AtomicU64,
+    /// What the host's game did with its character this time in the world (movewatch.rs: `.den where`).
+    pub moves: Mutex<Option<movewatch::Watch>>,
 }
 
 impl Shared {
@@ -247,6 +250,7 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
         notices: Mutex::new(notice::Notices::default()),
         last_cheer: Mutex::new(0),
         autosaved_at: std::sync::atomic::AtomicU64::new(0),
+        moves: Mutex::new(None),
     });
     let s = shared.clone();
     std::thread::spawn(move || login::serve(login, s, false));

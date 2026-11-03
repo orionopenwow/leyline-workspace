@@ -13,7 +13,7 @@
 use crate::companion::{self, Asked, At};
 use crate::den::{self, Change, WorldObject};
 use crate::notice::{self, Item, Old, Route};
-use crate::{ovmod, play, raw, testctl};
+use crate::{movewatch, ovmod, play, raw, testctl};
 use crate::{Gender as HeroGender, Shared};
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -229,6 +229,10 @@ fn leave(shared: &Shared, id: u64) {
     if live.as_ref().is_some_and(|l| l.0 == id) {
         *live = None;
         drop(live);
+        // what the host's game did with its character this time (logout, or the game closed)
+        if let Some(w) = shared.moves.lock().unwrap_or_else(|e| e.into_inner()).take().filter(|w| w.sess == id) {
+            shared.event("moves", &shared.cfg.hero.name, &w.summary());
+        }
         shared.companion.lock().unwrap_or_else(|e| e.into_inner()).away();
         shared.autosave();
     }
@@ -301,6 +305,8 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
     // the Builder's selection (ovmod.rs), whether this session moved yet and was answered by the addon channel
     let mut sel = ovmod::Sel::default();
     let (mut moved_once, mut ready) = (false, false);
+    // what the game does with its character (movewatch.rs: the events and `.den where`)
+    let mut watch: Option<movewatch::Watch> = None;
     // past the loading screen (notice.rs: the Den bar's hello is waited for from then)
     let mut loaded = false;
     loop {
@@ -309,6 +315,22 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
             loaded = shared.notices.lock().unwrap_or_else(|e| e.into_inner()).loaded(sess.id, now_ms() + shared.cfg.ui_wait_ms);
             if loaded {
                 shared.event("loaded", &sess.me.name, &format!("{op:#x}"));
+            }
+        }
+        // the game says it moves its character now (the world is on screen): told once more that it has control of
+        // it, and unrooted (movewatch.rs; 3 Nov: the character hung in the air and wouldn't walk). The first control
+        // update went during the loading screen.
+        if op == movewatch::CMSG_SET_ACTIVE_MOVER && pos.is_some() {
+            if let Some(w) = watch.as_mut().filter(|w| w.sess == sess.id) {
+                if w.mover() {
+                    let guid = body.get(..8).map(|b| u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]));
+                    shared.event("mover", &sess.me.name, if guid == Some(sess.me.guid) { "the game moves its character" } else { "the game named another guid" });
+                    c.send_raw(movewatch::SMSG_CLIENT_CONTROL_UPDATE, &movewatch::control_body(sess.me.guid))?;
+                    c.send_raw(movewatch::SMSG_FORCE_MOVE_UNROOT, &movewatch::unroot_body(sess.me.guid, 0))?;
+                    if sess.me.host {
+                        *shared.moves.lock().unwrap_or_else(|e| e.into_inner()) = Some(w.clone());
+                    }
+                }
             }
         }
         // the game's own settings (accdata.rs): unanswered, it had no key bindings and the character never moved
@@ -342,10 +364,8 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
             // where the player went, read by hand (packed guid, flags, flags2, time, x, y, z, o)
             if let (Some(p), Some(n)) = (pos.as_mut(), raw_move(op, &body)) {
                 *p = n;
-                if !moved_once {
-                    moved_once = true;
-                    shared.event("first_move", &sess.me.name, "raw");
-                }
+                moved_once = true;
+                track(shared, &sess, &mut watch, op, &body, n);
                 if let Some(l) = shared.live.lock().unwrap().as_mut().filter(|l| l.0 == sess.id) {
                     l.2 = n;
                 }
@@ -385,10 +405,19 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                     c.send(&SMSG_CHARACTER_LOGIN_FAILED { result: WorldResult::CharLoginNoCharacter })?;
                     continue;
                 }
-                let (spot, floor) = { let d = shared.den.lock().unwrap(); (d.spot, d.floor_at(d.spot.x, d.spot.y)) };
-                // a guest a step to the side of the host's spot
+                // a guest a step to the side of the host's spot; on the ground (movewatch::SPAWN_LIFT), not a yard up
                 let side = if sess.me.host { 0.0 } else { 2.0 + (sess.me.guid % 4) as f32 };
-                let start = At { x: spot.x + side, y: spot.y, z: floor + 1.0, o: std::f32::consts::FRAC_PI_2 };
+                let (start, ground, file, near) = {
+                    let d = shared.den.lock().unwrap();
+                    let start = At { x: d.spot.x + side, y: d.spot.y, z: d.spawn_z(side), o: std::f32::consts::FRAC_PI_2 };
+                    (start, d.floor_at(start.x, start.y), d.ground.is_some(), d.nearest_object(start.x, start.y))
+                };
+                shared.event("spawn", &sess.me.name, &movewatch::spawn_note(start, ground, file, near));
+                let w = movewatch::Watch::new(sess.id, start, ground);
+                if sess.me.host {
+                    *shared.moves.lock().unwrap_or_else(|e| e.into_inner()) = Some(w.clone());
+                }
+                watch = Some(w);
                 enter_world(&c.w, shared, &user.to_string(), &sess.me, start)?;
                 arrive(&c.w, shared, &sess, start)?;
                 pos = Some(start);
@@ -439,6 +468,11 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
             }
             ClientOpcodeMessage::CMSG_LOGOUT_REQUEST => {
                 shared.event("logout", &sess.me.name, "");
+                if let Some(w) = watch.take() {
+                    if !sess.me.host {
+                        shared.event("moves", &sess.me.name, &w.summary());
+                    }
+                }
                 // out of the world first (the companion goes with the player), then the client is told
                 leave(shared, sess.id);
                 pos = None;
@@ -459,10 +493,8 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
             other => {
                 if let (Some(p), Some(n)) = (pos.as_mut(), moved(&other)) {
                     *p = n;
-                    if !moved_once {
-                        moved_once = true;
-                        shared.event("first_move", &sess.me.name, "");
-                    }
+                    moved_once = true;
+                    track(shared, &sess, &mut watch, op, &body, n);
                     if let Some(l) = shared.live.lock().unwrap().as_mut().filter(|l| l.0 == sess.id) {
                         l.2 = n;
                     }
@@ -673,6 +705,20 @@ pub fn raw_move(op: u32, body: &[u8]) -> Option<Pos> {
     [x, y, z, o].iter().all(|v| v.is_finite() && v.abs() < 1.0e6).then_some(At { x, y, z, o })
 }
 
+/// A move from the game: what the watch makes of it into the events (movewatch.rs), and the host's copy kept for
+/// `.den where`.
+fn track(shared: &Shared, sess: &Sess, watch: &mut Option<movewatch::Watch>, op: u32, body: &[u8], n: Pos) {
+    let Some(w) = watch.as_mut().filter(|w| w.sess == sess.id) else { return };
+    let flags = raw_move(op, body).and_then(|_| movewatch::raw_flags(body)).unwrap_or(0);
+    let ground = shared.den.lock().unwrap_or_else(|e| e.into_inner()).floor_at(n.x, n.y);
+    for (ev, detail) in w.moved(op, flags, n, ground) {
+        shared.event(ev, &sess.me.name, &detail);
+    }
+    if sess.me.host {
+        *shared.moves.lock().unwrap_or_else(|e| e.into_inner()) = Some(w.clone());
+    }
+}
+
 /// How many addons the client listed in CMSG_AUTH_SESSION (u32 size, then zlib: u32 count, the addons...).
 pub fn addon_count(blob: &[u8]) -> usize {
     let b = play::addon_bytes(blob);
@@ -710,7 +756,7 @@ fn display_id(g: HeroGender) -> i32 {
 }
 
 pub fn character(shared: &Shared, me: &Me) -> Character {
-    let (spot, floor) = { let d = shared.den.lock().unwrap(); (d.spot, d.floor_at(d.spot.x, d.spot.y)) };
+    let (spot, z) = { let d = shared.den.lock().unwrap(); (d.spot, d.spawn_z(0.0)) };
     let empty = CharacterGear { equipment_display_id: 0, inventory_type: InventoryType::NonEquip, enchantment: 0 };
     let mut equipment = [empty; 23];
     for &(slot, _, display, inv) in OUTFIT {
@@ -730,7 +776,7 @@ pub fn character(shared: &Shared, me: &Me) -> Character {
         level: Level::new(1),
         area: AREA,
         map: Map::Kalimdor,
-        position: Vector3d { x: spot.x, y: spot.y, z: floor + 1.0 },
+        position: Vector3d { x: spot.x, y: spot.y, z },
         guild_id: 0,
         flags: 0,
         recustomization_flags: 0,
@@ -809,13 +855,13 @@ fn login_time() -> DateTime {
 /// What the client needs from CMSG_PLAYER_LOGIN to the world on screen, in AzerothCore's order
 /// (WorldSession::HandlePlayerLogin, Player::SendInitialPacketsBeforeAddToMap / AfterAddToMap).
 fn enter_world(c: &Writer, shared: &Shared, account: &str, me: &Me, p: Pos) -> io::Result<()> {
-    let (spot, floor) = { let d = shared.den.lock().unwrap(); (d.spot, d.floor_at(d.spot.x, d.spot.y)) };
+    let (spot, z) = { let d = shared.den.lock().unwrap(); (d.spot, d.spawn_z(0.0)) };
     c.send(&SMSG_LOGIN_VERIFY_WORLD { map: Map::Kalimdor, position: Vector3d { x: p.x, y: p.y, z: p.z }, orientation: p.o })?;
     c.send(&account_times(shared, account, &me.name, CacheMask::PER_CHARACTER_CACHE))?;
     c.send(&SMSG_FEATURE_SYSTEM_STATUS { complaint_status: ComplaintStatus::EnabledWithAutoIgnore, voice_chat_enabled: false })?;
     // no message of the day: it is a line in the chat (the Den bar or the welcome says hello instead)
     c.send(&SMSG_MOTD { motds: vec![] })?;
-    c.send(&SMSG_BINDPOINTUPDATE { position: Vector3d { x: spot.x, y: spot.y, z: floor + 1.0 }, map: Map::Kalimdor, area: AREA })?;
+    c.send(&SMSG_BINDPOINTUPDATE { position: Vector3d { x: spot.x, y: spot.y, z }, map: Map::Kalimdor, area: AREA })?;
     c.send(&SMSG_INITIAL_SPELLS { unknown1: 0, initial_spells: vec![], cooldowns: vec![] })?;
     c.send(&SMSG_ACTION_BUTTONS::Initial { data: [ActionButton { action: 0, action_type: 0, misc: 0 }; 144] })?;
     c.send(&SMSG_INITIALIZE_FACTIONS { factions: vec![FactionInitializer { flag: FactionFlag::empty(), standing: 0 }; 128] })?;
@@ -823,11 +869,9 @@ fn enter_world(c: &Writer, shared: &Shared, account: &str, me: &Me, p: Pos) -> i
     c.send(&SMSG_TIME_SYNC_REQ { time_sync: 0 })?;
     c.send(&player_create(me, p, true))?;
     // the game moves the character only while it has the control of it (SMSG_CLIENT_CONTROL_UPDATE, 0x159: packed
-    // guid, allow): said once, as AzerothCore's Player::SetClientControl does (2 Nov: the real game never moved)
-    let mut ctl = Vec::new();
-    crate::raw::packed_guid(&mut ctl, me.guid);
-    ctl.push(1);
-    c.send_raw(0x159, &ctl)?;
+    // guid, allow), as AzerothCore's Player::SetClientControl says it (2 Nov: the real game never moved); said again
+    // when the game says it took its character (CMSG_SET_ACTIVE_MOVER, in `session`)
+    c.send_raw(movewatch::SMSG_CLIENT_CONTROL_UPDATE, &movewatch::control_body(me.guid))?;
     c.send(&SMSG_INIT_WORLD_STATES { map: Map::Kalimdor, area: AREA, sub_area: AREA, states: vec![] })?;
     let objs = shared.den.lock().unwrap().everything();
     send_creates(c, &objs)?;
@@ -1036,6 +1080,16 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                 say(c, l)?;
             }
             Ok(())
+        }
+        // where you stand against the ground, and what the game did with its character (movewatch.rs; the den-test asks)
+        (".den", "where") => {
+            let (g, file) = { let d = shared.den.lock().unwrap(); (d.floor_at(p.x, p.y), d.ground.is_some()) };
+            let moves = shared.moves.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|w| w.sess == sess.id).map(|w| w.summary());
+            say(c, &format!(
+                "You stand at {:.1}, {:.1}, {:.2}: {} (the ground {:.2}{}). {}.",
+                p.x, p.y, p.z, movewatch::stand(p.z, g), g, if file { "" } else { ", the fixed floor" },
+                moves.unwrap_or_else(|| "Nothing seen from your game yet".into())
+            ))
         }
         (".den", "stamps") => {
             let names = den::stamp_names(&shared.cfg.stamps_dir);
@@ -1602,10 +1656,17 @@ fn test_command(shared: &Shared, w: &Writer, id: u64, cmd: &str) -> io::Result<(
     let sess = Sess { id: sess_id, addons: Vec::new(), me: Me::host(shared) };
     shared.event("test_cmd", "", &cmd.split_whitespace().take(2).collect::<Vec<_>>().join(" "));
     let (r, cap) = testctl::capture(|| chat(w, shared, &sess, p, cmd));
-    let (props, look, size) = { let d = shared.den.lock().unwrap_or_else(|e| e.into_inner()); (d.props.len(), d.look.name, d.ring() + 1) };
+    let (props, look, size, ground) = { let d = shared.den.lock().unwrap_or_else(|e| e.into_inner()); (d.props.len(), d.look.name, d.ring() + 1, d.floor_at(p.x, p.y)) };
+    // where the host stands and what their game did with its character (movewatch.rs), for the den-test's walk check
+    let me = shared.moves.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|w| w.sess == sess_id).map(|w| serde_json::json!({
+        "mover": w.mover, "moves": w.moves, "first": w.first.map(movewatch::op_name), "walked": w.walked,
+        "landed": w.landed.map(|(z, g)| z - g), "flags": movewatch::flag_names(w.flags_seen & !movewatch::FALLING),
+        "spawn": [w.spawn.x, w.spawn.y, w.spawn.z], "spawn_ground": w.ground,
+    }));
     testctl::write_out(&shared.cfg.den_dir, &serde_json::json!({
         "id": id, "cmd": cmd, "said": cap.said, "created": cap.created, "destroyed": cap.destroyed,
         "props": props, "look": look, "size": size, "t": now_ms(), "ok": r.is_ok(),
+        "pos": [p.x, p.y, p.z], "ground": ground, "on_ground": (p.z - ground).abs() <= movewatch::ON_GROUND, "me": me,
     }));
     r
 }

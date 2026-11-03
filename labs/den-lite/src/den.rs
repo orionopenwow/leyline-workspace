@@ -902,6 +902,22 @@ impl Den {
     pub fn everything(&self) -> Vec<WorldObject> {
         self.room.iter().cloned().chain(self.props.iter().map(|p| p.obj.clone())).collect()
     }
+
+    /// Where a player comes in, `side` yards east of the Den's middle (a guest a step beside the host): **on** the
+    /// ground there (movewatch::SPAWN_LIFT above it). 3 Nov: a whole yard above it showed the character floating
+    /// above its shadow in a game that wasn't moving it.
+    pub fn spawn_z(&self, side: f32) -> f32 {
+        self.floor_at(self.spot.x + side, self.spot.y) + crate::movewatch::SPAWN_LIFT
+    }
+
+    /// How far (yards, on the flat) the nearest room piece or prop stands from (x, y); None: the Den is empty.
+    pub fn nearest_object(&self, x: f32, y: f32) -> Option<f32> {
+        self.room
+            .iter()
+            .chain(self.props.iter().map(|p| &p.obj))
+            .map(|o| ((o.x - x).powi(2) + (o.y - y).powi(2)).sqrt())
+            .min_by(|a, b| a.total_cmp(b))
+    }
 }
 
 #[cfg(test)]
@@ -918,6 +934,34 @@ mod tests {
         d.chunks.push(delta::ChunkDelta { i: 152, heights: Some(b64::f32s(&[13.2 + up; 145])), ..Default::default() });
         fs::write(dir.join(GROUND_FILE), d.to_json().unwrap()).unwrap();
         dir
+    }
+
+    #[test]
+    fn the_player_comes_in_on_the_ground() {
+        // no ground file: the fixed floor; then the launcher's whole-tile white ground at the same height; then a hill
+        let mut den = Den::new(Spot::default());
+        let spot = den.spot;
+        let lift = crate::movewatch::SPAWN_LIFT;
+        assert!((den.spawn_z(0.0) - (13.2 + lift)).abs() < 1e-4);
+        assert!(den.spawn_z(0.0) - den.floor_at(spot.x, spot.y) <= crate::movewatch::ON_GROUND, "feet on the floor, not a yard up");
+        let flat = ground_dir("spawn", 0.0);
+        assert_eq!(den.reload_ground(&flat), Some(Ok(true)));
+        assert!((den.spawn_z(0.0) - (13.2 + lift)).abs() < 1e-3, "the white ground is at the floor height: {}", den.spawn_z(0.0));
+        let _ = fs::remove_dir_all(&flat);
+        // a hill under the room (a new Den: the ground file is told apart by its size and time only)
+        let dir = ground_dir("spawn-hill", 10.0);
+        let mut den = Den::new(Spot::default());
+        assert_eq!(den.reload_ground(&dir), Some(Ok(true)));
+        assert!((den.spawn_z(0.0) - (23.2 + lift)).abs() < 1e-3, "on the hill: {}", den.spawn_z(0.0));
+        assert!((den.spawn_z(3.0) - (23.2 + lift)).abs() < 1e-3, "a guest beside the host, on the same chunk");
+        // nothing placed yet in the white room: no piece near; one placed 3 yards ahead is that far
+        assert_eq!(den.nearest_object(spot.x, spot.y), None);
+        let st = one_piece(find_objects("chair")[0]);
+        let z = den.spawn_z(0.0);
+        let _ = den.stamp(&st, spot.x, spot.y, z, 0.0);
+        let d = den.nearest_object(spot.x, spot.y).unwrap();
+        assert!((d - 3.0).abs() < 0.01, "{d}");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

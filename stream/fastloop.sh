@@ -72,7 +72,7 @@ if [ -f "$WU/portal/network.py" ]; then cp -p "$WU/portal/network.py" "$BK/netwo
 rm -f "$BK/bugreport.py"
 [ ! -f "$WU/portal/bugreport.py" ] || cp -p "$WU/portal/bugreport.py" "$BK/bugreport.py"
 # Submit a link, the feedback digest, HQ's Review pages: each backed up when there, removed on rollback when not
-for f in linkqueue.py link-blocklist.json feedback.py staffdesk.py; do rm -f "$BK/$f"; [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
+for f in linkqueue.py link-blocklist.json feedback.py staffdesk.py loadouts.py loadouts.json; do rm -f "$BK/$f"; [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
 had_admin=""
 if [ -f "$WU/portal/admin.py" ]; then cp -p "$WU/portal/admin.py" "$BK/"; [ ! -f "$WU/portal/wu-mod.py" ] || cp -p "$WU/portal/wu-mod.py" "$BK/"; [ ! -f "$WU/portal/hq.py" ] || cp -p "$WU/portal/hq.py" "$BK/"; had_admin=1; fi
 had_hub=""
@@ -120,7 +120,7 @@ put_back() {
   if [ -n "$had_herokeys" ]; then cp -p "$BK/herokeys.py" "$WU/portal/herokeys.py"; else rm -f "$WU/portal/herokeys.py"; fi
   if [ -n "$had_network" ]; then cp -p "$BK/network.py" "$WU/portal/network.py"; else rm -f "$WU/portal/network.py"; fi
   if [ -f "$BK/bugreport.py" ]; then cp -p "$BK/bugreport.py" "$WU/portal/bugreport.py"; else rm -f "$WU/portal/bugreport.py"; fi
-  for f in linkqueue.py link-blocklist.json feedback.py staffdesk.py; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
+  for f in linkqueue.py link-blocklist.json feedback.py staffdesk.py loadouts.py loadouts.json; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
   if [ -n "$had_admin" ]; then cp -p "$BK/admin.py" "$WU/portal/admin.py"; [ ! -f "$BK/wu-mod.py" ] || cp -p "$BK/wu-mod.py" "$WU/portal/"
     if [ -f "$BK/hq.py" ]; then cp -p "$BK/hq.py" "$WU/portal/hq.py"; else rm -f "$WU/portal/hq.py"; fi
   else rm -f "$WU/portal/admin.py" "$WU/portal/wu-mod.py" "$WU/portal/hq.py"; fi
@@ -280,6 +280,12 @@ if [ -f hub.py ] && [ -f hub/community-index.json ]; then
 fi
 # the hub rankings (/wrath/leyline/mods.json, /wrath/api/hub/*: stream/hub_rank.py): optional; its store is
 # $WU/portal-data/hub_rank.sqlite3 (the writable /data mount)
+# loadouts (/wrath/leyline/loadouts, the launcher's templates and share codes): loadouts.py with its templates file,
+# always as a pair, beside hub.py (which reads it)
+if [ -f loadouts.py ] && [ -f loadouts.json ]; then
+  python3 -I -c 'import ast,sys,json;ast.parse(open(sys.argv[1]).read());json.load(open(sys.argv[2]))' loadouts.py loadouts.json \
+    && install -m 644 loadouts.py "$WU/portal/loadouts.py" && install -m 644 loadouts.json "$WU/portal/loadouts.json"
+fi
 if [ -f hub_rank.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' hub_rank.py && install -m 644 hub_rank.py "$WU/portal/hub_rank.py"; fi
 # List your mod (/wrath/mods/list, /wrath/api/listings: stream/listings.py) and the shared rules file, always as a pair;
 # its listings live in projects.jsonl, its policy in $WU/portal-data/listings-policy.json

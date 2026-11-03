@@ -1376,6 +1376,7 @@ local function build()
     search:SetScript("OnTextChanged", function(self)
         B.search = (self:GetText() or ""):sub(1, 30)
         B.offset = 0
+        if win.searchHint then if B.search == "" then win.searchHint:Show() else win.searchHint:Hide() end end
         if not SEARCHED[B.tab] then B.Filter() end
     end)
     search:SetScript("OnEnterPressed", function(self)
@@ -1436,6 +1437,8 @@ local function build()
     win:SetScript("OnShow", function()
         if PlaySound then pcall(PlaySound, "igCharacterInfoOpen") end
         if #B.catalog == 0 then B.RequestCatalog() end
+        -- a Model frame may not draw what it was given while hidden: every tile takes its model again
+        for _, t in ipairs(win.tiles) do t.modelPath = nil end
         B.Filter()
         refreshMeter()
         B.ShowPill(true)

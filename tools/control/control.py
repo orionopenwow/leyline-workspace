@@ -228,6 +228,7 @@ STEPS = {
     "remove-files": ("tools/cleanup/Remove listed files.bat", "Remove the files a change took out (tools/cleanup/REMOVE.txt)", False),
     "fresh-check": ("tools/fresh-history/Fresh history - dry run.bat", "Fresh Leyline history: what it would do (read-only)", False),
     "fresh-leyline-check": ("tools/fresh-history/Fresh history - Leyline repo (dry run).bat", "The public Leyline repo's history as Orion: what it would do (read-only)", False),
+    "wipe-releases": ("tools/fresh-history/Wipe old releases - Leyline repo.bat", "Old launcher releases off the public Leyline repo (the newest, launcher-latest, host-pack, host-kit and leyline-addons kept)", False),
     "fresh-leyline": ("tools/fresh-history/Fresh history - Leyline repo.bat", "The public Leyline repo's main as one commit by Orion (releases kept; backup on the Desktop)", False),
     "fresh-history": ("tools/fresh-history/Fresh history - do it.bat", "The workspace repo's main as one commit by Orion (releases kept; backup on the Desktop)", False),
     # ovrename / ovland (the OpenVanilla repo's rename to Leyline-Launcher, 2026-10-29) are done for good: the tool is in

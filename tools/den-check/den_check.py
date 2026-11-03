@@ -983,23 +983,26 @@ def parse_report(lines):
         kv = {k: v for k, v in re.findall(r"(\w+)=(\S*)", rest)}
         kv["_text"] = rest
         out[head] = kv
+        # a head that comes more than once (modelapi: one line a frame type): every line, in order
+        out.setdefault("_lines", {}).setdefault(head, []).append(rest)
     return out
 
 
-# den-features' framing sweep for the gallery's model tiles (Builder.lua B.TileFit; `.den ui fit <fill> <dx> <dy> <dz>
-# <unit> <scaledPos> <cam>`): the default (the old wiki's Model frame space: origin the frame's bottom-left, one unit
-# the screen's diagonal; the box 0.8 of the tile, its middle at the tile's middle), then one thing changed a picture:
-# right a quarter tile (x is across), up a quarter (y is up), toward you half a tile (z is depth: bigger if seen in
-# perspective), the unit the screen's height, positions over the model's scale, a smaller fill, the model's camera 0.
+# den-features' sweep for the gallery's model tiles (Builder.lua B.FIT / B.SetFit; `.den ui fit <word=value ...>`). The
+# owner's PC (3 Nov) showed whole models but from straight above: a plain Model frame puts a doodad's "up" toward you.
+# One run settles how this client gives a side view: each picture changes ONE thing from the default (a Model frame,
+# tipped back a quarter turn by SetPitch where the client has it, framed on the box's middle). The report's "modelapi"
+# lines say which methods each frame type has; "fit" what was on. Pick the picture with benches seen from the side and
+# set its words as Builder.lua's B.FIT.
 FIT_SWEEP = [
-    ("1-default", "0.8 0 0 0 diag 0"),
-    ("2-right-quarter", "0.8 0.25 0 0 diag 0"),
-    ("3-up-quarter", "0.8 0 0.25 0 diag 0"),
-    ("4-nearer-half", "0.8 0 0 0.5 diag 0"),
-    ("5-unit-height", "0.8 0 0 0 height 0"),
-    ("6-scaled-pos", "0.8 0 0 0 diag 1"),
-    ("7-fill-half", "0.5 0 0 0 diag 0"),
-    ("8-camera-0", "0.8 0 0 0 diag 0 0"),
+    ("1-model-default", "default"),                              # Model; SetPitch(-90deg) if the client has it
+    ("2-model-camera0", "cam=0"),                                # + the model's own camera 0
+    ("3-playermodel", "frame=PlayerModel"),                      # a PlayerModel frame, the same framing
+    ("4-playermodel-camera0", "frame=PlayerModel cam=0"),        # a PlayerModel, camera 0
+    ("5-playermodel-own", "frame=PlayerModel fit=own"),          # a PlayerModel framing it itself (scale 1 at 0,0,0)
+    ("6-dressup", "frame=DressUpModel"),                         # a DressUpModel frame, the same framing
+    ("7-dressup-own", "frame=DressUpModel fit=own"),             # a DressUpModel framing it itself
+    ("8-model-top-no-pitch", "pitch=off view=top"),              # the old top view, now centred (the fallback)
 ]
 
 
@@ -1083,8 +1086,10 @@ def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
             rep.add("INFO", "gallery: props without a model in your files", r["nomodel"]["_text"][:180])
         # the tiles' framing (3 Nov: lit, but each tile showed a close-up): the framings of FIT_SWEEP, a picture
         # each, then the default again. Compare logs\den-features\fit-* and set the best in Builder.lua B.FIT.
+        for l in dict.fromkeys(r.get("_lines", {}).get("modelapi", [])):
+            rep.add("INFO", "gallery: a model frame's methods", l)
         for label, args in FIT_SWEEP:
-            ui("fit " + args)
+            ui("fit " + ("reset" if args == "default" else args))
             shot("fit-" + label)
         ui("fit reset")
         ui("page 1")

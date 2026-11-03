@@ -651,6 +651,8 @@ class FakeDenEditor:
             ov = "LeylineDenBar/MinimapCluster" if "overlap" in self.broken else "none"
             self.report(["gallery shown=1 tiles=20 model=18 icon=2 empty=0 rows=4 cols=5 tile=92",
                          "catalog n=180 model=150 boxed=150 wmo=25 none=5", "nomodel Baked Bread,Bottle",
+                         "modelapi Model Pitch=0 Roll=0 Camera=1", "modelapi PlayerModel Pitch=0 Camera=1 PortraitZ=1",
+                         "fit frame=Model pitch=-1.57 view=auto fit=box cam=nil pitched=false",
                          "state sel=Barrel n=1 undo=4 redo=0 clip=%d grid=0 lite=1 mode=place tab=all pick=-" % self.clip,
                          "open LeylineDenBar,LeylineDenRail", "overlaps " + ov, "pill Place · snap off · 15°",
                          "screen 1923x1082 uiscale=0.71 play=%s rail=labelled" % str(self.play).lower()])
@@ -711,6 +713,16 @@ class Features(unittest.TestCase):
         for s in ("gallery", "placed", "selected", "moved", "edited", "files", "menu", "snap", "keys", "stamps", "play"):
             self.assertTrue(any(x.endswith("-%s.png" % s) for x in shots), s)
         self.assertFalse((dens / "featuretest.den.json").exists() or (dens / "featuretest-before.den.json").exists(), "the test's saves removed")
+
+    def test_the_side_view_sweep_settles_in_one_run(self):
+        rep, shots, _ = self.run_it()
+        fits = [x for x in shots if "-fit-" in x]
+        self.assertLessEqual(len(den_check.FIT_SWEEP), 8)
+        self.assertEqual(len(fits), len(den_check.FIT_SWEEP), fits)
+        self.assertEqual(len({l for l, _ in den_check.FIT_SWEEP}), len(den_check.FIT_SWEEP))
+        self.assertTrue(any("frame=PlayerModel" in a for _, a in den_check.FIT_SWEEP))
+        api = [r[2] for r in rep.rows if r[1] == "gallery: a model frame's methods"]
+        self.assertEqual(api, ["Model Pitch=0 Roll=0 Camera=1", "PlayerModel Pitch=0 Camera=1 PortraitZ=1"])
 
     def test_a_broken_feature_fails_with_the_fix(self):
         rep, _, _ = self.run_it(broken=("place", "overlap"))

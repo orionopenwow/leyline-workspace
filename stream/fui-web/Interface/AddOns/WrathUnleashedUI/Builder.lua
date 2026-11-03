@@ -573,24 +573,37 @@ B.PaintTile = paintTile
 
 -- How a tile frames its model. A Model frame has no "fit" of its own, and for a model without a camera of its own (every
 -- doodad) its space is the frame's, not the model's (the old wiki, Widget API Model:SetPosition): (0, 0, 0) is the
--- frame's BOTTOM-LEFT corner, x goes right, y up, z toward you, and one unit is the screen's diagonal in pixels, so the
--- top-right corner is (frame width / diagonal, frame height / diagonal, 0) and a 92-unit tile is only about 0.05
--- across. SetModelScale sizes the model in those same units. That is what the owner's three sweeps (3 Nov,
--- docs/den-ui/sweeps) showed: scales of 0.15-0.4 a close-up of a texture; 0.03-0.06 the model whole but at the
--- tile's bottom-left; any offset of 0.25 or more off the tile. So: the model's box (Den Lite sends its size in yards
--- from the game's own tables: w, d, h and the bottom z) is scaled to B.FIT.fill of the tile, a box that still fits as
--- the model turns (the diagonal of its footprint), and moved to the tile's middle: x half the width, y half the height
--- less the box's middle. The frame's size is known only once it is laid out, so the framing is applied again on show,
--- on a size change and on the next two frames (B.TileTick), and again whenever the screen's size or UI scale changes.
+-- frame's BOTTOM-LEFT corner, x goes right, y up, z toward you; one unit is a length of the screen (the owner's sweep
+-- 4, 3 Nov: its height), and SetModelScale sizes the model in those units. The model's own axes go straight onto the
+-- frame's: its x right, its y up, its z (a doodad's "up") toward you. So a plain Model frame shows a doodad from
+-- straight above (owner's shot 3 Nov: "a bench is a plank seen from the ceiling"), and SetFacing (a turn about the
+-- model's z) spins it in the tile's plane. A side view needs the model tipped back a quarter turn (Model:SetPitch,
+-- where the client has it: the tile tries it) or a frame whose camera looks across (PlayerModel / DressUpModel, or a
+-- camera of the model's own: SetCamera). Which of these the 3.3.5a client does is what FIT_SWEEP in
+-- tools/den-check/den_check.py settles in one run on the owner's PC (eight labelled pictures, one change each), and
+-- the den-test's report says which of these methods each frame type has (B.ModelApi).
+-- Framing: the model's box (Den Lite sends its size in yards from the game's own tables: w, d, h and the bottom z) is
+-- scaled to B.FIT.fill of the tile (the footprint's diagonal, so it still fits as it turns) and put in the tile's
+-- middle in both axes: seen from the side, its box's middle height on the tile's middle; seen from above the footprint
+-- is round the model's origin, so the origin on the middle (the old framing lowered every top view by half its
+-- height: the models sat at the tile's bottom edge). The frame's size is known only once it is laid out, so the
+-- framing is applied again on show, on a size change and on the next two frames (B.TileTick), and whenever the
+-- screen's size or UI scale changes.
 -- Tunable on a PC without a new addon (WrathUnleashedUIDB.den.fit, set by B.SetFit / the test's ".den ui fit"):
--- dx/dy/dz move the model by a part of the tile, unit picks the unit's length ("diag", or "height"/"width" of the
--- screen), scaledPos multiplies positions by the model's scale (the other way a client might do it), cam a SetCamera.
-B.FIT = { v = 2, fill = 0.8, dx = 0, dy = 0, dz = 0, unit = "height", scaledPos = false }
+-- fill; dx / dy / dz (a part of the tile); unit ("height", "width", "diag"); scaledPos; cam (SetCamera); frame
+-- ("Model", "PlayerModel", "DressUpModel": the tiles are made again of that type); pitch (radians, SetPitch where the
+-- client has it; "off" none); view ("auto": from the side when tipped or not a plain Model, else from above; "side";
+-- "top"); fit ("box": the framing above; "own": scale 1 at (0, 0, 0), the frame's own camera frames it).
+B.FIT = { v = 3, fill = 0.8, dx = 0, dy = 0, dz = 0, unit = "height", scaledPos = false, frame = "Model", pitch = -math.pi / 2,
+    view = "auto", fit = "box" }
+B.FRAMES = { Model = true, PlayerModel = true, DressUpModel = true }
 local NO_SIZE = { w = 1, d = 1, h = 1.2, z = 0 }   -- a prop whose size is unknown: about a crate's
 local function fitConf()
     local d = type(WrathUnleashedUIDB) == "table" and type(WrathUnleashedUIDB.den) == "table" and WrathUnleashedUIDB.den.fit
-    -- a framing saved by the first sweeps (yards, lift) is not this kind: the default
-    return (type(d) == "table" and d.v == 2) and d or B.FIT
+    -- a framing saved by an earlier sweep (v 1 or 2) is not this kind: the default
+    if type(d) ~= "table" or d.v ~= 3 then return B.FIT end
+    for k, v in pairs(B.FIT) do if d[k] == nil then d[k] = v end end
+    return d
 end
 B.FitConf = fitConf
 
@@ -609,22 +622,84 @@ function B.FrameUnits(m, conf)
     return w / len, h / len
 end
 
--- The framing of a model of `size` in a frame of W x H units: its scale and SetPosition(x, y, z).
-function B.TileFit(size, W, H, conf)
+-- Is this framing a side view? (view "auto": tipped back by SetPitch, or a frame type that isn't a plain Model)
+function B.SideView(conf, pitched)
+    local f = conf or fitConf()
+    if f.view == "side" then return true end
+    if f.view == "top" then return false end
+    return pitched == true or (f.frame or "Model") ~= "Model"
+end
+
+-- The framing of a model of `size` in a frame of W x H units: its scale and SetPosition(x, y, z). side: seen from the
+-- side (the box's middle height on the tile's middle), else from above (the origin on the middle).
+function B.TileFit(size, W, H, conf, side)
     local f = conf or fitConf()
     if type(size) ~= "table" then size = NO_SIZE end
     W, H = tonumber(W) or 0.055, tonumber(H) or 0.055
+    if side == nil then side = B.SideView(f) end
     local sw, sd, sh = tonumber(size.w) or 0, tonumber(size.d) or 0, tonumber(size.h) or 0
-    local ext = math.max(math.sqrt(sw * sw + sd * sd), sh, 0.05)       -- the footprint's diagonal: it fits as it turns
+    local foot = math.sqrt(sw * sw + sd * sd)                           -- the footprint's diagonal: it fits as it turns
+    local ext = math.max(side and math.max(foot, sh) or foot, 0.05)
     local fill = tonumber(f.fill) or B.FIT.fill
     local scale = math.max(1e-4, fill * math.min(W, H) / ext)
     local mid = (tonumber(size.z) or 0) + sh / 2
     local x = W / 2 + (tonumber(f.dx) or 0) * W
-    local y = H / 2 - mid * scale + (tonumber(f.dy) or 0) * H
+    local y = H / 2 + (tonumber(f.dy) or 0) * H
+    if side then y = y - mid * scale end
     local z = (tonumber(f.dz) or 0) * W
     if f.scaledPos then x, y, z = x / scale, y / scale, z / scale end
     return scale, x, y, z
 end
+
+-- What each model frame type has of the methods a side view could use: "Model pitch=1 cam=1 ..." (the den-test's
+-- report, so one run on the owner's PC says what his client has).
+B.API_PROBE = { "SetPitch", "SetRoll", "SetRotation", "SetCamera", "SetCustomCamera", "SetCameraPosition", "SetCameraDistance",
+    "SetPortraitZoom", "SetCamDistanceScale", "SetDisplayInfo", "SetCreature" }
+function B.ModelApi()
+    local out = {}
+    for _, kind in ipairs({ "Model", "PlayerModel", "DressUpModel" }) do
+        local ok, m = pcall(CreateFrame, kind, nil, UIParent)
+        if ok and m then
+            if m.Hide then m:Hide() end
+            local has = {}
+            for _, fn in ipairs(B.API_PROBE) do has[#has + 1] = fn:gsub("^Set", ""):sub(1, 9) .. "=" .. (type(m[fn]) == "function" and "1" or "0") end
+            out[#out + 1] = kind .. " " .. table.concat(has, " ")
+        else
+            out[#out + 1] = kind .. " none"
+        end
+    end
+    return out
+end
+
+-- The tile's model frame of a type (made once per type, the others hidden): t.model is the one in use.
+local function tileModel(t, kind)
+    kind = B.FRAMES[kind or ""] and kind or "Model"
+    t.models = t.models or {}
+    if not t.models[kind] then
+        local ok, m = pcall(CreateFrame, kind, nil, t)
+        if not ok or not m then ok, m = pcall(CreateFrame, "Model", nil, t) end
+        m:SetWidth(TILE - 4); m:SetHeight(TILE - 4)
+        m:SetPoint("TOPLEFT", 2, -2)
+        m:Hide()
+        m:SetScript("OnShow", function() if t.model == m then B.RefitSoon(t) end end)
+        m:SetScript("OnSizeChanged", function() if t.model == m then B.RefitSoon(t) end end)
+        m.kind = kind
+        t.models[kind] = m
+    end
+    local m = t.models[kind]
+    if t.model and t.model ~= m then
+        if t.model.ClearModel then pcall(t.model.ClearModel, t.model) end
+        t.model:Hide()
+        t.modelPath = nil
+    end
+    t.model = m
+    if t.top and m.GetFrameLevel then
+        local lv = m:GetFrameLevel()
+        if type(lv) == "number" then t.top:SetFrameLevel(lv + 2) end
+    end
+    return m
+end
+B.TileModel = tileModel
 
 -- Frame the tile's model now (from the Model frame's size as it is laid out now); false while it has no size yet.
 local function applyFit(t)
@@ -635,9 +710,17 @@ local function applyFit(t)
     if not W then return false end
     local cam = tonumber(conf.cam)
     if cam then pcall(m.SetCamera, m, cam) end
-    local scale, x, y, z = B.TileFit(c.size, W, H, conf)
-    pcall(m.SetModelScale, m, scale)
-    pcall(m.SetPosition, m, x, y, z)
+    local pitch = tonumber(conf.pitch)
+    t.pitched = nil
+    if pitch and type(m.SetPitch) == "function" then t.pitched = pcall(m.SetPitch, m, pitch) or nil end
+    if conf.fit == "own" then
+        pcall(m.SetModelScale, m, 1)
+        pcall(m.SetPosition, m, 0, 0, 0)
+    else
+        local scale, x, y, z = B.TileFit(c.size, W, H, conf, B.SideView(conf, t.pitched))
+        pcall(m.SetModelScale, m, scale)
+        pcall(m.SetPosition, m, x, y, z)
+    end
     pcall(m.SetFacing, m, B.facing or REST_FACING)
     t.fitW, t.fitH = W, H
     return true
@@ -664,23 +747,41 @@ end
 local function refitSoon(t) t.refit = 2; applyFit(t) end
 B.RefitSoon = refitSoon
 
--- The test's (and a curious player's) way to try a framing: B.SetFit(fill, dx, dy, dz, unit, scaledPos, cam) saves it
--- and re-frames the tiles shown; B.SetFit("reset") goes back to the default (tools/den-check den-features sweeps a
--- few and takes a picture of each).
+-- The test's (and a curious player's) way to try a framing, saved and applied to the tiles shown:
+--   B.SetFit("frame=PlayerModel cam=0 fit=own")   words: fill dx dy dz unit scaled cam frame pitch view fit
+--   B.SetFit(fill, dx, dy, dz, unit, scaledPos, cam)  (the older way)
+--   B.SetFit("reset") / B.SetFit("default")          the default again
+-- (tools/den-check den-features sweeps FIT_SWEEP and takes a picture of each.)
 function B.SetFit(fill, dx, dy, dz, unit, scaledPos, cam)
     WrathUnleashedUIDB = type(WrathUnleashedUIDB) == "table" and WrathUnleashedUIDB or {}
     WrathUnleashedUIDB.den = type(WrathUnleashedUIDB.den) == "table" and WrathUnleashedUIDB.den or {}
-    if fill == "reset" or fill == nil then
-        WrathUnleashedUIDB.den.fit = nil
+    local f
+    if fill == "reset" or fill == "default" or fill == nil or fill == "" then
+        f = nil
+    elseif type(fill) == "string" and fill:find("=") then
+        f = { v = 3 }
+        for k, v in fill:gmatch("(%a+)=(%S+)") do
+            k = k:lower()
+            if k == "fill" or k == "dx" or k == "dy" or k == "dz" then f[k] = tonumber(v)
+            elseif k == "unit" then f.unit = (v == "height" or v == "width") and v or "diag"
+            elseif k == "scaled" then f.scaledPos = v == "1"
+            elseif k == "cam" then f.cam = tonumber(v)
+            elseif k == "frame" then f.frame = B.FRAMES[v] and v or "Model"
+            elseif k == "pitch" then f.pitch = tonumber(v) or false
+            elseif k == "view" then f.view = (v == "side" or v == "top") and v or "auto"
+            elseif k == "fit" then f.fit = v == "own" and "own" or "box" end
+        end
     else
         local u = tostring(unit or "diag")
-        WrathUnleashedUIDB.den.fit = { v = 2, fill = tonumber(fill) or B.FIT.fill, dx = tonumber(dx) or 0, dy = tonumber(dy) or 0,
+        f = { v = 3, fill = tonumber(fill) or B.FIT.fill, dx = tonumber(dx) or 0, dy = tonumber(dy) or 0,
             dz = tonumber(dz) or 0, unit = (u == "height" or u == "width") and u or "diag",
             scaledPos = (scaledPos == true or scaledPos == "1" or scaledPos == 1), cam = tonumber(cam) }
     end
+    WrathUnleashedUIDB.den.fit = f
+    local conf = fitConf()
     local w = B.Window and B.Window()
     if w and w.tiles then
-        for _, t in ipairs(w.tiles) do t.modelPath = nil end
+        for _, t in ipairs(w.tiles) do tileModel(t, conf.frame); t.modelPath = nil end
     end
     if B.Refresh then B.Refresh() end
     return true
@@ -1555,20 +1656,13 @@ local function buildTile(i)
     t.why:SetPoint("TOP", t, "TOP", 0, -TILE + 22)
     t.why:SetWidth(TILE); t.why:SetJustifyH("CENTER")
     t.why:SetTextColor(S().ED.muted[1], S().ED.muted[2], S().ED.muted[3])
-    -- the model, turning
-    t.model = CreateFrame("Model", nil, t)
-    t.model:SetWidth(TILE - 4); t.model:SetHeight(TILE - 4)
-    t.model:SetPoint("TOPLEFT", 2, -2)
-    t.model:Hide()
-    -- framed again once it is shown and laid out (its size, and so its units, are known only then)
-    t.model:SetScript("OnShow", function() refitSoon(t) end)
-    t.model:SetScript("OnSizeChanged", function() refitSoon(t) end)
     -- above the model: the edge (gold when picked), the corner icon, the points and the favourite star
     t.top = CreateFrame("Frame", nil, t)
     t.top:SetWidth(TILE); t.top:SetHeight(TILE)
     t.top:SetPoint("TOPLEFT", 0, 0)
-    local lv = t.model.GetFrameLevel and t.model:GetFrameLevel()
-    if type(lv) == "number" then t.top:SetFrameLevel(lv + 2) end
+    -- the model, turning: a frame of the framing's type (B.FIT.frame), framed again once it is shown and laid out
+    -- (its size, and so its units, are known only then)
+    tileModel(t, fitConf().frame)
     t.edges = {}
     for k, side in ipairs({ { "TOPLEFT", "TOPRIGHT", 0, 1 }, { "BOTTOMLEFT", "BOTTOMRIGHT", 0, 1 },
                             { "TOPLEFT", "BOTTOMLEFT", 1, 0 }, { "TOPRIGHT", "BOTTOMRIGHT", 1, 0 } }) do

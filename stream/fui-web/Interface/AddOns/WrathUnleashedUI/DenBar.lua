@@ -939,6 +939,14 @@ function D.Report(what)
             r.model, r.icon, r.empty, r.rows, r.cols, r.tile)
         lines[#lines + 1] = string.format("catalog n=%d model=%d boxed=%d wmo=%d none=%d", r.catalog, r.withModel, r.boxed, r.wmo, r.none)
         if #r.missing > 0 then lines[#lines + 1] = "nomodel " .. table.concat(r.missing, ","):sub(1, 180) end
+        -- what this client's model frames have of a side view's methods (one line a frame type), and the framing on now
+        if b.ModelApi then for _, l in ipairs(b.ModelApi()) do lines[#lines + 1] = "modelapi " .. l end end
+        if b.FitConf then
+            local f = b.FitConf()
+            local t1 = b.Window and b.Window() and b.Window().tiles and b.Window().tiles[1]
+            lines[#lines + 1] = string.format("fit frame=%s pitch=%s view=%s fit=%s cam=%s pitched=%s", tostring(f.frame), tostring(f.pitch),
+                tostring(f.view), tostring(f.fit), tostring(f.cam), tostring(t1 and t1.pitched or false))
+        end
     end
     local s = (b and b.state) or {}
     lines[#lines + 1] = string.format("state sel=%s n=%s undo=%s redo=%s clip=%s grid=%s lite=%s mode=%s tab=%s pick=%s", s.selName or "-",
@@ -980,7 +988,10 @@ function D.TestAction(text)
     if a == "gallery" then if not (b.Window() and b.Window():IsShown()) then bar.build:Click() end; if w[2] then b.ShowTab(w[2]) end; return true end
     if a == "nogallery" then if b.Window() then b.Window():Hide() end; return true end
     if a == "tab" then return b.ShowTab(w[2] or "all") end
-    if a == "fit" then return b.SetFit(w[2], w[3], w[4], w[5], w[6], w[7], w[8]) end   -- fill dx dy dz unit scaledPos cam, or "reset"
+    if a == "fit" then   -- "fit frame=PlayerModel cam=0 ..." (Builder.lua B.SetFit's words), the older "fit fill dx dy dz unit scaledPos cam", or "reset"
+        if (w[2] or ""):find("=") then return b.SetFit(table.concat(w, " ", 2)) end
+        return b.SetFit(w[2], w[3], w[4], w[5], w[6], w[7], w[8])
+    end
     if a == "page" then return b.Page(tonumber(w[2]) or 1) end
     if a == "pick" or a == "place" then
         local c = find(w[2])

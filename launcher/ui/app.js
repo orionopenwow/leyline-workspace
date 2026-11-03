@@ -2987,8 +2987,10 @@ $("rl-join").addEventListener("click", async () => {
   try {
     const j = await invoke("join_invite", { client: c.id, link });
     // a friend's Den (host/litenet.rs): the game is already starting with your own login from the link
-    if (j.guest) say("rl-status", j.guest.auto ? `Joining your friend's Den: the game signs you in by itself and opens at character select.`
-      : `Joining your friend's Den. At the login screen: account ${j.guest.account}, password ${j.guest.password}.`, "ok");
+    // which way in it took (host/denways.rs): the same network, the friend's own address, or the relay
+    const via = { lan: " on your shared network", own: " through your friend's own address", relay: " through the Leyline relay" }[j.way] || "";
+    if (j.guest) say("rl-status", j.guest.auto ? `Joining your friend's Den${via}: the game signs you in by itself and opens at character select.`
+      : `Joining your friend's Den${via}. At the login screen: account ${j.guest.account}, password ${j.guest.password}.`, "ok");
     else say("rl-status", `${j.name || "The realm"} is open for this PC; ${c.name} now points at ${j.address}. Press PLAY.`, "ok");
     $("rl-invite").value = "";
     await refresh();

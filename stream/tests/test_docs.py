@@ -33,7 +33,7 @@ names = [n for n, _ in d.PAGES]
 
 # ---------------------------------------------------------------- 1. the page list and the files
 check("seventeen pages, fixed order", names == ["index", "network", "getting-started", "play", "commands", "mods", "publishing",
-                                              "hosting", "always-on", "join-network", "be-a-node", "launcher", "den", "agents", "hero-key",
+                                              "hosting", "den-invite", "always-on", "join-network", "be-a-node", "launcher", "den", "agents", "hero-key",
                                               "cross-server", "unite"], names)
 on_disk = sorted(f[:-3] for f in os.listdir(DOCS_DIR) if f.endswith(".md"))
 check("every page has its file in docs/leyline", all(n in on_disk for n in names), set(names) - set(on_disk))
@@ -106,6 +106,9 @@ spec_md = open(os.path.join(ROOT, "mods", "SPEC.md"), encoding="utf-8").read()
 for rule in ("CAN_JOIN_LFG", "10 MB a file, 50 MB a package, 2000 files", "## Interface: 30300", "CREATE TABLE IF NOT EXISTS",
              "string.dump", "RegisterPacketEvent", "WUModCatalog"):
     check(f"mods matches SPEC.md: {rule}", rule in spec_md and html.escape(rule) in pages["mods"])
+check("den-invite: the guide's three ways, what the friend needs, what never travels; the same text as docs/DEN-INVITE.md",
+      all(w in visible(pages["den-invite"]) for w in ("Same network", "Your own address", "The Leyline relay", "Hero Key", "game files"))
+      and open(os.path.join(DOCS_DIR, "den-invite.md"), encoding="utf-8").read() == open(os.path.join(ROOT, "docs", "DEN-INVITE.md"), encoding="utf-8").read())
 check("unite: marked as a proposal", "This page is a proposal" in visible(pages["unite"]))
 check("hero-key: unverified parts marked to confirm", "To confirm" in visible(pages["hero-key"])
       and "herokey_v2.py" in pages["hero-key"] and "passport.py" in pages["hero-key"])

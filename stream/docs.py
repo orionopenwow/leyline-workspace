@@ -36,6 +36,7 @@ PAGES = (
     ("mods", "Mod format"),
     ("publishing", "Publishing"),
     ("hosting", "Hosting"),
+    ("den-invite", "Invite a friend to your Den"),   # docs/DEN-INVITE.md, the same text (launcher host/denways.rs)
     ("always-on", "Keep your realm up 24/7"),
     ("join-network", "Bring your server"),   # an existing server joins with Hero Key sign-in (setup.py join-network)
     ("be-a-node", "Help carry the network"),   # community nodes (hosting/relay/wurelay/nodes.py)

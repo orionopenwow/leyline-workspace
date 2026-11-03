@@ -16,7 +16,10 @@ First, walking (walk_lines; owner 3 Nov: the character floated above its shadow 
 passed): the launcher steps forward until Den Lite sees the character walk, then the test checks from Den Lite's
 events that the game took its character, that the step walked it, that nothing holds it up or still (root, no
 gravity, hover), and from `.den where` that its feet are within half a yard of the ground; the Leyline UI's own view
-of the character (its speed, falling, control) is shown too.
+of the character (its speed, falling, control) is shown too. Then (keys_check, 3 Nov: no movement at all, on posted
+keys or the owner's own W) W is pressed a second way, as a keyboard does (SendInput, the game in front), with the
+Leyline UI's view before and after (Den Lite `.den diag`), what the game sent in the world and its time sync answer:
+the report says which way, if any, moved the character.
 
 The Den's smoke test, after "in the world", in order (den_steps; the commands go through Den Lite's own command files,
 labs/den-lite testctl.rs, so they never depend on the game window having the keyboard; typed into the game window by

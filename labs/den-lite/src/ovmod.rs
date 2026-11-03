@@ -168,7 +168,7 @@ pub struct Sel {
 }
 
 /// The verbs this Den Lite answers (the state's `caps=`: the editor hides a button whose verb isn't here).
-pub const CAPS: &str = "spawn,near,move,setpos,turn,setturn,tilt,scale,setscale,delete,undo,redo,copy,paste,dup,selall,pick,selclear,floor,grid,spawnat,find,models,save,load,selnext,selkind,seladd,lock,unlock,swap,swapkind,bring,ground,settle,upright,random,centre,reset,step,grow,preview,hover,follow,commit,axis,grab,cam,gizmo,mode,where";
+pub const CAPS: &str = "spawn,near,move,setpos,turn,setturn,tilt,scale,setscale,delete,undo,redo,copy,paste,dup,selall,pick,selclear,floor,grid,spawnat,find,models,save,load,selnext,selkind,seladd,lock,unlock,swap,swapkind,bring,ground,settle,upright,random,centre,reset,step,grow,preview,hover,follow,commit,axis,grab,cam,gizmo,mode,where,click,drag";
 
 /// The Builder's categories (Builder.lua CATS) by words in a prop's name; None: not offered in the catalog.
 pub fn category(name: &str) -> Option<&'static str> {
@@ -1102,7 +1102,7 @@ mod tests {
         builder_cmd(&mut d, &mut sel, here, &format!("seladd {}", prop_id(b)), true);
         assert_eq!((sel.guid, sel.more.clone()), (Some(a), vec![b]));
         let caps: Vec<&str> = CAPS.split(',').collect();
-        for v in ["swap", "swapkind", "bring", "ground", "settle", "random", "centre", "reset", "step", "grow", "seladd", "grab", "cam"] {
+        for v in ["swap", "swapkind", "bring", "ground", "settle", "random", "centre", "reset", "step", "grow", "seladd", "grab", "cam", "click", "drag"] {
             assert!(caps.contains(&v), "{v} in caps");
         }
     }

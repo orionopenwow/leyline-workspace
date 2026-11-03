@@ -734,3 +734,4 @@
 1312q ship  Save as Orion: Play solo on every mode, one-click Invite a friend and Join, the GM command center, the Discord & GM card and quick edits in Control
 1312r relay  Relay join page: Open in Leyline (the friend joins in one click)
 1312s hostkit  Host kit: the GM command center's sandbox controls for hosted realms
+1313a ship  Save as Orion: the launcher release no longer waits on GitHub's macOS machines (three ships' launcher builds were held back by it), so the sign-in cover, Play solo, invite and the new-machine fixes reach players

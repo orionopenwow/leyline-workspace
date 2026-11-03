@@ -247,7 +247,10 @@ class Workflows(unittest.TestCase):
                          {"GITHUB_TOKEN", "TAURI_SIGNING_PRIVATE_KEY", "TAURI_SIGNING_PRIVATE_KEY_PASSWORD"})
         # macOS never makes a routine run red: its jobs are allowed to fail, and it is not in the main release job
         self.assertTrue(jobs["release-macos"]["continue-on-error"])
-        self.assertIn("macos", jobs["core-tests"]["continue-on-error"])
+        self.assertTrue(jobs["core-tests-macos"]["continue-on-error"])
+        self.assertNotIn("macos-latest", jobs["core-tests"]["strategy"]["matrix"]["os"], "a missing macOS runner can't hold the release")
+        for j in ("portable", "create-release"):
+            self.assertNotIn("core-tests-macos", jobs[j]["needs"], j)
         self.assertFalse(any("macos" in m["platform"] for m in jobs["release"]["strategy"]["matrix"]["include"]))
         self.assertIn("universal-apple-darwin", text)
         bundles = " ".join(m["args"] for m in jobs["release"]["strategy"]["matrix"]["include"])

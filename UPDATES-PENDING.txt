@@ -749,3 +749,13 @@
 1313m addons  Leyline addons: the Den gallery's models lit (they drew black)
 1313n den-features  The Den editor feature test again: the gallery's models
 1313o ship  Save as Orion: walking in the Den, grass ground, the editor redo, the feature test, lit gallery models, nameplates
+1313p addons  Leyline addons: the gallery tiles' framing can be set (for the test's sweep)
+1313q den-features  Den feature test with five framings of the gallery's models, a picture each
+1313r den-features  Den feature test: a finer sweep of the gallery models' framing
+1313s addons  Leyline addons: the gallery tiles' framing moves sideways too
+1313t den-features  Den feature test: the gallery models brought to the middle of their tiles, six framings
+1313u addons  Leyline addons: the gallery frames each model in its tile (centred, the whole model, turning)
+1313v den-features  Den feature test: eight framings of the gallery models to confirm it
+1313w addons  Leyline addons: the gallery models framed larger in their tiles
+1313x foreverui  Browser game: the Den editor and gallery as on desktop
+1313y ship  Save as Orion: the Den gallery framing, the feature test

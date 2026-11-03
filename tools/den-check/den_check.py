@@ -986,6 +986,23 @@ def parse_report(lines):
     return out
 
 
+# den-features' framing sweep for the gallery's model tiles (Builder.lua B.TileFit; `.den ui fit <fill> <dx> <dy> <dz>
+# <unit> <scaledPos> <cam>`): the default (the old wiki's Model frame space: origin the frame's bottom-left, one unit
+# the screen's diagonal; the box 0.8 of the tile, its middle at the tile's middle), then one thing changed a picture:
+# right a quarter tile (x is across), up a quarter (y is up), toward you half a tile (z is depth: bigger if seen in
+# perspective), the unit the screen's height, positions over the model's scale, a smaller fill, the model's camera 0.
+FIT_SWEEP = [
+    ("1-default", "0.8 0 0 0 diag 0"),
+    ("2-right-quarter", "0.8 0.25 0 0 diag 0"),
+    ("3-up-quarter", "0.8 0 0.25 0 diag 0"),
+    ("4-nearer-half", "0.8 0 0 0.5 diag 0"),
+    ("5-unit-height", "0.8 0 0 0 height 0"),
+    ("6-scaled-pos", "0.8 0 0 0 diag 1"),
+    ("7-fill-half", "0.5 0 0 0 diag 0"),
+    ("8-camera-0", "0.8 0 0 0 diag 0 0"),
+]
+
+
 def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
     """The Den editor, feature by feature, through the Leyline UI's own buttons (Den Lite's `.den ui <action>` asks the
     addon to press them: DenBar.lua D.TestAction), a screenshot after each into `outdir`, PASS / FAIL from Den Lite's
@@ -1064,6 +1081,12 @@ def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
                "Check your 3.3.5a game folder in the launcher, then run den-features again." % ("it is there" if table else "it is missing"))
         if "nomodel" in r:
             rep.add("INFO", "gallery: props without a model in your files", r["nomodel"]["_text"][:180])
+        # the tiles' framing (3 Nov: lit, but each tile showed a close-up): the framings of FIT_SWEEP, a picture
+        # each, then the default again. Compare logs\den-features\fit-* and set the best in Builder.lua B.FIT.
+        for label, args in FIT_SWEEP:
+            ui("fit " + args)
+            shot("fit-" + label)
+        ui("fit reset")
         ui("page 1")
         shot("gallery-page2")
         ui("tab all")

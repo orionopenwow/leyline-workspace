@@ -1,0 +1,31 @@
+# The in-game addons' Lua tests (stream/tests/test_wuui_*.lua: the Esc menu, the Leyline panels...) on feature branches:
+# Claude's cloud sessions have no Lua 5.1 to run them. No secrets, no release.
+name: lua check
+
+on:
+  push:
+    branches: ["feat-*"]
+    paths:
+      - "stream/fui-web/**"
+      - "stream/tests/test_wuui_*.lua"
+      - ".github/workflows/lua-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lua:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Lua 5.1
+        run: sudo apt-get update && sudo apt-get install -y lua5.1
+      - name: the addons' tests
+        run: |
+          set -e
+          for t in stream/tests/test_wuui_*.lua; do
+            echo "== $t"
+            lua5.1 "$t"
+          done

@@ -353,10 +353,77 @@ function W.ShowBugReport()
     if StaticPopup_Show then StaticPopup_Show("WU_BUG_REPORT") end
 end
 
+-- With Forever UI (owner 3 Nov 01:28: "fix the 2 out of style buttons into the foreverui style"): its column, as its
+-- GameMenu.lua lays it out (200 x 36 red three-slice buttons, 48 top, 34 bottom, 28 sides, a 20 gap before a
+-- section), with Realm List and Report a bug skinned the same and in it under Mods & Workshop. The Mac options button
+-- only on a Mac and Ratings only when the game shows it: a hidden one left a two-button hole under Interface.
+local FUI_N = { top = 48, down = 34, side = 28, w = 200, h = 36, section = 20 }
+local FUI_ORDER = {
+    { "GameMenuButtonOptions" }, { "GameMenuButtonSoundOptions" }, { "GameMenuButtonMacOptions", mac = true },
+    { "GameMenuButtonUIOptions" }, { "GameMenuButtonKeybindings" }, { "GameMenuButtonMacros" }, { "GameMenuButtonRatings" },
+    { "GameMenuButtonAddOns" }, { "GameMenuButtonRealmList" }, { "GameMenuButtonBugReport" }, { "ExtraButtons" },
+    { "ForeverUIGameMenuButtonCustomize" }, { "ForeverUIGameMenuButtonHelp", section = true },
+    { "GameMenuButtonLogout", section = true }, { "GameMenuButtonQuit" }, { "GameMenuButtonContinue", section = true },
+}
+local function foreverMenu()
+    return type(ForeverUI) == "table" and type(ForeverUI.GameMenu) == "table" and type(ForeverUI.Templates) == "table"
+        and type(ForeverUI.Templates.ThreeSliceButton) == "function"
+end
+local fuiFonts
+local function fuiSkin(b)
+    if not b or b.foreverThreeSlice then return end
+    call(b, "SetWidth", FUI_N.w)
+    call(b, "SetHeight", FUI_N.h)
+    fuiFonts = fuiFonts or { GameFontHighlightLarge, GameFontHighlightLarge, GameFontDisableLarge }
+    pcall(ForeverUI.Templates.ThreeSliceButton, b, "128-redbutton", fuiFonts)
+end
+function W.LayoutForeverMenu(extra)
+    local f = GameMenuFrame
+    local isMac = type(IsMacClient) == "function" and IsMacClient()
+    local y, queued, list = FUI_N.top, false, {}
+    local function place(b)
+        if queued then y = y + FUI_N.section; queued = false end
+        fuiSkin(b)
+        call(b, "ClearAllPoints")
+        call(b, "SetPoint", "TOPLEFT", f, "TOPLEFT", FUI_N.side, -y)
+        y = y + FUI_N.h
+        list[#list + 1] = b
+    end
+    for _, e in ipairs(FUI_ORDER) do
+        if e.section then queued = true end
+        if e[1] == "ExtraButtons" then
+            for _, b in ipairs(extra) do place(b) end
+        else
+            local b = _G[e[1]]
+            if b and e.mac and not isMac then call(b, "Hide") end
+            if b and call(b, "IsShown") == true then place(b) end
+        end
+    end
+    call(f, "SetWidth", FUI_N.side + FUI_N.w + FUI_N.side)
+    call(f, "SetHeight", y + FUI_N.down)
+    return list
+end
+
 function W.LayoutGameMenu()
     if not GameMenuFrame then return nil end
     local bug = _G["GameMenuButtonBugReport"]
     if bug then if W.LeylineRealm then call(bug, "Show") else call(bug, "Hide") end end
+    if foreverMenu() then
+        local known = {}
+        for _, e in ipairs(FUI_ORDER) do if _G[e[1]] then known[_G[e[1]]] = true end end
+        local others = {}
+        if type(GameMenuFrame.GetChildren) == "function" then
+            local r = { pcall(GameMenuFrame.GetChildren, GameMenuFrame) }
+            if r[1] then for i = 2, #r do local c = r[i]
+                if type(c) == "table" and not known[c] and call(c, "IsObjectType", "Button") and call(c, "IsShown") == true then
+                    local t = call(c, "GetText")
+                    if t and t ~= "" then others[#others + 1] = c end
+                end
+            end end
+        end
+        table.sort(others, function(a, b) return (call(a, "GetTop") or 0) > (call(b, "GetTop") or 0) end)
+        return W.LayoutForeverMenu(others)
+    end
     local seen, list = {}, {}
     for _, n in ipairs(MENU_ORDER) do
         local b = _G[n]
@@ -450,6 +517,16 @@ function W.AddMenuButtons()
         end)
     end
     if ForeverUI and ForeverUI.GameMenu and ForeverUI.GameMenu.Layout then ForeverUI.GameMenu.Layout() end
+    -- Forever UI lays its column out again on each of its buttons' OnShow: ours runs after it, every time
+    if foreverMenu() then
+        for _, e in ipairs(FUI_ORDER) do
+            local b = _G[e[1]]
+            if b and not b.wuMenuHooked and type(b.HookScript) == "function" then
+                b.wuMenuHooked = true
+                pcall(b.HookScript, b, "OnShow", function() W.LayoutGameMenu() end)
+            end
+        end
+    end
     W.LayoutGameMenu()
     return mods, realms
 end

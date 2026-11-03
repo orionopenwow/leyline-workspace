@@ -56,7 +56,7 @@ jobs:
           workspaces: labs/den-lite
       - name: cargo test (Den Lite)
         working-directory: labs/den-lite
-        run: cargo test --locked
+        run: cargo test --locked --test client the_editors_pick -- --nocapture
       - name: cargo test (the terrain crate)
         working-directory: launcher/src-tauri/terrain
         run: cargo test

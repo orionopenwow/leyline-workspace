@@ -112,11 +112,16 @@ async function open(o = {}) {
   await page.goto(INDEX);
   await page.click('.nav[data-page="host"]');
   await page.waitForFunction(() => document.getElementById('hc-pane-main').classList.contains('on'));
+  // since 3 Nov the Host page opens on its own flow (hostflow.js); the mode cards are its More ways to host > Game modes
+  if (!o.noModes && !o.flow) {
+    await page.waitForSelector('#hst .hst-modes', { state: 'attached' });
+    await page.evaluate(() => window.LeylineHostModes.grid());
+  }
   return { page, errors };
 }
 const calls = (page, cmd) => page.evaluate((c) => window.__calls.filter(([x]) => x === c).map(([, a]) => a), cmd);
 
-test('the first screen is the mode cards; Pick a ruleset yourself goes to the picker and back', async () => {
+test('the mode cards (More ways to host > Game modes); Pick a ruleset yourself goes to the picker, and back to Host', async () => {
   const { page, errors } = await open();
   await page.waitForSelector('#hx .hx-card');
   // the realm list (for the players on realms running each mode) comes in from the Realms page's load
@@ -138,10 +143,11 @@ test('the first screen is the mode cards; Pick a ruleset yourself goes to the pi
   await page.waitForSelector('.hc-setup', { state: 'visible' });
   assert.ok(await page.isVisible('.hx-back-bar'));
   assert.deepEqual((await calls(page, 'host_mode_use')).at(-1), { id: null, values: {} }, 'a plain ruleset: no mode');
-  await page.click('.hx-back-bar .hx-back');
-  await page.waitForSelector('#hx .hx-card');
-  assert.ok(await page.isHidden('.hc-setup'));
   assert.doesNotMatch(await page.textContent('#hx'), NO_BRANDS);
+  await page.click('.hx-back-bar .hx-back');   // back to the Host page's own flow (hostflow.js)
+  await page.waitForSelector('#hst .hst-vis');
+  assert.ok(await page.isHidden('.hc-setup'));
+  assert.equal(await page.locator('#hx').count(), 0);
   assert.deepEqual(errors, []);
 });
 
@@ -261,8 +267,10 @@ test('in the Light theme too', async () => {
   assert.deepEqual(errors, []);
 });
 
-test('no modes from the core: the ruleset picker as before', async () => {
+test('no modes from the core: the ruleset picker as before (More ways to host > Other rulesets)', async () => {
   const { page, errors } = await open({ noModes: true });
+  await page.click('.hst-more summary');
+  await page.click('.hst-rulesets');
   await page.waitForSelector('.hc-setup .hc-rs');
   assert.equal(await page.locator('#hx').count(), 0);
   assert.ok(await page.isVisible('.hc-setup'));

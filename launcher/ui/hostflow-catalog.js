@@ -77,7 +77,7 @@ window.LeylineHostCatalog = {
     { "key": "hide", "group": "world", "label": "Hide and seek in Dalaran", "kind": "toggle", "maps": "env", "env": ["OV_EVENTS_HIDE"], "needs": "events" },
     { "key": "hubs", "group": "world", "label": "Teleports to the hubs (.hub)", "kind": "toggle", "maps": "env", "env": ["OV_QOL_HUB"] },
     { "key": "free_repair", "group": "world", "label": "Free repairs", "kind": "toggle", "maps": "env", "env": ["OV_FREE_REPAIR"] },
-    { "key": "weather", "group": "world", "label": "Weather and time of day", "kind": "coming", "help": "Coming: the Host pack doesn't set them yet." },
+    { "key": "weather", "group": "world", "label": "Weather and time of day", "kind": "coming", "help": "Change them live in the GM command center. A realm-wide default is coming." },
 
     { "key": "max_players", "group": "players", "label": "Player limit", "kind": "range", "min": 0, "max": 500, "step": 5, "unit": "players",
       "maps": "option", "option": "max", "help": "0 = the ruleset's own. When it's full, players wait in a queue." },

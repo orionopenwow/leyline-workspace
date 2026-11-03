@@ -36,6 +36,7 @@ PAGES = (
     ("mods", "Mod format"),
     ("publishing", "Publishing"),
     ("hosting", "Hosting"),
+    ("host-a-realm", "Host a realm"),   # the launcher's Host page, start to finish (launcher/ui/hostflow.js, host/flow.rs)
     ("den-invite", "Invite a friend to your Den"),   # docs/DEN-INVITE.md, the same text (launcher host/denways.rs)
     ("always-on", "Keep your realm up 24/7"),
     ("join-network", "Bring your server"),   # an existing server joins with Hero Key sign-in (setup.py join-network)

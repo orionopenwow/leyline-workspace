@@ -32,8 +32,8 @@ CSS = "/*LEYLINE-CSS*/"
 names = [n for n, _ in d.PAGES]
 
 # ---------------------------------------------------------------- 1. the page list and the files
-check("seventeen pages, fixed order", names == ["index", "network", "getting-started", "play", "commands", "mods", "publishing",
-                                              "hosting", "den-invite", "always-on", "join-network", "be-a-node", "launcher", "den", "agents", "hero-key",
+check("the pages, in a fixed order", names == ["index", "network", "getting-started", "play", "commands", "mods", "publishing",
+                                              "hosting", "host-a-realm", "den-invite", "always-on", "join-network", "be-a-node", "launcher", "den", "agents", "hero-key",
                                               "cross-server", "unite"], names)
 on_disk = sorted(f[:-3] for f in os.listdir(DOCS_DIR) if f.endswith(".md"))
 check("every page has its file in docs/leyline", all(n in on_disk for n in names), set(names) - set(on_disk))
@@ -133,6 +133,18 @@ check("always-on: a new realm in one command, link a server you run, never game 
                              "WrongPass.MaxCount = 0", "We never send game files", "Vanilla+", "True Vanilla")))
 check("always-on: no client version numbers", not re.search(r"\b(1\.12|2\.4\.3|3\.3\.5)", aon.replace("cmangos-1.12.1", "")))
 check("hosting links the always-on guide", 'href="/wrath/docs/always-on"' in pages["hosting"])
+# the Host page's guide names every template and every setting the launcher's catalog has (launcher/ui/hostflow-catalog.js)
+_js = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "launcher", "ui", "hostflow-catalog.js"), encoding="utf-8").read()
+_cat = _json.loads(_js[_js.index("{", _js.index("LeylineHostCatalog =")):_js.rindex("}") + 1])
+har = visible(pages["host-a-realm"])
+check("host-a-realm: every template from the launcher's catalog", all(t["name"] in har for t in _cat["templates"]),
+      [t["name"] for t in _cat["templates"] if t["name"] not in har])
+check("host-a-realm: every setting from the launcher's catalog", all(s["label"] in har for s in _cat["settings"]),
+      [s["label"] for s in _cat["settings"] if s["label"] not in har])
+check("host-a-realm: the server software, the relay, Private and Public, Ask Claude, nodes, backups, troubleshooting",
+      all(w in har for w in ("AzerothCore", "Docker", "realm image", "relay", "Private", "Public", "Ask Claude", "Copy the prompt",
+                              "Be a node", "Backups", "When something", "open no ports")))
+check("hosting links the Host page guide", 'href="/wrath/docs/host-a-realm"' in pages["hosting"])
 check("publishing: package, submit a link, the mods step", all(s in visible(pages["publishing"]) for s in
       ("Package your mod", "Submit a link", "The mods step")))
 

@@ -23,29 +23,56 @@ lanterns and braziers) or **Empty** (the plain room). Press Start. The place is 
 skip it, the Den asks you on your first visit; you can also pick again later: type `.den start forest`, `.den start keep`
 or `.den start empty` (add `replace` when your Den already has things in it: a copy of it is kept as "backup").
 
-**Your windows.** `/den` is the Den panel (invite a friend, who may build, save and load). Its **Home** button (or
-`/denhome`) opens the home panel: the start choice, stamps, the grid, visiting and the mailbox. `/builder` is the build
-window; in edit mode hold Q for the spawn menu.
+**The editor (3 Nov).** In your Den the editor opens by itself, laid out like a game editor: near-black panels, the
+tool that is on in gold.
+- **The top strip**: "YOUR DEN", **Undo n** / **Redo n** (how many steps there are), **Menu** (your budget, then
+  Select mine, Select nearest, Clear, Copy, Paste, Duplicate, Delete, Group, Ungroup, Put away, Storage, Floor,
+  Properties, the Den panel, Den home, Reload the props, Builder help), **Snap** (off, 0.5, 1, 2 or 5 yards), the turn
+  step **15°** / **45°** / **90°**, a line with what the Den just said ("Saved 12 s ago"), then **Play** (F8), **?**
+  (the intro again), **Files**, **Invite** and **x** (play mode: the tools away).
+- **The tool rail** on the left: **Select** (the prop nearest you; in edit mode click a prop, Select again for a box),
+  **Build** (F7: the gallery), **Move** and **Rotate** (the selection's panel), **Shape ground** (the launcher opens
+  Forge on your Den's ground), **Stamps**, **Path**, and the move step: 0.1, 0.25, 1 or 3 yards.
+- **The gallery** (bottom left): a column of category icons (Favourites, Recent, Prefabs, Stamps, Storage,
+  Everything, Seating, Tables... Every object, Models), a search box, **A-Z** and **Spin**, "1-20 of 53" with < and >,
+  and 20 tiles, each the prop's own 3D model turning slowly (the category's icon where there is none). Click a tile to
+  pick it (a gold edge), double-click it (or **Place**, or drag it out of the gallery) to put it at your feet; in the
+  browser's edit mode you then click where it goes. Right-click: a favourite (a gold star). The models are your own
+  game's files: the server only tells the gallery each prop's file name.
+- **The selection's panel** pops up when you select something: X, Y, Z, Turn, Pitch, Roll and Size as numbers (type
+  one and Enter) with - and +, the move step and the turn step, **Apply**, **Copy**, **Paste**, **Delete**, **Undo**,
+  **Redo** and **More** (lock, hide, show all, measure, align, bottoms, stack on, select mine, group, put away,
+  duplicate, floor). While it is open the arrow keys move the selection by the step, Page Up / Page Down lift and lower
+  it, and Q / E turn it (the keys are yours again when it closes).
+- **The status pill** at the bottom: "Place · Barrel · snap 1 yd · 15° · 3 props selected", and over it the last
+  thing the Den said.
+- **Files**: **This Den** (a save of the whole Den by name), **Build** (your props here by name: Save, Load, Share a
+  6-letter code), **Prefab** (the selection by name: Save, Paste, Share) and **Plot** (Claim, Info, Add a friend or a
+  Visitor, Remove).
+
+`/builder` opens the same gallery anywhere you may build (the strip then says "BUILD"); `/den` is the Den panel
+(invite a friend, who may build, save and load); its **Home** button (or `/denhome`) opens the home panel: the start
+choice, stamps, the grid, visiting and the mailbox. In edit mode hold Q: the gallery, until you let go.
 
 **Stamps: whole areas in one go.** A stamp is a small ready-made area: **Garden**, **Market square**, **Campfire
-circle**, **Dock** and **Small house**. Pick one (the home panel, or the spawn menu's **Stamps** tab). Nothing is placed
+circle**, **Dock** and **Small house**. Pick one (the home panel, the rail's **Stamps**, or the gallery's **Stamps** tab). Nothing is placed
 yet: stakes mark its corners, and a lone stake shows its front. **Turn left** / **Turn right** turn it 15 degrees,
 **Here** moves the mark to where you stand, **Place** puts it down, **Cancel** takes the mark away. Each piece lands on
 the ground or floor under it. One undo (Ctrl+Z) takes the whole stamp back. In chat: `.den stamps`, `.den stamp garden`,
 `.den stamp turn`, `.den stamp place`.
 
 **Placing that feels good.**
-- Grid: the home panel's **Grid** button goes off, 0.5, 1, 2 and 5 yards (`.build grid 2`). What you place at your feet
-  lines up with the room and turns to the nearest 15 degrees. In edit mode the **Snap** button does the same for clicks.
+- Grid: the strip's **Snap** (or the home panel's **Grid**) goes off, 0.5, 1, 2 and 5 yards (`.build grid 2`). What you
+  place at your feet lines up with the room and turns to the nearest 15 degrees; in edit mode clicks snap the same.
 - Ground: **Ground on** (`.build grid ground on`) sets what you place at your feet on the ground or floor under you.
-- Turning: 15 degree steps (Q / E while carrying, the Turn buttons).
+- Turning: 15, 45 or 90 degree steps (the strip), Q / E while carrying or while the selection's panel is open.
 - Copy and paste: select, **Copy**, then **Paste** where you click (or at your feet).
 - Undo and redo: the last 50 changes, Ctrl+Z and Ctrl+Y (`.build undo`, `.build redo`).
-- The palette: search, categories (with **Furniture**: seats, tables, beds, rugs), **Favourites** (right-click a prop)
-  and **Recent**.
+- The gallery: search, A-Z, categories (with **Furniture**: seats, tables, beds, rugs), **Favourites** (right-click a
+  tile) and **Recent**.
 - Before placing: a stamp shows its stakes first. A single prop has no see-through preview in this game: in the browser
   game edit mode places exactly where you click and the handles move it after; on your own game it goes at your feet
-  and the arrows nudge it.
+  and the arrow keys nudge it (the selection's panel).
 
 **A house you live in.** The **Small house** stamp is a cottage with its furniture already inside (bed, table, chairs,
 rug, lantern), a front door and a mailbox. Furnish it more from the **Furniture** tab. The starter places come with a
@@ -78,9 +105,10 @@ when sharing with friends. **Your Den** is in the launcher's side menu right und
   Lite: the Docker Den's three steps on the same page (the Host pack, Docker Desktop with a short guide, Start with
   your account name), its progress, then the first starter place opens. A Docker Den that is stopped is started first;
   its account (the realm's GM name) is filled in on the login screen (`SET accountName` in Config.wtf).
-- **The Den bar** (the Leyline UI's `DenBar.lua`): opens by itself at the top of the screen in Your Den, with **Build**
-  (F7: the Builder), **Shape ground** (Forge), **Play** (F8: the tools hidden, just you and your Den), **Save** (a save
-  by name), **Invite** (one link for one friend, into a copy box) and **Help** (the intro cards again). F7 and F8 only
+- **The Den editor** (the Leyline UI's `DenBar.lua` and `Builder.lua`, redone 3 Nov; the Player guide above): opens by
+  itself in Your Den: the top strip, the tool rail with **Build** (F7: the gallery of 3D props) and **Shape ground**
+  (Forge), **Play** (F8: the tools hidden, just you and your Den), **Files** (a save by name), **Invite** (one link for
+  one friend, into a copy box) and **?** (the intro cards again). F7 and F8 only
   when the game has them free, else Ctrl+F7 / Ctrl+F8. Den Lite's own lines are toasts under the bar, not chat.
 - **Autosave.** Den Lite writes the whole Den to `autosave.den.json` within 2 seconds of any change and at logout,
   and opens it at the next start; the bar says "Saved 12 s ago".

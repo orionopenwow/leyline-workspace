@@ -2034,14 +2034,109 @@ function B.FitRows(screenH)
     return math.max(2, math.min(ROWS, math.floor(room / (TILE + NAME_H + GAP))))
 end
 
--- The gallery's place and rows for this screen (again after a resize or a scale change).
+-- The game's own frames the gallery keeps off (DenBar.lua D.GAME_FRAMES, the den-test's list, plus the target
+-- frame, which comes and goes). Owner's den-features 3 Nov: "WrathUnleashedBuilderFrame/ChatFrame1": his chat is
+-- taller than the fixed place allowed for, so the gallery goes where the frames really are.
+B.KEEP_OFF = { "ChatFrame1", "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight", "MultiBarLeft",
+    "PlayerFrame", "TargetFrame", "MinimapCluster",
+    -- and the editor's own pieces beside it
+    "LeylineDenBar", "LeylineDenRail", "LeylineEditorStatus", "WrathUnleashedPropsFrame" }
+local KEEP_GAP = 8
+-- frames whose place counts while hidden (they come and go where they are)
+local KEEP_HIDDEN = { TargetFrame = true, WrathUnleashedPropsFrame = true }
+
+-- A frame's box in UIParent's units ({ l, b, r, t }), shown or not (the target frame's place counts while hidden).
+local function boxOf(f)
+    if not (f and f.GetLeft) then return nil end
+    local l, b, w, h = f:GetLeft(), f:GetBottom(), f:GetWidth(), f:GetHeight()
+    if not (l and b and w and h) or w <= 0 or h <= 0 then return nil end
+    local k = 1
+    if f.GetEffectiveScale and UIParent and UIParent.GetEffectiveScale then
+        local fe, ue = tonumber(f:GetEffectiveScale()), tonumber(UIParent:GetEffectiveScale())
+        if fe and ue and ue > 0 then k = fe / ue end
+    end
+    return { l = l * k, b = b * k, r = (l + w) * k, t = (b + h) * k }
+end
+B.BoxOf = boxOf
+
+-- The boxes of B.KEEP_OFF's frames there are now (the target frame's even while hidden; the others when shown).
+function B.KeepOffBoxes()
+    local out = {}
+    for _, n in ipairs(B.KEEP_OFF) do
+        local f = _G[n]
+        if f and (KEEP_HIDDEN[n] or (f.IsShown and f:IsShown())) then
+            local bx = boxOf(f)
+            -- soft: kept off when there's room, given up before the game's own frames are covered
+            if bx then bx.name = n; bx.soft = (n:match("^Leyline") or n:match("^WrathUnleashed") or not (f.IsShown and f:IsShown())) and true or nil; out[#out + 1] = bx end
+        end
+    end
+    return out
+end
+
+local function hits(l, b, r, t, boxes)
+    for _, g in ipairs(boxes) do
+        if math.min(r, g.r) - math.max(l, g.l) > 2 and math.min(t, g.t) - math.max(b, g.b) > 2 then return g end
+    end
+    return nil
+end
+B.Hits = hits
+
+-- Where the gallery goes (pure, for the test): the most rows (as many as B.FitRows gives, down to 2) at the first
+-- free place of: its usual
+-- place (above the chat, right of the rail), just above whatever is under it, just right of whatever is beside it,
+-- the screen's right side. `k`: the gallery's units in UIParent's. Returns x, bottom, rows (in UIParent's units for
+-- x and bottom), and false when nothing is free (then the usual place, the most rows that fit the screen).
+function B.PlaceGallery(screenW, screenH, boxes, k)
+    k = tonumber(k) or 1
+    boxes = boxes or {}
+    local w = WIN_W * k
+    local xs, bs = { LAYOUT.galleryX }, { LAYOUT.galleryBottom }
+    for _, g in ipairs(boxes) do
+        bs[#bs + 1] = g.t + KEEP_GAP
+        xs[#xs + 1] = g.r + KEEP_GAP
+    end
+    xs[#xs + 1] = screenW - w - KEEP_GAP
+    table.sort(bs)
+    local top = screenH - LAYOUT.galleryTop
+    local hard = {}
+    for _, g in ipairs(boxes) do if not g.soft then hard[#hard + 1] = g end end
+    for _, keep in ipairs({ boxes, hard }) do
+        for rows = B.FitRows(screenH), 2, -1 do
+            local h = winHeight(rows) * k
+            for _, b in ipairs(bs) do
+                if b >= LAYOUT.galleryBottom and b + h <= top then
+                    for _, x in ipairs(xs) do
+                        if x >= LAYOUT.galleryX and x + w <= screenW - KEEP_GAP and not hits(x, b, x + w, b + h, keep) then
+                            return x, b, rows, true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return LAYOUT.galleryX, LAYOUT.galleryBottom, B.FitRows(screenH), false
+end
+
+-- The gallery's place and rows for this screen (again after a resize, a scale change, or a game frame moving).
 function B.Layout()
     if not win then return end
-    B.rows = B.FitRows()
-    win:SetHeight(winHeight(B.rows))
     if not B.moved then
+        local k = 1
+        if win.GetEffectiveScale and UIParent and UIParent.GetEffectiveScale then
+            local fe, ue = tonumber(win:GetEffectiveScale()), tonumber(UIParent:GetEffectiveScale())
+            if fe and ue and ue > 0 then k = fe / ue end
+        end
+        local sw = tonumber(GetScreenWidth and GetScreenWidth()) or 1024
+        local sh = tonumber(GetScreenHeight and GetScreenHeight()) or 768
+        local x, b, rows = B.PlaceGallery(sw, sh, B.KeepOffBoxes(), k)
+        B.rows = rows
+        win:SetHeight(winHeight(B.rows))
         win:ClearAllPoints()
-        win:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", LAYOUT.galleryX, LAYOUT.galleryBottom)
+        win:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x / k, b / k)
+        B.placedAt = { x, b }
+    else
+        B.rows = B.FitRows()
+        win:SetHeight(winHeight(B.rows))
     end
     win.grid:SetHeight(B.rows * (TILE + NAME_H + GAP))
     local tabs = 0
@@ -2155,7 +2250,16 @@ local function build()
     win.spawn = chip(win, "Place", 200, function() B.Spawn() end, "BOTTOMRIGHT", -PAD, 8)
     win.spawn:SetActive(true)
 
-    win:SetScript("OnUpdate", function()
+    win:SetScript("OnUpdate", function(_, elapsed)
+        -- a game frame moved or grew under the gallery (the chat resized, the target frame came): laid out again
+        B.keepOffT = (B.keepOffT or 0) + (tonumber(elapsed) or 0)
+        if B.keepOffT > 1 and not B.moved then
+            B.keepOffT = 0
+            local me = boxOf(win)
+            local hard = {}
+            for _, g in ipairs(B.KeepOffBoxes()) do if not g.soft then hard[#hard + 1] = g end end
+            if me and hits(me.l, me.b, me.r, me.t, hard) then B.Layout() end
+        end
         if B.waiting and B.askedAt and now() - B.askedAt > ANSWER_WAIT then
             B.waiting = nil
             setStatus("The Builder isn't on this realm yet.")
@@ -2204,8 +2308,8 @@ function B.ShowMenu(show)
     B.Dock(win, editing())
     if show then
         if not win:IsShown() then B.heldOpen = true end
-        if editing() then win:ClearAllPoints(); win:SetPoint("CENTER", WorldFrame or UIParent, "CENTER", 0, 40) end
         win:Show()
+        B.Layout()
     elseif B.heldOpen then
         win:Hide()
     end

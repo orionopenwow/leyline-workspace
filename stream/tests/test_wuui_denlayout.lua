@@ -121,6 +121,48 @@ for _, scr in ipairs({ { 1920, 1080, 4 }, { 2560, 1440, 4 }, { 1280, 720, 2 } })
     check(tag .. "no step stack on the rail", #bar.steps == 0)
 end
 
+-- ---------------------------------------------------------------- a tall chat (owner's den-features 3 Nov: the gallery over
+-- ChatFrame1 after the stamps panel): the gallery goes above it or beside it, never over it, also when the chat grows
+-- while the gallery is open; a target frame shown keeps it off too
+for _, scr in ipairs({ { 1920, 1080 }, { 1280, 720 } }) do
+    local F, st, W = session(scr[1], scr[2])
+    local D, B = W.DenBar, W.Builder
+    local tag = scr[1] .. "x" .. scr[2] .. " tall chat: "
+    ChatFrame1:SetHeight(230)
+    D.TestAction("gallery")
+    B.Window():GetScript("OnUpdate")(B.Window(), 1.5)   -- open already: laid out again within a second
+    local GAL = { "WrathUnleashedBuilderFrame" }
+    local ov = overlaps(F, GAL, STOCK)
+    check(tag .. "the gallery clear of the chat", #ov == 0 and B.Window():IsShown(), table.concat(ov, ", "))
+    check(tag .. "still 2 rows or more", (B.rows or 0) >= 2, B.rows)
+    ChatFrame1:SetHeight(120)
+    B.Layout()
+    D.TestAction("rail stamps")
+    ChatFrame1:SetHeight(260)
+    B.Window():GetScript("OnUpdate")(B.Window(), 1.5)
+    ov = overlaps(F, GAL, STOCK)
+    check(tag .. "the chat grew while it was open: moved off within a second", #ov == 0, table.concat(ov, ", "))
+    local own = {}
+    for _, l in ipairs(D.Overlaps()) do if l:match("^WrathUnleashedBuilderFrame/") then own[#own + 1] = l end end
+    check(tag .. "the den-test's own check agrees", #own == 0, table.concat(own, ", "))
+    TargetFrame:Show()
+    ov = overlaps(F, { "WrathUnleashedBuilderFrame" }, { "TargetFrame", "PlayerFrame", "MinimapCluster" })
+    check(tag .. "nothing over the target frame either", #ov == 0, table.concat(ov, ", "))
+end
+-- the place itself (pure): the usual one when free; above a tall chat; beside it when above has no room
+do
+    local F, st, W = session(1920, 1080)
+    local B = W.Builder
+    local x, b, rows, ok = B.PlaceGallery(1500, 1080, {})
+    check("place: the usual one when nothing is in the way", ok and x == 80 and b == 232, x .. "," .. b)
+    local chat = { l = 32, b = 95, r = 462, t = 420 }
+    x, b, rows, ok = B.PlaceGallery(1500, 1080, { chat })
+    check("place: above or beside a tall chat", ok and not B.Hits(x, b, x + 668, b + 300, { chat }), x .. "," .. b .. "," .. rows)
+    local huge = { l = 32, b = 95, r = 462, t = 900 }
+    x, b, rows, ok = B.PlaceGallery(1500, 1080, { huge })
+    check("place: beside a chat as tall as the screen", ok and x >= 470, x .. "," .. b .. "," .. rows)
+end
+
 -- ---------------------------------------------------------------- nothing clipped (owner 3 Nov 10:35: "fix all UI windows to
 -- not be clipped and so boxy"): at 720p, 1080p and 1440p and UI scales 0.64 to 1.0, every Den window in turn (the strip,
 -- rail, gallery, selection panel, menu, Files, Snap, the invite card, the Dojo, Den home, the status pill, play mode's

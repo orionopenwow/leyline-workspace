@@ -8,7 +8,10 @@
     py -3 tools/den-check/den_check.py features                    `test`, then the Den editor's feature test (den_features,
                                                                     below): every editor action through the Leyline UI's own
                                                                     buttons, a screenshot after each (logs/den-features/);
-                                                                    then the placement aids (aids_features) and, on
+                                                                    then the Dojo's combat (dojo_features: a class and
+                                                                    spec fill the bars, a gear set, a practice run's
+                                                                    number, the boss's circle, the range), then the
+                                                                    placement aids (aids_features) and, on
                                                                     Windows, the build camera's hover calibration
                                                                     (the real cursor moved: leave the mouse alone)
     py -3 tools/den-check/den_check.py test                        the real thing, unattended: the newest Den Lite,
@@ -1282,6 +1285,129 @@ def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
         rep.add("INFO", "your Den after the feature test", "put back as it was (%s props)" % props())
 
 
+# ------------------------------------------------------------------------------------------------ the Dojo's combat
+# Owner 3 Nov: "spellbook placement loadout instant on bars, gear sets selector ... better combat and test range dojo
+# features". dojo_features drives Den Lite's sandbox (labs/den-lite sandbox.rs, combat.rs) through its own commands
+# and reads its events: a class and spec fill the spellbook and every bar, a bar loadout is kept and put back, a gear
+# set changes the look, a practice run (Den Lite casts your main bar at a dummy) ends with a number, the boss marks the
+# ground and casts, the range goes up. A picture after each. Your class, bars and look are put back after.
+
+DOJO_CLASS = ("mage", "fire", 80)
+DOJO_TIERS = ("t10", "t7", "t3", "t1")
+
+
+def event_like(den_dir, name, since, prefix=""):
+    """The first Den Lite event `name` at or after `since` whose detail starts with `prefix`."""
+    for e in events(den_dir, since):
+        if e.get("ev") == name and str(e.get("detail", "")).startswith(prefix):
+            return e
+    return None
+
+
+def dojo_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0, run_secs=15):
+    den_dir, outdir = Path(den_dir), Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    n = [0]
+
+    def shot(name):
+        n[0] += 1
+        out = outdir / ("dojo-%02d-%s.png" % (n[0], name))
+        ok, _ = shoot(out)
+        return out.name if ok else None
+
+    def ev(name, since, prefix="", secs=None):
+        return wait_for(lambda: event_like(den_dir, name, since, prefix), wait if secs is None else secs)
+
+    def cmd(line):
+        t = now_ms()
+        r = ch.send(line)
+        time.sleep(settle)
+        return t, r
+
+    if ch.send(".den size") is None:
+        rep.add("SKIP", "the Dojo's combat test", "Den Lite didn't take the test's commands")
+        return False
+    before = read_json(den_dir / "den-lite.class.json") or {}
+    kept = stash([den_dir / "den-lite.class.json", den_dir / "den-lite.gear.json", den_dir / "den-lite.gearsets.json", den_dir / "dojo-best.json"])
+    cmd(".den gearset save dojo-before")
+    try:
+        # 1. a class and spec: the spellbook and every bar at once
+        cls, spec, level = DOJO_CLASS
+        t, _ = cmd(".den class %s %s %d" % (cls, spec, level))
+        e = ev("class", t, cls)
+        bits = str((e or {}).get("detail", "")).split()
+        spells = int(bits[2]) if len(bits) > 2 and bits[2].isdigit() else 0
+        filled = int(bits[4]) if len(bits) > 4 and bits[4].isdigit() else 0
+        points = bits[5] if len(bits) > 5 else "?"
+        pic = shot("class")
+        rep.ok(e is not None and spells >= 10 and filled >= 20, "dojo: a class and spec fill the spellbook and every bar",
+               "%s %s %s: %d spells, %d buttons, %s talent points%s" % (cls, spec, level, spells, filled, points, (", " + pic) if pic else ""),
+               "No spells or bars: start Your Den from the launcher (it copies your game's spell tables), then run den-features again." if e else
+               "Den Lite didn't take .den class: send logs\\den-features-latest.txt.")
+        if points in ("0", "?"):
+            rep.add("INFO", "dojo: talents", "no talent points: the launcher copies Talent.dbc and TalentTab.dbc when Your Den starts (an older launcher doesn't)")
+        t, _ = cmd(".den spec frost")
+        e = ev("spec", t, cls)
+        rep.ok(e is not None, "dojo: another spec at once", (e or {}).get("detail", "no change"), "Den Lite didn't take .den spec: send logs\\den-features-latest.txt.")
+        shot("spec-frost")
+        # 2. a bar loadout kept and put back
+        t, _ = cmd(".den bars save dojotest")
+        saved = ev("bars", t, "save")
+        t, _ = cmd(".den bars use dojotest")
+        used = ev("bars", t, "use")
+        rep.ok(saved is not None and used is not None, "dojo: a bar loadout saved and put back", "dojotest",
+               "Den Lite didn't keep the bar: send logs\\den-features-latest.txt.")
+        cmd(".den bars delete dojotest")
+        # 3. a gear set: the look changes for everyone
+        got = None
+        for tier in DOJO_TIERS:
+            t, _ = cmd(".den gearset %s" % tier)
+            got = ev("gearset", t, tier, secs=wait / 2)
+            if got:
+                break
+        bits = str((got or {}).get("detail", "")).split()
+        slots = int(bits[2]) if len(bits) > 2 and bits[2].isdigit() else 0
+        pic = shot("gearset")
+        rep.ok(got is not None and slots >= 6, "dojo: a gear set changes the look", "%s: %d slots%s" % ((got or {}).get("detail", "none"), slots, (", " + pic) if pic else ""),
+               "No gear set: the launcher copies your game's Item.dbc and ItemSet.dbc when Your Den starts; update the launcher, then run den-features again.")
+        # 4. a practice run: a number
+        cmd(".den dojo dummies 1")
+        t, _ = cmd(".den dojo demo %d target" % run_secs)
+        time.sleep(min(run_secs / 2.0, 8))
+        pic = shot("practice-run")
+        e = ev("demo", t, "", secs=run_secs + 10)
+        bits = str((e or {}).get("detail", "")).split()
+        dps = int(bits[2]) if len(bits) > 2 and bits[2].isdigit() else 0
+        rep.ok(e is not None and dps > 0, "dojo: a timed practice run ends with a number",
+               "%s per second over %s s%s" % (dps, bits[0] if bits else "?", (", " + pic) if pic else ""),
+               "No number: the spells didn't land (send logs\\den-features-latest.txt and the picture).")
+        # 5. the boss: its circle (and its cast)
+        cmd(".den dojo boss")
+        t, _ = cmd(".den dojo demo 12 boss")
+        circle = ev("dojo", t, "boss circle", secs=14)
+        pic = shot("boss-circle")
+        cast = event_like(den_dir, "dojo", t, "boss cast")
+        rep.ok(circle is not None, "dojo: the boss marks the ground under you", "%s%s" % ("and casts at you" if cast else "no cast seen", (", " + pic) if pic else ""),
+               "The boss didn't fight: send logs\\den-features-latest.txt.")
+        # 6. the range
+        t, _ = cmd(".den dojo range")
+        e = ev("dojo", t, "range")
+        pic = shot("range")
+        rep.ok(e is not None, "dojo: the range (a dummy 40 yards out, markers)", "%s%s" % ((e or {}).get("detail", "none"), (", " + pic) if pic else ""),
+               "The range didn't go up: send logs\\den-features-latest.txt.")
+        return True
+    finally:
+        # as you were: the dummies down, your class, spec and look
+        ch.send(".den dojo clear")
+        if before.get("class"):
+            spec_before = (before.get("specs") or {}).get(before["class"], "")
+            ch.send(".den class %s %s %s" % (before["class"], spec_before, before.get("level", 80)))
+        ch.send(".den gearset dojo-before")
+        ch.send(".den gearset delete dojo-before")
+        unstash(kept)
+        rep.add("INFO", "your class and look after the Dojo test", "put back as they were")
+
+
 # ------------------------------------------------------------------------------------------------ the placement aids
 # Owner 3 Nov 10:29 - 10:36: a live preview of the prop under the mouse, the three arrows, select by hovering and
 # clicking. Den Lite labs/den-lite src/gizmo.rs, the Leyline UI's Gizmo.lua. aids_features drives them through the
@@ -2211,6 +2337,10 @@ def test(args, rep):
                 den_features(steps, FileChannel(den_dir), den_dir, lambda out: screenshot(pid, out), logs / "den-features")
             except Exception as e:  # noqa: BLE001 - the game still gets its picture and is closed
                 steps.add("FAIL", "the editor's feature test", "stopped: %s" % str(e)[:200], "Send logs\\den-test-latest.txt.")
+            try:
+                dojo_features(steps, FileChannel(den_dir), den_dir, lambda out: screenshot(pid, out), logs / "den-features")
+            except Exception as e:  # noqa: BLE001 - the game still gets its picture and is closed
+                steps.add("FAIL", "the Dojo's combat test", "stopped: %s" % str(e)[:200], "Send logs\\den-test-latest.txt.")
             try:
                 aids_features(steps, FileChannel(den_dir), den_dir, lambda out: screenshot(pid, out), logs / "den-features")
                 hover_calibration(steps, FileChannel(den_dir), den_dir, lambda out: screenshot(pid, out), logs / "den-features", win_mouse(pid))

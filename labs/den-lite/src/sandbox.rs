@@ -942,15 +942,23 @@ pub(super) fn dojo_verb(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, args: 
             send_outs(c, shared, sess.id, sess.me.guid, outs).and_then(|_| say(c, "The meters start again."))
         }
         "demo" | "practice" | "run" => {
+            // `.den dojo demo [seconds] [kind]`: at your target, else the nearest dummy (of that kind: "boss")
             let secs = a(1).parse::<u32>().unwrap_or(30).clamp(5, 300);
+            let kind = Kind::from_word(a(2)).or_else(|| Kind::from_word(a(1)));
             let us = units(shared);
             let target = {
                 let cb = shared.combat.lock().unwrap_or_else(|e| e.into_inner());
                 let sel = cb.selection;
-                if us.iter().any(|u| u.guid == sel && u.kind != Kind::Friend && u.kind != Kind::Marker) {
+                if kind.is_none() && us.iter().any(|u| u.guid == sel && u.kind != Kind::Friend && u.kind != Kind::Marker) {
                     Some(sel)
                 } else {
-                    us.iter().filter(|u| u.kind.hostile()).min_by(|x, y| combat::dist(x.at, p).total_cmp(&combat::dist(y.at, p))).map(|u| u.guid)
+                    us.iter()
+                        .filter(|u| match kind {
+                            Some(k) => u.kind == k,
+                            None => u.kind.hostile(),
+                        })
+                        .min_by(|x, y| combat::dist(x.at, p).total_cmp(&combat::dist(y.at, p)))
+                        .map(|u| u.guid)
                 }
             };
             match target {

@@ -774,6 +774,92 @@ class FakeDenEditor:
         return {"props": self.props, "said": []}
 
 
+class FakeDojo:
+    """A stand-in for Den Lite's sandbox for dojo_features: its commands write the events Den Lite writes."""
+
+    def __init__(self, dens, broken=()):
+        self.dens, self.broken = Path(dens), set(broken)
+        self.sent = []
+
+    def ev(self, name, detail):
+        with open(self.dens / "den-lite.events", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"t": den_check.now_ms(), "ev": name, "who": "", "detail": detail}) + "\n")
+
+    def send(self, cmd, wait=10.0):
+        self.sent.append(cmd)
+        w = cmd.split()
+        if cmd == ".den size":
+            return {"props": 3, "said": []}
+        if w[:2] == [".den", "class"] and len(w) >= 4:
+            n, filled = (2, 3) if "tables" in self.broken else (64, 58)
+            self.ev("class", "%s %s %d %s %d 71" % (w[2], w[-1], n, w[3], filled))
+        elif w[:2] == [".den", "spec"]:
+            self.ev("spec", "mage %s 60 58 71" % w[2])
+        elif w[:2] == [".den", "bars"] and w[2] in ("save", "use"):
+            self.ev("bars", "%s %s" % (w[2], w[3]))
+        elif w[:2] == [".den", "gearset"] and w[2].startswith("t") and "gear" not in self.broken and w[2] == "t7":
+            self.ev("gearset", "t7 7 17")
+        elif w[:3] == [".den", "dojo", "demo"] and "demo" not in self.broken:
+            if w[-1] == "boss":
+                self.ev("dojo", "boss cast")
+                self.ev("dojo", "boss circle")
+            else:
+                self.ev("demo", "%s 41250 2750" % w[3])
+        elif w[:3] == [".den", "dojo", "range"]:
+            self.ev("dojo", "range 5")
+        return {"props": 3, "said": []}
+
+
+class Dojo(unittest.TestCase):
+    """dojo_features against FakeDojo: every step PASS with a picture; no tables or a run without hits FAIL with the
+    fix; your class and look put back."""
+
+    def run_it(self, broken=()):
+        d = Path(tempfile.mkdtemp(prefix="dojo-features-"))
+        self.addCleanup(shutil.rmtree, d, True)
+        dens = d / "dens"
+        dens.mkdir()
+        (dens / "den-lite.class.json").write_text(json.dumps({"class": "rogue", "level": 70, "specs": {"rogue": "combat"}}))
+        shots = []
+
+        def shoot(out):
+            shots.append(out.name)
+            out.write_bytes(b"png")
+            return True, str(out)
+        rep = den_check.Report()
+        ch = FakeDojo(dens, broken)
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.dojo_features(rep, ch, dens, shoot, d / "shots", settle=0, wait=0.3, run_secs=0)
+        return rep, shots, ch
+
+    def test_every_step_passes_with_a_picture_and_your_class_comes_back(self):
+        rep, shots, ch = self.run_it()
+        fails = [r for r in rep.rows if r[0] == "FAIL"]
+        self.assertEqual(fails, [])
+        text = rep.text()
+        for step in ("a class and spec fill the spellbook and every bar", "another spec at once", "a bar loadout saved and put back",
+                     "a gear set changes the look", "a timed practice run ends with a number", "the boss marks the ground under you",
+                     "the range (a dummy 40 yards out, markers)"):
+            self.assertIn("PASS dojo: " + step, text)
+        self.assertIn("2750 per second", text)
+        self.assertIn("t7 7 17: 17 slots", text)
+        self.assertIn("and casts at you", text)
+        self.assertGreaterEqual(len(shots), 6)
+        self.assertTrue(all(s.startswith("dojo-") for s in shots))
+        self.assertIn(".den class rogue combat 70", ch.sent, "your class and spec back")
+        self.assertIn(".den gearset dojo-before", ch.sent)
+        self.assertEqual(ch.sent[-1], ".den gearset delete dojo-before")
+
+    def test_no_tables_or_no_hits_fail_with_the_fix(self):
+        rep, _, _ = self.run_it(broken=("tables", "demo", "gear"))
+        text = rep.text()
+        self.assertIn("FAIL dojo: a class and spec fill the spellbook and every bar", text)
+        self.assertIn("copies your game's spell tables", text)
+        self.assertIn("FAIL dojo: a timed practice run ends with a number", text)
+        self.assertIn("FAIL dojo: a gear set changes the look", text)
+        self.assertIn("ItemSet.dbc", text)
+
+
 class Features(unittest.TestCase):
     """den_features against FakeDenEditor: every feature PASS with a picture each; a broken one FAILs with its fix."""
 

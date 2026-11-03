@@ -11,7 +11,8 @@
 //!    hybrid Session's `enter`), else stopping at character select;
 //! 5. write [`REPORT`] in the data folder, close the game after `--hold` seconds, and exit 0 when it got there.
 //!
-//! This file is the contract (the arguments, the names the test tool reads); its parsing is tested here.
+//! This file is the contract (the arguments, the names the test tool reads); its parsing is tested here. main.rs sets
+//! the fresh folder, app.rs `play_test_cli` does the rest; tools/first-run/first_run.py (Control: first-run-test) runs it.
 
 use std::path::{Path, PathBuf};
 

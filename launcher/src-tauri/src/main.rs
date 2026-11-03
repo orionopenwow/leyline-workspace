@@ -12,7 +12,17 @@ fn main() {
     // `Leyline play-test --official [--hold <s>]`: PLAY on the official realm with no launcher window (the owner's
     // client-smoke step; playtest.rs)
     match leyline_lib::playtest::parse_cli(&args) {
-        Some(Ok(cli)) => std::process::exit(leyline_lib::play_test_cli(cli)),
+        Some(Ok(cli)) => {
+            // --fresh: an empty data folder for this run, before anything reads the settings (the first-run tool
+            // sets LEYLINE_APP_DIR itself, so it knows where play-test.json lands; else one under the temp folder)
+            let set = std::env::var_os(leyline_lib::settings::APP_DIR_ENV).is_some_and(|v| std::path::Path::new(&v).is_absolute());
+            if cli.fresh && !set {
+                let d = leyline_lib::playtest::fresh_dir(&std::env::temp_dir(), leyline_lib::denclick::now_ms());
+                let _ = std::fs::create_dir_all(&d);
+                std::env::set_var(leyline_lib::settings::APP_DIR_ENV, &d);
+            }
+            std::process::exit(leyline_lib::play_test_cli(cli))
+        }
         Some(Err(e)) => {
             eprintln!("{e}");
             std::process::exit(2);

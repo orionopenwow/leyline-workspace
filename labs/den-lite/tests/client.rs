@@ -1828,6 +1828,17 @@ fn the_editors_preview_gizmo_selection_and_exact_click() {
     let (frames, mode) = until_aid(&mut w, "mode");
     assert_eq!(mode, "build");
     assert_eq!(frames.iter().filter_map(single_go).find(|g| g.0 == chair), Some((chair, 10)), "a goober in build mode");
+    // under its build twin's entry, which the client asks about as a new entry: a goober with the chair's model and name
+    // (the client keeps query answers and goes by them: the chair's own answer, type 7, would win)
+    w.send(&CMSG_GAMEOBJECT_QUERY { entry_id: gizmo::twin(2413), guid: Guid::new(chair) });
+    let f = loop {
+        let f = w.frame();
+        if f.opcode == GO_QUERY_RESPONSE {
+            break f;
+        }
+    };
+    assert_eq!(&f.body[0..12], &[gizmo::twin(2413).to_le_bytes(), 10u32.to_le_bytes(), 39u32.to_le_bytes()].concat()[..]);
+    assert!(f.body[12..].starts_with(b"Wooden Chair\0"));
     assert!(frames.iter().any(|f| matches!(&f.msg, Some(ServerOpcodeMessage::SMSG_DESTROY_OBJECT(d)) if d.guid.guid() == chair)));
     // play mode: as it is again (a chair: type 7, right-click sits); then back to build mode
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tmode play");

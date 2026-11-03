@@ -423,6 +423,19 @@ _BRAND_HTML = re.compile(f"({_BRAND_SKIP}|{_BRAND_KEEP})|({_BRAND_OLD})", re.S)
 _BRAND_JSON = re.compile(f"(https?://[^\\s\"'<>]+|{_BRAND_KEEP})|({_BRAND_OLD})")
 
 
+# The site's tab icon (owner 2 Nov: "give our site the logo for the tab"): every page gets the Leyline mark, put in
+# front of its <title> unless the page names an icon itself.
+TAB_ICON = (b'<link rel="icon" type="image/png" sizes="32x32" href="/wrath/art/leyline-favicon-32.png">'
+            b'<link rel="apple-touch-icon" href="/wrath/art/leyline-favicon-180.png">')
+
+
+def with_tab_icon(body: bytes, ctype: str) -> bytes:
+    if not body or not ctype.startswith("text/html") or b'rel="icon"' in body[:8192]:
+        return body
+    i = body.find(b"<title", 0, 8192)
+    return body if i < 0 else body[:i] + TAB_ICON + body[i:]
+
+
 def brand_body(body: bytes, ctype: str) -> bytes:
     """The page as people read it with the Leyline brand on; unchanged when it is off (or not text)."""
     if not BRAND or not body:
@@ -1124,7 +1137,7 @@ ART_TYPES = {
     "leyline-shot-coa-ultrahd.webp": "image/webp",   # the front page's featured modpack (its authors' screenshot)
     # the owner's Minigolf recording for the Game modes section: a short muted loop and its poster
     "leyline-shot-minigolf.mp4": "video/mp4", "leyline-shot-minigolf.webm": "video/webm", "leyline-shot-minigolf.webp": "image/webp",
-    "leyline-mode-azeroth-survivors.webp": "image/webp",   # the mode's key art (the owner's; crest cropped out)
+    "leyline-mode-azeroth-survivors.webp": "image/webp", "leyline-mode-azeroth-survivors-play.webp": "image/webp",   # the mode's key art (the owner's; crest cropped out)
     # the front page's Forge and Agents sections: the owner's own app screenshots (Forge's map of its own island;
     # the Agents inn), game pictures, so behind the killswitch like the other leyline-shot- files
     "leyline-shot-forge.webp": "image/webp", "leyline-shot-agents.webp": "image/webp",
@@ -1146,7 +1159,7 @@ ART_TYPES = {
     # the round Leyline mark, split so the swirl turns while the crystal stays upright (SPIN_CSS, the hub)
     "leyline-swirl-256.webp": "image/webp", "leyline-crystal-256.webp": "image/webp",
     "leyline-swirl-128.png": "image/png", "leyline-crystal-128.png": "image/png",
-    "leyline-swirl-512.png": "image/png", "leyline-crystal-512.png": "image/png", "leyline-mark-512.png": "image/png",
+    "leyline-swirl-512.png": "image/png", "leyline-crystal-512.png": "image/png", "leyline-mark-512.png": "image/png", "leyline-favicon-32.png": "image/png", "leyline-favicon-180.png": "image/png",
     # the launcher's own pages for the hub's feature sections (tools/art/leyline-ui-shots.cjs: sample data, no game art)
     "leyline-ui-home.webp": "image/webp", "leyline-ui-realms.webp": "image/webp", "leyline-ui-modes.webp": "image/webp",
     "leyline-ui-workshop.webp": "image/webp", "leyline-ui-clients.webp": "image/webp", "leyline-ui-clients-close.webp": "image/webp", "leyline-ui-launcher.webp": "image/webp", "leyline-ui-hosting.webp": "image/webp",
@@ -3044,6 +3057,7 @@ class PageHandler(BaseHTTPRequestHandler):
              public: bool = False, same_origin: bool = False, connect: bool = False,
              headers: dict | None = None) -> None:
         body = brand_body(body, ctype)   # the Leyline brand switch (off: unchanged)
+        body = with_tab_icon(body, ctype)   # the Leyline mark on the browser tab (owner 2 Nov)
         body = legacy_body(body, ctype, self.headers.get("Host", ""))   # launcher documents on the old site name
         self.send_response(status)
         self.send_header("Content-Type", ctype)

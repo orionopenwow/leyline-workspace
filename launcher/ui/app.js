@@ -282,8 +282,16 @@ function realmLabel() {
   return r ? r.name : (a || "Another realm");
 }
 
+// The picked client has one home: the core's selected_client (owner 2 Nov: "hitting play doesnt go into the selected
+// client"). Whatever picks one (the play bar's list, a page's .client-pick, a realm of another version) ends here, so
+// state.settings, every .client-pick and the core all say the same client, and PLAY anywhere starts that one.
 function saveSelection() {
-  if (currentClient()) invoke("select", { client: $("play-client").value, realm: chosenRealm() }).catch(() => {});
+  const c = currentClient();
+  if (c) {
+    state.settings.selected_client = c.id;
+    document.querySelectorAll(".client-pick").forEach((sel) => { if (sel.value !== c.id) sel.value = c.id; });
+    invoke("select", { client: c.id, realm: chosenRealm() }).catch(() => {});
+  }
   if (mode !== "browser" && !isOfficial()) rememberJoined(chosenRealm());
 }
 // the community realms you played on (the realm picker's Your realms), the latest first, five at most, on this PC only
@@ -1075,7 +1083,9 @@ function clientForRealm(key, build) {
   const fits = (c) => !!c && (!build || c.build === build);
   const byId = (id) => have.find((x) => x.id === id);
   const cur = currentClient();
-  return [byId((v.realm || {})[key]), cur, byId((v.build || {})[build]), ...have].find(fits) || null;
+  // the client picked now first, when it can play there (owner 2 Nov: PLAY starts exactly the picked client); the
+  // one used there before only when the realm needs another version
+  return [cur, byId((v.realm || {})[key]), byId((v.build || {})[build]), ...have].find(fits) || null;
 }
 function useClientFor(key, build) {
   const c = clientForRealm(key, build);
@@ -1641,7 +1651,8 @@ function renderClientPickers() {
   });
 }
 function pickedClient() {
-  return state.settings.clients.find((c) => c.id === state.settings.selected_client) || state.settings.clients[0] || null;
+  const all = state.settings.clients;
+  return all.find((c) => c.id === state.settings.selected_client) || currentClient() || all[0] || null;
 }
 document.querySelectorAll(".client-pick").forEach((sel) => sel.addEventListener("change", async () => {
   state.settings.selected_client = sel.value;
@@ -1677,6 +1688,12 @@ const fitsClient = (p, c) => !c || (buildTag(c.build) !== "other" && (!p.builds.
 // The listed realm at this address, if any (its build and server).
 const realmAt = (addr) => realmsCache.find((x) => x.address === addr) || null;
 const clientFits = (r, c) => !r || !r.build || (c && c.build === r.build);
+// a plain line for a realm the picked client can't play (no silent swap): which of your folders to pick, or to add one
+function wrongClientText(r, c) {
+  const other = state.settings.clients.find((x) => clientFits(r, x));
+  return other ? `${r.name} plays with another game folder than ${c.name}: pick ${other.name} in the play bar, then PLAY.`
+    : `${r.name} plays with another game folder than ${c.name}. Add yours with Add a game folder… in the play bar.`;
+}
 const clientFor = (r) => {
   const c = pickedClient();
   if (clientFits(r, c)) return c;
@@ -2707,9 +2724,9 @@ invoke("p2p_flags").then((v) => {
 const CORE_LABELS = { azerothcore: "AzerothCore", trinitycore: "TrinityCore", cmangos: "CMaNGOS", vmangos: "vMaNGOS", mangos: "MaNGOS", other: "Other server" };
 $("rl-mine").addEventListener("change", () => renderRealms());
 async function playRealm(r, btn) {
-  const picked = needClient("rl-status");
-  if (!picked) return;
-  const c = clientFor(r) || picked;
+  const c = needClient("rl-status");
+  if (!c) return;
+  if (!clientFits(r, c)) return say("rl-status", wrongClientText(r, c), "warn");   // never another client by itself
   btn.disabled = true;
   say("rl-status", `Starting ${c.name} on ${r.name}…`);
   try {
@@ -2717,7 +2734,7 @@ async function playRealm(r, btn) {
     const j = window.LeylineGameMods ? await window.LeylineGameMods.beforeJoin(r, c, (t, k) => say("rl-status", t, k)) : { go: true, leyline: false };
     if (!j.go) { say("rl-status", ""); btn.disabled = false; return; }
     if (window.LeylineAddons && r.official && !j.leyline) await window.LeylineAddons.beforePlay(c);   // offers the Leyline addons (addons.js)
-    const msg = await invoke("play_realm", { client: picked.id, slug: r.slug });
+    const msg = await invoke("play_realm", { client: c.id, slug: r.slug });
     say("rl-status", msg + (r.official ? "" : " First time here? Make your account with Make an account."), "ok");
     await refresh();
     renderRealms();
@@ -2731,6 +2748,7 @@ async function playRealm(r, btn) {
 async function playRealmHeroKey(r, btn) {
   const picked = needClient("rl-status");
   if (!picked) return;
+  if (!clientFits(r, picked)) return say("rl-status", wrongClientText(r, picked), "warn");
   btn.disabled = true;
   say("rl-status", `Signing in to ${r.name} with your Hero Key…`);
   try {

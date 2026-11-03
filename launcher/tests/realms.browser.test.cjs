@@ -44,6 +44,7 @@ const FAKE = (p2p) => {
       case 'open_url': return null;
       case 'back_to_official': return 'Back on the official realm.';
       case 'restore_realmlist': return 'Your own realmlist is back.';
+      case 'play_realm': return `Started ${args.client}.`;
       case 'deep_link_take': { const l = window.__link || null; window.__link = null; return l; }
       default: throw 'unknown ' + cmd;
     }
@@ -120,6 +121,19 @@ test('Realms page: the official realm first, the slim line, one tag, players, Re
   await page.click('.nav[data-page="realms"]');
   await page.click('#rl-host');
   assert.ok(await page.locator('#page-host').evaluate((e) => e.classList.contains('on')));
+  assert.deepEqual(errors, []);
+});
+
+test('Realms page: PLAY starts exactly the picked client; one that cannot play the realm says so, no other client by itself', async () => {
+  const { page, errors } = await open(false);
+  const cards = page.locator('#rl-list .realm-card');
+  await cards.nth(1).locator('.acts .btn').first().click();   // Picked: a 1.12.1 realm, and only a 3.3.5a folder here
+  await page.waitForFunction(() => /another game folder/.test(document.querySelector('#rl-status').textContent));
+  assert.equal(await page.textContent('#rl-status'), 'Picked plays with another game folder than My Wrath. Add yours with Add a game folder… in the play bar.');
+  assert.ok(!(await page.evaluate(() => window.__calls.some(([c]) => c === 'play_realm'))), 'nothing started');
+  await cards.nth(2).locator('.acts .btn').first().click();   // Busy Den: 3.3.5a
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'play_realm'));
+  assert.deepEqual(await page.evaluate(() => window.__calls.filter(([c]) => c === 'play_realm').map(([, a]) => a)), [{ client: 'c335a-1', slug: 'c-bbbbbbbbbbbbbbbb' }]);
   assert.deepEqual(errors, []);
 });
 

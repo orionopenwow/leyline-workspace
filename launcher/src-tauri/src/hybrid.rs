@@ -1,5 +1,5 @@
 //! The hybrid client (docs/HYBRID-CLIENT.md): the player's own desktop game starts like the browser game. Behind
-//! Settings' `hybrid_login` switch (off by default), for 3.3.5a game folders that already have Forever UI's login
+//! Settings' `hybrid_login` switch (on by default since 2 Nov), for 3.3.5a game folders that already have Forever UI's login
 //! screens (its installer or "play\Install Forever UI.bat" put them in `Interface/GlueXML`).
 //!
 //! What it does: one patch archive, `Data/patch-Z.MPQ` (the one the game reads last; Forever UI's own installer

@@ -1,4 +1,4 @@
-"""The Leyline hub (hidden preview): one catalog of the Workshop, the community index and theme packs.
+"""The Leyline hub (the front page and the catalog, live on leylinelauncher.com): one catalog of the Workshop, the community index and theme packs.
 
 Built for the 2026-10-26 brief ("hide the full leyline front page thing but build it out for now") and the
 2026-10-29 one (an auto-populated index of open mods for every client build the launcher supports, and a way
@@ -4936,8 +4936,9 @@ REALM_LIST_MAX = 6
 POP_WORDS = ((0, "Offline", "off"), (20, "Low", "low"), (80, "Medium", "med"), (200, "High", "high"), (10 ** 9, "Full", "full"))
 # The modes' key art (the owner's, for the mode's authors): mode id -> (art file, width, height, alt). Missing: no picture.
 MODE_ART = {
-    "azeroth-survivors": ("leyline-mode-azeroth-survivors.webp", 483, 298,
-                          "Azeroth Survivors key art: the title over a band of heroes and a moonlit castle."),
+    # the card: a short loop of play (owner 2 Nov: "a small gif of gameplay for the site and launcher card")
+    "azeroth-survivors": ("leyline-mode-azeroth-survivors-play.webp", 483, 298,
+                          "Azeroth Survivors in play: a mage in the middle of a horde, spells flying."),
 }
 
 

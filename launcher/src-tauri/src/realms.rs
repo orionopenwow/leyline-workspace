@@ -192,26 +192,26 @@ pub fn core_label(tag: &str) -> &'static str {
     CORES.iter().find(|(t, _)| *t == tag).map(|(_, l)| *l).unwrap_or("Other")
 }
 
-/// The client to play `realm` with: the picked one when its build fits, else the first of the player's clients
-/// that fits. A realm whose build is not known takes the picked client. Otherwise it says what is missing:
-/// Leyline never downloads a client, so the player adds their own.
+/// The client to play `realm` with: exactly the picked one (owner 2 Nov: "hitting play doesnt go into the selected
+/// client"). When its version can't play the realm, a plain message says which of the player's folders to pick, or
+/// to add one: never another client by itself. With none picked, the first that fits. A realm whose build is not
+/// known takes the picked client. No version numbers in these words (they are the player's).
 pub fn pick_client<'a>(realm: &Realm, clients: &'a [ClientProfile], picked: Option<&str>) -> Result<&'a ClientProfile, String> {
-    let chosen = picked.and_then(|id| clients.iter().find(|c| c.id == id));
-    let Some(want) = realm.build else {
-        return chosen.or(clients.first()).ok_or_else(|| "Add your game client first (Game clients).".into());
+    let fits = |c: &ClientProfile| !realm.build.is_some_and(|b| c.build != b);
+    const ADD: &str = "Add yours with Add a game folder… in the play bar: Leyline never downloads the game.";
+    if clients.is_empty() {
+        return Err(format!("Add your game folder first. {ADD}"));
+    }
+    let Some(id) = picked else {
+        return clients.iter().find(|c| fits(c)).ok_or_else(|| format!("{} needs another game folder. {ADD}", realm.name));
     };
-    if let Some(c) = chosen.filter(|c| c.build == want) {
+    let c = clients.iter().find(|c| c.id == id).ok_or("That game folder isn't in your list any more: pick another in the play bar.")?;
+    if fits(c) {
         return Ok(c);
     }
-    clients.iter().find(|c| c.build == want).ok_or_else(|| {
-        let have: Vec<&str> = clients.iter().map(|c| c.build.version()).collect();
-        let have = if have.is_empty() { "no clients yet".to_string() } else { format!("you have {}", have.join(", ")) };
-        format!(
-            "{} needs a {} client ({have}). Add your own {} install under Game clients: Leyline never downloads a client.",
-            realm.name,
-            want.label(),
-            want.version()
-        )
+    Err(match clients.iter().find(|x| fits(x)) {
+        Some(o) => format!("{} plays with another game folder than {}: pick {} in the play bar, then PLAY.", realm.name, c.name, o.name),
+        None => format!("{} plays with another game folder than {}. {ADD}", realm.name, c.name),
     })
 }
 
@@ -687,12 +687,20 @@ mod tests {
             realmlist: String::new(), locale: None, exe_version: None, exe: None,
         };
         let clients = vec![prof("c1121-1", Build::V1121), prof("c335a-1", Build::V335a), prof("c335a-2", Build::V335a)];
-        assert_eq!(pick_client(&w, &clients, Some("c1121-1")).unwrap().id, "c335a-1", "the picked 1.12 client does not fit");
+        // owner 2 Nov: exactly the picked client; one that can't play the realm is never swapped by itself
+        let e = pick_client(&w, &clients, Some("c1121-1")).unwrap_err();
+        assert!(e.contains("another game folder than my 1.12.1") && e.contains("pick my 3.3.5a in the play bar"), "{e}");
         assert_eq!(pick_client(&w, &clients, Some("c335a-2")).unwrap().id, "c335a-2", "the picked one when it fits");
-        assert_eq!(pick_client(&r[0], &clients, Some("c335a-2")).unwrap().id, "c1121-1");
+        assert_eq!(pick_client(&w, &clients, Some("c335a-1")).unwrap().id, "c335a-1", "never the first of its version instead");
+        assert!(pick_client(&r[0], &clients, Some("c335a-2")).is_err());
+        assert_eq!(pick_client(&r[0], &clients, None).unwrap().id, "c1121-1", "none picked: the first that fits");
+        let e = pick_client(&r[1], &clients, Some("c335a-1")).unwrap_err();
+        assert!(e.contains("Add a game folder") && e.contains("never downloads"), "{e}");
         let e = pick_client(&r[1], &clients, None).unwrap_err();
-        assert!(e.contains("4.3.4 (15595)") && e.contains("you have 1.12.1, 3.3.5a, 3.3.5a") && e.contains("never downloads"), "{e}");
-        assert!(pick_client(&w, &[], None).unwrap_err().contains("no clients yet"));
+        assert!(e.contains("needs another game folder"), "{e}");
+        assert!(!e.chars().any(|c| c.is_ascii_digit()), "no version numbers in the player's words: {e}");
+        assert!(pick_client(&w, &[], None).unwrap_err().contains("Add your game folder first"));
+        assert!(pick_client(&w, &clients, Some("gone")).unwrap_err().contains("isn't in your list"));
         let unknown = Realm { build: None, ..Default::default() };
         assert_eq!(pick_client(&unknown, &clients, Some("c1121-1")).unwrap().id, "c1121-1");
     }

@@ -174,7 +174,9 @@
     f.append(lab, row, el("p", "sf-fine", "Paste the whole line from your key file. It starts with ovk1."));
     f.onsubmit = (e) => {
       e.preventDefault();
-      const v = i.value.trim();
+      // what a paste carries (spaces, line breaks, zero-width characters) goes, and OVK1. reads as ovk1. (the core
+      // looks for "ovk1." exactly; the id and the secret keep their case)
+      const v = i.value.replace(/[\s­​-‏⁠-⁤﻿]+/g, "").replace(/ovk1\./i, "ovk1.");
       if (!/ovk1\./.test(v)) { flow.note = "That doesn't look like a Hero Key. It starts with ovk1. Paste the whole line."; flow.stage = "error"; rebuild(box, big, "#sf-key"); return; }
       quickSignIn("key", () => invoke("social_key_signin", { key: v }));
     };
@@ -192,8 +194,9 @@
     f.append(l1, n, l2, row, el("p", "sf-fine", "Set a password in Manage account once you're signed in."));
     f.onsubmit = (e) => {
       e.preventDefault();
-      if (!/^[^#\s]{2,24}#\d{4}$/.test(n.value.trim()) || !p.value) { flow.note = "Type your name with its #tag, like Alice#1234, and your password."; flow.stage = "error"; rebuild(box, big, "#sf-pwname"); return; }
-      quickSignIn("password", () => invoke("social_password_signin", { name: n.value.trim(), password: p.value }));
+      const who = n.value.normalize("NFC").trim().replace(/\s*#\s*/, "#");   // "Zoë #1234" as typed is Zoë#1234
+      if (!/^[^#\s]{2,24}#\d{4}$/.test(who) || !p.value) { flow.note = "Type your name with its #tag, like Alice#1234, and your password."; flow.stage = "error"; rebuild(box, big, "#sf-pwname"); return; }
+      quickSignIn("password", () => invoke("social_password_signin", { name: who, password: p.value }));
     };
     return f;
   }

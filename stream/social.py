@@ -362,6 +362,23 @@ class Social:
         self.touch(acct, *self.friend_accts(acct))
 
     # ------------------------------------------------------------------ accounts
+    def social_use(self, acct: str) -> bool:
+        """True when the account has any friend, request, block, message or report (either side): what a closed account
+        would take with it from other players, so stream/herokeys.py's audit accounts close only without any."""
+        return bool(self.one("SELECT 1 FROM social_rel WHERE a = ? OR b = ? UNION ALL SELECT 1 FROM social_blocks WHERE a = ? OR b = ? "
+                             "UNION ALL SELECT 1 FROM social_messages WHERE lo = ? OR hi = ? "
+                             "UNION ALL SELECT 1 FROM social_reports WHERE reporter = ? OR target = ? LIMIT 1", (acct,) * 8))
+
+    def forget_account(self, acct: str) -> None:
+        """Remove an account's profile, launcher sign-ins and seen characters (stream/herokeys.py: the release audit's own
+        test account, closed at the end of its run; never one with social_use)."""
+        with self.lock:
+            for sql in ("DELETE FROM social_tokens WHERE acct = ?", "DELETE FROM social_chars WHERE acct = ?",
+                        "DELETE FROM social_accounts WHERE acct = ?"):
+                self.x(sql, (acct,))
+            self.seen.pop(acct, None)
+        _who_cache.clear()
+
     def profile(self, acct: str):
         r = self.one("SELECT acct, pid, name, tag, main, show_main, offline FROM social_accounts WHERE acct = ?", (acct,))
         if not r:
@@ -1171,6 +1188,21 @@ def cookie_user(h) -> tuple[str, str] | None:
     return user.upper(), shown_name(user.upper(), display)
 
 
+def forget_session(cookie: str) -> None:
+    """Drop the cached answer for this website session (it ran out or signed out: the next look asks the website)."""
+    sess = _session(cookie or "")
+    if sess:
+        _who_cache.pop(hashlib.sha256(sess.encode()).hexdigest(), None)
+
+
+def tidy_name(v):
+    """A typed name as the rules read it: outer spaces off, accents composed (a Mac's e + combining accent is one é)."""
+    if not isinstance(v, str):
+        return v
+    import unicodedata
+    return unicodedata.normalize("NFC", v).strip()
+
+
 def _json(h, status: int, doc: dict) -> None:
     h.send(status, json.dumps(doc, separators=(",", ":")).encode("utf-8"), "application/json; charset=utf-8")
 
@@ -1304,7 +1336,7 @@ def get(h, path: str, query: dict) -> None:
 
 
 SANCTION_ACTIVITY = {"send": "message", "request": "message", "accept": "message", "profile": "profile",
-                     "herokey": "realm", "report": "staff"}   # "staff": only a suspension stops it
+                     "herokey": "realm", "game/login": "realm", "report": "staff"}   # "staff": only a suspension stops it
 
 
 def _sanctioned(acct: str, sub: str) -> str:
@@ -1370,6 +1402,8 @@ def post(h, path: str) -> None:
         return _hk_call(h, hk, sub, "POST", acct, how, extra, doc)
     try:
         if sub == "profile":
+            if "name" in doc:
+                doc["name"] = tidy_name(doc["name"])
             prof = _profiles()
             check_name = prof.name_problem if prof is not None else name_error
             name_err = check_name(doc.get("name"), acct, via) if "name" in doc else ""

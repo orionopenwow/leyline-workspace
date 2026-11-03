@@ -51,7 +51,7 @@ ANSWERS = ROOT / "control" / "owner-answers.json"     # the owner's Done / answe
 DROP_MAX = 200 * 1024 * 1024
 AUDIT_HTML = ROOT / "logs" / "audit-latest.html"     # the release audit's report (tools/audit, docs/AUDIT.md)
 AUDIT_TXT = ROOT / "logs" / "audit-latest.txt"
-HQ_URL = "https://play.openvanilla.app/wrath/admin"   # Leyline HQ: the one place online (stream/hq.py)
+HQ_URL = "https://leylinelauncher.com/wrath/admin"   # Leyline HQ: the one place online (stream/hq.py)
 QUIET = "--quiet" in sys.argv                         # started at Windows sign-in: no browser tab
 TOKEN_FILE = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "WrathUnleashed" / "control-token"
 # The shared look (stream/www-files/art: wu-theme.css, the starfield, corners, dragons, divider, Cinzel), the same
@@ -147,6 +147,11 @@ STEPS = {
     # Azeroth Survivors at its own address (docs/SURVIVORS.md, steps 7 and "Off again"). The recording before it
     # (tools\survivors\Record Survivors files.bat) asks for your Data folder and plays in a browser window for about
     # 45 minutes, so it stays a double-click and is not a step here.
+    # owner 2 Nov "do the record": the same double-click as a step, now that tools\survivors\out\data-folder.txt names
+    # the 1.12 Data folder (no question). An Edge window plays for about 45 minutes, then asks for one pass by hand.
+    "sv-record": ("tools/survivors/Record Survivors files.bat", "Azeroth Survivors: record the game files it uses from your 1.12 folder (an Edge window, about 45 min, then one short pass by hand)", False),
+    "sv-export": ("tools/survivors/Export Survivors files.bat", "Azeroth Survivors: copy the recorded files out of your 1.12 folder (no new recording; a few minutes)", False),
+    "sv-preview": ("tools/survivors/Survivors preview.bat", "Azeroth Survivors on this PC only for 20 minutes (127.0.0.1:18093), for filming the card's GIF", False),
     "sv-site-check": ("hosting/survivors/Put Survivors on Leyline - check.bat", "Azeroth Survivors: its address and DNS, and whether the build and your recorded files are ready (read-only)", False),
     "sv-site": ("hosting/survivors/Put Survivors on Leyline.bat", "Azeroth Survivors on: upload the build and your recorded files, its own site behind the sign-in, self-check, then Play (rollback on failure)", False),
     "sv-site-off": ("hosting/survivors/Put Survivors on Leyline - off.bat", "Undo: Azeroth Survivors off (Play off, its site out; the files stay on the server)", False),
@@ -212,7 +217,9 @@ STEPS = {
     "builds-why": ("tools/github-builds/Why did the build fail.bat", "Why the last GitHub build failed (read-only)", False),
     "remove-files": ("tools/cleanup/Remove listed files.bat", "Remove the files a change took out (tools/cleanup/REMOVE.txt)", False),
     "fresh-check": ("tools/fresh-history/Fresh history - dry run.bat", "Fresh Leyline history: what it would do (read-only)", False),
-    "fresh-history": ("tools/fresh-history/Fresh history - do it.bat", "Fresh Leyline history: one commit, old history to a Desktop backup", False),
+    "fresh-leyline-check": ("tools/fresh-history/Fresh history - Leyline repo (dry run).bat", "The public Leyline repo's history as Orion: what it would do (read-only)", False),
+    "fresh-leyline": ("tools/fresh-history/Fresh history - Leyline repo.bat", "The public Leyline repo's main as one commit by Orion (releases kept; backup on the Desktop)", False),
+    "fresh-history": ("tools/fresh-history/Fresh history - do it.bat", "The workspace repo's main as one commit by Orion (releases kept; backup on the Desktop)", False),
     # ovrename / ovland (the OpenVanilla repo's rename to Leyline-Launcher, 2026-10-29) are done for good: the tool is in
     # labs/done/ov-rename/ (labs/README.md says how to run it again).
     # The game data killswitch (docs/GAME-DATA-ON-OUR-SERVER.md): only when the owner asks for it.
@@ -244,7 +251,7 @@ STEPS = {
 # Steps that change nothing in production. With "Ask before deploys" on (control/autopilot.json "confirm"),
 # Autopilot runs only these by itself; anything else waits for "Launch all".
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
-             "fresh-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
+             "fresh-check", "fresh-leyline-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
              "vr-data-check", "vr-site-check", "sv-site-check", "release-mirror-check", "bugs", "audit", "den-check", "domain-check"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}
 
@@ -269,9 +276,9 @@ def scrub(line: str) -> str:
         line = rx.sub(rep, line)
     return line
 CHECKS = [
-    ("Play page", "https://play.openvanilla.app/wrath"),
-    ("Game files", "https://wrath.openvanilla.app/data/__tier/index.json"),
-    ("Client", "https://wrath.openvanilla.app/boot-manifest.json"),
+    ("Play page", "https://leylinelauncher.com/wrath"),
+    ("Game files", "https://play.leylinelauncher.com/data/__tier/index.json"),
+    ("Client", "https://play.leylinelauncher.com/boot-manifest.json"),
 ]
 
 state = {"running": None, "lines": [], "health": {}, "health_at": 0, "auto_failed": None}

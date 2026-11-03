@@ -38,8 +38,8 @@ prerequisite: every helper runs in containers, so no Python on the host.
 * Profile world SQL (`main_unbrawl`/`main_world`/`brawl_world*`/`modern_combos`) applied once per
   profile, as `Make it Main.bat` / `deploy.sh` do. `realm-files/` is filled from `realm\` by
   `Make host kit.bat` / `make-kit.sh`.
-* Prints the invite link: `https://openvanilla.app/join/<realm-id>#<invite-secret>` (private) or
-  `https://openvanilla.app/join/<realm-id>` (public). The secret is in the fragment, so it never
+* Prints the invite link: `https://relay.leylinelauncher.com/join/<realm-id>#<invite-secret>` (private) or
+  `https://relay.leylinelauncher.com/join/<realm-id>` (public; `wunet/domains.py` `JOIN`). The secret is in the fragment, so it never
   reaches a web server log.
 * `Check my realm.bat` (H4d): the self-check in plain language. `Realm tools.bat`: friend
   accounts, new invite link, public/private, claim, signup mode, logs. `Stop my realm.bat`.

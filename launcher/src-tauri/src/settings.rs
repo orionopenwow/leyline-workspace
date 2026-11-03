@@ -11,7 +11,8 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 pub const FILE_NAME: &str = "settings.json";
-pub const SCHEMA: u32 = 1;
+/// 2 (2 Nov): `hybrid_login` on by default; a file from before has it on once (it was only ever off by default).
+pub const SCHEMA: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -49,9 +50,11 @@ pub struct Settings {
     /// After a catalog install, tell the hub "one more install" (anonymous: the mod id, the build and a fresh
     /// random id; rankings.rs). On unless the player turns it off.
     pub count_installs: bool,
-    /// The hybrid client (hybrid.rs, docs/HYBRID-CLIENT.md): Hero Key sign-in hands the one-time login to the
-    /// game's login screen through Leyline's patch archive, so the player types nothing. Off until the owner has
-    /// checked it on a real PC.
+    /// The hybrid client (hybrid.rs, docs/HYBRID-CLIENT.md): PLAY on the official realm and Hero Key sign-in hand
+    /// the login to the game's login screen through Leyline's patch archive, so the player types nothing and lands at
+    /// character select. On by default since 2 Nov (owner: "skipping to character select after realm"); it only
+    /// does anything in a folder that qualifies (hybrid::status: the changed login screens there, the slot free or
+    /// ours, the game never refused it), else the start is the plain one.
     pub hybrid_login: bool,
     /// The launcher's guide (ui/guide.js): the first-run tour ("tour") and each one-time encouragement line
     /// ("hosted", "friend", "mod") once shown. Kept here so each shows once, never again after a restart.
@@ -70,7 +73,7 @@ impl Default for Settings {
             native_ok: Vec::new(),
             update_channel: crate::update::Channel::Stable,
             count_installs: true,
-            hybrid_login: false,
+            hybrid_login: true,
             seen: Vec::new(),
         }
     }
@@ -146,6 +149,7 @@ pub fn load(dir: &Path) -> Settings {
                 if crate::addresses::is_official_realm(&s.selected_realm) {
                     s.selected_realm = crate::OFFICIAL_REALM.into();
                 }
+                migrate(&mut s);
                 s
             }
             Err(_) => {
@@ -155,6 +159,15 @@ pub fn load(dir: &Path) -> Settings {
         },
         Err(_) => Settings::default(),
     }
+}
+
+/// A file saved by an older Leyline, brought up to SCHEMA. To 2: the sign-in switch on (it was off by default and
+/// had no other way to be on before; turned off after this it stays off).
+fn migrate(s: &mut Settings) {
+    if s.schema < 2 {
+        s.hybrid_login = true;
+    }
+    s.schema = s.schema.max(SCHEMA);
 }
 
 pub fn save(dir: &Path, s: &Settings) -> io::Result<()> {
@@ -215,6 +228,22 @@ mod tests {
         let s = load(d.path());
         assert_eq!(s.selected_realm, "x.example.org");
         assert_eq!(s.wine.command, "wine");
+    }
+
+    #[test]
+    fn signing_in_by_itself_is_on_by_default_and_stays_off_once_turned_off() {
+        let d = tempfile::tempdir().unwrap();
+        assert!(Settings::default().hybrid_login);
+        // a file from before 2 Nov: the switch was off only because that was the default
+        fs::write(d.path().join(FILE_NAME), br#"{"schema":1,"hybrid_login":false,"selected_realm":"x.example.org"}"#).unwrap();
+        let s = load(d.path());
+        assert!(s.hybrid_login && s.schema == SCHEMA);
+        // turned off after that: kept off
+        let off = Settings { hybrid_login: false, ..s };
+        save(d.path(), &off).unwrap();
+        assert!(!load(d.path()).hybrid_login);
+        fs::write(d.path().join(FILE_NAME), br#"{"selected_realm":"x.example.org"}"#).unwrap();
+        assert!(load(d.path()).hybrid_login, "no switch saved: on");
     }
 
     #[test]

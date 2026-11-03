@@ -1,9 +1,11 @@
 # Den Lite (prototype)
 
-A tiny game server for the 3.3.5a client (build 12340), meant to be built into the Leyline launcher's **Your Den**:
-an instant white room to build in, with no Docker and no database. The player's own stock client connects to it on
-this PC like to any server (realmlist `127.0.0.1`). Owner's go-ahead: 1 Nov 2026. Status: **prototype, verified only
-by its own headless test client** (below); not yet tried with a real game client.
+A tiny game server for the 3.3.5a client (build 12340), built into the Leyline launcher's **Your Den**: one click
+into an instant white world to build in, with no Docker and no database. The player's own stock client connects to it
+on this PC like to any server (realmlist `127.0.0.1`). Owner's go-ahead: 1 Nov 2026. Status (2 Nov): **in use** behind
+the launcher's Play solo. CI builds it (`den-lite.yml`) into the release `den-lite-latest`, and the launcher downloads
+it on first use (`launcher/src-tauri/src/host/lite.rs`). The owner's real game logs in to it (the den-test on his PC,
+2 Nov); the fixes that real game needed (the addon list, the white ground, the key bindings) are noted below.
 
 It opens the same Den files as the full Den (`docs/DEN.md`, "The save file": format `leyline-den`, version 1) and the
 same stamps (`realm/custom/lua_scripts/den-stamps/*.den.json`), so a Den made here moves to the Docker Den later to
@@ -23,8 +25,8 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
   can't be done: SRP6 makes the server send values built from the password's verifier *before* the client proves
   anything, and both sides then derive the session key (which also keys the world server's header encryption) from
   the password. A server that doesn't know the password can't finish a login. An empty password isn't an option
-  either: the stock login screen won't log in without one. So the player types `den` (the launcher should say so
-  next to the button, or set a password of its own with `--password`).
+  either: the stock login screen won't log in without one. The player never types it: the launcher's one-click
+  sign-in (`launcher/src-tauri/src/denclick.rs`) enters the account and `den` and enters the world.
 - **The Den keeps itself**: within 2 seconds of any change (and at logout) the whole Den is written to
   `<dens>/autosave.den.json`, and Den Lite opens it when it starts, so a restart brings back the room as it was
   (nothing to undo after it). A damaged autosave is left as it is and the Den starts empty.
@@ -33,6 +35,10 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 - **The launcher's Open**: while the player is in the world, `<dens>/open.json` (`{"file": "<name>", "id": "<id>"}`,
   `host/dens.rs` `open_doc`) is checked every 2 seconds and at login; a new id opens that file, replacing the Den (a
   copy of what was there is saved as `backup`). Each id opens once, also after a restart (`<dens>/.open-done`).
+- **The game's own settings** (`src/accdata.rs`, 2 Nov): every `CMSG_REQUEST_ACCOUNT_DATA` gets an answer (empty the
+  first time, so the game uses its default keys), and what the game uploads (key bindings, macros, chat layout) is kept
+  in `<dens>/account-data/`, so the keys someone sets are there the next time. Before this the game had no key
+  bindings at all and W did nothing.
 - **Stamps** come from `--stamps` (default `den-stamps` beside the program); the six in this repo are also built in.
 - **`--client <game folder>`** (optional): `.den mods` then also lists what the launcher's mod manager put in that
   game (`<game>/Leyline/mods.json`). The launcher's `host/lite.rs` passes the game folder Your Den plays with.
@@ -50,9 +56,9 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 | `.den save <name>` | the whole Den to a file (the room is its look; the props are in it) |
 | `.den load <name> [replace\|add]` | opens a file; asks first when the Den has props; `replace` keeps a copy as `backup`, and one undo brings the old Den back |
 | `.den files` | the saved Dens |
-| `.den room white\|stone\|wood` | the room's look (`ov_den.lua` THEMES) |
+| `.den room white\|stone\|wood` | the look: `white` is the open white plane (no room pieces; the default since 1 Nov), `stone` and `wood` a room (`ov_den.lua` THEMES) |
 | `.den size [1-4]` | how big the Den is; with a number, the room rebuilt at that size (smaller only when every prop still fits) |
-| `.den grow` | the next size: the white room's floor and walls rebuilt bigger, and what counts as inside the Den follows |
+| `.den grow` | the next size: what counts as inside the Den grows (a stone or wood room is rebuilt bigger) |
 | `.den companion` (`.den jaina`) | your companion comes and follows you; again: back to your side. She is there from login by default (`--no-companion`: only when called) |
 | `.den companion stay\|follow\|come\|tips` | or say `Jaina, stay` (`wait`), `Jaina, follow`, `Jaina, come` (she walks over), `Jaina, tips` (`help`, `what next`): anywhere in the Den, never written down for the assistant |
 | `.den companion away` (`Jaina, go away`) | she goes until called again (leaving the Den or logging out only hides her: she is back when you are) |
@@ -184,7 +190,7 @@ game. Addons are client-side, so the Den is a quiet place to try them; mods with
    above); `CMSG_CREATURE_QUERY` -> `SMSG_CREATURE_QUERY_RESPONSE`; `SMSG_MONSTER_MOVE` (her walks); `SMSG_MESSAGECHAT`
    monster say (her lines); `SMSG_DESTROY_OBJECT` when she goes. All through `wow_world_messages`.
 
-### Verified, and only by the test client
+### Verified: the test client, then the real game
 
 `cargo test` runs a headless client made from the same crates: it logs in with SRP6 (and is refused with a wrong
 password), reads the realm list, does the auth session with header encryption, checks the character list (name, race,
@@ -202,8 +208,12 @@ going when you leave the Den), `.den mode minigolf` and `.den mods` (the two add
 launcher's side: `agents::den` tests that its tools use Den Lite's folder while its heartbeat is fresh (status, messages,
 `den_say` into Den Lite's `companion-out.json`, the catalog's "needs the full Den").
 
-That proves the server, the crates and the test client agree. **A real 3.3.5a client has not connected to it**: what
-it accepts, draws and does is to verify on a PC with the game. The riskiest unknowns:
+That proves the server, the crates and the test client agree. **The real game** (the owner's den-test, 1 and 2 Nov)
+then needed: the addon list read as the message crate hands it over, with none listed back when the game's key CRCs
+aren't standard (else the game never asked for its characters, or called its combat-log addon Banned); movement
+packets read by hand where the crate can't; an answer to the game's ask for its own settings (`src/accdata.rs`: no key
+bindings meant W did nothing); and the launcher's white ground (docs/DEN.md, "The white ground"). The unknowns as first
+written down, before any real game connected:
 
 1. Whether the client leaves the loading screen with this set of messages (no spells, no inventory items, no
    `SMSG_SET_PROFICIENCY` and friends), or wants something else first.
@@ -281,13 +291,10 @@ than that, the full Docker Den is the way.
 All without default features where possible. Release build (`opt-level = "s"`, thin LTO, stripped): about 1.3 MB on
 Linux x86-64. Note for Windows builds: `libz-sys` builds zlib with the C compiler (MSVC is there for Tauri anyway).
 
-## Next steps (into the launcher's Your Den button)
+## Next steps
 
-1. Build `den-lite` for Windows in the launcher's release and put it where `launcher/src-tauri/src/host/lite.rs`
-   looks (`$LEYLINE_DEN_LITE`, `<app data>/Leyline/den-lite/bin/`, beside the launcher); it already takes
-   `--dens <dir> --bind 127.0.0.1` and honours `open.json`.
-2. The launcher shows the password (`den`) on the Your Den page, or passes its own `--password` and shows that.
-3. Try it with a real client on a PC with the game (the unknowns above), and fix what it wants.
-4. Then: `.den home`, the stamp mark (stakes), and model props tested. Building from the assistant (`companion-place.json`).
-   The launcher passes `--client` since 1 Nov.
-5. Later: move to the workspace once stable; the browser client could connect too (out of scope here).
+Done since the prototype: CI builds it for Windows (`den-lite.yml`, release `den-lite-latest`), the launcher gets it
+on first use and passes `--client`, and the launcher signs in by itself (no password to show).
+
+1. `.den home`, the stamp mark (stakes), and model props tested. Building from the assistant (`companion-place.json`).
+2. Later: move to the workspace once stable; the browser client could connect too (out of scope here).

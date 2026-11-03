@@ -516,8 +516,8 @@
     claude.title = "Your own Claude builds in your Den with you: connect it once on the Agents page. Every change waits for your OK.";
     const acts = mk("div", "yd-row yd-acts");
     acts.append(play, invite, claude);
-    root.append(head, mk("p", "lede", "Just you, on this PC: no internet or sign-in needed. A white room to build in, with your companion to help. Invite friends when you like."),
-      acts, mk("p", "yd-hint yd-play-hint", where() === "lite" ? "Play solo starts your own server on this PC and opens the game at character select, with your look and addons." : where() === "docker" ? "Play solo starts it if it's stopped, then plays." : "Play solo sets it up once, then plays."), status);
+    root.append(head, mk("p", "lede", "Just you, on this PC: no internet or sign-in needed. A white world to build in, with your companion to help. Invite friends when you like."),
+      acts, mk("p", "yd-hint yd-play-hint", where() === "lite" ? "Play solo starts your own server on this PC, signs you in and takes you into your Den, with your look and addons." : where() === "docker" ? "Play solo starts it if it's stopped, then plays." : "Play solo sets it up once, then plays."), status);
     if (hint) { const hl = mk("p", "yd-hint", hint); hl.id = "yd-login-hint"; root.append(hl); }
     // on the network (Den Lite's tunnel): one line, and Stop sharing
     if (net && net.running) {

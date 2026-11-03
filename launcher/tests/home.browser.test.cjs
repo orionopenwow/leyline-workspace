@@ -287,7 +287,7 @@ test('the rows below the fold: realms, mods, modes, news and hosting, each landi
   assert.equal(await page.textContent('#hm-mods-row .hm-card .hm-line'), 'Interface');
   assert.equal(await page.locator('#hm-modes-row .hm-card').count(), 4);
   assert.equal(await page.getAttribute('#hm-modes-row .hm-card', 'data-mode'), 'azeroth-survivors', 'the mode with art first');
-  assert.equal(await page.locator('#hm-modes-row .hm-card:first-child img').getAttribute('src'), 'art/modes/azeroth-survivors.webp');
+  assert.equal(await page.locator('#hm-modes-row .hm-card:first-child img').getAttribute('src'), 'art/modes/azeroth-survivors-play.webp');
   assert.deepEqual(await names('hm-news'), ['EVERY CLIENT, EVERY SERVER', 'CHARACTER CREATE IS BACK IN COLOUR']);
   assert.equal(await page.textContent('#hm-news-row .hm-card .hm-line'), 'Finds every game client on your PC');
 

@@ -181,7 +181,7 @@
     const prof = me.profile || {};
     const args = { setup: true };
     if (!skip) {
-      const n = (draft.name || "").trim();
+      const n = (draft.name || "").normalize("NFC").trim();   // an accent typed as e + combining mark is one letter
       if (!NAME_RE.test(n)) { status("Names are 2 to 24 letters, digits, dots, dashes or underscores.", "bad"); $("ac-name").focus(); return; }
       if (n !== me.name) args.name = n;
       if (draft.avatar !== (prof.avatar || "")) args.avatar = draft.avatar;
@@ -267,6 +267,13 @@
     else if (!keyState) {
       c.append(el("p", "hint", "Checking your key…"));
       loadKey();
+    } else if (keyState.failed) {
+      c.append(el("p", "status bad", keyState.failed));
+      const again = el("button", "btn small", "Try again"); again.type = "button"; again.id = "ac-key-again";
+      again.onclick = () => { keyState = null; keyNote = ["", ""]; render(); };
+      const web = el("button", "link-s", "Open Your Hero Key on the website ›"); web.type = "button"; web.dataset.link = "herokey";
+      web.onclick = () => S().openLink("herokey");
+      const a = el("div", "ac-acts"); a.append(again, web); c.append(a);
     } else if (keyState.web_only) {
       c.append(el("p", "hint", "This launcher signed in through your browser, so your key is looked after on the website."));
       const b = el("button", "btn", "Open Your Hero Key"); b.type = "button"; b.dataset.link = "herokey";
@@ -280,7 +287,7 @@
       if (keyState.last_used) meta.append(el("span", "", " · Last used "), el("b", "", keyState.last_used));
       if (meta.childNodes.length) c.append(meta);
     }
-    if (keyState && !keyState.web_only || fresh) {
+    if (keyState && !keyState.web_only && !keyState.failed || fresh) {
       const a = el("div", "ac-acts ac-key-new");
       if (keyAsk) {
         a.append(el("p", "ac-ask", "Make a new key? Your old key stops working at once."));
@@ -346,7 +353,11 @@
     if (keyBusy) return;
     keyBusy = true;
     try { keyState = await invoke("social_call", { action: "herokey_status", args: {} }) || {}; }
-    catch (e) { keyState = { web_only: true }; if (String(e) === "signed_out") { keyBusy = false; S().refresh(); return; } }
+    catch (e) {
+      if (String(e) === "signed_out") { keyState = { web_only: true }; keyBusy = false; S().refresh(); return; }
+      // the website not answering is not "your key lives on the website": say what happened, with Try again
+      keyState = { failed: String(e) || "Couldn't check your key right now." };
+    }
     keyBusy = false;
     if (onPage()) render();
   }
@@ -356,7 +367,9 @@
     keyBusy = true; keyStatus("Making your new key…");
     try {
       const out = await invoke("social_call", { action: "herokey_new", args: {} });
-      keyShown = String(out && out.key || "");
+      const got = String(out && out.key || "");
+      if (!/^ovk1\./.test(got)) throw "Your new key didn't arrive. Open Manage account again to see it, or make another.";
+      keyShown = got;
       keyAsk = false; keyNote = ["Your new key is below. Your old key no longer works.", "ok"];
       if (keyState) keyState.saved = false;
     } catch (e) {
@@ -364,6 +377,7 @@
       const msg = String(e);
       keyNote = [msg.includes("website") ? msg : (msg === "signed_out" ? "You were signed out. Sign in again." : msg), "bad"];
       if (msg.includes("website")) keyState = Object.assign({}, keyState || {}, { web_only: true });
+      else if (msg !== "signed_out") keyState = null;   // look again: a key made a moment ago elsewhere shows up
     }
     keyBusy = false;
     render();

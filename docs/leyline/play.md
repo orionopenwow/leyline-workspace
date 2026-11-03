@@ -5,7 +5,7 @@ There are three ways to play Wrath: streamed in the browser, in the browser with
 ## Sign in
 
 1. Open [leylinelauncher.com/wrath](https://leylinelauncher.com/wrath).
-2. Sign in with your [Hero Key](hero-key.md) or Google (or Discord, when the site offers it).
+2. Sign in with your [Hero Key](hero-key.md) or Google.
 3. The site makes your game account for you. There are no separate Wrath accounts to ask for.
 
 A Hero Key saved in your browser signs you in by itself the next time. If that fails, you get the normal sign-in page.

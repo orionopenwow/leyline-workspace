@@ -231,6 +231,45 @@ class Config(unittest.TestCase):
         self.assertEqual(ctx.base("site"), "https://old.invalid")
 
 
+class HeroKey(unittest.TestCase):
+    """The Hero Key section (tools/audit/herokey.py): secrets masked, the switch, and a cleanup the site refuses is red."""
+
+    def test_mask(self):
+        import herokey
+        self.assertEqual(herokey.mask("ovk1.abcdefghij." + "x" * 43), "ovk1.ab…")
+        self.assertEqual(herokey.mask(""), "(none)")
+
+    def test_switch_off(self):
+        import herokey
+        out = io.StringIO()
+        rec = common.Recorder(out=out)
+        ctx = common.Ctx({"addresses": {}}, rec, {"site": "http://127.0.0.1:9"})
+        os.environ["LEYLINE_AUDIT_HEROKEY"] = "0"
+        try:
+            herokey.run(ctx, rec)
+        finally:
+            os.environ.pop("LEYLINE_AUDIT_HEROKEY")
+        self.assertEqual([(r.status, r.detail) for r in rec.results], [("SKIP", "LEYLINE_AUDIT_HEROKEY=0")])
+
+    def test_a_refused_cleanup_is_red_and_nothing_stays_signed_in(self):
+        import herokey
+        fk = fakes.Fakes()
+        os.environ["WU_AUDIT_CLOSE"] = "0"
+        try:
+            out = io.StringIO()
+            rec = common.Recorder(out=out)
+            fake, rewrite = fk.ctx_args()
+            herokey.run(common.Ctx({"addresses": {}}, rec, fake, rewrite), rec)
+        finally:
+            os.environ.pop("WU_AUDIT_CLOSE")
+            fk.close()
+        last = rec.results[-1]
+        self.assertEqual((last.check, last.status), ("The test account is cleaned up", "FAIL"))
+        self.assertIn("403", last.detail)
+        self.assertEqual([r.check for r in rec.results if r.status == "FAIL"], ["The test account is cleaned up"], out.getvalue())
+        self.assertIsNone(re.search(r"ovk1\.[A-Za-z0-9]{3}", out.getvalue()))
+
+
 class FakeRun(unittest.TestCase):
     """The whole audit against the fakes: green, and the audit account's password in no line or report."""
 
@@ -238,7 +277,7 @@ class FakeRun(unittest.TestCase):
         sys.path.insert(0, str(AUDIT))
         import audit
         logs = Path(tempfile.mkdtemp())
-        only = "site,downloads,server,hosting,wrath,launcher" + (",den" if os.environ.get("DEN_LITE_BIN") else "")
+        only = "site,downloads,server,hosting,wrath,herokey,launcher" + (",den" if os.environ.get("DEN_LITE_BIN") else "")
         out = io.StringIO()
         old = sys.stdout
         sys.stdout = out
@@ -257,8 +296,19 @@ class FakeRun(unittest.TestCase):
                      "PASS  Wrath Unleashed: Boost to level 80", "PASS  Wrath Unleashed: The level-1 test character is deleted again",
                      "PASS  Bug reports: In game", "PASS  Forum: Categories load", "PASS  Looks: Looks in the catalog",
                      "PASS  Downloads: Host pack", "PASS  Hosting: Wrath Unleashed on the network list",
-                     "PASS  Server: Bug manifest reachable", "PASS  Site: Every public page answers"):
+                     "PASS  Server: Bug manifest reachable", "PASS  Site: Every public page answers",
+                     "PASS  Hero Key: Get a Hero Key", "PASS  Hero Key: Status: the key while new, then saved",
+                     "PASS  Hero Key: Sign in with the key", "PASS  Hero Key: Sign in on the website's page",
+                     "PASS  Hero Key: Signed out on the website: the old cookie gets the signed-out card",
+                     "PASS  Hero Key: A new key: the old one stops working",
+                     "PASS  Hero Key: A pasted key with spaces, a line break and OVK1. still signs in",
+                     "PASS  Hero Key: Change your name", "PASS  Hero Key: A refused name gets plain words",
+                     "PASS  Hero Key: Password: set, sign in, remove", "PASS  Hero Key: Sign out: the token stops working",
+                     "PASS  Hero Key: A wrong key and a garbage body get plain refusals",
+                     "PASS  Hero Key: The test account is cleaned up"):
             self.assertIn(must, text)
+        for blob in (text, report_txt, report_html):   # a key is never more than "ovk1.ab…" in a line or the report
+            self.assertIsNone(re.search(r"ovk1\.[A-Za-z0-9]{3}", blob))
         if os.environ.get("DEN_LITE_BIN"):
             self.assertIn("PASS  Your Den: The Den is kept over a restart", text)
             self.assertIn("PASS  Your Den: Host and friend see each other", text)

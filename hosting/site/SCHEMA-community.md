@@ -3,7 +3,7 @@
 Home-hosted public realms are not files in `www/realms/`. The relay's listing serves them:
 
 ```
-GET https://relay.openvanilla.app/api/listing/realms.json      (CORS *, max-age 30)
+GET https://relay.leylinelauncher.com/api/listing/realms.json      (CORS *, max-age 30)
 { "schema": 1, "kind": "community", "updated": "2026-10-24T20:00:00Z", "realms": [ <record>, ... ] }
 ```
 
@@ -18,16 +18,16 @@ plus one block. Readers that don't know `community` can show the record as is.
 | `order` | always `1000`: below official realms; then live first, then by name. Never paid, never voted. |
 | `profile.address` / `port` | the relay's name and the realm's own relay auth port |
 | `profile.ruleset` | `main`, `brawl`, `progression`, `dalaran` (the host's profile), `casual` or `custom` |
-| `connect` | `{"kind": "web-signin", "url": "https://relay.openvanilla.app/join/<id>", "label": "Join this realm"}` (the relay serves the join page itself) |
+| `connect` | `{"kind": "web-signin", "url": "https://relay.leylinelauncher.com/join/<id>", "label": "Join this realm"}` (the relay serves the join page itself) |
 | `profile.game` | `wrath-3.3.5a` (an id, not display text) |
 | listed | public Beacons with a live tunnel to this relay only; a Beacon that switches to private leaves the list at once |
-| `status` | `{"url": "https://relay.openvanilla.app/r/<id>/status.json", "format": "openvanilla-status-1"}` |
+| `status` | `{"url": "https://relay.leylinelauncher.com/r/<id>/status.json", "format": "openvanilla-status-1"}` |
 | `media` | empty: no host-supplied images or links are shown in v1 |
 
 ```json
 "community": {
   "realmId": "k3x9q2m4p7w8r5t2",
-  "relay": "relay.openvanilla.app",
+  "relay": "relay.leylinelauncher.com",
   "signed": true,
   "claimed": false,
   "claimedBy": null,

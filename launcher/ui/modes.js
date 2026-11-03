@@ -27,6 +27,9 @@
   // banner on Home. A mode without art, or art that fails to load, simply has none (the card and Home as before).
   const ART = {
     "azeroth-survivors": { src: "art/modes/azeroth-survivors.webp", src2: "art/modes/azeroth-survivors@1.5x.webp", w: 483, h: 298,
+      // the cards show a short loop of play (owner 2 Nov: "a small gif of gameplay for the site and launcher card");
+      // Home's banner keeps the key art with its lettering
+      play: "art/modes/azeroth-survivors-play.webp", playAlt: "Azeroth Survivors in play: a mage in the middle of a horde, spells flying.",
       title: "Azeroth Survivors", alt: "Azeroth Survivors key art: the title over a band of heroes and a moonlit castle." },
   };
   const FEATURED = "azeroth-survivors";   // TODO(owner): the mode featured on Home
@@ -34,9 +37,10 @@
     const a = ART[id];
     if (!a) return null;
     const img = el("img", cls);
-    img.src = a.src;
-    if (a.src2) img.srcset = `${a.src} 1x, ${a.src2} 1.5x`;
-    img.width = a.w; img.height = a.h; img.alt = a.alt; img.decoding = "async";
+    const play = cls !== "hs-art" && a.play;   // cards: the loop of play; Home's banner: the key art
+    img.src = play || a.src;
+    if (a.src2 && !play) img.srcset = `${a.src} 1x, ${a.src2} 1.5x`;
+    img.width = a.w; img.height = a.h; img.alt = (play && a.playAlt) || a.alt; img.decoding = "async";
     return img;
   }
 

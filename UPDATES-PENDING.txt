@@ -659,3 +659,25 @@
 1283b addons Leyline addons: the box that held the keys hidden
 1285a ship Your Den: Den Lite answers the game's ask for its key bindings (W did nothing without them)
 1285b addons Leyline addons: error boxes closed in the Den, default keys if walking has none
+1286a signin Site: the Leyline mark as the tab icon
+1286b den-test Den test round 7: key bindings answered, error boxes closed, moving
+1287a relay Relay: the wider network on (mesh step 1), checked after the start
+1288a check Sweep: server check (read-only)
+1288b slice-health Sweep: streamed slice whole (read-only)
+1288c vr-data-check Sweep: finds this PC's 1.12 folder for the Survivors recording (read-only)
+1288d sv-site-check Sweep: Survivors address, DNS and readiness (read-only)
+1289a worldlog Sweep: world server Lua lines and out-of-memory victims (read-only)
+1292a worldlog Read-only: why ov_reports.lua (.bug, .wu) isn't running: its load lines
+1293a worldlog Read-only: where the world server reads its scripts from (why .bug and .wu are silent)
+1295a sv-export Survivors: copy the recorded files out of your 1.12 folder (no new recording)
+1294a worldlog Read-only: Lua errors in the world server's own log files (why .bug is silent)
+1296a sv-site-check Read-only: Survivors ready to go up (address, DNS, build, recorded files)
+1297a sv-preview Survivors on this PC for 20 minutes, to film the card GIF
+1300a ship Everything, saved as Orion: PLAY starts your pick and signs in to character select; Hero Key fixes; Den key bindings; guides; Survivors card loop
+1300b addons Leyline addons: the Den's error boxes and default keys
+1300c signin Site: auto sign-in for PLAY, Hero Key fixes and audit cleanup, guides, Survivors card loop, tab icon
+1300d server-fix Server: streamed game host 256 to 512 MB, live (no restart)
+1300e scripts Realm scripts reloaded (the bug-report script was silent)
+1300f sv-site Azeroth Survivors live at survivors.leylinelauncher.com (upload, self-check, rollback on failure)
+1300g fresh-leyline-check Read-only: the public Leyline repo's history as one commit by Orion, what it would do
+1300h fresh-check Read-only: the workspace repo's history as one commit by Orion, what it would do

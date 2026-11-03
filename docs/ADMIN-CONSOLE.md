@@ -1,13 +1,15 @@
 # Leyline HQ (the Admin Console)
 
-**Leyline HQ** is the one place to run Leyline: **https://play.openvanilla.app/wrath/admin**. Status, what needs
+**Leyline HQ** is the one place to run Leyline online: **https://leylinelauncher.com/wrath/admin**. Status, what needs
 you, what shipped, notes from Claude and to Claude, the people, the realms, the game, the content and the system,
 in plain words, on a phone too. Server-rendered by the Wrath portal (`stream/hq.py` for HQ, `stream/admin.py` for
 the console underneath, hooked into `stream/wrath_portal.py`), in the Leyline look, with a little plain script
 (the typed confirm). Only the owner and staff can open it.
 
-HQ is the main place now. The older tools stay: the GM console (`gmconsole/`, 127.0.0.1:8099 over the SSH tunnel)
-for restarts and logs, and Leyline Control on the owner's PC as the deploy runner (it has an **Open HQ** button).
+On the owner's PC the one place is **Leyline Control** (`Leyline Control.bat`, `tools/control/control.py`): **Waiting
+on you** with a button for each thing Claude needs, the update queue (`UPDATES-PENDING.txt` / `UPDATES-DONE.txt`) and
+every step; it has an **Open HQ** button. The GM console (`gmconsole/`, 127.0.0.1:8099 over the SSH tunnel) stays for
+restarts and logs.
 
 ## Home: ten seconds
 

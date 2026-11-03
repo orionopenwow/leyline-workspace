@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
-# Server fix (overnight 2 Nov, owner OK for fixes): the two streamed-file folders no longer writable by everyone,
-# and a read-only look at why the in-game .bug command didn't answer the release audit. No restart, no secrets.
+# Server fix (owner OK for fixes; restarts fine with no players). 2 Nov sweep: the streamed-game host (wu-play,
+# wenilla-host) was killed once in 24 h by its own 256 MB cap; it gets 512 MB, live (docker update, no restart).
+# stream-up.sh and slice-serve.sh now start it with 512 MB too. No secrets printed.
 set -uo pipefail
-cd /srv/wrath || { echo "no /srv/wrath"; exit 1; }
-echo "== 1. folder rights"
-for d in /srv/wrath/stream /srv/wrath/stream/slices; do
-  [ -d "$d" ] && chmod go-w "$d" && echo "  $d: $(stat -c %a "$d")"
-done
-echo "== 2. .bug (read only)"
-echo "  ov_reports.lua on the server: $(ls -l custom/lua_scripts/ov_reports.lua 2>/dev/null | awk '{print $5" bytes "$6" "$7" "$8}')"
-for k in AC_ALLOW_PLAYER_COMMANDS OV_REPORTS AC_ELUNA_ENABLED AC_ALE_ENABLED; do
-  echo "  $k=$(docker exec ov-ac-worldserver printenv "$k" 2>/dev/null || echo '(not set)')"
-done
-grep -E '^(AC_ALLOW_PLAYER_COMMANDS|OV_REPORTS)=' profiles/main.env .env 2>/dev/null | sed 's/^/  file: /'
-echo "  world server log, script lines (last 24 h):"
-docker logs --since 24h ov-ac-worldserver 2>&1 | grep -iE 'ov_reports|lua.*error|eluna|ale\b|reload' | tail -n 25 | sed 's/^/    /'
+echo "== 1. wu-play memory"
+if docker inspect wu-play >/dev/null 2>&1; then
+  before=$(docker inspect -f '{{.HostConfig.Memory}}' wu-play)
+  docker update --memory 512m --memory-swap 1g wu-play >/dev/null && echo "  wu-play: $((before / 1048576)) MB -> $(( $(docker inspect -f '{{.HostConfig.Memory}}' wu-play) / 1048576 )) MB (no restart)"
+  echo "  in use: $(docker stats --no-stream --format '{{.MemUsage}}' wu-play 2>/dev/null)"
+else
+  echo "  no wu-play container here"
+fi
+echo "== 2. memory now"
+free -m | sed 's/^/  /'
 echo "SERVER FIX DONE"

@@ -1,7 +1,9 @@
 # The Leyline mesh: a realm list and relays that don't depend on us
 
-**Status (2026-10-29):** the core is built and tested. Everything is **off** behind flags. Our servers stay up as
-seed nodes; the network must keep working without them.
+**Status (2026-11-02):** the core is built and tested. Step 1 is **on**: our relay runs as a mesh node
+(`RELAY_MESH=1`, turned on 2 Nov; "The order" below). The site flags `mesh_realms`, `relay_volunteer` and `mesh_relays`
+are still **off**, so launchers read today's listing and use only our relays. Our servers stay up as seed nodes; the
+network must keep working without them.
 
 ## The goal
 
@@ -28,7 +30,7 @@ packages that passed the checker, theme packs and the Host pack. Never game data
 ## 1. Who is in the network
 
 ```
-                 seed relays (ours: relay.openvanilla.app, ...)          bootstrap list, pinned keys
+                 seed relays (ours: relay.leylinelauncher.com, ...)      bootstrap list, pinned keys
                         |  gossip (push + pull)  |
           community relays (RELAY_VOLUNTEER=1)  ---  other mesh nodes         full nodes: hold every record
                         |                        |
@@ -57,8 +59,10 @@ Each node finds peers in this order:
    * launchers: `<app data>/cache/mesh-peers.json`;
 2. relay records it has already verified (any node with `"mesh": true` and an `http` base);
 3. the **bootstrap list**:
-   * relays: `RELAY_MESH_BOOTSTRAP`, by default `https://relay.openvanilla.app`;
-   * launchers: `mesh::SEEDS`, hard-coded in the release.
+   * relays: `RELAY_MESH_BOOTSTRAP`, by default `https://relay.leylinelauncher.com` (`relay-up.sh` sets it to the
+     relay's own public name);
+   * launchers: `mesh::SEEDS`, hard-coded in the release: the relay on both its names, `relay.leylinelauncher.com`
+     and the old `relay.openvanilla.app` (which answers forever).
 
 A launcher asks two cached peers first (a different pair each minute), then the seeds. It stops after three
 sources have answered.
@@ -444,15 +448,19 @@ snapshots a second network-wide. Spread over the full nodes, that is:
 
 **Server side:**
 
-* `RELAY_MESH=1` on our relay (`hosting/relay/deploy/relay.env`). Optionally set `RELAY_NODE_KEY`; the default is
-  `node.key` next to the state file.
+* `RELAY_MESH=1` on our relay (`hosting/relay/deploy/relay.env`; on since 2 Nov, written by `relay-up.sh`). Optionally
+  set `RELAY_NODE_KEY`; the default is `node.key` next to the state file.
 * The site flags are in `stream/leyline_net.py KNOWN`, written by the admin console.
 * The launcher overrides are in Settings > Advanced.
 
 **The order:**
 
-1. **`RELAY_MESH=1` on relay.openvanilla.app.** Check that `/api/mesh/node` answers, and that
-   `/api/mesh/realms.json` lists the same realms as `/api/listing/realms.json`.
+1. **`RELAY_MESH=1` on relay.leylinelauncher.com. Done: turned on 2 Nov (owner: "yes add the bigger network").**
+   The `relay` step (`hosting/relay/deploy/relay-up.sh`) now writes `RELAY_MESH=1` and
+   `RELAY_MESH_BOOTSTRAP=https://<the relay's public name>` into `relay.env`, checks after the start that
+   `/api/mesh/node` answers (and shows the mesh and listing counts), and rolls back if it doesn't.
+   `WU_RELAY_MESH=0` turns it off again on the next run. To check by hand: `/api/mesh/realms.json` lists the same
+   realms as `/api/listing/realms.json`. Launchers still read today's listing until step 2.
 2. **`mesh_realms` on the site.** Launchers then read the list from the mesh. Any failure falls back to today's
    listings, so this is low risk.
 3. **Host pack release, then `relay_volunteer` on the site.** That offers "Help the network". Players still use

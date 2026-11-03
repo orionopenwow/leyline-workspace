@@ -227,6 +227,13 @@ class Profiles:
             return {"acct": acct, "bio": "", "avatar": "", "setup": False, "ver": 1, "updated": 0}
         return {"acct": acct, "bio": r[0], "avatar": LEGACY.get(r[1], r[1]), "setup": bool(r[2]), "ver": r[3], "updated": r[4]}
 
+    def forget(self, acct: str) -> None:
+        """Remove an account's profile and its history: only the release audit's own test account, closed at the end of
+        its run (stream/herokeys.py close_audit_account); every player's history is kept."""
+        with self.lock:
+            self.db.execute("DELETE FROM profiles WHERE acct = ?", (acct,))
+            self.db.execute("DELETE FROM profile_history WHERE acct = ?", (acct,))
+
     def _hist(self, acct: str, field: str, old: str, new: str, by: str) -> None:
         self.db.execute("INSERT INTO profile_history (at, acct, field, old, new, by) VALUES (?,?,?,?,?,?)",
                         (self.now(), acct, field, old, new, by[:80]))

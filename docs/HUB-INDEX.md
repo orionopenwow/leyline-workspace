@@ -4,9 +4,17 @@ The hub is one catalog of everything modding-related for the game's classic clie
 launcher installs), a credited **link-out index** of open community projects, and launcher theme packs. It covers
 every client build the launcher supports: **1.12.1, 2.4.3, 3.3.5a, 4.3.4 and 5.4.8**, each entry tagged by build.
 
-It is **hidden** for now (the owner, 2026-10-26: "hide the full leyline front page thing but build it out for
-now"): served at `/wrath/leyline-preview`, `noindex` in a meta tag and an `X-Robots-Tag` header, linked from no
-other page. One switch makes it the front door later (below).
+It started **hidden** (the owner, 2026-10-26: "hide the full leyline front page thing but build it out for now"):
+served at `/wrath/leyline-preview`, `noindex`, linked from no other page. Since 2026-10-30 it is the site's front page
+(owner: "make this our main one"): `WU_HUB_FRONT=1` (on with the Leyline brand) serves it at `/wrath/leyline` and frames
+the site's other pages in the hub's side menu, and the `front-page` step (`tools/front-page/front-page.sh`) sends the
+site's `/` there (`leylinelauncher.com/`).
+
+The front page as it is (`stream/hub.py`, 2 Nov): dark everywhere, on phones too; the hero, the realm list, then the
+feature sections `FRONT_FEATURES`: the launcher, **Looks** (a big full-width picture with the looks under it), **Host
+your own server** ("Yes, you can host your own server", one click from your own PC) and game modes. Mods is not a
+front-page section any more (owner 1 Nov 19:49); it keeps its own page and menu item. The Leyline mark is the browser
+tab icon on every page (and the phone home-screen icon).
 
 | Piece | Where |
 | --- | --- |

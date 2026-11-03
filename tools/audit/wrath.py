@@ -182,8 +182,16 @@ async def level_one(ctx, rec, s: p.Session, c):
     at = s.mark()
     await s.say(".bug")
     line = await s.wait_line(lambda c: ".bug" in c["text"] and c["type"] in (p.CHAT_SYSTEM, -1), 6, at)
+    why = (line or {}).get("text", "no answer within 6 s")[:90]
+    if not line:
+        # 2 Nov: .bug never answered while .boost (another script) did. One more command of the same script
+        # (ov_reports.lua's .wu) says whether the whole script is silent or only .bug
+        at = s.mark()
+        await s.say(".wu")
+        wu = await s.wait_line(lambda c: "Commands:" in c["text"] and c["type"] in (p.CHAT_SYSTEM, -1), 6, at)
+        why += "; .wu from the same script: " + ("answers (only .bug is silent)" if wu else "silent too (the script isn't running)")
     rec.add("Bug reports", "In game: the realm's .bug command answers (nothing filed)", PASS if line else FAIL,
-            (line or {}).get("text", "no answer within 6 s")[:90], "Run the scripts step (ov_reports.lua), then tell Claude.")
+            why, "Run the scripts step (ov_reports.lua), then tell Claude.")
 
     why = await logout_hard(s)
     rec.add(F, "Log out", PASS if not why else FAIL, why or "back at character select", ACT)

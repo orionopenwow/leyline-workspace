@@ -35,7 +35,7 @@ echo "  wu-portal up, STREAM_SLICES=$NAME"
 
 log "3/3 Slice host (wu-play)"
 docker rm -f wu-play >/dev/null 2>&1 || true
-docker run -d --name wu-play --restart unless-stopped --memory 256m --cpus 1.5 \
+docker run -d --name wu-play --restart unless-stopped --memory 512m --cpus 1.5 \
   --network "$NET" --read-only --cap-drop ALL --security-opt no-new-privileges --user 65534:65534 \
   -v "$ST/www:/www:ro" -v "$D/$NAME:/slice:ro" -v "$ST/bin/wenilla-host:/usr/local/bin/wenilla-host:ro" \
   debian:bookworm-slim /usr/local/bin/wenilla-host --www /www --patch /slice --only-listed \

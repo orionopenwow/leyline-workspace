@@ -37,13 +37,14 @@ Our own realm is Wrath Unleashed, the official realm, which gets our client addi
 | Goldshire Inn guest pass (no sign-up) | Built, off by default | [Play](play.md#guest-pass) |
 | Realm claims with a Hero Key (listing and website) | Built | [Hero Key](hero-key.md) |
 | Hero Key sign-in on community realms | Built, off until the owner turns it on | [Hero Key](hero-key.md) |
-| Relays sharing one realm list (the Leyline mesh) | Built, off until the owner turns it on | [Other servers](cross-server.md) |
+| Relays sharing one realm list (the Leyline mesh) | Our relay keeps the shared list since 2 Nov; launchers read it once the owner turns that on | [Other servers](cross-server.md) |
 | Leyline Launcher (desktop app): clients, mods, realms, hosting | Live: released for download | [Launcher](launcher.md) |
+| Your Den: one click into your own white world on your PC, with Build, Shape ground, Play, Save and Invite | Live in the launcher | [Getting started](getting-started.md#your-den) |
 | `wu-mod test` on a local test realm | Planned | [Mod format](mods.md#what-is-planned) |
 | Signed mod packages | Planned | [Mod format](mods.md#what-is-planned) |
 | Hopping between realms from the in-game list | Planned | [Hosting](hosting.md#the-realm-list) |
 | Friends across realms | Planned | [Working together](unite.md) |
-| Peer-to-peer realm list and mod sharing | Planned | [Launcher](launcher.md) |
+| Peer-to-peer realm list and mod sharing | Built, off until the owner turns it on | [Launcher](launcher.md) |
 
 ## Where to go next
 
@@ -54,4 +55,4 @@ Our own realm is Wrath Unleashed, the official realm, which gets our client addi
 - Running another server: [Other servers](cross-server.md) and [Working together](unite.md).
 - Accounts and sign-in: [Hero Key](hero-key.md).
 
-The source is at [github.com/orionopenwow/WrathUnleashed](https://github.com/orionopenwow/WrathUnleashed). The network parts are copied to [github.com/orionopenwow/Leyline](https://github.com/orionopenwow/Leyline).
+The source is at [github.com/orionopenwow/leyline-workspace](https://github.com/orionopenwow/leyline-workspace). The network parts are copied to [github.com/orionopenwow/Leyline](https://github.com/orionopenwow/Leyline).

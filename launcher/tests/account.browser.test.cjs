@@ -54,6 +54,7 @@ const FAKE = (o) => {
           if ('setup' in a) prof.setup = a.setup;
           return { ok: true, me: { pid: 'aaaaaaaaaa', name, tag: '4821', main: '', show_main: false, offline: false, profile: { ...prof } } };
         }
+        if (args.action === 'herokey_status' && opts.keyDown && !window.__keyTried) { window.__keyTried = true; throw "The website's sign-in isn't answering right now. Try again shortly."; }
         if (args.action === 'herokey_status') return opts.webOnly ? { web_only: true, has_key: null, has_password: false }
           : { web_only: false, has_key: true, key: '', saved: true, made: '31 Oct 2026', last_used: '31 Oct 2026, Leyline', has_password: !!window.__pw };
         if (args.action === 'herokey_new') { if (opts.webOnly) throw 'Make a new key on the website: open Your Hero Key there.'; return { ok: true, key: 'ovk1.NewNew1234.' + 'n'.repeat(43) }; }
@@ -376,6 +377,48 @@ test('Manage account: a launcher signed in through the browser makes its new key
   await page.waitForSelector('#ac-key button[data-link="herokey"]');
   await page.click('#ac-key button[data-link="herokey"]');
   assert.ok(await called(page, 'open_link', 'a.name === "herokey"'));
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Hero Key paste: OVK1., spaces, a line break and a zero-width space inside are cleaned before the core sees it', async () => {
+  const { page, errors } = await open();
+  await page.click('#hf-signin');
+  await page.click('#hf-code .sf-way[data-via="herokey"]');
+  await page.waitForSelector('#sf-key');
+  await page.fill('#sf-key', '  OVK1.AbCdEf​1234.' + 'k'.repeat(20) + '\n' + 'k'.repeat(23) + ' ');
+  await page.click('#sf-keyform button[type=submit]');
+  await page.waitForSelector('#hf-me-btn');
+  assert.ok(await called(page, 'social_key_signin', 'a.key === "ovk1.AbCdEf1234." + "k".repeat(43)'));
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('name and password: a space before the #tag is fine', async () => {
+  const { page, errors } = await open();
+  await page.click('#hf-signin');
+  await page.click('#hf-code .sf-pwlink');
+  await page.fill('#sf-pwname', ' Alice #4821 ');
+  await page.fill('#sf-pw', 'correct horse battery');
+  await page.click('#sf-pwform button[type=submit]');
+  await page.waitForSelector('#hf-me-btn');
+  assert.ok(await called(page, 'social_password_signin', 'a.name === "Alice#4821"'));
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Manage account: the website not answering says so, with Try again (not "your key is on the website")', async () => {
+  const { page, errors } = await open({ signed: true, keyDown: true });
+  await page.waitForSelector('#hf-me-btn');
+  await page.evaluate(() => window.LeylineNav.show('account'));
+  await page.waitForSelector('#ac-key-again');
+  const t = await page.textContent('#ac-key');
+  assert.match(t, /isn't answering/);
+  assert.doesNotMatch(t, /signed in through your browser/);
+  assert.equal(await page.locator('#ac-key-new').count(), 0, 'no Make a new key while the key is out of sight');
+  await page.click('#ac-key-again');
+  await page.waitForSelector('#ac-key .ac-key-meta');
+  assert.match(await page.textContent('#ac-key'), /Your key is saved/);
   assert.deepEqual(errors, []);
   await page.close();
 });

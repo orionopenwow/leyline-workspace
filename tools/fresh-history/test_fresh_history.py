@@ -77,15 +77,28 @@ class FreshTests(unittest.TestCase):
         self.assertEqual(self.g("-C", self.origin, "rev-list", "--count", "main"), "1")      # one commit
         self.assertEqual(self.g("-C", self.origin, "rev-parse", "main^{tree}"), tree)        # same files
         self.assertEqual(self.g("-C", self.origin, "log", "-1", "--format=%s %an", "main"), "Leyline Orion")
-        self.assertEqual(self.g("-C", self.origin, "for-each-ref", "--format=%(refname)"), "refs/heads/main")
+        # 2 Nov: tags (the releases) and other branches stay by default
+        self.assertEqual(self.g("-C", self.origin, "for-each-ref", "--format=%(refname)"),
+                         "refs/heads/hub-index/daily\nrefs/heads/main\nrefs/tags/v1")
         self.assertEqual(self.g("-C", self.pc, "rev-parse", "HEAD"), new)                    # folder follows
         self.assertEqual(self.g("-C", self.pc, "status", "--porcelain"), "")
-        self.assertEqual(self.g("-C", self.pc, "tag", "-l"), "")
-        bundle = os.path.join(self.backups, "Leyline-history-backup-20261030-010000.bundle")
+        bundle = os.path.join(self.backups, "leyline-workspace-history-backup-20261030-010000.bundle")
         heads = self.g("-C", self.pc, "bundle", "list-heads", bundle)
         self.assertIn(self.old, heads)                                                        # backup has all
         self.assertIn("refs/tags/v1", heads)
         self.assertIn("#7", "\n".join(self.lines))                                           # open PRs named
+
+    def test_drop_refs_deletes_the_others(self):
+        self.assertEqual(F.fresh(self.pc, go=True, confirm_file=self._confirm(self.old), backup_dir=self.backups,
+                                 runner=self.runner, out=self.lines.append, now=lambda fmt: "20261030-010000",
+                                 keep_refs=False), 0, self.lines)
+        self.assertEqual(self.g("-C", self.origin, "for-each-ref", "--format=%(refname)"), "refs/heads/main")
+        self.assertEqual(self.g("-C", self.pc, "tag", "-l"), "")
+
+    def _confirm(self, text):
+        with open(self.confirm, "w") as f:
+            f.write(text)
+        return self.confirm
 
     def test_stops_if_someone_pushed(self):
         with self.assertRaises(F.Stop):

@@ -26,6 +26,11 @@ The JSON, under /wrath/api/social (stream/social.py's sign-in: the launcher's to
     POST herokey/new                a new key (the old one stops working): {key}
     POST herokey/saved              the player saved it (downloaded, copied): the service stops showing it
     POST password {password} | {remove: true}   an optional password for signing in to the launcher
+    POST game/login                 (the launcher's token only) the player's own game login on Wrath Unleashed, for one
+                                    start of their desktop game: {user, pass}. The launcher hands it to the game's login
+                                    screen (launcher/src-tauri/src/hybrid.rs) and keeps nothing (owner 2 Nov: "skip to
+                                    character select"). The same login the /wrath page shows and /__env.js gives.
+    POST audit/close                (the launcher's token only) the release audit closes its own test account; see below
 The name itself is POST profile {name} (stream/profiles.py set_name: the blocklist, at most 3 changes a day).
 
 The launcher and the service: a launcher has no website cookie, so a launcher that signed in here (a new account, a key)
@@ -36,13 +41,24 @@ launcher out ends a session it owns. A launcher without one (or whose browser si
 Passwords: optional, at least 10 characters, kept as scrypt hashes (profiles' folder, herokeys.sqlite3). They sign in
 to the launcher; the website's own sign-in stays the Hero Key and Google (the service has no password form for players).
 
-Settings: WU_HEROKEYS=0 (off). Standard library only.
+Pasted keys: spaces, line breaks and invisible characters are dropped, the "ovk1." prefix may be any case, and the key
+is found inside a longer line (the text file's "Key: ..."). The service only ever gets "ovk1.<id>.<secret>".
+
+The release audit's test account (tools/audit/herokey.py, docs/AUDIT.md): account/new {audit: true} marks the new
+account as the audit's (only at birth: no existing account can be marked), and POST audit/close with that account's
+own launcher token, within AUDIT_CLOSE_SECS of its birth, removes what Leyline keeps for it (its profile and history,
+launcher sign-ins, kept sessions, password) and signs that launcher's website session out. It refuses an account with
+any friend, request, block, message or report, so closing never takes anything away from another player. The service's
+own guest account (and its last key) stays: the service has no way to remove one.
+
+Settings: WU_HEROKEYS=0 (off), WU_AUDIT_CLOSE=0 (no audit/close). Standard library only.
 """
 from __future__ import annotations
 
 import hashlib
 import hmac
 import html
+import http.client
 import json
 import logging
 import os
@@ -67,10 +83,15 @@ START = PAGE + "/start"
 SIGNIN = PAGE + "/signin"
 FORM_MAX = 2048
 KEY_RE = re.compile(r"ovk1\.[A-Za-z0-9]{10}\.[A-Za-z0-9_-]{43}")
+PASTED_RE = re.compile(r"(?i:ovk1)\.[A-Za-z0-9]{10}\.[A-Za-z0-9_-]{43}")
+# what a paste can carry around or inside a key: spaces and line breaks, zero-width spaces and joiners, BOM, soft hyphen
+PASTE_JUNK = re.compile(r"[\s\u00ad\u200b-\u200f\u2060-\u2064\ufeff]+")
 KEEP_COOKIES = ("wr_session", "wr_guest", "wr_herokey_play")   # the service's cookies we pass on (never wr_herokey)
 PASS_MIN, PASS_MAX = 10, 128
 NEW_KEYS_PER_HOUR = 5
 NEW_ACCOUNTS_PER_HOUR = 3        # per network
+SAME_KEY_SECS = 10               # a second "new key" this soon after one (a double click, two windows) gets that same key
+AUDIT_CLOSE_SECS = 86400         # how long the audit's test account can close itself
 SIGNINS_PER_15MIN = 10           # per network, and per account for passwords
 FILE_NAME = "Leyline Hero Key.txt"
 
@@ -217,8 +238,8 @@ def realm(method: str, path: str, cookie: str, ip: str, ua: str, form: dict | No
         except Exception:   # noqa: BLE001
             body = ""
         return e.code, body, (e.headers.get_all("Set-Cookie") if e.headers else None) or []
-    except (urllib.error.URLError, OSError, ValueError):
-        return 0, "", []
+    except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException):
+        return 0, "", []   # not answering, timed out, cut off half way or answered something that isn't HTTP
 
 
 class Down(Exception):
@@ -279,6 +300,12 @@ def mark_saved(cookie: str, csrf: str, ip: str, ua: str) -> list[str]:
     st, _, sc = realm("POST", "/account/key/saved", cookie, ip, ua, {"_csrf": csrf}, script=True)
     if st == 0 or st >= 500:
         raise Down(f"saved {st}")
+    # 2 Nov audit: "saved" answered 200 here while the service still showed the key: a refusal (a stale form token,
+    # a moved form) was taken for success. Only a 2xx or a redirect back to the key page counts now.
+    if st in (401, 403):
+        raise Refused(401, "Your website sign-in ran out. Sign in again.")
+    if not (200 <= st < 400):
+        raise Down(f"saved {st}")
     return sc
 
 
@@ -321,6 +348,20 @@ def game_account(cookie: str, ip: str, ua: str) -> str:
     return user.upper()
 
 
+def game_login(cookie: str, ip: str, ua: str) -> tuple[str, str]:
+    """(account, password) of the signed-in player's game account, as the service's /api/play has them. Refused
+    "web_only" when that website session ended; Down when the service doesn't answer."""
+    getter = P("portal_get")
+    st, play = getter("/api/play", cookie, ip, ua) if getter else (0, {})
+    if st in (401, 403) or 300 <= st < 400:
+        raise Refused(409, "web_only")
+    user = str(play.get("user", "")) if isinstance(play, dict) else ""
+    pw = str(play.get("pass", "")) if isinstance(play, dict) else ""
+    if st != 200 or not re.fullmatch(r"[A-Za-z0-9]{1,16}", user) or not re.fullmatch(r"[\x21-\x7e]{1,16}", pw):
+        raise Down(f"api/play {st}")
+    return user.upper(), pw
+
+
 def realm_logout(cookie: str, ip: str, ua: str) -> None:
     realm("POST", "/logout", cookie, ip, ua, {})
 
@@ -332,6 +373,7 @@ CREATE TABLE IF NOT EXISTS hk_links (hash TEXT PRIMARY KEY, acct TEXT NOT NULL, 
 CREATE TABLE IF NOT EXISTS hk_passwords (acct TEXT PRIMARY KEY, hash TEXT NOT NULL, set_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS hk_events (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, acct TEXT NOT NULL,
   what TEXT NOT NULL, via TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS hk_audit (acct TEXT PRIMARY KEY, created INTEGER NOT NULL);
 """
 
 
@@ -449,6 +491,17 @@ class Store:
         else:
             self.x("INSERT OR REPLACE INTO hk_passwords (acct, hash, set_at) VALUES (?,?,?)", (acct, hash_password(pw), int(time.time())))
 
+    def mark_audit(self, acct: str) -> None:
+        self.x("INSERT OR REPLACE INTO hk_audit (acct, created) VALUES (?,?)", (acct, int(time.time())))
+
+    def audit_born(self, acct: str) -> int | None:
+        r = self.q("SELECT created FROM hk_audit WHERE acct = ?", (acct,))
+        return r[0][0] if r else None
+
+    def forget_account(self, acct: str) -> None:
+        for t in ("hk_links", "hk_passwords", "hk_events", "hk_audit"):
+            self.x(f"DELETE FROM {t} WHERE acct = ?", (acct,))
+
     def password_ok(self, acct: str, pw: str) -> bool:
         r = self.q("SELECT hash FROM hk_passwords WHERE acct = ?", (acct,))
         if not r:
@@ -497,7 +550,8 @@ def password_problem(pw, name: str = "") -> str:
 # ------------------------------------------------------------------ the JSON (from stream/social.py)
 NO_AUTH = ("account/new", "herokey/signin", "password/signin")
 WITH_AUTH_GET = ("herokey",)
-WITH_AUTH_POST = ("herokey/new", "herokey/saved", "password")
+WITH_AUTH_POST = ("herokey/new", "herokey/saved", "password", "game/login", "audit/close")
+GAME_LOGINS_PER_HOUR = 30        # per account: one per PLAY
 
 
 def handles(sub: str, method: str, authed: bool) -> bool:
@@ -536,6 +590,43 @@ def _set_made_name(acct: str) -> None:
         log.warning("herokeys: couldn't give a new account its name")
 
 
+def audit_close_on() -> bool:
+    return os.environ.get("WU_AUDIT_CLOSE", "1") != "0"
+
+
+def close_audit_account(acct: str, token: str, ip: str, ua: str) -> tuple[int, str]:
+    """The release audit's own test account closes itself (see the module's words): (status, text)."""
+    soc = _soc()
+    born = store.audit_born(acct) if store is not None else None
+    if not audit_close_on() or soc is None or born is None:
+        return 403, "Only the release audit's own test account can be closed this way."
+    if time.time() - born > AUDIT_CLOSE_SECS:
+        return 403, "That test account is too old to close itself."
+    if soc.social_use(acct):
+        return 409, "That account has friends, messages or reports, so it stays."
+    launcher_signed_out(token, acct, ip, ua)   # this launcher's own website session ends
+    store.forget_account(acct)
+    prof = P("profiles")
+    if prof is not None and getattr(prof, "store", None) is not None and hasattr(prof.store, "forget"):
+        prof.store.forget(acct)
+    soc.forget_account(acct)   # its launcher sign-ins (this token too) and its profile
+    log.info("herokeys: the release audit closed its test account")
+    return 200, "Closed."
+
+
+_new_locks: dict[str, threading.Lock] = {}
+_new_locks_guard = threading.Lock()
+_last_new: dict[str, float] = {}
+
+
+def _new_lock(acct: str) -> threading.Lock:
+    with _new_locks_guard:
+        if len(_new_locks) > 5000:
+            _new_locks.clear()
+            _last_new.clear()
+        return _new_locks.setdefault(acct, threading.Lock())
+
+
 def new_account(ip: str, ua: str) -> dict:
     """{cookies (Set-Cookie for the browser), cookie (the jar as a header), acct, key}. Raises Refused or Down."""
     b = _ratelimit().bucket(ip)
@@ -551,32 +642,53 @@ def new_account(ip: str, ua: str) -> dict:
         key, sc2 = mint(cookie_header(jar), info["csrf"], ip, ua)
         sc = sc + sc2
         jar = merge(jar, sc2)
+    if not KEY_RE.fullmatch(key or ""):   # an account nobody could ever sign in to again: say so, don't hand it out
+        raise Down("new account: no key")
     _set_made_name(acct)
     if store is not None:
         store.note(acct, "account.new")
     return {"cookies": passed_on(sc + (info.get("set_cookies") or [])), "cookie": cookie_header(jar), "acct": acct, "key": key}
 
 
+def find_key(pasted) -> str:
+    """The key in what a player pasted ("" when there is none): spaces, line breaks and invisible characters dropped,
+    "OVK1." or "Ovk1." read as "ovk1." (the id and the secret keep their case: they are case-sensitive)."""
+    if not isinstance(pasted, str):
+        return ""
+    m = PASTED_RE.search(PASTE_JUNK.sub("", pasted[:2000])[:400])
+    return "ovk1." + m.group(0)[5:] if m else ""
+
+
 def key_signin(key, ip: str, ua: str) -> dict:
     """{cookies, cookie, acct} for a pasted key. Raises Refused or Down. The key itself goes no further than the service."""
-    m = KEY_RE.search(re.sub(r"\s+", "", str(key or ""))[:400])
-    if not m:
+    found = find_key(key)
+    if not found:
         raise Refused(400, "That doesn't look like a Hero Key. It starts with ovk1. Paste the whole line.")
     if not _hit("ksi|" + _ratelimit().bucket(ip), SIGNINS_PER_15MIN, 900):
         raise Refused(429, "Too many tries. Wait 15 minutes and try again.")
-    sc = sign_in_with_key(m.group(0), ip, ua)
+    sc = sign_in_with_key(found, ip, ua)
     jar = merge({}, sc)
     acct = game_account(cookie_header(jar), ip, ua)
     return {"cookies": passed_on(sc), "cookie": cookie_header(jar), "acct": acct}
 
 
 def _find_by_name(text) -> str | None:
+    """The account for "Name#1234" (spaces around the # are fine, accents composed as the name rules keep them), or for
+    a bare name that only one account has."""
     soc = _soc()
-    m = re.fullmatch(r"\s*([^#\s]{2,24})#(\d{4})\s*", str(text or ""))
-    if soc is None or not m:
+    if soc is None or not isinstance(text, str):
         return None
-    r = soc.one("SELECT acct FROM social_accounts WHERE name_lc = ? AND tag = ?", (m.group(1).lower(), m.group(2)))
-    return r[0] if r else None
+    import unicodedata
+    t = unicodedata.normalize("NFC", text)[:64]
+    m = re.fullmatch(r"\s*([^#\s]{2,24})\s*#\s*(\d{4})\s*", t)
+    if m:
+        r = soc.one("SELECT acct FROM social_accounts WHERE name_lc = ? AND tag = ?", (m.group(1).lower(), m.group(2)))
+        return r[0] if r else None
+    m = re.fullmatch(r"\s*([^#\s]{2,24})\s*", t)
+    if not m:
+        return None
+    r = soc.q("SELECT acct FROM social_accounts WHERE name_lc = ? LIMIT 2", (m.group(1).lower(),))
+    return r[0][0] if len(r) == 1 else None
 
 
 def _jar_for(how: str, extra: str, acct: str, h) -> tuple[str, bool]:
@@ -587,6 +699,16 @@ def _jar_for(how: str, extra: str, acct: str, h) -> tuple[str, bool]:
     if not got:
         raise Refused(409, "web_only")
     return got[0], True
+
+
+def _ran_out(how: str, extra: str, kept: bool) -> Refused:
+    """The website session behind this call is gone. A launcher's kept one is forgotten and the launcher is told to use
+    the website (409 web_only): never a 401, which the launcher reads as "your sign-in is revoked" and signs out."""
+    if kept and store is not None:
+        store.forget(extra)
+    if how == "token":
+        return Refused(409, "web_only")
+    return Refused(401, "Your website sign-in ran out. Reload the page and sign in again.")
 
 
 def _keep(how: str, extra: str, acct: str, jar: str, sc: list[str], own: bool = True) -> None:
@@ -603,6 +725,8 @@ def api(h, sub: str, method: str, acct: str | None, how: str, extra: str, doc: d
             tok = _issue(out["acct"], "new account")
             if store is not None:
                 store.link(tok, out["acct"], out["cookie"], True)
+                if (doc or {}).get("audit") is True and audit_close_on():
+                    store.mark_audit(out["acct"])
             return send(200, {"ok": True, "token": tok, "key": out["key"], "me": _me(out["acct"])}, [])
         if sub == "herokey/signin":
             out = key_signin((doc or {}).get("key"), ip, ua)
@@ -634,8 +758,12 @@ def api(h, sub: str, method: str, acct: str | None, how: str, extra: str, doc: d
             if not info["signed_in"]:
                 if kept and store is not None:
                     store.forget(extra)
+                if how == "token":
                     return send(200, dict(base, web_only=True, has_key=None, key="", saved=False, made="", last_used=""), [])
-                return send(401, {"error": "Sign in first."}, [])
+                forget = getattr(P("social"), "forget_session", None)
+                if forget:
+                    forget(h.headers.get("Cookie", ""))
+                return send(401, {"error": "Your website sign-in ran out. Reload the page and sign in again."}, [])
             _keep(how, extra, acct, jar, info["set_cookies"])
             return send(200, dict(base, web_only=False, has_key=info["has_key"], key=info["key"], saved=info["saved"],
                                   made=info["made"], last_used=info["last_used"], hero_id=info["hero_id"]),
@@ -643,25 +771,68 @@ def api(h, sub: str, method: str, acct: str | None, how: str, extra: str, doc: d
         if sub == "herokey/new":
             if not _hit("hknew|" + acct, NEW_KEYS_PER_HOUR, 3600):
                 return send(429, {"error": "You've made a few keys this hour. Wait a while and try again."}, [])
-            jar, kept = _jar_for(how, extra, acct, h)
-            info = key_info(jar, ip, ua)
-            if not info["signed_in"] or not info.get("csrf"):
-                raise Refused(409 if kept else 401, "web_only" if kept else "Sign in first.")
-            key, sc = mint(cookie_header(merge(cookie_dict(jar), info["set_cookies"])), info["csrf"], ip, ua)
+            with _new_lock(acct):   # one new key at a time per account (a double click, the page and the launcher at once)
+                jar, kept = _jar_for(how, extra, acct, h)   # read under the lock: a launcher's kept session as the last call left it
+                info = key_info(jar, ip, ua)
+                if not info["signed_in"] or not info.get("csrf"):
+                    raise _ran_out(how, extra, kept)
+                just = time.monotonic() - _last_new.get(acct, -1e9) < SAME_KEY_SECS
+                if just and info["key"]:
+                    key, sc = info["key"], []   # one was made a moment ago and isn't saved yet: that one, not another
+                elif just:   # made a moment ago from another tab or device, and this one can't see it: don't revoke it
+                    raise Refused(409, "A new key was made a few seconds ago. Reload to see it, or wait a moment to make another.")
+                else:
+                    try:
+                        key, sc = mint(cookie_header(merge(cookie_dict(jar), info["set_cookies"])), info["csrf"], ip, ua)
+                    except Refused as e:
+                        if e.status == 401:
+                            raise _ran_out(how, extra, kept)
+                        raise
+                    _last_new[acct] = time.monotonic()
+                    if store is not None:
+                        store.note(acct, "key.new", "launcher" if how == "token" else "web")
             _keep(how, extra, acct, jar, info["set_cookies"] + sc, own=kept)
-            if store is not None:
-                store.note(acct, "key.new", "launcher" if how == "token" else "web")
             return send(200, {"ok": True, "key": key}, passed_on(info["set_cookies"] + sc) if how == "cookie" else [])
         if sub == "herokey/saved":
             jar, kept = _jar_for(how, extra, acct, h)
             info = key_info(jar, ip, ua)
             if not info["signed_in"]:
-                raise Refused(401, "Sign in first.")
+                raise _ran_out(how, extra, kept)
             sc = mark_saved(cookie_header(merge(cookie_dict(jar), info["set_cookies"])), info.get("csrf", ""), ip, ua)
+            after = key_info(cookie_header(merge(cookie_dict(jar), info["set_cookies"] + sc)), ip, ua)
+            if after.get("signed_in") and after.get("key"):   # the service still shows it: say so, don't pretend
+                logging.warning("herokeys: the service still shows the key after saved (form token %s)",
+                                "present" if info.get("csrf") else "missing")
+                return send(502, {"error": "The website didn't take that. Reload and press Saved again."}, [])
             _keep(how, extra, acct, jar, info["set_cookies"] + sc, own=kept)
             if store is not None:
                 store.note(acct, "key.saved", "launcher" if how == "token" else "web")
             return send(200, {"ok": True}, passed_on(sc) if how == "cookie" else [])
+        if sub == "game/login":   # the launcher's PLAY on Wrath Unleashed: signs in by itself (owner 2 Nov)
+            if how != "token":   # the website shows it on its own page; this call is the launcher's only
+                return send(404, {"error": "Unknown call."}, [])
+            if not _hit("glogin|" + acct, GAME_LOGINS_PER_HOUR, 3600):
+                return send(429, {"error": "Too many starts this hour. Type your password at the login screen."}, [])
+            again = {"error": "Sign in again on Home to play without typing your password.", "web_only": True}
+            try:
+                jar, kept = _jar_for(how, extra, acct, h)
+                user, pw = game_login(jar, ip, ua)
+            except Refused:
+                if store is not None and store.session(extra, acct):
+                    store.forget(extra)   # that website session ended: the launcher signs in again
+                return send(409, again, [])
+            if user != acct:
+                return send(409, again, [])
+            ensure = P("ensure_account")
+            if ensure is not None:
+                try:
+                    ensure(user, pw)   # the account is on the realm with this password (as /wrath/play does)
+                except Exception:   # noqa: BLE001: SoapError and friends
+                    log.warning("herokeys: game/login: the realm didn't answer")
+                    return send(503, {"error": "The realm isn't answering right now. Try again shortly."}, [])
+            if store is not None:
+                store.note(acct, "game.login", "launcher")
+            return send(200, {"ok": True, "user": user, "pass": pw}, [])
         if sub == "password":
             if store is None:
                 return send(404, {"error": "Passwords are off here."}, [])
@@ -678,6 +849,11 @@ def api(h, sub: str, method: str, acct: str | None, how: str, extra: str, doc: d
             store.set_password(acct, pw)
             store.note(acct, "password.set", how)
             return send(200, {"ok": True, "has_password": True}, [])
+        if sub == "audit/close":
+            if how != "token":
+                return send(404, {"error": "Unknown call."}, [])
+            st, text = close_audit_account(acct, extra, ip, ua)
+            return send(st, {"ok": True} if st == 200 else {"error": text}, [])
     except Refused as e:
         if e.text == "web_only":
             return send(409, {"error": "Make a new key on the website: open Your Hero Key there.", "web_only": True}, [])
@@ -685,7 +861,17 @@ def api(h, sub: str, method: str, acct: str | None, how: str, extra: str, doc: d
     except Down:
         log.warning("herokeys: the sign-in service didn't answer (%s)", sub)
         return send(503, {"error": "The website's sign-in isn't answering right now. Try again shortly."}, [])
+    except Exception as e:   # noqa: BLE001: a plain answer, never a 500 page (only the kind and the place are logged)
+        _oops(sub, e)
+        return send(503, {"error": "Something went wrong on our side. Try again shortly."}, [])
     send(404, {"error": "Unknown call."}, [])
+
+
+def _oops(where: str, e: BaseException) -> None:
+    import traceback
+    tb = traceback.extract_tb(e.__traceback__)
+    at = f"{os.path.basename(tb[-1].filename)}:{tb[-1].lineno}" if tb else "?"
+    log.error("herokeys: %s failed (%s at %s)", where, type(e).__name__, at)
 
 
 def launcher_signed_out(token: str, acct: str, ip: str, ua: str) -> None:
@@ -862,6 +1048,11 @@ def _anon_token(h) -> str:
     return cookie_dict(h.headers.get("Cookie", "")).get("ly_hk", "")
 
 
+DOWN_CARD = ('<section class="hk-card"><h1>Your Hero Key</h1><p>The website\'s sign-in isn\'t answering right now. '
+             'Try again shortly.</p></section>')
+STALE_SESSION = "wr_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax"
+
+
 def page(h, query: dict, note: str = "", ok: str = "", status: int = 200, cookies: list[str] | None = None) -> None:
     e = html.escape
     mod = P("social")
@@ -869,8 +1060,22 @@ def page(h, query: dict, note: str = "", ok: str = "", status: int = 200, cookie
     try:
         who = mod.cookie_user(h) if (mod is not None and "wr_session=" in cookie) else None
     except OSError:
-        return _shell(h, '<section class="hk-card"><h1>Your Hero Key</h1><p>The website\'s sign-in isn\'t answering right now. '
-                         'Try again shortly.</p></section>', 503)
+        return _shell(h, DOWN_CARD, 503)
+    info = None
+    if who:
+        try:
+            info = key_info(cookie, h.ip(), h.headers.get("User-Agent", ""))
+        except Down:
+            return _shell(h, DOWN_CARD, 503)
+        if not info["signed_in"]:   # the session ran out after the 60 s name cache said yes: signed out, not a redirect loop
+            forget = getattr(mod, "forget_session", None)
+            if forget:
+                forget(cookie)
+            who = None
+    if not who and "wr_session=" in cookie:   # a stale website cookie: cleared, and said plainly
+        cookies = list(cookies or []) + [STALE_SESSION]
+        if not note and not ok:
+            ok = "Your sign-in ran out. Sign in again with your Hero Key."
     msg = (f'<p class="hk-msg err" role="alert">{e(note)}</p>' if note else "") + (f'<p class="hk-msg" role="status">{e(ok)}</p>' if ok else "")
     if not who:
         anon = _anon_token(h)
@@ -897,13 +1102,6 @@ def page(h, query: dict, note: str = "", ok: str = "", status: int = 200, cookie
     soc = _soc()
     p = soc.ensure(acct, shown) if soc is not None else {"name": shown, "tag": ""}
     full = f'{p["name"]}#{p["tag"]}' if p.get("tag") else p["name"]
-    try:
-        info = key_info(cookie, h.ip(), h.headers.get("User-Agent", ""))
-    except Down:
-        return _shell(h, '<section class="hk-card"><h1>Your Hero Key</h1><p>The website\'s sign-in isn\'t answering right now. '
-                         'Try again shortly.</p></section>', 503)
-    if not info["signed_in"]:
-        return _go(h, PAGE)
     relay = passed_on(info["set_cookies"]) + list(cookies or [])
     sess = cookie_dict(cookie).get("wr_session", "")
     csrf = mod.csrf_for(sess) if mod is not None and getattr(mod, "store", None) is not None else ""
@@ -1011,3 +1209,6 @@ def post(h, path: str) -> None:
         return page(h, {}, e.text, status=e.status if e.status in (400, 401, 403, 429) else 400)
     except Down:
         return page(h, {}, "The website's sign-in isn't answering right now. Try again shortly.", status=503)
+    except Exception as e:   # noqa: BLE001: plain words, never a 500 page
+        _oops(path, e)
+        return page(h, {}, "Something went wrong on our side. Try again shortly.", status=503)

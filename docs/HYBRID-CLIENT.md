@@ -8,9 +8,10 @@ Goal: when Leyline starts the player's own stock desktop client (build 12340), i
 play.leylinelauncher.com: no intro movie, no login typing, straight to character select (or into the world), our
 loading screens, Forever UI as the interface, and the same "hop to another realm" flow.
 
-Status (2026-11-01, branch `agent/hybrid-client`): research done; a first prototype is built and tested on Linux
-(the MPQ writer, the glue sign-in hook, launcher wiring behind a switch that is off). **Nothing here has run on a
-real Windows PC yet.** The one test that decides most of the design is T1 below.
+Status (2026-11-02): merged into the launcher. The switch is Settings › "Sign in by itself: PLAY on Wrath Unleashed", on by
+default since 2 Nov (it only acts on a folder whose login screens are Forever UI's). PLAY on Wrath Unleashed uses it to
+sign in and land at character select (see "PLAY on Wrath Unleashed" below); Your Den and a friend's Den invite use it
+too. Still open: the T1 test on a stock Windows game (does it take the changed login screens).
 
 Words: this document is for the owner and contributors. Nothing a player sees (glue text, launcher text) carries a
 game brand name or a version number; the glue's tip lines are the browser's own list (`stream/www-files/wu-loading.js`).
@@ -31,6 +32,26 @@ signed in (and even then the Den's handoff stopped at character select). Now (`l
   `Data\<locale>\patch-<locale>-Z.MPQ` (whichever folder wins). The handoff is taken out when the game closes.
 - **Testing on the owner's PC:** Control `den-check` (read-only) and `den-test` (unattended: `Leyline.exe den-play
   --test`, a screenshot, logs in `tools\den-check\logs`), `den-test-invite` (a test friend joins too).
+
+## PLAY on Wrath Unleashed (2 Nov)
+
+Owner: "goes to the loginscreen instead of skipping to character select after realm". PLAY on the official realm
+(the play bar, or Play on its Realms card) now signs in the way Your Den does:
+
+- Signed in on Home, the launcher asks the website for the player's own game login (`POST
+  /wrath/api/social/game/login`, the launcher's token only; `stream/herokeys.py`). It is the login the website already
+  owns for the player (`WR000123`) and shows on its Play page; the browser game gets the same one from `/__env.js`.
+  It is not in the UI's `social::ACTIONS`, so the page never sees it.
+- `app.rs play_official`: the account name into `WTF/Config.wtf`, then the login into `patch-Z.MPQ` for this one
+  start with `enter: false` (character select), scrubbed when the game closes, as for every hybrid start.
+- `hybrid_login` is on by default now (settings schema 2 turns it on once for files saved before). It only acts in a
+  folder that qualifies (`hybrid::status`: Forever UI's login screens there, the slot free or ours, never refused);
+  elsewhere the start is the plain one with the account name filled in, and the line says to type the password.
+- Needs the portal deploy of `stream/herokeys.py` and `stream/social.py`; until then the launcher says the website
+  can't do it yet and starts the game as before.
+- Not done: a stock folder (no Forever UI) still stops at the login screen with the name filled in. The Den's key
+  driver (`denclick.rs`) could type the password there on Windows, but it follows Den Lite's milestone log, which the
+  official realm doesn't write.
 
 ## Verdicts
 
@@ -234,7 +255,7 @@ the names the client itself writes into `WTF/Config.wtf`. Also used: `accountNam
 To check on the PC (T5): that a brand-new folder with no `Config.wtf` doesn't override these on its first hardware
 check (`hwDetect`), and that the window covers the taskbar.
 
-## Prototype: what is on the branch
+## What was built (first on the branch `agent/hybrid-client`, now in the launcher)
 
 - `launcher/src-tauri/src/mpq.rs`, `hybrid.rs`, `glue/LeylineHybrid.{xml,lua}`, `glue/LeylineMark.tga` (our mark),
   `glue/test_hybrid_glue.lua`.

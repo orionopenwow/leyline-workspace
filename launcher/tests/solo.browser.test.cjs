@@ -217,7 +217,7 @@ test('the Docker Den on this PC, Solo leveling asked for: one realm per PC, so i
   await ctx.close();
 });
 
-test('the game client part: one row, the version the realm needs, picked by itself when you hop; per realm and per version remembered', async () => {
+test('the game client part: one row, the version the realm needs; the picked client stays, another only for another version', async () => {
   const { page, ctx, errors } = await open({ clients: [WRATH, VANILLA, WRATH2] });
   const pick = (name) => page.evaluate((n) => pickRealm(realmsCache.find((r) => r.name === n)), name);   // as the Realms page or a link does
   await page.click('#pb-realm-btn');
@@ -235,18 +235,25 @@ test('the game client part: one row, the version the realm needs, picked by itse
   // back to the official realm: the 3.3.5a one used there
   await page.click('#pb-rmenu >> text=Wrath Unleashed');
   assert.equal(await page.inputValue('#play-client'), 'c335a-1');
-  // Busy Den with the second 3.3.5a folder, picked from the client row's list; remembered for Busy Den only
+  // Busy Den with the second 3.3.5a folder, picked from the client row's list. The picked client stays picked on
+  // every realm it can play (owner 2 Nov: "hitting play doesnt go into the sewlected client"): the one remembered for
+  // a realm comes back only when the realm needs another version.
   await pick('Busy Den');
   await page.click('#pb-realm-btn');
   await page.click('#pb-rmenu .pb-client-opt');
   await page.click('#pb-menu .pb-mine >> text=Wrath copy');
   assert.equal(await page.inputValue('#play-client'), 'c335a-2');
+  assert.equal(await page.evaluate(() => state.settings.selected_client), 'c335a-2', 'one picked client: the core and every page');
+  assert.equal((await callsOf(page, 'select')).pop().client, 'c335a-2', 'saved in the core');
   await page.click('#pb-realm-btn');
   await page.click('#pb-rmenu >> text=Wrath Unleashed');
-  assert.equal(await page.inputValue('#play-client'), 'c335a-1', 'the official realm keeps its own');
+  assert.equal(await page.inputValue('#play-client'), 'c335a-2', 'the picked client, not the one used there before');
+  await page.click('#pb-realm-btn');
+  await page.click('#pb-rmenu >> text=Vanilla Remastered');
+  assert.equal(await page.inputValue('#play-client'), 'c1121-1', 'another version: its own client');
   await page.click('#pb-realm-btn');
   await page.click('#pb-rmenu >> text=Busy Den');
-  assert.equal(await page.inputValue('#play-client'), 'c335a-2', 'Busy Den keeps its own');
+  assert.equal(await page.inputValue('#play-client'), 'c335a-2', 'back to a 3.3.5a realm: the 3.3.5a client picked last there');
   // a 2.4.3 realm with no 2.4.3 folder: one plain line and Add a game folder…; the bar says the same
   await pick('Outland Rest');
   assert.deepEqual(await bar(page), ['THIS REALM NEEDS ANOTHER GAME FOLDER', 'Add the game folder for this realm']);

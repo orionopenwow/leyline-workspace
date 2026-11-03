@@ -24,9 +24,12 @@ deploys); local play is in `play\`.
 
 | Part | Where |
 |---|---|
-| Leyline launcher (Tauri 2: clients, mods, realms, hosting, themes) | `launcher/` |
+| Leyline launcher (Tauri 2: clients, mods, realms, Your Den, hosting, themes) | `launcher/` |
+| Den Lite, the built-in Den server behind Your Den (one click into a white world on the player's PC) | `labs/den-lite/` |
+| Forge, the Den's ground editor (from Noggit Red, GPL-3.0; the launcher gets it on the first Shape ground) | `forge/` |
 | P2P/relay network and one-click hosting: host kit, relay, Discord bridge, mesh, the Hangout as a Beacon | `hosting/` |
-| Website, portal and hub: sign-in, hub and Workshop, `/wrath/host`, realm list, social, docs | `stream/*.py`, `stream/www-files/` |
+| Website, portal and hub at leylinelauncher.com: sign-in, hub and Workshop, `/wrath/host`, realm list, social, docs | `stream/*.py`, `stream/www-files/` |
+| Azeroth Survivors at its own address (survivors.leylinelauncher.com) | `stream/survivors.py`, `hosting/survivors/`, `tools/survivors/` |
 | Browser game layer and our client patches for the Hangout | `stream/www-files/`, `stream/fui-web/`, `client/`, `play/` |
 | The Wrath Unleashed realm (AzerothCore 3.3.5a, custom modules and Lua) | `realm/` |
 | Mods and addons | `mods/`, `addons/` |
@@ -35,8 +38,11 @@ deploys); local play is in `play\`.
 
 ## Day to day
 
-- **Updates:** `Leyline Control.bat` (the control window, with Autopilot) or `UPDATE.bat` runs what Claude
-  queued in `UPDATES-PENDING.txt`. The steps are listed in `tools/control/control.py` (`STEPS`).
+- **Leyline Control** (`Leyline Control.bat`, `tools/control/control.py`): the one place for the owner. **Waiting on
+  you** lists each thing Claude needs, with its own buttons (Do it, Open, Add files, an answer box, Done). **Ready to
+  launch** is the update queue: the steps in `UPDATES-PENDING.txt` not yet in `UPDATES-DONE.txt`, run in order with
+  live output; Autopilot runs new ones by itself while the window is open. `UPDATE.bat` runs the same queue without
+  the window. Every step is in `STEPS` in `control.py`.
 - **Save to GitHub:** double-click `Ship to GitHub.bat` (the `ship` step). No questions: it brings in GitHub's
   main, checks for secrets and game data, commits as "Leyline update <date> <time>" and pushes to main; it
   closes by itself when done and stays open on a problem. In Autopilot every ship also refreshes the public

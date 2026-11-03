@@ -111,6 +111,44 @@ pub fn sign_in(app_dir: &Path, realm: &str) -> Result<Login, String> {
     Ok(Login { realm: t.realm, user: t.user, pass: t.pass, valid_s, auto: false, auto_why: String::new() })
 }
 
+/// The player's own login on the official realm (Wrath Unleashed), for one start of their desktop game (owner 2 Nov:
+/// "goes to the loginscreen instead of skipping to character select"). The website already owns one game account per
+/// player (`WR000123`, its password kept by the site's sign-in service, the same login the browser game gets) and
+/// hands it to this launcher's own token only (`POST /wrath/api/social/game/login`, stream/herokeys.py). It goes
+/// straight into the hybrid archive (crate::hybrid, scrubbed when the game closes) and is never written anywhere
+/// else, logged or shown. Its Debug never prints the password.
+#[derive(Clone, PartialEq)]
+pub struct GameLogin {
+    pub user: String,
+    pub pass: String,
+}
+
+impl std::fmt::Debug for GameLogin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GameLogin").field("user", &self.user).field("pass", &"<hidden>").finish()
+    }
+}
+
+/// Check the site's answer: `{ok, user, pass}`, an account name of 1 to 16 letters and digits, a password the game
+/// can take (printable, at most 16).
+pub fn parse_game_login(v: &Value) -> Result<GameLogin, String> {
+    let s = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    let (user, pass) = (s("user").to_ascii_uppercase(), s("pass"));
+    let user_ok = (1..=16).contains(&user.len()) && user.bytes().all(|b| b.is_ascii_alphanumeric());
+    if v.get("ok").and_then(Value::as_bool) != Some(true) || !user_ok || !pass_ok(&pass) {
+        return Err("The server's answer didn't look right.".into());
+    }
+    Ok(GameLogin { user, pass })
+}
+
+/// The official realm's login for the player signed in on Home ("signed_out" when the launcher isn't; the site's
+/// own words otherwise). Not one of the UI's actions (social::ACTIONS): the page never sees the password.
+pub fn official_login(app_dir: &Path) -> Result<GameLogin, String> {
+    let v = crate::social::post_as_player(app_dir, &format!("{}/game/login", crate::social::base()), &serde_json::json!({}))
+        .map_err(|e| if e.contains("Unknown call") || e.contains("are off here") { "the website can't do that yet".to_string() } else { e })?;
+    parse_game_login(&v)
+}
+
 /// Config.wtf with `SET accountName "<user>"` (the key keeps its spelling when the line is there; added when not).
 pub fn config_wtf_with_account(text: &str, user: &str) -> String {
     config_wtf_with(text, "accountName", user)
@@ -237,6 +275,22 @@ mod tests {
         let refused = serve_routes(vec![]);
         let t2 = Ticket { redeem: format!("{refused}/api/realms/{RID}/herokey"), ..t };
         assert!(redeem(&t2).unwrap_err().contains("refused"));
+    }
+
+    #[test]
+    fn the_official_realms_login_is_checked_and_never_printed() {
+        let l = parse_game_login(&json!({"ok": true, "user": "wr000123", "pass": "Q7W8E9R2T3Y4U5I6"})).unwrap();
+        assert_eq!((l.user.as_str(), l.pass.as_str()), ("WR000123", "Q7W8E9R2T3Y4U5I6"));
+        let shown = format!("{l:?}");
+        assert!(shown.contains("WR000123") && !shown.contains("Q7W8"), "{shown}");
+        for bad in [json!({"ok": false, "user": "WR1", "pass": "x"}), json!({"ok": true, "user": "WR 1", "pass": "x"}),
+            json!({"ok": true, "user": "WR1", "pass": ""}), json!({"ok": true, "user": "WR1", "pass": "a b"}),
+            json!({"ok": true, "user": "WR1", "pass": "x".repeat(17)}), json!({"ok": true, "user": "W".repeat(17), "pass": "x"}),
+            json!({"ok": true, "user": "WR1"})] {
+            assert!(parse_game_login(&bad).is_err(), "{bad}");
+        }
+        let d = tempfile::tempdir().unwrap();
+        assert_eq!(official_login(d.path()).unwrap_err(), "signed_out", "no sign-in on Home: nothing asked");
     }
 
     #[test]

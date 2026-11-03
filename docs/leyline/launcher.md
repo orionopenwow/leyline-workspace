@@ -1,6 +1,6 @@
 # Launcher
 
-The Leyline Launcher is a desktop app for Windows, macOS and Linux, built with Tauri. Its window says "Leyline". It uses your own game client: it never offers, shares or ships game files. It has no telemetry and no accounts.
+The Leyline Launcher is a desktop app for Windows, macOS and Linux, built with Tauri. Its window says "Leyline". It uses your own game client: it never offers, shares or ships game files. It has no telemetry. An account is optional and lives on the website.
 
 Version 0.3 adds every client build, every server type and self-updates. See [Getting a build](#getting-a-build).
 
@@ -8,13 +8,17 @@ Version 0.3 adds every client build, every server type and self-updates. See [Ge
 
 | Page | What you can do |
 |---|---|
-| **Home** | Pick a client and a realm, then PLAY. Or play Wrath in the browser. |
+| **Home** | Pick a client and a realm in the play bar, then PLAY. The realm list there has the official realm, **Your Den**, the realms you host or played on and **Host a server…**. Or play Wrath in the browser. |
+| **Your Den** | **Play solo**: one click into your own white world on this PC. **Invite friends**, **Saved Dens**, **Packs**, **Shape the ground** (Forge) and **Share on the Workshop**. See [Your Den](getting-started.md#your-den). |
 | **Game clients** | Add a client folder you already have, for now one of these: {{v:1.12.1 (5875)}} {{v:2.4.3 (8606)}} {{v:3.3.5a (12340)}}. Leyline reads the build from the game's .exe and checks the install is complete. Any other build shows as "other": it can play realms, but gets no mods. Or drop your game folder, a zip of it, or a direct link to your own backup zip on the play bar's game client list (or on Find your game files): a progress bar shows the download and the unpacking, Cancel stops it, and the client is added. Never from a torrent. |
-| **Discover** | Browse the Workshop: categories, search, credits, links to each project's page, source and author. Install a mod into the client you pick. |
-| **My Mods** | See what is installed in each client. One click to update or remove; turn mods off and on; UPDATE ALL. Drop a .zip, an addon folder, a .MPQ patch or a native mod (.dll, .asi, after a one-time OK) to add your own. |
+| **Mods & Addons › Discover** | Browse the Workshop: categories, search, credits, links to each project's page, source and author. Install a mod into the client you pick. **Looks** has graphics packs, interface looks and one-click presets. |
+| **Mods & Addons › Installed** | See what is installed in each client. One click to update or remove; turn mods off and on; Update all. Drop a .zip, an addon folder, a .MPQ patch or a native mod (.dll, .asi, after a one-time OK) to add your own. |
 | **Realms** | The official realm and every community Beacon, with their server (AzerothCore, TrinityCore, CMaNGOS, vMaNGOS, MaNGOS), build, status and player counts. PLAY picks one of your clients of the right build, sets its realm address and starts the game, or says which client is missing. Join a private realm with its invite link. |
 | **Host** | Run your own realm on your PC through the relay, step by step. |
-| **Settings** | Wine (macOS and Linux run Windows clients through it), updates, where your data lives. |
+| **Forum**, **News** | The community forum and the team's news. |
+| **Agents** | Connect your own AI assistant; it asks you before it changes anything. See [Agents](agents.md). |
+| **Help** | The first-run tour again, the player guide and Report a bug. |
+| **Settings** | Wine (macOS and Linux run Windows clients through it), the background picture, updates, privacy (count my installs, off unless you turn it on), the peer-to-peer switches, **Testing** (switches for trying things out, all off by default) and where your data lives. |
 
 ## Mods
 
@@ -26,7 +30,7 @@ Discover reads the Workshop list at `https://leylinelauncher.com/wrath/mods/all.
 - **Contained.** Zips are unpacked into a staging folder inside the client first, with zip-slip, symbolic-link, password and size checks. Nothing is ever written outside the client folder, or through a link that leads out of it. An addon folder Leyline did not install is never overwritten.
 - **Clean removal.** Each client keeps a list of every file Leyline put in it, in `Leyline\mods.json` inside the client folder. Removing a mod removes exactly those files, and the last removal takes the `Leyline` folder away too. Files you added to an addon's folder yourself are kept, and the game's own saved settings in `WTF` stay.
 - **Off and on.** A turned-off mod's files wait in `Leyline\disabled\` inside the client, where the game does not look.
-- **Updates.** When the Workshop has a newer version of an installed mod, My Mods shows "Update available" and an UPDATE button.
+- **Updates.** When the Workshop has a newer version of an installed mod, Installed shows "Update available" and an UPDATE button.
 
 Decided for now: every mod is allowed, with no review queue and no code signing. Nobody but you decides whether a mod is safe, so only install mods you trust.
 
@@ -37,8 +41,8 @@ The Realms page lists the official realm first, then the Beacons from the relay'
 - **PLAY** writes the client's `realmlist.wtf` (and the `realmList` line of `WTF\Config.wtf` on the Wrath-era game {{v:3.3.5a}}, when it has one), then starts the game. Your original files are kept as `.leyline-backup` the first time.
 - **A Beacon** is reached through the relay. The relay gives each realm its own login port, so its realmlist is `relay.leylinelauncher.com:<port>`. The listing carries that address; when it doesn't, Leyline asks the relay (`/api/realms/<id>`). The relay's public ports 40000 to 40999 must be open for this. The relay's setup opens them in its firewall; a cloud firewall in front of the box must allow them too.
 - **Your account** on a Beacon is made on its join page in your browser ("Make an account"), so your password never leaves the browser.
-- **A private realm**: paste its invite link under "A private realm". Leyline does what opening the link does (the relay's "knock" for this PC's address, valid 24 hours) and points your client at the realm.
-- **BACK TO WRATH** points the client at the official realm again. **MY OWN REALMLIST** puts back the files you had before Leyline.
+- **A private realm**: open **Got an invite link or another realm address?** and paste its invite link under "A private realm". A link to a friend's Den needs nothing more. Leyline does what opening the link does (the relay's "knock" for this PC's address, valid 24 hours) and points your client at the realm.
+- **…** › **Back to the official realm** points the client at the official realm again. **…** › **Use my own realmlist** puts back the files you had before Leyline.
 
 Where the realm address goes: {{v:1.12}} reads `realmlist.wtf` next to the game; {{v:2.4.3}} {{v:3.3.5a}} read `Data/<locale>/realmlist.wtf`; {{v:4.3.4}} {{v:5.4.8}} read `SET realmlist` in `WTF/Config.wtf`. Leyline keeps your original as a backup the first time.
 
@@ -48,16 +52,18 @@ Beacons run the Wrath-era game {{v:3.3.5a}}, so they need that game.
 
 Hosting runs on your own PC. There are no hosted slots on our servers: the realm runs only while your PC does. See [Hosting](hosting.md) for the Host pack itself.
 
-1. **HOST A REALM** opens [leylinelauncher.com/wrath/host](https://leylinelauncher.com/wrath/host). Sign in, choose a name, a ruleset and house rules, and download your realm file (`leyline-<realm id>.bat` for Windows, `.sh` for Mac and Linux).
-2. Unzip the Host pack and choose its folder in Leyline. You also need Docker Desktop.
-3. Leyline finds your realm file, in the kit or in Downloads, and copies it into the kit. START runs it in a window of its own. After the first run, START MY REALM runs the kit's own host script (`Host a Wrath realm.bat`, or `leyline host`).
-4. Leyline shows the realm's status from the relay: online, on the realm list, players and bots, and its realmlist address.
+1. Open **Host**. Its first screen is the modes anyone can host: pick one and press **Host**, or **Fork this mode** to make it yours.
+2. Or follow the three steps: **Get ready** (the Host pack and Docker Desktop, one click each), **Pick your game** (a ruleset), then **Start your realm** (a name, who can join: friends with your link or everyone, and your account name, which gets GM).
+3. Already run a server? **Link my server** puts it on the realm list with a small helper. Your server is not changed.
+4. Once it runs, the Host page is your realm's console: its state, Start and Stop, the GM controls, a health check, restarts with a warning, and its status from the relay (online, on the realm list, players and bots).
+
+You can also start on the website, at [leylinelauncher.com/wrath/host](https://leylinelauncher.com/wrath/host).
 
 ## Updates and privacy
 
 Leyline updates itself, for everyone: every new launcher is a normal release. It checks GitHub (tags `launcher-v*`) when it starts and every 6 hours, downloads a new version in the background and checks its signature. The title bar then says "Update ready — restart to finish" with a Restart button. Leave it, and the update finishes by itself the next time you open Leyline. It never restarts while a game you started from Leyline is open. Settings can also take early test versions.
 
-What it fetches: the Workshop list and the mods you install, the realm list and realm status, relay lookups for the realm you pick or host, and GitHub's release list. Each request gives up after 8 seconds (a mod download may take longer once it has started). The lists are kept, so Leyline works offline. It sends nothing about you. Settings and caches live in `%APPDATA%\Leyline` (Windows), `~/Library/Application Support/Leyline` (macOS) or `~/.local/share/Leyline` (Linux).
+What it fetches: the Workshop list and the mods you install, the realm list and realm status, relay lookups for the realm you pick or host, the Leyline addons, the website's background picture, and GitHub's release list. Your Den's program and Forge are downloaded once, the first time you use them. Each request gives up after 8 seconds (a mod download may take longer once it has started). The lists are kept, so Leyline works offline. It sends nothing about you. Settings and caches live in `%APPDATA%\Leyline` (Windows), `~/Library/Application Support/Leyline` (macOS) or `~/.local/share/Leyline` (Linux).
 
 ## Getting a build
 
@@ -71,7 +77,5 @@ To build it yourself, see `launcher/README.md` in the repo.
 
 ## Not yet
 
-- Publishing a mod from a GitHub repository.
-- A peer-to-peer realm list next to the relay's listing.
+- A peer-to-peer realm list next to the relay's listing (built, off until the owner turns it on).
 - Signed mods and a review step.
-- Starting and stopping a realm without the kit's own window.

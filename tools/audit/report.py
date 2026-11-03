@@ -8,7 +8,7 @@ import time
 
 from common import FAIL, PASS, SKIP
 
-ORDER = ["Server", "Site", "Downloads", "Catalog", "Wrath Unleashed", "Bug reports", "Your Den", "Hosting",
+ORDER = ["Server", "Site", "Downloads", "Catalog", "Wrath Unleashed", "Hero Key", "Bug reports", "Your Den", "Hosting",
          "Launcher", "Looks", "Forum", "Azeroth Survivors"]
 
 # (title, where to click, what good looks like): only what a person must judge, or a second PC must do

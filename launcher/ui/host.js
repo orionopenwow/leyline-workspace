@@ -293,7 +293,7 @@
   adv.append(mk("h3", "", "Advanced: peer-to-peer"),
     mk("p", "lede", "Off unless you or the website turn them on. Peer-to-peer never shares game files or a game client. It only shares Leyline itself, checked mods, theme packs and the Host pack, and each file is checked before it is used."),
     advList, natLine, advStatus);
-  if (setPanel) setPanel.insertBefore(adv, setPanel.querySelector("h3") || null);
+  if (setPanel) setPanel.append(adv);   // last: the advanced part after the everyday settings (3 Nov: Settings opened on it)
 
   async function loadFlags() {
     let v;

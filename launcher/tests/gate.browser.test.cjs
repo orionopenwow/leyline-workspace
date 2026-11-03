@@ -477,3 +477,29 @@ test('new machine click counts: browser 2, guest 2, key file in Downloads 0, log
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('Settings › Your account: signed out it opens Log in; a guest is told to save the login and lands on it; the P2P part is last', async () => {
+  const { page, errors } = await open();
+  await page.click('.nav[data-page="settings"]');
+  await page.waitForSelector('#page-settings.on');
+  assert.match(await page.textContent('#set-acct-line'), /Not logged in/);
+  const first = await page.evaluate(() => document.querySelector('#page-settings .panel h3').textContent);
+  assert.equal(first, 'Your account', 'Settings opens on the account, not the advanced peer-to-peer part');
+  await page.click('#set-acct');
+  await page.waitForSelector('#gate-new');
+  await page.click('#gate-new');
+  await page.waitForSelector('#hf-me-btn');
+  await page.click('.nav[data-page="settings"]');
+  await page.waitForFunction(() => /isn't saved yet/.test(document.getElementById('set-acct-line').textContent));
+  assert.equal(await page.textContent('#set-acct'), 'Save your login');
+  // guest → its login, from Settings: Your account, Save as text file (2 clicks from Settings)
+  await page.click('#set-acct');
+  await page.waitForSelector('#ac-guest-save');
+  await page.click('#ac-guest-save');
+  await page.waitForFunction(() => !!window.__savedText);
+  await page.click('.nav[data-page="settings"]');
+  await page.waitForFunction(() => /Logged in as Brightfeather42#1234/.test(document.getElementById('set-acct-line').textContent));
+  assert.equal(await page.textContent('#set-acct'), 'Your login and Hero Key');
+  assert.deepEqual(errors, []);
+  await page.close();
+});

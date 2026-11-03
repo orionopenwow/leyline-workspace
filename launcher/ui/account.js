@@ -496,5 +496,34 @@
     if (box) S().buildFlow(box, true); else render();
   });
 
+  // Settings › Your account: to the Hero Key card (signed in) or the Log in screen; a guest's unsaved login is said
+  function settingsAccount() {
+    const line = $("set-acct-line"), btn = $("set-acct");
+    if (!line || !btn) return;
+    const s = S(), me = s && s.me();
+    const name = me ? (me.tag ? `${me.name}#${me.tag}` : me.name) : "";
+    const guest = me ? guestLogin(name) : null;
+    if (!s || !s.signedIn()) {
+      line.textContent = "Not logged in. Log in to keep your progress and play online.";
+      btn.textContent = "Log in";
+    } else if (guest) {
+      line.textContent = `Your guest login (${name}) isn't saved yet: save it as a text file to log in again or on another PC.`;
+      btn.textContent = "Save your login";
+    } else {
+      line.textContent = `Logged in as ${name || "you"}. Your password and Hero Key: save them, or use them to log in on another PC.`;
+      btn.textContent = "Your login and Hero Key";
+    }
+    line.classList.toggle("warn", !!guest);
+  }
+  const sab = $("set-acct");
+  if (sab) sab.addEventListener("click", () => {
+    const s = S();
+    if (!s || !s.signedIn()) { if (window.LeylineGate) window.LeylineGate.show(""); return; }
+    if (window.LeylineNav) window.LeylineNav.show("account");
+    document.dispatchEvent(new CustomEvent("leyline:focus-key", {}));
+  });
+  for (const ev of ["leyline:me", "leyline:guest", "leyline:page"]) document.addEventListener(ev, settingsAccount);
+  settingsAccount();
+
   window.LeylineAccount = { render, welcome: () => welcome };
 })();

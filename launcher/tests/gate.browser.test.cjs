@@ -1,4 +1,6 @@
-// The sign-in screen (ui/gate.js) and seamless realm switching (ui/app.js) in Chromium, with a fake Tauri core (owner
+// The sign-in dialog (ui/gate.js; owner 2 Nov 23:14: "no immediate login screen, but encouragement to log in top right
+// ... a generated username and password ... as well as Google"; 23:18: the downloaded Hero Key file found by itself)
+// and seamless realm switching (ui/app.js) in Chromium, with a fake Tauri core (owner
 // 2 Nov: "create login flow for the launcher so people have to log in to use it etc with hero key sensed from browser
 // login or pasted"; "in the end swapping realms on community and official needs to be seamless, swap realm list, work
 // with hero key etc"; "not game 3.3.5a but wrath 3.3.5a for example and ordered properly").
@@ -55,6 +57,9 @@ const FAKE = (o) => {
       case 'social_signin_poll': if (window.__poll === 'signed_in') window.__signed = true; return { state: window.__poll, user_code: 'BCDF-GHJK', verify_url: '' };
       case 'social_signin_cancel': case 'social_signin_reopen': return null;
       case 'social_signout': window.__signed = false; return null;
+      case 'social_key_found': return window.__found || null;
+      case 'social_key_file': window.__signed = true; return { ok: true, me: { pid: 'aaaaaaaaaa', name: 'Alice', tag: '4821' } };
+      case 'save_text_file': window.__savedText = args.text; return true;
       case 'social_key_signin': if (!args.key.includes(KEY)) throw "That Hero Key didn't work. It may have been replaced by a newer one: use your newest key.";
         window.__signed = true; return { ok: true, me: { pid: 'aaaaaaaaaa', name: 'Alice', tag: '4821' } };
       case 'social_new_account': window.__signed = true; me.name = 'Brightfeather42'; me.tag = '1234';
@@ -65,6 +70,8 @@ const FAKE = (o) => {
           if (!window.__signed) throw 'signed_out';
           return { me: JSON.parse(JSON.stringify(me)), avatars: [], ways: { herokey: true, google: true }, manage_url: '' };
         }
+        if (args.action === 'password') { window.__pw = args.args.password; return { ok: true }; }
+        if (args.action === 'herokey_saved') return { ok: true };
         if (args.action === 'herokey_status') return { web_only: false, has_key: true, key: '', saved: false, made: '2 Nov 2026', last_used: '', has_password: false };
         if (args.action === 'state') return { friends: [], incoming: [], outgoing: [] };
         throw 'unexpected social call ' + args.action;
@@ -88,100 +95,143 @@ let browser;
 test.before(async () => { browser = await chromium.launch(); });
 test.after(async () => { await browser.close(); });
 
-async function open(opts) {
+async function open(opts, extra) {
   const page = await browser.newPage({ viewport: { width: 1400, height: 860 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.route('https://play.openvanilla.app/**', (r) => r.abort());
   await page.addInitScript(FAKE, opts || {});
+  if (extra) await page.addInitScript(extra);
   await page.goto(INDEX);
   return { page, errors };
 }
 const callsOf = (page, cmd) => page.evaluate((c) => window.__calls.filter(([x]) => x === c).map(([, a]) => a), cmd);
 const gateOpen = (page) => page.evaluate(() => !document.getElementById('gate').hidden);
 
-test('signed out: the screen covers the launcher; Log in | Sign up; no Discord; the browser sign-in, then name#tag and picture', async () => {
+test('signed out: the launcher opens and works; Log In top right invites; the dialog: browser, Google, name and password; no Discord', async () => {
   const { page, errors } = await open();
+  await page.waitForSelector('#hf-signin');
+  assert.equal(await gateOpen(page), false, 'no sign-in screen before the launcher');
+  assert.equal(await page.evaluate(() => document.querySelector('.frame').inert), false, 'every button works');
+  assert.match(await page.textContent('#hf-me'), /Play online, keep your progress/);
+  await page.click('.nav[data-page="realms"]');   // the launcher is usable signed out
+  assert.ok(await page.locator('#page-realms').evaluate((e) => e.classList.contains('on')));
+  await page.click('#hf-signin');
   await page.waitForSelector('#gate-browser');
   assert.ok(await gateOpen(page));
-  assert.ok(await page.evaluate(() => document.querySelector('.frame').inert), 'nothing behind it can be used');
-  assert.equal(await page.getAttribute('#gate-tab-login', 'aria-selected'), 'true');
-  assert.equal(await page.getAttribute('#gate-tab-signup', 'aria-selected'), 'false');
+  assert.match(await page.textContent('#gate-browser'), /Sign in with your browser/);
+  assert.match(await page.textContent('#gate'), /Instant launcher recognition/);
+  assert.match(await page.textContent('#gate-new'), /Create a guest account/);
   const text = await page.textContent('#gate');
   assert.doesNotMatch(text, /discord/i, 'no Discord sign-in, even when the website offers it');
   assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i);
   assert.match(text, /Continue with Google/);
-  assert.match(text, /Drop your Hero Key file here/);
+  assert.equal(await page.getAttribute('#gate-pwname', 'autocomplete'), 'username', 'a password manager fills it');
+  assert.equal(await page.getAttribute('#gate-pw', 'autocomplete'), 'current-password');
+  assert.equal(await page.locator('#gate-drop').count(), 0, 'the Hero Key file is folded away');
+  // Not now closes; Esc too
+  await page.click('#gate-close-dlg');
+  assert.equal(await gateOpen(page), false);
+  await page.click('#hf-signin');
+  await page.keyboard.press('Escape');
+  assert.equal(await gateOpen(page), false);
+  // the browser sign-in
+  await page.click('#hf-signin');
   await page.click('#gate-browser');
   await page.waitForSelector('#gate-code');
   assert.equal(await page.textContent('#gate-code'), 'BCDF-GHJK');
   assert.deepEqual(await callsOf(page, 'social_signin_start'), [{ via: null }], 'the website picks the way: a signed-in browser only approves');
-  // approved: the signed-in moment, then the launcher with the chip
   await page.waitForSelector('#gate-in', { timeout: 8000 });
   assert.equal(await page.textContent('#gate-in .gate-in-n'), 'Alice#4821');
-  assert.equal(await page.locator('#gate-in .gate-av img').count(), 1, 'the picture');
   await page.click('#gate-go');
   assert.equal(await gateOpen(page), false);
-  assert.equal(await page.evaluate(() => document.querySelector('.frame').inert), false);
   assert.equal(await page.textContent('#hf-me .hf-me-name'), 'Alice');
-  assert.equal(await page.textContent('#hf-me .hf-me-st'), '#4821');
   assert.deepEqual(errors, []);
   await page.close();
 });
 
-test('Google, a pasted Hero Key, a chosen key file; a file without a key says so', async () => {
+test('Google, name and password, the Hero Key file or paste; a file without a key says so', async () => {
   const { page, errors } = await open();
+  await page.click('#hf-signin');
   await page.waitForSelector('#gate-google');
   await page.click('#gate-google');
   await page.waitForSelector('#gate-cancel');
   assert.deepEqual(await callsOf(page, 'social_signin_start'), [{ via: 'google' }]);
   await page.click('#gate-cancel');
+  // name and password: a name without its #tag is said before anything goes anywhere
+  await page.fill('#gate-pwname', 'Alice');
+  await page.fill('#gate-pw', 'secret-words-here');
+  await page.click('#gate-pwgo');
+  assert.match(await page.textContent('#gate-err'), /#tag/);
+  assert.deepEqual(await callsOf(page, 'social_password_signin'), []);
+  await page.click('#gate-keylink');
   await page.waitForSelector('#gate-key');
-  // a wrong paste: said before anything goes anywhere
   await page.fill('#gate-key', 'hello');
   await page.click('#gate-keyform button[type=submit]');
   assert.match(await page.textContent('#gate-err'), /starts with ovk1/);
-  assert.deepEqual(await callsOf(page, 'social_key_signin'), []);
-  // a file that isn't a key
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-'));
   fs.writeFileSync(path.join(dir, 'notes.txt'), 'just some notes');
   await page.setInputFiles('#gate-file', path.join(dir, 'notes.txt'));
   await page.waitForFunction(() => /no Hero Key in that file/.test((document.getElementById('gate-err') || {}).textContent || ''));
   assert.deepEqual(await callsOf(page, 'social_key_signin'), []);
-  // the launcher's own key file
-  fs.writeFileSync(path.join(dir, 'Leyline Hero Key.txt'), `Leyline Hero Key\r\n\r\nName: Alice#4821\r\nKey: ${KEY}\r\nMade: 2 November 2026\r\n`);
+  fs.writeFileSync(path.join(dir, 'Leyline Hero Key.txt'), `Leyline Hero Key\r\n\r\nName: Alice#4821\r\nPassword: abcd-efgh-jkmn-pqrs\r\nKey: ${KEY}\r\n`);
   await page.setInputFiles('#gate-file', path.join(dir, 'Leyline Hero Key.txt'));
   await page.waitForSelector('#gate-in');
   assert.deepEqual(await callsOf(page, 'social_key_signin'), [{ key: KEY }], 'only the key goes to the core');
   await page.click('#gate-go');
-  assert.equal(await gateOpen(page), false);
-  // Sign out: the screen again
+  // Sign out: no screen comes back; Log In does
   await page.click('#hf-me-btn');
   await page.click('#hf-panel .ap-out');
-  await page.waitForSelector('#gate-browser');
-  assert.ok(await gateOpen(page));
-  // a pasted key (spaces and an upper-case prefix are fine)
-  await page.fill('#gate-key', '  OVK1.' + KEY.slice(5) + ' ');
-  await page.click('#gate-keyform button[type=submit]');
-  await page.waitForSelector('#gate-in');
-  assert.deepEqual((await callsOf(page, 'social_key_signin')).slice(-1), [{ key: KEY }]);
+  await page.waitForSelector('#hf-signin');
+  assert.equal(await gateOpen(page), false);
   assert.deepEqual(errors, []);
   await page.close();
 });
 
-test('Sign up: Create your Hero Key makes the account; Manage account shows the key once to save', async () => {
+test('Create a guest account: signed in and on at once; the login waits in Manage account until saved as a text file', async () => {
   const { page, errors } = await open();
-  await page.waitForSelector('#gate-tab-signup');
-  await page.click('#gate-tab-signup');
-  assert.equal(await page.getAttribute('#gate-tab-signup', 'aria-selected'), 'true');
-  assert.match(await page.textContent('#gate-pane'), /What is a Hero Key\?/);
+  await page.click('#hf-signin');
   await page.click('#gate-new');
-  await page.waitForFunction(() => document.getElementById('gate').hidden);
-  assert.ok(await page.locator('#page-account').evaluate((e) => e.classList.contains('on')), 'Manage account');
-  await page.waitForSelector('#ac-keytext');
-  await page.click('#ac-key-show');
-  assert.equal(await page.textContent('#ac-keytext'), 'ovk1.NewNew1234.' + 'n'.repeat(43));
+  await page.waitForSelector('#hf-me-btn');
+  assert.equal(await gateOpen(page), false, 'nothing to read first: straight in');
+  const pw = await page.evaluate(() => window.__pw);
+  assert.match(pw, /^[a-z2-9]{4}(-[a-z2-9]{4}){3}$/, 'a password made for it, easy to read');
   assert.equal(await page.textContent('#hf-me .hf-me-name'), 'Brightfeather42');
+  assert.match(await page.textContent('#gate-toast'), /You're in as Brightfeather42#1234\. Save your login any time: Manage account/);
+  assert.equal(await page.locator('#page-account').evaluate((e) => e.classList.contains('on')), false, 'no trip to Manage account');
+  await page.click('#gate-toast');   // the reminder opens Manage account › Your login
+  await page.waitForSelector('#ac-guest');
+  assert.equal(await page.textContent('#ac-guest-name'), 'Brightfeather42#1234');
+  assert.doesNotMatch(await page.textContent('#ac-guest'), new RegExp(pw), 'hidden until Show');
+  await page.click('#ac-guest-show');
+  assert.equal(await page.textContent('#ac-guest-pass'), pw);
+  await page.click('#ac-guest-save');
+  await page.waitForFunction(() => !!window.__savedText);
+  const t = await page.evaluate(() => window.__savedText);
+  assert.match(t, /Name: Brightfeather42#1234/);
+  assert.ok(t.includes(`Password: ${pw}`) && t.includes('Key: ovk1.NewNew1234.'));
+  await page.waitForFunction(() => !document.getElementById('ac-guest'));
+  assert.equal(await page.evaluate(() => localStorage.getItem('leyline.guestLogin')), null, 'forgotten on this PC once saved');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('a Hero Key file downloaded: signed out at the start, it signs in by itself; one from before Sign out is not used', async () => {
+  const { page, errors } = await open({}, () => { window.__found = { path: 'C:\\Users\\me\\Downloads\\Leyline Hero Key.txt', mtime_ms: Date.now(), name: 'Alice#4821' }; });
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'social_key_file'));
+  await page.waitForSelector('#hf-me-btn');
+  assert.match(await page.textContent('#gate-toast'), /Logged in as Alice#4821 with the Hero Key you downloaded/);
+  assert.deepEqual(await callsOf(page, 'social_key_file'), [{ path: 'C:\\Users\\me\\Downloads\\Leyline Hero Key.txt' }]);
+  // Sign out: the same file is not used again, the dialog checks for a new one while open
+  await page.click('#hf-me-btn');
+  await page.click('#hf-panel .ap-out');
+  await page.waitForSelector('#hf-signin');
+  await page.click('#hf-signin');
+  await page.waitForTimeout(3500);
+  assert.equal((await callsOf(page, 'social_key_file')).length, 1);
+  await page.evaluate(() => { window.__found = { path: 'C:\\Users\\me\\Downloads\\Leyline Hero Key (1).txt', mtime_ms: Date.now() + 5, name: 'Alice#4821' }; });
+  await page.waitForSelector('#gate-in', { timeout: 8000 });
+  assert.equal((await callsOf(page, 'social_key_file')).length, 2, 'a newly downloaded one signs in');
   assert.deepEqual(errors, []);
   await page.close();
 });
@@ -197,23 +247,18 @@ test('a sign-in kept from before: straight in, offline too (never locked out)', 
   await page.close();
 });
 
-test('the website down: said plainly, Try again, Continue without; PLAY on the official realm opens sign-in, then goes on', async () => {
+test('the website down: said plainly in the dialog; PLAY on the official realm opens sign-in, then goes on', async () => {
   const { page, errors } = await open({ down: true });
-  await page.waitForSelector('#gate-down');
-  assert.match(await page.textContent('#gate-down'), /website isn't answering/);
-  await page.click('#gate-retry');   // still down: still said
-  await page.waitForFunction(() => window.__calls.filter(([c]) => c === 'social_ways').length >= 2);
-  assert.ok(await page.isVisible('#gate-down'));
-  await page.click('#gate-skip');
-  assert.equal(await gateOpen(page), false);
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'realms_list'));
-  // PLAY on Wrath Unleashed, signed out: never a start at the stock login screen; the screen, with why
+  assert.equal(await gateOpen(page), false);
   await page.click('#play-go');
   await page.waitForSelector('#gate-why');
   assert.match(await page.textContent('#gate-why'), /Wrath Unleashed signs you in with your Leyline account/);
+  assert.match(await page.textContent('#gate-down'), /website isn't answering/);
   assert.deepEqual(await callsOf(page, 'play'), [], 'nothing started');
   await page.evaluate(() => { window.__up = true; });
   await page.click('#gate-retry');
+  await page.click('#gate-keylink');
   await page.fill('#gate-key', KEY);
   await page.click('#gate-keyform button[type=submit]');
   await page.waitForSelector('#gate-go');
@@ -312,8 +357,6 @@ test('switching official and community realms back and forth: PLAY each time sta
 
 test('signed out, the realm card Play on the official realm signs in first, then starts', async () => {
   const { page, errors } = await open({ down: true });
-  await page.waitForSelector('#gate-skip');
-  await page.click('#gate-skip');
   await page.click('.nav[data-page="realms"]');
   await page.click('#rl-tab-official');
   await page.waitForSelector('#rl-list .realm-card .rl-play');

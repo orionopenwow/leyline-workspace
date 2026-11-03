@@ -725,7 +725,7 @@ def page_signin(h, query: dict, note: str = "") -> None:
     ways_html = [f'<a class="pf-way {"key" if k == "herokey" else k}" href="{SIGNIN}/go/{k}?next={q}">{ICON[k]}<span>{WAY_LABEL[k]}</span></a>'
                  for k in order if w.get(k)]
     # Create a Hero Key (owner 2 Nov 21:04): the Hero Key page, where Get your Hero Key makes the free account
-    ways_html.insert(1, f'<a class="pf-way new" href="{HERO_KEY_PAGE}#new">{ICON["herokey"]}<span>Create a Hero Key</span></a>')
+    ways_html.insert(1, f'<a class="pf-way new" href="{HERO_KEY_PAGE}#new">{ICON["herokey"]}<span>Create a guest account</span></a>')
     btns = "".join(ways_html)
     launcher = nxt.startswith(LINK_PAGE)
     msg = f'<p class="pf-msg err" role="alert">{e(note)}</p>' if note else ""
@@ -734,7 +734,7 @@ def page_signin(h, query: dict, note: str = "") -> None:
             "One account for the website, the launcher and the forum.")
     inner = (f'<section class="pf-card">{_steps(1)}{msg}<h1>Sign in</h1><p>{e(lead)}</p>'
              f'<div class="pf-ways">{btns}</div>'
-             '<p class="pf-fine">New here? Create a Hero Key: your free account in one step, no email needed'
+             '<p class="pf-fine">New here? Create a guest account: free, one click, no email; play at once'
              + (", or continue with Google" if w.get("google") else "") + '. A Hero Key signs you in to the account it belongs to. '
              "We never see your password.</p>"
              '</section>')

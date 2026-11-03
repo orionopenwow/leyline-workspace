@@ -909,6 +909,116 @@ pub fn den_play_cli(cli: crate::denclick::Cli) -> i32 {
     if out == crate::denclick::Outcome::InWorld { 0 } else { 1 }
 }
 
+/// `Leyline play-test --official [--game <folder>] [--world] [--hold <s>]` (crate::playtest): PLAY on the official realm
+/// from the command line with no launcher window, as the PLAY button does (play_official), with the launcher's own
+/// sign-in and game folders: the owner's client-smoke step (tools/client-smoke, owner 2 Nov 23:33: "a robust smoke
+/// test with screenshots each phase ... access to my client for testing and debug"). Writes `<data>/play-test.json`
+/// (phases, the game's process id for its screenshots, whether the login screen got the sign-in; never the password),
+/// keeps the game open `--hold` seconds, closes it, takes the one-time login out of the archive. Exit 0: started with
+/// the sign-in handed to the game.
+pub fn play_test_cli(cli: crate::playtest::Cli) -> i32 {
+    std::hint::black_box(crate::playtest::CLI_MARK.as_ptr());
+    let dir = settings::app_dir();
+    let report_path = dir.join(crate::playtest::REPORT);
+    let mut rep = serde_json::json!({ "mark": crate::playtest::CLI_MARK, "phase": "start", "started_ms": crate::denclick::now_ms() });
+    let save = |rep: &serde_json::Value| {
+        let _ = settings::write_atomic(&report_path, serde_json::to_string_pretty(rep).unwrap_or_default().as_bytes());
+    };
+    let fail = |rep: &mut serde_json::Value, why: String| {
+        rep["phase"] = "done".into();
+        rep["error"] = why.into();
+        let _ = settings::write_atomic(&dir.join(crate::playtest::REPORT), serde_json::to_string_pretty(rep).unwrap_or_default().as_bytes());
+        1
+    };
+    if cli.fresh {
+        return fail(&mut rep, "--fresh isn't in this launcher yet: the test uses this PC's launcher and its sign-in".into());
+    }
+    let core = Core {
+        settings: Mutex::new(settings::load(&dir)),
+        dir: dir.clone(),
+        known_urls: Mutex::new(HashSet::new()),
+        mods_lock: Arc::new(Mutex::new(())),
+        games: Mutex::new(Vec::new()),
+        upd: Mutex::new(UpdState::default()),
+        deep_link: Mutex::new(None),
+    };
+    let s = core.snapshot();
+    let same = |a: &std::path::Path, b: &std::path::Path| a.to_string_lossy().trim_end_matches(['\\', '/']).eq_ignore_ascii_case(b.to_string_lossy().trim_end_matches(['\\', '/']));
+    let pick = match &cli.game {
+        Some(g) => s.clients.iter().find(|c| same(&c.path, g)).map(|c| c.id.clone()),
+        None => s.selected_client.clone().filter(|id| s.client(id).is_some_and(|c| c.build == clients::Build::V335a))
+            .or_else(|| s.clients.iter().find(|c| c.build == clients::Build::V335a).map(|c| c.id.clone())),
+    };
+    let Some(client) = pick else { return fail(&mut rep, "no 3.3.5a game folder in the launcher (or not the one --game names)".into()) };
+    let profile = match core.client(&client) {
+        Ok(p) => p,
+        Err(e) => return fail(&mut rep, e),
+    };
+    rep["client"] = serde_json::json!({ "id": client, "name": profile.name, "build": profile.build.version(), "path": profile.path });
+    rep["signed_in"] = crate::social::load_token(&dir).is_some().into();
+    rep["phase"] = "login".into();
+    save(&rep);
+    let login = crate::herokey::official_login(&dir);
+    rep["website_login"] = match &login {
+        Ok(l) => serde_json::json!({ "ok": true, "account": l.user }),
+        Err(e) => serde_json::json!({ "ok": false, "why": e }),
+    };
+    let session = login.as_ref().ok().map(|l| {
+        let _ = crate::herokey::set_account_name(&profile.path, &l.user);
+        crate::hybrid::Session { user: l.user.clone(), pass: l.pass.clone(), realm: None, enter: cli.world }
+    });
+    drop(login);
+    rep["glue"] = serde_json::to_value(crate::hybrid::status(&profile.path)).unwrap_or_default();
+    rep["phase"] = "starting".into();
+    save(&rep);
+    let (message, hybrid) = match point_and_play_with(&core, &client, OFFICIAL_REALM, true, session, false) {
+        Ok(x) => x,
+        Err(e) => return fail(&mut rep, e),
+    };
+    let pid = LAST_GAME_PID.load(std::sync::atomic::Ordering::Relaxed);
+    rep["message"] = message.into();
+    rep["hybrid"] = match &hybrid {
+        Ok(()) => serde_json::json!({ "ok": true }),
+        Err(e) => serde_json::json!({ "ok": false, "why": e }),
+    };
+    rep["pid"] = pid.into();
+    rep["phase"] = "running".into();
+    rep["running_ms"] = crate::denclick::now_ms().into();
+    save(&rep);
+    // the game stays open for the screenshots, then it is closed (unless it closed itself)
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(cli.hold.min(crate::playtest::HOLD_MAX));
+    let mut closed_itself = false;
+    while std::time::Instant::now() < until {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let gone = core.games.lock().map(|mut g| g.iter_mut().all(|c| c.try_wait().ok().flatten().is_some())).unwrap_or(false);
+        if gone {
+            closed_itself = true;
+            break;
+        }
+    }
+    if let Ok(mut g) = core.games.lock() {
+        for c in g.iter_mut() {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+    }
+    let mut scrubbed = false;
+    for _ in 0..40 {
+        if crate::hybrid::scrub(&profile.path).is_ok() {
+            scrubbed = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    rep["closed_itself"] = closed_itself.into();
+    rep["session_left"] = crate::hybrid::has_session(&profile.path).into();
+    rep["scrubbed"] = scrubbed.into();
+    rep["phase"] = "done".into();
+    rep["done_ms"] = crate::denclick::now_ms().into();
+    save(&rep);
+    if hybrid.is_ok() && !closed_itself { 0 } else { 1 }
+}
+
 fn solo_result(message: String, hybrid: Result<(), String>) -> SoloPlay {
     use crate::host::lite;
     let (auto, why) = match hybrid {
@@ -1755,6 +1865,7 @@ pub fn run() {
             // Your Hero Key in the launcher (Manage account; stream/herokeys.py)
             crate::social::commands::social_key_signin,
             crate::social::commands::social_key_file,
+            crate::social::commands::social_key_found,
             crate::social::commands::social_new_account,
             crate::social::commands::social_password_signin,
             crate::social::commands::save_text_file,

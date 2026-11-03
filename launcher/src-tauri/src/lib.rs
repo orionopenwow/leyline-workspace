@@ -55,7 +55,7 @@ pub mod upstream; // upstream addons: curated third-party addons installed from 
 #[cfg(feature = "app")]
 mod app;
 #[cfg(feature = "app")]
-pub use app::{den_play_cli, run};
+pub use app::{den_play_cli, play_test_cli, run};
 
 /// The official realm's realmlist (desktop players): `leylinelauncher.com`. `play.openvanilla.app` reaches the same
 /// server forever; `addresses::official_realm()` picks the old one on a computer that cannot resolve the new one yet.
@@ -85,6 +85,9 @@ pub const LINKS: &[(&str, &str)] = &[
     ("bugs", crate::site!("/wrath/bugs")), // the website's Report a bug form (signed out: Help › Report a bug)
     ("forumnew", crate::site!("/wrath/leyline/forum/new")),
     ("github", "https://github.com/orionopenwow/Leyline"),
+    // Melty (ui/home.js meltyPane, owner 2 Nov 23:28-23:29): their site and its download page
+    ("melty", "https://melty.gg"),
+    ("meltydl", "https://melty.gg/download"),
     ("host", host::HOST_PAGE),
     ("hostguide", crate::site!("/wrath/docs/hosting")), // the Host pack and its settings
     ("agentsguide", crate::site!("/wrath/docs/agents")), // Agents and Help: docs/leyline/agents.md

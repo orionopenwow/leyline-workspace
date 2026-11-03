@@ -13,6 +13,9 @@ set "PY="
 where py >nul 2>&1 && set "PY=py -3"
 if not defined PY where python >nul 2>&1 && set "PY=python"
 if not defined PY (echo Python 3 is needed. & exit /b 1)
-set "ARGS=--repo orionopenwow/Leyline --root "%LY%" --confirm "tools\fresh-history\CONFIRM-leyline""
+rem Notepad saves "CONFIRM-leyline.txt" (Windows hides the .txt): either name works
+set "CF=tools\fresh-history\CONFIRM-leyline"
+if not exist "%CF%" if exist "%CF%.txt" set "CF=%CF%.txt"
+set "ARGS=--repo orionopenwow/Leyline --root "%LY%" --confirm "%CF%""
 if /i "%~1"=="check" (%PY% "tools\fresh-history\fresh_history.py" %ARGS%) else (%PY% "tools\fresh-history\fresh_history.py" --go %ARGS%)
 exit /b %errorlevel%

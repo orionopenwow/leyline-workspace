@@ -218,16 +218,20 @@
       }
       renderCode();
       await loadMe();
-      if (via === "new" || (me && me.profile && me.profile.setup === false)) {
+      if (via === "new" || (via !== "login" && me && me.profile && me.profile.setup === false)) {
         if (window.LeylineNav) window.LeylineNav.show("account");
         emit("leyline:welcome", {});
-      } else say("Signed in.", "ok");
+      } else if (via !== "login") say("Signed in.", "ok");
+      return out;
     } catch (e) {
       if (id !== runId) return;
       flow.stage = "error"; flow.note = String(e); renderCode();
     }
   }
   function newAccount() { return quickSignIn("new", () => invoke("social_new_account")); }
+  // the sign-in dialog's Sign up (gate.js, owner 2 Nov 23:14): a new account whose login (name#tag and a password made
+  // for it) the dialog shows and saves; no trip to Manage account. Resolves with {key, me}, or undefined on an error.
+  const newLogin = () => quickSignIn("login", () => invoke("social_new_account"));
   // the sign-in screen's (gate.js): a Hero Key pasted or read from its file, a name and password
   const keySignIn = (text) => quickSignIn("key", () => invoke("social_key_signin", { key: String(text || "") }));
   const passwordSignIn = (name, password) => quickSignIn("password", () => invoke("social_password_signin", { name, password }));
@@ -480,11 +484,13 @@
     }
     if (!signedIn || !me) {
       const t = el("div", "hf-me-t");
-      t.append(el("b", "hf-me-name", "Leyline"), el("span", "hf-me-st", "Signed out"));
+      // owner 2 Nov 23:14: the launcher opens without a sign-in screen; here, top right, the invitation to log in
+      t.append(el("b", "hf-me-name", "Log in"), el("span", "hf-me-st hf-nudge", "Play online, keep your progress"));
       const b = el("button", "hf-signin"); b.append(el("span", "", "Log In")); b.type = "button"; b.id = "hf-signin";   // the PLAY stone (owner 31 Oct 21:59)
-      b.title = "Log in on the website, in your browser";   // neutral: the chooser lists only the ways the website offers
+      b.title = "Log in or sign up: free, one click";
       b.setAttribute("aria-haspopup", "dialog");
       b.onclick = () => {
+        if (window.LeylineGate) { window.LeylineGate.show(""); return; }   // the sign-in dialog (gate.js)
         if (flow.stage === "waiting") { renderCode(); return; }
         flow.stage = flow.stage === "choose" ? "idle" : "choose"; flow.note = "";
         renderCode();
@@ -593,6 +599,7 @@
 
   async function signOut() {
     signedIn = false; me = null; fresh = null;
+    try { localStorage.setItem("leyline.signedOutAt", String(Date.now())); } catch (_) { /* fine */ }   // gate.js: a key file from before isn't used again
     await invoke("social_signout").catch(() => {});
     renderMe(); say("Signed out. The sign-in was revoked on the website too.", "ok");
     emit("leyline:me", { me: null, signedIn: false });
@@ -662,6 +669,8 @@
     renderMe();
     if (yes) loadMe(); else loadWays();
   })();
+  // the sign-in dialog closed while the browser is still open for its code: the title bar's pop-over shows it
+  document.addEventListener("leyline:gate", () => renderCode());
   // back on Home: the latest threads again
   document.addEventListener("leyline:page", (ev) => { if ((ev.detail || {}).page === "play") loadLatest(); });
 
@@ -669,6 +678,6 @@
 
   window.LeylineSocial = { refresh: loadMe, me: () => me, extra: () => extra, signedIn: () => signedIn, signIn, signOut, cancelSignIn,
     loadLatest, flow: () => ({ ...flow, code }), ways: () => ways, loadWays, buildFlow, avatar, setMe, openLink,
-    newAccount, freshKey: () => fresh, dropFreshKey: () => { fresh = null; },
+    newAccount, newLogin, freshKey: () => fresh, dropFreshKey: () => { fresh = null; },
     keySignIn, passwordSignIn, keyFileSignIn: (call) => quickSignIn("key", call), known: () => known, checked: () => checked, waysDown: () => waysDown, offline: () => signedIn && !me };
 })();

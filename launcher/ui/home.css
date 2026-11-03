@@ -402,3 +402,20 @@ html[data-base="light"] .hs-st li:last-child .hs-st-n { color: #fff; }
 .hm-lv .hm-play { flex: none; }
 .hm-empty { grid-column: 1 / -1; margin: 0; padding: 14px; color: var(--t-muted); font-size: 13px; border-radius: var(--t-radius-sm);
   border: var(--t-border-w) dashed var(--t-border-strong); }
+
+/* Melty's pane (home.js meltyPane): big and blue, their wordmark, Download and their site */
+.hs-melty { display: grid; gap: 10px; padding: 18px 18px 16px; border-radius: 12px; color: #fff;
+  background: radial-gradient(120% 140% at 0% 0%, #4d8dff 0%, #2459e6 45%, #1534a8 100%);
+  border: 1px solid rgba(160, 200, 255, 0.45); box-shadow: 0 10px 28px rgba(10, 40, 140, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25); }
+.hs-melty-logo { display: flex; align-items: center; min-height: 40px; }
+.hs-melty-logo img { height: 34px; width: auto; max-width: 70%; }
+.hs-melty-word { font: 800 30px/1 var(--t-font, system-ui); letter-spacing: -0.02em; }
+.hs-melty-t { margin: 0; font-size: 14px; line-height: 1.4; color: rgba(255, 255, 255, 0.9); }
+.hs-melty-acts { display: flex; gap: 10px; align-items: center; }
+.hs-melty-dl { flex: 1; min-height: 42px; border: 0; border-radius: 10px; cursor: pointer; background: #fff; color: #1a46c8;
+  font: 700 16px/1 var(--t-font, system-ui); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25); }
+.hs-melty-dl:hover { background: #eaf1ff; }
+.hs-melty-site { min-height: 42px; padding: 0 14px; border-radius: 10px; cursor: pointer; background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.4); color: #fff; font: 600 14px/1 var(--t-font, system-ui); }
+.hs-melty-site:hover { background: rgba(255, 255, 255, 0.2); }
+.hs-melty button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }

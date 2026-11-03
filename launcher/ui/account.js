@@ -227,6 +227,66 @@
     if (keyState) keyState.saved = true;
   }
 
+  // A guest account's login (gate.js createGuest, owner 2 Nov 23:31: "Guest accounts ... auto log into launcher and play,
+  // and then they can be recommended to go to settings to retrieve their user name and pass and text file"): kept on this
+  // PC (leyline.guestLogin) until saved here, then forgotten. Only for the account signed in now.
+  const GUEST = "leyline.guestLogin";
+  function guestLogin(name) {
+    try {
+      const g = JSON.parse(localStorage.getItem(GUEST) || "null");
+      if (!g || typeof g.key !== "string" || !g.key.startsWith("ovk1.")) return null;
+      if (g.name && name && g.name !== name && !(name.includes("#") && g.name.split("#")[1] === name.split("#")[1])) return null;
+      return g;
+    } catch (_) { return null; }
+  }
+  function loginText(g) {
+    const day = new Date(g.at || Date.now()).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+    return `Leyline Hero Key\r\n\r\nName: ${g.name}\r\n` + (g.pass ? `Password: ${g.pass}\r\n` : "") + `Key: ${g.key}\r\nMade: ${day}\r\n\r\n`
+      + "Sign in to the Leyline launcher with your name (and its #tag) and password, or drop this file on its sign-in. "
+      + "The key signs you in on the website, Wrath Unleashed and every realm that accepts Hero Key. Keep this file private, like a password.\r\n";
+  }
+  let guestShown = false;
+  function guestBox(g) {
+    const wrap = el("div", "ac-guest"); wrap.id = "ac-guest";
+    wrap.append(el("p", "hint", "Your guest login. Save it so you can sign in anywhere: it's kept on this PC only until you do."));
+    const row = (label, id, value, secret) => {
+      const r = el("div", "ac-keybox ac-cred");
+      r.append(el("span", "ac-cred-l", label));
+      const v = el("code", "ac-keytext" + (secret && !guestShown ? " dots" : ""), secret && !guestShown ? "\u2022".repeat(10) : value); v.id = id;
+      r.append(v);
+      if (secret) {
+        const sh = el("button", "btn small", guestShown ? "Hide" : "Show"); sh.type = "button"; sh.id = "ac-guest-show";
+        sh.setAttribute("aria-pressed", String(guestShown)); sh.setAttribute("aria-controls", id);
+        sh.onclick = () => { guestShown = !guestShown; render(); const x = $("ac-guest-show"); if (x) x.focus(); };
+        r.append(sh);
+      }
+      const cp = el("button", "btn small", "Copy"); cp.type = "button"; cp.id = id + "-copy";
+      cp.onclick = async () => { try { await navigator.clipboard.writeText(value); keyStatus(`${label} copied.`, "ok"); } catch (_) { keyStatus("Select it and copy it.", "warn"); } };
+      r.append(cp);
+      return r;
+    };
+    wrap.append(row("Name", "ac-guest-name", g.name, false));
+    if (g.pass) wrap.append(row("Password", "ac-guest-pass", g.pass, true));
+    const acts = el("div", "ac-acts");
+    const save = el("button", "btn primary", "Save as text file"); save.type = "button"; save.id = "ac-guest-save";
+    save.onclick = async () => {
+      try {
+        const ok = await invoke("save_text_file", { name: FILE, text: loginText(g) });
+        if (!ok) return;
+        await keySaved();
+        try { localStorage.removeItem(GUEST); } catch (_) { /* fine */ }
+        keyStatus(`Saved ${FILE}. Sign in anywhere with your name and password, or with the file.`, "ok");
+        document.dispatchEvent(new CustomEvent("leyline:guest", { detail: { saved: true } }));
+        render();
+      } catch (e) { keyStatus(String(e), "bad"); }
+    };
+    acts.append(save);
+    wrap.append(acts);
+    const st = el("p", "status" + (keyNote[1] ? " " + keyNote[1] : ""), keyNote[0]); st.id = "ac-key-status"; st.setAttribute("role", "status");
+    wrap.append(st);
+    return wrap;
+  }
+
   // the key, hidden until Show; Save as text file (the native save dialog) and Copy
   function reveal(key, name) {
     const wrap = el("div", "ac-reveal");
@@ -261,6 +321,8 @@
     const c = el("section", "card ac-card ac-key"); c.id = "ac-key";
     c.append(el("h3", "", "Your Hero Key"));
     const name = me.tag ? `${me.name}#${me.tag}` : me.name;
+    const guest = guestLogin(name);
+    if (guest) { c.append(guestBox(guest)); return c; }
     const fresh = keyShown || (S().freshKey() ? S().freshKey().key : "") || (keyState && keyState.key) || "";
     if (fresh) c.append(reveal(fresh, name));
     else if (!keyState) {

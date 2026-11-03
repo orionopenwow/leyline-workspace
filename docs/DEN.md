@@ -101,7 +101,7 @@ when sharing with friends. **Your Den** is in the launcher's side menu right und
   `<app data>/Leyline/den-lite/bin/`), starts it, points the game at `127.0.0.1` and signs in by itself
   (`denclick.rs`: our login screen code where the game takes it, else the launcher types the local password and the
   Enters for you), then enters the world. You stand on an open grass plane (the whole tile flat, the game's own grass under
-  the area's own sky since 3 Nov, made by the launcher at the first Den start: `host/terrain.rs`); nothing stands on it until you place something. Without Den
+  Elwynn Forest's sky since 3 Nov, made by the launcher at the first Den start: `host/terrain.rs`); nothing stands on it until you place something. Without Den
   Lite: the Docker Den's three steps on the same page (the Host pack, Docker Desktop with a short guide, Start with
   your account name), its progress, then the first starter place opens. A Docker Den that is stopped is started first;
   its account (the realm's GM name) is filled in on the login screen (`SET accountName` in Config.wtf).
@@ -453,17 +453,23 @@ until 3 Nov, grass since: see "The ground" below in this section):
   off (no vmaps): players collide on their own client, the server needs heights.
 - **Den Lite** reads the ground's heights: `.den place`, stamps and the spawn stand on the edited ground; it notices a
   new ground file within 2 seconds.
-- **The ground: grass under the area's own sky** (3 Nov, owner 08:41: "make the white room instead a default Elwynn
-  ground color grass texture and give it a realm skybox for testing"; `host/terrain.rs`, `leyline-terrain`
-  `pad::PAD_TEXTURE`): the whole Den tile is flat at 13.2, every chunk walkable, the island's own models off it, painted
-  the game's own Elwynn grass **by name only** (`Tileset\Elwynn\ElwynnGrassBase.blp`; when the player's game hasn't that
-  exact name, the launcher paints the grass name their own archives list, `den_texture_name` / `pick_grass`). patch-T
-  holds the tile and our mark, nothing else: **no texture of ours and no table of the game's** (the white sky in
-  Light / LightParams / LightIntBand and the zone name "Your Den" in AreaTable, 1 to 3 Nov, are gone), so the sky and
-  the zone are the area's own. A white ground from before is painted grass at the next Den start (`pad::whiten`).
-  What went in is in `<dens>/yourden.ground-status.json` (`grass`, `texture_name`, `sky`, `area`); `den-check`
-  (tools/den-check) reports it ("grass ground: the game's own texture", "sky/area: the game's own": nothing of the
-  game's in patch-T). The room looks (`.den room white|stone|wood`, Den Lite) are unchanged: "white" is the open plane
+- **The ground: grass under Elwynn Forest's sky** (3 Nov, owner 08:41: "make the white room instead a default Elwynn
+  ground color grass texture and give it a realm skybox for testing"; 10:29: "do blue forest sky not grey green";
+  `host/terrain.rs`, `leyline-terrain` `pad::PAD_TEXTURE`, `dbc::elwynn_sky`): the whole Den tile is flat at 13.2, every
+  chunk walkable, the island's own models off it, painted the game's own Elwynn grass **by name only**
+  (`Tileset\Elwynn\ElwynnGrassBase.blp`; when the player's game hasn't that exact name, the launcher paints the grass
+  name their own archives list, `den_texture_name` / `pick_grass`). patch-T holds the tile, our mark and **one table of
+  the game's, the player's own Light.dbc**: the Den's lights on map 1 (the map's default and any light reaching the
+  Den) get the eight LightParams ids of Elwynn's own light (the light with the smallest reach over Goldshire on map 0,
+  else map 0's default): Elwynn's colours and skybox, blue and sunny. Only existing rows change and only to ids the
+  game already has, so an archive read after ours that hides the table can't leave a missing id. No texture of ours,
+  no LightParams / LightIntBand / AreaTable edit (the white sky and the "Your Den" zone name of 1 to 3 Nov are gone):
+  the zone keeps the game's own name. Without a readable Light.dbc of the known shape the sky is the area's own and the
+  status says why. A white ground from before is painted grass at the next Den start (`pad::whiten`).
+  What went in is in `<dens>/yourden.ground-status.json` (`grass`, `texture_name`, `sky`: "the Elwynn sky", `area`);
+  `den-check` (tools/den-check) reports it ("grass ground: the game's own texture", "sky: the Elwynn sky": Light.dbc is
+  the only table in patch-T). The room looks (`.den room white|stone|wood`, Den Lite) are unchanged: "white" is the
+  open plane
   with no room pieces. labs/den-lite README "Standing and walking" has the 3 Nov "can't move".
 
 ## Claude in your Den, and your companion (2026-11-01)

@@ -9,9 +9,9 @@
 //!   when the player plays anywhere else. T is above packs' L and below the hybrid client's Z (the client reads
 //!   numbers, then letters; the last wins: docs/HYBRID-CLIENT.md section 1). mods.rs never hands out T. An archive in
 //!   that slot Leyline did not write (no `Leyline\DenGround.txt` in it) is never touched. Beside the tile it holds
-//!   [`den_extras`]: our own white texture (made by code) and, from the player's own game tables edited here, the
-//!   white sky over the Den and its zone's name "Your Den" (the Den stays on map 1: a map of its own would crash a
-//!   guest's game that hasn't our patch, and a later archive hiding one table could leave a map id missing).
+//!   [`den_extras`]: the player's own Light.dbc with the Den's sky made Elwynn Forest's (its lights pointed at
+//!   Elwynn's existing LightParams; the Den stays on map 1: a map of its own would crash a guest's game that hasn't
+//!   our patch, and only existing ids are used, so a later archive hiding the table can't leave one missing).
 //! * **Forge's workspace**: `<app dir>/den-terrain/yourden/` (`World/Maps/<map>/<tile>.adt`, the tile to edit, and
 //!   `locked-tiles.txt`, the one tile Forge may save). After Forge closes, [`import`] turns what it saved into the
 //!   delta: a `.terrain.json` Forge wrote itself, else the diff of the saved tile against the player's own.
@@ -185,7 +185,7 @@ pub struct GroundStatus {
     /// own from Forge too).
     pub island_models: usize,
     pub models: usize,
-    /// The sky: always the area's own since 3 Nov (no table of the game's is changed any more).
+    /// The sky: [`SKY`] (Elwynn Forest's, from the player's own Light.dbc: 3 Nov 10:29), or "the area's own (why)".
     pub sky: String,
     /// The game's own texture name the ground is painted with, when the player's game has it.
     #[serde(default)]
@@ -201,11 +201,13 @@ pub struct GroundStatus {
 }
 
 pub const STATUS: &str = "yourden.ground-status.json";
-/// What the status says of the sky and the zone's name: nothing of the game's tables is in patch-T (3 Nov: the white
-/// sky and the "Your Den" zone name, the player's own Light / LightParams / LightIntBand / AreaTable edited on this PC,
-/// are gone with the white ground).
-pub const SKY: &str = "the area's own";
+/// What the status says of the sky and the zone's name. The sky is Elwynn Forest's (owner 3 Nov 10:29: "do blue forest
+/// sky not grey green"): the player's own Light.dbc, its Den lights pointed at Elwynn's LightParams
+/// (`leyline_terrain::dbc::elwynn_sky`), is the one table of the game's in patch-T. The zone keeps the game's own name
+/// (the white sky and the "Your Den" name of 2 Nov, LightParams / LightIntBand / AreaTable edits, are gone).
+pub const SKY: &str = "the Elwynn sky";
 pub const AREA: &str = "the game's own";
+pub const LIGHT_TABLE: &str = "DBFilesClient\\Light.dbc";
 
 pub fn status_path(den_root: &Path) -> PathBuf {
     dens::dir(den_root).join(STATUS)
@@ -272,10 +274,12 @@ pub fn den_texture_name(client: &Path) -> Option<String> {
     pick_grass(names.iter().map(String::as_str)).into_iter().take(8).find(|n| is_blp(n))
 }
 
-/// Besides the tile, what the Den's patch-T holds: nothing of the game's (3 Nov: no texture of ours, no edited sky or
-/// zone tables). The status: the grass, the island's models gone, the sky and zone the game's own. Never fails.
+/// Besides the tile, what the Den's patch-T holds: the player's own Light.dbc with the Den's sky made Elwynn Forest's
+/// ([`SKY`]); no texture of ours, no other table. When the table doesn't read or isn't the shape Leyline knows, it is
+/// left out (the sky is then the area's own) and the status says why. The status: the grass, the island's models
+/// gone, the sky, the zone the game's own. Never fails.
 pub fn den_extras(client: &Path, d: &Delta, tile: &[u8]) -> (Vec<(String, Vec<u8>)>, GroundStatus) {
-    let files: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut files: Vec<(String, Vec<u8>)> = Vec::new();
     let mut st = GroundStatus { open: d.open.len(), sky: SKY.into(), area: AREA.into(), ..Default::default() };
     let centre = d.pad.as_ref().and_then(|p| p.centre).map(|c| (c[0], c[1])).unwrap_or((pad::DEN.0, pad::DEN.1));
     if let Ok(t) = leyline_terrain::adt::Adt::parse(tile, None) {
@@ -283,7 +287,22 @@ pub fn den_extras(client: &Path, d: &Delta, tile: &[u8]) -> (Vec<(String, Vec<u8
         st.island_models = t.doodads.iter().map(|x| x.uid).chain(t.wmos.iter().map(|x| x.uid)).filter(|&u| u < delta::UID_BASE).count();
         st.area_id = pad::area_at(&t, &d.tile, centre);
     }
-    let _ = client;
+    // the den-test's variant (tools/den-check "Den test - variants.bat"): LEYLINE_DEN_SKY=0 leaves the area's own sky
+    st.sky = if std::env::var("LEYLINE_DEN_SKY").is_ok_and(|v| v == "0") {
+        "the area's own (the test asked)".into()
+    } else {
+        let order = archive_order(client);
+        let light = mpq::read_own(&order, LIGHT_TABLE)
+            .and_then(|b| b.ok_or_else(|| "your game has no Light.dbc".to_string()))
+            .and_then(|b| leyline_terrain::dbc::Dbc::parse(&b).map_err(|e| format!("Light.dbc: {}", e.0)));
+        match light.and_then(|l| leyline_terrain::dbc::elwynn_sky(&l, d.tile.map, centre.0, centre.1).map_err(|e| e.0)) {
+            Ok(sky) => {
+                files.push((LIGHT_TABLE.to_string(), sky.light.write()));
+                SKY.into()
+            }
+            Err(e) => format!("the area's own ({e})"),
+        }
+    };
     (files, st)
 }
 
@@ -724,7 +743,8 @@ pub(crate) mod tests {
         assert!(st.open == 256 && st.island_models == 0);
         assert!(!st.grass, "this synthetic game has no grass texture: said");
         assert_eq!(st.texture_name.as_deref(), Some(pad::PAD_TEXTURE), "the tile names the game's own grass");
-        assert_eq!((st.sky.as_str(), st.area.as_str()), (SKY, AREA));
+        assert!(st.sky.starts_with("the area's own (your game has no Light.dbc"), "said why: {}", st.sky);
+        assert_eq!(st.area, AREA);
         let t = Adt::parse(&tile, Some(AlphaMode::Small)).unwrap();
         let ground = pad::Ground::from_delta(&d).unwrap();
         assert!((ground.height_at(pad::DEN.0, pad::DEN.1).unwrap() - pad::DEN.2).abs() < 0.01);
@@ -766,6 +786,11 @@ pub(crate) mod tests {
         let g = game();
         let mut light = vec![1, 1, 0, 0, 0, 0, 0, 12, 12, 12, 12, 12, 12, 12, 12];
         light.truncate(light_fields as usize);
+        // Elwynn Forest's light on map 0, over Goldshire (params 40 ..= 47)
+        let f = |v: f32| v.to_bits();
+        let (ex, ez) = ((leyline_terrain::PLACE - leyline_terrain::dbc::ELWYNN.2) * 36.0, (leyline_terrain::PLACE - leyline_terrain::dbc::ELWYNN.1) * 36.0);
+        let mut elwynn = vec![2, 0, f(ex), 0, f(ez), f(9000.0), f(20000.0), 40, 41, 42, 43, 44, 45, 46, 47];
+        elwynn.truncate(light_fields as usize);
         let bands: Vec<Vec<u32>> = (0..18).map(|k| vec![12 * 18 - 17 + k, 2, 0, 1440, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x101010, 0x202020]).collect();
         let mut area = vec![0u32; 36];
         area[0] = 876;
@@ -778,7 +803,7 @@ pub(crate) mod tests {
         t.doodads = vec![leyline_terrain::adt::Doodad { name: 0, uid: 77, pos: [leyline_terrain::PLACE - pad::DEN.1, 13.0, leyline_terrain::PLACE - pad::DEN.0], rot: [0.0; 3], scale: 1024, flags: 0 }];
         t.recompute_refs();
         let files = vec![
-            ("DBFilesClient\\Light.dbc".to_string(), table(light_fields, &[light], &[0])),
+            ("DBFilesClient\\Light.dbc".to_string(), table(light_fields, &[light, elwynn], &[0])),
             ("DBFilesClient\\LightParams.dbc".to_string(), table(9, &[vec![12, 0, 33]], &[0])),
             ("DBFilesClient\\LightIntBand.dbc".to_string(), table(34, &bands, &[0])),
             ("DBFilesClient\\AreaTable.dbc".to_string(), table(36, &[area], b"\0GM Island\0")),
@@ -796,7 +821,8 @@ pub(crate) mod tests {
     #[test]
     fn the_den_is_grass_under_the_areas_own_sky_with_no_table_changed() {
         // owner 3 Nov 08:41: "a default Elwynn ground color grass texture and ... a realm skybox": the game's own grass
-        // by name, its own sky and zone; nothing of the game's tables (or a texture) in patch-T
+        // by name and its zone; 10:29 "do blue forest sky not grey green": the player's own Light.dbc with the Den's
+        // light pointing at Elwynn's, the one table of the game's in patch-T
         let g = game_with_tables(15);
         with_grass(&g, pad::PAD_TEXTURE);
         let dens = tempfile::tempdir().unwrap();
@@ -807,7 +833,13 @@ pub(crate) mod tests {
         assert!(st.island_models == 0 && st.models == 0 && st.hidden_by.is_empty(), "{st:?}");
         let a = fs::read(g.path().join("Data").join(SLOT)).unwrap();
         let list = String::from_utf8(mpq::read(&a, "(listfile)").unwrap()).unwrap();
-        assert!(!list.to_ascii_lowercase().contains("dbfilesclient"), "no table of the game's: {list}");
+        let tables: Vec<&str> = list.lines().filter(|l| l.to_ascii_lowercase().starts_with("dbfilesclient")).collect();
+        assert_eq!(tables, vec![LIGHT_TABLE], "Light.dbc only: {list}");
+        let light = leyline_terrain::dbc::Dbc::parse(&mpq::read(&a, LIGHT_TABLE).unwrap()).unwrap();
+        let den_light = light.row(1).unwrap();
+        assert_eq!((7..15).map(|k| leyline_terrain::dbc::Dbc::get(den_light, k)).collect::<Vec<_>>(), (40..48).collect::<Vec<u32>>(), "map 1's sky is Elwynn's");
+        assert_eq!((leyline_terrain::dbc::Dbc::get(light.row(2).unwrap(), 1), leyline_terrain::dbc::Dbc::get(light.row(2).unwrap(), 7)), (0, 40), "Elwynn's own light as it was");
+        assert_eq!(light.records.len(), 2, "no rows added");
         assert!(mpq::read(&a, pad::PAD_TEXTURE).is_none(), "the grass is the game's own, never copied");
         let t = Adt::parse(&mpq::read(&a, &pad::den_tile().adt_path()).unwrap(), None).unwrap();
         assert!(t.doodads.is_empty() && t.m2_names.is_empty() && t.chunks.iter().all(|c| c.refs.is_empty() && c.area == 876), "the tree went");

@@ -1310,8 +1310,12 @@ def den_lite_update(rep, root, fetch=_fetch):
 
 DEN_TEXTURE = "Tileset\\Leyline\\DenWhite.blp"
 # the Den's ground since 3 Nov (owner 08:41: "a default Elwynn ground color grass texture and ... a realm skybox"): the
-# game's own grass by name (launcher terrain crate pad.rs PAD_TEXTURE), the area's own sky, no table of the game's
+# game's own grass by name (launcher terrain crate pad.rs PAD_TEXTURE); 10:29 "do blue forest sky not grey green": the
+# Elwynn sky (the player's own Light.dbc, its Den lights pointed at Elwynn's: terrain crate dbc.rs elwynn_sky), the one
+# table of the game's in patch-T
 GRASS = "Tileset\\Elwynn\\ElwynnGrassBase.blp"
+SKY = "the Elwynn sky"
+LIGHT_TABLE = "DBFilesClient\\Light.dbc"
 
 
 def blp_is_ours(b):
@@ -1327,11 +1331,13 @@ def blp_is_ours(b):
 
 
 def patch_extras(names):
-    """Of patch-T's file names, what isn't the tile or our mark: the game's tables (the old white sky and zone name)
-    and textures (the old white ground). Since 3 Nov there should be none."""
+    """Of patch-T's file names, what isn't the tile, our mark or the Elwynn sky's Light.dbc: the game's other tables
+    (the old white sky and zone name) and textures (the old white ground). Since 3 Nov there should be none."""
     out = []
     for n in names:
         low = n.lower()
+        if low == LIGHT_TABLE.lower():
+            continue
         if low.startswith("dbfilesclient\\") or low.endswith(".blp"):
             out.append(n)
     return out
@@ -1339,9 +1345,9 @@ def patch_extras(names):
 
 def ground_lines(rep, detail, patch_t=None):
     """The Den's world, from the launcher's report (`ground_detail`, host/terrain.rs GroundStatus) and our patch-T:
-    the ground painted the game's own grass (only its name in the tile), nothing of the island on the tile, nothing
-    of the game's tables or textures in patch-T (the area's own sky and zone name). Only the picture shows what the
-    game drew."""
+    the ground painted the game's own grass (only its name in the tile), nothing of the island on the tile, the
+    Elwynn sky (Light.dbc the only table of the game's in patch-T; the zone's own name). Only the picture shows what
+    the game drew."""
     if not isinstance(detail, dict) or not detail:
         rep.add("INFO", "the Den's world", "the launcher doesn't say (an older launcher)")
         return
@@ -1366,14 +1372,18 @@ def ground_lines(rep, detail, patch_t=None):
         except Exception as e:  # noqa: BLE001 - said below
             extra, err = [], str(e)[:120]
         if err:
-            rep.add("FAIL", "sky/area: the game's own", "Data\\patch-T.MPQ couldn't be read: %s" % err, "Start My Den once more; still not: send this log.")
+            rep.add("FAIL", "zone: the game's own, no other table", "Data\\patch-T.MPQ couldn't be read: %s" % err, "Start My Den once more; still not: send this log.")
         else:
-            rep.ok(not extra, "sky/area: the game's own",
-                   "the area's normal sky and zone name: no table or texture of the game's in Data\\patch-T.MPQ" if not extra else
+            rep.ok(not extra, "zone: the game's own, no other table",
+                   "the zone's own name: Light.dbc (the sky) is the only table of the game's in Data\\patch-T.MPQ, no texture" if not extra else
                    "Data\\patch-T.MPQ still has %s" % ", ".join(extra[:4]),
                    "An older launcher made it: update the launcher and start My Den once more.")
     else:
         rep.add("INFO", "sky/area", "sky: %s; zone: %s" % (detail.get("sky", "?"), detail.get("area", "?")))
+    sky = str(detail.get("sky", "?"))
+    if "grass" in detail:
+        rep.ok(sky == SKY, "sky: the Elwynn sky", "Elwynn Forest's blue sky over the Den (your own Light.dbc)" if sky == SKY else
+               "the sky is %s" % sky, "Send this log: it says why your game's Light.dbc wasn't used.")
     for h in detail.get("hidden_by") or []:
         rep.add("INFO", "an archive read after the Den's hides part of it", str(h)[:200])
     if detail.get("whitened"):

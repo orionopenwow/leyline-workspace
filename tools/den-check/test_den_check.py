@@ -491,16 +491,21 @@ def white_blp(size=64):
 
 class DenWorld(unittest.TestCase):
     def test_the_dens_world_lines(self):
-        # 3 Nov: the game's own grass by name, the area's own sky, no table of the game's
+        # 3 Nov: the game's own grass by name, the Elwynn sky (Light.dbc), the zone's own name
         good = {"grass": True, "texture_name": den_check.GRASS, "open": 256, "island_models": 0, "models": 2,
-                "sky": "the area's own", "area": "the game's own", "area_id": 876, "hidden_by": []}
+                "sky": "the Elwynn sky", "area": "the game's own", "area_id": 876, "hidden_by": []}
         rep = den_check.Report()
         quiet(den_check.ground_lines, rep, good)
         text = rep.text()
         self.assertIn("PASS grass ground: the game's own texture: Tileset\\Elwynn\\ElwynnGrassBase.blp, from your own game", text)
         self.assertIn("PASS no buildings/trees on the Den tile: the island's models are gone, 2 of yours stay", text)
-        self.assertIn("INFO sky/area: sky: the area's own; zone: the game's own", text)
+        self.assertIn("INFO sky/area: sky: the Elwynn sky; zone: the game's own", text)
+        self.assertIn("PASS sky: the Elwynn sky: Elwynn Forest's blue sky over the Den", text)
         self.assertEqual(rep.failed(), [])
+        # the sky left the area's own: said why, failed
+        rep = den_check.Report()
+        quiet(den_check.ground_lines, rep, dict(good, sky="the area's own (your game has no Light.dbc)"))
+        self.assertIn("FAIL sky: the Elwynn sky: the sky is the area's own (your game has no Light.dbc)", rep.text())
         # no grass in this game; something read after our archive; a ground from before
         bad = dict(good, grass=False, island_models=3, models=3, hidden_by=["patch-Z.MPQ: World\\Maps\\x.adt"], whitened="256 parts painted grass")
         rep = den_check.Report()
@@ -525,10 +530,11 @@ class DenWorld(unittest.TestCase):
             p.write_bytes(b"not an archive")
             rep = den_check.Report()
             quiet(den_check.ground_lines, rep, good, p)
-            self.assertIn("FAIL sky/area: the game's own: Data\\patch-T.MPQ couldn't be read", rep.text())
+            self.assertIn("FAIL zone: the game's own, no other table: Data\\patch-T.MPQ couldn't be read", rep.text())
 
     def test_patch_t_holds_no_table_or_texture_of_the_games(self):
         self.assertEqual(den_check.patch_extras(["World\\Maps\\Kalimdor\\Kalimdor_1_1.adt", "Leyline\\DenGround.txt"]), [])
+        self.assertEqual(den_check.patch_extras(["World\\Maps\\Kalimdor\\Kalimdor_1_1.adt", "DBFilesClient\\Light.dbc"]), [], "the Elwynn sky's table")
         self.assertEqual(den_check.patch_extras(["World\\Maps\\Kalimdor\\Kalimdor_1_1.adt", "DBFilesClient\\AreaTable.dbc", den_check.DEN_TEXTURE]),
                          ["DBFilesClient\\AreaTable.dbc", den_check.DEN_TEXTURE])
 

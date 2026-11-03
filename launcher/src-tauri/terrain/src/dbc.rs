@@ -1,5 +1,6 @@
-//! The game's own tables (WDBC files), read from the player's archives and edited on the player's PC: the Den's white
-//! sky (LightIntBand, LightParams, found through Light) and its name (AreaTable). Nothing here is ever shipped: the
+//! The game's own tables (WDBC files), read from the player's archives and edited on the player's PC: the Den's sky
+//! (since 3 Nov 10:29 Elwynn Forest's: [`elwynn_sky`], Light only; before, a white one: LightIntBand, LightParams,
+//! found through Light) and its name (AreaTable). Nothing here is ever shipped: the
 //! launcher reads the player's own tables, changes a few existing rows, and puts them in the Den's patch-T (which is
 //! taken out whenever the player plays anywhere else).
 //!
@@ -198,6 +199,71 @@ pub fn white_sky(light: &Dbc, params: Option<&Dbc>, int_band: &Dbc, map: u32, x:
     Ok(Sky { int_band: ib, params, lights, params_ids: ids })
 }
 
+/// A point in Elwynn Forest on map 0 (Goldshire, world x / y): the light that reaches it is Elwynn's.
+pub const ELWYNN: (u32, f32, f32) = (0, -9460.0, 60.0);
+
+/// The Den's sky made Elwynn Forest's (owner 3 Nov 10:29: "do blue forest sky not grey green").
+#[derive(Debug, Clone, PartialEq)]
+pub struct ForestSky {
+    /// Light.dbc with the Den's lights pointing at Elwynn's LightParams (its colours and skybox).
+    pub light: Dbc,
+    /// The Den's lights now Elwynn's (the map's default and the ones that reach the Den).
+    pub lights: Vec<u32>,
+    /// Elwynn's light whose LightParams they got.
+    pub from: u32,
+}
+
+/// The lights of `map` that make the sky at world (`x`, `y`): the map's default (a light at 0, 0, 0) and every one
+/// whose reach takes in the point, nearest-reaching last.
+fn lights_at(light: &Dbc, map: u32, x: f32, y: f32) -> Vec<(u32, f32, bool)> {
+    let (px, pz) = ((PLACE - y) * 36.0, (PLACE - x) * 36.0);
+    let mut v = Vec::new();
+    for r in light.records.iter().filter(|r| Dbc::get(r, 1) == map) {
+        let default = (2..5).all(|f| Dbc::getf(r, f) == 0.0);
+        let (dx, dz) = (Dbc::getf(r, 2) - px, Dbc::getf(r, 4) - pz);
+        let reach = Dbc::getf(r, 6).max(Dbc::getf(r, 5));
+        if default || (reach > 0.0 && (dx * dx + dz * dz).sqrt() < reach) {
+            v.push((Dbc::get(r, 0), if default { f32::MAX } else { reach }, default));
+        }
+    }
+    v
+}
+
+/// The Den's sky from the player's own Light.dbc: Elwynn Forest's light (the one with the smallest reach that takes
+/// in [`ELWYNN`], else map 0's default) gives its eight LightParams (clear, under water, storm, ... : its colours
+/// and its skybox) to the Den's lights on `map` at world (`x`, `y`): the map's default and every light reaching the
+/// Den. Only Light.dbc changes, only rows already there, and only to ids the game already has (Elwynn's own), so a
+/// table hidden by a later archive can never leave a missing id. LightParams, LightIntBand and the zone stay the
+/// game's.
+pub fn elwynn_sky(light: &Dbc, map: u32, x: f32, y: f32) -> Result<ForestSky> {
+    if !light.shaped(15) {
+        return err(format!("Light.dbc has {} fields of {} bytes, not the 15 Leyline knows.", light.fields, light.record_size));
+    }
+    let mut forest = lights_at(light, ELWYNN.0, ELWYNN.1, ELWYNN.2);
+    forest.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    let Some(&(from, ..)) = forest.first() else { return err("Light.dbc has no light over Elwynn Forest.") };
+    let params: Vec<u32> = (7..15).map(|f| light.row(from).map(|r| Dbc::get(r, f)).unwrap_or(0)).collect();
+    if params[0] == 0 {
+        return err("Elwynn Forest's light has no sky in Light.dbc.");
+    }
+    let lights: Vec<u32> = lights_at(light, map, x, y).into_iter().map(|l| l.0).filter(|&id| id != from).collect();
+    if lights.is_empty() {
+        return err(format!("Light.dbc has no light for map {map}."));
+    }
+    let mut t = light.clone();
+    for &id in &lights {
+        if let Some(r) = t.row_mut(id) {
+            for (k, &p) in params.iter().enumerate() {
+                // a slot Elwynn leaves empty keeps the Den's own (never an id of 0 where the game had one)
+                if p != 0 {
+                    Dbc::set(r, 7 + k, p);
+                }
+            }
+        }
+    }
+    Ok(ForestSky { light: t, lights, from })
+}
+
 /// The area's name in every locale changed to `name` (AreaTable, 36 fields, names at 11 ..= 26).
 pub fn rename_area(area: &Dbc, id: u32, name: &str) -> Result<Dbc> {
     if !area.shaped(36) {
@@ -314,6 +380,42 @@ pub(crate) mod tests {
         assert!(white_sky(&l, Some(&p), &table(33, &[], &[0]), 1, 0.0, 0.0).is_err());
         assert!(white_sky(&l, Some(&p), &ib, 571, 0.0, 0.0).is_err());
         assert!(white_sky(&l, Some(&p), &table(34, &[vec![1, 1]], &[0]), 1, 16226.2, 16257.0).is_err());
+    }
+
+    #[test]
+    fn the_dens_sky_is_elwynns() {
+        let (mut l, ..) = lights();
+        let f = |v: f32| v.to_bits();
+        let elw = ((PLACE - ELWYNN.2) * 36.0, (PLACE - ELWYNN.1) * 36.0);
+        // map 0: Elwynn's own light (id 5, params 40..47) and a wide one that also reaches it (id 6, params 50)
+        l.records.push(table(15, &[vec![5, 0, f(elw.0 + 100.0), f(0.0), f(elw.1), f(9000.0), f(20000.0), 40, 41, 42, 43, 44, 45, 46, 47]], &[0]).records.remove(0));
+        l.records.push(table(15, &[vec![6, 0, f(elw.0), f(0.0), f(elw.1 - 3000.0), f(90000.0), f(200000.0), 50, 50, 50, 50, 50, 50, 50, 50]], &[0]).records.remove(0));
+        let s = elwynn_sky(&l, 1, 16226.2, 16257.0).unwrap();
+        assert_eq!(s.from, 5, "the nearest-reaching light over Goldshire, not the wide one or map 0's default (4)");
+        assert_eq!(s.lights, vec![1, 3], "the Den's: map 1's default and the one reaching the Den; not the far one");
+        for id in [1u32, 3] {
+            let r = s.light.row(id).unwrap();
+            assert_eq!((7..15).map(|k| Dbc::get(r, k)).collect::<Vec<_>>(), (40..48).collect::<Vec<u32>>(), "light {id}");
+            assert_eq!(Dbc::get(r, 1), 1, "still map 1");
+        }
+        assert_eq!(s.light.row(2).unwrap(), l.row(2).unwrap(), "the far light as it was");
+        assert_eq!(s.light.row(4).unwrap(), l.row(4).unwrap(), "map 0's default as it was");
+        assert_eq!(s.light.records.len(), l.records.len(), "no rows added");
+        assert_eq!(Dbc::parse(&s.light.write()).unwrap(), s.light);
+        // no light of Elwynn's own: map 0's default gives its sky
+        let (l0, ..) = lights();
+        let s0 = elwynn_sky(&l0, 1, 16226.2, 16257.0).unwrap();
+        assert_eq!(s0.from, 4);
+        assert_eq!(Dbc::get(s0.light.row(1).unwrap(), 7), 22);
+        // a slot Elwynn leaves empty keeps the Den's own
+        let mut l2 = l.clone();
+        Dbc::set(l2.row_mut(5).unwrap(), 8, 0);
+        assert_eq!(Dbc::get(elwynn_sky(&l2, 1, 16226.2, 16257.0).unwrap().light.row(1).unwrap(), 8), 13);
+        // another shape, no map 0, no map 1: refused
+        assert!(elwynn_sky(&table(14, &[vec![1]], &[0]), 1, 0.0, 0.0).is_err());
+        let only1 = table(15, &[vec![1, 1, 0, 0, 0, 0, 0, 12, 13, 14, 13, 12, 12, 12, 12]], &[0]);
+        assert!(elwynn_sky(&only1, 1, 0.0, 0.0).is_err());
+        assert!(elwynn_sky(&l, 571, 0.0, 0.0).is_err());
     }
 
     #[test]

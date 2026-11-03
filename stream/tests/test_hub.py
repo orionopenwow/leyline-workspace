@@ -1191,6 +1191,34 @@ check("modes page: Azeroth Survivors shows its key art (served, sized, alt), the
       sv and re.search(r'<img class="hb-mode-art" src="/wrath/art/leyline-mode-azeroth-survivors-play\.webp" alt="[^"]{20,}" width="483" height="298"', sv.group(0))
       and mp.count('class="hb-mode-art"') == 1 and "leyline-mode-azeroth-survivors-play.webp" in wp.ART_TYPES
       and os.path.isfile(os.path.join(HERE, "www-files", "art", "leyline-mode-azeroth-survivors-play.webp")))
+
+# ---------------------------------------------------------------- Agents is out (owner 3 Nov), its GIF; Forge's My Den
+ag = req("/wrath/leyline-preview/agents")[2].decode()
+check("agents: out now, not coming soon; the still while there is no GIF",
+      "Out now" in ag and "Coming soon" not in ag and "/wrath/art/leyline-shot-agents.webp" in ag and ".gif" not in ag)
+check("agents: the showcase says out now", "Out now in the launcher." in HB.hub.features(only=("agents",))
+      and "Coming soon" not in HB.hub.features(only=("agents",)))
+fg = req("/wrath/leyline-preview/forge")[2].decode()
+check("forge: a My Den section (what it is, how to open it, the guide), no picture slots while no pictures are there",
+      'id="my-den"' in fg and "<h2>My Den</h2>" in fg and 'href="/wrath/docs/den"' in fg and "Pick Your Den" in fg
+      and 'class="hb-den-shots"' not in fg)
+_anim = tempfile.mkdtemp(prefix="wu-anim-")
+shutil.copy(os.path.join(HERE, "www-files", "art", "leyline-shot-agents.webp"), _anim)
+shutil.copy(os.path.join(HERE, "www-files", "art", "leyline-shot-agents.webp"), os.path.join(_anim, "leyline-shot-den-2.webp"))
+open(os.path.join(_anim, "leyline-shot-agents.gif"), "wb").write(b"GIF89a\x01\x00\x01\x00\x00\x00\x00;")
+wp.ART_DIR = _anim
+ag = req("/wrath/leyline-preview/agents")[2].decode()
+gst, ghd, gb = req("/wrath/art/leyline-shot-agents.gif")
+check("agents: the GIF dropped in the art folder shows instead of the still, served as a GIF",
+      '<img src="/wrath/art/leyline-shot-agents.gif"' in ag and "leyline-shot-agents.webp" not in ag
+      and gst == 200 and ghd.get("content-type") == "image/gif" and gb.startswith(b"GIF89a"))
+fg = req("/wrath/leyline-preview/forge")[2].decode()
+check("forge: My Den shows the Den pictures that are there (only those)",
+      'data-slot="leyline-shot-den-2"' in fg and "leyline-shot-den-1" not in fg and "leyline-shot-den-3" not in fg)
+os.environ["WU_AGENTS_ANIM"] = "../etc/passwd"
+check("agents: a bad animated file name is ignored (the still)", "/wrath/art/leyline-shot-agents.webp" in req("/wrath/leyline-preview/agents")[2].decode())
+del os.environ["WU_AGENTS_ANIM"]
+shutil.rmtree(_anim, ignore_errors=True)
 wp.ART_DIR = ART_WAS
 HB.hub.portal = portal_with
 HB.hub.portal = lambda name: None if name == "hub_rank" else portal_with(name)

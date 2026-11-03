@@ -1539,11 +1539,15 @@ class Hub:
 
     def _app_shot(self, key, alt, fallback) -> str:
         """A screenshot of one of our own apps (Forge, Agents): leyline-shot-<key>.webp, a game picture, so off with
-        the game data killswitch; then the small drawing instead."""
+        the game data killswitch; then the small drawing instead. An app with an animated picture (APP_ANIMS: Agents'
+        GIF of the helpers at their laptops) shows that when its file is in the art folder, else the still."""
         have = self.portal("art_present")
         name = f"leyline-shot-{key}.webp"
+        anim = app_anim(key)
         try:
-            ok = self.game_shots_on() and (have is None or bool(have(name)))
+            ok = self.game_shots_on() and (have is None or bool(have(name)) or bool(anim and have(anim)))
+            if ok and anim and have is not None and have(anim):
+                name = anim
         except Exception:   # noqa: BLE001
             ok = False
         if not ok:
@@ -1641,7 +1645,7 @@ class Hub:
             ("agents", "Agents", "Your AI helpers, as heroes in an inn",
              "Bring your own AI coding helpers into the game: each one sits at a laptop in an inn and works through "
              "quests you approve, while you roam as your own character. A checker runs the real tests before anything "
-             "counts as done. Coming soon.",
+             "counts as done. Out now in the launcher.",
              ["Quests you approve, nothing goes ahead without you", "A checker the helpers can't edit",
               "Who needs you, at a glance", "Your own AI and your own account; Leyline never sees a key"],
              [(BASE + "/agents", "About Agents", False), (BASE + "/agents#own-ai", "Use your own AI", False)],
@@ -3134,12 +3138,37 @@ class Hub:
             '<section class="ly-panel"><h2>Get it</h2><p>Forge is in early access for Windows. The next build is on its '
             'way; join the Discord to hear when it lands.</p>'
             f'<p class="hb-actions"><a class="ly-btn" href="{BASE}/creators">Creator docs</a> '
-            f'<a class="ly-btn hb-alt" href="{BASE}/catalog">Mods</a></p></section>',
+            f'<a class="ly-btn hb-alt" href="{BASE}/catalog">Mods</a></p></section>' + self.my_den_section(),
             BASE + "/forge")
+
+    def my_den_section(self) -> str:
+        """The Forge page's My Den section (owner 3 Nov): what Your Den is, how to open it, its pictures, the guide.
+        Pictures: DEN_SHOTS in the art folder (game pictures, so only with the killswitch off); missing ones are left out."""
+        e = html.escape
+        have = self.portal("art_present")
+        shots = []
+        try:
+            if self.game_shots_on():
+                shots = [(n, alt) for n, alt in DEN_SHOTS if have is not None and have(n)]
+        except Exception:   # noqa: BLE001
+            shots = []
+        pics = ('<div class="hb-den-shots">' + "".join(
+            f'<figure class="hb-shot" data-slot="{e(n[:-5])}"><img src="/wrath/art/{e(n)}" alt="{e(alt)}" width="960" '
+            f'height="540" loading="lazy" decoding="async"></figure>' for n, alt in shots) + '</div>') if shots else ""
+        return ('<section class="ly-panel" id="my-den"><p class="hb-eyebrow">In the launcher</p><h2>My Den</h2>'
+                '<p>Your Den is your own white world to build in, on your PC. The launcher runs it for you, so it needs '
+                'no realm. Build a home or a whole village, shape the ground with Forge, save it, and invite a friend.</p>'
+                '<ol class="hb-list"><li><b>Open the launcher</b> and log in.</li>'
+                '<li><b>Pick Your Den</b> in the play bar\'s realm list, next to Play.</li>'
+                '<li><b>Press Play.</b> The first time, the launcher gets the small Den program, then takes you in.</li>'
+                '<li><b>Shape ground</b> on the Den\'s top bar opens Forge on your Den\'s land: hills, valleys, paint.</li></ol>'
+                + pics +
+                f'<p class="hb-actions"><a class="ly-btn" href="{DEN_GUIDE}">The Den guide</a> '
+                f'<a class="ly-btn hb-alt" href="{e(self._dl_page())}"{_ext(self._dl_page())}>Get the launcher</a></p></section>')
 
     def agents_page(self) -> bytes:
         return self._app_page(
-            "agents", "Agents", "Coming soon · your AI helpers",
+            "agents", "Agents", "Out now · your AI helpers",
             "Your AI coding helpers as heroes in an inn. You walk the inn freely as your own character; your helpers "
             "are the ones at the laptops, working through quests you approve. A checker runs the real tests before "
             "anything counts as done.",
@@ -3594,6 +3623,7 @@ box-shadow:0 0 0 3px var(--lk-accent-soft)}
 .hb-shot{margin:0;border-radius:var(--lk-r);overflow:hidden;border:1px solid var(--lk-border-strong);background:var(--lk-surface);
 box-shadow:0 18px 50px rgba(0,0,0,.45),0 0 0 1px rgba(91,141,239,.12),0 0 60px rgba(91,141,239,.10)}
 .hb-shot img{display:block;width:100%;height:auto}
+.hb-den-shots{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin:12px 0}
 /* the drawings (host, community, agents): plain CSS, the launcher's colours */
 .hb-draw{margin:0;padding:22px;border-radius:var(--lk-r);border:1px solid var(--lk-border-strong);background:var(--lk-surface);
 box-shadow:0 18px 50px rgba(0,0,0,.4),0 0 60px rgba(91,141,239,.08)}
@@ -4782,6 +4812,28 @@ ICONS = {
 
 # Heights of the Forge and Agents screenshots (960 wide), for the <img> size.
 APP_SHOTS = {"forge": 574, "agents": 540}
+# Animated pictures that replace an app's still when the file is in the art folder (owner 3 Nov: "Agents IS out", with
+# a GIF of the helpers at their laptops). The name may be changed with WU_AGENTS_ANIM; the portal serves only names in
+# its ART_TYPES (wrath_portal.py), so a new name goes there too. Drop the file in stream/www-files/art/ (fastloop.sh
+# installs it to the server's art folder). Same 960 wide frame as the still.
+APP_ANIMS = {"agents": ("WU_AGENTS_ANIM", "leyline-shot-agents.gif")}
+
+
+def app_anim(key: str) -> str:
+    """The animated picture's file name for an app, or "" (a name with a path or odd characters is ignored)."""
+    env, default = APP_ANIMS.get(key, ("", ""))
+    if not env:
+        return ""
+    name = (os.environ.get(env) or default).strip()
+    return name if re.fullmatch(r"[a-z0-9][a-z0-9-]{0,60}\.(?:gif|webp)", name) else ""
+
+
+# The Forge page's My Den section: its guide (stream/docs.py page "den") and its pictures, shown when they are in the art
+# folder (wrath_portal.ART_TYPES lists them; drop them in stream/www-files/art/). 960 x 540 each.
+DEN_GUIDE = "/wrath/docs/den"
+DEN_SHOTS = (("leyline-shot-den-1.webp", "Your Den: a player's own build in the white world."),
+             ("leyline-shot-den-2.webp", "Your Den with the Build bar open."),
+             ("leyline-shot-den-3.webp", "Your Den's ground shaped with Forge."))
 BACKDROP = "leyline-shot-backdrop.webp"   # the site backdrop (Hub._backdrop)
 
 

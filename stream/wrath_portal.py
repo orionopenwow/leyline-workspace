@@ -1331,6 +1331,9 @@ ART_TYPES = {
     # the front page's Forge and Agents sections: the owner's own app screenshots (Forge's map of its own island;
     # the Agents inn), game pictures, so behind the killswitch like the other leyline-shot- files
     "leyline-shot-forge.webp": "image/webp", "leyline-shot-agents.webp": "image/webp",
+    "leyline-shot-agents.gif": "image/gif",
+    # the Forge page's My Den pictures (hub.DEN_SHOTS), when the owner adds them
+    "leyline-shot-den-1.webp": "image/webp", "leyline-shot-den-2.webp": "image/webp", "leyline-shot-den-3.webp": "image/webp",   # Agents' animated picture (the owner's GIF; hub.APP_ANIMS), when it is there
     "leyline-shot-backdrop.webp": "image/webp",   # the hub's backdrop (the owner's picture), faint behind every page
     "play-stone.webp": "image/webp",   # the launcher's PLAY button picture without the word, for the site's Play buttons
     # the launcher's stone look on the site (launcher/ui/stone.css, owner 2026-10-31): the header/footer strip, the side

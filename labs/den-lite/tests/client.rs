@@ -1792,6 +1792,27 @@ fn single_go(f: &Frame) -> Option<(u64, u8)> {
 }
 
 /// Frames until a one-part addon answer `wubuild <name>`: the frames before it and its data.
+/// The last whole `wubuild <name>` answer in frames already read (its parts joined; the state line is often more
+/// than one part), or None.
+fn aid_parts(frames: &[Frame], name: &str) -> Option<String> {
+    let want = format!("OVMOD\twubuild\t{name}\t");
+    let (mut parts, mut whole) = (Vec::new(), None);
+    for f in frames {
+        let Some(rest) = addon_text(f).and_then(|t| t.strip_prefix(&want).map(String::from)) else { continue };
+        let Some((pn, data)) = rest.split_once('\t') else { continue };
+        let Some((i, n)) = pn.split_once('/') else { continue };
+        let (Ok(i), Ok(n)) = (i.parse::<usize>(), n.parse::<usize>()) else { continue };
+        if i == 1 {
+            parts.clear();
+        }
+        parts.push(data.to_string());
+        if i == n && parts.len() == n {
+            whole = Some(parts.concat());
+        }
+    }
+    whole
+}
+
 fn until_aid(w: &mut World, name: &str) -> (Vec<Frame>, String) {
     let want = format!("OVMOD\twubuild\t{name}\t1/1\t");
     let mut got = Vec::new();
@@ -1958,8 +1979,11 @@ fn the_editors_pick_place_select_drag_and_snap_out() {
     let mut glow = None;
     let mut handles = Vec::new();
     let mut frames2 = frames;
-    let (more, st) = until_aid(&mut w, "state");
-    frames2.extend(more);
+    // the state may come before "placed" (aid_send's order): look in what came already, else wait for it
+    let st = match aid_parts(&frames2, "state") {
+        Some(st) => st,
+        None => w.until_addon("wubuild", "state"),
+    };
     for f in &frames2 {
         if let Some((g, v)) = values(f) {
             if g == chair {

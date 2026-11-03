@@ -1572,7 +1572,7 @@ def mouse_steps(rep, ui, aids, shot, with_pic, den_dir, wait):
     return True
 
 
-def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
+def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0, only_move=False):
     """The editor's flow as the owner's video shows it (3 Nov: "it should function like this"), through the Leyline UI's
     own test actions, a picture after each step: build mode (props shown as things the game highlights); a gallery
     card picked (in hand, nothing in front of you); the real prop following the cursor; one click places it and it is
@@ -1672,49 +1672,51 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
         else:
             rep.ok(placed, "click: placed there", (ev or {}).get("detail", "nothing placed"), "Den Lite didn't place the prop: send logs\\den-features-latest.txt.")
             ui("gizmo cancel")
-        # 4. a handle dragged along X: the prop follows the cursor along it; a click drops it
-        if newer:
-            ui("gizmo grab x")
-            a = aids()
-            grabbed = str(a.get("armed", "")).startswith("axis,")
-            ui("gizmo hover 0.4 -0.3")
-            a = aids()
-            pic = shot("dragging")
-            moved = float(a.get("drag") or 0.0)
+        # den-move (owner 3 Nov: "limit the den test to one test: moving and selecting objects") skips 4, 5 and the menu
+        if not only_move:
+            # 4. a handle dragged along X: the prop follows the cursor along it; a click drops it
+            if newer:
+                ui("gizmo grab x")
+                a = aids()
+                grabbed = str(a.get("armed", "")).startswith("axis,")
+                ui("gizmo hover 0.4 -0.3")
+                a = aids()
+                pic = shot("dragging")
+                moved = float(a.get("drag") or 0.0)
+                t = now_ms()
+                ui("gizmo commit")
+                ev = wait_for(lambda: event_after(den_dir, "den_change", t), wait)
+                pic2 = shot("drag-dropped")
+                rep.ok(grabbed and abs(moved) > 0.05 and ev is not None, "drag: a handle moves it along X, a click drops it",
+                       "moved %+.2f yd along X%s%s" % (moved, (", " + pic) if pic else "", (", " + pic2) if pic2 else ""),
+                       "Grabbed %s, moved %.2f, dropped %s: send logs\\den-features-latest.txt and the pictures." % (grabbed, moved, ev is not None))
+            else:
+                ui("select")
+            # the wheel along a picked axis (a step at a time)
+            ui("gizmo axis z")
             t = now_ms()
-            ui("gizmo commit")
+            ui("gizmo wheel 1")
             ev = wait_for(lambda: event_after(den_dir, "den_change", t), wait)
-            pic2 = shot("drag-dropped")
-            rep.ok(grabbed and abs(moved) > 0.05 and ev is not None, "drag: a handle moves it along X, a click drops it",
-                   "moved %+.2f yd along X%s%s" % (moved, (", " + pic) if pic else "", (", " + pic2) if pic2 else ""),
-                   "Grabbed %s, moved %.2f, dropped %s: send logs\\den-features-latest.txt and the pictures." % (grabbed, moved, ev is not None))
-        else:
-            ui("select")
-        # the wheel along a picked axis (a step at a time)
-        ui("gizmo axis z")
-        t = now_ms()
-        ui("gizmo wheel 1")
-        ev = wait_for(lambda: event_after(den_dir, "den_change", t), wait)
-        pic = shot("wheel-step")
-        rep.ok(ev is not None and aids().get("axis") == "z", "gizmo: the wheel moves it along the picked axis",
-               with_pic("axis z, %s" % (ev or {}).get("detail", "no change"), pic),
-               "The wheel didn't move the prop: send logs\\den-features-latest.txt.")
-        ui("gizmo axis off")
-        # 5. Swap with: another card picked, Ins
-        if newer:
-            ui("pick 1670")
-            t = now_ms()
-            ui("key insert")
-            ev = wait_for(lambda: event_after(den_dir, "den_change", t), wait)
-            pic = shot("swap")
-            rep.ok(ev is not None, "swap: the selection becomes the gallery's pick", with_pic((ev or {}).get("detail", "no change"), pic),
-                   "Swap did nothing: send logs\\den-features-latest.txt.")
-            ui("gizmo cancel")
-        # the right-click menu's Duplicate (the menu opens at the cursor on a right-click in the game)
-        p0 = props() or 0
-        ui("gizmo menu 2")
-        got = wait_for(lambda: (props() or 0) == p0 + 1, wait, 0.5)
-        rep.ok(bool(got), "menu: Duplicate", "%s -> %s props" % (p0, props()), "The menu's Duplicate did nothing: send logs\\den-features-latest.txt.")
+            pic = shot("wheel-step")
+            rep.ok(ev is not None and aids().get("axis") == "z", "gizmo: the wheel moves it along the picked axis",
+                   with_pic("axis z, %s" % (ev or {}).get("detail", "no change"), pic),
+                   "The wheel didn't move the prop: send logs\\den-features-latest.txt.")
+            ui("gizmo axis off")
+            # 5. Swap with: another card picked, Ins
+            if newer:
+                ui("pick 1670")
+                t = now_ms()
+                ui("key insert")
+                ev = wait_for(lambda: event_after(den_dir, "den_change", t), wait)
+                pic = shot("swap")
+                rep.ok(ev is not None, "swap: the selection becomes the gallery's pick", with_pic((ev or {}).get("detail", "no change"), pic),
+                       "Swap did nothing: send logs\\den-features-latest.txt.")
+                ui("gizmo cancel")
+            # the right-click menu's Duplicate (the menu opens at the cursor on a right-click in the game)
+            p0 = props() or 0
+            ui("gizmo menu 2")
+            got = wait_for(lambda: (props() or 0) == p0 + 1, wait, 0.5)
+            rep.ok(bool(got), "menu: Duplicate", "%s -> %s props" % (p0, props()), "The menu's Duplicate did nothing: send logs\\den-features-latest.txt.")
         # the mouse, picked by Den Lite (gizmo.rs `click`, `drag`; owner 3 Nov: "clicking objects, having them
         # highlighted, moving them around easily"): the prop under the cursor glows, a click selects it, a press and
         # drag moves it. The selection's own place on the screen comes from Den Lite (`sel_uv`), so the test points
@@ -2374,15 +2376,21 @@ def test(args, rep):
             walk_lines(steps, events(den_dir, rpt["start"]), where)
         except Exception as e:  # noqa: BLE001 - the smoke test still runs
             steps.add("FAIL", "walking", "the check stopped: %s" % str(e)[:200], "Send logs\\den-test-latest.txt.")
-        try:
-            keys_check(steps, den_dir, pid, rpt["start"])
-        except Exception as e:  # noqa: BLE001 - the smoke test still runs
-            steps.add("INFO", "keys: pressed (SendInput)", "the check stopped: %s" % str(e)[:200])
-        try:
-            secrets = den_steps(steps, FileChannel(den_dir), den_dir, root, marks, rpt["start"])
-        except Exception as e:  # noqa: BLE001 - the game still gets its picture and is closed
-            steps.add("FAIL", "the Den's smoke test", "stopped: %s" % str(e)[:200], "Send logs\\den-test-latest.txt.")
-        if getattr(args, "features", False):
+        if not getattr(args, "move", False):   # den-move: only select and move (owner 3 Nov)
+            try:
+                keys_check(steps, den_dir, pid, rpt["start"])
+            except Exception as e:  # noqa: BLE001 - the smoke test still runs
+                steps.add("INFO", "keys: pressed (SendInput)", "the check stopped: %s" % str(e)[:200])
+            try:
+                secrets = den_steps(steps, FileChannel(den_dir), den_dir, root, marks, rpt["start"])
+            except Exception as e:  # noqa: BLE001 - the game still gets its picture and is closed
+                steps.add("FAIL", "the Den's smoke test", "stopped: %s" % str(e)[:200], "Send logs\\den-test-latest.txt.")
+        if getattr(args, "move", False):
+            try:
+                aids_features(steps, FileChannel(den_dir), den_dir, lambda out: screenshot(pid, out), logs / "den-move", only_move=True)
+            except Exception as e:  # noqa: BLE001 - the game still gets its picture and is closed
+                steps.add("FAIL", "select and move", "stopped: %s" % str(e)[:200], "Send logs\\den-move-latest.txt.")
+        elif getattr(args, "features", False):
             try:
                 den_features(steps, FileChannel(den_dir), den_dir, lambda out: screenshot(pid, out), logs / "den-features")
             except Exception as e:  # noqa: BLE001 - the game still gets its picture and is closed
@@ -2459,7 +2467,7 @@ def _quiet_add(r):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("mode", choices=["check", "test", "features"])
+    ap.add_argument("mode", choices=["check", "test", "features", "move"])
     ap.add_argument("--game")
     ap.add_argument("--app-dir")
     ap.add_argument("--no-login", action="store_true")
@@ -2468,11 +2476,12 @@ def main(argv=None):
     ap.add_argument("--timeout", type=int, default=150)
     a = ap.parse_args(argv)
     rep = Report()
+    a.move = a.mode == "move"
     a.features = a.mode == "features"
-    if a.features:
+    if a.features or a.move:
         a.mode = "test"
         a.timeout = max(a.timeout, 150)
-    title = "DEN CHECK" if a.mode == "check" else ("DEN FEATURE TEST" if a.features else "DEN TEST")
+    title = "DEN CHECK" if a.mode == "check" else ("DEN MOVE TEST" if a.move else "DEN FEATURE TEST" if a.features else "DEN TEST")
     print("%s (%s)" % (title, time.strftime("%Y-%m-%d %H:%M")))
     (check if a.mode == "check" else test)(a, rep)
     code = rep.end(title)
@@ -2485,9 +2494,10 @@ def main(argv=None):
             p = app / "den-lite" / f
             if p.is_file():
                 extra += "\n--- %s ---\n%s" % (f, p.read_text(encoding="utf-8", errors="replace"))
-        (logs / ("den-features-latest.txt" if a.features else "den-test-latest.txt")).write_text("%s (%s)\n%s\n%s%s" % (title, time.strftime("%Y-%m-%d %H:%M"), rep.text(),
+        latest = "den-move-latest.txt" if a.move else "den-features-latest.txt" if a.features else "den-test-latest.txt"
+        (logs / latest).write_text("%s (%s)\n%s\n%s%s" % (title, time.strftime("%Y-%m-%d %H:%M"), rep.text(),
                                                    "PASS" if code == 0 else "FAIL", extra), encoding="utf-8")
-        print("Saved %s" % (logs / ("den-features-latest.txt" if a.features else "den-test-latest.txt")))
+        print("Saved %s" % (logs / latest))
     return code
 
 

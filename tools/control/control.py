@@ -153,6 +153,7 @@ STEPS = {
     "fresh-sandbox": ("tools/first-run/Fresh computer test - sandbox.bat", "Fresh computer test in Windows Sandbox: a brand-new Windows with your game folder copied in (yours mapped read-only); the report lands in tools\\first-run\\logs\\sandbox\\out (needs Windows Sandbox on)", False),
     "den-test-variants": ("tools/den-check/Den test - variants.bat", "The Den test once (since 3 Nov the Den is the game's own grass and sky: nothing left to vary)", False),
     "den-test-invite": ("tools/den-check/Den test - invite.bat", "My Den test (the same as den-test: it always invites a test friend now)", False),
+    "den-move": ("tools/den-check/Den move.bat", "The one Den test for now: select and move (build mode, a prop placed and selected, hover glow, click selects, press and drag moves it, snap out and back, zoom far and back; pictures in tools\\den-check\\logs\\den-move)", False),
     "den-features": ("tools/den-check/Den features.bat", "The Den editor's feature test: den-test, then the gallery (do the tiles show models?), five props placed, select, move, turn, copy, paste, delete, undo, redo, save and open, every panel and play mode, through the editor's own buttons; a screenshot after each (tools\\den-check\\logs\\den-features)", False),
     "client":  ("stream/Update browser client.bat", "New browser game build", False),
     "client-back": ("stream/Roll back browser client.bat", "Undo: the previous browser game build back (the server keeps one; running it again swaps back)", False),

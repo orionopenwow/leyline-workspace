@@ -1707,7 +1707,7 @@ color:var(--gold);background:rgba(0,0,0,.35);font-weight:600}.drop.over{backgrou
 .gml{margin:4px 0 0;padding-left:18px;max-height:200px;overflow:auto}.gml li{margin:2px 0}
 #killswitch{border-image:none;border:2px solid #6b2620;border-radius:10px}#killswitch summary{color:var(--bad)}
 .ks textarea{font:inherit;width:100%;min-height:120px;background:rgba(0,0,0,.5);border:1px solid #0a0908;border-radius:7px;color:var(--text);padding:8px 11px}
-.ks .chk{display:flex;gap:8px;align-items:center;margin:3px 0}.ks .parts{margin:8px 0}.ks li.problem{color:var(--bad)}
+.ks .chk{display:flex;gap:8px;align-items:center;margin:3px 0}.ks .chk input{flex:none;min-width:0;width:auto;box-shadow:none}.ks .parts{margin:8px 0}.ks li.problem{color:var(--bad)}
 .ks li.manual{color:var(--warn)}.ks li.keep{color:var(--dim)}.ks .dgo{border-color:#8a2c22;background:rgba(255,131,120,.06)}
 .ks .dgo input{max-width:260px;flex:0 1 260px}
 </style></head><body class="ly">
@@ -1894,7 +1894,8 @@ const pa=k.paused;$("kspaused").innerHTML=pa?`<b style="color:var(--bad)">Paused
 const p=k.preview,key=p?p.id+(p.used?"u":""):"";
 if(key!==ksKey){ksKey=key;let h="";
 if(p){h=`<div>Preview of <b>${esc(KS_WORD[p.stage])}</b>, ${esc(p.when)}${p.used?" (used)":""}${logLink(p.log)}</div>`;
-let sec=null,body="";for(const i of p.items||[]){if(i.part!==sec){if(sec!==null)body+="</ul>";sec=i.part;body+=`<div class="sec">${esc(sec)}</div><ul>`}
+const PT=Object.fromEntries((k.parts||[]).map(x=>[x.key,x.title]));PT.backup="Backup";PT.all="All";
+let sec=null,body="";for(const i of p.items||[]){if(i.part!==sec){if(sec!==null)body+="</ul>";sec=i.part;body+=`<div class="sec">${esc(PT[sec]||sec)}</div><ul>`}
 body+=`<li class="${esc(i.kind)}">${i.kind==="manual"?"You: ":i.kind==="problem"?"Problem: ":""}${esc(i.text)}</li>`}if(sec!==null)body+="</ul>";
 if((p.problems||[]).length)body+=`<div class="sec" style="color:var(--bad)">Fix these first</div><ul>${p.problems.map(x=>`<li class="problem">${esc(x)}</li>`).join("")}</ul>`;
 h+=body}$("kssum").innerHTML=h}

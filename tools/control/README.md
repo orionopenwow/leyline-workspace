@@ -24,6 +24,15 @@ Buttons: Check server (`check`), Pull bug reports (`bugs`), Discord bot settings
 (`discord-preview`), World server log (`worldlog`), Find new mods (`mods-daily`, approves nothing), GM console, Open HQ.
 Every line shown goes through `scrub()` (no tokens or passwords).
 
+## Kill switch (owner only)
+
+The last card, folded. It takes Leyline down with the owner's farewell message: **Pause** (the message everywhere,
+then each ticked part stopped or hidden; **Undo** brings it back) and **Delete** (only after a Pause and a day's wait,
+a checked backup to the Desktop first). Each stage needs its own fresh preview and a typed phrase: `SHUT DOWN LEYLINE`,
+`BRING LEYLINE BACK`, `DELETE LEYLINE FOREVER`. It is not a step: never in `UPDATES-PENDING.txt`, Autopilot or
+Launch all. Logs: `logs\killswitch-<time>-<stage>.log`. Design and the manual steps: `docs/KILL-SWITCH.md`.
+Tests: `python3 -I tools/control/test_control_killswitch.py`, `python3 -I tools/killswitch/test_killswitch.py`.
+
 ## Quick edits (`apply-check` / `apply`)
 
 For a small change, Claude doesn't write a new `.bat`. After writing the changed files onto the PC (checked against

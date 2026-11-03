@@ -31,6 +31,8 @@
   const emit = (name, detail) => document.dispatchEvent(new CustomEvent(name, { detail }));
 
   let me = null, extra = {}, signedIn = false, code = "", ways = null;
+  // known: the core said whether a sign-in is kept (social_status); waysDown: the website didn't answer social_ways
+  let known = false, waysDown = false, checked = false;
   // the sign-in in progress: stage idle | choose | waiting | busy | error; via: the way picked; note: what went wrong;
   // form: the in-launcher form open in the chooser ("" | "key": paste your Hero Key | "password": name#tag and password)
   const flow = { stage: "idle", via: "", note: "", form: "" };
@@ -84,8 +86,8 @@
     return s;
   }
   async function loadWays() {
-    try { ways = await invoke("social_ways"); }
-    catch (_) { if (!ways) ways = { herokey: true, google: true, discord: false }; }
+    try { ways = await invoke("social_ways"); waysDown = false; }
+    catch (_) { waysDown = true; if (!ways) ways = { herokey: true, google: true, discord: false }; }
     emit("leyline:signin", { ...flow, code });
     return ways;
   }
@@ -225,7 +227,10 @@
       flow.stage = "error"; flow.note = String(e); renderCode();
     }
   }
-  function newAccount() { quickSignIn("new", () => invoke("social_new_account")); }
+  function newAccount() { return quickSignIn("new", () => invoke("social_new_account")); }
+  // the sign-in screen's (gate.js): a Hero Key pasted or read from its file, a name and password
+  const keySignIn = (text) => quickSignIn("key", () => invoke("social_key_signin", { key: String(text || "") }));
+  const passwordSignIn = (name, password) => quickSignIn("password", () => invoke("social_password_signin", { name, password }));
 
   // ---------------------------------------------------------------- the title bar's chip and its account panel
   // Owner 31 Oct 18:36: "make this popout menu from profile icon more consistent and in line with the module at top,
@@ -463,6 +468,16 @@
     closePanel(false);
     if (!signedIn || !me) { friends = null; adding = false; }
     box.textContent = "";
+    if (signedIn && !me) {
+      // signed in before, the website not answering now: the sign-in is kept (never a Log In here), Try again
+      const t = el("div", "hf-me-t");
+      t.append(el("b", "hf-me-name", "Signed in"), el("span", "hf-me-st", "Offline: your name shows once the website answers"));
+      const b = el("button", "link-s hf-retry", "Try again"); b.type = "button"; b.id = "hf-retry";
+      b.onclick = () => loadMe();
+      box.append(avatar("?", "hf-me-av hf-anon"), t, b);
+      renderCode();
+      return;
+    }
     if (!signedIn || !me) {
       const t = el("div", "hf-me-t");
       t.append(el("b", "hf-me-name", "Leyline"), el("span", "hf-me-st", "Signed out"));
@@ -502,7 +517,8 @@
     const box = $("hf-code");
     if (box) {
       const open = !signedIn && (flow.stage === "choose" || flow.stage === "waiting" || flow.stage === "error" || flow.stage === "busy")
-        && !(window.LeylineNav && window.LeylineNav.current().page === "account");
+        && !(window.LeylineNav && window.LeylineNav.current().page === "account")
+        && !(window.LeylineGate && window.LeylineGate.isOpen());   // the sign-in screen shows it itself
       box.hidden = !open;
       if (open) buildFlow(box, false); else box.textContent = "";
       box.classList.add("acct-panel", "ap-signin");
@@ -640,8 +656,9 @@
   renderBody();
   (async () => {
     let yes = false;
-    try { yes = await invoke("social_status"); } catch (_) { yes = false; }
-    signedIn = !!yes;
+    try { yes = await invoke("social_status"); known = true; } catch (_) { yes = false; }
+    signedIn = !!yes; checked = true;
+    emit("leyline:status", { known, signedIn });
     renderMe();
     if (yes) loadMe(); else loadWays();
   })();
@@ -652,5 +669,6 @@
 
   window.LeylineSocial = { refresh: loadMe, me: () => me, extra: () => extra, signedIn: () => signedIn, signIn, signOut, cancelSignIn,
     loadLatest, flow: () => ({ ...flow, code }), ways: () => ways, loadWays, buildFlow, avatar, setMe, openLink,
-    newAccount, freshKey: () => fresh, dropFreshKey: () => { fresh = null; } };
+    newAccount, freshKey: () => fresh, dropFreshKey: () => { fresh = null; },
+    keySignIn, passwordSignIn, keyFileSignIn: (call) => quickSignIn("key", call), known: () => known, checked: () => checked, waysDown: () => waysDown, offline: () => signedIn && !me };
 })();

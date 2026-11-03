@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="themes/themes.css"><script src="themes.js"></script>
 <link rel="stylesheet" href="social.css"><!-- Home's profile panel (social.js) and the Forum page (forum.js) -->
 <link rel="stylesheet" href="account.css"><!-- the sign-in chooser (social.js) and Manage account (account.js) -->
+<link rel="stylesheet" href="gate.css"><!-- the sign-in screen: Log in or Sign up before the launcher (gate.js) -->
 <link rel="stylesheet" href="modes.css">
 <link rel="stylesheet" href="hostconsole.css"><!-- Host: the host console (hostconsole.js) -->
 <link rel="stylesheet" href="den.css"><!-- Your Den: the one Den page and the Home entry (den.js) -->
@@ -28,8 +29,19 @@
 <link rel="stylesheet" href="slate.css"><!-- the pages on the stone: panels, cards, buttons, Realms (owner 31 Oct design pass) -->
 <link rel="stylesheet" href="guide.css"><!-- the first-run tour and the one-time encouragement toast (guide.js) -->
 </head>
-<body class="ly">
-<div class="frame">
+<body class="ly gated">
+<!-- The sign-in screen (gate.js): signed out, Log in or Sign up first, over the whole window; it shows "Checking your
+     sign-in…" until the core answers, so the launcher never flashes first. Its own drag strip and window buttons. -->
+<div class="gate" id="gate" role="dialog" aria-modal="true" aria-label="Sign in to Leyline">
+  <div class="gate-bar" data-tauri-drag-region></div>
+  <div class="winbtns gate-winbtns">
+    <button type="button" id="gate-min" aria-label="Minimise"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+    <button type="button" id="gate-max" aria-label="Maximise"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="1.5"/></svg></button>
+    <button type="button" id="gate-close" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="gate-body" id="gate-body"><section class="gate-card"><p class="gate-wait-t"><b>Checking your sign-in…</b></p></section></div>
+</div>
+<div class="frame" inert>
 
 <!-- Title bar: drag to move the window -->
 <header class="titlebar" data-tauri-drag-region>
@@ -762,6 +774,7 @@
 <script src="avatars.js"></script><!-- the player portraits (window.LeylineAvatars; before social.js) -->
 <script src="social.js"></script>
 <script src="account.js"></script>
+<script src="gate.js"></script><!-- the sign-in screen (window.LeylineGate; after social.js and account.js, before app.js) -->
 <script src="forum.js"></script>
 <script src="modes.js"></script>
 <script src="shelf.js"></script><!-- Mods and Addons: one rule (window.LeylineShelf; before market, gamemods, simple and app) -->

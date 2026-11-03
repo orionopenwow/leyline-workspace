@@ -213,6 +213,9 @@
   }
 
   async function play(m, btn) {
+    // the official realm signs in with the Leyline account: the sign-in screen first, then this goes on (gate.js)
+    const G = window.LeylineGate;
+    if (m.kind !== "offline" && !browserMode() && G && !G.ready()) { G.need(`${m.title} is on the official realm, which signs you in with your Leyline account. Log in, and it goes on by itself.`, () => play(m, btn)); return; }
     btn.disabled = true;
     try {
       if (m.kind === "offline" || browserMode()) {

@@ -240,7 +240,7 @@ function renderNews() {
 
 // ------------------------------------------------------------------ state
 async function refresh() {
-  state = await invoke("get_state");
+  state = tidyState(await invoke("get_state"));
   $("ver").textContent = "Leyline v" + state.version;
   $("data-dir").textContent = state.data_dir;
   renderPlay();
@@ -254,6 +254,20 @@ function isOfficial() { return $("play-realm").value === "official"; }
 // the official realm's address on either of its names (leylinelauncher.com, or play.openvanilla.app saved before the move)
 function isOfficialAddr(a) { return a === state.official_realm || ADDR.isOfficialRealm(a); }
 function chosenRealm() { return isOfficial() ? state.official_realm : $("play-custom").value.trim(); }
+// The official realm signs in with the Leyline account (app.rs play_official): signed in first, or the sign-in screen
+// with `then` to go on afterwards (gate.js). true: signed in (or no way to tell), go on now.
+function signedInFirst(then) {
+  const G = window.LeylineGate;
+  if (!G || G.ready()) return true;
+  G.need(`${officialName()} signs you in with your Leyline account. Log in, and PLAY goes on by itself.`, then);
+  return false;
+}
+// What a community realm's login is, after its start (owner 2 Nov: "community realms say plainly what login they need")
+function communityLogin(r) {
+  if (localChosen() || chosenRealm() === DEN_LITE) return "";
+  const name = (r && r.name) || "this realm";
+  return ` ${name} has its own accounts: log in with yours there` + (r && r.join_url ? " (first time? Make an account on its card under Realms)." : ".");
+}
 // The official realm (launch, owner 2026-10-30; renamed "Wrath Unleashed" for now, owner 2026-10-30 23:32): where
 // everyone meets in Dalaran. One name everywhere, whatever the listing calls it (the Sample Hangout, the realm's own
 // name). The one place the launcher's UI names it: home.js and addons.js read it from here (window.LeylineApp.HANGOUT).
@@ -457,7 +471,12 @@ function chosenRealmBuild() {
   return r && r.build ? r.build : null;
 }
 
+// the realm, client and mode the play bar's status line was last said for: another one, and the old line goes (owner
+// 2 Nov: "Started … on 127.0.0.1." from a Den start stayed after switching to Wrath Unleashed)
+let statusFor = null;
+const playKey = () => `${mode}|${isOfficial() ? "official" : chosenRealm()}|${$("play-client").value}`;
 function realmChanged() {
+  if (playKey() !== statusFor) { if (statusFor !== null) say("play-status", ""); statusFor = playKey(); }
   $("play-custom-wrap").hidden = isOfficial();
   const c = currentClient();
   const need = chosenRealmBuild();
@@ -475,7 +494,8 @@ function realmChanged() {
 // Top: Add a game folder… and Find your game files. Then the families Leyline plays that have no folder yet, greyed
 // ("Not found": a click opens the Find your game files guide). Nearest the button: the folders you added, the picked
 // one marked. Arrow keys, Home / End, Enter or Space, Esc; a click outside closes it. #play-client stays the model.
-const FAMILIES = [["1.12.1", "Vanilla"], ["2.4.3", "TBC"], ["3.3.5a", "Wrath"]];
+// the families, oldest first (ERAS): the offered ones only
+const FAMILIES = () => ERAS.filter(([b]) => offeredBuild(b));
 let menuOpen = false;
 function clientVersion(c) { return c && BUILDS[c.build] ? c.build : (c && c.exe_version) || ""; }
 function renderClientMenu() {
@@ -513,7 +533,7 @@ function renderClientMenu() {
     row("pb-act", "Find your game files", { run: () => openFindFiles() }),
   ];
   const have = state.settings.clients;
-  const missing = FAMILIES.filter(([b]) => !have.some((x) => x.build === b)).map(([b, name]) =>
+  const missing = FAMILIES().filter(([b]) => !have.some((x) => x.build === b)).map(([b, name]) =>
     row("pb-missing", name, { ver: b, sub: "Not found", disabled: true, title: `No ${b} folder added yet: how to find it`, run: () => openFindFiles(name, b) }));
   const tail = (t) => ([...t].length > 30 ? "…" + [...t].slice(-29).join("") : t);   // the end of a long path, where the folder name is
   const mine = have.map((x) => row("pb-mine", x.name, { ver: clientVersion(x), sub: tail(x.path), selected: c && x.id === c.id, title: x.path,
@@ -1456,6 +1476,9 @@ $("play-form").addEventListener("submit", async (ev) => {
   if (await localBeforePlay()) return;   // My Den / Solo leveling: knocked again first, or its next step
   const c = currentClient();
   if (!c) { openFindFiles(); return; }   // no game folder yet: where to find one (and browser play)
+  // the official realm signs in by itself with your Leyline account, so never a start signed out (it opened at the
+  // stock login screen): the sign-in screen first, then this PLAY goes on (gate.js)
+  if (isOfficial() && !signedInFirst(() => $("play-form").requestSubmit())) return;
   const realm = chosenRealm();
   if (!realm) { show("realms"); $("play-custom").focus(); return say("play-status", "Type a realm address.", "bad"); }
   $("play-go").disabled = true;
@@ -1466,8 +1489,10 @@ $("play-form").addEventListener("submit", async (ev) => {
     if (!j.go) { say("play-status", ""); return; }
     if (window.LeylineAddons && isOfficial() && !j.leyline) await window.LeylineAddons.beforePlay(c);   // offers the Leyline addons (addons.js)
     say("play-status", "Starting…");
-    say("play-status", await invoke("play", { client: c.id, realm }), "ok");
-    state = await invoke("get_state");
+    const started = await invoke("play", { client: c.id, realm });
+    say("play-status", started + (isOfficial() ? "" : communityLogin(rr)), "ok");
+    statusFor = playKey();
+    state = tidyState(await invoke("get_state"));
   } catch (e) {
     sayErr("play-status", e);
   } finally {
@@ -1644,7 +1669,7 @@ function renderClientPickers() {
   document.querySelectorAll(".client-pick").forEach((sel) => {
     sel.replaceChildren();
     for (const c of state.settings.clients) {
-      const o = el("option", "", `${c.name} · ${c.build}`);
+      const o = el("option", "", pickLabel(c));
       o.value = c.id;
       sel.append(o);
     }
@@ -1672,6 +1697,35 @@ function needClient(statusId) {
   if (!c) { say(statusId, "Add your game folder first: pick Add a game folder… in the play bar.", "bad"); return null; }
   return c;
 }
+// The game eras, oldest first (owner 2 Nov: "more accurately named not game 3.3.5a but wrath 3.3.5a for example and
+// ordered properly"; clients.rs Build::era). Every client list follows this order: the state's own list is sorted by it
+// (tidyState), so the play bar's list, Clients, the pickers and the core's id all agree.
+const ERAS = [["1.12.1", "Vanilla"], ["2.4.3", "TBC"], ["3.3.5a", "Wrath"], ["4.3.4", "Cata"], ["5.4.8", "MoP"]];
+const eraRank = (b) => { const i = ERAS.findIndex(([v]) => v === b); return i < 0 ? ERAS.length : i; };
+const eraName = (b) => { const e = ERAS.find(([v]) => v === b); return e ? `${e[1]} ${b}` : ""; };
+// A name an older core made ("Game 3.3.5a (3.3.5a (12340))", "<folder> (3.3.5a (12340))") as the new core names it
+// (clients.rs tidy_name: "Wrath 3.3.5a", "<folder> (Wrath)": the version shows beside it). A name the player typed is kept.
+const NOTHING_WORDS = ["game", "client", "wotlk", "wrath", "tbc", "vanilla", "classic", "cata", "cataclysm", "mop", "build", "enus", "engb"];
+const saysNothing = (n) => String(n).split(/[^\p{L}\p{N}]+/u).every((w) => !w || NOTHING_WORDS.includes(w.toLowerCase()) || /^\d+[a-z]?$/i.test(w));
+function tidyName(name, build) {
+  const era = eraName(build), b = BUILDS[build];
+  if (!era || !b || typeof name !== "string") return name;
+  const label = `${build} (${b.num})`;
+  let bare;
+  if (name === label) bare = "";
+  else if (name.endsWith(`(${label})`)) bare = name.slice(0, -label.length - 2).trim();
+  else return name;
+  return saysNothing(bare) ? era : `${bare} (${era.split(" ")[0]})`;
+}
+function tidyState(s) {
+  if (s && s.settings && Array.isArray(s.settings.clients)) {
+    s.settings.clients = s.settings.clients.map((c) => Object.assign({}, c, { name: tidyName(c.name, c.build) }))
+      .sort((a, b) => eraRank(a.build) - eraRank(b.build));   // stable: the order added, within an era
+  }
+  return s;
+}
+// a client in a picker: its name, and its version when the name doesn't say it
+const pickLabel = (c) => (String(c.name).includes(c.build) ? c.name : `${c.name} · ${c.build}`);
 // The builds Leyline knows (clients.rs). "other" is any build it does not: it plays realms, but takes no mods.
 const BUILDS = {
   "1.12.1": { num: 5875, tag: "1.12", file: "realmlist.wtf" },
@@ -2410,6 +2464,13 @@ function setupDrop() {
   // adds a game client (clientImport); over the rest of the play bar nothing moves; anywhere else it is a mod.
   wv.onDragDropEvent((ev) => {
     const t = ev.payload && ev.payload.type;
+    // the sign-in screen: a drop is the Hero Key file (gate.js), nothing else
+    if (window.LeylineGate && window.LeylineGate.isOpen()) {
+      if (t === "enter" || t === "over") window.LeylineGate.dragOver(true);
+      else if (t === "leave") window.LeylineGate.dragOver(false);
+      else if (t === "drop") window.LeylineGate.dropPath((ev.payload.paths || [])[0]);
+      return;
+    }
     const here = currentPage === "mods" && currentTab === "installed";
     const pos = ev.payload && ev.payload.position;
     const dpr = window.devicePixelRatio || 1;
@@ -2536,6 +2597,7 @@ let rlTab = "official";
 try { const t = localStorage.getItem("leyline.realmsTab"); if (RL_TABS.includes(t)) rlTab = t; } catch (_) { /* storage may be off */ }
 function setRealmsTab(tab, focus) {
   if (!RL_TABS.includes(tab)) return;
+  if (rlTab !== tab) say("rl-status", "");   // a line about the other tab's realm goes with it
   rlTab = tab;
   try { localStorage.setItem("leyline.realmsTab", tab); } catch (_) { /* storage may be off */ }
   renderRealms();
@@ -2780,6 +2842,10 @@ invoke("p2p_flags").then((v) => {
 const CORE_LABELS = { azerothcore: "AzerothCore", trinitycore: "TrinityCore", cmangos: "CMaNGOS", vmangos: "vMaNGOS", mangos: "MaNGOS", other: "Other server" };
 $("rl-mine").addEventListener("change", () => renderRealms());
 async function playRealm(r, btn) {
+  if (r.official && !signedInFirst(() => playRealm(r, btn))) return;
+  // the play bar follows the card: this realm, and the client its picker takes for it (the picked one when it can
+  // play there, else one of the version it needs), so PLAY and the bar say the same afterwards
+  if (r.official || r.address) pickRealm(r);
   const c = needClient("rl-status");
   if (!c) return;
   if (!clientFits(r, c)) return say("rl-status", wrongClientText(r, c), "warn");   // never another client by itself
@@ -2791,7 +2857,8 @@ async function playRealm(r, btn) {
     if (!j.go) { say("rl-status", ""); btn.disabled = false; return; }
     if (window.LeylineAddons && r.official && !j.leyline) await window.LeylineAddons.beforePlay(c);   // offers the Leyline addons (addons.js)
     const msg = await invoke("play_realm", { client: c.id, slug: r.slug });
-    say("rl-status", msg + (r.official ? "" : " First time here? Make your account with Make an account."), "ok");
+    say("rl-status", msg + (r.official ? "" : ` ${r.name} has its own accounts: log in with yours there`
+      + (r.join_url ? ", or make one with Make an account." : ".")), "ok");
     await refresh();
     renderRealms();
   } catch (e) { sayErr("rl-status", e); }

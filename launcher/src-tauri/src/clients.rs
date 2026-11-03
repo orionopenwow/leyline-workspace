@@ -715,7 +715,7 @@ pub fn says_nothing(name: &str) -> bool {
     })
 }
 
-/// A client's name made by Leyline, as it is shown now: `Wrath 3.3.5a`, or `<folder> (Wrath 3.3.5a)` when the folder's
+/// A client's name made by Leyline, as it is shown now: `Wrath 3.3.5a`, or `<folder> (Wrath)` when the folder's
 /// name says something. A name saved by an older Leyline (`Game 3.3.5a (3.3.5a (12340))`, `<folder> (3.3.5a (12340))`)
 /// becomes the new one; a name the player typed (no build label at its end) is kept.
 pub fn tidy_name(name: &str, build: Build) -> String {
@@ -731,7 +731,10 @@ pub fn tidy_name(name: &str, build: Build) -> String {
             None => return name.to_string(),
         }
     };
-    if says_nothing(bare) { build.era_name() } else { format!("{bare} ({})", build.era_name()) }
+    match build.era() {
+        Some(era) if !says_nothing(bare) => format!("{bare} ({era})"),
+        _ => build.era_name(),
+    }
 }
 
 /// A new profile from a detection. The id is unique among `existing` ids.
@@ -756,7 +759,8 @@ pub fn new_profile(path: &Path, det: &Detection, existing: &[ClientProfile]) -> 
         id,
         name: {
             let f = brandless(&folder);
-            if folder.is_empty() || says_nothing(&f) { label } else { format!("{f} ({label})") }
+            // the version shows beside the name everywhere: a named folder carries only its era
+            if folder.is_empty() || says_nothing(&f) { label } else { format!("{f} ({})", det.build.era().map(String::from).unwrap_or(label)) }
         },
         path: path.to_path_buf(),
         build: det.build,
@@ -852,7 +856,7 @@ mod tests {
         assert_eq!(tidy_name("Game 3.3.5a (3.3.5a (12340))", Build::V335a), "Wrath 3.3.5a");
         assert_eq!(tidy_name("Game (1.12.1 (5875))", Build::V1121), "Vanilla 1.12.1");
         assert_eq!(tidy_name("2.4.3 (8606)", Build::V243), "TBC 2.4.3");
-        assert_eq!(tidy_name("Warmane (3.3.5a (12340))", Build::V335a), "Warmane (Wrath 3.3.5a)");
+        assert_eq!(tidy_name("Warmane (3.3.5a (12340))", Build::V335a), "Warmane (Wrath)");
         // the player's own names, and an unknown build, stay
         assert_eq!(tidy_name("My raid client", Build::V335a), "My raid client");
         assert_eq!(tidy_name("Wrath 3.3.5a", Build::V335a), "Wrath 3.3.5a");
@@ -1129,6 +1133,6 @@ mod tests {
         let b = new_profile(d.path(), &det, std::slice::from_ref(&a));
         assert_eq!(a.id, "c335a-1");
         assert_eq!(b.id, "c335a-2");
-        assert!(a.name.ends_with("(Wrath 3.3.5a)"), "{}", a.name);
+        assert!(a.name.ends_with("(Wrath)"), "{}", a.name);
     }
 }

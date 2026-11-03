@@ -114,15 +114,14 @@ check("capacity from WU_PLAY_CAPACITY", wp.PLAY_CAPACITY == 2)
 os.environ.pop("WU_PLAY_CAPACITY", None)
 spec2 = importlib.util.spec_from_file_location("wp_default", sys.argv[1])
 wp2 = importlib.util.module_from_spec(spec2); spec2.loader.exec_module(wp2)
-check("default capacity: today's limit (the most sessions kept), so no line until the owner sets one",
-      wp2.PLAY_CAPACITY == wp2.Sessions.MAX_SESSIONS == 5000)
+check("default capacity: the owner's 250", wp2.PLAY_CAPACITY == 250)
 os.environ["WU_PLAY_CAPACITY"] = "nonsense"
 check("a bad value falls back to the default", wp2._env_int("WU_PLAY_CAPACITY", 5000, 0, 5000) == 5000)
 os.environ["WU_PLAY_CAPACITY"] = "-4"
 check("a negative value is 0 (no line)", wp2._env_int("WU_PLAY_CAPACITY", 5000, 0, 5000) == 0)
 os.environ["WU_PLAY_CAPACITY"] = "2"
-check("defaults: idle 600 s, beat 90 s, hold 120 s, line 500",
-      (wp.PLAY_IDLE, wp.QUEUE_BEAT, wp.QUEUE_HOLD, wp.QUEUE_MAX) == (600, 90, 120, 500))
+check("defaults: idle 600 s, a 180 s reconnect grace for a place, hold 120 s, line 500",
+      (wp.PLAY_IDLE, wp.QUEUE_BEAT, wp.QUEUE_HOLD, wp.QUEUE_MAX) == (600, 180, 120, 500))
 
 # --- two seats fill
 st, h, _ = play(1, "10.8.0.1")
@@ -265,10 +264,12 @@ a = Q.admit("u1", "ip1", "", "mini", "", full, t0)
 b_ = Q.admit("u2", "ip2", "", "mini", "", full, t0 + 1)
 c_ = Q.admit("u3", "ip3", "", "mini", "", full, t0 + 2)
 check("FIFO: 1, 2, 3", [a["position"], b_["position"], c_["position"]] == [1, 2, 3])
-Q.poll(b_["token"], 2, t0 + 60); Q.poll(c_["token"], 2, t0 + 60)
-check("a place nobody asks about is dropped after WU_QUEUE_BEAT", Q.poll(a["token"], 2, t0 + wp.QUEUE_BEAT + 1) is None)
-check("the others moved up (they asked)", Q.poll(b_["token"], 2, t0 + 92)["position"] == 1 and Q.poll(c_["token"], 2, t0 + 92)["position"] == 2)
-t0 += 60
+Q.poll(b_["token"], 2, t0 + 120); Q.poll(c_["token"], 2, t0 + 120)
+check("a page gone quiet for most of the grace (a reconnect) keeps its place", Q.poll(a["token"], 2, t0 + wp.QUEUE_BEAT - 5)["position"] == 1)
+Q.poll(b_["token"], 2, t0 + 240); Q.poll(c_["token"], 2, t0 + 240)
+check("a place nobody asks about is dropped after the grace (WU_QUEUE_BEAT)", Q.poll(a["token"], 2, t0 + 2 * wp.QUEUE_BEAT + 1) is None)
+check("the others moved up (they asked)", Q.poll(b_["token"], 2, t0 + 362)["position"] == 1 and Q.poll(c_["token"], 2, t0 + 362)["position"] == 2)
+t0 += 330
 v = Q.poll(b_["token"], 1, t0 + 40)
 check("a seat frees: the first ready", v["state"] == "ready")
 check("the next is #1, not let in", Q.poll(c_["token"], 1, t0 + 41)["state"] == "waiting" and Q.poll(c_["token"], 1, t0 + 41)["position"] == 1)

@@ -124,11 +124,11 @@ Settings (environment, /srv/wrath/portal.env):
   SOAP_TIMEOUT           seconds for one AzerothCore SOAP call, and the longest one waits for its turn (8)
   WU_STREAM              1 = browser streaming on, 0 = off (default 0)
   STREAM_HOST            the game's name (default: ADDRESSES below, by LEYLINE_DOMAIN_MOVE)
-  WU_PLAY_CAPACITY       streamed browser seats (default 5000, the most sessions kept = no line in practice; 0 = no
-                         line). Past it /wrath/play shows the browser queue (docs/QUEUE.md); own game files need no seat
+  WU_PLAY_CAPACITY       streamed browser seats (default 250, the owner's number; 0 = no line). Past it /wrath/play
+                         shows the browser queue (docs/QUEUE.md); own game files need no seat
   WU_PLAY_IDLE           seconds without game traffic before a seat counts free (600)
   WU_QUEUE_MAX, WU_QUEUE_PER_IP, WU_QUEUE_BEAT, WU_QUEUE_HOLD, WU_QUEUE_SEAT_MIN   the line: its length (500), places per
-                         address (4), seconds a silent place is kept (90), seconds a freed seat waits for the first in
+                         address (4), seconds a silent place is kept (180: the reconnect grace), seconds a freed seat waits for the first in
                          line (120), minutes per seat for the first wait guess (30). docs/QUEUE.md
   STREAM_SLICES          the slice names /wrath/play accepts (default mini)
   WU_SLICE_DIR           where <slice>.json lives (default /app/slices; maxTier is read from it)
@@ -878,10 +878,11 @@ def _env_int(name: str, default: int, lo: int, hi: int) -> int:
 
 # The browser queue (docs/QUEUE.md). Streamed play (the slice, "Dalaran in the browser") is the one thing this server
 # hands out that costs it real bandwidth and CPU per player. WU_PLAY_CAPACITY seats; past them a fair line.
-PLAY_CAPACITY = _env_int("WU_PLAY_CAPACITY", Sessions.MAX_SESSIONS, 0, Sessions.MAX_SESSIONS)  # 0 = no line at all
+# The owner's numbers (3 Nov): a line from about 250 players, and 180 s to come back without losing your place.
+PLAY_CAPACITY = _env_int("WU_PLAY_CAPACITY", 250, 0, Sessions.MAX_SESSIONS)   # 0 = no line at all
 PLAY_IDLE = _env_int("WU_PLAY_IDLE", 600, 60, 6 * 3600)        # a seat with no game traffic this long is free again
 QUEUE_MAX = _env_int("WU_QUEUE_MAX", 500, 1, 20000)            # the longest line; past it: "the line is full"
-QUEUE_BEAT = _env_int("WU_QUEUE_BEAT", 90, 30, 900)            # a place whose page stopped asking this long is dropped
+QUEUE_BEAT = _env_int("WU_QUEUE_BEAT", 180, 30, 900)           # the reconnect grace: a place whose page stopped asking this long is dropped
 QUEUE_HOLD = _env_int("WU_QUEUE_HOLD", 120, 30, 900)           # a freed seat waits this long for the first in line
 QUEUE_PER_IP = _env_int("WU_QUEUE_PER_IP", 4, 1, 100)          # places per address (/64): households share one
 QUEUE_SEAT_MIN = _env_int("WU_QUEUE_SEAT_MIN", 30, 1, 720)     # the wait guess before any seat was seen to free

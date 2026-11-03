@@ -581,7 +581,7 @@ function B.Refresh()
     if refreshPill then refreshPill() end
     if not win then return end
     local n = #B.shown
-    local maxOff = math.max(0, math.ceil((n - PAGE) / COLS) * COLS)
+    local maxOff = math.max(0, math.floor((n - 1) / COLS) * COLS)   -- the last page may be part full
     if B.offset > maxOff then B.offset = maxOff end
     if B.offset < 0 then B.offset = 0 end
     local favs = store().favs
@@ -626,7 +626,8 @@ function B.Page(dir)
     return true
 end
 function B.Scroll(rows)
-    B.offset = math.max(0, B.offset + rows * COLS)
+    local full = math.max(0, math.ceil((#B.shown - PAGE) / COLS) * COLS)   -- the wheel stops at a full last page
+    B.offset = math.max(0, math.min(math.max(full, B.offset), B.offset + rows * COLS))
     B.Refresh()
 end
 

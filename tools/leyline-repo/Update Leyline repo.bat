@@ -16,6 +16,9 @@ set "LY=%WU%\.repos\leyline-public"
 if not exist "%LY%\.git" if exist "%USERPROFILE%\Desktop\Leyline\.git" if /i not "%USERPROFILE%\Desktop\Leyline"=="%WU%" set "LY=%USERPROFILE%\Desktop\Leyline"
 if not "%LEYLINE_REPO_DIR%"=="" set "LY=%LEYLINE_REPO_DIR%"
 set "SLUG=orionopenwow/Leyline"
+rem The same copy for another repo (2 Nov: Leyline-Launcher, the old Open Vanilla repo, gets the same version):
+rem LEYLINE_SLUG names it, LEYLINE_REPO_DIR its folder, LEYLINE_KEEP the paths of that repo kept as they are
+if not "%LEYLINE_SLUG%"=="" set "SLUG=%LEYLINE_SLUG%"
 set "URL=https://github.com/%SLUG%.git"
 set GIT_TERMINAL_PROMPT=0
 
@@ -77,6 +80,7 @@ git merge -q --no-edit origin/main || (
 :export
 echo [4/5] Copying Leyline's parts from %WU%
 %PY% "%WU%\tools\leyline-repo\export.py" "%LY%" --source "%WU%" || (echo   The export stopped ^(see above^). Nothing was committed. & goto :fail)
+if not "%LEYLINE_KEEP%"=="" for %%K in (%LEYLINE_KEEP%) do git checkout -q HEAD -- "%%~K" >nul 2>&1
 git add -A || (echo   git add failed. & goto :fail)
 for /f "delims=" %%X in ('%PY% "%WU%\tools\leyline-repo\export.py" --list-exec --source "%WU%"') do git update-index --chmod=+x -- "%%X" >nul 2>&1
 git diff --cached --quiet && (echo   nothing changed since the last copy) && goto :push

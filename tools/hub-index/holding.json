@@ -140,6 +140,22 @@
    "reason": "no open licence file"
   },
   {
+   "repo": "https://github.com/Corfirean/modern-wow-renderer",
+   "name": "Modern Renderer (original)",
+   "builds": [
+    "3.3.5a"
+   ],
+   "reason": "no open licence file"
+  },
+  {
+   "repo": "https://github.com/cralor/TourGuideVanilla",
+   "name": "TourGuideVanilla",
+   "builds": [
+    "1.12"
+   ],
+   "reason": "no open licence file"
+  },
+  {
    "repo": "https://github.com/Day36512/Npcbot_Extended_Commands",
    "name": "Npcbot_Extended_Commands",
    "builds": [
@@ -148,8 +164,24 @@
    "reason": "no open licence file"
   },
   {
+   "repo": "https://github.com/Drakensangs/Chromatic-WotLK",
+   "name": "Chromatic-WotLK",
+   "builds": [
+    "3.3.5a"
+   ],
+   "reason": "no open licence file"
+  },
+  {
    "repo": "https://github.com/drfdev/turtle-wow-loot-navigator",
    "name": "Turtle Loot navigator",
+   "builds": [
+    "1.12"
+   ],
+   "reason": "no open licence file"
+  },
+  {
+   "repo": "https://github.com/EinBaum/SP_SwingTimer",
+   "name": "SP_SwingTimer",
    "builds": [
     "1.12"
    ],
@@ -204,6 +236,14 @@
    "reason": "no open licence file"
   },
   {
+   "repo": "https://github.com/jsb/Gatherer",
+   "name": "Gatherer",
+   "builds": [
+    "1.12"
+   ],
+   "reason": "no open licence file"
+  },
+  {
    "repo": "https://github.com/kasperfriend/azerothcore-oneclick-compiler",
    "name": "One-Click Realm Compiler",
    "builds": [
@@ -216,6 +256,14 @@
    "name": "Modern Renderer",
    "builds": [
     "3.3.5a"
+   ],
+   "reason": "no open licence file"
+  },
+  {
+   "repo": "https://github.com/laytya/EQL3",
+   "name": "EQL3",
+   "builds": [
+    "1.12"
    ],
    "reason": "no open licence file"
   },
@@ -261,10 +309,42 @@
    "reason": "no open licence file"
   },
   {
+   "repo": "https://github.com/Monteo/SuperMacro",
+   "name": "SuperMacro",
+   "builds": [
+    "1.12"
+   ],
+   "reason": "no open licence file"
+  },
+  {
+   "repo": "https://github.com/napnapnapnap/wowsimsexporter-wotlk-335",
+   "name": "Sim Exporter",
+   "builds": [
+    "3.3.5a"
+   ],
+   "reason": "no open licence file"
+  },
+  {
+   "repo": "https://github.com/nimeral/AuctionatorVanilla",
+   "name": "AuctionatorVanilla",
+   "builds": [
+    "1.12"
+   ],
+   "reason": "no open licence file"
+  },
+  {
    "repo": "https://github.com/Old-Man-Warcraft/mod-nemesis-system",
    "name": "Nemesis System",
    "builds": [
     "3.3.5a"
+   ],
+   "reason": "no open licence file"
+  },
+  {
+   "repo": "https://github.com/OldManAlpha/Puppeteer",
+   "name": "Puppeteer",
+   "builds": [
+    "1.12"
    ],
    "reason": "no open licence file"
   },
@@ -301,8 +381,32 @@
    "reason": "no open licence file"
   },
   {
+   "repo": "https://github.com/refaim/TradeSkillsData",
+   "name": "TradeSkillsData",
+   "builds": [
+    "1.12"
+   ],
+   "reason": "no open licence file"
+  },
+  {
+   "repo": "https://github.com/refaim/TrainerSkills",
+   "name": "TrainerSkills",
+   "builds": [
+    "1.12"
+   ],
+   "reason": "no open licence file"
+  },
+  {
    "repo": "https://github.com/refaim/WIM",
    "name": "WIM",
+   "builds": [
+    "1.12"
+   ],
+   "reason": "no open licence file"
+  },
+  {
+   "repo": "https://github.com/Road-block/ColorSocialFrame",
+   "name": "ColorSocialFrame",
    "builds": [
     "1.12"
    ],
@@ -319,6 +423,14 @@
   {
    "repo": "https://github.com/Sarjuuk/aowow",
    "name": "aowow",
+   "builds": [
+    "3.3.5a"
+   ],
+   "reason": "no open licence file"
+  },
+  {
+   "repo": "https://github.com/Sattva-108/AdiBags",
+   "name": "AdiBags",
    "builds": [
     "3.3.5a"
    ],
@@ -365,6 +477,14 @@
    "reason": "no open licence file"
   },
   {
+   "repo": "https://github.com/tilare/FlightTracker",
+   "name": "FlightTracker",
+   "builds": [
+    "1.12"
+   ],
+   "reason": "no open licence file"
+  },
+  {
    "repo": "https://github.com/trickerer/Trinity-Bots",
    "name": "Trinity-Bots",
    "builds": [
@@ -405,10 +525,26 @@
    "reason": "no open licence file"
   },
   {
+   "repo": "https://github.com/Xurkon/Routes",
+   "name": "Routes",
+   "builds": [
+    "3.3.5a"
+   ],
+   "reason": "no open licence file"
+  },
+  {
    "repo": "https://github.com/Youpeoples/Ultimate-Full-Loot-Pvp",
    "name": "Ultimate-Full-Loot-Pvp",
    "builds": [
     "3.3.5a"
+   ],
+   "reason": "no open licence file"
+  },
+  {
+   "repo": "https://github.com/zetone/enemyFrames",
+   "name": "enemyFrames",
+   "builds": [
+    "1.12"
    ],
    "reason": "no open licence file"
   }
@@ -439,6 +575,10 @@
   {
    "repo": "https://github.com/a3st/RetailUI",
    "reason": "ships game-format files: RetailUI/Textures/Minimap/Calendar.blp, RetailUI/Textures/Minimap/EyeGroupFinderFlipbook.blp, RetailUI/Textures/Minimap/GuildBanner.blp"
+  },
+  {
+   "repo": "https://github.com/absir/Bagshui",
+   "reason": "ships game-format files: Images/Icons/Add.blp, Images/Icons/Asterisk.blp, Images/Icons/Bags.blp"
   },
   {
    "repo": "https://github.com/Aethixdryad140461-coder/azerothcore-custom-resp-modules",
@@ -509,6 +649,10 @@
    "reason": "an old placeholder (says it isn't ready); the module lives at mod-playerbots/mod-playerbots"
   },
   {
+   "repo": "https://github.com/azerothcore/mod-qr-code",
+   "reason": "a repack, client patch or client download"
+  },
+  {
    "repo": "https://github.com/azerothcore/mod-reward-shop",
    "reason": "built to sell things (shop, VIP, donations or payments)"
   },
@@ -569,6 +713,14 @@
    "reason": "a repack, client patch or client download"
   },
   {
+   "repo": "https://github.com/cralor/TomTomVanilla",
+   "reason": "ships game-format files: Images/Arrow-UP.blp, Images/Arrow.blp, Images/Arrow2.m2"
+  },
+  {
+   "repo": "https://github.com/crosire/reshade",
+   "reason": "describes itself as an injector, which the cheats rule refuses by that word; listed only if the owner waives it (docs/MODS-DAILY.md, TODO(owner))"
+  },
+  {
    "repo": "https://github.com/DanieltheDeveloper/azerothcore-transmog-3.3.5a",
    "reason": "ships game-format files: patches/lose files/Interface/addons/Transmogrification/assets/Transmog-Frame.blp, patches/lose files/Interface/addons/Transmogrification/assets/Transmog-Icon-Holder.blp, patches/lose files/Interface/addons/Transmogrification/assets/Transmog-Icon.blp"
   },
@@ -587,6 +739,10 @@
   {
    "repo": "https://github.com/DenoHearth/QuestBlobMinimap",
    "reason": "written for one commercial server's modified client"
+  },
+  {
+   "repo": "https://github.com/Drakensangs/DungeonMapsVanilla",
+   "reason": "ships game-format files: Assets/Arrow-Down-Disabled.blp, Assets/Arrow-Down-Down.blp, Assets/Arrow-Down-Up.blp"
   },
   {
    "repo": "https://github.com/DustinHendrickson/mod-classless-wildcard",
@@ -665,6 +821,10 @@
    "reason": "an essay, not a mod or tool"
   },
   {
+   "repo": "https://github.com/FrancisEgan/Questline",
+   "reason": "ships game-format files: Textures/minimap-blips.blp, Textures/quest-available.blp, Textures/quest-complete.blp"
+  },
+  {
    "repo": "https://github.com/FusionWowCMS/FusionCMS",
    "reason": "ships donation and store modules (selling things), under a licence we don't recognise as open"
   },
@@ -683,6 +843,10 @@
   {
    "repo": "https://github.com/Grim-Batol/Paragon-Anniversary",
    "reason": "ships game-format files: clientside/Interface/Buttons/128redbutton.blp, clientside/Interface/Buttons/128redbutton9sliced.blp, clientside/Interface/Buttons/redbutton2x.blp"
+  },
+  {
+   "repo": "https://github.com/haha2345/SoloCollectionsPlatform",
+   "reason": "ships game-format files: SoloClientSuite/Interface/AddOns/!!!ClassicAPI/Texture/BUTTONS/UI-Panel-Button-YellowHighlight.blp, SoloClientSuite/Interface/AddOns/!!!ClassicAPI/Texture/ContainerFrame/Bags.blp, SoloClientSuite/Interface/AddOns/!!!ClassicAPI/Texture/FrameGeneral/!UI-Frame.blp"
   },
   {
    "repo": "https://github.com/Helias/mod-bg-battle-for-gilneas",
@@ -729,8 +893,16 @@
    "reason": "builds bots for automated play on other people's realms"
   },
   {
+   "repo": "https://github.com/Jslquintero/DialogUI",
+   "reason": "a repack, client patch or client download"
+  },
+  {
    "repo": "https://github.com/Kelsidavis/WoWee",
    "reason": "a whole replacement game client (also the from-scratch one with an Android build); its licence is MIT plus an added restriction against any commercial game use (since 2026-07-21), which is not an open licence; also answers anti-cheat"
+  },
+  {
+   "repo": "https://github.com/KhalGH/BattleGroundHealers-WotLK",
+   "reason": "ships game-format files: BattleGroundHealers/Artwork/BGHBottomLeft.blp, BattleGroundHealers/Artwork/BGHBottomRight.blp, BattleGroundHealers/Artwork/BGHTopLeft.blp"
   },
   {
    "repo": "https://github.com/Kirazul/Transmorpher",
@@ -833,6 +1005,10 @@
    "reason": "ships game-format files: Skada/Libs/SpecializedLibToast-1.0/closebutton-down.blp, Skada/Libs/SpecializedLibToast-1.0/closebutton-highlight.blp, Skada/Libs/SpecializedLibToast-1.0/closebutton-up.blp"
   },
   {
+   "repo": "https://github.com/nidas-wow-oss/Nidhaus_UnitFrames",
+   "reason": "ships game-format files: Nidhaus_UnitFrames/Artwork/0.blp, Nidhaus_UnitFrames/Artwork/1.blp, Nidhaus_UnitFrames/Artwork/2.blp"
+  },
+  {
    "repo": "https://github.com/NoM0Re/OmniCC-WotLK",
    "reason": "ships game-format files: OmniCC/media/Common-Input-Border.blp, OmniCC/media/CommonSearch.blp, OmniCC/media/UI-Character-CharacterTab-L1.blp"
   },
@@ -913,6 +1089,10 @@
    "reason": "ships game-format files: Textures/Professions/1536801-128redbutton.blp, Textures/Professions/1723831-uiframe-inner.blp, Textures/Professions/1723832-uiframe-inner.blp"
   },
   {
+   "repo": "https://github.com/Road-block/Cartographer",
+   "reason": "ships game-format files: Instances/BlackfathomDeeps.blp, Instances/BlackrockDepths.blp, Instances/BlackrockSpireLower.blp"
+  },
+  {
    "repo": "https://github.com/rsnitsch/vhs-deshaker",
    "reason": "nothing says it is for the game (a name match only)"
   },
@@ -949,6 +1129,10 @@
    "reason": "no sign of a supported client build"
   },
   {
+   "repo": "https://github.com/shirsig/aux-addon-vanilla",
+   "reason": "ships game-format files: WORLDSTATEFINALSCORE-HIGHLIGHT.BLP"
+  },
+  {
    "repo": "https://github.com/Shonik/lua-battlepass",
    "reason": "built to sell things (shop, VIP, donations or payments)"
   },
@@ -965,12 +1149,20 @@
    "reason": "ships binaries or archives (we only link source): SpellGUIV2/Costura32/SQLite.Interop.dll, SpellGUIV2/Costura32/StormLib.dll, SpellGUIV2/Costura64/SQLite.Interop.dll"
   },
   {
+   "repo": "https://github.com/Stormhand-dev/Lexara---HD-Font-Renderer-for-WoW-3.3.5",
+   "reason": "commits built binaries (dinput8.dll, skia.dll, source.7z) to the repo, and it is a DLL loaded into the client: link-out only if the owner decides so"
+  },
+  {
    "repo": "https://github.com/suprepupre/LuaBoost",
    "reason": "injects code into the game client (realms ban these tools)"
   },
   {
    "repo": "https://github.com/suprepupre/wow-optimize",
    "reason": "injects code into the game client (realms ban these tools)"
+  },
+  {
+   "repo": "https://github.com/tempranova/turtlerp",
+   "reason": "ships game-format files: images/TurtleRP_Icon.blp, images/WorldMapPlayerIconTRP.blp, images/description/TTRP-Description-BotLeft.blp"
   },
   {
    "repo": "https://github.com/tench-rt/tentacli",
@@ -983,6 +1175,10 @@
   {
    "repo": "https://github.com/TrinityCore/minimanager",
    "reason": "ships binaries or archives (we only link source): SQL/333a_dbc.zip"
+  },
+  {
+   "repo": "https://github.com/warblups/mod-quest-radar",
+   "reason": "ships game-format files: client-addon/server-module-variant/Icons/glow.blp"
   },
   {
    "repo": "https://github.com/wardz/ClassicCastbars",
@@ -1039,6 +1235,10 @@
   {
    "repo": "https://github.com/XJadeum/echoes-of-the-worldsoul-resocket",
    "reason": "one of a cluster of look-alike repos with identical star counts (likely a fake-star or malware-lure campaign)"
+  },
+  {
+   "repo": "https://github.com/xorann/BigWigs",
+   "reason": "licence is not open (non-commercial or no-derivatives terms, or a rider on an open licence)"
   },
   {
    "repo": "https://github.com/xVitali2/Addons-for-Vanilla-1.12.1",
@@ -1101,6 +1301,394 @@
     "2.4.3"
    ],
    "category": "presets"
+  },
+  {
+   "repo": "https://github.com/AlsoNotMehh/mod-account-bound",
+   "name": "Account Bound",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "realm-scripts"
+  },
+  {
+   "repo": "https://github.com/Arthur-Helias/ZonesLevel",
+   "name": "ZonesLevel",
+   "builds": [
+    "1.12"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/avirar/acore-data",
+   "name": "acore-data",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "tools"
+  },
+  {
+   "repo": "https://github.com/Bagan95/FadeFrameUI",
+   "name": "FadeFrameUI",
+   "builds": [
+    "1.12"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/Bagan95/FadeFrameUI-WOTLK",
+   "name": "FadeFrameUI (third era)",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/bkader/Compat-WotLK",
+   "name": "Compat-WotLK",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "realm-scripts"
+  },
+  {
+   "repo": "https://github.com/bkader/ElvinCDs",
+   "name": "ElvinCDs",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/bkader/KTracker",
+   "name": "KTracker",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/bkader/LibCompat-1.0",
+   "name": "LibCompat-1.0",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/BlackHobbiT/necrosis-twow",
+   "name": "Necrosis",
+   "builds": [
+    "1.12"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/buildthehomelab/wow-mod-forever-journal",
+   "name": "Journal",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "realm-scripts"
+  },
+  {
+   "repo": "https://github.com/Calmoran/mod-heimdall",
+   "name": "Heimdall tickets",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "tools"
+  },
+  {
+   "repo": "https://github.com/darhanger/idTip-WotLK",
+   "name": "idTip-WotLK",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/dh-harald/Bagzen",
+   "name": "Bagzen",
+   "builds": [
+    "1.12",
+    "3.3.5a"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/doitsujin/dxvk",
+   "name": "DXVK",
+   "builds": [
+    "1.12",
+    "2.4.3",
+    "3.3.5a"
+   ],
+   "category": "graphics"
+  },
+  {
+   "repo": "https://github.com/EinBaum/DisableEscape",
+   "name": "DisableEscape",
+   "builds": [
+    "1.12"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/EinBaum/MapTarget",
+   "name": "MapTarget",
+   "builds": [
+    "1.12"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/EinBaum/SuperIgnore",
+   "name": "SuperIgnore",
+   "builds": [
+    "1.12"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/faralaks/wow-questvoice",
+   "name": "QuestVoice",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/Fersantos1975/AzerCore-Ops",
+   "name": "AzerCore Ops",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "tools"
+  },
+  {
+   "repo": "https://github.com/ggb00/BistooltipRenewed",
+   "name": "BiS Tooltip Renewed",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/gitdalisar/addon-Faction-Free-Unit-Popup",
+   "name": "Faction Free Unit Popup",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/goamania/MouseHighlightCircle",
+   "name": "MouseHighlightCircle",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/heyitsbench/thecollector",
+   "name": "The Collector",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/Homerocker/HomeCheck",
+   "name": "HomeCheck",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/Maddnes95/mod-ilvl-scaling",
+   "name": "Item Level Scaling",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "encounters"
+  },
+  {
+   "repo": "https://github.com/MDGitHubRepo/CallOfElements",
+   "name": "Call of Elements",
+   "builds": [
+    "1.12"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/Medeah/Egnar",
+   "name": "Egnar",
+   "builds": [
+    "1.12"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/moiian/FFXIVCrossHotbar",
+   "name": "Cross Hotbar",
+   "builds": [
+    "1.12"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/moiian/ImmersiveDialogUI",
+   "name": "Immersive Dialog",
+   "builds": [
+    "1.12"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/NeticSoul/wow-335a-addon-wiki",
+   "name": "335a Addon Wiki",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "tools"
+  },
+  {
+   "repo": "https://github.com/PMZFX/mod-homebrew-gm",
+   "name": "Homebrew GM",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "tools"
+  },
+  {
+   "repo": "https://github.com/refaim/LibCrafts-1.0",
+   "name": "LibCrafts-1.0",
+   "builds": [
+    "1.12"
+   ],
+   "category": "realm-scripts"
+  },
+  {
+   "repo": "https://github.com/refaim/MobStats",
+   "name": "MobStats",
+   "builds": [
+    "1.12"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/refaim/snapjaw",
+   "name": "snapjaw",
+   "builds": [
+    "1.12",
+    "3.3.5a"
+   ],
+   "category": "tools"
+  },
+  {
+   "repo": "https://github.com/refaim/SoloRaidTargetIcons",
+   "name": "Solo Raid Target Icons",
+   "builds": [
+    "1.12"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/refaim/Vanilla-WoW-Lua-Definitions",
+   "name": "Lua definitions for addon makers",
+   "builds": [
+    "1.12"
+   ],
+   "category": "tools"
+  },
+  {
+   "repo": "https://github.com/rissole/Magnify-WotLK",
+   "name": "Magnify",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/SabineWren/Quiver",
+   "name": "Quiver",
+   "builds": [
+    "1.12"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/SamuelLira99/Profession-Capper",
+   "name": "Profession Capper",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/Sass42/Shapeshifter",
+   "name": "Shapeshifter",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "sandbox"
+  },
+  {
+   "repo": "https://github.com/ScottHamper/chatsuey",
+   "name": "ChatSuey",
+   "builds": [
+    "1.12"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/Souicia/mod-character-order",
+   "name": "Character Order",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "realm-scripts"
+  },
+  {
+   "repo": "https://github.com/stevemcqueenz/pfQuest-Reforged",
+   "name": "pfQuest Reforged",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/tdymel/DPSMate",
+   "name": "DPSMate",
+   "builds": [
+    "1.12"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/tdymel/DPSMateWOTLK",
+   "name": "DPSMate (third era)",
+   "builds": [
+    "3.3.5a"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/tdymel/ModifiedPowerAuras",
+   "name": "Modified Power Auras",
+   "builds": [
+    "1.12"
+   ],
+   "category": "addons"
+  },
+  {
+   "repo": "https://github.com/tdymel/VCB",
+   "name": "VCB",
+   "builds": [
+    "1.12"
+   ],
+   "category": "addons"
   }
  ]
 }

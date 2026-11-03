@@ -103,8 +103,16 @@ pub fn size(entry: u32, scale: Option<f32>) -> Size {
     size_with(entry, scale, crate::models::box_of)
 }
 
-/// A world piece's size (its scale is set: the normal one when the file said none).
+/// A world piece's size (its scale is set: the normal one when the file said none). A model carrier showing another
+/// display (a copied place's pieces) has that display's real box, else a yard cube.
 pub fn size_of(o: &WorldObject) -> Size {
+    let carried = o.entry == crate::den::MODEL_CARRIER && template(o.entry).map(|t| t.display) != Some(o.display);
+    if carried {
+        return match crate::models::box_of(o.display) {
+            Some((w, d, h, _)) if w > 0.01 && d > 0.01 => Size { w: w * o.scale, d: d * o.scale, h: h * o.scale, kind: Kind::Ground, real: true },
+            _ => Size { w: o.scale, d: o.scale, h: o.scale, kind: Kind::Ground, real: false },
+        };
+    }
     size(o.entry, Some(o.scale))
 }
 
@@ -364,7 +372,25 @@ pub const NAMES: &[(&str, &[&str])] = &[
     ("nook", &["nook", "reading", "library", "study", "books", "bookcorner", "reading-nook"]),
     ("shrine", &["shrine", "altar", "temple", "statue", "chapel", "sanctuary"]),
     ("dojo", &["dojo", "ring", "training", "arena"]),
+    // copied places (leyline-terrain place.rs PLACES: made on the player's PC by the launcher, `.den copy`)
+    ("lionspride", &["lionspride", "lion", "lions", "pride", "goldshire"]),
 ];
+
+/// A whole build takes at most this long however many pieces (a copied place has hundreds): the paces shrink.
+pub const BUILD_MAX_MS: u64 = 40_000;
+
+/// `.den copy`: the places that can be copied from the player's own game, (name, title).
+pub fn copy_places() -> Vec<(&'static str, &'static str)> {
+    leyline_terrain::place::PLACES.iter().map(|p| (p.name, p.title)).collect()
+}
+
+/// What `.den copy <place>` says when the copy isn't there: the launcher makes it when it starts the Den.
+pub fn not_copied(title: &str) -> String {
+    format!(
+        "{title} isn't copied on this PC yet: the launcher copies it from your own game files when it starts your Den \
+         (Leyline > Host > Your Den). Close the Den and press Play again, then .den copy again."
+    )
+}
 
 /// The stamp a word means ("tavern" -> "inn"); None: no stamp is called that.
 pub fn canonical(word: &str) -> Option<&'static str> {
@@ -523,6 +549,36 @@ mod tests {
     }
 
     #[test]
+    fn a_copied_place_is_read_from_the_dens_own_folder_bigger_than_a_stamp() {
+        assert_eq!(leyline_terrain::place::MODEL_BASE, crate::den::MODEL_BASE, "the copy's entries are Den Lite's model carrier");
+        let dens = std::env::temp_dir().join(format!("den-lite-stamps-local-{}", std::process::id()));
+        let local = dens.join(crate::den::LOCAL_DIR);
+        std::fs::create_dir_all(&local).unwrap();
+        let props: Vec<String> = (0..70)
+            .map(|i| format!(r#"{{"entry":{},"x":{},"y":0,"z":0,"yaw":0}}"#, crate::den::MODEL_BASE + 39, i as f64 * 0.5 - 17.0))
+            .collect();
+        let text = format!(r#"{{"format":"leyline-den","version":1,"kind":"stamp","local":true,"name":"lionspride","title":"The Lion's Pride","props":[{}]}}"#, props.join(","));
+        std::fs::write(local.join("lionspride.den.json"), text).unwrap();
+        crate::den::set_local_stamps(&dens);
+        let st = read_stamp(Path::new("no-such-folder"), "lion").expect("by another name");
+        assert_eq!(st.props.len(), 70);
+        assert!(crate::den::stamp_names(Path::new("no-such-folder")).contains(&"lionspride".to_string()));
+        assert_eq!(crate::dojo::build_words("build the Lion's Pride").as_deref(), Some("lionspride"));
+        // in a Den: each piece the model carrier showing its display
+        let mut den = crate::den::Den::new(crate::den::Spot { half: 32.0, ..Default::default() });
+        let (x, y, z) = (den.spot.x, den.spot.y, den.spot.z);
+        let ch = den.stamp(&st, x, y, z, 0.0);
+        assert_eq!(ch.created.len(), 70);
+        assert!(ch.created.iter().all(|o| o.entry == crate::den::MODEL_CARRIER && o.display == 39));
+        // a big build is paced to finish in time
+        let j = crate::dojo::Job::new(At { x, y, z, o: 0.0 }, At { x, y, z, o: 0.0 }, ch.created, 0, 0, "x");
+        assert!(j.paces.iter().sum::<u64>() <= BUILD_MAX_MS);
+        let _ = std::fs::remove_dir_all(&dens);
+        assert!(not_copied("The Lion's Pride").contains("press Play again"));
+        assert!(!crate::companion::branded(&not_copied("The Lion's Pride")));
+    }
+
+    #[test]
     fn other_names_find_the_stamp() {
         for (w, n) in [("tavern", "inn"), ("Pub", "inn"), ("camp", "campfire"), ("bonfire", "campfire"), ("farm", "garden"),
                        ("pier", "dock"), ("cottage", "house"), ("forge", "smithy"), ("blacksmith's", "smithy"), ("reading", "nook"),
@@ -532,10 +588,15 @@ mod tests {
         }
         assert_eq!(canonical("castle"), None);
         // every stamp is reachable by its own name, and every name but the Dojo is a built-in stamp
+        let places = copy_places();
         for (n, names) in NAMES {
             assert!(names.contains(n));
-            assert!(*n == "dojo" || BUILTIN_STAMPS.iter().any(|s| s.0 == *n), "{n}");
+            assert!(*n == "dojo" || BUILTIN_STAMPS.iter().any(|s| s.0 == *n) || places.iter().any(|p| p.0 == *n), "{n}");
         }
+        for (p, _) in &places {
+            assert_eq!(canonical(p), Some(*p), "every copied place has its names");
+        }
+        assert_eq!(canonical("goldshire"), Some("lionspride"));
         for (n, _) in BUILTIN_STAMPS {
             assert_eq!(canonical(n), Some(*n));
         }

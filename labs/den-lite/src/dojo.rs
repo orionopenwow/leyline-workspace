@@ -438,7 +438,14 @@ impl Job {
     pub fn new(stand: At, origin: At, mut pieces: Vec<WorldObject>, ms: u64, walk_ms: u64, title: &str) -> Job {
         use crate::stamps::{order, pace_ms, size_of, tier};
         order(&mut pieces, stand, origin.z);
-        let paces = pieces.iter().map(|o| pace_ms(tier(&size_of(o), o.z > origin.z + 0.2))).collect();
+        let mut paces: Vec<u64> = pieces.iter().map(|o| pace_ms(tier(&size_of(o), o.z > origin.z + 0.2))).collect();
+        // hundreds of pieces (a copied place): quicker each, the whole in BUILD_MAX_MS
+        let sum: u64 = paces.iter().sum();
+        if sum > crate::stamps::BUILD_MAX_MS {
+            for p in &mut paces {
+                *p = (*p * crate::stamps::BUILD_MAX_MS / sum).max(20);
+            }
+        }
         let start = ms + walk_ms.min(WALK_MAX_MS);
         Job {
             stand,

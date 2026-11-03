@@ -1474,6 +1474,18 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                 Err(e) => say(c, &e),
             }
         }
+        // a place copied from the player's own game (stamps.rs copy_places; made by the launcher into stamps-local)
+        (".den", "copy") => {
+            let places = crate::stamps::copy_places();
+            let want = crate::stamps::canonical(w(2)).unwrap_or(w(2));
+            match places.iter().find(|pl| pl.0 == want) {
+                None => say(c, &format!("Copy a place from your own game: {}.", places.iter().map(|pl| format!(".den copy {} ({})", pl.0, pl.1)).collect::<Vec<_>>().join(", "))),
+                Some(&(name, title)) => match den::read_stamp(&shared.cfg.stamps_dir, name) {
+                    Ok(_) => jaina_build(c, shared, sess, p, name),
+                    Err(_) => say(c, &crate::stamps::not_copied(title)),
+                },
+            }
+        }
         // the Dojo (dojo.rs): the training ring, dummies, flying, speed
         (".den", "dojo") => dojo_cmd(c, shared, sess, p, &words[2..]),
         (".den", "fly") => fly(c, shared, sess, w(2)),

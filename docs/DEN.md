@@ -54,8 +54,9 @@ tool that is on in gold.
 (invite a friend, who may build, save and load); its **Home** button (or `/denhome`) opens the home panel: the start
 choice, stamps, the grid, visiting and the mailbox. In edit mode hold Q: the gallery, until you let go.
 
-**Stamps: whole areas in one go.** A stamp is a small ready-made area: **Garden**, **Market square**, **Campfire
-circle**, **Dock** and **Small house**. Pick one (the home panel, the rail's **Stamps**, or the gallery's **Stamps** tab). Nothing is placed
+**Stamps: whole areas in one go.** A stamp is a small ready-made area: **Camp**, **Inn**, **Market**, **Garden**,
+**Dock**, **Small house**, **Smithy**, **Reading nook** and **Shrine**, laid out like the game's own places
+(docs/DEN-STAMPS.md: the rules, each stamp, and `.den copy` for a place copied from your own game). Pick one (the home panel, the rail's **Stamps**, or the gallery's **Stamps** tab). Nothing is placed
 yet: stakes mark its corners, and a lone stake shows its front. **Turn left** / **Turn right** turn it 15 degrees,
 **Here** moves the mark to where you stand, **Place** puts it down, **Cancel** takes the mark away. Each piece lands on
 the ground or floor under it. One undo (Ctrl+Z) takes the whole stamp back. In chat: `.den stamps`, `.den stamp garden`,

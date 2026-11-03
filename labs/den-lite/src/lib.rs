@@ -235,6 +235,7 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
         let _ = std::fs::create_dir_all(&cfg.den_dir);
         let _ = std::fs::write(cfg.den_dir.join(REMOTE_FILE), format!("{} {}\n", l.port(), w.port()));
     }
+    den::set_local_stamps(&cfg.den_dir);
     let mut d = den::Den::new(cfg.spot);
     if let Some(Err(e)) = d.reload_ground(&cfg.den_dir) {
         if cfg.verbose {

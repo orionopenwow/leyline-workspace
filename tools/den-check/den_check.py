@@ -961,6 +961,33 @@ UI_REPORT = "den-lite.ui-report"
 # flowers, a bed
 FEATURE_PROPS = [(2413, "Wooden Chair"), (1670, "Barrel of Powder"), (1953, "Campfire"), (2109, "Fragrant Flowers"), (13948, "Fancy Bed")]
 FEATURE_SAVE = "featuretest"
+# the stamps (realm/custom/lua_scripts/den-stamps, made by tools/den-stamps/compose.py): den-features builds each and
+# takes a picture so the owner can judge them (docs/DEN-STAMPS.md)
+STAMP_NAMES = ["campfire", "inn", "market", "garden", "dock", "house", "smithy", "nook", "shrine"]
+
+
+def stamp_pictures(rep, ch, den_dir, shot, wait=6.0, names=STAMP_NAMES, build_wait=60.0):
+    """Each stamp built in front of you (`.den jaina build <name>`: Jaina builds it piece by piece when she is out, else
+    it goes down at once), a picture once it is all there (logs/den-features/NN-stamp-<name>.png), then one undo."""
+    def size():
+        return ((ch.send(".den size") or {}).get("props")) or 0
+    for name in names:
+        p0 = size()
+        t = now_ms()
+        r = ch.send(".den jaina build %s" % name) or {}
+        if wait_for(lambda: event_after(den_dir, "den_change", t), wait) is None:
+            rep.add("FAIL", "stamp: %s" % name, "nothing was placed", "Send logs\\den-features-latest.txt.")
+            continue
+        if not any("Call your companion" in x for x in r.get("said", [])):
+            # she is out: wait for her to finish (the dojo event "built <n>")
+            wait_for(lambda: next((e for e in events(den_dir, t) if e.get("ev") == "dojo" and str(e.get("detail", "")).startswith("built")), None),
+                     build_wait, 0.5)
+        n = size() - p0
+        pic = shot("stamp-%s" % name)
+        rep.ok(n > 0, "stamp: %s" % name, "%d pieces%s" % (n, (", " + pic) if pic else ""),
+               "The stamp didn't go down: send logs\\den-features-latest.txt.")
+        ch.send(".build undo")
+        wait_for(lambda: size() <= p0, wait, 0.5)
 
 
 def ui_lines(den_dir, since):
@@ -1174,6 +1201,9 @@ def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
                 r = report(name)
                 opened = r.get("open", {}).get("_text", "")
                 rep.add("INFO", "panel: %s" % name, (opened or "-")[:150] + ((", " + pic) if pic else ""))
+        # 7. every stamp, built by Jaina (or put down at once without her), a picture of each, then taken back
+        stamp_pictures(rep, ch, den_dir, shot, wait)
+
         r = report("end")
         rep.ok(r.get("screen", {}).get("play") == "false", "play mode: and back to building", r.get("screen", {}).get("_text", "?"),
                "Back to building didn't come back: send logs\\den-features-latest.txt.")

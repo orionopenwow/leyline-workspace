@@ -15,6 +15,7 @@ Builder.lua
 EditMode.lua
 DenHome.lua
 DenBar.lua
+Gizmo.lua
 Dojo.lua
 Golf.lua
 ModeAPI.lua

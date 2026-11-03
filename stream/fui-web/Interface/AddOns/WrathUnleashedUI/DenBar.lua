@@ -1108,6 +1108,8 @@ function D.TestAction(text)
     local a, b = w[1] or "", B()
     if not b then return false end
     closeMenus()
+    -- the placement aids (Gizmo.lua): build mode, the live preview, the gizmo's axis, the menu
+    if a == "gizmo" then return W.Gizmo and W.Gizmo.TestAction(w) or false end
     if a == "report" then D.Report(w[2]); return true end
     if a == "gallery" then if not (b.Window() and b.Window():IsShown()) then bar.build:Click() end; if w[2] then b.ShowTab(w[2]) end; return true end
     if a == "nogallery" then if b.Window() then b.Window():Hide() end; return true end

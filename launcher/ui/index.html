@@ -29,19 +29,19 @@
 <link rel="stylesheet" href="slate.css"><!-- the pages on the stone: panels, cards, buttons, Realms (owner 31 Oct design pass) -->
 <link rel="stylesheet" href="guide.css"><!-- the first-run tour and the one-time encouragement toast (guide.js) -->
 </head>
-<body class="ly gated">
-<!-- The sign-in screen (gate.js): signed out, Log in or Sign up first, over the whole window; it shows "Checking your
-     sign-in…" until the core answers, so the launcher never flashes first. Its own drag strip and window buttons. -->
-<div class="gate" id="gate" role="dialog" aria-modal="true" aria-label="Log in to Leyline">
+<body class="ly">
+<!-- The sign-in dialog (gate.js): over the launcher, only when asked for (the title bar's Log In, or PLAY on the official
+     realm signed out); the launcher itself never waits for it (owner 2 Nov 23:14). Its own drag strip and window buttons. -->
+<div class="gate" id="gate" role="dialog" aria-modal="true" aria-label="Log in to Leyline" hidden>
   <div class="gate-bar" data-tauri-drag-region></div>
   <div class="winbtns gate-winbtns">
     <button type="button" id="gate-min" aria-label="Minimise"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
     <button type="button" id="gate-max" aria-label="Maximise"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="1.5"/></svg></button>
     <button type="button" id="gate-close" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
   </div>
-  <div class="gate-body" id="gate-body"><section class="gate-card"><p class="gate-wait-t"><b>Checking your sign-in…</b></p></section></div>
+  <div class="gate-body" id="gate-body"></div>
 </div>
-<div class="frame" inert>
+<div class="frame">
 
 <!-- Title bar: drag to move the window -->
 <header class="titlebar" data-tauri-drag-region>

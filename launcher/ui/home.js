@@ -250,7 +250,33 @@
     fm.append(sideHead("Latest on the forum", all), el("ul", "hs-forum"));
     fillForum(fm.lastChild);
     box.append(fm);
+    box.append(meltyPane());
     return box;
+  }
+  // Melty (owner 2 Nov 23:28: "a 'Melty' pane ... a link to go to melty's mod website, big blue pane with their logo and a
+  // download button"): their wordmark from melty.gg (its name in letters if the picture doesn't load), Download and the site
+  function meltyPane() {
+    const card = el("div", "hs-melty");
+    card.id = "hs-melty";
+    const logo = el("div", "hs-melty-logo");
+    const img = document.createElement("img");
+    img.alt = "Melty";
+    img.decoding = "async";
+    img.referrerPolicy = "no-referrer";
+    img.addEventListener("error", () => { img.remove(); logo.append(el("b", "hs-melty-word", "Melty")); });
+    img.src = "https://melty.gg/brand/melty-wordmark-white.png";
+    logo.append(img);
+    const dl = el("button", "hs-melty-dl", "Download");
+    dl.type = "button"; dl.id = "hs-melty-dl";
+    dl.addEventListener("click", () => App.openLink("meltydl"));
+    const site = el("button", "hs-melty-site", "melty.gg");
+    site.type = "button"; site.id = "hs-melty-site";
+    site.title = "Open Melty's website";
+    site.addEventListener("click", () => App.openLink("melty"));
+    const acts = el("div", "hs-melty-acts");
+    acts.append(dl, site);
+    card.append(logo, el("p", "hs-melty-t", "Mashups and mods for the games you own."), acts);
+    return card;
   }
   function sideHead(text, extra) {
     const h = el("div", "hs-side-h");

@@ -17,7 +17,7 @@ answering nonsense (503 with words); a bug of ours (503, not a 500); the release
 
     python3 -I stream/tests/test_herokeys.py stream/wrath_portal.py
 """
-import hashlib, http.client, importlib.util, io, json, logging, os, re, secrets, sys, tempfile, threading, urllib.parse
+import hashlib, html, http.client, importlib.util, io, json, logging, os, re, secrets, sys, tempfile, threading, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -281,8 +281,9 @@ check("start: another site's form is refused", st == 403)
 st, _, _, _, _ = req("POST", "/wrath/key/start", anon, {"t": t_start}, sfs="cross-site")
 check("start: cross-site is refused", st == 403)
 n_users = len(R["users"])
-st, hd, _, sc, _ = req("POST", "/wrath/key/start", anon, {"t": t_start})
-check("start: a new account, then the page", st == 303 and hd.get("Location") == "/wrath/key?new=1" and len(R["users"]) == n_users + 1, (st, hd))
+st, hd, mbody, sc, _ = req("POST", "/wrath/key/start", anon, {"t": t_start})
+check("start: a new account, its login shown at once (not a redirect: owner 2 Nov 23:18)", st == 200 and 'id="hk-made"' in mbody
+      and len(R["users"]) == n_users + 1, (st, hd))
 check("start: the service's own cookies come back (session, guest, the new key's), never wr_herokey",
       {c.split("=")[0] for c in sc} == {"wr_session", "wr_guest", "wr_herokey_play"}, sc)
 check("start: the service saw the player's own address (its limits per network hold)", R["seen"][-1][2] == "10.0.0.7")
@@ -291,6 +292,22 @@ acct1 = R["users"][max(R["users"])]["acct"]
 name1 = S.profile(acct1)["name"]
 check("start: a made-up readable name like Brightfeather42, through the name rules", re.fullmatch(r"[A-Z][a-z]+[a-z]+\d\d", name1)
       and wp.profiles.name_problem(name1) == "", name1)
+mpw = (re.search(r'id="hk-mpw" name="password" type="password" readonly autocomplete="new-password" value="([^"]+)"', mbody) or [None, ""])[1]
+check("start: a password made with it (4 groups of 4, easy to read), hidden until Show", re.fullmatch(r"[a-z2-9]{4}(-[a-z2-9]{4}){3}", mpw)
+      and ">Show<" in mbody and mpw not in visible(mbody), mpw)
+check("start: the name#tag for the browser's password manager (username / new-password), Save in this browser, Download",
+      f'autocomplete="username" value="{name1}#' in mbody and 'action="/wrath/key/saved"' in mbody and "Save in this browser" in mbody
+      and "Download as a text file" in mbody and "PasswordCredential" in mbody)
+check("start: the text file has the name, the password and the key, and says the launcher finds it",
+      "Name: " + name1 + "#" in html.unescape(mbody) and "Password: " + mpw in html.unescape(mbody) and re.search(r"Key: ovk1\.", mbody)
+      and "finds it in Downloads" in mbody)
+check("start: plain words, no brand names", not BRAND.search(visible(mbody)))
+st, _, _, _, d = req("POST", "/wrath/api/social/password/signin", js={"name": name1 + "#" + str(S.profile(acct1)["tag"]), "password": mpw})
+check("start: the made password signs the launcher in", st == 200 and (d or {}).get("token"), (st, d))
+st, hd, _, _, _ = req("POST", "/wrath/key/saved", anon, {"username": "x", "password": "y"})
+check("saved: Save in this browser's form goes back to the page (fields never kept)", st == 303 and hd.get("Location") == "/wrath/key?saved=1", (st, hd))
+st, _, _, _, _ = req("POST", "/wrath/key/saved", anon, {"username": "x"}, origin="https://evil.example")
+check("saved: another site's form is refused", st == 403)
 
 st, hd, body, sc, _ = req("GET", "/wrath/key?new=1", web)
 key1 = (re.search(r'data-key="(ovk1\.[^"]+)"', body) or [None, ""])[1]

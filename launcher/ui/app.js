@@ -504,12 +504,15 @@ function realmChanged() {
 const FAMILIES = () => ERAS.filter(([b]) => offeredBuild(b));
 let menuOpen = false;
 function clientVersion(c) { return c && BUILDS[c.build] ? c.build : (c && c.exe_version) || ""; }
+// the version chip beside a client's name, unless the name already says it ("Wrath 3.3.5a": owner 2 Nov 23:15, the
+// drop-up list showed every number twice)
+function clientBadge(c) { const v = clientVersion(c); return v && !String((c && c.name) || "").includes(v) ? v : ""; }
 function renderClientMenu() {
   if (!state) return;
   const c = currentClient();
   $("pb-client-name").textContent = c ? c.name : "No game client";
   $("pb-client").classList.toggle("empty", !c);
-  const v = clientVersion(c);
+  const v = clientBadge(c);
   $("pb-client-ver").hidden = !v;
   $("pb-client-ver").textContent = v;
   $("pb-client").title = c ? `${c.name} · ${c.path}` : "Add your game folder";
@@ -542,7 +545,7 @@ function renderClientMenu() {
   const missing = FAMILIES().filter(([b]) => !have.some((x) => x.build === b)).map(([b, name]) =>
     row("pb-missing", name, { ver: b, sub: "Not found", disabled: true, title: `No ${b} folder added yet: how to find it`, run: () => openFindFiles(name, b) }));
   const tail = (t) => ([...t].length > 30 ? "…" + [...t].slice(-29).join("") : t);   // the end of a long path, where the folder name is
-  const mine = have.map((x) => row("pb-mine", x.name, { ver: clientVersion(x), sub: tail(x.path), selected: c && x.id === c.id, title: x.path,
+  const mine = have.map((x) => row("pb-mine", x.name, { ver: clientBadge(x), sub: tail(x.path), selected: c && x.id === c.id, title: x.path,
     run: () => chooseClient(x) }));   // remembered for the realm picked, as the realm picker's client row
   const parts = [top, missing, mine].filter((g) => g.length);
   menu.replaceChildren(...parts.flatMap((g, i) => (i ? [sep(), ...g] : g)));
@@ -1342,7 +1345,7 @@ function renderRealmMenu() {
     const cur = currentClient();
     const fit = cur && (!need || cur.build === need) ? cur : state.settings.clients.find((x) => !need || x.build === need);
     if (fit) {
-      clients.push(row("pb-client-opt", fit.name, { ver: clientVersion(fit), sub: "Game client", title: `${fit.name} · ${fit.path}\nPick another game client or add a folder`,
+      clients.push(row("pb-client-opt", fit.name, { ver: clientBadge(fit), sub: "Game client", title: `${fit.name} · ${fit.path}\nPick another game client or add a folder`,
         keepFocus: true, run: () => openClientMenu() }));
     } else {
       const note = el("li", "pb-note", need ? "No game folder for this realm yet." : "No game folder yet.");

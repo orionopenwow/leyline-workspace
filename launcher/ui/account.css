@@ -293,3 +293,8 @@ html[data-base="light"] .ap-item:hover .ap-ic, html[data-base="light"] .ap-item:
 .ac-pass-f input { width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: var(--t-radius-sm);
   border: var(--t-border-w) solid var(--t-border-strong); background: color-mix(in srgb, var(--t-bg) 70%, transparent); color: var(--t-text); font: 14px var(--t-font); }
 .ac-pass-f input:focus-visible { outline: 2px solid var(--t-accent); outline-offset: 0; border-color: transparent; }
+
+/* Manage account › Your login: a guest account's name and password until saved (account.js guestBox) */
+.ac-guest { display: grid; gap: 8px; }
+.ac-cred { display: grid; grid-template-columns: 74px 1fr auto auto; align-items: center; gap: 8px; }
+.ac-cred-l { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--t-muted); }

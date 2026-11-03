@@ -1755,6 +1755,7 @@ pub fn run() {
             // Your Hero Key in the launcher (Manage account; stream/herokeys.py)
             crate::social::commands::social_key_signin,
             crate::social::commands::social_key_file,
+            crate::social::commands::social_key_found,
             crate::social::commands::social_new_account,
             crate::social::commands::social_password_signin,
             crate::social::commands::save_text_file,

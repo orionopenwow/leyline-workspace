@@ -1,0 +1,42 @@
+# Leyline launcher: the Rust core's tests and a compile check of the whole app, on feature branches, before a ship
+# (Claude's cloud sessions can't reach crates.io, so this is where their Rust gets built). Linux only, no release, no
+# secrets; the public Leyline repo's own workflow still builds and ships the launcher from main.
+name: launcher check
+
+on:
+  push:
+    branches: ["feat-*"]
+    paths:
+      - "launcher/src-tauri/**"
+      - ".github/workflows/launcher-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: launcher-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Linux webview libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: launcher/src-tauri
+      - name: cargo test (core, no webview)
+        working-directory: launcher/src-tauri
+        run: cargo test --locked --no-default-features
+      - name: cargo check (the whole app)
+        working-directory: launcher/src-tauri
+        run: cargo check --locked --all-targets

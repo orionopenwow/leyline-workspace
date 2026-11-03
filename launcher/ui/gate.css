@@ -1,11 +1,11 @@
-/* The sign-in screen (gate.js): over the whole window, the launcher's own look: the stone backdrop, the window's grey
-   edge, one stone panel in the middle with the spinning mark, Log in | Sign up, and the red stone buttons. */
+/* The sign-in dialog (gate.js): over the launcher (owner 2 Nov 23:14: no sign-in screen before it), the launcher dimmed
+   behind; one stone panel in the middle with the spinning mark, Not now, Log in | Sign up, and the red stone buttons. */
 .gate {
   position: fixed; inset: 0; z-index: 5000; display: grid; place-items: center; overflow: auto;
-  box-sizing: border-box; border: 7px solid transparent; border-image: url("art/window-edge.png") 19 / 7px round;
-  background: var(--t-backdrop-wash), url("art/leyline-bg.webp") center / cover no-repeat, var(--t-bg);
-  background-clip: padding-box; color: var(--t-text); font-family: var(--t-font);
+  box-sizing: border-box; background: rgba(4, 6, 9, 0.62); backdrop-filter: blur(3px);
+  color: var(--t-text); font-family: var(--t-font); animation: gate-in .16s ease-out;
 }
+@keyframes gate-in { from { opacity: 0; } to { opacity: 1; } }
 .gate[hidden] { display: none; }
 .gate-bar { position: fixed; top: 7px; left: 7px; right: 7px; height: 34px; }
 .gate-winbtns { z-index: 1; }
@@ -14,7 +14,7 @@
 #gate-close { background-image: url("art/win-close.png"); }
 .gate-body { width: min(440px, calc(100vw - 48px)); padding: 48px 0 32px; }
 .gate-card {
-  padding: 22px 26px 20px; border-radius: 4px;
+  position: relative; padding: 22px 26px 20px; border-radius: 4px;
   background: linear-gradient(180deg, rgba(26, 30, 29, 0.9), rgba(14, 16, 16, 0.94)), var(--stone-tall, #15171e);
   border: 1px solid var(--sl-metal, var(--t-border-strong));
   box-shadow: 0 0 0 1px var(--sl-edge, #000), inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 44px rgba(0, 0, 0, 0.6);
@@ -78,3 +78,41 @@ html[data-base="light"] .gate-card { background: var(--t-surface); }
 /* signed in, the website not answering: the chip says so, with Try again */
 .hf-me .hf-retry { flex: none; font-size: 12px; }
 @media (prefers-reduced-motion: reduce) { .gate-drop { transition: none; } }
+
+/* Not now (top right of the card) */
+.gate-x { position: absolute; top: 10px; right: 12px; padding: 4px 8px; border: 0; background: none; cursor: pointer;
+  color: var(--t-muted); font-size: 12.5px; border-radius: var(--t-radius-xs); }
+.gate-x:hover { color: var(--t-text); background: color-mix(in srgb, var(--t-text) 8%, transparent); }
+.gate-x:focus-visible { outline: 2px solid #f2c94c; }
+.gate-keylink { display: block; margin: 12px auto 0; font-size: 12.5px; }
+.gate .gate-drop { margin-top: 10px; }
+
+/* the login just made: name, password (hidden until Show), Save as text file, Continue */
+.gate-made { display: grid; gap: 8px; }
+.gate-made .gate-in-h { text-align: center; margin-bottom: 0; }
+.gate-made .gate-lede { text-align: center; }
+.gate-cred { display: grid; grid-template-columns: 74px 1fr auto auto; align-items: center; gap: 8px; padding: 8px 10px;
+  border-radius: var(--t-radius-sm); border: 1px solid var(--t-border-strong); background: color-mix(in srgb, var(--t-bg) 55%, transparent); }
+.gate-cred-l { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--t-muted); }
+.gate-cred-v { min-width: 0; overflow-wrap: anywhere; font: 600 14px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--t-text); }
+.gate-cred-v.dots { letter-spacing: .14em; color: var(--t-muted); }
+.gate-made .gate-acts { justify-content: center; margin-top: 6px; }
+.gate-made-msg { margin: 0; text-align: center; font-size: 13px; color: var(--t-ok); }
+.gate-made .sf-fine { text-align: center; }
+
+/* "Logged in with the Hero Key you downloaded" */
+.gate-toast { position: fixed; top: 58px; right: 18px; z-index: 6000; max-width: 360px; padding: 10px 14px; border-radius: var(--t-radius-sm);
+  background: var(--t-surface, #1a1d25); border: 1px solid var(--t-ok); color: var(--t-text); font-size: 13.5px; box-shadow: 0 10px 28px rgba(0,0,0,.45); }
+.gate-toast[hidden] { display: none; }
+
+/* signed out: the title bar's invitation (social.js renderMe) */
+.hf-me .hf-nudge { color: var(--sl-gold, var(--t-gold)); }
+@media (prefers-reduced-motion: reduce) { .gate { animation: none; } }
+
+/* Create a guest account: under the ways in, set apart */
+.gate-guest { margin: 16px 0 0; padding-top: 12px; border-top: 1px solid var(--t-border); display: grid; gap: 6px; }
+.gate-guest-h { margin: 0; text-align: center; font-size: 13px; color: var(--t-muted); }
+.gate .btn.gate-guest-go { width: 100%; height: 44px; font-size: 16px; }
+.gate-h { text-align: center; font-size: 20px; margin: 0 0 6px; }
+.gate .gate-lede { text-align: center; }
+button.gate-toast { cursor: pointer; text-align: left; font: inherit; }

@@ -118,6 +118,53 @@ pub fn key_file_text(path: &Path) -> Result<String, String> {
     Ok(text)
 }
 
+/// A Hero Key file the player downloaded (the website's or the launcher's "Leyline Hero Key.txt", or a browser's
+/// "Leyline Hero Key (1).txt"): where it is, when it was saved and the name written in it. Never the key: the core reads
+/// the file again when it signs in with it (social_key_file).
+#[derive(Debug, Clone, serde::Serialize, PartialEq)]
+pub struct FoundKey {
+    pub path: String,
+    pub mtime_ms: u64,
+    pub name: String,
+}
+
+/// A file name the website or the launcher gives a Hero Key file (any case; a browser's " (2)" kept).
+pub fn key_file_name_ok(n: &str) -> bool {
+    let l = n.to_ascii_lowercase();
+    l.starts_with("leyline hero key") && l.ends_with(".txt") && l.len() <= 64
+}
+
+/// The `Name:` line of a Hero Key file (`Name#1234`), plain letters, digits and `#._-` only.
+pub fn key_file_who(text: &str) -> String {
+    text.lines()
+        .find_map(|l| l.trim().strip_prefix("Name:"))
+        .map(|n| n.trim().chars().filter(|c| c.is_alphanumeric() || "#._-".contains(*c)).take(40).collect())
+        .unwrap_or_default()
+}
+
+/// The newest Hero Key file in `folder` (the Downloads folder): owner 2 Nov 23:18 "the launcher auto-detects that after
+/// download". Only files named like one, at most 16 KB, with a key inside.
+pub fn find_key_file(folder: &Path) -> Option<FoundKey> {
+    let mut best: Option<FoundKey> = None;
+    for e in std::fs::read_dir(folder).ok()?.flatten() {
+        let n = e.file_name().to_string_lossy().to_string();
+        if !key_file_name_ok(&n) {
+            continue;
+        }
+        let Ok(meta) = e.metadata() else { continue };
+        if !meta.is_file() || meta.len() > 16 * 1024 {
+            continue;
+        }
+        let ms = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis() as u64);
+        if best.as_ref().is_some_and(|b| b.mtime_ms >= ms) {
+            continue;
+        }
+        let Ok(text) = key_file_text(&e.path()) else { continue };
+        best = Some(FoundKey { path: e.path().to_string_lossy().into_owned(), mtime_ms: ms, name: key_file_who(&text) });
+    }
+    best
+}
+
 /// A new account (a made-up name, its Hero Key): {key, me}. The key is shown to the player once and not kept here.
 pub fn new_account(dir: &Path) -> Result<Value, String> {
     sign_in_call(dir, "account/new", &serde_json::json!({}))
@@ -511,6 +558,12 @@ pub mod commands {
         .await
     }
 
+    /// The newest Hero Key file in the Downloads folder, if any (gate.js signs in with it by itself).
+    #[tauri::command]
+    pub async fn social_key_found() -> Result<Option<FoundKey>, String> {
+        blocking(|| Ok(dirs::download_dir().and_then(|d| find_key_file(&d)))).await
+    }
+
     /// Get your Hero Key: a new account; the answer carries the key to show once.
     #[tauri::command]
     pub async fn social_new_account() -> Result<Value, String> {
@@ -556,6 +609,27 @@ pub mod commands {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_downloaded_key_file_is_found_newest_first_and_never_returns_the_key() {
+        let d = tempfile::tempdir().unwrap();
+        let key = format!("ovk1.AbCdE12345.{}", "x".repeat(43));
+        let body = |name: &str| format!("Leyline Hero Key\r\n\r\nName: {name}\r\nPassword: pw-not-read\r\nKey: {key}\r\n");
+        assert_eq!(find_key_file(d.path()), None, "nothing yet");
+        std::fs::write(d.path().join("notes.txt"), body("Other#1")).unwrap();
+        std::fs::write(d.path().join("Leyline Hero Key.txt"), "no key here").unwrap();
+        assert_eq!(find_key_file(d.path()), None, "only Hero Key files with a key in them");
+        std::fs::write(d.path().join("Leyline Hero Key.txt"), body("Old#1111")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        std::fs::write(d.path().join("leyline hero key (1).TXT"), body("Brightfeather42#1234<script>")).unwrap();
+        let f = find_key_file(d.path()).unwrap();
+        assert!(f.path.ends_with("leyline hero key (1).TXT"), "{f:?}");
+        assert_eq!(f.name, "Brightfeather42#1234script");
+        assert!(!format!("{f:?}").contains("ovk1"), "the key is never handed back");
+        std::fs::write(d.path().join("Leyline Hero Key (2).txt"), "x".repeat(20 * 1024)).unwrap();
+        assert!(find_key_file(d.path()).unwrap().path.ends_with("(1).TXT"), "a big file is not a key file");
+        assert!(key_file_name_ok("Leyline Hero Key (12).txt") && !key_file_name_ok("Leyline Hero Key.txt.exe") && !key_file_name_ok("hero key.txt"));
+    }
 
     #[test]
     fn token_saved_read_and_forgotten() {

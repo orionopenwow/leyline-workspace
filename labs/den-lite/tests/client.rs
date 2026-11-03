@@ -2180,8 +2180,17 @@ fn the_companion_flies_with_you_lands_with_you_and_walks_around_props() {
     assert!((pts[0][2] - 13.2).abs() < 0.2, "on the ground: {pts:?}");
     w.until(|f| (f.opcode == 0x423).then_some(()));
     w.until(|f| (f.opcode == 0x4D4).then_some(()));
-    let evs = den_lite::events::read(&dir);
-    assert!(evs.iter().any(|l| l.ev == "companion" && l.detail == "flies") && evs.iter().any(|l| l.ev == "companion" && l.detail == "lands"));
+    // the events file is written a moment later: wait up to 3 s for both lines
+    let seen = |evs: &[den_lite::events::Line]| evs.iter().any(|l| l.ev == "companion" && l.detail == "flies") && evs.iter().any(|l| l.ev == "companion" && l.detail == "lands");
+    let mut evs = den_lite::events::read(&dir);
+    for _ in 0..30 {
+        if seen(&evs) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+        evs = den_lite::events::read(&dir);
+    }
+    assert!(seen(&evs), "{:?}", evs.iter().map(|l| (&l.ev, &l.detail)).collect::<Vec<_>>());
     drop(w);
     drop(srv);
     let _ = std::fs::remove_dir_all(&dir);

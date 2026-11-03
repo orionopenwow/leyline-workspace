@@ -1,7 +1,11 @@
 # WrathUnleashed MAIN realm profile
 
-A normal Wrath game from level 1 (1x XP, gold costs, vendors, trainers, professions, the races' starting zones),
-and on its first login every new character chooses once:
+A Wrath game from level 1 (3x XP, 2x reputation and skill-ups, gold costs, vendors, trainers, professions, the
+races' starting zones). Every new character (Death Knights have their own Deathcharger) can ride from level 1: on its
+first login it learns Apprentice Riding and its race's basic ground mount (Brown Horse, Timber Wolf, Brown Ram,
+Striped Nightsaber, Brown Skeletal Horse, Brown Kodo, Red Mechanostrider, Emerald Raptor, Red Hawkstrider, Brown
+Elekk), in the Mounts tab; `.mount` mounts up (or gets down) with the best mount the character knows. And on its
+first login every new character chooses once:
 
 * **Begin your adventure at level 1** (a Death Knight: carry on with the Ebon Hold story at 55), or
 * **Boost to level 80**: pick a spec, then up to two primary professions, and the character gets level 80, every
@@ -21,7 +25,7 @@ character. None of Brawl's world changes apply on main.
 | File | What it is | Copy to |
 |---|---|---|
 | `profiles/main.env` | the profile; every key documented; `OV_MAIN=1` | `realm\profiles\` |
-| `custom/lua_scripts/ov_main.lua` | the choice menu, the boost, `.boost` | `realm\custom\lua_scripts\` |
+| `custom/lua_scripts/ov_main.lua` | the choice menu, the boost, `.boost`, riding from level 1, `.mount` | `realm\custom\lua_scripts\` |
 | `custom/lua_scripts/ov_kits.lua` | generated kit data, `OV_KITS[class][spec] = {name, role, pve, pvp}` | `realm\custom\lua_scripts\` |
 | `main_world.sql` | the menu texts (npc_text 61010-61013, new rows only) | `realm\` |
 | `main_unbrawl.sql` | puts back every stock row Brawl changed; no-op on a database that never ran Brawl | `realm\` |
@@ -85,7 +89,9 @@ Optional: add `main` to the profile list in the comments of `realm\Switch profil
 3. Type `.boost` again: "This character has already been boosted." Relog: no menu, no reminder.
 4. New **Orc Death Knight**: the menu (55), Boost -> Blood -> "No professions": Medallion of the Horde, Runeforging
    and Death Gate in the spellbook.
-5. New **Gnome Mage**: "Begin your adventure at level 1": normal start in Dun Morogh, class trainer costs gold,
+5. New **Gnome Mage**: "Begin your adventure at level 1": normal start in Dun Morogh; Apprentice Riding and the Red
+   Mechanostrider in the Mounts tab, a chat line about `.mount`, and `.mount` rides at level 1 (again: gets down);
+   class trainer costs gold,
    vendors charge, dual spec costs 1000 g at a trainer (stock), `.armory give 40000` says the Armory opens at 80.
 6. Overflow: on a fresh level 1, fill the backpack (buy/loot junk) and equip four small bags full of junk, then
    `.boost`: what doesn't fit arrives as mails "Your boost kit" (12 items each) at the Dalaran mailbox.

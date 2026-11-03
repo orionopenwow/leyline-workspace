@@ -45,5 +45,15 @@ jobs:
             echo "== $cmd"
             $cmd
           done
+      - name: the main realm's other tweaks (quality of life, starting kit, events clock, duel ratings, name guard, armory)
+        run: |
+          set -e
+          L=realm/custom/lua_scripts
+          lua5.1 stream/tests/test_ov_qol.lua $L/ov_qol.lua
+          lua5.1 stream/tests/test_ov_kits.lua $L/ov_main.lua
+          lua5.1 stream/tests/test_ov_events.lua $L/ov_events.lua
+          lua5.1 stream/tests/test_ov_duels.lua $L/ov_duels.lua
+          lua5.1 stream/tests/test_ov_names.lua $L/ov_names.lua
+          lua5.1 stream/tests/test_ov_armory.lua $L/ov_armory.lua
       - name: the website's friends and launcher link (test_social.py drives a Lua stand-in realm)
         run: python3 -I stream/tests/test_social.py stream/wrath_portal.py

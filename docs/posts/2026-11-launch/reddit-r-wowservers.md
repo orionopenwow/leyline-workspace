@@ -25,10 +25,12 @@ TODO(owner): two or three lines on who you are and why you made it.
 
 A Wrath+ realm. Each new character picks once:
 
-- **Level 1**: level up the usual way.
+- **Level 1**: level up from the start, at three times the usual pace, riding your race's mount from level 1.
 - **Boost to 80**: a one-time boost with a spec kit, professions and a trip to Dalaran, if you'd rather jump to the end game.
 
 **Solo is fine**
+
+TODO(owner): bots are off on Wrath Unleashed since 31 Oct (realm/profiles/main.env OV_COMPANIONS=0, "remove all live bots for now"), so `.buddy` and `.recruit` answer nothing there today. Turn companions back on before posting, or cut this section and "solo-friendly bots" from the title.
 
 No group? Bring bots. `.buddy` gives you a levelling buddy at your level, `.recruit party` fills a dungeon group with a tank, a healer and damage, and `/comp` opens the Bots window. They're always labelled as bots.
 

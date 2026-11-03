@@ -407,6 +407,37 @@ else
   echo "  already there (or herokeys.py isn't installed)"
 fi
 
+echo "== Caddy: the website's old sign-in pages open the Leyline ones (/login -> /wrath/signin, /key -> /wrath/key)"
+# owner 2 Nov 21:05: "prune this needless area": the old Open Vanilla login and key pages are never shown again; the
+# website's own forms and its Google sign-in (/auth/...) stay as they are. Only GET of those two pages is sent on.
+if [ -f "$WU/portal/profiles.py" ] && ! grep -q "leyline-signin-pages" "$CF"; then
+  cp -p "$CF" "$BK/Caddyfile.si"
+  if python3 -I - "$CF" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+anchor = "\thandle {\n\t\treverse_proxy ovlive-realm:8090"
+if anchor not in s:
+    print("  the site block has no catch-all handle for the website: left as it is"); sys.exit(3)
+add = ("\t# leyline-signin-pages: Log in, Sign up and the Hero Key are the Leyline pages (stream/profiles.py, stream/herokeys.py)\n"
+       "\t@oldlogin {\n\t\tmethod GET\n\t\tpath /login\n\t}\n"
+       "\tredir @oldlogin /wrath/signin 302\n"
+       "\t@oldkey {\n\t\tmethod GET\n\t\tpath /key\n\t}\n"
+       "\tredir @oldkey /wrath/key 302\n")
+s = s.replace(anchor, add + anchor, 1)
+open(p, "w").write(s)
+print("  added")
+PY
+  then
+    if ! caddy_reload; then
+      cat "$BK/Caddyfile.si" > "$CF"; caddy_reload || true
+      echo "  WARNING: Caddy refused the sign-in redirects; the old Caddyfile is back (the Leyline pages still work)"
+    fi
+  fi
+else
+  echo "  already there (or profiles.py isn't installed)"
+fi
+
 echo "== check"
 sleep 2
 c1=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://wrath.openvanilla.app/warm.html || true)
@@ -437,6 +468,8 @@ c11=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/
 echo "  /wrath/admin Admin Console (302 to sign-in = on): $c11"
 c11k=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -m 20 https://play.openvanilla.app/account/key || true)
 echo "  /account/key (302 to /wrath/key = the Leyline Hero Key page): $c11k"
+c11l=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -m 20 https://play.openvanilla.app/login || true)
+echo "  /login (302 to /wrath/signin = the old sign-in page pruned): $c11l"
 c12=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://play.openvanilla.app/wrath/leyline-preview || true)
 echo "  /wrath/leyline-preview hidden hub (200 = on): $c12"
 echo "  warm.html (public): $c1   /data (must stay gated, 302/401/403): $c2   /wrath signed out (200 = saved-key page): $c3"

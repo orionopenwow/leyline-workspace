@@ -70,7 +70,8 @@
   const picOf = (m) => (m && m.profile && m.profile.avatar_url) || "";
 
   // ---------------------------------------------------------------- the ways and the chooser
-  const WAYS = [["herokey", "Hero Key", "Sign in with your Hero Key"], ["google", "Google", "Continue with Google"], ["discord", "Discord", "Continue with Discord"]];
+  // Discord sign-in is not offered (owner 2 Nov 21:04: "remove discord auth from Leyline")
+  const WAYS = [["herokey", "Hero Key", "Sign in with your Hero Key"], ["google", "Google", "Continue with Google"]];
   const WAY_ICON = {
     herokey: '<path fill="currentColor" d="M7 14a3 3 0 1 1 0-6 3 3 0 0 1 0 6Zm5.65-4A6 6 0 1 0 12.65 14H15v3h3v-3h2v-4h-7.35Z"/>',
     google: '<path fill="#EA4335" d="M12 4.75c1.77 0 3.36.61 4.6 1.8l3.43-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.69 1.28 6.61l3.99 3.1C6.22 6.86 8.87 4.75 12 4.75z"/><path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.13 2.74-2.39 3.59l3.86 3c2.26-2.09 3.55-5.18 3.55-8.83z"/><path fill="#FBBC05" d="M5.26 14.29A7.2 7.2 0 0 1 4.89 12c0-.8.14-1.57.38-2.29l-3.99-3.1A11.95 11.95 0 0 0 0 12c0 1.94.46 3.77 1.28 5.39l3.98-3.1z"/><path fill="#34A853" d="M12 24c3.24 0 5.97-1.06 7.95-2.9l-3.86-3c-1.08.72-2.46 1.15-4.09 1.15-3.13 0-5.78-2.11-6.73-4.96l-3.98 3.1C3.25 21.3 7.3 24 12 24z"/>',
@@ -154,7 +155,7 @@
     pw.onclick = () => { flow.form = flow.form === "password" ? "" : "password"; flow.note = ""; rebuild(box, big, "#sf-pwname"); };
     box.append(pw);
     if (flow.form === "password") box.append(passwordForm(box, big));
-    box.append(el("p", "sf-fine", "Google" + (wayOn("discord") ? " and Discord open" : " opens") + " the website in your browser. "
+    box.append(el("p", "sf-fine", "Google opens the website in your browser. "
       + "One account works on Wrath Unleashed and every realm that accepts Hero Key."));
   }
 

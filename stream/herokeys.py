@@ -81,6 +81,7 @@ log = logging.getLogger("wrath-portal.herokeys")
 PAGE = "/wrath/key"
 START = PAGE + "/start"
 SIGNIN = PAGE + "/signin"
+WELCOME_PAGE = "/wrath/signin/welcome"   # stream/profiles.py WELCOME: Your profile, then on to where you were going
 FORM_MAX = 2048
 KEY_RE = re.compile(r"ovk1\.[A-Za-z0-9]{10}\.[A-Za-z0-9_-]{43}")
 PASTED_RE = re.compile(r"(?i:ovk1)\.[A-Za-z0-9]{10}\.[A-Za-z0-9_-]{43}")
@@ -925,11 +926,32 @@ background:var(--lk-surface-2,#20242e);color:var(--lk-text,#eef0f4);font:inherit
 .hk-or{display:flex;align-items:center;gap:10px;margin:16px 0 4px;color:var(--lk-muted,#9aa1ae);font-size:13px}
 .hk-or::before,.hk-or::after{content:"";flex:1;height:1px;background:var(--lk-border,#262a34)}
 .hk-status{min-height:1.4em;font-size:14px}.hk-status.ok{color:var(--lk-ok,#4fd18b)}.hk-status.bad{color:var(--lk-bad,#ff7f76)}
+.hk [hidden]{display:none!important}
+.hk label.hk-drop{display:grid;gap:4px;justify-items:center;margin:12px 0 4px;padding:18px 14px;border:1.5px dashed var(--lk-border-strong,#343a47);
+border-radius:var(--lk-r-sm,10px);text-align:center;cursor:pointer;font-weight:400!important}
+.hk-drop b{font-size:15px}.hk-drop span{font-size:13.5px;color:var(--lk-muted,#9aa1ae)}
+.hk-drop.on,.hk-drop:hover{border-color:var(--lk-accent,#5b8def);background:var(--lk-accent-soft,rgba(91,141,239,.10))}
+.hk-what{margin:8px 0 0;padding-left:18px;color:var(--lk-text-2,#c8cdd7);font-size:14px;line-height:1.5}.hk-what li{margin:4px 0}
 .hk-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 @media (max-width:520px){.hk-card{padding:16px}.hk-acts .hk-btn{flex:1 1 auto}}
 """
 
 JS = r"""
+(function(){
+  // signed out (owner 2 Nov 21:04): the key file dropped or chosen, or the key kept in this browser, fills Log in
+  var out=document.getElementById('hk-out'); if(!out) return;
+  var KEEP='leyline.herokey', f=document.getElementById('hk-login'), inp=document.getElementById('hk-paste');
+  var drop=out.querySelector('.hk-drop'), file=document.getElementById('hk-file'), use=document.getElementById('hk-usesaved');
+  function pick(t){ var m=/ovk1\.[A-Za-z0-9]{10}\.[A-Za-z0-9_-]{43}/i.exec(String(t||'').replace(/[\s\u00ad\u200b-\u200f\u2060-\u2064\ufeff]+/g,'')); return m?m[0]:''; }
+  function read(fl){ if(!fl) return; var r=new FileReader(); r.onload=function(){ var k=pick(r.result);
+    if(k){ inp.value=k; f.requestSubmit ? f.requestSubmit() : f.submit(); } else { drop.querySelector('span').textContent='No Hero Key in that file. Paste it below instead.'; } }; r.readAsText(fl.slice(0,8192)); }
+  if(file) file.addEventListener('change',function(){ read(file.files&&file.files[0]); });
+  if(drop){ ['dragenter','dragover'].forEach(function(n){ drop.addEventListener(n,function(e){ e.preventDefault(); drop.classList.add('on'); }); });
+    ['dragleave','drop'].forEach(function(n){ drop.addEventListener(n,function(e){ e.preventDefault(); drop.classList.remove('on'); }); });
+    drop.addEventListener('drop',function(e){ read(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0]); }); }
+  var kept=''; try{ kept=pick(localStorage.getItem(KEEP)); }catch(_){}
+  if(kept&&use){ use.hidden=false; use.addEventListener('click',function(){ inp.value=kept; f.requestSubmit ? f.requestSubmit() : f.submit(); }); }
+})();
 (function(){
   var root=document.getElementById('hk'); if(!root) return;
   var csrf=root.getAttribute('data-csrf')||'', who=root.getAttribute('data-name')||'';
@@ -957,7 +979,13 @@ JS = r"""
       a.download='Leyline Hero Key.txt'; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(function(){ URL.revokeObjectURL(a.href); },5000);
       say('Saved Leyline Hero Key.txt.','ok'); saved(); });
+    var kb=document.getElementById('hk-keep');
+    if(kb) kb.addEventListener('click',function(){ try{ localStorage.setItem('leyline.herokey',key); say('Kept in this browser: Log in offers it next time. Save the file too, for other devices.','ok'); saved(); }
+      catch(_){ say('This browser would not keep it. Download it instead.','bad'); } });
   }
+  var fg=document.getElementById('hk-forget');
+  if(fg){ try{ if(localStorage.getItem('leyline.herokey')) fg.hidden=false; }catch(_){}
+    fg.addEventListener('click',function(){ try{ localStorage.removeItem('leyline.herokey'); }catch(_){} fg.hidden=true; say('This browser no longer keeps your key.','ok'); }); }
   var nk=document.getElementById('hk-new');
   if(nk) nk.addEventListener('click',function(){
     if(!confirm('Make a new Hero Key? Your old key stops working at once.')) return;
@@ -1048,6 +1076,13 @@ def _anon_token(h) -> str:
     return cookie_dict(h.headers.get("Cookie", "")).get("ly_hk", "")
 
 
+WHAT_IS = ('<details><summary>What is a Hero Key?</summary><ul class="hk-what">'
+           '<li>It is your login: one line of text that starts with ovk1. Whoever has it can sign in as you.</li>'
+           '<li>Save it when it is made: download the text file, keep it in a password manager, or keep it in this browser.</li>'
+           '<li>We keep only a fingerprint of it, so we can never show or send it to you again.</li>'
+           '<li>Lost it? Sign in with Google if you linked it, then make a new key. A new key stops the old one at once.</li>'
+           '<li>One account works on Wrath Unleashed, in the launcher and on every realm that accepts Hero Key.</li></ul></details>')
+
 DOWN_CARD = ('<section class="hk-card"><h1>Your Hero Key</h1><p>The website\'s sign-in isn\'t answering right now. '
              'Try again shortly.</p></section>')
 STALE_SESSION = "wr_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax"
@@ -1084,18 +1119,29 @@ def page(h, query: dict, note: str = "", ok: str = "", status: int = 200, cookie
             anon = secrets.token_urlsafe(16)
             set_c.append(f"ly_hk={anon}; Path=/wrath/key; Max-Age=3600; HttpOnly; Secure; SameSite=Strict")
         t1, t2 = _form_token(anon, "start"), _form_token(anon, "signin")
-        inner = (f'{msg}<section class="hk-card" aria-labelledby="hk-t"><h1 id="hk-t">Your Hero Key</h1>'
-                 '<p>A Hero Key is your sign-in: one line of text you keep. One account works on Wrath Unleashed and on every '
-                 'realm that accepts Hero Key.</p>'
-                 f'<form method="post" action="{START}" class="hk-acts"><input type="hidden" name="t" value="{t1}">'
-                 f'<button class="hk-btn primary" type="submit">{KEY_ICON}Get your Hero Key</button></form>'
-                 '<p class="hk-fine">New here? This makes your free account with a name made for you. You can change the name later.</p>'
-                 '<p class="hk-or"><span>or</span></p>'
-                 f'<form method="post" action="{SIGNIN}"><input type="hidden" name="t" value="{t2}">'
-                 '<label for="hk-paste">Sign in with your Hero Key</label>'
+        # Owner 2 Nov 21:04: "Login - Options - Sign Up - Signed in state as quickly as possible and save / understand hero
+        # key". One card: Log in (the key file, a paste, or the key kept in this browser), the other options, Sign up.
+        pm = P("profiles")
+        try:
+            google = bool(pm.ways()["google"]) if pm is not None and hasattr(pm, "ways") else True
+        except Exception:   # noqa: BLE001
+            google = True
+        inner = (f'{msg}<section class="hk-card" id="hk-out" aria-labelledby="hk-t">'
+                 '<h1 id="hk-t">Log in</h1><p>Sign in with your Hero Key.</p>'
+                 f'<form method="post" action="{SIGNIN}" id="hk-login"><input type="hidden" name="t" value="{t2}">'
+                 '<label class="hk-drop" for="hk-file"><input id="hk-file" type="file" accept=".txt,text/plain" class="hk-sr">'
+                 '<b>Drop your key file here</b><span>or choose it (Leyline Hero Key.txt)</span></label>'
+                 '<label for="hk-paste">Or paste your key</label>'
                  '<input id="hk-paste" name="key" type="password" autocomplete="current-password" spellcheck="false" placeholder="ovk1." required>'
-                 '<div class="hk-acts"><button class="hk-btn" type="submit">Sign in</button>'
-                 f'<a class="hk-btn" href="{e(P("signin_url")("/wrath/key") if P("signin_url") else "/wrath/signin")}">Other ways to sign in</a></div></form>'
+                 f'<div class="hk-acts"><button class="hk-btn primary" type="submit">{KEY_ICON}Log in</button>'
+                 '<button class="hk-btn" id="hk-usesaved" type="button" hidden>Use the key saved in this browser</button></div></form>'
+                 + (f'<p class="hk-or"><span>or</span></p><div class="hk-acts">'
+                    '<a class="hk-btn" href="/wrath/signin/go/google?next=%2Fwrath%2Fkey">Continue with Google</a></div>' if google else "")
+                 + '<h2 id="new" style="margin-top:22px">New here?</h2>'
+                 '<p>Create a Hero Key: your free account in one step. No email, no password. A name is made for you; change it any time.</p>'
+                 f'<form method="post" action="{START}" class="hk-acts"><input type="hidden" name="t" value="{t1}">'
+                 f'<button class="hk-btn primary" type="submit">{KEY_ICON}Create a Hero Key</button></form>'
+                 + WHAT_IS +
                  '</section>')
         return _shell(h, inner, status, set_c)
     acct, shown = who
@@ -1105,13 +1151,17 @@ def page(h, query: dict, note: str = "", ok: str = "", status: int = 200, cookie
     relay = passed_on(info["set_cookies"]) + list(cookies or [])
     sess = cookie_dict(cookie).get("wr_session", "")
     csrf = mod.csrf_for(sess) if mod is not None and getattr(mod, "store", None) is not None else ""
+    # after a new key: on to the profile step (stream/profiles.py WELCOME: set up once, then where you were going)
+    cont = WELCOME_PAGE if (query.get("new") or [""])[0] or cookie_dict(cookie).get("ly_next") else ""
     if info["key"]:
         body = ('<p>Save it now: download it or copy it. For your safety it is shown only this once.</p>'
                 f'<div class="hk-key"><code id="hk-keytext" class="hk-dots" data-key="{e(info["key"])}" aria-label="Your Hero Key">'
                 f'{e(info["key"][:5])}••••••••••••••••••••••••</code>'
                 '<button class="hk-btn small" id="hk-show" type="button" aria-pressed="false" aria-controls="hk-keytext">Show</button></div>'
                 '<div class="hk-acts"><button class="hk-btn primary" id="hk-dl" type="button">Download as a text file</button>'
-                '<button class="hk-btn" id="hk-copy" type="button">Copy</button></div>')
+                '<button class="hk-btn" id="hk-copy" type="button">Copy</button>'
+                '<button class="hk-btn" id="hk-keep" type="button">Keep it in this browser</button></div>'
+                + (f'<div class="hk-acts"><a class="hk-btn primary" href="{e(cont)}">I saved it: continue</a></div>' if cont else ""))
     else:
         state = ("Your key is saved. Use it to sign in on any device and in the launcher." if info["saved"] else
                  "Your key was made but not saved yet, so it can't be shown again. Make a new one and save it.") if info["has_key"] else \
@@ -1142,7 +1192,8 @@ def page(h, query: dict, note: str = "", ok: str = "", status: int = 200, cookie
              '<p class="hk-status" id="hk-status" role="status"></p>'
              '<p class="hk-fine">One account works on Wrath Unleashed and on every realm that accepts Hero Key. Keep the key '
              'private, like a password. We never ask for it.</p>'
-             f'{more}</section>')
+             '<div class="hk-acts"><button class="hk-btn small" id="hk-forget" type="button" hidden>Forget the key kept in this browser</button></div>'
+             f'{WHAT_IS}{more}</section>')
     _shell(h, inner, status, relay, (acct, p["name"]))
 
 
@@ -1204,7 +1255,8 @@ def post(h, path: str) -> None:
         out = key_signin(form.get("key"), ip, ua)
         if store is not None:
             store.note(out["acct"], "signin.key", "web")
-        return _go(h, PAGE + "?back=1", out["cookies"])
+        nxt = cookie_dict(h.headers.get("Cookie", "")).get("ly_next", "")
+        return _go(h, WELCOME_PAGE if nxt else PAGE + "?back=1", out["cookies"])
     except Refused as e:
         return page(h, {}, e.text, status=e.status if e.status in (400, 401, 403, 429) else 400)
     except Down:

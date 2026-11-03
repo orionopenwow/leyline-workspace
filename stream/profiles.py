@@ -64,6 +64,7 @@ except ImportError:   # an image without it: the portal runs without profiles
 log = logging.getLogger("wrath-portal.profiles")
 
 SIGNIN = "/wrath/signin"
+HERO_KEY_PAGE = "/wrath/key"   # stream/herokeys.py PAGE: Get your Hero Key, or sign in with it
 WELCOME = SIGNIN + "/welcome"
 PROFILE = "/wrath/profile"
 AVATAR = "/wrath/avatar"
@@ -71,8 +72,8 @@ LINK_PAGE = "/wrath/link"
 BIO_MAX = 300
 FORM_MAX = 4096
 NEXT_COOKIE = "ly_next"
-WAYS = ("herokey", "google", "discord")
-WAY_START = {"herokey": "/key", "google": "/auth/google/start", "discord": "/auth/discord/start"}
+WAYS = ("herokey", "google")   # Discord sign-in is not offered (owner 2 Nov 21:04)
+WAY_START = {"herokey": "/wrath/key", "google": "/auth/google/start", "discord": "/auth/discord/start"}
 WAYS_TTL, WAYS_TTL_FAIL = 300, 60
 PID_RE = re.compile(r"^[a-z0-9]{10}$")
 CTRL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f​-‏‪-‮⁦-⁩­͏؜ᅟᅠ឴឵᠋-᠏⁠-⁥⁪-⁯ㅤ︀-️﻿ﾠ]")   # + soft hyphen, word joiners, fillers, variation selectors, BOM (stream/namecheck.py INVISIBLE_RE)
@@ -390,6 +391,7 @@ def ways(force: bool = False) -> dict:
         log.info("profiles: the sign-in page didn't answer (%s)", type(e).__name__)
         doc, ttl = {"herokey": True, "google": True, "discord": False}, WAYS_TTL_FAIL
     doc["herokey"] = True   # the Hero Key page is the website's own, always there
+    doc["discord"] = False  # owner 2 Nov 21:04: "remove discord auth from Leyline": never offered, whatever the website shows
     with _ways_lock:
         _ways.update(at=time.monotonic(), ttl=ttl, doc=doc)
     return dict(doc)
@@ -586,7 +588,7 @@ background:var(--lk-surface-2,#1b2030);color:var(--lk-text,#fff)!important}
 .pf-way:hover{border-color:var(--lk-accent,#5b8def)}.pf-way svg{width:22px;height:22px;flex:none}
 .pf-way.key{background:var(--lk-accent,#5b8def);border-color:transparent;color:#fff!important}.pf-way.key:hover{background:var(--lk-accent-strong,#7aa3f5)}
 .pf-way.google{background:#fff;color:#1f1f1f!important;border-color:#dadce0}
-.pf-way.discord{background:#5865f2;border-color:transparent;color:#fff!important}.pf-way.discord:hover{background:#4752c4}
+.pf-way.new{background:transparent;border:1px solid var(--lk-accent,#5b8def);color:var(--lk-text,#fff)!important}.pf-way.new:hover{background:var(--lk-accent-soft,rgba(91,141,239,.16))}
 .pf-fine{font-size:13px;color:var(--lk-muted,#8a93a6)!important}.pf-fine a{color:var(--lk-text-2,#b9c0d0)}
 .pf-form{display:grid;gap:10px;margin-top:14px}
 .pf-form label.l{font-weight:650;margin-top:6px}
@@ -719,9 +721,12 @@ def page_signin(h, query: dict, note: str = "") -> None:
         return _go(h, nxt)
     w = ways()
     q = urllib.parse.quote(nxt, safe="")
-    order = ("herokey", "google", "discord")
-    btns = "".join(f'<a class="pf-way {"key" if k == "herokey" else k}" href="{SIGNIN}/go/{k}?next={q}">{ICON[k]}<span>{WAY_LABEL[k]}</span></a>'
-                   for k in order if w.get(k))
+    order = ("herokey", "google")
+    ways_html = [f'<a class="pf-way {"key" if k == "herokey" else k}" href="{SIGNIN}/go/{k}?next={q}">{ICON[k]}<span>{WAY_LABEL[k]}</span></a>'
+                 for k in order if w.get(k)]
+    # Create a Hero Key (owner 2 Nov 21:04): the Hero Key page, where Get your Hero Key makes the free account
+    ways_html.insert(1, f'<a class="pf-way new" href="{HERO_KEY_PAGE}#new">{ICON["herokey"]}<span>Create a Hero Key</span></a>')
+    btns = "".join(ways_html)
     launcher = nxt.startswith(LINK_PAGE)
     msg = f'<p class="pf-msg err" role="alert">{e(note)}</p>' if note else ""
     # TODO(owner): the sign-in page's words
@@ -729,10 +734,10 @@ def page_signin(h, query: dict, note: str = "") -> None:
             "One account for the website, the launcher and the forum.")
     inner = (f'<section class="pf-card">{_steps(1)}{msg}<h1>Sign in</h1><p>{e(lead)}</p>'
              f'<div class="pf-ways">{btns}</div>'
-             '<p class="pf-fine">New here? Google' + (" or Discord" if w.get("discord") else "")
-             + ' makes your free account in one step. A Hero Key signs you in to the account it belongs to. '
+             '<p class="pf-fine">New here? Create a Hero Key: your free account in one step, no email needed'
+             + (", or continue with Google" if w.get("google") else "") + '. A Hero Key signs you in to the account it belongs to. '
              "We never see your password.</p>"
-             f'<p class="pf-fine" style="margin-top:8px"><a href="/login?next={q}">More ways to sign in</a></p></section>')
+             '</section>')
     _shell(h, "Sign in · Leyline", inner, SIGNIN, None)
 
 
@@ -819,8 +824,6 @@ def page_profile(h, note: str = "", ok: str = "", form: dict | None = None, stat
                  '<a href="/wrath/key">Your Hero Key</a></li>']
     if w.get("google"):
         ways_rows.append('<li><span><b>Google</b></span><a href="/auth/google/start?link=1">Link Google</a></li>')
-    if w.get("discord"):
-        ways_rows.append('<li><span><b>Discord</b></span><a href="/auth/discord/start?link=1">Link Discord</a></li>')
     ways_rows.append(f'<li><span><b>Leyline launcher</b><br><span class="pf-fine">The launchers signed in as you.</span></span>'
                      f'<a href="{LINK_PAGE}">Linked launchers</a></li>')
     inner = (f'<section class="pf-card"><div class="pf-me"><img src="{e(avatar_url(who["acct"]))}" alt="" width="64" height="64">'

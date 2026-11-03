@@ -107,8 +107,9 @@ test('signed out: SIGN IN opens the chooser; only the ways the website offers', 
   await page.close();
   const o = await open({ discord: true });
   await o.page.click('#hf-signin');
-  await o.page.waitForFunction(() => document.querySelectorAll('#hf-code .sf-ways .sf-way').length === 3);
-  assert.deepEqual(await o.page.$$eval('#hf-code .sf-ways .sf-way', (b) => b.map((x) => x.textContent)), ['Sign in with your Hero Key', 'Continue with Google', 'Continue with Discord']);
+  await o.page.waitForFunction(() => document.querySelectorAll('#hf-code .sf-ways .sf-way').length === 2);
+  // Discord sign-in is never offered, even when the website says it has it (owner 2 Nov 21:04)
+  assert.deepEqual(await o.page.$$eval('#hf-code .sf-ways .sf-way', (b) => b.map((x) => x.textContent)), ['Sign in with your Hero Key', 'Continue with Google']);
   assert.deepEqual([...errors, ...o.errors], []);
   await o.page.close();
 });
@@ -175,11 +176,12 @@ test('a refused or expired code: why, and the chooser again; Cancel stops waitin
 test('Manage account signed out: step 1 and the same chooser on the page', async () => {
   const { page, errors } = await open({ discord: true });
   await page.evaluate(() => window.LeylineNav.show('account'));
-  await page.waitForFunction(() => document.querySelectorAll('#ac-view .sf-way').length === 4);   // Get your Hero Key, then three
+  await page.waitForFunction(() => document.querySelectorAll('#ac-view .sf-way').length === 3);   // Get your Hero Key, then two (no Discord)
   assert.match(await page.textContent('#ac-view .ac-steps li.on'), /Sign in/);
-  await page.click('#ac-view .sf-way[data-via="discord"]');
+  assert.equal(await page.locator('#ac-view .sf-way[data-via="discord"]').count(), 0);
+  await page.click('#ac-view .sf-way[data-via="google"]');
   await page.waitForSelector('#ac-view .sx-code');
-  assert.ok(await called(page, 'social_signin_start', 'a.via === "discord"'));
+  assert.ok(await called(page, 'social_signin_start', 'a.via === "google"'));
   assert.ok(await page.isHidden('#hf-code'), 'no pop-over on top of the page');
   assert.deepEqual(errors, []);
   await page.close();
@@ -209,7 +211,7 @@ test('Manage account signed in: picture, name#tag, bio; save only what changed; 
   assert.ok(await called(page, 'social_call', 'a.action === "profile" && JSON.stringify(a.args) === JSON.stringify({setup: true, bio: "Hello there"})'));
   assert.equal(await page.textContent('#ac-view .ac-me-bio'), 'Hello there');
   // the ways: named links only
-  assert.deepEqual(await page.$$eval('#ac-view .ac-ways button', (b) => b.map((x) => x.dataset.link)), ['linkgoogle', 'linkdiscord', 'linkedlaunchers']);
+  assert.deepEqual(await page.$$eval('#ac-view .ac-ways button', (b) => b.map((x) => x.dataset.link)), ['linkgoogle', 'linkedlaunchers']);
   await page.click('#ac-view .ac-ways button[data-link="linkgoogle"]');
   assert.ok(await called(page, 'open_link', 'a.name === "linkgoogle"'));
   await page.click('#ac-view button:has-text("Your profile on the website")');

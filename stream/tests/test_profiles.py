@@ -119,7 +119,7 @@ def tok(who, path, cookies=""):
 
 # ---------------------------------------------------------------- the ways the website offers
 w = PM.ways(force=True)
-check("ways: read from the website's /login (no cookie sent): Hero Key, Google, Discord", w == {"herokey": True, "google": True, "discord": True}
+check("ways: read from the website's /login (no cookie sent): Hero Key, Google; Discord never (owner 2 Nov)", w == {"herokey": True, "google": True, "discord": False}
       and login_reads and login_reads[-1] == "", (w, login_reads))
 n = len(login_reads)
 PM.ways(); PM.ways()
@@ -141,11 +141,12 @@ check("chooser: Hero Key first, then Google; Discord hidden while the website do
       and "/wrath/signin/go/discord" not in body and body.index("go/herokey") < body.index("go/google"))
 check("chooser: no script, the hub's look, noindex, never a game or company name", "<script" not in body and 'class="hb-top"' in body
       and hd.get("X-Robots-Tag", "").startswith("noindex") and not BRAND.search(re.sub(r"<[^>]+>", " ", body)))
-check("chooser: More ways (the website's own page, guest play) keeps the next", 'href="/login?next=%2Fwrath%2Fleyline%2Fforum"' in body)
+check("chooser: no link to the old sign-in page; Create a Hero Key second", 'href="/login' not in body and 'href="/wrath/key#new"' in body
+      and body.index("go/herokey") < body.index("/wrath/key#new") < body.index("go/google"))
 LOGIN["html"] += '<a href="/auth/discord/start">Discord</a>'
 PM.ways(force=True)
 st, hd, body, _ = req("GET", "/wrath/signin")
-check("chooser: Discord shows once the website offers it", "/wrath/signin/go/discord?next=%2Fwrath" in body and "Continue with Discord" in body)
+check("chooser: Discord never shows, even when the website offers it", "/wrath/signin/go/discord" not in body and "Continue with Discord" not in body)
 
 # the hand-over
 st, hd, body, raw = req("GET", "/wrath/signin/go/google?next=%2Fwrath%2Fleyline%2Fforum")
@@ -156,9 +157,9 @@ check("go/google: ly_next (Path=/wrath) and the website's wr_next = /wrath/signi
       and any(c.startswith("wr_next=/wrath/signin/welcome;") and "Path=/;" in c for c in ck)
       and all("HttpOnly" in c and "Secure" in c and "SameSite=Lax" in c and "Max-Age=900" in c for c in ck), ck)
 st, hd, _, _ = req("GET", "/wrath/signin/go/herokey?next=%2Fwrath")
-check("go/herokey: the website's Hero Key page", st == 302 and hd.get("Location") == "/key")
+check("go/herokey: the Leyline Hero Key page (never the old one)", st == 302 and hd.get("Location") == "/wrath/key")
 st, hd, _, _ = req("GET", "/wrath/signin/go/discord?next=%2Fwrath")
-check("go/discord: the website's Discord start (when offered)", st == 302 and hd.get("Location") == "/auth/discord/start")
+check("go/discord: not offered: back to the chooser", st == 302 and hd.get("Location", "").startswith("/wrath/signin?next="))
 st, hd, _, _ = req("GET", "/wrath/signin/go/evil?next=%2Fwrath")
 check("go/<unknown>: back to the chooser", st == 302 and hd.get("Location", "").startswith("/wrath/signin?next="))
 for bad in ("https://evil.example/", "//evil.example/x", "/wrathx", "/\\evil", "/wrath/signin", "/login", "javascript:alert(1)"):
@@ -303,10 +304,10 @@ check("GET me (launcher): the profile (bio, picture, absolute picture address, s
       and me["me"]["profile"]["setup"] is True and me["me"]["profile"]["avatar_url"].startswith(f"https://play.example/wrath/avatar/u/{pid_a}.svg?v="), me)
 check("GET me: the portraits (absolute), the default, the ways, the manage page", len(me["avatars"]) == 24
       and me["avatars"][0]["url"] == "https://play.example/wrath/avatar/p/alchemist.svg"
-      and me["me"]["profile"]["default_avatar"] == PM.default_portrait(me["me"]["name"]) and me["ways"]["discord"] is True
+      and me["me"]["profile"]["default_avatar"] == PM.default_portrait(me["me"]["name"]) and me["ways"]["discord"] is False
       and me["manage_url"] == "https://play.example/wrath/profile")
 st, ways = jget("/wrath/api/social/ways")
-check("GET ways: no sign-in needed", st == 200 and ways == {"herokey": True, "google": True, "discord": True})
+check("GET ways: no sign-in needed", st == 200 and ways == {"herokey": True, "google": True, "discord": False})
 st, out = jpost("/wrath/api/social/profile", {"bio": "Hello there", "avatar": "mage", "setup": True}, B)
 check("POST profile (launcher): bio and picture saved, the new profile back", st == 200 and out["me"]["profile"]["avatar"] == "mage"
       and PR.get("WR000001")["bio"] == "Hello there")
@@ -336,7 +337,7 @@ check("profile page signed out: the chooser, coming back here", st == 302 and hd
 st, hd, body, _ = req("GET", "/wrath/profile", "alice")
 check("profile page: who is signed in (picture, name#tag), the form, the ways, sign out", st == 200 and "AliceR" in body
       and "#" + S.profile("WR000001")["tag"] in body and 'action="/logout"' in body and "/wrath/key" in body
-      and "/auth/google/start?link=1" in body and "/auth/discord/start?link=1" in body and "/wrath/link" in body and "<script" not in body)
+      and "/auth/google/start?link=1" in body and "/auth/discord/start" not in body and "/wrath/link" in body and "<script" not in body)
 check("profile page: never a game or company name", not BRAND.search(re.sub(r"<[^>]+>", " ", body)))
 t = tok("alice", "/wrath/profile")
 st, hd, _, _ = req("POST", "/wrath/profile", "alice", {"t": t, "name": "AliceR", "avatar": "cleric", "bio": "Sunny"})

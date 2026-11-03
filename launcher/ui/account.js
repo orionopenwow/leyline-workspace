@@ -158,7 +158,6 @@
       li.append(t, b); ul.append(li);
     };
     if (ways.google) row("Google", "", "Link Google", "linkgoogle");
-    if (ways.discord) row("Discord", "", "Link Discord", "linkdiscord");
     row("Leyline launchers", "This one and any others signed in as you. Revoke one there.", "Linked launchers", "linkedlaunchers");
     wc.append(ul);
     view.append(wc);

@@ -205,6 +205,16 @@ check("category: seating", win.title:GetText() == "SEATING" and seats >= 5 and #
 check("the column: Favourites, Recent, Prefabs, Stamps, Storage, Everything and every category", #win.tabs == 6 + #B.CATS - 1
     and win.tabs[1].tab == "favourites" and win.tabs[6].tab == "all" and win.tabs[6]:GetText() == "Everything")
 check("the category that is on is gold", (function() for _, t in ipairs(win.tabs) do if t:IsActive() ~= (t.tab == "seating") then return false end end return true end)())
+-- My models (the launcher's dropped models, Den Lite's mymodels.rs): the tab only when the catalog has one
+local function tabShown(name) for _, t in ipairs(win.tabs) do if t.tab == name then return t:IsShown() end end end
+B.Refresh()
+check("no My models tab without the player's own models", tabShown("mymodels") == false)
+B.catalog[#B.catalog + 1] = { id = 980001, key = "lighthouse", cat = "mymodels", name = "Lighthouse", cost = 1 }
+B.Refresh()
+tab("mymodels")
+check("My models: the player's own model, under its own tab", tabShown("mymodels") == true and win.title:GetText() == "MY MODELS"
+    and #shown() == 1 and shown()[1].item.id == 980001)
+B.catalog[#B.catalog] = nil
 tab("all")
 win.grid:Fire("OnMouseWheel", -1)
 check("the wheel scrolls a row", B.offset == 5 and win.count:GetText():find("^6%-25 of"))

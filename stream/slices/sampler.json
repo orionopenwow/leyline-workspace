@@ -2,7 +2,7 @@
  "slice": "sampler",
  "title": "Leyline Sample Hangout in the browser (temporary)",
  "comment": "The temporary Leyline Sample Hangout's streamed slice: mini.json less the capitals (Stormwind City, Orgrimmar) and the Goldshire inn. Every tier here is mini.json's own, unchanged, in mini.json's order (stream/tests/test_sampler.py checks it: change a tier in mini.json and copy it here). Streamed browser players get Dalaran, their starting area (Northshire Valley, the Valley of Trials, Ebon Hold for Death Knights) and every dungeon, raid, arena and battleground the Dungeon Finder and .play can send them to; their own 3.3.5a game folder opens the rest. The realm rule is ov_slices.lua with OV_SAMPLER=1 (realm/profiles/sampler.env), which also closes the capitals when the server still streams mini. Built by \"Make sampler slice.bat\" (the slice-sampler step); the server serves it as slice \"sampler\" next to \"mini\" (WU_SLICE=sampler bash stream-up.sh switches wu-play over).",
- "maxTier": 54,
+ "maxTier": 55,
  "budgetMB": 7424,
  "lite": {
   "comment": "Item models and textures are worn by everyone (spec kits, free Armory gear) and there are too many to pick from, so all of them ship, with textures cut to their mips of at most maxPx on the long side. --export reports what that saved.",
@@ -41,6 +41,7 @@
   "northshire",
   "valley-of-trials",
   "ebon-hold",
+  "pets",
   "naxx-os-voa",
   "ulduar",
   "eoe-onyxia-rs",
@@ -138,12 +139,17 @@
    ],
    "mounts": true,
    "mountsNote": "Every player mount's model and skins (horses, rams, wolves, kodos, raptors, mechanostriders, hawkstriders, elekks, gryphons, wyverns, drakes, mammoths, motorcycles...), the flight masters' mounts and a vehicle mount's passengers: displays.py reads Spell.dbc for aura 78 and prints those displays for this tier. Mounts are ridden everywhere and are not spawned anywhere, and the client seats a rider only once the mount's model has loaded, so they belong in the base. About 100-250 MB.",
+   "formsNote": "What a player character turns into goes here too (3 Nov 2026: druids in their forms, ghost wolves and ghosts were missing in the browser): displays.py follows the players' spells to their shapeshift forms (aura 36: SpellShapeshiftForm.dbc's models, with every race and colour variant of the same model) and transforms (aura 56: polymorph, hex, costumes), and the core's Ghost and night elf wisp spells.",
+   "creatures": [6491],
+   "creaturesNote": "Creatures no spawn query finds, by entry (displays.py: their models and other-gender models): 6491 the Spirit Healer, beside every graveyard a dead player runs to.",
    "measuredMB": null
   },
   {
    "key": "dalaran",
    "kind": "home",
    "name": "Dalaran",
+   "creatures": [721],
+   "creaturesNote": "Summoned by scripts, not spawned (displays.py \"creatures\"): 721 the rabbit the Dalaran hide-and-seek event (ov_events.lua OV_EVENTS_HIDER) summons.",
    "notes": "Dalaran (zone 4395 on Northrend, map 571): the city, the Underbelly (sewers) and the Violet Citadel. Only the ADT tiles under Dalaran's world-map rect plus one tile of margin; anything else on Northrend sends a stream player back.",
    "zones": [
     4395
@@ -1654,6 +1660,8 @@
    "key": "battlegrounds",
    "kind": "battleground",
    "name": "battlegrounds",
+   "creatures": [13116, 13117],
+   "creaturesNote": "Summoned by scripts, not spawned (displays.py \"creatures\"): 13116 and 13117 the Alliance and Horde Spirit Guides a battleground's dead gather at.",
    "maps": [
     {
      "id": 489
@@ -1905,6 +1913,16 @@
      "raid": true
     }
    ]
+  },
+  {
+   "key": "pets",
+   "kind": "base",
+   "name": "Hunter pets",
+   "notes": "Not a place: every tameable beast's models and skins (displays.py \"pets\": creature_template type_flags & 1 with a family). A hunter's pet is whatever beast was tamed, anywhere in the world, so no spawn in the slice finds it; the Sample Hangout's level-80 bots bring theirs to Dalaran. Right after the starting areas in order, before the dungeons, so the budget keeps it. 3 Nov 2026.",
+   "pets": true,
+   "maps": [],
+   "capture": [],
+   "measuredMB": null
   },
   {
    "key": "music",

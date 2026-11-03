@@ -2,7 +2,7 @@
  "slice": "mini",
  "title": "WrathUnleashed in the browser",
  "comment": "The one streamed slice. Each tier has a stable \"key\"; \"order\" lists the keys in priority order and a tier's number is its position there (move a key to reorder, delete it to drop the tier). Tiers are exported in that order until budgetMB; maxTier is the highest tier number the server actually holds (\"Make mini slice.bat\" lowers it to what fit; the gate passes it to the realm). The realm rule reads the same file (lua/tiers_lua.py makes ov_slices_tiers.lua from it), so nothing is listed twice. A map entry is the whole map, or a \"zone\" (AreaTable id, tiles from its world-map rect), or a world \"box\" [x min, x max, y min, y max]; marginTiles widens the streamed tiles, the realm rule uses the zone or box itself. Tier 0 (base) and Dalaran are always first.",
- "maxTier": 58,
+ "maxTier": 59,
  "budgetMB": 7424,
  "lite": {
   "comment": "Item models and textures are worn by everyone (spec kits, free Armory gear) and there are too many to pick from, so all of them ship, with textures cut to their mips of at most maxPx on the long side. --export reports what that saved.",
@@ -31,6 +31,7 @@
     "goldshire-inn",
     "valley-of-trials",
     "ebon-hold",
+    "pets",
     "naxx-os-voa",
     "ulduar",
     "eoe-onyxia-rs",
@@ -127,12 +128,17 @@
    ],
    "mounts": true,
    "mountsNote": "Every player mount's model and skins (horses, rams, wolves, kodos, raptors, mechanostriders, hawkstriders, elekks, gryphons, wyverns, drakes, mammoths, motorcycles...), the flight masters' mounts and a vehicle mount's passengers: displays.py reads Spell.dbc for aura 78 and prints those displays for this tier. Mounts are ridden everywhere and are not spawned anywhere, and the client seats a rider only once the mount's model has loaded, so they belong in the base. About 100-250 MB.",
+   "formsNote": "What a player character turns into goes here too (3 Nov 2026: druids in their forms, ghost wolves and ghosts were missing in the browser): displays.py follows the players' spells to their shapeshift forms (aura 36: SpellShapeshiftForm.dbc's models, with every race and colour variant of the same model) and transforms (aura 56: polymorph, hex, costumes), and the core's Ghost and night elf wisp spells.",
+   "creatures": [6491],
+   "creaturesNote": "Creatures no spawn query finds, by entry (displays.py: their models and other-gender models): 6491 the Spirit Healer, beside every graveyard a dead player runs to.",
    "measuredMB": null
   },
   {
    "key": "dalaran",
    "kind": "home",
    "name": "Dalaran",
+   "creatures": [721],
+   "creaturesNote": "Summoned by scripts, not spawned (displays.py \"creatures\"): 721 the rabbit the Dalaran hide-and-seek event (ov_events.lua OV_EVENTS_HIDER) summons.",
    "notes": "Dalaran (zone 4395 on Northrend, map 571): the city, the Underbelly (sewers) and the Violet Citadel. Only the ADT tiles under Dalaran's world-map rect plus one tile of margin; anything else on Northrend sends a stream player back.",
    "zones": [
     4395
@@ -1755,6 +1761,8 @@
    "key": "battlegrounds",
    "kind": "battleground",
    "name": "battlegrounds",
+   "creatures": [13116, 13117],
+   "creaturesNote": "Summoned by scripts, not spawned (displays.py \"creatures\"): 13116 and 13117 the Alliance and Horde Spirit Guides a battleground's dead gather at.",
    "maps": [
     {
      "id": 489
@@ -2012,6 +2020,8 @@
    "kind": "home",
    "kindNote": "home, as Dalaran: the realm's stream rule (ov_slices.lua) lets every player stand here at any level, so a browser player in a Den is never sent away; no play entries, so the travel menu doesn't offer it.",
    "name": "Den",
+   "creatures": [32364],
+   "creaturesNote": "Summoned by scripts, not spawned (displays.py \"creatures\"): 32364 the Den companion (ov_den_companion.lua OV_DEN_COMPANION_ENTRY), summoned by a script.",
    "notes": "The Den (owner 1 Nov 00:16: a light, fully working Den in the browser, the slice way): the sealed island in the far north-east of Kalimdor where every Den room stands (ov_build.lua DEN: map 1, 16226.2, 16257.0, game_tele 424 GMIsland), and the models of every object a Den can place: the Builder's catalog and buildings, the room's floor, wall and light blocks, and the stamps' and starter places' props. Objects found with '.build find' or '.build models' outside these are not carried (a player's own game folder shows them). Right after Dalaran in order (1 Nov 00:49: at the end, the budget left it out), so it always fits.",
    "maps": [
     {
@@ -2038,6 +2048,16 @@
     "Hop to a Den realm in the browser: you start in the white room.",
     ".den start forest, then .den stamp inn now; walk around the Inn and the yard."
    ],
+   "measuredMB": null
+  },
+  {
+   "key": "pets",
+   "kind": "base",
+   "name": "Hunter pets",
+   "notes": "Not a place: every tameable beast's models and skins (displays.py \"pets\": creature_template type_flags & 1 with a family). A hunter's pet is whatever beast was tamed, anywhere in the world, so no spawn in the slice finds it; the Sample Hangout's level-80 bots bring theirs to Dalaran. Right after the starting areas in order, before the dungeons, so the budget keeps it. 3 Nov 2026.",
+   "pets": true,
+   "maps": [],
+   "capture": [],
    "measuredMB": null
   },
   {

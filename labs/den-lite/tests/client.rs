@@ -759,7 +759,7 @@ fn the_den_grows_and_the_companion_talks_with_the_assistant() {
     assert_eq!(objects(&frames).0.len(), 1, "the file's chair (the white Den has no room pieces)");
     assert_eq!(srv.shared.den.lock().unwrap().spot.half, 16.0);
     w.say(".den size 9");
-    assert!(w.until_line().1.starts_with("Sizes are 1 to 4"));
+    assert!(w.until_line().1.starts_with("Sizes are 1 to 7"));
 
     // 2. the companion: called, named, heard, answering from the assistant's file, following, staying in the Den
     w.send(&heartbeat(mx, my, mz, 0.0));

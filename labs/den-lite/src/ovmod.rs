@@ -10,7 +10,9 @@
 //!   again;
 //! * `wuden info` -> `role=..;theme=..;builders=-;invite=1`; `wuden cmd <text>` -> the `.den <text>` chat command,
 //!   plus `invite` and `forge` (asked of the launcher: [`ASK_FILE`] / [`ANSWER_FILE`]);
-//! * `wubuild catalog` (the props Den Lite knows, in the Builder's categories), `wubuild state` (the selection) and
+//! * `wubuild catalog` (the props Den Lite knows, in the Builder's categories, with each model's path when the
+//!   player's own GameObjectDisplayInfo is in the Dens folder: `models.rs`; what doesn't fit one message follows as
+//!   `wubuild catmore`), `wubuild state` (the selection) and
 //!   `wubuild cmd`: `spawn <entry>`, `near`, `move x|y|z <d>`, `move <id> x y z yaw`, `setpos`, `turn`, `setturn`,
 //!   `tilt pitch|roll`, `scale <id> <s>`, `setscale`, `delete`, `undo`, `selclear`, `save`, `load`, `help`;
 //!   `snap on|off` (edit mode's gate: the host yes, guests no unless `.den friends build on`).
@@ -187,19 +189,41 @@ fn key(name: &str) -> String {
     if k.is_empty() { "prop".into() } else { k }
 }
 
-/// The catalog line: `id,key,category,name,points;...`, as many as fit the client's 32 parts.
-pub fn catalog() -> String {
-    let mut out = String::new();
+/// The whole catalog: `id,key,category,name,points[,model];...` in messages that each fit the client's 32 parts: the
+/// first is `catalog`, the rest `catmore` (Builder.lua adds them to the first; an older addon keeps the first). The
+/// model (the gallery's 3D tile) is the path in the player's own GameObjectDisplayInfo ([`crate::models`]), when the
+/// launcher put that table in the Dens folder; without it the lines have five fields, as before.
+pub fn catalog_parts(model_of: impl Fn(u32) -> Option<String>) -> Vec<String> {
+    let mut parts = vec![String::new()];
     for o in crate::objects::OBJECTS {
         let Some(cat) = category(o.3) else { continue };
         let name: String = o.3.chars().filter(|c| !matches!(c, ';' | ',' | '|' | '\t')).collect();
-        let item = format!("{},{},{},{},1;", o.0, key(&name), cat, name);
-        if out.len() + item.len() > PART * MAX_PARTS {
-            break;
+        let model = model_of(o.2).map(|m| format!(",{m}")).unwrap_or_default();
+        let item = format!("{},{},{},{},1{};", o.0, key(&name), cat, name, model);
+        if parts.last().is_some_and(|p| p.len() + item.len() > PART * MAX_PARTS) {
+            parts.push(String::new());
         }
-        out.push_str(&item);
+        if let Some(p) = parts.last_mut() {
+            p.push_str(&item);
+        }
     }
-    out
+    parts
+}
+
+/// The catalog's first message (see [`catalog_parts`]).
+pub fn catalog() -> String {
+    catalog_parts(|d| crate::models::of(d).map(str::to_string)).into_iter().next().unwrap_or_default()
+}
+
+/// The catalog's messages: `catalog`, then `catmore` for the rest.
+fn catalog_out() -> Vec<Out> {
+    let mut v: Vec<Out> = catalog_parts(|d| crate::models::of(d).map(str::to_string))
+        .into_iter()
+        .enumerate()
+        .map(|(i, p)| Out::Addon("wubuild".into(), if i == 0 { "catalog" } else { "catmore" }.into(), p))
+        .collect();
+    v.push(Out::Ready);
+    v
 }
 
 /// A prop's id in the Builder: its object guid's counter (also its `gid`).
@@ -396,7 +420,7 @@ pub fn handle(d: &mut Den, sel: &mut Sel, here: Option<Here>, msg: &AddonMsg, ow
                 _ => vec![Out::DenCmd(data.to_string())],
             }
         }
-        ("wubuild", "catalog") => vec![Out::Addon("wubuild".into(), "catalog".into(), catalog()), Out::Ready],
+        ("wubuild", "catalog") => catalog_out(),
         ("wubuild", "state") => vec![Out::Addon("wubuild".into(), "state".into(), state(d, sel, role))],
         ("wubuild", "cmd") => {
             let w = data.trim();
@@ -477,6 +501,27 @@ mod tests {
         assert!(c.len() <= PART * MAX_PARTS);
         assert!(c.contains("2413,woodenchair,seating,Wooden Chair,1;"), "{}", &c[..200]);
         assert!(c.split(';').filter(|s| !s.is_empty()).all(|s| s.split(',').count() == 5));
+    }
+
+    #[test]
+    fn the_whole_catalog_in_parts_with_models() {
+        let plain = catalog_parts(|_| None);
+        let n: usize = plain.iter().map(|p| p.split(';').filter(|s| !s.is_empty()).count()).sum();
+        let offered = crate::objects::OBJECTS.iter().filter(|o| category(o.3).is_some()).count();
+        assert_eq!(n, offered, "every prop, none cut off");
+        assert!(plain.iter().all(|p| p.len() <= PART * MAX_PARTS && !p.is_empty()));
+        assert!(plain.len() > 1, "more than one message's worth");
+        let with = catalog_parts(|d| (d == 39).then(|| "World\\Generic\\Chair01.mdx".to_string()));
+        let all = with.concat();
+        assert!(all.contains("2413,woodenchair,seating,Wooden Chair,1,World\\Generic\\Chair01.mdx;"), "the chair (display 39) has its model");
+        assert!(all.split(';').filter(|s| !s.is_empty()).all(|s| matches!(s.split(',').count(), 5 | 6)));
+        let m = |t: &str| AddonMsg { prefix: "OVMOD".into(), text: t.into() };
+        let mut d = Den::new(den::Spot::default());
+        let mut sel = Sel::default();
+        let out = handle(&mut d, &mut sel, None, &m("wubuild\tcatalog\t1/1\t"), true, true);
+        assert!(matches!(&out[0], Out::Addon(a, b, _) if a == "wubuild" && b == "catalog"));
+        assert!(matches!(&out[1], Out::Addon(_, b, _) if b == "catmore"));
+        assert_eq!(out.last(), Some(&Out::Ready));
     }
 
     #[test]

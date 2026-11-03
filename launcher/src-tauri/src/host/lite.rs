@@ -169,6 +169,23 @@ pub fn command_line(den_dir: &Path, client: Option<&Path>) -> Vec<String> {
     v
 }
 
+/// The props' models for the Builder's gallery (labs/den-lite `models.rs`): the player's own
+/// `DBFilesClient\GameObjectDisplayInfo.dbc`, read from their own game archives and put in the Dens folder for Den Lite
+/// to read at its start. The player's own data on their own PC, never shipped. Written only when it changed; nothing
+/// happens when the game has none (the gallery then shows icons).
+pub fn model_table(client: &Path, den_dir: &Path) -> bool {
+    let order = super::terrain::archive_order(client);
+    let Ok(Some(b)) = crate::mpq::read_own(&order, "DBFilesClient\\GameObjectDisplayInfo.dbc") else { return false };
+    if b.len() < 20 || &b[..4] != b"WDBC" {
+        return false;
+    }
+    let to = den_dir.join("GameObjectDisplayInfo.dbc");
+    if std::fs::read(&to).ok().as_deref() == Some(&b[..]) {
+        return true;
+    }
+    std::fs::write(&to, &b).is_ok()
+}
+
 fn port_answers(port: u16) -> bool {
     let addr: SocketAddr = ([127, 0, 0, 1], port).into();
     TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
@@ -230,6 +247,9 @@ impl DenLite for Binary {
             return Err(format!("Another server on this PC is using the login port ({LOGIN_PORT}), so your Den can't start. Stop that server, then press Play again."));
         }
         std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't make the Den folder: {e}"))?;
+        if let Some(c) = self.client.as_deref() {
+            model_table(c, &dir);
+        }
         let mut cmd = Command::new(exe);
         cmd.args(command_line(&dir, self.client.as_deref())).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
         if TEST_CONTROL.load(std::sync::atomic::Ordering::Relaxed) {

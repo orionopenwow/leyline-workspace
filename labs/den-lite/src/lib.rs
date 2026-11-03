@@ -13,6 +13,7 @@ pub mod events;
 pub mod guests;
 pub mod ovmod;
 pub mod login;
+pub mod models;
 pub mod movewatch;
 pub mod notice;
 pub mod objects;
@@ -230,6 +231,11 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
     // the Den as it was when Den Lite last ran (den::AUTOSAVE)
     if let Some(Err(e)) = d.open_autosave(&cfg.den_dir) {
         eprintln!("den-lite: the autosave didn't open ({e}); it is kept as it is and the Den starts empty");
+    }
+    // the props' models for the Builder's gallery (the player's own table, put in the Dens folder by the launcher)
+    let known = models::load(&cfg.den_dir);
+    if cfg.verbose {
+        eprintln!("den-lite: {known} prop models known for the gallery");
     }
     let autosaved = d.autosave_key();
     let events = events::Events::new(&cfg.den_dir);

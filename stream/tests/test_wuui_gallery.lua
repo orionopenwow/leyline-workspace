@@ -87,7 +87,8 @@ SlashCmdList = {}
 DEFAULT_CHAT_FRAME = { AddMessage = function() end }
 local screenW = 1745
 function GetScreenWidth() return screenW end
-function GetScreenHeight() return 981 end
+local screenH = 981
+function GetScreenHeight() return screenH end
 function InCombatLockdown() return false end
 function SetBinding() return 1 end
 function SetBindingClick() return 1 end
@@ -164,8 +165,9 @@ check("1-20 of 53", win.count:GetText() == "1-20 of 53")
 local t1 = tileOf(1001)
 check("a tile with a model: SetModel(path), shown, the icon hidden", t1.model.modelFile == byId[1001].model and t1.model:IsShown() and not t1.icon:IsShown())
 check("a tile's model is lit (a Model frame without a light draws black)", t1.model.light == 1)
--- the framing (the old wiki's Model:SetPosition: (0,0,0) the frame's bottom-left, one unit the screen's diagonal)
-local diag = math.sqrt(1745 ^ 2 + 981 ^ 2)
+-- the framing (the old wiki's Model:SetPosition: (0,0,0) the frame's bottom-left; one unit the screen's height, as the
+-- owner's PC showed it, 3 Nov sweep 4)
+local diag = 981
 local TW = 88 / diag
 check("a model's tile: in the tile's middle, the frame's own units (about 0.044 across)", t1.model.pos
     and math.abs(t1.model.pos[1] - TW / 2) < 1e-9 and t1.model.pos[3] == 0 and t1.model.mscale < TW, table.concat(t1.model.pos or {}, ","))
@@ -200,11 +202,11 @@ do
     m.w, m.h = 88, 88
     win.grid:Fire("OnUpdate", 0.01); win.grid:Fire("OnUpdate", 0.01); win.grid:Fire("OnUpdate", 0.01)
     m.pos = nil
-    screenW = 1365
+    screenH = 768
     win.grid:Fire("OnUpdate", 0.01)
-    local W2 = 88 / math.sqrt(1365 ^ 2 + 981 ^ 2)
+    local W2 = 88 / 768
     check("the screen's size or UI scale changed: framed again", m.pos and math.abs(m.pos[1] - W2 / 2) < 1e-9)
-    screenW = 1745
+    screenH = 981
     win.grid:Fire("OnUpdate", 0.01)
 end
 local t4 = tileOf(1004)

@@ -134,10 +134,10 @@ do
     check("a path without a size still shows", byId[2109].model == "World\\Generic\\Flowers01.mdx" and byId[2109].size == nil)
     local function tile(id) for _, t in ipairs(B.Window().tiles) do if t:IsShown() and t.item and t.item.id == id then return t end end end
     local t = tile(2413)
-    -- the Model frame's units (the old wiki's Model:SetPosition): the tile's size over the screen's diagonal
+    -- the Model frame's units (the old wiki's Model:SetPosition; the owner's PC: the screen's height): the tile's size over it
     local W, H = B.FrameUnits(t.model)
-    local diag = math.sqrt(GetScreenWidth() ^ 2 + GetScreenHeight() ^ 2)
-    check("a tile's units: its size over the screen's diagonal (a 88-unit tile about 0.05)", W and math.abs(W - t.model:GetWidth() / diag) < 1e-9
+    local diag = GetScreenHeight()
+    check("a tile's units: its size over the screen's height (a 88-unit tile about 0.09)", W and math.abs(W - t.model:GetWidth() / diag) < 1e-9
         and W > 0.02 and W < 0.1 and math.abs(H - W) < 1e-9, W)
     local scale, x, y, z = B.TileFit(byId[2413].size, W, H)
     local chairExt = math.max(math.sqrt(0.5 ^ 2 + 0.5 ^ 2), 1.1)

@@ -585,7 +585,7 @@ B.PaintTile = paintTile
 -- Tunable on a PC without a new addon (WrathUnleashedUIDB.den.fit, set by B.SetFit / the test's ".den ui fit"):
 -- dx/dy/dz move the model by a part of the tile, unit picks the unit's length ("diag", or "height"/"width" of the
 -- screen), scaledPos multiplies positions by the model's scale (the other way a client might do it), cam a SetCamera.
-B.FIT = { v = 2, fill = 0.8, dx = 0, dy = 0, dz = 0, unit = "diag", scaledPos = false }
+B.FIT = { v = 2, fill = 0.8, dx = 0, dy = 0, dz = 0, unit = "height", scaledPos = false }
 local NO_SIZE = { w = 1, d = 1, h = 1.2, z = 0 }   -- a prop whose size is unknown: about a crate's
 local function fitConf()
     local d = type(WrathUnleashedUIDB) == "table" and type(WrathUnleashedUIDB.den) == "table" and WrathUnleashedUIDB.den.fit

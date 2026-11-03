@@ -1406,10 +1406,12 @@ def aids_of(answer):
 
 
 def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
-    """The placement aids through the Leyline UI's own test actions, a picture after each: build mode (props shown
-    as things the game highlights), the live preview (the copy in front, then where the cursor's ray lands), a click
-    places it, Esc, the gizmo's three flags around the selection, the wheel along a picked axis, the menu's
-    Duplicate, play mode. Your Den is saved first and put back after."""
+    """The editor's flow as the owner's video shows it (3 Nov: "it should function like this"), through the Leyline UI's
+    own test actions, a picture after each step: build mode (props shown as things the game highlights); a gallery
+    card picked (in hand, nothing in front of you); the real prop following the cursor; one click places it and it is
+    selected at once (its glow, its handles and the halo); a handle dragged along X (moved N yd) and dropped; the wheel
+    along a picked axis; Swap with another card; the menu's Duplicate; snap out and back; the wheel past the game's
+    zoom limit and back; play mode. Your Den is saved first and put back after."""
     den_dir, outdir = Path(den_dir), Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     n = [0]
@@ -1419,6 +1421,9 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
         out = outdir / ("aids-%02d-%s.png" % (n[0], name))
         ok, _ = shoot(out)
         return out.name if ok else None
+
+    def with_pic(text, pic):
+        return text + ((", " + pic) if pic else "")
 
     def ui(action):
         r = ch.send(".den ui %s" % action)
@@ -1438,6 +1443,7 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
     if "aids" not in first:
         rep.add("SKIP", "the placement aids", "this Den Lite is from before them: update Den Lite (the launcher puts the newest in)")
         return False
+    newer = "cam" in (aids_of(first) or {})
     before = den_dir / ("%s-before.den.json" % AIDS_SAVE)
     kept = stash([before, den_dir / "backup.den.json"])
     ch.send(".den save %s-before" % AIDS_SAVE)
@@ -1462,52 +1468,111 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
                "The Leyline UI didn't start build mode: update the Leyline addons and Den Lite, then run den-features again.")
         if look is None:
             rep.add("INFO", "build mode: the props' goober looks", "this Den Lite is from before them (3 Nov): update Den Lite for the glow under the mouse")
-        # the live preview: armed, in front; then the cursor's point
+        if not newer:
+            rep.add("INFO", "the editor's new flow", "this Den Lite is from before one-click placing, the handles' drag and snap out (3 Nov): update Den Lite")
+        # 1. a card picked: in hand (the panel says so), nothing in front of you
         ui("gizmo arm 2413")
         a = aids()
-        pic = shot("preview")
-        rep.ok(str(a.get("armed", "")).startswith("place,2413") and a.get("ghost"), "preview: the prop's copy in front of you",
-               "armed %s, the copy at %s%s" % (a.get("armed"), a.get("ghost"), (", " + pic) if pic else ""),
-               "Den Lite showed no copy: send logs\\den-features-latest.txt.")
-        g0 = a.get("ghost")
+        pic = shot("pick")
+        rep.ok(str(a.get("armed", "")).startswith("place,2413") and (not newer or not a.get("ghost")), "pick: the card in hand",
+               with_pic("armed %s, nothing shown until the cursor is on the ground" % a.get("armed"), pic),
+               "Den Lite didn't take the pick: send logs\\den-features-latest.txt.")
+        # 2. the real prop follows the cursor on the ground
         ui("gizmo hover 0.25 -0.35")
         a = aids()
         cur = a.get("cursor") or []
-        pic = shot("preview-hover")
-        rep.ok(len(cur) >= 2 and abs(cur[0] - 0.25) < 0.01 and abs(cur[1] + 0.35) < 0.01 and a.get("ghost") and a.get("ghost") != g0,
-               "preview: the copy goes where the cursor points", "now at %s%s" % (a.get("ghost"), (", " + pic) if pic else ""),
-               "The copy didn't move to the cursor's point: send logs\\den-features-latest.txt.")
+        g1 = a.get("ghost")
+        ui("gizmo hover 0.1 -0.3")
+        a = aids()
+        pic = shot("follow")
+        rep.ok(len(cur) >= 2 and abs(cur[0] - 0.25) < 0.01 and abs(cur[1] + 0.35) < 0.01 and g1 and a.get("ghost") and a.get("ghost") != g1,
+               "follow: the real prop goes where the cursor points", with_pic("at %s, then %s" % (g1, a.get("ghost")), pic),
+               "The prop didn't follow the cursor: send logs\\den-features-latest.txt.")
+        # 3. one click: placed and selected at once (glow, handles, halo), placing over
         p0 = props() or 0
         t = now_ms()
         ui("gizmo commit")
         ev = wait_for(lambda: event_after(den_dir, "den_change", t), wait)
-        rep.ok(ev is not None and (props() or 0) == p0 + 1, "preview: a click places it there", (ev or {}).get("detail", "nothing placed"),
-               "Den Lite didn't place the prop: send logs\\den-features-latest.txt.")
-        ui("gizmo cancel")
         a = aids()
-        rep.ok(a.get("armed") == "off" and not a.get("ghost"), "preview: Esc takes the copy away", "armed %s" % a.get("armed"),
-               "The copy stayed: send logs\\den-features-latest.txt.")
-        # the gizmo: the selection's three flags, the wheel along an axis
-        ui("select")
-        a = aids()
-        pic = shot("gizmo")
-        rep.ok(a.get("gizmo") == 3, "gizmo: three flags around the selected prop (red X, green Y, blue Z)",
-               "%s flags, prop %s%s" % (a.get("gizmo"), a.get("sel"), (", " + pic) if pic else ""),
-               "No flags around the selection: send logs\\den-features-latest.txt and the picture.")
+        pic = shot("placed-selected")
+        placed = ev is not None and (props() or 0) == p0 + 1
+        if newer:
+            ok = placed and a.get("armed") == "off" and a.get("sel") is not None and a.get("glow") == a.get("sel") and int(a.get("gizmo") or 0) >= 3
+            rep.ok(ok, "click: placed, and selected at once (it glows, its handles)",
+                   with_pic("prop %s, glow on %s, %s handles and the halo, placing over (%s)" % (a.get("sel"), a.get("glow"), max(0, int(a.get("gizmo") or 0) - 1), a.get("armed")), pic),
+                   "Placed %s; armed %s, glow %s, gizmo %s: send logs\\den-features-latest.txt and the picture." % (placed, a.get("armed"), a.get("glow"), a.get("gizmo")))
+        else:
+            rep.ok(placed, "click: placed there", (ev or {}).get("detail", "nothing placed"), "Den Lite didn't place the prop: send logs\\den-features-latest.txt.")
+            ui("gizmo cancel")
+        # 4. a handle dragged along X: the prop follows the cursor along it; a click drops it
+        if newer:
+            ui("gizmo grab x")
+            a = aids()
+            grabbed = str(a.get("armed", "")).startswith("axis,")
+            ui("gizmo hover 0.4 -0.3")
+            a = aids()
+            pic = shot("dragging")
+            moved = float(a.get("drag") or 0.0)
+            t = now_ms()
+            ui("gizmo commit")
+            ev = wait_for(lambda: event_after(den_dir, "den_change", t), wait)
+            pic2 = shot("drag-dropped")
+            rep.ok(grabbed and abs(moved) > 0.05 and ev is not None, "drag: a handle moves it along X, a click drops it",
+                   "moved %+.2f yd along X%s%s" % (moved, (", " + pic) if pic else "", (", " + pic2) if pic2 else ""),
+                   "Grabbed %s, moved %.2f, dropped %s: send logs\\den-features-latest.txt and the pictures." % (grabbed, moved, ev is not None))
+        else:
+            ui("select")
+        # the wheel along a picked axis (a step at a time)
         ui("gizmo axis z")
         t = now_ms()
         ui("gizmo wheel 1")
         ev = wait_for(lambda: event_after(den_dir, "den_change", t), wait)
-        pic = shot("gizmo-moved")
+        pic = shot("wheel-step")
         rep.ok(ev is not None and aids().get("axis") == "z", "gizmo: the wheel moves it along the picked axis",
-               "axis z, %s%s" % ((ev or {}).get("detail", "no change"), (", " + pic) if pic else ""),
+               with_pic("axis z, %s" % (ev or {}).get("detail", "no change"), pic),
                "The wheel didn't move the prop: send logs\\den-features-latest.txt.")
         ui("gizmo axis off")
+        # 5. Swap with: another card picked, Ins
+        if newer:
+            ui("pick 1670")
+            t = now_ms()
+            ui("key insert")
+            ev = wait_for(lambda: event_after(den_dir, "den_change", t), wait)
+            pic = shot("swap")
+            rep.ok(ev is not None, "swap: the selection becomes the gallery's pick", with_pic((ev or {}).get("detail", "no change"), pic),
+                   "Swap did nothing: send logs\\den-features-latest.txt.")
+            ui("gizmo cancel")
         # the right-click menu's Duplicate (the menu opens at the cursor on a right-click in the game)
         p0 = props() or 0
         ui("gizmo menu 2")
         got = wait_for(lambda: (props() or 0) == p0 + 1, wait, 0.5)
         rep.ok(bool(got), "menu: Duplicate", "%s -> %s props" % (p0, props()), "The menu's Duplicate did nothing: send logs\\den-features-latest.txt.")
+        if newer:
+            # 6. snap out: the view up and back over you (Den Lite's camera object), and back
+            ui("gizmo snap")
+            a = aids()
+            pic = shot("snap-out")
+            out = str(a.get("cam", "")).startswith("far,") and a.get("far_at")
+            rep.ok(bool(out), "snap out: the view from up high", with_pic("%s, the camera object at %s" % (a.get("cam"), a.get("far_at")), pic),
+                   "The view didn't go out: send logs\\den-features-latest.txt and the picture.")
+            ui("gizmo snap")
+            a = aids()
+            pic = shot("snap-back")
+            rep.ok(a.get("cam") == "near", "snap out: and back to you", with_pic(str(a.get("cam")), pic),
+                   "The view stayed out: press the snap-out key (or View on the rail) and send logs\\den-features-latest.txt.")
+            # 7. the wheel past the game's own zoom limit: Den Lite's far view; and back in
+            ui("gizmo zoom 40")
+            a = aids()
+            pic = shot("zoom-far")
+            far = str(a.get("cam", "")).split(",")
+            back = float(far[1]) if len(far) > 1 and far[0] == "far" else 0.0
+            rep.ok(back > 0, "zoom: out past the game's limit", with_pic("%.0f yd further than the game's own camera goes" % back, pic),
+                   "The zoom stopped at the game's limit: send logs\\den-features-latest.txt.")
+            ui("gizmo zoom -60")
+            a = aids()
+            pic = shot("zoom-back")
+            rep.ok(a.get("cam") == "near", "zoom: and back to you", with_pic(str(a.get("cam")), pic),
+                   "The far view stayed: send logs\\den-features-latest.txt.")
         # play mode: plain again
         t = now_ms()
         ui("gizmo build off")

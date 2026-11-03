@@ -894,7 +894,9 @@ class FakeAids:
         self.dens, self.props, self.broken = Path(dens), 2, set(broken)
         self.true_cam, self.cam = true_cam or dict(den_check.CAMERA), cam or dict(den_check.CAMERA)
         self.player = [16226.2, 16257.0, 13.2, 0.0]
-        self.aids = {"armed": "off", "ghost": None, "at": None, "cursor": None, "axis": None, "gizmo": 0, "sel": None, "mode": "play"}
+        self.aids = {"armed": "off", "ghost": None, "at": None, "cursor": None, "axis": None, "gizmo": 0, "sel": None, "mode": "play",
+                     "glow": None, "drag": 0.0, "cam": "near", "far_at": None, "zoom": 12}
+        self.zoom, self.back = 12, 0.0
         self.screen = (0.0, 0.0)
 
     def ev(self, name, detail=""):
@@ -905,6 +907,9 @@ class FakeAids:
         if self.aids["armed"] == "off":
             return
         self.aids["cursor"] = [u, v, 16 / 9]
+        if self.aids["armed"].startswith("axis,"):
+            self.aids["drag"] = round((u - 0.1) * 12, 2)
+            return
         hit = den_check.project(self.cam, self.player, u, v, 16 / 9, self.player[2])
         if hit:
             self.aids["ghost"] = [hit[0], hit[1], self.player[2], 0.0]
@@ -921,6 +926,9 @@ class FakeAids:
         a = w[2:]
         if a and a[0] == "select" and "select" not in self.broken:
             self.aids.update(sel=7, gizmo=3)
+        if a[:2] == ["key", "insert"] and "swap" not in self.broken and self.aids["sel"]:
+            self.ev("den_change", "+1 -1")
+            return {"props": self.props, "said": []}
         if a[:1] != ["gizmo"] or (len(a) > 1 and a[1] in self.broken):
             return {"props": self.props}
         act = a[1]
@@ -930,12 +938,40 @@ class FakeAids:
             if self.aids["mode"] == "build":
                 self.twins = getattr(self, "twins", 0) + 3
         elif act == "arm":
-            self.aids.update(armed="place,%s,1543" % a[2], ghost=[self.player[0] + 2.5, self.player[1], 13.2, 0.0])
+            # in hand: nothing shown until the cursor is on the ground
+            self.aids.update(armed="place,%s,1543" % a[2], ghost=None)
         elif act == "hover":
             self.hover(float(a[2]), float(a[3]))
         elif act == "commit":
-            self.props += 1
-            self.ev("den_change", "+1 -0")
+            if self.aids["armed"].startswith("axis,"):
+                self.ev("den_change", "+1 -1")
+            else:
+                self.props += 1
+                self.ev("den_change", "+1 -0")
+                if "glow" not in self.broken:
+                    self.aids.update(sel=9, glow=9, gizmo=4)
+            self.aids.update(armed="off", ghost=None, cursor=None)
+        elif act == "grab":
+            self.aids.update(armed="axis,%s,%s" % (self.aids["sel"], a[2]), drag=0.0)
+        elif act == "snap":
+            if self.aids["cam"] == "near":
+                self.aids.update(cam="far,35.0,1,0", far_at=[16200.0, 16257.0, 32.0, 0.0])
+            else:
+                self.aids.update(cam="near", far_at=None)
+        elif act == "zoom":
+            steps = int(a[2])
+            for _ in range(min(40, abs(steps))):
+                if steps > 0:
+                    if self.zoom + 2 > 50 or self.back > 0:
+                        self.back = min(1500.0, self.back * 1.25 + 8)
+                    else:
+                        self.zoom += 2
+                elif self.back > 0:
+                    self.back = max(0.0, (self.back - 8) / 1.25)
+                else:
+                    self.zoom = max(2, self.zoom - 2)
+            self.aids["cam"] = ("far,%.1f,0,0" % self.back) if self.back >= 0.5 else "near"
+            self.back = self.back if self.back >= 0.5 else 0.0
         elif act == "cancel":
             self.aids.update(armed="off", ghost=None, cursor=None)
         elif act == "axis":
@@ -1012,21 +1048,30 @@ class PlacementAids(unittest.TestCase):
             den_check.aids_features(rep, FakeAids(self.dens), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
         self.assertEqual([r for r in rep.rows if r[0] == "FAIL"], [])
         names = [r[1] for r in rep.rows if r[0] == "PASS"]
-        for want in ("build mode: props light up under the mouse", "preview: the prop's copy in front of you", "preview: the copy goes where the cursor points",
-                     "preview: a click places it there", "preview: Esc takes the copy away", "gizmo: three flags around the selected prop (red X, green Y, blue Z)",
-                     "gizmo: the wheel moves it along the picked axis", "menu: Duplicate", "play mode: props plain again"):
+        for want in ("build mode: props light up under the mouse", "pick: the card in hand", "follow: the real prop goes where the cursor points",
+                     "click: placed, and selected at once (it glows, its handles)", "drag: a handle moves it along X, a click drops it",
+                     "gizmo: the wheel moves it along the picked axis", "swap: the selection becomes the gallery's pick", "menu: Duplicate",
+                     "snap out: the view from up high", "snap out: and back to you", "zoom: out past the game's limit", "zoom: and back to you",
+                     "play mode: props plain again"):
             self.assertIn(want, names)
         self.assertIn("the game asked for 3 of their goober looks", [r for r in rep.rows if r[1] == "build mode: props light up under the mouse"][0][2])
-        for s in ("build-mode", "preview", "preview-hover", "gizmo", "gizmo-moved"):
+        drag = [r for r in rep.rows if r[1] == "drag: a handle moves it along X, a click drops it"][0][2]
+        self.assertTrue(drag.startswith("moved +3.60 yd along X"), drag)
+        far = [r for r in rep.rows if r[1] == "zoom: out past the game's limit"][0][2]
+        self.assertTrue(far.startswith("1500 yd") and far.endswith("-zoom-far.png") and "yd further than the game's own camera goes" in far, far)
+        for s in ("build-mode", "pick", "follow", "placed-selected", "dragging", "drag-dropped", "wheel-step", "swap", "snap-out", "snap-back",
+                  "zoom-far", "zoom-back"):
             self.assertTrue(any(x.endswith("-%s.png" % s) for x in self.shots), s)
         self.assertFalse((self.dens / "aidstest-before.den.json").exists(), "the test's save removed")
 
     def test_a_broken_aid_fails_with_its_fix(self):
         rep = den_check.Report()
         with contextlib.redirect_stdout(io.StringIO()):
-            den_check.aids_features(rep, FakeAids(self.dens, broken={"hover", "select"}), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
+            den_check.aids_features(rep, FakeAids(self.dens, broken={"hover", "glow"}), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
         fails = {r[1] for r in rep.rows if r[0] == "FAIL"}
-        self.assertEqual(fails, {"preview: the copy goes where the cursor points", "gizmo: three flags around the selected prop (red X, green Y, blue Z)"})
+        # no hover: nothing follows the cursor and nothing can be dragged; no glow: placed but not selected, so no swap
+        self.assertEqual(fails, {"follow: the real prop goes where the cursor points", "click: placed, and selected at once (it glows, its handles)",
+                                 "drag: a handle moves it along X, a click drops it", "swap: the selection becomes the gallery's pick"})
         # Den Lite never took the build look: failed, with what it said
         rep = den_check.Report()
         with contextlib.redirect_stdout(io.StringIO()):
@@ -1041,6 +1086,18 @@ class PlacementAids(unittest.TestCase):
         rep = den_check.Report()
         den_check.aids_features(rep, Old(self.dens), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
         self.assertEqual(rep.rows[0][0], "SKIP")
+        # a Den Lite from before the new flow (no cam in its aids): the old checks, and said
+        class Before(FakeAids):
+            def send(self, cmd, wait=10.0):
+                r = FakeAids.send(self, cmd, wait)
+                if isinstance(r, dict) and "aids" in r:
+                    r["aids"].pop("cam", None)
+                return r
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, Before(self.dens), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
+        self.assertTrue(any(r[0] == "INFO" and r[1] == "the editor's new flow" for r in rep.rows))
+        self.assertNotIn("snap out: the view from up high", [r[1] for r in rep.rows])
 
     def test_hover_calibration_fits_and_saves_the_camera(self):
         true = {"fov": 1.25, "pivot": 1.7, "dist": 10.0, "pitch": 0.45}

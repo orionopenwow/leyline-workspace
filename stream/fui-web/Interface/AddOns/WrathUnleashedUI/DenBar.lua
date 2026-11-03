@@ -709,7 +709,11 @@ function D.SetActive(on)
     on = on and true or false
     if D.active == on then return end
     D.active = on
-    if not on then D.play = false; D.CloseDrawer(); if intro then intro:Hide() end end
+    if not on then
+        D.play = false; D.CloseDrawer(); if intro then intro:Hide() end
+        -- leaving the Den: its editor windows go with it
+        for _, f in ipairs(editorFrames()) do if f.IsShown and f:IsShown() then f:Hide() end end
+    end
     D.BindKeys()
     D.Refresh()
     if on and not db().introSeen then D.ShowIntro(1) end

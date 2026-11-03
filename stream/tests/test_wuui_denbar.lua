@@ -6,7 +6,8 @@
 -- saved variables, again from Help); Build opens the Builder; Shape ground, Save (a name) and Invite send the Den's
 -- commands; the invite link lands in the copy box; toasts show one at a time, then "Saved 12 s ago"; play mode hides
 -- every editor window and back (F8, the pill, Esc > Back to building); F7 / F8 are bound only in the Den and only
--- when free; elsewhere no bar, no keys; nothing goes to the chat; no game-brand names on screen.
+-- when free; elsewhere no bar, no keys; nothing goes to the chat; no game-brand names on screen. 2026-11-03: the slim
+-- strip (Undo n / Redo n, Menu, Snap, 15 / 45 / 90, Files, x), the tool rail and the status pill.
 local dir = arg[1] or "stream/fui-web/Interface/AddOns/WrathUnleashedUI"
 
 local pass, fail = 0, 0
@@ -169,9 +170,20 @@ local bar = D.Bar()
 check("in Your Den the bar opens by itself", D.IsActive() and bar:IsShown())
 check("and says hello to Den Lite", sentHas("wuden\thello\t1/1\t" .. D.VERSION))
 check("Den Lite's status arrived", D.status and D.status.role == "owner" and D.status.props == "0")
-check("six big buttons: Build, Shape ground, Play, Save, Invite, Help",
-    bar.build:GetText() == "Build (F7)" and bar.ground:GetText() == "Shape ground" and bar.playBtn:GetText() == "Play (F8)"
-    and bar.save:GetText() == "Save" and bar.invite:GetText() == "Invite" and bar.help:GetText() == "Help")
+check("the slim strip: Undo / Redo, Menu, Snap, the turn steps, Play, ?, Files, Invite, x",
+    bar.undo:GetText() == "Undo 0" and bar.redo:GetText() == "Redo 0" and bar.menuBtn:GetText() == "Menu"
+    and bar.snap:GetText() == "Snap: off" and bar.rot[15] and bar.rot[45] and bar.rot[90] and bar.rot[15]:IsActive()
+    and bar.playBtn:GetText() == "Play (F8)" and bar.help:GetText() == "?" and bar.save:GetText() == "Files"
+    and bar.invite:GetText() == "Invite" and bar.close:GetText() == "x" and bar.title:GetText() == "YOUR DEN")
+check("the tool rail: Select, Build (F7), Move, Rotate, Shape ground, Stamps, Path, four steps", D.Rail():IsShown()
+    and bar.select:GetText() == "Select" and bar.build:GetText() == "Build (F7)" and bar.move:GetText() == "Move"
+    and bar.rotate:GetText() == "Rotate" and bar.ground:GetText() == "Shape ground" and bar.stamps:GetText() == "Stamps"
+    and bar.path:GetText() == "Path" and #bar.steps == 4 and bar.build.iconPath:find("^Interface\\Icons\\"))
+check("square icon buttons of one size on the rail", (function()
+    for _, k in ipairs({ "select", "build", "move", "rotate", "ground", "stamps", "path" }) do if not bar[k].edIcon then return false end end
+    return true end)())
+check("the status pill at the bottom", _G.LeylineEditorStatus and _G.LeylineEditorStatus:IsShown()
+    and _G.LeylineEditorStatus.line:GetText():find("^Place · snap off · 15°"))
 check("F7 and F8 bound in the Den (free: a stock game binds neither)", overrides.F7 == "LeylineDenKeyBuild" and overrides.F8 == "LeylineDenKeyPlay")
 
 -- the intro, the first time
@@ -208,16 +220,20 @@ check("its answer is a toast in the bar, and in the Builder's own line", bar.lin
 tick(D.TOAST_SECS + 0.1)
 
 bar.save:Fire("OnClick")
-local dr = D.Drawer()
-check("Save: a name box under the bar", dr:IsShown() and D.drawerKind == "save" and dr.box.focus and dr.box:GetText() == "my-den")
-dr.box:SetText("castle by the lake")
-dr.ok:Fire("OnClick")
-check("a name with spaces is made a plain name and saved", sentHas("wuden\tcmd\t1/1\tsave castle-by-the-lake") and not dr:IsShown())
+local files = W.Builder.Files()
+check("Files: this Den's save by name, builds, prefabs and the plot", files:IsShown() and files.den:IsShown() and files.den:GetText() == "my-den"
+    and files.code and files.prefab and files.claim)
+files.den:SetText("castle by the lake")
+files.denSave:Fire("OnClick")
+check("a name with spaces is made a plain name and saved", sentHas("wuden\tcmd\t1/1\tsave castle-by-the-lake"))
 check("the bar hears it: Saved as ...", D.saved and D.saved.name == "castle-by-the-lake")
+files.close:Fire("OnClick")
 tick(D.TOAST_SECS + 0.1)
 tick(12)
 check("then: Saved as castle-by-the-lake 12 s ago (the line counts on)", bar.line:GetText():find("Saved as castle%-by%-the%-lake 1%d s ago") ~= nil)
-bar.save:Fire("OnClick")
+D.OpenSave()
+local dr = D.Drawer()
+check("Save by the drawer too: a name box under the strip", dr:IsShown() and D.drawerKind == "save" and dr.box.focus and dr.box:GetText() == "castle-by-the-lake")
 dr.box:SetText("no;way")
 check("a bad name: not sent, says why", not D.Save(dr.box:GetText()) and bar.line:GetText():find("letters, numbers") ~= nil)
 D.CloseDrawer()
@@ -243,7 +259,56 @@ check("Help: the intro again", intro:IsShown() and intro.count:GetText() == "1 /
 intro.skip:Fire("OnClick")
 check("Skip closes it", not intro:IsShown())
 
+-- ---------------------------------------------------------------- 2b. the editor's frame (2026-11-03)
+local Bd = W.Builder
+bar.menuBtn:Fire("OnClick")
+local mn = D.Menu()
+check("Menu: a list under the strip, the budget on top", mn and mn:IsShown() and mn.meter:GetText() ~= nil and #mn.rows == #D.MENU)
+check("the menu holds what the old rows of buttons had", (function()
+    local want = { "Select mine", "Copy", "Paste", "Duplicate", "Delete", "Group", "Ungroup", "Put away", "Storage", "Floor",
+        "Properties", "Den panel", "Den home", "Reload the props", "Builder help" }
+    local have = {}
+    for _, r in ipairs(mn.rows) do have[r:GetText()] = r:IsShown() end
+    for _, w in ipairs(want) do if not have[w] then return false end end
+    return have["Box select (edit mode)"] == false end)())
+local nm = #sent
+for _, r in ipairs(mn.rows) do if r:GetText() == "Select mine" then r:Fire("OnClick") end end
+check("a menu row does it and the menu closes", sent[nm + 1] == "wubuild\tcmd\t1/1\tselall" and not mn:IsShown())
+bar.snap:Fire("OnClick")
+local sm = D.SnapMenu()
+check("Snap: off, 0.5, 1, 2, 5 yd", sm:IsShown() and #sm.rows == 5 and sm.rows[1]:GetText() == "off" and sm.rows[5]:GetText() == "5 yd")
+sm.rows[3]:Fire("OnClick")
+check("Snap 1 yd: the grid at your feet and edit mode's grid", bar.snap:GetText() == "Snap: 1 yd" and sentHas("wubuild\tcmd\t1/1\tgrid 1")
+    and cv.leylineEditGrid == "1" and not sm:IsShown())
+bar.rot[45]:Fire("OnClick")
+check("45°: the turn step for Q / E and the popover", Bd.TurnStep() == 45 and bar.rot[45]:IsActive() and not bar.rot[15]:IsActive()
+    and cv.leylineEditAngle == "45")
+bar.rot[15]:Fire("OnClick")
+fireClient("wubuild\tstate\t1/1\tsel=-;mine=0/200;area=Your Den;code=-;n=0;pos=-;undo=3;redo=1")
+check("Undo 3 / Redo 1: the realm's counts", bar.undo:GetText() == "Undo 3" and bar.redo:GetText() == "Redo 1")
+nm = #sent
+bar.undo:Fire("OnClick")
+check("Undo sends undo", sent[nm + 1] == "wubuild\tcmd\t1/1\tundo")
+bar.move:Fire("OnClick")
+check("Move: the selection's popover, the tool lit gold", Bd.Panel():IsShown() and bar.move:IsActive() and Bd.mode == "move")
+bar.rotate:Fire("OnClick")
+check("Rotate: the same popover", Bd.Panel():IsShown() and bar.rotate:IsActive() and not bar.move:IsActive())
+bar.stamps:Fire("OnClick")
+check("Stamps: the gallery on its Stamps tab", Bd.Window():IsShown() and Bd.tab == "stamps" and bar.stamps:IsActive())
+bar.steps[4]:Fire("OnClick")
+check("a step preset: 3 yd", Bd.STEPS[Bd.step] == 3 and bar.steps[4]:IsActive() and not bar.steps[1]:IsActive())
+nm = #sent
+bar.select:Fire("OnClick")
+check("Select on your own game: the prop nearest you", sent[nm + 1] == "wubuild\tcmd\t1/1\tnear" and bar.select:IsActive())
+Bd.ShowTab("all")
+Bd.ShowProps(false)
+bar.close:Fire("OnClick")
+check("x in the Den: play mode (the tools away)", D.play == true and not bar:IsShown() and not D.Rail():IsShown())
+D.SetPlay(false)
+check("and back: the strip and the rail", bar:IsShown() and D.Rail():IsShown())
+
 -- ---------------------------------------------------------------- 3. play mode
+B.ShowBuilder(true)
 W.EditMode.ShowDen(true)
 W.DenHome.Show(true)
 B.ShowProps(true)
@@ -283,6 +348,11 @@ fire("PLAYER_ENTERING_WORLD")
 check("on another realm: no bar, no keys, no Esc button", not D.IsActive() and not bar:IsShown() and not bar.pill:IsShown() and next(overrides) == nil
     and not mb:IsShown())
 check("and play mode can't be turned on there", D.SetPlay(true) == false)
+W.ToggleBuilder()
+check("elsewhere, the Builder brings the frame: BUILD, no Den buttons", bar:IsShown() and D.Rail():IsShown() and bar.title:GetText() == "BUILD"
+    and not bar.invite:IsShown() and not bar.playBtn:IsShown() and not bar.ground:IsShown())
+bar.close:Fire("OnClick")
+check("and x shuts it all", not W.Builder.Window():IsShown() and not bar:IsShown() and not D.Rail():IsShown())
 realm = "Your Den"
 denLite = true
 fire("PLAYER_ENTERING_WORLD")

@@ -506,7 +506,7 @@ function B.Filter()
     if B.pick then
         local still = false
         for _, c in ipairs(B.shown) do if c == B.pick then still = true end end
-        if not still and not (B.pick.kind == nil and B.pick.id) then B.pick = nil end
+        if not still then B.pick = nil end
     end
     B.Refresh()
 end
@@ -1473,11 +1473,13 @@ function B.ShowMenu(show)
         if not win:IsShown() then B.heldOpen = true end
         if editing() then win:ClearAllPoints(); win:SetPoint("CENTER", WorldFrame or UIParent, "CENTER", 0, 40) end
         win:Show()
-    elseif B.heldOpen or not editing() then
+    elseif B.heldOpen then
         win:Hide()
     end
 end
-function B.ToggleMenu() B.ShowMenu(not (win and win:IsShown())) end
+function B.ToggleMenu()
+    if win and win:IsShown() then win:Hide() else B.ShowMenu(true); B.heldOpen = nil end
+end
 
 local listener = CreateFrame("Frame")
 listener:RegisterEvent("CHAT_MSG_ADDON")

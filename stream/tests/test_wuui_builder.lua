@@ -6,6 +6,9 @@
 -- meter and blocked spawns, the spawn menu (tabs, search, recent, favourites, prefabs), the properties panel,
 -- the group / prefab / plot rows, and edit mode's paste, box select, Shift-click, prefab and hold-Q hooks. 2026-10-30:
 -- redo, put away and the Storage tab, and the Den panel (info, the invite link to copy, builders, layouts).
+-- 2026-11-03, the Den editor's look: the window is the gallery (tiles, the category column, paging; one click picks,
+-- a double-click places), the selection's popover (pops up, - / +, the step chips, the keys), Files (builds,
+-- prefabs, the plot) and the status pill.
 local dir = arg[1] or "stream/fui-web/Interface/AddOns/WrathUnleashedUI"
 local server = arg[2] or "realm/custom/lua_scripts/ov_build.lua"
 local modapi = arg[3] or server:gsub("ov_build%.lua$", "ov_modapi.lua")
@@ -167,80 +170,119 @@ check("Esc closes it", UISpecialFrames[#UISpecialFrames] == "WrathUnleashedBuild
 check("asked for the catalog over OVMOD, whispered to self", sent[1] and sent[1][1] == "OVMOD" and sent[1][2] == "wubuild\tcatalog\t1/1\t"
     and sent[1][3] == "WHISPER" and sent[1][4] == "Tester")
 
+local files = B.Files()
+local binds = {}
+function SetOverrideBindingClick(_, _, key, button) binds[key] = button end
+function ClearOverrideBindings() binds = {} end
 local function shown()
     local out = {}
-    for _, r in ipairs(win.rows) do if r:IsShown() then out[#out + 1] = r end end
+    for _, t in ipairs(win.tiles) do if t:IsShown() then out[#out + 1] = t end end
     return out
 end
-check("the catalog arrives: a page of rows", #B.catalog == #T.CATALOG() and #shown() == #win.rows and win.count:GetText():find("of " .. #B.catalog))
-check("state arrived: not selected, in Goldshire green", win.sel:GetText():find("Nothing selected") and win.sel:GetText():find("Goldshire green"))
-check("Spawn waits for a pick", win.spawn.enabled == false)
+local function tab(name) for _, t in ipairs(win.tabs) do if t.tab == name then t:Fire("OnClick"); return t end end end
+local function status() return B.status or "" end
+check("the catalog arrives: a page of 20 tiles, 1-20 of N", #B.catalog == #T.CATALOG() and #shown() == B.PAGE and #win.tiles == B.PAGE
+    and win.count:GetText() == "1-20 of " .. #B.catalog)
+check("the head says EVERYTHING", win.title:GetText() == "EVERYTHING")
+check("state arrived: not selected, in Goldshire green", B.SelectionText():find("Nothing selected") and B.SelectionText():find("Goldshire green"))
+check("Place waits for a pick", win.spawn.enabled == false)
+check("the status pill: Place, snap off, 15°", _G.LeylineEditorStatus:IsShown() and _G.LeylineEditorStatus.line:GetText():find("^Place · snap off · 15°"))
 
--- search and categories
+-- search and categories (the column)
 win.search:SetText("lant"); win.search:Fire("OnTextChanged")
 local function countWhere(fn) local n = 0; for _, c in ipairs(T.CATALOG()) do if fn(c) then n = n + 1 end end; return n end
 local lanterns = countWhere(function(c) return c.name:lower():find("lant", 1, true) or c.key:find("lant", 1, true) end)
-check("search filters", lanterns >= 2 and #shown() == math.min(lanterns, #win.rows) and shown()[1].name:GetText():lower():find("lant"))
+check("search filters", lanterns >= 2 and #shown() == math.min(lanterns, B.PAGE) and shown()[1].name:GetText():lower():find("lant"))
 win.search:SetText(""); win.search:Fire("OnTextChanged")
-win.catBtn:Fire("OnClick")
+tab("seating")
 local seats = countWhere(function(c) return c.cat == "seating" end)
-check("category: seating", win.catBtn:GetText() == "Category: seating" and seats >= 5 and #shown() == math.min(seats, #win.rows))
-for _ = 1, #B.CATS - 1 do win.catBtn:Fire("OnClick") end
-check("categories go round to all", win.catBtn:GetText() == "Category: all")
-win.list:Fire("OnMouseWheel", -1)
-check("mouse wheel scrolls", B.offset == 1)
-win.list:Fire("OnMouseWheel", 1)
+check("category: seating", win.title:GetText() == "SEATING" and seats >= 5 and #shown() == math.min(seats, B.PAGE)
+    and shown()[1].item.cat == "seating")
+check("the column: Favourites, Recent, Prefabs, Stamps, Storage, Everything and every category", #win.tabs == 6 + #B.CATS - 1
+    and win.tabs[1].tab == "favourites" and win.tabs[6].tab == "all" and win.tabs[6]:GetText() == "Everything")
+check("the category that is on is gold", (function() for _, t in ipairs(win.tabs) do if t:IsActive() ~= (t.tab == "seating") then return false end end return true end)())
+tab("all")
+win.grid:Fire("OnMouseWheel", -1)
+check("the wheel scrolls a row", B.offset == 5 and win.count:GetText():find("^6%-25 of"))
+win.grid:Fire("OnMouseWheel", 1)
+win.next:Fire("OnClick")
+check("Next: the next page", B.offset == 20 and win.count:GetText():find("^21%-40 of"))
+win.prev:Fire("OnClick")
+check("Prev: back, and Prev is off on the first page", B.offset == 0 and win.prev.enabled == false)
 
--- pick and spawn
-shown()[1]:Fire("OnClick")
-check("a pick names the Spawn button", win.spawn.enabled and win.spawn:GetText() == "Spawn Wooden Chair")
+-- pick and place
+shown()[1]:Fire("OnClick", "LeftButton")
+check("a click picks it: the gold edge, Place names it", B.pick == shown()[1].item and win.spawn.enabled
+    and win.spawn:GetText() == "Place Wooden Chair" and shown()[1].hover:IsShown())
+check("one click places nothing", next(T.props) == nil)
 win.spawn:Fire("OnClick")
 local id = T.selected[7]
 local p = id and T.props[id]
-check("Spawn places it on the realm", p and p.entry == 2413 and objects[T.live[id]])
-check("the state shows the selection", win.sel:GetText():find("Selected: Wooden Chair") and win.sel:GetText():find("props 1/50"))
+check("Place puts it on the realm", p and p.entry == 2413 and objects[T.live[id]])
+check("the state shows the selection", B.SelectionText():find("Selected: Wooden Chair") and B.SelectionText():find("props 1/50"))
 check("the realm said so in chat", chat[#chat]:find("Wooden Chair placed"))
+local panel = B.Panel()
+local ui = { undo = panel.actions.Undo, copy = panel.actions.Copy, paste = panel.actions.Paste, selall = panel.tools["Select mine"],
+    path = W.DenBar.Bar().path }
+check("a new selection: its popover pops up", panel and panel:IsShown() and panel.title2:GetText() == "Wooden Chair")
+check("the pill says it", _G.LeylineEditorStatus.line:GetText():find("Wooden Chair selected"))
 
--- nudges and turns
+-- nudges and turns (the popover's - and +, the step chip)
 local z0 = p.z
-win.nudge["z+"]:Fire("OnClick")
+panel.plus.z:Fire("OnClick")
 check("z + moves it up one step (1 yd)", math.abs(p.z - (z0 + 1)) < 1e-6 and sent[#sent][2] == "wubuild\tcmd\t1/1\tmove z 1")
-win.stepBtn:Fire("OnClick")
-win.nudge["x-"]:Fire("OnClick")
-check("the step button: 3 yd", win.stepBtn:GetText() == "Step 3 yd" and sent[#sent][2]:find("move x %-3$"))
-win.stepBtn:Fire("OnClick")
-check("then 10 yd", win.stepBtn:GetText() == "Step 10 yd")
-win.stepBtn:Fire("OnClick")
-check("and round to 0.01 yd (fine nudges)", win.stepBtn:GetText() == "Step 0.01 yd")
-win.stepBtn:Fire("OnClick"); win.stepBtn:Fire("OnClick")
-win.nudge["y+"]:Fire("OnClick")
+panel.stepBtn:Fire("OnClick")
+panel.minus.x:Fire("OnClick")
+check("the step chip: 3 yd", panel.stepBtn:GetText() == "Step 3 yd" and sent[#sent][2]:find("move x %-3$"))
+panel.stepBtn:Fire("OnClick")
+check("then 10 yd", panel.stepBtn:GetText() == "Step 10 yd")
+panel.stepBtn:Fire("OnClick")
+check("and round to 0.01 yd (fine nudges)", panel.stepBtn:GetText() == "Step 0.01 yd")
+panel.stepBtn:Fire("OnClick"); panel.stepBtn:Fire("OnClick")
+panel.plus.y:Fire("OnClick")
 check("then 0.1 and 0.25 yd", sent[#sent][2]:find("move y 0%.25$"))
 local o0 = p.o
-win.turnL:Fire("OnClick")
+panel.plus.turn:Fire("OnClick")
 check("turn +15 degrees", math.abs(p.o - (o0 + math.rad(15))) < 1e-6)
 serverClock = serverClock + 1
-win.turnR:Fire("OnClick")
+panel.minus.turn:Fire("OnClick")
 check("turn -15 degrees", math.abs(p.o - o0) < 1e-6)
-win.undo:Fire("OnClick")
+panel.actions.Undo:Fire("OnClick")
 check("Undo", math.abs(p.o - (o0 + math.rad(15))) < 1e-6 and chat[#chat]:find("Undone"))
 
--- save / share / load with the box
-win.code:SetText("my camp")
-win.save:Fire("OnClick")
+-- the keys while the popover is open: arrows, Page Up / Down, Q / E
+check("the popover takes the arrows, Page Up / Down and Q / E", binds.UP == "LeylinePropKeyUP" and binds.PAGEDOWN == "LeylinePropKeyPAGEDOWN"
+    and binds.Q == "LeylinePropKeyQ" and binds.E == "LeylinePropKeyE")
+_G.LeylinePropKeyUP:Fire("OnClick", "LeftButton", true)
+check("Up moves it along x by the step", sent[#sent][2] == "wubuild\tcmd\t1/1\tmove x 0.25")
+_G.LeylinePropKeyUP:Fire("OnClick", "LeftButton", false)
+check("a key's release does nothing more", sent[#sent][2] == "wubuild\tcmd\t1/1\tmove x 0.25" and sent[#sent - 1][2] ~= "wubuild\tcmd\t1/1\tmove x 0.25")
+_G.LeylinePropKeyPAGEUP:Fire("OnClick", "LeftButton", true)
+check("Page Up lifts it", sent[#sent][2] == "wubuild\tcmd\t1/1\tmove z 0.25")
+serverClock = serverClock + 1
+_G.LeylinePropKeyE:Fire("OnClick", "LeftButton", true)
+check("E turns it by the turn step", sent[#sent][2] == "wubuild\tcmd\t1/1\tturn -15")
+panel:Hide()
+check("closing the popover gives the keys back", next(binds) == nil)
+panel:Show()
+
+-- save / share / load in Files
+files.code:SetText("my camp")
+files.save:Fire("OnClick")
 check("Save takes the name from the box", T.builds[7] and T.builds[7]["mycamp"] and chat[#chat]:find("Saved 'mycamp'"))
-win.code:SetText("mycamp")
-win.share:Fire("OnClick")
+files.code:SetText("mycamp")
+files.share:Fire("OnClick")
 local code = T.builds[7].mycamp.code
-check("Share puts the code in the box", code and win.code:GetText() == code)
-win.delete:Fire("OnClick")
-check("Delete", next(T.props) == nil and win.sel:GetText():find("Nothing selected") and win.sel:GetText():find("props 0/50"))
-win.load:Fire("OnClick")
+check("Share puts the code in the box", code and files.code:GetText() == code)
+panel.actions.Delete:Fire("OnClick")
+check("Delete", next(T.props) == nil and B.SelectionText():find("Nothing selected") and B.SelectionText():find("props 0/50"))
+files.load:Fire("OnClick")
 check("Load the code from the box", (function() local n = 0; for _ in pairs(T.props) do n = n + 1 end; return n == 1 end)()
     and chat[#chat]:find("Pasted '" .. code .. "'"))
-win.code:SetText("bad|name")
+files.code:SetText("bad|name")
 local before = #sent
-win.load:Fire("OnClick")
-check("a bad name never leaves the window", #sent == before and win.status:GetText():find("Type a build name"))
+files.load:Fire("OnClick")
+check("a bad name never leaves the window", #sent == before and status():find("Type a build name"))
 
 
 -- M3: the budget meter ---------------------------------------------------------------------------------------------
@@ -248,104 +290,88 @@ local function countProps() local n = 0; for _ in pairs(T.props) do n = n + 1 en
 check("the catalog carries build points", B.catalog[1].cost == T.costOf(B.catalog[1].id))
 check("budget meter: props and points", win.meter:GetText():find("Props 1/50") and win.meter:GetText():find("Points %d+/100")
     and B.meterFrac > 0 and B.meterFrac < 0.1)
-check("the plot line says there's no plot here", win.plot:GetText():find("No plot here"))
+check("the plot line says there's no plot here", files.plot:GetText():find("No plot here"))
 fireClient("OVMOD", "wubuild\tstate\t1/1\tsel=-;mine=50/50;area=Goldshire green;code=-;n=0;pos=-;pts=60/100;tier=builder;plot=-;clip=0", "WHISPER", "Tester")
 check("the meter fills at the limit", B.meterFrac == 1)
 B.pick = B.catalog[1]
 local nSent = #sent
 check("Spawn is blocked at the limit, with a plain message", B.Spawn() == false and #sent == nSent
-    and win.status:GetText():find("limit of 50 props"))
+    and status():find("limit of 50 props"))
 local heavy
 for _, c in ipairs(B.catalog) do if c.cost >= 2 then heavy = c; break end end
 fireClient("OVMOD", "wubuild\tstate\t1/1\tsel=-;mine=3/50;area=Goldshire green;code=-;n=0;pos=-;pts=99/100;tier=builder;plot=-;clip=0", "WHISPER", "Tester")
 B.pick = heavy
-check("and when the points run out", B.Spawn() == false and #sent == nSent and win.status:GetText():find("Not enough build points"))
+check("and when the points run out", B.Spawn() == false and #sent == nSent and status():find("Not enough build points"))
 B.Command("near")   -- the realm's real state again
 
--- M3: the spawn menu ---------------------------------------------------------------------------------------------
+-- the spawn menu is the gallery ---------------------------------------------------------------------------------------
 WrathUnleashedUIChar = nil
 B.ToggleMenu()
+check("/spawnmenu toggles the gallery (off)", not win:IsShown())
+B.ToggleMenu()
 local menu = B.Menu()
-check("the spawn menu opens (/spawnmenu too)", menu and menu:IsShown() and SLASH_WUSPAWNMENU1 == "/spawnmenu")
-local function cellsShown() local n = 0; for _, c in ipairs(menu.cells) do if c:IsShown() then n = n + 1 end end; return n end
-check("All props: a page of the realm's catalog", B.menuTab == "all" and cellsShown() == #menu.cells and menu.cells[1].item == B.catalog[1])
-local tabOf = {}
-for _, t in ipairs(menu.tabs) do tabOf[t.tab] = t end
-check("tabs: favourites, recent, prefabs, stamps, storage, all and every category", tabOf.favourites and tabOf.recent and tabOf.prefabs
-    and tabOf.stamps and tabOf.storage and tabOf.all and tabOf.seating and tabOf.decor and tabOf.structure and tabOf.furniture
-    and #menu.tabs == 6 + #B.CATS - 1)
-tabOf.furniture:Fire("OnClick")
+check("the spawn menu opens: the gallery (/spawnmenu too)", menu == win and win:IsShown() and SLASH_WUSPAWNMENU1 == "/spawnmenu")
+local function cellsShown() return #shown() end
+check("Everything: a page of the realm's catalog", B.tab == "all" and cellsShown() == B.PAGE and win.tiles[1].item == B.catalog[1])
+tab("furniture")
 check("Furniture: seating, tables, beds and rugs, nothing else", cellsShown() > 0 and (function()
     local bed = false
-    for _, c in ipairs(B.menuItems) do
+    for _, c in ipairs(B.shown) do
         if not (c.cat == "seating" or c.cat == "tables" or c.id == 19504 or c.id == 13948 or c.id == 181396 or c.id == 181077
             or c.id == 188346 or c.id == 188347 or c.id == 188348 or c.id == 19635 or c.id == 2695) then return false end
         if c.id == 19504 then bed = true end
     end
     return bed end)())
-tabOf.all:Fire("OnClick")
-tabOf.lights:Fire("OnClick")
-check("a category tab", cellsShown() > 0 and (function() for _, c in ipairs(menu.cells) do if c.item and c.item.cat ~= "lights" then return false end end; return true end)())
-menu.search:SetText("brazier"); menu.search:Fire("OnTextChanged")
-check("search inside the tab", cellsShown() >= 2 and menu.cells[1].item.name:lower():find("brazier"))
-menu.search:SetText(""); menu.search:Fire("OnTextChanged")
-tabOf.recent:Fire("OnClick")
-check("Recent starts empty, and says so", cellsShown() == 0 and menu.empty:GetText():find("show up here"))
-tabOf.all:Fire("OnClick")
+tab("lights")
+check("a category tab", cellsShown() > 0 and (function() for _, t in ipairs(shown()) do if t.item.cat ~= "lights" then return false end end; return true end)())
+win.search:SetText("brazier"); win.search:Fire("OnTextChanged")
+check("search inside the tab", cellsShown() >= 2 and shown()[1].item.name:lower():find("brazier"))
+win.search:SetText(""); win.search:Fire("OnTextChanged")
+tab("recent")
+check("Recent starts empty, and says so", cellsShown() == 0 and win.empty:GetText():find("show up here") and win.count:GetText() == "")
+tab("all")
 serverClock = serverClock + 5
-local first = menu.cells[1].item
+local first = shown()[1].item
 local before = countProps()
-menu.cells[1]:Fire("OnClick", "LeftButton")
-check("click a prop: it spawns", countProps() == before + 1 and T.props[T.selected[7]].entry == first.id)
+shown()[1]:Fire("OnDoubleClick")
+check("double-click a tile: it is placed", countProps() == before + 1 and T.props[T.selected[7]].entry == first.id)
 check("and goes on the recent list (per character)", WrathUnleashedUIChar.builder.recent[1] == first.id)
-tabOf.recent:Fire("OnClick")
-check("Recent shows it", menu.cells[1].item == first and cellsShown() == 1)
+tab("recent")
+check("Recent shows it", shown()[1].item == first and cellsShown() == 1)
 table.insert(WrathUnleashedUIChar.builder.recent, 999999)
-B.MenuRefresh()
+B.Filter()
 check("only props the realm sent are ever listed", cellsShown() == 1)
-menu.cells[1]:Fire("OnClick", "RightButton")
-check("right-click: a favourite", WrathUnleashedUIChar.builder.favs[first.id] == true and menu.cells[1]:GetText():find("^%* "))
-tabOf.favourites:Fire("OnClick")
-check("Favourites lists it", cellsShown() == 1 and menu.cells[1].item == first)
-menu.cells[1]:Fire("OnClick", "RightButton")
-check("right-click again: not a favourite", cellsShown() == 0 and menu.empty:GetText():find("right%-click"))
-tabOf.all:Fire("OnClick")
-menu.grid:Fire("OnMouseWheel", -1)
-check("the wheel scrolls a row", B.menuOffset == 3)
-menu:Hide()
+shown()[1]:Fire("OnClick", "RightButton")
+check("right-click: a favourite (a gold star on the tile)", WrathUnleashedUIChar.builder.favs[first.id] == true and shown()[1].fav:GetText() == "*")
+tab("favourites")
+check("Favourites lists it", cellsShown() == 1 and shown()[1].item == first)
+shown()[1]:Fire("OnClick", "RightButton")
+check("right-click again: not a favourite", cellsShown() == 0 and win.empty:GetText():find("right%-click"))
+tab("all")
+win.grid:Fire("OnMouseWheel", -1)
+check("the wheel scrolls a row", B.offset == B.COLS)
+win.grid:Fire("OnMouseWheel", 1)
 
--- 2026-11-01: the window's rows carry a small picture per category; Recent and Favourites are one click away
-B.Refresh()
-check("every row has its category's icon (a stock icon path)", (function()
-    for _, r in ipairs(shown()) do
-        local want = "Interface\\Icons\\" .. (B.CAT_ICONS[r.item.cat] or "INV_Misc_QuestionMark")
-        if r.icon.path ~= want then return false end
+-- the tiles' pictures: a tile without a model shows its category's icon
+check("a tile without a model: its category's icon (a stock icon path)", (function()
+    for _, t in ipairs(shown()) do
+        local want = "Interface\\Icons\\" .. (B.CAT_ICONS[t.item.cat] or "INV_Misc_QuestionMark")
+        if t.icon.path ~= want or not t.icon:IsShown() or t.model:IsShown() then return false end
     end
     return #shown() > 0 end)())
 check("every category has an icon", (function()
     for i = 2, #B.CATS do if B.CATS[i] ~= "all" and not B.CAT_ICONS[B.CATS[i]] then return false end end
     return true end)())
-win.recentBtn:Fire("OnClick")
-check("Recent: one click, the window lists what you placed", B.listMode == "recent" and win.recentBtn:GetText() == "> Recent"
-    and #shown() >= 1 and shown()[1].item == first)
-shown()[1]:Fire("OnClick", "RightButton")
-check("right-click a row: a favourite (a star on the row)", WrathUnleashedUIChar.builder.favs[first.id] == true and shown()[1].name:GetText():find("%* "))
-win.favBtn:Fire("OnClick")
-check("Favourites: one click", B.listMode == "favourites" and #shown() == 1 and shown()[1].item == first)
-shown()[1]:Fire("OnClick", "RightButton")
-check("and right-click again takes it off the list", #shown() == 0 and win.count:GetText():find("Right%-click"))
-win.favBtn:Fire("OnClick")
-check("Favourites again: back to the category", B.listMode == nil and win.catBtn:GetText() == "Category: all" and #shown() == #win.rows)
-check("Builder help: one short line, the rest behind ?", #win.info:GetText() <= 40 and win.help and #win.help.tip.lines >= 3
-    and not win.help.tip:IsShown())
-win.help:Fire("OnEnter")
-check("? shows the long help while the mouse is on it", win.help.tip:IsShown())
-win.help:Fire("OnLeave")
-check("and hides it after", not win.help.tip:IsShown())
+check("Files help: one short line, the rest behind ?", #files.info:GetText() <= 40 and files.help and #files.help.tip.lines >= 3
+    and not files.help.tip:IsShown())
+files.help:Fire("OnEnter")
+check("? shows the long help while the mouse is on it", files.help.tip:IsShown())
+files.help:Fire("OnLeave")
+check("and hides it after", not files.help.tip:IsShown())
 
 -- M3: the properties panel ----------------------------------------------------------------------------------------
-win.props:Fire("OnClick")
-local panel = B.Panel()
+B.ShowProps(true)
+panel = B.Panel()
 local sp = T.props[T.selected[7]]
 check("Properties opens with the selection's numbers", panel and panel:IsShown()
     and tonumber(panel.box.x:GetText()) and math.abs(tonumber(panel.box.x:GetText()) - sp.x) < 0.01
@@ -369,52 +395,51 @@ check("Apply: size", sp.s == 1.5)
 panel:Hide()
 
 -- M3: group, copy / paste, prefabs and the plot from the window -------------------------------------------------------
-win.selall:Fire("OnClick")
-check("Select mine", T.group[7] and #T.group[7] == countProps() and win.sel:GetText():find("Selected: %d props"))
-win.copy:Fire("OnClick")
+panel.tools["Select mine"]:Fire("OnClick")
+check("Select mine (the popover's More)", T.group[7] and #T.group[7] == countProps() and B.SelectionText():find("Selected: %d props"))
+ui.copy:Fire("OnClick")
 check("Copy", T.clip[7] and #T.clip[7].rel == countProps())
 serverClock = serverClock + 10
 local n0 = countProps()
-win.paste:Fire("OnClick")
+ui.paste:Fire("OnClick")
 check("Paste (outside edit mode: at your feet)", countProps() == n0 * 2)
-win.undo:Fire("OnClick")
-win.selall:Fire("OnClick")
-win.prefab:SetText("porch")
-win.prefabSave:Fire("OnClick")
+ui.undo:Fire("OnClick")
+ui.selall:Fire("OnClick")
+files.prefab:SetText("porch")
+files.prefabSave:Fire("OnClick")
 check("Prefab Save: the selection, and the list comes back", #B.prefabs == 1 and B.prefabs[1].name == "porch" and B.prefabs[1].count == n0)
 B.ShowMenu(true)
-local tabs2 = {}
-for _, t in ipairs(menu.tabs) do tabs2[t.tab] = t end
-tabs2.prefabs:Fire("OnClick")
-check("the spawn menu's Prefabs tab", menu.cells[1].item and menu.cells[1].item.name == "porch" and menu.cells[1]:GetText():find("porch %(" .. n0 .. "%)"))
+tab("prefabs")
+check("the gallery's Prefabs tab", win.tiles[1].item and win.tiles[1].item.name == "porch" and win.tiles[1].name:GetText():find("porch %(" .. n0 .. "%)")
+    and win.tiles[1].icon.path == "Interface\\Icons\\INV_Misc_Note_01")
 serverClock = serverClock + 10
-menu.cells[1]:Fire("OnClick", "LeftButton")
+win.tiles[1]:Fire("OnDoubleClick")
 check("click a prefab: pasted", countProps() == n0 * 2)
-win.undo:Fire("OnClick")
-menu:Hide()
-win.prefab:SetText("porch")
-win.prefabShare:Fire("OnClick")
-check("Prefab Share: a code in the box", T.prefabs[B.prefabs[1].id].code and win.code:GetText() == T.prefabs[B.prefabs[1].id].code)
-win.prefab:SetText("")
+ui.undo:Fire("OnClick")
+tab("all")
+files.prefab:SetText("porch")
+files.prefabShare:Fire("OnClick")
+check("Prefab Share: a code in the box", T.prefabs[B.prefabs[1].id].code and files.code:GetText() == T.prefabs[B.prefabs[1].id].code)
+files.prefab:SetText("")
 nSent = #sent
-win.prefabPaste:Fire("OnClick")
-check("an empty prefab name never leaves the window", #sent == nSent and win.status:GetText():find("prefab name"))
-win.claim:Fire("OnClick")
-check("Claim: a plot, shown in the window", next(T.plots) and win.plot:GetText():find("Tester's plot %(yours%)"))
-win.plotName:SetText("Nobody")
-win.plotAdd:Fire("OnClick")
+files.prefabPaste:Fire("OnClick")
+check("an empty prefab name never leaves the window", #sent == nSent and status():find("prefab name"))
+files.claim:Fire("OnClick")
+check("Claim: a plot, shown in the window", next(T.plots) and files.plot:GetText():find("Tester's plot %(yours%)"))
+files.plotName:SetText("Nobody")
+files.plotAdd:Fire("OnClick")
 check("Add sends the name", sent[#sent][2]:find("plot add Nobody$"))
 
 -- M3: edit mode's new clicks (the browser client calls these) ----------------------------------------------------------
 local E = W.EditMode
-win.selall:Fire("OnClick")
-win.copy:Fire("OnClick")
+ui.selall:Fire("OnClick")
+ui.copy:Fire("OnClick")
 E.StartPasting()
 serverClock = serverClock + 10
 n0 = countProps()
 E.Clicked(player.x + 3, player.y - 3, player.z)
 check("edit mode: Paste then a ground click pastes there", countProps() == n0 * 2 and sent[#sent][2]:find("pasteat [%-%d%.]+ [%-%d%.]+ [%-%d%.]+$"))
-win.undo:Fire("OnClick")
+ui.undo:Fire("OnClick")
 E.StartBox()
 E.Clicked(player.x - 6, player.y - 6, player.z)
 check("box select: the first corner waits for the second", E.pending and E.pending.kind == "box" and not sent[#sent][2]:find("selbox"))
@@ -436,11 +461,15 @@ serverClock = serverClock + 10
 n0 = countProps()
 E.Clicked(player.x - 3, player.y + 3, player.z)
 check("a prefab at the clicked point", sent[#sent][2]:find("prefab pasteat porch ") and countProps() > n0)
-win.undo:Fire("OnClick")
+ui.undo:Fire("OnClick")
+win:Hide()
 E.SpawnMenu(true)
-check("hold Q: the spawn menu", menu:IsShown())
+check("hold Q: the gallery", win:IsShown())
 E.SpawnMenu(false)
-check("let go: it closes", not menu:IsShown())
+check("let go: it closes", not win:IsShown())
+win:Show()
+E.SpawnMenu(true); E.SpawnMenu(false)
+check("open before Q: letting go leaves it open", win:IsShown())
 
 -- 2026-10-31: the Path tool: in edit mode two ground clicks; on foot the window's Path, walk, Path again
 do
@@ -453,20 +482,20 @@ do
     E.Clicked(player.x + 6, player.y, player.z)
     check("Path: the second click lays a prop every 3 yards", sent[#sent][2]:find("^wubuild\tcmd\t1/1\tpath " .. B.pick.id .. " [%-%d%.]+ [%-%d%.]+ [%-%d%.]+ [%-%d%.]+ [%-%d%.]+ [%-%d%.]+ 3$")
         and countProps() == n1 + 5 and E.pending == nil and E.note:find("Path laid"))
-    win.undo:Fire("OnClick")
+    ui.undo:Fire("OnClick")
     check("Path: one undo takes it all back", countProps() == n1)
     serverClock = serverClock + 10
     local x0 = player.x
-    win.path:Fire("OnClick")
-    check("Path on foot: the first press marks where you stand", sent[#sent][2]:find("path " .. B.pick.id .. " from$") and win.status:GetText():find("walk to where"))
+    ui.path:Fire("OnClick")
+    check("Path on foot: the first press marks where you stand", sent[#sent][2]:find("path " .. B.pick.id .. " from$") and status():find("walk to where"))
     player.x = x0 + 9
-    win.path:Fire("OnClick")
+    ui.path:Fire("OnClick")
     check("Path on foot: the second press lays it to where you stand", sent[#sent][2]:find("path " .. B.pick.id .. " to 3$") and countProps() == n1 + 4)
     player.x = x0
-    win.undo:Fire("OnClick")
+    ui.undo:Fire("OnClick")
     B.pick = nil
-    win.path:Fire("OnClick")
-    check("Path without a prop picked: says what to do", win.status:GetText():find("Pick the prop"))
+    ui.path:Fire("OnClick")
+    check("Path without a prop picked: says what to do", status():find("Pick the prop"))
 end
 
 -- Gmod-style edits: the gizmo previews on the client and commits once on release; the panel's tilt -------------------
@@ -584,15 +613,14 @@ do
     check("the state counts undo and redo", B.state.undo and B.state.redo == "0")
     E.Cmd("store")
     check("Put away: into storage, and the Storage tab knows", T.props[pid] == nil and B.storage[B.catalog[1].id] == 1)
-    local menu = B.Menu()
-    B.menuTab = "storage"; B.ShowMenu(true); B.MenuRefresh()
-    check("the Storage tab lists it with its count", menu.cells[1].item == B.catalog[1] and menu.cells[1]:GetText():find(" x1$"))
+    B.ShowMenu(true); tab("storage")
+    check("the Storage tab lists it with its count", win.tiles[1].item == B.catalog[1] and win.tiles[1].name:GetText():find(" x1$"))
     serverClock = serverClock + 5
-    menu.cells[1]:Fire("OnClick", "LeftButton")
+    win.tiles[1]:Fire("OnDoubleClick")
     check("placing it from the Storage tab takes it out", (B.storage[B.catalog[1].id] or 0) == 0)
-    B.MenuRefresh()
-    check("and the tab is empty again", not menu.cells[1]:IsShown() and menu.empty:GetText():find("Nothing put away"))
-    B.ShowMenu(false); B.menuTab = "all"
+    B.Filter()
+    check("and the tab is empty again", not win.tiles[1]:IsShown() and win.empty:GetText():find("Nothing put away"))
+    tab("all")
     E.Cmd("rm -rf")
     check("edit mode sends only its own commands", not sent[#sent][2]:find("rm"))
 
@@ -636,20 +664,17 @@ end
 -- /edit on a player's own game, the Den panel's way back, and the hello a Den listens for
 do
     local function lastSent() return sent[#sent][2] end
-    local function pickCat(name)
-        for _ = 1, #B.CATS do if win.catBtn:GetText() == "Category: " .. name then return true end; win.catBtn:Fire("OnClick") end
-        return win.catBtn:GetText() == "Category: " .. name
-    end
+    local function pickCat(name) tab(name); return B.tab == name end
     check("categories include Every object and Models", pickCat("objects"))
-    check("an empty search category says how to search", win.count:GetText():find("Enter"))
+    check("an empty search category says how to search", win.empty:GetText():find("Enter"))
     win.search:SetText("bench"); win.search:Fire("OnTextChanged")
     check("typing doesn't search by itself", not lastSent():find("find"))
     win.search:Fire("OnEnterPressed")
     check("Enter asks the realm to search every object", lastSent() == "wubuild\tcmd\t1/1\tfind bench")
     fireClient("OVMOD", "wubuild\tfound\t1/1\tobjects,1,1;500006,t500006,objects,Garden Bench,1;500001,t500001,objects,Long Table,2",
         "WHISPER", "Tester")
-    check("the answer fills the list", #B.shown == 2 and shown()[1].name:GetText() == "Garden Bench" and win.count:GetText():find("more"))
-    win.down:Fire("OnClick")
+    check("the answer fills the list", #B.shown == 2 and shown()[1].name:GetText() == "Garden Bench" and win.count:GetText() == "1-2 of 2+")
+    win.next:Fire("OnClick")
     check("Down at the end asks for the next page", lastSent() == "wubuild\tcmd\t1/1\tfind bench 2")
     fireClient("OVMOD", "wubuild\tfound\t1/1\tobjects,2,0;500007,t500007,objects,Stone Bench,1", "WHISPER", "Tester")
     check("page 2 adds to the list", #B.shown == 3)
@@ -664,14 +689,14 @@ do
     check("a model goes to the realm as its entry number", lastSent() == "wubuild\tcmd\t1/1\tspawn 2000004523")
     win.search:SetText(""); win.search:Fire("OnTextChanged")
     pickCat("all")
-    B.menuTab = "recent"; B.ShowMenu(true)
+    B.ShowMenu(true); tab("recent")
     check("Recent shows found objects and models too", (function()
         local names = {}
-        for _, c in ipairs(B.MenuList()) do names[c.name] = true end
+        for _, c in ipairs(B.shown) do names[c.name] = true end
         return names["Garden Bench"] and names["LampPost01 (model 4523)"] end)())
-    B.menuTab = "objects"; B.MenuRefresh()
-    check("the spawn menu's Every object tab lists the last search", #B.MenuList() == 3)
-    B.ShowMenu(false); B.menuTab = "all"
+    tab("objects")
+    check("the gallery's Every object tab lists the last search", #B.shown == 3)
+    tab("all")
 
     -- the properties panel: nudges and tools (on the chair placed above)
     win.spawn:Fire("OnClick")
@@ -684,7 +709,7 @@ do
     check("panel: turn - by the angle step (15)", lastSent() == "wubuild\tcmd\t1/1\tturn -15")
     panel.angle:Fire("OnClick")
     panel.plus.turn:Fire("OnClick")
-    check("panel: the angle step cycles (45)", panel.angle:GetText() == "Angle 45 deg" and lastSent() == "wubuild\tcmd\t1/1\tturn 45")
+    check("panel: the angle step cycles (45)", panel.angle:GetText() == "Turn 45°" and lastSent() == "wubuild\tcmd\t1/1\tturn 45")
     panel.plus.scale:Fire("OnClick")
     check("panel: size + 0.1", lastSent():find("setscale 1%.10$"))
     local n0 = #sent
@@ -832,7 +857,7 @@ end
 
 -- the client ignores messages that aren't the realm's answer to us
 fireClient("OVMOD", "wubuild\tstate\t1/1\tsel=1,2,Spoof;mine=9/9;area=x;code=-", "WHISPER", "Someone")
-check("ignores other senders", not win.sel:GetText():find("Spoof"))
+check("ignores other senders", not B.SelectionText():find("Spoof"))
 -- a catalog in two parts
 fireClient("OVMOD", "wubuild\tcatalog\t1/2\t2413,chair,seating,Wooden", "WHISPER", "Tester")
 fireClient("OVMOD", "wubuild\tcatalog\t2/2\t Chair;181075,table,tables,Table", "WHISPER", "Tester")
@@ -841,10 +866,10 @@ check("multi-part catalog reassembled", #B.catalog == 2 and B.catalog[1].name ==
 -- no realm script: says so
 onServerAddon = nil
 win.reload:Fire("OnClick")
-check("asking...", win.status:GetText():find("^Asking"))
+check("asking...", status():find("^Asking"))
 clock = clock + 10
 win:Fire("OnUpdate", 0.1)
-check("no answer: the Builder isn't on this realm", win.status:GetText():find("isn't on this realm"))
+check("no answer: the Builder isn't on this realm", status():find("isn't on this realm"))
 
 win:Hide()
 SlashCmdList.WUBUILDER("")

@@ -260,3 +260,167 @@ end
 
 -- A muted helper line (the small grey text under a control).
 function S.Muted(fs) if fs and fs.SetTextColor then fs:SetTextColor(S.C.muted[1], S.C.muted[2], S.C.muted[3]); fs.styleKeep = true end return fs end
+
+-- ---------------------------------------------------------------- the editor look (the Den editor, 2026-11-03)
+-- Owner, 3 Nov: "doesn't look like Noggit or a gallery of spinning 3D objects that I can place". The editor's own
+-- pieces (DenBar.lua's top strip and tool rail, Builder.lua's asset browser, status pill and popovers): near-black
+-- translucent panels, a 1px subtle edge, a gold / amber accent for what is on, small-caps labels and square icon
+-- buttons of one size. Flat colour (Texture:SetTexture(r, g, b, a)) and the client's own Interface\Icons only.
+S.ED = {
+    panel = { 0.035, 0.037, 0.045, 0.86 },   -- the strips and windows
+    panel2 = { 0.055, 0.058, 0.07, 0.94 },   -- popovers and menus
+    tile = { 0.075, 0.078, 0.092, 0.95 },    -- a gallery tile, a button
+    edge = { 1, 1, 1, 0.09 },                -- the 1px subtle edge
+    hover = { 1, 1, 1, 0.08 },
+    gold = { 0.878, 0.643, 0.227, 1 },       -- #e0a43a, the accent
+    goldFill = { 0.878, 0.643, 0.227, 0.18 },
+    text = { 0.92, 0.92, 0.94, 1 },
+    muted = { 0.60, 0.62, 0.66, 1 },
+    off = { 0.36, 0.37, 0.40, 1 },
+}
+S.ED_HEX = { gold = "e0a43a", text = "ebebef", muted = "999ea8" }
+local ED = S.ED
+
+-- A panel in the editor look: the translucent near-black fill and the subtle edge.
+function S.EdPanel(frame, alpha, fill)
+    local c = fill or ED.panel
+    c = { c[1], c[2], c[3], alpha or c[4] }
+    if not frame.edFill then
+        frame.edFill = solid(frame, "BACKGROUND", c)
+        frame.edFill:SetAllPoints(frame)
+        frame.edEdge = border(frame, ED.edge)
+    else
+        frame.edFill:SetTexture(unpackC(c))
+    end
+    return frame
+end
+
+-- A small-caps label: upper case, small, muted (or gold).
+function S.EdLabel(parent, text, gold, ...)
+    local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    fs.styleKeep = true
+    local c = gold and ED.gold or ED.muted
+    fs:SetTextColor(c[1], c[2], c[3])
+    fs:SetJustifyH("LEFT")
+    fs:SetText(tostring(text or ""):upper())
+    if select("#", ...) > 0 then fs:SetPoint(...) end
+    return fs
+end
+
+-- The editor's one tooltip: its own small frame (edit mode hides UIParent and GameTooltip with it), put on the
+-- button's own window while the mouse is on it.
+local tip
+function S.EdTip(owner, text)
+    if not owner then if tip then tip:Hide() end return end
+    if not tip then
+        tip = CreateFrame("Frame", "LeylineEditorTip", owner)
+        tip:SetFrameStrata("TOOLTIP")
+        S.EdPanel(tip, 0.96, ED.panel2)
+        tip.text = tip:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        tip.text:SetPoint("LEFT", 8, 0)
+        tip.text.styleKeep = true
+        tip:SetHeight(22)
+    end
+    if tip.SetParent then tip:SetParent(owner) end
+    tip:SetFrameStrata("TOOLTIP")
+    tip.text:SetText(text or "")
+    local w = tip.text.GetStringWidth and tip.text:GetStringWidth()
+    tip:SetWidth((tonumber(w) or (#tostring(text or "") * 6)) + 16)
+    tip:ClearAllPoints()
+    tip:SetPoint(owner.edTipAt or "LEFT", owner, owner.edTipTo or "RIGHT", owner.edTipX or 6, owner.edTipY or 0)
+    tip:Show()
+    return tip
+end
+function S.EdTipFrame() return tip end
+
+local function edPaint(b)
+    local enabled = b.enabled ~= false
+    if b.edBg then
+        local c = ED.tile
+        if b.edActive then c = ED.goldFill elseif b.edOver and enabled then c = { 0.13, 0.135, 0.155, 0.96 } end
+        b.edBg:SetTexture(unpackC(c))
+    end
+    if b.edEdges then
+        local e = b.edActive and ED.gold or ED.edge
+        for _, t in ipairs(b.edEdges) do t:SetTexture(unpackC(e)) end
+    end
+    if b.edIcon and b.edIcon.SetDesaturated then b.edIcon:SetDesaturated(not enabled) end
+    if b.edIcon and b.edIcon.SetAlpha then b.edIcon:SetAlpha(enabled and 1 or 0.4) end
+    if b.edText then
+        local t = (not enabled) and ED.off or (b.edActive and ED.gold or ED.text)
+        b.edText:SetTextColor(t[1], t[2], t[3])
+    end
+end
+S.EdPaint = edPaint
+
+local function edBase(parent, w, h, onClick, ...)
+    local b = CreateFrame("Button", nil, parent)
+    b:SetWidth(w); b:SetHeight(h)
+    b.edBg = solid(b, "BACKGROUND", ED.tile)
+    b.edBg:SetAllPoints(b)
+    b.edEdges = border(b, ED.edge, "BORDER")
+    b.SetActive = function(self, on) self.edActive = on and true or nil; edPaint(self) end
+    b.IsActive = function(self) return self.edActive == true end
+    local enable, disable = b.Enable, b.Disable
+    b.Enable = function(self, ...) if enable then enable(self, ...) end; self.enabled = true; edPaint(self) end
+    b.Disable = function(self, ...) if disable then disable(self, ...) end; self.enabled = false; edPaint(self) end
+    b:SetScript("OnEnter", function(self)
+        self.edOver = true; edPaint(self)
+        if self.edLabel and self.edLabel ~= "" then S.EdTip(self, self.edLabel) end
+    end)
+    b:SetScript("OnLeave", function(self) self.edOver = nil; edPaint(self); S.EdTip(nil) end)
+    if select("#", ...) > 0 then b:SetPoint(...) end
+    if onClick then b:SetScript("OnClick", onClick) end
+    return b
+end
+
+-- A square icon button (28-32 px): b:SetText / GetText are its label (shown as the tooltip), b:SetActive(on) the
+-- gold "this tool is on" look, b:SetIcon(path).
+function S.EdIcon(parent, size, icon, label, onClick, ...)
+    local b = edBase(parent, size or 30, size or 30, onClick, ...)
+    b.edIcon = b:CreateTexture(nil, "ARTWORK")
+    b.edIcon:SetPoint("TOPLEFT", 4, -4); b.edIcon:SetPoint("BOTTOMRIGHT", -4, 4)
+    b.edIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    b.SetIcon = function(self, path) self.iconPath = path; self.edIcon:SetTexture(path) end
+    b:SetIcon(icon)
+    b.SetText = function(self, t) self.edLabel = t; self.text = t end
+    b.GetText = function(self) return self.edLabel end
+    b:SetText(label or "")
+    edPaint(b)
+    return b
+end
+
+-- A slim text button (a chip): 22 px high, the same look; SetActive for toggles.
+function S.EdChip(parent, text, w, onClick, ...)
+    local b = edBase(parent, w or 60, 22, onClick, ...)
+    local fs = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    fs:SetPoint("LEFT", 4, 0); fs:SetPoint("RIGHT", -4, 0)
+    fs:SetJustifyH("CENTER")
+    fs.styleKeep = true
+    b.edText = fs
+    if b.SetFontString then b:SetFontString(fs) end
+    local setText = b.SetText
+    b.SetText = function(self, t)
+        fs:SetText(t)
+        if setText then pcall(setText, self, t) end
+        self.text = t
+    end
+    b.GetText = function() return fs:GetText() end
+    b:SetText(text or "")
+    edPaint(b)
+    return b
+end
+
+-- An input in the editor look.
+function S.EdInput(parent, w, h)
+    local e = CreateFrame("EditBox", nil, parent)
+    e:SetWidth(w or 120); e:SetHeight(h or 20)
+    if e.SetFontObject then e:SetFontObject(GameFontHighlightSmall or ChatFontNormal) end
+    if e.SetTextInsets then e:SetTextInsets(5, 5, 0, 0) end
+    local bg = solid(e, "BACKGROUND", { 0, 0, 0, 0.55 })
+    bg:SetAllPoints(e)
+    e.edEdges = border(e, ED.edge, "BORDER")
+    e:SetAutoFocus(false)
+    e:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    return e
+end

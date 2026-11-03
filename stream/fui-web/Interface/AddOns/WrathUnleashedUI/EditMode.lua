@@ -3,9 +3,10 @@
 -- While it is on, the normal UI is hidden and this addon shows the edit HUD instead:
 --   * a banner with the controls, and a line under it saying what the tool is doing (and what the realm answered);
 --   * a selection card: the selected prop (or how many), your props and build points, the plot or area;
---   * a tool bar: Props, Duplicate, Undo, Delete, Snap (grid), Turn (angle step), Keys, Done;
---   * a second bar: Spawn menu (Q), Select mine, Box select, Copy, Paste, Clear, Properties;
---   * a third bar: Group, Ungroup, Put away (into storage), Storage, Floor, Redo's count, and in a Den the Den button;
+--   * the editor's frame on the world frame (DenBar.lua's top strip and tool rail, Builder.lua's gallery, popover and
+--     status pill: 2026-11-03), which holds every tool the three old bars had (Props, Duplicate, Undo, Redo, Delete,
+--     Snap, Turn, Spawn menu, Select mine, Box select, Copy, Paste, Clear, Properties, Group, Ungroup, Put away,
+--     Storage, Floor, the Den); the old bars are still built, hidden, for a client without it;
 --   * in a Den (the realm's ov_den.lua), the Den panel: Invite a friend (the link to copy, the owner only), who
 --     builds (Can build / View only), the whole Den as a layout (Save, Load, Load replacing) and the room's look.
 --     /den opens it outside edit mode too.
@@ -358,7 +359,7 @@ local function moveBuilder(toWorld, show)
     B.Dock(win, toWorld)
     if toWorld then
         win:ClearAllPoints()
-        win:SetPoint("RIGHT", WorldFrame, "RIGHT", -24, 0)
+        win:SetPoint("BOTTOMLEFT", WorldFrame, "BOTTOMLEFT", 54, 46)
         if show then win:Show() end
     end
 end
@@ -389,7 +390,7 @@ local function build()
     -- banner
     local banner = panel(hud, 780, 58, { 0.89, 0.72, 0.36, 1 })
     banner:SetScale(scale)
-    banner:SetPoint("TOP", hud, "TOP", 0, -10)
+    banner:SetPoint("TOP", hud, "TOP", 0, -44)   -- under the editor's top strip (DenBar.lua)
     local title = banner:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -9)
     title:SetText("EDIT MODE")
@@ -408,7 +409,7 @@ local function build()
     -- selection card
     local card = panel(hud, 300, 88)
     card:SetScale(scale)
-    card:SetPoint("TOPLEFT", hud, "TOPLEFT", 16, -16)
+    card:SetPoint("TOPLEFT", hud, "TOPLEFT", 56, -44)   -- right of the tool rail
     local cardTitle = card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     cardTitle:SetPoint("TOPLEFT", 12, -10)
     cardTitle:SetText("Selection")
@@ -458,6 +459,7 @@ local function build()
         local B = builder()
         if not B then return end
         E.menuPinned = not (B.Menu() and B.Menu():IsShown())
+        B.heldOpen = nil
         B.ShowMenu(E.menuPinned)
     end)
     add2("Select mine", 96, function() E.Cmd("selall") end)
@@ -480,10 +482,10 @@ local function build()
     add3("Storage", 80, function()
         local B = builder()
         if not B then return end
-        B.menuTab, B.menuOffset = "storage", 0
         E.menuPinned = true
         B.ShowMenu(true)
-        B.MenuRefresh()
+        B.heldOpen = nil
+        B.ShowTab("storage")
     end)
     add3("Floor", 64, function() E.Cmd("floor") end)
     hud.den = bar(tools3, "Den", 80, function() E.ToggleDen() end, "RIGHT", -10, 0)
@@ -491,6 +493,12 @@ local function build()
 
     -- the template shelf (DenHome.lua): under the selection card, shown in a Den for its owner and builders
     if W.DenHome and W.DenHome.BuildShelf then W.DenHome.BuildShelf(hud, card, scale) end
+
+    -- 2026-11-03: the editor's own frame (DenBar.lua: the top strip, the tool rail, the menu; Builder.lua: the
+    -- gallery, the popover, the status pill) has every one of these three bars' tools, so they stay out of sight
+    -- (hud.bars, kept for a client without the frame)
+    hud.bars = { tools, tools2, tools3 }
+    if W.DenBar and W.DenBar.Bar then for _, b in ipairs(hud.bars) do b:Hide() end end
 
     hud:Hide()
 end
@@ -535,6 +543,7 @@ local function apply(nowOn)
         hud.snap:SetText(snapText()); hud.angle:SetText(angleText())
         hud:Show()
         moveBuilder(true, true)
+        if W.DenBar and W.DenBar.Refresh then W.DenBar.Refresh() end
         local B = builder()
         if B and B.Panel and B.Panel() then B.Dock(B.Panel(), true) end
         if B and B.RequestCatalog and (not B.catalog or #B.catalog == 0) then B.RequestCatalog() end
@@ -550,6 +559,7 @@ local function apply(nowOn)
             if B.Panel() then B.Dock(B.Panel(), false) end
         end
         if E.hidUI then E.hidUI = nil; UIParent:Show() end
+        if W.DenBar and W.DenBar.Refresh then W.DenBar.Refresh() end
         -- Shift + wheel turns a carried prop; where the client also gave it to the bar's page keys, the main bar
         -- came back on another page (WrathUnleashedUI.lua, PAGE_KEYS)
         if W.MainBarHome then W.MainBarHome() end

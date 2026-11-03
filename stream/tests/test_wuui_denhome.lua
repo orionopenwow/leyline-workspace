@@ -234,22 +234,24 @@ p.stamp.dock:Fire("OnClick")
 p.cancel:Fire("OnClick")
 check("Cancel: the mark goes, nothing placed", HS.pending[7] == nil and decor() == before + #HS.stamp("garden").props)
 
--- the spawn menu's Stamps tab
+-- the gallery's Stamps tab (the spawn menu is the gallery since 2026-11-03)
 local B = W.Builder
 B.ShowMenu(true)
-local menu = _G.WrathUnleashedSpawnMenu
+local menu = _G.WrathUnleashedBuilderFrame
 local stampsTab
 for _, t in ipairs(menu.tabs) do if t.tab == "stamps" then stampsTab = t end end
 stampsTab:Fire("OnClick")
-check("the spawn menu's Stamps tab: six stamps", #B.menuItems == 6 and B.menuItems[1].kind == "stamp")
+check("the gallery's Stamps tab: six stamps", #B.shown == 6 and B.shown[1].kind == "stamp" and menu.title:GetText() == "STAMPS")
 local cell
-for _, c in ipairs(menu.cells) do if c.item and c.item.key == "campfire" then cell = c end end
+for _, c in ipairs(menu.tiles) do if c.item and c.item.key == "campfire" then cell = c end end
 cell:Fire("OnEnter")
-check("a stamp cell says what it is", B.status:find("Campfire circle") and B.status:find("mark where it goes"))
+check("a stamp tile says what it is", B.status:find("Campfire circle") and B.status:find("place it"))
 cell:Fire("OnClick", "RightButton")
 check("stamps aren't favourites", not chatHas("favourite"))
 cell:Fire("OnClick", "LeftButton")
-check("a click marks it", HS.pending[7] and HS.pending[7].name == "campfire")
+check("one click picks it (the gold edge), nothing marked yet", B.pick == cell.item and not (HS.pending[7] and HS.pending[7].name == "campfire"))
+cell:Fire("OnDoubleClick")
+check("a double-click marks it", HS.pending[7] and HS.pending[7].name == "campfire")
 p.cancel:Fire("OnClick")
 B.ShowMenu(false)
 

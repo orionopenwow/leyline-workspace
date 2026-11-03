@@ -440,9 +440,9 @@
     "note": "External download, made and hosted by its authors; not checked or hosted by Leyline."
    },
    "review": {
-    "by": "Claude",
-    "at": "2026-11-01T15:00:00Z",
-    "notes": "Link only, like the UltraHD link (owner 2026-10-30: 'and other similar'). The repo has no release to pin, so no one click."
+    "by": "",
+    "at": "",
+    "notes": "Taken back to pending 2 Nov: its download points at a repo of olive-spore-734, an account on tools/hub-index/blocklist.json (look-alike lure cluster). A person checks the download before it is listed again. Was: link only, like the UltraHD link (owner 2026-10-30: 'and other similar')."
    }
   },
   {

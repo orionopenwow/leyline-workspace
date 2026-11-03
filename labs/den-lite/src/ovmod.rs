@@ -168,7 +168,7 @@ pub struct Sel {
 }
 
 /// The verbs this Den Lite answers (the state's `caps=`: the editor hides a button whose verb isn't here).
-pub const CAPS: &str = "spawn,near,move,setpos,turn,setturn,tilt,scale,setscale,delete,undo,redo,copy,paste,dup,selall,pick,selclear,floor,grid,spawnat,find,models,save,load,selnext,selkind,lock,unlock,preview,hover,follow,commit,axis,gizmo,mode,where";
+pub const CAPS: &str = "spawn,near,move,setpos,turn,setturn,tilt,scale,setscale,delete,undo,redo,copy,paste,dup,selall,pick,selclear,floor,grid,spawnat,find,models,save,load,selnext,selkind,seladd,lock,unlock,swap,swapkind,bring,ground,settle,upright,random,centre,reset,step,grow,preview,hover,follow,commit,axis,grab,gizmo,mode,where";
 
 /// The Builder's categories (Builder.lua CATS) by words in a prop's name; None: not offered in the catalog.
 pub fn category(name: &str) -> Option<&'static str> {
@@ -317,6 +317,27 @@ const BUILDER_HELP: &str = "Den Lite's Builder: place a prop from the gallery, N
 /// What only the full Den does: Den Lite says so plainly (the editor hides these on Den Lite: the state's `lite=1`).
 const FULL_ONLY: &[&str] = &["group", "ungroup", "store", "hide", "show", "measure", "align", "stack", "path", "prefab", "plot", "share", "selbox", "stackon", "pasteat", "placeat"];
 
+/// The pad's step (`step <dir> <yards>`) as (dx, dy, dz) for someone facing `o` (radians): forward is the way they
+/// face, left a quarter turn to their left.
+pub fn step_offset(dir: &str, o: f32, v: f64) -> Option<(f64, f64, f64)> {
+    let (s, c) = (o as f64).sin_cos();
+    Some(match dir {
+        "fwd" | "forward" => (c * v, s * v, 0.0),
+        "back" => (-c * v, -s * v, 0.0),
+        "left" => (-s * v, c * v, 0.0),
+        "right" => (s * v, -c * v, 0.0),
+        "up" => (0.0, 0.0, v),
+        "down" => (0.0, 0.0, -v),
+        _ => return None,
+    })
+}
+
+/// A turn for the Random button (degrees, 0 to 360): the clock's nanoseconds, spread.
+fn random_degrees() -> f64 {
+    let n = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos() as u64 ^ d.as_secs()).unwrap_or(7);
+    (n.wrapping_mul(2_654_435_761) % 360_000) as f64 / 1000.0
+}
+
 /// (x, y) on the grid around the Den's middle (yards; 0: as it is).
 fn snap(g: f64, v: f32, mid: f32) -> f32 {
     if g > 0.0 { mid + (((v - mid) as f64 / g).round() * g) as f32 } else { v }
@@ -328,8 +349,22 @@ pub fn builder_cmd(d: &mut Den, sel: &mut Sel, here: Here, text: &str, can: bool
     let was = sel.guid;
     let out = match verb.as_str() {
         "selnext" | "selkind" | "lock" | "unlock" => selection_cmd(d, sel, here, &verb, can),
+        // Shift+right-click (Gizmo.lua): the prop picked before stays selected with the new one
+        "seladd" => match text.split_whitespace().nth(1).and_then(|i| i.parse::<u64>().ok()).and_then(|i| guid_of(d, i)) {
+            Some(g) if sel.guid.is_some() && sel.guid != Some(g) => {
+                if !sel.more.contains(&g) {
+                    sel.more.push(g);
+                }
+                vec![Out::Say(format!("{} selected.", 1 + sel.more.len()))]
+            }
+            Some(g) => {
+                sel.guid = Some(g);
+                vec![Out::Say("1 selected.".into())]
+            }
+            None => vec![Out::Say("That prop isn't in your Den.".into())],
+        },
         // the props selected with `selkind` too: Delete and the moves and turns take them all
-        "delete" | "move" | "turn" | "tilt" | "floor" if !sel.more.is_empty() && !(verb == "move" && text.split_whitespace().count() >= 6) => {
+        "delete" | "move" | "turn" | "tilt" | "floor" | "ground" | "settle" | "upright" | "random" | "reset" | "step" | "grow" if !sel.more.is_empty() && !(verb == "move" && text.split_whitespace().count() >= 6) => {
             let mut v = builder_one(d, sel, here, text, can);
             let more = std::mem::take(&mut sel.more);
             let keep = sel.guid;
@@ -349,7 +384,7 @@ pub fn builder_cmd(d: &mut Den, sel: &mut Sel, here: Here, text: &str, can: bool
         _ => builder_one(d, sel, here, text, can),
     };
     // a selection changed any other way: the extra ones and the round go
-    if sel.guid != was && verb != "selnext" && verb != "selkind" {
+    if sel.guid != was && verb != "selnext" && verb != "selkind" && verb != "seladd" {
         sel.more.clear();
         sel.round = None;
     }
@@ -505,6 +540,92 @@ fn builder_one(d: &mut Den, sel: &mut Sel, here: Here, text: &str, can: bool) ->
                 edit(d, sel, &move |p, _| p.z = to)
             }
             None => Out::Say("Select a prop first (Near picks the closest).".into()),
+        },
+        // the selection panel's quick buttons and keys (Builder.lua; owner 3 Nov: "it should function like this")
+        "ground" | "settle" | "upright" => match sel.guid.and_then(|g| d.placed(g)).map(|p| (p.obj.x, p.obj.y)) {
+            Some((x, y)) => {
+                let to = (d.floor_at(x, y) - d.spot.z) as f64;
+                let (down, straight) = (verb != "upright", verb != "ground");
+                edit(d, sel, &move |p, _| {
+                    if down {
+                        p.z = to;
+                    }
+                    if straight {
+                        p.pitch = None;
+                        p.roll = None;
+                    }
+                })
+            }
+            None => Out::Say("Select a prop first (Near picks the closest).".into()),
+        },
+        "random" => {
+            let a = random_degrees();
+            edit(d, sel, &move |p, _| p.yaw = a)
+        }
+        "reset" => edit(d, sel, &|p, _| {
+            p.yaw = 0.0;
+            p.pitch = None;
+            p.roll = None;
+            p.scale = None;
+        }),
+        "centre" | "center" => {
+            let to = (d.floor_at(d.spot.x, d.spot.y) - d.spot.z) as f64;
+            edit(d, sel, &move |p, _| {
+                p.x = 0.0;
+                p.y = 0.0;
+                p.z = to;
+            })
+        }
+        // Home: in front of you, as high over the ground there as it was over the ground where it stood
+        "bring" => match sel.guid.and_then(|g| d.placed(g)).map(|p| p.obj.z - d.floor_at(p.obj.x, p.obj.y)) {
+            Some(lift) => {
+                let (x, y) = (here.x + 3.0 * here.o.cos(), here.y + 3.0 * here.o.sin());
+                let (x, y) = (snap(sel.grid, x, d.spot.x), snap(sel.grid, y, d.spot.y));
+                let (rx, ry, rz) = ((x - d.spot.x) as f64, (y - d.spot.y) as f64, (d.floor_at(x, y) + lift - d.spot.z) as f64);
+                edit(d, sel, &move |p, _| {
+                    p.x = rx;
+                    p.y = ry;
+                    p.z = rz;
+                })
+            }
+            None => Out::Say("Select a prop first (Near picks the closest).".into()),
+        },
+        // the pad: from where you stand (forward is the way you face), up and down
+        "step" => match (w.get(1).map(|a| a.to_ascii_lowercase()), num(w.get(2))) {
+            (Some(dir), Some(v)) if v.abs() <= 50.0 => match step_offset(&dir, here.o, v) {
+                Some((dx, dy, dz)) => edit(d, sel, &move |p, _| {
+                    p.x += dx;
+                    p.y += dy;
+                    p.z += dz;
+                }),
+                None => Out::Say("Usage: step fwd|back|left|right|up|down <yards>".into()),
+            },
+            _ => Out::Say("Usage: step fwd|back|left|right|up|down <yards>".into()),
+        },
+        "grow" => match num(w.get(1)).filter(|k| (0.2..=5.0).contains(k)) {
+            Some(k) => edit(d, sel, &move |p, _| p.scale = Some((p.scale.unwrap_or(1.0) * k).clamp(0.1, 5.0))),
+            None => Out::Say("Usage: grow <factor> (0.8 smaller, 1.25 bigger)".into()),
+        },
+        // Swap with: the selection becomes another prop (its place, turn and size kept); swapkind: every prop of the
+        // selection's kind, one undo step for them all
+        "swap" | "swapkind" => match (w.get(1).and_then(|e| e.parse::<u32>().ok()).filter(|e| den::template(*e).is_some()), sel.guid.and_then(|g| d.placed(g)).map(|p| (p.obj.guid, p.prop.entry))) {
+            (None, _) => Out::Say("Pick what to swap it with in the gallery first.".into()),
+            (_, None) => Out::Say("Select a prop first (Near picks the closest).".into()),
+            (Some(new), Some((g, old))) => {
+                let guids: Vec<u64> = if verb == "swap" { vec![g] } else { d.props.iter().filter(|p| p.prop.entry == old).map(|p| p.obj.guid).collect() };
+                let to = den::template(new).map(|t| t.name).unwrap_or("it");
+                match d.edit_many(&guids, |p| {
+                    p.entry = new as u64;
+                    p.model = None;
+                }) {
+                    Ok(mut c) => {
+                        let n = c.created.len();
+                        c.message = if n == 1 { format!("Swapped for {to}. Undo takes it back.") } else { format!("Swapped {n} props for {to} (one undo).") };
+                        Out::Change(c)
+                    }
+                    Err(e) => Out::Say(e),
+                }
+            }
         },
         "grid" => {
             let g = match w.get(1).map(|a| a.to_ascii_lowercase()) {

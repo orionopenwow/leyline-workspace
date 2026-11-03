@@ -1878,7 +1878,11 @@ fn flight_tick(shared: &Shared) -> io::Result<()> {
     let live = shared.live.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let Some((_, w, p)) = live else { return Ok(()) };
     let (fly_on, speed) = { let d = shared.dojo.lock().unwrap_or_else(|e| e.into_inner()); (d.fly, d.speed_now()) };
-    let ground = shared.den.lock().unwrap_or_else(|e| e.into_inner()).floor_at(p.x, p.y);
+    let (ground, land) = {
+        let d = shared.den.lock().unwrap_or_else(|e| e.into_inner());
+        let s = companion::spot(p);
+        (d.floor_at(p.x, p.y), d.floor_at(s.x, s.y))
+    };
     let up = flight::airborne(fly_on, p, ground);
     let mut comp = shared.companion.lock().unwrap_or_else(|e| e.into_inner());
     if !comp.out || comp.order == companion::Order::Stay {
@@ -1904,8 +1908,7 @@ fn flight_tick(shared: &Shared) -> io::Result<()> {
     } else if comp.flying {
         // you landed: she lands beside you
         comp.flying = false;
-        let g = shared.den.lock().unwrap_or_else(|e| e.into_inner()).floor_at(companion::spot(p).x, companion::spot(p).y);
-        let (pts, t) = flight::landing(here, p, g);
+        let (pts, t) = flight::landing(here, p, land);
         let to = pts[pts.len() - 1];
         let id = comp.set_path(here, to, ms, t);
         drop(comp);

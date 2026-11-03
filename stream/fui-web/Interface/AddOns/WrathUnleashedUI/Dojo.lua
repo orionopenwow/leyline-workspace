@@ -1,8 +1,10 @@
--- Dojo (3.3.5a API): the Den's training grounds, one small panel (owner 3 Nov: "the Dojo in the Den ... all built in
--- with clever UI sections"). The Den's tool rail has a Dojo button (DenBar.lua); it opens this panel beside the rail,
--- in the editor's look (Style.lua S.Ed*: near-black, gold for what is on). It stays open in play mode (training is
--- playing) and closes when you leave the Den.
+-- Dojo (3.3.5a API): the Den's training grounds, one small panel with two pages (owner 3 Nov: "the Dojo in the Den
+-- ... all built in with clever UI sections"; "spellbook placement loadout instant on bars, gear sets selector ...
+-- better combat and test range dojo features"). The Den's tool rail has a Dojo button (DenBar.lua); it opens this
+-- panel beside the rail, in the editor's look (Style.lua S.Ed*: near-black, gold for what is on). It stays open in
+-- play mode (training is playing) and closes when you leave the Den.
 --
+-- Train (the first page)
 --   Training      Ring (the training ring: on Den Lite your companion builds it), Dummies (three training dummies),
 --                 Clear (the dummies, the boss, the ring)
 --   Moving        Fly (on / off), Speed 1 / 2 / 4
@@ -10,22 +12,34 @@
 --                 the stamp at once)
 --   Practice      Pack, Mover, Healer, Tank, Boss: the sandbox combat's dummies (Den Lite, labs/den-lite combat.rs:
 --                 on when its line says combat=1)
---   Session       1m / 3m / 5m (a timed parse), Reset, Refill, Fight (dummies hit back)
---   Class         the class (click for the next), Be (that class at level 80: ".den class <class>"), Mounts (every
---                 mount in the spellbook: ".den mounts")
+--   Range         Levels (dummies three levels below and above you, light and heavy armour), Group (the healing
+--                 range), Range (a dummy 40 yards out, markers at 5/10/20/30), Run (your main bar cast for you for
+--                 30 s: a practice parse), Safe (nothing hurts you)
+--   Session       1m / 3m / 5m (a timed parse), Reset (the dummies, your cooldowns, the meters), Refill, Fight
+--                 (dummies hit back)
 --   Full Den      Boss (pick one, then Fight), Duel ring (on / off), New look; on Den Lite these say they need the
 --                 full Den
---   the readout   your damage per second on the dummies (full Den), and your best boss time
+-- Loadout (the second page; Den Lite)
+--   Class         the class and its spec (click for the next), Be (that class and spec at level 80: its spellbook,
+--                 talents and every bar at once: ".den class <class> <spec>"), Mounts (every mount on the right bar)
+--   Bars          your saved bars for this spec (click for the next), Use, Save (by the name in the box, or "bar n"),
+--                 Reset (the spec's own layout)
+--   Gear          the class and spec's raid tiers (T1-T10, the ones your game has) and your own sets, Wear, Save,
+--                 Off (your own outfit)
+-- The readout: your damage and healing per second, your best boss time.
 --
 -- Every button is one Den command over the realm's addon channel (mod "wuden", "cmd", "dojo <...>": EditMode.lua
--- DenCmd), the same on both servers: Den Lite (labs/den-lite dojo.rs) and the full Den (ov_dojo.lua) answer
---   server -> client   dojo  server=lite|full;fly=0|1;speed=<n>;dummies=<n>;ring=0|1[;building=0|1][;boss=<key|->;duel=0|1;best=<secs|->]
---                            [;combat=1;class=<word|->;level=<n>;fight=0|1;parse=<minutes|->] (Den Lite's sandbox combat)
---                      dps   dps=<n>;total=<n>;secs=<s>;dummy=<name>[;done=1]
+-- DenCmd), the same on both servers: Den Lite (labs/den-lite dojo.rs, sandbox.rs) and the full Den (ov_dojo.lua)
+-- answer
+--   server -> client   dojo     server=lite|full;fly=0|1;speed=<n>;dummies=<n>;ring=0|1[;building=0|1][;boss=<key|->;duel=0|1;best=<secs|->]
+--                               [;combat=1;class=<word|->;level=<n>;fight=0|1;parse=<minutes|->;best=<secs|->;god=0|1]
+--                      dps      dps=<n>;total=<n>;secs=<s>;dummy=<name>[;hps=<n>;healed=<n>][;done=1]
+--                      loadout  class=<word>;spec=<word>;specs=<a,b,c>;bars=<name|->;saved=<a,b>;set=<name|->;tiers=<1,2>;mine=<a,b>
 -- Their lines come back as the Den bar's toasts. Nothing the server sends is run; texts are shown plain.
 
 local W = WrathUnleashedUI
-local J = { line = {}, dps = nil, bossAt = 1, classAt = 1 }
+local J = { line = {}, dps = nil, bossAt = 1, classAt = 1, specAt = 1, barAt = 1, gearAt = 1, page = "train",
+    loadout = { saved = {}, tiers = {}, mine = {} } }
 local MOD = "wuden"
 J.STAMPS = { "garden", "campfire", "market", "inn" }
 J.BOSSES = { "hogger", "vancleef", "azuregos", "kazzak", "doomwalker" }
@@ -34,19 +48,39 @@ J.PRACTICE = { { "pack", "Pack", "Five dummies close together: try your area spe
     { "mover", "Mover", "A dummy walking a circle: keep it in range" },
     { "healer", "Healer", "A wounded friendly dummy losing health: heal it" },
     { "tank", "Tank", "A dummy that hits back once you hit it (you never fall)" },
-    { "boss", "Boss", "The practice boss: move out of the circles it marks under you" } }
-J.SESSION = { { "parse 1", "1m", "A one minute parse from your first hit (your best per class is kept)" },
+    { "boss", "Boss", "The practice boss: move out of its circles, interrupt its cast" } }
+J.RANGE = { { "levels", "Levels", "Dummies three levels below and above you (light and heavy armour: misses count against the higher)" },
+    { "group", "Group", "The healing range: five friends losing health, one faster" },
+    { "range", "Range", "A dummy 40 yards out, markers at 5, 10, 20 and 30 yards from it" },
+    { "demo 30", "Run", "Your main bar cast for you at the nearest dummy for 30 seconds: a practice parse" } }
+J.SESSION = { { "parse 1", "1m", "A one minute parse from your first hit (your best per class and spec is kept)" },
     { "parse 3", "3m", "A three minute parse" }, { "parse 5", "5m", "A five minute parse" },
     { "reset", "Reset", "Every dummy full again, your cooldowns ready, your health and power full" },
     { "refill", "Refill", "Your health and power full" } }
 J.CLASSES = { "warrior", "paladin", "hunter", "rogue", "priest", "deathknight", "shaman", "mage", "warlock", "druid" }
+J.SPECS = { warrior = { "arms", "fury", "protection" }, paladin = { "holy", "protection", "retribution" },
+    hunter = { "beastmastery", "marksmanship", "survival" }, rogue = { "assassination", "combat", "subtlety" },
+    priest = { "discipline", "holy", "shadow" }, deathknight = { "blood", "frost", "unholy" },
+    shaman = { "elemental", "enhancement", "restoration" }, mage = { "arcane", "fire", "frost" },
+    warlock = { "affliction", "demonology", "destruction" }, druid = { "balance", "feral", "restoration" } }
 J.FULL_ONLY = "Needs the full Den (Leyline > Host > Your Den): Den Lite has no combat."
+J.LITE_ONLY = "Den Lite's sandbox: update Your Den"
 
 local panel
 
 local function S() return W.Style end
 local function plain(s) return (tostring(s or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|", ""):gsub("%c", " ")) end
 local function title(s) return (s:gsub("^%l", string.upper)) end
+local function short(s, n) s = tostring(s or ""); if #s > n then return s:sub(1, n - 2) .. ".." end return s end
+-- a word list from the server ("a,b,c"): letters, digits, spaces and dashes only
+local function list(s)
+    local out = {}
+    for w in tostring(s or ""):gmatch("[^,]+") do
+        w = w:gsub("[^%w%s%-_]", "")
+        if w ~= "" and w ~= "-" and #out < 24 then out[#out + 1] = w:sub(1, 24) end
+    end
+    return out
+end
 
 local function send(name, data)
     if not SendAddonMessage or not UnitName then return false end
@@ -66,14 +100,49 @@ function J.Lite() return J.line.server == "lite" end
 function J.Combat() return J.line.combat == "1" end
 function J.Boss() return J.BOSSES[J.bossAt] end
 function J.Class() return J.CLASSES[J.classAt] end
+function J.Specs() return J.SPECS[J.Class()] or {} end
+function J.Spec() return J.Specs()[J.specAt] or J.Specs()[1] end
 function J.NextClass()
     J.classAt = J.classAt % #J.CLASSES + 1
-    if panel then panel.classPick:SetText(title(J.Class())) end
+    J.specAt = 1
+    J.Paint()
     return J.Class()
 end
+function J.NextSpec()
+    J.specAt = J.specAt % math.max(1, #J.Specs()) + 1
+    J.Paint()
+    return J.Spec()
+end
+-- the gear choices: the tiers your game has for the spec ("t7"), then your own sets
+function J.GearChoices()
+    local out = {}
+    for _, t in ipairs(J.loadout.tiers or {}) do out[#out + 1] = "t" .. t end
+    for _, n in ipairs(J.loadout.mine or {}) do out[#out + 1] = n end
+    return out
+end
+function J.Gear() return J.GearChoices()[J.gearAt] end
+function J.NextGear()
+    J.gearAt = J.gearAt % math.max(1, #J.GearChoices()) + 1
+    J.PaintPicks()
+    return J.Gear()
+end
+function J.Bar() return (J.loadout.saved or {})[J.barAt] end
+function J.NextBar()
+    J.barAt = J.barAt % math.max(1, #(J.loadout.saved or {})) + 1
+    J.PaintPicks()
+    return J.Bar()
+end
+-- the name typed for a save, else "<what> <n>"
+local function saveName(what, have)
+    local t = panel and panel.nameBox and panel.nameBox:GetText() or ""
+    t = tostring(t or ""):lower():gsub("[^%w%s%-_]", ""):gsub("^%s+", ""):gsub("%s+$", ""):sub(1, 24)
+    if t ~= "" then return t end
+    return what .. " " .. (#(have or {}) + 1)
+end
+function J.SaveBars() return J.Cmd("bars save " .. saveName("bar", J.loadout.saved)) end
+function J.SaveGear() return J.Cmd("gearset save " .. saveName("set", J.loadout.mine)) end
 
 -- ---------------------------------------------------------------- the panel
-local function chip(parent, text, w, fn, ...) return S().EdChip(parent, text, w, fn, ...) end
 local function label(parent, text, ...) return S().EdLabel(parent, text, false, ...) end
 
 local function build()
@@ -85,118 +154,174 @@ local function build()
     panel:EnableMouse(true)
     S().EdPanel(panel, 0.9)
     panel.head = S().EdLabel(panel, "Dojo", true, "TOPLEFT", 10, -9)
-    panel.close = chip(panel, "x", 24, function() J.Show(false) end, "TOPRIGHT", -8, -8)
+    panel.close = S().EdChip(panel, "x", 24, function() J.Show(false) end, "TOPRIGHT", -8, -8)
+    -- the two pages: Train and Loadout (tabs beside the title)
+    panel.tabs = {}
+    local tx = 64
+    for _, t in ipairs({ { "train", "Train", "dojo", "Dummies, the range, parses and the boss" },
+        { "loadout", "Loadout", "bars", "Class and spec, your bars, gear sets" } }) do
+        local b = S().EdChip(panel, t[2], nil, function() J.Page(t[1]) end, "TOPLEFT", tx, -5)
+        b.edLabel = t[4]; b.page = t[1]
+        panel.tabs[t[1]] = b
+        tx = tx + (tonumber((b:GetWidth())) or 60) + 4
+    end
     panel.note = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    panel.note:SetPoint("TOPLEFT", 10, -28); panel.note:SetWidth(298); panel.note:SetJustifyH("LEFT")
+    panel.note:SetPoint("TOPLEFT", 10, -36); panel.note:SetWidth(298); panel.note:SetJustifyH("LEFT")
     panel.note.styleKeep = true
+    panel.pages = {}
+    for _, k in ipairs({ "train", "loadout" }) do
+        local pg = CreateFrame("Frame", nil, panel)
+        pg:SetAllPoints(panel)
+        panel.pages[k] = pg
+    end
 
-    local y = -50
-    local function row(name)
-        local l = label(panel, name, "TOPLEFT", 10, y - 5)
-        y = y - 34
-        return l
-    end
-    -- chips as wide as their words (nothing cut), the panel as wide as its widest row
-    local widest = 0
-    local function chips(list, x0, at)
-        local x = x0 or 104
-        for _, c in ipairs(list) do
-            local b = chip(panel, c[2], nil, c[4], "TOPLEFT", x, at)
-            if c[1] == "bossPick" then b:SetWidth(math.max(tonumber((b:GetWidth())) or 0, 96)) end
-            b.edLabel = c[5]
-            panel[c[1]] = b
-            x = x + (tonumber((b:GetWidth())) or c[3]) + 4
+    local widest, lowest = 0, 0
+    -- one page's rows: a label, then chips as wide as their words (nothing cut)
+    local function page(pg)
+        local y = -58
+        local function row(name)
+            local l = label(pg, name, "TOPLEFT", 10, y - 5)
+            local at = y
+            y = y - 34
+            return l, at
         end
-        widest = math.max(widest, x)
-        return x
+        local function chips(list, x0, at)
+            local x = x0 or 104
+            for _, c in ipairs(list) do
+                local b = S().EdChip(pg, c[2], nil, c[4], "TOPLEFT", x, at)
+                if c[6] then b:SetWidth(math.max(tonumber((b:GetWidth())) or 0, c[6])) end
+                b.edLabel = c[5]
+                panel[c[1]] = b
+                x = x + (tonumber((b:GetWidth())) or c[3]) + 4
+            end
+            widest = math.max(widest, x)
+            return x
+        end
+        return row, chips, function() lowest = math.min(lowest, y) end
     end
-    local at = y
-    panel.training = row("Training")
+
+    -- ---------------- Train
+    local row, chips, done = page(panel.pages.train)
+    local pg = panel.pages.train
+    local _, at = nil, nil
+    panel.training, at = row("Training")
     chips({
         { "ring", "Ring", 52, function() J.Cmd("ring") end, "A training ring beside you (on Den Lite your companion builds it)" },
         { "dummies", "Dummies", 70, function() J.Cmd("dummies 3") end, "Three training dummies (in the ring when there is one)" },
         { "clear", "Clear", 52, function() J.Cmd("clear") end, "The dummies and the boss go (the ring too on the full Den)" },
     }, nil, at)
-    at = y
-    panel.moving = row("Moving")
+    panel.moving, at = row("Moving")
     local x = chips({ { "fly", "Fly", 52, function() J.Cmd("fly") end, "Fly: jump, then Space to rise and X to sink" } }, nil, at) + 8
     panel.speeds = {}
     for _, n in ipairs(J.SPEEDS) do
-        local b = chip(panel, n .. "x", nil, function() J.Cmd("speed " .. n) end, "TOPLEFT", x, at)
+        local b = S().EdChip(pg, n .. "x", nil, function() J.Cmd("speed " .. n) end, "TOPLEFT", x, at)
         b.edLabel = n == 1 and "Normal speed" or ("Run and fly " .. n .. " times as fast")
         b.speed = n
         panel.speeds[#panel.speeds + 1] = b
         x = x + (tonumber((b:GetWidth())) or 34) + 4
     end
     widest = math.max(widest, x)
-    at = y
-    panel.builds = row("Jaina builds")
+    panel.builds, at = row("Jaina builds")
     panel.stamps = {}
     x = 104
     for _, s in ipairs(J.STAMPS) do
-        local b = chip(panel, title(s), nil, function() J.Cmd("build " .. s) end, "TOPLEFT", x, at)
+        local b = S().EdChip(pg, title(s), nil, function() J.Cmd("build " .. s) end, "TOPLEFT", x, at)
         b.edLabel = "Jaina builds a " .. s .. " in front of you"
         b.stamp = s
         panel.stamps[#panel.stamps + 1] = b
         x = x + (tonumber((b:GetWidth())) or 52) + 4
     end
     widest = math.max(widest, x)
-    at = y
-    panel.practice = row("Practice")
-    panel.practiceChips = {}
-    x = 92
-    for _, c in ipairs(J.PRACTICE) do
-        local b = chip(panel, c[2], nil, function() J.Cmd(c[1]) end, "TOPLEFT", x, at)
-        b.edLabel = c[3]
-        b.verb = c[1]
-        panel.practiceChips[#panel.practiceChips + 1] = b
-        x = x + (tonumber((b:GetWidth())) or 42) + 4
+    local function verbRow(name, key, list, x0)
+        local l, at2 = row(name)
+        panel[key] = {}
+        local xx = x0 or 92
+        for _, c in ipairs(list) do
+            local b = S().EdChip(pg, c[2], nil, function() J.Cmd(c[1]) end, "TOPLEFT", xx, at2)
+            b.edLabel = c[3]
+            b.verb = c[1]
+            panel[key][#panel[key] + 1] = b
+            xx = xx + (tonumber((b:GetWidth())) or 42) + 4
+        end
+        widest = math.max(widest, xx)
+        return l, at2, xx
     end
-    widest = math.max(widest, x)
-    at = y
-    panel.session = row("Session")
-    panel.sessionChips = {}
-    x = 92
-    for _, c in ipairs(J.SESSION) do
-        local b = chip(panel, c[2], nil, function() J.Cmd(c[1]) end, "TOPLEFT", x, at)
-        b.edLabel = c[3]
-        b.verb = c[1]
-        panel.sessionChips[#panel.sessionChips + 1] = b
-        x = x + (tonumber((b:GetWidth())) or 30) + 4
-    end
-    widest = math.max(widest, x)
-    panel.fightBack = chip(panel, "Fight", nil, function() J.Cmd("fight " .. (J.line.fight == "1" and "off" or "on")) end, "TOPLEFT", x, at)
+    panel.practice = verbRow("Practice", "practiceChips", J.PRACTICE)
+    local rx
+    panel.rangeRow, at, rx = verbRow("Range", "rangeChips", J.RANGE)
+    panel.safe = S().EdChip(pg, "Safe", nil, function() J.Cmd("invulnerable " .. (J.line.god == "1" and "off" or "on")) end, "TOPLEFT", rx, at)
+    panel.safe.edLabel = "Nothing hurts you (again: as before)"
+    widest = math.max(widest, rx + (tonumber((panel.safe:GetWidth())) or 40) + 4)
+    panel.rangeChips[#panel.rangeChips + 1] = panel.safe
+    local sx
+    panel.session, at, sx = verbRow("Session", "sessionChips", J.SESSION)
+    panel.fightBack = S().EdChip(pg, "Fight", nil, function() J.Cmd("fight " .. (J.line.fight == "1" and "off" or "on")) end, "TOPLEFT", sx, at)
     panel.fightBack.edLabel = "The dummies hit back (lightly)"
-    widest = math.max(widest, x + (tonumber((panel.fightBack:GetWidth())) or 40) + 4)
+    widest = math.max(widest, sx + (tonumber((panel.fightBack:GetWidth())) or 40) + 4)
     panel.sessionChips[#panel.sessionChips + 1] = panel.fightBack
-    at = y
-    panel.classRow = row("Class")
+    panel.full, at = row("Full Den")
     chips({
-        { "classPick", title(J.Class()), 86, function() J.NextClass() end, "Which class (click for the next)" },
-        { "classBe", "Be", 34, function() J.Cmd("class " .. J.Class()) end, "Become that class at level 80, with every spell it learns" },
-        { "mounts", "Mounts", 58, function() J.Cmd("mounts") end, "Every mount in your spellbook (flying ones fly with Fly on)" },
-    }, nil, at)
-    at = y
-    panel.full = row("Full Den")
-    chips({
-        { "bossPick", title(J.Boss()), 78, function() J.NextBoss() end, "Which boss (click for the next)" },
+        { "bossPick", title(J.Boss()), 78, function() J.NextBoss() end, "Which boss (click for the next)", 96 },
         { "fight", "Fight", 46, function() J.Cmd("boss " .. J.Boss()) end, "The boss, 12 yards ahead: beat your best time" },
         { "duel", "Duels", 50, function() J.Cmd("duel " .. (J.line.duel == "1" and "off" or "on")) end, "Duels in the Den become timed spars" },
         { "look", "Look", 44, function() J.Cmd("look") end, "A new look at the character list" },
     }, nil, at)
+    done()
+
+    -- ---------------- Loadout
+    row, chips, done = page(panel.pages.loadout)
+    panel.classRow, at = row("Class")
+    chips({
+        { "classPick", title(J.Class()), 86, function() J.NextClass() end, "Which class (click for the next)", 100 },
+        { "specPick", title(J.Spec()), 96, function() J.NextSpec() end, "Which spec (click for the next)", 124 },
+        { "classBe", "Be", 34, function() J.Cmd("class " .. J.Class() .. " " .. J.Spec()) end, "Become that class and spec at level 80: its spellbook, talents and every bar at once" },
+        { "mounts", "Mounts", 58, function() J.Cmd("mounts") end, "Every mount in your spellbook, on the right bar (flying ones fly with Fly on)" },
+    }, nil, at)
+    panel.barsRow, at = row("Bars")
+    chips({
+        { "barPick", "No saved bar", 96, function() J.NextBar() end, "Your saved bars for this spec (click for the next)", 110 },
+        { "barUse", "Use", 40, function() if J.Bar() then J.Cmd("bars use " .. J.Bar()) end end, "Put that bar on" },
+        { "barSave", "Save", 44, function() J.SaveBars() end, "Keep your bar as it is now (by the name in the box)" },
+        { "barReset", "Reset", 48, function() J.Cmd("bars reset") end, "The spec's own layout again" },
+    }, nil, at)
+    panel.gearRow, at = row("Gear")
+    chips({
+        { "gearPick", "No sets", 96, function() J.NextGear() end, "Raid tiers for your class and spec, then your own sets (click for the next)", 110 },
+        { "gearWear", "Wear", 44, function() if J.Gear() then J.Cmd("gearset " .. J.Gear()) end end, "Put that whole look on (everyone in the Den sees it)" },
+        { "gearSave", "Save", 44, function() J.SaveGear() end, "Keep what you wear as a set (by the name in the box)" },
+        { "gearOff", "Off", 40, function() J.Cmd("gearset off") end, "Your own outfit again" },
+    }, nil, at)
+    panel.nameRow, at = row("Name")
+    panel.nameBox = S().EdInput(panel.pages.loadout, 160, 26)
+    panel.nameBox:SetPoint("TOPLEFT", 104, at)
+    panel.nameBox.edLabel = "A name for Save (empty: bar 1, set 1...)"
+    if panel.nameBox.SetMaxLetters then panel.nameBox:SetMaxLetters(24) end
+    widest = math.max(widest, 104 + 164)
+    done()
+
     panel.readout = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     local pw = math.max(318, widest + 10)
     panel:SetWidth(pw)
-    panel:SetHeight(-y + 46)
+    panel:SetHeight(-lowest + 46)
     panel.note:SetWidth(pw - 20)
-    panel.readout:SetPoint("TOPLEFT", 10, y - 6); panel.readout:SetWidth(pw - 20); panel.readout:SetJustifyH("LEFT")
+    panel.readout:SetPoint("TOPLEFT", 10, lowest - 6); panel.readout:SetWidth(pw - 20); panel.readout:SetJustifyH("LEFT")
     panel.readout.styleKeep = true
     panel:Hide()
+    J.Page(J.page)
     J.Paint()
 end
 
 function J.Panel() if not panel then build() end return panel end
 function J.IsOpen() return panel ~= nil and panel:IsShown() end
+
+-- A page: "train" or "loadout" (the tab lights up).
+function J.Page(which)
+    J.page = (which == "loadout") and "loadout" or "train"
+    if not panel then return J.page end
+    for k, pg in pairs(panel.pages) do if k == J.page then pg:Show() else pg:Hide() end end
+    for k, b in pairs(panel.tabs) do b:SetActive(k == J.page) end
+    return J.page
+end
 
 function J.Show(on)
     J.Panel()
@@ -218,13 +343,26 @@ function J.NextBoss()
     return J.Boss()
 end
 
+-- The pickers' words (shortened to fit their chips).
+function J.PaintPicks()
+    if not panel then return end
+    panel.classPick:SetText(title(J.Class()))
+    panel.specPick:SetText(short(title(J.Spec() or "-"), 13))
+    local bar = J.Bar()
+    panel.barPick:SetText(bar and short(bar, 12) or "No saved bar")
+    if bar then panel.barUse:Enable() else panel.barUse:Disable() end
+    local g = J.Gear()
+    panel.gearPick:SetText(g and short(g:gsub("^t(%d+)$", "Tier %1"), 12) or "No sets")
+    if g then panel.gearWear:Enable() else panel.gearWear:Disable() end
+end
+
 -- What is on (gold), what this server can't do (off, saying why), the readout.
 function J.Paint()
     if not panel then return end
     local l = J.line
     local lite = J.Lite()
     if l.server == "lite" then
-        panel.note:SetText(J.Combat() and "Den Lite: dummies that take your spells, any class, parses and a boss to practise."
+        panel.note:SetText(J.Combat() and "Den Lite: any class and spec, dummies that take your spells, parses and a boss."
             or "Den Lite: the ring, dummies to practise on, flying, speed and Jaina's builds.")
     elseif l.server == "full" then
         panel.note:SetText("The full Den: dummies count your damage, bosses keep your best time.")
@@ -242,51 +380,85 @@ function J.Paint()
         if lite then b:Disable(); b.edLabel = J.FULL_ONLY else b:Enable() end
     end
     panel.full:SetText(lite and "FULL DEN ONLY" or "FULL DEN")
-    -- the sandbox combat's rows: on when the server says it has it (Den Lite's combat=1)
+    -- the sandbox combat's rows and the loadout page: on when the server says it has it (Den Lite's combat=1)
     local combat = J.Combat()
-    for _, b in ipairs(panel.practiceChips) do
-        if combat then b:Enable() else b:Disable(); b.edLabel = "Needs Den Lite's sandbox combat (update Your Den)" end
+    for _, list in ipairs({ panel.practiceChips, panel.rangeChips, panel.sessionChips }) do
+        for _, b in ipairs(list) do
+            if combat then b:Enable() else b:Disable(); b.edLabel = "Needs Den Lite's sandbox combat (update Your Den)" end
+        end
     end
-    for _, b in ipairs(panel.sessionChips) do
-        if combat then b:Enable() else b:Disable() end
-    end
-    for _, k in ipairs({ "classPick", "classBe", "mounts" }) do
+    for _, k in ipairs({ "classPick", "specPick", "classBe", "mounts", "barPick", "barSave", "barReset", "gearPick", "gearSave", "gearOff" }) do
         if combat then panel[k]:Enable() else panel[k]:Disable() end
     end
     panel.fightBack:SetActive(l.fight == "1")
+    panel.safe:SetActive(l.god == "1")
+    J.PaintPicks()
+    if not combat then panel.barUse:Disable(); panel.gearWear:Disable() end
+    local lo = J.loadout
+    panel.classBe:SetActive(lo.class ~= nil and lo.class == J.Class() and lo.spec == J.Spec())
     local parts = {}
     if J.dps then
-        parts[#parts + 1] = string.format("%s%d DPS|r  %d in %s s%s", S().Hex("accent"), J.dps.dps, J.dps.total, J.dps.secs, J.dps.done and " (done)" or "")
+        local d = J.dps
+        local s = string.format("%s%d DPS|r  %d in %s s", S().Hex("accent"), d.dps, d.total, d.secs)
+        if (d.hps or 0) > 0 then s = s .. string.format("   %s%d HPS|r  %d healed", S().Hex("accent"), d.hps, d.healed or 0) end
+        parts[#parts + 1] = s .. (d.done and " (done)" or "")
     end
     if l.best and l.best ~= "-" then parts[#parts + 1] = "Best boss time: " .. l.best .. " s" end
     if l.building == "1" then parts[#parts + 1] = "Jaina is building..." end
-    if combat and l.class and l.class ~= "-" then parts[#parts + 1] = title(l.class) .. " " .. (l.level or "") end
+    if combat and l.class and l.class ~= "-" then
+        parts[#parts + 1] = title(l.class) .. " " .. (l.level or "") .. ((lo.spec and lo.class == l.class) and (" " .. title(lo.spec)) or "")
+    end
+    if combat and lo.set and lo.set ~= "-" then parts[#parts + 1] = "Gear: " .. lo.set end
     if combat and l.parse and l.parse ~= "-" then parts[#parts + 1] = l.parse .. " min parse" end
     panel.readout:SetText(#parts > 0 and table.concat(parts, "   ") or ((lite and not combat) and "" or "Hit a dummy: your damage per second shows here."))
 end
 
 -- ---------------------------------------------------------------- the server's answers
+local function fields(data, n)
+    local t = {}
+    for k, v in data:gmatch("(%a+)=([^;]*)") do t[k] = plain(v):sub(1, n) end
+    return t
+end
+
 function J.OnMessage(prefix, msg, channel, sender)
     if prefix ~= "OVMOD" or type(msg) ~= "string" or channel ~= "WHISPER" then return end
     if UnitName and sender ~= UnitName("player") then return end
     local mod, name, data = msg:match("^([^\t]+)\t([^\t]+)\t1/1\t(.*)$")
     if mod ~= MOD then return end
     if name == "dojo" then
-        local l = {}
-        for k, v in data:gmatch("(%a+)=([^;]*)") do l[k] = plain(v):sub(1, 24) end
+        local l = fields(data, 24)
         if l.server ~= "lite" and l.server ~= "full" then return end
         J.line = l
         J.Paint()
         if W.DenBar and W.DenBar.Paint then W.DenBar.Paint() end
     elseif name == "dps" then
-        local t = {}
-        for k, v in data:gmatch("(%a+)=([^;]*)") do t[k] = plain(v) end
+        local t = fields(data, 40)
         local dps, total = tonumber(t.dps or ""), tonumber(t.total or "")
         if not (dps and total) then return end
-        J.dps = { dps = dps, total = total, secs = (t.secs or "?"):sub(1, 8), dummy = (t.dummy or ""):sub(1, 40), done = t.done == "1" }
+        J.dps = { dps = dps, total = total, secs = (t.secs or "?"):sub(1, 8), dummy = (t.dummy or ""):sub(1, 40), done = t.done == "1",
+            hps = tonumber(t.hps or "") or 0, healed = tonumber(t.healed or "") or 0 }
         if J.dps.done and W.DenBar and W.DenBar.Toast then
-            W.DenBar.Toast("ok", string.format("%d damage per second (%d in %s s).", dps, total, J.dps.secs))
+            local s = string.format("%d damage per second (%d in %s s).", dps, total, J.dps.secs)
+            if J.dps.hps > 0 then s = s .. string.format(" %d healing per second.", J.dps.hps) end
+            W.DenBar.Toast("ok", s)
         end
+        J.Paint()
+    elseif name == "loadout" then
+        local t = fields(data, 200)
+        local class = (t.class or ""):lower():gsub("[^%a]", "")
+        if not J.SPECS[class] then return end
+        local lo = { class = class, spec = (t.spec or ""):lower():gsub("[^%a]", ""), bars = list(t.bars)[1], saved = list(t.saved),
+            set = list(t.set)[1] or "-", tiers = {}, mine = list(t.mine) }
+        for n in tostring(t.tiers or ""):gmatch("%d+") do
+            if #lo.tiers < 10 and tonumber(n) >= 1 and tonumber(n) <= 10 then lo.tiers[#lo.tiers + 1] = tonumber(n) end
+        end
+        J.loadout = lo
+        -- the pickers follow what you are
+        for i, c in ipairs(J.CLASSES) do if c == class then J.classAt = i end end
+        for i, s in ipairs(J.Specs()) do if s == lo.spec then J.specAt = i end end
+        J.barAt = 1
+        for i, n in ipairs(lo.saved) do if n == lo.bars then J.barAt = i end end
+        J.gearAt = math.min(J.gearAt, math.max(1, #J.GearChoices()))
         J.Paint()
     end
 end

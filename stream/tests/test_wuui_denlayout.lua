@@ -228,7 +228,7 @@ for _, scr in ipairs({ { 1280, 720 }, { 1920, 1080 }, { 2560, 1440 } }) do
         D.ShowSnap(true); look("snap"); D.ShowSnap(false)
         B.ShowFiles(true); look("files"); B.ShowFiles(false)
         D.Invite(); F.toClient("wuden\tinvite\t1/1\thttps://relay.example.app/join/abcdefghijklmnop#ABCDEFGHJKLMNPQRSTUVWXYZ"); look("invite"); D.CloseDrawer()
-        if W.Dojo then W.Dojo.Show(true); look("dojo"); W.Dojo.Show(false) end
+        if W.Dojo then W.Dojo.Show(true); look("dojo"); W.Dojo.Page("loadout"); look("dojo loadout"); W.Dojo.Page("train"); W.Dojo.Show(false) end
         if W.DenHome then W.DenHome.Show(true); look("den home"); W.DenHome.Show(false) end
         -- the Den guide, every page
         if W.DenGuide then

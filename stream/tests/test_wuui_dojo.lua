@@ -114,10 +114,10 @@ local function fireClient(msg)
 end
 local sent, cmds = {}, {}
 local server = "lite"
-local state = { fly = 0, speed = 1, dummies = 0, ring = 0, combat = 0, fight = 0 }
+local state = { fly = 0, speed = 1, dummies = 0, ring = 0, combat = 0, fight = 0, god = 0 }
 local function line()
     if server == "lite" then
-        local extra = state.combat == 1 and string.format(";combat=1;class=mage;level=80;fight=%d;parse=-;best=-", state.fight) or ""
+        local extra = state.combat == 1 and string.format(";combat=1;class=mage;level=80;fight=%d;parse=-;best=-;god=%d", state.fight, state.god) or ""
         return string.format("server=lite;fly=%d;speed=%d;dummies=%d;ring=%d;building=0", state.fly, state.speed, state.dummies, state.ring) .. extra
     end
     return string.format("server=full;fly=%d;speed=%d;dummies=%d;ring=%d;boss=-;duel=0;best=42.5", state.fly, state.speed, state.dummies, state.ring)
@@ -138,7 +138,11 @@ function SendAddonMessage(prefix, msg, channel, target)
         elseif w == "dummies" then state.dummies = 3
         elseif w == "ring" then state.ring = 1
         elseif w == "clear" then state.dummies = 0
-        elseif w == "fight" then state.fight = data:match("fight on") and 1 or 0 end
+        elseif w == "fight" then state.fight = data:match("fight on") and 1 or 0
+        elseif w == "invulnerable" then state.god = data:match("invulnerable on") and 1 or 0 end
+        if state.combat == 1 and (w == "status" or w == "class" or w == "bars" or w == "gearset") then
+            fireClient("wuden\tloadout\t1/1\tclass=mage;spec=fire;specs=arcane,fire,frost;bars=aoe;saved=single,aoe;set=t10;tiers=1,10;mine=raid")
+        end
         fireClient("wuden\tdojo\t1/1\t" .. line())
     end
 end
@@ -209,11 +213,69 @@ for _, b in ipairs(p.sessionChips) do b:Fire("OnClick"); verbs[#verbs + 1] = las
 check("1m 3m 5m Reset Refill Fight", table.concat(verbs, ",") == "dojo parse 1,dojo parse 3,dojo parse 5,dojo reset,dojo refill,dojo fight on")
 check("Fight lights up from the line", p.fightBack:IsActive())
 before = #cmds
-check("Next class cycles, sending nothing", J.NextClass() == "paladin" and p.classPick:GetText() == "Paladin" and #cmds == before)
+check("the class picker starts at what you are (the loadout line)", J.Class() == "mage" and p.classPick:GetText() == "Mage")
+check("Next class cycles, sending nothing", J.NextClass() == "warlock" and p.classPick:GetText() == "Warlock" and #cmds == before)
 p.classBe:Fire("OnClick")
-check("Be: dojo class <the pick>", lastCmd() == "dojo class paladin")
+check("Be: dojo class <the pick> <its spec>", lastCmd() == "dojo class warlock affliction")
 p.mounts:Fire("OnClick")
 check("Mounts: dojo mounts", lastCmd() == "dojo mounts")
+
+-- ---------------------------------------------------------------- 1c. the pages, the range, the loadout (owner 3 Nov:
+-- "spellbook placement loadout instant on bars, gear sets selector ... test range dojo features")
+check("two pages: Train shown, Loadout hidden", p.pages.train:IsShown() and not p.pages.loadout:IsShown()
+    and p.tabs.train:IsActive() and not p.tabs.loadout:IsActive() and p.tabs.train:GetText() == "Train")
+check("Train's rows are visible, Loadout's are not", p.practiceChips[1]:IsVisible() and not p.classBe:IsVisible())
+p.tabs.loadout:Fire("OnClick")
+check("the Loadout tab: its page", J.page == "loadout" and p.pages.loadout:IsShown() and not p.pages.train:IsShown()
+    and p.tabs.loadout:IsActive() and p.classBe:IsVisible() and not p.practiceChips[1]:IsVisible())
+check("its sections: Class, Bars, Gear, Name", p.classRow:GetText() == "CLASS" and p.barsRow:GetText() == "BARS"
+    and p.gearRow:GetText() == "GEAR" and p.nameRow:GetText() == "NAME")
+J.Cmd("status")
+check("the loadout line: the pickers follow what you are", J.loadout.class == "mage" and J.loadout.spec == "fire"
+    and J.Class() == "mage" and J.Spec() == "fire" and p.specPick:GetText() == "Fire" and p.classBe:IsActive())
+check("your saved bars, the one on first", p.barPick:GetText() == "aoe" and p.barUse.enabled ~= false)
+check("gear: the tiers your game has, then your sets", table.concat(J.GearChoices(), ",") == "t1,t10,raid" and p.gearPick:GetText() == "Tier 1")
+check("Next spec cycles, sending nothing", (function() local n = #cmds; return J.NextSpec() == "frost" and p.specPick:GetText() == "Frost" and #cmds == n end)())
+check("another spec isn't what you are", not p.classBe:IsActive())
+p.classBe:Fire("OnClick")
+check("Be: dojo class mage frost", lastCmd() == "dojo class mage frost")
+p.barPick:Fire("OnClick")
+check("the next saved bar", J.Bar() == "single" and p.barPick:GetText() == "single")
+p.barUse:Fire("OnClick")
+check("Use: dojo bars use single", lastCmd() == "dojo bars use single")
+p.nameBox:SetText("Boss Fight!")
+p.barSave:Fire("OnClick")
+check("Save by the name in the box (plain)", lastCmd() == "dojo bars save boss fight")
+p.nameBox:SetText("")
+p.barSave:Fire("OnClick")
+check("Save with no name: bar <n>", lastCmd() == "dojo bars save bar 3")
+p.barReset:Fire("OnClick")
+check("Reset: dojo bars reset", lastCmd() == "dojo bars reset")
+p.gearWear:Fire("OnClick")
+check("Wear: dojo gearset t1", lastCmd() == "dojo gearset t1")
+J.NextGear(); J.NextGear()
+p.gearWear:Fire("OnClick")
+check("your own set: dojo gearset raid", lastCmd() == "dojo gearset raid" and p.gearPick:GetText() == "raid")
+p.gearSave:Fire("OnClick")
+check("Save gear: dojo gearset save set 2", lastCmd() == "dojo gearset save set 2")
+p.gearOff:Fire("OnClick")
+check("Off: dojo gearset off", lastCmd() == "dojo gearset off")
+fireClient("wuden\tloadout\t1/1\tclass=bard;spec=x")
+check("a loadout line for no class is left out", J.loadout.class == "mage")
+fireClient("wuden\tloadout\t1/1\tclass=mage;spec=fire;specs=arcane,fire,frost;bars=-;saved=;set=-;tiers=;mine=|cffff0000x|r")
+check("no bars, no sets: Use and Wear off, words plain", p.barPick:GetText() == "No saved bar" and p.barUse.enabled == false
+    and table.concat(J.GearChoices(), ",") == "x")
+p.tabs.train:Fire("OnClick")
+check("back to Train", J.page == "train" and p.pages.train:IsShown())
+check("the Range row", p.rangeRow:GetText() == "RANGE" and #p.rangeChips == 5)
+verbs = {}
+for _, b in ipairs(p.rangeChips) do b:Fire("OnClick"); verbs[#verbs + 1] = lastCmd() end
+check("Levels, Group, Range, Run, Safe: their dojo commands", table.concat(verbs, ",") == "dojo levels,dojo group,dojo range,dojo demo 30,dojo invulnerable on")
+check("Safe lights up from the line", p.safe:IsActive())
+p.safe:Fire("OnClick")
+check("Safe again: off", lastCmd() == "dojo invulnerable off" and not p.safe:IsActive())
+fireClient("wuden\tdps\t1/1\tdps=900;total=9000;secs=10.0;dummy=Wounded Friend;hps=1200;healed=12000;done=1")
+check("healing per second beside the damage", p.readout:GetText():find("900 DPS") and p.readout:GetText():find("1200 HPS"))
 state.combat = 0
 
 -- ---------------------------------------------------------------- 2. the full Den

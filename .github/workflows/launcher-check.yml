@@ -8,6 +8,7 @@ on:
     branches: ["feat-*"]
     paths:
       - "launcher/src-tauri/**"
+      - "labs/den-lite/**"
       - ".github/workflows/launcher-check.yml"
   workflow_dispatch:
 
@@ -40,3 +41,22 @@ jobs:
       - name: cargo check (the whole app)
         working-directory: launcher/src-tauri
         run: cargo check --locked --all-targets
+
+  den-lite:
+    # Den Lite (labs/den-lite, its own crate) and the terrain crate it shares with the launcher
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: labs/den-lite
+      - name: cargo test (Den Lite)
+        working-directory: labs/den-lite
+        run: cargo test --locked
+      - name: cargo test (the terrain crate)
+        working-directory: launcher/src-tauri/terrain
+        run: cargo test

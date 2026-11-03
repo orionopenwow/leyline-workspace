@@ -635,11 +635,8 @@ fn drag_to(d: &Den, sel: &Sel, a: &mut Aids, s: f32, now: u64, force: bool) -> A
     }
     a.dragged = s;
     a.at = Some([p[0], p[1], p[2], a.yaw]);
-    let out = draw(d, a, now, force);
-    if out.create.is_empty() {
-        return out;
-    }
-    out.tell("drag", format!("{axis},{s:+.2}"))
+    // the copy redrawn at most every DRAW_MS; the status (and where a click drops it) at every hover
+    draw(d, a, now, force).tell("drag", format!("{axis},{s:+.2}"))
 }
 
 /// Grab the selection's handle for `axis`: its real object hidden (for this player), a copy dragged instead.

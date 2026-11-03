@@ -1957,7 +1957,7 @@ fn the_editors_pick_place_select_drag_and_snap_out() {
     assert!(gone.contains(&copy[0].0), "the copy goes once the real one is there");
     let mut glow = None;
     let mut handles = Vec::new();
-    let mut frames2 = frames.clone();
+    let mut frames2 = frames;
     let (more, st) = until_aid(&mut w, "state");
     frames2.extend(more);
     for f in &frames2 {

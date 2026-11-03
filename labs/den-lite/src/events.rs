@@ -33,6 +33,8 @@
 //! | `den_save` / `den_load` | `.den save <name>` / `.den load <name>` (detail: the name, and `replace` or `add`) |
 //! | `autosave` | the Den was written to `autosave.den.json` (detail: how many props) |
 //! | `test_cmd` | the den-test sent a command (testctl.rs; detail: its first two words) |
+//! | `ui_report` | the Leyline UI's own report for the den-test's feature check (only with the test's channel; detail: its text) |
+//! | `models` | at start: how many prop models the gallery knows from the player's own table (models.rs) |
 //! | `logout` | the game logged out |
 //!
 //! Nothing secret is ever written: no password, no session key, no addon data.

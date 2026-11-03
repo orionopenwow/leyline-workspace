@@ -92,6 +92,23 @@ pub fn take(dir: &Path) -> Option<(u64, String)> {
     Some((id, cmd))
 }
 
+/// `<dens>/den-lite.ui-report`: the Leyline UI's own lines for the den-test's feature check (`wuden report`), one
+/// JSON line each `{"t", "report"}`; at most [`MAX_UI`] lines.
+pub const UI_FILE: &str = "den-lite.ui-report";
+const MAX_UI: u64 = 400_000;
+
+pub fn write_ui(dir: &Path, text: &str) {
+    let p = dir.join(UI_FILE);
+    if std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0) > MAX_UI {
+        return;
+    }
+    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+    let clean: String = text.chars().filter(|c| !c.is_control()).take(1000).collect();
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(p) {
+        let _ = writeln!(f, "{}", serde_json::json!({ "t": t, "report": clean }));
+    }
+}
+
 pub fn write_out(dir: &Path, line: &serde_json::Value) {
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(dir.join(OUT_FILE)) {
         let _ = writeln!(f, "{line}");

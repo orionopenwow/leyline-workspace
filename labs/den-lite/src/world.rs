@@ -611,6 +611,13 @@ fn addon_outs(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Pos>, ready:
                 }
             }
             ovmod::Out::Status => send_addon(c, sess.me.guid, "wuden", "status", &status_line(shared, sess))?,
+            // the addon's own check (the den-test's `.den ui report`): kept only while the test's channel is on
+            ovmod::Out::Report(t) => {
+                if shared.cfg.test_control {
+                    shared.event("ui_report", &sess.me.name, &t);
+                    testctl::write_ui(&shared.cfg.den_dir, &t);
+                }
+            }
         }
     }
     Ok(())
@@ -1161,6 +1168,12 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             }
             let ops = shared.moves.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|w| w.sess == sess.id).map(|w| w.ops_line());
             say(c, &format!("Diag {tag}: {}; your game sent: {}.", if ui { "asked the Leyline UI" } else { "no Leyline UI to ask" }, ops.unwrap_or_else(|| "nothing yet".into())))
+        }
+        // the den-test's feature check (tools/den-check featuretest): what the editor does when clicked, asked of the
+        // Leyline UI over its own channel (`wuden ui <action>`, DenBar.lua D.TestAction). Only with the test's channel.
+        (".den", "ui") if shared.cfg.test_control => {
+            let rest: String = text.split_whitespace().skip(2).collect::<Vec<_>>().join(" ");
+            send_addon(c, sess.me.guid, "wuden", "ui", &rest)
         }
         (".den", "stamps") => {
             let names = den::stamp_names(&shared.cfg.stamps_dir);

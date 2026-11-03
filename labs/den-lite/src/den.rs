@@ -432,6 +432,17 @@ enum Undo {
     Deleted(Prop),
 }
 
+/// What `.build redo` does again: the change an undo took back (the Builder's Redo n).
+#[derive(Debug, Clone, PartialEq)]
+enum Redo {
+    /// Props an undo took away: placed again.
+    Place(Vec<Prop>),
+    /// A move, turn or size an undo put back: done again.
+    Edit { guid: u64, after: Prop },
+    /// A delete an undo put back: deleted again.
+    Delete(u64),
+}
+
 /// What a change did, for the world server to tell the client: objects to create and guids to destroy.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Change {
@@ -455,6 +466,7 @@ pub struct Den {
     ground_stamp: Option<(u64, Option<std::time::SystemTime>)>,
     next: u32,
     undo: Vec<Undo>,
+    redo: Vec<Redo>,
 }
 
 /// The Den as it is now, kept by itself (every change within seconds, and at logout) and opened again when Den Lite
@@ -481,6 +493,7 @@ impl Den {
             ground_stamp: None,
             next: 1,
             undo: Vec::new(),
+            redo: Vec::new(),
         };
         den.build_room();
         den
@@ -575,7 +588,14 @@ impl Den {
         })
     }
 
+    /// A new change: one undo step, and what could be redone is gone (as in every editor).
     fn push_undo(&mut self, u: Undo) {
+        self.redo.clear();
+        self.undo_keep(u);
+    }
+
+    /// One undo step, keeping the redo list (a redo's own undo step).
+    fn undo_keep(&mut self, u: Undo) {
         self.undo.push(u);
         if self.undo.len() > UNDO_DEPTH {
             self.undo.remove(0);
@@ -663,6 +683,11 @@ impl Den {
         self.undo.len()
     }
 
+    /// How many redo steps there are (the Builder's Redo n).
+    pub fn redo_depth(&self) -> usize {
+        self.redo.len()
+    }
+
     /// Puts `prop` in place of the one with `guid`, keeping the guid: the new object, or None (no such prop, or
     /// the new place is outside the Den).
     fn set_prop(&mut self, guid: u64, prop: Prop) -> Option<WorldObject> {
@@ -716,6 +741,59 @@ impl Den {
         Ok(obj)
     }
 
+    /// The Builder's Paste and Duplicate: one prop as given (relative to the Den, its turn, tilt and size kept), one
+    /// undo step. The new object.
+    pub fn place_one(&mut self, mut p: Prop) -> Result<WorldObject, String> {
+        template(p.entry as u32).ok_or("That prop isn't in your Den's catalog.")?;
+        p.group = None;
+        p.role = None;
+        p.x = quiet_round(p.x);
+        p.y = quiet_round(p.y);
+        p.z = quiet_round(p.z);
+        let (made, _) = self.place(&[p]);
+        let obj = made.into_iter().next().ok_or("It doesn't fit there: stand inside your Den.")?;
+        self.push_undo(Undo::Placed(vec![obj.guid]));
+        Ok(obj)
+    }
+
+    /// `.build redo`: the last change an undo took back, done again.
+    pub fn redo(&mut self) -> Change {
+        let Some(r) = self.redo.pop() else {
+            return Change { message: "Nothing to redo.".into(), ..Default::default() };
+        };
+        match r {
+            Redo::Place(props) => {
+                let (made, skipped) = self.place(&props);
+                if !made.is_empty() {
+                    self.undo_keep(Undo::Placed(made.iter().map(|o| o.guid).collect()));
+                }
+                let n = made.len();
+                Change { created: made, destroyed: Vec::new(), skipped, message: format!("Redone: {n} props back.") }
+            }
+            Redo::Edit { guid, after } => {
+                let before = self.placed(guid).map(|p| p.prop.clone());
+                match before {
+                    Some(before) => match self.set_prop(guid, after) {
+                        Some(obj) => {
+                            self.undo_keep(Undo::Edited { guid, before });
+                            Change { created: vec![obj], destroyed: vec![guid], message: "Redone.".into(), ..Default::default() }
+                        }
+                        None => Change { message: "Nothing to redo (it wouldn't fit).".into(), ..Default::default() },
+                    },
+                    None => Change { message: "Nothing to redo (that prop is gone).".into(), ..Default::default() },
+                }
+            }
+            Redo::Delete(guid) => match self.props.iter().position(|p| p.obj.guid == guid) {
+                Some(i) => {
+                    let gone = self.props.remove(i);
+                    self.undo_keep(Undo::Deleted(gone.prop));
+                    Change { destroyed: vec![guid], message: "Redone: deleted again.".into(), ..Default::default() }
+                }
+                None => Change { message: "Nothing to redo (that prop is gone).".into(), ..Default::default() },
+            },
+        }
+    }
+
     /// `.build undo`: the last change taken back.
     pub fn undo(&mut self) -> Change {
         let Some(u) = self.undo.pop() else {
@@ -723,19 +801,32 @@ impl Den {
         };
         match u {
             Undo::Placed(guids) => {
+                let gone: Vec<Prop> = self.props.iter().filter(|p| guids.contains(&p.obj.guid)).map(|p| p.prop.clone()).collect();
+                if !gone.is_empty() {
+                    self.redo.push(Redo::Place(gone));
+                }
                 self.props.retain(|p| !guids.contains(&p.obj.guid));
                 let n = guids.len();
                 Change { destroyed: guids, message: format!("Undone: {n} props taken away."), ..Default::default() }
             }
-            Undo::Edited { guid, before } => match self.set_prop(guid, before) {
+            Undo::Edited { guid, before } => match {
+                if let Some(after) = self.placed(guid).map(|p| p.prop.clone()) {
+                    self.redo.push(Redo::Edit { guid, after });
+                }
+                self.set_prop(guid, before)
+            } {
                 Some(obj) => Change { created: vec![obj], destroyed: vec![guid], message: "Undone: the prop is back where it was.".into(), ..Default::default() },
                 None => Change { message: "Undone (that prop is gone).".into(), ..Default::default() },
             },
             Undo::Deleted(prop) => {
                 let (made, _) = self.place(&[prop]);
+                if let Some(o) = made.first() {
+                    self.redo.push(Redo::Delete(o.guid));
+                }
                 Change { created: made, message: "Undone: the prop is back.".into(), ..Default::default() }
             }
             Undo::Replaced { added, removed, look: old, half } => {
+                self.redo.clear();
                 self.props.retain(|p| !added.contains(&p.obj.guid));
                 let mut destroyed = added;
                 let mut created = Vec::new();
@@ -786,6 +877,7 @@ impl Den {
         Some(read_file(&path).map(|doc| {
             self.open(&doc, true);
             self.undo.clear();
+            self.redo.clear();
             self.props.len()
         }))
     }

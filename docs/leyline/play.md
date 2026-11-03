@@ -50,7 +50,7 @@ The Leyline window and the line under the Esc menu say **Whole world: your game 
 - *"Your browser asks once more"*: press **Use my game folder** and allow reading the folder. If you said no by mistake, press **Choose folder** and pick it again.
 - *"Back to streamed play"*: the browser stopped reading the folder (it was moved, the game was patched while you played, or the permission was taken back). Reload the page to use it again.
 - Two game tabs: only one tab plays at a time. The other tab offers **Play here**.
-- Still stuck? Ask on our [Discord](https://discord.gg/hVeUxYwbkr).
+- Still stuck? Ask on our [Discord](https://discord.gg/RfChVr8J7T).
 
 ## In the browser with your own game folder
 

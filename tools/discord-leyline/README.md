@@ -1,163 +1,133 @@
-# Leyline Discord: the redo (you run it, once)
+# Leyline Discord: the launch layout (you run it, from Leyline Control)
 
-This sets your Discord server up the way [docs/DISCORD-PLAN.md](../../docs/DISCORD-PLAN.md) describes: twelve
-categories, the eight roles, and the 30 Oct look: an emoji and the bar in front of every channel (`👋︱welcome`).
-The server's name, icon and banner are never touched. Channels you already have, from the 30 Oct reset (`✦︱welcome`,
-`◆︱general`, `⟡︱host-a-beacon`...) or from before, are **renamed and moved, so their history stays**; one already named right (`🤝︱looking-for-group`) keeps its name. Anything the
-plan doesn't have goes into a hidden ARCHIVE. You run it from your own PC. Claude never connects to Discord and never
-posts anything.
+This sets your Discord server to the launch layout in [docs/DISCORD-PLAN.md](../../docs/DISCORD-PLAN.md) (3 Nov):
+**13 channels in five categories**, each dressed `<emoji>︱<name>` (`👋︱welcome`), with a clear topic, the right
+permissions, and pinned guides. It is your server as it is today, kept and tidied: the channels you have are
+**renamed and moved, so their history stays**; one already right is left alone. The server's name, icon and banner
+are never touched. You run it from your own PC. Claude never connects to Discord and never posts anything.
 
 Why a bot: Discord only lets a program change a server through a bot token. Running it as your own account is
-against Discord's terms. So you make a throwaway bot, use it for ten minutes, then kick it.
+against Discord's terms. So you make a bot, use it for ten minutes, then kick it.
 
-**Already ran it on 1 Nov?** Run it again (preview first): it brings the server up to the 2 Nov plan.
-`🟢︱live-realms` is renamed `🟢︱community-realms` and moved to the new **Realms** category (its history stays),
-`🎲︱modes-and-forks` moves to the new **Game modes** category, and `⭐︱official-realms`, `🧟︱azeroth-survivors`,
-`🌱︱realm-seeds` and `📱︱browser-and-mobile` are made. A few topics change (changelog, den-help, launcher-help,
-hosting-help, nodes, list-your-realm). Nothing is deleted. Then press **Set up the Discord** in HQ once, so the
-website bot learns the new channels, and paste the new first posts.
+**Safe to run again.** Every run reads the server first and changes only what differs; a second run changes
+nothing. The preview lists every change before anything happens.
 
-## The easy way: Leyline Control > Discord
+## What changes on today's server
 
-Make and invite the bot (steps 1-3 below), then everything else is in **Leyline Control** (`Leyline Control.bat`),
-in its **Discord** panel:
+| | Today | After |
+|---|---|---|
+| START | 👋 welcome, 📣 announcements | the same, read-only, plus **📖 guides-and-faq** (new, read-only: every guide and an FAQ) |
+| PLAY | 💬 general, 🛟 help, 🤝 looking-for-group, 🎧 Hangout (voice) | the same, with topics |
+| CREATE | 🧩 mods-and-workshop, 🏰 host-a-beacon, 📷 showcase | 🏰 **host-a-realm** (renamed: players see "Host a realm" now), 📸 showcase; the `/submit` command in mods-and-workshop's topic |
+| FEEDBACK | 🐞 bug-reports, 💡 ideas | the same, with topics |
+| 🔒 STAFF | mod-log | 🔒︱mod-log, private to Moderator and Helper |
+| Roles | Moderator, Helper, Creator, Member | kept as they are (name, colour, place); a missing Moderator or Helper is made |
+| Server | | system messages to #welcome (and the Community rules channel, if Community is on); AFK off |
+| Old channels | anything not above | into a hidden **ARCHIVE** (Moderators can read it), or deleted if you choose so in the card |
+| Pinned posts | | from [docs/discord-launch-posts.md](../../docs/discord-launch-posts.md), if you tick Post and pin |
 
-1. **Paste the token in Leyline Control > Discord** and press **Save**. It is kept on this PC only, in `token.txt`
-   next to this README (git-ignored, so it never goes to GitHub). Control never shows it again: it only says
-   "saved (ends abcd)" or "not saved", and it is hidden from every log. Only the script uses it, to talk to Discord.
-2. **Preview**. Changes nothing. The panel then lists every change it would make, by section (its log is linked).
-3. **Do it**. Read the list, type `YES` in the box under it, press **Do it**. It backs up the server to your Desktop
-   first, then makes exactly those changes. It needs a preview from the last hour, and stops, changing nothing, if
-   the server changed since that preview (run Preview again). Autopilot and Launch all never run it.
-4. **Bot settings**. Changes nothing: shows the lines with your channel ids for the website bot and the game bridge
-   (step 7 below).
-5. When you're finished, kick the bot (step 9) and press **Remove** in the panel.
+## In Leyline Control > Discord
 
-The extra options (`--delete-archived`, `--wipe-history`, `--post-first-posts`...) are not in Control: they each ask
-you to type a word, so they stay with the .bat files below.
+Make and invite the bot (steps 1-2 below), then:
 
-## The steps (about 30 minutes)
+1. **Paste the token** and press **Save**. It is kept on this PC only, in `token.txt` next to this README
+   (git-ignored, so it never goes to GitHub). Control never shows it again and hides it from every log.
+2. **Choose** (both are remembered):
+   - **Old channels (not in the layout)**: *Move them to a hidden ARCHIVE* (the default: nothing is deleted),
+     *Delete the empty ones, archive the rest* (a channel with no messages at all), or *Delete them all, even with
+     messages* (the backup keeps their last 1000 messages). A channel with messages is never deleted without that
+     last choice.
+   - **Post and pin the guide posts**: the bot posts and pins each finished block from docs/discord-launch-posts.md
+     (#welcome, the guides and the FAQ in #guides-and-faq, and the how-to posts in #help, #mods-and-workshop,
+     #host-a-realm, #bug-reports and #ideas). A pin that already says the same is left alone; when you change a block,
+     the bot edits its own pin instead of posting again. Your launch post in #announcements has `TODO(owner)` lines,
+     so it is always yours to write and pin.
+3. **Preview**. Changes nothing. The card lists every change by section: new channels, renames, each new topic's
+   text, permissions, what goes to ARCHIVE (and which old channels have no messages), the pinned posts, and anything
+   it would delete.
+4. **Do it**. Read the list, type `YES`, press **Do it**. It backs up the server to your Desktop first, then makes
+   exactly those changes with the choices the preview used. It needs a preview from the last hour, waits for a new
+   preview if you changed a choice, and stops, changing nothing, if the server changed since the preview.
+5. **Bot settings**. Changes nothing: the lines with your channel ids for the website bot and the game bridge
+   (step 5 below).
+6. When you're finished, kick the bot (step 7) and press **Remove** in the card.
+
+## The steps
 
 1. **Make the bot.** Open <https://discord.com/developers/applications> > **New Application**, name it
    `Leyline setup`, tick the box, **Create**. Left menu > **Bot** > **Reset Token** > **Copy**. That token is the
-   bot's password. Paste it in **Leyline Control > Discord** (the easy way, above), or when the script asks (it
-   hides it), or save it in `token.txt` next to the script (that file is never put on GitHub). Nothing else ever
-   writes the token anywhere.
+   bot's password: paste it in Leyline Control > Discord and nowhere else.
 2. **Invite it.** Left menu > **OAuth2** > **OAuth2 URL Generator** > tick **bot**, then under Bot Permissions tick
    **Administrator**. Open the URL at the bottom, pick your server, **Authorize**. In Discord: **Server Settings >
    Roles**, drag `Leyline setup` to the **top**.
-3. **Community first (recommended).** Server Settings > **Enable Community** (pick any channel for rules for now).
-   Without it Discord won't make the two forum channels (`feature-ideas`, `forum`) or the stage; the script skips
-   them and tells you, and makes them when you run it again later.
-4. **Preview.** Double-click **`Leyline Discord - preview.bat`**. It prints every change and **changes nothing**.
-   Check that your old channels show under "Reused channels" with the name you expect.
-   TODO(owner): your old `#help` becomes `launcher-help`. If it was mostly about hosting, change `ALIASES` in the
-   script (move `"help"` to the `hosting-help` line) before step 5.
-5. **Do it.** Double-click **`Leyline Discord - do it.bat`**. It shows the plan again; type `YES`. It **backs up
-   the server to your Desktop first** (`Leyline-discord-backup-<date>`), then makes the changes. Safe to run again:
-   a second run changes nothing, and a run that stopped halfway carries on.
-6. **First posts.** At the end it prints every first post from
-   [docs/discord-initial-posts.md](../../docs/discord-initial-posts.md) (also saved as `first-posts.txt` in the
-   backup folder). Fill in the `TODO(owner)` lines in your own words, paste each one into its channel, then hover >
-   **...** > **Pin Message**. Start with `#welcome` and `#rules`.
-7. **The bots' settings.** It also prints (and saves as `settings-for-the-bots.txt`) the lines with your channel
-   ids, ready to paste on the server:
-   - `/srv/wrath/portal.env`: `WU_DISCORD_GUILD`, `WU_DISCORD_TEMPLATE=/app/discord_template_v2.json`,
-     `WU_FORUM_DISCORD_CHANNELS=...` (the forum channel and its tags, made by the script). Restart the portal.
-   - `/opt/wu-discord/discord.env` (the game bridge, never paste it anywhere else): `DISCORD_CHAT_CHANNEL_ID`
-     (`world-chat`), `DISCORD_BUG_CHANNEL_ID` (`bug-reports`), `WU_DISCORD_BUG_INTAKE`, `DISCORD_GUILD_ID`. Deploy the
-     bridge (`hosting/discord/Deploy Discord bridge.bat`), then `systemctl restart wu-discord`.
-   Then Leyline HQ > Content > Discord > **Preview** should list everything under "found" and nothing under "would
-   make" (DISCORD-PLAN.md steps 4-5). Then type `setup` and press **Set up the Discord**: it makes nothing new,
-   it just learns which channel is which, so its posts land in the right place.
-8. **The rest by hand** (the script prints these too):
-   - **Onboarding**: Server Settings > Onboarding. Rules channel `rules`; default channels `welcome`,
-     `announcements`, `hangout`, `official-realms`, `bug-reports`; a question "What do you do?" with Play / Build a
-     Den / Host / Make mods / Game modes, each pointing at its category.
-   - **Changelog**: `#changelog` > Edit Channel > Integrations > Webhooks > New Webhook "Leyline releases" > Copy
-     Webhook URL. On GitHub, in **both** repos (`orionopenwow/Leyline` and `orionopenwow/Leyline-Launcher`):
-     Settings > Webhooks > Add webhook: that URL with `/github` on the end, `application/json`, "Let me select
-     individual events": **Releases** only. The URL is a secret.
-   - **Forum tags**: the script makes the five (Share your realm, Mods & addons, Dens & builds, Help, General). Rename
-     or recolour them in `#forum` > Edit Channel > Tags if you like; the ids stay the same.
-   - **Roles**: give Moderator, Guide and Core Team by hand. The earned roles come from the website bot
-     (`WU_DISCORD_ROLES=1`). Creator and Member from the reset are left alone. TODO(owner): keep or delete them.
-9. **Kick the bot.** Server Settings > Integrations > `Leyline setup` > **Kick**. Then in the Developer Portal:
-   Bot > **Reset Token** again (or delete the app), so the token is dead. Delete `token.txt`.
-10. **Undo, if you need to.** The backup folder has `guild.json`, `roles.json`, `channels.json` (names, categories
-    and every permission, as they were) and `what-changed.txt` (every change made). Archived channels are only
-    hidden: drag one back out of ARCHIVE and copy its old permissions from `channels.json`. Renames can be put back
-    by hand from the same file. Deleted channels and wiped chats can't come back (only their last messages are in
-    `messages\`), which is why those options ask you to type a word first.
+3. **Preview, then Do it** in Leyline Control (above).
+4. **Your launch post.** Write it in #announcements from the draft in docs/discord-launch-posts.md, then hover >
+   **...** > **Pin Message**. Without Post and pin, Do it also prints the other blocks (and saves them as
+   `first-posts.txt` in the backup folder) for you to paste and pin.
+5. **The bots' settings.** Do it prints (and saves as `settings-for-the-bots.txt`) the lines with your channel ids:
+   - `/srv/wrath/portal.env`: `WU_DISCORD_GUILD`, `WU_DISCORD_TEMPLATE=/app/discord_template_launch.json`,
+     `WU_FORUM_DISCORD_CHANNELS=news=<announcements id>`. Restart the portal. Then Leyline HQ > Content > Discord >
+     **Preview** should list everything under "found"; type `setup` and press **Set up the Discord** once so the
+     website bot learns which channel is which (it makes nothing new).
+   - `/opt/wu-discord/discord.env` (the game bridge; never paste it anywhere else): `DISCORD_BUG_CHANNEL_ID`
+     (`bug-reports`), `WU_DISCORD_BUG_INTAKE`, `DISCORD_GUILD_ID`. The launch layout has no live game-chat channel:
+     keep your `DISCORD_CHAT_CHANNEL_ID` as it is, or leave it empty. Then `systemctl restart wu-discord`.
+6. **By hand** (Do it prints these too): Community servers: Server Settings > Onboarding, default channels #welcome,
+   #announcements, #guides-and-faq, #general, #help. Give Moderator and Helper by hand. TODO(owner): keep or delete
+   the old Creator and Member roles.
+7. **Kick the bot.** Server Settings > Integrations > `Leyline setup` > **Kick**. Then in the Developer Portal:
+   Bot > **Reset Token** again (or delete the app), so the token is dead. Press **Remove** in the card.
+8. **Undo, if you need to.** The backup folder has `guild.json`, `roles.json`, `channels.json` (names, categories
+   and every permission, as they were) and `what-changed.txt`. Archived channels are only hidden: drag one back out
+   of ARCHIVE and copy its old permissions from `channels.json`. Renames and topics can be put back by hand from the
+   same file. Deleted channels can't come back (only their last messages are in `messages\`).
 
-## What it changes
-
-| Category | Channels | Notes |
-|---|---|---|
-| **Start here** | `👋︱welcome`, `📜︱rules`, `📣︱announcements`, `📝︱changelog` | read-only; Core Team and Moderator post news, Core Team the changelog |
-| **Wrath Unleashed** | `💬︱hangout`, `📈︱levelling`, `🌍︱world-chat`, `🤝︱looking-for-group`, `🎉︱events` | `🎉︱events` read-only; `🌍︱world-chat` is live with the game |
-| **Realms** | `⭐︱official-realms`, `🟢︱community-realms` | both read-only. Official: the bot keeps one status post per realm (online, players, uptime), edited in place. Community: players' realms as they go live (the old `live-realms`, renamed) |
-| **Game modes** | `🧟︱azeroth-survivors`, `🎲︱modes-and-forks` | `modes-and-forks` moved here from Mods & Workshop |
-| **Your Den** | `📸︱den-showcase`, `📦︱den-files` (1 min slowmode), `🔨︱den-help` | |
-| **Host a server** | `📋︱host-templates`, `🏰︱hosting-help`, `📢︱list-your-realm` (10 min slowmode), `🌱︱realm-seeds`, `🔗︱nodes`, `☕︱host-lounge`, `🔑︱node-keepers` | `📋︱host-templates` read-only; `☕︱host-lounge` only Realm Hosts, `🔑︱node-keepers` only Node Keepers |
-| **Mods & Workshop** | `📤︱workshop-submissions` (10 min slowmode), `🧩︱mods-and-addons`, `💻︱scripting-help`, `🎮︱mode-jam`, `🔍︱jam-judges` | `🔍︱jam-judges` only Mode Makers |
-| **Claude & the companion** | `🤖︱claude-and-agents`, `🐾︱companions` | |
-| **Feedback** | `🐞︱bug-reports`, `💡︱feature-ideas` (forum channel), `🛟︱launcher-help`, `📱︱browser-and-mobile` | every message in `🐞︱bug-reports` goes on the bug list |
-| **Forum** | `📚︱forum` (forum channel, 5 tags) | the website forum, live |
-| **Team** | `🧭︱roadmap`, `🔒︱mod-room` | private: Core Team; Moderators and Guides |
-| **Voice** | `🎧︱Dalaran lounge`, `🔊︱Group room 1`-`3`, `🎤︱Showcase stage` (Community only) | |
-| Roles | Core Team, Moderator, Guide, Realm Host, Mode Maker, Builder, Den Architect, Node Keeper | colours from the plan; Helper is renamed Guide; nobody gets Administrator |
-| Server | system messages to `👋︱welcome`; rules channel `📜︱rules`; AFK off | the name, icon, banner and invite background are never changed |
-| Old channels | into the hidden **ARCHIVE** | only Moderators (and you) can read it; nothing is deleted |
-
-Old names it picks up (the full list is `ALIASES` in the script): general / wrath-unleashed > `hangout`, help >
-`launcher-help`, host-a-beacon > `hosting-help`, mods-and-workshop / mods > `mods-and-addons`, showcase /
-builders-realm > `den-showcase`, building-help > `den-help`, Hangout (voice) > `Dalaran lounge`, live-realms >
-`community-realms` (2 Nov); categories START >
-Start here, PLAY > Wrath Unleashed, CREATE / Build > Your Den, Make > Mods & Workshop, Host > Host a server, FEEDBACK /
-Leyline > Feedback. `ideas` can't turn into a forum channel, so it goes to the archive with its history and
-`feature-ideas` is new. The names (emoji, the bar `︱`, then the name) are exactly the ones in
-`stream/discord_template_v2.json`, so the website bot finds them by exact name; a channel whose emoji differs (the
-older `✦︱welcome`) gets the plan's (`👋︱welcome`). The emoji for each channel are `EMOJI` in the script.
+Old names it picks up (the full list is `ALIASES` in the script), so a server from any earlier pass lands here:
+host-a-beacon / hosting-help > `host-a-realm`, hangout > `general`, launcher-help > `help`, mods-and-addons /
+workshop-submissions > `mods-and-workshop`, den-showcase > `showcase`, mod-room > `mod-log`, Dalaran lounge (voice) >
+`Hangout`; categories Start here > START, Wrath Unleashed > PLAY, Your Den / Mods & Workshop / Host a server > CREATE,
+Team > STAFF. The names are exactly the ones in `stream/discord_template_launch.json`, so the website bot finds them
+by exact name.
 
 If the Leyline website bot is already in the server (a bot role with "leyline" in its name, or name it with
-`--leyline-bot "<role>"`), it is allowed to post in the read-only and private channels. If you add it later, run the
-script again.
+`--leyline-bot "<role>"`), it may post in the read-only and private channels. If you add it later, run this again.
 
 **Never touched:** @everyone (only per-channel permissions), roles of bots and integrations, roles above the bot,
-roles you have yourself, your members.
+roles you have yourself, your members, the server's name, icon, banner and invite background.
 
-## Options
+## By hand, without Control
 
-Add them after the .bat name in a command prompt (`"Leyline Discord - do it.bat" --post-first-posts`):
+`Leyline Discord - preview.bat` and `Leyline Discord - do it.bat` do the same from a window (do it asks for `YES`).
+Options, after the .bat name in a command prompt:
 
 | Option | |
 |---|---|
-| `--post-first-posts` | lets the bot post and pin the first posts that have **no** `TODO(owner)` left, after you type `POST`. Never in Start here, never in the forum channels; the rest are printed for you. Off by default: they read better from you. |
-| `--delete-archived` | after the backup, delete the archived channels and empty old categories. You type the server's name. |
+| `--old-channels archive / delete-empty / delete-all` | what happens to old channels (as the card's choice). `delete-all` asks you to type the server's name. |
+| `--pin-posts` | the card's Post and pin. Asks you to type `POST`. |
+| `--delete-archived` | after the backup, delete everything in ARCHIVE and empty old categories. You type the server's name. |
 | `--delete-old-roles` | delete roles that aren't in the plan (Member and Owner are kept). You type `DELETE ROLES`. |
-| `--wipe-history` | replace every text channel with a fresh empty copy. You type `WIPE`. (`Leyline Discord - reset chats.bat` does this plus `--delete-archived`.) |
+| `--wipe-history` | replace every text channel with a fresh empty copy. You type `WIPE`. |
 | `--backup-messages N` | messages to back up per channel (default 1000; `0` skips messages). |
 | `--guild <id>` | which server, if the bot is in more than one (otherwise it asks). |
 
 ## The rules for anything players see
 
 No game or publisher names (World of Warcraft, WoW, Warcraft, Lich King, Blizzard) in channel names, topics or posts,
-and no money or tip links (no Patreon, Ko-fi, PayPal, donations). The script's names and topics are checked for this,
-and `--post-first-posts` refuses any draft that breaks it. Please keep to it in what you write too.
+no game version numbers, and no money or tip links. The script's names, topics and the posts are checked for this,
+and the bot refuses to post a block that breaks it.
 
 ## For developers
 
 `Control - Discord preview.bat`, `Control - Discord do it.bat` and `Control - Discord bot settings.bat` are Leyline
 Control's steps `discord-preview`, `discord-apply` and `discord-check` (tools/control/control.py); they never ask
-anything (`--from-control`). `--yes-from-control` works only when Control runs it as `discord-apply`
-(`LEYLINE_CONTROL_STEP`), never with the delete, wipe or post options, and with the preview's number of changes
-(`LEYLINE_DISCORD_EXPECT_CHANGES`). `python3 -I tools/control/test_control_discord.py` tests the panel end to end.
+anything (`--from-control`). The card's choices reach the script as `LEYLINE_DISCORD_OLD` (archive, empty, all) and
+`LEYLINE_DISCORD_PINS` (1); Control records them with the preview and gives Do it the preview's. `--yes-from-control`
+works only when Control runs it as `discord-apply` (`LEYLINE_CONTROL_STEP`), never with the role, wipe or archive
+delete options, and with the preview's number of changes (`LEYLINE_DISCORD_EXPECT_CHANGES`).
+`python3 -I tools/control/test_control_discord.py` tests the card end to end.
 
 `python3 tools/discord-leyline/test_discord_leyline.py` runs the tests against a fake Discord on localhost
-(`LEYLINE_DISCORD_API` points the script at it). `LAYOUT` in the script and `stream/discord_template_v2.json` must
-agree (a test checks names, types, topics, slowmodes and permissions): change both together. Standard library only.
-
-The website bot's 2 Nov parts, each off until its line is in portal.env (docs/DISCORD.md): `WU_DISCORD_OFFICIAL=1`
-(the status posts in `official-realms`, edited in place) and `WU_DISCORD_SURVIVORS=1` (a post in `azeroth-survivors`
-when the Survivors site is back up). The community-realms cards stay under `WU_DISCORD_FEED=1`.
+(`LEYLINE_DISCORD_API` points the script at it), including a copy of today's server from the owner's screenshot.
+`LAYOUT` in the script and `stream/discord_template_launch.json` must agree (a test checks names, types, topics and
+permissions): change both together. Standard library only. The bigger 2 Nov plan is `stream/discord_template_v2.json`
+and [docs/discord-initial-posts.md](../../docs/discord-initial-posts.md), kept for later.

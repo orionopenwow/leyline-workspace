@@ -49,7 +49,7 @@ set "S=%~dp0..\stream"
 if not exist "%S%\wrath_portal.py" (echo ..\stream\wrath_portal.py is missing. & pause & exit /b 1)
 copy /y "%S%\wrath_portal.py" "%UP%\kit\portal\" >nul || goto fail
 for %%m in (ratelimit links demo armory modes modes_data playmodes modepack workshop creations hostflow ed25519_pure herokey_sso projects social forum forum_discord discord_growth duels survivors profiles herokeys network bugreport docs leyline_net upstream_addons admin hq hub hub_rank listings) do if exist "%S%\%%m.py" copy /y "%S%\%%m.py" "%UP%\kit\portal\" >nul
-for %%j in (playmodes modepacks looks hostpack blocklist upstream-addons discord_template discord_template_v2) do if exist "%S%\%%j.json" copy /y "%S%\%%j.json" "%UP%\kit\portal\" >nul
+for %%j in (playmodes modepacks looks hostpack blocklist upstream-addons discord_template discord_template_v2 discord_template_launch) do if exist "%S%\%%j.json" copy /y "%S%\%%j.json" "%UP%\kit\portal\" >nul
 xcopy /e /i /q /y "%S%\www-files\art" "%UP%\kit\portal\art" >nul || goto fail
 copy /y "%R%\modules.env" "%UP%\kit\" >nul || goto fail
 xcopy /e /i /q /y "%R%\profiles" "%UP%\kit\profiles" >nul || goto fail

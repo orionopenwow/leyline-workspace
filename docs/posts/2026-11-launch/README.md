@@ -14,7 +14,7 @@ Open each one signed out, then signed in.
 - [ ] **Report a bug** works in all three places: Esc menu in the game, https://leylinelauncher.com/wrath/bugs (and the footer link), the launcher's Help menu
 - [ ] **Looks** answers: https://leylinelauncher.com/wrath/looks
 - [ ] **Browser play** loads: https://leylinelauncher.com/wrath
-- [ ] **The Discord invite** still works: https://discord.gg/hVeUxYwbkr
+- [ ] **The Discord invite** still works: https://discord.gg/RfChVr8J7T
 - [ ] **A real host test** passed on your own PC: a public realm shows on the list, and a friend outside your network joins (smoke 1 Nov, "The owner must test on a real PC", item 7)
 
 ## Order

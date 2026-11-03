@@ -58,7 +58,7 @@ A new character on the official realm picks once:
 
 ## Help and lost files
 
-Ask on the [Discord](https://discord.gg/hVeUxYwbkr). People there help find a game folder, restore one from a backup, and get you playing. In the game, type `.wu` for every command.
+Ask on the [Discord](https://discord.gg/RfChVr8J7T). People there help find a game folder, restore one from a backup, and get you playing. In the game, type `.wu` for every command.
 
 ## Common fixes
 
@@ -67,4 +67,4 @@ Ask on the [Discord](https://discord.gg/hVeUxYwbkr). People there help find a ga
 - **The game can't connect.** Check the status dot in the launcher's title bar. If the realm is up, delete the `Cache` folder next to the game and start it again.
 - **You changed the realm by hand before.** Realms › **…** › **Use my own realmlist** puts back what you had.
 - **Wrong account or password.** Sign in at [leylinelauncher.com/wrath](https://leylinelauncher.com/wrath): the account page shows your game account.
-- **Still stuck?** The [Discord](https://discord.gg/hVeUxYwbkr), or the [Forum](https://leylinelauncher.com/wrath/leyline/forum).
+- **Still stuck?** The [Discord](https://discord.gg/RfChVr8J7T), or the [Forum](https://leylinelauncher.com/wrath/leyline/forum).

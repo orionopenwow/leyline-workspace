@@ -242,7 +242,7 @@ if ON then loadChannelIds(); loadOptout() end
 -- login welcome ----------------------------------------------------------------------------------------------------
 local WELCOME_ON = (os.getenv("OV_WELCOME") or "1") ~= "0"
 local WELCOME_MS = 9000     -- after the other login lines (ov_go 5 s, ov_workshop 6 s, ov_playmode 7 s)
-local INVITE = "discord.gg/hVeUxYwbkr"   -- wrath_portal.DISCORD_URL; the in-game chat cannot open links, so the short form
+local INVITE = "discord.gg/RfChVr8J7T"   -- wrath_portal.DISCORD_URL; the in-game chat cannot open links, so the short form
 -- TODO(owner): the welcome line, his words
 local OFFICIAL_NAME = "Wrath Unleashed"   -- the official realm (ov_modapi.lua OVMod.OFFICIAL_NAME; this file may load first)
 -- one line (owner audit 2026-10-30): the welcome, where help is (.wu lists the commands, ov_reports.lua), the Discord,

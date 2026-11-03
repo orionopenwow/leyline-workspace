@@ -23,7 +23,7 @@ Use one path: **Add your project** on the Workshop, at [/wrath/mods/submit](http
 - A link goes to a person's review queue instead of the list when its repo has no open licence, when its text names the game or its publisher, or when it looks like decompiled, leaked, repack or cheat material. You hear nothing more until it is checked; nothing of yours is lost.
 - Nothing is downloaded or hosted from a link: players install from your repo.
 
-Want your mod in the packaged catalog (the one the mods step below puts on Wrath)? Put the zip and its `.sha256` in a release on your repo, add it with **Add your project**, and say so in the [Discord](https://discord.gg/hVeUxYwbkr). The team checks it with `wu-mod.py` and adds it to `mods/catalog/<your id>/` in the [repo](https://github.com/orionopenwow/leyline-workspace/tree/main/mods). The modders' guide in the repo (`mods/README-modders.md`) says realm mods get a human look before they go on Wrath.
+Want your mod in the packaged catalog (the one the mods step below puts on Wrath)? Put the zip and its `.sha256` in a release on your repo, add it with **Add your project**, and say so in the [Discord](https://discord.gg/RfChVr8J7T). The team checks it with `wu-mod.py` and adds it to `mods/catalog/<your id>/` in the [repo](https://github.com/orionopenwow/leyline-workspace/tree/main/mods). The modders' guide in the repo (`mods/README-modders.md`) says realm mods get a human look before they go on Wrath.
 
 The [Leyline Launcher](launcher.md) installs mods from the same Workshop list.
 

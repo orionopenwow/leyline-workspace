@@ -581,9 +581,17 @@ def run_all(ship_message: str, items=None, record=True) -> None:
             # which line this is (quick.py finds its manifest by it: control/quick/<id>.json, or "quick:<name>" in the note)
             env["LEYLINE_CONTROL_ID"] = str(item.get("id") or "")
             env["LEYLINE_CONTROL_NOTE"] = str(item.get("note") or "")[:200]
+            for k in ("LEYLINE_DISCORD_OLD", "LEYLINE_DISCORD_PINS"):
+                env.pop(k, None)
             if item["step"].startswith("discord-"):
                 env["LEYLINE_CONTROL_STEP"] = item["step"]
                 env["PYTHONIOENCODING"] = "utf-8"
+                # the card's choices: a preview uses the ones set now, Do it the ones its preview used
+                if item["step"] == "discord-preview":
+                    item["options"] = discord_options()
+                opts = clean_discord_options(item.get("options"))
+                env["LEYLINE_DISCORD_OLD"] = opts["old"]
+                env["LEYLINE_DISCORD_PINS"] = "1" if opts["pins"] else "0"
                 if item["step"] == "discord-apply":
                     env["LEYLINE_DISCORD_EXPECT_CHANGES"] = str(int(item["expect"]))
             log = LOGS / f"{item['id']}-{item['step']}.log"
@@ -675,6 +683,20 @@ def remove_discord_token() -> None:
             pass
 
 
+DISCORD_OLD = ("archive", "empty", "all")     # old channels: archive them, delete the empty ones, delete them all
+
+
+def clean_discord_options(o) -> dict:
+    """The Discord card's choices, tidied: old channels (archive by default) and Post and pin (off by default)."""
+    o = o if isinstance(o, dict) else {}
+    old = o.get("old") if o.get("old") in DISCORD_OLD else "archive"
+    return {"old": old, "pins": o.get("pins") is True}
+
+
+def discord_options() -> dict:
+    return clean_discord_options(discord_doc().get("options"))
+
+
 def discord_doc() -> dict:
     try:
         d = json.loads(DISCORD_DOC.read_text(encoding="utf-8"))
@@ -729,6 +751,7 @@ def discord_record(item: dict, rc: int, log: Path) -> None:
     if key == "preview":
         rec.update(discord_summary(log))
         rec["ok"] = rc == 0 and rec["changes"] is not None
+        rec["options"] = clean_discord_options(item.get("options"))
     if key == "apply":
         rec["changes"] = item.get("expect")
         if rc == 0 and isinstance(d.get("preview"), dict):
@@ -758,6 +781,9 @@ def discord_ready(d: dict | None = None) -> tuple[dict | None, str]:
         return None, "That preview was done. Run the preview again."
     if time.time() - float(p.get("at") or 0) > DISCORD_FRESH:
         return None, "The preview is over an hour old. Run it again."
+    if clean_discord_options(p.get("options")) != clean_discord_options((d if d is not None else discord_doc())
+                                                                        .get("options")):
+        return None, "You changed the choices since the preview. Run the preview again."
     if not p.get("changes"):
         return None, "Nothing to change: the server is already done."
     return p, ""
@@ -766,7 +792,8 @@ def discord_ready(d: dict | None = None) -> tuple[dict | None, str]:
 def discord_state() -> dict:
     d = discord_doc()
     p, why = discord_ready(d)
-    out = {"token": discord_token_status(), "ready": bool(p), "why": why}
+    out = {"token": discord_token_status(), "ready": bool(p), "why": why,
+           "options": clean_discord_options(d.get("options"))}
     for k in ("preview", "apply", "check"):
         if isinstance(d.get(k), dict):
             r = dict(d[k])
@@ -1226,6 +1253,19 @@ class H(http.server.BaseHTTPRequestHandler):
             remove_discord_token()
             emit("state", {})
             return self._send(200, json.dumps({"ok": True, "token": discord_token_status()}))
+        if self.path == "/api/discord/options":
+            if body.get("old") not in DISCORD_OLD or not isinstance(body.get("pins"), bool):
+                return self._send(400, json.dumps({"error": "Choose what happens to old channels, and Post and pin "
+                                                            "on or off."}))
+            d = discord_doc()
+            d["options"] = clean_discord_options(body)
+            try:
+                DISCORD_DOC.parent.mkdir(parents=True, exist_ok=True)
+                DISCORD_DOC.write_text(json.dumps(d, indent=1), encoding="utf-8")
+            except OSError as e:
+                return self._send(500, json.dumps({"error": f"Couldn't save it ({type(e).__name__})."}))
+            emit("state", {})
+            return self._send(200, json.dumps({"ok": True, "options": d["options"]}))
         if self.path == "/api/discord/apply":
             p, why = discord_ready()
             if not p:
@@ -1236,7 +1276,8 @@ class H(http.server.BaseHTTPRequestHandler):
                 return self._send(409, json.dumps({"error": "There is a newer preview. Read it, then type YES again."}))
             item = {"id": "discord-apply-" + time.strftime("%Y%m%d-%H%M%S"), "step": "discord-apply",
                     "title": STEPS["discord-apply"][1], "note": f"after preview {p['id']}", "known": True,
-                    "owner_confirmed": True, "expect": int(p["changes"])}
+                    "owner_confirmed": True, "expect": int(p["changes"]),
+                    "options": clean_discord_options(p.get("options"))}
             if not start_run("", [item], False, "Discord redo"):
                 return self._send(409, '{"error":"already running"}')
             return self._send(200, '{"ok":true}')
@@ -1338,6 +1379,8 @@ color:var(--gold);background:rgba(0,0,0,.35);font-weight:600}.drop.over{backgrou
 .dsum{margin-top:10px}.dsum ul{margin:4px 0 0;padding-left:18px;max-height:260px;overflow:auto}.dsum li.n{color:var(--dim);list-style:none}
 .dsum .sec{font-weight:600;margin-top:6px}.dgo{margin-top:10px;padding:10px;border:1px solid #8a6a2c;border-radius:8px;background:rgba(242,201,76,.06)}
 .dgo input{max-width:140px;flex:0 1 140px}
+.dopt{margin-top:10px;display:flex;flex-direction:column;gap:6px}.dopt select{font:inherit;background:rgba(0,0,0,.5);color:var(--text);border:1px solid #0a0908;border-radius:7px;padding:4px 8px}
+.dopt .chk{display:flex;gap:8px;align-items:center}
 .gml{margin:4px 0 0;padding-left:18px;max-height:200px;overflow:auto}.gml li{margin:2px 0}
 </style></head><body class="ly">
 <header><div class="brand"><span class="mark" aria-hidden="true"></span><h1>Leyline Control</h1></div>
@@ -1358,16 +1401,24 @@ color:var(--gold);background:rgba(0,0,0,.35);font-weight:600}.drop.over{backgrou
     <div class="launch"><input id="msg" placeholder="GitHub save note (only for 'Save to GitHub')">
     <button class="primary" id="go">Launch all</button></div></section>
   <section class="card" id="discord"><h2>Discord</h2>
-    <div class="sub">The Discord redo (tools\discord-leyline\README.md). Bot token: <b id="dtok">…</b></div>
+    <div class="sub">The Discord launch layout: 13 channels with emoji, topics, permissions and pinned guides
+      (tools\discord-leyline\README.md). Safe to run again: it only changes what differs. Bot token: <b id="dtok">…</b></div>
     <div class="launch"><input id="dtokin" type="password" autocomplete="off" spellcheck="false" aria-label="Discord bot token"
       placeholder="Discord bot token: paste it here"><button id="dsave">Save</button><button id="drm">Remove</button></div>
     <div class="sub">Kept on this PC only (tools\discord-leyline\token.txt, never on GitHub), never shown again, never in a log.</div>
     <div class="dos"><button class="primary sm" id="dprev" title="Shows what would change on your server. Changes nothing.">Preview</button>
       <button id="dcheck" title="The channel ids for the website bot and the game bridge. Changes nothing.">Bot settings</button></div>
+    <div class="dopt"><label>Old channels (not in the layout): <select id="dold">
+      <option value="archive">Move them to a hidden ARCHIVE</option>
+      <option value="empty">Delete the empty ones, archive the rest</option>
+      <option value="all">Delete them all, even with messages (backed up first)</option></select></label>
+      <label class="chk"><input type="checkbox" id="dpins"> Post and pin the guide posts (only finished ones: none with
+        TODO(owner))</label>
+      <div class="sub">Set these, then press Preview: Do it does exactly what that preview lists.</div></div>
     <div class="dsum" id="dsum"></div>
     <div class="dgo" id="dgo" hidden><div id="dask"></div>
       <div class="launch"><input id="dyes" autocomplete="off" placeholder="Type YES"><button class="primary" id="dapply">Do it</button></div>
-      <div class="sub">It backs up the server to your Desktop first (Leyline-discord-backup-...). It posts nothing.</div></div>
+      <div class="sub" id="dgonote">It backs up the server to your Desktop first (Leyline-discord-backup-...).</div></div>
     <div class="sub" id="dwhy"></div><div class="dsum" id="dlast"></div></section>
   <section class="card" id="gmcard"><h2>Discord &amp; GM</h2>
     <div class="sub">Read-only: the server, the Discord bridge and bot, open bug reports and what waits for your review, from
@@ -1460,6 +1511,11 @@ if(its.length){let sec=null,body="";for(const i of its){if(i.section!==sec){if(s
 body+=`<li${i.change?"":' class="n"'}>${esc(i.text)}</li>`}body+="</ul>";
 h+=`<details class="fold"${p.ok&&!p.used?" open":""}><summary>What would change</summary>${body}</details>`}}
 $("dsum").innerHTML=h||'<div class="empty">No preview yet. Save the token, then press Preview.</div>'}
+const o=d.options||{old:"archive",pins:false};
+if(document.activeElement!==$("dold"))$("dold").value=o.old;$("dpins").checked=!!o.pins;$("dold").disabled=$("dpins").disabled=busy;
+const po=(p&&p.options)||o;$("dgonote").textContent="It backs up the server to your Desktop first (Leyline-discord-backup-...). "+
+(po.pins?"It posts and pins only the posts the preview lists. ":"It posts nothing. ")+
+(po.old==="all"?"It DELETES every old channel the preview lists, even ones with messages.":po.old==="empty"?"It deletes the old channels with no messages.":"It deletes nothing.");
 $("dgo").hidden=!d.ready;$("dapply").disabled=busy;
 if(d.ready)$("dask").innerHTML=`Read the preview above. To make these <b>${p.changes} change(s)</b> to ${esc(p.server)}, type YES and press Do it.`;
 $("dwhy").textContent=d.ready||!t.saved&&!p?"":d.why||"";
@@ -1474,6 +1530,8 @@ $("dtokin").addEventListener("keydown",e=>{if(e.key==="Enter")$("dsave").click()
 $("drm").onclick=()=>{if(confirm("Remove the saved Discord bot token from this PC?"))dpost("/api/discord/token-remove")};
 $("dprev").onclick=()=>{$("con").innerHTML="";post("/api/do",{run:"discord-preview"})};
 $("dcheck").onclick=()=>{$("con").innerHTML="";post("/api/do",{run:"discord-check"})};
+const dopt=()=>dpost("/api/discord/options",{old:$("dold").value,pins:$("dpins").checked});
+$("dold").onchange=dopt;$("dpins").onchange=dopt;
 $("dapply").onclick=async()=>{const p=(last&&last.discord||{}).preview;if(!p)return;$("con").innerHTML="";
 if(await dpost("/api/discord/apply",{preview:p.id,confirm:$("dyes").value.trim()}))$("dyes").value=""};
 $("go").onclick=async()=>{$("con").innerHTML="";const r=await fetch("/api/launch",{method:"POST",headers:{...H,"Content-Type":"application/json"},body:JSON.stringify({message:$("msg").value})});if(!r.ok)alert("Couldn't start: "+(await r.text()));refresh()};

@@ -788,3 +788,7 @@
 1318a signin  Website: the Host a realm guide (/wrath/docs/host-a-realm)
 1318b hostkit  Host kit: reads the Host page's settings once (state/options.json)
 1318c ship  Save as Orion: the new Host page (Private/Public, templates, settings, Ask Claude, guide); the launcher builds after this
+1319a signin  Website: the new Discord invite everywhere
+1319b scripts-reload  Realm scripts: the new Discord invite in the game's welcome
+1319c ship  Save as Orion: the Discord launch layout and new invite (the launcher builds after this)
+1319d den-features  Den feature test on today's launcher: place like the video, glow, handles, Swap, snap out, combat and Dojo

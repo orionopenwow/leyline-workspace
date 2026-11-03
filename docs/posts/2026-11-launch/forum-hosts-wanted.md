@@ -66,4 +66,4 @@ The step-by-step for keeping a realm up (sleep settings, Docker at start-up, upd
 
 TODO(owner): how you pick realms to feature (front page, staff picks), and anything a host should do to be considered.
 
-Questions? Ask below, in **Help**, or on the Discord: https://discord.gg/hVeUxYwbkr
+Questions? Ask below, in **Help**, or on the Discord: https://discord.gg/RfChVr8J7T

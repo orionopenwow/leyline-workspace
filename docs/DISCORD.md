@@ -1,6 +1,8 @@
 # The Leyline Discord: the bot and its setup
 
-The next layout (1 Nov: Wrath Unleashed, Your Den, Host a server, Mods & Workshop, Claude & the companion, Feedback
+**At launch (3 Nov)** the server uses the 13-channel launch layout in [DISCORD-PLAN.md](DISCORD-PLAN.md), built by Leyline Control's Discord card (tools/discord-leyline); the website bot follows it with `WU_DISCORD_TEMPLATE=/app/discord_template_launch.json`. Its pinned posts are [discord-launch-posts.md](discord-launch-posts.md). The invite is https://discord.gg/RfChVr8J7T.
+
+The bigger layout for later (1 Nov: Wrath Unleashed, Your Den, Host a server, Mods & Workshop, Claude & the companion, Feedback
 feeding the bugs manifest, Forum) is [DISCORD-PLAN.md](DISCORD-PLAN.md), opt-in with
 `WU_DISCORD_TEMPLATE=/app/discord_template_v2.json`; its first posts are [discord-initial-posts.md](discord-initial-posts.md).
 Its 2 Nov update adds the Realms category (official-realms, and community-realms, which is the old live-realms

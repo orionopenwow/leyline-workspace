@@ -2,10 +2,10 @@
 setlocal
 chcp 65001 >nul
 title Leyline Discord - do it
-rem Redoes your Discord server to the Leyline channel plan (docs/DISCORD-PLAN.md). It shows the plan first and asks you to type YES.
+rem Sets your Discord server to the Leyline launch layout (docs/DISCORD-PLAN.md). It shows the plan first and asks you to type YES.
 rem Before any change it backs up the server to your Desktop (Leyline-discord-backup-...).
 rem Channels you already have are renamed and moved (history kept); the rest move into a hidden ARCHIVE.
-rem It posts nothing: it prints the first posts for you to paste yourself.
+rem It posts nothing unless you add --pin-posts: it prints the pinned posts for you to paste yourself.
 rem
 rem You need a throwaway bot first (5 minutes, once):
 rem   1. Open https://discord.com/developers/applications and click "New Application". Name it "Leyline setup",
@@ -23,7 +23,9 @@ rem Extra options (add them after the .bat name in a command prompt, or edit the
 rem   --delete-archived    also delete the archived channels after the backup (asks you to type the server name)
 rem   --delete-old-roles   also delete roles that aren't in the plan (asks you to type DELETE ROLES)
 rem   --backup-messages N  messages to back up per channel (default 1000)
-rem   --post-first-posts   let the bot post the finished first posts (no TODO(owner) left; asks you to type POST)
+rem   --pin-posts          let the bot post and pin the finished posts (no TODO(owner) left; asks you to type POST)
+rem   --old-channels delete-empty   delete old channels that have no messages (the rest go to ARCHIVE)
+rem   --old-channels delete-all     delete every old channel, even with messages (asks you to type the server name)
 cd /d "%~dp0"
 set "PYTHONIOENCODING=utf-8"
 set "PY="

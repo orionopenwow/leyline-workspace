@@ -57,7 +57,7 @@ local NORTHREND_LEVEL = 68     -- from here on, home is Dalaran
 local CHECK_EVERY_MS = 5000    -- the position check for box-bounded areas
 local GOSSIP_MAX = 30          -- 3.3.5a shows at most 32 gossip items
 
-local DISCORD = "https://discord.gg/hVeUxYwbkr"
+local DISCORD = "https://discord.gg/RfChVr8J7T"
 local HELP = "play.openvanilla.app/wrath/docs/play"
 -- The page reads a dropped 3.3.5a game folder in the browser (stream/www-files/ownfiles.js) and the realm
 -- then lifts this rule for the account; the in-game button is Esc > Mods & Workshop > Leyline realms.

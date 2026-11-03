@@ -40,7 +40,7 @@ in game: lua/ov_slices.lua                  a marked account that leaves the sli
   centre-screen message: *"This part of the world isn't streamed to the browser. Drop your own 3.3.5a
   game folder on the game page (or Esc > Mods & Workshop > Leyline realms > Use my game folder) to go
   anywhere: it is read on your computer, nothing is uploaded. How: leylinelauncher.com/wrath/docs/play
-  - or ask on our Discord: https://discord.gg/hVeUxYwbkr"* (centre: *"Not streamed: drop your 3.3.5a
+  - or ask on our Discord: https://discord.gg/RfChVr8J7T"* (centre: *"Not streamed: drop your 3.3.5a
   game folder on the page to go here"*). On Northrend (map 571),
   only zone 4395 (Dalaran, including the Underbelly and the Violet Citadel) counts as inside. Dalaran
   is always home, even at `maxTier` 0.

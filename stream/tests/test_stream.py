@@ -145,7 +145,7 @@ check("env: no session -> 401, no password", st == 401 and b"Pa55word" not in b)
 os.environ["WU_STREAM"] = "0"
 st, h, b = get("/wrath/play?mini=mini", cookie="wr_session=good")
 check("off: /wrath/play says streaming is off", st == 200 and "Streaming is off right now".encode() in b)
-check("off: the Discord help line", b"https://discord.gg/hVeUxYwbkr" in b)
+check("off: the Discord help line", b"https://discord.gg/RfChVr8J7T" in b)
 st, h, b = get("/__auth", cookie=f"wu_play={sid}", headers={"X-Forwarded-Uri": "/data/DBFilesClient%5CMap.dbc"})
 check("off: /data denied even with a session", st == 403)
 st, h, b = get("/__auth", cookie=f"wu_play={sid}", headers={"X-Forwarded-Uri": "/ws/8085?host=x"})
@@ -158,7 +158,7 @@ os.environ["WU_STREAM"] = "1"
 st, h, b = get("/wrath", cookie="wr_session=good")
 check("on: /wrath (Play now) goes straight into the game", st in (302, 303) and (h.get("location") or h.get("Location") or "") == "/wrath/play?mini=mini", str(st))
 st, h, b = get("/wrath/account", cookie="wr_session=good")
-check("on: account page shows the button + Discord line", b"/wrath/play?mini=mini" in b and b"discord.gg/hVeUxYwbkr" in b)
+check("on: account page shows the button + Discord line", b"/wrath/play?mini=mini" in b and b"discord.gg/RfChVr8J7T" in b)
 
 # --- the realm does not confirm the mark: no session
 soap["reply"] = None

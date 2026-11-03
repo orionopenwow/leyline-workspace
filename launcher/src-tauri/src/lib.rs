@@ -83,7 +83,7 @@ pub const LINKS: &[(&str, &str)] = &[
     ("start", crate::site!("/wrath/start")), // Start here: the four ways in (Help, the tour; stream/wrath_portal.py)
     ("gettingstarted", crate::site!("/wrath/docs/getting-started")), // the player guide (Help, Find your game files)
     ("mods", crate::site!("/wrath/mods")),
-    ("discord", "https://discord.gg/hVeUxYwbkr"),
+    ("discord", "https://discord.gg/RfChVr8J7T"),
     ("forum", forum::PAGE), // the website's forum: posting happens there (forum.rs)
     ("bugs", crate::site!("/wrath/bugs")), // the website's Report a bug form (signed out: Help › Report a bug)
     ("forumnew", crate::site!("/wrath/leyline/forum/new")),
@@ -118,7 +118,7 @@ pub fn link(name: &str) -> Option<&'static str> {
 mod link_tests {
     #[test]
     fn only_listed_links_open() {
-        assert_eq!(super::link("discord"), Some("https://discord.gg/hVeUxYwbkr"));
+        assert_eq!(super::link("discord"), Some("https://discord.gg/RfChVr8J7T"));
         assert!(super::link("https://example.com").is_none());
         assert!(super::LINKS.iter().all(|(_, u)| u.starts_with("https://")));
     }

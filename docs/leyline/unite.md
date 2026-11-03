@@ -37,4 +37,4 @@ These are ideas, not promises:
 
 ## How to take part
 
-Talk to us in the Discord at [discord.gg/hVeUxYwbkr](https://discord.gg/hVeUxYwbkr), or read the code at [github.com/orionopenwow/Leyline](https://github.com/orionopenwow/Leyline). See [Other servers](cross-server.md) for what works today.
+Talk to us in the Discord at [discord.gg/RfChVr8J7T](https://discord.gg/RfChVr8J7T), or read the code at [github.com/orionopenwow/Leyline](https://github.com/orionopenwow/Leyline). See [Other servers](cross-server.md) for what works today.

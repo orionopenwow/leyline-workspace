@@ -510,7 +510,7 @@ ART_DIR = os.environ.get("WU_ART_DIR", "/app/art")
 FOREVERUI = "0" if os.environ.get("WU_FOREVERUI", "1").strip() == "0" else "1"
 SESSION_TTL = 12 * 3600
 CODE_TTL = 60
-DISCORD_URL = "https://discord.gg/hVeUxYwbkr"
+DISCORD_URL = "https://discord.gg/RfChVr8J7T"
 GAME_FOLDER_HELP = "/wrath/docs/play#use-your-own-game-folder-to-go-anywhere"
 DISCORD_HELP = ("Need help finding or setting up your own game folder? Join our Discord and "
                 "people will help: " + DISCORD_URL)

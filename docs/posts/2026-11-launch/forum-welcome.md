@@ -53,6 +53,6 @@ What helps most: what you did, what you expected, what happened instead, and whe
 
 TODO(owner): confirm these rules, or point to your own rules thread instead.
 
-Want to talk live? The Discord: https://discord.gg/hVeUxYwbkr
+Want to talk live? The Discord: https://discord.gg/RfChVr8J7T
 
 TODO(owner): a short sign-off in your voice.

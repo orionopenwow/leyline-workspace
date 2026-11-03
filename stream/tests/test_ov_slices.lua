@@ -252,7 +252,7 @@ p.map, p.zone = LATER_MAP, 0; fire(28, p); runTimers()
 check("an instance in a tier above the mark refused: sent to Dalaran", #p.tp == 1 and p.tp[1][1] == 571, LATER_MAP)
 check("whisper says drop your game folder + the help page + Discord", p.msgs[#p.msgs]:match("Drop your own 3.3.5a game folder on the game page")
     and p.msgs[#p.msgs]:match("Use my game folder") and p.msgs[#p.msgs]:match("nothing is uploaded")
-    and p.msgs[#p.msgs]:match("play.openvanilla.app/wrath/docs/play") and p.msgs[#p.msgs]:match("discord.gg/hVeUxYwbkr"))
+    and p.msgs[#p.msgs]:match("play.openvanilla.app/wrath/docs/play") and p.msgs[#p.msgs]:match("discord.gg/RfChVr8J7T"))
 check("centre text too: drop the game folder", #p.center == 1 and p.center[1]:match("drop your 3.3.5a game folder on the page"))
 do
     local bad = false

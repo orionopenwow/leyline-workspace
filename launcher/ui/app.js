@@ -2152,7 +2152,7 @@ async function showLinkedRealm(id) {
   if (!r) { say("rl-status", "That realm isn't on the realm list right now: it may be offline. Try Refresh in a minute.", "warn"); return; }
   if (r.official || r.address) pickRealm(r);   // the play bar too, with a client of the version it needs
   $("rl-mine").checked = false;
-  renderRealms();
+  setRealmsTab(realmTab(r));   // a community realm shows on the Community tab (renders the list)
   const card = [...document.querySelectorAll("#rl-list .realm-card")].find((c) => c.querySelector(".name")?.textContent === r.name);
   if (card) { card.classList.add("linked"); card.scrollIntoView({ block: "center" }); const b = card.querySelector(".acts .btn"); if (b && !b.disabled) b.focus(); }
   const need = r.official ? "3.3.5a" : r.build;
@@ -2490,15 +2490,14 @@ function fillRealmFilters() {
     const sel = $(id);
     if (!sel) continue;
     const cur = sel.value;
-    const vs = [...new Set(realmsCache.filter((r) => !r.official).flatMap(values))].sort();
+    const vs = [...new Set(realmsCache.flatMap(values))].sort();   // both tabs: the filters work in whichever is open
     sel.replaceChildren(el("option", "", "any"), ...vs.map((v) => { const o = el("option", "", label(v)); o.value = v; return o; }));
     sel.firstChild.value = "";
     sel.value = vs.includes(cur) ? cur : "";
   }
 }
 function realmMatches(r) {
-  if (r.official) return true;   // the sample stays pinned
-  if (hiddenBuild(r.build)) return false;   // 4.3.4 / 5.4.8 realms are not offered for now (MAX_OFFERED_BUILD)
+  if (hiddenBuild(r.build) && !r.official) return false;   // 4.3.4 / 5.4.8 realms are not offered for now (MAX_OFFERED_BUILD)
   for (const [id, values] of RL_FILTERS) {
     const v = $(id) && $(id).value;
     if (v && !values(r).includes(v)) return false;
@@ -2526,10 +2525,38 @@ function clearRealmFilters() {
   $("rl-mine").checked = false;
   renderRealms();
 }
-function networkLine(t) {
-  if (!t) return "";
-  // the network's count is the community realms (the official realm is listed on its own, first)
-  return `${t.realms} community realm${t.realms === 1 ? "" : "s"} · ${t.players} playing`;
+// The two lists (owner 2026-11-02): Official realms are ours (official, or the official lineup: run by us, room for
+// everyone, up around the clock); Community realms are the players' own (Beacons on the relay). One panel, two tabs.
+const RL_TABS = ["official", "community"];
+const realmTab = (r) => (r && (r.official || inLineup(r)) ? "official" : "community");
+let rlTab = "official";
+try { const t = localStorage.getItem("leyline.realmsTab"); if (RL_TABS.includes(t)) rlTab = t; } catch (_) { /* storage may be off */ }
+function setRealmsTab(tab, focus) {
+  if (!RL_TABS.includes(tab)) return;
+  rlTab = tab;
+  try { localStorage.setItem("leyline.realmsTab", tab); } catch (_) { /* storage may be off */ }
+  renderRealms();
+  if (focus) $("rl-tab-" + tab).focus();
+}
+for (const b of document.querySelectorAll("#rl-tabs [data-rl-tab]")) {
+  b.addEventListener("click", () => setRealmsTab(b.dataset.rlTab));
+  b.addEventListener("keydown", (e) => {   // the usual tab list keys
+    const i = RL_TABS.indexOf(b.dataset.rlTab);
+    const j = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : e.key === "Home" ? 0 : e.key === "End" ? RL_TABS.length - 1 : null;
+    if (j === null) return;
+    e.preventDefault();
+    setRealmsTab(RL_TABS[(j + RL_TABS.length) % RL_TABS.length], true);
+  });
+}
+const plural = (n, one) => `${n} ${one}${n === 1 ? "" : "s"}`;
+// The count line of the open tab, from the list itself: the network's own totals count every realm online, ours
+// too (realms.rs totals), which is how the official realm came to be called a "community realm".
+const tabRealms = (tab) => realmsCache.filter((r) => realmTab(r) === tab && !(hiddenBuild(r.build) && !r.official));
+const livePlayers = (rs, k) => rs.reduce((n, r) => n + (r.state === "live" ? r[k] || 0 : 0), 0);
+function networkLine(tab) {
+  if (!realmsCache.length) return "";
+  const rs = tabRealms(tab);
+  return `${plural(rs.length, tab === "official" ? "official realm" : "community realm")} · ${livePlayers(rs, "players")} playing`;
 }
 // A realm's look, as on the website: a hue from its name, the crystal for the official realm.
 function nameHue(name) {
@@ -2577,10 +2604,26 @@ function renderRealms() {
   box.replaceChildren();
   const now = state.settings.selected_realm;
   const mine = $("rl-mine").checked;
+  for (const b of document.querySelectorAll("#rl-tabs [data-rl-tab]")) {
+    const on = b.dataset.rlTab === rlTab;
+    b.setAttribute("aria-selected", String(on));
+    b.tabIndex = on ? 0 : -1;
+  }
+  $("rl-pane").setAttribute("aria-labelledby", "rl-tab-" + rlTab);
   const net = $("rl-net");
   if (net) {
-    net.textContent = networkLine(networkTotals);
-    net.title = networkTotals && networkTotals.bots ? `${networkTotals.bots} bots too` : "";
+    net.textContent = networkLine(rlTab);
+    const bots = livePlayers(tabRealms(rlTab), "bots");
+    net.title = bots ? `${bots} bots too` : "";
+  }
+  // the other list, in one line: who runs it
+  const note = $("rl-tab-note");
+  if (note) {
+    const other = rlTab === "official" ? "community" : "official";
+    const sw = el("button", "link-s", other === "community" ? "See community realms" : "See official realms");
+    sw.type = "button";
+    sw.addEventListener("click", () => setRealmsTab(other, true));
+    note.replaceChildren(el("span", "", rlTab === "official" ? "Community realms are run by players and may go offline." : "Official realms are run by us around the clock."), " ", sw);
   }
   const nf = realmFilterCount();
   $("rl-fcount").hidden = !nf;
@@ -2590,12 +2633,13 @@ function renderRealms() {
   if (!rlOtherShown && !isOfficial()) { rlOtherShown = true; $("rl-other").open = true; }   // their own realm address: show where it is set
   // the official realm first, then the official lineup (Vanilla Remastered when listed), then the network's order (realms.rs)
   const order = realmsCache.filter((r) => r.official).concat(realmsCache.filter(inLineup), realmsCache.filter((r) => !r.official && !inLineup(r)));
-  let community = 0;
+  const shows = (r) => !(mine && !clientFor(r)) && realmMatches(r) && realmSearched(r);
+  let shown = 0;
   for (const r of order) {
+    if (realmTab(r) !== rlTab) continue;
     const fit = clientFor(r);
-    if (mine && !fit) continue;
-    if (!realmMatches(r) || !realmSearched(r)) continue;
-    if (!r.official) community++;
+    if (!shows(r)) continue;
+    shown++;
     const live = r.state === "live";
     const card = el("article", "realm-card rl" + (r.address && r.address === now ? " on" : "") + (r.featured ? " featured" : "")
       + (r.official ? " official" : "") + (live ? "" : " off"));
@@ -2615,7 +2659,7 @@ function renderRealms() {
     if (r.direct && p2pHosting) bits.push("Direct connect available");
     line.append(el("span", "", bits.filter(Boolean).join(" · ")));
     // everything else about the realm, on hover
-    const more = [r.official ? "Run by Leyline" : "Community realm", r.is_new ? "New" : "",
+    const more = [realmTab(r) === "official" ? "Run by Leyline" : "Community realm", r.is_new ? "New" : "",
       r.region ? (REGION_LABELS[r.region] || r.region) + (r.region_estimated ? " (estimated)" : "") : "", r.language || "",
       ...(r.official ? [] : (r.tags || []).map((t) => TAG_LABELS[t] || t))];
     const u = r.uptime_7d != null ? r.uptime_7d : r.uptime_24h;
@@ -2687,9 +2731,16 @@ function renderRealms() {
     box.append(e);
   };
   const realmsQ = $("rl-q").value.trim();
-  if (realmsCache.filter((r) => !r.official).length === 0) empty("No community realms yet. Be the first to run one: see Host your own below.");   // the banner below is the one call to action
-  else if (!community && realmsQ) empty(`No realm called “${realmsQ}”.`, "Clear search", () => { $("rl-q").value = ""; renderRealms(); });
-  else if (!community && nf) empty(mine && nf === 1 ? "None of the listed realms fits your clients." : "No realms match these filters.", "Clear filters", clearRealmFilters);
+  const inTab = tabRealms(rlTab);
+  const other = rlTab === "official" ? "community" : "official";
+  const there = realmsCache.filter((r) => realmTab(r) === other && shows(r)).length;   // a search that finds realms in the other tab says so
+  if (!inTab.length) {
+    if (rlTab === "community") empty("No community realms yet. Be the first to run one: see Host your own below.");   // the banner below is the one call to action
+    else empty("The official realms aren't on the list right now. Try Refresh in a minute.");
+  } else if (!shown && (realmsQ || nf) && there) empty(realmsQ ? `No ${rlTab} realm called “${realmsQ}”.` : `No ${rlTab} realms match these filters.`,
+    `Show ${there} in ${other === "community" ? "Community" : "Official"} realms`, () => setRealmsTab(other, true));
+  else if (!shown && realmsQ) empty(`No realm called “${realmsQ}”.`, "Clear search", () => { $("rl-q").value = ""; renderRealms(); });
+  else if (!shown && nf) empty(mine && nf === 1 ? "None of the listed realms fits your clients." : "No realms match these filters.", "Clear filters", clearRealmFilters);
 }
 for (const id of ["rl-f-build", "rl-f-tag", "rl-f-region", "rl-f-lang", "rl-f-now"]) {
   if ($(id)) $(id).addEventListener("change", () => renderRealms());
@@ -2698,6 +2749,8 @@ $("rl-q").addEventListener("input", () => renderRealms());
 $("rl-f-clear").addEventListener("click", clearRealmFilters);
 if ($("rl-host")) $("rl-host").addEventListener("click", () => show("host"));
 if ($("rl-host-link")) $("rl-host-link").addEventListener("click", () => show("host"));   // the Host page has Link my server
+// the hosting guide on the website (docs/leyline/hosting.md, stream/docs.py), on both tabs
+if ($("rl-host-guide")) $("rl-host-guide").addEventListener("click", () => openUrl(ADDR.site("/wrath/docs/hosting")));
 // The FILTERS popover and the … menu: one open at a time; a click outside or Escape closes it.
 function rlPopover(btnId, boxId) {
   const btn = $(btnId), box = $(boxId);
@@ -2989,6 +3042,7 @@ window.LeylineApp = {
   state: () => state,   // addons.js: the clients
   refresh: () => refresh().then(refreshStatus).catch(() => { /* as it was */ }),   // den.js: after Play solo, the bar shows Your Den
   pickRealm, playRealm, loadRealms, showRealm: showLinkedRealm,   // realmlink.js: paste to add, Live now
+  realmTab, setRealmsTab,   // realmlink.js: a pasted community realm opens the Community tab
 };
 
 // ------------------------------------------------------------------ start

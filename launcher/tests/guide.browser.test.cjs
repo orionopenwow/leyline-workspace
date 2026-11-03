@@ -82,7 +82,7 @@ test('first run with no game folder: four steps on the real controls, then Done 
   const { page, ctx, errors } = await open({ seen: [] });
   await page.waitForSelector('#gd-tour');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'gd-tour-next', 'Next has the focus');
-  const want = [['Play Wrath Unleashed', '#play-go'], ['Your Den', '.nav-den'], ['Host a server', '.side .nav[data-page="host"]'],
+  const want = [['Play Wrath Unleashed', '#play-go'], ['Your Den', '#pb-realm-btn'], ['Host a server', '.side .nav[data-page="host"]'],
     ['Find your game files', '#pb-client']];
   for (let i = 0; i < want.length; i++) {
     assert.equal(await page.textContent('#gd-tour-title'), want[i][0]);

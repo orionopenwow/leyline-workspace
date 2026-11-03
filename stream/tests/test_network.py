@@ -150,22 +150,35 @@ check("realms: 200, no script, CSP strict", st == 200 and "<script" not in page.
 i_feat, i_sample = page.find("<h2>Picked One</h2>"), page.find("<h2>Leyline Sample Hangout</h2>")
 i_busy, i_plain, i_old, i_sleepy = (page.find("<h2>Busy Den</h2>"), page.find("<h2>Plain Field</h2>"),
                                     page.find("<h2>Old relay record</h2>"), page.find("<h2>Sleepy Hollow</h2>"))
-check("order on the page: featured, the sample (pinned), by score, offline last",
-      0 <= i_feat < i_sample < i_busy < i_plain < i_old < i_sleepy, (i_feat, i_sample, i_busy, i_plain, i_old, i_sleepy))
-check("the sample: no Temporary chip (read as a wipe), the start line, its own numbers, Play", ">Temporary</span>" not in page[i_sample:i_busy]
-      and "Start at level 1 or boost to 80" in page[i_sample:i_busy]
-      and "4 playing · 10 bots" in page[i_sample:i_busy]
-      and 'href="/wrath?go=h:dalaran">Play in Dalaran</a>' in page[i_sample:i_busy])
+i_off, i_com = page.find('id="official-realms"'), page.find('id="community-realms"')
+check("two titled sections: Official realms (ours), then Community realms; jump links to both",
+      0 <= i_off < i_sample < i_com < i_feat and '<h2 class="eyebrow" id="official-realms-h">Official realms</h2>' in page
+      and '<h2 class="eyebrow" id="community-realms-h">Community realms</h2>' in page
+      and 'href="#official-realms">Official realms</a>' in page and 'href="#community-realms">Community realms</a>' in page,
+      (i_off, i_sample, i_com, i_feat))
+check("order in Community realms: featured, by score, offline last",
+      i_com < i_feat < i_busy < i_plain < i_old < i_sleepy, (i_feat, i_busy, i_plain, i_old, i_sleepy))
+check("the sample: no Temporary chip (read as a wipe), the start line, its own numbers, Play", ">Temporary</span>" not in page[i_sample:i_com]
+      and "Start at level 1 or boost to 80" in page[i_sample:i_com]
+      and "4 playing · 10 bots" in page[i_sample:i_com]
+      and 'href="/wrath?go=h:dalaran">Play in Dalaran</a>' in page[i_sample:i_com])
+check("each section says who runs the other list, and links the hosting guide",
+      "Community realms are run by players and may go offline." in page[i_off:i_com]
+      and "Official realms are run by us around the clock." in page[i_com:]
+      and page[i_off:i_com].count('href="/wrath/docs/hosting">How hosting works</a>') == 1
+      and page[i_com:page.find('id="host-your-own"')].count('href="/wrath/docs/hosting">How hosting works</a>') == 1)
+check("no brand words in the section notes", not re.search(r"(?i)\bwow\b|warcraft|blizzard", net.OFFICIAL_NOTE + net.COMMUNITY_NOTE))
 check("the hangout's relay record is the sample, not listed twice", "<h2>Wrath Unleashed</h2>" not in page)
 check("names are neutral on /wrath/realms (an older relay's brand words dropped)", "<h2>Den</h2>" in page
       and not re.search(r"(?i)\bwow\b|warcraft", page))
 check("hidden by staff: not on the page", "Hidden Away" not in page and HIDDEN not in page)
-check("network line: live community realms + the sample", "5 realms · 39 players online · 50 bots" in page,   # the hangout from its own status (4 players, 10 bots), not its record
+check("each section's own count line: ours never called a community realm (the hangout from its own status, not its record)",
+      re.findall(r'net-line">([^<]*)', page) == ["1 official realm · 4 players online · 10 bots", "6 community realms · 35 players online · 40 bots"],
       re.findall(r'net-line">([^<]*)', page))
-check("featured and verified badges", ">Featured</span>" in page[i_feat:i_sample] and "Verified host" in page[i_feat:i_sample]
+check("featured and verified badges", ">Featured</span>" in page[i_feat:i_busy] and "Verified host" in page[i_feat:i_busy]
       and "Verified host" in page[i_busy:i_plain] and "Featured" not in page[i_busy:i_plain])
-check("build, core, tags, region, language", ">1.12.1</span><span class=\"tag\">AzerothCore</span>" in page[i_feat:i_sample] and "1.12.1 · " not in page and ">Blizzlike<" in page[i_feat:i_sample]
-      and ">Europe<" in page[i_feat:i_sample] and ">English<" in page[i_busy:i_plain])
+check("build, core, tags, region, language", ">1.12.1</span><span class=\"tag\">AzerothCore</span>" in page[i_feat:i_busy] and "1.12.1 · " not in page and ">Blizzlike<" in page[i_feat:i_busy]
+      and ">Europe<" in page[i_feat:i_busy] and ">English<" in page[i_busy:i_plain])
 check("estimated region marked, new badge, player limit", "Europe (estimated)" in page[i_plain:i_old]
       and ">New</span>" in page[i_plain:i_old] and "0 playing of 50" in page[i_plain:i_old])
 check("uptime badge (7 d), and none for an old relay record", "98% up · 7 d" in page[i_busy:i_plain]

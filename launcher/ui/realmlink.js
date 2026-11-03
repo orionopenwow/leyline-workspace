@@ -113,6 +113,7 @@
       return;
     }
     if (r.official || r.address) App.pickRealm(r);   // Your realms, with the client it needs (leyline.clientFor)
+    if (!r.typed && App.setRealmsTab) App.setRealmsTab(App.realmTab(r));   // a listed community realm: the Community tab
     const name = r.official ? App.HANGOUT.name : r.name;
     const need = r.official ? "3.3.5a" : r.build;
     const st = App.state();

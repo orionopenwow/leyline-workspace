@@ -233,11 +233,13 @@ test('buttons: sentence case everywhere but the PLAY picture; Home says level 1 
   await ctx.close();
 });
 
-test('Realms: the count says community realms; Mods › Discover offline: one line, no count', async () => {
+test('Realms: each tab\'s count says what it counts; Mods › Discover offline: one line, no count', async () => {
   const { page, ctx, errors } = await open({ fail: ['mods_catalog'], raw: 'error sending request for url (https://x/catalog.json)' });
   await go(page, 'realms');
   await page.waitForFunction(() => document.getElementById('rl-net').textContent);
-  assert.equal(await page.textContent('#rl-net'), '0 community realms · 5 playing');
+  assert.equal(await page.textContent('#rl-net'), '1 official realm · 5 playing', 'Official: never called a community realm');
+  await page.click('#rl-tab-community');
+  assert.equal(await page.textContent('#rl-net'), '0 community realms · 0 playing');
   await go(page, 'mods', 'discover');
   await page.waitForFunction(() => /Can't load the mods/.test(document.getElementById('cat-status').textContent));
   assert.equal(await page.textContent('#cat-status'), "Can't load the mods. Try again.");

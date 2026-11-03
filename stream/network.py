@@ -452,6 +452,12 @@ NET_CSS = """
 .badge.good{border-color:#3f7a4c;color:#9fe0ae}.badge.warn{border-color:#7a6a3f;color:#e8d79a}.badge.dim{color:#9d9686}
 .host-cta{border:1px solid #4a3b1c;border-radius:4px;padding:14px 18px;margin:18px 0;background:rgba(12,10,24,.55)}
 .host-cta h2{margin:0 0 6px}.host-cta ol{margin:8px 0 10px 1.2em;padding:0}.report{font-size:.85rem}
+.net-jump{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin:6px 0 4px}
+.net-jump a{border:1px solid #6b5a2e;border-radius:999px;padding:5px 14px;font-size:.9rem;text-decoration:none;color:#e8d79a;
+background:rgba(40,30,10,.55);white-space:nowrap}.net-jump a:hover,.net-jump a:focus-visible{border-color:#c9a24a;color:#ece6d6}
+.net-sec{scroll-margin-top:12px}.net-sec>h2.eyebrow{font-size:.95rem;color:#e8d79a}
+.net-note{text-align:center;margin:-8px 0 12px}
+@media (max-width:520px){.net-jump a{flex:1 1 auto;text-align:center}}
 """
 
 
@@ -600,31 +606,58 @@ def sample_card(st: dict, rec: dict | None, share_box=None, sample: dict | None 
             + (share_box("/wrath/r/wrath") if share_box else '') + '</div>')
 
 
+def section_line(n: int, what: str, t: dict) -> str:
+    """One section's count line: "1 official realm · 4 players online · 10 bots"."""
+    s = f'{n} {what}{"" if n == 1 else "s"} · {t["players"]} player{"" if t["players"] == 1 else "s"} online'
+    return s + (f' · {t["bots"]} bots' if t.get("bots") else "")
+
+
+# The two lists (owner 2026-11-02): Official realms (ours: room for everyone, up around the clock) and Community realms
+# (hosted by players). The page runs no script, so they are two titled sections with jump links, not tabs.
+OFFICIAL_NOTE = "Run by us around the clock. Community realms are run by players and may go offline."
+COMMUNITY_NOTE = "Hosted by players on their own PCs, so a realm may go offline. Official realms are run by us around the clock."
+
+
 def page_body(realms: list[dict], ok: bool, query: dict, sample_status: dict, join_base: str, ruleset_labels: dict,
               share_box=None, pack_url: str | None = None, base: str = "/wrath/realms", sample: dict | None = None) -> str:
-    """Everything between the crest and the footer of /wrath/realms."""
+    """Everything between the crest and the footer of /wrath/realms: Official realms, then Community realms."""
     shown = order(realms)
-    t = totals(shown, sample_status)
     f = filters_from(query or {})
-    community = [r for r in shown if not r["sample"]]
     sample_rec = next((r for r in shown if r["sample"]), None)
+    ours = [r for r in shown if not r["sample"] and r["group"] == "official"]   # the second official realm (vr)
+    community = [r for r in shown if not r["sample"] and r["group"] != "official"]
     hits = [r for r in community if matches(r, f)]
-    featured = [r for r in hits if r["group"] == "featured"]
-    rest = [r for r in hits if r["group"] != "featured"]
-    out = [f'<p class="net-line">{e(network_line(t))}</p>', filters_html(f, facets(community), base)]
-    out += [card(r, join_base, ruleset_labels, share_box) for r in featured]
-    out.append(sample_card(sample_status, sample_rec, share_box, sample))
-    if rest:
-        out += [card(r, join_base, ruleset_labels, share_box) for r in rest]
+    guide = f'<a href="{HOSTING_DOCS}">How hosting works</a>'
+    t_ours = totals(([sample_rec] if sample_rec else []) + ours, sample_status)
+    t_com = totals(community)
+    out = ['<nav class="net-jump" aria-label="Realm lists"><a href="#official-realms">Official realms</a>'
+           '<a href="#community-realms">Community realms</a></nav>',
+           '<section class="net-sec" id="official-realms" aria-labelledby="official-realms-h">'
+           '<h2 class="eyebrow" id="official-realms-h">Official realms</h2>'
+           f'<p class="net-line">{e(section_line(1 + len(ours), "official realm", t_ours))}</p>'
+           f'<p class="fine net-note">{e(OFFICIAL_NOTE)} {guide}</p>',
+           sample_card(sample_status, sample_rec, share_box, sample)]
+    out += [card(r, join_base, ruleset_labels, share_box) for r in ours]
+    out.append('</section>')
+    out += ['<section class="net-sec" id="community-realms" aria-labelledby="community-realms-h">'
+            '<h2 class="eyebrow" id="community-realms-h">Community realms</h2>'
+            f'<p class="net-line">{e(section_line(len(community), "community realm", t_com))}</p>'
+            f'<p class="fine net-note">{e(COMMUNITY_NOTE)} {guide}</p>']
+    if community:
+        out.append(filters_html(f, facets(community), base))
+    if hits:
         if not ok:
-            out.insert(2, '<p class="fine">The realm list may be a little out of date right now.</p>')
+            out.append('<p class="fine">The realm list may be a little out of date right now.</p>')
+        featured = [r for r in hits if r["group"] == "featured"]
+        out += [card(r, join_base, ruleset_labels, share_box) for r in featured + [r for r in hits if r["group"] != "featured"]]
     elif community and f:
-        out.append(f'<p class="fine">No realms match these filters. <a href="{e(base)}">Show every realm</a></p>')
+        out.append(f'<p class="fine">No realms match these filters. <a href="{e(base)}#community-realms">Show every realm</a></p>')
     elif ok and not community:
         out.append('<p class="fine">No community realms are open right now. Anyone can host one: a private realm for '
                    'friends or a public one, with their own GM login and rules.</p>')
     elif not ok:
         out.append('<p class="fine">The community realm list isn\'t reachable right now. Try again in a minute.</p>')
+    out.append('</section>')
     out.append(host_cta("realms", pack_url))
     return "".join(out)
 

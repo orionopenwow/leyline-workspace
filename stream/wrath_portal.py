@@ -1832,7 +1832,7 @@ def realms_page(query: dict | None = None) -> bytes:
         stamps = [x for x in (updated_text(st.get("updated_at"), "Realm status"),
                               updated_text(when, "Community list") if ok else "") if x]
         body = (f'<style>{REALM_CSS}{network.NET_CSS}</style>'
-                f'{crest("Realms")}<p class="sub">The Leyline network: realms hosted by players</p>{RULE}'
+                f'{crest("Realms")}<p class="sub">Official realms, run by us, and community realms hosted by players</p>{RULE}'
                 + host_plus("realms")
                 + network.page_body(realms, ok, query or {}, st, JOIN_BASE, RULESET_LABELS, share_box,
                                     pack["download"] if pack else None, sample=sample_info())
@@ -1894,8 +1894,13 @@ def realms_page(query: dict | None = None) -> bytes:
                           updated_text(when, "Community list") if ok else "") if x]
     body = (f'<style>{REALM_CSS}</style>'
             f'{crest("Realms")}<p class="sub">Wrath · on the Leyline network</p>{RULE}'
+            '<h2 class="eyebrow" id="official-realms">Official realms</h2>'
+            '<p class="fine center">Run by us around the clock. Community realms are run by players and may go offline. '
+            '<a href="/wrath/docs/hosting">How hosting works</a></p>'
             + official +
-            '<h2 class="eyebrow">Community realms</h2>'
+            '<h2 class="eyebrow" id="community-realms">Community realms</h2>'
+            '<p class="fine center">Hosted by players on their own PCs, so a realm may go offline. Official realms are run '
+            'by us around the clock. <a href="/wrath/docs/hosting">How hosting works</a></p>'
             + host_plus("realms")
             + community +
             '<p class="fine foot">Community realms are run by players on their own PCs, through the Leyline relay '

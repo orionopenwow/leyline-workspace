@@ -16,8 +16,8 @@
   const TOUR = [
     { key: "play", target: "#play-go", fallback: "#pb-realm-btn", title: "Play Wrath Unleashed",
       text: "The official realm: hang out, level up, meet people. Press PLAY, or pick Play in your browser in the realm list." },
-    { key: "den", target: ".nav-den", title: "Your Den",
-      text: "Your own small white room, on this PC. Build in it, save it, grow it. Invite a friend when you're ready." },
+    { key: "den", target: "#pb-realm-btn", title: "Your Den",
+      text: "Your own small white room, on this PC, in the realm list next to PLAY. Build in it, save it, invite a friend." },
     { key: "host", target: '.side .nav[data-page="host"]', title: "Host a server",
       text: "Run your own realm from a template, in one click. Friends join with your invite link." },
     { key: "files", target: "#pb-client", title: "Find your game files", needsNoClient: true,

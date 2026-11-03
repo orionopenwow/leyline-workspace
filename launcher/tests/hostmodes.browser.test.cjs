@@ -121,6 +121,7 @@ test('the first screen is the mode cards; Pick a ruleset yourself goes to the pi
   await page.waitForSelector('#hx .hx-card');
   // the realm list (for the players on realms running each mode) comes in from the Realms page's load
   await page.evaluate(() => window.LeylineNav && window.LeylineNav.show('realms'));
+  await page.click('#rl-tab-community');   // the players' realms have their own tab
   await page.waitForSelector('.realm-card .rl-mode');
   await page.click('.nav[data-page="host"]');
   const cards = await page.$$eval('#hx .hx-card', (l) => l.map((c) => [c.dataset.mode, c.querySelector('.hx-name').firstChild.textContent, !!c.querySelector('.hx-pic img[src^="data:image/svg+xml"]'),
@@ -232,11 +233,15 @@ test('Fork: a copy with based_on set opens its settings; saved, its card says wh
 test('the Realms page: a realm\'s mode and its credit on its row, and Fork this mode', async () => {
   const { page, errors } = await open();
   await page.evaluate(() => window.LeylineNav.show('realms'));
+  await page.click('#rl-tab-community');   // the players' realms have their own tab
   await page.waitForSelector('.realm-card .rl-mode');
   const rows = await page.$$eval('.realm-card', (l) => l.map((c) => [c.querySelector('.name').textContent, (c.querySelector('.rl-mode') || {}).textContent || '', !!c.querySelector('.rl-fork')]));
   assert.deepEqual(rows.find((r) => r[0] === 'Ann Arena'), ['Ann Arena', 'Mode: Ann duels by Ann · based on Duel ladder by Leyline', true]);
   assert.deepEqual(rows.find((r) => r[0] === 'Duel Town'), ['Duel Town', 'Mode: Duel ladder by Leyline', true]);
-  assert.equal(rows.find((r) => r[1] === '' && r[0] !== 'Ann Arena')[2], false, 'no mode: no Fork');
+  await page.click('#rl-tab-official');
+  const ours = await page.$$eval('.realm-card', (l) => l.map((c) => [c.querySelector('.name').textContent, (c.querySelector('.rl-mode') || {}).textContent || '', !!c.querySelector('.rl-fork')]));
+  assert.equal(ours.find((r) => r[1] === '')[2], false, 'no mode: no Fork');
+  await page.click('#rl-tab-community');
   await page.locator('.realm-card', { hasText: 'Ann Arena' }).locator('.rl-mode').scrollIntoViewIfNeeded();
   await shot(page, 'realm-rows.png');
   await page.locator('.realm-card', { hasText: 'Ann Arena' }).locator('.rl-fork').click();

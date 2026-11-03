@@ -325,19 +325,25 @@ impl Book {
     }
 }
 
-/// The tables, read once per Dens folder (Spell.dbc is large: kept for the program's life).
-static BOOK: Mutex<Option<(PathBuf, Arc<Book>)>> = Mutex::new(None);
+/// The tables, read once per Dens folder (Spell.dbc is large: kept for the program's life). None there yet: tried
+/// again at most every 10 seconds (the launcher copies them as Den Lite starts).
+static BOOK: Mutex<Option<(PathBuf, Arc<Book>, std::time::Instant)>> = Mutex::new(None);
 
 pub fn book(dir: &Path) -> Arc<Book> {
     let mut g = BOOK.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some((d, b)) = g.as_ref() {
-        if d == dir && !b.spells.is_empty() {
+    if let Some((d, b, at)) = g.as_ref() {
+        if d == dir && (!b.spells.is_empty() || at.elapsed().as_secs() < 10) {
             return b.clone();
         }
     }
     let b = Arc::new(Book::read(dir));
-    *g = Some((dir.to_path_buf(), b.clone()));
+    *g = Some((dir.to_path_buf(), b.clone(), std::time::Instant::now()));
     b
+}
+
+/// Forget the tables read (a test that writes new ones).
+pub fn forget() {
+    *BOOK.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
 /// Test helpers: tables written as the game's own are, from a few rows (the tests of classes.rs, combat.rs and the

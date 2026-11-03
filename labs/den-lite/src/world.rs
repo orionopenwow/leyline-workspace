@@ -26,6 +26,10 @@ use wow_world_messages::wrath::opcodes::ClientOpcodeMessage;
 use wow_world_messages::wrath::*;
 use wow_world_messages::{DateTime, Guid};
 
+/// The sandbox combat and the class picker (sandbox.rs: a child module, so these hooks stay small).
+#[path = "sandbox.rs"]
+mod sandbox;
+
 pub const PLAYER_GUID: u64 = 1;
 /// The GM island's area (AreaTable 876), map 1.
 const AREA: Area = Area::GmIsland;
@@ -352,6 +356,10 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 }
             }
         }
+        // the sandbox combat (sandbox.rs, combat.rs): casts, the target, swings, the bar; a start of movement stops a cast
+        if sandbox::client_op(&c.w, shared, &sess, pos, op, &body)? {
+            continue;
+        }
         // the game's answers to the Dojo's fly and speed changes (dojo.rs): counted for the log, and where the
         // character is (nothing waits for them)
         if dojo::ACKS.contains(&op) {
@@ -470,6 +478,9 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                     *shared.moves.lock().unwrap_or_else(|e| e.into_inner()) = Some(w.clone());
                 }
                 watch = Some(w);
+                if sess.me.host {
+                    sandbox::prepare(shared);
+                }
                 enter_world(&c.w, shared, &user.to_string(), &sess.me, start)?;
                 arrive(&c.w, shared, &sess, start)?;
                 // the Dojo: the game starts on foot at its normal speed; the training dummies up are shown
@@ -478,7 +489,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 }
                 let dummies = shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).dummies.clone();
                 for d in &dummies {
-                    c.send(&dummy_create(d))?;
+                    c.send(&dummy_create(shared, d))?;
                 }
                 pos = Some(start);
                 loaded = false;
@@ -507,13 +518,14 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                     shared.players.lock().unwrap().iter().find(|p| p.me.guid == g).map(|p| p.me.clone())
                 };
                 if let Some(m) = who {
+                    let class = if m.host { sandbox::class_of(shared).0 } else { Class::Warrior };
                     c.send(&SMSG_NAME_QUERY_RESPONSE {
                         guid: q.guid,
                         character_name: m.name,
                         realm_name: String::new(),
                         race: Race::Human,
                         gender: gender_of(m.gender),
-                        class: Class::Warrior,
+                        class,
                         has_declined_names: SMSG_NAME_QUERY_RESPONSE_DeclinedNames::No,
                     })?
                 }
@@ -949,18 +961,19 @@ pub fn character(shared: &Shared, me: &Me) -> Character {
     for &(slot, _, display, inv) in OUTFIT {
         equipment[slot] = CharacterGear { equipment_display_id: display, inventory_type: inv, enchantment: 0 };
     }
+    let (class, level) = if me.host { sandbox::class_of(shared) } else { (Class::Warrior, 1) };
     Character {
         guid: Guid::new(me.guid),
         name: me.name.clone(),
         race: Race::Human,
-        class: Class::Warrior,
+        class,
         gender: gender_of(me.gender),
         skin: 0,
         face: 0,
         hair_style: 0,
         hair_color: 0,
         facial_hair: 0,
-        level: Level::new(1),
+        level: Level::new(level),
         area: AREA,
         map: Map::Kalimdor,
         position: Vector3d { x: spot.x, y: spot.y, z },
@@ -977,6 +990,11 @@ pub fn character(shared: &Shared, me: &Me) -> Character {
 
 /// A player's create: for its own client (`own`: the self flag, it controls it) or for the others'.
 fn player_create(me: &Me, p: Pos, own: bool) -> SMSG_UPDATE_OBJECT {
+    player_create_as(me, p, own, None)
+}
+
+/// ... with the class picked (sandbox.rs: its class, level, health and power), for the host's own copy.
+fn player_create_as(me: &Me, p: Pos, own: bool, kit: Option<&crate::classes::Kit>) -> SMSG_UPDATE_OBJECT {
     let mut b = UpdatePlayerBuilder::new()
         .set_object_guid(Guid::new(me.guid))
         .set_object_scale_x(1.0)
@@ -1000,6 +1018,9 @@ fn player_create(me: &Me, p: Pos, own: bool) -> SMSG_UPDATE_OBJECT {
         .set_player_bytes_3(if me.gender == HeroGender::Female { 1 } else { 0 }, 0, 0, 0)
         .set_player_next_level_xp(400)
         .set_player_watched_faction_index(-1);
+    if let Some(k) = kit {
+        b = sandbox::with_class(b, k, gender_of(me.gender));
+    }
     for &(slot, entry, _, _) in OUTFIT {
         let idx = VisibleItemIndex::try_from(slot as u8).expect("an equipment slot");
         b = b.set_player_visible_item(VisibleItem::new(entry, [0, 0]), idx);
@@ -1052,16 +1073,15 @@ fn enter_world(c: &Writer, shared: &Shared, account: &str, me: &Me, p: Pos) -> i
     // no message of the day: it is a line in the chat (the Den bar or the welcome says hello instead)
     c.send(&SMSG_MOTD { motds: vec![] })?;
     c.send(&SMSG_BINDPOINTUPDATE { position: Vector3d { x: spot.x, y: spot.y, z }, map: Map::Kalimdor, area: AREA })?;
-    // one spell: the editor's exact click (gizmo.rs PLACE_SPELL, never cast)
-    c.send_raw(gizmo::SMSG_INITIAL_SPELLS, &gizmo::initial_spells_body(&[gizmo::PLACE_SPELL]))?;
-    c.send(&SMSG_ACTION_BUTTONS::Initial { data: [ActionButton { action: 0, action_type: 0, misc: 0 }; 144] })?;
+    // the class's spells and bar when one is picked (sandbox.rs), else none, as before
+    sandbox::initial(c, shared, me)?;
     c.send(&SMSG_INITIALIZE_FACTIONS { factions: vec![FactionInitializer { flag: FactionFlag::empty(), standing: 0 }; 128] })?;
     c.send(&SMSG_LOGIN_SETTIMESPEED { datetime: login_time(), timescale: 1.0 / 60.0, unknown1: 0 })?;
     // the player (Map::AddPlayerToMap), THEN the time sync (Player::SendInitialPacketsAfterAddToMap:
     // ResetTimeSync, SendTimeSync), as AzerothCore and the message crate's own wrath_server example do. Den Lite sent
     // the time sync before the player existed, and a control update during the loading screen that AzerothCore never
     // sends at login (it is said when the game takes its character: CMSG_SET_ACTIVE_MOVER, in `session`).
-    c.send(&player_create(me, p, true))?;
+    c.send(&player_create_as(me, p, true, sandbox::kit_for(shared, me).as_ref()))?;
     c.send_raw(movewatch::SMSG_TIME_SYNC_REQ, &movewatch::time_sync_body(0))?;
     c.send(&SMSG_INIT_WORLD_STATES { map: Map::Kalimdor, area: AREA, sub_area: AREA, states: vec![] })?;
     let objs = shared.den.lock().unwrap().everything();
@@ -1264,6 +1284,7 @@ const HELP: &[&str] = &[
     ".den companion [stay|follow|come|tips|away]: your companion (or say \"Jaina, stay\"); .den ask <words> or \"Jaina, ...\" near her: to your assistant (Leyline's Agents page), or her own tips",
     ".den mode [id]: Leyline's game modes and how to try one on this PC; .den mods: the addons and mods in your game",
     ".den dojo: a training ring with dummies (your companion builds it); .den fly on|off; .den speed 1-5; \"Jaina, build a garden\" (.den dojo help: more)",
+    ".den class <class> [level]: any class at any level, every spell it learns (.den class: the list); the dummies take your hits",
 ];
 
 fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Result<()> {
@@ -1488,6 +1509,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
         }
         // the Dojo (dojo.rs): the training ring, dummies, flying, speed
         (".den", "dojo") => dojo_cmd(c, shared, sess, p, &words[2..]),
+        (".den", "class") => sandbox::class_cmd(c, shared, sess, w(2), w(3)),
         (".den", "fly") => fly(c, shared, sess, w(2)),
         (".den", "speed") => speed(c, shared, sess, w(2)),
         (".den", "companion") | (".den", "jaina") => match w(2) {
@@ -1544,7 +1566,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
         }
         (".den", "friends") => friends(c, shared, w(2), w(3)),
         (".den", "invite") | (".den", "forge") => ask_launcher(c, shared, w(1)),
-        (".den", _) | (".build", _) => say(c, "Den Lite knows: .den place, .den find, .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room, .den grow, .den size, .den companion, .den ask, .den mode, .den mods, .den friends, .den invite, .den forge, .den dojo, .den fly, .den speed."),
+        (".den", _) | (".build", _) => say(c, "Den Lite knows: .den place, .den find, .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room, .den grow, .den size, .den companion, .den ask, .den mode, .den mods, .den friends, .den invite, .den forge, .den dojo, .den fly, .den speed, .den class."),
         // Another server's commands (GM addons send ".server info", ".account onlinelist" on login): not said
         // aloud, and nothing to answer in a Den.
         (w0, _) if w0.starts_with('.') => Ok(()),
@@ -1988,7 +2010,7 @@ fn check_open(shared: &Shared, w: &Writer, file: &str) -> io::Result<()> {
 
 /// The Den bar's Dojo panel line (`wuden dojo <line>`), only when the bar is there.
 fn dojo_line(c: &Writer, shared: &Shared, sess: &Sess) -> io::Result<()> {
-    let line = shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).line();
+    let line = shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).line() + &sandbox::line_extra(shared);
     bar_data(c, shared, sess.id, sess.me.guid, "dojo", &line)
 }
 
@@ -2042,18 +2064,24 @@ const DOJO_HELP: &[&str] = &[
     ".den dojo dummies [1-5]: training dummies (in the ring, or in front of you); .den dojo clear: the dummies down",
     ".den fly on|off: fly (jump, then Space to rise, X to sink); .den speed 1-5: run and fly faster",
     ".den jaina build <stamp>, or say \"Jaina, build a garden\": she walks over and builds it piece by piece",
-    "On the full Den (Leyline > Host > Your Den): dummies that count your damage, bosses, a duel ring, a new look.",
+    ".den dojo pack|mover|healer|tank|boss: dummies to practise area spells, chasing, healing, tanking and a boss's circles",
+    ".den dojo parse 1|3|5, reset, refill, cooldowns, fight on|off, best, dps; .den class <class> [level]: any class",
+    "On the full Den (Leyline > Host > Your Den): duels, a new look.",
 ];
 
 /// `.den dojo [ring|dummies [n]|clear|fly|speed|build <stamp>|status|help]`.
 fn dojo_cmd(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, args: &[String]) -> io::Result<()> {
     let a = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+    // the sandbox combat's verbs (sandbox.rs): the other dummies, parses, reset, refill, cooldowns, bests
+    if let Some(r) = sandbox::dojo_verb(c, shared, sess, p, args) {
+        return r.and_then(|_| dojo_line(c, shared, sess));
+    }
     match a(0) {
         "" | "ring" | "here" | "on" => jaina_build(c, shared, sess, p, "dojo"),
         "dummies" | "dummy" | "dummys" => {
             let n = a(1).parse::<usize>().unwrap_or(3);
             let made = dummies_up(shared, p, n);
-            say(c, &format!("{made} training dummies up. Den Lite has no combat: they stand still for practice and pictures (the full Den counts your damage)."))?;
+            say(c, &format!("{made} training dummies up: target one and attack, or cast at it. Your damage per second shows (.den dojo help: more dummies)."))?;
             dojo_line(c, shared, sess)
         }
         "clear" | "off" | "down" => {
@@ -2080,7 +2108,7 @@ fn dojo_cmd(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, args: &[String]) -
             None => say(c, "Build what? .den dojo build garden (.den stamps lists them)."),
         },
         "status" => dojo_line(c, shared, sess),
-        "boss" | "bosses" | "duel" | "duels" | "dps" | "meter" | "look" | "barber" | "best" | "queue" | "dungeon" | "raid" => {
+        "duel" | "duels" | "look" | "barber" | "queue" | "dungeon" | "raid" => {
             say(c, &format!("That {}. Here: .den dojo, .den dojo dummies, .den fly, .den speed, \"Jaina, build ...\".", dojo::FULL_ONLY))?;
             dojo_line(c, shared, sess)
         }
@@ -2107,7 +2135,7 @@ fn dummies_up(shared: &Shared, p: Pos, n: usize) -> usize {
             let _ = pl.w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(g), target_died: false });
         }
         for m in &made {
-            let _ = pl.w.send(&dummy_create(m));
+            let _ = pl.w.send(&dummy_create(shared, m));
         }
     }
     shared.event("dojo", "", &format!("dummies {}", made.len()));
@@ -2195,21 +2223,23 @@ fn jaina_build(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, name: &str) -> 
     dojo_line(c, shared, sess)
 }
 
-/// The training dummy's create: a unit like the companion's (dojo::DUMMIES: its entry, model and level), friendly,
-/// standing still. Den Lite has no combat: nothing ever hits it.
-fn dummy_create(d: &dojo::Dummy) -> SMSG_UPDATE_OBJECT {
+/// A dummy's create: a unit like the companion's (dojo::DUMMIES / KIND_DUMMIES: its entry, model and level),
+/// standing still, with the sandbox combat's health and faction (sandbox.rs: attackable, or friendly for the wounded
+/// one), no flags that keep you from hitting it.
+fn dummy_create(shared: &Shared, d: &dojo::Dummy) -> SMSG_UPDATE_OBJECT {
     let (entry, display, _, level) = dojo::dummy(d.entry).unwrap_or(dojo::DUMMIES[0]);
+    let (cur, max, faction, scale) = sandbox::dummy_look(shared, d);
     let guid = Guid::new(d.guid);
     let mask = UpdateUnitBuilder::new()
         .set_object_guid(guid)
         .set_object_entry(entry as i32)
-        .set_object_scale_x(1.0)
+        .set_object_scale_x(scale)
         .set_unit_bytes_0(Race::Human, Class::Warrior, Gender::Male, Power::Rage)
-        .set_unit_health(100)
-        .set_unit_maxhealth(100)
+        .set_unit_health(cur as i32)
+        .set_unit_maxhealth(max as i32)
         .set_unit_level(level.into())
-        .set_unit_factiontemplate(35)
-        .set_unit_flags(832)
+        .set_unit_factiontemplate(faction as i32)
+        .set_unit_flags(0)
         .set_unit_boundingradius(0.389)
         .set_unit_combatreach(1.5)
         .set_unit_displayid(display as i32)
@@ -2254,6 +2284,7 @@ pub fn dojo_ticker(shared: Arc<Shared>) {
 }
 
 fn dojo_tick(shared: &Shared) -> io::Result<()> {
+    sandbox::tick(shared);
     if shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).job.is_none() {
         return Ok(());
     }
@@ -2317,7 +2348,7 @@ fn dojo_tick(shared: &Shared) -> io::Result<()> {
                     monster_say(&w, if ring { dojo::BUILT_DOJO } else { dojo::BUILT })?;
                 }
                 notify_host(shared, Item::line("ok", format!("{title} is up ({shown} props). .build undo takes it back.")))?;
-                let line = shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).line();
+                let line = shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).line() + &sandbox::line_extra(shared);
                 bar_data(&w, shared, sess_id, PLAYER_GUID, "dojo", &line)?;
             }
         }

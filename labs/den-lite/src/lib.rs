@@ -147,6 +147,9 @@ pub struct Shared {
     pub build_look: std::sync::atomic::AtomicBool,
     /// The host's placement aids as the den-test reads them (gizmo::view).
     pub aid_view: Mutex<serde_json::Value>,
+    /// The class picked (`.den class`, classes.rs; kept in the Dens folder) and the sandbox combat (combat.rs).
+    pub pick: Mutex<Option<classes::Pick>>,
+    pub combat: Mutex<combat::Combat>,
 }
 
 impl Shared {
@@ -255,6 +258,7 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
         eprintln!("den-lite: {known} prop models known for the gallery");
     }
     let autosaved = d.autosave_key();
+    let pick = classes::Pick::load(&cfg.den_dir);
     let events = events::Events::new(&cfg.den_dir);
     events.note("start", "", &format!("{}{}", la.port(), if cfg.test_control { " test" } else { "" }));
     events.note("models", "", &known.to_string());
@@ -279,6 +283,8 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
         dojo: Mutex::new(dojo::Dojo::default()),
         build_look: std::sync::atomic::AtomicBool::new(false),
         aid_view: Mutex::new(serde_json::Value::Null),
+        pick: Mutex::new(pick),
+        combat: Mutex::new(combat::Combat::new(world::PLAYER_GUID)),
     });
     let s = shared.clone();
     std::thread::spawn(move || login::serve(login, s, false));

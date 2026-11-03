@@ -55,6 +55,7 @@ ALLOW = [
     "stream/links.py",                            # short share links (/r /h /q /m /u)
     "stream/playmodes.json",                      # the mode catalog the launcher builds in (modes.rs include_str!)
     "stream/modepacks.json",                      # the mode templates the launcher builds in (host/modes.rs include_str!)
+    "stream/loadouts.json",                       # the loadout templates the Host page's test checks (host/flow.rs include_str!)
     "stream/www-files/art/leyline-*",             # the Leyline art, leyline-display-OFL.txt included
     "mods/SPEC.md",                               # the mod package format
     "docs/leyline",                               # the Leyline docs (also served at /wrath/docs)
@@ -279,6 +280,7 @@ panel); run those there.
 | `docs/leyline/` | the Leyline docs: play, mods, publishing, hosting, launcher, Hero Key, other servers, commands |
 | `stream/playmodes.json` | the game-mode catalog the launcher builds in |
 | `stream/modepacks.json` | the mode templates (realms anyone can host and fork) the launcher builds in |
+| `stream/loadouts.json` | the loadout templates (approved catalog ids only) the launcher's Host page checks against |
 | `launcher/` | the Leyline desktop launcher (Windows, macOS, Linux): clients, mods, realms, hosting. Build steps in `launcher/README.md` |
 
 The Mods & Workshop panel (`ModsPanel.lua`) uses the rest of the WrathUnleashed UI addon, so it stays in

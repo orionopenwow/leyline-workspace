@@ -46,7 +46,7 @@ def run(mode):
     (game / "Data" / "enUS").mkdir(parents=True)
     (game / "WTF").mkdir()
     (game / "WTF" / "Config.wtf").write_text('SET accountName "WR000123"\r\nSET gxWindow "1"\r\n')
-    (game / "Data" / "enUS" / "realmlist.wtf").write_text("set realmlist leylinelauncher.com\r\n")
+    (game / "Data" / "enUS" / "realmlist.wtf").write_text("\ufeffset realmlist leylinelauncher.com\r\n", encoding="utf-8")   # a BOM, as on the owner's PC
     app.mkdir()
     (app / "settings.json").write_text(json.dumps({"clients": [{"id": "c1", "name": "Wrath 3.3.5a", "path": str(game), "build": "3.3.5a"}],
                                                    "selected_client": "c1"}))

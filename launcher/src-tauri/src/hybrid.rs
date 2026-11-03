@@ -14,10 +14,9 @@
 //! launcher retries until then), and on the next write. The password only ever works once and for minutes (the
 //! realm scrambles it after `login_ttl`), but it still never stays on disk longer than that one start.
 //!
-//! Without Forever UI (owner 2 Nov 23:31: "when the client launches from a signed in launcher, it skips the login ...
-//! instantly, clear way to do this without too much client edit"): the game's own `GlueXML.toc`, read from the
-//! player's archives (crate::mpq::read_own, never shipped by us), with our one line added at its end; nothing else of
-//! the game's login screens is copied or changed. The archive then holds only that list, our own files and the session.
+//! Without Forever UI: nothing. The stock game checks its login screen files and refuses a changed list ("Your login
+//! interface files are corrupt", the owner's client-smoke, 3 Nov 00:15), so the game's own list with our line added
+//! can't be used; an archive of ours holding one (0.3.35 wrote it) is taken away at the next start.
 //!
 //! An archive in that slot that Leyline did not write (no `LeylineHybrid.lua` inside, or bigger than ours can be)
 //! is never touched: the switch then says why and the old way (type the one-time password) is used.
@@ -147,48 +146,11 @@ pub fn foreverui_glue(client: &Path) -> Result<(String, Vec<(String, Vec<u8>)>),
 
 const TOC_NAME: &str = "Interface\\GlueXML\\GlueXML.toc";
 
-/// The game's own login screen list (`Interface\GlueXML\GlueXML.toc`), from the player's archives in the order the
-/// game reads them (our own slots left out, so it is never our copy).
-pub fn stock_toc(client: &Path) -> Result<String, String> {
-    let order = crate::host::terrain::archive_order(client);
-    if order.is_empty() {
-        return Err("This game folder has no game archives in its Data folder.".into());
-    }
-    let toc = mpq::read_own(&order, TOC_NAME)?.ok_or("This game's login screen list isn't in its archives.")?;
-    if toc.len() > 64 * 1024 {
-        return Err("That login screen list is too big to be the game's.".into());
-    }
-    Ok(String::from_utf8_lossy(&toc).into_owned())
-}
-
-/// The game's own list with ours added last (once): the game's screens load as always, then our sign-in.
-pub fn stock_toc_with_ours(toc: &str) -> Result<String, String> {
-    let nl = if toc.contains("\r\n") { "\r\n" } else { "\n" };
-    let mut lines: Vec<&str> = toc.lines().filter(|l| !l.trim().eq_ignore_ascii_case(OUR_XML)).collect();
-    let lists_xml = lines.iter().any(|l| {
-        let t = l.trim().to_ascii_lowercase();
-        !t.starts_with('#') && t.ends_with(".xml")
-    });
-    if !lists_xml {
-        return Err("That GlueXML.toc lists no login screen files.".into());
-    }
-    while lines.last().is_some_and(|l| l.trim().is_empty()) {
-        lines.pop();
-    }
-    lines.push(OUR_XML);
-    Ok(lines.join(nl) + nl)
-}
-
 /// The login screen list for our archive and the glue files that go with it: Forever UI's (its toc and files, from
-/// the folder) when it is installed, else the game's own list from its archives with nothing else of its copied.
+/// the folder). The game's own list is never used: the stock game refuses a changed one (see the top of this file).
 pub fn glue(client: &Path) -> Result<(String, Vec<(String, Vec<u8>)>), String> {
-    match foreverui_glue(client) {
-        Ok((toc, fui)) => Ok((toc_with_ours(&toc)?, fui)),
-        Err(fui_err) => {
-            let toc = stock_toc(client).map_err(|e| format!("{e} ({fui_err})"))?;
-            Ok((stock_toc_with_ours(&toc)?, Vec::new()))
-        }
-    }
+    let (toc, fui) = foreverui_glue(client)?;
+    Ok((toc_with_ours(&toc)?, fui))
 }
 
 /// Everything the archive holds, for this session (or none).
@@ -272,7 +234,15 @@ pub fn write(client: &Path, s: Option<&Session>) -> Result<PathBuf, String> {
         return Err("This game doesn't take Leyline's login screen (it closed on it once).".into());
     }
     let all = slots(client)?;
-    let bytes = mpq::build(&bundle(client, s)?)?;
+    let files = match bundle(client, s) {
+        Ok(f) => f,
+        Err(e) => {
+            // nothing we can write here (no Forever UI): an archive of ours from before goes, so the game starts clean
+            let _ = remove(client);
+            return Err(e);
+        }
+    };
+    let bytes = mpq::build(&files)?;
     for (p, _) in &all {
         crate::settings::write_atomic(p, &bytes).map_err(|e| format!("Couldn't write {} (is the game still running?): {e}", p.display()))?;
     }
@@ -282,10 +252,23 @@ pub fn write(client: &Path, s: Option<&Session>) -> Result<PathBuf, String> {
 /// Take the session out (the archive stays, with the empty one). Ok(true): it was taken out; Ok(false): there was
 /// none. Err while the game still holds the archive.
 pub fn scrub(client: &Path) -> Result<bool, String> {
+    if stale(client) {
+        return remove(client);
+    }
     if !has_session(client) {
         return Ok(false);
     }
     write(client, None).map(|_| true)
+}
+
+/// An archive of ours the game would refuse: one whose login screen list isn't Forever UI's (0.3.35 wrote the game's
+/// own list with our line), or any of ours in a folder without Forever UI.
+pub fn stale(client: &Path) -> bool {
+    let Ok(all) = slots(client) else { return false };
+    let fui = foreverui_glue(client).is_ok();
+    all.iter().filter(|(_, ours)| *ours).any(|(p, _)| {
+        !fui || fs::read(p).ok().and_then(|b| mpq::read(&b, TOC_NAME)).is_some_and(|t| !String::from_utf8_lossy(&t).to_ascii_lowercase().contains("foreverui"))
+    })
 }
 
 /// Take our archive away (the switch turned off), from every slot. Someone else's is never touched.
@@ -311,9 +294,8 @@ pub fn remove(client: &Path) -> Result<bool, String> {
 
 pub fn status(client: &Path) -> Status {
     let fui = foreverui_glue(client);
-    let g = if fui.is_ok() { Ok(()) } else { glue(client).map(|_| ()) };
     let sl = slot(client);
-    let why = match (&g, &sl) {
+    let why = match (&fui, &sl) {
         (Err(e), _) => e.clone(),
         (_, Err(e)) => e.clone(),
         _ => String::new(),
@@ -450,35 +432,31 @@ mod tests {
     }
 
     #[test]
-    fn without_forever_ui_the_games_own_list_from_its_archives_gets_our_line_last() {
-        const STOCK: &str = "## Interface: 30300\r\nGlueLocalization.xml\r\nGlueParent.xml\r\nAccountLogin.xml\r\n\r\n";
-        assert_eq!(stock_toc_with_ours(STOCK).unwrap(), "## Interface: 30300\r\nGlueLocalization.xml\r\nGlueParent.xml\r\nAccountLogin.xml\r\nLeylineHybrid.xml\r\n");
-        let once = stock_toc_with_ours(STOCK).unwrap();
-        assert_eq!(stock_toc_with_ours(&once).unwrap(), once, "idempotent");
-        assert!(stock_toc_with_ours("## Title: nothing\n").is_err(), "a list with no screens");
-
-        // a game folder: its own archive holds the list and a login screen file; no Forever UI anywhere
+    fn without_forever_ui_nothing_is_written_and_an_old_archive_of_ours_goes() {
+        // 0.3.35 wrote the game's own login screen list with our line; the stock game refuses it ("corrupt"): the next
+        // start (write or scrub) takes it away and writes nothing in its place
         let d = tempfile::tempdir().unwrap();
         fs::create_dir_all(d.path().join("Data/enUS")).unwrap();
-        let common = mpq::build(&[
-            (TOC_NAME.to_string(), STOCK.as_bytes().to_vec()),
-            ("Interface\\GlueXML\\AccountLogin.xml".to_string(), b"<Ui/>".to_vec()),
+        let old = mpq::build(&[
+            (TOC_NAME.to_string(), b"GlueParent.xml\r\nLeylineHybrid.xml\r\n".to_vec()),
+            (OUR_LUA_NAME.to_string(), b"-- ours".to_vec()),
+            (SESSION_NAME.to_string(), NO_SESSION.as_bytes().to_vec()),
         ])
         .unwrap();
-        fs::write(d.path().join("Data/common.MPQ"), &common).unwrap();
-        assert!(foreverui_glue(d.path()).is_err());
-        assert_eq!(stock_toc(d.path()).unwrap(), STOCK);
-        let st = status(d.path());
-        assert!(!st.foreverui && st.slot_ok && st.why.is_empty(), "{st:?}");
-        let p = write(d.path(), Some(&sess())).unwrap();
-        let ours = fs::read(&p).unwrap();
-        assert_eq!(mpq::read(&ours, TOC_NAME).unwrap(), once.as_bytes());
-        assert!(mpq::read(&ours, "Interface\\GlueXML\\AccountLogin.xml").is_none(), "nothing of the game's own screens is copied");
-        assert!(mpq::read(&ours, OUR_LUA_NAME).is_some() && has_session(d.path()));
-        // written again (the next PLAY): the list is read from the game's archives, never from ours
-        write(d.path(), Some(&sess())).unwrap();
-        assert_eq!(mpq::read(&fs::read(&p).unwrap(), TOC_NAME).unwrap(), once.as_bytes(), "one line of ours, still");
-        assert!(scrub(d.path()).unwrap() && !has_session(d.path()));
+        let root = d.path().join("Data").join(SLOT);
+        let loc = d.path().join("Data/enUS/patch-enUS-Z.MPQ");
+        fs::write(&root, &old).unwrap();
+        fs::write(&loc, &old).unwrap();
+        assert!(stale(d.path()));
+        assert!(scrub(d.path()).unwrap(), "taken away");
+        assert!(!root.exists() && !loc.exists());
+        fs::write(&root, &old).unwrap();
+        assert!(write(d.path(), Some(&sess())).is_err(), "no Forever UI: no sign-in by itself");
+        assert!(!root.exists(), "and the old archive went with it");
+        // an archive of ours with Forever UI's list is not stale
+        let c = client();
+        write(c.path(), Some(&sess())).unwrap();
+        assert!(!stale(c.path()));
     }
 
     #[test]

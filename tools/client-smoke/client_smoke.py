@@ -36,12 +36,18 @@ REPORT = "play-test.json"
 CLI_MARK = b"leyline-play-test-v1"
 
 
+def plain(t):
+    """One line for the log: no byte-order mark or other invisible characters, at most 300 characters."""
+    return "".join(c for c in str(t) if c.isprintable() and c != "\ufeff")[:300]
+
+
 class Steps:
     def __init__(self):
         self.rows = []
 
     def add(self, ok, what, detail=""):
         kind = "PASS" if ok is True else ("FAIL" if ok is False else "INFO")
+        detail = plain(detail)
         self.rows.append((kind, what, detail))
         print("%-4s %s%s" % (kind, what, (": " + detail) if detail else ""), flush=True)
         return ok
@@ -65,7 +71,7 @@ def realmlist(game):
     for d in places + [Path(game)]:
         p = dc.find_ci(d, "realmlist.wtf")
         if p and p.is_file():
-            return p.read_text(encoding="utf-8", errors="replace").strip()[:200]
+            return plain(p.read_text(encoding="utf-8-sig", errors="replace").strip())[:200]
     return ""
 
 
@@ -77,6 +83,45 @@ def archive_state(game):
     ours, left, toc, names = dc.our_archive(p)
     return {"there": True, "ours": ours, "session_left": left, "toc_has_ours": toc, "files": len(names),
             "glue_files": sorted(n for n in names if n.lower().startswith("interface\\gluexml\\"))[:12]}
+
+# The game's message boxes (a dialog window, class #32770, of the game's process) and their text: "Your login interface
+# files are corrupt" is a FAIL the screenshots alone didn't flag (3 Nov 00:15).
+DIALOG_PS = r"""
+Add-Type @'
+using System; using System.Text; using System.Collections.Generic; using System.Runtime.InteropServices;
+public class LD {
+  public delegate bool EP(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EP f, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr p, EP f, IntPtr l);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  public static List<string> Find(uint want) {
+    var o = new List<string>();
+    EnumWindows((h, l) => { uint p; GetWindowThreadProcessId(h, out p); if (p != want || !IsWindowVisible(h)) return true;
+      var c = new StringBuilder(64); GetClassName(h, c, 64); if (c.ToString() != "#32770") return true;
+      var t = new StringBuilder(512); EnumChildWindows(h, (k, m) => { var cc = new StringBuilder(64); GetClassName(k, cc, 64);
+        if (cc.ToString() == "Static") { var s = new StringBuilder(512); GetWindowText(k, s, 512); if (s.Length > 0) t.Append(s.ToString()).Append(' '); }
+        return true; }, IntPtr.Zero);
+      o.Add(t.ToString().Trim()); return true; }, IntPtr.Zero);
+    return o; } }
+'@
+[LD]::Find(__PID__) | ForEach-Object { "DIALOG:" + $_ }
+"""
+
+
+def game_dialogs(pid):
+    """The text of each message box the game's process shows now ([] off Windows or when there is none)."""
+    if os.name != "nt" or not pid:
+        return []
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", DIALOG_PS.replace("__PID__", str(int(pid)))],
+                           capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return [plain(l[7:]) for l in r.stdout.splitlines() if l.startswith("DIALOG:")]
+
 
 
 def read_report(app):
@@ -92,6 +137,11 @@ def main(argv=None):
     ap.add_argument("--every", type=float, default=3.0, help="seconds between screenshots")
     ap.add_argument("--world", action="store_true", help="enter the world with the last character, not only character select")
     a = ap.parse_args(argv)
+    for f in (sys.stdout, sys.stderr):   # the Windows console's code page can't print everything: never a crash over it
+        try:
+            f.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
     st = Steps()
     print("CLIENT SMOKE TEST (%s)" % time.strftime("%Y-%m-%d %H:%M"), flush=True)
     if OUT.exists():
@@ -133,7 +183,7 @@ def main(argv=None):
     st.add(None, "started", " ".join(cmd[1:]))
 
     # 3. while it runs: the report's phases, the game window every few seconds
-    shots, pid, seen_phase, seen_session = 0, 0, "", False
+    shots, pid, seen_phase, seen_session, dialogs = 0, 0, "", False, []
     deadline = t0 + max(10, min(a.hold, 600)) + 90
     next_shot = 0.0
     while time.time() < deadline:
@@ -154,6 +204,10 @@ def main(argv=None):
                 st.add(None, "screenshot", detail)
             if not seen_session:
                 seen_session = bool(archive_state(gpath).get("session_left"))
+            for d in game_dialogs(pid):
+                if d not in dialogs:
+                    dialogs.append(d)
+                    st.add(None, "a message box from the game", "%s (at %.0fs)" % (d or "(no text)", time.time() - t0))
             next_shot = time.time() + a.every
         if proc.poll() is not None and ph == "done":
             break
@@ -166,7 +220,7 @@ def main(argv=None):
 
     # 4. after
     r = read_report(app) or {}
-    return finish(st, r, {"code": code, "shots": shots, "pid": pid, "gpath": gpath, "seen_session": seen_session, "t": time.time() - t0})
+    return finish(st, r, {"code": code, "shots": shots, "pid": pid, "gpath": gpath, "seen_session": seen_session, "t": time.time() - t0, "dialogs": dialogs})
 
 
 def finish(st, r, run):
@@ -180,6 +234,7 @@ def finish(st, r, run):
         st.add(bool(hy.get("ok")), "the sign-in handed to the login screen (it skips the login by itself)", hy.get("why", ""))
         st.add(run["seen_session"] or not hy.get("ok"), "the sign-in was in the archive while the game started")
         st.add(run["shots"] > 0, "screenshots of the game", "%d in %s" % (run["shots"], OUT))
+        st.add(not run["dialogs"], "no message box from the game (a refused login screen, a crash)", "; ".join(run["dialogs"]))
         st.add(bool(r.get("scrubbed")) and not r.get("session_left"), "the sign-in taken back out after", "left in the archive!" if r.get("session_left") else "")
         after = archive_state(run["gpath"])
         st.add(not after.get("session_left"), "nothing of it on disk now", json.dumps(after))

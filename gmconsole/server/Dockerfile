@@ -3,4 +3,4 @@
 # bash (soap-cmd.sh, stream-switch.sh, stream-lib.sh), curl (soap-cmd.sh), the docker CLI and compose.
 FROM python:3.12-alpine
 RUN apk add --no-cache bash curl docker-cli docker-cli-compose coreutils
-LABEL org.opencontainers.image.title="WrathUnleashed GM console"
+LABEL org.opencontainers.image.title="Leyline GM console"

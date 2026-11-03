@@ -700,3 +700,6 @@
 1311b fresh-leyline  The public Leyline repo's main as one commit by Orion (owner made CONFIRM-leyline; backup on the Desktop): Chumpton off the contributors
 1311c signin  Site: Create a guest account (signed in and straight on to play; the name, password and Hero Key wait on Your Hero Key to save, with Save in this browser and the text file); new accounts no longer left signed out
 1311d ship  Save as Orion: the launcher opens straight in (Log In top right), guest accounts in one click, the Hero Key file found in Downloads, the client list numbers once, Melty's pane, PLAY skips the game's login screen without Forever UI too, play-test and the client smoke test
+1311e gm  GM console in the launcher's look: stone panels, gold headings, the Leyline mark, red stone buttons (Leyline GM console); the game keeps running
+1311g client-smoke  Client smoke test again (1311f stopped on an invisible character in the realmlist file): your game started as PLAY starts it, screenshots, closed, the sign-in taken out (logs\client-smoke)
+1311h ship  Save as Orion: PLAY never writes the game's own login screen list again (the game called it corrupt), and takes such an archive away at the next start; client-smoke fails on any message box from the game

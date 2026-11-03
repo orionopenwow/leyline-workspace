@@ -1291,6 +1291,7 @@ const HELP: &[&str] = &[
     ".den dojo: a training ring with dummies (your companion builds it); .den fly on|off; .den speed 1-5; \"Jaina, build a garden\" (.den dojo help: more)",
     ".den class <class> [level]: any class at any level, every spell it learns (.den class: the list); the dummies take your hits",
     ".den gear <item number>|<slot> <item>|list <slot>|reset: any item's look on you (looks: thunderfury, warglaives...)",
+    ".den mounts [list|off]: every mount in your spellbook; flying ones fly with .den fly on",
 ];
 
 fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Result<()> {
@@ -1517,6 +1518,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
         (".den", "dojo") => dojo_cmd(c, shared, sess, p, &words[2..]),
         (".den", "class") => sandbox::class_cmd(c, shared, sess, w(2), w(3)),
         (".den", "gear") | (".den", "looks") => sandbox::gear_cmd(c, shared, sess, &words[2..]),
+        (".den", "mounts") | (".den", "mount") => sandbox::mounts_cmd(c, shared, sess, w(2), w(3)),
         (".den", "fly") => fly(c, shared, sess, w(2)),
         (".den", "speed") => speed(c, shared, sess, w(2)),
         (".den", "companion") | (".den", "jaina") => match w(2) {
@@ -1573,7 +1575,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
         }
         (".den", "friends") => friends(c, shared, w(2), w(3)),
         (".den", "invite") | (".den", "forge") => ask_launcher(c, shared, w(1)),
-        (".den", _) | (".build", _) => say(c, "Den Lite knows: .den place, .den find, .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room, .den grow, .den size, .den companion, .den ask, .den mode, .den mods, .den friends, .den invite, .den forge, .den dojo, .den fly, .den speed, .den class, .den gear."),
+        (".den", _) | (".build", _) => say(c, "Den Lite knows: .den place, .den find, .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room, .den grow, .den size, .den companion, .den ask, .den mode, .den mods, .den friends, .den invite, .den forge, .den dojo, .den fly, .den speed, .den class, .den gear, .den mounts."),
         // Another server's commands (GM addons send ".server info", ".account onlinelist" on login): not said
         // aloud, and nothing to answer in a Den.
         (w0, _) if w0.starts_with('.') => Ok(()),

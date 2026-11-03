@@ -52,10 +52,17 @@ pub const SMSG_SPELLNONMELEEDAMAGELOG: u16 = 0x250;
 pub const SMSG_SPELL_FAILED_OTHER: u16 = 0x2A6;
 pub const SMSG_UPDATE_COMBO_POINTS: u16 = 0x39D;
 pub const SMSG_AURA_UPDATE: u16 = 0x496;
+pub const CMSG_CANCEL_MOUNT_AURA: u32 = 0x375;
+/// UNIT_FIELD_MOUNTDISPLAYID; UNIT_FLAG_MOUNT with the player's own UNIT_FLAG_PLAYER_CONTROLLED.
+pub const MOUNT_DISPLAY: u16 = 69;
+pub const FLAGS_MOUNTED: u32 = 0x0800_0008;
+pub const FLAGS_PLAYER: u32 = 0x0000_0008;
 
 /// The game's messages read here (world.rs takes them before the message crate does).
-pub const CLIENT_OPS: [u32; 8] =
-    [CMSG_CAST_SPELL, CMSG_CANCEL_CAST, CMSG_CANCEL_AURA, CMSG_CANCEL_CHANNELLING, CMSG_SET_SELECTION, CMSG_ATTACKSWING, CMSG_ATTACKSTOP, classes::CMSG_SET_ACTION_BUTTON];
+pub const CLIENT_OPS: [u32; 9] = [
+    CMSG_CAST_SPELL, CMSG_CANCEL_CAST, CMSG_CANCEL_AURA, CMSG_CANCEL_CHANNELLING, CMSG_SET_SELECTION, CMSG_ATTACKSWING, CMSG_ATTACKSTOP,
+    classes::CMSG_SET_ACTION_BUTTON, CMSG_CANCEL_MOUNT_AURA,
+];
 /// Every message this module writes (the headless test client reads them by hand).
 pub const SERVER_OPS: [u16; 20] = [
     SMSG_CAST_FAILED, SMSG_SPELL_START, SMSG_SPELL_GO, SMSG_SPELL_FAILURE, SMSG_SPELL_COOLDOWN, MSG_CHANNEL_START, MSG_CHANNEL_UPDATE,
@@ -673,6 +680,8 @@ struct Aura {
     aura: u32,
     school: u32,
     form: u8,
+    /// A mount (its model), with the run and flight speeds it gives.
+    mount: u32,
 }
 
 /// A unit's health.
@@ -755,6 +764,9 @@ pub struct Combat {
     next_regen: u64,
     last_hurt: u64,
     gos: u32,
+    /// Spells known besides the class's (`.den mounts`: every mount).
+    pub extra: Vec<u32>,
+    speed_counter: u32,
 }
 
 impl Combat {
@@ -784,6 +796,8 @@ impl Combat {
             next_regen: 0,
             last_hurt: 0,
             gos: 0,
+            extra: Vec::new(),
+            speed_counter: 0x4000_0000,
         }
     }
 
@@ -845,10 +859,40 @@ impl Combat {
     }
 
     pub fn knows(&self, spell: u32) -> bool {
-        match &self.kit {
-            Some(k) => k.spells.binary_search(&spell).is_ok(),
-            None => spell == classes::ATTACK,
+        self.extra.contains(&spell)
+            || match &self.kit {
+                Some(k) => k.spells.binary_search(&spell).is_ok(),
+                None => spell == classes::ATTACK,
+            }
+    }
+
+    /// Every spell known: the class's (or the auto attack) and the extra ones, sorted.
+    pub fn known(&self) -> Vec<u32> {
+        let mut v = self.kit.as_ref().map(|k| k.spells.clone()).unwrap_or_else(|| vec![classes::ATTACK]);
+        v.extend(self.extra.iter().copied());
+        v.sort_unstable();
+        v.dedup();
+        v
+    }
+
+    fn speed_packets(&mut self, run: f32, flight: f32) -> Vec<Out> {
+        self.speed_counter = self.speed_counter.wrapping_add(2);
+        vec![
+            Out::Pkt(crate::dojo::SMSG_FORCE_RUN_SPEED_CHANGE, crate::dojo::run_speed_body(self.me, self.speed_counter, run)),
+            Out::Pkt(crate::dojo::SMSG_FORCE_FLIGHT_SPEED_CHANGE, crate::dojo::flight_speed_body(self.me, self.speed_counter + 1, flight)),
+        ]
+    }
+
+    /// CMSG_CANCEL_MOUNT_AURA: off the mount.
+    pub fn dismount(&mut self) -> Vec<Out> {
+        match self.auras.iter().position(|a| a.unit == self.me && a.mount != 0) {
+            Some(i) => self.drop_aura(i),
+            None => Vec::new(),
         }
+    }
+
+    pub fn mounted(&self) -> bool {
+        self.auras.iter().any(|a| a.unit == self.me && a.mount != 0)
     }
 
     /// The health a unit goes up with (and Den Lite keeps from now).
@@ -1018,6 +1062,8 @@ impl Combat {
             }
         }
         let cast_ms = book.cast_ms(&s, level);
+        // the aura effects per unit: one aura for the spell on each (its effects' bits), after the loop
+        let mut auras: Vec<(u64, Vec<(usize, Effect, i32)>)> = Vec::new();
         for (k, e) in s.effects.iter().enumerate() {
             let roll = self.roll();
             let value = effect_value(&s, e, level, roll);
@@ -1054,9 +1100,15 @@ impl Combat {
                     self.combo = (g, had.saturating_add(value.clamp(1, 5) as u8).min(5));
                     out.push(Out::Pkt(SMSG_UPDATE_COMBO_POINTS, combo_body(g, self.combo.1)));
                 } else if matches!(e.kind, 6 | 35 | 65 | 119 | 128 | 129 | 143) && !s.channeled() {
-                    out.extend(self.aura_on(now, book, &s, e, k, g, value, cast_ms));
+                    match auras.iter_mut().find(|x| x.0 == g) {
+                        Some(x) => x.1.push((k, *e, value)),
+                        None => auras.push((g, vec![(k, *e, value)])),
+                    }
                 }
             }
+        }
+        for (g, effs) in auras {
+            out.extend(self.aura_on(now, book, &s, &effs, g, cast_ms));
         }
         if finisher && self.combo.1 > 0 {
             let t = self.combo.0;
@@ -1205,23 +1257,26 @@ impl Combat {
         (0u8..56).find(|s| !self.auras.iter().any(|a| a.unit == unit && a.slot == *s)).unwrap_or(55)
     }
 
-    /// An aura: shown on the unit with its duration; damage or healing over time ticks from the tick; a stance or
-    /// form sets the shapeshift byte (UNIT_FIELD_BYTES_2's fourth: the stance bar's own).
-    #[allow(clippy::too_many_arguments)]
-    fn aura_on(&mut self, now: u64, book: &Book, s: &Spell, e: &Effect, k: usize, g: u64, value: i32, cast_ms: u32) -> Vec<Out> {
+    /// An aura: shown on the unit with its duration (one for the spell, its aura effects' bits); damage or healing
+    /// over time ticks from the tick; a stance or form sets the shapeshift byte (UNIT_FIELD_BYTES_2's fourth: the
+    /// stance bar's own); a mount (SPELL_AURA_MOUNTED 78: a creature entry, its model from creatures.rs) sets
+    /// UNIT_FIELD_MOUNTDISPLAYID and UNIT_FLAG_MOUNT, its speeds (auras 32 and 207: per cent more) the run and flight
+    /// speeds.
+    fn aura_on(&mut self, now: u64, book: &Book, s: &Spell, effs: &[(usize, Effect, i32)], g: u64, cast_ms: u32) -> Vec<Out> {
         let mut out = Vec::new();
         let dur = book.duration_ms(s, self.stats.level);
         let ends = if dur == 0 || dur == u32::MAX { 0 } else { now + dur as u64 };
-        // the same spell again on the same unit: refreshed in its slot (a stance: switched off)
-        let same = self.auras.iter().position(|a| a.unit == g && a.spell == s.id);
-        let form = if e.aura == 36 { e.misc.clamp(0, 255) as u8 } else { 0 };
-        if let Some(i) = same {
-            if form != 0 && ends == 0 {
+        let mask: u8 = effs.iter().fold(0, |m, (k, _, _)| m | (1u8 << k));
+        let form = effs.iter().find(|x| x.1.aura == 36).map(|x| x.1.misc.clamp(0, 255) as u8).unwrap_or(0);
+        let mount = effs.iter().find(|x| x.1.aura == 78).map(|x| crate::creatures::display(x.1.misc.max(0) as u32).unwrap_or(0).max(1)).unwrap_or(0);
+        // the same spell again on the same unit: refreshed in its slot (a stance or a mount: switched off)
+        if let Some(i) = self.auras.iter().position(|a| a.unit == g && a.spell == s.id) {
+            if (form != 0 || mount != 0) && (ends == 0 || mount != 0) {
                 return self.drop_aura(i);
             }
             let slot = self.auras[i].slot;
             self.auras[i].ends = ends;
-            out.push(Out::Pkt(SMSG_AURA_UPDATE, aura_body(g, slot, s.id, self.me, 1 << k, !harmful(s), self.stats.level as u8, (ends > 0).then_some((dur, dur)))));
+            out.push(Out::Pkt(SMSG_AURA_UPDATE, aura_body(g, slot, s.id, self.me, mask, !harmful(s), self.stats.level as u8, (ends > 0).then_some((dur, dur)))));
             return out;
         }
         if form != 0 {
@@ -1232,19 +1287,28 @@ impl Combat {
             self.form = form;
             out.push(Out::Pkt(SMSG_UPDATE_OBJECT, values_body(self.me, &[(field::BYTES_2, (form as u32) << 24)])));
         }
+        if mount != 0 && g == self.me {
+            // one mount at a time
+            if let Some(i) = self.auras.iter().position(|a| a.unit == g && a.mount != 0) {
+                out.extend(self.drop_aura(i));
+            }
+            let pct = |aura: u32| effs.iter().find(|x| x.1.aura == aura).map(|x| x.2.max(0) as f32).unwrap_or(0.0);
+            let (run, flight) = (crate::dojo::BASE_RUN * (1.0 + pct(32) / 100.0), crate::dojo::BASE_FLIGHT * (1.0 + pct(207).max(pct(32)) / 100.0));
+            out.push(Out::Pkt(SMSG_UPDATE_OBJECT, values_body(self.me, &[(MOUNT_DISPLAY, if mount == 1 { 0 } else { mount }), (field::FLAGS, FLAGS_MOUNTED)])));
+            out.extend(self.speed_packets(run, flight));
+        }
         let slot = self.free_slot(g);
-        let every = if e.amplitude > 0 { e.amplitude as u64 } else { 3000 };
-        let ticks = if ends > 0 { (dur as u64 / every).max(1) as u32 } else { 1 };
-        let bonus = self.stats.spell_power as f32 * (dur.min(15_000) as f32 / 15_000.0).max(coefficient(cast_ms) * 0.5);
-        let (amount, heal) = if is_dot(e) {
-            ((value.max(1) as u32) + (bonus as u32 / ticks), false)
-        } else if is_hot(e) {
-            ((value.max(1) as u32) + (bonus as u32 * 2 / ticks), true)
-        } else {
-            (0, false)
-        };
-        self.auras.push(Aura { unit: g, slot, spell: s.id, ends, every, next: now + every, amount, heal, aura: e.aura, school: s.school_mask, form });
-        out.push(Out::Pkt(SMSG_AURA_UPDATE, aura_body(g, slot, s.id, self.me, 1 << k, !harmful(s), self.stats.level as u8, (ends > 0).then_some((dur, dur)))));
+        let (mut amount, mut heal, mut aura, mut every) = (0u32, false, effs[0].1.aura, 3000u64);
+        if let Some((_, e, value)) = effs.iter().find(|x| is_dot(&x.1) || is_hot(&x.1)) {
+            every = if e.amplitude > 0 { e.amplitude as u64 } else { 3000 };
+            let ticks = if ends > 0 { (dur as u64 / every).max(1) as u32 } else { 1 };
+            let bonus = self.stats.spell_power as f32 * (dur.min(15_000) as f32 / 15_000.0).max(coefficient(cast_ms) * 0.5);
+            heal = is_hot(e);
+            amount = (*value).max(1) as u32 + if heal { bonus as u32 * 2 / ticks } else { bonus as u32 / ticks };
+            aura = e.aura;
+        }
+        self.auras.push(Aura { unit: g, slot, spell: s.id, ends, every, next: now + every, amount, heal, aura, school: s.school_mask, form, mount });
+        out.push(Out::Pkt(SMSG_AURA_UPDATE, aura_body(g, slot, s.id, self.me, mask, !harmful(s), self.stats.level as u8, (ends > 0).then_some((dur, dur)))));
         out
     }
 
@@ -1254,6 +1318,10 @@ impl Combat {
         if a.form != 0 && a.unit == self.me {
             self.form = 0;
             out.push(Out::Pkt(SMSG_UPDATE_OBJECT, values_body(self.me, &[(field::BYTES_2, 0)])));
+        }
+        if a.mount != 0 && a.unit == self.me {
+            out.push(Out::Pkt(SMSG_UPDATE_OBJECT, values_body(self.me, &[(MOUNT_DISPLAY, 0), (field::FLAGS, FLAGS_PLAYER)])));
+            out.extend(self.speed_packets(crate::dojo::BASE_RUN, crate::dojo::BASE_FLIGHT));
         }
         out
     }
@@ -1995,5 +2063,41 @@ mod tests {
         }
         assert!(!Kind::Healer.hostile() && Kind::Boss.hostile());
         assert_eq!((Kind::Target.faction(), Kind::Tank.faction(), Kind::Healer.faction()), (7, 14, 35));
+    }
+
+    #[test]
+    fn a_mount_shows_its_model_and_speeds_then_comes_off() {
+        let mut b = book();
+        // a made-up mount spell: aura 78 on creature 3 (its model 987 in creatures.rs), 100 % run speed
+        let mut m = crate::spells::Spell { id: 458, name: "Brown Horse".into(), cast_index: 1, ..Default::default() };
+        m.effects[0] = Effect { kind: 6, aura: 78, misc: 3, target_a: 1, ..Default::default() };
+        m.effects[1] = Effect { kind: 6, aura: 32, base: 99, die: 1, target_a: 1, ..Default::default() };
+        b.spells.insert(458, m);
+        let mut c = mage(&b);
+        assert!(!c.knows(458));
+        c.extra = vec![458];
+        assert!(c.knows(458) && c.known().contains(&458) && c.known().contains(&143));
+        let out = c.cast(0, here(), &[], &b, CastReq { count: 1, spell: 458, mask: 0, ..Default::default() });
+        let mut mounted = None;
+        for o in &out {
+            if let Out::Pkt(SMSG_UPDATE_OBJECT, v) = o {
+                if v.len() > 12 && v[7] == 3 {
+                    mounted = Some(v.clone());
+                }
+            }
+        }
+        let v = mounted.expect("the mount's fields (three blocks reach field 69)");
+        assert_eq!(u32::from_le_bytes(v[v.len() - 8..v.len() - 4].try_into().unwrap()), FLAGS_MOUNTED, "flags (59) come first");
+        assert_eq!(u32::from_le_bytes(v[v.len() - 4..].try_into().unwrap()), 987, "the creature's model");
+        let run = body(&out, crate::dojo::SMSG_FORCE_RUN_SPEED_CHANGE);
+        assert_eq!(f32::from_le_bytes(run[7..11].try_into().unwrap()), 14.0, "twice as fast");
+        let auras = ops(&out).iter().filter(|o| **o == SMSG_AURA_UPDATE).count();
+        assert_eq!(auras, 1, "one aura for the spell, both effects' bits");
+        assert_eq!(body(&out, SMSG_AURA_UPDATE)[7] & 0x3, 0x3);
+        assert!(c.mounted());
+        let off = c.dismount();
+        assert!(!c.mounted());
+        let run = body(&off, crate::dojo::SMSG_FORCE_RUN_SPEED_CHANGE);
+        assert_eq!(f32::from_le_bytes(run[7..11].try_into().unwrap()), 7.0);
     }
 }

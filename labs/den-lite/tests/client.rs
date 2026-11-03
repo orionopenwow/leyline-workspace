@@ -2064,6 +2064,25 @@ fn the_class_picker_and_the_dummies_take_spells_and_swings() {
     assert!(w.until_line().1.starts_with("No bests yet"));
     w.say(".den class bard");
     assert!(w.until_line().1.starts_with("No class called 'bard'"));
+
+    // every mount: in the spellbook at once; cast one: its model and speed; off again
+    w.say(".den mounts");
+    let spells = w.until(|f| (f.opcode == 0x012A).then(|| f.body.clone()));
+    let n = u16::from_le_bytes([spells[1], spells[2]]) as usize;
+    let ids: Vec<u32> = (0..n).map(|k| u32::from_le_bytes(spells[3 + 6 * k..7 + 6 * k].try_into().unwrap())).collect();
+    assert!(ids.contains(&458) && ids.contains(&143), "the mounts and the class's spells: {ids:?}");
+    assert!(w.until_line().1.starts_with("1 mounts in your spellbook"));
+    w.raw(0x12E, &[9, 0xCA, 0x01, 0, 0, 0, 0, 0, 0, 0]);
+    let on = w.until(|f| values(f).filter(|(g, v)| *g == den_lite::world::PLAYER_GUID && v.contains_key(&69)).map(|(_, v)| v));
+    assert_eq!(on[&69], 987, "the horse's model");
+    let run = w.until(|f| (f.opcode == 0x0E2).then(|| f.body.clone()));
+    assert_eq!(f32::from_le_bytes(run[7..11].try_into().unwrap()), 14.0);
+    w.say(".den mounts list");
+    assert_eq!(w.until_line().1, "Mounts, page 1 of 1: Brown Horse.");
+    w.raw(0x375, &[]);
+    let off = w.until(|f| values(f).filter(|(g, v)| *g == den_lite::world::PLAYER_GUID && v.contains_key(&69)).map(|(_, v)| v));
+    assert_eq!(off[&69], 0, "off the horse");
+    assert!(std::fs::metadata(dir.join("den-lite.mounts")).is_ok());
     let evs = den_lite::events::read(&dir);
     assert!(evs.iter().any(|l| l.ev == "class" && l.detail.starts_with("mage 80")));
     assert!(evs.iter().any(|l| l.ev == "cast" && l.detail.starts_with("143 ")));

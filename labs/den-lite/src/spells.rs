@@ -325,6 +325,18 @@ impl Book {
     }
 }
 
+/// Every mount the tables have (`.den mounts`): spells with SPELL_AURA_MOUNTED (78), not passive, with a name
+/// (none of the game's own brand words: those are never shown here), sorted by name.
+pub fn mounts(book: &Book) -> Vec<u32> {
+    let mut v: Vec<&Spell> = book
+        .spells
+        .values()
+        .filter(|s| s.effects.iter().any(|e| e.kind == 6 && e.aura == 78) && !s.passive() && !s.name.is_empty() && !crate::companion::branded(&s.name))
+        .collect();
+    v.sort_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)));
+    v.into_iter().map(|s| s.id).collect()
+}
+
 /// The tables, read once per Dens folder (Spell.dbc is large: kept for the program's life). None there yet: tried
 /// again at most every 10 seconds (the launcher copies them as Den Lite starts).
 static BOOK: Mutex<Option<(PathBuf, Arc<Book>, std::time::Instant)>> = Mutex::new(None);
@@ -473,6 +485,9 @@ pub mod fake {
                 effects: vec![(2, 23, 1, 6, 0, 0, 0, 0)], ..Default::default() },
             Row { id: 78, name: "Heroic Strike".into(), level: 1, cast_index: 1, power: 1, cost: 150, school: 1,
                 effects: vec![(58, 10, 1, 6, 0, 0, 0, 0)], ..Default::default() },
+            // a mount: the creature 3 (its model in creatures.rs), 100 % faster
+            Row { id: 458, name: "Brown Horse".into(), level: 1, cast_index: 1, power: 0, school: 1,
+                effects: vec![(6, 0, 1, 1, 78, 0, 0, 3), (6, 99, 1, 1, 32, 0, 0, 0)], ..Default::default() },
         ]
     }
 }

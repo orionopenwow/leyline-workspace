@@ -7,6 +7,7 @@
 
 pub mod accdata;
 pub mod cheers;
+pub mod creatures;
 pub mod classes;
 pub mod combat;
 pub mod companion;

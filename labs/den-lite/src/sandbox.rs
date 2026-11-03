@@ -93,14 +93,21 @@ fn empty_book() -> Arc<Book> {
 /// The tables when a class is picked (Spell.dbc is big: never read for nothing).
 fn book_for(shared: &Shared) -> Arc<Book> {
     let picked = shared.pick.lock().unwrap_or_else(|e| e.into_inner()).is_some();
-    if picked { spells::book(&shared.cfg.den_dir) } else { empty_book() }
+    let mounts = !shared.combat.lock().unwrap_or_else(|e| e.into_inner()).extra.is_empty();
+    if picked || mounts { spells::book(&shared.cfg.den_dir) } else { empty_book() }
 }
+
+/// `<dens>/den-lite.mounts`: there, every mount is known (`.den mounts`).
+pub const MOUNTS_FILE: &str = "den-lite.mounts";
 
 /// Before the host's Enter World: the class's kit (spells, bar, numbers), full health and power.
 pub(super) fn prepare(shared: &Shared) {
     let pick = shared.pick.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let kit = pick.as_ref().and_then(|p| classes::kit(&book_for(shared), p));
-    shared.combat.lock().unwrap_or_else(|e| e.into_inner()).set_kit(kit);
+    let mounts = if shared.cfg.den_dir.join(MOUNTS_FILE).exists() { spells::mounts(&spells::book(&shared.cfg.den_dir)) } else { Vec::new() };
+    let mut cb = shared.combat.lock().unwrap_or_else(|e| e.into_inner());
+    cb.set_kit(kit);
+    cb.extra = mounts;
 }
 
 /// The host's kit, when a class is picked.
@@ -122,10 +129,16 @@ fn with_place(spells: &[u32]) -> Vec<u32> {
 
 /// SMSG_INITIAL_SPELLS and SMSG_ACTION_BUTTONS at Enter World: the class's, or none as before.
 pub(super) fn initial(c: &Writer, shared: &Shared, me: &Me) -> io::Result<()> {
+    let known = if me.host { shared.combat.lock().unwrap_or_else(|e| e.into_inner()).known() } else { Vec::new() };
     match kit_for(shared, me) {
         Some(k) => {
-            c.send_raw(classes::SMSG_INITIAL_SPELLS, &classes::initial_spells_body(&with_place(&k.spells)))?;
+            let book = if known.is_empty() { &k.spells } else { &known };
+            c.send_raw(classes::SMSG_INITIAL_SPELLS, &classes::initial_spells_body(&with_place(book)))?;
             c.send_raw(classes::SMSG_ACTION_BUTTONS, &classes::action_buttons_body(&k.buttons, 0))
+        }
+        None if known.len() > 1 => {
+            c.send_raw(classes::SMSG_INITIAL_SPELLS, &classes::initial_spells_body(&with_place(&known)))?;
+            c.send(&SMSG_ACTION_BUTTONS::Initial { data: [ActionButton { action: 0, action_type: 0, misc: 0 }; 144] })
         }
         None => {
             // one spell: the editor's exact click (gizmo.rs PLACE_SPELL, never cast)
@@ -331,6 +344,7 @@ pub(super) fn client_op(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Po
             None => Vec::new(),
         },
         combat::CMSG_CANCEL_CAST | combat::CMSG_CANCEL_CHANNELLING => shared.combat.lock().unwrap_or_else(|e| e.into_inner()).interrupt(combat::fail::INTERRUPTED),
+        combat::CMSG_CANCEL_MOUNT_AURA => shared.combat.lock().unwrap_or_else(|e| e.into_inner()).dismount(),
         combat::CMSG_CANCEL_AURA => match body.get(..4) {
             Some(b) => shared.combat.lock().unwrap_or_else(|e| e.into_inner()).cancel_aura(u32::from_le_bytes([b[0], b[1], b[2], b[3]])),
             None => Vec::new(),
@@ -432,10 +446,14 @@ pub(super) fn class_cmd(c: &Writer, shared: &Shared, sess: &Sess, a: &str, b: &s
     // in the world now: the fields, the spells and the bar at once (the class's own frames: at the next login)
     let female = sess.me.gender == HeroGender::Female;
     c.send_raw(combat::SMSG_UPDATE_OBJECT, &combat::values_body(sess.me.guid, &class_fields(&kit, female)))?;
-    c.send_raw(classes::SMSG_INITIAL_SPELLS, &classes::initial_spells_body(&with_place(&kit.spells)))?;
-    c.send_raw(classes::SMSG_ACTION_BUTTONS, &classes::action_buttons_body(&kit.buttons, 1))?;
     let n = kit.spells.len();
-    shared.combat.lock().unwrap_or_else(|e| e.into_inner()).set_kit(Some(kit));
+    let known = {
+        let mut cb = shared.combat.lock().unwrap_or_else(|e| e.into_inner());
+        cb.set_kit(Some(kit.clone()));
+        cb.known()
+    };
+    c.send_raw(classes::SMSG_INITIAL_SPELLS, &classes::initial_spells_body(&with_place(&known)))?;
+    c.send_raw(classes::SMSG_ACTION_BUTTONS, &classes::action_buttons_body(&kit.buttons, 1))?;
     shared.event("class", &sess.me.name, &format!("{} {level} {n}", cd.word));
     let tables = if book.spells.is_empty() {
         " Your game's spell tables aren't in the Dens folder yet: start Your Den from the launcher (it copies them from your game), then .den class again."
@@ -446,6 +464,46 @@ pub(super) fn class_cmd(c: &Writer, shared: &Shared, sess: &Sess, a: &str, b: &s
         "You are a level {level} {} now: {n} spells, the main ones on your bar.{tables} Log out and back in for the class's own bars and frames (your class is kept).",
         cd.name
     ))
+}
+
+/// `.den mounts [on|off|list [page]]`: every mount the player's own tables have, known at once (in the spellbook;
+/// cast one to ride, again or right-click its buff to get off; flying ones fly with `.den fly on`); a page of them.
+pub(super) fn mounts_cmd(c: &Writer, shared: &Shared, sess: &Sess, a: &str, b: &str) -> io::Result<()> {
+    let dir = &shared.cfg.den_dir;
+    let book = spells::book(dir);
+    let all = spells::mounts(&book);
+    if a == "list" {
+        let page = b.parse::<usize>().unwrap_or(1).max(1) - 1;
+        let per = 15;
+        let pages = all.len().div_ceil(per).max(1);
+        let ids: Vec<u32> = all.iter().copied().skip(page * per).take(per).collect();
+        bar_data(c, shared, sess.id, sess.me.guid, "mounts", &format!("page={};pages={pages};ids={}", page + 1, ids.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")))?;
+        let names: Vec<String> = ids.iter().filter_map(|i| book.spell(*i)).map(|s| s.name.clone()).collect();
+        return say(c, &if names.is_empty() { "No mounts known yet: .den mounts".to_string() } else { format!("Mounts, page {} of {pages}: {}.", page + 1, names.join(", ")) });
+    }
+    let on = a != "off";
+    if on && all.is_empty() {
+        return say(c, "Your game's spell tables aren't in the Dens folder yet (the launcher copies them when Your Den starts): no mounts to learn.");
+    }
+    if on {
+        let _ = std::fs::write(dir.join(MOUNTS_FILE), "on\n");
+    } else {
+        let _ = std::fs::remove_file(dir.join(MOUNTS_FILE));
+    }
+    let (known, outs) = {
+        let mut cb = shared.combat.lock().unwrap_or_else(|e| e.into_inner());
+        let outs = if on { Vec::new() } else { cb.dismount() };
+        cb.extra = if on { all.clone() } else { Vec::new() };
+        (cb.known(), outs)
+    };
+    send_outs(c, shared, sess.id, sess.me.guid, outs)?;
+    c.send_raw(classes::SMSG_INITIAL_SPELLS, &classes::initial_spells_body(&with_place(&known)))?;
+    shared.event("mounts", &sess.me.name, &format!("{} {}", if on { "on" } else { "off" }, all.len()));
+    say(c, &if on {
+        format!("{} mounts in your spellbook (General). Cast one to ride, again to get off; flying ones fly with .den fly on. .den mounts list: their names. If they don't show, log out and in.", all.len())
+    } else {
+        "The mounts are put away.".to_string()
+    })
 }
 
 /// The Dojo's sandbox verbs (`.den dojo <verb>`); None: not one of them.

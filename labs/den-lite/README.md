@@ -71,6 +71,8 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 | `.den dojo dummies [1-5]` / `clear` | training dummies to hit (below, "Sandbox combat") / the dummies down (`.build undo` takes the ring back) |
 | `.den dojo pack\|mover\|healer\|tank\|boss` | the other dummies: five for area spells, one walking a circle, a wounded friendly one to heal, one that hits back, the practice boss |
 | `.den dojo parse 1\|3\|5`, `reset`, `refill`, `cooldowns`, `fight on\|off`, `best`, `dps` | a timed parse (best per class kept), everything full again, your power, your cooldowns, dummies hitting back, your bests, your numbers now |
+| `.den gear <item>...` / `<slot> <item\|none>` / `list <slot> [page]` / `reset` | any item's look on you, in its slot (several at once; a second one-hand weapon in the off hand); looks: `thunderfury`, `shadowmourne`, `warglaives`, `sulfuras`, `valanyr` |
+| `.den mounts` / `list [page]` / `off` | every mount your game has, in your spellbook; cast one to ride (again, or its buff right-clicked, to get off); flying ones fly with `.den fly on` |
 | `.den class <class> [level]` | any class (warrior, paladin, hunter, rogue, priest, deathknight, shaman, mage, warlock, druid) at any level (80 if none), every spell it learns, its bar; `.den class` alone: the list |
 | `.den fly on\|off` / `.den speed 1-5` | fly (jump, then Space to rise, X to sink) / run and fly faster |
 | `.den jaina build <stamp>`, or say `Jaina, build a garden` (a tavern, a forge, a reading nook...) | she walks into its middle and builds it the way a person would (big pieces first, small last, things on tables at the end), casting at each piece, then steps back to look at it (`dojo` is the training ring; docs/DEN-STAMPS.md) |
@@ -389,6 +391,28 @@ down) until **den-check's hover calibration** runs on the owner's PC (`Den featu
 of the game window, at each the preview's place and, by pressing G and clicking, the game's own point; the camera
 fitted to them, printed and saved to `<dens>/den-lite.camera.json`, used from the next Den start). Until then the copy
 can land a few yards from the cursor; the exact click (G) is always exact.
+### Any gear, every mount (3 Nov, owner 10:40: "allow all mounts, all gear")
+
+- **Gear** (`src/gear.rs`): the look only. The character's visible item fields (`PLAYER_VISIBLE_ITEM_n_ENTRYID`,
+  field 283 + 2 n, every one of the 19 slots) in a values update, to you and to friends in the Den, kept in
+  `<dens>/den-lite.gear.json` and in your create at the next login; the game draws each from its own `Item.dbc` by
+  entry, as the ready-made outfit. Which slot an item goes in: the player's own `Item.dbc` (its inventory type),
+  copied by the launcher. That table has no names (they are a server's), so `.den gear list <slot>` lists entries
+  (and sends `wuden gear slot=..;page=..;pages=..;ids=..` for a picker; the game's own icons show them). The
+  character list still shows the outfit. TODO(owner): which ready-made looks (armour sets) to offer.
+- **Mounts** (`src/creatures.rs`, combat.rs): `.den mounts` puts every spell with the mounted aura (78) from your own
+  `Spell.dbc` in your spellbook (`SMSG_INITIAL_SPELLS` again, with the class's), kept (`<dens>/den-lite.mounts`). Cast
+  one: the aura, `UNIT_FIELD_MOUNTDISPLAYID` (69) with the creature's model and `UNIT_FLAG_MOUNT`, and the speeds its
+  other auras give (32: run, 207: flight; per cent more) with `SMSG_FORCE_RUN_SPEED_CHANGE` /
+  `SMSG_FORCE_FLIGHT_SPEED_CHANGE`; again, or `CMSG_CANCEL_MOUNT_AURA` / the buff right-clicked: off, the speeds back
+  to normal. The creature -> model table is generated from AzerothCore's own world database
+  (`creature_template_model`, `tools/gen_creature_models.py`, azerothcore-wotlk 5c5fe0b of 2 Nov 2026; 29947
+  creatures, 105 KB), as `objects.rs` is from its gameobject_template. Mount names with a game brand word are left
+  out. `.den mounts list` sends `wuden mounts page=..;pages=..;ids=..` for a list in the panel.
+- Not built yet: the Play panel's gear picker and mount list (the server's answers above are ready for them).
+- To see on the real game: the spellbook taking the mounts without a relog, the mount's model and animation, the
+  speeds, flying mounts with `.den fly on`; gear in every slot (weapons sheathed, shields, tabards).
+
 ### Sandbox combat (3 Nov)
 
 The owner (screenshot of three dummies that did nothing): "have training dummies be active, make all spells work, ...

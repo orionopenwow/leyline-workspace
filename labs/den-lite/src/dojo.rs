@@ -889,6 +889,9 @@ mod tests {
                              ("build a blacksmith's forge", "smithy"), ("Build us a shrine please", "shrine"), ("make a farm", "garden"),
                              ("build a pier", "dock"), ("build a cottage", "house"), ("make a bazaar", "market"), ("build a castle", "castle")] {
             assert_eq!(build_words(said).as_deref(), Some(name), "{said}");
+        }
+    }
+
     #[test]
     fn kinds_go_up_in_their_places_and_the_walker_walks_a_circle() {
         let mut d = Dojo::default();

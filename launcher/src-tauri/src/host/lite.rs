@@ -215,6 +215,8 @@ pub fn copy_places(client: &Path, den_dir: &Path) -> Vec<String> {
         }
     }
     made
+}
+
 /// The tables Den Lite's sandbox combat and class picker read (labs/den-lite `spells.rs` FILES, `gear.rs`): the
 /// player's own spells, their skill lines, cast times, durations, radii, and items (their looks), from their own game
 /// archives into the Dens folder, as [`model_table`]. Never shipped; written only when changed. How many are there.

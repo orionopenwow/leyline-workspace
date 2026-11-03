@@ -146,25 +146,28 @@ local function build()
     panel.practiceChips = {}
     x = 92
     for _, c in ipairs(J.PRACTICE) do
-        local b = chip(panel, c[2], 42, function() J.Cmd(c[1]) end, "TOPLEFT", x, at)
+        local b = chip(panel, c[2], nil, function() J.Cmd(c[1]) end, "TOPLEFT", x, at)
         b.edLabel = c[3]
         b.verb = c[1]
         panel.practiceChips[#panel.practiceChips + 1] = b
-        x = x + 45
+        x = x + (tonumber((b:GetWidth())) or 42) + 4
     end
+    widest = math.max(widest, x)
     at = y
     panel.session = row("Session")
     panel.sessionChips = {}
     x = 92
     for _, c in ipairs(J.SESSION) do
-        local b = chip(panel, c[2], c[2]:len() > 2 and 44 or 28, function() J.Cmd(c[1]) end, "TOPLEFT", x, at)
+        local b = chip(panel, c[2], nil, function() J.Cmd(c[1]) end, "TOPLEFT", x, at)
         b.edLabel = c[3]
         b.verb = c[1]
         panel.sessionChips[#panel.sessionChips + 1] = b
-        x = x + (c[2]:len() > 2 and 47 or 31)
+        x = x + (tonumber((b:GetWidth())) or 30) + 4
     end
-    panel.fightBack = chip(panel, "Fight", 40, function() J.Cmd("fight " .. (J.line.fight == "1" and "off" or "on")) end, "TOPLEFT", x, at)
+    widest = math.max(widest, x)
+    panel.fightBack = chip(panel, "Fight", nil, function() J.Cmd("fight " .. (J.line.fight == "1" and "off" or "on")) end, "TOPLEFT", x, at)
     panel.fightBack.edLabel = "The dummies hit back (lightly)"
+    widest = math.max(widest, x + (tonumber((panel.fightBack:GetWidth())) or 40) + 4)
     panel.sessionChips[#panel.sessionChips + 1] = panel.fightBack
     at = y
     panel.classRow = row("Class")

@@ -1899,6 +1899,11 @@ fn the_editors_preview_gizmo_selection_and_exact_click() {
     assert_eq!(until_aid(&mut w, "aim").1, "off");
     let evs = std::fs::read_to_string(dir.join("den-lite.events")).unwrap_or_default();
     assert!(evs.contains("aid_click") && evs.contains("aid_use") && evs.contains("build_mode"), "{evs}");
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// A unit's create in some frames: (guid, entry, health, max health, faction).
 fn unit_creates(frames: &[Frame]) -> Vec<(u64, i32, i32, i32, i32)> {
     let mut v = Vec::new();

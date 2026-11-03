@@ -12,6 +12,12 @@
                                                                     smoke test (below), a screenshot, and closes the
                                                                     game and Den Lite
 
+First, walking (walk_lines; owner 3 Nov: the character floated above its shadow and wouldn't walk while every line
+passed): the launcher steps forward until Den Lite sees the character walk, then the test checks from Den Lite's
+events that the game took its character, that the step walked it, that nothing holds it up or still (root, no
+gravity, hover), and from `.den where` that its feet are within half a yard of the ground; the Leyline UI's own view
+of the character (its speed, falling, control) is shown too.
+
 The Den's smoke test, after "in the world", in order (den_steps; the commands go through Den Lite's own command files,
 labs/den-lite testctl.rs, so they never depend on the game window having the keyboard; typed into the game window by
 the launcher only when Den Lite is too old for that):
@@ -80,7 +86,7 @@ MILESTONES = [
     ("char_enum", "character select"),
     ("player_login", "Enter World"),
     ("in_world", "in the world (the white island)"),
-    ("first_move", "first movement"),
+    ("first_move", "first movement from the game (landing, turning or walking)"),
     ("builder_ready", "the Leyline UI's Den panel and Builder answered"),
     ("den_ui", "the Den bar opened (Build, Shape ground, Play, Save, Invite)"),
 ]
@@ -475,6 +481,66 @@ FIXES = {
     "builder_ready": "The Leyline UI didn't talk to Den Lite: install the Leyline addons in the launcher (Mods), then run den-test again.",
     "den_ui": "The Den bar didn't open (an older Leyline UI: Den Lite's lines went to the chat): update the Leyline addons in the launcher (Mods), then run den-test again.",
 }
+
+
+# ------------------------------------------------------------------------------------------------ walking
+# movement flags that hold a character up or still (labs/den-lite movewatch.rs)
+HELD = ("ROOT", "DISABLE_GRAVITY", "HOVER", "FLYING")
+# the feet within this many yards of the ground: standing on it (movewatch.rs ON_GROUND)
+ON_GROUND = 0.5
+
+
+def walk_lines(rep, evs, where=None):
+    """Does the game move its character, did the step forward walk it, and does it stand on the ground? (Owner 3 Nov:
+    the character floated above its shadow and wouldn't walk, and the den-test passed: "first movement" was any
+    packet.) From Den Lite's events (labs/den-lite movewatch.rs: spawn, mover, first_move, move_flags, walked) and
+    its answer to `.den where` (`where`: the test-out line, with pos and ground; None when there was none)."""
+    first = {}
+    for e in evs:
+        if e.get("detail") == "remote":
+            continue
+        first.setdefault(e.get("ev"), e)
+    diag = [str(e.get("detail", ""))[7:] for e in evs if e.get("ev") == "addon" and str(e.get("detail", "")).startswith("wudiag ")]
+    sp = first.get("spawn")
+    if not sp:
+        rep.add("INFO", "walking", "Den Lite doesn't say whether the character walked (an older Den Lite)")
+        for d in diag[:6]:
+            rep.add("INFO", "the game says", d[:200])
+        return
+    rep.add("INFO", "where you came in", str(sp.get("detail", ""))[:200])
+    mover = first.get("mover")
+    fm = first.get("first_move")
+    rep.ok(mover is not None, "the game took its character",
+           "it said so; Den Lite told it once more that it has control" if mover else "it never said so (no SET_ACTIVE_MOVER)",
+           "The game never took its character, so it can neither walk nor fall: send logs\\den-test-latest.txt and the screenshot.")
+    rep.add("INFO", "the game's first move", str(fm.get("detail", "")) if fm else "none: the game sent no movement at all")
+    for e in evs:
+        if e.get("ev") == "move_flags":
+            d = str(e.get("detail", ""))
+            held = any(h in d.split() for h in HELD)
+            rep.add("FAIL" if held else "INFO", "held up or still" if held else "movement flags", d[:200],
+                    "The game holds the character up or still (%s): send logs\\den-test-latest.txt." % d.split(" in ")[0] if held else "")
+    walked = first.get("walked")
+    if walked:
+        why = ""
+    elif fm:
+        why = "The game moves its character but the step forward didn't walk it: see the keys line (the game says) below, then send logs\\den-test-latest.txt."
+    else:
+        why = "The game sent no movement at all: it isn't moving its character. Send logs\\den-test-latest.txt and the screenshot."
+    rep.ok(walked is not None, "walking: the step forward walked the character",
+           str(walked.get("detail", "")) if walked else "it never got a yard from where it came in", why)
+    if isinstance(where, dict) and isinstance(where.get("pos"), list) and len(where["pos"]) == 3 and where.get("ground") is not None:
+        z, g = float(where["pos"][2]), float(where["ground"])
+        ok = abs(z - g) <= ON_GROUND
+        detail = "z %.2f, the ground %.2f (%s)" % (z, g, "on it" if ok else "%.2f %s it" % (abs(z - g), "above" if z > g else "under"))
+    else:
+        src = walked or sp
+        ok = "on the ground" in str(src.get("detail", ""))
+        detail = ("after walking: " if walked else "where you came in: ") + str(src.get("detail", ""))[:160]
+    rep.ok(ok, "standing on the ground (feet within half a yard)", detail,
+           "The character isn't on the ground: send logs\\den-test-latest.txt and the screenshot.")
+    for d in diag[:6]:
+        rep.add("INFO", "the game says", d[:200])
 
 
 # ------------------------------------------------------------------------------------------------ the Den's smoke test
@@ -1079,14 +1145,20 @@ def test(args, rep):
     secrets = []
     steps = Report()
     if rpt.get("phase") == "in_world":
-        # the step forward and the Leyline UI's hello, then the Den's smoke test, then the picture
-        for _ in range(60):
+        # the step forward and the Leyline UI's hello (the launcher steps up to three times, 3 s apart, until Den Lite
+        # saw the character walk), then where the character stands, the Den's smoke test, then the picture
+        for _ in range(100):
             evs = events(den_dir, rpt["start"])
-            if {"first_move", "builder_ready"} <= {e["ev"] for e in evs}:
+            if {"walked", "builder_ready"} <= {e["ev"] for e in evs}:
                 break
             time.sleep(0.25)
         # the steps' lines go after the sign-in's milestones (below), in the order they ran
         steps.add = _quiet_add(steps)
+        try:
+            where = FileChannel(den_dir).send(".den where", wait=5.0)
+            walk_lines(steps, events(den_dir, rpt["start"]), where)
+        except Exception as e:  # noqa: BLE001 - the smoke test still runs
+            steps.add("FAIL", "walking", "the check stopped: %s" % str(e)[:200], "Send logs\\den-test-latest.txt.")
         try:
             secrets = den_steps(steps, FileChannel(den_dir), den_dir, root, marks, rpt["start"])
         except Exception as e:  # noqa: BLE001 - the game still gets its picture and is closed

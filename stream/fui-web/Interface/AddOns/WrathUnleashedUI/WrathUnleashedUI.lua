@@ -773,7 +773,7 @@ local function denDiag()
     local f = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
     diagSend("focus:" .. ((f and f.GetName and f:GetName()) or (f and "unnamed") or "none"))
     -- what the game thinks of the character (2 Nov: it never moved, with a real keyboard either)
-    local sp = GetUnitSpeed and select(3, pcall(GetUnitSpeed, "player"))
+    local sp = GetUnitSpeed and select(2, pcall(GetUnitSpeed, "player"))
     diagSend(string.format("me:speed=%s falling=%s dead=%s control=%s", tostring(sp),
         tostring(IsFalling and IsFalling()), tostring(UnitIsDeadOrGhost and UnitIsDeadOrGhost("player")),
         tostring(HasFullControl and HasFullControl())))

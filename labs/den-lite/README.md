@@ -65,9 +65,11 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 | `.den ask <words>`, or say `Jaina, <words>` within 10 yards of her | written down for your own assistant (Leyline's Agents page: `den_messages`); its `den_say` lines are hers |
 | `.den mode [id]` | Leyline's game modes and Host templates; with an id, what it is and how to run it on this PC (the full Den) |
 | `.den mods` | the addons your game loaded, and (with `--client`) the launcher's mods in it |
+| `.den where` | where you stand against the ground under you, and what your game did with its character (took it, moved, walked); the den-test asks it |
 
 The character is a ready-made human (female by default, `--gender male`), level 1, in a white shirt, trousers and
-boots, standing in the middle of the Den on the GM island (map 1, 16226.2, 16257.0, floor 13.2: `game_tele` 424).
+boots, standing in the middle of the Den on the GM island (map 1, 16226.2, 16257.0, floor 13.2: `game_tele` 424), **on**
+the ground there (5 cm above it; see "Standing and walking" below).
 No chat spam (owner 1 Nov 23:46; `src/notice.rs`): with the Leyline UI's Den bar (WrathUnleashedUI `DenBar.lua`, its
 hello `wuden hello`), what Den Lite says that nobody typed for (the welcome, Jaina's one greeting, the encouragement
 moments, the Builder's and the bar's answers, the launcher's answers, a friend in your Den) is a toast in the bar
@@ -89,8 +91,9 @@ ground** (also `.den invite`, `.den forge`) are asked of the launcher through `<
 ### The milestone log
 
 `<dens>/den-lite.events` (new at every start; `src/events.rs`): one JSON line per step on the way in
-(`login_challenge`, `auth_ok`, `realm_list`, `world_auth`, `char_enum`, `char_create`, `player_login`, `in_world`,
-`first_move`, `builder_ready`, `ask`, `peer_seen`, `logout`), and what happens in the Den (`den_change`, `den_save`,
+(`login_challenge`, `auth_ok`, `realm_list`, `world_auth`, `char_enum`, `char_create`, `player_login`, `spawn`,
+`in_world`, `mover`, `first_move`, `move_flags`, `landed`, `walked`, `builder_ready`, `ask`, `peer_seen`, `logout`,
+`moves`), and what happens in the Den (`den_change`, `den_save`,
 `den_load`, `autosave`, `answer`, `test_cmd`), never a password or an invite link. The launcher's one-click sign-in
 (`launcher/src-tauri/src/denclick.rs`) and the owner's `den-test` (tools/den-check) read it.
 
@@ -101,6 +104,46 @@ on 127.0.0.1), Den Lite takes chat commands from `<dens>/den-lite.test-cmd` (`{"
 while the player is in the world and runs them as if they had been typed, so the test never depends on the game
 window having the keyboard. Only `.den` / `.build` commands. Each one's lines and changes go to
 `<dens>/den-lite.test-out` (one JSON line: `said`, `created`, `destroyed`, `props`, `look`, `size`).
+
+### Standing and walking (3 Nov)
+
+The owner's report (3 Nov, the real game, screenshots): in the Den the character **floated above its own shadow** on
+the white ground and **couldn't move**. What the code shows:
+
+- **The ground and the spawn are the same height.** The launcher's white ground is the whole tile flattened to 13.2
+  (`leyline-terrain` `pad::DEN`, `host/terrain.rs` `first_ground`; the tile's heights are relative to each chunk's own
+  base and the crate writes them so; a test checks the whole tile with every chunk on its own base), and Den Lite reads
+  the same delta (`Den::floor_at`). But Den Lite put the player **a whole yard above** it (`floor + 1.0`, in the
+  character list, Enter World and the bind point alike).
+- **A game that moves its character drops that yard at once and lands** (`MSG_MOVE_FALL_LAND`). One that hangs a
+  yard up *and* won't walk is not moving its character at all: it doesn't have control of it (or it is rooted), so it
+  neither falls nor walks. The den-test couldn't tell: its "first movement" passed on *any* movement packet (a
+  landing or a turn), and the launcher's test stopped stepping forward at the first one.
+
+So (`src/movewatch.rs`, `world.rs`):
+
+1. The player comes in **on** the ground (`Den::spawn_z`: `movewatch::SPAWN_LIFT`, 5 cm, above the ground under the
+   spot), so nothing floats even in a game that isn't moving its character.
+2. Control is said **again once the game is in the world**: the first `SMSG_CLIENT_CONTROL_UPDATE` goes during the
+   loading screen; when the game sends `CMSG_SET_ACTIVE_MOVER` (it takes its character once the world is on screen)
+   Den Lite sends the control update once more and an unroot (`SMSG_FORCE_MOVE_UNROOT`, as AzerothCore's
+   `SetRooted(false)`). Both change nothing for a game that already moves its character.
+3. The launcher's Den ground marks every open chunk walkable (the chunk flag "impassable" off; `pad::flatten`, and
+   `pad::whiten` for a ground made before).
+4. **What the game did is written down** (`movewatch::Watch`, the events log): `spawn` (z against the ground under it,
+   ground file or fixed floor, the nearest prop), `mover` (it took its character), `first_move` (which packet, the
+   flags that hold a character up or still, z against the ground), `move_flags` (root, no gravity, hover, flying...),
+   `landed`, `walked` (a yard or more from where it came in) and `moves` (a summary at logout or when the game
+   closes). `.den where` says the same in the game, and the den-test's command channel answers it with `pos`,
+   `ground`, `on_ground` and `me`.
+5. **The den-test checks walking** (tools/den-check `walk_lines`): the launcher steps forward until Den Lite logs
+   `walked` (denclick.rs: not just any first move), then the test passes only if the game took its character, the
+   step walked it, nothing held it up or still, and its feet are within half a yard of the ground; the Leyline UI's
+   own view of the character (`wudiag`: its speed, falling, control, the forward key) is printed too.
+
+If the owner's next den-test still fails, its lines say which: no `mover` and no movement (the game never took its
+character: see the `control=` line), a `ROOT` / `DISABLE_GRAVITY` flag, movement but no walk (the keys line), or a
+character off the ground.
 
 ### Growing: the white room's sizes
 
@@ -179,7 +222,9 @@ game. Addons are client-side, so the Den is a quiet place to try them; mods with
    `SMSG_BINDPOINTUPDATE`, `SMSG_INITIAL_SPELLS` (none), `SMSG_ACTION_BUTTONS` (144 empty), `SMSG_INITIALIZE_FACTIONS`
    (128), `SMSG_LOGIN_SETTIMESPEED`, `SMSG_TIME_SYNC_REQ`, `SMSG_UPDATE_OBJECT` (the player: create type 3, flags
    self + living, speeds, and the fields for race/class/gender, health, level, faction 1, display 49 or 50, bounding
-   radius, combat reach, cast speed, hover height, unit flags, player bytes, the visible items), `SMSG_INIT_WORLD_STATES`
+   radius, combat reach, cast speed, hover height, unit flags, player bytes, the visible items),
+   `SMSG_CLIENT_CONTROL_UPDATE` (the game controls it; said again with an unroot when the game sends
+   `CMSG_SET_ACTIVE_MOVER`), `SMSG_INIT_WORLD_STATES`
    (map 1, area 876, none), then the room and the props (`SMSG_UPDATE_OBJECT`, 40 gameobjects a message: create type
    2, flags 0x250 with position, guid counter and packed rotation; guid, type, entry, scale, display, flags, parent
    rotation (0, 0, 0, 1), bytes 1), and a system line.
@@ -223,9 +268,11 @@ written down, before any real game connected:
 3. The gameobjects: that the client shows them from the create alone, or only once it has its query answer (both are
    sent), and that 0x250 with the packed rotation is what it wants (AzerothCore's flags; the crate calls 0x10
    "high guid" after mangos, AzerothCore "low guid": same bytes).
-4. The ground: Den Lite has no map files, so the floor is the fixed height 13.2 and stamps stand on your feet's
-   height; the white blocks stand at their own size on the ground (the full Den sizes them from the host's dbc).
-5. Movement is not checked at all (the client is trusted: fine for one player on their own PC).
+4. The ground: Den Lite has no map files, so the floor is the fixed height 13.2 (or the launcher's ground file's
+   heights) and stamps stand on your feet's height; the white blocks stand at their own size on the ground (the full
+   Den sizes them from the host's dbc).
+5. Movement is not checked (the client is trusted: fine for one player on their own PC); since 3 Nov it is watched
+   for the log ("Standing and walking").
 6. `SMSG_ADDON_INFO` sends no public key; a client addon with a non-standard CRC may be marked as changed.
 7. The companion: whether the client draws her from this unit create (no auras, no power fields, no `UNIT_FIELD_BYTES_2`),
    shows "Jaina" from the query answer, and animates her walks from a one-point `SMSG_MONSTER_MOVE` with no spline

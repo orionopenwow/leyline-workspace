@@ -413,6 +413,55 @@ class Milestones(unittest.TestCase):
         self.assertIn("FAIL in the world (the white island): not seen", rep.text())
 
 
+class Walking(unittest.TestCase):
+    """walk_lines: the den-test's walk check from Den Lite's events (labs/den-lite movewatch.rs) and `.den where`."""
+    SPAWN = {"t": 1, "ev": "spawn", "detail": "z 13.25, ground 13.20 (the Den's ground file), on the ground (+0.05), nearest prop none"}
+
+    def lines(self, evs, where=None):
+        rep = den_check.Report()
+        quiet(den_check.walk_lines, rep, evs, where)
+        return rep
+
+    def test_a_character_that_walks_on_the_ground_passes(self):
+        evs = [self.SPAWN, {"t": 2, "ev": "mover", "detail": "the game moves its character"},
+               {"t": 3, "ev": "first_move", "detail": "FALL_LAND, z 13.20, on the ground (+0.00)"},
+               {"t": 4, "ev": "walked", "detail": "2.8 yards by HEARTBEAT, z 13.21, on the ground (+0.01)"},
+               {"t": 5, "ev": "addon", "detail": "wudiag me:speed=7 falling=false dead=false control=true"}]
+        rep = self.lines(evs, {"id": 1, "pos": [16229.0, 16257.0, 13.21], "ground": 13.2, "on_ground": True})
+        text = rep.text()
+        self.assertEqual(rep.failed(), [], text)
+        self.assertIn("PASS the game took its character", text)
+        self.assertIn("PASS walking: the step forward walked the character: 2.8 yards by HEARTBEAT", text)
+        self.assertIn("PASS standing on the ground (feet within half a yard): z 13.21, the ground 13.20 (on it)", text)
+        self.assertIn("INFO the game says: me:speed=7 falling=false dead=false control=true", text)
+        self.assertIn("INFO where you came in: z 13.25", text)
+
+    def test_the_owners_floating_character_fails_with_the_reason(self):
+        # 3 Nov: no SET_ACTIVE_MOVER, no movement, a yard above the ground; and one held by a root
+        rep = self.lines([dict(self.SPAWN, detail="z 14.20, ground 13.20 (the Den's ground file), 1.00 above the ground, nearest prop none")],
+                         {"id": 1, "pos": [16226.2, 16257.0, 14.2], "ground": 13.2})
+        text = rep.text()
+        self.assertIn("FAIL the game took its character: it never said so", text)
+        self.assertIn("INFO the game's first move: none: the game sent no movement at all", text)
+        self.assertIn("FAIL walking: the step forward walked the character: it never got a yard from where it came in", text)
+        self.assertIn("The game sent no movement at all", text)
+        self.assertIn("FAIL standing on the ground (feet within half a yard): z 14.20, the ground 13.20 (1.00 above it)", text)
+        evs = [self.SPAWN, {"t": 2, "ev": "mover"}, {"t": 3, "ev": "first_move", "detail": "HEARTBEAT [ROOT], z 13.25, on the ground (+0.05)"},
+               {"t": 3, "ev": "move_flags", "detail": "ROOT in HEARTBEAT"}, {"t": 4, "ev": "move_flags", "detail": "SWIMMING in START_SWIM"}]
+        text = self.lines(evs).text()
+        self.assertIn("FAIL held up or still: ROOT in HEARTBEAT", text)
+        self.assertIn("INFO movement flags: SWIMMING in START_SWIM", text)
+        self.assertIn("the step forward didn't walk it", text)
+        # no `.den where` answer: the ground line from where the character came in
+        self.assertIn("PASS standing on the ground (feet within half a yard): where you came in: z 13.25", text)
+
+    def test_an_older_den_lite_says_so_without_failing(self):
+        rep = self.lines([{"t": 1, "ev": "first_move", "detail": "raw"}, {"t": 2, "ev": "addon", "detail": "wudiag keys:forward=W"}])
+        self.assertEqual(rep.failed(), [])
+        self.assertIn("INFO walking: Den Lite doesn't say", rep.text())
+        self.assertIn("INFO the game says: keys:forward=W", rep.text())
+
+
 def white_blp(size=64):
     """The launcher's white texture, the same layout (terrain crate blp.rs `solid`)."""
     import struct

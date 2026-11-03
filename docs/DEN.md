@@ -429,7 +429,9 @@ PC (`dens/packs.json`) says which ones and how: "Make them from your own game fo
   start (older small pads are opened up), with the island's own models off it. `patch-T` carries our own white
   texture, stored at the name of a snow texture the game already knows (a texture at a new name drew green), and,
   from the player's own tables edited on this PC, a white sky and the zone name "Your Den". What went in is in
-  `<dens>/yourden.ground-status.json`; `den-check` (tools/den-check) reports it.
+  `<dens>/yourden.ground-status.json`; `den-check` (tools/den-check) reports it. The ground is the floor height 13.2
+  everywhere (the height Den Lite puts the player on, 5 cm above it since 3 Nov) and every chunk of it walkable (the
+  chunk flag "impassable" off); labs/den-lite README "Standing and walking" has the 3 Nov floating character.
 
 ## Claude in your Den, and your companion (2026-11-01)
 

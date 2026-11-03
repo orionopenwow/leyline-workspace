@@ -61,6 +61,9 @@ if not defined MSG (
   if not defined NOW set "NOW=%date% %time:~0,5%"
   set "MSG=Leyline update !NOW!"
 )
+rem Saved as Orion, the owner (2 Nov: "push as Orion not Chumpton"): this repo's own identity, whatever the PC's is
+git config user.name "Orion"
+git config user.email "orionopenwow@users.noreply.github.com"
 git commit -q -m "!MSG!" -m "!STAT!" || (echo Commit failed ^(set git user.name / user.email once^). & goto fail)
 echo   committed: !MSG!
 

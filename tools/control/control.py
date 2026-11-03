@@ -217,7 +217,9 @@ STEPS = {
     "builds-why": ("tools/github-builds/Why did the build fail.bat", "Why the last GitHub build failed (read-only)", False),
     "remove-files": ("tools/cleanup/Remove listed files.bat", "Remove the files a change took out (tools/cleanup/REMOVE.txt)", False),
     "fresh-check": ("tools/fresh-history/Fresh history - dry run.bat", "Fresh Leyline history: what it would do (read-only)", False),
-    "fresh-history": ("tools/fresh-history/Fresh history - do it.bat", "Fresh Leyline history: one commit, old history to a Desktop backup", False),
+    "fresh-leyline-check": ("tools/fresh-history/Fresh history - Leyline repo (dry run).bat", "The public Leyline repo's history as Orion: what it would do (read-only)", False),
+    "fresh-leyline": ("tools/fresh-history/Fresh history - Leyline repo.bat", "The public Leyline repo's main as one commit by Orion (releases kept; backup on the Desktop)", False),
+    "fresh-history": ("tools/fresh-history/Fresh history - do it.bat", "The workspace repo's main as one commit by Orion (releases kept; backup on the Desktop)", False),
     # ovrename / ovland (the OpenVanilla repo's rename to Leyline-Launcher, 2026-10-29) are done for good: the tool is in
     # labs/done/ov-rename/ (labs/README.md says how to run it again).
     # The game data killswitch (docs/GAME-DATA-ON-OUR-SERVER.md): only when the owner asks for it.
@@ -249,7 +251,7 @@ STEPS = {
 # Steps that change nothing in production. With "Ask before deploys" on (control/autopilot.json "confirm"),
 # Autopilot runs only these by itself; anything else waits for "Launch all".
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
-             "fresh-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
+             "fresh-check", "fresh-leyline-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
              "vr-data-check", "vr-site-check", "sv-site-check", "release-mirror-check", "bugs", "audit", "den-check", "domain-check"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}
 

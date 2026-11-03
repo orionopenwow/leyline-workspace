@@ -84,6 +84,9 @@ for /f "delims=" %%L in ('git --no-pager diff --cached --shortstat') do echo   %
 set "REV="
 for /f "delims=" %%R in ('git -C "%WU%" rev-parse --short HEAD 2^>nul') do set "REV=%%R"
 if defined REV (set "MSG=Copy from WrathUnleashed !REV!") else set "MSG=Copy from WrathUnleashed"
+rem Saved as Orion, the owner (2 Nov: "push as Orion not Chumpton"): this repo's own identity, whatever the PC's is
+git config user.name "Orion"
+git config user.email "orionopenwow@users.noreply.github.com"
 git commit -q -m "!MSG!" || (echo   Commit failed. & goto :fail)
 echo   committed: !MSG!
 

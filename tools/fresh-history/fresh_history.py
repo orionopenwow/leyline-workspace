@@ -17,6 +17,10 @@ the first problem without having changed anything on GitHub:
      every tag on GitHub (they would keep the old history reachable) is deleted — all are in the backup;
   7. this folder: main points at the new commit (files untouched), the old commits stay only in the bundle.
 Open pull requests on GitHub keep their old commits until closed; the report lists them.
+2 Nov (owner: "push as Orion not Chumpton ... wipe chumpton as contributor"): --repo names either repo (the
+workspace or the public Leyline copy, --root its folder), and tags and other branches are KEPT by default: the
+launcher, Den Lite, Forge and Survivors downloads are releases on tags, and GitHub's contributor list counts only
+the default branch, so replacing main alone takes the old author off it. --drop-refs is the old behaviour.
 Standard library only; tokens are never printed.
 """
 from __future__ import annotations
@@ -28,7 +32,7 @@ import subprocess
 import time
 
 OWNER = "orionopenwow"
-REPO = f"{OWNER}/WrathUnleashed"
+REPO = f"{OWNER}/leyline-workspace"
 NOT_OWNER = ("chumpton",)
 MESSAGE = "Leyline"
 AUTOPILOT_FILES = {"UPDATES-DONE.txt", "UPDATES-PENDING.txt", "control/autopilot.json", "control/claude-status.json",
@@ -49,7 +53,9 @@ def run(args, cwd=None, env=None):
     return p.returncode, ((p.stdout or "") + (p.stderr or "")).strip()
 
 
-def fresh(root, go=False, confirm_file=None, backup_dir=None, runner=run, out=print, now=time.strftime):
+def fresh(root, go=False, confirm_file=None, backup_dir=None, runner=run, out=print, now=time.strftime, repo=None,
+          keep_refs=True):
+    repo = repo or REPO
     git = lambda *a, env=None: runner(["git", "-C", root] + list(a), env=env)
     say = out
 
@@ -104,17 +110,19 @@ def fresh(root, go=False, confirm_file=None, backup_dir=None, runner=run, out=pr
             other_heads.append(ref[len("refs/heads/"):])
         elif ref.startswith("refs/tags/") and not ref.endswith("^{}"):
             tags.append(ref[len("refs/tags/"):])
-    rc, prs = runner(["gh", "pr", "list", "-R", REPO, "--state", "open", "--json", "number,title",
+    if keep_refs:   # releases hang on tags: never delete them here (owner 2 Nov)
+        other_heads, tags = [], []
+    rc, prs = runner(["gh", "pr", "list", "-R", repo, "--state", "open", "--json", "number,title",
                       "--jq", '.[] | "#\\(.number) \\(.title)"'])
     open_prs = [p for p in (prs.splitlines() if rc == 0 else []) if p.strip()]
 
     stamp = now("%Y%m%d-%H%M%S")
     bdir = backup_dir or os.path.join(os.environ.get("USERPROFILE") or os.path.expanduser("~"), "Desktop")
-    bundle = os.path.join(bdir, f"Leyline-history-backup-{stamp}.bundle")
+    bundle = os.path.join(bdir, f"{repo.split('/')[-1]}-history-backup-{stamp}.bundle")
     say(f"[4/7] backup of the whole old history -> {bundle}")
     if not go:
         say(f"      would delete on GitHub: {len(other_heads)} other branch(es) {other_heads[:8]} and "
-            f"{len(tags)} tag(s) {tags[:8]}")
+            f"{len(tags)} tag(s) {tags[:8]}" if not keep_refs else "      tags, releases and other branches stay as they are")
         if open_prs:
             say(f"      open pull requests keep old commits until closed: {', '.join(open_prs[:5])}")
         say(f"      would replace GitHub's main ({remote[:7]}) with one commit '{MESSAGE}' (same files)")
@@ -175,9 +183,13 @@ def main(argv=None):
     ap.add_argument("--go", action="store_true", help="do it (default: dry run)")
     ap.add_argument("--root", default=os.path.dirname(os.path.dirname(here)))
     ap.add_argument("--backup-dir")
+    ap.add_argument("--repo", default=REPO, help="owner/name on GitHub (default: the workspace)")
+    ap.add_argument("--confirm", default=os.path.join(here, "CONFIRM"))
+    ap.add_argument("--drop-refs", action="store_true", help="also delete GitHub's other branches and tags")
     a = ap.parse_args(argv)
     try:
-        return fresh(a.root, go=a.go, confirm_file=os.path.join(here, "CONFIRM"), backup_dir=a.backup_dir)
+        return fresh(a.root, go=a.go, confirm_file=a.confirm, backup_dir=a.backup_dir, repo=a.repo,
+                     keep_refs=not a.drop_refs)
     except Stop as e:
         print("STOPPED: " + str(e))
         return 1

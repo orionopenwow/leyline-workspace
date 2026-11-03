@@ -1071,9 +1071,9 @@ check("game modes: the page's CSP lets our own media play", "media-src 'self'" i
 mp = req("/wrath/leyline-preview/modes")[2].decode()
 sv = re.search(r'<article class="hb-mode art" id="mode-azeroth-survivors">.*?</article>', mp, re.S)
 check("modes page: Azeroth Survivors shows its key art (served, sized, alt), the others none",
-      sv and re.search(r'<img class="hb-mode-art" src="/wrath/art/leyline-mode-azeroth-survivors\.webp" alt="[^"]{20,}" width="483" height="298"', sv.group(0))
-      and mp.count('class="hb-mode-art"') == 1 and "leyline-mode-azeroth-survivors.webp" in wp.ART_TYPES
-      and os.path.isfile(os.path.join(HERE, "www-files", "art", "leyline-mode-azeroth-survivors.webp")))
+      sv and re.search(r'<img class="hb-mode-art" src="/wrath/art/leyline-mode-azeroth-survivors-play\.webp" alt="[^"]{20,}" width="483" height="298"', sv.group(0))
+      and mp.count('class="hb-mode-art"') == 1 and "leyline-mode-azeroth-survivors-play.webp" in wp.ART_TYPES
+      and os.path.isfile(os.path.join(HERE, "www-files", "art", "leyline-mode-azeroth-survivors-play.webp")))
 wp.ART_DIR = ART_WAS
 HB.hub.portal = portal_with
 HB.hub.portal = lambda name: None if name == "hub_rank" else portal_with(name)

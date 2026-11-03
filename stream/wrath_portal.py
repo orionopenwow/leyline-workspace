@@ -1137,7 +1137,7 @@ ART_TYPES = {
     "leyline-shot-coa-ultrahd.webp": "image/webp",   # the front page's featured modpack (its authors' screenshot)
     # the owner's Minigolf recording for the Game modes section: a short muted loop and its poster
     "leyline-shot-minigolf.mp4": "video/mp4", "leyline-shot-minigolf.webm": "video/webm", "leyline-shot-minigolf.webp": "image/webp",
-    "leyline-mode-azeroth-survivors.webp": "image/webp",   # the mode's key art (the owner's; crest cropped out)
+    "leyline-mode-azeroth-survivors.webp": "image/webp", "leyline-mode-azeroth-survivors-play.webp": "image/webp",   # the mode's key art (the owner's; crest cropped out)
     # the front page's Forge and Agents sections: the owner's own app screenshots (Forge's map of its own island;
     # the Agents inn), game pictures, so behind the killswitch like the other leyline-shot- files
     "leyline-shot-forge.webp": "image/webp", "leyline-shot-agents.webp": "image/webp",

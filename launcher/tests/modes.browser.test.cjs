@@ -184,7 +184,7 @@ test('Key art: on the Azeroth Survivors card and as the featured slide of Home\'
   await page.waitForFunction(() => { const c = document.querySelector('#md-list .md-card[data-mode="azeroth-survivors"]'); return c && c.classList.contains('md-flash'); });
   const art = card(page, 'azeroth-survivors').locator('img.md-art');
   assert.equal(await art.count(), 1);
-  assert.match(await art.getAttribute('alt'), /Azeroth Survivors key art/);
+  assert.match(await art.getAttribute('alt'), /Azeroth Survivors in play/);
   assert.ok(await art.evaluate((i) => i.complete && i.naturalWidth === 483 && i.naturalHeight === 298), 'the cropped art (no banner) loads');
   assert.ok(await card(page, 'azeroth-survivors').evaluate((c) => c.classList.contains('has-art')));
   assert.equal(await card(page, 'minigolf').locator('img').count(), 0, 'modes without art have no picture');

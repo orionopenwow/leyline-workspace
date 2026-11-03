@@ -170,9 +170,9 @@
       const a = el("div", "gate-acts");
       const again = el("button", "btn small", "Try again"); again.type = "button"; again.id = "gate-retry";
       again.onclick = async () => { note = ""; await s.loadWays(); render(); };
-      const skip = el("button", "link-s", "Continue without signing in"); skip.type = "button"; skip.id = "gate-skip";
-      skip.onclick = skip;
-      a.append(again, skip); d.append(a); pane.append(d);
+      const sk = el("button", "link-s", "Continue without logging in"); sk.type = "button"; sk.id = "gate-skip";
+      sk.onclick = skip;
+      a.append(again, sk); d.append(a); pane.append(d);
     }
     if (tab === "login") loginPane(pane); else signupPane(pane);
   }

@@ -143,7 +143,7 @@ test('signed out: sign in or open the website, nothing is sent', async () => {
   const { page, errors } = await open({ signed: false });
   await page.evaluate(() => window.LeylineListMod.open());
   await page.waitForSelector('#lm-dlg[open]');
-  assert.match(await page.textContent('#lm-dlg'), /Sign in to list a mod/);
+  assert.match(await page.textContent('#lm-dlg'), /Log in to list a mod/);
   assert.equal((await calls(page, 'listing_post')).length, 0);
   assert.deepEqual(errors, []);
   await page.close();

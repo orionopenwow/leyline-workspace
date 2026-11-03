@@ -277,7 +277,7 @@ test('switching official and community realms back and forth: PLAY each time sta
   await page.click('.nav[data-page="play"]');
   assert.deepEqual(await playNow(), { client: 'c1121-1', realm: 'relay.openvanilla.app:40020' });
   assert.equal(await page.textContent('#play-status'), 'Started Vanilla 1.12.1. Log in with your account there.', 'short, and says what login it needs');
-  assert.match(await page.getAttribute('#play-status', 'title'), /^Started Vanilla 1\.12\.1 on relay/);
+  assert.match(await page.getAttribute('#play-status', 'title'), /^Started .* on relay\.openvanilla\.app:40020\.$/, 'the whole answer on hover');
   // 4. the picker: back to Wrath Unleashed: the Wrath folder again, the old line gone
   await page.click('#pb-realm-btn');
   await page.click('#pb-rmenu .pb-realm-opt >> text=Wrath Unleashed');

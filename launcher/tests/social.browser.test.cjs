@@ -305,7 +305,7 @@ test('signed out: the chooser in the same panel look, Get your Hero Key first; E
   await page.click('#hf-signin');
   await page.waitForSelector('#hf-code.acct-panel:not([hidden]) .sf-new');
   assert.equal(await page.getAttribute('#hf-signin', 'aria-expanded'), 'true');
-  assert.deepEqual(await page.$$eval('#hf-code .sf-way', (b) => b.map((x) => x.textContent)), ['Get your Hero Key', 'Sign in with your Hero Key', 'Continue with Google']);
+  assert.deepEqual(await page.$$eval('#hf-code .sf-way', (b) => b.map((x) => x.textContent)), ['Get your Hero Key', 'Log in with your Hero Key', 'Continue with Google']);
   await page.keyboard.press('Escape');
   assert.ok(await page.isHidden('#hf-code'));
   assert.equal(await page.evaluate(() => document.activeElement.id), 'hf-signin');

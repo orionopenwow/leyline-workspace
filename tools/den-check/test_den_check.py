@@ -341,6 +341,12 @@ class Pieces(unittest.TestCase):
         for bad in ("", "https://relay/join/x#y", good.replace("~~", "~"), good + " ", "http" + good[5:], good.replace("kzdv", "KZDV")):
             self.assertIsNone(den_check.INVITE_RE.match(bad), bad)
             self.assertNotIn("ABCDEFGHJK", den_check.redact(bad))
+        # the friend's other ways in (launcher host/denways.rs): kept out of the log too
+        ways = good + "~~lan=192.168.1.20:3724~~at=home.example.net:3724"
+        self.assertTrue(den_check.INVITE_RE.match(ways))
+        self.assertEqual(den_check.redact(ways), r)
+        for bad in (good + "~~evil=1", good + "~~lan=1.2.3.4 x", good + "~~lan="):
+            self.assertIsNone(den_check.INVITE_RE.match(bad), bad)
 
     def test_todo_lines_dont_fail_the_test(self):
         rep = den_check.Report()

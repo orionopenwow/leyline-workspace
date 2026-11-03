@@ -337,7 +337,12 @@ end
 
 function G.TestAction(w)
     local a = w[2] or ""
-    if a == "build" then G.SetBuild(w[3] ~= "off"); return true end
+    if a == "build" then
+        local on = w[3] ~= "off"
+        -- already so: say the mode again (Den Lite answers the look each time; the den-test reads that)
+        if on == G.build then send(on and "mode build" or "mode play") else G.SetBuild(on) end
+        return true
+    end
     if a == "arm" then return G.Arm(w[3]) end
     if a == "move" then return G.MoveSelected() end
     if a == "hover" then

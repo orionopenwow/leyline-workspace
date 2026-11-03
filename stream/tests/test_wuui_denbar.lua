@@ -175,10 +175,11 @@ check("the slim strip: Undo / Redo, Menu, Snap, the turn steps, Play, ?, Files, 
     and bar.snap:GetText() == "Snap: off" and bar.rot[15] and bar.rot[45] and bar.rot[90] and bar.rot[15]:IsActive()
     and bar.playBtn:GetText() == "Play (F8)" and bar.help:GetText() == "?" and bar.save:GetText() == "Files"
     and bar.invite:GetText() == "Invite" and bar.close:GetText() == "x" and bar.title:GetText() == "YOUR DEN")
-check("the tool rail: Select, Build (F7), Move, Rotate, Shape ground, Stamps, Path, four steps", D.Rail():IsShown()
+check("the tool rail: Select, Build (F7), Move, Rotate, Stamps, Path, Ground, Dojo; no step stack (owner's shot)", D.Rail():IsShown()
     and bar.select:GetText() == "Select" and bar.build:GetText() == "Build (F7)" and bar.move:GetText() == "Move"
     and bar.rotate:GetText() == "Rotate" and bar.ground:GetText() == "Shape ground" and bar.stamps:GetText() == "Stamps"
-    and bar.path:GetText() == "Path" and #bar.steps == 4 and bar.build.iconPath:find("^Interface\\Icons\\"))
+    and bar.path:GetText() == "Path" and #bar.steps == 0 and bar.build.iconPath:find("^Interface\\Icons\\")
+    and bar.ground.edText:GetText() == "Ground" and bar.build.edLabel:find("gallery"))
 check("square icon buttons of one size on the rail", (function()
     for _, k in ipairs({ "select", "build", "move", "rotate", "ground", "stamps", "path" }) do if not bar[k].edIcon then return false end end
     return true end)())
@@ -189,15 +190,15 @@ check("F7 and F8 bound in the Den (free: a stock game binds neither)", overrides
 -- the intro, the first time
 local intro = D.Intro()
 check("the first time: the intro's first card", intro and intro:IsShown() and intro.head:GetText() == "This is your Den"
-    and intro.body:GetText():find("empty white world that's yours") and intro.count:GetText() == "1 / 4")
-check("four short cards", #D.CARDS == 4 and (function()
-    for _, c in ipairs(D.CARDS) do if #c[2] > 160 or #c[1] > 20 then return false end end
-    return D.CARDS[2][1] == "Build" and D.CARDS[3][1] == "Shape ground" and D.CARDS[4][2]:find("Invite")
+    and intro.body:GetText():find("empty white world that's yours") and intro.count:GetText() == "1 / 5")
+check("four short cards and the keys", #D.CARDS == 5 and (function()
+    for i, c in ipairs(D.CARDS) do if (i < 5 and #c[2] > 160) or #c[2] > 220 or #c[1] > 20 then return false end end
+    return D.CARDS[2][1] == "Build" and D.CARDS[3][1] == "Shape ground" and D.CARDS[4][2]:find("Invite") and D.CARDS[5][1] == "Keys"
 end)())
 intro.next:Fire("OnClick")
-check("Next: Build", intro.head:GetText() == "Build" and intro.count:GetText() == "2 / 4")
-intro.next:Fire("OnClick"); intro.next:Fire("OnClick")
-check("the last card: Start building, no Skip", intro.head:GetText() == "Play and invite" and intro.next:GetText() == "Start building" and not intro.skip:IsShown())
+check("Next: Build", intro.head:GetText() == "Build" and intro.count:GetText() == "2 / 5")
+intro.next:Fire("OnClick"); intro.next:Fire("OnClick"); intro.next:Fire("OnClick")
+check("the last card (the keys): Start building, no Skip", intro.head:GetText() == "Keys" and intro.next:GetText() == "Start building" and not intro.skip:IsShown())
 intro.next:Fire("OnClick")
 check("done: the intro goes and is remembered", not intro:IsShown() and WrathUnleashedUIDB.den.introSeen == true)
 
@@ -245,7 +246,7 @@ bar.invite:Fire("OnClick")
 check("Invite asks for the link (.den invite) and opens the copy box", sentHas("wuden\tcmd\t1/1\tinvite") and dr:IsShown() and D.drawerKind == "invite")
 local link = "https://relay.openvanilla.app/join/kzdvvj2umnduyauf#ABCDEFGHJKLMNPQRSTUVWXYZ~~GABCDE2345.ABCDEFGH23456789"
 fireClient("wuden\tinvite\t1/1\t" .. link)
-check("the link lands in the copy box, focused to copy", dr.box:GetText() == link and dr.box.focus and dr.label:GetText() == "Invite link:")
+check("the link lands in the copy box, focused to copy", dr.box:GetText() == link and dr.box.focus and dr.label:GetText() == "INVITE ONE FRIEND")
 dr.box:SetText(link .. "x")
 check("a key typed doesn't change the link", dr.box:GetText() == link)
 fireClient("wuden\tinvite\t1/1\tjavascript:alert(1)")
@@ -255,8 +256,8 @@ check("the hidden Den panel doesn't take the keyboard", not (den and den.link.fo
 dr.close:Fire("OnClick")
 
 bar.help:Fire("OnClick")
-check("Help: the intro again", intro:IsShown() and intro.count:GetText() == "1 / 4")
-intro.skip:Fire("OnClick")
+check("?: the keys card", intro:IsShown() and intro.count:GetText() == "5 / 5" and intro.head:GetText() == "Keys")
+intro.next:Fire("OnClick")
 check("Skip closes it", not intro:IsShown())
 
 -- ---------------------------------------------------------------- 2b. the editor's frame (2026-11-03)
@@ -265,8 +266,8 @@ bar.menuBtn:Fire("OnClick")
 local mn = D.Menu()
 check("Menu: a list under the strip, the budget on top", mn and mn:IsShown() and mn.meter:GetText() ~= nil and #mn.rows == #D.MENU)
 check("the menu holds what the old rows of buttons had", (function()
-    local want = { "Select mine", "Copy", "Paste", "Duplicate", "Delete", "Group", "Ungroup", "Put away", "Storage", "Floor",
-        "Properties", "Den panel", "Den home", "Reload the props", "Builder help" }
+    local want = { "Select mine", "Copy", "Paste", "Duplicate", "Delete", "Group", "Ungroup", "Put away", "Storage", "Drop to the floor",
+        "Properties", "Den panel", "Den home", "Reload the props", "Keys and tips" }
     local have = {}
     for _, r in ipairs(mn.rows) do have[r:GetText()] = r:IsShown() end
     for _, w in ipairs(want) do if not have[w] then return false end end
@@ -295,8 +296,6 @@ bar.rotate:Fire("OnClick")
 check("Rotate: the same popover", Bd.Panel():IsShown() and bar.rotate:IsActive() and not bar.move:IsActive())
 bar.stamps:Fire("OnClick")
 check("Stamps: the gallery on its Stamps tab", Bd.Window():IsShown() and Bd.tab == "stamps" and bar.stamps:IsActive())
-bar.steps[4]:Fire("OnClick")
-check("a step preset: 3 yd", Bd.STEPS[Bd.step] == 3 and bar.steps[4]:IsActive() and not bar.steps[1]:IsActive())
 nm = #sent
 bar.select:Fire("OnClick")
 check("Select on your own game: the prop nearest you", sent[nm + 1] == "wubuild\tcmd\t1/1\tnear" and bar.select:IsActive())

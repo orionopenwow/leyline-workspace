@@ -280,6 +280,36 @@ S.ED = {
 }
 S.ED_HEX = { gold = "e0a43a", text = "ebebef", muted = "999ea8" }
 local ED = S.ED
+-- Sizes (UI units; the addon's own fit scale makes one unit about one pixel at 1080p, 1.2 at 1440p). Owner, 3 Nov
+-- 08:40: "UI too small and bulky": text 13 (the stock small font is 10), titles 15, chips 28 high, icons 40.
+S.ED_SIZE = { text = 13, label = 13, title = 15, small = 13, chip = 28, icon = 40 }
+
+-- The editor's fonts: the game's own font file (whatever the client's locale uses, read from GameFontHighlight) at
+-- the editor's sizes. One font object per size, made once.
+local edFonts = {}
+function S.EdFont(size)
+    size = size or S.ED_SIZE.text
+    if edFonts[size] then return edFonts[size] end
+    local o = CreateFont and CreateFont("LeylineEdFont" .. size)
+    if o then
+        local file = "Fonts\\FRIZQT__.TTF"
+        local base = _G.GameFontHighlight
+        if base and base.GetFont then local f = base:GetFont(); if type(f) == "string" and f ~= "" then file = f end end
+        if o.SetFont then o:SetFont(file, size, "") end
+        if o.SetShadowOffset then o:SetShadowOffset(1, -1) end
+        if o.SetShadowColor then o:SetShadowColor(0, 0, 0, 0.9) end
+    end
+    edFonts[size] = o or GameFontHighlightSmall
+    return edFonts[size]
+end
+-- a FontString in the editor's font at a size
+function S.EdText(parent, size, layer)
+    local fs = parent:CreateFontString(nil, layer or "OVERLAY")
+    if fs.SetFontObject then fs:SetFontObject(S.EdFont(size)) end
+    fs.styleKeep = true
+    fs:SetTextColor(ED.text[1], ED.text[2], ED.text[3])
+    return fs
+end
 
 -- A panel in the editor look: the translucent near-black fill and the subtle edge.
 function S.EdPanel(frame, alpha, fill)
@@ -297,8 +327,7 @@ end
 
 -- A small-caps label: upper case, small, muted (or gold).
 function S.EdLabel(parent, text, gold, ...)
-    local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    fs.styleKeep = true
+    local fs = S.EdText(parent, S.ED_SIZE.label)
     local c = gold and ED.gold or ED.muted
     fs:SetTextColor(c[1], c[2], c[3])
     fs:SetJustifyH("LEFT")
@@ -316,16 +345,15 @@ function S.EdTip(owner, text)
         tip = CreateFrame("Frame", "LeylineEditorTip", owner)
         tip:SetFrameStrata("TOOLTIP")
         S.EdPanel(tip, 0.96, ED.panel2)
-        tip.text = tip:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        tip.text:SetPoint("LEFT", 8, 0)
-        tip.text.styleKeep = true
-        tip:SetHeight(22)
+        tip.text = S.EdText(tip, S.ED_SIZE.text)
+        tip.text:SetPoint("LEFT", 9, 0)
+        tip:SetHeight(28)
     end
     if tip.SetParent then tip:SetParent(owner) end
     tip:SetFrameStrata("TOOLTIP")
     tip.text:SetText(text or "")
     local w = tip.text.GetStringWidth and tip.text:GetStringWidth()
-    tip:SetWidth((tonumber(w) or (#tostring(text or "") * 6)) + 16)
+    tip:SetWidth((tonumber(w) or (#tostring(text or "") * 7)) + 18)
     tip:ClearAllPoints()
     tip:SetPoint(owner.edTipAt or "LEFT", owner, owner.edTipTo or "RIGHT", owner.edTipX or 6, owner.edTipY or 0)
     tip:Show()
@@ -374,12 +402,14 @@ local function edBase(parent, w, h, onClick, ...)
     return b
 end
 
--- A square icon button (28-32 px): b:SetText / GetText are its label (shown as the tooltip), b:SetActive(on) the
+-- A square icon button (40 px): b:SetText / GetText are its label (shown as the tooltip), b:SetActive(on) the
 -- gold "this tool is on" look, b:SetIcon(path).
 function S.EdIcon(parent, size, icon, label, onClick, ...)
-    local b = edBase(parent, size or 30, size or 30, onClick, ...)
+    size = size or S.ED_SIZE.icon
+    local b = edBase(parent, size, size, onClick, ...)
     b.edIcon = b:CreateTexture(nil, "ARTWORK")
-    b.edIcon:SetPoint("TOPLEFT", 4, -4); b.edIcon:SetPoint("BOTTOMRIGHT", -4, 4)
+    local inset = math.max(3, math.floor(size / 8))
+    b.edIcon:SetPoint("TOPLEFT", inset, -inset); b.edIcon:SetPoint("BOTTOMRIGHT", -inset, inset)
     b.edIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     b.SetIcon = function(self, path) self.iconPath = path; self.edIcon:SetTexture(path) end
     b:SetIcon(icon)
@@ -390,13 +420,12 @@ function S.EdIcon(parent, size, icon, label, onClick, ...)
     return b
 end
 
--- A slim text button (a chip): 22 px high, the same look; SetActive for toggles.
+-- A text button (a chip): 28 high, 13 px text, the same look; SetActive for toggles. w nil: as wide as its text.
 function S.EdChip(parent, text, w, onClick, ...)
-    local b = edBase(parent, w or 60, 22, onClick, ...)
-    local fs = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    fs:SetPoint("LEFT", 4, 0); fs:SetPoint("RIGHT", -4, 0)
+    local b = edBase(parent, w or 60, S.ED_SIZE.chip, onClick, ...)
+    local fs = S.EdText(b, S.ED_SIZE.text)
+    fs:SetPoint("LEFT", 6, 0); fs:SetPoint("RIGHT", -6, 0)
     fs:SetJustifyH("CENTER")
-    fs.styleKeep = true
     b.edText = fs
     if b.SetFontString then b:SetFontString(fs) end
     local setText = b.SetText
@@ -407,6 +436,10 @@ function S.EdChip(parent, text, w, onClick, ...)
     end
     b.GetText = function() return fs:GetText() end
     b:SetText(text or "")
+    if not w then
+        local tw = fs.GetStringWidth and tonumber((fs:GetStringWidth()))
+        b:SetWidth(math.floor((tw or (#tostring(text or "") * 7)) + 20))
+    end
     edPaint(b)
     return b
 end
@@ -414,9 +447,9 @@ end
 -- An input in the editor look.
 function S.EdInput(parent, w, h)
     local e = CreateFrame("EditBox", nil, parent)
-    e:SetWidth(w or 120); e:SetHeight(h or 20)
-    if e.SetFontObject then e:SetFontObject(GameFontHighlightSmall or ChatFontNormal) end
-    if e.SetTextInsets then e:SetTextInsets(5, 5, 0, 0) end
+    e:SetWidth(w or 120); e:SetHeight(h or 26)
+    if e.SetFontObject then e:SetFontObject(S.EdFont(S.ED_SIZE.text)) end
+    if e.SetTextInsets then e:SetTextInsets(7, 7, 0, 0) end
     local bg = solid(e, "BACKGROUND", { 0, 0, 0, 0.55 })
     bg:SetAllPoints(e)
     e.edEdges = border(e, ED.edge, "BORDER")

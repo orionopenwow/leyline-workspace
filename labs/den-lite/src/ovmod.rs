@@ -560,7 +560,13 @@ pub fn handle(d: &mut Den, sel: &mut Sel, here: Option<Here>, msg: &AddonMsg, ow
                 _ => vec![Out::DenCmd(data.to_string())],
             }
         }
-        ("wubuild", "catalog") => catalog_out(),
+        // as the full Den's ov_build.lua: the state comes with the catalog (the editor knows Undo n, Redo n and lite=1 at once)
+        ("wubuild", "catalog") => {
+            let mut v = catalog_out();
+            let at = v.len().saturating_sub(1);
+            v.insert(at, Out::Addon("wubuild".into(), "state".into(), state(d, sel, role)));
+            v
+        }
         ("wubuild", "state") => vec![Out::Addon("wubuild".into(), "state".into(), state(d, sel, role))],
         ("wubuild", "cmd") => {
             let w = data.trim();

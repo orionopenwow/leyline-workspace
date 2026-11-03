@@ -155,7 +155,8 @@ check("1-20 of 53", win.count:GetText() == "1-20 of 53")
 local t1 = tileOf(1001)
 check("a tile with a model: SetModel(path), shown, the icon hidden", t1.model.modelFile == byId[1001].model and t1.model:IsShown() and not t1.icon:IsShown())
 local t4 = tileOf(1004)
-check("a tile without one: the category's icon", not t4.model:IsShown() and t4.icon:IsShown() and t4.icon.path == "Interface\\Icons\\INV_Drink_05")
+check("a WMO's tile: the building icon on purpose, and why", not t4.model:IsShown() and t4.icon:IsShown() and t4.icon.path == "Interface\\Icons\\INV_Misc_Rune_01"
+    and t4.why:GetText() == "building")
 check("the name under the tile", t1.name:GetText() == "Barrel 53")
 check("a prop of 2 points says so on its tile", tileOf(1005).cost:GetText() == "2" and t1.cost:GetText() == "")
 local m1 = t1.model

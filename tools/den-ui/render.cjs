@@ -56,7 +56,11 @@ function page(doc) {
       const just = r.justify === 'CENTER' ? 'center' : r.justify === 'RIGHT' ? 'right' : 'left';
       const col = r.tcolor ? rgba(r.tcolor) : (r.kind === 'EditBox' ? '#eee' : '#ffd100');
       const pad = r.kind === 'EditBox' ? 'padding-left:5px;' : '';
-      els.push(`<div class="txt" style="${box};font-size:${size.toFixed(1)}px;line-height:${h.toFixed(1)}px;text-align:${just};color:${col};${pad}">${richText(r.text)}</div>`);
+      // one line when the region is one line high (the game cuts it with "..."), else wrapped at its width
+      const one = r.kind === 'EditBox' || r.h < (r.font || 12) * 1.9;
+      const flow = one ? `white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:${h.toFixed(1)}px;` : `white-space:normal;line-height:${(size * 1.25).toFixed(1)}px;`;
+      const ww = r.autoW ? 'width:auto;' : '';
+      els.push(`<div class="txt" style="${box};${ww}font-size:${size.toFixed(1)}px;${flow}text-align:${just};color:${col};${pad}">${richText(r.text)}</div>`);
     } else if (r.kind === 'Model' && r.model) {
       const name = String(r.model).split(/[\\/]/).pop();
       els.push(`<div class="model" style="${box}"><div class="spin"></div><span>${esc(name)}</span></div>`);
@@ -70,7 +74,7 @@ function page(doc) {
   div{position:absolute;box-sizing:border-box}
   .stock{border:1px dashed rgba(40,60,90,.55);background:rgba(40,60,90,.10)}
   .stock span{position:absolute;left:4px;top:2px;font:11px sans-serif;color:rgba(30,45,70,.8)}
-  .txt{white-space:nowrap;overflow:visible;text-shadow:0 1px 1px rgba(0,0,0,.9)}
+  .txt{text-shadow:0 1px 1px rgba(0,0,0,.9)}
   .icon{background:linear-gradient(135deg,#3a3f4a,#22252c);border:1px solid #555;overflow:hidden}
   .icon.desat{filter:grayscale(1) brightness(.7)}
   .icon span{position:absolute;left:1px;right:1px;bottom:1px;color:#c9cdd4;line-height:1.05;word-break:break-all;text-shadow:0 1px 0 #000}

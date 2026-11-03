@@ -19,28 +19,28 @@ F.cvars.useUiScale, F.cvars.uiScale, F.cvars.gxResolution = "1", tostring(k), px
 
 -- a fake Den Lite (ovmod.rs): the catalog with models, the state line, the Builder's commands
 local CATALOG = {
-    { 2413, "Wooden Chair", "seating", "World\\Generic\\Human\\Passive Doodads\\Chairs\\Chair01.m2", "0.5,0.5,1.1" },
-    { 2489, "High Back Chair", "seating", "World\\Generic\\Human\\Passive Doodads\\Chairs\\HighBackChair.m2", "0.6,0.6,1.5" },
-    { 181075, "Long Table", "tables", "World\\Generic\\Human\\Passive Doodads\\Tables\\LongTable01.m2", "2.4,0.9,0.9" },
-    { 1670, "Barrel of Powder", "barrels", "World\\Generic\\Human\\Passive Doodads\\Barrels\\Barrel01.m2", "0.6,0.6,1.0" },
-    { 2130, "Wine Cask", "barrels", "World\\Generic\\Human\\Passive Doodads\\Barrels\\Cask01.m2", "1.2,0.9,1.0" },
-    { 19028, "Watch Post", "fences", "World\\Generic\\Human\\Passive Doodads\\Posts\\WatchPost.m2", "2.0,2.0,6.0" },
-    { 1953, "Campfire", "fires", "World\\Generic\\Human\\Passive Doodads\\Campfire\\Campfire01.m2", "1.2,1.2,0.6" },
-    { 1558, "Candle", "lights", "World\\Generic\\Human\\Passive Doodads\\Candles\\Candle01.m2", "0.1,0.1,0.3" },
-    { 2109, "Fragrant Flowers", "nature", "World\\Generic\\Nature\\Flowers\\Flowers01.m2", "0.8,0.8,0.5" },
-    { 13948, "Fancy Bed", "decor", "World\\Generic\\Human\\Passive Doodads\\Beds\\FancyBed.m2", "2.2,1.4,1.2" },
-    { 2695, "Book", "decor", "World\\Generic\\Human\\Passive Doodads\\Books\\Book01.m2", "0.3,0.2,0.1" },
+    { 2413, "Wooden Chair", "seating", "World\\Generic\\Human\\Passive Doodads\\Chairs\\Chair01.m2", "0.50x0.50x1.10x0.00" },
+    { 2489, "High Back Chair", "seating", "World\\Generic\\Human\\Passive Doodads\\Chairs\\HighBackChair.m2", "0.60x0.60x1.50x0.00" },
+    { 181075, "Long Table", "tables", "World\\Generic\\Human\\Passive Doodads\\Tables\\LongTable01.m2", "2.40x0.90x0.90x0.00" },
+    { 1670, "Barrel of Powder", "barrels", "World\\Generic\\Human\\Passive Doodads\\Barrels\\Barrel01.m2", "0.60x0.60x1.00x0.00" },
+    { 2130, "Wine Cask", "barrels", "World\\Generic\\Human\\Passive Doodads\\Barrels\\Cask01.m2", "1.20x0.90x1.00x0.00" },
+    { 19028, "Watch Post", "fences", "World\\Generic\\Human\\Passive Doodads\\Posts\\WatchPost.m2", "2.00x2.00x6.00x0.00" },
+    { 1953, "Campfire", "fires", "World\\Generic\\Human\\Passive Doodads\\Campfire\\Campfire01.m2", "1.20x1.20x0.60x0.00" },
+    { 1558, "Candle", "lights", "World\\Generic\\Human\\Passive Doodads\\Candles\\Candle01.m2", "0.10x0.10x0.30x0.00" },
+    { 2109, "Fragrant Flowers", "nature", "World\\Generic\\Nature\\Flowers\\Flowers01.m2", "0.80x0.80x0.50x0.00" },
+    { 13948, "Fancy Bed", "decor", "World\\Generic\\Human\\Passive Doodads\\Beds\\FancyBed.m2", "2.20x1.40x1.20x0.00" },
+    { 2695, "Book", "decor", "World\\Generic\\Human\\Passive Doodads\\Books\\Book01.m2", "0.30x0.20x0.10x0.00" },
     { 19006, "House", "buildings", "wmo", "" },
     { 19007, "Inn", "buildings", "wmo", "" },
-    { 2686, "Apothecary Table", "tables", "World\\Generic\\Human\\Passive Doodads\\Tables\\Apothecary.m2", "1.8,0.8,1.0" },
-    { 2687, "Bottle", "decor", "World\\Generic\\Human\\Passive Doodads\\Bottles\\Bottle01.m2", "0.1,0.1,0.3" },
+    { 2686, "Apothecary Table", "tables", "World\\Generic\\Human\\Passive Doodads\\Tables\\Apothecary.m2", "1.80x0.80x1.00x0.00" },
+    { 2687, "Bottle", "decor", "World\\Generic\\Human\\Passive Doodads\\Bottles\\Bottle01.m2", "0.10x0.10x0.30x0.00" },
     { 2562, "Baked Bread", "decor", "", "" },
-    { 2711, "Charging Stone", "nature", "World\\Generic\\Nature\\Stones\\Stone01.m2", "1.0,1.0,1.4" },
-    { 2148, "Cheese Cutters", "decor", "World\\Generic\\Human\\Passive Doodads\\Food\\Cheese.m2", "0.4,0.4,0.2" },
-    { 181396, "Rug", "decor", "World\\Generic\\Human\\Passive Doodads\\Rugs\\Rug01.m2", "2.0,1.4,0.05" },
-    { 2371, "Skull", "decor", "World\\Generic\\Passive Doodads\\Skulls\\Skull01.m2", "0.3,0.3,0.3" },
+    { 2711, "Charging Stone", "nature", "World\\Generic\\Nature\\Stones\\Stone01.m2", "1.00x1.00x1.40x0.00" },
+    { 2148, "Cheese Cutters", "decor", "World\\Generic\\Human\\Passive Doodads\\Food\\Cheese.m2", "0.40x0.40x0.20x0.00" },
+    { 181396, "Rug", "decor", "World\\Generic\\Human\\Passive Doodads\\Rugs\\Rug01.m2", "2.00x1.40x0.05x0.00" },
+    { 2371, "Skull", "decor", "World\\Generic\\Passive Doodads\\Skulls\\Skull01.m2", "0.30x0.30x0.30x0.00" },
     { 19057, "Bridge", "structure", "wmo", "" },
-    { 2552, "Cauldron", "decor", "World\\Generic\\Passive Doodads\\Cauldron\\Cauldron01.m2", "1.2,1.2,1.0" },
+    { 2552, "Cauldron", "decor", "World\\Generic\\Passive Doodads\\Cauldron\\Cauldron01.m2", "1.20x1.20x1.00x0.00" },
 }
 local function catalogLine(v2)
     local items = {}
@@ -73,6 +73,7 @@ F.server = function(msg)
         F.toClient("wuden\tstatus\t1/1\trole=owner;props=3;saved=12")
     elseif mod == "wubuild" and name == "catalog" then
         F.toClient("wubuild\tcatalog\t1/1\t" .. catalogLine(V2))
+        F.toClient("wubuild\tstate\t1/1\t" .. stateLine())
     elseif mod == "wubuild" and name == "state" then
         F.toClient("wubuild\tstate\t1/1\t" .. stateLine())
     elseif mod == "wubuild" and name == "cmd" then

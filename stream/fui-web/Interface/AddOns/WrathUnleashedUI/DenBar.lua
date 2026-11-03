@@ -43,7 +43,9 @@ local VERSION = "1"
 local TOAST_SECS = 5
 local TOAST_QUEUE = 4
 local NAME_MAX = 24
-local BAR_W, BAR_H, RAIL_BTN = 900, 32, 30
+local BAR_H, RAIL_W, RAIL_BTN = 40, 64, 30   -- the strip's height, the rail's width, a rail icon
+local RAIL_TOP = 118                          -- under the game's player frame (104 high at the top left)
+local RAIL_FLOOR = 232                        -- above the chat (its top is 215 at the stock place)
 local KEY_CHOICES = { build = { "F7", "CTRL-F7" }, play = { "F8", "CTRL-F8" } }
 local KIND_COLOUR = { info = "text", ok = "ok", warn = "warn", jaina = "violet", cheer = "accent" }
 
@@ -53,6 +55,7 @@ local CARDS = {
     { "Build", "Build (F7, the box on the left) opens a gallery of props: double-click one to place it, then move, turn or delete it." },
     { "Shape ground", "Opens the world editor on your Den's ground: raise hills, dig, paint the ground. Your game shows it after a restart." },
     { "Play and invite", "Play (F8) hides the tools so you just walk your Den. Invite makes one link for a friend: send it, and they join you here." },
+    { "Keys", "F7 gallery · F8 play · double-click a tile to place · arrows move, PgUp / PgDn lift, Q / E turn · Del deletes · Ctrl+Z / Ctrl+Y undo, redo · Ctrl+C / V / D copy, paste, duplicate." },
 }
 D.CARDS = CARDS
 
@@ -98,12 +101,20 @@ function D.SavedLine()
     return what .. D.Ago(clock() - s.at)
 end
 
+-- The line: the current toast over the status pill (Builder.lua B.PillNote), and in play mode on the small pill.
 local function showLine()
     if not bar then return end
     local t = D.current
     local text = t and (hex(KIND_COLOUR[t.kind] or "text") .. (t.kind == "jaina" and "Jaina: " or "") .. t.text .. "|r") or (hex("muted") .. D.SavedLine() .. "|r")
     bar.line:SetText(text)
     if bar.pill then bar.pill.line:SetText(text) end
+    local b = W.Builder
+    if t and b and b.PillNote and t ~= D.noted then
+        D.noted = t
+        local st = S()
+        local c = t.kind == "cheer" and st.ED.gold or (st.C and (t.kind == "warn" or t.kind == "jaina") and st.C[KIND_COLOUR[t.kind]]) or nil
+        b.PillNote((t.kind == "jaina" and "Jaina: " or "") .. t.text, c)
+    end
 end
 
 -- One line in the bar for TOAST_SECS, one at a time; the same line twice in a row shows once. `now`: before the
@@ -143,7 +154,6 @@ end
 -- ---------------------------------------------------------------- the top strip and the tool rail
 local function ED() return S().ED end
 local function chip(parent, text, w, onClick, ...) return S().EdChip(parent, text, w, onClick, ...) end
-local function icon(parent, path, text, onClick, ...) return S().EdIcon(parent, RAIL_BTN, "Interface\\Icons\\" .. path, text, onClick, ...) end
 local function B() return W.Builder end
 local function E() return W.EditMode end
 local function editing() local e = E(); return e and e.IsOn and e.IsOn() end
@@ -153,33 +163,42 @@ local function keyText(which) local k = D.keys[which]; return k and (" (" .. k:g
 function D.Labels()
     if not bar then return end
     bar.build:SetText("Build" .. keyText("build"))
+    bar.build.edLabel = "Build: the gallery of props" .. keyText("build")
     bar.playBtn:SetText("Play" .. keyText("play"))
     if bar.pill then bar.pill.back:SetText("Back to building" .. keyText("play")) end
 end
 
--- The menu (the strip's Menu): everything that isn't a tool of its own, one row each.
+-- The menu (the strip's Menu): what isn't a tool of its own, in groups. A row's third field: "den" (only in a Den),
+-- "edit" (the browser's edit mode), "browser", "full" (only the full Den: Den Lite's state says lite=1).
 local MENU = {
-    { "Select mine", function() local b = B(); if b then b.Command("selall") end end },
+    { "#", "Selection" },
     { "Select nearest", function() local b = B(); if b then b.Command("near") end end },
+    { "Select mine", function() local b = B(); if b then b.Command("selall") end end },
     { "Clear selection", function() local b = B(); if b then b.Command("selclear") end end },
     { "Box select (edit mode)", function() local e = E(); if e and editing() then e.StartBox() end end, "edit" },
+    { "Properties", function() local b = B(); if b then b.ToggleProps() end end },
+    { "#", "Edit" },
     { "Copy", function() local b = B(); if b then b.Command("copy") end end },
     { "Paste", function() local b = B(); if b then b.Paste() end end },
     { "Duplicate", function() local b = B(); if b then b.Command("dup") end end },
+    { "Drop to the floor", function() local b = B(); if b then b.Command("floor") end end },
     { "Delete", function() local b = B(); if b then b.Command("delete") end end },
-    { "Group", function() local b = B(); if b then b.Command("group") end end },
-    { "Ungroup", function() local b = B(); if b then b.Command("ungroup") end end },
-    { "Put away", function() local b = B(); if b then b.Command("store") end end },
-    { "Storage", function() local b = B(); if b then b.ShowBuilder(true); b.ShowTab("storage") end end },
-    { "Floor", function() local b = B(); if b then b.Command("floor") end end },
-    { "Properties", function() local b = B(); if b then b.ToggleProps() end end },
+    { "#", "Groups and storage", "full" },
+    { "Group", function() local b = B(); if b then b.Command("group") end end, "full" },
+    { "Ungroup", function() local b = B(); if b then b.Command("ungroup") end end, "full" },
+    { "Put away", function() local b = B(); if b then b.Command("store") end end, "full" },
+    { "Storage", function() local b = B(); if b then b.ShowBuilder(true); b.ShowTab("storage") end end, "full" },
+    { "#", "Your Den", "den" },
     { "Den panel", function() local e = E(); if e and e.ToggleDen then e.ToggleDen() end end, "den" },
     { "Den home", function() if W.DenHome and W.DenHome.Toggle then W.DenHome.Toggle() end end, "den" },
     { "Edit mode (F7)", function() local e = E(); if e and e.Toggle then e.Toggle() end end, "browser" },
+    { "#", "Help" },
+    { "Keys and tips", function() D.ShowIntro(#CARDS) end },
+    { "The intro again", function() D.ShowIntro(1) end },
     { "Reload the props", function() local b = B(); if b then b.RequestCatalog() end end },
-    { "Builder help", function() local b = B(); if b then b.Command("help") end end },
 }
 D.MENU = MENU
+local MENU_W, MENU_ROW = 220, 28
 
 local function closeMenus(except)
     if menu and menu ~= except then menu:Hide() end
@@ -188,25 +207,28 @@ end
 
 local function buildMenu()
     menu = CreateFrame("Frame", "LeylineDenMenu", bar)
-    menu:SetWidth(190)
-    menu:SetPoint("TOPLEFT", bar.menuBtn, "BOTTOMLEFT", 0, -4)
+    menu:SetWidth(MENU_W)
+    menu:SetPoint("TOPRIGHT", bar.menuBtn, "BOTTOMRIGHT", 0, -6)
     menu:SetFrameStrata("DIALOG")
     menu:EnableMouse(true)
     S().EdPanel(menu, 0.96, ED().panel2)
     -- the budget first: props and points (or the Den's room and yard)
-    menu.meter = menu:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    menu.meter:SetPoint("TOPLEFT", 8, -8); menu.meter:SetWidth(176); menu.meter:SetJustifyH("LEFT")
-    menu.meter.styleKeep = true
+    menu.meter = S().EdText(menu, S().ED_SIZE.text)
+    menu.meter:SetPoint("TOPLEFT", 10, -10); menu.meter:SetWidth(MENU_W - 20); menu.meter:SetJustifyH("LEFT")
     menu.rows = {}
-    local y = -26
     for i, it in ipairs(MENU) do
-        local r = chip(menu, it[1], 176, function() closeMenus(); it[2]() end, "TOPLEFT", 7, y)
-        if r.edText then r.edText:ClearAllPoints(); r.edText:SetPoint("LEFT", 8, 0); r.edText:SetJustifyH("LEFT") end
+        local r
+        if it[1] == "#" then
+            r = S().EdLabel(menu, it[2], true)
+            r.header = true
+        else
+            r = chip(menu, it[1], MENU_W - 16, function() closeMenus(); it[2]() end)
+            r:SetHeight(MENU_ROW - 2)
+            if r.edText then r.edText:ClearAllPoints(); r.edText:SetPoint("LEFT", 10, 0); r.edText:SetJustifyH("LEFT") end
+        end
         r.only = it[3]
         menu.rows[i] = r
-        y = y - 23
     end
-    menu.bottom = y
     menu:Hide()
 end
 
@@ -221,12 +243,21 @@ function D.ShowMenu(show)
     menu.meter:SetText(s.den and string.format("Room %s   Yard %s", s.room or "?", s.yard or "?") or (b and b.Meter and (b.Meter()) or ""))
     local e = E()
     local browser = e and e.Desktop and not e.Desktop()
-    local y = -26
+    local lite = s.lite == "1"
+    local y = -34
     for _, r in ipairs(menu.rows) do
         local on = not r.only or (r.only == "den" and D.active) or (r.only == "edit" and editing()) or (r.only == "browser" and browser)
-        if on then r:ClearAllPoints(); r:SetPoint("TOPLEFT", menu, "TOPLEFT", 7, y); r:Show(); y = y - 23 else r:Hide() end
+            or (r.only == "full" and not lite)
+        if on then
+            r:ClearAllPoints()
+            if r.header then y = y - 6; r:SetPoint("TOPLEFT", menu, "TOPLEFT", 10, y - 6); y = y - 22
+            else r:SetPoint("TOPLEFT", menu, "TOPLEFT", 8, y); y = y - MENU_ROW end
+            r:Show()
+        else
+            r:Hide()
+        end
     end
-    menu:SetHeight(-y + 6)
+    menu:SetHeight(-y + 8)
     menu:Show()
     return true
 end
@@ -235,24 +266,24 @@ function D.Menu() return menu end
 local function snapText(g) return (g and g > 0) and ("Snap: " .. g .. " yd") or "Snap: off" end
 local function buildSnapMenu()
     snapMenu = CreateFrame("Frame", "LeylineDenSnapMenu", bar)
-    snapMenu:SetWidth(92)
-    snapMenu:SetPoint("TOPLEFT", bar.snap, "BOTTOMLEFT", 0, -4)
+    snapMenu:SetWidth(110)
+    snapMenu:SetPoint("TOPLEFT", bar.snap, "BOTTOMLEFT", 0, -6)
     snapMenu:SetFrameStrata("DIALOG")
     snapMenu:EnableMouse(true)
     S().EdPanel(snapMenu, 0.96, ED().panel2)
     snapMenu.rows = {}
     local list = (B() and B().SNAPS) or { 0, 0.5, 1, 2, 5 }
     for i, g in ipairs(list) do
-        local r = chip(snapMenu, g > 0 and (g .. " yd") or "off", 80, function()
+        local r = chip(snapMenu, g > 0 and (g .. " yd") or "off", 94, function()
             closeMenus()
             local b = B()
             if b then b.SetSnap(g) end
             D.Refresh()
-        end, "TOPLEFT", 6, -6 - (i - 1) * 23)
+        end, "TOPLEFT", 8, -8 - (i - 1) * (MENU_ROW + 2))
         r.grid = g
         snapMenu.rows[i] = r
     end
-    snapMenu:SetHeight(#list * 23 + 10)
+    snapMenu:SetHeight(#list * (MENU_ROW + 2) + 14)
     snapMenu:Hide()
 end
 function D.ShowSnap(show)
@@ -292,7 +323,8 @@ function D.Tool(which)
             if b.mode == "select" and e.StartBox then e.StartBox() elseif e.Cancel then e.Cancel("Click a prop to select it; Select again for a box.") end
         else
             b.Command("near")
-            b.SetStatus("Selected the prop nearest you. Shift-click in edit mode adds more.")
+            b.SetStatus("Selected the prop nearest you. Its numbers are in the popover on the right.")
+            if b.ShowProps then b.ShowProps(true); b.propsAuto = true end
         end
         b.SetMode("select")
     elseif which == "place" then
@@ -307,118 +339,146 @@ function D.Tool(which)
     D.Refresh()
 end
 
+-- The rail's tools: { key, icon (Interface\Icons\...), label under it, tooltip, what it does }
+D.RAIL = {
+    { "select", "Ability_Hunter_SniperShot", "Select", "Select: the prop nearest you", function() D.Tool("select") end },
+    { "build", "INV_Crate_01", "Build", "Build: the gallery of props", function() D.Tool("place") end },
+    { "move", "Spell_Arcane_Blink", "Move", "Move the selection (arrows, PgUp / PgDn)", function() D.Tool("move") end },
+    { "rotate", "Ability_Whirlwind", "Rotate", "Turn the selection (Q / E)", function() D.Tool("rotate") end },
+    { "stamps", "INV_Misc_Map_01", "Stamps", "Stamps: ready-made areas", function() D.Tool("stamps") end },
+    { "path", "Ability_Tracking", "Path", "Path: a line of the picked prop", function() D.Tool("path") end },
+    { "ground", "Spell_Nature_Earthquake", "Ground", "Shape the ground (opens Forge)", function() D.ShapeGround() end, "Shape ground" },
+    { "dojo", "Ability_DualWield", "Dojo", "The training grounds", function() if W.Dojo then W.Dojo.Toggle() end end },
+}
+
+-- A rail button: the icon and its name under it (a short screen: the icon alone, the name in the tooltip).
+local function railButton(t)
+    local b = chip(rail, "", RAIL_W - 8, t[5])
+    b.edIcon = b:CreateTexture(nil, "ARTWORK")
+    b.edIcon:SetWidth(RAIL_BTN); b.edIcon:SetHeight(RAIL_BTN)
+    b.edIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    b.edIcon:SetTexture("Interface\\Icons\\" .. t[2])
+    b.iconPath = "Interface\\Icons\\" .. t[2]
+    b.SetIcon = function(self, path) self.iconPath = path; self.edIcon:SetTexture(path) end
+    b.edText:ClearAllPoints()
+    b.edText:SetPoint("BOTTOMLEFT", 2, 4); b.edText:SetPoint("BOTTOMRIGHT", -2, 4)
+    b.SetText = function(self, txt) self.text = txt; self.edText:SetText(t[3]) end
+    b.GetText = function(self) return self.text end
+    b:SetText(t[6] or t[3])
+    b.edLabel = t[4]
+    b.edTipAt, b.edTipTo = "LEFT", "RIGHT"
+    return b
+end
+
+-- The rail's buttons for the screen's height: labelled (54 high) when they fit between the player frame and the chat,
+-- else icon-only (40). Called on every Refresh (a resize, a new UI scale).
+function D.LayoutRail()
+    if not rail then return end
+    local h = (GetScreenHeight and GetScreenHeight()) or 768
+    local n = #D.RAIL
+    local room = h - RAIL_TOP - RAIL_FLOOR
+    local tall = room >= n * 58 + 8
+    local bh = tall and 54 or math.max(34, math.min(44, math.floor((room - 8) / n) - 4))
+    local y = -4
+    for _, t in ipairs(D.RAIL) do
+        local b = bar[t[1]]
+        b:SetHeight(bh)
+        b:ClearAllPoints(); b:SetPoint("TOPLEFT", rail, "TOPLEFT", 4, y)
+        b.edIcon:ClearAllPoints()
+        if tall then b.edIcon:SetPoint("TOP", b, "TOP", 0, -4); b.edText:Show()
+        else b.edIcon:SetPoint("CENTER", b, "CENTER", 0, 0); b.edText:Hide() end
+        y = y - bh - 4
+    end
+    rail:SetHeight(-y + 4)
+    rail.compact = not tall
+end
+
 local function buildBar()
-    -- the strip: across the top, near-black and translucent
+    -- the strip: a floating toolbar across the top middle, clear of the minimap (top right) and the player frame
     bar = CreateFrame("Frame", "LeylineDenBar", UIParent)
     bar:SetHeight(BAR_H)
-    bar:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
-    bar:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", 0, 0)
-    bar:SetWidth(BAR_W)
+    bar:SetPoint("TOP", UIParent, "TOP", 0, -6)
     bar:SetFrameStrata("MEDIUM")
     bar:EnableMouse(true)
-    S().EdPanel(bar, 0.84)
+    S().EdPanel(bar, 0.88)
     bar.mark = bar:CreateTexture(nil, "ARTWORK")
     bar.mark:SetTexture(S().MARK)
-    bar.mark:SetWidth(18); bar.mark:SetHeight(18)
+    bar.mark:SetWidth(22); bar.mark:SetHeight(22)
     bar.mark:SetPoint("LEFT", 10, 0)
-    bar.title = S().EdLabel(bar, "Your Den", true, "LEFT", 34, 0)
-    local x = 120
-    local function add(key, text, w, fn)
+    bar.title = S().EdText(bar, S().ED_SIZE.title)
+    bar.title:SetPoint("LEFT", 38, 0)
+    bar.title:SetTextColor(ED().gold[1], ED().gold[2], ED().gold[3])
+    bar.title:SetText("YOUR DEN")
+    local x = 136
+    bar.chips = {}
+    local function add(key, text, w, fn, tip)
         local b = chip(bar, text, w, fn, "LEFT", x, 0)
-        x = x + w + 4
+        bar.chips[#bar.chips + 1] = { b, x }
+        x = x + (tonumber((b:GetWidth())) or w or 60) + 6
         bar[key] = b
+        b.edLabel = tip
+        b.edTipAt, b.edTipTo, b.edTipX, b.edTipY = "TOP", "BOTTOM", 0, -6
         return b
     end
-    add("undo", "Undo 0", 60, function() local b = B(); if b then b.Command("undo") end end)
-    add("redo", "Redo 0", 60, function() local b = B(); if b then b.Command("redo") end end)
-    add("menuBtn", "Menu", 52, function() D.ShowMenu() end)
-    x = x + 8
-    add("snap", "Snap: off", 78, function() D.ShowSnap() end)
+    local function gap() x = x + 10 end
+    add("undo", "Undo 0", 76, function() local b = B(); if b then b.Command("undo") end end, "Undo (Ctrl+Z with a prop selected)")
+    add("redo", "Redo 0", 76, function() local b = B(); if b then b.Command("redo") end end, "Redo (Ctrl+Y)")
+    gap()
+    add("snap", "Snap: off", 104, function() D.ShowSnap() end, "Snap what you place to a grid")
     bar.rot = {}
     for _, a in ipairs({ 15, 45, 90 }) do
-        bar.rot[a] = add("rot" .. a, a .. "°", 36, function() local b = B(); if b then b.SetAngle(a) end; D.Refresh() end)
-        bar.rot[a].edLabel = "Q / E turn by " .. a .. " degrees"
+        bar.rot[a] = add("rot" .. a, a .. "°", 44, function() local b = B(); if b then b.SetAngle(a) end; D.Refresh() end, "Q / E turn by " .. a .. " degrees")
     end
-    -- the line: Den Lite's toasts, one at a time, and "Saved 12 s ago"
-    bar.line = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    bar.line:SetPoint("LEFT", x + 12, 0)
-    bar.line:SetPoint("RIGHT", bar, "RIGHT", -300, 0)
-    bar.line:SetJustifyH("CENTER")
-    bar.line.styleKeep = true
-    -- the right: Play, ?, Files, Invite, close
-    bar.close = chip(bar, "x", 24, function() D.Close() end, "RIGHT", -6, 0)
-    bar.invite = chip(bar, "Invite", 56, function() D.Invite() end, "RIGHT", -34, 0)
-    bar.save = chip(bar, "Files", 52, function() local b = B(); if b then b.ShowFiles() end end, "RIGHT", -94, 0)
-    bar.help = chip(bar, "?", 24, function() D.ShowIntro(1) end, "RIGHT", -150, 0)
-    bar.playBtn = chip(bar, "Play", 78, function() D.SetPlay(true) end, "RIGHT", -178, 0)
+    gap()
+    add("playBtn", "Play", 96, function() D.SetPlay(true) end, "Play: hide the tools and walk your Den")
+    add("invite", "Invite", 70, function() D.Invite() end, "Invite one friend: a link to send")
+    add("save", "Files", 62, function() local b = B(); if b then b.ShowFiles() end end, "Save and open your Den by name")
+    add("menuBtn", "Menu", 66, function() D.ShowMenu() end, "Copy, paste, delete, groups, help...")
+    add("help", "?", 28, function() D.ShowIntro(#CARDS) end, "Keys and tips")
+    add("close", "x", 28, function() D.Close() end, "Close the tools (Play)")
+    bar.x = x
+    bar.full = x + 4
+    bar:SetWidth(bar.full)
+    -- the strip's old line (kept for callers): the toasts now show over the status pill
+    bar.line = S().EdText(bar, S().ED_SIZE.text)
+    bar.line:Hide()
 
-    -- the rail: down the left, square icon buttons, the tool that is on in gold
+    -- the rail: down the left under the player frame, an icon and a name each, the tool that is on in gold
     rail = CreateFrame("Frame", "LeylineDenRail", UIParent)
-    rail:SetWidth(RAIL_BTN + 8)
-    rail:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 8, -(BAR_H + 10))
+    rail:SetWidth(RAIL_W)
+    rail:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 8, -RAIL_TOP)
     rail:SetFrameStrata("MEDIUM")
     rail:EnableMouse(true)
-    S().EdPanel(rail, 0.84)
-    local y = -4
-    local function tool(key, path, text, fn)
-        local b = icon(rail, path, text, fn, "TOPLEFT", 4, y)
-        y = y - RAIL_BTN - 4
-        bar[key] = b
-        return b
-    end
-    tool("select", "INV_Misc_Spyglass_02", "Select", function() D.Tool("select") end)
-    tool("build", "INV_Crate_01", "Build", function() D.Tool("place") end)
-    tool("move", "Ability_Rogue_Sprint", "Move", function() D.Tool("move") end)
-    tool("rotate", "Ability_Whirlwind", "Rotate", function() D.Tool("rotate") end)
-    tool("ground", "Spell_Nature_Earthquake", "Shape ground", function() D.ShapeGround() end)
-    tool("stamps", "INV_Misc_Map_01", "Stamps", function() D.Tool("stamps") end)
-    tool("path", "Ability_Tracking", "Path", function() D.Tool("path") end)
-    tool("dojo", "Ability_Warrior_BattleShout", "Dojo", function() if W.Dojo then W.Dojo.Toggle() end end)
-    bar.build.edLabel = "Build"
-    y = y - 4
-    bar.stepLabel = S().EdLabel(rail, "Step", false, "TOP", rail, "TOP", 0, y)
-    y = y - 14
-    bar.steps = {}
-    local Bm = B()
-    for i, si in ipairs((Bm and Bm.STEP_PRESETS) or {}) do
-        local yd = Bm.STEPS[si]
-        local b = chip(rail, tostring(yd), RAIL_BTN, function() local b2 = B(); if b2 then b2.SetStep(si) end; D.Refresh() end, "TOPLEFT", 4, y)
-        b.edLabel = "Move " .. yd .. " yd a step"
-        b.step = si
-        bar.steps[i] = b
-        y = y - 26
-    end
-    rail:SetHeight(-y + 2)
-    for _, k in ipairs({ "select", "build", "move", "rotate", "ground", "stamps", "path", "dojo" }) do
-        bar[k].edTipAt, bar[k].edTipTo = "LEFT", "RIGHT"
-    end
+    S().EdPanel(rail, 0.88)
+    for _, t in ipairs(D.RAIL) do bar[t[1]] = railButton(t) end
+    bar.steps = {}   -- the move step lives in the popover now (owner: the rail's "STEP 0.1 0.25 1 3" stack)
+    D.LayoutRail()
     rail:Hide()
     bar.rail = rail
 
-    -- play mode: one small button and the line
+    -- play mode: one small chip and the line
     local pill = CreateFrame("Frame", "LeylineDenPlayPill", UIParent)
-    pill:SetWidth(330); pill:SetHeight(30)
+    pill:SetWidth(420); pill:SetHeight(36)
     pill:SetPoint("TOP", UIParent, "TOP", 0, -6)
     pill:EnableMouse(true)
-    S().EdPanel(pill, 0.72)
-    pill.back = chip(pill, "Back to building", 150, function() D.SetPlay(false) end, "LEFT", 4, 0)
-    pill.line = pill:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    pill.line:SetPoint("LEFT", 160, 0)
-    pill.line:SetWidth(166); pill.line:SetJustifyH("LEFT")
-    pill.line.styleKeep = true
+    S().EdPanel(pill, 0.78)
+    pill.back = chip(pill, "Back to building", 170, function() D.SetPlay(false) end, "LEFT", 4, 0)
+    pill.line = S().EdText(pill, S().ED_SIZE.text)
+    pill.line:SetPoint("LEFT", 182, 0)
+    pill.line:SetWidth(228); pill.line:SetJustifyH("LEFT")
     pill:Hide()
     bar.pill = pill
 
-    -- the drawer under the strip: a name for Save, or the invite link to copy
+    -- the drawer under the strip: a name for Save, or the invite link to copy (a small card, not a bar)
     drawer = CreateFrame("Frame", "LeylineDenDrawer", bar)
-    drawer:SetWidth(500); drawer:SetHeight(34)
-    drawer:SetPoint("TOPRIGHT", bar, "BOTTOMRIGHT", -6, -4)
+    drawer:SetWidth(470); drawer:SetHeight(64)
+    drawer:SetPoint("TOP", bar, "BOTTOM", 0, -8)
     drawer:EnableMouse(true)
     S().EdPanel(drawer, 0.95, ED().panel2)
-    drawer.label = S().EdLabel(drawer, "", false, "LEFT", 10, 0)
-    drawer.label:SetWidth(100)
-    drawer.box = S().EdInput(drawer, 260, 20)
-    drawer.box:SetPoint("LEFT", 112, 0)
+    drawer.label = S().EdLabel(drawer, "", true, "TOPLEFT", 12, -9)
+    drawer.label:SetWidth(300)
+    drawer.box = S().EdInput(drawer, 330, 26)
+    drawer.box:SetPoint("TOPLEFT", 12, -28)
     drawer.box:SetScript("OnEscapePressed", function(self) self:ClearFocus(); D.CloseDrawer() end)
     drawer.box:SetScript("OnEnterPressed", function() if D.drawerKind == "save" then D.Save(drawer.box:GetText()) else D.CloseDrawer() end end)
     drawer.box:SetScript("OnEditFocusGained", function(self) if D.drawerKind == "invite" then self:HighlightText() end end)
@@ -426,9 +486,12 @@ local function buildBar()
     drawer.box:SetScript("OnTextChanged", function(self)
         if D.drawerKind == "invite" and D.link and self:GetText() ~= D.link then self:SetText(D.link); self:HighlightText() end
     end)
-    drawer.ok = chip(drawer, "Save", 56, function() if D.drawerKind == "save" then D.Save(drawer.box:GetText()) else D.CloseDrawer() end end, "LEFT", 378, 0)
+    drawer.hint = S().EdText(drawer, S().ED_SIZE.small)
+    drawer.hint:SetPoint("TOPRIGHT", -12, -10)
+    drawer.hint:SetTextColor(ED().muted[1], ED().muted[2], ED().muted[3])
+    drawer.ok = chip(drawer, "Save", 56, function() if D.drawerKind == "save" then D.Save(drawer.box:GetText()) else D.CloseDrawer() end end, "TOPLEFT", 350, -28)
     drawer.ok:SetActive(true)
-    drawer.close = chip(drawer, "Close", 52, function() D.CloseDrawer() end, "LEFT", 438, 0)
+    drawer.close = chip(drawer, "x", 28, function() D.CloseDrawer() end, "TOPLEFT", 412, -28)
     drawer:Hide()
 
     bar:Hide()
@@ -438,7 +501,25 @@ function D.Bar() if not bar then buildBar() end return bar end
 function D.Rail() D.Bar(); return rail end
 function D.Drawer() D.Bar(); return drawer end
 
--- The strip and the rail say what is on now: the title, Undo n / Redo n, Snap, the turn step, the tool, the step.
+-- The strip's place: the screen's middle, but never over the player frame (top left, 222 wide with its margin) or the
+-- minimap (top right, 200); on a narrow screen without its title, so it fits between them.
+function D.LayoutBar()
+    if not bar then return end
+    local sw = (GetScreenWidth and tonumber((GetScreenWidth()))) or 1366
+    local room = sw - 222 - 200
+    local compact = bar.full > room
+    local shift = compact and 98 or 0
+    for _, c in ipairs(bar.chips) do c[1]:ClearAllPoints(); c[1]:SetPoint("LEFT", bar, "LEFT", c[2] - shift, 0) end
+    if compact then bar.title:Hide() else bar.title:Show() end
+    local w = bar.full - shift
+    bar:SetWidth(w)
+    local left = math.max(222, math.floor((sw - w) / 2))
+    bar:ClearAllPoints()
+    bar:SetPoint("TOPLEFT", UIParent, "TOPLEFT", left, -6)
+    bar.compact = compact
+end
+
+-- The strip and the rail say what is on now: the title, Undo n / Redo n, Snap, the turn step, the tool.
 function D.Paint()
     if not bar then return end
     local b = B()
@@ -446,6 +527,8 @@ function D.Paint()
     bar.title:SetText(D.active and "YOUR DEN" or "BUILD")
     bar.undo:SetText("Undo " .. (tonumber(s.undo or "") or 0))
     bar.redo:SetText("Redo " .. (tonumber(s.redo or "") or 0))
+    if (tonumber(s.undo or "") or 0) > 0 then bar.undo:Enable() else bar.undo:Disable() end
+    if (tonumber(s.redo or "") or 0) > 0 then bar.redo:Enable() else bar.redo:Disable() end
     if b then
         bar.snap:SetText(snapText(b.Snap()))
         local a = b.TurnStep()
@@ -458,7 +541,6 @@ function D.Paint()
         bar.rotate:SetActive(b.mode == "rotate")
         bar.stamps:SetActive(gallery and b.tab == "stamps")
         bar.path:SetActive(b.mode == "path")
-        for _, c in ipairs(bar.steps) do c:SetActive(c.step == b.step) end
     end
     bar.dojo:SetActive(W.Dojo and W.Dojo.IsOpen and W.Dojo.IsOpen() or false)
     -- what is only for a Den: the ground, Play, Invite
@@ -477,14 +559,16 @@ function D.OpenDrawer(kind)
     D.Bar()
     D.drawerKind = kind
     if kind == "save" then
-        drawer.label:SetText("Name this save:")
+        drawer.label:SetText(("Name this save"):upper())
+        drawer.hint:SetText("Enter saves")
         drawer.ok:SetText("Save")
         drawer.box:SetMaxLetters(NAME_MAX)
         drawer.box:SetText(D.lastName or "my-den")
         drawer.box:SetFocus()
         drawer.box:HighlightText()
     else
-        drawer.label:SetText("Invite link:")
+        drawer.label:SetText(("Invite one friend"):upper())
+        drawer.hint:SetText(D.link and "Ctrl+C copies it, then send it" or "")
         drawer.ok:SetText("Done")
         drawer.box:SetMaxLetters(0)
         drawer.box:SetText(D.link or "")
@@ -531,12 +615,24 @@ function D.Save(name)
     return true
 end
 
+-- Files > This Den > Open: a save put back in place of the Den (".den load <name> replace"; Undo brings it back).
+function D.Open(name)
+    local n = tostring(name or ""):gsub("^%s+", ""):gsub("%s+$", ""):gsub("%s+", "-")
+    if n == "" or #n > NAME_MAX or not n:match("^[%w_%-]+$") then
+        D.Toast("warn", "Type the name of a save: letters, numbers, - and _.", true)
+        return false
+    end
+    denCmd("load " .. n .. " replace")
+    return true
+end
+
 function D.Invite()
     D.link = nil
     denCmd("invite")
     D.OpenDrawer("invite")
     drawer.box:SetText("")
-    drawer.label:SetText("Making a link...")
+    drawer.label:SetText(("Making a link..."):upper())
+    drawer.hint:SetText("")
     return true
 end
 
@@ -576,21 +672,22 @@ function D.TogglePlay() return D.SetPlay(not D.play) end
 -- ---------------------------------------------------------------- the intro
 local function buildIntro()
     intro = CreateFrame("Frame", "LeylineDenIntro", UIParent)
-    intro:SetWidth(400); intro:SetHeight(190)
+    intro:SetWidth(460); intro:SetHeight(220)
     intro:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
     intro:SetFrameStrata("DIALOG")
     intro:EnableMouse(true)
     if S() then S().Window(intro, "Your Den") end
-    intro.head = intro:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    intro.head:SetPoint("TOPLEFT", 16, -44)
+    intro.head = S().EdText(intro, 17)
+    intro.head:SetPoint("TOPLEFT", 18, -46)
     intro.head:SetJustifyH("LEFT")
-    intro.body = intro:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    intro.body:SetPoint("TOPLEFT", 16, -72)
-    intro.body:SetWidth(368); intro.body:SetJustifyH("LEFT")
-    intro.count = intro:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    intro.count:SetPoint("BOTTOMLEFT", 16, 16)
-    intro.skip = chip(intro, "Skip", 70, function() D.EndIntro() end, "BOTTOMRIGHT", -104, 10)
-    intro.next = chip(intro, "Next", 86, function() D.NextCard() end, "BOTTOMRIGHT", -12, 10)
+    intro.head:SetTextColor(ED().gold[1], ED().gold[2], ED().gold[3])
+    intro.body = S().EdText(intro, 14)
+    intro.body:SetPoint("TOPLEFT", 18, -76)
+    intro.body:SetWidth(424); intro.body:SetJustifyH("LEFT")
+    intro.count = S().EdText(intro, S().ED_SIZE.text)
+    intro.count:SetPoint("BOTTOMLEFT", 18, 18)
+    intro.skip = chip(intro, "Skip", 70, function() D.EndIntro() end, "BOTTOMRIGHT", -150, 12)
+    intro.next = chip(intro, "Next", 130, function() D.NextCard() end, "BOTTOMRIGHT", -12, 12)
     intro.next:SetActive(true)
     if UISpecialFrames then tinsert(UISpecialFrames, "LeylineDenIntro") end
     intro:SetScript("OnHide", function() if D.card then D.EndIntro() end end)
@@ -699,6 +796,8 @@ function D.Refresh()
     local open = B and B.EditorOpen and B.EditorOpen()
     local want = (D.active and not D.play) or (open and not D.play) or false
     D.Dock(editing() and true or false)
+    D.LayoutRail()
+    D.LayoutBar()
     if want then bar:Show(); rail:Show() else bar:Hide(); rail:Hide(); closeMenus() end
     if D.active and D.play then bar.pill:Show() else bar.pill:Hide() end
     if B and B.ShowPill then B.ShowPill(want) end
@@ -760,16 +859,182 @@ function D.OnMessage(prefix, msg, channel, sender)
     elseif name == "diag" then
         -- the den-test asks what the game makes of the character now (WrathUnleashedUI.lua W.DenDiag)
         if W.DenDiag then pcall(W.DenDiag, plain(data)) end
+    elseif name == "ui" then
+        D.TestAction(data)
     elseif name == "invite" and inviteOk(data) then
         D.link = data
         if D.active then
             D.OpenDrawer("invite")
-            drawer.label:SetText("Invite link:")
             drawer.box:SetText(data)
             drawer.box:SetFocus()
             drawer.box:HighlightText()
         end
     end
+end
+
+-- ---------------------------------------------------------------- the chat: the Den's system lines go to the pill
+-- Owner's shot, 3 Nov: "the chat full of system lines". In a Den every system line (Den Lite's answers, its welcome)
+-- shows over the status pill instead, one at a time; what the player typed themselves (a dot command in the last few
+-- seconds) still answers in the chat, as before.
+D.TYPED_SECS = 4
+function D.ChatFilter(_, _, text)
+    if not (D.active or (W.InDen and W.InDen())) then return false end
+    if D.typedAt and clock() - D.typedAt <= D.TYPED_SECS then return false end
+    D.Toast("info", text)
+    return true
+end
+if ChatFrame_AddMessageEventFilter then ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", D.ChatFilter) end
+if hooksecurefunc and SendChatMessage then
+    hooksecurefunc("SendChatMessage", function(msg) if type(msg) == "string" and msg:match("^%s*%.") then D.typedAt = clock() end end)
+end
+
+-- ---------------------------------------------------------------- the den-test's feature check
+-- tools/den-check `featuretest` asks Den Lite (`.den ui <action>`, only with the test's channel), which asks the
+-- addon (`wuden ui <action>`): each action is what a click on the editor does, through the same buttons and the same
+-- Builder calls, so the test proves the clicks. Only in a Den. `report` answers `wuden report <line>` lines: the
+-- gallery's tiles (with a model, an icon on purpose, empty), the catalog, the selection, the windows' places and
+-- what they overlap of the game's own frames.
+local function frameRect(f)
+    if not (f and f.IsShown and f:IsShown() and f.GetLeft) then return nil end
+    local l, b, w, h = f:GetLeft(), f:GetBottom(), f:GetWidth(), f:GetHeight()
+    if not (l and b and w and h) then return nil end
+    local k = 1
+    if f.GetEffectiveScale and UIParent and UIParent.GetEffectiveScale then
+        local fe, ue = tonumber(f:GetEffectiveScale()), tonumber(UIParent:GetEffectiveScale())
+        if fe and ue and ue > 0 then k = fe / ue end
+    end
+    return { x = l * k, y = b * k, w = w * k, h = h * k }
+end
+D.EDITOR_FRAMES = { "LeylineDenBar", "LeylineDenRail", "WrathUnleashedBuilderFrame", "LeylineEditorStatus", "WrathUnleashedPropsFrame",
+    "WrathUnleashedFilesFrame", "LeylineDenMenu", "LeylineDenDrawer" }
+D.GAME_FRAMES = { "MinimapCluster", "ChatFrame1", "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight",
+    "MultiBarLeft", "PlayerFrame" }
+-- Which shown editor windows overlap which shown game frames (by more than 2 UI units): { "A/B", ... }
+function D.Overlaps()
+    local out = {}
+    for _, en in ipairs(D.EDITOR_FRAMES) do
+        local a = frameRect(_G[en])
+        if a then
+            for _, gn in ipairs(D.GAME_FRAMES) do
+                local g = frameRect(_G[gn])
+                if g then
+                    local ox = math.min(a.x + a.w, g.x + g.w) - math.max(a.x, g.x)
+                    local oy = math.min(a.y + a.h, g.y + g.h) - math.max(a.y, g.y)
+                    if ox > 2 and oy > 2 then out[#out + 1] = en .. "/" .. gn end
+                end
+            end
+        end
+    end
+    return out
+end
+D.FrameRect = frameRect
+
+local function report(line) send("report", tostring(line):gsub("[%c|]", " "):sub(1, 200)) end
+function D.Report(what)
+    local b = B()
+    local lines = {}
+    if b and b.TileReport then
+        local r = b.TileReport()
+        lines[#lines + 1] = string.format("gallery shown=%d tiles=%d model=%d icon=%d empty=%d rows=%d cols=%d tile=%d", r.shown, r.tiles,
+            r.model, r.icon, r.empty, r.rows, r.cols, r.tile)
+        lines[#lines + 1] = string.format("catalog n=%d model=%d boxed=%d wmo=%d none=%d", r.catalog, r.withModel, r.boxed, r.wmo, r.none)
+        if #r.missing > 0 then lines[#lines + 1] = "nomodel " .. table.concat(r.missing, ","):sub(1, 180) end
+    end
+    local s = (b and b.state) or {}
+    lines[#lines + 1] = string.format("state sel=%s n=%s undo=%s redo=%s clip=%s grid=%s lite=%s mode=%s tab=%s pick=%s", s.selName or "-",
+        tostring(s.count or 0), s.undo or "?", s.redo or "?", s.clip or "?", s.grid or "?", s.lite or "0", tostring(b and b.mode),
+        tostring(b and b.tab), tostring(b and b.pick and b.pick.id or "-"))
+    local open = {}
+    for _, n in ipairs(D.EDITOR_FRAMES) do if _G[n] and _G[n].IsShown and _G[n]:IsShown() then open[#open + 1] = n end end
+    for _, n in ipairs({ "LeylineDenIntro", "LeylineDenPlayPill", "WrathUnleashedDenFrame", "LeylineDojoFrame" }) do
+        if _G[n] and _G[n].IsShown and _G[n]:IsShown() then open[#open + 1] = n end
+    end
+    lines[#lines + 1] = "open " .. table.concat(open, ",")
+    local ov = D.Overlaps()
+    lines[#lines + 1] = "overlaps " .. (#ov > 0 and table.concat(ov, ",") or "none")
+    local h = (GetScreenHeight and GetScreenHeight()) or 0
+    local w = (GetScreenWidth and GetScreenWidth()) or 0
+    lines[#lines + 1] = string.format("screen %.0fx%.0f uiscale=%s play=%s rail=%s", w, h, tostring(GetCVar and GetCVar("uiScale")), tostring(D.play),
+        rail and (rail.compact and "compact" or "labelled") or "-")
+    local p = b and b.Pill and b.Pill()
+    if p and p.line then lines[#lines + 1] = "pill " .. tostring(p.line:GetText() or "") end
+    if what then lines[#lines + 1] = "mark " .. tostring(what) end
+    for _, l in ipairs(lines) do report(l) end
+    return lines
+end
+
+local function find(id)
+    local b = B()
+    id = tonumber(id)
+    for _, c in ipairs((b and b.catalog) or {}) do if c.id == id then return c end end
+end
+-- one test action, as the matching click: true when it was one
+function D.TestAction(text)
+    if not D.active then return false end
+    local w = {}
+    for x in tostring(text or ""):gmatch("%S+") do w[#w + 1] = x end
+    local a, b = w[1] or "", B()
+    if not b then return false end
+    closeMenus()
+    if a == "report" then D.Report(w[2]); return true end
+    if a == "gallery" then if not (b.Window() and b.Window():IsShown()) then bar.build:Click() end; if w[2] then b.ShowTab(w[2]) end; return true end
+    if a == "nogallery" then if b.Window() then b.Window():Hide() end; return true end
+    if a == "tab" then return b.ShowTab(w[2] or "all") end
+    if a == "page" then return b.Page(tonumber(w[2]) or 1) end
+    if a == "pick" or a == "place" then
+        local c = find(w[2])
+        if not c then report("missing " .. tostring(w[2])); return false end
+        if not (b.Window() and b.Window():IsShown()) then bar.build:Click() end
+        b.ShowTab("all")
+        b.Choose(c)
+        if a == "place" then b.Window().spawn:Click() end
+        return true
+    end
+    if a == "select" then bar.select:Click(); return true end
+    if a == "props" then b.ShowProps(w[2] ~= "off"); return true end
+    if a == "nudge" then
+        local p = b.Panel()
+        if not (p and p:IsShown()) then b.ShowProps(true); p = b.Panel() end
+        local f = (w[2] or "x"):lower()
+        local btn = ((tonumber(w[3]) or 1) < 0) and p.minus[f] or p.plus[f]
+        if btn then btn:Click(); return true end
+        return false
+    end
+    if a == "key" then local fn = b.KEYS[(w[2] or ""):upper()]; if fn then fn(); return true end; return false end
+    if a == "undo" then bar.undo:Click(); return true end
+    if a == "redo" then bar.redo:Click(); return true end
+    if a == "snap" then local g = tonumber(w[2]); if g then b.SetSnap(g) else D.ShowSnap(true) end; D.Refresh(); return true end
+    if a == "turnstep" then local r = bar.rot[tonumber(w[2]) or 15]; if r then r:Click() end; return r ~= nil end
+    if a == "menu" then
+        if not w[2] then D.ShowMenu(true); return true end
+        local want = table.concat(w, " ", 2):lower()
+        D.ShowMenu(true)
+        for i, it in ipairs(MENU) do
+            if it[1] ~= "#" and it[1]:lower() == want and menu.rows[i]:IsShown() then menu.rows[i]:Click(); return true end
+        end
+        D.ShowMenu(false)
+        report("missing menu " .. want)
+        return false
+    end
+    if a == "files" then b.ShowFiles(w[2] ~= "off"); return true end
+    if a == "save" or a == "open" then
+        b.ShowFiles(true)
+        local f = b.Files()
+        f.den:SetText(w[2] or "")
+        if a == "save" then f.denSave:Click() else f.denOpen:Click() end
+        return true
+    end
+    if a == "keys" then bar.help:Click(); return true end
+    if a == "intro" then D.ShowIntro(tonumber(w[2]) or 1); return true end
+    if a == "play" then bar.playBtn:Click(); return true end
+    if a == "build" then bar.pill.back:Click(); return true end
+    if a == "close" then
+        D.CloseDrawer(); D.EndIntro()
+        for _, f in ipairs({ b.Window(), b.Panel(), b.Files and b.Files() }) do if f and f:IsShown() then f:Hide() end end
+        return true
+    end
+    if a == "rail" then local r = bar[w[2] or ""]; if r and r.Click then r:Click(); return true end; return false end
+    return false
 end
 
 local listener = CreateFrame("Frame")

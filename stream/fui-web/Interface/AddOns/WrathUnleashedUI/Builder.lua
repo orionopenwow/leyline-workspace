@@ -49,11 +49,18 @@
 local W = WrathUnleashedUI
 local PREFIX, MOD = "OVMOD", "wubuild"
 local COLS, ROWS = 5, 4
-local PAGE = COLS * ROWS                        -- tiles on a page: 20 frames, reused
-local TILE, GAP, NAME_H = 74, 6, 14
-local CAT_W = 64                                -- the category column
-local WIN_W = CAT_W + 8 + COLS * TILE + (COLS - 1) * GAP + 10
-local WIN_H = 62 + ROWS * (TILE + NAME_H + GAP) + 32
+local PAGE = COLS * ROWS                        -- tiles on a page: 20 frames, reused (fewer rows on a short screen)
+local TILE, GAP, NAME_H = 92, 8, 20             -- owner 3 Nov 08:40 "UI too small": 92-unit tiles, 13 px names
+local CAT_W = 136                               -- the category column: an icon and the name, one row each
+local HEAD_H, FOOT_H, PAD = 76, 42, 10
+local WIN_W = PAD + CAT_W + PAD + COLS * TILE + (COLS - 1) * GAP + PAD
+local function winHeight(rows) return HEAD_H + rows * (TILE + NAME_H + GAP) - GAP + FOOT_H end
+local WIN_H = winHeight(ROWS)
+-- Where the editor's windows go, clear of the game's own frames (UI units): the rail under the player frame, the
+-- gallery right of the rail and above the chat (its top is 215 at the stock place), the popover under the minimap and
+-- left of the side bars, the status pill above the action bars.
+local LAYOUT = { railX = 8, railTop = 118, railW = 64, galleryX = 80, galleryBottom = 232, topMargin = 56, galleryTop = 112,
+    propsRight = 104, propsTop = 206, pillBottom = 152 }
 local ANSWER_WAIT = 6
 local STEPS = { 0.01, 0.1, 0.25, 1, 3, 10 }    -- the move step, in yards
 local STEP_PRESETS = { 2, 3, 4, 5 }             -- the rail's presets (indices into STEPS): 0.1, 0.25, 1, 3
@@ -80,8 +87,11 @@ local ICON = "Interface\\Icons\\"
 local CAT_ICONS = { seating = "Spell_Nature_Sleep", tables = "INV_Misc_Food_15", barrels = "INV_Drink_05",
     crates = "INV_Crate_01", lights = "INV_Torch_Lit", banners = "INV_BannerPVP_02", tents = "INV_Fabric_Linen_01",
     fires = "Spell_Fire_Fire", fences = "Ability_Defend", nature = "Spell_Nature_Regeneration", decor = "INV_Misc_Book_09",
-    structure = "Trade_Mining", buildings = "Trade_BlackSmithing", furniture = "Trade_Tailoring", objects = "INV_Misc_Gear_01",
+    structure = "Trade_Mining", buildings = "INV_Misc_Rune_01", furniture = "Trade_Tailoring", objects = "INV_Misc_Gear_01",
     models = "Spell_Frost_WizardMark" }
+-- A tile that can't show its model shows a picture on purpose: a building (a WMO: a Model frame can't draw one) the
+-- home stone; a prop the player's game files have no model for, its category's icon.
+local WMO_ICON = "INV_Misc_Rune_01"
 local TAB_ICONS = { favourites = "Spell_Arcane_StarFire", recent = "INV_Misc_PocketWatch_01", prefabs = "INV_Misc_Note_01",
     stamps = "INV_Misc_Map_01", storage = "INV_Misc_Bag_10", all = "INV_Misc_Bag_08" }
 local function catIcon(cat) return ICON .. (CAT_ICONS[cat or ""] or TAB_ICONS[cat or ""] or "INV_Misc_QuestionMark") end
@@ -91,6 +101,8 @@ local TABS = { "favourites", "recent", "prefabs", "stamps", "storage", "all" }
 for i = 2, #CATS do TABS[#TABS + 1] = CATS[i] end
 local TAB_TEXT = { favourites = "Favourites", recent = "Recent", prefabs = "Prefabs", stamps = "Stamps", storage = "Storage",
     all = "Everything", objects = "Every object", models = "Models" }
+-- what only the full Den has (Den Lite's state says lite=1): hidden there, not offered and then refused
+local FULL_TABS = { prefabs = true, storage = true, models = true }
 local function tabText(t) return TAB_TEXT[t] or (t:sub(1, 1):upper() .. t:sub(2)) end
 
 local win, panel, files, pill
@@ -122,17 +134,17 @@ end
 -- A "?" button: the long help, shown while the mouse is on it (a click keeps it open). Its own small frame, not
 -- GameTooltip: edit mode hides UIParent, and the tooltip with it.
 function W.HelpButton(parent, lines, width, ...)
-    local b = W.Style.Button(parent, "?", 22, nil, nil, ...)
+    local b = W.Style.EdChip(parent, "?", 28, nil, ...)
     local tip = CreateFrame("Frame", nil, b)
     width = width or 420
-    tip:SetWidth(width); tip:SetHeight(14 + #lines * 14)
+    tip:SetWidth(width); tip:SetHeight(16 + #lines * 18)
     tip:SetPoint("BOTTOMRIGHT", b, "TOPRIGHT", 0, 4)   -- above, to the left (b.tip can be put elsewhere)
     tip:SetFrameStrata("TOOLTIP")
     W.Style.EdPanel(tip, 0.96, W.Style.ED.panel2)
     tip.lines = {}
     for i, line in ipairs(lines) do
-        local fs = tip:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        fs:SetPoint("TOPLEFT", 8, -7 - (i - 1) * 14)
+        local fs = W.Style.EdText(tip, W.Style.ED_SIZE.text)
+        fs:SetPoint("TOPLEFT", 10, -8 - (i - 1) * 18)
         fs:SetWidth(width - 16); fs:SetJustifyH("LEFT")
         fs:SetText(line)
         tip.lines[i] = fs
@@ -151,8 +163,12 @@ local function editing() return W.EditMode and W.EditMode.IsOn and W.EditMode.Is
 
 local refreshPill
 local function setStatus(text)
-    B.status = text or ""
-    if pill then pill.note:SetText(B.status) end
+    B.status, B.statusAt = text or "", now()
+    if pill then
+        pill.note:SetText(B.status)
+        local m = S().ED.muted
+        pill.note:SetTextColor(m[1], m[2], m[3])
+    end
     if panel then panel.status:SetText(B.status) end
     if files then files.status:SetText(B.status) end
 end
@@ -210,7 +226,7 @@ end
 -- A found object or model, kept so Recent and Favourites still show it next time (ids only reach the realm).
 local function remember(c)
     if c and (c.cat == "objects" or c.cat == "models") then
-        store().items[c.id] = { key = c.key, cat = c.cat, name = c.name, cost = c.cost, model = c.model }
+        store().items[c.id] = { key = c.key, cat = c.cat, name = c.name, cost = c.cost, model = c.model, size = c.size, wmo = c.wmo }
     end
 end
 
@@ -238,11 +254,20 @@ local function parseCatalog(data, into)
         if not id then id, key, cat, name = item:match("^(%d+),([%w]+),(%a+),(.+)$") end
         if id and #list < 800 and not seen[tonumber(id)] then
             seen[tonumber(id)] = true
-            -- the 6th field: a model path, or (catalog v2, docs/DEN-OVERHAUL.md) a bare display id whose path
-            -- comes later; either way an older 5-field line still reads
+            -- the 6th field: a model path (and, Den Lite 2026-11-03, its size: ",<w>x<d>x<h>x<bottom>" yards), "-wmo"
+            -- (a building: no model in a tile), "-" (no model in the player's files), or (catalog v2,
+            -- docs/DEN-OVERHAUL.md) a bare display id whose path comes later; an older 5-field line still reads
+            local size
+            if model then
+                local path, sw, sd, sh, sz = model:match("^(.-),(%d+%.?%d*)x(%d+%.?%d*)x(%d+%.?%d*)x(%-?%d+%.?%d*)$")
+                if path then model, size = path, { w = tonumber(sw), d = tonumber(sd), h = tonumber(sh), z = tonumber(sz) } end
+            end
             local display = model and model:match("^%d+$") and tonumber(model) or nil
+            local wmo = model == "-wmo" or (model and model:lower():match("%.wmo$") ~= nil) or nil
+            local path = (not display and not wmo and model ~= "-") and B.ModelPath(model) or nil
             list[#list + 1] = { id = tonumber(id), key = key, cat = cat, name = name:gsub("|", ""), cost = tonumber(cost) or 1,
-                model = (not display) and B.ModelPath(model) or nil, display = display }
+                model = path, display = display, size = path and size or nil, wmo = wmo,
+                noModel = (model == "-" or (model ~= nil and not path and not display and not wmo)) or nil }
         end
     end
     return list
@@ -463,7 +488,8 @@ function B.ListFor(tab, search)
     local ids = byIdMap()
     for id, it in pairs(store().items) do   -- found objects and models, for Recent, Favourites and Storage
         if not ids[id] and type(it) == "table" and it.name then
-            ids[id] = { id = id, key = it.key, cat = it.cat, name = it.name, cost = it.cost or 1, model = B.ModelPath(it.model) }
+            ids[id] = { id = id, key = it.key, cat = it.cat, name = it.name, cost = it.cost or 1, model = B.ModelPath(it.model),
+                size = type(it.size) == "table" and it.size or nil, wmo = it.wmo }
         end
     end
     if tab == "storage" then
@@ -531,8 +557,10 @@ end
 local function tileIcon(c)
     if c.kind == "prefab" then return catIcon("prefabs") end
     if c.kind == "stamp" then return catIcon("stamps") end
+    if c.wmo then return ICON .. WMO_ICON end
     return catIcon(c.cat)
 end
+B.TileIcon = tileIcon
 
 local function paintTile(t)
     local c = t.item
@@ -543,24 +571,73 @@ local function paintTile(t)
 end
 B.PaintTile = paintTile
 
-local function setTileModel(t, path)
+-- How a tile frames its model (a Model frame has no "fit" of its own): scaled so the model's largest side is
+-- B.FIT.yards, moved down by its middle so it sits in the tile's centre. The size comes with the catalog (Den Lite
+-- reads it from the same table as the path); without one the model is shown at its own size. Tunable on a PC
+-- (WrathUnleashedUIDB.den.fit = { yards = .., lift = .., cam = <SetCamera index> }) without a new addon.
+B.FIT = { yards = 1.6, lift = 0 }
+local function fitConf()
+    local d = type(WrathUnleashedUIDB) == "table" and type(WrathUnleashedUIDB.den) == "table" and WrathUnleashedUIDB.den.fit
+    return type(d) == "table" and d or B.FIT
+end
+function B.TileFit(size)
+    local f = fitConf()
+    local yards = tonumber(f.yards) or B.FIT.yards
+    if type(size) ~= "table" then return 1, tonumber(f.lift) or 0 end
+    local ext = math.max(tonumber(size.w) or 0, tonumber(size.d) or 0, tonumber(size.h) or 0, 0.05)
+    local scale = math.max(0.02, math.min(yards / ext, 12))
+    local mid = (tonumber(size.z) or 0) + (tonumber(size.h) or 0) / 2
+    return scale, -mid * scale + (tonumber(f.lift) or 0)
+end
+
+local function setTileModel(t, c)
+    local path = c and c.model
     if path then
+        -- shown first: a Model frame given a model while hidden may draw nothing (tiles are reused across pages)
+        t.model:Show()
         if t.modelPath ~= path then
             t.modelPath = path
             if t.model.ClearModel then pcall(t.model.ClearModel, t.model) end
             pcall(t.model.SetModel, t.model, path)
-            pcall(t.model.SetPosition, t.model, 0, 0, 0)
+            local cam = tonumber(fitConf().cam)
+            if cam then pcall(t.model.SetCamera, t.model, cam) end
+            local scale, z = B.TileFit(c.size)
+            pcall(t.model.SetModelScale, t.model, scale)
+            pcall(t.model.SetPosition, t.model, 0, 0, z)
             pcall(t.model.SetFacing, t.model, B.facing or REST_FACING)
         end
-        t.model:Show()
         t.icon:Hide()
         t.badge:Show()
+        t.why:SetText("")
     else
         if t.modelPath then t.modelPath = nil; if t.model.ClearModel then pcall(t.model.ClearModel, t.model) end end
         t.model:Hide()
         t.icon:Show()
         t.badge:Hide()
+        -- a picture on purpose, and why: a building, or no model in this game's files
+        t.why:SetText(c and not c.kind and (c.wmo and "building" or "no preview") or "")
     end
+end
+
+-- What the gallery shows (the den-test's feature check, DenBar.lua D.Report): tiles on screen, with a model, with an
+-- icon on purpose (buildings, props without a model), and the catalog's own counts.
+function B.TileReport()
+    local r = { shown = (win and win:IsShown()) and 1 or 0, tiles = 0, model = 0, icon = 0, empty = 0, wmo = 0, none = 0,
+        rows = B.rows or ROWS, cols = COLS, tile = TILE, catalog = #B.catalog, withModel = 0, boxed = 0, missing = {} }
+    for _, c in ipairs(B.catalog) do
+        if c.model then r.withModel = r.withModel + 1; if c.size then r.boxed = r.boxed + 1 end
+        elseif c.wmo then r.wmo = r.wmo + 1
+        else r.none = r.none + 1; if #r.missing < 40 then r.missing[#r.missing + 1] = c.name end end
+    end
+    for _, t in ipairs((win and win.tiles) or {}) do
+        if t:IsShown() and t.item then
+            r.tiles = r.tiles + 1
+            if t.modelPath and t.model:IsShown() then r.model = r.model + 1
+            elseif t.icon:IsShown() and t.icon.path then r.icon = r.icon + 1
+            else r.empty = r.empty + 1 end
+        end
+    end
+    return r
 end
 
 local function emptyText(n)
@@ -585,8 +662,9 @@ function B.Refresh()
     if B.offset > maxOff then B.offset = maxOff end
     if B.offset < 0 then B.offset = 0 end
     local favs = store().favs
+    local page = B.PageSize()
     for i, t in ipairs(win.tiles) do
-        local c = B.shown[B.offset + i]
+        local c = i <= page and B.shown[B.offset + i] or nil
         t.item = c
         if c then
             t.name:SetText(tileNameText(c))
@@ -594,9 +672,9 @@ function B.Refresh()
             t.cost:SetText((c.cost or 1) > 1 and tostring(c.cost) or "")
             t.icon:SetTexture(tileIcon(c)); t.icon.path = tileIcon(c)
             t.badge:SetTexture(tileIcon(c))
-            setTileModel(t, c.model)
-            paintTile(t)
             t:Show()
+            setTileModel(t, c)
+            paintTile(t)
         else
             t:Hide()
         end
@@ -606,27 +684,35 @@ function B.Refresh()
     win.az:SetActive(B.az)
     win.spinBtn:SetActive(B.spin)
     local f = SEARCHED[B.tab] and B.found[B.tab]
-    win.count:SetText(n > 0 and string.format("%d-%d of %d%s", B.offset + 1, math.min(n, B.offset + PAGE), n,
+    win.count:SetText(n > 0 and string.format("%d-%d of %d%s", B.offset + 1, math.min(n, B.offset + page), n,
         (f and f.more) and "+" or "") or "")
     win.empty:SetText(emptyText(n))
     if B.offset > 0 then win.prev:Enable() else win.prev:Disable() end
-    if B.offset + PAGE < n or (f and f.more) then win.next:Enable() else win.next:Disable() end
+    if B.offset + page < n or (f and f.more) then win.next:Enable() else win.next:Disable() end
+    -- what only the full Den has stays out of Den Lite's column
+    local lite = B.state.lite == "1"
+    local y = -PAD
+    for _, b in ipairs(win.tabs) do
+        if lite and FULL_TABS[b.tab] then b:Hide() else b:ClearAllPoints(); b:SetPoint("TOPLEFT", win, "TOPLEFT", PAD, y); b:Show(); y = y - win.tabStep end
+    end
     win.spawn:SetText(B.pick and ("Place " .. B.pick.name) or "Place")
     if B.pick then win.spawn:Enable() else win.spawn:Disable() end
 end
 
 -- Paging: Next / Prev a page; the wheel a row. At the end of a searched list Next asks the realm for more.
+function B.PageSize() return COLS * (B.rows or ROWS) end
 function B.Page(dir)
-    if dir > 0 and B.offset + PAGE >= #B.shown then
+    local page = B.PageSize()
+    if dir > 0 and B.offset + page >= #B.shown then
         if SEARCHED[B.tab] then return B.MoreFound(B.tab) end
         return false
     end
-    B.offset = math.max(0, B.offset + dir * PAGE)
+    B.offset = math.max(0, B.offset + dir * page)
     B.Refresh()
     return true
 end
 function B.Scroll(rows)
-    local full = math.max(0, math.ceil((#B.shown - PAGE) / COLS) * COLS)   -- the wheel stops at a full last page
+    local full = math.max(0, math.ceil((#B.shown - B.PageSize()) / COLS) * COLS)   -- the wheel stops at a full last page
     B.offset = math.max(0, math.min(math.max(full, B.offset), B.offset + rows * COLS))
     B.Refresh()
 end
@@ -681,7 +767,7 @@ function B.Choose(item)
     return true
 end
 
--- Places the picked prop: at your feet, or in edit mode where you click next.
+-- Places the picked prop: in front of you (Den Lite: 3 yards ahead), or in edit mode where you click next.
 function B.Spawn()
     if not B.pick then setStatus("Pick a prop first."); return false end
     if B.pick.kind then return B.Place(B.pick) end
@@ -907,28 +993,53 @@ function B.StatusLine()
     return table.concat(parts, " · ")
 end
 
+-- The pill: one line at the bottom centre, above the action bars, saying what the editor is doing; over it, for a
+-- few seconds, the last thing the realm (Den Lite) said or the hint for what the mouse is on. Every answer goes here,
+-- none to the chat (DenBar.lua filters the Den's system lines into it too).
+local NOTE_SECS = 6
 local function buildPill()
     pill = CreateFrame("Frame", "LeylineEditorStatus", UIParent)
-    pill:SetWidth(460); pill:SetHeight(24)
-    pill:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 14)
+    pill:SetWidth(560); pill:SetHeight(30)
+    pill:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, LAYOUT.pillBottom)
     pill:SetFrameStrata("MEDIUM")
-    S().EdPanel(pill, 0.82)
-    pill.line = pill:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    S().EdPanel(pill, 0.86)
+    pill.line = S().EdText(pill, S().ED_SIZE.text)
     pill.line:SetPoint("CENTER", 0, 0)
-    pill.line.styleKeep = true
-    pill.note = pill:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    pill.note:SetPoint("BOTTOM", pill, "TOP", 0, 5)
-    pill.note:SetWidth(620)
-    pill.note.styleKeep = true
+    pill.line:SetHeight(18)   -- one line: a long one ends in "..."
+    pill.note = S().EdText(pill, S().ED_SIZE.text)
+    pill.note:SetPoint("BOTTOM", pill, "TOP", 0, 6)
+    pill.note:SetWidth(720)
     local m = S().ED.muted
     pill.note:SetTextColor(m[1], m[2], m[3])
     pill.note:SetText(B.status or "")
+    pill:SetScript("OnUpdate", function()
+        if B.statusAt and now() - B.statusAt > NOTE_SECS and pill.note:GetText() ~= "" then pill.note:SetText("") end
+    end)
     pill:Hide()
 end
 refreshPill = function()
-    if pill then pill.line:SetText(B.StatusLine()) end
+    if not pill then return end
+    local line = B.StatusLine()
+    local D = W.DenBar
+    if D and D.IsActive and D.IsActive() and D.SavedLine then line = line .. "  ·  " .. D.SavedLine() end
+    pill.line:SetText(line)
+    local w = pill.line.GetStringWidth and tonumber((pill.line:GetStringWidth()))
+    -- never wider than the room between the chat (its right edge 462 at the stock place) and the screen's middle
+    local sw = (GetScreenWidth and tonumber((GetScreenWidth()))) or 1366
+    local most = math.max(360, math.min(900, sw - 2 * 480))
+    local pw = math.max(math.min(420, most), math.min(most, (w or (#line * 7)) + 40))
+    pill:SetWidth(pw)
+    pill.line:SetWidth(pw - 24)
 end
 function B.Pill() if not pill then buildPill() end return pill end
+-- a note over the pill (a toast's colour, or muted): DenBar.lua's toasts and the Builder's own hints
+function B.PillNote(text, colour)
+    B.Pill()
+    B.status, B.statusAt = text or "", now()
+    pill.note:SetText(text or "")
+    local c = colour or S().ED.muted
+    pill.note:SetTextColor(c[1], c[2], c[3])
+end
 function B.ShowPill(show)
     B.Pill()
     B.Dock(pill, editing())
@@ -1053,11 +1164,15 @@ B.KEYS = {
     UP = function() return B.Nudge("x", 1) end, DOWN = function() return B.Nudge("x", -1) end,
     PAGEUP = function() return B.Nudge("z", 1) end, PAGEDOWN = function() return B.Nudge("z", -1) end,
     Q = function() return B.Nudge("turn", 1) end, E = function() return B.Nudge("turn", -1) end,
+    DELETE = function() return B.Command("delete") end,
+    ["CTRL-Z"] = function() return B.Command("undo") end, ["CTRL-Y"] = function() return B.Command("redo") end,
+    ["CTRL-C"] = function() return B.Command("copy") end, ["CTRL-V"] = function() return B.Paste() end,
+    ["CTRL-D"] = function() return B.Command("dup") end,
 }
-local KEY_ORDER = { "LEFT", "RIGHT", "UP", "DOWN", "PAGEUP", "PAGEDOWN", "Q", "E" }
+local KEY_ORDER = { "LEFT", "RIGHT", "UP", "DOWN", "PAGEUP", "PAGEDOWN", "Q", "E", "DELETE", "CTRL-Z", "CTRL-Y", "CTRL-C", "CTRL-V", "CTRL-D" }
 local keyOwner
 local function keyButton(key)
-    local name = "LeylinePropKey" .. key
+    local name = "LeylinePropKey" .. key:gsub("%-", "")
     if _G[name] then return name end
     local b = CreateFrame("Button", name, UIParent)
     b:EnableMouse(false)
@@ -1077,10 +1192,28 @@ function B.BindKeys(on)
     return B.keysOn == true
 end
 
+-- Chips in a row, as wide as their words, wrapping at maxW: { {text, fn, key}, ... } -> the chips by key (or text).
+local function flow(parent, list, x0, y0, maxW, into)
+    local x, y = x0, y0
+    into = into or {}
+    for _, it in ipairs(list) do
+        local c = chip(parent, it[1], nil, it[2])
+        local w = tonumber((c:GetWidth())) or 60
+        if x > x0 and x + w > x0 + maxW then x, y = x0, y - S().ED_SIZE.chip - 6 end
+        c:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+        x = x + w + 6
+        into[it[3] or it[1]] = c
+        c.only = it[4]
+    end
+    return into, y - S().ED_SIZE.chip
+end
+B.Flow = flow
+
+local PANEL_W = 352
 local function buildPanel()
     panel = CreateFrame("Frame", "WrathUnleashedPropsFrame", UIParent)
-    panel:SetWidth(300); panel:SetHeight(226)
-    panel:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -16, 52)
+    panel:SetWidth(PANEL_W)
+    panel:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -LAYOUT.propsRight, -LAYOUT.propsTop)
     panel:SetFrameStrata("DIALOG")
     panel:EnableMouse(true)
     panel:SetMovable(true)
@@ -1088,72 +1221,99 @@ local function buildPanel()
     panel:SetScript("OnDragStart", panel.StartMoving)
     panel:SetScript("OnDragStop", panel.StopMovingOrSizing)
     S().EdPanel(panel, 0.92, S().ED.panel2)
-    smallCaps(panel, "Selection", true, "TOPLEFT", 10, -8)
-    panel.title2 = label(panel, "", "GameFontHighlight", "TOPLEFT", 10, -20)
-    panel.title2:SetWidth(250)
-    panel.close = chip(panel, "x", 20, function() B.ShowProps(false) end, "TOPRIGHT", -5, -5)
+    smallCaps(panel, "Selection", true, "TOPLEFT", 12, -10)
+    panel.title2 = S().EdText(panel, S().ED_SIZE.title)
+    panel.title2:SetPoint("TOPLEFT", 12, -28)
+    panel.title2:SetWidth(PANEL_W - 70); panel.title2:SetJustifyH("LEFT")
+    panel.close = chip(panel, "x", 28, function() B.ShowProps(false) end, "TOPRIGHT", -6, -6)
     panel.box, panel.minus, panel.plus, panel.rowLabel = {}, {}, {}, {}
-    -- three rows of three: position, rotation, size and the two steps
+    -- three rows of three: position, rotation, then size and the two steps
     for i, f in ipairs(FIELDS) do
         local col, row = (i - 1) % 3, math.floor((i - 1) / 3)
-        local x, y = 10 + col * 96, -42 - row * 40
+        local x, y = 12 + col * 112, -54 - row * 58
         panel.rowLabel[f[1]] = smallCaps(panel, f[2], false, "TOPLEFT", x, y)
-        panel.minus[f[1]] = chip(panel, "-", 16, function() B.Nudge(f[1], -1) end, "TOPLEFT", x, y - 12)
-        local e = editBox(panel, 52, 12, "TOPLEFT", x + 18, y - 13)
+        panel.minus[f[1]] = chip(panel, "-", 24, function() B.Nudge(f[1], -1) end, "TOPLEFT", x, y - 18)
+        local e = editBox(panel, 60, 12, "TOPLEFT", x + 26, y - 19)
+        e:SetHeight(26)
         e:SetScript("OnEditFocusGained", function() B.propsEditing = true end)
         e:SetScript("OnEnterPressed", function(self) self:ClearFocus(); B.ApplyProps() end)
         panel.box[f[1]] = e
-        panel.plus[f[1]] = chip(panel, "+", 16, function() B.Nudge(f[1], 1) end, "TOPLEFT", x + 72, y - 12)
+        panel.plus[f[1]] = chip(panel, "+", 24, function() B.Nudge(f[1], 1) end, "TOPLEFT", x + 88, y - 18)
     end
-    panel.stepBtn = chip(panel, "Step " .. STEPS[B.step] .. " yd", 88, function()
+    smallCaps(panel, "Steps", false, "TOPLEFT", 124, -170)
+    panel.stepBtn = chip(panel, "Step " .. STEPS[B.step] .. " yd", 100, function()
         B.SetStep(B.step % #STEPS + 1)
-    end, "TOPLEFT", 106, -134)
+    end, "TOPLEFT", 124, -188)
     panel.step = panel.stepBtn
-    panel.angle = chip(panel, "Turn " .. ANGLE_STEPS[B.angle] .. "°", 88, function()
+    panel.angle = chip(panel, "Turn " .. ANGLE_STEPS[B.angle] .. "°", 100, function()
         B.SetAngle(ANGLE_STEPS[B.angle % #ANGLE_STEPS + 1])
-    end, "TOPLEFT", 202, -134)
-    smallCaps(panel, "Steps", false, "TOPLEFT", 106, -122)
-    -- what you do with it
-    panel.actions = {}
-    local acts = {
-        { "Apply", function() B.ApplyProps() end }, { "Copy", function() B.Command("copy") end }, { "Paste", function() B.Paste() end },
-        { "Delete", function() B.Command("delete") end }, { "Undo", function() B.Command("undo") end },
-        { "Redo", function() B.Command("redo") end }, { "More", function() B.PropsMore() end },
-    }
-    for i, a in ipairs(acts) do panel.actions[a[1]] = chip(panel, a[1], 40, a[2], "TOPLEFT", 10 + (i - 1) * 40, -164) end
+    end, "TOPLEFT", 236, -188)
+    -- what you do with it (Undo and Redo are on the top strip)
+    local y
+    panel.actions, y = flow(panel, {
+        { "Apply", function() B.ApplyProps() end }, { "Duplicate", function() B.Command("dup") end },
+        { "Copy", function() B.Command("copy") end }, { "Paste", function() B.Paste() end },
+        { "Floor", function() B.Command("floor") end }, { "Delete", function() B.Command("delete") end },
+        { "More", function() B.PropsMore() end },
+    }, 12, -228, PANEL_W - 24)
     panel.apply = panel.actions.Apply
-    panel.hint = label(panel, "Arrows move  ·  PgUp / PgDn up, down  ·  Q / E turn", "GameFontDisableSmall", "TOPLEFT", 10, -192)
-    panel.status = label(panel, "", "GameFontHighlightSmall", "TOPLEFT", 10, -207)
-    panel.status:SetWidth(280)
-    -- More: the rest of the selection's tools
+    panel.hint = S().EdText(panel, S().ED_SIZE.small)
+    panel.hint:SetPoint("TOPLEFT", 12, y - 8)
+    panel.hint:SetWidth(PANEL_W - 24); panel.hint:SetJustifyH("LEFT")
+    local m = S().ED.muted
+    panel.hint:SetTextColor(m[1], m[2], m[3])
+    panel.hint:SetText("Arrows move · PgUp / PgDn up, down · Q / E turn · Del deletes · Ctrl+Z / Ctrl+Y undo, redo")
+    panel.status = S().EdText(panel, S().ED_SIZE.small)
+    panel.status:SetPoint("TOPLEFT", 12, y - 40)
+    panel.status:SetWidth(PANEL_W - 24); panel.status:SetJustifyH("LEFT")
+    panel:SetHeight(-(y - 40) + 24)
+    -- More: the rest of the selection's tools (what only the full Den does is hidden on Den Lite)
     panel.tools = {}
-    local rows = {
-        { { "Lock", "lock" }, { "Unlock", "unlock" }, { "Hide", "hide" }, { "Show all", "show all" }, { "Measure", "measure" } },
-        { { "Align X", "align x" }, { "Align Y", "align y" }, { "Align Z", "align z" }, { "Bottoms", "align bottom" }, { "Stack on", B.Stack } },
-        { { "Select mine", "selall" }, { "Clear", "selclear" }, { "Group", "group" }, { "Ungroup", "ungroup" }, { "Put away", "store" } },
-        { { "Duplicate", "dup" }, { "Floor", "floor" }, { "Near", "near" }, { "Undo", "undo" }, { "Redo", "redo" } },
-    }
     panel.more = CreateFrame("Frame", nil, panel)
-    panel.more:SetWidth(300); panel.more:SetHeight(4 * 26 + 8)
-    panel.more:SetPoint("TOPLEFT", panel, "BOTTOMLEFT", 0, -2)
+    panel.more:SetWidth(PANEL_W)
+    panel.more:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
+    panel.more:ClearAllPoints()
+    panel.more:SetPoint("TOPLEFT", panel, "BOTTOMLEFT", 0, -4)
     S().EdPanel(panel.more, 0.92, S().ED.panel2)
-    for r, row in ipairs(rows) do
-        for c, t in ipairs(row) do
-            local act = t[2]
-            local b = chip(panel.more, t[1], 54, function()
-                if type(act) == "function" then act() else B.Command(act) end
-            end, "TOPLEFT", 8 + (c - 1) * 57, -6 - (r - 1) * 26)
-            if not panel.tools[t[1]] then panel.tools[t[1]] = b end
+    local function cmdFn(c) return function() B.Command(c) end end
+    local _, my = flow(panel.more, {
+        { "Select nearest", cmdFn("near"), "Near" }, { "Select my last", cmdFn("selall"), "Select mine" }, { "Clear", cmdFn("selclear") },
+        { "Lock", cmdFn("lock"), nil, "full" }, { "Unlock", cmdFn("unlock"), nil, "full" }, { "Hide", cmdFn("hide"), nil, "full" },
+        { "Show all", cmdFn("show all"), nil, "full" }, { "Measure", cmdFn("measure"), nil, "full" },
+        { "Align X", cmdFn("align x"), nil, "full" }, { "Align Y", cmdFn("align y"), nil, "full" }, { "Align Z", cmdFn("align z"), nil, "full" },
+        { "Bottoms", cmdFn("align bottom"), nil, "full" }, { "Stack on", B.Stack, nil, "full" },
+        { "Group", cmdFn("group"), nil, "full" }, { "Ungroup", cmdFn("ungroup"), nil, "full" }, { "Put away", cmdFn("store"), nil, "full" },
+    }, 12, -10, PANEL_W - 24, panel.tools)
+    panel.tools.Duplicate = panel.actions.Duplicate
+    panel.tools.Floor = panel.actions.Floor
+    panel.tools.Undo = chip(panel.more, "Undo", 60, cmdFn("undo")); panel.tools.Undo:Hide()
+    panel.tools.Redo = chip(panel.more, "Redo", 60, cmdFn("redo")); panel.tools.Redo:Hide()
+    panel.more:SetHeight(-my + 12)
+    panel.more:SetScript("OnShow", function()
+        local lite = B.state.lite == "1"
+        local list = {}
+        for _, k in ipairs({ "Near", "Select mine", "Clear", "Lock", "Unlock", "Hide", "Show all", "Measure", "Align X", "Align Y",
+            "Align Z", "Bottoms", "Stack on", "Group", "Ungroup", "Put away" }) do
+            local c = panel.tools[k]
+            if c then if lite and c.only == "full" then c:Hide() else c:Show(); list[#list + 1] = c end end
         end
-    end
+        local x, yy = 12, -10
+        for _, c in ipairs(list) do
+            local w = tonumber((c:GetWidth())) or 60
+            if x > 12 and x + w > PANEL_W - 12 then x, yy = 12, yy - S().ED_SIZE.chip - 6 end
+            c:ClearAllPoints(); c:SetPoint("TOPLEFT", panel.more, "TOPLEFT", x, yy)
+            x = x + w + 6
+        end
+        panel.more:SetHeight(-(yy - S().ED_SIZE.chip) + 12)
+    end)
     panel.more:Hide()
     panel.help = W.HelpButton(panel, {
         "Type exact numbers and Enter, or nudge with - and +.",
         "Angles in degrees; pitch and roll tilt the prop.",
         "Arrows move it by the step; Page Up / Down lift it; Q / E turn it.",
-        "Align: lines the rest up with the last one picked.",
-        "Stack on: the rest go on top of the first one picked.",
-    }, 340, "TOPRIGHT", -28, -5)
+        "Del deletes it; Ctrl+C / Ctrl+V copy and paste; Ctrl+D duplicates.",
+        "Align: lines the rest up with the last one picked (the full Den).",
+    }, 420, "TOPRIGHT", -40, -6)
     panel:SetScript("OnShow", function() B.propsEditing = nil; B.PropsFill(); B.BindKeys(true) end)
     panel:SetScript("OnHide", function() B.BindKeys(false); B.propsAuto = nil end)
     panel:Hide()
@@ -1190,62 +1350,82 @@ end
 -- ---------------------------------------------------------------- Files
 
 buildFiles = function()
+    local FW = 520
     files = CreateFrame("Frame", "WrathUnleashedFilesFrame", UIParent)
-    files:SetWidth(380); files:SetHeight(214)
-    files:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -12, -44)
+    files:SetWidth(FW)
+    files:SetPoint("TOP", UIParent, "TOP", 0, -LAYOUT.topMargin)
     files:SetFrameStrata("DIALOG")
     files:EnableMouse(true)
     S().EdPanel(files, 0.94, S().ED.panel2)
-    smallCaps(files, "Files", true, "TOPLEFT", 10, -8)
-    files.close = chip(files, "x", 20, function() files:Hide() end, "TOPRIGHT", -5, -5)
+    smallCaps(files, "Files", true, "TOPLEFT", 12, -10)
+    files.close = chip(files, "x", 28, function() files:Hide() end, "TOPRIGHT", -6, -6)
     if UISpecialFrames then tinsert(UISpecialFrames, "WrathUnleashedFilesFrame") end
-    -- this Den, by name (DenBar.lua: .den save <name>)
-    files.denLabel = smallCaps(files, "This Den", false, "TOPLEFT", 10, -30)
-    files.den = editBox(files, 150, 24, "TOPLEFT", 80, -26)
-    files.denSave = chip(files, "Save", 60, function()
+    local LX, BX = 12, 112          -- the row's label, its name box
+    local function row(y, label) return smallCaps(files, label, false, "TOPLEFT", LX, y - 7) end
+    -- this Den, by name (DenBar.lua: .den save <name>; Open: .den load <name> replace, one undo takes it back)
+    files.denLabel = row(-40, "This Den")
+    files.den = editBox(files, 170, 24, "TOPLEFT", BX, -40)
+    files.denSave = chip(files, "Save", 64, function()
         local D = W.DenBar
         if D and D.Save then D.Save(files.den:GetText()) end
-    end, "TOPLEFT", 236, -25)
-    -- builds: your props in this area, by name or a 6-letter code
-    smallCaps(files, "Build", false, "TOPLEFT", 10, -60)
-    files.code = editBox(files, 150, 24, "TOPLEFT", 80, -56)
-    files.save = chip(files, "Save", 60, function() B.Save() end, "TOPLEFT", 236, -55)
-    files.load = chip(files, "Load", 60, function() B.Load() end, "TOPLEFT", 236 + 62, -55)
-    files.share = chip(files, "Share", 60, function() B.Share() end, "TOPLEFT", 236 + 124 - 62, -80)
-    files.share:ClearAllPoints(); files.share:SetPoint("TOPLEFT", files, "TOPLEFT", 80, -80)
-    files.info = label(files, "A name or a 6-letter code.", "GameFontDisableSmall", "TOPLEFT", 146, -85)
+    end, "TOPLEFT", BX + 178, -40)
+    files.denOpen = chip(files, "Open", 64, function()
+        local D = W.DenBar
+        if D and D.Open then D.Open(files.den:GetText()) end
+    end, "TOPLEFT", BX + 248, -40)
+    files.denInfo = S().EdText(files, S().ED_SIZE.small)
+    files.denInfo:SetPoint("TOPLEFT", BX, -72)
+    files.denInfo:SetText("Your Den saves itself as you build. Open replaces it; Undo brings it back.")
+    files.denInfo:SetTextColor(S().ED.muted[1], S().ED.muted[2], S().ED.muted[3])
+    -- builds: your props in this area, by name or a 6-letter code (the full Den)
+    files.full = {}
+    local function full(f) files.full[#files.full + 1] = f; return f end
+    full(row(-100, "Build"))
+    files.code = full(editBox(files, 170, 24, "TOPLEFT", BX, -100))
+    files.save = full(chip(files, "Save", 64, function() B.Save() end, "TOPLEFT", BX + 178, -100))
+    files.load = full(chip(files, "Load", 64, function() B.Load() end, "TOPLEFT", BX + 248, -100))
+    files.share = full(chip(files, "Share", 64, function() B.Share() end, "TOPLEFT", BX + 318, -100))
+    files.info = full(S().EdText(files, S().ED_SIZE.small))
+    files.info:SetPoint("TOPLEFT", BX, -132); files.info:SetText("A name or a 6-letter code.")
     -- prefabs: the selection, saved by name
-    smallCaps(files, "Prefab", false, "TOPLEFT", 10, -112)
-    files.prefab = editBox(files, 150, 24, "TOPLEFT", 80, -108)
-    files.prefabSave = chip(files, "Save", 60, function() local n = prefabName(); if n then B.Command("prefab save " .. n) end end, "TOPLEFT", 236, -107)
-    files.prefabPaste = chip(files, "Paste", 60, function() local n = prefabName(); if n then B.PastePrefab(n) end end, "TOPLEFT", 298, -107)
-    files.prefabShare = chip(files, "Share", 60, function() local n = prefabName(); if n then B.Command("prefab share " .. n) end end, "TOPLEFT", 80, -131)
+    full(row(-156, "Prefab"))
+    files.prefab = full(editBox(files, 170, 24, "TOPLEFT", BX, -156))
+    files.prefabSave = full(chip(files, "Save", 64, function() local n = prefabName(); if n then B.Command("prefab save " .. n) end end, "TOPLEFT", BX + 178, -156))
+    files.prefabPaste = full(chip(files, "Paste", 64, function() local n = prefabName(); if n then B.PastePrefab(n) end end, "TOPLEFT", BX + 248, -156))
+    files.prefabShare = full(chip(files, "Share", 64, function() local n = prefabName(); if n then B.Command("prefab share " .. n) end end, "TOPLEFT", BX + 318, -156))
     -- the plot
-    smallCaps(files, "Plot", false, "TOPLEFT", 10, -162)
-    files.claim = chip(files, "Claim", 46, function() B.Command("plot claim") end, "TOPLEFT", 80, -157)
-    files.plotInfoBtn = chip(files, "Info", 40, function() B.Command("plot") end, "TOPLEFT", 128, -157)
-    files.plotName = editBox(files, 80, 12, "TOPLEFT", 170, -158)
-    files.plotAdd = chip(files, "Add", 36, function() local n = plotName(); if n then B.Command("plot add " .. n) end end, "TOPLEFT", 252, -157)
-    files.plotVisitor = chip(files, "Visitor", 46, function() local n = plotName(); if n then B.Command("plot add " .. n .. " visitor") end end, "TOPLEFT", 290, -157)
-    files.plotRemove = chip(files, "Remove", 40, function() local n = plotName(); if n then B.Command("plot remove " .. n) end end, "TOPLEFT", 338, -157)
-    files.plot = label(files, B.PlotText(), "GameFontDisableSmall", "TOPLEFT", 80, -182)
-    files.plot:SetWidth(290)
-    files.status = label(files, B.status or "", "GameFontHighlightSmall", "TOPLEFT", 10, -198)
-    files.status:SetWidth(360)
+    full(row(-196, "Plot"))
+    files.claim = full(chip(files, "Claim", 64, function() B.Command("plot claim") end, "TOPLEFT", BX, -196))
+    files.plotInfoBtn = full(chip(files, "Info", 52, function() B.Command("plot") end, "TOPLEFT", BX + 70, -196))
+    files.plotName = full(editBox(files, 110, 12, "TOPLEFT", BX + 128, -196))
+    files.plotAdd = full(chip(files, "Add", 48, function() local n = plotName(); if n then B.Command("plot add " .. n) end end, "TOPLEFT", BX + 244, -196))
+    files.plotVisitor = full(chip(files, "Visitor", 66, function() local n = plotName(); if n then B.Command("plot add " .. n .. " visitor") end end, "TOPLEFT", BX + 298, -196))
+    files.plotRemove = full(chip(files, "Remove", 70, function() local n = plotName(); if n then B.Command("plot remove " .. n) end end, "TOPLEFT", BX + 370, -196))
+    files.plot = full(S().EdText(files, S().ED_SIZE.small))
+    files.plot:SetPoint("TOPLEFT", BX, -228)
+    files.plot:SetWidth(FW - BX - 12); files.plot:SetJustifyH("LEFT")
+    files.plot:SetText(B.PlotText())
+    files.status = S().EdText(files, S().ED_SIZE.small)
+    files.status:SetWidth(FW - 24); files.status:SetJustifyH("LEFT")
     files.help = W.HelpButton(files, {
-        "This Den: a save of the whole Den by name (the autosave keeps it anyway).",
+        "This Den: a save of the whole Den by name (the autosave keeps it anyway); Open puts a save back.",
         "Build: Save or Share your props in this area by name; Load a name or a code where you stand.",
         "Prefab: the selection, saved by name; Paste puts a copy down (in edit mode: click the ground).",
         "Plot: Claim one, then Add a friend (or a Visitor) by name.",
-        "Every object and Models (the gallery): type a word, Enter; Next loads more.",
-    }, 470, "TOPRIGHT", -28, -5)
+    }, 560, "TOPRIGHT", -40, -6)
     files:SetScript("OnShow", function()
         local D = W.DenBar
         local den = D and D.IsActive and D.IsActive()
-        if den then files.denLabel:Show(); files.den:Show(); files.denSave:Show() else files.denLabel:Hide(); files.den:Hide(); files.denSave:Hide() end
+        local lite = B.state.lite == "1"
+        for _, f in ipairs({ files.denLabel, files.den, files.denSave, files.denOpen, files.denInfo }) do if den then f:Show() else f:Hide() end end
+        for _, f in ipairs(files.full) do if lite then f:Hide() else f:Show() end end
         if den and (files.den:GetText() or "") == "" then files.den:SetText((D and D.lastName) or "my-den") end
         files.plot:SetText(B.PlotText())
+        local bottom = lite and -96 or -252
+        files.status:ClearAllPoints(); files.status:SetPoint("TOPLEFT", 12, bottom)
+        files:SetHeight(-bottom + 30)
     end)
+    files:SetHeight(282)
     files:Hide()
 end
 
@@ -1270,12 +1450,16 @@ local function buildTile(i)
     t.hover = solid(t, "BORDER", { 1, 1, 1, 0.05 })
     t.hover:SetPoint("TOPLEFT", 0, 0); t.hover:SetWidth(TILE); t.hover:SetHeight(TILE)
     t.hover:Hide()
-    -- the picture where there's no model: the category's icon, faint
+    -- the picture where there's no model (a building, a prop without a model in this game's files): on purpose,
+    -- the category's icon (a building: the home stone) at full strength, and a word why
     t.icon = t:CreateTexture(nil, "ARTWORK")
-    t.icon:SetWidth(38); t.icon:SetHeight(38)
-    t.icon:SetPoint("TOP", t, "TOP", 0, -18)
+    t.icon:SetWidth(46); t.icon:SetHeight(46)
+    t.icon:SetPoint("TOP", t, "TOP", 0, -16)
     t.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    t.icon:SetAlpha(0.55)
+    t.why = S().EdText(t, S().ED_SIZE.small)
+    t.why:SetPoint("TOP", t, "TOP", 0, -TILE + 22)
+    t.why:SetWidth(TILE); t.why:SetJustifyH("CENTER")
+    t.why:SetTextColor(S().ED.muted[1], S().ED.muted[2], S().ED.muted[3])
     -- the model, turning
     t.model = CreateFrame("Model", nil, t)
     t.model:SetWidth(TILE - 4); t.model:SetHeight(TILE - 4)
@@ -1292,28 +1476,25 @@ local function buildTile(i)
                             { "TOPLEFT", "BOTTOMLEFT", 1, 0 }, { "TOPRIGHT", "BOTTOMRIGHT", 1, 0 } }) do
         local e = solid(t.top, "OVERLAY", S().ED.edge)
         e:SetPoint(side[1]); e:SetPoint(side[2])
-        if side[3] == 1 then e:SetWidth(1) else e:SetHeight(1) end
+        if side[3] == 1 then e:SetWidth(2) else e:SetHeight(2) end
         t.edges[k] = e
     end
     t.badge = t.top:CreateTexture(nil, "OVERLAY")
-    t.badge:SetWidth(14); t.badge:SetHeight(14)
-    t.badge:SetPoint("BOTTOMRIGHT", -3, 3)
+    t.badge:SetWidth(18); t.badge:SetHeight(18)
+    t.badge:SetPoint("BOTTOMRIGHT", -4, 4)
     t.badge:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    t.badge:SetAlpha(0.8)
+    t.badge:SetAlpha(0.85)
     t.badge:Hide()
-    t.cost = t.top:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    t.cost:SetPoint("TOPLEFT", 4, -3)
-    t.cost.styleKeep = true
-    t.fav = t.top:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    t.fav:SetPoint("TOPRIGHT", -4, -2)
-    t.fav.styleKeep = true
+    t.cost = S().EdText(t.top, S().ED_SIZE.small)
+    t.cost:SetPoint("TOPLEFT", 5, -4)
+    t.fav = S().EdText(t.top, S().ED_SIZE.title)
+    t.fav:SetPoint("TOPRIGHT", -5, -3)
     local g = S().ED.gold
     t.fav:SetTextColor(g[1], g[2], g[3])
-    t.name = t:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    t.name:SetPoint("TOPLEFT", t, "TOPLEFT", 0, -TILE - 1)
-    t.name:SetWidth(TILE); t.name:SetHeight(NAME_H)
+    t.name = S().EdText(t, S().ED_SIZE.text)
+    t.name:SetPoint("TOPLEFT", t, "TOPLEFT", 0, -TILE - 3)
+    t.name:SetWidth(TILE); t.name:SetHeight(NAME_H - 2)
     t.name:SetJustifyH("CENTER")
-    t.name.styleKeep = true
     t:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     t:RegisterForDrag("LeftButton")
     t:SetScript("OnClick", function(self, mouse)
@@ -1328,10 +1509,10 @@ local function buildTile(i)
         if not it then return end
         if it.kind then setStatus(it.name .. ((it.kind == "stamp") and (": " .. (it.line or "")) or "") .. "  Double-click to place it.")
         else setStatus(string.format("%s: %d build point%s. %s", it.name, it.cost or 1, (it.cost or 1) == 1 and "" or "s",
-            editing() and "Double-click, then click the ground." or "Double-click to place it at your feet.")) end
+            editing() and "Double-click, then click the ground." or "Double-click to place it in front of you.")) end
     end)
     t:SetScript("OnLeave", function(self) self.over = nil; paintTile(self) end)
-    -- drag a tile out of the window: placed (at your feet; in edit mode where you click next)
+    -- drag a tile out of the window: placed (in front of you; in edit mode where you click next)
     t:SetScript("OnDragStart", function(self) B.dragging = self.item; if self.item then setStatus("Let go outside the window to place it.") end end)
     t:SetScript("OnDragStop", function()
         local it = B.dragging
@@ -1342,37 +1523,65 @@ local function buildTile(i)
     return t
 end
 
+-- How many rows of tiles fit between the gallery's bottom (above the chat) and the player frame's bottom: 4 on a
+-- 1080p screen at the addon's own scale, fewer on a short one (2 at least).
+function B.FitRows(screenH)
+    screenH = tonumber(screenH) or (GetScreenHeight and GetScreenHeight()) or 768
+    local room = screenH - LAYOUT.galleryBottom - LAYOUT.galleryTop - HEAD_H - FOOT_H + GAP
+    return math.max(2, math.min(ROWS, math.floor(room / (TILE + NAME_H + GAP))))
+end
+
+-- The gallery's place and rows for this screen (again after a resize or a scale change).
+function B.Layout()
+    if not win then return end
+    B.rows = B.FitRows()
+    win:SetHeight(winHeight(B.rows))
+    if not B.moved then
+        win:ClearAllPoints()
+        win:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", LAYOUT.galleryX, LAYOUT.galleryBottom)
+    end
+    win.grid:SetHeight(B.rows * (TILE + NAME_H + GAP))
+    local tabs = 0
+    for _, b in ipairs(win.tabs) do if b:IsShown() or not (B.state.lite == "1" and FULL_TABS[b.tab]) then tabs = tabs + 1 end end
+    win.tabStep = math.max(18, math.min(26, math.floor((winHeight(B.rows) - 2 * PAD) / math.max(1, tabs))))
+    for _, b in ipairs(win.tabs) do b:SetHeight(win.tabStep - 2) end
+end
+
 local function build()
     win = CreateFrame("Frame", "WrathUnleashedBuilderFrame", UIParent)
     win:SetWidth(WIN_W); win:SetHeight(WIN_H)
-    win:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 54, 46)
+    win:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", LAYOUT.galleryX, LAYOUT.galleryBottom)
     win:SetFrameStrata("DIALOG")
     win:EnableMouse(true)
     win:SetMovable(true)
     win:RegisterForDrag("LeftButton")
     win:SetScript("OnDragStart", win.StartMoving)
-    win:SetScript("OnDragStop", win.StopMovingOrSizing)
-    S().EdPanel(win, 0.88)
+    win:SetScript("OnDragStop", function(self) self:StopMovingOrSizing(); B.moved = true end)
+    S().EdPanel(win, 0.9)
     tinsert(UISpecialFrames, "WrathUnleashedBuilderFrame")   -- Esc closes it
     local st = store()
     if st.spin ~= nil then B.spin = st.spin and true or false end
     B.az = st.az and true or false
 
     -- the head: the tab's name, the page, paging, close
-    local x0 = CAT_W + 8
-    win.title = smallCaps(win, "Everything", true, "TOPLEFT", x0, -10)
-    win.close = chip(win, "x", 20, function() win:Hide() end, "TOPRIGHT", -6, -6)
-    win.next = chip(win, ">", 22, function() B.Page(1) end, "TOPRIGHT", -32, -6)
-    win.prev = chip(win, "<", 22, function() B.Page(-1) end, "TOPRIGHT", -56, -6)
-    win.count = win:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    win.count:SetPoint("TOPRIGHT", -84, -11)
+    local x0 = PAD + CAT_W + PAD
+    win.title = S().EdText(win, S().ED_SIZE.title)
+    win.title:SetPoint("TOPLEFT", x0, -14)
+    win.title:SetTextColor(S().ED.gold[1], S().ED.gold[2], S().ED.gold[3])
+    win.close = chip(win, "x", 28, function() win:Hide() end, "TOPRIGHT", -PAD, -PAD + 2)
+    win.close.edLabel = "Close the gallery (Esc)"
+    win.next = chip(win, ">", 28, function() B.Page(1) end, "TOPRIGHT", -PAD - 34, -PAD + 2)
+    win.prev = chip(win, "<", 28, function() B.Page(-1) end, "TOPRIGHT", -PAD - 66, -PAD + 2)
+    win.next.edLabel, win.prev.edLabel = "Next page", "Previous page"
+    win.count = S().EdText(win, S().ED_SIZE.text)
+    win.count:SetPoint("TOPRIGHT", -PAD - 104, -15)
     win.count:SetJustifyH("RIGHT")
-    win.count.styleKeep = true
     local m = S().ED.muted
     win.count:SetTextColor(m[1], m[2], m[3])
 
-    -- search, A-Z, Spin
-    local search = editBox(win, 196, 30, "TOPLEFT", x0, -32)
+    -- search, A-Z, Spin, Reload
+    local search = editBox(win, 240, 30, "TOPLEFT", x0, -42)
+    search:SetHeight(28)
     search:SetScript("OnTextChanged", function(self)
         B.search = (self:GetText() or ""):sub(1, 30)
         B.offset = 0
@@ -1384,47 +1593,64 @@ local function build()
         if SEARCHED[B.tab] then B.Find(B.tab, B.search) end
     end)
     win.search = search
-    win.searchHint = smallCaps(win, "Search", false, "LEFT", search, "RIGHT", -60, 0)
-    win.az = chip(win, "A-Z", 40, function() B.SetAZ(not B.az) end, "TOPLEFT", x0 + 204, -31)
-    win.spinBtn = chip(win, "Spin", 44, function() B.SetSpin(not B.spin) end, "TOPLEFT", x0 + 248, -31)
-    win.reload = chip(win, "Reload", 52, function() B.RequestCatalog() end, "TOPLEFT", x0 + 296, -31)
+    win.searchHint = S().EdText(win, S().ED_SIZE.text)
+    win.searchHint:SetPoint("LEFT", search, "LEFT", 8, 0)
+    win.searchHint:SetTextColor(S().ED.off[1], S().ED.off[2], S().ED.off[3])
+    win.searchHint:SetText("Search props...")
+    win.az = chip(win, "A-Z", 48, function() B.SetAZ(not B.az) end, "TOPLEFT", x0 + 248, -42)
+    win.az.edLabel = "Sort by name"
+    win.spinBtn = chip(win, "Spin", 52, function() B.SetSpin(not B.spin) end, "TOPLEFT", x0 + 302, -42)
+    win.spinBtn.edLabel = "Turn the models slowly"
+    win.reload = chip(win, "Reload", 66, function() B.RequestCatalog() end, "TOPLEFT", x0 + 360, -42)
+    win.reload.edLabel = "Ask for the props again"
 
-    -- the category column: two narrow columns of icons
+    -- the category column: an icon and the name, one row each (the one on in gold)
     win.tabs = {}
+    win.tabStep = 24
     for i, t in ipairs(TABS) do
-        local col, row = (i - 1) % 2, math.floor((i - 1) / 2)
-        local b = S().EdIcon(win, 26, catIcon(t), tabText(t), function(self) B.ShowTab(self.tab) end,
-            "TOPLEFT", 6 + col * 28, -8 - row * 28)
+        local b = chip(win, "", CAT_W, function(self) B.ShowTab(self.tab) end, "TOPLEFT", PAD, -PAD - (i - 1) * 24)
+        b:SetHeight(22)
         b.tab = t
-        b.edTipAt, b.edTipTo = "LEFT", "RIGHT"
+        b.edText:ClearAllPoints()
+        b.edText:SetPoint("LEFT", 28, 0); b.edText:SetPoint("RIGHT", -4, 0)
+        b.edText:SetJustifyH("LEFT")
+        b:SetText(tabText(t))
+        b.tabIcon = b:CreateTexture(nil, "ARTWORK")
+        b.tabIcon:SetWidth(18); b.tabIcon:SetHeight(18)
+        b.tabIcon:SetPoint("LEFT", 5, 0)
+        b.tabIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        b.tabIcon:SetTexture(catIcon(t))
+        b.iconPath = catIcon(t)
         win.tabs[i] = b
     end
     local sep = solid(win, "BORDER", S().ED.edge)
-    sep:SetPoint("TOPLEFT", CAT_W + 1, -6); sep:SetPoint("BOTTOMLEFT", CAT_W + 1, 6); sep:SetWidth(1)
+    sep:SetPoint("TOPLEFT", PAD + CAT_W + PAD / 2, -PAD); sep:SetPoint("BOTTOMLEFT", PAD + CAT_W + PAD / 2, PAD); sep:SetWidth(1)
 
     -- the grid of tiles
     win.grid = CreateFrame("Frame", nil, win)
     win.grid:SetWidth(COLS * TILE + (COLS - 1) * GAP); win.grid:SetHeight(ROWS * (TILE + NAME_H + GAP))
-    win.grid:SetPoint("TOPLEFT", x0, -60)
+    win.grid:SetPoint("TOPLEFT", x0, -HEAD_H)
     win.grid:EnableMouseWheel(true)
     win.grid:SetScript("OnMouseWheel", function(_, delta) B.Scroll(-delta) end)
     win.grid:SetScript("OnUpdate", function(_, elapsed) B.Turntable(elapsed) end)
     win.tiles = {}
     for i = 1, PAGE do win.tiles[i] = buildTile(i) end
-    win.empty = label(win, "", "GameFontHighlightSmall", "TOPLEFT", x0 + 6, -70)
-    win.empty:SetWidth(COLS * TILE)
+    win.empty = S().EdText(win, S().ED_SIZE.text)
+    win.empty:SetPoint("TOPLEFT", x0 + 6, -HEAD_H - 10)
+    win.empty:SetWidth(COLS * TILE); win.empty:SetJustifyH("LEFT")
 
     -- the foot: the budget meter and Place
     win.barBg = solid(win, "ARTWORK", { 1, 1, 1, 0.08 })
-    win.barBg:SetWidth(120); win.barBg:SetHeight(4)
+    win.barBg:SetWidth(160); win.barBg:SetHeight(4)
     win.barBg:SetPoint("BOTTOMLEFT", x0, 12)
     win.bar = win:CreateTexture(nil, "OVERLAY")
     win.bar:SetTexture(1, 1, 1, 1)
     win.bar:SetWidth(1); win.bar:SetHeight(4)
     win.bar:SetPoint("BOTTOMLEFT", x0, 12)
-    win.meter = label(win, "", "GameFontHighlightSmall", "BOTTOMLEFT", x0, 20)
-    win.meter.styleKeep = true
-    win.spawn = chip(win, "Place", 150, function() B.Spawn() end, "BOTTOMRIGHT", -8, 8)
+    win.meter = S().EdText(win, S().ED_SIZE.small)
+    win.meter:SetPoint("BOTTOMLEFT", x0, 20)
+    win.meter:SetTextColor(m[1], m[2], m[3])
+    win.spawn = chip(win, "Place", 200, function() B.Spawn() end, "BOTTOMRIGHT", -PAD, 8)
     win.spawn:SetActive(true)
 
     win:SetScript("OnUpdate", function()
@@ -1437,6 +1663,7 @@ local function build()
     win:SetScript("OnShow", function()
         if PlaySound then pcall(PlaySound, "igCharacterInfoOpen") end
         if #B.catalog == 0 then B.RequestCatalog() end
+        B.Layout()
         -- a Model frame may not draw what it was given while hidden: every tile takes its model again
         for _, t in ipairs(win.tiles) do t.modelPath = nil end
         B.Filter()

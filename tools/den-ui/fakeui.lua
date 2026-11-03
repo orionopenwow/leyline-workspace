@@ -86,13 +86,14 @@ function Frame:GetObjectType() return self.kind end
 function Frame:SetWidth(w) self.w = w end
 function Frame:SetHeight(h) self.h = h end
 function Frame:SetSize(w, h) self.w, self.h = w, h end
-function Frame:GetWidth() local r = F.rect(self); return r and r.w or (self.w or 0) end
-function Frame:GetHeight() local r = F.rect(self); return r and r.h or (self.h or 0) end
-function Frame:GetLeft() local r = F.rect(self); return r and r.x end
-function Frame:GetRight() local r = F.rect(self); return r and (r.x + r.w) end
-function Frame:GetTop() local r = F.rect(self); return r and (r.y + r.h) end
-function Frame:GetBottom() local r = F.rect(self); return r and r.y end
-function Frame:GetCenter() local r = F.rect(self); if r then return r.x + r.w / 2, r.y + r.h / 2 end end
+local function now(self) return F.anyRect(self) end
+function Frame:GetWidth() local r = now(self); return r and r.w or (self.w or 0) end
+function Frame:GetHeight() local r = now(self); return r and r.h or (self.h or 0) end
+function Frame:GetLeft() local r = now(self); return r and r.x end
+function Frame:GetRight() local r = now(self); return r and (r.x + r.w) end
+function Frame:GetTop() local r = now(self); return r and (r.y + r.h) end
+function Frame:GetBottom() local r = now(self); return r and r.y end
+function Frame:GetCenter() local r = now(self); if r then return r.x + r.w / 2, r.y + r.h / 2 end end
 function Frame:SetScale(s) self.scale = tonumber(s) or 1 end
 function Frame:GetScale() return self.scale or 1 end
 function Frame:GetEffectiveScale() return 1 end
@@ -361,8 +362,13 @@ function F.rect(f, depth)
     cache[f] = false
     local w, h = f.w, f.h
     if f.kind == "FontString" then
-        if not w or w == 0 then w = F.textWidth(f) end
-        if not h or h == 0 then h = F.fontSize(f) + 2 end
+        f.autoW = nil
+        if not w or w == 0 then w = F.textWidth(f); f.autoW = true end
+        if not h or h == 0 then
+            -- a FontString with a width and no height wraps: as many lines as its text needs
+            local lines = (f.w and f.w > 0) and math.max(1, math.ceil(F.textWidth(f) / f.w)) or 1
+            h = lines * (F.fontSize(f) + 3) - 1
+        end
     end
     local left, right, top, bottom, cx, cy
     local pts = f.points
@@ -384,6 +390,7 @@ function F.rect(f, depth)
     end
     w, h = w or 0, h or 0
     local x, y
+    if left and right then f.autoW = nil end
     if left and right then x, w = left, right - left elseif left then x = left elseif right then x = right - w else x = (cx or 0) - w / 2 end
     if top and bottom then y, h = bottom, top - bottom elseif bottom then y = bottom elseif top then y = top - h else y = (cy or 0) - h / 2 end
     cache[f] = { x = x, y = y, w = w, h = h }
@@ -425,6 +432,15 @@ function F.layout()
 end
 function F.endLayout() cache = nil end
 
+-- a frame's rect now, shown or not (the getters: GetLeft, GetWidth...)
+function F.anyRect(f)
+    if cache then return F.rect(f) end
+    cache = {}
+    local r = F.rect(f)
+    cache = nil
+    return r
+end
+
 -- the rect of a named or given frame (nil when hidden)
 function F.rectOf(f)
     if type(f) == "string" then f = _G[f] end
@@ -449,10 +465,10 @@ function F.dump(path, title, notes)
         local text = f.kind == "FontString" and f.text or (f.kind == "EditBox" and f.text) or nil
         local font = (f.kind == "FontString" or f.kind == "EditBox") and F.fontSize(f) or nil
         rows[#rows + 1] = string.format('{"n":%d,"kind":%s,"name":%s,"stock":%s,"x":%s,"y":%s,"w":%s,"h":%s,"strata":%d,"level":%d,"layer":%d,"alpha":%s,'
-            .. '"color":%s,"file":%s,"text":%s,"font":%s,"tcolor":%s,"justify":%s,"model":%s,"desat":%s,"root":%s}',
+            .. '"color":%s,"file":%s,"text":%s,"font":%s,"tcolor":%s,"justify":%s,"model":%s,"desat":%s,"root":%s,"autoW":%s}',
             f.n, jstr(f.kind), jstr(f.name), jstr(f.stock), jnum(e.x), jnum(e.y), jnum(e.w), jnum(e.h), e.strata, e.level, e.layer, jnum(e.alpha),
             jcol(f.color or (f.file and f.vcolor) or nil), jstr(f.file), jstr(text), font and tostring(font) or "null", jcol(f.tcolor), jstr(f.justify),
-            jstr(f.kind == "Model" and f.model or nil), f.desat and "true" or "false", jstr(e.root))
+            jstr(f.kind == "Model" and f.model or nil), f.desat and "true" or "false", jstr(e.root), f.autoW and "true" or "false")
     end
     F.endLayout()
     local h = assert(io.open(path, "wb"))

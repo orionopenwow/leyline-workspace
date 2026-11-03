@@ -566,6 +566,10 @@ BRIDGE_PORT = int(os.environ.get("BRIDGE_PORT", "7878"))
 BRIDGE_HOST = os.environ.get("BRIDGE_HOST", "ovlive-realm")
 
 STREAM_HOST = os.environ.get("STREAM_HOST", "").strip() or address("game")
+# portal.env still holds the old game name from before the move: once the move is on, the old name's page loads
+# 301 to the new one, so a gate cookie set there never reaches the game page (sign-in loop). Use the new name.
+if DOMAIN_MOVED and STREAM_HOST in ADDRESSES["game"][1:]:
+    STREAM_HOST = ADDRESSES["game"][0]
 GAME_HOSTS = frozenset({STREAM_HOST, *ADDRESSES["game"]})
 GAME_ORIGINS = frozenset(f"https://{h}" for h in GAME_HOSTS)
 STREAM_SLICES = {x.strip() for x in os.environ.get("STREAM_SLICES", "mini").split(",") if x.strip()}

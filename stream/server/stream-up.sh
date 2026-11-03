@@ -129,7 +129,7 @@ $MARK_BEGIN: the browser client streams the "mini" slice here, behind the
 # else needs its wu_play cookie (forward_auth /__auth) and goes to wu-play (page, /data, /ws).
 # "Play with my own game files" uses the same site without /data (wu-portal's /__auth refuses it).
 # wu-play's COOP/COEP headers pass through unchanged: the page must stay cross-origin isolated.
-$STREAM_HOST {
+$STREAM_NAMES {
 	# compresses what wu-play doesn't already send compressed (the page, scripts, /__env.js)
 	encode zstd gzip
 	# nothing here sends more than a few KB (the gate's JSON): refuse big bodies before they reach wu-portal or

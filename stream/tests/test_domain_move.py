@@ -11,19 +11,22 @@ from xml.sax.saxutils import escape
 
 PORTAL = os.path.abspath(sys.argv[1])
 MODE = sys.argv[2] if len(sys.argv) > 2 else ""
+# "stale": the move is on but portal.env still names the old game host (stream-up.sh used to write it back on
+# every run): the portal must still send players to the new game name, or the browser loops on sign-in.
+STALE = MODE == "stale"
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 NEW = {"site": "leylinelauncher.com", "game": "play.leylinelauncher.com", "relay": "relay.leylinelauncher.com"}
 OLD = {"site": "play.openvanilla.app", "game": "wrath.openvanilla.app", "relay": "relay.openvanilla.app"}
 
 if not MODE:   # each mode in its own process: the portal reads its settings once
     bad = 0
-    for m in ("old", "new"):
+    for m in ("old", "new", "stale"):
         r = subprocess.run([sys.executable, "-I", os.path.abspath(__file__), PORTAL, m], capture_output=True, text=True, timeout=300)
         sys.stdout.write(r.stdout + r.stderr)
         bad += r.returncode != 0
     sys.exit(1 if bad else 0)
 
-SOAP_PORT, REALM_PORT, PAGE_PORT = (17981, 18191, 18192) if MODE == "old" else (17982, 18193, 18194)
+SOAP_PORT, REALM_PORT, PAGE_PORT = {"old": (17981, 18191, 18192), "new": (17982, 18193, 18194)}.get(MODE, (17983, 18195, 18196))
 slices = tempfile.mkdtemp()
 with open(os.path.join(slices, "mini.json"), "w") as f:
     json.dump({"slice": "mini", "maxTier": 4, "title": "Mini"}, f)
@@ -32,7 +35,9 @@ for k in ("PUBLIC_HOST", "STREAM_HOST", "WU_JOIN_BASE", "WU_RELAY_WS", "WU_RELAY
 os.environ.update(SOAP_USER="WUSOAP", SOAP_PASS="x", AC_SOAP_URL=f"http://127.0.0.1:{SOAP_PORT}/",
                   PORTAL_URL=f"http://127.0.0.1:{REALM_PORT}", WU_SLICE_DIR=slices, WU_STREAM="1", WU_OWNFILES="1",
                   WU_LEYLINE_DIR=tempfile.mkdtemp(), WU_RELAY_LISTING_FILE="/nonexistent",
-                  LEYLINE_DOMAIN_MOVE="1" if MODE == "new" else "0")
+                  LEYLINE_DOMAIN_MOVE="0" if MODE == "old" else "1")
+if STALE:
+    os.environ["STREAM_HOST"] = OLD["game"]
 spec = importlib.util.spec_from_file_location("wp", PORTAL)
 wp = importlib.util.module_from_spec(spec); spec.loader.exec_module(wp)
 sys.path.insert(0, os.path.join(ROOT, "tools", "domain"))
@@ -87,8 +92,8 @@ def check(name, cond, extra=""):
     fails += 0 if cond else 1
 
 
-now = NEW if MODE == "new" else OLD
-other = OLD if MODE == "new" else NEW
+now = OLD if MODE == "old" else NEW
+other = NEW if MODE == "old" else OLD
 
 # --- the names
 check("ADDRESSES matches tools/domain/addresses.json",
@@ -139,7 +144,7 @@ else:
     check("an API on the old name answers there (200), as before", st == 200, st)
 
 # --- the whole sign-in flow through Caddy's rules, from a link on the old name (a browser: page loads)
-if MODE == "new":
+if MODE in ("new", "stale"):
     PAGE = {"Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate", "Accept": "text/html"}
     jar = {}   # host -> cookie header (cookies are per host)
     seen = []

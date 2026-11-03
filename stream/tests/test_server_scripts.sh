@@ -124,7 +124,7 @@ check "wu-portal recreated like deploy.sh" "grep -q 'run -d --name wu-portal .*-
 run=$(grep 'run -d --name wu-play' "$WU/docker.log")
 check "wu-play: bookworm-slim, 256m, read-only, only-listed" "[[ '$run' == *'--memory 256m'* && '$run' == *'--read-only'* && '$run' == *'debian:bookworm-slim'* && '$run' == *'--only-listed'* && '$run' == *'--upstream play.openvanilla.app'* ]]"
 check "wu-play: slice and www mounted read-only" "[[ '$run' == *'/slices/mini:/slice:ro'* && '$run' == *'/www:/www:ro'* ]]"
-check "Caddy block added once" "[ \$(grep -c '^wrath.openvanilla.app {' $WU_CADDYFILE) = 1 ]"
+check "Caddy block added once" "[ \$(grep -c '^wrath.openvanilla.app, play.leylinelauncher.com {' $WU_CADDYFILE) = 1 ]"
 check "Caddy: forward_auth /__auth, gate to wu-portal, rest to wu-play" "grep -q 'uri /__auth' $WU_CADDYFILE && grep -q '@gate path /__gate /__env.js' $WU_CADDYFILE && grep -q 'reverse_proxy wu-play:8090' $WU_CADDYFILE"
 check "Caddy: original site untouched" "grep -q 'reverse_proxy ovlive-realm:8090' $WU_CADDYFILE"
 check "Caddyfile backup" "cmp -s $WU/Caddyfile.before-stream $T/Caddyfile.orig"
@@ -133,7 +133,7 @@ check "Caddyfile backup" "cmp -s $WU/Caddyfile.before-stream $T/Caddyfile.orig"
 bash "$ST/stream-up.sh" > "$T/up2.log" 2>&1; rc=$?
 check "second run succeeds" "[ $rc = 0 ]"
 check "www edits not doubled" "[ \$(grep -c \"from './sections.js'\" $ST/www/index.html) = 1 ] && [ \$(grep -c 'const dataReady = Promise.resolve' $ST/www/boot.js) = 1 ]"
-check "still one Caddy block, one env.js tag" "[ \$(grep -c '^wrath.openvanilla.app {' $WU_CADDYFILE) = 1 ] && [ \$(grep -c '__env.js\"' $ST/www/index.html) = 1 ]"
+check "still one Caddy block, one env.js tag" "[ \$(grep -c '^wrath.openvanilla.app, play.leylinelauncher.com {' $WU_CADDYFILE) = 1 ] && [ \$(grep -c '__env.js\"' $ST/www/index.html) = 1 ]"
 check "the first backup is kept" "cmp -s $WU/Caddyfile.before-stream $T/Caddyfile.orig && grep -q 'old portal' $WU/portal/wrath_portal.py.before-stream"
 
 # --- Caddy refuses: restored

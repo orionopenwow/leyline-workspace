@@ -300,6 +300,12 @@ def mark_saved(cookie: str, csrf: str, ip: str, ua: str) -> list[str]:
     st, _, sc = realm("POST", "/account/key/saved", cookie, ip, ua, {"_csrf": csrf}, script=True)
     if st == 0 or st >= 500:
         raise Down(f"saved {st}")
+    # 2 Nov audit: "saved" answered 200 here while the service still showed the key: a refusal (a stale form token,
+    # a moved form) was taken for success. Only a 2xx or a redirect back to the key page counts now.
+    if st in (401, 403):
+        raise Refused(401, "Your website sign-in ran out. Sign in again.")
+    if not (200 <= st < 400):
+        raise Down(f"saved {st}")
     return sc
 
 
@@ -793,6 +799,11 @@ def api(h, sub: str, method: str, acct: str | None, how: str, extra: str, doc: d
             if not info["signed_in"]:
                 raise _ran_out(how, extra, kept)
             sc = mark_saved(cookie_header(merge(cookie_dict(jar), info["set_cookies"])), info.get("csrf", ""), ip, ua)
+            after = key_info(cookie_header(merge(cookie_dict(jar), info["set_cookies"] + sc)), ip, ua)
+            if after.get("signed_in") and after.get("key"):   # the service still shows it: say so, don't pretend
+                logging.warning("herokeys: the service still shows the key after saved (form token %s)",
+                                "present" if info.get("csrf") else "missing")
+                return send(502, {"error": "The website didn't take that. Reload and press Saved again."}, [])
             _keep(how, extra, acct, jar, info["set_cookies"] + sc, own=kept)
             if store is not None:
                 store.note(acct, "key.saved", "launcher" if how == "token" else "web")

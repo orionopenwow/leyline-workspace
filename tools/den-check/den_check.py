@@ -996,11 +996,24 @@ def den_lite_asset():
     return "den-lite-windows-x64.exe" if os.name == "nt" else "den-lite-linux-x64"
 
 
+def built_here(den):
+    """True when Den Lite here was built on this PC by the den-lite step (tools/den-lite/Build Den Lite.bat writes
+    den-lite.built-here beside it), and not replaced since: the test then runs that build, not the release's."""
+    mark = den.with_name("den-lite.built-here")
+    try:
+        return den.is_file() and mark.is_file() and den.stat().st_mtime <= mark.stat().st_mtime + 5
+    except OSError:
+        return False
+
+
 def den_lite_update(rep, root, fetch=_fetch):
     """The newest Den Lite from its release (the one the launcher gets on first use), when the one here differs: the
     release's sha256 checked before it is put in place. A Den Lite left running is asked to stop first (the test
     starts its own)."""
     den = Path(root) / "bin" / exe_name("den-lite")
+    if built_here(den):
+        rep.add("INFO", "the newest Den Lite", "the one built on this PC (den-lite step) is used, not the release's")
+        return
     try:
         want = sha_in(fetch(DEN_LITE_RELEASE + den_lite_asset() + ".sha256", 4096).decode("utf-8", "replace"))
     except Exception as e:  # noqa: BLE001 - offline is fine: the one here is used

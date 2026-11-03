@@ -17,6 +17,8 @@ if not exist "%APPDATA%\Leyline\den-lite\bin" mkdir "%APPDATA%\Leyline\den-lite\
 rem a Den left running holds the file: stop it first (its autosave keeps the Den; the next My Den starts the new one)
 tasklist /fi "imagename eq den-lite.exe" 2>nul | find /i "den-lite.exe" >nul && (echo Stopping the running Den Lite to update it... & taskkill /im den-lite.exe /f >nul 2>&1 & ping -n 3 127.0.0.1 >nul)
 copy /y "%CARGO_TARGET_DIR%\release\den-lite.exe" "%APPDATA%\Leyline\den-lite\bin\den-lite.exe" >nul || (echo Could not copy den-lite.exe. & exit /b 1)
+rem the den-test runs this build, not the release's, until a newer one replaces it (den_check.py built_here)
+echo built on this PC> "%APPDATA%\Leyline\den-lite\bin\den-lite.built-here"
 echo.
 echo Den Lite is at %APPDATA%\Leyline\den-lite\bin\den-lite.exe
 echo In the launcher: Your Den (after the launcher update with Your Den). Login: account DEN, password den.

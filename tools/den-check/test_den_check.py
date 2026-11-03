@@ -386,6 +386,18 @@ class Pieces(unittest.TestCase):
             quiet(den_check.den_lite_update, rep, root, offline)
             self.assertIn("couldn't check", rep.text())
             self.assertEqual(rep.failed(), [])
+            # built on this PC (the den-lite step): the test keeps that build, no download
+            exe.write_bytes(b"built here")
+            (exe.parent / "den-lite.built-here").write_text("built on this PC")
+            calls.clear()
+            rep = den_check.Report()
+            quiet(den_check.den_lite_update, rep, root, fetch)
+            self.assertIn("built on this PC", rep.text())
+            self.assertEqual((exe.read_bytes(), calls), (b"built here", []))
+            # a newer Den Lite replaced it later (the launcher's download): the mark no longer counts
+            t = (exe.parent / "den-lite.built-here").stat().st_mtime
+            os.utime(exe, (t + 60, t + 60))
+            self.assertFalse(den_check.built_here(exe))
         finally:
             shutil.rmtree(d, ignore_errors=True)
 

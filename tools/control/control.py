@@ -127,6 +127,8 @@ STEPS = {
     "client-smoke": ("tools/client-smoke/Client smoke test.bat", "Client smoke test: your game started as PLAY starts it on Wrath Unleashed (the launcher's sign-in skips the login screen), a screenshot every few seconds, then closed and the sign-in taken out (logs\\client-smoke)", False),
     "client-smoke-world": ("tools/client-smoke/Client smoke test - world.bat", "Client smoke test, on into the world with your last character (logs\\client-smoke)", False),
     "den-test": ("tools/den-check/Den test.bat", "My Den test: starts your game by itself, signs in, then builds, saves and loads, the white room, Forge's files, a shareable Den file, an invite a test friend signs in with, the autosave; a screenshot, closes it (logs in tools\\den-check\\logs)", False),
+    # the first-run test (tools/first-run/first_run.py, docs/FIRST-RUN-TEST.md): a brand-new launcher through to in the game
+    "first-run-test": ("tools/first-run/First run test.bat", "First-run test: today's download in an empty data folder, your game folder added, a test Hero Key logged in, PLAY on Wrath Unleashed, the game logs in by itself, into the world, then the Den test; screenshots, then the test account and temp folders removed (logs in tools\\first-run\\logs)", False),
     "den-test-variants": ("tools/den-check/Den test - variants.bat", "Three Den tests to find what draws the Den green: our made texture; the game's own sky; the game's own sky and zone name (logs\\den-test-made/nosky/plain)", False),
     "den-test-invite": ("tools/den-check/Den test - invite.bat", "My Den test (the same as den-test: it always invites a test friend now)", False),
     "client":  ("stream/Update browser client.bat", "New browser game build", False),

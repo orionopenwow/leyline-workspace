@@ -185,7 +185,7 @@ test('Realms: Play solo after Play on each realm card; the official realm plays 
   await page.waitForFunction(() => document.querySelectorAll('#rl-list .realm-card').length === 2);
   const com = await soloRows(page, '#rl-list .realm-card');
   assert.deepEqual(com.map((r) => r.label), ['Play solo', 'Play solo']);
-  assert.match(com[1].note, /Your own 1\.12\.1 realm/, 'another version: its own realm on this PC');
+  assert.match(com[1].note, /your own realm of this version/, 'another version: its own realm on this PC');
   await page.click('#rl-tab-official');
   await page.waitForFunction(() => document.querySelector('#rl-list .realm-card .solo-go'));
   await page.click('#rl-list .realm-card .solo-go');
@@ -266,7 +266,7 @@ test('The friend without a 3.3.5a folder: told how, nothing joins', async () => 
   const { page, ctx, errors } = await open({ deep: { action: 'join', id: LINK }, clients: [VANILLA] });
   await page.waitForSelector('#solo-join');
   await page.click('#solo-join-go');
-  await page.waitForFunction(() => /3\.3\.5a game folder/.test(document.querySelector('.solo-join-status').textContent));
+  await page.waitForFunction(() => /your own game folder, the same version/.test(document.querySelector('.solo-join-status').textContent));
   assert.equal((await callsOf(page, 'join_invite')).length, 0);
   await page.click('#solo-join .link-s');
   await page.waitForFunction(() => document.querySelector('#page-clients.on'));

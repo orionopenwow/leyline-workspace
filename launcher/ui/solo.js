@@ -93,7 +93,7 @@
     if (r.mode && r.mode.id && PACK_NAMES[r.mode.id]) return { kind: "realm", name: r.mode.name || PACK_NAMES[r.mode.id], pack: r.mode.id };
     const prof = PROFILE_FOR_BUILD[r.build || r.version || "3.3.5a"];
     if (prof === "solo") return SOLO_LEVELING;
-    if (prof) return { kind: "realm", name: `Your own ${r.build} realm`, profile: prof };
+    if (prof) return { kind: "realm", name: "your own realm of this version", profile: prof };
     return { kind: "none", why: "Leyline can't run this game version on your PC yet." };
   }
 
@@ -304,7 +304,7 @@
       const clients = (s.settings && s.settings.clients) || [];
       const c = clients.find((x) => x.id === s.settings.selected_client && x.build === "3.3.5a") || clients.find((x) => x.build === "3.3.5a");
       if (!c) {
-        line("Your friend's world plays with your own 3.3.5a game folder: add it, then press Join again.", "warn");
+        line("Your friend's world plays with your own game folder, the same version as theirs: add it, then press Join again.", "warn");
         const add = mk("button", "link-s", "Add your game folder ›");
         add.type = "button";
         add.addEventListener("click", () => nav("clients"));

@@ -22,6 +22,7 @@
 use crate::classes::{self, Kit, Stats};
 use crate::companion::At;
 use crate::raw::packed_guid;
+use crate::pets::{self, PetDef};
 use crate::spells::{Book, Effect, Spell};
 use std::collections::HashMap;
 
@@ -858,6 +859,27 @@ impl BossFight {
     }
 }
 
+/// Your pet (pets.rs): where it is, what it fights, its stance (react: 0 passive, 1 defensive, 2 aggressive) and
+/// whether it stays put.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Pet {
+    pub guid: u64,
+    pub def: PetDef,
+    pub at: At,
+    pub target: u64,
+    pub next_hit: u64,
+    pub next_move: u64,
+    pub react: u8,
+    pub stay: bool,
+    move_id: u32,
+}
+
+/// A pet swings (or casts its bolt) this often, follows when this far, and reaches this far.
+pub const PET_HIT_MS: u64 = 2000;
+pub const PET_FOLLOW: f32 = 4.0;
+pub const PET_REACH: f32 = 3.0;
+pub const PET_BOLT_REACH: f32 = 30.0;
+
 /// A practice run (`.den dojo demo`): Den Lite casts your main bar's rotation at a dummy for you, a timed parse.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Demo {
@@ -910,6 +932,10 @@ pub struct Combat {
     proc_ready: HashMap<u32, u64>,
     in_proc: bool,
     pub demo: Option<Demo>,
+    pub pet: Option<Pet>,
+    pets_made: u32,
+    /// What you last attacked or cast at (your pet's target).
+    pub last_target: u64,
 }
 
 impl Combat {
@@ -948,6 +974,9 @@ impl Combat {
             proc_ready: HashMap::new(),
             in_proc: false,
             demo: None,
+            pet: None,
+            pets_made: 0,
+            last_target: 0,
         }
     }
 
@@ -1030,6 +1059,8 @@ impl Combat {
         self.boss = None;
         self.parse = None;
         self.demo = None;
+        self.pet = None;
+        self.last_target = 0;
     }
 
     fn start_power(&self) -> f32 {
@@ -1120,6 +1151,7 @@ impl Combat {
         }
         self.unit_health(u);
         self.selection = guid;
+        self.last_target = guid;
         self.swing = Some((guid, now, false));
         vec![Out::Pkt(SMSG_ATTACKSTART, attack_start_body(self.me, guid)), Out::Event("combat", format!("attack {}", u.kind.word()))]
     }
@@ -1248,6 +1280,15 @@ impl Combat {
         out.push(Out::Pkt(SMSG_SPELL_GO, go_body_missed(self.me, &r, now as u32, &hits, &missed, Some(self.power as u32))));
         for &(g, why) in &missed {
             out.push(Out::Pkt(SMSG_SPELLLOGMISS, spell_miss_body(s.id, self.me, g, why)));
+        }
+        if let Some(g) = target.filter(|g| harmful(&s) && units.iter().any(|u| u.guid == *g && u.kind.hostile())) {
+            self.last_target = g;
+        }
+        // a pet: summoned, or sent away
+        if let Some(entry) = self.summoned(&s) {
+            out.extend(self.summon(now, me, entry));
+        } else if s.name == "Dismiss Pet" || s.effects.iter().any(|e| e.kind == 102) {
+            out.extend(self.dismiss());
         }
         // runic power from a rune strike (the sandbox's: ten a strike)
         if self.stats.power == classes::RUNIC && s.rune_cost != 0 && s.power_type != classes::RUNIC as i32 {
@@ -1835,6 +1876,7 @@ impl Combat {
             i += 1;
         }
         out.extend(self.dummies_tick(now, me, units));
+        out.extend(self.pet_tick(now, me, units));
         // power and health back, once a second
         if now >= self.next_regen {
             self.next_regen = now + 1000;
@@ -2015,6 +2057,149 @@ impl Combat {
             self.health -= dmg;
         }
         out.push(self.me_update());
+        out
+    }
+
+    /// The pet a spell calls (SPELL_EFFECT_SUMMON_PET 56 or SUMMON 28 naming a pet Den Lite knows; Call Pet: the
+    /// hunter's wolf; Raise Dead: the ghoul).
+    fn summoned(&self, s: &Spell) -> Option<u32> {
+        for e in &s.effects {
+            if e.kind == 56 || e.kind == 28 {
+                let m = e.misc.max(0) as u32;
+                if pets::pet_def(m).is_some() {
+                    return Some(m);
+                }
+                if e.kind == 56 && self.kit.as_ref().is_some_and(|k| k.class == 3) {
+                    return Some(pets::HUNTER_PET);
+                }
+            }
+        }
+        match s.name.as_str() {
+            "Call Pet" => Some(pets::HUNTER_PET),
+            "Raise Dead" => Some(pets::GHOUL),
+            _ => None,
+        }
+    }
+
+    /// A pet at your side (the old one sent away first): its create, your UNIT_FIELD_SUMMON, its bar.
+    pub fn summon(&mut self, now: u64, me: At, entry: u32) -> Vec<Out> {
+        let Some(def) = pets::pet_def(entry).copied() else { return Vec::new() };
+        let mut out = self.dismiss();
+        self.pets_made += 1;
+        let guid = pets::pet_guid(entry, self.pets_made);
+        let at = At { x: me.x - me.o.cos() * 2.0 - me.o.sin() * 1.5, y: me.y - me.o.sin() * 2.0 + me.o.cos() * 1.5, z: me.z, o: me.o };
+        let health = (self.stats.health / 2).max(100);
+        let fields = pets::pet_fields(entry, self.me, self.stats.level, health, pets::pet_display(entry));
+        out.push(Out::Pkt(SMSG_UPDATE_OBJECT, pets::create_unit_body(guid, [at.x, at.y, at.z, at.o], now as u32, &fields)));
+        out.push(Out::Pkt(SMSG_UPDATE_OBJECT, values_body(self.me, &[(pets::UNIT_FIELD_SUMMON, guid as u32), (pets::UNIT_FIELD_SUMMON + 1, (guid >> 32) as u32)])));
+        let spells: Vec<u32> = if def.bolt != 0 { vec![def.bolt] } else { Vec::new() };
+        out.push(Out::Pkt(pets::SMSG_PET_SPELLS, pets::pet_spells_body(guid, def.family, 1, 1, &spells)));
+        out.push(Out::Event("pet", format!("{} {entry}", def.name)));
+        self.pet = Some(Pet { guid, def, at, target: 0, next_hit: now + 1000, next_move: now + 500, react: 1, stay: false, move_id: 1 });
+        out
+    }
+
+    /// The pet sent away: gone from the world and from your bar.
+    pub fn dismiss(&mut self) -> Vec<Out> {
+        let Some(p) = self.pet.take() else { return Vec::new() };
+        vec![
+            Out::Pkt(pets::SMSG_DESTROY_OBJECT, pets::destroy_body(p.guid)),
+            Out::Pkt(SMSG_UPDATE_OBJECT, values_body(self.me, &[(pets::UNIT_FIELD_SUMMON, 0), (pets::UNIT_FIELD_SUMMON + 1, 0)])),
+            Out::Pkt(pets::SMSG_PET_SPELLS, pets::no_pet_body()),
+            Out::Event("pet", "away".into()),
+        ]
+    }
+
+    /// CMSG_PET_ACTION: Attack (your target), Follow, Stay, Dismiss (ACT_COMMAND 7); Aggressive, Defensive, Passive
+    /// (ACT_REACTION 6). Its spell buttons: it already uses its bolt.
+    pub fn pet_action(&mut self, units: &[Unit], body: &[u8]) -> Vec<Out> {
+        let Some((guid, action, kind, target)) = pets::read_pet_action(body) else { return Vec::new() };
+        if self.pet.as_ref().map(|p| p.guid) != Some(guid) {
+            return Vec::new();
+        }
+        match (kind, action) {
+            (7, 3) => return self.dismiss(),
+            (7, a) => {
+                let hostile = units.iter().any(|u| u.guid == target && u.kind.hostile());
+                if let Some(p) = self.pet.as_mut() {
+                    match a {
+                        0 => (p.stay, p.target) = (true, 0),
+                        1 => (p.stay, p.target) = (false, 0),
+                        _ if hostile => p.target = target,
+                        _ => {}
+                    }
+                }
+            }
+            (6, r) => {
+                if let Some(p) = self.pet.as_mut() {
+                    p.react = r.min(2) as u8;
+                    if p.react == 0 {
+                        p.target = 0;
+                    }
+                }
+            }
+            _ => {}
+        }
+        Vec::new()
+    }
+
+    /// Every tick: the pet fights its target (the one you sent it at, else, unless passive, what you fight): it
+    /// walks up to it, then swings (or casts its bolt) every two seconds, its damage counted with yours; with
+    /// nothing to fight it follows you (unless told to stay).
+    fn pet_tick(&mut self, now: u64, me: At, units: &[Unit]) -> Vec<Out> {
+        let mut out = Vec::new();
+        let Some(mut p) = self.pet.clone() else { return out };
+        let alive = |g: u64, c: &Combat| g != 0 && units.iter().any(|u| u.guid == g && u.kind.hostile()) && c.hp.get(&g).map_or(true, |h| h.cur > 0);
+        if !alive(p.target, self) {
+            p.target = 0;
+        }
+        if p.target == 0 && p.react > 0 && alive(self.last_target, self) && self.hp.get(&self.last_target).is_some_and(|h| h.last_hit + 10_000 > now) {
+            p.target = self.last_target;
+        }
+        let reach = if p.def.bolt != 0 { PET_BOLT_REACH } else { PET_REACH };
+        match units.iter().find(|u| u.guid == p.target).copied() {
+            Some(u) => {
+                let d = dist(p.at, u.at);
+                if d > reach && now >= p.next_move {
+                    // up to it, stopping just short
+                    let k = ((d - reach * 0.6) / d).clamp(0.0, 1.0);
+                    let to = At { x: p.at.x + (u.at.x - p.at.x) * k, y: p.at.y + (u.at.y - p.at.y) * k, z: u.at.z, o: p.at.o };
+                    let ms = (dist(p.at, to) / 7.0 * 1000.0) as u32;
+                    p.move_id = p.move_id.wrapping_add(1);
+                    out.push(Out::Pkt(pets::SMSG_MONSTER_MOVE, pets::move_body(p.guid, [p.at.x, p.at.y, p.at.z], [to.x, to.y, to.z], p.move_id, ms)));
+                    p.at = to;
+                    p.next_move = now + ms as u64 + 100;
+                    p.next_hit = p.next_hit.max(p.next_move);
+                } else if d <= reach + 1.0 && now >= p.next_hit {
+                    p.next_hit = now + PET_HIT_MS;
+                    let crit = self.roll2() % 100 < 5;
+                    let base = (self.stats.level.max(1) * if p.def.bolt != 0 { 12 } else { 9 }) as f32 * (1.0 + classes::tier_ilvl(self.kit.as_ref().map(|k| k.tier).unwrap_or(0)) / 200.0);
+                    let school = if p.def.bolt != 0 { 4 } else { 1 };
+                    let dmg = self.dealt(units, u.guid, base * if crit { 1.5 } else { 1.0 }, school);
+                    if p.def.bolt != 0 {
+                        let r = CastReq { count: 0, spell: p.def.bolt, mask: TF_UNIT, unit: Some(u.guid), src: None, dest: None };
+                        out.push(Out::Pkt(SMSG_SPELL_GO, go_body(p.guid, &r, now as u32, &[u.guid], None)));
+                        out.push(Out::Pkt(SMSG_SPELLNONMELEEDAMAGELOG, spell_damage_body(u.guid, p.guid, p.def.bolt, dmg, 0, school, crit)));
+                    } else {
+                        out.push(Out::Pkt(SMSG_ATTACKERSTATEUPDATE, swing_body(p.guid, u.guid, dmg, crit)));
+                    }
+                    self.unit_health(&u);
+                    out.extend(self.took(now, &u, dmg as i64));
+                }
+            }
+            None if !p.stay && now >= p.next_move && dist(p.at, me) > PET_FOLLOW => {
+                let to = At { x: me.x - me.o.cos() * 2.0 - me.o.sin() * 1.5, y: me.y - me.o.sin() * 2.0 + me.o.cos() * 1.5, z: me.z, o: me.o };
+                let ms = (dist(p.at, to) / 7.0 * 1000.0).min(4000.0) as u32;
+                p.move_id = p.move_id.wrapping_add(1);
+                out.push(Out::Pkt(pets::SMSG_MONSTER_MOVE, pets::move_body(p.guid, [p.at.x, p.at.y, p.at.z], [to.x, to.y, to.z], p.move_id, ms)));
+                p.at = to;
+                p.next_move = now + ms as u64 + 300;
+            }
+            None => {}
+        }
+        if self.pet.as_ref().map(|x| x.guid) == Some(p.guid) {
+            self.pet = Some(p);
+        }
         out
     }
 
@@ -2785,5 +2970,68 @@ mod tests {
         assert_eq!(secs, 20.0);
         assert!(total > 5000 && dps == (total as f32 / 20.0).round() as u32, "{total} {dps}");
         assert!(c.demo.is_none());
+    }
+    #[test]
+    fn a_pet_comes_follows_fights_your_target_and_goes() {
+        let mut rows = fake::sample();
+        rows.push(fake::Row { id: 688, name: "Summon Imp".into(), level: 1, cast_index: 1, school: 32, effects: vec![(56, 0, 1, 1, 0, 0, 0, 416)], ..Default::default() });
+        rows.push(fake::Row { id: 2641, name: "Dismiss Pet".into(), level: 10, cast_index: 1, school: 1, effects: vec![(3, 0, 1, 1, 0, 0, 0, 0)], ..Default::default() });
+        let b = Book::from_bytes(Some(&fake::spells(&rows)), Some(&fake::abilities(&fake::ABILITIES)), Some(&fake::four(&fake::CAST_TIMES)), Some(&fake::four(&fake::DURATIONS)), None);
+        let mut c = mage(&b);
+        knows_too(&mut c, 688);
+        knows_too(&mut c, 2641);
+        let us = units(Kind::Target);
+        let out = c.cast(0, here(), &us, &b, on(688, 0));
+        let pet = c.pet.clone().expect("a pet");
+        assert_eq!((pet.def.name, pet.def.bolt), ("Imp", 47964));
+        let create = out.iter().find_map(|o| match o { Out::Pkt(SMSG_UPDATE_OBJECT, x) if x.get(4) == Some(&2) => Some(x.clone()), _ => None }).expect("its create");
+        let mut at = 5;
+        assert_eq!(read_packed(&create, &mut at), Some(pet.guid));
+        assert!(ops(&out).contains(&pets::SMSG_PET_SPELLS));
+        // you fight the dummy: the imp casts its bolt at it, its damage on your meter
+        c.attack(10, &us, DUMMY);
+        let mut bolts = 0;
+        for t in (50..=8000).step_by(50) {
+            for o in c.tick(t, here(), &us, &b) {
+                if let Out::Pkt(SMSG_SPELLNONMELEEDAMAGELOG, x) = o {
+                    let mut at = 0;
+                    read_packed(&x, &mut at);
+                    if read_packed(&x, &mut at) == Some(pet.guid) {
+                        bolts += 1;
+                    }
+                }
+            }
+        }
+        assert!(bolts >= 2, "{bolts}");
+        assert!(c.meter.total > 0);
+        // stay, then follow: it walks after you
+        let act = |a: u32, t: u32| {
+            let mut v = pet.guid.to_le_bytes().to_vec();
+            v.extend_from_slice(&(a | t << 24).to_le_bytes());
+            v.extend_from_slice(&0u64.to_le_bytes());
+            v
+        };
+        c.stop();
+        c.last_target = 0;
+        c.pet_action(&us, &act(1, 7));
+        let far = At { x: -40.0, ..here() };
+        let mut moved = false;
+        for t in (9000..=12_000).step_by(50) {
+            moved |= c.tick(t, far, &us, &b).iter().any(|o| matches!(o, Out::Pkt(pets::SMSG_MONSTER_MOVE, _)));
+        }
+        assert!(moved, "it follows");
+        c.pet_action(&us, &act(0, 6));
+        assert_eq!(c.pet.as_ref().unwrap().react, 0, "passive");
+        // dismissed: gone, the bar too
+        let out = c.cast(20_000, here(), &us, &b, on(2641, 0));
+        assert!(c.pet.is_none() && ops(&out).contains(&pets::SMSG_DESTROY_OBJECT), "{out:?}");
+        let out = c.summon(21_000, here(), 69);
+        assert_eq!(c.pet.as_ref().map(|p| p.def.name), Some("Wolf"));
+        assert!(ops(&out).contains(&pets::SMSG_PET_SPELLS));
+        let wolf = c.pet.as_ref().unwrap().guid;
+        let mut v = wolf.to_le_bytes().to_vec();
+        v.extend_from_slice(&(3u32 | 7 << 24).to_le_bytes());
+        assert_eq!(c.pet_action(&us, &v).len(), 4, "the bar's Dismiss");
+        assert!(c.pet.is_none());
     }
 }

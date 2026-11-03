@@ -1634,6 +1634,12 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0, only_mo
                 + ((", " + pic) if pic else "")) if ok else
                ("Den Lite's look: %s; the event: %s" % (look or "?", (ev or {}).get("detail", "none"))),
                "The Leyline UI didn't start build mode: update the Leyline addons and Den Lite, then run den-features again.")
+        if not ok:
+            # why the UI left build mode (Gizmo.lua: it follows G.Wanted() every half second)
+            t2 = now_ms()
+            ui("gizmo report")
+            why = wait_for(lambda: [x for x in ui_lines(den_dir, t2) if x.startswith("why ")], wait, 0.2) or []
+            rep.add("INFO", "build mode: what the UI says", "; ".join(why) or "no report from the UI")
         if look is None:
             rep.add("INFO", "build mode: the props' goober looks", "this Den Lite is from before them (3 Nov): update Den Lite for the glow under the mouse")
         if not newer:

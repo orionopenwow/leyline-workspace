@@ -66,6 +66,8 @@ jobs:
           lua5.1 stream/tests/test_den_smoke.lua realm/custom/lua_scripts
           lua5.1 stream/tests/test_ov_den_home.lua realm/custom/lua_scripts
           lua5.1 stream/tests/test_ov_den_companion.lua realm/custom/lua_scripts
+          lua5.1 stream/tests/test_ov_dojo.lua realm/custom/lua_scripts/ov_dojo.lua labs/den-lite/src/dojo.rs
+          lua5.1 stream/tests/test_wuui_dojo.lua
       - name: ov_hostctl (Your realm, for the realm's GM) and the in-game Host window, Realm List, the Leyline look
         run: |
           lua5.1 stream/tests/test_wuui_host.lua

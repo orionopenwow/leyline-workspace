@@ -1,4 +1,5 @@
-# The in-game addons' Lua tests (stream/tests/test_wuui_*.lua: the Esc menu, the Leyline panels...) on feature branches:
+# The in-game addons' Lua tests (stream/tests/test_wuui_*.lua: the Esc menu, the Leyline panels...) and the Dojo's
+# realm script (test_ov_dojo.lua) on feature branches:
 # Claude's cloud sessions have no Lua 5.1 to run them. No secrets, no release.
 name: lua check
 
@@ -10,6 +11,7 @@ on:
       - "stream/tests/test_wuui_*.lua"
       - "stream/tests/test_ov_*.lua"
       - "realm/custom/lua_scripts/**"
+      - "labs/den-lite/src/dojo.rs"
       - "stream/social.py"
       - "stream/tests/test_social.py"
       - ".github/workflows/lua-check.yml"
@@ -29,7 +31,7 @@ jobs:
       - name: the Esc menu's and the Den editor's tests (each file's own command, from its first line)
         run: |
           set -e
-          for t in gamemenu gamemenu_fui leyline host builder denbar denhome gallery fillbars; do
+          for t in gamemenu gamemenu_fui leyline host builder denbar denhome gallery fillbars dojo; do
             f="stream/tests/test_wuui_$t.lua"
             cmd=$(head -1 "$f" | sed -n 's/^-- \(lua5\.1 .*\)$/\1/p')
             cmd=$(echo "$cmd" | sed 's/ \[[^]]*\]//g')
@@ -55,5 +57,7 @@ jobs:
           lua5.1 stream/tests/test_ov_duels.lua $L/ov_duels.lua
           lua5.1 stream/tests/test_ov_names.lua $L/ov_names.lua
           lua5.1 stream/tests/test_ov_armory.lua $L/ov_armory.lua
+      - name: the Dojo on the full Den (ov_dojo.lua under a fake mod-ale; its ring checked against Den Lite's dojo.rs)
+        run: lua5.1 stream/tests/test_ov_dojo.lua realm/custom/lua_scripts/ov_dojo.lua labs/den-lite/src/dojo.rs
       - name: the website's friends and launcher link (test_social.py drives a Lua stand-in realm)
         run: python3 -I stream/tests/test_social.py stream/wrath_portal.py

@@ -22,10 +22,13 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Lua 5.1
         run: sudo apt-get update && sudo apt-get install -y lua5.1
-      - name: the addons' tests
+      - name: the Esc menu's tests (each file's own command, from its first line)
         run: |
           set -e
-          for t in stream/tests/test_wuui_*.lua; do
-            echo "== $t"
-            lua5.1 "$t"
+          for t in gamemenu gamemenu_fui leyline host; do
+            f="stream/tests/test_wuui_$t.lua"
+            cmd=$(head -1 "$f" | sed -n 's/^-- \(lua5\.1 .*\)$/\1/p')
+            cmd=$(echo "$cmd" | sed 's/ \[[^]]*\]//g')
+            echo "== $cmd"
+            $cmd
           done

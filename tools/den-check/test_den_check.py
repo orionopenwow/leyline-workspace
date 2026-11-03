@@ -981,9 +981,42 @@ class FakeAids:
         self.true_cam, self.cam = true_cam or dict(den_check.CAMERA), cam or dict(den_check.CAMERA)
         self.player = [16226.2, 16257.0, 13.2, 0.0]
         self.aids = {"armed": "off", "ghost": None, "at": None, "cursor": None, "axis": None, "gizmo": 0, "sel": None, "mode": "play",
-                     "glow": None, "drag": 0.0, "cam": "near", "far_at": None, "zoom": 12}
+                     "glow": None, "drag": 0.0, "cam": "near", "far_at": None, "zoom": 12,
+                     "hovered": None, "sel_at": None, "sel_uv": None, "grip": False}
         self.zoom, self.back = 12, 0.0
         self.screen = (0.0, 0.0)
+        # the props the mouse can find: id -> (u, v on the screen, x, y, z)
+        self.where = {7: [-0.3, -0.2, 16227.0, 16259.0, 13.2], 9: [0.1, -0.3, 16229.0, 16257.0, 13.2]}
+
+    def under(self, u, v):
+        if "mouse" in self.broken:
+            return None
+        for pid, w in self.where.items():
+            if abs(w[0] - u) < 0.05 and abs(w[1] - v) < 0.05:
+                return pid
+        return None
+
+    def mouse(self, act, a):
+        if act == "click":
+            hit = self.under(float(a[2]), float(a[3]))
+            self.aids.update(sel=hit, glow=hit, gizmo=4 if hit else 0)
+        elif act == "press":
+            hit = self.under(float(a[2]), float(a[3]))
+            if hit:
+                self.aids.update(sel=hit, grip=True, armed="move,%s,1543" % hit)
+        elif act == "moveto" and self.aids["grip"]:
+            self.moved = (float(a[2]), float(a[3]))
+        elif act == "release" and self.aids["grip"]:
+            w = self.where[self.aids["sel"]]
+            du, dv = self.moved
+            w[2], w[3] = w[2] + (du - w[0]) * 10, w[3] + (dv - w[1]) * 10
+            w[0], w[1] = du, dv
+            self.ev("den_change", "+1 -1")
+            self.aids.update(grip=False, armed="off", glow=self.aids["sel"])
+
+    def sync(self):
+        w = self.where.get(self.aids["sel"])
+        self.aids.update(sel_uv=w[:2] if w else None, sel_at=w[2:] if w else None)
 
     def ev(self, name, detail=""):
         with open(self.dens / "den-lite.events", "a", encoding="utf-8") as f:
@@ -991,6 +1024,8 @@ class FakeAids:
 
     def hover(self, u, v):
         if self.aids["armed"] == "off":
+            if self.aids["mode"] == "build":
+                self.aids["hovered"] = self.under(u, v)
             return
         self.aids["cursor"] = [u, v, 16 / 9]
         if self.aids["armed"].startswith("axis,"):
@@ -1003,6 +1038,7 @@ class FakeAids:
     def send(self, cmd, wait=10.0):
         w = cmd.split()
         if cmd == ".den size":
+            self.sync()
             look = "build" if self.aids["mode"] == "build" and "look" not in self.broken else "play"
             return {"props": self.props, "aids": dict(self.aids), "look_mode": look, "twin_queries": getattr(self, "twins", 0)}
         if w[:2] in ([".den", "save"], [".den", "load"]):
@@ -1064,6 +1100,8 @@ class FakeAids:
             self.aids["axis"] = None if a[2] == "off" else a[2]
         elif act == "wheel":
             self.ev("den_change", "+1 -1")
+        elif act in ("click", "press", "moveto", "release"):
+            self.mouse(act, a)
         elif act == "menu" and a[2] == "2":
             self.props += 1
             self.ev("den_change", "+1 -0")
@@ -1138,15 +1176,18 @@ class PlacementAids(unittest.TestCase):
                      "click: placed, and selected at once (it glows, its handles)", "drag: a handle moves it along X, a click drops it",
                      "gizmo: the wheel moves it along the picked axis", "swap: the selection becomes the gallery's pick", "menu: Duplicate",
                      "snap out: the view from up high", "snap out: and back to you", "zoom: out past the game's limit", "zoom: and back to you",
-                     "play mode: props plain again"):
+                     "play mode: props plain again", "mouse: the prop under the cursor glows", "mouse: a click selects it (a click on the sky clears)",
+                     "mouse: press and drag moves it"):
             self.assertIn(want, names)
+        moved = [r for r in rep.rows if r[1] == "mouse: press and drag moves it"][0][2]
+        self.assertTrue(moved.startswith("moved 2.06 yd") and moved.endswith("-mouse-dropped.png"), moved)
         self.assertIn("the game asked for 3 of their goober looks", [r for r in rep.rows if r[1] == "build mode: props light up under the mouse"][0][2])
         drag = [r for r in rep.rows if r[1] == "drag: a handle moves it along X, a click drops it"][0][2]
         self.assertTrue(drag.startswith("moved +3.60 yd along X"), drag)
         far = [r for r in rep.rows if r[1] == "zoom: out past the game's limit"][0][2]
         self.assertTrue(far.startswith("1500 yd") and far.endswith("-zoom-far.png") and "yd further than the game's own camera goes" in far, far)
         for s in ("build-mode", "pick", "follow", "placed-selected", "dragging", "drag-dropped", "wheel-step", "swap", "snap-out", "snap-back",
-                  "zoom-far", "zoom-back"):
+                  "zoom-far", "zoom-back", "mouse-hover", "mouse-click", "mouse-dragging", "mouse-dropped"):
             self.assertTrue(any(x.endswith("-%s.png" % s) for x in self.shots), s)
         self.assertFalse((self.dens / "aidstest-before.den.json").exists(), "the test's save removed")
 
@@ -1160,6 +1201,31 @@ class PlacementAids(unittest.TestCase):
         must = {"follow: the real prop goes where the cursor points", "click: placed, and selected at once (it glows, its handles)",
                 "drag: a handle moves it along X, a click drops it"}
         self.assertTrue(must <= fails <= must | {"swap: the selection becomes the gallery's pick"}, fails)
+        # the mouse finds nothing: its three checks fail, each with what to send
+        rep = den_check.Report()
+        dens = self.d / "dens-mouse"
+        dens.mkdir()
+        (dens / "den-lite.events").write_text("")
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, FakeAids(dens, broken={"mouse"}), dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
+        fails = {r[1] for r in rep.rows if r[0] == "FAIL"}
+        self.assertEqual(fails, {"mouse: the prop under the cursor glows", "mouse: a click selects it (a click on the sky clears)", "mouse: press and drag moves it"})
+        # a Den Lite from before the mouse: said, not failed
+        class NoMouse(FakeAids):
+            def send(self, cmd, wait=10.0):
+                r = FakeAids.send(self, cmd, wait)
+                if isinstance(r, dict) and "aids" in r:
+                    for k in ("sel_uv", "sel_at", "hovered", "grip"):
+                        r["aids"].pop(k, None)
+                return r
+        rep = den_check.Report()
+        dens = self.d / "dens-nomouse"
+        dens.mkdir()
+        (dens / "den-lite.events").write_text("")
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, NoMouse(dens), dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
+        self.assertTrue(any(r[0] == "INFO" and r[1] == "the mouse: hover, click and drag" for r in rep.rows))
+        self.assertEqual([r for r in rep.rows if r[0] == "FAIL"], [])
         # Den Lite never took the build look: failed, with what it said
         rep = den_check.Report()
         with contextlib.redirect_stdout(io.StringIO()):

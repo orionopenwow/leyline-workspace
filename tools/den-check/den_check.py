@@ -1532,13 +1532,54 @@ def aids_of(answer):
     return a if isinstance(a, dict) else {}
 
 
+def mouse_steps(rep, ui, aids, shot, with_pic, den_dir, wait):
+    """aids_features' mouse checks: a click on the sky clears the selection; the cursor on the prop glows it; a click
+    selects it; pressed, moved and let go, it is dropped where the cursor took it (yards moved)."""
+    a = aids()
+    sel, uv, at0 = a.get("sel"), a.get("sel_uv"), a.get("sel_at")
+    if sel is None or not uv or not at0 or not all(-0.95 < c < 0.95 for c in uv):
+        rep.add("SKIP", "the mouse: hover, click and drag", "the selection (%s) isn't on the screen (%s)" % (sel, uv))
+        return False
+    u, v = uv
+    ui("gizmo click 0 0.95")
+    cleared = aids().get("sel") is None
+    ui("gizmo hover %.4f %.4f" % (u, v))
+    a = aids()
+    pic = shot("mouse-hover")
+    rep.ok(a.get("hovered") == sel, "mouse: the prop under the cursor glows",
+           with_pic("prop %s under the cursor at (%.2f, %.2f)" % (a.get("hovered"), u, v), pic),
+           "Den Lite didn't find prop %s under the cursor (it found %s): send logs\\den-features-latest.txt and the picture." % (sel, a.get("hovered")))
+    ui("gizmo click %.4f %.4f" % (u, v))
+    a = aids()
+    pic = shot("mouse-click")
+    rep.ok(cleared and a.get("sel") == sel and a.get("glow") == sel, "mouse: a click selects it (a click on the sky clears)",
+           with_pic("the sky cleared it: %s; then prop %s selected, glowing %s" % ("yes" if cleared else "no", a.get("sel"), a.get("glow")), pic),
+           "Cleared %s, selected %s, glow %s: send logs\\den-features-latest.txt and the picture." % (cleared, a.get("sel"), a.get("glow")))
+    t = now_ms()
+    ui("gizmo press %.4f %.4f" % (u, v))
+    ui("gizmo moveto %.4f %.4f" % (u + 0.2, v - 0.05))
+    held = aids().get("grip") is True
+    pic = shot("mouse-dragging")
+    ui("gizmo release")
+    ev = wait_for(lambda: event_after(den_dir, "den_change", t), wait)
+    a = aids()
+    pic2 = shot("mouse-dropped")
+    at1 = a.get("sel_at") or at0
+    yd = math.hypot(at1[0] - at0[0], at1[1] - at0[1])
+    rep.ok(held and ev is not None and yd > 0.5, "mouse: press and drag moves it",
+           "moved %.2f yd%s%s" % (yd, (", " + pic) if pic else "", (", " + pic2) if pic2 else ""),
+           "Held %s, dropped %s, moved %.2f yd: send logs\\den-features-latest.txt and the pictures." % (held, ev is not None, yd))
+    return True
+
+
 def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
     """The editor's flow as the owner's video shows it (3 Nov: "it should function like this"), through the Leyline UI's
     own test actions, a picture after each step: build mode (props shown as things the game highlights); a gallery
     card picked (in hand, nothing in front of you); the real prop following the cursor; one click places it and it is
     selected at once (its glow, its handles and the halo); a handle dragged along X (moved N yd) and dropped; the wheel
-    along a picked axis; Swap with another card; the menu's Duplicate; snap out and back; the wheel past the game's
-    zoom limit and back; play mode. Your Den is saved first and put back after."""
+    along a picked axis; Swap with another card; the menu's Duplicate; the mouse (the prop under the cursor glows, a
+    click selects it, a press and drag moves it: mouse_steps); snap out and back; the wheel past the game's zoom limit
+    and back; play mode. Your Den is saved first and put back after."""
     den_dir, outdir = Path(den_dir), Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     n = [0]
@@ -1674,6 +1715,15 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
         ui("gizmo menu 2")
         got = wait_for(lambda: (props() or 0) == p0 + 1, wait, 0.5)
         rep.ok(bool(got), "menu: Duplicate", "%s -> %s props" % (p0, props()), "The menu's Duplicate did nothing: send logs\\den-features-latest.txt.")
+        # the mouse, picked by Den Lite (gizmo.rs `click`, `drag`; owner 3 Nov: "clicking objects, having them
+        # highlighted, moving them around easily"): the prop under the cursor glows, a click selects it, a press and
+        # drag moves it. The selection's own place on the screen comes from Den Lite (`sel_uv`), so the test points
+        # the cursor where it truly is.
+        a = aids()
+        if "sel_uv" not in a:
+            rep.add("INFO", "the mouse: hover, click and drag", "this Den Lite is from before clicking and dragging props (3 Nov): update Den Lite")
+        else:
+            mouse_steps(rep, ui, aids, shot, with_pic, den_dir, wait)
         if newer:
             # 6. snap out: the view up and back over you (Den Lite's camera object), and back
             ui("gizmo snap")

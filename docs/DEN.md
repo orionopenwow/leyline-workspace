@@ -100,8 +100,8 @@ when sharing with friends. **Your Den** is in the launcher's side menu right und
   launcher gets it on first use (the release `den-lite-latest`, checked against its checksum, into
   `<app data>/Leyline/den-lite/bin/`), starts it, points the game at `127.0.0.1` and signs in by itself
   (`denclick.rs`: our login screen code where the game takes it, else the launcher types the local password and the
-  Enters for you), then enters the world. You stand on an open white plane (the whole tile flat and white, made by the
-  launcher at the first Den start: `host/terrain.rs`); nothing stands on it until you place something. Without Den
+  Enters for you), then enters the world. You stand on an open grass plane (the whole tile flat, the game's own grass under
+  the area's own sky since 3 Nov, made by the launcher at the first Den start: `host/terrain.rs`); nothing stands on it until you place something. Without Den
   Lite: the Docker Den's three steps on the same page (the Host pack, Docker Desktop with a short guide, Start with
   your account name), its progress, then the first starter place opens. A Docker Den that is stopped is started first;
   its account (the realm's GM name) is filled in on the login screen (`SET accountName` in Config.wtf).
@@ -425,8 +425,8 @@ PC (`dens/packs.json`) says which ones and how: "Make them from your own game fo
 
 ## Your Den's ground: Forge and the terrain delta (2026-11-01)
 
-**Built** (docs/NOGGIT-DEN-PLAN.md phases 1-3 and 5; the white ground has been tried in a real game since 2 Nov, see
-"The white ground" below in this section):
+**Built** (docs/NOGGIT-DEN-PLAN.md phases 1-3 and 5; the ground has been tried in a real game since 2 Nov, white
+until 3 Nov, grass since: see "The ground" below in this section):
 
 - **The crate** `launcher/src-tauri/terrain` (`leyline-terrain`, MIT, written from the public format notes): reads and
   writes the map tile (heights, normals made again, paint layers and their alpha maps in all three forms, holes, water,
@@ -453,13 +453,18 @@ PC (`dens/packs.json`) says which ones and how: "Make them from your own game fo
   off (no vmaps): players collide on their own client, the server needs heights.
 - **Den Lite** reads the ground's heights: `.den place`, stamps and the spawn stand on the edited ground; it notices a
   new ground file within 2 seconds.
-- **The white ground** (1 and 2 Nov, `host/terrain.rs`): the whole Den tile is flat and white, made at the first Den
-  start (older small pads are opened up), with the island's own models off it. `patch-T` carries our own white
-  texture, stored at the name of a snow texture the game already knows (a texture at a new name drew green), and,
-  from the player's own tables edited on this PC, a white sky and the zone name "Your Den". What went in is in
-  `<dens>/yourden.ground-status.json`; `den-check` (tools/den-check) reports it. The ground is the floor height 13.2
-  everywhere (the height Den Lite puts the player on, 5 cm above it since 3 Nov) and every chunk of it walkable (the
-  chunk flag "impassable" off); labs/den-lite README "Standing and walking" has the 3 Nov floating character.
+- **The ground: grass under the area's own sky** (3 Nov, owner 08:41: "make the white room instead a default Elwynn
+  ground color grass texture and give it a realm skybox for testing"; `host/terrain.rs`, `leyline-terrain`
+  `pad::PAD_TEXTURE`): the whole Den tile is flat at 13.2, every chunk walkable, the island's own models off it, painted
+  the game's own Elwynn grass **by name only** (`Tileset\Elwynn\ElwynnGrassBase.blp`; when the player's game hasn't that
+  exact name, the launcher paints the grass name their own archives list, `den_texture_name` / `pick_grass`). patch-T
+  holds the tile and our mark, nothing else: **no texture of ours and no table of the game's** (the white sky in
+  Light / LightParams / LightIntBand and the zone name "Your Den" in AreaTable, 1 to 3 Nov, are gone), so the sky and
+  the zone are the area's own. A white ground from before is painted grass at the next Den start (`pad::whiten`).
+  What went in is in `<dens>/yourden.ground-status.json` (`grass`, `texture_name`, `sky`, `area`); `den-check`
+  (tools/den-check) reports it ("grass ground: the game's own texture", "sky/area: the game's own": nothing of the
+  game's in patch-T). The room looks (`.den room white|stone|wood`, Den Lite) are unchanged: "white" is the open plane
+  with no room pieces. labs/den-lite README "Standing and walking" has the 3 Nov "can't move".
 
 ## Claude in your Den, and your companion (2026-11-01)
 

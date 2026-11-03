@@ -1,0 +1,119 @@
+{
+ "format": "leyline-den",
+ "version": 1,
+ "kind": "stamp",
+ "name": "smithy",
+ "title": "Smithy",
+ "line": "An open-air forge: the melting pot and the fire behind the work bench, the quench barrel a step from the fire, racks along the back, crates of finished weapons, coal sacks, an armour stand out front for buyers and a torch.",
+ "focus": [
+  5.0,
+  1.4
+ ],
+ "props": [
+  {
+   "entry": 19412,
+   "x": 5.2,
+   "y": 1.6,
+   "z": 0.0,
+   "yaw": 180.0
+  },
+  {
+   "entry": 180473,
+   "x": 5.23,
+   "y": -0.85,
+   "z": 0.0,
+   "yaw": 358.6
+  },
+  {
+   "entry": 176561,
+   "x": 2.41,
+   "y": 0.35,
+   "z": 0.0,
+   "yaw": 180.8
+  },
+  {
+   "entry": 201774,
+   "x": 3.67,
+   "y": 3.09,
+   "z": 0.0,
+   "yaw": 332.6
+  },
+  {
+   "entry": 19635,
+   "x": 7.17,
+   "y": -1.89,
+   "z": 0.0,
+   "yaw": 139.4
+  },
+  {
+   "entry": 19635,
+   "x": 7.17,
+   "y": 3.91,
+   "z": 0.0,
+   "yaw": 228.0
+  },
+  {
+   "entry": 180774,
+   "x": 7.9,
+   "y": 0.41,
+   "z": 0.0,
+   "yaw": 178.8
+  },
+  {
+   "entry": 202892,
+   "x": 4.32,
+   "y": -3.31,
+   "z": 0.0,
+   "yaw": 345.7
+  },
+  {
+   "entry": 202891,
+   "x": 4.09,
+   "y": -4.23,
+   "z": 0.0,
+   "yaw": 342.2
+  },
+  {
+   "entry": 1670,
+   "x": 5.4,
+   "y": -3.91,
+   "z": 0.0,
+   "yaw": 246.7
+  },
+  {
+   "entry": 92527,
+   "x": 6.96,
+   "y": 1.24,
+   "z": 0.0,
+   "yaw": 195.9
+  },
+  {
+   "entry": 184858,
+   "x": 6.65,
+   "y": 0.1,
+   "z": 0.0,
+   "yaw": 68.7
+  },
+  {
+   "entry": 26480,
+   "x": 0.64,
+   "y": -2.37,
+   "z": 0.0,
+   "yaw": 176.5
+  },
+  {
+   "entry": 180765,
+   "x": 2.29,
+   "y": 1.19,
+   "z": 1.0,
+   "yaw": 176.4
+  },
+  {
+   "entry": 180043,
+   "x": 0.55,
+   "y": 2.63,
+   "z": 0.0,
+   "yaw": 3.0
+  }
+ ]
+}

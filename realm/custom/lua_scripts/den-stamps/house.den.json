@@ -4,73 +4,126 @@
  "kind": "stamp",
  "name": "house",
  "title": "Small house",
- "line": "A cottage you walk into, furnished, with a front door and a mailbox.",
+ "line": "A cottage you walk into: a bed against the back wall with a candle by it, a table with two chairs and a book, a rug, a barrel in the corner; a lantern at the door, a mailbox and flowers.",
+ "focus": [
+  7.0,
+  0.0
+ ],
  "props": [
   {
    "entry": 19262,
-   "x": 7,
-   "y": 0,
-   "z": 0,
-   "yaw": 180,
+   "x": 7.0,
+   "y": 0.0,
+   "z": 0.0,
+   "yaw": 180.0,
    "role": "house"
   },
   {
-   "entry": 19504,
-   "x": 9,
-   "y": 2,
-   "z": 0,
-   "yaw": 0
-  },
-  {
-   "entry": 181075,
-   "x": 6,
-   "y": -1.5,
-   "z": 0,
-   "yaw": 0
-  },
-  {
-   "entry": 2413,
-   "x": 4.8,
-   "y": -1.5,
-   "z": 0,
-   "yaw": 0
-  },
-  {
-   "entry": 2413,
-   "x": 7.2,
-   "y": -1.5,
-   "z": 0,
-   "yaw": 180
-  },
-  {
-   "entry": 181396,
-   "x": 7,
-   "y": 0.5,
-   "z": 0,
-   "yaw": 0
-  },
-  {
    "entry": 179977,
-   "x": 8.5,
-   "y": -2.5,
-   "z": 0,
-   "yaw": 0
-  },
-  {
-   "entry": 179977,
-   "x": 2,
+   "x": 2.0,
    "y": 1.5,
-   "z": 0,
-   "yaw": 180,
+   "z": 0.0,
+   "yaw": 180.0,
    "role": "door"
   },
   {
    "entry": 19626,
-   "x": 2,
+   "x": 2.0,
    "y": -2.5,
-   "z": 0,
-   "yaw": 180,
+   "z": 0.0,
+   "yaw": 180.0,
    "role": "mailbox"
+  },
+  {
+   "entry": 19504,
+   "x": 8.4,
+   "y": 1.55,
+   "z": 0.0,
+   "yaw": 180.0
+  },
+  {
+   "entry": 181396,
+   "x": 6.6,
+   "y": 0.0,
+   "z": 0.0,
+   "yaw": 90.0
+  },
+  {
+   "entry": 182093,
+   "x": 6.0,
+   "y": -1.25,
+   "z": 0.0,
+   "yaw": 0.0
+  },
+  {
+   "entry": 2413,
+   "x": 4.99,
+   "y": -1.19,
+   "z": 0.0,
+   "yaw": 359.8
+  },
+  {
+   "entry": 2413,
+   "x": 7.02,
+   "y": -1.21,
+   "z": 0.0,
+   "yaw": 183.1
+  },
+  {
+   "entry": 2695,
+   "x": 5.92,
+   "y": -1.08,
+   "z": 0.8,
+   "yaw": 5.3
+  },
+  {
+   "entry": 1558,
+   "x": 6.27,
+   "y": -0.98,
+   "z": 0.8,
+   "yaw": 3.2
+  },
+  {
+   "entry": 2562,
+   "x": 5.83,
+   "y": -1.44,
+   "z": 0.8,
+   "yaw": 358.9
+  },
+  {
+   "entry": 182093,
+   "x": 9.09,
+   "y": -0.23,
+   "z": 0.0,
+   "yaw": 0.9
+  },
+  {
+   "entry": 180765,
+   "x": 9.07,
+   "y": -0.25,
+   "z": 0.8,
+   "yaw": 3.4
+  },
+  {
+   "entry": 179967,
+   "x": 9.09,
+   "y": -2.08,
+   "z": 0.0,
+   "yaw": 11.5
+  },
+  {
+   "entry": 2109,
+   "x": 0.92,
+   "y": 2.53,
+   "z": 0.0,
+   "yaw": 13.7
+  },
+  {
+   "entry": 2109,
+   "x": 0.96,
+   "y": -1.36,
+   "z": 0.0,
+   "yaw": 358.2
   }
  ]
 }

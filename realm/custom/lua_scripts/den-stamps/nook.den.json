@@ -1,0 +1,119 @@
+{
+ "format": "leyline-den",
+ "version": 1,
+ "kind": "stamp",
+ "name": "nook",
+ "title": "Reading nook",
+ "line": "A quiet corner on a rug: two high-backed chairs turned to a little table with a book and a candle, a bench, a second table of books, a lantern and potted plants.",
+ "focus": [
+  0.8,
+  0.0
+ ],
+ "props": [
+  {
+   "entry": 181396,
+   "x": 0.8,
+   "y": 0.0,
+   "z": 0.0,
+   "yaw": 90.0
+  },
+  {
+   "entry": 182093,
+   "x": 0.8,
+   "y": 0.0,
+   "z": 0.0,
+   "yaw": 15.0
+  },
+  {
+   "entry": 2489,
+   "x": -0.24,
+   "y": 0.92,
+   "z": 0.0,
+   "yaw": 321.5
+  },
+  {
+   "entry": 2489,
+   "x": -0.25,
+   "y": -0.92,
+   "z": 0.0,
+   "yaw": 37.1
+  },
+  {
+   "entry": 24538,
+   "x": 2.91,
+   "y": -0.03,
+   "z": 0.0,
+   "yaw": 177.2
+  },
+  {
+   "entry": 190689,
+   "x": 2.6,
+   "y": 2.4,
+   "z": 0.0,
+   "yaw": 0.0
+  },
+  {
+   "entry": 2695,
+   "x": 0.88,
+   "y": -0.08,
+   "z": 0.8,
+   "yaw": 20.6
+  },
+  {
+   "entry": 1558,
+   "x": 1.01,
+   "y": 0.28,
+   "z": 0.8,
+   "yaw": 7.5
+  },
+  {
+   "entry": 2695,
+   "x": 2.15,
+   "y": 2.31,
+   "z": 0.95,
+   "yaw": 356.6
+  },
+  {
+   "entry": 2695,
+   "x": 2.81,
+   "y": 2.23,
+   "z": 0.95,
+   "yaw": 6.3
+  },
+  {
+   "entry": 1558,
+   "x": 2.35,
+   "y": 1.87,
+   "z": 0.95,
+   "yaw": 352.3
+  },
+  {
+   "entry": 179977,
+   "x": 2.65,
+   "y": -2.18,
+   "z": 0.0,
+   "yaw": 1.0
+  },
+  {
+   "entry": 181087,
+   "x": -1.09,
+   "y": 2.0,
+   "z": 0.0,
+   "yaw": 355.1
+  },
+  {
+   "entry": 181087,
+   "x": 3.94,
+   "y": -1.36,
+   "z": 0.0,
+   "yaw": 20.3
+  },
+  {
+   "entry": 182593,
+   "x": 0.65,
+   "y": -1.76,
+   "z": 0.0,
+   "yaw": 342.7
+  }
+ ]
+}

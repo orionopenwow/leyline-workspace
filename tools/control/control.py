@@ -309,6 +309,8 @@ STEPS = {
     "hq-sync": ("tools/hq/HQ sync.bat", "Leyline HQ: send the recent changes and Claude's notes, fetch the owner's notes", False),
     "hqnote": ("tools/hq/HQ sync.bat", "Leyline HQ: publish Claude's notes (and sync)", False),
     "hq-inbox": ("tools/hq/HQ sync.bat", "Leyline HQ: fetch the owner's notes to Claude (and sync)", False),
+    # The commons kit (tools/commons, docs/BLANK-SLATE.md): the directory and "Make my own Leyline" check themselves.
+    "commons-check": ("tools/commons/Commons check.bat", "Commons kit check: the directory and Make my own Leyline's tests (read-only, a temp folder)", False),
 }
 # Steps that change nothing in production. With "Ask before deploys" on (control/autopilot.json "confirm"),
 # Autopilot runs only these by itself; anything else waits for "Launch all".

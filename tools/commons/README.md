@@ -35,7 +35,7 @@ your domain (or none yet) and a Discord invite (or none). They become one `brand
 {
   "format": 1,
   "name": "Emberline",
-  "colours": {"bg": "#201010", "text": "#fff0e0", "accent": "#e0602a", "accent_strong": "#e67d55"},
+  "colours": {"bg": "#201010", "text": "#fff0e0", "accent": "#e0602a", "accent_strong": "#e67d50"},
   "logo": "brand-logo.png",
   "links": {"site": "https://play.example.org", "discord": "https://discord.gg/abc", "reddit": ""}
 }

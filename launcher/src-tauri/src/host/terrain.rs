@@ -157,10 +157,11 @@ pub fn own_tile(client: &Path, tile: &TileRef) -> Result<(Vec<u8>, AlphaMode), S
     Ok((adt, alpha))
 }
 
-/// The white pad on the player's own tile (the first ground).
-/// The whole tile (owner 1 Nov 20:55: "a nearly infinite plane of flat white ground"): 533 yards a side, flat and
-/// white, the island's water, trees and buildings gone. Painted our own white texture (`pad::PAD_TEXTURE`, made by
-/// code, put in patch-T beside the tile: [`den_extras`]).
+/// The Den's first ground on the player's own tile.
+/// The whole tile (owner 1 Nov 20:55: "a nearly infinite plane of flat ... ground"): 533 yards a side, flat, the
+/// island's water, trees and buildings gone. Since 3 Nov (owner 08:41: "a default Elwynn ground color grass texture
+/// and ... a realm skybox") painted the game's own grass (`pad::PAD_TEXTURE`, a texture path the player's own game
+/// has: only its name is in the tile, see [`den_texture_name`]) under the area's normal sky.
 pub const FIRST_RING: u32 = 15;
 
 pub fn first_ground(client: &Path) -> Result<Delta, String> {
@@ -170,24 +171,26 @@ pub fn first_ground(client: &Path) -> Result<Delta, String> {
     pad::make_pad(&base, tile, p, FIRST_RING).map_err(|e| e.0)
 }
 
-// ------------------------------------------------------------------------------------------------ white everywhere
+// ------------------------------------------------------------------------------------------------ the Den's world
 /// What the Den's patch-T holds besides the tile, for the test's report (`<dens>/yourden.ground-status.json`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, serde::Deserialize)]
 pub struct GroundStatus {
-    /// Our own white texture is in patch-T and the Den's chunk is painted with it.
-    pub texture_ours: bool,
+    /// The Den's chunk is painted with the game's own grass (the name in [`GroundStatus::texture_name`]), found in
+    /// the player's own archives.
+    #[serde(default)]
+    pub grass: bool,
     /// Chunks of the tile open to the Den (256: all).
     pub open: usize,
     /// The island's own models and buildings still on the Den's tile (0: none), and every model on it (the player's
     /// own from Forge too).
     pub island_models: usize,
     pub models: usize,
-    /// "white", or why the sky is the game's own.
+    /// The sky: always the area's own since 3 Nov (no table of the game's is changed any more).
     pub sky: String,
-    /// The game's own texture name the ground is painted with (the snow tileset), when one was found.
+    /// The game's own texture name the ground is painted with, when the player's game has it.
     #[serde(default)]
     pub texture_name: Option<String>,
-    /// The zone's name the game shows ("Your Den"), or why it is the game's own.
+    /// The zone's name: the game's own (no table changed).
     pub area: String,
     pub area_id: u32,
     /// Files of ours that an archive the game reads after patch-T also has (it hides ours): "patch-Z.MPQ: ...".
@@ -198,8 +201,11 @@ pub struct GroundStatus {
 }
 
 pub const STATUS: &str = "yourden.ground-status.json";
-pub const SKY_TABLES: [&str; 3] = ["Light.dbc", "LightParams.dbc", "LightIntBand.dbc"];
-pub const AREA_TABLE: &str = "AreaTable.dbc";
+/// What the status says of the sky and the zone's name: nothing of the game's tables is in patch-T (3 Nov: the white
+/// sky and the "Your Den" zone name, the player's own Light / LightParams / LightIntBand / AreaTable edited on this PC,
+/// are gone with the white ground).
+pub const SKY: &str = "the area's own";
+pub const AREA: &str = "the game's own";
 
 pub fn status_path(den_root: &Path) -> PathBuf {
     dens::dir(den_root).join(STATUS)
@@ -227,94 +233,94 @@ fn after_slot(client: &Path) -> Vec<PathBuf> {
     v
 }
 
-/// The bytes that go in patch-T at our texture's name: a light ground texture from the player's OWN archives (a snow
-/// tileset, found through their archives' listfiles), else our own made white one. 2 Nov 02:53: the game drew our made
-/// texture (palette and DXT1 alike) as bright green, its sign for a texture it can't use; one of its own always works.
-pub fn den_texture(client: &Path) -> Vec<u8> {
-    let order = archive_order(client);
-    if let Some(n) = den_texture_name(client) {
-        if let Ok(Some(b)) = crate::mpq::read_own(&order, &n) {
-            return b;
-        }
-    }
-    pad::pad_texture()
+/// Which grass name, of a game's listfile names, the Den's ground uses when the game hasn't `pad::PAD_TEXTURE` itself:
+/// the Elwynn grass (a "grassbase" first, then the shortest name), else any tileset grass; never a specular map
+/// (`_s.blp`) or a blend. Pure, for the test.
+pub fn pick_grass<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    let mut v: Vec<String> = names
+        .into_iter()
+        .map(str::trim)
+        .filter(|n| {
+            let l = n.to_ascii_lowercase();
+            l.starts_with("tileset\\") && l.ends_with(".blp") && !l.ends_with("_s.blp") && l.contains("grass") && !l.contains("blend") && !l.contains("trans")
+        })
+        .map(String::from)
+        .collect();
+    v.sort_by_key(|n| {
+        let l = n.to_ascii_lowercase();
+        (!l.starts_with("tileset\\elwynn\\"), !l.contains("grassbase"), n.len(), l)
+    });
+    v.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+    v
 }
 
-/// The light snow ground texture of the player's own archives the Den uses (found through their listfiles), if any.
+/// The game's own grass texture the Den's ground is painted with: `pad::PAD_TEXTURE` when the player's archives have
+/// it, else the best grass name their listfiles show (`pick_grass`) that reads. None: the game has neither (the tile
+/// keeps `pad::PAD_TEXTURE`'s name; the status says so). The texture itself is never copied: the game reads its own.
 pub fn den_texture_name(client: &Path) -> Option<String> {
     let order = archive_order(client);
+    let is_blp = |n: &str| crate::mpq::read_own(&order, n).ok().flatten().is_some_and(|b| b.starts_with(b"BLP2"));
+    if is_blp(pad::PAD_TEXTURE) {
+        return Some(pad::PAD_TEXTURE.to_string());
+    }
     let mut names: Vec<String> = Vec::new();
     for p in order.iter().rev() {
         let Ok(mut a) = crate::mpq::GameArchive::open(p) else { continue };
         let Ok(Some(list)) = a.read("(listfile)") else { continue };
-        for l in String::from_utf8_lossy(&list).lines() {
-            let n = l.trim();
-            let low = n.to_ascii_lowercase();
-            if low.starts_with("tileset\\") && low.ends_with(".blp") && !low.ends_with("_s.blp") && low.contains("snow")
-                && !["rock", "dirt", "grass", "ice", "road", "path", "mud", "stone", "trans", "blend"].iter().any(|w| low.contains(w))
-            {
-                names.push(n.to_string());
-            }
-        }
+        names.extend(String::from_utf8_lossy(&list).lines().map(String::from));
     }
-    names.sort_by_key(|n| (n.len(), n.to_ascii_lowercase()));
-    names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
-    names.into_iter().take(8).find(|n| crate::mpq::read_own(&order, n).ok().flatten().is_some_and(|b| b.starts_with(b"BLP2")))
+    pick_grass(names.iter().map(String::as_str)).into_iter().take(8).find(|n| is_blp(n))
 }
 
-/// Besides the tile, what the Den's patch-T holds: our white texture; the player's own sky tables with the sky over
-/// the Den white (`leyline_terrain::dbc::white_sky`); the player's own AreaTable with the Den's zone called "Your
-/// Den". Each table only when it reads and has the shape Leyline knows: else that part is left out (the ground is
-/// still white) and the status says why. Never fails.
+/// Besides the tile, what the Den's patch-T holds: nothing of the game's (3 Nov: no texture of ours, no edited sky or
+/// zone tables). The status: the grass, the island's models gone, the sky and zone the game's own. Never fails.
 pub fn den_extras(client: &Path, d: &Delta, tile: &[u8]) -> (Vec<(String, Vec<u8>)>, GroundStatus) {
-    use leyline_terrain::dbc::{self, Dbc};
-    let made = std::env::var("LEYLINE_DEN_TEX").is_ok_and(|v| v == "made");
-    let mut files: Vec<(String, Vec<u8>)> = vec![(pad::PAD_TEXTURE.to_string(), if made { pad::pad_texture() } else { den_texture(client) })];
-    let mut st = GroundStatus { open: d.open.len(), ..Default::default() };
+    let files: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut st = GroundStatus { open: d.open.len(), sky: SKY.into(), area: AREA.into(), ..Default::default() };
     let centre = d.pad.as_ref().and_then(|p| p.centre).map(|c| (c[0], c[1])).unwrap_or((pad::DEN.0, pad::DEN.1));
-    let t = leyline_terrain::adt::Adt::parse(tile, None).ok();
-    if let Some(t) = &t {
-        st.texture_ours = leyline_terrain::locate(centre.0, centre.1).is_some_and(|(_, (r, c))| {
-            t.chunks[(r * 16 + c) as usize].layers.first().and_then(|l| t.textures.get(l.texture as usize)).is_some_and(|n| n.eq_ignore_ascii_case(pad::PAD_TEXTURE))
-        });
+    if let Ok(t) = leyline_terrain::adt::Adt::parse(tile, None) {
         st.models = t.doodads.len() + t.wmos.len();
         st.island_models = t.doodads.iter().map(|x| x.uid).chain(t.wmos.iter().map(|x| x.uid)).filter(|&u| u < delta::UID_BASE).count();
-        st.area_id = pad::area_at(t, &d.tile, centre);
+        st.area_id = pad::area_at(&t, &d.tile, centre);
     }
-    let order = archive_order(client);
-    let table = |n: &str| -> Result<Dbc, String> {
-        let b = mpq::read_own(&order, &format!("DBFilesClient\\{n}"))?.ok_or_else(|| format!("your game has no {n}"))?;
-        Dbc::parse(&b).map_err(|e| format!("{n}: {}", e.0))
-    };
-    // the den-test's variants (tools/den-check "Den test - variants.bat"): LEYLINE_DEN_SKY=0 leaves the sky as the
-    // game's own, LEYLINE_DEN_AREA=0 the zone's name (2 Nov: the ground drew green, to find which part does it)
-    let off = |k: &str| std::env::var(k).is_ok_and(|v| v == "0");
-    st.sky = if off("LEYLINE_DEN_SKY") { "the game's own (the test asked)".into() } else { match (table(SKY_TABLES[0]), table(SKY_TABLES[2])) {
-        (Ok(l), Ok(ib)) => match dbc::white_sky(&l, table(SKY_TABLES[1]).ok().as_ref(), &ib, d.tile.map, centre.0, centre.1) {
-            Ok(s) => {
-                files.push((format!("DBFilesClient\\{}", SKY_TABLES[2]), s.int_band.write()));
-                if let Some(p) = s.params {
-                    files.push((format!("DBFilesClient\\{}", SKY_TABLES[1]), p.write()));
+    let _ = client;
+    (files, st)
+}
+
+/// The tile's texture at the Den's middle (its first layer), for the status.
+fn texture_at_centre(t: &leyline_terrain::adt::Adt, d: &Delta) -> Option<String> {
+    let centre = d.pad.as_ref().and_then(|p| p.centre).map(|c| (c[0], c[1])).unwrap_or((pad::DEN.0, pad::DEN.1));
+    let (_, (r, c)) = leyline_terrain::locate(centre.0, centre.1)?;
+    t.chunks.get((r * 16 + c) as usize)?.layers.first().and_then(|l| t.textures.get(l.texture as usize)).cloned()
+}
+
+/// patch-T for this ground: the tile (its pad painted the grass name the player's game has) and our mark; the status
+/// saved beside the Den files. Returns the tile's sha256.
+fn write_den_patch(client: &Path, den_root: &Path, d: &Delta, tile: Vec<u8>, whitened: Option<String>) -> Result<(String, GroundStatus), String> {
+    let sha = sha_hex(&tile);
+    let (extras, mut st) = den_extras(client, d, &tile);
+    st.whitened = whitened;
+    let found = den_texture_name(client);
+    let tile = match leyline_terrain::adt::Adt::parse(&tile, None) {
+        Ok(mut t) => {
+            // the grass name the player's game has, where the pad says pad::PAD_TEXTURE
+            let mut renamed = false;
+            if let Some(n) = found.as_ref().filter(|n| !n.eq_ignore_ascii_case(pad::PAD_TEXTURE)) {
+                for name in t.textures.iter_mut().filter(|x| x.eq_ignore_ascii_case(pad::PAD_TEXTURE)) {
+                    *name = n.clone();
+                    renamed = true;
                 }
-                "white".into()
             }
-            Err(e) => format!("the game's own ({})", e.0),
-        },
-        (Err(e), _) | (_, Err(e)) => format!("the game's own ({e})"),
-    } };
-    st.area = if off("LEYLINE_DEN_AREA") {
-        "the game's own (the test asked)".into()
-    } else if st.area_id == 0 {
-        "the game's own (the Den's chunk has no zone)".into()
-    } else {
-        match table(AREA_TABLE).and_then(|a| dbc::rename_area(&a, st.area_id, dbc::DEN_NAME).map_err(|e| e.0)) {
-            Ok(a) => {
-                files.push((format!("DBFilesClient\\{AREA_TABLE}"), a.write()));
-                dbc::DEN_NAME.into()
-            }
-            Err(e) => format!("the game's own ({e})"),
+            let at = texture_at_centre(&t, d);
+            st.grass = found.is_some() && at.as_ref().zip(found.as_ref()).is_some_and(|(a, f)| a.eq_ignore_ascii_case(f));
+            st.texture_name = at;
+            if renamed { t.write() } else { tile }
         }
+        Err(_) => tile,
     };
+    let mut files = vec![(d.tile.adt_path(), tile)];
+    files.extend(extras);
+    // what an archive read after ours would hide
     for p in after_slot(client) {
         let Ok(mut a) = mpq::GameArchive::open(&p) else { continue };
         let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
@@ -323,47 +329,6 @@ pub fn den_extras(client: &Path, d: &Delta, tile: &[u8]) -> (Vec<(String, Vec<u8
             st.hidden_by.push(format!("{name}: {}", hit.join(", ")));
         }
     }
-    (files, st)
-}
-
-/// patch-T for this ground: the tile and [`den_extras`]; the status saved beside the Den files. Returns the tile's
-/// sha256.
-fn write_den_patch(client: &Path, den_root: &Path, d: &Delta, tile: Vec<u8>, whitened: Option<String>) -> Result<(String, GroundStatus), String> {
-    let sha = sha_hex(&tile);
-    let (extras, mut st) = den_extras(client, d, &tile);
-    st.whitened = whitened;
-    let mut extra_white: Vec<(String, Vec<u8>)> = Vec::new();
-    // the tile as the game gets it: painted with the snow texture's own name from the player's archives (2 Nov: every
-    // texture at our new name drew green, ours and theirs alike; a name the game already knows does not)
-    let tile = if std::env::var("LEYLINE_DEN_TEX").is_ok_and(|v| v == "made") {
-        tile
-    } else {
-        match (den_texture_name(client), leyline_terrain::adt::Adt::parse(&tile, None)) {
-            (Some(n), Ok(mut t)) => {
-                let mut hit = false;
-                for name in t.textures.iter_mut().filter(|x| x.eq_ignore_ascii_case(pad::PAD_TEXTURE)) {
-                    *name = n.clone();
-                    hit = true;
-                }
-                if hit {
-                    // and our white texture at that name (and its specular twin), so the known name draws white
-                    // (2 Nov 04:54: the snow name drew, as the game's own furrowed brown field)
-                    extra_white.push((n.clone(), pad::pad_texture()));
-                    if let Some(stem) = n.strip_suffix(".blp").or_else(|| n.strip_suffix(".BLP")) {
-                        extra_white.push((format!("{stem}_s.blp"), pad::pad_texture()));
-                    }
-                    st.texture_name = Some(n);
-                    t.write()
-                } else {
-                    tile
-                }
-            }
-            _ => tile,
-        }
-    };
-    let mut files = vec![(d.tile.adt_path(), tile)];
-    files.extend(extras);
-    files.extend(extra_white);
     write_patch(client, &files)?;
     if let Ok(t) = serde_json::to_string_pretty(&st) {
         let _ = crate::settings::write_atomic(&status_path(den_root), t.as_bytes());
@@ -428,7 +393,7 @@ pub fn remove_patch(client: &Path) -> Result<bool, String> {
 /// Before a Den starts: patch-T from the player's own files plus the Den's ground (none yet: nothing, and an old one
 /// taken away). Returns the tile's sha256 when one was written.
 pub fn prepare_client(client: &Path, den_root: &Path) -> Result<Option<String>, String> {
-    // the first Den start makes the white ground (before: only the first Open in Forge did, so a new Den stood on
+    // the first Den start makes the ground (before: only the first Open in Forge did, so a new Den stood on
     // the bare island inside a room of ice blocks)
     let mut d = ground_or_pad(client, den_root)?;
     let mut whitened = None;
@@ -445,11 +410,11 @@ pub fn prepare_client(client: &Path, den_root: &Path) -> Result<Option<String>, 
                     d = g;
                 }
             }
-            // a ground from before our white texture (painted the island's own, its trees and buildings standing)
+            // a ground from before the grass (painted our white or the island's own, its trees and buildings standing)
             if let Ok(Some((g, w))) = pad::whiten(&base, &d) {
                 save(den_root, &g)?;
                 d = g;
-                whitened = Some(format!("{} parts painted white, {} of the island's models taken away, {} parts put in the Den's zone, {} parts made walkable", w.repainted, w.models, w.area, w.walkable));
+                whitened = Some(format!("{} parts painted grass, {} of the island's models taken away, {} parts put in the Den's zone, {} parts made walkable", w.repainted, w.models, w.area, w.walkable));
             }
         }
     }
@@ -534,11 +499,7 @@ pub fn workspace(app: &Path, client: &Path, den_root: &Path) -> Result<(Workspac
     let err = |e: std::io::Error| format!("Couldn't get the editor's folder ready: {e}");
     fs::create_dir_all(adt.parent().unwrap()).map_err(err)?;
     crate::settings::write_atomic(&adt, &tile).map_err(err)?;
-    // our white texture where Forge finds it (its project folder comes before the game's archives)
-    let tex: PathBuf = pad::PAD_TEXTURE.split('\\').collect();
-    let tex = dir.join(tex);
-    fs::create_dir_all(tex.parent().unwrap()).map_err(err)?;
-    crate::settings::write_atomic(&tex, &den_texture(client)).map_err(err)?;
+    // the ground's grass is the game's own texture: Forge reads it from the game's archives (nothing of ours to add)
     // the ground as Forge reads it (forge/docs/DEN-MODE.md): it keeps base, open and pad from this file
     crate::settings::write_atomic(&dir.join(format!("{GROUND}.terrain.json")), flat_text.as_bytes()).map_err(err)?;
     // the tiles Forge may save: one "x,y" a line (DEN-MODE.md `--locked-tiles <file>`)
@@ -750,20 +711,20 @@ pub(crate) mod tests {
         let dens = tempfile::tempdir().unwrap();
         assert!(!ground_path(dens.path()).is_file());
         let sha = prepare_client(g.path(), dens.path()).unwrap().unwrap();
-        assert!(ground_path(dens.path()).is_file(), "the first Den start makes the white ground");
+        assert!(ground_path(dens.path()).is_file(), "the first Den start makes the ground");
         let d = ground_or_pad(g.path(), dens.path()).unwrap();
         assert_eq!(d.open.len(), 256, "the whole tile");
         let a = fs::read(g.path().join("Data").join(SLOT)).unwrap();
         let tile = mpq::read(&a, &d.tile.adt_path()).unwrap();
         assert_eq!(sha_hex(&tile), sha);
         let list = String::from_utf8(mpq::read(&a, "(listfile)").unwrap()).unwrap();
-        assert_eq!(list.lines().count(), 3, "the tile, our white texture and our mark, nothing else (this game has no tables to read): {list}");
-        let blp = mpq::read(&a, pad::PAD_TEXTURE).unwrap();
-        assert_eq!(blp, pad::pad_texture(), "our own texture, made by code");
+        assert_eq!(list.lines().count(), 2, "the tile and our mark, nothing else: no texture, no table of the game's: {list}");
+        assert!(mpq::read(&a, pad::PAD_TEXTURE).is_none() && mpq::read(&a, pad::WHITE_TEXTURE).is_none());
         let st = last_status(dens.path()).unwrap();
-        assert!(st.texture_ours && st.open == 256 && st.island_models == 0);
-        assert!(st.sky.starts_with("the game's own (your game has no Light.dbc"), "{}", st.sky);
-        assert!(st.area.starts_with("the game's own"), "{}", st.area);
+        assert!(st.open == 256 && st.island_models == 0);
+        assert!(!st.grass, "this synthetic game has no grass texture: said");
+        assert_eq!(st.texture_name.as_deref(), Some(pad::PAD_TEXTURE), "the tile names the game's own grass");
+        assert_eq!((st.sky.as_str(), st.area.as_str()), (SKY, AREA));
         let t = Adt::parse(&tile, Some(AlphaMode::Small)).unwrap();
         let ground = pad::Ground::from_delta(&d).unwrap();
         assert!((ground.height_at(pad::DEN.0, pad::DEN.1).unwrap() - pad::DEN.2).abs() < 0.01);
@@ -827,49 +788,75 @@ pub(crate) mod tests {
         g
     }
 
-    #[test]
-    fn the_den_is_white_all_round_from_the_players_own_tables() {
-        use leyline_terrain::dbc::{self, Dbc};
-        let g = game_with_tables(15);
-        let dens = tempfile::tempdir().unwrap();
-        prepare_client(g.path(), dens.path()).unwrap().unwrap();
-        let st = last_status(dens.path()).unwrap();
-        assert_eq!((st.sky.as_str(), st.area.as_str(), st.area_id), ("white", "Your Den", 876), "{st:?}");
-        assert!(st.texture_ours && st.island_models == 0 && st.models == 0 && st.hidden_by.is_empty(), "{st:?}");
-        let a = fs::read(g.path().join("Data").join(SLOT)).unwrap();
-        let ib = Dbc::parse(&mpq::read(&a, "DBFilesClient\\LightIntBand.dbc").unwrap()).unwrap();
-        assert_eq!(ib.records.len(), 18, "the player's own rows, none added");
-        assert_eq!(Dbc::get(ib.row(12 * 18 - 17 + 3).unwrap(), 18), dbc::WHITE, "the sky white");
-        assert_eq!(Dbc::get(ib.row(12 * 18 - 17 + 3).unwrap(), 19), 0);
-        let lp = Dbc::parse(&mpq::read(&a, "DBFilesClient\\LightParams.dbc").unwrap()).unwrap();
-        assert_eq!(Dbc::get(lp.row(12).unwrap(), 2), 0, "no skybox model");
-        assert!(mpq::read(&a, "DBFilesClient\\Light.dbc").is_none(), "Light.dbc itself is only read");
-        let at = Dbc::parse(&mpq::read(&a, "DBFilesClient\\AreaTable.dbc").unwrap()).unwrap();
-        assert_eq!(dbc::area_name(&at, 876).as_deref(), Some("Your Den"));
-        let t = Adt::parse(&mpq::read(&a, &pad::den_tile().adt_path()).unwrap(), None).unwrap();
-        assert!(t.doodads.is_empty() && t.m2_names.is_empty() && t.chunks.iter().all(|c| c.refs.is_empty() && c.area == 876), "the tree went");
-        // after Forge: the same extras again
-        assert!(after_change(g.path(), dens.path(), None).is_empty());
-        let a = fs::read(g.path().join("Data").join(SLOT)).unwrap();
-        assert!(mpq::read(&a, "DBFilesClient\\AreaTable.dbc").is_some() && mpq::read(&a, pad::PAD_TEXTURE).is_some());
-        // an archive the game reads after ours with one of our files: said
-        fs::write(g.path().join("Data/patch-Z.MPQ"), mpq::build(&[("DBFilesClient\\AreaTable.dbc".into(), b"x".to_vec())]).unwrap()).unwrap();
-        prepare_client(g.path(), dens.path()).unwrap();
-        assert_eq!(last_status(dens.path()).unwrap().hidden_by, vec!["patch-Z.MPQ: DBFilesClient\\AreaTable.dbc".to_string()]);
-        // a Light table of another shape: the sky is left as it is, the rest still goes in
-        let g2 = game_with_tables(14);
-        let dens2 = tempfile::tempdir().unwrap();
-        prepare_client(g2.path(), dens2.path()).unwrap();
-        let st = last_status(dens2.path()).unwrap();
-        assert!(st.sky.starts_with("the game's own (Light.dbc has 14 fields"), "{}", st.sky);
-        assert_eq!(st.area, "Your Den");
-        let a = fs::read(g2.path().join("Data").join(SLOT)).unwrap();
-        assert!(mpq::read(&a, "DBFilesClient\\LightIntBand.dbc").is_none());
+    /// The synthetic game with the game's own grass texture in its archives, at `name`.
+    fn with_grass(g: &tempfile::TempDir, name: &str) {
+        fs::write(g.path().join("Data/patch-2.MPQ"), mpq::build(&[(name.to_string(), pad::pad_texture())]).unwrap()).unwrap();
     }
 
     #[test]
-    fn a_ground_from_before_is_made_white_at_the_next_start() {
+    fn the_den_is_grass_under_the_areas_own_sky_with_no_table_changed() {
+        // owner 3 Nov 08:41: "a default Elwynn ground color grass texture and ... a realm skybox": the game's own grass
+        // by name, its own sky and zone; nothing of the game's tables (or a texture) in patch-T
         let g = game_with_tables(15);
+        with_grass(&g, pad::PAD_TEXTURE);
+        let dens = tempfile::tempdir().unwrap();
+        prepare_client(g.path(), dens.path()).unwrap().unwrap();
+        let st = last_status(dens.path()).unwrap();
+        assert_eq!((st.sky.as_str(), st.area.as_str(), st.area_id), (SKY, AREA, 876), "{st:?}");
+        assert!(st.grass && st.texture_name.as_deref() == Some(pad::PAD_TEXTURE), "{st:?}");
+        assert!(st.island_models == 0 && st.models == 0 && st.hidden_by.is_empty(), "{st:?}");
+        let a = fs::read(g.path().join("Data").join(SLOT)).unwrap();
+        let list = String::from_utf8(mpq::read(&a, "(listfile)").unwrap()).unwrap();
+        assert!(!list.to_ascii_lowercase().contains("dbfilesclient"), "no table of the game's: {list}");
+        assert!(mpq::read(&a, pad::PAD_TEXTURE).is_none(), "the grass is the game's own, never copied");
+        let t = Adt::parse(&mpq::read(&a, &pad::den_tile().adt_path()).unwrap(), None).unwrap();
+        assert!(t.doodads.is_empty() && t.m2_names.is_empty() && t.chunks.iter().all(|c| c.refs.is_empty() && c.area == 876), "the tree went");
+        assert!(t.chunks.iter().all(|c| t.textures[c.layers[0].texture as usize] == pad::PAD_TEXTURE), "every chunk the grass");
+        // after Forge: the same again
+        assert!(after_change(g.path(), dens.path(), None).is_empty());
+        // an archive the game reads after ours with the Den's tile: said
+        fs::write(g.path().join("Data/patch-Z.MPQ"), mpq::build(&[(pad::den_tile().adt_path(), b"x".to_vec())]).unwrap()).unwrap();
+        prepare_client(g.path(), dens.path()).unwrap();
+        assert_eq!(last_status(dens.path()).unwrap().hidden_by, vec![format!("patch-Z.MPQ: {}", pad::den_tile().adt_path())]);
+    }
+
+    #[test]
+    fn a_game_with_its_grass_under_another_name_gets_that_name() {
+        let g = game_with_tables(15);
+        with_grass(&g, "Tileset\\Elwynn\\ElwynnGrass01.blp");
+        let dens = tempfile::tempdir().unwrap();
+        prepare_client(g.path(), dens.path()).unwrap();
+        let st = last_status(dens.path()).unwrap();
+        assert!(st.grass && st.texture_name.as_deref() == Some("Tileset\\Elwynn\\ElwynnGrass01.blp"), "{st:?}");
+        let a = fs::read(g.path().join("Data").join(SLOT)).unwrap();
+        let t = Adt::parse(&mpq::read(&a, &pad::den_tile().adt_path()).unwrap(), None).unwrap();
+        assert!(t.textures.iter().any(|n| n == "Tileset\\Elwynn\\ElwynnGrass01.blp") && !t.textures.iter().any(|n| n == pad::PAD_TEXTURE));
+        // the ground file keeps the one name; only the tile the game gets has the player's
+        assert_eq!(load(dens.path()).unwrap().unwrap().pad.unwrap().texture, pad::PAD_TEXTURE);
+    }
+
+    #[test]
+    fn the_grass_name_picked_from_a_games_list() {
+        let names = [
+            "Tileset\\Snow\\SnowBase.blp",
+            "Tileset\\Elwynn\\ElwynnGrassBase_s.blp",
+            "Tileset\\Barrens\\BarrensGrass.blp",
+            "Tileset\\Elwynn\\ElwynnGrassFlowers02.blp",
+            "Tileset\\Elwynn\\ElwynnGrassBase.blp",
+            "Tileset\\Elwynn\\ElwynnGrassBlend.blp",
+            "World\\Elwynn\\Grass.blp",
+        ];
+        assert_eq!(
+            pick_grass(names),
+            vec!["Tileset\\Elwynn\\ElwynnGrassBase.blp", "Tileset\\Elwynn\\ElwynnGrassFlowers02.blp", "Tileset\\Barrens\\BarrensGrass.blp"]
+        );
+        assert!(pick_grass(["Tileset\\Snow\\SnowBase.blp"]).is_empty());
+    }
+
+    #[test]
+    fn a_ground_from_before_is_made_grass_at_the_next_start() {
+        let g = game_with_tables(15);
+        with_grass(&g, pad::PAD_TEXTURE);
         let dens = tempfile::tempdir().unwrap();
         // the ground as the launcher made it before: the whole tile, painted the island's own texture, the tree kept
         let (base, _) = own_tile(g.path(), &pad::den_tile()).unwrap();
@@ -881,8 +868,8 @@ pub(crate) mod tests {
         let d = load(dens.path()).unwrap().unwrap();
         assert_eq!(d.pad.as_ref().unwrap().texture, pad::PAD_TEXTURE);
         let st = last_status(dens.path()).unwrap();
-        assert!(st.texture_ours && st.island_models == 0, "{st:?}");
-        assert!(st.whitened.as_deref().is_some_and(|w| w.starts_with("256 parts painted white, 1 of the island's models")), "{:?}", st.whitened);
+        assert!(st.grass && st.island_models == 0, "{st:?}");
+        assert!(st.whitened.as_deref().is_some_and(|w| w.starts_with("256 parts painted grass, 1 of the island's models")), "{:?}", st.whitened);
         // the start after: nothing more to do
         prepare_client(g.path(), dens.path()).unwrap();
         assert!(last_status(dens.path()).unwrap().whitened.is_none());

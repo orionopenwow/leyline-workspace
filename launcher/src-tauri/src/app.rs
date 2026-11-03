@@ -1053,7 +1053,7 @@ pub fn den_play_cli(cli: crate::denclick::Cli) -> i32 {
         Ok((p, st)) => (p.message, st),
         Err(e) => return fail(e),
     };
-    // the white ground (host/terrain.rs patch-T) while the game runs: for the test's report
+    // the Den's ground (host/terrain.rs patch-T: the game's own grass) while the game runs: for the test's report
     let ground = crate::host::terrain::slot(&game).map(|(_, ours)| ours).unwrap_or(false);
     let out = den_watch(st, cli.test.then_some(cli.hold), None);
     if cli.test && !was {

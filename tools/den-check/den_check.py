@@ -85,7 +85,7 @@ MILESTONES = [
     ("world_auth", "joined Your Den"),
     ("char_enum", "character select"),
     ("player_login", "Enter World"),
-    ("in_world", "in the world (the white island)"),
+    ("in_world", "in the world (your Den)"),
     ("first_move", "first movement from the game (landing, turning or walking)"),
     ("builder_ready", "the Leyline UI's Den panel and Builder answered"),
     ("den_ui", "the Den bar opened (Build, Shape ground, Play, Save, Invite)"),
@@ -1062,51 +1062,229 @@ def den_lite_update(rep, root, fetch=_fetch):
 # ------------------------------------------------------------------------------------------------ test
 
 DEN_TEXTURE = "Tileset\\Leyline\\DenWhite.blp"
+# the Den's ground since 3 Nov (owner 08:41: "a default Elwynn ground color grass texture and ... a realm skybox"): the
+# game's own grass by name (launcher terrain crate pad.rs PAD_TEXTURE), the area's own sky, no table of the game's
+GRASS = "Tileset\\Elwynn\\ElwynnGrassBase.blp"
 
 
 def blp_is_ours(b):
-    """Our white texture (launcher terrain crate blp.rs): BLP2, type 1, palette, no alpha, mips; the palette's first
-    colour white and every pixel using it."""
+    """Our old white texture (launcher terrain crate blp.rs): BLP2, type 1, palette, no alpha, mips; the palette's
+    first colour white and every pixel using it."""
     if not b or len(b) < 1172 or b[:4] != b"BLP2":
         return False
     kind, comp, depth, _atype, mips, w, h = struct.unpack_from("<IBBBBII", b, 4)
     off0, size0 = struct.unpack_from("<I", b, 20)[0], struct.unpack_from("<I", b, 84)[0]
-    # our made one (palette or DXT1), or the light snow texture from the player's own archives the launcher puts at
-    # our name (2 Nov: the game drew the made ones green): any whole BLP2 with mips
+    # our made one (palette or DXT1), or the light snow texture from the player's own archives the launcher put at
+    # our name (2 Nov): any whole BLP2 with mips
     return kind == 1 and comp in (1, 2, 3) and mips in (1, 2) and w > 0 and h > 0 and off0 >= 148 and len(b) >= off0 + size0
+
+
+def patch_extras(names):
+    """Of patch-T's file names, what isn't the tile or our mark: the game's tables (the old white sky and zone name)
+    and textures (the old white ground). Since 3 Nov there should be none."""
+    out = []
+    for n in names:
+        low = n.lower()
+        if low.startswith("dbfilesclient\\") or low.endswith(".blp"):
+            out.append(n)
+    return out
 
 
 def ground_lines(rep, detail, patch_t=None):
     """The Den's world, from the launcher's report (`ground_detail`, host/terrain.rs GroundStatus) and our patch-T:
-    the white texture is ours, nothing of the island stands on the tile, the sky and the zone's name. Only the
-    picture shows what the game drew."""
+    the ground painted the game's own grass (only its name in the tile), nothing of the island on the tile, nothing
+    of the game's tables or textures in patch-T (the area's own sky and zone name). Only the picture shows what the
+    game drew."""
     if not isinstance(detail, dict) or not detail:
         rep.add("INFO", "the Den's world", "the launcher doesn't say (an older launcher)")
         return
-    tex = None
-    if patch_t is not None:
-        try:
-            tex = mpqlite.Archive(str(patch_t)).read(DEN_TEXTURE)
-        except Exception:  # noqa: BLE001 - read below as "not there"
-            tex = None
-    ours = bool(detail.get("texture_ours")) and (patch_t is None or blp_is_ours(tex))
-    rep.ok(ours, "white ground texture is ours",
-           "%s in Data\\patch-T.MPQ, made by the launcher (not a game file)" % DEN_TEXTURE if ours else
-           "the Den's chunk isn't painted with it" if not detail.get("texture_ours") else "it isn't in Data\\patch-T.MPQ",
-           "Start My Den once more (it paints the ground again); still not: send this log.")
+    if "grass" not in detail:
+        rep.add("INFO", "the Den's ground", "an older launcher: the white ground (sky: %s, area: %s); update the launcher for the grass" %
+                (detail.get("sky", "?"), detail.get("area", "?")))
+    else:
+        name = detail.get("texture_name") or GRASS
+        rep.ok(bool(detail.get("grass")), "grass ground: the game's own texture",
+               "%s, from your own game (only its name is in the Den's tile)" % name if detail.get("grass") else
+               "your game hasn't a grass texture Leyline knows (the tile names %s)" % name,
+               "Send this log: it says which grass name your game has.")
     left = int(detail.get("island_models", -1))
     mine = int(detail.get("models", 0)) - max(left, 0)
     rep.ok(left == 0, "no buildings/trees on the Den tile",
            ("the island's models are gone" + (", %d of yours stay" % mine if mine > 0 else "")) if left == 0 else "%s of the island's models still stand" % left,
            "Send this log (the launcher should take them off at the start).")
-    sky, area = str(detail.get("sky", "")), str(detail.get("area", ""))
-    good = sky == "white" and area == "Your Den"
-    rep.ok(good, "sky/area: Your Den", "white sky, the zone called Your Den (the picture shows it)" if good else "sky: %s; area: %s" % (sky or "?", area or "?"),
-           "The ground is still white. Send this log: it says why the sky or the name stayed the game's own.")
+    if patch_t is not None:
+        try:
+            extra = patch_extras(mpqlite.Archive(str(patch_t)).names())
+            err = None
+        except Exception as e:  # noqa: BLE001 - said below
+            extra, err = [], str(e)[:120]
+        if err:
+            rep.add("FAIL", "sky/area: the game's own", "Data\\patch-T.MPQ couldn't be read: %s" % err, "Start My Den once more; still not: send this log.")
+        else:
+            rep.ok(not extra, "sky/area: the game's own",
+                   "the area's normal sky and zone name: no table or texture of the game's in Data\\patch-T.MPQ" if not extra else
+                   "Data\\patch-T.MPQ still has %s" % ", ".join(extra[:4]),
+                   "An older launcher made it: update the launcher and start My Den once more.")
+    else:
+        rep.add("INFO", "sky/area", "sky: %s; zone: %s" % (detail.get("sky", "?"), detail.get("area", "?")))
     for h in detail.get("hidden_by") or []:
         rep.add("INFO", "an archive read after the Den's hides part of it", str(h)[:200])
     if detail.get("whitened"):
-        rep.add("INFO", "your Den's ground from before", "made white: %s" % str(detail["whitened"])[:200])
+        rep.add("INFO", "your Den's ground from before", "made grass: %s" % str(detail["whitened"])[:200])
+
+
+# ------------------------------------------------------------------------------------------------ keys: two ways
+# 3 Nov: the game sent no movement at all, on the launcher's posted keys (denclick.rs PostMessage WM_KEYDOWN) and on
+# the owner's own W. The test now also presses W the way a keyboard does (SendInput, scan codes, the game in front),
+# asks the Leyline UI for its view before and after (Den Lite `.den diag`), and says which way moved the character.
+SCAN_W = 0x11
+SCAN_UP = 0x48
+KEYEVENTF_EXTENDEDKEY = 0x0001
+KEYEVENTF_KEYUP = 0x0002
+KEYEVENTF_SCANCODE = 0x0008
+
+
+def key_events(scan, extended=False):
+    """One key press as SendInput events: (scan code, flags) down, then up."""
+    base = KEYEVENTF_SCANCODE | (KEYEVENTF_EXTENDEDKEY if extended else 0)
+    return [(scan, base), (scan, base | KEYEVENTF_KEYUP)]
+
+
+def diag_blocks(evs):
+    """The Leyline UI's answers (addon events `wudiag ...`), grouped by the tag of the ask they answer (`at:<tag>`;
+    lines before any tag: "login")."""
+    out, tag = {}, "login"
+    for e in evs:
+        d = str(e.get("detail", ""))
+        if e.get("ev") != "addon" or not d.startswith("wudiag "):
+            continue
+        d = d[7:]
+        if d.startswith("at:"):
+            tag = d[3:].strip() or "?"
+            out.setdefault(tag, [])
+            continue
+        out.setdefault(tag, []).append(d)
+    return out
+
+
+def moves_of(answer):
+    """How many movement packets Den Lite has seen from the game, from a `.den where` answer (test-out's `me`)."""
+    me = answer.get("me") if isinstance(answer, dict) else None
+    return int(me.get("moves", 0)) if isinstance(me, dict) else None
+
+
+def method_lines(rep, posted_moved, sent, before, after, blocks, evs):
+    """Which way of pressing W moved the character, and the UI's view before and after.
+    posted_moved: the launcher's posted keys moved it (Den Lite saw movement before this check); sent: what the
+    SendInput press did ("" when it couldn't run, with why); before/after: Den Lite's movement count around it."""
+    rep.add("INFO", "keys: posted to the window (the launcher)", "the game moved" if posted_moved else "no movement from the game")
+    if sent:
+        rep.add("INFO", "keys: pressed (SendInput, the game in front)", sent)
+    elif before is None or after is None:
+        rep.add("INFO", "keys: pressed (SendInput, the game in front)", "Den Lite didn't answer `.den where` around it")
+    else:
+        moved = after > before
+        rep.ok(moved or posted_moved, "keys: pressed (SendInput, the game in front)",
+               "the game moved: %d movement packets" % (after - before) if moved else "no movement from the game either",
+               "Neither way of pressing W moves the character: the game itself holds it. Send logs\\den-test-latest.txt "
+               "and the screenshot (the lines below say what the game sent and what the Leyline UI saw).")
+    for tag in ("before", "after"):
+        for line in blocks.get(tag, [])[:6]:
+            rep.add("INFO", "the game says (%s)" % tag, line[:200])
+    ops = [str(e.get("detail", "")) for e in evs if e.get("ev") == "client_op"]
+    if ops:
+        rep.add("INFO", "what the game sent in the world", ", ".join(ops)[:300])
+    ts = [e for e in evs if e.get("ev") == "time_sync"]
+    rep.add("INFO", "time sync", str(ts[0].get("detail")) if ts else "the game never answered the time sync")
+
+
+def game_window(pid):
+    """The game's main window (class GxWindowClass*) by process id (Windows), or None."""
+    if os.name != "nt":
+        return None
+    import ctypes
+    from ctypes import wintypes
+    u = ctypes.windll.user32
+    found = []
+    proto = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def each(h, _lp):
+        p = wintypes.DWORD()
+        u.GetWindowThreadProcessId(h, ctypes.byref(p))
+        buf = ctypes.create_unicode_buffer(64)
+        u.GetClassNameW(h, buf, 64)
+        if p.value == int(pid) and u.IsWindowVisible(h) and buf.value.startswith("GxWindowClass"):
+            found.append(h)
+            return False
+        return True
+    u.EnumWindows(proto(each), 0)
+    return found[0] if found else None
+
+
+def send_input_keys(pid, hold_ms=900):
+    """W, then the up arrow, as a keyboard sends them (SendInput, scan codes), with the game's window brought to the
+    front first. Returns "" when the presses went in, else why they couldn't."""
+    if os.name != "nt":
+        return "SendInput is on Windows only"
+    import ctypes
+    from ctypes import wintypes
+    u = ctypes.windll.user32
+    h = game_window(pid)
+    if not h:
+        return "the game's window wasn't found"
+
+    class KEYBDINPUT(ctypes.Structure):
+        _fields_ = [("wVk", wintypes.WORD), ("wScan", wintypes.WORD), ("dwFlags", wintypes.DWORD), ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+    class MOUSEINPUT(ctypes.Structure):
+        _fields_ = [("dx", wintypes.LONG), ("dy", wintypes.LONG), ("mouseData", wintypes.DWORD), ("dwFlags", wintypes.DWORD), ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+    class _U(ctypes.Union):
+        _fields_ = [("ki", KEYBDINPUT), ("mi", MOUSEINPUT)]
+
+    class INPUT(ctypes.Structure):
+        _fields_ = [("type", wintypes.DWORD), ("u", _U)]
+
+    def press(events):
+        n = 0
+        for scan, flags in events:
+            i = INPUT(type=1, u=_U(ki=KEYBDINPUT(wVk=0, wScan=scan, dwFlags=flags, time=0, dwExtraInfo=0)))
+            n += u.SendInput(1, ctypes.byref(i), ctypes.sizeof(INPUT))
+        return n
+
+    # Windows lets a program take the foreground only after a key press of its own: a bare Alt first
+    alt = 0x38
+    press([(alt, KEYEVENTF_SCANCODE), (alt, KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP)])
+    u.ShowWindow(h, 9)
+    u.SetForegroundWindow(h)
+    time.sleep(0.4)
+    if u.GetForegroundWindow() != h:
+        return "the game's window couldn't be brought to the front"
+    sent = 0
+    for scan, ext in ((SCAN_W, False), (SCAN_UP, True)):
+        down, up = key_events(scan, ext)
+        sent += press([down])
+        time.sleep(hold_ms / 1000)
+        sent += press([up])
+        time.sleep(0.3)
+    return "" if sent == 4 else "SendInput took %d of 4 key events (another program may block input)" % sent
+
+
+def keys_check(rep, den_dir, pid, start, ch=None, press=send_input_keys, wait=2.5):
+    """The second way of pressing W, Den Lite's movement count around it and the UI's view before and after."""
+    ch = ch or FileChannel(den_dir)
+    evs = events(den_dir, start)
+    posted_moved = any(e.get("ev") in ("first_move", "walked") for e in evs)
+    ch.send(".den diag before", wait=5.0)
+    time.sleep(1.0)
+    before = moves_of(ch.send(".den where", wait=5.0))
+    why = press(pid)
+    time.sleep(wait)
+    after = moves_of(ch.send(".den where", wait=5.0))
+    ch.send(".den diag after", wait=5.0)
+    time.sleep(1.5)
+    evs = events(den_dir, start)
+    method_lines(rep, posted_moved, why, before, after, diag_blocks(evs), evs)
 
 
 def test(args, rep):
@@ -1173,6 +1351,10 @@ def test(args, rep):
         except Exception as e:  # noqa: BLE001 - the smoke test still runs
             steps.add("FAIL", "walking", "the check stopped: %s" % str(e)[:200], "Send logs\\den-test-latest.txt.")
         try:
+            keys_check(steps, den_dir, pid, rpt["start"])
+        except Exception as e:  # noqa: BLE001 - the smoke test still runs
+            steps.add("INFO", "keys: pressed (SendInput)", "the check stopped: %s" % str(e)[:200])
+        try:
             secrets = den_steps(steps, FileChannel(den_dir), den_dir, root, marks, rpt["start"])
         except Exception as e:  # noqa: BLE001 - the game still gets its picture and is closed
             steps.add("FAIL", "the Den's smoke test", "stopped: %s" % str(e)[:200], "Send logs\\den-test-latest.txt.")
@@ -1194,9 +1376,9 @@ def test(args, rep):
         rep.add("INFO", "the launcher said", str(rpt.get("launch"))[:300])
         if rpt.get("addons"):
             rep.add("INFO", "Leyline addons", str(rpt.get("addons"))[:200])
-        rep.ok(bool(rpt.get("ground")), "the white ground (the open plane) was put in the game",
+        rep.ok(bool(rpt.get("ground")), "the Den's ground (the open grass plane) was put in the game",
                "your Den's ground in Data/patch-T.MPQ",
-               "The launcher couldn't make your Den's white ground: see 'the launcher said' above and send this log.")
+               "The launcher couldn't make your Den's ground: see 'the launcher said' above and send this log.")
         data = find_ci(Path(c["path"]), "Data")
         ground_lines(rep, rpt.get("ground_detail"), find_ci(data, "patch-T.MPQ") if data else None)
     crcs = [e for e in events(den_dir, rpt["start"]) if e.get("ev") == "addon_crcs"]

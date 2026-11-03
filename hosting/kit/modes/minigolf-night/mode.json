@@ -1,0 +1,46 @@
+{
+ "format": "leyline-mode",
+ "schema": 1,
+ "id": "minigolf-night",
+ "name": "Minigolf night",
+ "line": "Minigolf on courses players built, plus Bumper Balls and Coin Dash. Bring your party.",
+ "picture": "picture.svg",
+ "version": "1.0",
+ "author": "Leyline",
+ "based_on": null,
+ "status": "live",
+ "profile": "dalaran",
+ "scripts": [
+  "ov_golf.lua",
+  "ov_modes.lua",
+  "ov_playmode.lua",
+  "ov_qol.lua"
+ ],
+ "env": {},
+ "mods": [
+  "mode:minigolf",
+  "mode:bumper-balls",
+  "mode:coin-dash"
+ ],
+ "den": null,
+ "tags": [
+  "hangout"
+ ],
+ "settings": [
+  {
+   "key": "hub",
+   "label": "Hub teleports",
+   "help": "Quick trips to the arenas around the city.",
+   "type": "toggle",
+   "default": true,
+   "env": "OV_QOL_HUB"
+  },
+  {
+   "key": "duel_reset",
+   "label": "Duels reset health",
+   "type": "toggle",
+   "default": true,
+   "env": "OV_DUEL_RESET"
+  }
+ ]
+}

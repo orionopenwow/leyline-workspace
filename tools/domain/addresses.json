@@ -1,0 +1,9 @@
+{
+  "_doc": "Leyline's public addresses: the one list (docs/DOMAIN-MOVE.md). new = the name players read; old = the name already-installed launchers, host packs and desktop clients still call, which answers forever. tools/domain/test_domain.py checks every component's own copy against this file.",
+  "site":  {"new": "leylinelauncher.com",       "old": "play.openvanilla.app"},
+  "game":  {"new": "play.leylinelauncher.com",  "old": "wrath.openvanilla.app"},
+  "relay": {"new": "relay.leylinelauncher.com", "old": "relay.openvanilla.app"},
+  "www":   {"new": "www.leylinelauncher.com",   "to": "leylinelauncher.com"},
+  "realmlist": {"new": "leylinelauncher.com",   "old": "play.openvanilla.app"},
+  "survivors": {"new": "survivors.leylinelauncher.com", "_doc": "Azeroth Survivors' own address (docs/SURVIVORS.md), only once it goes live; no old name. hosting/survivors/address.txt says the same (tested)."}
+}

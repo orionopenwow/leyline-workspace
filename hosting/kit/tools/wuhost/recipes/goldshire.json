@@ -1,0 +1,12 @@
+{
+ "format": "leyline-pack-recipe",
+ "version": 1,
+ "id": "goldshire",
+ "title": "Goldshire",
+ "line": "The village by the inn: its land for your Den's server, and the doodads around the inn as Den props.",
+ "comment": "Map 0 (Eastern Kingdoms) around the Lion's Pride Inn (game_tele 435, -9448.55, 68.24, 56.32): grid tiles 49-50 x 31-32. The layout takes the doodads within 28 yards of the inn's door that have a GameObjectDisplayInfo row (lamp posts, barrels, crates, fences, carts), positions from the inn. Their facing is to verify in game.",
+ "tiles": [{"map": 0, "box": [-9700, -9200, -200, 300]}],
+ "deps": true,
+ "layout": {"centre": [-9448.55, 68.24, 56.32], "radius": 28, "max": 150},
+ "limits": {"files": 3000, "mb": 200}
+}

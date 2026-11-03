@@ -1,0 +1,4 @@
+{
+ "about": "The PUBLIC half of the Leyline release key (docs/RESILIENCE.md). Must equal launcher/branding.json release_log.public_key. Empty: relays and host agents keep no release log.",
+ "public_key": ""
+}

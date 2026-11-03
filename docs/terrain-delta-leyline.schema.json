@@ -1,0 +1,396 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leyline.local/schemas/terrain-delta-leyline.schema.json",
+  "title": "Leyline terrain delta, Leyline's own form (the Den's ground file)",
+  "description": "The form leyline-terrain keeps as the Den's ground (<dens>/yourden.terrain.json, written by the launcher, read by Den Lite and by every launcher that rebuilds the tile). Same format name and version as docs/terrain-delta.schema.json (Forge's form, which the crate also reads and writes: leyline_terrain::flat); this one adds what Forge's form can't carry yet: the tile's map folder, removing models (models is the complete list), more than one water layer and per-vertex water, a WMO's bounds and doodad set, ground effects, and chunks that list only what changed. To reconcile into one schema: owner's call. A Den's ground as numbers and file names only (docs/NOGGIT-DEN-PLAN.md 2.5). Each player's launcher rebuilds the map tile from their OWN game files plus this file (leyline-terrain apply); the file never holds a byte of a game file. Read by a strict parser (unknown keys refused), never run, at most 4 MB. Written by leyline-terrain diff (the launcher, after Forge closes) and by Forge. Base64 is standard (RFC 4648, with padding). Chunk index i = row * 16 + column (the order of the tile's chunk table; row = the chunk's IndexY, column = its IndexX). A chunk that is the same as the base is left out; a key left out of a chunk means 'as the base'.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "version",
+    "tile",
+    "open"
+  ],
+  "properties": {
+    "format": {
+      "const": "leyline-terrain"
+    },
+    "version": {
+      "const": 1
+    },
+    "base": {
+      "description": "What the tile is made from: 'own' = the tile from the player's own game files (the default); 'blank' = a flat empty tile made by leyline-terrain; 'pack:<id>' = a pack's land (later).",
+      "type": "string",
+      "pattern": "^(own|blank|pack:[a-z0-9][a-z0-9-]{0,23})$"
+    },
+    "tile": {
+      "description": "Which map tile: the map's id, its folder name under World/Maps, and the two numbers of the tile's file name in order (<dir>_<x>_<y>.adt). The Den is map 1, dir Kalimdor, x 1, y 1.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "map",
+        "dir",
+        "x",
+        "y"
+      ],
+      "properties": {
+        "map": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "dir": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_ '-]{1,64}$"
+        },
+        "x": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 63
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 63
+        }
+      }
+    },
+    "open": {
+      "description": "The chunks that may differ from the base (0-255). apply refuses a delta whose chunks lie outside this list. The Den's white pad is 4 chunks; each 'Make the Den bigger' adds a ring.",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 255
+      },
+      "maxItems": 256,
+      "uniqueItems": true
+    },
+    "pad": {
+      "description": "How the white pad was made (kept for the next ring): its floor height in world yards and its texture.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "height",
+        "texture"
+      ],
+      "properties": {
+        "height": {
+          "type": "number"
+        },
+        "texture": {
+          "$ref": "#/$defs/path"
+        },
+        "centre": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "world x, y the pad grows around"
+        }
+      }
+    },
+    "origin": {
+      "description": "World x, y, z that model positions are relative to (the Den's middle, so a template can move). Default [0, 0, 0]: positions are world coordinates.",
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "chunks": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/chunk"
+      }
+    },
+    "models": {
+      "description": "When present: the tile's COMPLETE list of placed models (it replaces the base's doodads and buildings). Left out: as the base.",
+      "type": "array",
+      "maxItems": 8192,
+      "items": {
+        "$ref": "#/$defs/model"
+      }
+    },
+    "made": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "by": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "at": {
+          "type": "string",
+          "maxLength": 32
+        }
+      }
+    }
+  },
+  "$defs": {
+    "path": {
+      "description": "A file name inside the game's archives, backslashes or slashes, no '..', no drive.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 260,
+      "pattern": "^[^:\"<>|]+$"
+    },
+    "b64": {
+      "type": "string",
+      "contentEncoding": "base64"
+    },
+    "chunk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "i"
+      ],
+      "properties": {
+        "i": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "xy": {
+          "description": "The chunk's corner in world x, y (its highest x and y; the chunk spans 33.333 yards towards lower x and y). Informational, for readers without the base tile (Den Lite).",
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "heights": {
+          "description": "145 x float32 little-endian, ABSOLUTE world heights, in the tile's vertex order: 9 outer, 8 inner, ... 9 outer (17 rows). Row r of outer vertices lies r * 4.1667 yards towards lower x from the corner, column c towards lower y; inner ones half a step further each way.",
+          "$ref": "#/$defs/b64"
+        },
+        "layers": {
+          "description": "The chunk's texture layers, bottom first, 1 to 4. 'alpha' (64 x 64 uint8, row by row, 0 = none, 255 = full) is required for every layer after the first and not allowed on the first.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "tex"
+            ],
+            "properties": {
+              "tex": {
+                "$ref": "#/$defs/path"
+              },
+              "flags": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295,
+                "description": "layer flags without the alpha bits (0x100, 0x200): rotation/animation bits"
+              },
+              "effect": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "alpha": {
+                "$ref": "#/$defs/b64"
+              }
+            }
+          }
+        },
+        "holes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "4 x 4 hole bits, bit (row * 4 + column), 1 = hole"
+        },
+        "area": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "impassable": {
+          "type": "boolean"
+        },
+        "colors": {
+          "description": "145 x 4 bytes of vertex shading (as the tile's own), or null to remove",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/b64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "water": {
+          "description": "The chunk's water: null = none. Otherwise its layers.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "layers"
+              ],
+              "properties": {
+                "fishable": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$"
+                },
+                "deep": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$"
+                },
+                "layers": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "type",
+                      "min",
+                      "max"
+                    ],
+                    "properties": {
+                      "type": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 65535,
+                        "description": "liquid type id (1 water, 2 ocean, 3 magma, 4 slime, ...: the player's own liquid table)"
+                      },
+                      "format": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 65535,
+                        "description": "the instance's second 16-bit field (vertex format)"
+                      },
+                      "min": {
+                        "type": "number"
+                      },
+                      "max": {
+                        "type": "number"
+                      },
+                      "x": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 7
+                      },
+                      "y": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 7
+                      },
+                      "w": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 8
+                      },
+                      "h": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 8
+                      },
+                      "mask": {
+                        "description": "w*h bits, row by row, low bit first; left out = every cell",
+                        "$ref": "#/$defs/b64"
+                      },
+                      "heights": {
+                        "description": "(w+1)*(h+1) float32 LE",
+                        "$ref": "#/$defs/b64"
+                      },
+                      "uv": {
+                        "description": "(w+1)*(h+1) x 2 uint16 LE",
+                        "$ref": "#/$defs/b64"
+                      },
+                      "depth": {
+                        "description": "(w+1)*(h+1) uint8",
+                        "$ref": "#/$defs/b64"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "pos"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path",
+          "description": "an .m2 (a doodad) or .wmo (a building) in the player's own archives"
+        },
+        "uid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "unique id; models Leyline adds use 0x7F000000 and up"
+        },
+        "pos": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3,
+          "description": "world x, y, z minus origin"
+        },
+        "rot": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3,
+          "description": "degrees, as the tile stores them"
+        },
+        "scale": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 64,
+          "description": ".m2 only; 1 = normal size"
+        },
+        "flags": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "set": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "description": ".wmo only: doodad set"
+        },
+        "name_set": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "description": ".wmo only"
+        },
+        "bounds": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 6,
+          "maxItems": 6,
+          "description": ".wmo only: world min x, y, z, max x, y, z minus origin"
+        }
+      }
+    }
+  }
+}

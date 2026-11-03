@@ -1,0 +1,115 @@
+# Sign-in and profiles (website and launcher)
+
+Owner, 2026-10-30: "Allow manage account within launcher, bio profile pic etc basic stuff, smooth out the login process,
+incorporate hero key gmail and discord signin in sign in phases on site and launcher".
+
+## Who does what
+
+```
+ browser / launcher                our portal (stream/, Python)                 the website (Rust, /opt/wenilla-realm)
+ ------------------                ----------------------------                 --------------------------------------
+ /wrath/signin  ───────────────▶   the chooser: Hero Key, Google, Discord
+                                   (a button shows only when the website's
+                                   own /login page offers that way)
+ /wrath/signin/go/<way> ───────▶   sets ly_next (ours, Path=/wrath) and
+                                   wr_next=/wrath/signin/welcome (the website's
+                                   own "come back to" cookie), then  ─────────▶ /key, /auth/google/start, /auth/discord/start
+                                                                                signs in, makes the account the first time,
+                                                                                sets wr_session, lands on wr_next
+ /wrath/signin/welcome ◀────────────────────────────────────────────────────────
+                                   first time only: name, picture, bio (Skip works)
+ back to where they came from
+```
+
+- Sign-in itself (sessions, accounts, Google, Discord, Hero Keys) stays in the Rust site. Nothing in Python sees a
+  password, makes an account or reads its database; the portal learns who is signed in through `GET /api/me` and
+  `GET /api/play`, as before. No Rust change and no new image were needed.
+- `wr_next` is the Rust site's own cookie (`auth/oauth.rs` `next_cookie`, `landing`): it only ever sends a browser to a
+  path on this site (`safe_next`). We set it to `/wrath/signin/welcome`, nothing else.
+- Which ways show: `stream/profiles.py` `ways()` reads the website's `/login` (no cookie) every 5 minutes and looks for
+  `/auth/google/start` and `/auth/discord/start`. The Hero Key is always there. If `/login` can't be read: Hero Key and
+  Google, no Discord.
+
+## The launcher
+
+The launcher's sign-in is the device code flow it always had (`stream/social.py`, `/wrath/link`), with three buttons:
+each opens `/wrath/link?code=XXXX-XXXX&via=herokey|google|discord`, which goes straight to that way's sign-in (or the
+chooser when the way isn't offered), then back to the code to approve. The launcher polls and continues by itself; the
+first time, it opens its own Manage account page for the profile step.
+
+## Profiles
+
+- Name and `#tag`: stream/social.py's (one name everywhere). Refused: the game and company names, also hidden behind
+  separators (`profiles.name_problem`).
+- Bio: plain text, up to 300 characters, the word filter's words starred out, game and company names replaced.
+- Picture: one of 12 original preset shapes (`profiles.PRESETS`) or the initial. Served at `/wrath/avatar/p/<id>.svg`
+  (a week) and `/wrath/avatar/u/<public id>.svg?v=<n>` (a day; `v` changes when the picture or name does).
+- The admin console's Profiles tab resets a picture, bio or name. Every change, the player's own too, is kept in
+  `profile_history` (profiles.sqlite3) and staff resets are in the audit log. Nothing is deleted.
+
+### Guests
+
+What "guest" means here, and what each kind can do:
+
+| Kind | What it is | `/api/me` | Name and picture |
+|---|---|---|---|
+| **Website guest account** | "Play as guest" on the Rust site (`auth/guest.rs`): a real account with no password, a Hero Key made at once, characters kept | `username: guest-xxxxxxxx`, `display_name: "Guest XXXXXXXX"` | like anyone: `/wrath/profile`, the launcher's Manage account, the welcome step when it signs in through `/wrath/signin`. Its first Leyline name is `GuestXXXXXXXX`; the pages flag it (`name_generated`) and the forum's forms link "Pick your own name and picture" |
+| **Hero Key account** | any account signing in with its Hero Key (a guest's or anyone's) | as its account | the same |
+| **Guest pass** (`stream/demo.py`, `WU_GUEST_DEMO=1`) | a shared demo character, no account, reset after each visit | none (no sign-in) | not possible: nothing is kept. Its pages say so, and "Make a free account" goes to `/wrath/signin` |
+
+What stopped guests before (31 Oct): nothing refused them, but the site header and the forum showed the website's display
+name ("Guest ABCD2345") even after a rename, for up to a minute on the forum and forever in the header. Now
+`social.cookie_user` and the forum show the Leyline name at once. Nothing else was guest-specific.
+
+The same rules for everyone: `social.name_error`, the brand rule, the word filter, the presets; names that pass for the
+team (Admin, Moderator, Leyline..., GM, Staff, Owner) and guest-style names are refused; at most
+`WU_NAME_CHANGES_PER_DAY` (3) name changes of your own a day (staff resets aren't counted). The forum's stricter limits
+for accounts new to it stay (they count from the forum's first sight of the account, so a rename doesn't reset them).
+
+Not ours to change (the Rust site): an idle guest account is removed after `OPENVANILLA_GUEST_IDLE_DAYS` (30) even when
+it saved its Hero Key. The sweep (`auth/guest.rs sweep`) doesn't look at keys. TODO(owner): if Hero Key accounts must
+be kept, that sweep needs `AND NOT EXISTS (SELECT 1 FROM hero_keys ...)` in the website's repository.
+
+### Not built, and what each would need
+
+- Uploading a picture: the portal runs on the stock `python:3.12-alpine` image, which has no image library to decode and
+  re-encode an upload safely (strip metadata, 256 px WebP). Needs a portal image with Pillow (e.g. a two-line Dockerfile
+  `FROM python:3.12-alpine` + `RUN pip install --no-cache-dir Pillow==<pinned>`, used by stream-lib.sh and
+  fastloop.sh), then an upload endpoint in profiles.py. TODO(owner): say if you want this.
+- The Google or Discord picture: the Rust site asks Google for `openid profile` and Discord for `identify`, but keeps
+  only the display name; `/api/me` answers `{username, display_name, role}`. Needs, in the Rust site: store the
+  provider's picture URL on the identity (`identities.avatar_url`), and add `"avatar_url"` to `/api/me`. The portal
+  would then offer "Use my Google/Discord picture" and proxy it (never hotlink).
+- Showing which ways are linked, and unlinking: `/api/me` doesn't say. Needs `"providers": ["google", ...]` in
+  `/api/me`; unlinking needs a POST on the Rust site (it has none). Today the profile page links to `/account/key`
+  (the Hero Key page) and to `/auth/<way>/start?link=1` (the Rust site's own "link this way to my account").
+
+## Owner checklist
+
+Nothing below types a password or makes an account on another service for you.
+
+- [ ] Google: already on (the website has offered it for months). Nothing to do.
+- [x] Discord sign-in: **not used** (owner, 1 Nov release goals: "Hero Key sign-in (Google sign-in); Discord sign-in
+      is NOT used"). Keep `DISCORD_SIGNIN=off` in `/opt/wenilla-realm/.env`: the site's chooser and the launcher only
+      show a Discord button when the website's own `/login` offers it, so with it off no Discord button appears
+      anywhere. The steps below are kept only for the record, in case that ever changes.
+      The website has Discord sign-in built in; it was switched off on 2026-10-22
+      ("discord is only a join button now"). The Discord application it used still exists (its id and secret are in
+      `/opt/wenilla-realm/.env`). To turn sign-in back on WITHOUT the Herald bot (we never post on the Discord):
+      1. On the server, in `/opt/wenilla-realm/.env`: `DISCORD_SIGNIN=on` (or delete the line), and check
+         `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` are set.
+      2. In `/opt/wenilla-realm/compose.override.yaml`, the realm service's `DISCORD_CLIENT_ID:` and
+         `DISCORD_CLIENT_SECRET:` lines back to `${DISCORD_CLIENT_ID:-}` and `${DISCORD_CLIENT_SECRET:-}` (discord_off.sh
+         blanked them), and `DISCORD_GUILD_ID:`, `DISCORD_BOT_TOKEN:`, `DISCORD_REQUIRE_ROLE_IDS:` and
+         `DISCORD_GRANT_ROLE_ID:` blank (`""`): then sign-in asks Discord only for `identify` (name and id), never adds
+         anyone to the server and has no wave gate.
+      3. `cd /opt/wenilla-realm && docker compose up -d realm`, and keep `/etc/openvanilla-discord-off` so the Herald
+         bot stays off. (`bash discord_off.sh on` would also start the bot: don't use it for this.)
+      4. In the Discord developer portal, the application's OAuth2 redirect must list
+         `https://leylinelauncher.com/auth/discord/callback` and, kept, `https://play.openvanilla.app/auth/discord/callback`
+         (docs/DOMAIN-MOVE.md).
+      Within 5 minutes the Discord button appears on /wrath/signin and in the launcher. To hide it again:
+      `DISCORD_SIGNIN=off` and restart the realm service.
+- [ ] Read the sign-in and welcome words (TODO(owner) in stream/profiles.py).
+
+No new environment variables or secrets on our portal. `WU_PROFILES=0` turns profiles and /wrath/signin off.

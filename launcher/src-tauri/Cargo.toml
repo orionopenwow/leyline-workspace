@@ -1,0 +1,73 @@
+[package]
+name = "leyline"
+version = "0.3.1"
+description = "Leyline: pick a game client, manage mods, find and host realms"
+authors = ["Leyline contributors"]
+license = "MIT"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+# The core (clients, launch, settings, catalog, realms) is a plain library; the Tauri app sits on top of it.
+name = "leyline_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+# `app` is the desktop app (Tauri + webview). Without it only the core builds, which needs no system webview:
+#   cargo test --no-default-features
+default = ["app"]
+app = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-dialog", "dep:tauri-plugin-opener", "dep:tauri-plugin-updater", "torrent-engine"]
+# A real BitTorrent engine for game-client magnets and .torrents, used only with Settings > Testing's switch on
+# (clienttorrent.rs, owner 31 Oct; off by default). About 3.5 MB of the release binary.
+torrent-engine = ["dep:librqbit", "dep:tokio"]
+# Scripted Den recipes (agents/den.rs): Lua 5.1, compiled from C sources (mlua vendored). Off by default: without it
+# JSON template recipes work as always, and a .recipe.lua is listed but refused in plain words.
+lua-recipes = ["dep:mlua"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [], optional = true }
+
+[dependencies]
+tauri = { version = "2", features = [], optional = true }
+tauri-plugin-dialog = { version = "2", optional = true }
+tauri-plugin-opener = { version = "2", optional = true }
+# Leyline's own updates: GitHub release downloads, signature-checked against the public key in tauri.conf.json.
+tauri-plugin-updater = { version = "2", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "5"
+ureq = { version = "2", default-features = false, features = ["tls"] }
+# Mods: reading zips (deflate only, no other codecs) and checking the catalog's sha256.
+zip = { version = "2", default-features = false, features = ["deflate"] }
+# Source tarballs (.tar.gz) of pinned server software, checked inside like a zip (p2p/checker.rs). Already in the
+# tree through zip.
+flate2 = "1"
+sha2 = "0.10"
+# The Leyline mesh (src/p2p/mesh.rs): Ed25519 checks of signed realm records. Already in the tree through rustls.
+ring = "0.17"
+# Your Den on the network (src/host/litenet.rs): the relay tunnel's wss, with the same TLS stack and roots as ureq
+# (already in the tree through it).
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+webpki-roots = "0.26"
+# Leyline's own updates from any source (update.rs verify_minisign): the same minisign check the updater plugin makes,
+# already in the tree through tauri-plugin-updater.
+minisign-verify = "0.3"
+# Den recipes (agents/den.rs, docs/DEN.md "Building brain"): small layout scripts run on the player's PC only, in a
+# sandboxed Lua 5.1 (the realm scripts' own Lua): math, string and table only, a memory and an instruction limit.
+# Only with the lua-recipes feature (off by default).
+mlua = { version = "0.10", default-features = false, features = ["lua51", "vendored"], optional = true }
+# The torrent engine (feature torrent-engine): rustls like the rest, upload switchable off at run time.
+librqbit = { version = "9.1.0", default-features = false, features = ["rust-tls", "disable-upload"], optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"], optional = true }
+
+# The Den's ground (host/terrain.rs): our own MIT map tile code, also used by Den Lite (labs/den-lite).
+leyline-terrain = { path = "terrain" }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

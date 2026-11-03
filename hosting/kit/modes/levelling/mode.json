@@ -1,0 +1,67 @@
+{
+ "format": "leyline-mode",
+ "schema": 1,
+ "id": "levelling",
+ "name": "Classic levelling",
+ "line": "The whole world from level 1, at the speed you pick.",
+ "picture": "picture.svg",
+ "version": "1.0",
+ "author": "Leyline",
+ "based_on": null,
+ "status": "live",
+ "profile": "main",
+ "scripts": [
+  "ov_main.lua",
+  "ov_qol.lua",
+  "ov_events.lua"
+ ],
+ "env": {},
+ "mods": [],
+ "den": null,
+ "tags": [
+  "blizzlike"
+ ],
+ "settings": [
+  {
+   "key": "xp",
+   "label": "Levelling speed",
+   "type": "number",
+   "min": 1,
+   "max": 10,
+   "default": 3,
+   "unit": "x",
+   "env": [
+    "AC_RATE_XP_KILL",
+    "AC_RATE_XP_QUEST",
+    "AC_RATE_XP_QUEST_DF",
+    "AC_RATE_XP_EXPLORE"
+   ]
+  },
+  {
+   "key": "rep",
+   "label": "Reputation speed",
+   "type": "number",
+   "min": 1,
+   "max": 10,
+   "default": 2,
+   "unit": "x",
+   "env": "AC_RATE_REPUTATION_GAIN"
+  },
+  {
+   "key": "boost",
+   "label": "Offer a one-time boost",
+   "help": "New characters may skip to the top level once.",
+   "type": "toggle",
+   "default": false,
+   "env": "OV_MAIN"
+  },
+  {
+   "key": "events",
+   "label": "Events in chat",
+   "help": "Trivia, hide and seek and the stock events, announced.",
+   "type": "toggle",
+   "default": true,
+   "env": "OV_EVENTS"
+  }
+ ]
+}

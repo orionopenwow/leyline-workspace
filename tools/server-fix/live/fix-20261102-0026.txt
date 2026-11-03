@@ -1,0 +1,36 @@
+== 1. folder rights
+  /srv/wrath/stream: 755
+  /srv/wrath/stream/slices: 755
+== 2. .bug (read only)
+  ov_reports.lua on the server: 16325 bytes Oct 31 20:39
+  AC_ALLOW_PLAYER_COMMANDS=(not set)
+  OV_REPORTS=(not set)
+  AC_ELUNA_ENABLED=(not set)
+  AC_ALE_ENABLED=true
+  world server log, script lines (last 24 h):
+    [0m[36mLoaded 275 weightscale stat weights
+    [0m[0m> Config: Missing property ALE.PlayerAnnounceReload in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.PlayerAnnounceReload = 0" to this file or define 'AC_ALE_PLAYER_ANNOUNCE_RELOAD' as an environment variable.
+    [33m> Config: Missing property ALE.PlayerAnnounceReload in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.PlayerAnnounceReload = 0" to this file or define 'AC_ALE_PLAYER_ANNOUNCE_RELOAD' as an environment variable.
+    [0m> Config: Missing property ALE.BytecodeCache in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.BytecodeCache = 1" to this file or define 'AC_ALE_BYTECODE_CACHE' as an environment variable.
+    [33m> Config: Missing property ALE.BytecodeCache in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.BytecodeCache = 1" to this file or define 'AC_ALE_BYTECODE_CACHE' as an environment variable.
+    > Config: Missing property ALE.PlayerAnnounceReload in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.PlayerAnnounceReload = 0" to this file or define 'AC_ALE_PLAYER_ANNOUNCE_RELOAD' as an environment variable.
+    [33m> Config: Missing property ALE.PlayerAnnounceReload in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.PlayerAnnounceReload = 0" to this file or define 'AC_ALE_PLAYER_ANNOUNCE_RELOAD' as an environment variable.
+    [0m> Config: Missing property ALE.BytecodeCache in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.BytecodeCache = 1" to this file or define 'AC_ALE_BYTECODE_CACHE' as an environment variable.
+    [33m> Config: Missing property ALE.BytecodeCache in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.BytecodeCache = 1" to this file or define 'AC_ALE_BYTECODE_CACHE' as an environment variable.
+    [0m[0m> Config: Missing property ALE.PlayerAnnounceReload in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.PlayerAnnounceReload = 0" to this file or define 'AC_ALE_PLAYER_ANNOUNCE_RELOAD' as an environment variable.
+    [33m> Config: Missing property ALE.PlayerAnnounceReload in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.PlayerAnnounceReload = 0" to this file or define 'AC_ALE_PLAYER_ANNOUNCE_RELOAD' as an environment variable.
+    [0m> Config: Missing property ALE.BytecodeCache in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.BytecodeCache = 1" to this file or define 'AC_ALE_BYTECODE_CACHE' as an environment variable.
+    [33m> Config: Missing property ALE.BytecodeCache in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.BytecodeCache = 1" to this file or define 'AC_ALE_BYTECODE_CACHE' as an environment variable.
+    > Config: Missing property ALE.PlayerAnnounceReload in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.PlayerAnnounceReload = 0" to this file or define 'AC_ALE_PLAYER_ANNOUNCE_RELOAD' as an environment variable.
+    [33m> Config: Missing property ALE.PlayerAnnounceReload in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.PlayerAnnounceReload = 0" to this file or define 'AC_ALE_PLAYER_ANNOUNCE_RELOAD' as an environment variable.
+    [0m> Config: Missing property ALE.BytecodeCache in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.BytecodeCache = 1" to this file or define 'AC_ALE_BYTECODE_CACHE' as an environment variable.
+    [33m> Config: Missing property ALE.BytecodeCache in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.BytecodeCache = 1" to this file or define 'AC_ALE_BYTECODE_CACHE' as an environment variable.
+    [0m[0m> Config: Missing property ALE.PlayerAnnounceReload in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.PlayerAnnounceReload = 0" to this file or define 'AC_ALE_PLAYER_ANNOUNCE_RELOAD' as an environment variable.
+    [33m> Config: Missing property ALE.PlayerAnnounceReload in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.PlayerAnnounceReload = 0" to this file or define 'AC_ALE_PLAYER_ANNOUNCE_RELOAD' as an environment variable.
+    [0m> Config: Missing property ALE.BytecodeCache in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.BytecodeCache = 1" to this file or define 'AC_ALE_BYTECODE_CACHE' as an environment variable.
+    [33m> Config: Missing property ALE.BytecodeCache in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.BytecodeCache = 1" to this file or define 'AC_ALE_BYTECODE_CACHE' as an environment variable.
+    [0m> Config: Missing property ALE.PlayerAnnounceReload in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.PlayerAnnounceReload = 0" to this file or define 'AC_ALE_PLAYER_ANNOUNCE_RELOAD' as an environment variable.
+    [33m> Config: Missing property ALE.PlayerAnnounceReload in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.PlayerAnnounceReload = 0" to this file or define 'AC_ALE_PLAYER_ANNOUNCE_RELOAD' as an environment variable.
+    [0m> Config: Missing property ALE.BytecodeCache in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.BytecodeCache = 1" to this file or define 'AC_ALE_BYTECODE_CACHE' as an environment variable.
+    [33m> Config: Missing property ALE.BytecodeCache in config file /azerothcore/env/dist/etc/worldserver.conf, add "ALE.BytecodeCache = 1" to this file or define 'AC_ALE_BYTECODE_CACHE' as an environment variable.
+SERVER FIX DONE

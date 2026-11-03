@@ -1,0 +1,915 @@
+-- ov_den.lua: a Den, your own room to build in (mod-ale, 3.3.5a). Only on a realm with OV_DEN=1
+-- (realm/profiles/den.env: the host kit's "den" profile, a private realm on the owner's PC; docs/DEN.md).
+--
+-- Every character starts alone in a plain white room and builds it into their Den: F7 (edit mode) or /builder
+-- place props from the realm's catalog (ov_build.lua does all the building and checks every change). This script
+-- is the room around it:
+--   * the room: a floor, four walls with a doorway to the yard and four lights, made of catalog props owned by
+--     the Den itself (free of every budget; only the owner changes them). Built the first time someone is there.
+--     The spot: ov_build.lua's DEN (the sealed island in the far north-east corner of Kalimdor, map 1).
+--   * the edge: anyone outside the Den (walked or fell out, another map, a teleport) is put back in the room within
+--     a few seconds. GMs with .gm on are free to leave. New characters start in the room, with their hearth there.
+--   * who does what: the owner (the realm's GM: the host kit gives the host's account GM level 3) always builds
+--     and changes the room; builders are the friends the owner allows (.den allow <name> build); everyone else
+--     with the invite link visits: looks around, nothing more.
+--
+--   .den                          what this is, and your role here
+--   .den home                     back to the middle of the room
+--   .den invite                   (owner) the realm's invite link to give a friend; the Den bar shows it to copy
+--   .den builders                 who may build here
+--   .den allow <name> build|view  (owner) lets a friend build, or back to looking only (they must be online to add)
+--   .den room [white|stone|wood]  (owner) the room's look; ".den room rebuild" puts it up again, "clear" takes it down
+--   .den budget                   the decor budgets: inside the room and out in the yard
+--   .den save|load <name> [replace] | .den layouts     the whole Den as a layout (.build layout)
+--   .den save <name>              (owner) also writes the Den to a file on the host's PC: <kit>/state/dens/<name>.den.json
+--   .den load <name> [replace|add] (owner) opens that file (asks first when the Den has decor; replace keeps a
+--                                 copy of what was there as "backup"); without a file, your own layout as before
+--   .den files                    the Den files saved from here (the launcher's Host page lists every one)
+--   .den gm speed 1|2|4 | gm fly on|off | gm revive | mark | go    (owner and builders, inside the Den) GM controls
+--   .den gm weather clear|rain|snow|fog | gm invisible on|off | gm summon <name>   (the owner) more of them
+--                                 all reset on leaving the Den or logging out (below, "GM controls"; docs/DEN.md)
+--
+-- The Den bar (WrathUnleashedUI/EditMode.lua) talks to this over the OVMOD channel (ov_modapi.lua), mod "wuden":
+--   client -> server   cmd      <the text after .den>
+--   server -> client   info     role=<owner|builder|visitor>;theme=<look>;builders=<a b c>;invite=<0|1>
+--                      invite   <the invite link>          (the owner only)
+--
+-- Files: <kit>/realm-files/lua_scripts/den-invite.dat (the host kit's setup.py, den profile only), data only:
+--   return { invite = "https://.../join/<realm id>#<invite secret>" }       read, never run (OV_DEN_INVITE_FILE)
+--        <kit>/state/dens (mounted at OV_DEN_SAVES, /azerothcore/dens): the Den's save files, JSON (docs/DEN.md, "The
+--   save file"), written by .den save, read by .den load and by the launcher's "Open a saved Den", which writes
+--   open.json there ({"file": "<name>", "id": "<letters>"}): the Den opens with that file (replacing what is there,
+--   a copy kept as "backup") as soon as its owner is in the room. Files are JSON read by OVBuild.JsonDecode and
+--   checked (OVBuild.DenCheck: known entries only, inside the Den, the budgets); nothing in them is ever run.
+--        <kit>/state/dens/packs.json: the packs made on this PC (packs.py), data only; a Den file's "packs" (below).
+-- Tables: mod_den_settings (k, v): the room's look, its floor height, the last opened launcher file, its packs;
+--   mod_den_files (name, props, at): the files saved from here.
+-- mod-ale used: RegisterPlayerEvent 3 ON_LOGIN, 28 ON_MAP_CHANGE, 30 ON_FIRST_LOGIN, 42 ON_COMMAND; CreateLuaEvent;
+-- Player:Teleport / IsGM / GetGMRank / SetBindPoint / RegisterEvent / SendBroadcastMessage; Map:GetHeight;
+-- GetPlayersInWorld, GetPlayerByName, CharDBQuery / CharDBExecute. GM controls (each in pcall; a missing one says
+-- "not available on this realm"): Unit:SetSpeed(type, rate, forced) / SetCanFly / IsDead, Player:SetGMVisible /
+-- SetGameMaster / ResurrectPlayer / SummonPlayer / GetZoneId, Map:SetWeather(zone, type, grade), GetMapById;
+-- RegisterPlayerEvent 4 ON_LOGOUT.
+
+if os.getenv("OV_DEN") ~= "1" then return end
+
+local TAG = "|cffc8a2ff[Den]|r "
+local MOD = "wuden"
+local FILE = os.getenv("OV_DEN_INVITE_FILE") or "/azerothcore/lua_scripts/den-invite.dat"
+local CHECK_MS = 2000          -- the edge check
+local BACK_COOLDOWN = 3        -- seconds between two "back in the room" for one player
+local AREA_ID = 876            -- AreaTable.dbc: the island's own area (the hearth's area)
+local ADDON_WAIT = 20          -- seconds after a login without a word from the addon: say how to get it
+local SAVES = os.getenv("OV_DEN_SAVES") or "/azerothcore/dens"
+local FILE_MAX = 512 * 1024    -- bytes in one Den file
+local OPEN_EVERY = 5           -- edge checks (2 s each) between two looks for the launcher's open.json
+local Files = { VERSION = 1 }  -- the save file (below)
+
+local OVMod
+do
+    local ok, m = pcall(function() return require("ov_modapi") end)
+    if ok and type(m) == "table" then OVMod = m end
+    if not OVMod and type(rawget(_G, "OVMod")) == "table" then OVMod = rawget(_G, "OVMod") end
+end
+
+local function say(player, text) player:SendBroadcastMessage(TAG .. text) end
+
+local function try(obj, method, ...)
+    if not obj then return nil end
+    local ok, fn = pcall(function() return obj[method] end)
+    if not ok or type(fn) ~= "function" then return nil end
+    local ok2, a, b = pcall(fn, obj, ...)
+    if ok2 then return a, b end
+    return nil
+end
+
+local function query(sql)
+    if not CharDBQuery then return nil end
+    local ok, q = pcall(CharDBQuery, sql)
+    if ok then return q end
+    return nil
+end
+local function exec(sql) if CharDBExecute then pcall(CharDBExecute, sql) end end
+
+-- ov_build.lua loads first (file order) or later: OVBuild is looked up at each use.
+local function B() local b = rawget(_G, "OVBuild"); return (type(b) == "table" and b.DEN) and b or nil end
+local function den() local b = B(); return b and b.DEN end
+
+local function isOwner(player) return (tonumber(try(player, "GetGMRank")) or 0) > 0 end
+local function free(player) return try(player, "IsGM") == true end   -- a GM with .gm on goes where they like
+
+local function role(player)
+    if isOwner(player) then return "owner" end
+    local b = B()
+    local l = (player:GetName() or ""):lower()
+    for _, n in ipairs(b and b.Builders() or {}) do if n:lower() == l then return "builder" end end
+    return "visitor"
+end
+
+------------------------------------------------------------------------------------------------
+-- settings: the look and the floor height
+------------------------------------------------------------------------------------------------
+exec("CREATE TABLE IF NOT EXISTS mod_den_settings (k VARCHAR(16) NOT NULL PRIMARY KEY, v VARCHAR(64) NOT NULL)")
+local settings = {}
+do
+    local q = query("SELECT k, v FROM mod_den_settings")
+    if q then repeat settings[q:GetString(0)] = q:GetString(1) until not q:NextRow() end
+end
+local function setSetting(k, v)
+    settings[k] = v
+    exec(string.format("REPLACE INTO mod_den_settings (k, v) VALUES ('%s', '%s')", k, tostring(v):gsub("[^%w%.%-]", "")))
+end
+
+------------------------------------------------------------------------------------------------
+-- the room
+------------------------------------------------------------------------------------------------
+-- Looks: catalog entries only (ov_build.lua's allowlist, checked against the world database). tile: yards between
+-- two floor or wall pieces, rows: how many pieces high the walls are. How each looks in game is "to verify";
+-- OV_DEN_TILE sets the spacing for all of them.
+local THEMES = {
+    white = { name = "white", floor = 188142, wall = 188142, light = 190664, tile = 4, rows = 2 },   -- big light blocks
+    stone = { name = "stone", floor = 190024, wall = 19444, light = 180043, tile = 4, rows = 1 },    -- platform, rock wall
+    wood  = { name = "wood", floor = 190615, wall = 211062, light = 179977, tile = 4, rows = 1 },    -- platform, wooden fence
+}
+
+local function themeOf(name) return THEMES[tostring(name or ""):lower()] end
+local function currentTheme() return themeOf(settings.theme) or themeOf(os.getenv("OV_DEN_THEME")) or THEMES.white end
+
+local function floorZ()
+    local d = den()
+    return tonumber(settings.floor or "") or (d and d.z) or 0
+end
+
+-- The room's pieces, in world coordinates: { entry, x, y, z, o }. The south wall keeps a doorway out to the yard.
+local function plan(t, fz)
+    local d = den()
+    local tile = tonumber(os.getenv("OV_DEN_TILE") or "") or t.tile
+    if tile < 1 then tile = 1 end
+    if tile > 10 then tile = 10 end
+    local half = d.half
+    local offs = {}
+    local n = math.max(1, math.floor(half * 2 / tile + 0.5))
+    for i = 1, n do offs[i] = -half + tile * (i - 0.5) end
+    local out = {}
+    local function add(entry, x, y, z, o, s) out[#out + 1] = { entry = entry, x = x, y = y, z = z, o = o or 0, s = s } end
+    -- With the models' bounds (the server's own GameObjectDisplayInfo, OVBuild.ModelBox) every block is sized to
+    -- exactly one tile, the floor's tops level with the ground: one seamless, flat surface. Without them, the
+    -- blocks stand at their own size on the ground (the spacing is "to verify" in game).
+    local b = B()
+    local function fit(entry)
+        if not (b and b.ModelBox) then return nil end
+        local w, dp, lo, hi = b.ModelBox(entry)
+        if not w or w <= 0.05 or hi - lo <= 0.01 then return nil end
+        local s = math.max(0.1, math.min(5, tile / math.max(w, dp)))
+        return s, lo * s, hi * s
+    end
+    local fs, _, ftop = fit(t.floor)
+    for _, ox in ipairs(offs) do
+        for _, oy in ipairs(offs) do add(t.floor, d.x + ox, d.y + oy, fs and (fz - ftop) or fz, 0, fs) end
+    end
+    local ws, wlo, whi = fit(t.wall)
+    for r = 0, t.rows - 1 do
+        local z = ws and (fz - wlo + (whi - wlo) * r) or (fz + tile * (r + 0.5))
+        for _, o in ipairs(offs) do
+            add(t.wall, d.x + o, d.y + half, z, 0, ws)                         -- north
+            if math.abs(o) > tile then add(t.wall, d.x + o, d.y - half, z, 0, ws) end   -- south, the doorway in its middle
+            add(t.wall, d.x + half, d.y + o, z, math.pi / 2, ws)                -- east
+            add(t.wall, d.x - half, d.y + o, z, math.pi / 2, ws)                -- west
+        end
+    end
+    local c = half - 2
+    for _, s in ipairs({ { 1, 1 }, { 1, -1 }, { -1, 1 }, { -1, -1 } }) do add(t.light, d.x + s[1] * c, d.y + s[2] * c, fz) end
+    return out
+end
+
+-- Puts the room up when it isn't there (or force: again, in look t). player: who is there now (their grid).
+local function buildRoom(player, t, force)
+    local b = B()
+    if not b then return 0 end
+    if b.RoomCount() > 0 and not force then return 0 end
+    if b.RoomCount() > 0 then b.ClearRoom(player) end
+    t = t or currentTheme()
+    local d = den()
+    -- the floor height: measured once where the room stands (the ground there), then kept
+    if not settings.floor then
+        local map = try(player, "GetMap")
+        local h = map and tonumber(try(map, "GetHeight", d.x, d.y))
+        local fz = (h and math.abs(h - d.z) <= 30) and h or d.z
+        setSetting("floor", string.format("%.2f", fz))
+    end
+    b.SetFloor(floorZ())
+    setSetting("theme", t.name)
+    if settings.cleared then settings.cleared = nil; exec("DELETE FROM mod_den_settings WHERE k = 'cleared'") end
+    return b.PlaceRoom(player, plan(t, floorZ()))
+end
+
+------------------------------------------------------------------------------------------------
+-- the edge
+------------------------------------------------------------------------------------------------
+local lastBack = {}
+
+local function inside(player)
+    local d = den()
+    if not d then return true end
+    if player:GetMapId() ~= d.map then return false end
+    local dx, dy = player:GetX() - d.x, player:GetY() - d.y
+    local z, fz = player:GetZ(), floorZ()
+    return math.sqrt(dx * dx + dy * dy) <= d.r and z >= fz - 12 and z <= fz + 50
+end
+
+local function toRoom(player, quiet)
+    local d = den()
+    if not d then return end
+    try(player, "Teleport", d.map, d.x, d.y, floorZ() + 1, math.pi / 2)
+    if not quiet then say(player, "That's the edge of the Den: back in the room. (|cffffff00.den|r says what's here.)") end
+end
+
+------------------------------------------------------------------------------------------------
+-- GM controls: fixed, checked actions for the owner and the builders (never visitors), only inside the Den. Nothing
+-- typed is ever run as a GM command. Each core call is in pcall: a realm without it says "not available". Speed,
+-- flying, invisibility and the owner's weather are put back when the player leaves the Den (the edge check) or
+-- logs out. Time of day is left out: mod-ale has no per-player time (only a raw packet, which the core overwrites).
+------------------------------------------------------------------------------------------------
+local GM = { RATE = 4, state = {}, calls = {}, marks = {} }
+GM.SPEEDS = { ["1"] = 1, ["2"] = 2, ["4"] = 4 }
+GM.MOVES = { 1, 3, 6 }                      -- UnitMoveType: MOVE_RUN, MOVE_SWIM, MOVE_FLIGHT
+GM.WEATHER = { clear = { 0, 0 }, rain = { 1, 0.7 }, snow = { 2, 0.7 } }   -- WeatherType, grade (Map:SetWeather)
+local NA = "That isn't available on this realm."
+
+-- obj:method(...) in pcall: true when it ran (a missing method or an error: false)
+local function call(obj, method, ...)
+    if not obj then return false end
+    local ok, fn = pcall(function() return obj[method] end)
+    if not ok or type(fn) ~= "function" then return false end
+    return (pcall(fn, obj, ...))
+end
+
+local function gmSay(player, text) say(player, text); if OVDen and OVDen.Home and OVDen.Home.sendHome then pcall(OVDen.Home.sendHome, player) end end
+
+-- a few commands a second per player
+function GM.rated(player)
+    local g, now = player:GetGUIDLow(), os.time()
+    local c = GM.calls[g]
+    if not c or c.at ~= now then c = { at = now, n = 0 }; GM.calls[g] = c end
+    c.n = c.n + 1
+    return c.n <= GM.RATE
+end
+
+-- who may: the owner always, builders (not ownerOnly), never visitors; only inside the Den
+function GM.may(player, ownerOnly)
+    local r = role(player)
+    if r == "visitor" then return nil, "The GM controls are for the Den's owner and the builders they allow." end
+    if ownerOnly and r ~= "owner" then return nil, "Only the Den's owner can do that." end
+    if not inside(player) then return nil, "Only inside the Den: |cffffff00.den home|r takes you back." end
+    return r
+end
+
+local function st(player)
+    local g = player:GetGUIDLow()
+    GM.state[g] = GM.state[g] or { speed = 1 }
+    return GM.state[g]
+end
+
+local function speedTo(player, rate)
+    if not call(player, "SetSpeed", GM.MOVES[1], rate, true) then return false end
+    for i = 2, #GM.MOVES do call(player, "SetSpeed", GM.MOVES[i], rate, true) end
+    return true
+end
+
+local function weatherTo(map, zone, w)
+    local t = GM.WEATHER[w]
+    return t and map and zone and call(map, "SetWeather", zone, t[1], t[2]) or false
+end
+
+-- "<speed>,<fly 0|1>,<invisible 0|1>" for the Den panel (the home line)
+function GM.line(player)
+    local s = GM.state[player:GetGUIDLow()] or {}
+    return string.format("%d,%d,%d", s.speed or 1, s.fly and 1 or 0, s.invisible and 1 or 0)
+end
+
+-- Everything back to normal: true when there was something to put back.
+function GM.reset(player, why)
+    local g = player:GetGUIDLow()
+    local s = GM.state[g]
+    if not s then return false end
+    GM.state[g] = nil
+    if s.speed and s.speed ~= 1 then speedTo(player, 1) end
+    if s.fly then call(player, "SetCanFly", false) end
+    if s.invisible then
+        call(player, "SetGMVisible", true)
+        if s.wasGM == false then call(player, "SetGameMaster", false) end
+    end
+    if s.weather then
+        local d, map = den(), nil
+        if d and GetMapById then
+            local ok, m = pcall(GetMapById, d.map)
+            if ok then map = m end
+        end
+        weatherTo(map, s.weather, "clear")
+    end
+    if why and (s.speed ~= 1 or s.fly or s.invisible or s.weather) then gmSay(player, why) end
+    return true
+end
+
+local function onOff(w) w = tostring(w or ""):lower(); if w == "on" then return true elseif w == "off" then return false end end
+
+function GM.speed(player, w)
+    local rate = GM.SPEEDS[tostring(w or ""):lower():gsub("x$", "")]
+    if not rate then return say(player, "Speeds: |cffffff00.den gm speed 1|r, |cffffff002|r or |cffffff004|r (times your normal run).") end
+    if not speedTo(player, rate) then return say(player, NA) end
+    st(player).speed = rate
+    gmSay(player, rate == 1 and "Normal speed." or string.format("You run %d times as fast, here in the Den.", rate))
+end
+
+function GM.fly(player, w)
+    local on = onOff(w)
+    if on == nil then return say(player, "Usage: |cffffff00.den gm fly on|r or |cffffff00off|r") end
+    if not call(player, "SetCanFly", on) then return say(player, NA) end
+    st(player).fly = on
+    gmSay(player, on and "You can fly: jump, then hold Space to rise and X to sink." or "Flying is off.")
+end
+
+function GM.weather(player, w)
+    w = tostring(w or ""):lower()
+    if w == "fog" then return say(player, "Fog isn't available on this realm: its weather has clear skies, rain and snow.") end
+    if not GM.WEATHER[w] then return say(player, "Weather: |cffffff00.den gm weather clear|r, |cffffff00rain|r or |cffffff00snow|r.") end
+    local zone = tonumber(try(player, "GetZoneId"))
+    if not (zone and weatherTo(try(player, "GetMap"), zone, w)) then return say(player, NA) end
+    st(player).weather = w ~= "clear" and zone or nil
+    gmSay(player, w == "clear" and "Clear skies over the Den." or ("The Den has " .. w .. " now (everyone here sees it; clear puts it back)."))
+end
+
+function GM.invisible(player, w)
+    local on = onOff(w)
+    if on == nil then return say(player, "Usage: |cffffff00.den gm invisible on|r or |cffffff00off|r") end
+    local s = st(player)
+    if on and not s.invisible then s.wasGM = free(player) end
+    if not call(player, "SetGMVisible", not on) then return say(player, NA) end
+    if not on and s.wasGM == false then call(player, "SetGameMaster", false) end
+    s.invisible = on or nil
+    gmSay(player, on and "Visitors can't see you now (GM mode is on while you are)." or "Everyone can see you again.")
+end
+
+function GM.summon(player, name)
+    name = tostring(name or ""):gsub("[^%a]", "")
+    if name == "" then return say(player, "Usage: |cffffff00.den gm summon <name>|r (a friend who builds here)") end
+    local allowed
+    for _, n in ipairs(B().Builders() or {}) do if n:lower() == name:lower() then allowed = true end end
+    if not allowed then
+        return say(player, name .. " isn't allowed in your Den yet: |cffffff00.den allow " .. name .. " build|r first.")
+    end
+    local ok, t = pcall(function() return GetPlayerByName and GetPlayerByName(name) end)
+    if not (ok and t) then return say(player, name .. " isn't online.") end
+    if t == player then return say(player, "That's you.") end
+    if not call(t, "SummonPlayer", player) then return say(player, NA) end
+    gmSay(player, "Asked " .. t:GetName() .. " to come: they'll see a summon to accept.")
+    say(t, player:GetName() .. " is calling you over in the Den: accept the summon to go.")
+end
+
+function GM.revive(player)
+    if try(player, "IsDead") ~= true then return say(player, "You're not dead.") end
+    if not call(player, "ResurrectPlayer", 100, false) then return say(player, NA) end
+    gmSay(player, "You're back on your feet.")
+end
+
+-- .den mark / .den go: one saved spot per character, kept relative to the Den (mod_den_marks)
+exec("CREATE TABLE IF NOT EXISTS mod_den_marks (guid INT UNSIGNED NOT NULL PRIMARY KEY, x FLOAT NOT NULL, y FLOAT NOT NULL, "
+    .. "z FLOAT NOT NULL, o FLOAT NOT NULL)")
+function GM.mark(player)
+    local d = den()
+    local g = player:GetGUIDLow()
+    local m = { player:GetX() - d.x, player:GetY() - d.y, player:GetZ() - floorZ(), tonumber(try(player, "GetO")) or 0 }
+    GM.marks[g] = m
+    exec(string.format("REPLACE INTO mod_den_marks (guid, x, y, z, o) VALUES (%d, %.2f, %.2f, %.2f, %.3f)", g, m[1], m[2], m[3], m[4]))
+    gmSay(player, "Marked this spot: |cffffff00.den go|r brings you back to it.")
+end
+
+function GM.go(player)
+    local d = den()
+    local g = player:GetGUIDLow()
+    local m = GM.marks[g]
+    if not m then
+        local q = query(string.format("SELECT x, y, z, o FROM mod_den_marks WHERE guid = %d", g))
+        if q then m = { q:GetFloat(0), q:GetFloat(1), q:GetFloat(2), q:GetFloat(3) }; GM.marks[g] = m end
+    end
+    if not m then return say(player, "No mark yet: |cffffff00.den mark|r saves where you stand.") end
+    if math.sqrt(m[1] * m[1] + m[2] * m[2]) > d.r then return say(player, "Your mark is outside the Den now: mark a new spot.") end
+    if not call(player, "Teleport", d.map, d.x + m[1], d.y + m[2], floorZ() + m[3], m[4]) then return say(player, NA) end
+    gmSay(player, "At your mark.")
+end
+
+GM.OWNER = { weather = true, invisible = true, summon = true }
+function GM.command(player, words)
+    local what = (words[2] or ""):lower()
+    local r, why = GM.may(player, GM.OWNER[what])
+    if not r then return say(player, why) end
+    if not GM.rated(player) then return say(player, "One moment: that's a lot of GM clicks at once.") end
+    if what == "speed" then return GM.speed(player, words[3])
+    elseif what == "fly" then return GM.fly(player, words[3])
+    elseif what == "weather" then return GM.weather(player, words[3])
+    elseif what == "invisible" then return GM.invisible(player, words[3])
+    elseif what == "summon" then return GM.summon(player, words[3])
+    elseif what == "revive" then return GM.revive(player)
+    elseif what == "mark" then return GM.mark(player)
+    elseif what == "go" then return GM.go(player)
+    end
+    say(player, "GM controls (here in the Den; all back to normal when you leave): |cffffff00.den gm speed 1|2|4|r, "
+        .. "|cffffff00.den gm fly on|off|r, |cffffff00.den gm revive|r, |cffffff00.den mark|r / |cffffff00.den go|r, |cffffff00.den home|r.")
+    if r == "owner" then
+        say(player, "  Owner: |cffffff00.den gm weather clear|rain|snow|r, |cffffff00.den gm invisible on|off|r, |cffffff00.den gm summon <name>|r.")
+    end
+end
+
+-- The building tools (edit mode, the Builder, the Den panel) are the Leyline UI addon (WrathUnleashedUI): the
+-- browser client has it built in; a player's own game gets it from the launcher (Addons). The addon asks for
+-- the Den's info when it loads (EditMode.lua, PLAYER_ENTERING_WORLD); whoever stays silent hears how to get it.
+local loginAt, heard, hinted = {}, {}, {}
+local function addonHint(player)
+    local g = player:GetGUIDLow()
+    if heard[g] or hinted[g] or not loginAt[g] or os.time() - loginAt[g] < ADDON_WAIT then return end
+    hinted[g] = true
+    say(player, "Building here works best with the Leyline UI addon: edit mode, the Builder window and the Den panel. "
+        .. "Get it in the Leyline launcher (Addons, then Leyline UI) and restart the game.")
+    say(player, "Until then, everything works as commands: |cffffff00.den|r and |cffffff00.build help|r.")
+end
+
+local function checkOne(player)
+    if not player then return end
+    addonHint(player)
+    if inside(player) then
+        -- the room goes up the first time anyone stands in the Den (its grid is loaded then)
+        local b = B()
+        if b and b.RoomCount() == 0 and not settings.cleared then buildRoom(player) end
+        return
+    end
+    GM.reset(player, "You left the Den: speed, flying and the other GM controls are back to normal.")
+    if free(player) then return end
+    local g, now = player:GetGUIDLow(), os.time()
+    if lastBack[g] and now - lastBack[g] < BACK_COOLDOWN then return end
+    lastBack[g] = now
+    toRoom(player)
+end
+
+local ticks = 0
+local function checkAll()
+    if not GetPlayersInWorld then return end
+    local ok, list = pcall(GetPlayersInWorld)
+    if not ok or type(list) ~= "table" then return end
+    for _, pl in ipairs(list) do pcall(checkOne, pl) end
+    ticks = ticks + 1
+    if ticks % OPEN_EVERY == 0 and Files.openPending and B() then
+        for _, pl in ipairs(list) do pcall(Files.openPending, pl) end
+    end
+end
+
+------------------------------------------------------------------------------------------------
+-- invite, builders, info
+------------------------------------------------------------------------------------------------
+-- The link from den-invite.dat, read as data (never run): an https join link, nothing else.
+local function inviteLink()
+    local f = io and io.open and io.open(FILE, "r")
+    if not f then return nil end
+    local text = f:read("*a") or ""
+    f:close()
+    local link = text:match('invite%s*=%s*"(https://[%w%.%-]+[:%d]*/join/[a-z2-7]+#[A-Z2-9]+)"')
+    if link and #link < 200 then return link end
+    return nil
+end
+
+local function sendInfo(player)
+    if not OVMod then return end
+    local b = B()
+    local names = b and b.Builders() or {}
+    pcall(OVMod.Send, player, MOD, "info", string.format("role=%s;theme=%s;builders=%s;invite=%d", role(player),
+        currentTheme().name, #names > 0 and table.concat(names, " ") or "-", (isOwner(player) and inviteLink()) and 1 or 0))
+end
+
+local function inviteCommand(player)
+    if not isOwner(player) then return say(player, "Only the Den's owner hands out the invite link: ask them for it.") end
+    local link = inviteLink()
+    if not link then
+        return say(player, "Your invite link is on the launcher's Host page (Copy invite link), and in your Host pack "
+            .. "folder: state\\invite.txt. Anyone with it can join this Den.")
+    end
+    say(player, "Give a friend this link: |cffffff00" .. link .. "|r")
+    say(player, "Anyone with it can join, so share it only with friends. A new link (the old one stops working): "
+        .. "the launcher's Host page, New invite link.")
+    if OVMod then pcall(OVMod.Send, player, MOD, "invite", link) end
+end
+
+local function buildersCommand(player)
+    local b = B()
+    local names = b and b.Builders() or {}
+    if #names == 0 then
+        say(player, "Builders: only the owner so far." .. (isOwner(player) and " |cffffff00.den allow <name> build|r lets a friend build." or ""))
+    else
+        say(player, "Builders (besides the owner): " .. table.concat(names, ", ") .. ".")
+    end
+end
+
+local function allowCommand(player, words)
+    if not isOwner(player) then return say(player, "Only the Den's owner decides who builds.") end
+    local name, what = words[2], (words[3] or "build"):lower()
+    if not name or not (what == "build" or what == "view") then
+        return say(player, "Usage: |cffffff00.den allow <name> build|r (they may build) or |cffffff00.den allow <name> view|r (look only)")
+    end
+    local ok, text = B().SetBuilder(player, name, what == "build")
+    say(player, text or "")
+    if ok then sendInfo(player) end
+end
+
+local function roomCommand(player, words)
+    if not isOwner(player) then return say(player, "Only the Den's owner changes the room.") end
+    local w = (words[2] or ""):lower()
+    if w == "" then
+        return say(player, string.format("The room is %s (%d pieces). |cffffff00.den room white|stone|wood|r changes its look, "
+            .. "|cffffff00rebuild|r puts it up again, |cffffff00clear|r takes it down. Your decor stays either way.",
+            currentTheme().name, B().RoomCount()))
+    end
+    if w == "clear" then
+        local n = B().ClearRoom(player)
+        setSetting("cleared", "1")   -- stays down until rebuilt
+        return say(player, string.format("The room is down (%d pieces); |cffffff00.den room rebuild|r puts it back.", n))
+    end
+    local t = (w == "rebuild") and currentTheme() or themeOf(w)
+    if not t then return say(player, "Looks: white, stone, wood.") end
+    local n = buildRoom(player, t, true)
+    say(player, string.format("The room is up again, %s (%d pieces).", t.name, n))
+    sendInfo(player)
+end
+
+local function budgetCommand(player)
+    local i, ic, o, oc = B().DenUsage()
+    say(player, string.format("Decor budget: the room %d of %d points, the yard %d of %d. A prop's points are in the "
+        .. "spawn menu; putting one away (|cffffff00.build store|r) frees them.", i, ic, o, oc))
+end
+
+local function helpCommand(player)
+    local r = role(player)
+    say(player, "This is a Den: a room to build in, private to its owner and the friends they invite.")
+    if r == "visitor" then
+        say(player, "You're visiting: look around as you like. The owner can make you a builder.")
+    else
+        say(player, "You build here (" .. r .. "): F7 is edit mode (hold Q for props, G to carry, Ctrl+Z undo, Ctrl+Y redo).")
+        say(player, "  |cffffff00.den budget|r  |cffffff00.den save <name>|r  |cffffff00.den load <name>|r  |cffffff00.den layouts|r  |cffffff00.den builders|r")
+        say(player, "  Paths: |cffffff00.build path <prop> from|r, walk, |cffffff00.build path <prop> to|r (the Builder's Path: two clicks).")
+    end
+    if r == "owner" then
+        say(player, "  Owner: |cffffff00.den invite|r  |cffffff00.den allow <name> build|view|r  |cffffff00.den room white|stone|wood|rebuild|r")
+        say(player, "  |cffffff00.den save <name>|r also writes a file on your PC (state\\dens); |cffffff00.den load <name> replace|add|r opens one; |cffffff00.den files|r")
+    end
+    if r ~= "visitor" then
+        say(player, "  GM controls, here in the Den: |cffffff00.den gm speed 1|2|4|r  |cffffff00.den gm fly on|off|r  |cffffff00.den gm revive|r  "
+            .. "|cffffff00.den mark|r / |cffffff00.den go|r" .. (r == "owner" and "  |cffffff00.den gm weather|r  |cffffff00.den gm invisible on|off|r  |cffffff00.den gm summon <name>|r" or ""))
+    end
+    if OVDen and OVDen.help then pcall(OVDen.help, player, r) end
+    say(player, "  |cffffff00.den home|r takes you back to the middle of the room.")
+end
+
+------------------------------------------------------------------------------------------------
+-- the save file: the Den as JSON on the host's PC (docs/DEN.md, "The save file")
+------------------------------------------------------------------------------------------------
+exec("CREATE TABLE IF NOT EXISTS mod_den_files (name VARCHAR(24) NOT NULL PRIMARY KEY, props SMALLINT UNSIGNED NOT NULL, "
+    .. "at INT UNSIGNED NOT NULL DEFAULT 0)")
+
+function Files.clean(name)
+    name = tostring(name or ""):lower():gsub("%.den%.json$", ""):gsub("[^%w_%-]", ""):sub(1, 24)
+    return name ~= "" and name or nil
+end
+function Files.path(name) return SAVES .. "/" .. name .. ".den.json" end
+
+-- A small JSON writer: tables with only 1..n keys are arrays, others objects (keys sorted); numbers short.
+local function jstr(s)
+    return '"' .. tostring(s):gsub('[%c"\\]', function(c)
+        if c == '"' then return '\\"' elseif c == "\\" then return "\\\\" elseif c == "\n" then return "\\n" end
+        return string.format("\\u%04x", c:byte())
+    end) .. '"'
+end
+local function jnum(v)
+    if v ~= v or v == math.huge or v == -math.huge then return "0" end
+    if v == math.floor(v) and math.abs(v) < 1e15 then return string.format("%d", v) end
+    local t = string.format("%.4f", v):gsub("0+$", ""):gsub("%.$", "")
+    return t
+end
+function Files.encode(v, indent)
+    indent = indent or ""
+    local t = type(v)
+    if t == "number" then return jnum(v) elseif t == "boolean" then return tostring(v) elseif t == "string" then return jstr(v) end
+    if t ~= "table" then return "null" end
+    local n = #v
+    local isArray = n > 0 or next(v) == nil
+    for k in pairs(v) do if type(k) ~= "number" or k < 1 or k > n or k ~= math.floor(k) then isArray = false; break end end
+    if isArray then
+        local flat, parts = true, {}
+        for i = 1, n do if type(v[i]) == "table" then flat = false end end
+        for i = 1, n do parts[i] = Files.encode(v[i], indent .. " ") end
+        if flat then return "[" .. table.concat(parts, ",") .. "]" end
+        return "[\n" .. indent .. " " .. table.concat(parts, ",\n" .. indent .. " ") .. "\n" .. indent .. "]"
+    end
+    local keys, parts = {}, {}
+    for k in pairs(v) do keys[#keys + 1] = tostring(k) end
+    table.sort(keys)
+    local deep = false
+    for _, k in ipairs(keys) do if type(v[k]) == "table" then deep = true end end
+    for _, k in ipairs(keys) do parts[#parts + 1] = jstr(k) .. ":" .. Files.encode(v[k], indent .. " ") end
+    if not deep then return "{" .. table.concat(parts, ",") .. "}" end
+    return "{\n" .. indent .. " " .. table.concat(parts, ",\n" .. indent .. " ") .. "\n" .. indent .. "}"
+end
+
+-- Packs (docs/DEN.md, "Packs"): parts of the game the player makes from their own game folder (the host kit's
+-- tools/wuhost/packs.py). A Den remembers the packs it took (settings "packs", ids joined by "."); its file lists
+-- them ("packs": ["goldshire"]), and whoever opens it hears which of them they haven't made yet. The packs made on
+-- this PC: <SAVES>/packs.json ({"packs": [{"id": ..., "title": ...}]}), read as data.
+function Files.packIds(list)
+    local out, seen = {}, {}
+    if type(list) ~= "table" then return out end
+    for i = 1, math.min(#list, 32) do
+        local id = list[i]
+        if type(id) == "string" and #id <= 24 and id:match("^[a-z0-9][a-z0-9%-]*$") and not seen[id] then
+            seen[id] = true
+            out[#out + 1] = id
+        end
+    end
+    return out
+end
+function Files.denPacks()
+    local out = {}
+    for id in tostring(settings.packs or ""):gmatch("[^%.]+") do out[#out + 1] = id end
+    return Files.packIds(out)
+end
+function Files.madePacks()
+    local f = io and io.open and io.open(SAVES .. "/packs.json", "r")
+    if not f then return {} end
+    local text = f:read(65536) or ""
+    f:close()
+    local b = B()
+    local doc = b and b.JsonDecode(text, 65536)
+    local out = {}
+    if type(doc) == "table" and type(doc.packs) == "table" then
+        for _, p in ipairs(doc.packs) do
+            if type(p) == "table" and type(p.id) == "string" then
+                out[p.id] = type(p.title) == "string" and p.title:gsub("[^%w%s%-',]", ""):sub(1, 40) or p.id
+            end
+        end
+    end
+    return out
+end
+-- A file's packs join the Den's; returns the ones not made on this PC.
+function Files.takePacks(doc)
+    local ids = Files.packIds(type(doc) == "table" and doc.packs)
+    if #ids == 0 then return {} end
+    local have, list = {}, Files.denPacks()
+    for _, id in ipairs(list) do have[id] = true end
+    for _, id in ipairs(ids) do if not have[id] then list[#list + 1] = id; have[id] = true end end
+    local joined = table.concat(list, ".")
+    if #joined <= 64 then setSetting("packs", joined) end
+    local made, missing = Files.madePacks(), {}
+    for _, id in ipairs(ids) do if not made[id] then missing[#missing + 1] = id end end
+    return missing
+end
+
+-- The whole Den as the file's table (version 1).
+function Files.doc(name)
+    local b, d = B(), den()
+    local lay = b.DenLayout()
+    local packs = Files.denPacks()
+    return { format = "leyline-den", version = Files.VERSION, name = name, saved = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        room = { look = currentTheme().name, size = d.half }, props = lay.props, paths = lay.paths,
+        packs = #packs > 0 and packs or nil }
+end
+
+-- Writes the Den to <SAVES>/<name>.den.json: true, props  or  nil, why
+function Files.write(name)
+    local doc = Files.doc(name)
+    local text = Files.encode(doc) .. "\n"
+    if #text > FILE_MAX then return nil, "the Den is too big for one file" end
+    local tmp = Files.path(name) .. ".tmp"
+    local f = io and io.open and io.open(tmp, "w")
+    if not f then return nil, "the realm can't write to its saves folder" end
+    local ok = f:write(text)
+    f:close()
+    if not ok or not (os.rename and os.rename(tmp, Files.path(name))) then
+        if os.remove then pcall(os.remove, tmp) end
+        return nil, "the realm can't write to its saves folder"
+    end
+    exec(string.format("REPLACE INTO mod_den_files (name, props, at) VALUES ('%s', %d, %d)", name, #doc.props, os.time()))
+    return true, #doc.props
+end
+
+-- Reads and checks <name>.den.json: checked (OVBuild.DenCheck), doc  or  nil, why. Never runs anything in it.
+function Files.read(name, add)
+    local f = io and io.open and io.open(Files.path(name), "r")
+    if not f then return nil, "no file" end
+    local text = f:read(FILE_MAX + 1) or ""
+    f:close()
+    if #text > FILE_MAX then return nil, "That Den file is too big." end
+    local b = B()
+    local doc, why = b.JsonDecode(text:gsub("^\239\187\191", ""), FILE_MAX)
+    if type(doc) ~= "table" then return nil, "That Den file can't be read (" .. tostring(why or "not JSON") .. ")." end
+    local c, why2 = b.DenCheck(doc, add)
+    if not c then return nil, why2 end
+    return c, doc
+end
+
+local function decorCount() return #(B().DenLayout().props) end
+
+-- Opens a checked file for the owner: the room's look from the file, then the props. replace: a copy of what was
+-- here is saved first as "backup".
+function Files.open(player, name, c, doc, replace)
+    local backup
+    if replace and decorCount() > 0 then
+        if Files.write("backup") then backup = true end
+    end
+    local t = type(doc.room) == "table" and themeOf(doc.room.look)
+    if t and t.name ~= currentTheme().name and not settings.cleared then buildRoom(player, t, true) end
+    local n = B().DenApply(player, c, replace)
+    local d = den()
+    say(player, string.format("Opened '%s': %d props%s.%s%s", name, n,
+        c.skipped > 0 and string.format(" (%d left out: not known on this realm, or outside this Den)", c.skipped) or "",
+        backup and " What was here is saved as 'backup' (|cffffff00.den load backup replace|r)." or "",
+        (type(doc.room) == "table" and tonumber(doc.room.size) and tonumber(doc.room.size) ~= d.half)
+            and string.format(" It was saved in a room %d yards wide; this one is %d.", doc.room.size * 2, d.half * 2) or ""))
+    say(player, "Ctrl+Z (|cffffff00.build undo|r) takes it back.")
+    local missing = Files.takePacks(doc)
+    if #missing > 0 then
+        say(player, "This Den uses packs you haven't made yet: " .. table.concat(missing, ", ") .. ". Make them from your own "
+            .. "game folder (|cffffff00leyline pack build " .. missing[1] .. "|r on your PC) and restart the Den; until then "
+            .. "some of it may look bare.")
+    end
+    return n
+end
+
+local function saveCommand(player, name)
+    B().Run(player, "layout save " .. name)
+    if not isOwner(player) then return end
+    local ok, n = Files.write(name)
+    if ok then
+        say(player, string.format("Saved to a file too (%d props): state\\dens\\%s.den.json in your Host pack folder. The "
+            .. "launcher's Host page (Saved Dens) opens it or saves a copy.", n, name))
+    else
+        say(player, "Couldn't save the file (" .. tostring(n) .. "); the layout is saved in the realm.")
+    end
+end
+
+local function loadCommand(player, name, mode)
+    if not isOwner(player) then return B().Run(player, "layout load " .. name .. (mode == "replace" and " replace" or "")) end
+    local c, doc = Files.read(name, mode == "add")
+    if not c then
+        if doc ~= "no file" then return say(player, doc) end
+        return B().Run(player, "layout load " .. name .. (mode == "replace" and " replace" or ""))
+    end
+    local have = decorCount()
+    if have > 0 and mode ~= "replace" and mode ~= "add" then
+        return say(player, string.format("Your Den has %d props. |cffffff00.den load %s replace|r puts the file's Den in their "
+            .. "place (a copy of yours is saved as 'backup'); |cffffff00.den load %s add|r adds it to them.", have, name, name))
+    end
+    Files.open(player, name, c, doc, mode == "replace")
+end
+
+local function filesCommand(player)
+    local q = query("SELECT name, props FROM mod_den_files ORDER BY name")
+    local names = {}
+    if q then repeat names[#names + 1] = q:GetString(0) .. " (" .. q:GetUInt32(1) .. ")" until not q:NextRow() end
+    if #names == 0 then return say(player, "No Den files yet: |cffffff00.den save <name>|r writes one.") end
+    say(player, "Den files saved here: " .. table.concat(names, ", ") .. ". The launcher's Host page lists every file.")
+end
+
+-- The launcher's "Open a saved Den": <SAVES>/open.json names a file; opened once (its id is kept) when the owner
+-- is in the room.
+function Files.pending()
+    local f = io and io.open and io.open(SAVES .. "/open.json", "r")
+    if not f then return nil end
+    local text = f:read(4096) or ""
+    f:close()
+    local doc = B().JsonDecode(text, 4096)
+    if type(doc) ~= "table" then return nil end
+    local name, id = Files.clean(doc.file), tostring(doc.id or ""):gsub("[^%w]", ""):sub(1, 32)
+    if not name or id == "" or settings.opened == id then return nil end
+    return name, id
+end
+
+function Files.openPending(player)
+    if not (player and isOwner(player) and inside(player)) then return end
+    local name, id = Files.pending()
+    if not name then return end
+    setSetting("opened", id)
+    if os.remove then pcall(os.remove, SAVES .. "/open.json") end
+    local c, doc = Files.read(name)
+    if not c then
+        return say(player, "The launcher asked to open '" .. name .. "', but " .. (doc == "no file" and "that file isn't there." or doc))
+    end
+    say(player, "Opening '" .. name .. "' from the launcher.")
+    Files.open(player, name, c, doc, true)
+end
+
+local function run(player, text)
+    local words = {}
+    for w in tostring(text or ""):gmatch("%S+") do if #words < 6 then words[#words + 1] = w:sub(1, 24) end end
+    local sub = (words[1] or "help"):lower()
+    if not B() then return say(player, "The Builder isn't on this realm, so the Den can't work.") end
+    if sub == "home" then toRoom(player, true); return say(player, "Back in the room.")
+    elseif sub == "gm" then return GM.command(player, words)
+    elseif sub == "mark" or sub == "go" then return GM.command(player, { "gm", sub })
+    elseif sub == "invite" then return inviteCommand(player)
+    elseif sub == "builders" then return buildersCommand(player)
+    elseif sub == "allow" then return allowCommand(player, words)
+    elseif sub == "room" then return roomCommand(player, words)
+    elseif sub == "budget" then return budgetCommand(player)
+    elseif sub == "save" or sub == "load" then
+        local name = Files.clean(words[2])
+        if not name then return say(player, "Usage: |cffffff00.den " .. sub .. " <name>|r") end
+        if sub == "save" then return saveCommand(player, name) end
+        return loadCommand(player, name, (words[3] or ""):lower())
+    elseif sub == "layouts" then return B().Run(player, "layout list")
+    elseif sub == "files" then return filesCommand(player)
+    end
+    local extra = OVDen and OVDen.extra[sub]   -- ov_den_home.lua: start, stamp, knock, note, mail, visit
+    if extra then return extra(player, words, text) end
+    helpCommand(player)
+end
+
+------------------------------------------------------------------------------------------------
+-- events
+------------------------------------------------------------------------------------------------
+local function onCommand(event, player, command)
+    if not player then return end
+    local text = (command or ""):gsub("^[%.!]", "")
+    local verb, rest = text:match("^(%S+)%s*(.*)$")
+    if (verb or ""):lower() ~= "den" then return end
+    run(player, rest)
+    sendInfo(player)
+    return false
+end
+
+local function arrive(player)
+    if not player or not den() then return end
+    if inside(player) and not settings.cleared then buildRoom(player) end
+    local b = B()
+    if b then b.SetFloor(floorZ()) end
+    sendInfo(player)
+    if Files.openPending and b then pcall(Files.openPending, player) end
+end
+
+local function onLogin(event, player)
+    if not player then return end
+    local g = player:GetGUIDLow()
+    loginAt[g], heard[g], hinted[g] = os.time(), nil, nil
+    if not free(player) and not inside(player) then toRoom(player, true) end
+    arrive(player)
+end
+
+local function onMap(event, player) arrive(player) end
+
+local function onLogout(event, player)
+    if not player then return end
+    pcall(GM.reset, player)
+    GM.calls[player:GetGUIDLow()] = nil
+end
+
+-- A new character: into the room (a moment after the login, once they are in the world), the hearth set there.
+local function onFirstLogin(event, player)
+    if not player then return end
+    local d = den()
+    if not d then return end
+    try(player, "SetBindPoint", d.x, d.y, floorZ() + 1, d.map, AREA_ID)
+    local function go(_, _, _, pl)
+        pl = pl or player
+        toRoom(pl, true)
+        say(pl, "Welcome to the Den: a plain room for now. Press F7 to start building (or type .den).")
+    end
+    if not try(player, "RegisterEvent", go, 1500, 1) then go() end
+end
+
+RegisterPlayerEvent(3, onLogin)        -- PLAYER_EVENT_ON_LOGIN
+RegisterPlayerEvent(4, onLogout)       -- PLAYER_EVENT_ON_LOGOUT
+RegisterPlayerEvent(28, onMap)         -- PLAYER_EVENT_ON_MAP_CHANGE
+RegisterPlayerEvent(30, onFirstLogin)  -- PLAYER_EVENT_ON_FIRST_LOGIN
+RegisterPlayerEvent(42, onCommand)     -- PLAYER_EVENT_ON_COMMAND
+if CreateLuaEvent then CreateLuaEvent(checkAll, CHECK_MS, 0) end
+
+if OVMod then
+    OVMod.On(MOD, "cmd", function(player, data)
+        heard[player:GetGUIDLow()] = true
+        if #(data or "") > 80 then return end
+        run(player, data)
+        sendInfo(player)
+    end)
+    OVMod.On(MOD, "info", function(player) heard[player:GetGUIDLow()] = true; sendInfo(player) end)
+end
+
+-- after a restart (or a Lua reload): the Builder knows the floor at once
+if B() and settings.floor then B().SetFloor(floorZ()) end
+
+-- OVDen (global): what ov_den_home.lua (starter places, stamps, the door, the mailbox) builds on. extra[sub] are
+-- more .den commands (run as fn(player, words, text)); help(player, role) adds lines to .den's help.
+OVDen = rawget(_G, "OVDen") or {}
+OVDen.extra = OVDen.extra or {}
+OVDen.Files, OVDen.settings, OVDen.setSetting, OVDen.role, OVDen.isOwner = Files, settings, setSetting, role, isOwner
+OVDen.inside, OVDen.floorZ, OVDen.decorCount, OVDen.say, OVDen.sendInfo = inside, floorZ, decorCount, say, sendInfo
+OVDen.themeOf, OVDen.buildRoom = themeOf, buildRoom
+OVDen.GM = GM
+
+-- for stream/tests/test_ov_den.lua (read only)
+OV_DEN_TEST = { THEMES = THEMES, plan = plan, buildRoom = buildRoom, inside = inside, checkAll = checkAll,
+    inviteLink = inviteLink, settings = settings, run = run, role = role, heard = heard, ADDON_WAIT = ADDON_WAIT,
+    Files = Files, SAVES = SAVES, GM = GM }

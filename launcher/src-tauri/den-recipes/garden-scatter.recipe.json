@@ -1,0 +1,30 @@
+{
+ "format": "leyline-recipe",
+ "version": 1,
+ "name": "garden-scatter",
+ "title": "Garden scatter",
+ "about": "Flowers, plants and bushes spread over a round bed (a sunflower spiral, nudged a little at random so it looks grown, not planted), with a low fence around it.",
+ "params": {
+  "x": { "default": 0, "min": -40, "max": 40, "about": "the bed's middle: yards from the room's middle" },
+  "y": { "default": 0, "min": -40, "max": 40 },
+  "radius": { "default": 5, "min": 2, "max": 20, "about": "yards" },
+  "count": { "default": 20, "min": 3, "max": 120, "whole": true, "about": "how many plants" },
+  "jitter": { "default": 0.3, "min": 0, "max": 1, "about": "how far each plant is nudged from the spiral (0: none)" },
+  "fence": { "default": 1, "min": 0, "max": 1, "whole": true, "about": "1: a low fence around the bed" },
+  "seed": { "default": 1, "min": 1, "max": 99999, "whole": true, "about": "another number, another scatter" }
+ },
+ "let": [
+  ["step", "jitter * radius / sqrt(count)"],
+  ["fr", "radius + 1"],
+  ["posts", "max(6, floor(2 * pi * fr / 3))"]
+ ],
+ "pieces": [
+  { "repeat": [["i", "count"]],
+    "let": [["a", "i * 137.508 + seed * 31"], ["rr", "radius * sqrt((i + 0.5) / count)"]],
+    "pick": { "keys": ["flower", "fragrantflower", "plant", "bogbeanplant", "concealingbush"], "by": "floor(rand(i, 3) * 5)" },
+    "x": "x + rr * cos(a) + step * (rand(i, 1) - 0.5)", "y": "y + rr * sin(a) + step * (rand(i, 2) - 0.5)",
+    "yaw": "rand(i, 4) * 360", "scale": "0.8 + rand(i, 5) * 0.5" },
+  { "repeat": [["i", "posts"]], "when": "fence == 1", "let": [["a", "360 * i / posts"]],
+    "key": "woodfence2", "x": "x + fr * cos(a)", "y": "y + fr * sin(a)", "yaw": "a + 90" }
+ ]
+}

@@ -1,0 +1,42 @@
+<!DOCTYPE RCC>
+<!-- Modified for Forge (see CHANGES-FROM-NOGGIT-RED.md): Inter instead of Segoe UI, Font Awesome Free instead of Pro, Forge icon and splash. -->
+<RCC version="1.0">
+    <qresource>
+        <file>DefaultStyle.json</file>
+        <file>convert.png</file>
+    </qresource>
+    <qresource prefix="/fonts">
+        <file>font_awesome_free_solid.ttf</file>
+        <file>noggit_font.ttf</file>
+        <file>Inter-Regular.ttf</file>
+        <file>Inter-SemiBold.ttf</file>
+    </qresource>
+    <qresource prefix="/">
+        <file alias="icon">../media/forge_icon.png</file>
+        <file alias="splash">../media/forge_splash.png</file>
+    </qresource>
+    <qresource prefix="/shader">
+      <file alias="m2_vs">../src/glsl/m2_vert.glsl</file>
+      <file alias="m2_fs">../src/glsl/m2_frag.glsl</file>
+      <file alias="m2_box_vs">../src/glsl/m2_box_vert.glsl</file>
+      <file alias="m2_box_fs">../src/glsl/m2_box_frag.glsl</file>
+      <file alias="particle_vs">../src/glsl/particle_vert.glsl</file>
+      <file alias="particle_fs">../src/glsl/particle_frag.glsl</file>
+      <file alias="ribbon_vs">../src/glsl/ribbon_vert.glsl</file>
+      <file alias="ribbon_fs">../src/glsl/ribbon_frag.glsl</file>
+      <file alias="terrain_vs">../src/glsl/terrain_vert.glsl</file>
+      <file alias="terrain_fs">../src/glsl/terrain_frag.glsl</file>
+      <file alias="wmo_vs">../src/glsl/wmo_vert.glsl</file>
+      <file alias="wmo_fs">../src/glsl/wmo_frag.glsl</file>
+      <file alias="liquid_vs">../src/glsl/liquid_vert.glsl</file>
+      <file alias="liquid_fs">../src/glsl/liquid_frag.glsl</file>
+      <file alias="mfbo_vs">../src/glsl/mfbo_vert.glsl</file>
+      <file alias="mfbo_fs">../src/glsl/mfbo_frag.glsl</file>
+      <file alias="cursor_vs">../src/glsl/cursor_vert.glsl</file>
+      <file alias="cursor_fs">../src/glsl/cursor_frag.glsl</file>
+      <file alias="horizon_vs">../src/glsl/horizon_vert.glsl</file>
+      <file alias="horizon_fs">../src/glsl/horizon_frag.glsl</file>
+      <file alias="occluder_vs">../src/glsl/occluder_vert.glsl</file>
+      <file alias="occluder_fs">../src/glsl/occluder_frag.glsl</file>
+    </qresource>
+</RCC>

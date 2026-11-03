@@ -1,0 +1,23 @@
+/* The launcher's page scroll bar (owner 2026-10-31: "use this as the launcher scroll bar, its mine"): the owner's own
+   art, cut into four parts (art/scroll-top, -thumb, -track, -bottom: the brown edge left off), drawn at 20px wide.
+   The caps are the end buttons; the track repeats; the grip stretches by its middle. For the page itself (main); small
+   panels keep their thin bars. scrollbar-color/-width must be "auto" here or Chromium (the launcher's webview) ignores
+   the ::-webkit-scrollbar parts. */
+html body main { scrollbar-width: auto; scrollbar-color: auto; }
+main::-webkit-scrollbar { width: 20px; }
+main::-webkit-scrollbar-track { background: url("art/scroll-track.png") center top / 100% auto repeat-y #0c0c0c; }
+main::-webkit-scrollbar-thumb {
+  min-height: 24px;
+  border-style: solid; border-width: 5px 0; border-color: transparent;
+  border-image: url("art/scroll-thumb.png") 6 0 fill / 5px 0 stretch;
+}
+main::-webkit-scrollbar-thumb:hover { filter: brightness(1.18); }
+main::-webkit-scrollbar-thumb:active { filter: brightness(0.92); }
+main::-webkit-scrollbar-button:single-button:vertical:decrement {
+  display: block; height: 18px; background: url("art/scroll-top.png") center / 100% 100% no-repeat;
+}
+main::-webkit-scrollbar-button:single-button:vertical:increment {
+  display: block; height: 18px; background: url("art/scroll-bottom.png") center / 100% 100% no-repeat;
+}
+main::-webkit-scrollbar-button:vertical:start:increment, main::-webkit-scrollbar-button:vertical:end:decrement { display: none; }
+main::-webkit-scrollbar-corner { background: #0c0c0c; }

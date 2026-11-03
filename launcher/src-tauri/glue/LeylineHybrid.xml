@@ -1,0 +1,7 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/
+..\FrameXML\UI.xsd">
+	<!-- Leyline hybrid client (docs/HYBRID-CLIENT.md). Listed in GlueXML.toc by the launcher (hybrid.rs), after
+	     Forever UI's glue. LeylineSession.lua is written for one start of the game (empty otherwise). -->
+	<Script file="LeylineSession.lua"/>
+	<Script file="LeylineHybrid.lua"/>
+</Ui>

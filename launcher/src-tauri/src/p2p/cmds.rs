@@ -1,0 +1,542 @@
+//! The desktop app's commands for the Host pack, Docker, the realm's stop/logs/invite, and the P2P/torrent
+//! flags (Settings > Advanced). Registered in `app.rs`'s handler list; the UI is `launcher/ui/host.js`.
+//!
+//! None of them takes a URL or a path from the UI: the pack comes from the catalog or our release, the kit
+//! folder from the saved settings, the flag names from `flags::KNOWN`.
+
+use crate::host::docker::{self, DockerInfo};
+use crate::host::pack::{self, Installed, PackInfo};
+use crate::host::{self, HostOs};
+use crate::p2p::flags::{self, Limits, Local, View};
+use crate::p2p::nat::{self, NatReport};
+use crate::p2p::transfer::NoSwarm;
+use crate::settings;
+use std::path::PathBuf;
+use std::time::Duration;
+
+fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> impl std::future::Future<Output = Result<T, String>> {
+    async move { tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())? }
+}
+
+fn kit() -> Result<PathBuf, String> {
+    let k = settings::load(&settings::app_dir()).host_kit;
+    if k.is_empty() {
+        return Err("Get the Host pack, or choose your host kit folder, first.".into());
+    }
+    Ok(PathBuf::from(k))
+}
+
+#[tauri::command]
+pub async fn hostpack_info() -> Result<PackInfo, String> {
+    blocking(|| Ok(pack::info(&settings::app_dir(), pack::FALLBACK_URL))).await
+}
+
+/// Download, check and install (or update) the Host pack. Returns what is installed and the kit folder, which
+/// the UI then makes the host kit (`set_host_kit`).
+#[tauri::command]
+pub async fn hostpack_install() -> Result<(Installed, String), String> {
+    blocking(|| {
+        let dir = settings::app_dir();
+        let d = pack::available(&dir, pack::FALLBACK_URL)?;
+        let i = pack::install(&dir, &d, &flags::current(&dir), &NoSwarm)?;
+        Ok((i, pack::kit_dir(&dir).display().to_string()))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn docker_info() -> Result<DockerInfo, String> {
+    blocking(|| Ok(docker::check(Duration::from_secs(15)))).await
+}
+
+/// Start Docker Desktop (Start Docker on the Host page). The UI then watches `docker_info` until it answers.
+#[tauri::command]
+pub async fn docker_start() -> Result<String, String> {
+    blocking(docker::start).await
+}
+
+/// Host any client: the realm profiles the kit can run for the clients Leyline found on this PC, and the saved
+/// choice (host/profiles.rs). Nothing here takes a path from the UI: clients by their id, profiles by their name.
+#[tauri::command]
+pub async fn host_profiles() -> Result<(Vec<host::profiles::Offer>, Option<host::profiles::Choice>), String> {
+    blocking(|| {
+        let s = settings::load(&settings::app_dir());
+        let k = (!s.host_kit.is_empty()).then(|| PathBuf::from(&s.host_kit));
+        let choice = k.as_deref().and_then(host::profiles::read_choice);
+        Ok((host::profiles::offers(k.as_deref(), &s.clients), choice))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn host_choose(profile: String, client_id: Option<String>) -> Result<host::profiles::Choice, String> {
+    blocking(move || {
+        let s = settings::load(&settings::app_dir());
+        let client = match client_id.as_deref() {
+            Some(id) => Some(s.clients.iter().find(|c| c.id == id).ok_or("That client is not in your clients any more.")?),
+            None => None,
+        };
+        host::profiles::choose(&kit()?, &profile, client)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn host_stop() -> Result<String, String> {
+    blocking(|| host::stop(&kit()?)).await
+}
+
+#[tauri::command]
+pub async fn host_logs(lines: Option<u32>) -> Result<String, String> {
+    blocking(move || host::logs(&kit()?, lines.unwrap_or(200))).await
+}
+
+/// The invite link the kit wrote (None before the first start).
+#[tauri::command]
+pub fn host_invite() -> Result<Option<String>, String> {
+    Ok(host::invite(&kit()?))
+}
+
+#[tauri::command]
+pub async fn host_new_invite() -> Result<String, String> {
+    blocking(|| host::new_invite(&kit()?)).await
+}
+
+/// The realm list details (tags, region, language, player limit, direct connections) from the kit's beacon.json.
+#[tauri::command]
+pub fn host_listing() -> Result<host::ListingDetails, String> {
+    Ok(host::listing_details(&kit()?))
+}
+
+#[tauri::command]
+pub async fn host_listing_set(details: host::ListingDetails) -> Result<String, String> {
+    blocking(move || host::set_listing_details(&kit()?, &details)).await
+}
+
+// ---------------------------------------------------------------- the host console (host/console.rs)
+
+/// The realm on this PC: its services, uptime, the relay, whether the GM controls work now.
+#[tauri::command]
+pub async fn host_console() -> Result<host::console::Console, String> {
+    blocking(|| Ok(host::console::console(&kit()?))).await
+}
+
+/// One GM control (announce, motd, kick, ban, unban, allow, restart, cancel, status), run by the realm's own script.
+/// A restart is always the five-minute one: no delay is taken from here.
+#[tauri::command]
+pub async fn host_gm(action: String, data: Option<String>) -> Result<String, String> {
+    blocking(move || host::console::gm(&kit()?, &action, data.as_deref().unwrap_or(""))).await
+}
+
+/// Check my realm, sorted into its five checks.
+#[tauri::command]
+pub async fn host_check() -> Result<host::console::CheckReport, String> {
+    blocking(|| host::console::check(&kit()?)).await
+}
+
+/// A realm tool by name (public, private, signup-invite|open|off, claim with its token).
+#[tauri::command]
+pub async fn host_tool(name: String, arg: Option<String>) -> Result<String, String> {
+    blocking(move || host::console::tool(&kit()?, &name, arg.as_deref())).await
+}
+
+#[tauri::command]
+pub fn host_rules() -> Result<Vec<String>, String> {
+    Ok(host::console::rules(&kit()?))
+}
+
+#[tauri::command]
+pub async fn host_rules_set(lines: Vec<String>) -> Result<String, String> {
+    blocking(move || host::console::set_rules(&kit()?, &lines)).await
+}
+
+// ---------------------------------------------------------------- a Den's save files (host/dens.rs)
+
+/// Saved Dens: the Den files in the kit's state/dens, newest first.
+#[tauri::command]
+pub fn host_dens() -> Result<Vec<host::dens::DenFile>, String> {
+    Ok(host::dens::list(&kit()?))
+}
+
+/// One Den file's text, for Save a copy (they are 512 KB at most).
+#[tauri::command]
+pub fn host_den_text(name: String) -> Result<String, String> {
+    host::dens::text(&kit()?, &name)
+}
+
+/// Adds a Den file the host picked on this PC (its name and text, read by the page): checked, never over another.
+#[tauri::command]
+pub fn host_den_add(file_name: String, text: String) -> Result<String, String> {
+    host::dens::add(&kit()?, &file_name, &text)
+}
+
+/// Open a saved Den: the realm opens it (replacing what is there, a copy kept as "backup") when the owner is in the Den.
+#[tauri::command]
+pub fn host_den_open(name: String) -> Result<String, String> {
+    host::dens::open(&kit()?, &name)
+}
+
+// ---------------------------------------------------------------- Your Den: one page, Den Lite or the Docker Den (host/yourden.rs)
+
+fn lite() -> host::lite::Binary {
+    host::lite::Binary::find(&settings::app_dir())
+}
+
+/// The chosen Host pack, if any (no error: Your Den works without one through Den Lite).
+pub(crate) fn kit_opt() -> Option<PathBuf> {
+    kit().ok().filter(|k| k.is_dir())
+}
+
+/// (the Host pack hosts the Den, the other realm it hosts)
+pub(crate) fn docker_den(k: Option<&std::path::Path>) -> (bool, Option<String>) {
+    match k.and_then(|k| host::inspect(Some(k), None).realm) {
+        Some(r) if r.profile == host::profiles::DEN => (true, None),
+        Some(r) => (false, Some(if r.name.is_empty() { "a realm".into() } else { r.name })),
+        None => (false, None),
+    }
+}
+
+/// Where Saved Dens are now: the Docker Den's files once the Host pack hosts it, else Den Lite's.
+pub(crate) fn den_root() -> PathBuf {
+    let k = kit_opt();
+    let (den, _) = docker_den(k.as_deref());
+    host::yourden::saves_root(k.as_deref(), den, &host::lite::root(&settings::app_dir())).0
+}
+
+/// Everything the Your Den page shows: Den Lite, the Docker Den, Saved Dens and Packs.
+#[tauri::command]
+pub async fn den_state() -> Result<host::yourden::DenState, String> {
+    use host::lite::DenLite;
+    blocking(|| {
+        let app = settings::app_dir();
+        let k = kit_opt();
+        let (den, other) = docker_den(k.as_deref());
+        let lite_root = host::lite::root(&app);
+        let (root, saves) = host::yourden::saves_root(k.as_deref(), den, &lite_root);
+        let mut roots: Vec<&std::path::Path> = vec![root.as_path()];
+        if let Some(k) = k.as_deref() {
+            if k != root.as_path() {
+                roots.push(k);
+            }
+        }
+        if lite_root != root {
+            roots.push(&lite_root);
+        }
+        Ok(host::yourden::DenState {
+            lite: lite().status(),
+            kit: k.is_some(),
+            docker_den: den,
+            other_realm: other,
+            account: if den { k.as_deref().map(host::yourden::account).unwrap_or_default() } else { String::new() },
+            saves,
+            dens: host::dens::list(&root),
+            packs: host::yourden::packs(&roots),
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn den_lite_stop() -> Result<(), String> {
+    use host::lite::DenLite;
+    host::litenet::stop(); // friends can't reach a stopped Den
+    blocking(|| lite().stop()).await
+}
+
+/// One Saved Den's text (Save a copy), wherever Saved Dens are now.
+#[tauri::command]
+pub fn den_text(name: String) -> Result<String, String> {
+    host::dens::text(&den_root(), &name)
+}
+
+#[tauri::command]
+pub fn den_add(file_name: String, text: String) -> Result<String, String> {
+    host::dens::add(&den_root(), &file_name, &text)
+}
+
+#[tauri::command]
+pub fn den_open(name: String) -> Result<String, String> {
+    host::dens::open(&den_root(), &name)
+}
+
+/// Add from a link: a Den shared on the Workshop (a .den.json GitHub release file), checked, into Saved Dens.
+#[tauri::command]
+pub async fn den_fetch(url: String, sha256: Option<String>) -> Result<String, String> {
+    blocking(move || host::yourden::fetch_add(&den_root(), url.trim(), sha256.as_deref(), &settings::app_dir().join("tmp"))).await
+}
+
+/// Share with friends, before the Docker Den starts: the Den Lite files into the Host pack's saves. Returns the name
+/// of the newest one there, which the page opens once the Docker Den is up (or None: Den Lite had none).
+#[tauri::command]
+pub async fn den_share_move() -> Result<Option<String>, String> {
+    use host::lite::DenLite;
+    blocking(|| {
+        let k = kit()?;
+        let _ = lite().stop();   // one Den at a time: the Lite one hands over its files
+        host::yourden::move_to_kit(&host::lite::root(&settings::app_dir()), &k)
+    })
+    .await
+}
+
+// ---------------------------------------------------------------- modes anyone can host and fork (host/modes.rs)
+
+/// The Host page's mode cards: the templates, then this Host pack's own forks (no Host pack yet: the templates).
+#[tauri::command]
+pub fn host_modes() -> Vec<host::modes::Mode> {
+    host::modes::list(kit().ok().as_deref())
+}
+
+/// Fork this mode: a copy in the Host pack with based_on set. `listed` is a listed realm's mode recipe (checked again).
+#[tauri::command]
+pub fn host_mode_fork(id: String, listed: Option<serde_json::Value>, author: Option<String>) -> Result<host::modes::Mode, String> {
+    host::modes::fork(&kit()?, &id, listed.as_ref(), author.as_deref())
+}
+
+/// Change a fork: name, line, your name, the jam, its settings' defaults.
+#[tauri::command]
+pub fn host_mode_save(id: String, edits: serde_json::Value) -> Result<host::modes::Mode, String> {
+    host::modes::save(&kit()?, &id, &edits)
+}
+
+#[tauri::command]
+pub fn host_mode_remove(id: String) -> Result<(), String> {
+    host::modes::remove(&kit()?, &id)
+}
+
+/// Host this mode: the answers checked, state/mode.json written, its Den file opened. The page then starts the
+/// returned ruleset (host_choose, host_start_quiet). `id` None: no mode (a plain ruleset from the picker).
+#[tauri::command]
+pub fn host_mode_use(id: Option<String>, values: serde_json::Value) -> Result<Option<host::modes::UseResult>, String> {
+    let k = kit()?;
+    match id {
+        Some(id) => host::modes::use_mode(&k, &id, &values).map(Some),
+        None => {
+            host::modes::clear(&k);
+            Ok(None)
+        }
+    }
+}
+
+/// `leyline link` (Link my server.bat) in a window of its own.
+#[tauri::command]
+pub fn host_link_start() -> Result<String, String> {
+    let plan = host::plan_link(&kit()?, HostOs::current(), host::on_path)?;
+    host::run(&plan)?;
+    Ok(plan.note)
+}
+
+/// Start the realm with no window: the Host page's answers (name, public or private, the host's account name) go to
+/// the kit's script, which asks nothing; `host_progress` then shows its steps.
+#[tauri::command]
+pub fn host_start_quiet(answers: host::Answers) -> Result<String, String> {
+    let plan = host::plan_quiet(&kit()?, HostOs::current(), &answers)?;
+    host::run_job(&plan, "host")
+}
+
+/// "Put it on Leyline": `leyline link` for a server found on this PC (or typed in), with no window.
+#[tauri::command]
+pub fn host_link_quiet(answers: host::LinkAnswers) -> Result<String, String> {
+    let plan = host::plan_link_quiet(&kit()?, HostOs::current(), &answers)?;
+    host::run_job(&plan, "link")
+}
+
+/// "Already run a server?": a game server found on this PC (its containers, programs or game ports), read-only.
+#[tauri::command]
+pub async fn host_scan() -> Result<Option<host::scan::Found>, String> {
+    blocking(|| Ok(host::scan::scan())).await
+}
+
+/// The quiet start's step, in plain words.
+#[tauri::command]
+pub fn host_progress() -> host::Progress {
+    host::progress()
+}
+
+#[tauri::command]
+pub async fn p2p_flags() -> Result<View, String> {
+    blocking(|| Ok(flags::load(&settings::app_dir(), flags::URL))).await
+}
+
+/// Set one flag on this PC (`value` true/false), or follow the site again (`value` null).
+#[tauri::command]
+pub fn p2p_set_flag(name: String, value: Option<bool>) -> Result<Local, String> {
+    flags::set_local(&settings::app_dir(), &name, value)
+}
+
+#[tauri::command]
+pub fn p2p_set_limits(limits: Option<Limits>) -> Result<Local, String> {
+    flags::set_local_limits(&settings::app_dir(), limits)
+}
+
+/// "Help the network: relay for others": start (`on`) or stop the Host pack's community relay. Needs the site's
+/// `relay_volunteer` offer and this PC's own "On" (`flags::volunteer_allowed`).
+#[tauri::command]
+pub async fn host_volunteer_relay(on: bool, public_host: Option<String>, region: Option<String>) -> Result<String, String> {
+    blocking(move || {
+        let dir = settings::app_dir();
+        let site = flags::load(&dir, flags::URL).site;
+        host::volunteer_relay(&kit()?, &site, &flags::load_local(&dir), on, public_host.as_deref(), region.as_deref())
+    })
+    .await
+}
+
+/// The NAT check, only when direct connections are on.
+#[tauri::command]
+pub async fn p2p_nat_check() -> Result<NatReport, String> {
+    blocking(|| {
+        let f = flags::current(&settings::app_dir());
+        if !f.p2p_hosting {
+            return Err("Direct connections are off (Settings > Advanced).".into());
+        }
+        let servers = if f.stun.is_empty() { vec!["stun.cloudflare.com:3478".to_string()] } else { f.stun.clone() };
+        Ok(nat::check(&servers, Duration::from_secs(2)))
+    })
+    .await
+}
+
+// Shared magnet: links (p2p/magnet.rs), behind the `magnet_links` flag. With the flag off every command answers "off"
+// and does nothing. Only info-hashes of Leyline's own checked packages (the cached catalog) are accepted.
+
+fn inbox() -> &'static std::sync::Mutex<crate::p2p::magnet::Inbox> {
+    static INBOX: std::sync::OnceLock<std::sync::Mutex<crate::p2p::magnet::Inbox>> = std::sync::OnceLock::new();
+    INBOX.get_or_init(Default::default)
+}
+
+/// A `magnet:` link Leyline was started with (its arguments). Queued for `magnet_pending`; nothing is fetched.
+pub fn magnet_from_args() {
+    if let Some(uri) = crate::p2p::magnet::from_args(std::env::args()) {
+        let dir = settings::app_dir();
+        let flags = flags::current(&dir);
+        if flags.magnet_links {
+            if let Ok(mut i) = inbox().lock() {
+                crate::p2p::magnet::open(&uri, &flags, &crate::p2p::magnet::known(&dir), &mut i);
+            }
+        }
+    }
+}
+
+/// Open a shared magnet link: `{"status":"off"}`, `{"status":"accepted","package":{..},"open":<leyline link>}` or
+/// `{"status":"refused","reason":".."}`. Nothing is downloaded here.
+#[tauri::command]
+pub async fn magnet_open(uri: String) -> Result<crate::p2p::magnet::Opened, String> {
+    blocking(move || {
+        let dir = settings::app_dir();
+        let flags = flags::current(&dir);
+        let mut i = inbox().lock().map_err(|_| "magnet lock poisoned")?;
+        Ok(crate::p2p::magnet::open(&uri, &flags, &crate::p2p::magnet::known(&dir), &mut i))
+    })
+    .await
+}
+
+/// The shared links this session received (newest last). Empty when the flag is off.
+#[tauri::command]
+pub fn magnet_pending() -> Result<Vec<crate::p2p::magnet::Pending>, String> {
+    if !flags::current(&settings::app_dir()).magnet_links {
+        return Ok(vec![]);
+    }
+    Ok(inbox().lock().map_err(|_| "magnet lock poisoned")?.list())
+}
+
+/// Forget one shared link (by info-hash) or all of them.
+#[tauri::command]
+pub fn magnet_dismiss(info_hash: Option<String>) -> Result<(), String> {
+    inbox().lock().map_err(|_| "magnet lock poisoned")?.dismiss(info_hash.as_deref());
+    Ok(())
+}
+
+/// Download an accepted shared package through the one download path (refusal list + the catalog's sha256), into
+/// `<app data>/downloads/magnet/`. Only an info-hash that `magnet_open` accepted and the catalog still lists.
+#[tauri::command]
+pub async fn magnet_fetch(info_hash: String) -> Result<(String, crate::p2p::transfer::Outcome), String> {
+    blocking(move || {
+        let dir = settings::app_dir();
+        let flags = flags::current(&dir);
+        if !flags.magnet_links {
+            return Err(crate::p2p::magnet::OFF.into());
+        }
+        if inbox().lock().map_err(|_| "magnet lock poisoned")?.accepted(&info_hash).is_none() {
+            return Err(crate::p2p::magnet::UNKNOWN.into());
+        }
+        let k = crate::p2p::magnet::known(&dir).into_iter().find(|k| k.info_hash == info_hash).ok_or(crate::p2p::magnet::UNKNOWN)?;
+        let (path, out) = crate::p2p::magnet::fetch(&dir, &k, &flags, &NoSwarm)?;
+        Ok((path.display().to_string(), out))
+    })
+    .await
+}
+
+// ------------------------------------------------------------------------------------------------ the Network tab
+// (host/network.rs, docs/leyline/join-network.md, docs/leyline/be-a-node.md)
+
+/// How this realm shows on the Leyline network: listed, Hero Key, who's online, mods, rules, arrivals, node status.
+#[tauri::command]
+pub async fn host_network() -> Result<host::network::Network, String> {
+    blocking(|| Ok(host::network::read(&kit()?, crate::p2p::mesh::now_secs()))).await
+}
+
+/// One Network tab change, by its word (host/network.rs `set_cmd`); `arg` only for the mods list (JSON, checked there).
+#[tauri::command]
+pub async fn host_network_set(what: String, arg: Option<String>) -> Result<String, String> {
+    blocking(move || host::network::set(&kit()?, &what, arg.as_deref())).await
+}
+
+/// Test Hero Key sign-in: the kit's dry run beside the realm's database; nothing stays.
+#[tauri::command]
+pub async fn host_herokey_test() -> Result<host::network::TestReport, String> {
+    blocking(|| host::network::herokey_test(&kit()?)).await
+}
+
+#[derive(serde::Serialize)]
+pub struct CarryView {
+    pub settings: host::network::CarrySettings,
+    pub node: host::network::NodeStatus,
+    /// The website offers it (`relay_volunteer`): the owner's switch for everyone.
+    pub offered: bool,
+    pub idle_secs: Option<u64>,
+    pub on_ac: Option<bool>,
+}
+
+static CARRY_TICK: std::sync::Once = std::sync::Once::new();
+
+/// While the launcher runs: every 30 s, pause or resume carrying by the "only while idle and plugged in" rule.
+fn carry_ticker() {
+    CARRY_TICK.call_once(|| {
+        std::thread::spawn(|| loop {
+            if let Ok(k) = kit() {
+                host::network::tick(&k, &settings::app_dir());
+            }
+            std::thread::sleep(Duration::from_secs(30));
+        });
+    });
+}
+
+/// Help carry the network: this PC's settings, the live "carrying N players" status, and whether it is offered.
+#[tauri::command]
+pub async fn host_carry() -> Result<CarryView, String> {
+    blocking(|| {
+        let dir = settings::app_dir();
+        let s = host::network::load_carry(&dir);
+        if s.on {
+            carry_ticker();
+        }
+        let node = kit().map(|k| host::network::node_status(&k, crate::p2p::mesh::now_secs())).unwrap_or_default();
+        Ok(CarryView { settings: s, node, offered: flags::load(&dir, flags::URL).site.relay_volunteer,
+                       idle_secs: host::network::idle_secs(), on_ac: host::network::on_ac() })
+    })
+    .await
+}
+
+/// Turn helping carry the network on (with its caps) or off: one click.
+#[tauri::command]
+pub async fn host_carry_set(settings: host::network::CarrySettings) -> Result<String, String> {
+    blocking(move || {
+        let dir = crate::settings::app_dir();
+        let offered = flags::load(&dir, flags::URL).site.relay_volunteer;
+        let on = settings.on;
+        let r = host::network::carry_set(&kit()?, &dir, settings, offered)?;
+        if on {
+            carry_ticker();
+        }
+        Ok(r)
+    })
+    .await
+}

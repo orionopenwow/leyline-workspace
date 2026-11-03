@@ -1,0 +1,53 @@
+{
+ "repo": "https://github.com/OutThisLife/azeroth-survivors-re",
+ "sha": "72048f4056e2a57d99234e4fb658179e577d1d92",
+ "source": "unmodified",
+ "toolchain": "rust 1.98.1 (the pin), prebuilt wasm32 std",
+ "deviations": [
+  "gzip -n (no file name or time in the .gz) so the hashes are the same from one build to the next; upstream's web-build.sh runs gzip -kf -6 without -n.",
+  "added next to the build: licenses/ (upstream's LICENSE-MIT and LICENSE-APACHE, third_party/kira's and third_party/lua-src's licences, and tools/survivors/licenses-index.html as index.html)."
+ ],
+ "cargo_wasm": {
+  "what": "target/wasm32-unknown-unknown/release/wenilla.wasm before wasm-bindgen (rust 1.98.1 (the pin), prebuilt wasm32 std)",
+  "sha256": "e6dc17d393d2c5a64fb408eabe3b03e0a73fecceb3eca2d83805cb226d655362",
+  "bytes": 165260859
+ },
+ "dist": {
+  "files": {
+   "boot-manifest.json": "75f8fb4ba3f7f84145e6305bbbb10115facb295a8fd71837cfeb205ebcebad55",
+   "boot.js": "d5efd3670d7410f42d812239aab501c5d2a228e4c4b5076498cd05a7aa79ef46",
+   "boot.js.br": "6cd9b16a909cbe2d0f85f2e658dc8d5272cc99788bedd36ab1ccde6c3e443793",
+   "boot.js.gz": "df4e74b9ac1128c01b3eb2b307b52f22a9b7593db254a7988e04dccd6718fee9",
+   "bridge.js": "366fc4f9049554ae2d4aa5c5314f8494905a46f0c1fd35ea109809ce64466ee0",
+   "bridge.js.br": "1c02c4e442601339f2128067120dac78f94611aaffb3243c5cc3d8fab3219b73",
+   "bridge.js.gz": "d187e1af6ab3f2a85f74cdb1ca35d5b4f14c3a80b840b2b193e8f2411095cf34",
+   "examples/hud.js": "c8066cc05368a5552c1ab5761c146915749a6809f1580805996e0d2314456a22",
+   "examples/idle.js": "82d0d0b852b8385f6bb9c7c36f05c64c977221440890cc30d2ef1ac3b06416ed",
+   "favicon.svg": "a7f7be686c875787a76787e0365869880b8865de4554941510a55a17eea019ef",
+   "index.html": "b7e4ca4c5e67be481299c418dfa954a3cfe5d570069841bb6467b48ddf6aacbe",
+   "licenses/LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+   "licenses/LICENSE-MIT": "bb5e0128050c349695ead59646679a093f77e540b17791958a629c2477aed97f",
+   "licenses/index.html": "9c8aa8798df8f090318e5163687fca500ba10977a4a4b546ea68438b63f9a40f",
+   "licenses/kira-LICENSE-APACHE": "85bb5389360900e5ef360073a906f7ff6c2866995743242671091f376fe2c92d",
+   "licenses/kira-LICENSE-MIT": "1d075e895672c131d6adda4c0d03933e4162ca732d8c99b0cc497af884b8e703",
+   "licenses/lua-LICENSE": "bb53bb4136a0ac250ba54c3baf6fb0ee22f33879a696848dc0d0aa64dfa9412d",
+   "platform.js": "22684974b937e2253871e446e3a60c66940fab20a91af8703c89d74891ceb6f1",
+   "platform.js.br": "4bb2d30607ff50c03a230801bd59f206d05ca3112242648854d6c5ad9272ca2b",
+   "platform.js.gz": "d6806ce2b1c36b011ff5fadec326080472a42d6eb9a103c40cb69e18cfc3bcbc",
+   "snippets/benilla-app-e11f90d5572a787b/inline0.js": "a6d8b6cbe3ade99211ad4f01a4712c9996044e402975fc3d72e7f7b6d043f85b",
+   "wasi_stubs.js": "610f2e16508e8a1a31ec5bc071ea7e9e59273f836c626bac4a2dce581fac6d62",
+   "wasi_stubs.js.br": "a1f4df0af3355af6d934931c0c35326fd709e1f09b21a422f0cf3c6697d15329",
+   "wasi_stubs.js.gz": "81a378d1ed36dce4fb0ec76fde7615f9251f12805d4edfe1f0677ad9faad2837",
+   "wenilla.js": "6f1c191ed43986c7b44c6bb7fa9f63de048515d8410969075e951f2beefdf136",
+   "wenilla.js.br": "f8672361bd45895ae1f39f57beda2843eafeda845aefb29eea450ec8b0adbfaf",
+   "wenilla.js.gz": "b16b8b5bf2612806fb0fe696f40cbe0b33d57e3257d445807c56456feacfc1a3",
+   "wenilla_bg.wasm": "d75c125507d6c4d1aa7ec083879bfae3b4dcd1e4601322200fc9da8b3b18b65e",
+   "wenilla_bg.wasm.br": "7d8ac944ff91a9af6eb9abbdfb71350b1b330d32d324e1ac0e71f08e7fd12cbf",
+   "wenilla_bg.wasm.gz": "699a00bbeac0542e8b05310f96d87960872e39ed399e48707832c2848b1e1da2",
+   "world-manifest.json": "214574f59d67088e66c5ab3733d8f9b27ffbb3e535d79db1c39151bb9c30e65b"
+  },
+  "count": 31,
+  "bytes": 114942001
+ },
+ "committed": "2026-10-26T11:00:31-05:00"
+}

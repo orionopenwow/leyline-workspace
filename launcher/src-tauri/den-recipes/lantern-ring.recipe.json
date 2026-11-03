@@ -1,0 +1,20 @@
+{
+ "format": "leyline-recipe",
+ "version": 1,
+ "name": "lantern-ring",
+ "title": "Lantern ring",
+ "about": "Lights in a circle, facing out: around a fire, a well, or the middle of the room. A campfire in the middle if you like.",
+ "params": {
+  "x": { "default": 0, "min": -40, "max": 40, "about": "the ring's middle: yards from the room's middle" },
+  "y": { "default": 0, "min": -40, "max": 40 },
+  "radius": { "default": 5, "min": 1.5, "max": 20, "about": "yards" },
+  "count": { "default": 8, "min": 3, "max": 32, "whole": true, "about": "how many lights" },
+  "light": { "default": "lantern", "piece": true, "about": "which light (a catalog key: lantern, torch, lamppost, brazier...)" },
+  "fire": { "default": 0, "min": 0, "max": 1, "whole": true, "about": "1: a campfire in the middle" }
+ },
+ "pieces": [
+  { "repeat": [["i", "count"]], "let": [["a", "360 * i / count"]],
+    "key": "$light", "x": "x + radius * cos(a)", "y": "y + radius * sin(a)", "yaw": "a" },
+  { "when": "fire", "key": "campfire", "x": "x", "y": "y" }
+ ]
+}

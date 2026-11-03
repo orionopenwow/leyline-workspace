@@ -1,0 +1,76 @@
+/* Agents (agents.js): the page, and the approval card that shows on every page. Theme tokens only (style.css). */
+.ag-allow {
+  display: flex; align-items: center; gap: 12px; margin: 4px 0 6px; padding: 12px 14px; max-width: 640px; cursor: pointer;
+  border-radius: var(--t-radius-sm); background: var(--t-card); border: var(--t-border-w) solid var(--t-card-border);
+}
+.ag-allow > span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.ag-allow .hint { margin: 0; }
+.ag-allow input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.ag-sw {
+  flex: none; position: relative; width: 40px; height: 22px; border-radius: 999px;
+  background: var(--t-raised); border: var(--t-border-w) solid var(--t-border-strong); transition: background 0.15s;
+}
+.ag-sw::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--t-muted); transition: transform 0.15s, background 0.15s;
+}
+.ag-allow input:checked + .ag-sw { background: var(--t-accent); border-color: var(--t-accent); }
+.ag-allow input:checked + .ag-sw::after { transform: translateX(18px); background: var(--t-on-accent); }
+.ag-allow input:focus-visible + .ag-sw { outline: 2px solid var(--t-accent); outline-offset: 2px; }
+
+.ag-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.ag-conn p { margin: 0 0 10px; color: var(--t-text-2); }
+.ag-conn .hint { margin: 8px 0 0; }
+.ag-conn details summary { cursor: pointer; color: var(--t-accent); font-weight: 600; font-size: 12.5px; margin-top: 4px; }
+.ag-cmd { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 10px; }
+.ag-cmd code, .ag-cmd pre {
+  flex: 1; min-width: 0; margin: 0; padding: 7px 9px; overflow-x: auto; white-space: pre; border-radius: var(--t-radius-xs);
+  font: 11.5px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace; color: var(--t-text);
+  background: var(--t-surface-2); border: var(--t-border-w) solid var(--t-border);
+}
+.ag-dot { display: inline-flex; align-items: center; gap: 6px; letter-spacing: 0; text-transform: none; font-weight: 600; }
+.ag-dot::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--t-muted); }
+.ag-dot.on { color: var(--t-ok); }
+.ag-dot.on::before { background: var(--t-ok); }
+.ag-dot.warn { color: var(--t-warn); }
+.ag-dot.warn::before { background: var(--t-warn); }
+
+.ag-tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.ag-tier { padding: 12px 14px; border-radius: var(--t-radius-sm); background: var(--t-card); border: var(--t-border-w) solid var(--t-card-border);
+  border-top: 3px solid var(--t-muted); }
+.ag-tier.ag-read { border-top-color: var(--t-ok); }
+.ag-tier.ag-ask { border-top-color: var(--t-warn); }
+.ag-tier.ag-never { border-top-color: var(--t-danger); }
+.ag-tier ul { margin: 8px 0 0; padding-left: 18px; color: var(--t-text-2); }
+.ag-tier li { margin: 3px 0; }
+.ag-tier .hint { margin: 8px 0 0; }
+
+.ag-wait { display: flex; flex-direction: column; gap: 10px; max-width: 640px; }
+.ag-wait .hint { margin: 0; }
+.ag-req { border-left: 3px solid var(--t-warn); }
+.ag-req h4, .ag-card h3 { margin: 4px 0 6px; font: 700 15px/1.3 var(--t-font); color: var(--t-text); letter-spacing: 0; text-transform: none; }
+.ag-req ul, .ag-card ul { margin: 0 0 12px; padding-left: 18px; color: var(--t-text-2); overflow-wrap: anywhere; }
+.ag-req li, .ag-card li { margin: 3px 0; }
+.ag-card-head { display: flex; justify-content: space-between; gap: 10px; font: 600 11px var(--t-font); letter-spacing: 0.06em; text-transform: uppercase; color: var(--t-muted); }
+.ag-card-from { color: var(--t-warn); }
+
+.ag-audit .hint { margin: 0; }
+.ag-log { list-style: none; margin: 0; padding: 0; max-width: 900px; }
+.ag-log li {
+  display: grid; grid-template-columns: 120px 120px 1fr auto; gap: 10px; align-items: baseline; padding: 7px 4px;
+  border-bottom: var(--t-border-w) solid var(--t-border); font-size: 13px;
+}
+.ag-when, .ag-from { color: var(--t-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ag-res { font-weight: 600; color: var(--t-text-2); }
+
+/* the approval card: above everything, bottom right, on any page */
+.ag-card {
+  position: fixed; right: 20px; bottom: 96px; z-index: 60; width: min(400px, calc(100vw - 40px)); padding: 14px 16px;
+  border-radius: var(--t-radius); background: var(--t-surface); color: var(--t-text);
+  border: var(--t-border-w) solid var(--t-border-strong); border-left: 4px solid var(--t-warn);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+}
+.ag-card[hidden] { display: none; }
+.ag-card .status { margin: 8px 0 0; min-height: 0; }
+html[data-base="light"] .ag-card { box-shadow: 0 14px 40px rgba(16, 24, 40, 0.2); }
+.panel .ag-grid > .card { margin: 0; }

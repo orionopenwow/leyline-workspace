@@ -1,0 +1,433 @@
+{
+ "schema": 1,
+ "about": "Mode templates anyone can host and fork (hosting/kit/modes, docs/MODES.md). Made by python3 -I stream/modepack.py --write; the launcher builds it in, the site serves /wrath/modes/<id>.",
+ "modes": [
+  {
+   "format": "leyline-mode",
+   "schema": 1,
+   "id": "levelling",
+   "name": "Classic levelling",
+   "line": "The whole world from level 1, at the speed you pick.",
+   "author": "Leyline",
+   "version": "1.0",
+   "based_on": null,
+   "status": "live",
+   "profile": "main",
+   "scripts": [
+    "ov_main.lua",
+    "ov_qol.lua",
+    "ov_events.lua"
+   ],
+   "env": {},
+   "mods": [],
+   "tags": [
+    "blizzlike"
+   ],
+   "picture": "picture.svg",
+   "den": null,
+   "settings": [
+    {
+     "key": "xp",
+     "label": "Levelling speed",
+     "env": [
+      "AC_RATE_XP_KILL",
+      "AC_RATE_XP_QUEST",
+      "AC_RATE_XP_QUEST_DF",
+      "AC_RATE_XP_EXPLORE"
+     ],
+     "type": "number",
+     "min": 1,
+     "max": 10,
+     "default": 3,
+     "unit": "x"
+    },
+    {
+     "key": "rep",
+     "label": "Reputation speed",
+     "env": [
+      "AC_RATE_REPUTATION_GAIN"
+     ],
+     "type": "number",
+     "min": 1,
+     "max": 10,
+     "default": 2,
+     "unit": "x"
+    },
+    {
+     "key": "boost",
+     "label": "Offer a one-time boost",
+     "help": "New characters may skip to the top level once.",
+     "env": [
+      "OV_MAIN"
+     ],
+     "type": "toggle",
+     "default": false
+    },
+    {
+     "key": "events",
+     "label": "Events in chat",
+     "help": "Trivia, hide and seek and the stock events, announced.",
+     "env": [
+      "OV_EVENTS"
+     ],
+     "type": "toggle",
+     "default": true
+    }
+   ],
+   "picture_data": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMjAgMTgwIiB3aWR0aD0iMzIwIiBoZWlnaHQ9IjE4MCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJza3kiIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiMxYjE0NDYiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMwYTBkMjciLz48L2xpbmVhckdyYWRpZW50PjxyYWRpYWxHcmFkaWVudCBpZD0iZ2xvdyIgY3g9Ii43IiBjeT0iLjI1IiByPSIuNiI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjN2E1Y2ZmIiBzdG9wLW9wYWNpdHk9Ii41NSIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzdhNWNmZiIgc3RvcC1vcGFjaXR5PSIwIi8+PC9yYWRpYWxHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjMyMCIgaGVpZ2h0PSIxODAiIGZpbGw9InVybCgjc2t5KSIvPjxyZWN0IHdpZHRoPSIzMjAiIGhlaWdodD0iMTgwIiBmaWxsPSJ1cmwoI2dsb3cpIi8+PHBhdGggZD0iTTAgMTUwIEw3MCA5NSBMMTEwIDEyMCBMMTcwIDYwIEwyMzAgMTEwIEwyNzAgODUgTDMyMCAxMjAgTDMyMCAxODAgTDAgMTgwWiIgZmlsbD0iIzI0MWM1YyIvPjxwYXRoIGQ9Ik0wIDE2NSBMOTAgMTI1IEwxNDAgMTQwIEwyMDAgMTAwIEwzMjAgMTUwIEwzMjAgMTgwIEwwIDE4MFoiIGZpbGw9IiMyZjI3NzUiLz48cGF0aCBkPSJNNDAgMTc4IEM5MCAxNTAgMTIwIDE2MCAxNjAgMTM1IFMyMzAgMTAwIDI1MCA4MiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNWZlM2ZmIiBzdHJva2Utd2lkdGg9IjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWRhc2hhcnJheT0iMiAxMiIvPjxnIGZpbGw9IiM1ZmUzZmYiPjxjaXJjbGUgY3g9IjI1MCIgY3k9IjgwIiByPSI3Ii8+PC9nPjxwYXRoIGQ9Ik0yNTAgMzAgbDAgNDAgTTI0MCA0MiBsMTAgLTEyIGwxMCAxMiIgc3Ryb2tlPSIjZmZkNzdhIiBzdHJva2Utd2lkdGg9IjQiIGZpbGw9Im5vbmUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjwvc3ZnPgo="
+  },
+  {
+   "format": "leyline-mode",
+   "schema": 1,
+   "id": "solo-leveling",
+   "name": "Solo leveling",
+   "line": "Just you, levelling from 1. Helper bots fill your group; dungeons scale to you.",
+   "author": "Leyline",
+   "version": "1.0",
+   "based_on": null,
+   "status": "live",
+   "profile": "solo",
+   "scripts": [
+    "ov_companions.lua",
+    "ov_qol.lua"
+   ],
+   "env": {},
+   "mods": [],
+   "tags": [
+    "bots"
+   ],
+   "picture": "picture.svg",
+   "den": null,
+   "settings": [
+    {
+     "key": "xp",
+     "label": "Levelling speed",
+     "env": [
+      "AC_RATE_XP_KILL",
+      "AC_RATE_XP_QUEST",
+      "AC_RATE_XP_QUEST_DF",
+      "AC_RATE_XP_EXPLORE"
+     ],
+     "type": "number",
+     "min": 1,
+     "max": 10,
+     "default": 2,
+     "unit": "x"
+    },
+    {
+     "key": "helpers",
+     "label": "Helper bots in your party",
+     "help": "Type .recruit party in game to fill your group.",
+     "env": [
+      "OV_COMPANIONS_PER_PLAYER"
+     ],
+     "type": "number",
+     "min": 1,
+     "max": 4,
+     "default": 4
+    }
+   ],
+   "picture_data": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMjAgMTgwIiB3aWR0aD0iMzIwIiBoZWlnaHQ9IjE4MCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJza3kiIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiMxYjE0NDYiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMwYTBkMjciLz48L2xpbmVhckdyYWRpZW50PjxyYWRpYWxHcmFkaWVudCBpZD0iZ2xvdyIgY3g9Ii43IiBjeT0iLjI1IiByPSIuNiI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjN2E1Y2ZmIiBzdG9wLW9wYWNpdHk9Ii41NSIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzdhNWNmZiIgc3RvcC1vcGFjaXR5PSIwIi8+PC9yYWRpYWxHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjMyMCIgaGVpZ2h0PSIxODAiIGZpbGw9InVybCgjc2t5KSIvPjxyZWN0IHdpZHRoPSIzMjAiIGhlaWdodD0iMTgwIiBmaWxsPSJ1cmwoI2dsb3cpIi8+PHBhdGggZD0iTTAgMTUwIFExNjAgMTIwIDMyMCAxNTAgTDMyMCAxODAgTDAgMTgwWiIgZmlsbD0iIzI0MWM1YyIvPjxnIGZpbGw9IiNjOWIyZmYiPjxjaXJjbGUgY3g9IjE2MCIgY3k9Ijc4IiByPSIxMiIvPjxwYXRoIGQ9Ik0xNDIgMTQwIEwxNDggOTggUTE2MCA5MCAxNzIgOTggTDE3OCAxNDBaIi8+PC9nPjxnIGZpbGw9IiM1ZmUzZmYiIG9wYWNpdHk9Ii45Ij48Y2lyY2xlIGN4PSIxMTIiIGN5PSI5OCIgcj0iNyIvPjxjaXJjbGUgY3g9IjIwOCIgY3k9Ijk4IiByPSI3Ii8+PGNpcmNsZSBjeD0iMTI4IiBjeT0iNjIiIHI9IjUiLz48Y2lyY2xlIGN4PSIxOTIiIGN5PSI2MiIgcj0iNSIvPjwvZz48Y2lyY2xlIGN4PSIxNjAiIGN5PSIxMDUiIHI9IjYyIiBmaWxsPSJub25lIiBzdHJva2U9IiM1ZmUzZmYiIHN0cm9rZS1vcGFjaXR5PSIuMzUiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWRhc2hhcnJheT0iNCA4Ii8+PC9zdmc+Cg=="
+  },
+  {
+   "format": "leyline-mode",
+   "schema": 1,
+   "id": "duel-ladder",
+   "name": "Duel ladder",
+   "line": "Everyone at the top level. Duels count toward a rating, weekly points and a top ten.",
+   "author": "Leyline",
+   "version": "1.0",
+   "based_on": null,
+   "status": "live",
+   "profile": "brawl",
+   "scripts": [
+    "ov_duels.lua",
+    "ov_qol.lua"
+   ],
+   "env": {
+    "OV_DUELS": "1",
+    "OV_DUEL_RESET": "1"
+   },
+   "mods": [],
+   "tags": [
+    "pvp"
+   ],
+   "picture": "picture.svg",
+   "den": null,
+   "settings": [
+    {
+     "key": "min_s",
+     "label": "Shortest duel that counts",
+     "env": [
+      "OV_DUELS_MIN_S"
+     ],
+     "type": "number",
+     "min": 5,
+     "max": 120,
+     "default": 15,
+     "unit": "seconds"
+    },
+    {
+     "key": "per_day",
+     "label": "Rated duels per pair a day",
+     "help": "Stops two friends farming each other.",
+     "env": [
+      "OV_DUELS_PAIR_PER_DAY"
+     ],
+     "type": "number",
+     "min": 1,
+     "max": 20,
+     "default": 3
+    },
+    {
+     "key": "win_points",
+     "label": "Points for a win",
+     "env": [
+      "OV_DUELS_WIN_POINTS"
+     ],
+     "type": "number",
+     "min": 1,
+     "max": 10,
+     "default": 3
+    },
+    {
+     "key": "streaks",
+     "label": "Win streak lines",
+     "help": "A short line to the zone at 3, 5, 10 wins in a row.",
+     "env": [
+      "OV_DUELS_STREAKS"
+     ],
+     "type": "toggle",
+     "default": true
+    }
+   ],
+   "picture_data": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMjAgMTgwIiB3aWR0aD0iMzIwIiBoZWlnaHQ9IjE4MCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJza3kiIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiMxYjE0NDYiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMwYTBkMjciLz48L2xpbmVhckdyYWRpZW50PjxyYWRpYWxHcmFkaWVudCBpZD0iZ2xvdyIgY3g9Ii43IiBjeT0iLjI1IiByPSIuNiI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjN2E1Y2ZmIiBzdG9wLW9wYWNpdHk9Ii41NSIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzdhNWNmZiIgc3RvcC1vcGFjaXR5PSIwIi8+PC9yYWRpYWxHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjMyMCIgaGVpZ2h0PSIxODAiIGZpbGw9InVybCgjc2t5KSIvPjxyZWN0IHdpZHRoPSIzMjAiIGhlaWdodD0iMTgwIiBmaWxsPSJ1cmwoI2dsb3cpIi8+PGcgc3Ryb2tlPSIjMmYyNzc1IiBzdHJva2Utd2lkdGg9IjYiPjxwYXRoIGQ9Ik02MCAyMCBMNjAgMTgwIE0xMTAgMjAgTDExMCAxODAiLz48cGF0aCBkPSJNNjAgNTAgTDExMCA1MCBNNjAgOTAgTDExMCA5MCBNNjAgMTMwIEwxMTAgMTMwIi8+PC9nPjxnIHN0cm9rZS1saW5lY2FwPSJyb3VuZCI+PHBhdGggZD0iTTE3NSA0MCBMMjY1IDE0MCIgc3Ryb2tlPSIjYzliMmZmIiBzdHJva2Utd2lkdGg9IjgiLz48cGF0aCBkPSJNMjY1IDQwIEwxNzUgMTQwIiBzdHJva2U9IiM1ZmUzZmYiIHN0cm9rZS13aWR0aD0iOCIvPjxwYXRoIGQ9Ik0xOTAgMTIwIEwxNzAgMTQwIE0yNTAgMTIwIEwyNzAgMTQwIiBzdHJva2U9IiNmZmQ3N2EiIHN0cm9rZS13aWR0aD0iMTAiLz48L2c+PGcgZmlsbD0iI2ZmZDc3YSI+PGNpcmNsZSBjeD0iODUiIGN5PSI1MCIgcj0iNiIvPjwvZz48L3N2Zz4K"
+  },
+  {
+   "format": "leyline-mode",
+   "schema": 1,
+   "id": "hide-and-seek",
+   "name": "Hide and seek",
+   "line": "Someone hides in the city and hints come every few minutes. Find them first to win.",
+   "author": "Leyline",
+   "version": "1.0",
+   "based_on": null,
+   "status": "live",
+   "profile": "dalaran",
+   "scripts": [
+    "ov_events.lua"
+   ],
+   "env": {
+    "OV_EVENTS": "1",
+    "OV_EVENTS_HIDE": "1"
+   },
+   "mods": [],
+   "tags": [
+    "hangout"
+   ],
+   "picture": "picture.svg",
+   "den": null,
+   "settings": [
+    {
+     "key": "hide_every",
+     "label": "A round every",
+     "env": [
+      "OV_EVENTS_HIDE_EVERY_H"
+     ],
+     "type": "number",
+     "min": 1,
+     "max": 12,
+     "default": 2,
+     "unit": "hours"
+    },
+    {
+     "key": "trivia",
+     "label": "Trivia too",
+     "env": [
+      "OV_EVENTS_TRIVIA"
+     ],
+     "type": "toggle",
+     "default": true
+    },
+    {
+     "key": "trivia_every",
+     "label": "Trivia every",
+     "env": [
+      "OV_EVENTS_TRIVIA_EVERY_H"
+     ],
+     "type": "number",
+     "min": 1,
+     "max": 12,
+     "default": 2,
+     "unit": "hours"
+    },
+    {
+     "key": "stock",
+     "label": "Announce the world's own events",
+     "env": [
+      "OV_EVENTS_STOCK"
+     ],
+     "type": "toggle",
+     "default": true
+    },
+    {
+     "key": "min_players",
+     "label": "Players online to start a round",
+     "env": [
+      "OV_EVENTS_MIN_PLAYERS"
+     ],
+     "type": "number",
+     "min": 1,
+     "max": 20,
+     "default": 1
+    }
+   ],
+   "picture_data": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMjAgMTgwIiB3aWR0aD0iMzIwIiBoZWlnaHQ9IjE4MCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJza3kiIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiMxYjE0NDYiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMwYTBkMjciLz48L2xpbmVhckdyYWRpZW50PjxyYWRpYWxHcmFkaWVudCBpZD0iZ2xvdyIgY3g9Ii43IiBjeT0iLjI1IiByPSIuNiI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjN2E1Y2ZmIiBzdG9wLW9wYWNpdHk9Ii41NSIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzdhNWNmZiIgc3RvcC1vcGFjaXR5PSIwIi8+PC9yYWRpYWxHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjMyMCIgaGVpZ2h0PSIxODAiIGZpbGw9InVybCgjc2t5KSIvPjxyZWN0IHdpZHRoPSIzMjAiIGhlaWdodD0iMTgwIiBmaWxsPSJ1cmwoI2dsb3cpIi8+PGcgZmlsbD0iIzI0MWM1YyI+PHJlY3QgeD0iMjAiIHk9IjcwIiB3aWR0aD0iNDAiIGhlaWdodD0iMTEwIi8+PHJlY3QgeD0iNzAiIHk9IjQwIiB3aWR0aD0iMzAiIGhlaWdodD0iMTQwIi8+PHJlY3QgeD0iMjMwIiB5PSI2MCIgd2lkdGg9IjM2IiBoZWlnaHQ9IjEyMCIvPjxyZWN0IHg9IjI3NiIgeT0iOTAiIHdpZHRoPSIzMCIgaGVpZ2h0PSI5MCIvPjxwYXRoIGQ9Ik03MCA0MCBMODUgMTIgTDEwMCA0MFogTTIzMCA2MCBMMjQ4IDMwIEwyNjYgNjBaIi8+PC9nPjxjaXJjbGUgY3g9IjE2MCIgY3k9Ijg4IiByPSIzOCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNWZlM2ZmIiBzdHJva2Utd2lkdGg9IjgiLz48cGF0aCBkPSJNMTg3IDExNiBMMjIyIDE1MCIgc3Ryb2tlPSIjNWZlM2ZmIiBzdHJva2Utd2lkdGg9IjEyIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48ZyBmaWxsPSIjZmZkNzdhIj48Y2lyY2xlIGN4PSIxNDgiIGN5PSI4NiIgcj0iNSIvPjxjaXJjbGUgY3g9IjE3MiIgY3k9Ijg2IiByPSI1Ii8+PC9nPjwvc3ZnPgo="
+  },
+  {
+   "format": "leyline-mode",
+   "schema": 1,
+   "id": "minigolf-night",
+   "name": "Minigolf night",
+   "line": "Minigolf on courses players built, plus Bumper Balls and Coin Dash. Bring your party.",
+   "author": "Leyline",
+   "version": "1.0",
+   "based_on": null,
+   "status": "live",
+   "profile": "dalaran",
+   "scripts": [
+    "ov_golf.lua",
+    "ov_modes.lua",
+    "ov_playmode.lua",
+    "ov_qol.lua"
+   ],
+   "env": {},
+   "mods": [
+    "mode:minigolf",
+    "mode:bumper-balls",
+    "mode:coin-dash"
+   ],
+   "tags": [
+    "hangout"
+   ],
+   "picture": "picture.svg",
+   "den": null,
+   "settings": [
+    {
+     "key": "hub",
+     "label": "Hub teleports",
+     "help": "Quick trips to the arenas around the city.",
+     "env": [
+      "OV_QOL_HUB"
+     ],
+     "type": "toggle",
+     "default": true
+    },
+    {
+     "key": "duel_reset",
+     "label": "Duels reset health",
+     "env": [
+      "OV_DUEL_RESET"
+     ],
+     "type": "toggle",
+     "default": true
+    }
+   ],
+   "picture_data": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMjAgMTgwIiB3aWR0aD0iMzIwIiBoZWlnaHQ9IjE4MCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJza3kiIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiMxYjE0NDYiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMwYTBkMjciLz48L2xpbmVhckdyYWRpZW50PjxyYWRpYWxHcmFkaWVudCBpZD0iZ2xvdyIgY3g9Ii43IiBjeT0iLjI1IiByPSIuNiI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjN2E1Y2ZmIiBzdG9wLW9wYWNpdHk9Ii41NSIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzdhNWNmZiIgc3RvcC1vcGFjaXR5PSIwIi8+PC9yYWRpYWxHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjMyMCIgaGVpZ2h0PSIxODAiIGZpbGw9InVybCgjc2t5KSIvPjxyZWN0IHdpZHRoPSIzMjAiIGhlaWdodD0iMTgwIiBmaWxsPSJ1cmwoI2dsb3cpIi8+PGNpcmNsZSBjeD0iMjUwIiBjeT0iNDIiIHI9IjE4IiBmaWxsPSIjZmZkNzdhIiBvcGFjaXR5PSIuOSIvPjxwYXRoIGQ9Ik0wIDE0MCBRMTIwIDEwNSAzMjAgMTM1IEwzMjAgMTgwIEwwIDE4MFoiIGZpbGw9IiMxZjVhNGEiLz48ZWxsaXBzZSBjeD0iMjAwIiBjeT0iMTM4IiByeD0iMTQiIHJ5PSI1IiBmaWxsPSIjMGEwZDI3Ii8+PHBhdGggZD0iTTIwMCAxMzYgTDIwMCA3MCIgc3Ryb2tlPSIjYzliMmZmIiBzdHJva2Utd2lkdGg9IjQiLz48cGF0aCBkPSJNMjAwIDcwIEwyMzIgODIgTDIwMCA5NFoiIGZpbGw9IiM1ZmUzZmYiLz48Y2lyY2xlIGN4PSI5NiIgY3k9IjE0MCIgcj0iNyIgZmlsbD0iI2ZmZmZmZiIvPjxwYXRoIGQ9Ik05NiAxNDAgQzEzMCAxMjggMTYwIDEzMCAxODYgMTM2IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS1vcGFjaXR5PSIuNSIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtZGFzaGFycmF5PSIzIDYiLz48L3N2Zz4K"
+  },
+  {
+   "format": "leyline-mode",
+   "schema": 1,
+   "id": "den",
+   "name": "My Den",
+   "line": "A private room to build in with friends: invite only, no bots.",
+   "author": "Leyline",
+   "version": "1.0",
+   "based_on": null,
+   "status": "live",
+   "profile": "den",
+   "scripts": [
+    "ov_den.lua",
+    "ov_build.lua"
+   ],
+   "env": {},
+   "mods": [],
+   "tags": [
+    "custom"
+   ],
+   "picture": "picture.svg",
+   "den": null,
+   "settings": [
+    {
+     "key": "look",
+     "label": "The room's look",
+     "env": [
+      "OV_DEN_THEME"
+     ],
+     "type": "choice",
+     "options": [
+      {
+       "value": "white",
+       "label": "White"
+      },
+      {
+       "value": "stone",
+       "label": "Stone"
+      },
+      {
+       "value": "wood",
+       "label": "Wood"
+      }
+     ],
+     "default": "white"
+    },
+    {
+     "key": "budget",
+     "label": "Building budget",
+     "help": "How much each builder may place.",
+     "env": [
+      "OV_BUILD_POINTS"
+     ],
+     "type": "number",
+     "min": 100,
+     "max": 5000,
+     "default": 1500,
+     "unit": "points"
+    }
+   ],
+   "picture_data": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMjAgMTgwIiB3aWR0aD0iMzIwIiBoZWlnaHQ9IjE4MCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJza3kiIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiMxYjE0NDYiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMwYTBkMjciLz48L2xpbmVhckdyYWRpZW50PjxyYWRpYWxHcmFkaWVudCBpZD0iZ2xvdyIgY3g9Ii43IiBjeT0iLjI1IiByPSIuNiI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjN2E1Y2ZmIiBzdG9wLW9wYWNpdHk9Ii41NSIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzdhNWNmZiIgc3RvcC1vcGFjaXR5PSIwIi8+PC9yYWRpYWxHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjMyMCIgaGVpZ2h0PSIxODAiIGZpbGw9InVybCgjc2t5KSIvPjxyZWN0IHdpZHRoPSIzMjAiIGhlaWdodD0iMTgwIiBmaWxsPSJ1cmwoI2dsb3cpIi8+PHBhdGggZD0iTTE2MCAzMCBMMjUwIDcwIEwyNTAgMTUwIEwxNjAgMTc1IEw3MCAxNTAgTDcwIDcwWiIgZmlsbD0iIzI0MWM1YyIgc3Ryb2tlPSIjYzliMmZmIiBzdHJva2Utd2lkdGg9IjMiLz48cGF0aCBkPSJNMTYwIDMwIEwxNjAgMTEwIE03MCA3MCBMMTYwIDExMCBMMjUwIDcwIiBmaWxsPSJub25lIiBzdHJva2U9IiNjOWIyZmYiIHN0cm9rZS1vcGFjaXR5PSIuNSIgc3Ryb2tlLXdpZHRoPSIyIi8+PGcgZmlsbD0iIzVmZTNmZiI+PHBhdGggZD0iTTEyMCAxMzAgbDIwIC05IGwyMCA5IGwtMjAgOVoiLz48cGF0aCBkPSJNMTIwIDEzMCBsMCAxNCBsMjAgOSBsMCAtMTRaIiBvcGFjaXR5PSIuNyIvPjxwYXRoIGQ9Ik0xNjAgMTMwIGwwIDE0IGwtMjAgOSBsMCAtMTRaIiBvcGFjaXR5PSIuNSIvPjwvZz48cmVjdCB4PSIxODIiIHk9IjExMiIgd2lkdGg9IjI2IiBoZWlnaHQ9IjMwIiBmaWxsPSIjZmZkNzdhIiBvcGFjaXR5PSIuODUiLz48L3N2Zz4K"
+  },
+  {
+   "format": "leyline-mode",
+   "schema": 1,
+   "id": "survivors",
+   "name": "Survivors",
+   "line": "Hold out against the waves, alone. Coming soon.",
+   "author": "Leyline",
+   "version": "1.0",
+   "based_on": null,
+   "status": "coming",
+   "profile": null,
+   "scripts": [],
+   "env": {},
+   "mods": [],
+   "tags": [],
+   "credit": {
+    "by": "Aethus (original game), open rebuild by OutThisLife",
+    "source": "https://github.com/OutThisLife/azeroth-survivors-re",
+    "license": "MIT or Apache-2.0"
+   },
+   "picture": "picture.svg",
+   "den": null,
+   "settings": [],
+   "picture_data": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMjAgMTgwIiB3aWR0aD0iMzIwIiBoZWlnaHQ9IjE4MCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJza3kiIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiMxYjE0NDYiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMwYTBkMjciLz48L2xpbmVhckdyYWRpZW50PjxyYWRpYWxHcmFkaWVudCBpZD0iZ2xvdyIgY3g9Ii43IiBjeT0iLjI1IiByPSIuNiI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjN2E1Y2ZmIiBzdG9wLW9wYWNpdHk9Ii41NSIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzdhNWNmZiIgc3RvcC1vcGFjaXR5PSIwIi8+PC9yYWRpYWxHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjMyMCIgaGVpZ2h0PSIxODAiIGZpbGw9InVybCgjc2t5KSIvPjxyZWN0IHdpZHRoPSIzMjAiIGhlaWdodD0iMTgwIiBmaWxsPSJ1cmwoI2dsb3cpIi8+PGNpcmNsZSBjeD0iMTYwIiBjeT0iOTUiIHI9IjcwIiBmaWxsPSJub25lIiBzdHJva2U9IiNjOWIyZmYiIHN0cm9rZS1vcGFjaXR5PSIuMjUiIHN0cm9rZS13aWR0aD0iMiIvPjxjaXJjbGUgY3g9IjIzMC4wIiBjeT0iOTUuMCIgcj0iNiIgZmlsbD0iI2ZmNmI4YiIvPjxjaXJjbGUgY3g9IjIyNC43IiBjeT0iMTIxLjgiIHI9IjYiIGZpbGw9IiNmZjZiOGIiLz48Y2lyY2xlIGN4PSIyMDkuNSIgY3k9IjE0NC41IiByPSI2IiBmaWxsPSIjZmY2YjhiIi8+PGNpcmNsZSBjeD0iMTg2LjgiIGN5PSIxNTkuNyIgcj0iNiIgZmlsbD0iI2ZmNmI4YiIvPjxjaXJjbGUgY3g9IjE2MC4wIiBjeT0iMTY1LjAiIHI9IjYiIGZpbGw9IiNmZjZiOGIiLz48Y2lyY2xlIGN4PSIxMzMuMiIgY3k9IjE1OS43IiByPSI2IiBmaWxsPSIjZmY2YjhiIi8+PGNpcmNsZSBjeD0iMTEwLjUiIGN5PSIxNDQuNSIgcj0iNiIgZmlsbD0iI2ZmNmI4YiIvPjxjaXJjbGUgY3g9Ijk1LjMiIGN5PSIxMjEuOCIgcj0iNiIgZmlsbD0iI2ZmNmI4YiIvPjxjaXJjbGUgY3g9IjkwLjAiIGN5PSI5NS4wIiByPSI2IiBmaWxsPSIjZmY2YjhiIi8+PGNpcmNsZSBjeD0iOTUuMyIgY3k9IjY4LjIiIHI9IjYiIGZpbGw9IiNmZjZiOGIiLz48Y2lyY2xlIGN4PSIxMTAuNSIgY3k9IjQ1LjUiIHI9IjYiIGZpbGw9IiNmZjZiOGIiLz48Y2lyY2xlIGN4PSIxMzMuMiIgY3k9IjMwLjI5OTk5OTk5OTk5OTk5NyIgcj0iNiIgZmlsbD0iI2ZmNmI4YiIvPjxjaXJjbGUgY3g9IjE2MC4wIiBjeT0iMjUuMCIgcj0iNiIgZmlsbD0iI2ZmNmI4YiIvPjxjaXJjbGUgY3g9IjE4Ni44IiBjeT0iMzAuMjk5OTk5OTk5OTk5OTk3IiByPSI2IiBmaWxsPSIjZmY2YjhiIi8+PGNpcmNsZSBjeD0iMjA5LjUiIGN5PSI0NS41IiByPSI2IiBmaWxsPSIjZmY2YjhiIi8+PGNpcmNsZSBjeD0iMjI0LjciIGN5PSI2OC4yIiByPSI2IiBmaWxsPSIjZmY2YjhiIi8+PGNpcmNsZSBjeD0iMjAwLjUiIGN5PSIxMTIuMSIgcj0iNSIgZmlsbD0iI2ZmNmI4YiIgb3BhY2l0eT0iLjciLz48Y2lyY2xlIGN4PSIxNzYuNiIgY3k9IjEzNS44IiByPSI1IiBmaWxsPSIjZmY2YjhiIiBvcGFjaXR5PSIuNyIvPjxjaXJjbGUgY3g9IjE0Mi45IiBjeT0iMTM1LjUiIHI9IjUiIGZpbGw9IiNmZjZiOGIiIG9wYWNpdHk9Ii43Ii8+PGNpcmNsZSBjeD0iMTE5LjIiIGN5PSIxMTEuNiIgcj0iNSIgZmlsbD0iI2ZmNmI4YiIgb3BhY2l0eT0iLjciLz48Y2lyY2xlIGN4PSIxMTkuNCIgY3k9Ijc3LjkiIHI9IjUiIGZpbGw9IiNmZjZiOGIiIG9wYWNpdHk9Ii43Ii8+PGNpcmNsZSBjeD0iMTQzLjQiIGN5PSI1NC4zIiByPSI1IiBmaWxsPSIjZmY2YjhiIiBvcGFjaXR5PSIuNyIvPjxjaXJjbGUgY3g9IjE3Ny4wIiBjeT0iNTQuNCIgcj0iNSIgZmlsbD0iI2ZmNmI4YiIgb3BhY2l0eT0iLjciLz48Y2lyY2xlIGN4PSIyMDAuNyIgY3k9Ijc4LjMiIHI9IjUiIGZpbGw9IiNmZjZiOGIiIG9wYWNpdHk9Ii43Ii8+PGNpcmNsZSBjeD0iMTYwIiBjeT0iOTUiIHI9IjEyIiBmaWxsPSIjNWZlM2ZmIi8+PGNpcmNsZSBjeD0iMTYwIiBjeT0iOTUiIHI9IjIyIiBmaWxsPSJub25lIiBzdHJva2U9IiM1ZmUzZmYiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWRhc2hhcnJheT0iNSA1Ii8+PC9zdmc+Cg=="
+  }
+ ],
+ "jam": {
+  "id": "first-jam",
+  "theme": "Small realms, big games",
+  "line": "Fork any mode, make it your own, host it, and enter it here.",
+  "until": null,
+  "picks": []
+ }
+}

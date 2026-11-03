@@ -1,0 +1,176 @@
+{
+ "format": 1,
+ "note": "Left out of the index whatever the forges say. owners: a whole account; repos: one repo; patterns: a regex over the repo link, name, description and topics; review: held for a person to decide.",
+ "owners": [
+  {
+   "owner": "chumpton",
+   "reason": "the Chumpton account (never listed)"
+  },
+  {
+   "owner": "wowdecomp",
+   "reason": "wowdecomp: shut down after a cease-and-desist on 2026-10-29; nothing derived from it is listed"
+  },
+  {
+   "owner": "Jnnshschl",
+   "reason": "builds bots for automated play on other people's realms"
+  },
+  {
+   "owner": "MidnightZora737r",
+   "reason": "one of a cluster of look-alike repos with identical star counts (likely a fake-star or malware-lure campaign)"
+  },
+  {
+   "owner": "Aursolstice160913-alt",
+   "reason": "one of a cluster of look-alike repos with identical star counts (likely a fake-star or malware-lure campaign)"
+  },
+  {
+   "owner": "MasterSkyat57941",
+   "reason": "one of a cluster of look-alike repos with identical star counts (likely a fake-star or malware-lure campaign)"
+  },
+  {
+   "owner": "ForVoid48577",
+   "reason": "one of a cluster of look-alike repos with identical star counts (likely a fake-star or malware-lure campaign)"
+  },
+  {
+   "owner": "Aethixdryad140461-coder",
+   "reason": "one of a cluster of look-alike repos with identical star counts (likely a fake-star or malware-lure campaign)"
+  },
+  {
+   "owner": "XJadeum",
+   "reason": "one of a cluster of look-alike repos with identical star counts (likely a fake-star or malware-lure campaign)"
+  },
+  {
+   "owner": "Lordcaster",
+   "reason": "one of a cluster of look-alike repos with identical star counts (likely a fake-star or malware-lure campaign)"
+  },
+  {
+   "owner": "Gel88566ight",
+   "reason": "one of a cluster of look-alike repos with identical star counts (likely a fake-star or malware-lure campaign)"
+  },
+  {
+   "owner": "WithoutMyth",
+   "reason": "one of a cluster of look-alike repos with identical star counts (likely a fake-star or malware-lure campaign)"
+  },
+  {
+   "owner": "alseif0x",
+   "reason": "in the same cluster of repos with identical star counts; a person should check it before it is listed"
+  },
+  {
+   "owner": "olive-spore-734",
+   "reason": "account pattern of the same look-alike cluster; a person should check it before it is listed"
+  },
+  {
+   "owner": "suprepupre",
+   "reason": "injects code into the game client (realms ban these tools)"
+  },
+  {
+   "owner": "showard-4742",
+   "reason": "a look-alike cheat lure ('ESP', 'no-recoil', code only 'in Release'): one of a pair with identical text and stars (likely malware)"
+  },
+  {
+   "owner": "johnsonj-2416",
+   "reason": "a look-alike cheat lure ('ESP', 'no-recoil', code only 'in Release'): one of a pair with identical text and stars (likely malware)"
+  },
+  {
+   "owner": "Killm12321idgard",
+   "reason": "one of a cluster of look-alike repos with identical star counts (likely a fake-star or malware-lure campaign)"
+  },
+  {
+   "owner": "Krakenduke",
+   "reason": "one of a cluster of look-alike repos with identical star counts (likely a fake-star or malware-lure campaign)"
+  }
+ ],
+ "repos": [
+  {
+   "repo": "https://github.com/francescoborzi/why-i-hate-wow-private-servers",
+   "reason": "an essay, not a mod or tool"
+  },
+  {
+   "repo": "https://github.com/dedinc/wrobot-auto-trial",
+   "reason": "a bot for automated play"
+  },
+  {
+   "repo": "https://github.com/kirazul/transmorpher",
+   "reason": "edits the game client's memory to change looks (a client hack)"
+  },
+  {
+   "repo": "https://github.com/xvitali2/addons-for-vanilla-1.12.1",
+   "reason": "a bundle of other people's addons re-uploaded, not a project of its own"
+  },
+  {
+   "repo": "https://github.com/nom0re/wow-3.3.5a-addons",
+   "reason": "a bundle of other people's addons re-uploaded, not a project of its own"
+  },
+  {
+   "repo": "https://github.com/kelsidavis/wowee",
+   "reason": "a whole replacement game client (also the from-scratch one with an Android build); its licence is MIT plus an added restriction against any commercial game use (since 2026-07-21), which is not an open licence; also answers anti-cheat"
+  },
+  {
+   "repo": "https://github.com/brian8544/arctium-launcher",
+   "reason": "patches current game clients in memory to reach other servers"
+  },
+  {
+   "repo": "https://github.com/pjerra/turtle-agent",
+   "reason": "a headless client for scripted or automated play"
+  },
+  {
+   "repo": "https://github.com/tench-rt/tentacli",
+   "reason": "a framework for automated game clients"
+  },
+  {
+   "repo": "https://github.com/the-kludge-bureau/hearthdb",
+   "reason": "a DLL plugin injected into the game client"
+  },
+  {
+   "repo": "https://github.com/azerothcore/mod-npc-gambler",
+   "reason": "wagering, left out by choice (like mod-duel-bet)"
+  },
+  {
+   "repo": "https://github.com/azerothcore/mod-playerbots",
+   "reason": "an old placeholder (says it isn't ready); the module lives at mod-playerbots/mod-playerbots"
+  },
+  {
+   "repo": "https://github.com/mranonymz/wow-imito",
+   "reason": "the Android port: release-only APK with no source in the repo (built from wow-mobile and Winlator), downloads a whole game client from a ZIP link and updates modified clients; no licence for the repo"
+  },
+  {
+   "repo": "https://github.com/outthislife/azeroth-survivors-re",
+   "reason": "its build script downloads the whole 1.12.1 game client (archive.org) into the build: a client download"
+  },
+  {
+   "repo": "https://github.com/ahmedalqamzi/azeroth-survivors-downloads",
+   "reason": "release-only Windows downloads that fetch the game's original Data (a client download); no source"
+  },
+  {
+   "repo": "https://github.com/dustinhendrickson/wowdecomp",
+   "reason": "decompiled client code (wowdecomp), with Android builds of it: never listed"
+  },
+  {
+   "repo": "https://github.com/mrgreencheezz/tswow-web-client",
+   "reason": "its host mode serves the client's own game files to other players over the network"
+  },
+  {
+   "repo": "https://github.com/fusionwowcms/fusioncms",
+   "reason": "ships donation and store modules (selling things), under a licence we don't recognise as open"
+  }
+ ],
+ "patterns": [
+  {
+   "pattern": "resocket|rpocket",
+   "reason": "a look-alike copy from a fake-star or malware-lure campaign"
+  }
+ ],
+ "review": [
+  {
+   "repo": "https://github.com/gslance/wow-custom-launcher",
+   "reason": "a launcher and patcher that hands out a server's client patches: check it can't carry game files"
+  },
+  {
+   "repo": "https://github.com/ssdeanx/tortoise-wow",
+   "reason": "restores another server's custom content: check where its data comes from"
+  },
+  {
+   "repo": "https://github.com/marcocastignoli/wow-mobile",
+   "reason": "the open Android base of the mobile client (a Winlator fork, LGPL-2.1, no game data): it commits prebuilt Wine/Box64/driver and Windows-component archives (.tzst) and a bundled addon zip, so a person decides"
+  }
+ ]
+}

@@ -1,0 +1,4 @@
+# The address Azeroth Survivors gets: a subdomain with a DNS A record to the server (no "wow" in it). Settled and in
+# DNS on 2 Nov (A record to 167.233.140.242).
+# The first line that is not a comment is used. "Put Survivors on Leyline.bat" reads it.
+survivors.leylinelauncher.com

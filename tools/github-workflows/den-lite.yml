@@ -1,0 +1,103 @@
+# Den Lite (labs/den-lite): the tiny local server behind the launcher's Play solo (no Docker). Builds it for Windows
+# and Linux, runs its tests (the headless client logs in, builds, saves, restarts) and puts the programs on the
+# rolling release "den-lite-latest" of this repo, always at the same addresses, each with its checksum:
+#   https://github.com/<this repo>/releases/download/den-lite-latest/den-lite-windows-x64.exe   (+ .sha256)
+#   https://github.com/<this repo>/releases/download/den-lite-latest/den-lite-linux-x64         (+ .sha256)
+# The launcher (launcher/src-tauri/src/host/lite.rs `install`) downloads this PC's file on the first Play solo and
+# checks it against its .sha256 before it runs it (smoke O10: before, only the owner's Control step built it).
+# MIT like the launcher; never holds game data (the room is its own objects, the client is the player's).
+#
+# Runs in the workspace repo. Source copy: tools/github-workflows/den-lite.yml; "setup\Turn on GitHub builds.bat"
+# (tools/github-builds/github_builds.py, WU_FILES) puts it in .github/workflows/.
+# Not on every push: only when labs/den-lite/ (or this file) changes, or by hand (Actions > den-lite > Run workflow).
+name: den-lite
+on:
+  push:
+    branches: [main]
+    paths:
+      - "labs/den-lite/**"
+      - ".github/workflows/den-lite.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: den-lite-latest
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Test (the headless client against the server)
+        shell: bash
+        working-directory: labs/den-lite
+        run: cargo test --locked --release
+
+      - name: Build
+        shell: bash
+        working-directory: labs/den-lite
+        run: cargo build --locked --release
+
+      - name: Package with its checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe="$(find labs/den-lite/target/release -maxdepth 1 -name den-lite.exe | head -n1)"
+          test -n "$exe"
+          cp "$exe" den-lite-windows-x64.exe
+          sha256sum den-lite-windows-x64.exe | awk '{print $1"  den-lite-windows-x64.exe"}' > den-lite-windows-x64.exe.sha256
+          cat den-lite-windows-x64.exe.sha256
+          ls -la den-lite-windows-x64.exe
+
+      - name: Put it on den-lite-latest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ver="$(date -u +%Y.%m.%d)-${GITHUB_SHA::7}"
+          notes="Den Lite, the local server behind Leyline's Play solo, built from $GITHUB_SHA ($ver). The Leyline launcher downloads the file for your PC on first use and checks it against its .sha256. MIT licence; source: labs/den-lite. It never contains or downloads game data. Not code-signed yet."
+          if gh release view den-lite-latest -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit den-lite-latest -R "$GITHUB_REPOSITORY" --title "Den Lite (latest, $ver)" --notes "$notes" --prerelease=false
+          else
+            gh release create den-lite-latest -R "$GITHUB_REPOSITORY" --title "Den Lite (latest, $ver)" --notes "$notes" --target "$GITHUB_SHA" --latest=false
+          fi
+          gh release upload den-lite-latest den-lite-windows-x64.exe den-lite-windows-x64.exe.sha256 -R "$GITHUB_REPOSITORY" --clobber
+
+  linux:
+    # after Windows, which makes the release
+    needs: windows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Test (the headless client against the server)
+        working-directory: labs/den-lite
+        run: cargo test --locked --release
+
+      - name: Build
+        working-directory: labs/den-lite
+        run: cargo build --locked --release
+
+      - name: Package with its checksum and put it on den-lite-latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cp labs/den-lite/target/release/den-lite den-lite-linux-x64
+          sha256sum den-lite-linux-x64 | awk '{print $1"  den-lite-linux-x64"}' > den-lite-linux-x64.sha256
+          cat den-lite-linux-x64.sha256
+          gh release upload den-lite-latest den-lite-linux-x64 den-lite-linux-x64.sha256 -R "$GITHUB_REPOSITORY" --clobber

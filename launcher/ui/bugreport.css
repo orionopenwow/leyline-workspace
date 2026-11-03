@@ -1,0 +1,13 @@
+/* Help › Report a bug (bugreport.js): the one dialog, in the existing .dlg look */
+.bug-dlg { width: min(520px, calc(100vw - 32px)); max-width: 520px; }
+.bug-dlg form { display: grid; gap: 10px; }
+.bug-dlg textarea {
+  width: 100%; min-height: 120px; padding: 9px 11px; resize: vertical;
+  border-radius: var(--t-radius-sm); border: var(--t-border-w) solid var(--t-border);
+  background: var(--t-surface-2); color: var(--t-text); font: 13px/1.45 var(--t-font);
+}
+.bug-dlg textarea:focus { border-color: var(--t-accent); outline: none; }
+.bug-dlg .bug-count { justify-self: end; margin: -6px 0 0; }
+.bug-dlg .status { margin: 0; }
+.bug-dlg .status:empty { display: none; }
+.bug-dlg [hidden] { display: none !important; }

@@ -1,0 +1,126 @@
+# The Leyline workspace repo (orionopenwow/leyline-workspace): our own code, scripts and docs only.
+# Never: Blizzard game data, game-file slices, Forever UI art, build outputs, secrets.
+
+# game data / slices / patch files (from players' own installs)
+/patch/
+/stream/work/
+/stream/www/
+/stream/slices/*/
+**/*.MPQ
+**/*.mpq
+**/*.blp
+**/*.m2
+**/*.wmo
+**/*.adt
+**/*.dbc
+addons/AzerothAdmin_Models/
+addons/ForeverUI/
+fui-src.tgz
+
+# build outputs and binaries (rebuilt from the client patch)
+/play/dist/
+/play/*.part*
+/play/*.tgz
+/play/*.br
+/play/*.exe
+/stream/bin/
+/tools/wenilla-host-linux
+*.exe
+*.tgz
+*.part00
+*.part01
+
+# secrets and machine-local files
+.env
+*.secret
+signup.env
+portal.env
+gmconsole.env
+wow-folder.txt
+foreverui-installed.txt
+players/wow-folder.txt
+labs/players/wow-folder.txt
+
+# logs and diagnostics
+*.log
+logs.txt
+charfix-diagnose.txt
+# reports the read-only server checks write beside themselves
+server/server-report.txt
+server/native-client-report.txt
+dev/merge-help/
+__pycache__/
+
+# wu-mod.py catalog / pack output
+/mods/dist/
+
+# the Leyline Launcher branch bundle (delivered beside the old ovland step, never committed)
+tools/ov-rename/*.bundle
+labs/done/ov-rename/*.bundle
+tools/launcher-site/*.bundle
+
+# fresh-history: written by Claude when the step is queued, never committed
+tools/fresh-history/CONFIRM
+
+# client source checkout made by client/get-source.sh (its own git repo)
+/client/benilla-wotlk/
+
+# a copy of mods/wu-mod.py that "Update sign-in and warm-up.bat" makes beside the portal before upload
+/stream/wu-mod.py
+# and the launcher's rules file, beside listings.py (List your mod)
+/stream/upstream-rules.json
+
+# the sync bundle Claude drops beside the labs 1.12 client tool (never committed)
+labs/leyline-client-112/*.bundle
+
+# working copies the steps manage inside the workspace (the move to Leyline, tools/workspace-move): .repos\leyline-public, .repos\leyline-launcher
+/.repos/
+
+# machine state: the control window's files (tools/control/control.py writes them; Claude writes claude-status.json
+# here on the PC), every step's logs, and the GitHub cleanup plan / Discord tool's token and state
+/logs/
+/control/autopilot.json
+/control/claude-status.json
+/control/last-run.json
+/control/last-check.json
+# Leyline HQ (tools/hq/hq_sync.py): Claude's notes for HQ and the owner's notes to Claude stay on the PC
+/control/hq-notes.json
+/control/notes-from-owner.json
+tools/github-cleanup/PLAN.json
+tools/discord-leyline/token.txt
+tools/discord-leyline/token.txt.tmp
+# Leyline Control's Discord panel: the last preview's summary, do it and bot settings (no token in it)
+/control/discord.json
+tools/discord-leyline/.leyline-state.json
+# the note the move to Leyline leaves in the old folder
+MOVED-TO-LEYLINE.txt
+# the old tester package's zip (labs/players/Make player package.bat)
+labs/players/*.zip
+# the client boot check's screenshot (client/dev/smoke.js)
+client/dev/smoke.png
+
+# tool caches and build folders (npm, cargo, Python)
+node_modules/
+target/
+.venv/
+venv/
+*.pyc
+.pytest_cache/
+
+# editor, OS and scratch files
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp
+*.bak
+*~
+~$*
+.vscode/
+.idea/
+# the launcher Open Leyline Launcher.bat keeps (fetched from GitHub; never committed)
+/.launcher/
+/.launcher-test/
+
+# the owner's in-game screenshots for the launcher's Home gallery: published to the site by tools/site-art (the
+# Autopilot step "homeart"), never kept in the repo (owner rule: no game-made pictures in the repo or downloads)
+/site-art/

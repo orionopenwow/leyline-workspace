@@ -1,0 +1,1417 @@
+"""Host a realm from the website: the "+ Your server" flow (stream/wrath_portal.py hooks it in).
+
+    GET  /wrath/host               signed out: to the site's sign-in and back here. Signed in: the form
+                                   (realm name, preset, house rules, public or private, the GM account
+                                   name, a tagline, and "More settings": type, rates, start, bots, sign-up,
+                                   Hero Key sign-in, region, language, tags, max players) and the account's own
+                                   realms. GET /wrath/host?<choices> fills the form in: the in-game Host window
+                                   (WrathUnleashedUI/Host.lua) and the launcher's leyline://host link send the
+                                   host's choices here (prefill(): every name and value checked again; the same
+                                   rules as Host.lua, wrath-page.js hostQuery and deeplink.rs host_query). Nothing
+                                   is made until the host signs in and presses Start server.
+    POST /wrath/host               checks everything, makes a pending realm for this account, 303 to its page
+    GET  /wrath/host/<id>          owner only: the share link, the one-click setup for the host's PC and
+                                   live status ("Waiting for your PC" -> "Online, listed"; meta refresh)
+    GET  /wrath/host/<id>/leyline-<id>.sh    owner only: Mac/Linux, runs `leyline host` with the answers
+    GET  /wrath/host/<id>/leyline-<id>.bat   owner only: Windows, runs "Host a Wrath realm.bat" the same way
+
+The realm runs on the host's own PC (free) and reaches players through the Leyline relay. A pending
+realm has a page id (16 base32 letters, the shape of a realm id but not one), an invite secret and a host
+secret (B32, the same lengths setup.py makes), and a claim token that ties the realm to the Hero Key account
+that made it. The download carries them to the PC as one base64 "seed" v2 (setup.py init --seed), used once
+and deleted there. The realm's Ed25519 key, and so its realm id, is made ON THE HOST'S PC (setup.py), as
+wunet/keys.py says: the website never holds a realm key. The PC's agent shows the relay
+pair_hash(claim token) = sha256("leyline-pair-v1\n" + token); the website asks the relay
+(GET /api/pair/<hash>) which realm that is, and from then on the page shows that realm id's links and status.
+Records made before this (seed v1) carried a website-made key: they still work, and the site still forgets
+such a key once the realm connects.
+
+Nothing here makes game accounts or sets passwords: the host makes the GM account on their own join
+page (the host link) with a password only their browser sees. The download holds only this realm's own
+key and links: never the site's settings, other realms, or anyone's sign-in.
+
+Status comes from the relay's public API (GET /api/realms/<id>: online) and the realm list
+(wrath_portal.community_realms: listed). With WU_LISTING_SITE_SECRET set, a listed public realm is
+claimed for its account (POST /api/listing/claims, hosting/relay/wurelay/listing.py) once its signed
+heartbeat carries the claim token.
+
+Settings (environment):
+  WU_HOST_DIR             where pending realms are kept, one 0600 JSON file each (default /hosted, a
+                          writable volume; the portal's /app is read-only)
+  WU_HOST_KIT_URL         the Host pack download, only when there is no Host pack descriptor (kit_url(): the
+                          launcher's own source comes first, so the two can't drift)
+  WU_LISTING_SITE_SECRET  the relay's RELAY_LISTING_SITE_SECRET, for claims (unset: no claims)
+  WU_HOST_PER_ACCOUNT     realms one account may make (default 3)
+
+Standard library only (plus wunet/ed25519_pure.py, loaded from beside this file or from the repo).
+"""
+from __future__ import annotations
+
+import base64
+import hashlib
+import hmac
+import html
+import importlib.util
+import json
+import os
+import re
+import secrets
+import shlex
+import threading
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+HOST_DIR = os.environ.get("WU_HOST_DIR", "/hosted")
+KIT_URL_FALLBACK = "https://github.com/orionopenwow/Leyline/releases/tag/host-pack"   # the release page: every pack
+SITE_SECRET = os.environ.get("WU_LISTING_SITE_SECRET", "")
+PER_ACCOUNT = int(os.environ.get("WU_HOST_PER_ACCOUNT", "3") or 3)
+MAX_TOTAL = 5000
+GUIDE_URL = "/wrath/docs/hosting"      # docs/leyline/hosting.md, served by the portal (the repo is private)
+ALWAYS_ON_URL = "/wrath/docs/always-on"   # docs/leyline/always-on.md: a realm that stays up, or a server you already run
+
+# The same rules as setup.py and the relay.
+NAME_RE = re.compile(r"^[A-Za-z0-9 _'-]{1,32}$")
+GM_RE = re.compile(r"^[A-Za-z0-9]{3,16}$")
+RID_RE = re.compile(r"^[a-z2-7]{16}$")
+B32 = "ABCDEFGHJKMNPQRSTVWXYZ23456789"
+BANNED = re.compile(r"(?i)world\s*of\s*warcraft|\bwow\b|warcraft|lich\s*king|blizzard")
+# A few slurs no realm name, tagline or house rule may carry. The same two lists as the relay's listing
+# (hosting/relay/wurelay/listing.py BANNED and SLURS; hosting/tests/test_network_listing.py checks they match): the
+# website and the relay ship apart, so each keeps its own copy.
+SLURS = ("beaner", "chink", "coon", "dyke", "fag", "faggot", "gook", "kike", "nigga", "nigger", "raghead", "retard",
+         "spic", "towelhead", "tranny", "wetback")
+_LEET = str.maketrans("013457@$!|", "oieastasii")
+_SLUR_RE = re.compile(r"(?<![a-z])(?:" + "|".join(sorted(SLURS, key=len, reverse=True)) + r")(?:s|z|es|ed)?(?![a-z])")
+
+
+def has_slur(text) -> bool:
+    """A slur in the text: as a word (with leetspeak undone), or squashed ("f.a.g.g.o.t") for the long ones."""
+    if not isinstance(text, str) or not text:
+        return False
+    low = text.lower().translate(_LEET)
+    if _SLUR_RE.search(low):
+        return True
+    squashed = re.sub(r"[^a-z]", "", low)
+    return any(len(w) >= 6 and w in squashed for w in SLURS)
+
+
+def _leyline_net():
+    """stream/leyline_net.py, for the Host pack descriptor; None without it."""
+    import sys
+    m = sys.modules.get("wu_leyline_net")
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "leyline_net.py")
+    if m is None and os.path.isfile(p):
+        try:
+            spec = importlib.util.spec_from_file_location("wu_leyline_net", p)
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            sys.modules["wu_leyline_net"] = m
+        except Exception:   # noqa: BLE001: the fallback below
+            return None
+    return m
+
+
+def kit_url() -> str:
+    """The Host pack download: the same descriptor the launcher installs from (leyline_net.hostpack(), which feeds
+    /wrath/mods/all.json and /wrath/leyline/hostpack.json), so the website and the launcher hand out one pack.
+    No descriptor: WU_HOST_KIT_URL, else the release page with every pack."""
+    ln = _leyline_net()
+    d = ln.hostpack() if ln is not None else None
+    if d and d.get("download"):
+        return d["download"]
+    return os.environ.get("WU_HOST_KIT_URL") or KIT_URL_FALLBACK
+
+
+def _namecheck():
+    """stream/namecheck.py (the one blocklist for names), shared through sys.modules["wu_namecheck"]; None without it."""
+    import sys
+    m = sys.modules.get("wu_namecheck")
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "namecheck.py")
+    if m is None and os.path.isfile(p):
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("wu_namecheck", p)
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            sys.modules["wu_namecheck"] = m
+        except Exception:   # noqa: BLE001: the slur list above still holds
+            return None
+    return m
+
+
+def name_ok(name) -> bool:
+    """A realm name fit for the front page: no brand word, no slur, nothing stream/namecheck.py refuses in a realm name
+    (sexual terms, profanity, passing for the Leyline team)."""
+    if not (isinstance(name, str) and bool(name.strip()) and not BANNED.search(name) and not has_slur(name)):
+        return False
+    nc = _namecheck()
+    try:
+        return not (nc is not None and nc.realm_name_hit(name))
+    except Exception:   # noqa: BLE001
+        return True
+PRESETS = {   # setup.py PROFILES, in the order the form shows them (dalaran first: the default)
+    "dalaran": ("Dalaran hangout", "Light on your PC, no bots: everyone boosts to 80 and meets in Dalaran."),
+    "main": ("Classic levelling", "The full world from level 1, with a one-time boost to 80 for anyone who wants it."),
+    "brawl": ("Brawl", "Everyone starts at 80 in Dalaran with everything unlocked."),
+    "progression": ("Progression", "Level 1x through the original world, then the two expansions, per character."),
+    "vanillaplus": ("Vanilla+", "The original world only, level 60, 1.5x XP: made to stay up for good on a spare PC or a small server."),
+    "den": ("My Den", "A private room to build in with friends: invite only, no bots, the smallest realm of all."),
+    # the host kit's other cores (hosting/kit/tools/wuhost/cores.py; docs/HOST-ANY-CLIENT.md)
+    "cmangos-1.12.1": ("CMaNGOS Classic", "The CMaNGOS core, built on your PC from its own source, for the classic client."),
+    "cmangos-2.4.3": ("CMaNGOS TBC", "The CMaNGOS core, built on your PC from its own source, for the first expansion's client."),
+}
+CORE_OF = {k: ("cmangos" if k.startswith("cmangos-") else "azerothcore") for k in PRESETS}
+
+# "More settings": the host kit's other choices (setup.py init / signup / herokey / listing, state/realm.env).
+# The same names and rules as the in-game Host window (Host.lua), the page (wrath-page.js hostQuery) and the launcher
+# (deeplink.rs host_query). Each is optional; a missing one is the ruleset's own.
+TYPES = {"normal": "Normal", "pvp": "PvP", "rp": "RP", "rppvp": "RP-PvP"}
+SIGNUPS = {"open": "Open: anyone can make an account", "invite": "Invite link only", "off": "Closed"}
+REGIONS = {"na-east": "NA east", "na-west": "NA west", "sa": "S. America", "eu": "Europe", "africa": "Africa",
+           "me": "Middle East", "asia": "Asia", "oce": "Oceania"}
+TAGS = ("blizzlike", "boosted", "custom", "pvp", "rp", "hangout")
+LANG_RE = re.compile(r"^[a-z]{2,3}(-[A-Z]{2})?$")
+NO_BOTS = ("dalaran", "den")                     # setup.py PROFILE_BOTS: 0 (and the other cores: none yet)
+OPTION_KEYS = ("type", "xp", "loot", "rep", "start", "bots", "signup", "herokey", "region", "lang", "tags", "max",
+               "browser")
+# Ready-made realms (owner 2026-10-30: "recommend more server types ... maybe a Duels Server with simple rules, example
+# build and mod servers"): each fills the form from presets and options the kit already has (nothing new on the host's
+# PC); the host still names it and presses Start server. id -> (label, one line, preset, options, tagline, rules).
+RECIPES = {
+    # My Den (docs/DEN.md, the kit's den profile): one room on the host's PC, private, sign-up by invite, no bots
+    "den": ("My Den", "A private room to build in with friends: invite only, no bots, light on your PC.",
+            "den", {"vis": "private", "bots": "0", "signup": "invite", "herokey": "on"},
+            "A Den: a room to build in, for friends with the invite link.",
+            ("Be kind: no harassment, hate speech or spam.", "Build only where the owner lets you.",
+             "The owner's word is final.")),
+    "duels": ("Duels", "Level 80 in Dalaran, everything unlocked, duels reset health and cooldowns, 1v1 arena.",
+              "brawl", {"bots": "0", "type": "normal", "tags": "pvp,hangout", "max": "40", "signup": "open", "herokey": "on"},
+              "Duels in Dalaran: level 80, everything unlocked, rematch freely.",
+              ("Be kind: no harassment, hate speech or spam.",
+               "Duel only players who accept; never attack or pull mobs onto anyone who didn't.",
+               "Health and cooldowns reset after every duel: rematch freely.",
+               "Queue 1v1 arena for ranked fights.",
+               "No cheats, exploits or automation.",
+               "The host's word is final.")),
+    "modtest": ("Mod and mode test", "A private Dalaran for trying addons, realm scripts and modes with your friends.",
+                "dalaran", {"bots": "0", "signup": "invite", "herokey": "on", "tags": "custom"},
+                "A test realm for mods and modes.",
+                ("Things may break: that's the point.", "Report what you find to the host.", "The host's word is final.")),
+    "event": ("Event night", "A private Dalaran for a night of games: minigolf, modes, a raid of friends.",
+              "dalaran", {"bots": "0", "signup": "invite", "herokey": "on", "max": "40", "tags": "hangout"},
+              "Event night: games and modes with friends.",
+              ("Be kind: no harassment, hate speech or spam.", "Follow the host's calls during events.",
+               "The host's word is final.")),
+    "rp": ("Roleplay hangout", "Dalaran for roleplay: in character in public, out of character in whispers.",
+           "dalaran", {"type": "rp", "tags": "rp,hangout", "herokey": "on"},
+           "A roleplay hangout in Dalaran.",
+           ("Stay in character in public channels; out of character goes in whispers or brackets.",
+            "Be kind: no harassment, hate speech or spam.", "No cheats, bots or exploits.", "The host's word is final.")),
+    "vanillaplus": ("Vanilla+ (always on)", "The original world to level 60 at 1.5x, open to everyone: run it on a spare PC or a small server and leave it up.",
+                    "vanillaplus", {"bots": "0", "signup": "open", "herokey": "on", "tags": "blizzlike,custom"},
+                    "Vanilla+: the original world to level 60, always on.",
+                    ("Be kind: no harassment, hate speech or spam.", "No cheats, bots or exploits.",
+                     "Characters are kept for good: this realm doesn't reset.", "The host's word is final.")),
+    "smallgroup": ("Small-group levelling", "The full world from level 1 at double speed, with bots to fill your party.",
+                   "main", {"xp": "2", "start": "level1", "bots": "20", "max": "20", "herokey": "on"},
+                   "Small-group levelling at double speed.",
+                   ("Be kind: no harassment, hate speech or spam.", "No cheats, bots or exploits.",
+                    "The host's word is final.")),
+}
+
+
+def options(form: dict, preset: str) -> tuple[dict, dict]:
+    """The "More settings" answers, checked against the ruleset: (clean options, errors by field)."""
+    g = lambda k: form.get(k, "") if isinstance(form.get(k, ""), str) else ""   # noqa: E731
+    err, out = {}, {}
+    ac = CORE_OF.get(preset) == "azerothcore"
+
+    def num(k, lo, hi):
+        v = g(k).strip()
+        if v == "":
+            return None
+        if not re.fullmatch(r"\d{1,5}", v) or not lo <= int(v) <= hi:
+            err[k] = {"xp": "Rates: 1x to 10x.", "loot": "Rates: 1x to 10x.", "rep": "Rates: 1x to 10x.",
+                      "bots": "Bots: 0 to 200.", "max": "Max players: 0 (not shown) to 10000."}[k]
+            return None
+        return int(v)
+    t = g("type") or "normal"
+    if t not in TYPES:
+        err["type"] = "Pick a realm type."
+        t = "normal"
+    if t != "normal":
+        out["type"] = t
+    for k in ("xp", "loot", "rep"):
+        v = num(k, 1, 10)
+        if v is not None:
+            if not ac:
+                err[k] = "Rates are set by the ruleset on this core."
+            else:
+                out[k] = v
+    st = g("start")
+    if st:
+        if preset != "main" or st not in ("level1", "boost"):
+            err["start"] = "Level 1 or the boost: only for Classic levelling."
+        else:
+            out["start"] = st
+    b = num("bots", 0, 200)
+    if b is not None:
+        if b > 0 and (not ac or preset in NO_BOTS):
+            err["bots"] = "This ruleset runs without bots."
+        else:
+            out["bots"] = b
+    su = g("signup")
+    if su:
+        if su not in SIGNUPS:
+            err["signup"] = "Pick who can make accounts."
+        else:
+            out["signup"] = su
+    hk = g("herokey")
+    if hk:
+        if hk not in ("on", "off"):
+            err["herokey"] = "Hero Key sign-in: on or off."
+        else:
+            out["herokey"] = hk
+    r = g("region")
+    if r:
+        if r not in REGIONS:
+            err["region"] = "Pick a region."
+        else:
+            out["region"] = r
+    lang = g("lang").strip()
+    if lang:
+        if not LANG_RE.match(lang):
+            err["lang"] = "A language code like en, de or pt-BR."
+        else:
+            out["lang"] = lang
+    tags = [x for x in g("tags").split(",") if x]
+    if any(x not in TAGS for x in tags):
+        err["tags"] = "Tags: " + ", ".join(TAGS) + "."
+    elif tags:
+        out["tags"] = [x for x in TAGS if x in tags]
+    m = num("max", 0, 10000)
+    if m:
+        out["max"] = m
+    br = g("browser")
+    if br:   # "Browser players": Warden off so the browser client (3.3.5a, no Warden module) can join (setup.py)
+        if br not in ("on", "off"):
+            err["browser"] = "Browser players: on or off."
+        elif br == "on" and not ac:
+            err["browser"] = "Browser players need an AzerothCore ruleset."
+        else:
+            out["browser"] = br
+    return out, err
+
+
+def prefill(query: str) -> tuple[dict, list[str]]:
+    """GET /wrath/host?<choices> (from the game or the launcher): the form's values, and the names left out because
+    they were not right. Unknown names are left out too; nothing here makes anything."""
+    try:
+        q = urllib.parse.parse_qs(query[:1000], keep_blank_values=False, max_num_fields=24)
+    except ValueError:
+        return {}, ["everything"]
+    one = {k: v[0] for k, v in q.items() if v}
+    vals, dropped = {}, []
+    rec = RECIPES.get(one.pop("recipe", ""))
+    if rec:   # a ready-made realm: its preset, options, tagline and rules; anything else in the query still wins
+        one = {"preset": rec[2], **rec[3], **one}
+        vals["tagline"], vals["rules"] = rec[4], list(rec[5])
+    for k in one:
+        if k not in ("core", "preset", "name", "vis") + OPTION_KEYS:
+            dropped.append(k)
+    preset = one.get("preset", "")
+    if preset in PRESETS and (not one.get("core") or CORE_OF[preset] == one.get("core")):
+        vals["preset"] = preset
+    elif "preset" in one or "core" in one:
+        dropped.append("preset")
+    name = _one_line(one.get("name", ""))
+    if name:
+        if NAME_RE.match(name) and name_ok(name):
+            vals["name"] = name
+        else:
+            dropped.append("name")
+    if one.get("vis") in ("public", "private"):
+        vals["visibility"] = one["vis"]
+    elif "vis" in one:
+        dropped.append("vis")
+    opts, errs = options({k: one[k] for k in OPTION_KEYS if k in one}, vals.get("preset", "dalaran"))
+    dropped += [k for k in errs]
+    for k in OPTION_KEYS:
+        if k in opts:
+            vals[k] = ",".join(opts[k]) if k == "tags" else str(opts[k])
+    return vals, sorted(set(dropped))
+DEFAULT_TAGLINE = {"dalaran": "A Dalaran hangout: boost to 80, duel, queue, meet."}
+DEFAULT_RULES = ("Be kind: no harassment, hate speech or spam.\n"
+                 "Duel anyone who agrees; no griefing in Dalaran.\n"
+                 "No cheats, bots or exploits.\n"
+                 "The host's word is final: the host is the GM here.")
+MAX_RULES, RULE_LEN, TAGLINE_LEN = 10, 120, 80
+FORM_BYTES = 8192
+STATUS_TTL = 10
+REFRESH = 15
+POSTS_PER_MIN = 20   # per address
+
+_get = None          # the portal's globals, looked up late (bind)
+_lock = threading.Lock()
+_status: dict = {}
+_csrf_key = secrets.token_bytes(32)
+
+
+def bind(getter) -> None:
+    """getter(name) -> one of the portal's globals (portal_get, render, leyline_css, community_realms, ...)."""
+    global _get
+    _get = getter
+
+
+def _our_origin(origin: str) -> bool:
+    """An Origin that is this site, on its new name or its old one (docs/DOMAIN-MOVE.md)."""
+    try:
+        known = P("SITE_ORIGINS")
+    except Exception:   # noqa: BLE001
+        known = None
+    return origin in (known or {f"https://{P('PUBLIC_HOST')}"})
+
+
+def P(name):
+    return _get(name)
+
+
+# ----------------------------------------------------------------------------------------------
+# Realm keys (the same as wunet/keys.py: realm id = base32(sha256(public key))[:16])
+# ----------------------------------------------------------------------------------------------
+
+def _load_ed25519():
+    for p in (os.path.join(HERE, "ed25519_pure.py"),
+              os.path.join(HERE, "..", "hosting", "kit", "tools", "wunet", "ed25519_pure.py")):
+        if os.path.isfile(p):
+            spec = importlib.util.spec_from_file_location("wu_ed25519", p)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod
+    raise ImportError("ed25519_pure.py not found")
+
+
+ed25519 = _load_ed25519()
+
+
+def realm_id(public: bytes) -> str:
+    return base64.b32encode(hashlib.sha256(public).digest()).decode().lower()[:16]
+
+
+def gen(n: int) -> str:
+    return "".join(secrets.choice(B32) for _ in range(n))
+
+
+def new_realm_secrets() -> dict:
+    """A pending realm: a page id, the links' secrets and the claim (= pairing) token. No key: the PC makes it."""
+    while True:
+        pid = base64.b32encode(os.urandom(10)).decode().lower()
+        if not load(pid):
+            break
+    return {"pending_id": pid, "realm_id": None, "invite_secret": gen(20), "host_secret": gen(24),
+            "claim": secrets.token_urlsafe(18)}
+
+
+PAIR_CTX = b"leyline-pair-v1\n"
+
+
+def pair_hash(token: str) -> str:
+    """The same as hosting/kit/tools/wunet/keys.py pair_hash: what the realm's agent shows the relay."""
+    return hashlib.sha256(PAIR_CTX + token.encode("utf-8")).hexdigest()
+
+
+def page_id(rec: dict) -> str:
+    """The id in this realm's page and download addresses (the pending id; an older record's realm id)."""
+    return rec.get("pending_id") or rec["realm_id"]
+
+
+# ----------------------------------------------------------------------------------------------
+# The store: one file per pending realm, 0600, in HOST_DIR/realms
+# ----------------------------------------------------------------------------------------------
+
+def _dir() -> str:
+    d = os.path.join(HOST_DIR, "realms")
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    return d
+
+
+def load(rid: str) -> dict | None:
+    if not RID_RE.match(rid or ""):
+        return None
+    try:
+        with open(os.path.join(_dir(), rid + ".json"), encoding="utf-8") as f:
+            doc = json.load(f)
+        return doc if isinstance(doc, dict) and (doc.get("pending_id") or doc.get("realm_id")) == rid else None
+    except (OSError, ValueError):
+        return None
+
+
+def save(rec: dict) -> None:
+    d = _dir()
+    pid = page_id(rec)
+    tmp = os.path.join(d, pid + ".json.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(rec, f, sort_keys=True)
+    os.replace(tmp, os.path.join(d, pid + ".json"))
+
+
+def all_ids() -> list[str]:
+    try:
+        return [n[:-5] for n in os.listdir(_dir()) if n.endswith(".json") and RID_RE.match(n[:-5])]
+    except OSError:
+        return []
+
+
+def realms_of(owner: str) -> list[dict]:
+    out = [r for r in (load(i) for i in all_ids()) if r and hmac.compare_digest(r.get("owner", ""), owner)]
+    return sorted(out, key=lambda r: r.get("created", 0))
+
+
+def owner_key(user: str) -> str:
+    """The account's game login (one per web user, e.g. WR000123) is its stable id here."""
+    return user.upper()
+
+
+# ----------------------------------------------------------------------------------------------
+# The form
+# ----------------------------------------------------------------------------------------------
+
+def _one_line(v: str) -> str:
+    return " ".join(v.replace("\x00", "").split())
+
+
+def validate(form: dict) -> tuple[dict, dict]:
+    """(clean answers, errors by field). form: field -> str."""
+    g = lambda k: form.get(k, "") if isinstance(form.get(k, ""), str) else ""   # noqa: E731
+    err, out = {}, {}
+    name = _one_line(g("name"))
+    if not name:
+        err["name"] = "Give your realm a name."
+    elif not NAME_RE.match(name):
+        err["name"] = "Realm names: up to 32 letters, digits, spaces, _ ' or -."
+    elif _get is not None and name.lower() == str(P("REALM_NAME")).lower():
+        err["name"] = "That's the official realm's name: pick your own."
+    out["name"] = name
+    preset = g("preset") or "dalaran"
+    if preset not in PRESETS:
+        err["preset"] = "Pick a ruleset."
+        preset = "dalaran"
+    out["preset"] = preset
+    vis = g("visibility") or "public"
+    if vis not in ("public", "private"):
+        err["visibility"] = "Choose public or private."
+        vis = "public"
+    out["visibility"] = vis
+    gm = g("gm").strip()
+    if not GM_RE.match(gm):
+        err["gm"] = "Your GM account name: 3 to 16 letters or digits (you make this account yourself)."
+    out["gm"] = gm.upper() if GM_RE.match(gm) else gm[:16]
+    tag = _one_line(g("tagline"))
+    if len(tag) > TAGLINE_LEN:
+        err["tagline"] = f"The tagline is one line of up to {TAGLINE_LEN} characters."
+    out["tagline"] = tag[:TAGLINE_LEN]
+    raw = g("rules").replace("\r\n", "\n").replace("\r", "\n")
+    lines = [_one_line(x) for x in raw.split("\n")]
+    lines = [x for x in lines if x]
+    if len(raw) > 2000 or len(lines) > MAX_RULES or any(len(x) > RULE_LEN for x in lines):
+        err["rules"] = f"Up to {MAX_RULES} house rules, one per line, {RULE_LEN} characters each."
+    if any(ord(c) < 32 and c not in "\n\t" for c in raw):
+        err["rules"] = "House rules: plain text only."
+    out["rules"] = lines[:MAX_RULES]
+    for k, text in (("name", name), ("tagline", tag), ("rules", " ".join(lines))):
+        if k not in err and BANNED.search(text):
+            err[k] = "Please leave game and publisher brand names out: Leyline is its own project."
+        elif k not in err and has_slur(text):
+            err[k] = "Please pick words that are kind to everyone: that one isn't allowed on Leyline."
+    opts, oerr = options(form, preset)
+    out["options"] = opts
+    err.update(oerr)
+    return out, err
+
+
+def csrf(owner: str) -> str:
+    return hmac.new(_csrf_key, ("host:" + owner).encode(), hashlib.sha256).hexdigest()[:32]
+
+
+# ----------------------------------------------------------------------------------------------
+# Status: the relay's API and the realm list
+# ----------------------------------------------------------------------------------------------
+
+def relay_api() -> str:
+    """The relay's base URL: the one the realm list reads (often its Docker-network address), else the join base."""
+    try:
+        u = P("listing_url")()
+        if u.endswith("/api/listing/realms.json"):
+            return u[: -len("/api/listing/realms.json")]
+    except Exception:  # noqa: BLE001
+        pass
+    return P("JOIN_BASE")
+
+
+def relay_online(rid: str) -> bool | None:
+    """True / False from GET /api/realms/<id>; None when the relay doesn't know it yet or can't be reached."""
+    return relay_info(rid).get("online")
+
+
+def relay_info(rid: str) -> dict:
+    """GET /api/realms/<id>, cached STATUS_TTL: {"online": bool|None, "listed": bool|None, "listed_in_s": float|None}.
+    A newer relay says itself when a public realm is listed and how long after its tunnel came up (launch smoke S6), so
+    the host's page needs not wait for the site's own copy of the realm list (up to a minute or two old)."""
+    now = time.monotonic()
+    with _lock:
+        hit = _status.get(rid)
+        if hit and now - hit[0] < STATUS_TTL:
+            return hit[1]
+    v = {"online": None, "listed": None, "listed_in_s": None}
+    try:
+        req = urllib.request.Request(f"{relay_api()}/api/realms/{rid}", headers={"Accept": "application/json",
+                                                                                 "User-Agent": "wrath-portal"})
+        with urllib.request.urlopen(req, timeout=2.5) as r:
+            doc = json.loads(r.read(65536).decode("utf-8"))
+        if isinstance(doc, dict):
+            v["online"] = bool(doc.get("online"))
+            if isinstance(doc.get("listed"), bool):
+                v["listed"] = doc["listed"]
+            li = doc.get("listed_in_s")
+            if isinstance(li, (int, float)) and not isinstance(li, bool) and 0 <= li < 86400:
+                v["listed_in_s"] = float(li)
+    except Exception:  # noqa: BLE001
+        pass
+    with _lock:
+        _status[rid] = (now, v)
+        if len(_status) > 5000:
+            _status.clear()
+    return v
+
+
+def relay_pair(rec: dict) -> str | None:
+    """The realm id the host's PC registered with this record's token (GET /api/pair/<hash> on the relay), or None
+    (not yet, or the relay can't be reached). Cached like relay_online."""
+    h = pair_hash(rec["claim"])
+    now = time.monotonic()
+    with _lock:
+        hit = _status.get("pair:" + h)
+        if hit and now - hit[0] < STATUS_TTL:
+            return hit[1]
+    v = None
+    try:
+        req = urllib.request.Request(f"{relay_api()}/api/pair/{h}", headers={"Accept": "application/json",
+                                                                             "User-Agent": "wrath-portal"})
+        with urllib.request.urlopen(req, timeout=2.5) as r:
+            doc = json.loads(r.read(65536).decode("utf-8"))
+        rid = doc.get("realm_id") if isinstance(doc, dict) else None
+        v = rid if isinstance(rid, str) and RID_RE.match(rid) else None
+    except Exception:  # noqa: BLE001 - 404 (not yet) or unreachable: ask again on the next view
+        v = None
+    with _lock:
+        _status["pair:" + h] = (now, v)
+    return v
+
+
+def listed_entry(rid: str) -> dict | None:
+    try:
+        realms, _ok = P("community_realms")()
+    except Exception:  # noqa: BLE001
+        return None
+    return next((r for r in realms if r.get("id") == rid), None)
+
+
+def try_claim(rec: dict) -> None:
+    """A listed public realm whose heartbeat carries the claim token: bind it to the account (once)."""
+    if not SITE_SECRET or rec.get("claimed") or not rec.get("claim"):
+        return
+    body = json.dumps({"realm_id": rec["realm_id"], "token": rec["claim"],
+                       "claimed_by": (rec.get("owner_display") or "a Hero Key account")[:40]}).encode()
+    req = urllib.request.Request(f"{relay_api()}/api/listing/claims", data=body, method="POST",
+                                 headers={"Content-Type": "application/json", "Authorization": "Bearer " + SITE_SECRET})
+    try:
+        with urllib.request.urlopen(req, timeout=2.5) as r:
+            if r.status == 200:
+                rec["claimed"] = True
+    except Exception:  # noqa: BLE001 - not yet (the next heartbeat carries it); tried again on the next view
+        return
+
+
+def fmt_secs(v: float) -> str:
+    """0.3 s, 12 s, 2 min 5 s: how long the realm took to be listed after the PC connected."""
+    if v < 10:
+        return f"{v:.1f} s"
+    if v < 120:
+        return f"{int(round(v))} s"
+    return f"{int(v // 60)} min {int(v % 60)} s"
+
+
+def status_of(rec: dict) -> tuple[str, str, bool]:
+    """(state, text, final). Also learns the realm id from the relay (pairing), forgets an old record's realm key
+    once the PC has connected, and claims."""
+    changed = False
+    if not rec.get("realm_id"):
+        rid = relay_pair(rec) if rec.get("claim") else None
+        if not rid:
+            return ("waiting", "Waiting for your PC", False)
+        rec["realm_id"] = rid
+        rec["first_online"] = int(time.time())
+        changed = True
+    rid = rec["realm_id"]
+    info = relay_info(rid)
+    online = info["online"]
+    entry = listed_entry(rid) if rec["visibility"] == "public" else None
+    if not (entry and entry.get("live")) and online and rec["visibility"] == "public" and info["listed"]:
+        entry = {"live": True, "claimed": False}   # the relay lists it already; the site's copy catches up
+    if entry and entry.get("live") and "listed_in_s" not in rec:
+        seen = int(time.time()) - rec["first_online"] if rec.get("first_online") else 0   # an older relay: this page's view
+        rec["listed_in_s"] = info["listed_in_s"] if info["listed_in_s"] is not None else (seen if seen > 0 else None)
+        changed = True
+    if (online or entry) and rec.get("realm_key"):
+        rec["realm_key"] = None            # the PC holds it now; the site keeps no copy
+        rec["first_online"] = int(time.time())
+        changed = True
+    if entry and entry.get("live"):
+        if not entry.get("claimed") and not rec.get("claimed"):
+            try_claim(rec)
+            changed = changed or bool(rec.get("claimed"))
+        li = rec.get("listed_in_s")
+        state = ("listed", "Online, listed" + (f" in {fmt_secs(li)}" if isinstance(li, (int, float)) else ""), True)
+    elif online and rec["visibility"] == "private":
+        state = ("online", "Online, private: friends join with your invite link", True)
+    elif online:
+        state = ("online", "Online: joining the realm list (about a minute)", False)
+    elif rec.get("first_online"):
+        state = ("offline", "Your PC is offline: start it again to bring the realm back", False)
+    else:
+        state = ("waiting", "Waiting for your PC", False)
+    if changed:
+        save(rec)
+    return state
+
+
+# ----------------------------------------------------------------------------------------------
+# The download: a seed for setup.py init --seed, and a script that runs the kit with it
+# ----------------------------------------------------------------------------------------------
+
+def relay_host() -> str:
+    return urllib.parse.urlsplit(P("JOIN_BASE")).hostname or "relay.leylinelauncher.com"
+
+
+def seed_b64(rec: dict) -> str:
+    """v2: the links' secrets, the claim (pairing) token and the answers; no key (the PC makes it). An older record
+    that still holds a website-made key gets the v1 seed it was made for."""
+    doc = {"v": 2, "invite_secret": rec["invite_secret"], "host_secret": rec["host_secret"], "claim": rec["claim"],
+           "name": rec["name"], "profile": rec["preset"], "visibility": rec["visibility"],
+           "gm_name": rec["gm"], "tagline": rec.get("tagline", ""), "rules": rec.get("rules", [])}
+    if rec.get("options"):   # "More settings" (setup.py apply_options); an older kit ignores them
+        doc["options"] = rec["options"]
+    if rec.get("realm_key"):
+        doc.update(v=1, realm_id=rec["realm_id"], realm_key=rec["realm_key"])
+    return base64.b64encode(json.dumps(doc, sort_keys=True, separators=(",", ":")).encode("utf-8")).decode("ascii")
+
+
+def script_sh(rec: dict) -> bytes:
+    q = shlex.quote
+    rid = page_id(rec)
+    return (
+        "#!/usr/bin/env bash\n"
+        f"# Leyline: start your realm \"{rec['name']}\" on this Mac or Linux PC.\n"
+        "# Put this file in your unzipped Host pack folder (next to the `leyline` script), then run:\n"
+        f"#   bash leyline-{rid}.sh\n"
+        "# It sets up the realm with the answers you gave on the website and starts it with `leyline host`.\n"
+        "# It holds this realm's links and its claim token: yours, keep it private.\n"
+        "# The realm's key is made on this PC and never leaves it. No passwords, no accounts:\n"
+        f"# you make your GM account {rec['gm']} yourself on your own join page (leyline status shows it).\n"
+        "set -euo pipefail\n"
+        'KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n'
+        '[ -f "$KIT/leyline" ] || { echo "Put this file in your Host pack folder (next to leyline), then run it again."; exit 1; }\n'
+        'mkdir -p "$KIT/state"\n'
+        "umask 077\n"
+        "cat > \"$KIT/state/seed.b64\" <<'SEED'\n"
+        f"{seed_b64(rec)}\n"
+        "SEED\n"
+        "export WU_SEED=state/seed.b64 LEYLINE_NONINTERACTIVE=1\n"
+        f"export LEYLINE_NAME={q(rec['name'])} LEYLINE_RULESET={q(rec['preset'])} "
+        f"LEYLINE_VISIBILITY={q(rec['visibility'])} LEYLINE_GM={q(rec['gm'])}\n"
+        f'export WU_RELAY="${{WU_RELAY:-{relay_host()}}}"\n'
+        'exec bash "$KIT/leyline" host "$@"\n').encode("utf-8")
+
+
+def script_bat(rec: dict) -> bytes:
+    lines = [
+        "@echo off",
+        "setlocal",
+        f"title Leyline - start {rec['name']}",
+        f"rem Leyline: start your realm \"{rec['name']}\" on this Windows PC. Needs Docker Desktop.",
+        "rem Put this file in your unzipped Host pack folder (next to \"Host a Wrath realm.bat\") and double-click it.",
+        "rem It sets up the realm with the answers you gave on the website, then starts it.",
+        "rem It holds this realm's links and its claim token: yours, keep it private.",
+        "rem The realm's key is made on this PC and never leaves it. No passwords, no accounts:",
+        f"rem you make your GM account {rec['gm']} yourself on your own join page (state\\host-link.txt).",
+        'cd /d "%~dp0"',
+        'if not exist "Host a Wrath realm.bat" (echo Put this file in your Host pack folder, next to "Host a Wrath realm.bat", then run it again. & pause & exit /b 1)',
+        "docker version >nul 2>&1 || (echo Docker Desktop is not running. Start it ^(or install it from docker.com^), then run this again. & pause & exit /b 1)",
+        'if not defined WU_TOOLS_PREBUILT set "WU_TOOLS_PREBUILT=ghcr.io/orionopenwow/wu-host-tools:1"',
+        'set "WU_TOOLS_IMAGE=wu-host-tools:1"',
+        'docker pull -q "%WU_TOOLS_PREBUILT%" >nul 2>&1 && docker tag "%WU_TOOLS_PREBUILT%" "%WU_TOOLS_IMAGE%"',
+        'docker image inspect "%WU_TOOLS_IMAGE%" >nul 2>&1 || docker build -q -t "%WU_TOOLS_IMAGE%" "%~dp0tools" >nul || (echo Building the helper image failed. Is this PC online? & pause & exit /b 1)',
+        f'if not defined WU_RELAY set "WU_RELAY={relay_host()}"',
+        'if not exist "state" mkdir "state"',
+        f'> "state\\seed.b64" echo {seed_b64(rec)}',
+        'docker run --rm -v "%~dp0.:/kit" -e WU_KIT=/kit %WU_TOOLS_IMAGE% python -m wuhost.setup init --seed state/seed.b64 --relay %WU_RELAY% >nul || (echo Setting up the realm failed ^(see above^). & pause & exit /b 1)',
+        f'set "WU_NAME={rec["name"]}"',
+        f'set "WU_PROFILE={rec["preset"]}"',
+        f'set "WU_VISIBILITY={rec["visibility"]}"',
+        'call "Host a Wrath realm.bat"',
+    ]
+    return ("\r\n".join(lines) + "\r\n").encode("utf-8")
+
+
+# ----------------------------------------------------------------------------------------------
+# Pages (the Leyline look)
+# ----------------------------------------------------------------------------------------------
+
+HOST_CSS = """
+.hf{display:block}
+.hf .back{display:none}
+.hf-pg{scroll-margin-top:80px}
+.hf-who{margin:0;color:var(--lk-muted);font-size:13.5px}
+.hf-cols{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:20px;align-items:start}
+.hf-pane{scroll-margin-top:90px;min-width:0}
+.hf-pack{grid-column:1/-1}
+/* the Start card: the launcher's slate card with the crest, the eyebrow and the title */
+.hf-card{position:relative;padding:22px 22px 24px;border:1px solid var(--lk-border-strong);border-radius:var(--lk-r);
+background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--lk-text) 1.6%,transparent) 0 2px,transparent 2px 7px),
+linear-gradient(180deg,var(--lk-surface-2),var(--lk-surface));box-shadow:inset 0 1px 0 color-mix(in srgb,var(--lk-text) 5%,transparent)}
+.hf-card-h{display:flex;align-items:center;gap:14px;margin:0 0 14px;padding-bottom:14px;border-bottom:1px solid var(--lk-border)}
+.hf-card-h .ly-spin{--ly-spin-size:44px!important}
+.hf-crest{display:grid;place-items:center;flex:none;width:46px;height:46px;border-radius:50%;border:1px solid var(--lk-gold-line);
+background:radial-gradient(circle at 50% 40%,var(--lk-surface-2),var(--lk-bg))}
+.hf-eyebrow{margin:0;color:var(--lk-gold);font-size:11.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+.hf-card h2,.hf .hf-card-h h2{margin:2px 0 0;font-size:22px;line-height:1.2;font-weight:700;text-align:left}
+.hf .ly-lede{margin:0 0 10px;color:var(--lk-text-2);font-size:15px;text-align:left;max-width:none}
+.hf-cap{margin:22px 0 10px;color:var(--lk-muted);font-size:11.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+.hf-cap:first-child{margin-top:0}
+/* the steps: big numbers, done ticks (the launcher's "Before you start") */
+.hf-steps{display:grid;gap:10px;margin:0;padding:12px;list-style:none;counter-reset:hf;border:1px solid var(--lk-gold-line);border-radius:12px;
+background:color-mix(in srgb,var(--lk-gold) 5%,transparent)}
+.hf-steps>li{counter-increment:hf;display:grid;grid-template-columns:36px minmax(0,1fr);gap:4px 14px;align-items:center;margin:0;
+padding:12px 14px;border-radius:10px;background:var(--lk-surface);border:1px solid var(--lk-border)}
+.hf-steps>li::before{content:counter(hf);grid-row:1/span 3;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;
+background:var(--lk-accent);color:var(--lk-on-accent);font-weight:700;font-size:15px;box-shadow:0 0 0 4px var(--lk-accent-soft)}
+.hf-steps>li>b{font-size:16px;font-weight:650;color:var(--lk-text)}
+.hf-steps>li>span{color:var(--lk-text-2);font-size:14px}
+.hf-steps>li>.row{justify-content:flex-start;margin:6px 0 0}
+.hf-steps .hint{margin:4px 0 0}
+.hf-steps .link{margin:6px 0 0}
+/* the Guide: the launcher's accordion */
+.hf-guide{padding:16px;border:1px solid var(--lk-border);border-radius:var(--lk-r);background:var(--lk-surface)}
+.hf-guide details{margin:0 0 8px;border:1px solid var(--lk-border);border-radius:10px;background:var(--lk-surface-2)}
+.hf-guide summary{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;cursor:pointer;list-style:none;
+font-weight:600;font-size:14px;color:var(--lk-text)}
+.hf-guide summary::-webkit-details-marker{display:none}
+.hf-guide summary::after{content:"";flex:none;width:7px;height:7px;border:solid var(--lk-muted);border-width:0 1.6px 1.6px 0;transform:rotate(45deg) translateY(-2px)}
+.hf-guide details[open] summary::after{transform:rotate(-135deg)}
+.hf-guide details p{margin:0;padding:0 12px 12px;color:var(--lk-text-2);font-size:13.5px}
+.hf-pack-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.hf-pack-g>section{padding:18px;border:1px solid var(--lk-border);border-radius:12px;background:var(--lk-surface-2)}
+.hf-pack-g h2{margin:0 0 6px;font-size:17px;text-align:left}.hf-pack-g p{margin:0 0 10px;color:var(--lk-text-2);font-size:14px}
+@supports selector(:has(a)){
+.hf-pack{display:none}
+.hf-pg:has(#hf-guide:target) .hf-start,.hf-pg:has(#hf-pack:target) :is(.hf-start,.hf-guide){display:none}
+.hf-pg:has(#hf-pack:target) .hf-pack{display:block}
+.hf-pg:has(#hf-guide:target) .hf-cols{grid-template-columns:minmax(0,1fr)}
+.hf-pg:has(#hf-guide:target) .hf-guide{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;align-items:start}
+.hf-pg:has(#hf-guide:target) .hf-guide :is(.hf-cap,.hf-fine){grid-column:1/-1}
+.hf-pg:has(#hf-guide:target) .hf-guide details{margin:0}
+.hf-pg:not(:has(:is(#hf-guide,#hf-pack):target)) .hf-seg a[data-t=start],.hf-pg:has(#hf-guide:target) .hf-seg a[data-t=guide],
+.hf-pg:has(#hf-pack:target) .hf-seg a[data-t=pack]{background:var(--lk-accent);color:var(--lk-on-accent)!important}
+}
+/* the form */
+.hf label{display:block;font-weight:600;margin:16px 0 5px;color:var(--lk-text);font-size:14px}
+.hf .hint{display:block;font-weight:400;font-size:13px;color:var(--lk-muted);margin-top:2px}
+.hf input[type=text],.hf input[type=number],.hf textarea,.hf select{width:100%;min-height:40px;background:var(--lk-surface-2);color:var(--lk-text);
+border:1px solid var(--lk-border);border-radius:var(--lk-r-sm);padding:9px 12px;font:15px/1.4 var(--lk-font)}
+.hf textarea{min-height:120px;resize:vertical}
+.hf :is(input,textarea,select):focus{outline:none;border-color:var(--lk-accent);box-shadow:0 0 0 3px var(--lk-accent-soft)}
+.hf .opts{display:grid;gap:8px;grid-template-columns:repeat(2,minmax(0,1fr))}
+.hf .opt{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--lk-border);border-radius:10px;padding:11px 13px;
+background:var(--lk-surface);font-weight:400;margin:0;cursor:pointer}
+.hf .opt:hover{border-color:var(--lk-border-strong)}
+.hf .opt:has(input:checked){border-color:var(--lk-accent);box-shadow:0 0 0 1px var(--lk-accent),0 0 0 4px var(--lk-accent-soft)}
+.hf .opt b{display:block;color:var(--lk-text);font-weight:650}.hf .opt span{font-size:13.5px;color:var(--lk-muted)}
+.hf .opt input{margin-top:4px;accent-color:var(--lk-accent)}
+.hf .recipes-l{list-style:none;margin:0 0 8px;padding:0;display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
+.hf .recipes-l a{display:grid;gap:2px;height:100%;padding:11px 13px;border:1px solid var(--lk-border);border-radius:10px;
+background:var(--lk-surface);text-decoration:none;color:var(--lk-text)}
+.hf .recipes-l a:hover{border-color:var(--lk-accent)}
+.hf .recipes-l b{color:var(--lk-text);font-weight:650}.hf .recipes-l span{font-size:13px;color:var(--lk-muted)}
+.hf .err{color:var(--lk-bad);font-size:14px;margin:4px 0 0}
+.hf .go{margin-top:20px;display:flex;justify-content:flex-start}
+.hf button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 24px;font:600 16px var(--lk-font);
+cursor:pointer;color:var(--lk-on-accent);background:var(--lk-accent);border:0;border-radius:var(--lk-r-sm);
+box-shadow:0 8px 22px color-mix(in srgb,var(--lk-accent) 30%,transparent)}
+.hf button:hover{background:var(--lk-accent-strong)}
+.hf a.dl{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:0 16px;border-radius:var(--lk-r-sm);
+font-weight:600;font-size:14px;text-decoration:none;color:var(--lk-text)!important;background:var(--lk-surface-2);border:1px solid var(--lk-border-strong)}
+.hf a.dl:hover{border-color:var(--lk-accent)}
+.hf a.dl.primary{background:var(--lk-accent);border-color:var(--lk-accent);color:var(--lk-on-accent)!important}
+.hf a.dl.primary:hover{background:var(--lk-accent-strong)}
+.hf :is(button,a.dl):focus-visible{outline:2px solid var(--lk-accent-strong);outline-offset:2px}
+.hf .row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.hf code,.hf .link{display:block;background:var(--lk-bg);border:1px solid var(--lk-border);border-radius:8px;padding:9px 12px;
+font:13.5px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:anywhere;color:var(--lk-text)}
+.hf .pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 12px;font-weight:600;font-size:13px;border:1px solid var(--lk-border-strong)}
+.hf .pill.waiting{color:var(--lk-warn);border-color:color-mix(in srgb,var(--lk-warn) 50%,transparent)}
+.hf .pill.online,.hf .pill.listed{color:var(--lk-ok);border-color:color-mix(in srgb,var(--lk-ok) 50%,transparent);background:color-mix(in srgb,var(--lk-ok) 10%,transparent)}
+.hf .pill.offline{color:var(--lk-muted)}
+.hf ol{padding-left:1.3rem}.hf li{margin:6px 0}.hf .mine a{color:var(--lk-accent-strong)}
+.hf .ly-panel{margin:14px 0 0;padding:18px 18px 20px;border:1px solid var(--lk-border);border-radius:12px;background:var(--lk-surface);box-shadow:none}
+.hf .hf-card .ly-panel{background:transparent;border:0;padding:0;margin:18px 0 0}
+.hf .ly-panel h2,.hf-card .ly-panel h2{margin:0 0 10px;font-size:17px;text-align:left}
+.hf .needs{margin:0;padding:0;border:0;background:none}.hf .needs p{margin:4px 0;color:var(--lk-text-2);font-size:14.5px}
+.hf .needs b{color:var(--lk-text)}
+.hf .more{margin-top:18px;border:1px solid var(--lk-border);border-radius:10px;padding:2px 14px 14px;background:var(--lk-surface)}
+.hf .more summary{cursor:pointer;font-weight:600;padding:10px 0;color:var(--lk-accent-strong)}
+.hf .trio{display:grid;gap:10px;grid-template-columns:repeat(3,minmax(0,1fr))}
+.hf .tags{display:flex;flex-wrap:wrap;gap:6px 14px}.hf label.tag{display:inline-flex;gap:6px;font-weight:400;margin:4px 0}
+.hf .ver{display:inline-block;padding:0 7px;border-radius:6px;border:1px solid var(--lk-gold-line);color:var(--lk-gold);
+background:color-mix(in srgb,var(--lk-gold) 12%,transparent);font:600 12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.hf .live{border-color:color-mix(in srgb,var(--lk-ok) 55%,transparent)}.hf .live .link{user-select:all;-webkit-user-select:all;margin:6px 0}
+.hf .poster{position:relative;isolation:isolate;display:flex;flex-direction:column;justify-content:flex-end;max-width:280px;min-height:220px;
+padding:16px;border-radius:12px;overflow:hidden;border:1px solid rgba(140,170,255,.45);
+background:linear-gradient(var(--a),hsl(var(--h1) 55% 26%),hsl(var(--h2) 50% 16%) 70%,#11131a)}
+.hf .poster::before{content:"";position:absolute;inset:0;z-index:-1;opacity:.55;
+background:url(/wrath/art/leyline-crystal-256.webp) var(--x) var(--y)/58% no-repeat}
+.hf .poster::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,transparent 30%,rgba(10,12,18,.88))}
+.hf .poster h3{margin:0 0 4px;font-size:21px;color:#fff}.hf .poster-p{position:absolute;top:12px;left:14px;margin:0;font-size:12.5px;color:#dfe6ff}
+.hf .poster-l{margin:0;color:#d6dbea;font-size:14px}
+.hf .note{border:1px solid var(--lk-accent);background:var(--lk-accent-soft);border-radius:10px;padding:10px 12px;font-size:14px}
+.hf .ly-fine,.hf-fine{margin:14px 0 0;color:var(--lk-muted);font-size:13.5px}
+@media (max-width:900px){.hf-cols{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:560px){.hf .opts,.hf .trio{grid-template-columns:1fr}.hf-card{padding:16px}.hf-steps{padding:8px}
+.hf-steps>li{grid-template-columns:28px minmax(0,1fr);gap:4px 10px;padding:10px;align-items:start}.hf-steps>li::before{width:26px;height:26px;font-size:13px}}
+"""
+
+PLUS_CSS = (".ly-plus{display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:999px;text-decoration:none;"
+            "font:600 14px/1 system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#1a1030!important;"
+            "background:linear-gradient(180deg,#9ff0ff,#5fe3ff);border:1px solid #9ff0ff;box-shadow:0 0 14px rgba(95,227,255,.35)}"
+            ".ly-plus:hover,.ly-plus:focus-visible{box-shadow:0 0 22px rgba(180,140,255,.6);outline:none}"
+            ".ly-plus b{font-size:18px;line-height:1}.ly-plus-row{display:flex;justify-content:center;margin:14px 0}")
+
+
+def plus_button(where: str = "") -> str:
+    """The "+ Your server" button for the realm list, the Leyline page and the account page."""
+    return (f'<style>{PLUS_CSS}</style><div class="ly-plus-row"><a class="ly-plus" href="/wrath/host" '
+            f'data-where="{html.escape(where)}"><b aria-hidden="true">+</b>Your server</a></div>')
+
+
+def page(title: str, inner: str, refresh: int = 0) -> bytes:
+    """A Host page: in the hub's shell (the website's top bar, the launcher's look) when the portal has the hub, else
+    the plain Leyline page. Private to the signed-in host: never indexed."""
+    e = html.escape
+    meta = (f'<meta http-equiv="refresh" content="{int(refresh)}">' if refresh else "") + '<meta name="robots" content="noindex">'
+    hub = P("hub_mod")
+    if hub is not None and getattr(hub, "hub", None) is not None:
+        try:
+            out = hub.hub._shell(f"{title} · Leyline", f'<div class="hf">{inner}</div>', "/wrath/host", active="host", css=HOST_CSS)
+            if hub.front_on():   # the hub's own links, at the front door's address (as hub._Live does)
+                out = out.replace(hub.BASE.encode(), hub.FRONT.encode())
+            out = out.replace(b'<meta name="robots" content="noindex">', b"")
+            return out.replace(b"<title>", meta.encode() + b"<title>", 1)
+        except Exception:   # noqa: BLE001: the plain page then
+            pass
+    css = (P("LOOK_VARS") or "") + P("leyline_css")() + HOST_CSS
+    return (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">'
+            f'{meta}<title>{e(title)} · Leyline</title><style>{css}</style></head>'
+            f'<body class="ly"><div class="ly-glow"></div><div class="ly-wrap hf">'
+            f'<a class="back" href="/wrath/leyline">&larr; Leyline</a>{inner}</div></body></html>').encode("utf-8")
+
+
+def more_settings(vals: dict, errs: dict) -> str:
+    """The form's "More settings" (open when any is set): the host kit's other choices."""
+    e = html.escape
+    o = vals.get("options") if isinstance(vals.get("options"), dict) else {}
+    v = lambda k: str(vals.get(k, o.get(k, "")) if not isinstance(o.get(k), list) else ",".join(o[k]))   # noqa: E731
+
+    def er(k):
+        return f'<p class="err" id="err-{k}">{e(errs[k])}</p>' if k in errs else ""
+
+    def select(name, label, choices, hint=""):
+        cur = v(name)
+        opts = "".join(f'<option value="{e(k)}"{" selected" if k == cur else ""}>{e(t)}</option>' for k, t in choices)
+        return (f'<label for="f-{name}">{e(label)}' + (f'<span class="hint">{e(hint)}</span>' if hint else "")
+                + f'</label><select id="f-{name}" name="{name}">{opts}</select>{er(name)}')
+
+    def number(name, label, lo, hi, hint):
+        return (f'<label for="f-{name}">{e(label)}<span class="hint">{e(hint)}</span></label>'
+                f'<input type="number" id="f-{name}" name="{name}" min="{lo}" max="{hi}" value="{e(v(name))}">{er(name)}')
+    rate = [("", "The ruleset's own")] + [(str(i), f"{i}x") for i in (1, 2, 3, 5, 10)]
+    tags = set(v("tags").split(","))
+    tag_html = "".join(f'<label class="tag"><input type="checkbox" name="tags" value="{t}"{" checked" if t in tags else ""}> '
+                       f'{e(t.capitalize() if t not in ("pvp", "rp") else t.upper().replace("VP", "vP"))}</label>' for t in TAGS)
+    any_set = any(v(k) for k in OPTION_KEYS if k != "type") or v("type") not in ("", "normal")
+    return (f'<details class="more"{" open" if any_set or any(k in errs for k in OPTION_KEYS) else ""}>'
+            '<summary>More settings</summary>'
+            + select("type", "Realm type", list(TYPES.items()))
+            + '<div class="trio">' + select("xp", "XP rate", rate) + select("loot", "Loot rate", rate)
+            + select("rep", "Reputation rate", rate) + '</div>'
+            '<p class="hint">Rates apply on the AzerothCore rulesets; CMaNGOS realms use the ruleset\'s own.</p>'
+            + select("start", "New characters (Classic levelling)", [("", "The ruleset's own"), ("boost", "Level 1, or the boost to 80"),
+                                                                     ("level1", "Level 1 only")])
+            + number("bots", "Bots", 0, 200, "0 to 200 (not on the Dalaran hangout or CMaNGOS)")
+            + select("signup", "Who can make accounts", [("", "Open when public, invite link when private")] + list(SIGNUPS.items()))
+            + select("herokey", "Hero Key sign-in", [("", "Off"), ("on", "On: Leyline accounts sign in directly"), ("off", "Off")])
+            + select("region", "Region", [("", "Not set")] + list(REGIONS.items()))
+            + f'<label for="f-lang">Language<span class="hint">A code like en, de or pt-BR (optional)</span></label>'
+              f'<input type="text" id="f-lang" name="lang" maxlength="6" value="{e(v("lang"))}">{er("lang")}'
+            + f'<label>Tags</label><div class="tags">{tag_html}</div>{er("tags")}'
+            + number("max", "Max players", 0, 10000, "The server lets in no more than this, and the realm list shows it. "
+                     "0 = the ruleset's own")
+            + select("browser", "Browser players", [("", "The default: on for the AzerothCore rulesets"),
+                                                    ("on", "On: the anti-cheat is off so browsers can join"),
+                                                    ("off", "Off: desktop clients only, anti-cheat on")],
+                     "The browser client has no anti-cheat module, so it joins only with the core's client anti-cheat "
+                     "off. The server's own checks stay on.")
+            + '</details>')
+
+
+def form_page(owner: str, display: str, vals: dict | None = None, errs: dict | None = None, note: str = "") -> bytes:
+    e = html.escape
+    vals, errs = vals or {}, errs or {}
+
+    def er(k):
+        return f'<p class="err" id="err-{k}">{e(errs[k])}</p>' if k in errs else ""
+    preset = vals.get("preset", "dalaran")
+    vis = vals.get("visibility", "public")
+    rules = vals.get("rules")
+    rules_text = "\n".join(rules) if isinstance(rules, list) else (rules if isinstance(rules, str) else DEFAULT_RULES)
+    opts = "".join(
+        f'<label class="opt"><input type="radio" name="preset" value="{k}"{" checked" if k == preset else ""}>'
+        f'<div><b>{e(t)}</b><span>{e(d)}</span></div></label>' for k, (t, d) in PRESETS.items())
+    visopts = "".join(
+        f'<label class="opt"><input type="radio" name="visibility" value="{k}"{" checked" if k == vis else ""}>'
+        f'<div><b>{t}</b><span>{d}</span></div></label>'
+        for k, t, d in (("public", "Public", "Listed on the Leyline realm list for everyone."),
+                        ("private", "Private", "Only people with your invite link can find and join it.")))
+    mine = realms_of(owner)
+    mine_html = ""
+    if mine:
+        mine_html = ('<section class="ly-panel mine"><h2>Your realms</h2><ul>'
+                     + "".join(f'<li><a href="/wrath/host/{e(page_id(r))}">{e(r["name"])}</a> '
+                               f'<span class="hint">{e(PRESETS[r["preset"]][0])}, {e(r["visibility"])}</span></li>'
+                               for r in mine) + '</ul></section>')
+    full = len(mine) >= PER_ACCOUNT
+    form = ('<section class="ly-panel"><p>You have made the most realms one account can for now '
+            f'({PER_ACCOUNT}). Open one above to start it.</p></section>' if full else
+            '<section class="ly-panel recipes"><h2>Start from a ready-made realm</h2><ul class="recipes-l">'
+            + "".join(f'<li><a href="/wrath/host?recipe={k}"><b>{e(r[0])}</b><span>{e(r[1])}</span></a></li>' for k, r in RECIPES.items())
+            + '</ul><p class="hint">Each fills the form below; name it and press Start server.</p>'
+            f'<p class="hint">Want it up all the time, or already run a server? <a href="{ALWAYS_ON_URL}">Keep your realm up '
+            '24/7, or put your own server on the list</a>.</p></section>'
+            '<section class="ly-panel" id="new-realm"><h2>New realm</h2>'
+            + (f'<p class="note" role="status">{e(note)}</p>' if note else "")
+            + (f'<p class="err">{e(errs["_"])}</p>' if "_" in errs else "") +
+            '<form method="post" action="/wrath/host">'
+            f'<input type="hidden" name="csrf" value="{e(csrf(owner))}">'
+            '<label for="f-name">Realm name<span class="hint">Up to 32 letters, digits, spaces, _ \' or -</span></label>'
+            f'<input type="text" id="f-name" name="name" maxlength="32" required value="{e(vals.get("name", ""))}">{er("name")}'
+            f'<label>Ruleset</label><div class="opts">{opts}</div>{er("preset")}'
+            '<label for="f-tag">Tagline<span class="hint">One line for the realm list (optional)</span></label>'
+            f'<input type="text" id="f-tag" name="tagline" maxlength="{TAGLINE_LEN}" value="{e(vals.get("tagline", ""))}">{er("tagline")}'
+            f'<label for="f-rules">House rules<span class="hint">One per line, up to {MAX_RULES}. Shown on the realm list and your join page.</span></label>'
+            f'<textarea id="f-rules" name="rules">{e(rules_text)}</textarea>{er("rules")}'
+            f'<label>Who can join</label><div class="opts">{visopts}</div>{er("visibility")}'
+            + more_settings(vals, errs) +
+            '<label for="f-gm">Your GM account name<span class="hint">3 to 16 letters or digits. You make this game account '
+            'yourself on your realm\'s join page, with your own password; it gets GM rights by itself.</span></label>'
+            f'<input type="text" id="f-gm" name="gm" maxlength="16" required autocomplete="off" value="{e(vals.get("gm", ""))}">{er("gm")}'
+            '<div class="go"><button type="submit">Start server</button></div></form></section>')
+    # the launcher's Host page on the web (owner 2026-10-31): Start (the steps, the rulesets, the form), Guide, and
+    # Host pack & settings, as tabs that are anchors (no script: the tab in the address shows its pane)
+    spin = P("spin")
+    crest = f'<span class="hf-crest" aria-hidden="true">{spin(40, "slow") if spin else ""}</span>'
+    inner = (
+        '<section class="hb-pg hf-pg" aria-labelledby="hf-h"><header class="hb-pg-h"><div class="hb-pg-t"><h1 id="hf-h">Host</h1>'
+        + host_tabs() + '</div></header><div class="hb-pg-b hf-cols">'
+        f'<div class="hf-pane hf-start" id="hf-start"><div class="hf-card"><div class="hf-card-h">{crest}<div>'
+        '<p class="hf-eyebrow">Your realm</p><h2>Host a realm</h2></div></div>'
+        f'<p class="ly-lede">Signed in as {e(display)}. Your realm runs on your own PC, free, and players reach it '
+        'through the Leyline network. You open no ports, and nobody sees your home address.</p>'
+        + needs_panel() + '<h3 class="hf-cap">Before you start</h3>' + before_steps() + mine_html + form + '</div></div>'
+        + guide_pane() + pack_pane() + '</div></section>')
+    return page("Your server", inner)
+
+
+# What a host needs and how long it takes, said before anything else (the launcher's Host page and the hub's Beacon
+# page say the same; stream/hub.py HOST_NEEDS). The client version is a chip, never in the sentence.
+NEEDS = ("Docker", "your own game folder", "about 10 GB free")
+NEEDS_TIME = "The first start takes 5 to 20 minutes, and your PC must stay on for others to play."
+NETWORK_DOC = "/wrath/docs/network"   # docs/leyline/network.md: how the Leyline network works, for players
+
+
+def needs_panel() -> str:
+    e = html.escape
+    return ('<!-- TODO(owner): the host needs wording -->'
+            '<section class="ly-panel needs" aria-label="What you need"><p><b>You need:</b> '
+            f'{e(NEEDS[0])}, {e(NEEDS[1])} <span class="ver" title="Game client version">3.3.5a</span>, {e(NEEDS[2])}.</p>'
+            f'<p>{e(NEEDS_TIME)} <a href="{NETWORK_DOC}">How the Leyline network works</a></p></section>')
+
+
+def host_tabs() -> str:
+    """Start, Guide and Host pack & settings: links to the panes (CSS shows the one in the address)."""
+    return ('<nav class="hb-seg hf-seg" aria-label="Host">'
+            '<a href="/wrath/host#hf-start" data-t="start">Start</a><a href="/wrath/host#hf-guide" data-t="guide">Guide</a>'
+            '<a href="/wrath/host#hf-pack" data-t="pack">Host pack &amp; settings</a></nav>')
+
+
+def _launcher_url() -> str:
+    """Get the launcher: the site's download page with every option (stream/downloads.py), else the hub's file."""
+    if P("downloads_mod") is not None:
+        return "/wrath/download"
+    hub = P("hub_mod")
+    try:
+        return hub.hub._download() if hub is not None else LAUNCHER_FALLBACK
+    except Exception:   # noqa: BLE001
+        return LAUNCHER_FALLBACK
+
+
+LAUNCHER_FALLBACK = "https://github.com/orionopenwow/Leyline/releases"
+DOCKER_URL = "https://www.docker.com/products/docker-desktop/"
+
+
+def before_steps() -> str:
+    """The two things a host needs first and the third that starts it, as the launcher's numbered steps."""
+    e = html.escape
+    return ('<ol class="hf-steps">'
+            '<li><b>Get the Host pack</b><span>The Leyline launcher has it built in, or download the pack on its own.</span>'
+            f'<div class="row"><a class="dl primary" href="{e(_launcher_url())}" rel="noopener noreferrer">Get the launcher</a>'
+            f'<a class="dl" href="{e(kit_url())}" rel="noopener noreferrer">Host pack</a></div></li>'
+            '<li><b>Get Docker</b><span>Docker Desktop runs the realm\'s servers on your PC. It is free for personal use.</span>'
+            f'<div class="row"><a class="dl" href="{DOCKER_URL}" rel="noopener noreferrer">Get Docker</a></div></li>'
+            '<li><b>Pick a ruleset and start</b><span>Name your realm below and press Start server. Then run the file it gives '
+            'you in the Host pack folder.</span></li></ol>')
+
+
+GUIDE = (
+    ("How the Leyline network works", "Players reach your realm through the Leyline network. You open no ports, and "
+     "nobody sees your address.", NETWORK_DOC, "How the network works"),
+    ("Start your realm", "Pick a ruleset, name it and press Start server. Download your realm's file into the Host pack "
+     "folder and run it. The first start takes 5 to 20 minutes.", None, None),
+    ("Public or private", "Public realms show on the realm list for everyone. Private ones only let in people with your "
+     "invite link.", None, None),
+    ("Invite friends", "Your realm's page has a link to share. A private realm also has an invite link.", None, None),
+    ("Your GM account", "Make it on your own join link, with your own password. It gets GM rights by itself.", None, None),
+    ("Keep it up 24/7", "What PC is enough, how to stop it sleeping, and what happens on a power cut.", ALWAYS_ON_URL,
+     "Keep your realm up 24/7"),
+    ("Link a server you already run", "Put your own server on the realm list and keep your own setup.", ALWAYS_ON_URL,
+     "Put it on the list"),
+    ("Move it to another PC", "Copy the Host pack folder, with its state folder, to the new PC.", None, None),
+    ("When something's wrong", "The hosting guide walks through the usual problems.", GUIDE_URL, "Hosting guide"),
+)
+
+
+def guide_pane() -> str:
+    e = html.escape
+    rows = "".join(f'<details><summary>{e(t)}</summary><p>{e(line)}'
+                   + (f' <a href="{e(href)}">{e(label)}</a>' if href else "") + "</p></details>" for t, line, href, label in GUIDE)
+    return f'<aside class="hf-pane hf-guide" id="hf-guide" aria-label="Guide"><h2 class="hf-cap">Guide</h2>{rows}</aside>'
+
+
+def pack_pane() -> str:
+    e = html.escape
+    return ('<div class="hf-pane hf-pack" id="hf-pack"><div class="hf-pack-g">'
+            '<section><h2>The Host pack</h2><p>Everything your PC needs to run a realm, in one folder. The launcher\'s Host '
+            'page sets it up and starts it for you.</p>'
+            f'<div class="row"><a class="dl primary" href="{e(_launcher_url())}" rel="noopener noreferrer">Get the launcher</a>'
+            f'<a class="dl" href="{e(kit_url())}" rel="noopener noreferrer">Download the Host pack</a></div></section>'
+            '<section><h2>Settings</h2><p>Rates, bots, who can make accounts, region, language, tags and the player limit are '
+            'under More settings on Start. The launcher\'s Host page has the same settings.</p>'
+            '<div class="row"><a class="dl" href="/wrath/host#new-realm">Open the form</a></div></section>'
+            '<section><h2>Keep it up 24/7</h2><p>Keep your realm up day and night, or put a server you already run on '
+            'the list.</p>'
+            f'<div class="row"><a class="dl" href="{ALWAYS_ON_URL}">Keep your realm up 24/7</a>'
+            f'<a class="dl" href="{e(GUIDE_URL)}">Hosting guide</a></div></section></div></div>')
+
+
+def poster_preview(rec: dict, rid: str) -> str:
+    """The card the front page shows for this realm (stream/hub.py posters(): the same backdrop from the realm id)."""
+    e = html.escape
+    h = hashlib.sha256(rid.encode()).digest()
+    h1 = 200 + h[0] % 90
+    h2 = (h1 + 40 + h[1] % 80) % 360
+    ang, x, y = h[2] % 180, 20 + h[3] % 60, 15 + h[4] % 50
+    line = rec.get("tagline") or PRESETS[rec["preset"]][1]
+    return (f'<div class="poster" style="--h1:{h1};--h2:{h2};--a:{ang}deg;--x:{x}%;--y:{y}%" aria-label="Your realm\'s card">'
+            f'<p class="poster-p">New realm</p><h3>{e(rec["name"])}</h3><p class="poster-l">{e(line)}</p></div>')
+
+
+def live_panel(rec: dict, share: str) -> str:
+    """"You're live": shown once the realm is online and listed. The share link, a line to paste into Discord, and the
+    card players see on the front page. TODO(owner): the wording."""
+    e = html.escape
+    dc = f"Come play on {rec['name']}, my realm on Leyline: {share}"
+    return ('<!-- TODO(owner): the "You\'re live" wording -->'
+            '<section class="ly-panel live" aria-labelledby="live-h"><h2 id="live-h">You\'re on the front page</h2>'
+            '<p>Your realm is live and listed: players see it on the front page and the realm list, in the launcher and in '
+            'the game. Share it:</p>'
+            f'<div class="link" tabindex="0">{e(share)}</div>'
+            '<p class="hint">For your Discord: tap the line to select it, then copy.</p>'
+            f'<div class="link" tabindex="0">{e(dc)}</div>'
+            f'<p class="hint">Your card on the front page:</p>{poster_preview(rec, rec["realm_id"])}</section>')
+
+
+def downloadable(rec: dict) -> bool:
+    """The setup file is offered until the PC has registered the realm (or, for an older record, while the site
+    still holds its key). Afterwards the PC holds everything: moving the realm = copying the kit folder."""
+    return bool(rec.get("realm_key")) or not rec.get("realm_id")
+
+
+def start_page(rec: dict) -> bytes:
+    e = html.escape
+    pid = page_id(rec)
+    state, text, final = status_of(rec)
+    rid = rec.get("realm_id")
+    host = P("PUBLIC_HOST")
+    join = P("JOIN_BASE")
+    kit = kit_url()
+    if downloadable(rec):
+        dl = ('<div class="row">'
+              f'<a class="dl" href="/wrath/host/{pid}/leyline-{pid}.bat" download>Windows (.bat)</a>'
+              f'<a class="dl" href="/wrath/host/{pid}/leyline-{pid}.sh" download>Mac / Linux (.sh)</a></div>'
+              '<p class="hint">The file holds your realm\'s links and the token that ties it to your account, so keep '
+              'it to yourself. Your PC makes the realm\'s key itself: it never leaves your PC.</p>')
+    else:
+        dl = ('<p>Your PC holds this realm\'s key, so there is nothing more to download. To move the realm, '
+              'copy the Host pack folder (with its <b>state</b> folder) to the new PC.</p>')
+    if rid:
+        share = f"https://{host}/wrath/r/{rid[:8]}"
+        invite = f"{join}/join/{rid}" + (f"#{rec['invite_secret']}" if rec["visibility"] == "private" else "")
+        host_link = f"{join}/join/{rid}#{rec['invite_secret']}~{rec['host_secret']}"
+        priv = (f'<p>It\'s private: friends need your invite link to join.</p><div class="link">{e(invite)}</div>'
+                if rec["visibility"] == "private" else
+                '<p>It\'s public: it shows on the realm list for everyone, on the site and in the game, once your PC is online.</p>')
+        links = (f'<p>Share this link: it opens your realm\'s page with a preview card.</p>'
+                 f'<div class="link">{e(share)}</div>{priv}')
+        gm = (f'<li><b>Make your GM account</b><span>Make <b>{e(rec["gm"])}</b> on your own join link (yours only: it can make '
+              f'the GM account), with a password you choose:</span><div class="link">{e(host_link)}</div></li>')
+    else:
+        links = ('<p>Your realm\'s links appear here as soon as your PC connects: the realm\'s address comes from the '
+                 'key your PC makes.</p>')
+        gm = (f'<li><b>Make your GM account</b><span>Make <b>{e(rec["gm"])}</b> on your own join link, with a password you '
+              'choose. The link shows here (and in the setup window on your PC) once your PC is connected.</span></li>')
+    live = live_panel(rec, f"https://{host}/wrath/r/{rid[:8]}") if rid and state == "listed" else ""
+    inner = (
+        '<section class="hb-pg hf-pg" aria-labelledby="hf-h"><header class="hb-pg-h"><div class="hb-pg-t">'
+        f'<h1 id="hf-h">{e(rec["name"])}</h1>'
+        f'<span class="pill {e(state)}" role="status">{"&#9679; " if state in ("online", "listed") else ""}{e(text)}</span></div>'
+        '<a class="hb-ghost" href="/wrath/host">Your realms</a></header><div class="hb-pg-b hf-cols">'
+        f'<div class="hf-pane hf-start" id="hf-start"><div class="hf-card"><div class="hf-card-h"><div>'
+        f'<p class="hf-eyebrow">{e(PRESETS[rec["preset"]][0])}</p><h2>Start {e(rec["name"])}</h2>'
+        f'<p class="ly-lede">{e(PRESETS[rec["preset"]][0])} · {e(rec["visibility"])} · GM {e(rec["gm"])}</p></div></div>'
+        + live +
+        f'<section class="ly-panel"><h2>Your link</h2>{links}</section>'
+        + ("" if live else needs_panel()) +
+        '<section class="ly-panel"><h2>Set up your PC</h2><ol class="hf-steps">'
+        f'<li><b>Get Docker and the Host pack</b><span>Install <a href="{DOCKER_URL}" rel="noopener noreferrer">Docker</a> '
+        f'and unzip the <a href="{e(kit)}" rel="noopener noreferrer">Host pack</a>. The server uses your own game '
+        'files, read on your PC; nothing is downloaded or shared.</span></li>'
+        f'<li><b>Run your realm\'s file</b><span>Download it into the Host pack folder and run it.</span>{dl}</li>'
+        '<li><b>Leave it running</b><span>This page changes to <b>Online</b> when your PC connects to the Leyline network.</span></li>'
+        + gm +
+        '</ol></section>'
+        '<p class="ly-fine">The first start imports the databases and can take 5 to 20 minutes. '
+        f'<a href="{e(GUIDE_URL)}" rel="noopener noreferrer">Hosting guide</a> · '
+        f'<a href="{ALWAYS_ON_URL}">Keep it up 24/7</a> · <a href="/wrath/host">Your realms</a></p></div></div>'
+        + guide_pane() + '</div></section>')
+    # while it is about to be listed, look again sooner (the relay lists it seconds after the PC connects)
+    return page(rec["name"], inner, refresh=0 if final else (5 if state == "online" else REFRESH))
+
+
+# ----------------------------------------------------------------------------------------------
+# Requests (h is the portal's PageHandler)
+# ----------------------------------------------------------------------------------------------
+
+DL_RE = re.compile(r"^/wrath/host/([a-z2-7]{16})/leyline-([a-z2-7]{16})\.(sh|bat)$")
+START_RE = re.compile(r"^/wrath/host/([a-z2-7]{16})$")
+
+
+def match(path: str) -> bool:
+    return path == "/wrath/host" or path.startswith("/wrath/host/")
+
+
+def _signin(path: str) -> str:
+    # the Leyline sign-in (2026-10-31 live: Host signed out landed on the old site's /login page, with its old
+    # wording); the old address only when the portal has no Leyline sign-in
+    try:
+        fn = P("signin_url")
+        if callable(fn):
+            return fn(path)
+    except Exception:   # noqa: BLE001
+        pass
+    return "/login?next=" + urllib.parse.quote(path, safe="")
+
+
+def who(h, path: str):
+    """(owner, display) for the signed-in account, or None after answering (sign-in redirect or an error)."""
+    ip = h.ip()
+    cookie = h.headers.get("Cookie", "")
+    ua = h.headers.get("User-Agent", "")
+    if "wr_session=" not in cookie:
+        h.redirect(_signin(path))
+        return None
+    status, me = P("portal_get")("/api/me", cookie, ip, ua)
+    if status in (401, 403) or 300 <= status < 400:
+        h.redirect(_signin(path))
+        return None
+    if status != 200 or not me:
+        h.send(503, P("error_page")("The website isn't answering right now. Please try again shortly."))
+        return None
+    status, play = P("portal_get")("/api/play", cookie, ip, ua)
+    user = str(play.get("user", "")) if isinstance(play, dict) else ""
+    if status != 200 or not re.match(r"^[A-Za-z0-9]{1,16}$", user):
+        h.send(503, P("error_page")("Your account isn't ready yet. Please try again in a minute."))
+        return None
+    display = str(me.get("display_name") or me.get("username") or user)[:40]
+    hub = P("hub_mod")   # the top bar's account chip on the hub's shell
+    try:
+        hub._REQ.who = hub._viewer(h) if hub is not None else None
+    except Exception:   # noqa: BLE001: the page shows Sign In then
+        pass
+    return owner_key(user), display
+
+
+def _not_found(h):
+    h.send(404, page("Not found", '<section class="ly-panel"><h2>Not found</h2><p>There is no realm here for your '
+                                  'account. <a href="/wrath/host">Your realms</a></p></section>'))
+
+
+def _net(ip: str) -> str:
+    """The network a limit counts (the portal's rl_bucket: IPv4 /32, IPv6 /64), so one host can't walk its /64."""
+    try:
+        rb = P("rl_bucket")
+    except Exception:   # noqa: BLE001
+        rb = None
+    try:
+        return rb(ip) if callable(rb) else ip
+    except Exception:   # noqa: BLE001
+        return ip
+
+
+def get(h, path: str) -> None:
+    if not P("page_limit").hit(_net(h.ip()), 120):
+        h.send(429, P("busy_page")(back=path))
+        return
+    m_dl, m_start = DL_RE.match(path), START_RE.match(path)
+    if path != "/wrath/host" and not m_dl and not m_start:
+        _not_found(h)
+        return
+    query = urllib.parse.urlsplit(getattr(h, "path", "") or "").query if path == "/wrath/host" else ""
+    acct = who(h, path + ("?" + query[:1000] if query else ""))   # the choices survive the sign-in
+    if acct is None:
+        return
+    owner, display = acct
+    if path == "/wrath/host":
+        if query:
+            vals, dropped = prefill(query)
+            note = "Filled in with your choices from the game. Check them, add your GM account name, then Start server."
+            if dropped:
+                note += " Left out (not valid): " + ", ".join(dropped) + "."
+            h.send(200, form_page(owner, display, vals, {}, note))
+        else:
+            h.send(200, form_page(owner, display))
+        return
+    rid = (m_dl or m_start).group(1)
+    rec = load(rid)
+    if not rec or not hmac.compare_digest(rec.get("owner", ""), owner) or (m_dl and m_dl.group(2) != rid):
+        _not_found(h)
+        return
+    if m_start:
+        h.send(200, start_page(rec))
+        return
+    if not downloadable(rec):
+        h.send(410, page(rec["name"], '<section class="ly-panel"><h2>Already set up</h2><p>Your PC holds this realm\'s '
+                                      f'key now. <a href="/wrath/host/{rid}">Back</a></p></section>'))
+        return
+    kind = m_dl.group(3)
+    body = script_sh(rec) if kind == "sh" else script_bat(rec)
+    h.send(200, body, "application/octet-stream",
+           headers={"Content-Disposition": f'attachment; filename="leyline-{rid}.{kind}"'})
+
+
+def read_form(h) -> dict | None:
+    try:
+        n = int(h.headers.get("Content-Length", "0"))
+    except ValueError:
+        return None
+    if n < 0 or n > FORM_BYTES:
+        return None
+    if (h.headers.get("Content-Type", "").split(";")[0].strip().lower() != "application/x-www-form-urlencoded"):
+        return None
+    try:
+        q = urllib.parse.parse_qs(h.rfile.read(n).decode("utf-8"), keep_blank_values=True, max_num_fields=40)
+    except (UnicodeDecodeError, ValueError):
+        return None
+    return {k: (",".join(x for x in v if x) if k == "tags" else v[0]) for k, v in q.items()}
+
+
+def _sanctioned(owner: str) -> str:
+    """The refusal text when a sanction stops new realms for this game account, else ""."""
+    try:
+        adm = P("admin")
+        return adm.blocked("submit", acct=owner) if adm is not None and hasattr(adm, "blocked") else ""
+    except Exception:   # noqa: BLE001
+        return ""
+
+
+def post(h, path: str) -> None:
+    if path != "/wrath/host":
+        h.send(405, b"method not allowed\n", "text/plain")
+        return
+    ip = h.ip()
+    if not P("gate_limit").hit("host:" + _net(ip), POSTS_PER_MIN):
+        h.send(429, P("busy_page")(back="/wrath/host"))
+        return
+    origin = h.headers.get("Origin", "")
+    if origin and not _our_origin(origin) and not (origin == "null" and h.headers.get("Sec-Fetch-Site", "") == "same-origin"):   # null: no-referrer pages (Caddy)
+        h.send(403, P("error_page")("That form came from another site."))
+        return
+    form = read_form(h)
+    if form is None:
+        h.send(400, P("error_page")("That form didn't arrive in one piece. Please try again."))
+        return
+    acct = who(h, path)
+    if acct is None:
+        return
+    owner, display = acct
+    blk = _sanctioned(owner)
+    if blk:   # a site-wide sanction (Leyline HQ, stream/admin.py blocked())
+        h.send(403, P("error_page")(blk))
+        return
+    if not hmac.compare_digest(form.get("csrf", ""), csrf(owner)):
+        vals, _ = validate(form)
+        h.send(400, form_page(owner, display, vals, {"_": "The form timed out. Check your answers and press Start server again."}))
+        return
+    vals, errs = validate(form)
+    if errs:
+        h.send(400, form_page(owner, display, vals, errs))
+        return
+    with _lock:
+        if len(realms_of(owner)) >= PER_ACCOUNT:
+            h.send(400, form_page(owner, display, vals, {"_": f"One account can make {PER_ACCOUNT} realms for now."}))
+            return
+        if len(all_ids()) >= MAX_TOTAL:
+            h.send(503, form_page(owner, display, vals, {"_": "New realms are paused for a while. Please try again later."}))
+            return
+        rec = new_realm_secrets()
+        rec.update(owner=owner, owner_display=display, created=int(time.time()), name=vals["name"],
+                   preset=vals["preset"], visibility=vals["visibility"], gm=vals["gm"],
+                   tagline=vals["tagline"] or DEFAULT_TAGLINE.get(vals["preset"], ""), rules=vals["rules"],
+                   options=vals.get("options") or {}, claimed=False, first_online=None)
+        save(rec)
+    h.send_response(303)
+    h.send_header("Location", f"/wrath/host/{rec['pending_id']}")
+    h.send_header("Cache-Control", "no-store")
+    h.send_header("Content-Length", "0")
+    h.end_headers()

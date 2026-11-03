@@ -1,0 +1,45 @@
+/* The guide (guide.js): the first-run tour card and its ring, and the one-time encouragement toast. The card is a .dlg
+   (style.css, slate.css: the same metal edge and Marcellus title as every dialog), not modal: the launcher stays usable. */
+.gd-tour {
+  position: fixed; z-index: 80; margin: 0; width: min(320px, calc(100vw - 32px)); max-width: none; padding: 16px 18px 14px;
+}
+.gd-tour h3 { margin: 2px 0 6px; font-size: 17px; }
+.gd-tour p { margin: 0 0 12px; font-size: 13px; line-height: 1.45; }
+.gd-tour-n { display: block; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--t-muted); }
+.gd-tour-row { display: flex; justify-content: flex-end; gap: 8px; margin: 0; }
+.gd-ring {
+  position: fixed; z-index: 79; pointer-events: none; border-radius: 10px;
+  border: 2px solid var(--t-accent); box-shadow: 0 0 0 4px var(--t-accent-soft), 0 0 18px var(--t-accent-soft);
+  transition: left 0.18s ease, top 0.18s ease, width 0.18s ease, height 0.18s ease;
+}
+.gd-ring[hidden] { display: none; }
+
+.gd-toast {
+  position: fixed; z-index: 70; left: 50%; bottom: 116px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px; max-width: min(520px, calc(100vw - 32px)); padding: 10px 10px 10px 14px;
+  border-radius: var(--t-radius-sm); background: var(--t-surface); color: var(--t-text);
+  border: var(--t-border-w) solid var(--t-border-strong); box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
+  font-size: 13px; animation: gd-in 0.22s ease-out;
+}
+.gd-toast-ic {
+  flex: none; width: 10px; height: 10px; border-radius: 2px; transform: rotate(45deg);
+  background: linear-gradient(135deg, var(--t-accent-strong), var(--t-accent-2));
+}
+.gd-toast-t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.gd-toast-x {
+  flex: none; width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--t-muted);
+  font-size: 18px; line-height: 1; cursor: pointer;
+}
+.gd-toast-x:hover, .gd-toast-x:focus-visible { color: var(--t-text); background: var(--t-raised); }
+html:not([data-base="light"]) .gd-toast {
+  background: linear-gradient(180deg, rgba(26, 30, 29, 0.94), rgba(14, 16, 16, 0.96)), var(--stone-tall);
+  border-color: var(--sl-metal, var(--t-border-strong));
+  box-shadow: 0 0 0 1px var(--sl-edge, #000), 0 14px 34px rgba(0, 0, 0, 0.55);
+}
+html[data-base="light"] .gd-toast { box-shadow: 0 12px 32px rgba(16, 24, 40, 0.18); }
+@keyframes gd-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@media (prefers-reduced-motion: reduce) { .gd-toast { animation: none; } .gd-ring { transition: none; } }
+
+/* Help: the one line for new players at the top */
+.help-new { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 14px; }
+.help-new .lede { margin: 0; }

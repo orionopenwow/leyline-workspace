@@ -1,0 +1,449 @@
+/* The pages on the stone (owner 2026-10-31: "these areas need a look more consistent with everything else and realms
+   should stand out more etc do a full design pass as well"). The title bar, side menu and play bar are stone with a
+   dark metal edge (stone.css); this carries the same look into the pages:
+
+   - panels: dark slate over the side menu's stone tile, a thin grey-green metal edge (#3d4743) with a black outer line,
+     the page title in Marcellus gold on a stone header strip;
+   - cards inside panels: deeper slate, the same metal edge, a little lift;
+   - buttons: the primary one is the Log In / PLAY red stone (art/stone-btn.webp, nine-slice) with gold lettering,
+     the rest are dark stone like the play bar's wells; inputs and selects are wells sunk into the panel;
+   - Realms: each realm its own raised, metal-edged card, the icon framed, a clear status pill, the official realm in
+     gold, and a small red stone Play.
+
+   Loaded after stone.css. Tokens sit in :where() so a theme pack's :root still wins; the stone surfaces are for the
+   dark base only, the Light look keeps its light surfaces and only takes the red stone primary button. */
+
+/* ---------------------------------------------------------------- tokens: the dark base on slate */
+:where(html:not([data-base="light"])) {
+  --t-surface: #1a1d1c;
+  --t-surface-2: #131615;
+  --t-raised: #262b29;
+  --t-border: #2c3330;
+  --t-border-strong: #3d4743;
+  --t-text: #eeece6;
+  --t-text-2: #cfccc3;
+  --t-muted: #a2a59e;
+  --t-accent: #d6ad55;
+  --t-accent-strong: #f0cc76;
+  --t-on-accent: #1d1508;
+  --t-accent-soft: rgba(214, 173, 85, 0.14);
+  --t-radius: 8px;
+  --t-radius-sm: 6px;
+  --t-radius-xs: 5px;
+  --t-panel: rgba(21, 24, 23, 0.9);
+  --t-panel-border: rgba(0, 0, 0, 0.55);
+  --t-panel-head: rgba(0, 0, 0, 0.2);
+  --t-card: rgba(10, 12, 12, 0.5);
+  --t-card-border: #333b38;
+  --sl-metal: #3d4743;
+  --sl-metal-hi: #56625d;
+  --sl-edge: #0a0908;
+  --sl-gold: #e2bd66;
+  --sl-gold-dim: #b99a5c;
+}
+:root {
+  --sl-btn-stone: url("art/stone-btn.webp") 28 30 fill / 9px stretch;
+  --sl-gold-text: linear-gradient(180deg, #fff1a0 0%, #f9d55c 40%, #e2ab2e 75%, #b9801c 100%);
+}
+
+/* ---------------------------------------------------------------- panels (dark) */
+html:not([data-base="light"]) :is(.panel, .news, .home .card, .tile, .hs-side, .dlg) {
+  background:
+    linear-gradient(180deg, rgba(26, 30, 29, 0.86), rgba(14, 16, 16, 0.9)),
+    var(--stone-tall);
+  border: 1px solid var(--sl-metal);
+  box-shadow: 0 0 0 1px var(--sl-edge), inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 0 0 1px rgba(0, 0, 0, 0.35), 0 14px 34px rgba(0, 0, 0, 0.5);
+}
+html:not([data-base="light"]) .tile:hover { border-color: var(--sl-gold-dim); }
+/* the page title on a stone strip, in the Log In button's Marcellus gold */
+html:not([data-base="light"]) :is(.panel > h2, .panel > .panel-head) {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.42)), var(--stone);
+  border-bottom: 1px solid var(--sl-edge);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+:is(.panel > h2, .panel-head h2, .dlg h3) {
+  font-family: "Marcellus", Georgia, serif; font-weight: 400; letter-spacing: 0.03em;
+}
+.panel > h2, .panel-head h2 { font-size: 23px; }
+html:not([data-base="light"]) :is(.panel > h2, .panel-head h2, .dlg h3) {
+  color: var(--sl-gold);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+/* section titles: small caps in a quiet gold */
+html:not([data-base="light"]) :is(.panel h3, .card-head, .hs-side h3) { color: var(--sl-gold-dim); }
+html:not([data-base="light"]) .card > .card-head:first-child {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.38)), var(--stone);
+  border-bottom: 1px solid var(--sl-edge); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* cards inside a panel: deeper slate, a metal edge, a little lift */
+html:not([data-base="light"]) :is(.panel .card, .cards .card, .theme-card, .fm-box, fieldset, .mod-card, .ag-card) {
+  background: linear-gradient(180deg, rgba(36, 41, 39, 0.55), rgba(12, 14, 14, 0.6));
+  border: 1px solid var(--t-card-border);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 3px 10px rgba(0, 0, 0, 0.28);
+}
+html:not([data-base="light"]) .theme-card.on { border-color: var(--sl-gold-dim); box-shadow: 0 0 0 1px var(--sl-gold-dim), 0 3px 10px rgba(0, 0, 0, 0.28); }
+html:not([data-base="light"]) legend { color: var(--sl-gold-dim); font-weight: 600; }
+html:not([data-base="light"]) .news-entry { border-bottom-color: rgba(255, 255, 255, 0.07); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.5); }
+
+/* ---------------------------------------------------------------- inputs: wells sunk into the stone (dark) */
+html:not([data-base="light"]) :is(select, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea) {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.32)), var(--stone);
+  border: 1px solid var(--sl-edge);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: var(--t-text);
+}
+html:not([data-base="light"]) :is(select, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea):hover { border-color: #4a4538; }
+html:not([data-base="light"]) :is(select, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea):focus { border-color: var(--stone-metal); outline: none; }
+html:not([data-base="light"]) select option { background: #1a1d1c; }
+html:not([data-base="light"]) input::placeholder { color: #8d8f89; }
+:is(select, input, textarea):focus-visible { outline: 2px solid var(--t-accent); outline-offset: 1px; }
+
+/* ---------------------------------------------------------------- buttons */
+/* secondary (dark): raised dark stone with a metal edge, like the play bar's frames */
+html:not([data-base="light"]) :is(.btn:not(.primary), .icon-btn) {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(0, 0, 0, 0.4)), var(--stone);
+  border: 1px solid var(--sl-edge);
+  box-shadow: inset 0 0 0 1px rgba(86, 98, 93, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 1px 2px rgba(0, 0, 0, 0.6);
+  color: #e9e4d6; text-shadow: 0 1px 1px rgba(0, 0, 0, 0.7);
+}
+html:not([data-base="light"]) :is(.btn:not(.primary), .icon-btn):hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(0, 0, 0, 0.32)), var(--stone);
+  box-shadow: inset 0 0 0 1px var(--stone-metal), inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.6);
+  border-color: var(--sl-edge); color: #fff;
+}
+html:not([data-base="light"]) :is(.btn:not(.primary), .icon-btn):active:not(:disabled) { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), inset 0 0 0 1px var(--sl-metal); }
+html:not([data-base="light"]) :is(.btn:not(.primary), .icon-btn).open,
+html:not([data-base="light"]) .rl-fbtn.on {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.36)), var(--stone);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), inset 0 0 0 1px var(--stone-metal);
+  color: var(--sl-gold);
+}
+html:not([data-base="light"]) .btn.danger { color: #ff9a8f; }
+html:not([data-base="light"]) .btn.danger:hover:not(:disabled) { box-shadow: inset 0 0 0 1px rgba(255, 127, 118, 0.6), 0 1px 2px rgba(0, 0, 0, 0.6); }
+html:not([data-base="light"]) .btn:not(.primary):disabled, html:not([data-base="light"]) .icon-btn:disabled { opacity: 0.45; filter: saturate(0.4); }
+html:not([data-base="light"]) .btn:not(.primary):disabled:hover { background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(0, 0, 0, 0.4)), var(--stone); border-color: var(--sl-edge); }
+
+/* primary (both bases): the Log In / PLAY red stone, gold Marcellus lettering */
+.btn.primary, .sf-way.sf-new, .pbd-btn.pbd-go {
+  border: 9px solid transparent; border-image: var(--sl-btn-stone);
+  background: none; border-radius: 0; box-shadow: none;
+  padding: 0 14px; min-height: 0;
+  font: 400 15px/1 "Marcellus", Georgia, serif; letter-spacing: 0.04em; color: #f8d867;
+  text-shadow: 0 1px 0 #2a1800, 0 2px 3px rgba(0, 0, 0, 0.85);
+  transition: filter 0.12s, transform 0.12s;
+}
+.btn.primary { height: 38px; }
+.btn.primary.small { height: 34px; padding: 0 12px; font-size: 14px; }
+.btn.primary:hover:not(:disabled), .sf-way.sf-new:hover, .pbd-btn.pbd-go:hover {
+  background: none; border-color: transparent; filter: brightness(1.18); color: #ffe68a;
+}
+.btn.primary:active:not(:disabled) { filter: brightness(0.9); transform: translateY(1px); }
+.btn.primary:focus-visible { outline: 2px solid #f2c94c; outline-offset: 2px; }
+.btn.primary:disabled { opacity: 0.55; filter: grayscale(0.75) brightness(0.8); cursor: default; }
+.btn.primary:disabled:hover { background: none; border-color: transparent; }
+html:not([data-base="light"]) .btn.primary, html:not([data-base="light"]) .btn.primary:hover:not(:disabled) { box-shadow: none; }
+.btn.primary.wide { width: 100%; }
+
+/* the page tabs (Installed | Discover, Host's Start | Guide …): a well, the picked one raised stone in gold */
+html:not([data-base="light"]) .page-tabs {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.34)), var(--stone);
+  border: 1px solid var(--sl-edge); box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+html:not([data-base="light"]) .page-tab { color: #c8c4b8; }
+html:not([data-base="light"]) .page-tab:hover { background: rgba(255, 255, 255, 0.05); color: #fff; }
+html:not([data-base="light"]) .page-tab[aria-selected="true"] {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.3)), var(--stone);
+  box-shadow: inset 0 0 0 1px var(--stone-metal), 0 1px 2px rgba(0, 0, 0, 0.7);
+  color: var(--sl-gold); text-shadow: 0 1px 1px rgba(0, 0, 0, 0.8);
+}
+html:not([data-base="light"]) .page-tab[aria-selected="true"] .badge { background: rgba(214, 173, 85, 0.22); color: var(--sl-gold); }
+html:not([data-base="light"]) .ly-tab[aria-selected="true"], html:not([data-base="light"]) .ly-tab.on { color: var(--sl-gold); border-bottom-color: var(--sl-gold); }
+
+/* popovers and menus: the play bar's drop-up stone panel */
+html:not([data-base="light"]) :is(.rl-popover, .hf-fm-pop) {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.62)), var(--stone);
+  border: 1px solid var(--sl-edge);
+  box-shadow: 0 0 0 1px rgba(196, 178, 140, 0.18), 0 18px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+html:not([data-base="light"]) .rl-menu button:hover, html:not([data-base="light"]) .rl-menu button:focus-visible { background: rgba(0, 0, 0, 0.35); color: var(--sl-gold); }
+
+/* dialogs: the window's own metal edge */
+.dlg { border-radius: 4px; }
+html:not([data-base="light"]) .dlg {
+  border: 6px solid transparent; border-image: url("art/window-edge.png") 19 / 6px round;
+  background-clip: padding-box; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+}
+.dlg::backdrop { background: rgba(4, 5, 6, 0.66); }
+
+/* ---------------------------------------------------------------- Realms */
+/* the toolbar sits in a sunk stone tray with the paste box, so it reads as one control strip */
+html:not([data-base="light"]) #page-realms .rl-paste label { color: var(--sl-gold-dim); font-weight: 600; letter-spacing: 0.02em; }
+#page-realms .rl-tools input[type="search"], #page-realms select.rl-client, #page-realms .rl-paste-row input { height: 38px; }
+#page-realms .rl-tools .btn.small, #page-realms .rl-paste-row .btn.small:not(.primary) { height: 38px; padding: 0 14px; font-size: 12.5px; }
+#page-realms .icon-btn { width: 38px; height: 38px; }
+.realm-list { gap: 12px; }
+
+/* each realm a raised, metal-edged card */
+.realm-card.rl {
+  gap: 4px 20px; padding: 14px 16px 14px 14px; border-radius: 8px;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+}
+html:not([data-base="light"]) .realm-card.rl {
+  background:
+    linear-gradient(180deg, rgba(48, 55, 52, 0.78), rgba(20, 23, 22, 0.88)),
+    var(--stone-tall);
+  border: 1px solid var(--sl-metal);
+  box-shadow: 0 0 0 1px var(--sl-edge), inset 0 1px 0 rgba(255, 255, 255, 0.09), inset 0 -1px 0 rgba(0, 0, 0, 0.5), 0 6px 16px rgba(0, 0, 0, 0.45);
+}
+html:not([data-base="light"]) .realm-card.rl:hover {
+  border-color: var(--sl-metal-hi);
+  background: linear-gradient(180deg, rgba(58, 66, 62, 0.78), rgba(24, 28, 27, 0.88)), var(--stone-tall);
+  box-shadow: 0 0 0 1px var(--sl-edge), inset 0 1px 0 rgba(255, 255, 255, 0.11), 0 10px 24px rgba(0, 0, 0, 0.55);
+}
+/* the official realm: gold metal edge, a warm wash and a gold rail */
+html:not([data-base="light"]) .realm-card.rl.official {
+  border-color: #8a7140;
+  background:
+    linear-gradient(90deg, rgba(214, 173, 85, 0.16), rgba(214, 173, 85, 0.03) 55%, transparent),
+    linear-gradient(180deg, rgba(52, 52, 44, 0.8), rgba(22, 22, 19, 0.9)),
+    var(--stone-tall);
+  box-shadow: 0 0 0 1px var(--sl-edge), inset 3px 0 0 #d6ad55, inset 0 1px 0 rgba(255, 230, 160, 0.14), 0 0 22px rgba(214, 173, 85, 0.12), 0 6px 16px rgba(0, 0, 0, 0.45);
+}
+html:not([data-base="light"]) .realm-card.rl.official:hover { border-color: #b08e4c; }
+/* the realm you play on now: lit, a bright rail */
+html:not([data-base="light"]) .realm-card.rl.on {
+  border-color: var(--stone-metal);
+  box-shadow: 0 0 0 1px var(--sl-edge), inset 3px 0 0 var(--sl-gold), 0 0 0 2px rgba(214, 173, 85, 0.35), 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+html:not([data-base="light"]) .realm-card.rl.on:not(.official) {
+  background: linear-gradient(90deg, rgba(214, 173, 85, 0.1), transparent 60%), linear-gradient(180deg, rgba(48, 55, 52, 0.78), rgba(20, 23, 22, 0.88)), var(--stone-tall);
+}
+html:not([data-base="light"]) .realm-card.rl.linked { box-shadow: 0 0 0 1px var(--sl-edge), 0 0 0 3px var(--sl-gold), 0 0 26px rgba(214, 173, 85, 0.35); }
+html:not([data-base="light"]) .realm-card.rl.featured:not(.official) { border-color: #5d5577; }
+.realm-card.rl.off { opacity: 0.62; }
+
+/* the icon: bigger, in a metal frame */
+.realm-card.rl > .rl-ic { width: 54px; height: 54px; border-radius: 10px; font-size: 22px; }
+html:not([data-base="light"]) .realm-card.rl > .rl-ic {
+  box-shadow: 0 0 0 1px var(--sl-edge), 0 0 0 3px #4a5651, 0 0 0 4px var(--sl-edge), inset 0 0 0 1px rgba(255, 255, 255, 0.14), 0 4px 10px rgba(0, 0, 0, 0.6);
+  margin: 4px;
+}
+html:not([data-base="light"]) .realm-card.rl.official > .rl-ic {
+  box-shadow: 0 0 0 1px var(--sl-edge), 0 0 0 3px #a8873f, 0 0 0 4px var(--sl-edge), 0 0 16px rgba(214, 173, 85, 0.35), 0 4px 10px rgba(0, 0, 0, 0.6);
+}
+html:not([data-base="light"]) .rl-ic.crystal { background: radial-gradient(circle at 50% 40%, #2b3140, #10131a); }
+
+/* the name in Marcellus, a touch larger */
+.realm-card.rl .name { font: 400 19px/1.2 "Marcellus", Georgia, serif; letter-spacing: 0.02em; }
+html:not([data-base="light"]) .realm-card.rl .name { color: #f3ead2; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); }
+html:not([data-base="light"]) .realm-card.rl.official .name { color: #f6d77a; }
+html:not([data-base="light"]) .rl-meta { color: #b3b2a9; }
+html:not([data-base="light"]) .rl-bdg.o { background: linear-gradient(180deg, #e9c46a, #b98a2c); border-color: #f1d488; color: #1d1508; text-shadow: none; }
+html:not([data-base="light"]) .rl-bdg.f { background: rgba(139, 108, 240, 0.16); border-color: #8b6cf0; color: #c3b3ff; }
+
+/* players: a clear status pill and a readable count */
+.rl-pop { gap: 7px; min-width: 112px; }
+.rl-pop .state {
+  display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px 3px 8px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 600;
+}
+.rl-pop .state .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.rl-pop .state.is-online { background: rgba(79, 209, 139, 0.12); border: 1px solid rgba(79, 209, 139, 0.45); color: #bfeccf; }
+.rl-pop .state.is-online .dot { background: #4fd18b; box-shadow: 0 0 6px rgba(79, 209, 139, 0.8); }
+.rl-pop .state.is-offline { background: rgba(255, 127, 118, 0.1); border: 1px solid rgba(255, 127, 118, 0.45); color: #ffb3ab; }
+.rl-pop .state.is-offline .dot { background: #ff7f76; }
+.rl-pop b.rl-n { font-size: 14px; color: #fff; }
+html[data-base="light"] .rl-pop .state.is-online { background: rgba(18, 128, 74, 0.1); border-color: rgba(18, 128, 74, 0.45); color: #0d5c36; }
+html[data-base="light"] .rl-pop .state.is-offline { background: rgba(180, 35, 24, 0.08); border-color: rgba(180, 35, 24, 0.4); color: #8f1b12; }
+html[data-base="light"] .rl-pop b.rl-n { color: var(--t-text); }
+.rl-bar { width: 104px; height: 5px; }
+html:not([data-base="light"]) .rl-bar { background: rgba(0, 0, 0, 0.55); box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 255, 255, 0.06); }
+
+/* the per-realm Play: a small PLAY */
+.btn.primary.rl-play { min-width: 104px; height: 42px; padding: 0 18px; font-size: 18px; letter-spacing: 0.05em; }
+
+/* Host your own realm: a stone strip */
+html:not([data-base="light"]) .rl-host-banner {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.4)), var(--stone);
+  border: 1px solid var(--sl-metal);
+  box-shadow: 0 0 0 1px var(--sl-edge), inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+.rl-host-banner { border-radius: 8px; padding: 12px 14px 12px 16px; }
+html:not([data-base="light"]) .rl-host-banner p { color: #c4c1b6; }
+html:not([data-base="light"]) .rl-host-banner p b { color: var(--sl-gold); font-family: "Marcellus", Georgia, serif; font-weight: 400; font-size: 15px; letter-spacing: 0.02em; }
+.rl-host-acts { align-items: center; }
+.rl-host-acts .btn { height: 38px; }
+.rl-host-acts .btn.primary { padding: 0 16px; font-size: 15px; }
+html:not([data-base="light"]) .net-line { color: #b3b2a9; }
+
+/* ---------------------------------------------------------------- the rest of the pages */
+/* Home's lineup/forum glass cards and the side columns */
+html:not([data-base="light"]) .hs-glass { border: 1px solid rgba(61, 71, 67, 0.9); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+/* drop zones */
+html:not([data-base="light"]) .drop { background: rgba(0, 0, 0, 0.28); border-color: #4a5651; box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.45); }
+html:not([data-base="light"]) .drop.over { border-color: var(--sl-gold); background: rgba(214, 173, 85, 0.1); }
+/* logs */
+html:not([data-base="light"]) .logs { background: rgba(0, 0, 0, 0.55); border-color: var(--sl-edge); box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.6); }
+/* the hero key / sign-in choices */
+html:not([data-base="light"]) .sf-way:not(.sf-google):not(.sf-discord):not(.sf-new) {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(0, 0, 0, 0.4)), var(--stone);
+  border: 1px solid var(--sl-edge); box-shadow: inset 0 0 0 1px rgba(86, 98, 93, 0.55), 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.sf-way.sf-new { border-radius: 0; color: #f8d867; height: auto; min-height: 44px; }
+
+/* the colours under the light base stay the Light look's; only the primary is the red stone */
+html[data-base="light"] .btn.primary { color: #f8d867; }
+@media (prefers-reduced-motion: reduce) { .btn.primary { transition: none; } }
+
+/* ---------------------------------------------------------------- Host: the start in three numbered steps */
+/* owner 2026-10-31: "make this area more clean and simple for users, quick step guides 1 2 3 and buttons to click
+   fields to fill it all blends together right now" (hostconsole.js stepCard / paintSteps) */
+html:not([data-base="light"]) .hc-sw {
+  background: linear-gradient(180deg, rgba(30, 34, 33, 0.82), rgba(14, 16, 16, 0.9)), var(--stone-tall);
+  border: 1px solid var(--sl-metal);
+  box-shadow: 0 0 0 1px var(--sl-edge), inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 10px 26px rgba(0, 0, 0, 0.45);
+}
+html:not([data-base="light"]) :is(.hc-box, .hc-tile) { background: rgba(0, 0, 0, 0.3); border-color: #333b38; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45); }
+.hc-start .hc-t { font: 400 24px/1.2 "Marcellus", Georgia, serif; letter-spacing: 0.02em; }
+html:not([data-base="light"]) .hc-start .hc-t { color: var(--sl-gold); text-shadow: 0 1px 0 #000, 0 2px 4px rgba(0, 0, 0, 0.6); }
+.hc-start .hc-lede { margin-bottom: 8px !important; }
+.hs-details { margin: 0 0 16px; font-size: 12.5px; }
+.hs-details > summary { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; color: var(--t-muted); font-weight: 600; }
+.hs-details > summary::-webkit-details-marker { display: none; }
+.hs-details > summary::before { content: "›"; display: inline-block; transition: transform 0.15s; }
+.hs-details[open] > summary::before { transform: rotate(90deg); }
+.hs-details > summary:hover { color: var(--t-text); }
+.hs-details > .hc-needs, .hs-details > .hint { margin: 8px 0 0 !important; }
+.hc-or { margin: 18px 0 10px !important; }
+.hc-or[hidden] { display: none; }
+
+.hs-flow { display: grid; gap: 12px; counter-reset: none; }
+.hs-step { border-radius: 8px; padding: 14px 16px 16px; transition: opacity 0.15s, box-shadow 0.15s; }
+.hs-step-head { display: flex; align-items: center; gap: 14px; }
+.hs-num {
+  flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
+  font: 400 21px/1 "Marcellus", Georgia, serif;
+}
+.hs-step-t { display: grid; gap: 2px; min-width: 0; }
+.hs-step-t b { font: 400 19px/1.2 "Marcellus", Georgia, serif; letter-spacing: 0.02em; }
+.hs-step-t span { font-size: 12.5px; color: var(--t-muted); }
+.hs-step-body { margin: 14px 0 0 54px; }
+.hs-step-body:not(:has(> :not([hidden]))) { display: none; }
+/* finished: folded to its head and a tick; a step not reached yet: quiet */
+.hs-step.done .hs-step-body { display: none; }
+.hs-step.done, .hs-step.hs-ok:not(.now) { padding-bottom: 14px; }
+.hs-step:not(.now):not(.hs-ok) { opacity: 0.78; }
+.hs-step.hs-ok .hs-num { font: 700 18px/1 var(--t-font); }
+html:not([data-base="light"]) .hs-step {
+  background: linear-gradient(180deg, rgba(40, 46, 44, 0.6), rgba(12, 14, 14, 0.66));
+  border: 1px solid #333b38;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+html:not([data-base="light"]) .hs-num {
+  color: #d9d4c6; background: radial-gradient(circle at 50% 35%, #3a423f, #191d1c);
+  box-shadow: 0 0 0 1px var(--sl-edge), 0 0 0 3px #4a5651, 0 0 0 4px var(--sl-edge), 0 3px 8px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 1px 1px #000;
+}
+html:not([data-base="light"]) .hs-step-t b { color: #efe9d8; }
+html:not([data-base="light"]) .hs-step.now {
+  border-color: #8a7140;
+  background: linear-gradient(90deg, rgba(214, 173, 85, 0.12), transparent 60%), linear-gradient(180deg, rgba(46, 50, 46, 0.7), rgba(14, 15, 14, 0.75));
+  box-shadow: 0 0 0 1px var(--sl-edge), inset 3px 0 0 var(--sl-gold), 0 0 20px rgba(214, 173, 85, 0.1), 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+html:not([data-base="light"]) .hs-step.now .hs-num {
+  color: #2a1a04; background: radial-gradient(circle at 50% 30%, #ffe08a, #c9932f 70%, #8d6420);
+  box-shadow: 0 0 0 1px var(--sl-edge), 0 0 0 3px #a8873f, 0 0 0 4px var(--sl-edge), 0 0 14px rgba(214, 173, 85, 0.45);
+  text-shadow: 0 1px 0 rgba(255, 240, 190, 0.6);
+}
+html:not([data-base="light"]) .hs-step.now .hs-step-t b { color: var(--sl-gold); }
+html:not([data-base="light"]) .hs-step.hs-ok .hs-num { color: #fff; background: radial-gradient(circle at 50% 30%, #5fe39c, #1f8a52); box-shadow: 0 0 0 1px var(--sl-edge), 0 0 0 3px #3f6b55, 0 0 0 4px var(--sl-edge); text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5); }
+html[data-base="light"] .hs-step { background: var(--t-surface); border: 1px solid var(--t-border); box-shadow: var(--t-shadow); }
+html[data-base="light"] .hs-num { background: var(--t-raised); color: var(--t-text); box-shadow: inset 0 0 0 2px var(--t-border-strong); }
+html[data-base="light"] .hs-step.now { border-color: #b88a2c; box-shadow: inset 3px 0 0 #b88a2c, var(--t-shadow); }
+html[data-base="light"] .hs-step.now .hs-num { background: #b88a2c; color: #fff; box-shadow: none; }
+html[data-base="light"] .hs-step.hs-ok .hs-num { background: var(--t-ok); color: #fff; box-shadow: none; }
+
+/* step 1's two rows: a check row each, a green tick when done or one obvious button */
+.hs-step .hc-ready { margin: 0; padding: 0; background: none; box-shadow: none; gap: 8px; }
+.hs-step .hc-ready-h { display: none; }
+.hs-step .hc-step { padding: 10px 12px; border-radius: 6px; }
+.hs-step .hc-step-n { width: 28px; height: 28px; font-size: 13px; box-shadow: none; }
+html:not([data-base="light"]) .hs-step .hc-step { background: rgba(0, 0, 0, 0.32); border: 1px solid #2c3330; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45); }
+html:not([data-base="light"]) .hs-step .hc-step:not(.done) .hc-step-n { background: transparent; color: var(--sl-gold); box-shadow: inset 0 0 0 2px #8a7140; }
+.hs-step .hc-step.done .hc-step-n { background: var(--t-ok); color: #fff; }
+.hs-step .hc-step-go { min-width: 170px; }
+
+/* step 2: the ruleset cards */
+html:not([data-base="light"]) :is(.hc-rs, .hc-ds) {
+  background: linear-gradient(180deg, rgba(48, 55, 52, 0.55), rgba(16, 19, 18, 0.7));
+  border: 1px solid #39423e; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+html:not([data-base="light"]) :is(.hc-rs, .hc-ds):hover:not(:disabled) { border-color: var(--sl-metal-hi); }
+html:not([data-base="light"]) :is(.hc-rs, .hc-ds).on {
+  border-color: var(--sl-gold);
+  background: linear-gradient(180deg, rgba(214, 173, 85, 0.16), rgba(30, 26, 18, 0.7));
+  box-shadow: 0 0 0 1px var(--sl-edge), 0 0 0 2px rgba(214, 173, 85, 0.4), 0 0 16px rgba(214, 173, 85, 0.14);
+}
+html:not([data-base="light"]) .hc-rs.on .hc-rs-h b { color: var(--sl-gold); }
+
+/* step 3: the fields as labelled wells, then the big red stone Start */
+.hs-step .hc-form { margin: 0 0 4px; gap: 12px 16px; }
+.hs-step .hc-field > span { font: 600 12.5px var(--t-font); color: var(--t-text-2); letter-spacing: 0.01em; }
+html:not([data-base="light"]) .hs-step .hc-field > span { color: var(--sl-gold-dim); }
+.hs-step .hc-field .hc-token { height: 40px; font-size: 14px; }
+html:not([data-base="light"]) .hc-seg { background: linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.34)), var(--stone); border: 1px solid var(--sl-edge); box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6); }
+html:not([data-base="light"]) .hc-seg-b { color: #c8c4b8; }
+html:not([data-base="light"]) .hc-seg-b[aria-pressed="true"] {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.3)), var(--stone);
+  box-shadow: inset 0 0 0 1px var(--stone-metal), 0 1px 2px rgba(0, 0, 0, 0.7); color: var(--sl-gold);
+}
+.hs-step .hc-go { margin-top: 16px; }
+.hs-step .hc-go #hc-start { height: 52px; min-width: 220px; padding: 0 28px; border-width: 11px; border-image: url("art/stone-btn.webp") 28 30 fill / 11px stretch; font-size: 21px; }
+html:not([data-base="light"]) .hc-linkcard { border: 1px solid #333b38; background: rgba(0, 0, 0, 0.22); }
+@media (max-width: 820px) { .hs-step-body { margin-left: 0; } }
+@media (prefers-reduced-motion: reduce) { .hs-step { transition: none; } }
+/* the Host pack & settings tab: the same three steps (index.html #hs-k1..3, host.js) */
+ol.hs-flow { list-style: none; padding: 0; margin: 4px 0 12px; color: var(--t-text); }
+ol.hs-flow > li::marker { content: none; }
+.hs-checks { display: grid; gap: 8px; }
+.hs-checks .status:empty { display: none; }
+.hs-check { display: flex; align-items: center; gap: 14px; padding: 10px 12px; border-radius: 6px; }
+.hs-check-n { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: 50%; font: 700 13px var(--t-font); }
+.hs-check-t { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.hs-check-t b { font: 700 15px var(--t-font); color: var(--t-text); }
+.hs-check-t span { font-size: 12.5px; color: var(--t-text-2); }
+.hs-check-t span.ok { color: var(--t-ok); }
+.hs-check-t span.warn { color: var(--t-warn); }
+.hs-check.done .hs-check-n { background: var(--t-ok); color: #fff; }
+html:not([data-base="light"]) .hs-check { background: rgba(0, 0, 0, 0.32); border: 1px solid #2c3330; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45); }
+html:not([data-base="light"]) .hs-check:not(.done) .hs-check-n { color: var(--sl-gold); box-shadow: inset 0 0 0 2px #8a7140; }
+html[data-base="light"] .hs-check { background: var(--t-surface-2); border: 1px solid var(--t-border); }
+html[data-base="light"] .hs-check:not(.done) .hs-check-n { box-shadow: inset 0 0 0 2px var(--t-border-strong); }
+.hs-row-acts { display: flex; align-items: center; gap: 8px; flex: none; }
+.hs-row-acts:empty { display: none; }
+.hs-manual { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 0; font-size: 12.5px; color: var(--t-muted); }
+.hs-manual > span { margin-right: 2px; }
+.hs-step-body > .hs-details { margin: 12px 0 0; }
+.hs-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 16px; }
+.hs-fields .hc-field { font: 600 12.5px var(--t-font); color: var(--t-text-2); }
+html:not([data-base="light"]) .hs-fields .hc-field { color: var(--sl-gold-dim); }
+.hs-fields .hc-field[hidden] { display: none; }
+.hs-fields select { height: 40px; font-size: 13.5px; }
+.hs-game .hint, .hs-game .status { margin: 10px 0 0; }
+.hs-game .status:empty { display: none; }
+.hs-alt { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 14px 0 0 !important; font-size: 12.5px; color: var(--t-muted); }
+#hs-k3 .hc-go #host-start { height: 52px; min-width: 220px; padding: 0 28px; border-width: 11px; border-image: url("art/stone-btn.webp") 28 30 fill / 11px stretch; font-size: 21px; }
+#hs-k3 #host-seeds:empty { display: none; }
+#hc-pane-kit > .lede { margin-bottom: 6px; }
+#hc-pane-kit > .hs-details { margin-bottom: 14px; }
+.hs-fields select { max-width: 520px; }
+/* the sign-in chooser and the profile panel under the title bar chip: slate with the metal line */
+html:not([data-base="light"]) .titlebar .tb-me { --ap-bg: #181b1a; --ap-line: #3d4743; --ap-shadow: 0 0 0 1px #0a0908, 0 18px 40px rgba(0, 0, 0, 0.6); }
+/* the Light look: the title bar, side menu and play bar stay stone (stone.css), so their words keep the dark base's
+   light colours there */
+html[data-base="light"] :is(.side, .playbar, .titlebar .brand, .titlebar .search) {
+  --t-text: #eef0f4; --t-text-2: #d3d6dc; --t-muted: #a9aeb8; --t-surface: #2a2f2d; --t-raised: #323836; --t-border: #3d4743; --t-border-strong: #4a5651;
+  --t-ok: #4fd18b; --t-warn: #f2c14e; --t-bad: #ff7f76;
+  color: var(--t-text);
+}

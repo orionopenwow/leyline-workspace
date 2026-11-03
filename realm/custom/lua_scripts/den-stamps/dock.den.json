@@ -1,0 +1,66 @@
+{
+ "format": "leyline-den",
+ "version": 1,
+ "kind": "stamp",
+ "name": "dock",
+ "title": "Dock",
+ "line": "Boards out in front of you with barrels, crates, a lantern and a fishing chair.",
+ "props": [
+  {
+   "entry": 190615,
+   "x": 2,
+   "y": 0,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 190615,
+   "x": 6,
+   "y": 0,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 190615,
+   "x": 10,
+   "y": 0,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 179967,
+   "x": 2,
+   "y": 1.6,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 179969,
+   "x": 6,
+   "y": -1.6,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 92527,
+   "x": 4,
+   "y": -1.6,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 179977,
+   "x": 10,
+   "y": 1.6,
+   "z": 0,
+   "yaw": 0
+  },
+  {
+   "entry": 186475,
+   "x": 11,
+   "y": -1,
+   "z": 0,
+   "yaw": 0
+  }
+ ]
+}

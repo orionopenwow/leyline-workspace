@@ -1,0 +1,14 @@
+{
+ "format": "leyline-pack-recipe",
+ "version": 1,
+ "id": "human-buildings",
+ "title": "Human buildings",
+ "line": "Human houses, farms and towers, and the village doodads that go with them.",
+ "comment": "The human town buildings (world models: every group file and texture) and the human village doodads. The Den places buildings from the realm's own building catalog (ov_build.lua, \"buildings\"); this pack is their models and textures for a client that lacks them, and the doodads as model props.",
+ "prefixes": [
+  {"path": "World\\wmo\\Azeroth\\Buildings\\", "ext": [".wmo"]},
+  {"path": "World\\Generic\\Human\\Passive Doodads\\", "ext": [".m2"]}
+ ],
+ "deps": true,
+ "limits": {"files": 6000, "mb": 400}
+}

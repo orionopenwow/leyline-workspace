@@ -1,0 +1,16 @@
+/* Leyline Launcher: the Modes page (modes.js). Uses style.css's tokens and its realm-card look. */
+.md-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.md-card .md-play { min-width: 76px; }
+.md-how { color: var(--muted); font-size: 12px; }
+
+/* key art: on a mode's card (top, full bleed); Home's gallery and Game modes row show it too (home.css) */
+.md-card.has-art { overflow: hidden; padding-top: 0; }
+.md-card .md-art { display: block; width: calc(100% + 2 * var(--md-pad, 16px)); max-width: none; height: auto; aspect-ratio: 483 / 298; object-fit: cover;
+  margin: 0 calc(-1 * var(--md-pad, 16px)) 10px; border-bottom: var(--t-border-w, 1px) solid var(--t-border); }
+.md-card.md-flash { animation: md-flash 1.6s ease; }
+@keyframes md-flash { 0%, 40% { box-shadow: 0 0 0 2px var(--t-accent), 0 0 30px color-mix(in srgb, var(--t-accent) 40%, transparent); } 100% { box-shadow: none; } }
+@media (prefers-reduced-motion: reduce) { .md-card.md-flash { animation: none; } }
+.md-card .md-soon { cursor: default; opacity: .7; }
+.md-card .md-cmd { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
+.md-card .md-cmd code { color: var(--t-accent, inherit); }
+.md-invite { color: var(--muted); font-size: 13px; margin: 12px 0 0; }

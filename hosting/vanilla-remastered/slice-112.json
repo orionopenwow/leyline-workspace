@@ -1,0 +1,165 @@
+{
+  "slice": "vr112",
+  "title": "Vanilla Remastered in the browser (levels 1-20)",
+  "comment": "The 1.12 browser slice (owner 2026-10-31: 'minimal slices for 1-20 leveling'). vr-slice.py reads this. Tiers are taken in order until budgetMB (or until the disk would keep less than minFreeMB); the first tier that does not fit and every tier after it are left out, and the report says so. A zone is a WorldMapArea.dbc AreaName (its world-map rectangle gives the map tiles, widened by marginTiles); an instance is a whole Map.dbc map id. Creatures and objects come from the realm's own spawns inside the tiers' tiles (their model folders and sounds). Only names the player's own client would read are ever written: paths inside the game's archives, nothing else.",
+  "budgetMB": 2800,
+  "minFreeMB": 3000,
+  "marginTiles": 1,
+  "copyWhole": [
+    "patch-Z.MPQ"
+  ],
+  "base": {
+    "prefixes": [
+      "DBFilesClient\\",
+      "Interface\\",
+      "Fonts\\",
+      "Character\\",
+      "Item\\",
+      "Spells\\",
+      "XTextures\\",
+      "Environments\\",
+      "Cameras\\",
+      "Particles\\",
+      "Textures\\*",
+      "Textures\\Footsteps\\",
+      "Textures\\Weather\\",
+      "Textures\\SpellChainEffects\\",
+      "Textures\\Splash\\",
+      "Textures\\GuildEmblems\\",
+      "Textures\\ShaneCube\\",
+      "Sound\\Interface\\",
+      "Sound\\Spells\\",
+      "Sound\\Character\\",
+      "Sound\\Item\\",
+      "Sound\\Universal\\",
+      "Sound\\Doodad\\",
+      "Sound\\Music\\GlueScreenMusic\\",
+      "World\\wmo\\transports\\",
+      "World\\Generic\\Passive Doodads\\Ships\\",
+      "Textures\\Minimap\\md5translate.trs"
+    ],
+    "creatureFolders": [
+      "Creature\\Horse\\",
+      "Creature\\Ram\\",
+      "Creature\\Wolf\\",
+      "Creature\\Raptor\\",
+      "Creature\\KodoBeast\\",
+      "Creature\\Tiger\\",
+      "Creature\\MechaStrider\\",
+      "Creature\\Skeletalwarhorse\\",
+      "Creature\\HorseUndead\\",
+      "Creature\\Zeppelin\\",
+      "Creature\\Boat\\",
+      "Creature\\Gryphon\\",
+      "Creature\\Wyvern\\",
+      "Creature\\Hippogryph\\",
+      "Creature\\Bat\\",
+      "Creature\\Imp\\",
+      "Creature\\VoidWalker\\",
+      "Creature\\Felhunter\\",
+      "Creature\\Succubus\\",
+      "Creature\\Spirit\\",
+      "Creature\\SpiritHealer\\"
+    ]
+  },
+  "tiers": [
+    {
+      "key": "alliance-start",
+      "name": "Alliance starting zones and capitals",
+      "map": 0,
+      "zones": [
+        "Elwynn",
+        "Stormwind",
+        "DunMorogh",
+        "Ironforge"
+      ]
+    },
+    {
+      "key": "kalimdor-alliance-start",
+      "name": "Night elf start and capital",
+      "map": 1,
+      "zones": [
+        "Teldrassil",
+        "Darnassis"
+      ]
+    },
+    {
+      "key": "horde-start",
+      "name": "Horde starting zones and capitals",
+      "map": 1,
+      "zones": [
+        "Durotar",
+        "Ogrimmar",
+        "Mulgore",
+        "ThunderBluff"
+      ]
+    },
+    {
+      "key": "undead-start",
+      "name": "Undead start and capital",
+      "map": 0,
+      "zones": [
+        "Tirisfal",
+        "Undercity"
+      ]
+    },
+    {
+      "key": "alliance-10-20",
+      "name": "Alliance levels 10-20",
+      "map": 0,
+      "zones": [
+        "Westfall",
+        "LochModan",
+        "Redridge"
+      ]
+    },
+    {
+      "key": "darkshore",
+      "name": "Darkshore (10-20)",
+      "map": 1,
+      "zones": [
+        "Darkshore"
+      ]
+    },
+    {
+      "key": "horde-10-20",
+      "name": "Horde levels 10-20",
+      "map": 1,
+      "zones": [
+        "Barrens"
+      ]
+    },
+    {
+      "key": "silverpine",
+      "name": "Silverpine Forest (10-20)",
+      "map": 0,
+      "zones": [
+        "Silverpine"
+      ]
+    },
+    {
+      "key": "tram",
+      "name": "The tram between the two capitals",
+      "instances": [
+        369
+      ]
+    },
+    {
+      "key": "dungeons",
+      "name": "Ragefire Chasm, Wailing Caverns, the Deadmines",
+      "instances": [
+        389,
+        43,
+        36
+      ]
+    },
+    {
+      "key": "music",
+      "name": "Zone music and ambience",
+      "prefixes": [
+        "Sound\\Music\\ZoneMusic\\",
+        "Sound\\Ambience\\"
+      ]
+    }
+  ]
+}

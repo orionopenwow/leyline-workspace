@@ -24,6 +24,7 @@ os.environ.update(SOAP_USER="WUSOAP", SOAP_PASS="x", AC_SOAP_URL="http://127.0.0
                   WU_RELAY_LISTING="http://127.0.0.1:9/realms.json", WU_PORTAL_DATA=DATA, WU_HUB_DIR=HUBDIR,
                   WU_MODS_DIR=tempfile.mkdtemp(), WU_WORKSHOP_ITEMS_DIR=tempfile.mkdtemp())
 os.environ.pop("WU_HUB_FRONT", None)
+os.environ["WU_DL_PROBE"] = "0"   # downloads.py never asks GitHub here (set_assets below)
 os.environ.pop("WU_HUB", None)
 
 passed = failed = 0
@@ -173,11 +174,11 @@ check("header: More is a details dropdown (no script needed) with Forge, Agents,
       and "#status" not in more.group(1) and "/gallery" not in more.group(1))
 check("header: the phone sheet has the same items as tiles, and the download", re.findall(
       r"<span>([^<]+)</span>", re.search(r'<div class="hb-nav-x">(.*?)</div>', nav, re.S).group(1)) == MORE_ITEMS
-      and 'class="hb-dl-x"' in nav and 'id="hb-menu" class="hb-menu-t"' in hd and '<label for="hb-menu" class="hb-menu-b"' in hd)
+      and '<a class="hb-dl-x" href="/wrath/download">Download the launcher</a>' in nav and 'id="hb-menu" class="hb-menu-t"' in hd and '<label for="hb-menu" class="hb-menu-b"' in hd)
 check("header: a line icon by every item (inline SVG, currentColor)", nav.count('<svg viewBox="0 0 24 24" aria-hidden="true">') == 7 + 1 + 7 + 7
       and "stroke:currentColor" in front)
-check("header: Download (primary) and Log In (the launcher's word; the crystal on the folded rail) on the right, no item active on the front page",
-      re.search(r'<div class="hb-end"><a class="hb-dl" href="https://github\.com/orionopenwow/Leyline/releases/download/launcher-latest/Leyline\.exe"[^>]*>.*?<span>Download</span></a>'
+check("header: Download (primary: the download page with every option) and Log In (the launcher's word; the crystal on the folded rail) on the right, no item active on the front page",
+      re.search(r'<div class="hb-end"><a class="hb-dl" href="/wrath/download"><svg[^>]*>.*?<span>Download</span></a>'
                 r'<a class="hb-signin" href="/login\?next=%2Fwrath"><img src="/wrath/art/leyline-crystal-128.png" alt="" width="26" height="26"><span>Log In</span></a>', hd, re.S)
       and on == [] and 'aria-current="page"' not in hd)
 check("header: Join the Discord under News (the launcher's side menu), the portal's link, opened safely",
@@ -224,7 +225,7 @@ check("hero: the whole mark leads, crisp (the 512px layers), big (~400px, 220px 
       and "hb-crystal" not in front
       and "Every client, every server" in front and "One launcher for every classic client and every server" in front
       and "hb-bullets" not in front and "TODO(owner): the hero heading" in front
-      and 'class="hb-hero-a"' not in front and 'class="hb-dl" href="https://github.com/orionopenwow/Leyline/releases/download/launcher-latest/Leyline.exe"' in front)
+      and 'class="hb-hero-a"' not in front and 'class="hb-dl" href="/wrath/download"' in front)
 check("hero: one quiet Start here link under the line (not a button), before the launcher shot",
       front.count('href="/wrath/start"') == 1 and '<p class="hb-start"><a href="/wrath/start">New here? Start here ›</a></p>' in front
       and front.index('class="hb-sub-h"') < front.index('class="hb-start"') < front.index('class="hb-hero-shot"'))
@@ -277,7 +278,7 @@ check("launch: the Hangout row comes first, named, labelled Official realm",
       re.search(r'<li class="hb-rl home[^"]*" data-home="1"[^>]*>.*?<b>Wrath Unleashed</b><span class="hb-rl-k">Official realm</span>', front))
 # the owner's 2026-10-30 additions: realms under the hero, the feature sections in order, how it works, the polish
 FS_RE = (r'<section class="hb-fs hb-rv( flip)?" id="f-([a-z]+)".*?<p class="hb-eyebrow">.*?</span>([^<]+)</p><h2[^>]*>([^<]+)</h2>'
-         r'<p class="hb-lede">([^<]+)</p><ul class="hb-points">(.*?)</ul><p class="hb-fs-a">(.*?)</p></div>'
+         r'<p class="hb-lede">([^<]+)</p><ul class="hb-points">(.*?)</ul><(?:p|div) class="hb-fs-a[^"]*">(.*?)</(?:p|div)></div>'
          r'<div class="hb-fs-v">(.*?)</div></section>')
 # owner 1 Nov ("make sure the website is clean looking too"): the front page shows four of them (FRONT_FEATURES), the
 # launcher's story; the rest are drawn by features(only=None) and checked from there
@@ -310,7 +311,7 @@ check("front page: the Looks section links each tile to its card on /wrath/looks
       'href="/wrath/looks">See every look</a>' in front and all(x[1] for x in lks))
 check("feature sections: alternating sides (every other one flips)", [bool(f[0]) for f in fs] == [False, True] * 4 + [False])
 check("feature sections: a heading, a lede, points and a first link each", all(f[3] and f[4] and f[5].count("<li>") >= 2
-      and 'class="hb-cta sm"' in f[6] for f in fs))
+      and ('class="hb-cta sm"' in f[6] or (f[1] == "launcher" and 'class="ly-btn dlp-main"' in f[6])) for f in fs))
 hrefs = [re.findall(r'href="([^"]+)"', f[6]) for f in fs]
 check("feature sections: links to pages that exist, nothing paid", [h[0] for h in hrefs][1:] == [
       "/wrath/looks", "/wrath/host", "/wrath/leyline-preview/realms", "/wrath?go=mode:minigolf", "/wrath/leyline-preview/catalog?sort=hot",
@@ -380,6 +381,122 @@ if wp.admin is not None and hasattr(wp.admin, "leyline_dir"):
     check("Download Now: the stable release the admin console published", f'href="{rel}"' in req("/wrath/leyline-preview")[2].decode())
 json.dump({"stable": {"version": "0.4.0", "tag": "x", "url": "https://evil.example/x"}}, open(os.path.join(os.environ["WU_LEYLINE_DIR"], "channel.json"), "w"))
 check("Download Now: never a link off the releases page", "evil.example" not in req("/wrath/leyline-preview")[2].decode())
+
+# ---------------------------------------------------------------- the download choice (stream/downloads.py; owner 2 Nov:
+# "for the download button on site and everywhere lets have options, like head to git to get zip, get the exe, etc")
+DM = wp.downloads_mod
+check("downloads.py loaded beside the portal", DM is not None)
+GH = "https://github.com/orionopenwow/Leyline/releases/download/"
+
+
+def _asset(tag, name, size, digest=None):
+    return {"name": name, "size": size, "browser_download_url": GH + tag + "/" + name,
+            **({"digest": "sha256:" + digest} if digest else {})}
+
+
+def _rel(tag, names, **kw):
+    return {"tag_name": tag, "draft": False, "prerelease": False, "assets": [_asset(tag, n, 10_485_760, "ab" * 32) for n in names], **kw}
+
+
+FULL = {"rolling": {"tag_name": "launcher-latest", "assets": [_asset("launcher-latest", "Leyline.exe", 22_656_000, "cd" * 32),
+                                                              _asset("launcher-latest", "Leyline-portable.zip", 9_000_000),
+                                                              _asset("launcher-latest", "SHA256SUMS.txt", 200),
+                                                              {"name": "Leyline-portable.zip", "size": 1, "browser_download_url": "https://evil.example/x.zip"}]},
+        "releases": [_rel("launcher-v0.9.1-beta.1", ["Leyline_0.9.1-beta.1_x64-setup.exe"], prerelease=True),
+                     _rel("launcher-v0.9.0", ["Leyline_0.9.0_amd64.AppImage", "latest.json"]),   # still building: no Windows yet
+                     _rel("launcher-v0.8.9", ["latest.json", "Leyline_0.8.9_x64-setup.exe", "Leyline_0.8.9_x64-setup.exe.sig",
+                                              "Leyline_0.8.9_x64_en-US.msi", "Leyline_0.8.9_universal.dmg", "Leyline_universal.app.tar.gz",
+                                              "Leyline_0.8.9_amd64.AppImage", "Leyline_0.8.9_amd64.deb", "SHA256SUMS.txt"]),
+                     _rel("launcher-v0.8.8", ["Leyline_0.8.8_x64-setup.exe"])]}
+if DM is not None:
+    bare = DM.options(DM.EXE, {"assets": {}})
+    check("download rows before GitHub answers: Leyline.exe first (recommended), then the installer, macOS, Linux, GitHub, checksums; "
+          "no zip and no checksums file until GitHub lists them",
+          [r["key"] for r in bare] == ["windows", "installer", "macos", "linux", "github", "checksums"] and bare[0]["rec"]
+          and bare[0]["links"] == [("Leyline.exe", DM.EXE, "", True)]
+          and all(l[1] == DM.LATEST for k in ("installer", "macos", "linux") for l in next(r for r in bare if r["key"] == k)["links"])
+          and [l[1] for l in bare[-1]["links"]] == ["/wrath/download#verify"], bare)
+    gh = next(r for r in bare if r["key"] == "github")["links"]
+    check("download rows: every release on GitHub, the source and the source as a ZIP",
+          [(l[0], l[1]) for l in gh] == [("All releases", "https://github.com/orionopenwow/Leyline/releases"),
+                                        ("Source code", "https://github.com/orionopenwow/Leyline"),
+                                        ("Source as a ZIP", "https://github.com/orionopenwow/Leyline/archive/refs/heads/main.zip")])
+    got = DM.parse(FULL["rolling"], FULL["releases"])
+    check("GitHub's answer: the rolling files, and the newest stable release with the Windows installer (no pre-release, no "
+          "half-built one); updater files left out; links off GitHub dropped",
+          got["version"] == "0.8.9" and got["tag"] == "launcher-v0.8.9"
+          and sorted(got["assets"]) == ["appimage", "deb", "dmg", "exe", "msi", "setup", "sums", "sums_rel", "zip"]
+          and got["assets"]["zip"]["url"] == GH + "launcher-latest/Leyline-portable.zip"
+          and got["assets"]["appimage"]["name"] == "Leyline_0.8.9_amd64.AppImage" and got["assets"]["exe"]["sha256"] == "cd" * 32, got)
+    check("GitHub's answer: junk and a wrong shape give nothing, never an error",
+          DM.parse(None, None)["assets"] == {} and DM.parse({"assets": [1, None, {"name": "Leyline.exe"}]}, [None, "x", {"tag_name": 5}])["assets"] == {})
+    rows = {r["key"]: r for r in DM.options(DM.EXE, got)}
+    check("download rows with GitHub's files: sizes, the portable zip, both checksums files and How to verify",
+          rows["windows"]["links"][0][2] == "22 MB" and rows["installer"]["links"][0][:3] == ("Setup .exe", GH + "launcher-v0.8.9/Leyline_0.8.9_x64-setup.exe", "10 MB")
+          and rows["zip"]["links"][0][:3] == ("Leyline-portable.zip", GH + "launcher-latest/Leyline-portable.zip", "8.6 MB")
+          and [l[0] for l in rows["checksums"]["links"]] == ["SHA256SUMS.txt for Leyline.exe", "SHA256SUMS.txt for the installers", "How to verify"]
+          and [l[0] for l in rows["linux"]["links"]] == [".AppImage", ".deb"] and [l[0] for l in rows["macos"]["links"]] == [".dmg"])
+    check("download rows: the Windows file the admin console published leads; anything off the releases page never does",
+          DM.options(rel, got)[0]["links"][0][1] == rel and DM.options("https://evil.example/x", got)[0]["links"][0][1] == DM.EXE)
+    DM.set_assets(FULL)
+    front_dl = req("/wrath/leyline-preview")[2].decode()
+    pn = re.search(r'<section class="hb-fs hb-rv" id="f-launcher".*?</section>', front_dl, re.S).group(0)
+    check("front page, the launcher section: the Download choice: Download for Windows, Other downloads (a details: Enter or "
+          "Space opens it, no script), every row, All download options, the trust line",
+          re.search(r'<div class="dlp"><div class="dlp-row"><a class="ly-btn dlp-main" href="https://github\.com/orionopenwow/Leyline/releases/download/'
+                    r'launcher-latest/Leyline\.exe" rel="noopener noreferrer"><svg[^>]*>.*?</svg><span>Download for Windows</span></a>'
+                    r'<details class="dlp-more"><summary class="dlp-sum">Other downloads<svg', pn, re.S)
+          and all(f">{t}<" in pn for t in ("Windows installer", "Portable zip", "macOS", "Linux", "GitHub", "Checksums"))
+          and '<a href="/wrath/download">All download options ›</a>' in pn
+          and "Open source. Built on GitHub from the public code. Check the SHA-256 before you run it." in pn
+          and "Leyline.exe · 22 MB · also for macOS and Linux" in pn and "<script" not in pn, pn[:600])
+    check("the Download choice: keyboard focus shows, the chevron turns, the menu a popover on wide screens and full width on a phone",
+          ".dlp-sum:focus-visible" in DM.CSS and ".dlp-more[open] .dlp-chev{transform:rotate(180deg)}" in DM.CSS
+          and "@media (min-width:700px){.dlp-menu{position:absolute" in DM.CSS and "@media (max-width:560px){.dlp-list li{grid-template-columns:minmax(0,1fr)}" in DM.CSS
+          and ".dlp-sum::-webkit-details-marker{display:none}" in DM.CSS and DM.CSS in front_dl)
+    check("hero: every download linked in the line under the picture", 'macOS and Linux: <a href="/wrath/download">every download</a>' in front_dl)
+    foot_dl = re.search(r'<footer class="hb-foot">.*?</footer>', front_dl, re.S).group(0)
+    check("footer: Download is the download page", '<a href="/wrath/download">Download</a>' in foot_dl)
+    os.environ["WU_HUB_FRONT"] = "1"
+    st_d, h_d, b_d = req("/wrath/download")
+    dpg = b_d.decode()
+    check("/wrath/download: 200 in the site's frame, no script, the header's Download marks the way here",
+          st_d == 200 and "<script" not in dpg and "script-src 'none'" in h_d.get("content-security-policy", "")
+          and '<a class="hb-dl" href="/wrath/download">' in dpg and "<h1>Download Leyline</h1>" in dpg and "<title>Download · " in dpg)
+    opts = re.findall(r'<li class="dl-opt" id="dl-([a-z]+)"><div class="dl-opt-h"><h3>([^<]+)</h3>', dpg)
+    check("/wrath/download: every option laid out in order, Windows recommended",
+          [o[0] for o in opts] == ["windows", "installer", "zip", "macos", "linux", "github", "checksums"]
+          and '<h3>Windows</h3><span class="dl-badge">Recommended</span>' in dpg
+          and 'class="ly-btn dl-big" href="https://github.com/orionopenwow/Leyline/releases/download/launcher-latest/Leyline.exe"' in dpg
+          and "Leyline 0.8.9" in dpg and "Leyline.exe · 22 MB · one file, nothing to install" in dpg, opts)
+    check("/wrath/download: Verify your download (certutil on Windows, shasum elsewhere), the SHA256SUMS files, each installer's SHA-256",
+          '<section class="dl-verify" id="verify"' in dpg and "certutil -hashfile Leyline.exe SHA256" in dpg and "shasum -a 256 Leyline*" in dpg
+          and f'href="{GH}launcher-latest/SHA256SUMS.txt"' in dpg and f'href="{GH}launcher-v0.8.9/SHA256SUMS.txt"' in dpg
+          and "<dt>Leyline_0.8.9_x64-setup.exe</dt><dd><code>" + "ab" * 32 in dpg)
+    check("/wrath/download: first-run help, the trust line, never a game client, no money links",
+          "choose More info, then Run anyway" in dpg and "Open source. Built on GitHub from the public code." in dpg
+          and "never downloads, offers or shares a game client" in dpg
+          and not re.search(r"(?i)donat|patreon|ko-fi|\btip\b|support us|sponsor", re.search(r'<div class="dlpg">.*?</main>', dpg, re.S).group(0)))
+    check("/wrath/download: no brand words players see", not BANNED.search(visible(dpg)), BANNED.search(visible(dpg)))
+    check("/wrath/download/ answers too; the page is the same with the front door off",
+          req("/wrath/download/")[0] == 200)
+    os.environ.pop("WU_HUB_FRONT", None)
+    st_o, _h, b_o = req("/wrath/download")
+    check("/wrath/download without the front door: the Leyline look, the same rows", st_o == 200 and 'id="dl-zip"' in b_o.decode() and "<script" not in b_o.decode())
+    item_dl = req("/wrath/leyline-preview/catalog")[2].decode()
+    check("Get the launcher goes to the download page everywhere on the hub", 'href="/wrath/download">Get the launcher</a>' in item_dl
+          or "Get the launcher" not in item_dl)
+    _dm = wp.downloads_mod
+    wp.downloads_mod = None
+    st_n, h_n, _b = req("/wrath/download")
+    hd_n = req("/wrath/leyline-preview")[2].decode()
+    wp.downloads_mod = _dm
+    check("without downloads.py: /wrath/download goes to the releases page, the header's Download to the Windows file",
+          st_n == 302 and h_n.get("location") == "https://github.com/orionopenwow/Leyline/releases"
+          and 'class="hb-dl" href="https://github.com/orionopenwow/Leyline/releases/download/launcher-latest/Leyline.exe"' in hd_n)
+    check("docs: the launcher page's Verify your download says what the site says",
+          "## Verify your download" in open(os.path.join(REPO, "docs", "leyline", "launcher.md")).read()
+          and DM.VERIFY_MD in open(os.path.join(REPO, "docs", "leyline", "launcher.md")).read())
 cat = req("/wrath/leyline-preview/catalog?build=2.4.3")[2].decode()
 check("catalog: filtered by build, labelled in words", all(("2.4.3" in e["builds"] or "any" in e["builds"]) for e in INDEX["entries"]
                                       if f'/p/{e["id"].replace(":", "-")}"' in cat) and "for the second era" in cat

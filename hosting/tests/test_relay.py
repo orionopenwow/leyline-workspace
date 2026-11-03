@@ -38,6 +38,14 @@ class Public(unittest.IsolatedAsyncioTestCase):
             r.realm.add_account("bob", "pw")
             with self.assertRaises((wire335.WowError, asyncio.IncompleteReadError, ConnectionError)):
                 await wire335.logon("127.0.0.1", r.shared, "bob", "pw", timeout=3)
+            # security review 2 Nov (F5): another site's page can't knock (it would reroute this IP's login)
+            st, body, _ = await http("POST", f"{r.http}/api/realms/{r.rid}/knock", {}, {"Origin": "https://evil.example"})
+            self.assertEqual(st, 403, body)
+            with self.assertRaises((wire335.WowError, asyncio.IncompleteReadError, ConnectionError)):
+                await wire335.logon("127.0.0.1", r.shared, "bob", "pw", timeout=3)
+            st, body, _ = await http("POST", f"{r.http}/api/realms/{r.rid}/accounts", {"user": "x", "pass": "y"},
+                                     {"Origin": "https://evil.example"})
+            self.assertEqual(st, 403, body)
             st, body, hdr = await http("POST", f"{r.http}/api/realms/{r.rid}/knock", {},
                                        {"Origin": "https://openvanilla.test"})
             self.assertEqual(st, 200, body)

@@ -1067,6 +1067,9 @@ def host_tabs() -> str:
 
 
 def _launcher_url() -> str:
+    """Get the launcher: the site's download page with every option (stream/downloads.py), else the hub's file."""
+    if P("downloads_mod") is not None:
+        return "/wrath/download"
     hub = P("hub_mod")
     try:
         return hub.hub._download() if hub is not None else LAUNCHER_FALLBACK

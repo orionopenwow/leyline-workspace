@@ -67,13 +67,29 @@ What it fetches: the Workshop list and the mods you install, the realm list and 
 
 ## Getting a build
 
-Installers are on the [Leyline releases page](https://github.com/orionopenwow/Leyline/releases) (tags `launcher-v*`): Windows (.msi and setup .exe), macOS (one .dmg for Apple Silicon and Intel) and Linux (.AppImage, .deb).
+Every option is on the site's [download page](/wrath/download):
+
+- **Windows**: [Leyline.exe](https://github.com/orionopenwow/Leyline/releases/download/launcher-latest/Leyline.exe), one file, nothing to install (recommended).
+- **Windows installer**: setup .exe or .msi, on the [newest release](https://github.com/orionopenwow/Leyline/releases/latest).
+- **Portable zip**: Leyline-portable.zip, beside Leyline.exe on the rolling release `launcher-latest`.
+- **macOS**: one .dmg for Apple Silicon and Intel. **Linux**: .AppImage and .deb. Both on the [newest release](https://github.com/orionopenwow/Leyline/releases/latest).
+- **Every release** (tags `launcher-v*`) is on the [Leyline releases page](https://github.com/orionopenwow/Leyline/releases); the source is the [Leyline repo](https://github.com/orionopenwow/Leyline) ([as a ZIP](https://github.com/orionopenwow/Leyline/archive/refs/heads/main.zip)).
+- **Checksums**: every release has SHA256SUMS.txt (see below).
 
 Builds are not code-signed yet. On Windows choose "More info, Run anyway". On macOS right-click the app and choose Open (if it says the app is damaged: `xattr -dr com.apple.quarantine /Applications/Leyline.app`). On Linux make the .AppImage executable.
 
-The build workflow is `.github/workflows/leyline-launcher.yml` in the Leyline repo. It runs the tests on every change and, for a tag such as `launcher-v0.3.0`, builds the installers and attaches them to a release. The owner turns it on once with `setup\Turn on GitHub builds.bat`, which also pushes the first tag; a new version is a new tag.
+The build workflow is `.github/workflows/leyline-launcher.yml` in the Leyline repo. It runs the tests on every change and, for a tag such as `launcher-v0.3.0`, builds the installers and attaches them to a release, then hashes every file into SHA256SUMS.txt. Each ship from main also puts Leyline.exe, Leyline-portable.zip and their SHA256SUMS.txt on `launcher-latest`. The owner turns it on once with `setup\Turn on GitHub builds.bat`, which also pushes the first tag; a new version is a new tag.
 
 To build it yourself, see `launcher/README.md` in the repo.
+
+## Verify your download
+
+Every file is built on GitHub from the public code. Each release lists the SHA-256 of its files in SHA256SUMS.txt, and GitHub shows the same value next to each file on the release page. Hash your download and compare: if the two don't match, don't run it and download it again.
+
+- Windows: open Command Prompt in the folder with the file and run: `certutil -hashfile Leyline.exe SHA256`
+- macOS and Linux: open a terminal in the folder with the file and run: `shasum -a 256 Leyline*`
+
+Use your file's name in the command (`sha256sum` works on Linux too).
 
 ## Not yet
 

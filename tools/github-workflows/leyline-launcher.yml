@@ -21,6 +21,10 @@
 # installed launcher downloads it in the background and offers Restart.
 # A hand-pushed tag still works: its version (launcher-v0.3.0 -> 0.3.0) must match tauri.conf.json, and a version with
 # a "-" (0.3.1-beta.1) is published as a pre-release, which only the opt-in early channel installs.
+# Pinned builds (security review 2 Nov, F2: the updater signing key is in the same job as the build tools): npm ci
+# installs exactly launcher/package-lock.json (the Tauri CLI), and cargo runs --locked against src-tauri/Cargo.lock
+# (`tauri build ... -- --locked` passes it to cargo build; release_version.py stamp writes the version into both
+# Cargo.toml and Cargo.lock, so the lock still matches after the stamp).
 # One run at a time per kind (pull requests apart): a release is never made twice, and a run that finds its release
 # already finished (latest.json there) builds nothing.
 name: leyline launcher
@@ -74,13 +78,15 @@ jobs:
           workspaces: launcher/src-tauri
       - name: cargo test (core, no webview)
         working-directory: launcher/src-tauri
-        run: cargo test --no-default-features
+        run: cargo test --locked --no-default-features
 
   # The simple way in (owner 2026-10-30: "why do we have to go through an installer? lets make this way simpler"):
   # every push to main builds one portable Leyline.exe (no installer: double-click and it runs; Windows 10 and 11 already
   # have the WebView2 it uses) and puts it on the rolling release "launcher-latest", always at the same address:
   #   https://github.com/orionopenwow/Leyline/releases/download/launcher-latest/Leyline.exe
   # "Open Leyline Launcher.bat" fetches it from there (the website can link it once the first build is up).
+  # Beside it (owner 2 Nov: "options, like head to git to get zip, get the exe"): Leyline-portable.zip (the same exe in a
+  # zip) and SHA256SUMS.txt for both, which the site's download page (stream/downloads.py) links once they are there.
   portable:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.plan.outputs.ship == 'true'
     needs: [core-tests, plan]
@@ -105,9 +111,17 @@ jobs:
         working-directory: launcher
         shell: bash
         run: |
-          npm install --no-audit --no-fund
-          npx tauri build --no-bundle
+          npm ci --no-audit --no-fund
+          npx tauri build --no-bundle -- --locked
           cp src-tauri/target/release/leyline.exe ../Leyline.exe
+      - name: The portable zip and the checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f Leyline-portable.zip SHA256SUMS.txt
+          7z a -tzip -mx=9 Leyline-portable.zip Leyline.exe >/dev/null
+          sha256sum Leyline.exe Leyline-portable.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
       - name: Put it on launcher-latest
         shell: bash
         env:
@@ -121,7 +135,7 @@ jobs:
           else
             gh release create launcher-latest -R "$GITHUB_REPOSITORY" --title "Leyline launcher (latest, $ver)" --notes "$notes" --target "$GITHUB_SHA" --latest=false
           fi
-          gh release upload launcher-latest Leyline.exe -R "$GITHUB_REPOSITORY" --clobber
+          gh release upload launcher-latest Leyline.exe Leyline-portable.zip SHA256SUMS.txt -R "$GITHUB_REPOSITORY" --clobber
 
   create-release:
     # a launcher-v tag, or a ship from main (plan)
@@ -137,6 +151,7 @@ jobs:
       signed: ${{ steps.r.outputs.signed }}
       stamp: ${{ steps.r.outputs.stamp }}
       skip: ${{ steps.r.outputs.skip }}
+      tag: ${{ steps.r.outputs.tag }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Make the release (once per tag)
@@ -178,12 +193,14 @@ jobs:
             [ -s notes.md ] || echo "The newest Leyline. Installed launchers download it by themselves: press Restart when it says Update ready, or it finishes the next time Leyline opens." > notes.md
             {
               echo
+              echo "SHA256SUMS.txt lists the SHA-256 of every file here: check yours before you run it (certutil -hashfile <file> SHA256 on Windows, shasum -a 256 <file> elsewhere)."
               echo "Builds are not code-signed yet: on Windows choose \"More info, Run anyway\"; on macOS right-click Leyline and choose Open (see launcher/README.md)."
               echo "Leyline uses your own game client. It never offers or shares one."
             } >> notes.md
             gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "Leyline $ver" --notes-file notes.md $pre "${target[@]}"
           fi
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "id=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json databaseId --jq .databaseId)" >> "$GITHUB_OUTPUT"
           pk=$(python3 -c "import json;print(json.load(open('launcher/src-tauri/tauri.conf.json'))['plugins']['updater']['pubkey'])")
           if [ "$HAS_KEY" = "true" ] && [ "${pk#TODO}" = "$pk" ]; then
@@ -229,7 +246,7 @@ jobs:
         run: $(command -v python3 || command -v python) launcher/scripts/release_version.py stamp "${{ needs.create-release.outputs.stamp }}"
       - name: Install the Tauri CLI
         working-directory: launcher
-        run: npm install
+        run: npm ci --no-audit --no-fund
       - name: Updater signing on or off
         id: sign
         shell: bash
@@ -251,7 +268,7 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.id }}
           includeUpdaterJson: ${{ needs.create-release.outputs.signed == 'true' }}
           updaterJsonPreferNsis: true
-          args: ${{ matrix.args }} ${{ steps.sign.outputs.args }}
+          args: ${{ matrix.args }} ${{ steps.sign.outputs.args }} -- --locked
 
   release-macos:
     needs: create-release
@@ -278,7 +295,7 @@ jobs:
         run: $(command -v python3 || command -v python) launcher/scripts/release_version.py stamp "${{ needs.create-release.outputs.stamp }}"
       - name: Install the Tauri CLI
         working-directory: launcher
-        run: npm install
+        run: npm ci --no-audit --no-fund
       - name: Updater signing on or off
         id: sign
         shell: bash
@@ -299,4 +316,30 @@ jobs:
           projectPath: launcher
           releaseId: ${{ needs.create-release.outputs.id }}
           includeUpdaterJson: ${{ needs.create-release.outputs.signed == 'true' }}
-          args: --target universal-apple-darwin --bundles app,dmg ${{ steps.sign.outputs.args }}
+          args: --target universal-apple-darwin --bundles app,dmg ${{ steps.sign.outputs.args }} -- --locked
+
+  # SHA256SUMS.txt on every release (owner 2 Nov: a checksums file per release, linked from the site's download page):
+  # once the builds are attached, download every file of the release, hash it here and attach the list. Runs after
+  # macOS too (allowed to fail); a macOS build re-run later is then missing from the list until this job is re-run.
+  checksums:
+    needs: [create-release, release, release-macos]
+    if: >-
+      !cancelled() && needs.create-release.result == 'success' && needs.create-release.outputs.skip != 'true' &&
+      needs.release.result == 'success'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Hash every file and attach SHA256SUMS.txt
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.create-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir files && cd files
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY"
+          rm -f SHA256SUMS.txt
+          sha256sum -- * > ../SHA256SUMS.txt
+          cd .. && cat SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt -R "$GITHUB_REPOSITORY" --clobber

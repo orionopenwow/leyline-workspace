@@ -137,7 +137,7 @@ NOTE_LEN = 300
 REPORTS_PER_HOUR = 5
 MAX_REPORTS = 3000
 HOST_URL = "/wrath/host"          # "+ Your server" on the website (stream/hostflow.py)
-LAUNCHER_URL = "/wrath/leyline"   # the Leyline launcher download page
+LAUNCHER_URL = "/wrath/download"   # the Leyline launcher download page: every option (stream/downloads.py)
 HOSTING_DOCS = "/wrath/docs/hosting"
 
 _get = None

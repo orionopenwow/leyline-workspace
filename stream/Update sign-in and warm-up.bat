@@ -55,6 +55,8 @@ rem the Discord bot's growth side (discord_growth.py and discord_template.json, 
 if exist forum_discord.py if exist discord_growth.py if exist discord_template.json set "LINKS=%LINKS% discord_growth.py discord_template.json"
 rem the upgraded Discord channel plan (docs\DISCORD-PLAN.md), opt-in with WU_DISCORD_TEMPLATE in portal.env
 if exist discord_growth.py if exist discord_template_v2.json set "LINKS=%LINKS% discord_template_v2.json"
+rem the download page and the Download choice (/wrath/download)
+if exist downloads.py set "LINKS=%LINKS% downloads.py"
 rem the duel leaderboards (/wrath/leaderboards, /wrath/api/leaderboards; duels-export.py fills them on the realm)
 if exist duels.py set "LINKS=%LINKS% duels.py"
 rem Azeroth Survivors' page and its address's gate (/wrath/survivors, /__auth?site=survivors)

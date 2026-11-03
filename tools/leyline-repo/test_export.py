@@ -78,6 +78,7 @@ try:
             "docs/leyline/index.md", "docs/leyline/mods.md", "docs/leyline/cross-server.md",
             "launcher/README.md", "launcher/ui/index.html", "launcher/src-tauri/Cargo.toml",
             "launcher/src-tauri/src/clients.rs", "launcher/ui/art/leyline-emblem.webp",
+            "launcher/package-lock.json", "launcher/src-tauri/Cargo.lock",   # the workflow's npm ci and cargo --locked
             "README.md", "LICENSE", "THIRD-PARTY-NOTICES.md", ".gitignore"]
     missing = [w for w in want if w not in got]
     check("allow-list: the relay, kit, tools, bridge, tests, addon, links, art and top files are there", not missing, missing)

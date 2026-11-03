@@ -916,6 +916,19 @@ class Hub:
             pass
         return LAUNCHER_EXE
 
+    def _dl_page(self) -> str:
+        """Where Download and Get the launcher go (owner 2 Nov: "for the download button on site and everywhere lets have
+        options"): the site's download page with every option (stream/downloads.py), else the Windows file."""
+        return DOWNLOAD_PAGE if self.portal("downloads_mod") is not None else self._download()
+
+    def _dl_panel(self) -> str:
+        """The small Download choice (Download for Windows, Other downloads, the trust line), or "" without downloads.py."""
+        dm = self.portal("downloads_mod")
+        try:
+            return dm.panel(self._download()) if dm is not None else ""
+        except Exception:   # noqa: BLE001
+            return ""
+
     def _spin(self, size: int, cls: str = "", label: str = "") -> str:
         sp = self.portal("spin")
         if sp is not None:
@@ -979,8 +992,8 @@ class Hub:
             # only on the folded rail
             acct = (f'<a class="hb-signin" href="{e(sin)}"><img src="/wrath/art/leyline-crystal-128.png" alt="" width="26" height="26">'
                     '<span>Log In</span></a>')
-        dl = self._download()
-        dl_a = (f'<a class="hb-dl" href="{e(dl)}" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true">'
+        dl = self._dl_page()   # the download page: every option, no script needed
+        dl_a = (f'<a class="hb-dl" href="{e(dl)}"{_ext(dl)}><svg viewBox="0 0 24 24" aria-hidden="true">'
                 f'{NAV_ICONS["download"]}</svg><span>Download</span></a>')
         # A top bar like a website (owner 2026-10-31: "fit for the website"): the brand, the launcher's pages, Download and
         # the account. On a phone Menu opens the same items as a sheet (no script needed).
@@ -994,7 +1007,7 @@ class Hub:
                 '<input type="checkbox" id="hb-menu" class="hb-menu-t" aria-label="Menu">'
                 '<label for="hb-menu" class="hb-menu-b" aria-hidden="true">Menu</label>'
                 f'<nav class="hb-nav" aria-label="Leyline">{"".join(item(*m) for m in main)}{drop}{extra}'
-                f'<a class="hb-dl-x" href="{e(dl)}" rel="noopener noreferrer">Download the launcher</a></nav>'
+                f'<a class="hb-dl-x" href="{e(dl)}"{_ext(dl)}>Download the launcher</a></nav>'
                 f'<div class="hb-end">{dl_a}{acct}<a class="hb-playx" href="/wrath">Play</a></div></header>')
 
     def _shell(self, title: str, body: str, path: str, nonce: str = "", active: str | None = None, css: str = "") -> bytes:
@@ -1003,7 +1016,7 @@ class Hub:
         e = html.escape
         front = path in (BASE, FRONT)
         home = FRONT if front_on() else BASE
-        dl = self._download()
+        dl = self._dl_page()
         top = self._header(ACTIVE.get(path.split("?")[0], "mods" if path.startswith(BASE + "/p/") else "") if active is None else active)
         sub = "" if (front or front_on()) else (f'<nav class="hb-sub" aria-label="Hub">'
                + "".join(f'<a href="{BASE}{h}"' + (' aria-current="page" class="on"' if path == BASE + h else "") + f">{t}</a>"
@@ -1033,7 +1046,7 @@ class Hub:
         meta = ('<meta name="description" content="Leyline: one launcher for your own game clients and every realm, '
                 'with mods, addons, realm scripts and tools.">')
         css = ((self.portal("LOOK_VARS") or LOOK_FALLBACK) + SITE_TOKENS_CSS + (self.portal("SPIN_CSS") or "") + HUB_CSS + SITE_CSS
-               + SIDE_CSS + STONE_CSS + STONE_MOBILE_CSS + DARK_ISLANDS + self._backdrop() + css)
+               + SIDE_CSS + STONE_CSS + STONE_MOBILE_CSS + DARK_ISLANDS + self._backdrop() + self._dl_css() + css)
         return (f'<!doctype html><html lang="en" data-look="leyline"><head><meta charset="utf-8">'
                 f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">'
                 f'<title>{e(title)}</title>{meta}{robots}<style>{css}</style></head>'
@@ -1041,6 +1054,10 @@ class Hub:
                 f'<main id="main" class="hb-main{" hb-front" if front else ""}">{flag}{sub}{body}</main>{foot}'
                 + (f'<script nonce="{e(nonce)}">{HUB_JS}</script>' if nonce else "") + '</body></html>').replace(
                     LIGHT_MQ, LIGHT_OFF).encode("utf-8")
+
+    def _dl_css(self) -> str:
+        dm = self.portal("downloads_mod")
+        return (getattr(dm, "CSS", "") or "") if dm is not None else ""
 
     def _turn_hint(self, path: str) -> str:
         """Phones held upright (owner 2026-10-31: "sideways mode recommended on mobile, gentle encouragement"): a slim
@@ -1273,7 +1290,7 @@ class Hub:
                        + (' <span class="hb-rl-mg">in your game</span>' if game else "") + "</li>")
         n = len(mods)
         return (f'<details class="hb-rl-mods"><summary>Uses {n} mod{"" if n == 1 else "s"}</summary><ul>{"".join(lis)}</ul>'
-                f'<p><a href="{e(self._download())}" rel="noopener noreferrer">Get the launcher</a> to add them automatically '
+                f'<p><a href="{e(self._dl_page())}">Get the launcher</a> to add them automatically '
                 'when you join.</p></details>')
 
     def realm_section(self, got=None) -> str:
@@ -1571,7 +1588,8 @@ class Hub:
              "installs mods in a click, takes you to any realm and keeps itself up to date.",
              ["Your own clients, found for you", "One sign-in everywhere", "Updates in the background, never mid-game",
               "Windows, macOS and Linux"],
-             [(dl, "Download the launcher", True), (LAUNCHER_OTHER, "macOS and Linux", True)],   # Play in your browser is the realm's own button, above
+             # the one Download choice (stream/downloads.py): Windows first, Other downloads, the trust line
+             self._dl_panel() or [(dl, "Download the launcher", True), (LAUNCHER_OTHER, "macOS and Linux", True)],
              shot("launcher", "The Leyline launcher: its realm list open over Home, with Wrath Unleashed, Your Den, your realms and Host a server, "
                   "and the game client, realm and PLAY button below.")),
             ("looks", "Looks", "Make the game look new",
@@ -1640,14 +1658,16 @@ class Hub:
         secs = [x for x in secs if only is None or x[0] in only]   # the front page: FRONT_FEATURES only
         out = []
         for n, (icon, eyebrow, title, lede, points, acts, art) in enumerate(secs):
-            btns = "".join(f'<a class="{"hb-cta sm" if k == 0 else "hb-ghost"}" href="{e(h)}"'
-                           + (' rel="noopener noreferrer"' if ext or h.startswith("http") else "") + f">{e(t)}</a>"
-                           for k, (h, t, ext) in enumerate(acts))
+            btns = acts if isinstance(acts, str) else "".join(
+                f'<a class="{"hb-cta sm" if k == 0 else "hb-ghost"}" href="{e(h)}"'
+                + (' rel="noopener noreferrer"' if ext or h.startswith("http") else "") + f">{e(t)}</a>"
+                for k, (h, t, ext) in enumerate(acts))
             out.append(f'<section class="hb-fs hb-rv{" flip" if n % 2 else ""}" id="f-{icon}" aria-labelledby="hb-f-{icon}">'
                        f'<div class="hb-fs-t"><p class="hb-eyebrow"><span class="hb-ico"><svg viewBox="0 0 24 24" aria-hidden="true">'
                        f'{ICONS[icon]}</svg></span>{e(eyebrow)}</p><h2 id="hb-f-{icon}">{e(title)}</h2><p class="hb-lede">{e(lede)}</p>'
                        f'<ul class="hb-points">{"".join(f"<li>{e(x)}</li>" for x in points)}</ul>'
-                       f'<p class="hb-fs-a">{btns}</p></div><div class="hb-fs-v">{art}</div></section>')
+                       + (f'<div class="hb-fs-a hb-fs-dl">{btns}</div>' if isinstance(acts, str) else f'<p class="hb-fs-a">{btns}</p>')
+                       + f'</div><div class="hb-fs-v">{art}</div></section>')
         # the ley line: a faint thread down the left of the sections, drawn as you scroll (HUB_JS); fully drawn without
         # script or with reduced motion; never takes a click; hidden where the page is too narrow for a margin
         thread = ('<svg class="hb-thread" viewBox="0 0 40 1000" preserveAspectRatio="none" aria-hidden="true" focusable="false">'
@@ -2049,7 +2069,7 @@ class Hub:
                          "href": "/wrath", "acts": [("/wrath", "Play in your browser", True)]})
         launcher = [{"k": "launcher", "id": "l-" + key, "title": title, "line": line, "credit": "The Leyline launcher, with sample data",
                      "label": "Launcher", "img": ("/wrath/art/leyline-ui-" + key + ".webp", 1240, 760, alt), "art": "",
-                     "href": "/wrath/art/leyline-ui-" + key + ".webp", "acts": [(dl, "Download the launcher", True)]}
+                     "href": "/wrath/art/leyline-ui-" + key + ".webp", "acts": [(self._dl_page(), "Download the launcher", True)]}
                     for key, (title, line, alt) in LAUNCHER_SHOTS.items()]
         mods = []
         pool = [i for i in items if i["source"] != "theme"]
@@ -2211,7 +2231,7 @@ class Hub:
             'alt="The Leyline launcher with its game client list open: five game clients found on this PC, each with its version, '
             'with the featured mode on the home banner, and the realm and PLAY button below." decoding="async" fetchpriority="high"></figure>'
             # no buttons under the line (owner 2026-10-30): Download and Play are in the side menu
-            f'<p class="hb-note">Free and open source, for Windows, <a href="{LAUNCHER_OTHER}" rel="noopener noreferrer">macOS and Linux</a>. Nothing to buy.</p></section>'
+            f'<p class="hb-note">Free and open source, for Windows, macOS and Linux: <a href="{e(self._dl_page())}"{_ext(self._dl_page())}>every download</a>. Nothing to buy.</p></section>'
             # straight to the point (owner 1 Nov: "make sure the website is clean looking too"; the launcher's story:
             # Wrath Unleashed, your Den, your realms, Host a server): the realm, the list, how it works, the featured
             # mod, four feature sections, the forum and the status bar. The counters, the community posters, the Hero
@@ -2547,7 +2567,7 @@ class Hub:
         acts = [f'<a class="hb-cta sm" href="leyline://install/{e(i["id"])}">Install with Leyline</a>']
         if i["repo"]:
             acts.append(f'<a class="hb-ghost" href="{e(i["repo"])}" rel="noopener noreferrer nofollow ugc">Source</a>')
-        acts.append(f'<a class="hb-ghost" href="{e(self._download())}" rel="noopener noreferrer">Get the launcher</a>')
+        acts.append(f'<a class="hb-ghost" href="{e(self._dl_page())}">Get the launcher</a>')
         body = (f'<nav class="hb-crumb" aria-label="Where you are"><a href="{BASE}/addons">Addons</a></nav>'
                 f'<article class="hb-pg hb-mk-item"><header class="hb-pg-h"><div class="hb-pg-t"><h1>{e(name)}</h1>'
                 + (self.works_badge() if i["works"] else "") + "</div></header>"
@@ -2662,8 +2682,8 @@ class Hub:
                 f'placeholder="Search {word}"><button type="submit">Search</button></form>'
                 f'{secs}<p class="hb-sall"><a class="hb-cta sm" href="{home}?view=all">Browse everything</a>'
                 f'<span>Every {word[:-1]}, with all the filters.</span></p></div></section>'
-                + f'<p class="hb-get">Installing needs the Leyline launcher on this PC. <a href="{e(self._download())}" '
-                  'rel="noopener noreferrer">Get the launcher</a></p>'
+                + f'<p class="hb-get">Installing needs the Leyline launcher on this PC. <a href="{e(self._dl_page())}">'
+                  'Get the launcher</a></p>'
                 + (f"<style>{rk.RANK_CSS}</style>" if rk else ""))
         return self._shell(f"{title} · Leyline", body, home, active=shelf)
 
@@ -2765,7 +2785,7 @@ class Hub:
                 + (f'<h3 class="hb-gm-h">Coming</h3><div class="hb-grid hb-big">{"".join(self.game_card(g, realms) for g in soon)}</div>'
                    if soon else "")
                 + '<p class="hb-fine">Host a realm and pick its mods: <code>leyline mods add &lt;id&gt;</code> in the Host pack '
-                f'folder. <a href="{e(self._download())}" rel="noopener noreferrer">Get the launcher</a> to add a realm\'s mods '
+                f'folder. <a href="{e(self._dl_page())}">Get the launcher</a> to add a realm\'s mods '
                 'automatically.</p></section>')
 
     def catalog_redirect(self, path: str, query: dict) -> str | None:
@@ -2960,8 +2980,8 @@ class Hub:
                 + filters + strip
                 + (self.featured_strip([i for i in all_items if shelf_of(i) == "mods"]) if page == 1 and unfiltered and shelf == "mods" else "")
                 + (f'<div class="hb-grid">{grid}</div>' if grid else "") + f'{ext_s}{nav}</div></section>'
-                + f'<p class="hb-get">Installing needs the Leyline launcher on this PC. <a href="{e(self._download())}" '
-                  'rel="noopener noreferrer">Get the launcher</a></p>'
+                + f'<p class="hb-get">Installing needs the Leyline launcher on this PC. <a href="{e(self._dl_page())}">'
+                  'Get the launcher</a></p>'
                 + (f"<style>{rk.RANK_CSS}</style>" if rk else ""))
         return self._shell(f"{title} · Leyline", body, home, active=shelf if shelf != "themes" else "mods")
 
@@ -3151,7 +3171,7 @@ class Hub:
                 '<p>In the launcher: open Host, get the Host pack, pick a ruleset and your house rules, then '
                 'fill in how your realm shows on the list (tags, region, language, player limit). Community realms come first '
                 'everywhere: on the website, in the launcher and in the game\'s Leyline window.</p>'
-                '<p class="hb-actions"><a class="ly-btn" href="/wrath/leyline">Get the launcher</a> '
+                '<p class="hb-actions"><a class="ly-btn" href="/wrath/download">Get the launcher</a> '
                 '<a class="ly-btn hb-alt" href="/wrath/host">Start on the website</a></p>'
                 f'<p class="hb-actions"><a class="ly-btn" href="{e(host_url)}" rel="noopener noreferrer">The host guide</a> '
                 '<a class="ly-btn hb-alt" href="/wrath/realms">See live realms</a></p></section>'
@@ -3248,6 +3268,12 @@ LAUNCHER_EXE = RELEASES + "/download/launcher-latest/Leyline.exe"
 # macOS (.dmg) and Linux (.AppImage, .deb): the newest versioned release (the workflow marks it latest). Leyline.exe is
 # Windows only, so every "Windows, macOS and Linux" line links these too.
 LAUNCHER_OTHER = RELEASES + "/latest"
+# The site's download page (stream/downloads.py, wrath_portal download_page): every option, linked by Download everywhere
+DOWNLOAD_PAGE = "/wrath/download"
+
+
+def _ext(href: str) -> str:
+    return ' rel="noopener noreferrer"' if href.startswith("https://") else ""
 # the launcher's Dark tokens, when the hub runs without the portal (the portal's LOOK_VARS is the one copy)
 LOOK_FALLBACK = (":root{--lk-bg:#15181f;--lk-chrome:#181b23;--lk-surface:#1e222b;--lk-surface-2:#252a35;--lk-raised:#2c3240;"
                  "--lk-border:#2c313c;--lk-border-strong:#3c4352;--lk-text:#eef0f4;--lk-text-2:#c8cdd7;--lk-muted:#9aa1ae;"

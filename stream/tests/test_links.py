@@ -6,6 +6,7 @@ the /wrath?go= deep link, strict path checks, escaping, the generic card, the ra
 import http.client, importlib.util, os, re, sys, threading
 from http.server import ThreadingHTTPServer
 
+os.environ["WU_DL_PROBE"] = "0"   # stream/downloads.py never asks GitHub in a test
 os.environ.update(SOAP_USER="WUSOAP", SOAP_PASS="x", AC_SOAP_URL="http://127.0.0.1:9/", PORTAL_URL="http://127.0.0.1:9",
                   WU_STREAM="0", STREAM_HOST="wrath.example", PUBLIC_HOST="play.example",
                   WU_RELAY_LISTING="http://127.0.0.1:9/api/listing/realms.json")
@@ -184,6 +185,9 @@ check("GET /wrath/m/better-bags", get("/wrath/m/better-bags")[0] == 200)
 wp.community_realms = rl
 st, hd, body = get("/wrath/r/frostpea")
 check("GET /wrath/r/<short> is the realm card", st == 200 and "<h1>Frost Peak</h1>" in body and "leyline://realm/frostpeakaaaaaaa" in body)
+check("served realm card: Get the launcher goes to the site's download page (every option)",
+      'href="/wrath/download" rel="noopener noreferrer">Get the launcher</a>' in body)
+check("links.py on its own: Get the launcher is the newest release", L.GET_LAUNCHER == "https://github.com/orionopenwow/Leyline/releases/latest")
 check("GET /r/<short> too", "<h1>Frost Peak</h1>" in get("/r/frostpea")[2])
 check("other paths unchanged", get("/nope")[0] == 404)
 codes = [get("/h/x", ip="198.51.100.9")[0] for _ in range(605)]

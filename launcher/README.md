@@ -164,7 +164,13 @@ hand-pushed tag still works too: `launcher-v<version>`, with `<version>` exactly
    pre-release (beta channel only);
 3. builds and attaches: Windows setup .exe (NSIS) and .msi; Linux .AppImage and .deb; macOS one universal .dmg
    (a separate job that may fail without failing the run: re-run it later for the .dmg);
-4. with the updater key set, signs the updater files and attaches `latest.json`.
+4. with the updater key set, signs the updater files and attaches `latest.json`;
+5. hashes every file of the release into `SHA256SUMS.txt` and attaches it.
+
+Each ship from main also puts `Leyline.exe` (one file, no installer), `Leyline-portable.zip` and their
+`SHA256SUMS.txt` on the rolling release `launcher-latest`. Players pick from all of these on the site's download page,
+`/wrath/download` (stream/downloads.py), which also says how to verify a download
+(`certutil -hashfile Leyline.exe SHA256` on Windows, `shasum -a 256 <file>` elsewhere).
 
 The owner's order for a release:
 

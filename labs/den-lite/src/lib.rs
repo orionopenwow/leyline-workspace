@@ -18,6 +18,7 @@ pub mod farsight;
 pub mod gizmo;
 pub mod flight;
 pub mod gear;
+pub mod gearsets;
 pub mod guests;
 pub mod ovmod;
 pub mod login;

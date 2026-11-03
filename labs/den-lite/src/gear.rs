@@ -74,22 +74,26 @@ pub fn slot_of_inv(inv: u32) -> Option<u8> {
     })
 }
 
-/// Item.dbc: entry -> (display, inventory type).
+/// Item.dbc: entry -> (display, inventory type), and its (class, subclass) (2 a weapon, 4 armour: gearsets.rs).
 #[derive(Debug, Default)]
 pub struct Items {
     pub by_id: HashMap<u32, (u32, u32)>,
+    pub kinds: HashMap<u32, (u32, u32)>,
 }
 
 impl Items {
     pub fn from_bytes(b: &[u8]) -> Items {
         let mut by_id = HashMap::new();
+        let mut kinds = HashMap::new();
         if let Some(t) = crate::spells::Table::parse(b).filter(|t| t.fields == 8 && t.size == 32) {
             for k in 0..t.n {
                 let r = t.row(k);
-                by_id.insert(crate::spells::Table::u(r, 0), (crate::spells::Table::u(r, 5), crate::spells::Table::u(r, 6)));
+                let id = crate::spells::Table::u(r, 0);
+                by_id.insert(id, (crate::spells::Table::u(r, 5), crate::spells::Table::u(r, 6)));
+                kinds.insert(id, (crate::spells::Table::u(r, 1), crate::spells::Table::u(r, 2)));
             }
         }
-        Items { by_id }
+        Items { by_id, kinds }
     }
     pub fn slot(&self, entry: u32) -> Option<u8> {
         self.by_id.get(&entry).and_then(|&(_, inv)| slot_of_inv(inv))
@@ -117,15 +121,18 @@ pub fn items(dir: &Path) -> Arc<Items> {
     i
 }
 
-/// What the character wears (slot -> item; 0 empty).
+/// What the character wears (slot -> item; 0 empty), and the gear set put on last (gearsets.rs: its name and the
+/// raid tier it stands for in the sandbox's numbers; 0 none).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Gear {
     pub slots: BTreeMap<u8, u32>,
+    pub set_name: String,
+    pub tier: u8,
 }
 
 impl Default for Gear {
     fn default() -> Gear {
-        Gear { slots: OUTFIT.iter().copied().collect() }
+        Gear { slots: OUTFIT.iter().copied().collect(), set_name: String::new(), tier: 0 }
     }
 }
 
@@ -138,12 +145,14 @@ impl Gear {
                 slots.insert(s, e as u32);
             }
         }
-        Some(Gear { slots })
+        let set_name = v.get("set").and_then(Value::as_str).unwrap_or("").chars().take(24).collect();
+        let tier = v.get("tier").and_then(Value::as_u64).unwrap_or(0).min(10) as u8;
+        Some(Gear { slots, set_name, tier })
     }
     pub fn save(&self, dir: &Path) -> bool {
         let m: serde_json::Map<String, Value> = self.slots.iter().map(|(s, e)| (slot_name(*s).to_string(), json!(e))).collect();
         let _ = std::fs::create_dir_all(dir);
-        crate::companion::write_json(dir, FILE, &json!({"slots": m}))
+        crate::companion::write_json(dir, FILE, &json!({"slots": Value::Object(m), "set": self.set_name.as_str(), "tier": self.tier}))
     }
     pub fn set(&mut self, slot: u8, entry: u32) {
         if slot < SLOTS_N {
@@ -259,6 +268,7 @@ mod tests {
         assert_eq!(f[15], (283 + 30, 0));
         g.set(15, 19019);
         g.set(40, 1);
+        (g.set_name, g.tier) = ("t10".into(), 10);
         assert_eq!(g.fields()[15].1, 19019);
         let dir = std::env::temp_dir().join(format!("den-lite-gear-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);

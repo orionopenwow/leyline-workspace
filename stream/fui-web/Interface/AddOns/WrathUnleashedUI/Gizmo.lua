@@ -440,12 +440,15 @@ function G.OnMessage(prefix, msg, channel, sender)
         G.axis = (data == "x" or data == "y" or data == "z") and data or nil
         bindings(); showTag()
     elseif name == "picked" then
+        -- Shift+right-click: the one selected before stays selected with it
+        local prev = G.sel
         G.Picked(data)
+        if prev and prev ~= G.sel and IsShiftKeyDown and IsShiftKeyDown() then send("seladd " .. prev) end
     elseif name == "placed" then
-        -- placed: the new prop is the selection (Den Lite's state follows and opens the panel)
+        -- placed: the new prop is the selection (Den Lite's state follows and fills the panel, which stays open)
         G.sel = tonumber(data)
         local B = W.Builder
-        if B and B.HandDone then B.HandDone() end
+        if B and B.HandDone then B.HandDone(true) end
     elseif name == "drag" or name == "moved" then
         local axis, d = data:match("^(%a),([%+%-][%d%.]+)$")
         local B = W.Builder

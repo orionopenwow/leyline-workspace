@@ -1598,11 +1598,12 @@ function B.InHand(item)
     if B.inHand then B.ShowProps(true); B.propsAuto = true end
     B.PropsFill()
 end
-function B.HandDone()
+-- `placed`: the panel stays open for the new selection (its state comes next)
+function B.HandDone(placed)
     if not B.inHand then return end
     B.inHand = nil
     if panel and panel:IsShown() then
-        if B.state.selId then B.PropsFill() elseif B.propsAuto then B.ShowProps(false) end
+        if B.state.selId or placed then B.PropsFill() elseif B.propsAuto then B.ShowProps(false) end
     end
 end
 

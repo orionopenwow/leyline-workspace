@@ -244,6 +244,14 @@ G.Picked(5)
 menu.rows[10]:Fire("OnClick")
 check("Properties opens the Builder's panel", W.propsShown == true)
 
+-- Shift+right-click on another prop: both selected (seladd the one before)
+shift = true
+n = #sent
+answer("picked", "6")
+check("Shift+right-click adds: the one before stays selected", G.sel == 6 and cmds(n)[1] == "seladd 5")
+shift = false
+G.Cancel()
+
 -- a left click on empty ground clears the selection; not on a named object
 n = #sent
 click("LeftButton")

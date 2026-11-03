@@ -33,7 +33,7 @@ local function session(pw, ph, scale)
     local st = { undo = 0, sel = nil, sent = {} }
     local function state()
         return string.format("mine=%d/800;undo=%d;redo=0;den=owner;room=%d/800;yard=0/0;core=1;lite=1;grid=0;clip=0;area=den;code=-;", st.undo, st.undo, st.undo)
-            .. (st.sel and string.format("sel=%d,%d,Barrel of Powder;n=1;pos=1.00,2.00,3.00,0,1.00;rot=0,0,0;ids=%d;gids=%d;", st.sel, 1670, st.sel, st.sel) or "sel=-;n=0;ids=;gids=;")
+            .. (st.caps or "") .. (st.sel and string.format("sel=%d,%d,Barrel of Powder;n=1;pos=1.00,2.00,3.00,0,1.00;rot=0,0,0;ids=%d;gids=%d;", st.sel, 1670, st.sel, st.sel) or "sel=-;n=0;ids=;gids=;")
     end
     F.server = function(msg)
         local mod, name, data = msg:match("^([^\t]+)\t([^\t]+)\t1/1\t(.*)$")
@@ -366,6 +366,55 @@ do
     D.SetActive(false); F.realm = "Somewhere else"
     F.systemLine("Elsewhere.")
     check("outside a Den the chat is the game's", F.chat[#F.chat] == "Elsewhere.")
+end
+
+-- ---------------------------------------------------------------- the selection panel as the owner's editor (3 Nov video): a
+-- pick in hand, then placed and selected; the pad from where you stand; Swap with the gallery's pick; the tabs
+do
+    local F, st, W = session(1920, 1080)
+    local D, B = W.DenBar, W.Builder
+    local function lastCmd() for i = #st.sent, 1, -1 do if st.sent[i][2] == "cmd" then return st.sent[i][3] end end end
+    local caps = "caps=spawn,move,turn,delete,undo,redo,copy,paste,dup,step,grow,bring,ground,settle,upright,random,centre,reset,swap,swapkind,seladd,lock;"
+    D.TestAction("gallery")
+    B.InHand(B.ById(1670))
+    local panel = B.Panel()
+    check("a pick in hand: the panel says so, its model on top, the rest waits", panel:IsShown() and panel.stateText:GetText() == "in hand · click the ground"
+        and panel.title2:GetText() == "Barrel of Powder" and not panel.body:IsShown() and panel.handText:IsShown() and panel.preview:IsShown())
+    B.HandDone(true)
+    st.caps, st.sel = caps, 41
+    F.toClient("wubuild\tstate\t1/1\tmine=1/800;undo=1;redo=0;den=owner;room=1/800;yard=0/0;core=1;lite=1;grid=0;clip=0;area=den;code=-;" .. caps
+        .. "sel=41,1670,Barrel of Powder;n=1;pos=1.00,2.00,3.00,0,1.00;rot=0,0,0;ids=41;gids=41;")
+    check("placed: selected at once, the panel open on it", panel:IsShown() and panel.body:IsShown() and not panel.handText:IsShown()
+        and panel.stateText:GetText() == "selected" and panel.selTitle:GetText() == "SELECTION · 1")
+    check("POSITION in red, green, blue", panel.rowLabel.x.tcolor and panel.rowLabel.x.tcolor[1] > 0.8 and panel.rowLabel.y.tcolor[2] > 0.7 and panel.rowLabel.z.tcolor[3] > 0.8)
+    panel.pad.fwd:Click()
+    check("the pad: forward from where you stand, by the step (1 yd)", lastCmd() == "step fwd 1")
+    panel.stepChips[2]:Click(); panel.pad.left:Click()
+    check("the step 0.1: left by 0.1", lastCmd() == "step left 0.1")
+    panel.pad.bigger:Click()
+    check("bigger", lastCmd() == "grow 1.25")
+    panel.pad.bring:Click()
+    check("the middle: bring it here", lastCmd() == "bring")
+    panel.pad.up:Click()
+    check("lift up by the step", lastCmd() == "move z 0.1")
+    panel.pad.turnleft:Click()
+    check("turn left by the turn step", lastCmd() == "turn 15")
+    panel.actions.Settle:Click()
+    check("a quick button: Settle", lastCmd() == "settle" and panel.actions.Settle.enabled ~= false)
+    B.PanelTab("swap")
+    check("the tabs: Swap · keys shows its page only", panel.pages.swap:IsShown() and not panel.pages.piece:IsShown() and panel.tabs.swap:IsActive()
+        and panel.hint:GetText():find("Ins swap"))
+    D.TestAction("pick 2413")
+    D.TestAction("key insert")
+    check("Ins: Swap with the gallery's pick", lastCmd() == "swap 2413" and B.inHand == nil)
+    D.TestAction("key shift-insert")
+    check("Shift+Ins: all of its kind", lastCmd() == "swapkind 2413")
+    panel.swap.Swap:Click()
+    check("the Swap button", lastCmd() == "swap 2413")
+    B.PanelTab("piece")
+    st.sel = nil
+    F.toClient("wubuild\tstate\t1/1\tmine=1/800;undo=1;redo=0;den=owner;room=1/800;yard=0/0;core=1;lite=1;grid=0;clip=0;area=den;code=-;sel=-;n=0;ids=;gids=;")
+    check("nothing selected: the selection's keys given back", B.keysOn ~= true)
 end
 
 -- ---------------------------------------------------------------- the den-test's actions and report

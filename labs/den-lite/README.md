@@ -330,75 +330,98 @@ game: the flying and the speed; whether her cast shows from `SMSG_SPELL_START` /
 Next (plan only): a dungeon queue with companions and raid training (the full Den), Jaina building recipes the
 assistant writes, and `.glb` models as props (docs/DEN.md, "The Dojo").
 
-### Placing with the mouse: the live preview, the gizmo, select by right-click (3 Nov)
+### Placing with the mouse: pick, follow, click, selected; the handles; snap out (3 Nov)
 
-The owner's asks (3 Nov 10:29 - 10:36): "when mousing over ground in game, it shows a preview of where it will land",
-"show the actual prop moving around, not a placement circle, make it a live preview", "the 3 directional arrows",
-"hovering over an object makes it glow; you can click it, select it ... right-click options to delete". The stock
-3.3.5a client gives an addon **no cursor-to-world call** and has no gameobject hover event, so a prop can't literally
-stick to the cursor the way an editor's does. What Den Lite (`src/gizmo.rs`) and the Leyline UI (`Gizmo.lua`) build
-from what the client does have:
+The owner's asks (3 Nov): "show the actual prop moving around, not a placement circle", "the 3 directional arrows",
+"hovering over an object makes it glow", and then his own editor's video: "it should function like this ... until it
+works identically", "the 'snap out' camera mode working for sure too and infinite camera zoom out from character". The
+stock 3.3.5a client gives an addon **no cursor-to-world call** and no gameobject hover event, so Den Lite
+(`src/gizmo.rs`, `src/farsight.rs`) and the Leyline UI (`Gizmo.lua`, `Builder.lua`) build the video's flow from what
+the client does have. In the video's order:
 
-- **Build mode** (`wubuild cmd mode build|play`; the UI sends it in Your Den on Den Lite when not in play mode): every
-  prop is created again with the goober type in `GAMEOBJECT_BYTES_1` **under its build twin's entry** (the prop's entry
-  with bit 24 set, `gizmo::twin`; the guid keeps the prop's own). The client keeps each entry's query answer and went by
-  that cached type, not the type byte (owner's den-features 3 Nov: no glow), so the twin is a new entry it must ask
-  for, and `CMSG_GAMEOBJECT_QUERY` answers a twin as a goober with the prop's own model, name and size
-  (`gizmo::query_any`; how many twins were asked: `twin_queries` in the den-test's answers). The client then highlights a prop under the mouse (its own interact glow and cursor) and a
-  right-click sends `CMSG_GAMEOBJ_USE`: Den Lite selects it, puts the gizmo around it and tells the UI `wubuild
-  picked <id>` (and the state); the UI opens its menu at the cursor (Delete, Duplicate, Move, Rotate, Bigger, Smaller,
-  Snap to floor, Lock, Copy, Properties). Play mode shows the props as they are again (a right-click there is left to
-  the game). A left click on empty ground in build mode clears the selection (`selclear`; not when the game shows an
-  object's name under the mouse). **Left-clicking a gameobject can't select it**: the client never tells the server.
-- **The live preview** (`preview <entry>` from a gallery pick, `preview move` for the selected prop): a copy of the
-  real prop (same entry and model; its own guid, not selectable) stands 2.5 yards in front and follows you; the UI
-  puts the camera in a known pose (the **build camera**: your own view saved in view 5 and put back on leaving; view 2
-  reset, zoomed all the way in, then out 12 yards) and, while the cursor is over the world, sends its screen point about
-  10 times a second (`hover <u> <v> <aspect> <distance>`). Den Lite knows where you stand and face (your movement
-  packets) and casts the ray from the camera through that point onto the ground (`gizmo::project`), snapped to the
-  grid and set on the ground (a moved prop keeps its height over it). A left click on the world (`commit`) puts the
-  real prop exactly where the copy is (or moves the selected one there: one undo); it stays armed until Esc or a right
-  click (`preview off`). `preview turn <deg>` turns the copy, `follow` gives it back to the in-front place, `where`
-  answers `wubuild ghost x,y,z,deg`.
-- **Moving a gameobject, what the client accepts**: in 3.3.5a a gameobject's place is only in the movement block of
-  its create (`UPDATEFLAG_STATIONARY_POSITION`); its update fields have no position (1.12's `GAMEOBJECT_POS_X ..` were
-  dropped in 2.0) and a values update can't move it; transports move only along their path. So each move of the copy
-  is a **create under the other of two guids, then the destroy of the old one** (the Builder's own moves destroy and
-  create the same guid, with a frame between). At most one redraw per 100 ms; the place Commit uses is always the
-  newest. An `UPDATETYPE_MOVEMENT` block (type 1) for a gameobject is untested and left out.
-- **The exact click** (the ground-target cursor, as a fallback and as the calibration's truth): the player knows one
-  spell, Flare (1543, in `SMSG_INITIAL_SPELLS`; ground-targeted, `TARGET_FLAG_DEST_LOCATION`; its cost is a share of
-  base mana, which a warrior hasn't, so the client's own cost check passes). While armed the UI binds G to a secure
-  button that casts it: the game's own circle follows the mouse on the ground and a click sends `CMSG_CAST_SPELL` with
-  the exact world point. Den Lite never casts it: it places (or moves) the armed prop there and answers
-  `SMSG_CAST_FAILED` with `SPELL_FAILED_DONT_REPORT` (nothing on screen) and `SMSG_CLEAR_COOLDOWN`. A cast of any other
-  spell goes on as before.
-- **The gizmo** (`gizmo on|off`, on in build mode): three small flags around the selected prop, made by Den Lite as
-  goobers of its own entries (990001 - 990003, answered in `CMSG_GAMEOBJECT_QUERY`): **X: the red Warsong Flag (display
-  5913), Y: the green Netherstorm Flag (7153), Z: the blue Silverwing Flag (5912)**, half size, 1.8 yards out (Z above).
-  A right-click on a flag picks its axis (`wubuild axis x|y|z`); the UI then binds the mouse wheel (only then) to the
-  Builder's `move <axis> <step>`. They follow the prop (made anew when it moves) and go with the selection.
-- **Selection verbs** (for the Builder's selection panel; the state line's `caps=` lists every verb this Den Lite
-  answers, `locked=0|1` the selection's lock): `selnext` (the next prop by distance from where the round started,
-  wrapping), `selkind` (every prop of the selection's kind: Delete, moves, turns and Snap to floor take them all, one
-  undo step each), `lock` / `unlock` (a locked prop refuses moves and Delete; `locked` in the Den file).
-- **Nothing holds the keyboard**: the UI's override bindings (Esc, G, the wheel) exist only while armed, while an axis
-  is picked or while the menu is open, and are cleared after; WASD and the camera's mouse drags are never taken (the
-  world-click hook only watches `WorldFrame`'s mouse-up: a click is under 0.3 s and 6 pixels).
+1. **Pick a card** (the gallery, bottom left: the category column, search, A-Z, Spin, named cards; the picked card
+   gets a gold edge): `preview <entry>`. The selection panel shows it **in hand · click the ground** with its model on
+   top. Nothing appears in front of you: the prop shows only once the cursor is over the ground (`follow` still puts
+   it in front, for the keyboard's Enter).
+2. **The real prop follows the cursor**: while the cursor is over the world the addon sends its screen point about 10
+   times a second (`hover <u> <v> <aspect> <zoom>`); Den Lite casts the ray from the build camera through it onto the
+   ground (`gizmo::project`, snapped to the grid, standing on the ground) and shows a copy of the real prop (same entry
+   and model; not selectable) there. A gameobject's place is only in its create (`UPDATEFLAG_STATIONARY_POSITION`; no
+   position in its update fields since 2.0), so each move is a create under the other of two guids, then the destroy
+   of the old one: never a frame without it, at most one redraw per 100 ms.
+3. **One left click places it and ends placing** (`commit`): the real prop where the copy was, and it is the
+   **selection at once**: Den Lite answers `placed <id>`, `aim off` and the state, puts the glow, the handles and the
+   halo on it, and the panel opens on it. **Shift+click** (`commit keep`) places it and keeps it in hand; Esc or a right
+   click puts it away (`preview off`).
+4. **The glow** (why this one): in 3.3.5a a gameobject's highlight is drawn by the client from `GAMEOBJECT_DYNAMIC`'s
+   low flags, the ones a server sets on a quest object: `GO_DYNFLAG_LO_ACTIVATE` (0x01) and `GO_DYNFLAG_LO_SPARKLE`
+   (0x08, the glitter round the whole model). Den Lite sends them in a values update (`raw::gameobject_dynamic`) to the
+   selected prop only, again after every create of it (a move, a turn or a size makes it anew and a create clears it),
+   and 0 when it is let go. Under it a **halo**: the game's own "Crate Highlight" model (display 2233, the glow round a
+   quest crate) as an object of Den Lite's (entry 990010), as wide as the prop's footprint. Build mode still shows every
+   prop as a goober under its **build twin's** entry (the client highlights it under the mouse; a right-click sends
+   `CMSG_GAMEOBJ_USE`: selected, `picked <id>`, the menu at the cursor). A left click on a gameobject tells the server
+   nothing in this client, so selecting stays a right-click; a left click on empty ground lets go (`selclear`).
+5. **The handles**: red X, green Y at the prop's foot along the world's axes and blue over its top (up), set out from
+   its box (the player's own `GameObjectDisplayInfo`, else its size). The client can't tint a gameobject and has no red,
+   green and blue arrow models, so the handles are the three coloured flags (Warsong 5913, Netherstorm 7153,
+   Silverwing 5912). **Right-click a handle**: grabbed (`grab x|y|z`; the real prop hidden for you, its glowing copy in
+   its place); the hover stream then moves it **along that axis to the point of the axis line nearest the cursor's ray**
+   (`gizmo::along`), live, at most a redraw per 100 ms, and the status says "Moving Cottage +4.45 yd along X"; the wheel
+   steps it by the panel's step (`grab nudge`); a left click drops it (one change, one undo: "Moved Cottage +4.45 yd
+   along X."), Esc or a right click puts it back (`grab off`).
+6. **The selection panel** (the video's, in the Leyline look, our own icons from `tools/den-ui/icons/make_icons.py`):
+   the model on top (right-drag turns it, the wheel zooms) with its size, the name and "selected", three tabs (the
+   panel must fit above the action bars on a 768-unit screen): **Piece**: POSITION X / Y / Z in red, green and blue
+   (type and Enter, or - / + and the wheel); MOVE · TURN · SIZE from where you stand (the pad: turn left, forward,
+   turn right / left, bring here, right / smaller, back, bigger; lift up and down; the step 0.1 / 0.5 / 1 / 5 yd: Den
+   Lite's `step fwd|back|left|right|up|down <yd>`, `grow`, `bring`); ROTATION · SIZE (turn, tilt, roll by 15 / 45 /
+   90; size; the sliders); the quick buttons (tilt, upright, to ground, settle, random, centre, duplicate, reset,
+   delete; Apply). **Swap · keys**: SWAP WITH the gallery's last pick (`swap <entry>`; All of this kind: `swapkind
+   <entry>`, every prop of its kind, one undo), Lock, Copy, Paste, More, and the keys. **Select**: Nearest, Next, All of
+   its kind, Clear; Shift+right-click adds (`seladd`). **Keys only while something is selected**: Del delete, U copy,
+   Ins swap, Shift+Ins all of its kind, `,` `.` turn, Page Up / Down lift, Home bring here, End to ground, Ctrl+Z /
+   Ctrl+Shift+Z undo and redo, Tab, Esc, numpad + / - size. Never WASD, Q / E or the arrows.
+7. **Snap out**: one key (J, or the first of K, F9, F10 nothing else uses) or **View** on the rail. Den Lite makes an
+   invisible unit nobody can click (`farsight.rs`: entry 990020, display 11686) up and back over where you stand, sets
+   the player's **`PLAYER_FARSIGHT`** (field 624) on it, as the game's own Far Sight and Mind Vision do, and the client's
+   camera goes there; the same key gives it back (far sight 0, the object gone). The object sits on the build camera's
+   own line of sight, 35 yards further back (`gizmo::far_spot`), so the middle of the screen stays on the same ground
+   and the ray stays exact (`Aids::view`: the build camera with the extra distance, from the far focus). While it is
+   out the arrow keys pan it (`cam pan`, a short flying spline), and placing, dragging and selecting work from there.
+8. **Zoom out without end**: in build mode the addon zooms the game's camera itself (2 yards a notch) so it always
+   knows the distance (sent as `cam zoom`, used by the ray), with `cameraDistanceMax` raised to 50 (given back on
+   leaving). Past the game's own limit each notch goes to Den Lite (`cam far 1`): the same far-sight object, further back
+   each notch (8 yards plus a quarter of how far out it is, up to 1500); zooming in comes back the same way and, at 0,
+   the view is yours again.
 
-What is proven here, and what needs the owner's PC: the ray, the copy's two-guid moves, Commit, the exact click's
-cast and its silent answer, the gizmo, the goober look and right-click selection are tested in `gizmo.rs`, `ovmod.rs`,
-`raw.rs` and the headless client (`the_editors_preview_gizmo_selection_and_exact_click`), the UI in
-`stream/tests/test_wuui_gizmo.lua`, den-check's parts in `test_den_check.py`. **On the real game, to see**: that the
-build twins give the highlight and the right-click (den-check's `build mode: props light up under the mouse` says how
-many goober looks the game asked for); that
-Flare's cursor shows for this character and the silent failure leaves no cooldown; that `SaveView` / `SetView` /
-`ResetView` / `CameraZoomIn` / `CameraZoomOut` aren't protected; the flags' colours. **The build camera's numbers are
-first guesses** (field of view 90 degrees across the diagonal, pivot 2 yards over the feet, 12 yards back, 0.5 rad
-down) until **den-check's hover calibration** runs on the owner's PC (`Den features.bat`: the real cursor at six points
-of the game window, at each the preview's place and, by pressing G and clicking, the game's own point; the camera
-fitted to them, printed and saved to `<dens>/den-lite.camera.json`, used from the next Den start). Until then the copy
-can land a few yards from the cursor; the exact click (G) is always exact.
+**The exact click** stays as the fallback and the calibration's truth: while placing, G starts the ground-target cursor
+of Flare (1543, taught in `SMSG_INITIAL_SPELLS`); its `CMSG_CAST_SPELL` carries the exact point; Den Lite places there
+(and stays in hand, for the calibration's six clicks), answers `SPELL_FAILED_DONT_REPORT` and clears the cooldown.
+
+**Nothing holds the keyboard**: the override bindings (Esc, G, the wheel, the snap key, the arrows while snapped out, the
+selection's keys) exist only in build mode and only while needed. A camera drag while placing, dragging or snapped
+out puts the build camera's pose back (view 2, saved at the counted zoom).
+
+The verbs (`caps=` lists them all): `preview <entry> [u v aspect zoom]`, `preview move|turn|off`, `hover`, `follow`,
+`commit [keep]`, `grab x|y|z|nudge <yd>|off`, `axis`, `gizmo on|off`, `mode build|play`, `where`, `cam snap [off]|far
+<n>|pan <dir> <yd>|zoom <yd>|off|where`, and the panel's `step`, `grow`, `bring`, `ground`, `settle`, `upright`,
+`random`, `centre`, `reset`, `swap`, `swapkind`, `seladd`. Answers: `aim`, `axis`, `picked`, `placed`, `drag`, `moved`,
+`cam`, `mode`, `ghost`, `state`.
+
+What is proven here, and what needs the owner's PC: the ray, the axis-drag point, place-then-select, the glow's values
+update, the far view's pose and its far-sight packets are unit-tested in `gizmo.rs`, `raw.rs` and `ovmod.rs`, and over
+the wire in the headless client (`the_editors_pick_place_select_drag_and_snap_out`); the UI in
+`stream/tests/test_wuui_gizmo.lua`, `_builder`, `_denlayout`; den-check's run in `test_den_check.py`. **On the real
+game, to see** (den-check's `Den features.bat` photographs each step): that the sparkle and the halo show on the
+selected prop; that `PLAYER_FARSIGHT` on a unit of Den Lite's moves the camera (and the flying spline moves it); that
+the camera's target height on that object matches (`far_pivot` in the camera file, 0 until calibrated); that
+`cameraDistanceMax` 50 really lets the camera to 50 yards (the zoom count assumes it); that `CameraZoomIn` / `Out`,
+`SaveView` / `SetView` / `ResetView` aren't protected; the flags' colours. **The build camera's numbers are first
+guesses** (field of view 90 degrees across the diagonal, pivot 2 yards over the feet, 0.5 rad down) until **den-check's
+hover calibration** runs on the owner's PC (the real cursor at six points, at each the copy's place and, by pressing G
+and clicking, the game's own point; the camera fitted, saved to `<dens>/den-lite.camera.json`, used from the next Den
+start). Until then the copy can land a few yards from the cursor; the exact click (G) is always exact.
 ### Any gear, every mount (3 Nov, owner 10:40: "allow all mounts, all gear")
 
 - **Gear** (`src/gear.rs`): the look only. The character's visible item fields (`PLAYER_VISIBLE_ITEM_n_ENTRYID`,

@@ -1301,7 +1301,8 @@ SCAN_G = 0x22
 
 def project(cam, player, u, v, aspect, floor):
     """gizmo.rs `project`, the same numbers: where the cursor at (u, v) (-1 .. 1, right and up) points on the ground at
-    height `floor`, the build camera `cam` behind the player at (x, y, z, facing). None: no ground within 60 yards."""
+    height `floor`, the build camera `cam` behind the player at (x, y, z, facing). None: no ground within 60 yards past
+    the camera's own distance (gizmo.rs REACH + dist: the far view looks from further back)."""
     x, y, z, o = player
     so, co = math.sin(o), math.cos(o)
     fwd, right = (co, so, 0.0), (so, -co, 0.0)
@@ -1320,7 +1321,7 @@ def project(cam, player, u, v, aspect, floor):
     if t <= 0:
         return None
     px, py = eye[0] + d[0] * t, eye[1] + d[1] * t
-    return (px, py) if math.hypot(px - x, py - y) <= 60.0 else None
+    return (px, py) if math.hypot(px - x, py - y) <= 60.0 + cam["dist"] else None
 
 
 def camera_error(cam, samples):

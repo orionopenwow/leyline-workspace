@@ -797,4 +797,6 @@
 1321b addons  Leyline addons: the mouse in build mode (click, hover, drag), the BUILD frame
 1321c foreverui  Browser game: the same
 1321d ship  Save as Orion: select and move props, den-move, the phone sweep in the release audit
-1321e den-move  The one Den test: select and move, snap out, zoom (pictures in tools\den-check\logs\den-move)
+1321f addons  Leyline addons: the UI says why build mode doesn't stick (den-move reads it)
+1322a signin  Website: browser Play no longer loops on sign-in (the game page uses its new name after the domain move)
+1322b ship  Save as Orion: the browser Play sign-in loop fix

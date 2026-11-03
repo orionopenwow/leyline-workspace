@@ -724,6 +724,10 @@ function G.TestAction(w)
     end
     if a == "report" then
         local u, v, asp = G.Cursor()
+        local D, B = W.DenBar, W.Builder
+        report(string.format("why wanted=%d active=%d play=%d lite=%s denrealm=%d",
+            G.Wanted() and 1 or 0, (D and D.active) and 1 or 0, (D and D.play) and 1 or 0,
+            tostring(B and B.state and B.state.lite or "-"), (W.InDen and W.InDen()) and 1 or 0))
         report(string.format("gizmo build=%d armed=%s axis=%s sel=%s camera=%d menu=%d cursor=%s,%s,%s ghost=%s zoom=%d far=%s snapkey=%s moved=%s hovered=%s dragging=%d button1=%d frame=%d",
             G.build and 1 or 0, G.armed or "-", G.axis or "-", tostring(G.sel or "-"), G.camera and 1 or 0,
             (menu and menu:IsShown()) and 1 or 0, u and string.format("%.3f", u) or "-", v and string.format("%.3f", v) or "-",

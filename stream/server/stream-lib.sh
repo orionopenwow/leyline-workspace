@@ -5,7 +5,14 @@ WU="${WU_DIR:-/srv/wrath}"
 ST="${WU_STREAM_DIR:-$WU/stream}"
 CF="${WU_CADDYFILE:-/opt/openvanilla-classicplus/Caddyfile}"
 CADDY_DIR="${WU_CADDY_DIR:-/opt/wenilla-realm}"
-STREAM_HOST="${WU_STREAM_HOST:-wrath.openvanilla.app}"
+# The game's name: the new one once the domain move is on (tools/domain/domain.sh writes LEYLINE_DOMAIN_MOVE=1 to
+# portal.env). The old default here used to put the old name back in portal.env on every stream-up.sh, so the
+# gate cookie landed on a host whose page loads 301 to the new one: a sign-in loop in the browser.
+if grep -qs '^LEYLINE_DOMAIN_MOVE=1' "$WU/portal.env"; then STREAM_HOST="${WU_STREAM_HOST:-play.leylinelauncher.com}"
+else STREAM_HOST="${WU_STREAM_HOST:-wrath.openvanilla.app}"; fi
+# The streaming block answers both game names, so a rerun never drops the one domain_caddy.py added.
+STREAM_NAMES="$STREAM_HOST"
+for h in wrath.openvanilla.app play.leylinelauncher.com; do [ "$h" = "$STREAM_HOST" ] || STREAM_NAMES="$STREAM_NAMES, $h"; done
 UPSTREAM="${WU_UPSTREAM:-play.openvanilla.app}"
 NET=wenilla-realm_default
 MARK_BEGIN="# >>> WrathUnleashed streaming (stream-up.sh)"

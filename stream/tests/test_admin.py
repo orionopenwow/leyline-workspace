@@ -1172,6 +1172,11 @@ for day in range(14):
 w = FB.release_window(W, base + 15 * 86400)
 check("release window: the quietest two hours of the week from the samples, in UTC and Phoenix time",
       w["weekday"] == 2 and w["hour"] == 9 and w["text"].startswith("Wednesday 09:00-11:00 UTC") and "Wednesday 02:00" in w["phoenix"], w)
+_cli = subprocess.run([sys.executable, "-I", os.path.join(STREAM, "feedback.py"), "digest", "--data", DATA, "--wu", os.path.join(T, "nowu"),
+                       "--out", os.path.join(T, "ops-cli")], capture_output=True, text=True)
+check("feedback.py from the command line (the Control step): last line FEEDBACK OK, the missing host sources named",
+      _cli.returncode == 0 and _cli.stdout.strip().splitlines()[-1].startswith("FEEDBACK OK: 4 items")
+      and re.search(r"not here: [a-z, ]*discord, backlog", _cli.stdout), _cli.stdout + _cli.stderr)
 check("release window: the default until there is data", FB.release_window(tempfile.mkdtemp(), base)["basis"].startswith("default"))
 shutil.rmtree(W, ignore_errors=True)
 

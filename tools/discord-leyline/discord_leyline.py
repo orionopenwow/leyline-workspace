@@ -159,8 +159,8 @@ LAYOUT = [
         C("node-keepers", topic="Network changes, first.", private=["Node Keeper", "Core Team"]),
     ]),
     ("Mods & Workshop", [
-        C("workshop-submissions", topic="Made a mod, addon or mode? Post its Workshop link here for the team to look "
-                                        "at. One post every 10 minutes.", slow=600),
+        C("workshop-submissions", topic="Made a mod, addon, look or realm? Type /submit with its link: it goes to the "
+                                        "team's review queue. Or post the link here. One post every 10 minutes.", slow=600),
         C("mods-and-addons", topic="Mods and addons: share, ask, report problems with one."),
         C("scripting-help", topic="Help with realm scripts and mode files."),
         C("mode-jam", topic="The monthly mode jam. Bragging rights only, no prizes."),

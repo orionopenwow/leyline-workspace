@@ -277,6 +277,11 @@ STEPS = {
     # backlog. Uploads tools/bugs/status.json, has the GM console rebuild, copies BUGS-MANIFEST.md and backlog.json to
     # tools/bugs/live/ (git-ignored). Touches only the bug backlog, so Autopilot may run it (READ_ONLY below).
     "bugs": ("tools/bugs/Pull bug manifest.bat", "Bug manifest: every bug report in one list, copied to tools\\bugs\\live (statuses from tools\\bugs\\status.json go up first)", False),
+    # The feedback digest (stream/feedback.py, docs/ADMIN-CONSOLE.md "Review"): bug reports, the forum and the Discord's
+    # bug channel in themes with a mood score, and the quietest window for pushing updates. Writes only the digest on the
+    # server (HQ > Review > Feedback) and copies it, with the upgrades waiting for the owner, to tools/feedback/live/
+    # (git-ignored). The portal makes one by itself every few hours too; this one reads every source on the host.
+    "feedback": ("tools/feedback/Feedback digest.bat", "Feedback digest (read-only): themes and mood from bug reports, the forum and Discord, and the quietest release window, copied to tools\\feedback\\live", False),
     # The Discord redo (tools/discord-leyline/README.md), from the Discord panel (the bot token pasted there, saved in
     # tools\discord-leyline\token.txt). discord-apply runs only from that panel: after a preview from the last hour, when
     # the owner types YES under its summary (OWNER_ONLY below); it backs up the server to the Desktop first.
@@ -297,7 +302,7 @@ STEPS = {
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "fresh-leyline-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
              "vr-data-check", "vr-site-check", "sv-site-check", "release-mirror-check", "fork-check", "bugs", "audit", "den-check", "domain-check",
-             "discord-preview", "discord-check", "apply-check"}
+             "discord-preview", "discord-check", "apply-check", "feedback"}
 # Steps only the owner starts, by hand, from their own panel (never Autopilot, Launch all or a Waiting on you button)
 OWNER_ONLY = {"discord-apply"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}

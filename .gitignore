@@ -126,3 +126,5 @@ desktop.ini
 # the owner's in-game screenshots for the launcher's Home gallery: published to the site by tools/site-art (the
 # Autopilot step "homeart"), never kept in the repo (owner rule: no game-made pictures in the repo or downloads)
 /site-art/
+# the feedback step's copies (player text stays off GitHub)
+/tools/feedback/live/

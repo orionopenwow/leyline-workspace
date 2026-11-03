@@ -143,6 +143,11 @@ Discord sign-in (Profile, Ways to sign in, "Link Discord") reports the Discord i
 `discord.id`), the page offers "Link my Discord" in one click. **Unverified:** we haven't seen whether the website's
 `/api/me` sends that field; without it, `/link` is the way.
 
+**Submitting links.** `/submit link:<https://...> kind:<mod|addon|look|realm> [note:...]` puts a link in the one review
+queue (stream/linkqueue.py, the same as the website's `/wrath/submit`); the answer is private. Linked or not, anyone
+can submit; a linked person's Leyline sanctions apply. Staff review it in HQ > Review > Submissions. The command is
+registered with `/link` when the bot starts (the same applications.commands scope).
+
 **Same rules, same sanctions.** A Discord post goes through `store.reply` / `store.new_thread`, the same code as a
 website post: lengths, the word and brand filters, the rate limits (the stricter ones for accounts new to the forum),
 locked threads, Announcements for the team. It also passes `admin.blocked("post")`: a ban (suspend), a mute or

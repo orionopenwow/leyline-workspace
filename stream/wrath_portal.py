@@ -29,8 +29,11 @@ Two listeners, both inside Docker networks only (never published on the host):
          GET /wrath/key, POST /wrath/key/start|signin   Your Hero Key (stream/herokeys.py): see it, save it, make a
                                new one; a new account or a Hero Key sign-in. The website's /account/key redirects here
          GET /wrath/admin[/...], POST /wrath/admin/act   staff only: the Leyline Admin Console (stream/admin.py,
-                               docs/ADMIN-CONSOLE.md); GET /wrath/leyline/{flags,channel,news,themes,realm-overrides}.json
-                               are its public feeds for the launcher
+                               docs/ADMIN-CONSOLE.md); GET /wrath/leyline/{flags,channel,news,themes,realm-overrides,version}.json
+                               are its public feeds for the launcher. HQ > Review (stream/staffdesk.py): submitted
+                               links, the feedback digest (stream/feedback.py, every WU_FEEDBACK_HOURS), upgrades
+         GET/POST /wrath/submit, GET /wrath/leyline/approved-links.json   Submit a link (stream/linkqueue.py): one
+                               review queue for mod, addon, look and realm links (also the Discord's /submit)
          GET/POST /wrath/leyline/forum[/...], GET /wrath/forum/api/...   the Leyline forum (stream/forum.py): read
                                by anyone, posts from signed-in website accounts; its JSON is for the launcher
 

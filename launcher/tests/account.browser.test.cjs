@@ -294,7 +294,7 @@ test('Get your Hero Key: a new account right here; its key shown once, hidden un
   await page.waitForFunction(() => /Saved Leyline Hero Key\.txt/.test(document.getElementById('ac-key-status').textContent));
   const f = await page.evaluate(() => window.__file);
   assert.equal(f.name, 'Leyline Hero Key.txt');
-  assert.match(f.text, /^Leyline Hero Key\r\n\r\nName: Alice#4821\r\nKey: ovk1\.AbCdEf1234\.k{43}\r\nMade: \d{1,2} \w+ \d{4}\r\n\r\nThis key signs you in to your Leyline account on Wrath Unleashed and on every realm that accepts Hero Key\./);
+  assert.match(f.text, /^Leyline Hero Key\r\n\r\nName: Alice#4821\r\nKey: ovk1\.AbCdEf1234\.k{43}\r\nMade: \d{1,2} \w+ \d{4}\r\n\r\nThis key logs you in to your Leyline account on Wrath Unleashed and on every realm that accepts Hero Key\./);
   assert.doesNotMatch(f.text, /warcraft|wow|blizzard|open vanilla/i);
   assert.ok(await called(page, 'social_call', 'a.action === "herokey_saved"'), 'saved tells the website to stop showing it');
   await page.click('#ac-skip');
@@ -427,6 +427,24 @@ test('Manage account: the website not answering says so, with Try again (not "yo
   await page.click('#ac-key-again');
   await page.waitForSelector('#ac-key .ac-key-meta');
   assert.match(await page.textContent('#ac-key'), /Your key is saved/);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Manage account: Play on another PC: the same account moves with the key file or the password; never shared', async () => {
+  const { page, errors } = await open({ signed: true });
+  await page.waitForSelector('#hf-me-btn');
+  await page.click('#hf-me-btn');
+  await page.click('#hf-panel [role="menuitem"]:has-text("Hero Key")');
+  await page.waitForSelector('#ac-otherpc');
+  assert.equal(await page.getAttribute('#ac-otherpc', 'open'), null, 'folded until asked');
+  await page.click('#ac-otherpc summary');
+  const t = await page.textContent('#ac-otherpc');
+  assert.match(t, /Downloads folder and open Leyline\. It logs you in by itself/);
+  assert.match(t, /Log In there with \S+#\d{4} and your password/);
+  assert.match(t, /characters are on the realm/);
+  assert.match(t, /yours alone/);
+  assert.doesNotMatch(t, /Sign in|world of warcraft|\bwow\b|warcraft|blizzard/i);
   assert.deepEqual(errors, []);
   await page.close();
 });

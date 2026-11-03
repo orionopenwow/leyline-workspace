@@ -509,7 +509,7 @@ check("stale: signed in first (the name is cached for a minute)", st == 200 and 
 R["sessions"].pop(dict(p.split("=", 1) for p in webR.split("; "))["wr_session"], None)
 st, hd, body, sc, _ = req("GET", "/wrath/key", webR)
 check("stale: the session ran out inside the cache minute: the signed-out card, not a 303 back to itself", st == 200
-      and "Location" not in hd and "Sign in with your Hero Key" in body and "ran out" in body, (st, hd.get("Location")))
+      and "Location" not in hd and "Log in with your Hero Key" in body and "ran out" in body, (st, hd.get("Location")))
 check("stale: the dead website cookie is cleared", any(c.startswith("wr_session=;") and "Max-Age=0" in c and "Path=/" in c for c in sc), sc)
 st, hd, body, sc, _ = req("GET", "/wrath/key", "wr_session=junk")
 check("stale: a junk session cookie: the signed-out card and the cookie cleared", st == 200 and "Create a guest account" in body

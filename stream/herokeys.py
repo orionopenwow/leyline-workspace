@@ -299,7 +299,7 @@ def mint(cookie: str, csrf: str, ip: str, ua: str) -> tuple[str, list[str]]:
     if st == 429:
         raise Refused(429, "You've made a few keys this hour. Wait a while and try again.")
     if st in (401, 403) or 300 <= st < 400:
-        raise Refused(401, "Your website sign-in ran out. Sign in again.")
+        raise Refused(401, "Your website sign-in ran out. Log in again.")
     if st != 200:
         raise Down(f"mint {st}")
     try:
@@ -318,7 +318,7 @@ def mark_saved(cookie: str, csrf: str, ip: str, ua: str) -> list[str]:
     # 2 Nov audit: "saved" answered 200 here while the service still showed the key: a refusal (a stale form token,
     # a moved form) was taken for success. Only a 2xx or a redirect back to the key page counts now.
     if st in (401, 403):
-        raise Refused(401, "Your website sign-in ran out. Sign in again.")
+        raise Refused(401, "Your website sign-in ran out. Log in again.")
     if not (200 <= st < 400):
         raise Down(f"saved {st}")
     return sc
@@ -350,7 +350,7 @@ def new_guest(ip: str, ua: str) -> list[str]:
     if "Too many" in body:
         raise Refused(429, "Too many new accounts from here. Wait an hour and try again.")
     if "off on this realm" in body:
-        raise Refused(403, "New accounts are paused right now. Sign in with Google instead.")
+        raise Refused(403, "New accounts are paused right now. Log in with Google instead.")
     raise Refused(403, "Couldn't make an account right now. Try again shortly.")
 
 
@@ -551,7 +551,7 @@ def text_file(name: str, key: str, day: str | None = None, password: str = "") -
     pw = f"Password: {password}\r\n" if password else ""
     return (f"Leyline Hero Key\r\n\r\nName: {name}\r\n{pw}Key: {key}\r\nMade: {day}\r\n\r\n"
             "Log in to the Leyline launcher with your name (and its #tag) and password, or drop this file on its sign-in. "
-            "The key signs you in on the website, Wrath Unleashed and every realm that accepts Hero Key. "
+            "The key logs you in on the website, Wrath Unleashed and every realm that accepts Hero Key. "
             "Keep this file private, like a password.\r\n")
 
 
@@ -905,7 +905,7 @@ def api(h, sub: str, method: str, acct: str | None, how: str, extra: str, doc: d
                 return send(404, {"error": "Unknown call."}, [])
             if not _hit("glogin|" + acct, GAME_LOGINS_PER_HOUR, 3600):
                 return send(429, {"error": "Too many starts this hour. Type your password at the login screen."}, [])
-            again = {"error": "Sign in again on Home to play without typing your password.", "web_only": True}
+            again = {"error": "Log in again (Log In, top right) to play without typing your password.", "web_only": True}
             try:
                 jar, kept = _jar_for(how, extra, acct, h)
                 user, pw = game_login(jar, ip, ua)
@@ -1110,7 +1110,7 @@ JS = r"""
     var dlb=document.getElementById('hk-dl');
     if(dlb) dlb.addEventListener('click',function(){
       var day=new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
-      var text='Leyline Hero Key\r\n\r\nName: '+who+'\r\nKey: '+key+'\r\nMade: '+day+'\r\n\r\nThis key signs you in to your Leyline account on Wrath Unleashed and on every realm that accepts Hero Key. Keep it private, like a password.\r\n';
+      var text='Leyline Hero Key\r\n\r\nName: '+who+'\r\nKey: '+key+'\r\nMade: '+day+'\r\n\r\nThis key logs you in to your Leyline account on Wrath Unleashed and on every realm that accepts Hero Key. Keep it private, like a password.\r\n';
       var a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([text],{type:'text/plain'}));
       a.download='Leyline Hero Key.txt'; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(function(){ URL.revokeObjectURL(a.href); },5000);
@@ -1216,7 +1216,7 @@ WHAT_IS = ('<details><summary>What is a Hero Key?</summary><ul class="hk-what">'
            '<li>It is your login: one line of text that starts with ovk1. Whoever has it can sign in as you.</li>'
            '<li>Save it when it is made: download the text file, keep it in a password manager, or keep it in this browser.</li>'
            '<li>We keep only a fingerprint of it, so we can never show or send it to you again.</li>'
-           '<li>Lost it? Sign in with Google if you linked it, then make a new key. A new key stops the old one at once.</li>'
+           '<li>Lost it? Log in with Google if you linked it, then make a new key. A new key stops the old one at once.</li>'
            '<li>One account works on Wrath Unleashed, in the launcher and on every realm that accepts Hero Key.</li></ul></details>')
 
 DOWN_CARD = ('<section class="hk-card"><h1>Your Hero Key</h1><p>The website\'s sign-in isn\'t answering right now. '
@@ -1246,7 +1246,7 @@ def page(h, query: dict, note: str = "", ok: str = "", status: int = 200, cookie
     if not who and "wr_session=" in cookie:   # a stale website cookie: cleared, and said plainly
         cookies = list(cookies or []) + [STALE_SESSION]
         if not note and not ok:
-            ok = "Your sign-in ran out. Sign in again with your Hero Key."
+            ok = "Your sign-in ran out. Log in again with your Hero Key."
     msg = (f'<p class="hk-msg err" role="alert">{e(note)}</p>' if note else "") + (f'<p class="hk-msg" role="status">{e(ok)}</p>' if ok else "")
     if not who:
         anon = _anon_token(h)
@@ -1263,7 +1263,7 @@ def page(h, query: dict, note: str = "", ok: str = "", status: int = 200, cookie
         except Exception:   # noqa: BLE001
             google = True
         inner = (f'{msg}<section class="hk-card" id="hk-out" aria-labelledby="hk-t">'
-                 '<h1 id="hk-t">Log in</h1><p>Sign in with your Hero Key.</p>'
+                 '<h1 id="hk-t">Log in</h1><p>Log in with your Hero Key.</p>'
                  f'<form method="post" action="{SIGNIN}" id="hk-login"><input type="hidden" name="t" value="{t2}">'
                  '<label class="hk-drop" for="hk-file"><input id="hk-file" type="file" accept=".txt,text/plain" class="hk-sr">'
                  '<b>Drop your key file here</b><span>or choose it (Leyline Hero Key.txt)</span></label>'
@@ -1278,7 +1278,7 @@ def page(h, query: dict, note: str = "", ok: str = "", status: int = 200, cookie
                  'password and Hero Key wait on this page to save when you like.</p>'
                  f'<form method="post" action="{START}" class="hk-acts" id="hk-start"' + (' data-go="1"' if (query.get("guest") or [""])[0] else "") + f'><input type="hidden" name="t" value="{t1}">'
                  f'<button class="hk-btn primary" type="submit">{KEY_ICON}Create a guest account</button></form>'
-                 '<p class="hk-fine">Using the Leyline launcher? Sign in with your browser there: it recognises you here at once.</p>'
+                 '<p class="hk-fine">Using the Leyline launcher? Log in with your browser there: it recognises you here at once.</p>'
                  + WHAT_IS +
                  '</section>')
         return _shell(h, inner, status, set_c)

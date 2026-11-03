@@ -132,7 +132,7 @@ test('the keyboard: Up opens, arrows and Home / End move, Enter picks, Esc close
 
 test('no clients: every family greyed; a greyed row opens Find your game files; Add a game folder opens Clients', async () => {
   const { page, ctx, errors } = await open({ clients: [] });
-  assert.equal(await page.textContent('#pb-client-name'), 'No game client');
+  assert.equal(await page.textContent('#pb-client-name'), 'No game folder');
   assert.equal(await page.isVisible('#pb-client-ver'), false);
   await page.click('#pb-client');
   assert.deepEqual(await rows(page), ['pb-act|Add a game folder…|||false|', 'pb-act|Add from a zip or a link…|||false|', 'pb-act|Find your game files|||false|', '---',

@@ -12,11 +12,12 @@
 // manager fills); Create a guest account: the account and a password for it at once (social.js newLogin), signed in and
 // on to play at once, nothing to read first. Its login (name, password, Hero Key and the text file) waits in Manage
 // account › Your login until saved (leyline.guestLogin; account.js), with a reminder. The Hero Key file or a pasted key
-// is folded under "Sign in with your Hero Key".
+// is folded under "Log in with your Hero Key".
 //
 // A Hero Key file in Downloads (the website's Create a Hero Key saves one, owner 2 Nov 23:18) signs in by itself: when
 // the launcher starts signed out and while this dialog is open (social_key_found, every few seconds). A file from before
-// the player's last Sign out is never used again (leyline.signedOutAt, social.js signOut).
+// the player's last Log out is never used by itself again (leyline.signedOutAt, social.js signOut): this dialog offers
+// it as one button instead, "Log in as Name#1234" (3 Nov: logging back in on the same PC was 3 clicks and a file picker).
 //
 // Loaded after social.js and account.js, before app.js. Everything from the server is shown with textContent.
 (function () {
@@ -38,7 +39,7 @@
   // opened for that; here: a sign-in started in this dialog (its welcome is shown); note: a line of ours; keyWays: the
   // Hero Key file and paste shown
   let open = false, phase = "in", then = null, why = "", here = false, note = "", keyWays = false, over = false,
-    welcomeT = 0, findT = 0, finding = false, lastFocus = null;
+    welcomeT = 0, findT = 0, finding = false, lastFocus = null, known = null;
 
   function setOpen(on) {
     if (open === on) return;
@@ -68,6 +69,10 @@
     finding = true;
     try {
       const f = await tauri("social_key_found");
+      // a key file from before the last Log out isn't used by itself, but it is offered: "Log in as …" (one click)
+      const was = known ? known.path + known.mtime_ms : "";
+      known = f && f.path && f.mtime_ms <= outAt() ? { path: f.path, name: f.name || "", mtime_ms: f.mtime_ms } : null;
+      if ((known ? known.path + known.mtime_ms : "") !== was && open && phase === "in") render();
       if (!f || !f.path || !(f.mtime_ms > outAt()) || !(f.mtime_ms > triedAt())) return false;
       try { localStorage.setItem("leyline.keyFileTried", String(f.mtime_ms)); } catch (_) { /* fine */ }
       here = open;
@@ -219,7 +224,7 @@
       setTimeout(() => { const g = $("gate-go"); if (g) g.focus(); }, 0);
       return;
     }
-    if (f.stage === "busy") { card.append(spinLine(f.via === "login" || f.via === "new" ? "Making your guest account…" : "Signing in…")); return; }
+    if (f.stage === "busy") { card.append(spinLine(f.via === "login" || f.via === "new" ? "Making your guest account…" : "Logging in…")); return; }
     if (f.stage === "waiting") {
       card.append(spinLine("Waiting for your browser…", f.via === "google" ? "Continue with Google there, then approve this code. Leyline goes on by itself."
         : "Log in there (a browser already logged in only asks you to approve), then approve this code. Leyline goes on by itself."));
@@ -233,7 +238,7 @@
       return;
     }
 
-    card.append(el("h2", "gate-h", "Sign in to Leyline"));
+    card.append(el("h2", "gate-h", "Log in to Leyline"));
     if (why) { const w = el("p", "gate-why", why); w.id = "gate-why"; card.append(w); }
     const pane = el("div", "gate-pane"); pane.id = "gate-pane";
     card.append(pane);
@@ -256,9 +261,17 @@
     const s = S();
     pane.append(el("p", "gate-lede", `One account for the launcher, the website and ${realmName()}.`));
     const ways = el("div", "gate-ways");
-    const br = el("button", "btn primary gate-big", "Sign in with your browser"); br.type = "button"; br.id = "gate-browser";
+    // back after a Log out on this PC: the Hero Key file in Downloads, one click (never by itself: the player logged out)
+    if (known) {
+      const again = el("button", "btn primary gate-big gate-again", known.name ? `Log in as ${known.name}` : "Log in with your Hero Key file");
+      again.type = "button"; again.id = "gate-again";
+      const path = known.path;
+      again.onclick = () => go(() => s.keyFileSignIn(() => tauri("social_key_file", { path })));
+      ways.append(again, el("p", "sf-fine gate-under", `With ${FILE} from your Downloads.`));
+    }
+    const br = el("button", known ? "btn gate-big" : "btn primary gate-big", "Log in with your browser"); br.type = "button"; br.id = "gate-browser";
     br.onclick = () => go(() => s.signIn(""));
-    ways.append(br, el("p", "sf-fine gate-under", "Instant launcher recognition: signed in on leylinelauncher.com? Approve once and you're in."));
+    ways.append(br, el("p", "sf-fine gate-under", "Instant launcher recognition: logged in on leylinelauncher.com? Approve once and you're in."));
     if (googleOn()) ways.append(way("sf-google", "Continue with Google", svg(IC.google), () => go(() => s.signIn("google")), "gate-google"));
     pane.append(ways);
     const or = el("p", "sf-or"); or.append(el("span", "", "or your name and password")); pane.append(or);
@@ -269,7 +282,7 @@
     const n = el("input"); n.id = "gate-pwname"; n.name = "username"; n.type = "text"; n.autocomplete = "username"; n.spellcheck = false; n.placeholder = "Brightfeather42#1234"; n.maxLength = 40;
     const l2 = el("label", "sf-label", "Password"); l2.htmlFor = "gate-pw";
     const p = el("input"); p.id = "gate-pw"; p.name = "password"; p.type = "password"; p.autocomplete = "current-password"; p.maxLength = 128;
-    const go2 = el("button", "btn small primary", "Sign in"); go2.type = "submit"; go2.id = "gate-pwgo";
+    const go2 = el("button", "btn small primary", "Log in"); go2.type = "submit"; go2.id = "gate-pwgo";
     const r2 = el("div", "sf-form-row"); r2.append(p, go2);
     pf.append(l1, n, l2, r2);
     pf.onsubmit = (e) => {
@@ -281,7 +294,7 @@
     pane.append(pf);
 
     // the Hero Key file or the key itself, folded away
-    const kl = el("button", "link-s gate-keylink", keyWays ? "Hide the Hero Key options" : "Sign in with your Hero Key"); kl.type = "button"; kl.id = "gate-keylink";
+    const kl = el("button", "link-s gate-keylink", keyWays ? "Hide the Hero Key options" : "Log in with your Hero Key"); kl.type = "button"; kl.id = "gate-keylink";
     kl.setAttribute("aria-expanded", String(keyWays));
     kl.onclick = () => { keyWays = !keyWays; render(); const x = $(keyWays ? "gate-choose" : "gate-keylink"); if (x) x.focus(); };
     pane.append(kl);
@@ -345,7 +358,8 @@
     setOpen(true);
     if (S() && !S().ways()) S().loadWays();
     render();
-    setTimeout(() => { const b = $("gate-browser"); if (b) b.focus(); }, 0);
+    findKeyFile();   // at once, not in a few seconds: the "Log in as …" of a key file kept from before
+    setTimeout(() => { const b = $("gate-again") || $("gate-browser"); if (b) b.focus(); }, 0);
   }
   function signedInNow() {
     const s = S();

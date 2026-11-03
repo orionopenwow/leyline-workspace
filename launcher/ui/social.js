@@ -113,7 +113,7 @@
       t.append(el("b", "", "Waiting for your browser…"),
         el("span", "", flow.via === "guest"
           ? "On the website, pick More ways to log in, then Play as guest, and approve this code. Leyline continues by itself."
-          : "Finish signing in there" + (flow.via ? " with " + (WAYS.find((x) => x[0] === flow.via) || ["", "the website"])[1] : "") + ", then approve this code. Leyline continues by itself."));
+          : "Finish logging in there" + (flow.via ? " with " + (WAYS.find((x) => x[0] === flow.via) || ["", "the website"])[1] : "") + ", then approve this code. Leyline continues by itself."));
       w.append(sp, t);
       const c = el("p", "sx-code", code); c.setAttribute("aria-label", "Sign-in code " + code.split("").join(" "));
       const row = el("div", "sf-acts");
@@ -194,7 +194,7 @@
     const p = el("input"); p.id = "sf-pw"; p.type = "password"; p.autocomplete = "current-password"; p.maxLength = 128;
     const go = el("button", "btn small primary", "Log in"); go.type = "submit";
     const row = el("div", "sf-form-row"); row.append(p, go);
-    f.append(l1, n, l2, row, el("p", "sf-fine", "Set a password in Manage account once you're signed in."));
+    f.append(l1, n, l2, row, el("p", "sf-fine", "Set a password in Manage account once you're logged in."));
     f.onsubmit = (e) => {
       e.preventDefault();
       const who = n.value.normalize("NFC").trim().replace(/\s*#\s*/, "#");   // "Zoë #1234" as typed is Zoë#1234
@@ -221,7 +221,7 @@
       if (via === "new" || (via !== "login" && me && me.profile && me.profile.setup === false)) {
         if (window.LeylineNav) window.LeylineNav.show("account");
         emit("leyline:welcome", {});
-      } else if (via !== "login") say("Signed in.", "ok");
+      } else if (via !== "login") say("Logged in.", "ok");
       return out;
     } catch (e) {
       if (id !== runId) return;
@@ -371,7 +371,7 @@
     ac.append(menuItem("manage", "Manage account", "Name, picture, bio and ways to log in", manage),
       menuItem("key", "Hero Key", guest ? "Save it to keep this guest account" : "See it, save it, make a new one", manageKey, guest ? "warn" : ""));
     const sep = el("div", "ap-sep"); sep.setAttribute("role", "separator");
-    ac.append(sep, menuItem("out", "Sign out", "", signOut, "ap-out"));
+    ac.append(sep, menuItem("out", "Log out", "", signOut, "ap-out"));
     p.append(ac);
     renderFriendsInto(p);
     return p;
@@ -475,7 +475,7 @@
     if (signedIn && !me) {
       // signed in before, the website not answering now: the sign-in is kept (never a Log In here), Try again
       const t = el("div", "hf-me-t");
-      t.append(el("b", "hf-me-name", "Signed in"), el("span", "hf-me-st", "Offline: your name shows once the website answers"));
+      t.append(el("b", "hf-me-name", "Logged in"), el("span", "hf-me-st", "Offline: your name shows once the website answers"));
       const b = el("button", "link-s hf-retry", "Try again"); b.type = "button"; b.id = "hf-retry";
       b.onclick = () => loadMe();
       box.append(avatar("?", "hf-me-av hf-anon"), t, b);
@@ -505,7 +505,7 @@
     btn.type = "button"; btn.id = "hf-me-btn";
     btn.setAttribute("aria-haspopup", "dialog"); btn.setAttribute("aria-expanded", "false"); btn.setAttribute("aria-controls", "hf-panel");
     const who = el("span", "hf-me-who");
-    who.append(el("b", "hf-me-name", me.name), el("span", "hf-me-st", me.tag ? "#" + me.tag : "Signed in"));
+    who.append(el("b", "hf-me-name", me.name), el("span", "hf-me-st", me.tag ? "#" + me.tag : "Logged in"));
     btn.append(avatar(me.name, "hf-me-av", picOf(me)), who, svg('<path d="M6 9l6 6 6-6"/>', "hf-caret"));
     btn.title = me.tag ? `${me.name}#${me.tag}` : me.name;
     btn.setAttribute("aria-label", `Your account: ${btn.title}`);
@@ -581,8 +581,8 @@
           if (me && me.profile && me.profile.setup === false) {   // the first time: the profile step, in Manage account
             if (window.LeylineNav) window.LeylineNav.show("account");
             emit("leyline:welcome", {});
-          } else say("Signed in.", "ok");
-        } else if (p.state === "denied") fail("Not signed in: the code was refused on the website.");
+          } else say("Logged in.", "ok");
+        } else if (p.state === "denied") fail("Not logged in: the code was refused on the website.");
         else if (p.state === "signed_out") { flow.stage = "idle"; renderCode(); return; }
         else fail("The code expired. Pick a way to try again.");
         return;
@@ -601,7 +601,7 @@
     signedIn = false; me = null; fresh = null;
     try { localStorage.setItem("leyline.signedOutAt", String(Date.now())); } catch (_) { /* fine */ }   // gate.js: a key file from before isn't used again
     await invoke("social_signout").catch(() => {});
-    renderMe(); say("Signed out. The sign-in was revoked on the website too.", "ok");
+    renderMe(); say("Logged out. The sign-in was revoked on the website too.", "ok");
     emit("leyline:me", { me: null, signedIn: false });
   }
 

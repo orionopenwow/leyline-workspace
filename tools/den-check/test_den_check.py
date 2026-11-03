@@ -616,6 +616,110 @@ class Keys(unittest.TestCase):
         self.assertIn("PASS keys: pressed (SendInput, the game in front): the game moved: 3 movement packets", rep.text())
 
 
+class FakeDenEditor:
+    """A stand-in for Den Lite with the Leyline UI in the game, for den_features: `.den ui <action>` does what the
+    addon's button would (DenBar.lua D.TestAction) and writes Den Lite's events, counts and the addon's report."""
+
+    def __init__(self, dens, broken=()):
+        self.dens, self.props, self.play, self.clip, self.broken = Path(dens), 3, False, False, set(broken)
+        self.kind = "fake"
+
+    def ev(self, name, detail=""):
+        with open(self.dens / "den-lite.events", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"t": den_check.now_ms(), "ev": name, "who": "", "detail": detail}) + "\n")
+
+    def report(self, lines):
+        with open(self.dens / "den-lite.ui-report", "a", encoding="utf-8") as f:
+            for l in lines:
+                f.write(json.dumps({"t": den_check.now_ms(), "report": l}) + "\n")
+
+    def send(self, cmd, wait=10.0):
+        w = cmd.split()
+        if cmd == ".den size":
+            return {"props": self.props, "said": ["Your Den: a 16 yard room."]}
+        if w[:2] == [".den", "save"]:
+            (self.dens / ("%s.den.json" % w[2])).write_text('{"format": "leyline-den", "props": []}')
+            return {"props": self.props}
+        if w[:2] == [".den", "load"]:
+            self.ev("den_load", w[2] + " replace")
+            return {"props": self.props}
+        a = w[2:]
+        act = a[0] if a else ""
+        if act in self.broken:
+            return {"props": self.props}
+        if act == "report":
+            ov = "LeylineDenBar/MinimapCluster" if "overlap" in self.broken else "none"
+            self.report(["gallery shown=1 tiles=20 model=18 icon=2 empty=0 rows=4 cols=5 tile=92",
+                         "catalog n=180 model=150 boxed=150 wmo=25 none=5", "nomodel Baked Bread,Bottle",
+                         "state sel=Barrel n=1 undo=4 redo=0 clip=%d grid=0 lite=1 mode=place tab=all pick=-" % self.clip,
+                         "open LeylineDenBar,LeylineDenRail", "overlaps " + ov, "pill Place · snap off · 15°",
+                         "screen 1923x1082 uiscale=0.71 play=%s rail=labelled" % str(self.play).lower()])
+        elif act == "place":
+            self.props += 1
+            self.ev("den_change", "+1 -0")
+        elif act in ("nudge", "key") or a[:2] == ["menu", "drop"]:
+            self.ev("den_change", "+1 -1")
+        elif a[:2] == ["menu", "copy"]:
+            self.clip = True
+        elif a[:2] in (["menu", "paste"], ["menu", "duplicate"]) or act == "undo":
+            self.props += 1
+            self.ev("den_change", "+1 -0")
+        elif a[:2] == ["menu", "delete"] or act == "redo":
+            self.props -= 1
+            self.ev("den_change", "+0 -1")
+        elif act == "save":
+            (self.dens / ("%s.den.json" % a[1])).write_text("{}")
+        elif act == "open":
+            self.ev("den_load", a[1] + " replace")
+        elif act == "play":
+            self.play = True
+        elif act == "build":
+            self.play = False
+        return {"props": self.props, "said": []}
+
+
+class Features(unittest.TestCase):
+    """den_features against FakeDenEditor: every feature PASS with a picture each; a broken one FAILs with its fix."""
+
+    def run_it(self, broken=()):
+        d = Path(tempfile.mkdtemp(prefix="den-features-"))
+        self.addCleanup(shutil.rmtree, d, True)
+        dens = d / "dens"
+        dens.mkdir()
+        (dens / "den-lite.events").write_text(json.dumps({"t": 1, "ev": "models", "who": "", "detail": "9120"}) + "\n")
+        shots = []
+
+        def shoot(out):
+            shots.append(out.name)
+            out.write_bytes(b"png")
+            return True, str(out)
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.den_features(rep, FakeDenEditor(dens, broken), dens, shoot, d / "shots", settle=0, wait=0.3)
+        return rep, shots, dens
+
+    def test_every_feature_passes_with_a_picture(self):
+        rep, shots, dens = self.run_it()
+        fails = [r for r in rep.rows if r[0] == "FAIL"]
+        self.assertEqual(fails, [])
+        names = [r[1] for r in rep.rows]
+        for want in ("gallery: opens with tiles", "gallery: every tile a model or an icon on purpose", "place: five different props",
+                     "select: the prop nearest you", "turn: Q", "paste: one more", "delete: one fewer", "undo: it is back", "redo: deleted again",
+                     "files: Save by name", "files: Open by name", "play mode: and back to building", "editor: nothing over the minimap, chat, bars or player frame"):
+            self.assertIn(want, names)
+        self.assertGreaterEqual(sum(1 for r in rep.rows if r[1].startswith("place: ") and r[0] == "PASS"), 6)
+        for s in ("gallery", "placed", "selected", "moved", "edited", "files", "menu", "snap", "keys", "stamps", "play"):
+            self.assertTrue(any(x.endswith("-%s.png" % s) for x in shots), s)
+        self.assertFalse((dens / "featuretest.den.json").exists() or (dens / "featuretest-before.den.json").exists(), "the test's saves removed")
+
+    def test_a_broken_feature_fails_with_the_fix(self):
+        rep, _, _ = self.run_it(broken=("place", "overlap"))
+        fails = {r[1]: r for r in rep.rows if r[0] == "FAIL"}
+        self.assertIn("place: Wooden Chair from the gallery", fails)
+        self.assertIn("editor: nothing over the minimap, chat, bars or player frame", fails)
+        self.assertIn("Den Lite didn't place", fails["place: Wooden Chair from the gallery"][3])
+
+
 class Control(unittest.TestCase):
     def test_the_steps_are_registered(self):
         src = (HERE.parent / "control" / "control.py").read_text(encoding="utf-8")
@@ -624,13 +728,14 @@ class Control(unittest.TestCase):
         for node in tree.body:
             if isinstance(node, ast.Assign) and len(node.targets) == 1 and getattr(node.targets[0], "id", "") in ("STEPS", "READ_ONLY"):
                 vals[node.targets[0].id] = ast.literal_eval(node.value)
-        for step in ("den-check", "den-test", "den-test-invite"):
+        for step in ("den-check", "den-test", "den-test-invite", "den-features"):
             bat = vals["STEPS"][step][0]
             self.assertTrue((HERE.parent.parent / bat).is_file(), bat)
             self.assertFalse(bat.startswith("labs/"))
         self.assertIn("den-check", vals["READ_ONLY"])
         self.assertNotIn("den-test", vals["READ_ONLY"], "it starts the game: not for Autopilot on its own")
-        for bat in ("Den check.bat", "Den test.bat", "Den test - invite.bat"):
+        self.assertNotIn("den-features", vals["READ_ONLY"], "it starts the game")
+        for bat in ("Den check.bat", "Den test.bat", "Den test - invite.bat", "Den features.bat"):
             self.assertIn(b"\r\n", (HERE / bat).read_bytes(), bat + " has Windows line ends")
 
 

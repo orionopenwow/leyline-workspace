@@ -5,6 +5,9 @@
                                                                     archive, Forever UI, Config.wtf, Den Lite and a
                                                                     sign-in through the exact steps (a Den Lite of
                                                                     its own on spare ports, a scratch folder)
+    py -3 tools/den-check/den_check.py features                    `test`, then the Den editor's feature test (den_features,
+                                                                    below): every editor action through the Leyline UI's own
+                                                                    buttons, a screenshot after each (logs/den-features/)
     py -3 tools/den-check/den_check.py test                        the real thing, unattended: the newest Den Lite,
                                                                     then the launcher's own My Den (Leyline.exe
                                                                     den-play --test) starts Den Lite and the game,
@@ -947,6 +950,219 @@ def den_steps(rep, ch, den_dir, root, launcher=None, start=None):
     return secrets
 
 
+# ------------------------------------------------------------------------------------------------ the editor's feature test
+
+UI_REPORT = "den-lite.ui-report"
+# five props of different kinds from Den Lite's catalog (labs/den-lite objects.rs): a chair, a barrel, a campfire,
+# flowers, a bed
+FEATURE_PROPS = [(2413, "Wooden Chair"), (1670, "Barrel of Powder"), (1953, "Campfire"), (2109, "Fragrant Flowers"), (13948, "Fancy Bed")]
+FEATURE_SAVE = "featuretest"
+
+
+def ui_lines(den_dir, since):
+    """The Leyline UI's report lines (Den Lite writes them to den-lite.ui-report: testctl.rs write_ui) since `since`."""
+    out = []
+    try:
+        for line in (Path(den_dir) / UI_REPORT).read_text(encoding="utf-8").splitlines():
+            try:
+                v = json.loads(line)
+            except ValueError:
+                continue
+            if v.get("t", 0) >= since:
+                out.append(str(v.get("report", "")))
+    except OSError:
+        pass
+    return out
+
+
+def parse_report(lines):
+    """The report's lines (DenBar.lua D.Report) as {first word: {key: value}} plus the raw text under "_text"."""
+    out = {}
+    for l in lines:
+        head, _, rest = l.partition(" ")
+        kv = {k: v for k, v in re.findall(r"(\w+)=(\S*)", rest)}
+        kv["_text"] = rest
+        out[head] = kv
+    return out
+
+
+def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
+    """The Den editor, feature by feature, through the Leyline UI's own buttons (Den Lite's `.den ui <action>` asks the
+    addon to press them: DenBar.lua D.TestAction), a screenshot after each into `outdir`, PASS / FAIL from Den Lite's
+    events and counts and the addon's own report (`.den ui report`). Your Den is saved first and put back after.
+    `shoot(path)` takes a picture (den_check.screenshot on Windows)."""
+    den_dir, outdir = Path(den_dir), Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    for old in outdir.glob("*.png"):
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    n = [0]
+
+    def shot(name):
+        n[0] += 1
+        out = outdir / ("%02d-%s.png" % (n[0], name))
+        ok, _ = shoot(out)
+        return out.name if ok else None
+
+    def ui(action):
+        r = ch.send(".den ui %s" % action)
+        time.sleep(settle)
+        return r
+
+    def report(mark=""):
+        t = now_ms()
+        ui("report %s" % mark if mark else "report")
+        lines = wait_for(lambda: (lambda ls: ls if any(x.startswith("screen ") for x in ls) else None)(ui_lines(den_dir, t)), wait, 0.2) or ui_lines(den_dir, t)
+        return parse_report(lines)
+
+    def props():
+        r = ch.send(".den size")
+        return (r or {}).get("props")
+
+    def changed(since):
+        return wait_for(lambda: event_after(den_dir, "den_change", since), wait)
+
+    first = ch.send(".den size")
+    if first is None:
+        rep.add("SKIP", "the editor's feature test", "Den Lite didn't take the test's commands")
+        return False
+    before = den_dir / ("%s-before.den.json" % FEATURE_SAVE)
+    save_file = den_dir / ("%s.den.json" % FEATURE_SAVE)
+    kept = stash([before, save_file, den_dir / "backup.den.json"])
+    ch.send(".den save %s-before" % FEATURE_SAVE)
+    try:
+        # 0. the addon answers at all (a Leyline UI from before this test doesn't)
+        r = report("start")
+        if "state" not in r:
+            rep.add("FAIL", "editor: the Leyline UI answers the test", "no report from the addon",
+                    "Update the Leyline addons (Ship, then the launcher puts them in), then run den-features again.")
+            return False
+        rep.add("INFO", "editor: the screen", r.get("screen", {}).get("_text", "?"))
+        ov = r.get("overlaps", {}).get("_text", "?")
+        rep.ok(ov == "none", "editor: nothing over the minimap, chat, bars or player frame", ov,
+               "Send logs\\den-features-latest.txt and the pictures in logs\\den-features.")
+
+        # 1. the gallery
+        ui("gallery")
+        r = report("gallery")
+        g, c = r.get("gallery", {}), r.get("catalog", {})
+        pic = shot("gallery")
+        rep.ok(g.get("shown") == "1" and int(g.get("tiles", "0")) > 0, "gallery: opens with tiles",
+               "%s tiles (%s x %s of %s)%s" % (g.get("tiles"), g.get("cols"), g.get("rows"), g.get("tile"), (", " + pic) if pic else ""),
+               "The gallery didn't open: send logs\\den-features-latest.txt.")
+        rep.ok(g.get("empty") == "0", "gallery: every tile a model or an icon on purpose", "%s with a model, %s with an icon, %s empty" % (
+            g.get("model"), g.get("icon"), g.get("empty")), "Some tiles are blank: send the gallery picture in logs\\den-features.")
+        models = int(c.get("model", "0") or 0)
+        table = (den_dir / "GameObjectDisplayInfo.dbc").is_file()
+        known = event_after(den_dir, "models", 0)
+        rep.ok(models > 0, "gallery: the props' models from your game files",
+               "%s of %s props have a model (%s sized, %s buildings, %s without); Den Lite knows %s models" % (
+                   c.get("model"), c.get("n"), c.get("boxed"), c.get("wmo"), c.get("none"), (known or {}).get("detail", "?")),
+               "The gallery has no models: the launcher copies GameObjectDisplayInfo.dbc from your game into the Dens folder (%s) at the Den's start. "
+               "Check your 3.3.5a game folder in the launcher, then run den-features again." % ("it is there" if table else "it is missing"))
+        if "nomodel" in r:
+            rep.add("INFO", "gallery: props without a model in your files", r["nomodel"]["_text"][:180])
+        ui("page 1")
+        shot("gallery-page2")
+        ui("tab all")
+
+        # 2. five props placed from the gallery (pick, then Place)
+        start_props = props() or 0
+        placed = 0
+        for pid, name in FEATURE_PROPS:
+            t = now_ms()
+            ui("place %d" % pid)
+            ev = changed(t)
+            ok = ev is not None and str(ev.get("detail", "")).startswith("+1")
+            placed += 1 if ok else 0
+            rep.ok(ok, "place: %s from the gallery" % name, (ev or {}).get("detail", "no change"),
+                   "Den Lite didn't place %s (%d): send logs\\den-features-latest.txt." % (name, pid))
+        now_props = props() or 0
+        rep.ok(now_props == start_props + placed and placed == len(FEATURE_PROPS), "place: five different props", "%s props now (were %s)" % (now_props, start_props),
+               "Not every prop was placed: send logs\\den-features-latest.txt.")
+        pic = shot("placed")
+        r = report("placed")
+        rep.add("INFO", "the status pill", r.get("pill", {}).get("_text", "-")[:160] + ((", " + pic) if pic else ""))
+
+        # 3. select, move, turn (the popover's buttons and its keys)
+        ui("nogallery")
+        ui("select")
+        r = report("select")
+        sel = r.get("state", {}).get("sel", "-")
+        rep.ok(sel not in ("-", ""), "select: the prop nearest you", sel, "Select picked nothing: send logs\\den-features-latest.txt.")
+        ui("props")
+        shot("selected")
+        for action, what in (("nudge z 1", "move: up by the step (the popover's +)"), ("nudge x -1", "move: back along x"),
+                             ("key q", "turn: Q"), ("nudge turn 1", "turn: the popover's +"), ("nudge scale 1", "size: the popover's +")):
+            t = now_ms()
+            ui(action)
+            ev = changed(t)
+            rep.ok(ev is not None, what, (ev or {}).get("detail", "no change"), "Den Lite didn't change the prop: send logs\\den-features-latest.txt.")
+        shot("moved")
+
+        # 4. copy, paste, duplicate, floor, delete, undo, redo (the menu's rows and the strip's buttons)
+        for action, what, delta in (("menu copy", "copy", 0), ("menu paste", "paste: one more", 1), ("menu duplicate", "duplicate: one more", 1),
+                                    ("menu drop to the floor", "floor", 0), ("menu delete", "delete: one fewer", -1),
+                                    ("undo", "undo: it is back", 1), ("redo", "redo: deleted again", -1)):
+            p0 = props() or 0
+            t = now_ms()
+            ui(action)
+            if delta:
+                got = wait_for(lambda: (props() or 0) == p0 + delta, wait, 0.5)
+                rep.ok(bool(got), what, "%s -> %s props" % (p0, props()), "Den Lite didn't %s: send logs\\den-features-latest.txt." % what.split(":")[0])
+            else:
+                r = report(action)
+                st = r.get("state", {})
+                ok = st.get("clip") == "1" if action == "menu copy" else changed(t) is not None
+                rep.ok(ok, what, st.get("_text", "")[:120] if action == "menu copy" else "the prop moved down", "Send logs\\den-features-latest.txt.")
+        r = report("counts")
+        st = r.get("state", {})
+        rep.add("INFO", "undo / redo counts", "Undo %s, Redo %s" % (st.get("undo"), st.get("redo")))
+        shot("edited")
+
+        # 5. save and open by name (Files > This Den)
+        t = now_ms()
+        ui("save %s" % FEATURE_SAVE)
+        ok = wait_for(lambda: save_file.is_file() and save_file.stat().st_mtime * 1000 >= t - 2000, wait)
+        rep.ok(bool(ok), "files: Save by name", save_file.name if ok else "no file", "Den Lite didn't write the Den file: send logs\\den-features-latest.txt.")
+        pic = shot("files")
+        t = now_ms()
+        ui("open %s" % FEATURE_SAVE)
+        ev = wait_for(lambda: event_after(den_dir, "den_load", t), wait)
+        rep.ok(ev is not None, "files: Open by name", (ev or {}).get("detail", "not opened"), "Den Lite didn't open the save: send logs\\den-features-latest.txt.")
+
+        # 6. every panel, a picture of each
+        for action, name in (("close", None), ("menu", "menu"), ("close", None), ("snap", "snap"), ("close", None), ("keys", "keys"),
+                             ("close", None), ("rail stamps", "stamps"), ("close", None), ("play", "play"), ("build", "building")):
+            ui(action)
+            if name:
+                pic = shot(name)
+                r = report(name)
+                opened = r.get("open", {}).get("_text", "")
+                rep.add("INFO", "panel: %s" % name, (opened or "-")[:150] + ((", " + pic) if pic else ""))
+        r = report("end")
+        rep.ok(r.get("screen", {}).get("play") == "false", "play mode: and back to building", r.get("screen", {}).get("_text", "?"),
+               "Back to building didn't come back: send logs\\den-features-latest.txt.")
+        ov = r.get("overlaps", {}).get("_text", "?")
+        rep.ok(ov == "none", "editor: still nothing over the game's own frames", ov, "Send the pictures in logs\\den-features.")
+        ui("close")
+        return True
+    finally:
+        # your Den as it was
+        if before.is_file():
+            ch.send(".den load %s-before replace" % FEATURE_SAVE)
+        unstash(kept)
+        for f in (before, save_file):
+            if kept.get(f) is None:
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
+        rep.add("INFO", "your Den after the feature test", "put back as it was (%s props)" % props())
+
+
 def guest_name(den_dir, user):
     """The friend's character name for a guest account (Den Lite's guests.json; never its verifier)."""
     try:
@@ -1361,6 +1577,11 @@ def test(args, rep):
             secrets = den_steps(steps, FileChannel(den_dir), den_dir, root, marks, rpt["start"])
         except Exception as e:  # noqa: BLE001 - the game still gets its picture and is closed
             steps.add("FAIL", "the Den's smoke test", "stopped: %s" % str(e)[:200], "Send logs\\den-test-latest.txt.")
+        if getattr(args, "features", False):
+            try:
+                den_features(steps, FileChannel(den_dir), den_dir, lambda out: screenshot(pid, out), logs / "den-features")
+            except Exception as e:  # noqa: BLE001 - the game still gets its picture and is closed
+                steps.add("FAIL", "the editor's feature test", "stopped: %s" % str(e)[:200], "Send logs\\den-test-latest.txt.")
         time.sleep(1.5)
         ok, detail = screenshot(pid, shot)
         steps.add("INFO" if ok else "FAIL" if os.name == "nt" else "INFO", "screenshot", detail, "PowerShell couldn't capture the game window.")
@@ -1424,7 +1645,7 @@ def _quiet_add(r):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("mode", choices=["check", "test"])
+    ap.add_argument("mode", choices=["check", "test", "features"])
     ap.add_argument("--game")
     ap.add_argument("--app-dir")
     ap.add_argument("--no-login", action="store_true")
@@ -1433,7 +1654,11 @@ def main(argv=None):
     ap.add_argument("--timeout", type=int, default=150)
     a = ap.parse_args(argv)
     rep = Report()
-    title = "DEN CHECK" if a.mode == "check" else "DEN TEST"
+    a.features = a.mode == "features"
+    if a.features:
+        a.mode = "test"
+        a.timeout = max(a.timeout, 150)
+    title = "DEN CHECK" if a.mode == "check" else ("DEN FEATURE TEST" if a.features else "DEN TEST")
     print("%s (%s)" % (title, time.strftime("%Y-%m-%d %H:%M")))
     (check if a.mode == "check" else test)(a, rep)
     code = rep.end(title)
@@ -1446,9 +1671,9 @@ def main(argv=None):
             p = app / "den-lite" / f
             if p.is_file():
                 extra += "\n--- %s ---\n%s" % (f, p.read_text(encoding="utf-8", errors="replace"))
-        (logs / "den-test-latest.txt").write_text("%s (%s)\n%s\n%s%s" % (title, time.strftime("%Y-%m-%d %H:%M"), rep.text(),
+        (logs / ("den-features-latest.txt" if a.features else "den-test-latest.txt")).write_text("%s (%s)\n%s\n%s%s" % (title, time.strftime("%Y-%m-%d %H:%M"), rep.text(),
                                                    "PASS" if code == 0 else "FAIL", extra), encoding="utf-8")
-        print("Saved %s" % (logs / "den-test-latest.txt"))
+        print("Saved %s" % (logs / ("den-features-latest.txt" if a.features else "den-test-latest.txt")))
     return code
 
 

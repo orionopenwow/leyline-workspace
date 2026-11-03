@@ -13,6 +13,27 @@ clients.
 
 Read first: docs/DEN.md (what is built), docs/NOGGIT-DEN-PLAN.md (Forge and the terrain delta), forge/docs/DEN-MODE.md.
 
+## Status, 3 Nov 2026 (the editor at real screen sizes, agent/denux)
+
+Built: the strip, rail, gallery, popover, menu, Files and invite card at real sizes (13 px text and up, 28 px chips,
+a 5 x 4 gallery of 92-unit tiles; 2-4 rows by screen height), all clear of the game's minimap, chat, action bars and
+player frame (checked by `stream/tests/test_wuui_denlayout.lua` at 1920x1080, 2560x1440 and 1280x720, and on the PC by
+the den-test's report). Pictures: `docs/den-ui/` (before and after), drawn without the game by
+`tools/den-ui` (`lua tools/den-ui/scenes.lua <addon dir> <out> 1920x1080`, then `node tools/den-ui/render.cjs <out> <png dir> 1920x1080`).
+
+- **Icons** (Interface\Icons): rail Select `Ability_Hunter_SniperShot`, Build `INV_Crate_01`, Move `Spell_Arcane_Blink`,
+  Rotate `Ability_Whirlwind`, Stamps `INV_Misc_Map_01`, Path `Ability_Tracking`, Ground `Spell_Nature_Earthquake`,
+  Dojo `Ability_DualWield`; a building's tile `INV_Misc_Rune_01`; categories as before (Builder.lua CAT_ICONS).
+- **Tiles**: Den Lite sends each model's size with its path (`<path>,<w>x<d>x<h>x<bottom>`, from the same table's box),
+  `-wmo` for a building and `-` for no model; the tile scales the model to `B.FIT.yards` and centres it (tunable on a PC:
+  `WrathUnleashedUIDB.den.fit = { yards, lift, cam }`); buildings and model-less props show an icon and say why.
+- **Den Lite** now does redo, copy, paste, duplicate, select mine (the last prop), pick, floor, grid, find and the Den
+  home's staged stamp; what only the full Den does is hidden on Den Lite (`lite=1` in the state).
+- **Chat**: in a Den the system lines go over the status pill; a dot command you typed still answers in the chat.
+- **Feature test**: Control step `den-features` (tools/den-check `features`): every feature through the editor's own
+  buttons with a screenshot each. To check on a real client: how the tiles frame their models (the fit), and the
+  ghost / click-to-place tricks (section 3).
+
 ---
 
 ## 0. One page

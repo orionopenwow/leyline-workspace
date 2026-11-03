@@ -1,5 +1,7 @@
 # The Leyline Discord: first posts (drafts)
 
+**3 Nov: for the launch, use [discord-launch-posts.md](discord-launch-posts.md)** (the 13-channel layout Leyline Control builds). These drafts are for the bigger plan, later.
+
 Drafts for the first message in each channel of [DISCORD-PLAN.md](DISCORD-PLAN.md). **Nothing here has been posted,
 and we never post for you.** Copy a block, fill in the `TODO(owner)` lines in your own words, paste it, then hover
 it > ... > **Pin Message**. Each block is under Discord's 2000 characters. Delete any line you don't want.

@@ -1,4 +1,81 @@
-# The Leyline Discord: channel upgrade plan
+# The Leyline Discord: channel plan
+
+## The launch layout (3 Nov): what we use now
+
+Owner, 3 Nov: "the updated, yet minimalist and only things needed for Leyline Launcher discord at this point, not too
+many channels, simple script rerun in control center preparing for launch ... keep dressed with emojis and organized
+and functional for all needed aspects and links to guides, info, FAQ etc." New invite: https://discord.gg/RfChVr8J7T
+(the website, the launcher, the realm and the docs all use it).
+
+It is the server as it is today (the 30 Oct reset, the owner's screenshot) kept and tidied, not the bigger plan
+below. **13 channels.** Names are `<emoji>︱<name>`, the 30 Oct look.
+
+| Category | Channel | Who writes | Topic (short) | Pinned |
+|---|---|---|---|---|
+| **START** | 👋︱welcome | read-only | what Leyline is, start in 3 steps, the rules; link to Download | welcome: 3 steps, where to go, the rules, the invite |
+| | 📣︱announcements | read-only; Moderator, the website bot | news; forum announcements too | the owner's launch post (TODO(owner)) |
+| | 📖︱guides-and-faq **(new)** | read-only; Moderator, Helper | every guide and the FAQ; link to /wrath/docs | the guides (11 links) and the FAQ (8 answers) |
+| **PLAY** | 💬︱general | everyone | anything Leyline | |
+| | 🛟︱help | everyone | installing, logging in, Hero Key, game folders, playing, Your Den | how to ask |
+| | 🤝︱looking-for-group | everyone | say the realm, level and plan | |
+| | 🎧︱Hangout | voice | | |
+| **CREATE** | 🧩︱mods-and-workshop | everyone | mods, addons, looks; `/submit` sends a link to the review queue | how to share, `/submit`, the mods pages |
+| | 🏰︱host-a-realm (was host-a-beacon) | everyone | the launcher's Host page; link to the hosting guide | how to host, the guides |
+| | 📸︱showcase | everyone | screenshots and clips | |
+| **FEEDBACK** | 🐞︱bug-reports | everyone | what, expected, happened, where; every message goes on the bug list | how to report (and `.bug`, /wrath/bugs) |
+| | 💡︱ideas | everyone | one idea per message, react to vote | how |
+| **🔒 STAFF** | 🔒︱mod-log | Moderator, Helper (private) | moderation notes, reports, alerts | |
+
+Roles: **Moderator** and **Helper** (the reset's; an old Guide counts as Helper). A role already there keeps its name,
+colour and place. Creator and Member are left alone (TODO(owner): keep or delete them).
+
+### Why this shape
+
+- **Keep what works.** Every channel on today's server stays, with its history. Two changes only: a new
+  `guides-and-faq`, and `host-a-beacon` becomes `host-a-realm`. "Beacon" is no longer a player word: the launcher and
+  the site say "Host a realm" and "Community realms" (the word survives only inside the hosting guide's own
+  explanation). The showcase camera emoji is the plan's 📸 (the screenshot's looked like 📷: the preview shows it as a
+  rename either way).
+- **No separate rules channel.** The rules are a short block in #welcome's pinned post, and #welcome is the
+  Community rules channel. One fewer read-only channel to scroll past.
+- **guides-and-faq, not a wiki of channels.** One read-only channel with two pinned posts (the guides, the FAQ) links
+  to the pages that already exist on leylinelauncher.com: getting started, Hero Key, play, Your Den, invite a friend
+  (/wrath/docs/den-invite), host a realm, mods, publishing a mod, game modes, the launcher, common fixes. No invented
+  URLs: a test checks each one against stream/docs.py and the site's routes, and each #anchor against the guide's
+  headings. There is no loadouts page on the public site yet, so "mods & loadouts" links the Mods page only.
+- **help stays a text channel**, not a Forum channel. A Forum channel can't be made from an existing one (Discord has
+  no type change for that), so it would mean a new channel and the old one archived; it also needs a Community server.
+  A text channel with threads is enough at launch. Later: TODO(owner) if you want it as a forum.
+- **One staff channel.** mod-log covers moderation; a separate staff-chat isn't needed for a small team yet.
+- **No live game-chat channel, no realm status or Survivors feed channels.** Those are the bigger plan's; the bridge
+  keeps working (`DISCORD_BUG_CHANNEL_ID` is bug-reports). The website bot's posts land in the launch channels when
+  turned on: Find a group in #looking-for-group, new mods and the featured mode in #mods-and-workshop, community realms
+  going live in #host-a-realm, Den of the week in #showcase (`posts` in discord_template_launch.json).
+- **Announcements stay an announcement channel** if Discord made them one: the website bot counts one as the text
+  channel of the same name.
+
+### Running it (Leyline Control > Discord)
+
+The owner's script `tools/discord-leyline/discord_leyline.py` builds exactly this, from the card in Leyline Control
+(its README is the guide). In short: paste the bot token, pick the two choices, press **Preview**, read it, type
+`YES`, press **Do it**. Safe to rerun: only what differs changes.
+
+- **Old channels** (not in the layout): moved to a hidden ARCHIVE by default. The card can instead delete the empty
+  ones (no messages at all), or delete them all (the backup keeps their last 1000 messages). A channel with messages
+  is never deleted without that last choice, and the preview names every one first.
+- **Post and pin** (off by default): the bot posts and pins the finished blocks of
+  [discord-launch-posts.md](discord-launch-posts.md), edits its own pin when a block changes, and leaves a pin that
+  already says the same. The launch post in #announcements is TODO(owner), always the owner's.
+- The website bot: `WU_DISCORD_TEMPLATE=/app/discord_template_launch.json` in portal.env (the file ships with
+  `signin`), then HQ > Content > Discord > Set up the Discord once so it learns the channels.
+
+---
+
+## The bigger plan (1-2 Nov, for later)
+
+Kept for when the community grows; the launch layout above replaces it for now. Its template is
+`stream/discord_template_v2.json` and its drafts [discord-initial-posts.md](discord-initial-posts.md); the script no
+longer builds it.
 
 Owner, 1 Nov 04:18: "create a Discord channel upgrade plan to suit all of the features and desired visions that we
 have so far, and initial posts". The first posts are drafts in [discord-initial-posts.md](discord-initial-posts.md).

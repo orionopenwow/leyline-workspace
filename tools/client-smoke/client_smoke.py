@@ -36,12 +36,18 @@ REPORT = "play-test.json"
 CLI_MARK = b"leyline-play-test-v1"
 
 
+def plain(t):
+    """One line for the log: no byte-order mark or other invisible characters, at most 300 characters."""
+    return "".join(c for c in str(t) if c.isprintable() and c != "\ufeff")[:300]
+
+
 class Steps:
     def __init__(self):
         self.rows = []
 
     def add(self, ok, what, detail=""):
         kind = "PASS" if ok is True else ("FAIL" if ok is False else "INFO")
+        detail = plain(detail)
         self.rows.append((kind, what, detail))
         print("%-4s %s%s" % (kind, what, (": " + detail) if detail else ""), flush=True)
         return ok
@@ -65,7 +71,7 @@ def realmlist(game):
     for d in places + [Path(game)]:
         p = dc.find_ci(d, "realmlist.wtf")
         if p and p.is_file():
-            return p.read_text(encoding="utf-8", errors="replace").strip()[:200]
+            return plain(p.read_text(encoding="utf-8-sig", errors="replace").strip())[:200]
     return ""
 
 
@@ -92,6 +98,11 @@ def main(argv=None):
     ap.add_argument("--every", type=float, default=3.0, help="seconds between screenshots")
     ap.add_argument("--world", action="store_true", help="enter the world with the last character, not only character select")
     a = ap.parse_args(argv)
+    for f in (sys.stdout, sys.stderr):   # the Windows console's code page can't print everything: never a crash over it
+        try:
+            f.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
     st = Steps()
     print("CLIENT SMOKE TEST (%s)" % time.strftime("%Y-%m-%d %H:%M"), flush=True)
     if OUT.exists():

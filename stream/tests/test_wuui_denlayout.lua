@@ -22,12 +22,12 @@ local CATALOG = "2413,woodenchair,seating,Wooden Chair,1,World\\Generic\\Chair01
     .. "1558,candle,lights,Candle,1,World\\Generic\\Candle01.mdx,0.10x0.10x0.30x0.00;"
     .. "2109,flowers,nature,Fragrant Flowers,1,World\\Generic\\Flowers01.m2;"
 
-local function session(pw, ph)
+local function session(pw, ph, scale)
     -- a fresh game: the fake API, the addon, a Den Lite that answers as labs/den-lite ovmod.rs
     for k in pairs(package.loaded) do if k:match("^den") then package.loaded[k] = nil end end
     WrathUnleashedUI, WrathUnleashedUIDB, WrathUnleashedUIChar = nil, { den = { introSeen = true } }, nil
     local F = dofile(uidir .. "/fakeui.lua")
-    local k = math.floor(math.max(0.64, math.min(1.0, 768 / ph)) * 100 + 1e-6) / 100
+    local k = scale or math.floor(math.max(0.64, math.min(1.0, 768 / ph)) * 100 + 1e-6) / 100
     F.setup(768 / k * pw / ph, 768 / k)
     F.cvars.uiScale = tostring(k)
     local st = { undo = 0, sel = nil, sent = {} }
@@ -119,6 +119,73 @@ for _, scr in ipairs({ { 1920, 1080, 4 }, { 2560, 1440, 4 }, { 1280, 720, 2 } })
     local rail = F.rectOf("LeylineDenRail")
     check(tag .. "the rail: under the player frame, above the chat", rail and rail.y + rail.h <= ph * 0 + (768 / (F.cvars.uiScale + 0)) - 110 and rail.y >= 215, rail and (rail.y .. "," .. rail.h))
     check(tag .. "no step stack on the rail", #bar.steps == 0)
+end
+
+-- ---------------------------------------------------------------- nothing clipped (owner 3 Nov 10:35: "fix all UI windows to
+-- not be clipped and so boxy"): at 720p, 1080p and 1440p and UI scales 0.64 to 1.0, every Den window in turn (the strip,
+-- rail, gallery, selection panel, menu, Files, Snap, the invite card, the Dojo, Den home, the status pill, play mode's
+-- bar and its class list): every text fits its box (one line: its width; wrapped: its height), every region inside its
+-- own frame, every frame inside its parent (but what opens beside it on purpose: menus, the pill's note) and on screen.
+local ROOTS = { LeylineDenBar = true, LeylineDenRail = true, WrathUnleashedBuilderFrame = true, LeylineEditorStatus = true,
+    WrathUnleashedPropsFrame = true, WrathUnleashedFilesFrame = true, LeylineDenPlayPill = true, LeylineDojoPanel = true,
+    LeylineDenHomePanel = true, LeylineDenModeBanner = true }
+local function clipped(F)
+    local out = {}
+    local function add(e, why) if #out < 8 then out[#out + 1] = (e.root or "?") .. " " .. e.kind .. " '" .. tostring(e.f.text or e.f.name or "") .. "' " .. why end end
+    local rects = {}
+    local layout = F.layout()
+    for _, e in ipairs(layout) do rects[e.f] = e end
+    for _, e in ipairs(layout) do
+        local f = e.f
+        if ROOTS[e.root or ""] or ROOTS[f.name or ""] then
+            -- on screen
+            if e.x < -0.5 or e.y < -0.5 or e.x + e.w > F.screen.w + 0.5 or e.y + e.h > F.screen.h + 0.5 then add(e, "off screen") end
+            -- a text fits its box
+            if f.kind == "FontString" and f.text and f.text ~= "" and not e.f.autoW then
+                local tw, size = F.textWidth(f), F.fontSize(f)
+                local lines = math.ceil(tw / math.max(1, e.w) - 1e-6)
+                if e.h < size * 1.9 then
+                    if tw > e.w + 0.5 then add(e, string.format("wider than its box (%.0f > %.0f)", tw, e.w)) end
+                elseif lines * (size + 3) - 1 > e.h + 1 then
+                    add(e, string.format("taller than its box (%d lines in %.0f)", lines, e.h))
+                end
+            end
+            if f.kind == "EditBox" and not f.scrolls and f.text and f.text ~= "" and F.textWidth(f) + 14 > e.w + 0.5 then add(e, "an input too narrow for its number") end
+            -- inside its own frame (a region) or its parent (a frame), unless it opens beside it on purpose
+            local par = f.parent
+            local pe = par and rects[par]
+            local empty = (f.kind == "FontString" and (f.text or "") == "")
+            if pe and not empty and not f.outside then
+                if e.x < pe.x - 1 or e.y < pe.y - 1 or e.x + e.w > pe.x + pe.w + 1 or e.y + e.h > pe.y + pe.h + 1 then add(e, "outside its frame") end
+            end
+        end
+    end
+    F.endLayout()
+    return out
+end
+
+for _, scr in ipairs({ { 1280, 720 }, { 1920, 1080 }, { 2560, 1440 } }) do
+    for _, k in ipairs({ false, 0.64, 1.0 }) do
+        local F, st, W = session(scr[1], scr[2], k or nil)
+        local D, B = W.DenBar, W.Builder
+        local tag = string.format("%dx%d at %s: ", scr[1], scr[2], k and tostring(k) or "the addon's scale")
+        local bad = {}
+        local function look(what)
+            for _, l in ipairs(clipped(F)) do bad[#bad + 1] = what .. ": " .. l end
+        end
+        look("the editor")
+        D.TestAction("gallery"); D.TestAction("place 1670"); D.TestAction("props")
+        look("gallery and panel")
+        B.PropsMore(true); look("the panel's More"); B.PropsMore(false)
+        D.ShowMenu(true); look("menu"); D.ShowMenu(false)
+        D.ShowSnap(true); look("snap"); D.ShowSnap(false)
+        B.ShowFiles(true); look("files"); B.ShowFiles(false)
+        D.Invite(); F.toClient("wuden\tinvite\t1/1\thttps://relay.example.app/join/abcdefghijklmnop#ABCDEFGHJKLMNPQRSTUVWXYZ"); look("invite"); D.CloseDrawer()
+        if W.Dojo then W.Dojo.Show(true); look("dojo"); W.Dojo.Show(false) end
+        if W.DenHome then W.DenHome.Show(true); look("den home"); W.DenHome.Show(false) end
+        D.SetPlay(true); D.ShowClasses(true); look("play mode"); D.ShowClasses(false)
+        check(tag .. "every Den window: no text clipped, nothing outside its frame or the screen", #bad == 0, table.concat(bad, " | "))
+    end
 end
 
 -- ---------------------------------------------------------------- the tiles: models fitted, buildings and props without one

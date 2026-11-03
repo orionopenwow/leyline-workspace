@@ -240,7 +240,7 @@ for _, t in ipairs(win.tabs) do if t.tab == "all" then t:Fire("OnClick") end end
 
 -- selection: one click, the gold edge
 local gold = W.Style.ED.gold
-local function goldEdge(t) local e = t.edges[1].tex; return type(e) == "table" and e[1] == gold[1] and e[2] == gold[2] end
+local function goldEdge(t) local e = t.edgeColour or t.edges[1].tex; return type(e) == "table" and e[1] == gold[1] and e[2] == gold[2] end
 win.tiles[2]:Fire("OnClick", "LeftButton")
 check("a click picks it: the gold edge, Place names it", B.pick == win.tiles[2].item and goldEdge(win.tiles[2]) and not goldEdge(win.tiles[1])
     and win.spawn:GetText() == "Place " .. win.tiles[2].item.name)

@@ -332,11 +332,23 @@ function S.EdText(parent, size, layer)
     return fs
 end
 
--- A panel in the editor look: the translucent near-black fill and the subtle edge.
+-- A panel in the editor look (owner 3 Nov 10:35: "fix all UI windows to not be clipped and so boxy"): a soft,
+-- rounded backdrop (the tooltip's rounded edge, Interface\Tooltips\UI-Tooltip-Border, 12 px, over a dark translucent
+-- fill inset 3 px), a muted edge; gold for what is on (S.EdEdge). A frame without backdrops gets the flat fill.
+S.ROUND_EDGE = "Interface\\Tooltips\\UI-Tooltip-Border"
+S.ED_EDGE = { 0.62, 0.64, 0.70, 0.55 }
+local ROUND = { bgFile = S.WHITE, edgeFile = S.ROUND_EDGE, tile = false, edgeSize = 12, insets = { left = 3, right = 3, top = 3, bottom = 3 } }
+local ROUND_SMALL = { bgFile = S.WHITE, edgeFile = S.ROUND_EDGE, tile = false, edgeSize = 9, insets = { left = 2, right = 2, top = 2, bottom = 2 } }
+S.ROUND, S.ROUND_SMALL = ROUND, ROUND_SMALL
 function S.EdPanel(frame, alpha, fill)
     local c = fill or ED.panel
     c = { c[1], c[2], c[3], alpha or c[4] }
-    if not frame.edFill then
+    if frame.SetBackdrop then
+        if not frame.edRound then frame:SetBackdrop(ROUND); frame.edRound = true end
+        frame:SetBackdropColor(unpackC(c))
+        local e = frame.edEdgeColour or S.ED_EDGE
+        frame:SetBackdropBorderColor(unpackC(e))
+    elseif not frame.edFill then
         frame.edFill = solid(frame, "BACKGROUND", c)
         frame.edFill:SetAllPoints(frame)
         frame.edEdge = border(frame, ED.edge)
@@ -348,9 +360,27 @@ end
 
 -- The panel's edge in another colour (gold: what is on / build mode).
 function S.EdEdge(frame, c)
+    frame.edEdgeColour = c
+    if frame.edRound then frame:SetBackdropBorderColor(unpackC((c == ED.edge or not c) and S.ED_EDGE or c)); return end
     if not frame.edEdge then frame.edEdge = border(frame, c or ED.edge) end
     for _, t in ipairs(frame.edEdge) do t:SetTexture(unpackC(c or ED.edge)) end
-    frame.edEdgeColour = c
+end
+
+-- Fit a text to a width: the whole of it when it fits, else cut with "..." (and true: the caller shows the whole in a
+-- tooltip). Measured with the FontString itself.
+function S.Elide(fs, text, w)
+    text = tostring(text or "")
+    fs:SetText(text)
+    local tw = fs.GetStringWidth and tonumber((fs:GetStringWidth()))
+    if not tw or tw <= w then return false end
+    local lo, hi = 0, #text
+    while lo < hi do
+        local mid = math.floor((lo + hi + 1) / 2)
+        fs:SetText(text:sub(1, mid):gsub("%s+$", "") .. "...")
+        if (tonumber((fs:GetStringWidth())) or 0) <= w then lo = mid else hi = mid - 1 end
+    end
+    fs:SetText(text:sub(1, lo):gsub("%s+$", "") .. "...")
+    return true
 end
 
 -- A small-caps label: upper case, small, muted (or gold).
@@ -391,6 +421,13 @@ function S.EdTipFrame() return tip end
 
 local function edPaint(b)
     local enabled = b.enabled ~= false
+    if b.edRound then
+        local c = ED.tile
+        if b.edActive then c = ED.goldFill elseif b.edOver and enabled then c = { 0.13, 0.135, 0.155, 0.96 } end
+        b:SetBackdropColor(unpackC(c))
+        local e = b.edActive and ED.gold or (b.edOver and enabled and { 0.8, 0.8, 0.85, 0.7 } or { 0.55, 0.57, 0.62, 0.45 })
+        b:SetBackdropBorderColor(unpackC(e))
+    end
     if b.edBg then
         local c = ED.tile
         if b.edActive then c = ED.goldFill elseif b.edOver and enabled then c = { 0.13, 0.135, 0.155, 0.96 } end
@@ -416,9 +453,14 @@ S.EdPaint = edPaint
 local function edBase(parent, w, h, onClick, ...)
     local b = CreateFrame("Button", nil, parent)
     b:SetWidth(w); b:SetHeight(h)
-    b.edBg = solid(b, "BACKGROUND", ED.tile)
-    b.edBg:SetAllPoints(b)
-    b.edEdges = border(b, ED.edge, "BORDER")
+    if b.SetBackdrop then
+        b:SetBackdrop(ROUND_SMALL)
+        b.edRound = true
+    else
+        b.edBg = solid(b, "BACKGROUND", ED.tile)
+        b.edBg:SetAllPoints(b)
+        b.edEdges = border(b, ED.edge, "BORDER")
+    end
     b.SetActive = function(self, on) self.edActive = on and true or nil; edPaint(self) end
     b.IsActive = function(self) return self.edActive == true end
     local enable, disable = b.Enable, b.Disable
@@ -484,9 +526,15 @@ function S.EdInput(parent, w, h)
     e:SetWidth(w or 120); e:SetHeight(h or 26)
     if e.SetFontObject then e:SetFontObject(S.EdFont(S.ED_SIZE.text)) end
     if e.SetTextInsets then e:SetTextInsets(7, 7, 0, 0) end
-    local bg = solid(e, "BACKGROUND", { 0, 0, 0, 0.55 })
-    bg:SetAllPoints(e)
-    e.edEdges = border(e, ED.edge, "BORDER")
+    if e.SetBackdrop then
+        e:SetBackdrop(ROUND_SMALL)
+        e:SetBackdropColor(0, 0, 0, 0.55)
+        e:SetBackdropBorderColor(0.55, 0.57, 0.62, 0.5)
+    else
+        local bg = solid(e, "BACKGROUND", { 0, 0, 0, 0.55 })
+        bg:SetAllPoints(e)
+        e.edEdges = border(e, ED.edge, "BORDER")
+    end
     e:SetAutoFocus(false)
     e:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     return e

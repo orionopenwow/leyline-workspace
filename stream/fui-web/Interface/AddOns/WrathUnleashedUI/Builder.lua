@@ -51,7 +51,7 @@ local PREFIX, MOD = "OVMOD", "wubuild"
 local COLS, ROWS = 5, 4
 local PAGE = COLS * ROWS                        -- tiles on a page: 20 frames, reused (fewer rows on a short screen)
 local TILE, GAP, NAME_H = 92, 8, 20             -- owner 3 Nov 08:40 "UI too small": 92-unit tiles, 13 px names
-local CAT_W = 136                               -- the category column: an icon and the name, one row each
+local CAT_W = 128                               -- the category column: an icon and the name, one row each
 local HEAD_H, FOOT_H, PAD = 76, 42, 10
 local WIN_W = PAD + CAT_W + PAD + COLS * TILE + (COLS - 1) * GAP + PAD
 local function winHeight(rows) return HEAD_H + rows * (TILE + NAME_H + GAP) - GAP + FOOT_H end
@@ -60,7 +60,7 @@ local WIN_H = winHeight(ROWS)
 -- gallery right of the rail and above the chat (its top is 215 at the stock place), the selection's panel left of the minimap and
 -- left of the side bars, the status pill above the action bars.
 local LAYOUT = { railX = 8, railTop = 118, railW = 64, galleryX = 80, galleryBottom = 232, topMargin = 56, galleryTop = 112,
-    propsRight = 204, propsTop = 56, pillBottom = 152 }
+    propsRight = 198, propsTop = 56, pillBottom = 152 }
 local ANSWER_WAIT = 6
 local STEPS = { 0.01, 0.1, 0.25, 1, 3, 10 }    -- the move step, in yards
 local STEP_PRESETS = { 2, 3, 4, 5 }             -- the rail's presets (indices into STEPS): 0.1, 0.25, 1, 3
@@ -571,7 +571,7 @@ B.TileIcon = tileIcon
 local function paintTile(t)
     local c = t.item
     local picked = c ~= nil and c == B.pick
-    local e = picked and S().ED.gold or (t.over and { 1, 1, 1, 0.22 } or S().ED.edge)
+    local e = picked and S().ED.gold or (t.over and { 1, 1, 1, 0.45 } or S().ED_EDGE)
     for _, x in ipairs(t.edges) do x:SetTexture(e[1], e[2], e[3], e[4]) end
     if t.over or picked then t.hover:Show() else t.hover:Hide() end
 end
@@ -869,7 +869,7 @@ function B.Refresh()
         local c = i <= page and B.shown[B.offset + i] or nil
         t.item = c
         if c then
-            t.name:SetText(tileNameText(c))
+            t.elided = S().Elide(t.name, tileNameText(c), TILE - 4)
             t.fav:SetText(favs[c.id] and c.kind == nil and "*" or "")
             t.cost:SetText((c.cost or 1) > 1 and tostring(c.cost) or "")
             t.icon:SetTexture(tileIcon(c)); t.icon.path = tileIcon(c)
@@ -1297,6 +1297,7 @@ local function buildPill()
     pill.note = S().EdText(pill, S().ED_SIZE.text)
     pill.note:SetPoint("BOTTOM", pill, "TOP", 0, 6)
     pill.note:SetWidth(720)
+    pill.note.outside = true   -- over the pill, on purpose
     local m = S().ED.muted
     pill.note:SetTextColor(m[1], m[2], m[3])
     pill.note:SetText(B.status or "")
@@ -1304,6 +1305,7 @@ local function buildPill()
     pill.sel = CreateFrame("Button", nil, pill)
     pill.sel:SetHeight(30)
     pill.sel:SetPoint("LEFT", pill, "RIGHT", 6, 0)
+    pill.sel.outside = true
     S().EdPanel(pill.sel, 0.9, S().ED.panel2)
     S().EdEdge(pill.sel, S().ED.gold)
     pill.sel.label = S().EdText(pill.sel, S().ED_SIZE.text)
@@ -1323,14 +1325,21 @@ refreshPill = function()
     local line = B.StatusLine()
     local D = W.DenBar
     if D and D.IsActive and D.IsActive() and D.SavedLine then line = line .. "  ·  " .. D.SavedLine() end
+    -- never wider than the room between the chat (its right edge 462 at the stock place) and the screen's middle;
+    -- a line too long loses the "Saved" note first, then ends in "..." (nothing cut mid-letter)
+    local sw = (GetScreenWidth and tonumber((GetScreenWidth()))) or 1366
+    local most = math.max(360, math.min(900, sw - 2 * 470))
     pill.line:SetText(line)
     local w = pill.line.GetStringWidth and tonumber((pill.line:GetStringWidth()))
-    -- never wider than the room between the chat (its right edge 462 at the stock place) and the screen's middle
-    local sw = (GetScreenWidth and tonumber((GetScreenWidth()))) or 1366
-    local most = math.max(360, math.min(900, sw - 2 * 480))
+    if w and w + 40 > most then
+        line = B.StatusLine()
+        pill.line:SetText(line)
+        w = tonumber((pill.line:GetStringWidth()))
+    end
     local pw = math.max(math.min(420, most), math.min(most, (w or (#line * 7)) + 40))
     pill:SetWidth(pw)
     pill.line:SetWidth(pw - 24)
+    if w and w > pw - 24 then S().Elide(pill.line, line, pw - 24) end
     -- the selection's box, and the pill's edge gold while building in a Den (build mode), the subtle edge elsewhere
     local s = B.state
     local name = s.selName and ((s.count or 1) > 1 and (s.count .. " selected: " .. s.selName) or s.selName)
@@ -1569,7 +1578,7 @@ B.Flow = flow
 -- pitch, roll with the turn step (15 / 45 / 90) and a slider for the turn; SIZE with a slider; Apply, Snap to floor,
 -- Duplicate, Delete, Lock; SELECT nearest, next (Tab), all of its kind, clear. The mouse wheel over a box nudges it.
 -- Keys while it is open: arrows / PgUp / PgDn move, Q / E turn, + / - size, Del, Ctrl+D, Tab next, Esc lets go.
-local PANEL_W, PANEL_PAD, COL_W = 420, 14, 132
+local PANEL_W, PANEL_PAD, COL_W = 436, 14, 136
 local function section(parent, text, y)
     local fs = smallCaps(parent, text, true, "TOPLEFT", PANEL_PAD, y)
     local rule = solid(parent, "BORDER", S().ED.edge)
@@ -1584,13 +1593,14 @@ local function field(f, x, y)
     panel.rowLabel[key] = smallCaps(panel, f[3] or f[2], false, "TOPLEFT", x, y - 7)
     local lx = x + 18
     if f[3] and #f[3] > 1 then lx = x + 40 end
-    panel.minus[key] = chip(panel, "-", 24, function() B.Nudge(key, -1) end, "TOPLEFT", lx, y)
-    local e = editBox(panel, COL_W - (lx - x) - 58, 12, "TOPLEFT", lx + 26, y)
+    local bw = COL_W - (lx - x) - 2 * 20 - 8
+    panel.minus[key] = chip(panel, "-", 20, function() B.Nudge(key, -1) end, "TOPLEFT", lx, y)
+    local e = editBox(panel, bw, 12, "TOPLEFT", lx + 22, y)
     e:SetHeight(28)
     e:SetScript("OnEditFocusGained", function() B.propsEditing = true end)
     e:SetScript("OnEnterPressed", function(self) self:ClearFocus(); B.ApplyProps() end)
     panel.box[key] = e
-    panel.plus[key] = chip(panel, "+", 24, function() B.Nudge(key, 1) end, "TOPLEFT", lx + 26 + (COL_W - (lx - x) - 58) + 2, y)
+    panel.plus[key] = chip(panel, "+", 20, function() B.Nudge(key, 1) end, "TOPLEFT", lx + 22 + bw + 2, y)
     for _, w in ipairs({ e, panel.minus[key], panel.plus[key] }) do
         if w.EnableMouseWheel then w:EnableMouseWheel(true) end
         w:SetScript("OnMouseWheel", function(_, delta) B.Nudge(key, (tonumber(delta) or 0) > 0 and 1 or -1) end)
@@ -1662,10 +1672,11 @@ local function buildPanel()
     panel.step = panel.stepBtn
     for i = #STEP_PRESETS, 1, -1 do
         local si = STEP_PRESETS[i]
-        local c = chip(panel, tostring(STEPS[si]), 40, function() B.SetStep(si) end)
+        local c = chip(panel, tostring(STEPS[si]), nil, function() B.SetStep(si) end)
         c.edLabel = "Move by " .. STEPS[si] .. " yd"
-        x = x - 40
-        c:SetPoint("TOPRIGHT", panel, "TOPLEFT", x + 40, y + 6)
+        local cw = tonumber((c:GetWidth())) or 44
+        x = x - cw
+        c:SetPoint("TOPRIGHT", panel, "TOPLEFT", x + cw, y + 6)
         x = x - 4
         panel.stepChips[si] = c
     end
@@ -1754,6 +1765,7 @@ local function buildPanel()
     panel.more = CreateFrame("Frame", nil, panel)
     panel.more:SetWidth(PANEL_W)
     panel.more:SetPoint("TOPLEFT", panel, "BOTTOMLEFT", 0, -4)
+    panel.more.outside = true
     S().EdPanel(panel.more, 0.92, S().ED.panel2)
     local function cmdFn(c) return function() B.Command(c) end end
     local _, my = flow(panel.more, {
@@ -1858,7 +1870,7 @@ buildFiles = function()
     end, "TOPLEFT", BX + 248, -40)
     files.denInfo = S().EdText(files, S().ED_SIZE.small)
     files.denInfo:SetPoint("TOPLEFT", BX, -72)
-    files.denInfo:SetText("Your Den saves itself as you build. Open replaces it; Undo brings it back.")
+    files.denInfo:SetText("It saves itself. Open replaces it (Undo undoes).")
     files.denInfo:SetTextColor(S().ED.muted[1], S().ED.muted[2], S().ED.muted[3])
     -- builds: your props in this area, by name or a 6-letter code (the full Den)
     files.full = {}
@@ -1928,10 +1940,20 @@ local function buildTile(i)
     local t = CreateFrame("Button", nil, win.grid)
     t:SetWidth(TILE); t:SetHeight(TILE + NAME_H)
     t:SetPoint("TOPLEFT", col * (TILE + GAP), -row * (TILE + NAME_H + GAP))
-    local sq = solid(t, "BACKGROUND", S().ED.tile)
-    sq:SetPoint("TOPLEFT", 0, 0); sq:SetWidth(TILE); sq:SetHeight(TILE)
+    -- the tile's square: a soft rounded card (owner 3 Nov: "not so boxy")
+    t.card = CreateFrame("Frame", nil, t)
+    t.card:SetWidth(TILE); t.card:SetHeight(TILE)
+    t.card:SetPoint("TOPLEFT", 0, 0)
+    if t.card.SetBackdrop then
+        t.card:SetBackdrop(S().ROUND_SMALL)
+        local c = S().ED.tile
+        t.card:SetBackdropColor(c[1], c[2], c[3], c[4])
+        t.card:SetBackdropBorderColor(0, 0, 0, 0)
+    else
+        solid(t.card, "BACKGROUND", S().ED.tile):SetAllPoints(t.card)
+    end
     t.hover = solid(t, "BORDER", { 1, 1, 1, 0.05 })
-    t.hover:SetPoint("TOPLEFT", 0, 0); t.hover:SetWidth(TILE); t.hover:SetHeight(TILE)
+    t.hover:SetPoint("TOPLEFT", 3, -3); t.hover:SetWidth(TILE - 6); t.hover:SetHeight(TILE - 6)
     t.hover:Hide()
     -- the picture where there's no model (a building, a prop without a model in this game's files): on purpose,
     -- the category's icon (a building: the home stone) at full strength, and a word why
@@ -1950,13 +1972,13 @@ local function buildTile(i)
     -- the model, turning: a frame of the framing's type (B.FIT.frame), framed again once it is shown and laid out
     -- (its size, and so its units, are known only then)
     tileModel(t, fitConf().frame)
+    -- the edge: rounded, over the model (gold when picked)
     t.edges = {}
-    for k, side in ipairs({ { "TOPLEFT", "TOPRIGHT", 0, 1 }, { "BOTTOMLEFT", "BOTTOMRIGHT", 0, 1 },
-                            { "TOPLEFT", "BOTTOMLEFT", 1, 0 }, { "TOPRIGHT", "BOTTOMRIGHT", 1, 0 } }) do
-        local e = solid(t.top, "OVERLAY", S().ED.edge)
-        e:SetPoint(side[1]); e:SetPoint(side[2])
-        if side[3] == 1 then e:SetWidth(2) else e:SetHeight(2) end
-        t.edges[k] = e
+    if t.top.SetBackdrop then
+        t.top:SetBackdrop({ edgeFile = S().ROUND_EDGE, edgeSize = 12, insets = { left = 3, right = 3, top = 3, bottom = 3 } })
+        t.edges[1] = { SetTexture = function(_, r, g, b, a) t.edgeColour = { r, g, b, a }; t.top:SetBackdropBorderColor(r, g, b, a) end }
+    else
+        t.edges[1] = solid(t.top, "OVERLAY", S().ED.edge)
     end
     t.badge = t.top:CreateTexture(nil, "OVERLAY")
     t.badge:SetWidth(18); t.badge:SetHeight(18)
@@ -1986,11 +2008,13 @@ local function buildTile(i)
         self.over = true; paintTile(self)
         local it = self.item
         if not it then return end
+        -- a name cut short: the whole of it under the tile
+        if self.elided then self.edTipAt, self.edTipTo, self.edTipX, self.edTipY = "TOP", "BOTTOM", 0, -2; S().EdTip(self, tileNameText(it)) end
         if it.kind then setStatus(it.name .. ((it.kind == "stamp") and (": " .. (it.line or "")) or "") .. "  Double-click to place it.")
         else setStatus(string.format("%s: %d build point%s. %s", it.name, it.cost or 1, (it.cost or 1) == 1 and "" or "s",
             editing() and "Double-click, then click the ground." or "Double-click to place it in front of you.")) end
     end)
-    t:SetScript("OnLeave", function(self) self.over = nil; paintTile(self) end)
+    t:SetScript("OnLeave", function(self) self.over = nil; paintTile(self); S().EdTip(nil) end)
     -- drag a tile out of the window: placed (in front of you; in edit mode where you click next)
     t:SetScript("OnDragStart", function(self) B.dragging = self.item; if self.item then setStatus("Let go outside the window to place it.") end end)
     t:SetScript("OnDragStop", function()

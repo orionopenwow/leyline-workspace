@@ -1,0 +1,180 @@
+/* leyline-theme.css: the Leyline Launcher's look for the GM console (owner 2 Nov 23:14: "Ensuring server software
+   and gm console management software match the aesthetic of the launcher too").
+
+   Copied from the launcher (launcher/ui: style.css, stone.css, slate.css, spin.css, gate.css), with the art next to
+   this file (served from gmconsole.py's ART_TYPES allow-list):
+     - the dark backdrop picture (leyline-bg.webp) under a dark wash;
+     - slate panels on the side menu's stone tile (stone-side.webp), a thin grey-green metal edge, a black outer
+       line and an inner highlight; header strips on the title bar's stone (stone-bar.webp);
+     - Marcellus (OFL) in gold for headings and the picked tab, Inter (OFL) for text;
+     - the primary button is the Log In / PLAY red stone (stone-btn.webp, nine-slice) with gold lettering, the rest
+       are raised dark stone; inputs are wells sunk into the stone;
+     - the spinning mark (the swirl turns, the crystal stays upright) beside "Leyline GM console".
+   Every url() is relative. app.css (the layout) is linked after this file and still reads well without it.
+
+   Vocabulary:
+     body.ly                       backdrop and body type
+     .ly-mark                      the spinning mark (one empty element)
+     .ly-title, .ly h1             Marcellus gold heading
+     .ly-panel, .ly .card          slate panel; .card-h is its stone header strip
+     .btn                          dark stone; .primary red stone; .danger red lettering; .ghost quiet; .small
+     .pill / .badge (.ok .bad .warn .job)  status
+   No animation except the mark's slow turn and short hovers; none at all with prefers-reduced-motion. */
+
+@font-face { font-family: "Marcellus"; font-weight: 400; font-display: swap; src: url("marcellus-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 400; font-display: swap; src: url("inter-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 500 700; font-display: swap; src: url("inter-latin-600-normal.woff2") format("woff2"); }
+
+:root {
+  /* the launcher's dark slate tokens (slate.css) */
+  --ly-font: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --ly-display: "Marcellus", Georgia, serif;
+  --ly-mono: ui-monospace, "Cascadia Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --ly-bg: #0c0e12;
+  --ly-text: #eeece6;
+  --ly-text-2: #cfccc3;
+  --ly-muted: #a2a59e;
+  --ly-faint: #7d817b;
+  --ly-gold: #e2bd66;
+  --ly-gold-dim: #b99a5c;
+  --ly-accent: #d6ad55;
+  --ly-metal: #3d4743;
+  --ly-metal-hi: #56625d;
+  --ly-edge: #0a0908;
+  --ly-card-border: #333b38;
+  --ly-line: rgba(255, 255, 255, 0.07);
+  --ly-stone-metal: rgba(196, 178, 140, 0.55);
+  --ly-ok: #4fd18b;
+  --ly-warn: #f2c14e;
+  --ly-bad: #ff7f76;
+  --ly-stone: url("stone-bar.webp") 0 0 / 340px 34px repeat;
+  --ly-stone-tall: url("stone-side.webp") 0 0 / 256px 256px repeat;
+  --ly-btn-stone: url("stone-btn.webp") 28 30 fill / 9px stretch;
+  color-scheme: dark;
+}
+
+/* ---------------------------------------------------------------- the backdrop */
+/* a fixed layer behind the page, so long pages scroll over it */
+html:has(> body.ly) { background: var(--ly-bg); }
+body.ly {
+  background: transparent; color: var(--ly-text); font-family: var(--ly-font);
+  -webkit-font-smoothing: antialiased;
+}
+body.ly::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(9, 11, 17, 0.55), rgba(9, 11, 17, 0.84) 80%),
+    url("leyline-bg.webp") center top / cover no-repeat,
+    var(--ly-bg);
+}
+
+/* ---------------------------------------------------------------- the spinning mark (spin.css) */
+.ly-mark { position: relative; display: inline-block; flex: none; vertical-align: middle; width: 34px; height: 34px;
+  filter: drop-shadow(-1px -1px 0 rgba(255, 255, 255, 0.18)) drop-shadow(1px 1.5px 0 rgba(0, 0, 0, 0.65)) drop-shadow(0 3px 5px rgba(0, 0, 0, 0.55)); }
+.ly-mark::before, .ly-mark::after { content: ""; position: absolute; inset: 0; background: center / contain no-repeat; pointer-events: none; }
+.ly-mark::before { background-image: url("leyline-swirl-128.png"); animation: ly-mark-turn 16s linear infinite; will-change: transform; }
+.ly-mark::after { background-image: url("leyline-crystal-128.png"); }
+@keyframes ly-mark-turn { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* ---------------------------------------------------------------- headings */
+.ly-title, .ly h1 {
+  font-family: var(--ly-display); font-weight: 400; letter-spacing: 0.03em; line-height: 1.2; color: var(--ly-gold);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+.ly h2 { font-family: var(--ly-display); font-weight: 400; letter-spacing: 0.03em; color: var(--ly-gold); }
+
+/* ---------------------------------------------------------------- panels */
+.ly-panel, .ly .card {
+  background: linear-gradient(180deg, rgba(26, 30, 29, 0.86), rgba(14, 16, 16, 0.9)), var(--ly-stone-tall);
+  border: 1px solid var(--ly-metal);
+  box-shadow: 0 0 0 1px var(--ly-edge), inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 0 0 1px rgba(0, 0, 0, 0.35), 0 14px 34px rgba(0, 0, 0, 0.5);
+}
+/* the header strip on the title bar's stone, the title in Marcellus gold */
+.ly .card > .card-h {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.4)), var(--ly-stone);
+  border-bottom: 1px solid var(--ly-edge); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.ly .card-h h2 { text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 2px 6px rgba(0, 0, 0, 0.6); }
+
+/* the top bar and the tabs: the launcher's title bar stone */
+.ly .top {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.3)), var(--ly-stone);
+  border-bottom: 1px solid var(--ly-edge); box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.05), 0 1px 0 rgba(0, 0, 0, 0.6);
+}
+.ly .tabs {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.55)), var(--ly-stone);
+  border-bottom: 1px solid var(--ly-edge); box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5), 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* ---------------------------------------------------------------- buttons */
+/* secondary: raised dark stone with a metal edge, like the play bar's frames */
+.ly .btn {
+  font: 600 13px/1.2 var(--ly-font); letter-spacing: 0.01em; white-space: nowrap; cursor: pointer;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(0, 0, 0, 0.4)), var(--ly-stone);
+  border: 1px solid var(--ly-edge); border-radius: 5px;
+  box-shadow: inset 0 0 0 1px rgba(86, 98, 93, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 1px 2px rgba(0, 0, 0, 0.6);
+  color: #e9e4d6; text-shadow: 0 1px 1px rgba(0, 0, 0, 0.7);
+  transition: filter 0.12s, box-shadow 0.12s;
+}
+.ly .btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(0, 0, 0, 0.32)), var(--ly-stone);
+  box-shadow: inset 0 0 0 1px var(--ly-stone-metal), inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.6);
+  color: #fff;
+}
+.ly .btn:active:not(:disabled) { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), inset 0 0 0 1px var(--ly-metal); }
+.ly .btn:disabled { opacity: 0.45; filter: saturate(0.4); cursor: not-allowed; }
+.ly .btn.ghost { background: linear-gradient(180deg, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.5)); box-shadow: inset 0 0 0 1px rgba(86, 98, 93, 0.35); color: var(--ly-text-2); }
+.ly .btn.danger { color: #ff9a8f; }
+.ly .btn.danger:hover:not(:disabled) { color: #ffc2bb; box-shadow: inset 0 0 0 1px rgba(255, 127, 118, 0.6), 0 1px 2px rgba(0, 0, 0, 0.6); }
+
+/* primary: the Log In / PLAY red stone with gold Marcellus lettering, a nine-slice so it fits any width */
+.ly .btn.primary {
+  border: 9px solid transparent; border-image: var(--ly-btn-stone); border-radius: 0;
+  background: none; box-shadow: none; padding: 0 12px; height: 36px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font: 400 15px/1 var(--ly-display); letter-spacing: 0.04em; color: #f8d867;
+  text-shadow: 0 1px 0 #2a1800, 0 2px 3px rgba(0, 0, 0, 0.85);
+}
+.ly .btn.primary.small { height: 30px; border-width: 7px; border-image-width: 7px; padding: 0 9px; font-size: 13.5px; }
+.ly .btn.primary:hover:not(:disabled) { background: none; box-shadow: none; filter: brightness(1.18); color: #ffe68a; }
+.ly .btn.primary:active:not(:disabled) { filter: brightness(0.9); box-shadow: none; }
+.ly .btn.primary:disabled { opacity: 0.55; filter: grayscale(0.75) brightness(0.8); }
+.ly .btn-grid .btn.primary { height: auto; min-height: 36px; padding: 4px 12px; }
+
+/* focus: the launcher's gold ring */
+.ly :is(a, button, summary, select, input, textarea):focus-visible { outline: 2px solid #f2c94c; outline-offset: 2px; }
+
+/* ---------------------------------------------------------------- inputs: wells sunk into the stone */
+.ly :is(select, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea) {
+  font-family: var(--ly-font); color: var(--ly-text);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.32)), var(--ly-stone);
+  border: 1px solid var(--ly-edge); border-radius: 5px;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.ly :is(select, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea):hover { border-color: #4a4538; }
+.ly :is(select, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea):focus { border-color: var(--ly-stone-metal); outline: none; }
+.ly select option { background: #1a1d1c; color: var(--ly-text); }
+.ly input::placeholder, .ly textarea::placeholder { color: #8d8f89; }
+.ly input[type="checkbox"] { accent-color: var(--ly-accent); }
+
+/* ---------------------------------------------------------------- status pills */
+.ly .pill {
+  display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; white-space: nowrap;
+  font: 600 12px/1.5 var(--ly-font); color: var(--ly-text-2);
+  background: rgba(0, 0, 0, 0.4); border: 1px solid var(--ly-metal);
+}
+.ly .pill.ok { color: #bfeccf; background: rgba(79, 209, 139, 0.12); border-color: rgba(79, 209, 139, 0.45); }
+.ly .pill.ok::before, .ly .pill.bad::before { content: ""; width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.ly .pill.ok::before { background: var(--ly-ok); box-shadow: 0 0 6px rgba(79, 209, 139, 0.8); }
+.ly .pill.bad { color: #ffb3ab; background: rgba(255, 127, 118, 0.1); border-color: rgba(255, 127, 118, 0.45); }
+.ly .pill.bad::before { background: var(--ly-bad); }
+.ly .pill.job { color: #f6dc9a; background: rgba(242, 193, 78, 0.1); border-color: rgba(242, 193, 78, 0.45); }
+
+/* ---------------------------------------------------------------- links */
+a:where(:not(.btn)):where(.ly *) { color: var(--ly-gold); text-underline-offset: 2px; }
+a:where(:not(.btn)):where(.ly *):hover { color: #ffe08f; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ly-mark::before { animation: none; }
+  .ly .btn { transition: none; }
+}

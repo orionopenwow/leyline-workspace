@@ -54,9 +54,9 @@ install -m 644 "$SRC/gmconsole.py" "$APP/gmconsole.py"
 install -m 644 "$SRC/bugs_manifest.py" "$APP/bugs_manifest.py"   # the bugs manifest (docs/BUGS-MANIFEST.md)
 install -d -m 755 "$WU/bugs"                                        # its backlog and BUGS-MANIFEST.md
 install -m 644 "$SRC/static/app.js" "$SRC/static/app.css" "$APP/static/"
-# the shared look (a copy of stream/www-files/art); without it the console keeps its plain styles
+# the launcher's look (leyline-theme.css and copies of launcher/ui/art); without it the console keeps its plain styles
 rm -rf "$APP/static/art"
-if [ -f "$SRC/static/art/wu-theme.css" ]; then
+if [ -f "$SRC/static/art/leyline-theme.css" ]; then
   install -d -m 755 "$APP/static/art"
   install -m 644 "$SRC"/static/art/* "$APP/static/art/"
   echo "  art: $(ls "$APP/static/art" | wc -l) files"

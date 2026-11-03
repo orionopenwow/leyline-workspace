@@ -1,4 +1,4 @@
-# WrathUnleashed GM console
+# Leyline GM console
 
 One owner-only page to run the live server: realm health, players, rolling updates, streaming,
 the Beacons launch checklist, speed passes, bug reports, health and logs. It runs on the server in its own small

@@ -1,5 +1,5 @@
 'use strict';
-// WrathUnleashed GM console. Everything from the server is put on the page as text (textContent),
+// Leyline GM console. Everything from the server is put on the page as text (textContent),
 // never as markup: player names, log lines and remote JSON can't inject anything.
 (function () {
   const CSRF = document.querySelector('meta[name=csrf]').content;
@@ -160,7 +160,7 @@
   const nav = h('nav', { class: 'tabs', role: 'tablist' }, TABS.map(([k, l]) =>
     h('a', { href: '#' + k, 'data-tab': k, role: 'tab', text: l })));
   const main = h('main', { id: 'main' });
-  app.append(h('div', { class: 'top' }, h('div', { class: 'brand' }, h('b', { text: 'WrathUnleashed' }), h('span', { text: 'GM console' })),
+  app.append(h('div', { class: 'top' }, h('div', { class: 'brand' }, h('span', { class: 'ly-mark', role: 'img', 'aria-label': 'Leyline' }), h('b', { text: 'Leyline' }), h('span', { text: 'GM console' })),
     pill, jobPill, h('span', { class: 'grow' }), stamp), nav, main, toasts);
 
   function setPill(realm) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""WrathUnleashed GM console: one owner-only page to run the live server.
+"""Leyline GM console: one owner-only page to run the live server.
 
 Runs in its own container (wu-gmconsole, see gmconsole-install.sh) on the host's network and
 listens on 127.0.0.1:8099 ONLY. Nothing public routes to it: the owner reaches it through the SSH
@@ -54,16 +54,17 @@ REALM_DIR = E("GM_REALM_DIR", "/opt/wenilla-realm")
 CADDYFILE = E("GM_CADDYFILE", "/opt/openvanilla-classicplus/Caddyfile")
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(APP_DIR, "static")
-# The shared WrathUnleashed look (a copy of stream/www-files/art: wu-theme.css, the starfield, corners, dragons,
-# divider, Cinzel), served at /static/art/<name> from this list only, without the login (it is our own art).
+# The Leyline Launcher's look (leyline-theme.css plus copies of launcher/ui/art: the backdrop, the stone tiles, the red
+# stone button, the spinning mark, Marcellus and Inter with their OFL texts), served at /static/art/<name> from this
+# list only, without the login (it is our own art).
 ART_DIR = E("GM_ART_DIR", os.path.join(STATIC_DIR, "art"))
 ART_TYPES = {
-    "wu-theme.css": "text/css; charset=utf-8",
-    "wu-load-orion.webp": "image/webp", "wu-load-bg.webp": "image/webp", "wu-card.webp": "image/webp",
-    "wu-corner-tl.webp": "image/webp", "wu-corner-tr.webp": "image/webp",
-    "wu-corner-bl.webp": "image/webp", "wu-corner-br.webp": "image/webp",
-    "wu-divider.webp": "image/webp", "wu-dragon-l.webp": "image/webp", "wu-dragon-r.webp": "image/webp",
-    "Cinzel-SemiBold.woff2": "font/woff2", "Cinzel-OFL.txt": "text/plain; charset=utf-8",
+    "leyline-theme.css": "text/css; charset=utf-8",
+    "leyline-bg.webp": "image/webp", "stone-bar.webp": "image/webp", "stone-side.webp": "image/webp",
+    "stone-btn.webp": "image/webp", "leyline-crystal-128.png": "image/png", "leyline-swirl-128.png": "image/png",
+    "marcellus-latin-400-normal.woff2": "font/woff2", "Marcellus-OFL.txt": "text/plain; charset=utf-8",
+    "inter-latin-400-normal.woff2": "font/woff2", "inter-latin-600-normal.woff2": "font/woff2",
+    "Inter-OFL.txt": "text/plain; charset=utf-8",
 }
 
 
@@ -1974,12 +1975,13 @@ CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' 
        "form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 SHELL = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="csrf" content="%s"><title>WrathUnleashed GM</title><link rel="stylesheet" href="/static/art/wu-theme.css">
+<meta name="csrf" content="%s"><title>Leyline GM console</title><link rel="stylesheet" href="/static/art/leyline-theme.css">
 <link rel="stylesheet" href="/static/app.css">
-<link rel="icon" href="data:,"></head><body class="wu"><div id="app"></div><script src="/static/app.js"></script></body></html>"""
+<link rel="icon" href="/static/art/leyline-crystal-128.png"></head><body class="ly"><div id="app"></div><script src="/static/app.js"></script></body></html>"""
 NOAUTH = b"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>GM console</title><link rel="stylesheet" href="/static/art/wu-theme.css"><link rel="stylesheet" href="/static/app.css"></head>
-<body class="wu"><main class="signed-out wu-panel"><div class="wu-brand"><h1>GM console</h1></div><hr class="wu-divider">
+<title>Leyline GM console</title><link rel="stylesheet" href="/static/art/leyline-theme.css"><link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="/static/art/leyline-crystal-128.png"></head>
+<body class="ly"><main class="signed-out ly-panel"><div class="ly-brand"><span class="ly-mark" role="img" aria-label="Leyline"></span><h1>Leyline GM console</h1></div>
 <p>Not signed in. Open the console with <b>Open GM Console.bat</b> on your PC.</p></main></body></html>"""
 
 
@@ -2036,7 +2038,7 @@ class Handler(BaseHTTPRequestHandler):
         self.do_GET()
 
     def art(self, name):
-        """GET /static/art/<name>: the shared look, from the allow-list, cached (the theme for an hour, the art
+        """GET /static/art/<name>: the launcher's look, from the allow-list, cached (the theme for an hour, the art
         for a week). No login needed: it is our own art, nothing private."""
         body = art_bytes(name)
         if body is None:

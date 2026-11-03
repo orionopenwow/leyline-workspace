@@ -7,6 +7,8 @@
 
 pub mod accdata;
 pub mod cheers;
+pub mod classes;
+pub mod combat;
 pub mod companion;
 pub mod den;
 pub mod dojo;
@@ -21,6 +23,7 @@ pub mod notice;
 pub mod objects;
 pub mod play;
 pub mod raw;
+pub mod spells;
 pub mod stamps;
 pub mod testctl;
 pub mod world;

@@ -1049,6 +1049,65 @@ mod tests {
     }
 
     #[test]
+    fn the_selection_panels_pad_quick_buttons_and_swap() {
+        let mut d = Den::new(den::Spot::default());
+        let s0 = den::Spot::default();
+        let here = Here { x: s0.x, y: s0.y, z: s0.z, o: 0.0 };
+        let mut sel = Sel::default();
+        let a = d.spawn(2413, s0.x + 3.0, s0.y, s0.z, 0.0).unwrap().guid;
+        let at = |d: &Den| d.placed(a).map(|p| (p.obj.x - s0.x, p.obj.y - s0.y, p.obj.z - d.floor_at(p.obj.x, p.obj.y))).unwrap();
+        assert!(matches!(&builder_cmd(&mut d, &mut sel, here, "step fwd 1", true)[0], Out::Say(t) if t.contains("Select")));
+        sel.guid = Some(a);
+        // the pad, from where you stand (facing +x): forward, left, up; one undo step each
+        builder_cmd(&mut d, &mut sel, here, "step fwd 1", true);
+        builder_cmd(&mut d, &mut sel, here, "step left 2", true);
+        builder_cmd(&mut d, &mut sel, here, "step up 0.5", true);
+        let (x, y, z) = at(&d);
+        assert!((x - 4.0).abs() < 0.01 && (y - 2.0).abs() < 0.01 && (z - 0.5).abs() < 0.01, "{x} {y} {z}");
+        assert_eq!(step_offset("right", std::f32::consts::FRAC_PI_2, 1.0).map(|v| (v.0.round(), v.1.round())), Some((1.0, -0.0)));
+        assert!(matches!(&builder_cmd(&mut d, &mut sel, here, "step sideways 1", true)[0], Out::Say(t) if t.contains("Usage")));
+        // End: down to the ground; bigger, then Reset (straight, no turn, size 1)
+        builder_cmd(&mut d, &mut sel, here, "ground", true);
+        assert!(at(&d).2.abs() < 0.01);
+        builder_cmd(&mut d, &mut sel, here, "grow 1.25", true);
+        assert_eq!(d.placed(a).unwrap().prop.scale, Some(1.25));
+        builder_cmd(&mut d, &mut sel, here, "turn 30", true);
+        builder_cmd(&mut d, &mut sel, here, "reset", true);
+        let p = d.placed(a).unwrap().prop.clone();
+        assert!(p.scale.is_none() && p.yaw.abs() < 0.01);
+        builder_cmd(&mut d, &mut sel, here, "random", true);
+        assert!((0.0..360.0).contains(&d.placed(a).unwrap().prop.yaw));
+        // Home: in front of you; the centre: the Den's middle
+        builder_cmd(&mut d, &mut sel, Here { x: s0.x + 10.0, ..here }, "bring", true);
+        assert!((at(&d).0 - 13.0).abs() < 0.01);
+        builder_cmd(&mut d, &mut sel, here, "centre", true);
+        assert!(at(&d).0.abs() < 0.01 && at(&d).1.abs() < 0.01);
+        // Swap with: the selection becomes a barrel, where it was; undo takes it back
+        let barrel = crate::objects::OBJECTS.iter().find(|o| o.3.to_lowercase().contains("barrel")).unwrap().0;
+        assert!(matches!(&builder_cmd(&mut d, &mut sel, here, "swap 7", true)[0], Out::Say(t) if t.contains("gallery")));
+        let o = builder_cmd(&mut d, &mut sel, here, &format!("swap {barrel}"), true);
+        assert!(o.iter().any(|x| matches!(x, Out::Change(c) if c.created.len() == 1 && c.message.starts_with("Swapped for"))));
+        assert_eq!(d.placed(a).unwrap().prop.entry, barrel as u64);
+        d.undo();
+        assert_eq!(d.placed(a).unwrap().prop.entry, 2413);
+        // All of this kind: every chair, one undo for them all; Shift+right-click adds to the selection
+        let b = d.spawn(2413, s0.x - 2.0, s0.y, s0.z, 0.0).unwrap().guid;
+        let c = d.spawn(2413, s0.x - 4.0, s0.y, s0.z, 0.0).unwrap().guid;
+        let o = builder_cmd(&mut d, &mut sel, here, &format!("swapkind {barrel}"), true);
+        assert!(o.iter().any(|x| matches!(x, Out::Change(ch) if ch.created.len() == 3 && ch.message.contains("3 props"))));
+        assert!([a, b, c].iter().all(|g| d.placed(*g).unwrap().prop.entry == barrel as u64));
+        let msg = d.undo().message;
+        assert!([a, b, c].iter().all(|g| d.placed(*g).unwrap().prop.entry == 2413), "one undo: {msg}");
+        assert!(d.redo().message.contains("Redone") && d.placed(c).unwrap().prop.entry == barrel as u64);
+        builder_cmd(&mut d, &mut sel, here, &format!("seladd {}", prop_id(b)), true);
+        assert_eq!((sel.guid, sel.more.clone()), (Some(a), vec![b]));
+        let caps: Vec<&str> = CAPS.split(',').collect();
+        for v in ["swap", "swapkind", "bring", "ground", "settle", "random", "centre", "reset", "step", "grow", "seladd", "grab", "cam"] {
+            assert!(caps.contains(&v), "{v} in caps");
+        }
+    }
+
+    #[test]
     fn the_den_panel_and_the_builders_gate() {
         let mut d = Den::new(den::Spot::default());
         let mut sel = Sel::default();

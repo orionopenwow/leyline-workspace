@@ -1027,7 +1027,7 @@ local function frameRect(f)
     if not (l and b and w and h) then return nil end
     local k = 1
     if f.GetEffectiveScale and UIParent and UIParent.GetEffectiveScale then
-        local fe, ue = tonumber(f:GetEffectiveScale()), tonumber(UIParent:GetEffectiveScale())
+        local fe, ue = tonumber((f:GetEffectiveScale())), tonumber((UIParent:GetEffectiveScale()))
         if fe and ue and ue > 0 then k = fe / ue end
     end
     return { x = l * k, y = b * k, w = w * k, h = h * k }

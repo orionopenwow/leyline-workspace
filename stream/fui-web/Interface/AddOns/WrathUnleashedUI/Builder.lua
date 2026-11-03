@@ -641,7 +641,7 @@ end
 
 local function cursorX(f)
     local x = GetCursorPosition and GetCursorPosition()
-    local s = (f and f.GetEffectiveScale and tonumber(f:GetEffectiveScale())) or 1
+    local s = (f and f.GetEffectiveScale and tonumber((f:GetEffectiveScale()))) or 1
     return x and (tonumber(x) or 0) / math.max(0.01, s) or nil
 end
 
@@ -2023,7 +2023,7 @@ local function boxOf(f)
     if not (l and b and w and h) or w <= 0 or h <= 0 then return nil end
     local k = 1
     if f.GetEffectiveScale and UIParent and UIParent.GetEffectiveScale then
-        local fe, ue = tonumber(f:GetEffectiveScale()), tonumber(UIParent:GetEffectiveScale())
+        local fe, ue = tonumber((f:GetEffectiveScale())), tonumber((UIParent:GetEffectiveScale()))
         if fe and ue and ue > 0 then k = fe / ue end
     end
     return { l = l * k, b = b * k, r = (l + w) * k, t = (b + h) * k }
@@ -2094,7 +2094,7 @@ function B.Layout()
     if not B.moved then
         local k = 1
         if win.GetEffectiveScale and UIParent and UIParent.GetEffectiveScale then
-            local fe, ue = tonumber(win:GetEffectiveScale()), tonumber(UIParent:GetEffectiveScale())
+            local fe, ue = tonumber((win:GetEffectiveScale())), tonumber((UIParent:GetEffectiveScale()))
             if fe and ue and ue > 0 then k = fe / ue end
         end
         local sw = tonumber(GetScreenWidth and GetScreenWidth()) or 1024

@@ -575,6 +575,8 @@ pub(super) fn dojo_verb(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, args: 
             say(c, &if m.total == 0 { "Hit a dummy: your numbers show here and in the Dojo panel.".to_string() } else { format!("Now: {} in {:.1} s, {} per second.", m.total, m.secs(), m.per_sec()) })
         }
         "class" => class_cmd(c, shared, sess, a(1), a(2)),
+        "mounts" | "mount" => mounts_cmd(c, shared, sess, a(1), a(2)),
+        "gear" | "looks" => gear_cmd(c, shared, sess, &args[1..]),
         _ => return None,
     };
     Some(r)

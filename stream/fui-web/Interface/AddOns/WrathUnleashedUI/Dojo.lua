@@ -11,7 +11,8 @@
 --   Practice      Pack, Mover, Healer, Tank, Boss: the sandbox combat's dummies (Den Lite, labs/den-lite combat.rs:
 --                 on when its line says combat=1)
 --   Session       1m / 3m / 5m (a timed parse), Reset, Refill, Fight (dummies hit back)
---   Class         the class (click for the next), Be (that class at level 80: ".den class <class>")
+--   Class         the class (click for the next), Be (that class at level 80: ".den class <class>"), Mounts (every
+--                 mount in the spellbook: ".den mounts")
 --   Full Den      Boss (pick one, then Fight), Duel ring (on / off), New look; on Den Lite these say they need the
 --                 full Den
 --   the readout   your damage per second on the dummies (full Den), and your best boss time
@@ -170,6 +171,7 @@ local function build()
     chips({
         { "classPick", title(J.Class()), 86, function() J.NextClass() end, "Which class (click for the next)" },
         { "classBe", "Be", 34, function() J.Cmd("class " .. J.Class()) end, "Become that class at level 80, with every spell it learns" },
+        { "mounts", "Mounts", 58, function() J.Cmd("mounts") end, "Every mount in your spellbook (flying ones fly with Fly on)" },
     }, nil, at)
     at = y
     panel.full = row("Full Den")
@@ -245,7 +247,9 @@ function J.Paint()
     for _, b in ipairs(panel.sessionChips) do
         if combat then b:Enable() else b:Disable() end
     end
-    if combat then panel.classPick:Enable(); panel.classBe:Enable() else panel.classPick:Disable(); panel.classBe:Disable() end
+    for _, k in ipairs({ "classPick", "classBe", "mounts" }) do
+        if combat then panel[k]:Enable() else panel[k]:Disable() end
+    end
     panel.fightBack:SetActive(l.fight == "1")
     local parts = {}
     if J.dps then

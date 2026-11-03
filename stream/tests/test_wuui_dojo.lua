@@ -212,6 +212,8 @@ before = #cmds
 check("Next class cycles, sending nothing", J.NextClass() == "paladin" and p.classPick:GetText() == "Paladin" and #cmds == before)
 p.classBe:Fire("OnClick")
 check("Be: dojo class <the pick>", lastCmd() == "dojo class paladin")
+p.mounts:Fire("OnClick")
+check("Mounts: dojo mounts", lastCmd() == "dojo mounts")
 state.combat = 0
 
 -- ---------------------------------------------------------------- 2. the full Den

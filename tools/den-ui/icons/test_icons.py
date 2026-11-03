@@ -28,7 +28,8 @@ def load(path, name):
 
 class Icons(unittest.TestCase):
     def names(self):
-        s = open(os.path.join(ADDON, "Style.lua"), encoding="utf-8").read()
+        with open(os.path.join(ADDON, "Style.lua"), encoding="utf-8") as fh:
+            s = fh.read()
         block = re.search(r"S\.ICONS = \{(.*?)\}", s, re.S).group(1)
         return re.findall(r'"(\w+)"', block)
 
@@ -48,6 +49,8 @@ class Icons(unittest.TestCase):
             self.assertTrue(any(a > 200 for a in alpha) and any(a == 0 for a in alpha), n + ": white lines on transparent")
 
     def test_the_generator_makes_exactly_these(self):
+        if importlib.util.find_spec("PIL") is None:
+            self.skipTest("Pillow isn't installed here")
         mk = load(os.path.join(os.path.dirname(__file__), "make_icons.py"), "make_icons")
         self.assertEqual(sorted(mk.ICONS), sorted(self.names()))
         files = sorted(f[:-4] for f in os.listdir(ICONS) if f.endswith(".tga"))
@@ -55,7 +58,8 @@ class Icons(unittest.TestCase):
 
     def test_the_den_ui_uses_no_game_icon(self):
         for f in DEN_UI:
-            s = open(os.path.join(ADDON, f), encoding="utf-8").read()
+            with open(os.path.join(ADDON, f), encoding="utf-8") as fh:
+                s = fh.read()
             code = "\n".join(l.split("--", 1)[0] for l in s.splitlines())
             self.assertNotIn("Interface\\\\Icons", code, f)
 

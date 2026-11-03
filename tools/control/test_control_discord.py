@@ -280,6 +280,49 @@ class Steps(Base):
         self.assertTrue(any("Run the preview again" in l for l in ctl.state["lines"]))
         self.assertEqual(self.fake.writes(), [])
 
+    def test_the_cards_choices(self):
+        """Old channels and Post and pin: chosen in the card, used by the preview, and Do it does that preview's."""
+        post("/api/discord/token", {"token": TOKEN})
+        self.assertEqual(state()[1]["discord"]["options"], {"old": "archive", "pins": False})
+        for bad in ({"old": "nuke", "pins": False}, {"old": "all", "pins": "yes"}, {}):
+            self.assertEqual(post("/api/discord/options", bad)[0], 400, bad)
+        self.assertEqual(post("/api/discord/options", {"old": "empty", "pins": True}, {"X-Token": "nope"})[0], 403)
+        st, b = post("/api/discord/options", {"old": "empty", "pins": True})
+        self.assertEqual(st, 200, b)
+        self.run_step("discord-preview")
+        s = state()[1]["discord"]
+        p = s["preview"]
+        self.assertEqual(p["options"], {"old": "empty", "pins": True})
+        self.assertTrue(s["ready"], s)
+        self.assertTrue(any(i["section"] == "Pinned posts" and i["change"] for i in p["items"]), p["items"])
+        self.assertTrue(any(i["section"] == "DELETED" and "no messages" in i["text"] for i in p["items"]), p["items"])
+        log = (ctl.LOGS / p["log"]).read_text(encoding="utf-8")
+        self.assertIn("Choices: old channels: delete the empty ones, archive the rest", log)
+        # changed since the preview: Do it waits for a new one
+        post("/api/discord/options", {"old": "all", "pins": True})
+        s = state()[1]["discord"]
+        self.assertFalse(s["ready"])
+        self.assertIn("changed the choices", s["why"])
+        self.assertEqual(post("/api/discord/apply", {"preview": p["id"], "confirm": "YES"})[0], 409)
+        post("/api/discord/options", {"old": "empty", "pins": True})
+        self.assertTrue(state()[1]["discord"]["ready"])
+        self.assertEqual(post("/api/discord/apply", {"preview": p["id"], "confirm": "YES"})[0], 200)
+        wait_idle()
+        a = state()[1]["discord"]["apply"]
+        self.assertTrue(a["ok"], "\n".join(ctl.state["lines"][-30:]))
+        self.assertIsNone(self.fake.chan("23"), "the empty old channel was deleted")
+        self.assertIsNotNone(self.fake.chan("22"), "the one with messages was not")
+        self.assertTrue(self.fake.w.get("pins"), "the guide posts were pinned")
+        self.run_step("discord-preview")
+        self.assertEqual(state()[1]["discord"]["preview"]["changes"], 0)
+
+    def test_the_card_has_the_choices(self):
+        page = req("GET", f"/?t={ctl.TOKEN}")[1]
+        panel = page[page.index('id="discord"'):page.index('id="gmcard"')]
+        for s in ('id="dold"', 'value="archive"', 'value="empty"', 'value="all"', 'id="dpins"', "Post and pin",
+                  "even with messages", "13 channels"):
+            self.assertIn(s, panel)
+
     def test_summary_parser(self):
         log = T / "x.log"
         log.write_text("Signed in as the bot b.\nPREVIEW (nothing will change) for the server \"Orion's\":\n\n"

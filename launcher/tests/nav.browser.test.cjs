@@ -44,7 +44,7 @@ const FAKE = ({ page, backdrop, tabs }) => {
       case 'host_info': return { dir: null, is_kit: false, problems: [], seeds: [], realm: null };
       case 'modes_list': return { modes: [], from_cache: false, builtin: false, saved_at: null, error: null };
       case 'p2p_flags': return { effective: { p2p_hosting: false, limits: {} }, known: [], local: { overrides: {} }, site: {} };
-      case 'social_status': return false;
+      case 'social_status': return true;   // a sign-in kept (the website not asked: the sign-in screen stays closed)
       default: throw 'unknown ' + cmd;
     }
   } } };

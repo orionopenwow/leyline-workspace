@@ -26,7 +26,7 @@
   const MOMENTS = {
     "cheer-hosted": { line: "You're live — share this link and friends can join.", action: "Copy invite link" },
     "cheer-friend": { line: "A friend just joined your server. Say hello!" },
-    "cheer-mod": { line: "Your first mod is in. It's there the next time you press PLAY." },
+    "cheer-mod": { line: "Your first mod or addon is in. It's there the next time you press PLAY." },
   };
   const SKIP = "Skip tour", NEXT = "Next", DONE = "Done";
 
@@ -206,7 +206,15 @@
   async function boot() {
     for (let i = 0; i < 50 && !app(); i++) await new Promise((r) => setTimeout(r, 100));
     if (!readSeen()) return;   // an older core: no guide
-    if (!seen.includes("tour")) setTimeout(startTour, 500);
+    if (seen.includes("tour")) return;
+    // the sign-in screen first (gate.js): the tour starts once it closes
+    const G = window.LeylineGate;
+    if (G && G.isOpen()) {
+      const go = (ev) => { if (ev.detail && ev.detail.open) return; document.removeEventListener("leyline:gate", go); setTimeout(startTour, 500); };
+      document.addEventListener("leyline:gate", go);
+      return;
+    }
+    setTimeout(startTour, 500);
   }
   const again = byId("guide-again");
   if (again) again.addEventListener("click", () => { if (readSeen()) startTour(); });

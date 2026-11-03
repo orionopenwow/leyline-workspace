@@ -105,6 +105,24 @@ impl Build {
             Build::Other => "other",
         }
     }
+    /// The game era players call this build by (owner 2 Nov: "Wrath 3.3.5a", not "Game 3.3.5a"), or None.
+    pub fn era(self) -> Option<&'static str> {
+        match self {
+            Build::V1121 => Some("Vanilla"),
+            Build::V243 => Some("TBC"),
+            Build::V335a => Some("Wrath"),
+            Build::V434 => Some("Cata"),
+            Build::V548 => Some("MoP"),
+            Build::Other => None,
+        }
+    }
+    /// A client's default name: the era and the version (`Wrath 3.3.5a`), or the label for an unknown build.
+    pub fn era_name(self) -> String {
+        match self.era() {
+            Some(e) => format!("{e} {}", self.version()),
+            None => self.label().to_string(),
+        }
+    }
     pub fn label(self) -> &'static str {
         match self {
             Build::V1121 => "1.12.1 (5875)",
@@ -686,6 +704,39 @@ pub fn brandless(name: &str) -> String {
     }
 }
 
+/// Whether a folder's name (game names already out) says nothing but the game and its version ("Game 3.3.5a",
+/// "3.3.5a client", "WotLK"): such a folder's client is named by its era alone (`Build::era_name`).
+pub fn says_nothing(name: &str) -> bool {
+    const WORDS: &[&str] = &["game", "client", "wotlk", "wrath", "tbc", "vanilla", "classic", "cata", "cataclysm", "mop", "build", "enus", "engb"];
+    name.split(|c: char| !c.is_alphanumeric()).all(|w| {
+        let w = w.to_lowercase();
+        let digits = w.trim_end_matches(|c: char| c.is_ascii_alphabetic());
+        w.is_empty() || WORDS.contains(&w.as_str()) || (!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) && w.len() - digits.len() <= 1)
+    })
+}
+
+/// A client's name made by Leyline, as it is shown now: `Wrath 3.3.5a`, or `<folder> (Wrath)` when the folder's
+/// name says something. A name saved by an older Leyline (`Game 3.3.5a (3.3.5a (12340))`, `<folder> (3.3.5a (12340))`)
+/// becomes the new one; a name the player typed (no build label at its end) is kept.
+pub fn tidy_name(name: &str, build: Build) -> String {
+    if build.era().is_none() {
+        return name.to_string();
+    }
+    let label = build.label();
+    let bare = if name == label {
+        ""
+    } else {
+        match name.strip_suffix(&format!("({label})")) {
+            Some(b) => b.trim_end(),
+            None => return name.to_string(),
+        }
+    };
+    match build.era() {
+        Some(era) if !says_nothing(bare) => format!("{bare} ({era})"),
+        _ => build.era_name(),
+    }
+}
+
 /// A new profile from a detection. The id is unique among `existing` ids.
 pub fn new_profile(path: &Path, det: &Detection, existing: &[ClientProfile]) -> ClientProfile {
     let base = format!("c{}", det.build.version().replace('.', ""));
@@ -696,7 +747,7 @@ pub fn new_profile(path: &Path, det: &Detection, existing: &[ClientProfile]) -> 
     let folder = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
     let label = match (det.build, &det.exe_version) {
         (Build::Other, Some(v)) => format!("other build {v}"),
-        (b, _) => b.label().to_string(),
+        (b, _) => b.era_name(),
     };
     let exe = det
         .exe
@@ -706,7 +757,11 @@ pub fn new_profile(path: &Path, det: &Detection, existing: &[ClientProfile]) -> 
         .filter(|n| !n.eq_ignore_ascii_case(det.build.exe_name()));
     ClientProfile {
         id,
-        name: brandless(&if folder.is_empty() { label } else { format!("{folder} ({label})") }),
+        name: {
+            let f = brandless(&folder);
+            // the version shows beside the name everywhere: a named folder carries only its era
+            if folder.is_empty() || says_nothing(&f) { label } else { format!("{f} ({})", det.build.era().map(String::from).unwrap_or(label)) }
+        },
         path: path.to_path_buf(),
         build: det.build,
         realmlist: det.current_realmlist.clone().unwrap_or_default(),
@@ -788,6 +843,24 @@ mod tests {
         assert_eq!(super::brandless("My Game (3.3.5a (12340))"), "My Game (3.3.5a (12340))");
         assert_eq!(super::brandless("Blizzard Entertainment"), "Game");
         assert_eq!(super::brandless("wow"), "Game");
+    }
+    #[test]
+    fn client_names_say_the_era() {
+        use super::{says_nothing, tidy_name, Build};
+        assert_eq!(Build::V335a.era_name(), "Wrath 3.3.5a");
+        assert_eq!(Build::V1121.era_name(), "Vanilla 1.12.1");
+        assert_eq!(Build::V243.era_name(), "TBC 2.4.3");
+        assert!(says_nothing("Game 3.3.5a") && says_nothing("Game") && says_nothing("3.3.5a client") && says_nothing("WotLK-3.3.5"));
+        assert!(!says_nothing("Warmane") && !says_nothing("My Game"));
+        // names an older Leyline made
+        assert_eq!(tidy_name("Game 3.3.5a (3.3.5a (12340))", Build::V335a), "Wrath 3.3.5a");
+        assert_eq!(tidy_name("Game (1.12.1 (5875))", Build::V1121), "Vanilla 1.12.1");
+        assert_eq!(tidy_name("2.4.3 (8606)", Build::V243), "TBC 2.4.3");
+        assert_eq!(tidy_name("Warmane (3.3.5a (12340))", Build::V335a), "Warmane (Wrath)");
+        // the player's own names, and an unknown build, stay
+        assert_eq!(tidy_name("My raid client", Build::V335a), "My raid client");
+        assert_eq!(tidy_name("Wrath 3.3.5a", Build::V335a), "Wrath 3.3.5a");
+        assert_eq!(tidy_name("x (other build 7.3.5)", Build::Other), "x (other build 7.3.5)");
     }
     use super::testutil::*;
     use super::*;
@@ -1060,6 +1133,6 @@ mod tests {
         let b = new_profile(d.path(), &det, std::slice::from_ref(&a));
         assert_eq!(a.id, "c335a-1");
         assert_eq!(b.id, "c335a-2");
-        assert!(a.name.ends_with("(3.3.5a (12340))"));
+        assert!(a.name.ends_with("(Wrath)"), "{}", a.name);
     }
 }

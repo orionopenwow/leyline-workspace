@@ -34,7 +34,7 @@
 
   function steps(on) {
     const ol = el("ol", "ac-steps"); ol.setAttribute("aria-label", "Steps");
-    ["Sign in", "Your profile", "Play"].forEach((n, i) => {
+    ["Log in", "Your profile", "Play"].forEach((n, i) => {
       const li = el("li", i + 1 === on ? "on" : i + 1 < on ? "done" : "");
       li.dataset.n = String(i + 1);
       if (i + 1 === on) li.setAttribute("aria-current", "step");
@@ -54,7 +54,7 @@
   // ---------------------------------------------------------------- signed out: the sign-in
   function renderSignedOut(view) {
     const card = el("section", "card ac-card ac-signin");
-    card.append(steps(1), el("h2", "", "Sign in"),
+    card.append(steps(1), el("h2", "", "Log in"),
       el("p", "ac-lede", "One account for the launcher, the website and the forum: your name and picture, mod ratings, and your Hero Key on community realms."));
     const box = el("div", "ac-flow"); box.id = "ac-flow";
     S().buildFlow(box, true);
@@ -117,7 +117,7 @@
     const nl = el("label", "ac-label", "Display name"); nl.htmlFor = "ac-name";
     const name = el("input"); name.id = "ac-name"; name.type = "text"; name.maxLength = 24; name.value = draft.name; name.autocomplete = "off"; name.spellcheck = false;
     name.setAttribute("aria-describedby", "ac-name-h");
-    const nh = el("p", "hint", (prof.name_generated ? "Your name was made for you (a guest's or the default): pick your own. " : "")
+    const nh = el("p", "hint", (prof.name_generated ? "Your name was made for you: pick your own any time. " : "")
       + `2 to 24 letters, digits, dots, dashes or underscores. Others see it with your tag${me.tag ? " (#" + me.tag + ")" : ""}.`); nh.id = "ac-name-h";
     name.oninput = () => { draft.name = name.value; };
     const bl = el("label", "ac-label", "Bio (optional)"); bl.htmlFor = "ac-bio";
@@ -147,8 +147,8 @@
 
     // the ways to sign in
     const wc = el("section", "card ac-card ac-ways");
-    wc.append(el("h3", "", "Ways to sign in"),
-      el("p", "hint", "Each opens the website in your browser. Linking another way lets it sign in to this same account."));
+    wc.append(el("h3", "", "Ways to log in"),
+      el("p", "hint", "Each opens the website in your browser. Linking another way lets it log in to this same account."));
     const ul = el("ul", "ac-list");
     const row = (title, line, label, link) => {
       const li = el("li");
@@ -205,7 +205,7 @@
       busy = false;
       if (btn) btn.disabled = false;
       const msg = String(e);
-      status(msg === "signed_out" ? "You were signed out. Sign in again." : msg, "bad");
+      status(msg === "signed_out" ? "You were signed out. Log in again." : msg, "bad");
       if (msg === "signed_out") S().refresh();
     }
   }
@@ -253,7 +253,7 @@
       catch (_) { draw(true); keyStatus("Select the key and copy it.", "warn"); }
     };
     acts.append(save, copy);
-    wrap.append(el("p", "hint", "Save it now: it is shown only this once. Anyone with it can sign in as you."), box, acts);
+    wrap.append(el("p", "hint", "Save it now: it is shown only this once. Anyone with it can log in as you."), box, acts);
     return wrap;
   }
 
@@ -313,7 +313,7 @@
     d.append(el("summary", "", has ? "Password: set" : "Password (optional)"));
     const f = el("form", "ac-pass-f"); f.noValidate = true;
     f.append(el("p", "hint", has ? "Change it, or remove it. Your Hero Key keeps working either way."
-      : `Set one to sign in here with your name and #tag${me.tag ? ` (${me.name}#${me.tag})` : ""}. Your Hero Key keeps working.`));
+      : `Set one to log in here with your name and #tag${me.tag ? ` (${me.name}#${me.tag})` : ""}. Your Hero Key keeps working.`));
     const l1 = el("label", "ac-label", has ? "New password" : "Password"); l1.htmlFor = "ac-pw1";
     const p1 = el("input"); p1.id = "ac-pw1"; p1.type = "password"; p1.autocomplete = "new-password"; p1.maxLength = 128;
     const l2 = el("label", "ac-label", "Type it again"); l2.htmlFor = "ac-pw2";
@@ -340,8 +340,8 @@
         await invoke("social_call", { action: "password", args: { password: p1.value } });
         p1.value = p2.value = "";
         if (keyState) keyState.has_password = true;
-        note("Password saved. Sign in with your name, its #tag and this password.", "ok");
-      } catch (err) { note(String(err) === "signed_out" ? "You were signed out. Sign in again." : String(err), "bad"); }
+        note("Password saved. Log in with your name, its #tag and this password.", "ok");
+      } catch (err) { note(String(err) === "signed_out" ? "You were signed out. Log in again." : String(err), "bad"); }
     };
     f.append(l1, p1, l2, p2, acts, st);
     d.append(f);
@@ -374,7 +374,7 @@
     } catch (e) {
       keyAsk = false;
       const msg = String(e);
-      keyNote = [msg.includes("website") ? msg : (msg === "signed_out" ? "You were signed out. Sign in again." : msg), "bad"];
+      keyNote = [msg.includes("website") ? msg : (msg === "signed_out" ? "You were signed out. Log in again." : msg), "bad"];
       if (msg.includes("website")) keyState = Object.assign({}, keyState || {}, { web_only: true });
       else if (msg !== "signed_out") keyState = null;   // look again: a key made a moment ago elsewhere shows up
     }

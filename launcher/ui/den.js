@@ -444,7 +444,7 @@
   }
   function stateLine() {
     const w = where();
-    if (w === "lite") return liteUp() ? ["ok", "Open on this PC (Den Lite)"] : ["", "Ready on this PC: no setup needed"];
+    if (w === "lite") return liteUp() ? ["ok", "Open on this PC"] : ["", "Ready on this PC: no setup needed"];
     if (w === "docker") return dockerUp() ? ["ok", "Online on this PC · private · friends with your invite link"] : ["", "Stopped: Play starts it"];
     return ["warn", "Not set up yet: Play sets it up"];
   }

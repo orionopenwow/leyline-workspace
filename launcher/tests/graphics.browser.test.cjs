@@ -44,7 +44,8 @@ const FAKE = () => {
       case 'host_info': return { dir: null, is_kit: false, problems: [], seeds: [], realm: null };
       case 'modes_list': return { modes: [], from_cache: false, builtin: false, saved_at: null, error: null };
       case 'p2p_flags': return { effective: { p2p_hosting: false, limits: {} }, known: [], local: { overrides: {} }, site: {} };
-      case 'social_status': return false;
+      case 'social_status': return true;   // a sign-in kept (the website not asked: the sign-in screen stays closed)
+      case 'social_call': throw 'offline';
       case 'addons_status': return { prefs: { auto_update: true, dont_ask: true }, clients: [], available: null };
       case 'addons_should_offer': return false;
       case 'addons_auto_update': return [];

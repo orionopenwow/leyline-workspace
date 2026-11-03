@@ -692,3 +692,4 @@
 1307b ship  Save as Orion: the slimmer Log In button, sign-in pruned, the Discord setup script for today's channels
 1308a signin  Site: new addons, mods and graphics finds waiting for your review; Performance and High looks (pending); Epoch water held back for a check
 1308b ship  Save as Orion: Leyline Control > Discord (paste the bot token, Preview, Do it), the mods-daily step and its plan
+1309a ship  Save as Orion: log in to use the launcher (browser, Google, Hero Key file or paste, Sign up), game folders named Wrath 3.3.5a etc and in order, smooth official/community switching, the first-run test

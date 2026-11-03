@@ -102,7 +102,8 @@ test('Realms page: two tabs, Official first; the slim line, one tag, players, Re
   assert.equal(await cards.nth(0).locator('.rl-note').textContent(), 'Needs your own 1.12.1 client', 'a quiet note only when it applies');
   assert.equal(await cards.nth(1).locator('.rl-note').count(), 0);
   assert.equal(await page.locator('#rl-list .rl-addr').count(), 0, 'no address chip');
-  assert.equal(await cards.nth(0).locator('.rl-meta').textContent(), 'PvE · vMaNGOS', 'one line: type · core');
+  assert.equal(await cards.nth(0).locator('.rl-meta').textContent(), 'PvE', 'one line: type and style, no server software name');
+  assert.equal(await cards.nth(1).locator('.rl-meta').textContent(), 'PvE · Bots');
   const more = await cards.nth(0).locator('.rl-meta').getAttribute('title');
   assert.match(more, /Community realm/); assert.match(more, /Europe/); assert.match(more, /PvP/); assert.match(more, /97% up · 7 d/);
   assert.match(more, /Realmlist: relay\.openvanilla\.app:40020/);
@@ -388,7 +389,7 @@ test('Hero Key sign-in: hidden with the flag off; on: live community realms only
   const off = await open(false);
   await off.page.click('#rl-refresh');
   await off.page.waitForTimeout(100);
-  assert.equal(await off.page.locator('button:has-text("Sign in with your Hero Key")').count(), 0, 'flag off: no button');
+  assert.equal(await off.page.locator('button:has-text("Log in with your Hero Key")').count(), 0, 'flag off: no button');
   assert.deepEqual(off.errors, []);
   const page = await browser.newPage();
   const errors = [];
@@ -409,11 +410,11 @@ test('Hero Key sign-in: hidden with the flag off; on: live community realms only
   await page.click('#rl-refresh');
   await page.waitForTimeout(100);
   const cards = page.locator('#rl-list .realm-card');
-  const hk = (i) => cards.nth(i).locator('button:has-text("Sign in with your Hero Key")').count();
+  const hk = (i) => cards.nth(i).locator('button:has-text("Log in with your Hero Key")').count();
   assert.equal(await hk(0), 0, 'not the official one');
   await page.click('#rl-tab-community');
   assert.deepEqual([await hk(0), await hk(1), await hk(2)], [1, 1, 0], 'live community realms only (not offline)');
-  await cards.nth(1).locator('button:has-text("Sign in with your Hero Key")').click();
+  await cards.nth(1).locator('button:has-text("Log in with your Hero Key")').click();
   await page.waitForFunction(() => /one-time password/.test(document.querySelector('#rl-status').textContent));
   assert.match(await page.textContent('#rl-status'), /HKABCDEFGHIJKLMN.*Q7W8E9R2T3Y4U5I6.*10 minutes/);
   assert.ok(await page.evaluate(() => window.__calls.some(([c, a]) => c === 'play_realm_herokey' && a.slug === 'c-bbbbbbbbbbbbbbbb')));

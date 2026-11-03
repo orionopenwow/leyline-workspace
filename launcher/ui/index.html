@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="themes/themes.css"><script src="themes.js"></script>
 <link rel="stylesheet" href="social.css"><!-- Home's profile panel (social.js) and the Forum page (forum.js) -->
 <link rel="stylesheet" href="account.css"><!-- the sign-in chooser (social.js) and Manage account (account.js) -->
+<link rel="stylesheet" href="gate.css"><!-- the sign-in screen: Log in or Sign up before the launcher (gate.js) -->
 <link rel="stylesheet" href="modes.css">
 <link rel="stylesheet" href="hostconsole.css"><!-- Host: the host console (hostconsole.js) -->
 <link rel="stylesheet" href="den.css"><!-- Your Den: the one Den page and the Home entry (den.js) -->
@@ -28,8 +29,19 @@
 <link rel="stylesheet" href="slate.css"><!-- the pages on the stone: panels, cards, buttons, Realms (owner 31 Oct design pass) -->
 <link rel="stylesheet" href="guide.css"><!-- the first-run tour and the one-time encouragement toast (guide.js) -->
 </head>
-<body class="ly">
-<div class="frame">
+<body class="ly gated">
+<!-- The sign-in screen (gate.js): signed out, Log in or Sign up first, over the whole window; it shows "Checking your
+     sign-in…" until the core answers, so the launcher never flashes first. Its own drag strip and window buttons. -->
+<div class="gate" id="gate" role="dialog" aria-modal="true" aria-label="Log in to Leyline">
+  <div class="gate-bar" data-tauri-drag-region></div>
+  <div class="winbtns gate-winbtns">
+    <button type="button" id="gate-min" aria-label="Minimise"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+    <button type="button" id="gate-max" aria-label="Maximise"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="1.5"/></svg></button>
+    <button type="button" id="gate-close" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="gate-body" id="gate-body"><section class="gate-card"><p class="gate-wait-t"><b>Checking your sign-in…</b></p></section></div>
+</div>
+<div class="frame" inert>
 
 <!-- Title bar: drag to move the window -->
 <header class="titlebar" data-tauri-drag-region>
@@ -43,7 +55,7 @@
   <!-- owner 31 Oct: every update reaches everyone; one calm line, Restart, or it finishes the next time Leyline opens -->
   <div class="pill upd-line" id="tb-update" role="status" hidden><span id="tb-update-text">Update ready — restart to finish</span><button type="button" class="upd-go" id="tb-update-go">Restart</button></div>
   <div class="pill" id="tb-status"><span class="dot"></span><span id="tb-status-text">Checking…</span></div>
-  <button type="button" class="chip" id="tb-account" title="Your account lives on the website: sign in, or manage it">
+  <button type="button" class="chip" id="tb-account" title="Your account lives on the website: log in, or manage it">
     <span class="chip-crest"><b>L</b></span>
     <span class="chip-txt"><span>Your account</span></span>
     <span class="chip-go" aria-hidden="true">Manage</span>
@@ -159,7 +171,7 @@
   <!-- CLIENTS (from CHANGE GAME FOLDER) -->
   <section class="page" id="page-clients">
     <div class="panel">
-      <h2>Game Clients</h2>
+      <h2>Game folders</h2>
       <p class="lede">Point Leyline at a game folder you already have; it reads the build itself. Leyline never downloads a game client. <button type="button" class="link" data-page-go="findfiles">Can't find yours? ›</button></p>
       <div class="row">
         <button class="btn" id="cl-pick">Choose a folder…</button>
@@ -404,12 +416,12 @@
         <button type="button" class="btn small" id="fm-discord">Join the Discord</button></div>
       <div id="fm-view" aria-live="polite"></div>
       <p class="status" id="fm-status" role="status"></p>
-      <p class="hint fm-fine">Reading here; sign in on Home or Manage account to post from the launcher. Plain text and links only.</p>
+      <p class="hint fm-fine">Reading here; Log In (in the title bar) to post from the launcher. Plain text and links only.</p>
     </div>
   </section>
 
   <!-- MANAGE ACCOUNT (account.js): signed out, the sign-in in steps; signed in, your picture, name and bio, the ways to
-       sign in and Sign out. Opened from the title bar's profile chip; no menu item. -->
+       log in and Sign out. Opened from the title bar's profile chip; no menu item. -->
   <section class="page" id="page-account">
     <div class="panel wide ac">
       <div class="panel-head"><h2>Manage account</h2></div>
@@ -568,7 +580,7 @@
             <input id="wine-prefix" placeholder="leave empty for the default" autocomplete="off" spellcheck="false">
           </label>
         </fieldset>
-        <div class="row"><button class="btn" type="submit" id="set-save">Save</button><button class="btn" type="button" data-page-go="clients">Game clients</button></div>
+        <div class="row"><button class="btn" type="submit" id="set-save">Save</button><button class="btn" type="button" data-page-go="clients">Game folders</button></div>
         <p class="status" id="set-status" role="status"></p>
       </form>
       <h3>Background</h3>
@@ -599,7 +611,7 @@
         the game folder; without them your account name is filled in. The login goes into Leyline's own archive in the game's
         Data folder for that one start, and is taken out when the game closes.</label>
       <p class="status" id="hybrid-status" role="status"></p>
-      <label class="check"><input type="checkbox" id="set-ctorrent"> Allow torrent downloads of game clients (testing only): a magnet link or torrent
+      <label class="check"><input type="checkbox" id="set-ctorrent"> Allow torrent downloads of game folders (testing only): a magnet link or torrent
         file you drop on the realm box downloads into the folder you pick</label>
       <label class="check sub"><input type="checkbox" id="set-cshare"> Share while downloading (upload capped; it stops when the download is done)</label>
       <p class="status" id="testing-status" role="status"></p>
@@ -692,7 +704,7 @@
         <span class="pb-client-name" id="pb-client-name">No game client</span><span class="rl-ver sm" id="pb-client-ver" hidden></span>
         <svg class="pb-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>
       </button>
-      <ul class="pb-menu" id="pb-menu" role="listbox" aria-label="Game clients" hidden></ul>
+      <ul class="pb-menu" id="pb-menu" role="listbox" aria-label="Game folders" hidden></ul>
       <!-- adding a client from a dropped folder, zip or link: the question, then the progress bar (app.js clientImport) -->
       <div class="cimp" id="cimp" role="dialog" aria-labelledby="cimp-title" hidden>
         <div class="cimp-head"><b id="cimp-title">Add a game client</b><button type="button" class="cimp-x" id="cimp-x" aria-label="Close">×</button></div>
@@ -762,6 +774,7 @@
 <script src="avatars.js"></script><!-- the player portraits (window.LeylineAvatars; before social.js) -->
 <script src="social.js"></script>
 <script src="account.js"></script>
+<script src="gate.js"></script><!-- the sign-in screen (window.LeylineGate; after social.js and account.js, before app.js) -->
 <script src="forum.js"></script>
 <script src="modes.js"></script>
 <script src="shelf.js"></script><!-- Mods and Addons: one rule (window.LeylineShelf; before market, gamemods, simple and app) -->

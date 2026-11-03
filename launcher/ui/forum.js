@@ -33,7 +33,7 @@
   // what went wrong with a post, in plain words (the forum's own refusal is already plain)
   function postFailed(e) {
     const m = String(e);
-    if (m === "signed_out") { if (S()) S().refresh(); return "You were signed out. Sign in again from Manage account."; }
+    if (m === "signed_out") { if (S()) S().refresh(); return "You were signed out. Log in again from Manage account."; }
     return oops(e, m || DOWN);
   }
   function asWho() {
@@ -348,7 +348,7 @@
   function signLine() {
     const fine = document.querySelector("#page-forum .fm-fine");
     if (fine) fine.textContent = signedIn() ? "You post and reply right here, signed in on this launcher. Plain text and links only."
-      : "Reading here; sign in on Home or Manage account to post from the launcher. Plain text and links only.";
+      : "Reading here; Log In (in the title bar) to post from the launcher. Plain text and links only.";
     const nb = $("fm-new");
     if (nb) nb.title = signedIn() ? "Start a thread here" : "Opens the website in your browser";
   }

@@ -40,6 +40,7 @@ pub mod mpq; // a small MPQ writer for the hybrid client's patch archive (our fi
 pub mod news; // the News page: the website's news feed, read only (news.rs)
 pub mod net;
 pub mod p2p;
+pub mod playtest; // `Leyline play-test`: the first-run test on the official realm, its arguments (docs/FIRST-RUN-TEST.md)
 pub mod pe_version;
 pub mod rankings; // Discover's sort tabs, install counts and ratings (hub rankings agent)
 pub mod realms;

@@ -91,6 +91,10 @@ async function open(opts) {
   await page.route('https://play.openvanilla.app/wrath/art/**', (r) => r.abort());
   await page.addInitScript(FAKE, opts || {});
   await page.goto(INDEX);
+  // signed out, the sign-in screen (gate.js, gate.browser.test.cjs) covers the launcher: these tests are the launcher
+  // behind it, as after its Continue without signing in
+  await page.waitForFunction(() => window.LeylineSocial && window.LeylineSocial.checked());
+  await page.evaluate(() => window.LeylineGate.skip());
   return { page, errors, fetched };
 }
 const called = (page, cmd, pred) => page.evaluate(([c, p]) => window.__calls.some(([x, a]) => x === c && (!p || new Function('a', 'return ' + p)(a))), [cmd, pred || '']);
@@ -109,7 +113,7 @@ test('signed out: SIGN IN opens the chooser; only the ways the website offers', 
   await o.page.click('#hf-signin');
   await o.page.waitForFunction(() => document.querySelectorAll('#hf-code .sf-ways .sf-way').length === 2);
   // Discord sign-in is never offered, even when the website says it has it (owner 2 Nov 21:04)
-  assert.deepEqual(await o.page.$$eval('#hf-code .sf-ways .sf-way', (b) => b.map((x) => x.textContent)), ['Sign in with your Hero Key', 'Continue with Google']);
+  assert.deepEqual(await o.page.$$eval('#hf-code .sf-ways .sf-way', (b) => b.map((x) => x.textContent)), ['Log in with your Hero Key', 'Continue with Google']);
   assert.deepEqual([...errors, ...o.errors], []);
   await o.page.close();
 });
@@ -177,7 +181,7 @@ test('Manage account signed out: step 1 and the same chooser on the page', async
   const { page, errors } = await open({ discord: true });
   await page.evaluate(() => window.LeylineNav.show('account'));
   await page.waitForFunction(() => document.querySelectorAll('#ac-view .sf-way').length === 3);   // Get your Hero Key, then two (no Discord)
-  assert.match(await page.textContent('#ac-view .ac-steps li.on'), /Sign in/);
+  assert.match(await page.textContent('#ac-view .ac-steps li.on'), /Log in/);
   assert.equal(await page.locator('#ac-view .sf-way[data-via="discord"]').count(), 0);
   await page.click('#ac-view .sf-way[data-via="google"]');
   await page.waitForSelector('#ac-view .sx-code');

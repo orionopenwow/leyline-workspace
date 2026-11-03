@@ -78,6 +78,10 @@ async function open(opts) {
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.addInitScript(FAKE, opts || {});
   await page.goto(INDEX);
+  // signed out, the sign-in screen (gate.js, gate.browser.test.cjs) covers the launcher: these tests are the launcher
+  // behind it, as after its Continue without signing in
+  await page.waitForFunction(() => window.LeylineSocial && window.LeylineSocial.checked());
+  await page.evaluate(() => window.LeylineGate.skip());
   await page.waitForFunction(() => window.LeylineNav && window.LeylineForum);
   return { page, errors };
 }

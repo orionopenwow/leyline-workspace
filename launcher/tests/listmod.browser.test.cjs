@@ -84,6 +84,10 @@ async function open(opts = {}) {
   await page.addInitScript(FAKE, Object.assign({ catalog: CATALOG, signed: true }, opts));
   await page.addInitScript(([ok, bad]) => { window.__ok = ok; window.__bad = bad; }, [CHECK_OK, CHECK_BAD]);
   await page.goto(INDEX);
+  // signed out, the sign-in screen (gate.js, gate.browser.test.cjs) covers the launcher: these tests are the launcher
+  // behind it, as after its Continue without signing in
+  await page.waitForFunction(() => window.LeylineSocial && window.LeylineSocial.checked());
+  await page.evaluate(() => window.LeylineGate.skip());
   await page.waitForFunction(() => !!document.getElementById('mods-list-yours') && !!window.LeylineSocial);
   return { page, errors };
 }
@@ -139,7 +143,7 @@ test('signed out: sign in or open the website, nothing is sent', async () => {
   const { page, errors } = await open({ signed: false });
   await page.evaluate(() => window.LeylineListMod.open());
   await page.waitForSelector('#lm-dlg[open]');
-  assert.match(await page.textContent('#lm-dlg'), /Sign in to list a mod/);
+  assert.match(await page.textContent('#lm-dlg'), /Log in to list a mod/);
   assert.equal((await calls(page, 'listing_post')).length, 0);
   assert.deepEqual(errors, []);
   await page.close();

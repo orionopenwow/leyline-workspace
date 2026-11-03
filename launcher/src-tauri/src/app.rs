@@ -239,6 +239,10 @@ fn point_and_play_with(
     if !start {
         return Ok((format!("{} now points at {realm}.", profile.name), hybrid));
     }
+    // anywhere but a Den: the Den's account and realm name (den_launch) out of Config.wtf, so the switch is clean
+    if !local && realm != crate::host::lite::ADDRESS {
+        let _ = crate::herokey::clear_login(&profile.path, crate::host::lite::ACCOUNT, crate::host::lite::REALM);
+    }
     crate::gfx::prepare_launch(&profile)?;
     let hybrid_on = (core.snapshot().hybrid_login || local) && profile.build == clients::Build::V335a;
     match &session {
@@ -330,7 +334,7 @@ fn official_note(login: &Result<(), String>, hybrid: &Result<(), String>) -> Str
         (Ok(()), Ok(())) => " It signs you in by itself and opens at character select.".into(),
         (Ok(()), Err(e)) if e.is_empty() => format!(" Your account name is filled in: {PW}"),
         (Ok(()), Err(e)) => format!(" Your account name is filled in: {PW} (Signing in by itself didn't work here: {e})"),
-        (Err(e), _) if e == "signed_out" => " Sign in on Home (top right) and PLAY signs you in by itself.".into(),
+        (Err(e), _) if e == "signed_out" => " Log in to Leyline and PLAY signs you in by itself.".into(),
         (Err(e), _) => format!(" Signing in by itself didn't work ({e}): {PW}"),
     }
 }
@@ -374,7 +378,7 @@ async fn play_realm_herokey(core: State<'_, Core>, client: String, slug: String)
     };
     let d2 = dir.clone();
     let login = blocking(move || crate::herokey::sign_in(&d2, &rid)).await.map_err(|e| {
-        if e == "signed_out" { "Sign in on Home first (top right: your Hero Key or Google, on the web).".to_string() } else { e }
+        if e == "signed_out" { "Log in to Leyline first: Log In, in the title bar.".to_string() } else { e }
     })?;
     let profile = core.client(&client)?;
     let _ = crate::herokey::set_account_name(&profile.path, &login.user);
@@ -1750,6 +1754,7 @@ pub fn run() {
             crate::social::commands::social_ways,
             // Your Hero Key in the launcher (Manage account; stream/herokeys.py)
             crate::social::commands::social_key_signin,
+            crate::social::commands::social_key_file,
             crate::social::commands::social_new_account,
             crate::social::commands::social_password_signin,
             crate::social::commands::save_text_file,
@@ -1802,7 +1807,7 @@ mod solo_tests {
         let n = official_note(&ok, &Err("Forever UI's login screens aren't in this game folder yet".into()));
         assert!(n.contains("account name is filled in") && n.contains("didn't work here: Forever UI"), "{n}");
         let n = official_note(&Err("signed_out".into()), &Err(String::new()));
-        assert!(n.contains("Sign in on Home"), "{n}");
+        assert!(n.contains("Log in to Leyline"), "{n}");
         let n = official_note(&Err("The website isn't answering".into()), &Err(String::new()));
         assert!(n.contains("didn't work (The website") && n.contains("game password"), "{n}");
         for n in [official_note(&ok, &Ok(())), official_note(&ok, &Err(String::new())), official_note(&Err("signed_out".into()), &Ok(()))] {

@@ -31,6 +31,8 @@
   const emit = (name, detail) => document.dispatchEvent(new CustomEvent(name, { detail }));
 
   let me = null, extra = {}, signedIn = false, code = "", ways = null;
+  // known: the core said whether a sign-in is kept (social_status); waysDown: the website didn't answer social_ways
+  let known = false, waysDown = false, checked = false;
   // the sign-in in progress: stage idle | choose | waiting | busy | error; via: the way picked; note: what went wrong;
   // form: the in-launcher form open in the chooser ("" | "key": paste your Hero Key | "password": name#tag and password)
   const flow = { stage: "idle", via: "", note: "", form: "" };
@@ -71,7 +73,7 @@
 
   // ---------------------------------------------------------------- the ways and the chooser
   // Discord sign-in is not offered (owner 2 Nov 21:04: "remove discord auth from Leyline")
-  const WAYS = [["herokey", "Hero Key", "Sign in with your Hero Key"], ["google", "Google", "Continue with Google"]];
+  const WAYS = [["herokey", "Hero Key", "Log in with your Hero Key"], ["google", "Google", "Continue with Google"]];
   const WAY_ICON = {
     herokey: '<path fill="currentColor" d="M7 14a3 3 0 1 1 0-6 3 3 0 0 1 0 6Zm5.65-4A6 6 0 1 0 12.65 14H15v3h3v-3h2v-4h-7.35Z"/>',
     google: '<path fill="#EA4335" d="M12 4.75c1.77 0 3.36.61 4.6 1.8l3.43-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.69 1.28 6.61l3.99 3.1C6.22 6.86 8.87 4.75 12 4.75z"/><path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.13 2.74-2.39 3.59l3.86 3c2.26-2.09 3.55-5.18 3.55-8.83z"/><path fill="#FBBC05" d="M5.26 14.29A7.2 7.2 0 0 1 4.89 12c0-.8.14-1.57.38-2.29l-3.99-3.1A11.95 11.95 0 0 0 0 12c0 1.94.46 3.77 1.28 5.39l3.98-3.1z"/><path fill="#34A853" d="M12 24c3.24 0 5.97-1.06 7.95-2.9l-3.86-3c-1.08.72-2.46 1.15-4.09 1.15-3.13 0-5.78-2.11-6.73-4.96l-3.98 3.1C3.25 21.3 7.3 24 12 24z"/>',
@@ -84,8 +86,8 @@
     return s;
   }
   async function loadWays() {
-    try { ways = await invoke("social_ways"); }
-    catch (_) { if (!ways) ways = { herokey: true, google: true, discord: false }; }
+    try { ways = await invoke("social_ways"); waysDown = false; }
+    catch (_) { waysDown = true; if (!ways) ways = { herokey: true, google: true, discord: false }; }
     emit("leyline:signin", { ...flow, code });
     return ways;
   }
@@ -100,7 +102,7 @@
     if (flow.stage === "busy") {
       const w = el("div", "sf-wait");
       const sp = el("span", "ly-spin"); sp.setAttribute("aria-hidden", "true");
-      const t = el("div", "sf-wait-t"); t.append(el("b", "", flow.via === "new" ? "Making your account…" : "Signing in…"));
+      const t = el("div", "sf-wait-t"); t.append(el("b", "", flow.via === "new" ? "Making your account…" : "Logging in…"));
       w.append(sp, t); box.append(w);
       return;
     }
@@ -110,7 +112,7 @@
       const t = el("div", "sf-wait-t");
       t.append(el("b", "", "Waiting for your browser…"),
         el("span", "", flow.via === "guest"
-          ? "On the website, pick More ways to sign in, then Play as guest, and approve this code. Leyline continues by itself."
+          ? "On the website, pick More ways to log in, then Play as guest, and approve this code. Leyline continues by itself."
           : "Finish signing in there" + (flow.via ? " with " + (WAYS.find((x) => x[0] === flow.via) || ["", "the website"])[1] : "") + ", then approve this code. Leyline continues by itself."));
       w.append(sp, t);
       const c = el("p", "sx-code", code); c.setAttribute("aria-label", "Sign-in code " + code.split("").join(" "));
@@ -126,13 +128,13 @@
       const p = el("p", "sf-err", flow.note); p.setAttribute("role", "alert");
       box.append(p);
     }
-    if (!big) box.append(el("p", "sf-h", "Sign in to Leyline"));
+    if (!big) box.append(el("p", "sf-h", "Log in to Leyline"));
     // new here: an account and its Hero Key, right here
     const nw = el("button", "sf-way sf-new"); nw.type = "button"; nw.dataset.via = "new";
     nw.append(svg(WAY_ICON.herokey), el("span", "", "Get your Hero Key"));
     nw.onclick = newAccount;
     box.append(nw, el("p", "sf-fine sf-new-t", "New here? This makes your free account with a name made for you. Change the name any time."));
-    const or = el("p", "sf-or"); or.append(el("span", "", "or sign in"));
+    const or = el("p", "sf-or"); or.append(el("span", "", "or log in"));
     box.append(or);
     const list = el("div", "sf-ways");
     for (const [k, , label] of WAYS) {
@@ -150,7 +152,7 @@
       list.append(b);
     }
     box.append(list);
-    const pw = el("button", "link-s sf-pwlink", "Sign in with your name and password"); pw.type = "button";
+    const pw = el("button", "link-s sf-pwlink", "Log in with your name and password"); pw.type = "button";
     pw.setAttribute("aria-expanded", String(flow.form === "password"));
     pw.onclick = () => { flow.form = flow.form === "password" ? "" : "password"; flow.note = ""; rebuild(box, big, "#sf-pwname"); };
     box.append(pw);
@@ -170,7 +172,7 @@
     const lab = el("label", "sf-label", "Your Hero Key"); lab.htmlFor = "sf-key";
     const i = el("input"); i.id = "sf-key"; i.type = "password"; i.autocomplete = "off"; i.spellcheck = false; i.placeholder = "ovk1.";
     i.maxLength = 400;
-    const go = el("button", "btn small primary", "Sign in"); go.type = "submit";
+    const go = el("button", "btn small primary", "Log in"); go.type = "submit";
     const row = el("div", "sf-form-row"); row.append(i, go);
     f.append(lab, row, el("p", "sf-fine", "Paste the whole line from your key file. It starts with ovk1."));
     f.onsubmit = (e) => {
@@ -190,7 +192,7 @@
     const n = el("input"); n.id = "sf-pwname"; n.type = "text"; n.autocomplete = "username"; n.spellcheck = false; n.placeholder = "Alice#1234"; n.maxLength = 40;
     const l2 = el("label", "sf-label", "Password"); l2.htmlFor = "sf-pw";
     const p = el("input"); p.id = "sf-pw"; p.type = "password"; p.autocomplete = "current-password"; p.maxLength = 128;
-    const go = el("button", "btn small primary", "Sign in"); go.type = "submit";
+    const go = el("button", "btn small primary", "Log in"); go.type = "submit";
     const row = el("div", "sf-form-row"); row.append(p, go);
     f.append(l1, n, l2, row, el("p", "sf-fine", "Set a password in Manage account once you're signed in."));
     f.onsubmit = (e) => {
@@ -225,7 +227,10 @@
       flow.stage = "error"; flow.note = String(e); renderCode();
     }
   }
-  function newAccount() { quickSignIn("new", () => invoke("social_new_account")); }
+  function newAccount() { return quickSignIn("new", () => invoke("social_new_account")); }
+  // the sign-in screen's (gate.js): a Hero Key pasted or read from its file, a name and password
+  const keySignIn = (text) => quickSignIn("key", () => invoke("social_key_signin", { key: String(text || "") }));
+  const passwordSignIn = (name, password) => quickSignIn("password", () => invoke("social_password_signin", { name, password }));
 
   // ---------------------------------------------------------------- the title bar's chip and its account panel
   // Owner 31 Oct 18:36: "make this popout menu from profile icon more consistent and in line with the module at top,
@@ -359,7 +364,7 @@
 
     // the account, Sign out last
     const ac = el("div", "ap-acct"); ac.setAttribute("role", "menu"); ac.setAttribute("aria-label", "Account");
-    ac.append(menuItem("manage", "Manage account", "Name, picture, bio and ways to sign in", manage),
+    ac.append(menuItem("manage", "Manage account", "Name, picture, bio and ways to log in", manage),
       menuItem("key", "Hero Key", guest ? "Save it to keep this guest account" : "See it, save it, make a new one", manageKey, guest ? "warn" : ""));
     const sep = el("div", "ap-sep"); sep.setAttribute("role", "separator");
     ac.append(sep, menuItem("out", "Sign out", "", signOut, "ap-out"));
@@ -445,7 +450,7 @@
       await invoke("social_call", { action: "request", args: { to } });
       addNote = [`Asked ${to}. They show here once they say yes.`, "ok"];
       const i = $("ap-addin"); if (i) i.value = "";
-    } catch (e) { addNote = [String(e) === "signed_out" ? "You were signed out. Sign in again." : String(e), "bad"]; }
+    } catch (e) { addNote = [String(e) === "signed_out" ? "You were signed out. Log in again." : String(e), "bad"]; }
     await loadFriends();
   }
 
@@ -463,11 +468,21 @@
     closePanel(false);
     if (!signedIn || !me) { friends = null; adding = false; }
     box.textContent = "";
+    if (signedIn && !me) {
+      // signed in before, the website not answering now: the sign-in is kept (never a Log In here), Try again
+      const t = el("div", "hf-me-t");
+      t.append(el("b", "hf-me-name", "Signed in"), el("span", "hf-me-st", "Offline: your name shows once the website answers"));
+      const b = el("button", "link-s hf-retry", "Try again"); b.type = "button"; b.id = "hf-retry";
+      b.onclick = () => loadMe();
+      box.append(avatar("?", "hf-me-av hf-anon"), t, b);
+      renderCode();
+      return;
+    }
     if (!signedIn || !me) {
       const t = el("div", "hf-me-t");
       t.append(el("b", "hf-me-name", "Leyline"), el("span", "hf-me-st", "Signed out"));
       const b = el("button", "hf-signin"); b.append(el("span", "", "Log In")); b.type = "button"; b.id = "hf-signin";   // the PLAY stone (owner 31 Oct 21:59)
-      b.title = "Sign in on the website, in your browser";   // neutral: the chooser lists only the ways the website offers
+      b.title = "Log in on the website, in your browser";   // neutral: the chooser lists only the ways the website offers
       b.setAttribute("aria-haspopup", "dialog");
       b.onclick = () => {
         if (flow.stage === "waiting") { renderCode(); return; }
@@ -502,7 +517,8 @@
     const box = $("hf-code");
     if (box) {
       const open = !signedIn && (flow.stage === "choose" || flow.stage === "waiting" || flow.stage === "error" || flow.stage === "busy")
-        && !(window.LeylineNav && window.LeylineNav.current().page === "account");
+        && !(window.LeylineNav && window.LeylineNav.current().page === "account")
+        && !(window.LeylineGate && window.LeylineGate.isOpen());   // the sign-in screen shows it itself
       box.hidden = !open;
       if (open) buildFlow(box, false); else box.textContent = "";
       box.classList.add("acct-panel", "ap-signin");
@@ -510,7 +526,7 @@
       const sb = $("hf-signin"); if (sb) sb.setAttribute("aria-expanded", String(open));
       const tb = document.querySelector(".tb-me"); if (tb) tb.classList.toggle("open-in", open);
       box.setAttribute("role", flow.stage === "waiting" ? "status" : "dialog");
-      box.setAttribute("aria-label", "Sign in");
+      box.setAttribute("aria-label", "Log in");
     }
     emit("leyline:signin", { ...flow, code });
   }
@@ -523,7 +539,7 @@
       if (extra.ways) ways = Object.assign({}, ways || {}, extra.ways);
       signedIn = !!me;
     } catch (e) {
-      if (String(e) === "signed_out") { signedIn = false; me = null; say("You were signed out. Sign in again.", "warn"); }
+      if (String(e) === "signed_out") { signedIn = false; me = null; say("You were signed out. Log in again.", "warn"); }
       else if (signedIn && !me) say("Couldn't reach the website to load your name. It will try again.", "warn");
     }
     renderMe();
@@ -640,8 +656,9 @@
   renderBody();
   (async () => {
     let yes = false;
-    try { yes = await invoke("social_status"); } catch (_) { yes = false; }
-    signedIn = !!yes;
+    try { yes = await invoke("social_status"); known = true; } catch (_) { yes = false; }
+    signedIn = !!yes; checked = true;
+    emit("leyline:status", { known, signedIn });
     renderMe();
     if (yes) loadMe(); else loadWays();
   })();
@@ -652,5 +669,6 @@
 
   window.LeylineSocial = { refresh: loadMe, me: () => me, extra: () => extra, signedIn: () => signedIn, signIn, signOut, cancelSignIn,
     loadLatest, flow: () => ({ ...flow, code }), ways: () => ways, loadWays, buildFlow, avatar, setMe, openLink,
-    newAccount, freshKey: () => fresh, dropFreshKey: () => { fresh = null; } };
+    newAccount, freshKey: () => fresh, dropFreshKey: () => { fresh = null; },
+    keySignIn, passwordSignIn, keyFileSignIn: (call) => quickSignIn("key", call), known: () => known, checked: () => checked, waysDown: () => waysDown, offline: () => signedIn && !me };
 })();

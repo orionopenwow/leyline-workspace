@@ -102,6 +102,22 @@ pub fn sign_in_key(dir: &Path, pasted: &str) -> Result<Value, String> {
     sign_in_call(dir, "herokey/signin", &serde_json::json!({ "key": key }))
 }
 
+/// The text of a Hero Key file the player dropped on the sign-in screen (Tauri gives the drop as a path): a small file
+/// only (the launcher's own is a few lines), read as text. The key in it is found by `sign_in_key`.
+pub fn key_file_text(path: &Path) -> Result<String, String> {
+    const NOT: &str = "That isn't a Hero Key file. Pick the one Leyline saved (Leyline Hero Key.txt), or paste the key.";
+    let meta = std::fs::metadata(path).map_err(|_| "Couldn't open that file. Pick it again, or paste the key.".to_string())?;
+    if !meta.is_file() || meta.len() > 16 * 1024 {
+        return Err(NOT.into());
+    }
+    let bytes = std::fs::read(path).map_err(|_| "Couldn't read that file. Pick it again, or paste the key.".to_string())?;
+    let text = String::from_utf8_lossy(&bytes).into_owned();
+    if find_key(&text).is_none() {
+        return Err(NOT.into());
+    }
+    Ok(text)
+}
+
 /// A new account (a made-up name, its Hero Key): {key, me}. The key is shown to the player once and not kept here.
 pub fn new_account(dir: &Path) -> Result<Value, String> {
     sign_in_call(dir, "account/new", &serde_json::json!({}))
@@ -485,6 +501,16 @@ pub mod commands {
         blocking(move || sign_in_key(&dir(), &key)).await
     }
 
+    /// Sign in with a Hero Key file dropped on the sign-in screen (its path; gate.js).
+    #[tauri::command]
+    pub async fn social_key_file(path: String) -> Result<Value, String> {
+        blocking(move || {
+            let text = key_file_text(Path::new(&path))?;
+            sign_in_key(&dir(), &text)
+        })
+        .await
+    }
+
     /// Get your Hero Key: a new account; the answer carries the key to show once.
     #[tauri::command]
     pub async fn social_new_account() -> Result<Value, String> {
@@ -614,6 +640,16 @@ mod tests {
         assert_eq!(find_key("hello"), None);
         // 2 Nov: a pasted key with an upper-case prefix and a zero-width space still signs in
         assert_eq!(find_key(&format!("OVK1.{}\u{200b}", &k[5..])), Some(k.clone()));
+        // a dropped key file: the launcher's own (a few lines) reads; anything else, or a big file, is refused
+        let f = tempfile::tempdir().unwrap();
+        let file = f.path().join("Leyline Hero Key.txt");
+        std::fs::write(&file, format!("Leyline Hero Key\r\n\r\nName: Alice#4821\r\nKey: {k}\r\nMade: 2 November 2026\r\n")).unwrap();
+        assert_eq!(find_key(&key_file_text(&file).unwrap()), Some(k.clone()));
+        std::fs::write(&file, "just a note").unwrap();
+        assert!(key_file_text(&file).is_err());
+        std::fs::write(&file, format!("{k}{}", " ".repeat(20000))).unwrap();
+        assert!(key_file_text(&file).is_err(), "too big");
+        assert!(key_file_text(f.path()).is_err(), "a folder");
         let d = tempfile::tempdir().unwrap();
         assert!(sign_in_key(d.path(), "not a key").unwrap_err().contains("ovk1."));
         assert!(sign_in_password(d.path(), "Alice#1234", "").is_err());

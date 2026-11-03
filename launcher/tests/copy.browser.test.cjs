@@ -45,7 +45,7 @@ const FAKE = (o) => {
       case 'host_info': return { dir: null, is_kit: false, problems: [], seeds: [], realm: null };
       case 'modes_list': return { modes: [], from_cache: false, builtin: false, saved_at: null, error: null };
       case 'p2p_flags': return { effective: { p2p_hosting: false, limits: {} }, known: [], local: { overrides: {} }, site: {} };
-      case 'social_status': return false;
+      case 'social_status': return true;   // a sign-in kept (the website not asked: the sign-in screen stays closed)
       case 'news_list': if (o.news) return { posts: o.news, from_cache: false }; throw 'Offline and nothing cached yet.';
       case 'forum_call': return args.action === 'categories' ? { categories: [] } : { threads: [] };
       case 'open_link': return null;
@@ -188,10 +188,10 @@ test('Settings: Privacy in one line about the account; no Wine on Windows; Wine 
   await ctx.close();
 });
 
-test('one wording: sign-in, realms, the official name, original rules, Host pack; no money link', async () => {
+test('one wording: Log in, realms, the official name, original rules, Host pack; no money link', async () => {
   const { page, ctx, errors } = await open();
-  assert.equal(await page.getAttribute('#tb-account', 'title'), 'Your account lives on the website: sign in, or manage it');
-  assert.equal(await page.textContent('#page-forum .fm-fine'), 'Reading here; sign in on Home or Manage account to post from the launcher. Plain text and links only.');
+  assert.equal(await page.getAttribute('#tb-account', 'title'), 'Your account lives on the website: log in, or manage it');
+  assert.equal(await page.textContent('#page-forum .fm-fine'), 'Reading here; Log In (in the title bar) to post from the launcher. Plain text and links only.');
   assert.equal((await page.textContent('.realm-add')).trim(), '+Add a realm');
   assert.equal(await page.textContent('#play-realm option[value="official"]'), 'Wrath Unleashed (the official realm)');
   assert.equal(await page.locator('[data-link="support"]').count(), 0, 'no support link at all');

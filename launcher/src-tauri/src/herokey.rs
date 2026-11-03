@@ -177,6 +177,34 @@ pub fn config_wtf_with(text: &str, key: &str, value: &str) -> String {
     lines.join("\r\n") + "\r\n"
 }
 
+/// Config.wtf without the lines that set `key` to exactly `value` (any case for the key), the rest kept byte for byte.
+pub fn config_wtf_without(text: &str, drop: &[(&str, &str)]) -> String {
+    text.split_inclusive('\n')
+        .filter(|l| {
+            let t = l.trim();
+            let mut w = t.splitn(3, char::is_whitespace);
+            let (Some(set), Some(key), rest) = (w.next(), w.next(), w.next().unwrap_or("")) else { return true };
+            let value = rest.trim().trim_matches('"');
+            !(set.eq_ignore_ascii_case("SET") && drop.iter().any(|(k, v)| key.eq_ignore_ascii_case(k) && value == *v))
+        })
+        .collect()
+}
+
+/// Take the Den's own login out of Config.wtf (`SET accountName "DEN"`, `SET realmName "Your Den"`: den_launch writes
+/// them) before a start anywhere else, so the official realm or a community realm never opens with the Den's account
+/// filled in or looks for a realm named Your Den (owner 2 Nov: "swapping realms ... needs to be seamless"). Anything
+/// else in the file stays. Returns whether it changed the file.
+pub fn clear_login(client_root: &Path, user: &str, realm: &str) -> std::io::Result<bool> {
+    let Some(cfg) = config_wtf(client_root) else { return Ok(false) };
+    let Ok(old) = std::fs::read_to_string(&cfg) else { return Ok(false) };
+    let text = config_wtf_without(&old, &[("accountName", user), ("realmName", realm)]);
+    if text == old {
+        return Ok(false);
+    }
+    crate::settings::write_atomic(&cfg, text.as_bytes())?;
+    Ok(true)
+}
+
 /// An account name Leyline may put on the login screen: a realm's `HK...` name, or a plain local one (the Den's
 /// `DEN`, the Docker Den's GM name: 3 to 16 letters and digits). Never anything that could break the line.
 pub fn prefill_ok(user: &str) -> bool {
@@ -222,6 +250,22 @@ mod tests {
     use serde_json::json;
 
     const RID: &str = "abcdefghijk2345a";
+
+    #[test]
+    fn the_dens_login_comes_out_before_another_realm() {
+        let cfg = "SET realmList \"x\"\r\nSET accountName \"DEN\"\r\nset realmname \"Your Den\"\r\nSET gxWindow \"1\"\r\n";
+        assert_eq!(config_wtf_without(cfg, &[("accountName", "DEN"), ("realmName", "Your Den")]), "SET realmList \"x\"\r\nSET gxWindow \"1\"\r\n");
+        // the player's own account name and another realm name stay
+        let own = "SET accountName \"WR000123\"\nSET realmName \"Wrath Unleashed\"\n";
+        assert_eq!(config_wtf_without(own, &[("accountName", "DEN"), ("realmName", "Your Den")]), own);
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join("WTF")).unwrap();
+        std::fs::write(d.path().join("WTF/Config.wtf"), cfg).unwrap();
+        assert!(clear_login(d.path(), "DEN", "Your Den").unwrap());
+        assert!(!clear_login(d.path(), "DEN", "Your Den").unwrap(), "nothing left to take out");
+        let left = std::fs::read_to_string(d.path().join("WTF/Config.wtf")).unwrap();
+        assert!(!left.contains("DEN") && !left.contains("Your Den") && left.contains("gxWindow"), "{left}");
+    }
 
     fn answer(realm: &str, redeem: &str) -> Value {
         json!({"ok": true, "realm": realm, "assertion": {"aud": realm, "sub": "x"}, "sig": "ab".repeat(64),

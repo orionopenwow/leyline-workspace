@@ -135,6 +135,71 @@ pub(super) fn initial(c: &Writer, shared: &Shared, me: &Me) -> io::Result<()> {
     }
 }
 
+/// The looks picked (`.den gear`) on the player's create: every visible slot.
+pub(super) fn with_gear(mut b: UpdatePlayerBuilder, g: &crate::gear::Gear) -> UpdatePlayerBuilder {
+    for s in 0..crate::gear::SLOTS_N {
+        let e = g.slots.get(&s).copied().unwrap_or(0);
+        if let Ok(idx) = VisibleItemIndex::try_from(s) {
+            b = b.set_player_visible_item(VisibleItem::new(e, [0, 0]), idx);
+        }
+    }
+    b
+}
+
+/// `.den gear ...`: any item's look in its slot, at once for everyone in the Den, kept in the Dens folder.
+pub(super) fn gear_cmd(c: &Writer, shared: &Shared, sess: &Sess, words: &[String]) -> io::Result<()> {
+    use crate::gear::{self, Ask};
+    let w: Vec<&str> = words.iter().map(String::as_str).collect();
+    let items = gear::items(&shared.cfg.den_dir);
+    let ask = match gear::parse(&w, &items) {
+        Ok(a) => a,
+        Err(e) => return say(c, &e),
+    };
+    let mut g = shared.gear.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_default();
+    let line = match ask {
+        Ask::Show => {
+            let worn: Vec<String> = g.slots.iter().filter(|(_, e)| **e != 0).map(|(s, e)| format!("{} {e}", gear::slot_name(*s))).collect();
+            return say(c, &format!(
+                "You wear: {}. .den gear <item number> puts its look on (several at once too), .den gear <slot> <item|none>, .den gear list <slot>, .den gear reset. Looks: {}.",
+                if worn.is_empty() { "nothing".to_string() } else { worn.join(", ") },
+                gear::PRESETS.iter().map(|p| p.0).collect::<Vec<_>>().join(", ")
+            ));
+        }
+        Ask::List(slot, page) => {
+            let (ids, n) = items.list(slot, page);
+            let pages = n.div_ceil(gear::PAGE).max(1);
+            let list = ids.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+            bar_data(c, shared, sess.id, sess.me.guid, "gear", &format!("slot={};page={};pages={pages};ids={list}", gear::slot_name(slot), page + 1))?;
+            return say(c, &if n == 0 {
+                format!("No {} items known (the launcher copies your game's item table into the Dens folder when Your Den starts).", gear::slot_name(slot))
+            } else {
+                format!("{} items, page {} of {pages}: {}. .den gear <number> puts one on.", gear::slot_name(slot), page + 1, ids.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(" "))
+            });
+        }
+        Ask::Reset => {
+            g = gear::Gear::default();
+            "Back in your own outfit.".to_string()
+        }
+        Ask::Put(v) => {
+            let mut said = Vec::new();
+            for (s, e) in v {
+                g.set(s, e);
+                said.push(if e == 0 { format!("{} off", gear::slot_name(s)) } else { format!("{} {e}", gear::slot_name(s)) });
+            }
+            format!("Your look: {}. (.den gear reset: your own outfit again)", said.join(", "))
+        }
+    };
+    g.save(&shared.cfg.den_dir);
+    *shared.gear.lock().unwrap_or_else(|e| e.into_inner()) = Some(g.clone());
+    let body = combat::values_body(sess.me.guid, &g.fields());
+    c.send_raw(combat::SMSG_UPDATE_OBJECT, &body)?;
+    for o in others(shared, sess.id) {
+        let _ = o.w.send_raw(combat::SMSG_UPDATE_OBJECT, &body);
+    }
+    shared.event("gear", &sess.me.name, &g.slots.iter().filter(|(_, e)| **e != 0).map(|(s, e)| format!("{s}:{e}")).collect::<Vec<_>>().join(" "));
+    say(c, &line)
+}
+
 /// The units the player can fight or help now: the Dojo's dummies, and the companion (friendly).
 fn units(shared: &Shared) -> Vec<Unit> {
     let mut v: Vec<Unit> = shared

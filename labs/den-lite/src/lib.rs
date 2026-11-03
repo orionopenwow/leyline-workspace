@@ -15,6 +15,7 @@ pub mod dojo;
 pub mod events;
 pub mod gizmo;
 pub mod flight;
+pub mod gear;
 pub mod guests;
 pub mod ovmod;
 pub mod login;
@@ -151,6 +152,8 @@ pub struct Shared {
     /// The class picked (`.den class`, classes.rs; kept in the Dens folder) and the sandbox combat (combat.rs).
     pub pick: Mutex<Option<classes::Pick>>,
     pub combat: Mutex<combat::Combat>,
+    /// The character's looks (`.den gear`, gear.rs; kept in the Dens folder).
+    pub gear: Mutex<Option<gear::Gear>>,
 }
 
 impl Shared {
@@ -260,6 +263,7 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
     }
     let autosaved = d.autosave_key();
     let pick = classes::Pick::load(&cfg.den_dir);
+    let looks = gear::Gear::load(&cfg.den_dir);
     let events = events::Events::new(&cfg.den_dir);
     events.note("start", "", &format!("{}{}", la.port(), if cfg.test_control { " test" } else { "" }));
     events.note("models", "", &known.to_string());
@@ -286,6 +290,7 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
         aid_view: Mutex::new(serde_json::Value::Null),
         pick: Mutex::new(pick),
         combat: Mutex::new(combat::Combat::new(world::PLAYER_GUID)),
+        gear: Mutex::new(looks),
     });
     let s = shared.clone();
     std::thread::spawn(move || login::serve(login, s, false));

@@ -2162,3 +2162,41 @@ fn the_companion_flies_with_you_lands_with_you_and_walks_around_props() {
     drop(srv);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn any_items_look_goes_on_at_once_and_is_kept() {
+    let (srv, dir) = server("gear", HeroGender::Male);
+    // the player's own item table, as the launcher copies it (made-up rows: id, class, subclass, sound, material,
+    // display, inventory type, sheath)
+    let rows = vec![vec![19019, 2, 7, 0, 1, 30606, 13, 3], vec![32837, 2, 7, 0, 1, 45479, 21, 3], vec![32838, 2, 7, 0, 1, 45481, 22, 3]];
+    std::fs::write(dir.join(den_lite::gear::ITEM_TABLE), den_lite::spells::fake::table(8, &rows, &[])).unwrap();
+    let mut w = into_world(&srv, 0);
+    let me = den_lite::world::PLAYER_GUID;
+    let mainhand = den_lite::gear::VISIBLE_ITEM + 30;
+    w.say(".den gear 19019");
+    let v = w.until(|f| values(f).filter(|(g, _)| *g == me).map(|(_, v)| v));
+    assert_eq!((v[&mainhand], v[&(den_lite::gear::VISIBLE_ITEM + 6)]), (19019, 4334), "the weapon on, the shirt still on");
+    assert!(w.until_line().1.starts_with("Your look: mainhand 19019"));
+    w.say(".den gear warglaives");
+    let v = w.until(|f| values(f).filter(|(g, _)| *g == me).map(|(_, v)| v));
+    assert_eq!((v[&mainhand], v[&(mainhand + 2)]), (32837, 32838), "both hands");
+    w.until_line();
+    w.say(".den gear list mainhand");
+    let line = w.until_line().1;
+    assert!(line.starts_with("mainhand items, page 1 of 1: 19019 32837"), "{line}");
+    w.say(".den gear head 999");
+    let v = w.until(|f| values(f).filter(|(g, _)| *g == me).map(|(_, v)| v));
+    assert_eq!(v[&den_lite::gear::VISIBLE_ITEM], 999, "a slot and a number need no table");
+    w.until_line();
+    let kept = std::fs::read_to_string(dir.join(den_lite::gear::FILE)).unwrap();
+    assert!(kept.contains("32838") && kept.contains("\"head\""), "{kept}");
+    w.say(".den gear reset");
+    let v = w.until(|f| values(f).filter(|(g, _)| *g == me).map(|(_, v)| v));
+    assert_eq!((v[&mainhand], v[&den_lite::gear::VISIBLE_ITEM]), (0, 0));
+    assert!(w.until_line().1.starts_with("Back in your own outfit"));
+    w.say(".den gear sparkly");
+    assert!(w.until_line().1.starts_with("Usage: .den gear"));
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+}

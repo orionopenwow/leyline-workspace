@@ -990,11 +990,11 @@ pub fn character(shared: &Shared, me: &Me) -> Character {
 
 /// A player's create: for its own client (`own`: the self flag, it controls it) or for the others'.
 fn player_create(me: &Me, p: Pos, own: bool) -> SMSG_UPDATE_OBJECT {
-    player_create_as(me, p, own, None)
+    player_create_as(me, p, own, None, None)
 }
 
 /// ... with the class picked (sandbox.rs: its class, level, health and power), for the host's own copy.
-fn player_create_as(me: &Me, p: Pos, own: bool, kit: Option<&crate::classes::Kit>) -> SMSG_UPDATE_OBJECT {
+fn player_create_as(me: &Me, p: Pos, own: bool, kit: Option<&crate::classes::Kit>, looks: Option<&crate::gear::Gear>) -> SMSG_UPDATE_OBJECT {
     let mut b = UpdatePlayerBuilder::new()
         .set_object_guid(Guid::new(me.guid))
         .set_object_scale_x(1.0)
@@ -1024,6 +1024,10 @@ fn player_create_as(me: &Me, p: Pos, own: bool, kit: Option<&crate::classes::Kit
     for &(slot, entry, _, _) in OUTFIT {
         let idx = VisibleItemIndex::try_from(slot as u8).expect("an equipment slot");
         b = b.set_player_visible_item(VisibleItem::new(entry, [0, 0]), idx);
+    }
+    // the looks picked with `.den gear` (gear.rs), every slot
+    if let Some(g) = looks {
+        b = sandbox::with_gear(b, g);
     }
     let living = MovementBlock_UpdateFlag_Living::Living {
         backwards_flight_speed: 4.5,
@@ -1081,7 +1085,8 @@ fn enter_world(c: &Writer, shared: &Shared, account: &str, me: &Me, p: Pos) -> i
     // ResetTimeSync, SendTimeSync), as AzerothCore and the message crate's own wrath_server example do. Den Lite sent
     // the time sync before the player existed, and a control update during the loading screen that AzerothCore never
     // sends at login (it is said when the game takes its character: CMSG_SET_ACTIVE_MOVER, in `session`).
-    c.send(&player_create_as(me, p, true, sandbox::kit_for(shared, me).as_ref()))?;
+    let looks = if me.host { shared.gear.lock().unwrap_or_else(|e| e.into_inner()).clone() } else { None };
+    c.send(&player_create_as(me, p, true, sandbox::kit_for(shared, me).as_ref(), looks.as_ref()))?;
     c.send_raw(movewatch::SMSG_TIME_SYNC_REQ, &movewatch::time_sync_body(0))?;
     c.send(&SMSG_INIT_WORLD_STATES { map: Map::Kalimdor, area: AREA, sub_area: AREA, states: vec![] })?;
     let objs = shared.den.lock().unwrap().everything();
@@ -1285,6 +1290,7 @@ const HELP: &[&str] = &[
     ".den mode [id]: Leyline's game modes and how to try one on this PC; .den mods: the addons and mods in your game",
     ".den dojo: a training ring with dummies (your companion builds it); .den fly on|off; .den speed 1-5; \"Jaina, build a garden\" (.den dojo help: more)",
     ".den class <class> [level]: any class at any level, every spell it learns (.den class: the list); the dummies take your hits",
+    ".den gear <item number>|<slot> <item>|list <slot>|reset: any item's look on you (looks: thunderfury, warglaives...)",
 ];
 
 fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Result<()> {
@@ -1510,6 +1516,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
         // the Dojo (dojo.rs): the training ring, dummies, flying, speed
         (".den", "dojo") => dojo_cmd(c, shared, sess, p, &words[2..]),
         (".den", "class") => sandbox::class_cmd(c, shared, sess, w(2), w(3)),
+        (".den", "gear") | (".den", "looks") => sandbox::gear_cmd(c, shared, sess, &words[2..]),
         (".den", "fly") => fly(c, shared, sess, w(2)),
         (".den", "speed") => speed(c, shared, sess, w(2)),
         (".den", "companion") | (".den", "jaina") => match w(2) {
@@ -1566,7 +1573,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
         }
         (".den", "friends") => friends(c, shared, w(2), w(3)),
         (".den", "invite") | (".den", "forge") => ask_launcher(c, shared, w(1)),
-        (".den", _) | (".build", _) => say(c, "Den Lite knows: .den place, .den find, .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room, .den grow, .den size, .den companion, .den ask, .den mode, .den mods, .den friends, .den invite, .den forge, .den dojo, .den fly, .den speed, .den class."),
+        (".den", _) | (".build", _) => say(c, "Den Lite knows: .den place, .den find, .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room, .den grow, .den size, .den companion, .den ask, .den mode, .den mods, .den friends, .den invite, .den forge, .den dojo, .den fly, .den speed, .den class, .den gear."),
         // Another server's commands (GM addons send ".server info", ".account onlinelist" on login): not said
         // aloud, and nothing to answer in a Den.
         (w0, _) if w0.starts_with('.') => Ok(()),

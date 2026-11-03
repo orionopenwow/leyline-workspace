@@ -263,7 +263,7 @@ end
 local function listCommands(player)
     say(player, "Commands: |cffffff00.boost|r (level 80 boost, new characters), |cffffff00.play|r (places and dungeons), "
         .. "|cffffff00.bug <text>|r (report a bug), |cffffff00.stuck|r (go home if stuck), "
-        .. "|cffffff00.guide|r (what to do at 80), |cffffff00.mounts|r (every mount, at 80), "
+        .. "|cffffff00.guide|r (what to do at 80), |cffffff00.mount|r (ride), |cffffff00.mounts|r (every mount, at 80), "
         .. "|cffffff00.hub|r (Dalaran spots), |cffffff00.rules|r (house rules).")
     say(player, "Quality of life: |cffffff00.learnall|r (class spells; they come by themselves on level up), "
         .. "|cffffff00.respec confirm|r (free talent reset), |cffffff00.xp off|r / |cffffff00.xp on|r (freeze XP), "

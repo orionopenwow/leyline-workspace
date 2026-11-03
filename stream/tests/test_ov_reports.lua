@@ -235,6 +235,7 @@ local lowc = player({ guid = 106, level = 30 })
 events[42](42, lowc, "mounts")
 check(".mounts below 80 explained", not lowc.queue and lastMsg(lowc):match("at level 80"))
 check(".wu mentions .mounts", (function() local x = player(); events[42](42, x, "wu"); return x.msgs[1]:match("%.mounts") end)())
+check(".wu mentions .mount (ride, from level 1)", (function() local x = player(); events[42](42, x, "wu"); return x.msgs[1]:find(".mount|r (ride)", 1, true) ~= nil end)())
 
 -- the Leyline brand switch: the chat tag (OVMod.Brand from ov_modapi.lua; off: the old one)
 local t0 = player(); events[42](42, t0, "wu")

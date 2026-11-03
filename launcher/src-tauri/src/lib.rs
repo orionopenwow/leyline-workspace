@@ -91,6 +91,9 @@ pub const LINKS: &[(&str, &str)] = &[
     ("melty", "https://melty.gg"),
     ("meltydl", "https://melty.gg/download"),
     ("host", host::HOST_PAGE),
+    // Leyline HQ (docs/ADMIN-CONSOLE.md): the official realm's staff tools; the website checks you are staff
+    // (ui/gmcenter.js, the GM command center's one line for the official realm)
+    ("hq", crate::site!("/wrath/admin")),
     ("hostguide", crate::site!("/wrath/docs/hosting")), // the Host pack and its settings
     ("agentsguide", crate::site!("/wrath/docs/agents")), // Agents and Help: docs/leyline/agents.md
     ("hostdocs", crate::site!("/wrath/docs/hosting")), // the host console's guide (host/console.rs)

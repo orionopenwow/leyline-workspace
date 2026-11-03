@@ -121,7 +121,8 @@ pub async fn host_console() -> Result<host::console::Console, String> {
     blocking(|| Ok(host::console::console(&kit()?))).await
 }
 
-/// One GM control (announce, motd, kick, ban, unban, allow, restart, cancel, status), run by the realm's own script.
+/// One GM control (announce, motd, kick, ban, unban, allow, restart, cancel, status, and the GM command center's
+/// `sandbox` controls: console.rs sandbox_data), run by the realm's own script.
 /// A restart is always the five-minute one: no delay is taken from here.
 #[tauri::command]
 pub async fn host_gm(action: String, data: Option<String>) -> Result<String, String> {

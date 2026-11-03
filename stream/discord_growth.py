@@ -70,7 +70,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE_FILE = os.path.join(HERE, "discord_template.json")
 
 # channel types and permission bits (Discord API v10)
-T_TEXT, T_VOICE, T_CATEGORY, T_STAGE, T_FORUM = 0, 2, 4, 13, 15
+T_TEXT, T_VOICE, T_CATEGORY, T_NEWS, T_STAGE, T_FORUM = 0, 2, 4, 5, 13, 15
 TYPES = {"text": T_TEXT, "voice": T_VOICE, "stage": T_STAGE, "forum": T_FORUM}
 P_ADD_REACTIONS, P_VIEW, P_SEND, P_READ_HISTORY = 1 << 6, 1 << 10, 1 << 11, 1 << 16
 P_CONNECT, P_SPEAK, P_CREATE_THREADS, P_SEND_THREADS = 1 << 20, 1 << 21, 1 << 35, 1 << 38
@@ -414,7 +414,9 @@ class Growth:
             except E as ex:
                 soft("role " + r["name"], ex)
         chans = self.link.api.call("GET", f"/guilds/{g}/channels") or []
-        seen = {(str(c.get("name") or "").lower(), int(c.get("type") or 0)): c for c in chans}
+        # an announcement channel (type 5, Community servers) counts as text: it is the same channel, with Publish
+        seen = {(str(c.get("name") or "").lower(), T_TEXT if int(c.get("type") or 0) == T_NEWS else int(c.get("type") or 0)): c
+                for c in chans}
         for cat in self.template["categories"]:
             have = seen.get((cat["name"].lower(), T_CATEGORY))
             cat_id = str(have["id"]) if have else ""

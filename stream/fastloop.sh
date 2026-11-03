@@ -55,8 +55,8 @@ had_forum=""
 if [ -f "$WU/portal/forum.py" ]; then cp -p "$WU/portal/forum.py" "$BK/forum.py"; had_forum=1; fi
 rm -f "$BK/forum_discord.py"
 [ ! -f "$WU/portal/forum_discord.py" ] || cp -p "$WU/portal/forum_discord.py" "$BK/forum_discord.py"
-rm -f "$BK/discord_growth.py" "$BK/discord_template.json" "$BK/discord_template_v2.json"
-for f in discord_growth.py discord_template.json discord_template_v2.json; do [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
+rm -f "$BK/discord_growth.py" "$BK/discord_template.json" "$BK/discord_template_v2.json" "$BK/discord_template_launch.json"
+for f in discord_growth.py discord_template.json discord_template_v2.json discord_template_launch.json; do [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
 had_downloads=""
 if [ -f "$WU/portal/downloads.py" ]; then cp -p "$WU/portal/downloads.py" "$BK/downloads.py"; had_downloads=1; fi
 had_duels=""
@@ -112,7 +112,7 @@ put_back() {
   done
   if [ -n "$had_forum" ]; then cp -p "$BK/forum.py" "$WU/portal/forum.py"; else rm -f "$WU/portal/forum.py"; fi
   if [ -f "$BK/forum_discord.py" ]; then cp -p "$BK/forum_discord.py" "$WU/portal/forum_discord.py"; else rm -f "$WU/portal/forum_discord.py"; fi
-  for f in discord_growth.py discord_template.json discord_template_v2.json; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
+  for f in discord_growth.py discord_template.json discord_template_v2.json discord_template_launch.json; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
   if [ -n "$had_downloads" ]; then cp -p "$BK/downloads.py" "$WU/portal/downloads.py"; else rm -f "$WU/portal/downloads.py"; fi
   if [ -n "$had_duels" ]; then cp -p "$BK/duels.py" "$WU/portal/duels.py"; else rm -f "$WU/portal/duels.py"; fi
   if [ -n "$had_survivors" ]; then cp -p "$BK/survivors.py" "$WU/portal/survivors.py"; else rm -f "$WU/portal/survivors.py"; fi
@@ -228,6 +228,10 @@ if [ -f forum_discord.py ] && [ -f discord_growth.py ] && [ -f discord_template.
   # the upgraded channel plan (docs/DISCORD-PLAN.md): used only when portal.env says WU_DISCORD_TEMPLATE=/app/discord_template_v2.json
   if [ -f discord_template_v2.json ] && python3 -I -c 'import json,sys;json.load(open(sys.argv[1]))' discord_template_v2.json; then
     install -m 644 discord_template_v2.json "$WU/portal/"
+  fi
+  # the launch layout (docs/DISCORD-PLAN.md, 3 Nov): used when portal.env says WU_DISCORD_TEMPLATE=/app/discord_template_launch.json
+  if [ -f discord_template_launch.json ] && python3 -I -c 'import json,sys;json.load(open(sys.argv[1]))' discord_template_launch.json; then
+    install -m 644 discord_template_launch.json "$WU/portal/"
   fi
 fi
 # the download page and the Download choice (/wrath/download, stream/downloads.py): optional (without it Download is the file)

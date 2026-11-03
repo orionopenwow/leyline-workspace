@@ -794,6 +794,22 @@ check("the old live_realms key is still accepted: a server set up before the spl
 G2.set_map("channel", "community_realms", OLD_LR, "🟢︱community-realms")
 check("... and community_realms wins once setup has found it", G2.post_channel("live") == OLD_LR)
 
+# ------------------------------------------------------------------------------------- the launch layout (3 Nov)
+LT = os.path.join(STREAM, "discord_template_launch.json")
+TL = json.load(open(LT, encoding="utf-8"))
+check("launch template: valid, 13 channels, Find a group and mod posts have their channels", DGM.check_template(TL) == []
+      and sum(len(c["channels"]) for c in TL["categories"]) == 13 and TL["posts"]["lfg"] == "looking_for_group"
+      and TL["posts"]["mod"] == "mods_and_workshop", DGM.check_template(TL))
+NEWS_ANN = add_channel("📣︱announcements", 5)      # a Community server's announcement channel
+OLD_HOST = add_channel("🏰︱host-a-beacon", 0)       # the 30 Oct name, not yet renamed by the owner's script
+G3 = DGM.attach(L, dict(ENV, WU_DISCORD_TEMPLATE=LT), G.fd)
+pv3 = G3.setup(dry=True)
+check("launch Preview: an announcement channel counts as the text one; host-a-beacon counts as host-a-realm",
+      "channel 📣︱announcements" in pv3["found"] and "channel 📣︱announcements" not in pv3["made"]
+      and "channel 🏰︱host-a-realm (as 🏰︱host-a-beacon)" in pv3["found"] and "channel 📖︱guides-and-faq" in pv3["made"], pv3)
+del D["channels"][NEWS_ANN], D["channels"][OLD_HOST]
+L.growth = G2
+
 VR_ID = "nnnnnnnnnnnnnnnn"
 _vr_before = wp.network.vr_id
 wp.network.vr_id = lambda: VR_ID

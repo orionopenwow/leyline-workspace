@@ -369,8 +369,8 @@ pub(super) fn client_op(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Po
     Ok(true)
 }
 
-/// When the moving dummies take their next step.
-static NEXT_STEP: AtomicU64 = AtomicU64::new(0);
+// When the moving dummies take their next step: one clock per Den Lite (its own dojo_ticker thread).
+thread_local!(static NEXT_STEP: std::cell::Cell<u64> = const { std::cell::Cell::new(0) });
 
 /// Every 50 ms (dojo_ticker): the moving dummies walk; the fight's tick (casts due, swings, ticks, regen, the
 /// dummies' own doings) to the host in the world.
@@ -378,8 +378,8 @@ pub(super) fn tick(shared: &Shared) {
     let live = shared.live.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let Some((sess, w, p)) = live else { return };
     let now = now_ms();
-    if now >= NEXT_STEP.load(Ordering::Relaxed) {
-        NEXT_STEP.store(now + dojo::MOVER_STEP_MS, Ordering::Relaxed);
+    if now >= NEXT_STEP.with(|n| n.get()) {
+        NEXT_STEP.with(|n| n.set(now + dojo::MOVER_STEP_MS));
         let steps = shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).mover_steps();
         for (guid, from, to) in steps {
             for pl in shared.players.lock().unwrap_or_else(|e| e.into_inner()).clone() {

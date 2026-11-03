@@ -1869,12 +1869,13 @@ fn companion_blocks(d: &den::Den) -> Vec<crate::flight::Block> {
 /// Every 300 ms or so (dojo_ticker): she flies with a flying player and lands with them (flight.rs).
 fn flight_tick(shared: &Shared) -> io::Result<()> {
     use crate::flight;
-    static NEXT: AtomicU64 = AtomicU64::new(0);
+    // one clock per Den Lite (each runs its own dojo_ticker thread; a shared one starved the others in tests)
+    thread_local!(static NEXT: std::cell::Cell<u64> = const { std::cell::Cell::new(0) });
     let ms = now_ms();
-    if ms < NEXT.load(Ordering::Relaxed) {
+    if ms < NEXT.with(|n| n.get()) {
         return Ok(());
     }
-    NEXT.store(ms + flight::SKY_EVERY_MS, Ordering::Relaxed);
+    NEXT.with(|n| n.set(ms + flight::SKY_EVERY_MS));
     let live = shared.live.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let Some((_, w, p)) = live else { return Ok(()) };
     let (fly_on, speed) = { let d = shared.dojo.lock().unwrap_or_else(|e| e.into_inner()); (d.fly, d.speed_now()) };

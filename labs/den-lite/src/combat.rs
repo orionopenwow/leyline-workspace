@@ -66,11 +66,11 @@ pub const CLIENT_OPS: [u32; 9] = [
     classes::CMSG_SET_ACTION_BUTTON, CMSG_CANCEL_MOUNT_AURA,
 ];
 /// Every message this module writes (the headless test client reads them by hand).
-pub const SERVER_OPS: [u16; 20] = [
+pub const SERVER_OPS: [u16; 23] = [
     SMSG_CAST_FAILED, SMSG_SPELL_START, SMSG_SPELL_GO, SMSG_SPELL_FAILURE, SMSG_SPELL_COOLDOWN, MSG_CHANNEL_START, MSG_CHANNEL_UPDATE,
     SMSG_ATTACKSTART, SMSG_ATTACKSTOP, SMSG_ATTACKSWING_NOTINRANGE, SMSG_ATTACKSWING_CANT_ATTACK, SMSG_ATTACKERSTATEUPDATE, SMSG_SPELLHEALLOG,
     SMSG_CLEAR_COOLDOWN, SMSG_PERIODICAURALOG, SMSG_SPELLNONMELEEDAMAGELOG, SMSG_SPELL_FAILED_OTHER, SMSG_UPDATE_COMBO_POINTS, SMSG_AURA_UPDATE,
-    classes::SMSG_INITIAL_SPELLS,
+    classes::SMSG_INITIAL_SPELLS, SMSG_SPELLLOGMISS, crate::specs::SMSG_TALENTS_INFO, crate::pets::SMSG_PET_SPELLS,
 ];
 
 /// The update fields used (UpdateFields.h, 3.3.5a).
@@ -2218,7 +2218,9 @@ impl Combat {
         let Some(d) = self.demo.clone() else { return Vec::new() };
         if now >= d.until {
             self.demo = None;
-            let mut out = self.stop();
+            // the run is over: a cast still going stops, the swings too
+            let mut out = self.interrupt(fail::INTERRUPTED);
+            out.extend(self.stop());
             let secs = (d.until - d.start) as f32 / 1000.0;
             let dps = (d.total as f32 / secs).round() as u32;
             out.push(Out::Dps(self.readout(true)));

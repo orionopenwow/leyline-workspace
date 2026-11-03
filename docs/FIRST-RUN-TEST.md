@@ -11,6 +11,10 @@ Two halves:
    data folder, a game folder added, signed in with a test Hero Key, PLAY on Wrath Unleashed, character select, then
    the world. Most of it runs by itself from Leyline Control as the step `first-run-test`; the owner watches one screen.
 
+**3 Nov:** built. `Leyline play-test --fresh --game <folder>` (main.rs, app.rs), `GET audit/presence` (stream/herokeys.py),
+`tools/first-run/first_run.py` with `First run test.bat` and the Control step `first-run-test` (PASS / FAIL per phase,
+unit-tested with fakes in `tools/first-run/test_first_run.py`). The owner's manual checklist is docs/OWNER-TEST-PLAN.md.
+
 Rules this test keeps: no game or publisher names on any screen; nothing typed by a person into a sign-in; no account
 made by a person's route (the audit's own test-account API, `account/new {audit: true}` and `audit/close`, is the one
 allowed way, as `tools/audit/herokey.py` does it); keys and passwords never on a command line, in a log or a report.

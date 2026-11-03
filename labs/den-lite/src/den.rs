@@ -103,7 +103,11 @@ impl Spot {
     /// How far under and over the floor a prop may be: 12 and 50 yards, and in a city-size Den as much as its half
     /// width (a city has hills, stairs and towers).
     pub fn heights(&self) -> (f32, f32) {
-        (self.half.max(12.0), self.half.max(50.0))
+        if self.half > ring_half(ROOM_RINGS - 1) {
+            (self.half.max(12.0), self.half.max(50.0))
+        } else {
+            (12.0, 50.0)
+        }
     }
     /// Whether this is the first Den's spot (the island, where the launcher's grass ground is).
     pub fn is_home(&self) -> bool {

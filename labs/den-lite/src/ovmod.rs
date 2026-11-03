@@ -748,7 +748,9 @@ mod tests {
     #[test]
     fn the_whole_catalog_in_parts_with_models() {
         let plain = catalog_parts(|_| None);
-        let n: usize = plain.iter().map(|p| p.split(';').filter(|s| !s.is_empty()).count()).sum();
+        // the built-in props only (another test may have added the player's own models, mymodels.rs, meanwhile)
+        let mine = format!(",{},", crate::mymodels::CATEGORY);
+        let n: usize = plain.iter().map(|p| p.split(';').filter(|s| !s.is_empty() && !s.contains(&mine)).count()).sum();
         let offered = crate::objects::OBJECTS.iter().filter(|o| category(o.3).is_some()).count();
         assert_eq!(n, offered, "every prop, none cut off");
         assert!(plain.iter().all(|p| p.len() <= PART * MAX_PARTS && !p.is_empty()));

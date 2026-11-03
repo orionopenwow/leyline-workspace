@@ -2096,8 +2096,12 @@ fn the_mouse_hovers_clicks_and_drags_props_in_build_mode() {
     assert_eq!(dynamic(&frames), Some(GLOW), "the prop under the cursor glows");
     std::thread::sleep(Duration::from_millis(150));
     w.addon("OVMOD", &format!("wubuild\tcmd\t1/1\thover {}", at(0.0, 0.95)));
-    let (frames, hovered) = until_aid(&mut w, "hovered");
+    let (mut frames, hovered) = until_aid(&mut w, "hovered");
     assert_eq!(hovered, "-");
+    // the glow's values update may come just after the answer
+    while dynamic(&frames).is_none() {
+        frames.push(w.frame());
+    }
     assert_eq!(dynamic(&frames), Some(0), "and stops when the cursor leaves it");
 
     // a click on it selects it; a click on the sky clears

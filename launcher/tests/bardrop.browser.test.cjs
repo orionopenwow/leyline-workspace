@@ -51,7 +51,7 @@ const FAKE = ({ clients, theme }) => {
       case 'host_info': return { dir: null, is_kit: false, problems: [], seeds: [], realm: null };
       case 'modes_list': return { modes: [], from_cache: false, builtin: false, saved_at: null, error: null };
       case 'p2p_flags': return { effective: { p2p_hosting: false, limits: {} }, known: [], local: { overrides: {} }, site: {} };
-      case 'social_status': return false;
+      case 'social_status': return true;   // a sign-in kept (the website not asked: the sign-in screen stays closed)
       case 'pick_folder': return null;
       case 'testing_get': return { ...window.__testing };
       case 'testing_set': window.__testing = { client_torrents: args.clientTorrents, share: args.clientTorrents && args.share }; return { ...window.__testing };

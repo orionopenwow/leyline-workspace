@@ -87,6 +87,10 @@ async function open(opts, size) {
     opts && opts.nofriends ? { friends: [], incoming: [] } : { friends: FRIENDS, incoming: [{ pid: 'gggggggggg', name: 'Wren', tag: '5521', at: 1 }] });
   await page.addInitScript(FAKE, opts || {});
   await page.goto(INDEX);
+  // signed out, the sign-in screen (gate.js, gate.browser.test.cjs) covers the launcher: these tests are the launcher
+  // behind it, as after its Continue without signing in
+  await page.waitForFunction(() => window.LeylineSocial && window.LeylineSocial.checked());
+  await page.evaluate(() => window.LeylineGate.skip());
   return { page, errors };
 }
 

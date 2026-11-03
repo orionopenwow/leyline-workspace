@@ -135,10 +135,10 @@
       setTimeout(() => { const g = $("gate-go"); if (g) g.focus(); }, 0);
       return;
     }
-    if (f.stage === "busy") { card.append(spinLine(f.via === "new" ? "Making your account…" : "Signing in…")); return; }
+    if (f.stage === "busy") { card.append(spinLine(f.via === "new" ? "Making your account…" : "Logging in…")); return; }
     if (f.stage === "waiting") {
       card.append(spinLine("Waiting for your browser…", f.via === "google" ? "Continue with Google there, then approve this code. Leyline goes on by itself."
-        : "Sign in there (a browser already signed in only asks you to approve), then approve this code. Leyline goes on by itself."));
+        : "Log in there (a browser already signed in only asks you to approve), then approve this code. Leyline goes on by itself."));
       const c = el("p", "sx-code gate-code", f.code); c.id = "gate-code"; c.setAttribute("aria-label", "Sign-in code " + String(f.code).split("").join(" "));
       const row = el("div", "gate-acts");
       const again = el("button", "btn small", "Open the page again"); again.type = "button";
@@ -171,7 +171,7 @@
       const again = el("button", "btn small", "Try again"); again.type = "button"; again.id = "gate-retry";
       again.onclick = async () => { note = ""; await s.loadWays(); render(); };
       const skip = el("button", "link-s", "Continue without signing in"); skip.type = "button"; skip.id = "gate-skip";
-      skip.onclick = () => { then = null; why = ""; setOpen(false); };
+      skip.onclick = skip;
       a.append(again, skip); d.append(a); pane.append(d);
     }
     if (tab === "login") loginPane(pane); else signupPane(pane);
@@ -181,7 +181,7 @@
     const s = S();
     pane.append(el("p", "gate-lede", `One account for the launcher, the website and ${realmName()}.`));
     const ways = el("div", "gate-ways");
-    const br = el("button", "btn primary gate-big", "Sign in with your browser"); br.type = "button"; br.id = "gate-browser";
+    const br = el("button", "btn primary gate-big", "Log in with your browser"); br.type = "button"; br.id = "gate-browser";
     br.onclick = () => go(() => s.signIn(""));
     ways.append(br, el("p", "sf-fine gate-under", "Signed in on the website already, or your Hero Key kept in your browser? Approve once and you're in."));
     if (googleOn()) ways.append(way("sf-google", "Continue with Google", svg(IC.google), () => go(() => s.signIn("google")), "gate-google"));
@@ -261,7 +261,7 @@
     d.append(el("summary", "", "What is a Hero Key?"),
       el("p", "", "A Hero Key is one line of text that starts with ovk1. It is your account: it signs you in to Leyline, "
         + `the website and ${realmName()} on any computer, and on community realms that accept Hero Key.`),
-      el("p", "", "Keep its file somewhere safe, like a password: anyone with it can sign in as you. Lost it? Sign in another way "
+      el("p", "", "Keep its file somewhere safe, like a password: anyone with it can log in as you. Lost it? Log in another way "
         + "and make a new one in Manage account."));
     pane.append(d);
     const foot = el("p", "gate-foot"); foot.append("Already have a Hero Key? ");
@@ -272,6 +272,9 @@
   }
 
   // ---------------------------------------------------------------- in and out
+  // Continue without signing in (only offered while the website isn't answering): the launcher, signed out; PLAY on
+  // the official realm still opens this first
+  function skip() { then = null; why = ""; phase = "in"; setOpen(false); }
   function finish() {
     clearTimeout(welcomeT);
     phase = "in"; here = false; why = "";
@@ -326,7 +329,7 @@
     return false;
   }
 
-  window.LeylineGate = { isOpen: () => open, ready, need, show, dropPath, dragOver: (on) => { if (over !== on) { over = on; const d = $("gate-drop"); if (d) d.classList.toggle("over", on); } } };
+  window.LeylineGate = { isOpen: () => open, ready, need, show, skip, dropPath, dragOver: (on) => { if (over !== on) { over = on; const d = $("gate-drop"); if (d) d.classList.toggle("over", on); } } };
   // social.js asked the core before this ran (its answer can come first): go by it
   const s0 = S();
   if (s0 && s0.checked()) {

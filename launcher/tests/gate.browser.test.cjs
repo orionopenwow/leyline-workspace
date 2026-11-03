@@ -276,7 +276,8 @@ test('switching official and community realms back and forth: PLAY each time sta
   // 3. PLAY in the bar: the same realm and client; the line says what login it needs
   await page.click('.nav[data-page="play"]');
   assert.deepEqual(await playNow(), { client: 'c1121-1', realm: 'relay.openvanilla.app:40020' });
-  assert.match(await page.textContent('#play-status'), /Old World has its own accounts/);
+  assert.equal(await page.textContent('#play-status'), 'Started Vanilla 1.12.1. Log in with your account there.', 'short, and says what login it needs');
+  assert.match(await page.getAttribute('#play-status', 'title'), /^Started Vanilla 1\.12\.1 on relay/);
   // 4. the picker: back to Wrath Unleashed: the Wrath folder again, the old line gone
   await page.click('#pb-realm-btn');
   await page.click('#pb-rmenu .pb-realm-opt >> text=Wrath Unleashed');
@@ -284,7 +285,7 @@ test('switching official and community realms back and forth: PLAY each time sta
   assert.equal(await page.inputValue('#play-client'), 'c335a-1');
   assert.deepEqual(await last('select'), { client: 'c335a-1', realm: OFFICIAL });
   assert.deepEqual(await playNow(), { client: 'c335a-1', realm: OFFICIAL });
-  assert.doesNotMatch(await page.textContent('#play-status'), /own accounts/, 'the official realm signs in by itself');
+  assert.doesNotMatch(await page.textContent('#play-status'), /Log in/, 'the official realm signs in by itself');
   // 5. the picker: Old World again, under Your realms: the Vanilla folder again
   await page.click('#pb-realm-btn');
   await page.click('#pb-rmenu .pb-realm-opt >> text=Old World');

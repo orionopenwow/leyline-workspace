@@ -36,7 +36,7 @@
   const DEFAULT_CAT = { addon: "addons", package: "addons", patch: "graphics", native: "tools", "realm-script": "realm-scripts", "game-mode": "sandbox", den: "sandbox" };
   const failed = (e, fb) => {
     const m = String(e);
-    if (m === "signed_out") { if (S() && S().refresh) S().refresh(); return "You were signed out. Sign in again from Manage account."; }
+    if (m === "signed_out") { if (S() && S().refresh) S().refresh(); return "You were signed out. Log in again from Manage account."; }
     return oops(e, m || fb);
   };
 
@@ -84,8 +84,8 @@
     const den = listKind === "den";
     const d = head(listKind === "addon" ? "List your addon" : den ? "Share your Den on the Workshop" : "List your mod");
     if (!signedIn()) {
-      d.append(el("p", "", "Sign in to list a mod: any player can. Paste your repo link and Leyline shows exactly what one click will install."));
-      const acc = el("button", "btn primary", "Sign in"); acc.type = "button";
+      d.append(el("p", "", "Log in to list a mod: any player can. Paste your repo link and Leyline shows exactly what one click will install."));
+      const acc = el("button", "btn primary", "Log in"); acc.type = "button";
       acc.onclick = () => { dlg.close(); if (window.LeylineNav) window.LeylineNav.show("account"); };
       const web = el("button", "btn", "Open on the website"); web.type = "button";
       web.onclick = () => invoke("listing_open").catch(() => {});
@@ -207,7 +207,7 @@
   function report(p) {
     const d = head(`Report ${p.name}`);
     if (!signedIn()) {
-      d.append(el("p", "", "Sign in to report a mod."), closeRow([]));
+      d.append(el("p", "", "Log in to report a mod."), closeRow([]));
       d.showModal();
       return;
     }

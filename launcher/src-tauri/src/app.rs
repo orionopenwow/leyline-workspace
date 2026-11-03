@@ -334,7 +334,7 @@ fn official_note(login: &Result<(), String>, hybrid: &Result<(), String>) -> Str
         (Ok(()), Ok(())) => " It signs you in by itself and opens at character select.".into(),
         (Ok(()), Err(e)) if e.is_empty() => format!(" Your account name is filled in: {PW}"),
         (Ok(()), Err(e)) => format!(" Your account name is filled in: {PW} (Signing in by itself didn't work here: {e})"),
-        (Err(e), _) if e == "signed_out" => " Log in to Leyline (top right) and PLAY signs you in by itself.".into(),
+        (Err(e), _) if e == "signed_out" => " Log in to Leyline and PLAY signs you in by itself.".into(),
         (Err(e), _) => format!(" Signing in by itself didn't work ({e}): {PW}"),
     }
 }
@@ -378,7 +378,7 @@ async fn play_realm_herokey(core: State<'_, Core>, client: String, slug: String)
     };
     let d2 = dir.clone();
     let login = blocking(move || crate::herokey::sign_in(&d2, &rid)).await.map_err(|e| {
-        if e == "signed_out" { "Log in to Leyline first (top right: your Hero Key, your browser or Google).".to_string() } else { e }
+        if e == "signed_out" { "Log in to Leyline first: Log In, in the title bar.".to_string() } else { e }
     })?;
     let profile = core.client(&client)?;
     let _ = crate::herokey::set_account_name(&profile.path, &login.user);

@@ -79,7 +79,7 @@ const FAKE = (o) => {
       case 'host_dens': return [];
       case 'modes_list': return { modes: [], from_cache: false, builtin: false, saved_at: null, error: null };
       case 'p2p_flags': return { effective: { p2p_hosting: false, limits: {} }, known: [], local: { overrides: {} }, site: {} };
-      case 'social_status': return false;
+      case 'social_status': return true;   // a sign-in kept (the website not asked: the sign-in screen stays closed)
       case 'pick_folder': return null;
       default: throw 'unknown ' + cmd;
     }

@@ -43,7 +43,7 @@ const FAKE = (o) => {
         : { dir: S.kit ? '/kit' : null, is_kit: S.kit, problems: [], seeds: [], realm: null };
       case 'modes_list': return { modes: [], from_cache: false, builtin: false, saved_at: null, error: null };
       case 'p2p_flags': return { effective: { p2p_hosting: false, limits: {} }, known: [], local: { overrides: {} }, site: {} };
-      case 'social_status': return false;
+      case 'social_status': return true;   // a sign-in kept (the website not asked: the sign-in screen stays closed)
       case 'den_state': return {
         lite: { available: !!S.lite && S.lite !== 'get', can_get: S.lite === 'get', running: S.lite === 'running', address: '127.0.0.1', account: 'DEN', den_dir: '/app/den-lite/state/dens' },
         kit: S.kit || S.docker_den, docker_den: S.docker_den, other_realm: null, account: S.docker_den ? 'BEA42' : '',

@@ -41,7 +41,7 @@ const FAKE = ({ clients, saved }) => {
       case 'host_info': return { dir: null, is_kit: false, problems: [], seeds: [], realm: null };
       case 'modes_list': return { modes: [], from_cache: false, builtin: false, saved_at: null, error: null };
       case 'p2p_flags': return { effective: { p2p_hosting: false, limits: {} }, known: [], local: { overrides: {} }, site: {} };
-      case 'social_status': return false;
+      case 'social_status': return true;   // a sign-in kept (the website not asked: the sign-in screen stays closed)
       case 'pick_folder': return null;
       default: throw 'unknown ' + cmd;
     }
@@ -82,7 +82,8 @@ test('the picker: the client and its version; the drop-up list in its three grou
   assert.deepEqual(await rows(page), [
     'pb-act|Add a game folder…|||false|', 'pb-act|Add from a zip or a link…|||false|', 'pb-act|Find your game files|||false|', '---',
     'pb-missing|TBC|2.4.3|Not found|false|true', '---',
-    'pb-mine|My Wrath|3.3.5a|C:\\Games\\Wrath|true|', 'pb-mine|My Vanilla|1.12.1|/home/me/Games/vanilla|false|',
+    // your folders in era order (owner 2 Nov: "ordered properly"): Vanilla before Wrath
+    'pb-mine|My Vanilla|1.12.1|/home/me/Games/vanilla|false|', 'pb-mine|My Wrath|3.3.5a|C:\\Games\\Wrath|true|',
   ]);
   assert.equal(await page.evaluate(() => document.activeElement.textContent.startsWith('My Wrath')), true, 'the picked row has the focus');
   // the list opens upwards, above the button, inside the window
@@ -108,11 +109,13 @@ test('the keyboard: Up opens, arrows and Home / End move, Enter picks, Esc close
   await page.focus('#pb-client');
   await page.keyboard.press('ArrowUp');
   assert.ok(await page.isVisible('#pb-menu'));
-  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowUp');   // from My Wrath (the picked one, last: the folders in era order) up to My Vanilla
   assert.equal(await page.evaluate(() => document.activeElement.querySelector('.pb-opt-name').textContent), 'My Vanilla');
   await page.keyboard.press('Home');
   assert.equal(await page.evaluate(() => document.activeElement.querySelector('.pb-opt-name').textContent), 'Add a game folder…');
   await page.keyboard.press('End');
+  assert.equal(await page.evaluate(() => document.activeElement.querySelector('.pb-opt-name').textContent), 'My Wrath');
+  await page.keyboard.press('ArrowUp');
   await page.keyboard.press('Enter');
   assert.equal(await page.inputValue('#play-client'), 'c1121-1');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'pb-client', 'the focus back on the button');

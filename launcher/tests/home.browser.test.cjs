@@ -62,7 +62,7 @@ const FAKE = ({ empty, browser, ms, modes, noClients, forumDown, forumWait }) =>
       case 'modes_list': return { modes: empty ? [] : modes, from_cache: false, builtin: false, saved_at: null, error: null };
       case 'mode_open_browser': return 'Opened it in your browser.';
       case 'p2p_flags': return { effective: { p2p_hosting: false, limits: {} }, known: [], local: { overrides: {} }, site: {} };
-      case 'social_status': return false;
+      case 'social_status': return true;   // a sign-in kept (the website not asked: the sign-in screen stays closed)
       case 'open_link': return null;
       case 'play': return 'Started.';
       case 'open_browser_play': return null;

@@ -224,13 +224,13 @@ async function step(page, errors, name, size, check) {
   if (SHOTS) await page.screenshot({ path: path.join(SHOTS, `${nn}-${name}.png`) });
 }
 
-// THE SIGN-IN, in one place: the sign-in gate (people log in first) changes only this. A test Hero Key, pasted.
+// THE SIGN-IN, in one place: the sign-in screen (gate.js: people log in first). A test Hero Key, pasted there.
 const TEST_KEY = 'ovk1.TestTestAa.' + 'k'.repeat(43);
 async function signIn(page) {
-  await page.click('#hf-signin');
-  await page.click('.sf-way[data-via="herokey"]');
-  await page.fill('#sf-key', TEST_KEY);
-  await page.click('#sf-keyform button[type="submit"]');
+  await page.waitForSelector('#gate-key');
+  await page.fill('#gate-key', TEST_KEY);
+  await page.click('#gate-keyform button[type="submit"]');
+  await page.click('#gate-go');   // the signed-in moment: picture, name#tag, Continue
   await page.waitForSelector('#hf-me-btn');
 }
 
@@ -245,6 +245,13 @@ test('a brand-new player, start to end: tour, game folders, realms, PLAY, Your D
   await page.addInitScript(FAKE);
   await page.goto(INDEX);
   await page.waitForFunction(() => window.LeylineNav && window.LeylineApp && window.LeylineApp.state());
+
+  // 0. the sign-in screen first: nothing of the launcher until logged in
+  await step(page, errors, 'sign-in', SMALL, async () => {
+    await page.waitForSelector('#gate-browser');
+    assert.equal(await page.evaluate(() => document.querySelector('.frame').inert), true);
+  });
+  await signIn(page);
 
   // 1. first launch: no settings, no game folders; Home, with the tour on top
   await step(page, errors, 'first-launch', SMALL, async () => {
@@ -377,14 +384,9 @@ test('a brand-new player, start to end: tour, game folders, realms, PLAY, Your D
     await step(page, errors, name, name === 'host' ? LARGE : SMALL, check);
   }
 
-  // 16. Log In, then Manage account
+  // 16. signed in since the start: the chip, then Manage account
   await go(page, 'play');
-  await step(page, errors, 'log-in-button', SMALL, async () => { assert.ok(await page.isVisible('#hf-signin')); });
-  await page.click('#hf-signin');
-  await step(page, errors, 'log-in-chooser', SMALL);
-  await page.keyboard.press('Escape');
-  await signIn(page);
-  await step(page, errors, 'signed-in', SMALL);
+  await step(page, errors, 'signed-in', SMALL, async () => { assert.ok(await page.isVisible('#hf-me-btn')); });
   await page.click('#hf-me-btn');
   await step(page, errors, 'account-panel', SMALL);
   await page.click('#hf-panel [role="menuitem"]:has-text("Manage account")');

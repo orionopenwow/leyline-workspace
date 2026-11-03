@@ -91,6 +91,10 @@ async function open(opts) {
   await page.route('https://play.openvanilla.app/wrath/art/**', (r) => r.abort());
   await page.addInitScript(FAKE, opts || {});
   await page.goto(INDEX);
+  // signed out, the sign-in screen (gate.js, gate.browser.test.cjs) covers the launcher: these tests are the launcher
+  // behind it, as after its Continue without signing in
+  await page.waitForFunction(() => window.LeylineSocial && window.LeylineSocial.checked());
+  await page.evaluate(() => window.LeylineGate.skip());
   return { page, errors, fetched };
 }
 const called = (page, cmd, pred) => page.evaluate(([c, p]) => window.__calls.some(([x, a]) => x === c && (!p || new Function('a', 'return ' + p)(a))), [cmd, pred || '']);

@@ -102,7 +102,8 @@ test('Realms page: two tabs, Official first; the slim line, one tag, players, Re
   assert.equal(await cards.nth(0).locator('.rl-note').textContent(), 'Needs your own 1.12.1 client', 'a quiet note only when it applies');
   assert.equal(await cards.nth(1).locator('.rl-note').count(), 0);
   assert.equal(await page.locator('#rl-list .rl-addr').count(), 0, 'no address chip');
-  assert.equal(await cards.nth(0).locator('.rl-meta').textContent(), 'PvE · vMaNGOS', 'one line: type · core');
+  assert.equal(await cards.nth(0).locator('.rl-meta').textContent(), 'PvE', 'one line: type and style, no server software name');
+  assert.equal(await cards.nth(1).locator('.rl-meta').textContent(), 'PvE · Bots');
   const more = await cards.nth(0).locator('.rl-meta').getAttribute('title');
   assert.match(more, /Community realm/); assert.match(more, /Europe/); assert.match(more, /PvP/); assert.match(more, /97% up · 7 d/);
   assert.match(more, /Realmlist: relay\.openvanilla\.app:40020/);

@@ -12,7 +12,7 @@
   const MIN = 10, MAX = 1500, LOG_MAX = 40;
   const NAMES = { play: "Home", den: "Your Den", realms: "Realms", mods: "Mods & Addons", host: "Host", forum: "Forum",
     news: "News", settings: "Settings", agents: "Agents", account: "Manage account", findfiles: "Find your files",
-    clients: "Game clients", help: "Help" };
+    clients: "Game folders", help: "Help" };
   const KIND = { den: "den", host: "host", mods: "mods" };
   const RATE = "Thanks! That's a lot of reports in a short while. Please wait a little before the next one.";
 

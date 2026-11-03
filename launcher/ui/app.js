@@ -262,11 +262,17 @@ function signedInFirst(then) {
   G.need(`${officialName()} signs you in with your Leyline account. Log in, and PLAY goes on by itself.`, then);
   return false;
 }
-// What a community realm's login is, after its start (owner 2 Nov: "community realms say plainly what login they need")
-function communityLogin(r) {
-  if (localChosen() || chosenRealm() === DEN_LITE) return "";
-  const name = (r && r.name) || "this realm";
-  return ` ${name} has its own accounts: log in with yours there` + (r && r.join_url ? " (first time? Make an account on its card under Realms)." : ".");
+// PLAY's line in the bar, short enough to fit beside the realm (the core's whole answer is its tooltip): what started,
+// and how you get past the login screen. A community realm has its own accounts (owner 2 Nov: "community realms say
+// plainly what login they need"); the official realm signs in by itself.
+function playLine(msg, c) {
+  const m = String(msg || "");
+  if (!/^Started /.test(m)) return m;
+  let out = `Started ${c.name}.`;
+  if (/signs you in by itself/.test(m)) out += " It signs you in by itself.";
+  else if (/account name is filled in/.test(m)) out += " Type your game password at the login screen.";
+  else if (!isOfficial() && !localChosen() && chosenRealm() !== DEN_LITE) out += " Log in with your account there.";
+  return out;
 }
 // The official realm (launch, owner 2026-10-30; renamed "Wrath Unleashed" for now, owner 2026-10-30 23:32): where
 // everyone meets in Dalaran. One name everywhere, whatever the listing calls it (the Sample Hangout, the realm's own
@@ -476,7 +482,7 @@ function chosenRealmBuild() {
 let statusFor = null;
 const playKey = () => `${mode}|${isOfficial() ? "official" : chosenRealm()}|${$("play-client").value}`;
 function realmChanged() {
-  if (playKey() !== statusFor) { if (statusFor !== null) say("play-status", ""); statusFor = playKey(); }
+  if (playKey() !== statusFor) { if (statusFor !== null) { say("play-status", ""); $("play-status").title = ""; } statusFor = playKey(); }
   $("play-custom-wrap").hidden = isOfficial();
   const c = currentClient();
   const need = chosenRealmBuild();
@@ -1151,6 +1157,13 @@ function localGo(L) {
   // the Host page (owner 1 Nov 02:46: "clicking the button doesn't launch the den")
   if (L === DEN && step !== "play" && window.LeylineDen && window.LeylineNav) {
     pendingLocal = null;
+    // the bar follows at once (owner 2 Nov UX pass: it kept Wrath Unleashed / READY TO PLAY and the old line): Your Den
+    // on Den Lite is 127.0.0.1; else the old line goes
+    if (window.LeylineDen.where && window.LeylineDen.where() === "lite") {
+      $("play-realm").value = "custom"; $("play-custom").value = DEN_LITE;
+      if (mode === "browser") setMode("online");
+      realmChanged();
+    } else { say("play-status", ""); $("play-status").title = ""; }
     window.LeylineNav.show("den");
     window.LeylineDen.go();
     return;
@@ -1490,7 +1503,8 @@ $("play-form").addEventListener("submit", async (ev) => {
     if (window.LeylineAddons && isOfficial() && !j.leyline) await window.LeylineAddons.beforePlay(c);   // offers the Leyline addons (addons.js)
     say("play-status", "Starting…");
     const started = await invoke("play", { client: c.id, realm });
-    say("play-status", started + (isOfficial() ? "" : communityLogin(rr)), "ok");
+    say("play-status", playLine(started, c), "ok");
+    $("play-status").title = String(started);   // the whole of it on hover
     statusFor = playKey();
     state = tidyState(await invoke("get_state"));
   } catch (e) {
@@ -1606,8 +1620,8 @@ async function addClient(path) {
   try {
     const r = await invoke("add_client", { path });
     const d = r.detection;
-    const how = d.detected_by === "exe_version" ? "from the executable" : "from the data files";
-    let msg = `Added ${r.profile.name}: ${d.build_label}, detected ${how}.`;
+    // the name says the era and version ("Added Wrath 3.3.5a."); how it was found stays out of the sentence
+    let msg = `Added ${tidyName(r.profile.name, r.profile.build)}.`;
     if (d.build === "other") msg += " Leyline does not know this build: you can play realms with it, but it offers no mods for it.";
     if (!d.complete) msg += " Some files are missing: " + d.missing.join(", ");
     await refresh();
@@ -1889,7 +1903,7 @@ async function rateProject(p, n, box) {
     if (ranked && ranked.metrics && ranked.metrics[p.id] && r && r.rating) ranked.metrics[p.id].rating = r.rating;
     say("cat-status", `Thanks: you rated ${p.name} ${n} star${n > 1 ? "s" : ""}.`, "ok");
   } catch (e) {
-    say("cat-status", String(e) === "signed_out" ? "Sign in (top right) to rate mods: the same sign-in as the website." : oops(e, "Couldn't save your rating. Try again."), "bad");
+    say("cat-status", String(e) === "signed_out" ? "Log In (in the title bar) to rate mods: the same account as the website." : oops(e, "Couldn't save your rating. Try again."), "bad");
   }
 }
 
@@ -2194,7 +2208,7 @@ function showHostLink(id) {
   }
   go.hidden = false;
   go.onclick = async () => {
-    try { await invoke("open_host_form", { query: id }); say("host-status-line", "The website's host page is open with your choices: sign in, add your GM account name, press Start server, then come back here for steps 2 and 3.", "ok"); }
+    try { await invoke("open_host_form", { query: id }); say("host-status-line", "The website's host page is open with your choices: log in, add your GM account name, press Start server, then come back here for steps 2 and 3.", "ok"); }
     catch (e) { sayErr("host-status-line", e); }
   };
   say("host-status-line", "Your choices from the game are below. Make the realm on the website, then start it here.", "ok");
@@ -2539,7 +2553,7 @@ async function loadRealms(quiet) {
 // other live realms by the network's fair score, offline ones. The filters narrow the community realms.
 let networkTotals = null;
 let p2pHosting = false;   // direct connections are shown only when the p2p_hosting flag is on (Settings > Advanced)
-let heroKeyOn = false;    // "Sign in with your Hero Key" only with the herokey_sso flag on (docs/HERO-KEY-SSO.md)
+let heroKeyOn = false;    // "Log in with your Hero Key" only with the herokey_sso flag on (docs/HERO-KEY-SSO.md)
 const TAG_LABELS = { blizzlike: "Original rules", boosted: "Boosted", custom: "Custom", pvp: "PvP", rp: "RP", hangout: "Hangout", bots: "Bots" };
 const REGION_LABELS = { "na-east": "North America east", "na-west": "North America west", sa: "South America", eu: "Europe",
   africa: "Africa", me: "Middle East", asia: "Asia", oce: "Oceania" };
@@ -2720,7 +2734,9 @@ function renderRealms() {
     if (r.official) { const b = el("span", "rl-bdg o", "Official"); if (r.temporary) b.title = "Temporary: our own realm for now"; title.append(b); }
     else if (r.featured) title.append(el("span", "rl-bdg f", "Featured"));
     const line = el("div", "rl-meta");
-    const bits = [r.kind, CORE_LABELS[r.core] || "Other server"];
+    // the realm's type and style (owner 2 Nov UX pass: no server software names, "AzerothCore" is jargon to players)
+    const style = (r.official ? [] : (r.tags || []).filter((t) => t !== "pvp" && t !== "rp")).map((t) => TAG_LABELS[t] || t).slice(0, 2);
+    const bits = [r.kind, ...style];
     if (r.direct && p2pHosting) bits.push("Direct connect available");
     line.append(el("span", "", bits.filter(Boolean).join(" · ")));
     // everything else about the realm, on hover
@@ -2768,7 +2784,7 @@ function renderRealms() {
     }
     const acts = el("div", "acts");
     if (heroKeyOn && !r.official && r.realm_id && r.state === "live") {
-      const hk = el("button", "btn small", "Sign in with your Hero Key");
+      const hk = el("button", "btn small", "Log in with your Hero Key");
       hk.title = "No account to make: your Hero Key signs you in here (a one-time password, shown below)";
       hk.disabled = !state.settings.clients.length;
       hk.addEventListener("click", () => playRealmHeroKey(r, hk));
@@ -3105,6 +3121,13 @@ function playHangout() {
   saveSelection();
   $("play-form").requestSubmit();
 }
+
+// signed in or out: the bar's line was about the other state (a signed-out note): it goes, the bar is drawn again
+document.addEventListener("leyline:me", () => {
+  if (!state) return;
+  if (/log in/i.test($("play-status").textContent)) { say("play-status", ""); $("play-status").title = ""; }
+  renderPlayBar();
+});
 
 window.LeylineApp = {
   news: () => news, realms: () => realmsCache, catalog: () => catalog, mode: () => mode, setMode, openLink, playHangout, HANGOUT,

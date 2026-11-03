@@ -1059,7 +1059,7 @@ pub(crate) mod commands {
     }
 
     fn signed(e: String) -> String {
-        if e == "signed_out" { "Sign in on the launcher first (Manage account).".into() } else { e }
+        if e == "signed_out" { "Log in to Leyline first: Log In, in the title bar.".into() } else { e }
     }
 
     /// Connect / Disconnect a Claude app: `target` is `claude_code` or `desktop`.

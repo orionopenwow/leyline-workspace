@@ -1692,7 +1692,17 @@ function renderSettings() {
   if ($("set-save")) $("set-save").hidden = !!state.windows;
   $("set-count").checked = state.settings.count_installs !== false;
   $("set-hybrid").checked = state.settings.hybrid_login === true;
+  $("set-cover").checked = state.settings.signin_cover !== false;
 }
+// Settings › Hide the sign-in behind Leyline's screen (src-tauri/src/cover.rs; on unless turned off)
+$("set-cover").addEventListener("change", async () => {
+  const on = $("set-cover").checked;
+  try {
+    await invoke("set_signin_cover", { on });
+    state.settings.signin_cover = on;
+    say("cover-status", on ? "Leyline's screen covers the game while it signs you in." : "You'll see the game's login screen while Leyline signs you in.", "ok");
+  } catch (e) { $("set-cover").checked = !on; sayErr("cover-status", e); }
+});
 $("set-hybrid").addEventListener("change", async () => {
   const on = $("set-hybrid").checked;
   try {

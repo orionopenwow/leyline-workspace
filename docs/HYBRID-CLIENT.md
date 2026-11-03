@@ -53,6 +53,43 @@ Owner: "goes to the loginscreen instead of skipping to character select after re
   driver (`denclick.rs`) could type the password there on Windows, but it follows Den Lite's milestone log, which the
   official realm doesn't write.
 
+## The sign-in cover (3 Nov)
+
+Owner: PLAY → character select "smooth"; the player never sees the sign-in being typed. While the launcher types the
+sign-in at the stock login screen (`app.rs keys_sign_in` on the official realm, `denclick.rs` for Your Den), Leyline's
+own "Logging you in as <name>…" screen (`launcher/ui/cover.html`, `cover.css`, `cover.js`) covers the game's window.
+The logic is `launcher/src-tauri/src/cover.rs` (pure, unit-tested on every platform); the window is `app.rs
+cover_start` / `cover_watch` / `cover_window`; the Windows calls are `cover::win`.
+
+- **The window:** a Tauri window (label `signin-cover`): undecorated, on top, off the taskbar, `focused(false)`, made
+  hidden at PLAY (its page loads while the game opens) and destroyed after the start (a hidden window left open would
+  keep Leyline running after its main window closes). On Windows it gets `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` and is
+  shown with `SetWindowPos(HWND_TOPMOST, SWP_NOACTIVATE | SWP_SHOWWINDOW)`, so it **never takes the keyboard**: the game
+  stays the foreground window. The keys are posted window messages to the game's own window (`denclick::win::send`),
+  which need no focus anyway.
+- **Placement:** exactly over the game's picture (its client area): `GetClientRect` + `ClientToScreen` of both corners,
+  in the launcher's own per-monitor DPI awareness (physical pixels, so a game without DPI awareness on a scaled screen
+  lines up). Looked at every 200 ms: it follows a moved or resized window, steps aside while the game is minimised.
+- **When:** up as soon as the game's window exists (before the 7 s `KEYS_SETTLE`), with the steps Opening the game →
+  Signing in → Choosing your realm → Character select (Den: Into your Den).
+- **Character select, detected without reading game memory:** the game's own TCP connections, by its process id
+  (`GetExtendedTcpTable`, `TCP_TABLE_OWNER_PID_CONNECTIONS`, established IPv4). A connection to the login port 3724 is
+  the login; a connection to any other port (not 80/443) after it is the realm's world server, which the game opens
+  only once the login and the realm are done: the cover goes 0.9 s later (character select drawing its list). Your Den
+  follows Den Lite's milestone log instead and goes at `player_login` (the world's loading screen shows).
+- **Never stranded behind it:** gone at once when the game closes, the keys didn't reach the window, the login
+  connection closes with no world connection for 1.5 s (a wrong password, a message on the login screen), logged in but
+  no world connection for 8 s (the realm list waits for the player), Esc (seen with `GetAsyncKeyState`, as the game has
+  the keyboard) or a click on "Show the game", a newer start, or the limit: 25 s from the window (Den 45 s). A guard
+  hides it even if its thread panics. When it goes, the game window is brought to the front.
+- **Setting:** Settings › Playing › "Hide the sign-in behind Leyline's screen" (`settings.signin_cover`, on by default;
+  `set_signin_cover`). The headless runs (`play-test`, `den-play --test`) have no cover.
+- **Log:** `<launcher data>/signin-cover.log`: each step and why it went, in ms from the start. Never a password.
+- **Only a real Windows run proves:** the window really doesn't take focus (WebView2 inside a `WS_EX_NOACTIVATE`
+  window), it lines up on a scaled screen, the world port shows up in the connection table at character select, and
+  that a fullscreen (not windowed) game lets a top-most window show over it at all (if not, the game's own login screen
+  shows as before: the password box shows only stars).
+
 ## Verdicts
 
 | # | Question | Verdict | What decides it |

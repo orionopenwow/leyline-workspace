@@ -1,0 +1,27 @@
+<!doctype html>
+<!-- The sign-in cover (src-tauri/src/cover.rs, app.rs cover_start): Leyline's "Logging you in…" screen, sized exactly
+     over the game's window while the launcher types the sign-in at its login screen, gone at character select. Its own
+     small window: no launcher script but cover.js, which asks the core what to show (cover_state) and hides it on
+     "Show the game" or Esc (cover_hide). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Leyline</title>
+<link rel="stylesheet" href="spin.css">
+<link rel="stylesheet" href="cover.css">
+</head>
+<body>
+<main class="cover" aria-live="polite">
+  <div class="cv-card">
+    <span class="ly-spin cv-mark" role="img" aria-label="Leyline"></span>
+    <h1 class="cv-title" id="cv-title">Logging you in…</h1>
+    <div class="cv-bar" aria-hidden="true"><span class="cv-fill" id="cv-fill"></span></div>
+    <ol class="cv-steps" id="cv-steps"></ol>
+    <p class="cv-note">Leyline is signing you in. The game shows up as soon as you're through.</p>
+  </div>
+  <button type="button" class="cv-show" id="cv-show">Show the game <kbd>Esc</kbd></button>
+</main>
+<script src="cover.js"></script>
+</body>
+</html>

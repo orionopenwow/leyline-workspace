@@ -297,9 +297,9 @@ fn den_ground_root(core: &Core, realm: &str) -> Option<PathBuf> {
 /// Point the client at the realm, then start it. On the official realm, signed in on Home, the game signs in by
 /// itself and opens at character select (`play_official`).
 #[tauri::command]
-async fn play(core: State<'_, Core>, client: String, realm: String) -> Result<String, String> {
+async fn play(app: AppHandle, core: State<'_, Core>, client: String, realm: String) -> Result<String, String> {
     if crate::addresses::is_official_realm(realm.trim()) {
-        return play_official(&core, &client, &realm).await;
+        return play_official(&core, &client, &realm, Some(&app)).await;
     }
     point_and_play(&core, &client, &realm, true)
 }
@@ -309,8 +309,9 @@ async fn play(core: State<'_, Core>, client: String, realm: String) -> Result<St
 /// launcher's token; nothing asked when signed out), its account name in Config.wtf, and the login handed to the
 /// login screen for this one start (crate::hybrid, `enter: false`: it stops at character select). Where that can't
 /// be (a folder without the changed login screens, the switch off), the account name is still filled in. Never stops
-/// the start: a failed sign-in is said after it.
-async fn play_official(core: &Core, client: &str, realm: &str) -> Result<String, String> {
+/// the start: a failed sign-in is said after it. `app`: the launcher window's app, for the sign-in cover over the keys
+/// (crate::cover; none from the command line).
+async fn play_official(core: &Core, client: &str, realm: &str, app: Option<&AppHandle>) -> Result<String, String> {
     let profile = core.client(client)?;
     let mut login: Result<crate::herokey::GameLogin, String> = Err("signed_out".into());
     if profile.build == clients::Build::V335a {
@@ -322,13 +323,18 @@ async fn play_official(core: &Core, client: &str, realm: &str) -> Result<String,
         crate::hybrid::Session { user: l.user.clone(), pass: l.pass.clone(), realm: None, enter: false }
     });
     let pass = login.as_ref().ok().map(|l| l.pass.clone());
+    let name = login.as_ref().ok().map(|l| l.user.clone()).unwrap_or_default();
     let asked = login.map(|_| ());
     let (message, mut hybrid) = point_and_play_with(core, client, realm, true, session, false)?;
-    // a stock game (no Forever UI's login screens): the launcher's keys sign in instead
+    // a stock game (no Forever UI's login screens): the launcher's keys sign in instead, behind Leyline's cover
     if let (Err(_), Some(pass)) = (&hybrid, pass) {
         let pid = LAST_GAME_PID.load(std::sync::atomic::Ordering::Relaxed);
         if pid != 0 && cfg!(windows) {
-            keys_sign_in(pid, pass);
+            let cover = match app {
+                Some(app) if core.snapshot().signin_cover => cover_start(app, pid, crate::cover::Mode::Official, &name, None),
+                _ => None,
+            };
+            keys_sign_in(pid, pass, cover);
             hybrid = Ok(());
         }
     }
@@ -343,23 +349,137 @@ const KEYS_SETTLE: std::time::Duration = std::time::Duration::from_secs(7);
 /// refuses changed login screen files, so instead of them the launcher types the sign-in for this start at the login
 /// screen, as Your Den's keys do (crate::denclick, posted window messages, no focus taken): the account name is
 /// already filled in (Config.wtf), so the password and Enter. One try; if the login screen wasn't ready, the player
-/// is on the normal login screen with the name filled in. The password is only in this thread's memory.
-fn keys_sign_in(pid: u32, pass: String) -> std::thread::JoinHandle<Result<(), String>> {
+/// is on the normal login screen with the name filled in. The password is only in this thread's memory. `cover`: the
+/// sign-in cover's signals (crate::cover), told when the keys went or didn't.
+fn keys_sign_in(pid: u32, pass: String, cover: Option<Arc<crate::cover::Signals>>) -> std::thread::JoinHandle<Result<(), String>> {
     std::thread::spawn(move || {
-        use crate::denclick::{Game, Key, Process};
-        let mut g = Process(pid);
-        let t0 = std::time::Instant::now();
-        while !g.window() {
-            if !g.alive() || t0.elapsed() > std::time::Duration::from_secs(60) {
-                return Err("the game window didn't open".to_string());
+        let r = keys_sign_in_now(pid, &pass);
+        if let Some(c) = cover {
+            if r.is_ok() { c.keys_sent() } else { c.keys_failed() }
+        }
+        r
+    })
+}
+
+fn keys_sign_in_now(pid: u32, pass: &str) -> Result<(), String> {
+    use crate::denclick::{Game, Key, Process};
+    let mut g = Process(pid);
+    let t0 = std::time::Instant::now();
+    while !g.window() {
+        if !g.alive() || t0.elapsed() > std::time::Duration::from_secs(60) {
+            return Err("the game window didn't open".to_string());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+    std::thread::sleep(KEYS_SETTLE);
+    if !g.alive() {
+        return Err("the game closed before the login screen".into());
+    }
+    if g.send(Key::Password, pass) { Ok(()) } else { Err("the game window didn't take the keys".into()) }
+}
+
+/// The sign-in cover (crate::cover, owner 3 Nov): Leyline's "Logging you in…" screen over the game's window while the
+/// launcher signs in, from the moment the window opens until character select (or the Den's loading screen), and
+/// gone at once when anything goes another way. Windows only (where the keys are); its own thread, so the start
+/// never waits on it. Returns the signals the signing-in side sets. `den`: Den Lite's Dens folder and the start (unix
+/// ms) whose milestones it follows.
+fn cover_start(app: &AppHandle, pid: u32, mode: crate::cover::Mode, name: &str, den: Option<(PathBuf, u64)>) -> Option<Arc<crate::cover::Signals>> {
+    if !cfg!(windows) || pid == 0 {
+        return None;
+    }
+    let sig = Arc::new(crate::cover::Signals::default());
+    let id = crate::cover::begin(mode, crate::cover::title(mode, name));
+    let (app, s) = (app.clone(), sig.clone());
+    std::thread::spawn(move || cover_watch(app, pid, mode, den, s, id));
+    Some(sig)
+}
+
+#[cfg(windows)]
+fn cover_watch(app: AppHandle, pid: u32, mode: crate::cover::Mode, den: Option<(PathBuf, u64)>, sig: Arc<crate::cover::Signals>, id: u64) {
+    use crate::cover::{self, win};
+    let log = settings::app_dir().join("signin-cover.log");
+    let say = |text: String| {
+        let _ = std::fs::write(&log, text);
+    };
+    let w = match cover_window(&app) {
+        Ok(w) => w,
+        Err(e) => return say(format!("sign-in cover ({mode:?})\nno cover window: {e}\n")),
+    };
+    let hwnd = match w.hwnd() {
+        Ok(h) => h.0 as isize,
+        Err(e) => return say(format!("sign-in cover ({mode:?})\nno cover window: {e}\n")),
+    };
+    win::prepare(hwnd);
+    // whatever happens in here (even a panic), the cover doesn't stay up (unless a newer start has it now)
+    struct Down(isize, u64);
+    impl Drop for Down {
+        fn drop(&mut self) {
+            if crate::cover::current() == self.1 {
+                win::hide(self.0);
             }
-            std::thread::sleep(std::time::Duration::from_millis(250));
         }
-        std::thread::sleep(KEYS_SETTLE);
-        if !g.alive() {
-            return Err("the game closed before the login screen".into());
-        }
-        if g.send(Key::Password, &pass) { Ok(()) } else { Err("the game window didn't take the keys".into()) }
+    }
+    let down = Down(hwnd, id);
+    let mut screen = win::Desktop { pid, cover: hwnd };
+    let start = crate::denclick::now_ms();
+    let den_ref = den.as_ref().map(|(d, t)| (d.as_path(), *t));
+    let (end, steps) = cover::run(&mut screen, cover::Watch::new(mode, start), &sig, den_ref, id, &mut crate::denclick::now_ms, &mut |ms| {
+        std::thread::sleep(std::time::Duration::from_millis(ms))
+    });
+    say(cover::log_text(mode, &end, &steps));
+    drop(down);
+    // made again for the next start: a hidden window left open would keep Leyline running after its main window
+    // closes (a newer start that took it over destroys it when it is done)
+    if cover::current() == id {
+        let _ = w.destroy();
+    }
+}
+
+#[cfg(not(windows))]
+fn cover_watch(app: AppHandle, pid: u32, mode: crate::cover::Mode, den: Option<(PathBuf, u64)>, sig: Arc<crate::cover::Signals>, id: u64) {
+    let _ = (app, pid, mode, den, sig, id);
+}
+
+/// The cover's window, made hidden when the start begins (its page loads while the game opens) and destroyed after it.
+/// Undecorated, on top, off the taskbar, never focused (on Windows it is also made unable to take the keyboard:
+/// cover::win::prepare), dark before its page draws.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn cover_window(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
+    if let Some(w) = app.get_webview_window(crate::cover::LABEL) {
+        return Ok(w);
+    }
+    tauri::WebviewWindowBuilder::new(app, crate::cover::LABEL, tauri::WebviewUrl::App(crate::cover::PAGE.into()))
+        .title("Leyline")
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .focused(false)
+        .resizable(false)
+        .shadow(false)
+        .visible(false)
+        .background_color(tauri::window::Color(11, 13, 18, 255))
+        .inner_size(960.0, 600.0)
+        .build()
+}
+
+/// The cover's page (ui/cover.js): what to show.
+#[tauri::command]
+fn cover_state() -> crate::cover::View {
+    crate::cover::view()
+}
+
+/// The cover's "Show the game" (or Esc on it): this start's cover goes, the game in front.
+#[tauri::command]
+fn cover_hide(id: u64) {
+    crate::cover::dismiss(id);
+}
+
+/// Settings › Hide the sign-in behind Leyline's screen.
+#[tauri::command]
+fn set_signin_cover(core: State<Core>, on: bool) -> Result<(), String> {
+    core.update(|s| {
+        s.signin_cover = on;
+        Ok(())
     })
 }
 
@@ -381,7 +501,7 @@ fn official_note(login: &Result<(), String>, hybrid: &Result<(), String>) -> Str
 /// folder to pick (realms::pick_client; owner 2 Nov, no silent swap). The official realm signs in by itself as PLAY
 /// does (`play_official`).
 #[tauri::command]
-async fn play_realm(core: State<'_, Core>, client: String, slug: String) -> Result<String, String> {
+async fn play_realm(app: AppHandle, core: State<'_, Core>, client: String, slug: String) -> Result<String, String> {
     let dir = core.dir.clone();
     let realm = realms::cached(&dir).into_iter().find(|r| r.slug == slug).ok_or("That realm is not on the list any more.")?;
     let client = {
@@ -390,7 +510,7 @@ async fn play_realm(core: State<'_, Core>, client: String, slug: String) -> Resu
     };
     let r2 = realm.clone();
     let addr = blocking(move || realms::desktop_address(&r2, |relay| format!("https://{relay}"))).await?;
-    let mut msg = if realm.official { play_official(&core, &client, &addr).await? } else { point_and_play(&core, &client, &addr, true)? };
+    let mut msg = if realm.official { play_official(&core, &client, &addr, Some(&app)).await? } else { point_and_play(&core, &client, &addr, true)? };
     if !realm.official && realm.state != "live" {
         msg.push_str(" The list says this realm is offline right now, so it may not answer.");
     }
@@ -697,7 +817,7 @@ fn den_launch(core: &Core, client: &str) -> Result<(SoloPlay, DenStart), String>
 /// After a My Den start: signs in (crate::denclick::drive) unless our login screen code did, answers the game's
 /// asks (Invite a friend, Shape the ground) while it runs, and takes the handoff out when it closes. A game that
 /// refused our login screen code is started once more without it. `test`: the den-test step's hold (seconds).
-fn den_watch(st: DenStart, test: Option<u64>) -> crate::denclick::Outcome {
+fn den_watch(st: DenStart, test: Option<u64>, cover: Option<Arc<crate::cover::Signals>>) -> crate::denclick::Outcome {
     use crate::denclick::{self, Driver, Outcome, Process};
     use crate::host::lite;
     let app = crate::settings::app_dir();
@@ -743,6 +863,11 @@ fn den_watch(st: DenStart, test: Option<u64>) -> crate::denclick::Outcome {
     };
     let start = denclick::now_ms();
     let mut out = denclick::drive(&mut Process(st.pid), &den_dir, &root, Driver::new(start, st.glue, test.is_some()), lite::PASSWORD, st.pid, &mut asks);
+    // the sign-in cover goes now: in the world, or the sign-in stopped (a refused login screen code: the new start
+    // below has no cover, the player sees the game)
+    if let Some(c) = &cover {
+        c.finish(out == Outcome::InWorld);
+    }
     if out == Outcome::GlueRefused {
         // the game closed on our login screen code: never again for this game, and once more without it
         let m = crate::hybrid::refused_marker(&st.game);
@@ -847,7 +972,7 @@ fn close_game(pid: u32) {
 /// (gets it on first use), then [`den_launch`] starts the game and [`den_watch`] signs in by itself: with our login
 /// screen code where the game takes it, else with the launcher's keys (crate::denclick), straight into the Den.
 #[tauri::command]
-async fn den_play_lite(core: State<'_, Core>, client: String) -> Result<SoloPlay, String> {
+async fn den_play_lite(app: AppHandle, core: State<'_, Core>, client: String) -> Result<SoloPlay, String> {
     let profile = core.client(&client)?;
     if profile.build != crate::clients::Build::V335a {
         return Err("Your Den plays with a different game folder: pick or add it in the play bar, where its version shows.".into());
@@ -855,7 +980,12 @@ async fn den_play_lite(core: State<'_, Core>, client: String) -> Result<SoloPlay
     let game = profile.path.clone();
     blocking(move || den_lite_up(&game)).await?;
     let (play, st) = den_launch(&core, &client)?;
-    std::thread::spawn(move || den_watch(st, None));
+    let cover = if core.snapshot().signin_cover {
+        cover_start(&app, st.pid, crate::cover::Mode::Den, "", Some((crate::host::dens::dir(&crate::host::lite::root(&settings::app_dir())), crate::denclick::now_ms())))
+    } else {
+        None
+    };
+    std::thread::spawn(move || den_watch(st, None, cover));
     Ok(play)
 }
 
@@ -925,7 +1055,7 @@ pub fn den_play_cli(cli: crate::denclick::Cli) -> i32 {
     };
     // the white ground (host/terrain.rs patch-T) while the game runs: for the test's report
     let ground = crate::host::terrain::slot(&game).map(|(_, ours)| ours).unwrap_or(false);
-    let out = den_watch(st, cli.test.then_some(cli.hold));
+    let out = den_watch(st, cli.test.then_some(cli.hold), None);
     if cli.test && !was {
         let _ = lite::Binary::find(&settings::app_dir()).stop();
     }
@@ -1022,7 +1152,7 @@ pub fn play_test_cli(cli: crate::playtest::Cli) -> i32 {
     rep["pid"] = pid.into();
     // as PLAY does: no Forever UI, the launcher's keys (keys_sign_in)
     let keys = match (&hybrid, pass) {
-        (Err(_), Some(pass)) if pid != 0 => Some(keys_sign_in(pid, pass)),
+        (Err(_), Some(pass)) if pid != 0 => Some(keys_sign_in(pid, pass, None)),
         _ => None,
     };
     rep["keys"] = if keys.is_some() { serde_json::json!({ "started": true }) } else { serde_json::Value::Null };
@@ -1804,6 +1934,9 @@ pub fn run() {
             mod_my_rating,
             set_count_installs,
             set_hybrid_login,
+            set_signin_cover, // the sign-in cover (cover.rs): its switch, its page's state and "Show the game"
+            cover_state,
+            cover_hide,
             hybrid_status,
             deep_link_take,
             pick_mod_file,

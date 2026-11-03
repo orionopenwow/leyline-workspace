@@ -151,6 +151,7 @@ STEPS = {
     # the 1.12 Data folder (no question). An Edge window plays for about 45 minutes, then asks for one pass by hand.
     "sv-record": ("tools/survivors/Record Survivors files.bat", "Azeroth Survivors: record the game files it uses from your 1.12 folder (an Edge window, about 45 min, then one short pass by hand)", False),
     "sv-export": ("tools/survivors/Export Survivors files.bat", "Azeroth Survivors: copy the recorded files out of your 1.12 folder (no new recording; a few minutes)", False),
+    "sv-preview": ("tools/survivors/Survivors preview.bat", "Azeroth Survivors on this PC only for 20 minutes (127.0.0.1:18093), for filming the card's GIF", False),
     "sv-site-check": ("hosting/survivors/Put Survivors on Leyline - check.bat", "Azeroth Survivors: its address and DNS, and whether the build and your recorded files are ready (read-only)", False),
     "sv-site": ("hosting/survivors/Put Survivors on Leyline.bat", "Azeroth Survivors on: upload the build and your recorded files, its own site behind the sign-in, self-check, then Play (rollback on failure)", False),
     "sv-site-off": ("hosting/survivors/Put Survivors on Leyline - off.bat", "Undo: Azeroth Survivors off (Play off, its site out; the files stay on the server)", False),

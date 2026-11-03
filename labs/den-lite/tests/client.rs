@@ -1223,7 +1223,8 @@ fn the_guest_command_prints_a_login_once() {
 fn one_click_lands_in_the_den_with_the_builder_ready() {
     let (srv, dir) = server("oneclick", HeroGender::Female);
     let ev = |dir: &std::path::Path| den_lite::events::read(dir).into_iter().map(|l| l.ev).collect::<Vec<_>>();
-    assert_eq!(ev(&dir), ["start"]);
+    // at start: "start" (and "models", how many prop models it knows, when the game's table is there)
+    assert_eq!(ev(&dir).into_iter().filter(|e| e != "models").collect::<Vec<_>>(), ["start"]);
     // the login screen code signs in as DENAUTO (the launcher's keys: DEN, as Config.wtf fills in)
     let (key, _, address) = login(srv.login, "DENAUTO", "den").expect("login");
     let mut w = World::connect(&address, "DENAUTO", key, 3);

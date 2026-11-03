@@ -14,6 +14,7 @@ pub mod companion;
 pub mod den;
 pub mod dojo;
 pub mod events;
+pub mod farsight;
 pub mod gizmo;
 pub mod flight;
 pub mod gear;

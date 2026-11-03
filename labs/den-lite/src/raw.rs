@@ -5,6 +5,8 @@
 //!   the identity quaternion (0, 0, 0, 1) there, as AzerothCore sends (`gameobject_addon` defaults). The test
 //!   client reads these blocks back with the crate's own parser, so the two agree on the layout.
 //! - **`SMSG_GAMEOBJECT_QUERY_RESPONSE`**: the crate has 6 data fields; 3.3.5a has 24 (MAX_GAMEOBJECT_DATA).
+//! - **Values updates** of single fields (the editor's selection glow, `GAMEOBJECT_DYNAMIC`; the far camera,
+//!   `PLAYER_FARSIGHT`): a few words, read back by the headless client's own reader.
 //!
 //! Everything else goes through `wow_world_messages`.
 
@@ -20,7 +22,12 @@ const OBJECT_FIELD_SCALE_X: usize = 4;
 const GAMEOBJECT_DISPLAYID: usize = 8;
 const GAMEOBJECT_FLAGS: usize = 9;
 const GAMEOBJECT_PARENTROTATION: usize = 10;
+/// The dynamic flags (low half: GO_DYNFLAG_LO_*, high half: a transport's path progress).
+pub const GAMEOBJECT_DYNAMIC: usize = 14;
 const GAMEOBJECT_BYTES_1: usize = 17;
+/// The player's far sight (a guid, two words): the client's camera goes to that object (UNIT_END 148 + 0x1DC).
+pub const PLAYER_FARSIGHT: usize = 624;
+const UPDATETYPE_VALUES: u8 = 0;
 const GAMEOBJECT_END: usize = 18;
 const TYPEMASK_OBJECT_GAMEOBJECT: u32 = 0x0001 | 0x0020;
 const TYPEID_GAMEOBJECT: u8 = 5;
@@ -144,6 +151,41 @@ pub fn gameobject_creates_shown(objs: &[WorldObject], per: usize, shown: impl Fn
         .collect()
 }
 
+/// An SMSG_UPDATE_OBJECT body changing only these fields of one object (one block of UPDATETYPE_VALUES: its packed
+/// guid, as many mask words as the highest field needs, the values in field order).
+pub fn values_body(guid: u64, fields: &[(usize, u32)]) -> Vec<u8> {
+    let mut f = fields.to_vec();
+    f.sort_by_key(|x| x.0);
+    f.dedup_by_key(|x| x.0);
+    let blocks = f.last().map(|x| x.0 / 32 + 1).unwrap_or(0);
+    let mut out = Vec::with_capacity(16 + 4 * blocks + 4 * f.len());
+    out.extend_from_slice(&1u32.to_le_bytes());
+    out.push(UPDATETYPE_VALUES);
+    packed_guid(&mut out, guid);
+    out.push(blocks as u8);
+    let mut mask = vec![0u32; blocks];
+    for (i, _) in &f {
+        mask[i / 32] |= 1 << (i % 32);
+    }
+    for m in mask {
+        out.extend_from_slice(&m.to_le_bytes());
+    }
+    for (_, v) in &f {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    out
+}
+
+/// A gameobject's dynamic flags (the selection's glow: gizmo::GLOW on, 0 off).
+pub fn gameobject_dynamic(guid: u64, flags: u32) -> Vec<u8> {
+    values_body(guid, &[(GAMEOBJECT_DYNAMIC, flags)])
+}
+
+/// The player's far sight on `target` (0: back to the player's own view).
+pub fn farsight(player: u64, target: u64) -> Vec<u8> {
+    values_body(player, &[(PLAYER_FARSIGHT, target as u32), (PLAYER_FARSIGHT + 1, (target >> 32) as u32)])
+}
+
 fn cstring(out: &mut Vec<u8>, s: &str) {
     out.extend_from_slice(s.as_bytes());
     out.push(0);
@@ -193,6 +235,29 @@ mod tests {
         // the entry (field 3): sixth from the end (entry, scale, display, flags, rotation, bytes_1); b's the build twin's
         assert_eq!((tail(&a, 6), tail(&b, 6)), (2413, 2413 | 0x0100_0000));
         assert_eq!(gameobject_creates_shown(std::slice::from_ref(&o), 8, |o| (o.kind, 0, o.entry)), gameobject_creates(std::slice::from_ref(&o), 8));
+    }
+
+    #[test]
+    fn values_updates_of_one_field() {
+        // the glow: one mask word, bit 14, the flags
+        let b = gameobject_dynamic(0xF110_0009_6D00_0001, 0x09);
+        let mut want = 1u32.to_le_bytes().to_vec();
+        want.push(0);
+        packed_guid(&mut want, 0xF110_0009_6D00_0001);
+        want.push(1);
+        want.extend_from_slice(&(1u32 << 14).to_le_bytes());
+        want.extend_from_slice(&9u32.to_le_bytes());
+        assert_eq!(b, want);
+        // far sight: 20 mask words (fields up to 639), bits 16 and 17 of the 20th, the guid's two halves
+        let b = farsight(7, 0xF130_00F1_C200_0001);
+        let at = 4 + 1 + 2 + 1;
+        assert_eq!((b[4], b[7]), (0, 20));
+        let word = |k: usize| u32::from_le_bytes(b[at + 4 * k..at + 4 * k + 4].try_into().unwrap());
+        assert!((0..19).all(|k| word(k) == 0) && word(19) == 0b11 << 16);
+        assert_eq!((word(20), word(21)), (0xC200_0001, 0xF130_00F1));
+        assert_eq!(b.len(), at + 4 * 22);
+        let off = farsight(7, 0);
+        assert_eq!(&off[off.len() - 8..], &[0u8; 8]);
     }
 
     #[test]

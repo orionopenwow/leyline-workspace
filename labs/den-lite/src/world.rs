@@ -750,6 +750,11 @@ fn aid_send(c: &Writer, shared: &Shared, sess: &Sess, sel: &ovmod::Sel, aids: &g
     for g in &out.destroy {
         c.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(*g), target_died: false })?;
     }
+    // the selection's glow (GAMEOBJECT_DYNAMIC) after its create; the far camera (gizmo.rs, farsight.rs)
+    for (g, flags) in &out.glow {
+        c.send_raw(raw::SMSG_UPDATE_OBJECT, &raw::gameobject_dynamic(*g, *flags))?;
+    }
+    aid_far(c, sess, out.far)?;
     for (name, data) in &out.addon {
         send_addon(c, sess.me.guid, "wubuild", name, data)?;
     }
@@ -767,9 +772,29 @@ fn aid_send(c: &Writer, shared: &Shared, sess: &Sess, sel: &ovmod::Sel, aids: &g
     Ok(())
 }
 
+/// The far camera's object (farsight.rs): made there and the view on it; moved with a short flying spline; the view
+/// given back and the object gone.
+fn aid_far(c: &Writer, sess: &Sess, far: Option<gizmo::FarOut>) -> io::Result<()> {
+    use crate::{farsight, flight};
+    match far {
+        None => Ok(()),
+        Some(gizmo::FarOut::Show(at)) => {
+            c.send(&farsight::create(farsight::at(at)))?;
+            c.send_raw(flight::SMSG_SPLINE_MOVE_SET_FLYING, &flight::guid_body(farsight::GUID))?;
+            c.send_raw(flight::SMSG_SPLINE_MOVE_GRAVITY_DISABLE, &flight::guid_body(farsight::GUID))?;
+            c.send_raw(raw::SMSG_UPDATE_OBJECT, &raw::farsight(sess.me.guid, farsight::GUID))
+        }
+        Some(gizmo::FarOut::Move(from, to)) => c.send_raw(flight::SMSG_MONSTER_MOVE, &farsight::move_body(from, to, (now_ms() & 0xFFFF_FFFF) as u32)),
+        Some(gizmo::FarOut::Off) => {
+            c.send_raw(raw::SMSG_UPDATE_OBJECT, &raw::farsight(sess.me.guid, 0))?;
+            c.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(farsight::GUID), target_died: false })
+        }
+    }
+}
+
 /// The player moved: an armed copy that isn't on the cursor follows them (gizmo.rs `follow_player`).
 fn aid_follow(c: &Writer, shared: &Shared, sess: &Sess, sel: &ovmod::Sel, aids: &mut gizmo::Aids, n: Pos) -> io::Result<()> {
-    if aids.armed.is_none() || aids.cursor.is_some() {
+    if aids.armed.is_none() || !aids.follow {
         return Ok(());
     }
     let here = ovmod::Here { x: n.x, y: n.y, z: n.z, o: n.o };
@@ -813,7 +838,7 @@ fn aid_packet(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Pos>, sel: &
     let Some(guid) = body.get(..8).map(|b| u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])) else { return Ok(true) };
     let out = {
         let d = shared.den.lock().unwrap_or_else(|e| e.into_inner());
-        gizmo::use_object(&d, sel, aids, guid, shared.build_look.load(Ordering::Relaxed))
+        gizmo::use_object(&d, sel, aids, guid, shared.build_look.load(Ordering::Relaxed), now_ms())
     };
     if out != gizmo::AidOut::default() {
         shared.event("aid_use", &sess.me.name, &format!("{}", guid & 0xFF_FFFF));
@@ -1994,6 +2019,9 @@ fn companion_create(at: At) -> SMSG_UPDATE_OBJECT {
 
 /// CMSG_CREATURE_QUERY: her name (what the client shows over her), "<Your companion>" under it, humanoid, her model.
 fn creature_answer(entry: u32) -> SMSG_CREATURE_QUERY_RESPONSE {
+    if let Some(a) = crate::farsight::creature(entry) {
+        return a;
+    }
     if let Some((_, display, name, _)) = dojo::dummy(entry) {
         return SMSG_CREATURE_QUERY_RESPONSE {
             creature_entry: entry,

@@ -49,7 +49,7 @@ Only what is built and has a smoke test. Each row passes its test, or it is hidd
 | Dojo / training grounds | **Preview** badge on the Den page, off unless its own tests pass | New today; Den Lite has no combat (see 3.2) |
 | Azeroth Survivors | **Coming soon** (as now) | Permission statement still `TODO(owner)`; the local-run decision is in 2.2 |
 | Vanilla Remastered | Hidden from Official | Not relaunched; plan in 3.4 |
-| Seeded servers | Not shown | Plan only (3.3) |
+| Seeded servers | Not shown | Plan only (3.3); the vanilla Seed may show as Preview if its drills pass (1.4) |
 | Boss Rush / mod-dungeon-master | Hidden | Upstream calls itself early development |
 | P2P flags (`p2p_hosting`, `torrent_*`, `magnet_links`, `mesh_relays`, `relay_volunteer`) | **All off** in `flags.json` | Built, but not proven with real swarms or open ports |
 | Settings > Testing: torrents of game clients | Off (the default; the site can't turn it on) | Rule |
@@ -77,6 +77,47 @@ Only what is built and has a smoke test. Each row passes its test, or it is hidd
     - then Your Den.
 
 **No-go on any red in rows 1 to 5 of 1.1.** Rows 6 to 8 may slip; hide them instead.
+
+---
+
+## 1.4 Before release: seeded vanilla realm
+
+The owner's ask, 3 Nov: a "minimum slice" vanilla+ realm that people help run as nodes, through a relay, with no
+single place, using the Open Vanilla tuning, features and addons. The full plan is
+[SEEDED-REALM-PLAN.md](SEEDED-REALM-PLAN.md).
+
+In short:
+- **What:** a 1.12 "Open Vanilla" Seed on CMaNGOS Classic (the host kit's `cmangos-1.12.1` profile).
+  - Levels 1 to 20: the starting zones and capitals, the 10 to 20 zones, and three early dungeons.
+  - The Classic+ pace (1.5x, 2x rested), 60 s saves, Hero Key login.
+  - Approved 1.12 addons (pfQuest, ShaguTweaks and the like; all pending until approved).
+  - The stock client only.
+- **How:** one elected host runs the world, and trusted **Keepers** hold a copy of its database.
+  - The copy is signed, encrypted binlog chunks every 30 s through the relays.
+  - Relays accept only the host with a valid, majority-signed **lease**. Our relay is one vote (the witness), never
+    a copy of the realm.
+  - Planned handoffs lose nothing. A crash loses at most about 90 s at v0.
+- **Before release:** "Seed v0" as a Preview, about 3 weeks of agent work plus two evenings of drills with the
+  owner's PC and 1 to 2 volunteers.
+  - The new Control steps are `seed-check`, `seed-drill` and `seed-witness`.
+  - If release is sooner, there is a 1-week "Tier 0": manual takeover only.
+- **After release:** automatic election, live semisync, multi-relay, Lua features (needs an Eluna build), challenge
+  modes, and level caps 30 to 60. Then graduation to Official by the DISCORD-PLAN rule: 30 days at 99 %, on 5
+  Keepers in 2 regions.
+
+**Open questions for the owner** (S1 to S8 in the plan):
+1. **S1:** launch on 1.12 CMaNGOS (recommended), or on `vanillaplus` (AzerothCore, our Lua works, about 4 GB a host)?
+2. **S2:** a level 1 to 20 slice at launch?
+3. **S3:** drop the old Classic+ race/class tables for launch (they are built from game files; only a per-PC recipe
+   could bring them back)?
+4. **S4:** desktop only for the Seed, no browser slice?
+5. **S5:** Keepers: 14 days as a candidate plus a passed drill, then your approval?
+6. **S6:** may our relay keep a 24 h encrypted chunk mailbox?
+7. **S7:** the name and house rules (`TODO(owner)`).
+8. **S8:** keep the TurtleHD and Project Reforged links off for good?
+
+Also: was the old 1.12 server image stock CMaNGOS or a fork? And a legal read before it is shown: the server this
+idea comes from was shut down by a permanent injunction in April 2026 (plan, section 6).
 
 ---
 

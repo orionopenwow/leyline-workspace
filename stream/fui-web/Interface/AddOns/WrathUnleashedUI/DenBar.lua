@@ -980,6 +980,7 @@ function D.TestAction(text)
     if a == "gallery" then if not (b.Window() and b.Window():IsShown()) then bar.build:Click() end; if w[2] then b.ShowTab(w[2]) end; return true end
     if a == "nogallery" then if b.Window() then b.Window():Hide() end; return true end
     if a == "tab" then return b.ShowTab(w[2] or "all") end
+    if a == "fit" then return b.SetFit(w[2], w[3], w[4]) end
     if a == "page" then return b.Page(tonumber(w[2]) or 1) end
     if a == "pick" or a == "place" then
         local c = find(w[2])

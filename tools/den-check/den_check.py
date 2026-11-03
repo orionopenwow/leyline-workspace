@@ -986,6 +986,10 @@ def parse_report(lines):
     return out
 
 
+# den-features' framing sweep for the gallery's model tiles: (yards the largest side is scaled to, depth, lift)
+FIT_SWEEP = [(0.4, 0, 0), (0.15, 0, 0), (1.6, -6, 0), (1.6, 6, 0), (0.8, -3, 0)]
+
+
 def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
     """The Den editor, feature by feature, through the Leyline UI's own buttons (Den Lite's `.den ui <action>` asks the
     addon to press them: DenBar.lua D.TestAction), a screenshot after each into `outdir`, PASS / FAIL from Den Lite's
@@ -1064,6 +1068,12 @@ def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
                "Check your 3.3.5a game folder in the launcher, then run den-features again." % ("it is there" if table else "it is missing"))
         if "nomodel" in r:
             rep.add("INFO", "gallery: props without a model in your files", r["nomodel"]["_text"][:180])
+        # the tiles' framing (3 Nov: lit, but each tile showed a close-up): a few settings, a picture each, the last
+        # one kept. Pick the best from logs\den-features and set it as the default in Builder.lua B.FIT.
+        for yards, x, lift in FIT_SWEEP:
+            ui("fit %s %s %s" % (yards, x, lift))
+            shot("fit-%s_%s_%s" % (yards, x, lift))
+        ui("fit %s %s %s" % FIT_SWEEP[0])
         ui("page 1")
         shot("gallery-page2")
         ui("tab all")

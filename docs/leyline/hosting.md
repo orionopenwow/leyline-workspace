@@ -2,6 +2,8 @@
 
 Anyone can host a Wrath realm (on AzerothCore) from their own PC. On Leyline a hosted realm is called a Beacon. The relay is live: a public realm shows on the realm list about a minute after your PC connects. New to all this? Read [How the Leyline network works](network.md) first.
 
+Using the Leyline launcher? Its Host page does all of this in four steps: see [Host a realm](host-a-realm.md). This page is the Host pack by hand.
+
 **Before you start:** you need Docker, your own game folder and about 10 GB free. The first start takes 5 to 20 minutes. Your PC must stay on for others to play.
 
 | You need | |

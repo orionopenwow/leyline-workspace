@@ -199,6 +199,7 @@ test('Realms: Play solo after Play on each realm card; the official realm plays 
 test('Host: every mode card has Play solo after Host; the Den has its own page', async () => {
   const { page, ctx, errors } = await open();
   await page.evaluate(() => window.LeylineNav.show('host'));
+  await page.evaluate(() => window.LeylineHostModes.grid());   // Host's More ways to host > Game modes (hostflow.js, 3 Nov)
   await page.waitForFunction(() => document.querySelectorAll('#hx .hx-card').length > 0);
   const rows = await soloRows(page, '#hx .hx-card');
   for (const r of rows.filter((x) => x.id !== 'survivors')) {

@@ -101,7 +101,16 @@ const FAKE = (setUp) => {
 };
 
 let browser;
-test.before(async () => { browser = await chromium.launch(); });
+// No realm yet: since 3 Nov the Host page opens on its own flow (hostflow.js, tests/hostflow.browser.test.cjs); the
+// setup start these tests cover is its More ways to host > Other rulesets. Every page here starts there.
+const PICKER = () => window.addEventListener('load', () => setTimeout(() => {
+  if (window.LeylineHostFlow && window.LeylineHostFlow.state().view === 'flow') window.LeylineHostModes.rulesets();
+}, 0));
+test.before(async () => {
+  browser = await chromium.launch();
+  const newPage = browser.newPage.bind(browser);
+  browser.newPage = async (o) => { const p = await newPage(o); await p.addInitScript(PICKER); return p; };
+});
 test.after(async () => { await browser.close(); });
 
 async function open(setUp, light) {
@@ -314,7 +323,7 @@ test('no realm yet: the setup start (Vanilla+ always on, Link my server) and the
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'open_link'));
   assert.deepEqual((await calls(page, 'open_link'))[0], { name: 'alwayson' });
   const names = await page.$$eval('#hc-pane-guide .hc-more', (l) => [...new Set(l.map((x) => x.dataset.link))].sort());
-  assert.deepEqual(names, ['alwayson', 'hostdocs', 'network']);
+  assert.deepEqual(names, ['alwayson', 'hostarealm', 'hostdocs', 'network'], 'and the Host page guide (hostflow.js)');
   // what a host needs and how long it takes, before the rulesets (and on the Host pack tab)
   const needs = await page.textContent('#hc-pane-main .hc-needs');
   assert.match(needs, /You need: Docker \(a free program that runs your realm in its own space\), your own game folder 3\.3\.5a, about 10 GB free\. The first start takes 5 to 20 minutes, and your PC must stay on for others to play\./);

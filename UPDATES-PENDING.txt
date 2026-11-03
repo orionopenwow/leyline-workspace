@@ -785,3 +785,6 @@
 1317c foreverui  Browser game: the same
 1317d ship  Save as Orion: the Den editor like the video, combat and Dojo, retag steps (the launcher builds after this)
 1317e retag-leyline-check  Leyline repo: which release tags still point at old commits by someone else (read-only)
+1318a signin  Website: the Host a realm guide (/wrath/docs/host-a-realm)
+1318b hostkit  Host kit: reads the Host page's settings once (state/options.json)
+1318c ship  Save as Orion: the new Host page (Private/Public, templates, settings, Ask Claude, guide); the launcher builds after this

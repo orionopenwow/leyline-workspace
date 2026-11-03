@@ -94,6 +94,9 @@ pub const TOOLS: &[Tool] = &[
     Tool { name: "host_logs", title: "My realm's recent logs", tier: Tier::Read,
         description: "The last lines of the player's own realm's logs, with addresses, account names, tokens and links hidden.",
         props: r#"{"lines": {"type": "integer", "minimum": 20, "maximum": 400}}"#, required: &[] },
+    Tool { name: "host_plan_request", title: "What realm the player wants", tier: Tier::Read,
+        description: "What the player typed in the Host page's Ask Claude box (the realm they want, in plain words), and every realm setting there is: its key, range or choices, and what it does, plus the templates. Answer with host_plan_propose.",
+        props: "{}", required: &[] },
     Tool { name: "forum_my_threads", title: "My forum threads", tier: Tier::Read,
         description: "The threads the player started on the Leyline forum (needs the launcher's sign-in).",
         props: "{}", required: &[] },
@@ -109,6 +112,10 @@ pub const TOOLS: &[Tool] = &[
     Tool { name: "realm_stop", title: "Stop my realm", tier: Tier::Ask,
         description: "Asks the player: stop their own realm. Characters, accounts and the invite link are kept.",
         props: "{}", required: &[] },
+    Tool { name: "host_plan_propose", title: "Fill my realm's settings", tier: Tier::Ask,
+        description: "Asks the player: fill the Host page's settings panel for the realm they described (host_plan_request). `template` is a template id, `settings` {key: value} with keys from host_plan_request only, `why` {key: one short line each}, `name` an optional realm name. Unknown keys are left out and numbers are clamped to their range. Nothing is hosted: the player reviews the panel and presses Host. Who can join (Private or Public, sign-up) is never set here.",
+        props: r#"{"template": {"type": "string"}, "settings": {"type": "object"}, "why": {"type": "object"}, "name": {"type": "string", "maxLength": 32}}"#,
+        required: &["settings"] },
     Tool { name: "forum_new_thread", title: "Start a forum thread", tier: Tier::Ask,
         description: "Asks the player: start a thread on the Leyline forum as the player. `cat` is a category id (realms, mods, dens, help, general).",
         props: r#"{"cat": {"type": "string"}, "title": {"type": "string", "maxLength": 100}, "body": {"type": "string", "maxLength": 5000}}"#,
@@ -559,6 +566,7 @@ pub fn read_tool(app_dir: &Path, name: &str, args: &Value, home: Option<&Path>) 
             Ok(json!({"projects": hits}))
         }
         "host_status" => Ok(host_brief(app_dir, home)),
+        "host_plan_request" => Ok(crate::host::flow::request(&dir(app_dir))),
         "host_logs" => {
             let k = need_kit(app_dir)?;
             let n = args.get("lines").and_then(Value::as_u64).unwrap_or(120).clamp(20, 400) as u32;
@@ -635,6 +643,21 @@ pub fn describe(app_dir: &Path, name: &str, args: &Value) -> Result<Card, String
                 title: format!("Stop your realm{}", if c.name.is_empty() { String::new() } else { format!(" \"{}\"", short(&c.name, 40)) }),
                 lines: vec!["Anyone playing on it is dropped.".into(), "Characters, accounts and your invite link are kept.".into()],
             })
+        }
+        "host_plan_propose" => {
+            let a = crate::host::flow::answer_from_value(args)?;
+            let t = crate::host::flow::template(&a.template).and_then(|t| t["name"].as_str()).unwrap_or("Classic levelling");
+            let mut lines = vec![format!("Starting from: {t}."), "Your Host page's settings panel gets them. Nothing is hosted: you review, then press Host.".into()];
+            if let Some(n) = &a.name {
+                lines.push(format!("Realm name: {}", short(n, 32)));
+            }
+            if !a.changed.is_empty() {
+                lines.push(format!("Changed to fit: {}", short(&a.changed.join("; "), 300)));
+            }
+            if !a.left_out.is_empty() {
+                lines.push(format!("Left out: {}", short(&a.left_out.join("; "), 300)));
+            }
+            Ok(Card { title: "Fill your realm's settings".into(), lines })
         }
         "forum_new_thread" => {
             crate::forum::post_for("new", args)?;
@@ -1046,6 +1069,10 @@ pub(crate) mod commands {
                 crate::host::run_job(&plan, "host")
             }
             "realm_stop" => crate::host::stop(&need_kit(dir)?),
+            "host_plan_propose" => {
+                crate::host::flow::propose(&super::dir(dir), a)?;
+                Ok("Your Host page's settings panel has them now: the player reviews them there, then presses Host.".into())
+            }
             "forum_new_thread" => {
                 let v = crate::forum::post(dir, "new", a).map_err(signed)?;
                 Ok(format!("Posted thread #{}.", v.pointer("/thread/id").map(|x| x.to_string()).unwrap_or_default()))
@@ -1113,7 +1140,7 @@ mod tests {
             assert!(tool(n).is_none(), "{n}");
         }
         let ask: Vec<&str> = TOOLS.iter().filter(|t| t.tier == Tier::Ask).map(|t| t.name).collect();
-        assert_eq!(ask, ["mod_install", "mod_remove", "realm_start", "realm_stop", "forum_new_thread", "forum_reply",
+        assert_eq!(ask, ["mod_install", "mod_remove", "realm_start", "realm_stop", "host_plan_propose", "forum_new_thread", "forum_reply",
             "den_place_layout", "den_say", "den_recipe_save"]);
         for t in TOOLS {
             let j = tool_json(t);

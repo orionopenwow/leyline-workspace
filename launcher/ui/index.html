@@ -16,6 +16,7 @@
 <link rel="stylesheet" href="hostconsole.css"><!-- Host: the host console (hostconsole.js) -->
 <link rel="stylesheet" href="den.css"><!-- Your Den: the one Den page and the Home entry (den.js) -->
 <link rel="stylesheet" href="hostmodes.css"><!-- Host: modes anyone can host and fork (hostmodes.js) -->
+<link rel="stylesheet" href="hostflow.css"><!-- Host: Private or Public, templates, the settings panel, Ask Claude (hostflow.js) -->
 <link rel="stylesheet" href="loadouts.css"><!-- Loadouts: Mods & Addons › Installed, the game folder cards, the realm offer (loadouts.js) -->
 <link rel="stylesheet" href="addons.css"><!-- the Leyline addons: Clients, Mods & Addons › Installed › Addons, the PLAY offer (addons.js) -->
 <link rel="stylesheet" href="market.css"><!-- the addon marketplace in Mods & Addons › Discover › Addons (market.js) -->
@@ -820,6 +821,8 @@
 <script src="host.js"></script>
 <script src="hostconsole.js"></script>
 <script src="hostmodes.js"></script><!-- Host: the mode cards first, Fork this mode (host/modes.rs; after hostconsole.js) -->
+<script src="hostflow-catalog.js"></script><!-- the Host page's settings and templates (window.LeylineHostCatalog; the core reads the same file, host/flow.rs) -->
+<script src="hostflow.js"></script><!-- Host: Private or Public, templates, settings, Ask Claude, Host (host/flow.rs; after hostmodes.js) -->
 <script src="den.js"></script><!-- Your Den: the one Den page and the Home entry (window.LeylineDen; after app.js and hostconsole.js) -->
 <script src="gmcenter.js"></script><!-- the GM command center for your own worlds (window.LeylineGM; after den.js) -->
 <script src="hostnetwork.js"></script><!-- Host: the Network tab (host/network.rs) -->

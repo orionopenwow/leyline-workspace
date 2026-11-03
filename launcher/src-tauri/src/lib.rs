@@ -98,6 +98,7 @@ pub const LINKS: &[(&str, &str)] = &[
     ("hostguide", crate::site!("/wrath/docs/hosting")), // the Host pack and its settings
     ("agentsguide", crate::site!("/wrath/docs/agents")), // Agents and Help: docs/leyline/agents.md
     ("hostdocs", crate::site!("/wrath/docs/hosting")), // the host console's guide (host/console.rs)
+    ("hostarealm", crate::site!("/wrath/docs/host-a-realm")), // the Host page's full guide (ui/hostflow.js; docs/leyline/host-a-realm.md)
     ("alwayson", crate::site!("/wrath/docs/always-on")),
     ("network", crate::site!("/wrath/docs/network")), // the host guide's first item: how the network works
     ("beanode", crate::site!("/wrath/docs/be-a-node")), // Become a node: the play bar's skip-the-line card (docs/QUEUE.md)

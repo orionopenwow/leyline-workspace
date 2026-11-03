@@ -2289,6 +2289,10 @@ pub fn run() {
             crate::p2p::cmds::host_mode_save,
             crate::p2p::cmds::host_mode_remove,
             crate::p2p::cmds::host_mode_use,
+            crate::p2p::cmds::host_flow_apply, // the Host page's flow: templates, the settings panel, Ask Claude (host/flow.rs)
+            crate::p2p::cmds::host_flow_current,
+            crate::p2p::cmds::host_plan_ask,
+            crate::p2p::cmds::host_plan_take,
             crate::p2p::cmds::host_check,
             crate::p2p::cmds::host_tool,
             crate::p2p::cmds::host_rules,

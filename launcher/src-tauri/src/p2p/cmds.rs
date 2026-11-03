@@ -318,6 +318,34 @@ pub fn host_mode_use(id: Option<String>, values: serde_json::Value) -> Result<Op
     }
 }
 
+// ---------------------------------------------------------------- the Host page's flow (host/flow.rs)
+
+/// Host this plan: a template, the settings panel's values, Private or Public, the host's own house rules. Checked, then
+/// the kit's files written; the page then picks the returned ruleset and starts the realm (host_choose, host_start_quiet).
+#[tauri::command]
+pub fn host_flow_apply(template: String, values: serde_json::Map<String, serde_json::Value>, visibility: String,
+    rules: Option<Vec<String>>) -> Result<host::flow::Applied, String> {
+    host::flow::apply(&kit()?, &template, &values, &visibility, rules.as_deref().unwrap_or(&[]))
+}
+
+/// The plan last hosted from the page (Edit settings on the running realm), or None.
+#[tauri::command]
+pub fn host_flow_current() -> Option<serde_json::Value> {
+    kit().ok().and_then(|k| host::flow::current(&k))
+}
+
+/// Ask my assistant: the host's words for the player's own assistant (agents.rs host_plan_request).
+#[tauri::command]
+pub fn host_plan_ask(text: String) -> Result<(), String> {
+    host::flow::ask(&crate::agents::dir(&settings::app_dir()), &text)
+}
+
+/// The assistant's answer once the player approved its card (agents.rs host_plan_propose), checked again; None yet.
+#[tauri::command]
+pub fn host_plan_take() -> Option<serde_json::Value> {
+    host::flow::take(&crate::agents::dir(&settings::app_dir()))
+}
+
 /// `leyline link` (Link my server.bat) in a window of its own.
 #[tauri::command]
 pub fn host_link_start() -> Result<String, String> {

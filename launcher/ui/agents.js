@@ -27,6 +27,8 @@
     host_status: "Your own realm: if it runs",
     host_logs: "Your realm's recent logs, with addresses, names and keys hidden",
     forum_my_threads: "Your own forum threads",
+    host_plan_request: "What you typed in Host's Ask Claude box, and the realm settings there are",
+    host_plan_propose: "Fill Host's settings panel for you to review (nothing is hosted)",
     mod_install: "Install or update a mod",
     mod_remove: "Remove a mod (it can be installed again)",
     realm_start: "Start your own realm",
@@ -41,9 +43,9 @@
     den_say: "A line your companion says in your Den",
     den_recipe_save: "Add a recipe to your building library",
   };
-  const READ = ["realm_status", "realms_list", "my_clients", "catalog_search", "host_status", "host_logs", "forum_my_threads",
+  const READ = ["realm_status", "realms_list", "my_clients", "catalog_search", "host_status", "host_logs", "host_plan_request", "forum_my_threads",
     "den_status", "den_catalog", "den_recipes", "den_messages"];
-  const ASK = ["mod_install", "mod_remove", "realm_start", "realm_stop", "forum_new_thread", "forum_reply",
+  const ASK = ["mod_install", "mod_remove", "realm_start", "realm_stop", "host_plan_propose", "forum_new_thread", "forum_reply",
     "den_place_layout", "den_say", "den_recipe_save"];
   const NEVER = ["Sign in, see or change a password, a Hero Key or your account", "Anything with money",
     "Delete files, remove a game client, wipe a realm", "Make your realm public, open its sign-up, or make invites",

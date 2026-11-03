@@ -6,6 +6,9 @@
 // mode (the Realms page: realmRow below), copies the mode into the Host pack as yours, based_on set, and opens its settings.
 // Commands: src-tauri/src/p2p/cmds.rs host_mode*. Loaded after hostconsole.js (it rebuilds the Start tab on each
 // "leyline:kit"; this puts its screen back on top). Everything from a mode or the realm list is shown with textContent.
+// Since 3 Nov the Host page opens on its own flow (hostflow.js: Private or Public, templates, settings): these cards
+// are one click away there (More ways to host > Game modes), and show by themselves only when asked for (`asked`:
+// grid(), open(), Fork this mode, the ruleset picker) or when that flow isn't loaded.
 "use strict";
 (() => {
   const call = window.__TAURI__ && window.__TAURI__.core
@@ -40,6 +43,10 @@
   let view = "grid";       // grid | host | edit | run | off (the ruleset picker underneath)
   let cur = null;          // the mode on the form
   let job = null, jobTimer = null, live = null, liveTimer = null;
+  let asked = false;      // shown on purpose (hostflow.js steps aside); without hostflow.js always
+  const flow = () => window.LeylineHostFlow || null;
+  function ask() { if (!asked) { asked = true; if (flow()) flow().hide(); } }
+  function backToFlow() { asked = false; view = "grid"; place(); if (flow()) flow().show(); }
 
   const realms = () => { try { return Array.isArray(realmsCache) ? realmsCache : []; } catch (_) { return []; } };   // app.js
   // a mode's name: from the cards, else from a listed realm that runs it
@@ -72,8 +79,8 @@
   // ---------------------------------------------------------------- where it sits
   function place() {
     // no modes (an older core, or none to show): the ruleset picker as before
-    const setup = !(kit && kit.realm) && Array.isArray(modes) && modes.length > 0;
-    const shown = setup || (view === "run" && live);
+    const setup = !(kit && kit.realm) && Array.isArray(modes) && modes.length > 0 && (asked || !flow());
+    const shown = setup || (view === "run" && live && (asked || !flow()));
     main.classList.toggle("hx-on", !!setup && view !== "off" && view !== "run");
     root.classList.toggle("hx-bar", view === "off");
     if (view === "off" && root.dataset.v !== "off") paint();
@@ -101,7 +108,9 @@
     root.dataset.v = view;
     if (view === "off") {   // the ruleset picker underneath: one line back to the modes
       const bar = mk("div", "hx-back-bar");
-      bar.append(mk("span", "", "Picking a ruleset yourself."), btn("‹ Host a mode instead", "hc-more hx-back", () => { view = "grid"; place(); paint(); }));
+      bar.append(mk("span", "", "Picking a ruleset yourself."), flow()
+        ? btn("‹ Back to Host", "hc-more hx-back", () => { call("host_mode_use", { id: null, values: {} }).catch(() => {}); backToFlow(); })
+        : btn("‹ Host a mode instead", "hc-more hx-back", () => { view = "grid"; place(); paint(); }));
       root.append(bar);
       return;
     }
@@ -119,6 +128,7 @@
     id.append(mk("p", "hc-t", "What will you host?"));
     // a plain ruleset: no mode (the kit's state/mode.json goes, so the realm list shows none)
     const other = btn("Pick a ruleset yourself", "hc-more hx-other", () => { view = "off"; place(); paint(); call("host_mode_use", { id: null, values: {} }).catch(() => {}); });
+    if (flow()) top.append(btn("‹ Back to Host", "hc-more hx-back hx-flow-back", backToFlow));
     top.append(id, other);
     sw.append(top);   // owner 1 Nov 01:04: "less info panels, straight to the point": no lede, small template tiles
     const grid = mk("div", "hx-grid");
@@ -163,6 +173,7 @@
     return c;
   }
   async function forkIt(id, listed, b) {
+    ask();
     if (!(kit && kit.is_kit)) {
       view = "grid"; show(); paint();
       say("Get the Host pack first: a fork lives in it. Pick a ruleset yourself below to get ready.", "warn");
@@ -344,7 +355,7 @@
       acts.append(btn("Copy link", "btn primary", async (ev) => {
         try { await navigator.clipboard.writeText(live.link); ev.currentTarget.textContent = "Copied"; } catch (_) { say("Select the link and copy it.", "warn"); }
       }));
-      acts.append(btn("Open the console", "btn small", () => { view = "grid"; live = null; place(); }));
+      acts.append(btn("Open the console", "btn small", () => { view = "grid"; live = null; asked = false; place(); if (flow()) flow().show(); }));
       // optional: your own Claude, as Your Den's "Ask Claude to edit it" (the Agents page, connected once)
       const claude = btn("Connect Claude", "btn small hx-claude", () => { if (window.LeylineNav) window.LeylineNav.show("agents"); });
       claude.title = "Your own Claude helps run your realm: connect it once on the Agents page. Every change waits for your OK.";
@@ -464,11 +475,14 @@
 
   // open(id, {solo}): that mode's form (solo: private, for you); rulesets(): the ruleset picker underneath (solo.js)
   async function open(id, opts) {
+    ask();
     view = "grid"; solo = !!(opts && opts.solo); show();
     if (id && !modes) await load();
     if (id) { const m = (modes || []).find((x) => x.id === id); if (m) { cur = m; view = "host"; } }
     paint();
   }
-  window.LeylineHostModes = { realmRow, reload: () => load(), open, rulesets: () => { view = "off"; place(); paint(); } };
+  // grid(): the mode cards (hostflow.js More ways to host); rulesets(): the ruleset picker underneath
+  window.LeylineHostModes = { realmRow, reload: () => load(), open, grid: () => { ask(); view = "grid"; show(); paint(); },
+    rulesets: () => { ask(); view = "off"; place(); paint(); call("host_mode_use", { id: null, values: {} }).catch(() => {}); }, back: backToFlow };
   load();
 })();

@@ -758,6 +758,27 @@ def run_pause(ctx: Ctx, run_id: str) -> dict:
     return rec
 
 
+def merge_pause(old: dict | None, new: dict) -> dict:
+    """A second Pause while one is on (after a problem): Undo still puts back what the first one found."""
+    if not old or old.get("resumed") or old.get("deleted") or new.get("dry"):
+        return new
+    out = dict(new)
+    out["parts"] = clean_parts(set(old.get("parts") or []) | set(new.get("parts") or []))
+    res = {k: dict(v) for k, v in (old.get("results") or {}).items()}
+    for part, r in (new.get("results") or {}).items():
+        cur = res.setdefault(part, {})
+        for k, v in r.items():
+            if k == "saved":
+                cur["saved"] = {**(v or {}), **(cur.get("saved") or {})}
+            elif isinstance(v, list):
+                cur[k] = sorted(set(cur.get(k) or []) | set(v))
+            else:
+                cur[k] = v
+    out["results"] = res
+    out["first_at"] = old.get("first_at") or old.get("at")
+    return out
+
+
 # --------------------------------------------------------------------------------------------------------- resume
 def run_resume(ctx: Ctx, paused: dict) -> dict:
     L = ctx.log

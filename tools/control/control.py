@@ -15,6 +15,9 @@ Serves a page on http://127.0.0.1:8097 (this PC only) and opens it. The page sho
   * Discord: the Discord redo's bot token (pasted once, saved on this PC only in tools/discord-leyline/token.txt,
     git-ignored, never shown back, never in a log), Preview (read-only), and Do it: only after a fresh preview, and
     only when the owner types YES under it; never from Autopilot, Launch all or a Waiting on you button.
+  * Kill switch (docs/KILL-SWITCH.md, tools/killswitch): the farewell message and the parts to take down; Pause, Undo
+    and Delete, each only after its own fresh preview and a typed phrase (SHUT DOWN LEYLINE, BRING LEYLINE BACK,
+    DELETE LEYLINE FOREVER), from this card only: it is not a step, so never the queue, Autopilot or a button elsewhere.
   * Discord & GM: read-only, the server's checks, the Discord bridge (wu-discord, from the last server check) and bot,
     the open bug reports (the bugs step's backlog), the addons and looks waiting for review, the last quick edits; its
     buttons run existing steps (check, bugs, discord-check, discord-preview, worldlog, mods-daily) on a click.
@@ -64,6 +67,9 @@ DISCORD_DIR = ROOT / "tools" / "discord-leyline"
 DISCORD_TOKEN = DISCORD_DIR / "token.txt"            # git-ignored; the script reads it; Control never shows it
 DISCORD_DOC = ROOT / "control" / "discord.json"      # the last preview's summary, the last do it and bot settings
 DISCORD_FRESH = 3600                                  # Do it needs a preview from the last hour
+# The kill switch (docs/KILL-SWITCH.md): its card's message, choices, last preview and runs (no secrets in it)
+KS_DIR = ROOT / "tools" / "killswitch"
+KS_DOC = ROOT / "control" / "killswitch.json"
 HQ_URL = "https://leylinelauncher.com/wrath/admin"   # Leyline HQ: the one place online (stream/hq.py)
 # The Discord & GM card (gm_overview): what it reads, all files this PC already has; it changes none of them
 BUGS_BACKLOG = ROOT / "tools" / "bugs" / "live" / "backlog.json"     # the bugs step's copy (docs/BUGS-MANIFEST.md)
@@ -802,6 +808,254 @@ def discord_state() -> dict:
     return out
 
 
+# ------------------------------------------------------------------ the kill switch (docs/KILL-SWITCH.md)
+# Only from its card: never a step (not in STEPS), so never UPDATES-PENDING.txt, Autopilot, Launch all or /api/do.
+_KS = {}
+KS_FACTORY = None          # tests: a callable giving {"github", "discord", "server", "run_step"} (fakes)
+KS_BACKUP_ROOT = None      # tests: where the backups go (else the Desktop)
+
+
+def ks_mod():
+    """tools/killswitch/killswitch.py, loaded once."""
+    if "m" not in _KS:
+        if str(KS_DIR) not in sys.path:
+            sys.path.insert(0, str(KS_DIR))
+        import killswitch   # noqa: PLC0415
+        _KS["m"] = killswitch
+    return _KS["m"]
+
+
+def ks_doc() -> dict:
+    try:
+        d = json.loads(KS_DOC.read_text(encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def ks_write(d: dict) -> None:
+    KS_DOC.parent.mkdir(parents=True, exist_ok=True)
+    tmp = KS_DOC.with_name("killswitch.json.tmp")
+    tmp.write_text(json.dumps(d, indent=1, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, KS_DOC)
+
+
+def ks_config(d: dict | None = None) -> dict:
+    """The card's message and choices (the TODO(owner) text and every part ticked until the owner saves his)."""
+    ks = ks_mod()
+    c = (d if d is not None else ks_doc()).get("config")
+    c = c if isinstance(c, dict) else {}
+    return {"title": str(c.get("title") or ks.DEFAULT_TITLE)[:ks.TITLE_MAX],
+            "message": str(c.get("message") if isinstance(c.get("message"), str) else ks.DEFAULT_MESSAGE)[:ks.MESSAGE_MAX],
+            "parts": ks.clean_parts(c.get("parts") if isinstance(c.get("parts"), list) else ks.PARTS),
+            "options": ks.clean_options(c.get("options"))}
+
+
+def ks_paused(d: dict | None = None) -> dict | None:
+    """The Pause that is on now (not undone, not deleted), or None."""
+    p = (d if d is not None else ks_doc()).get("paused")
+    return p if isinstance(p, dict) and not p.get("resumed") else None
+
+
+def ks_adapters() -> dict:
+    """The real services: gh on this PC, Discord with the Discord card's saved token, the server over SSH, and this
+    window's own step runner."""
+    ks = ks_mod()
+    tok = discord_secret()
+    return {"github": ks.GitHub() if shutil_which("gh") else None, "discord": ks.DiscordAPI(tok) if tok else None,
+            "server": ks.Server(), "run_step": ks_run_step}
+
+
+def shutil_which(name: str):
+    import shutil   # noqa: PLC0415
+    return shutil.which(name)
+
+
+def ks_run_step(step: str) -> int:
+    """One existing step for the kill switch (Pause's realm steps): its own log, its lines on the page."""
+    if step not in STEPS or step in OWNER_ONLY:
+        emit("line", f"!! {step}: not a step it may run")
+        return 1
+    bat = ROOT / STEPS[step][0]
+    log = LOGS / f"killswitch-{time.strftime('%Y%m%d-%H%M%S')}-{step}.log"
+    env = dict(os.environ, LEYLINE_CONTROL_ID=log.stem, LEYLINE_CONTROL_NOTE="kill switch")
+    with open(log, "w", encoding="utf-8") as lf:
+        p = subprocess.Popen(["cmd", "/c", "call", str(bat)], cwd=str(ROOT), env=env, stdin=subprocess.PIPE,
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        try:
+            p.stdin.write(b"\n" * 8)
+            p.stdin.close()
+        except OSError:
+            pass
+        for raw in iter(p.stdout.readline, b""):
+            line = scrub(raw.decode("utf-8", errors="replace").rstrip("\r\n"))
+            if line.strip().lower().startswith("press any key"):
+                continue
+            lf.write(line + "\n")
+            emit("line", "    " + line)
+        return p.wait()
+
+
+def ks_ctx(cfg: dict, log):
+    ks = ks_mod()
+    a = (KS_FACTORY or ks_adapters)()
+    if a.get("discord") is not None:
+        log.hide(discord_secret())
+    return ks.Ctx(title=cfg["title"], message=cfg["message"], parts=cfg["parts"], options=cfg["options"], log=log,
+                  github=a.get("github"), discord=a.get("discord"), server=a.get("server"), run_step=a.get("run_step"),
+                  backup_root=KS_BACKUP_ROOT)
+
+
+def ks_log(kind: str):
+    ks = ks_mod()
+    LOGS.mkdir(parents=True, exist_ok=True)
+    log = ks.Log(LOGS / f"killswitch-{time.strftime('%Y%m%d-%H%M%S')}-{kind}.log", emit=lambda l: emit("line", l),
+                 scrub=scrub)
+    log.hide(discord_secret())
+    return log
+
+
+def ks_ready(stage: str, d: dict | None = None) -> tuple[dict | None, str]:
+    """The preview a stage would carry out, or why there is none."""
+    ks = ks_mod()
+    d = d if d is not None else ks_doc()
+    p = d.get("preview")
+    paused = ks_paused(d)
+    if stage == "resume" and (not paused or paused.get("deleted")):
+        return None, "Nothing is paused." if not paused else "A Delete ran: there is nothing to bring back."
+    if stage == "delete" and not paused:
+        return None, "Delete comes only after a Pause."
+    if not isinstance(p, dict) or p.get("stage") != stage:
+        return None, "Run its preview first."
+    if p.get("used"):
+        return None, "That preview was used. Run it again."
+    if time.time() - float(p.get("at") or 0) > ks.PREVIEW_FRESH:
+        return None, "The preview is over an hour old. Run it again."
+    c = ks_config(d)
+    if p.get("key") != ks.preview_key(stage, c["title"], c["message"], c["parts"], c["options"]):
+        return None, "You changed the message or the choices since the preview. Run it again."
+    if p.get("problems"):
+        return None, "The preview found problems: fix them, then run it again."
+    return p, ""
+
+
+def ks_state() -> dict:
+    ks = ks_mod()
+    d = ks_doc()
+    paused = ks_paused(d)
+    out = {"config": ks_config(d), "parts": [{"key": k, "title": ks.PART_TITLES[k], "deletable": k in ks.DELETABLE}
+                                              for k in ks.PARTS],
+           "phrases": ks.PHRASES, "ready": {}, "why": {}, "delete_wait_h": ks.DELETE_WAIT // 3600}
+    for st in ("pause", "resume", "delete"):
+        p, why = ks_ready(st, d)
+        out["ready"][st], out["why"][st] = bool(p), why
+    p = d.get("preview")
+    if isinstance(p, dict):
+        out["preview"] = {k: p.get(k) for k in ("id", "stage", "items", "problems", "log", "used", "options", "parts")}
+        out["preview"]["when"] = _when(p.get("at"))
+    if paused:
+        out["paused"] = {"id": paused.get("id"), "when": _when(paused.get("at")), "parts": paused.get("parts"),
+                         "ok": paused.get("ok"), "problems": paused.get("problems") or [],
+                         "deleted": bool(paused.get("deleted")),
+                         "delete_opens": _when(float(paused.get("at") or 0) + ks.DELETE_WAIT)}
+    if isinstance(d.get("last"), dict):
+        out["last"] = dict(d["last"], when=_when(d["last"].get("at")))
+    return out
+
+
+def ks_state_safe() -> dict:
+    try:
+        return ks_state()
+    except Exception as e:   # noqa: BLE001 (the rest of the page still works)
+        return {"error": f"{type(e).__name__}"}
+
+
+def ks_task(title: str, fn) -> bool:
+    with lock:
+        if state["running"]:
+            return False
+        state["running"] = {"id": "killswitch", "step": "killswitch", "title": title}
+        state["lines"] = []
+
+    def go():
+        try:
+            fn()
+        except Exception as e:   # noqa: BLE001 (never a dead window; the reason on the page)
+            emit("line", f"!! Kill switch stopped: {type(e).__name__}: {scrub(str(e))[:300]}")
+        finally:
+            with lock:
+                state["running"] = None
+            emit("state", {})
+    threading.Thread(target=go, daemon=True).start()
+    return True
+
+
+def ks_preview_run(stage: str) -> None:
+    ks = ks_mod()
+    d = ks_doc()
+    cfg = ks_config(d)
+    log = ks_log(f"preview-{stage}")
+    log(f"== Kill switch: preview of {stage} (it only reads)")
+    ctx = ks_ctx(cfg, log)
+    p = ks.preview(ctx, stage, ks_paused(d))
+    p["log"] = log.path.name
+    for i in p["items"]:                 # what the page and killswitch.json keep: the same hiding as the log
+        i["text"] = log.clean(i["text"])
+    p["problems"] = [log.clean(x) for x in p["problems"]]
+    d = ks_doc()
+    d["preview"] = p
+    ks_write(d)
+    log(f"== Preview done: {len(p['problems'])} problem(s)")
+
+
+def ks_go_run(stage: str, pid: str) -> None:
+    ks = ks_mod()
+    d = ks_doc()
+    p, why = ks_ready(stage, d)
+    if not p or p["id"] != pid:
+        emit("line", f"!! Kill switch: {why or 'that preview is not the latest'}")
+        return
+    d["preview"]["used"] = True          # one press, one run
+    ks_write(d)
+    cfg = ks_config(d)
+    log = ks_log(stage)
+    ctx = ks_ctx(cfg, log)
+    last = {"stage": stage, "at": time.time(), "log": log.path.name, "dry": cfg["options"]["dry"], "ok": False}
+    try:
+        if stage == "pause":
+            rec = ks.run_pause(ctx, ks.new_id())
+            rec["problems"] = [log.clean(x) for x in rec["problems"]]
+            d = ks_doc()
+            if not rec["dry"]:
+                d["paused"] = ks.merge_pause(ks_paused(d), rec)
+            last.update(ok=rec["ok"], problems=rec["problems"])
+        elif stage == "resume":
+            paused = ks_paused(d)
+            out = ks.run_resume(ctx, paused)
+            d = ks_doc()
+            if out["ok"]:
+                paused["resumed"] = out
+                d.setdefault("history", []).append(paused)
+                d["paused"] = None
+            last.update(ok=out["ok"], problems=out["problems"], turn_back_on=out["turn_back_on"])
+        else:
+            paused = ks_paused(d)
+            out = ks.run_delete(ctx, ks.new_id(), paused)
+            d = ks_doc()
+            if out["ok"]:
+                d["paused"]["deleted"] = out
+                d["deleted"] = out
+            last.update(ok=out["ok"], manual=out["manual"], backup=out["backup"])
+    except (ks.Refused, RuntimeError) as e:
+        log(f"!! Stopped: {e}")
+        d = ks_doc()
+        last.update(ok=False, problems=[str(e)])
+    last["problems"] = [log.clean(str(x)) for x in last.get("problems") or []]
+    d["last"] = last
+    ks_write(d)
+
+
 def audit_state() -> dict | None:
     """The last release audit: when, and its result line (logs/audit-latest.txt's second line), or None."""
     try:
@@ -1076,7 +1330,7 @@ class H(http.server.BaseHTTPRequestHandler):
                                                "health": health, "health_at": at, "lines": lines,
                                                "autopilot": autopilot_on(), "confirm": confirm_on(),
                                                "audit": audit_state(), "answers": answers(),
-                                               "discord": discord_state()}))
+                                               "discord": discord_state(), "killswitch": ks_state_safe()}))
         if path == "/api/gm":
             return self._send(200, json.dumps(gm_overview()))
         if path == "/audit":
@@ -1121,6 +1375,8 @@ class H(http.server.BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         if self.path.startswith("/api/discord/"):
             return self._discord(n)
+        if self.path.startswith("/api/killswitch/"):
+            return self._killswitch(n)
         if self.path.startswith("/api/drop"):
             # a file for Claude: /api/drop?id=<item>&dir=<folder>&name=<file name>, the raw bytes as the body
             qs = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -1284,6 +1540,73 @@ class H(http.server.BaseHTTPRequestHandler):
         return self._send(404, '{"error":"not found"}')
 
 
+    def _strict_body(self, n: int, limit: int):
+        """The owner's own panels (Discord, kill switch): the session token in the X-Token header only (never the
+        cookie or the link), same-origin, a JSON object, small. Returns the body, or None after answering."""
+        if not token_ok(self.headers.get("X-Token", "")):
+            self._send(403, '{"error":"forbidden"}')
+            return None
+        if self.headers.get("Sec-Fetch-Site", "same-origin") not in ("same-origin", "none"):
+            self._send(403, '{"error":"forbidden"}')
+            return None
+        if not (self.headers.get("Content-Type") or "").startswith("application/json"):
+            self._send(415, '{"error":"json only"}')
+            return None
+        if n > limit:
+            self._send(413, '{"error":"too big"}')
+            return None
+        try:
+            body = json.loads(self.rfile.read(n) or b"{}") if n > 0 else {}
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            self._send(400, '{"error":"bad json"}')
+            return None
+        return body
+
+    def _killswitch(self, n: int):
+        """The kill switch card (docs/KILL-SWITCH.md): save the message and choices, preview a stage, and go (after
+        that preview, with its typed phrase)."""
+        body = self._strict_body(n, 16384)
+        if body is None:
+            return
+        ks = ks_mod()
+        if self.path == "/api/killswitch/save":
+            t, m, parts, o = body.get("title"), body.get("message"), body.get("parts"), body.get("options")
+            if not (isinstance(t, str) and len(t) <= ks.TITLE_MAX and isinstance(m, str) and len(m) <= ks.MESSAGE_MAX
+                    and isinstance(parts, list) and all(x in ks.PARTS for x in parts) and isinstance(o, dict)
+                    and all(isinstance(o.get(k, False), bool) for k in ("private", "dry"))):
+                return self._send(400, json.dumps({"error": f"A title up to {ks.TITLE_MAX} characters, a message up "
+                                                            f"to {ks.MESSAGE_MAX}, and the parts ticked."}))
+            d = ks_doc()
+            d["config"] = {"title": " ".join(t.split()), "message": m.replace("\r\n", "\n"), "parts": ks.clean_parts(parts),
+                           "options": ks.clean_options(o)}
+            ks_write(d)
+            emit("state", {})
+            return self._send(200, json.dumps({"ok": True, "config": ks_config(d)}))
+        stage = body.get("stage")
+        if stage not in ("pause", "resume", "delete"):
+            return self._send(400, '{"error":"pause, resume or delete"}')
+        if self.path == "/api/killswitch/preview":
+            if stage == "resume" and not ks_paused():
+                return self._send(409, json.dumps({"error": "Nothing is paused."}))
+            if not ks_task(f"Kill switch: preview {stage}", lambda: ks_preview_run(stage)):
+                return self._send(409, '{"error":"already running"}')
+            return self._send(200, '{"ok":true}')
+        if self.path == "/api/killswitch/go":
+            p, why = ks_ready(stage)
+            if not p:
+                return self._send(409, json.dumps({"error": why}))
+            if str(body.get("phrase") or "").strip() != ks.PHRASES[stage]:
+                return self._send(400, json.dumps({"error": f"Type {ks.PHRASES[stage]} exactly."}))
+            if str(body.get("preview") or "") != p["id"]:
+                return self._send(409, json.dumps({"error": "There is a newer preview. Read it, then type again."}))
+            if not ks_task(f"Kill switch: {stage}", lambda: ks_go_run(stage, p["id"])):
+                return self._send(409, '{"error":"already running"}')
+            return self._send(200, '{"ok":true}')
+        return self._send(404, '{"error":"not found"}')
+
+
 PAGE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Leyline Control</title>
@@ -1382,6 +1705,11 @@ color:var(--gold);background:rgba(0,0,0,.35);font-weight:600}.drop.over{backgrou
 .dopt{margin-top:10px;display:flex;flex-direction:column;gap:6px}.dopt select{font:inherit;background:rgba(0,0,0,.5);color:var(--text);border:1px solid #0a0908;border-radius:7px;padding:4px 8px}
 .dopt .chk{display:flex;gap:8px;align-items:center}
 .gml{margin:4px 0 0;padding-left:18px;max-height:200px;overflow:auto}.gml li{margin:2px 0}
+#killswitch{border-image:none;border:2px solid #6b2620;border-radius:10px}#killswitch summary{color:var(--bad)}
+.ks textarea{font:inherit;width:100%;min-height:120px;background:rgba(0,0,0,.5);border:1px solid #0a0908;border-radius:7px;color:var(--text);padding:8px 11px}
+.ks .chk{display:flex;gap:8px;align-items:center;margin:3px 0}.ks .parts{margin:8px 0}.ks li.problem{color:var(--bad)}
+.ks li.manual{color:var(--warn)}.ks li.keep{color:var(--dim)}.ks .dgo{border-color:#8a2c22;background:rgba(255,131,120,.06)}
+.ks .dgo input{max-width:260px;flex:0 1 260px}
 </style></head><body class="ly">
 <header><div class="brand"><span class="mark" aria-hidden="true"></span><h1>Leyline Control</h1></div>
 <div class="health" id="health"></div>
@@ -1429,6 +1757,26 @@ color:var(--gold);background:rgba(0,0,0,.35);font-weight:600}.drop.over{backgrou
     <h3>Working on</h3><div id="now"></div><div class="updated" id="cupd"></div>
     <h3>Finished</h3><div id="fin"></div></details></section>
   <section class="card hist"><details class="fold"><summary>History</summary><div id="hist"></div></details></section>
+  <section class="card ks" id="killswitch"><details class="fold" id="ksfold"><summary>Kill switch</summary>
+    <div class="sub">Takes Leyline down with your farewell (docs\KILL-SWITCH.md). <b>Pause</b> posts the message
+      everywhere and stops or hides each part you tick; Undo brings it back. <b>Delete</b> comes only after a Pause and
+      a day's wait, backs everything up to your Desktop first, and can't be undone. Each one needs its own preview and
+      a typed phrase. Only this card runs it: never the queue or Autopilot.</div>
+    <div class="launch"><input id="kstitle" maxlength="80" aria-label="Title" placeholder="Title"></div>
+    <textarea id="ksmsg" maxlength="1800" aria-label="Farewell message" placeholder="Your farewell to the community"></textarea>
+    <div class="parts" id="ksparts"></div>
+    <label class="chk"><input type="checkbox" id="ksprivate"> Make the GitHub repos private on Pause (else public, read-only)</label>
+    <label class="chk"><input type="checkbox" id="ksdry"> Dry run: check and log everything, change nothing</label>
+    <div class="dos"><button id="kssave">Save</button>
+      <button class="primary sm" id="ksprev-pause" title="Reads only. Lists exactly what Pause would do.">Preview Pause</button>
+      <button id="ksprev-resume" title="Reads only.">Preview Undo</button>
+      <button id="ksprev-delete" title="Reads only.">Preview Delete</button></div>
+    <div class="sub" id="kspaused"></div>
+    <div class="dsum" id="kssum"></div>
+    <div class="dgo" id="ksgo" hidden><div id="ksask"></div>
+      <div class="launch"><input id="ksphrase" autocomplete="off" spellcheck="false" placeholder="Type the phrase">
+      <button class="primary" id="ksdo">Go</button></div></div>
+    <div class="sub" id="kswhy"></div><div class="dsum" id="kslast"></div></details></section>
 </div>
 <div class="stack">
   <section class="card"><h2>Live output</h2><div class="status" id="run"></div><div class="console" id="con"></div></section>
@@ -1479,7 +1827,7 @@ $("go").disabled=!!s.running||!(s.pending||[]).length;$("audit").disabled=!!s.ru
 const ar=$("areport");if(s.audit){ar.hidden=false;ar.href=`/audit?t=${T}`;ar.textContent=`Last audit ${s.audit.at}: ${s.audit.green?"all green":s.audit.result}`;ar.style.color=s.audit.green?"var(--ok)":"var(--bad)"}else ar.hidden=true;
 $("run").innerHTML=s.running?`<span class="spinner"></span>${esc(s.running.title||"Running")}…`:'<span class="sub">Idle</span>';
 $("hist").innerHTML=(s.history||[]).map(x=>`<div class="item fin"><span class="tag">${esc(x.step)}</span><div>${esc(x.note||x.id)} ${x.log?`<a href="/api/log?t=${T}&name=${encodeURIComponent(x.log)}" target="_blank">log</a>`:""}</div></div>`).join("")||'<div class="empty">No runs yet.</div>';
-discordPanel(s);gmPanel(gmBusy&&!s.running);gmBusy=!!s.running;
+discordPanel(s);ksPanel(s);gmPanel(gmBusy&&!s.running);gmBusy=!!s.running;
 document.querySelectorAll("#gmacts [data-gmrun]").forEach(b=>{b.disabled=!!s.running});
 if(!$("con").childElementCount&&s.lines)s.lines.forEach(line)}
 let gmAt=0,gmBusy=false;
@@ -1534,6 +1882,35 @@ const dopt=()=>dpost("/api/discord/options",{old:$("dold").value,pins:$("dpins")
 $("dold").onchange=dopt;$("dpins").onchange=dopt;
 $("dapply").onclick=async()=>{const p=(last&&last.discord||{}).preview;if(!p)return;$("con").innerHTML="";
 if(await dpost("/api/discord/apply",{preview:p.id,confirm:$("dyes").value.trim()}))$("dyes").value=""};
+const KS_WORD={pause:"Pause",resume:"Undo pause",delete:"Delete"};let ksKey="",ksCfg="";
+function ksPanel(s){const k=s.killswitch||{};if(k.error){$("kswhy").textContent="The kill switch didn't load: "+k.error;return}
+const c=k.config||{},busy=!!s.running,ck=JSON.stringify(c);
+if(ck!==ksCfg&&![$("kstitle"),$("ksmsg")].includes(document.activeElement)){ksCfg=ck;$("kstitle").value=c.title||"";$("ksmsg").value=c.message||"";
+$("ksparts").innerHTML=(k.parts||[]).map(p=>`<label class="chk"><input type="checkbox" data-part="${esc(p.key)}"${(c.parts||[]).includes(p.key)?" checked":""}> ${esc(p.title)}${p.deletable?"":' <span class="sub">(Pause only)</span>'}</label>`).join("");
+$("ksprivate").checked=!!(c.options||{}).private;$("ksdry").checked=!!(c.options||{}).dry}
+["kssave","ksprev-pause","ksprev-resume","ksprev-delete"].forEach(id=>$(id).disabled=busy);
+$("ksprev-resume").hidden=!k.paused;$("ksprev-delete").hidden=!k.paused;
+const pa=k.paused;$("kspaused").innerHTML=pa?`<b style="color:var(--bad)">Paused</b> since ${esc(pa.when)} (${esc((pa.parts||[]).join(", "))})${pa.ok?"":" with problems"}. A real Delete opens ${esc(pa.delete_opens)}.`:"";
+const p=k.preview,key=p?p.id+(p.used?"u":""):"";
+if(key!==ksKey){ksKey=key;let h="";
+if(p){h=`<div>Preview of <b>${esc(KS_WORD[p.stage])}</b>, ${esc(p.when)}${p.used?" (used)":""}${logLink(p.log)}</div>`;
+let sec=null,body="";for(const i of p.items||[]){if(i.part!==sec){if(sec!==null)body+="</ul>";sec=i.part;body+=`<div class="sec">${esc(sec)}</div><ul>`}
+body+=`<li class="${esc(i.kind)}">${i.kind==="manual"?"You: ":i.kind==="problem"?"Problem: ":""}${esc(i.text)}</li>`}if(sec!==null)body+="</ul>";
+if((p.problems||[]).length)body+=`<div class="sec" style="color:var(--bad)">Fix these first</div><ul>${p.problems.map(x=>`<li class="problem">${esc(x)}</li>`).join("")}</ul>`;
+h+=body}$("kssum").innerHTML=h}
+const st=p&&k.ready[p.stage]?p.stage:"";$("ksgo").hidden=!st;$("ksdo").disabled=busy;
+if(st){$("ksask").innerHTML=`Read the preview above. To ${esc(KS_WORD[st].toLowerCase())}${(c.options||{}).dry?" (dry run: nothing changes)":""}, type <b>${esc(k.phrases[st])}</b> and press ${esc(KS_WORD[st])}.`;$("ksdo").textContent=KS_WORD[st]}
+$("kswhy").textContent=p&&!st?(k.why[p.stage]||""):"";
+const l=k.last;$("kslast").innerHTML=l?`<div>Last ${esc(KS_WORD[l.stage])} ${esc(l.when)}: ${l.dry?"dry run, checked":l.ok?'<span style="color:var(--ok)">done</span>':'<span style="color:var(--bad)">stopped or with problems</span>'}${logLink(l.log)}</div>`
++((l.problems||[]).length?`<ul>${l.problems.map(x=>`<li class="problem">${esc(x)}</li>`).join("")}</ul>`:"")
++((l.manual||[]).length?`<div class="sec">Your turn</div><ul>${l.manual.map(x=>`<li class="manual">${esc(x)}</li>`).join("")}</ul>`:"")
++((l.turn_back_on||[]).length?`<div>Turn back on what you want: ${esc(l.turn_back_on.join(", "))}</div>`:""):""}
+function ksConfig(){return{title:$("kstitle").value,message:$("ksmsg").value,parts:[...$("ksparts").querySelectorAll("input[data-part]:checked")].map(i=>i.dataset.part),options:{private:$("ksprivate").checked,dry:$("ksdry").checked}}}
+async function ksSave(){ksCfg="";return dpost("/api/killswitch/save",ksConfig())}
+$("kssave").onclick=ksSave;
+["pause","resume","delete"].forEach(st=>{$("ksprev-"+st).onclick=async()=>{if(!await ksSave())return;$("con").innerHTML="";dpost("/api/killswitch/preview",{stage:st})}});
+$("ksdo").onclick=async()=>{const k=(last&&last.killswitch)||{},p=k.preview;if(!p)return;$("con").innerHTML="";
+if(await dpost("/api/killswitch/go",{stage:p.stage,preview:p.id,phrase:$("ksphrase").value.trim()}))$("ksphrase").value=""};
 $("go").onclick=async()=>{$("con").innerHTML="";const r=await fetch("/api/launch",{method:"POST",headers:{...H,"Content-Type":"application/json"},body:JSON.stringify({message:$("msg").value})});if(!r.ok)alert("Couldn't start: "+(await r.text()));refresh()};
 $("audit").onclick=async()=>{$("con").innerHTML="";const r=await fetch("/api/audit",{method:"POST",headers:H});if(!r.ok)alert("Busy: "+(await r.text()));refresh()};
 $("check").onclick=async()=>{$("con").innerHTML="";const r=await fetch("/api/check",{method:"POST",headers:H});if(!r.ok)alert("Busy: "+(await r.text()));refresh()};

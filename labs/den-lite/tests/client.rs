@@ -1256,7 +1256,14 @@ fn one_click_lands_in_the_den_with_the_builder_ready() {
     assert!(cat.matches(';').count() > 50 && cat.contains("2413,woodenchair,seating,Wooden Chair,1;"));
     w.send(&heartbeat(16226.2, 16257.0, 14.2, 0.0));
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tspawn 2413");
-    let st = w.until_addon("wubuild", "state");
+    // the state after the spawn (the catalog may be followed by a state of its own, before anything is placed)
+    let mut st = w.until_addon("wubuild", "state");
+    for _ in 0..4 {
+        if st.contains("n=1;") {
+            break;
+        }
+        st = w.until_addon("wubuild", "state");
+    }
     let id: u64 = st.split("sel=").nth(1).unwrap().split(',').next().unwrap().parse().expect(&st);
     assert!(st.contains(",2413,Wooden Chair;") && st.contains("n=1;") && st.contains("den=owner"), "{st}");
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tmove z 0.5");

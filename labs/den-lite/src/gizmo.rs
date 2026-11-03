@@ -30,7 +30,10 @@
 //! * **Select mode**: `mode build` shows every prop as a goober (GAMEOBJECT_BYTES_1's type byte), which the client
 //!   highlights under the mouse and lets you right-click (CMSG_GAMEOBJ_USE: the prop is selected, the gizmo comes
 //!   up, the addon opens its menu at the cursor: `wubuild picked <id>`). `mode play` shows them as they are (a chair
-//!   sits, decor does nothing). The template's own type (the query answer, which the client caches) never changes.
+//!   sits, decor does nothing). The client keeps each entry's query answer (its type among it) and goes by that,
+//!   not by the type byte alone, so in build mode a prop is shown under its build twin's entry ([`twin`]: the entry
+//!   with [`BUILD_TWIN`] set), whose query answer is the same model, name and size as a goober. The client asks
+//!   for each twin once and keeps it; the prop's own entry (play mode) keeps its own answer.
 //!
 //! Everything here is pure (the world server sends what it returns), so it is tested without a client.
 
@@ -95,15 +98,40 @@ pub fn gizmo_axis(g: u64) -> Option<char> {
     (0x10..0x16).contains(&n).then(|| GIZMO[((n - 0x10) % 3) as usize].3)
 }
 
-/// The type and flags the client is told for an object (GAMEOBJECT_BYTES_1's type byte, GAMEOBJECT_FLAGS): the copy
-/// plain and not selectable; the gizmo goobers; in build mode every prop a goober (highlighted, right-click uses it).
-pub fn shown(o: &WorldObject, build: bool) -> (u8, u32) {
+/// The bit that makes a prop's entry its build twin (above every entry the game or Den Lite uses; the guid keeps
+/// the prop's own entry, so selection and right-click go by the guid as before).
+pub const BUILD_TWIN: u32 = 0x0100_0000;
+
+/// The prop's entry in build mode: the twin the client is told is a goober.
+pub fn twin(entry: u32) -> u32 {
+    entry | BUILD_TWIN
+}
+
+/// For a queried entry: the prop's own entry when it is a build twin.
+pub fn untwin(entry: u32) -> Option<u32> {
+    (entry & BUILD_TWIN != 0).then_some(entry & !BUILD_TWIN)
+}
+
+/// The query answer for any entry: a twin is its prop's template as a goober; else the prop's own; else a gizmo flag.
+pub fn query_any(entry: u32) -> Option<(u8, u32, &'static str, f32)> {
+    if let Some(own) = untwin(entry) {
+        return den::template(own).map(|t| (GOOBER, t.display, t.name, t.size));
+    }
+    den::template(entry).map(|t| (t.kind, t.display, t.name, t.size)).or_else(|| query(entry))
+}
+
+/// The type, flags and entry the client is told for an object (GAMEOBJECT_BYTES_1's type byte, GAMEOBJECT_FLAGS,
+/// OBJECT_FIELD_ENTRY): the copy plain and not selectable; the gizmo goobers; in build mode every prop a goober
+/// under its build twin's entry (highlighted under the mouse, right-click uses it).
+pub fn shown(o: &WorldObject, build: bool) -> (u8, u32, u32) {
     if is_ghost(o.guid) {
-        (GENERIC, NOT_SELECTABLE)
-    } else if gizmo_axis(o.guid).is_some() || build {
-        (GOOBER, 0)
+        (GENERIC, NOT_SELECTABLE, o.entry)
+    } else if gizmo_axis(o.guid).is_some() {
+        (GOOBER, 0, o.entry)
+    } else if build {
+        (GOOBER, 0, twin(o.entry))
     } else {
-        (o.kind, 0)
+        (o.kind, 0, o.entry)
     }
 }
 
@@ -725,7 +753,7 @@ mod tests {
         let g0 = out.create[0].clone();
         assert!(is_ghost(g0.guid) && g0.entry == 2413);
         assert!((g0.x - (here.x + AHEAD)).abs() < 0.01, "in front before the cursor says");
-        assert_eq!(shown(&g0, true), (GENERIC, NOT_SELECTABLE), "the copy never glows");
+        assert_eq!(shown(&g0, true), (GENERIC, NOT_SELECTABLE, g0.entry), "the copy never glows");
         assert!(out.addon.contains(&("aim".into(), format!("place,2413,{PLACE_SPELL}"))));
         assert!(d.props.is_empty(), "nothing placed yet");
         // the cursor: the copy moves there, made under the other guid before the old one goes
@@ -813,7 +841,7 @@ mod tests {
         assert_eq!(out.create.len(), 3);
         let x = out.create.iter().find(|o| o.entry == 990_001).unwrap();
         assert!((x.x - obj.x - GIZMO_OFF).abs() < 0.01 && x.display == 5913);
-        assert!(out.create.iter().all(|o| shown(o, false) == (GOOBER, 0)), "right-click uses them");
+        assert!(out.create.iter().all(|o| shown(o, false) == (GOOBER, 0, o.entry)), "right-click uses them");
         assert!(sync(&d, &sel, &mut a).create.is_empty(), "nothing changed: nothing sent");
         // the prop moves: new flags made, the old ones taken away
         let old = a.gizmo.clone();
@@ -841,8 +869,14 @@ mod tests {
         let obj = d.spawn(2413, here.x + 3.0, here.y, here.z, 0.0).unwrap();
         let out = cmd(&mut d, &mut sel, &mut a, here, "mode build", true, 0);
         assert_eq!(out.look, Some(true));
-        assert_eq!(shown(&obj, true), (GOOBER, 0), "highlighted, usable");
-        assert_eq!(shown(&obj, false), (obj.kind, 0), "in play as it is");
+        assert_eq!(shown(&obj, true), (GOOBER, 0, twin(obj.entry)), "highlighted, usable: under its build twin");
+        assert_eq!(shown(&obj, false), (obj.kind, 0, obj.entry), "in play as it is");
+        // the client asks for the twin: the same model, name and size, a goober; the prop's own entry as it is
+        let t = den::template(obj.entry).unwrap();
+        assert_eq!(query_any(twin(obj.entry)), Some((GOOBER, t.display, t.name, t.size)));
+        assert_eq!(query_any(obj.entry), Some((t.kind, t.display, t.name, t.size)));
+        assert_eq!(untwin(obj.entry), None);
+        assert_eq!(query_any(GIZMO[0].0), query(GIZMO[0].0));
         cmd(&mut d, &mut sel, &mut a, here, "gizmo on", true, 0);
         assert_eq!(use_object(&d, &mut sel, &mut a, obj.guid, false), AidOut::default(), "play mode: left to the game");
         assert_eq!(sel.guid, None);

@@ -531,8 +531,11 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 }
             }
             ClientOpcodeMessage::CMSG_GAMEOBJECT_QUERY(q) => {
-                let t = den::template(q.entry_id);
-                let body = raw::gameobject_query_response(q.entry_id, t.map(|t| (t.kind, t.display, t.name, t.size)).or_else(|| gizmo::query(q.entry_id)));
+                // a build twin (gizmo.rs `twin`: build mode shows props under it) is answered as a goober
+                if gizmo::untwin(q.entry_id).is_some() {
+                    shared.twin_queries.fetch_add(1, Ordering::Relaxed);
+                }
+                let body = raw::gameobject_query_response(q.entry_id, gizmo::query_any(q.entry_id));
                 c.send_raw(raw::SMSG_GAMEOBJECT_QUERY_RESPONSE, &body)?;
             }
             ClientOpcodeMessage::CMSG_UPDATE_ACCOUNT_DATA(u) => {
@@ -631,10 +634,11 @@ fn aid_send(c: &Writer, shared: &Shared, sess: &Sess, sel: &ovmod::Sel, aids: &g
         apply(c, shared, ch)?;
     }
     if let Some(build) = out.look {
+        // the event every time the mode is asked for (the den-test reads it; the editor may already be in it)
+        shared.event("build_mode", &sess.me.name, if build { "build" } else { "play" });
         if shared.build_look.swap(build, Ordering::Relaxed) != build {
             // every prop shown again in the new look, to everyone in the Den
             let objs: Vec<WorldObject> = shared.den.lock().unwrap_or_else(|e| e.into_inner()).props.iter().map(|p| p.obj.clone()).collect();
-            shared.event("build_mode", &sess.me.name, if build { "build" } else { "play" });
             for p in shared.players.lock().unwrap_or_else(|e| e.into_inner()).clone() {
                 for o in &objs {
                     let _ = p.w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(o.guid), target_died: false });
@@ -1378,9 +1382,15 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             match den::read_stamp(&shared.cfg.stamps_dir, w(2)) {
                 Err(e) => say(c, &e),
                 Ok(st) => {
-                    let ch = shared.den.lock().unwrap().stamp(&st, p.x, p.y, p.z, p.o + deg.to_radians());
+                    // all of it inside the Den: moved toward the middle when the player stands near its edge
+                    let o = p.o + deg.to_radians();
+                    let (ch, fx, fy) = {
+                        let mut d = shared.den.lock().unwrap();
+                        let (fx, fy, _) = d.fit_stamp(&st, p.x, p.y, o);
+                        (d.stamp(&st, fx, fy, p.z, o), fx, fy)
+                    };
                     if !ch.created.is_empty() {
-                        *shared.last_stamp.lock().unwrap_or_else(|e| e.into_inner()) = Some((w(2).to_string(), p.x, p.y, p.z, p.o, deg));
+                        *shared.last_stamp.lock().unwrap_or_else(|e| e.into_inner()) = Some((w(2).to_string(), fx, fy, p.z, p.o, deg));
                     }
                     apply(c, shared, &ch)?;
                     if ch.created.is_empty() { Ok(()) } else { cheer(c, shared, sess, "first-piece") }
@@ -2068,6 +2078,8 @@ fn test_command(shared: &Shared, w: &Writer, id: u64, cmd: &str) -> io::Result<(
         "props": props, "look": look, "size": size, "t": now_ms(), "ok": r.is_ok(),
         "pos": [p.x, p.y, p.z], "ground": ground, "on_ground": (p.z - ground).abs() <= movewatch::ON_GROUND, "me": me,
         "aids": shared.aid_view.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+        "look_mode": if shared.build_look.load(Ordering::Relaxed) { "build" } else { "play" },
+        "twin_queries": shared.twin_queries.load(Ordering::Relaxed),
     }));
     r
 }
@@ -2242,7 +2254,10 @@ fn jaina_build(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, name: &str) -> 
     let o = ((p.o / step).round() * step).rem_euclid(2.0 * std::f32::consts::PI);
     let me = At { o, ..p };
     let far = dojo::reach(&st.props.iter().map(|e| (e.x, e.y)).collect::<Vec<_>>());
+    // then moved toward the room's middle as far as it takes for all of it to be inside the Den (den.rs fit_stamp)
     let mid = dojo::ahead(me, far);
+    let (fx0, fy0, too_big) = shared.den.lock().unwrap_or_else(|e| e.into_inner()).fit_stamp(&st, mid.x, mid.y, o);
+    let mid = At { x: fx0, y: fy0, ..mid };
     // on the ground there (a player flying overhead builds on the ground, not in the air)
     let origin = {
         let d = shared.den.lock().unwrap_or_else(|e| e.into_inner());
@@ -2251,6 +2266,9 @@ fn jaina_build(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, name: &str) -> 
     let ch = shared.den.lock().unwrap_or_else(|e| e.into_inner()).stamp(&st, origin.x, origin.y, origin.z, o);
     if ch.created.is_empty() {
         return say(c, &ch.message);
+    }
+    if too_big {
+        say(c, "It is bigger than your Den: some pieces are left out. .den grow makes the room bigger.")?;
     }
     // she builds from its middle (the free spot nearest its focal point: never inside a piece) and, when it is done,
     // steps back to your side to look at it (stamps.rs)

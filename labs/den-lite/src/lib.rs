@@ -148,6 +148,9 @@ pub struct Shared {
     /// The editor's build mode (gizmo.rs `mode build`): props are shown as goobers the client highlights and lets
     /// you right-click; off: as they are.
     pub build_look: std::sync::atomic::AtomicBool,
+    /// How often the client asked for a build twin's template (gizmo.rs `twin`): it does once per prop kind, the
+    /// first time build mode shows it; the den-test reads it to know the client took the goober look.
+    pub twin_queries: std::sync::atomic::AtomicU32,
     /// The host's placement aids as the den-test reads them (gizmo::view).
     pub aid_view: Mutex<serde_json::Value>,
     /// The class picked (`.den class`, classes.rs; kept in the Dens folder) and the sandbox combat (combat.rs).
@@ -288,6 +291,7 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
         moves: Mutex::new(None),
         dojo: Mutex::new(dojo::Dojo::default()),
         build_look: std::sync::atomic::AtomicBool::new(false),
+        twin_queries: std::sync::atomic::AtomicU32::new(0),
         aid_view: Mutex::new(serde_json::Value::Null),
         pick: Mutex::new(pick),
         combat: Mutex::new(combat::Combat::new(world::PLAYER_GUID)),

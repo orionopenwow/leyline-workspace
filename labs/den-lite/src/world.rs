@@ -611,6 +611,13 @@ fn addon_outs(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Pos>, ready:
                 }
             }
             ovmod::Out::Status => send_addon(c, sess.me.guid, "wuden", "status", &status_line(shared, sess))?,
+            // the addon's own check (the den-test's `.den ui report`): kept only while the test's channel is on
+            ovmod::Out::Report(t) => {
+                if shared.cfg.test_control {
+                    shared.event("ui_report", &sess.me.name, &t);
+                    testctl::write_ui(&shared.cfg.den_dir, &t);
+                }
+            }
         }
     }
     Ok(())
@@ -1162,6 +1169,12 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             let ops = shared.moves.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|w| w.sess == sess.id).map(|w| w.ops_line());
             say(c, &format!("Diag {tag}: {}; your game sent: {}.", if ui { "asked the Leyline UI" } else { "no Leyline UI to ask" }, ops.unwrap_or_else(|| "nothing yet".into())))
         }
+        // the den-test's feature check (tools/den-check featuretest): what the editor does when clicked, asked of the
+        // Leyline UI over its own channel (`wuden ui <action>`, DenBar.lua D.TestAction). Only with the test's channel.
+        (".den", "ui") if shared.cfg.test_control => {
+            let rest: String = text.split_whitespace().skip(2).collect::<Vec<_>>().join(" ");
+            send_addon(c, sess.me.guid, "wuden", "ui", &rest)
+        }
         (".den", "stamps") => {
             let names = den::stamp_names(&shared.cfg.stamps_dir);
             say(c, &format!("Stamps: {}.", if names.is_empty() { "none here".into() } else { names.join(", ") }))
@@ -1169,6 +1182,33 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
         (".den", "stamp") => {
             if w(2).is_empty() {
                 return say(c, "Which stamp? .den stamps lists them.");
+            }
+            // the Den home's staged stamp (DenHome.lua: mark, turn, here, place, cancel): Den Lite puts the stamp down
+            // when it is marked, so turn and here put it down again (one undo each way), place keeps it, cancel takes it back
+            if matches!(w(2), "place" | "cancel" | "turn" | "here") {
+                let last = shared.last_stamp.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                let Some((name, x, y, z, o, turn)) = last else { return say(c, "Mark a stamp first (Den home > Stamps).") };
+                if w(2) == "place" {
+                    *shared.last_stamp.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                    return say(c, "The stamp is down. .build undo takes it back.");
+                }
+                let ch = shared.den.lock().unwrap().undo();
+                apply(c, shared, &ch)?;
+                if w(2) == "cancel" {
+                    *shared.last_stamp.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                    return Ok(());
+                }
+                let add = if w(2) == "turn" { w(3).parse::<f32>().ok().filter(|d| d.is_finite() && d.abs() <= 360.0).unwrap_or(15.0) } else { 0.0 };
+                let (x, y, z, o) = if w(2) == "here" { (p.x, p.y, p.z, p.o) } else { (x, y, z, o) };
+                let turn = turn + add;
+                return match den::read_stamp(&shared.cfg.stamps_dir, &name) {
+                    Err(e) => say(c, &e),
+                    Ok(st) => {
+                        let ch = shared.den.lock().unwrap().stamp(&st, x, y, z, o + turn.to_radians());
+                        *shared.last_stamp.lock().unwrap_or_else(|e| e.into_inner()) = Some((name, x, y, z, o, turn));
+                        apply(c, shared, &ch)
+                    }
+                };
             }
             let deg = words.iter().skip(3).find_map(|x| x.parse::<f32>().ok()).unwrap_or(0.0);
             if !deg.is_finite() || deg.abs() > 360.0 {
@@ -1178,6 +1218,9 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                 Err(e) => say(c, &e),
                 Ok(st) => {
                     let ch = shared.den.lock().unwrap().stamp(&st, p.x, p.y, p.z, p.o + deg.to_radians());
+                    if !ch.created.is_empty() {
+                        *shared.last_stamp.lock().unwrap_or_else(|e| e.into_inner()) = Some((w(2).to_string(), p.x, p.y, p.z, p.o, deg));
+                    }
                     apply(c, shared, &ch)?;
                     if ch.created.is_empty() { Ok(()) } else { cheer(c, shared, sess, "first-piece") }
                 }

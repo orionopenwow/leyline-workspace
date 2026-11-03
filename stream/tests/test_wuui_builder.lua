@@ -222,7 +222,7 @@ check("Place puts it on the realm", p and p.entry == 2413 and objects[T.live[id]
 check("the state shows the selection", B.SelectionText():find("Selected: Wooden Chair") and B.SelectionText():find("props 1/50"))
 check("the realm said so in chat", chat[#chat]:find("Wooden Chair placed"))
 local panel = B.Panel()
-local ui = { undo = panel.actions.Undo, copy = panel.actions.Copy, paste = panel.actions.Paste, selall = panel.tools["Select mine"],
+local ui = { undo = panel.tools.Undo, copy = panel.actions.Copy, paste = panel.actions.Paste, selall = panel.tools["Select mine"],
     path = W.DenBar.Bar().path }
 check("a new selection: its popover pops up", panel and panel:IsShown() and panel.title2:GetText() == "Wooden Chair")
 check("the pill says it", _G.LeylineEditorStatus.line:GetText():find("Wooden Chair selected"))
@@ -247,7 +247,7 @@ check("turn +15 degrees", math.abs(p.o - (o0 + math.rad(15))) < 1e-6)
 serverClock = serverClock + 1
 panel.minus.turn:Fire("OnClick")
 check("turn -15 degrees", math.abs(p.o - o0) < 1e-6)
-panel.actions.Undo:Fire("OnClick")
+panel.tools.Undo:Fire("OnClick")
 check("Undo", math.abs(p.o - (o0 + math.rad(15))) < 1e-6 and chat[#chat]:find("Undone"))
 
 -- the keys while the popover is open: arrows, Page Up / Down, Q / E

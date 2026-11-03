@@ -128,6 +128,9 @@ pub struct Shared {
     pub notices: Mutex<notice::Notices>,
     /// When the last encouragement moment was said (unix seconds; notice::cheer_ok).
     pub last_cheer: Mutex<u64>,
+    /// The stamp the Leyline UI's Den home marked last (`.den stamp <name>` puts it down at once; then `turn <deg>`,
+    /// `here`, `place` and `cancel` work on it, as on the full Den): its name, where, the facing, the extra turn.
+    pub last_stamp: Mutex<Option<(String, f32, f32, f32, f32, f32)>>,
     /// When the autosave last wrote (unix seconds; 0: not in this run), for the Den bar's "Saved 12 s ago".
     pub autosaved_at: std::sync::atomic::AtomicU64,
     /// What the host's game did with its character this time in the world (movewatch.rs: `.den where`).
@@ -243,6 +246,7 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
     let autosaved = d.autosave_key();
     let events = events::Events::new(&cfg.den_dir);
     events.note("start", "", &format!("{}{}", la.port(), if cfg.test_control { " test" } else { "" }));
+    events.note("models", "", &known.to_string());
     let shared = Arc::new(Shared {
         events,
         den: Mutex::new(d),
@@ -258,6 +262,7 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
         opened: Mutex::new(std::collections::HashSet::new()),
         notices: Mutex::new(notice::Notices::default()),
         last_cheer: Mutex::new(0),
+        last_stamp: Mutex::new(None),
         autosaved_at: std::sync::atomic::AtomicU64::new(0),
         moves: Mutex::new(None),
         dojo: Mutex::new(dojo::Dojo::default()),

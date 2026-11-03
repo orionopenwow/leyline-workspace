@@ -14,8 +14,13 @@
 //!   player's own GameObjectDisplayInfo is in the Dens folder: `models.rs`; what doesn't fit one message follows as
 //!   `wubuild catmore`), `wubuild state` (the selection) and
 //!   `wubuild cmd`: `spawn <entry>`, `near`, `move x|y|z <d>`, `move <id> x y z yaw`, `setpos`, `turn`, `setturn`,
-//!   `tilt pitch|roll`, `scale <id> <s>`, `setscale`, `delete`, `undo`, `selclear`, `save`, `load`, `help`;
-//!   `snap on|off` (edit mode's gate: the host yes, guests no unless `.den friends build on`).
+//!   `tilt pitch|roll`, `scale <id> <s>`, `setscale`, `delete`, `undo`, `redo`, `copy`, `paste`, `dup`, `selall`
+//!   (your last prop: Den Lite selects one at a time), `pick <id>`, `floor`, `grid <yd>|off`, `spawnat <entry> x y z`,
+//!   `find <word>` / `models <word>` (answered `wubuild found`), `selclear`, `save`, `load`, `help`;
+//!   `snap on|off` (edit mode's gate: the host yes, guests no unless `.den friends build on`). The state says `lite=1`:
+//!   the editor then hides what only the full Den does (groups, storage, prefabs, plots, align, stack, lock, hide).
+//! * `wuden report <text>` (the addon's own check, asked by the den-test's `.den ui report`, world.rs): written to the
+//!   events (`ui_report`) and `<dens>/den-lite.ui-report` while the test's channel is on.
 //!
 //! The 3.3.5a wire format of an addon message (the message crate has no `LANG_ADDON`, so it is read and written
 //! here): CMSG_MESSAGECHAT `u32 type, u32 language (0xFFFFFFFF), [cstring target for a whisper], cstring text`;
@@ -131,6 +136,8 @@ pub enum Out {
     Hello,
     /// The status line again.
     Status,
+    /// The addon's own report (the den-test's feature check): its text.
+    Report(String),
 }
 
 /// Where the player stands and faces (world coordinates, radians).
@@ -146,6 +153,10 @@ pub struct Here {
 #[derive(Debug, Default, Clone)]
 pub struct Sel {
     pub guid: Option<u64>,
+    /// Copy's prop (relative to the Den, its turn, tilt and size) for Paste.
+    pub clip: Option<den::Prop>,
+    /// Snap: what Spawn and Paste put down lands on this grid (yards; 0 off).
+    pub grid: f64,
 }
 
 /// The Builder's categories (Builder.lua CATS) by words in a prop's name; None: not offered in the catalog.
@@ -212,12 +223,24 @@ pub fn catalog_parts(model_of: impl Fn(u32) -> Option<String>) -> Vec<String> {
 
 /// The catalog's first message (see [`catalog_parts`]).
 pub fn catalog() -> String {
-    catalog_parts(|d| crate::models::of(d).map(str::to_string)).into_iter().next().unwrap_or_default()
+    catalog_parts(crate::models::tile).into_iter().next().unwrap_or_default()
+}
+
+/// `wubuild found`: a search's answer (Builder.lua: `<kind>,<page>,<more>;` then catalog items), the Den's own props
+/// whose names have the word.
+pub fn found(kind: &str, q: &str) -> String {
+    let mut out = format!("{kind},1,0;");
+    for o in den::find_objects(q).into_iter().take(40) {
+        let name: String = o.3.chars().filter(|c| !matches!(c, ';' | ',' | '|' | '\t')).collect();
+        let model = crate::models::tile(o.2).map(|m| format!(",{m}")).unwrap_or_default();
+        out.push_str(&format!("{},{},{},{},1{};", o.0, key(&name), category(o.3).unwrap_or("decor"), name, model));
+    }
+    out
 }
 
 /// The catalog's messages: `catalog`, then `catmore` for the rest.
 fn catalog_out() -> Vec<Out> {
-    let mut v: Vec<Out> = catalog_parts(|d| crate::models::of(d).map(str::to_string))
+    let mut v: Vec<Out> = catalog_parts(crate::models::tile)
         .into_iter()
         .enumerate()
         .map(|(i, p)| Out::Addon("wubuild".into(), if i == 0 { "catalog" } else { "catmore" }.into(), p))
@@ -238,7 +261,13 @@ fn guid_of(d: &Den, id: u64) -> Option<u64> {
 /// The state line (Builder.lua parseState) for this session's selection.
 pub fn state(d: &Den, sel: &Sel, role: &str) -> String {
     let n = d.props.len();
-    let mut s = format!("mine={n}/{MAX_PROPS};pts={n}/{MAX_PROPS};undo={};redo=0;stored=0;grp=0;den={role};room={n}/{MAX_PROPS};yard=0/0;core=1;area=den;code=-;", d.undo_depth());
+    let mut s = format!(
+        "mine={n}/{MAX_PROPS};pts={n}/{MAX_PROPS};undo={};redo={};stored=0;grp=0;den={role};room={n}/{MAX_PROPS};yard=0/0;core=1;lite=1;grid={};clip={};area=den;code=-;",
+        d.undo_depth(),
+        d.redo_depth(),
+        sel.grid,
+        sel.clip.is_some() as u8
+    );
     match sel.guid.and_then(|g| d.placed(g)) {
         Some(p) => {
             let name = den::template(p.obj.entry).map(|t| t.name).unwrap_or("Prop").replace([';', ',', '|'], "");
@@ -265,13 +294,21 @@ fn num(s: Option<&&str>) -> Option<f64> {
     s.and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite())
 }
 
-const BUILDER_HELP: &str = "Den Lite's Builder: Spawn a prop where you stand, Near picks the closest, then move (x, y, z), turn, tilt, size, Delete and Undo. Your Den keeps itself; Save and Load in the Den panel (/den).";
+const BUILDER_HELP: &str = "Den Lite's Builder: place a prop from the gallery, Near picks the closest, then move (x, y, z), turn, tilt, size, Copy, Paste, Duplicate, Delete, Undo and Redo. Your Den keeps itself; Files saves it by name.";
+
+/// What only the full Den does: Den Lite says so plainly (the editor hides these on Den Lite: the state's `lite=1`).
+const FULL_ONLY: &[&str] = &["group", "ungroup", "store", "lock", "unlock", "hide", "show", "measure", "align", "stack", "path", "prefab", "plot", "share", "selbox", "stackon", "pasteat", "placeat"];
+
+/// (x, y) on the grid around the Den's middle (yards; 0: as it is).
+fn snap(g: f64, v: f32, mid: f32) -> f32 {
+    if g > 0.0 { mid + (((v - mid) as f64 / g).round() * g) as f32 } else { v }
+}
 
 /// One Builder command (`wubuild cmd <text>`) on the Den. `can` is false for a friend who may not build.
 pub fn builder_cmd(d: &mut Den, sel: &mut Sel, here: Here, text: &str, can: bool) -> Vec<Out> {
     let w: Vec<&str> = text.split_whitespace().collect();
     let verb = w.first().map(|v| v.to_ascii_lowercase()).unwrap_or_default();
-    let looks = matches!(verb.as_str(), "help" | "near" | "selclear" | "" | "catalog");
+    let looks = matches!(verb.as_str(), "help" | "near" | "selclear" | "" | "catalog" | "copy" | "find" | "models" | "pick" | "select" | "selall" | "grid");
     if !can && !looks {
         return vec![Out::Say("Only the Den's owner builds here (they can let friends: .den friends build on).".into())];
     }
@@ -288,6 +325,7 @@ pub fn builder_cmd(d: &mut Den, sel: &mut Sel, here: Here, text: &str, can: bool
         "spawn" => match w.get(1).and_then(|e| e.parse::<u32>().ok()) {
             Some(entry) => {
                 let (x, y) = (here.x + 3.0 * here.o.cos(), here.y + 3.0 * here.o.sin());
+                let (x, y) = (snap(sel.grid, x, d.spot.x), snap(sel.grid, y, d.spot.y));
                 let z = d.floor_at(x, y);
                 match d.spawn(entry, x, y, z, here.o) {
                     Ok(obj) => {
@@ -310,6 +348,106 @@ pub fn builder_cmd(d: &mut Den, sel: &mut Sel, here: Here, text: &str, can: bool
         "selclear" => {
             sel.guid = None;
             Out::Say("Selection cleared.".into())
+        }
+        // one prop at a time on Den Lite: "select mine" is your last one
+        "selall" => match d.props.last().map(|p| p.obj.guid) {
+            Some(g) => {
+                sel.guid = Some(g);
+                let name = d.placed(g).and_then(|p| den::template(p.obj.entry)).map(|t| t.name).unwrap_or("a prop");
+                Out::Say(format!("Selected {name}, your last prop (Den Lite selects one at a time)."))
+            }
+            None => Out::Say("Nothing placed yet.".into()),
+        },
+        "pick" | "select" => match w.get(1).and_then(|i| i.parse::<u64>().ok()).and_then(|i| guid_of(d, i)) {
+            Some(g) => {
+                sel.guid = Some(g);
+                let name = d.placed(g).and_then(|p| den::template(p.obj.entry)).map(|t| t.name).unwrap_or("a prop");
+                Out::Say(format!("Selected {name}."))
+            }
+            None => Out::Say("That prop isn't in your Den.".into()),
+        },
+        "copy" => match sel.guid.and_then(|g| d.placed(g)) {
+            Some(p) => {
+                sel.clip = Some(p.prop.clone());
+                let name = den::template(p.obj.entry).map(|t| t.name).unwrap_or("the prop");
+                Out::Say(format!("Copied {name}. Paste puts one in front of you."))
+            }
+            None => Out::Say("Select a prop first (Near picks the closest).".into()),
+        },
+        "paste" | "dup" => {
+            let src = if verb == "dup" { sel.guid.and_then(|g| d.placed(g)).map(|p| p.prop.clone()) } else { sel.clip.clone() };
+            match src {
+                Some(mut p) => {
+                    if verb == "dup" {
+                        // next to the original, a yard along x
+                        p.x += 1.0;
+                    } else {
+                        let (x, y) = (here.x + 3.0 * here.o.cos(), here.y + 3.0 * here.o.sin());
+                        let (x, y) = (snap(sel.grid, x, d.spot.x), snap(sel.grid, y, d.spot.y));
+                        // as high above the ground here as it was above the ground where it was copied
+                        let lift = p.z - (d.floor_at(d.spot.x + p.x as f32, d.spot.y + p.y as f32) - d.spot.z) as f64;
+                        p.z = (d.floor_at(x, y) - d.spot.z) as f64 + lift;
+                        p.x = (x - d.spot.x) as f64;
+                        p.y = (y - d.spot.y) as f64;
+                    }
+                    match d.place_one(p) {
+                        Ok(obj) => {
+                            sel.guid = Some(obj.guid);
+                            let msg = if verb == "dup" { "Duplicated next to it." } else { "Pasted in front of you." };
+                            Out::Change(Change { created: vec![obj], message: msg.into(), ..Default::default() })
+                        }
+                        Err(e) => Out::Say(e),
+                    }
+                }
+                None if verb == "dup" => Out::Say("Select a prop first (Near picks the closest).".into()),
+                None => Out::Say("Copy a prop first.".into()),
+            }
+        }
+        "floor" => match sel.guid.and_then(|g| d.placed(g)).map(|p| (p.obj.x, p.obj.y)) {
+            Some((x, y)) => {
+                let to = (d.floor_at(x, y) - d.spot.z) as f64;
+                edit(d, sel, &move |p, _| p.z = to)
+            }
+            None => Out::Say("Select a prop first (Near picks the closest).".into()),
+        },
+        "grid" => {
+            let g = match w.get(1).map(|a| a.to_ascii_lowercase()) {
+                Some(a) if a == "off" => Some(0.0),
+                Some(a) => a.parse::<f64>().ok().filter(|g| g.is_finite() && (0.0..=10.0).contains(g)),
+                None => None,
+            };
+            match g {
+                Some(g) => {
+                    sel.grid = g;
+                    Out::Say(if g > 0.0 { format!("Snap: what you place lands on a {g} yard grid.") } else { "Snap off.".into() })
+                }
+                None => Out::Say("Usage: grid <yards> | grid off".into()),
+            }
+        }
+        "spawnat" => match (w.get(1).and_then(|e| e.parse::<u32>().ok()), num(w.get(2)), num(w.get(3)), num(w.get(4))) {
+            (Some(entry), Some(x), Some(y), Some(z)) => {
+                let (x, y) = (snap(sel.grid, x as f32, d.spot.x), snap(sel.grid, y as f32, d.spot.y));
+                match d.spawn(entry, x, y, z as f32, here.o) {
+                    Ok(obj) => {
+                        sel.guid = Some(obj.guid);
+                        Out::Change(Change { created: vec![obj], message: "Placed.".into(), ..Default::default() })
+                    }
+                    Err(e) => Out::Say(e),
+                }
+            }
+            _ => Out::Say("Usage: spawnat <prop> x y z".into()),
+        },
+        "find" | "models" => {
+            let q = w[1..].iter().filter(|x| x.parse::<u32>().is_err()).cloned().collect::<Vec<_>>().join(" ");
+            let kind = if verb == "models" { "models" } else { "objects" };
+            return vec![Out::Addon("wubuild".into(), "found".into(), found(kind, &q))];
+        }
+        "redo" => {
+            let c = d.redo();
+            if sel.guid.is_some_and(|g| d.placed(g).is_none()) {
+                sel.guid = None;
+            }
+            Out::Change(c)
         }
         "move" if w.len() >= 6 => {
             // move <id> x y z yaw [pitch roll]: exact numbers, world coordinates
@@ -393,6 +531,7 @@ pub fn builder_cmd(d: &mut Den, sel: &mut Sel, here: Here, text: &str, can: bool
         }
         "save" | "load" => Out::DenCmd(w.join(" ")),
         "help" | "" => Out::Say(BUILDER_HELP.into()),
+        v if FULL_ONLY.contains(&v) => Out::Say(format!("Den Lite doesn't do \"{v}\" (it is the full Den's). {BUILDER_HELP}")),
         _ => Out::Say(format!("Den Lite's Builder doesn't do \"{verb}\" yet. {BUILDER_HELP}")),
     };
     vec![out]
@@ -408,6 +547,7 @@ pub fn handle(d: &mut Den, sel: &mut Sel, here: Option<Here>, msg: &AddonMsg, ow
     match (md, name) {
         ("wuden", "hello") => vec![Out::Hello, Out::Ready],
         ("wuden", "status") => vec![Out::Status],
+        ("wuden", "report") => vec![Out::Report(data.chars().filter(|c| !c.is_control()).take(1000).collect())],
         ("wuden", "info") => vec![Out::Addon("wuden".into(), "info".into(), format!("role={role};theme={};builders=-;invite={}", d.look.name, owner as u8)), Out::Ready],
         ("wuden", "cmd") => {
             let w = data.split_whitespace().next().unwrap_or("").to_ascii_lowercase();
@@ -420,7 +560,13 @@ pub fn handle(d: &mut Den, sel: &mut Sel, here: Option<Here>, msg: &AddonMsg, ow
                 _ => vec![Out::DenCmd(data.to_string())],
             }
         }
-        ("wubuild", "catalog") => catalog_out(),
+        // as the full Den's ov_build.lua: the state comes with the catalog (the editor knows Undo n, Redo n and lite=1 at once)
+        ("wubuild", "catalog") => {
+            let mut v = catalog_out();
+            let at = v.len().saturating_sub(1);
+            v.insert(at, Out::Addon("wubuild".into(), "state".into(), state(d, sel, role)));
+            v
+        }
         ("wubuild", "state") => vec![Out::Addon("wubuild".into(), "state".into(), state(d, sel, role))],
         ("wubuild", "cmd") => {
             let w = data.trim();
@@ -565,6 +711,64 @@ mod tests {
         let o = builder_cmd(&mut d, &mut sel, here, "delete", false);
         assert!(matches!(&o[0], Out::Say(s) if s.contains("owner")), "a visitor can't");
         assert_eq!(d.props.len(), 1);
+    }
+
+    #[test]
+    fn redo_copy_paste_duplicate_select_floor_grid_and_find() {
+        let mut d = Den::new(den::Spot::default());
+        let s0 = den::Spot::default();
+        let here = Here { x: s0.x, y: s0.y, z: s0.z, o: 0.0 };
+        let mut sel = Sel::default();
+        builder_cmd(&mut d, &mut sel, here, "spawn 2413", true);
+        let g = sel.guid.unwrap();
+        builder_cmd(&mut d, &mut sel, here, "turn 90", true);
+        builder_cmd(&mut d, &mut sel, here, "undo", true);
+        assert!(state(&d, &sel, "owner").contains("redo=1;"), "Redo 1 after an undo");
+        builder_cmd(&mut d, &mut sel, here, "redo", true);
+        assert_eq!(d.placed(g).unwrap().prop.yaw, 90.0, "the turn redone");
+        builder_cmd(&mut d, &mut sel, here, "undo", true);
+        builder_cmd(&mut d, &mut sel, here, "undo", true);
+        assert!(d.props.is_empty());
+        let o = builder_cmd(&mut d, &mut sel, here, "redo", true);
+        assert!(matches!(&o[0], Out::Change(c) if c.created.len() == 1), "the place redone: {o:?}");
+        assert_eq!(d.props.len(), 1);
+        let o = builder_cmd(&mut d, &mut sel, here, "redo", true);
+        assert!(matches!(&o[0], Out::Change(c) if c.created.is_empty()), "the turn is gone with the old object");
+        // a new change empties Redo
+        builder_cmd(&mut d, &mut sel, here, "selall", true);
+        builder_cmd(&mut d, &mut sel, here, "move z 1", true);
+        builder_cmd(&mut d, &mut sel, here, "undo", true);
+        builder_cmd(&mut d, &mut sel, here, "move z 2", true);
+        assert_eq!(d.redo_depth(), 0);
+        // copy, paste, duplicate
+        builder_cmd(&mut d, &mut sel, here, "copy", true);
+        assert!(state(&d, &sel, "owner").contains("clip=1;"));
+        let o = builder_cmd(&mut d, &mut sel, here, "paste", true);
+        assert!(matches!(&o[0], Out::Change(c) if c.created.len() == 1), "{o:?}");
+        assert_eq!(d.props.len(), 2);
+        assert!((d.props[1].prop.z - 2.0).abs() < 1e-6, "as high as the copied one");
+        builder_cmd(&mut d, &mut sel, here, "dup", true);
+        assert_eq!(d.props.len(), 3);
+        assert!((d.props[2].prop.x - d.props[1].prop.x - 1.0).abs() < 1e-6, "a yard along");
+        builder_cmd(&mut d, &mut sel, here, "floor", true);
+        assert_eq!(d.props[2].prop.z, 0.0, "down on the floor");
+        // pick by id, the grid, find
+        let g = d.props[0].obj.guid;
+        let id = prop_id(g);
+        let o = builder_cmd(&mut d, &mut sel, here, &format!("pick {id}"), true);
+        assert!(matches!(&o[0], Out::Say(s) if s.starts_with("Selected")) && sel.guid == Some(g));
+        builder_cmd(&mut d, &mut sel, here, "grid 2", true);
+        assert_eq!(sel.grid, 2.0);
+        builder_cmd(&mut d, &mut sel, Here { x: s0.x + 0.7, ..here }, "spawn 2413", true);
+        let p = &d.placed(sel.guid.unwrap()).unwrap().prop;
+        assert!(((p.x / 2.0).round() * 2.0 - p.x).abs() < 0.01 && ((p.y / 2.0).round() * 2.0 - p.y).abs() < 0.01, "on the 2 yard grid: {p:?}");
+        let o = builder_cmd(&mut d, &mut sel, here, "find chair", true);
+        assert!(matches!(&o[0], Out::Addon(a, b, c) if a == "wubuild" && b == "found" && c.starts_with("objects,1,0;") && c.contains(",Wooden Chair,")), "{o:?}");
+        let o = builder_cmd(&mut d, &mut sel, here, "group", true);
+        assert!(matches!(&o[0], Out::Say(s) if s.contains("full Den")));
+        assert!(state(&d, &sel, "owner").contains("lite=1;grid=2;"));
+        let m = AddonMsg { prefix: "OVMOD".into(), text: "wuden\treport\t1/1\tgallery tiles=20 model=18".into() };
+        assert_eq!(handle(&mut d, &mut sel, None, &m, true, true), vec![Out::Report("gallery tiles=20 model=18".into())]);
     }
 
     #[test]

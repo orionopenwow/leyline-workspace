@@ -1223,7 +1223,8 @@ fn the_guest_command_prints_a_login_once() {
 fn one_click_lands_in_the_den_with_the_builder_ready() {
     let (srv, dir) = server("oneclick", HeroGender::Female);
     let ev = |dir: &std::path::Path| den_lite::events::read(dir).into_iter().map(|l| l.ev).collect::<Vec<_>>();
-    assert_eq!(ev(&dir), ["start"]);
+    // at start: "start" (and "models", how many prop models it knows, when the game's table is there)
+    assert_eq!(ev(&dir).into_iter().filter(|e| e != "models").collect::<Vec<_>>(), ["start"]);
     // the login screen code signs in as DENAUTO (the launcher's keys: DEN, as Config.wtf fills in)
     let (key, _, address) = login(srv.login, "DENAUTO", "den").expect("login");
     let mut w = World::connect(&address, "DENAUTO", key, 3);
@@ -1255,7 +1256,14 @@ fn one_click_lands_in_the_den_with_the_builder_ready() {
     assert!(cat.matches(';').count() > 50 && cat.contains("2413,woodenchair,seating,Wooden Chair,1;"));
     w.send(&heartbeat(16226.2, 16257.0, 14.2, 0.0));
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tspawn 2413");
-    let st = w.until_addon("wubuild", "state");
+    // the state after the spawn (the catalog may be followed by a state of its own, before anything is placed)
+    let mut st = w.until_addon("wubuild", "state");
+    for _ in 0..4 {
+        if st.contains("n=1;") {
+            break;
+        }
+        st = w.until_addon("wubuild", "state");
+    }
     let id: u64 = st.split("sel=").nth(1).unwrap().split(',').next().unwrap().parse().expect(&st);
     assert!(st.contains(",2413,Wooden Chair;") && st.contains("n=1;") && st.contains("den=owner"), "{st}");
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tmove z 0.5");

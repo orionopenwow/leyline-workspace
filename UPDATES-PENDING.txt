@@ -742,3 +742,10 @@
 1313e den-lite  Den Lite rebuilt: its login and your character created exactly as a full server does (update flags, clock, time sync), every message the game sends logged, .den diag
 1313f addons  Leyline addons: the Den bar's diagnostics
 1313g ship  Save as Orion: the Den on grass under the normal sky (no edited sky or zone tables), Den Lite matching the full server's login, the walking checks
+1313h den-lite  Den Lite rebuilt: the editor's missing actions (redo, copy, paste, duplicate, floor, grid, find), each model's size for the gallery
+1313i addons  Leyline addons: the Den editor sized for real screens (bigger text, 5x4 gallery, labelled rail, grouped menu, invite as a small card)
+1313j foreverui  Browser game: the same Den editor
+1313l den-features  The Den editor feature by feature through its own buttons, a screenshot after each
+1313m addons  Leyline addons: the Den gallery's models lit (they drew black)
+1313n den-features  The Den editor feature test again: the gallery's models
+1313o ship  Save as Orion: walking in the Den, grass ground, the editor redo, the feature test, lit gallery models, nameplates

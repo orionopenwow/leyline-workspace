@@ -54,6 +54,7 @@ function Frame:SetTexture(a, b, c, d) self.tex = b and { a, b, c, d } or a end
 function Frame:IsMouseOver() return self.mouseOver == true end
 -- Model frames
 function Frame:SetModel(path) self.modelFile = path; self.setModelCalls = (self.setModelCalls or 0) + 1 end
+function Frame:SetLight(on, ...) self.light = on end
 function Frame:ClearModel() self.modelFile = nil end
 function Frame:SetFacing(f) self.facing = f end
 local function new(kind, name, parent)
@@ -154,8 +155,10 @@ local function tileOf(id) for _, t in ipairs(win.tiles) do if t:IsShown() and t.
 check("1-20 of 53", win.count:GetText() == "1-20 of 53")
 local t1 = tileOf(1001)
 check("a tile with a model: SetModel(path), shown, the icon hidden", t1.model.modelFile == byId[1001].model and t1.model:IsShown() and not t1.icon:IsShown())
+check("a tile's model is lit (a Model frame without a light draws black)", t1.model.light == 1)
 local t4 = tileOf(1004)
-check("a tile without one: the category's icon", not t4.model:IsShown() and t4.icon:IsShown() and t4.icon.path == "Interface\\Icons\\INV_Drink_05")
+check("a WMO's tile: the building icon on purpose, and why", not t4.model:IsShown() and t4.icon:IsShown() and t4.icon.path == "Interface\\Icons\\INV_Misc_Rune_01"
+    and t4.why:GetText() == "building")
 check("the name under the tile", t1.name:GetText() == "Barrel 53")
 check("a prop of 2 points says so on its tile", tileOf(1005).cost:GetText() == "2" and t1.cost:GetText() == "")
 local m1 = t1.model

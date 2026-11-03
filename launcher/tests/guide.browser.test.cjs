@@ -152,7 +152,7 @@ test('moments: one short line each, once, one at a time, held while the tour is 
   assert.equal(await page.locator('#gd-toast').count(), 0, 'never over the tour');
   await page.click('#gd-tour-skip');
   await page.waitForSelector('#gd-toast');
-  assert.match(await page.textContent('#gd-toast'), /Your first mod is in/);
+  assert.match(await page.textContent('#gd-toast'), /Your first mod or addon is in/);
   assert.equal(await page.getAttribute('#gd-toast', 'role'), 'status');
   assert.equal(await page.evaluate(() => window.LeylineGuide.moment('mod')), false, 'once');
   // the next one waits for this one

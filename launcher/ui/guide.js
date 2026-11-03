@@ -26,7 +26,7 @@
   const MOMENTS = {
     "cheer-hosted": { line: "You're live — share this link and friends can join.", action: "Copy invite link" },
     "cheer-friend": { line: "A friend just joined your server. Say hello!" },
-    "cheer-mod": { line: "Your first mod is in. It's there the next time you press PLAY." },
+    "cheer-mod": { line: "Your first mod or addon is in. It's there the next time you press PLAY." },
   };
   const SKIP = "Skip tour", NEXT = "Next", DONE = "Done";
 

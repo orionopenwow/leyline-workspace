@@ -112,9 +112,22 @@ impl Settings {
     }
 }
 
-/// Leyline's data folder: %APPDATA%\Leyline, ~/Library/Application Support/Leyline, ~/.local/share/Leyline.
+/// Another data folder for this run: an absolute path in `LEYLINE_APP_DIR` (the first-run test's fresh, empty one,
+/// docs/FIRST-RUN-TEST.md; tools/den-check reads the same name). Unset, empty or relative: the normal folder.
+pub const APP_DIR_ENV: &str = "LEYLINE_APP_DIR";
+
+/// Leyline's data folder: %APPDATA%\Leyline, ~/Library/Application Support/Leyline, ~/.local/share/Leyline, or
+/// [`APP_DIR_ENV`] when it is set.
 pub fn app_dir() -> PathBuf {
-    dirs::data_dir().unwrap_or_else(std::env::temp_dir).join("Leyline")
+    app_dir_with(std::env::var_os(APP_DIR_ENV))
+}
+
+/// [`app_dir`] with the override's value (None: unset).
+pub fn app_dir_with(over: Option<std::ffi::OsString>) -> PathBuf {
+    match over.map(PathBuf::from) {
+        Some(p) if p.is_absolute() => p,
+        _ => dirs::data_dir().unwrap_or_else(std::env::temp_dir).join("Leyline"),
+    }
 }
 
 /// Write `bytes` to `path` atomically.
@@ -180,6 +193,16 @@ pub fn save(dir: &Path, s: &Settings) -> io::Result<()> {
 mod tests {
     use super::*;
     use crate::clients::Build;
+
+    #[test]
+    fn app_dir_override_only_when_absolute() {
+        let fresh = std::env::temp_dir().join("leyline-first-run");
+        assert_eq!(app_dir_with(Some(fresh.clone().into_os_string())), fresh);
+        let normal = app_dir_with(None);
+        assert!(normal.ends_with("Leyline"));
+        assert_eq!(app_dir_with(Some("relative/dir".into())), normal);
+        assert_eq!(app_dir_with(Some("".into())), normal);
+    }
 
     fn profile() -> ClientProfile {
         ClientProfile {

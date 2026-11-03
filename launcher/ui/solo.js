@@ -1,8 +1,8 @@
 // Leyline: single player everywhere (owner 3 Nov: "Entirely make sure single player for all modes is apparent and
 // available for people with local files etc, and then 1 click invite friend to single player world").
 //
-// One label and one place: every mode and realm card that can be played on this PC gets a "Play solo" button first in
-// its row of buttons, beside the online one, and one line under it saying where it runs and what it needs. The worlds
+// One label and one place: every mode and realm card that can be played on this PC gets a "Play solo" button right
+// after its online button (Play / Host), and one line under it saying where it runs and what it needs. The worlds
 // it opens, all on this PC with the player's own game folder (Leyline never ships game files):
 //   * Your Den: Den Lite, a small server built into Leyline. Nothing else to install (den.js, app.js LOCAL.den).
 //   * Solo leveling: a full realm from the Host pack, in Docker (app.js LOCAL.solo).
@@ -110,19 +110,20 @@
     if (dock) return `${WHERE}: ${t.name}, set up once (5 to 20 minutes).`;
     return `${WHERE}: ${t.name}, in Docker.`;
   }
+  const realmTitle = (t) => (dock && !dockerReady() ? "Needs Docker first: this opens the one-time setup" : `Play ${t.name} on this PC`);
   const notes = new Set();
   function paintNotes() {
     for (const n of [...notes]) {
       if (!n.isConnected) { notes.delete(n); continue; }
       n.textContent = noteText(n.__solo);
       const b = n.__soloBtn;
-      if (b && n.__solo.kind === "realm" && !n.__solo.coming) b.title = dock && !dockerReady() ? "Needs Docker first: this opens the one-time setup" : `Play ${n.__solo.name} on this PC`;
+      if (b && n.__solo.kind === "realm" && !n.__solo.coming) b.title = realmTitle(n.__solo);
     }
   }
 
   // ---------------------------------------------------------------- the button and its line
   // `button(t)`: the Play solo button (or a quiet "Online only" chip). `note(t)`: its one line. `attach(acts, after, t)`:
-  // the button first in `acts`, the line at the end of `body` (or returned, for the caller to place).
+  // the button right after the online one in `acts`, the line at the end of `body` (or returned, for the caller to place).
   function button(t) {
     if (!t) return null;
     if (t.kind === "none") {
@@ -134,7 +135,7 @@
     b.type = "button";
     b.dataset.solo = t.kind;
     if (t.coming) { b.disabled = true; b.title = "Not out yet"; return b; }
-    b.title = t.kind === "den" ? "Your Den on this PC: no Docker, no sign-in" : t.kind === "browser" ? "Just you, in your browser" : `Play ${t.name} on this PC`;
+    b.title = t.kind === "den" ? "Your Den on this PC: no Docker, no sign-in" : t.kind === "browser" ? "Just you, in your browser" : realmTitle(t);
     b.addEventListener("click", (ev) => { ev.stopPropagation(); go(t, b); });
     if (t.kind === "realm") docker();
     return b;
@@ -151,7 +152,8 @@
   function attach(acts, body, t) {
     if (!t || !acts) return null;
     const b = button(t);
-    acts.prepend(b);
+    const online = acts.firstElementChild;   // the card's online button stays first: Play solo right beside it
+    if (online) online.after(b); else acts.append(b);
     const n = note(t, b);
     if (body) body.append(n);
     return { button: b, note: n };
@@ -162,8 +164,9 @@
   function say(text, kind) {
     const s = status && status.isConnected ? status : byId("solo-status");
     if (!s) return;
+    if (!s.dataset.base) s.dataset.base = s.className.replace(/\s+(ok|bad|warn)\b/g, "") || "status";   // its own classes kept
     s.textContent = text || "";
-    s.className = (s.dataset.base || "status") + (kind ? " " + kind : "");
+    s.className = s.dataset.base + (kind ? " " + kind : "");
   }
   function statusFor(b) {
     const page = b && b.closest ? b.closest(".page") : null;
@@ -214,12 +217,13 @@
     }
     // not set up here yet: the mode's form, private, for you (hostmodes.js); else the Host page with that ruleset
     if (t.pack && window.LeylineHostModes && window.LeylineHostModes.open) {
-      window.LeylineHostModes.open(t.pack, { solo: true });
+      await window.LeylineHostModes.open(t.pack, { solo: true });
     } else {
       nav("host");
       if (window.LeylineHostModes && window.LeylineHostModes.rulesets) window.LeylineHostModes.rulesets();
       document.dispatchEvent(new CustomEvent("leyline:host-ruleset", { detail: { profile: prof || "solo", solo: true } }));
     }
+    status = document.querySelector("#page-host .hx-status") || document.getElementById("host-status-line");   // the lines go where you are now
     await docker();
     if (dock && !dockerReady()) say(`${t.name} runs in Docker on this PC. ${dock.help || "Set it up once on the Host page."}`, "warn");
   }

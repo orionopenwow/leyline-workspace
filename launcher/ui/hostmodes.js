@@ -147,8 +147,6 @@
       b.append(s);
     }
     const acts = mk("div", "hx-acts");
-    // Play solo first (solo.js): the same mode, private, just you, on this PC
-    if (window.LeylineSolo && m.profile !== "den") window.LeylineSolo.attach(acts, b, window.LeylineSolo.forPack(m));
     if (m.status === "coming") {
       if (m.credit) b.append(mk("p", "hx-by", `By ${m.credit.by}`));
     } else {
@@ -159,6 +157,8 @@
         acts.append(btn("Remove", "hc-more hx-remove", () => removeIt(m)));
       }
     }
+    // Play solo beside Host (solo.js): the same mode, private, just you, on this PC
+    if (window.LeylineSolo && m.profile !== "den") window.LeylineSolo.attach(acts, b, window.LeylineSolo.forPack(m));
     c.append(pic(m), b, acts);
     return c;
   }

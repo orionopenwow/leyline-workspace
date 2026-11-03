@@ -36,6 +36,12 @@
   <h1 id="name">Joining a realm…</h1>
   <p class="sub" id="sub">A Beacon: a realm hosted by a player, reached through the Leyline relay. <span class="pill" id="client-chip" title="The game client this realm needs">3.3.5a</span></p>
 
+  <div class="card" id="leyline-card" hidden>
+    <h2>Have Leyline?</h2>
+    <p class="small">One click: Leyline joins this realm with this link and starts your game. You can skip the steps below.</p>
+    <div style="margin-top:10px"><button id="open-leyline" type="button">Open in Leyline</button></div>
+  </div>
+
   <div class="card" id="state-card">
     <h2>1. This computer is let in</h2>
     <div id="knock-msg" class="msg">Checking the invite…</div>
@@ -111,6 +117,17 @@
     return true;
   }
   window.__wuHop = { hop, hopOrigins, handBack }; // for tests
+
+  // ---- Open in Leyline: the launcher joins with this same link (leyline://join?link=…, launcher deeplink.rs; it
+  // shows one Join button and takes only links on Leyline's relay). Made here in the browser, so the invite after #
+  // never reaches a server. Not while the browser game frames this page.
+  const leylineLink = realmId && invite && !hop
+    ? "leyline://join?link=" + encodeURIComponent(location.origin + location.pathname.replace(/\/+$/, "") + location.hash) : "";
+  if (leylineLink) {
+    $("leyline-card").hidden = false;
+    $("open-leyline").addEventListener("click", () => { location.href = leylineLink; });
+  }
+  window.__wuLeyline = leylineLink; // for tests
 
   // ---- SRP6 verifier, as AzerothCore stores it: x = SHA1(salt | SHA1(UPPER(user) ":" UPPER(pass))), v = 7^x mod N, little endian
   const N = BigInt("0x894B645E89E1535BBDAD5B8B290650530801B18EBFBF5E8FAB3C82872A3E9BB7");

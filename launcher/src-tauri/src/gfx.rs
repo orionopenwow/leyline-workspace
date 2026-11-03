@@ -321,6 +321,29 @@ pub fn preset(c: &ClientProfile, id: &str) -> Result<State, String> {
     write(c, &set)
 }
 
+/// The graphics settings as they were before Leyline first changed them (Loadouts › Clean): only the settings on the
+/// Graphics page, from the copy kept at the first change, each checked (the game's default when the copy has none).
+/// The rest of Config.wtf (the realm, the window, the sign-in lines) stays as it is. Nothing to do without a copy.
+pub fn back_to_original(c: &ClientProfile) -> Result<State, String> {
+    let list = tweaks(c.build);
+    let p = config_path(c);
+    let Ok(old) = fs::read_to_string(backup_of(&p)) else { return Ok(read(c)) };
+    if list.is_empty() {
+        return Ok(read(c));
+    }
+    let was = parse(&old);
+    let set: BTreeMap<String, String> = list
+        .iter()
+        // the window stays as the player and the launch set it
+        .filter(|t| !t.key.eq_ignore_ascii_case("gxWindow") && !t.key.eq_ignore_ascii_case("gxMaximize"))
+        .filter_map(|t| {
+            let v = was.get(&t.key.to_ascii_lowercase()).cloned().unwrap_or_else(|| t.default.to_string());
+            check(t, &v).ok().map(|v| (t.key.to_string(), v))
+        })
+        .collect();
+    write(c, &set)
+}
+
 /// Put the copy kept at the first change back.
 pub fn restore(c: &ClientProfile) -> Result<State, String> {
     let p = config_path(c);
@@ -364,6 +387,23 @@ mod tests {
         let mut c: ClientProfile = serde_json::from_value(serde_json::json!({"id":"c1","name":"Mine","path":dir,"build":"3.3.5a"})).unwrap();
         c.build = build;
         c
+    }
+
+    #[test]
+    fn back_to_original_puts_only_the_graphics_back() {
+        let d = tempfile::tempdir().unwrap();
+        fs::create_dir_all(d.path().join("WTF")).unwrap();
+        let cfg = d.path().join("WTF/Config.wtf");
+        fs::write(&cfg, "SET realmlist \"a\"\nSET farclip \"500\"\n").unwrap();
+        let c = client(d.path(), Build::V335a);
+        back_to_original(&c).unwrap();
+        assert!(fs::read_to_string(&cfg).unwrap().contains("farclip \"500\""), "no copy: nothing changes");
+        preset(&c, "ultra").unwrap();
+        fs::write(&cfg, fs::read_to_string(&cfg).unwrap().replace("SET realmlist \"a\"", "SET realmlist \"b\"")).unwrap();
+        back_to_original(&c).unwrap();
+        let now = fs::read_to_string(&cfg).unwrap();
+        assert!(now.contains("farclip \"500\""), "{now}");
+        assert!(now.contains("realmlist \"b\""), "the rest stays as it is now: {now}");
     }
 
     #[test]

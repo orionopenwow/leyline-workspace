@@ -32,6 +32,7 @@ pub mod herokey; // Hero Key sign-in to community realms (docs/HERO-KEY-SSO.md; 
 pub mod hybrid; // the hybrid client: the desktop game signs in and loads like the browser game (docs/HYBRID-CLIENT.md)
 pub mod host;
 pub mod launch;
+pub mod loadouts; // Loadouts: named sets of mods, addons and looks per game folder; Clean is every Leyline mod off (loadouts.rs)
 pub mod linkloop; // instant link: the link page asks this launcher for its code on 127.0.0.1 (linkloop.rs)
 pub mod listed; // listed mods: what players list with "List your mod", installed from the author (stream/listings.py)
 pub mod listing; // List your mod from the launcher: check, list, report, edit, remove (stream/listings.py)

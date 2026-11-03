@@ -1,5 +1,5 @@
 -- texlua stream/tests/test_wuui_gizmo.lua [addon dir]
--- Your Den's placement aids (Gizmo.lua; Den Lite labs/den-lite src/gizmo.rs). Fake 3.3.5a API and a fake Builder /
+-- Your Den's placement aids (Gizmo.lua; Den Lite labs/den-lite src/gizmo.rs, farsight.rs). Fake 3.3.5a API and a fake Builder /
 -- Den bar: build mode starts in Your Den on Den Lite (mode build, gizmo on, the build camera from a reset view at a
 -- known zoom, the player's own view kept and put back); nothing is bound until something is armed; a gallery pick
 -- arms the live preview and the cursor's place on the screen goes to Den Lite (u, v, aspect, distance; at most 10 a
@@ -65,6 +65,13 @@ local mouseoverUnit = false
 function UnitExists(u) return u == "mouseover" and mouseoverUnit end
 function UnitName() return "Wren" end
 function InCombatLockdown() return false end
+local shift = false
+function IsShiftKeyDown() return shift end
+local cvars = { cameraDistanceMax = "15", cameraDistanceMaxFactor = "2" }
+function GetCVar(k) return cvars[k] end
+function SetCVar(k, v) cvars[k] = tostring(v) end
+local gameBinds = { J = "TOGGLEFOO" }
+function GetBindingAction(k) return gameBinds[k] or "" end
 function GetSpellInfo(id) return id == 1543 and "Flare" or nil end
 local sent = {}
 function SendAddonMessage(prefix, text, channel, target) sent[#sent + 1] = { prefix, text, channel, target } end
@@ -83,10 +90,11 @@ function hooksecurefunc(t, name, fn)
 end
 
 -- the Builder and the Den bar as Gizmo.lua sees them
-local moves = {}
+local moves, notes, handDone = {}, {}, 0
 WrathUnleashedUI = {
-    Builder = { state = { lite = "1" }, Choose = function(item) return true end, Move = function(a, s) moves[#moves + 1] = a .. s; return true end,
-        ShowProps = function(show) WrathUnleashedUI.propsShown = show end },
+    Builder = { state = { lite = "1", selName = "Cottage" }, Choose = function(item) return true end, Move = function(a, s) moves[#moves + 1] = a .. s; return true end,
+        ShowProps = function(show) WrathUnleashedUI.propsShown = show end, STEPS = { 0.01, 0.1, 0.25, 0.5, 1, 3, 5, 10 }, step = 5,
+        PillNote = function(t) notes[#notes + 1] = t end, HandDone = function() handDone = handDone + 1 end },
     DenBar = { active = true, play = false },
 }
 local W = WrathUnleashedUI
@@ -117,9 +125,14 @@ local function count(t) local n = 0; for _ in pairs(t) do n = n + 1 end; return 
 tick()
 local c = cmds()
 check("in the Den on Den Lite: build mode and the gizmo", G.build and has(c, "mode build") and has(c, "gizmo on"))
-check("the build camera: the player's view kept, a reset view, all the way in, then out by the build distance",
-    table.concat(camera, ",") == "save 5,reset 2,set 2,in 50,out 12")
-check("nothing bound: the keyboard is the player's", count(bindings) == 0)
+check("the build camera: the player's view kept, a reset view, all the way in, out by the build distance, kept in view 2",
+    table.concat(camera, ",") == "save 5,reset 2,set 2,in 50,out 12,save 2", table.concat(camera, ","))
+check("as far out as the game goes: its zoom limit raised (and its own value kept)", cvars.cameraDistanceMax == "50" and G.cvars.max == "15")
+check("the zoom told to Den Lite", has(c, "cam zoom 12"))
+check("build mode binds only the wheel (the zoom, kept count of) and the snap-out key: J is the game's, so K",
+    bindings.MOUSEWHEELUP == "LeylineGizmoWheelUp" and bindings.MOUSEWHEELDOWN == "LeylineGizmoWheelDown" and bindings.K == "LeylineGizmoSnap"
+    and not bindings.J and count(bindings) == 3)
+check("never a movement key", not (bindings.W or bindings.A or bindings.S or bindings.D or bindings.Q or bindings.E or bindings.UP or bindings.LEFT))
 
 -- a gallery pick arms the preview
 local n = #sent
@@ -127,9 +140,10 @@ W.Builder.Choose({ id = 2413, name = "Wooden Chair" })
 c = cmds(n)
 check("a gallery pick arms the preview, and the cursor goes at once", c[1] == "preview 2413" and c[2] and c[2]:find("^hover "))
 answer("aim", "place,2413,1543")
-check("armed: Esc and the exact-click key bound, nothing else", G.armed == "place" and bindings.ESCAPE == "LeylineGizmoCancel"
-    and bindings.G == "LeylineGizmoAim" and count(bindings) == 2)
-check("the tag says how", named.LeylineGizmoTag.shown and named.LeylineGizmoTag.fs.text:find("left%-click the ground"))
+check("in hand: Esc and the exact-click key bound too, nothing else", G.armed == "place" and bindings.ESCAPE == "LeylineGizmoCancel"
+    and bindings.G == "LeylineGizmoAim" and count(bindings) == 5)
+check("the tag says how", named.LeylineGizmoTag.shown and named.LeylineGizmoTag.fs.text:find("in hand: click the ground")
+    and named.LeylineGizmoTag.fs.text:find("Shift%+click places more"))
 
 -- the cursor's place on the screen
 cursor = { 1440, 270 }
@@ -168,7 +182,12 @@ end
 n = #sent
 click("LeftButton")
 c = cmds(n)
-check("a left click places it where the copy is", c[#c] == "commit")
+check("a left click places it where the copy is (one click: placed, then selected)", c[#c] == "commit")
+shift = true
+n = #sent
+click("LeftButton")
+check("Shift+click: placed, and another in hand", cmds(n)[#cmds(n)] == "commit keep")
+shift = false
 n = #sent
 camera = {}
 click("LeftButton", 1.2, 80)
@@ -181,7 +200,8 @@ targeting = false
 n = #sent
 click("RightButton")
 c = cmds(n)
-check("a right click stops: preview off, the keys given back", c[1] == "preview off" and G.armed == nil and count(bindings) == 0)
+check("a right click stops: preview off, its keys given back (the wheel and snap-out stay in build mode)", c[1] == "preview off" and G.armed == nil
+    and count(bindings) == 3 and handDone > 0)
 check("the tag goes", not named.LeylineGizmoTag.shown)
 
 -- the gizmo's axis and the wheel
@@ -193,7 +213,7 @@ named.LeylineGizmoWheelDown:Fire("OnClick")
 check("the wheel moves the prop along the axis by the Builder's step", moves[1] == "y1" and moves[2] == "y-1")
 n = #sent
 named.LeylineGizmoCancel:Fire("OnClick")
-check("Esc lets the axis go, and the wheel", G.axis == nil and cmds(n)[1] == "axis off" and count(bindings) == 0)
+check("Esc lets the axis go: the wheel zooms again", G.axis == nil and cmds(n)[1] == "axis off" and count(bindings) == 3)
 
 -- a right-clicked prop: the menu at the cursor
 cursor = { 500, 400 }
@@ -234,12 +254,88 @@ click("LeftButton")
 check("on an object the game names: kept", #cmds(n) == 0)
 GameTooltip.shown = false
 
+-- one click places it and ends placing: Den Lite says placed, then aim off; the panel's "in hand" ends
+W.Builder.Choose({ id = 2413, name = "Cottage" })
+answer("aim", "place,2413,1543")
+local hd = handDone
+answer("placed", "7")
+answer("aim", "off")
+check("placed: the new prop is the selection, nothing in hand, the in-hand keys given back", G.sel == 7 and G.armed == nil and handDone > hd
+    and not bindings.G and not bindings.ESCAPE)
+
+-- a handle grabbed: the prop follows the cursor along its axis; the wheel steps; a click drops it
+answer("aim", "axis,7,x")
+check("dragging along x: armed, Esc and the wheel bound", G.armed == "axis" and G.axis == "x" and bindings.ESCAPE and bindings.MOUSEWHEELUP)
+check("the tag says so", named.LeylineGizmoTag.fs.text:find("Dragging along X %(red%)"))
+cursor = { 1200, 400 }
+n = #sent
+tick(0.2)
+check("the cursor goes to Den Lite (the drag follows it)", (cmds(n)[1] or ""):find("^hover "))
+n = #sent
+named.LeylineGizmoWheelUp:Fire("OnClick")
+check("the wheel: a step along the axis (the Builder's step)", cmds(n)[1] == "grab nudge 1")
+answer("drag", "x,+4.45")
+check("the status: Moving Cottage +4.45 yd along X", notes[#notes] == "Moving Cottage +4.45 yd along X")
+n = #sent
+click("LeftButton")
+check("a left click drops it", cmds(n)[#cmds(n)] == "commit")
+answer("moved", "x,+4.45")
+answer("aim", "off")
+answer("axis", "-")
+check("dropped: Moved Cottage +4.45 yd along X", notes[#notes] == "Moved Cottage +4.45 yd along X" and G.armed == nil)
+answer("aim", "axis,7,z")
+n = #sent
+named.LeylineGizmoCancel:Fire("OnClick")
+check("Esc while dragging: puts it back (grab off)", cmds(n)[1] == "grab off" and G.armed == nil)
+n = #sent
+check("test: grab a handle", G.TestAction({ "gizmo", "grab", "y" }) and cmds(n)[1] == "grab y")
+
+-- the wheel: the game's zoom, kept count of; past the game's limit Den Lite's far view; and back
+camera = {}
+n = #sent
+named.LeylineGizmoWheelDown:Fire("OnClick")
+check("wheel down: the game zooms out 2 yards, kept count of, told to Den Lite", camera[1] == "out 2" and G.zoom == 14 and cmds(n)[1] == "cam zoom 14")
+local hovered = false
+for _ = 1, 30 do named.LeylineGizmoWheelDown:Fire("OnClick") end
+c = cmds(n)
+check("the game's own limit (50): no further than that", G.zoom == 50 and has(c, "cam zoom 50"))
+check("past it: Den Lite's far view, a notch at a time", c[#c] == "cam far 1")
+answer("cam", "far,8.0,0,0")
+check("the far view: the build camera posed again round Den Lite's camera object", G.far and G.far.back == 8 and camera[#camera] == "save 2")
+check("the arrows pan it while it is out", bindings.UP == "LeylineGizmoPanUP" and bindings.RIGHT == "LeylineGizmoPanRIGHT")
+n = #sent
+named.LeylineGizmoPanUP:Fire("OnClick")
+check("an arrow: cam pan", cmds(n)[1] == "cam pan fwd 4")
+n = #sent
+named.LeylineGizmoWheelUp:Fire("OnClick")
+check("wheel up while far: nearer (Den Lite)", cmds(n)[1] == "cam far -1")
+answer("cam", "near")
+check("back to the player's view: the arrows given back", G.far == nil and not bindings.UP)
+n = #sent
+named.LeylineGizmoWheelUp:Fire("OnClick")
+check("then the game's own zoom again", G.zoom == 48 and cmds(n)[1] == "cam zoom 48")
+
+-- snap out: one key, and back
+n = #sent
+named.LeylineGizmoSnap:Fire("OnClick")
+check("the snap-out key: cam snap", cmds(n)[1] == "cam snap")
+answer("cam", "far,35.0,1,90")
+check("snapped out: the overview, the tag says how back", G.far and G.far.snap and named.LeylineGizmoTag.fs.text:find("Overview: K"))
+camera = {}
+click("LeftButton", 1.2, 80)
+check("a camera drag in the overview: the pose comes back (the ray needs it)", camera[1] == "set 2")
+n = #sent
+check("test: snap", G.TestAction({ "gizmo", "snap" }) and cmds(n)[1] == "cam snap")
+answer("cam", "near")
+n = #sent
+check("test: zoom and pan", G.TestAction({ "gizmo", "zoom", "-2" }) and has(cmds(n), "cam zoom 44") and not G.TestAction({ "gizmo", "pan", "left" }))
+
 -- the den-test's actions
 n = #sent
 check("test: hover at a point", G.TestAction({ "gizmo", "hover", "0.25", "-0.4" }) and cmds(n)[1] == "hover 0.2500 -0.4000 1.7778 12")
 n = #sent
 G.TestAction({ "gizmo", "report" })
-check("test: the report", sent[#sent][2]:find("^wuden\treport\t1/1\tgizmo build=1 armed=%- axis=%-"))
+check("test: the report", sent[#sent][2]:find("^wuden\treport\t1/1\tgizmo build=1 armed=%- axis=%-") and sent[#sent][2]:find("zoom=44 far=%- snapkey=K"))
 
 -- play mode: everything given back
 W.Builder.Choose({ id = 2413 })
@@ -250,7 +346,7 @@ n = #sent
 tick()
 c = cmds(n)
 check("play mode: the preview stops, the gizmo goes, the props are plain again", has(c, "preview off") and has(c, "gizmo off") and has(c, "mode play") and not G.build)
-check("the player's own camera back", camera[#camera] == "set 5")
+check("the player's own camera back, and the game's zoom limit", camera[#camera] == "set 5" and cvars.cameraDistanceMax == "15")
 check("nothing bound", count(bindings) == 0)
 n = #sent
 W.Builder.Choose({ id = 2413 })

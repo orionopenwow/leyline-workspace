@@ -2542,4 +2542,5 @@ W.Builder = B
 B.SetStatus = setStatus   -- the Den bar (DenBar.lua) shows Den Lite's answers here too
 B.Window, B.STEPS, B.CATS, B.CAT_ICONS, B.CatIcon = function() return win end, STEPS, CATS, CAT_ICONS, catIcon
 B.Menu, B.Panel, B.MENU_TABS, B.TABS, B.TAB_ICONS = function() return win end, function() return panel end, TABS, TABS, TAB_ICONS
+B.STEPS = STEPS
 B.PAGE, B.COLS, B.STEP_PRESETS, B.ANGLE_STEPS, B.TabText = PAGE, COLS, STEP_PRESETS, ANGLE_STEPS, tabText

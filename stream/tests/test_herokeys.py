@@ -274,6 +274,8 @@ anon = jar_add("", sc)
 t_start = re.search(r'action="/wrath/key/start"[^>]*><input type="hidden" name="t" value="([0-9a-f]{32})"', body).group(1)
 t_sign = re.search(r'action="/wrath/key/signin" id="hk-login"><input type="hidden" name="t" value="([0-9a-f]{32})"', body).group(1)
 
+st, _, gbody, _, _ = req("GET", "/wrath/key?guest=1", anon)
+check("?guest=1 (the sign-in page's Create a guest account): the form submits itself", 'id="hk-start" data-go="1"' in gbody and "st.submit()" in gbody)
 st, _, _, _, _ = req("POST", "/wrath/key/start", anon, {"t": "0" * 32})
 check("start: a wrong form token is refused", st == 403)
 st, _, _, _, _ = req("POST", "/wrath/key/start", anon, {"t": t_start}, origin="https://evil.example")
@@ -282,8 +284,10 @@ st, _, _, _, _ = req("POST", "/wrath/key/start", anon, {"t": t_start}, sfs="cros
 check("start: cross-site is refused", st == 403)
 n_users = len(R["users"])
 st, hd, _, sc, _ = req("POST", "/wrath/key/start", anon, {"t": t_start})
-check("start: a guest account, signed in and straight on to play (owner 2 Nov 23:31)", st == 303 and hd.get("Location") == "/wrath?guest=1"
+check("start: a guest account, signed in, straight to the profile step (owner 3 Nov 01:33)", st == 303 and hd.get("Location") == "/wrath/signin/welcome"
       and len(R["users"]) == n_users + 1, (st, hd))
+check("start: after the profile step, back to the login to save (ly_next)", any(c.startswith("ly_next=/wrath/key%3Fready%3D1;") or c.startswith("ly_next=/wrath/key?ready=1;") for c in sc), sc)
+sc = [c for c in sc if not c.startswith("ly_next=")]
 check("start: the cookies carry no Domain (the site answers on two names)", not any("domain=" in c.lower() for c in sc), sc)
 check("start: the service's own cookies come back (session, guest, the new key's), never wr_herokey",
       {c.split("=")[0] for c in sc} == {"wr_session", "wr_guest", "wr_herokey_play"}, sc)
@@ -293,7 +297,10 @@ acct1 = R["users"][max(R["users"])]["acct"]
 name1 = S.profile(acct1)["name"]
 check("start: a made-up readable name like Brightfeather42, through the name rules", re.fullmatch(r"[A-Z][a-z]+[a-z]+\d\d", name1)
       and wp.profiles.name_problem(name1) == "", name1)
-st, _, mbody, _, _ = req("GET", "/wrath/key", jar_add(anon, sc))
+st, _, mbody, _, _ = req("GET", "/wrath/key?ready=1", jar_add(anon, sc))
+check("ready: the browser is asked to keep the login at once, then Play in your browser or Get the Leyline launcher",
+      'data-autosave="1"' in mbody and 'id="hk-play" href="/wrath"' in mbody and 'id="hk-get" href="/wrath/download"' in mbody
+      and "Ready to play" in mbody)
 mpw = (re.search(r'id="hk-mpw" name="password" type="password" readonly autocomplete="new-password" value="([^"]+)"', mbody) or [None, ""])[1]
 check("start: a password made with it (4 groups of 4, easy to read), hidden until Show", re.fullmatch(r"[a-z2-9]{4}(-[a-z2-9]{4}){3}", mpw)
       and ">Show<" in mbody and mpw not in visible(mbody), mpw)

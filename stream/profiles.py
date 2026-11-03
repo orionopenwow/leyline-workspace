@@ -725,7 +725,7 @@ def page_signin(h, query: dict, note: str = "") -> None:
     ways_html = [f'<a class="pf-way {"key" if k == "herokey" else k}" href="{SIGNIN}/go/{k}?next={q}">{ICON[k]}<span>{WAY_LABEL[k]}</span></a>'
                  for k in order if w.get(k)]
     # Create a Hero Key (owner 2 Nov 21:04): the Hero Key page, where Get your Hero Key makes the free account
-    ways_html.insert(1, f'<a class="pf-way new" href="{HERO_KEY_PAGE}#new">{ICON["herokey"]}<span>Create a guest account</span></a>')
+    ways_html.insert(1, f'<a class="pf-way new" href="{HERO_KEY_PAGE}?guest=1">{ICON["herokey"]}<span>Create a guest account</span></a>')
     btns = "".join(ways_html)
     launcher = nxt.startswith(LINK_PAGE)
     msg = f'<p class="pf-msg err" role="alert">{e(note)}</p>' if note else ""

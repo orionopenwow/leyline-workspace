@@ -3239,7 +3239,8 @@ class Hub:
                 '<label class="hb-hp" aria-hidden="true">Leave empty <input name="website" tabindex="-1" autocomplete="off"></label>'
                 '<button class="ly-btn" type="submit">Submit</button></form>'
                 '<p class="hb-fine">Please don\'t put names, emails or other personal details in the note. '
-                'The rules are on the <a href="' + BASE + '/creators">creators page</a>.</p></section>')
+                'The rules are on the <a href="' + BASE + '/creators">creators page</a>. A look, a realm, or a page '
+                'that isn\'t a repo? <a href="/wrath/submit">Submit a link</a> instead.</p></section>')
         return self._shell("Submit a mod or an addon · Leyline", body, BASE + "/submit")
 
     # ---------------------------------------------------------------- submissions
@@ -3285,8 +3286,12 @@ class Hub:
             return False, "Too many submissions from here for now. Please try again later."
         if len(self.store.submissions()) >= Store.MAX_QUEUE:
             return False, "The queue is full right now. Please try again later."
-        self.store.append({"id": c["id"], "repo": c["url"], "build": build, "category": cat, "note": note,
-                           "at": time.strftime("%Y-%m-%dT%H:%M:00Z", time.gmtime(now)), "via": "portal"})
+        rec = {"id": c["id"], "repo": c["url"], "build": build, "category": cat, "note": note,
+               "at": time.strftime("%Y-%m-%dT%H:%M:00Z", time.gmtime(now)), "via": "portal"}
+        self.store.append(rec)
+        lq = self.portal("linkqueue")   # the one review queue (stream/linkqueue.py, HQ > Review > Submissions) shows it too
+        if lq is not None:
+            lq.add_from_hub(rec)
         return True, ""
 
 

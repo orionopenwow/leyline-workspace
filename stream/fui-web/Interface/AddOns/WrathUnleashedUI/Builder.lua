@@ -82,19 +82,17 @@ local function inCat(c, want)
     return want == "all" or c.cat == want or (want == "furniture" and (c.cat == "seating" or c.cat == "tables" or FURNITURE_IDS[c.id] == true))
 end
 local RECENT_MAX = 12
--- A small picture per category (stock 3.3.5a icons, Interface\Icons\...): the column, and a tile without a model.
-local ICON = "Interface\\Icons\\"
-local CAT_ICONS = { seating = "Spell_Nature_Sleep", tables = "INV_Misc_Food_15", barrels = "INV_Drink_05",
-    crates = "INV_Crate_01", lights = "INV_Torch_Lit", banners = "INV_BannerPVP_02", tents = "INV_Fabric_Linen_01",
-    fires = "Spell_Fire_Fire", fences = "Ability_Defend", nature = "Spell_Nature_Regeneration", decor = "INV_Misc_Book_09",
-    structure = "Trade_Mining", buildings = "INV_Misc_Rune_01", furniture = "Trade_Tailoring", objects = "INV_Misc_Gear_01",
-    models = "Spell_Frost_WizardMark" }
+-- A small picture per category: the editor's own line icons (Style.lua S.Icon, Media\Icons; owner 3 Nov: "Don't use
+-- the game's icons for the UI"), for the column and for a tile without a model.
+local CAT_ICONS = { seating = "seating", tables = "tables", barrels = "barrels", crates = "crates", lights = "lights",
+    banners = "banners", tents = "tents", fires = "fires", fences = "fences", nature = "nature", decor = "decor",
+    structure = "structure", buildings = "buildings", furniture = "furniture", objects = "objects", models = "models" }
 -- A tile that can't show its model shows a picture on purpose: a building (a WMO: a Model frame can't draw one) the
--- home stone; a prop the player's game files have no model for, its category's icon.
-local WMO_ICON = "INV_Misc_Rune_01"
-local TAB_ICONS = { favourites = "Spell_Arcane_StarFire", recent = "INV_Misc_PocketWatch_01", prefabs = "INV_Misc_Note_01",
-    stamps = "INV_Misc_Map_01", storage = "INV_Misc_Bag_10", all = "INV_Misc_Bag_08" }
-local function catIcon(cat) return ICON .. (CAT_ICONS[cat or ""] or TAB_ICONS[cat or ""] or "INV_Misc_QuestionMark") end
+-- house; a prop the player's game files have no model for, its category's icon.
+local WMO_ICON = "buildings"
+local TAB_ICONS = { favourites = "favourites", recent = "recent", prefabs = "prefabs", stamps = "stamp", storage = "storage", all = "all" }
+local function iconName(cat) return CAT_ICONS[cat or ""] or TAB_ICONS[cat or ""] or "noimage" end
+local function catIcon(cat) return W.Style.Icon(iconName(cat)) end
 
 -- The column: Favourites, Recent, Prefabs, Stamps, Storage, Everything, then every category.
 local TABS = { "favourites", "recent", "prefabs", "stamps", "storage", "all" }
@@ -557,7 +555,7 @@ end
 local function tileIcon(c)
     if c.kind == "prefab" then return catIcon("prefabs") end
     if c.kind == "stamp" then return catIcon("stamps") end
-    if c.wmo then return ICON .. WMO_ICON end
+    if c.wmo then return W.Style.Icon(WMO_ICON) end
     return catIcon(c.cat)
 end
 B.TileIcon = tileIcon
@@ -1651,7 +1649,7 @@ local function buildTile(i)
     t.icon = t:CreateTexture(nil, "ARTWORK")
     t.icon:SetWidth(46); t.icon:SetHeight(46)
     t.icon:SetPoint("TOP", t, "TOP", 0, -16)
-    t.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    t.icon:SetVertexColor(0.62, 0.64, 0.69, 1)
     t.why = S().EdText(t, S().ED_SIZE.small)
     t.why:SetPoint("TOP", t, "TOP", 0, -TILE + 22)
     t.why:SetWidth(TILE); t.why:SetJustifyH("CENTER")
@@ -1674,7 +1672,7 @@ local function buildTile(i)
     t.badge = t.top:CreateTexture(nil, "OVERLAY")
     t.badge:SetWidth(18); t.badge:SetHeight(18)
     t.badge:SetPoint("BOTTOMRIGHT", -4, 4)
-    t.badge:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    t.badge:SetVertexColor(0.62, 0.64, 0.69, 1)
     t.badge:SetAlpha(0.85)
     t.badge:Hide()
     t.cost = S().EdText(t.top, S().ED_SIZE.small)
@@ -1810,8 +1808,7 @@ local function build()
         b.tabIcon = b:CreateTexture(nil, "ARTWORK")
         b.tabIcon:SetWidth(18); b.tabIcon:SetHeight(18)
         b.tabIcon:SetPoint("LEFT", 5, 0)
-        b.tabIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        b.tabIcon:SetTexture(catIcon(t))
+        W.Style.SetIcon(b.tabIcon, iconName(t), S().ED.muted)
         b.iconPath = catIcon(t)
         win.tabs[i] = b
     end

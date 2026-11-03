@@ -341,14 +341,14 @@ end
 
 -- The rail's tools: { key, icon (Interface\Icons\...), label under it, tooltip, what it does }
 D.RAIL = {
-    { "select", "Ability_Hunter_SniperShot", "Select", "Select: the prop nearest you", function() D.Tool("select") end },
-    { "build", "INV_Crate_01", "Build", "Build: the gallery of props", function() D.Tool("place") end },
-    { "move", "Spell_Arcane_Blink", "Move", "Move the selection (arrows, PgUp / PgDn)", function() D.Tool("move") end },
-    { "rotate", "Ability_Whirlwind", "Rotate", "Turn the selection (Q / E)", function() D.Tool("rotate") end },
-    { "stamps", "INV_Misc_Map_01", "Stamps", "Stamps: ready-made areas", function() D.Tool("stamps") end },
-    { "path", "Ability_Tracking", "Path", "Path: a line of the picked prop", function() D.Tool("path") end },
-    { "ground", "Spell_Nature_Earthquake", "Ground", "Shape the ground (opens Forge)", function() D.ShapeGround() end, "Shape ground" },
-    { "dojo", "Ability_DualWield", "Dojo", "The training grounds", function() if W.Dojo then W.Dojo.Toggle() end end },
+    { "select", "select", "Select", "Select: the prop nearest you", function() D.Tool("select") end },
+    { "build", "place", "Build", "Build: the gallery of props", function() D.Tool("place") end },
+    { "move", "move", "Move", "Move the selection (arrows, PgUp / PgDn)", function() D.Tool("move") end },
+    { "rotate", "rotate", "Rotate", "Turn the selection (Q / E)", function() D.Tool("rotate") end },
+    { "stamps", "stamp", "Stamps", "Stamps: ready-made areas", function() D.Tool("stamps") end },
+    { "path", "path", "Path", "Path: a line of the picked prop", function() D.Tool("path") end },
+    { "ground", "ground", "Ground", "Shape the ground (opens Forge)", function() D.ShapeGround() end, "Shape ground" },
+    { "dojo", "dojo", "Dojo", "The training grounds", function() if W.Dojo then W.Dojo.Toggle() end end },
 }
 
 -- A rail button: the icon and its name under it (a short screen: the icon alone, the name in the tooltip).
@@ -356,9 +356,8 @@ local function railButton(t)
     local b = chip(rail, "", RAIL_W - 8, t[5])
     b.edIcon = b:CreateTexture(nil, "ARTWORK")
     b.edIcon:SetWidth(RAIL_BTN); b.edIcon:SetHeight(RAIL_BTN)
-    b.edIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    b.edIcon:SetTexture("Interface\\Icons\\" .. t[2])
-    b.iconPath = "Interface\\Icons\\" .. t[2]
+    S().SetIcon(b.edIcon, t[2])
+    b.iconPath = S().Icon(t[2])
     b.SetIcon = function(self, path) self.iconPath = path; self.edIcon:SetTexture(path) end
     b.edText:ClearAllPoints()
     b.edText:SetPoint("BOTTOMLEFT", 2, 4); b.edText:SetPoint("BOTTOMRIGHT", -2, 4)

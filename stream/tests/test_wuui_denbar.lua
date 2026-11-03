@@ -178,7 +178,7 @@ check("the slim strip: Undo / Redo, Menu, Snap, the turn steps, Play, ?, Files, 
 check("the tool rail: Select, Build (F7), Move, Rotate, Stamps, Path, Ground, Dojo; no step stack (owner's shot)", D.Rail():IsShown()
     and bar.select:GetText() == "Select" and bar.build:GetText() == "Build (F7)" and bar.move:GetText() == "Move"
     and bar.rotate:GetText() == "Rotate" and bar.ground:GetText() == "Shape ground" and bar.stamps:GetText() == "Stamps"
-    and bar.path:GetText() == "Path" and #bar.steps == 0 and bar.build.iconPath:find("^Interface\\Icons\\")
+    and bar.path:GetText() == "Path" and #bar.steps == 0 and bar.build.iconPath:find("^Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\", 1, false) and not bar.select.iconPath:find("Interface\\Icons", 1, true)
     and bar.ground.edText:GetText() == "Ground" and bar.build.edLabel:find("gallery"))
 check("square icon buttons of one size on the rail", (function()
     for _, k in ipairs({ "select", "build", "move", "rotate", "ground", "stamps", "path" }) do if not bar[k].edIcon then return false end end

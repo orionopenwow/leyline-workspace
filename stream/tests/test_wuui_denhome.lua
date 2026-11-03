@@ -346,7 +346,7 @@ check("shelf: nine tiles, stamps first (Inn, house, garden, market, campfire, do
     return #items == #want end)())
 check("shelf: every tile a stock game icon and a short hint", (function()
     for key, b in pairs(shelf.tiles) do
-        if not (b.icon.path or ""):match("^Interface\\Icons\\[%w_]+$") then return false end
+        if not (b.icon.path or ""):match("^Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\[%w_]+$") then return false end
         if not (b.hint and #b.hint > 8 and #b.hint <= 80) then return false end
     end
     return true end)())

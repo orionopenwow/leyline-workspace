@@ -62,3 +62,5 @@ jobs:
         run: lua5.1 stream/tests/test_ov_dojo.lua realm/custom/lua_scripts/ov_dojo.lua labs/den-lite/src/dojo.rs
       - name: the website's friends and launcher link (test_social.py drives a Lua stand-in realm)
         run: python3 -I stream/tests/test_social.py stream/wrath_portal.py
+      - name: the Den editor's own icons (64 x 64 32-bit TGA the client reads; in the pack and the stream)
+        run: python3 tools/den-ui/icons/test_icons.py

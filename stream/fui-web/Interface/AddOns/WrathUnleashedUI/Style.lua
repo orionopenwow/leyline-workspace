@@ -280,6 +280,27 @@ S.ED = {
 }
 S.ED_HEX = { gold = "e0a43a", text = "ebebef", muted = "999ea8" }
 local ED = S.ED
+-- The editor's own icons (owner, 3 Nov 10:36: "Don't use the game's icons for the UI"): flat white line icons on
+-- transparent, ours (tools/den-ui/icons/make_icons.py draws them; Media\Icons\<name>.tga, 64 x 64), tinted by
+-- vertex colour: white, muted, or gold when on. S.Icon("rotate") is the path.
+S.ICON_DIR = "Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\"
+S.ICONS = { "all", "banners", "barrels", "build", "buildings", "class", "close", "crates", "decor", "delete", "dock", "dojo", "duplicate",
+    "favourites", "fences", "files", "fires", "floor", "furniture", "grid", "ground", "help", "invite", "keep", "lights", "lock", "market", "menu",
+    "models", "move", "nature", "noimage", "objects", "path", "place", "play", "prefabs", "recent", "redo", "rotate", "scale",
+    "search", "seating", "select", "snap", "stamp", "storage", "structure", "tables", "tents", "undo" }
+local iconSet = {}
+for _, n in ipairs(S.ICONS) do iconSet[n] = true end
+function S.Icon(name) return S.ICON_DIR .. (iconSet[name or ""] and name or "noimage") end
+-- a texture showing one of our icons, white (or c), the whole image (no crop: they are drawn with their own margin)
+function S.SetIcon(tex, name, c)
+    if not tex then return end
+    tex:SetTexture(S.Icon(name))
+    if tex.SetTexCoord then tex:SetTexCoord(0, 1, 0, 1) end
+    c = c or ED.text
+    if tex.SetVertexColor then tex:SetVertexColor(c[1], c[2], c[3], c[4] or 1) end
+    tex.iconName = name
+end
+
 -- Sizes (UI units; the addon's own fit scale makes one unit about one pixel at 1080p, 1.2 at 1440p). Owner, 3 Nov
 -- 08:40: "UI too small and bulky": text 13 (the stock small font is 10), titles 15, chips 28 high, icons 40.
 S.ED_SIZE = { text = 13, label = 13, title = 15, small = 13, chip = 28, icon = 40 }
@@ -373,6 +394,10 @@ local function edPaint(b)
         for _, t in ipairs(b.edEdges) do t:SetTexture(unpackC(e)) end
     end
     if b.edIcon and b.edIcon.SetDesaturated then b.edIcon:SetDesaturated(not enabled) end
+    if b.edIcon and b.edIcon.iconName and b.edIcon.SetVertexColor then
+        local c = b.edActive and ED.gold or (b.edOver and ED.text or { 0.82, 0.83, 0.86, 1 })
+        b.edIcon:SetVertexColor(c[1], c[2], c[3], 1)
+    end
     if b.edIcon and b.edIcon.SetAlpha then b.edIcon:SetAlpha(enabled and 1 or 0.4) end
     if b.edText then
         local t = (not enabled) and ED.off or (b.edActive and ED.gold or ED.text)
@@ -410,8 +435,10 @@ function S.EdIcon(parent, size, icon, label, onClick, ...)
     b.edIcon = b:CreateTexture(nil, "ARTWORK")
     local inset = math.max(3, math.floor(size / 8))
     b.edIcon:SetPoint("TOPLEFT", inset, -inset); b.edIcon:SetPoint("BOTTOMRIGHT", -inset, inset)
-    b.edIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    b.SetIcon = function(self, path) self.iconPath = path; self.edIcon:SetTexture(path) end
+    b.SetIcon = function(self, path)
+        if path and not path:find("\\") then S.SetIcon(self.edIcon, path); path = S.Icon(path) else self.edIcon:SetTexture(path) end
+        self.iconPath = path
+    end
     b:SetIcon(icon)
     b.SetText = function(self, t) self.edLabel = t; self.text = t end
     b.GetText = function(self) return self.edLabel end

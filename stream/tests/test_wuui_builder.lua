@@ -355,7 +355,7 @@ win.grid:Fire("OnMouseWheel", 1)
 -- the tiles' pictures: a tile without a model shows its category's icon
 check("a tile without a model: its category's icon (a stock icon path)", (function()
     for _, t in ipairs(shown()) do
-        local want = "Interface\\Icons\\" .. (B.CAT_ICONS[t.item.cat] or "INV_Misc_QuestionMark")
+        local want = "Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\" .. (B.CAT_ICONS[t.item.cat] or "noimage")
         if t.icon.path ~= want or not t.icon:IsShown() or t.model:IsShown() then return false end
     end
     return #shown() > 0 end)())
@@ -411,7 +411,7 @@ check("Prefab Save: the selection, and the list comes back", #B.prefabs == 1 and
 B.ShowMenu(true)
 tab("prefabs")
 check("the gallery's Prefabs tab", win.tiles[1].item and win.tiles[1].item.name == "porch" and win.tiles[1].name:GetText():find("porch %(" .. n0 .. "%)")
-    and win.tiles[1].icon.path == "Interface\\Icons\\INV_Misc_Note_01")
+    and win.tiles[1].icon.path == "Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\prefabs")
 serverClock = serverClock + 10
 win.tiles[1]:Fire("OnDoubleClick")
 check("click a prefab: pasted", countProps() == n0 * 2)

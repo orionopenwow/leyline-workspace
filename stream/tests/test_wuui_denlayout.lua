@@ -150,9 +150,9 @@ do
         table.concat(t.model.mpos or {}, ","))
     local tc = tile(1558)
     check("a small candle is scaled up more than the chair", tc.model.mscale > t.model.mscale)
-    check("the house: the home stone, 'building'", tile(19006).icon.path == "Interface\\Icons\\INV_Misc_Rune_01" and tile(19006).why:GetText() == "building"
+    check("the house: the home stone, 'building'", tile(19006).icon.path == "Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\buildings" and tile(19006).why:GetText() == "building"
         and not tile(19006).model:IsShown())
-    check("the bread: its category's icon, 'no preview'", tile(2562).icon.path == "Interface\\Icons\\INV_Misc_Book_09" and tile(2562).why:GetText() == "no preview")
+    check("the bread: its category's icon, 'no preview'", tile(2562).icon.path == "Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\decor" and tile(2562).why:GetText() == "no preview")
     WrathUnleashedUIDB.den.fit = { yards = 0.06, x = 0, lift = 0.5, y = 0 }   -- what the first sweeps left saved on the PC
     local s1, x1 = B.TileFit(byId[2413].size, W, H, nil, true)
     check("a framing saved by the first sweeps is ignored: the default", s1 == scale and x1 == x)

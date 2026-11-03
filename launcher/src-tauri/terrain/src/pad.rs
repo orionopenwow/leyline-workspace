@@ -10,17 +10,22 @@ use std::collections::HashMap;
 
 /// The Den: map 1, the sealed island (docs/DEN.md "The room"; game_tele 424): x, y and the room's floor.
 pub const DEN: (f32, f32, f32) = (16226.2, 16257.0, 13.2);
-/// The pad's texture: our own white texture (made by [`crate::blp::solid`], never a game file), put in the player's
-/// patch-T beside the tile by the launcher (owner 1 Nov: "a completely white plane"). The game's own
-/// `Tileset\Generic\White.blp` isn't in every game's archives (it wasn't in the owner's).
-pub const PAD_TEXTURE: &str = "Tileset\\Leyline\\DenWhite.blp";
-/// Our texture's size (a side, in pixels) and colour (BGRA).
+/// The pad's texture: the game's own Elwynn grass (owner 3 Nov 08:41: "a default Elwynn ground color grass texture").
+/// Only its name goes in the tile: the player's own game draws it from its own archives (the launcher picks the grass
+/// name the player's game really has when this exact one isn't there: host/terrain.rs `den_texture_name`). Before 3 Nov
+/// our own white texture (`Tileset\Leyline\DenWhite.blp`, made by code).
+pub const PAD_TEXTURE: &str = "Tileset\\Elwynn\\ElwynnGrassBase.blp";
+/// The old white texture's size (a side, in pixels) and colour (BGRA): [`pad_texture`], kept for the tests and a
+/// white room made by hand.
 pub const PAD_TEXTURE_SIZE: u32 = 256;
 pub const PAD_TEXTURE_BGRA: [u8; 4] = [255, 255, 255, 255];
-/// Textures earlier pads were painted with: a chunk painted only with one of these (or the pad's own) is the pad's.
-const OLD_PAD_TEXTURES: &[&str] = &["Tileset\\Generic\\White.blp"];
+/// Our white texture's name (the white ground, 1 to 3 Nov).
+pub const WHITE_TEXTURE: &str = "Tileset\\Leyline\\DenWhite.blp";
+/// Textures earlier pads were painted with: a chunk painted only with one of these (or the pad's own) is the pad's,
+/// and is painted the grass at the next start ([`whiten`]).
+const OLD_PAD_TEXTURES: &[&str] = &["Tileset\\Generic\\White.blp", WHITE_TEXTURE];
 
-/// Our texture's bytes (what goes in patch-T at [`PAD_TEXTURE`]).
+/// Our old white texture's bytes (no longer put in patch-T: the ground is the game's own grass since 3 Nov).
 pub fn pad_texture() -> Vec<u8> {
     // DXT1 white (RGB565 0xFFFF): the form the game's own terrain textures use
     let _ = PAD_TEXTURE_BGRA;
@@ -412,6 +417,22 @@ mod tests {
         assert!(whiten(&base, &d).unwrap().is_none());
         // a ground with no pad, or on a blank base: left alone
         assert!(whiten(&base, &Delta::new(den_tile(), vec![1])).unwrap().is_none());
+    }
+
+    #[test]
+    fn the_white_ground_from_before_becomes_the_grass() {
+        // 1 to 3 Nov the pad was our white texture; owner 3 Nov 08:41: grass instead
+        let base = sample().write();
+        let white = make_pad(&base, den_tile(), Pad { height: DEN.2, texture: WHITE_TEXTURE.into(), centre: None }, 1).unwrap();
+        let (d, w) = whiten(&base, &white).unwrap().expect("repainted");
+        assert_eq!(w.repainted, white.open.len());
+        assert_eq!(d.pad.as_ref().unwrap().texture, PAD_TEXTURE);
+        assert_eq!(PAD_TEXTURE, "Tileset\\Elwynn\\ElwynnGrassBase.blp", "the game's own grass: a name only");
+        let t = Adt::parse(&delta::apply(&d, Some(&base), None).unwrap(), None).unwrap();
+        for &i in &d.open {
+            assert_eq!(t.textures[t.chunks[i as usize].layers[0].texture as usize], PAD_TEXTURE);
+        }
+        assert!(whiten(&base, &d).unwrap().is_none(), "once");
     }
 
     #[test]

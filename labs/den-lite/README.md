@@ -1,7 +1,7 @@
 # Den Lite (prototype)
 
 A tiny game server for the 3.3.5a client (build 12340), built into the Leyline launcher's **Your Den**: one click
-into an instant white world to build in, with no Docker and no database. The player's own stock client connects to it
+into an instant open world (the game's own grass since 3 Nov) to build in, with no Docker and no database. The player's own stock client connects to it
 on this PC like to any server (realmlist `127.0.0.1`). Owner's go-ahead: 1 Nov 2026. Status (2 Nov): **in use** behind
 the launcher's Play solo. CI builds it (`den-lite.yml`) into the release `den-lite-latest`, and the launcher downloads
 it on first use (`launcher/src-tauri/src/host/lite.rs`). The owner's real game logs in to it (the den-test on his PC,
@@ -65,7 +65,8 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 | `.den ask <words>`, or say `Jaina, <words>` within 10 yards of her | written down for your own assistant (Leyline's Agents page: `den_messages`); its `den_say` lines are hers |
 | `.den mode [id]` | Leyline's game modes and Host templates; with an id, what it is and how to run it on this PC (the full Den) |
 | `.den mods` | the addons your game loaded, and (with `--client`) the launcher's mods in it |
-| `.den where` | where you stand against the ground under you, and what your game did with its character (took it, moved, walked); the den-test asks it |
+| `.den where` | where you stand against the ground under you, what your game did with its character (took it, moved, walked, the time sync) and every kind of message it sent; the den-test asks it |
+| `.den diag [tag]` | asks the Leyline UI for its view of the character (into the events as `wudiag` lines, after `at:<tag>`); the den-test's before / after |
 | `.den dojo` (`.dojo`) | the Dojo: a training ring in front of you, built by your companion piece by piece, with three training dummies in it (below, "The Dojo") |
 | `.den dojo dummies [1-5]` / `clear` | training dummies (display only: no combat here) / the dummies down (`.build undo` takes the ring back) |
 | `.den fly on\|off` / `.den speed 1-5` | fly (jump, then Space to rise, X to sink) / run and fly faster |
@@ -150,6 +151,34 @@ So (`src/movewatch.rs`, `world.rs`):
 If the owner's next den-test still fails, its lines say which: no `mover` and no movement (the game never took its
 character: see the `control=` line), a `ROOT` / `DISABLE_GRAVITY` flag, movement but no walk (the keys line), or a
 character off the ground.
+
+**3 Nov, later: on the ground, `control=1`, W bound, and still not one movement packet** (the launcher's posted keys
+and the owner's own W alike). Den Lite's login was compared, message by message and byte by byte, with AzerothCore
+(`WorldSession::HandlePlayerLoginFromDB`, `Player::SendInitialPacketsBefore/AfterAddToMap`,
+`Object::BuildCreateUpdateBlockForPlayer`, `Object::BuildMovementUpdate`, `Unit::BuildMovementPacket`, the
+`UpdateFields.h` indices) and with the message crate's own `examples/wrath_server`. The fields, the speeds (order and
+values), the movement flags (none) and the update mask were right; three things differed, now as AzerothCore:
+
+1. **The time sync came before the player existed.** AzerothCore (and the crate's example) send the player's create
+   first (`Map::AddPlayerToMap`), then `SMSG_TIME_SYNC_REQ` (`SendInitialPacketsAfterAddToMap`: `ResetTimeSync`,
+   `SendTimeSync`). Den Lite sent it before the create, so the game's only time sync named no character of its own.
+2. **The movement block's time was 0.** AzerothCore writes its clock (`GameTime::GetGameTimeMS`) as the movement's
+   time; Den Lite now writes `movewatch::server_ms` (milliseconds since it started, from 1000).
+3. **The update flags were SELF | LIVING (0x21).** Every AzerothCore unit carries LIVING | STATIONARY_POSITION
+   (`Unit::Unit`: `m_updateFlag = (UPDATEFLAG_LIVING | UPDATEFLAG_STATIONARY_POSITION)`), its own copy adds SELF: 0x61
+   (`movewatch::player_update_flags`; the Living block is what follows either way).
+
+And the control update that went during the loading screen is gone (AzerothCore sends none at login); it is said
+when the game takes its character (`CMSG_SET_ACTIVE_MOVER`), with the unroot.
+
+Which of these the real game needed is for the den-test to show, so it also says now: **every opcode the game sends
+once in the world** (`client_op` events, `.den where`'s "Your game sent: ..."), whether it **answered the time sync**
+(`time_sync`), and **W pressed a second way**: tools/den-check brings the game to the front and presses W and the up
+arrow with `SendInput` (scan codes, as a keyboard), asks the Leyline UI for its view before and after (`.den diag
+<tag>` -> `wuden diag`, WrathUnleashedUI `W.DenDiag`: speed, falling, dead, control, mounted, on a flight, flying,
+swimming, W's and Up's binding with the override bindings, a protected call the game blocked) and says which way moved
+the character. The launcher's ground changed the same day (no edited tables or texture of ours: docs/DEN.md "The
+ground"), which takes the ground out of the question too.
 
 ### Growing: the white room's sizes
 
@@ -269,17 +298,18 @@ assistant writes, and `.glb` models as props (docs/DEN.md, "The Dojo").
    `Player::SendInitialPacketsBeforeAddToMap` / `AfterAddToMap`): `SMSG_LOGIN_VERIFY_WORLD`,
    `SMSG_ACCOUNT_DATA_TIMES` (per-character mask 0xEA), `SMSG_FEATURE_SYSTEM_STATUS`, `SMSG_MOTD`,
    `SMSG_BINDPOINTUPDATE`, `SMSG_INITIAL_SPELLS` (none), `SMSG_ACTION_BUTTONS` (144 empty), `SMSG_INITIALIZE_FACTIONS`
-   (128), `SMSG_LOGIN_SETTIMESPEED`, `SMSG_TIME_SYNC_REQ`, `SMSG_UPDATE_OBJECT` (the player: create type 3, flags
-   self + living, speeds, and the fields for race/class/gender, health, level, faction 1, display 49 or 50, bounding
-   radius, combat reach, cast speed, hover height, unit flags, player bytes, the visible items),
-   `SMSG_CLIENT_CONTROL_UPDATE` (the game controls it; said again with an unroot when the game sends
-   `CMSG_SET_ACTIVE_MOVER`), `SMSG_INIT_WORLD_STATES`
+   (128), `SMSG_LOGIN_SETTIMESPEED`, `SMSG_UPDATE_OBJECT` (the player: create type 3, flags self + living +
+   stationary position (0x61, AzerothCore's), the movement time from Den Lite's clock, speeds, and the fields for
+   race/class/gender, health, level, faction 1, display 49 or 50, bounding radius, combat reach, cast speed, hover
+   height, unit flags, player bytes, the visible items), then `SMSG_TIME_SYNC_REQ` (after the player, as AzerothCore),
+   `SMSG_INIT_WORLD_STATES`
    (map 1, area 876, none), then the room and the props (`SMSG_UPDATE_OBJECT`, 40 gameobjects a message: create type
    2, flags 0x250 with position, guid counter and packed rotation; guid, type, entry, scale, display, flags, parent
    rotation (0, 0, 0, 1), bytes 1), and a system line.
 5. Afterwards: movement packets (`MSG_MOVE_*`) keep the player's position; `CMSG_GAMEOBJECT_QUERY` ->
    the query answer (type, display, name, 24 data fields, size); `CMSG_NAME_QUERY`, `CMSG_PING`,
-   `CMSG_UPDATE_ACCOUNT_DATA`, `CMSG_LOGOUT_REQUEST` (instant), `CMSG_MESSAGECHAT` (the commands).
+   `CMSG_UPDATE_ACCOUNT_DATA`, `CMSG_LOGOUT_REQUEST` (instant), `CMSG_MESSAGECHAT` (the commands);
+   `CMSG_SET_ACTIVE_MOVER` -> `SMSG_CLIENT_CONTROL_UPDATE` (the game controls its character) and `SMSG_FORCE_MOVE_UNROOT`.
 6. The companion: her create (`SMSG_UPDATE_OBJECT`, create type 2, object type unit, flags living, the unit fields
    above); `CMSG_CREATURE_QUERY` -> `SMSG_CREATURE_QUERY_RESPONSE`; `SMSG_MONSTER_MOVE` (her walks); `SMSG_MESSAGECHAT`
    monster say (her lines); `SMSG_DESTROY_OBJECT` when she goes. All through `wow_world_messages`.
@@ -306,7 +336,7 @@ That proves the server, the crates and the test client agree. **The real game** 
 then needed: the addon list read as the message crate hands it over, with none listed back when the game's key CRCs
 aren't standard (else the game never asked for its characters, or called its combat-log addon Banned); movement
 packets read by hand where the crate can't; an answer to the game's ask for its own settings (`src/accdata.rs`: no key
-bindings meant W did nothing); and the launcher's white ground (docs/DEN.md, "The white ground"). The unknowns as first
+bindings meant W did nothing); and the launcher's white ground (docs/DEN.md, "The ground"; grass since 3 Nov). The unknowns as first
 written down, before any real game connected:
 
 1. Whether the client leaves the loading screen with this set of messages (no spells, no inventory items, no

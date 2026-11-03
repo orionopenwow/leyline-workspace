@@ -383,5 +383,15 @@ check("toasts are plain text (colour codes and links taken out)", D.Toast("info"
     return false
 end)())
 
+-- the den-test's before/after (3 Nov: still no walking): Den Lite asks, the addon answers with its whole view
+do
+    local n0 = #sent
+    fireClient("wuden\tdiag\t1/1\tbefore")
+    local said = table.concat({ select(n0 + 1, unpack(sent)) }, "\n")
+    check("diag: the addon answers Den Lite's ask with its view, tagged", said:find("wudiag\tat:before", 1, true) ~= nil
+        and said:find("wudiag\tme:speed=", 1, true) ~= nil and said:find("wudiag\tme2:mounted=", 1, true) ~= nil
+        and said:find("W*=", 1, true) ~= nil)
+end
+
 print(string.format("\n%d/%d passed", pass, pass + fail))
 if fail > 0 then os.exit(1) end

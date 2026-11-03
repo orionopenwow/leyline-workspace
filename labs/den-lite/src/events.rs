@@ -16,12 +16,14 @@
 //! | `player_login` | the game asked to enter the world with the character |
 //! | `in_world` | the world was sent: the player stands in the Den |
 //! | `spawn` | where the player comes in against the ground under it, where that height came from, the nearest prop |
-//! | `mover` | the game said it moves its character (CMSG_SET_ACTIVE_MOVER); Den Lite then tells it once more that it has control |
+//! | `mover` | the game said it moves its character (CMSG_SET_ACTIVE_MOVER); Den Lite then tells it that it has control (and unroots it) |
 //! | `first_move` | the first movement from the game in this session (which packet, the flags that hold a character up or still, z against the ground) |
 //! | `move_flags` | a movement flag that holds the character up or still (root, no gravity, hover, flying...), the first time |
 //! | `landed` | the game's character landed (FALL_LAND), z against the ground |
 //! | `walked` | the character got a yard or more from where it came in (z against the ground) |
-//! | `moves` | at logout or when the game closes: what the game did with its character (movewatch.rs `Watch::summary`) |
+//! | `moves` | at logout or when the game closes: what the game did with its character (movewatch.rs `Watch::summary`) and every kind of message it sent |
+//! | `client_op` | the first time the game sent this kind of message once in the world (detail: its name or opcode; 48 kinds at most) |
+//! | `time_sync` | the game's first answer to the time sync (its counter and clock) |
 //! | `builder_ready` | the in-game Den panel or Builder asked Den Lite (addon channel) and was answered |
 //! | `addon` | an addon message from the game (detail: its mod and name; never its data) |
 //! | `ask` | the game asked the launcher for something (detail: `invite` or `forge`) |

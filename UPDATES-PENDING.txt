@@ -735,3 +735,10 @@
 1312r relay  Relay join page: Open in Leyline (the friend joins in one click)
 1312s hostkit  Host kit: the GM command center's sandbox controls for hosted realms
 1313a ship  Save as Orion: the launcher release no longer waits on GitHub's macOS machines (three ships' launcher builds were held back by it), so the sign-in cover, Play solo, invite and the new-machine fixes reach players
+1313b addons  Leyline addons: compact nameplates (a slim bar, the name just above, the level beside it; /plates small|normal|off)
+1313c foreverui  Browser game: the same compact nameplates
+1313d client-smoke  Client test on the newest launcher: PLAY signs in behind the Logging you in screen, screenshots each phase
+1313d client-smoke  Client test on the newest launcher: PLAY signs in behind the Logging you in screen, screenshots each phase
+1313e den-lite  Den Lite rebuilt: its login and your character created exactly as a full server does (update flags, clock, time sync), every message the game sends logged, .den diag
+1313f addons  Leyline addons: the Den bar's diagnostics
+1313g ship  Save as Orion: the Den on grass under the normal sky (no edited sky or zone tables), Den Lite matching the full server's login, the walking checks

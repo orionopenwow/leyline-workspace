@@ -415,14 +415,14 @@ class Milestones(unittest.TestCase):
         text = rep.text()
         self.assertIn("PASS the game window opened: 4.0 s", text)
         self.assertIn("PASS the game asked to sign in: 9.0 s, by the launcher's keys", text)
-        self.assertIn("PASS in the world (the white island): 15.0 s", text)
+        self.assertIn("PASS in the world (your Den): 15.0 s", text)
         self.assertIn("PASS the Den bar opened (Build, Shape ground, Play, Save, Invite): 16.0 s", text)
         self.assertIn("send Password: login screen: the local password; send Enter", text)
         self.assertEqual(rep.failed(), [])
         rep = den_check.Report()
         quiet(den_check.milestones, rep, [dict(evs[0], who="DENAUTO")], start, actions)
         self.assertIn("by Leyline's login screen", rep.text())
-        self.assertIn("FAIL in the world (the white island): not seen", rep.text())
+        self.assertIn("FAIL in the world (your Den): not seen", rep.text())
 
 
 class Walking(unittest.TestCase):
@@ -491,37 +491,46 @@ def white_blp(size=64):
 
 class DenWorld(unittest.TestCase):
     def test_the_dens_world_lines(self):
-        good = {"texture_ours": True, "open": 256, "island_models": 0, "models": 2, "sky": "white", "area": "Your Den", "area_id": 876, "hidden_by": []}
+        # 3 Nov: the game's own grass by name, the area's own sky, no table of the game's
+        good = {"grass": True, "texture_name": den_check.GRASS, "open": 256, "island_models": 0, "models": 2,
+                "sky": "the area's own", "area": "the game's own", "area_id": 876, "hidden_by": []}
         rep = den_check.Report()
         quiet(den_check.ground_lines, rep, good)
         text = rep.text()
-        self.assertIn("PASS white ground texture is ours", text)
+        self.assertIn("PASS grass ground: the game's own texture: Tileset\\Elwynn\\ElwynnGrassBase.blp, from your own game", text)
         self.assertIn("PASS no buildings/trees on the Den tile: the island's models are gone, 2 of yours stay", text)
-        self.assertIn("PASS sky/area: Your Den", text)
+        self.assertIn("INFO sky/area: sky: the area's own; zone: the game's own", text)
         self.assertEqual(rep.failed(), [])
-        # the sky left as the game's own (its tables couldn't be read): the ground lines still pass, the sky's fails
-        # with the reason; something read after our archive: said
-        bad = dict(good, sky="the game's own (your game has no Light.dbc)", area="the game's own (x)", island_models=3, models=3,
-                   hidden_by=["patch-Z.MPQ: DBFilesClient\\AreaTable.dbc"], whitened="256 parts painted white")
+        # no grass in this game; something read after our archive; a ground from before
+        bad = dict(good, grass=False, island_models=3, models=3, hidden_by=["patch-Z.MPQ: World\\Maps\\x.adt"], whitened="256 parts painted grass")
         rep = den_check.Report()
         quiet(den_check.ground_lines, rep, bad)
         text = rep.text()
+        self.assertIn("FAIL grass ground: the game's own texture: your game hasn't a grass texture Leyline knows", text)
         self.assertIn("FAIL no buildings/trees on the Den tile: 3 of the island's models still stand", text)
-        self.assertIn("FAIL sky/area: Your Den: sky: the game's own (your game has no Light.dbc); area: the game's own (x)", text)
         self.assertIn("INFO an archive read after the Den's hides part of it: patch-Z.MPQ", text)
-        self.assertIn("INFO your Den's ground from before: made white: 256 parts painted white", text)
-        self.assertIn("PASS white ground texture is ours", text)
-        # an older launcher: one line, no failure
+        self.assertIn("INFO your Den's ground from before: made grass: 256 parts painted grass", text)
+        # an older launcher (the white ground's report): said, not failed
+        rep = den_check.Report()
+        quiet(den_check.ground_lines, rep, {"texture_ours": True, "island_models": 0, "models": 0, "sky": "white", "area": "Your Den"})
+        self.assertIn("INFO the Den's ground: an older launcher: the white ground (sky: white, area: Your Den)", rep.text())
+        self.assertEqual(rep.failed(), [])
+        # no report at all: one line, no failure
         rep = den_check.Report()
         quiet(den_check.ground_lines, rep, None)
         self.assertEqual([r[0] for r in rep.rows], ["INFO"])
-        # patch-T not readable: the texture line fails
+        # patch-T not readable: the sky/area line fails
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "patch-T.MPQ"
             p.write_bytes(b"not an archive")
             rep = den_check.Report()
             quiet(den_check.ground_lines, rep, good, p)
-            self.assertIn("FAIL white ground texture is ours: it isn't in Data\\patch-T.MPQ", rep.text())
+            self.assertIn("FAIL sky/area: the game's own: Data\\patch-T.MPQ couldn't be read", rep.text())
+
+    def test_patch_t_holds_no_table_or_texture_of_the_games(self):
+        self.assertEqual(den_check.patch_extras(["World\\Maps\\Kalimdor\\Kalimdor_1_1.adt", "Leyline\\DenGround.txt"]), [])
+        self.assertEqual(den_check.patch_extras(["World\\Maps\\Kalimdor\\Kalimdor_1_1.adt", "DBFilesClient\\AreaTable.dbc", den_check.DEN_TEXTURE]),
+                         ["DBFilesClient\\AreaTable.dbc", den_check.DEN_TEXTURE])
 
     def test_our_texture_is_told_from_others(self):
         self.assertTrue(den_check.blp_is_ours(white_blp(64)))
@@ -533,6 +542,78 @@ class DenWorld(unittest.TestCase):
         self.assertFalse(den_check.blp_is_ours(bytes(white_blp(64))[:1200]), "cut short")
         self.assertFalse(den_check.blp_is_ours(b"BLP1" + bytes(2000)))
         self.assertFalse(den_check.blp_is_ours(None))
+
+
+class Keys(unittest.TestCase):
+    """The second way of pressing W (SendInput) and the Leyline UI's view before and after (3 Nov)."""
+
+    def test_a_key_press_as_a_keyboard_sends_it(self):
+        self.assertEqual(den_check.key_events(den_check.SCAN_W), [(0x11, 0x8), (0x11, 0xA)])
+        self.assertEqual(den_check.key_events(den_check.SCAN_UP, True), [(0x48, 0x9), (0x48, 0xB)])
+
+    def test_the_uis_answers_grouped_by_ask(self):
+        evs = [{"ev": "addon", "detail": "wudiag me:speed=0 falling=nil dead=nil control=1"},
+               {"ev": "addon", "detail": "wudiag at:before"}, {"ev": "addon", "detail": "wudiag me2:mounted=nil W*=MOVEFORWARD"},
+               {"ev": "mover", "detail": "x"}, {"ev": "addon", "detail": "wudiag at:after"},
+               {"ev": "addon", "detail": "wudiag blocked:BLOCKED:X:MoveForwardStart()"}]
+        b = den_check.diag_blocks(evs)
+        self.assertEqual(b["login"], ["me:speed=0 falling=nil dead=nil control=1"])
+        self.assertEqual(b["before"], ["me2:mounted=nil W*=MOVEFORWARD"])
+        self.assertEqual(b["after"], ["blocked:BLOCKED:X:MoveForwardStart()"])
+
+    def test_den_lites_movement_count(self):
+        self.assertEqual(den_check.moves_of({"me": {"moves": 4}}), 4)
+        self.assertIsNone(den_check.moves_of({"said": []}))
+        self.assertIsNone(den_check.moves_of(None))
+
+    def test_which_way_moved_the_character(self):
+        evs = [{"ev": "client_op", "detail": "SET_ACTIVE_MOVER"}, {"ev": "client_op", "detail": "TIME_SYNC_RESP"},
+               {"ev": "time_sync", "detail": "the game answered the time sync (counter 0, its clock 9 ms)"}]
+        blocks = {"before": ["me:speed=0"], "after": ["me:speed=7"]}
+        rep = den_check.Report()
+        quiet(den_check.method_lines, rep, False, "", 0, 5, blocks, evs)
+        t = rep.text()
+        self.assertIn("INFO keys: posted to the window (the launcher): no movement from the game", t)
+        self.assertIn("PASS keys: pressed (SendInput, the game in front): the game moved: 5 movement packets", t)
+        self.assertIn("INFO the game says (before): me:speed=0", t)
+        self.assertIn("INFO the game says (after): me:speed=7", t)
+        self.assertIn("INFO what the game sent in the world: SET_ACTIVE_MOVER, TIME_SYNC_RESP", t)
+        self.assertIn("INFO time sync: the game answered", t)
+        # neither way: one FAIL that says so
+        rep = den_check.Report()
+        quiet(den_check.method_lines, rep, False, "", 0, 0, {}, [])
+        self.assertIn("FAIL keys: pressed (SendInput, the game in front): no movement from the game either", rep.text())
+        self.assertIn("INFO time sync: the game never answered the time sync", rep.text())
+        # SendInput couldn't run (not Windows, no window): said, not failed
+        rep = den_check.Report()
+        quiet(den_check.method_lines, rep, True, "SendInput is on Windows only", None, None, {}, [])
+        self.assertEqual(rep.failed(), [])
+        self.assertIn("INFO keys: posted to the window (the launcher): the game moved", rep.text())
+
+    def test_the_check_asks_before_presses_and_asks_after(self):
+        sent = []
+
+        class Ch:
+            n = 0
+
+            def send(self, cmd, wait=10.0):
+                sent.append(cmd)
+                if cmd == ".den where":
+                    Ch.n += 1
+                    return {"me": {"moves": 0 if Ch.n == 1 else 3}}
+                return {"said": []}
+        pressed = []
+        with tempfile.TemporaryDirectory() as d:
+            rep = den_check.Report()
+            orig = den_check.time.sleep
+            den_check.time.sleep = lambda s: None
+            try:
+                quiet(den_check.keys_check, rep, Path(d), 42, 0, Ch(), lambda pid: pressed.append(pid) or "", 0)
+            finally:
+                den_check.time.sleep = orig
+        self.assertEqual(sent, [".den diag before", ".den where", ".den where", ".den diag after"])
+        self.assertEqual(pressed, [42])
+        self.assertIn("PASS keys: pressed (SendInput, the game in front): the game moved: 3 movement packets", rep.text())
 
 
 class Control(unittest.TestCase):

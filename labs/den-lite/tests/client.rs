@@ -520,15 +520,23 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
     assert!(detail("time_sync").contains("counter 0, its clock 5000 ms"), "{}", detail("time_sync"));
     assert!(ev.iter().any(|l| l.ev == "client_op" && l.detail == "MSG_MOVE_START_FORWARD"), "every opcode written down");
     assert!(detail("walked").starts_with("3.6 yards by HEARTBEAT"), "{}", detail("walked"));
+    // the camp stamp (tools/den-stamps/compose.py): its fire where you stand, benches round it facing it
+    let n = den::read_stamp(&dir.join("no-stamps-here"), "campfire").expect("the built-in camp").props.len();
+    assert!((10..=40).contains(&n), "{n}");
     w.say(".den stamp campfire now");
     let (frames, line) = w.until_line();
-    assert!(line.starts_with("Campfire circle is down (10 props)"), "{line}");
+    assert!(line.starts_with(&format!("Camp is down ({n} props)")), "{line}");
     let (stamp, _) = objects(&frames);
-    assert_eq!(stamp.len(), 10);
+    assert_eq!(stamp.len(), n);
     let fire = stamp.values().find(|g| g.entry == 1953).expect("the campfire");
     assert_eq!(fire.display, 192);
     assert!((fire.x - px).abs() < 0.01 && (fire.y - py).abs() < 0.01 && (fire.z - pz).abs() < 0.01);
-    assert!(stamp.values().any(|g| g.entry == 24538 && (g.x - (px + 3.0)).abs() < 0.01 && (g.y - py).abs() < 0.01), "a bench 3 yards ahead");
+    assert!(stamp.values().any(|g| {
+        let d = ((g.x - px).powi(2) + (g.y - py).powi(2)).sqrt();
+        let to_fire = (py - g.y).atan2(px - g.x).rem_euclid(std::f32::consts::TAU);
+        let off = (g.o - to_fire + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+        g.entry == 24538 && (2.6..3.4).contains(&d) && off.abs() < 0.3
+    }), "a bench about 3 yards from the fire, facing it");
     let stamp_guids: Vec<u64> = stamp.keys().copied().collect();
 
     // one piece by name, 3 yards ahead (facing east), then taken back
@@ -559,9 +567,9 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
     // save, undo, load
     w.say(".den save test1");
     let (_, line) = w.until_line();
-    assert!(line.starts_with("Saved to a file (10 props)"), "{line}");
+    assert!(line.starts_with(&format!("Saved to a file ({n} props)")), "{line}");
     let saved = den::read_file(&dir.join("test1.den.json")).expect("a Den file");
-    assert_eq!(saved.props.len(), 10);
+    assert_eq!(saved.props.len(), n);
     let f = saved.props.iter().find(|p| p.entry == 1953).unwrap();
     assert!((f.x - 3.0).abs() < 0.01 && (f.y - 2.0).abs() < 0.01 && (f.z - 1.0).abs() < 0.01);
     assert_eq!(saved.room.as_ref().unwrap().look, "white");
@@ -569,7 +577,7 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
     w.say(".build undo");
     let (frames, line) = w.until_line();
     let (_, gone) = objects(&frames);
-    assert_eq!(gone.len(), 10, "{line}");
+    assert_eq!(gone.len(), n, "{line}");
     // the encouragement moments (cheers.rs): first visit, first piece, first save, each once, never in the chat frame
     assert_eq!(w.notes.len(), 3, "{:?}", w.notes);
     assert_eq!(w.notes.iter().map(|n| den_lite::cheers::LINES.iter().position(|(_, l)| l == n)).collect::<Vec<_>>(),
@@ -584,7 +592,7 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
 
     w.say(".den load test1");
     let (frames, line) = w.until_line();
-    assert_eq!(line, "Opened: 10 props.");
+    assert_eq!(line, format!("Opened: {n} props."));
     let (loaded, _) = objects(&frames);
     let mut a: Vec<(i32, i32, i32)> = stamp.values().map(|g| (g.entry, (g.x * 100.0) as i32, (g.y * 100.0) as i32)).collect();
     let mut b: Vec<(i32, i32, i32)> = loaded.values().map(|g| (g.entry, (g.x * 100.0) as i32, (g.y * 100.0) as i32)).collect();
@@ -598,13 +606,13 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
     w.say(".den load test1 replace");
     let (frames, _) = w.until_line();
     let (made, gone) = objects(&frames);
-    assert_eq!((made.len(), gone.len()), (10, 10));
+    assert_eq!((made.len(), gone.len()), (n, n));
     assert!(dir.join("backup.den.json").exists(), "a copy is kept as backup");
     w.say(".build undo");
     let (frames, line) = w.until_line();
     let (made, gone) = objects(&frames);
-    assert_eq!((made.len(), gone.len()), (10, 10), "{line}");
-    assert_eq!(srv.shared.den.lock().unwrap().props.len(), 10);
+    assert_eq!((made.len(), gone.len()), (n, n), "{line}");
+    assert_eq!(srv.shared.den.lock().unwrap().props.len(), n);
 
     // a look, other questions, and out
     w.say(".den room stone");
@@ -618,8 +626,8 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
     let (_, line) = w.until_line();
     assert_eq!(line, "Opening 'test1' from the launcher.");
     let (frames, line) = w.until_line();
-    assert_eq!(line, "Opened: 10 props.");
-    assert_eq!(objects(&frames).1.len(), 10 + 34, "what was there goes, and the file's white room comes back for the stone one");
+    assert_eq!(line, format!("Opened: {n} props."));
+    assert_eq!(objects(&frames).1.len(), n + 34, "what was there goes, and the file's white room comes back for the stone one");
     assert!(std::fs::read_to_string(dir.join(".open-done")).unwrap().contains("18f3a9c2b7e1d4a51234"));
     assert!(!srv.shared.mark_opened(&dir, "18f3a9c2b7e1d4a51234"), "each id opens once");
     w.send(&CMSG_PING { sequence_id: 7, round_time_in_ms: 0 });
@@ -1657,8 +1665,13 @@ fn the_dojo_flies_speeds_and_jaina_builds_piece_by_piece() {
     assert_eq!(made.len(), placed, "every piece appeared");
     let starts = frames.iter().filter(|f| f.opcode == 0x131).count();
     let gos: Vec<&Frame> = frames.iter().filter(|f| f.opcode == 0x132).collect();
-    let turns = frames.iter().filter(|f| f.opcode == 0x0DD && f.msg.is_none()).count();
-    assert_eq!((starts, gos.len(), turns), (1, placed, placed), "one cast started, then a turn and a cast per piece");
+    let turns: Vec<&Frame> = frames.iter().filter(|f| f.opcode == 0x0DD && f.msg.is_none()).collect();
+    assert_eq!((starts, gos.len(), turns.len()), (1, placed, placed + 1), "one cast started, a turn and a cast per piece, then her step back");
+    // the last: she walks back (longer than a turn on the spot) and ends facing the garden (a facing-angle move)
+    let back = &turns[placed].body;
+    let n = 1 + back[0].count_ones() as usize;
+    assert_eq!(back[n + 17], 4, "a facing-angle move");
+    assert!(u32::from_le_bytes(back[n + 26..n + 30].try_into().unwrap()) > 100, "a walk, not a turn on the spot");
     assert!(took >= Duration::from_millis(den_lite::dojo::PIECE_MS * (placed as u64 - 1)), "one at a time: {took:?}");
     let first_go = frames.iter().position(|f| f.opcode == 0x132).unwrap();
     let first_piece = frames.iter().position(|f| matches!(&f.msg, Some(ServerOpcodeMessage::SMSG_UPDATE_OBJECT(_)))).unwrap();
@@ -1682,6 +1695,10 @@ fn the_dojo_flies_speeds_and_jaina_builds_piece_by_piece() {
         }
         frames.push(f);
     }
+    // she says it when she steps back to look; the dummies go up when she is done looking, with the line
+    let (more, line) = w.until_line();
+    assert!(line.contains("is up"), "{line}");
+    frames.extend(more);
     let ring = srv.shared.den.lock().unwrap().props.len() - placed;
     assert!(ring >= 20, "the ring's pieces: {ring}");
     assert_eq!(objects(&frames).0.len(), ring);
@@ -1703,7 +1720,6 @@ fn the_dojo_flies_speeds_and_jaina_builds_piece_by_piece() {
         .filter(|g| (g >> 24) & 0xFF_FFFF == 31144)
         .collect();
     assert_eq!(dummies.len(), 3, "three training dummies");
-    assert!(w.until_line().1.contains("is up"));
     w.send(&CMSG_CREATURE_QUERY { creature: 31144, guid: Guid::new(dummies[0]) });
     let q = w.until(|f| match &f.msg {
         Some(ServerOpcodeMessage::SMSG_CREATURE_QUERY_RESPONSE(r)) => Some(r.clone()),

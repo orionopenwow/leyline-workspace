@@ -331,6 +331,9 @@ pub const BUILTIN_STAMPS: &[(&str, &str)] = &[
     ("house", include_str!("../../../realm/custom/lua_scripts/den-stamps/house.den.json")),
     ("inn", include_str!("../../../realm/custom/lua_scripts/den-stamps/inn.den.json")),
     ("market", include_str!("../../../realm/custom/lua_scripts/den-stamps/market.den.json")),
+    ("nook", include_str!("../../../realm/custom/lua_scripts/den-stamps/nook.den.json")),
+    ("shrine", include_str!("../../../realm/custom/lua_scripts/den-stamps/shrine.den.json")),
+    ("smithy", include_str!("../../../realm/custom/lua_scripts/den-stamps/smithy.den.json")),
 ];
 
 /// The stamps there are: the folder's and the built-in ones.
@@ -344,6 +347,9 @@ pub fn stamp_names(dir: &Path) -> Vec<String> {
 
 pub fn read_stamp(dir: &Path, name: &str) -> Result<DenDoc, String> {
     let name = clean_name(name).ok_or("No such stamp.")?;
+    // another name for one ("tavern": the inn; stamps.rs NAMES), when there is no stamp called that
+    let known = |n: &str| dir.join(format!("{n}.den.json")).is_file() || BUILTIN_STAMPS.iter().any(|s| s.0 == n);
+    let name = if known(&name) { name } else { crate::stamps::canonical(&name).filter(|n| known(*n)).map(str::to_string).unwrap_or(name) };
     let path = dir.join(format!("{name}.den.json"));
     let doc = if path.is_file() {
         read_file(&path)
@@ -633,6 +639,9 @@ impl Den {
 
     /// `.den stamp <name> now`: the stamp's pieces turned by `o` (15 degree steps) around the player at (x, y, z).
     pub fn stamp(&mut self, st: &DenDoc, x: f32, y: f32, z: f32, o: f32) -> Change {
+        // fitted to the models' real sizes when Den Lite has them (stamps.rs): on table tops, nothing in another
+        let settled = crate::stamps::settle(st);
+        let st = &settled;
         let step = PI / 12.0;
         let o = ((o / step).round() * step).rem_euclid(2.0 * PI);
         let (c, s) = (o.cos() as f64, o.sin() as f64);

@@ -21,6 +21,7 @@ pub mod notice;
 pub mod objects;
 pub mod play;
 pub mod raw;
+pub mod stamps;
 pub mod testctl;
 pub mod world;
 

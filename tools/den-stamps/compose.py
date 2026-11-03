@@ -275,7 +275,7 @@ def camp():
 
 def inn():
     s = Scene("inn", "Inn", "A small inn you walk into: a bar with kegs behind it, tables with chairs pulled in and food on "
-              "them, a rug, a hearth with a stool, lanterns at the door, a mailbox and barrels outside.", focus=(12.6, 1.6))
+              "them, a rug, a hearth with a stool, lanterns at the door, a mailbox and barrels outside.", focus=(12.4, 1.6))
     s.put(19007, 11.0, 0.0, 180.0, role="house")
     s.room = (7.8, 14.1, -3.65, 3.65)                      # inside its walls (kept where the furniture always stood)
     s.put(179977, 4.5, 1.2, 0.0, role="door")

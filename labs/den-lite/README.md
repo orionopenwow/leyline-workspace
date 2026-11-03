@@ -74,7 +74,12 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 | `.den dojo parse 1\|3\|5`, `reset`, `refill`, `cooldowns`, `fight on\|off`, `best`, `dps` | a timed parse (best per class kept), everything full again, your power, your cooldowns, dummies hitting back, your bests, your numbers now |
 | `.den gear <item>...` / `<slot> <item\|none>` / `list <slot> [page]` / `reset` | any item's look on you, in its slot (several at once; a second one-hand weapon in the off hand); looks: `thunderfury`, `shadowmourne`, `warglaives`, `sulfuras`, `valanyr` |
 | `.den mounts` / `list [page]` / `off` | every mount your game has, in your spellbook; cast one to ride (again, or its buff right-clicked, to get off); flying ones fly with `.den fly on` |
-| `.den class <class> [level]` | any class (warrior, paladin, hunter, rogue, priest, deathknight, shaman, mage, warlock, druid) at any level (80 if none), every spell it learns, its bar; `.den class` alone: the list |
+| `.den class <class> [spec] [level]` | any class (warrior, paladin, hunter, rogue, priest, deathknight, shaman, mage, warlock, druid) and spec at any level (80 if none): its spellbook, talents and every bar at once; `.den class` alone: the list |
+| `.den spec [<spec>]` | the class's three specs, or that spec at once (its talents, spellbook and bars) |
+| `.den bars [list\|save <name>\|use <name>\|reset\|delete <name>]` | named bar loadouts for the class and spec, kept in the Dens folder |
+| `.den gearset [list\|t1-t10\|<yours>\|save <name>\|delete <name>\|off]` | a whole look at once: the class and spec's raid tier from your own game's tables, or one of your saved sets; weapons are real items |
+| `.den dojo levels\|light\|heavy\|group\|range` | dummies three levels below and above you, the healing range (five friends), distance markers |
+| `.den dojo demo [seconds] [kind]`, `invulnerable on\|off`, `meter reset`, `pet off` | a practice run (your main bar cast for you, a number at the end), nothing hurts you, the meters again, your pet away |
 | `.den fly on\|off` / `.den speed 1-5` | fly (jump, then Space to rise, X to sink) / run and fly faster |
 | `.den jaina build <stamp>`, or say `Jaina, build a garden` (a tavern, a forge, a reading nook...) | she walks into its middle and builds it the way a person would (big pieces first, small last, things on tables at the end), casting at each piece, then steps back to look at it (`dojo` is the training ring; docs/DEN-STAMPS.md) |
 | `.den go <place>` / `.den go <map> <x> <y> <z>` | anywhere your game has: capitals, starting towns, Goldshire, Dalaran... (`.den places`); `.den go den` back to your Den ("Den anywhere", below) |
@@ -485,8 +490,8 @@ game's own messages that your spells and swings land on the Dojo's dummies and t
   ("12345 damage in 20.4 s: 605 per second."). Nothing hurts you unless a dummy hits back, and you never fall (back
   to full instead).
 
-**What is approximate.** No talents, procs, gear, stats, resistances, misses, dodges or blocks; a 10 % critical chance
-(spells 1.5 times, swings 2 times). Damage: the spell's base points and dice from your own `Spell.dbc` with its points
+**What is approximate.** Talents, gear tiers, misses, armour, procs and pets: the next section (3 Nov, evening); no resistances,
+parries or blocks; a 10 % critical chance without gear or talents (spells 1.5 times, swings 2 times). Damage: the spell's base points and dice from your own `Spell.dbc` with its points
 per level, plus a spell power of 15 a level (casters; 5 others) times the cast time over 3.5 s; weapon strikes: a
 weapon's damage by level plus attack power (30 a level for melee) over 14 per second of swing. Health and mana by
 level (`classes::stats`). Effects other than damage, heals, auras, energize and combo points (summons, teleports,
@@ -494,8 +499,9 @@ dispels, pets, totems, crowd control) succeed visually and do nothing. Death kni
 need a weapon equipped (many warrior and rogue strikes, hunters' shots) may be refused by the game itself: Den Lite's
 character carries no items.
 
-**What needs the full Den** (real AzerothCore): real stats and gear, talents, procs, pets, creatures that fight back
-for real, duels and fighting a friend, quests and loot.
+**What needs the full Den** (real AzerothCore): real stats from items, every talent's own effect (spell modifiers),
+pets with their own spells and talents, creatures that fight back for real, duels and fighting a friend, quests and
+loot.
 
 **The tables** (all the player's own, `src/spells.rs`): `Spell.dbc`, `SkillLineAbility.dbc`, `SpellCastTimes.dbc`,
 `SpellDuration.dbc`, `SpellRadius.dbc`, checked against their 3.3.5a shapes. The launcher copies them from the player's
@@ -514,6 +520,75 @@ points, the stance bar) after a class change without relogging; whether the game
 weapon; whether the dummies' neutral faction lets every spell target them; how the missiles, the boss's circle (a
 ground-targeted fire spell's own look, `combat::BOSS_SPELL`) and the auras look; whether the spellbook shows the
 spells without the class's skill lines in the player's fields.
+
+### Specs, bars, gear sets and the test range (3 Nov, evening)
+
+Owner (3 Nov): "spellbook placement loadout instant on bars, gear sets selector, full featureset for Dens to work and
+better combat and test range dojo features". The whole list, what is next and the research: docs/DEN-FEATURES.md.
+
+- **Specs and bars** (`src/specs.rs`, `classes.rs`): every class has its three specs (`.den class mage fire`,
+  `.den spec frost`). A spec gets every bar filled at once (3.3.5a's button numbers): the rotation on 1-6 and area
+  spells or big cooldowns on 7-12, cooldowns and defensives on the bottom left bar, utility (interrupts, crowd
+  control, the auto attack) on the bottom right, mounts on the right bar, buffs, heals and every other spell on the
+  second right bar and the main bar's second page; the stance and form bars (a warrior's three stances, a druid's
+  cat, prowl, bear and moonkin, a rogue's stealth, a priest's shadowform) get the spec's own list. The four extra bars
+  are switched on (PLAYER_FIELD_BYTES' third byte). TODO(owner): the layouts are a first pass from the usual builds.
+- **Talents**: with the player's own `Talent.dbc` and `TalentTab.dbc` (the launcher now copies them, `host/lite.rs`
+  GAME_TABLES), the spec's tree is filled top to bottom as a level-80 player would (abilities first, every rank, the
+  tree's last talent at 51, the rest in the second tree; 5 points a row and every prerequisite kept), the talents'
+  spells are learnt, the other trees' abilities left out, and the game's talent frame is told (SMSG_TALENTS_INFO, as
+  AzerothCore's Player::BuildPlayerTalentsInfoData). Their passives count in the sandbox: damage and healing per
+  cent, critical chance, procs (PROC_TRIGGER_SPELL: their own spell cast at the target, once a second at most).
+  Spell modifiers (SPELL_AURA_ADD_PCT_MODIFIER and the like) don't.
+- **Bar loadouts**: `.den bars save aoe`, `use`, `reset`, `delete`; up to ten per class and spec, kept in
+  `den-lite.class.json` with the player's own button changes (now per class and spec).
+- **Gear sets** (`src/gearsets.rs`): `.den gearset t7` puts the class's raid set of that tier on (T1-T10: found by name
+  in the player's own `ItemSet.dbc`, the spec's version first: healer, caster, fighter or tank), the slots the set
+  has no piece for and the weapons from the same era's items of the right kind (Item.dbc), at once for everyone in the
+  Den. `.den gearset save <name>` keeps what you wear (`den-lite.gearsets.json`). The tier also counts in the numbers
+  (`classes::geared`: health, power, spell or attack power, weapon damage, critical chance, hit: tier 7 and up is
+  hit-capped; a tank's armour and avoidance).
+- **Weapons are real items** (`src/pets.rs`): the main hand, off hand and ranged are created as item objects in the
+  player's inventory slots, and the game's CMSG_ITEM_QUERY_SINGLE gets its answer ("Dojo Staff": Item.dbc has no
+  names), so spells that need a weapon can be cast.
+- **Better combat** (`src/combat.rs`): misses and dodges against higher levels only (spells 5, 6, 17 per cent; weapons
+  5.5, 6, 8 and a 6.5 per cent dodge at +3; less your hit), glancing blows (auto attacks at +3), armour on physical
+  hits (the heavy dummy and the boss: about two fifths off), the combat log's miss lines (SMSG_SPELLLOGMISS and the
+  go's miss list), runic power from rune strikes, healing on its own meter (`dps` and `hps` in the panel's readout,
+  `.den dojo meter reset`), your own heals counted.
+- **Pets** (`src/pets.rs`, combat.rs): a summon your class has (Summon Imp, Call Pet, Raise Dead, Summon Water
+  Elemental, Feral Spirit...) brings a pet: its create (summoned and created by you), its bar (SMSG_PET_SPELLS: Attack,
+  Follow, Stay, its spell, Aggressive, Defensive, Passive, as AzerothCore's CharmInfo), it follows you, fights what
+  you fight (casters cast their bolt), its damage counts with yours; its bar's buttons work (CMSG_PET_ACTION),
+  Dismiss Pet sends it away. Spells with a reagent (a warlock's Soul Shard) are refused by the game itself.
+- **The test range**: `.den dojo levels` (a dummy three levels below you without armour and a boss-level one with
+  heavy armour and the skull), `group` (the healing range: five friends losing health, the first faster, a big hit
+  on one now and then), `range` (a dummy 40 yards out, small markers named by their distance: 5, 10, 20, 30 yards),
+  `demo [seconds] [kind]` (a practice run: your main bar cast for you at the dummy, cooldowns and damage over time
+  first, ending with your number; the den-check's timed parse), `invulnerable on` (nothing hurts you). The boss now
+  also casts at you every 15 seconds (3 s, a shadow bolt's look): kick it (any interrupt, silence or stun) or it hits
+  for a quarter of your health; its result says how many you interrupted. Bests are kept per class and spec.
+- **The Dojo panel** (WrathUnleashedUI `Dojo.lua`): two pages, Train (the old rows, the Range row: Levels, Group,
+  Range, Run, Safe) and Loadout (class and spec pickers and Be, Mounts; your saved bars: Use, Save, Reset; gear: the
+  tiers your game has and your sets: Wear, Save, Off; a name box for Save). Den Lite answers `wuden loadout
+  class=..;spec=..;specs=..;bars=..;saved=..;set=..;tiers=..;mine=..`.
+
+Tested here: unit tests (specs.rs: every class's three specs, the bars, a level-80 build on made-up talent trees, the
+talents message byte for byte; gearsets.rs: tiers by role, the filled slots and weapons, saved sets; pets.rs: the
+creates, the pet bar, the item answer field by field against the message crate's own reading; combat.rs: misses and
+armour only against higher levels, procs once a second, the boss's cast kicked, healing meters and the healing range,
+a pet that follows and fights, a practice run's number; classes.rs: loadouts, gear tiers), the headless clients
+(`a_class_and_spec_fill_the_spellbook_talents_and_every_bar_and_loadouts_come_back`,
+`a_gear_set_changes_every_visible_slot_and_its_weapons_are_real_items`,
+`a_practice_run_has_a_number_the_boss_is_kicked_and_a_pet_comes_and_goes`), the Lua panel tests and the den-check's
+Dojo steps (`dojo_features`). This container can't fetch crates: the std-side modules' tests ran here under plain
+rustc with a stand-in JSON crate; CI's `cargo test --locked` must confirm the rest (sandbox.rs, world.rs hooks, the
+headless clients).
+
+**Only the real game can show**: whether the game takes the talent frame from SMSG_TALENTS_INFO without a relog,
+shows the four extra bars from the field, fills the stance bars as it swaps forms; whether it accepts the item
+objects as equipped weapons (Backstab, Auto Shot), the pet's create, frame and bar, and the boss's skull; how the
+markers look (the dummy's model, small).
 
 ## How it works
 

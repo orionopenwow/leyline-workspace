@@ -315,6 +315,10 @@ pub(super) fn client_op(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Po
     if !combat::CLIENT_OPS.contains(&op) {
         return Ok(false);
     }
+    // the editor's exact click (gizmo.rs PLACE_SPELL) is the editor's, never a combat cast
+    if op == combat::CMSG_CAST_SPELL && combat::read_cast(body).is_some_and(|r| r.spell == crate::gizmo::PLACE_SPELL) {
+        return Ok(false);
+    }
     // a guest's game: nothing to cast here (the host's Den is the host's sandbox)
     if !sess.me.host {
         if let Some(r) = combat::read_cast(body).filter(|_| op == combat::CMSG_CAST_SPELL) {

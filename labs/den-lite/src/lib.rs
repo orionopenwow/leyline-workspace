@@ -26,6 +26,7 @@ pub mod models;
 pub mod movewatch;
 pub mod notice;
 pub mod objects;
+pub mod pets;
 pub mod places;
 pub mod play;
 pub mod mymodels;

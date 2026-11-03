@@ -75,6 +75,8 @@ never a silent FAIL.
 | Wrath Unleashed | The headless 3.3.5a client (hosting/kit/tools/wunet/wire335.py plus tools/audit/play335.py) on the live realm with the audit's own account: log in, list characters, make a level-1 night elf hunter, enter the world, the first-login choice, spawn, the starting weapon and bow, the realm's level-1 mount, a basic spell, running a few yards, targeting a creature and starting melee (SMSG_ATTACKSTART), `.bug` answering (empty, so nothing is filed), log out; a second character takes the boost to 80; both are deleted again |
 | Your Den | Den Lite on this PC (the launcher's copy, or den-lite-latest checked against its .sha256) on loopback, its own free ports and a temporary Dens folder: DEN / den, the quick start, the character and the room, `.den place chair`, `.den save`, Jaina there and answering "Jaina, tips", the stop file, the Den back after a restart (autosave), a guest login (Invite friends), the friend's client in through the friends' listener, both see each other, the login taken back. Through the relay: SKIP (the launcher's tunnel: manual item 4) |
 | Launcher | The Leyline.exe on this PC is the latest release; %APPDATA%\Leyline\settings.json reads and its game folders exist |
+| Mobile | The website's main pages on three phones (iPhone 13, Pixel 7, a small 360x640) in headless Chromium: 200, nothing scrolls sideways, primary buttons at least 40 px, no console or page errors, no text cut off, no banned words, a screenshot each; on the iPhone 13 the Hero Key journey (paste the key, the profile, Submit a link logged in, Log out) with the audit's own test account. See "Mobile and screenshots" below |
+| Screenshots | The same pages on a desktop (1440x900), and every screenshot against the last run's: the list of pages that changed, in the report |
 
 ### The audit account
 
@@ -126,12 +128,68 @@ herokeys.py (the Control step `signin`), the cleanup line is red and each run le
 `LEYLINE_AUDIT_HEROKEY=0` skips the section; `--only herokey` runs just it. With `--fake` it runs against the site's
 own code and a fake sign-in service (`tools/audit/fakes.py SignInService`).
 
+### Mobile and screenshots
+
+Owner, 3 Nov: "a sweeping smoke test for mobile login and features and info and refresh of everything, new screenshots
+if things updated, a full sweep pass." The section `mobile` (`tools/audit/mobile.py`, which runs
+`tools/audit/mobile_sweep.cjs` in Node with Playwright; features "Mobile" and "Screenshots" in the report). It needs
+Node.js and Playwright on the PC; without them it is one SKIP with the fix:
+`npm install -g playwright && npx playwright install chromium` (Node.js first: `winget install OpenJS.NodeJS.LTS`).
+
+Each page below, on each phone (iPhone 13 and Pixel 7 as Playwright has them, and a small 360x640 Android), is one
+line "<page> on phones":
+
+- it answers 200 (after any redirect);
+- nothing scrolls sideways (`document.scrollingElement.scrollWidth` at most the screen's width + 1);
+- primary buttons (`.btn.primary`, `.hk-btn.primary`, `.ly-btn`, `.hb-cta`, submit buttons...) at least 40 by 40 px;
+- no console errors, page errors, or the site's own files answering 4xx/5xx;
+- no text cut off (a box that hides its overflow and is too small for its words, not an ellipsis that is meant) and
+  no words running past the screen's edge;
+- no banned words in what a player reads (the legal disclaimer stays);
+- a screenshot: `logs\audit-shots\mobile\<page>-<phone>.png` (iphone13, pixel7, small360).
+
+| Page | Address |
+|---|---|
+| Home | /wrath/leyline |
+| Download | /wrath/download |
+| Log in (Hero Key) | /wrath/key |
+| Forum, a thread | /wrath/leyline/forum, the newest thread (from /wrath/forum/api/latest) |
+| Mods, Addons | /wrath/leyline-preview/catalog, /wrath/leyline-preview/addons |
+| Game modes, Loadouts | /wrath/modes, /wrath/leyline-preview/loadouts |
+| Docs | /wrath/docs/getting-started, /wrath/docs/host-a-realm, /wrath/docs/den-invite, /wrath/docs/den |
+| Submit a link | /wrath/submit |
+| Azeroth Survivors | /wrath/survivors |
+| Agents, Forge | /wrath/leyline-preview/agents, /wrath/leyline-preview/forge |
+
+Then, on the iPhone 13, the Hero Key on a phone, each its own line: "Log in on a phone with a pasted Hero Key" (the
+key pasted in /wrath/key's box, Log in, the signed-in card), "Your profile shows on a phone, with Log out"
+(/wrath/profile: the name and the Log out button), "Submit a link while logged in, on a phone" (the form, not "Log in
+first"), "Log out on a phone" (Log out, then /wrath/key shows Log in again). The account is the audit's own test
+account, made and closed the herokey section's way (`account/new {audit: true}`, then `audit/close`: lines "Test
+account: ..."). Its key is marked saved first, so the signed-in card never shows it; it goes to the browser on stdin,
+never on a command line; a page that shows it gets no screenshot. This is a second test account a run (the site
+allows 3 an hour per network: a second audit in the same hour may SKIP) and one more key sign-in.
+
+Screenshots: the same pages on a desktop (1440x900) go to `logs\audit-shots\desktop\<page>.png`. Before each run the
+last run's pictures move to `logs\audit-shots\previous\`; after it, every new page picture is compared with its
+old one in the browser (a pixel counts when a colour moved by more than 32 of 255; a picture "changed" when over
+0.5 % of its pixels did). The report's "Screenshots that changed" lists them with links to both, so you know which
+pictures on the site, in the docs or on a store page to take again. The Log in journey's pictures show a new
+made-up name each run, so they are kept but not compared.
+
+`LEYLINE_AUDIT_MOBILE=0` skips the section; `--only mobile` runs just it (about 2 minutes on the fakes). With `--fake`
+it runs against the site's own code on 127.0.0.1 (other addresses are blocked; the site's /logout goes to the fake
+sign-in service).
+
+The launcher's own screenshots are a separate script that needs no website: `node tools/audit/launcher_shots.cjs`
+(the launcher UI with a fake core, as launcher/tests do) writes `docs/screens/launcher/*.jpg`.
+
 ## Running it elsewhere
 
 ```
 py -3 tools\audit\audit.py                         the live run (what the button does)
 python3 tools/audit/audit.py --fake                  anywhere: the site's own code and fake servers on 127.0.0.1
-python3 tools/audit/audit.py --only site,downloads   some sections (site, downloads, server, hosting, wrath, den, launcher)
+python3 tools/audit/audit.py --only site,downloads   some sections (site, downloads, server, hosting, wrath, herokey, den, launcher, mobile)
 DEN_LITE_BIN=<den-lite> python3 tools/audit/audit.py --fake --only den    the Den section against a built Den Lite
 ```
 
@@ -164,5 +222,7 @@ report's header says which answered. SSH uses the realmlist name the same way.
 | `tools/audit/play335.py`, `wrath.py` | the headless player and the Wrath Unleashed run |
 | `tools/audit/den.py` | Your Den with Den Lite |
 | `tools/audit/pc.py` | the launcher on this PC |
+| `tools/audit/mobile.py`, `mobile_sweep.cjs` | the phone and screenshot sweep (Node and Playwright) |
+| `tools/audit/launcher_shots.cjs` | the launcher's screenshots for the docs (docs/screens/launcher) |
 | `tools/audit/report.py` | the report and the manual list (MANUAL: the same as above) |
 | `tools/audit/fakes.py`, `tests/test_audit.py` | the fake world and the tests |

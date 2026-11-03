@@ -3,7 +3,7 @@
 
     py -3 tools\\audit\\audit.py                 on the owner's PC (Leyline Control: Release audit, or the step "audit")
     python3 tools/audit/audit.py --fake          anywhere else: the site's own code and fake servers on 127.0.0.1
-    ... --only site,downloads,server,hosting,wrath,herokey,den,launcher   --no-boost   --logs <folder>
+    ... --only site,downloads,server,hosting,wrath,herokey,den,launcher,mobile   --no-boost   --logs <folder>
 
 Prints one PASS / FAIL / SKIP line per check and writes logs/audit-latest.txt and logs/audit-latest.html (green or
 red per feature, what failed, the one next action, and the short list only a person can check). Read only, except
@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import FAIL, ROOT, Ctx, Recorder, load_config, short  # noqa: E402
 import report  # noqa: E402
 
-SECTIONS = ["site", "downloads", "server", "hosting", "wrath", "herokey", "den", "launcher"]
+SECTIONS = ["site", "downloads", "server", "hosting", "wrath", "herokey", "den", "launcher", "mobile"]
 
 
 def main(argv=None) -> int:
@@ -50,6 +50,7 @@ def main(argv=None) -> int:
             fakes = fk.Fakes()
             fake, rewrite = fakes.ctx_args()
         ctx = Ctx(cfg, rec, fake, rewrite, temp)
+        ctx.cache["logs"] = Path(a.logs)
         wu = None
         for name in only:
             print(f"== {name}", flush=True)
@@ -83,13 +84,16 @@ def main(argv=None) -> int:
                 elif name == "launcher":
                     import pc
                     pc.run(ctx, rec)
+                elif name == "mobile":
+                    import mobile
+                    mobile.run(ctx, rec, Path(a.logs))
             except Exception as e:  # noqa: BLE001 - one section never stops the others
                 rec.add(name.capitalize(), f"The {name} checks ran", FAIL, short(e), "Tell Claude this line.")
                 traceback.print_exc()
             print(f"   ({time.time() - t:.0f} s)", flush=True)
         where = ", ".join(f"{k}: {ctx._hosts[k]}" for k in sorted(ctx._hosts)) or ("127.0.0.1" if a.fake else "")
         meta = {"secs": time.time() - t0, "mode": "fake servers" if a.fake else "live", "where": where,
-                "appendix": ctx.cache.get("appendix", [])}
+                "appendix": ctx.cache.get("appendix", []), "shots": ctx.cache.get("shots")}
         t, h = report.write(rec.results, meta, Path(a.logs))
         c = rec.counts()
         print(f"\nRESULT: {c['PASS']} passed, {c['FAIL']} failed, {c['SKIP']} skipped in {meta['secs']:.0f} s")

@@ -121,6 +121,8 @@ body.wu::before {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .6), inset 0 0 0 1px rgba(90, 60, 10, .45), inset 0 -3px 6px rgba(120, 70, 0, .35), 0 2px 8px rgba(0, 0, 0, .55), 0 0 14px rgba(240, 200, 100, .18);
 }
 .btn.primary:hover, .btn.gold:hover, .wu button.primary:hover, .wu button.gold:hover { color: #1a1003; filter: brightness(1.06); }
+/* on a phone the main action is a thumb-sized tap (the release audit's phone sweep, tools/audit/mobile.py) */
+@media (pointer: coarse), (max-width: 600px) { .btn.primary, .btn.gold, .wu button.primary, .wu button.gold { min-height: 44px; } }
 
 .btn.ghost, .wu button.ghost {
   color: var(--wu-gold-2); background: rgba(10, 8, 18, .6); border-color: var(--wu-rim);

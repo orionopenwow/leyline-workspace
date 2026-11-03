@@ -257,7 +257,7 @@ class Journey:
         c = "Sign in on the website's page"
         g = self.site.call("GET", "/wrath/key")
         jar = take_cookies({}, g.cookies)
-        m = re.search(r'action="/wrath/key/signin"><input type="hidden" name="t" value="([0-9a-f]{32})"', g.text)
+        m = re.search(r'action="/wrath/key/signin"[^>]*><input type="hidden" name="t" value="([0-9a-f]{32})"', g.text)
         if g.status != 200 or not m or "ly_hk" not in jar:
             return self.add(c, False, f"/wrath/key: HTTP {g.status or g.error}, form token {'found' if m else 'missing'}", t0=t0)
         p = self.site.call("POST", "/wrath/key/signin", form={"t": m.group(1), "key": self.key}, jar=jar)
@@ -282,7 +282,8 @@ class Journey:
                             "the website's sign-out didn't end this session from here, so there is no stale cookie to try",
                             status=SKIP)
         after = self.site.call("GET", "/wrath/key", jar=old)
-        ok = after.status == 200 and "Sign in with your Hero Key" in after.text and not SERVER_ERROR.search(after.text)
+        ok = (after.status == 200 and ('id="hk-out"' in after.text or re.search(r"(?:Log|Sign) in with your Hero Key", after.text))
+              and not SERVER_ERROR.search(after.text))   # the signed-out card ("Log in" since 2 Nov)
         self.add("Signed out on the website: the old cookie gets the signed-out card", ok,
                  "the signed-out card, no redirect loop" if ok else
                  f"HTTP {after.status}{' to ' + after.headers.get('location', '') if 300 <= after.status < 400 else ''}",

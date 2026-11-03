@@ -456,6 +456,73 @@ def with_tab_icon(body: bytes, ctype: str) -> bytes:
     return body if i < 0 else body[:i] + TAB_ICON + body[i:]
 
 
+# The kill switch (docs/KILL-SWITCH.md, tools/killswitch): $WU_PORTAL_DATA/leyline/shutdown.json, written by its server
+# half. {"mode": "banner"}: a farewell banner on top of every page. {"mode": "closed"}: every page answers the farewell
+# page (503), but for what launchers and the owner still need: the /wrath/leyline/ feeds (News and the update notice
+# carry the message), the status document, the art and HQ. No file: nothing changes.
+SHUTDOWN_OPEN = ("/wrath/leyline/", "/wrath/art/", "/wrath/admin")
+SHUTDOWN_EXACT = frozenset({"/wrath/status.json", "/wrath/healthz", "/wrath/admin"})
+_shutdown = {"key": None, "doc": None}
+
+
+def shutdown_file() -> str:
+    return os.path.join(os.environ.get("WU_PORTAL_DATA", "/data"), "leyline", "shutdown.json")
+
+
+def shutdown_doc() -> dict | None:
+    """The kill switch's notice, or None. Read again only when the file changes."""
+    try:
+        st = os.stat(shutdown_file())
+        key = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        _shutdown.update(key=None, doc=None)
+        return None
+    if _shutdown["key"] != key:
+        doc = None
+        try:
+            with open(shutdown_file(), "rb") as f:
+                raw = json.loads(f.read(64_000).decode("utf-8"))
+            if isinstance(raw, dict) and raw.get("mode") in ("banner", "closed") and str(raw.get("message") or "").strip():
+                doc = {"mode": raw["mode"], "title": " ".join(str(raw.get("title") or "Leyline is closing").split())[:80],
+                       "message": str(raw["message"])[:1800]}
+        except (OSError, ValueError, UnicodeDecodeError):
+            doc = None
+        _shutdown.update(key=key, doc=doc)
+    return _shutdown["doc"]
+
+
+def shutdown_open(path: str) -> bool:
+    """What still answers while the site is closed."""
+    return path in SHUTDOWN_EXACT or path.startswith(SHUTDOWN_OPEN)
+
+
+def _shutdown_paras(text: str) -> str:
+    return "".join(f"<p>{html.escape(' '.join(p.split()))}</p>" for p in str(text).splitlines() if p.strip())
+
+
+def shutdown_page(doc: dict) -> bytes:
+    t = html.escape(doc["title"])
+    return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" '
+            f'content="width=device-width,initial-scale=1"><title>{t}</title><style>body{{margin:0;min-height:100vh;'
+            f'display:grid;place-items:center;background:#121417;color:#e9ebef;font:16px/1.6 system-ui,sans-serif}}'
+            f'main{{max-width:640px;padding:32px 24px}}h1{{font:400 28px Georgia,serif;color:#f1cf86}}</style></head>'
+            f'<body><main id="ly-farewell"><h1>{t}</h1>{_shutdown_paras(doc["message"])}</main></body></html>').encode("utf-8")
+
+
+def shutdown_body(body: bytes, ctype: str) -> bytes:
+    """Banner mode: the message on top of every HTML page (once)."""
+    doc = shutdown_doc()
+    if not doc or doc["mode"] != "banner" or not body or not ctype.startswith("text/html") or b'id="ly-farewell' in body:
+        return body
+    m = re.search(rb"<body[^>]*>", body[:65536])
+    if not m:
+        return body
+    bar = (f'<aside id="ly-farewell-bar" role="status" style="position:relative;z-index:99999;padding:12px 18px;'
+           f'background:#3a2a12;color:#f6e7c4;border-bottom:1px solid #8a6a2c;font:15px/1.5 system-ui,sans-serif">'
+           f'<b>{html.escape(doc["title"])}</b>{_shutdown_paras(doc["message"])}</aside>').encode("utf-8")
+    return body[:m.end()] + bar + body[m.end():]
+
+
 def brand_body(body: bytes, ctype: str) -> bytes:
     """The page as people read it with the Leyline brand on; unchanged when it is off (or not text)."""
     if not BRAND or not body:
@@ -3511,6 +3578,7 @@ class PageHandler(BaseHTTPRequestHandler):
         body = brand_body(body, ctype)   # the Leyline brand switch (off: unchanged)
         body = with_tab_icon(body, ctype)   # the Leyline mark on the browser tab (owner 2 Nov)
         body = legacy_body(body, ctype, self.headers.get("Host", ""))   # launcher documents on the old site name
+        body = shutdown_body(body, ctype)   # the kill switch's banner (docs/KILL-SWITCH.md; no file: unchanged)
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
@@ -4057,6 +4125,10 @@ class PageHandler(BaseHTTPRequestHandler):
         # stream site's game-folder layer (POST /__gate?layer=..., /__layer for a Caddyfile that routes it).
         split = urllib.parse.urlsplit(self.path)
         path = split.path.rstrip("/") or "/"
+        shut = shutdown_doc()
+        if shut and shut["mode"] == "closed" and not shutdown_open(path):   # the kill switch: nothing to post to
+            self.send(503, shutdown_page(shut))
+            return
         if hub_mod is not None:   # as in do_GET: the request, for pages drawn in the hub's frame (hub_frame)
             hub_mod.note_request(self)
         if path == QUEUE_API + "/leave":
@@ -4143,6 +4215,10 @@ class PageHandler(BaseHTTPRequestHandler):
         split = urllib.parse.urlsplit(self.path)
         path = split.path.rstrip("/") or "/"
         query = urllib.parse.parse_qs(split.query)
+        shut = shutdown_doc()
+        if shut and shut["mode"] == "closed" and not shutdown_open(path):   # the kill switch's farewell page
+            self.send(503, shutdown_page(shut))
+            return
         if hub_mod is not None:   # the turn-your-phone hint's "Not now" (cookie), for every page in the hub's look
             hub_mod.note_request(self)
         if path == "/__auth":

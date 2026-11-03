@@ -22,6 +22,8 @@ pub const MAX_PATHS: usize = 100;
 /// ov_den_home.lua H.STAMP_MAX and H.STAMP_SPAN.
 pub const STAMP_MAX: usize = 60;
 pub const STAMP_SPAN: f64 = 40.0;
+/// How far inside the Den's reach a fitted stamp's farthest piece stands (yards; settle may move a piece a little).
+pub const STAMP_FIT_MARGIN: f32 = 1.0;
 /// What a locked prop says when it is moved or deleted.
 pub const LOCKED: &str = "That prop is locked: Unlock it first.";
 
@@ -692,13 +694,47 @@ impl Den {
         let (made, skipped) = self.place(&props);
         let title = st.title.clone().or(st.name.clone()).unwrap_or_else(|| "The stamp".into());
         let message = if made.is_empty() {
-            format!("{title} doesn't fit here: nothing was placed.")
+            format!("{title} doesn't fit here: nothing was placed. Stand nearer the middle of your Den, or .den grow makes it bigger.")
         } else {
             self.push_undo(Undo::Placed(made.iter().map(|o| o.guid).collect()));
-            let left = if skipped > 0 { format!(" ({skipped} left out: outside the Den or unknown here)") } else { String::new() };
+            let left = if skipped > 0 { format!(" ({skipped} left out: outside the Den or unknown here; .den grow makes room)") } else { String::new() };
             format!("{title} is down ({} props){left}. .build undo takes it back.", made.len())
         };
         Change { created: made, destroyed: Vec::new(), skipped, message }
+    }
+
+    /// Where a stamp's origin goes so all of it lies inside the Den (owner's den-features 3 Nov: six stamps "nothing
+    /// was placed" in the size 1 room): (x, y) as asked when it fits there; else moved straight toward the room's
+    /// middle until its farthest piece is [`STAMP_FIT_MARGIN`] inside the Den's reach. The flag: the stamp is wider
+    /// than the whole Den (it goes in the middle, some pieces stay out; `.den grow` makes room).
+    pub fn fit_stamp(&self, st: &DenDoc, x: f32, y: f32, o: f32) -> (f32, f32, bool) {
+        let settled = crate::stamps::settle(st);
+        let step = PI / 12.0;
+        let o = ((o / step).round() * step).rem_euclid(2.0 * PI);
+        let (c, s) = (o.cos(), o.sin());
+        let w: Vec<(f32, f32)> = settled.props.iter().map(|e| (e.x as f32 * c - e.y as f32 * s, e.x as f32 * s + e.y as f32 * c)).collect();
+        if w.is_empty() {
+            return (x, y, false);
+        }
+        // the pieces' box middle (turned as they will stand) and the farthest piece from it
+        let (mut lo, mut hi) = ((f32::MAX, f32::MAX), (f32::MIN, f32::MIN));
+        for &(a, b) in &w {
+            lo = (lo.0.min(a), lo.1.min(b));
+            hi = (hi.0.max(a), hi.1.max(b));
+        }
+        let mid = ((lo.0 + hi.0) / 2.0, (lo.1 + hi.1) / 2.0);
+        let rb = w.iter().map(|&(a, b)| ((a - mid.0).powi(2) + (b - mid.1).powi(2)).sqrt()).fold(0.0, f32::max);
+        let room = self.spot.reach() - STAMP_FIT_MARGIN - rb;
+        let (qx, qy) = (x + mid.0 - self.spot.x, y + mid.1 - self.spot.y);
+        let d = (qx * qx + qy * qy).sqrt();
+        if room < 0.0 {
+            return (self.spot.x - mid.0, self.spot.y - mid.1, true);
+        }
+        if d <= room {
+            return (x, y, false);
+        }
+        let k = room / d;
+        (self.spot.x + qx * k - mid.0, self.spot.y + qy * k - mid.1, false)
     }
 
     /// The prop with this object guid.
@@ -1072,6 +1108,40 @@ impl Den {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every built-in stamp goes down whole in the default room (size 1: 22 yards from its middle), whether the player
+    /// stands in the middle or near the edge facing out (owner's den-features 3 Nov: campfire, inn, dock, house,
+    /// smithy and shrine placed nothing), the way Jaina's build and `.den stamp` place it: its middle ahead, then fitted.
+    #[test]
+    fn every_built_in_stamp_fits_the_default_room() {
+        let dir = Path::new("no-such-folder");
+        for (name, _) in BUILTIN_STAMPS {
+            let st = read_stamp(dir, name).unwrap();
+            let far = crate::dojo::reach(&st.props.iter().map(|e| (e.x, e.y)).collect::<Vec<_>>());
+            for (dx, dy, o) in [(0.0f32, 0.0f32, 0.0f32), (12.0, 0.0, 0.0), (-15.0, 5.0, PI), (0.0, 18.0, PI / 2.0), (14.0, -14.0, -PI / 4.0), (20.0, 0.0, PI)] {
+                let mut den = Den::new(Spot::default());
+                assert_eq!(den.ring(), 0, "the default room");
+                let (px, py) = (den.spot.x + dx, den.spot.y + dy);
+                let (mx, my) = (px + o.cos() * far, py + o.sin() * far);
+                let (x, y, too_big) = den.fit_stamp(&st, mx, my, o);
+                assert!(!too_big, "{name}: smaller than the Den");
+                let ch = den.stamp(&st, x, y, den.spot.z, o);
+                assert_eq!((ch.created.len(), ch.skipped), (st.props.len(), 0), "{name} from ({dx}, {dy}) facing {o}: all of it inside the Den: {}", ch.message);
+            }
+            // `.den stamp` where the player stands, at the room's edge
+            let mut den = Den::new(Spot::default());
+            let (x, y, _) = den.fit_stamp(&st, den.spot.x + 21.0, den.spot.y, 0.0);
+            assert_eq!(den.stamp(&st, x, y, den.spot.z, 0.0).created.len(), st.props.len(), "{name} at the edge");
+            // already inside: left where it was asked
+            let big = Den::new(Spot { half: 32.0, ..Spot::default() });
+            assert_eq!(big.fit_stamp(&st, big.spot.x + 1.0, big.spot.y, 0.0), (big.spot.x + 1.0, big.spot.y, false), "{name}");
+        }
+        // a stamp wider than the whole Den: in the middle, said
+        let wide = parse(r#"{"format":"leyline-den","version":1,"kind":"stamp","props":[{"entry":2413,"x":-30,"y":0,"z":0,"yaw":0},{"entry":2413,"x":30,"y":0,"z":0,"yaw":0}]}"#).unwrap();
+        let den = Den::new(Spot::default());
+        let (x, y, too_big) = den.fit_stamp(&wide, den.spot.x + 10.0, den.spot.y, 0.0);
+        assert!(too_big && (x - den.spot.x).abs() < 1e-3 && (y - den.spot.y).abs() < 1e-3);
+    }
 
     /// A ground file as the launcher writes it: the chunk the room stands in raised 10 yards (a hill under the room).
     fn ground_dir(name: &str, up: f32) -> PathBuf {

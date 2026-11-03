@@ -25,6 +25,7 @@
 //!
 //! Everything here is plain logic and message bodies, tested below; world.rs sends them.
 
+use crate::combat::Kind;
 use crate::companion::At;
 use crate::den::WorldObject;
 use crate::raw::packed_guid;
@@ -77,8 +78,52 @@ pub const DUMMIES: &[(u32, u32, &str, u8)] = &[
 /// How many dummies `.den dojo dummies` puts up at most.
 pub const MAX_DUMMIES: usize = 5;
 
+/// The sandbox combat's other dummies (combat.rs Kind): Den Lite's own entries (their names come from this server's
+/// creature query answer), the training dummy's model; the boss twice its size.
+pub const KIND_DUMMIES: &[(u32, u32, &str, u8, Kind)] = &[
+    (900_001, 27510, "Pack Dummy", 80, Kind::Pack),
+    (900_002, 27510, "Moving Dummy", 80, Kind::Mover),
+    (900_003, 27510, "Wounded Dummy", 80, Kind::Healer),
+    (900_004, 27510, "Sparring Dummy", 80, Kind::Tank),
+    (900_005, 27510, "Practice Boss", 83, Kind::Boss),
+];
+
 pub fn dummy(entry: u32) -> Option<(u32, u32, &'static str, u8)> {
-    DUMMIES.iter().copied().find(|d| d.0 == entry)
+    DUMMIES.iter().copied().find(|d| d.0 == entry).or_else(|| KIND_DUMMIES.iter().find(|d| d.0 == entry).map(|d| (d.0, d.1, d.2, d.3)))
+}
+
+/// A dummy's kind by its entry (the training dummies: Target).
+pub fn kind_of(entry: u32) -> Kind {
+    KIND_DUMMIES.iter().find(|d| d.0 == entry).map(|d| d.4).unwrap_or(Kind::Target)
+}
+
+/// The entry a kind goes up with.
+pub fn entry_of(kind: Kind) -> u32 {
+    KIND_DUMMIES.iter().find(|d| d.4 == kind).map(|d| d.0).unwrap_or(DUMMIES[0].0)
+}
+
+/// How many of a kind go up, and where (x ahead, y left of you or the ring's middle): five in a tight pack, one
+/// walker, the wounded one to your left, the sparring one close, the boss further out.
+pub fn kind_spots(kind: Kind) -> Vec<(f32, f32)> {
+    match kind {
+        Kind::Pack => vec![(6.0, 0.0), (6.8, 1.2), (6.8, -1.2), (7.6, 0.6), (7.6, -0.6)],
+        Kind::Mover => vec![(MOVER_RADIUS + 3.0, 0.0)],
+        Kind::Healer => vec![(2.0, 3.0)],
+        Kind::Tank => vec![(3.0, 0.0)],
+        Kind::Boss => vec![(12.0, 0.0)],
+        _ => vec![(5.0, 0.0)],
+    }
+}
+
+/// The moving dummy walks a circle this wide around where it went up, a step every MOVER_STEP_MS.
+pub const MOVER_RADIUS: f32 = 4.0;
+pub const MOVER_STEP_MS: u64 = 2000;
+pub const MOVER_POINTS: usize = 8;
+
+/// The moving dummy's next point on its circle around `home` (point `n`).
+pub fn mover_point(home: At, n: usize) -> At {
+    let a = n as f32 * 2.0 * PI / MOVER_POINTS as f32;
+    At { x: home.x + a.cos() * MOVER_RADIUS, y: home.y + a.sin() * MOVER_RADIUS, z: home.z, o: (a + PI / 2.0).rem_euclid(2.0 * PI) }
 }
 
 /// A creature guid (HighGuid::Unit 0xF130, the entry, a counter), as the companion's.
@@ -124,6 +169,11 @@ pub struct Dummy {
     pub guid: u64,
     pub entry: u32,
     pub at: At,
+    /// What it does in the sandbox combat (combat.rs).
+    pub kind: Kind,
+    /// Where it went up (the moving dummy's circle's middle) and its step.
+    pub home: At,
+    pub step: usize,
 }
 
 /// The Dojo's state (one: the host's).
@@ -186,11 +236,43 @@ impl Dojo {
         .into_iter()
         .map(|at| {
             self.next_dummy += 1;
-            Dummy { guid: creature_guid(entry, 0x100 + self.next_dummy), entry, at }
+            Dummy { guid: creature_guid(entry, 0x100 + self.next_dummy), entry, at, kind: kind_of(entry), home: at, step: 0 }
         })
         .collect();
         self.dummies.extend(made.iter().copied());
         made
+    }
+
+    /// The dummies of one kind (combat.rs Kind) in front of `p` (or in the ring), standing at `z`; the old ones of
+    /// that kind are taken down first: their guids, and the new ones.
+    pub fn place_kind(&mut self, p: At, kind: Kind, z: f32) -> (Vec<u64>, Vec<Dummy>) {
+        let gone: Vec<u64> = self.dummies.iter().filter(|d| d.kind == kind).map(|d| d.guid).collect();
+        self.dummies.retain(|d| d.kind != kind);
+        let base = self.ring.map(|r| At { x: r.x - r.o.cos() * 4.0, y: r.y - r.o.sin() * 4.0, ..r }).unwrap_or(p);
+        let entry = entry_of(kind);
+        let made: Vec<Dummy> = kind_spots(kind)
+            .into_iter()
+            .map(|(x, y)| {
+                let w = local(base, x, y);
+                self.next_dummy += 1;
+                let at = At { z, o: (base.o + PI).rem_euclid(2.0 * PI), ..w };
+                Dummy { guid: creature_guid(entry, 0x100 + self.next_dummy), entry, at, kind, home: at, step: 0 }
+            })
+            .collect();
+        self.dummies.extend(made.iter().copied());
+        (gone, made)
+    }
+
+    /// The moving dummies' next steps due (every MOVER_STEP_MS): (guid, from, to). Their places are kept.
+    pub fn mover_steps(&mut self) -> Vec<(u64, At, At)> {
+        let mut out = Vec::new();
+        for d in self.dummies.iter_mut().filter(|d| d.kind == Kind::Mover) {
+            d.step = (d.step + 1) % MOVER_POINTS;
+            let to = mover_point(At { x: d.home.x - MOVER_RADIUS, ..d.home }, d.step);
+            out.push((d.guid, d.at, to));
+            d.at = to;
+        }
+        out
     }
 
     /// Every dummy taken down: their guids.
@@ -807,6 +889,39 @@ mod tests {
                              ("build a blacksmith's forge", "smithy"), ("Build us a shrine please", "shrine"), ("make a farm", "garden"),
                              ("build a pier", "dock"), ("build a cottage", "house"), ("make a bazaar", "market"), ("build a castle", "castle")] {
             assert_eq!(build_words(said).as_deref(), Some(name), "{said}");
+        }
+    }
+
+    #[test]
+    fn kinds_go_up_in_their_places_and_the_walker_walks_a_circle() {
+        let mut d = Dojo::default();
+        let p = At { x: 0.0, y: 0.0, z: 1.0, o: 0.0 };
+        let (gone, pack) = d.place_kind(p, Kind::Pack, 13.2);
+        assert!(gone.is_empty() && pack.len() == 5);
+        assert!(pack.iter().all(|x| x.kind == Kind::Pack && x.entry == 900_001 && x.at.z == 13.2 && x.at.x >= 6.0));
+        let (gone, again) = d.place_kind(p, Kind::Pack, 13.2);
+        assert_eq!(gone.len(), 5, "the old pack comes down");
+        assert_eq!(d.dummies.len(), 5);
+        assert_ne!(again[0].guid, pack[0].guid);
+        let (_, boss) = d.place_kind(p, Kind::Boss, 13.2);
+        assert_eq!(boss.len(), 1);
+        assert!((boss[0].at.x - 12.0).abs() < 1e-4);
+        assert_eq!(kind_of(boss[0].entry), Kind::Boss);
+        assert_eq!(dummy(900_005).map(|x| x.2), Some("Practice Boss"));
+        assert_eq!(kind_of(31144), Kind::Target);
+        let (_, m) = d.place_kind(p, Kind::Mover, 13.2);
+        let home = m[0].at;
+        let mut seen = Vec::new();
+        for _ in 0..MOVER_POINTS {
+            let s = d.mover_steps();
+            assert_eq!(s.len(), 1);
+            seen.push(s[0].2);
+        }
+        let mid = At { x: home.x - MOVER_RADIUS, ..home };
+        assert!(seen.iter().all(|a| ((a.x - mid.x).powi(2) + (a.y - mid.y).powi(2)).sqrt() - MOVER_RADIUS < 1e-3));
+        assert!((seen[MOVER_POINTS - 1].x - home.x).abs() < 1e-3, "round again to where it started");
+        for (_, _, name, _, _) in KIND_DUMMIES {
+            assert!(!crate::companion::branded(name));
         }
     }
 }

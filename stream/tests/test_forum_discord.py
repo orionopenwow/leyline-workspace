@@ -289,7 +289,7 @@ sleeps = []
 L.api._sleep = lambda s: sleeps.append(s)
 L.start()
 check("start: the bot, the channel types, the server", L.bot_id == BOT and L.guild == GUILD and L.ch_type[CH_HELP] == 15 and L.ch_type[CH_GENERAL] == 0)
-check("start: /link and /unlink registered for the server", [c["name"] for c in D["commands"] or []] == ["link", "unlink"])
+check("start: /link, /unlink and /submit registered for the server", [c["name"] for c in D["commands"] or []] == ["link", "unlink", "submit"])
 check("every call carries the bot token in the Authorization header only", D["auth"] == {"Bot " + TOKEN})
 
 
@@ -651,6 +651,35 @@ check("status for HQ: state, outbox, links; no token", st["outbox"] == 0 and st[
 code_hq, page_hq = wp.admin.hq.forum_page({"account": "staff1", "role": "admin", "name": "Mod Sam"}, {}) if getattr(wp.admin, "hq", None) else (200, "Discord link")
 check("HQ's Forum page says how the Discord link is doing", "Discord link" in page_hq, page_hq[:300])
 check("the token never reached a log line", TOKEN not in logbuf.getvalue())
+
+# ------------------------------------------------------------------------------------------- /submit (stream/linkqueue.py)
+LQ = wp.linkqueue
+st, doc = interact({"type": 2, "data": {"name": "submit", "options": [
+    {"name": "link", "type": 3, "value": "https://github.com/alice/frame-kit"}, {"name": "kind", "type": 3, "value": "addon"},
+    {"name": "note", "type": 3, "value": "tidy frames"}]}, "member": {"user": user(U_AL, "AliceD")}})
+got = LQ.item(LQ.validate("https://github.com/alice/frame-kit", "addon")["id"]) if LQ else None
+check("/submit: a linked person's link lands as pending (private answer), with their Leyline account",
+      st == 200 and doc["data"]["flags"] == 64 and "review queue" in doc["data"]["content"] and got
+      and got["status"] == "pending" and got["via"] == "discord" and got["acct"] == L.linked(U_AL) and got["kind"] == "addon", (doc, got))
+st, doc = interact({"type": 2, "data": {"name": "submit", "options": [
+    {"name": "link", "type": 3, "value": "https://github.com/alice/frame-kit"}, {"name": "kind", "type": 3, "value": "addon"}]},
+    "user": user(U_UN, "Unl")})
+check("/submit: the same link again is already waiting", "already waiting" in doc["data"]["content"])
+st, doc = interact({"type": 2, "data": {"name": "submit", "options": [
+    {"name": "link", "type": 3, "value": "https://github.com/midnightzora737r/thing"}, {"name": "kind", "type": 3, "value": "mod"}]},
+    "user": user(U_UN, "Unl")})
+check("/submit: a blocklisted account is refused", "blocklist" in doc["data"]["content"] and not LQ.items("pending")[1:], doc)
+st, doc = interact({"type": 2, "data": {"name": "submit", "options": [
+    {"name": "link", "type": 3, "value": "https://github.com/x/y/releases/download/v1/pack.zip"}, {"name": "kind", "type": 3, "value": "look"}]},
+    "user": user(U_UN, "Unl")})
+check("/submit: a file to download is refused", "not a file" in doc["data"]["content"])
+st, doc = interact({"type": 2, "data": {"name": "submit", "options": [
+    {"name": "link", "type": 3, "value": "https://gitlab.com/someone/realm-kit"}, {"name": "kind", "type": 3, "value": "mod"}]},
+    "user": user(U_UN, "Unl")})
+unl = [r for r in LQ.items("pending") if "realm-kit" in r["url"]]
+check("/submit: someone not linked can submit too (kept as their Discord name, no Discord id on disk)",
+      unl and unl[0]["by_name"] == "Unl" and unl[0]["linked"] is False
+      and U_UN not in open(os.path.join(LQ.qdir(), "queue.jsonl")).read(), unl)
 
 # ------------------------------------------------------------------------------------------- the deploy step
 bat = open(os.path.join(ROOT, "stream", "Update sign-in and warm-up.bat"), encoding="utf-8").read()

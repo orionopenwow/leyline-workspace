@@ -67,6 +67,8 @@ tools/fresh-history/CONFIRM
 
 # a copy of mods/wu-mod.py that "Update sign-in and warm-up.bat" makes beside the portal before upload
 /stream/wu-mod.py
+# the index blocklist the same .bat copies beside linkqueue.py
+/stream/link-blocklist.json
 # and the launcher's rules file, beside listings.py (List your mod)
 /stream/upstream-rules.json
 
@@ -124,3 +126,5 @@ desktop.ini
 # the owner's in-game screenshots for the launcher's Home gallery: published to the site by tools/site-art (the
 # Autopilot step "homeart"), never kept in the repo (owner rule: no game-made pictures in the repo or downloads)
 /site-art/
+# the feedback step's copies (player text stays off GitHub)
+/tools/feedback/live/

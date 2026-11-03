@@ -22,7 +22,8 @@ restarts and logs.
 | **Releases** | launcher version, channel or hold, the newest GitHub build runs, the addon pack version, the host pack version, when the website's files changed | GitHub's public API (no token, cached 10 minutes), `addonpack.json` on the `leyline-addons` release, `hostpack.json` |
 | **Recent changes** | the last deploys: done, failed or waiting | `hq/changes.json` from the PC |
 
-The menu: **Home · Needs you · Players · Forum · Realms · Releases · Content · Game · System**. Content opens
+The menu: **Home · Needs you · Review · Players · Forum · Realms · Releases · Content · Game · System**. Review opens
+Submissions, Feedback and Upgrades (below). Content opens
 Catalog, Workshop, Index, Themes, Profiles and All reports; System opens Health, Numbers (the old dashboard), Flags,
 Staff and Audit.
 
@@ -39,14 +40,52 @@ Done, Dismiss and Mute from the forum. A person's page has an **On the forum** b
 
 ## Roles
 
-owner > admin > mod. Every action names the least role it needs; buttons a role can't use are not shown, and the
-server checks again.
+owner > admin > mod > helper. Every action names the least role it needs; buttons a role can't use are not shown, and
+the server checks again. The Staff page shows the same as a table ("What each role can do", `stream/staffdesk.py`
+ROLE_TABLE).
 
 | Role | Who | Can |
 |---|---|---|
-| **mod** | staff granted as mod; `WU_MODS_ADMINS`; a game account with GM level `WU_ADMIN_GM_LEVEL` or more | reports (resolve, dismiss, notes), hide links, realms and forum posts, pin/lock threads, mute from the forum (up to a week), profile resets, re-run checks, kick, mute, unmute, send to Dalaran |
+| **helper** | staff granted as helper (owner 3 Nov: "a mod-level account access panel ... so I can recruit help") | Review > Submissions and Feedback only: read them and leave notes on submissions. No other page, no HQ API, no forum staff powers or badge |
+| **mod** | staff granted as mod; `WU_MODS_ADMINS`; a game account with GM level `WU_ADMIN_GM_LEVEL` or more | approve clean mod, addon and realm links and reject any link (Review), reports (resolve, dismiss, notes), hide links, realms and forum posts, pin/lock threads, mute from the forum (up to a week), profile resets, re-run checks, kick, mute, unmute, send to Dalaran |
 | **admin** | staff granted as admin (an old staff entry without a role is an admin); `WU_ADMIN_STAFF` | everything a mod does, plus approvals and rejections, featured and edits, the index, realm official/featured/verified, relay blocks, News, game bans and unbans, announcements, site-wide sanctions, signing out launchers, forum merges |
-| **owner** | `WU_ADMIN_OWNERS` | everything, plus flags, staff, the stable/beta channel and hold, notes to Claude |
+| **owner** | `WU_ADMIN_OWNERS` | everything, plus flags, staff, the stable/beta channel and hold, the minimum launcher version, approving or holding upgrades, approving looks and HD packs, undoing any review decision, notes to Claude |
+
+**What moderators (and helpers) can never do** (decided 3 Nov; the owner can change it): change roles; see secrets,
+keys or emails (no console page shows any: tokens, passwords, the bot token and env files never reach a page, and
+launcher sign-ins show only a short hash prefix); deploy (nothing in the console deploys; deploys stay Control steps
+on the owner's PC); approve owner-only things: looks and HD packs, links with a warning (admins and the owner),
+flags, the release channel and hold, the minimum launcher version, upgrades, undo. Every approval is in the audit log
+with who and their role, and the owner can undo it (Review > Submissions > Recently decided).
+
+## Review: submitted links, feedback, upgrades
+
+`stream/staffdesk.py` (beside `admin.py`), `stream/linkqueue.py` and `stream/feedback.py`.
+
+- **Submissions** (`/wrath/admin/submissions`): one queue for links from the website (`/wrath/submit`, logged in),
+  the Discord (`/submit`, docs/FORUM.md) and the hub's Submit a mod (a copy of each repo). Every link is checked as it
+  arrives: https only, the allowed sites (forges, CurseForge, Wago, itch; `WU_LINK_HOSTS` adds more), never a file
+  to download, never game files, not from a blocklisted account (`tools/hub-index/blocklist.json`, shipped beside
+  `linkqueue.py` as `link-blocklist.json`), not decompiled or leaked. Approve, Reject (with a reason), notes. A
+  mod/addon repo approved here is approved in the community index too (`hub/decisions.jsonl`), and an undo delists
+  it. What was approved: `/wrath/leyline/approved-links.json` (public: ids, kinds, links). Files:
+  `$WU_PORTAL_DATA/linkqueue/queue.jsonl`, `decisions.jsonl`.
+- **Feedback** (`/wrath/admin/feedback`): the newest digest: what players said in the last 72 hours (bug reports from
+  the site and the launcher, the forum, and on the server also the Discord's #bug-reports intake and the bugs
+  manifest's game reports), in themes (crashes, log in, connecting, launcher, speed and graphics, Your Den, mods,
+  gameplay, browser and phones, game modes, community) with a mood score from a word list, the trend against the 72
+  hours before, and a few quotes (emails, addresses and links taken out). The portal makes one every
+  `WU_FEEDBACK_HOURS` hours (4; 0 = off); the Control step **feedback** (read-only) makes one with every source on the
+  host and copies it to `tools/feedback/live/`. Pluggable: `WU_SENTIMENT_LEXICON` (a JSON word list) and
+  `WU_SENTIMENT_SCORER` (a .py with `score(text)`). No paid service; nothing leaves the server.
+- **Upgrades** (`/wrath/admin/upgrades`): **When to push updates**: the quietest two hours of the week, from player
+  counts the portal samples every 10 minutes (`$WU_PORTAL_DATA/ops/presence.jsonl`, 28 days), in UTC and Phoenix time;
+  a default (Tuesday 10:00 UTC) until there is data. **Waiting for the owner**: admins propose a change (launcher,
+  website, realm, Den Lite); the owner approves (it gets the next window to ship in) or holds. Nothing here deploys:
+  Claude and Control read the decisions (`admin/upgrades.json`, copied by the feedback step). **Launcher versions**:
+  the stable version (from Releases) and the minimum the owner sets, published at `/wrath/leyline/version.json`
+  (docs/LAUNCHER-VERSION-POLICY.md).
+
 
 ## Players
 
@@ -164,7 +203,7 @@ Both files are git-ignored.
 ## Grant staff
 
 Ask the person to open `/wrath/admin` once: the Staff only page shows their account id. Then, as the owner, open
-**System > Staff**, type that id (and a name for the list), pick **mod** or **admin** and press **Grant**.
+**System > Staff**, type that id (and a name for the list), pick **helper**, **mod** or **admin** and press **Grant**.
 **Revoke** asks you to type the id. These people are staff too, without a grant:
 
 | Who | Role | Set where |
@@ -191,7 +230,7 @@ Ask the person to open `/wrath/admin` once: the Staff only page shows their acco
 | **Audit** | Every action: who, what, when, before and after, and refusals. |
 
 Owner only: grant or revoke staff, change a feature flag, set the stable or beta channel, hold or release updates,
-notes to Claude. See **Roles** above for mods and admins.
+the minimum launcher version, approve or hold upgrades, approve looks, undo review decisions, notes to Claude. See **Roles** above for mods and admins.
 
 ## Safety
 

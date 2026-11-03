@@ -48,7 +48,7 @@
       {"key": "node_keepers", "name": "🔑︱node-keepers", "topic": "Network changes, first.", "private": ["node_keeper", "core_team"]}
     ]},
     {"key": "make", "name": "Mods & Workshop", "channels": [
-      {"key": "workshop_submissions", "name": "📤︱workshop-submissions", "topic": "Made a mod, addon or mode? Post its Workshop link here for the team to look at. One post every 10 minutes.", "slowmode": 600},
+      {"key": "workshop_submissions", "name": "📤︱workshop-submissions", "topic": "Made a mod, addon, look or realm? Type /submit with its link: it goes to the team's review queue. Or post the link here. One post every 10 minutes.", "slowmode": 600},
       {"key": "mods_and_addons", "name": "🧩︱mods-and-addons", "topic": "Mods and addons: share, ask, report problems with one."},
       {"key": "scripting_help", "name": "💻︱scripting-help", "topic": "Help with realm scripts and mode files."},
       {"key": "mode_jam", "name": "🎮︱mode-jam", "topic": "The monthly mode jam. Bragging rights only, no prizes."},

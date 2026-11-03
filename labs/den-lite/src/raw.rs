@@ -72,12 +72,12 @@ pub fn packed_rotation(q: [f32; 4]) -> u64 {
 
 /// One create block for a gameobject, as it is.
 pub fn gameobject_block(out: &mut Vec<u8>, o: &WorldObject) {
-    gameobject_block_shown(out, o, o.kind, 0)
+    gameobject_block_shown(out, o, o.kind, 0, o.entry)
 }
 
 /// One create block for a gameobject with the type and flags the client is told (the editor's build mode shows
 /// props as goobers: gizmo.rs `shown`).
-pub fn gameobject_block_shown(out: &mut Vec<u8>, o: &WorldObject, kind: u8, flags: u32) {
+pub fn gameobject_block_shown(out: &mut Vec<u8>, o: &WorldObject, kind: u8, flags: u32, entry: u32) {
     out.push(UPDATETYPE_CREATE_OBJECT);
     packed_guid(out, o.guid);
     out.push(TYPEID_GAMEOBJECT);
@@ -94,7 +94,7 @@ pub fn gameobject_block_shown(out: &mut Vec<u8>, o: &WorldObject, kind: u8, flag
     fields[0] = Some(o.guid as u32);
     fields[1] = Some((o.guid >> 32) as u32);
     fields[OBJECT_FIELD_TYPE] = Some(TYPEMASK_OBJECT_GAMEOBJECT);
-    fields[OBJECT_FIELD_ENTRY] = Some(o.entry);
+    fields[OBJECT_FIELD_ENTRY] = Some(entry);
     fields[OBJECT_FIELD_SCALE_X] = Some(o.scale.to_bits());
     fields[GAMEOBJECT_DISPLAYID] = Some(o.display);
     fields[GAMEOBJECT_FLAGS] = Some(flags);
@@ -130,14 +130,14 @@ pub fn gameobject_creates(objs: &[WorldObject], per: usize) -> Vec<Vec<u8>> {
 }
 
 /// As [`gameobject_creates`], each object's type and flags from `shown`.
-pub fn gameobject_creates_shown(objs: &[WorldObject], per: usize, shown: impl Fn(&WorldObject) -> (u8, u32)) -> Vec<Vec<u8>> {
+pub fn gameobject_creates_shown(objs: &[WorldObject], per: usize, shown: impl Fn(&WorldObject) -> (u8, u32, u32)) -> Vec<Vec<u8>> {
     objs.chunks(per.max(1))
         .map(|chunk| {
             let mut out = Vec::with_capacity(4 + chunk.len() * 80);
             out.extend_from_slice(&(chunk.len() as u32).to_le_bytes());
             for o in chunk {
-                let (kind, flags) = shown(o);
-                gameobject_block_shown(&mut out, o, kind, flags);
+                let (kind, flags, entry) = shown(o);
+                gameobject_block_shown(&mut out, o, kind, flags, entry);
             }
             out
         })
@@ -183,14 +183,16 @@ mod tests {
         let o = WorldObject { guid: 0xF110_0009_6D00_0001, entry: 2413, display: 39, kind: 7, scale: 1.0, x: 1.0, y: 2.0, z: 3.0, o: 0.0, pitch: 0.0, roll: 0.0 };
         let (mut a, mut b) = (Vec::new(), Vec::new());
         gameobject_block(&mut a, &o);
-        gameobject_block_shown(&mut b, &o, 10, 0x10);
+        gameobject_block_shown(&mut b, &o, 10, 0x10, 2413 | 0x0100_0000);
         assert_eq!(a.len(), b.len());
         // the values end: ..., flags (field 9), the rotation (10 ..= 13, only 13 set), bytes_1 (17)
         let tail = |v: &[u8], k: usize| u32::from_le_bytes(v[v.len() - 4 * k..v.len() - 4 * k + 4].try_into().unwrap());
         assert_eq!((tail(&a, 1) >> 8) & 0xFF, 7, "as it is: a chair");
         assert_eq!((tail(&b, 1) >> 8) & 0xFF, 10, "a goober");
         assert_eq!((tail(&a, 3), tail(&b, 3)), (0, 0x10), "the flags");
-        assert_eq!(gameobject_creates_shown(std::slice::from_ref(&o), 8, |o| (o.kind, 0)), gameobject_creates(std::slice::from_ref(&o), 8));
+        // the entry (field 3): sixth from the end (entry, scale, display, flags, rotation, bytes_1); b's the build twin's
+        assert_eq!((tail(&a, 6), tail(&b, 6)), (2413, 2413 | 0x0100_0000));
+        assert_eq!(gameobject_creates_shown(std::slice::from_ref(&o), 8, |o| (o.kind, 0, o.entry)), gameobject_creates(std::slice::from_ref(&o), 8));
     }
 
     #[test]

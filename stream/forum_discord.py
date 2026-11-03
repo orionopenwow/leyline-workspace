@@ -29,6 +29,8 @@ Discord is read with plain REST (no gateway): every WU_FORUM_DISCORD_POLL second
 threads, and only threads with new messages are read. Deletions show as a drop in a thread's message count (read at
 once) and in a slow sweep (every 10 minutes, threads active in the last 7 days). /link and /unlink arrive at our
 Interactions Endpoint URL (POST /wrath/forum/api/discord/interactions), checked with the app's Ed25519 public key.
+/submit (a link, what it is, a note) puts a mod, addon, look or realm link in the review queue (stream/linkqueue.py),
+the same queue as the website's /wrath/submit; the answer is private.
 
 Pages: GET/POST /wrath/leyline/forum/discord[?c=<code>]  link or unlink (signed in on the website).
 
@@ -79,7 +81,16 @@ SNOW_RE = re.compile(r"^\d{5,22}$")
 EPHEMERAL = 64
 SUPPRESS_EMBEDS = 4
 COMMANDS = [{"name": "link", "type": 1, "description": "Link your Leyline account, so your replies here reach the forum"},
-            {"name": "unlink", "type": 1, "description": "Unlink your Leyline account from this Discord account"}]
+            {"name": "unlink", "type": 1, "description": "Unlink your Leyline account from this Discord account"},
+            # Submit a link (stream/linkqueue.py): one review queue with the website's /wrath/submit
+            {"name": "submit", "type": 1, "description": "Send a mod, addon, look or realm link to the Leyline team for review",
+             "options": [{"type": 3, "name": "link", "description": "The project's page (https://...)", "required": True,
+                          "max_length": 300},
+                         {"type": 3, "name": "kind", "description": "What it is", "required": True,
+                          "choices": [{"name": "Mod", "value": "mod"}, {"name": "Addon", "value": "addon"},
+                                      {"name": "Look", "value": "look"}, {"name": "Realm", "value": "realm"}]},
+                         {"type": 3, "name": "note", "description": "A short note for the reviewers", "required": False,
+                          "max_length": 280}]}]
 
 
 def snowflake_ms(sid) -> int:
@@ -1042,6 +1053,17 @@ class Link:
         if name == "unlink":
             return say("Unlinked. Your messages here no longer reach the forum." if self.unlink(discord_id=did)
                        else "You weren't linked.")
+        if name == "submit":   # Submit a link: into the one review queue (stream/linkqueue.py), answered privately
+            lq = self.fm.P("linkqueue") if hasattr(self.fm, "P") else None
+            if lq is None:
+                return say("Submitting links isn't open yet. Please try again later.")
+            opts = {str(o.get("name")): o.get("value") for o in ((d.get("data") or {}).get("options") or [])
+                    if isinstance(o, dict) and isinstance(o.get("value"), str)}
+            try:
+                return say(lq.discord_submit(did, dname, self.linked(did) or "", opts))
+            except Exception:   # noqa: BLE001
+                log.exception("forum-discord: /submit failed")
+                return say("That didn't go through. Please try again shortly.")
         return say("I don't know that command.")
 
 

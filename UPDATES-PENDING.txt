@@ -765,3 +765,8 @@
 1314d ship  Save as Orion: the Den editor overhaul, Elwynn sky, live placement, gizmo, the GM panel look
 1314e den-lite  Den Lite rebuilt: nine composed stamps (camp, inn, market, garden, dock, house, smithy, nook, shrine), Jaina builds big first and steps back, .den copy lionspride
 1314f ship  Save as Orion: the composed stamps, Jaina's building, copy a place from your own game
+1315a den-lite  Den Lite rebuilt: class picker and live dummies, the Dojo set, Jaina flies with you, .den mounts / .den gear, build twins (props light up), stamps fit the room, .den help
+1315b addons  Leyline addons: models seen from the side, right-drag turns / wheel zooms, the gallery clear of chat, the Den guide, Dojo buttons
+1315c foreverui  Browser game: the same
+1315d signin  Website: submit a link (site and Discord), Review pages and helper role, feedback digest, version.json, Agents out now, My Den on Forge
+1315e ship  Save as Orion: all of the above

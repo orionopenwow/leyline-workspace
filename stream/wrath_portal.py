@@ -29,8 +29,11 @@ Two listeners, both inside Docker networks only (never published on the host):
          GET /wrath/key, POST /wrath/key/start|signin   Your Hero Key (stream/herokeys.py): see it, save it, make a
                                new one; a new account or a Hero Key sign-in. The website's /account/key redirects here
          GET /wrath/admin[/...], POST /wrath/admin/act   staff only: the Leyline Admin Console (stream/admin.py,
-                               docs/ADMIN-CONSOLE.md); GET /wrath/leyline/{flags,channel,news,themes,realm-overrides}.json
-                               are its public feeds for the launcher
+                               docs/ADMIN-CONSOLE.md); GET /wrath/leyline/{flags,channel,news,themes,realm-overrides,version}.json
+                               are its public feeds for the launcher. HQ > Review (stream/staffdesk.py): submitted
+                               links, the feedback digest (stream/feedback.py, every WU_FEEDBACK_HOURS), upgrades
+         GET/POST /wrath/submit, GET /wrath/leyline/approved-links.json   Submit a link (stream/linkqueue.py): one
+                               review queue for mod, addon, look and realm links (also the Discord's /submit)
          GET/POST /wrath/leyline/forum[/...], GET /wrath/forum/api/...   the Leyline forum (stream/forum.py): read
                                by anyone, posts from signed-in website accounts; its JSON is for the launcher
 
@@ -349,6 +352,10 @@ if listings is not None:
 bugreport = _load_module("wu_bugreport", "bugreport.py")   # Report a bug: /wrath/bugs, the launcher's /wrath/bugs/api/report (stream/bugreport.py)
 if bugreport is not None:
     bugreport.bind(lambda name: globals()[name])
+linkqueue = _load_module("wu_linkqueue", "linkqueue.py")   # Submit a link: /wrath/submit, the Discord's /submit (stream/linkqueue.py)
+if linkqueue is not None:
+    linkqueue.bind(lambda name: globals()[name])
+feedback = _load_module("wu_feedback", "feedback.py")   # the feedback digest and the release window (stream/feedback.py)
 network = _load_module("wu_network", "network.py")   # the realm browser, /wrath/realms.json, realm reports (stream/network.py)
 if network is not None:
     network.bind(lambda name: globals()[name])
@@ -1331,6 +1338,9 @@ ART_TYPES = {
     # the front page's Forge and Agents sections: the owner's own app screenshots (Forge's map of its own island;
     # the Agents inn), game pictures, so behind the killswitch like the other leyline-shot- files
     "leyline-shot-forge.webp": "image/webp", "leyline-shot-agents.webp": "image/webp",
+    "leyline-shot-agents.gif": "image/gif",
+    # the Forge page's My Den pictures (hub.DEN_SHOTS), when the owner adds them
+    "leyline-shot-den-1.webp": "image/webp", "leyline-shot-den-2.webp": "image/webp", "leyline-shot-den-3.webp": "image/webp",   # Agents' animated picture (the owner's GIF; hub.APP_ANIMS), when it is there
     "leyline-shot-backdrop.webp": "image/webp",   # the hub's backdrop (the owner's picture), faint behind every page
     "play-stone.webp": "image/webp",   # the launcher's PLAY button picture without the word, for the site's Play buttons
     # the launcher's stone look on the site (launcher/ui/stone.css, owner 2026-10-31): the header/footer strip, the side
@@ -4091,6 +4101,9 @@ class PageHandler(BaseHTTPRequestHandler):
         if bugreport is not None and bugreport.match(path):   # POST /wrath/bugs, /wrath/bugs/api/report (stream/bugreport.py)
             bugreport.post(self, path)
             return
+        if linkqueue is not None and linkqueue.match(path):   # POST /wrath/submit: Submit a link (stream/linkqueue.py)
+            linkqueue.post(self, path)
+            return
         if hub_mod is not None and hub_mod.match(path):   # POST /wrath/leyline-preview/submit (stream/hub.py)
             hub_mod.post(self, path)
             return
@@ -4199,6 +4212,9 @@ class PageHandler(BaseHTTPRequestHandler):
             if got:
                 self.send(got[0], got[1], got[2], public=True)
                 return
+        if linkqueue is not None and linkqueue.match(path):   # /wrath/submit, /wrath/leyline/approved-links.json (stream/linkqueue.py)
+            linkqueue.get(self, path, query)
+            return
         if admin is not None and admin.match(path):   # /wrath/admin and the /wrath/leyline/*.json feeds (stream/admin.py)
             admin.get(self, path, query)
             return
@@ -4509,6 +4525,42 @@ class Server(ThreadingHTTPServer):
             self.slots.release()
 
 
+def ops_dir() -> str:
+    """Where the feedback digest and the presence samples live (stream/feedback.py): $WU_PORTAL_DATA/ops."""
+    return os.path.join(os.environ.get("WU_PORTAL_DATA", "/data"), "ops")
+
+
+def _ops_tick(now: float, last_digest: float) -> float:
+    """One round of the ops thread: a presence sample (players online now) and, every WU_FEEDBACK_HOURS hours (4; 0 = off),
+    the feedback digest. Returns when the digest last ran. Never raises."""
+    try:
+        doc = json.loads(status_json().decode("utf-8"))
+        n = doc.get("players") if isinstance(doc, dict) and doc.get("online") else None
+        if isinstance(n, int) and not isinstance(n, bool):
+            feedback.sample(ops_dir(), n, int(now))
+    except Exception:   # noqa: BLE001
+        log.debug("presence sample skipped", exc_info=True)
+    try:
+        hours = float(os.environ.get("WU_FEEDBACK_HOURS", "4"))
+    except ValueError:
+        hours = 4.0
+    if hours > 0 and now - last_digest >= hours * 3600:
+        try:
+            feedback.digest(os.environ.get("WU_PORTAL_DATA", "/data"), ops_dir(), os.environ.get("WU_FEEDBACK_WU", ""),
+                            lex=feedback.load_scorer(os.environ.get("WU_SENTIMENT_LEXICON", ""), os.environ.get("WU_SENTIMENT_SCORER", "")))
+        except Exception:   # noqa: BLE001
+            log.exception("feedback digest failed")
+        return now
+    return last_digest
+
+
+def _ops_loop() -> None:
+    last = time.time() - 3 * 3600   # the first digest an hour after a start, not at once
+    while True:
+        time.sleep(feedback.SAMPLE_EVERY)
+        last = _ops_tick(time.time(), last)
+
+
 def main() -> int:
     logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if not SOAP_USER or not SOAP_PASS:
@@ -4525,6 +4577,8 @@ def main() -> int:
     if guest:
         guest.start_thread()
     threading.Thread(target=_layer_sweeper, daemon=True, name="layer-sweeper").start()
+    if feedback is not None:   # presence samples for the release window, and the feedback digest every few hours
+        threading.Thread(target=_ops_loop, daemon=True, name="ops").start()
     if social is not None:
         social.setup()   # the store in /data and the realm bridge thread (stream/social.py)
     if profiles is not None:

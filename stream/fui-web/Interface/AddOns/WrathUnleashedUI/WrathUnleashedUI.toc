@@ -17,6 +17,7 @@ DenHome.lua
 DenBar.lua
 Gizmo.lua
 Dojo.lua
+Guide.lua
 Golf.lua
 ModeAPI.lua
 Modes.lua

@@ -752,7 +752,12 @@ end)
 SLASH_LEYLINEEDIT1 = "/edit"
 SlashCmdList["LEYLINEEDIT"] = function() E.Toggle() end
 SLASH_LEYLINEDEN1 = "/den"
-SlashCmdList["LEYLINEDEN"] = function() E.ToggleDen() end
+SlashCmdList["LEYLINEDEN"] = function(msg)
+    -- /den guide (or /den help): the Den guide (Guide.lua); /den alone: the Den panel as before
+    local w = tostring(msg or ""):lower():match("^%s*(%a+)")
+    if (w == "guide" or w == "help") and W.DenGuide then return W.DenGuide.Show(true) end
+    E.ToggleDen()
+end
 
 local denListener = CreateFrame("Frame")
 denListener:RegisterEvent("CHAT_MSG_ADDON")

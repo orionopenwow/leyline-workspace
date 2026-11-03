@@ -88,6 +88,24 @@ class StepPaths(unittest.TestCase):
         for word in (b"rebrand.py\"", b" --write", b"releaselog append"):
             self.assertNotIn(word, raw)
 
+    def test_feedback_is_read_only(self):
+        """The feedback digest (stream/feedback.py): READ_ONLY, CRLF, runs only the digest, copies it back, deploys nothing."""
+        bat, title, interactive = control_steps()["feedback"]
+        self.assertEqual(win(bat), "tools/feedback/Feedback digest.bat")
+        self.assertFalse(interactive)
+        self.assertIn("read-only", title)
+        tree = ast.parse(read("tools/control/control.py"))
+        ro = next(ast.literal_eval(n.value) for n in tree.body
+                  if isinstance(n, ast.Assign) and any(getattr(t, "id", "") == "READ_ONLY" for t in n.targets))
+        self.assertIn("feedback", ro)
+        with open(os.path.join(ROOT, bat), "rb") as f:
+            raw = f.read()
+        self.assertEqual(raw.count(b"\n"), raw.count(b"\r\n"), "CRLF line endings")
+        self.assertIn(b"feedback.py digest", raw)
+        self.assertIn(b'findstr /b /c:"FEEDBACK OK"', raw)
+        for word in (b"fastloop", b"docker", b"rollback", b"git push", b" approve"):
+            self.assertNotIn(word, raw.replace(b"approved or posted", b""))
+
     def test_update_bat_steps_exist(self):
         bats = re.findall(r'if /i "%STEP%"=="([^"]+)"\s+\(?set "BAT=([^"]+)"', read("UPDATE.bat"))
         self.assertGreater(len(bats), 10)

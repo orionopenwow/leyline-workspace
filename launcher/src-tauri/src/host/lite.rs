@@ -217,6 +217,27 @@ pub fn copy_places(client: &Path, den_dir: &Path) -> Vec<String> {
     made
 }
 
+/// The tables Den Lite's sandbox combat and class picker read (labs/den-lite `spells.rs` FILES, `gear.rs`): the
+/// player's own spells, their skill lines, cast times, durations, radii, and items (their looks), from their own game
+/// archives into the Dens folder, as [`model_table`]. Never shipped; written only when changed. How many are there.
+pub const GAME_TABLES: [&str; 6] = ["Spell.dbc", "SkillLineAbility.dbc", "SpellCastTimes.dbc", "SpellDuration.dbc", "SpellRadius.dbc", "Item.dbc"];
+
+pub fn game_tables(client: &Path, den_dir: &Path) -> usize {
+    let order = super::terrain::archive_order(client);
+    let mut n = 0;
+    for name in GAME_TABLES {
+        let Ok(Some(b)) = crate::mpq::read_own(&order, &format!("DBFilesClient\\{name}")) else { continue };
+        if b.len() < 20 || &b[..4] != b"WDBC" {
+            continue;
+        }
+        let to = den_dir.join(name);
+        if std::fs::read(&to).ok().as_deref() == Some(&b[..]) || std::fs::write(&to, &b).is_ok() {
+            n += 1;
+        }
+    }
+    n
+}
+
 fn port_answers(port: u16) -> bool {
     let addr: SocketAddr = ([127, 0, 0, 1], port).into();
     TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
@@ -281,6 +302,7 @@ impl DenLite for Binary {
         if let Some(c) = self.client.as_deref() {
             model_table(c, &dir);
             copy_places(c, &dir);
+            game_tables(c, &dir);
         }
         let mut cmd = Command::new(exe);
         cmd.args(command_line(&dir, self.client.as_deref())).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());

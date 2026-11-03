@@ -114,10 +114,11 @@ local function fireClient(msg)
 end
 local sent, cmds = {}, {}
 local server = "lite"
-local state = { fly = 0, speed = 1, dummies = 0, ring = 0 }
+local state = { fly = 0, speed = 1, dummies = 0, ring = 0, combat = 0, fight = 0 }
 local function line()
     if server == "lite" then
-        return string.format("server=lite;fly=%d;speed=%d;dummies=%d;ring=%d;building=0", state.fly, state.speed, state.dummies, state.ring)
+        local extra = state.combat == 1 and string.format(";combat=1;class=mage;level=80;fight=%d;parse=-;best=-", state.fight) or ""
+        return string.format("server=lite;fly=%d;speed=%d;dummies=%d;ring=%d;building=0", state.fly, state.speed, state.dummies, state.ring) .. extra
     end
     return string.format("server=full;fly=%d;speed=%d;dummies=%d;ring=%d;boss=-;duel=0;best=42.5", state.fly, state.speed, state.dummies, state.ring)
 end
@@ -136,7 +137,8 @@ function SendAddonMessage(prefix, msg, channel, target)
         elseif w == "speed" then state.speed = tonumber(data:match("speed (%d)"))
         elseif w == "dummies" then state.dummies = 3
         elseif w == "ring" then state.ring = 1
-        elseif w == "clear" then state.dummies = 0 end
+        elseif w == "clear" then state.dummies = 0
+        elseif w == "fight" then state.fight = data:match("fight on") and 1 or 0 end
         fireClient("wuden\tdojo\t1/1\t" .. line())
     end
 end
@@ -159,6 +161,7 @@ local J = assert(W.Dojo, "W.Dojo")
 local D = assert(W.DenBar, "W.DenBar")
 check("nothing of the Dojo before it is opened", not J.IsOpen() and _G.LeylineDojoPanel == nil)
 
+local before
 -- ---------------------------------------------------------------- 1. Den Lite: the rail's Dojo button
 fire("PLAYER_ENTERING_WORLD")
 local bar = D.Bar()
@@ -187,8 +190,31 @@ p.stamps[1]:Fire("OnClick")
 check("Jaina builds a garden: dojo build garden", lastCmd() == "dojo build garden" and p.stamps[1]:GetText() == "Garden")
 p.clear:Fire("OnClick")
 check("Clear: dojo clear", lastCmd() == "dojo clear" and not p.dummies:IsActive())
-local before = #cmds
+before = #cmds
 check("Next boss cycles the pick, sending nothing", J.NextBoss() == "vancleef" and p.bossPick:GetText() == "Vancleef" and #cmds == before)
+
+-- ---------------------------------------------------------------- 1b. Den Lite with its sandbox combat (combat=1)
+check("without combat=1 the practice rows are off", p.practiceChips[1].enabled == false and p.sessionChips[1].enabled == false and p.classBe.enabled == false)
+state.combat = 1
+J.Cmd("status")
+check("with combat=1: Practice, Session and Class on", J.Combat() and p.practiceChips[1].enabled == true and p.sessionChips[1].enabled == true
+    and p.classBe.enabled == true and p.practice:GetText() == "PRACTICE" and p.session:GetText() == "SESSION")
+check("the note says what Den Lite does now", p.note:GetText():find("any class"))
+check("the readout: the class and level", p.readout:GetText():find("Mage 80"))
+local verbs = {}
+for _, b in ipairs(p.practiceChips) do b:Fire("OnClick"); verbs[#verbs + 1] = lastCmd() end
+check("Pack, Mover, Healer, Tank, Boss: their dojo commands", table.concat(verbs, ",") == "dojo pack,dojo mover,dojo healer,dojo tank,dojo boss")
+verbs = {}
+for _, b in ipairs(p.sessionChips) do b:Fire("OnClick"); verbs[#verbs + 1] = lastCmd() end
+check("1m 3m 5m Reset Refill Fight", table.concat(verbs, ",") == "dojo parse 1,dojo parse 3,dojo parse 5,dojo reset,dojo refill,dojo fight on")
+check("Fight lights up from the line", p.fightBack:IsActive())
+before = #cmds
+check("Next class cycles, sending nothing", J.NextClass() == "paladin" and p.classPick:GetText() == "Paladin" and #cmds == before)
+p.classBe:Fire("OnClick")
+check("Be: dojo class <the pick>", lastCmd() == "dojo class paladin")
+p.mounts:Fire("OnClick")
+check("Mounts: dojo mounts", lastCmd() == "dojo mounts")
+state.combat = 0
 
 -- ---------------------------------------------------------------- 2. the full Den
 server = "full"

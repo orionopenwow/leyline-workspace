@@ -47,11 +47,12 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 
 | Command | What it does |
 |---|---|
-| `.den` | the commands |
+| `.den` (`.den commands`) | the commands |
+| `.den help` (`.den guide`) | opens the Leyline UI's Den guide (a paged help window: WrathUnleashedUI `Guide.lua`, also `/den guide`); without the UI, the commands |
 | `.den place <name>` | one piece 3 yards in front of you, facing as you face (`chair`, `lantern`, `house`...: whole name first, then a word's start) |
 | `.den find <word>` | the pieces whose name has that word (12 shown) |
 | `.den stamps` | the stamps |
-| `.den stamp <name> now [degrees]` | puts a stamp down where you stand, facing as you face (15 degree steps); `x` ahead of you, `y` to your left, as `ov_den_home.lua` |
+| `.den stamp <name> now [degrees]` | puts a stamp down where you stand, facing as you face (15 degree steps); `x` ahead of you, `y` to your left, as `ov_den_home.lua`. Near the Den's edge it is moved toward the middle until all of it is inside (`Den::fit_stamp`; every built-in stamp fits the size 1 room) |
 | `.build undo` | takes the last stamp or load back (50 deep) |
 | `.den save <name>` | the whole Den to a file (the room is its look; the props are in it) |
 | `.den load <name> [replace\|add]` | opens a file; asks first when the Den has props; `replace` keeps a copy as `backup`, and one undo brings the old Den back |
@@ -68,7 +69,12 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 | `.den where` | where you stand against the ground under you, what your game did with its character (took it, moved, walked, the time sync) and every kind of message it sent; the den-test asks it |
 | `.den diag [tag]` | asks the Leyline UI for its view of the character (into the events as `wudiag` lines, after `at:<tag>`); the den-test's before / after |
 | `.den dojo` (`.dojo`) | the Dojo: a training ring in front of you, built by your companion piece by piece, with three training dummies in it (below, "The Dojo") |
-| `.den dojo dummies [1-5]` / `clear` | training dummies (display only: no combat here) / the dummies down (`.build undo` takes the ring back) |
+| `.den dojo dummies [1-5]` / `clear` | training dummies to hit (below, "Sandbox combat") / the dummies down (`.build undo` takes the ring back) |
+| `.den dojo pack\|mover\|healer\|tank\|boss` | the other dummies: five for area spells, one walking a circle, a wounded friendly one to heal, one that hits back, the practice boss |
+| `.den dojo parse 1\|3\|5`, `reset`, `refill`, `cooldowns`, `fight on\|off`, `best`, `dps` | a timed parse (best per class kept), everything full again, your power, your cooldowns, dummies hitting back, your bests, your numbers now |
+| `.den gear <item>...` / `<slot> <item\|none>` / `list <slot> [page]` / `reset` | any item's look on you, in its slot (several at once; a second one-hand weapon in the off hand); looks: `thunderfury`, `shadowmourne`, `warglaives`, `sulfuras`, `valanyr` |
+| `.den mounts` / `list [page]` / `off` | every mount your game has, in your spellbook; cast one to ride (again, or its buff right-clicked, to get off); flying ones fly with `.den fly on` |
+| `.den class <class> [level]` | any class (warrior, paladin, hunter, rogue, priest, deathknight, shaman, mage, warlock, druid) at any level (80 if none), every spell it learns, its bar; `.den class` alone: the list |
 | `.den fly on\|off` / `.den speed 1-5` | fly (jump, then Space to rise, X to sink) / run and fly faster |
 | `.den jaina build <stamp>`, or say `Jaina, build a garden` (a tavern, a forge, a reading nook...) | she walks into its middle and builds it the way a person would (big pieces first, small last, things on tables at the end), casting at each piece, then steps back to look at it (`dojo` is the training ring; docs/DEN-STAMPS.md) |
 | `.den copy lionspride` | the Lion's Pride copied from your own game files (made by the launcher into `stamps-local` when it starts the Den; never shipped): docs/DEN-STAMPS.md |
@@ -83,7 +89,8 @@ moments, the Builder's and the bar's answers, the launcher's answers, a friend i
 hello within `--ui-wait` milliseconds (4000) of the game being in the world (its first SET_ACTIVE_MOVER, time sync
 answer or move after the loading screen; at most `--ui-load`, 30000, after Enter World), the old way: the welcome and five
 quick-start lines in the chat. Typed `.den` commands always answer in the chat. Other chat is said back as your own
-line. One creature, the companion; no combat, spells, quests or loot.
+line. Creatures: the companion and the Dojo's dummies; a sandbox combat against the dummies ("Sandbox combat"); no
+quests or loot.
 
 ### The Leyline UI's Den panel and Builder, and asks for the launcher
 
@@ -200,7 +207,28 @@ puts the old size back.
 from this server's answer to its creature query ("Jaina", "<Your companion>" under it). She stands 2.5 yards behind you,
 a little to the left, and follows loosely: twice a second the server checks, and when her spot is more than 2 yards
 from where she is (or is going) she walks or runs there (`SMSG_MONSTER_MOVE`, one point; the server keeps her position
-along the way). A jump of more than 30 yards puts her back at your side; leaving the Den sends her off.
+along the way). A jump of more than 40 yards puts her back at your side; going more than 300 yards from the Den sends
+her off (she waits in the Den).
+
+**Flying, props, keeping up (3 Nov, `src/flight.rs`).** The owner: "when user flies have Jaina fly with, more
+dynamically", "fix Jaina collision", "she fades away after a certain distance".
+
+- *Flying with you.* With `.den fly on` and you more than 1.5 yards above the ground, she flies: she is told so
+  (`SMSG_SPLINE_MOVE_SET_FLYING`, `SMSG_SPLINE_MOVE_GRAVITY_DISABLE`: her packed guid, as AzerothCore's
+  `Creature::SetCanFly` / `SetDisableGravity` tell the players around), then every 300 ms that her spot moved more than a
+  yard, a curved path to 2.5 yards behind you and 0.8 above your height (`SMSG_MONSTER_MOVE`, spline flags Flying
+  0x2000 | Catmullrom 0x40000, every point written whole as AzerothCore's `PacketBuilder` does for such paths), at
+  your own flight speed (`.den speed`). You land: she flies down beside you, then `UNSET_FLYING` and `GRAVITY_ENABLE`.
+- *Around props.* Her walk to her spot goes around a prop standing in the straight line (a waypoint beside it, from the
+  prop's model size when the launcher copied `GameObjectDisplayInfo.dbc`, else a small circle), never ends inside one
+  and never closer than 2 yards to you; such a walk is a curved path (Catmullrom). The Dojo's builds still walk her
+  straight to the spot the build wants.
+- *Fading away* was Den Lite sending her off as soon as you were past the Den's own circle (22 yards at size 1), and
+  the game removing her. She now follows anywhere within 300 yards of the Den, and past 40 yards (a jump, fast flying)
+  she is put back behind you at once.
+
+To see on the real game: whether the game flies her from the spline flags alone (else her create needs the flying
+movement flags too), how the curves look, and her landing.
 
 Her manners (owner 1 Nov: "smarter companions"; `companion.rs`, all deterministic and unit tested): she never stands
 in your way (closer than 1.2 yards and stopped, she steps back to her spot), `stay` keeps her where she is (and a jump
@@ -210,7 +238,7 @@ to (no tips or nudges nobody asked for, and nothing when she rejoins you). With 
 is still a guide: an ask her built-in guide knows (`GUIDE`: placing, stamps, undo, save, load, grow, looks, mods,
 modes, Forge, friends, levelling, the assistant) gets its answer at once, and is still written down; with someone
 reading her notes (`read_at`), the assistant answers instead. `tips` picks the next step that fits the Den (a first
-piece, a first save, more room), then the general tips in turn. Den Lite has no combat, so "help me" is a tip here. "Jaina, build a
+piece, a first save, more room), then the general tips in turn. Her "help me" is a tip here (she doesn't fight). "Jaina, build a
 garden" is hers too: she builds it ("The Dojo", below).
 
 She talks through the same files as the full Den, in the Dens folder, so the launcher's Den tools for your assistant
@@ -256,15 +284,43 @@ Dojo", has both side by side):
   Friends in the Den see it at once.
 - **The ring** (`.den dojo`): the stamp `dojo::DOJO_STAMP` (11 fences with the opening towards you, 4 torches, 2
   banners, 2 weapon racks, a target tent, 2 benches; all props Den Lite knows), built by her as above, then three
-  **training dummies** in it: creature creates like hers with the game's training dummy entries (31144 and the others in
-  `dojo::DUMMIES`), friendly, never hit (Den Lite has no combat). `.den dojo dummies [1-5]` puts them up anywhere,
-  `.den dojo clear` takes them down; they are shown again at login. Bosses, damage per second, spars and a new look
-  say they need the full Den.
+  **training dummies** in it: creature creates like hers with the game's training dummy entry (31144,
+  `dojo::DUMMIES`), now targets for the sandbox combat (below): attackable (faction 7), 5 million health, refilled.
+  `.den dojo dummies [1-5]` puts them up anywhere, `.den dojo clear` takes them down; they are shown again at login.
+  Duels and a new look say they need the full Den.
 - **The Den bar's Dojo panel** (WrathUnleashedUI `Dojo.lua`): its buttons send `wuden cmd dojo <...>` (as `.den dojo
   <...>`); Den Lite answers `wuden dojo server=lite;fly=0|1;speed=<n>;dummies=<n>;ring=0|1;building=0|1`.
 
+#### The Dojo as a training ground (plan and what is built, owner 3 Nov 10:36: "fully complete the Dojo features")
+
+What a training ground needs, and where each part stands:
+
+| Part | What it does | Den Lite | Command / panel |
+|---|---|---|---|
+| Single target | the training dummy: hit it, your damage per second | built | `.den dojo dummies [n]`, Dummies |
+| Pack of five | five weaker dummies close together: area spells | built | `.den dojo pack`, Pack |
+| Moving target | one dummy walking a 4-yard circle: keep in range | built | `.den dojo mover`, Mover |
+| Healing practice | a friendly wounded dummy losing health every second; your healing per second | built | `.den dojo healer`, Healer |
+| Tank practice | a dummy that hits back once hit (lightly); `fight on`: all dummies do | built | `.den dojo tank`, `.den dojo fight on`, Tank, Fight |
+| Damage meter | the readout in the Dojo panel (`wuden dps`), the numbers in the chat when a fight ends | built | hit a dummy; `.den dojo dps` |
+| Timed parse | 1, 3 or 5 minutes from your first hit; the best per class kept (`<dens>/dojo-best.json`) | built | `.den dojo parse 1\|3\|5`, 1m 3m 5m |
+| Boss practice | the practice boss (twice the size, it falls): every 9 s it marks the ground under you (a cast from it at your feet, 2.5 s), then the circle lands; get out. Your time and how often it caught you; the best time per class kept | built | `.den dojo boss`, Boss |
+| Reset | every dummy full (the boss back up), cooldowns ready, health and power full | built | `.den dojo reset`, Reset |
+| Refill / cooldowns | power and health full; every cooldown ready | built | `.den dojo refill`, `cooldowns`, Refill |
+| Class, level, respec | any class at any level, free and at once | built | `.den class <class> [level]`, the class picker |
+| Personal bests | per class: parses and the boss time | built | `.den dojo best` |
+| Duel arena | a ring for you and a friend: countdown, win or lose | **next**: needs combat between two players' sessions (Den Lite's combat is the host's alone); the full Den has duels | `.den dojo duel` says so |
+| A new look | the barber | the full Den | `.den dojo look` |
+
+The panel (WrathUnleashedUI `Dojo.lua`): a Practice row (Pack, Mover, Healer, Tank, Boss), a Session row (1m, 3m, 5m,
+Reset, Refill, Fight) and a class picker (the class, then Be) send the same `.den dojo` / `.den class` commands; on Den
+Lite they are on when the Dojo line says `combat=1` (`;combat=1;class=<word>;level=<n>;fight=0|1;parse=<m|->;best=<boss
+seconds|->` after the line above).
+
 Tested here: `dojo.rs`'s unit tests (the bodies byte for byte, the acks, the build's steps and timing, the ring, the
-dummies' spots) and the headless client (`the_dojo_flies_speeds_and_jaina_builds_piece_by_piece`). To see on the real
+dummies' spots, the kinds' places and the walker's circle), combat.rs's (each dummy kind, the parse, the boss's circles
+and fall, reset), sandbox.rs's (the bests) and the headless clients (`the_dojo_flies_speeds_and_jaina_builds_piece_by_piece`,
+`the_class_picker_and_the_dummies_take_spells_and_swings`). To see on the real
 game: the flying and the speed; whether her cast shows from `SMSG_SPELL_START` / `GO` without anything else (else
 `SMSG_PLAY_SPELL_VISUAL`, a kit id, is the fallback to try), and her turning; the dummies' model (display 27510).
 
@@ -281,8 +337,11 @@ stick to the cursor the way an editor's does. What Den Lite (`src/gizmo.rs`) and
 from what the client does have:
 
 - **Build mode** (`wubuild cmd mode build|play`; the UI sends it in Your Den on Den Lite when not in play mode): every
-  prop is created again with the goober type in `GAMEOBJECT_BYTES_1` (the query answer, which the client caches, keeps
-  the template's own type). The client then highlights a prop under the mouse (its own interact glow and cursor) and a
+  prop is created again with the goober type in `GAMEOBJECT_BYTES_1` **under its build twin's entry** (the prop's entry
+  with bit 24 set, `gizmo::twin`; the guid keeps the prop's own). The client keeps each entry's query answer and went by
+  that cached type, not the type byte (owner's den-features 3 Nov: no glow), so the twin is a new entry it must ask
+  for, and `CMSG_GAMEOBJECT_QUERY` answers a twin as a goober with the prop's own model, name and size
+  (`gizmo::query_any`; how many twins were asked: `twin_queries` in the den-test's answers). The client then highlights a prop under the mouse (its own interact glow and cursor) and a
   right-click sends `CMSG_GAMEOBJ_USE`: Den Lite selects it, puts the gizmo around it and tells the UI `wubuild
   picked <id>` (and the state); the UI opens its menu at the cursor (Delete, Duplicate, Move, Rotate, Bigger, Smaller,
   Snap to floor, Lock, Copy, Properties). Play mode shows the props as they are again (a right-click there is left to
@@ -328,7 +387,8 @@ What is proven here, and what needs the owner's PC: the ray, the copy's two-guid
 cast and its silent answer, the gizmo, the goober look and right-click selection are tested in `gizmo.rs`, `ovmod.rs`,
 `raw.rs` and the headless client (`the_editors_preview_gizmo_selection_and_exact_click`), the UI in
 `stream/tests/test_wuui_gizmo.lua`, den-check's parts in `test_den_check.py`. **On the real game, to see**: that the
-goober type in the update field gives the highlight and the right-click (not only the cached template's type); that
+build twins give the highlight and the right-click (den-check's `build mode: props light up under the mouse` says how
+many goober looks the game asked for); that
 Flare's cursor shows for this character and the silent failure leaves no cooldown; that `SaveView` / `SetView` /
 `ResetView` / `CameraZoomIn` / `CameraZoomOut` aren't protected; the flags' colours. **The build camera's numbers are
 first guesses** (field of view 90 degrees across the diagonal, pivot 2 yards over the feet, 12 yards back, 0.5 rad
@@ -336,6 +396,98 @@ down) until **den-check's hover calibration** runs on the owner's PC (`Den featu
 of the game window, at each the preview's place and, by pressing G and clicking, the game's own point; the camera
 fitted to them, printed and saved to `<dens>/den-lite.camera.json`, used from the next Den start). Until then the copy
 can land a few yards from the cursor; the exact click (G) is always exact.
+### Any gear, every mount (3 Nov, owner 10:40: "allow all mounts, all gear")
+
+- **Gear** (`src/gear.rs`): the look only. The character's visible item fields (`PLAYER_VISIBLE_ITEM_n_ENTRYID`,
+  field 283 + 2 n, every one of the 19 slots) in a values update, to you and to friends in the Den, kept in
+  `<dens>/den-lite.gear.json` and in your create at the next login; the game draws each from its own `Item.dbc` by
+  entry, as the ready-made outfit. Which slot an item goes in: the player's own `Item.dbc` (its inventory type),
+  copied by the launcher. That table has no names (they are a server's), so `.den gear list <slot>` lists entries
+  (and sends `wuden gear slot=..;page=..;pages=..;ids=..` for a picker; the game's own icons show them). The
+  character list still shows the outfit. TODO(owner): which ready-made looks (armour sets) to offer.
+- **Mounts** (`src/creatures.rs`, combat.rs): `.den mounts` puts every spell with the mounted aura (78) from your own
+  `Spell.dbc` in your spellbook (`SMSG_INITIAL_SPELLS` again, with the class's), kept (`<dens>/den-lite.mounts`). Cast
+  one: the aura, `UNIT_FIELD_MOUNTDISPLAYID` (69) with the creature's model and `UNIT_FLAG_MOUNT`, and the speeds its
+  other auras give (32: run, 207: flight; per cent more) with `SMSG_FORCE_RUN_SPEED_CHANGE` /
+  `SMSG_FORCE_FLIGHT_SPEED_CHANGE`; again, or `CMSG_CANCEL_MOUNT_AURA` / the buff right-clicked: off, the speeds back
+  to normal. The creature -> model table is generated from AzerothCore's own world database
+  (`creature_template_model`, `tools/gen_creature_models.py`, azerothcore-wotlk 5c5fe0b of 2 Nov 2026; 29947
+  creatures, 105 KB), as `objects.rs` is from its gameobject_template. Mount names with a game brand word are left
+  out. `.den mounts list` sends `wuden mounts page=..;pages=..;ids=..` for a list in the panel.
+- Not built yet: the Play panel's gear picker and mount list (the server's answers above are ready for them).
+- To see on the real game: the spellbook taking the mounts without a relog, the mount's model and animation, the
+  speeds, flying mounts with `.den fly on`; gear in every slot (weapons sheathed, shields, tabards).
+
+### Sandbox combat (3 Nov)
+
+The owner (screenshot of three dummies that did nothing): "have training dummies be active, make all spells work, ...
+allow class picker, any spell". Den Lite is not a game server with a combat engine; this is a sandbox: enough of the
+game's own messages that your spells and swings land on the Dojo's dummies and the game shows them as a real fight.
+
+**What works.**
+
+- **Class picker** (`src/classes.rs`): `.den class mage 80` makes the ready-made character a mage at level 80 (any of
+  the ten classes, levels 1-80), at once in the world: its fields (`UNIT_FIELD_BYTES_0`'s class and power, level,
+  health, mana / rage / energy / runic power, attack time, damage, attack power) in an `SMSG_UPDATE_OBJECT` values
+  update, `SMSG_INITIAL_SPELLS` with every spell the class learns up to that level, and `SMSG_ACTION_BUTTONS` with its
+  main spells (the class's list by name, then other spells that hurt or heal). The spells: every ability of the
+  class's skill lines in the player's own `SkillLineAbility.dbc` (class mask, the human race's mask), each at the
+  highest rank the level allows (the table's next rank, else the same name's highest level), talents' abilities too
+  (no talent points: the abilities only), plus the auto attack (and Auto Shot). What AzerothCore sends a level-80
+  character is the same pair of messages, filled from its trainers and talents. The choice is kept in
+  `<dens>/den-lite.class.json` with your own changes to the bar (`CMSG_SET_ACTION_BUTTON`), per class; at login the
+  character list, the create and both messages are the class's. The character stays human (its look as before).
+- **Targets**: `CMSG_SET_SELECTION` (u64). **Auto attack**: `CMSG_ATTACKSWING` (u64) -> `SMSG_ATTACKSTART` (u64
+  attacker, u64 victim), a swing every attack time (`SMSG_ATTACKERSTATEUPDATE`: hit info, packed attacker and victim,
+  damage, overkill, one physical part, victim state, two u32), out of reach `SMSG_ATTACKSWING_NOTINRANGE`, a friendly
+  unit `SMSG_ATTACKSWING_CANT_ATTACK`; `CMSG_ATTACKSTOP` -> `SMSG_ATTACKSTOP`. Rage from swings.
+- **Spells**: `CMSG_CAST_SPELL` (cast count, spell, flags, targets) -> checked (known, the global cooldown, its
+  cooldown, power, a hostile target in range for a harmful spell) -> `SMSG_SPELL_START` (the cast time from
+  `SpellCastTimes.dbc`, the power left) -> after the cast time `SMSG_SPELL_GO` (the units hit) -> the effects: damage
+  (`SMSG_SPELLNONMELEEDAMAGELOG`), heals (`SMSG_SPELLHEALLOG`), the unit's health (`SMSG_UPDATE_OBJECT` values), the
+  cooldown (`SMSG_SPELL_COOLDOWN`), auras (`SMSG_AURA_UPDATE` with the duration from `SpellDuration.dbc`: buffs on you,
+  damage and healing over time ticking with `SMSG_PERIODICAURALOG`, a stance or form setting the stance bar's byte),
+  combo points (`SMSG_UPDATE_COMBO_POINTS`, finishers use them), channelled spells (`MSG_CHANNEL_START` / `UPDATE`, the
+  channel fields, ticks; a spell that triggers another each tick sends that spell's own `SMSG_SPELL_GO`, so its
+  missiles fly), area spells (every hostile dummy in the radius from `SpellRadius.dbc`, around you or the place you
+  aimed). Refused: `SMSG_CAST_FAILED` (not known 63, not ready 67, no power 85, out of range 97, friendly 115, bad
+  targets 12, in progress 105). Moving (start forward, back, strafe, a jump) or `CMSG_CANCEL_CAST` stops a cast with
+  a cast time: `SMSG_SPELL_FAILURE`, `SMSG_SPELL_FAILED_OTHER` (interrupted 40). `CMSG_CANCEL_AURA` takes a buff off.
+  Power comes back every second (mana 3 %, energy 10, rage and runic power 3), health too when nothing hit you for 5 s.
+- **The dummies count**: the training dummy has 5 million health and refills at a tenth; the meter's line goes to the
+  Dojo panel (`wuden dps dps=..;total=..;secs=..;dummy=..`, once a second) and, 5 s after your last hit, to the chat
+  ("12345 damage in 20.4 s: 605 per second."). Nothing hurts you unless a dummy hits back, and you never fall (back
+  to full instead).
+
+**What is approximate.** No talents, procs, gear, stats, resistances, misses, dodges or blocks; a 10 % critical chance
+(spells 1.5 times, swings 2 times). Damage: the spell's base points and dice from your own `Spell.dbc` with its points
+per level, plus a spell power of 15 a level (casters; 5 others) times the cast time over 3.5 s; weapon strikes: a
+weapon's damage by level plus attack power (30 a level for melee) over 14 per second of swing. Health and mana by
+level (`classes::stats`). Effects other than damage, heals, auras, energize and combo points (summons, teleports,
+dispels, pets, totems, crowd control) succeed visually and do nothing. Death knights' runes aren't spent. Spells that
+need a weapon equipped (many warrior and rogue strikes, hunters' shots) may be refused by the game itself: Den Lite's
+character carries no items.
+
+**What needs the full Den** (real AzerothCore): real stats and gear, talents, procs, pets, creatures that fight back
+for real, duels and fighting a friend, quests and loot.
+
+**The tables** (all the player's own, `src/spells.rs`): `Spell.dbc`, `SkillLineAbility.dbc`, `SpellCastTimes.dbc`,
+`SpellDuration.dbc`, `SpellRadius.dbc`, checked against their 3.3.5a shapes. The launcher copies them from the player's
+own game archives into the Dens folder at Den Lite's start, as `GameObjectDisplayInfo.dbc` (`launcher/src-tauri/src/
+host/lite.rs` `game_tables`); never shipped. Without them `.den class` says so and only the auto attack works.
+
+**Tested here**: unit tests on every message body and the formulas (combat.rs, classes.rs, spells.rs on small made-up
+tables), and the headless client (`the_class_picker_and_the_dummies_take_spells_and_swings`): it picks mage 80 (the
+fields, the spells, the bar), puts a dummy up, is refused an unknown spell, casts Fireball (start, 2.5 s, the go at the
+dummy, the damage log, its health down), is interrupted by moving, swings and stops, resets (full again), and puts up
+the pack and the wounded dummy.
+
+**Only the real game can show**: whether `SMSG_INITIAL_SPELLS` sent again in the world replaces the spellbook (else the
+new class's spells are there after logging out and in, which is always right); the class's own frames (runes, combo
+points, the stance bar) after a class change without relogging; whether the game casts weapon strikes and shots with no
+weapon; whether the dummies' neutral faction lets every spell target them; how the missiles, the boss's circle (a
+ground-targeted fire spell's own look, `combat::BOSS_SPELL`) and the auras look; whether the spellbook shows the
+spells without the class's skill lines in the player's fields.
 
 ## How it works
 
@@ -349,6 +501,12 @@ can land a few yards from the cursor; the exact click (G) is always exact.
 | `src/play.rs` | `.den mode` (the built-in mode lists) and `.den mods` (the client's addon list, the launcher's `mods.json`) |
 | `src/dojo.rs` | the Dojo: fly and speed (and the game's acks), the training ring and dummies, Jaina's build piece by piece (her casts and turns) |
 | `src/gizmo.rs` | the editor's placement aids: the live preview (the build camera's ray, the copy's two-guid moves), the exact click (Flare's ground-target cast), the gizmo's flags, build mode's goober look and right-click selection; the calibration samples |
+| `src/dojo.rs` | the Dojo: fly and speed (and the game's acks), the training ring and dummies (their kinds, the walker's circle), Jaina's build piece by piece (her casts and turns) |
+| `src/spells.rs` | the player's own spell tables (Spell, SkillLineAbility, SpellCastTimes, SpellDuration, SpellRadius) |
+| `src/classes.rs` | the class picker: the ten classes, their spells at a level, their bars, their numbers, the choice kept |
+| `src/combat.rs` | the sandbox combat: casts, swings, damage and heals, auras, channels, cooldowns, the dummies' kinds, the meter, parses, the boss |
+| `src/sandbox.rs` | world.rs's side of it (a child module): the game's combat messages in, the answers out, `.den class`, the Dojo's verbs, the bests, the tick |
+| `src/flight.rs` | the companion in the air, around props and keeping up |
 | `src/raw.rs` | the two messages written by hand (gameobject creates, the gameobject query answer); why is at the top of the file |
 | `src/models.rs` | the props' model paths for the Builder's gallery, from the player's own `GameObjectDisplayInfo.dbc` that the launcher copies into the Dens folder (`host/lite.rs` `model_table`); none: icons |
 | `src/objects.rs` | the gameobject entries Lite can show (415: the catalog of `ov_build.lua`, the looks, the stamps, the starters) with type, display id, name and size, generated by `tools/gen_objects.py` from AzerothCore's world database `gameobject_template` |
@@ -365,7 +523,8 @@ can land a few yards from the cursor; the exact click (G) is always exact.
 4. `CMSG_PLAYER_LOGIN` -> in AzerothCore's order (`WorldSession::HandlePlayerLogin`,
    `Player::SendInitialPacketsBeforeAddToMap` / `AfterAddToMap`): `SMSG_LOGIN_VERIFY_WORLD`,
    `SMSG_ACCOUNT_DATA_TIMES` (per-character mask 0xEA), `SMSG_FEATURE_SYSTEM_STATUS`, `SMSG_MOTD`,
-   `SMSG_BINDPOINTUPDATE`, `SMSG_INITIAL_SPELLS` (none), `SMSG_ACTION_BUTTONS` (144 empty), `SMSG_INITIALIZE_FACTIONS`
+   `SMSG_BINDPOINTUPDATE`, `SMSG_INITIAL_SPELLS` (none; the class's after `.den class`), `SMSG_ACTION_BUTTONS` (144
+   empty; the class's bar), `SMSG_INITIALIZE_FACTIONS`
    (128), `SMSG_LOGIN_SETTIMESPEED`, `SMSG_UPDATE_OBJECT` (the player: create type 3, flags self + living +
    stationary position (0x61, AzerothCore's), the movement time from Den Lite's clock, speeds, and the fields for
    race/class/gender, health, level, faction 1, display 49 or 50, bounding radius, combat reach, cast speed, hover

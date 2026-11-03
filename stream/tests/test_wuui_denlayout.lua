@@ -121,6 +121,48 @@ for _, scr in ipairs({ { 1920, 1080, 4 }, { 2560, 1440, 4 }, { 1280, 720, 2 } })
     check(tag .. "no step stack on the rail", #bar.steps == 0)
 end
 
+-- ---------------------------------------------------------------- a tall chat (owner's den-features 3 Nov: the gallery over
+-- ChatFrame1 after the stamps panel): the gallery goes above it or beside it, never over it, also when the chat grows
+-- while the gallery is open; a target frame shown keeps it off too
+for _, scr in ipairs({ { 1920, 1080 }, { 1280, 720 } }) do
+    local F, st, W = session(scr[1], scr[2])
+    local D, B = W.DenBar, W.Builder
+    local tag = scr[1] .. "x" .. scr[2] .. " tall chat: "
+    ChatFrame1:SetHeight(230)
+    D.TestAction("gallery")
+    B.Window():GetScript("OnUpdate")(B.Window(), 1.5)   -- open already: laid out again within a second
+    local GAL = { "WrathUnleashedBuilderFrame" }
+    local ov = overlaps(F, GAL, STOCK)
+    check(tag .. "the gallery clear of the chat", #ov == 0 and B.Window():IsShown(), table.concat(ov, ", "))
+    check(tag .. "still 2 rows or more", (B.rows or 0) >= 2, B.rows)
+    ChatFrame1:SetHeight(120)
+    B.Layout()
+    D.TestAction("rail stamps")
+    ChatFrame1:SetHeight(260)
+    B.Window():GetScript("OnUpdate")(B.Window(), 1.5)
+    ov = overlaps(F, GAL, STOCK)
+    check(tag .. "the chat grew while it was open: moved off within a second", #ov == 0, table.concat(ov, ", "))
+    local own = {}
+    for _, l in ipairs(D.Overlaps()) do if l:match("^WrathUnleashedBuilderFrame/") then own[#own + 1] = l end end
+    check(tag .. "the den-test's own check agrees", #own == 0, table.concat(own, ", "))
+    TargetFrame:Show()
+    ov = overlaps(F, { "WrathUnleashedBuilderFrame" }, { "TargetFrame", "PlayerFrame", "MinimapCluster" })
+    check(tag .. "nothing over the target frame either", #ov == 0, table.concat(ov, ", "))
+end
+-- the place itself (pure): the usual one when free; above a tall chat; beside it when above has no room
+do
+    local F, st, W = session(1920, 1080)
+    local B = W.Builder
+    local x, b, rows, ok = B.PlaceGallery(1500, 1080, {})
+    check("place: the usual one when nothing is in the way", ok and x == 80 and b == 232, x .. "," .. b)
+    local chat = { l = 32, b = 95, r = 462, t = 420 }
+    x, b, rows, ok = B.PlaceGallery(1500, 1080, { chat })
+    check("place: above or beside a tall chat", ok and not B.Hits(x, b, x + 668, b + 300, { chat }), x .. "," .. b .. "," .. rows)
+    local huge = { l = 32, b = 95, r = 462, t = 900 }
+    x, b, rows, ok = B.PlaceGallery(1500, 1080, { huge })
+    check("place: beside a chat as tall as the screen", ok and x >= 470, x .. "," .. b .. "," .. rows)
+end
+
 -- ---------------------------------------------------------------- nothing clipped (owner 3 Nov 10:35: "fix all UI windows to
 -- not be clipped and so boxy"): at 720p, 1080p and 1440p and UI scales 0.64 to 1.0, every Den window in turn (the strip,
 -- rail, gallery, selection panel, menu, Files, Snap, the invite card, the Dojo, Den home, the status pill, play mode's
@@ -128,7 +170,7 @@ end
 -- own frame, every frame inside its parent (but what opens beside it on purpose: menus, the pill's note) and on screen.
 local ROOTS = { LeylineDenBar = true, LeylineDenRail = true, WrathUnleashedBuilderFrame = true, LeylineEditorStatus = true,
     WrathUnleashedPropsFrame = true, WrathUnleashedFilesFrame = true, LeylineDenPlayPill = true, LeylineDojoPanel = true,
-    LeylineDenHomePanel = true, LeylineDenModeBanner = true }
+    LeylineDenHomePanel = true, LeylineDenModeBanner = true, LeylineDenGuide = true }
 local function clipped(F)
     local out = {}
     local function add(e, why) if #out < 8 then out[#out + 1] = (e.root or "?") .. " " .. e.kind .. " '" .. tostring(e.f.text or e.f.name or "") .. "' " .. why end end
@@ -188,6 +230,13 @@ for _, scr in ipairs({ { 1280, 720 }, { 1920, 1080 }, { 2560, 1440 } }) do
         D.Invite(); F.toClient("wuden\tinvite\t1/1\thttps://relay.example.app/join/abcdefghijklmnop#ABCDEFGHJKLMNPQRSTUVWXYZ"); look("invite"); D.CloseDrawer()
         if W.Dojo then W.Dojo.Show(true); look("dojo"); W.Dojo.Show(false) end
         if W.DenHome then W.DenHome.Show(true); look("den home"); W.DenHome.Show(false) end
+        -- the Den guide, every page
+        if W.DenGuide then
+            for i = 1, #W.DenGuide.PAGES do W.DenGuide.Show(true, i); look("guide page " .. i) end
+            local gov = overlaps(F, { "LeylineDenGuide" }, STOCK)
+            for _, l in ipairs(gov) do bad[#bad + 1] = "overlap: " .. l end
+            W.DenGuide.Show(false)
+        end
         D.SetPlay(true); D.ShowClasses(true); look("play mode"); D.ShowClasses(false)
         check(tag .. "every Den window: no text clipped, nothing outside its frame or the screen", #bad == 0, table.concat(bad, " | "))
     end
@@ -206,57 +255,98 @@ do
     check("a path without a size still shows", byId[2109].model == "World\\Generic\\Flowers01.mdx" and byId[2109].size == nil)
     local function tile(id) for _, t in ipairs(B.Window().tiles) do if t:IsShown() and t.item and t.item.id == id then return t end end end
     local t = tile(2413)
-    -- the Model frame's units (the old wiki's Model:SetPosition; the owner's PC: the screen's height): the tile's size over it
-    local W, H = B.FrameUnits(t.model)
-    local diag = GetScreenHeight()
-    check("a tile's units: its size over the screen's height (a 88-unit tile about 0.09)", W and math.abs(W - t.model:GetWidth() / diag) < 1e-9
-        and W > 0.02 and W < 0.1 and math.abs(H - W) < 1e-9, W)
-    -- the fake's Model frame has SetPitch: the tile is tipped back a quarter turn, a side view
-    check("the tile tips its model back a quarter turn where the client can (SetPitch): seen from the side", t.pitched == true)
-    local scale, x, y, z = B.TileFit(byId[2413].size, W, H, nil, true)
-    local chairExt = math.max(math.sqrt(0.5 ^ 2 + 0.5 ^ 2), 1.1)
-    check("the chair's tile: SetModel, then scaled so its turning box is 0.8 of the tile, its middle at the tile's middle",
-        t.model.model == "World\\Generic\\Chair01.mdx" and t.model:IsShown() and math.abs(t.model.mscale - scale) < 1e-9
-        and math.abs(scale - 0.8 * W / chairExt) < 1e-9 and math.abs(t.model.mpos[1] - W / 2) < 1e-9
-        and math.abs(t.model.mpos[2] - (H / 2 - 0.55 * scale)) < 1e-9 and t.model.mpos[3] == 0,
-        table.concat(t.model.mpos or {}, ","))
-    local tc = tile(1558)
-    check("a small candle is scaled up more than the chair", tc.model.mscale > t.model.mscale)
+    -- from the side (owner's PC sweep, 3 Nov: "fit-5-playermodel-own"): a PlayerModel, framed by its own camera
+    check("the chair's tile: a PlayerModel given the chair, its own framing (scale 1 at 0,0,0), shown",
+        t.model.kind == "PlayerModel" and t.model.model == "World\\Generic\\Chair01.mdx" and t.model:IsShown() and t.model.mscale == 1
+        and t.model.mpos and t.model.mpos[1] == 0 and t.model.mpos[2] == 0 and t.model.mpos[3] == 0, t.model.kind)
     check("the house: the home stone, 'building'", tile(19006).icon.path == "Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\buildings" and tile(19006).why:GetText() == "building"
         and not tile(19006).model:IsShown())
     check("the bread: its category's icon, 'no preview'", tile(2562).icon.path == "Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\decor" and tile(2562).why:GetText() == "no preview")
-    WrathUnleashedUIDB.den.fit = { yards = 0.06, x = 0, lift = 0.5, y = 0 }   -- what the first sweeps left saved on the PC
-    local s1, x1 = B.TileFit(byId[2413].size, W, H, nil, true)
-    check("a framing saved by the first sweeps is ignored: the default", s1 == scale and x1 == x)
-    WrathUnleashedUIDB.den.fit = { v = 2, fill = 0.4 }
-    check("a framing saved by the earlier sweeps (v 2) is ignored too", (B.TileFit(byId[2413].size, W, H, nil, true)) == scale)
-    WrathUnleashedUIDB.den.fit = { v = 3, fill = 0.4, dx = 0.25, dy = -0.25, dz = 0.5, cam = 0 }
-    local s2, x2, y2, z2 = B.TileFit(byId[2413].size, W, H, nil, true)
-    check("the fit can be tuned on a PC (WrathUnleashedUIDB.den.fit): fill and moves by a part of the tile",
-        math.abs(s2 - scale / 2) < 1e-9 and math.abs(x2 - 0.75 * W) < 1e-9 and math.abs(y2 - (0.25 * H - 0.55 * s2)) < 1e-9
-        and math.abs(z2 - 0.5 * W) < 1e-9)
-    WrathUnleashedUIDB.den.fit.scaledPos = true
-    local s3, x3 = B.TileFit(byId[2413].size, W, H, nil, true)
-    check("scaledPos: the position over the model's scale", math.abs(x3 - x2 / s3) < 1e-9)
-    WrathUnleashedUIDB.den.fit = nil
-    -- seen from above (a plain Model frame without SetPitch): the footprint fills the tile, the origin on its middle in
-    -- both axes (the old framing lowered it by half its height: the owner's tiles sat at the bottom edge)
-    local s4, x4, y4 = B.TileFit(byId[2413].size, W, H, nil, false)
-    check("from above: the footprint's diagonal fills 0.8, the origin on the tile's middle in both axes",
-        math.abs(s4 - 0.8 * W / math.sqrt(0.5)) < 1e-9 and math.abs(x4 - W / 2) < 1e-9 and math.abs(y4 - H / 2) < 1e-9)
-    check("view auto: a side view when tipped back or not a plain Model frame", B.SideView(B.FIT, true) and not B.SideView(B.FIT, false)
-        and B.SideView({ frame = "PlayerModel", view = "auto" }) and not B.SideView({ frame = "PlayerModel", view = "top" }))
-    -- the sweep's words: a frame type makes the tiles again of that type; "own" leaves the framing to its camera
-    B.SetFit("frame=PlayerModel cam=0 fit=own")
-    F.tick(0.1)
-    local tp = tile(2413)
-    check("SetFit frame=PlayerModel: the tile's model is a PlayerModel now, scale 1 at 0,0,0, camera 0, the Model hidden",
-        tp.model.kind == "PlayerModel" and tp.model.model == "World\\Generic\\Chair01.mdx" and tp.model.mscale == 1
-        and tp.model.mpos[1] == 0 and tp.model.camera == 0 and not tp.models.Model:IsShown(), tp.model.kind)
-    B.SetFit("reset")
-    check("SetFit reset: a plain Model again", tile(2413).model.kind == "Model" and tile(2413).model:IsShown() and WrathUnleashedUIDB.den.fit == nil)
-    local api = B.ModelApi()
-    check("the model API report: a line per frame type, each method 0 or 1", #api == 3 and api[1]:match("^Model Pitch=[01] ") and api[2]:match("^PlayerModel "))
+    -- the wheel over a tile zooms that tile only; Shift + wheel pages; the grid's wheel is the gallery's
+    local other = tile(1670)
+    t:GetScript("OnMouseWheel")(t, 1)
+    check("the wheel over a tile zooms its model in (that tile only)", math.abs(t.model.mscale - B.ZOOM_STEP) < 1e-9 and other.model.mscale == 1)
+    for _ = 1, 30 do t:GetScript("OnMouseWheel")(t, 1) end
+    check("zoom stops at its most", math.abs(t.model.mscale - B.ZOOM_MAX) < 1e-9)
+    for _ = 1, 40 do t:GetScript("OnMouseWheel")(t, -1) end
+    check("and at its least", math.abs(t.model.mscale - B.ZOOM_MIN) < 1e-9)
+    -- a right-drag turns it (the cursor moves while the right button is held); a right-click is still a favourite
+    B.SetSpin(false)
+    local f0 = t.model.facing
+    F.cursor = { 500, 300 }; F.buttons = { RightButton = true }
+    t:GetScript("OnMouseDown")(t, "RightButton")
+    F.cursor = { 560, 300 }
+    B.Window().grid:GetScript("OnUpdate")(B.Window().grid, 0.016)
+    check("a right-drag turns the tile's model by the cursor's way", t.model.facing and math.abs(t.model.facing - f0 - 60 * B.TURN_PER_PX) < 1e-6,
+        tostring(t.model.facing) .. " " .. tostring(f0))
+    F.buttons = {}
+    t:GetScript("OnMouseUp")(t, "RightButton")
+    local favs = 0
+    for _ in pairs((WrathUnleashedUIDB.den or {}).favs or {}) do favs = favs + 1 end
+    t:Fire("OnClick", "RightButton")
+    local favs2 = 0
+    for _ in pairs((WrathUnleashedUIDB.den or {}).favs or {}) do favs2 = favs2 + 1 end
+    check("the right-button up after a drag is not a favourite click", favs2 == favs)
+    B.SetSpin(true)
+    F.tick(0.5)
+    check("Spin still turns it, its own turn added", math.abs(t.model.facing - (B.facing + t.turn)) < 1e-6)
+    -- the selection's larger preview, beside the panel: the selected prop's model, from the side; the same mouse
+    F.toClient("wubuild\tstate\t1/1\tmine=1/800;undo=1;redo=0;den=owner;room=1/800;yard=0/0;core=1;lite=1;grid=0;clip=0;area=den;code=-;"
+        .. "sel=41,2413,Wooden Chair;n=1;pos=1.00,2.00,3.00,0,1.00;rot=0,0,0;ids=41;gids=41;")
+    W.DenBar.TestAction("props")
+    local pv = B.preview
+    check("the preview: shown beside the panel with the chair, a PlayerModel at its own framing", pv and pv:IsShown() and pv.model.kind == "PlayerModel"
+        and pv.model.model == "World\\Generic\\Chair01.mdx" and pv.model.mscale == 1, pv and tostring(pv.modelPath))
+    pv:GetScript("OnMouseWheel")(pv, 1); pv:GetScript("OnMouseWheel")(pv, 1)
+    check("the wheel over the preview zooms it", math.abs(pv.model.mscale - B.ZOOM_STEP ^ 2) < 1e-9)
+    check("the den-test's view actions: turn and zoom", W.DenBar.TestAction("view preview turn 90") and math.abs(pv.turn - math.pi / 2) < 1e-6
+        and W.DenBar.TestAction("view tile zoom 2"))
+    F.toClient("wubuild\tstate\t1/1\tmine=1/800;undo=1;redo=0;den=owner;room=1/800;yard=0/0;core=1;lite=1;grid=0;clip=0;area=den;code=-;"
+        .. "sel=42,2562,Baked Bread;n=1;pos=1.00,2.00,3.00,0,1.00;rot=0,0,0;ids=42;gids=42;")
+    check("a prop without a model: no preview", not pv:IsShown())
+end
+
+-- ---------------------------------------------------------------- the Den guide (owner 3 Nov): a paged help window
+do
+    local F, st, W = session(1920, 1080)
+    local D, G = W.DenBar, W.DenGuide
+    check("the guide: a Guide button on the Den bar", D.Bar().guide ~= nil)
+    D.Bar().guide:Click()
+    check("Guide opens it at its first page", G.IsOpen() and LeylineDenGuide:IsShown() and G.page == 1 and D.Bar().guide.edActive)
+    local need = { "start", "modes", "gallery", "place", "select", "stamps", "dojo", "class", "invite", "keys" }
+    local missing = {}
+    for _, k in ipairs(need) do if not G.Index(k) then missing[#missing + 1] = k end end
+    check("pages: Build and Play, the gallery, placing, selecting, stamps and Jaina, the Dojo, class, invite, keys", #missing == 0, table.concat(missing, ","))
+    local text = {}
+    for _, p in ipairs(G.PAGES) do text[#text + 1] = table.concat(p[5], " ") end
+    text = table.concat(text, " ")
+    for _, verb in ipairs({ ".den class", ".den mounts", ".den gear", ".den dojo", ".den jaina build", ".den fly", ".den speed", ".den grow",
+        ".build undo", "Invite", "Right-click", "F7", "Esc" }) do
+        check("the guide says " .. verb, text:find(verb, 1, true) ~= nil)
+    end
+    check("short sentences (none over 30 words)", (function()
+        for sent in text:gmatch("[^%.]+") do local n = 0; for _ in sent:gmatch("%S+") do n = n + 1 end; if n > 30 then return false end end
+        return true end)())
+    G.win = LeylineDenGuide
+    LeylineDenGuide.next:Click()
+    check("Next: the next page", G.page == 2 and LeylineDenGuide.heading:GetText() == G.PAGES[2][4])
+    LeylineDenGuide.back:Click()
+    check("Back: the page before", G.page == 1)
+    LeylineDenGuide.list[G.Index("dojo")]:Click()
+    check("a page from the list", G.PAGES[G.page][1] == "dojo" and LeylineDenGuide.icon.iconName == "dojo")
+    check("its icons are ours", (function() for _, p in ipairs(G.PAGES) do if not W.Style.Icon(p[3]):find("Media\\Icons\\" .. p[3], 1, true) then return false end end return true end)())
+    G.Show(false)
+    F.toClient("wuden\tguide\t1/1\topen")
+    check(".den help: Den Lite's 'guide open' opens it", G.IsOpen())
+    G.Show(false)
+    SlashCmdList["LEYLINEDEN"]("guide")
+    check("/den guide opens it", G.IsOpen())
+    SlashCmdList["LEYLINEDENGUIDE"]("keys")
+    check("/denguide keys: at that page", G.PAGES[G.page][1] == "keys")
+    check("the den-test's action and report", D.TestAction("guide stamps") and G.Report():find("open=1 page=" .. G.Index("stamps"), 1, true) ~= nil)
+    check("Esc closes it (a special frame)", (function() for _, n in ipairs(UISpecialFrames or {}) do if n == "LeylineDenGuide" then return true end end return false end)())
+    D.SetPlay(true)
+    check("play mode's corner has Guide too", D.Bar().pill.play.guide ~= nil)
 end
 
 -- ---------------------------------------------------------------- the chat: the Den's system lines go to the pill

@@ -438,6 +438,7 @@ local function buildBar()
     add("invite", "Invite", 70, function() D.Invite() end, "Invite one friend: a link to send")
     add("save", "Files", 62, function() local b = B(); if b then b.ShowFiles() end end, "Save and open your Den by name")
     add("menuBtn", "Menu", 66, function() D.ShowMenu() end, "Copy, paste, delete, groups, help...")
+    add("guide", "Guide", 62, function() if W.DenGuide then W.DenGuide.Toggle() end end, "The Den guide: how everything works")
     add("help", "?", 28, function() D.ShowIntro(#CARDS) end, "Keys and tips")
     add("close", "x", 28, function() D.Close() end, "Close the tools (Play)")
     bar.x = x
@@ -474,7 +475,8 @@ local function buildBar()
     for _, it in ipairs({ { "dojo", "Dojo", function() if W.Dojo then W.Dojo.Toggle() end end, "The training grounds" },
                           { "class", "Class", function() D.ShowClasses() end, "Try another class here" },
                           { "invite", "Invite", function() D.Invite() end, "Invite one friend: a link to send" },
-                          { "files", "Files", function() local b = B(); if b then b.ShowFiles() end end, "Your Den's saves by name" } }) do
+                          { "files", "Files", function() local b = B(); if b then b.ShowFiles() end end, "Your Den's saves by name" },
+                          { "guide", "Guide", function() if W.DenGuide then W.DenGuide.Toggle() end end, "The Den guide: how everything works" } }) do
         local c = chip(pill, it[2], nil, it[3], "TOPLEFT", px, -8 - S().ED_SIZE.chip - 6)
         c.edLabel = it[4]
         c.edTipAt, c.edTipTo = "LEFT", "RIGHT"
@@ -614,6 +616,7 @@ function D.Paint()
         bar.path:SetActive(b.mode == "path")
     end
     bar.dojo:SetActive(W.Dojo and W.Dojo.IsOpen and W.Dojo.IsOpen() or false)
+    if bar.guide then bar.guide:SetActive(W.DenGuide and W.DenGuide.IsOpen() or false) end
     -- what is only for a Den: the ground, Play, Invite
     for _, k in ipairs({ "ground", "playBtn", "invite" }) do if D.active then bar[k]:Show() else bar[k]:Hide() end end
 end
@@ -1024,13 +1027,13 @@ local function frameRect(f)
     if not (l and b and w and h) then return nil end
     local k = 1
     if f.GetEffectiveScale and UIParent and UIParent.GetEffectiveScale then
-        local fe, ue = tonumber(f:GetEffectiveScale()), tonumber(UIParent:GetEffectiveScale())
+        local fe, ue = tonumber((f:GetEffectiveScale())), tonumber((UIParent:GetEffectiveScale()))
         if fe and ue and ue > 0 then k = fe / ue end
     end
     return { x = l * k, y = b * k, w = w * k, h = h * k }
 end
 D.EDITOR_FRAMES = { "LeylineDenBar", "LeylineDenRail", "WrathUnleashedBuilderFrame", "LeylineEditorStatus", "WrathUnleashedPropsFrame",
-    "WrathUnleashedFilesFrame", "LeylineDenMenu", "LeylineDenDrawer" }
+    "WrathUnleashedFilesFrame", "LeylineDenMenu", "LeylineDenDrawer", "LeylineDenGuide" }
 D.GAME_FRAMES = { "MinimapCluster", "ChatFrame1", "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight",
     "MultiBarLeft", "PlayerFrame" }
 -- Which shown editor windows overlap which shown game frames (by more than 2 UI units): { "A/B", ... }
@@ -1063,15 +1066,21 @@ function D.Report(what)
             r.model, r.icon, r.empty, r.rows, r.cols, r.tile)
         lines[#lines + 1] = string.format("catalog n=%d model=%d boxed=%d wmo=%d none=%d", r.catalog, r.withModel, r.boxed, r.wmo, r.none)
         if #r.missing > 0 then lines[#lines + 1] = "nomodel " .. table.concat(r.missing, ","):sub(1, 180) end
-        -- what this client's model frames have of a side view's methods (one line a frame type), and the framing on now
-        if b.ModelApi then for _, l in ipairs(b.ModelApi()) do lines[#lines + 1] = "modelapi " .. l end end
-        if b.FitConf then
-            local f = b.FitConf()
+        -- the model views (a tile and the selection's preview): their frame type (a side view: PlayerModel), the
+        -- player's own turn and zoom, the facing they are drawn at
+        if b.ViewFacing then
             local t1 = b.Window and b.Window() and b.Window().tiles and b.Window().tiles[1]
-            lines[#lines + 1] = string.format("fit frame=%s pitch=%s view=%s fit=%s cam=%s pitched=%s", tostring(f.frame), tostring(f.pitch),
-                tostring(f.view), tostring(f.fit), tostring(f.cam), tostring(t1 and t1.pitched or false))
+            local pv = b.preview
+            local function view(v)
+                if not (v and v.model) then return "none" end
+                return string.format("%s,%s,%.2f,%.2f,%.2f", tostring(v.model.kind or "?"), v.modelPath and "1" or "0", v.turn or 0, v.zoom or 1,
+                    b.ViewFacing(v))
+            end
+            lines[#lines + 1] = string.format("view tile=%s preview=%s previewShown=%s spin=%s", view(t1), view(pv),
+                (pv and pv:IsShown()) and "1" or "0", b.spin and "1" or "0")
         end
     end
+    if W.DenGuide then lines[#lines + 1] = W.DenGuide.Report() end
     local s = (b and b.state) or {}
     lines[#lines + 1] = string.format("state sel=%s n=%s undo=%s redo=%s clip=%s grid=%s lite=%s mode=%s tab=%s pick=%s", s.selName or "-",
         tostring(s.count or 0), s.undo or "?", s.redo or "?", s.clip or "?", s.grid or "?", s.lite or "0", tostring(b and b.mode),
@@ -1114,9 +1123,16 @@ function D.TestAction(text)
     if a == "gallery" then if not (b.Window() and b.Window():IsShown()) then bar.build:Click() end; if w[2] then b.ShowTab(w[2]) end; return true end
     if a == "nogallery" then if b.Window() then b.Window():Hide() end; return true end
     if a == "tab" then return b.ShowTab(w[2] or "all") end
-    if a == "fit" then   -- "fit frame=PlayerModel cam=0 ..." (Builder.lua B.SetFit's words), the older "fit fill dx dy dz unit scaledPos cam", or "reset"
-        if (w[2] or ""):find("=") then return b.SetFit(table.concat(w, " ", 2)) end
-        return b.SetFit(w[2], w[3], w[4], w[5], w[6], w[7], w[8])
+    if a == "view" then   -- "view tile|preview turn <degrees>" / "view tile|preview zoom <wheel clicks>": what a right-drag and the wheel do
+        local v = w[2] == "preview" and b.preview or (b.Window() and b.Window().tiles and b.Window().tiles[1])
+        local n = tonumber(w[4]) or 0
+        if w[3] == "turn" then return b.ViewTurn(v, math.rad(n)) end
+        if w[3] == "zoom" then
+            local ok = false
+            for _ = 1, math.min(10, math.abs(n)) do ok = b.ViewZoom(v, n) or ok end
+            return ok
+        end
+        return false
     end
     if a == "page" then return b.Page(tonumber(w[2]) or 1) end
     if a == "pick" or a == "place" then
@@ -1163,6 +1179,15 @@ function D.TestAction(text)
         return true
     end
     if a == "keys" then bar.help:Click(); return true end
+    if a == "guide" then   -- "guide" (the bar's Guide button), "guide <page>", "guide next", "guide close"
+        local G = W.DenGuide
+        if not G then return false end
+        if w[2] == "close" then G.Show(false); return true end
+        if w[2] == "next" then G.Go(G.page + 1); return true end
+        if w[2] then G.Show(true, G.Index(w[2]) or tonumber(w[2]) or 1); return true end
+        bar.guide:Click()
+        return G.IsOpen()
+    end
     if a == "intro" then D.ShowIntro(tonumber(w[2]) or 1); return true end
     if a == "play" then bar.playBtn:Click(); return true end
     if a == "build" then bar.pill.back:Click(); return true end

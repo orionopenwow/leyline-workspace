@@ -964,6 +964,15 @@ FEATURE_SAVE = "featuretest"
 # the stamps (realm/custom/lua_scripts/den-stamps, made by tools/den-stamps/compose.py): den-features builds each and
 # takes a picture so the owner can judge them (docs/DEN-STAMPS.md)
 STAMP_NAMES = ["campfire", "inn", "market", "garden", "dock", "house", "smithy", "nook", "shrine"]
+STAMP_DIR = ROOT / "realm" / "custom" / "lua_scripts" / "den-stamps"
+
+
+def stamp_pieces(name, folder=STAMP_DIR):
+    """How many pieces a built-in stamp has (its den-stamps file; Den Lite builds the same in), else None."""
+    try:
+        return len(json.loads((Path(folder) / ("%s.den.json" % name)).read_text(encoding="utf-8"))["props"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 def stamp_pictures(rep, ch, den_dir, shot, wait=6.0, names=STAMP_NAMES, build_wait=60.0):
@@ -976,7 +985,9 @@ def stamp_pictures(rep, ch, den_dir, shot, wait=6.0, names=STAMP_NAMES, build_wa
         t = now_ms()
         r = ch.send(".den jaina build %s" % name) or {}
         if wait_for(lambda: event_after(den_dir, "den_change", t), wait) is None:
-            rep.add("FAIL", "stamp: %s" % name, "nothing was placed", "Send logs\\den-features-latest.txt.")
+            said = " ".join(str(x) for x in r.get("said", []))[:160]
+            rep.add("FAIL", "stamp: %s" % name, "nothing was placed" + (": " + said if said else ""),
+                    "Update Den Lite (stamps are moved inside the room since 3 Nov), then send logs\\den-features-latest.txt.")
             continue
         if not any("Call your companion" in x for x in r.get("said", [])):
             # she is out: wait for her to finish (the dojo event "built <n>")
@@ -984,8 +995,12 @@ def stamp_pictures(rep, ch, den_dir, shot, wait=6.0, names=STAMP_NAMES, build_wa
                      build_wait, 0.5)
         n = size() - p0
         pic = shot("stamp-%s" % name)
-        rep.ok(n > 0, "stamp: %s" % name, "%d pieces%s" % (n, (", " + pic) if pic else ""),
-               "The stamp didn't go down: send logs\\den-features-latest.txt.")
+        whole = stamp_pieces(name)
+        # all of it inside the room (Den Lite fits a stamp in: den.rs fit_stamp); a part left out fails
+        rep.ok(n > 0 and (whole is None or n >= whole), "stamp: %s" % name,
+               "%d pieces%s%s" % (n, (" of %d" % whole) if whole else "", (", " + pic) if pic else ""),
+               "The stamp didn't go down: send logs\\den-features-latest.txt." if n <= 0 else
+               "Only part of it is inside your Den: update Den Lite (it moves a stamp inside the room), then send logs\\den-features-latest.txt.")
         ch.send(".build undo")
         wait_for(lambda: size() <= p0, wait, 0.5)
 
@@ -1014,27 +1029,71 @@ def parse_report(lines):
         kv = {k: v for k, v in re.findall(r"(\w+)=(\S*)", rest)}
         kv["_text"] = rest
         out[head] = kv
-        # a head that comes more than once (modelapi: one line a frame type): every line, in order
+        # a head that comes more than once: every line, in order
         out.setdefault("_lines", {}).setdefault(head, []).append(rest)
     return out
 
 
-# den-features' sweep for the gallery's model tiles (Builder.lua B.FIT / B.SetFit; `.den ui fit <word=value ...>`). The
-# owner's PC (3 Nov) showed whole models but from straight above: a plain Model frame puts a doodad's "up" toward you.
-# One run settles how this client gives a side view: each picture changes ONE thing from the default (a Model frame,
-# tipped back a quarter turn by SetPitch where the client has it, framed on the box's middle). The report's "modelapi"
-# lines say which methods each frame type has; "fit" what was on. Pick the picture with benches seen from the side and
-# set its words as Builder.lua's B.FIT.
-FIT_SWEEP = [
-    ("1-model-default", "default"),                              # Model; SetPitch(-90deg) if the client has it
-    ("2-model-camera0", "cam=0"),                                # + the model's own camera 0
-    ("3-playermodel", "frame=PlayerModel"),                      # a PlayerModel frame, the same framing
-    ("4-playermodel-camera0", "frame=PlayerModel cam=0"),        # a PlayerModel, camera 0
-    ("5-playermodel-own", "frame=PlayerModel fit=own"),          # a PlayerModel framing it itself (scale 1 at 0,0,0)
-    ("6-dressup", "frame=DressUpModel"),                         # a DressUpModel frame, the same framing
-    ("7-dressup-own", "frame=DressUpModel fit=own"),             # a DressUpModel framing it itself
-    ("8-model-top-no-pitch", "pitch=off view=top"),              # the old top view, now centred (the fallback)
-]
+# The gallery's tiles and the selection's preview show props from the SIDE: a PlayerModel framed by its own camera
+# (the owner's PC sweep of 3 Nov, picture "fit-5-playermodel-own"; Builder.lua B.VIEW_FRAME). In either, a right-drag
+# turns the model and the wheel zooms (owner 3 Nov). The report's "view" line: tile=<frame>,<has model>,<turn>,<zoom>,
+# <facing> and the same for the preview.
+VIEW_FRAME = "PlayerModel"
+
+
+def parse_view(text):
+    """A view's part of the report ("PlayerModel,1,1.57,1.32,2.17") as a dict, or {}."""
+    parts = str(text or "").split(",")
+    if len(parts) < 5:
+        return {}
+    try:
+        return {"frame": parts[0], "model": parts[1] == "1", "turn": float(parts[2]), "zoom": float(parts[3]), "facing": float(parts[4])}
+    except ValueError:
+        return {}
+
+
+def view_checks(rep, report, ui, shot, which, label):
+    """The model view `which` ("tile" / "preview"): from the side, then turned 90 degrees and zoomed in two wheel clicks
+    by the addon's own handlers (DenBar.lua `view` action), a picture of it."""
+    v = parse_view(report(which).get("view", {}).get(which))
+    if not v:
+        rep.add("FAIL", "%s: from the side" % label, "no view in the addon's report", "Update the Leyline addons, then run den-features again.")
+        return
+    rep.ok(v["frame"] == VIEW_FRAME and v["model"], "%s: from the side" % label,
+           "a %s with its own framing%s" % (v["frame"], "" if v["model"] else ", but no model in it"),
+           "Send the pictures in logs\\den-features (the tiles should show props from the side).")
+    ui("view %s turn 90" % which)
+    ui("view %s zoom 2" % which)
+    after = parse_view(report(which + "-turned").get("view", {}).get(which))
+    pic = shot("%s-turned-zoomed" % which)
+    ok = bool(after) and abs(((after["turn"] - v["turn"]) % 6.2832) - 1.5708) < 0.05 and after["zoom"] > v["zoom"] * 1.2
+    rep.ok(ok, "%s: right-drag turns it, the wheel zooms" % label,
+           ("turned to %.2f rad, zoom %.2f%s" % (after["turn"], after["zoom"], (", " + pic) if pic else "")) if after else "no view after",
+           "The model didn't turn or zoom: send logs\\den-features-latest.txt and the pictures.")
+
+
+GUIDE_PAGES = 10   # at least: Build and Play, gallery, placing, selecting, stamps, Dojo, class, invite, keys (Guide.lua)
+
+
+def guide_checks(rep, ch, report, ui, shot):
+    """The Den guide (WrathUnleashedUI Guide.lua): Guide on the bar opens it at its first page, Next turns it, and
+    `.den help` in the chat opens it (Den Lite answers `wuden guide open` when the game has the Leyline UI)."""
+    ui("guide close")
+    ui("guide")
+    g = report("guide").get("guide", {})
+    pic = shot("guide")
+    rep.ok(g.get("open") == "1" and int(g.get("pages", "0") or 0) >= GUIDE_PAGES, "guide: Guide on the Den bar opens it",
+           "page %s of %s%s" % (g.get("page"), g.get("pages"), (", " + pic) if pic else "") if g else "no guide in the addon's report",
+           "Update the Leyline addons, then run den-features again.")
+    ui("guide next")
+    g2 = report("guide-next").get("guide", {})
+    rep.ok(g2.get("page") == "2", "guide: Next turns the page", "page %s (%s)" % (g2.get("page"), g2.get("key")), "Send logs\\den-features-latest.txt.")
+    ui("guide close")
+    said = " ".join(str(x) for x in ((ch.send(".den help") or {}).get("said") or []))
+    g3 = report("guide-help").get("guide", {})
+    rep.ok(g3.get("open") == "1", "guide: .den help opens it", said[:120] or "nothing said",
+           "Update Den Lite and the Leyline addons, then run den-features again.")
+    ui("guide close")
 
 
 def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
@@ -1115,14 +1174,8 @@ def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
                "Check your 3.3.5a game folder in the launcher, then run den-features again." % ("it is there" if table else "it is missing"))
         if "nomodel" in r:
             rep.add("INFO", "gallery: props without a model in your files", r["nomodel"]["_text"][:180])
-        # the tiles' framing (3 Nov: lit, but each tile showed a close-up): the framings of FIT_SWEEP, a picture
-        # each, then the default again. Compare logs\den-features\fit-* and set the best in Builder.lua B.FIT.
-        for l in dict.fromkeys(r.get("_lines", {}).get("modelapi", [])):
-            rep.add("INFO", "gallery: a model frame's methods", l)
-        for label, args in FIT_SWEEP:
-            ui("fit " + ("reset" if args == "default" else args))
-            shot("fit-" + label)
-        ui("fit reset")
+        # the tiles: from the side, and a right-drag / the wheel on one
+        view_checks(rep, report, ui, shot, "tile", "gallery tiles")
         ui("page 1")
         shot("gallery-page2")
         ui("tab all")
@@ -1153,6 +1206,7 @@ def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
         rep.ok(sel not in ("-", ""), "select: the prop nearest you", sel, "Select picked nothing: send logs\\den-features-latest.txt.")
         ui("props")
         shot("selected")
+        view_checks(rep, report, ui, shot, "preview", "the selection's preview")
         for action, what in (("nudge z 1", "move: up by the step (the popover's +)"), ("nudge x -1", "move: back along x"),
                              ("key q", "turn: Q"), ("nudge turn 1", "turn: the popover's +"), ("nudge scale 1", "size: the popover's +")):
             t = now_ms()
@@ -1201,6 +1255,8 @@ def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
                 r = report(name)
                 opened = r.get("open", {}).get("_text", "")
                 rep.add("INFO", "panel: %s" % name, (opened or "-")[:150] + ((", " + pic) if pic else ""))
+        # the Den guide: the bar's Guide button opens it, its pages turn, `.den help` opens it too
+        guide_checks(rep, ch, report, ui, shot)
         # 7. every stamp, built by Jaina (or put down at once without her), a picture of each, then taken back
         stamp_pictures(rep, ch, den_dir, shot, wait)
 
@@ -1385,14 +1441,26 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
     kept = stash([before, den_dir / "backup.den.json"])
     ch.send(".den save %s-before" % AIDS_SAVE)
     try:
-        # build mode
+        # build mode: Den Lite says the look (an event every time it is asked: 3 Nov the editor was already in build
+        # mode, so none came); since 3 Nov its props go out under their build twins (gizmo.rs `twin`), which the
+        # game asks for once each, as goobers (a glow under the mouse, right-click uses them)
+        q0 = int((ch.send(".den size") or {}).get("twin_queries") or 0)
         t = now_ms()
         ui("gizmo build on")
         ev = wait_for(lambda: event_after(den_dir, "build_mode", t), wait)
         pic = shot("build-mode")
-        rep.ok(ev is not None and ev.get("detail") == "build", "build mode: props light up under the mouse",
-               "your props are shown as things the game highlights and lets you right-click" + ((", " + pic) if pic else ""),
-               "The Leyline UI didn't start build mode: update the Leyline addons, then run den-features again.")
+        ans = ch.send(".den size") or {}
+        look = ans.get("look_mode")
+        asked = int(ans.get("twin_queries") or 0) - q0
+        ok = ev is not None and ev.get("detail") == "build" and look in (None, "build")
+        rep.ok(ok, "build mode: props light up under the mouse",
+               ("your props are shown as things the game highlights and lets you right-click" +
+                ("" if look is None else (", the game asked for %d of their goober looks" % asked) if asked > 0 else ", the game had their goober looks kept from before")
+                + ((", " + pic) if pic else "")) if ok else
+               ("Den Lite's look: %s; the event: %s" % (look or "?", (ev or {}).get("detail", "none"))),
+               "The Leyline UI didn't start build mode: update the Leyline addons and Den Lite, then run den-features again.")
+        if look is None:
+            rep.add("INFO", "build mode: the props' goober looks", "this Den Lite is from before them (3 Nov): update Den Lite for the glow under the mouse")
         # the live preview: armed, in front; then the cursor's point
         ui("gizmo arm 2413")
         a = aids()
@@ -1726,7 +1794,13 @@ DEN_TEXTURE = "Tileset\\Leyline\\DenWhite.blp"
 # table of the game's in patch-T
 GRASS = "Tileset\\Elwynn\\ElwynnGrassBase.blp"
 SKY = "the Elwynn sky"
+# what a launcher from before the Elwynn sky (commit bf14145, 3 Nov 10:48) says: the owner's den-features of 11:20 ran
+# one ("FAIL sky: the sky is the area's own", no reason in brackets: the newer launcher always gives one)
+OLD_SKY = "the area's own"
 LIGHT_TABLE = "DBFilesClient\\Light.dbc"
+# game languages whose own patches are read AFTER Data\patch-T.MPQ (wotlkdev.github.io wiki/theory/client: on
+# these the locale folder's patches win; on the others Data's lettered patches win)
+LOCALE_FIRST = ("ruru", "zhcn", "zhtw")
 
 
 def blp_is_ours(b):
@@ -1754,7 +1828,28 @@ def patch_extras(names):
     return out
 
 
-def ground_lines(rep, detail, patch_t=None):
+def locale_light(data):
+    """For a game whose language's own patches are read after Data\\patch-T.MPQ (LOCALE_FIRST): the first of those
+    that has its own Light.dbc (it would hide the Elwynn sky), else None."""
+    if not data:
+        return None
+    try:
+        dirs = [d for d in Path(data).iterdir() if d.is_dir() and d.name.lower() in LOCALE_FIRST]
+    except OSError:
+        return None
+    for d in dirs:
+        for a in sorted(d.glob("*.[Mm][Pp][Qq]"), reverse=True):
+            if not a.name.lower().startswith("patch-"):
+                continue
+            try:
+                if any(n.lower() == LIGHT_TABLE.lower() for n in mpqlite.Archive(str(a)).names()):
+                    return "%s\\%s" % (d.name, a.name)
+            except Exception:  # noqa: BLE001 - an archive that doesn't read hides nothing we can tell
+                continue
+    return None
+
+
+def ground_lines(rep, detail, patch_t=None, data=None):
     """The Den's world, from the launcher's report (`ground_detail`, host/terrain.rs GroundStatus) and our patch-T:
     the ground painted the game's own grass (only its name in the tile), nothing of the island on the tile, the
     Elwynn sky (Light.dbc the only table of the game's in patch-T; the zone's own name). Only the picture shows what
@@ -1776,9 +1871,11 @@ def ground_lines(rep, detail, patch_t=None):
     rep.ok(left == 0, "no buildings/trees on the Den tile",
            ("the island's models are gone" + (", %d of yours stay" % mine if mine > 0 else "")) if left == 0 else "%s of the island's models still stand" % left,
            "Send this log (the launcher should take them off at the start).")
+    names = None
     if patch_t is not None:
         try:
-            extra = patch_extras(mpqlite.Archive(str(patch_t)).names())
+            names = mpqlite.Archive(str(patch_t)).names()
+            extra = patch_extras(names)
             err = None
         except Exception as e:  # noqa: BLE001 - said below
             extra, err = [], str(e)[:120]
@@ -1793,8 +1890,24 @@ def ground_lines(rep, detail, patch_t=None):
         rep.add("INFO", "sky/area", "sky: %s; zone: %s" % (detail.get("sky", "?"), detail.get("area", "?")))
     sky = str(detail.get("sky", "?"))
     if "grass" in detail:
-        rep.ok(sky == SKY, "sky: the Elwynn sky", "Elwynn Forest's blue sky over the Den (your own Light.dbc)" if sky == SKY else
-               "the sky is %s" % sky, "Send this log: it says why your game's Light.dbc wasn't used.")
+        hidden = [h for h in detail.get("hidden_by") or [] if LIGHT_TABLE.lower() in str(h).lower()]
+        loc = locale_light(data) if sky == SKY else None
+        if sky == OLD_SKY:
+            rep.add("FAIL", "sky: the Elwynn sky", "the sky is the area's own: this launcher is from before the Elwynn sky",
+                    "Update the launcher (Ship, then wait for its build; den-test gets the newest), then run den-features again.")
+        elif sky != SKY:
+            rep.add("FAIL", "sky: the Elwynn sky", "the sky is %s" % sky, "Send this log: it says why your game's Light.dbc wasn't used.")
+        elif names is not None and not any(n.lower() == LIGHT_TABLE.lower() for n in names):
+            rep.add("FAIL", "sky: the Elwynn sky", "the launcher says the Elwynn sky, but Data\\patch-T.MPQ has no Light.dbc",
+                    "Start My Den once more; still not: send this log.")
+        elif hidden:
+            rep.add("FAIL", "sky: the Elwynn sky", "an archive read after the Den's has its own Light.dbc: %s" % hidden[0][:120],
+                    "Move that archive out of Data (it hides the Den's sky), then start My Den once more.")
+        elif loc:
+            rep.add("FAIL", "sky: the Elwynn sky", "your game's language reads its own Light.dbc after the Den's: %s" % loc,
+                    "Send this log: Leyline has to put the Den's sky in your language's folder too.")
+        else:
+            rep.add("PASS", "sky: the Elwynn sky", "Elwynn Forest's blue sky over the Den (your own Light.dbc%s)" % (", in Data\\patch-T.MPQ" if names else ""))
     for h in detail.get("hidden_by") or []:
         rep.add("INFO", "an archive read after the Den's hides part of it", str(h)[:200])
     if detail.get("whitened"):
@@ -2058,7 +2171,7 @@ def test(args, rep):
                "your Den's ground in Data/patch-T.MPQ",
                "The launcher couldn't make your Den's ground: see 'the launcher said' above and send this log.")
         data = find_ci(Path(c["path"]), "Data")
-        ground_lines(rep, rpt.get("ground_detail"), find_ci(data, "patch-T.MPQ") if data else None)
+        ground_lines(rep, rpt.get("ground_detail"), find_ci(data, "patch-T.MPQ") if data else None, data)
     crcs = [e for e in events(den_dir, rpt["start"]) if e.get("ev") == "addon_crcs"]
     if crcs:
         rep.add("INFO", "the game's addon list (key checks)", str(crcs[-1].get("detail"))[:300])

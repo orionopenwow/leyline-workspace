@@ -1020,13 +1020,179 @@ r = act("owner1", "staff.grant", "new", account="newbie", name="New", role="mod"
 check("grant a mod", ok_(r) and "(mod)" in req("GET", "/wrath/admin", "newbie")[2])
 r = act("owner1", "staff.grant", "new", account="newbie", name="New", role="admin")
 check("... then an admin", ok_(r) and "(admin)" in req("GET", "/wrath/admin", "newbie")[2])
-check("unknown roles refused", "err=Pick mod or admin" in act("owner1", "staff.grant", "new", account="newbie", role="owner")[1])
+check("unknown roles refused", "err=Pick helper, mod or admin" in urllib.parse.unquote(act("owner1", "staff.grant", "new", account="newbie", role="owner")[1]))
 act("owner1", "staff.revoke", "newbie", confirm="newbie")
 pages = "".join(req("GET", "/wrath/admin/" + t, "owner1")[2] for t in ("", "inbox", "players", "person?acct=WRMAL", "game", "notes", "realms"))
 check("HQ pages: no secrets", "sekritsoappass" not in pages and "GAMEPASS" not in pages and A._secret().hex() not in pages and "feedkey" not in pages)
 check("HQ pages: every one renders on the menu", all(req("GET", "/wrath/admin/" + t, "modadm")[0] == 200 for t in ("", "inbox", "players", "game", "notes", "realms", "numbers", "content", "system")))
 check("signin step ships hq.py beside admin.py", 'install -m 644 hq.py "$WU/portal/hq.py"' in open(os.path.join(STREAM, "fastloop.sh")).read()
       and 'set "LINKS=%LINKS% hq.py"' in open(os.path.join(STREAM, "Update sign-in and warm-up.bat")).read())
+
+# ---------------------------------------------------------------- HQ > Review (stream/staffdesk.py, linkqueue.py, feedback.py)
+LQ, FB, SD = wp.linkqueue, wp.feedback, A.staffdesk
+check("review: the portal loads linkqueue.py, feedback.py and staffdesk.py", LQ is not None and FB is not None and SD is not None)
+WHO_A = {"acct": "WRPLAYER", "name": "Player"}
+ok1, _, ID_ADDON = LQ.submit("https://github.com/Ann/Tidy-Bars", "addon", "nice bars", "site", WHO_A)
+ok2, _, ID_LOOK = LQ.submit("https://github.com/ann/crisp-look", "look", "", "site", {"acct": "WRGM", "name": "Gm"})
+ok3, _, ID_WARN = LQ.submit("https://ann.itch.io/frost-mod", "mod", "", "discord", {"discord": "70000000000000001", "name": "Ann D"})
+ok4, _, ID_REALM = LQ.submit("https://play.example/r/frost", "realm", "", "site", {"acct": "WRNEW", "name": "New"})
+check("links: clean addon, a look, a non-repo page and our own realm page are queued", ok1 and ok2 and ok3 and ok4, (ok1, ok2, ok3, ok4))
+refused = {u: LQ.submit(u, k, "", "site", {"acct": "WROTHER", "name": "O"})[1] for u, k in (
+    ("http://github.com/a/b", "mod"), ("https://evil.example/a/b", "mod"), ("https://github.com/a/b/releases/download/v1/x.zip", "mod"),
+    ("https://github.com/a/b/blob/main/patch-Z.mpq", "mod"), ("https://github.com/MidnightZora737r/pack", "mod"),
+    ("https://github.com/wowdecomp/client", "mod"), ("https://user:pw@github.com/a/b", "mod"), ("https://github.com/Ann/Tidy-Bars.git", "addon"),
+    ("https://play.example/r/frost", "mod"), ("https://github.com/x/y", "nonsense"))}
+check("links: http, unknown sites, downloads, game files, blocklisted and decompiled accounts, logins, duplicates, "
+      "our site for non-realms, unknown kinds are all refused",
+      all(refused.values()) and len(LQ.items("pending")) == 4 and "already waiting" in refused["https://github.com/Ann/Tidy-Bars.git"]
+      and "blocklist" in refused["https://github.com/MidnightZora737r/pack"] and "not a file" in refused["https://github.com/a/b/releases/download/v1/x.zip"], refused)
+A.set_sanction({"account": "owner1", "name": "Owner1", "role": "owner"}, "nosubmit", "WRBAD", "", 1, "spam links") if hasattr(A, "set_sanction") else None
+okb, msgb, _ = LQ.submit("https://github.com/bad/spam", "mod", "", "site", {"acct": "WRBAD", "name": "Bad"})
+check("links: a site sanction (no submissions) is obeyed", not okb and msgb, msgb)
+LQ._times.clear()
+q_raw = open(os.path.join(LQ.qdir(), "queue.jsonl")).read()
+check("links: no Discord id on disk", "70000000000000001" not in q_raw)
+
+sub = req("GET", "/wrath/admin/submissions", "owner1")[2]
+check("submissions page: every waiting link, its checks, the menu says how many wait",
+      all(x in sub for x in ("github.com/Ann/Tidy-Bars", "ann.itch.io/frost-mod", "crisp-look", "play.example/r/frost"))
+      and "not a repo: check the page by hand" in sub and "Review (4)" in sub and 'rel="noopener noreferrer nofollow"' in sub, sub[:500])
+msub = req("GET", "/wrath/admin/submissions", "modadm")[2]
+check("submissions page (mod): no Approve on the look or the warned link, says why; no Undo",
+      "Looks and HD packs are approved by the owner." in msub and "Links with a warning need an admin or the owner." in msub
+      and 'value="submit.undo"' not in msub)
+r = act("modadm", "submit.approve", ID_ADDON, "/wrath/admin/submissions")
+hubdec = [json.loads(l) for l in open(os.path.join(DATA, "hub", "decisions.jsonl"))] if os.path.isfile(os.path.join(DATA, "hub", "decisions.jsonl")) else []
+check("a mod approves a clean addon: approved, listed in the index too, in the public feed",
+      ok_(r) and LQ.item(ID_ADDON)["status"] == "approved"
+      and any(d["id"] == ID_ADDON and d["decision"] == "approve" and d["category"] == "addons" for d in hubdec)
+      and ID_ADDON in req("GET", "/wrath/leyline/approved-links.json")[2], (r, hubdec[-1:]))
+feed = json.loads(req("GET", "/wrath/leyline/approved-links.json")[2])
+check("approved-links.json: public, ids, kinds and links only (no names, notes or accounts)",
+      feed["links"] and set(feed["links"][0]) == {"id", "kind", "url", "approved_at"} and "WRPLAYER" not in json.dumps(feed)
+      and req("GET", "/wrath/leyline/approved-links.json")[1].get("Access-Control-Allow-Origin") == "*")
+check("a mod can't approve a look (owner) or a warned link (admin)",
+      "Looks and HD packs" in act("modadm", "submit.approve", ID_LOOK)[1] and "need an admin" in act("modadm", "submit.approve", ID_WARN)[1]
+      and LQ.item(ID_LOOK)["status"] == "pending")
+check("an admin approves the warned link; only the owner the look", ok_(act("staff1", "submit.approve", ID_WARN))
+      and "Looks and HD packs" in act("staff1", "submit.approve", ID_LOOK)[1] and ok_(act("owner1", "submit.approve", ID_LOOK)))
+check("reject needs a reason", "Say why" in act("modadm", "submit.reject", ID_REALM)[1])
+check("a mod rejects with a reason", ok_(act("modadm", "submit.reject", ID_REALM, reason="not a real realm"))
+      and LQ.item(ID_REALM)["status"] == "rejected")
+check("undo is the owner's", "Only the owner" in act("modadm", "submit.undo", ID_ADDON)[1] and "Only the owner" in act("staff1", "submit.undo", ID_ADDON)[1])
+r = act("owner1", "submit.undo", ID_ADDON)
+hubdec = [json.loads(l) for l in open(os.path.join(DATA, "hub", "decisions.jsonl"))]
+check("the owner undoes a mod's approval: waiting again, and off the index", ok_(r) and LQ.item(ID_ADDON)["status"] == "pending"
+      and hubdec[-1]["id"] == ID_ADDON and hubdec[-1]["decision"] == "delist" and ID_ADDON not in req("GET", "/wrath/leyline/approved-links.json")[2])
+au = [x for x in audit() if x.get("action", "").startswith("submit.")]
+check("every review decision and refusal is in the audit log with who and their role",
+      any(x["action"] == "submit.approve" and x["role"] == "mod" and x["ok"] for x in au)
+      and any(x["action"] == "submit.undo" and x["role"] == "owner" for x in au) and any(not x["ok"] for x in au))
+done = req("GET", "/wrath/admin/submissions", "owner1")[2]
+check("recently decided: who decided, their role, the reason, Undo for the owner",
+      "by Modadm (mod)" in done and "not a real realm" in done and 'value="submit.undo"' in done)
+
+# the hub's Submit a mod lands in the same queue; its Index-page decision counts
+HUBQ = wp.hub_mod.hub if wp.hub_mod is not None else None
+if HUBQ is not None:
+    HUBQ._rl = None
+    okh, _ = HUBQ.submit({"repo": "https://github.com/zed/zap-addon", "build": "3.3.5a", "category": "addons", "note": "zap"}, "10.7.0.1")
+    hid = LQ.validate("https://github.com/zed/zap-addon", "addon")["id"]
+    check("the hub's Submit a mod form puts a copy in the one queue", okh and LQ.item(hid) and LQ.item(hid)["via"] == "index"
+          and LQ.item(hid)["status"] == "pending")
+
+# helpers: a mod-level account panel for recruits
+check("the owner grants a helper", ok_(act("owner1", "staff.grant", "new", account="newbie", name="Newbie", role="helper")))
+st, _, hb = req("GET", "/wrath/admin", "newbie")
+check("a helper's home is Submissions; the menu has only Review", st == 200 and "<h2>Submissions</h2>" in hb and "(helper)" in hb
+      and 'href="/wrath/admin/players"' not in hb and 'value="submit.approve"' not in hb and 'value="submit.note"' in hb)
+check("a helper sees Feedback, not Players, Forum, Staff, Upgrades, Audit or the API",
+      req("GET", "/wrath/admin/feedback", "newbie")[0] == 200
+      and all(req("GET", "/wrath/admin/" + t, "newbie")[0] == 403 for t in ("players", "forum", "staff", "upgrades", "audit", "inbox", "system"))
+      and req("GET", "/wrath/admin/api/inbox", "newbie")[0] == 403)
+HTOK = token("newbie", "/wrath/admin/submissions")
+check("a helper leaves a note; can't approve or reject", ok_(act("newbie", "submit.note", ID_ADDON, "/wrath/admin/submissions", text="looks fine to me", csrf=HTOK))
+      and "Only moderators" in act("newbie", "submit.approve", ID_ADDON, csrf=HTOK)[1] and "Only moderators" in act("newbie", "submit.reject", ID_ADDON, reason="x", csrf=HTOK)[1]
+      and "looks fine to me" in req("GET", "/wrath/admin/submissions", "owner1")[2])
+stp = req("GET", "/wrath/admin/staff", "owner1")[2]
+check("staff page: helper in the roles, the What each role can do table, how to recruit",
+      '<option value="helper">' in stp and "What each role can do" in stp and "See secrets, keys or emails; deploy" in stp
+      and "To recruit someone" in stp)
+act("owner1", "staff.revoke", "newbie", confirm="newbie")
+
+# feedback digest
+os.makedirs(os.path.join(DATA, "bugs"), exist_ok=True)
+now_s = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+with open(os.path.join(DATA, "bugs", "intake.jsonl"), "w") as f:
+    for i, t in enumerate(["The launcher crashes when I press Play, terrible", "game crashed again <script>x</script> mail me at a@b.example",
+                           "I love the new Den build mode, so smooth", "can't log in with my hero key, password fails"]):
+        f.write(json.dumps({"id": f"s{i}", "source": "site", "at": now_s, "reporter": "P", "text": t}) + "\n")
+check("feedback: Run now is an admin's", "Only admins" in act("modadm", "feedback.run", "now")[1] and ok_(act("staff1", "feedback.run", "now")))
+fp = req("GET", "/wrath/admin/feedback", "modadm")[2]
+d = FB.latest(os.path.join(DATA, "ops"))
+check("feedback: themes with counts and mood; quotes escaped and redacted",
+      d and d["items"] == 4 and any(t["id"] == "crash" and t["count"] == 2 and t["mood"] < 0 for t in d["themes"])
+      and any(t["id"] == "den" and t["mood"] > 0 for t in d["themes"]) and "Crashes and errors" in fp
+      and "<script>x" not in fp and "a@b.example" not in fp and "[email]" in fp, (d or {}).get("themes"))
+
+# upgrades and the launcher version policy
+check("upgrades: only admins propose", "Only admins" in act("modadm", "upgrade.propose", "new", title="Launcher 0.5", kind="launcher")[1])
+r = act("staff1", "upgrade.propose", "new", "/wrath/admin/upgrades", title="Launcher 0.5.0 to stable", kind="launcher", version="0.5.0", what="new sign-in screen")
+ups = SD.upgrades()
+uid = next(iter(ups), "")
+check("upgrades: proposed, waiting for the owner", ok_(r) and ups[uid]["status"] == "proposed")
+check("upgrades: only the owner approves or holds", "Only the owner" in act("staff1", "upgrade.approve", uid)[1])
+r = act("owner1", "upgrade.approve", uid, note="go")
+check("upgrades: approved with the release window to ship in", ok_(r) and SD.upgrades()[uid]["status"] == "approved"
+      and "UTC" in SD.upgrades()[uid]["ship_window"])
+check("upgrades: hold", ok_(act("owner1", "upgrade.hold", uid, note="wait for the fix")) and SD.upgrades()[uid]["status"] == "held")
+upg = req("GET", "/wrath/admin/upgrades", "owner1")[2]
+check("upgrades page: the window, proposals, the version policy form (owner)",
+      "When to push updates" in upg and "Launcher 0.5.0 to stable" in upg and 'value="version.set"' in upg)
+check("version policy: the owner types set; a minimum newer than stable is refused",
+      "Type set" in act("owner1", "version.set", "policy", minimum="0.4.0")[1]
+      and "newer than the current stable" in act("owner1", "version.set", "policy", minimum="9.0.0", confirm="set")[1]
+      and "Only the owner" in act("staff1", "version.set", "policy", minimum="0.4.0", confirm="set")[1])
+r = act("owner1", "version.set", "policy", minimum="0.4.0", notice="Please update to keep playing together", confirm="set")
+st, hd, vb = req("GET", "/wrath/leyline/version.json")
+v = json.loads(vb) if st == 200 else {}
+check("version.json: public, current stable, minimum, notice and the release window",
+      ok_(r) and v.get("current") == "0.4.2" and v.get("minimum") == "0.4.0" and v.get("notice", "").startswith("Please")
+      and v.get("window", {}).get("text") and hd.get("Access-Control-Allow-Origin") == "*", v)
+rev = "".join(req("GET", "/wrath/admin/" + t, "owner1")[2] for t in ("submissions", "feedback", "upgrades", "staff"))
+check("Review pages: no secrets", "sekritsoappass" not in rev and "GAMEPASS" not in rev and A._secret().hex() not in rev)
+
+# the release window from presence samples (feedback.py, unit)
+W = tempfile.mkdtemp(prefix="wu-win-")
+base = 1730073600   # a Monday 00:00 UTC
+for day in range(14):
+    for hr in range(24):
+        for k in range(4):
+            FB.sample(W, 2 if hr in (9, 10) and day % 7 == 2 else 20 + hr, base + day * 86400 + hr * 3600 + k * 600)
+w = FB.release_window(W, base + 15 * 86400)
+check("release window: the quietest two hours of the week from the samples, in UTC and Phoenix time",
+      w["weekday"] == 2 and w["hour"] == 9 and w["text"].startswith("Wednesday 09:00-11:00 UTC") and "Wednesday 02:00" in w["phoenix"], w)
+_cli = subprocess.run([sys.executable, "-I", os.path.join(STREAM, "feedback.py"), "digest", "--data", DATA, "--wu", os.path.join(T, "nowu"),
+                       "--out", os.path.join(T, "ops-cli")], capture_output=True, text=True)
+check("feedback.py from the command line (the Control step): last line FEEDBACK OK, the missing host sources named",
+      _cli.returncode == 0 and _cli.stdout.strip().splitlines()[-1].startswith("FEEDBACK OK: 4 items")
+      and re.search(r"not here: [a-z, ]*discord, backlog", _cli.stdout), _cli.stdout + _cli.stderr)
+check("release window: the default until there is data", FB.release_window(tempfile.mkdtemp(), base)["basis"].startswith("default"))
+shutil.rmtree(W, ignore_errors=True)
+
+# the website's Submit a link form
+st, _, sp = req("GET", "/wrath/submit")
+check("/wrath/submit signed out: Log in, and /submit in the Discord", st == 200 and "Log in" in sp and "/submit" in sp)
+st, _, sp = req("GET", "/wrath/submit?kind=look", "player")
+tk = re.search(r'name="t" value="([0-9a-f]{32})"', sp)
+check("/wrath/submit signed in: the form with the kinds, the look picked", st == 200 and tk and 'value="look" checked' in sp)
+st, _, sp = req("POST", "/wrath/submit", "player", {"t": tk.group(1) if tk else "", "kind": "realm", "url": "https://play.example/r/cozy"})
+check("/wrath/submit: queued, thanks page", st == 200 and "in the queue" in sp and any("r/cozy" in r["url"] for r in LQ.items("pending")), sp[-400:])
+st, _, sp = req("POST", "/wrath/submit", "player", {"t": "0" * 32, "kind": "mod", "url": "https://github.com/q/r"})
+check("/wrath/submit: the form token is needed", st == 400 and "timed out" in sp)
+check("signin step ships linkqueue.py (with the blocklist), feedback.py and staffdesk.py",
+      all(x in open(os.path.join(STREAM, "fastloop.sh")).read() for x in ('install -m 644 linkqueue.py', 'install -m 644 feedback.py', 'install -m 644 staffdesk.py'))
+      and all(x in open(os.path.join(STREAM, "Update sign-in and warm-up.bat")).read() for x in ("linkqueue.py link-blocklist.json", "feedback.py", "staffdesk.py")))
 
 # ---------------------------------------------------------------- rate limits
 A.POSTS_PER_MIN, A.IP_PER_MIN, A.PAGES_PER_MIN = LIMITS

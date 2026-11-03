@@ -291,7 +291,10 @@ function GetBuildInfo() return "3.3.5", "12340", "Jun 24 2010", 30300 end
 function IsShiftKeyDown() return false end
 function IsAltKeyDown() return false end
 function IsControlKeyDown() return false end
-function GetCursorPosition() return 0, 0 end
+-- the cursor (screen pixels) and the mouse buttons held: F.cursor = { x, y }, F.buttons = { RightButton = true }
+F.cursor, F.buttons = { 0, 0 }, {}
+function GetCursorPosition() return F.cursor[1], F.cursor[2] end
+function IsMouseButtonDown(b) return F.buttons[b or "LeftButton"] == true end
 function GetCurrentKeyBoardFocus() return nil end
 function GetNumAddOns() return 0 end
 function GetAddOnInfo() return nil end

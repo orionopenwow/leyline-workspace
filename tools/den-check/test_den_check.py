@@ -507,6 +507,48 @@ class DenWorld(unittest.TestCase):
         rep = den_check.Report()
         quiet(den_check.ground_lines, rep, dict(good, sky="the area's own (your game has no Light.dbc)"))
         self.assertIn("FAIL sky: the Elwynn sky: the sky is the area's own (your game has no Light.dbc)", rep.text())
+        # a launcher from before the Elwynn sky (owner's PC 3 Nov 11:20): said so, with the fix
+        rep = den_check.Report()
+        quiet(den_check.ground_lines, rep, dict(good, sky="the area's own"))
+        self.assertIn("FAIL sky: the Elwynn sky: the sky is the area's own: this launcher is from before the Elwynn sky", rep.text())
+        self.assertIn("Update the launcher", rep.text())
+        # the launcher says so, but patch-T has no Light.dbc; then with it; then hidden by a later archive
+        real = den_check.mpqlite.Archive
+
+        class Fake:
+            names_ = []
+
+            def __init__(self, path):
+                pass
+
+            def names(self):
+                return Fake.names_
+        try:
+            den_check.mpqlite.Archive = Fake
+            Fake.names_ = ["World\\Maps\\Kalimdor\\Kalimdor_1_1.adt"]
+            rep = den_check.Report()
+            quiet(den_check.ground_lines, rep, good, "patch-T.MPQ")
+            self.assertIn("FAIL sky: the Elwynn sky: the launcher says the Elwynn sky, but Data\\patch-T.MPQ has no Light.dbc", rep.text())
+            Fake.names_.append("DBFilesClient\\Light.dbc")
+            rep = den_check.Report()
+            quiet(den_check.ground_lines, rep, good, "patch-T.MPQ")
+            self.assertIn("PASS sky: the Elwynn sky: Elwynn Forest's blue sky over the Den (your own Light.dbc, in Data\\patch-T.MPQ)", rep.text())
+            rep = den_check.Report()
+            quiet(den_check.ground_lines, rep, dict(good, hidden_by=["patch-Z.MPQ: DBFilesClient\\Light.dbc"]), "patch-T.MPQ")
+            self.assertIn("FAIL sky: the Elwynn sky: an archive read after the Den's has its own Light.dbc: patch-Z.MPQ", rep.text())
+            # a language whose own patches win (ruRU) with a Light.dbc: said
+            with tempfile.TemporaryDirectory() as t:
+                (Path(t) / "ruRU").mkdir()
+                (Path(t) / "ruRU" / "patch-ruRU-3.MPQ").write_bytes(b"x")
+                (Path(t) / "enUS").mkdir()
+                self.assertEqual(den_check.locale_light(t), "ruRU\\patch-ruRU-3.MPQ")
+                rep = den_check.Report()
+                quiet(den_check.ground_lines, rep, good, "patch-T.MPQ", t)
+                self.assertIn("FAIL sky: the Elwynn sky: your game's language reads its own Light.dbc after the Den's", rep.text())
+                os.rename(Path(t) / "ruRU", Path(t) / "deDE")
+                self.assertIsNone(den_check.locale_light(t))
+        finally:
+            den_check.mpqlite.Archive = real
         # no grass in this game; something read after our archive; a ground from before
         bad = dict(good, grass=False, island_models=3, models=3, hidden_by=["patch-Z.MPQ: World\\Maps\\x.adt"], whitened="256 parts painted grass")
         rep = den_check.Report()
@@ -630,6 +672,13 @@ class FakeDenEditor:
     def __init__(self, dens, broken=()):
         self.dens, self.props, self.play, self.clip, self.broken = Path(dens), 3, False, False, set(broken)
         self.kind = "fake"
+        self.views = {"tile": [0.0, 1.0], "preview": [0.0, 1.0]}
+        self.guide = [False, 1]
+
+    def view(self, which):
+        turn, zoom = self.views[which]
+        frame = "Model" if "topdown" in self.broken else "PlayerModel"
+        return "%s,1,%.2f,%.2f,%.2f" % (frame, turn, zoom, 0.6 + turn)
 
     def ev(self, name, detail=""):
         with open(self.dens / "den-lite.events", "a", encoding="utf-8") as f:
@@ -645,10 +694,13 @@ class FakeDenEditor:
         if w[:3] == [".den", "jaina", "build"]:
             if "stamps" in self.broken:
                 return {"props": self.props, "said": []}
-            self.stamped = 20
-            self.props += 20
-            self.ev("den_change", "+20 -0")
-            self.ev("dojo", "built 20")
+            if "stamps-part" in self.broken:
+                self.stamped = 4
+            else:
+                self.stamped = den_check.stamp_pieces(w[3]) or 20
+            self.props += self.stamped
+            self.ev("den_change", "+%d -0" % self.stamped)
+            self.ev("dojo", "built %d" % self.stamped)
             return {"props": self.props, "said": []}
         if w[:2] == [".build", "undo"]:
             self.props -= getattr(self, "stamped", 0)
@@ -656,6 +708,10 @@ class FakeDenEditor:
             return {"props": self.props, "said": []}
         if cmd == ".den size":
             return {"props": self.props, "said": ["Your Den: a 16 yard room."]}
+        if cmd == ".den help":
+            if "guide" not in self.broken:
+                self.guide = [True, 1]
+            return {"props": self.props, "said": ["The Den guide is open (Guide on the Den bar). .den commands lists the commands."]}
         if w[:2] == [".den", "save"]:
             (self.dens / ("%s.den.json" % w[2])).write_text('{"format": "leyline-den", "props": []}')
             return {"props": self.props}
@@ -670,8 +726,8 @@ class FakeDenEditor:
             ov = "LeylineDenBar/MinimapCluster" if "overlap" in self.broken else "none"
             self.report(["gallery shown=1 tiles=20 model=18 icon=2 empty=0 rows=4 cols=5 tile=92",
                          "catalog n=180 model=150 boxed=150 wmo=25 none=5", "nomodel Baked Bread,Bottle",
-                         "modelapi Model Pitch=0 Roll=0 Camera=1", "modelapi PlayerModel Pitch=0 Camera=1 PortraitZ=1",
-                         "fit frame=Model pitch=-1.57 view=auto fit=box cam=nil pitched=false",
+                         "view tile=%s preview=%s previewShown=1 spin=1" % (self.view("tile"), self.view("preview")),
+                         "guide open=%d page=%d pages=11 key=x" % (1 if self.guide[0] else 0, self.guide[1]),
                          "state sel=Barrel n=1 undo=4 redo=0 clip=%d grid=0 lite=1 mode=place tab=all pick=-" % self.clip,
                          "open LeylineDenBar,LeylineDenRail", "overlaps " + ov, "pill Place · snap off · 15°",
                          "screen 1923x1082 uiscale=0.71 play=%s rail=labelled" % str(self.play).lower()])
@@ -692,6 +748,19 @@ class FakeDenEditor:
             (self.dens / ("%s.den.json" % a[1])).write_text("{}")
         elif act == "open":
             self.ev("den_load", a[1] + " replace")
+        elif act == "guide" and "guide" not in self.broken:
+            if a[1:2] == ["close"]:
+                self.guide[0] = False
+            elif a[1:2] == ["next"]:
+                self.guide[1] += 1
+            else:
+                self.guide = [True, 1]
+        elif act == "view" and "view" not in self.broken:
+            v = self.views[a[1]]
+            if a[2] == "turn":
+                v[0] = (v[0] + math.radians(float(a[3]))) % (2 * math.pi)
+            else:
+                v[1] = min(3.0, v[1] * 1.15 ** int(a[3]))
         elif act == "play":
             self.play = True
         elif act == "build":
@@ -738,15 +807,33 @@ class Features(unittest.TestCase):
         self.assertEqual(len(den_check.STAMP_NAMES), len(set(den_check.STAMP_NAMES)))
         self.assertFalse((dens / "featuretest.den.json").exists() or (dens / "featuretest-before.den.json").exists(), "the test's saves removed")
 
-    def test_the_side_view_sweep_settles_in_one_run(self):
+    def test_tiles_and_preview_from_the_side_turned_and_zoomed(self):
         rep, shots, _ = self.run_it()
-        fits = [x for x in shots if "-fit-" in x]
-        self.assertLessEqual(len(den_check.FIT_SWEEP), 8)
-        self.assertEqual(len(fits), len(den_check.FIT_SWEEP), fits)
-        self.assertEqual(len({l for l, _ in den_check.FIT_SWEEP}), len(den_check.FIT_SWEEP))
-        self.assertTrue(any("frame=PlayerModel" in a for _, a in den_check.FIT_SWEEP))
-        api = [r[2] for r in rep.rows if r[1] == "gallery: a model frame's methods"]
-        self.assertEqual(api, ["Model Pitch=0 Roll=0 Camera=1", "PlayerModel Pitch=0 Camera=1 PortraitZ=1"])
+        rows = {r[1]: r for r in rep.rows}
+        for label in ("gallery tiles", "the selection's preview"):
+            self.assertEqual(rows["%s: from the side" % label][0], "PASS")
+            self.assertEqual(rows["%s: right-drag turns it, the wheel zooms" % label][0], "PASS", rows["%s: right-drag turns it, the wheel zooms" % label])
+        self.assertTrue(any(x.endswith("-tile-turned-zoomed.png") for x in shots) and any(x.endswith("-preview-turned-zoomed.png") for x in shots))
+        self.assertFalse(any("-fit-" in x for x in shots), "the sweep is gone")
+        self.assertFalse(hasattr(den_check, "FIT_SWEEP"))
+        self.assertEqual(den_check.parse_view("PlayerModel,1,1.57,1.32,2.17")["zoom"], 1.32)
+        self.assertEqual(den_check.parse_view("nope"), {})
+        # top-down tiles, or turn/zoom that doesn't work: failed
+        rep, _, _ = self.run_it(broken=("topdown", "view"))
+        fails = {r[1] for r in rep.rows if r[0] == "FAIL"}
+        self.assertIn("gallery tiles: from the side", fails)
+        self.assertIn("the selection's preview: right-drag turns it, the wheel zooms", fails)
+
+    def test_the_guide_opens_turns_and_answers_den_help(self):
+        rep, shots, _ = self.run_it()
+        rows = {r[1]: r for r in rep.rows}
+        for name in ("guide: Guide on the Den bar opens it", "guide: Next turns the page", "guide: .den help opens it"):
+            self.assertEqual(rows[name][0], "PASS", rows[name])
+        self.assertTrue(any(x.endswith("-guide.png") for x in shots))
+        rep, _, _ = self.run_it(broken=("guide",))
+        fails = {r[1] for r in rep.rows if r[0] == "FAIL"}
+        self.assertIn("guide: Guide on the Den bar opens it", fails)
+        self.assertIn("guide: .den help opens it", fails)
 
     def test_the_stamp_list_is_the_shipped_stamps(self):
         shipped = sorted(p.name.split(".")[0] for p in (HERE.parent.parent / "realm" / "custom" / "lua_scripts" / "den-stamps").glob("*.den.json"))
@@ -756,6 +843,13 @@ class Features(unittest.TestCase):
         rep, _, _ = self.run_it(broken=("stamps",))
         fails = {r[1] for r in rep.rows if r[0] == "FAIL"}
         self.assertIn("stamp: campfire", fails)
+        # only part of it inside the room: failed, with the count
+        rep, _, _ = self.run_it(broken=("stamps-part",))
+        fails = {r[1]: r for r in rep.rows if r[0] == "FAIL"}
+        self.assertIn("stamp: inn", fails)
+        self.assertIn("4 pieces of 34", fails["stamp: inn"][2])
+        self.assertEqual(den_check.stamp_pieces("nook"), 15)
+        self.assertIsNone(den_check.stamp_pieces("no-such-stamp"))
 
     def test_a_broken_feature_fails_with_the_fix(self):
         rep, _, _ = self.run_it(broken=("place", "overlap"))
@@ -812,7 +906,8 @@ class FakeAids:
     def send(self, cmd, wait=10.0):
         w = cmd.split()
         if cmd == ".den size":
-            return {"props": self.props, "aids": dict(self.aids)}
+            look = "build" if self.aids["mode"] == "build" and "look" not in self.broken else "play"
+            return {"props": self.props, "aids": dict(self.aids), "look_mode": look, "twin_queries": getattr(self, "twins", 0)}
         if w[:2] in ([".den", "save"], [".den", "load"]):
             if w[1] == "save":
                 (self.dens / ("%s.den.json" % w[2])).write_text("{}")
@@ -826,6 +921,8 @@ class FakeAids:
         if act == "build":
             self.aids["mode"] = "play" if a[2:] == ["off"] else "build"
             self.ev("build_mode", self.aids["mode"])
+            if self.aids["mode"] == "build":
+                self.twins = getattr(self, "twins", 0) + 3
         elif act == "arm":
             self.aids.update(armed="place,%s,1543" % a[2], ghost=[self.player[0] + 2.5, self.player[1], 13.2, 0.0])
         elif act == "hover":
@@ -913,6 +1010,7 @@ class PlacementAids(unittest.TestCase):
                      "preview: a click places it there", "preview: Esc takes the copy away", "gizmo: three flags around the selected prop (red X, green Y, blue Z)",
                      "gizmo: the wheel moves it along the picked axis", "menu: Duplicate", "play mode: props plain again"):
             self.assertIn(want, names)
+        self.assertIn("the game asked for 3 of their goober looks", [r for r in rep.rows if r[1] == "build mode: props light up under the mouse"][0][2])
         for s in ("build-mode", "preview", "preview-hover", "gizmo", "gizmo-moved"):
             self.assertTrue(any(x.endswith("-%s.png" % s) for x in self.shots), s)
         self.assertFalse((self.dens / "aidstest-before.den.json").exists(), "the test's save removed")
@@ -923,6 +1021,13 @@ class PlacementAids(unittest.TestCase):
             den_check.aids_features(rep, FakeAids(self.dens, broken={"hover", "select"}), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
         fails = {r[1] for r in rep.rows if r[0] == "FAIL"}
         self.assertEqual(fails, {"preview: the copy goes where the cursor points", "gizmo: three flags around the selected prop (red X, green Y, blue Z)"})
+        # Den Lite never took the build look: failed, with what it said
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, FakeAids(self.dens, broken={"look"}), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
+        row = [r for r in rep.rows if r[1] == "build mode: props light up under the mouse"][0]
+        self.assertEqual(row[0], "FAIL")
+        self.assertTrue(row[2].startswith("Den Lite's look: play; the event: "), row[2])
         # a Den Lite from before the aids: skipped, said
         class Old(FakeAids):
             def send(self, cmd, wait=10.0):

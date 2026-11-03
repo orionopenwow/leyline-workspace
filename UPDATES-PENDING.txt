@@ -731,3 +731,6 @@
 1312n ship  Save as Orion: the Dojo, level-1 mounts, the new-machine fixes and first-run-test, the slice model fix, the owner test plan
 1312o slice  Browser game files rebuilt: shapeshift forms, transforms, ghost/wisp, hunter pets, summoned creatures (fixes missing models)
 1312p slice-health  Check the rebuilt browser game files (player models now checked; most-missed list)
+1312q ship  Save as Orion: Play solo on every mode, one-click Invite a friend and Join, the GM command center, the Discord & GM card and quick edits in Control
+1312r relay  Relay join page: Open in Leyline (the friend joins in one click)
+1312s hostkit  Host kit: the GM command center's sandbox controls for hosted realms

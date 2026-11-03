@@ -7,7 +7,8 @@
 //! * GM controls: the in-game Your realm window's actions (realm/custom/lua_scripts/ov_hostctl.lua: announce, an
 //!   on-screen notice, message of the day, kick, mute / unmute, send to Dalaran, Ban account / Unban account (the
 //!   character's whole account, with a reason and how long, as on Leyline HQ), the allow list, restart with five
-//!   minutes' warning). The kit has no SOAP, so the
+//!   minutes' warning), and the GM command center's sandbox controls (`sandbox`: teleport presets, spawn by search,
+//!   time of day, weather, speed, fly, level, items, revive, kill, clear). The kit has no SOAP, so the
 //!   console adds one row to `ov_host_queue` in the realm's own characters database (`docker exec` into its database
 //!   container, which only this PC's owner can reach) and ov_hostctl.lua runs it as the console within seconds, with
 //!   the same checks and limits, and writes its answer back. A restart can only be the five-minute one: the console
@@ -235,9 +236,53 @@ pub fn ps_args() -> Vec<&'static str> {
 
 // ------------------------------------------------------------------------------------------------ GM controls
 
-/// The actions ov_hostctl.lua runs (its ACTIONS, plus status).
+/// The actions ov_hostctl.lua runs (its ACTIONS, plus status). `sandbox` is the GM command center's (ui/gmcenter.js):
+/// fixed sandbox controls for the host's own world, checked by `sandbox_data`.
 pub const GM_ACTIONS: &[&str] =
-    &["status", "announce", "notify", "motd", "kick", "mute", "unmute", "rescue", "ban", "unban", "allow", "restart", "cancel"];
+    &["status", "announce", "notify", "motd", "kick", "mute", "unmute", "rescue", "ban", "unban", "allow", "restart", "cancel", "sandbox"];
+
+/// The GM command center's teleport presets (ov_hostctl.lua SANDBOX_TELE maps each to a `.tele` name).
+pub const SANDBOX_TELE: &[&str] =
+    &["dalaran", "stormwind", "orgrimmar", "ironforge", "undercity", "thunderbluff", "darnassus", "silvermoon", "exodar", "shattrath", "gmisland"];
+/// Weather the command center can set where you stand.
+pub const SANDBOX_WEATHER: &[&str] = &["clear", "rain", "snow", "storm"];
+
+/// The command center's sandbox controls, `verb\targ\tname` (name optional: the realm's GM online). Only these verbs,
+/// each with its own checked argument, ever reach the realm, and the realm script checks them again. Nothing typed
+/// is run as a GM command.
+pub fn sandbox_data(data: &str) -> Result<String, String> {
+    let mut it = data.trim().splitn(3, '\t');
+    let verb = it.next().unwrap_or("").trim();
+    let arg = it.next().unwrap_or("").trim();
+    let who = it.next().unwrap_or("").trim();
+    let name = if who.is_empty() { String::new() } else { clean_name(who).ok_or("A character name: letters only.")? };
+    let num = |lo: u32, hi: u32, why: &str| -> Result<String, String> {
+        arg.parse::<u32>().ok().filter(|n| (lo..=hi).contains(n)).map(|n| n.to_string()).ok_or_else(|| why.to_string())
+    };
+    let arg = match verb {
+        "tele" => SANDBOX_TELE.iter().find(|t| **t == arg).map(|t| t.to_string()).ok_or("Pick a place from the list.")?,
+        "weather" => SANDBOX_WEATHER.iter().find(|t| **t == arg).map(|t| t.to_string()).ok_or("Clear, rain, snow or storm.")?,
+        "time" => num(0, 23, "An hour from 0 to 23.")?,
+        "speed" => num(1, 5, "Speed: 1 to 5 times.")?,
+        "level" => num(1, 80, "A level from 1 to 80.")?,
+        "fly" => match arg {
+            "on" | "off" => arg.to_string(),
+            _ => return Err("Fly: on or off.".into()),
+        },
+        "revive" | "kill" | "clear" | "heal" => String::new(),
+        "find-creature" | "find-object" | "find-item" => {
+            let w: String = arg.chars().filter(|c| c.is_ascii_alphanumeric() || *c == ' ' || *c == '-').collect();
+            let w = w.split_whitespace().collect::<Vec<_>>().join(" ");
+            if !(2..=30).contains(&w.chars().count()) {
+                return Err("Type 2 to 30 letters to search for.".into());
+            }
+            w
+        }
+        "spawn-creature" | "spawn-object" | "item" => num(1, 9_999_999, "Pick one from the search first.")?,
+        _ => return Err("That is not a sandbox control.".into()),
+    };
+    Ok(format!("{verb}\t{arg}\t{name}"))
+}
 
 /// Ban account: at most a year (0 = permanent), as on Leyline HQ (stream/hq.py build "ban").
 pub const BAN_HOURS: u32 = 8760;
@@ -280,6 +325,7 @@ pub fn gm_data(action: &str, data: &str) -> Result<String, String> {
     const NAME: &str = "A character name: letters only.";
     match action {
         "status" | "restart" | "cancel" => Ok(String::new()),
+        "sandbox" => sandbox_data(data),
         "announce" | "motd" | "notify" => clean_text(data).ok_or_else(|| "Write the message first.".into()),
         "kick" | "unban" | "unmute" | "rescue" => clean_name(data).ok_or_else(|| NAME.into()),
         // name, a number, the reason (the rest): tabs from the console, spaces when typed
@@ -746,6 +792,32 @@ mod tests {
         assert!(gm_data("server", "shutdown").is_err());
         assert_eq!(unhex(&hex("Grumpy\t24 é")).unwrap(), "Grumpy\t24 é");
         assert!(unhex("4").is_none() && unhex("zz").is_none());
+    }
+
+    #[test]
+    fn sandbox_controls_are_fixed_words_and_checked_numbers() {
+        assert_eq!(gm_data("sandbox", "tele\tdalaran").unwrap(), "tele\tdalaran\t");
+        assert_eq!(gm_data("sandbox", "tele\tdalaran\tgrumpy").unwrap(), "tele\tdalaran\tGrumpy");
+        assert_eq!(gm_data("sandbox", "tele\tDalaran'; --").unwrap_err(), "Pick a place from the list.");
+        assert_eq!(gm_data("sandbox", "time\t23").unwrap(), "time\t23\t");
+        assert!(gm_data("sandbox", "time\t24").is_err() && gm_data("sandbox", "time\t-1").is_err());
+        assert_eq!(gm_data("sandbox", "speed\t5").unwrap(), "speed\t5\t");
+        assert!(gm_data("sandbox", "speed\t50").is_err());
+        assert_eq!(gm_data("sandbox", "level\t80").unwrap(), "level\t80\t");
+        assert!(gm_data("sandbox", "level\t81").is_err() && gm_data("sandbox", "level\t0").is_err());
+        assert_eq!(gm_data("sandbox", "fly\ton").unwrap(), "fly\ton\t");
+        assert!(gm_data("sandbox", "fly\tmaybe").is_err());
+        assert_eq!(gm_data("sandbox", "weather\tsnow").unwrap(), "weather\tsnow\t");
+        assert!(gm_data("sandbox", "weather\tfog").is_err());
+        assert_eq!(gm_data("sandbox", "revive\tanything").unwrap(), "revive\t\t", "no argument carried");
+        assert_eq!(gm_data("sandbox", "find-creature\t  Stormwind   Guard;DROP ").unwrap(), "find-creature\tStormwind GuardDROP\t");
+        assert!(gm_data("sandbox", "find-object\tx").is_err());
+        assert_eq!(gm_data("sandbox", "spawn-creature\t68").unwrap(), "spawn-creature\t68\t");
+        assert!(gm_data("sandbox", "spawn-object\t0").is_err() && gm_data("sandbox", "item\tabc").is_err());
+        assert!(gm_data("sandbox", "run\t.server shutdown 0").is_err(), "never a typed command");
+        assert!(gm_data("sandbox", "tele\tdalaran\tRob'); DROP").is_err());
+        assert!(queue_sql("sandbox", "kill").unwrap().contains("VALUES ('sandbox', UNHEX('"));
+        assert!(SANDBOX_TELE.iter().all(|t| t.chars().all(|c| c.is_ascii_lowercase())));
     }
 
     #[test]

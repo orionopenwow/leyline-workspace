@@ -3,7 +3,7 @@
 //! The scheme is registered by the installer (tauri.conf.json `plugins.deep-link.desktop.schemes`). On Windows and
 //! Linux the OS starts Leyline with the link as an argument; `from_args` finds it. A link never installs anything
 //! by itself: the UI shows the project and the player clicks INSTALL (a web page can open a link, so the click is
-//! the consent). Only `install/<catalog id>`, `realm/<realm id or official>` and `host?<choices>` are understood;
+//! the consent). Only `install/<catalog id>`, `realm/<realm id or official>`, `host?<choices>` and `join?link=<invite>` are understood;
 //! anything else is ignored.
 //!
 //! `leyline://host?<choices>` comes from the in-game Host window (WrathUnleashedUI/Host.lua, "Start hosting" in the
@@ -13,6 +13,11 @@
 //! rates, signup, list, invite) comes from the game's "Your realm" tab: the Host page at that control. Every name and
 //! value is checked here (`host_query`) with the same rules as Host.lua, stream/www-files/wrath-page.js hostQuery and
 //! stream/hostflow.py prefill(); the link carries no secret and starts nothing.
+//!
+//! `leyline://join?link=<an invite link, percent-encoded>` is a friend's "Invite a friend" (ui/solo.js): the relay's
+//! join page (hosting/relay/wurelay/www/join.html, "Open in Leyline") makes it in the browser from the link it was
+//! opened with, so the secret after `#` never reaches a server. Only an invite link on Leyline's own relay is taken
+//! (`join_link`); the launcher then shows one Join button, and nothing joins until the player presses it.
 
 /// What a link asks for.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -25,6 +30,17 @@ pub enum Link {
     Realm(String),
     /// Open the Host page with these choices: the checked, canonical query string (`host_query`).
     Host(String),
+    /// A friend's invite link (`join_link`): the launcher offers Join with it. Nothing joins until the player clicks.
+    Join(String),
+}
+
+/// The invite link a `leyline://join?link=` carries, when it is one (realms.rs parse_invite) on Leyline's own relay.
+pub fn join_link(q: &str) -> Option<String> {
+    let v = q.split('&').find_map(|p| p.strip_prefix("link="))?;
+    let link = unescape(v)?;
+    let (relay, _, _) = crate::realms::parse_invite(&link)?;
+    let ours = relay == crate::addresses::RELAY_HOST || relay == crate::addresses::OLD_RELAY_HOST;
+    (ours && link.len() <= 400 && !link.chars().any(|c| c.is_control() || c.is_whitespace())).then_some(link)
 }
 
 pub const SCHEME: &str = "leyline";
@@ -48,6 +64,9 @@ pub fn parse(url: &str) -> Option<Link> {
     let (scheme, rest) = url.split_once("://")?;
     if !scheme.eq_ignore_ascii_case(SCHEME) {
         return None;
+    }
+    if let Some(q) = rest.strip_prefix("join?").or_else(|| rest.strip_prefix("join/?")) {
+        return join_link(q).map(Link::Join);
     }
     if let Some(q) = rest.strip_prefix("host?").or_else(|| rest.strip_prefix("host/?")) {
         let q = q.split('#').next()?;
@@ -185,6 +204,26 @@ mod tests {
         assert_eq!(parse("LEYLINE://install/mod%3Apings/"), Some(Link::Install("mod:pings".into())));
         assert_eq!(parse("leyline://install/link:0123456789ab?from=hub"), Some(Link::Install("link:0123456789ab".into())));
         assert_eq!(parse("leyline://install/theme:night-sky"), Some(Link::Install("theme:night-sky".into())));
+    }
+
+    #[test]
+    fn parses_join_links_on_our_relay_only() {
+        let link = "https://relay.leylinelauncher.com/join/abcdefghijk2345a#ABCDEFGHJKLMNPQR~GUEST7~pw9";
+        let enc = escape(link);
+        assert_eq!(parse(&format!("leyline://join?link={enc}")), Some(Link::Join(link.into())));
+        let old = "https://relay.openvanilla.app/join/abcdefghijk2345a#ABCDEFGHJKLMNPQR";
+        assert_eq!(parse(&format!("leyline://join/?link={}", escape(old))), Some(Link::Join(old.into())));
+        for bad in [
+            "https://evil.example.com/join/abcdefghijk2345a#ABCDEFGHJKLMNPQR",
+            "https://relay.leylinelauncher.com/join/abcdefghijk2345a",
+            "https://relay.leylinelauncher.com/join/xyz#ABCDEFGHJKLMNPQR",
+            "http://relay.leylinelauncher.com/join/abcdefghijk2345a#ABCDEFGHJKLMNPQR",
+        ] {
+            assert_eq!(parse(&format!("leyline://join?link={}", escape(bad))), None, "{bad}");
+        }
+        assert_eq!(parse("leyline://join?nolink=1"), None);
+        let json = serde_json::to_value(Link::Join(link.into())).unwrap();
+        assert_eq!(json, serde_json::json!({"action": "join", "id": link}));
     }
 
     #[test]

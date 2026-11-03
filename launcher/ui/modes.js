@@ -170,7 +170,10 @@
       });
       acts.append(b);
     });
+    // Play solo first, beside Play (solo.js): on this PC, with your own game files; or why it's online only
+    const solo = window.LeylineSolo ? window.LeylineSolo.attach(acts, null, window.LeylineSolo.forMode(m)) : null;
     if (acts.childNodes.length) c.append(acts);
+    if (solo) c.append(solo.note);
     return c;
   }
 

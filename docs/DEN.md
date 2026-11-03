@@ -559,6 +559,14 @@ Either way the output is checked like any other layout (the catalog, the Den, th
 4. The owner decides: Den panel, the friend's name, **Can build** / **View only** (`.den allow <name> build|view`; the
    friend must be online). A builder places, moves, lays paths; back to View only, they can't, not even undo.
 
+**One click from the launcher (3 Nov).** Any solo world on this PC has **Invite a friend** (Home's Play solo row, the
+GM command center; `launcher/ui/solo.js`): on Den Lite it is `den_invite` (the relay tunnel up, a login for one friend
+inside the link, 24 hours); on a Host pack realm it is that realm's invite link. The link is copied. The friend opens it:
+the relay's join page has **Open in Leyline** (`leyline://join?link=…`, made in the browser so the secret after `#`
+never reaches a server; `deeplink.rs` takes only links on Leyline's relay), and their launcher shows one **Join**
+button (nothing joins before it), which knocks and starts the game with their 3.3.5a folder (`join_invite`). Pasting
+the link under Realms › Got an invite link? still works.
+
 Gap, not fixed here: the browser client can't visit a Den yet (the stream doesn't carry the island's terrain tile;
 see Requests), so a friend joins with their own game for now.
 

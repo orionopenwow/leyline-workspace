@@ -27,6 +27,7 @@
 <link rel="stylesheet" href="looks-art.css"><!-- the Looks drawings: a copy of stream/looks.py MOTIF_CSS -->
 <link rel="stylesheet" href="stone.css"><!-- the title bar and play bar on the owner's stone texture -->
 <link rel="stylesheet" href="slate.css"><!-- the pages on the stone: panels, cards, buttons, Realms (owner 31 Oct design pass) -->
+<link rel="stylesheet" href="solo.css"><!-- Play solo everywhere, Invite a friend, the GM command center (solo.js, gmcenter.js) -->
 <link rel="stylesheet" href="guide.css"><!-- the first-run tour and the one-time encouragement toast (guide.js) -->
 </head>
 <body class="ly">
@@ -795,6 +796,7 @@
 <script src="account.js"></script>
 <script src="gate.js"></script><!-- the sign-in screen (window.LeylineGate; after social.js and account.js, before app.js) -->
 <script src="forum.js"></script>
+<script src="solo.js"></script><!-- Play solo on every mode and realm card, Invite a friend, the friend's Join (window.LeylineSolo; before modes.js) -->
 <script src="modes.js"></script>
 <script src="shelf.js"></script><!-- Mods and Addons: one rule (window.LeylineShelf; before market, gamemods, simple and app) -->
 <script src="market.js"></script>
@@ -810,6 +812,7 @@
 <script src="hostconsole.js"></script>
 <script src="hostmodes.js"></script><!-- Host: the mode cards first, Fork this mode (host/modes.rs; after hostconsole.js) -->
 <script src="den.js"></script><!-- Your Den: the one Den page and the Home entry (window.LeylineDen; after app.js and hostconsole.js) -->
+<script src="gmcenter.js"></script><!-- the GM command center for your own worlds (window.LeylineGM; after den.js) -->
 <script src="hostnetwork.js"></script><!-- Host: the Network tab (host/network.rs) -->
 <script src="home.js"></script>
 <script src="agents.js"></script><!-- Agents: the page and the approval card on every page (window.LeylineAgents) -->

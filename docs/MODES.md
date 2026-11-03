@@ -169,6 +169,24 @@ settings. The launcher's **Host** page opens on a grid of them. Pick one, name y
 **Fork** copies a mode into your Host pack as your own. Its card and your realm on the realm list then say
 "based on *X* by *Y*". Fork a mode from its card, or from any realm on the Realms page that shows its mode.
 
+### Play solo, and the GM command center (3 Nov)
+
+Every mode and realm card in the launcher has **Play solo** right after its online button (Modes, Realms, the Host
+page's mode cards; `launcher/ui/solo.js`), with one line under it saying where it runs and what it needs. Play solo
+always means on this PC with your own game files: Your Den (Den Lite, nothing to install), Solo leveling, a mode
+package hosted privately for you (the form opens with "Play solo: just you, on this PC"), or another version's own
+realm. A mode that needs Docker says so before anything is pressed and opens the Host page's Docker steps. A mode that
+can't run on your PC says "Online only" and why (the official realm's hub, or two players by design). Catalog modes map
+to packages in `solo.js` `PACK_FOR_MODE` (the minigames run on Minigolf night's ruleset, Brawl on Duel ladder).
+
+The **GM command center** (`launcher/ui/gmcenter.js`; Host page › GM command center, or Home's Play solo row) runs your
+own realm on this PC: Move (teleport presets, speed, fly), Spawn (creatures and safe objects by search, then Clear),
+World (time of day, weather), Character (level, items by search, revive, heal, kill your target), Players & realm
+(announce, kick, ban, restart). Each is one `host_gm` call: the realm's queue and `ov_hostctl.lua` "sandbox" (fixed
+verbs, checked numbers, preset places, never a typed GM command; `host/console.rs` `sandbox_data`). Kick, ban, restart,
+kill and clear ask first. Your Den on Den Lite keeps its controls in the game (`/den`). The official realm is never run
+from here: staff use Leyline HQ.
+
 ### The templates
 
 They live in `hosting/kit/modes/<id>/` and ship with the Host pack. Each one only switches on what the realm scripts

@@ -150,13 +150,15 @@
     if (m.status === "coming") {
       if (m.credit) b.append(mk("p", "hx-by", `By ${m.credit.by}`));
     } else {
-      acts.append(btn("Host", "btn small primary hx-host", () => { cur = m; view = "host"; paint(); }));
+      acts.append(btn("Host", "btn small primary hx-host", () => { cur = m; solo = false; view = "host"; paint(); }));
       acts.append(btn("Fork", "btn small hx-fork", (ev) => forkIt(m.id, null, ev.currentTarget)));
       if (m.own) {
         acts.append(btn("Change", "btn small hx-change", () => { cur = m; view = "edit"; paint(); }));
         acts.append(btn("Remove", "hc-more hx-remove", () => removeIt(m)));
       }
     }
+    // Play solo beside Host (solo.js): the same mode, private, just you, on this PC
+    if (window.LeylineSolo && m.profile !== "den") window.LeylineSolo.attach(acts, b, window.LeylineSolo.forPack(m));
     c.append(pic(m), b, acts);
     return c;
   }
@@ -243,18 +245,20 @@
 
   // ---------------------------------------------------------------- host it: the short form
   let vis = "private";
+  let solo = false;   // Play solo (solo.js): private, named for you, said so
   function paintHost() {
     const m = cur;
-    const sw = mk("div", "hc-sw hx-sw");
-    sw.append(head(m, "Host this mode"));
+    const sw = mk("div", "hc-sw hx-sw" + (solo ? " hx-solo" : ""));
+    if (solo) vis = "private";
+    sw.append(head(m, solo ? "Play solo: just you, on this PC" : "Host this mode"));
     const form = mk("div", "hx-form");
     const nl = mk("label", "hc-field");
     const name = mk("input", "hc-token");
     name.id = "hx-name"; name.type = "text"; name.maxLength = 32; name.spellcheck = false; name.autocomplete = "off";
-    name.value = m.name.replace(/[^A-Za-z0-9 _'-]/g, "").slice(0, 32) || "My Realm";
+    name.value = (solo ? `Solo ${m.name}` : m.name).replace(/[^A-Za-z0-9 _'-]/g, "").slice(0, 32) || "My Realm";
     nl.append(mk("span", "", "Realm name"), name);
     form.append(nl);
-    if (!PRIVATE.includes(m.profile)) {
+    if (!PRIVATE.includes(m.profile) && !solo) {
       const vl = mk("div", "hc-field");
       vl.append(mk("span", "", "Who can join"));
       const seg = mk("div", "hc-seg");
@@ -285,7 +289,8 @@
     const ready = kit && kit.is_kit;
     const host = btn(ready ? `Host ${m.name}` : "Get the Host pack first", "btn primary hx-go", () => ready ? hostIt(m, name, gm, sets, host) : getReady());
     host.id = "hx-go";
-    go.append(host, mk("span", "hc-fine", PRIVATE.includes(m.profile) ? "Private: only friends with your invite link. The first start takes 5 to 20 minutes."
+    go.append(host, mk("span", "hc-fine", solo ? "Private: only you, and friends you invite later (Invite a friend). The first start takes 5 to 20 minutes."
+      : PRIVATE.includes(m.profile) ? "Private: only friends with your invite link. The first start takes 5 to 20 minutes."
       : "The first start takes 5 to 20 minutes. Leave this PC on while people play."));
     sw.append(go, mk("p", "status hx-status"));
     root.append(sw);
@@ -457,6 +462,13 @@
     }
   }
 
-  window.LeylineHostModes = { realmRow, reload: () => load(), open: (id) => { view = "grid"; show(); if (id) { const m = (modes || []).find((x) => x.id === id); if (m) { cur = m; view = "host"; } } paint(); } };
+  // open(id, {solo}): that mode's form (solo: private, for you); rulesets(): the ruleset picker underneath (solo.js)
+  async function open(id, opts) {
+    view = "grid"; solo = !!(opts && opts.solo); show();
+    if (id && !modes) await load();
+    if (id) { const m = (modes || []).find((x) => x.id === id); if (m) { cur = m; view = "host"; } }
+    paint();
+  }
+  window.LeylineHostModes = { realmRow, reload: () => load(), open, rulesets: () => { view = "off"; place(); paint(); } };
   load();
 })();

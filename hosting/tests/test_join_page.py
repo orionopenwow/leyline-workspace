@@ -33,6 +33,32 @@ const cases = JSON.parse(process.argv[1]);
         self.assertEqual(got[1], "28b837075a12b82553921d9095fa3fdcb0151c4bfc860ab97a69d0fa86a3d213")
 
 
+class JoinPageOpensLeyline(unittest.TestCase):
+    """Open in Leyline: the launcher's leyline://join link, made in the browser from the link the page was opened with
+    (the invite after # never reaches a server), never while the browser game frames the page."""
+
+    def test_open_in_leyline(self):
+        src = open(PAGE, encoding="utf-8").read()
+        self.assertIn('<button id="open-leyline" type="button">Open in Leyline</button>', src)
+        self.assertIn('<div class="card" id="leyline-card" hidden>', src, "hidden until there is an invite")
+        self.assertIn('"leyline://join?link=" + encodeURIComponent(location.origin + location.pathname', src)
+        self.assertIn("realmId && invite && !hop", src)
+        self.assertNotIn("fetch(\"leyline", src)
+
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
+    def test_the_link_round_trips(self):
+        # the same encoding the page does, read back as the launcher's deeplink.rs unescape does
+        link = "https://relay.leylinelauncher.com/join/abcdefghijk2345a#ABCDEFGHJKLMNPQR~GUEST7~pw9"
+        out = subprocess.run(["node", "-e", "console.log('leyline://join?link=' + encodeURIComponent(process.argv[1]))", link],
+                             capture_output=True, text=True, timeout=30)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        made = out.stdout.strip()
+        from urllib.parse import unquote
+        self.assertTrue(made.startswith("leyline://join?link=https%3A%2F%2Frelay.leylinelauncher.com%2Fjoin%2F"))
+        self.assertNotIn("#", made, "the # is encoded, so the whole link reaches the launcher")
+        self.assertEqual(unquote(made.split("link=", 1)[1]), link)
+
+
 class JoinPageServed(unittest.IsolatedAsyncioTestCase):
     async def test_relay_serves_join_page(self):
         async with Rig() as r:

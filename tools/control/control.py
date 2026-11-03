@@ -15,6 +15,11 @@ Serves a page on http://127.0.0.1:8097 (this PC only) and opens it. The page sho
   * Discord: the Discord redo's bot token (pasted once, saved on this PC only in tools/discord-leyline/token.txt,
     git-ignored, never shown back, never in a log), Preview (read-only), and Do it: only after a fresh preview, and
     only when the owner types YES under it; never from Autopilot, Launch all or a Waiting on you button.
+  * Discord & GM: read-only, the server's checks, the Discord bridge (wu-discord, from the last server check) and bot,
+    the open bug reports (the bugs step's backlog), the addons and looks waiting for review, the last quick edits; its
+    buttons run existing steps (check, bugs, discord-check, discord-preview, worldlog, mods-daily) on a click.
+  * Quick edits: the apply-check / apply steps (tools/control/quick.py): a manifest of files and their sha256 and one
+    deploy step, checked, instead of a new .bat for each small change.
   * Autopilot (switch in the header, remembered in control/autopilot.json): while this window is open, new
     steps Claude adds to UPDATES-PENDING.txt run on their own within a minute, and a read-only server check
     runs every 3 hours (logs/check-auto-*.log), so Claude can read the results without asking you. A failed
@@ -60,6 +65,12 @@ DISCORD_TOKEN = DISCORD_DIR / "token.txt"            # git-ignored; the script r
 DISCORD_DOC = ROOT / "control" / "discord.json"      # the last preview's summary, the last do it and bot settings
 DISCORD_FRESH = 3600                                  # Do it needs a preview from the last hour
 HQ_URL = "https://leylinelauncher.com/wrath/admin"   # Leyline HQ: the one place online (stream/hq.py)
+# The Discord & GM card (gm_overview): what it reads, all files this PC already has; it changes none of them
+BUGS_BACKLOG = ROOT / "tools" / "bugs" / "live" / "backlog.json"     # the bugs step's copy (docs/BUGS-MANIFEST.md)
+SERVER_CHECK = ROOT / "logs" / "server-check-latest.txt"             # the check step's report (realm/diag.sh)
+UPSTREAM = ROOT / "mods" / "upstream.json"                           # curated addons; pending = no reviewer yet
+LOOKS = ROOT / "stream" / "looks.json"                               # looks; pending = no reviewer yet
+QUICK_LOG = ROOT / "control" / "quick" / "applied.jsonl"             # quick edits applied (tools/control/quick.py)
 QUIET = "--quiet" in sys.argv                         # started at Windows sign-in: no browser tab
 TOKEN_FILE = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "WrathUnleashed" / "control-token"
 # The shared look (stream/www-files/art: wu-theme.css, the starfield, corners, dragons, divider, Cinzel), the same
@@ -271,6 +282,11 @@ STEPS = {
     "discord-preview": ("tools/discord-leyline/Control - Discord preview.bat", "Discord redo preview: what would change on your server (read-only)", False),
     "discord-apply": ("tools/discord-leyline/Control - Discord do it.bat", "Discord redo, done: the server backed up to your Desktop, then the changes the preview showed", False),
     "discord-check": ("tools/discord-leyline/Control - Discord bot settings.bat", "Discord bot settings: the channel ids for the website bot and the game bridge (read-only)", False),
+    # Quick Claude edits (tools/control/quick.py, README.md "Quick edits"): control/quick/<id>.json names the files, their
+    # sha256 and one deploy step (signin, addons, scripts or none); apply-check only checks it, apply checks it again and
+    # runs that step's own .bat. Anything else in a manifest is refused. No new .bat for each small change.
+    "apply-check": ("tools/control/Quick apply - check.bat", "Quick edit check (read-only): the manifest's files are inside Leyline, no secrets, each its sha256", False),
+    "apply": ("tools/control/Quick apply.bat", "Quick edit: the manifest's files checked, then its one deploy step (signin, addons, scripts or none)", False),
     "hq-sync": ("tools/hq/HQ sync.bat", "Leyline HQ: send the recent changes and Claude's notes, fetch the owner's notes", False),
     "hqnote": ("tools/hq/HQ sync.bat", "Leyline HQ: publish Claude's notes (and sync)", False),
     "hq-inbox": ("tools/hq/HQ sync.bat", "Leyline HQ: fetch the owner's notes to Claude (and sync)", False),
@@ -280,7 +296,7 @@ STEPS = {
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "fresh-leyline-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
              "vr-data-check", "vr-site-check", "sv-site-check", "release-mirror-check", "fork-check", "bugs", "audit", "den-check", "domain-check",
-             "discord-preview", "discord-check"}
+             "discord-preview", "discord-check", "apply-check"}
 # Steps only the owner starts, by hand, from their own panel (never Autopilot, Launch all or a Waiting on you button)
 OWNER_ONLY = {"discord-apply"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}
@@ -549,6 +565,9 @@ def run_all(ship_message: str, items=None, record=True) -> None:
                     env["WU_SHIP_MSG"] = env["LEYLINE_SHIP_MSG"] = note
             for k in ("LEYLINE_CONTROL_STEP", "LEYLINE_DISCORD_EXPECT_CHANGES"):
                 env.pop(k, None)
+            # which line this is (quick.py finds its manifest by it: control/quick/<id>.json, or "quick:<name>" in the note)
+            env["LEYLINE_CONTROL_ID"] = str(item.get("id") or "")
+            env["LEYLINE_CONTROL_NOTE"] = str(item.get("note") or "")[:200]
             if item["step"].startswith("discord-"):
                 env["LEYLINE_CONTROL_STEP"] = item["step"]
                 env["PYTHONIOENCODING"] = "utf-8"
@@ -754,6 +773,104 @@ def audit_state() -> dict | None:
     return {"at": time.strftime("%d %b %H:%M", time.localtime(at)), "result": result, "green": result.startswith("ALL GREEN")}
 
 
+# ------------------------------------------------------------------ the Discord & GM card (read-only)
+# Quick actions: existing steps only, each on a click (never Autopilot; discord-apply stays on the Discord panel).
+GM_ACTIONS = [("check", "Check server"), ("bugs", "Pull bug reports"), ("discord-check", "Discord bot settings"),
+              ("discord-preview", "Discord preview"), ("worldlog", "World server log"), ("mods-daily", "Find new mods (approves nothing)")]
+OPEN_BUGS = ("new", "triaged", "planned")
+
+
+def _read_json(p: Path):
+    try:
+        return json.loads(p.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return None
+
+
+def _when(t) -> str:
+    try:
+        return time.strftime("%d %b %H:%M", time.localtime(float(t)))
+    except (TypeError, ValueError, OverflowError, OSError):
+        return ""
+
+
+def bugs_overview(n: int = 8) -> dict:
+    """The open bug reports from the bugs step's backlog, newest first: id, title, status, how many, where from."""
+    b = _read_json(BUGS_BACKLOG)
+    items = b.get("items") if isinstance(b, dict) and isinstance(b.get("items"), list) else None
+    if items is None:
+        return {"have": False, "open": 0, "items": [], "at": ""}
+    live = [it for it in items if isinstance(it, dict) and it.get("status") in OPEN_BUGS and not it.get("merged_into")]
+    live.sort(key=lambda it: -(it.get("last") or 0))
+    out = [{"id": str(it.get("id", ""))[:20], "title": scrub(str(it.get("title", "")))[:140], "status": it.get("status"),
+            "count": int(it.get("count") or 0), "sources": [str(x)[:10] for x in (it.get("sources") or [])][:4],
+            "last": _when(it.get("last"))} for it in live[:n]]
+    return {"have": True, "open": len(live), "items": out, "at": _when(BUGS_BACKLOG.stat().st_mtime)}
+
+
+def _pending_review(entries) -> list:
+    return [e for e in entries if isinstance(e, dict) and isinstance(e.get("review"), dict) and not e["review"].get("by")]
+
+
+def mods_overview(n: int = 6) -> dict:
+    """What waits for the owner's review: curated addons and looks with no reviewer yet. Never approves anything."""
+    up = _read_json(UPSTREAM)
+    looks = _read_json(LOOKS)
+    addons = _pending_review(up.get("entries", [])) if isinstance(up, dict) else []
+    lk = _pending_review(looks.get("looks", [])) if isinstance(looks, dict) else []
+    name = lambda e: scrub(str(e.get("display_name") or e.get("name") or e.get("id") or ""))[:60]
+    return {"addons": len(addons), "addon_names": [name(e) for e in addons[:n]], "looks": len(lk), "look_names": [name(e) for e in lk[:n]]}
+
+
+def bridge_overview() -> dict:
+    """The Discord bridge on the server (/opt/wu-discord, the wu-discord service), as the last server check saw it."""
+    try:
+        text = SERVER_CHECK.read_text(encoding="utf-8", errors="replace")
+        at = _when(SERVER_CHECK.stat().st_mtime)
+    except OSError:
+        return {"seen": False, "state": "", "enabled": "", "lines": [], "at": ""}
+    lines, on = [], False
+    for ln in text.splitlines():
+        if ln.startswith("== "):
+            on = ln.startswith("== Discord bridge")
+            continue
+        if ln.startswith("DIAG OK"):
+            on = False
+        if on and ln.strip():
+            lines.append(scrub(ANSI.sub("", ln.rstrip()))[:200])
+    m = re.search(r"state: (\S+); enabled: (\S+)", "\n".join(lines))
+    return {"seen": bool(lines), "state": m.group(1) if m else "", "enabled": m.group(2) if m else "",
+            "lines": [l for l in lines if not l.lstrip().startswith("state:")][:8], "at": at}
+
+
+def quick_overview(n: int = 5) -> list:
+    """The last quick edits applied (tools/control/quick.py): when, which manifest, its deploy, ok."""
+    out = []
+    for ln in read_lines(QUICK_LOG)[-n:]:
+        try:
+            d = json.loads(ln)
+        except ValueError:
+            continue
+        if isinstance(d, dict):
+            out.append({"at": str(d.get("at", ""))[:20], "id": str(d.get("id", ""))[:64], "deploy": str(d.get("deploy", ""))[:10],
+                        "files": len(d.get("files") or []), "ok": bool(d.get("ok")), "why": scrub(str(d.get("why", "")))[:200]})
+    return list(reversed(out))
+
+
+def gm_overview() -> dict:
+    """The Discord & GM card: the server, the Discord bridge and bot, open bug reports, what waits for review, the last
+    quick edits, and the quick actions (existing steps, each on a click). Read-only: it only reads files."""
+    with lock:
+        health, at = dict(state["health"] or {}), state["health_at"]
+    d = discord_state()
+    return {"server": {"health": health, "at": _when(at) if at else "", "last_check": _read_json(LAST_CHECK)},
+            "bridge": bridge_overview(),
+            "discord": {"token": d["token"]["saved"], "preview": (d.get("preview") or {}).get("when", ""),
+                        "check": (d.get("check") or {}).get("when", ""), "check_ok": (d.get("check") or {}).get("ok")},
+            "bugs": bugs_overview(), "mods": mods_overview(), "quick": quick_overview(),
+            "actions": [{"step": k, "label": v} for k, v in GM_ACTIONS if k in STEPS and k not in OWNER_ONLY]}
+
+
 def write_last_check(sid: str, ok: bool) -> None:
     try:
         LAST_CHECK.parent.mkdir(exist_ok=True)
@@ -920,6 +1037,8 @@ class H(http.server.BaseHTTPRequestHandler):
                                                "autopilot": autopilot_on(), "confirm": confirm_on(),
                                                "audit": audit_state(), "answers": answers(),
                                                "discord": discord_state()}))
+        if path == "/api/gm":
+            return self._send(200, json.dumps(gm_overview()))
         if path == "/audit":
             try:
                 return self._send(200, AUDIT_HTML.read_bytes(), "text/html; charset=utf-8")
@@ -1206,6 +1325,7 @@ color:var(--gold);background:rgba(0,0,0,.35);font-weight:600}.drop.over{backgrou
 .dsum{margin-top:10px}.dsum ul{margin:4px 0 0;padding-left:18px;max-height:260px;overflow:auto}.dsum li.n{color:var(--dim);list-style:none}
 .dsum .sec{font-weight:600;margin-top:6px}.dgo{margin-top:10px;padding:10px;border:1px solid #8a6a2c;border-radius:8px;background:rgba(242,201,76,.06)}
 .dgo input{max-width:140px;flex:0 1 140px}
+.gml{margin:4px 0 0;padding-left:18px;max-height:200px;overflow:auto}.gml li{margin:2px 0}
 </style></head><body class="ly">
 <header><div class="brand"><span class="mark" aria-hidden="true"></span><h1>Leyline Control</h1></div>
 <div class="health" id="health"></div>
@@ -1236,6 +1356,11 @@ color:var(--gold);background:rgba(0,0,0,.35);font-weight:600}.drop.over{backgrou
       <div class="launch"><input id="dyes" autocomplete="off" placeholder="Type YES"><button class="primary" id="dapply">Do it</button></div>
       <div class="sub">It backs up the server to your Desktop first (Leyline-discord-backup-...). It posts nothing.</div></div>
     <div class="sub" id="dwhy"></div><div class="dsum" id="dlast"></div></section>
+  <section class="card" id="gmcard"><h2>Discord &amp; GM</h2>
+    <div class="sub">Read-only: the server, the Discord bridge and bot, open bug reports and what waits for your review, from
+      this PC's latest checks. Each button runs an existing step, only when you press it.</div>
+    <div id="gmo"><div class="empty">Loading…</div></div>
+    <div class="dos" id="gmacts"></div></section>
   <section class="card"><details class="fold"><summary>Claude's notes</summary>
     <h3>Working on</h3><div id="now"></div><div class="updated" id="cupd"></div>
     <h3>Finished</h3><div id="fin"></div></details></section>
@@ -1290,8 +1415,25 @@ $("go").disabled=!!s.running||!(s.pending||[]).length;$("audit").disabled=!!s.ru
 const ar=$("areport");if(s.audit){ar.hidden=false;ar.href=`/audit?t=${T}`;ar.textContent=`Last audit ${s.audit.at}: ${s.audit.green?"all green":s.audit.result}`;ar.style.color=s.audit.green?"var(--ok)":"var(--bad)"}else ar.hidden=true;
 $("run").innerHTML=s.running?`<span class="spinner"></span>${esc(s.running.title||"Running")}…`:'<span class="sub">Idle</span>';
 $("hist").innerHTML=(s.history||[]).map(x=>`<div class="item fin"><span class="tag">${esc(x.step)}</span><div>${esc(x.note||x.id)} ${x.log?`<a href="/api/log?t=${T}&name=${encodeURIComponent(x.log)}" target="_blank">log</a>`:""}</div></div>`).join("")||'<div class="empty">No runs yet.</div>';
-discordPanel(s);
+discordPanel(s);gmPanel(gmBusy&&!s.running);gmBusy=!!s.running;
+document.querySelectorAll("#gmacts [data-gmrun]").forEach(b=>{b.disabled=!!s.running});
 if(!$("con").childElementCount&&s.lines)s.lines.forEach(line)}
+let gmAt=0,gmBusy=false;
+async function gmPanel(force){if(!force&&Date.now()-gmAt<20000)return;gmAt=Date.now();
+const r=await fetch("/api/gm",{headers:H});if(!r.ok)return;const g=await r.json();
+const hs=Object.entries(g.server.health||{}),up=hs.filter(([,v])=>v.ok).length,lc=g.server.last_check;
+let h=`<div class="item"><span class="tag">server</span><div>${hs.length?`${up} of ${hs.length} answering`:"checking…"}${lc?` · last check ${esc(lc.at)}: ${lc.ok?"ok":"failed"}`:""}</div></div>`;
+const b=g.bridge;h+=`<div class="item"><span class="tag">bridge</span><div>${b.seen?`wu-discord: ${esc(b.state||"?")}, ${esc(b.enabled||"?")} · seen ${esc(b.at)}`:"Not in the last server check yet: press Check server."}${b.lines.length?`<div class="sub">${b.lines.map(esc).join("<br>")}</div>`:""}</div></div>`;
+const d=g.discord;h+=`<div class="item"><span class="tag">bot</span><div>Token ${d.token?"saved":"not saved"}${d.check?` · bot settings ${esc(d.check)}${d.check_ok===false?" (stopped)":""}`:""}${d.preview?` · last preview ${esc(d.preview)}`:""}</div></div>`;
+const u=g.bugs;h+=`<div class="item"><span class="tag">bugs</span><div>${u.have?`${u.open} open · pulled ${esc(u.at)}`:"No bug list on this PC yet: press Pull bug reports."}${u.items.length?`<ul class="gml">${u.items.map(i=>`<li><b>${esc(i.status)}</b> ${esc(i.title)} <span class="sub">x${i.count} · ${esc(i.sources.join(", "))} · ${esc(i.last)}</span></li>`).join("")}</ul>`:""}</div></div>`;
+const m=g.mods,names=m.addon_names.concat(m.look_names);h+=`<div class="item"><span class="tag">mods</span><div>${m.addons} addon(s) and ${m.looks} look(s) wait for your review (HQ, Mods)${names.length?`<div class="sub">${esc(names.join(", "))}</div>`:""}</div></div>`;
+if(g.quick.length)h+=`<div class="item"><span class="tag">quick</span><div>${g.quick.map(q=>`${esc(q.at)} ${esc(q.id)}, ${esc(q.deploy)}: ${q.ok?"done":"not done"}${q.why?` (${esc(q.why)})`:""}`).join("<br>")}</div></div>`;
+$("gmo").innerHTML=h;
+$("gmacts").innerHTML=g.actions.map(a=>`<button data-gmrun="${esc(a.step)}"${last&&last.running?" disabled":""}>${esc(a.label)}</button>`).join("")
++'<button data-gm="console" title="The server GM console (bug reports, players, logs)">GM console</button><button data-gm="hq">Open HQ</button>'}
+$("gmacts").addEventListener("click",e=>{const t=e.target.closest("button");if(!t||t.disabled)return;
+if(t.dataset.gmrun){$("con").innerHTML="";post("/api/do",{run:t.dataset.gmrun})}
+else if(t.dataset.gm==="console")$("gmc").click();else if(t.dataset.gm==="hq")$("hq").click()});
 const logLink=n=>n?` <a href="/api/log?t=${T}&name=${encodeURIComponent(n)}" target="_blank">log</a>`:"";
 let dprevKey="";
 function discordPanel(s){const d=s.discord||{},t=d.token||{},busy=!!s.running,el=$("dtok");

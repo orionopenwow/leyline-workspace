@@ -1283,7 +1283,16 @@ function localHint() {
   if (!clientForRealm(L.profile, L.build)) return { head: "ADD YOUR GAME FOLDER", detail: `${L.name} needs your game folder`, warn: true };
   return { head: "READY TO PLAY", detail: "On this PC", warn: false };
 }
-window.LeylineLocal = { play: (id) => (LOCAL[id] ? playLocal(LOCAL[id]) : null), names: () => Object.fromEntries(Object.values(LOCAL).map((L) => [L.profile, L.name])) };
+// the realm the Host pack runs on this PC, whatever its ruleset (solo.js Play solo on a mode package): knocked and
+// played as Your Den and Solo leveling are
+function hostedLocal() {
+  if (!(kit && kit.realm)) return null;
+  const L = Object.values(LOCAL).find(localHosted);
+  const ver = /(\d+\.\d+\.\d+a?)$/.exec(kit.realm.profile || "");
+  return L || { name: kit.realm.name || "Your realm", profile: kit.realm.profile, build: ver ? ver[1] : "3.3.5a", key: "leyline.hosted", mark: "solo" };
+}
+window.LeylineLocal = { play: (id) => (LOCAL[id] ? playLocal(LOCAL[id]) : null), names: () => Object.fromEntries(Object.values(LOCAL).map((L) => [L.profile, L.name])),
+  playHosted: async () => { await readKit(); const L = hostedLocal(); if (L) return playLocal(L); show("host"); return null; } };
 let rmenuOpen = false;
 const realmRowsOf = (m) => [...m.querySelectorAll(".pb-opt")];
 function pickRealm(r) {
@@ -2170,6 +2179,8 @@ async function handleDeepLink() {
   try { link = await invoke("deep_link_take"); } catch (_) { return; }
   if (link && link.action === "realm" && typeof link.id === "string") return showLinkedRealm(link.id);
   if (link && link.action === "host" && typeof link.id === "string") return showHostLink(link.id);
+  // a friend's invite (leyline://join?link=…, deeplink.rs): one Join button, nothing joins before it (solo.js)
+  if (link && link.action === "join" && typeof link.id === "string") return window.LeylineSolo && window.LeylineSolo.offerJoin(link.id);
   if (!link || link.action !== "install" || typeof link.id !== "string") return;
   if (link.id.startsWith("look:")) {   // the website's Looks page: Discover › Looks, that card (looks.js); nothing installs yet
     show("mods", true, "discover");
@@ -2846,6 +2857,8 @@ function renderRealms() {
     play.addEventListener("click", () => playRealm(r, play));
     acts.prepend(play);
     if (window.LeylineHostModes) window.LeylineHostModes.realmRow(r, main, acts);   // its mode, "based on", Fork this mode (hostmodes.js)
+    // Play solo right after Play (solo.js, owner 3 Nov): the same game on this PC, with your own game files
+    if (window.LeylineSolo) window.LeylineSolo.attach(acts, main, window.LeylineSolo.forRealm(r));
     card.append(realmIcon(r.name, r.official), main, pop, acts);
     box.append(card);
   }

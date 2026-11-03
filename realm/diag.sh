@@ -32,4 +32,7 @@ find "$SL/mini" -maxdepth 1 2>/dev/null | head -12 | sed 's/^/  /'
 du -sh "$SL"/* 2>/dev/null | sed 's/^/  /'
 docker inspect -f 'wu-play: {{.State.Status}} since {{.State.StartedAt}}; mounts: {{range .Mounts}}{{.Source}}->{{.Destination}} {{end}}' wu-play 2>&1
 docker logs --tail 15 wu-play 2>&1 | cut -c1-200 | sed 's/^/  /'
+echo; echo "== Discord bridge (wu-discord)"
+echo "  state: $(systemctl is-active wu-discord 2>/dev/null || true); enabled: $(systemctl is-enabled wu-discord 2>/dev/null || true)"
+journalctl -u wu-discord -n 6 --no-pager -o cat 2>/dev/null | grep -viE 'token|password|secret' | cut -c1-200 | sed 's/^/  /'
 echo; echo "DIAG OK"

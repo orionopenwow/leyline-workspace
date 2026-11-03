@@ -246,7 +246,8 @@ check("poll: pending", doc["status"] == "pending")
 st, page, r = call("GET", "/wrath/link?code=" + dev["user_code"])
 check("link page signed out: to the website's sign-in and back", st == 302
       and r.getheader("Location") == "/login?next=" + urllib.parse.quote("/wrath/link?code=" + dev["user_code"], safe=""))
-st, page, _ = call("GET", "/wrath/link?code=" + dev["user_code"], sess="alice")
+FAR = {"X-Forwarded-For": "203.0.113.9"}   # the browser on another connection than the launcher
+st, page, _ = call("GET", "/wrath/link?code=" + dev["user_code"], sess="alice", headers=FAR)
 check("link page from a link: the code is a hint to compare, no Approve", st == 200 and dev["user_code"] in page
       and "Approve" not in page and 'value="approve"' not in page and "someone sent you this link" in page)
 check("link page from a link: a field to type the code (not pre-filled)", 'name="code" maxlength="9"' in page
@@ -274,6 +275,30 @@ st, page, _ = call("POST", "/wrath/link", raw=form, sess="alice", headers={"Orig
 check("approve from another site refused", st == 403)
 st, page, _ = call("POST", "/wrath/link", raw=form, sess="alice")
 check("approved", st == 200 and "close this tab" in page and "Linked launchers" in page)
+# instant link (owner 3 Nov): the launcher's loopback answerer, and one click on the launcher's own connection
+st, d2, _ = call("POST", API + "device/start", {})
+c2 = d2["user_code"]
+st, page, _ = call("GET", "/wrath/link?code=" + c2, sess="alice")
+check("same connection as the launcher: the code and one-click Approve", st == 200 and c2 in page
+      and 'value="approve"' in page and "someone sent you this link" in page and "<script" not in page)
+NONCE = "abcDEF123_-abcDEF123_-xyz"
+st, page, r = call("GET", f"/wrath/link?code={c2}&port=50123&nonce={NONCE}", sess="alice", headers=FAR)
+csp = r.getheader("Content-Security-Policy") or ""
+check("with the launcher's port and secret: it asks the launcher on this PC, Approve only by the script",
+      st == 200 and f"http://127.0.0.1:50123/leyline-link?nonce={NONCE}" in page and "connect-src 'self' http://127.0.0.1:*" in csp
+      and re.search(r"script-src 'nonce-[^']+'", csp) and 'id="sl-go"' in page and 'id="sl-alt" hidden' in page
+      and 'name="code" maxlength="9"' in page, csp)
+mn = re.search(r"'nonce-([^']+)'", csp)
+check("the script carries the page's nonce", mn and f'<script nonce="{mn.group(1)}">' in page)
+for bad in ("&port=80&nonce=" + NONCE, "&port=50123&nonce=short", "&port=50123&nonce=" + NONCE + "%22"):
+    st, page, r = call("GET", f"/wrath/link?code={c2}{bad}", sess="alice", headers=FAR)
+    check(f"a bad port or secret is ignored ({bad[:20]})", "127.0.0.1" not in page and 'value="approve"' not in page
+          and "127.0.0.1" not in (r.getheader("Content-Security-Policy") or ""))
+st, page, r = call("GET", f"/wrath/link?code={c2}&port=50123&nonce={NONCE}")
+check("signed out: the port and secret come back with the sign-in", st == 302 and urllib.parse.quote(
+    f"/wrath/link?code={c2}&port=50123&nonce={NONCE}", safe="") in (r.getheader("Location") or ""), r.getheader("Location"))
+st, page, r = call("GET", "/wrath/link", sess="alice")
+check("other link pages stay without scripts", "<script" not in page and "127.0.0.1" not in (r.getheader("Content-Security-Policy") or ""))
 time.sleep(DEV_WAIT := 3.2)
 st, doc, _ = call("POST", API + "device/poll", {"device_code": dev["device_code"]})
 check("poll: the token, once", doc.get("status") == "ok" and re.fullmatch(r"[A-Za-z0-9_-]{43}", doc.get("token", "")), doc)

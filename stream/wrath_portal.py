@@ -3090,7 +3090,7 @@ class PageHandler(BaseHTTPRequestHandler):
 
     def send(self, status: int, body: bytes, ctype: str = "text/html; charset=utf-8", nonce: str = "",
              public: bool = False, same_origin: bool = False, connect: bool = False,
-             headers: dict | None = None) -> None:
+             headers: dict | None = None, loopback: bool = False) -> None:
         body = brand_body(body, ctype)   # the Leyline brand switch (off: unchanged)
         body = with_tab_icon(body, ctype)   # the Leyline mark on the browser tab (owner 2 Nov)
         body = legacy_body(body, ctype, self.headers.get("Host", ""))   # launcher documents on the old site name
@@ -3113,7 +3113,8 @@ class PageHandler(BaseHTTPRequestHandler):
                          f"default-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self'; media-src 'self'; font-src 'self'; "
                          f"script-src {script}; "
                          f"frame-src {' '.join(sorted(GAME_ORIGINS))}; "
-                         + ("connect-src 'self'; " if connect else "") +
+                         + ("connect-src 'self' http://127.0.0.1:*; " if loopback   # /wrath/link asks the launcher on this PC
+                            else "connect-src 'self'; " if connect else "") +
                          "form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
         self.end_headers()
         if self.command != "HEAD":

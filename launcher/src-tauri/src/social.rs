@@ -292,6 +292,11 @@ pub fn open_url(verify_url: &str, via: Option<&str>) -> String {
     }
 }
 
+/// The link page's address with the launcher's loopback answerer (linkloop.rs): `&port=<port>&nonce=<nonce>`.
+pub fn with_loop(open: &str, l: &crate::linkloop::Loop) -> String {
+    format!("{open}&port={}&nonce={}", l.port, l.nonce)
+}
+
 /// Which ways the website offers right now ({herokey, google, discord}: booleans only), no sign-in needed.
 pub fn ways() -> Result<Value, String> {
     let v = read_json(crate::addresses::try_both(&format!("{}/ways", base()), |u| agent(TIMEOUT).get(u).call()).map_err(failure)?)?;
@@ -495,6 +500,10 @@ pub mod commands {
     pub async fn social_signin_start(app: AppHandle, via: Option<String>) -> Result<SignIn, String> {
         let mut p = blocking(start).await?;
         p.open = open_url(&p.verify_url, via.as_deref());
+        // instant link: the page asks this launcher for its code on 127.0.0.1 and links with no typing (linkloop.rs)
+        if let Ok(l) = crate::linkloop::start(&p.user_code) {
+            p.open = with_loop(&p.open, &l);
+        }
         app.opener().open_url(p.open.clone(), None::<&str>).map_err(|e| e.to_string())?;
         let out = SignIn { state: "pending".into(), user_code: p.user_code.clone(), verify_url: p.verify_url.clone() };
         *PENDING.lock().map_err(|_| "lock")? = Some(p);
@@ -517,6 +526,7 @@ pub mod commands {
         let state = blocking(move || poll(&dir(), &pc)).await?;
         if state != "pending" && state != "slow_down" {
             *PENDING.lock().map_err(|_| "lock")? = None;
+            crate::linkloop::stop();
         }
         let state = if state == "slow_down" { "pending".to_string() } else { state };
         Ok(SignIn { state, user_code: p.user_code, verify_url: p.verify_url })
@@ -528,6 +538,7 @@ pub mod commands {
         if let Ok(mut p) = PENDING.lock() {
             *p = None;
         }
+        crate::linkloop::stop();
     }
 
     /// One API call by action name (see ACTIONS).
@@ -697,6 +708,8 @@ mod tests {
         assert_eq!(open_url(u, Some("https://evil.example")), u);
         assert_eq!(open_url(u, Some("google&x=1")), u);
         assert_eq!(open_url(u, None), u);
+        let l = crate::linkloop::Loop { port: 50123, nonce: "n0nce-_abc".into() };
+        assert_eq!(with_loop(&open_url(u, Some("google")), &l), format!("{u}&via=google&port=50123&nonce=n0nce-_abc"));
     }
 
     #[test]

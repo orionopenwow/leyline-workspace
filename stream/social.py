@@ -742,7 +742,7 @@ class Social:
                 if code not in self.devices:
                     break
             self.devices[code] = {"hash": hashlib.sha256(device.encode()).hexdigest(), "expires": t + DEVICE_TTL,
-                                  "acct": None, "denied": False, "token": None, "polled": 0.0}
+                                  "acct": None, "denied": False, "token": None, "polled": 0.0, "ip": str(ip or "")[:64]}
         user_code = code[:4] + "-" + code[4:]
         return {"device_code": device, "user_code": user_code, "interval": DEVICE_INTERVAL, "expires_in": DEVICE_TTL,
                 "verify_url": f"https://{{host}}{LINK_PAGE}?code={user_code}"}
@@ -777,6 +777,10 @@ class Social:
             return None
         d = self.devices.get(c)
         return c if d and d["expires"] >= self.clock() and not d["token"] and not d["denied"] else None
+
+    def device_ip(self, code: str) -> str:
+        """The address the launcher asked for this code from ("" when unknown)."""
+        return str((self.devices.get(code or "") or {}).get("ip") or "")
 
     def device_answer(self, code: str, acct: str, approve: bool) -> bool:
         with self.lock:
@@ -1469,13 +1473,15 @@ LINK_CSS = """
 """
 
 
-def _page(h, status: int, title: str, inner: str) -> None:
+def _page(h, status: int, title: str, inner: str, nonce: str = "") -> None:
     try:
         body = P("ly_shell")(f"{title} · Leyline", f'<section class="ly-panel sl">{inner}</section>', LINK_PAGE, "", "",
                              LINK_CSS, noindex=True)
     except Exception:   # noqa: BLE001
         body = (f"<!doctype html><meta charset=utf-8><title>{html.escape(title)}</title>"
                 f"<style>{LINK_CSS}</style><main class=sl>{inner}</main>").encode("utf-8")
+    if nonce:   # the instant link's script, and the one place a page of ours may ask 127.0.0.1 (the launcher's answerer)
+        return h.send(status, body, nonce=nonce, loopback=True)
     h.send(status, body)
 
 
@@ -1492,8 +1498,22 @@ def _profiles():
     return mod if mod is not None and getattr(mod, "store", None) is not None else None
 
 
-def _signin(h, code: str = "", via: str = "") -> None:
+LOOP_PORT_RE = re.compile(r"[0-9]{4,5}")
+LOOP_NONCE_RE = re.compile(r"[A-Za-z0-9_-]{20,64}")
+
+
+def _loop(query: dict) -> tuple[int, str] | None:
+    """The launcher's loopback answerer from the link (?port=&nonce=, launcher/src-tauri/src/linkloop.rs), checked."""
+    port, nonce = (query.get("port") or [""])[0], (query.get("nonce") or [""])[0]
+    if not (LOOP_PORT_RE.fullmatch(port) and LOOP_NONCE_RE.fullmatch(nonce)) or not 1024 <= int(port) <= 65535:
+        return None
+    return int(port), nonce
+
+
+def _signin(h, code: str = "", via: str = "", loop: tuple[int, str] | None = None) -> None:
     nxt = LINK_PAGE + (f"?code={code}" if code else "")
+    if code and loop:   # back from signing in, the page can still find the launcher
+        nxt += f"&port={loop[0]}&nonce={loop[1]}"
     prof = _profiles()
     if prof is None:
         return h.redirect("/login?next=" + urllib.parse.quote(nxt, safe=""))
@@ -1517,7 +1537,7 @@ def link_page(h, query: dict, note: str = "", typed: str = "") -> None:
         return _page(h, 503, "Link the launcher", "<h1>Link the launcher</h1><p>The website isn't answering right now. Try again shortly.</p>")
     if who is None:
         hint_shown = (hint[:4] + "-" + hint[4:]) if hint else (raw if CODE_RE.fullmatch(raw or "") else "")
-        return _signin(h, hint_shown, (query.get("via") or [""])[0])
+        return _signin(h, hint_shown, (query.get("via") or [""])[0], _loop(query))
     acct, _display = who
     sess = _session(h.headers.get("Cookie", ""))
     p = store.ensure(acct, _display)
@@ -1543,6 +1563,52 @@ def link_page(h, query: dict, note: str = "", typed: str = "") -> None:
                          "Check the code in your launcher and type it again, or start again from the launcher.</p>")
         elif raw and not hint:
             parts.append("<p>The code in this link has expired or was already used. Start again from the launcher.</p>")
+        loop = _loop(query) if hint and not typed and not note else None
+        same_ip = bool(hint and not typed and not note and store.device_ip(hint) and store.device_ip(hint) == h.ip())
+        if loop or same_ip:
+            hs = hint[:4] + "-" + hint[4:]
+            approve = (f'<form method="post" action="{LINK_PAGE}" id="sl-go"><input type="hidden" name="code" value="{e(hint)}">'
+                       f'<input type="hidden" name="t" value="{_form_token(sess, "approve:" + hint)}">'
+                       '<button class="ly-btn" name="do" value="approve">Approve</button></form>')
+            if loop:   # ask the launcher on this computer; it answers only this page and only with its secret
+                nonce = secrets.token_urlsafe(16)
+                parts.append(
+                    f'<div id="sl-auto"><p class="code">{e(hs)}</p><p>Linking the Leyline launcher on this computer as '
+                    f'<b>{e(p["name"])}#{e(p["tag"])}</b>…</p></div>'
+                    f'<div id="sl-alt" hidden>')
+                tail = ('</div>'
+                        f'<script nonce="{nonce}">(function(){{var w={json.dumps(hs)},alt=document.getElementById("sl-alt"),'
+                        'auto=document.getElementById("sl-auto"),done=false;'
+                        'function fallback(){if(!done){auto.hidden=true;alt.hidden=false;}}'
+                        'var t=setTimeout(fallback,2500);'
+                        f'fetch("http://127.0.0.1:{loop[0]}/leyline-link?nonce={loop[1]}",{{cache:"no-store",'
+                        'targetAddressSpace:"loopback"}).then(function(r){return r.ok?r.json():null})'
+                        '.then(function(j){if(j&&j.code===w){done=true;clearTimeout(t);'
+                        'var f=document.getElementById("sl-go");f.querySelector("button").click();}else{fallback();}})'
+                        '.catch(fallback);})();</script>')
+            else:
+                tail = ""
+            if same_ip or loop:
+                parts.append(
+                    f'<p>Your Leyline launcher should show this code:</p><p class="code">{e(hs)}</p>'
+                    f"<p>If it does, approve to sign it in as <b>{e(p['name'])}#{e(p['tag'])}</b>. "
+                    "<b>If someone sent you this link, don't</b>: approving would let their launcher sign in as you.</p>"
+                    f'<div class="row">{approve}</div>' if same_ip else
+                    f'<form id="sl-go" method="post" action="{LINK_PAGE}" hidden>'
+                    f'<input type="hidden" name="code" value="{e(hint)}">'
+                    f'<input type="hidden" name="t" value="{_form_token(sess, "approve:" + hint)}">'
+                    '<button name="do" value="approve">Approve</button></form>')
+            if loop and not same_ip:
+                parts.append(f'<p>Compare the code <span class="code">{e(hs)}</span> with your launcher, then type it below. '
+                             "<b>If someone sent you this link, stop here.</b></p>")
+            if same_ip:
+                parts.append("<p><small>Different code? Type the one your launcher shows:</small></p>")
+            parts.append(f'<form method="post" action="{LINK_PAGE}"><p><label>Type the code shown in your launcher: '
+                         '<input type="text" name="code" maxlength="9" autocomplete="off" autocapitalize="characters" '
+                         'spellcheck="false" placeholder="XXXX-XXXX" required></label> '
+                         f'<input type="hidden" name="t" value="{_form_token(sess, "check")}">'
+                         '<button class="ly-btn ghost" name="do" value="check">Next</button></p></form>' + tail)
+            return _page(h, 200, "Link the launcher", "".join(parts) + _linked(acct, sess), nonce if loop else "")
         if hint:
             hs = hint[:4] + "-" + hint[4:]
             parts.append(f'<p>This link came with the code <span class="code">{e(hs)}</span>. Compare it with the code '
@@ -1553,6 +1619,12 @@ def link_page(h, query: dict, note: str = "", typed: str = "") -> None:
                      'spellcheck="false" placeholder="XXXX-XXXX" required></label> '
                      f'<input type="hidden" name="t" value="{_form_token(sess, "check")}">'
                      '<button class="ly-btn" name="do" value="check">Next</button></p></form>')
+    _page(h, 200, "Link the launcher", "".join(parts) + _linked(acct, sess))
+
+
+def _linked(acct: str, sess: str) -> str:
+    """The Linked launchers list, each with Revoke."""
+    e = html.escape
     toks = store.tokens(acct)
     if toks:
         rows = "".join(
@@ -1560,8 +1632,8 @@ def link_page(h, query: dict, note: str = "", typed: str = "") -> None:
             f'<td><form method="post" action="{LINK_PAGE}"><input type="hidden" name="id" value="{e(t["id"])}">'
             f'<input type="hidden" name="t" value="{_form_token(sess, "revoke:" + t["id"])}">'
             '<button class="ly-btn ghost" name="do" value="revoke">Revoke</button></form></td></tr>' for t in toks)
-        parts.append(f"<h2>Linked launchers</h2><table>{rows}</table>")
-    _page(h, 200, "Link the launcher", "".join(parts))
+        return f"<h2>Linked launchers</h2><table>{rows}</table>"
+    return ""
 
 
 def link_post(h) -> None:

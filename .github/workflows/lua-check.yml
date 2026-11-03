@@ -8,6 +8,8 @@ on:
     paths:
       - "stream/fui-web/**"
       - "stream/tests/test_wuui_*.lua"
+      - "stream/social.py"
+      - "stream/tests/test_social.py"
       - ".github/workflows/lua-check.yml"
   workflow_dispatch:
 
@@ -32,3 +34,5 @@ jobs:
             echo "== $cmd"
             $cmd
           done
+      - name: the website's friends and launcher link (test_social.py drives a Lua stand-in realm)
+        run: python3 -I stream/tests/test_social.py stream/wrath_portal.py

@@ -2692,7 +2692,11 @@ fn a_practice_run_has_a_number_the_boss_is_kicked_and_a_pet_comes_and_goes() {
     let mut at = 0;
     assert_eq!(den_lite::combat::read_packed(&stopped, &mut at), Some(boss), "the boss's cast stopped");
     w.until(|f| (f.opcode == 0x0131 && spell_of(&f.body, boss) == Some(den_lite::combat::BOSS_SPELL)).then_some(()));
-    assert!(w.notes.iter().any(|n| n == "Interrupted!") && w.notes.iter().any(|n| n.starts_with("Fire at your feet")), "{:?}", w.notes);
+    // the circle's warning comes with the boss's spell or just after it
+    while !w.notes.iter().any(|n| n.starts_with("Fire at your feet")) {
+        w.frame();
+    }
+    assert!(w.notes.iter().any(|n| n == "Interrupted!"), "{:?}", w.notes);
 
     // a pet: its create (read by the crate), its bar, its name, then dismissed from the bar
     w.raw(0x12E, &cast_at(7, 688, 0));

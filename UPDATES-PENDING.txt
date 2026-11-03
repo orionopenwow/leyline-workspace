@@ -703,3 +703,5 @@
 1311e gm  GM console in the launcher's look: stone panels, gold headings, the Leyline mark, red stone buttons (Leyline GM console); the game keeps running
 1311g client-smoke  Client smoke test again (1311f stopped on an invisible character in the realmlist file): your game started as PLAY starts it, screenshots, closed, the sign-in taken out (logs\client-smoke)
 1311h ship  Save as Orion: PLAY never writes the game's own login screen list again (the game called it corrupt), and takes such an archive away at the next start; client-smoke fails on any message box from the game
+1311i leyline  The launcher fix to the public Leyline repo (1311h's export stopped before pushing): PLAY never writes the game's own login screen list again, and takes such an archive away
+1311l ship  Save as Orion: PLAY on Wrath Unleashed with a stock game: the launcher types your one-time sign-in at the login screen (no game change), so it goes on to character select by itself; client-smoke reports it

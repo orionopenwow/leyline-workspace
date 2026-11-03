@@ -8,22 +8,37 @@
 --   Moving        Fly (on / off), Speed 1 / 2 / 4
 --   Jaina builds  Garden, Campfire, Market, Inn (Den Lite: she walks over and builds it piece by piece; the full Den:
 --                 the stamp at once)
+--   Practice      Pack, Mover, Healer, Tank, Boss: the sandbox combat's dummies (Den Lite, labs/den-lite combat.rs:
+--                 on when its line says combat=1)
+--   Session       1m / 3m / 5m (a timed parse), Reset, Refill, Fight (dummies hit back)
+--   Class         the class (click for the next), Be (that class at level 80: ".den class <class>")
 --   Full Den      Boss (pick one, then Fight), Duel ring (on / off), New look; on Den Lite these say they need the
---                 full Den (no combat engine there)
+--                 full Den
 --   the readout   your damage per second on the dummies (full Den), and your best boss time
 --
 -- Every button is one Den command over the realm's addon channel (mod "wuden", "cmd", "dojo <...>": EditMode.lua
 -- DenCmd), the same on both servers: Den Lite (labs/den-lite dojo.rs) and the full Den (ov_dojo.lua) answer
 --   server -> client   dojo  server=lite|full;fly=0|1;speed=<n>;dummies=<n>;ring=0|1[;building=0|1][;boss=<key|->;duel=0|1;best=<secs|->]
+--                            [;combat=1;class=<word|->;level=<n>;fight=0|1;parse=<minutes|->] (Den Lite's sandbox combat)
 --                      dps   dps=<n>;total=<n>;secs=<s>;dummy=<name>[;done=1]
 -- Their lines come back as the Den bar's toasts. Nothing the server sends is run; texts are shown plain.
 
 local W = WrathUnleashedUI
-local J = { line = {}, dps = nil, bossAt = 1 }
+local J = { line = {}, dps = nil, bossAt = 1, classAt = 1 }
 local MOD = "wuden"
 J.STAMPS = { "garden", "campfire", "market", "inn" }
 J.BOSSES = { "hogger", "vancleef", "azuregos", "kazzak", "doomwalker" }
 J.SPEEDS = { 1, 2, 4 }
+J.PRACTICE = { { "pack", "Pack", "Five dummies close together: try your area spells" },
+    { "mover", "Mover", "A dummy walking a circle: keep it in range" },
+    { "healer", "Healer", "A wounded friendly dummy losing health: heal it" },
+    { "tank", "Tank", "A dummy that hits back once you hit it (you never fall)" },
+    { "boss", "Boss", "The practice boss: move out of the circles it marks under you" } }
+J.SESSION = { { "parse 1", "1m", "A one minute parse from your first hit (your best per class is kept)" },
+    { "parse 3", "3m", "A three minute parse" }, { "parse 5", "5m", "A five minute parse" },
+    { "reset", "Reset", "Every dummy full again, your cooldowns ready, your health and power full" },
+    { "refill", "Refill", "Your health and power full" } }
+J.CLASSES = { "warrior", "paladin", "hunter", "rogue", "priest", "deathknight", "shaman", "mage", "warlock", "druid" }
 J.FULL_ONLY = "Needs the full Den (Leyline > Host > Your Den): Den Lite has no combat."
 
 local panel
@@ -47,7 +62,14 @@ function J.Cmd(text)
 end
 
 function J.Lite() return J.line.server == "lite" end
+function J.Combat() return J.line.combat == "1" end
 function J.Boss() return J.BOSSES[J.bossAt] end
+function J.Class() return J.CLASSES[J.classAt] end
+function J.NextClass()
+    J.classAt = J.classAt % #J.CLASSES + 1
+    if panel then panel.classPick:SetText(title(J.Class())) end
+    return J.Class()
+end
 
 -- ---------------------------------------------------------------- the panel
 local function chip(parent, text, w, fn, ...) return S().EdChip(parent, text, w, fn, ...) end
@@ -55,7 +77,7 @@ local function label(parent, text, ...) return S().EdLabel(parent, text, false, 
 
 local function build()
     panel = CreateFrame("Frame", "LeylineDojoPanel", UIParent)
-    panel:SetWidth(318); panel:SetHeight(236)
+    panel:SetWidth(318); panel:SetHeight(320)
     -- right of the Den's tool rail, under the player frame (not over it)
     panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 80, -118)
     panel:SetFrameStrata("MEDIUM")
@@ -119,6 +141,37 @@ local function build()
     end
     widest = math.max(widest, x)
     at = y
+    panel.practice = row("Practice")
+    panel.practiceChips = {}
+    x = 92
+    for _, c in ipairs(J.PRACTICE) do
+        local b = chip(panel, c[2], 42, function() J.Cmd(c[1]) end, "TOPLEFT", x, at)
+        b.edLabel = c[3]
+        b.verb = c[1]
+        panel.practiceChips[#panel.practiceChips + 1] = b
+        x = x + 45
+    end
+    at = y
+    panel.session = row("Session")
+    panel.sessionChips = {}
+    x = 92
+    for _, c in ipairs(J.SESSION) do
+        local b = chip(panel, c[2], c[2]:len() > 2 and 44 or 28, function() J.Cmd(c[1]) end, "TOPLEFT", x, at)
+        b.edLabel = c[3]
+        b.verb = c[1]
+        panel.sessionChips[#panel.sessionChips + 1] = b
+        x = x + (c[2]:len() > 2 and 47 or 31)
+    end
+    panel.fightBack = chip(panel, "Fight", 40, function() J.Cmd("fight " .. (J.line.fight == "1" and "off" or "on")) end, "TOPLEFT", x, at)
+    panel.fightBack.edLabel = "The dummies hit back (lightly)"
+    panel.sessionChips[#panel.sessionChips + 1] = panel.fightBack
+    at = y
+    panel.classRow = row("Class")
+    chips({
+        { "classPick", title(J.Class()), 86, function() J.NextClass() end, "Which class (click for the next)" },
+        { "classBe", "Be", 34, function() J.Cmd("class " .. J.Class()) end, "Become that class at level 80, with every spell it learns" },
+    }, nil, at)
+    at = y
     panel.full = row("Full Den")
     chips({
         { "bossPick", title(J.Boss()), 78, function() J.NextBoss() end, "Which boss (click for the next)" },
@@ -166,7 +219,8 @@ function J.Paint()
     local l = J.line
     local lite = J.Lite()
     if l.server == "lite" then
-        panel.note:SetText("Den Lite: the ring, dummies to practise on, flying, speed and Jaina's builds.")
+        panel.note:SetText(J.Combat() and "Den Lite: dummies that take your spells, any class, parses and a boss to practise."
+            or "Den Lite: the ring, dummies to practise on, flying, speed and Jaina's builds.")
     elseif l.server == "full" then
         panel.note:SetText("The full Den: dummies count your damage, bosses keep your best time.")
     else
@@ -183,13 +237,25 @@ function J.Paint()
         if lite then b:Disable(); b.edLabel = J.FULL_ONLY else b:Enable() end
     end
     panel.full:SetText(lite and "FULL DEN ONLY" or "FULL DEN")
+    -- the sandbox combat's rows: on when the server says it has it (Den Lite's combat=1)
+    local combat = J.Combat()
+    for _, b in ipairs(panel.practiceChips) do
+        if combat then b:Enable() else b:Disable(); b.edLabel = "Needs Den Lite's sandbox combat (update Your Den)" end
+    end
+    for _, b in ipairs(panel.sessionChips) do
+        if combat then b:Enable() else b:Disable() end
+    end
+    if combat then panel.classPick:Enable(); panel.classBe:Enable() else panel.classPick:Disable(); panel.classBe:Disable() end
+    panel.fightBack:SetActive(l.fight == "1")
     local parts = {}
     if J.dps then
         parts[#parts + 1] = string.format("%s%d DPS|r  %d in %s s%s", S().Hex("accent"), J.dps.dps, J.dps.total, J.dps.secs, J.dps.done and " (done)" or "")
     end
     if l.best and l.best ~= "-" then parts[#parts + 1] = "Best boss time: " .. l.best .. " s" end
     if l.building == "1" then parts[#parts + 1] = "Jaina is building..." end
-    panel.readout:SetText(#parts > 0 and table.concat(parts, "   ") or (lite and "" or "Hit a dummy: your damage per second shows here."))
+    if combat and l.class and l.class ~= "-" then parts[#parts + 1] = title(l.class) .. " " .. (l.level or "") end
+    if combat and l.parse and l.parse ~= "-" then parts[#parts + 1] = l.parse .. " min parse" end
+    panel.readout:SetText(#parts > 0 and table.concat(parts, "   ") or ((lite and not combat) and "" or "Hit a dummy: your damage per second shows here."))
 end
 
 -- ---------------------------------------------------------------- the server's answers

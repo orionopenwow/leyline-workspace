@@ -246,6 +246,59 @@ pub struct Running {
     pub shared: Arc<Shared>,
 }
 
+/// `<dens>/den-lite.direct-want`: "<this PC's network address>" written by the launcher's Invite (the first time a
+/// friend is invited the direct way opens, so playing alone never asks the firewall anything).
+pub const DIRECT_WANT: &str = "den-lite.direct-want";
+
+/// The friends' direct listener (same network, or the player's own address): guests only, on this PC's network
+/// address (never 127.0.0.1). A failure never stops the Den: `<dens>/den-lite.direct` says why. Once per run.
+pub fn open_direct(shared: &Arc<Shared>, ip: IpAddr, (lp, wp): (u16, u16)) -> Result<(u16, u16), String> {
+    static OPEN: std::sync::OnceLock<(u16, u16)> = std::sync::OnceLock::new();
+    if let Some(p) = OPEN.get() {
+        return Ok(*p);
+    }
+    let file = shared.cfg.den_dir.join(DIRECT_FILE);
+    if ip.is_loopback() || ip.is_unspecified() {
+        let _ = std::fs::write(&file, "off not an address on a network\n");
+        return Err("not an address on a network".into());
+    }
+    match (TcpListener::bind((ip, lp)), TcpListener::bind((ip, wp))) {
+        (Ok(l), Ok(w)) => {
+            let lport = l.local_addr().map(|a| a.port()).unwrap_or(lp);
+            let wport = w.local_addr().map(|a| a.port()).unwrap_or(wp);
+            let s = shared.clone();
+            std::thread::spawn(move || login::serve_direct(l, s, wport));
+            let s = shared.clone();
+            std::thread::spawn(move || world::serve(w, s, true));
+            let _ = std::fs::write(&file, format!("{ip} {lport} {wport}\n"));
+            shared.event("direct_open", "", &format!("{lport} {wport}"));
+            let _ = OPEN.set((lport, wport));
+            Ok((lport, wport))
+        }
+        (a, b) => {
+            let why = a.err().or(b.err()).map(|e| e.to_string()).unwrap_or_default();
+            let _ = std::fs::write(&file, format!("off {why}\n"));
+            Err(why)
+        }
+    }
+}
+
+/// The launcher's ask for the direct way (`<dens>/den-lite.direct-want`), taken once it is read.
+pub fn direct_wanted(shared: &Arc<Shared>) {
+    let p = shared.cfg.den_dir.join(DIRECT_WANT);
+    let Ok(t) = std::fs::read_to_string(&p) else { return };
+    let _ = std::fs::remove_file(&p);
+    match t.trim().parse::<IpAddr>() {
+        Ok(ip) => {
+            let ports = shared.cfg.friends_lan_ports;
+            let _ = open_direct(shared, ip, ports);
+        }
+        Err(_) => {
+            let _ = std::fs::write(shared.cfg.den_dir.join(DIRECT_FILE), "off not an address\n");
+        }
+    }
+}
+
 /// Binds both ports and serves them on background threads.
 pub fn start(mut cfg: Config) -> io::Result<Running> {
     // the test's commands come from a file anyone on this PC could write: never on a Den others can reach
@@ -268,31 +321,8 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
         let _ = std::fs::create_dir_all(&cfg.den_dir);
         let _ = std::fs::write(cfg.den_dir.join(REMOTE_FILE), format!("{} {}\n", l.port(), w.port()));
     }
-    // the direct way for friends (same network, or the player's own address): a failure here (the address went, a
-    // firewall, the ports in use) never stops the Den; the file says why
     let _ = std::fs::create_dir_all(&cfg.den_dir);
-    let direct = match cfg.friends_lan.filter(|ip| !ip.is_loopback() && !ip.is_unspecified()) {
-        None => {
-            let _ = std::fs::remove_file(cfg.den_dir.join(DIRECT_FILE));
-            None
-        }
-        Some(ip) => {
-            let (lp, wp) = cfg.friends_lan_ports;
-            match (TcpListener::bind((ip, lp)), TcpListener::bind((ip, wp))) {
-                (Ok(l), Ok(w)) => {
-                    let wport = w.local_addr().map(|a| a.port()).unwrap_or(wp);
-                    let lport = l.local_addr().map(|a| a.port()).unwrap_or(lp);
-                    let _ = std::fs::write(cfg.den_dir.join(DIRECT_FILE), format!("{ip} {lport} {wport}\n"));
-                    Some((l, w, wport))
-                }
-                (a, b) => {
-                    let why = a.err().or(b.err()).map(|e| e.to_string()).unwrap_or_default();
-                    let _ = std::fs::write(cfg.den_dir.join(DIRECT_FILE), format!("off {why}\n"));
-                    None
-                }
-            }
-        }
-    };
+    let _ = std::fs::remove_file(cfg.den_dir.join(DIRECT_FILE));
     den::set_local_stamps(&cfg.den_dir);
     let mut d = den::Den::new(cfg.spot);
     if let Some(Err(e)) = d.reload_ground(&cfg.den_dir) {
@@ -358,11 +388,9 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
         let s = shared.clone();
         std::thread::spawn(move || world::serve(rw, s, true));
     }
-    if let Some((dl, dw, wport)) = direct {
-        let s = shared.clone();
-        std::thread::spawn(move || login::serve_direct(dl, s, wport));
-        let s = shared.clone();
-        std::thread::spawn(move || world::serve(dw, s, true));
+    if let Some(ip) = shared.cfg.friends_lan {
+        let ports = shared.cfg.friends_lan_ports;
+        let _ = open_direct(&shared, ip, ports);
     }
     let s = shared.clone();
     std::thread::spawn(move || world::companion_ticker(s));

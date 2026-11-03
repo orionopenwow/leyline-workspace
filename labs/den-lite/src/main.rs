@@ -131,6 +131,8 @@ fn main() {
             loop {
                 let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
                 let _ = std::fs::write(&alive, format!("{} {at} {}\n", std::process::id(), r.login.port()));
+                // the launcher's Invite: the direct way for friends, opened on the first ask
+                den_lite::direct_wanted(&r.shared);
                 if stop.exists() {
                     let _ = std::fs::remove_file(&stop);
                     let _ = std::fs::remove_file(&alive);

@@ -26,8 +26,10 @@ TODO(owner): your opening line, in your own words (who you are, why you made Ley
 
 **Where to go**
 - Wrath Unleashed, our own realm: #hangout and #levelling, live game chat in #world-chat
+- Realms: ours in #official-realms (always on), players' realms in #community-realms
+- Game modes: #azeroth-survivors and #modes-and-forks
 - Your Den: show it in #den-showcase, share Den files in #den-files
-- Hosting: #host-templates and #hosting-help
+- Hosting: #host-templates and #hosting-help, and the guide: https://leylinelauncher.com/wrath/docs/hosting
 - Mods & Workshop: post what you made in #workshop-submissions
 - Your own AI assistant with Leyline: #claude-and-agents
 - Found a bug? #bug-reports (every message there goes on our bug list)
@@ -66,7 +68,11 @@ Forum announcements show up here too, so you can follow the news from either pla
 ### #changelog
 
 ```
-This channel fills itself: every time a new version of the Leyline launcher ships, its release notes are posted here. The launcher updates itself; you don't need to do anything.
+This channel fills itself: every time a new version ships, its release notes are posted here. They come from our two public repos:
+- Leyline (the game side, the site and the realms): https://github.com/orionopenwow/Leyline
+- Leyline Launcher (the launcher): https://github.com/orionopenwow/Leyline-Launcher
+
+The launcher updates itself; you don't need to do anything.
 
 Questions about a change? Ask in #launcher-help.
 ```
@@ -118,13 +124,6 @@ Looking for people to play with? Post here: what you want to do, your level and 
 You can also use **Find a group** on the website once your Discord is linked to your Leyline account; it posts here for you with a Join button.
 ```
 
-### #live-realms
-
-```
-Realms on the Leyline network show up here as they go live: the name, the kind of realm, how many are playing, and a link to join.
-
-Want yours here? Host one from the launcher's Host page and make it public (see #hosting-help).
-```
 
 ### #events
 
@@ -132,6 +131,57 @@ Want yours here? Host one from the launcher's Host page and make it public (see 
 Weekly events in Dalaran and other community happenings are posted here.
 
 TODO(owner): the first event (what, when, where), or a line saying events start soon.
+```
+
+---
+
+## Realms
+
+### #official-realms
+
+```
+**Official realms** are the ones we run ourselves: up around the clock, with room for everyone. Today that is **Wrath Unleashed**.
+
+The bot keeps one post per official realm here and updates it in place: online or not, how many are playing, and how long it has been up. No need to ask "is it up?": look here.
+
+Something wrong with one? Tell us in #bug-reports.
+
+TODO(owner): one line in your own words about what "official" means to you (what we promise, and what we don't).
+```
+
+### #community-realms
+
+```
+**Community realms** are run by players, on their own PCs and servers. They show up here as they go live: the name, the kind of realm, how many are playing, and a link to join.
+
+A community realm may go offline when its host does. For a realm that is always on, see #official-realms.
+
+Want yours here? Host one from the launcher's Host page and make it public. The guide: https://leylinelauncher.com/wrath/docs/hosting
+```
+
+---
+
+## Game modes
+
+### #azeroth-survivors
+
+```
+**Azeroth Survivors** is a game mode you play in your browser: hold out against a horde, pick up power as you go, see how long you last.
+
+Play: https://survivors.leylinelauncher.com (or the Azeroth Survivors card in the launcher's modes)
+It needs your own game files: bring your own game folder, we never send game files.
+
+Share your best runs, ask for advice, and tell us when something breaks. When the Survivors site comes back after being down, the bot says so here.
+
+Credit: Azeroth Survivors by Aethus; the open rebuild by OutThisLife.
+
+TODO(owner): a line in your own words about why you added it.
+```
+
+### #modes-and-forks
+
+```
+Game modes and forks: share yours, ask about one, team up. The featured mode is posted here when the team picks one.
 ```
 
 ---
@@ -145,7 +195,7 @@ Show your **Den** here: a screenshot or two and a line about it.
 
 Every week the team picks a **Den of the week**. It is posted here, shows on the website and in the launcher, and its builder gets the **Den Architect** role.
 
-New to Dens? In the launcher, open **Your Den** and press **Play**. In your Den, **F7** is edit mode. Questions go in #den-help.
+New to Dens? In the launcher, pick **Your Den** in the realm picker (next to **Play**) and press **Play**. In your Den, **F7** is edit mode. Questions go in #den-help.
 ```
 
 ### #den-files (how to share a Den)
@@ -154,7 +204,7 @@ New to Dens? In the launcher, open **Your Den** and press **Play**. In your Den,
 **How to share your Den**
 
 1. In your Den, save it: **.den save <name>** (or **Save a copy** under Saved Dens in the launcher).
-2. In the launcher, open **Your Den**, then **Share on the Workshop**, and follow the steps there.
+2. In the launcher, open **Your Den** (the realm picker, next to **Play**), then **Share on the Workshop**, and follow the steps there.
 3. Post the Workshop link here with a line about your Den.
 
 **To open someone's Den:** copy their link, then in the launcher, **Your Den** > **Saved Dens** > **Add from a link**.
@@ -166,6 +216,8 @@ Links to the Workshop only, please. One post a minute.
 
 ```
 Questions about building your Den: edit mode (**F7**), placing and moving props, paths, buildings, saving and loading, inviting a friend.
+
+**Your Den** opens from the realm picker, next to **Play** (it is no longer in the side menu). **Forge** (**Shape the ground**) edits your Den's terrain: raise hills, dig ponds, smooth paths.
 
 Tell us what you tried and what happened. A screenshot helps.
 
@@ -194,9 +246,10 @@ TODO(owner): the first templates to post (one message each), or a line saying th
 1. In the launcher, open **Host**.
 2. Pick a ruleset (or a template from #host-templates) and press **Start**. The first start takes a while.
 3. When it says **Online**, copy your **invite link** and send it to your friends.
-4. Want strangers to find it? Make it **public**: it shows in the realm list and in #live-realms.
+4. Want strangers to find it? Make it **public**: it shows under **Community realms** in the realm list and in #community-realms.
 
-Hosting on a server instead of your PC? The Host pack and its guide: https://leylinelauncher.com/wrath/host
+The full guide: https://leylinelauncher.com/wrath/docs/hosting
+Hosting on a server instead of your PC? The Host pack: https://leylinelauncher.com/wrath/host
 
 **Asking for help?** Say what you tried, what you see, and paste the result of the **health check** from the Host page. Never post passwords, tokens or your settings files.
 ```
@@ -209,10 +262,31 @@ Tell people about your realm: its name, what kind of realm it is, its house rule
 One post every 10 minutes. Keep it to your own realm, no money or paid perks.
 ```
 
+### #realm-seeds
+
+```
+**Realm Seeds** are a plan, not built yet: community-run versions of a realm, carried entirely by the node network, with everyone playing on their own game files.
+
+A Seed can become an **Official realm** once enough nodes carry it, steadily:
+- 30 days in a row
+- up 99% of the time
+- at least 5 nodes, in at least 2 regions
+- a failover test every week
+- then the team flips it to Official
+
+Talk about Seeds here: ideas, questions, and each Seed's progress toward Official.
+
+TODO(owner): which realm you'd like to see as the first Seed, or a line saying the first one comes later.
+```
+
 ### #nodes
 
 ```
-Nodes help carry the Leyline network. Questions about running one, and how it works, go here.
+Nodes help carry the Leyline network: the relay mesh passes players' game connections through PCs like yours. It never stores or shares game files.
+
+**Be a node:** in the launcher, Host, then the **Network** tab, then **Help carry the network**. What it needs and how it works: https://leylinelauncher.com/wrath/docs/be-a-node
+
+Questions about running one, and how it works, go here.
 ```
 
 ### #host-lounge
@@ -247,12 +321,6 @@ One post every 10 minutes. Data and scripts only, no game files.
 Talk about mods and addons: what you use, what you'd like someone to make, and problems with one (say which mod, and what happened).
 
 Bugs in Leyline itself go in #bug-reports.
-```
-
-### #modes-and-forks
-
-```
-Game modes and forks: share yours, ask about one, team up. The featured mode is posted here when the team picks one.
 ```
 
 ### #scripting-help
@@ -340,11 +408,29 @@ Before posting, search: your idea may be here already, and adding your voice to 
 ### #launcher-help
 
 ```
-Help with the Leyline launcher: installing, signing in, updates, finding your game folder.
+Help with the Leyline launcher: installing, updates, finding your game folder, and signing in.
+
+**Your Hero Key**
+- **Log in:** paste your Hero Key in the launcher's sign-in, or use it on the website.
+- **Lost it?** Signed in, open **Your Hero Key** (in the launcher: Manage account) and press **Make a new key**. The old one stops working at once.
+- **Change your name:** on the same page.
+More: https://leylinelauncher.com/wrath/docs/hero-key
 
 Say what you tried, what you see, and which system you're on. A screenshot helps. Never post your password or Hero Key.
 
 Get the launcher: https://leylinelauncher.com/wrath/leyline
+```
+
+### #browser-and-mobile
+
+```
+Playing in your browser, on a PC or a phone? Tell us how it goes here: what works, what doesn't, and what would make it better.
+
+Say which browser and which device (for example: a phone or a laptop, and the browser's name). A screenshot helps.
+
+**Touch controls** for phones are planned. Tell us what you'd want from them.
+
+TODO(owner): a line on when you hope to have touch controls ready, or leave it out.
 ```
 
 ---

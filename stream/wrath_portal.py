@@ -160,6 +160,8 @@ Settings (environment, /srv/wrath/portal.env):
                          the one writable mount); WU_MODS_ADMINS, WU_GITHUB_TOKEN etc.: stream/projects.py
   WU_WORKSHOP_ITEMS_DIR  the approved Workshop items for /wrath/workshop (default /app/workshop =
                          /srv/wrath/portal/workshop, written by realm/custom/workshop-export.py)
+  WU_BRAND_FILE          a community's own brand.json (stream/brandfile.py: name, colours, logo, Discord link; written by
+                         tools/commons "Make my own Leyline"). Unset (the default): every page exactly as before
   WU_ART_DIR             the site art and theme (default /app/art = /srv/wrath/portal/art on the host,
                          installed from stream/www-files/art by fastloop.sh), served at /wrath/art/<name>
                          from a fixed list. Missing: the pages fall back to plain CSS.
@@ -443,6 +445,13 @@ _BRAND_HTML = re.compile(f"({_BRAND_SKIP}|{_BRAND_KEEP})|({_BRAND_OLD})", re.S)
 _BRAND_JSON = re.compile(f"(https?://[^\\s\"'<>]+|{_BRAND_KEEP})|({_BRAND_OLD})")
 
 
+# A community's own brand file (stream/brandfile.py; tools/commons "Make my own Leyline"; docs/BLANK-SLATE.md):
+# WU_BRAND_FILE=/path/brand.json gives the site another name, colours, logo and Discord link. Unset, missing or
+# refused: None, and every page reads exactly as before.
+_brandfile = _load_module("wu_brandfile", "brandfile.py")
+BRAND_FILE = _brandfile.load(os.environ.get("WU_BRAND_FILE", "").strip()) if _brandfile else None
+
+
 # The site's tab icon (owner 2 Nov: "give our site the logo for the tab"): every page gets the Leyline mark, put in
 # front of its <title> unless the page names an icon itself.
 TAB_ICON = (b'<link rel="icon" type="image/png" sizes="32x32" href="/wrath/art/leyline-favicon-32.png">'
@@ -454,6 +463,73 @@ def with_tab_icon(body: bytes, ctype: str) -> bytes:
         return body
     i = body.find(b"<title", 0, 8192)
     return body if i < 0 else body[:i] + TAB_ICON + body[i:]
+
+
+# The kill switch (docs/KILL-SWITCH.md, tools/killswitch): $WU_PORTAL_DATA/leyline/shutdown.json, written by its server
+# half. {"mode": "banner"}: a farewell banner on top of every page. {"mode": "closed"}: every page answers the farewell
+# page (503), but for what launchers and the owner still need: the /wrath/leyline/ feeds (News and the update notice
+# carry the message), the status document, the art and HQ. No file: nothing changes.
+SHUTDOWN_OPEN = ("/wrath/leyline/", "/wrath/art/", "/wrath/admin")
+SHUTDOWN_EXACT = frozenset({"/wrath/status.json", "/wrath/healthz", "/wrath/admin"})
+_shutdown = {"key": None, "doc": None}
+
+
+def shutdown_file() -> str:
+    return os.path.join(os.environ.get("WU_PORTAL_DATA", "/data"), "leyline", "shutdown.json")
+
+
+def shutdown_doc() -> dict | None:
+    """The kill switch's notice, or None. Read again only when the file changes."""
+    try:
+        st = os.stat(shutdown_file())
+        key = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        _shutdown.update(key=None, doc=None)
+        return None
+    if _shutdown["key"] != key:
+        doc = None
+        try:
+            with open(shutdown_file(), "rb") as f:
+                raw = json.loads(f.read(64_000).decode("utf-8"))
+            if isinstance(raw, dict) and raw.get("mode") in ("banner", "closed") and str(raw.get("message") or "").strip():
+                doc = {"mode": raw["mode"], "title": " ".join(str(raw.get("title") or "Leyline is closing").split())[:80],
+                       "message": str(raw["message"])[:1800]}
+        except (OSError, ValueError, UnicodeDecodeError):
+            doc = None
+        _shutdown.update(key=key, doc=doc)
+    return _shutdown["doc"]
+
+
+def shutdown_open(path: str) -> bool:
+    """What still answers while the site is closed."""
+    return path in SHUTDOWN_EXACT or path.startswith(SHUTDOWN_OPEN)
+
+
+def _shutdown_paras(text: str) -> str:
+    return "".join(f"<p>{html.escape(' '.join(p.split()))}</p>" for p in str(text).splitlines() if p.strip())
+
+
+def shutdown_page(doc: dict) -> bytes:
+    t = html.escape(doc["title"])
+    return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" '
+            f'content="width=device-width,initial-scale=1"><title>{t}</title><style>body{{margin:0;min-height:100vh;'
+            f'display:grid;place-items:center;background:#121417;color:#e9ebef;font:16px/1.6 system-ui,sans-serif}}'
+            f'main{{max-width:640px;padding:32px 24px}}h1{{font:400 28px Georgia,serif;color:#f1cf86}}</style></head>'
+            f'<body><main id="ly-farewell"><h1>{t}</h1>{_shutdown_paras(doc["message"])}</main></body></html>').encode("utf-8")
+
+
+def shutdown_body(body: bytes, ctype: str) -> bytes:
+    """Banner mode: the message on top of every HTML page (once)."""
+    doc = shutdown_doc()
+    if not doc or doc["mode"] != "banner" or not body or not ctype.startswith("text/html") or b'id="ly-farewell' in body:
+        return body
+    m = re.search(rb"<body[^>]*>", body[:65536])
+    if not m:
+        return body
+    bar = (f'<aside id="ly-farewell-bar" role="status" style="position:relative;z-index:99999;padding:12px 18px;'
+           f'background:#3a2a12;color:#f6e7c4;border-bottom:1px solid #8a6a2c;font:15px/1.5 system-ui,sans-serif">'
+           f'<b>{html.escape(doc["title"])}</b>{_shutdown_paras(doc["message"])}</aside>').encode("utf-8")
+    return body[:m.end()] + bar + body[m.end():]
 
 
 def brand_body(body: bytes, ctype: str) -> bytes:
@@ -510,7 +586,7 @@ ART_DIR = os.environ.get("WU_ART_DIR", "/app/art")
 FOREVERUI = "0" if os.environ.get("WU_FOREVERUI", "1").strip() == "0" else "1"
 SESSION_TTL = 12 * 3600
 CODE_TTL = 60
-DISCORD_URL = "https://discord.gg/RfChVr8J7T"
+DISCORD_URL = ((BRAND_FILE or {}).get("links") or {}).get("discord") or "https://discord.gg/RfChVr8J7T"
 GAME_FOLDER_HELP = "/wrath/docs/play#use-your-own-game-folder-to-go-anywhere"
 DISCORD_HELP = ("Need help finding or setting up your own game folder? Join our Discord and "
                 "people will help: " + DISCORD_URL)
@@ -1328,6 +1404,7 @@ ART_TYPES = {
     "wu-divider.webp": "image/webp", "wu-dragon-l.webp": "image/webp", "wu-dragon-r.webp": "image/webp",
     "Cinzel-SemiBold.woff2": "font/woff2", "Cinzel-OFL.txt": "text/plain; charset=utf-8",
     "wu-card.webp": "image/webp",   # the link-preview card (tools/art/wu-card.html, 1200 x 630)
+    "brand-logo.png": "image/png", "brand-logo.webp": "image/webp",   # a brand file's logo (stream/brandfile.py)
     "leyline-emblem.webp": "image/webp", "leyline-bg.webp": "image/webp",   # the Leyline page (owner's art)
     "leyline-shot-dalaran.webp": "image/webp", "leyline-shot-start.webp": "image/webp",   # gallery (live client shots)
     "leyline-shot-city.webp": "image/webp", "leyline-shot-durotar.webp": "image/webp",
@@ -3505,12 +3582,20 @@ class PageHandler(BaseHTTPRequestHandler):
         # Caddy sets X-Forwarded-For to the real address (header_up in the site's Caddyfile).
         return (self.headers.get("X-Forwarded-For", "").split(",")[-1].strip() or self.client_address[0])[:64]
 
+    def brand_file_body(self, body: bytes, ctype: str = "text/html; charset=utf-8") -> bytes:
+        """A page as the community's brand file says (WU_BRAND_FILE; unset: unchanged), for modules that answer with
+        cookies themselves (herokeys, profiles) instead of through send()."""
+        return _brandfile.apply(BRAND_FILE, body, ctype) if BRAND_FILE else body
+
     def send(self, status: int, body: bytes, ctype: str = "text/html; charset=utf-8", nonce: str = "",
              public: bool = False, same_origin: bool = False, connect: bool = False,
              headers: dict | None = None, loopback: bool = False) -> None:
         body = brand_body(body, ctype)   # the Leyline brand switch (off: unchanged)
+        if BRAND_FILE:   # a community's own brand file (WU_BRAND_FILE; unset: unchanged)
+            body = _brandfile.apply(BRAND_FILE, body, ctype)
         body = with_tab_icon(body, ctype)   # the Leyline mark on the browser tab (owner 2 Nov)
         body = legacy_body(body, ctype, self.headers.get("Host", ""))   # launcher documents on the old site name
+        body = shutdown_body(body, ctype)   # the kill switch's banner (docs/KILL-SWITCH.md; no file: unchanged)
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
@@ -4057,6 +4142,10 @@ class PageHandler(BaseHTTPRequestHandler):
         # stream site's game-folder layer (POST /__gate?layer=..., /__layer for a Caddyfile that routes it).
         split = urllib.parse.urlsplit(self.path)
         path = split.path.rstrip("/") or "/"
+        shut = shutdown_doc()
+        if shut and shut["mode"] == "closed" and not shutdown_open(path):   # the kill switch: nothing to post to
+            self.send(503, shutdown_page(shut))
+            return
         if hub_mod is not None:   # as in do_GET: the request, for pages drawn in the hub's frame (hub_frame)
             hub_mod.note_request(self)
         if path == QUEUE_API + "/leave":
@@ -4143,6 +4232,10 @@ class PageHandler(BaseHTTPRequestHandler):
         split = urllib.parse.urlsplit(self.path)
         path = split.path.rstrip("/") or "/"
         query = urllib.parse.parse_qs(split.query)
+        shut = shutdown_doc()
+        if shut and shut["mode"] == "closed" and not shutdown_open(path):   # the kill switch's farewell page
+            self.send(503, shutdown_page(shut))
+            return
         if hub_mod is not None:   # the turn-your-phone hint's "Not now" (cookie), for every page in the hub's look
             hub_mod.note_request(self)
         if path == "/__auth":

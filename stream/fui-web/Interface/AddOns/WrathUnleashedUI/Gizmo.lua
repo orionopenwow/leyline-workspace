@@ -20,10 +20,27 @@
 --     carries on (`cam far`: the view goes to an invisible camera object of Den Lite's, further back each notch, and
 --     back to you when you zoom in again). The snap-out key (J, or the first free of K, F9, F10) puts the view up and
 --     back over where you stand, and back; while it is out the arrow keys pan it.
--- Nothing here takes WASD or the mouse's camera drags. The override bindings (Esc, G, the wheel, the snap key, the
--- arrows while snapped out) exist only in build mode and only while needed, and are cleared after.
+--   * The mouse, picked by Den Lite (owner 3 Nov: "clicking objects, having them highlighted, moving them around
+--     easily"; Den Lite's caps say `click`): the game never tells the realm about a left click on an object, so in
+--     build mode this file sends the cursor's place even with nothing in hand and Den Lite casts the ray itself
+--     (labs/den-lite src/pick.rs). The prop under the cursor glows and its name shows by the cursor (`hovered`). A
+--     short, still left click (under 0.3 s, under 6 px) selects it (`click`), or clears the selection on empty
+--     ground; Shift+click adds it. Pressing on a prop and moving more than 6 px drags it (`drag`, then the cursor's
+--     place; the spot you grabbed stays under the cursor); letting go drops it (`commit`, one undo); Esc puts it
+--     back; the wheel or Q / E turn it.
+--   * The build view: entering build mode puts the view up and back over you (`cam build`: Den Lite's camera object,
+--     a pose it knows exactly, so the ray is true), with a BUILD frame round the screen and the cursor always free;
+--     leaving gives your own camera back. WASD and the arrows pan the view while it is out; the wheel zooms.
+-- How the mouse is shared with the camera (3.3.5a): WorldFrame's OnMouseDown / OnMouseUp hooks see every press on the
+-- world but can't stop the game's own left-drag (CAMERAORSELECTORMOVE turns the camera; CameraOrSelectOrMoveStart /
+-- Stop are protected). So while the cursor is over a prop (Den Lite said `hovered`), or a prop is being dragged,
+-- BUTTON1 is override-bound to this file's own button (LeylineGizmoGrab, down and up): the press is ours and the
+-- camera stays. Over empty ground BUTTON1 is the game's again (left-drag turns the camera, right-drag as always). The
+-- binding never changes while a button is held, and a lost mouse-up is caught by IsMouseButtonDown.
+-- The override bindings (Esc, G, the wheel, the snap key, BUTTON1 over a prop, Q / E with a selection, WASD and the
+-- arrows while the view is out) exist only in build mode and only while needed, and are cleared after.
 -- Talks over OVMOD as the Builder does (`wubuild cmd ...`); answers come as
--- `wubuild aim|axis|picked|placed|drag|moved|cam|mode|ghost|state`.
+-- `wubuild aim|axis|picked|placed|drag|moved|cam|mode|ghost|state|hovered|selected|grabbed`.
 
 local W = WrathUnleashedUI or {}
 local G = { build = false, armed = nil, axis = nil, sel = nil, scale = 1, lastSend = 0, lastU = nil, lastV = nil, zoom = 12, far = nil }
@@ -41,6 +58,9 @@ G.ZOOM_MIN = 2
 G.ZOOM_HARD = 50                -- the game's own camera never goes further than this
 G.SNAP_KEYS = { "J", "K", "F9", "F10" }   -- snap out: the first that nothing else uses
 G.PAN = 4                       -- yards an arrow key pans the far view
+G.PAN_EVERY = 0.2               -- seconds between pans while a pan key is held
+G.SETTLE = 0.15                 -- the cursor came to rest: its place once more after this (Den Lite's glow keeps up)
+G.TURN = 15                     -- degrees Q / E (and the wheel while dragging) turn the prop
 
 local PREFIX, MOD = "OVMOD", "wubuild"
 
@@ -89,14 +109,28 @@ local function overWorld()
     return f == nil or f == WorldFrame
 end
 
--- One hover when the cursor moved (at most every G.HOVER_EVERY seconds).
+-- Den Lite picks with the mouse itself (its caps say `click`): a Den Lite from before only knew right-clicks.
+function G.Picks()
+    local B = W.Builder
+    if B and B.Can then return B.Can("click") and true or false end
+    return (B and B.state and B.state.caps and B.state.caps:find("click", 1, true)) and true or false
+end
+
+-- One hover when the cursor moved (at most every G.HOVER_EVERY seconds): while something is in hand or dragged, or
+-- in build mode with nothing in hand (Den Lite picks: the prop under the cursor glows). The cursor at rest: its place
+-- once more after G.SETTLE (Den Lite changes the glow at most every 100 ms, so the last change is never lost).
 function G.Tick(force)
-    if not G.armed or not overWorld() then return false end
+    if not (G.armed or G.dragging or (G.build and G.Picks())) or not overWorld() then return false end
     local t = now()
     if not force and t - G.lastSend < G.HOVER_EVERY then return false end
     local u, v, a = G.Cursor()
     if not u then return false end
-    if not force and G.lastU and math.abs(u - G.lastU) < 0.002 and math.abs(v - G.lastV) < 0.002 then return false end
+    if not force and G.lastU and math.abs(u - G.lastU) < 0.002 and math.abs(v - G.lastV) < 0.002 then
+        if G.armed or G.dragging or G.settled or t - G.lastSend < G.SETTLE then return false end
+        G.settled = true
+    else
+        G.settled = false
+    end
     G.lastSend, G.lastU, G.lastV = t, u, v
     return send(string.format("hover %.4f %.4f %.4f %d", u, v, a, G.zoom))
 end
@@ -123,6 +157,8 @@ end
 function G.CameraIn()
     if G.camera then return end
     G.camera = true
+    -- the cursor always free in build mode
+    if IsMouselooking and IsMouselooking() and MouselookStop then pcall(MouselookStop) end
     if SaveView then pcall(SaveView, G.VIEW_KEEP) end
     -- as far out as the game goes (given back on leaving)
     if GetCVar and SetCVar then
@@ -132,12 +168,15 @@ function G.CameraIn()
     G.zoom = G.CAM_DIST
     G.Pose()
     send("cam zoom " .. G.zoom)
+    -- the editor's own view: up and back over you, a pose Den Lite knows (a Den Lite from before: the build camera)
+    if G.Picks() then send("cam build"); G.buildView = true end
 end
 
 function G.CameraOut()
     if not G.camera then return end
     G.camera = nil
-    if G.far then send("cam off"); G.far = nil end
+    if G.far or G.buildView then send("cam off"); G.far = nil end
+    G.buildView = nil
     if G.cvars and SetCVar then
         if G.cvars.max then pcall(SetCVar, "cameraDistanceMax", G.cvars.max) end
         if G.cvars.factor then pcall(SetCVar, "cameraDistanceMaxFactor", G.cvars.factor) end
@@ -175,8 +214,10 @@ end
 
 -- ---------------------------------------------------------------- the keys: only while needed
 
-local owner, aimBtn, cancelBtn, wheelUp, wheelDown, snapBtn, tag, menu
-local PAN_KEYS = { UP = "fwd", DOWN = "back", LEFT = "left", RIGHT = "right" }
+local owner, aimBtn, cancelBtn, wheelUp, wheelDown, snapBtn, tag, menu, grabBtn, tip, frame
+local PAN_KEYS = { UP = "fwd", DOWN = "back", LEFT = "left", RIGHT = "right", W = "fwd", S = "back", A = "left", D = "right" }
+local TURN_KEYS = { Q = 1, E = -1 }
+local down = {}
 
 -- The snap-out key: the first of G.SNAP_KEYS nothing else uses (the game's own bindings and the addon's keep theirs).
 function G.SnapKey()
@@ -188,11 +229,22 @@ function G.SnapKey()
     return nil
 end
 
+-- BUTTON1 is ours while the cursor is over a prop or one is dragged (never changed while the button is held).
+function G.WantsButton1()
+    if down.LeftButton then return G.b1 and true or false end
+    return (G.build and G.Picks() and not G.armed and (G.hovered ~= nil or G.dragging)) and true or false
+end
+
 local function bindings()
     if not owner or not SetOverrideBindingClick or not ClearOverrideBindings then return end
     if InCombatLockdown and InCombatLockdown() then return end
     ClearOverrideBindings(owner)
-    if G.armed or G.axis or (menu and menu:IsShown()) then
+    G.b1 = G.WantsButton1()
+    if G.b1 and grabBtn then SetOverrideBindingClick(owner, true, "BUTTON1", "LeylineGizmoGrab") end
+    if G.build and (G.sel or G.armed == "move" or G.armed == "place" or G.dragging) then
+        for k in pairs(TURN_KEYS) do SetOverrideBindingClick(owner, true, k, "LeylineGizmoTurn" .. k) end
+    end
+    if G.armed or G.axis or G.dragging or (menu and menu:IsShown()) then
         SetOverrideBindingClick(owner, true, "ESCAPE", "LeylineGizmoCancel")
     end
     if (G.armed == "place" or G.armed == "move") and aimBtn then
@@ -207,7 +259,7 @@ local function bindings()
         G.snapKey = G.snapKey or G.SnapKey()
         if G.snapKey then SetOverrideBindingClick(owner, true, G.snapKey, "LeylineGizmoSnap") end
     end
-    if G.far then
+    if G.far and G.build then
         for k in pairs(PAN_KEYS) do SetOverrideBindingClick(owner, true, k, "LeylineGizmoPan" .. k) end
     end
 end
@@ -218,10 +270,20 @@ local function handName()
     local B = W.Builder
     return (B and B.inHand and B.inHand.name) or (B and B.pick and B.pick.name) or "It"
 end
+-- The hint line in build mode with nothing in hand.
+function G.Hint()
+    local D = W.DenBar
+    local key = (D and D.keys and D.keys.build) or "F7"
+    if not G.Picks() then return "Right-click a prop to select it  ·  " .. key .. " to play" end
+    return "Click a prop to select  ·  drag to move  ·  Shift adds  ·  Q E turn  ·  Del deletes  ·  " .. key .. " leaves Build"
+end
+
 local function showTag()
     if not tag then return end
     local parts = {}
-    if G.armed == "place" then
+    if G.dragging then
+        parts[#parts + 1] = "Moving: let go to drop it  ·  wheel or Q E turns it  ·  Esc puts it back"
+    elseif G.armed == "place" then
         parts[#parts + 1] = handName() .. " in hand: click the ground  ·  Shift+click places more  ·  Esc puts it away"
     elseif G.armed == "move" then
         parts[#parts + 1] = "Moving: click the ground  ·  " .. G.AIM_KEY .. ": exact spot  ·  Esc puts it back"
@@ -230,8 +292,13 @@ local function showTag()
     elseif G.axis then
         parts[#parts + 1] = "Axis " .. (AXIS_TEXT[G.axis] or G.axis) .. ": the mouse wheel moves it"
     end
+    if #parts == 0 and G.build then parts[#parts + 1] = G.Hint() end
     if G.far then
-        parts[#parts + 1] = (G.far.snap and "Overview" or "Far view") .. ": " .. (G.snapKey and (G.snapKey .. " or ") or "") .. "zoom in to come back  ·  arrows pan"
+        if G.far.snap then
+            parts[#parts + 1] = "Overview: " .. (G.snapKey and (G.snapKey .. " or ") or "") .. "zoom in to come back  ·  WASD pans"
+        else
+            parts[#parts + 1] = "WASD pans  ·  wheel zooms"
+        end
     end
     if #parts == 0 then tag:Hide(); return end
     tag.fs:SetText(table.concat(parts, "   |   "))
@@ -246,10 +313,22 @@ function G.SetAxis(a)
     end
     bindings(); showTag()
 end
+G.ShowTag = showTag
 
--- The wheel: dragging a handle, a step along it; an axis picked, the Builder's move; else the zoom (up: nearer).
+-- Q / E: turn what is held (in hand, dragged) or the selection, by G.TURN degrees (Q: left).
+function G.Turn(sign)
+    if not G.build then return false end
+    local deg = sign * G.TURN
+    if G.dragging or G.armed == "move" or G.armed == "place" then return send("preview turn " .. deg) end
+    if G.sel then return send("turn " .. deg) end
+    return false
+end
+
+-- The wheel: dragging a prop, it turns; dragging a handle, a step along it; an axis picked, the Builder's move; else
+-- the zoom (up: nearer).
 function G.Wheel(sign)
     local B = W.Builder
+    if G.dragging then return G.Turn(sign) end
     if G.armed == "axis" then
         local step = (B and B.STEPS and B.STEPS[B.step]) or 0.5
         return send("grab nudge " .. tostring(sign * step))
@@ -286,8 +365,11 @@ end
 
 function G.Cancel()
     if menu and menu:IsShown() then menu:Hide() end
-    if G.armed == "axis" then send("grab off") elseif G.armed then send("preview off") end
+    if G.armed == "axis" then send("grab off") elseif G.armed or G.dragging then send("preview off") end
     G.armed = nil
+    G.dragging = nil
+    -- the press is spent: its let-go starts nothing
+    if down.LeftButton then down.LeftButton.prop = nil end
     if G.axis then G.SetAxis(nil) end
     local B = W.Builder
     if B and B.HandDone then B.HandDone() end
@@ -316,53 +398,139 @@ function G.SetBuild(on)
         send("gizmo off")
         send("mode play")
         G.CameraOut()
+        G.hovered = nil
     end
+    if frame then if on then frame:Show() else frame:Hide() end end
+    if tip and not on then tip:Hide() end
     bindings(); showTag()
 end
 
--- ---------------------------------------------------------------- clicks on the world
+-- ---------------------------------------------------------------- the mouse on the world
 
-local down = {}
-function G.MouseDown(button)
+-- Where the cursor is now: the pixels (for the click's 6 px) and Den Lite's u, v, aspect.
+local function at()
     local x, y = 0, 0
     if GetCursorPosition then x, y = GetCursorPosition() end
-    down[button] = { t = now(), x = x or 0, y = y or 0 }
+    local u, v, a = G.Cursor()
+    return x or 0, y or 0, u, v, a
 end
 
--- The mouse over a gameobject the game names (its tooltip, no unit): a left click there isn't "empty ground".
-local function overObject()
+-- The mouse over a gameobject the game names (its tooltip, no unit): a left click there isn't "empty ground" (a Den
+-- Lite from before picking only).
+function G.OverObject()
     if not GameTooltip or not GameTooltip.IsShown or not GameTooltip:IsShown() then return false end
     return not (UnitExists and UnitExists("mouseover"))
 end
 
--- A click (short, still) on the world: left places (armed) or clears the selection; right stops.
+-- A button pressed on the world (WorldFrame's hook, or BUTTON1's own binding over a prop; the second of the two is
+-- left out). A left press over a prop may become a drag.
+function G.MouseDown(button)
+    if down[button] then return false end
+    local x, y, u, v, a = at()
+    down[button] = { t = now(), x = x, y = y, u = u, v = v, a = a, prop = G.hovered and G.hovered.id or nil }
+    return true
+end
+
+-- Held and moved more than G.CLICK_MOVE pixels from a press on a prop: Den Lite grabs what is under where it was
+-- pressed (the grabbed spot stays under the cursor), then follows the cursor (G.Tick).
+function G.DragCheck()
+    local d = down.LeftButton
+    if not d or G.dragging or G.armed or not G.build or not d.prop or not d.u or not G.Picks() then return false end
+    local x, y = at()
+    if math.abs(x - d.x) <= G.CLICK_MOVE and math.abs(y - d.y) <= G.CLICK_MOVE then return false end
+    G.dragging = true
+    if tip then tip:Hide() end
+    send(string.format("drag %.4f %.4f %.4f %d", d.u, d.v, d.a or (16 / 9), G.zoom))
+    G.lastU, G.lastV = nil, nil
+    G.Tick(true)
+    bindings(); showTag()
+    return true
+end
+
+-- A button let go: a drag drops the prop (one undo); a click (short, still) on the world: left places what is in
+-- hand, or selects what is under the cursor (Shift adds; empty ground clears); right stops placing.
 function G.MouseUp(button)
+    -- a quick flick (pressed, moved and let go within one frame) is a drag too
+    if button == "LeftButton" and not G.dragging then G.DragCheck() end
     local d = down[button]
     down[button] = nil
-    if not G.build or not d then return false end
-    local x, y = 0, 0
-    if GetCursorPosition then x, y = GetCursorPosition() end
-    local click = (now() - d.t) <= G.CLICK_TIME and math.abs((x or 0) - d.x) <= G.CLICK_MOVE and math.abs((y or 0) - d.y) <= G.CLICK_MOVE
+    if not G.build or not d then bindings(); return false end
+    if button == "LeftButton" and G.dragging then
+        G.Tick(true)
+        G.dragging = nil
+        send("commit")
+        bindings(); showTag()
+        return true
+    end
+    local x, y = at()
+    local click = (now() - d.t) <= G.CLICK_TIME and math.abs(x - d.x) <= G.CLICK_MOVE and math.abs(y - d.y) <= G.CLICK_MOVE
     if not click then
-        -- a camera drag while placing, dragging or snapped out: the build camera's pose again (the ray needs it)
+        -- a camera drag while placing, dragging or the view is out: the build camera's pose again (the ray needs it)
         if (G.armed or G.far) and SetView then pcall(SetView, G.VIEW_BUILD) end
+        bindings()
         return false
     end
+    local done = false
     if button == "LeftButton" then
         if SpellIsTargeting and SpellIsTargeting() then return false end   -- the exact click: Den Lite gets the cast
+        local shift = IsShiftKeyDown and IsShiftKeyDown()
         if G.armed then
             G.Tick(true)
             -- Shift+click: placed, and another in hand
-            local keep = G.armed == "place" and IsShiftKeyDown and IsShiftKeyDown()
-            return send(keep and "commit keep" or "commit")
+            local keep = G.armed == "place" and shift
+            done = send(keep and "commit keep" or "commit")
+        elseif menu and menu:IsShown() then
+            menu:Hide(); done = true
+        elseif G.Picks() and d.u then
+            done = send(string.format("click %.4f %.4f %.4f %d%s", d.u, d.v, d.a or (16 / 9), G.zoom, shift and " add" or ""))
+        elseif not G.OverObject() then
+            done = send("selclear")
         end
-        if menu and menu:IsShown() then menu:Hide(); bindings(); return true end
-        if not overObject() then return send("selclear") end
-        return false
     elseif button == "RightButton" then
-        if G.armed then G.Cancel(); return true end
+        if G.armed then G.Cancel(); done = true end
+    end
+    bindings()
+    return done
+end
+
+-- A mouse-up the game kept from us (let go over a window, or a binding's up never came): the button is up, so it is
+-- let go here.
+function G.UpCheck()
+    if not IsMouseButtonDown then return false end
+    for button in pairs(down) do
+        local ok, held = pcall(IsMouseButtonDown, button)
+        if ok and not held then G.MouseUp(button); return true end
     end
     return false
+end
+
+-- The name of the prop under the cursor, by the cursor (not while dragging, placing or over a window).
+function G.TipUpdate()
+    if not tip then return end
+    if not (G.build and G.hovered and G.hovered.name ~= "" and not G.dragging and not G.armed and overWorld()) then tip:Hide(); return end
+    local x, y = 0, 0
+    if GetCursorPosition then x, y = GetCursorPosition() end
+    local s = (UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
+    tip:ClearAllPoints()
+    tip:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", (x or 0) / s + 16, (y or 0) / s + 8)
+    tip.fs:SetText(G.hovered.name)
+    tip:Show()
+end
+
+-- Pan keys held: the view keeps panning (one step at once, then every G.PAN_EVERY while held).
+local held = {}
+function G.PanKey(dir, isDown)
+    if isDown == false then held[dir] = nil; return false end
+    held[dir] = now()
+    return G.Pan(dir)
+end
+function G.PanHeld()
+    if not G.far then for k in pairs(held) do held[k] = nil end; return false end
+    local t, sent = now(), false
+    for dir, last in pairs(held) do
+        if t - last >= G.PAN_EVERY then held[dir] = t; sent = G.Pan(dir) or sent end
+    end
+    return sent
 end
 
 -- ---------------------------------------------------------------- the menu at the cursor
@@ -462,6 +630,23 @@ function G.OnMessage(prefix, msg, channel, sender)
         -- the view moved to Den Lite's camera object (or back to you): the build camera's pose again round it
         if (was == nil) ~= (G.far == nil) then G.Pose() end
         bindings(); showTag()
+    elseif name == "hovered" then
+        -- `<id> <name>` or `-`: the prop under the cursor (it glows); BUTTON1 is ours while there is one
+        local id, nm = data:match("^(%d+)%s*(.*)$")
+        G.hovered = id and { id = tonumber(id), name = nm or "" } or nil
+        G.TipUpdate()
+        bindings()
+    elseif name == "selected" then
+        -- a left click selected this prop (or `-`: cleared); the Builder's state fills the panel
+        G.sel = tonumber(data)
+        bindings(); showTag()
+    elseif name == "grabbed" then
+        -- the drag's press found nothing to grab (or a locked prop): the drag is over
+        if data == "-" then
+            G.dragging = nil
+            if down.LeftButton then down.LeftButton.prop = nil end
+            bindings(); showTag()
+        end
     elseif name == "ghost" then
         G.ghost = data
     elseif name == "state" then
@@ -491,6 +676,38 @@ function G.TestAction(w)
         return send(string.format("hover %.4f %.4f %.4f %d", u, v, asp or (16 / 9), G.CAM_DIST))
     end
     if a == "tick" then return G.Tick(true) end
+    -- the mouse, as if it were there: a click at (u, v) (`add`: Shift), a press-drag-let-go from one point to another,
+    -- or its three steps (a picture can be taken while it is held)
+    if a == "click" then
+        local u, v = tonumber(w[3]), tonumber(w[4])
+        if not u or not v then return false end
+        return send(string.format("click %.4f %.4f %.4f %d%s", u, v, 16 / 9, G.zoom, w[5] == "add" and " add" or ""))
+    end
+    if a == "press" then
+        local u, v = tonumber(w[3]), tonumber(w[4])
+        if not u or not v then return false end
+        G.dragging = true
+        bindings(); showTag()
+        return send(string.format("drag %.4f %.4f %.4f %d", u, v, 16 / 9, G.zoom))
+    end
+    if a == "moveto" then
+        local u, v = tonumber(w[3]), tonumber(w[4])
+        if not u or not v then return false end
+        return send(string.format("hover %.4f %.4f %.4f %d", u, v, 16 / 9, G.zoom))
+    end
+    if a == "release" then
+        G.dragging = nil
+        bindings(); showTag()
+        return send("commit")
+    end
+    if a == "drag" then
+        local u1, v1, u2, v2 = tonumber(w[3]), tonumber(w[4]), tonumber(w[5]), tonumber(w[6])
+        if not (u1 and v1 and u2 and v2) then return false end
+        G.TestAction({ "gizmo", "press", w[3], w[4] })
+        G.TestAction({ "gizmo", "moveto", w[5], w[6] })
+        return G.TestAction({ "gizmo", "release" })
+    end
+    if a == "turn" then return G.Turn(tonumber(w[3]) or 1) end
     if a == "commit" then return send(w[3] == "keep" and "commit keep" or "commit") end
     if a == "grab" then return G.Grab(w[3]) end
     if a == "snap" then return G.Snap() end
@@ -507,11 +724,12 @@ function G.TestAction(w)
     end
     if a == "report" then
         local u, v, asp = G.Cursor()
-        report(string.format("gizmo build=%d armed=%s axis=%s sel=%s camera=%d menu=%d cursor=%s,%s,%s ghost=%s zoom=%d far=%s snapkey=%s moved=%s",
+        report(string.format("gizmo build=%d armed=%s axis=%s sel=%s camera=%d menu=%d cursor=%s,%s,%s ghost=%s zoom=%d far=%s snapkey=%s moved=%s hovered=%s dragging=%d button1=%d frame=%d",
             G.build and 1 or 0, G.armed or "-", G.axis or "-", tostring(G.sel or "-"), G.camera and 1 or 0,
             (menu and menu:IsShown()) and 1 or 0, u and string.format("%.3f", u) or "-", v and string.format("%.3f", v) or "-",
             asp and string.format("%.3f", asp) or "-", G.ghost or "-", G.zoom or 0,
-            G.far and string.format("%.1f%s", G.far.back, G.far.snap and "s" or "") or "-", G.snapKey or "-", (G.lastMove or "-"):gsub(" ", "_")))
+            G.far and string.format("%.1f%s", G.far.back, G.far.snap and "s" or "") or "-", G.snapKey or "-", ((G.lastMove or "-"):gsub(" ", "_")),
+            G.hovered and tostring(G.hovered.id) or "-", G.dragging and 1 or 0, G.b1 and 1 or 0, (frame and frame:IsShown()) and 1 or 0))
         return true
     end
     return false
@@ -547,11 +765,54 @@ local function setup()
     snapBtn = CreateFrame("Button", "LeylineGizmoSnap", UIParent)
     snapBtn:SetScript("OnClick", function() G.Snap() end)
     snapBtn:Hide()
+    -- a pan key: down pans at once and keeps panning while held; up stops (a click from elsewhere: one step)
     for k, dir in pairs(PAN_KEYS) do
         local b = CreateFrame("Button", "LeylineGizmoPan" .. k, UIParent)
-        b:SetScript("OnClick", function() G.Pan(dir) end)
+        if b.RegisterForClicks then b:RegisterForClicks("AnyDown", "AnyUp") end
+        b:SetScript("OnClick", function(_, _, isDown) G.PanKey(dir, isDown) end)
         b:Hide()
     end
+    for k, sign in pairs(TURN_KEYS) do
+        local b = CreateFrame("Button", "LeylineGizmoTurn" .. k, UIParent)
+        if b.RegisterForClicks then b:RegisterForClicks("AnyDown") end
+        b:SetScript("OnClick", function(_, _, isDown) if isDown ~= false then G.Turn(sign) end end)
+        b:Hide()
+    end
+    -- BUTTON1 over a prop: the press and the let-go are ours (the camera doesn't turn)
+    grabBtn = CreateFrame("Button", "LeylineGizmoGrab", UIParent)
+    if grabBtn.RegisterForClicks then grabBtn:RegisterForClicks("AnyDown", "AnyUp") end
+    grabBtn:SetScript("OnClick", function(_, _, isDown)
+        if isDown == false then G.MouseUp("LeftButton") else G.MouseDown("LeftButton") end
+    end)
+    grabBtn:Hide()
+    -- the prop's name by the cursor
+    tip = CreateFrame("Frame", "LeylineGizmoHoverTip", UIParent)
+    tip:SetFrameStrata("TOOLTIP")
+    tip:SetWidth(160); tip:SetHeight(20)
+    tip.fs = tip.CreateFontString and tip:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall") or { SetText = function() end }
+    if tip.fs.SetPoint then tip.fs:SetPoint("LEFT", tip, "LEFT", 6, 0) end
+    tip:Hide()
+    -- build mode's frame round the screen and its word, so it is plain which mode you are in
+    frame = CreateFrame("Frame", "LeylineGizmoBuildFrame", UIParent)
+    frame:SetAllPoints(UIParent)
+    frame:SetFrameStrata("BACKGROUND")
+    if frame.EnableMouse then frame:EnableMouse(false) end
+    local EDGE, R, Gc, Bc, A = 4, 0.95, 0.72, 0.25, 0.85
+    local function edge(p1, p2, w, h)
+        local t = frame.CreateTexture and frame:CreateTexture(nil, "OVERLAY")
+        if not t then return end
+        t:SetTexture(R, Gc, Bc, A)
+        t:SetPoint(p1, frame, p1, 0, 0); t:SetPoint(p2, frame, p2, 0, 0)
+        if w then t:SetWidth(w) end
+        if h then t:SetHeight(h) end
+    end
+    edge("TOPLEFT", "TOPRIGHT", nil, EDGE); edge("BOTTOMLEFT", "BOTTOMRIGHT", nil, EDGE)
+    edge("TOPLEFT", "BOTTOMLEFT", EDGE, nil); edge("TOPRIGHT", "BOTTOMRIGHT", EDGE, nil)
+    frame.word = frame.CreateFontString and frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge") or { SetText = function() end }
+    if frame.word.SetPoint then frame.word:SetPoint("TOP", frame, "TOP", 0, -10) end
+    frame.word:SetText("BUILD")
+    if frame.word.SetTextColor then frame.word:SetTextColor(R, Gc, Bc) end
+    frame:Hide()
     -- the tag above the status pill: what is armed, which axis
     tag = CreateFrame("Frame", "LeylineGizmoTag", UIParent)
     tag:SetWidth(520); tag:SetHeight(22)
@@ -576,7 +837,11 @@ local function setup()
             acc = 0
             G.SetBuild(G.Wanted())
         end
-        if G.armed then G.Tick(false) end
+        G.UpCheck()
+        G.DragCheck()
+        if G.armed or G.dragging or G.build then G.Tick(false) end
+        G.TipUpdate()
+        G.PanHeld()
     end)
     owner:SetScript("OnEvent", function(_, ev, ...)
         if ev == "CHAT_MSG_ADDON" then G.OnMessage(...) end

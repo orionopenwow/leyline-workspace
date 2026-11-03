@@ -140,8 +140,8 @@ W.Builder.Choose({ id = 2413, name = "Wooden Chair" })
 c = cmds(n)
 check("a gallery pick arms the preview, and the cursor goes at once", c[1] == "preview 2413" and c[2] and c[2]:find("^hover "))
 answer("aim", "place,2413,1543")
-check("in hand: Esc and the exact-click key bound too, nothing else", G.armed == "place" and bindings.ESCAPE == "LeylineGizmoCancel"
-    and bindings.G == "LeylineGizmoAim" and count(bindings) == 5)
+check("in hand: Esc, the exact-click key and Q / E (turn it) bound too, nothing else", G.armed == "place" and bindings.ESCAPE == "LeylineGizmoCancel"
+    and bindings.G == "LeylineGizmoAim" and bindings.Q == "LeylineGizmoTurnQ" and bindings.E == "LeylineGizmoTurnE" and count(bindings) == 7)
 check("the tag says how", named.LeylineGizmoTag.shown and named.LeylineGizmoTag.fs.text:find("in hand: click the ground")
     and named.LeylineGizmoTag.fs.text:find("Shift%+click places more"))
 
@@ -202,7 +202,8 @@ click("RightButton")
 c = cmds(n)
 check("a right click stops: preview off, its keys given back (the wheel and snap-out stay in build mode)", c[1] == "preview off" and G.armed == nil
     and count(bindings) == 3 and handDone > 0)
-check("the tag goes", not named.LeylineGizmoTag.shown)
+check("the tag goes back to build mode's hint (a Den Lite from before: right-click selects)",
+    named.LeylineGizmoTag.shown and named.LeylineGizmoTag.fs.text:find("Right%-click a prop to select it"))
 
 -- the gizmo's axis and the wheel
 answer("axis", "y")
@@ -366,9 +367,173 @@ W.Builder.state.lite = nil
 tick()
 check("on the full Den: no build mode", not G.build)
 
+-- ---------------------------------------------------------------- the mouse, picked by Den Lite (its caps: click)
+local mouseHeld = {}
+function IsMouseButtonDown(b) return mouseHeld[b] and true or false end
+local looking = true
+function IsMouselooking() return looking end
+function MouselookStop() looking = false end
+W.Builder.state.lite = "1"
+W.Builder.Can = function(v) return v == "click" or v == "drag" end
+W.DenBar.play = false
+W.DenBar.keys = { build = "F7", play = "F8" }
+answer("state", "mine=1/800;sel=-;n=1;")
+local function at(list, want) for i, v in ipairs(list) do if v == want then return i end end return nil end
+camera = {}
+n = #sent
+tick()
+c = cmds(n)
+check("build mode with a picking Den Lite: the editor's own view (cam build) after the zoom", G.build and has(c, "mode build")
+    and at(c, "cam build") and at(c, "cam zoom 12") and at(c, "cam build") > at(c, "cam zoom 12"))
+check("the cursor is freed (no mouselook) on entering", looking == false)
+check("a BUILD frame round the screen", named.LeylineGizmoBuildFrame.shown and named.LeylineGizmoBuildFrame.word.text == "BUILD")
+check("the hint line", named.LeylineGizmoTag.shown and named.LeylineGizmoTag.fs.text:find("Click a prop to select  ·  drag to move  ·  Shift adds  ·  Q E turn  ·  Del deletes  ·  F7 leaves Build", 1, true))
+answer("cam", "far,14.0,0,0")
+check("the view out: WASD and the arrows pan it, Q / E not yet (nothing selected), BUTTON1 still the game's",
+    bindings.W == "LeylineGizmoPanW" and bindings.A == "LeylineGizmoPanA" and bindings.UP == "LeylineGizmoPanUP" and not bindings.Q and not bindings.BUTTON1)
+check("the tag: how to pan", named.LeylineGizmoTag.fs.text:find("WASD pans  ·  wheel zooms", 1, true))
+
+-- the hover stream with nothing in hand
+cursor = { 1440, 270 }
+n = #sent
+tick(0.15)
+check("in build mode the cursor's place goes even with nothing in hand", cmds(n)[1] == "hover 0.5000 -0.5000 1.7778 12")
+n = #sent
+tick(0.2)
+check("at rest: once more (Den Lite's glow keeps up)", cmds(n)[1] == "hover 0.5000 -0.5000 1.7778 12")
+n = #sent
+tick(0.2); tick(0.2)
+check("then nothing", #cmds(n) == 0)
+
+-- a prop under the cursor: its name by the cursor, BUTTON1 ours
+answer("hovered", "5 Wooden Chair")
+check("hovered: the name by the cursor", G.hovered and G.hovered.id == 5 and named.LeylineGizmoHoverTip.shown and named.LeylineGizmoHoverTip.fs.text == "Wooden Chair")
+check("hovered: BUTTON1 is ours (the camera doesn't turn on a press on a prop)", bindings.BUTTON1 == "LeylineGizmoGrab" and G.b1)
+local grab = named.LeylineGizmoGrab
+local function press(both) mouseHeld.LeftButton = true; if both then WorldFrame:Fire("OnMouseDown", "LeftButton") end; grab:Fire("OnClick", "LeftButton", true) end
+local function release(both) mouseHeld.LeftButton = nil; grab:Fire("OnClick", "LeftButton", false); if both then WorldFrame:Fire("OnMouseUp", "LeftButton") end end
+n = #sent
+press(true); clock = clock + 0.1; release(true)
+c = cmds(n)
+check("a click on it (the hook and the binding both saw it): selected once, at the press point", #c == 1 and c[1] == "click 0.5000 -0.5000 1.7778 12")
+answer("selected", "5")
+check("selected: Q / E turn it", G.sel == 5 and bindings.Q == "LeylineGizmoTurnQ" and bindings.E == "LeylineGizmoTurnE")
+n = #sent
+named.LeylineGizmoTurnQ:Fire("OnClick", "LeftButton", true)
+named.LeylineGizmoTurnE:Fire("OnClick", "LeftButton", true)
+check("Q turns it left, E right", cmds(n)[1] == "turn 15" and cmds(n)[2] == "turn -15")
+shift = true
+n = #sent
+press(); clock = clock + 0.1; release()
+check("Shift+click adds it", cmds(n)[1] == "click 0.5000 -0.5000 1.7778 12 add")
+shift = false
+
+-- press and drag: the drag starts past 6 px, from where it was pressed; the wheel turns it; letting go drops it
+n = #sent
+press()
+cursor = { 1444, 272 }
+tick(0.05)
+local function drags(list) local k = 0; for _, x in ipairs(list) do if x:find("^drag ") then k = k + 1 end end; return k end
+check("held, moved 4 px: still a click", not G.dragging and drags(cmds(n)) == 0)
+n = #sent
+cursor = { 1500, 300 }
+tick(0.05)
+c = cmds(n)
+check("moved past 6 px: Den Lite grabs what was under the press, then the cursor's place", G.dragging and c[1] == "drag 0.5000 -0.5000 1.7778 12" and (c[2] or ""):find("^hover 0%.5625 %-0%.4444"))
+check("dragging: the name tip hides, the tag says how", not named.LeylineGizmoHoverTip.shown and named.LeylineGizmoTag.fs.text:find("Moving: let go to drop it"))
+answer("aim", "move,5,1543")
+answer("hovered", "-")
+check("the binding stays ours while the button is held", bindings.BUTTON1 == "LeylineGizmoGrab")
+cursor = { 1520, 320 }
+n = #sent
+tick(0.15)
+check("the prop follows the cursor", (cmds(n)[1] or ""):find("^hover "))
+n = #sent
+named.LeylineGizmoWheelUp:Fire("OnClick")
+check("the wheel while dragging turns it", cmds(n)[1] == "preview turn 15")
+n = #sent
+release()
+c = cmds(n)
+check("let go: dropped (commit), the drag over", c[#c] == "commit" and not G.dragging)
+answer("aim", "off")
+check("over empty ground after: BUTTON1 the game's again", not bindings.BUTTON1)
+
+-- Esc while dragging puts it back; the let-go after does nothing
+answer("hovered", "5 Wooden Chair")
+n = #sent
+press(); cursor = { 1400, 300 }; tick(0.05)
+answer("aim", "move,5,1543")
+named.LeylineGizmoCancel:Fire("OnClick")
+release()
+c = cmds(n)
+check("Esc while dragging: put back (preview off), no drop after", has(c, "preview off") and not has(c, "commit") and not G.dragging)
+answer("aim", "off")
+
+-- a quick flick (pressed, moved and let go before the next frame): a drag and a drop
+answer("hovered", "5 Wooden Chair")
+cursor = { 1400, 300 }
+n = #sent
+press(); cursor = { 1440, 330 }; release()
+c = cmds(n)
+check("a quick flick on a prop: dragged and dropped, not a camera drag", (c[1] or ""):find("^drag 0%.4583") and c[#c] == "commit" and not G.dragging)
+answer("aim", "off")
+
+-- a press on a prop that was gone by then: Den Lite says nothing was grabbed
+press(); cursor = { 1300, 300 }; tick(0.05)
+answer("grabbed", "-")
+check("nothing grabbed: the drag is over", not G.dragging)
+release()
+
+-- a lost let-go (over a window): caught by the button's state
+answer("hovered", "5 Wooden Chair")
+n = #sent
+press()
+mouseHeld.LeftButton = nil
+clock = clock + 0.05
+owner:Fire("OnUpdate", 0.05)
+check("a let-go the game kept from us: caught (a click; still over the prop, BUTTON1 still ours)", (cmds(n)[1] or ""):find("^click ") and G.b1 == true)
+
+-- a click on empty ground (BUTTON1 the game's: the hook sees it): Den Lite clears the selection
+answer("hovered", "-")
+n = #sent
+WorldFrame:Fire("OnMouseDown", "LeftButton"); clock = clock + 0.1; WorldFrame:Fire("OnMouseUp", "LeftButton")
+check("a click on empty ground: click (Den Lite clears the selection), never the old selclear", (cmds(n)[1] or ""):find("^click ") and not has(cmds(n), "selclear"))
+
+-- a pan key held keeps panning; let go stops
+n = #sent
+named.LeylineGizmoPanW:Fire("OnClick", "LeftButton", true)
+tick(0.25)
+named.LeylineGizmoPanW:Fire("OnClick", "LeftButton", false)
+tick(0.25)
+c = cmds(n)
+local pans = 0
+for _, x in ipairs(c) do if x == "cam pan fwd 4" then pans = pans + 1 end end
+check("W held: the view pans on, and stops when let go", pans == 2)
+
+-- the den-test's mouse
+n = #sent
+G.TestAction({ "gizmo", "click", "0.1", "-0.2" })
+G.TestAction({ "gizmo", "drag", "0.1", "-0.2", "0.3", "-0.25" })
+c = cmds(n)
+check("test: click, and press-move-let-go", c[1] == "click 0.1000 -0.2000 1.7778 12" and c[2] == "drag 0.1000 -0.2000 1.7778 12"
+    and c[3] == "hover 0.3000 -0.2500 1.7778 12" and c[4] == "commit" and not G.dragging)
+G.TestAction({ "gizmo", "report" })
+check("test: the report says the mouse's state", sent[#sent][2]:find("hovered=%- dragging=0 button1=0 frame=1"))
+
+-- leaving build mode: the view back, the frame and every binding gone
+W.DenBar.play = true
+n = #sent
+tick()
+c = cmds(n)
+check("play mode: the view given back (cam off), nothing bound, no frame", has(c, "cam off") and count(bindings) == 0 and not named.LeylineGizmoBuildFrame.shown)
+n = #sent
+cursor = { 900, 500 }
+tick(0.2)
+check("play mode: no hover stream", #cmds(n) == 0)
+
 -- brand words
 local words = { "World of Warcraft", "WoW", "Warcraft", "Lich King", "Blizzard" }
-local shown = table.concat(labels, " ") .. " " .. tostring(named.LeylineGizmoTag.fs.text)
+local shown = table.concat(labels, " ") .. " " .. tostring(named.LeylineGizmoTag.fs.text) .. " " .. G.Hint() .. " " .. tostring(named.LeylineGizmoBuildFrame.word.text)
 local clean = true
 for _, w in ipairs(words) do if shown:find(w, 1, true) then clean = false end end
 check("no game-brand words on screen", clean)

@@ -25,6 +25,7 @@ sys.path.insert(0, str(AUDIT))
 
 import common  # noqa: E402
 import fakes  # noqa: E402
+import mobile  # noqa: E402
 import pc  # noqa: E402
 import play335 as p  # noqa: E402
 import report  # noqa: E402
@@ -314,6 +315,147 @@ class FakeRun(unittest.TestCase):
             self.assertIn("PASS  Your Den: Host and friend see each other", text)
         self.assertEqual(rc, 1 if fails else 0)
         self.assertIn("Only you can check these", report_html)
+
+
+def png(w: int, h: int, rgb=(200, 30, 30)) -> bytes:
+    """A solid PNG (standard library only)."""
+    def chunk(t, b):
+        return struct.pack(">I", len(b)) + t + b + struct.pack(">I", zlib.crc32(t + b) & 0xffffffff)
+    raw = b"".join(b"\x00" + bytes(rgb) * w for _ in range(h))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
+class Mobile(unittest.TestCase):
+    """The phone and screenshot sweep (tools/audit/mobile.py, mobile_sweep.cjs): the checks, the lines, the switch,
+    no Playwright, the report's changed list; and, where node and Playwright are here, the sweep against the fakes."""
+
+    def ok(self, **kw):
+        r = {"page": "home", "device": "iphone13", "status": 200, "scrollWidth": 390, "innerWidth": 390, "small": [], "cut": [],
+             "past": [], "errors": [], "text": "Leyline. Not affiliated with or endorsed by Blizzard Entertainment.", "attrs": "", "shot": "mobile/home-iphone13.png"}
+        r.update(kw)
+        return r
+
+    def test_problems(self):
+        self.assertEqual(mobile.problems(self.ok()), [], "the legal line is allowed")
+        self.assertEqual(mobile.problems(self.ok(status=404)), ["HTTP 404"])
+        self.assertIn("scrolls sideways", mobile.problems(self.ok(scrollWidth=420))[0])
+        self.assertEqual(mobile.problems(self.ok(scrollWidth=391)), [], "one pixel of rounding is fine")
+        self.assertIn("buttons under 40 px", mobile.problems(self.ok(small=["Log in 92x38"]))[0])
+        self.assertIn("banned words", mobile.problems(self.ok(text="Play " + "War" + "craft here"))[0])
+        self.assertIn("banned words", mobile.problems(self.ok(attrs="a " + "W" + "oW logo"))[0])
+        self.assertIn("errors", mobile.problems(self.ok(errors=["page error: x is not defined"]))[0])
+        self.assertIn("text cut off", mobile.problems(self.ok(cut=[".title: Long words"]))[0])
+        self.assertIn("key shows", mobile.problems(self.ok(leak=True))[0])
+        # the desktop pass: only the answer, errors and words (a desktop layout isn't judged as a phone's)
+        self.assertEqual(mobile.problems(self.ok(scrollWidth=2000, small=["x 10x10"]), desktop=True), [])
+
+    def test_one_line_per_page_over_the_phones(self):
+        rs = [self.ok(device=d) for d in mobile.DEVICES] + [self.ok(page="forum", device="pixel7", small=["Post 80x30"])]
+        lines = mobile.page_lines(rs, [("home", "Home", "/wrath/leyline"), ("forum", "Forum", "/f"), ("forge", "Forge", "/g")])
+        self.assertEqual([(t, st) for t, st, _, _ in lines], [("Home on phones", "PASS"), ("Forum on phones", "FAIL"), ("Forge on phones", "SKIP")])
+        self.assertIn("iPhone 13, Pixel 7, 360x640", lines[0][2])
+        self.assertIn("Pixel 7: buttons under 40 px: Post 80x30", lines[1][2])
+
+    def test_switch_off_and_no_playwright(self):
+        rec = common.Recorder(out=io.StringIO())
+        ctx = common.Ctx({"addresses": {}}, rec, {"site": "http://127.0.0.1:9"})
+        os.environ["LEYLINE_AUDIT_MOBILE"] = "0"
+        try:
+            mobile.run(ctx, rec, Path(tempfile.mkdtemp()))
+        finally:
+            os.environ.pop("LEYLINE_AUDIT_MOBILE")
+        self.assertEqual([(r.status, r.detail) for r in rec.results], [("SKIP", "LEYLINE_AUDIT_MOBILE=0")])
+        rec = common.Recorder(out=io.StringIO())
+        real = mobile.shutil.which
+        mobile.shutil.which = lambda name: None
+        try:
+            mobile.run(ctx, rec, Path(tempfile.mkdtemp()))
+        finally:
+            mobile.shutil.which = real
+        self.assertEqual([r.status for r in rec.results], ["SKIP", "SKIP"])
+        self.assertIn("npm install -g playwright", rec.results[0].detail, "the one-line fix")
+
+    def test_rotate_keeps_one_run_back(self):
+        shots = Path(tempfile.mkdtemp())
+        self.assertIsNone(mobile.rotate(shots))
+        (shots / "desktop").mkdir()
+        (shots / "desktop" / "home.png").write_bytes(b"1")
+        prev = mobile.rotate(shots)
+        self.assertEqual((prev / "desktop" / "home.png").read_bytes(), b"1")
+        self.assertFalse((shots / "desktop").exists())
+        (shots / "desktop").mkdir()
+        (shots / "desktop" / "home.png").write_bytes(b"2")
+        mobile.rotate(shots)
+        self.assertEqual((prev / "desktop" / "home.png").read_bytes(), b"2", "the run before that is dropped")
+
+    def test_report_lists_the_changed_screenshots(self):
+        R = common.Result
+        rs = [R("Mobile", "Home on phones", "PASS", "/wrath/leyline"), R("Screenshots", "Desktop screenshots at 1440x900", "PASS", "16 saved")]
+        meta = {"when": "2026-11-03 10:00", "secs": 90, "mode": "live", "shots": {"dir": "C:/x/logs/audit-shots", "previous": "C:/x/p",
+                "changed": [{"shot": "desktop/home.png", "share": 12.5}, {"shot": "mobile/<b>.png", "share": 1}], "fresh": ["desktop/forge.png"], "same": 40, "count": 68}}
+        t = report.text(rs, meta)
+        self.assertIn("== Screenshots that changed", t)
+        self.assertIn("desktop/home.png  (12.5 % of the picture)", t)
+        self.assertIn("New this run: desktop/forge.png", t)
+        h = report.page(rs, meta)
+        self.assertIn('<a href="audit-shots/desktop/home.png">', h)
+        self.assertIn('audit-shots/previous/desktop/home.png', h)
+        self.assertIn("mobile/&lt;b&gt;.png", h)
+        self.assertLess(h.index("Features"), h.index("Screenshots that changed"))
+        self.assertLess(report.ORDER.index("Hero Key"), report.ORDER.index("Mobile"))
+        first = report.text(rs, dict(meta, shots=dict(meta["shots"], previous="", changed=[])))
+        self.assertIn("Nothing to compare with yet", first)
+        self.assertNotIn("== Screenshots that changed", report.text(rs, {"when": "x"}))
+
+    def test_the_section_is_in_the_audit(self):
+        import audit
+        self.assertIn("mobile", audit.SECTIONS)
+        doc = (ROOT / "docs" / "AUDIT.md").read_text(encoding="utf-8")
+        for key, _, path in mobile.PAGES:
+            self.assertIn(path, doc, key)
+
+    @unittest.skipUnless(mobile.node_env()[0], "node and Playwright are not here")
+    def test_the_sweep_against_the_fakes(self):
+        """A short sweep (three pages) on the fake site: green, the Log in journey on a phone, the test account closed,
+        the screenshots saved, a changed one listed, and the key in no line, report or job file."""
+        logs = Path(tempfile.mkdtemp())
+        shots = logs / "audit-shots"
+        for d, name in (("desktop", "home.png"), ("mobile", "home-pixel7.png")):
+            (shots / d).mkdir(parents=True)
+            (shots / d / name).write_bytes(png(40, 30))      # "the last run": a picture that differs from today's
+        fk = fakes.Fakes()
+        pages = mobile.PAGES
+        mobile.PAGES = [p for p in pages if p[0] in ("home", "login", "submit")]
+        out = io.StringIO()
+        rec = common.Recorder(out=out)
+        try:
+            fake, rewrite = fk.ctx_args()
+            ctx = common.Ctx({"addresses": {}}, rec, fake, rewrite)
+            mobile.run(ctx, rec, logs)
+        finally:
+            mobile.PAGES = pages
+            fk.close()
+        text = out.getvalue()
+        fails = [l for l in text.splitlines() if l.startswith("FAIL")]
+        self.assertEqual(fails, [], text)
+        for must in ("PASS  Mobile: Home on phones", "PASS  Mobile: Log in (Hero Key) on phones", "PASS  Mobile: Submit a link on phones",
+                     "PASS  Mobile: Log in on a phone with a pasted Hero Key", "PASS  Mobile: Your profile shows on a phone, with Log out",
+                     "PASS  Mobile: Submit a link while logged in, on a phone", "PASS  Mobile: Log out on a phone",
+                     "PASS  Mobile: Test account: The test account is cleaned up", "PASS  Screenshots: Desktop screenshots at 1440x900"):
+            self.assertIn(must, text)
+        for d in mobile.DEVICES:
+            self.assertTrue((shots / "mobile" / f"home-{d}.png").stat().st_size > 1000, d)
+        self.assertTrue((shots / "mobile" / "login-signed-in-iphone13.png").exists())
+        self.assertTrue((shots / "desktop" / "submit.png").exists())
+        sh = ctx.cache["shots"]
+        self.assertEqual(sorted(c["shot"] for c in sh["changed"]), ["desktop/home.png", "mobile/home-pixel7.png"])
+        self.assertIn("mobile/home-iphone13.png", sh["fresh"])
+        self.assertIsNone(re.search(r"ovk1\.[A-Za-z0-9]{3}", text))
+        report.write(rec.results, {"shots": sh}, logs)
+        for f in ("audit-latest.txt", "audit-latest.html"):
+            self.assertIsNone(re.search(r"ovk1\.[A-Za-z0-9]{3}", (logs / f).read_text()))
+        self.assertIn("desktop/home.png", (logs / "audit-latest.txt").read_text())
 
 
 if __name__ == "__main__":

@@ -427,6 +427,72 @@ guesses** (field of view 90 degrees across the diagonal, pivot 2 yards over the 
 hover calibration** runs on the owner's PC (the real cursor at six points, at each the copy's place and, by pressing G
 and clicking, the game's own point; the camera fitted, saved to `<dens>/den-lite.camera.json`, used from the next Den
 start). Until then the copy can land a few yards from the cursor; the exact click (G) is always exact.
+#### The mouse, picked by Den Lite: hover, click, drag; the build view (3 Nov, evening)
+
+The owner (3 Nov): "still need to fundamentally build the feature of clicking objects, having them highlighted, moving
+them around easily, clear and distinct build mode camera and intuitive features". Right-click selecting (above) leans on
+the client's own goober highlight, which goes by its cached template, and **the client never tells the realm about a
+left click on a gameobject**. But Den Lite already knows the camera (the build camera's pose, or exactly the far view's)
+and every prop's place, turn and size. So Den Lite picks by itself (`src/pick.rs`, std only, its own tests;
+`gizmo.rs` `click`, `drag`, the hover):
+
+* **The ray pick** (`pick::pick`): the cursor's ray (`gizmo::ray`, from `Aids::view`) against each prop's **upright box**:
+  its model's width, depth and height and bottom (`models::box_of`, from the player's own `GameObjectDisplayInfo`, at
+  its size, 5% larger so an edge is easy to hit; a guess from its size when the table isn't there), turned with the
+  prop. The nearest box entered wins, within the ray's reach (the camera's distance + 60 yards). Ties (entered within
+  0.05 yd): the smaller box, then the newer prop. A box the camera is inside (a house round the far camera) counts only
+  when nothing else is hit. Hidden props are never picked; locked ones are picked and selected but not dragged.
+* **The glow under the cursor**: in build mode (`mode build`) the addon's hover goes even with nothing in hand (about
+  10 a second, once more when the cursor comes to rest). The prop under it gets the selection's glow (the same
+  `GAMEOBJECT_DYNAMIC` values update, to that player only); the one it left loses it unless it is selected (the
+  selection also has its halo and handles). At most one change per 100 ms. The addon is told `hovered <id> <name>` (or
+  `-`) and shows the name by the cursor.
+* **Click** (`click <u> <v> <aspect> [<zoom>] [add]`, a left press and let-go under 0.3 s and 6 px): the prop under the
+  cursor is the selection (its glow, handles, halo; `selected <id>`; the panel follows the state); on empty ground the
+  selection is cleared (`selected -`). `add` (Shift) adds it to the selection (it glows too). Right-click still selects
+  and opens the menu.
+* **Press and drag** (`drag <u> <v> <aspect> [<zoom>]`, sent when the mouse pressed on a prop has moved 6 px, with the
+  point where it was pressed): that prop is the selection; the real one is hidden for you and its glowing copy follows
+  the hover stream. The ray at the press hit the prop's box at some point P; **the drag follows a level plane at P's
+  height and keeps the foot's offset from P** (`pick::grip`, `pick::follow`), so the spot you grabbed stays under the
+  cursor. The foot is snapped to the grid (when Snap is on) and set on the ground at its own height over it. Let go:
+  `commit` (the real prop there, one undo step, selected again). Esc: `preview off` (back where it was). The wheel
+  and Q / E while dragging: `preview turn ±15`. Nothing under the press: `grabbed -`.
+* **Sharing the mouse with the camera** (what 3.3.5a allows): `WorldFrame`'s `OnMouseDown` / `OnMouseUp` can be hooked
+  but not stopped, and `CameraOrSelectOrMoveStart` / `Stop` (the left-drag camera) are protected. What an addon may do
+  is override-bind a mouse button outside combat (`SetOverrideBindingClick(owner, true, "BUTTON1", button)`). So while
+  Den Lite says the cursor is over a prop, or a prop is dragged, `BUTTON1` is bound to `LeylineGizmoGrab` (registered
+  for down and up clicks): the press is the addon's and the camera doesn't turn. Over empty ground BUTTON1 is the game's
+  (left-drag turns the camera; right-drag as always). The binding never changes while the button is held; a let-go the
+  game kept from the addon is caught by `IsMouseButtonDown` on the next frame; the hook and the binding seeing the same
+  press count once.
+* **The build view** (`cam build`): entering build mode the addon frees the cursor (`MouselookStop`), poses the build
+  camera at its counted zoom and asks for the build view: the far-sight object up and back over where you stand
+  (`BUILD_BACK` 14 yards past the client's zoom, on the camera's own line of sight), a pose Den Lite knows exactly
+  whatever the player does after. A gold frame round the screen and **BUILD** at the top say which mode it is. WASD
+  and the arrows pan the view while it is out (held: on every 0.2 s), the wheel zooms (past the client's limit the far
+  view goes further, as above), the snap key toggles the 35-yard overview. Leaving build mode (`mode play`) gives the
+  view back (Den Lite does it too, so it is never left out).
+* **One hint line** in build mode: "Click a prop to select · drag to move · Shift adds · Q E turn · Del deletes · F7
+  leaves Build". The guide's Build and Play, Placing, Selecting and Keys pages say the same.
+
+Verbs added: `click`, `drag`, `cam build` (caps: `click,drag`; the addon falls back to right-click selecting without
+them). Answers added: `hovered`, `selected`, `grabbed`. The den-test's view adds `hovered`, `sel_at`, `sel_uv` (where
+the selection's middle is on the screen), `build`, `grip`; the addon's test actions add `gizmo click|press|moveto|
+release|drag|turn`.
+
+Tested here: `pick.rs` (the box hit, nearest, ties, behind the camera, too far, a box round the camera, turned boxes,
+the drag's grip), `gizmo.rs` (click selects / adds / clears and the glows; the hover glow on and off and its 100 ms;
+press-drag-let-go moves it with the grabbed spot under the cursor, on the grid, turned, one undo; Esc; locked;
+visitors; the build view's pose and picking from it; `screen` is `ray`'s inverse), the headless client
+(`the_mouse_hovers_clicks_and_drags_props_in_build_mode`), `test_wuui_gizmo.lua` (click vs drag thresholds, BUTTON1 only
+over a prop and never changed while held, the lost let-go, Q / E and WASD only in build mode, the frame, the hint) and
+den-check's `mouse_steps` (hover glow, click select, drag N yards, a picture each). **Only the real game proves**: that
+BUTTON1 override-bound to a button really keeps the left-drag camera still and its down and up both arrive (else the
+WorldFrame hook still selects and drags, but the camera turns too); that the glow shows on a prop that isn't selected;
+how well the boxes fit (a building with no model box gets a small guessed one: pick it by its foot); the build view's
+pitch (the camera calibration).
+
 ### Any gear, every mount (3 Nov, owner 10:40: "allow all mounts, all gear")
 
 - **Gear** (`src/gear.rs`): the look only. The character's visible item fields (`PLAYER_VISIBLE_ITEM_n_ENTRYID`,

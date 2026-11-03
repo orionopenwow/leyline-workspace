@@ -119,6 +119,26 @@ In short:
 Also: was the old 1.12 server image stock CMaNGOS or a fork? And a legal read before it is shown: the server this
 idea comes from was shut down by a permanent injunction in April 2026 (plan, section 6).
 
+## 1.5 Before release: the movement
+
+The owner's ask, 3 Nov: "if ever Leyline goes down the movement continues". The pages are
+[MOVEMENT.md](MOVEMENT.md) (the mission paragraph, `TODO(owner)`, and three ways to keep it alive: one click on your
+PC, be a node, your own server on Hetzner) and [BLANK-SLATE.md](BLANK-SLATE.md) (every piece separate, the Commons
+repo, the directory, phases). The kit is [tools/commons](../tools/commons/README.md).
+
+| Whiteboard item | State | Where |
+|---|---|---|
+| **Kill switch** | being built separately | [KILL-SWITCH.md](KILL-SWITCH.md) |
+| **Seed server working: host own without Leyline, every feature separate, guide** | the seeded realm is a plan (1.4). Hosting your own without Leyline: **built** as `Start my own server.bat` and the Hetzner guide; every feature separate: the table in BLANK-SLATE.md section 2 | SEEDED-REALM-PLAN.md, MOVEMENT.md, BLANK-SLATE.md |
+| **Host in browser kit + guide** | **built, page only:** Make my own Leyline packs the browser kit (own files only, no slices) and UPLOAD.md. The browser client build is not in the repo (BLANK-SLATE C4) | tools/commons/README.md |
+| **Directory: living list, wiki in forum** | **built:** `tools/commons/directory.json` and `commons.py wiki` (the pinned post, in forum-sized posts). Not built: an HQ button that replaces the pinned post | BLANK-SLATE.md section 4 |
+| **Fresh run** | the fresh computer test exists (`fresh-test`, `fresh-sandbox`); the "fresh install to in the game" run is HANDOFF item 2. Add a fresh run of `Make my own Leyline` then `preview` to it | FRESH-COMPUTER-TEST.md, FIRST-RUN-TEST.md |
+| **Make my own Leyline** (a skinned site, Log in page, browser kit, host kit) | **built:** one .bat, a few questions, one `brand.json`; the site reads it through `WU_BRAND_FILE` (unset: unchanged). Control step `commons-check` (not in READ_ONLY yet) | tools/commons |
+| **One thing to click** | **built:** `Start my own server.bat`, `Be a node.bat` (call the host kit's own scripts; packed inside the host kit zip) | MOVEMENT.md |
+
+Before release: the owner finalizes the mission paragraph (C6), and decides C1 (the Commons repo) and C2 (licence,
+SUCCESSION D1). Everything else above can ship as it is.
+
 ---
 
 ## 2. Recommendations

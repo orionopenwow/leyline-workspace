@@ -18,7 +18,8 @@ G.PAGES = {
         "Use Back and Next below, or pick a page on the left." } },
     { "modes", "Build and Play", "play", "Build mode and Play mode", {
         "Build mode shows the tools: the bar at the top, the tools down the left, the gallery.",
-        "In Build mode your props glow under the mouse. Right-click one to pick it.",
+        "Build mode has its own camera: up and back over your Den, with a gold frame round the screen.",
+        "In Build mode your props glow under the mouse, and the name shows by the cursor. Click one to pick it.",
         "Play mode hides the tools. You just walk your Den. Props work as they should: a chair is a seat.",
         "In Play mode the corner keeps Dojo, Class, Invite, Files and this guide.",
         "Press F7, or Play on the bar, to switch." } },
@@ -29,13 +30,14 @@ G.PAGES = {
         "Shift and the wheel turns the page. A right-click on a tile makes it a favourite.",
         "Click a tile to pick it. Double-click, or Enter, to place it. You can also drag a tile out of the window." } },
     { "place", "Placing", "place", "Placing a prop", {
-        "Pick a prop in the gallery. A copy of it stands in front of you.",
-        "Move the mouse over the ground. The copy goes where you point.",
-        "Click to put it there. Keep clicking to place more. Esc stops.",
+        "Pick a prop in the gallery. Move the mouse over the ground. The prop goes where you point.",
+        "Click to put it there. Shift and click places more. Esc stops.",
         "G shows a circle on the ground for the exact spot. Click to place it there.",
         "Snap on the bar lines props up on a grid. 15, 45 and 90 set how far Q and E turn." } },
     { "select", "Selecting", "select", "Selecting and changing", {
-        "Right-click a prop to select it. A menu opens: Delete, Duplicate, Move, Rotate, Bigger, Smaller, Snap to floor, Lock, Copy, Properties.",
+        "Click a prop to select it. Click empty ground to let go. Shift and click adds another.",
+        "Press on a prop and drag it. Let go to drop it. Esc while dragging puts it back. The wheel or Q and E turn it.",
+        "Right-click a prop for its menu: Delete, Duplicate, Move, Rotate, Bigger, Smaller, Snap to floor, Lock, Copy, Properties.",
         "Three flags stand around it: red for X, green for Y, blue for Z.",
         "Right-click a flag, then roll the wheel. The prop moves along that line.",
         "The selection panel shows its numbers. Type a number and press Enter. Its preview turns with a right-drag and zooms with the wheel.",
@@ -65,7 +67,8 @@ G.PAGES = {
         "The launcher's Invite guide has the rest." } },
     { "keys", "Keys", "keys", "Keys", {
         "F7: Build or Play.  Enter: place the picked prop.  Esc: let go.",
-        "Arrows: move.  Page Up and Page Down: lift and lower.",
+        "Click: select.  Drag a prop: move it.  WASD and the arrows: move the Build camera.  Wheel: zoom.",
+        "Page Up and Page Down: lift and lower.",
         "Q and E: turn.  + and -: size.  Tab: the next prop.",
         "Del: delete.  Ctrl+D: duplicate.  Ctrl+Z and Ctrl+Y: undo and redo.",
         "G: the exact spot.  Right-drag in a model window: turn.  Wheel there: zoom." } },

@@ -657,6 +657,8 @@ def _shell(h, title: str, inner: str, path: str, who=None, status: int = 200, co
 
 
 def _send_with_cookies(h, status: int, body: bytes, cookies: list[str], headers: dict) -> None:
+    if hasattr(h, "brand_file_body"):   # a community's own brand file (stream/brandfile.py; unset: unchanged)
+        body = h.brand_file_body(body)
     h.send_response(status)
     h.send_header("Content-Type", "text/html; charset=utf-8")
     h.send_header("Content-Length", str(len(body)))

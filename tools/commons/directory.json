@@ -1,0 +1,219 @@
+{
+  "format": 1,
+  "_about": "The living list of everything Leyline is made of, one piece per entry, and where its mods lists live (docs/BLANK-SLATE.md). Machine-readable: tools/commons/commons.py check-directory checks it, and commons.py wiki prints it as the forum's pinned directory post. 'alone' is how far the piece runs without the rest: today, later (needs work first) or plan (designed, not built). 'public' is true when the code is already in the public Leyline repo (tools/leyline-repo/export.py ALLOW).",
+  "updated": "2026-11-03",
+  "capabilities": [
+    {
+      "id": "launcher", "name": "Launcher", "area": "player",
+      "what": "The desktop app: log in, add your own game folders, mods, Official and Community realms, Your Den, hosting, self-update.",
+      "code": ["launcher"], "public": true, "licence": "MIT",
+      "needs": ["an updater key", "a place for releases", "a relay", "a website for log in and the realm list (optional: it still plays solo, Den and mesh realms)"],
+      "run_alone": "cd launcher && npm ci && npx tauri build (rebrand first: launcher/scripts/rebrand.py)",
+      "alone": "today", "phase": 1
+    },
+    {
+      "id": "updates", "name": "Launcher releases and self-update", "area": "network",
+      "what": "Builds and signs each release; launchers update from GitHub, then mirrors, never installing anything an updater key did not sign.",
+      "code": ["launcher/src-tauri/src/update.rs", "tools/github-workflows/leyline-launcher.yml"], "public": true, "licence": "MIT",
+      "needs": ["the updater key (no spare yet)"],
+      "run_alone": "npx tauri build with TAURI_SIGNING_PRIVATE_KEY set; upload the files and latest.json anywhere static",
+      "alone": "today", "phase": 1
+    },
+    {
+      "id": "release-mirror", "name": "Release mirror", "area": "network",
+      "what": "Copies releases, the Host pack, addons and pinned server source to a static folder with sha256 and torrents.",
+      "code": ["tools/release-mirror"], "public": false, "licence": "none stated",
+      "needs": ["GitHub access", "SSH for upload"],
+      "run_alone": "python3 -I tools/release-mirror/release_mirror.py build --out DIR",
+      "alone": "later", "phase": 2
+    },
+    {
+      "id": "release-log", "name": "Release log (the chain)", "area": "network",
+      "what": "A signed, hash-linked list of every release, so anyone can check the files they have.",
+      "code": ["hosting/kit/tools/wunet/releaselog.py", "launcher/src-tauri/src/releaselog.rs"], "public": true, "licence": "MIT",
+      "needs": ["the release key (not made yet)"],
+      "run_alone": "PYTHONPATH=hosting/kit/tools python3 -m wunet.releaselog keygen|append|verify",
+      "alone": "today", "phase": 1
+    },
+    {
+      "id": "mod-index", "name": "Mod index and daily updater", "area": "site",
+      "what": "Finds open mods every day, checks each (licence, no game files, no paid, no decompiled code) and writes a link-out catalog. A person approves.",
+      "code": ["tools/hub-index", "tools/addon-curate"], "public": false, "licence": "none stated",
+      "needs": ["git", "network access to the code forges"],
+      "run_alone": "python3 -I tools/hub-index/hub_index.py build; python3 -I tools/addon-curate/curate.py run",
+      "alone": "later", "phase": 2
+    },
+    {
+      "id": "login", "name": "Log in page and Hero Key (website side)", "area": "site",
+      "what": "The /wrath/key Log in page: Hero Key file or paste, Google, Create a Hero Key; signed realm passes.",
+      "code": ["stream/herokeys.py", "stream/herokey_sso.py"], "public": false, "licence": "none stated",
+      "needs": ["the sign-in service (a separate project, not in this repo)", "the key table, pepper and site key for the same players' keys"],
+      "run_alone": "inside the website (stream/wrath_portal.py); without the sign-in service it shows 'Log in isn't answering'",
+      "alone": "later", "phase": 3
+    },
+    {
+      "id": "herokey-realms", "name": "Hero Key for realms (checking side)", "area": "host",
+      "what": "A community realm checks a site-signed pass and makes the player's account. Off by default.",
+      "code": ["hosting/kit/tools/wunet/herokey.py"], "public": true, "licence": "MIT",
+      "needs": ["a pinned site key"],
+      "run_alone": "setup.py herokey on|off|pin",
+      "alone": "today", "phase": 1
+    },
+    {
+      "id": "relay", "name": "Relay and mesh node", "area": "network",
+      "what": "Lets home realms be reached with no open ports and the host's address hidden; gossips the realm list and release log.",
+      "code": ["hosting/relay", "hosting/kit/tools/wunet/mesh.py", "hosting/kit/docker-compose.volunteer-relay.yml"], "public": true, "licence": "MIT",
+      "needs": ["a public name with TLS", "Docker", "open ports for a node (80, 443, 41000-41051)"],
+      "run_alone": "tools/commons/Be a node.bat, or setup.py volunteer-relay --host NAME then docker compose -f docker-compose.volunteer-relay.yml up -d",
+      "alone": "today", "phase": 1
+    },
+    {
+      "id": "host-kit", "name": "Host kit and Host pack", "area": "host",
+      "what": "One click to host a realm: builds the server from its authors' source, reads map data from your own client on your own PC.",
+      "code": ["hosting/kit", "hosting/pack"], "public": true, "licence": "MIT (realm images: AGPL-3.0 AzerothCore; other profiles GPL-2.0)",
+      "needs": ["Docker", "your own game client", "a relay"],
+      "run_alone": "tools/commons/Start my own server.bat, or Host a Leyline realm.bat, or bash leyline host",
+      "alone": "today", "phase": 1
+    },
+    {
+      "id": "den-lite", "name": "Den Lite", "area": "player",
+      "what": "A tiny local server for one player's private building world (Your Den). No Docker, no database.",
+      "code": ["labs/den-lite"], "public": false, "licence": "MIT OR Apache-2.0",
+      "needs": ["nothing online"],
+      "run_alone": "cargo build --release, then den-lite --dens FOLDER --bind 127.0.0.1",
+      "alone": "today", "phase": 1
+    },
+    {
+      "id": "forge", "name": "Forge", "area": "player",
+      "what": "The Den's ground editor (Windows), from Noggit Red.",
+      "code": ["forge"], "public": false, "licence": "GPL-3.0 (source published with every build)",
+      "needs": ["a Windows build machine"],
+      "run_alone": "the forge.yml CI build (release forge-latest, with its source tarball)",
+      "alone": "today", "phase": 2
+    },
+    {
+      "id": "website", "name": "Website, portal and hub", "area": "site",
+      "what": "The front page, realm list, profiles, social, Workshop, flags file, HQ. One Python program behind any web server.",
+      "code": ["stream/wrath_portal.py", "stream/hub.py", "stream/profiles.py", "stream/social.py", "stream/brandfile.py"], "public": false, "licence": "none stated",
+      "needs": ["Python 3", "a web server with TLS (Caddy)", "the sign-in service for Log in"],
+      "run_alone": "tools/commons 'Make my own Leyline' packs site/ with run-site.sh and portal.env",
+      "alone": "later", "phase": 2
+    },
+    {
+      "id": "forum", "name": "Forum", "area": "site",
+      "what": "The built-in forum: plain text and links, one SQLite file, moderated from HQ.",
+      "code": ["stream/forum.py"], "public": false, "licence": "none stated",
+      "needs": ["the website"],
+      "run_alone": "inside the website only",
+      "alone": "later", "phase": 2
+    },
+    {
+      "id": "browser-kit", "name": "Browser kit (play in the browser with your own files)", "area": "player",
+      "what": "The game page around the browser client: reads the player's own game folder in the tab, never uploads it.",
+      "code": ["stream/www-files"], "public": false, "licence": "none stated",
+      "needs": ["the browser client build (wenilla.js and its wasm: built from a separate source, not in this repo)", "a realm that lets browser players in"],
+      "run_alone": "tools/commons 'Make my own Leyline' packs browser-kit/ (own files only, no slices)",
+      "alone": "later", "phase": 3
+    },
+    {
+      "id": "addons", "name": "Leyline in-game addons", "area": "player",
+      "what": "The in-game Leyline window, Host window and their art (our own files).",
+      "code": ["stream/fui-web/Interface/AddOns/WrathUnleashedUI", "addons"], "public": true, "licence": "MIT (ours); listed addons keep their own",
+      "needs": ["your own game client"],
+      "run_alone": "copy into the client's Interface/AddOns, or the launcher installs them",
+      "alone": "today", "phase": 1
+    },
+    {
+      "id": "control", "name": "Leyline Control", "area": "tool",
+      "what": "The owner's local panel: runs named steps from a queue, with logs and Autopilot.",
+      "code": ["tools/control/control.py"], "public": false, "licence": "none stated",
+      "needs": ["Windows", "SSH to the server", "GitHub sign-in"],
+      "run_alone": "py -3 tools\\control\\control.py (every step is also a plain .bat)",
+      "alone": "later", "phase": 4
+    },
+    {
+      "id": "agents", "name": "Agents (MCP) and the community brain", "area": "player",
+      "what": "A local MCP server for the player's own assistant, with read, ask and never tiers; the building library and guides.",
+      "code": ["launcher/src-tauri/src/agents.rs", "docs/leyline/agents.md"], "public": true, "licence": "MIT",
+      "needs": ["the launcher"],
+      "run_alone": "Leyline mcp",
+      "alone": "today", "phase": 1
+    },
+    {
+      "id": "fork-kit", "name": "Fork kit", "area": "tool",
+      "what": "One branding.json for the launcher, rebrand.py to apply it, fork_kit.py to check a copy is ready on its own.",
+      "code": ["launcher/branding.json", "launcher/scripts/rebrand.py", "tools/fork-kit"], "public": false, "licence": "MIT (branding, rebrand); fork_kit none stated",
+      "needs": ["Python 3"],
+      "run_alone": "python3 -I tools/fork-kit/fork_kit.py check",
+      "alone": "today", "phase": 1
+    },
+    {
+      "id": "commons-kit", "name": "Make my own Leyline (the commons kit)", "area": "tool",
+      "what": "A few questions, then a skinned site, Log in page, browser kit, host kit and launcher branding, ready to upload.",
+      "code": ["tools/commons"], "public": false, "licence": "none stated",
+      "needs": ["Python 3"],
+      "run_alone": "tools/commons/Make my own Leyline.bat, or python3 -I tools/commons/commons.py make",
+      "alone": "today", "phase": 1
+    },
+    {
+      "id": "discord-bridge", "name": "Discord bridge", "area": "site",
+      "what": "Carries a realm's World chat to and from one Discord channel, plus a bug feed.",
+      "code": ["hosting/discord"], "public": true, "licence": "MIT",
+      "needs": ["a Discord server and bot of your own", "the realm's SOAP"],
+      "run_alone": "PYTHONPATH=hosting/discord python3 -m wudiscord.bridge --check",
+      "alone": "today", "phase": 1
+    },
+    {
+      "id": "discord-setup", "name": "Discord server setup", "area": "tool",
+      "what": "Lays out a Discord server's channels and roles once, after a preview and a typed YES.",
+      "code": ["tools/discord-leyline"], "public": false, "licence": "none stated",
+      "needs": ["your own bot token"],
+      "run_alone": "Leyline Discord - preview.bat, then Leyline Discord - do it.bat (tools/discord-leyline/README.md)",
+      "alone": "later", "phase": 2
+    },
+    {
+      "id": "survivors", "name": "Azeroth Survivors (mode)", "area": "player",
+      "what": "A browser mode, an unmodified open rebuild pinned by commit.",
+      "code": ["stream/survivors.py", "stream/survivors/upstream.lock.json"], "public": false, "licence": "upstream MIT or Apache-2.0; permission statement TODO(owner)",
+      "needs": ["the upstream build at its pinned commit", "the author's permission statement"],
+      "run_alone": "a local launcher mode is planned, not built",
+      "alone": "plan", "phase": 3
+    },
+    {
+      "id": "first-run-test", "name": "Fresh computer test", "area": "tool",
+      "what": "Every feature from an empty profile, PASS or FAIL per check.",
+      "code": ["tools/first-run"], "public": false, "licence": "none stated",
+      "needs": ["Windows (Sandbox optional)"],
+      "run_alone": "tools/first-run/Fresh computer test.bat",
+      "alone": "today", "phase": 1
+    },
+    {
+      "id": "seed-server", "name": "Seeded realm (one host at a time, never one place)", "area": "network",
+      "what": "A realm that players carry: one elected host, Keepers holding a copy, a signed lease at the relay.",
+      "code": ["docs/SEEDED-REALM-PLAN.md", "hosting/kit/profiles/cmangos-1.12.1"], "public": false, "licence": "MIT (kit); CMaNGOS GPL-2.0",
+      "needs": ["the host kit", "Keepers", "a relay"],
+      "run_alone": "designed, not built (Seed v0)",
+      "alone": "plan", "phase": 3
+    },
+    {
+      "id": "kill-switch", "name": "Kill switch", "area": "tool",
+      "what": "Turns parts of the official network off cleanly; built separately (docs/KILL-SWITCH.md).",
+      "code": ["tools/control"], "public": false, "licence": "none stated",
+      "needs": ["the owner's PC"],
+      "run_alone": "see docs/KILL-SWITCH.md",
+      "alone": "later", "phase": 1
+    }
+  ],
+  "mod_directories": [
+    {"id": "community-index", "name": "Community mod index", "file": "stream/hub/community-index.json",
+     "what": "Every open project the index found, link-out only, with its checks. Nothing hosted.", "approved_only": false},
+    {"id": "upstream-addons", "name": "Approved one-click addons", "file": "stream/upstream-addons.json",
+     "what": "Addons pinned to an exact file and sha256 for the launcher's one-click install, after a person approved them.", "approved_only": true},
+    {"id": "looks", "name": "Looks and HD packs", "file": "stream/looks.json",
+     "what": "Graphics looks; found ones stay pending until approved.", "approved_only": true},
+    {"id": "mode-catalog", "name": "Game modes", "file": "stream/playmodes.json",
+     "what": "The modes the launcher builds in.", "approved_only": true},
+    {"id": "mode-templates", "name": "Realm templates", "file": "stream/modepacks.json",
+     "what": "The realm templates the Host page offers.", "approved_only": true}
+  ]
+}

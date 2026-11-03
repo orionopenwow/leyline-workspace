@@ -9,7 +9,7 @@ import time
 from common import FAIL, PASS, SKIP
 
 ORDER = ["Server", "Site", "Downloads", "Catalog", "Wrath Unleashed", "Hero Key", "Bug reports", "Your Den", "Hosting",
-         "Launcher", "Looks", "Forum", "Azeroth Survivors"]
+         "Launcher", "Looks", "Forum", "Azeroth Survivors", "Mobile", "Screenshots"]
 
 # (title, where to click, what good looks like): only what a person must judge, or a second PC must do
 MANUAL = [
@@ -77,6 +77,25 @@ def counts(results):
     return c
 
 
+def shots_lines(meta: dict) -> list[str]:
+    """The screenshot sweep (tools/audit/mobile.py): where the pictures are, and which pages changed since the last run
+    (the marketing and docs screenshots to take again)."""
+    sh = meta.get("shots")
+    if not sh:
+        return []
+    out = [f"{sh.get('count', 0)} screenshots in {sh.get('dir', '')} (folders mobile and desktop; the last run's in previous)"]
+    if not sh.get("previous"):
+        out.append("Nothing to compare with yet: the next run lists the pages that changed.")
+    elif sh.get("changed"):
+        out.append(f"Changed since the last run ({len(sh['changed'])}): take these screenshots again where the site or docs use them")
+        out += [f"  {c['shot']}  ({c.get('share', 0)} % of the picture)" for c in sh["changed"]]
+    else:
+        out.append(f"Nothing changed visibly since the last run ({sh.get('same', 0)} the same).")
+    if sh.get("fresh"):
+        out.append("New this run: " + ", ".join(sh["fresh"]))
+    return out
+
+
 def text(results, meta: dict) -> str:
     c = counts(results)
     out = [f"Leyline release audit, {meta.get('when', '')} ({meta.get('secs', 0):.0f} s, {meta.get('mode', 'live')})",
@@ -88,6 +107,8 @@ def text(results, meta: dict) -> str:
             out.append(f"{r.status:<4}  {r.check}" + (f"  ({r.detail})" if r.detail else "")
                        + (f"\n      -> {r.action}" if r.status == FAIL and r.action else ""))
         out.append("")
+    if shots_lines(meta):
+        out += ["== Screenshots that changed"] + shots_lines(meta) + [""]
     out.append("== Only you can check these (docs/AUDIT.md)")
     for i, (t, where, good) in enumerate(MANUAL, 1):
         out += [f"{i}. {t}", f"   Where: {where}", f"   Good:  {good}"]
@@ -121,7 +142,8 @@ summary{cursor:pointer;font-weight:600}
 table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}td{padding:6px 6px;border-top:1px solid var(--line);vertical-align:top}
 td.s{width:56px}.tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px}
 .tag.PASS{background:var(--okbg);color:var(--ok)}.tag.FAIL{background:var(--badbg);color:var(--bad)}.tag.SKIP{background:var(--skipbg);color:var(--skip)}
-.act{color:var(--bad);font-size:13px}.det{color:var(--dim);font-size:13px;overflow-wrap:anywhere}
+.act{color:var(--bad);font-size:13px}
+ul.shots{padding-left:20px;font-size:14px}ul.shots li{margin:2px 0}ul.shots a{color:var(--accent)}.det{color:var(--dim);font-size:13px;overflow-wrap:anywhere}
 """
 
 
@@ -144,6 +166,23 @@ def page(results, meta: dict) -> str:
                       f'{"red" if n[FAIL] else ("green" if n[PASS] else "skipped")}</summary><table>{rows}</table></details>')
     manual = "".join(f'<li><b>{e(t)}</b><span class="w">Where: {e(w)}</span><span class="g">Good: {e(g)}</span></li>'
                      for t, w, g in MANUAL)
+    shots = ""
+    sh = meta.get("shots")
+    if sh:
+        link = lambda rel: f'<a href="audit-shots/{e(rel)}">{e(rel)}</a>'  # noqa: E731 - beside the report in logs
+        if not sh.get("previous"):
+            body = "<p class=\"dim\">Nothing to compare with yet: the next run lists the pages that changed.</p>"
+        elif sh.get("changed"):
+            body = (f"<p>{len(sh['changed'])} changed since the last run. Take these again where the site, the docs or the "
+                    "store page use them:</p><ul class=\"shots\">" + "".join(
+                        f"<li>{link(c['shot'])} <span class=\"dim\">({c.get('share', 0)} % of the picture; before: "
+                        f"{link('previous/' + c['shot'])})</span></li>" for c in sh["changed"]) + "</ul>")
+        else:
+            body = f"<p>Nothing changed visibly since the last run ({sh.get('same', 0)} the same).</p>"
+        if sh.get("fresh"):
+            body += "<p class=\"dim\">New this run: " + ", ".join(link(x) for x in sh["fresh"]) + "</p>"
+        shots = (f"<h2>Screenshots that changed</h2><p class=\"dim\">{sh.get('count', 0)} screenshots in "
+                 f"{e(sh.get('dir', ''))} (mobile and desktop; the last run's in previous).</p>{body}")
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Release audit</title><style>{CSS}</style></head>
 <body><main>
@@ -156,6 +195,7 @@ def page(results, meta: dict) -> str:
 <p class="dim">The automated run can't judge these, or they need a second PC. About 30 minutes; 4 and 7 need a friend.</p>
 <ol class="manual">{manual}</ol>
 <h2>Features</h2><div class="grid">{''.join(cards)}</div>
+{shots}
 <h2>Every check</h2>{''.join(groups)}
 </main></body></html>"""
 

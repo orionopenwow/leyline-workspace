@@ -791,4 +791,10 @@
 1319a signin  Website: the new Discord invite everywhere
 1319b scripts-reload  Realm scripts: the new Discord invite in the game's welcome
 1319c ship  Save as Orion: the Discord launch layout and new invite (the launcher builds after this)
-1319d den-features  Den feature test on today's launcher: place like the video, glow, handles, Swap, snap out, combat and Dojo
+1320a signin  Website: ready for a farewell page (kill switch) and a community's own brand file (unset: unchanged)
+1320b ship  Save as Orion: the kill switch card, the movement docs and Make my own Leyline kit
+1321a den-lite  Den Lite rebuilt: click a prop to select it, the prop under the mouse glows, press and drag moves it, the build view (WASD pans, F7 leaves)
+1321b addons  Leyline addons: the mouse in build mode (click, hover, drag), the BUILD frame
+1321c foreverui  Browser game: the same
+1321d ship  Save as Orion: select and move props, den-move, the phone sweep in the release audit
+1321e den-move  The one Den test: select and move, snap out, zoom (pictures in tools\den-check\logs\den-move)

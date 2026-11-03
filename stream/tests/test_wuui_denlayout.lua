@@ -290,12 +290,12 @@ do
     B.SetSpin(true)
     F.tick(0.5)
     check("Spin still turns it, its own turn added", math.abs(t.model.facing - (B.facing + t.turn)) < 1e-6)
-    -- the selection's larger preview, beside the panel: the selected prop's model, from the side; the same mouse
+    -- the selection's larger preview, on top of the panel (the owner's editor): the selected prop's model, from the side; the same mouse
     F.toClient("wubuild\tstate\t1/1\tmine=1/800;undo=1;redo=0;den=owner;room=1/800;yard=0/0;core=1;lite=1;grid=0;clip=0;area=den;code=-;"
         .. "sel=41,2413,Wooden Chair;n=1;pos=1.00,2.00,3.00,0,1.00;rot=0,0,0;ids=41;gids=41;")
     W.DenBar.TestAction("props")
     local pv = B.preview
-    check("the preview: shown beside the panel with the chair, a PlayerModel at its own framing", pv and pv:IsShown() and pv.model.kind == "PlayerModel"
+    check("the preview: shown on top of the panel with the chair, a PlayerModel at its own framing", pv and pv:IsShown() and pv.model.kind == "PlayerModel"
         and pv.model.model == "World\\Generic\\Chair01.mdx" and pv.model.mscale == 1, pv and tostring(pv.modelPath))
     pv:GetScript("OnMouseWheel")(pv, 1); pv:GetScript("OnMouseWheel")(pv, 1)
     check("the wheel over the preview zooms it", math.abs(pv.model.mscale - B.ZOOM_STEP ^ 2) < 1e-9)
@@ -303,7 +303,8 @@ do
         and W.DenBar.TestAction("view tile zoom 2"))
     F.toClient("wubuild\tstate\t1/1\tmine=1/800;undo=1;redo=0;den=owner;room=1/800;yard=0/0;core=1;lite=1;grid=0;clip=0;area=den;code=-;"
         .. "sel=42,2562,Baked Bread;n=1;pos=1.00,2.00,3.00,0,1.00;rot=0,0,0;ids=42;gids=42;")
-    check("a prop without a model: no preview", not pv:IsShown())
+    check("a prop without a model: its category's icon in the preview, no model", pv:IsShown() and not pv.model:IsShown() and pv.icon:IsShown()
+        and pv.icon:GetTexture() == "Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\decor", tostring(pv.icon:GetTexture()))
 end
 
 -- ---------------------------------------------------------------- the Den guide (owner 3 Nov): a paged help window
@@ -376,7 +377,8 @@ do
     check("ui place <id>: picked and Place pressed: spawn sent", D.TestAction("place 1670") and lastCmd() == "spawn 1670" and st.undo == 1)
     check("Undo 1 on the strip", D.Bar().undo:GetText() == "Undo 1")
     check("ui nudge z 1: the popover's +", D.TestAction("nudge z 1") and lastCmd():match("^move z ") ~= nil and B.Panel():IsShown())
-    check("ui key Q: the popover's turn key", D.TestAction("key q") and lastCmd():match("^turn ") ~= nil)
+    check("ui key .: the panel's turn key (the owner's editor: , and . turn)", D.TestAction("key .") and lastCmd():match("^turn ") ~= nil)
+    check("no movement key is taken (Q, E, the arrows)", not D.TestAction("key q") and not D.TestAction("key up"))
     check("ui menu copy: the menu's row", D.TestAction("menu copy") and lastCmd() == "copy")
     check("ui menu duplicate", D.TestAction("menu duplicate") and lastCmd() == "dup")
     check("ui menu delete", D.TestAction("menu delete") and lastCmd() == "delete")

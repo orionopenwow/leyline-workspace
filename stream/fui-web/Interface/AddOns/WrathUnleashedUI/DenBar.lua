@@ -487,7 +487,7 @@ local function buildBar()
     -- the toasts' line (kept for callers; play mode's toasts show as the mode's banner)
     pill.line = S().EdText(pill, S().ED_SIZE.text)
     pill.line:SetPoint("TOPLEFT", pill, "BOTTOMLEFT", 4, -6)
-    pill.line:SetWidth(320); pill.line:SetJustifyH("LEFT")
+    pill.line:SetWidth(math.max(px + 2, bw + 16) - 8); pill.line:SetJustifyH("LEFT")
     pill.line.outside = true
     pill:Hide()
     bar.pill = pill

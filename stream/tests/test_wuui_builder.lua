@@ -892,7 +892,7 @@ do
     local t1 = shown()[1]
     t1:Fire("OnClick", "LeftButton")
     check("one click picks AND arms it: the pill says Place: <name>, Enter or double-click", B.Armed() == t1.item
-        and _G.LeylineEditorStatus.line:GetText():find("^Place: " .. t1.item.name:gsub("%p", "%%%0") .. " · click Place, or press Enter / double%-click"))
+        and _G.LeylineEditorStatus.line:GetText():find("^Place: " .. t1.item.name:gsub("%p", "%%%0") .. " · Enter, double%-click or Place"))
     check("armed: Enter is bound to place it", binds.ENTER ~= nil and binds.NUMPADENTER ~= nil)
     B.Panel():Hide()
     serverClock = serverClock + 5

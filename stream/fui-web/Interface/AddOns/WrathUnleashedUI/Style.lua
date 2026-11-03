@@ -514,7 +514,7 @@ function S.EdChip(parent, text, w, onClick, ...)
     b:SetText(text or "")
     if not w then
         local tw = fs.GetStringWidth and tonumber((fs:GetStringWidth()))
-        b:SetWidth(math.floor((tw or (#tostring(text or "") * 7)) + 20))
+        b:SetWidth(math.floor((tw or (#tostring(text or "") * 7)) * 1.08 + 22))   -- room for a wider font than measured
     end
     edPaint(b)
     return b

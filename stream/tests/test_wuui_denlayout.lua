@@ -176,6 +176,11 @@ for _, scr in ipairs({ { 1280, 720 }, { 1920, 1080 }, { 2560, 1440 } }) do
         look("the editor")
         D.TestAction("gallery"); D.TestAction("place 1670"); D.TestAction("props")
         look("gallery and panel")
+        -- the editor's own windows apart too: the gallery, the selection's panel and the status pill (with its box)
+        local mine = overlaps(F, { "WrathUnleashedPropsFrame" }, { "WrathUnleashedBuilderFrame", "LeylineEditorStatus", "LeylineDenBar", "LeylineDenRail" })
+        local pill = overlaps(F, { "LeylineEditorStatus" }, { "WrathUnleashedBuilderFrame", "LeylineDenRail" })
+        for _, l in ipairs(mine) do bad[#bad + 1] = "overlap: " .. l end
+        for _, l in ipairs(pill) do bad[#bad + 1] = "overlap: " .. l end
         B.PropsMore(true); look("the panel's More"); B.PropsMore(false)
         D.ShowMenu(true); look("menu"); D.ShowMenu(false)
         D.ShowSnap(true); look("snap"); D.ShowSnap(false)

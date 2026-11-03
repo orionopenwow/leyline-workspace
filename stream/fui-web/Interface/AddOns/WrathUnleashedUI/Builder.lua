@@ -60,7 +60,7 @@ local WIN_H = winHeight(ROWS)
 -- gallery right of the rail and above the chat (its top is 215 at the stock place), the selection's panel left of the minimap and
 -- left of the side bars, the status pill above the action bars.
 local LAYOUT = { railX = 8, railTop = 118, railW = 64, galleryX = 80, galleryBottom = 232, topMargin = 56, galleryTop = 112,
-    propsRight = 198, propsTop = 56, pillBottom = 152 }
+    propsRight = 198, propsTop = 52, pillBottom = 152 }
 local ANSWER_WAIT = 6
 local STEPS = { 0.01, 0.1, 0.25, 1, 3, 10 }    -- the move step, in yards
 local STEP_PRESETS = { 2, 3, 4, 5 }             -- the rail's presets (indices into STEPS): 0.1, 0.25, 1, 3
@@ -1267,7 +1267,7 @@ local MODE_TEXT = { select = "Select", place = "Place", move = "Move", rotate = 
 function B.StatusLine()
     local s = B.state
     if B.armed then
-        return "Place: " .. B.armed.name .. " · click Place, or press Enter / double-click"
+        return "Place: " .. B.armed.name .. " · Enter, double-click or Place"
     end
     local parts = { MODE_TEXT[B.mode or "place"] or "Place" }
     if B.pick and (B.mode == "place" or B.mode == nil) then parts[#parts + 1] = B.pick.name end
@@ -1663,7 +1663,7 @@ local function buildPanel()
     panel.box, panel.minus, panel.plus, panel.rowLabel = {}, {}, {}, {}
 
     -- MOVE: the step presets and the step chip (it cycles every step, 0.01 to 10 yd)
-    local y = -80
+    local y = -76
     section(panel, "Move", y)
     panel.stepChips = {}
     local x = PANEL_W - P
@@ -1681,11 +1681,11 @@ local function buildPanel()
         panel.stepChips[si] = c
     end
     panel.stepBtn:Hide()   -- the presets show the step; the chip stays for the keys' text and older callers
-    y = y - 28
+    y = y - 26
     for i, f in ipairs({ { "x", "X" }, { "y", "Y" }, { "z", "Z" } }) do field(f, P + (i - 1) * COL_W, y) end
 
     -- ROTATE: the turn step, then turn / pitch / roll and the turn's slider
-    y = y - 44
+    y = y - 40
     section(panel, "Rotate", y)
     panel.angleChips = {}
     x = PANEL_W - P
@@ -1702,9 +1702,9 @@ local function buildPanel()
         B.SetAngle(ANGLE_STEPS[B.angle % #ANGLE_STEPS + 1])
     end)
     panel.angle:Hide()
-    y = y - 28
+    y = y - 26
     for i, f in ipairs({ { "turn", "Turn", "Turn" }, { "pitch", "Pitch", "Tilt" }, { "roll", "Roll", "Roll" } }) do field(f, P + (i - 1) * COL_W, y) end
-    y = y - 36
+    y = y - 34
     panel.turnSlider = slider(panel, PANEL_W - 2 * P - 60, 0, 360, 5, function(v)
         local p = B.state.p
         if not p then return end
@@ -1716,9 +1716,9 @@ local function buildPanel()
     panel.turnText:SetTextColor(m[1], m[2], m[3])
 
     -- SIZE: the number and a slider (0.1 to 5)
-    y = y - 32
+    y = y - 26
     section(panel, "Size", y)
-    y = y - 28
+    y = y - 26
     field({ "scale", "Size", "" }, P, y)
     panel.scaleSlider = slider(panel, PANEL_W - 2 * P - COL_W - 8, 0.1, 5, 0.05, function(v)
         if not B.state.p then return end
@@ -1727,7 +1727,7 @@ local function buildPanel()
     end, "TOPLEFT", P + COL_W + 8, y - 5)
 
     -- what you do with it (Undo and Redo are on the top strip)
-    y = y - 44
+    y = y - 40
     section(panel, "Actions", y)
     local ay
     panel.actions, ay = flow(panel, {
@@ -1742,7 +1742,7 @@ local function buildPanel()
     panel.actions.Delete.edLabel = "Delete it (Del)"
 
     -- SELECT: nearest, the next near you (Tab), all of its kind, nothing
-    y = ay - 16
+    y = ay - 12
     section(panel, "Select", y)
     local sy
     panel.sel, sy = flow(panel, {
@@ -1753,13 +1753,13 @@ local function buildPanel()
     panel.hint:SetPoint("TOPLEFT", P, sy - 12)
     panel.hint:SetWidth(PANEL_W - 2 * P); panel.hint:SetJustifyH("LEFT")
     panel.hint:SetTextColor(m[1], m[2], m[3])
-    panel.hint:SetText("Arrows move · PgUp / PgDn up, down · Q / E turn · + / - size · Del · Ctrl+D copy · Tab next · Esc let go")
-    panel.hint:SetHeight(34)
+    panel.hint:SetText("Arrows move · Q / E turn · + / - size · Tab · Esc")
+    panel.hint:SetHeight(16)
     panel.status = S().EdText(panel, S().ED_SIZE.small)
-    panel.status:SetPoint("TOPLEFT", P, sy - 50)
+    panel.status:SetPoint("TOPLEFT", P, sy - 32)
     panel.status:SetWidth(PANEL_W - 2 * P); panel.status:SetJustifyH("LEFT")
-    panel.status:SetHeight(18)
-    panel:SetHeight(-(sy - 50) + 30)
+    panel.status:SetHeight(16)
+    panel:SetHeight(-(sy - 32) + 26)
     -- More: the rest of the selection's tools (what only the full Den does is hidden on Den Lite)
     panel.tools = {}
     panel.more = CreateFrame("Frame", nil, panel)

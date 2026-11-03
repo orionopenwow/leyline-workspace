@@ -465,10 +465,13 @@ function F.dump(path, title, notes)
         local text = f.kind == "FontString" and f.text or (f.kind == "EditBox" and f.text) or nil
         local font = (f.kind == "FontString" or f.kind == "EditBox") and F.fontSize(f) or nil
         rows[#rows + 1] = string.format('{"n":%d,"kind":%s,"name":%s,"stock":%s,"x":%s,"y":%s,"w":%s,"h":%s,"strata":%d,"level":%d,"layer":%d,"alpha":%s,'
-            .. '"color":%s,"file":%s,"text":%s,"font":%s,"tcolor":%s,"justify":%s,"model":%s,"desat":%s,"root":%s,"autoW":%s}',
+            .. '"color":%s,"file":%s,"text":%s,"font":%s,"tcolor":%s,"justify":%s,"model":%s,"desat":%s,"root":%s,"autoW":%s,'
+            .. '"bd":%s,"bdedge":%s,"edge":%s}',
             f.n, jstr(f.kind), jstr(f.name), jstr(f.stock), jnum(e.x), jnum(e.y), jnum(e.w), jnum(e.h), e.strata, e.level, e.layer, jnum(e.alpha),
             jcol(f.color or (f.file and f.vcolor) or nil), jstr(f.file), jstr(text), font and tostring(font) or "null", jcol(f.tcolor), jstr(f.justify),
-            jstr(f.kind == "Model" and f.model or nil), f.desat and "true" or "false", jstr(e.root), f.autoW and "true" or "false")
+            jstr(f.model and f.kind:find("Model") and f.model or nil), f.desat and "true" or "false", jstr(e.root), f.autoW and "true" or "false",
+            jcol(f.backdrop and f.backdrop.bgFile and (f.bdcolor or { 0, 0, 0, 1 }) or nil), jcol(f.backdrop and f.backdrop.edgeFile and f.bdborder or nil),
+            f.backdrop and tostring(f.backdrop.edgeSize or 0) or "null")
     end
     F.endLayout()
     local h = assert(io.open(path, "wb"))

@@ -27,16 +27,38 @@ function richText(t) {
   return out;
 }
 
+// our own icons (tools/den-ui/icons/make_icons.py): the addon's TGA files, drawn tinted on a canvas
+const ICON_DIR = path.join(__dirname, '..', '..', 'stream', 'fui-web', 'Interface', 'AddOns', 'WrathUnleashedUI', 'Media', 'Icons');
+function tgaRGBA(file) {
+  const b = fs.readFileSync(file);
+  const w = b.readUInt16LE(12), h = b.readUInt16LE(14), top = (b[17] & 0x20) !== 0;
+  const out = Buffer.alloc(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    const sy = top ? y : h - 1 - y;
+    for (let x = 0; x < w; x++) {
+      const s = 18 + (sy * w + x) * 4, d = (y * w + x) * 4;
+      out[d] = b[s + 2]; out[d + 1] = b[s + 1]; out[d + 2] = b[s]; out[d + 3] = b[s + 3];
+    }
+  }
+  return out.toString('base64');
+}
 function page(doc) {
   const k = PH / doc.screen.h; // pixels per UI unit
   const H = doc.screen.h;
   const els = [];
+  const icons = new Set();
   for (const r of doc.regions) {
     const left = r.x * k;
     const top = (H - r.y - r.h) * k;
     const w = r.w * k;
     const h = r.h * k;
     const box = `left:${left.toFixed(1)}px;top:${top.toFixed(1)}px;width:${w.toFixed(1)}px;height:${h.toFixed(1)}px;opacity:${r.alpha}`;
+    if (r.bd || r.bdedge) {
+      // a backdrop: the rounded tooltip edge over a fill (Style.lua S.ROUND)
+      const rad = Math.max(3, (r.edge || 12) * 0.5 * k);
+      const bw = Math.max(1, (r.edge || 12) / 9 * k);
+      els.push(`<div style="${box};border-radius:${rad.toFixed(1)}px;${r.bd ? `background:${rgba(r.bd)};` : ''}${r.bdedge ? `border:${bw.toFixed(1)}px solid ${rgba(r.bdedge)};` : ''}"></div>`);
+    }
     if (r.stock) {
       els.push(`<div class="stock" style="${box}"><span>${esc(r.stock)}</span></div>`);
     } else if (r.kind === 'Texture') {
@@ -44,6 +66,8 @@ function page(doc) {
         const name = String(r.file).split(/[\\/]/).pop();
         const isIcon = /Interface\\Icons\\/i.test(r.file);
         const tint = r.color ? `background:${rgba(r.color)};` : '';
+        const own = /Media\\Icons\\(\w+)$/i.exec(r.file);
+        if (own) { icons.add(own[1]); els.push(`<canvas class="ic" width="64" height="64" data-n="${own[1]}" data-c="${(r.color || [1, 1, 1, 1]).join(',')}" style="${box}"></canvas>`); continue; }
         if (/white8x8|WHITE8X8/i.test(r.file)) els.push(`<div style="${box};background:${rgba(r.color || [1, 1, 1, 1])}"></div>`);
         else if (/leyline-mark/i.test(r.file)) els.push(`<div class="mark" style="${box}"></div>`);
         else els.push(`<div class="icon ${isIcon ? '' : 'tex'} ${r.desat ? 'desat' : ''}" style="${box};${tint}" title="${esc(r.file)}"><span style="font-size:${Math.max(7, Math.min(11, h / 4.2))}px">${esc(name)}</span></div>`);
@@ -71,7 +95,7 @@ function page(doc) {
   body{width:${PW}px;height:${PH}px;position:relative;overflow:hidden;font-family:"DejaVu Sans","Liberation Sans",Arial,sans-serif;
     background:radial-gradient(ellipse at 50% 60%,#e9ecef 0%,#cfd5db 55%,#9aa3ab 100%)}
   .floor{position:absolute;left:0;right:0;bottom:0;height:45%;background:linear-gradient(#dfe4e8,#c3cad1)}
-  div{position:absolute;box-sizing:border-box}
+  div,canvas{position:absolute;box-sizing:border-box}
   .stock{border:1px dashed rgba(40,60,90,.55);background:rgba(40,60,90,.10)}
   .stock span{position:absolute;left:4px;top:2px;font:11px sans-serif;color:rgba(30,45,70,.8)}
   .txt{text-shadow:0 1px 1px rgba(0,0,0,.9)}
@@ -87,7 +111,12 @@ function page(doc) {
   .inl{display:inline-block;width:1em;height:1em;background:#444;vertical-align:middle}
   .cap{position:absolute;right:10px;bottom:8px;font:12px sans-serif;color:rgba(20,30,40,.75);background:rgba(255,255,255,.6);padding:2px 6px;border-radius:3px}
   </style></head><body><div class="floor"></div>${els.join('\n')}
-  <div class="cap">${esc(doc.title)} · ${PW}x${PH} · UI ${doc.screen.w.toFixed(0)}x${doc.screen.h.toFixed(0)} units</div></body></html>`;
+  <div class="cap">${esc(doc.title)} · ${PW}x${PH} · UI ${doc.screen.w.toFixed(0)}x${doc.screen.h.toFixed(0)} units</div>
+  <script>(function(){var ICONS={${[...icons].map((n) => { const f = path.join(ICON_DIR, n + '.tga'); return fs.existsSync(f) ? `${n}:"${tgaRGBA(f)}"` : ''; }).filter(Boolean).join(',')}};
+  for(const c of document.querySelectorAll('canvas.ic')){const d=ICONS[c.dataset.n];if(!d)continue;const t=c.dataset.c.split(',').map(Number);
+  const raw=atob(d);const im=c.getContext('2d').createImageData(64,64);for(let i=0;i<raw.length;i+=4){im.data[i]=raw.charCodeAt(i)*t[0];
+  im.data[i+1]=raw.charCodeAt(i+1)*t[1];im.data[i+2]=raw.charCodeAt(i+2)*t[2];im.data[i+3]=raw.charCodeAt(i+3)*(t[3]??1);}c.getContext('2d').putImageData(im,0,0);}})();
+  </script></body></html>`;
 }
 
 (async () => {
@@ -99,7 +128,9 @@ function page(doc) {
   const files = fs.readdirSync(inDir).filter((f) => f.endsWith('.json')).sort();
   for (const f of files) {
     const doc = JSON.parse(fs.readFileSync(path.join(inDir, f), 'utf8'));
-    await p.setContent(page(doc));
+    const html = page(doc);
+    if (process.env.DEN_UI_HTML) fs.writeFileSync(path.join(outDir, f.replace(/\.json$/, '.html')), html);
+    await p.setContent(html);
     const out = path.join(outDir, `${prefix}${f.replace(/\.json$/, '')}.png`);
     await p.screenshot({ path: out });
     console.log(out);

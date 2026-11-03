@@ -3,7 +3,7 @@
 //! up to the whole tile). And [`Ground`]: the height of the ground at a point from a delta alone, for Den Lite (which
 //! has no map files) to stand props and the player on the edited ground.
 
-use crate::adt::{height_in, Adt, ChunkWater, Layer};
+use crate::adt::{height_in, Adt, ChunkWater, Layer, MCNK_IMPASSABLE};
 use crate::delta::{self, Delta, DiffOptions, Pad, TileRef};
 use crate::{b64, chunk_corner, clean_path, err, locate, Result, CHUNK, UNIT};
 use std::collections::HashMap;
@@ -73,8 +73,9 @@ pub fn area_at(a: &Adt, tile: &TileRef, at: (f32, f32)) -> u32 {
 }
 
 /// The chunks flattened to `height` and painted `texture` only; their water, holes, vertex colours and shadows gone,
-/// the island's models and buildings on them taken away, and the open area one zone (`area`, the Den's: the game then
-/// shows the Den's name everywhere on it).
+/// walkable (the chunk flag "impassable" off: the Den is ground to walk on everywhere), the island's models and
+/// buildings on them taken away, and the open area one zone (`area`, the Den's: the game then shows the Den's name
+/// everywhere on it).
 fn flatten(a: &mut Adt, chunks: &[u16], height: f32, texture: &str, area: u32) {
     let tex = a.texture_index(texture);
     for &i in chunks {
@@ -82,6 +83,7 @@ fn flatten(a: &mut Adt, chunks: &[u16], height: f32, texture: &str, area: u32) {
         c.set_abs_heights(&[height; 145]);
         c.layers = vec![Layer { texture: tex, flags: 0, effect: 0, alpha: None }];
         c.holes = 0;
+        c.flags &= !MCNK_IMPASSABLE;
         c.colors = None;
         c.shadow = None;
         if area != 0 {
@@ -150,6 +152,8 @@ pub struct Whitened {
     pub models: usize,
     /// Chunks put in the Den's zone.
     pub area: usize,
+    /// Chunks made walkable again (the chunk flag "impassable" taken off).
+    pub walkable: usize,
 }
 
 /// A ground made before (the pad painted the island's own texture, the island's trees and buildings still standing
@@ -185,6 +189,10 @@ pub fn whiten(base: &[u8], d: &Delta) -> Result<Option<(Delta, Whitened)>> {
         if area != 0 && c.area != area {
             c.area = area;
             w.area += 1;
+        }
+        if c.flags & MCNK_IMPASSABLE != 0 {
+            c.flags &= !MCNK_IMPASSABLE;
+            w.walkable += 1;
         }
     }
     // the island's own placements standing on the open area (the chunks' references say which)
@@ -338,6 +346,9 @@ mod tests {
     fn the_whole_tile_is_white_and_empty() {
         let mut s = sample();
         s.chunks[100].area = 9; // another zone on the tile
+        s.chunks[152].flags |= MCNK_IMPASSABLE; // the Den's own chunk marked impassable in the game's tile
+        // a real tile's chunks each have their own base height (the heights are relative to it)
+        s.chunks.iter_mut().step_by(3).for_each(|c| c.position[2] += 25.0);
         let base = s.write();
         let d = make_pad(&base, den_tile(), pad(), 15).unwrap();
         assert_eq!(d.models, Some(vec![]), "every model and building taken off");
@@ -347,6 +358,17 @@ mod tests {
             assert_eq!(c.layers.len(), 1);
             assert_eq!(t.textures[c.layers[0].texture as usize], PAD_TEXTURE);
             assert!(c.refs.is_empty() && c.colors.is_none() && c.shadow.is_none() && c.area == 876);
+            // what the game stands the player on: the chunk's base height plus its 145 heights, the floor Den Lite
+            // spawns at (3 Nov: the player floated above the ground; it must be 13.2 everywhere, not the old base)
+            assert!(c.abs_heights().iter().all(|h| (h - DEN.2).abs() < 0.01), "chunk {} {:?}", c.index_y * 16 + c.index_x, &c.abs_heights()[..3]);
+            assert_eq!(c.flags & MCNK_IMPASSABLE, 0, "walkable");
+        }
+        // Den Lite's heights from the delta alone agree with the tile, at the spawn and at the tile's far corners
+        let g = Ground::from_delta(&d).unwrap();
+        for (x, y) in [(DEN.0, DEN.1), (DEN.0 + 250.0, DEN.1 - 250.0), (DEN.0 - 200.0, DEN.1 + 270.0)] {
+            if crate::locate(x, y).is_some_and(|(t, _)| t == (1, 1)) {
+                assert!((g.height_at(x, y).unwrap() - DEN.2).abs() < 0.01, "{x} {y}");
+            }
         }
         assert!(t.water.as_ref().unwrap().iter().all(|w| w.layers.is_empty()));
         let b = pad_texture();
@@ -375,7 +397,7 @@ mod tests {
         o.pad = Some(Pad { height: DEN.2, texture: "Tileset\\Leyline\\Grass.blp".into(), centre: None });
         let old = delta::diff_tiles(&Adt::parse(&base, None).unwrap(), &e, &o).unwrap().0;
         let (d, w) = whiten(&base, &old).unwrap().expect("something to do");
-        assert_eq!(w, Whitened { repainted: 4, models: 2, area: 0 });
+        assert_eq!(w, Whitened { repainted: 4, models: 2, area: 0, walkable: 0 });
         assert_eq!(d.pad.as_ref().unwrap().texture, PAD_TEXTURE);
         let t = Adt::parse(&delta::apply(&d, Some(&base), None).unwrap(), None).unwrap();
         for i in [135usize, 136, 151, 152] {

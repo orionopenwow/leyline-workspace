@@ -449,7 +449,7 @@ pub fn prepare_client(client: &Path, den_root: &Path) -> Result<Option<String>, 
             if let Ok(Some((g, w))) = pad::whiten(&base, &d) {
                 save(den_root, &g)?;
                 d = g;
-                whitened = Some(format!("{} parts painted white, {} of the island's models taken away, {} parts put in the Den's zone", w.repainted, w.models, w.area));
+                whitened = Some(format!("{} parts painted white, {} of the island's models taken away, {} parts put in the Den's zone, {} parts made walkable", w.repainted, w.models, w.area, w.walkable));
             }
         }
     }

@@ -21,12 +21,13 @@ where py >nul 2>&1 || set PY=python
 %PY% -I tools\survivors\survivors_check.py all tools\survivors\dist tools\survivors\out\slice tools\survivors\out\names.sha256
 if errorlevel 1 (echo. & echo Not uploaded: survivors-check did not pass ^(see above^). Run Record Survivors files.bat first. & pause & exit /b 1)
 echo Packing the build and the slice (a few hundred MB; the upload takes a while)...
-tar -czf "%TGZ%" --exclude=__pycache__ -s ",^tools/survivors/dist,payload/www," -s ",^tools/survivors/out/slice,payload/slice," -s ",^tools/survivors/out/names.sha256,payload/names.sha256," %PARTS% tools/survivors/dist tools/survivors/out/slice tools/survivors/out/names.sha256 || (echo Packing failed. & pause & exit /b 1)
+rem Windows' own tar has no -s: the files go up at their own paths and the server moves them into payload/ (2 Nov)
+tar -czf "%TGZ%" --exclude=__pycache__ %PARTS% tools/survivors/dist tools/survivors/out/slice tools/survivors/out/names.sha256 || (echo Packing failed. & pause & exit /b 1)
 goto send
 :pack_plain
 tar -czf "%TGZ%" --exclude=__pycache__ %PARTS% || (echo Packing failed. & pause & exit /b 1)
 :send
-ssh -i "%USERPROFILE%\.ssh\openwow" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 root@play.openvanilla.app "mkdir -p /srv/survivors && T=$(mktemp -d -p /srv/survivors upload.XXXXXX) && tar -xzf - -C $T && sed 's/\r$//' $T/hosting/survivors/sv-site-up.sh > $T/sv-site-up.sh && SV_SITE_HOST=%SVH% bash $T/sv-site-up.sh $T --go 2>&1 | tee /tmp/sv-site.log; rm -rf $T; grep -q '^SV SITE ON' /tmp/sv-site.log" < "%TGZ%"
+ssh -i "%USERPROFILE%\.ssh\openwow" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 root@play.openvanilla.app "mkdir -p /srv/survivors && T=$(mktemp -d -p /srv/survivors upload.XXXXXX) && tar -xzf - -C $T && if [ -d $T/tools/survivors/dist ]; then mkdir -p $T/payload && mv $T/tools/survivors/dist $T/payload/www && mv $T/tools/survivors/out/slice $T/payload/slice && mv $T/tools/survivors/out/names.sha256 $T/payload/names.sha256; fi && sed 's/\r$//' $T/hosting/survivors/sv-site-up.sh > $T/sv-site-up.sh && SV_SITE_HOST=%SVH% bash $T/sv-site-up.sh $T --go 2>&1 | tee /tmp/sv-site.log; rm -rf $T; grep -q '^SV SITE ON' /tmp/sv-site.log" < "%TGZ%"
 set "RC=%ERRORLEVEL%"
 del /q "%TGZ%" >nul 2>&1
 if not "%RC%"=="0" (echo. & echo It did not finish; see above. & pause & exit /b 1)

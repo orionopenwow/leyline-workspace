@@ -1,0 +1,8 @@
+== 1. wu-play memory
+  wu-play: 256 MB -> 512 MB (no restart)
+  in use: 214.5MiB / 512MiB
+== 2. memory now
+                 total        used        free      shared  buff/cache   available
+  Mem:            7750        4808         244           5        3013        2941
+  Swap:           2047         671        1376
+SERVER FIX DONE

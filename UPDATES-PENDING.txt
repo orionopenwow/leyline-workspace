@@ -678,6 +678,9 @@
 1300c signin Site: auto sign-in for PLAY, Hero Key fixes and audit cleanup, guides, Survivors card loop, tab icon
 1300d server-fix Server: streamed game host 256 to 512 MB, live (no restart)
 1300e scripts Realm scripts reloaded (the bug-report script was silent)
-1300f sv-site Azeroth Survivors live at survivors.leylinelauncher.com (upload, self-check, rollback on failure)
 1300g fresh-leyline-check Read-only: the public Leyline repo's history as one commit by Orion, what it would do
-1300h fresh-check Read-only: the workspace repo's history as one commit by Orion, what it would do
+1302a sv-site Azeroth Survivors live at survivors.leylinelauncher.com (Windows' tar packs it now)
+1302b scripts-reload Realm scripts reloaded live (the bug-report script was silent)
+1302c ship Save as Orion: the Survivors upload fix and the scripts-reload step
+1302d fresh-leyline-check Read-only: the public Leyline repo as one commit by Orion, what it would do
+1302e fresh-check Read-only: the workspace repo as one commit by Orion, what it would do

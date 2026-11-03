@@ -770,3 +770,8 @@
 1315c foreverui  Browser game: the same
 1315d signin  Website: submit a link (site and Discord), Review pages and helper role, feedback digest, version.json, Agents out now, My Den on Forge
 1315e ship  Save as Orion: all of the above
+1315f den-lite  Den Lite rebuilt: Den anywhere (.den go / .den here / .den places, city sizes), My models as props, friends' direct listener
+1315g addons  Leyline addons: the My models tab in the gallery
+1315h foreverui  Browser game: the same
+1315i signin  Website: Loadouts and Game modes in Mods & Addons, the invite guide (/wrath/docs/den-invite)
+1315j ship  Save as Orion: Den anywhere, My models, invite ways, loadouts, Game modes (the launcher builds after this)

@@ -53,6 +53,10 @@
   let forgeGpl = false; // the GPL notice is open
   let forgeTimer = null;
   const FORGE_GPL = "leyline.forgeGplSeen";
+  let invited = null;   // den_invite: the link and its ways (host/denways.rs), shown under the buttons
+  let models = null;    // den_models: the player's own models (host/denmodels.rs)
+  let modelsBusy = false;
+  let modelName = "";
 
   const status = mk("p", "status yd-status");
   status.setAttribute("role", "status");
@@ -86,6 +90,7 @@
     if (forge && forge.running) followForge();
     try { net = await call("den_net_state"); } catch (_) { net = null; }
     if (net && net.running) { paint(); followNet(); }
+    try { models = await call("den_models"); paint(); } catch (_) { models = null; }
     // Docker on this PC: Solo leveling is offered as the bigger way to play alone (never waited for)
     if (!dock) call("docker_info").then((d) => { dock = d; paint(); }).catch(() => { /* no Docker: not offered */ });
   }
@@ -325,6 +330,7 @@
     try {
       const r = await call("den_invite", { name: null });
       net = r.tunnel;
+      invited = r;
       let copied = true;
       try { await navigator.clipboard.writeText(r.link); } catch (_) { copied = false; }
       // TODO(owner): the words
@@ -346,10 +352,138 @@
     netTimer = setTimeout(tick, 1500);
   }
   async function stopSharing() {
-    try { await call("den_net_stop"); net = null; say("Your Den is off the network, and your friends' links stopped working.", "ok"); }
+    try { await call("den_net_stop"); net = null; invited = null; say("Your Den is off the network, and your friends' links stopped working.", "ok"); }
     catch (e) { say(oops(e), "bad"); }
     paint();
   }
+  // the ways in the link (app.rs InviteWay): same network, your own address, the relay, in the order a friend's
+  // Leyline tries them; the link to copy again; your own address (optional)
+  function waysBox() {
+    const box = mk("div", "yd-ways");
+    box.id = "yd-ways";
+    box.append(mk("b", "", "How your friend gets in"));
+    const ol = mk("ol", "yd-way-list");
+    for (const w of invited.ways || []) {
+      const li = mk("li", "yd-way " + (w.ok ? "on" : "off"), w.line);
+      li.id = "yd-way-" + w.id;
+      ol.append(li);
+    }
+    box.append(ol);
+    // TODO(owner): the words
+    box.append(mk("p", "yd-hint", "Their Leyline tries these in this order and tells them which one worked. Your friend needs Leyline, their own game folder and a Hero Key. Game files never travel: each of you plays with your own. The Den invite guide has every step."));
+    const lr = mk("div", "yd-row");
+    const li = mk("input", "");
+    li.id = "yd-link"; li.readOnly = true; li.value = invited.link; li.setAttribute("aria-label", "The invite link");
+    const cp = btn("Copy", "btn small", async () => {
+      try { await navigator.clipboard.writeText(invited.link); say("Invite link copied again.", "ok"); } catch (_) { li.select(); }
+    });
+    cp.id = "yd-link-copy";
+    lr.append(li, cp);
+    const or = mk("div", "yd-row");
+    const oi = mk("input", "");
+    oi.id = "yd-own"; oi.maxLength = 260; oi.placeholder = "Your own address (optional): den.example.org";
+    oi.setAttribute("aria-label", "Your own address for friends");
+    const own = (invited.ways || []).find((w) => w.id === "own");
+    if (own && own.ok) oi.value = (own.line.match(/^Your own address: (\S+)/) || [])[1] || "";
+    const ob = btn("Save", "btn small", async () => {
+      try {
+        const h = await call("den_own_address", { host: oi.value.trim() });
+        say(h ? `Your own address is ${h}. Press Invite friends again for a link that has it.` : "Your own address is taken out.", "ok");
+      } catch (e) { say(oops(e, "That address couldn't be kept."), "bad"); }
+    });
+    ob.id = "yd-own-save";
+    or.append(oi, ob);
+    box.append(lr, or);
+    return box;
+  }
+
+  // ---------------------------------------------------------------- My models (host/denmodels.rs)
+  const MODEL_EXT = /\.(m2|skin|blp|wmo)$/i;
+  const MODEL_MB = { m2: 16, skin: 4, blp: 8, wmo: 16 };
+  const modelIn = mk("input", "");
+  modelIn.type = "file"; modelIn.multiple = true; modelIn.accept = ".m2,.skin,.blp,.wmo"; modelIn.hidden = true; modelIn.id = "yd-model-files";
+  modelIn.addEventListener("change", () => { const f = Array.from(modelIn.files || []); modelIn.value = ""; addModels(f); });
+  async function asBase64(f) {
+    const b = new Uint8Array(await f.arrayBuffer());
+    let s = "";
+    for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
+    return btoa(s);
+  }
+  // the same limits as host/denfiles.rs, said before anything is read
+  function modelProblem(list) {
+    if (!list.length) return "Drop a model's files: an .m2 with its .skin and .blp files, or a .wmo with its groups.";
+    if (list.length > 80) return "Up to 80 files at once.";
+    for (const f of list) {
+      const m = f.name.match(MODEL_EXT);
+      if (!m) return `File ${f.name}: only .m2, .skin, .blp and .wmo files (your own model's files).`;
+      if (f.size > MODEL_MB[m[1].toLowerCase()] * 1024 * 1024) return `File ${f.name}: too big (${MODEL_MB[m[1].toLowerCase()]} MB at most).`;
+    }
+    if (list.reduce((n, f) => n + f.size, 0) > 48 * 1024 * 1024) return "That's more than 48 MB at once.";
+    if (!list.some((f) => /\.(m2|wmo)$/i.test(f.name))) return "There's no model in that: drop the .m2 (or the building's .wmo) with its files.";
+    return "";
+  }
+  async function addModels(files) {
+    const list = Array.from(files || []);
+    const bad = modelProblem(list);
+    if (bad) { say(bad, "warn"); return; }
+    modelsBusy = true; paint();
+    say("Adding your model…");
+    try {
+      const payload = [];
+      for (const f of list) payload.push({ name: f.name, data: await asBase64(f) });
+      const m = await call("den_models_add", { files: payload, label: modelName.trim() || null });
+      const miss = (m.missing || []).length;
+      // TODO(owner): the words
+      say(`${m.name} is in your Den's gallery under My models ${liteUp() ? "after you close your game and press Play solo again" : "the next time you press Play solo"}.`
+        + (miss ? ` ${miss} texture${miss === 1 ? "" : "s"} it names weren't in your drop: they stay as they are (your game may have them).` : ""), "ok");
+      modelName = "";
+    } catch (e) { say(oops(e, "That model couldn't be added."), "bad"); }
+    try { models = await call("den_models"); } catch (_) { /* as it was */ }
+    modelsBusy = false;
+    paint();
+  }
+  async function removeModel(m) {
+    try { await call("den_models_remove", { slug: m.slug }); say(`${m.name} is out of your Den's gallery (from the next Play solo).`, "ok"); }
+    catch (e) { say(oops(e), "bad"); }
+    try { models = await call("den_models"); } catch (_) { /* as it was */ }
+    paint();
+  }
+  function modelsTile() {
+    const box = mk("div", "");
+    const drop = mk("div", "yd-drop" + (modelsBusy ? " busy" : ""));
+    drop.id = "yd-models-drop";
+    drop.tabIndex = 0;
+    drop.setAttribute("role", "button");
+    drop.append(mk("b", "", modelsBusy ? "Adding…" : "Drop your own model files here, or click to choose them"),
+      mk("span", "yd-hint", "An .m2 with its .skin and .blp files, or a building's .wmo with its group files and .blp files."));
+    drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+    drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+    drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); if (!modelsBusy) addModels(e.dataTransfer && e.dataTransfer.files); });
+    drop.addEventListener("click", () => { if (!modelsBusy) modelIn.click(); });
+    drop.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && !modelsBusy) { e.preventDefault(); modelIn.click(); } });
+    const nm = mk("input", "");
+    nm.id = "yd-model-name"; nm.maxLength = 32; nm.placeholder = "Its name in the gallery (optional)"; nm.value = modelName;
+    nm.setAttribute("aria-label", "The model's name in the gallery");
+    nm.addEventListener("input", () => { modelName = nm.value; });
+    box.append(drop, nm, modelIn);
+    const ul = mk("ul", "yd-list");
+    ul.id = "yd-models";
+    for (const m of models || []) {
+      const li = mk("li", "");
+      const t = mk("div", "yd-li-t");
+      t.append(mk("b", "", m.name), mk("span", "yd-hint", [m.kind === "wmo" ? "Building" : "Model", `${Math.max(1, Math.round((m.bytes || 0) / 1024))} KB`,
+        (m.missing || []).length ? `${m.missing.length} texture name${m.missing.length === 1 ? "" : "s"} from your game` : ""].filter(Boolean).join(" · ")));
+      li.append(t, btn("Remove", "btn small", () => removeModel(m)));
+      ul.append(li);
+    }
+    box.append(ul);
+    // TODO(owner): the words
+    const note = mk("p", "yd-hint yd-models-note", "Your files stay on this PC: nothing is uploaded or shared. A friend who joins sees a plain stand-in where each model stands, because their game hasn't your files.");
+    note.id = "yd-models-note";
+    box.append(note);
+    return tile("My models", "Your own 3D models as props: in the Builder's gallery under My models.", box, "wide");
+  }
+
   function inviteFriends() {
     if (where() === "docker") { copyInvite(); return; }
     if (where() === "lite") { inviteLite(); return; }
@@ -529,6 +663,7 @@
       nl.append(sb);
       root.append(nl);
     }
+    if (invited && where() === "lite") root.append(waysBox());
     // the bigger way to play alone, only where Docker runs (or Solo leveling is already hosted here)
     const soloHosted = typeof kit !== "undefined" && kit && kit.realm && kit.realm.profile === "solo";
     if (soloHosted || (dock && dock.state === "ready")) {
@@ -599,6 +734,7 @@
     }
     pk.append(pl);
     grid.append(tile("Packs", "Ready-made places to build around.", pk));
+    if (where() === "lite") grid.append(modelsTile());
     grid.append(groundTile());
     // Share on the Workshop
     const ws = mk("div", "");

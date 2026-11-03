@@ -59,3 +59,17 @@
 .yd-bar { height: 6px; border-radius: 3px; background: var(--t-surface-2); overflow: hidden; }
 .yd-bar i { display: block; height: 100%; background: var(--t-accent); transition: width .4s ease; }
 @media (prefers-reduced-motion: reduce) { .yd-bar i { transition: none; } }
+
+/* Invite: the ways in the link (host/denways.rs) */
+.yd-ways { margin: 8px 0 12px; padding: 10px 12px; border: var(--t-border-w) solid var(--t-border); border-radius: var(--t-radius); background: var(--t-surface); }
+.yd-way-list { margin: 6px 0; padding-left: 20px; }
+.yd-way { margin: 2px 0; }
+.yd-way.on::marker { color: var(--t-ok, #6c6); }
+.yd-way.off { opacity: .7; }
+.yd-ways input { flex: 1 1 220px; min-width: 0; }
+/* My models: the drop area (host/denmodels.rs) */
+.yd-drop { display: flex; flex-direction: column; gap: 4px; align-items: center; justify-content: center; text-align: center; min-height: 84px; margin: 8px 0;
+  padding: 12px; border: 2px dashed var(--t-border); border-radius: var(--t-radius); cursor: pointer; }
+.yd-drop.over, .yd-drop:focus-visible { border-color: var(--t-accent, #c9a64b); outline: none; }
+.yd-drop.busy { cursor: progress; opacity: .7; }
+#yd-model-name { width: 100%; max-width: 320px; margin-bottom: 6px; }

@@ -24,7 +24,9 @@ pub mod models;
 pub mod movewatch;
 pub mod notice;
 pub mod objects;
+pub mod places;
 pub mod play;
+pub mod mymodels;
 pub mod raw;
 pub mod spells;
 pub mod stamps;
@@ -70,6 +72,11 @@ pub struct Config {
     /// Friends' listeners (guests only: what the launcher's relay tunnel connects to), on `bind`; 0 picks a free
     /// port; None: no friends. Written to `<dens>/den-lite.remote` ("<login port> <world port>").
     pub remote_ports: Option<(u16, u16)>,
+    /// Friends on the same network or through the player's own address (port forwarding, their own server): a
+    /// direct listener pair on this LAN address of the PC (never 127.0.0.1), guests only (login.rs serve_direct).
+    /// None: off. Written to `<dens>/den-lite.direct` ("<ip> <login port> <world port>", or "off <why>").
+    pub friends_lan: Option<IpAddr>,
+    pub friends_lan_ports: (u16, u16),
     /// The companion is at the player's side from login (owner 1 Nov: "she's the main helper of the game");
     /// `--no-companion`: only when called.
     pub companion: bool,
@@ -101,6 +108,8 @@ impl Default for Config {
             spot: den::Spot::default(),
             client: None,
             remote_ports: Some((0, 0)),
+            friends_lan: None,
+            friends_lan_ports: (3724, 8085),
             companion: true,
             verbose: false,
             test_control: false,
@@ -158,6 +167,13 @@ pub struct Shared {
     pub combat: Mutex<combat::Combat>,
     /// The character's looks (`.den gear`, gear.rs; kept in the Dens folder).
     pub gear: Mutex<Option<gear::Gear>>,
+    /// Each connection in the world (world.rs Writer address): the map its player is on and whether it is a guest
+    /// (a friend's game gets the player's own models as stand-ins: mymodels.rs).
+    pub seen: Mutex<HashMap<usize, (u32, bool)>>,
+    /// `.den go` trips waiting for the game's answer, by session (places.rs).
+    pub trips: Mutex<HashMap<u64, places::Trip>>,
+    /// The Den's map (den.rs Spot::map), kept apart so sending objects never waits on the Den's lock.
+    pub den_map: std::sync::atomic::AtomicU32,
 }
 
 impl Shared {
@@ -218,6 +234,9 @@ impl Shared {
 
 /// `<dens>/den-lite.remote`: "<login port> <world port>" of the friends' listeners (the launcher's tunnel reads it).
 pub const REMOTE_FILE: &str = "den-lite.remote";
+/// `<dens>/den-lite.direct`: "<ip> <login port> <world port>" of the friends' direct listeners, or "off <why>"
+/// (the launcher's Invite reads it: the same-network and own-address ways).
+pub const DIRECT_FILE: &str = "den-lite.direct";
 
 pub struct Running {
     pub login: SocketAddr,
@@ -225,6 +244,59 @@ pub struct Running {
     /// Friends' listeners (Config::remote_ports): login, world.
     pub remote: Option<(SocketAddr, SocketAddr)>,
     pub shared: Arc<Shared>,
+}
+
+/// `<dens>/den-lite.direct-want`: "<this PC's network address>" written by the launcher's Invite (the first time a
+/// friend is invited the direct way opens, so playing alone never asks the firewall anything).
+pub const DIRECT_WANT: &str = "den-lite.direct-want";
+
+/// The friends' direct listener (same network, or the player's own address): guests only, on this PC's network
+/// address (never 127.0.0.1). A failure never stops the Den: `<dens>/den-lite.direct` says why. Once per run.
+pub fn open_direct(shared: &Arc<Shared>, ip: IpAddr, (lp, wp): (u16, u16)) -> Result<(u16, u16), String> {
+    static OPEN: std::sync::OnceLock<(u16, u16)> = std::sync::OnceLock::new();
+    if let Some(p) = OPEN.get() {
+        return Ok(*p);
+    }
+    let file = shared.cfg.den_dir.join(DIRECT_FILE);
+    if ip.is_loopback() || ip.is_unspecified() {
+        let _ = std::fs::write(&file, "off not an address on a network\n");
+        return Err("not an address on a network".into());
+    }
+    match (TcpListener::bind((ip, lp)), TcpListener::bind((ip, wp))) {
+        (Ok(l), Ok(w)) => {
+            let lport = l.local_addr().map(|a| a.port()).unwrap_or(lp);
+            let wport = w.local_addr().map(|a| a.port()).unwrap_or(wp);
+            let s = shared.clone();
+            std::thread::spawn(move || login::serve_direct(l, s, wport));
+            let s = shared.clone();
+            std::thread::spawn(move || world::serve(w, s, true));
+            let _ = std::fs::write(&file, format!("{ip} {lport} {wport}\n"));
+            shared.event("direct_open", "", &format!("{lport} {wport}"));
+            let _ = OPEN.set((lport, wport));
+            Ok((lport, wport))
+        }
+        (a, b) => {
+            let why = a.err().or(b.err()).map(|e| e.to_string()).unwrap_or_default();
+            let _ = std::fs::write(&file, format!("off {why}\n"));
+            Err(why)
+        }
+    }
+}
+
+/// The launcher's ask for the direct way (`<dens>/den-lite.direct-want`), taken once it is read.
+pub fn direct_wanted(shared: &Arc<Shared>) {
+    let p = shared.cfg.den_dir.join(DIRECT_WANT);
+    let Ok(t) = std::fs::read_to_string(&p) else { return };
+    let _ = std::fs::remove_file(&p);
+    match t.trim().parse::<IpAddr>() {
+        Ok(ip) => {
+            let ports = shared.cfg.friends_lan_ports;
+            let _ = open_direct(shared, ip, ports);
+        }
+        Err(_) => {
+            let _ = std::fs::write(shared.cfg.den_dir.join(DIRECT_FILE), "off not an address\n");
+        }
+    }
 }
 
 /// Binds both ports and serves them on background threads.
@@ -249,6 +321,8 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
         let _ = std::fs::create_dir_all(&cfg.den_dir);
         let _ = std::fs::write(cfg.den_dir.join(REMOTE_FILE), format!("{} {}\n", l.port(), w.port()));
     }
+    let _ = std::fs::create_dir_all(&cfg.den_dir);
+    let _ = std::fs::remove_file(cfg.den_dir.join(DIRECT_FILE));
     den::set_local_stamps(&cfg.den_dir);
     let mut d = den::Den::new(cfg.spot);
     if let Some(Err(e)) = d.reload_ground(&cfg.den_dir) {
@@ -262,15 +336,19 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
     }
     // the props' models for the Builder's gallery (the player's own table, put in the Dens folder by the launcher)
     let known = models::load(&cfg.den_dir);
+    // the player's own models, dropped on the launcher's Your Den card (mymodels.rs)
+    let mine = mymodels::load(&cfg.den_dir);
     if cfg.verbose {
         eprintln!("den-lite: {known} prop models known for the gallery");
     }
     let autosaved = d.autosave_key();
+    let den_map = d.spot.map;
     let pick = classes::Pick::load(&cfg.den_dir);
     let looks = gear::Gear::load(&cfg.den_dir);
     let events = events::Events::new(&cfg.den_dir);
     events.note("start", "", &format!("{}{}", la.port(), if cfg.test_control { " test" } else { "" }));
     events.note("models", "", &known.to_string());
+    events.note("my_models", "", &mine.to_string());
     let shared = Arc::new(Shared {
         events,
         den: Mutex::new(d),
@@ -296,6 +374,9 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
         pick: Mutex::new(pick),
         combat: Mutex::new(combat::Combat::new(world::PLAYER_GUID)),
         gear: Mutex::new(looks),
+        seen: Mutex::new(HashMap::new()),
+        trips: Mutex::new(HashMap::new()),
+        den_map: std::sync::atomic::AtomicU32::new(den_map),
     });
     let s = shared.clone();
     std::thread::spawn(move || login::serve(login, s, false));
@@ -306,6 +387,10 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
         std::thread::spawn(move || login::serve(rl, s, true));
         let s = shared.clone();
         std::thread::spawn(move || world::serve(rw, s, true));
+    }
+    if let Some(ip) = shared.cfg.friends_lan {
+        let ports = shared.cfg.friends_lan_ports;
+        let _ = open_direct(&shared, ip, ports);
     }
     let s = shared.clone();
     std::thread::spawn(move || world::companion_ticker(s));

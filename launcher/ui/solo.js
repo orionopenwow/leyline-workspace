@@ -315,8 +315,9 @@
       line("Joining…");
       try {
         const j = await call("join_invite", { client: c.id, link });
-        if (j.guest) line(j.guest.auto ? "Joining your friend's world: the game signs you in by itself."
-          : `Joining your friend's world. At the login screen: account ${j.guest.account}, password ${j.guest.password}.`, "ok");
+        const via = { lan: " on your shared network", own: " through your friend's own address", relay: " through the Leyline relay" }[j.way] || "";
+        if (j.guest) line(j.guest.auto ? `Joining your friend's world${via}: the game signs you in by itself.`
+          : `Joining your friend's world${via}. At the login screen: account ${j.guest.account}, password ${j.guest.password}.`, "ok");
         else line(`${j.name || "Their world"} is open for you: ${c.name} now points at it. Press PLAY.`, "ok");
         later.textContent = "Close";
         if (typeof refresh === "function") refresh().catch(() => { /* the bar as it was */ });

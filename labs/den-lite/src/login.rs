@@ -44,7 +44,60 @@ pub fn serve(listener: TcpListener, shared: Arc<Shared>, remote: bool) {
             let _ = stream.set_nodelay(true);
             let _ = stream.set_read_timeout(Some(Duration::from_secs(120)));
             let remote = remote || !stream.peer_addr().map(|a| a.ip().is_loopback()).unwrap_or(false);
-            if let Err(e) = session(stream, &shared, remote) {
+            if let Err(e) = session(stream, &shared, remote, None) {
+                shared.log(&format!("login: {e}"));
+            }
+        });
+    }
+}
+
+/// `<dens>/den-lite.direct-host`: the player's own address on the internet ("Your own address" in the launcher: a
+/// name or an IP with the router's ports 3724 and 8085 sent to this PC, or their own server). Friends who come in
+/// from the internet on the direct listener are sent there; friends on the same network to this PC's own address.
+pub const DIRECT_HOST_FILE: &str = "den-lite.direct-host";
+
+/// A host name or IP address as typed: letters, digits, dots, - and : (IPv6), up to 253.
+pub fn host_ok(h: &str) -> bool {
+    !h.is_empty() && h.len() <= 253 && h.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == ':')
+}
+
+pub fn direct_host(dir: &std::path::Path) -> Option<String> {
+    let t = std::fs::read_to_string(dir.join(DIRECT_HOST_FILE)).ok()?;
+    let t = t.trim();
+    host_ok(t).then(|| t.to_string())
+}
+
+/// A friend on this network (a private, link-local or loopback address).
+pub fn same_network(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v) => v.is_private() || v.is_loopback() || v.is_link_local(),
+        std::net::IpAddr::V6(v) => v.is_loopback() || (v.segments()[0] & 0xfe00) == 0xfc00 || (v.segments()[0] & 0xffc0) == 0xfe80,
+    }
+}
+
+/// The world address the direct listener's realm list names: this PC's address on the network the friend came in
+/// on (same network), else the player's own address (`public`), else this PC's address anyway.
+pub fn direct_address(local: std::net::IpAddr, peer: std::net::IpAddr, public: Option<&str>, world_port: u16) -> String {
+    match public.filter(|_| !same_network(peer)) {
+        Some(h) if h.contains(':') && !h.starts_with('[') => format!("[{h}]:{world_port}"),
+        Some(h) => format!("{h}:{world_port}"),
+        None => std::net::SocketAddr::new(local, world_port).to_string(),
+    }
+}
+
+/// The friends' direct listener (`--friends-lan`, a LAN address of this PC): guests only, the realm list pointing
+/// back at this PC the way the friend came (direct_address).
+pub fn serve_direct(listener: TcpListener, shared: Arc<Shared>, world_port: u16) {
+    for stream in listener.incoming().flatten() {
+        let shared = shared.clone();
+        std::thread::spawn(move || {
+            let _ = stream.set_nodelay(true);
+            let _ = stream.set_read_timeout(Some(Duration::from_secs(120)));
+            let (Ok(local), Ok(peer)) = (stream.local_addr(), stream.peer_addr()) else { return };
+            let public = direct_host(&shared.cfg.den_dir);
+            let address = direct_address(local.ip(), peer.ip(), public.as_deref(), world_port);
+            shared.event("direct", "", if same_network(peer.ip()) { "same network" } else { "internet" });
+            if let Err(e) = session(stream, &shared, true, Some(address)) {
                 shared.log(&format!("login: {e}"));
             }
         });
@@ -61,7 +114,7 @@ fn now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
-fn session(mut s: TcpStream, shared: &Shared, remote: bool) -> io::Result<()> {
+fn session(mut s: TcpStream, shared: &Shared, remote: bool, address: Option<String>) -> io::Result<()> {
     let first = read_initial_message(&mut s).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
     let challenge = match first {
         InitialMessage::Logon(c) => c,
@@ -136,7 +189,11 @@ fn session(mut s: TcpStream, shared: &Shared, remote: bool) -> io::Result<()> {
     loop {
         match ClientOpcodeMessage::read(&mut s) {
             Ok(ClientOpcodeMessage::CMD_REALM_LIST(_)) => {
-                send(&mut s, &realm_list(shared, remote))?;
+                let list = match &address {
+                    Some(a) => realm_list_at(shared, a.clone()),
+                    None => realm_list(shared, remote),
+                };
+                send(&mut s, &list)?;
                 shared.event("realm_list", &user.to_string(), "");
             }
             Ok(_) => {}
@@ -160,6 +217,11 @@ pub fn public_address(dir: &std::path::Path) -> Option<String> {
 
 pub fn realm_list(shared: &Shared, remote: bool) -> CMD_REALM_LIST_Server {
     let address = if remote { public_address(&shared.cfg.den_dir).unwrap_or_else(|| shared.remote_world_address()) } else { shared.world_address() };
+    realm_list_at(shared, address)
+}
+
+/// The one realm, at this world address.
+pub fn realm_list_at(shared: &Shared, address: String) -> CMD_REALM_LIST_Server {
     CMD_REALM_LIST_Server {
         realms: vec![Realm {
             realm_type: RealmType::PlayerVsEnvironment,
@@ -189,4 +251,23 @@ pub fn rand_bytes<const N: usize>() -> [u8; N] {
         *b = x as u8;
     }
     out
+}
+
+#[cfg(test)]
+mod direct_tests {
+    use super::*;
+    use std::net::IpAddr;
+
+    #[test]
+    fn a_friend_is_sent_back_the_way_they_came() {
+        let lan: IpAddr = "192.168.1.20".parse().unwrap();
+        let friend_lan: IpAddr = "192.168.1.31".parse().unwrap();
+        let friend_net: IpAddr = "81.2.69.160".parse().unwrap();
+        assert_eq!(direct_address(lan, friend_lan, Some("my.example.net"), 8085), "192.168.1.20:8085", "same network: this PC");
+        assert_eq!(direct_address(lan, friend_net, Some("my.example.net"), 8085), "my.example.net:8085", "the internet: your own address");
+        assert_eq!(direct_address(lan, friend_net, None, 8085), "192.168.1.20:8085", "no own address set: this PC's");
+        assert_eq!(direct_address(lan, friend_net, Some("2001:db8::1"), 8085), "[2001:db8::1]:8085");
+        assert!(same_network("10.0.0.2".parse().unwrap()) && same_network("fe80::1".parse().unwrap()) && !same_network(friend_net));
+        assert!(host_ok("den.example.org") && !host_ok("a b") && !host_ok("x/y") && !host_ok(""));
+    }
 }

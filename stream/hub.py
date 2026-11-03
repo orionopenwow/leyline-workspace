@@ -93,6 +93,21 @@ def _load_gamemods():
 
 GM = _load_gamemods()
 
+
+def _load_loadouts():
+    """stream/loadouts.py from beside this file (loadout templates and share codes), or None."""
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("wu_hub_loadouts", os.path.join(HERE, "loadouts.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception:   # noqa: BLE001: the hub runs without it (no Loadouts page)
+        return None
+
+
+LO = _load_loadouts()
+
 # ------------------------------------------------------------------------------------------- shared rules
 BUILDS = ["1.12", "2.4.3", "3.3.5a", "4.3.4", "5.4.8"]           # the client builds the launcher supports
 BUILD_LABEL = {"1.12": "1.12.1", "2.4.3": "2.4.3", "3.3.5a": "3.3.5a", "4.3.4": "4.3.4", "5.4.8": "5.4.8", "any": "Any build"}
@@ -2371,6 +2386,102 @@ class Hub:
                   'Duel points and ratings: <a href="/wrath/leaderboards">the leaderboards</a>.</p>')
         return self._shell("Modes · Leyline", body, BASE + "/modes")
 
+    # ---------------------------------------------------------------- Game modes and Loadouts (owner 3 Nov 2026)
+    # TODO(owner): the loadouts lines in your own voice (LOADOUTS_TIP, the Loadouts page's opening)
+    LOADOUTS_TIP = ("Make it yours: save the mods and addons you like as a loadout, switch between them in one click, and go "
+                    "back to Clean (the game as installed) any time. Your game files stay as they are.")
+
+    def loadouts_tip(self) -> str:
+        """One friendly line on Mods and Addons pointing to Loadouts."""
+        e = html.escape
+        return (f'<p class="hb-fine hb-lo-tip">{e(self.LOADOUTS_TIP)} <a href="{BASE}/loadouts">How loadouts work</a></p>')
+
+    def game_modes_page(self) -> bytes:
+        """Mods & Addons › Game modes: every way to play something different in one place: the modes you can play now
+        (playmodes.json: the Leyline Modes on our realm, Azeroth Survivors in the browser, in-game modes), Your Den in the
+        launcher, and the mods list's game modes (with Install, handed to the launcher). /modes keeps working."""
+        e = html.escape
+        pm = self.portal("playmodes")
+        modes = self._modes()
+        cards = []
+        for m in modes:
+            href = pm.play_href(m, "/wrath/host") if pm is not None else None
+            label = "Host it" if m["kind"] == "realm-type" else "Play"
+            if not href and m["kind"] == "offline" and isinstance(m.get("start"), dict) and str(m["start"].get("path", "")).startswith("/"):
+                href, label = m["start"]["path"], "Try it"   # a browser mode still being finished: its page is open
+            tags = [pm.KIND_TEXT.get(m["kind"], "") if pm is not None else "", "Coming" if m["status"] == "coming" else ""]
+            act = (f'<p class="hb-act"><a class="{"hb-ghost" if label != "Play" else "hb-play"}" href="{e(href)}">{label}</a></p>'
+                   if href else "")
+            name, line = neutral(m["title"]), neutral(m["line"])
+            if not name:
+                continue
+            cards.append(f'<article class="hb-mode" id="gm-{e(m["id"])}"><h2>{e(name)}</h2><p>{e(line)}</p>'
+                         f'<p>{"".join(f"<span class=hb-tag>{e(x)}</span>" for x in tags if x)}</p>{act}</article>')
+        dl = self._dl_page()
+        cards.append('<article class="hb-mode" id="gm-den"><h2>Your Den</h2><p>Your own building room, on your PC: build, '
+                     'decorate and practise in the Dojo, then invite friends. It runs in the launcher.</p>'
+                     '<p><span class="hb-tag">In the launcher</span><span class="hb-tag">No server</span></p>'
+                     f'<p class="hb-act"><a class="hb-ghost" href="{e(dl)}"{_ext(dl)}>Get the launcher</a></p></article>')
+        games = [g for g in self.game_mods() if g["kind"] == "mod"]
+        realms = self.mod_realms() if games else []
+        mods_s = (f'<section class="hb-gm-s" id="game-mods" aria-labelledby="hb-gmm-h"><h2 id="hb-gmm-h">Game mode mods</h2>'
+                  '<p class="hb-ext-lede">Mods from the mods list that change how you play. Install hands over to the launcher.</p>'
+                  f'<div class="hb-grid hb-big">{"".join(self.game_card(g, realms) for g in games)}</div></section>') if games else ""
+        body = (f'<section class="hb-pg hb-cat" data-shelf="gamemodes" aria-labelledby="hb-pg-h"><header class="hb-pg-h"><div class="hb-pg-t">'
+                f'<h1 id="hb-pg-h">Game modes</h1>{self.mods_tabs("gamemodes")}</div></header><div class="hb-pg-b">'
+                '<p class="hb-lede hb-shelf-line">Minigames and modes that change how you play: on our realm, in your browser, '
+                'or on your own PC.</p>'
+                f'<div class="hb-modes">{"".join(cards)}</div>{self.modes_strip()}{mods_s}'
+                f'<p class="hb-fine">Every mode with its rules: <a href="{BASE}/modes">Modes</a>. Duels, dungeons and hangouts: '
+                '<a href="/wrath/modes">the full modes page</a>.</p></div></section>')
+        return self._shell("Game modes · Leyline", body, BASE + "/game-modes", active="mods")
+
+    def loadout_templates(self) -> list[dict]:
+        """The templates this site shows: reviewed addons only (stream/loadouts.py drops anything else)."""
+        if LO is None:
+            return []
+        try:
+            return LO.templates({u["id"] for u in self.upstream()})
+        except Exception:   # noqa: BLE001
+            return []
+
+    def loadouts_page(self) -> bytes:
+        """Mods & Addons › Loadouts: what a loadout is, how switching keeps the game safe, and the templates, each with its
+        share code to paste in the launcher (a code names catalog ids only; the launcher installs only what it finds in its
+        own reviewed list)."""
+        e = html.escape
+        names = {u["id"]: u["name"] for u in self.upstream()}
+        names[LO.LEYLINE_ADDONS if LO else "leyline:addons"] = "Leyline addons"
+        cards = []
+        for t in self.loadout_templates():
+            items = "".join(f"<li>{e(names.get(i, i))}</li>" for i in t["items"])
+            gfx = (f'<span class="hb-tag">Graphics: {e(LO.PRESET_NAME.get(t["gfx"], t["gfx"]))}</span>' if t["gfx"] else "")
+            code = LO.share_code(t)
+            cards.append(f'<article class="hb-mode hb-lo" id="lo-{e(t["id"])}"><h2>{e(neutral(t["name"]))}</h2>'
+                         f'<p>{e(neutral(t["line"]))}</p>' + (f'<ul class="hb-list">{items}</ul>' if items else "")
+                         + f'<p>{gfx}<span class="hb-tag">{len(t["items"])} to install</span></p>'
+                         f'<p class="hb-fine"><label>Share code <input class="hb-lo-code" type="text" readonly value="{e(code)}" '
+                         f'aria-label="Share code for {e(neutral(t["name"]))}"></label></p></article>')
+        steps = "".join(f"<li>{x}</li>" for x in (
+            "<b>Make one.</b> In the launcher: Mods &amp; Addons › Installed › Loadouts › Save what's on now. Or start from a template.",
+            "<b>Switch.</b> One click turns on the mods and addons in that loadout and turns the others off.",
+            "<b>Go back to Clean.</b> Clean turns every mod Leyline added off: the game as you installed it.",
+            "<b>Share.</b> Copy a loadout's code and send it to a friend. They paste it in Loadouts › Paste a code.",
+            "<b>Join a realm.</b> A realm can suggest its own loadout. Use it when you join, and switch back after."))
+        body = (f'<section class="hb-pg hb-cat" data-shelf="loadouts" aria-labelledby="hb-pg-h"><header class="hb-pg-h"><div class="hb-pg-t">'
+                f'<h1 id="hb-pg-h">Loadouts</h1>{self.mods_tabs("loadouts")}</div></header><div class="hb-pg-b">'
+                f'<p class="hb-lede hb-shelf-line">{e(self.LOADOUTS_TIP)}</p>'
+                f'<section class="ly-panel"><h2>How it works</h2><ol class="hb-list">{steps}</ol>'
+                '<p class="hb-fine">Switching never deletes or changes your game files. Mods Leyline added are turned off by '
+                'moving them to a Leyline folder the game does not read; addons you added yourself stay as they are. Leyline '
+                'keeps a copy of your game settings for each loadout before it switches.</p></section>'
+                '<h2>Templates</h2><p class="hb-ext-lede">Starter loadouts made only from reviewed addons. Paste a code in the '
+                'launcher, or pick the template there.</p>'
+                + (f'<div class="hb-modes">{"".join(cards)}</div>' if cards else '<p class="hb-empty">No templates right now.</p>')
+                + f'</div></section><p class="hb-get">Loadouts need the Leyline launcher on this PC. <a href="{e(self._dl_page())}">'
+                  'Get the launcher</a></p>')
+        return self._shell("Loadouts · Leyline", body, BASE + "/loadouts", active="mods")
+
     def news_posts(self, n: int = 30) -> list[dict]:
         """The admin console's news.json posts fit to show ({title, tag, date, items}), newest first as published: a
         post with a brand word anywhere is dropped whole, client numbers are taken out (neutral). The news page and the
@@ -2684,6 +2795,7 @@ class Hub:
                 f'<form class="hb-search" method="get" action="{home}" role="search">'
                 f'<label for="hb-q" class="hb-vh">Search {word}</label><input id="hb-q" name="q" type="search" maxlength="60" '
                 f'placeholder="Search {word}"><button type="submit">Search</button></form>'
+                f'{self.loadouts_tip()}'
                 f'{secs}<p class="hb-sall"><a class="hb-cta sm" href="{home}?view=all">Browse everything</a>'
                 f'<span>Every {word[:-1]}, with all the filters.</span></p></div></section>'
                 + f'<p class="hb-get">Installing needs the Leyline launcher on this PC. <a href="{e(self._dl_page())}">'
@@ -2692,10 +2804,12 @@ class Hub:
         return self._shell(f"{title} · Leyline", body, home, active=shelf)
 
     def mods_tabs(self, cur: str) -> str:
-        """The tabs over Mods, Addons and Themes (the launcher's Discover has the same three)."""
+        """The tabs over Mods, Addons and Themes (the launcher's Discover has the same three), then Game modes and Loadouts
+        (owner 3 Nov: "Game modes as a section somewhere in mods and addons"; loadouts: stream/loadouts.py)."""
         e = html.escape
-        tabs = [("mods", "Mods", f"{BASE}/catalog"), ("addons", "Addons", f"{BASE}/addons"), ("themes", "Themes", f"{BASE}/catalog?cat=themes")]
-        return ('<nav class="hb-seg" aria-label="Mods, addons and themes">' + "".join(
+        tabs = [("mods", "Mods", f"{BASE}/catalog"), ("addons", "Addons", f"{BASE}/addons"), ("themes", "Themes", f"{BASE}/catalog?cat=themes"),
+                ("gamemodes", "Game modes", f"{BASE}/game-modes"), ("loadouts", "Loadouts", f"{BASE}/loadouts")]
+        return ('<nav class="hb-seg" aria-label="Mods, addons, themes, game modes and loadouts">' + "".join(
             f'<a href="{e(h)}"' + (' class="on" aria-current="page"' if c == cur else "") + f">{t}</a>" for c, t, h in tabs) + "</nav>")
 
     # ---------------------------------------------------------------- Mods › Game modes (stream/gamemods.py, docs/GAME-MODS.md)
@@ -5067,7 +5181,7 @@ def population(live: bool, players) -> tuple[str, str]:
             return word, cls
     return "Full", "full"
 # The header item each hub page highlights (the catalog: Addons when filtered to them, else Mods; an item page: Mods).
-ACTIVE = {BASE + "/realms": "realms", BASE + "/catalog": "mods", BASE + "/addons": "addons", BASE + "/submit": "mods", BASE + "/modes": "modes",
+ACTIVE = {BASE + "/realms": "realms", BASE + "/catalog": "mods", BASE + "/game-modes": "mods", BASE + "/loadouts": "mods", BASE + "/addons": "addons", BASE + "/submit": "mods", BASE + "/modes": "modes",
           BASE + "/beacon": "host", BASE + "/news": "news", BASE + "/creators": "creators", BASE + "/gallery": "gallery",
           BASE + "/forge": "forge", BASE + "/agents": "agents",
           FRONT + "/gallery": "gallery"}
@@ -5278,6 +5392,12 @@ def get(handler, path: str, query: dict) -> None:
         return
     if path == BASE + "/modes":
         handler.send(200, hub.modes_page(), headers=_robots())
+        return
+    if path == BASE + "/game-modes":
+        handler.send(200, hub.game_modes_page(), headers=_robots())
+        return
+    if path == BASE + "/loadouts":
+        handler.send(200, hub.loadouts_page(), headers=_robots())
         return
     if path == BASE + "/news":
         handler.send(200, hub.news_page(), headers=_robots())

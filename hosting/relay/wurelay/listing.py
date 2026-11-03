@@ -30,7 +30,8 @@ Listing quality (2026-10-29, all optional in the beat, so older agents keep work
   Also mods (2026-10-31, docs/GAME-MODS.md): the mods the realm runs or asks players to have, [{"id", "version"?}]
   (clean_mods), shown on realm cards and offered by the launcher on join; names only, never files. And mode
   (2026-10-31, docs/MODES.md): the mode package it runs, its credit and recipe (clean_mode), for "based on X by Y"
-  and Fork this mode.
+  and Fork this mode. And loadout (2026-11-03): the loadout the realm suggests, {"name", "items", "gfx"} (clean_loadout),
+  catalog ids only; the launcher offers "Use this realm's loadout" on join.
 The listing works out the rest itself from the heartbeats: uptime over 24 h and 7 d (hourly buckets of the seconds
 a realm was seen online), "new" (first seen in the last 7 days), a coarse region estimate (the relay's own
 RELAY_REGION when the realm's tunnel answers in under 45 ms) and a fair score (players, bots counted apart and
@@ -82,6 +83,11 @@ NEAR_MS = 45
 MOD_ID_RE = re.compile(r"^(?:mod:[a-z][a-z0-9-]{2,31}|up:[a-z0-9][a-z0-9._-]{0,63}|mode:[a-z][a-z0-9-]{1,31})$")
 MOD_VERSION_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.+-]{0,31}$")
 MAX_MODS = 32
+# The loadout a realm suggests (owner 3 Nov 2026; stream/loadouts.py, launcher loadouts.rs): {"name", "items", "gfx"}, ids
+# only (catalog ids or the Leyline addons), a launcher graphics preset. The same rules as stream/loadouts.py clean_loadout.
+LOADOUT_ID_RE = re.compile(r"^(?:leyline:addons|(?:mod|up|look):[a-z][a-z0-9-]{2,31}|link:[0-9a-f]{12})$")
+LOADOUT_PRESETS = ("low", "classic", "balanced", "high", "ultra")
+MAX_LOADOUT_ITEMS = 64
 
 # The word filter (owner rules: player-facing text never names the game or its publisher, and no slurs). The same two
 # lists as stream/hostflow.py BANNED and SLURS (hosting/tests/test_network_listing.py checks they match): the relay and
@@ -205,6 +211,22 @@ def rules_text(rules):
     """The rules as one short line (the in-game hop window's "rules"): the filtered lines joined, at most 300 chars."""
     t = " ".join(r for r in rules or [] if r)
     return t if len(t) <= RULES_TEXT_MAX else t[:RULES_TEXT_MAX - 1].rstrip() + "\u2026"
+
+
+def clean_loadout(v):
+    """The realm's suggested loadout: {"name", "items", "gfx"} or None. The name is word-filtered (the realm's name when
+    there is none: the launcher fills it in); ids each once, at most MAX_LOADOUT_ITEMS; None when it names nothing."""
+    if not isinstance(v, dict):
+        return None
+    items = []
+    for i in (v.get("items") if isinstance(v.get("items"), list) else [])[:MAX_LOADOUT_ITEMS * 2]:
+        if (isinstance(i, str) and LOADOUT_ID_RE.fullmatch(i) and "--" not in i and not i.endswith("-") and i not in items
+                and len(items) < MAX_LOADOUT_ITEMS):
+            items.append(i)
+    gfx = v.get("gfx") if v.get("gfx") in LOADOUT_PRESETS else ""
+    if not items and not gfx:
+        return None
+    return {"name": _masked(v.get("name"), 40) or "", "items": items, "gfx": gfx}
 
 
 def clean_mods(v):
@@ -373,6 +395,7 @@ def clean_record(rec: dict) -> dict:
         "signup": rec.get("signup") if rec.get("signup") in SIGNUPS else None,
         "mods": clean_mods(rec.get("mods")),
         "mode": clean_mode(rec.get("mode")),
+        "loadout": clean_loadout(rec.get("loadout")),
     }
     return out
 
@@ -629,6 +652,7 @@ class Listing:
             "features": [],
             "mods": list(rec.get("mods") or []),
             "mode": rec.get("mode"),
+            "loadout": rec.get("loadout"),
             "media": {"icon": None, "screenshots": [], "trailer": None},
             "discord": rec["discord"],
             "status": {"url": f"https://{relay}/r/{rid}/status.json", "format": "openvanilla-status-1"},

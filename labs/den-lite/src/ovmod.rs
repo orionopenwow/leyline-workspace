@@ -217,8 +217,11 @@ fn key(name: &str) -> String {
 /// launcher put that table in the Dens folder; without it the lines have five fields, as before.
 pub fn catalog_parts(model_of: impl Fn(u32) -> Option<String>) -> Vec<String> {
     let mut parts = vec![String::new()];
-    for o in crate::objects::OBJECTS {
-        let Some(cat) = category(o.3) else { continue };
+    // the player's own models (mymodels.rs) in their own category, then every prop Den Lite knows
+    let mine: Vec<(u32, u8, u32, &'static str, f32)> = crate::mymodels::all().into_iter().map(|t| (t.entry, t.kind, t.display, t.name, t.size)).collect();
+    for o in mine.iter().chain(crate::objects::OBJECTS.iter()) {
+        let cat = if crate::mymodels::is_mine(o.0) { Some(crate::mymodels::CATEGORY) } else { category(o.3) };
+        let Some(cat) = cat else { continue };
         let name: String = o.3.chars().filter(|c| !matches!(c, ';' | ',' | '|' | '\t')).collect();
         let model = model_of(o.2).map(|m| format!(",{m}")).unwrap_or_default();
         let item = format!("{},{},{},{},1{};", o.0, key(&name), cat, name, model);
@@ -244,7 +247,7 @@ pub fn found(kind: &str, q: &str) -> String {
     for o in den::find_objects(q).into_iter().take(40) {
         let name: String = o.3.chars().filter(|c| !matches!(c, ';' | ',' | '|' | '\t')).collect();
         let model = crate::models::tile(o.2).map(|m| format!(",{m}")).unwrap_or_default();
-        out.push_str(&format!("{},{},{},{},1{};", o.0, key(&name), category(o.3).unwrap_or("decor"), name, model));
+        out.push_str(&format!("{},{},{},{},1{};", o.0, key(&name), if crate::mymodels::is_mine(o.0) { crate::mymodels::CATEGORY } else { category(o.3).unwrap_or("decor") }, name, model));
     }
     out
 }
@@ -745,7 +748,9 @@ mod tests {
     #[test]
     fn the_whole_catalog_in_parts_with_models() {
         let plain = catalog_parts(|_| None);
-        let n: usize = plain.iter().map(|p| p.split(';').filter(|s| !s.is_empty()).count()).sum();
+        // the built-in props only (another test may have added the player's own models, mymodels.rs, meanwhile)
+        let mine = format!(",{},", crate::mymodels::CATEGORY);
+        let n: usize = plain.iter().map(|p| p.split(';').filter(|s| !s.is_empty() && !s.contains(&mine)).count()).sum();
         let offered = crate::objects::OBJECTS.iter().filter(|o| category(o.3).is_some()).count();
         assert_eq!(n, offered, "every prop, none cut off");
         assert!(plain.iter().all(|p| p.len() <= PART * MAX_PARTS && !p.is_empty()));

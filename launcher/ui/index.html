@@ -16,6 +16,7 @@
 <link rel="stylesheet" href="hostconsole.css"><!-- Host: the host console (hostconsole.js) -->
 <link rel="stylesheet" href="den.css"><!-- Your Den: the one Den page and the Home entry (den.js) -->
 <link rel="stylesheet" href="hostmodes.css"><!-- Host: modes anyone can host and fork (hostmodes.js) -->
+<link rel="stylesheet" href="loadouts.css"><!-- Loadouts: Mods & Addons › Installed, the game folder cards, the realm offer (loadouts.js) -->
 <link rel="stylesheet" href="addons.css"><!-- the Leyline addons: Clients, Mods & Addons › Installed › Addons, the PLAY offer (addons.js) -->
 <link rel="stylesheet" href="market.css"><!-- the addon marketplace in Mods & Addons › Discover › Addons (market.js) -->
 <link rel="stylesheet" href="home.css"><!-- Home: the hero gallery and the rows below it (home.js) -->
@@ -148,6 +149,8 @@
       <section class="hm-sec" id="hm-mods" aria-labelledby="hm-mods-h" hidden>
         <div class="card-head hm-head"><span id="hm-mods-h">MODS TO TRY</span><button type="button" class="link" data-hm-go="discover">See all ›</button></div>
         <div class="hm-row" id="hm-mods-row"></div>
+        <!-- TODO(owner): Home's loadouts line in your own voice -->
+        <p class="hint hm-lo" id="hm-lo">Make it yours: save the mods you like as a loadout and switch in one click. Clean is always one click away. <button type="button" class="link" data-hm-go="installed">Loadouts ›</button></p>
       </section>
       <section class="hm-sec" id="hm-modes" aria-labelledby="hm-modes-h" hidden>
         <div class="card-head hm-head"><span id="hm-modes-h">GAME MODES</span><button type="button" class="link" data-hm-go="modes">See all ›</button></div>
@@ -192,6 +195,7 @@
         <div class="page-tabs" role="tablist" aria-label="Mods and addons">
           <button type="button" class="page-tab" role="tab" id="tab-mods-installed" data-group="mods" data-tab="installed" aria-controls="pane-installed">Installed<span class="badge" id="tab-mods-count" hidden></span></button>
           <button type="button" class="page-tab" role="tab" id="tab-mods-discover" data-group="mods" data-tab="discover" aria-controls="pane-discover">Discover</button>
+          <button type="button" class="page-tab" role="tab" id="tab-mods-gamemodes" data-group="mods" data-tab="gamemodes" aria-controls="pane-gamemodes">Game modes</button>
         </div></div>
       <div class="tabpane" id="pane-installed" role="tabpanel" aria-labelledby="tab-mods-installed" data-shelf="mods">
         <div class="ly-tabs inst-tabs" id="inst-tabs" role="tablist" aria-label="Installed">
@@ -254,6 +258,10 @@
         <div class="game-box dc-full" id="game-discover" hidden></div><!-- Mods › Game modes: the Leyline Modes (gamemods.js) -->
         <div class="mod-grid dc-grid dc-full" id="cat-grid"></div>
         <div class="row dc-more dc-full"><button type="button" class="btn small" data-link="mods">Mods on the website</button><button type="button" class="btn small" data-link="modders">Make a mod</button></div>
+      </div>
+      <!-- Game modes (owner 3 Nov: "Game modes as a section somewhere in mods and addons"): gamemods.js showSection -->
+      <div class="tabpane" id="pane-gamemodes" role="tabpanel" aria-labelledby="tab-mods-gamemodes">
+        <div class="game-box" id="gm-section"></div>
       </div>
     </div>
   </section>
@@ -808,6 +816,7 @@
 <script src="app.js"></script>
 <script src="realmlink.js"></script><!-- paste a realm link to add it; Live now (window.LeylineRealmLink; after app.js, before home.js) -->
 <script src="addons.js"></script>
+<script src="loadouts.js"></script><!-- Loadouts: named sets of mods per game folder, Clean, templates, share codes (window.LeylineLoadouts; after app.js and addons.js) -->
 <script src="host.js"></script>
 <script src="hostconsole.js"></script>
 <script src="hostmodes.js"></script><!-- Host: the mode cards first, Fork this mode (host/modes.rs; after hostconsole.js) -->

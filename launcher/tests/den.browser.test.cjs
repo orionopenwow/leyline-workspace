@@ -72,10 +72,32 @@ const FAKE = (o) => {
         : { idle: false, kind: 'host', running: true, code: null, step: 'Starting the servers', n: 5, of: 8, secs: 60, problem: null };
       case 'host_invite': return 'https://relay.openvanilla.app/join/abcdefghijk2345a#INVITECODE1234567890';
       case 'join_invite': return /~~/.test(args.link)
-        ? { address: 'relay.openvanilla.app:40007', name: 'Den Lite', guest: { auto: true, account: 'GABCDE2345', password: '', why: '', message: 'Started.' } }
+        ? (/~~lan=/.test(args.link)
+          ? { address: '192.168.1.20', name: "Your friend's Den", way: 'lan', tried: [], guest: { auto: true, account: 'GABCDE2345', password: '', why: '', message: 'Started.' } }
+          : { address: 'relay.openvanilla.app:40007', name: 'Den Lite', way: 'relay', tried: [], guest: { auto: true, account: 'GABCDE2345', password: '', why: '', message: 'Started.' } })
         : { address: 'relay.openvanilla.app:40001', name: 'My Den' };
       case 'den_invite': S.net = { running: true, connected: true, relay: 'relay.openvanilla.app', realm_id: 'kzdvvj2umnduyauf', address: 'relay.openvanilla.app', auth_port: 40006, world_port: 40007, streams: 0, last_error: '' };
-        return { link: 'https://relay.openvanilla.app/join/kzdvvj2umnduyauf#INVITESECRETINVITESECRET~~GABCDE2345.ABCDEFGH23456789', name: 'Rowan', expires: 1, tunnel: S.net };
+        return { link: 'https://relay.openvanilla.app/join/kzdvvj2umnduyauf#INVITESECRETINVITESECRET~~GABCDE2345.ABCDEFGH23456789' + (o.lan ? '~~lan=192.168.1.20:3724' : ''), name: 'Rowan', expires: 1, tunnel: S.net,
+          ways: [
+            o.lan ? { id: 'lan', ok: true, line: 'Same network: on, at 192.168.1.20 (friends at your home or on your network come in here first).' }
+              : { id: 'lan', ok: false, line: "Same network: this PC isn't on a home or office network." },
+            S.own ? { id: 'own', ok: true, line: `Your own address: ${S.own} (your router must send ports 3724 and 8085 to this PC).` }
+              : { id: 'own', ok: false, line: 'Your own address: not set (only for a router you set up, or your own server; see the guide).' },
+            { id: 'relay', ok: true, line: 'Leyline relay: on (works from anywhere; the relay only passes the game\'s connection through).' }] };
+      case 'den_own_address': if (args.host != null) { if (/\s/.test(args.host)) throw "That isn't an address"; S.own = args.host; } return S.own || '';
+      // My models (host/denmodels.rs): what den_models_add would keep, by the same first checks
+      case 'den_models': return S.models || [];
+      case 'den_models_add': {
+        const m2 = args.files.find((f) => /\.(m2|wmo)$/i.test(f.name));
+        if (!m2) throw "There's no model in that: drop the .m2 (or the building's .wmo) with its files.";
+        if (atob(m2.data).slice(0, 4) !== 'MD20') throw `File ${m2.name}: that isn't a model file of the game's own kind.`;
+        const slug = (args.label || m2.name.replace(/\.m2$/i, '')).toLowerCase().replace(/[^a-z0-9-]/g, '_');
+        const m = { entry: 980001 + (S.models || []).length, display: 60001, name: args.label || slug, slug, kind: 'm2', model: '', box: [0, 0, 0, 1, 1, 1],
+          files: args.files.map((f) => f.name), missing: ['World\\Generic\\stone.blp'], unused: [], bytes: args.files.reduce((n, f) => n + atob(f.data).length, 0) };
+        S.models = (S.models || []).concat([m]);
+        return m;
+      }
+      case 'den_models_remove': S.models = (S.models || []).filter((m) => m.slug !== args.slug); return true;
       case 'den_net_state': return S.net || { running: false, connected: false, relay: '', realm_id: '', address: '', auth_port: 0, world_port: 0, streams: 0, last_error: '' };
       case 'den_net_stop': S.net = null; return null;
       case 'play': return 'Started My Game on relay.openvanilla.app:40001.';
@@ -467,6 +489,80 @@ test('Invite friends on Den Lite: on the network from this PC at once, a link fo
   await page.waitForFunction(() => /friend's Den/.test(document.getElementById('rl-status').textContent));
   assert.match(await page.textContent('#rl-status'), /signs you in by itself and opens at character select/);
   assert.equal((await calls(page, 'join_invite'))[0].link, clip);
+  await noBrands(page);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Invite friends: the ways in the link in the order they are tried, the link to copy again, your own address; the friend is told the way', async () => {
+  const { page, ctx, errors } = await open({ lite: 'running', page: 'den', lan: true });
+  await page.waitForSelector('#yd-friends');
+  await page.click('#yd-friends');
+  await page.waitForSelector('#yd-ways');
+  assert.deepEqual(await page.$$eval('#yd-ways li', (l) => l.map((x) => [x.id, x.className])),
+    [['yd-way-lan', 'yd-way on'], ['yd-way-own', 'yd-way off'], ['yd-way-relay', 'yd-way on']]);
+  assert.match(await page.textContent('#yd-ways'), /tries these in this order.*own game folder and a Hero Key.*Game files never travel/s);
+  const link = await page.inputValue('#yd-link');
+  assert.match(link, /~~GABCDE2345\.[A-Z0-9]+~~lan=192\.168\.1\.20:3724$/);
+  await page.evaluate(() => navigator.clipboard.writeText(''));
+  await page.click('#yd-link-copy');
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), link);
+  // your own address: kept, then the next invite has it
+  await page.fill('#yd-own', 'den.example.org');
+  await page.click('#yd-own-save');
+  await page.waitForFunction(() => /Your own address is den\.example\.org/.test(document.querySelector('#yd .yd-status').textContent));
+  assert.deepEqual((await calls(page, 'den_own_address')).map((a) => a.host), ['den.example.org']);
+  await page.click('#yd-friends');
+  await page.waitForFunction(() => document.querySelector('#yd-way-own') && document.querySelector('#yd-way-own').classList.contains('on'));
+  assert.equal(await page.inputValue('#yd-own'), 'den.example.org');
+  // the friend: the link joins on the same network, and they are told so
+  await page.evaluate(() => window.LeylineNav.show('realms'));
+  await page.evaluate(() => { const d = document.getElementById('rl-other'); if (d) d.open = true; });
+  await page.fill('#rl-invite', link);
+  await page.click('#rl-join');
+  await page.waitForFunction(() => /friend's Den/.test(document.getElementById('rl-status').textContent));
+  assert.match(await page.textContent('#rl-status'), /Joining your friend's Den on your shared network/);
+  await noBrands(page);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('My models: drop your own model files on Your Den, checked first, listed, removed; friends see a stand-in, nothing uploaded', async () => {
+  const { page, ctx, errors } = await open({ lite: 'stopped', page: 'den' });
+  await page.waitForSelector('#yd-models-drop');
+  assert.match(await page.textContent('#yd-models-note'), /stay on this PC: nothing is uploaded or shared.*stand-in/);
+  // a drop is the browser's own: files made in the page and handed to the drop event
+  const dropFiles = (files) => page.evaluate((fs) => {
+    const dt = new DataTransfer();
+    for (const f of fs) dt.items.add(new File([new Uint8Array(f.bytes)], f.name));
+    const el = document.getElementById('yd-models-drop');
+    el.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    el.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+  }, files);
+  const MD20 = [77, 68, 50, 48, 8, 1, 0, 0];
+  // checked before anything is sent: the wrong kind of file, no model in the drop
+  await dropFiles([{ name: 'tower.fbx', bytes: [1, 2, 3] }]);
+  assert.match(await statusText(page), /tower\.fbx: only \.m2, \.skin, \.blp and \.wmo files/);
+  await dropFiles([{ name: 'tower.blp', bytes: [66, 76, 80, 50] }]);
+  assert.match(await statusText(page), /There's no model in that/);
+  assert.equal((await calls(page, 'den_models_add')).length, 0);
+  // a model with its skin and texture, under its own name
+  await page.fill('#yd-model-name', 'Lighthouse');
+  await dropFiles([{ name: 'Tower.m2', bytes: MD20 }, { name: 'Tower00.skin', bytes: [83, 75, 73, 78] }, { name: 'tower.blp', bytes: [66, 76, 80, 50] }]);
+  await page.waitForFunction(() => /Lighthouse is in your Den's gallery under My models/.test(document.querySelector('#yd .yd-status').textContent));
+  assert.match(await statusText(page), /1 texture it names weren't in your drop/);
+  const sent = (await calls(page, 'den_models_add'))[0];
+  assert.deepEqual(sent.files.map((f) => f.name), ['Tower.m2', 'Tower00.skin', 'tower.blp']);
+  assert.equal(sent.label, 'Lighthouse');
+  assert.equal(Buffer.from(sent.files[0].data, 'base64').subarray(0, 4).toString(), 'MD20', 'the bytes as base64');
+  await page.waitForSelector('#yd-models li');
+  assert.match(await page.textContent('#yd-models'), /Lighthouse.*Model/s);
+  // the server's own check still answers (a file that only looks right by name)
+  await dropFiles([{ name: 'fake.m2', bytes: [1, 2, 3, 4] }]);
+  await page.waitForFunction(() => /isn't a model file/.test(document.querySelector('#yd .yd-status').textContent));
+  await page.click('#yd-models li button');
+  await page.waitForFunction(() => !document.querySelector('#yd-models li'));
+  assert.deepEqual((await calls(page, 'den_models_remove')).map((a) => a.slug), ['lighthouse']);
   await noBrands(page);
   assert.deepEqual(errors, []);
   await ctx.close();

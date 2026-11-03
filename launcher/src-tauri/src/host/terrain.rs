@@ -35,8 +35,8 @@ pub const SLOT: &str = "patch-T.MPQ";
 pub const GROUND: &str = "yourden";
 const MARK: &str = "Leyline\\DenGround.txt";
 const MARK_TEXT: &[u8] = b"Leyline: your Den's ground, made on this PC from your own game files. Removed when you play elsewhere.\r\n";
-/// Ours holds one or a few tiles; anything much bigger in the slot is someone else's.
-const OURS_MAX: u64 = 64 * 1024 * 1024;
+/// Ours holds a few tiles and the player's own models (host/denmodels.rs); anything much bigger is someone else's.
+const OURS_MAX: u64 = 512 * 1024 * 1024;
 /// The pack folder the Docker Den's re-stage reads first.
 pub const PACK_ID: &str = "den-terrain";
 
@@ -339,6 +339,13 @@ fn write_den_patch(client: &Path, den_root: &Path, d: &Delta, tile: Vec<u8>, whi
     };
     let mut files = vec![(d.tile.adt_path(), tile)];
     files.extend(extras);
+    // My models (host/denmodels.rs): the player's own model files under World\Leyline\Den\ and their own model
+    // table with a row each (none dropped: nothing, and the table is left alone)
+    let dens_dir = dens::dir(den_root);
+    if !crate::host::denmodels::list(&dens_dir).is_empty() {
+        let stock = mpq::read_own(&archive_order(client), crate::host::denmodels::TABLE).ok().flatten();
+        files.extend(crate::host::denmodels::patch_files(&dens_dir, stock.as_deref()));
+    }
     // what an archive read after ours would hide
     for p in after_slot(client) {
         let Ok(mut a) = mpq::GameArchive::open(&p) else { continue };

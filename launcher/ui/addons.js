@@ -113,6 +113,7 @@
       }
       notes[c.id] = [doneText(r, c), "ok"];
       ok = true;
+      if (window.LeylineApp && window.LeylineApp.noteInstalled) window.LeylineApp.noteInstalled("leyline:addons", "addons");   // Installed opens on Addons
     } catch (e) {
       notes[c.id] = [String(e), "bad"];
     }

@@ -730,10 +730,10 @@ fn the_den_grows_and_the_companion_talks_with_the_assistant() {
 
     // 1. the room grows by rings, is saved with its size and opens at it again
     w.say(".den size");
-    assert!(w.until_line().1.starts_with("Your Den is size 1 of 4: a 16 x 16 yard room"));
+    assert!(w.until_line().1.starts_with("Your Den is size 1 of 7: a 16 x 16 yard room"));
     w.say(".den grow");
     let (frames, line) = w.until_line();
-    assert!(line.starts_with("Your Den is size 2 of 4: a 32 x 32 yard room, props up to 30 yards"), "{line}");
+    assert!(line.starts_with("Your Den is size 2 of 7: a 32 x 32 yard room, props up to 30 yards"), "{line}");
     let (made, gone) = objects(&frames);
     assert_eq!((made.len(), gone.len()), (0, 0), "the open plane: only the size changes");
     let _ = mx;
@@ -751,7 +751,7 @@ fn the_den_grows_and_the_companion_talks_with_the_assistant() {
     w.until_line();
     w.say(".den size 1");
     let (frames, line) = w.until_line();
-    assert!(line.starts_with("Your Den is size 1 of 4"), "{line}");
+    assert!(line.starts_with("Your Den is size 1 of 7"), "{line}");
     assert_eq!(objects(&frames).0.len(), 0);
     w.say(".den load grown");
     let (frames, line) = w.until_line();
@@ -759,7 +759,7 @@ fn the_den_grows_and_the_companion_talks_with_the_assistant() {
     assert_eq!(objects(&frames).0.len(), 1, "the file's chair (the white Den has no room pieces)");
     assert_eq!(srv.shared.den.lock().unwrap().spot.half, 16.0);
     w.say(".den size 9");
-    assert!(w.until_line().1.starts_with("Sizes are 1 to 4"));
+    assert!(w.until_line().1.starts_with("Sizes are 1 to 7"));
 
     // 2. the companion: called, named, heard, answering from the assistant's file, following, staying in the Den
     w.send(&heartbeat(mx, my, mz, 0.0));
@@ -983,8 +983,8 @@ fn a_new_players_den_survives_a_restart_of_the_program() {
     if opened.contains("replace") {
         assert_eq!(say(&mut w, ".den load mine replace"), "Opened: 2 props.");
     }
-    assert_eq!(say(&mut w, ".den size").split(':').next().unwrap(), "Your Den is size 1 of 4");
-    assert!(say(&mut w, ".den grow").starts_with("Your Den is size 2 of 4"));
+    assert_eq!(say(&mut w, ".den size").split(':').next().unwrap(), "Your Den is size 1 of 7");
+    assert!(say(&mut w, ".den grow").starts_with("Your Den is size 2 of 7"));
     // the real program: she is at your side from login, so calling her answers in her own voice
     w.say(".den companion");
     assert_eq!(w.until_she_says().2, den_lite::companion::HERE);
@@ -1252,7 +1252,7 @@ fn one_click_lands_in_the_den_with_the_builder_ready() {
     let (srv, dir) = server("oneclick", HeroGender::Female);
     let ev = |dir: &std::path::Path| den_lite::events::read(dir).into_iter().map(|l| l.ev).collect::<Vec<_>>();
     // at start: "start" (and "models", how many prop models it knows, when the game's table is there)
-    assert_eq!(ev(&dir).into_iter().filter(|e| e != "models").collect::<Vec<_>>(), ["start"]);
+    assert_eq!(ev(&dir).into_iter().filter(|e| e != "models" && e != "my_models").collect::<Vec<_>>(), ["start"]);
     // the login screen code signs in as DENAUTO (the launcher's keys: DEN, as Config.wtf fills in)
     let (key, _, address) = login(srv.login, "DENAUTO", "den").expect("login");
     let mut w = World::connect(&address, "DENAUTO", key, 3);
@@ -2240,6 +2240,89 @@ fn any_items_look_goes_on_at_once_and_is_kept() {
     assert!(w.until_line().1.starts_with("Back in your own outfit"));
     w.say(".den gear sparkly");
     assert!(w.until_line().1.starts_with("Usage: .den gear"));
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// System lines until one starts with `prefix` (other lines, such as the companion staying behind, are skipped);
+/// every frame on the way and the line.
+fn until_said(w: &mut World, prefix: &str) -> (Vec<Frame>, String) {
+    let mut all = Vec::new();
+    loop {
+        let (frames, line) = w.until_line();
+        all.extend(frames);
+        if line.starts_with(prefix) {
+            return (all, line);
+        }
+    }
+}
+
+fn f32_at(b: &[u8], i: usize) -> f32 {
+    f32::from_le_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]])
+}
+
+/// Den anywhere (places.rs, owner 3 Nov): `.den go` on the same map is a near teleport the game answers, to another
+/// map a far one (TRANSFER_PENDING, NEW_WORLD, the game's WORLDPORT_ACK, then everything again: the player's own
+/// create with the self flag, the time sync, the world states, and no Den objects on a map the Den isn't on);
+/// `.den here` moves the Den, keeping the old place's props in its own file, and props go down at the new place.
+#[test]
+fn the_den_goes_anywhere_near_and_far_and_each_place_keeps_its_den() {
+    let (srv, dir) = server("places", HeroGender::Female);
+    let mut w = into_world(&srv, 0);
+    let me = den_lite::world::PLAYER_GUID;
+    w.say(".den place chair");
+    let (frames, _) = w.until_line();
+    let (made, _) = objects(&frames);
+    let chair = *made.keys().next().expect("the chair on the island");
+    // near: Orgrimmar is on the island's map
+    w.say(".den go orgrimmar");
+    let (frames, _) = until_said(&mut w, "Off to Orgrimmar");
+    let tp = frames.iter().find(|f| f.opcode == 0x0C7).expect("MSG_MOVE_TELEPORT_ACK");
+    assert_eq!(&tp.body[..2], &[0x01, 0x01], "the player's packed guid");
+    let counter = u32::from_le_bytes([tp.body[2], tp.body[3], tp.body[4], tp.body[5]]);
+    assert_eq!((f32_at(&tp.body, 16), f32_at(&tp.body, 20)), (1629.36, -4373.39));
+    assert!(!frames.iter().any(|f| f.opcode == 0x03E), "no loading screen on the same map");
+    let mut ack = vec![0x01, 0x01];
+    ack.extend_from_slice(&counter.to_le_bytes());
+    ack.extend_from_slice(&1000u32.to_le_bytes());
+    w.raw(0x0C7, &ack);
+    until_said(&mut w, "You are at Orgrimmar");
+    // far: Stormwind is on another map
+    w.say(".den go stormwind");
+    let (frames, _) = until_said(&mut w, "Off to Stormwind");
+    assert!(frames.iter().any(|f| f.opcode == 0x03F && f.body == 0u32.to_le_bytes()), "SMSG_TRANSFER_PENDING, map 0");
+    let nw = frames.iter().find(|f| f.opcode == 0x03E).expect("SMSG_NEW_WORLD");
+    assert_eq!((&nw.body[..4], f32_at(&nw.body, 4)), (&0u32.to_le_bytes()[..], -8833.38));
+    assert!(f32_at(&nw.body, 12) > 94.0, "a little above the ground: the game lands on its own");
+    w.raw(0x0DC, &[]);
+    let (frames, _) = until_said(&mut w, "You are at Stormwind");
+    assert_eq!(player_created(&frames, me), Some(true), "the player's own create again, with the self flag");
+    assert!(frames.iter().any(|f| f.opcode == 0x0390), "the time sync again");
+    assert!(objects(&frames).0.is_empty(), "the Den's props stay on the island's map");
+    // make my Den here: the island's chair goes, kept in its place's file
+    w.send(&heartbeat(-8830.0, 630.0, 94.0, 0.0));
+    w.say(".den here");
+    let (frames, line) = until_said(&mut w, "Your Den is here now: Stormwind");
+    assert!(objects(&frames).1.contains(&chair), "{line}");
+    assert!(dir.join("places").join("m1_16226_16257.den.json").is_file());
+    w.say(".den place chair");
+    let (frames, _) = w.until_line();
+    let (made, _) = objects(&frames);
+    let c = made.values().next().expect("a chair in Stormwind");
+    assert!((c.x + 8827.0).abs() < 1.0 && (c.y - 630.0).abs() < 1.0, "3 yards ahead, at the new place");
+    w.say(".den places");
+    let (_, line) = until_said(&mut w, "Your Den is at Stormwind");
+    assert!(line.contains("Dens you kept at other places"), "{line}");
+    // back to the island: no Den objects there now (the Den is in Stormwind)
+    w.say(".den go island");
+    until_said(&mut w, "Off to your first Den");
+    w.raw(0x0DC, &[]);
+    let (frames, _) = until_said(&mut w, "You are at your first Den");
+    assert!(objects(&frames).0.is_empty());
+    w.say(".den size city");
+    let (_, line) = until_said(&mut w, "Your Den is size 7 of 7");
+    assert!(line.contains("city-size"), "{line}");
     drop(w);
     drop(srv);
     let _ = std::fs::remove_dir_all(&dir);

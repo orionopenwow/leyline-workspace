@@ -179,6 +179,8 @@ pub fn model_table(client: &Path, den_dir: &Path) -> bool {
     if b.len() < 20 || &b[..4] != b"WDBC" {
         return false;
     }
+    // with a row per model the player dropped (host/denmodels.rs), as the Den's patch has it
+    let b = super::denmodels::table(den_dir, &b).unwrap_or(b);
     let to = den_dir.join("GameObjectDisplayInfo.dbc");
     if std::fs::read(&to).ok().as_deref() == Some(&b[..]) {
         return true;

@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "about": "Loadout templates (stream/loadouts.py, launcher/src-tauri/src/loadouts.rs): ready-made starter loadouts for the launcher's Mods & Addons › Loadouts and the site's /loadouts. Items are catalog ids of REVIEWED, published entries only (stream/upstream-addons.json) or leyline:addons; a pending id is never shown (loadouts.py drops it, test_loadouts.py fails on it). gfx is a launcher graphics preset (gfx.rs PRESETS). The launcher keeps the same list in ui/loadouts.js TEMPLATES (the test checks both match).",
+  "templates": [
+    {"id": "official", "name": "Official realm", "line": "The Leyline addons for game modes, golf and your Den, with balanced graphics.",
+     "items": ["leyline:addons"], "gfx": "balanced", "builds": ["3.3.5a"]},
+    {"id": "quester", "name": "Quester", "line": "Quest help on the map, gathering spots, item ids and stat values in tooltips.",
+     "items": ["up:questie", "up:gathermate", "up:idtip", "up:ratingbuster"], "gfx": "balanced", "builds": ["3.3.5a"]},
+    {"id": "raider", "name": "Raider", "line": "A damage meter, cooldown and aura tracking, raid tools and gear checks.",
+     "items": ["up:skada", "up:tellmewhen", "up:weakauras-bunny67", "up:sharedmedia", "up:blt", "up:krt", "up:gearscorelite"], "gfx": "balanced", "builds": ["3.3.5a"]},
+    {"id": "clean-frames", "name": "Tidy interface", "line": "Movable action bars, one sorted bag, clearer unit frames, nameplates and minimap.",
+     "items": ["up:dominos", "up:adibags", "up:ruf", "up:platebuffs", "up:pretty-minimap"], "gfx": "", "builds": ["3.3.5a"]},
+    {"id": "best-graphics", "name": "Best graphics", "line": "The game's own settings turned all the way up. No files added.",
+     "items": [], "gfx": "ultra", "builds": ["1.12", "2.4.3", "3.3.5a"]},
+    {"id": "old-pc", "name": "Old PC", "line": "The game's own settings turned down for speed. No files added.",
+     "items": [], "gfx": "low", "builds": ["1.12", "2.4.3", "3.3.5a"]}
+  ]
+}

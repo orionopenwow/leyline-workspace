@@ -98,10 +98,11 @@ $("tb-account").addEventListener("click", () => openLink("account"));
 // friends and hub, which became the Forum on 2026-10-30) still work everywhere: show() maps them to the page + tab, so a remembered page, a
 // data-page-go button or a leyline:// link lands where it used to; a page with tabs alone opens its last tab. Modes has no menu item
 // but is still a page (Home's featured mode, Realms › MODES, show("modes")).
-const TABS = { mods: ["installed", "discover"] };
+const TABS = { mods: ["installed", "discover", "gamemodes"] };   // Game modes (owner 3 Nov): gamemods.js showSection
 const ALIASES = { mymods: ["mods", "installed"], installed: ["mods", "installed"], discover: ["mods", "discover"],
   community: ["forum", ""], friends: ["forum", ""], hub: ["forum", ""], chat: ["forum", ""] };
-const loaders = { "mods:discover": () => loadCatalog(), "mods:installed": () => loadInstalled(), realms: () => loadRealms(), host: () => loadHost(),
+const loaders = { "mods:discover": () => loadCatalog(), "mods:installed": () => loadInstalled(),
+  "mods:gamemodes": () => window.LeylineGameMods && window.LeylineGameMods.showSection(), realms: () => loadRealms(), host: () => loadHost(),
   forum: () => window.LeylineForum && window.LeylineForum.load() };
 let currentPage = "play";
 let currentTab = "";
@@ -1546,6 +1547,8 @@ $("play-form").addEventListener("submit", async (ev) => {
   try {
     // the realm's mods (gamemods.js): one offer for the client mods it uses that this game lacks; Cancel stops PLAY
     const rr = isOfficial() ? realmsCache.find((x) => x.official) : realmAt(realm);
+    // the realm's suggested loadout (loadouts.js): "Use this realm's loadout" once; Cancel stops PLAY
+    if (window.LeylineLoadouts && rr && !(await window.LeylineLoadouts.beforeJoin(rr, c)).go) { say("play-status", ""); return; }
     const j = window.LeylineGameMods && rr ? await window.LeylineGameMods.beforeJoin(rr, c, (t, k) => say("play-status", t, k)) : { go: true, leyline: false };
     if (!j.go) { say("play-status", ""); return; }
     if (window.LeylineAddons && isOfficial() && !j.leyline) await window.LeylineAddons.beforePlay(c);   // offers the Leyline addons (addons.js)
@@ -1607,6 +1610,7 @@ function renderClients() {
     card.append(top, tags, meta, more, acts);
     card.dataset.client = c.id;
     if (window.LeylineAddons) window.LeylineAddons.clientCard(card, c);   // the Leyline addons row (addons.js)
+    if (window.LeylineLoadouts) window.LeylineLoadouts.clientCard(card, c);   // "Loadout: <name>" and Change (loadouts.js)
     list.append(card);
 
     const runCheck = async () => {
@@ -2164,6 +2168,7 @@ async function installProject(p, btn) {
   try {
     const m = await withNativeOk(() => invoke("mod_install", { client: c.id, project: p.id }));
     say("cat-status", installedText(was ? "Updated" : "Installed", m, c), m.warnings.length ? "warn" : "ok");
+    noteInstalled(m.key || p.id, window.LeylineShelf ? window.LeylineShelf.of(p) : "");
     if (!was && window.LeylineGuide) window.LeylineGuide.moment("mod");   // the first mod: one line, once (guide.js)
   } catch (e) {
     sayErr("cat-status", e);
@@ -2376,6 +2381,18 @@ async function updateMod(c, m) {
   return installedText("Updated", r, c);
 }
 
+// What was just installed (owner's UX finding, 2 Nov: after an addon install Installed opened on the Mods tab): Installed
+// opens on its tab (Mods or Addons) with its card marked, wherever it was installed from (Discover, Game modes, a drop,
+// the Leyline addons, a loadout).
+let justInstalled = "";
+function noteInstalled(key, shelf) {
+  justInstalled = key || "";
+  if (shelf === "mods" || shelf === "addons") {
+    instShelf = shelf;
+    try { localStorage.setItem("leyline.instShelf", instShelf); } catch (_) { /* fine */ }
+  }
+}
+
 // Installed › Mods | Addons (owner 31 Oct 19:22): the same rule as Discover (shelf.js installed(): the mods list's entry,
 // else an addon is one that only adds addon folders). The Leyline addons are under Addons (addons.js).
 let instShelf = "mods";
@@ -2405,6 +2422,7 @@ function renderInstalled() {
   if ($("mods-find")) $("mods-find").textContent = instShelf === "addons" ? "Find addons" : "Find mods";
   if ($("mods-list-yours")) $("mods-list-yours").textContent = instShelf === "addons" ? "List your addon" : "List your mod";
   if (window.LeylineAddons) window.LeylineAddons.renderMods(c);   // the Leyline addons, first on Installed › Addons (addons.js)
+  if (window.LeylineLoadouts) window.LeylineLoadouts.renderInstalled(c);   // the Loadouts box on top (loadouts.js)
   $("mods-client-note").textContent = c ? (offeredBuild(c.build) ? c.build : "Other build") : "";
   $("mods-client-note").title = c ? `${buildLabel(c.build)} · ${c.path}` : "";
   const list = $("mods-list");
@@ -2418,7 +2436,8 @@ function renderInstalled() {
   if (buildTag(c.build) === "other" && !installed.length) { list.append(el("p", "hint", "Leyline does not know this client's build, so it installs no mods or addons here. Realms work.")); return; }
   if (!mine.length) { list.append(el("p", "hint", `No ${word} in this client yet. Find some in Discover › ${instShelf === "addons" ? "Addons" : "Mods"}, or drop one above.`)); return; }
   for (const m of mine) {
-    const card = el("div", "card" + (m.enabled ? "" : " off") + (m.update ? " has-update" : ""));
+    const card = el("div", "card" + (m.enabled ? "" : " off") + (m.update ? " has-update" : "") + (m.key === justInstalled ? " just" : ""));
+    card.dataset.key = m.key;
     const top = el("div", "top");
     top.append(el("span", "name", m.name), el("span", "build", m.version ? "v" + m.version : (m.source === "catalog" ? "Workshop" : "Local")));
     const tags = el("div", "tags");
@@ -2473,6 +2492,8 @@ function renderInstalled() {
     card.append(top, tags, meta, acts);
     list.append(card);
   }
+  const just = list.querySelector(".card.just");
+  if (just && currentPage === "mods" && currentTab === "installed" && just.scrollIntoView) just.scrollIntoView({ block: "nearest" });
 }
 
 async function modAction(cmd, args, okText) {
@@ -2500,6 +2521,7 @@ async function installLocal(paths) {
     try {
       const m = await withNativeOk(() => invoke("mod_install_local", { client: c.id, path }));
       say("mods-status", installedText("Installed", m, c), m.warnings.length ? "warn" : "ok");
+      noteInstalled(m.key, shelfOfInstalled(m));
       if (window.LeylineGuide) window.LeylineGuide.moment("mod");   // the first mod: one line, once (guide.js)
     } catch (e) {
       say("mods-status", `${name}: ` + showProblems(e), "bad");
@@ -2930,7 +2952,8 @@ async function playRealm(r, btn) {
   btn.disabled = true;
   say("rl-status", `Starting ${c.name} on ${r.name}…`);
   try {
-    // the realm's mods (gamemods.js): "This realm uses X, Y: Get them and play" (one click; Cancel stops PLAY)
+    // the realm's suggested loadout (loadouts.js), then its mods (gamemods.js): "This realm uses X, Y: Get them and play"
+    if (window.LeylineLoadouts && !(await window.LeylineLoadouts.beforeJoin(r, c)).go) { say("rl-status", ""); btn.disabled = false; return; }
     const j = window.LeylineGameMods ? await window.LeylineGameMods.beforeJoin(r, c, (t, k) => say("rl-status", t, k)) : { go: true, leyline: false };
     if (!j.go) { say("rl-status", ""); btn.disabled = false; return; }
     if (window.LeylineAddons && r.official && !j.leyline) await window.LeylineAddons.beforePlay(c);   // offers the Leyline addons (addons.js)
@@ -2987,8 +3010,10 @@ $("rl-join").addEventListener("click", async () => {
   try {
     const j = await invoke("join_invite", { client: c.id, link });
     // a friend's Den (host/litenet.rs): the game is already starting with your own login from the link
-    if (j.guest) say("rl-status", j.guest.auto ? `Joining your friend's Den: the game signs you in by itself and opens at character select.`
-      : `Joining your friend's Den. At the login screen: account ${j.guest.account}, password ${j.guest.password}.`, "ok");
+    // which way in it took (host/denways.rs): the same network, the friend's own address, or the relay
+    const via = { lan: " on your shared network", own: " through your friend's own address", relay: " through the Leyline relay" }[j.way] || "";
+    if (j.guest) say("rl-status", j.guest.auto ? `Joining your friend's Den${via}: the game signs you in by itself and opens at character select.`
+      : `Joining your friend's Den${via}. At the login screen: account ${j.guest.account}, password ${j.guest.password}.`, "ok");
     else say("rl-status", `${j.name || "The realm"} is open for this PC; ${c.name} now points at ${j.address}. Press PLAY.`, "ok");
     $("rl-invite").value = "";
     await refresh();
@@ -3195,6 +3220,7 @@ window.LeylineApp = {
   news: () => news, realms: () => realmsCache, catalog: () => catalog, mode: () => mode, setMode, openLink, playHangout, HANGOUT,
   realmIcon, realmVersion, hiddenBuild, nameHue,
   state: () => state,   // addons.js: the clients
+  noteInstalled,   // addons.js: the Leyline addons just went in (Installed opens on Addons)
   refresh: () => refresh().then(refreshStatus).catch(() => { /* as it was */ }),   // den.js: after Play solo, the bar shows Your Den
   pickRealm, playRealm, loadRealms, showRealm: showLinkedRealm,   // realmlink.js: paste to add, Live now
   realmTab, setRealmsTab,   // realmlink.js: a pasted community realm opens the Community tab

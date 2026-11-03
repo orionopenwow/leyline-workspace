@@ -602,6 +602,10 @@ struct Joined {
     name: String,
     /// A friend's Den invite (host/litenet.rs): the game was started with the friend's own login.
     guest: Option<GuestJoin>,
+    /// Which way in a Den invite used (host/denways.rs): "lan", "own" or "relay" ("" for a realm's invite), and
+    /// what was tried before it.
+    way: String,
+    tried: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -620,6 +624,33 @@ struct GuestJoin {
 async fn join_invite(core: State<'_, Core>, client: String, link: String) -> Result<Joined, String> {
     core.client(&client)?;
     let (relay, rid, secret) = realms::parse_invite(&link).ok_or("That is not an invite link (https://<relay>/join/<realm>#<code>).")?;
+    // a friend's Den (Den Lite): the same network first, then the friend's own address, then the relay (denways.rs)
+    if let Some((user, pass)) = crate::host::litenet::guest_in(&link) {
+        let profile = core.client(&client)?;
+        if profile.build != clients::Build::V335a {
+            return Err("Your friend's Den plays with a 3.3.5a game folder: pick that one.".into());
+        }
+        let (lan, at) = crate::host::denways::ways_in(&link);
+        let (way, list, tried) = blocking(move || Ok(crate::host::denways::pick(lan.as_deref(), at.as_deref(), crate::host::denways::connects))).await?;
+        let (address, name) = if way == "relay" {
+            let tried_now = tried.clone();
+            blocking(move || realms::knock(&format!("https://{relay}"), &rid, &secret)).await.map_err(|e| {
+                let before = if tried_now.is_empty() { String::new() } else { format!("{} ", tried_now.join(" ")) };
+                format!("{before}The Leyline relay: {e}")
+            })?
+        } else {
+            (list, "Your friend's Den".to_string())
+        };
+        let _ = crate::herokey::set_login(&profile.path, &user, None);
+        let s = crate::hybrid::Session { user: user.clone(), pass: pass.clone(), realm: None, enter: false };
+        let (message, hybrid) = point_and_play_with(&core, &client, &address, true, Some(s), true)?;
+        let (auto, why) = match hybrid {
+            Ok(()) => (true, String::new()),
+            Err(e) => (false, e),
+        };
+        let guest = GuestJoin { auto, account: user, password: if auto { String::new() } else { pass }, why, message };
+        return Ok(Joined { address, name, guest: Some(guest), way: way.into(), tried });
+    }
     let (address, name) = blocking(move || realms::knock(&format!("https://{relay}"), &rid, &secret)).await?;
     if let Some(k) = core.kit() {
         let own_den = crate::host::invite(&k).as_deref() == Some(link.as_str())
@@ -630,24 +661,8 @@ async fn join_invite(core: State<'_, Core>, client: String, link: String) -> Res
             }
         }
     }
-    // a friend's Den (Den Lite through the relay): their own one-time login, straight to character select
-    if let Some((user, pass)) = crate::host::litenet::guest_in(&link) {
-        let profile = core.client(&client)?;
-        if profile.build != clients::Build::V335a {
-            return Err("Your friend's Den plays with a 3.3.5a game folder: pick that one.".into());
-        }
-        let _ = crate::herokey::set_login(&profile.path, &user, None);
-        let s = crate::hybrid::Session { user: user.clone(), pass: pass.clone(), realm: None, enter: false };
-        let (message, hybrid) = point_and_play_with(&core, &client, &address, true, Some(s), true)?;
-        let (auto, why) = match hybrid {
-            Ok(()) => (true, String::new()),
-            Err(e) => (false, e),
-        };
-        let guest = GuestJoin { auto, account: user, password: if auto { String::new() } else { pass }, why, message };
-        return Ok(Joined { address, name, guest: Some(guest) });
-    }
     point_and_play(&core, &client, &address, false)?;
-    Ok(Joined { address, name, guest: None })
+    Ok(Joined { address, name, guest: None, way: String::new(), tried: Vec::new() })
 }
 
 /// What Invite friends made: the link to send (one friend, 24 hours) and the tunnel as it is now.
@@ -657,6 +672,42 @@ struct DenInvite {
     name: String,
     expires: u64,
     tunnel: crate::host::litenet::TunnelState,
+    /// The ways in the link, in the order the friend's launcher tries them (host/denways.rs).
+    ways: Vec<InviteWay>,
+}
+
+/// One way in: "lan" (same network), "own" (your own address), "relay"; on or not, and why, in a line.
+#[derive(Serialize, Debug, Clone, PartialEq)]
+struct InviteWay {
+    id: &'static str,
+    ok: bool,
+    line: String,
+}
+
+/// The same network way: Den Lite's direct listener opened on this ask (`<dens>/den-lite.direct-want`; it reads it
+/// within 2 seconds) and what it says. Some("ip:port") when open.
+fn open_lan(dens: &Path) -> (Option<String>, InviteWay) {
+    use crate::host::denways;
+    let off = |line: String| (None, InviteWay { id: "lan", ok: false, line });
+    let Some(ip) = denways::lan_address() else { return off("Same network: this PC isn't on a home or office network.".into()) };
+    let want = dens.join(denways::WANT_FILE);
+    if std::fs::write(&want, ip.to_string()).is_err() {
+        return off("Same network: couldn't ask your Den's server.".into());
+    }
+    for _ in 0..25 {
+        if !want.exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    if want.exists() {
+        let _ = std::fs::remove_file(&want);
+        return off("Same network: your Den's server is from before this way (update Leyline, then Play again).".into());
+    }
+    match std::fs::read_to_string(dens.join(denways::DIRECT_FILE)).map_err(|e| e.to_string()).and_then(|t| denways::direct_state(&t)) {
+        Ok((ip, lp, _)) => (Some(format!("{ip}:{lp}")), InviteWay { id: "lan", ok: true, line: format!("Same network: on, at {ip} (friends at your home or on your network come in here first).") }),
+        Err(why) => off(format!("Same network: off ({why}). Allow Den Lite in your firewall for private networks, then Invite again.")),
+    }
 }
 
 /// Invite friends, Den Lite (owner 1 Nov: "invite a friend through the Leyline network and host locally
@@ -676,6 +727,7 @@ fn den_invite_now(name: Option<&str>) -> Result<DenInvite, String> {
 /// test's friend comes in on this PC, through Den Lite's friends' listener).
 fn den_invite_with(name: Option<&str>, tunnel: bool) -> Result<DenInvite, String> {
     use crate::host::{lite::{self, DenLite}, litenet};
+    let tunnel_on = tunnel;
     {
         let app = crate::settings::app_dir();
         let l = lite::Binary::find(&app);
@@ -712,8 +764,92 @@ fn den_invite_with(name: Option<&str>, tunnel: bool) -> Result<DenInvite, String
         };
         let g = l.guest_add(name)?;
         let link = litenet::invite_link(realms::RELAY, &tunnel.realm_id, &secret, Some((&g.user, &g.pass)));
-        Ok(DenInvite { link, name: g.name, expires: g.expires, tunnel })
+        // the other ways (host/denways.rs): the same network, the player's own address
+        let dens = l.den_dir();
+        let (lan, lan_way) = open_lan(&dens);
+        let own = std::fs::read_to_string(dens.join(crate::host::denways::HOST_FILE)).ok().map(|t| t.trim().to_string()).filter(|h| crate::host::denways::host_ok(h));
+        let own_way = match (&own, lan.is_some()) {
+            (None, _) => InviteWay { id: "own", ok: false, line: "Your own address: not set (only for a router you set up, or your own server; see the guide).".into() },
+            (Some(h), true) => InviteWay { id: "own", ok: true, line: format!("Your own address: {h} (your router must send ports 3724 and 8085 to this PC).") },
+            (Some(h), false) => InviteWay { id: "own", ok: false, line: format!("Your own address: {h}, but your Den's direct way is off (see Same network).") },
+        };
+        let at = own.filter(|_| lan.is_some());
+        let relay_way = if !tunnel_on {
+            InviteWay { id: "relay", ok: false, line: "Leyline relay: not started (a test).".into() }
+        } else if tunnel.last_error.is_empty() {
+            InviteWay { id: "relay", ok: true, line: "Leyline relay: on (works from anywhere; the relay only passes the game's connection through).".into() }
+        } else {
+            InviteWay { id: "relay", ok: false, line: format!("Leyline relay: {}", tunnel.last_error) }
+        };
+        let link = crate::host::denways::with_ways(&link, lan.as_deref(), at.as_deref());
+        Ok(DenInvite { link, name: g.name, expires: g.expires, tunnel, ways: vec![lan_way, own_way, relay_way] })
     }
+}
+
+/// "Your own address" for friends (host/denways.rs): a host name or IP (optionally `:port`) that reaches this PC
+/// from the internet, kept in `<dens>/den-lite.direct-host` for Den Lite; empty takes it away. What is set now.
+#[tauri::command]
+fn den_own_address(host: Option<String>) -> Result<String, String> {
+    use crate::host::{denways, lite::DenLite};
+    let dens = crate::host::lite::Binary::find(&crate::settings::app_dir()).den_dir();
+    let f = dens.join(denways::HOST_FILE);
+    match host.map(|h| h.trim().to_string()) {
+        None => {}
+        Some(h) if h.is_empty() => {
+            let _ = std::fs::remove_file(&f);
+        }
+        Some(h) if denways::host_ok(&h) => {
+            std::fs::create_dir_all(&dens).map_err(|e| e.to_string())?;
+            std::fs::write(&f, &h).map_err(|e| format!("Couldn't keep your address: {e}"))?;
+        }
+        Some(_) => return Err("That isn't an address: a name like den.example.org or an IP, optionally :port.".into()),
+    }
+    Ok(std::fs::read_to_string(&f).map(|t| t.trim().to_string()).unwrap_or_default())
+}
+
+/// My models (host/denmodels.rs): a dropped file, its bytes as base64 (the UI reads them from the drop).
+#[derive(serde::Deserialize)]
+struct DroppedFile {
+    name: String,
+    data: String,
+}
+
+fn den_models_dir() -> PathBuf {
+    use crate::host::lite::DenLite;
+    crate::host::lite::Binary::find(&crate::settings::app_dir()).den_dir()
+}
+
+/// The player's own models in Your Den.
+#[tauri::command]
+fn den_models() -> Vec<crate::host::denmodels::Model> {
+    crate::host::denmodels::list(&den_models_dir())
+}
+
+/// A drop of model files added (checked; nothing uploaded). It is in the Den the next time it starts.
+#[tauri::command]
+async fn den_models_add(files: Vec<DroppedFile>, label: Option<String>) -> Result<crate::host::denmodels::Model, String> {
+    blocking(move || {
+        if files.len() > crate::host::denfiles::MAX_FILES {
+            return Err(format!("Up to {} files at once.", crate::host::denfiles::MAX_FILES));
+        }
+        let mut got = Vec::new();
+        for f in files {
+            if f.data.len() > crate::host::denfiles::MAX_TOTAL / 3 * 4 + 8 {
+                return Err(format!("File {} is too big.", f.name));
+            }
+            let b = leyline_terrain::b64::decode(&f.data).ok_or_else(|| format!("File {} didn't arrive whole.", f.name))?;
+            got.push((f.name, b));
+        }
+        let dir = den_models_dir();
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        crate::host::denmodels::add(&dir, &got, label.as_deref())
+    })
+    .await
+}
+
+#[tauri::command]
+fn den_models_remove(slug: String) -> Result<bool, String> {
+    crate::host::denmodels::remove(&den_models_dir(), &slug)
 }
 
 /// The tunnel now (Your Den's Friends line).
@@ -1994,6 +2130,16 @@ pub fn run() {
             crate::looks::commands::looks_apply,
             crate::looks::commands::looks_remove,
             crate::looks::commands::looks_reset,
+            crate::loadouts::commands::loadouts_status,
+            crate::loadouts::commands::loadout_new,
+            crate::loadouts::commands::loadout_add_shared,
+            crate::loadouts::commands::loadout_import,
+            crate::loadouts::commands::loadout_code,
+            crate::loadouts::commands::loadout_copy,
+            crate::loadouts::commands::loadout_rename,
+            crate::loadouts::commands::loadout_set_gfx,
+            crate::loadouts::commands::loadout_delete,
+            crate::loadouts::commands::loadout_switch,
             crate::clientimport::commands::client_import_check,
             crate::clientimport::commands::client_import_start,
             crate::clientimport::commands::client_import_state,
@@ -2040,6 +2186,10 @@ pub fn run() {
             den_invite, // Invite friends on Den Lite: the relay tunnel and a login per friend (host/litenet.rs)
             den_net_state,
             den_net_stop,
+            den_own_address, // Invite: your own address for friends (host/denways.rs)
+            den_models, // My models (host/denmodels.rs)
+            den_models_add,
+            den_models_remove,
             den_prefill_account,
             den_join_page,
             forge_state, // Forge, the Den's terrain editor (host/forge.rs, ui/den.js "Open in Forge")

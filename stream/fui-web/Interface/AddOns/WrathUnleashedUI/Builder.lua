@@ -72,7 +72,7 @@ local REST_FACING = 0.6                         -- a three-quarter view while Sp
 -- places any safe object and any model of the host's own game files), and their lists are the realm's answers.
 -- "buildings" (houses, inns, towers: a Den's catalog only) shows only when the realm's catalog has them.
 local CATS = { "all", "seating", "tables", "barrels", "crates", "lights", "banners", "tents", "fires", "fences", "nature", "decor",
-    "structure", "buildings", "furniture", "objects", "models" }
+    "structure", "buildings", "furniture", "objects", "models", "mymodels" }
 local SEARCHED = { objects = "find", models = "models" }
 -- "furniture" (a house's palette) isn't a realm category either: the seating and tables, and the beds, rugs, the rack
 -- and the book from decor. "stamps" are a Den's ready-made areas (DenHome.lua, .den stamp).
@@ -86,7 +86,7 @@ local RECENT_MAX = 12
 -- the game's icons for the UI"), for the column and for a tile without a model.
 local CAT_ICONS = { seating = "seating", tables = "tables", barrels = "barrels", crates = "crates", lights = "lights",
     banners = "banners", tents = "tents", fires = "fires", fences = "fences", nature = "nature", decor = "decor",
-    structure = "structure", buildings = "buildings", furniture = "furniture", objects = "objects", models = "models" }
+    structure = "structure", buildings = "buildings", furniture = "furniture", objects = "objects", models = "models", mymodels = "models" }
 -- A tile that can't show its model shows a picture on purpose: a building (a WMO: a Model frame can't draw one) the
 -- house; a prop the player's game files have no model for, its category's icon.
 local WMO_ICON = "buildings"
@@ -98,7 +98,7 @@ local function catIcon(cat) return W.Style.Icon(iconName(cat)) end
 local TABS = { "favourites", "recent", "prefabs", "stamps", "storage", "all" }
 for i = 2, #CATS do TABS[#TABS + 1] = CATS[i] end
 local TAB_TEXT = { favourites = "Favourites", recent = "Recent", prefabs = "Prefabs", stamps = "Stamps", storage = "Storage",
-    all = "Everything", objects = "Every object", models = "Models" }
+    all = "Everything", objects = "Every object", models = "Models", mymodels = "My models" }
 -- what only the full Den has (Den Lite's state says lite=1): hidden there, not offered and then refused
 local FULL_TABS = { prefabs = true, storage = true, models = true }
 local function tabText(t) return TAB_TEXT[t] or (t:sub(1, 1):upper() .. t:sub(2)) end
@@ -106,6 +106,14 @@ local function tabText(t) return TAB_TEXT[t] or (t:sub(1, 1):upper() .. t:sub(2)
 local win, panel, files, pill
 local B = { catalog = {}, shown = {}, offset = 0, tab = "all", step = 4, search = "", state = {}, parts = {}, prefabs = {},
     storage = {}, found = {}, angle = 3, spin = true, az = false, facing = REST_FACING, mode = "place" }
+-- "My models" (the player's own models dropped on the launcher's Your Den card; Den Lite's mymodels.rs): only when
+-- the catalog has one
+local function tabHidden(t, lite)
+    if lite and FULL_TABS[t] then return true end
+    if t ~= "mymodels" then return false end
+    for _, c in ipairs(B.catalog or {}) do if c.cat == "mymodels" then return false end end
+    return true
+end
 
 local function S() return W.Style end
 local function chip(parent, text, w, onClick, ...) return S().EdChip(parent, text, w, onClick, ...) end
@@ -808,7 +816,7 @@ function B.Refresh()
     local lite = B.state.lite == "1"
     local y = -PAD
     for _, b in ipairs(win.tabs) do
-        if lite and FULL_TABS[b.tab] then b:Hide() else b:ClearAllPoints(); b:SetPoint("TOPLEFT", win, "TOPLEFT", PAD, y); b:Show(); y = y - win.tabStep end
+        if tabHidden(b.tab, lite) then b:Hide() else b:ClearAllPoints(); b:SetPoint("TOPLEFT", win, "TOPLEFT", PAD, y); b:Show(); y = y - win.tabStep end
     end
     win.spawn:SetText(B.pick and ("Place " .. B.pick.name) or "Place")
     if B.pick then win.spawn:Enable() else win.spawn:Disable() end
@@ -2111,7 +2119,7 @@ function B.Layout()
     end
     win.grid:SetHeight(B.rows * (TILE + NAME_H + GAP))
     local tabs = 0
-    for _, b in ipairs(win.tabs) do if b:IsShown() or not (B.state.lite == "1" and FULL_TABS[b.tab]) then tabs = tabs + 1 end end
+    for _, b in ipairs(win.tabs) do if b:IsShown() or not tabHidden(b.tab, B.state.lite == "1") then tabs = tabs + 1 end end
     win.tabStep = math.max(18, math.min(26, math.floor((winHeight(B.rows) - 2 * PAD) / math.max(1, tabs))))
     for _, b in ipairs(win.tabs) do b:SetHeight(win.tabStep - 2) end
 end

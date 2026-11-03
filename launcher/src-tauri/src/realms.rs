@@ -96,6 +96,27 @@ pub struct Realm {
     /// The mode the realm runs (docs/MODES.md, "Mode packages"): its credit ("based on X by Y") and, when the listing
     /// carries the whole recipe, `forkable` and `recipe` for Fork this mode (host/modes.rs from_listing, checked there).
     pub mode: Option<Value>,
+    /// The loadout the realm suggests (`loadout` in the listing: a name, catalog ids and a graphics preset; checked by
+    /// `loadouts::clean_shared`). Joining offers "Use this realm's loadout" (ui/loadouts.js); it is a new loadout in
+    /// the player's game folder, so one click puts their own back.
+    pub loadout: Option<crate::loadouts::Shared>,
+}
+
+/// A realm's suggested loadout from its listing, checked: None when it names nothing installable.
+pub fn parse_loadout(v: Option<&Value>, realm_name: &str) -> Option<crate::loadouts::Shared> {
+    let o = v?.as_object()?;
+    let items: Vec<String> = o
+        .get("items")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().take(crate::loadouts::MAX_ITEMS * 2).filter_map(Value::as_str).map(String::from).collect())
+        .unwrap_or_default();
+    let name = o.get("name").and_then(Value::as_str).filter(|n| !n.trim().is_empty()).unwrap_or(realm_name);
+    let gfx = o.get("gfx").and_then(Value::as_str).unwrap_or("");
+    let s = crate::loadouts::clean_shared(&crate::loadouts::Shared { name: name.into(), items, gfx: gfx.into() }).ok()?;
+    if s.items.is_empty() && s.gfx.is_empty() {
+        return None;
+    }
+    Some(s)
 }
 
 /// One entry of a realm's mod list.
@@ -426,6 +447,7 @@ pub fn parse_community_in(v: &Value, all: bool) -> Vec<Realm> {
                 report_url: Some(format!("{REPORT_BASE}{rid}")),
                 temporary: false,
                 mods: parse_mods(r.get("mods")),
+                loadout: parse_loadout(r.get("loadout"), &s(r, "name", 32)),
                 mode: crate::host::modes::from_listing(r.get("mode")),
                 realm_id: Some(rid),
             })
@@ -842,6 +864,20 @@ mod tests {
         let many: Value = serde_json::json!((0..100).map(|i| format!("mod:m{i:03}")).collect::<Vec<_>>());
         assert_eq!(parse_mods(Some(&many)).len(), MAX_MODS);
         assert!(parse_mods(Some(&serde_json::json!("mod:x"))).is_empty());
+    }
+
+    #[test]
+    fn a_realm_suggests_a_loadout_of_catalog_ids_only() {
+        let v = serde_json::json!({"name": "Raid night", "items": ["up:skada", "https://x.example/a.zip", "local:Mine", "up:skada", "mod:pings"], "gfx": "high"});
+        let l = parse_loadout(Some(&v), "Frost").unwrap();
+        assert_eq!(l.name, "Raid night");
+        assert_eq!(l.items, vec!["up:skada".to_string(), "mod:pings".to_string()]);
+        assert_eq!(l.gfx, "high");
+        let l = parse_loadout(Some(&serde_json::json!({"items": ["up:dominos"], "gfx": "turbo"})), "Frost").unwrap();
+        assert_eq!((l.name.as_str(), l.gfx.as_str()), ("Frost", ""));
+        assert_eq!(parse_loadout(Some(&serde_json::json!({"items": ["file:x"]})), "Frost"), None);
+        assert_eq!(parse_loadout(Some(&serde_json::json!("up:skada")), "Frost"), None);
+        assert_eq!(parse_loadout(None, "Frost"), None);
     }
 
     #[test]

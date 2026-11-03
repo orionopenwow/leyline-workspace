@@ -592,10 +592,10 @@ end
 
 -- The test's (and a curious player's) way to try a framing: B.SetFit(yards, depth, lift) saves it and re-frames the
 -- tiles shown (tools/den-check den-features sweeps a few and takes a picture of each).
-function B.SetFit(yards, x, lift)
+function B.SetFit(yards, x, lift, y)
     WrathUnleashedUIDB = type(WrathUnleashedUIDB) == "table" and WrathUnleashedUIDB or {}
     WrathUnleashedUIDB.den = type(WrathUnleashedUIDB.den) == "table" and WrathUnleashedUIDB.den or {}
-    WrathUnleashedUIDB.den.fit = { yards = tonumber(yards) or B.FIT.yards, x = tonumber(x) or 0, lift = tonumber(lift) or 0 }
+    WrathUnleashedUIDB.den.fit = { yards = tonumber(yards) or B.FIT.yards, x = tonumber(x) or 0, lift = tonumber(lift) or 0, y = tonumber(y) or 0 }
     local win = B.Window and B.Window()
     if win and win.tiles then
         for _, t in ipairs(win.tiles) do t.modelPath = nil end
@@ -621,7 +621,7 @@ local function setTileModel(t, c)
             if cam then pcall(t.model.SetCamera, t.model, cam) end
             local scale, z = B.TileFit(c.size)
             pcall(t.model.SetModelScale, t.model, scale)
-            pcall(t.model.SetPosition, t.model, tonumber(fitConf().x) or 0, 0, z)
+            pcall(t.model.SetPosition, t.model, tonumber(fitConf().x) or 0, tonumber(fitConf().y) or 0, z)
             pcall(t.model.SetFacing, t.model, B.facing or REST_FACING)
         end
         t.icon:Hide()

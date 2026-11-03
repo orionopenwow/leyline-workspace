@@ -987,7 +987,7 @@ def parse_report(lines):
 
 
 # den-features' framing sweep for the gallery's model tiles: (yards the largest side is scaled to, depth, lift)
-FIT_SWEEP = [(0.06, 0, 0), (0.03, 0, 0), (0.15, -1, 0), (0.15, 1, 0), (0.15, -2, 0), (0.15, 2, 0), (0.4, 2.5, 0)]
+FIT_SWEEP = [(0.06, 0, -0.5, 0.5), (0.06, 0, 0.5, -0.5), (0.06, 0, -1, 1), (0.06, 0, -0.25, 0.25), (0.1, 0, -0.5, 0.5), (0.06, 0, 0.5, 0.5)]
 
 
 def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
@@ -1070,10 +1070,10 @@ def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
             rep.add("INFO", "gallery: props without a model in your files", r["nomodel"]["_text"][:180])
         # the tiles' framing (3 Nov: lit, but each tile showed a close-up): a few settings, a picture each, the last
         # one kept. Pick the best from logs\den-features and set it as the default in Builder.lua B.FIT.
-        for yards, x, lift in FIT_SWEEP:
-            ui("fit %s %s %s" % (yards, x, lift))
-            shot("fit-%s_%s_%s" % (yards, x, lift))
-        ui("fit %s %s %s" % FIT_SWEEP[0])
+        for yards, x, lift, y in FIT_SWEEP:
+            ui("fit %s %s %s %s" % (yards, x, lift, y))
+            shot("fit-%s_%s_%s_%s" % (yards, x, lift, y))
+        ui("fit %s %s %s %s" % FIT_SWEEP[0])
         ui("page 1")
         shot("gallery-page2")
         ui("tab all")

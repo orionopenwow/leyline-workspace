@@ -23,6 +23,7 @@ pub mod catalog;
 pub mod clientimport; // drop a game folder, a zip or a link to your own backup on the client list (clientimport.rs)
 pub mod clienttorrent; // magnets and .torrents for game clients: the owner's testing switch, off by default (clienttorrent.rs)
 pub mod clients;
+pub mod cover; // the sign-in cover: Leyline's "Logging you in…" screen over the game while the launcher signs in (cover.rs)
 pub mod deeplink; // leyline://install/<id> (hub rankings agent)
 pub mod denclick; // My Den in one click on the desktop game: sign-in keys, the game's asks, the den-play command (denclick.rs)
 pub mod gfx; // Mods & Addons › Graphics: the client's own graphics settings in Config.wtf (gfx.rs)
@@ -95,6 +96,7 @@ pub const LINKS: &[(&str, &str)] = &[
     ("hostdocs", crate::site!("/wrath/docs/hosting")), // the host console's guide (host/console.rs)
     ("alwayson", crate::site!("/wrath/docs/always-on")),
     ("network", crate::site!("/wrath/docs/network")), // the host guide's first item: how the network works
+    ("beanode", crate::site!("/wrath/docs/be-a-node")), // Become a node: the play bar's skip-the-line card (docs/QUEUE.md)
     ("themes", "https://github.com/orionopenwow/WrathUnleashed/blob/main/docs/THEMES.md"), // themes agent
     ("modders", "https://github.com/orionopenwow/WrathUnleashed/blob/main/mods/README-modders.md"),
     ("releases", update::RELEASES_PAGE),

@@ -60,6 +60,9 @@ Play in the browser, streamed (a small "mini" slice of the game, never the full 
                                (ownfiles.js). Lands on https://<STREAM_HOST>/?ownfiles=1. Works with
                                streaming off (WU_STREAM=0); needs WU_OWNFILES=1 (stream-up.sh sets it:
                                the stream site must exist). Clears an earlier stream mark first.
+         GET /wrath/api/queue  the browser queue: {capacity, in_use, waiting, wait_min}; ?me=1 adds this browser's
+                               place ("you", from the wu_q cookie). POST /wrath/api/queue/leave gives it up.
+                               status.json carries the same numbers as "browser_queue" (docs/QUEUE.md)
          GET /wrath/play/end   ends the player's sessions and clears the realm mark, so their
                                account is not held to the slice when they play with their own files
   on the stream site (STREAM_HOST, its own Caddy site block):
@@ -121,6 +124,12 @@ Settings (environment, /srv/wrath/portal.env):
   SOAP_TIMEOUT           seconds for one AzerothCore SOAP call, and the longest one waits for its turn (8)
   WU_STREAM              1 = browser streaming on, 0 = off (default 0)
   STREAM_HOST            the game's name (default: ADDRESSES below, by LEYLINE_DOMAIN_MOVE)
+  WU_PLAY_CAPACITY       streamed browser seats (default 250, the owner's number; 0 = no line). Past it /wrath/play
+                         shows the browser queue (docs/QUEUE.md); own game files need no seat
+  WU_PLAY_IDLE           seconds without game traffic before a seat counts free (600)
+  WU_QUEUE_MAX, WU_QUEUE_PER_IP, WU_QUEUE_BEAT, WU_QUEUE_HOLD, WU_QUEUE_SEAT_MIN   the line: its length (500), places per
+                         address (4), seconds a silent place is kept (180: the reconnect grace), seconds a freed seat waits for the first in
+                         line (120), minutes per seat for the first wait guess (30). docs/QUEUE.md
   STREAM_SLICES          the slice names /wrath/play accepts (default mini)
   WU_SLICE_DIR           where <slice>.json lives (default /app/slices; maxTier is read from it)
   WU_GAMEDATA_FLAG       the killswitch's flag file (default /app/gamedata-off = /srv/wrath/portal/gamedata-off);
@@ -729,6 +738,9 @@ class Sessions:
         self.sessions: dict[str, dict] = {}
         self.codes: dict[str, tuple[str, float]] = {}
         self.path = ""
+        # sid -> when its game last asked us for anything (/__auth, /__env.js, the /__gate posts): the browser
+        # queue's seats (PlayQueue). In memory only; a session taken back from the file counts from its load.
+        self.seen: dict[str, float] = {}
 
     def _persist(self) -> None:
         """Write the live sessions (call with the lock held). Atomic, 0600; a failure only logs."""
@@ -760,6 +772,7 @@ class Sessions:
                 if (isinstance(k, str) and isinstance(v, dict) and isinstance(v.get("user"), str)
                         and isinstance(v.get("exp"), (int, float)) and v["exp"] > now and len(self.sessions) < self.MAX_SESSIONS):
                     self.sessions[k] = v
+                    self.seen[k] = now
                     n += 1
             self._persist()
         return n
@@ -767,6 +780,8 @@ class Sessions:
     def _sweep(self, now: float) -> None:
         for k in [k for k, v in self.sessions.items() if v["exp"] <= now]:
             del self.sessions[k]
+        for k in [k for k in self.seen if k not in self.sessions]:
+            del self.seen[k]
         for k in [k for k, v in self.codes.items() if v[1] <= now]:
             del self.codes[k]
 
@@ -784,6 +799,7 @@ class Sessions:
                 del self.sessions[min(self.sessions, key=lambda k: self.sessions[k]["exp"])]
             self.sessions[sid] = {"user": user.upper(), "pass": password, "slice": slug,
                                   "tier": tier, "mode": mode, "exp": now + SESSION_TTL}
+            self.seen[sid] = now
             self.codes[code] = (sid, now + CODE_TTL)
             self._persist()
         return code
@@ -806,6 +822,21 @@ class Sessions:
                 return None
             return dict(s)
 
+    def touch(self, sid: str, now: float | None = None) -> None:
+        """The session's game is still there (a seat in use for the browser queue). Memory only, no file write."""
+        now = time.time() if now is None else now
+        with self.lock:
+            if sid in self.sessions:
+                self.seen[sid] = now
+
+    def seated(self, idle: float, now: float | None = None) -> set[str]:
+        """The accounts holding a streamed seat: a "stream" session whose game asked for something in the last
+        `idle` seconds. One seat per account, whatever its tabs. Own game files and guest passes take none."""
+        now = time.time() if now is None else now
+        with self.lock:
+            return {v["user"] for k, v in self.sessions.items()
+                    if v.get("mode") == "stream" and v["exp"] > now and self.seen.get(k, 0) > now - idle}
+
     def set_hop(self, sid: str, hop: dict) -> None:
         """This session plays on a community realm (a Leyline hop): /__env.js gives that realm's addresses."""
         with self.lock:
@@ -826,6 +857,7 @@ class Sessions:
             gone = [k for k, v in self.sessions.items() if v["user"] == user.upper()]
             for k in gone:
                 del self.sessions[k]
+                self.seen.pop(k, None)
             for c in [c for c, v in self.codes.items() if v[0] in gone]:
                 del self.codes[c]
             if gone:
@@ -834,6 +866,160 @@ class Sessions:
 
 
 sessions = Sessions()
+
+
+def _env_int(name: str, default: int, lo: int, hi: int) -> int:
+    try:
+        v = int(os.environ.get(name, "").strip() or default)
+    except ValueError:
+        v = default
+    return max(lo, min(hi, v))
+
+
+# The browser queue (docs/QUEUE.md). Streamed play (the slice, "Dalaran in the browser") is the one thing this server
+# hands out that costs it real bandwidth and CPU per player. WU_PLAY_CAPACITY seats; past them a fair line.
+# The owner's numbers (3 Nov): a line from about 250 players, and 180 s to come back without losing your place.
+PLAY_CAPACITY = _env_int("WU_PLAY_CAPACITY", 250, 0, Sessions.MAX_SESSIONS)   # 0 = no line at all
+PLAY_IDLE = _env_int("WU_PLAY_IDLE", 600, 60, 6 * 3600)        # a seat with no game traffic this long is free again
+QUEUE_MAX = _env_int("WU_QUEUE_MAX", 500, 1, 20000)            # the longest line; past it: "the line is full"
+QUEUE_BEAT = _env_int("WU_QUEUE_BEAT", 180, 30, 900)           # the reconnect grace: a place whose page stopped asking this long is dropped
+QUEUE_HOLD = _env_int("WU_QUEUE_HOLD", 120, 30, 900)           # a freed seat waits this long for the first in line
+QUEUE_PER_IP = _env_int("WU_QUEUE_PER_IP", 4, 1, 100)          # places per address (/64): households share one
+QUEUE_SEAT_MIN = _env_int("WU_QUEUE_SEAT_MIN", 30, 1, 720)     # the wait guess before any seat was seen to free
+QUEUE_COOKIE = "wu_q"
+QUEUE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{20,40}$")
+
+
+class PlayQueue:
+    """A first-come, first-served line for streamed seats. One place per game account (and QUEUE_PER_IP per address);
+    the queue page asks every ~15 s (the heartbeat) and a place that stops asking is dropped after QUEUE_BEAT. When a
+    seat frees, the first in line is "ready" and that seat is held for it for QUEUE_HOLD seconds; the page then goes
+    back to /wrath/play, which does all its usual checks (sign-in, the realm mark) before the seat is used.
+
+    A place gives nothing but a turn: the token in the wu_q cookie only says where you are in line. Getting in still
+    needs the signed-in player at /wrath/play, and the place must belong to that account. Memory only (a restart of the
+    portal empties the line; the pages put people back in by themselves)."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.line: list[dict] = []          # FIFO: {token, user, ip, slug, go, joined, beat, ready_until}
+        self.freed: collections.deque = collections.deque(maxlen=64)   # when seats were taken by the line (the wait guess)
+
+    def capacity(self) -> int:
+        return PLAY_CAPACITY
+
+    def _sweep(self, now: float) -> None:
+        self.line = [t for t in self.line
+                     if t["beat"] > now - QUEUE_BEAT and not (t["ready_until"] and t["ready_until"] <= now)]
+
+    def _promote(self, in_use: int, now: float) -> None:
+        """Hold each free seat for the next in line."""
+        free = self.capacity() - in_use - sum(1 for t in self.line if t["ready_until"])
+        for t in self.line:
+            if free <= 0:
+                break
+            if not t["ready_until"]:
+                t["ready_until"] = now + QUEUE_HOLD
+                free -= 1
+
+    def _wait_min(self, ahead: int, now: float) -> int:
+        """A rough wait for someone with `ahead` people before them: from how fast the line moved in the last 30
+        minutes, else from QUEUE_SEAT_MIN per seat."""
+        recent = [t for t in self.freed if t > now - 1800]
+        if len(recent) >= 3:
+            per_min = len(recent) / max(1.0, (now - min(recent)) / 60.0)
+        else:
+            per_min = max(1, self.capacity()) / QUEUE_SEAT_MIN
+        return max(1, int(round((ahead + 1) / max(per_min, 0.01))))
+
+    def _view(self, t: dict, now: float) -> dict:
+        ahead = sum(1 for x in self.line[: self.line.index(t)] if not x["ready_until"])
+        go = f"/wrath/play?mini={urllib.parse.quote(t['slug'])}{t['go']}"
+        if t["ready_until"]:
+            return {"state": "ready", "position": 0, "wait_min": 0, "hold_s": int(max(0, t["ready_until"] - now)), "go": go}
+        return {"state": "waiting", "position": ahead + 1, "wait_min": self._wait_min(ahead, now), "go": go}
+
+    def admit(self, user: str, ip: str, token: str, slug: str, go: str, seated: set, now: float | None = None) -> dict:
+        """At /wrath/play for a signed-in account: {"state": "go"} (use a seat now; "used": the token of a place to
+        forget) or the place in line ({"state": "waiting"|"ready"|"full"|"limit", "token", ...})."""
+        now = time.time() if now is None else now
+        user = user.upper()
+        with self.lock:
+            self._sweep(now)
+            cap = self.capacity()
+            mine = next((t for t in self.line if t["user"] == user), None)
+            if cap <= 0 or user in seated:   # no line set, or this account already holds a seat (another tab, a reload)
+                if mine:
+                    self.line.remove(mine)
+                return {"state": "go", "used": mine["token"] if mine else ""}
+            self._promote(len(seated), now)
+            if mine and mine["ready_until"]:
+                self.line.remove(mine)
+                self.freed.append(now)
+                return {"state": "go", "used": mine["token"]}
+            if not mine and not self.line and len(seated) < cap:
+                return {"state": "go", "used": ""}
+            if mine:
+                mine["beat"] = now
+                mine["slug"], mine["go"] = slug, go
+                return {**self._view(mine, now), "token": mine["token"]}
+            if len(self.line) >= QUEUE_MAX:
+                return {"state": "full", "token": ""}
+            if sum(1 for t in self.line if t["ip"] == ip) >= QUEUE_PER_IP:
+                return {"state": "limit", "token": ""}
+            t = {"token": secrets.token_urlsafe(24), "user": user, "ip": ip, "slug": slug, "go": go,
+                 "joined": now, "beat": now, "ready_until": 0.0}
+            self.line.append(t)
+            self._promote(len(seated), now)
+            if t["ready_until"]:   # a seat was free for it at once (the ones ahead hold theirs): no page in between
+                self.line.remove(t)
+                self.freed.append(now)
+                return {"state": "go", "used": ""}
+            return {**self._view(t, now), "token": t["token"]}
+
+    def poll(self, token: str, in_use: int, now: float | None = None) -> dict | None:
+        """The queue page's heartbeat: this place now (None: no such place, or it was dropped)."""
+        now = time.time() if now is None else now
+        with self.lock:
+            self._sweep(now)
+            t = next((x for x in self.line if hmac.compare_digest(x["token"], token)), None) if token else None
+            if not t:
+                return None
+            t["beat"] = now
+            self._promote(in_use, now)
+            return self._view(t, now)
+
+    def leave(self, token: str) -> bool:
+        with self.lock:
+            n = len(self.line)
+            self.line = [t for t in self.line if not hmac.compare_digest(t["token"], token)]
+            return len(self.line) != n
+
+    def drop_user(self, user: str) -> None:
+        with self.lock:
+            self.line = [t for t in self.line if t["user"] != user.upper()]
+
+    def status(self, in_use: int, now: float | None = None) -> dict:
+        """The public numbers: {capacity, in_use, waiting, wait_min} (capacity 0: no line here)."""
+        now = time.time() if now is None else now
+        with self.lock:
+            self._sweep(now)
+            self._promote(in_use, now)
+            waiting = len(self.line)
+            cap = self.capacity()
+            return {"capacity": cap, "in_use": min(in_use, cap) if cap else in_use, "waiting": waiting,
+                    "wait_min": self._wait_min(waiting, now) if waiting else 0}
+
+
+play_queue = PlayQueue()
+
+
+def seated_now() -> set:
+    return sessions.seated(PLAY_IDLE)
+
+
+def queue_status() -> dict:
+    return play_queue.status(len(seated_now()))
 
 
 def realm_mark(user: str, slug: str, tier: int, seconds: int) -> None:
@@ -1415,6 +1601,8 @@ def stream_ended_page() -> bytes:
     return render(
         f'{crest(REALM_NAME)}{RULE}'
         '<p class="center">Your browser pass has ended. Your account can go anywhere again with your own game files.</p>'
+        f'<p class="center"><a class="btn primary" id="end-pc" href="{html.escape(start_links()["launcher"])}">Play on your own PC</a></p>'
+        '<p class="fine center">Get the launcher and drag your game folder onto it: the whole world, no line, no streaming.</p>'
         '<p class="center"><a class="btn" href="/wrath/account">Back</a></p>'
         f'<p class="fine">{html.escape(DISCORD_HELP.split(DISCORD_URL)[0])}'
         f'<a href="{DISCORD_URL}">{DISCORD_URL}</a></p>', title="Browser pass ended", current="play")
@@ -2810,6 +2998,127 @@ def start_links() -> dict:
     return {"play": "/wrath", "launcher": download_link() or START_LAUNCHER, "den": START_DEN, "host": host}
 
 
+
+# ----------------------------------------------------------------------------------------------
+# The browser queue's page (GET /wrath/play when every streamed seat is taken) and "Skip the line"
+# ----------------------------------------------------------------------------------------------
+
+QUEUE_PATH = "/wrath/play"
+QUEUE_API = "/wrath/api/queue"
+QUEUE_POLL_S = 15
+QUEUE_CSS = """
+.q-now{max-width:640px;margin:10px auto 22px;text-align:center}
+.q-now h1{margin:.2em 0 .1em}
+.q-pos{font-size:clamp(2.4rem,7vw,3.6rem);font-weight:800;line-height:1.05;margin:14px 0 4px;letter-spacing:.01em}
+.q-wait{font-size:1.1rem;opacity:.9;margin:0 0 6px}
+.q-fine{font-size:.9rem;opacity:.75}
+.q-leave{background:none!important;border:0!important;color:inherit!important;text-decoration:underline;cursor:pointer;
+  font:inherit;font-size:.9rem;opacity:.8;padding:4px;min-height:0}
+.q-skip{max-width:960px;margin:8px auto 0}
+.q-skip h2{text-align:center;margin:0 0 4px}
+.q-skip>p{text-align:center;margin:0 0 16px;opacity:.85}
+.q-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;list-style:none;margin:0;padding:0}
+@media (max-width:900px){.q-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:520px){.q-cards{grid-template-columns:1fr}}
+.q-card{display:flex;flex-direction:column;gap:6px;height:100%;box-sizing:border-box;padding:16px;border-radius:10px;
+  border:1px solid rgba(120,150,255,.3);background:rgba(16,20,40,.55);color:inherit;text-decoration:none}
+.q-card:hover,.q-card:focus-visible{border-color:var(--ly-cyan,#7cf)}
+.q-card h3{margin:0;font-size:1.05rem}
+.q-card p{margin:0;font-size:.92rem;opacity:.85;flex:1}
+.q-card .q-go{font-weight:700}
+"""
+
+
+def seed_link() -> str:
+    """Where "Seed a server" goes: the roadmap's seeded servers on /wrath/docs when that page is there, else the
+    roadmap on GitHub (docs/ROADMAP.md)."""
+    if docs is not None and "roadmap" in getattr(docs, "TITLES", {}):
+        return "/wrath/docs/roadmap#seeded-servers"
+    return f"{LEYLINE_REPO}/blob/main/docs/ROADMAP.md#seeded-servers"
+
+
+def skip_line_cards(only_pc: bool = False) -> str:
+    """The "Skip the line" choices: each one puts a player somewhere that is not a seat here, and the last three make
+    the network bigger for everyone. only_pc: just the first (the nudge after a browser pass)."""
+    e = html.escape
+    links = start_links()
+    pc_line = "Get the launcher and drag your game folder onto it: the whole world, no line, no streaming."
+    cards = [("q-pc", links["launcher"], "Play on your own PC", pc_line, "Get the launcher")]
+    if not only_pc:
+        cards += [
+            ("q-host", links["host"], "Host your own realm",
+             "Run a realm on your own PC with the Host pack. Your friends join you, and it shows up for everyone.",
+             "Host a realm"),
+            ("q-node", "/wrath/docs/be-a-node", "Become a node",
+             "Let your PC carry a little of the network's traffic, so more people can play at once.", "How to help"),
+            ("q-seed", seed_link(), "Seed a server",
+             "Keep a realm's files and world going for others, so new players have somewhere to land.", "Seeding"),
+        ]
+    items = []
+    for cid, href, title, line, go in cards:
+        rel = ' rel="noopener noreferrer"' if href.startswith("https://") else ""
+        items.append(f'<li><a class="q-card" id="{cid}" href="{e(href)}"{rel}><h3>{e(title)}</h3><p>{e(line)}</p>'
+                     f'<span class="q-go">{e(go)} ›</span></a></li>')
+    return f'<ul class="q-cards">{"".join(items)}</ul>'
+
+
+def queue_page(v: dict, nonce: str, retry: str) -> bytes:
+    """You're #N in line, about M min: kept up to date by the page itself (QUEUE_API every QUEUE_POLL_S seconds, which
+    is also the place's heartbeat), and a reload every 30 s without script. Ready: back to /wrath/play by itself."""
+    e = html.escape
+    st = queue_status()
+    state = v.get("state")
+    if state == "full":
+        head, pos, wait = "The line is full right now", "", "Try again in a few minutes, or skip the line below."
+    elif state == "limit":
+        head, pos, wait = "Lots of people from your network are already in line", "", "Try again shortly, or skip the line below."
+    else:
+        head = "The browser game is full right now"   # TODO(owner): his words for the line
+        pos = f"You're #{int(v.get('position') or 1)} in line"
+        wait = f"About {int(v.get('wait_min') or 1)} min"
+    own = ('<p class="q-fine">Have your game folder on this computer? <a id="q-own" href="/wrath/play?mode=own">'
+           'Use it in the browser instead</a>: no line.</p>') if ownfiles_on() else ""
+    leave = ('<p><button type="button" class="q-leave" id="q-leave">Leave the line</button></p>'
+             if v.get("token") else "")
+    seats = (f'<p class="q-fine" id="q-seats">{int(st["in_use"])} of {int(st["capacity"])} browser seats in use · '
+             f'{int(st["waiting"])} waiting</p>') if st["capacity"] else ""
+    body = (f'<section class="q-now" aria-labelledby="q-head"><h1 id="q-head">{e(head)}</h1>'
+            f'<p class="q-pos" id="q-pos" aria-live="polite">{e(pos, quote=False)}</p><p class="q-wait" id="q-wait" aria-live="polite">{e(wait)}</p>'
+            f'{seats}<p class="q-fine">Keep this page open: it moves you in by itself when a seat frees up.</p>{own}{leave}</section>'
+            '<section class="q-skip ly-panel" aria-labelledby="q-skip-h"><h2 id="q-skip-h">Skip the line</h2>'
+            '<p>The browser game is a small taste on one server. These need no seat here, and the last three '
+            'make room for more players.</p>'   # TODO(owner): his pitch for growing the network
+            f'{skip_line_cards()}</section>')
+    script = ("(function(){var api=" + json.dumps(QUEUE_API) + ",retry=" + json.dumps(retry) + ",ms=" + str(QUEUE_POLL_S * 1000) + ";"
+              "function $(i){return document.getElementById(i)}"
+              "function tick(){fetch(api+'?me=1',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json()})"
+              ".then(function(d){var y=d&&d.you;if(!y){location.replace(retry);return}"
+              "if(y.state==='ready'){$('q-pos').textContent=\"It's your turn\";$('q-wait').textContent='Starting…';location.replace(y.go);return}"
+              "$('q-pos').textContent=\"You're #\"+y.position+' in line';$('q-wait').textContent='About '+y.wait_min+' min';"
+              "if($('q-seats'))$('q-seats').textContent=d.in_use+' of '+d.capacity+' browser seats in use · '+d.waiting+' waiting';"
+              "setTimeout(tick,ms)}).catch(function(){setTimeout(tick,ms*2)})}"
+              "setTimeout(tick,ms);"
+              "var b=$('q-leave');if(b)b.addEventListener('click',function(){b.disabled=true;"
+              "fetch(api+'/leave',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'})"
+              ".then(function(){location.assign('/wrath')},function(){location.assign('/wrath')})});"
+              "})();") if v.get("token") else ""
+    if script:
+        body += f'<script nonce="{nonce}">{script}</script>'
+    page = ly_shell(f"In line · {SITE_NAME}", body, QUEUE_PATH, "play", next_step="", css=QUEUE_CSS, noindex=True).decode("utf-8")
+    refresh = f'<noscript><meta http-equiv="refresh" content="30;url={e(retry)}"></noscript>' if script else \
+        f'<meta http-equiv="refresh" content="60;url={e(retry)}">'
+    return page.replace("<head>", "<head>" + refresh, 1).encode("utf-8")
+
+
+def queue_json(token: str | None) -> dict:
+    """GET /wrath/api/queue: the public numbers, and with ?me=1 and a place's cookie, that place ("you")."""
+    seated = seated_now()
+    doc = play_queue.status(len(seated))
+    if token is not None:
+        doc["you"] = play_queue.poll(token, len(seated)) if token else None
+    return doc
+
+
 def start_page() -> bytes:
     """Start here: four cards (Play in your browser, Get the launcher, Make your Den, Host a server), in the hub's frame
     when the front door is on, else in the Leyline look."""
@@ -3045,6 +3354,7 @@ def status_with_gamedata(body: bytes) -> bytes:
     if not isinstance(doc, dict):
         return body
     doc.update(gamedata_state())
+    doc["browser_queue"] = queue_status()   # the browser queue (docs/QUEUE.md): the launcher shows "Busy · queue N"
     return (json.dumps(doc, separators=(",", ":")) + "\n").encode("utf-8")
 
 
@@ -3249,6 +3559,7 @@ class PageHandler(BaseHTTPRequestHandler):
         # ov_slices.lua may not even be loaded), so a failed clear only matters while it is on.
         remember_go(user, query or {})
         sessions.end_user(user)
+        play_queue.drop_user(user)   # own game files take no streamed seat: no place in line either
         layers.take(user)
         try:
             realm_clear(user)
@@ -3291,6 +3602,16 @@ class PageHandler(BaseHTTPRequestHandler):
         if page:
             self.send(*page)
             return
+        # The browser queue (docs/QUEUE.md): every check above still ran; a place in line gives only a turn.
+        token = self.queue_token()
+        v = play_queue.admit(user, rl_bucket(ip), token, slug, go_param(query), seated_now())
+        if v["state"] != "go":
+            retry = f"/wrath/play?mini={urllib.parse.quote(slug)}{go_param(query)}"
+            nonce = secrets.token_urlsafe(16)
+            extra = {"Set-Cookie": f"{QUEUE_COOKIE}={v['token']}; Path=/wrath; Max-Age={SESSION_TTL}; HttpOnly; Secure; SameSite=Lax"} \
+                if v.get("token") else None
+            self.send(200, queue_page(v, nonce, retry), nonce=nonce if v.get("token") else "", connect=True, headers=extra)
+            return
         try:
             ensure_account(user, password)
             realm_mark(user, slug, info["tier"], SESSION_TTL)
@@ -3302,7 +3623,41 @@ class PageHandler(BaseHTTPRequestHandler):
         layers.take(user)   # a new stream play: marked again above; a page with the folder lifts it again
         code = sessions.create(user, password, slug, info["tier"])
         log.info("stream session for %s (%s, tier %d)", user.upper(), slug, info["tier"])
-        self.redirect(f"https://{STREAM_HOST}/__gate?code={urllib.parse.quote(code)}{go_param(query)}")
+        self.redirect(f"https://{STREAM_HOST}/__gate?code={urllib.parse.quote(code)}{go_param(query)}",
+                      f"{QUEUE_COOKIE}=; Path=/wrath; Max-Age=0; HttpOnly; Secure; SameSite=Lax" if token else "")
+
+    def queue_token(self) -> str:
+        """The wu_q cookie (a place in the browser queue), when it has the right shape."""
+        t = cookie_value(self.headers.get("Cookie", ""), QUEUE_COOKIE)
+        return t if QUEUE_TOKEN_RE.match(t or "") else ""
+
+    def queue_api(self, query: dict) -> None:
+        """GET /wrath/api/queue: {capacity, in_use, waiting, wait_min}; ?me=1 adds this browser's place ("you")."""
+        if not gate_limit.hit("queue:" + rl_bucket(self.ip()), 90):
+            self.json_reply(429, {"error": "too many requests"})
+            return
+        me = (query.get("me") or [""])[0] == "1"
+        doc = queue_json(self.queue_token() if me else None)
+        if me:
+            self.json_reply(200, doc)
+        else:
+            self.send(200, (json.dumps(doc, separators=(",", ":")) + "\n").encode(), "application/json; charset=utf-8",
+                      headers={"Access-Control-Allow-Origin": "*"})
+
+    def queue_leave(self) -> None:
+        """POST /wrath/api/queue/leave (same-origin): give up this browser's place."""
+        if not gate_limit.hit("queue:" + rl_bucket(self.ip()), 90):
+            self.json_reply(429, {"ok": False, "why": "too many requests"})
+            return
+        if self.headers.get("Origin", "") not in (SITE_ORIGINS or {f"https://{PUBLIC_HOST}"}):
+            self.json_reply(403, {"ok": False, "why": "same-origin only"})
+            return
+        token = self.queue_token()
+        gone = play_queue.leave(token) if token else False
+        self.send(200, b'{"ok":true}\n', "application/json; charset=utf-8", same_origin=True,
+                  headers={"Set-Cookie": f"{QUEUE_COOKIE}=; Path=/wrath; Max-Age=0; HttpOnly; Secure; SameSite=Lax"})
+        if gone:
+            log.info("queue: a place given up")
 
     def stream_end(self) -> None:
         """GET /wrath/play/end: end the player's sessions and clear the realm mark."""
@@ -3315,6 +3670,7 @@ class PageHandler(BaseHTTPRequestHandler):
             self.send(*page)
             return
         sessions.end_user(user)
+        play_queue.drop_user(user)
         layers.take(user)
         try:
             realm_clear(user)
@@ -3347,6 +3703,8 @@ class PageHandler(BaseHTTPRequestHandler):
     def stream_session(self) -> dict | None:
         sid = cookie_value(self.headers.get("Cookie", ""), "wu_play")
         sess = sessions.get(sid) if sid and len(sid) < 128 else None
+        if sess:
+            sessions.touch(sid)   # its game is still there: the seat stays taken (the browser queue)
         # an Azeroth Survivors session (stream/survivors.py) opens only its own address, never the Wrath stream
         return None if sess and sess.get("mode") == "survivors" else sess
 
@@ -3563,6 +3921,9 @@ class PageHandler(BaseHTTPRequestHandler):
         path = split.path.rstrip("/") or "/"
         if hub_mod is not None:   # as in do_GET: the request, for pages drawn in the hub's frame (hub_frame)
             hub_mod.note_request(self)
+        if path == QUEUE_API + "/leave":
+            self.queue_leave()
+            return
         if path in ("/__gate", "/__layer"):
             q = urllib.parse.parse_qs(split.query)
             if path == "/__gate" and ("hop" in q or "herokey" in q):
@@ -3661,6 +4022,9 @@ class PageHandler(BaseHTTPRequestHandler):
             return
         if path == "/wrath/play/end":
             self.stream_end()
+            return
+        if path == QUEUE_API:
+            self.queue_api(query)
             return
         if path == "/wrath/status.json":
             self.send(200, status_with_gamedata(status_json()), "application/json; charset=utf-8", public=True)

@@ -1,0 +1,70 @@
+/* The sign-in cover (cover.html): the launcher's dark look over the whole game window, the spinning mark, the heading,
+   a shimmering progress line and the four steps. Its own page, so its own few tokens (style.css isn't loaded). */
+@font-face { font-family: "Inter"; font-weight: 400; src: url("art/fonts/inter-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 500 700; src: url("art/fonts/inter-latin-600-normal.woff2") format("woff2"); }
+
+:root {
+  --cv-bg: #0b0d12;
+  --cv-text: #eef0f4;
+  --cv-muted: #9aa1ae;
+  --cv-accent: #5b8def;
+  --cv-accent-2: #8b6cf0;
+  --cv-ok: #4fd18b;
+  --cv-line: rgba(238, 240, 244, 0.1);
+  color-scheme: dark;
+}
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--cv-bg); }
+body {
+  color: var(--cv-text); font: 15px/1.45 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  user-select: none; -webkit-user-select: none; cursor: default;
+}
+.cover {
+  position: fixed; inset: 0; display: grid; place-items: center;
+  background:
+    radial-gradient(60% 55% at 50% 42%, rgba(91, 141, 239, 0.16), transparent 70%),
+    radial-gradient(40% 40% at 70% 75%, rgba(139, 108, 240, 0.12), transparent 70%),
+    var(--cv-bg);
+}
+.cv-card { display: flex; flex-direction: column; align-items: center; gap: 18px; width: min(460px, 86vw); text-align: center; }
+.cv-mark { --ly-spin-size: clamp(64px, 14vmin, 112px); --ly-spin-turn: 5s; filter: drop-shadow(0 6px 24px rgba(91, 141, 239, 0.35)); }
+.cv-title { margin: 4px 0 0; font-size: clamp(20px, 3.4vmin, 28px); font-weight: 600; letter-spacing: 0.01em; }
+
+/* the progress line: filled to the step, a soft shimmer running over it */
+.cv-bar { position: relative; width: 100%; height: 4px; border-radius: 4px; background: var(--cv-line); overflow: hidden; }
+.cv-fill {
+  position: absolute; inset: 0 auto 0 0; width: 12%; border-radius: inherit;
+  background: linear-gradient(90deg, var(--cv-accent), var(--cv-accent-2));
+  transition: width .5s ease;
+}
+.cv-bar::after {
+  content: ""; position: absolute; inset: 0; width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  animation: cv-shimmer 1.6s ease-in-out infinite;
+}
+@keyframes cv-shimmer { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+
+.cv-steps { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 8px; width: 100%; text-align: left; }
+.cv-step { display: flex; align-items: center; gap: 10px; color: var(--cv-muted); transition: color .3s ease; }
+.cv-step::before {
+  content: ""; flex: none; width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid var(--cv-line); box-sizing: border-box; transition: all .3s ease;
+}
+.cv-step.done { color: var(--cv-text); }
+.cv-step.done::before { background: var(--cv-ok); border-color: var(--cv-ok); }
+.cv-step.now { color: var(--cv-text); font-weight: 600; }
+.cv-step.now::before { border-color: var(--cv-accent); background: var(--cv-accent); box-shadow: 0 0 0 4px rgba(91, 141, 239, 0.25); animation: cv-pulse 1.2s ease-in-out infinite; }
+@keyframes cv-pulse { 50% { box-shadow: 0 0 0 7px rgba(91, 141, 239, 0.08); } }
+.cv-note { margin: 2px 0 0; color: var(--cv-muted); font-size: 13px; }
+
+.cv-show {
+  position: fixed; right: 18px; bottom: 16px; display: inline-flex; align-items: center; gap: 8px;
+  padding: 7px 12px; border: 1px solid var(--cv-line); border-radius: 9px; background: rgba(255, 255, 255, 0.04);
+  color: var(--cv-muted); font: inherit; font-size: 13px; cursor: pointer;
+}
+.cv-show:hover, .cv-show:focus-visible { color: var(--cv-text); border-color: rgba(238, 240, 244, 0.25); outline: none; }
+.cv-show kbd { font: 11px/1 Inter, system-ui, sans-serif; padding: 3px 5px; border: 1px solid var(--cv-line); border-radius: 5px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cv-bar::after, .cv-step.now::before { animation: none; }
+  .cv-fill { transition: none; }
+}

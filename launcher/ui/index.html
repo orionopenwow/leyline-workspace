@@ -586,6 +586,11 @@
       <h3>Background</h3>
       <label class="check"><input type="checkbox" id="set-backdrop"> Background picture: the website's picture behind the pages, under a soft wash
         (fetched from leylinelauncher.com when Leyline starts; the plain colour when it is off or offline)</label>
+      <h3>Playing</h3>
+      <label class="check"><input type="checkbox" id="set-cover"> Hide the sign-in behind Leyline's screen: while Leyline signs you in
+        at the game's login screen, a "Logging you in…" screen covers the game until character select (Esc or Show the game
+        takes it away)</label>
+      <p class="status" id="cover-status" role="status"></p>
       <h3>Updates</h3>
       <p class="lede">Leyline updates itself: it downloads new versions in the background, then says Update ready. Press Restart when you like, or it finishes the next time you open Leyline. It never restarts while your game is open.</p>
       <div class="form">
@@ -760,6 +765,13 @@
         <button type="button" class="pbd-x" id="pbd-x" aria-label="Close" hidden>×</button>
       </div>
     </div>
+  </div>
+  <!-- the official realm has a line (status.json, docs/QUEUE.md): the other ways in (app.js renderQueueCard) -->
+  <div class="pb-queue" id="pb-queue" role="region" aria-label="Skip the line" hidden>
+    <b class="pbq-head">Busy right now</b><span class="pbq-line" id="pbq-line"></span>
+    <span class="pbq-why">Skip the line, and help make room for more players:</span>
+    <span class="pbq-btns"><button type="button" class="btn small" id="pbq-pc" hidden>Play with your game folder</button><button type="button" class="btn small" id="pbq-host">Host your own realm</button><button type="button" class="btn small" id="pbq-node">Become a node</button></span>
+    <button type="button" class="pbq-x" id="pbq-x" aria-label="Not now" title="Not now">×</button>
   </div>
   <div class="pb-right">
     <button type="submit" class="play" id="play-go"><span class="sr">Play</span></button>

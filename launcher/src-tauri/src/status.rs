@@ -16,7 +16,7 @@ pub const PING_TIMEOUT: Duration = Duration::from_secs(3);
 pub const STATUS_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// What the Home page shows for a realm.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct RealmStatus {
     /// "online", "partial" (login answers, world down), "offline", or "unknown" (nothing answered,
     /// which may be this PC's network rather than the realm).
@@ -28,6 +28,15 @@ pub struct RealmStatus {
     /// its server streams no game data, so browser play needs the player's own game folder. None: not said.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gamedata_streaming: Option<bool>,
+    /// The realm's own login queue (`"queue"` in its status file: the worldserver's "Queue: N"). None: not said.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub queue: Option<u64>,
+    /// The official site's browser queue (`"browser_queue": {"waiting", "wait_min"}`, docs/QUEUE.md): people waiting for
+    /// a streamed seat and a rough wait in minutes. The play bar says "Busy · queue N" with the skip-the-line choices.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub browser_waiting: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub browser_wait_min: Option<u64>,
 }
 
 /// "host" or "host:port" to (host, port).
@@ -65,14 +74,24 @@ pub fn gamedata_streaming(v: &Value) -> Option<bool> {
     v.get("gamedata_streaming").and_then(Value::as_bool)
 }
 
+/// The queues in a status file: (the realm's login queue, people waiting for a browser seat, their rough wait in minutes).
+pub fn queues(v: &Value) -> (Option<u64>, Option<u64>, Option<u64>) {
+    let bq = v.get("browser_queue");
+    (
+        v.get("queue").and_then(Value::as_u64),
+        bq.and_then(|q| q.get("waiting")).and_then(Value::as_u64),
+        bq.and_then(|q| q.get("wait_min")).and_then(Value::as_u64),
+    )
+}
+
 /// Put the ping and the status file together the way the older Python launcher (Leyline Launcher) did.
 pub fn combine(ping_ms: Option<u32>, file: Option<(bool, Option<u64>, Option<u64>)>) -> RealmStatus {
     match file {
-        Some((true, players, bots)) => RealmStatus { state: "online", ping_ms, players, bots, gamedata_streaming: None },
+        Some((true, players, bots)) => RealmStatus { state: "online", ping_ms, players, bots, gamedata_streaming: None, ..Default::default() },
         Some((false, _, _)) => {
-            RealmStatus { state: if ping_ms.is_some() { "partial" } else { "offline" }, ping_ms, players: None, bots: None, gamedata_streaming: None }
+            RealmStatus { state: if ping_ms.is_some() { "partial" } else { "offline" }, ping_ms, players: None, bots: None, gamedata_streaming: None, ..Default::default() }
         }
-        None => RealmStatus { state: if ping_ms.is_some() { "online" } else { "unknown" }, ping_ms, players: None, bots: None, gamedata_streaming: None },
+        None => RealmStatus { state: if ping_ms.is_some() { "online" } else { "unknown" }, ping_ms, players: None, bots: None, gamedata_streaming: None, ..Default::default() },
     }
 }
 
@@ -85,6 +104,9 @@ pub fn check(realm: &str, status_url: Option<&str>) -> RealmStatus {
         .and_then(|body| serde_json::from_str::<Value>(&body).ok());
     let mut s = combine(ping_ms, doc.as_ref().and_then(parse_status));
     s.gamedata_streaming = doc.as_ref().and_then(gamedata_streaming);
+    if let Some(v) = doc.as_ref() {
+        (s.queue, s.browser_waiting, s.browser_wait_min) = queues(v);
+    }
     s
 }
 
@@ -110,11 +132,26 @@ mod tests {
     }
 
     #[test]
+    fn queues_come_from_the_status_file() {
+        let v: Value = serde_json::from_str(
+            r#"{"online":true,"players":40,"queue":3,"browser_queue":{"capacity":24,"in_use":24,"waiting":7,"wait_min":12}}"#,
+        )
+        .unwrap();
+        assert_eq!(queues(&v), (Some(3), Some(7), Some(12)));
+        let old: Value = serde_json::from_str(r#"{"online":true,"players":1,"queue":null}"#).unwrap();
+        assert_eq!(queues(&old), (None, None, None));
+        let s = RealmStatus { state: "online", browser_waiting: Some(7), ..Default::default() };
+        let j = serde_json::to_value(&s).unwrap();
+        assert_eq!(j["browser_waiting"], 7);
+        assert!(j.get("queue").is_none() && j.get("browser_wait_min").is_none(), "unsaid: left out");
+    }
+
+    #[test]
     fn status_files_and_pings_combine() {
         let v: Value = serde_json::from_str(r#"{"online":true,"players":1,"bots":60,"uptime_s":5}"#).unwrap();
         let f = parse_status(&v);
         assert_eq!(f, Some((true, Some(1), Some(60))));
-        assert_eq!(combine(Some(38), f), RealmStatus { state: "online", ping_ms: Some(38), players: Some(1), bots: Some(60), gamedata_streaming: None });
+        assert_eq!(combine(Some(38), f), RealmStatus { state: "online", ping_ms: Some(38), players: Some(1), bots: Some(60), gamedata_streaming: None, ..Default::default() });
         assert_eq!(combine(Some(40), Some((false, None, None))).state, "partial");
         assert_eq!(combine(None, Some((false, None, None))).state, "offline");
         assert_eq!(combine(Some(12), None).state, "online");

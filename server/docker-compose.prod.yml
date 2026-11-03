@@ -215,8 +215,11 @@ services:
       # Freeze detector: if the world loop is stuck 60 s the core aborts and
       # `restart: unless-stopped` brings it back, instead of hanging with players connected.
       AC_MAX_CORE_STUCK_TIME: "60"
-      # Hard cap on simultaneous player sessions (bots do not count against it).
-      AC_PLAYER_LIMIT: "${WU_PLAYER_LIMIT:-1000}"
+      # Hard cap on simultaneous player sessions (bots do not count against it). Past it the worldserver's own login
+      # queue starts ("Queue: N" in server info, status.json "queue"). The owner's number (3 Nov): about 250 (docs/QUEUE.md).
+      AC_PLAYER_LIMIT: "${WU_PLAYER_LIMIT:-250}"
+      # Reconnect grace: a player who drops comes back within this many seconds without queueing again (docs/QUEUE.md).
+      AC_DISCONNECT_TOLERANCE_INTERVAL: "${WU_RECONNECT_GRACE:-180}"
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8085"]
       interval: 30s

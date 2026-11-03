@@ -340,6 +340,7 @@ function renderRealmRows() {
     const txt = el("span", "rr-txt");
     txt.append(el("span", "name", name));
     if (ver) { const v = el("span", "rl-ver sm", ver); v.title = "Game client version"; txt.append(v); }
+    if (official && queueN()) { const q = el("span", "rr-busy", `Busy · queue ${queueN()}`); q.title = "People waiting to get in"; txt.append(q); }
     b.append(!official && localAt(custom) && name === localAt(custom).name ? markIcon(localAt(custom).mark) : realmIcon(name, official, "sm"), txt, dot);
     b.title = ver ? `${name} · ${ver}` : name;
     b.addEventListener("click", () => {
@@ -383,6 +384,26 @@ function renderSrvBar(players) {
 
 let statusSeq = 0;
 let officialGamedata;   // false = the official realm's server streams no game data (browser play needs the player's folder)
+// The official realm's queues (status.json, docs/QUEUE.md): its login queue ("queue") and the browser seats' line
+// ("browser_queue"). The realm row and PLAY say "Busy · queue N" for the mode you play in, with the skip-the-line card.
+let officialQueue = { realm: 0, browser: 0, wait: 0 };
+let queueCardShut = false;   // "Not now" on the card: shut until the line is gone
+function queueN() {
+  if (!isOfficial() || localChosen()) return 0;
+  return mode === "browser" ? officialQueue.browser : officialQueue.realm;
+}
+function renderQueueCard() {
+  const box = $("pb-queue");
+  if (!box) return;
+  const n = queueN();
+  if (!n) queueCardShut = false;
+  box.hidden = !n || queueCardShut;
+  if (box.hidden) return;
+  $("pbq-line").textContent = mode === "browser"
+    ? `${n} waiting for a browser seat${officialQueue.wait ? `, about ${officialQueue.wait} min` : ""}.`
+    : `${n} waiting to get into ${officialName()}.`;
+  $("pbq-pc").hidden = mode !== "browser";
+}
 async function refreshStatus() {
   const realm = chosenRealm();
   const seq = ++statusSeq;
@@ -409,7 +430,12 @@ async function refreshStatus() {
     const beacon = realmsCache.find((x) => !x.official && x.address === realm && x.status_url);
     const s = await invoke("realm_status", beacon ? { realm, statusUrl: beacon.status_url } : { realm });
     // The official realm's game data killswitch (status.json "gamedata_streaming"): BROWSER mode says what it needs.
-    if (seq === statusSeq && !beacon && isOfficial()) { officialGamedata = s.gamedata_streaming; renderPlayBar(); }
+    if (seq === statusSeq && !beacon && isOfficial()) {
+      officialGamedata = s.gamedata_streaming;
+      officialQueue = { realm: s.queue || 0, browser: s.browser_waiting || 0, wait: s.browser_wait_min || 0 };
+      renderPlayBar();
+      renderRealmRows();
+    }
     const ms = s.ping_ms != null ? `${s.ping_ms} ms` : "";
     const counts = [s.players != null ? `Players: ${s.players}` : "", s.bots != null ? `Bots: ${s.bots}` : ""].filter(Boolean);
     const host = realm.includes(":") ? realm : `${realm}:3724`;
@@ -1457,6 +1483,10 @@ function renderPlayBar() {
   } else {
     detail = "";
   }
+  if (queueN() && head.startsWith("READY")) {   // a line on the official realm: say so, and offer the other ways in
+    head = `BUSY · QUEUE ${queueN()}`; warn = true;
+    detail = mode === "browser" && officialQueue.wait ? `About ${officialQueue.wait} min · or skip the line` : "Or skip the line";
+  }
   const lh = mode === "browser" ? null : localHint();   // My Den / Solo leveling: their own next step
   if (lh) ({ head, detail, warn } = lh);
   $("play-headline").textContent = head;
@@ -1476,7 +1506,13 @@ function renderPlayBar() {
   if (rmenuOpen) renderRealmMenu();
   renderClientMenu();
   $("play-caption").textContent = mode === "browser" ? "IN YOUR BROWSER" : (c ? `ONLINE  ·  ${c.name.toUpperCase()}` : "NO GAME FOLDER YET");
+  renderQueueCard();
 }
+if ($("pbq-host")) $("pbq-host").addEventListener("click", () => show("host"));
+if ($("pbq-node")) $("pbq-node").addEventListener("click", () => openLink("beanode"));
+if ($("pbq-pc")) $("pbq-pc").addEventListener("click", () => setMode("online"));   // your own game folder: no browser seat
+if ($("pbq-x")) $("pbq-x").addEventListener("click", () => { queueCardShut = true; renderQueueCard(); });
+document.addEventListener("leyline:mode", () => { if (officialQueue.realm || officialQueue.browser) renderRealmRows(); });   // the row's count follows the mode
 
 $("play-realm").addEventListener("change", () => { realmChanged(); saveSelection(); });
 $("play-custom").addEventListener("change", () => { realmChanged(); saveSelection(); });
@@ -1656,7 +1692,17 @@ function renderSettings() {
   if ($("set-save")) $("set-save").hidden = !!state.windows;
   $("set-count").checked = state.settings.count_installs !== false;
   $("set-hybrid").checked = state.settings.hybrid_login === true;
+  $("set-cover").checked = state.settings.signin_cover !== false;
 }
+// Settings › Hide the sign-in behind Leyline's screen (src-tauri/src/cover.rs; on unless turned off)
+$("set-cover").addEventListener("change", async () => {
+  const on = $("set-cover").checked;
+  try {
+    await invoke("set_signin_cover", { on });
+    state.settings.signin_cover = on;
+    say("cover-status", on ? "Leyline's screen covers the game while it signs you in." : "You'll see the game's login screen while Leyline signs you in.", "ok");
+  } catch (e) { $("set-cover").checked = !on; sayErr("cover-status", e); }
+});
 $("set-hybrid").addEventListener("change", async () => {
   const on = $("set-hybrid").checked;
   try {

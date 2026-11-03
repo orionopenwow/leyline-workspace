@@ -71,6 +71,23 @@ class StepPaths(unittest.TestCase):
         self.assertNotIn("domain-off", ro)
         self.assertIn("read-only", steps["domain-check"][1])
 
+    def test_fork_check_is_read_only(self):
+        """The fork kit (docs/TOOLKIT.md): fork-check only reads (READ_ONLY), runs fork_kit.py check, CRLF like a bat."""
+        bat, title, interactive = control_steps()["fork-check"]
+        self.assertEqual(win(bat), "tools/fork-kit/Fork check.bat")
+        self.assertFalse(interactive)
+        self.assertIn("read-only", title)
+        tree = ast.parse(read("tools/control/control.py"))
+        ro = next(ast.literal_eval(n.value) for n in tree.body
+                  if isinstance(n, ast.Assign) and any(getattr(t, "id", "") == "READ_ONLY" for t in n.targets))
+        self.assertIn("fork-check", ro)
+        with open(os.path.join(ROOT, bat), "rb") as f:
+            raw = f.read()
+        self.assertEqual(raw.count(b"\n"), raw.count(b"\r\n"), "CRLF line endings")
+        self.assertIn(b'fork_kit.py" check', raw)
+        for word in (b"rebrand.py\"", b" --write", b"releaselog append"):
+            self.assertNotIn(word, raw)
+
     def test_update_bat_steps_exist(self):
         bats = re.findall(r'if /i "%STEP%"=="([^"]+)"\s+\(?set "BAT=([^"]+)"', read("UPDATE.bat"))
         self.assertGreater(len(bats), 10)

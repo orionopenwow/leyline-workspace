@@ -718,3 +718,8 @@
 1311x foreverui  Browser game: the same new Den editor
 1311z den-lite  Den Lite built on this PC again, marked so the den-test uses it (not the older release one)
 1312b ship  Save as Orion: the Den overhaul (standing on the ground, walkable ground, the new editor with the turning 3D gallery, the whole catalog, the walking check), instant launcher linking, the new site name in two leftovers
+1312c fresh-check  Fresh history: the dry run (read-only), CONFIRM 90cbf11a
+1312d fresh-history  The workspace repo's main as one Orion commit (owner asked 3 Nov 02:50: takes Chumpton off the contributors; backup bundle on the Desktop)
+1312f addons  Leyline addons: screenshot mode (Alt+Z) no longer takes the keyboard, so W/A/S/D still walk
+1312g signin  Site: the browser queue (a fair line past WU_PLAY_CAPACITY seats, default 250; You are #N page; Skip the line; Play on your own PC after a browser pass)
+1312h ship  Save as Orion: the sign-in cover (Logging you in over the game while it signs in), Busy queue N in the launcher, the roadmap, toolkit and succession docs, fork-check

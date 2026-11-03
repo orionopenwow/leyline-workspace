@@ -59,6 +59,10 @@ pub struct Settings {
     /// The launcher's guide (ui/guide.js): the first-run tour ("tour") and each one-time encouragement line
     /// ("hosted", "friend", "mod") once shown. Kept here so each shows once, never again after a restart.
     pub seen: Vec<String>,
+    /// Settings › "Hide the sign-in behind Leyline's screen" (crate::cover): while the launcher types the sign-in at
+    /// the game's login screen (the official realm on a stock game, Your Den), Leyline's "Logging you in…" screen
+    /// covers the game until character select (or the Den's loading screen). On by default; a file without it: on.
+    pub signin_cover: bool,
 }
 
 impl Default for Settings {
@@ -75,6 +79,7 @@ impl Default for Settings {
             count_installs: true,
             hybrid_login: true,
             seen: Vec::new(),
+            signin_cover: true,
         }
     }
 }
@@ -267,6 +272,17 @@ mod tests {
         assert!(!load(d.path()).hybrid_login);
         fs::write(d.path().join(FILE_NAME), br#"{"selected_realm":"x.example.org"}"#).unwrap();
         assert!(load(d.path()).hybrid_login, "no switch saved: on");
+    }
+
+    #[test]
+    fn the_sign_in_cover_is_on_by_default_and_stays_off_once_turned_off() {
+        let d = tempfile::tempdir().unwrap();
+        assert!(Settings::default().signin_cover);
+        fs::write(d.path().join(FILE_NAME), br#"{"selected_realm":"x.example.org"}"#).unwrap();
+        let s = load(d.path());
+        assert!(s.signin_cover, "a file from before the switch: on");
+        save(d.path(), &Settings { signin_cover: false, ..s }).unwrap();
+        assert!(!load(d.path()).signin_cover);
     }
 
     #[test]

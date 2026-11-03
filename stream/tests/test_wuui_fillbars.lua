@@ -249,6 +249,25 @@ do
     SlashCmdList.WUSHOT(""); IsAltKeyDown = function() return true end
     catcher.scripts.OnKeyDown(catcher, "Z")
     check("Alt+Z brings it back too", shown == true)
+    -- the desktop game: only Esc is bound to the catcher, the keyboard isn't taken (W still walks)
+    local over, cleared = {}, false
+    SetOverrideBindingClick = function(owner, prio, key, name) over[key] = name end
+    ClearOverrideBindings = function() cleared = true; over = {} end
+    catcher = nil
+    local realCreate2 = CreateFrame
+    CreateFrame = function(...)
+        local f = realCreate2(...)
+        f.kb = false
+        f.EnableKeyboard = function(s, on) s.kb = on end
+        catcher = catcher or f
+        return f
+    end
+    SlashCmdList.WUSHOT("")
+    check("screenshot mode doesn't take the keyboard where Esc can be bound", shown == false and over.ESCAPE == "WrathUnleashedShotMode")
+    check("so walking keys still reach the game", catcher == nil or not catcher.kb)
+    SlashCmdList.WUSHOT("")
+    check("leaving it lets Esc go again", shown == true and cleared)
+    SetOverrideBindingClick, ClearOverrideBindings = nil, nil
     CreateFrame = realCreate
 end
 

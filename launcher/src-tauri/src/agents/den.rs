@@ -1579,7 +1579,7 @@ mod tests {
         assert!(c.categories.iter().any(|x| x == "buildings") && c.categories.iter().any(|x| x == "seating"));
         assert!(c.id(19007).is_some(), "the inn stamp's building");
         // every stamp's pieces are catalog entries
-        for s in ["inn", "garden", "market", "campfire", "dock", "house"] {
+        for s in ["inn", "garden", "market", "campfire", "dock", "house", "smithy", "nook", "shrine"] {
             let t = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../realm/custom/lua_scripts/den-stamps/{s}.den.json"))).unwrap();
             let v: Value = serde_json::from_str(&t).unwrap();
             for p in v["props"].as_array().unwrap() {

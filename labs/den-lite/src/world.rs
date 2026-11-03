@@ -1474,6 +1474,18 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                 Err(e) => say(c, &e),
             }
         }
+        // a place copied from the player's own game (stamps.rs copy_places; made by the launcher into stamps-local)
+        (".den", "copy") => {
+            let places = crate::stamps::copy_places();
+            let want = crate::stamps::canonical(w(2)).unwrap_or(w(2));
+            match places.iter().find(|pl| pl.0 == want) {
+                None => say(c, &format!("Copy a place from your own game: {}.", places.iter().map(|pl| format!(".den copy {} ({})", pl.0, pl.1)).collect::<Vec<_>>().join(", "))),
+                Some(&(name, title)) => match den::read_stamp(&shared.cfg.stamps_dir, name) {
+                    Ok(_) => jaina_build(c, shared, sess, p, name),
+                    Err(_) => say(c, &crate::stamps::not_copied(title)),
+                },
+            }
+        }
         // the Dojo (dojo.rs): the training ring, dummies, flying, speed
         (".den", "dojo") => dojo_cmd(c, shared, sess, p, &words[2..]),
         (".den", "fly") => fly(c, shared, sess, w(2)),
@@ -2123,16 +2135,25 @@ fn jaina_build(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, name: &str) -> 
     let far = dojo::reach(&st.props.iter().map(|e| (e.x, e.y)).collect::<Vec<_>>());
     let mid = dojo::ahead(me, far);
     // on the ground there (a player flying overhead builds on the ground, not in the air)
-    let (origin, stand) = {
+    let origin = {
         let d = shared.den.lock().unwrap_or_else(|e| e.into_inner());
-        let origin = At { z: d.floor_at(mid.x, mid.y), ..mid };
-        let s = dojo::stand_spot(me, origin);
-        (origin, At { z: d.floor_at(s.x, s.y), ..s })
+        At { z: d.floor_at(mid.x, mid.y), ..mid }
     };
     let ch = shared.den.lock().unwrap_or_else(|e| e.into_inner()).stamp(&st, origin.x, origin.y, origin.z, o);
     if ch.created.is_empty() {
         return say(c, &ch.message);
     }
+    // she builds from its middle (the free spot nearest its focal point: never inside a piece) and, when it is done,
+    // steps back to your side to look at it (stamps.rs)
+    let (fx, fy) = crate::stamps::focus(&st);
+    let (centre, stand, admire) = {
+        let d = shared.den.lock().unwrap_or_else(|e| e.into_inner());
+        let f = dojo::local(origin, fx as f32, fy as f32);
+        let f = At { z: d.floor_at(f.x, f.y), ..f };
+        let s = dojo::build_stand(f, &ch.created);
+        let a = dojo::admire_spot(f, &ch.created, me);
+        (f, At { z: d.floor_at(s.x, s.y), ..s }, At { z: d.floor_at(a.x, a.y), ..a })
+    };
     if ring {
         shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).ring = Some(origin);
     }
@@ -2167,8 +2188,9 @@ fn jaina_build(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, name: &str) -> 
         None => 0,
     };
     monster_say(c, dojo::ON_IT)?;
-    let mut job = dojo::Job::new(stand, origin, ch.created, ms, walk_ms, &title);
+    let mut job = dojo::Job::new(stand, centre, ch.created, ms, walk_ms, &title);
     job.then_dummies = ring;
+    job.admire = Some(admire);
     shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).job = Some(job);
     dojo_line(c, shared, sess)
 }
@@ -2243,15 +2265,16 @@ fn dojo_tick(shared: &Shared) -> io::Result<()> {
     let ms = now_ms();
     // the props still in the Den (an undo while she builds takes the rest back), before the Dojo's lock
     let placed: std::collections::HashSet<u64> = shared.den.lock().unwrap_or_else(|e| e.into_inner()).props.iter().map(|x| x.obj.guid).collect();
-    let (steps, done) = {
+    let (steps, done, ring_job) = {
         let mut d = shared.dojo.lock().unwrap_or_else(|e| e.into_inner());
         let Some(job) = d.job.as_mut() else { return Ok(()) };
         let steps = job.due(ms, |g| placed.contains(&g));
+        let ring_job = job.then_dummies;
         let done = steps.iter().any(|s| matches!(s, dojo::Step::Done { .. })).then(|| (job.title.clone(), job.then_dummies));
         if done.is_some() {
             d.job = None;
         }
-        (steps, done)
+        (steps, done, ring_job)
     };
     let out = shared.companion.lock().unwrap_or_else(|e| e.into_inner()).out;
     for s in steps {
@@ -2269,14 +2292,28 @@ fn dojo_tick(shared: &Shared) -> io::Result<()> {
                 }
                 send_creates(&w, shared, std::slice::from_ref(&obj))?;
             }
-            dojo::Step::Done { shown } => {
+            dojo::Step::Admire { to } => {
+                // the last piece is up: she walks back to look at it, ending turned to it, and says so
+                if out {
+                    let walked = {
+                        let mut comp = shared.companion.lock().unwrap_or_else(|e| e.into_inner());
+                        comp.go_stay(to, ms).map(|m| (m, comp.moves))
+                    };
+                    if let Some(((from, there, d), id)) = walked {
+                        w.send_raw(dojo::SMSG_MONSTER_MOVE, &dojo::walk_facing_body(companion::GUID, from, there, id, d, to.o))?;
+                    }
+                    monster_say(&w, if ring_job { dojo::BUILT_DOJO } else { dojo::BUILT })?;
+                }
+                shared.event("dojo", "", "admire");
+            }
+            dojo::Step::Done { shown, admired } => {
                 shared.companion.lock().unwrap_or_else(|e| e.into_inner()).follow_on();
                 let (title, ring) = done.clone().unwrap_or_default();
                 shared.event("dojo", "", &format!("built {shown}"));
                 if ring {
                     dummies_up(shared, p, 3);
                 }
-                if out {
+                if out && !admired {
                     monster_say(&w, if ring { dojo::BUILT_DOJO } else { dojo::BUILT })?;
                 }
                 notify_host(shared, Item::line("ok", format!("{title} is up ({shown} props). .build undo takes it back.")))?;

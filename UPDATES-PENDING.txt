@@ -763,3 +763,5 @@
 1314b addons  Leyline addons: the Den editor (our icons, build/play modes, the selection panel, placement aids) and the Leyline look for the GM panel
 1314c foreverui  Browser game: the same
 1314d ship  Save as Orion: the Den editor overhaul, Elwynn sky, live placement, gizmo, the GM panel look
+1314e den-lite  Den Lite rebuilt: nine composed stamps (camp, inn, market, garden, dock, house, smithy, nook, shrine), Jaina builds big first and steps back, .den copy lionspride
+1314f ship  Save as Orion: the composed stamps, Jaina's building, copy a place from your own game

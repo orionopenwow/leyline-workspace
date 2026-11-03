@@ -10,10 +10,14 @@
 //!   `Unit::SetCanFly` says it to a player: packed guid, a counter). Jump, then Space to rise and X to sink.
 //! - `.den speed 1-5`: run and flight speed times 1 to 5 (SMSG_FORCE_RUN_SPEED_CHANGE / FORCE_FLIGHT_SPEED_CHANGE,
 //!   as `Unit::SetSpeed`: packed guid, the counter the game echoes in its ack, for run a byte 0, the speed).
-//! - `.den jaina build <stamp>` or "Jaina, build a garden": she walks to the spot, starts a cast, then each piece
-//!   appears one by one ([`PIECE_MS`] apart) while she turns to it and casts at it (SMSG_SPELL_START, then one
+//! - `.den jaina build <stamp>` or "Jaina, build a garden" (or a tavern, a forge, a reading nook: stamps.rs NAMES):
+//!   she walks into the stamp's middle (the free spot nearest it: never inside a piece), starts a cast, then each
+//!   piece appears the way a person builds a place (stamps.rs `order`: the building, rugs and boards, the big pieces,
+//!   furniture, small things, last what stands on a table), a big one taking longer than a small one
+//!   (stamps.rs `pace_ms`, about [`PIECE_MS`]), while she turns to it and casts at it (SMSG_SPELL_START, then one
 //!   SMSG_SPELL_GO per piece with the piece's spot as the target; the game draws the spell's visuals from its own
-//!   Spell.dbc: no aura, no spell system here).
+//!   Spell.dbc: no aura, no spell system here). Then she steps back on your side, turns to look at it
+//!   ([`Step::Admire`]) and says so; [`ADMIRE_MS`] later she follows you again.
 //!
 //! The game's answers to the fly and speed changes (CMSG_MOVE_SET_CAN_FLY_ACK, CMSG_FORCE_*_SPEED_CHANGE_ACK: packed
 //! guid, the counter, the movement info without its guid, then a float) are read for the events log and the
@@ -53,6 +57,8 @@ pub const BUILD_SPELL: u32 = 42955;
 pub const PIECE_MS: u64 = 250;
 /// At most this long for her walk to the spot before she starts (a long walk is cut short: she starts on the way).
 pub const WALK_MAX_MS: u64 = 4000;
+/// How long she stands back to look at what she built before she follows you again.
+pub const ADMIRE_MS: u64 = 2500;
 /// TARGET_FLAG_DEST_LOCATION (SpellCastTargets).
 const TARGET_DEST: u32 = 0x40;
 /// CAST_FLAG_UNKNOWN_2 for a start, CAST_FLAG_UNKNOWN_9 for a go (as AzerothCore's Spell::SendSpellStart / Go).
@@ -238,15 +244,19 @@ pub fn on_off(s: &str) -> Option<bool> {
     }
 }
 
-/// "build a garden", "build me the inn", "make a campfire", "build the dojo": the stamp's word; None: not a build.
+/// "build a garden", "build me the inn", "make a campfire", "build the dojo", "build a tavern" (the inn: stamps.rs
+/// NAMES): the stamp's name (an unknown word as it was, so the answer can say there is none); None: not a build.
 pub fn build_words(words: &str) -> Option<String> {
     let low = words.to_lowercase();
     let mut it = low.split(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_').filter(|w| !w.is_empty());
     if !matches!(it.next()?, "build" | "make" | "conjure" | "raise") {
         return None;
     }
-    it.find(|w| !matches!(*w, "a" | "an" | "the" | "me" | "us" | "my" | "our" | "please" | "some" | "little" | "small"))
-        .map(str::to_string)
+    it.find(|w| {
+        !matches!(*w, "a" | "an" | "the" | "me" | "us" | "my" | "our" | "please" | "some" | "little" | "small" | "up" | "cozy" | "cosy"
+            | "nice" | "new" | "quiet" | "old")
+    })
+    .map(|w| crate::stamps::canonical(w).map(str::to_string).unwrap_or_else(|| w.to_string()))
 }
 
 // ---------------------------------------------------------------- message bodies
@@ -335,19 +345,26 @@ pub fn spell_go_body(caster: u64, spell: u32, time_ms: u32, at: [f32; 3]) -> Vec
 /// SMSG_MONSTER_MOVE turning a creature where it stands (MonsterMoveType 4, facing angle): packed guid, a byte, the
 /// start, the spline id, the type and the angle, no spline flags, a short duration, one point (where it stands).
 pub fn facing_body(guid: u64, at: At, id: u32, angle: f32) -> Vec<u8> {
+    walk_facing_body(guid, at, at, id, 100, angle)
+}
+
+/// SMSG_MONSTER_MOVE walking a creature from `from` to `to` in `ms` and turning it to `angle` when it gets there
+/// (MonsterMoveType 4, as [`facing_body`]: she walks back to look at her build and ends facing it, not the way she
+/// walked).
+pub fn walk_facing_body(guid: u64, from: At, to: At, id: u32, ms: u32, angle: f32) -> Vec<u8> {
     let mut b = Vec::with_capacity(48);
     packed_guid(&mut b, guid);
     b.push(0);
-    for v in [at.x, at.y, at.z] {
+    for v in [from.x, from.y, from.z] {
         b.extend_from_slice(&v.to_le_bytes());
     }
     b.extend_from_slice(&id.to_le_bytes());
     b.push(4);
     b.extend_from_slice(&angle.to_le_bytes());
     b.extend_from_slice(&0u32.to_le_bytes());
-    b.extend_from_slice(&100u32.to_le_bytes());
+    b.extend_from_slice(&ms.max(1).to_le_bytes());
     b.extend_from_slice(&1u32.to_le_bytes());
-    for v in [at.x, at.y, at.z] {
+    for v in [to.x, to.y, to.z] {
         b.extend_from_slice(&v.to_le_bytes());
     }
     b
@@ -363,6 +380,16 @@ pub fn stand_spot(p: At, origin: At) -> At {
     At { o: facing(s, origin.x, origin.y), ..s }
 }
 
+/// Where she builds from: the free spot nearest the stamp's middle (`origin`), among its pieces (stamps.rs).
+pub fn build_stand(origin: At, pieces: &[WorldObject]) -> At {
+    crate::stamps::clear_spot(origin, pieces)
+}
+
+/// Where she looks at it from when it is done: a step back on the player's side, free, facing it (stamps.rs).
+pub fn admire_spot(origin: At, pieces: &[WorldObject], player: At) -> At {
+    crate::stamps::admire_spot(origin, pieces, player)
+}
+
 /// How far ahead of the player a stamp's middle goes so the whole stamp is in front of them: its reach and 1.5.
 pub fn reach(pieces: &[(f64, f64)]) -> f32 {
     pieces.iter().map(|(x, y)| (x * x + y * y).sqrt()).fold(0.0, f64::max) as f32 + 1.5
@@ -375,8 +402,11 @@ pub enum Step {
     Start { ms: u32, at: [f32; 3] },
     /// One piece appears; she turns to it (facing) and casts at it.
     Piece { obj: WorldObject, facing: f32 },
-    /// All of them are there (how many appeared; the rest were taken back while she built).
-    Done { shown: usize },
+    /// The last piece is up: she walks back to `to` and ends facing the build, and says it is done.
+    Admire { to: At },
+    /// All of them are there (how many appeared; the rest were taken back while she built). `admired`: she looked at
+    /// it already (and said so); else this is when she says it.
+    Done { shown: usize, admired: bool },
 }
 
 /// A build in progress: the pieces are in the Den already (saved, one undo); the game is shown them one by one.
@@ -384,7 +414,9 @@ pub enum Step {
 pub struct Job {
     pub stand: At,
     pub origin: At,
+    /// In build order (stamps.rs `order`), each with the time it takes ([`Job::paces`]).
     pub pieces: Vec<WorldObject>,
+    pub paces: Vec<u64>,
     pub next: usize,
     pub shown: usize,
     /// When she starts casting (after her walk), then when the next piece is due (milliseconds).
@@ -394,20 +426,47 @@ pub struct Job {
     /// Dummies go up when it is done (`.den dojo`).
     pub then_dummies: bool,
     pub title: String,
+    /// Where she steps back to look at it when it is done (None: she doesn't, Done comes with the last piece).
+    pub admire: Option<At>,
+    /// When the look is over (set when she steps back).
+    pub admire_until: Option<u64>,
 }
 
 impl Job {
-    /// A build whose pieces are `pieces` (nearest her first), she at `stand` from `ms` + her walk.
+    /// A build whose pieces are `pieces` (in build order: big first, then nearest her), she at `stand` from `ms` +
+    /// her walk; `origin.z` is the ground there (a piece above it stands on something).
     pub fn new(stand: At, origin: At, mut pieces: Vec<WorldObject>, ms: u64, walk_ms: u64, title: &str) -> Job {
-        let d = |o: &WorldObject| (o.x - stand.x).powi(2) + (o.y - stand.y).powi(2);
-        pieces.sort_by(|a, b| d(a).partial_cmp(&d(b)).unwrap_or(std::cmp::Ordering::Equal));
+        use crate::stamps::{order, pace_ms, size_of, tier};
+        order(&mut pieces, stand, origin.z);
+        let mut paces: Vec<u64> = pieces.iter().map(|o| pace_ms(tier(&size_of(o), o.z > origin.z + 0.2))).collect();
+        // hundreds of pieces (a copied place): quicker each, the whole in BUILD_MAX_MS
+        let sum: u64 = paces.iter().sum();
+        if sum > crate::stamps::BUILD_MAX_MS {
+            for p in &mut paces {
+                *p = (*p * crate::stamps::BUILD_MAX_MS / sum).max(20);
+            }
+        }
         let start = ms + walk_ms.min(WALK_MAX_MS);
-        Job { stand, origin, pieces, next: 0, shown: 0, start_at: start, next_at: start + PIECE_MS, started: false, then_dummies: false, title: title.into() }
+        Job {
+            stand,
+            origin,
+            pieces,
+            paces,
+            next: 0,
+            shown: 0,
+            start_at: start,
+            next_at: start + PIECE_MS,
+            started: false,
+            then_dummies: false,
+            title: title.into(),
+            admire: None,
+            admire_until: None,
+        }
     }
 
     /// How long the whole cast takes once she starts.
     pub fn cast_ms(&self) -> u32 {
-        (self.pieces.len() as u64 * PIECE_MS + PIECE_MS) as u32
+        (self.paces.iter().sum::<u64>() + PIECE_MS) as u32
     }
 
     /// What is due at `ms`; `still(guid)`: the piece is still in the Den (an undo while she builds takes the rest
@@ -423,15 +482,30 @@ impl Job {
         }
         while self.next < self.pieces.len() && ms >= self.next_at {
             let obj = self.pieces[self.next].clone();
+            self.next_at += self.paces.get(self.next).copied().unwrap_or(PIECE_MS);
             self.next += 1;
-            self.next_at += PIECE_MS;
             if still(obj.guid) {
                 self.shown += 1;
                 out.push(Step::Piece { facing: facing(self.stand, obj.x, obj.y), obj });
             }
         }
-        if self.next >= self.pieces.len() {
-            out.push(Step::Done { shown: self.shown });
+        if self.next < self.pieces.len() {
+            return out;
+        }
+        match (self.admire, self.admire_until) {
+            // the last piece has had its time: she steps back to look at it
+            (Some(to), None) if self.shown > 0 => {
+                if ms >= self.next_at {
+                    self.admire_until = Some(ms + ADMIRE_MS);
+                    out.push(Step::Admire { to });
+                }
+            }
+            (Some(_), Some(until)) => {
+                if ms >= until {
+                    out.push(Step::Done { shown: self.shown, admired: true });
+                }
+            }
+            _ => out.push(Step::Done { shown: self.shown, admired: false }),
         }
         out
     }
@@ -595,19 +669,20 @@ mod tests {
         let origin = At { x: 5.0, y: 0.0, z: 0.0, o: 0.0 };
         let pieces = vec![obj(3, 9.0, 0.0), obj(1, 1.0, 0.0), obj(2, 0.0, 4.0)];
         let mut j = Job::new(stand, origin, pieces, 1000, 600, "Garden");
-        // nearest her first
+        // all fences (one tier): nearest her first, each a big piece's time
         assert_eq!(j.pieces.iter().map(|o| o.guid).collect::<Vec<_>>(), vec![1, 2, 3]);
+        assert_eq!(j.paces, vec![400, 400, 400]);
         assert!(j.due(1500, |_| true).is_empty(), "still walking");
         let s = j.due(1600, |_| true);
-        assert!(matches!(s[0], Step::Start { ms: 1000, .. }), "{s:?}");
+        assert!(matches!(s[0], Step::Start { ms: 1450, .. }), "{s:?}");
         assert_eq!(s.len(), 1);
         let s = j.due(1850, |_| true);
         assert!(matches!(&s[0], Step::Piece { obj, facing } if obj.guid == 1 && facing.abs() < 1e-5));
         // a piece taken back meanwhile never appears; a late tick catches up
-        let s = j.due(2400, |g| g != 2);
+        let s = j.due(3100, |g| g != 2);
         assert_eq!(s.len(), 2);
         assert!(matches!(&s[0], Step::Piece { obj, .. } if obj.guid == 3));
-        assert_eq!(s[1], Step::Done { shown: 2 });
+        assert_eq!(s[1], Step::Done { shown: 2, admired: false });
         // a long walk is cut short
         let j2 = Job::new(stand, origin, vec![], 0, 60_000, "x");
         assert_eq!(j2.start_at, WALK_MAX_MS);
@@ -622,5 +697,116 @@ mod tests {
         assert!((s.o - facing(s, 10.0, 0.0)).abs() < 1e-6);
         let l = local(At { x: 0.0, y: 0.0, z: 0.0, o: PI / 2.0 }, 1.0, 0.0);
         assert!(l.x.abs() < 1e-5 && (l.y - 1.0).abs() < 1e-5);
+    }
+
+    fn piece(guid: u64, entry: u32, x: f32, y: f32, z: f32) -> WorldObject {
+        let t = crate::den::template(entry).unwrap();
+        WorldObject { guid, entry, display: t.display, kind: t.kind, scale: t.size, x, y, z, o: 0.0, pitch: 0.0, roll: 0.0 }
+    }
+
+    #[test]
+    fn she_builds_big_first_small_last_then_steps_back_to_look() {
+        let ground = 13.2;
+        let stand = At { x: 0.0, y: 0.0, z: ground, o: 0.0 };
+        let origin = At { x: 0.5, y: 0.0, z: ground, o: 0.0 };
+        let pieces = vec![
+            piece(1, 2562, 2.0, 0.0, ground + 0.95), // bread on the table
+            piece(2, 181075, 2.0, 0.0, ground),      // the table
+            piece(3, 184592, 6.0, 0.0, ground),      // a tent
+            piece(4, 2413, 2.0, 1.3, ground),        // a chair
+            piece(5, 181396, 2.0, 0.0, ground),      // a rug under it all
+        ];
+        let mut j = Job::new(stand, origin, pieces, 0, 0, "Camp");
+        assert_eq!(j.pieces.iter().map(|o| o.guid).collect::<Vec<_>>(), vec![5, 3, 2, 4, 1], "rug, tent, table, chair, bread");
+        assert!(j.paces[1] > j.paces[3] && j.paces[3] > j.paces[4], "a tent takes longer than a chair, a chair than bread: {:?}", j.paces);
+        let you = At { x: -10.0, y: 0.0, z: ground, o: 0.0 };
+        j.admire = Some(admire_spot(origin, &j.pieces, you));
+        let total: u64 = j.paces.iter().sum();
+        let mut seen = Vec::new();
+        let mut admired = None;
+        let mut done = None;
+        let mut t = 0;
+        while t < PIECE_MS + total + ADMIRE_MS + 1000 && done.is_none() {
+            for s in j.due(t, |_| true) {
+                match s {
+                    Step::Piece { obj, facing: f } => {
+                        assert!((f - facing(stand, obj.x, obj.y)).abs() < 1e-5, "she faces each piece as it appears");
+                        seen.push(obj.guid)
+                    }
+                    Step::Admire { to } => admired = Some((t, to)),
+                    Step::Done { shown, admired } => done = Some((t, shown, admired)),
+                    Step::Start { .. } => {}
+                }
+            }
+            t += 50;
+        }
+        assert_eq!(seen, vec![5, 3, 2, 4, 1]);
+        let (at, to) = admired.expect("she steps back");
+        assert!(at >= PIECE_MS + total - 50, "after the last piece's own time: {at}");
+        assert!(to.x < 0.0, "on your side of it: {to:?}");
+        assert!((to.o - facing(to, origin.x, origin.y)).abs() < 1e-4, "facing the build");
+        let (dt, shown, admired) = done.expect("then it is done");
+        assert_eq!((shown, admired), (5, true));
+        assert!(dt >= at + ADMIRE_MS && dt < at + ADMIRE_MS + 100);
+        // no admire spot: done with the last piece, as before
+        let mut k = Job::new(stand, origin, vec![piece(9, 179969, 2.0, 0.0, ground)], 0, 0, "x");
+        let s = k.due(10_000, |_| true);
+        assert!(matches!(s.last(), Some(Step::Done { shown: 1, admired: false })), "{s:?}");
+        // everything taken back while she built: nothing to look at
+        let mut u = Job::new(stand, origin, vec![piece(9, 179969, 2.0, 0.0, ground)], 0, 0, "x");
+        u.admire = Some(you);
+        let s = u.due(10_000, |_| false);
+        assert!(matches!(s.last(), Some(Step::Done { shown: 0, admired: false })), "{s:?}");
+    }
+
+    #[test]
+    fn she_builds_from_a_free_spot_in_the_middle_of_every_stamp() {
+        let dir = std::path::Path::new("no-such-folder");
+        for (name, _) in crate::den::BUILTIN_STAMPS {
+            let st = crate::den::read_stamp(dir, name).unwrap();
+            let mut den = crate::den::Den::new(crate::den::Spot { half: 32.0, ..Default::default() });
+            let (x, y, z) = (den.spot.x + 2.0, den.spot.y, den.spot.z);
+            let ch = den.stamp(&st, x, y, z, 0.0);
+            assert_eq!(ch.created.len(), st.props.len(), "{name}: all of it inside the Den");
+            let (fx, fy) = crate::stamps::focus(&st);
+            let origin = local(At { x, y, z, o: 0.0 }, fx as f32, fy as f32);
+            let s = build_stand(origin, &ch.created);
+            for o in &ch.created {
+                let sz = crate::stamps::size_of(o);
+                if matches!(sz.kind, crate::stamps::Kind::Floor | crate::stamps::Kind::Shell) || o.z > z + 1.8 {
+                    continue;
+                }
+                let b = crate::stamps::Bx { x: o.x, y: o.y, hw: sz.w / 2.0, hd: sz.d / 2.0, o: o.o };
+                assert!(!b.holds(s.x, s.y, 0.3), "{name}: she stands inside entry {}", o.entry);
+            }
+            let d = ((s.x - origin.x).powi(2) + (s.y - origin.y).powi(2)).sqrt();
+            assert!(d < 4.0, "{name}: she builds from near its middle ({d} yards off)");
+            let you = At { x: x - 15.0, y, z, o: 0.0 };
+            let a = admire_spot(origin, &ch.created, you);
+            assert!(a.x < s.x, "{name}: she steps back your way: {a:?} from {s:?}");
+        }
+    }
+
+    #[test]
+    fn walk_facing_body_ends_facing() {
+        let from = At { x: 1.0, y: 2.0, z: 3.0, o: 0.0 };
+        let to = At { x: 4.0, y: 5.0, z: 6.0, o: 0.0 };
+        let b = walk_facing_body(crate::companion::GUID, from, to, 7, 1500, 2.5);
+        let n = 1 + b[0].count_ones() as usize;
+        assert_eq!(f32::from_le_bytes(b[n + 1..n + 5].try_into().unwrap()), 1.0, "from");
+        assert_eq!(b[n + 1 + 12 + 4], 4, "facing angle");
+        assert_eq!(f32::from_le_bytes(b[n + 18..n + 22].try_into().unwrap()), 2.5);
+        assert_eq!(u32::from_le_bytes(b[n + 26..n + 30].try_into().unwrap()), 1500, "how long the walk takes");
+        assert_eq!(f32::from_le_bytes(b[n + 34..n + 38].try_into().unwrap()), 4.0, "to");
+        assert_eq!(facing_body(crate::companion::GUID, from, 7, 2.5), walk_facing_body(crate::companion::GUID, from, from, 7, 100, 2.5));
+    }
+
+    #[test]
+    fn every_stamp_answers_to_its_other_names() {
+        for (said, name) in [("build a tavern", "inn"), ("make me a little camp", "campfire"), ("build a reading nook", "nook"),
+                             ("build a blacksmith's forge", "smithy"), ("Build us a shrine please", "shrine"), ("make a farm", "garden"),
+                             ("build a pier", "dock"), ("build a cottage", "house"), ("make a bazaar", "market"), ("build a castle", "castle")] {
+            assert_eq!(build_words(said).as_deref(), Some(name), "{said}");
+        }
     }
 }

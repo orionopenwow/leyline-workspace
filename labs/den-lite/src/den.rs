@@ -331,12 +331,33 @@ pub const BUILTIN_STAMPS: &[(&str, &str)] = &[
     ("house", include_str!("../../../realm/custom/lua_scripts/den-stamps/house.den.json")),
     ("inn", include_str!("../../../realm/custom/lua_scripts/den-stamps/inn.den.json")),
     ("market", include_str!("../../../realm/custom/lua_scripts/den-stamps/market.den.json")),
+    ("nook", include_str!("../../../realm/custom/lua_scripts/den-stamps/nook.den.json")),
+    ("shrine", include_str!("../../../realm/custom/lua_scripts/den-stamps/shrine.den.json")),
+    ("smithy", include_str!("../../../realm/custom/lua_scripts/den-stamps/smithy.den.json")),
 ];
 
-/// The stamps there are: the folder's and the built-in ones.
+/// Copied places (`.den copy`, leyline-terrain place.rs): made by the launcher from the player's own game files into
+/// `<dens>/stamps-local`, never shipped. Bigger than a stamp may be.
+pub const LOCAL_DIR: &str = "stamps-local";
+pub const LOCAL_MAX: usize = 400;
+static LOCAL: std::sync::Mutex<Option<std::path::PathBuf>> = std::sync::Mutex::new(None);
+
+/// Where this Den Lite's copied places are (`<dens>/stamps-local`; set at its start).
+pub fn set_local_stamps(dens: &Path) {
+    *LOCAL.lock().unwrap_or_else(|e| e.into_inner()) = Some(dens.join(LOCAL_DIR));
+}
+
+fn local_dir() -> Option<std::path::PathBuf> {
+    LOCAL.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// The stamps there are: the folder's, the built-in ones and the copied places made on this PC.
 pub fn stamp_names(dir: &Path) -> Vec<String> {
     let mut v = list_names(dir);
     v.extend(BUILTIN_STAMPS.iter().map(|s| s.0.to_string()));
+    if let Some(l) = local_dir() {
+        v.extend(list_names(&l));
+    }
     v.sort();
     v.dedup();
     v
@@ -344,14 +365,25 @@ pub fn stamp_names(dir: &Path) -> Vec<String> {
 
 pub fn read_stamp(dir: &Path, name: &str) -> Result<DenDoc, String> {
     let name = clean_name(name).ok_or("No such stamp.")?;
+    let local = local_dir();
+    let local_file = |n: &str| local.as_ref().map(|l| l.join(format!("{n}.den.json"))).filter(|p| p.is_file());
+    // another name for one ("tavern": the inn; stamps.rs NAMES), when there is no stamp called that
+    let known = |n: &str| dir.join(format!("{n}.den.json")).is_file() || BUILTIN_STAMPS.iter().any(|s| s.0 == n) || local_file(n).is_some();
+    let name = if known(name.as_str()) { name } else { crate::stamps::canonical(&name).filter(|n| known(*n)).map(str::to_string).unwrap_or(name) };
     let path = dir.join(format!("{name}.den.json"));
+    let mut max = STAMP_MAX;
     let doc = if path.is_file() {
         read_file(&path)
+    } else if let Some(b) = BUILTIN_STAMPS.iter().find(|s| s.0 == name) {
+        parse(b.1)
+    } else if let Some(l) = local_file(name.as_str()) {
+        max = LOCAL_MAX;
+        read_file(&l)
     } else {
-        BUILTIN_STAMPS.iter().find(|s| s.0 == name).map(|s| parse(s.1)).unwrap_or(Err(String::new()))
+        Err(String::new())
     }
     .map_err(|_| format!("No stamp called '{name}'."))?;
-    if doc.props.is_empty() || doc.props.len() > STAMP_MAX {
+    if doc.props.is_empty() || doc.props.len() > max {
         return Err(format!("The stamp '{name}' isn't right."));
     }
     if doc.props.iter().any(|p| p.x.abs() > STAMP_SPAN || p.y.abs() > STAMP_SPAN || p.z.abs() > STAMP_SPAN) {
@@ -633,6 +665,9 @@ impl Den {
 
     /// `.den stamp <name> now`: the stamp's pieces turned by `o` (15 degree steps) around the player at (x, y, z).
     pub fn stamp(&mut self, st: &DenDoc, x: f32, y: f32, z: f32, o: f32) -> Change {
+        // fitted to the models' real sizes when Den Lite has them (stamps.rs): on table tops, nothing in another
+        let settled = crate::stamps::settle(st);
+        let st = &settled;
         let step = PI / 12.0;
         let o = ((o / step).round() * step).rem_euclid(2.0 * PI);
         let (c, s) = (o.cos() as f64, o.sin() as f64);

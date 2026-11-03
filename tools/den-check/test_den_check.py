@@ -642,6 +642,18 @@ class FakeDenEditor:
 
     def send(self, cmd, wait=10.0):
         w = cmd.split()
+        if w[:3] == [".den", "jaina", "build"]:
+            if "stamps" in self.broken:
+                return {"props": self.props, "said": []}
+            self.stamped = 20
+            self.props += 20
+            self.ev("den_change", "+20 -0")
+            self.ev("dojo", "built 20")
+            return {"props": self.props, "said": []}
+        if w[:2] == [".build", "undo"]:
+            self.props -= getattr(self, "stamped", 0)
+            self.stamped = 0
+            return {"props": self.props, "said": []}
         if cmd == ".den size":
             return {"props": self.props, "said": ["Your Den: a 16 yard room."]}
         if w[:2] == [".den", "save"]:
@@ -719,6 +731,11 @@ class Features(unittest.TestCase):
         self.assertGreaterEqual(sum(1 for r in rep.rows if r[1].startswith("place: ") and r[0] == "PASS"), 6)
         for s in ("gallery", "placed", "selected", "moved", "edited", "files", "menu", "snap", "keys", "stamps", "play"):
             self.assertTrue(any(x.endswith("-%s.png" % s) for x in shots), s)
+        # every stamp built and pictured, then taken back
+        for name in den_check.STAMP_NAMES:
+            self.assertTrue(any(x.endswith("-stamp-%s.png" % name) for x in shots), name)
+            self.assertIn(("PASS", "stamp: %s" % name), [(r[0], r[1]) for r in rep.rows])
+        self.assertEqual(len(den_check.STAMP_NAMES), len(set(den_check.STAMP_NAMES)))
         self.assertFalse((dens / "featuretest.den.json").exists() or (dens / "featuretest-before.den.json").exists(), "the test's saves removed")
 
     def test_the_side_view_sweep_settles_in_one_run(self):
@@ -730,6 +747,15 @@ class Features(unittest.TestCase):
         self.assertTrue(any("frame=PlayerModel" in a for _, a in den_check.FIT_SWEEP))
         api = [r[2] for r in rep.rows if r[1] == "gallery: a model frame's methods"]
         self.assertEqual(api, ["Model Pitch=0 Roll=0 Camera=1", "PlayerModel Pitch=0 Camera=1 PortraitZ=1"])
+
+    def test_the_stamp_list_is_the_shipped_stamps(self):
+        shipped = sorted(p.name.split(".")[0] for p in (HERE.parent.parent / "realm" / "custom" / "lua_scripts" / "den-stamps").glob("*.den.json"))
+        self.assertEqual(sorted(den_check.STAMP_NAMES), shipped)
+
+    def test_a_stamp_that_doesnt_go_down_fails(self):
+        rep, _, _ = self.run_it(broken=("stamps",))
+        fails = {r[1] for r in rep.rows if r[0] == "FAIL"}
+        self.assertIn("stamp: campfire", fails)
 
     def test_a_broken_feature_fails_with_the_fix(self):
         rep, _, _ = self.run_it(broken=("place", "overlap"))

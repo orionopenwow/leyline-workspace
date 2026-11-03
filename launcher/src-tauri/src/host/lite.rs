@@ -186,6 +186,37 @@ pub fn model_table(client: &Path, den_dir: &Path) -> bool {
     std::fs::write(&to, &b).is_ok()
 }
 
+/// The places `.den copy` builds (leyline-terrain place.rs PLACES, e.g. the Lion's Pride): each copied from the
+/// player's own map tile, building file and model table into `<dens>/stamps-local/<name>.den.json`, once (delete the
+/// file to copy it again). Their own game's layout on their own PC: never shipped, never uploaded. What was made.
+pub fn copy_places(client: &Path, den_dir: &Path) -> Vec<String> {
+    use leyline_terrain::place;
+    let dir = den_dir.join("stamps-local");
+    let todo: Vec<&place::Place> = place::PLACES.iter().filter(|p| !dir.join(format!("{}.den.json", p.name)).is_file()).collect();
+    if todo.is_empty() {
+        return Vec::new();
+    }
+    let order = super::terrain::archive_order(client);
+    let read = |name: &str| crate::mpq::read_own(&order, name).ok().flatten();
+    let Some(table) = read("DBFilesClient\\GameObjectDisplayInfo.dbc") else { return Vec::new() };
+    let Ok(displays) = place::display_index(&table) else { return Vec::new() };
+    let mut made = Vec::new();
+    for p in todo {
+        let found = p.tiles.iter().find_map(|&t| {
+            let b = read(place::tile_path(p, t).as_str())?;
+            let adt = leyline_terrain::adt::Adt::parse(&b, None).ok()?;
+            place::find_building(p, &adt).map(|_| adt)
+        });
+        let Some(adt) = found else { continue };
+        let Ok(c) = place::copy_place(p, &adt, |f| read(f), &displays) else { continue };
+        let text = serde_json::to_string_pretty(&c.doc).unwrap_or_default();
+        if std::fs::create_dir_all(&dir).is_ok() && std::fs::write(dir.join(format!("{}.den.json", p.name)), text).is_ok() {
+            made.push(format!("{} ({} pieces)", p.name, c.pieces));
+        }
+    }
+    made
+}
+
 fn port_answers(port: u16) -> bool {
     let addr: SocketAddr = ([127, 0, 0, 1], port).into();
     TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
@@ -249,6 +280,7 @@ impl DenLite for Binary {
         std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't make the Den folder: {e}"))?;
         if let Some(c) = self.client.as_deref() {
             model_table(c, &dir);
+            copy_places(c, &dir);
         }
         let mut cmd = Command::new(exe);
         cmd.args(command_line(&dir, self.client.as_deref())).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());

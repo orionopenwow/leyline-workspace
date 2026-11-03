@@ -117,9 +117,9 @@ local function near(a, b) return math.abs(a - b) < 0.01 end
 
 -- ---------------------------------------------------------------- the shipped files
 local ids = catalogIds()
-check("six stamps ship: garden, market, campfire, dock, house, inn", (function()
-    for _, n in ipairs({ "garden", "market", "campfire", "dock", "house", "inn" }) do if not H.stamp(n) then return false end end
-    return #H.STAMPS == 6 end)())
+check("nine stamps ship: garden, market, campfire, dock, house, inn, smithy, nook, shrine", (function()
+    for _, n in ipairs({ "garden", "market", "campfire", "dock", "house", "inn", "smithy", "nook", "shrine" }) do if not H.stamp(n) then return false end end
+    return #H.STAMPS == 9 end)())
 check("no stamp outside the list is read (no paths from players)", H.stamp("../ov_build") == nil and H.stamp("nothing") == nil)
 check("every stamp piece is a verified catalog entry", (function()
     for _, n in ipairs(H.STAMPS) do for _, e in ipairs(H.stamp(n).props) do if not ids[e.entry] then return false end end end
@@ -180,7 +180,7 @@ fire(3, own)
 check("first visit, empty Den: the owner is asked how it starts", said(own, "Pick how your Den starts") and addonHas(own, "^wuden\tstart\t1/1\tforest,Forest glade;keep,Dark keep;empty,Empty"))
 fire(28, own)
 check("asked once a session", (function() local n = 0; for _, m in ipairs(own.msgs) do if m:find("Pick how your Den starts") then n = n + 1 end end; return n == 1 end)())
-check("the home line goes to the addon", addonHas(own, "^wuden\thome\t1/1\tstarted=%-;door=0;mailbox=0;mail=0;role=owner;stamp=%-;stamps=garden,market,campfire,dock,house,inn"))
+check("the home line goes to the addon", addonHas(own, "^wuden\thome\t1/1\tstarted=%-;door=0;mailbox=0;mail=0;role=owner;stamp=%-;stamps=garden,market,campfire,dock,house,inn,smithy,nook,shrine"))
 
 local bud = player({ guid = 2, name = "Buddy" })
 cmd(bud, ".den start forest")
@@ -248,8 +248,10 @@ check("each piece on the floor (the room's)", (function()
     for _, p in pairs(T.props) do if p.owner == 2 and not near(p.z, GROUND) then return false end end
     return true end)())
 check("a piece lands where the stamp says (x ahead, y left)", (function()
+    local bench
+    for _, e in ipairs(H.stamp("garden").props) do if e.entry == 24538 then bench = e end end
     for _, p in pairs(T.props) do
-        if p.owner == 2 and p.entry == 24538 then return near(p.x, DEN.x + 6 - 4.5) and near(p.y, DEN.y - 6) end
+        if p.owner == 2 and p.entry == 24538 then return near(p.x, DEN.x + 6 + bench.x) and near(p.y, DEN.y - 6 + bench.y) end
     end
     return false end)())
 check("a builder's stamp doesn't move the owner's door", doorBefore and near(H.spot("door").x, doorBefore.x) and near(H.spot("door").y, doorBefore.y))

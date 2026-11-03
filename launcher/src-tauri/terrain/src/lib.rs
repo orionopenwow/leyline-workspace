@@ -11,6 +11,8 @@
 //!   turned into ours and back;
 //! * [`blp`]: our own one-colour texture (BLP2, palette, every mip level), the Den's white ground;
 //! * [`dbc`]: the player's own game tables edited on their PC: the Den's white sky (Light*) and its name (AreaTable);
+//! * [`place`]: a place in the player's own game (a building, its doodad set, the models round it) copied into a
+//!   Den stamp on their PC, never shipped (`.den copy lionspride`);
 //! * [`pad`]: the Den's white pad (2 x 2 chunks flattened and painted, grown by rings) and [`pad::Ground`], the ground
 //!   height at a point from a delta alone (Den Lite).
 //!
@@ -27,6 +29,7 @@ pub mod dbc;
 pub mod delta;
 pub mod flat;
 pub mod pad;
+pub mod place;
 pub mod wdt;
 
 /// One map tile is 533.333 yards a side (1600 feet).

@@ -70,7 +70,8 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 | `.den dojo` (`.dojo`) | the Dojo: a training ring in front of you, built by your companion piece by piece, with three training dummies in it (below, "The Dojo") |
 | `.den dojo dummies [1-5]` / `clear` | training dummies (display only: no combat here) / the dummies down (`.build undo` takes the ring back) |
 | `.den fly on\|off` / `.den speed 1-5` | fly (jump, then Space to rise, X to sink) / run and fly faster |
-| `.den jaina build <stamp>`, or say `Jaina, build a garden` | she walks over and builds the stamp piece by piece, casting at each piece (`dojo` is the training ring) |
+| `.den jaina build <stamp>`, or say `Jaina, build a garden` (a tavern, a forge, a reading nook...) | she walks into its middle and builds it the way a person would (big pieces first, small last, things on tables at the end), casting at each piece, then steps back to look at it (`dojo` is the training ring; docs/DEN-STAMPS.md) |
+| `.den copy lionspride` | the Lion's Pride copied from your own game files (made by the launcher into `stamps-local` when it starts the Den; never shipped): docs/DEN-STAMPS.md |
 
 The character is a ready-made human (female by default, `--gender male`), level 1, in a white shirt, trousers and
 boots, standing in the middle of the Den on the GM island (map 1, 16226.2, 16257.0, floor 13.2: `game_tele` 424), **on**

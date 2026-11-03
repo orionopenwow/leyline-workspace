@@ -117,6 +117,12 @@ pub fn tile_field(path: Option<&str>, size: Option<(f32, f32, f32, f32)>, wmo: b
     }
 }
 
+/// A display's size in yards (width, depth, height, the bottom's height) from the player's own table, if Den Lite
+/// read it (stamps.rs fits stamps to it).
+pub fn box_of(display: u32) -> Option<(f32, f32, f32, f32)> {
+    BOXES.get()?.get(&display).copied()
+}
+
 /// The model path of a display id, if the table was there.
 pub fn of(display: u32) -> Option<&'static str> {
     PATHS.get()?.get(&display).map(String::as_str)

@@ -1792,6 +1792,27 @@ fn single_go(f: &Frame) -> Option<(u64, u8)> {
 }
 
 /// Frames until a one-part addon answer `wubuild <name>`: the frames before it and its data.
+/// The last whole `wubuild <name>` answer in frames already read (its parts joined; the state line is often more
+/// than one part), or None.
+fn aid_parts(frames: &[Frame], name: &str) -> Option<String> {
+    let want = format!("OVMOD\twubuild\t{name}\t");
+    let (mut parts, mut whole) = (Vec::new(), None);
+    for f in frames {
+        let Some(rest) = addon_text(f).and_then(|t| t.strip_prefix(&want).map(String::from)) else { continue };
+        let Some((pn, data)) = rest.split_once('\t') else { continue };
+        let Some((i, n)) = pn.split_once('/') else { continue };
+        let (Ok(i), Ok(n)) = (i.parse::<usize>(), n.parse::<usize>()) else { continue };
+        if i == 1 {
+            parts.clear();
+        }
+        parts.push(data.to_string());
+        if i == n && parts.len() == n {
+            whole = Some(parts.concat());
+        }
+    }
+    whole
+}
+
 fn until_aid(w: &mut World, name: &str) -> (Vec<Frame>, String) {
     let want = format!("OVMOD\twubuild\t{name}\t1/1\t");
     let mut got = Vec::new();
@@ -1930,17 +1951,17 @@ fn the_editors_pick_place_select_drag_and_snap_out() {
     let s0 = Spot::default();
     w.send(&heartbeat(s0.x, s0.y, s0.z, 0.0));
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tmode build");
-    eprintln!("STEP 1"); assert_eq!(until_aid(&mut w, "mode").1, "build");
+    assert_eq!(until_aid(&mut w, "mode").1, "build");
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tgizmo on");
 
     // the pick: armed, nothing shown until the cursor is over the ground; the hover rides along with the pick
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tpreview 2413");
-    eprintln!("STEP 2"); let (frames, aim) = until_aid(&mut w, "aim");
+    let (frames, aim) = until_aid(&mut w, "aim");
     assert_eq!(aim, format!("place,2413,{}", gizmo::PLACE_SPELL));
     assert!(objects(&frames).0.is_empty(), "no copy in front of you");
     w.addon("OVMOD", "wubuild\tcmd\t1/1\thover 0.15 -0.25 1.7778 12");
     w.addon("OVMOD", "wubuild\tcmd\t1/1\twhere");
-    eprintln!("STEP 3"); let (frames, at) = until_aid(&mut w, "ghost");
+    let (frames, at) = until_aid(&mut w, "ghost");
     let at: Vec<f32> = at.split(',').map(|v| v.parse().unwrap()).collect();
     let copy: Vec<(u64, Go)> = objects(&frames).0.into_iter().filter(|(g, _)| gizmo::is_ghost(*g)).collect();
     assert_eq!(copy.len(), 1, "the real prop's copy under the cursor");
@@ -1948,7 +1969,7 @@ fn the_editors_pick_place_select_drag_and_snap_out() {
 
     // one click: placed there, placing over, the new prop selected and glowing
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tcommit");
-    eprintln!("STEP 4"); let (frames, placed) = until_aid(&mut w, "placed");
+    let (frames, placed) = until_aid(&mut w, "placed");
     let id: u64 = placed.parse().unwrap();
     let chair = (0xF110u64 << 48) | (2413u64 << 24) | id;
     let (made, gone) = objects(&frames);
@@ -1958,8 +1979,11 @@ fn the_editors_pick_place_select_drag_and_snap_out() {
     let mut glow = None;
     let mut handles = Vec::new();
     let mut frames2 = frames;
-    eprintln!("STEP 5"); let (more, st) = until_aid(&mut w, "state");
-    frames2.extend(more);
+    // the state may come before "placed" (aid_send's order): look in what came already, else wait for it
+    let st = match aid_parts(&frames2, "state") {
+        Some(st) => st,
+        None => w.until_addon("wubuild", "state"),
+    };
     for f in &frames2 {
         if let Some((g, v)) = values(f) {
             if g == chair {
@@ -1979,15 +2003,15 @@ fn the_editors_pick_place_select_drag_and_snap_out() {
     // grab the X handle and drag: the copy along x, then a click drops it there
     let xh = handles.iter().find(|h| h.1.entry == 990_001).unwrap().0;
     w.raw(gizmo::CMSG_GAMEOBJ_USE, &xh.to_le_bytes());
-    eprintln!("STEP 6"); assert_eq!(until_aid(&mut w, "aim").1, format!("axis,{id},x"));
+    assert_eq!(until_aid(&mut w, "aim").1, format!("axis,{id},x"));
     w.addon("OVMOD", "wubuild\tcmd\t1/1\thover 0.3 -0.1 1.7778 12");
-    eprintln!("STEP 7"); let drag = until_aid(&mut w, "drag").1;
+    let drag = until_aid(&mut w, "drag").1;
     assert!(drag.starts_with("x,"), "{drag}");
     let s: f32 = drag[2..].parse().unwrap();
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tcommit");
-    eprintln!("STEP 8"); let moved = until_aid(&mut w, "moved").1;
+    let moved = until_aid(&mut w, "moved").1;
     assert_eq!(moved, format!("x,{s:+.2}"));
-    eprintln!("STEP 9"); let mut st = w.until_addon("wubuild", "state");
+    let mut st = w.until_addon("wubuild", "state");
     while !st.contains("pos=") {
         st = w.until_addon("wubuild", "state");
     }
@@ -1997,13 +2021,13 @@ fn the_editors_pick_place_select_drag_and_snap_out() {
 
     // a click on empty ground: deselected, the glow off
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tselclear");
-    eprintln!("STEP 10"); let off = w.until(|f| values(f).filter(|(g, _)| *g == chair).map(|(_, v)| v.get(&(den_lite::raw::GAMEOBJECT_DYNAMIC as u16)).copied()));
+    let off = w.until(|f| values(f).filter(|(g, _)| *g == chair).map(|(_, v)| v.get(&(den_lite::raw::GAMEOBJECT_DYNAMIC as u16)).copied()));
     assert_eq!(off, Some(0));
 
     // snap out: the camera object (an invisible unit) and the view on it; again: the view back, the object gone
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tcam zoom 12");
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tcam snap");
-    eprintln!("STEP 11"); let (frames, cam) = until_aid(&mut w, "cam");
+    let (frames, cam) = until_aid(&mut w, "cam");
     assert!(cam.starts_with("far,35.0,1,"), "{cam}");
     let units = unit_creates(&frames);
     assert!(units.iter().any(|u| u.0 == den_lite::farsight::GUID && u.1 == den_lite::farsight::ENTRY as i32), "{units:?}");
@@ -2012,10 +2036,10 @@ fn the_editors_pick_place_select_drag_and_snap_out() {
     let target = v[&(den_lite::raw::PLAYER_FARSIGHT as u16)] as u64 | (v[&(den_lite::raw::PLAYER_FARSIGHT as u16 + 1)] as u64) << 32;
     assert_eq!(target, den_lite::farsight::GUID);
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tcam pan fwd 6");
-    eprintln!("STEP 12"); let (frames, _) = until_aid(&mut w, "cam");
+    let (frames, _) = until_aid(&mut w, "cam");
     assert!(frames.iter().any(|f| f.opcode == den_lite::flight::SMSG_MONSTER_MOVE), "the view glides");
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tcam snap");
-    eprintln!("STEP 13"); let (frames, cam) = until_aid(&mut w, "cam");
+    let (frames, cam) = until_aid(&mut w, "cam");
     assert_eq!(cam, "near");
     let back = frames.iter().filter_map(values).find(|(_, v)| v.contains_key(&(den_lite::raw::PLAYER_FARSIGHT as u16))).unwrap().1;
     assert_eq!(back[&(den_lite::raw::PLAYER_FARSIGHT as u16)], 0);
@@ -2024,7 +2048,7 @@ fn the_editors_pick_place_select_drag_and_snap_out() {
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tcam far 2");
     assert!(until_aid(&mut w, "cam").1.starts_with("far,"));
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tcam far -2");
-    eprintln!("STEP 14"); assert_eq!(until_aid(&mut w, "cam").1, "near");
+    assert_eq!(until_aid(&mut w, "cam").1, "near");
     drop(w);
     drop(srv);
     let _ = std::fs::remove_dir_all(&dir);

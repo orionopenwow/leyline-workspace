@@ -8,6 +8,8 @@ on:
     paths:
       - "stream/fui-web/**"
       - "stream/tests/test_wuui_*.lua"
+      - "stream/tests/test_ov_*.lua"
+      - "realm/custom/lua_scripts/**"
       - "stream/social.py"
       - "stream/tests/test_social.py"
       - ".github/workflows/lua-check.yml"
@@ -31,6 +33,15 @@ jobs:
             f="stream/tests/test_wuui_$t.lua"
             cmd=$(head -1 "$f" | sed -n 's/^-- \(lua5\.1 .*\)$/\1/p')
             cmd=$(echo "$cmd" | sed 's/ \[[^]]*\]//g')
+            echo "== $cmd"
+            $cmd
+          done
+      - name: the main realm's ov_main.lua (riding from level 1 and .mount, the choice menu, the boost's bars and mounts)
+        run: |
+          set -e
+          for t in start_mount main_choice main_bars; do
+            f="stream/tests/test_ov_$t.lua"
+            cmd=$(head -1 "$f" | sed -n 's/^-- \(lua5\.1 .*\)$/\1/p')
             echo "== $cmd"
             $cmd
           done

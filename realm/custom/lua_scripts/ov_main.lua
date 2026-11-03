@@ -55,6 +55,8 @@
 --   CMSG_SET_ACTION_BUTTON, login and spec switches do; the 3.3.5a client doesn't place learned spells), so
 --   nothing fights the layout.
 -- Env (read at each use): OV_MAIN=1 on; OV_BOOST_KITS_PER_ACCOUNT (10); OV_BOOST_GOLD gold given with a kit (0).
+-- Riding from level 1 (see "riding from level 1" below): Apprentice Riding and the race's mount at the first login,
+-- .mount; OV_START_MOUNT=0 = off.
 -- Tables (characters DB, created here if missing): ov_main_choice, ov_boosts (same definition as ov_services.lua).
 -- Gossip texts 61010-61013 come from main_world.sql (stock text 100 if they are missing).
 --
@@ -1331,10 +1333,31 @@ local function openMenuSoon(player)
     end
 end
 
--- Every new character (not Death Knights, who get theirs in the Ebon Hold story) starts with Apprentice
--- Riding and its race's basic mount, so even level 1 can ride. Spell ids checked against AzerothCore's
--- item_template (the mount spell each race's level-20 vendor mount teaches) and trainer_spell (33388).
+------------------------------------------------------------------------------------------------ riding from level 1
+-- Owner 2026-11-03: "Start level 1s with initial ground mounts and riding". Every character but a Death Knight (the
+-- Ebon Hold story gives its Acherus Deathcharger) gets Apprentice Riding (33388: riding 75/75) and its race's basic
+-- ground mount as a spell, no bag item: on the first login (with one chat line), and at any later login below
+-- RIDING_CATCH_UP_BELOW for a character made before this (silently; from level 20 the riding trainer sells it as
+-- stock). Once per character in effect: each spell is only learned when HasSpell says it is missing, and the
+-- spells are saved with the character. Every grant is logged ("[ov_main] start mount: ...").
+-- Why level 1 can ride (azerothcore-wotlk, the pinned core's Spells/Spell.cpp, Entities/Player): the level 20 and
+-- riding 75 requirements are on the mount ITEM (item_template RequiredLevel 20, RequiredSkill 762 /
+-- RequiredSkillRank 75, checked by Player::CanUseItem when the item is used) and on the trainer row (trainer_spell
+-- ReqLevel 20 for 33388). Spell::CheckCast has no caster-level check for a learned player spell (SpellLevel is only
+-- compared for pets, item casts and aura scaling), and the SPELL_AURA_MOUNTED case checks only water, maps that
+-- allow mounts, shapeshifts and transforms. Player::_LoadSkills keeps riding at any level (no level gate). These
+-- mounts have a fixed speed (+60%), so the riding value doesn't change them. No DBC or database change is needed.
+-- Spell ids: each race's level-20 vendor mount's spellid_2 in the core's item_template (5656 Brown Horse Bridle
+-- -> 458, 1132 Horn of the Timber Wolf -> 580, 5872 Brown Ram -> 6899, 8629 Reins of the Striped Nightsaber ->
+-- 10793, 13333 Brown Skeletal Horse -> 17464, 15290 Brown Kodo -> 18990, 8563 Red Mechanostrider -> 10873, 8588
+-- Whistle of the Emerald Raptor -> 8395, 28927 Red Hawkstrider -> 34795, 28481 Brown Elekk -> 34406).
+-- OV_START_MOUNT=0 turns it off (default on wherever OV_MAIN=1).
+-- .mount: mounts up (or gets down) with the best mount the character knows: the Celestial Steed of a boost, the
+-- boost's ground mount, the race's mount, a Death Knight's Deathcharger. A normal cast, so the core's own rules
+-- (indoors, combat, no-mount maps) answer as for a click in the spellbook.
 local APPRENTICE_RIDING = 33388
+local RIDING_CATCH_UP_BELOW = 20
+local DK_MOUNT = 48778   -- Acherus Deathcharger (QUEST_SPELLS[6])
 local START_MOUNT = {
     [1] = 458,    -- Human: Brown Horse
     [2] = 580,    -- Orc: Timber Wolf
@@ -1347,15 +1370,61 @@ local START_MOUNT = {
     [10] = 34795, -- Blood Elf: Red Hawkstrider
     [11] = 34406, -- Draenei: Brown Elekk
 }
+local function startMountOn() return on() and os.getenv("OV_START_MOUNT") ~= "0" end
+
+-- Learns what is missing; returns the race's mount spell (nil: not for this character) and how many were learned.
 local function giveStartMount(player)
-    if player:GetClass() == CLASS_DK then return end
-    local mount = START_MOUNT[player:GetRace()]
-    if not mount then return end
-    if not player:HasSpell(APPRENTICE_RIDING) then player:LearnSpell(APPRENTICE_RIDING) end
-    if not player:HasSpell(mount) then player:LearnSpell(mount) end
-    player:RegisterEvent(function(_, _, _, p)
-        if p then say(p, "You can ride from level 1: your mount is in the spellbook (Pet/Mounts tab, |cffffff00Shift+P|r).") end
+    if not startMountOn() or isBot(player) or try(player, "GetClass") == CLASS_DK then return nil, 0 end
+    local mount = START_MOUNT[try(player, "GetRace") or 0]
+    if not mount then return nil, 0 end
+    local learned = {}
+    for _, id in ipairs({ APPRENTICE_RIDING, mount }) do
+        if try(player, "HasSpell", id) ~= true then
+            try(player, "LearnSpell", id)
+            learned[#learned + 1] = id
+        end
+    end
+    if #learned > 0 then
+        print(string.format("[ov_main] start mount: %s (guid %s, race %s, level %s) learned %s",
+            tostring(try(player, "GetName")), tostring(try(player, "GetGUIDLow")), tostring(try(player, "GetRace")),
+            tostring(try(player, "GetLevel")), table.concat(learned, ", ")))
+    end
+    return mount, #learned
+end
+
+local function announceStartMount(player)
+    try(player, "RegisterEvent", function(_, _, _, p)
+        if p then say(p, "You can ride from level 1: type |cffffff00.mount|r, or find your mount in the " ..
+            "Character window (|cffffff00C|r), Pets tab, Mounts.") end
     end, 6000, 1)
+end
+
+-- First login: the grant and its one chat line (ON_LOGIN, which runs first, may already have learned the spells).
+local function startMountFirstLogin(player)
+    local mount = giveStartMount(player)
+    if mount and try(player, "HasSpell", mount) == true then announceStartMount(player) end
+end
+
+-- Any login: a character made before riding from level 1, still below 20, gets it quietly.
+local function startMountCatchUp(player)
+    if (try(player, "GetLevel") or 99) >= RIDING_CATCH_UP_BELOW then return end
+    giveStartMount(player)
+end
+
+local function mountCommand(player)
+    if try(player, "IsMounted") == true then
+        try(player, "Dismount")
+        return
+    end
+    if (try(player, "GetLevel") or 99) < RIDING_CATCH_UP_BELOW then giveStartMount(player) end
+    local race = START_MOUNT[try(player, "GetRace") or 0]
+    for _, id in ipairs({ SMART_MOUNT, MOUNTS[1], DK_MOUNT, race }) do
+        if id and try(player, "HasSpell", id) == true then
+            try(player, "CastSpell", player, id, false)
+            return
+        end
+    end
+    say(player, "This character doesn't know a mount yet: the riding trainer teaches riding from level 20.")
 end
 
 ------------------------------------------------------------------------------------------------ starting kit
@@ -1532,7 +1601,8 @@ local function onFirstLogin(event, player)
     local ok, err = pcall(fillStartKit, player)
     if not ok then print("[ov_main] start kit failed: " .. tostring(err)) end
     if not on() then return end
-    giveStartMount(player)
+    local okMount, errMount = pcall(startMountFirstLogin, player)
+    if not okMount then print("[ov_main] start mount failed: " .. tostring(errMount)) end
     if not canBoost(player) then return end
     setChoice(player, "pending", "")
     openMenuSoon(player)
@@ -1542,6 +1612,8 @@ end
 -- ov_main_choice row yet and no reminder: only the menu.
 local function onLogin(event, player)
     if not on() or not player or isBot(player) then return end
+    local okMount, errMount = pcall(startMountCatchUp, player)
+    if not okMount then print("[ov_main] start mount failed: " .. tostring(errMount)) end
     local guid = player:GetGUIDLow()
     barState[guid] = loadBarState(guid)
     if barState[guid] and not barState[guid].applied then startBars(player, 5000) end   -- logged out too soon
@@ -1565,6 +1637,12 @@ local function onCommand(event, player, command)
         if not on() then return end
         local guid = player:GetGUIDLow()
         if cmd == "boost later" and not chosen[guid] and choiceOf(guid) == "pending" then setChoice(player, "later", "") end
+        return false
+    end
+    if cmd == "mount" then
+        if not on() then return end   -- other realms: let the core answer
+        local ok, err = pcall(mountCommand, player)
+        if not ok then print("[ov_main] .mount failed: " .. tostring(err)) end
         return false
     end
     if cmd ~= "boost" then return end
@@ -1645,4 +1723,5 @@ OV_MAIN_TEST = { BARS = BARS, RACIALS = RACIALS, INV_SLOTS = INV_SLOTS, resolveL
     buildButtonsPacket = buildButtonsPacket, layoutRows = layoutRows, equipSet = equipSet, barState = barState,
     SMSG_ACTION_BUTTONS = SMSG_ACTION_BUTTONS, MAX_ACTION_BUTTONS = MAX_ACTION_BUTTONS,
     START_KITS = START_KITS, fillStartKit = fillStartKit, SMART_MOUNT = SMART_MOUNT, MOUNTS = MOUNTS,
-    flyButtons = flyButtons, smartMountButtons = smartMountButtons, barsWord = barsWord }
+    flyButtons = flyButtons, smartMountButtons = smartMountButtons, barsWord = barsWord,
+    START_MOUNT = START_MOUNT, APPRENTICE_RIDING = APPRENTICE_RIDING, DK_MOUNT = DK_MOUNT }

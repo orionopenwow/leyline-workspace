@@ -832,9 +832,9 @@ def page_profile(h, note: str = "", ok: str = "", form: dict | None = None, stat
              + '</section><section class="pf-card"><h2>Ways to sign in</h2><p class="pf-fine">Linking another way lets it sign in to '
              'this same account.</p>'
              f'<ul class="pf-list">{"".join(ways_rows)}</ul></section>'
-             '<section class="pf-card"><h2>Sign out</h2><p class="pf-fine">Signs this browser out. Your launcher stays signed in '
-             'until you sign out there or revoke it on Linked launchers.</p>'
-             '<form method="post" action="/logout" class="pf-acts"><button class="pf-btn ghost" type="submit">Sign out</button></form></section>')
+             '<section class="pf-card"><h2>Log out</h2><p class="pf-fine">Logs this browser out. Your launcher stays logged in '
+             'until you log out there or revoke it on Linked launchers.</p>'
+             '<form method="post" action="/logout" class="pf-acts"><button class="pf-btn ghost" type="submit">Log out</button></form></section>')
     _shell(h, "Your profile · Leyline", inner, PROFILE, who, status)
 
 

@@ -85,7 +85,8 @@ SHARE_MARK = b"leyline-den-share-v1"
 SAVE = "smoketest"
 # the invite link (host/litenet.rs invite_link, new_secret; labs/den-lite guests.rs): relay, realm id, the Den's
 # secret, the friend's account and password
-INVITE_RE = re.compile(r"^https://([a-z0-9.-]{3,80})/join/([a-z2-7]{16})#([A-Z2-9]{24})~~(G[A-Z0-9]{3,15})\.([A-Z0-9]{16})$")
+# the friend's other ways in may follow (launcher host/denways.rs with_ways: ~~lan=<ip:port>, ~~at=<host[:port]>)
+INVITE_RE = re.compile(r"^https://([a-z0-9.-]{3,80})/join/([a-z2-7]{16})#([A-Z2-9]{24})~~(G[A-Z0-9]{3,15})\.([A-Z0-9]{16})((?:~~(?:lan|at)=[A-Za-z0-9.:\[\]-]{1,120})*)$")
 DEN_LITE_RELEASE = "https://github.com/orionopenwow/leyline-workspace/releases/download/den-lite-latest/"
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 MILESTONES = [

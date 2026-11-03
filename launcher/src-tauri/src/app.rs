@@ -1221,6 +1221,7 @@ pub fn den_play_cli(cli: crate::denclick::Cli) -> i32 {
 /// the sign-in handed to the game.
 pub fn play_test_cli(cli: crate::playtest::Cli) -> i32 {
     std::hint::black_box(crate::playtest::CLI_MARK.as_ptr());
+    std::hint::black_box(crate::playtest::CHECKS_MARK.as_ptr());
     let dir = settings::app_dir();
     let report_path = dir.join(crate::playtest::REPORT);
     let mut rep = serde_json::json!({ "mark": crate::playtest::CLI_MARK, "phase": "start", "started_ms": crate::denclick::now_ms() });
@@ -1268,11 +1269,64 @@ pub fn play_test_cli(cli: crate::playtest::Cli) -> i32 {
             }
         }
     }
-    // the test Hero Key (the first-run tool's test account), only from the environment: signed in, then forgotten
+    // --game more than once: the other folders are added too (a player with several versions); PLAY uses the first
+    if !cli.more.is_empty() {
+        let mut more = Vec::new();
+        for g in &cli.more {
+            if core.snapshot().clients.iter().any(|c| same(&c.path, g)) {
+                continue;
+            }
+            let r = clients::detect(g).map_err(|e| e.to_string()).and_then(|det| {
+                core.update(|s| {
+                    let profile = clients::new_profile(g, &det, &s.clients);
+                    s.clients.push(profile.clone());
+                    Ok(serde_json::json!({ "ok": true, "build": profile.build.version(), "name": profile.name, "complete": det.complete }))
+                })
+            });
+            more.push(r.unwrap_or_else(|e| serde_json::json!({ "ok": false, "why": e })));
+        }
+        rep["more_added"] = more.into();
+    }
+    // --checks: what the game folder box does with each thing a player can drop on it (a fresh profile: Settings ›
+    // Testing off, so a magnet or a .torrent gets the one sentence); the probes' small files removed after
+    let probe_dir = dir.join(crate::playtest::PROBE_DIR);
+    if cli.checks {
+        let torrents = crate::clienttorrent::load_testing(&dir).client_torrents;
+        rep["checks"] = serde_json::json!({ "mark": crate::playtest::CHECKS_MARK, "torrent_switch": torrents });
+        rep["checks"]["drops"] = match crate::playtest::drop_probes(&probe_dir, cli.game.as_deref()) {
+            Ok(p) => crate::playtest::run_drops(&p, torrents),
+            Err(e) => serde_json::json!([{ "name": "the drop probes", "ok": false, "got": e.to_string() }]),
+        };
+        save(&rep);
+    }
+    // the test Hero Key (the first-run tool's test account), only from the environment: signed in, then forgotten.
+    // --checks: three ways, as a player does them: the key file found in a folder (the sign-in screen's Downloads
+    // look, the same reading a dropped file gets), log out, then the key pasted with the junk a paste brings
     if let Some(key) = std::env::var_os(crate::playtest::KEY_ENV) {
         std::env::remove_var(crate::playtest::KEY_ENV);
         let key = key.to_string_lossy().to_string();
-        let out = crate::social::sign_in_key(&dir, &key);
+        let out = if cli.checks {
+            let file = probe_dir.join("Leyline Hero Key.txt");
+            let by_file = std::fs::create_dir_all(&probe_dir)
+                .and_then(|_| std::fs::write(&file, format!("Leyline Hero Key\r\nKey: {key}\r\n")))
+                .map_err(|e| e.to_string())
+                .and_then(|_| crate::social::find_key_file(&probe_dir).ok_or_else(|| "the key file wasn't found".to_string()))
+                .and_then(|f| crate::social::key_file_text(std::path::Path::new(&f.path)))
+                .and_then(|t| crate::social::sign_in_key(&dir, &t));
+            let _ = std::fs::remove_file(&file);
+            let file_ok = by_file.is_ok() && crate::social::load_token(&dir).is_some();
+            crate::social::sign_out(&dir);
+            let out_ok = crate::social::load_token(&dir).is_none();
+            let by_paste = crate::social::sign_in_key(&dir, &format!("  Key: {key} \n"));
+            rep["checks"]["signin"] = serde_json::json!({
+                "file": file_ok, "file_why": by_file.as_ref().err().cloned().unwrap_or_default(),
+                "logout": out_ok,
+                "paste": by_paste.is_ok(), "paste_why": by_paste.as_ref().err().cloned().unwrap_or_default()
+            });
+            by_paste
+        } else {
+            crate::social::sign_in_key(&dir, &key)
+        };
         drop(key);
         match out {
             Ok(v) => {
@@ -1366,11 +1420,45 @@ pub fn play_test_cli(cli: crate::playtest::Cli) -> i32 {
     rep["closed_itself"] = closed_itself.into();
     rep["session_left"] = crate::hybrid::has_session(&profile.path).into();
     rep["scrubbed"] = scrubbed.into();
+    // --checks, with the game closed: a community realm and back, then loadouts Clean and back
+    if cli.checks {
+        rep["phase"] = "checks".into();
+        save(&rep);
+        rep["checks"]["realm_switch"] = realm_switch_check(&core, &client);
+        rep["checks"]["loadouts"] = crate::playtest::loadout_round_trip(&profile.path);
+        let _ = std::fs::remove_dir_all(&probe_dir);
+    }
     rep["phase"] = "done".into();
     rep["done_ms"] = crate::denclick::now_ms().into();
     save(&rep);
     let typed = rep["keys"]["typed"].as_bool() == Some(true);
     if (hybrid.is_ok() || typed) && !closed_itself { 0 } else { 1 }
+}
+
+/// play-test --checks: the game folder pointed at a community realm from the list (as Play on a community realm does,
+/// without starting the game), then back at the official realm. `ok` null when the list has none for this folder.
+fn realm_switch_check(core: &Core, client: &str) -> serde_json::Value {
+    let list = realms::fetch_all(&core.dir);
+    let build = core.client(client).ok().map(|p| p.build);
+    let host = |a: &str| a.trim().to_ascii_lowercase().split(':').next().unwrap_or("").to_string();
+    let Some(r) = list.realms.iter().find(|r| {
+        !r.official
+            && r.address.as_deref().is_some_and(|a| clients::valid_realm_address(a) && !crate::addresses::is_official_realm(a))
+            && (r.build.is_none() || r.build == build)
+    }) else {
+        return serde_json::json!({ "ok": serde_json::Value::Null, "why": "no community realm for this game folder on the list right now", "listed": list.realms.len() });
+    };
+    let addr = r.address.clone().unwrap_or_default();
+    let to = point_and_play(core, client, &addr, false);
+    let at = core.client(client).ok().and_then(|p| clients::read_realmlist(&p)).unwrap_or_default();
+    let there = to.is_ok() && host(&at) == host(&addr);
+    let back = point_and_play(core, client, OFFICIAL_REALM, false);
+    let home_at = core.client(client).ok().and_then(|p| clients::read_realmlist(&p)).unwrap_or_default();
+    let home = back.is_ok() && crate::addresses::is_official_realm(&home_at);
+    serde_json::json!({
+        "ok": there && home, "realm": r.name, "there": there, "back": home,
+        "why": to.err().or(back.err()).unwrap_or_default()
+    })
 }
 
 fn solo_result(message: String, hybrid: Result<(), String>) -> SoloPlay {

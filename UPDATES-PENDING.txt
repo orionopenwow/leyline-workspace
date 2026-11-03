@@ -775,3 +775,8 @@
 1315h foreverui  Browser game: the same
 1315i signin  Website: Loadouts and Game modes in Mods & Addons, the invite guide (/wrath/docs/den-invite)
 1315j ship  Save as Orion: Den anywhere, My models, invite ways, loadouts, Game modes (the launcher builds after this)
+1315l addons  Leyline addons: the test's build mode says the mode again
+1315m foreverui  Browser game: the same
+1315n den-features  Den feature test again: build mode glow, the invite link with every way in
+1316a signin  Website: the profile page says Log out
+1316b ship  Save as Orion: the fresh computer test (fresh-test, fresh-sandbox), the seeded realm plan (the launcher builds after this)

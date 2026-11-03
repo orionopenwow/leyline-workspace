@@ -181,7 +181,7 @@ end
 ------------------------------------------------------------------------------------------------
 local function count(t) local n = 0; for _ in pairs(t) do n = n + 1 end; return n end
 local function bestOf(g)
-    local b, low = D.best[g], nil
+    local b, low = D.bestFor and D.bestFor(g) or D.best[g], nil
     for _, ms in pairs(b or {}) do if not low or ms < low then low = ms end end
     return low
 end
@@ -328,6 +328,8 @@ local function bestFor(g)
     D.best[g] = b
     return b
 end
+
+D.bestFor = bestFor
 
 local function bossOf(word)
     word = tostring(word or ""):lower()

@@ -650,6 +650,64 @@ Everything below already has its addon side; the client calls the hook or sends 
    draw the model see-through under the cursor, on the Snap grid, turned by Q / E in 15 degree steps, before the click
    that places it (`.build spawnat`). The stakes (`.den stamp`) are the fallback every game has.
 
+## The Dojo: training grounds in the Den (2026-11-03)
+
+Owner, 3 Nov: "Den, Training Room built out: able to duel in Den, customize character, fly around ... raid and
+dungeon with companions in training grounds mode alongside the den feature, all built in with clever UI sections ...
+call it the Dojo in the Den ... initial training dummy and npc area, spawn bosses ... speak to Jaina in game mode to
+create sets and she walks over and casts spells while things load into existence". Phase 1 is below: what each
+server can do, and what is next.
+
+**In game**: the Den's tool rail has a **Dojo** button (or `/dojo`): a small panel beside the rail, in the editor's
+look (WrathUnleashedUI `Dojo.lua`). Its sections: **Training** (Ring, Dummies, Clear), **Moving** (Fly, speed 1x / 2x /
+4x), **Jaina builds** (Garden, Campfire, Market, Inn), **Full Den** (a boss to pick, Fight, Duels, Look) and a readout
+(your damage per second, your best boss time). Every button is one command, `dojo <...>` through the Den's addon
+channel (`wuden cmd`), the same on both servers; each answers `wuden dojo server=lite|full;...` and the panel shows
+what is on in gold. On Den Lite the Full Den row is off and says why. Typed, it is `.dojo ...` or `.den dojo ...`.
+
+| | Den Lite (`labs/den-lite`, `src/dojo.rs`) | The full Den (`ov_dojo.lua`, `OV_DEN=1`) |
+|---|---|---|
+| The ring (fences, torches, banners, racks, benches) | `.den dojo`: Jaina walks over and builds it piece by piece; a stamp in the Den (saved, one undo) | `.dojo ring`: spawned at once (not saved; `.dojo clear` takes it) |
+| Training dummies | `.den dojo dummies [1-5]`: display only (no combat): to practise on, for pictures | `.dojo dummies [1-5] [grandmaster\|master\|expert\|raider]`: the game's own; your damage per second in the panel, the last numbers as a toast |
+| Fly | `.den fly on\|off` (the game's own fly; jump, Space, X) | `.dojo fly` (owner only, inside the Den; ov_den.lua's GM controls: off when you leave) |
+| Speed | `.den speed 1-5` (run and flight) | `.dojo speed 1\|2\|4` (the GM controls) |
+| Jaina builds a set | `.den jaina build garden`, or say "Jaina, build a garden": she walks to the spot, starts a cast, and each piece appears a quarter second after the last as she turns to it and casts at it | `.dojo build garden`: the stamp at once (`.den stamp garden now`) |
+| Bosses | says it needs the full Den | `.dojo boss [name] [level] [health %]` (owner): Hogger, VanCleef, Azuregos, Kazzak, Doomwalker; 10 minutes; your time against your best (per character, `mod_dojo_best`) |
+| Duels | (one player at a time on Den Lite's own; friends: no combat) | `.dojo duel on` (owner): a duel inside the Den is a spar, timed, both healed at the end |
+| A new look | says it needs the full Den | `.dojo look`: the game's customize screen at your next visit to the character list (as `ov_services.lua`) |
+
+How Den Lite does it without a spell system (`dojo.rs`): `SMSG_MOVE_SET_CAN_FLY` / `UNSET` (packed guid, a counter),
+`SMSG_FORCE_RUN_SPEED_CHANGE` / `FORCE_FLIGHT_SPEED_CHANGE` (the counter, the speed); the game's acks
+(`CMSG_MOVE_SET_CAN_FLY_ACK`, `CMSG_FORCE_*_SPEED_CHANGE_ACK`) are read for the events log (`dojo_ack`) and the
+character's spot, and its flying moves (`CMSG_MOVE_SET_FLY`, ascend, descend) are read like the others. Jaina's
+build: her walk (`SMSG_MONSTER_MOVE`), one `SMSG_SPELL_START` from her with the whole build as its cast time, then per
+piece a turn (`SMSG_MONSTER_MOVE`, facing angle), an `SMSG_SPELL_GO` aimed at the piece's spot and the piece's create.
+The game draws a cast's visuals from its own Spell.dbc for any unit it knows, with no aura state; nothing of the
+spell happens. Training dummies are creature creates like hers (the game's training dummy entries, friendly, never
+hit).
+
+**Proven here**: Den Lite's unit tests and the headless client (`tests/client.rs`
+`the_dojo_flies_speeds_and_jaina_builds_piece_by_piece`: fly and its ack, speed, "Jaina, build a garden" piece by
+piece with one cast start, a turn and a cast per piece, the ring and its three dummies, the dummies' name, clear,
+undo, the panel's line); `stream/tests/test_ov_dojo.lua` (the full Den under a fake mod-ale; the ring checked against
+Den Lite's) and `test_wuui_dojo.lua` (the panel on both servers); CI runs all three. **To see on a real game**: that it
+flies and runs faster from these messages; that Jaina's cast shows (the spell, 42955, is a pick: another may look
+better) and that she turns; the dummies' model (display 27510 is to check); on the full Den, that the island's area
+lets a duel start at all, that the dummies' damage reaches `ON_DAMAGE_TAKEN` (the core's own training dummy script may
+change it first), and that the listed bosses behave outside their own dungeons.
+
+**Next (plan only)**:
+
+1. **Dungeon queue with companions**: a "Queue" button in the panel; the full Den makes a solo instance of a short
+   dungeon (or a Den-made arena) with the player's bot companions (`ov_companions.lua`) as the party; Den Lite says it
+   needs the full Den.
+2. **Raid training**: a boss's mechanics in the ring, step by step (a slow-motion mode: its casts announced, the
+   timer paused on a wipe), and the leaderboard of best times from `mod_dojo_best` on the website.
+3. **Jaina in game mode**: "Jaina, build me an arena" with a recipe (`den_recipes`) she builds piece by piece on the
+   full Den too (the same cast and turn, through `companion-place.json`), and asks for what's missing.
+4. **.glb import**: a model from Forge or the player's own files as a prop (the launcher converts it into a custom
+   model in the player's own game folder, never shipped by us); Den Lite shows it once the game has it.
+
 ## Requests
 
 - **Launcher addon install** (workstream K): the Leyline UI addon pack must keep `WrathUnleashedUI` (it does:

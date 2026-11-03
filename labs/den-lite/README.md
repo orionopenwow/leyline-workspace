@@ -66,6 +66,10 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 | `.den mode [id]` | Leyline's game modes and Host templates; with an id, what it is and how to run it on this PC (the full Den) |
 | `.den mods` | the addons your game loaded, and (with `--client`) the launcher's mods in it |
 | `.den where` | where you stand against the ground under you, and what your game did with its character (took it, moved, walked); the den-test asks it |
+| `.den dojo` (`.dojo`) | the Dojo: a training ring in front of you, built by your companion piece by piece, with three training dummies in it (below, "The Dojo") |
+| `.den dojo dummies [1-5]` / `clear` | training dummies (display only: no combat here) / the dummies down (`.build undo` takes the ring back) |
+| `.den fly on\|off` / `.den speed 1-5` | fly (jump, then Space to rise, X to sink) / run and fly faster |
+| `.den jaina build <stamp>`, or say `Jaina, build a garden` | she walks over and builds the stamp piece by piece, casting at each piece (`dojo` is the training ring) |
 
 The character is a ready-made human (female by default, `--gender male`), level 1, in a white shirt, trousers and
 boots, standing in the middle of the Den on the GM island (map 1, 16226.2, 16257.0, floor 13.2: `game_tele` 424), **on**
@@ -96,7 +100,7 @@ ground** (also `.den invite`, `.den forge`) are asked of the launcher through `<
 (`login_challenge`, `auth_ok`, `realm_list`, `world_auth`, `char_enum`, `char_create`, `player_login`, `spawn`,
 `in_world`, `mover`, `first_move`, `move_flags`, `landed`, `walked`, `builder_ready`, `ask`, `peer_seen`, `logout`,
 `moves`), and what happens in the Den (`den_change`, `den_save`,
-`den_load`, `autosave`, `answer`, `test_cmd`), never a password or an invite link. The launcher's one-click sign-in
+`den_load`, `autosave`, `answer`, `test_cmd`; the Dojo's `dojo` and `dojo_ack`), never a password or an invite link. The launcher's one-click sign-in
 (`launcher/src-tauri/src/denclick.rs`) and the owner's `den-test` (tools/den-check) read it.
 
 ### The den-test's commands (`src/testctl.rs`)
@@ -176,7 +180,8 @@ to (no tips or nudges nobody asked for, and nothing when she rejoins you). With 
 is still a guide: an ask her built-in guide knows (`GUIDE`: placing, stamps, undo, save, load, grow, looks, mods,
 modes, Forge, friends, levelling, the assistant) gets its answer at once, and is still written down; with someone
 reading her notes (`read_at`), the assistant answers instead. `tips` picks the next step that fits the Den (a first
-piece, a first save, more room), then the general tips in turn. Den Lite has no combat, so "help me" is a tip here.
+piece, a first save, more room), then the general tips in turn. Den Lite has no combat, so "help me" is a tip here. "Jaina, build a
+garden" is hers too: she builds it ("The Dojo", below).
 
 She talks through the same files as the full Den, in the Dens folder, so the launcher's Den tools for your assistant
 (`launcher/src-tauri/src/agents/den.rs`) work unchanged: `companion-in.json` (written every 10 seconds and after each
@@ -196,6 +201,46 @@ command on a realm that has it, or "coming". `.den mods` lists the addons the ga
 when it logs in; the stock `Blizzard_` ones are only counted) and, with `--client`, the launcher's mod list for that
 game. Addons are client-side, so the Den is a quiet place to try them; mods with realm parts need the full Den.
 
+### The Dojo (3 Nov)
+
+The owner's ask (3 Nov): a training room in the Den, "the Dojo", with dummies, flying, and Jaina building sets while
+she casts. What Den Lite does (`src/dojo.rs`; the full Den's `ov_dojo.lua` does what needs combat; docs/DEN.md, "The
+Dojo", has both side by side):
+
+- **Fly** (`.den fly on|off`): `SMSG_MOVE_SET_CAN_FLY` / `SMSG_MOVE_UNSET_CAN_FLY` (packed guid, a counter), as
+  AzerothCore's `Unit::SetCanFly` tells a player's game. **Speed** (`.den speed 1-5`): `SMSG_FORCE_RUN_SPEED_CHANGE`
+  (packed guid, the counter, a byte 0, the speed) and `SMSG_FORCE_FLIGHT_SPEED_CHANGE` (no byte), times the normal 7.
+  The game's acks (`CMSG_MOVE_SET_CAN_FLY_ACK` 0x345, `CMSG_FORCE_RUN_SPEED_CHANGE_ACK` 0x0E3,
+  `CMSG_FORCE_FLIGHT_SPEED_CHANGE_ACK` 0x382: packed guid, the counter, the movement info without its guid, a float)
+  are read before the message crate sees them: the `dojo_ack` event, and where the character is. Its flying moves
+  (`CMSG_MOVE_SET_FLY` 0x346, ascend 0x359 / 0x35A, descend 0x3A7) are read by hand like the others (`raw_move`);
+  `CMSG_MOVE_SET_FLY` isn't passed on to friends. A new time in the world starts on foot at the normal speed.
+- **Jaina builds a set** (`.den jaina build garden`, "Jaina, build a garden", "make a campfire", the panel's buttons):
+  the stamp goes into the Den at once (saved, one `.build undo`), its middle far enough ahead of you that it all fits
+  in front, on the ground (also when you fly). With her out: she walks to a spot between you and it (`SMSG_MONSTER_MOVE`)
+  and waits there; a ticker (`dojo_ticker`, every 50 ms) then sends one `SMSG_SPELL_START` from her (the whole build as
+  its cast time, aimed at the middle) and, every 250 ms, the nearest piece left: her turn to it (`SMSG_MONSTER_MOVE`,
+  facing angle), an `SMSG_SPELL_GO` aimed at its spot (`dojo::BUILD_SPELL`: only its look; the game draws it from its own
+  Spell.dbc for any unit it knows, no aura needed) and its create. A piece taken back meanwhile (undo) never appears.
+  Done: she follows again, "There. What shall we try next?", and the line. Without her: all at once, as a stamp.
+  Friends in the Den see it at once.
+- **The ring** (`.den dojo`): the stamp `dojo::DOJO_STAMP` (11 fences with the opening towards you, 4 torches, 2
+  banners, 2 weapon racks, a target tent, 2 benches; all props Den Lite knows), built by her as above, then three
+  **training dummies** in it: creature creates like hers with the game's training dummy entries (31144 and the others in
+  `dojo::DUMMIES`), friendly, never hit (Den Lite has no combat). `.den dojo dummies [1-5]` puts them up anywhere,
+  `.den dojo clear` takes them down; they are shown again at login. Bosses, damage per second, spars and a new look
+  say they need the full Den.
+- **The Den bar's Dojo panel** (WrathUnleashedUI `Dojo.lua`): its buttons send `wuden cmd dojo <...>` (as `.den dojo
+  <...>`); Den Lite answers `wuden dojo server=lite;fly=0|1;speed=<n>;dummies=<n>;ring=0|1;building=0|1`.
+
+Tested here: `dojo.rs`'s unit tests (the bodies byte for byte, the acks, the build's steps and timing, the ring, the
+dummies' spots) and the headless client (`the_dojo_flies_speeds_and_jaina_builds_piece_by_piece`). To see on the real
+game: the flying and the speed; whether her cast shows from `SMSG_SPELL_START` / `GO` without anything else (else
+`SMSG_PLAY_SPELL_VISUAL`, a kit id, is the fallback to try), and her turning; the dummies' model (display 27510).
+
+Next (plan only): a dungeon queue with companions and raid training (the full Den), Jaina building recipes the
+assistant writes, and `.glb` models as props (docs/DEN.md, "The Dojo").
+
 ## How it works
 
 | File | |
@@ -206,6 +251,7 @@ game. Addons are client-side, so the Den is a quiet place to try them; mods with
 | `src/notice.rs` | the Den bar's toasts instead of chat lines: who has the bar, what waits for its hello, the old way after the wait, cheers at most one every three minutes |
 | `src/companion.rs` | the companion: following, asks and lines, the `companion-in.json` / `companion-out.json` files |
 | `src/play.rs` | `.den mode` (the built-in mode lists) and `.den mods` (the client's addon list, the launcher's `mods.json`) |
+| `src/dojo.rs` | the Dojo: fly and speed (and the game's acks), the training ring and dummies, Jaina's build piece by piece (her casts and turns) |
 | `src/raw.rs` | the two messages written by hand (gameobject creates, the gameobject query answer); why is at the top of the file |
 | `src/models.rs` | the props' model paths for the Builder's gallery, from the player's own `GameObjectDisplayInfo.dbc` that the launcher copies into the Dens folder (`host/lite.rs` `model_table`); none: icons |
 | `src/objects.rs` | the gameobject entries Lite can show (415: the catalog of `ov_build.lua`, the looks, the stamps, the starters) with type, display id, name and size, generated by `tools/gen_objects.py` from AzerothCore's world database `gameobject_template` |

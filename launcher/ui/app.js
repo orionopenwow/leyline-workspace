@@ -1203,7 +1203,10 @@ async function knockLocal(L) {
 async function localBeforePlay() {
   // Your Den on Den Lite (127.0.0.1): PLAY is Your Den's one click (den.js: start it, sign in by itself), never a
   // plain start at a login screen (smoke O3)
-  if (chosenRealm() === DEN_LITE && window.LeylineDen && window.LeylineDen.where() === "lite") { window.LeylineDen.go(); return true; }
+  // (owner 2 Nov 20:48 "Den still doesn't go straight to den from launcher": with the Den page never opened since the
+  // launcher started, where() had nothing to go on and PLAY started the game at the login screen. go() reads it.)
+  if (localKnocked) { localKnocked = false; return false; }   // the knock just ran (Your Den's Docker play too): PLAY on
+  if (chosenRealm() === DEN_LITE && window.LeylineDen) { window.LeylineDen.go(); return true; }
   const L = localChosen();
   if (!L || localKnocked) { localKnocked = false; return false; }
   return !(await knockLocal(L));

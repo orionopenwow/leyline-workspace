@@ -31,7 +31,7 @@ jobs:
       - name: the Esc menu's and the Den editor's tests (each file's own command, from its first line)
         run: |
           set -e
-          for t in gamemenu gamemenu_fui leyline host hostsandbox builder denbar denhome gallery fillbars dojo; do
+          for t in gamemenu gamemenu_fui leyline host hostsandbox builder denbar denhome gallery fillbars dojo plates; do
             f="stream/tests/test_wuui_$t.lua"
             cmd=$(head -1 "$f" | sed -n 's/^-- \(lua5\.1 .*\)$/\1/p')
             cmd=$(echo "$cmd" | sed 's/ \[[^]]*\]//g')

@@ -190,6 +190,7 @@ STEPS = {
     "build-realm-on": ("hosting/build-realm/Builders realm - on.bat", "Builders' Realm on: backup, its own databases and servers, self-check, on Leyline (rollback on failure)", False),
     "build-realm-off": ("hosting/build-realm/Builders realm - off.bat", "Builders' Realm off: off Leyline, a 5-minute countdown for builders online, stopped (data kept)", False),
     "build-realm-saves": ("hosting/build-realm/Builders realm - saves.bat", "Builders' Realm saves: copy them to this PC, send the files in its send folder", False),
+    "leyline-launcher": ("tools/leyline-repo/Update Leyline-Launcher repo.bat", "Leyline-Launcher repo (the old Open Vanilla one): the same Leyline version, copied and pushed (its site and releases kept)", False),
     "leyline": ("tools/leyline-repo/Update Leyline repo.bat", "Leyline repo: copy and push (github.com/orionopenwow/Leyline)", False),
     "mods":  ("mods/Put mods on Wrath.bat", "Mods catalog: realm (live reload), streamed addons and /wrath/mods", False),
     # Resilience (docs/RESILIENCE.md): after a ship, our own copy of each Leyline release, the Host pack, the addons and
@@ -523,6 +524,11 @@ def run_all(ship_message: str, items=None, record=True) -> None:
             if item["step"] == "ship" and not any(q["step"] == "leyline" for q in queue[i:]):
                 queue.insert(i, {"id": item["id"] + "-leyline", "step": "leyline",
                                  "title": STEPS["leyline"][1], "note": "follows Save to GitHub",
+                                 "known": True})
+            # ... and the Leyline-Launcher repo gets the same version right after it (owner 2 Nov)
+            if item["step"] == "leyline" and not any(q["step"] == "leyline-launcher" for q in queue[i:]):
+                queue.insert(i, {"id": item["id"] + "-launcher", "step": "leyline-launcher",
+                                 "title": STEPS["leyline-launcher"][1], "note": "follows the Leyline repo",
                                  "known": True})
         emit("result", {"ok": True})
         if ran:

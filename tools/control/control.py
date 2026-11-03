@@ -208,6 +208,9 @@ STEPS = {
     # key on this PC, the signed release log), so launchers keep updating and people keep hosting if GitHub is down.
     "release-mirror": ("tools/release-mirror/Mirror releases.bat", "Release mirror: copy the new Leyline releases, Host pack, addons and server source to our server (after a ship)", False),
     "release-mirror-check": ("tools/release-mirror/Mirror releases - check.bat", "Release mirror: what it would copy (read-only)", False),
+    # The fork kit (docs/TOOLKIT.md, docs/SUCCESSION.md): is this copy ready to run under another name, keys and
+    # servers: branding.json, brand words, update sources and spare keys, the release-log key, relays (fetched).
+    "fork-check": ("tools/fork-kit/Fork check.bat", "Fork readiness: branding, brand words, update sources, spare keys, release-log key, relays (read-only)", False),
     "hostkit": ("hosting/kit/Publish host kit.bat", "Host kit download (checked zip on the public Leyline release)", False),
     # The Leyline addons (addons/pack/make-addonpack.py): our in-game addons as a checked zip that the launcher installs
     # into players' own 3.3.5a folders. Run it after changing WrathUnleashedUI, OVArmory, OVQoL or the mods catalog.
@@ -274,7 +277,7 @@ STEPS = {
 # Autopilot runs only these by itself; anything else waits for "Launch all".
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "fresh-leyline-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
-             "vr-data-check", "vr-site-check", "sv-site-check", "release-mirror-check", "bugs", "audit", "den-check", "domain-check",
+             "vr-data-check", "vr-site-check", "sv-site-check", "release-mirror-check", "fork-check", "bugs", "audit", "den-check", "domain-check",
              "discord-preview", "discord-check"}
 # Steps only the owner starts, by hand, from their own panel (never Autopilot, Launch all or a Waiting on you button)
 OWNER_ONLY = {"discord-apply"}

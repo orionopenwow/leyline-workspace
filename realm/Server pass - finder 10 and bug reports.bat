@@ -9,6 +9,8 @@ cd /d "%~dp0"
 set "KEY=%USERPROFILE%\.ssh\openwow"
 set "WARN=5"
 if /i "%~1"=="now" set "WARN=0"
+set "RELOAD=0"
+if /i "%~1"=="reload" (set "RELOAD=1" & set "WARN=0")
 if not exist serverpass.sh (echo serverpass.sh is missing next to this file. & pause & exit /b 1)
 if not exist "custom\lua_scripts\ov_reports.lua" (echo custom\lua_scripts\ov_reports.lua is missing. & pause & exit /b 1)
 if not exist "..\stream\lua\ov_slices.lua" (echo ..\stream\lua\ov_slices.lua is missing. & pause & exit /b 1)
@@ -67,7 +69,7 @@ rem step 1f fills reserved_name / profanity_name from the portal's namecheck.py)
 if exist "custom\lua_scripts\ov_names.lua" copy /y "custom\lua_scripts\ov_names.lua" "%T%\" >nul
 copy /y serverpass.sh "%T%\serverpass.sh.txt" >nul
 tar -cf "%TEMP%\wu-serverpass.tar" -C "%T%" . || (echo Packing failed. & pause & exit /b 1)
-ssh -i "%KEY%" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 root@play.openvanilla.app "T=$(mktemp -d) && tar -x -C $T -f - && sed 's/\r$//' $T/serverpass.sh.txt > $T/sp.sh && rm -f $T/serverpass.sh.txt && (cd $T && tar -cf - *.lua $(ls leyline-fetch.py armory-export.py workshop-export.py duels-export.py 2>/dev/null)) | SERVERPASS_WARN_MIN=%WARN% bash $T/sp.sh 2>&1 | tee /tmp/wu-serverpass.log; rm -rf $T; grep -q '^SERVERPASS OK' /tmp/wu-serverpass.log" < "%TEMP%\wu-serverpass.tar"
+ssh -i "%KEY%" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 root@play.openvanilla.app "T=$(mktemp -d) && tar -x -C $T -f - && sed 's/\r$//' $T/serverpass.sh.txt > $T/sp.sh && rm -f $T/serverpass.sh.txt && (cd $T && tar -cf - *.lua $(ls leyline-fetch.py armory-export.py workshop-export.py duels-export.py 2>/dev/null)) | SERVERPASS_WARN_MIN=%WARN% SERVERPASS_RELOAD=%RELOAD% bash $T/sp.sh 2>&1 | tee /tmp/wu-serverpass.log; rm -rf $T; grep -q '^SERVERPASS OK' /tmp/wu-serverpass.log" < "%TEMP%\wu-serverpass.tar"
 if errorlevel 1 (echo. & echo It did not report success; see above. & del /q "%TEMP%\wu-serverpass.tar" & rmdir /s /q "%T%" & pause & exit /b 1)
 del /q "%TEMP%\wu-serverpass.tar" & rmdir /s /q "%T%"
 echo.

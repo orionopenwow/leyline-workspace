@@ -561,6 +561,9 @@ for f in "$DST"/*.lua; do
 done
 [ -z "$NEW" ] || { echo "  not yet loaded by the world server:$NEW (a restart loads them)"; need=1; }
 mark_loaded() { (cd "$DST" && ls -1 *.lua 2>/dev/null) > "$LOADED_LIST" || true; }
+# SERVERPASS_RELOAD=1 (the scripts-reload step, 2 Nov: ov_reports.lua was on the server, unchanged, yet silent): a live
+# "reload ale" even when nothing changed
+[ "${SERVERPASS_RELOAD:-0}" = 1 ] && [ "$changed" = 0 ] && { changed=1; echo "  a reload was asked for"; }
 if [ "$need" = 0 ] && [ "$changed" = 0 ]; then
   echo "== 4. settings and scripts already live: nothing to reload"
   [ -f "$LOADED_LIST" ] || mark_loaded

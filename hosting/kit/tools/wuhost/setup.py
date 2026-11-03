@@ -333,6 +333,35 @@ def read_mode(cfg):
     return {"public": pub, "env": env, "mods": mods}
 
 
+# The launcher's Host page (launcher/src-tauri/src/host/flow.rs) writes the realm's own options here: realm type, roaming
+# bots, player limit, who can make an account. Read once by init with the same checks as a seed's options, then removed
+# (Realm tools change them after that). Its world server settings go in state/mode.json (read_mode, above).
+OPTIONS_FILE = "options.json"
+
+
+def read_host_page_options(profile):
+    """state/options.json, checked against the profile (check_options): the clean dict, or None (none, or not valid)."""
+    try:
+        with open(path(OPTIONS_FILE), encoding="utf-8-sig") as f:
+            o = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return check_options(o, profile) if isinstance(o, dict) else None
+
+
+def apply_host_page_options(a, cfg, profile):
+    """The Host page's options over the saved ones (this run's own flags still win): returns True when there were some."""
+    o = read_host_page_options(profile)
+    if not o:
+        return False
+    if a.signup is None and "signup" in o:
+        a.signup = o.pop("signup")
+    if a.bots is None and "bots" in o:
+        a.bots = o.pop("bots")
+    apply_options(o, a, cfg)
+    return True
+
+
 def realm_env_lines(cfg):
     """state/realm.env: the world server's own settings over the profile's (docker-compose.host.yml reads it last)."""
     e = cfg.get("realm_env") or {}
@@ -781,6 +810,7 @@ def cmd_init(a):
     vis = a.visibility or cfg.get("visibility", "private")
     if vis not in ("public", "private"):
         sys.exit("Choose private or public")
+    host_page = apply_host_page_options(a, cfg, profile)
     os.makedirs(STATE, exist_ok=True)
     secret = keys.load_or_create(path("realm.key"))
     rid = keys.realm_id(keys.public_key(secret))
@@ -842,6 +872,11 @@ def cmd_init(a):
     if seed:   # used: the key and links live in state/ now
         try:
             os.remove(seed["_path"])
+        except OSError:
+            pass
+    if host_page:   # used: Realm tools change these from now on
+        try:
+            os.remove(path(OPTIONS_FILE))
         except OSError:
             pass
     print(json.dumps({"realm_id": rid, "first_run": first, "invite": invite_link(cfg)}))

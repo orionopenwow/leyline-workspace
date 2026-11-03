@@ -65,9 +65,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-latest, macos-latest]
+        os: [ubuntu-22.04, windows-latest]
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ startsWith(matrix.os, 'macos') }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: launcher/src-tauri
+      - name: cargo test (core, no webview)
+        working-directory: launcher/src-tauri
+        run: cargo test --locked --no-default-features
+
+  # macOS on its own (3 Nov: three ships never reached players because GitHub had no macOS runner for the matrix's
+  # macOS leg, and a job no runner picks up fails even with continue-on-error): nothing waits for it.
+  core-tests-macos:
+    runs-on: macos-latest
+    continue-on-error: true
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable

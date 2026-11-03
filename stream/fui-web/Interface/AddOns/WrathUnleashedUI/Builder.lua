@@ -571,34 +571,116 @@ local function paintTile(t)
 end
 B.PaintTile = paintTile
 
--- How a tile frames its model (a Model frame has no "fit" of its own): scaled so the model's largest side is
--- B.FIT.yards, moved down by its middle so it sits in the tile's centre. The size comes with the catalog (Den Lite
--- reads it from the same table as the path); without one the model is shown at its own size. Tunable on a PC
--- (WrathUnleashedUIDB.den.fit = { yards = .., lift = .., cam = <SetCamera index> }) without a new addon.
-B.FIT = { yards = 1.6, lift = 0 }
+-- How a tile frames its model. A Model frame has no "fit" of its own, and for a model without a camera of its own (every
+-- doodad) its space is the frame's, not the model's (the old wiki, Widget API Model:SetPosition): (0, 0, 0) is the
+-- frame's BOTTOM-LEFT corner, x goes right, y up, z toward you, and one unit is the screen's diagonal in pixels, so the
+-- top-right corner is (frame width / diagonal, frame height / diagonal, 0) and a 92-unit tile is only about 0.05
+-- across. SetModelScale sizes the model in those same units. That is what the owner's three sweeps (3 Nov,
+-- docs/den-ui/sweeps) showed: scales of 0.15-0.4 a close-up of a texture; 0.03-0.06 the model whole but at the
+-- tile's bottom-left; any offset of 0.25 or more off the tile. So: the model's box (Den Lite sends its size in yards
+-- from the game's own tables: w, d, h and the bottom z) is scaled to B.FIT.fill of the tile, a box that still fits as
+-- the model turns (the diagonal of its footprint), and moved to the tile's middle: x half the width, y half the height
+-- less the box's middle. The frame's size is known only once it is laid out, so the framing is applied again on show,
+-- on a size change and on the next two frames (B.TileTick), and again whenever the screen's size or UI scale changes.
+-- Tunable on a PC without a new addon (WrathUnleashedUIDB.den.fit, set by B.SetFit / the test's ".den ui fit"):
+-- dx/dy/dz move the model by a part of the tile, unit picks the unit's length ("diag", or "height"/"width" of the
+-- screen), scaledPos multiplies positions by the model's scale (the other way a client might do it), cam a SetCamera.
+B.FIT = { v = 2, fill = 0.8, dx = 0, dy = 0, dz = 0, unit = "diag", scaledPos = false }
+local NO_SIZE = { w = 1, d = 1, h = 1.2, z = 0 }   -- a prop whose size is unknown: about a crate's
 local function fitConf()
     local d = type(WrathUnleashedUIDB) == "table" and type(WrathUnleashedUIDB.den) == "table" and WrathUnleashedUIDB.den.fit
-    return type(d) == "table" and d or B.FIT
+    -- a framing saved by the first sweeps (yards, lift) is not this kind: the default
+    return (type(d) == "table" and d.v == 2) and d or B.FIT
 end
-function B.TileFit(size)
-    local f = fitConf()
-    local yards = tonumber(f.yards) or B.FIT.yards
-    if type(size) ~= "table" then return 1, tonumber(f.lift) or 0 end
-    local ext = math.max(tonumber(size.w) or 0, tonumber(size.d) or 0, tonumber(size.h) or 0, 0.05)
-    local scale = math.max(0.02, math.min(yards / ext, 12))
-    local mid = (tonumber(size.z) or 0) + (tonumber(size.h) or 0) / 2
-    return scale, -mid * scale + (tonumber(f.lift) or 0)
+B.FitConf = fitConf
+
+-- The tile's width and height in the Model frame's units (or nil while it is not laid out yet).
+function B.FrameUnits(m, conf)
+    if not (m and m.GetWidth) then return nil end
+    local s = (m.GetEffectiveScale and tonumber(m:GetEffectiveScale())) or 1
+    local w, h = (tonumber(m:GetWidth()) or 0) * s, (tonumber(m:GetHeight()) or 0) * s
+    if w <= 0 or h <= 0 then return nil end
+    local us = (UIParent and UIParent.GetEffectiveScale and tonumber(UIParent:GetEffectiveScale())) or 1
+    local sw = ((GetScreenWidth and tonumber(GetScreenWidth())) or 0) * us
+    local sh = ((GetScreenHeight and tonumber(GetScreenHeight())) or 0) * us
+    local unit = (conf or fitConf()).unit
+    local len = unit == "height" and sh or unit == "width" and sw or math.sqrt(sw * sw + sh * sh)
+    if not len or len <= 0 then return nil end
+    return w / len, h / len
 end
 
--- The test's (and a curious player's) way to try a framing: B.SetFit(yards, depth, lift) saves it and re-frames the
--- tiles shown (tools/den-check den-features sweeps a few and takes a picture of each).
-function B.SetFit(yards, x, lift, y)
+-- The framing of a model of `size` in a frame of W x H units: its scale and SetPosition(x, y, z).
+function B.TileFit(size, W, H, conf)
+    local f = conf or fitConf()
+    if type(size) ~= "table" then size = NO_SIZE end
+    W, H = tonumber(W) or 0.055, tonumber(H) or 0.055
+    local sw, sd, sh = tonumber(size.w) or 0, tonumber(size.d) or 0, tonumber(size.h) or 0
+    local ext = math.max(math.sqrt(sw * sw + sd * sd), sh, 0.05)       -- the footprint's diagonal: it fits as it turns
+    local fill = tonumber(f.fill) or B.FIT.fill
+    local scale = math.max(1e-4, fill * math.min(W, H) / ext)
+    local mid = (tonumber(size.z) or 0) + sh / 2
+    local x = W / 2 + (tonumber(f.dx) or 0) * W
+    local y = H / 2 - mid * scale + (tonumber(f.dy) or 0) * H
+    local z = (tonumber(f.dz) or 0) * W
+    if f.scaledPos then x, y, z = x / scale, y / scale, z / scale end
+    return scale, x, y, z
+end
+
+-- Frame the tile's model now (from the Model frame's size as it is laid out now); false while it has no size yet.
+local function applyFit(t)
+    local m, c = t.model, t.item
+    if not (t.modelPath and c and c.model == t.modelPath) then return false end
+    local conf = fitConf()
+    local W, H = B.FrameUnits(m, conf)
+    if not W then return false end
+    local cam = tonumber(conf.cam)
+    if cam then pcall(m.SetCamera, m, cam) end
+    local scale, x, y, z = B.TileFit(c.size, W, H, conf)
+    pcall(m.SetModelScale, m, scale)
+    pcall(m.SetPosition, m, x, y, z)
+    pcall(m.SetFacing, m, B.facing or REST_FACING)
+    t.fitW, t.fitH = W, H
+    return true
+end
+B.ApplyFit = applyFit
+
+-- Each frame (the grid's OnUpdate): a tile given a model, shown or resized is framed again on the next two frames
+-- (its size and the model are ready only then), and every tile when the screen's size or UI scale changes.
+function B.TileTick(elapsed)
+    if not win then return end
+    for _, t in ipairs(win.tiles) do
+        if t.modelPath and t:IsShown() then
+            if (t.refit or 0) > 0 then
+                if applyFit(t) then t.refit = t.refit - 1 end
+            else
+                local W, H = B.FrameUnits(t.model)
+                if W and (W ~= t.fitW or H ~= t.fitH) then applyFit(t) end
+            end
+        end
+    end
+    B.Turntable(elapsed)
+end
+
+local function refitSoon(t) t.refit = 2; applyFit(t) end
+B.RefitSoon = refitSoon
+
+-- The test's (and a curious player's) way to try a framing: B.SetFit(fill, dx, dy, dz, unit, scaledPos, cam) saves it
+-- and re-frames the tiles shown; B.SetFit("reset") goes back to the default (tools/den-check den-features sweeps a
+-- few and takes a picture of each).
+function B.SetFit(fill, dx, dy, dz, unit, scaledPos, cam)
     WrathUnleashedUIDB = type(WrathUnleashedUIDB) == "table" and WrathUnleashedUIDB or {}
     WrathUnleashedUIDB.den = type(WrathUnleashedUIDB.den) == "table" and WrathUnleashedUIDB.den or {}
-    WrathUnleashedUIDB.den.fit = { yards = tonumber(yards) or B.FIT.yards, x = tonumber(x) or 0, lift = tonumber(lift) or 0, y = tonumber(y) or 0 }
-    local win = B.Window and B.Window()
-    if win and win.tiles then
-        for _, t in ipairs(win.tiles) do t.modelPath = nil end
+    if fill == "reset" or fill == nil then
+        WrathUnleashedUIDB.den.fit = nil
+    else
+        local u = tostring(unit or "diag")
+        WrathUnleashedUIDB.den.fit = { v = 2, fill = tonumber(fill) or B.FIT.fill, dx = tonumber(dx) or 0, dy = tonumber(dy) or 0,
+            dz = tonumber(dz) or 0, unit = (u == "height" or u == "width") and u or "diag",
+            scaledPos = (scaledPos == true or scaledPos == "1" or scaledPos == 1), cam = tonumber(cam) }
+    end
+    local w = B.Window and B.Window()
+    if w and w.tiles then
+        for _, t in ipairs(w.tiles) do t.modelPath = nil end
     end
     if B.Refresh then B.Refresh() end
     return true
@@ -617,12 +699,7 @@ local function setTileModel(t, c)
             -- owner's gallery was black tiles). Ambient plus a key light from the front-left, as the
             -- character screens light theirs.
             if t.model.SetLight then pcall(t.model.SetLight, t.model, 1, 0, -0.5, -0.7, -0.5, 0.75, 1, 1, 1, 0.9, 1, 0.95, 0.85) end
-            local cam = tonumber(fitConf().cam)
-            if cam then pcall(t.model.SetCamera, t.model, cam) end
-            local scale, z = B.TileFit(c.size)
-            pcall(t.model.SetModelScale, t.model, scale)
-            pcall(t.model.SetPosition, t.model, tonumber(fitConf().x) or 0, tonumber(fitConf().y) or 0, z)
-            pcall(t.model.SetFacing, t.model, B.facing or REST_FACING)
+            refitSoon(t)
         end
         t.icon:Hide()
         t.badge:Show()
@@ -1483,6 +1560,9 @@ local function buildTile(i)
     t.model:SetWidth(TILE - 4); t.model:SetHeight(TILE - 4)
     t.model:SetPoint("TOPLEFT", 2, -2)
     t.model:Hide()
+    -- framed again once it is shown and laid out (its size, and so its units, are known only then)
+    t.model:SetScript("OnShow", function() refitSoon(t) end)
+    t.model:SetScript("OnSizeChanged", function() refitSoon(t) end)
     -- above the model: the edge (gold when picked), the corner icon, the points and the favourite star
     t.top = CreateFrame("Frame", nil, t)
     t.top:SetWidth(TILE); t.top:SetHeight(TILE)
@@ -1650,7 +1730,7 @@ local function build()
     win.grid:SetPoint("TOPLEFT", x0, -HEAD_H)
     win.grid:EnableMouseWheel(true)
     win.grid:SetScript("OnMouseWheel", function(_, delta) B.Scroll(-delta) end)
-    win.grid:SetScript("OnUpdate", function(_, elapsed) B.Turntable(elapsed) end)
+    win.grid:SetScript("OnUpdate", function(_, elapsed) B.TileTick(elapsed) end)
     win.tiles = {}
     for i = 1, PAGE do win.tiles[i] = buildTile(i) end
     win.empty = S().EdText(win, S().ED_SIZE.text)

@@ -134,18 +134,35 @@ do
     check("a path without a size still shows", byId[2109].model == "World\\Generic\\Flowers01.mdx" and byId[2109].size == nil)
     local function tile(id) for _, t in ipairs(B.Window().tiles) do if t:IsShown() and t.item and t.item.id == id then return t end end end
     local t = tile(2413)
-    local scale, z = B.TileFit(byId[2413].size)
-    check("the chair's tile: SetModel, then scaled so its largest side is the fit, moved down by its middle",
+    -- the Model frame's units (the old wiki's Model:SetPosition): the tile's size over the screen's diagonal
+    local W, H = B.FrameUnits(t.model)
+    local diag = math.sqrt(GetScreenWidth() ^ 2 + GetScreenHeight() ^ 2)
+    check("a tile's units: its size over the screen's diagonal (a 88-unit tile about 0.05)", W and math.abs(W - t.model:GetWidth() / diag) < 1e-9
+        and W > 0.02 and W < 0.1 and math.abs(H - W) < 1e-9, W)
+    local scale, x, y, z = B.TileFit(byId[2413].size, W, H)
+    local chairExt = math.max(math.sqrt(0.5 ^ 2 + 0.5 ^ 2), 1.1)
+    check("the chair's tile: SetModel, then scaled so its turning box is 0.8 of the tile, its middle at the tile's middle",
         t.model.model == "World\\Generic\\Chair01.mdx" and t.model:IsShown() and math.abs(t.model.mscale - scale) < 1e-9
-        and math.abs(scale - B.FIT.yards / 1.1) < 1e-9 and math.abs(t.model.mpos[3] - z) < 1e-9 and z < 0)
+        and math.abs(scale - 0.8 * W / chairExt) < 1e-9 and math.abs(t.model.mpos[1] - W / 2) < 1e-9
+        and math.abs(t.model.mpos[2] - (H / 2 - 0.55 * scale)) < 1e-9 and t.model.mpos[3] == 0,
+        table.concat(t.model.mpos or {}, ","))
     local tc = tile(1558)
     check("a small candle is scaled up more than the chair", tc.model.mscale > t.model.mscale)
     check("the house: the home stone, 'building'", tile(19006).icon.path == "Interface\\Icons\\INV_Misc_Rune_01" and tile(19006).why:GetText() == "building"
         and not tile(19006).model:IsShown())
     check("the bread: its category's icon, 'no preview'", tile(2562).icon.path == "Interface\\Icons\\INV_Misc_Book_09" and tile(2562).why:GetText() == "no preview")
-    WrathUnleashedUIDB.den.fit = { yards = 3, lift = 0.5, cam = 0 }
-    local s2, z2 = B.TileFit(byId[2413].size)
-    check("the fit can be tuned on a PC (WrathUnleashedUIDB.den.fit)", math.abs(s2 - 3 / 1.1) < 1e-9 and math.abs(z2 - (-0.55 * s2 + 0.5)) < 1e-9)
+    WrathUnleashedUIDB.den.fit = { yards = 0.06, x = 0, lift = 0.5, y = 0 }   -- what the first sweeps left saved on the PC
+    local s1, x1 = B.TileFit(byId[2413].size, W, H)
+    check("a framing saved by the first sweeps is ignored: the default", s1 == scale and x1 == x)
+    WrathUnleashedUIDB.den.fit = { v = 2, fill = 0.4, dx = 0.25, dy = -0.25, dz = 0.5, cam = 0 }
+    local s2, x2, y2, z2 = B.TileFit(byId[2413].size, W, H)
+    check("the fit can be tuned on a PC (WrathUnleashedUIDB.den.fit): fill and moves by a part of the tile",
+        math.abs(s2 - scale / 2) < 1e-9 and math.abs(x2 - 0.75 * W) < 1e-9 and math.abs(y2 - (0.25 * H - 0.55 * s2)) < 1e-9
+        and math.abs(z2 - 0.5 * W) < 1e-9)
+    WrathUnleashedUIDB.den.fit.scaledPos = true
+    local s3, x3 = B.TileFit(byId[2413].size, W, H)
+    check("scaledPos: the position over the model's scale", math.abs(x3 - x2 / s3) < 1e-9)
+    WrathUnleashedUIDB.den.fit = nil
 end
 
 -- ---------------------------------------------------------------- the chat: the Den's system lines go to the pill

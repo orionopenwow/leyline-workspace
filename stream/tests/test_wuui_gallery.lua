@@ -50,6 +50,9 @@ function Frame:GetParent() return self.parent end
 function Frame:SetParent(p) self.parent = p end
 function Frame:GetHeight() return self.h or 0 end
 function Frame:SetHeight(h) self.h = h end
+function Frame:GetWidth() return self.w or 0 end
+function Frame:SetWidth(w) self.w = w end
+function Frame:GetEffectiveScale() return self.escale or 1 end
 function Frame:SetTexture(a, b, c, d) self.tex = b and { a, b, c, d } or a end
 function Frame:IsMouseOver() return self.mouseOver == true end
 -- Model frames
@@ -59,6 +62,7 @@ function Frame:SetPosition(x, y, z) self.pos = { x, y, z } end
 function Frame:SetModelScale(v) self.mscale = v end
 function Frame:ClearModel() self.modelFile = nil end
 function Frame:SetFacing(f) self.facing = f end
+function Frame:SetCamera(c) self.camera = c end
 local function new(kind, name, parent)
     local f = setmetatable({ kind = kind, name = name, parent = parent, scripts = {}, events = {}, shown = true }, Frame)
     if name then _G[name] = f end
@@ -81,6 +85,8 @@ UISpecialFrames = {}
 function tinsert(t, v) table.insert(t, v) end
 SlashCmdList = {}
 DEFAULT_CHAT_FRAME = { AddMessage = function() end }
+local screenW = 1745
+function GetScreenWidth() return screenW end
 function GetScreenHeight() return 981 end
 function InCombatLockdown() return false end
 function SetBinding() return 1 end
@@ -158,10 +164,49 @@ check("1-20 of 53", win.count:GetText() == "1-20 of 53")
 local t1 = tileOf(1001)
 check("a tile with a model: SetModel(path), shown, the icon hidden", t1.model.modelFile == byId[1001].model and t1.model:IsShown() and not t1.icon:IsShown())
 check("a tile's model is lit (a Model frame without a light draws black)", t1.model.light == 1)
-B.SetFit(0.4, -3, 0)
-check("SetFit re-frames the tiles shown: the depth and the saved setting", t1.model.pos and t1.model.pos[1] == -3
-      and WrathUnleashedUIDB.den.fit.yards == 0.4)
-B.SetFit(1.6, 0, 0)
+-- the framing (the old wiki's Model:SetPosition: (0,0,0) the frame's bottom-left, one unit the screen's diagonal)
+local diag = math.sqrt(1745 ^ 2 + 981 ^ 2)
+local TW = 88 / diag
+check("a model's tile: in the tile's middle, the frame's own units (about 0.044 across)", t1.model.pos
+    and math.abs(t1.model.pos[1] - TW / 2) < 1e-9 and t1.model.pos[3] == 0 and t1.model.mscale < TW, table.concat(t1.model.pos or {}, ","))
+B.SetFit(0.5, 0.25, 0, 0.5, "height", "1", 0)
+local s1 = t1.model.mscale
+check("SetFit re-frames the tiles shown: by a part of the tile, the unit, positions over the scale, a camera",
+    t1.model.pos and math.abs(t1.model.pos[1] - 0.75 * (88 / 981) / s1) < 1e-9 and math.abs(t1.model.pos[3] - 0.5 * (88 / 981) / s1) < 1e-9
+    and t1.model.camera == 0 and WrathUnleashedUIDB.den.fit.fill == 0.5 and WrathUnleashedUIDB.den.fit.scaledPos == true)
+B.SetFit("reset")
+check("SetFit reset: the default again", WrathUnleashedUIDB.den.fit == nil and math.abs(t1.model.pos[1] - TW / 2) < 1e-9)
+-- framed again once laid out: before its frame has a size there is nothing to frame by; shown or sized, it is framed
+-- on the next frames, and again when the screen changes
+do
+    local m = t1.model
+    m.pos = nil; m.w = 0
+    B.RefitSoon(t1)
+    check("no size yet: not framed (nothing to frame by)", m.pos == nil)
+    m.w = 88
+    win.grid:Fire("OnUpdate", 0.01)
+    check("the next frame, laid out: framed", m.pos and math.abs(m.pos[1] - TW / 2) < 1e-9)
+    m.pos = nil
+    win.grid:Fire("OnUpdate", 0.01)
+    check("and once more the frame after (the model loads late)", m.pos ~= nil)
+    m.pos = nil
+    win.grid:Fire("OnUpdate", 0.01)
+    check("then left alone while nothing changes", m.pos == nil)
+    m:Hide(); m:Show()
+    check("shown again: framed on show", m.pos ~= nil)
+    m.pos = nil
+    m.w, m.h = 120, 120; m:Fire("OnSizeChanged", 120, 120)
+    check("resized: framed by its new size", m.pos and math.abs(m.pos[1] - 60 / diag) < 1e-9)
+    m.w, m.h = 88, 88
+    win.grid:Fire("OnUpdate", 0.01); win.grid:Fire("OnUpdate", 0.01); win.grid:Fire("OnUpdate", 0.01)
+    m.pos = nil
+    screenW = 1365
+    win.grid:Fire("OnUpdate", 0.01)
+    local W2 = 88 / math.sqrt(1365 ^ 2 + 981 ^ 2)
+    check("the screen's size or UI scale changed: framed again", m.pos and math.abs(m.pos[1] - W2 / 2) < 1e-9)
+    screenW = 1745
+    win.grid:Fire("OnUpdate", 0.01)
+end
 local t4 = tileOf(1004)
 check("a WMO's tile: the building icon on purpose, and why", not t4.model:IsShown() and t4.icon:IsShown() and t4.icon.path == "Interface\\Icons\\INV_Misc_Rune_01"
     and t4.why:GetText() == "building")

@@ -8,14 +8,15 @@
 //!
 //! * the player comes in **on** the ground ([`SPAWN_LIFT`] above it, was a whole yard), so even a game that doesn't
 //!   move its character shows it standing, never floating;
-//! * Den Lite says once more that the game has its character (SMSG_CLIENT_CONTROL_UPDATE, and an unroot) when the game
-//!   says it is in the world (`CMSG_SET_ACTIVE_MOVER`): the first one goes during the loading screen;
+//! * Den Lite says that the game has its character (SMSG_CLIENT_CONTROL_UPDATE, and an unroot) when the game says it
+//!   is in the world (`CMSG_SET_ACTIVE_MOVER`); none during the loading screen (AzerothCore sends none at login);
 //!
 //! and this watch writes down, per session, what the game did with its character, for the events log (events.rs:
 //! `spawn`, `mover`, `first_move`, `move_flags`, `landed`, `walked`) and `.den where`, so the den-test on the owner's PC
 //! says which of these it is.
 
 use crate::companion::At;
+use std::collections::BTreeMap;
 
 /// How far above the ground the player comes in: on it, a hair above so rounding never puts the feet under it.
 pub const SPAWN_LIFT: f32 = 0.05;
@@ -33,6 +34,70 @@ pub const SMSG_CLIENT_CONTROL_UPDATE: u16 = 0x159;
 /// Takes a root off (packed guid, u32 counter): AzerothCore's Unit::SetRooted(false) for a player.
 pub const SMSG_FORCE_MOVE_UNROOT: u16 = 0x0EA;
 pub const MSG_MOVE_FALL_LAND: u32 = 0x0C9;
+/// The server's time sync (u32 counter): the game answers with CMSG_TIME_SYNC_RESP (counter, its own clock in ms).
+pub const SMSG_TIME_SYNC_REQ: u16 = 0x390;
+
+// The player's create (3 Nov, still no movement at all): as AzerothCore builds it. Every unit carries
+// UPDATEFLAG_LIVING | UPDATEFLAG_STATIONARY_POSITION (Unit::Unit, Unit.cpp: `m_updateFlag = (UPDATEFLAG_LIVING |
+// UPDATEFLAG_STATIONARY_POSITION)`), and the player's own copy adds UPDATEFLAG_SELF
+// (Object::BuildCreateUpdateBlockForPlayer: `if (target == this) flags |= UPDATEFLAG_SELF`). Den Lite sent 0x21.
+pub const UPDATEFLAG_SELF: u16 = 0x0001;
+pub const UPDATEFLAG_LIVING: u16 = 0x0020;
+pub const UPDATEFLAG_STATIONARY_POSITION: u16 = 0x0040;
+/// The update flags of a player's create: its own (`own`) or someone else's.
+pub const fn player_update_flags(own: bool) -> u16 {
+    (if own { UPDATEFLAG_SELF } else { 0 }) | UPDATEFLAG_LIVING | UPDATEFLAG_STATIONARY_POSITION
+}
+
+/// The server's clock for movement timestamps: milliseconds since Den Lite started (AzerothCore's
+/// GameTime::GetGameTimeMS, which Unit::BuildMovementPacket writes as the movement's time). Den Lite wrote 0. Starts at
+/// 1000 so it is never 0.
+pub fn server_ms() -> u32 {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    let s = START.get_or_init(std::time::Instant::now);
+    (s.elapsed().as_millis() as u64 + 1000).min(u32::MAX as u64) as u32
+}
+
+/// SMSG_TIME_SYNC_REQ's body.
+pub fn time_sync_body(counter: u32) -> Vec<u8> {
+    counter.to_le_bytes().to_vec()
+}
+
+/// CMSG_TIME_SYNC_RESP's body: (counter, the game's clock in ms).
+pub fn time_sync_resp(body: &[u8]) -> Option<(u32, u32)> {
+    let b = body.get(..8)?;
+    Some((u32::from_le_bytes([b[0], b[1], b[2], b[3]]), u32::from_le_bytes([b[4], b[5], b[6], b[7]])))
+}
+
+/// How many different opcodes from the game are written down once in the world (the `client_op` events).
+pub const OPS_KEPT: usize = 48;
+
+/// A client opcode's name for the log (the ones that tell what the game does with its character), else its number.
+pub fn client_op_name(op: u32) -> String {
+    let n = match op {
+        0x0B5..=0x0C3 | 0x0C9..=0x0CB | 0x0DA | 0x0DB | 0x0EE => return format!("MSG_MOVE_{}", op_name(op)),
+        0x026A => "SET_ACTIVE_MOVER",
+        0x0391 => "TIME_SYNC_RESP",
+        0x02CE => "MOVE_TIME_SKIPPED",
+        0x00EB => "FORCE_MOVE_UNROOT_ACK",
+        0x00E9 => "FORCE_MOVE_ROOT_ACK",
+        0x02CA => "MOVE_FALL_RESET",
+        0x01DC => "PING",
+        0x0095 => "MESSAGECHAT",
+        0x020A => "REQUEST_ACCOUNT_DATA",
+        0x020B => "UPDATE_ACCOUNT_DATA",
+        0x013D => "SET_SELECTION",
+        0x01F4 => "ZONEUPDATE",
+        0x0050 => "NAME_QUERY",
+        0x005E => "GAMEOBJECT_QUERY",
+        0x0060 => "CREATURE_QUERY",
+        0x04FF => "READY_FOR_ACCOUNT_DATA_TIMES",
+        0x02D1 => "MOVE_NOT_ACTIVE_MOVER",
+        0x0346 => "MOVE_SET_FLY",
+        _ => return format!("{op:#05x}"),
+    };
+    n.to_string()
+}
 
 // 3.3.5 movement flags (the u32 `flags` of a MSG_MOVE_* packet), the ones that keep a character from falling or walking
 pub const FORWARD: u32 = 0x1;
@@ -165,6 +230,10 @@ pub struct Watch {
     pub walked: Option<f32>,
     /// The last position and the ground there.
     pub last: Option<(At, f32)>,
+    /// Every opcode the game sent since it came in, and how often (the first [`OPS_KEPT`] different ones).
+    pub ops: BTreeMap<u32, u32>,
+    /// The game's first answer to the time sync: (counter, its clock).
+    pub time_sync: Option<(u32, u32)>,
 }
 
 impl Watch {
@@ -211,6 +280,38 @@ impl Watch {
         self.last.map(|(a, g)| (a.z - g).abs() <= ON_GROUND)
     }
 
+    /// A frame from the game while in the world: Some((name, count)) the first time this opcode is seen (the
+    /// `client_op` event), so the log says everything the game sent, not only what Den Lite understood.
+    pub fn client_op(&mut self, op: u32) -> Option<String> {
+        if let Some(n) = self.ops.get_mut(&op) {
+            *n += 1;
+            return None;
+        }
+        if self.ops.len() >= OPS_KEPT {
+            return None;
+        }
+        self.ops.insert(op, 1);
+        Some(client_op_name(op))
+    }
+
+    /// CMSG_TIME_SYNC_RESP: Some(detail) the first time (the `time_sync` event).
+    pub fn synced(&mut self, body: &[u8]) -> Option<String> {
+        let r = time_sync_resp(body)?;
+        if self.time_sync.is_some() {
+            return None;
+        }
+        self.time_sync = Some(r);
+        Some(format!("the game answered the time sync (counter {}, its clock {} ms)", r.0, r.1))
+    }
+
+    /// What the game sent, for `.den where` and the logout's `moves` event: "SET_ACTIVE_MOVER x1, PING x2".
+    pub fn ops_line(&self) -> String {
+        if self.ops.is_empty() {
+            return "nothing".into();
+        }
+        self.ops.iter().map(|(op, n)| format!("{} x{n}", client_op_name(*op))).collect::<Vec<_>>().join(", ")
+    }
+
     /// One line for `.den where` and the logout's `moves` event.
     pub fn summary(&self) -> String {
         let mover = if self.mover { "the game took its character" } else { "the game never said it took its character" };
@@ -223,7 +324,8 @@ impl Watch {
             None => "never walked".into(),
         };
         let flags = flag_names(self.flags_seen & !FALLING);
-        format!("{mover}; {moves}; {walked}{}", if flags.is_empty() { String::new() } else { format!("; flags seen: {flags}") })
+        let sync = if self.time_sync.is_some() { "time sync answered" } else { "time sync not answered" };
+        format!("{mover}; {moves}; {walked}{}; {sync}", if flags.is_empty() { String::new() } else { format!("; flags seen: {flags}") })
     }
 }
 
@@ -251,7 +353,7 @@ mod tests {
         let n = w.moved(0x0EE, FORWARD, at(16229.2, 16257.0, 13.21), 13.2);
         assert_eq!(n, vec![("walked", "3.0 yards by HEARTBEAT, z 13.21, on the ground (+0.01)".to_string())]);
         assert!(w.moved(0x0EE, FORWARD, at(16235.0, 16257.0, 13.2), 13.2).is_empty(), "walked is said once");
-        assert_eq!(w.summary(), "the game took its character; 5 movement packets (first FALL_LAND); walked (3.0 yards)");
+        assert_eq!(w.summary(), "the game took its character; 5 movement packets (first FALL_LAND); walked (3.0 yards); time sync not answered");
     }
 
     #[test]
@@ -266,8 +368,8 @@ mod tests {
         // falling alone is every jump: not told
         let mut j = Watch::new(2, at(0.0, 0.0, 13.2), 13.2);
         assert_eq!(j.moved(0x0BB, FALLING, at(0.0, 0.0, 13.2), 13.2).len(), 1, "only the first move");
-        assert_eq!(w.summary(), "the game never said it took its character; 2 movement packets (first HEARTBEAT); never walked; flags seen: ROOT DISABLE_GRAVITY");
-        assert_eq!(Watch::new(3, at(0.0, 0.0, 0.0), 0.0).summary(), "the game never said it took its character; no movement from the game; never walked");
+        assert_eq!(w.summary(), "the game never said it took its character; 2 movement packets (first HEARTBEAT); never walked; flags seen: ROOT DISABLE_GRAVITY; time sync not answered");
+        assert_eq!(Watch::new(3, at(0.0, 0.0, 0.0), 0.0).summary(), "the game never said it took its character; no movement from the game; never walked; time sync not answered");
     }
 
     #[test]
@@ -311,5 +413,49 @@ mod tests {
         assert_eq!(op_name(0x0C9), "FALL_LAND");
         assert_eq!(op_name(0x0EE), "HEARTBEAT");
         assert_eq!(op_name(0x123), "MOVE");
+    }
+
+    #[test]
+    fn the_players_create_carries_azerothcores_update_flags() {
+        // Unit::Unit: LIVING | STATIONARY_POSITION; BuildCreateUpdateBlockForPlayer adds SELF for the player's own
+        assert_eq!(player_update_flags(true), 0x0061);
+        assert_eq!(player_update_flags(false), 0x0060);
+    }
+
+    #[test]
+    fn the_movement_clock_is_never_zero_and_runs_forward() {
+        let a = server_ms();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let b = server_ms();
+        assert!(a >= 1000 && b >= a + 15, "{a} {b}");
+    }
+
+    #[test]
+    fn time_sync_bodies_and_the_games_answer() {
+        assert_eq!(time_sync_body(7), vec![7, 0, 0, 0]);
+        let mut w = Watch::new(1, at(0.0, 0.0, 0.0), 0.0);
+        let mut resp = 0u32.to_le_bytes().to_vec();
+        resp.extend_from_slice(&123_456u32.to_le_bytes());
+        assert_eq!(time_sync_resp(&resp), Some((0, 123_456)));
+        assert_eq!(time_sync_resp(&resp[..7]), None);
+        assert_eq!(w.synced(&resp).as_deref(), Some("the game answered the time sync (counter 0, its clock 123456 ms)"));
+        assert_eq!(w.synced(&resp), None, "said once");
+        assert!(w.summary().ends_with("; time sync answered"), "{}", w.summary());
+    }
+
+    #[test]
+    fn every_opcode_the_game_sends_is_written_down_once() {
+        let mut w = Watch::new(1, at(0.0, 0.0, 0.0), 0.0);
+        assert_eq!(w.ops_line(), "nothing");
+        assert_eq!(w.client_op(0x26A).as_deref(), Some("SET_ACTIVE_MOVER"));
+        assert_eq!(w.client_op(0x0B5).as_deref(), Some("MSG_MOVE_START_FORWARD"));
+        assert_eq!(w.client_op(0x2CE).as_deref(), Some("MOVE_TIME_SKIPPED"));
+        assert_eq!(w.client_op(0x26A), None, "only the first time");
+        assert_eq!(w.client_op(0x4242).as_deref(), Some("0x4242"));
+        assert_eq!(w.ops_line(), "MSG_MOVE_START_FORWARD x1, SET_ACTIVE_MOVER x2, MOVE_TIME_SKIPPED x1, 0x4242 x1");
+        for op in 0..100u32 {
+            w.client_op(0x5000 + op);
+        }
+        assert_eq!(w.ops.len(), OPS_KEPT, "bounded");
     }
 }

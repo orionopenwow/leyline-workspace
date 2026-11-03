@@ -757,6 +757,9 @@ function D.OnMessage(prefix, msg, channel, sender)
         local n = plain(data):gsub("[^%w_%-]", ""):sub(1, NAME_MAX)
         D.saved = { at = clock(), name = n ~= "" and n or "auto" }
         showLine()
+    elseif name == "diag" then
+        -- the den-test asks what the game makes of the character now (WrathUnleashedUI.lua W.DenDiag)
+        if W.DenDiag then pcall(W.DenDiag, plain(data)) end
     elseif name == "invite" and inviteOk(data) then
         D.link = data
         if D.active then

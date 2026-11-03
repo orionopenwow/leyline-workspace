@@ -434,7 +434,9 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
     // SMSG_LOGIN_VERIFY_WORLD first, then account data, ..., the player, world states, the room
     assert_eq!(at(0x0236), 0);
     assert!(at(0x0209) < at(0x00A9), "account data times before the player create");
-    assert!(at(0x0390) < at(0x00A9), "time sync before the player create");
+    // the time sync after the player exists (AzerothCore's SendInitialPacketsAfterAddToMap; 3 Nov: it went before)
+    assert!(at(0x0390) > at(0x00A9), "time sync after the player create");
+    assert!(at(0x00A9) < at(0x02C2), "the player before the world states");
     let Some(ServerOpcodeMessage::SMSG_LOGIN_VERIFY_WORLD(v)) = &frames[0].msg else { unreachable!() };
     assert_eq!(v.map, Map::Kalimdor);
     let player = frames
@@ -449,14 +451,18 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
         .next()
         .expect("the player's create");
     assert!(player.1.update_flag.get_self());
+    // AzerothCore's flags for a player's own create (SELF | LIVING | STATIONARY_POSITION) and the server's clock: the
+    // bytes are checked in world.rs's own test; here the crate still reads the create as a living self
     assert_eq!(player.0.unit_displayid(), Some(49));
     assert!(player.0.player_visible_item(VisibleItemIndex::Index3).is_some(), "the shirt shows");
-    let Some(MovementBlock_UpdateFlag_Living::Living { position, running_speed, .. }) = player.1.update_flag.get_living() else {
+    let Some(MovementBlock_UpdateFlag_Living::Living { position, running_speed, timestamp, .. }) = player.1.update_flag.get_living() else {
         panic!("the player isn't living")
     };
+    assert!(*timestamp >= 1000, "the server's clock in the movement block, not 0: {timestamp}");
     // on the ground, not a yard above it (3 Nov: a game that didn't move its character showed it floating)
     assert!((position.z - (13.2 + den_lite::movewatch::SPAWN_LIFT)).abs() < 0.01 && *running_speed == 7.0, "{}", position.z);
-    assert!(names.contains(&0x0159), "the game is told it has control of its character");
+    // no control update during the loading screen (AzerothCore sends none at login): only once the game takes it
+    assert!(!names.contains(&0x0159), "no control update before the game takes its character");
     assert!(names.contains(&0x02C2), "SMSG_INIT_WORLD_STATES");
     let (room, _) = objects(&frames);
     // a new Den is the open white plane: no room pieces (owner 1 Nov 20:55), the launcher's white ground is the floor
@@ -482,17 +488,33 @@ fn a_player_logs_in_builds_saves_and_opens_their_den() {
     assert_eq!(ctl, den_lite::movewatch::control_body(den_lite::world::PLAYER_GUID));
     let unroot = w.until(|f| (f.opcode == 0x00EA).then(|| f.body.clone()));
     assert_eq!(unroot, den_lite::movewatch::unroot_body(den_lite::world::PLAYER_GUID, 0));
+    // the game answers the time sync, then walks: MSG_MOVE_START_FORWARD as the real game sends it (packed guid,
+    // flags FORWARD, flags2, its clock, x y z o, fall time), then a heartbeat further on
+    let mut sync = 0u32.to_le_bytes().to_vec();
+    sync.extend_from_slice(&5000u32.to_le_bytes());
+    w.raw(0x391, &sync);
+    let mut fwd = vec![0x01, 0x01];
+    fwd.extend_from_slice(&den_lite::movewatch::FORWARD.to_le_bytes());
+    fwd.extend_from_slice(&0u16.to_le_bytes());
+    fwd.extend_from_slice(&5100u32.to_le_bytes());
+    for f in [16226.2f32, 16257.0, 13.25, 0.0, 0.0] {
+        fwd.extend_from_slice(&f.to_le_bytes());
+    }
+    w.raw(0x0B5, &fwd);
     w.send(&heartbeat(px, py, pz, 0.0));
     // where we stand against the ground, and what the server saw of our moves
     w.say(".den where");
     let (_, line) = w.until_line();
+    assert!(line.contains("time sync answered") && line.contains("MSG_MOVE_START_FORWARD x1"), "{line}");
     assert!(line.starts_with("You stand at 16229.2, 16259.0, 14.20: 1.00 above the ground (the ground 13.20, the fixed floor)."), "{line}");
     assert!(line.contains("the game took its character") && line.contains("walked (3.6 yards)"), "{line}");
     let ev = den_lite::events::read(&dir);
     let detail = |name: &str| ev.iter().find(|l| l.ev == name).map(|l| l.detail.clone()).unwrap_or_else(|| panic!("no {name} in {ev:?}"));
     assert!(detail("spawn").contains("on the ground (+0.05), nearest prop none"), "{}", detail("spawn"));
     assert_eq!(detail("mover"), "the game moves its character");
-    assert!(detail("first_move").starts_with("HEARTBEAT, z 14.20"), "{}", detail("first_move"));
+    assert!(detail("first_move").starts_with("START_FORWARD, z 13.25, on the ground"), "{}", detail("first_move"));
+    assert!(detail("time_sync").contains("counter 0, its clock 5000 ms"), "{}", detail("time_sync"));
+    assert!(ev.iter().any(|l| l.ev == "client_op" && l.detail == "MSG_MOVE_START_FORWARD"), "every opcode written down");
     assert!(detail("walked").starts_with("3.6 yards by HEARTBEAT"), "{}", detail("walked"));
     w.say(".den stamp campfire now");
     let (frames, line) = w.until_line();
@@ -1420,6 +1442,13 @@ fn with_the_den_bar_nothing_spams_the_chat() {
     let (more, greet) = until_den(&mut w, "toast");
     assert_eq!(greet, format!("jaina|{}", den_lite::companion::GREET), "her one greeting, as a toast");
     assert!(chat_lines(&frames).is_empty() && chat_lines(&more).is_empty() && w.notes.is_empty(), "{:?}", w.notes);
+
+    // the den-test's before / after: Den Lite asks the bar for the game's view of the character, and says so
+    w.say(".den diag before");
+    let (_, tag) = until_den(&mut w, "diag");
+    assert_eq!(tag, "before");
+    let (_, line) = w.until_line();
+    assert!(line.starts_with("Diag before: asked the Leyline UI; your game sent: "), "{line}");
 
     // the Builder (a bar's answer): the change for everyone, its line a toast
     w.send(&heartbeat(16226.2, 16257.0, 14.2, 0.0));

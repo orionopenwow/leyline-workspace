@@ -231,7 +231,7 @@ fn leave(shared: &Shared, id: u64) {
         drop(live);
         // what the host's game did with its character this time (logout, or the game closed)
         if let Some(w) = shared.moves.lock().unwrap_or_else(|e| e.into_inner()).take().filter(|w| w.sess == id) {
-            shared.event("moves", &shared.cfg.hero.name, &w.summary());
+            shared.event("moves", &shared.cfg.hero.name, &format!("{}; sent: {}", w.summary(), w.ops_line()));
         }
         shared.companion.lock().unwrap_or_else(|e| e.into_inner()).away();
         shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).job = None;
@@ -318,9 +318,25 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 shared.event("loaded", &sess.me.name, &format!("{op:#x}"));
             }
         }
-        // the game says it moves its character now (the world is on screen): told once more that it has control of
-        // it, and unrooted (movewatch.rs; 3 Nov: the character hung in the air and wouldn't walk). The first control
-        // update went during the loading screen.
+        // everything the game sends once in the world, written down once per opcode (3 Nov: "no movement packets at
+        // all"; the log now says what it did send), and its answer to the time sync
+        if pos.is_some() {
+            if let Some(w) = watch.as_mut().filter(|w| w.sess == sess.id) {
+                if let Some(name) = w.client_op(op) {
+                    shared.event("client_op", &sess.me.name, &name);
+                }
+                if op == movewatch::CMSG_TIME_SYNC_RESP {
+                    if let Some(d) = w.synced(&body) {
+                        shared.event("time_sync", &sess.me.name, &d);
+                    }
+                }
+                if sess.me.host {
+                    *shared.moves.lock().unwrap_or_else(|e| e.into_inner()) = Some(w.clone());
+                }
+            }
+        }
+        // the game says it moves its character now (the world is on screen): told that it has control of it, and
+        // unrooted (movewatch.rs; 3 Nov: the character hung in the air and wouldn't walk)
         if op == movewatch::CMSG_SET_ACTIVE_MOVER && pos.is_some() {
             if let Some(w) = watch.as_mut().filter(|w| w.sess == sess.id) {
                 if w.mover() {
@@ -504,7 +520,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 shared.event("logout", &sess.me.name, "");
                 if let Some(w) = watch.take() {
                     if !sess.me.host {
-                        shared.event("moves", &sess.me.name, &w.summary());
+                        shared.event("moves", &sess.me.name, &format!("{}; sent: {}", w.summary(), w.ops_line()));
                     }
                 }
                 // out of the world first (the companion goes with the player), then the client is told
@@ -864,7 +880,8 @@ fn player_create(me: &Me, p: Pos, own: bool) -> SMSG_UPDATE_OBJECT {
         position: Vector3d { x: p.x, y: p.y, z: p.z },
         running_speed: 7.0,
         swimming_speed: 4.722222,
-        timestamp: 0,
+        // the server's clock, as AzerothCore's Unit::BuildMovementPacket (GameTime::GetGameTimeMS); was 0
+        timestamp: movewatch::server_ms(),
         turn_rate: std::f32::consts::PI,
         walking_speed: 2.5,
     };
@@ -872,8 +889,10 @@ fn player_create(me: &Me, p: Pos, own: bool) -> SMSG_UPDATE_OBJECT {
         objects: vec![Object::CreateObject2 {
             guid3: Guid::new(me.guid),
             mask2: UpdateMask::Player(b.finalize()),
+            // AzerothCore's flags: SELF (its own copy) | LIVING | STATIONARY_POSITION (movewatch::player_update_flags);
+            // the crate writes the Living block for LIVING whatever else is set, as the game reads it
             movement2: MovementBlock {
-                update_flag: if own { MovementBlock_UpdateFlag::new_self() } else { MovementBlock_UpdateFlag::empty() }.set_living(living),
+                update_flag: MovementBlock_UpdateFlag::new(movewatch::player_update_flags(own), None, None, None, None, Some(living), None, None),
             },
             object_type: ObjectType::Player,
         }],
@@ -901,12 +920,12 @@ fn enter_world(c: &Writer, shared: &Shared, account: &str, me: &Me, p: Pos) -> i
     c.send(&SMSG_ACTION_BUTTONS::Initial { data: [ActionButton { action: 0, action_type: 0, misc: 0 }; 144] })?;
     c.send(&SMSG_INITIALIZE_FACTIONS { factions: vec![FactionInitializer { flag: FactionFlag::empty(), standing: 0 }; 128] })?;
     c.send(&SMSG_LOGIN_SETTIMESPEED { datetime: login_time(), timescale: 1.0 / 60.0, unknown1: 0 })?;
-    c.send(&SMSG_TIME_SYNC_REQ { time_sync: 0 })?;
+    // the player (Map::AddPlayerToMap), THEN the time sync (Player::SendInitialPacketsAfterAddToMap:
+    // ResetTimeSync, SendTimeSync), as AzerothCore and the message crate's own wrath_server example do. Den Lite sent
+    // the time sync before the player existed, and a control update during the loading screen that AzerothCore never
+    // sends at login (it is said when the game takes its character: CMSG_SET_ACTIVE_MOVER, in `session`).
     c.send(&player_create(me, p, true))?;
-    // the game moves the character only while it has the control of it (SMSG_CLIENT_CONTROL_UPDATE, 0x159: packed
-    // guid, allow), as AzerothCore's Player::SetClientControl says it (2 Nov: the real game never moved); said again
-    // when the game says it took its character (CMSG_SET_ACTIVE_MOVER, in `session`)
-    c.send_raw(movewatch::SMSG_CLIENT_CONTROL_UPDATE, &movewatch::control_body(me.guid))?;
+    c.send_raw(movewatch::SMSG_TIME_SYNC_REQ, &movewatch::time_sync_body(0))?;
     c.send(&SMSG_INIT_WORLD_STATES { map: Map::Kalimdor, area: AREA, sub_area: AREA, states: vec![] })?;
     let objs = shared.den.lock().unwrap().everything();
     send_creates(c, &objs)?;
@@ -1124,12 +1143,24 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
         // where you stand against the ground, and what the game did with its character (movewatch.rs; the den-test asks)
         (".den", "where") => {
             let (g, file) = { let d = shared.den.lock().unwrap(); (d.floor_at(p.x, p.y), d.ground.is_some()) };
-            let moves = shared.moves.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|w| w.sess == sess.id).map(|w| w.summary());
+            let moves = shared.moves.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|w| w.sess == sess.id).map(|w| (w.summary(), w.ops_line()));
+            let (moves, ops) = moves.unwrap_or_else(|| ("Nothing seen from your game yet".into(), "nothing".into()));
             say(c, &format!(
-                "You stand at {:.1}, {:.1}, {:.2}: {} (the ground {:.2}{}). {}.",
+                "You stand at {:.1}, {:.1}, {:.2}: {} (the ground {:.2}{}). {moves}. Your game sent: {ops}.",
                 p.x, p.y, p.z, movewatch::stand(p.z, g), g, if file { "" } else { ", the fixed floor" },
-                moves.unwrap_or_else(|| "Nothing seen from your game yet".into())
             ))
+        }
+        // the den-test's before / after: the Leyline UI's view of the character (WrathUnleashedUI W.DenDiag), into the
+        // events as `addon` lines (wudiag ...)
+        (".den", "diag") => {
+            let tag: String = w(2).chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').take(24).collect();
+            let tag = if tag.is_empty() { "now".to_string() } else { tag };
+            let ui = shared.notices.lock().unwrap_or_else(|e| e.into_inner()).has_ui(sess.id);
+            if ui {
+                send_addon(c, sess.me.guid, "wuden", "diag", &tag)?;
+            }
+            let ops = shared.moves.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|w| w.sess == sess.id).map(|w| w.ops_line());
+            say(c, &format!("Diag {tag}: {}; your game sent: {}.", if ui { "asked the Leyline UI" } else { "no Leyline UI to ask" }, ops.unwrap_or_else(|| "nothing yet".into())))
         }
         (".den", "stamps") => {
             let names = den::stamp_names(&shared.cfg.stamps_dir);
@@ -1739,6 +1770,7 @@ fn test_command(shared: &Shared, w: &Writer, id: u64, cmd: &str) -> io::Result<(
         "mover": w.mover, "moves": w.moves, "first": w.first.map(movewatch::op_name), "walked": w.walked,
         "landed": w.landed.map(|(z, g)| z - g), "flags": movewatch::flag_names(w.flags_seen & !movewatch::FALLING),
         "spawn": [w.spawn.x, w.spawn.y, w.spawn.z], "spawn_ground": w.ground,
+        "ops": w.ops_line(), "time_sync": w.time_sync.is_some(),
     }));
     testctl::write_out(&shared.cfg.den_dir, &serde_json::json!({
         "id": id, "cmd": cmd, "said": cap.said, "created": cap.created, "destroyed": cap.destroyed,
@@ -2077,4 +2109,48 @@ fn dojo_tick(shared: &Shared) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn f32_at(b: &[u8], i: usize) -> f32 {
+        f32::from_le_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]])
+    }
+
+    /// The player's own create, byte for byte against AzerothCore (Object::BuildCreateUpdateBlockForPlayer,
+    /// Object::BuildMovementUpdate, Unit::BuildMovementPacket): CREATE_OBJECT2, the packed guid, type player, update
+    /// flags SELF | LIVING | STATIONARY_POSITION, movement flags 0 + flags2 0, the server's clock, x y z o, fall time 0,
+    /// then the nine speeds in AzerothCore's order (walk, run, run back, swim, swim back, flight, flight back, turn,
+    /// pitch), then the values.
+    #[test]
+    fn the_players_own_create_is_azerothcores_byte_for_byte() {
+        let me = Me { guid: PLAYER_GUID, name: "Wren".into(), gender: HeroGender::Female, host: true };
+        let p = At { x: 16226.2, y: 16257.0, z: 13.25, o: 1.5 };
+        let mut v = Vec::new();
+        player_create(&me, p, true).write_unencrypted_server(&mut v).unwrap();
+        // header: u16 size (big endian), u16 opcode
+        assert_eq!(u16::from_le_bytes([v[2], v[3]]), 0x00A9);
+        let b = &v[4..];
+        assert_eq!(&b[..4], &1u32.to_le_bytes(), "one object");
+        assert_eq!(b[4], 3, "UPDATETYPE_CREATE_OBJECT2 (a player)");
+        assert_eq!(&b[5..7], &[0x01, 0x01], "packed guid 1");
+        assert_eq!(b[7], 4, "TYPEID_PLAYER");
+        assert_eq!(u16::from_le_bytes([b[8], b[9]]), 0x0061, "SELF | LIVING | STATIONARY_POSITION");
+        assert_eq!(&b[10..16], &[0; 6], "movement flags and flags2: none (no root, no gravity off)");
+        let t = u32::from_le_bytes([b[16], b[17], b[18], b[19]]);
+        assert!(t >= 1000, "the server's clock, not 0: {t}");
+        assert_eq!([f32_at(b, 20), f32_at(b, 24), f32_at(b, 28), f32_at(b, 32)], [16226.2, 16257.0, 13.25, 1.5]);
+        assert_eq!(&b[36..40], &[0; 4], "fall time");
+        let speeds: Vec<f32> = (0..9).map(|k| f32_at(b, 40 + 4 * k)).collect();
+        assert_eq!(speeds, vec![2.5, 7.0, 4.5, 4.722222, 2.5, 7.0, 4.5, std::f32::consts::PI, std::f32::consts::PI]);
+        // no position block after Living, no high guid / target / transport / vehicle / rotation: the values next
+        let blocks = b[76] as usize;
+        assert!((5..=60).contains(&blocks), "the update mask's block count: {blocks}");
+        // someone else's copy of a player: the same without SELF
+        let mut o = Vec::new();
+        player_create(&me, p, false).write_unencrypted_server(&mut o).unwrap();
+        assert_eq!(u16::from_le_bytes([o[12], o[13]]), 0x0060);
+    }
 }

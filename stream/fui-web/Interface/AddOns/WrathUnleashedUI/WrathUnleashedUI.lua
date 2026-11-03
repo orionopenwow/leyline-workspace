@@ -787,6 +787,12 @@ local function denDiag()
     diagSend(string.format("me:speed=%s falling=%s dead=%s control=%s", tostring(sp),
         tostring(IsFalling and IsFalling()), tostring(UnitIsDeadOrGhost and UnitIsDeadOrGhost("player")),
         tostring(HasFullControl and HasFullControl())))
+    -- 3 Nov (still no movement): the rest of what can hold a character (mounted, on a flight, flying, swimming), the
+    -- key's override binding (a frame's override wins over the W you see bound) and what the game blocked
+    local function q(f, ...) if not f then return "?" end local ok, v = pcall(f, ...) return ok and tostring(v) or "err" end
+    diagSend(string.format("me2:mounted=%s taxi=%s flying=%s swimming=%s W*=%s UP*=%s", q(IsMounted), q(UnitOnTaxi, "player"),
+        q(IsFlying), q(IsSwimming), q(GetBindingAction, "W", true), q(GetBindingAction, "UP", true)))
+    if W.blocked then diagSend("blocked:" .. W.blocked) end
     if not EnumerateFrames then return end
     local n, fr = 0, EnumerateFrames()
     while fr and n < 3 do
@@ -803,7 +809,22 @@ local function denDiag()
         fr = EnumerateFrames(fr)
     end
 end
-denQuiet:SetScript("OnEvent", function() pcall(denKeys); denQuietBox(); quietLeft = 20; diagAt = W.InDen() and 4 or nil end)
+-- the den-test's "before" and "after" (Den Lite's `wuden diag <tag>`, DenBar.lua): the same lines on demand
+function W.DenDiag(tag)
+    diagSend("at:" .. tostring(tag or "?"):sub(1, 24))
+    pcall(denDiag)
+end
+-- a protected call the game refused (the movement keys call protected functions): which addon, which function
+denQuiet:RegisterEvent("ADDON_ACTION_BLOCKED")
+denQuiet:RegisterEvent("ADDON_ACTION_FORBIDDEN")
+denQuiet:SetScript("OnEvent", function(_, event, a, b)
+    if event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
+        W.blocked = event:sub(14) .. ":" .. tostring(a) .. ":" .. tostring(b)
+        if W.InDen() then diagSend("blocked:" .. W.blocked) end
+        return
+    end
+    pcall(denKeys); denQuietBox(); quietLeft = 20; diagAt = W.InDen() and 4 or nil
+end)
 denQuiet:SetScript("OnUpdate", function(_, dt)
     if diagAt then
         diagAt = diagAt - (dt or 0)

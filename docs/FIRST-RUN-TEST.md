@@ -15,6 +15,10 @@ Two halves:
 `tools/first-run/first_run.py` with `First run test.bat` and the Control step `first-run-test` (PASS / FAIL per phase,
 unit-tested with fakes in `tools/first-run/test_first_run.py`). The owner's manual checklist is docs/OWNER-TEST-PLAN.md.
 
+**3 Nov, later:** grown into the **fresh computer test**: every feature, the computer's own needs, cookies, drag and
+drop, a Windows Sandbox run. Plan and numbers: docs/FRESH-COMPUTER-TEST.md (Control `fresh-test`, `fresh-sandbox`;
+`first-run-test` runs the same tool). Its report numbers are that plan's part B, not the table in 3.5 below.
+
 Rules this test keeps: no game or publisher names on any screen; nothing typed by a person into a sign-in; no account
 made by a person's route (the audit's own test-account API, `account/new {audit: true}` and `audit/close`, is the one
 allowed way, as `tools/audit/herokey.py` does it); keys and passwords never on a command line, in a log or a report.

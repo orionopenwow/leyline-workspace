@@ -330,11 +330,11 @@ mod tests {
         assert_eq!(c.game, Some(PathBuf::from("C:\\W")), "the first is the one PLAY uses");
         assert_eq!(c.more, vec![PathBuf::from("C:\\V")], "the same folder twice is one");
         assert!(!parse_cli(&args(&["play-test", "--official"])).unwrap().unwrap().checks);
-        let mut many = vec!["play-test", "--official"];
         let names: Vec<String> = (0..=MAX_GAMES).map(|i| format!("C:\\G{i}")).collect();
+        let mut many: Vec<&str> = vec!["play-test", "--official"];
         for n in &names {
             many.push("--game");
-            many.push(n);
+            many.push(n.as_str());
         }
         assert!(parse_cli(&args(&many)).unwrap().is_err());
     }

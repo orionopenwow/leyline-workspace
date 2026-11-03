@@ -318,6 +318,8 @@ Read it this way:
 - **Code:** `tools/control/control.py` (`STEPS`, about 100 entries), `UPDATE.bat`, `UPDATES-PENDING.txt`.
 - **Run alone:** `py -3 tools\control\control.py` on Windows. Every step is also a plain `.bat` or script that runs
   without Control. Tests: `tools/control/test_*.py`.
+- **The fresh computer test:** `tools/first-run/Fresh computer test.bat` (steps `fresh-test`, `fresh-sandbox`): every
+  feature from an empty profile or a Windows Sandbox, PASS / FAIL per check (docs/FRESH-COMPUTER-TEST.md).
 - **Licence:** none stated (workspace only).
 - **A fork changes:** the server address and SSH key the deploy steps use. A community would more likely move the steps
   into CI with a deploy key than run one person's PC.

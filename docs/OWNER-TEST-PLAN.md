@@ -5,7 +5,8 @@ everywhere. Can log in and out, share character, everything makes sense on new m
 make sure all kinks are out."
 
 **Before you start:** run the Control steps `signin` (the website), then `ship`, and wait for the launcher build on
-GitHub. Then run `first-run-test`. It covers lines 1 to 16 by itself; its log is `tools\first-run\logs\first-run-latest.txt`.
+GitHub. Then run `fresh-test` (docs/FRESH-COMPUTER-TEST.md). It covers much of this list by itself; its log is
+`tools\first-run\logs\first-run-latest.txt`, and the numbers in brackets below are its check numbers.
 
 **How to use it:** do each line in order: *Do* this, then *you should see* that. Write the number of any line that
 doesn't match and send it with a screenshot. The **Auto** column names the Control step that already checks it.
@@ -29,7 +30,7 @@ set WEBVIEW2_USER_DATA_FOLDER=<the folder the log names>\webview
 | 2 | Look at the first screen | The launcher opens on Home at once: no sign-in wall. Log In is top right, and a 4-step tour shows | (UI test) firstrun |
 | 3 | Go through the tour with Next | 4 steps; the last is "Find your game files"; Done closes it | (UI test) firstrun |
 | 4 | Look at the play bar, bottom left | "GAME FOLDER: No game folder" | (UI test) playbar |
-| 5 | Click it, then Find your game files, and pick your Wrath folder | "Added …". The bar shows the folder and READY TO PLAY | first-run-test (6) |
+| 5 | Click it, then Find your game files, and pick your Wrath folder | "Added …". The bar shows the folder and READY TO PLAY | fresh-test (7) |
 | 6 | Open Settings | The first thing is "Your account". The peer-to-peer part is at the bottom | (UI test) gate |
 
 ## B. Log in, each way (log out between each with your picture top right, then Log out)
@@ -41,7 +42,7 @@ set WEBVIEW2_USER_DATA_FOLDER=<the folder the log names>\webview
 | 9 | Your picture, then Log out (2 clicks) | Log In comes back. The message says "Logged out" | (UI test) gate |
 | 10 | Log In | "Log in as Name#1234" at the top, from the file in Downloads. One click logs you in | (UI test) gate |
 | 11 | Log out. Log In, then type your name#tag and the password from the file | Logged in | (UI test) account |
-| 12 | Log out. Log In, Log in with your Hero Key, then drop the file on the box | Logged in | (UI test) gate |
+| 12 | Log out. Log In, Log in with your Hero Key, then drop the file on the box | Logged in | (UI test) gate; fresh-test (11, 12, 13) |
 | 13 | Log out. Log In, Log in with your browser (2 clicks), then approve in the browser | The launcher goes on by itself. A browser already logged in only asks you to approve | (UI test) gate; `audit` |
 | 14 | Log out. Log In, then Continue with Google | Google in your browser, then you're logged in | — |
 | 15 | On the website, Log in, then Create a Hero Key, then download it; open the launcher logged out | It logs in by itself (0 clicks): "Logged in as … with the Hero Key you downloaded" | (UI test) gate |
@@ -52,10 +53,10 @@ set WEBVIEW2_USER_DATA_FOLDER=<the folder the log names>\webview
 | # | Do | You should see | Auto |
 |---|---|---|---|
 | 17 | Logged out, press PLAY on Wrath Unleashed | The Log in screen, saying why. Once you're in, the game starts by itself (no second PLAY) | (UI test) gate |
-| 18 | Logged in, press PLAY | The game opens and goes past the login screen to character select by itself | first-run-test (7); `client-smoke` |
-| 19 | Make a character and enter the world | You're in the world within a minute | first-run-test (7, test character) |
-| 20 | Close the game, then look at the game folder | No one-time login left behind | first-run-test (7); `client-smoke` |
-| 21 | Realms, Community, then Play on a community realm | That realm's game starts. The play bar shows the community realm | (UI test) gate, realms |
+| 18 | Logged in, press PLAY | The game opens and goes past the login screen to character select by itself | fresh-test (16, 17, 18); `client-smoke` |
+| 19 | Make a character and enter the world | You're in the world within a minute | fresh-test (15, 19) |
+| 20 | Close the game, then look at the game folder | No one-time login left behind | fresh-test (21); `client-smoke` |
+| 21 | Realms, Community, then Play on a community realm | That realm's game starts. The play bar shows the community realm | (UI test) gate, realms; fresh-test (22) |
 | 22 | Pick Wrath Unleashed again in the play bar's realm list, then PLAY | The official realm, logged in by itself. No old message left in the bar | (UI test) gate, playbar |
 
 ## D. Your account on another PC ("share character")
@@ -75,7 +76,7 @@ other as friends or invite them to your Den.
 
 | # | Do | You should see | Auto |
 |---|---|---|---|
-| 27 | Pick Your Den in the play bar's realm list, then Play (no login needed) | The game opens on the white island, logged in by itself | `den-test`; first-run-test (8) |
+| 27 | Pick Your Den in the play bar's realm list, then Play (no login needed) | The game opens on the white island, logged in by itself | `den-test`; fresh-test (23) |
 | 28 | Walk with W/A/S/D | You walk; nothing pops up | `den-test` |
 | 29 | Open the gallery, place a piece, then undo it | The piece shows, then goes | `den-test` |
 | 30 | Type `.den save test1`, then look at Saved Dens in the launcher | "test1" is listed | `den-test` |
@@ -114,10 +115,9 @@ other as friends or invite them to your Den.
 | # | Do | You should see | Auto |
 |---|---|---|---|
 | 50 | Run `audit` | All lines PASS, or the same known lines as last time | `audit` |
-| 51 | Run `first-run-test` again | PASS. The test account is closed and the temp folders are gone | `first-run-test` (10, 11) |
+| 51 | Run `fresh-test` again | PASS. The test account is closed and the temp folders are gone | `fresh-test` (26, 28) |
 
 **Where "Auto" lives:** UI tests are `launcher/tests/*.browser.test.cjs`, and CI runs them on every ship. The Control
-steps are on Leyline Control. `first-run-test` numbers its log lines: 1 is the download, 2 a fresh start, 3 your game
-folder, 4 the test account, 5 the test character, 6 the launcher (folder added, logged in), 7 PLAY (by itself, the
-world, the screenshots, the one-time login removed), 8 the Den test, 9 your own launcher untouched, 10 the clean-up,
-11 no secrets in the log.
+steps are on Leyline Control. `fresh-test` numbers its log lines as docs/FRESH-COMPUTER-TEST.md part B does: 1 to 5
+this computer, 6 to 9 game folders and drag and drop, 10 to 14 log in and the website, 15 to 22 PLAY and a community
+realm, 23 and 24 Your Den, 25 loadouts, 26 to 30 the clean-up.

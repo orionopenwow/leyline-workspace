@@ -1321,7 +1321,7 @@ pub fn play_test_cli(cli: crate::playtest::Cli) -> i32 {
             rep["checks"]["signin"] = serde_json::json!({
                 "file": file_ok, "file_why": by_file.as_ref().err().cloned().unwrap_or_default(),
                 "logout": out_ok,
-                "paste": by_paste.is_ok(), "paste_why": by_paste.as_ref().err().cloned().unwrap_or_default(),
+                "paste": by_paste.is_ok(), "paste_why": by_paste.as_ref().err().cloned().unwrap_or_default()
             });
             by_paste
         } else {
@@ -1457,7 +1457,7 @@ fn realm_switch_check(core: &Core, client: &str) -> serde_json::Value {
     let home = back.is_ok() && crate::addresses::is_official_realm(&home_at);
     serde_json::json!({
         "ok": there && home, "realm": r.name, "there": there, "back": home,
-        "why": to.err().or(back.err()).unwrap_or_default(),
+        "why": to.err().or(back.err()).unwrap_or_default()
     })
 }
 

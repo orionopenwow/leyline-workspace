@@ -77,6 +77,9 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 | `.den class <class> [level]` | any class (warrior, paladin, hunter, rogue, priest, deathknight, shaman, mage, warlock, druid) at any level (80 if none), every spell it learns, its bar; `.den class` alone: the list |
 | `.den fly on\|off` / `.den speed 1-5` | fly (jump, then Space to rise, X to sink) / run and fly faster |
 | `.den jaina build <stamp>`, or say `Jaina, build a garden` (a tavern, a forge, a reading nook...) | she walks into its middle and builds it the way a person would (big pieces first, small last, things on tables at the end), casting at each piece, then steps back to look at it (`dojo` is the training ring; docs/DEN-STAMPS.md) |
+| `.den go <place>` / `.den go <map> <x> <y> <z>` | anywhere your game has: capitals, starting towns, Goldshire, Dalaran... (`.den places`); `.den go den` back to your Den ("Den anywhere", below) |
+| `.den here [name]` | makes your Den here: the Den that was where you were is kept for that place, and the one kept for this place (if any) opens |
+| `.den size city` | the biggest Den (sizes 5 to 7: 128, 256 and 512 yards across, open ground) |
 | `.den copy lionspride` | the Lion's Pride copied from your own game files (made by the launcher into `stamps-local` when it starts the Den; never shipped): docs/DEN-STAMPS.md |
 
 The character is a ready-made human (female by default, `--gender male`), level 1, in a white shirt, trousers and
@@ -651,3 +654,43 @@ on first use and passes `--client`, and the launcher signs in by itself (no pass
 
 1. `.den home`, the stamp mark (stakes), and model props tested. Building from the assistant (`companion-place.json`).
 2. Later: move to the workspace once stable; the browser client could connect too (out of scope here).
+
+### Den anywhere (3 Nov, owner: "whole cities or even teleport anywhere")
+
+`src/places.rs`. The player's own game has every map, so a Den can be anywhere: Den Lite only says where to stand
+(numbers only: the named places are `game_tele`'s coordinates; no game data). `.den go` on the same map is a **near
+teleport** (`MSG_MOVE_TELEPORT_ACK` with a counter; the game answers with the same opcode); to another map a **far**
+one (`SMSG_TRANSFER_PENDING`, `SMSG_NEW_WORLD`; the game's loading screen, then `MSG_MOVE_WORLDPORT_ACK`), after which
+everything is sent again in AzerothCore's `HandleMoveWorldportAck` order (`world.rs arrive_far`): bind point,
+spells, factions, the clock, the player's own create (the same 0x61 flags and server-clock time as at login), the
+time sync, the world states, then the Den's objects and dummies if the Den is on that map, and friends on it. The
+watch of the game's moves starts again, so its `CMSG_SET_ACTIVE_MOVER` gets the control update and unroot once more.
+Named places put you 2.5 yards above their height and the game falls onto its own ground (Den Lite has no
+collision; the landing's `MSG_MOVE_FALL_LAND` gives the height, and `.den here` uses where you stand).
+
+`.den here` moves the Den's spot (map, middle, floor); props are relative to it. The Den that was there is kept in
+`<dens>/places/<m<map>_<x>_<y>>.den.json` and the one kept for the new spot opens. The autosave carries the place
+(`place` in the file), so a restart opens the Den where it was; `.den load` of a file keeps the Den where it is.
+Objects go only to games on the Den's map; the companion stays in the Den. The launcher's grass ground (the island
+tile) is used only while the Den is on its map. City sizes (5-7) are open ground (no stone or wood floors).
+
+To see on the real game: the far teleport's loading screen and the character walking after it (the den-test's walk
+lines after `.den go stormwind`), and whether a named place's height lands the character on the ground everywhere.
+
+### My models (3 Nov, owner: "drag and drop new 3d models")
+
+`src/mymodels.rs`. The launcher's Your Den card takes the player's own `.m2` (with its `.skin` and `.blp` files) or a
+building's `.wmo` (with its groups), checks them (launcher `host/denfiles.rs`: names, sizes, magic bytes, the format
+this game reads), puts them under `World\Leyline\Den\<name>\` in the Den's patch with a row each in the player's
+own `GameObjectDisplayInfo.dbc` there, and writes `<dens>/my-models.json`. Den Lite reads it at its start: entries
+980001..., the generic type, the row's display, the Builder's "My models" tab. Nothing is uploaded: a friend's game
+gets the model carrier as a stand-in in each one's place (their game hasn't the files or the rows).
+
+### Friends: three ways in (3 Nov)
+
+Besides the relay tunnel's listeners, Den Lite opens a **direct listener** for friends on this PC's network address
+(`--friends-lan <ip>`, or when the launcher's Invite writes `<dens>/den-lite.direct-want`; ports 3724 and 8085, guests
+only). Its realm list sends a friend on the same network to this PC's address and a friend from the internet to the
+player's own address (`<dens>/den-lite.direct-host`, set in the launcher), and `<dens>/den-lite.direct` says whether
+it is open. The launcher's link carries every way; the friend's launcher tries same network, own address, relay.
+Player guide: docs/DEN-INVITE.md.

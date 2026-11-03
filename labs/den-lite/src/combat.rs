@@ -178,11 +178,13 @@ pub enum Kind {
     Heavy,
     /// The healing range: a group of five friends taking damage, one more than the others.
     Group,
+    /// A distance marker on the range (friendly, nothing happens to it).
+    Marker,
 }
 
 impl Kind {
     pub fn hostile(self) -> bool {
-        !matches!(self, Kind::Healer | Kind::Friend | Kind::Group)
+        !matches!(self, Kind::Healer | Kind::Friend | Kind::Group | Kind::Marker)
     }
     /// Armour against physical damage.
     pub fn armor(self) -> u32 {
@@ -195,7 +197,7 @@ impl Kind {
     pub fn faction(self) -> u32 {
         match self {
             Kind::Tank | Kind::Boss => 14,
-            Kind::Healer | Kind::Friend | Kind::Group => 35,
+            Kind::Healer | Kind::Friend | Kind::Group | Kind::Marker => 35,
             _ => 7,
         }
     }
@@ -206,7 +208,7 @@ impl Kind {
             Kind::Healer => 20_000 + 250 * level,
             Kind::Group => 15_000 + 200 * level,
             Kind::Boss => 1500 * level.max(1) + 30_000,
-            Kind::Friend => 100,
+            Kind::Friend | Kind::Marker => 100,
         }
     }
     /// Health when it goes up (the healing dummy starts hurt).
@@ -229,6 +231,7 @@ impl Kind {
             Kind::Light => "light",
             Kind::Heavy => "heavy",
             Kind::Group => "group",
+            Kind::Marker => "range",
         }
     }
     pub fn from_word(w: &str) -> Option<Kind> {
@@ -242,6 +245,7 @@ impl Kind {
             "light" | "low" | "novice" => Kind::Light,
             "heavy" | "high" | "raider" | "armoured" | "armored" => Kind::Heavy,
             "group" | "healers" | "party" | "raid" | "healrange" | "healing range" => Kind::Group,
+            "range" | "markers" | "distance" | "distances" => Kind::Marker,
             _ => return None,
         })
     }
@@ -2123,6 +2127,7 @@ pub fn dummy_name(k: Kind) -> &'static str {
         Kind::Light => "Novice's Training Dummy",
         Kind::Heavy => "Raider's Training Dummy",
         Kind::Group => "Wounded Friend",
+        Kind::Marker => "Range Marker",
     }
 }
 

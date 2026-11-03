@@ -90,7 +90,7 @@ const FAKE = (o) => {
       case 'den_models_add': {
         const m2 = args.files.find((f) => /\.(m2|wmo)$/i.test(f.name));
         if (!m2) throw "There's no model in that: drop the .m2 (or the building's .wmo) with its files.";
-        if (atob(m2.data).slice(0, 4) !== 'MD20') throw `${m2.name}: that isn't a model file of the game's own kind.`;
+        if (atob(m2.data).slice(0, 4) !== 'MD20') throw `File ${m2.name}: that isn't a model file of the game's own kind.`;
         const slug = (args.label || m2.name.replace(/\.m2$/i, '')).toLowerCase().replace(/[^a-z0-9-]/g, '_');
         const m = { entry: 980001 + (S.models || []).length, display: 60001, name: args.label || slug, slug, kind: 'm2', model: '', box: [0, 0, 0, 1, 1, 1],
           files: args.files.map((f) => f.name), missing: ['World\\Generic\\stone.blp'], unused: [], bytes: args.files.reduce((n, f) => n + atob(f.data).length, 0) };

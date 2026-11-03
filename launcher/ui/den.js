@@ -53,7 +53,7 @@
   let forgeGpl = false; // the GPL notice is open
   let forgeTimer = null;
   const FORGE_GPL = "leyline.forgeGplSeen";
-  let invite = null;    // den_invite: the link and its ways (host/denways.rs), shown under the buttons
+  let invited = null;   // den_invite: the link and its ways (host/denways.rs), shown under the buttons
   let models = null;    // den_models: the player's own models (host/denmodels.rs)
   let modelsBusy = false;
   let modelName = "";
@@ -330,7 +330,7 @@
     try {
       const r = await call("den_invite", { name: null });
       net = r.tunnel;
-      invite = r;
+      invited = r;
       let copied = true;
       try { await navigator.clipboard.writeText(r.link); } catch (_) { copied = false; }
       // TODO(owner): the words
@@ -352,7 +352,7 @@
     netTimer = setTimeout(tick, 1500);
   }
   async function stopSharing() {
-    try { await call("den_net_stop"); net = null; invite = null; say("Your Den is off the network, and your friends' links stopped working.", "ok"); }
+    try { await call("den_net_stop"); net = null; invited = null; say("Your Den is off the network, and your friends' links stopped working.", "ok"); }
     catch (e) { say(oops(e), "bad"); }
     paint();
   }
@@ -363,7 +363,7 @@
     box.id = "yd-ways";
     box.append(mk("b", "", "How your friend gets in"));
     const ol = mk("ol", "yd-way-list");
-    for (const w of invite.ways || []) {
+    for (const w of invited.ways || []) {
       const li = mk("li", "yd-way " + (w.ok ? "on" : "off"), w.line);
       li.id = "yd-way-" + w.id;
       ol.append(li);
@@ -373,9 +373,9 @@
     box.append(mk("p", "yd-hint", "Their Leyline tries these in this order and tells them which one worked. Your friend needs Leyline, their own game folder and a Hero Key. Game files never travel: each of you plays with your own. The Den invite guide has every step."));
     const lr = mk("div", "yd-row");
     const li = mk("input", "");
-    li.id = "yd-link"; li.readOnly = true; li.value = invite.link; li.setAttribute("aria-label", "The invite link");
+    li.id = "yd-link"; li.readOnly = true; li.value = invited.link; li.setAttribute("aria-label", "The invite link");
     const cp = btn("Copy", "btn small", async () => {
-      try { await navigator.clipboard.writeText(invite.link); say("Invite link copied again.", "ok"); } catch (_) { li.select(); }
+      try { await navigator.clipboard.writeText(invited.link); say("Invite link copied again.", "ok"); } catch (_) { li.select(); }
     });
     cp.id = "yd-link-copy";
     lr.append(li, cp);
@@ -383,7 +383,7 @@
     const oi = mk("input", "");
     oi.id = "yd-own"; oi.maxLength = 260; oi.placeholder = "Your own address (optional): den.example.org";
     oi.setAttribute("aria-label", "Your own address for friends");
-    const own = (invite.ways || []).find((w) => w.id === "own");
+    const own = (invited.ways || []).find((w) => w.id === "own");
     if (own && own.ok) oi.value = (own.line.match(/^Your own address: (\S+)/) || [])[1] || "";
     const ob = btn("Save", "btn small", async () => {
       try {
@@ -415,8 +415,8 @@
     if (list.length > 80) return "Up to 80 files at once.";
     for (const f of list) {
       const m = f.name.match(MODEL_EXT);
-      if (!m) return `${f.name}: only .m2, .skin, .blp and .wmo files (your own model's files).`;
-      if (f.size > MODEL_MB[m[1].toLowerCase()] * 1024 * 1024) return `${f.name}: too big (${MODEL_MB[m[1].toLowerCase()]} MB at most).`;
+      if (!m) return `File ${f.name}: only .m2, .skin, .blp and .wmo files (your own model's files).`;
+      if (f.size > MODEL_MB[m[1].toLowerCase()] * 1024 * 1024) return `File ${f.name}: too big (${MODEL_MB[m[1].toLowerCase()]} MB at most).`;
     }
     if (list.reduce((n, f) => n + f.size, 0) > 48 * 1024 * 1024) return "That's more than 48 MB at once.";
     if (!list.some((f) => /\.(m2|wmo)$/i.test(f.name))) return "There's no model in that: drop the .m2 (or the building's .wmo) with its files.";
@@ -663,7 +663,7 @@
       nl.append(sb);
       root.append(nl);
     }
-    if (invite && where() === "lite") root.append(waysBox());
+    if (invited && where() === "lite") root.append(waysBox());
     // the bigger way to play alone, only where Docker runs (or Solo leveling is already hosted here)
     const soloHosted = typeof kit !== "undefined" && kit && kit.realm && kit.realm.profile === "solo";
     if (soloHosted || (dock && dock.state === "ready")) {

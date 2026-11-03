@@ -835,9 +835,9 @@ async fn den_models_add(files: Vec<DroppedFile>, label: Option<String>) -> Resul
         let mut got = Vec::new();
         for f in files {
             if f.data.len() > crate::host::denfiles::MAX_TOTAL / 3 * 4 + 8 {
-                return Err(format!("{} is too big.", f.name));
+                return Err(format!("File {} is too big.", f.name));
             }
-            let b = leyline_terrain::b64::decode(&f.data).ok_or_else(|| format!("{} didn't arrive whole.", f.name))?;
+            let b = leyline_terrain::b64::decode(&f.data).ok_or_else(|| format!("File {} didn't arrive whole.", f.name))?;
             got.push((f.name, b));
         }
         let dir = den_models_dir();

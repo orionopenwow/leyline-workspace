@@ -91,7 +91,7 @@ pub fn slug(s: &str) -> String {
 
 /// What a file is, from its name and its first bytes, within its size limit.
 pub fn kind_of(name: &str, b: &[u8]) -> Result<Kind, String> {
-    let (_, ext) = clean_file_name(name).ok_or_else(|| format!("{}: only .m2, .skin, .blp and .wmo files with plain names.", short(name)))?;
+    let (_, ext) = clean_file_name(name).ok_or_else(|| format!("File {}: only .m2, .skin, .blp and .wmo files with plain names.", short(name)))?;
     let (kind, max) = match ext.as_str() {
         "m2" => (Kind::M2, MAX_M2),
         "skin" => (Kind::Skin, MAX_SKIN),
@@ -99,7 +99,7 @@ pub fn kind_of(name: &str, b: &[u8]) -> Result<Kind, String> {
         _ => (if b.get(12..16) == Some(b"PGOM") { Kind::WmoGroup } else { Kind::WmoRoot }, MAX_WMO),
     };
     if b.len() > max {
-        return Err(format!("{}: too big ({} MB at most).", short(name), max / (1024 * 1024)));
+        return Err(format!("File {}: too big ({} MB at most).", short(name), max / (1024 * 1024)));
     }
     let magic = b.get(..4).unwrap_or(&[]);
     let ok = match kind {
@@ -110,7 +110,7 @@ pub fn kind_of(name: &str, b: &[u8]) -> Result<Kind, String> {
         Kind::WmoGroup => magic == b"REVM",
     };
     if !ok {
-        return Err(format!("{}: that isn't a model file of the game's own kind.", short(name)));
+        return Err(format!("File {}: that isn't a model file of the game's own kind.", short(name)));
     }
     Ok(kind)
 }
@@ -286,7 +286,7 @@ pub fn prepare(files: &[(String, Vec<u8>)], label: Option<&str>) -> Result<Prepa
     }
     let mut kinds = Vec::new();
     for (n, b) in files {
-        let (stem, _) = clean_file_name(n).ok_or_else(|| format!("{}: only .m2, .skin, .blp and .wmo files with plain names.", short(n)))?;
+        let (stem, _) = clean_file_name(n).ok_or_else(|| format!("File {}: only .m2, .skin, .blp and .wmo files with plain names.", short(n)))?;
         kinds.push((stem, kind_of(n, b)?, b));
     }
     let primaries: Vec<_> = kinds.iter().filter(|k| matches!(k.1, Kind::M2 | Kind::WmoRoot)).collect();

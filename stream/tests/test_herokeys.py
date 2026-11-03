@@ -628,6 +628,38 @@ S.request(acctF, f"{pq['name']}#{pq['tag']}")
 st, _, _, _, d = req("POST", "/wrath/api/social/audit/close", js={}, headers=BF)
 check("audit close: an account with a friend request stays (409): closing never takes from another player", st == 409
       and S.profile(acctF) is not None, (st, d))
+# GET audit/presence: where the audit's test account's game got to (the first-run test); nobody else's
+HK._presence_cache.update(at=0.0, text=None)
+soap_was = wp.ac_soap
+soap_calls = []
+def fake_soap(cmd):
+    soap_calls.append(cmd)
+    return ("-[         Account][   Character][             IP][Map][Zone][Exp][GMLev]-\n"
+            f"-[{acctA:<16}][Zarathea    ][10.0.1.5       ][571][4395][  2][    0]-\n"
+            "-[BOTSOMEONE      ][Botty       ][127.0.0.1      ][  0][  12][  2][    0]-")
+wp.ac_soap = fake_soap
+st, _, _, _, d = req("GET", "/wrath/api/social/audit/presence", headers=BQ)
+check("presence: an ordinary account gets 404 (only the audit's own test account)", st == 404, (st, d))
+st, _, _, _, d = req("GET", "/wrath/api/social/audit/presence", web, headers={"X-Leyline-CSRF": csrf})
+check("presence: never through a website cookie", st in (401, 403, 404), (st, d))
+st, _, _, _, d = req("GET", "/wrath/api/social/audit/presence", headers=BA)
+check("presence: in the world, its character and map, no login given yet", st == 200 and d == {"account_online": True, "in_world": True,
+      "character": "Zarathea", "map": 571, "login_given": False}, (st, d))
+check("presence: the console is asked a fixed command", soap_calls == ["account onlinelist"], soap_calls)
+HS.note(acctA, "game.login", "launcher")
+HK._presence_cache.update(at=0.0, text=None)
+wp.ac_soap = lambda cmd: "There are no online accounts."
+st, _, _, _, d = req("GET", "/wrath/api/social/audit/presence", headers=BA)
+check("presence: not in the world yet, but the launcher was given its game login", st == 200 and d["in_world"] is False
+      and d["character"] is None and d["login_given"] is True, (st, d))
+HK._presence_cache.update(at=0.0, text=None)
+wp.ac_soap = lambda cmd: (_ for _ in ()).throw(wp.SoapError("down", "x"))
+st, _, _, _, d = req("GET", "/wrath/api/social/audit/presence", headers=BA)
+check("presence: the realm down is 503 with words, not a 500", st == 503 and d.get("error"), (st, d))
+check("presence: the console's rows parse in both shapes", HK.parse_online("-|ABC |Zara |1.2.3.4 |0 |12 |2 |0 |", "abc") == {"character": "Zara", "map": 0}
+      and HK.parse_online("-[Account][Character]-", "ACCOUNT") is None and HK.parse_online("", "A") is None)
+wp.ac_soap = soap_was
+HK._presence_cache.update(at=0.0, text=None)
 n_sess = len(R["sessions"])
 HS.set_password(acctA, "audit password 123")
 st, _, _, _, d = req("POST", "/wrath/api/social/audit/close", js={}, headers=BA)

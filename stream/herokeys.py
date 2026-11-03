@@ -31,6 +31,9 @@ The JSON, under /wrath/api/social (stream/social.py's sign-in: the launcher's to
                                     screen (launcher/src-tauri/src/hybrid.rs) and keeps nothing (owner 2 Nov: "skip to
                                     character select"). The same login the /wrath page shows and /__env.js gives.
     POST audit/close                (the launcher's token only) the release audit closes its own test account; see below
+    GET  audit/presence             (the launcher's token only, the audit's test account only) where that account's game
+                                    got to on Wrath Unleashed, for the first-run test (docs/FIRST-RUN-TEST.md 3.2):
+                                    {account_online, in_world, character, map, login_given}; 404 for any other account
 The name itself is POST profile {name} (stream/profiles.py set_name: the blocklist, at most 3 changes a day).
 
 The launcher and the service: a launcher has no website cookie, so a launcher that signed in here (a new account, a key)
@@ -573,9 +576,12 @@ def password_problem(pw, name: str = "") -> str:
 
 # ------------------------------------------------------------------ the JSON (from stream/social.py)
 NO_AUTH = ("account/new", "herokey/signin", "password/signin")
-WITH_AUTH_GET = ("herokey",)
+WITH_AUTH_GET = ("herokey", "audit/presence")
 WITH_AUTH_POST = ("herokey/new", "herokey/saved", "password", "game/login", "audit/close")
 GAME_LOGINS_PER_HOUR = 30        # per account: one per PLAY
+PRESENCE_PER_HOUR = 600          # per account: the first-run test asks every 2 s for a few minutes
+PRESENCE_CACHE_SECS = 2.0        # the realm console is asked at most this often, whoever asks
+LOGIN_GIVEN_SECS = 900           # a game/login this recent counts as "the launcher handed the game its login"
 
 
 def handles(sub: str, method: str, authed: bool) -> bool:
@@ -636,6 +642,68 @@ def close_audit_account(acct: str, token: str, ip: str, ua: str) -> tuple[int, s
     soc.forget_account(acct)   # its launcher sign-ins (this token too) and its profile
     log.info("herokeys: the release audit closed its test account")
     return 200, "Closed."
+
+
+_presence_cache: dict = {"at": 0.0, "text": None}
+_presence_lock = threading.Lock()
+
+
+def online_list_text() -> str | None:
+    """The realm console's `account onlinelist` (the characters in the world now), cached a moment; None when the
+    realm doesn't answer. A fixed command: nothing of the caller's goes into it."""
+    soap = P("ac_soap")
+    if soap is None:
+        return None
+    with _presence_lock:
+        now = time.monotonic()
+        if _presence_cache["text"] is not None and now - _presence_cache["at"] < PRESENCE_CACHE_SECS:
+            return _presence_cache["text"]
+        try:
+            text = str(soap("account onlinelist") or "")
+        except Exception:   # noqa: BLE001: SoapError and friends: the realm didn't answer
+            return None
+        _presence_cache.update(at=now, text=text)
+        return text
+
+
+def parse_online(text: str, acct: str) -> dict | None:
+    """The row of `account onlinelist` for this account: {character, map}, or None when it isn't there. The console's
+    rows are cells in [..] or between | (AzerothCore has printed both): account, character, IP, map, zone, ..."""
+    want = (acct or "").upper()
+    if not want:
+        return None
+    for line in (text or "").splitlines():
+        cells = [c.strip() for c in re.split(r"[\[\]|]", line) if c.strip() and not set(c.strip()) <= set("-=")]
+        if any(c.lower() == "character" for c in cells):   # the header row
+            continue
+        for i, c in enumerate(cells):
+            if c.upper() != want or i + 1 >= len(cells):
+                continue
+            char = cells[i + 1]
+            if not re.fullmatch(r"[^\W\d_]{2,12}", char):
+                continue
+            nums = [int(x) for x in cells[i + 2:] if re.fullmatch(r"\d{1,5}", x)]
+            return {"character": char, "map": nums[0] if nums else None}
+    return None
+
+
+def presence(acct: str) -> tuple[int, dict]:
+    """GET audit/presence: where the audit's own test account's game got to (status, doc)."""
+    if store is None or store.audit_born(acct) is None:
+        return 404, {"error": "Unknown call."}
+    given = False
+    try:
+        r = store.q("SELECT MAX(at) FROM hk_events WHERE acct = ? AND what = 'game.login'", (acct,))
+        given = bool(r and r[0][0] and time.time() - r[0][0] < LOGIN_GIVEN_SECS)
+    except Exception:   # noqa: BLE001
+        given = False
+    text = online_list_text()
+    if text is None:
+        return 503, {"error": "The realm isn't answering right now. Try again shortly.", "login_given": given}
+    row = parse_online(text, acct)
+    # the console lists characters in the world: one there means the game passed character select too
+    return 200, {"account_online": row is not None, "in_world": row is not None, "character": row["character"] if row else None,
+                 "map": row["map"] if row else None, "login_given": given}
 
 
 _new_locks: dict[str, threading.Lock] = {}
@@ -873,6 +941,13 @@ def api(h, sub: str, method: str, acct: str | None, how: str, extra: str, doc: d
             store.set_password(acct, pw)
             store.note(acct, "password.set", how)
             return send(200, {"ok": True, "has_password": True}, [])
+        if sub == "audit/presence" and method == "GET":   # the first-run test (tools/first-run/first_run.py)
+            if how != "token":
+                return send(404, {"error": "Unknown call."}, [])
+            if not _hit("presence|" + acct, PRESENCE_PER_HOUR, 3600):
+                return send(429, {"error": "Slow down a little."}, [])
+            st, doc = presence(acct)
+            return send(st, doc, [])
         if sub == "audit/close":
             if how != "token":
                 return send(404, {"error": "Unknown call."}, [])

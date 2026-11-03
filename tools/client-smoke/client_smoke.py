@@ -231,8 +231,13 @@ def finish(st, r, run):
         glue = r.get("glue") or {}
         st.add(None, "login screen archive status", json.dumps(glue))
         hy = r.get("hybrid") or {}
-        st.add(bool(hy.get("ok")), "the sign-in handed to the login screen (it skips the login by itself)", hy.get("why", ""))
-        st.add(run["seen_session"] or not hy.get("ok"), "the sign-in was in the archive while the game started")
+        keys = r.get("keys") or {}
+        if hy.get("ok"):
+            st.add(True, "the sign-in handed to the login screen (Forever UI's login screens: it signs in by itself)")
+            st.add(run["seen_session"], "the sign-in was in the archive while the game started")
+        else:
+            st.add(None, "no login screen hand-over here", hy.get("why", ""))
+            st.add(keys.get("typed") is True, "the launcher typed the sign-in at the login screen (a stock game)", keys.get("why", "") or ("" if keys else "not started"))
         st.add(run["shots"] > 0, "screenshots of the game", "%d in %s" % (run["shots"], OUT))
         st.add(not run["dialogs"], "no message box from the game (a refused login screen, a crash)", "; ".join(run["dialogs"]))
         st.add(bool(r.get("scrubbed")) and not r.get("session_left"), "the sign-in taken back out after", "left in the archive!" if r.get("session_left") else "")

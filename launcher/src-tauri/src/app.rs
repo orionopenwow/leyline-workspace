@@ -321,9 +321,46 @@ async fn play_official(core: &Core, client: &str, realm: &str) -> Result<String,
         let _ = crate::herokey::set_account_name(&profile.path, &l.user);
         crate::hybrid::Session { user: l.user.clone(), pass: l.pass.clone(), realm: None, enter: false }
     });
+    let pass = login.as_ref().ok().map(|l| l.pass.clone());
     let asked = login.map(|_| ());
-    let (message, hybrid) = point_and_play_with(core, client, realm, true, session, false)?;
+    let (message, mut hybrid) = point_and_play_with(core, client, realm, true, session, false)?;
+    // a stock game (no Forever UI's login screens): the launcher's keys sign in instead
+    if let (Err(_), Some(pass)) = (&hybrid, pass) {
+        let pid = LAST_GAME_PID.load(std::sync::atomic::Ordering::Relaxed);
+        if pid != 0 && cfg!(windows) {
+            keys_sign_in(pid, pass);
+            hybrid = Ok(());
+        }
+    }
     Ok(message + &official_note(&asked, &hybrid))
+}
+
+/// How long after the game's window shows the login screen takes to draw and take keys (the owner's PC: the window at
+/// once, the login screen a few seconds later; client-smoke 3 Nov).
+const KEYS_SETTLE: std::time::Duration = std::time::Duration::from_secs(7);
+
+/// The official realm on a stock game (owner 3 Nov 00:38: "as smooth as possible for the end consumer"): the stock game
+/// refuses changed login screen files, so instead of them the launcher types the sign-in for this start at the login
+/// screen, as Your Den's keys do (crate::denclick, posted window messages, no focus taken): the account name is
+/// already filled in (Config.wtf), so the password and Enter. One try; if the login screen wasn't ready, the player
+/// is on the normal login screen with the name filled in. The password is only in this thread's memory.
+fn keys_sign_in(pid: u32, pass: String) -> std::thread::JoinHandle<Result<(), String>> {
+    std::thread::spawn(move || {
+        use crate::denclick::{Game, Key, Process};
+        let mut g = Process(pid);
+        let t0 = std::time::Instant::now();
+        while !g.window() {
+            if !g.alive() || t0.elapsed() > std::time::Duration::from_secs(60) {
+                return Err("the game window didn't open".to_string());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+        std::thread::sleep(KEYS_SETTLE);
+        if !g.alive() {
+            return Err("the game closed before the login screen".into());
+        }
+        if g.send(Key::Password, &pass) { Ok(()) } else { Err("the game window didn't take the keys".into()) }
+    })
 }
 
 /// What PLAY on the official realm adds to "Started …": how the player gets past the login screen. `login`: the
@@ -967,6 +1004,7 @@ pub fn play_test_cli(cli: crate::playtest::Cli) -> i32 {
         let _ = crate::herokey::set_account_name(&profile.path, &l.user);
         crate::hybrid::Session { user: l.user.clone(), pass: l.pass.clone(), realm: None, enter: cli.world }
     });
+    let pass = login.as_ref().ok().map(|l| l.pass.clone());
     drop(login);
     rep["glue"] = serde_json::to_value(crate::hybrid::status(&profile.path)).unwrap_or_default();
     rep["phase"] = "starting".into();
@@ -982,6 +1020,12 @@ pub fn play_test_cli(cli: crate::playtest::Cli) -> i32 {
         Err(e) => serde_json::json!({ "ok": false, "why": e }),
     };
     rep["pid"] = pid.into();
+    // as PLAY does: no Forever UI, the launcher's keys (keys_sign_in)
+    let keys = match (&hybrid, pass) {
+        (Err(_), Some(pass)) if pid != 0 => Some(keys_sign_in(pid, pass)),
+        _ => None,
+    };
+    rep["keys"] = if keys.is_some() { serde_json::json!({ "started": true }) } else { serde_json::Value::Null };
     rep["phase"] = "running".into();
     rep["running_ms"] = crate::denclick::now_ms().into();
     save(&rep);
@@ -1010,13 +1054,21 @@ pub fn play_test_cli(cli: crate::playtest::Cli) -> i32 {
         }
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
+    if let Some(k) = keys {
+        rep["keys"] = match k.join() {
+            Ok(Ok(())) => serde_json::json!({ "started": true, "typed": true }),
+            Ok(Err(e)) => serde_json::json!({ "started": true, "typed": false, "why": e }),
+            Err(_) => serde_json::json!({ "started": true, "typed": false, "why": "the keys thread stopped" }),
+        };
+    }
     rep["closed_itself"] = closed_itself.into();
     rep["session_left"] = crate::hybrid::has_session(&profile.path).into();
     rep["scrubbed"] = scrubbed.into();
     rep["phase"] = "done".into();
     rep["done_ms"] = crate::denclick::now_ms().into();
     save(&rep);
-    if hybrid.is_ok() && !closed_itself { 0 } else { 1 }
+    let typed = rep["keys"]["typed"].as_bool() == Some(true);
+    if (hybrid.is_ok() || typed) && !closed_itself { 0 } else { 1 }
 }
 
 fn solo_result(message: String, hybrid: Result<(), String>) -> SoloPlay {

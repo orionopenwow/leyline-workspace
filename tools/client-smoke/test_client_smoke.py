@@ -30,13 +30,15 @@ def save():
     open(os.path.join(app, "play-test.json"), "w").write(json.dumps(rep))
 save(); time.sleep(0.3)
 mode = os.environ.get("FAKE_MODE", "ok")
-if mode == "signed_out":
+if mode == "keys":
+    rep.update(website_login={"ok": True, "account": "WR000123"}, hybrid={"ok": False, "why": "no Forever UI"}, keys={"started": True, "typed": True})
+elif mode == "signed_out":
     rep.update(signed_in=False, website_login={"ok": False, "why": "signed_out"}, hybrid={"ok": False, "why": "no sign-in"})
 else:
     rep.update(website_login={"ok": True, "account": "WR000123"}, hybrid={"ok": True}, glue={"foreverui": False, "slot_ok": True})
 rep.update(phase="running", pid=os.getpid()); save(); time.sleep(1.2)
 rep.update(phase="done", scrubbed=True, session_left=False, closed_itself=False); save()
-sys.exit(0 if mode == "ok" else 1)
+sys.exit(0 if mode in ("ok", "keys") else 1)
 '''
 
 
@@ -66,6 +68,8 @@ check("ok: the launcher's phases are followed (login, running, done)", "phase: l
 check("ok: the game started is seen by its pid", "PASS the game started" in out, out)
 check("ok: the website login, the hand-over and the clean-up pass", "PASS the website gave this player's game login: WR000123" in out
       and "PASS the sign-in handed to the login screen" in out and "PASS the sign-in taken back out after" in out, out)
+r, summary = run("keys")
+check("a stock game: the launcher's keys typed the sign-in", "PASS the launcher typed the sign-in at the login screen" in r.stdout, r.stdout)
 check("ok: the before and after state is written (account name, realmlist; never a password)", "Config.wtf account before: WR000123" in out
       and "realmlist before: set realmlist leylinelauncher.com" in out and "password" not in summary.lower().replace("never a password", ""), out)
 check("ok: the summary file", summary.startswith("CLIENT SMOKE TEST") and "play-test's exit code: 0" in summary, summary)
@@ -74,5 +78,5 @@ check("no screenshots off Windows: said as a FAIL, not a crash", "FAIL screensho
 r, summary = run("signed_out")
 check("signed out: said plainly (Log In first), FAIL", "FAIL the launcher is signed in: Log In in the launcher first" in r.stdout and r.returncode == 1, r.stdout)
 
-print("%d/7 checks passed" % (7 - len(FAILS)))
+print("%d/8 checks passed" % (8 - len(FAILS)))
 sys.exit(1 if FAILS else 0)

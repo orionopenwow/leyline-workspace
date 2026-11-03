@@ -376,7 +376,7 @@ function MouselookStop() looking = false end
 W.Builder.state.lite = "1"
 W.Builder.Can = function(v) return v == "click" or v == "drag" end
 W.DenBar.play = false
-W.DenBar.keys = { play = "F8" }
+W.DenBar.keys = { build = "F7", play = "F8" }
 answer("state", "mine=1/800;sel=-;n=1;")
 local function at(list, want) for i, v in ipairs(list) do if v == want then return i end end return nil end
 camera = {}
@@ -387,7 +387,7 @@ check("build mode with a picking Den Lite: the editor's own view (cam build) aft
     and at(c, "cam build") and at(c, "cam zoom 12") and at(c, "cam build") > at(c, "cam zoom 12"))
 check("the cursor is freed (no mouselook) on entering", looking == false)
 check("a BUILD frame round the screen", named.LeylineGizmoBuildFrame.shown and named.LeylineGizmoBuildFrame.word.text == "BUILD")
-check("the hint line", named.LeylineGizmoTag.shown and named.LeylineGizmoTag.fs.text:find("Click a prop to select  ·  drag to move  ·  Shift adds  ·  Q E turn  ·  Del deletes  ·  F8 leaves Build", 1, true))
+check("the hint line", named.LeylineGizmoTag.shown and named.LeylineGizmoTag.fs.text:find("Click a prop to select  ·  drag to move  ·  Shift adds  ·  Q E turn  ·  Del deletes  ·  F7 leaves Build", 1, true))
 answer("cam", "far,14.0,0,0")
 check("the view out: WASD and the arrows pan it, Q / E not yet (nothing selected), BUTTON1 still the game's",
     bindings.W == "LeylineGizmoPanW" and bindings.A == "LeylineGizmoPanA" and bindings.UP == "LeylineGizmoPanUP" and not bindings.Q and not bindings.BUTTON1)

@@ -273,7 +273,7 @@ end
 -- The hint line in build mode with nothing in hand.
 function G.Hint()
     local D = W.DenBar
-    local key = (D and D.keys and D.keys.play) or "F8"
+    local key = (D and D.keys and D.keys.build) or "F7"
     if not G.Picks() then return "Right-click a prop to select it  ·  " .. key .. " to play" end
     return "Click a prop to select  ·  drag to move  ·  Shift adds  ·  Q E turn  ·  Del deletes  ·  " .. key .. " leaves Build"
 end

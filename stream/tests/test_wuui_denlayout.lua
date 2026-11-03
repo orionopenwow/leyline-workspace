@@ -22,12 +22,12 @@ local CATALOG = "2413,woodenchair,seating,Wooden Chair,1,World\\Generic\\Chair01
     .. "1558,candle,lights,Candle,1,World\\Generic\\Candle01.mdx,0.10x0.10x0.30x0.00;"
     .. "2109,flowers,nature,Fragrant Flowers,1,World\\Generic\\Flowers01.m2;"
 
-local function session(pw, ph)
+local function session(pw, ph, scale)
     -- a fresh game: the fake API, the addon, a Den Lite that answers as labs/den-lite ovmod.rs
     for k in pairs(package.loaded) do if k:match("^den") then package.loaded[k] = nil end end
     WrathUnleashedUI, WrathUnleashedUIDB, WrathUnleashedUIChar = nil, { den = { introSeen = true } }, nil
     local F = dofile(uidir .. "/fakeui.lua")
-    local k = math.floor(math.max(0.64, math.min(1.0, 768 / ph)) * 100 + 1e-6) / 100
+    local k = scale or math.floor(math.max(0.64, math.min(1.0, 768 / ph)) * 100 + 1e-6) / 100
     F.setup(768 / k * pw / ph, 768 / k)
     F.cvars.uiScale = tostring(k)
     local st = { undo = 0, sel = nil, sent = {} }
@@ -121,6 +121,78 @@ for _, scr in ipairs({ { 1920, 1080, 4 }, { 2560, 1440, 4 }, { 1280, 720, 2 } })
     check(tag .. "no step stack on the rail", #bar.steps == 0)
 end
 
+-- ---------------------------------------------------------------- nothing clipped (owner 3 Nov 10:35: "fix all UI windows to
+-- not be clipped and so boxy"): at 720p, 1080p and 1440p and UI scales 0.64 to 1.0, every Den window in turn (the strip,
+-- rail, gallery, selection panel, menu, Files, Snap, the invite card, the Dojo, Den home, the status pill, play mode's
+-- bar and its class list): every text fits its box (one line: its width; wrapped: its height), every region inside its
+-- own frame, every frame inside its parent (but what opens beside it on purpose: menus, the pill's note) and on screen.
+local ROOTS = { LeylineDenBar = true, LeylineDenRail = true, WrathUnleashedBuilderFrame = true, LeylineEditorStatus = true,
+    WrathUnleashedPropsFrame = true, WrathUnleashedFilesFrame = true, LeylineDenPlayPill = true, LeylineDojoPanel = true,
+    LeylineDenHomePanel = true, LeylineDenModeBanner = true }
+local function clipped(F)
+    local out = {}
+    local function add(e, why) if #out < 8 then out[#out + 1] = (e.root or "?") .. " " .. e.kind .. " '" .. tostring(e.f.text or e.f.name or "") .. "' " .. why end end
+    local rects = {}
+    local layout = F.layout()
+    for _, e in ipairs(layout) do rects[e.f] = e end
+    for _, e in ipairs(layout) do
+        local f = e.f
+        if ROOTS[e.root or ""] or ROOTS[f.name or ""] then
+            -- on screen
+            if e.x < -0.5 or e.y < -0.5 or e.x + e.w > F.screen.w + 0.5 or e.y + e.h > F.screen.h + 0.5 then add(e, "off screen") end
+            -- a text fits its box
+            if f.kind == "FontString" and f.text and f.text ~= "" and not e.f.autoW then
+                local tw, size = F.textWidth(f), F.fontSize(f)
+                local lines = math.ceil(tw / math.max(1, e.w) - 1e-6)
+                if e.h < size * 1.9 then
+                    if tw > e.w + 0.5 then add(e, string.format("wider than its box (%.0f > %.0f)", tw, e.w)) end
+                elseif lines * (size + 3) - 1 > e.h + 1 then
+                    add(e, string.format("taller than its box (%d lines in %.0f)", lines, e.h))
+                end
+            end
+            if f.kind == "EditBox" and not f.scrolls and f.text and f.text ~= "" and F.textWidth(f) + 14 > e.w + 0.5 then add(e, "an input too narrow for its number") end
+            -- inside its own frame (a region) or its parent (a frame), unless it opens beside it on purpose
+            local par = f.parent
+            local pe = par and rects[par]
+            local empty = (f.kind == "FontString" and (f.text or "") == "")
+            if pe and not empty and not f.outside then
+                if e.x < pe.x - 1 or e.y < pe.y - 1 or e.x + e.w > pe.x + pe.w + 1 or e.y + e.h > pe.y + pe.h + 1 then add(e, "outside its frame") end
+            end
+        end
+    end
+    F.endLayout()
+    return out
+end
+
+for _, scr in ipairs({ { 1280, 720 }, { 1920, 1080 }, { 2560, 1440 } }) do
+    for _, k in ipairs({ false, 0.64, 1.0 }) do
+        local F, st, W = session(scr[1], scr[2], k or nil)
+        local D, B = W.DenBar, W.Builder
+        local tag = string.format("%dx%d at %s: ", scr[1], scr[2], k and tostring(k) or "the addon's scale")
+        local bad = {}
+        local function look(what)
+            for _, l in ipairs(clipped(F)) do bad[#bad + 1] = what .. ": " .. l end
+        end
+        look("the editor")
+        D.TestAction("gallery"); D.TestAction("place 1670"); D.TestAction("props")
+        look("gallery and panel")
+        -- the editor's own windows apart too: the gallery, the selection's panel and the status pill (with its box)
+        local mine = overlaps(F, { "WrathUnleashedPropsFrame" }, { "WrathUnleashedBuilderFrame", "LeylineEditorStatus", "LeylineDenBar", "LeylineDenRail" })
+        local pill = overlaps(F, { "LeylineEditorStatus" }, { "WrathUnleashedBuilderFrame", "LeylineDenRail" })
+        for _, l in ipairs(mine) do bad[#bad + 1] = "overlap: " .. l end
+        for _, l in ipairs(pill) do bad[#bad + 1] = "overlap: " .. l end
+        B.PropsMore(true); look("the panel's More"); B.PropsMore(false)
+        D.ShowMenu(true); look("menu"); D.ShowMenu(false)
+        D.ShowSnap(true); look("snap"); D.ShowSnap(false)
+        B.ShowFiles(true); look("files"); B.ShowFiles(false)
+        D.Invite(); F.toClient("wuden\tinvite\t1/1\thttps://relay.example.app/join/abcdefghijklmnop#ABCDEFGHJKLMNPQRSTUVWXYZ"); look("invite"); D.CloseDrawer()
+        if W.Dojo then W.Dojo.Show(true); look("dojo"); W.Dojo.Show(false) end
+        if W.DenHome then W.DenHome.Show(true); look("den home"); W.DenHome.Show(false) end
+        D.SetPlay(true); D.ShowClasses(true); look("play mode"); D.ShowClasses(false)
+        check(tag .. "every Den window: no text clipped, nothing outside its frame or the screen", #bad == 0, table.concat(bad, " | "))
+    end
+end
+
 -- ---------------------------------------------------------------- the tiles: models fitted, buildings and props without one
 do
     local F, st, W = session(1920, 1080)
@@ -139,7 +211,9 @@ do
     local diag = GetScreenHeight()
     check("a tile's units: its size over the screen's height (a 88-unit tile about 0.09)", W and math.abs(W - t.model:GetWidth() / diag) < 1e-9
         and W > 0.02 and W < 0.1 and math.abs(H - W) < 1e-9, W)
-    local scale, x, y, z = B.TileFit(byId[2413].size, W, H)
+    -- the fake's Model frame has SetPitch: the tile is tipped back a quarter turn, a side view
+    check("the tile tips its model back a quarter turn where the client can (SetPitch): seen from the side", t.pitched == true)
+    local scale, x, y, z = B.TileFit(byId[2413].size, W, H, nil, true)
     local chairExt = math.max(math.sqrt(0.5 ^ 2 + 0.5 ^ 2), 1.1)
     check("the chair's tile: SetModel, then scaled so its turning box is 0.8 of the tile, its middle at the tile's middle",
         t.model.model == "World\\Generic\\Chair01.mdx" and t.model:IsShown() and math.abs(t.model.mscale - scale) < 1e-9
@@ -148,21 +222,41 @@ do
         table.concat(t.model.mpos or {}, ","))
     local tc = tile(1558)
     check("a small candle is scaled up more than the chair", tc.model.mscale > t.model.mscale)
-    check("the house: the home stone, 'building'", tile(19006).icon.path == "Interface\\Icons\\INV_Misc_Rune_01" and tile(19006).why:GetText() == "building"
+    check("the house: the home stone, 'building'", tile(19006).icon.path == "Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\buildings" and tile(19006).why:GetText() == "building"
         and not tile(19006).model:IsShown())
-    check("the bread: its category's icon, 'no preview'", tile(2562).icon.path == "Interface\\Icons\\INV_Misc_Book_09" and tile(2562).why:GetText() == "no preview")
+    check("the bread: its category's icon, 'no preview'", tile(2562).icon.path == "Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\decor" and tile(2562).why:GetText() == "no preview")
     WrathUnleashedUIDB.den.fit = { yards = 0.06, x = 0, lift = 0.5, y = 0 }   -- what the first sweeps left saved on the PC
-    local s1, x1 = B.TileFit(byId[2413].size, W, H)
+    local s1, x1 = B.TileFit(byId[2413].size, W, H, nil, true)
     check("a framing saved by the first sweeps is ignored: the default", s1 == scale and x1 == x)
-    WrathUnleashedUIDB.den.fit = { v = 2, fill = 0.4, dx = 0.25, dy = -0.25, dz = 0.5, cam = 0 }
-    local s2, x2, y2, z2 = B.TileFit(byId[2413].size, W, H)
+    WrathUnleashedUIDB.den.fit = { v = 2, fill = 0.4 }
+    check("a framing saved by the earlier sweeps (v 2) is ignored too", (B.TileFit(byId[2413].size, W, H, nil, true)) == scale)
+    WrathUnleashedUIDB.den.fit = { v = 3, fill = 0.4, dx = 0.25, dy = -0.25, dz = 0.5, cam = 0 }
+    local s2, x2, y2, z2 = B.TileFit(byId[2413].size, W, H, nil, true)
     check("the fit can be tuned on a PC (WrathUnleashedUIDB.den.fit): fill and moves by a part of the tile",
         math.abs(s2 - scale / 2) < 1e-9 and math.abs(x2 - 0.75 * W) < 1e-9 and math.abs(y2 - (0.25 * H - 0.55 * s2)) < 1e-9
         and math.abs(z2 - 0.5 * W) < 1e-9)
     WrathUnleashedUIDB.den.fit.scaledPos = true
-    local s3, x3 = B.TileFit(byId[2413].size, W, H)
+    local s3, x3 = B.TileFit(byId[2413].size, W, H, nil, true)
     check("scaledPos: the position over the model's scale", math.abs(x3 - x2 / s3) < 1e-9)
     WrathUnleashedUIDB.den.fit = nil
+    -- seen from above (a plain Model frame without SetPitch): the footprint fills the tile, the origin on its middle in
+    -- both axes (the old framing lowered it by half its height: the owner's tiles sat at the bottom edge)
+    local s4, x4, y4 = B.TileFit(byId[2413].size, W, H, nil, false)
+    check("from above: the footprint's diagonal fills 0.8, the origin on the tile's middle in both axes",
+        math.abs(s4 - 0.8 * W / math.sqrt(0.5)) < 1e-9 and math.abs(x4 - W / 2) < 1e-9 and math.abs(y4 - H / 2) < 1e-9)
+    check("view auto: a side view when tipped back or not a plain Model frame", B.SideView(B.FIT, true) and not B.SideView(B.FIT, false)
+        and B.SideView({ frame = "PlayerModel", view = "auto" }) and not B.SideView({ frame = "PlayerModel", view = "top" }))
+    -- the sweep's words: a frame type makes the tiles again of that type; "own" leaves the framing to its camera
+    B.SetFit("frame=PlayerModel cam=0 fit=own")
+    F.tick(0.1)
+    local tp = tile(2413)
+    check("SetFit frame=PlayerModel: the tile's model is a PlayerModel now, scale 1 at 0,0,0, camera 0, the Model hidden",
+        tp.model.kind == "PlayerModel" and tp.model.model == "World\\Generic\\Chair01.mdx" and tp.model.mscale == 1
+        and tp.model.mpos[1] == 0 and tp.model.camera == 0 and not tp.models.Model:IsShown(), tp.model.kind)
+    B.SetFit("reset")
+    check("SetFit reset: a plain Model again", tile(2413).model.kind == "Model" and tile(2413).model:IsShown() and WrathUnleashedUIDB.den.fit == nil)
+    local api = B.ModelApi()
+    check("the model API report: a line per frame type, each method 0 or 1", #api == 3 and api[1]:match("^Model Pitch=[01] ") and api[2]:match("^PlayerModel "))
 end
 
 -- ---------------------------------------------------------------- the chat: the Den's system lines go to the pill

@@ -22,6 +22,9 @@ pub const MAX_PATHS: usize = 100;
 /// ov_den_home.lua H.STAMP_MAX and H.STAMP_SPAN.
 pub const STAMP_MAX: usize = 60;
 pub const STAMP_SPAN: f64 = 40.0;
+/// What a locked prop says when it is moved or deleted.
+pub const LOCKED: &str = "That prop is locked: Unlock it first.";
+
 /// ov_build.lua K.UNDO_DEPTH.
 pub const UNDO_DEPTH: usize = 50;
 /// A model prop's entry is this plus its display (ov_build.lua `.build models`); it is shown on the carrier.
@@ -702,6 +705,9 @@ impl Den {
     /// destroyed and made again with the same guid where it now is. Refused when it would leave the Den.
     pub fn edit(&mut self, guid: u64, f: impl FnOnce(&mut Prop)) -> Result<Change, String> {
         let before = self.placed(guid).ok_or("Select a prop first (Near picks the closest).")?.prop.clone();
+        if before.locked == Some(true) {
+            return Err(LOCKED.into());
+        }
         let mut p = before.clone();
         f(&mut p);
         p.x = quiet_round(p.x);
@@ -716,9 +722,25 @@ impl Den {
         Ok(Change { created: vec![obj], destroyed: vec![guid], ..Default::default() })
     }
 
+    /// The Builder's Lock / Unlock: a locked prop can't be moved, turned, sized or deleted until it is unlocked; kept
+    /// in the Den file (`locked`). Nothing changes in the world, so there is nothing to undo.
+    pub fn set_lock(&mut self, guid: u64, on: bool) -> Result<(), String> {
+        let p = self.props.iter_mut().find(|p| p.obj.guid == guid).ok_or("Select a prop first (Near picks the closest).")?;
+        p.prop.locked = on.then_some(true);
+        Ok(())
+    }
+
+    /// Whether the prop is locked.
+    pub fn locked(&self, guid: u64) -> bool {
+        self.placed(guid).is_some_and(|p| p.prop.locked == Some(true))
+    }
+
     /// The Builder's Delete: the prop taken away (undo puts it back).
     pub fn delete(&mut self, guid: u64) -> Result<Change, String> {
         let i = self.props.iter().position(|p| p.obj.guid == guid).ok_or("Select a prop first (Near picks the closest).")?;
+        if self.props[i].prop.locked == Some(true) {
+            return Err(LOCKED.into());
+        }
         let gone = self.props.remove(i);
         self.push_undo(Undo::Deleted(gone.prop));
         Ok(Change { destroyed: vec![guid], message: "Deleted. Undo puts it back.".into(), ..Default::default() })

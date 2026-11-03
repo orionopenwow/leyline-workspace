@@ -44,6 +44,8 @@ function Frame:IsVisible()
     return self.parent == nil or self.parent.top or self.parent:IsVisible()
 end
 function Frame:SetText(t) self.text = t end
+function Frame:SetValue(v) self.value = v; self:Fire("OnValueChanged", v) end
+function Frame:GetValue() return self.value or 0 end
 function Frame:GetText() return self.text end
 function Frame:Enable() self.enabled = true end
 function Frame:Disable() self.enabled = false end
@@ -171,9 +173,11 @@ check("asked for the catalog over OVMOD, whispered to self", sent[1] and sent[1]
     and sent[1][3] == "WHISPER" and sent[1][4] == "Tester")
 
 local files = B.Files()
-local binds = {}
-function SetOverrideBindingClick(_, _, key, button) binds[key] = button end
-function ClearOverrideBindings() binds = {} end
+local binds, bindOwner = {}, {}
+function SetOverrideBindingClick(owner, _, key, button) binds[key] = button; bindOwner[key] = owner end
+function ClearOverrideBindings(owner)
+    for k, o in pairs(bindOwner) do if o == owner or owner == nil then binds[k] = nil; bindOwner[k] = nil end end
+end
 local function shown()
     local out = {}
     for _, t in ipairs(win.tiles) do if t:IsShown() then out[#out + 1] = t end end
@@ -225,7 +229,9 @@ local panel = B.Panel()
 local ui = { undo = panel.tools.Undo, copy = panel.actions.Copy, paste = panel.actions.Paste, selall = panel.tools["Select mine"],
     path = W.DenBar.Bar().path }
 check("a new selection: its popover pops up", panel and panel:IsShown() and panel.title2:GetText() == "Wooden Chair")
-check("the pill says it", _G.LeylineEditorStatus.line:GetText():find("Wooden Chair selected"))
+check("the pill says it: the selection's name boxed in gold at its right", _G.LeylineEditorStatus.sel:IsShown()
+    and _G.LeylineEditorStatus.sel.label:GetText() == "Wooden Chair")
+
 
 -- nudges and turns (the popover's - and +, the step chip)
 local z0 = p.z
@@ -355,7 +361,7 @@ win.grid:Fire("OnMouseWheel", 1)
 -- the tiles' pictures: a tile without a model shows its category's icon
 check("a tile without a model: its category's icon (a stock icon path)", (function()
     for _, t in ipairs(shown()) do
-        local want = "Interface\\Icons\\" .. (B.CAT_ICONS[t.item.cat] or "INV_Misc_QuestionMark")
+        local want = "Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\" .. (B.CAT_ICONS[t.item.cat] or "noimage")
         if t.icon.path ~= want or not t.icon:IsShown() or t.model:IsShown() then return false end
     end
     return #shown() > 0 end)())
@@ -411,7 +417,7 @@ check("Prefab Save: the selection, and the list comes back", #B.prefabs == 1 and
 B.ShowMenu(true)
 tab("prefabs")
 check("the gallery's Prefabs tab", win.tiles[1].item and win.tiles[1].item.name == "porch" and win.tiles[1].name:GetText():find("porch %(" .. n0 .. "%)")
-    and win.tiles[1].icon.path == "Interface\\Icons\\INV_Misc_Note_01")
+    and win.tiles[1].icon.path == "Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\prefabs")
 serverClock = serverClock + 10
 win.tiles[1]:Fire("OnDoubleClick")
 check("click a prefab: pasted", countProps() == n0 * 2)
@@ -874,6 +880,75 @@ check("no answer: the Builder isn't on this realm", status():find("isn't on this
 win:Hide()
 SlashCmdList.WUBUILDER("")
 check("/builder toggles it", win:IsShown())
+
+-- ---------------------------------------------------------------- owner 3 Nov: "allow selecting object in window, and
+-- immediately have it selected ... a window to nudge and rotate / settings / how big object is and better selection"
+do
+    local function lastSent() return sent[#sent][2] end
+    local function countProps() local n = 0; for _ in pairs(T.props) do n = n + 1 end; return n end
+    player.x, player.y, player.z = -9448.55, 68.24, 56.32   -- back where the first prop went (the build area)
+    win:Show()
+    tab("all")
+    local t1 = shown()[1]
+    t1:Fire("OnClick", "LeftButton")
+    check("one click picks AND arms it: the pill says Place: <name>, Enter or double-click", B.Armed() == t1.item
+        and _G.LeylineEditorStatus.line:GetText():find("^Place: " .. t1.item.name:gsub("%p", "%%%0") .. " · Enter, double%-click or Place"))
+    check("armed: Enter is bound to place it", binds.ENTER ~= nil and binds.NUMPADENTER ~= nil)
+    B.Panel():Hide()
+    serverClock = serverClock + 5
+    _G[binds.ENTER]:Fire("OnClick", "LeftButton", true)
+    check("Enter places it (spawn <id>), the binding given back", lastSent() == "wubuild\tcmd\t1/1\tspawn " .. t1.item.id
+        and B.Armed() == nil and binds.ENTER == nil)
+    -- the realm selects what it placed: its panel opens by itself
+    local function realmSelects(pid, entry, name)
+        fireClient("OVMOD", string.format("wubuild\tstate\t1/1\tsel=%d,%d,%s;n=1;pos=1.00,2.00,3.00,10,1.00;rot=10,0,0;ids=%d;gids=%d;mine=2/50;area=Goldshire green;code=-",
+            pid, entry, name, pid, pid), "WHISPER", "Tester")
+    end
+    realmSelects(901, t1.item.id, t1.item.name)
+    check("after placing, the new prop is selected and its panel open", B.state.selName == t1.item.name and B.Panel():IsShown())
+    -- a double-click: OnClick (pick, arm) then OnDoubleClick (place)
+    local t2 = shown()[2]
+    t2:Fire("OnClick", "LeftButton"); t2:Fire("OnDoubleClick")
+    check("a double-click places it at once", lastSent() == "wubuild\tcmd\t1/1\tspawn " .. t2.item.id and B.Armed() == nil)
+    realmSelects(902, t2.item.id, t2.item.name)
+    -- the panel: size, steps, sliders, the wheel, the keys, lock and selecting
+    local panel = B.Panel()
+    for _, c in ipairs(B.catalog) do if c.id == B.state.selEntry then c.size = { w = 1, d = 0.5, h = 2, z = 0 } end end
+    B.PropsFill()
+    check("the size readout: width x depth x height in yards from the catalog's box times its size",
+        panel.size:GetText():find("^1%.00 x 0%.50 x 2%.00 yd") and panel.size:GetText():find("size 1%.00"))
+    panel.stepChips[5]:Fire("OnClick")
+    check("a step chip: 3 yd, lit", B.step == 5 and panel.stepChips[5]:IsActive() and not panel.stepChips[2]:IsActive())
+    panel.box.x:Fire("OnMouseWheel", 1)
+    check("the wheel over Move X nudges x by the step", lastSent() == "wubuild\tcmd\t1/1\tmove x 3")
+    panel.angleChips[90]:Fire("OnClick")
+    panel.box.turn:Fire("OnMouseWheel", -1)
+    check("the wheel over Turn turns by the turn step (90)", lastSent() == "wubuild\tcmd\t1/1\tturn -90" and panel.angleChips[90]:IsActive())
+    panel.turnSlider:SetValue(120); panel.turnSlider:Fire("OnMouseUp")
+    check("the turn slider: one exact change when let go", lastSent():find("^wubuild\tcmd\t1/1\tmove %d+ [%-%d%.]+ [%-%d%.]+ [%-%d%.]+ 120%.0"))
+    panel.scaleSlider:SetValue(2.5); panel.scaleSlider:Fire("OnMouseUp")
+    check("the size slider: scale <id> 2.50", lastSent():find("^wubuild\tcmd\t1/1\tscale %d+ 2%.50$"))
+    B.ShowProps(true)
+    check("the panel's keys: + / - size, Tab next, Esc lets go, Del, Ctrl+D", binds["="] and binds["-"] and binds.TAB and binds.ESCAPE
+        and binds.DELETE and binds["CTRL-D"] and binds["="] ~= binds["-"])
+    _G[binds["="]]:Fire("OnClick", "LeftButton", true)
+    check("= sizes it up by 0.1", lastSent():find("setscale %d"))
+    _G[binds.TAB]:Fire("OnClick", "LeftButton", true)
+    check("Tab without the server's selnext: the nearest (an existing verb), and says so", lastSent() == "wubuild\tcmd\t1/1\tnear")
+    B.state.can = { selnext = true, selkind = true }
+    B.SelectNext()
+    check("Tab with selnext: selnext", lastSent() == "wubuild\tcmd\t1/1\tselnext")
+    panel.sel.Kind:Fire("OnClick")
+    check("All of its kind with selkind: selkind", lastSent() == "wubuild\tcmd\t1/1\tselkind")
+    B.state.can = {}; B.state.lite = "1"
+    local n0 = #sent
+    B.PropsFill()
+    panel.actions.Lock:Fire("OnClick")
+    check("Lock on Den Lite without caps=lock: off, sends nothing", panel.actions.Lock.enabled == false and #sent == n0)
+    B.state.lite = nil
+    _G[binds.ESCAPE]:Fire("OnClick", "LeftButton", true)
+    check("Esc: selclear, the panel closed, its keys given back", lastSent() == "wubuild\tcmd\t1/1\tselclear" and not panel:IsShown() and binds.TAB == nil)
+end
 
 -- nothing the window shows names the game or its maker
 local bad

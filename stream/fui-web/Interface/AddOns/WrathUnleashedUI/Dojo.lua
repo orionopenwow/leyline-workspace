@@ -56,12 +56,13 @@ local function label(parent, text, ...) return S().EdLabel(parent, text, false, 
 local function build()
     panel = CreateFrame("Frame", "LeylineDojoPanel", UIParent)
     panel:SetWidth(318); panel:SetHeight(236)
-    panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 54, -42)
+    -- right of the Den's tool rail, under the player frame (not over it)
+    panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 80, -118)
     panel:SetFrameStrata("MEDIUM")
     panel:EnableMouse(true)
     S().EdPanel(panel, 0.9)
     panel.head = S().EdLabel(panel, "Dojo", true, "TOPLEFT", 10, -9)
-    panel.close = chip(panel, "x", 22, function() J.Show(false) end, "TOPRIGHT", -6, -5)
+    panel.close = chip(panel, "x", 24, function() J.Show(false) end, "TOPRIGHT", -8, -8)
     panel.note = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     panel.note:SetPoint("TOPLEFT", 10, -28); panel.note:SetWidth(298); panel.note:SetJustifyH("LEFT")
     panel.note.styleKeep = true
@@ -69,17 +70,22 @@ local function build()
     local y = -50
     local function row(name)
         local l = label(panel, name, "TOPLEFT", 10, y - 5)
-        y = y - 28
+        y = y - 34
         return l
     end
+    -- chips as wide as their words (nothing cut), the panel as wide as its widest row
+    local widest = 0
     local function chips(list, x0, at)
-        local x = x0 or 92
+        local x = x0 or 104
         for _, c in ipairs(list) do
-            local b = chip(panel, c[2], c[3], c[4], "TOPLEFT", x, at)
+            local b = chip(panel, c[2], nil, c[4], "TOPLEFT", x, at)
+            if c[1] == "bossPick" then b:SetWidth(math.max(tonumber((b:GetWidth())) or 0, 96)) end
             b.edLabel = c[5]
             panel[c[1]] = b
-            x = x + c[3] + 4
+            x = x + (tonumber((b:GetWidth())) or c[3]) + 4
         end
+        widest = math.max(widest, x)
+        return x
     end
     local at = y
     panel.training = row("Training")
@@ -90,27 +96,28 @@ local function build()
     }, nil, at)
     at = y
     panel.moving = row("Moving")
-    chips({ { "fly", "Fly", 52, function() J.Cmd("fly") end, "Fly: jump, then Space to rise and X to sink" } }, nil, at)
+    local x = chips({ { "fly", "Fly", 52, function() J.Cmd("fly") end, "Fly: jump, then Space to rise and X to sink" } }, nil, at) + 8
     panel.speeds = {}
-    local x = 92 + 56 + 8
     for _, n in ipairs(J.SPEEDS) do
-        local b = chip(panel, n .. "x", 34, function() J.Cmd("speed " .. n) end, "TOPLEFT", x, at)
+        local b = chip(panel, n .. "x", nil, function() J.Cmd("speed " .. n) end, "TOPLEFT", x, at)
         b.edLabel = n == 1 and "Normal speed" or ("Run and fly " .. n .. " times as fast")
         b.speed = n
         panel.speeds[#panel.speeds + 1] = b
-        x = x + 38
+        x = x + (tonumber((b:GetWidth())) or 34) + 4
     end
+    widest = math.max(widest, x)
     at = y
     panel.builds = row("Jaina builds")
     panel.stamps = {}
-    x = 92
+    x = 104
     for _, s in ipairs(J.STAMPS) do
-        local b = chip(panel, title(s), 52, function() J.Cmd("build " .. s) end, "TOPLEFT", x, at)
+        local b = chip(panel, title(s), nil, function() J.Cmd("build " .. s) end, "TOPLEFT", x, at)
         b.edLabel = "Jaina builds a " .. s .. " in front of you"
         b.stamp = s
         panel.stamps[#panel.stamps + 1] = b
-        x = x + 56
+        x = x + (tonumber((b:GetWidth())) or 52) + 4
     end
+    widest = math.max(widest, x)
     at = y
     panel.full = row("Full Den")
     chips({
@@ -120,7 +127,11 @@ local function build()
         { "look", "Look", 44, function() J.Cmd("look") end, "A new look at the character list" },
     }, nil, at)
     panel.readout = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    panel.readout:SetPoint("TOPLEFT", 10, y - 6); panel.readout:SetWidth(298); panel.readout:SetJustifyH("LEFT")
+    local pw = math.max(318, widest + 10)
+    panel:SetWidth(pw)
+    panel:SetHeight(-y + 46)
+    panel.note:SetWidth(pw - 20)
+    panel.readout:SetPoint("TOPLEFT", 10, y - 6); panel.readout:SetWidth(pw - 20); panel.readout:SetJustifyH("LEFT")
     panel.readout.styleKeep = true
     panel:Hide()
     J.Paint()

@@ -270,6 +270,72 @@ game: the flying and the speed; whether her cast shows from `SMSG_SPELL_START` /
 Next (plan only): a dungeon queue with companions and raid training (the full Den), Jaina building recipes the
 assistant writes, and `.glb` models as props (docs/DEN.md, "The Dojo").
 
+### Placing with the mouse: the live preview, the gizmo, select by right-click (3 Nov)
+
+The owner's asks (3 Nov 10:29 - 10:36): "when mousing over ground in game, it shows a preview of where it will land",
+"show the actual prop moving around, not a placement circle, make it a live preview", "the 3 directional arrows",
+"hovering over an object makes it glow; you can click it, select it ... right-click options to delete". The stock
+3.3.5a client gives an addon **no cursor-to-world call** and has no gameobject hover event, so a prop can't literally
+stick to the cursor the way an editor's does. What Den Lite (`src/gizmo.rs`) and the Leyline UI (`Gizmo.lua`) build
+from what the client does have:
+
+- **Build mode** (`wubuild cmd mode build|play`; the UI sends it in Your Den on Den Lite when not in play mode): every
+  prop is created again with the goober type in `GAMEOBJECT_BYTES_1` (the query answer, which the client caches, keeps
+  the template's own type). The client then highlights a prop under the mouse (its own interact glow and cursor) and a
+  right-click sends `CMSG_GAMEOBJ_USE`: Den Lite selects it, puts the gizmo around it and tells the UI `wubuild
+  picked <id>` (and the state); the UI opens its menu at the cursor (Delete, Duplicate, Move, Rotate, Bigger, Smaller,
+  Snap to floor, Lock, Copy, Properties). Play mode shows the props as they are again (a right-click there is left to
+  the game). A left click on empty ground in build mode clears the selection (`selclear`; not when the game shows an
+  object's name under the mouse). **Left-clicking a gameobject can't select it**: the client never tells the server.
+- **The live preview** (`preview <entry>` from a gallery pick, `preview move` for the selected prop): a copy of the
+  real prop (same entry and model; its own guid, not selectable) stands 2.5 yards in front and follows you; the UI
+  puts the camera in a known pose (the **build camera**: your own view saved in view 5 and put back on leaving; view 2
+  reset, zoomed all the way in, then out 12 yards) and, while the cursor is over the world, sends its screen point about
+  10 times a second (`hover <u> <v> <aspect> <distance>`). Den Lite knows where you stand and face (your movement
+  packets) and casts the ray from the camera through that point onto the ground (`gizmo::project`), snapped to the
+  grid and set on the ground (a moved prop keeps its height over it). A left click on the world (`commit`) puts the
+  real prop exactly where the copy is (or moves the selected one there: one undo); it stays armed until Esc or a right
+  click (`preview off`). `preview turn <deg>` turns the copy, `follow` gives it back to the in-front place, `where`
+  answers `wubuild ghost x,y,z,deg`.
+- **Moving a gameobject, what the client accepts**: in 3.3.5a a gameobject's place is only in the movement block of
+  its create (`UPDATEFLAG_STATIONARY_POSITION`); its update fields have no position (1.12's `GAMEOBJECT_POS_X ..` were
+  dropped in 2.0) and a values update can't move it; transports move only along their path. So each move of the copy
+  is a **create under the other of two guids, then the destroy of the old one** (the Builder's own moves destroy and
+  create the same guid, with a frame between). At most one redraw per 100 ms; the place Commit uses is always the
+  newest. An `UPDATETYPE_MOVEMENT` block (type 1) for a gameobject is untested and left out.
+- **The exact click** (the ground-target cursor, as a fallback and as the calibration's truth): the player knows one
+  spell, Flare (1543, in `SMSG_INITIAL_SPELLS`; ground-targeted, `TARGET_FLAG_DEST_LOCATION`; its cost is a share of
+  base mana, which a warrior hasn't, so the client's own cost check passes). While armed the UI binds G to a secure
+  button that casts it: the game's own circle follows the mouse on the ground and a click sends `CMSG_CAST_SPELL` with
+  the exact world point. Den Lite never casts it: it places (or moves) the armed prop there and answers
+  `SMSG_CAST_FAILED` with `SPELL_FAILED_DONT_REPORT` (nothing on screen) and `SMSG_CLEAR_COOLDOWN`. A cast of any other
+  spell goes on as before.
+- **The gizmo** (`gizmo on|off`, on in build mode): three small flags around the selected prop, made by Den Lite as
+  goobers of its own entries (990001 - 990003, answered in `CMSG_GAMEOBJECT_QUERY`): **X: the red Warsong Flag (display
+  5913), Y: the green Netherstorm Flag (7153), Z: the blue Silverwing Flag (5912)**, half size, 1.8 yards out (Z above).
+  A right-click on a flag picks its axis (`wubuild axis x|y|z`); the UI then binds the mouse wheel (only then) to the
+  Builder's `move <axis> <step>`. They follow the prop (made anew when it moves) and go with the selection.
+- **Selection verbs** (for the Builder's selection panel; the state line's `caps=` lists every verb this Den Lite
+  answers, `locked=0|1` the selection's lock): `selnext` (the next prop by distance from where the round started,
+  wrapping), `selkind` (every prop of the selection's kind: Delete, moves, turns and Snap to floor take them all, one
+  undo step each), `lock` / `unlock` (a locked prop refuses moves and Delete; `locked` in the Den file).
+- **Nothing holds the keyboard**: the UI's override bindings (Esc, G, the wheel) exist only while armed, while an axis
+  is picked or while the menu is open, and are cleared after; WASD and the camera's mouse drags are never taken (the
+  world-click hook only watches `WorldFrame`'s mouse-up: a click is under 0.3 s and 6 pixels).
+
+What is proven here, and what needs the owner's PC: the ray, the copy's two-guid moves, Commit, the exact click's
+cast and its silent answer, the gizmo, the goober look and right-click selection are tested in `gizmo.rs`, `ovmod.rs`,
+`raw.rs` and the headless client (`the_editors_preview_gizmo_selection_and_exact_click`), the UI in
+`stream/tests/test_wuui_gizmo.lua`, den-check's parts in `test_den_check.py`. **On the real game, to see**: that the
+goober type in the update field gives the highlight and the right-click (not only the cached template's type); that
+Flare's cursor shows for this character and the silent failure leaves no cooldown; that `SaveView` / `SetView` /
+`ResetView` / `CameraZoomIn` / `CameraZoomOut` aren't protected; the flags' colours. **The build camera's numbers are
+first guesses** (field of view 90 degrees across the diagonal, pivot 2 yards over the feet, 12 yards back, 0.5 rad
+down) until **den-check's hover calibration** runs on the owner's PC (`Den features.bat`: the real cursor at six points
+of the game window, at each the preview's place and, by pressing G and clicking, the game's own point; the camera
+fitted to them, printed and saved to `<dens>/den-lite.camera.json`, used from the next Den start). Until then the copy
+can land a few yards from the cursor; the exact click (G) is always exact.
+
 ## How it works
 
 | File | |
@@ -281,6 +347,7 @@ assistant writes, and `.glb` models as props (docs/DEN.md, "The Dojo").
 | `src/companion.rs` | the companion: following, asks and lines, the `companion-in.json` / `companion-out.json` files |
 | `src/play.rs` | `.den mode` (the built-in mode lists) and `.den mods` (the client's addon list, the launcher's `mods.json`) |
 | `src/dojo.rs` | the Dojo: fly and speed (and the game's acks), the training ring and dummies, Jaina's build piece by piece (her casts and turns) |
+| `src/gizmo.rs` | the editor's placement aids: the live preview (the build camera's ray, the copy's two-guid moves), the exact click (Flare's ground-target cast), the gizmo's flags, build mode's goober look and right-click selection; the calibration samples |
 | `src/raw.rs` | the two messages written by hand (gameobject creates, the gameobject query answer); why is at the top of the file |
 | `src/models.rs` | the props' model paths for the Builder's gallery, from the player's own `GameObjectDisplayInfo.dbc` that the launcher copies into the Dens folder (`host/lite.rs` `model_table`); none: icons |
 | `src/objects.rs` | the gameobject entries Lite can show (415: the catalog of `ov_build.lua`, the looks, the stamps, the starters) with type, display id, name and size, generated by `tools/gen_objects.py` from AzerothCore's world database `gameobject_template` |

@@ -759,3 +759,7 @@
 1313w addons  Leyline addons: the gallery models framed larger in their tiles
 1313x foreverui  Browser game: the Den editor and gallery as on desktop
 1313y ship  Save as Orion: the Den gallery framing, the feature test
+1314a den-lite  Den Lite rebuilt: live placement under the mouse, the exact click, the move arrows, right-click selects (build mode), selnext/selkind/lock
+1314b addons  Leyline addons: the Den editor (our icons, build/play modes, the selection panel, placement aids) and the Leyline look for the GM panel
+1314c foreverui  Browser game: the same
+1314d ship  Save as Orion: the Den editor overhaul, Elwynn sky, live placement, gizmo, the GM panel look

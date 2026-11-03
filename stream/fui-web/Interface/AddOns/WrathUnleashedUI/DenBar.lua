@@ -52,10 +52,10 @@ local KIND_COLOUR = { info = "text", ok = "ok", warn = "warn", jaina = "violet",
 -- TODO(owner): a voice pass on the intro cards, his words.
 local CARDS = {
     { "This is your Den", "An empty white world that's yours. Everything you do here keeps itself: it saves as you go." },
-    { "Build", "Build (F7, the box on the left) opens a gallery of props: double-click one to place it, then move, turn or delete it." },
+    { "Build mode", "F7 switches between Build mode (the tools, a thin gold edge) and Play mode. Click a prop in the gallery, then Enter or double-click to place it." },
     { "Shape ground", "Opens the world editor on your Den's ground: raise hills, dig, paint the ground. Your game shows it after a restart." },
-    { "Play and invite", "Play (F8) hides the tools so you just walk your Den. Invite makes one link for a friend: send it, and they join you here." },
-    { "Keys", "F7 gallery · F8 play · double-click a tile to place · arrows move, PgUp / PgDn lift, Q / E turn · Del deletes · Ctrl+Z / Ctrl+Y undo, redo · Ctrl+C / V / D copy, paste, duplicate." },
+    { "Play mode and invite", "Play mode (F7) hides every tool so you just walk your Den: Dojo, Class, Invite and Files stay in the corner." },
+    { "Keys", "F7 build / play · click a tile, Enter places · arrows move, PgUp / PgDn lift, Q / E turn, + / - size · Tab next · Del deletes · Esc lets go · Ctrl+Z / Ctrl+Y undo, redo." },
 }
 D.CARDS = CARDS
 
@@ -162,10 +162,13 @@ local function keyText(which) local k = D.keys[which]; return k and (" (" .. k:g
 
 function D.Labels()
     if not bar then return end
-    bar.build:SetText("Build" .. keyText("build"))
-    bar.build.edLabel = "Build: the gallery of props" .. keyText("build")
-    bar.playBtn:SetText("Play" .. keyText("play"))
-    if bar.pill then bar.pill.back:SetText("Back to building" .. keyText("play")) end
+    bar.build:SetText("Build")
+    bar.build.edLabel = "Build: the gallery of props"
+    -- F7 is the one key between the two modes (F8 too); the button and the corner chip say it
+    local k = D.keys.build and "build" or "play"
+    bar.playBtn:SetText("Play" .. keyText(k))
+    bar.playBtn.edLabel = "Play mode: the tools away, just walk your Den" .. keyText(k)
+    if bar.pill then bar.pill.back:SetText("Your Den · Build" .. keyText(k)) end
 end
 
 -- The menu (the strip's Menu): what isn't a tool of its own, in groups. A row's third field: "den" (only in a Den),
@@ -209,6 +212,7 @@ local function buildMenu()
     menu = CreateFrame("Frame", "LeylineDenMenu", bar)
     menu:SetWidth(MENU_W)
     menu:SetPoint("TOPRIGHT", bar.menuBtn, "BOTTOMRIGHT", 0, -6)
+    menu.outside = true   -- drops below the strip
     menu:SetFrameStrata("DIALOG")
     menu:EnableMouse(true)
     S().EdPanel(menu, 0.96, ED().panel2)
@@ -268,6 +272,7 @@ local function buildSnapMenu()
     snapMenu = CreateFrame("Frame", "LeylineDenSnapMenu", bar)
     snapMenu:SetWidth(110)
     snapMenu:SetPoint("TOPLEFT", bar.snap, "BOTTOMLEFT", 0, -6)
+    snapMenu.outside = true
     snapMenu:SetFrameStrata("DIALOG")
     snapMenu:EnableMouse(true)
     S().EdPanel(snapMenu, 0.96, ED().panel2)
@@ -341,14 +346,14 @@ end
 
 -- The rail's tools: { key, icon (Interface\Icons\...), label under it, tooltip, what it does }
 D.RAIL = {
-    { "select", "Ability_Hunter_SniperShot", "Select", "Select: the prop nearest you", function() D.Tool("select") end },
-    { "build", "INV_Crate_01", "Build", "Build: the gallery of props", function() D.Tool("place") end },
-    { "move", "Spell_Arcane_Blink", "Move", "Move the selection (arrows, PgUp / PgDn)", function() D.Tool("move") end },
-    { "rotate", "Ability_Whirlwind", "Rotate", "Turn the selection (Q / E)", function() D.Tool("rotate") end },
-    { "stamps", "INV_Misc_Map_01", "Stamps", "Stamps: ready-made areas", function() D.Tool("stamps") end },
-    { "path", "Ability_Tracking", "Path", "Path: a line of the picked prop", function() D.Tool("path") end },
-    { "ground", "Spell_Nature_Earthquake", "Ground", "Shape the ground (opens Forge)", function() D.ShapeGround() end, "Shape ground" },
-    { "dojo", "Ability_DualWield", "Dojo", "The training grounds", function() if W.Dojo then W.Dojo.Toggle() end end },
+    { "select", "select", "Select", "Select: the prop nearest you", function() D.Tool("select") end },
+    { "build", "place", "Build", "Build: the gallery of props", function() D.Tool("place") end },
+    { "move", "move", "Move", "Move the selection (arrows, PgUp / PgDn)", function() D.Tool("move") end },
+    { "rotate", "rotate", "Rotate", "Turn the selection (Q / E)", function() D.Tool("rotate") end },
+    { "stamps", "stamp", "Stamps", "Stamps: ready-made areas", function() D.Tool("stamps") end },
+    { "path", "path", "Path", "Path: a line of the picked prop", function() D.Tool("path") end },
+    { "ground", "ground", "Ground", "Shape the ground (opens Forge)", function() D.ShapeGround() end, "Shape ground" },
+    { "dojo", "dojo", "Dojo", "The training grounds", function() if W.Dojo then W.Dojo.Toggle() end end },
 }
 
 -- A rail button: the icon and its name under it (a short screen: the icon alone, the name in the tooltip).
@@ -356,9 +361,8 @@ local function railButton(t)
     local b = chip(rail, "", RAIL_W - 8, t[5])
     b.edIcon = b:CreateTexture(nil, "ARTWORK")
     b.edIcon:SetWidth(RAIL_BTN); b.edIcon:SetHeight(RAIL_BTN)
-    b.edIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    b.edIcon:SetTexture("Interface\\Icons\\" .. t[2])
-    b.iconPath = "Interface\\Icons\\" .. t[2]
+    S().SetIcon(b.edIcon, t[2])
+    b.iconPath = S().Icon(t[2])
     b.SetIcon = function(self, path) self.iconPath = path; self.edIcon:SetTexture(path) end
     b.edText:ClearAllPoints()
     b.edText:SetPoint("BOTTOMLEFT", 2, 4); b.edText:SetPoint("BOTTOMRIGHT", -2, 4)
@@ -408,7 +412,7 @@ local function buildBar()
     bar.title = S().EdText(bar, S().ED_SIZE.title)
     bar.title:SetPoint("LEFT", 38, 0)
     bar.title:SetTextColor(ED().gold[1], ED().gold[2], ED().gold[3])
-    bar.title:SetText("YOUR DEN")
+    bar.title:SetText("BUILD")
     local x = 136
     bar.chips = {}
     local function add(key, text, w, fn, tip)
@@ -456,29 +460,96 @@ local function buildBar()
     rail:Hide()
     bar.rail = rail
 
-    -- play mode: one small chip and the line
+    -- play mode: no editor at all, only a small corner chip "Your Den · Build (F7)" and a compact play bar under it:
+    -- Dojo, Class (a list of the ten, ".den class <name>"), Invite, Files
     local pill = CreateFrame("Frame", "LeylineDenPlayPill", UIParent)
-    pill:SetWidth(420); pill:SetHeight(36)
-    pill:SetPoint("TOP", UIParent, "TOP", 0, -6)
+    pill:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 8, -RAIL_TOP)
     pill:EnableMouse(true)
-    S().EdPanel(pill, 0.78)
-    pill.back = chip(pill, "Back to building", 170, function() D.SetPlay(false) end, "LEFT", 4, 0)
+    S().EdPanel(pill, 0.8)
+    pill.back = chip(pill, "Your Den · Build (F7)", nil, function() D.SetPlay(false) end, "TOPLEFT", 8, -8)
+    pill.back.edLabel = "Back to building: the tools again"
+    pill.back:SetActive(true)
+    pill.play = {}
+    local px = 8
+    for _, it in ipairs({ { "dojo", "Dojo", function() if W.Dojo then W.Dojo.Toggle() end end, "The training grounds" },
+                          { "class", "Class", function() D.ShowClasses() end, "Try another class here" },
+                          { "invite", "Invite", function() D.Invite() end, "Invite one friend: a link to send" },
+                          { "files", "Files", function() local b = B(); if b then b.ShowFiles() end end, "Your Den's saves by name" } }) do
+        local c = chip(pill, it[2], nil, it[3], "TOPLEFT", px, -8 - S().ED_SIZE.chip - 6)
+        c.edLabel = it[4]
+        c.edTipAt, c.edTipTo = "LEFT", "RIGHT"
+        pill.play[it[1]] = c
+        px = px + (tonumber((c:GetWidth())) or 60) + 6
+    end
+    local bw = tonumber((pill.back:GetWidth())) or 180
+    pill:SetWidth(math.max(px + 2, bw + 16))
+    pill:SetHeight(2 * S().ED_SIZE.chip + 22)
+    -- the toasts' line (kept for callers; play mode's toasts show as the mode's banner)
     pill.line = S().EdText(pill, S().ED_SIZE.text)
-    pill.line:SetPoint("LEFT", 182, 0)
-    pill.line:SetWidth(228); pill.line:SetJustifyH("LEFT")
+    pill.line:SetPoint("TOPLEFT", pill, "BOTTOMLEFT", 4, -6)
+    pill.line:SetWidth(math.max(px + 2, bw + 16) - 8); pill.line:SetJustifyH("LEFT")
+    pill.line.outside = true
     pill:Hide()
     bar.pill = pill
+
+    -- the class list: the ten classes, one row each (Den Lite: .den class <name>)
+    local cl = CreateFrame("Frame", "LeylineDenClassMenu", pill)
+    cl:SetPoint("TOPLEFT", pill, "TOPRIGHT", 6, 0)
+    cl.outside = true
+    cl:SetFrameStrata("DIALOG")
+    cl:EnableMouse(true)
+    S().EdPanel(cl, 0.96, ED().panel2)
+    S().EdLabel(cl, "Play as", true, "TOPLEFT", 12, -10)
+    cl.rows = {}
+    for i, c in ipairs(D.CLASSES) do
+        local r = chip(cl, c[2], 150, function() D.PickClass(c[1]) end, "TOPLEFT", 8, -30 - (i - 1) * (MENU_ROW + 2))
+        r:SetHeight(MENU_ROW)
+        r.class = c[1]
+        cl.rows[i] = r
+    end
+    cl:SetWidth(166)
+    cl:SetHeight(#D.CLASSES * (MENU_ROW + 2) + 38)
+    cl:Hide()
+    bar.classes = cl
+
+    -- build mode's mark: a thin gold edge round the screen (no mouse), and the mode's banner when it changes
+    local edge = CreateFrame("Frame", "LeylineDenBuildEdge", UIParent)
+    edge:SetAllPoints(UIParent)
+    edge:SetFrameStrata("BACKGROUND")
+    edge:EnableMouse(false)
+    edge.lines = S().Border(edge, { ED().gold[1], ED().gold[2], ED().gold[3], 0.55 }, "OVERLAY")
+    for i, t in ipairs(edge.lines) do if i <= 2 then t:SetHeight(3) else t:SetWidth(3) end end
+    edge:Hide()
+    bar.edge = edge
+    local banner = CreateFrame("Frame", "LeylineDenModeBanner", UIParent)
+    banner:SetWidth(320); banner:SetHeight(48)
+    banner:SetPoint("TOP", UIParent, "TOP", 0, -120)
+    banner:SetFrameStrata("HIGH")
+    banner:EnableMouse(false)
+    S().EdPanel(banner, 0.82)
+    banner.label = S().EdText(banner, 20)
+    banner.label:SetPoint("CENTER", 0, 0)
+    banner:SetScript("OnUpdate", function(self, elapsed)
+        self.t = (self.t or 0) + (tonumber(elapsed) or 0)
+        local a = self.t < 1.1 and 1 or math.max(0, 1 - (self.t - 1.1) / 0.5)
+        self:SetAlpha(a)
+        if a <= 0 then self:Hide() end
+    end)
+    banner:Hide()
+    bar.banner = banner
 
     -- the drawer under the strip: a name for Save, or the invite link to copy (a small card, not a bar)
     drawer = CreateFrame("Frame", "LeylineDenDrawer", bar)
     drawer:SetWidth(470); drawer:SetHeight(64)
     drawer:SetPoint("TOP", bar, "BOTTOM", 0, -8)
+    drawer.outside = true
     drawer:EnableMouse(true)
     S().EdPanel(drawer, 0.95, ED().panel2)
     drawer.label = S().EdLabel(drawer, "", true, "TOPLEFT", 12, -9)
     drawer.label:SetWidth(300)
     drawer.box = S().EdInput(drawer, 330, 26)
     drawer.box:SetPoint("TOPLEFT", 12, -28)
+    drawer.box.scrolls = true   -- a link longer than the box scrolls in it (Ctrl+C copies all of it)
     drawer.box:SetScript("OnEscapePressed", function(self) self:ClearFocus(); D.CloseDrawer() end)
     drawer.box:SetScript("OnEnterPressed", function() if D.drawerKind == "save" then D.Save(drawer.box:GetText()) else D.CloseDrawer() end end)
     drawer.box:SetScript("OnEditFocusGained", function(self) if D.drawerKind == "invite" then self:HighlightText() end end)
@@ -524,7 +595,7 @@ function D.Paint()
     if not bar then return end
     local b = B()
     local s = (b and b.state) or {}
-    bar.title:SetText(D.active and "YOUR DEN" or "BUILD")
+    bar.title:SetText("BUILD")
     bar.undo:SetText("Undo " .. (tonumber(s.undo or "") or 0))
     bar.redo:SetText("Redo " .. (tonumber(s.redo or "") or 0))
     if (tonumber(s.undo or "") or 0) > 0 then bar.undo:Enable() else bar.undo:Disable() end
@@ -636,6 +707,49 @@ function D.Invite()
     return true
 end
 
+-- The ten classes (Den Lite's ".den class <name>": the Den's sandbox lets you try one).
+D.CLASSES = { { "warrior", "Warrior" }, { "paladin", "Paladin" }, { "hunter", "Hunter" }, { "rogue", "Rogue" }, { "priest", "Priest" },
+    { "deathknight", "Death Knight" }, { "shaman", "Shaman" }, { "mage", "Mage" }, { "warlock", "Warlock" }, { "druid", "Druid" } }
+function D.ShowClasses(show)
+    D.Bar()
+    local cl = bar.classes
+    if show == nil then show = not cl:IsShown() end
+    if show then cl:Show() else cl:Hide() end
+    bar.pill.play.class:SetActive(show)
+    return show
+end
+function D.PickClass(key)
+    for _, c in ipairs(D.CLASSES) do
+        if c[1] == key then
+            denCmd("class " .. key)
+            D.ShowClasses(false)
+            D.Toast("info", "Playing as " .. c[2] .. "...")
+            return true
+        end
+    end
+    return false
+end
+
+-- The mode's banner: "Build mode" / "Play mode" for a moment, then it fades.
+function D.Banner(text)
+    D.Bar()
+    local b = bar.banner
+    b.label:SetText(text)
+    local g = ED().gold
+    b.label:SetTextColor(g[1], g[2], g[3])
+    b.t = 0
+    b:SetAlpha(1)
+    b:Show()
+    return b
+end
+
+-- F7 (and F8): the one key between the modes. In a Den: build <-> play; elsewhere F7 is the gallery.
+function D.ToggleMode()
+    if not D.active then return D.Build() end
+    D.SetPlay(not D.play)
+    return D.play and "play" or "build"
+end
+
 -- What play mode hides: every editor window, the shelf (with edit mode), what is being placed, the selection.
 local function editorFrames()
     local out = {}
@@ -651,6 +765,7 @@ end
 function D.SetPlay(on)
     on = on and true or false
     if not D.active then on = false end
+    local was = D.play
     D.play = on
     if on then
         local E, H, B = W.EditMode, W.DenHome, W.Builder
@@ -662,8 +777,15 @@ function D.SetPlay(on)
         -- no handles on a selected prop while you walk
         if B and B.state and B.state.selId and B.Command then B.Command("selclear") end
         if LeylineEdit then pcall(LeylineEdit, "group") end
-        D.Toast("info", "Play mode: just you and your Den. " .. (D.keys.play and (D.keys.play:gsub("CTRL%-", "Ctrl+") .. " or ") or "") .. "Esc > Back to building.", true)
+        local k = D.keys.build or D.keys.play
+        D.Toast("info", "Play mode: just you and your Den. " .. (k and (k:gsub("CTRL%-", "Ctrl+") .. " or ") or "") .. "Esc > Back to building.", true)
+    elseif was then
+        -- back to building: the gallery with it
+        local B = W.Builder
+        if B and B.ShowBuilder and not (B.Window() and B.Window():IsShown()) then B.SetMode("place"); B.ShowBuilder(true) end
     end
+    if bar and bar.classes and on == false then bar.classes:Hide() end
+    if D.active and was ~= on then D.Banner(on and "Play mode" or "Build mode") end
     D.Refresh()
     return D.play
 end
@@ -757,7 +879,7 @@ function D.BindKeys()
             if not (which == "build" and browser) then
                 for _, k in ipairs(KEY_CHOICES[which]) do
                     if free(k) then
-                        SetOverrideBindingClick(keyOwner, false, k, keyButton(which, which == "build" and D.Build or D.TogglePlay))
+                        SetOverrideBindingClick(keyOwner, false, k, keyButton(which, which == "build" and D.ToggleMode or D.TogglePlay))
                         D.keys[which] = k
                         break
                     end
@@ -800,6 +922,8 @@ function D.Refresh()
     D.LayoutBar()
     if want then bar:Show(); rail:Show() else bar:Hide(); rail:Hide(); closeMenus() end
     if D.active and D.play then bar.pill:Show() else bar.pill:Hide() end
+    -- build mode in a Den: the gold edge round the screen
+    if D.active and not D.play then bar.edge:Show() else bar.edge:Hide() end
     if B and B.ShowPill then B.ShowPill(want) end
     D.Paint()
     menuRefresh()
@@ -939,6 +1063,14 @@ function D.Report(what)
             r.model, r.icon, r.empty, r.rows, r.cols, r.tile)
         lines[#lines + 1] = string.format("catalog n=%d model=%d boxed=%d wmo=%d none=%d", r.catalog, r.withModel, r.boxed, r.wmo, r.none)
         if #r.missing > 0 then lines[#lines + 1] = "nomodel " .. table.concat(r.missing, ","):sub(1, 180) end
+        -- what this client's model frames have of a side view's methods (one line a frame type), and the framing on now
+        if b.ModelApi then for _, l in ipairs(b.ModelApi()) do lines[#lines + 1] = "modelapi " .. l end end
+        if b.FitConf then
+            local f = b.FitConf()
+            local t1 = b.Window and b.Window() and b.Window().tiles and b.Window().tiles[1]
+            lines[#lines + 1] = string.format("fit frame=%s pitch=%s view=%s fit=%s cam=%s pitched=%s", tostring(f.frame), tostring(f.pitch),
+                tostring(f.view), tostring(f.fit), tostring(f.cam), tostring(t1 and t1.pitched or false))
+        end
     end
     local s = (b and b.state) or {}
     lines[#lines + 1] = string.format("state sel=%s n=%s undo=%s redo=%s clip=%s grid=%s lite=%s mode=%s tab=%s pick=%s", s.selName or "-",
@@ -976,11 +1108,16 @@ function D.TestAction(text)
     local a, b = w[1] or "", B()
     if not b then return false end
     closeMenus()
+    -- the placement aids (Gizmo.lua): build mode, the live preview, the gizmo's axis, the menu
+    if a == "gizmo" then return W.Gizmo and W.Gizmo.TestAction(w) or false end
     if a == "report" then D.Report(w[2]); return true end
     if a == "gallery" then if not (b.Window() and b.Window():IsShown()) then bar.build:Click() end; if w[2] then b.ShowTab(w[2]) end; return true end
     if a == "nogallery" then if b.Window() then b.Window():Hide() end; return true end
     if a == "tab" then return b.ShowTab(w[2] or "all") end
-    if a == "fit" then return b.SetFit(w[2], w[3], w[4], w[5], w[6], w[7], w[8]) end   -- fill dx dy dz unit scaledPos cam, or "reset"
+    if a == "fit" then   -- "fit frame=PlayerModel cam=0 ..." (Builder.lua B.SetFit's words), the older "fit fill dx dy dz unit scaledPos cam", or "reset"
+        if (w[2] or ""):find("=") then return b.SetFit(table.concat(w, " ", 2)) end
+        return b.SetFit(w[2], w[3], w[4], w[5], w[6], w[7], w[8])
+    end
     if a == "page" then return b.Page(tonumber(w[2]) or 1) end
     if a == "pick" or a == "place" then
         local c = find(w[2])

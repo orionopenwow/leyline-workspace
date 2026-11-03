@@ -280,6 +280,27 @@ S.ED = {
 }
 S.ED_HEX = { gold = "e0a43a", text = "ebebef", muted = "999ea8" }
 local ED = S.ED
+-- The editor's own icons (owner, 3 Nov 10:36: "Don't use the game's icons for the UI"): flat white line icons on
+-- transparent, ours (tools/den-ui/icons/make_icons.py draws them; Media\Icons\<name>.tga, 64 x 64), tinted by
+-- vertex colour: white, muted, or gold when on. S.Icon("rotate") is the path.
+S.ICON_DIR = "Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\"
+S.ICONS = { "all", "banners", "barrels", "build", "buildings", "class", "close", "crates", "decor", "delete", "dock", "dojo", "duplicate",
+    "favourites", "fences", "files", "fires", "floor", "furniture", "grid", "ground", "help", "invite", "keep", "lights", "lock", "market", "menu",
+    "models", "move", "nature", "noimage", "objects", "path", "place", "play", "prefabs", "recent", "redo", "rotate", "scale",
+    "search", "seating", "select", "snap", "stamp", "storage", "structure", "tables", "tents", "undo" }
+local iconSet = {}
+for _, n in ipairs(S.ICONS) do iconSet[n] = true end
+function S.Icon(name) return S.ICON_DIR .. (iconSet[name or ""] and name or "noimage") end
+-- a texture showing one of our icons, white (or c), the whole image (no crop: they are drawn with their own margin)
+function S.SetIcon(tex, name, c)
+    if not tex then return end
+    tex:SetTexture(S.Icon(name))
+    if tex.SetTexCoord then tex:SetTexCoord(0, 1, 0, 1) end
+    c = c or ED.text
+    if tex.SetVertexColor then tex:SetVertexColor(c[1], c[2], c[3], c[4] or 1) end
+    tex.iconName = name
+end
+
 -- Sizes (UI units; the addon's own fit scale makes one unit about one pixel at 1080p, 1.2 at 1440p). Owner, 3 Nov
 -- 08:40: "UI too small and bulky": text 13 (the stock small font is 10), titles 15, chips 28 high, icons 40.
 S.ED_SIZE = { text = 13, label = 13, title = 15, small = 13, chip = 28, icon = 40 }
@@ -311,11 +332,23 @@ function S.EdText(parent, size, layer)
     return fs
 end
 
--- A panel in the editor look: the translucent near-black fill and the subtle edge.
+-- A panel in the editor look (owner 3 Nov 10:35: "fix all UI windows to not be clipped and so boxy"): a soft,
+-- rounded backdrop (the tooltip's rounded edge, Interface\Tooltips\UI-Tooltip-Border, 12 px, over a dark translucent
+-- fill inset 3 px), a muted edge; gold for what is on (S.EdEdge). A frame without backdrops gets the flat fill.
+S.ROUND_EDGE = "Interface\\Tooltips\\UI-Tooltip-Border"
+S.ED_EDGE = { 0.62, 0.64, 0.70, 0.55 }
+local ROUND = { bgFile = S.WHITE, edgeFile = S.ROUND_EDGE, tile = false, edgeSize = 12, insets = { left = 3, right = 3, top = 3, bottom = 3 } }
+local ROUND_SMALL = { bgFile = S.WHITE, edgeFile = S.ROUND_EDGE, tile = false, edgeSize = 9, insets = { left = 2, right = 2, top = 2, bottom = 2 } }
+S.ROUND, S.ROUND_SMALL = ROUND, ROUND_SMALL
 function S.EdPanel(frame, alpha, fill)
     local c = fill or ED.panel
     c = { c[1], c[2], c[3], alpha or c[4] }
-    if not frame.edFill then
+    if frame.SetBackdrop then
+        if not frame.edRound then frame:SetBackdrop(ROUND); frame.edRound = true end
+        frame:SetBackdropColor(unpackC(c))
+        local e = frame.edEdgeColour or S.ED_EDGE
+        frame:SetBackdropBorderColor(unpackC(e))
+    elseif not frame.edFill then
         frame.edFill = solid(frame, "BACKGROUND", c)
         frame.edFill:SetAllPoints(frame)
         frame.edEdge = border(frame, ED.edge)
@@ -323,6 +356,31 @@ function S.EdPanel(frame, alpha, fill)
         frame.edFill:SetTexture(unpackC(c))
     end
     return frame
+end
+
+-- The panel's edge in another colour (gold: what is on / build mode).
+function S.EdEdge(frame, c)
+    frame.edEdgeColour = c
+    if frame.edRound then frame:SetBackdropBorderColor(unpackC((c == ED.edge or not c) and S.ED_EDGE or c)); return end
+    if not frame.edEdge then frame.edEdge = border(frame, c or ED.edge) end
+    for _, t in ipairs(frame.edEdge) do t:SetTexture(unpackC(c or ED.edge)) end
+end
+
+-- Fit a text to a width: the whole of it when it fits, else cut with "..." (and true: the caller shows the whole in a
+-- tooltip). Measured with the FontString itself.
+function S.Elide(fs, text, w)
+    text = tostring(text or "")
+    fs:SetText(text)
+    local tw = fs.GetStringWidth and tonumber((fs:GetStringWidth()))
+    if not tw or tw <= w then return false end
+    local lo, hi = 0, #text
+    while lo < hi do
+        local mid = math.floor((lo + hi + 1) / 2)
+        fs:SetText(text:sub(1, mid):gsub("%s+$", "") .. "...")
+        if (tonumber((fs:GetStringWidth())) or 0) <= w then lo = mid else hi = mid - 1 end
+    end
+    fs:SetText(text:sub(1, lo):gsub("%s+$", "") .. "...")
+    return true
 end
 
 -- A small-caps label: upper case, small, muted (or gold).
@@ -363,6 +421,13 @@ function S.EdTipFrame() return tip end
 
 local function edPaint(b)
     local enabled = b.enabled ~= false
+    if b.edRound then
+        local c = ED.tile
+        if b.edActive then c = ED.goldFill elseif b.edOver and enabled then c = { 0.13, 0.135, 0.155, 0.96 } end
+        b:SetBackdropColor(unpackC(c))
+        local e = b.edActive and ED.gold or (b.edOver and enabled and { 0.8, 0.8, 0.85, 0.7 } or { 0.55, 0.57, 0.62, 0.45 })
+        b:SetBackdropBorderColor(unpackC(e))
+    end
     if b.edBg then
         local c = ED.tile
         if b.edActive then c = ED.goldFill elseif b.edOver and enabled then c = { 0.13, 0.135, 0.155, 0.96 } end
@@ -373,6 +438,10 @@ local function edPaint(b)
         for _, t in ipairs(b.edEdges) do t:SetTexture(unpackC(e)) end
     end
     if b.edIcon and b.edIcon.SetDesaturated then b.edIcon:SetDesaturated(not enabled) end
+    if b.edIcon and b.edIcon.iconName and b.edIcon.SetVertexColor then
+        local c = b.edActive and ED.gold or (b.edOver and ED.text or { 0.82, 0.83, 0.86, 1 })
+        b.edIcon:SetVertexColor(c[1], c[2], c[3], 1)
+    end
     if b.edIcon and b.edIcon.SetAlpha then b.edIcon:SetAlpha(enabled and 1 or 0.4) end
     if b.edText then
         local t = (not enabled) and ED.off or (b.edActive and ED.gold or ED.text)
@@ -384,9 +453,14 @@ S.EdPaint = edPaint
 local function edBase(parent, w, h, onClick, ...)
     local b = CreateFrame("Button", nil, parent)
     b:SetWidth(w); b:SetHeight(h)
-    b.edBg = solid(b, "BACKGROUND", ED.tile)
-    b.edBg:SetAllPoints(b)
-    b.edEdges = border(b, ED.edge, "BORDER")
+    if b.SetBackdrop then
+        b:SetBackdrop(ROUND_SMALL)
+        b.edRound = true
+    else
+        b.edBg = solid(b, "BACKGROUND", ED.tile)
+        b.edBg:SetAllPoints(b)
+        b.edEdges = border(b, ED.edge, "BORDER")
+    end
     b.SetActive = function(self, on) self.edActive = on and true or nil; edPaint(self) end
     b.IsActive = function(self) return self.edActive == true end
     local enable, disable = b.Enable, b.Disable
@@ -410,8 +484,10 @@ function S.EdIcon(parent, size, icon, label, onClick, ...)
     b.edIcon = b:CreateTexture(nil, "ARTWORK")
     local inset = math.max(3, math.floor(size / 8))
     b.edIcon:SetPoint("TOPLEFT", inset, -inset); b.edIcon:SetPoint("BOTTOMRIGHT", -inset, inset)
-    b.edIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    b.SetIcon = function(self, path) self.iconPath = path; self.edIcon:SetTexture(path) end
+    b.SetIcon = function(self, path)
+        if path and not path:find("\\") then S.SetIcon(self.edIcon, path); path = S.Icon(path) else self.edIcon:SetTexture(path) end
+        self.iconPath = path
+    end
     b:SetIcon(icon)
     b.SetText = function(self, t) self.edLabel = t; self.text = t end
     b.GetText = function(self) return self.edLabel end
@@ -438,7 +514,7 @@ function S.EdChip(parent, text, w, onClick, ...)
     b:SetText(text or "")
     if not w then
         local tw = fs.GetStringWidth and tonumber((fs:GetStringWidth()))
-        b:SetWidth(math.floor((tw or (#tostring(text or "") * 7)) + 20))
+        b:SetWidth(math.floor((tw or (#tostring(text or "") * 7)) * 1.08 + 22))   -- room for a wider font than measured
     end
     edPaint(b)
     return b
@@ -450,9 +526,15 @@ function S.EdInput(parent, w, h)
     e:SetWidth(w or 120); e:SetHeight(h or 26)
     if e.SetFontObject then e:SetFontObject(S.EdFont(S.ED_SIZE.text)) end
     if e.SetTextInsets then e:SetTextInsets(7, 7, 0, 0) end
-    local bg = solid(e, "BACKGROUND", { 0, 0, 0, 0.55 })
-    bg:SetAllPoints(e)
-    e.edEdges = border(e, ED.edge, "BORDER")
+    if e.SetBackdrop then
+        e:SetBackdrop(ROUND_SMALL)
+        e:SetBackdropColor(0, 0, 0, 0.55)
+        e:SetBackdropBorderColor(0.55, 0.57, 0.62, 0.5)
+    else
+        local bg = solid(e, "BACKGROUND", { 0, 0, 0, 0.55 })
+        bg:SetAllPoints(e)
+        e.edEdges = border(e, ED.edge, "BORDER")
+    end
     e:SetAutoFocus(false)
     e:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     return e

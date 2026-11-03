@@ -7,7 +7,10 @@
                                                                     its own on spare ports, a scratch folder)
     py -3 tools/den-check/den_check.py features                    `test`, then the Den editor's feature test (den_features,
                                                                     below): every editor action through the Leyline UI's own
-                                                                    buttons, a screenshot after each (logs/den-features/)
+                                                                    buttons, a screenshot after each (logs/den-features/);
+                                                                    then the placement aids (aids_features) and, on
+                                                                    Windows, the build camera's hover calibration
+                                                                    (the real cursor moved: leave the mouse alone)
     py -3 tools/den-check/den_check.py test                        the real thing, unattended: the newest Den Lite,
                                                                     then the launcher's own My Den (Leyline.exe
                                                                     den-play --test) starts Den Lite and the game,
@@ -50,6 +53,7 @@ headers and Leyline's own archive.
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -983,23 +987,26 @@ def parse_report(lines):
         kv = {k: v for k, v in re.findall(r"(\w+)=(\S*)", rest)}
         kv["_text"] = rest
         out[head] = kv
+        # a head that comes more than once (modelapi: one line a frame type): every line, in order
+        out.setdefault("_lines", {}).setdefault(head, []).append(rest)
     return out
 
 
-# den-features' framing sweep for the gallery's model tiles (Builder.lua B.TileFit; `.den ui fit <fill> <dx> <dy> <dz>
-# <unit> <scaledPos> <cam>`): the default (the old wiki's Model frame space: origin the frame's bottom-left, one unit
-# the screen's diagonal; the box 0.8 of the tile, its middle at the tile's middle), then one thing changed a picture:
-# right a quarter tile (x is across), up a quarter (y is up), toward you half a tile (z is depth: bigger if seen in
-# perspective), the unit the screen's height, positions over the model's scale, a smaller fill, the model's camera 0.
+# den-features' sweep for the gallery's model tiles (Builder.lua B.FIT / B.SetFit; `.den ui fit <word=value ...>`). The
+# owner's PC (3 Nov) showed whole models but from straight above: a plain Model frame puts a doodad's "up" toward you.
+# One run settles how this client gives a side view: each picture changes ONE thing from the default (a Model frame,
+# tipped back a quarter turn by SetPitch where the client has it, framed on the box's middle). The report's "modelapi"
+# lines say which methods each frame type has; "fit" what was on. Pick the picture with benches seen from the side and
+# set its words as Builder.lua's B.FIT.
 FIT_SWEEP = [
-    ("1-default", "0.8 0 0 0 diag 0"),
-    ("2-right-quarter", "0.8 0.25 0 0 diag 0"),
-    ("3-up-quarter", "0.8 0 0.25 0 diag 0"),
-    ("4-nearer-half", "0.8 0 0 0.5 diag 0"),
-    ("5-unit-height", "0.8 0 0 0 height 0"),
-    ("6-scaled-pos", "0.8 0 0 0 diag 1"),
-    ("7-fill-half", "0.5 0 0 0 diag 0"),
-    ("8-camera-0", "0.8 0 0 0 diag 0 0"),
+    ("1-model-default", "default"),                              # Model; SetPitch(-90deg) if the client has it
+    ("2-model-camera0", "cam=0"),                                # + the model's own camera 0
+    ("3-playermodel", "frame=PlayerModel"),                      # a PlayerModel frame, the same framing
+    ("4-playermodel-camera0", "frame=PlayerModel cam=0"),        # a PlayerModel, camera 0
+    ("5-playermodel-own", "frame=PlayerModel fit=own"),          # a PlayerModel framing it itself (scale 1 at 0,0,0)
+    ("6-dressup", "frame=DressUpModel"),                         # a DressUpModel frame, the same framing
+    ("7-dressup-own", "frame=DressUpModel fit=own"),             # a DressUpModel framing it itself
+    ("8-model-top-no-pitch", "pitch=off view=top"),              # the old top view, now centred (the fallback)
 ]
 
 
@@ -1083,8 +1090,10 @@ def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
             rep.add("INFO", "gallery: props without a model in your files", r["nomodel"]["_text"][:180])
         # the tiles' framing (3 Nov: lit, but each tile showed a close-up): the framings of FIT_SWEEP, a picture
         # each, then the default again. Compare logs\den-features\fit-* and set the best in Builder.lua B.FIT.
+        for l in dict.fromkeys(r.get("_lines", {}).get("modelapi", [])):
+            rep.add("INFO", "gallery: a model frame's methods", l)
         for label, args in FIT_SWEEP:
-            ui("fit " + args)
+            ui("fit " + ("reset" if args == "default" else args))
             shot("fit-" + label)
         ui("fit reset")
         ui("page 1")
@@ -1184,6 +1193,383 @@ def den_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
                 except OSError:
                     pass
         rep.add("INFO", "your Den after the feature test", "put back as it was (%s props)" % props())
+
+
+# ------------------------------------------------------------------------------------------------ the placement aids
+# Owner 3 Nov 10:29 - 10:36: a live preview of the prop under the mouse, the three arrows, select by hovering and
+# clicking. Den Lite labs/den-lite src/gizmo.rs, the Leyline UI's Gizmo.lua. aids_features drives them through the
+# addon's test actions (`.den ui gizmo ...`, DenBar.lua D.TestAction); hover_calibration moves the real cursor.
+
+AIDS_SAVE = "aidstest"
+# gizmo.rs Camera::default: the build camera's first guesses (diagonal field of view, pivot over the feet, distance
+# behind the pivot, looking down)
+CAMERA = {"fov": math.pi / 2, "pivot": 2.0, "dist": 12.0, "pitch": 0.5}
+CAMERA_FILE = "den-lite.camera.json"
+SAMPLES_FILE = "den-lite.camera-samples"
+# where hover_calibration puts the cursor: fractions of the game window (from the left, from the top), all below the
+# middle (the ground in front of the character), spread across
+CAL_POINTS = [(0.5, 0.62), (0.3, 0.72), (0.7, 0.72), (0.5, 0.85), (0.38, 0.9), (0.62, 0.66)]
+SCAN_G = 0x22
+
+
+def project(cam, player, u, v, aspect, floor):
+    """gizmo.rs `project`, the same numbers: where the cursor at (u, v) (-1 .. 1, right and up) points on the ground at
+    height `floor`, the build camera `cam` behind the player at (x, y, z, facing). None: no ground within 60 yards."""
+    x, y, z, o = player
+    so, co = math.sin(o), math.cos(o)
+    fwd, right = (co, so, 0.0), (so, -co, 0.0)
+    sp, cp = math.sin(cam["pitch"]), math.cos(cam["pitch"])
+    pivot = (x, y, z + cam["pivot"])
+    eye = (pivot[0] - cam["dist"] * cp * fwd[0], pivot[1] - cam["dist"] * cp * fwd[1], pivot[2] + cam["dist"] * sp)
+    look = (cp * fwd[0], cp * fwd[1], -sp)
+    up = (right[1] * look[2] - right[2] * look[1], right[2] * look[0] - right[0] * look[2], right[0] * look[1] - right[1] * look[0])
+    a = min(max(aspect, 0.2), 5.0)
+    tv = math.tan(cam["fov"] / 2) / math.sqrt(1 + a * a)
+    u, v = min(max(u, -1.0), 1.0), min(max(v, -1.0), 1.0)
+    d = [look[i] + right[i] * u * tv * a + up[i] * v * tv for i in range(3)]
+    if d[2] >= -1e-4:
+        return None
+    t = (floor - eye[2]) / d[2]
+    if t <= 0:
+        return None
+    px, py = eye[0] + d[0] * t, eye[1] + d[1] * t
+    return (px, py) if math.hypot(px - x, py - y) <= 60.0 else None
+
+
+def camera_error(cam, samples):
+    """The root mean square, in yards, of where the camera says each sample's cursor lands against where the exact
+    click landed (a cursor whose ray misses counts 30 yards)."""
+    if not samples:
+        return float("inf")
+    tot = 0.0
+    for sm in samples:
+        hit = project(cam, sm["player"], sm["u"], sm["v"], sm["aspect"], sm["dest"][2])
+        tot += 900.0 if hit is None else (hit[0] - sm["dest"][0]) ** 2 + (hit[1] - sm["dest"][1]) ** 2
+    return math.sqrt(tot / len(samples))
+
+
+FIT_KEYS = ("fov", "pivot", "dist", "pitch")
+FIT_BOUNDS = {"fov": (0.3, 2.8), "pivot": (0.0, 5.0), "dist": (1.0, 40.0), "pitch": (-0.3, 1.5)}
+
+
+def fit_camera(samples, start=None, rounds=3000):
+    """The build camera that best fits the samples (Nelder-Mead on the four numbers, kept within FIT_BOUNDS):
+    (camera, its error in yards)."""
+    start = dict(start or CAMERA)
+
+    def cam_of(p):
+        return {k: min(max(p[i], FIT_BOUNDS[k][0]), FIT_BOUNDS[k][1]) for i, k in enumerate(FIT_KEYS)}
+
+    def f(p):
+        return camera_error(cam_of(p), samples)
+    pts = [[start[k] for k in FIT_KEYS]]
+    for i, k in enumerate(FIT_KEYS):
+        p = list(pts[0])
+        p[i] += 0.3 if k in ("fov", "pitch") else 1.5
+        pts.append(p)
+    vals = [f(p) for p in pts]
+    for _ in range(rounds):
+        order = sorted(range(len(pts)), key=lambda i: vals[i])
+        pts, vals = [pts[i] for i in order], [vals[i] for i in order]
+        if vals[-1] - vals[0] < 1e-9:
+            break
+        c = [sum(p[j] for p in pts[:-1]) / (len(pts) - 1) for j in range(len(FIT_KEYS))]
+        r = [c[j] + (c[j] - pts[-1][j]) for j in range(len(FIT_KEYS))]
+        fr = f(r)
+        if fr < vals[0]:
+            e = [c[j] + 2 * (c[j] - pts[-1][j]) for j in range(len(FIT_KEYS))]
+            fe = f(e)
+            pts[-1], vals[-1] = (e, fe) if fe < fr else (r, fr)
+        elif fr < vals[-2]:
+            pts[-1], vals[-1] = r, fr
+        else:
+            k = [c[j] + 0.5 * (pts[-1][j] - c[j]) for j in range(len(FIT_KEYS))]
+            fk = f(k)
+            if fk < vals[-1]:
+                pts[-1], vals[-1] = k, fk
+            else:
+                for i in range(1, len(pts)):
+                    pts[i] = [pts[0][j] + 0.5 * (pts[i][j] - pts[0][j]) for j in range(len(FIT_KEYS))]
+                    vals[i] = f(pts[i])
+    best = min(range(len(pts)), key=lambda i: vals[i])
+    return cam_of(pts[best]), vals[best]
+
+
+def read_samples(den_dir, skip=0):
+    """The exact clicks' calibration samples Den Lite wrote (gizmo.rs Sample), from line `skip` on."""
+    out = []
+    try:
+        lines = (Path(den_dir) / SAMPLES_FILE).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return out
+    for line in lines[skip:]:
+        try:
+            v = json.loads(line)
+        except ValueError:
+            continue
+        if all(k in v for k in ("u", "v", "aspect", "player", "dest")):
+            out.append(v)
+    return out
+
+
+def aids_of(answer):
+    """The host's placement aids from a test command's answer (test-out "aids": gizmo.rs `view`)."""
+    a = answer.get("aids") if isinstance(answer, dict) else None
+    return a if isinstance(a, dict) else {}
+
+
+def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0):
+    """The placement aids through the Leyline UI's own test actions, a picture after each: build mode (props shown
+    as things the game highlights), the live preview (the copy in front, then where the cursor's ray lands), a click
+    places it, Esc, the gizmo's three flags around the selection, the wheel along a picked axis, the menu's
+    Duplicate, play mode. Your Den is saved first and put back after."""
+    den_dir, outdir = Path(den_dir), Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    n = [0]
+
+    def shot(name):
+        n[0] += 1
+        out = outdir / ("aids-%02d-%s.png" % (n[0], name))
+        ok, _ = shoot(out)
+        return out.name if ok else None
+
+    def ui(action):
+        r = ch.send(".den ui %s" % action)
+        time.sleep(settle)
+        return r
+
+    def aids():
+        return aids_of(ch.send(".den size"))
+
+    def props():
+        return (ch.send(".den size") or {}).get("props")
+
+    first = ch.send(".den size")
+    if first is None:
+        rep.add("SKIP", "the placement aids", "Den Lite didn't take the test's commands")
+        return False
+    if "aids" not in first:
+        rep.add("SKIP", "the placement aids", "this Den Lite is from before them: update Den Lite (the launcher puts the newest in)")
+        return False
+    before = den_dir / ("%s-before.den.json" % AIDS_SAVE)
+    kept = stash([before, den_dir / "backup.den.json"])
+    ch.send(".den save %s-before" % AIDS_SAVE)
+    try:
+        # build mode
+        t = now_ms()
+        ui("gizmo build on")
+        ev = wait_for(lambda: event_after(den_dir, "build_mode", t), wait)
+        pic = shot("build-mode")
+        rep.ok(ev is not None and ev.get("detail") == "build", "build mode: props light up under the mouse",
+               "your props are shown as things the game highlights and lets you right-click" + ((", " + pic) if pic else ""),
+               "The Leyline UI didn't start build mode: update the Leyline addons, then run den-features again.")
+        # the live preview: armed, in front; then the cursor's point
+        ui("gizmo arm 2413")
+        a = aids()
+        pic = shot("preview")
+        rep.ok(str(a.get("armed", "")).startswith("place,2413") and a.get("ghost"), "preview: the prop's copy in front of you",
+               "armed %s, the copy at %s%s" % (a.get("armed"), a.get("ghost"), (", " + pic) if pic else ""),
+               "Den Lite showed no copy: send logs\\den-features-latest.txt.")
+        g0 = a.get("ghost")
+        ui("gizmo hover 0.25 -0.35")
+        a = aids()
+        cur = a.get("cursor") or []
+        pic = shot("preview-hover")
+        rep.ok(len(cur) >= 2 and abs(cur[0] - 0.25) < 0.01 and abs(cur[1] + 0.35) < 0.01 and a.get("ghost") and a.get("ghost") != g0,
+               "preview: the copy goes where the cursor points", "now at %s%s" % (a.get("ghost"), (", " + pic) if pic else ""),
+               "The copy didn't move to the cursor's point: send logs\\den-features-latest.txt.")
+        p0 = props() or 0
+        t = now_ms()
+        ui("gizmo commit")
+        ev = wait_for(lambda: event_after(den_dir, "den_change", t), wait)
+        rep.ok(ev is not None and (props() or 0) == p0 + 1, "preview: a click places it there", (ev or {}).get("detail", "nothing placed"),
+               "Den Lite didn't place the prop: send logs\\den-features-latest.txt.")
+        ui("gizmo cancel")
+        a = aids()
+        rep.ok(a.get("armed") == "off" and not a.get("ghost"), "preview: Esc takes the copy away", "armed %s" % a.get("armed"),
+               "The copy stayed: send logs\\den-features-latest.txt.")
+        # the gizmo: the selection's three flags, the wheel along an axis
+        ui("select")
+        a = aids()
+        pic = shot("gizmo")
+        rep.ok(a.get("gizmo") == 3, "gizmo: three flags around the selected prop (red X, green Y, blue Z)",
+               "%s flags, prop %s%s" % (a.get("gizmo"), a.get("sel"), (", " + pic) if pic else ""),
+               "No flags around the selection: send logs\\den-features-latest.txt and the picture.")
+        ui("gizmo axis z")
+        t = now_ms()
+        ui("gizmo wheel 1")
+        ev = wait_for(lambda: event_after(den_dir, "den_change", t), wait)
+        pic = shot("gizmo-moved")
+        rep.ok(ev is not None and aids().get("axis") == "z", "gizmo: the wheel moves it along the picked axis",
+               "axis z, %s%s" % ((ev or {}).get("detail", "no change"), (", " + pic) if pic else ""),
+               "The wheel didn't move the prop: send logs\\den-features-latest.txt.")
+        ui("gizmo axis off")
+        # the right-click menu's Duplicate (the menu opens at the cursor on a right-click in the game)
+        p0 = props() or 0
+        ui("gizmo menu 2")
+        got = wait_for(lambda: (props() or 0) == p0 + 1, wait, 0.5)
+        rep.ok(bool(got), "menu: Duplicate", "%s -> %s props" % (p0, props()), "The menu's Duplicate did nothing: send logs\\den-features-latest.txt.")
+        # play mode: plain again
+        t = now_ms()
+        ui("gizmo build off")
+        ev = wait_for(lambda: event_after(den_dir, "build_mode", t), wait)
+        rep.ok(ev is not None and ev.get("detail") == "play", "play mode: props plain again", (ev or {}).get("detail", "no change"),
+               "Play mode didn't come back: send logs\\den-features-latest.txt.")
+        return True
+    finally:
+        if before.is_file():
+            ch.send(".den load %s-before replace" % AIDS_SAVE)
+        unstash(kept)
+        if kept.get(before) is None:
+            try:
+                before.unlink()
+            except OSError:
+                pass
+
+
+def win_mouse(pid):
+    """The real cursor over the game's window (Windows): move(fx, fy) puts it at that fraction of the window's client
+    area; aim_click() presses G (the exact click's key while armed) and clicks the left button where the cursor is.
+    Each returns "" when done, else why not. None off Windows."""
+    if os.name != "nt":
+        return None
+    import ctypes
+    from ctypes import wintypes
+    u = ctypes.windll.user32
+
+    class KEYBDINPUT(ctypes.Structure):
+        _fields_ = [("wVk", wintypes.WORD), ("wScan", wintypes.WORD), ("dwFlags", wintypes.DWORD), ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+    class MOUSEINPUT(ctypes.Structure):
+        _fields_ = [("dx", wintypes.LONG), ("dy", wintypes.LONG), ("mouseData", wintypes.DWORD), ("dwFlags", wintypes.DWORD), ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+    class _U(ctypes.Union):
+        _fields_ = [("ki", KEYBDINPUT), ("mi", MOUSEINPUT)]
+
+    class INPUT(ctypes.Structure):
+        _fields_ = [("type", wintypes.DWORD), ("u", _U)]
+
+    def key(scan, flags):
+        i = INPUT(type=1, u=_U(ki=KEYBDINPUT(wVk=0, wScan=scan, dwFlags=flags, time=0, dwExtraInfo=0)))
+        return u.SendInput(1, ctypes.byref(i), ctypes.sizeof(INPUT))
+
+    def button(flags):
+        i = INPUT(type=0, u=_U(mi=MOUSEINPUT(dx=0, dy=0, mouseData=0, dwFlags=flags, time=0, dwExtraInfo=0)))
+        return u.SendInput(1, ctypes.byref(i), ctypes.sizeof(INPUT))
+
+    class Mouse:
+        def front(self):
+            h = game_window(pid)
+            if not h:
+                return None
+            key(0x38, KEYEVENTF_SCANCODE)
+            key(0x38, KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP)
+            u.ShowWindow(h, 9)
+            u.SetForegroundWindow(h)
+            time.sleep(0.3)
+            return h if u.GetForegroundWindow() == h else None
+
+        def move(self, fx, fy):
+            h = self.front()
+            if not h:
+                return "the game's window couldn't be brought to the front"
+            r = wintypes.RECT()
+            u.GetClientRect(h, ctypes.byref(r))
+            pt = wintypes.POINT(int(r.right * fx), int(r.bottom * fy))
+            u.ClientToScreen(h, ctypes.byref(pt))
+            return "" if u.SetCursorPos(pt.x, pt.y) else "SetCursorPos didn't move the cursor"
+
+        def aim_click(self):
+            if not self.front():
+                return "the game's window couldn't be brought to the front"
+            n = key(SCAN_G, KEYEVENTF_SCANCODE) + key(SCAN_G, KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP)
+            time.sleep(0.5)
+            n += button(0x0002)
+            time.sleep(0.08)
+            n += button(0x0004)
+            return "" if n == 4 else "SendInput took %d of 4 events" % n
+    return Mouse()
+
+
+def hover_calibration(rep, ch, den_dir, shoot, outdir, mouse, settle=0.8, wait=4.0, points=CAL_POINTS):
+    """The build camera measured on this PC: the real cursor put at a few points of the game window (`mouse.move`);
+    at each, where Den Lite's ray put the prop's copy (the live preview) and, pressing G and clicking there
+    (`mouse.aim_click`: the game's own ground-target cursor), where the game itself says the point is (Den Lite's
+    calibration sample), with a picture. The camera (field of view, pivot, distance, pitch) fitted to those points is
+    printed and written to Den Lite's `den-lite.camera.json` (used from the next Den start)."""
+    den_dir, outdir = Path(den_dir), Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    if mouse is None:
+        rep.add("SKIP", "hover calibration", "the real cursor is moved on Windows only")
+        return None
+    first = ch.send(".den size")
+    if first is None or "aids" not in first:
+        rep.add("SKIP", "hover calibration", "Den Lite didn't take the test's commands, or is from before the placement aids")
+        return None
+    before = den_dir / ("%s-before.den.json" % AIDS_SAVE)
+    kept = stash([before, den_dir / "backup.den.json"])
+    ch.send(".den save %s-before" % AIDS_SAVE)
+    skip = len(read_samples(den_dir))
+    try:
+        cam_now = dict(CAMERA)
+        try:
+            cam_now.update({k: float(v) for k, v in json.loads((den_dir / CAMERA_FILE).read_text(encoding="utf-8")).items() if k in CAMERA})
+        except (OSError, ValueError, AttributeError):
+            pass
+        ch.send(".den ui gizmo build on")
+        time.sleep(settle)
+        ch.send(".den ui gizmo arm 2413")
+        time.sleep(settle)
+        previews = []
+        for i, (fx, fy) in enumerate(points, 1):
+            why = mouse.move(fx, fy)
+            if why:
+                rep.add("FAIL", "hover calibration: point %d" % i, why, "Leave the game window alone during the test, then run it again.")
+                continue
+            time.sleep(settle)
+            a = aids_of(ch.send(".den size"))
+            out = outdir / ("calibrate-%d.png" % i)
+            ok, _ = shoot(out)
+            have = len(read_samples(den_dir, skip))
+            why = mouse.aim_click()
+            got = wait_for(lambda: len(read_samples(den_dir, skip)) > have or None, wait, 0.2)
+            rep.add("INFO", "hover calibration: point %d" % i, "window %.2f, %.2f: cursor %s, the copy at %s, %s%s" % (
+                fx, fy, a.get("cursor"), a.get("ghost"), "the click measured" if got else ("no click measured" + (" (%s)" % why if why else "")),
+                (", " + out.name) if ok else ""))
+            previews.append(a.get("ghost"))
+        samples = read_samples(den_dir, skip)
+        if len(samples) < 4:
+            rep.add("FAIL", "hover calibration", "%d of %d clicks measured: too few to fit the camera" % (len(samples), len(points)),
+                    "G must start the exact-click cursor (the Leyline UI's build mode, armed): send logs\\den-features-latest.txt and the pictures.")
+            return None
+        err0 = camera_error(cam_now, samples)
+        cam, err = fit_camera(samples, cam_now)
+        rep.add("INFO", "hover calibration: before", "the preview was %.2f yd off the real point on average (camera %s)" % (
+            err0, ", ".join("%s %.3f" % (k, cam_now[k]) for k in FIT_KEYS)))
+        rep.ok(err <= 0.6, "hover calibration: the camera fitted",
+               "fov %.3f rad (diagonal), pivot %.2f yd, distance %.2f yd, pitch %.3f rad: %.2f yd off on average over %d points" % (
+                   cam["fov"], cam["pivot"], cam["dist"], cam["pitch"], err, len(samples)),
+               "No camera fits within 0.6 yd (the camera moved during the test?): send logs\\den-features-latest.txt and the pictures.")
+        if err <= 0.6 and err < err0:
+            try:
+                (den_dir / CAMERA_FILE).write_text(json.dumps({k: round(cam[k], 4) for k in FIT_KEYS}), encoding="utf-8")
+                rep.add("INFO", "hover calibration: saved", "%s (Den Lite uses it from the next Den start)" % CAMERA_FILE)
+            except OSError as e:
+                rep.add("INFO", "hover calibration: not saved", str(e)[:120])
+        return cam, err
+    finally:
+        try:
+            ch.send(".den ui gizmo cancel")
+            ch.send(".den ui gizmo build off")
+        finally:
+            if before.is_file():
+                ch.send(".den load %s-before replace" % AIDS_SAVE)
+            unstash(kept)
+            if kept.get(before) is None:
+                try:
+                    before.unlink()
+                except OSError:
+                    pass
 
 
 def guest_name(den_dir, user):
@@ -1305,8 +1691,12 @@ def den_lite_update(rep, root, fetch=_fetch):
 
 DEN_TEXTURE = "Tileset\\Leyline\\DenWhite.blp"
 # the Den's ground since 3 Nov (owner 08:41: "a default Elwynn ground color grass texture and ... a realm skybox"): the
-# game's own grass by name (launcher terrain crate pad.rs PAD_TEXTURE), the area's own sky, no table of the game's
+# game's own grass by name (launcher terrain crate pad.rs PAD_TEXTURE); 10:29 "do blue forest sky not grey green": the
+# Elwynn sky (the player's own Light.dbc, its Den lights pointed at Elwynn's: terrain crate dbc.rs elwynn_sky), the one
+# table of the game's in patch-T
 GRASS = "Tileset\\Elwynn\\ElwynnGrassBase.blp"
+SKY = "the Elwynn sky"
+LIGHT_TABLE = "DBFilesClient\\Light.dbc"
 
 
 def blp_is_ours(b):
@@ -1322,11 +1712,13 @@ def blp_is_ours(b):
 
 
 def patch_extras(names):
-    """Of patch-T's file names, what isn't the tile or our mark: the game's tables (the old white sky and zone name)
-    and textures (the old white ground). Since 3 Nov there should be none."""
+    """Of patch-T's file names, what isn't the tile, our mark or the Elwynn sky's Light.dbc: the game's other tables
+    (the old white sky and zone name) and textures (the old white ground). Since 3 Nov there should be none."""
     out = []
     for n in names:
         low = n.lower()
+        if low == LIGHT_TABLE.lower():
+            continue
         if low.startswith("dbfilesclient\\") or low.endswith(".blp"):
             out.append(n)
     return out
@@ -1334,9 +1726,9 @@ def patch_extras(names):
 
 def ground_lines(rep, detail, patch_t=None):
     """The Den's world, from the launcher's report (`ground_detail`, host/terrain.rs GroundStatus) and our patch-T:
-    the ground painted the game's own grass (only its name in the tile), nothing of the island on the tile, nothing
-    of the game's tables or textures in patch-T (the area's own sky and zone name). Only the picture shows what the
-    game drew."""
+    the ground painted the game's own grass (only its name in the tile), nothing of the island on the tile, the
+    Elwynn sky (Light.dbc the only table of the game's in patch-T; the zone's own name). Only the picture shows what
+    the game drew."""
     if not isinstance(detail, dict) or not detail:
         rep.add("INFO", "the Den's world", "the launcher doesn't say (an older launcher)")
         return
@@ -1361,14 +1753,18 @@ def ground_lines(rep, detail, patch_t=None):
         except Exception as e:  # noqa: BLE001 - said below
             extra, err = [], str(e)[:120]
         if err:
-            rep.add("FAIL", "sky/area: the game's own", "Data\\patch-T.MPQ couldn't be read: %s" % err, "Start My Den once more; still not: send this log.")
+            rep.add("FAIL", "zone: the game's own, no other table", "Data\\patch-T.MPQ couldn't be read: %s" % err, "Start My Den once more; still not: send this log.")
         else:
-            rep.ok(not extra, "sky/area: the game's own",
-                   "the area's normal sky and zone name: no table or texture of the game's in Data\\patch-T.MPQ" if not extra else
+            rep.ok(not extra, "zone: the game's own, no other table",
+                   "the zone's own name: Light.dbc (the sky) is the only table of the game's in Data\\patch-T.MPQ, no texture" if not extra else
                    "Data\\patch-T.MPQ still has %s" % ", ".join(extra[:4]),
                    "An older launcher made it: update the launcher and start My Den once more.")
     else:
         rep.add("INFO", "sky/area", "sky: %s; zone: %s" % (detail.get("sky", "?"), detail.get("area", "?")))
+    sky = str(detail.get("sky", "?"))
+    if "grass" in detail:
+        rep.ok(sky == SKY, "sky: the Elwynn sky", "Elwynn Forest's blue sky over the Den (your own Light.dbc)" if sky == SKY else
+               "the sky is %s" % sky, "Send this log: it says why your game's Light.dbc wasn't used.")
     for h in detail.get("hidden_by") or []:
         rep.add("INFO", "an archive read after the Den's hides part of it", str(h)[:200])
     if detail.get("whitened"):
@@ -1605,6 +2001,11 @@ def test(args, rep):
                 den_features(steps, FileChannel(den_dir), den_dir, lambda out: screenshot(pid, out), logs / "den-features")
             except Exception as e:  # noqa: BLE001 - the game still gets its picture and is closed
                 steps.add("FAIL", "the editor's feature test", "stopped: %s" % str(e)[:200], "Send logs\\den-test-latest.txt.")
+            try:
+                aids_features(steps, FileChannel(den_dir), den_dir, lambda out: screenshot(pid, out), logs / "den-features")
+                hover_calibration(steps, FileChannel(den_dir), den_dir, lambda out: screenshot(pid, out), logs / "den-features", win_mouse(pid))
+            except Exception as e:  # noqa: BLE001 - the game still gets its picture and is closed
+                steps.add("FAIL", "the placement aids", "stopped: %s" % str(e)[:200], "Send logs\\den-test-latest.txt.")
         time.sleep(1.5)
         ok, detail = screenshot(pid, shot)
         steps.add("INFO" if ok else "FAIL" if os.name == "nt" else "INFO", "screenshot", detail, "PowerShell couldn't capture the game window.")

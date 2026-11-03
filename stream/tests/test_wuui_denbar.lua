@@ -173,12 +173,13 @@ check("Den Lite's status arrived", D.status and D.status.role == "owner" and D.s
 check("the slim strip: Undo / Redo, Menu, Snap, the turn steps, Play, ?, Files, Invite, x",
     bar.undo:GetText() == "Undo 0" and bar.redo:GetText() == "Redo 0" and bar.menuBtn:GetText() == "Menu"
     and bar.snap:GetText() == "Snap: off" and bar.rot[15] and bar.rot[45] and bar.rot[90] and bar.rot[15]:IsActive()
-    and bar.playBtn:GetText() == "Play (F8)" and bar.help:GetText() == "?" and bar.save:GetText() == "Files"
-    and bar.invite:GetText() == "Invite" and bar.close:GetText() == "x" and bar.title:GetText() == "YOUR DEN")
+    and bar.playBtn:GetText() == "Play (F7)" and bar.help:GetText() == "?" and bar.save:GetText() == "Files"
+    and bar.invite:GetText() == "Invite" and bar.close:GetText() == "x" and bar.title:GetText() == "BUILD")
+check("build mode's mark: a thin gold edge round the screen", _G.LeylineDenBuildEdge:IsShown() and #_G.LeylineDenBuildEdge.lines == 4)
 check("the tool rail: Select, Build (F7), Move, Rotate, Stamps, Path, Ground, Dojo; no step stack (owner's shot)", D.Rail():IsShown()
-    and bar.select:GetText() == "Select" and bar.build:GetText() == "Build (F7)" and bar.move:GetText() == "Move"
+    and bar.select:GetText() == "Select" and bar.build:GetText() == "Build" and bar.move:GetText() == "Move"
     and bar.rotate:GetText() == "Rotate" and bar.ground:GetText() == "Shape ground" and bar.stamps:GetText() == "Stamps"
-    and bar.path:GetText() == "Path" and #bar.steps == 0 and bar.build.iconPath:find("^Interface\\Icons\\")
+    and bar.path:GetText() == "Path" and #bar.steps == 0 and bar.build.iconPath:find("^Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\", 1, false) and not bar.select.iconPath:find("Interface\\Icons", 1, true)
     and bar.ground.edText:GetText() == "Ground" and bar.build.edLabel:find("gallery"))
 check("square icon buttons of one size on the rail", (function()
     for _, k in ipairs({ "select", "build", "move", "rotate", "ground", "stamps", "path" }) do if not bar[k].edIcon then return false end end
@@ -193,10 +194,10 @@ check("the first time: the intro's first card", intro and intro:IsShown() and in
     and intro.body:GetText():find("empty white world that's yours") and intro.count:GetText() == "1 / 5")
 check("four short cards and the keys", #D.CARDS == 5 and (function()
     for i, c in ipairs(D.CARDS) do if (i < 5 and #c[2] > 160) or #c[2] > 220 or #c[1] > 20 then return false end end
-    return D.CARDS[2][1] == "Build" and D.CARDS[3][1] == "Shape ground" and D.CARDS[4][2]:find("Invite") and D.CARDS[5][1] == "Keys"
+    return D.CARDS[2][1] == "Build mode" and D.CARDS[2][2]:find("F7") and D.CARDS[3][1] == "Shape ground" and D.CARDS[4][2]:find("Invite") and D.CARDS[5][1] == "Keys"
 end)())
 intro.next:Fire("OnClick")
-check("Next: Build", intro.head:GetText() == "Build" and intro.count:GetText() == "2 / 5")
+check("Next: Build mode", intro.head:GetText() == "Build mode" and intro.count:GetText() == "2 / 5")
 intro.next:Fire("OnClick"); intro.next:Fire("OnClick"); intro.next:Fire("OnClick")
 check("the last card (the keys): Start building, no Skip", intro.head:GetText() == "Keys" and intro.next:GetText() == "Start building" and not intro.skip:IsShown())
 intro.next:Fire("OnClick")
@@ -318,8 +319,21 @@ _G.LeylineDenKeyPlay:Fire("OnClick", "LeftButton", false)
 check("F8: play mode (one press, down and up, counts once)", D.play == true)
 check("every editor window goes", not B.Window():IsShown() and not W.EditMode.DenPanel():IsShown() and not W.DenHome.Panel():IsShown()
     and not B.Panel():IsShown())
-check("the bar shrinks to one button", not bar:IsShown() and bar.pill:IsShown() and bar.pill.back:GetText() == "Back to building (F8)")
-check("a toast says how back", bar.pill.line:GetText():find("Back to building") ~= nil)
+check("play mode: no strip, rail, pill or edge; the corner chip and the play bar (Dojo, Class, Invite, Files)", not bar:IsShown()
+    and not D.Rail():IsShown() and not _G.LeylineEditorStatus:IsShown() and not _G.LeylineDenBuildEdge:IsShown() and bar.pill:IsShown()
+    and bar.pill.back:GetText() == "Your Den · Build (F7)" and bar.pill.play.dojo and bar.pill.play.class and bar.pill.play.invite
+    and bar.pill.play.files)
+check("the mode's banner: Play mode", _G.LeylineDenModeBanner:IsShown() and _G.LeylineDenModeBanner.label:GetText() == "Play mode")
+bar.pill.play.class:Fire("OnClick")
+check("Class: the ten classes", _G.LeylineDenClassMenu:IsShown() and #_G.LeylineDenClassMenu.rows == 10
+    and _G.LeylineDenClassMenu.rows[6]:GetText() == "Death Knight")
+local nc = #sent
+_G.LeylineDenClassMenu.rows[8]:Fire("OnClick")
+check("a class: .den class mage (the Den's command), the list closed", sent[nc + 1] == "wuden\tcmd\t1/1\tclass mage"
+    and not _G.LeylineDenClassMenu:IsShown())
+check("a toast says how back", (function()
+    for _, t in ipairs(D.toasts) do if t.text:find("Back to building") then return true end end
+    return bar.pill.line:GetText():find("Back to building") ~= nil end)())
 local mb = D.MenuButton()
 check("Esc menu: Back to building", mb and mb:IsShown() and mb:GetText() == "Back to building")
 GameMenuFrame:Show()
@@ -332,13 +346,17 @@ bar.pill.back:Fire("OnClick")
 check("and the pill's button back", D.play == false and bar:IsShown())
 D.SetPlay(true)
 _G.LeylineDenKeyBuild:Fire("OnClick", "LeftButton", true)
-check("F7 in play mode: back to building, the Builder opens", D.play == false and B.Window():IsShown())
+check("F7 in play mode: back to building, the Builder opens, the banner says Build mode", D.play == false and B.Window():IsShown()
+    and _G.LeylineDenModeBanner.label:GetText() == "Build mode" and _G.LeylineDenBuildEdge:IsShown())
+_G.LeylineDenKeyBuild:Fire("OnClick", "LeftButton", true)
+check("F7 in build mode: play mode (one key both ways)", D.play == true)
+_G.LeylineDenKeyBuild:Fire("OnClick", "LeftButton", true)
 
 -- ---------------------------------------------------------------- 4. keys only when free, and nowhere else
 bound.F8 = "TOGGLEAUTORUN"
 D.BindKeys()
-check("F8 taken by the player: Ctrl+F8, and the button says so", overrides.F8 == nil and overrides["CTRL-F8"] == "LeylineDenKeyPlay"
-    and bar.playBtn:GetText() == "Play (Ctrl+F8)")
+check("F8 taken by the player: Ctrl+F8 (F7 still the mode's key, the button says F7)", overrides.F8 == nil and overrides["CTRL-F8"] == "LeylineDenKeyPlay"
+    and bar.playBtn:GetText() == "Play (F7)")
 bound.F8 = nil
 
 realm = "Wrath Unleashed"

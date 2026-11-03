@@ -210,7 +210,7 @@ do
     win.grid:Fire("OnUpdate", 0.01)
 end
 local t4 = tileOf(1004)
-check("a WMO's tile: the building icon on purpose, and why", not t4.model:IsShown() and t4.icon:IsShown() and t4.icon.path == "Interface\\Icons\\INV_Misc_Rune_01"
+check("a WMO's tile: the building icon on purpose, and why", not t4.model:IsShown() and t4.icon:IsShown() and t4.icon.path == "Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\buildings"
     and t4.why:GetText() == "building")
 check("the name under the tile", t1.name:GetText() == "Barrel 53")
 check("a prop of 2 points says so on its tile", tileOf(1005).cost:GetText() == "2" and t1.cost:GetText() == "")
@@ -240,7 +240,7 @@ for _, t in ipairs(win.tabs) do if t.tab == "all" then t:Fire("OnClick") end end
 
 -- selection: one click, the gold edge
 local gold = W.Style.ED.gold
-local function goldEdge(t) local e = t.edges[1].tex; return type(e) == "table" and e[1] == gold[1] and e[2] == gold[2] end
+local function goldEdge(t) local e = t.edgeColour or t.edges[1].tex; return type(e) == "table" and e[1] == gold[1] and e[2] == gold[2] end
 win.tiles[2]:Fire("OnClick", "LeftButton")
 check("a click picks it: the gold edge, Place names it", B.pick == win.tiles[2].item and goldEdge(win.tiles[2]) and not goldEdge(win.tiles[1])
     and win.spawn:GetText() == "Place " .. win.tiles[2].item.name)
@@ -284,7 +284,7 @@ check("catmore adds to the catalog, an id twice once", #B.catalog == 54 and byId
 -- an old realm: a 5-field catalog replaces it, and the gallery still works
 fireClient("wubuild\tcatalog\t1/1\t2413,chair,seating,Wooden Chair,1;181075,table,tables,Table,2")
 check("an old 5-field catalog: two props, icons only", #B.catalog == 2 and win.count:GetText() == "1-2 of 2"
-    and not win.tiles[1].model:IsShown() and win.tiles[1].icon.path == "Interface\\Icons\\Spell_Nature_Sleep")
+    and not win.tiles[1].model:IsShown() and win.tiles[1].icon.path == "Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\seating")
 win.tiles[2]:Fire("OnDoubleClick")
 check("and places as before", lastCmd() == "spawn 181075")
 -- found objects carry a model too

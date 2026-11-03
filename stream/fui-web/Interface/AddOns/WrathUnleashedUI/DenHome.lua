@@ -42,12 +42,12 @@ local STAMPS = {
     { key = "inn", name = "Inn", line = "A small inn: tables, kegs, lanterns, a mailbox and a fire outside." },
 }
 local STARTERS = { { "forest", "Forest glade" }, { "keep", "Dark keep" }, { "empty", "Empty" } }
--- the shelf's tiles: stock 3.3.5a icons (Interface\Icons\...), stamps first, then the owner's starter places
-local ICON = "Interface\\Icons\\"
+-- the shelf's tiles: the editor's own line icons (Style.lua S.Icon, Media\Icons), stamps first, then the owner's
+-- starter places
+local function ICONP(name) return W.Style.Icon(name) end
 local SHELF_STAMPS = { "inn", "house", "garden", "market", "campfire", "dock" }
-local SHELF_ICONS = { inn = "INV_Misc_Rune_01", house = "INV_Misc_Key_05", garden = "INV_Misc_Flower_02",
-    market = "INV_Misc_Coin_01", campfire = "Spell_Fire_Fire", dock = "Trade_Fishing",
-    forest = "Spell_Nature_Tranquility", keep = "Spell_Shadow_Twilight", empty = "INV_Misc_Note_01" }
+local SHELF_ICONS = { inn = "buildings", house = "furniture", garden = "nature", market = "market", campfire = "fires", dock = "dock",
+    forest = "nature", keep = "keep", empty = "grid" }
 local STARTER_LINES = { forest = "Trees, a brook, a pond, a cottage.", keep = "A ruined tower, mist, braziers.",
     empty = "The plain room, nothing in it." }
 local TILE, TILE_GAP = 32, 4
@@ -384,10 +384,10 @@ function H.ShelfItems()
     local out = {}
     for _, key in ipairs(SHELF_STAMPS) do
         local s = stampOf(key)
-        if s then out[#out + 1] = { kind = "stamp", key = key, name = s.name, hint = s.name .. ": " .. s.line, icon = ICON .. SHELF_ICONS[key] } end
+        if s then out[#out + 1] = { kind = "stamp", key = key, name = s.name, hint = s.name .. ": " .. s.line, icon = ICONP(SHELF_ICONS[key]) } end
     end
     for _, st in ipairs(STARTERS) do
-        out[#out + 1] = { kind = "start", key = st[1], name = st[2], owner = true, icon = ICON .. SHELF_ICONS[st[1]],
+        out[#out + 1] = { kind = "start", key = st[1], name = st[2], owner = true, icon = ICONP(SHELF_ICONS[st[1]]),
             hint = st[2] .. " (a whole Den): " .. STARTER_LINES[st[1]] }
     end
     return out
@@ -531,7 +531,6 @@ local function tile(parent, it)
     b.icon = b:CreateTexture(nil, "ARTWORK")
     b.icon:SetAllPoints(b)
     b.icon:SetTexture(it.icon)
-    b.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     b.icon.path = it.icon
     b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
     b.on = b:CreateTexture(nil, "OVERLAY")

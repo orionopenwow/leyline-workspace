@@ -162,7 +162,7 @@ check("nothing of the Dojo before it is opened", not J.IsOpen() and _G.LeylineDo
 -- ---------------------------------------------------------------- 1. Den Lite: the rail's Dojo button
 fire("PLAYER_ENTERING_WORLD")
 local bar = D.Bar()
-check("the rail has a Dojo button", bar.dojo and bar.dojo:GetText() == "Dojo" and bar.dojo.iconPath:find("^Interface\\Icons\\") and bar.dojo.edIcon)
+check("the rail has a Dojo button", bar.dojo and bar.dojo:GetText() == "Dojo" and bar.dojo.iconPath == W.Style.Icon("dojo") and bar.dojo.edIcon)
 bar.dojo:Fire("OnClick")
 local p = J.Panel()
 check("it opens the Dojo panel beside the rail", J.IsOpen() and p:IsShown() and p.head:GetText() == "DOJO" and bar.dojo:IsActive())

@@ -120,13 +120,13 @@ local first
 for _, c in ipairs(B.catalog or {}) do if c.id == 1670 then first = c end end
 if first then B.Choose(first) end
 F.tick(0.6)
-scene("2-gallery", "The gallery: a prop picked", "5 x 4 tiles, models spinning; WMO buildings and props without a model show an icon")
+scene("2-gallery", "The gallery: a prop picked and armed (Enter places it)", "5 x 4 tiles, models seen from the side; buildings and props without a model show our icon")
 
 if first then B.Place(first) end
 F.toClient("wubuild\tstate\t1/1\t" .. stateLine())
 if B.ShowProps then B.ShowProps(true) end
 F.tick(0.6)
-scene("3-selection", "A prop placed and selected: its popover", "exact numbers, nudges, the selection's actions")
+scene("3-selection", "A prop placed and selected: its panel", "name and size, Move / Rotate / Size, actions, selecting")
 
 closeAll()
 if D.ShowMenu then D.ShowMenu(true) end
@@ -148,7 +148,14 @@ closeAll()
 if W.ToggleBuilder and B.Window() and B.Window():IsShown() then W.ToggleBuilder() end
 if D.SetPlay then D.SetPlay(true) end
 F.tick(0.6)
-scene("7-play", "Play mode (F8)", "only a small chip: Back to building")
+if D.ShowClasses then D.ShowClasses(true) end
+scene("7-play", "Play mode (F7): no tools, the corner chip and the play bar", "Dojo, Class (the list open), Invite, Files")
+if D.ShowClasses then D.ShowClasses(false) end
+if D.SetPlay then D.SetPlay(false) end
+if W.ToggleBuilder and B.Window() and B.Window():IsShown() then W.ToggleBuilder() end
+if W.Dojo then W.Dojo.Show(true) end
+F.tick(0.1)
+scene("8-dojo", "Build mode (F7 back): the banner, the gold edge; the Dojo", "the Dojo's panel beside the rail")
 
 -- the chat: what Den Lite said that reached the chat frame
 local h = assert(io.open(out .. "/chat.txt", "wb"))

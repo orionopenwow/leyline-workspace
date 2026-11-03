@@ -3,6 +3,9 @@
 The next layout (1 Nov: Wrath Unleashed, Your Den, Host a server, Mods & Workshop, Claude & the companion, Feedback
 feeding the bugs manifest, Forum) is [DISCORD-PLAN.md](DISCORD-PLAN.md), opt-in with
 `WU_DISCORD_TEMPLATE=/app/discord_template_v2.json`; its first posts are [discord-initial-posts.md](discord-initial-posts.md).
+Its 2 Nov update adds the Realms category (official-realms, and community-realms, which is the old live-realms
+renamed), Game modes (azeroth-survivors, modes-and-forks), realm-seeds and browser-and-mobile; the owner-run script
+(tools/discord-leyline) renames and moves the old channels.
 
 The growth plan's Discord section (owner, 2026-10-31: "yep do it"). Code: `stream/discord_growth.py` and
 `stream/discord_template.json`, loaded by `stream/forum_discord.py` (the forum link, docs/FORUM.md "The Discord
@@ -17,7 +20,9 @@ The bot only does what portal.env turns on, and Set up the Discord only runs whe
 | Part | Switch (portal.env) | What happens |
 |---|---|---|
 | Set up the Discord | none (owner presses it in HQ) | Makes the plan's channels and roles that the server doesn't have yet. Found by name, so running it again is safe. It never deletes, renames or changes anything already there |
-| Live realms | `WU_DISCORD_FEED=1` | A realm on the network that goes live (first seen, or back after 6 hours away) gets a card in **live-realms**: name, mode, players, and its link (`/r/<short>` when the realm has one, else its join link). At most `WU_DISCORD_FEED_PER_HOUR` (4) an hour, busiest first; a card held back more than an hour is dropped. Realms already live when the feed is turned on are not announced, and nor is a burst after the portal was down |
+| Live realms | `WU_DISCORD_FEED=1` | A community realm on the network that goes live (first seen, or back after 6 hours away) gets a card in **community-realms** (v2 template, key `community_realms`; the old v1 template: **live-realms**, key `live_realms`). A server set up before the 2 Nov split keeps working: the bot falls back to the channel it knows as `live_realms`, and Set up the Discord counts a channel still named `🟢︱live-realms` as community-realms. Official realms never get a card here. The card: name, mode, players, and its link (`/r/<short>` when the realm has one, else its join link). At most `WU_DISCORD_FEED_PER_HOUR` (4) an hour, busiest first; a card held back more than an hour is dropped. Realms already live when the feed is turned on are not announced, and nor is a burst after the portal was down |
+| Official realms' status | `WU_DISCORD_OFFICIAL=1` | One post per official realm in **official-realms** (v2 template): "**Wrath Unleashed** · Official realm / 🟢 Online · 12 playing · up 2 days 3 hours · 99% up over 7 days", or "🔴 Offline right now". Checked every 5 minutes and **edited in place** when the text changes (never posted again; nothing is sent when nothing changed). A post deleted by hand is posted again. Our realm's numbers come from its own status (the same as `/wrath/status.json`), the 7-day uptime and the second official realm from the relay listing |
+| Azeroth Survivors back up | `WU_DISCORD_SURVIVORS=1` | When the Survivors address (stream/survivors.py: `WU_SURVIVORS_URL` or the file `sv-site-up.sh --go` writes) comes back after being off for 15 minutes or more, a post in **azeroth-survivors** (v2 template): "**Azeroth Survivors** is back up", with a Play link to `/wrath/survivors`. At most one every 3 hours; the state when the bot starts is only remembered |
 | Den of the week, featured mode | `WU_DISCORD_FEED=1` | Staff pick them in HQ; posted in **den-showcase** / **modes-and-forks**. With the feed off the pick is still recorded (and Den of the week still earns the role) |
 | Find a group | `WU_DISCORD_LFG=1` | "Alice wants a group for Goblin Brawl (Brawl)" in **looking-for-group**, with their Discord mention (no ping), a note and a Join button. From the website (the forum's Discord page, `/wrath/leyline/forum/discord`, `?group=<realm id>` picks the realm) or the launcher (`POST /wrath/forum/api/discord/group {realm?, what?, note?}`, Bearer token). Linked accounts only, no sanctions, the word and brand filters, one per account every `WU_DISCORD_LFG_GAP` minutes (30), `WU_DISCORD_LFG_PER_HOUR` (20) in all |
 | Roles from accounts | `WU_DISCORD_ROLES=1` | Once a night at `WU_DISCORD_ROLES_HOUR` UTC (4) linked people get the roles their Leyline facts earn (below). Every change is in HQ's audit log |
@@ -51,7 +56,7 @@ mods, addons, mode-jam, scripting-help, jam-judges for Mode Makers), Host (hosti
 launcher-help, roadmap for Core Team, mod-room for Moderators and Guides), Voice (Dalaran lounge, Group room 1-3,
 Showcase stage). Template fields: `read_only` (only `posters` roles and the bot can write), `private` (only those
 roles see it; never made if one of its roles is missing), `bot_posts`, `slowmode` (seconds), `topic`, `type`
-(text, voice, stage, forum), `optional`. `posts` names the channel for each kind of post. Roles are made with no
+(text, voice, stage, forum), `optional`, `was` (older names that count as this channel, so Set up makes no copy). `posts` names the channel for each kind of post. Roles are made with no
 powers and can't be pinged; `auto` names the fact that earns one, `keep` keeps it.
 
 ## Owner checklist (about 15 minutes)
@@ -91,6 +96,8 @@ powers and can't be pinged; `auto` names the fact that earns one, `keep` keeps i
    WU_DISCORD_ROLES=1       # roles from accounts, nightly
    WU_DISCORD_AUTOMOD=1     # needs Manage Server (step 3)
    WU_DISCORD_MODS=1        # listed mods, new and updated, in mods
+   WU_DISCORD_OFFICIAL=1    # v2 template: the official realms' status posts, edited in place
+   WU_DISCORD_SURVIVORS=1   # v2 template: "Azeroth Survivors is back up" in azeroth-survivors
    ```
    Optional: `WU_DISCORD_FEED_PER_HOUR` (4), `WU_DISCORD_MODS_PER_HOUR` (6), `WU_DISCORD_LFG_GAP` (30 minutes), `WU_DISCORD_LFG_PER_HOUR` (20),
    `WU_DISCORD_ROLES_HOUR` (4, UTC), `WU_DISCORD_TEMPLATE` (another template file).

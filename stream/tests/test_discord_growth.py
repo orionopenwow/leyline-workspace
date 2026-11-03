@@ -18,7 +18,12 @@ staff gave by hand never taken, taken back when the fact goes, unlinked people l
 resumable after Discord fails mid-way, the audit log); AutoMod (off, made, updated, a 403 explained, pushed again only
 when the words change); listed mods (WU_DISCORD_MODS: off posts nothing, a new listing and an applied update post
 once each, never again after a restart, the hourly cap holds and releases in order, the word and brand filters, Discord
-down or a throwing bot never stops a listing); HQ's Discord tab; the token never in a log; and the deploy step ships both files.
+down or a throwing bot never stops a listing); the 2 Nov split with discord_template_v2.json (setup counts the old
+live-realms as community-realms and makes no copy, the community feed under the new key and the old live_realms key
+still accepted, official realms never in it; WU_DISCORD_OFFICIAL: one status post per official realm, edited in place,
+not again when nothing changed, posted again when deleted, off by default; WU_DISCORD_SURVIVORS: a post when the
+Survivors address comes back after 15 minutes or more, not at start, not after a blip, not twice in 3 hours, off by
+default); HQ's Discord tab; the token never in a log; and the deploy step ships both files.
 
     python3 -I stream/tests/test_discord_growth.py stream/wrath_portal.py
 """
@@ -149,6 +154,13 @@ class Discord(BaseHTTPRequestHandler):
             if method == "PATCH":
                 D["rules"][m.group(1)].update(body)
                 return self.reply(200, D["rules"][m.group(1)])
+        m = re.fullmatch(r"/channels/(\d+)/messages/(\d+)", path)
+        if m and method == "PATCH":   # an edit in place (the official realms' status posts)
+            msg = next((x for x in D["msgs"].get(m.group(1), []) if x["id"] == m.group(2)), None)
+            if msg is None:
+                return self.reply(404, {"message": "Unknown Message", "code": 10008})
+            msg.update(body)
+            return self.reply(200, msg)
         m = re.fullmatch(r"/channels/(\d+)/messages", path)
         if m and method == "POST":
             if m.group(1) not in D["channels"]:
@@ -744,9 +756,156 @@ del G.mod_listed
 check("a bot that throws never stops a listing going live", ok and next(r for r in PS.load() if r["id"] == "777777777777")["listing"]["state"] == "reviewed", msg)
 G.cfg = _cfg_before
 
+# ------------------------------------------------------------------------------------------- the 2 Nov split (template v2)
+V2 = os.path.join(STREAM, "discord_template_v2.json")
+T2 = json.load(open(V2, encoding="utf-8"))
+check("v2 template: valid, community-realms is posts.live, official and survivors have their channels", DGM.check_template(T2) == []
+      and T2["posts"]["live"] == "community_realms" and T2["posts"]["official"] == "official_realms"
+      and T2["posts"]["survivors"] == "azeroth_survivors", DGM.check_template(T2))
+check("v1 template unchanged: posts.live is still live_realms", T["posts"]["live"] == "live_realms")
+check("a bad was list is refused", any("was" in b for b in DGM.check_template(
+    {"format": 1, "roles": [], "categories": [{"key": "c", "name": "C", "channels": [{"key": "a", "name": "a", "was": "x"}]}]})))
+for cfg_name in ("official", "survivors"):
+    check(f"{cfg_name}: off by default", getattr(DGM.Config(ENV), cfg_name) is False and getattr(DGM.Config(dict(ENV, **{"WU_DISCORD_" + cfg_name.upper(): "1"})), cfg_name))
+WU_CAT = add_channel("Wrath Unleashed", 4)
+OLD_LR = add_channel("🟢︱live-realms", 0, WU_CAT)    # the 1 Nov channel, not yet renamed by the owner's script
+G2 = DGM.attach(L, dict(ENV, WU_DISCORD_TEMPLATE=V2), G.fd)
+L.growth = G2   # the worker hands its outbox items to the link's growth: the v2 one for this part
+check("v2 template loads", G2.template is not None and not G2.template_error, G2.template_error)
+pv2 = G2.setup(dry=True)
+check("v2 Preview: the old live-realms counts as community-realms, official-realms would be made",
+      "channel 🟢︱community-realms (as 🟢︱live-realms)" in pv2["found"] and "channel ⭐︱official-realms" in pv2["made"]
+      and "channel 🟢︱community-realms" not in pv2["made"], pv2)
+n0 = len(D["calls"])
+rep2 = G2.setup(dry=False)
+byname2 = {c["name"]: c for c in D["channels"].values()}
+check("v2 setup: no copy of community-realms; its key maps to the old channel (history kept)",
+      G2.mapped("channel", "community_realms") == OLD_LR and "🟢︱community-realms" not in byname2
+      and not any(c[0] in ("DELETE", "PATCH", "PUT") for c in D["calls"][n0:]), rep2)
+off_ch = byname2.get("⭐︱official-realms") or {}
+check("v2 setup: official-realms read-only, the bot may post; azeroth-survivors and realm-seeds made",
+      any(o["id"] == GUILD and int(o["deny"]) & DGM.P_SEND for o in off_ch.get("permission_overwrites") or [])
+      and any(o["id"] == BOT and o["type"] == 1 for o in off_ch.get("permission_overwrites") or [])
+      and "🧟︱azeroth-survivors" in byname2 and "🌱︱realm-seeds" in byname2 and "📱︱browser-and-mobile" in byname2
+      and byname2["🧟︱azeroth-survivors"]["parent_id"] == byname2["Game modes"]["id"], sorted(byname2)[:80])
+G2.store.x("DELETE FROM dg_map WHERE kind = 'channel' AND key = 'community_realms'")
+check("the old live_realms key is still accepted: a server set up before the split posts there",
+      G2.post_channel("live") == G.mapped("channel", "live_realms") != "")
+G2.set_map("channel", "community_realms", OLD_LR, "🟢︱community-realms")
+check("... and community_realms wins once setup has found it", G2.post_channel("live") == OLD_LR)
+
+VR_ID = "nnnnnnnnnnnnnnnn"
+_vr_before = wp.network.vr_id
+wp.network.vr_id = lambda: VR_ID
+G2.cfg = DGM.Config(dict(ENV, WU_DISCORD_TEMPLATE=V2, WU_DISCORD_FEED="1"))
+G2.feed_tick()
+NOW[0] += 60
+REALMS.append(realm("mmmmmmmmmmmmmmmm", "Pine Hollow", 3))
+REALMS.append(realm(VR_ID, "Second Light", 30, up7=97))
+G2.feed_tick()
+L.drain()
+cr = D["msgs"].get(OLD_LR, [])
+check("the community feed under the new key: a card in community-realms; an official realm never gets one",
+      len(cr) == 1 and "**Pine Hollow** is live" in cr[0]["content"] and not any("Second Light" in x["content"] for x in cr), cr)
+
+# official realms: one status post each, edited in place
+STATUS = {"realm": "Wrath Unleashed", "online": True, "players": 12, "uptime_s": 2 * 86400 + 3 * 3600 + 59}
+_rs_before = wp.realm_status
+wp.realm_status = lambda: dict(STATUS)
+REALMS.append(realm("hhhhhhhhhhhhhhh2", "Our Hangout", 5, hangout=True, up7=99))
+OFF = G2.mapped("channel", "official_realms")
+
+
+def official():
+    G2.next_official = 0
+    G2.tick()
+    L.drain()
+    return D["msgs"].get(OFF, [])
+
+
+G2.cfg = DGM.Config(dict(ENV, WU_DISCORD_TEMPLATE=V2))
+check("official: off posts nothing", official() == [] and not F.q("SELECT 1 FROM fd_outbox WHERE kind = 'dg.official'"))
+G2.cfg = DGM.Config(dict(ENV, WU_DISCORD_TEMPLATE=V2, WU_DISCORD_OFFICIAL="1"))
+om = official()
+check("official on: one post per official realm: online, players, how long up, the 7-day uptime",
+      len(om) == 2 and om[0]["content"] == "**Wrath Unleashed** · Official realm\n🟢 Online · 12 playing · up 2 days 3 hours · 99% up over 7 days"
+      and om[1]["content"] == "**Second Light** · Official realm\n🟢 Online · 30 playing · 97% up over 7 days", om)
+check("... no pings, no link previews", all(x["allowed_mentions"] == {"parse": []} and x["flags"] == 4 for x in om))
+n0 = len(D["calls"])
+om = official()
+check("... nothing changed: no call to Discord at all", len(om) == 2 and not any("/messages" in c[1] for c in D["calls"][n0:]), D["calls"][n0:])
+STATUS["players"] = 15
+n0 = len(D["calls"])
+om = official()
+edits = [c for c in D["calls"][n0:] if "/messages" in c[1]]
+check("... players changed: the post edited in place, not posted again", len(om) == 2 and "15 playing" in om[0]["content"]
+      and [c[0] for c in edits] == ["PATCH"] and edits[0][1] == f"/channels/{OFF}/messages/{om[0]['id']}", edits)
+STATUS.update(online=False, players=None, uptime_s=None)
+om = official()
+check("... offline: said plainly", len(om) == 2 and om[0]["content"] == "**Wrath Unleashed** · Official realm\n🔴 Offline right now · 99% up over 7 days", om)
+D["msgs"][OFF] = om[1:]   # someone deleted our realm's post by hand
+STATUS.update(online=True, players=4, uptime_s=1800)
+om = official()
+check("... a deleted post is posted again (one new post, not a second for the other realm)", len(om) == 2
+      and om[-1]["content"].endswith("4 playing · up under an hour · 99% up over 7 days") and "Second Light" in om[0]["content"], om)
+check("... the HQ status knows it", G2.status()["official"] is True and not (G2.status()["official_last"] or {}).get("error"))
+wp.realm_status = _rs_before
+wp.network.vr_id = _vr_before
+
+# Azeroth Survivors: back up after being off
+SURL = ["https://survivors.example/"]
+
+
+class _Sv:
+    @staticmethod
+    def site_url():
+        return SURL[0]
+
+
+_sv_before = wp.survivors
+wp.survivors = _Sv
+SVC = G2.mapped("channel", "azeroth_survivors")
+G2.cfg = DGM.Config(dict(ENV, WU_DISCORD_TEMPLATE=V2))
+G2.next_survivors = 0
+G2.tick()
+check("survivors: off remembers nothing", G2.jmeta("survivors") is None)
+G2.cfg = DGM.Config(dict(ENV, WU_DISCORD_TEMPLATE=V2, WU_DISCORD_SURVIVORS="1"))
+G2.next_survivors = 0
+G2.tick()
+check("survivors on: the state at start is remembered, not announced", (G2.jmeta("survivors") or {}).get("up") is True
+      and not D["msgs"].get(SVC))
+SURL[0] = ""
+NOW[0] += 60
+G2.survivors_tick()
+NOW[0] += 20 * 60
+SURL[0] = "https://survivors.example/"
+res = G2.survivors_tick()
+L.drain()
+sm = D["msgs"].get(SVC, [])
+check("back after 20 minutes off: a post in azeroth-survivors with a Play link on our site", res == "posted" and len(sm) == 1
+      and sm[0]["content"].startswith("**Azeroth Survivors** is back up.") and "https://play.example/wrath/survivors" in sm[0]["content"]
+      and sm[0]["allowed_mentions"] == {"parse": []} and sm[0]["flags"] == 4, (res, sm))
+SURL[0] = ""
+NOW[0] += 60
+G2.survivors_tick()
+NOW[0] += 5 * 60
+SURL[0] = "https://survivors.example/"
+check("off only 5 minutes: no post", G2.survivors_tick() == "short")
+SURL[0] = ""
+NOW[0] += 60
+G2.survivors_tick()
+NOW[0] += 30 * 60
+SURL[0] = "https://survivors.example/"
+check("a second return within 3 hours: no post", G2.survivors_tick() == "quiet" and len(D["msgs"].get(SVC, [])) == 1)
+check("no banned words in any post the new parts made", not any(re.search(r"(?i)warcraft|\bwow\b|blizzard|lich\s*king", x["content"])
+                                                                for x in D["msgs"].get(SVC, []) + D["msgs"].get(OFF, [])))
+wp.survivors = _sv_before
+L.growth = G
+
 # ------------------------------------------------------------------------------------------- HQ
 st, title, body = HQ.page(ADMIN, "discord", {})
 check("HQ's Discord tab lists the mods switch", "WU_DISCORD_MODS" in body)
+check("... and the official realms and Survivors switches", "WU_DISCORD_OFFICIAL" in body and "WU_DISCORD_SURVIVORS" in body)
 check("HQ's Discord tab: on and off, setup, picks, roles, AutoMod, the last posts", st == 200 and "Set up the Discord" in body
       and "WU_DISCORD_FEED" in body and "Last posts" in body and "wants a group" in body and "Record a fact" in body
       and "Push the words now" in body, body[:500])

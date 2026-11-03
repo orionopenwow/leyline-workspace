@@ -3,6 +3,10 @@
 Owner, 1 Nov 04:18: "create a Discord channel upgrade plan to suit all of the features and desired visions that we
 have so far, and initial posts". The first posts are drafts in [discord-initial-posts.md](discord-initial-posts.md).
 
+Owner, 2 Nov: "new discord bot script too with the updated channels and functionality etc". The 2 Nov update
+(below, "What changed on 2 Nov") follows the launcher and the site: Official and Community realms, Azeroth Survivors,
+Realm Seeds, the relay mesh, the Hero Key, Your Den on the realm picker, and play on phones.
+
 **Nothing here is posted or changed by us.** The owner applies it by hand, or presses Set up the Discord in Leyline HQ
 himself; we run that step for him only after his explicit OK, and it only ever adds what is missing.
 
@@ -21,6 +25,31 @@ rulesets and presets, the Host pack), **Mods & Workshop** (List your mod, mode p
 launcher's **Agents** page (your own Claude) and the in-game **companion bots**, the **forum** linked to Discord, and
 now the **bugs manifest** (docs/BUGS-MANIFEST.md). The Builders' Realm is hidden in the launcher, so it gets no channel.
 
+## What changed on 2 Nov
+
+- **Realms** (a new category): the launcher and the site split realms into **Official realms** (run by us, around
+  the clock, with room for everyone: today Wrath Unleashed) and **Community realms** (run by players, may go
+  offline). `live-realms` becomes `community-realms` (renamed, so its history stays; the script's ALIASES do it) and
+  `official-realms` is new: the bot keeps one status post per official realm there, edited in place
+  (`WU_DISCORD_OFFICIAL`).
+- **Game modes** (a new category): `azeroth-survivors` (new; the mode played in the browser at
+  survivors.leylinelauncher.com, with your own game files; also a launcher mode card) and `modes-and-forks`, moved
+  in from Mods & Workshop with its history. The bot can say when the Survivors site is back up
+  (`WU_DISCORD_SURVIVORS`).
+- **Host a server**: `realm-seeds` (new) for Realm Seeds, a plan not built yet: community-run versions of a realm
+  carried by the node network with players' own game files. A Seed graduates to Official after 30 days at 99% up on
+  5 nodes in 2 regions with a weekly failover test, then a staff flip. The `nodes` topic now points at "be a node"
+  (docs/leyline/be-a-node.md) and the relay mesh; `hosting-help` and `community-realms` point at the hosting guide
+  (leylinelauncher.com/wrath/docs/hosting).
+- **Feedback**: `browser-and-mobile` (new) for play in the browser, on a PC or a phone; touch controls are planned.
+- **Topics refreshed**: `launcher-help` (Hero Key: log in, make a new key, change your name), `den-help` (Your Den
+  opens from the realm picker next to Play; Forge, "Shape the ground", edits the terrain), `changelog` (both public
+  repos: github.com/orionopenwow/Leyline and github.com/orionopenwow/Leyline-Launcher).
+
+Old setups keep working: the bot still accepts a channel set up under the old `live_realms` key, and Set up the
+Discord counts a channel still named `🟢︱live-realms` as `community-realms` (the template's `was` names), so it never
+makes a second one.
+
 ## The new layout
 
 The bot's version of it is `stream/discord_template_v2.json` (checked by the bot's own template checker). Names keep
@@ -34,25 +63,28 @@ The server's name and icon stay as they are (owner, 1 Nov). The table uses the n
 | **Start here** | `welcome` | owner, team | what Leyline is, the three links, where to go next | the owner's post (pinned) |
 | | `rules` | owner, team | the rules | the owner's post (pinned) |
 | | `announcements` | Core Team, Moderator | news | the owner; forum Announcements threads (forum link, `news=`) |
-| | `changelog` | Core Team | the launcher's release notes, as each release ships | GitHub release webhook (step 8) |
+| | `changelog` | Core Team | release notes from both repos (Leyline, Leyline-Launcher), as each release ships | GitHub release webhooks (step 8) |
 | **Wrath Unleashed** | `hangout` | everyone | general talk about the realm | people |
 | | `levelling` | everyone | routes, quests, `.guide`, gear | people |
 | | `world-chat` | everyone | live with the game's World channel ("[Discord] Name: text" in game) | the bridge (`DISCORD_CHAT_CHANNEL_ID`) |
 | | `looking-for-group` | everyone | groups | people; Find a group (bot, `WU_DISCORD_LFG`) |
-| | `live-realms` | bot | realms as they go live | bot (`WU_DISCORD_FEED`) |
 | | `events` | Core Team, Moderator, Guide | weekly Dalaran events | the team |
+| **Realms** | `official-realms` | bot, Core Team | one status post per official realm (online, players, uptime), edited in place | bot (`WU_DISCORD_OFFICIAL`) |
+| | `community-realms` (was `live-realms`) | bot | community realms as they go live; the hosting guide in its topic | bot (`WU_DISCORD_FEED`) |
+| **Game modes** | `azeroth-survivors` | everyone | the browser mode: runs, advice, problems | people; "back up" posts (bot, `WU_DISCORD_SURVIVORS`) |
+| | `modes-and-forks` (moved from Mods & Workshop) | everyone | game modes and forks | people; the featured mode (bot) |
 | **Your Den** | `den-showcase` | everyone | screenshots of Dens | people; Den of the week (bot) |
 | | `den-files` | everyone, 60 s slowmode | Workshop links to shared Den files | people (Share on the Workshop in the launcher) |
-| | `den-help` | everyone | edit mode, props, paths, save/load, invites | people |
+| | `den-help` | everyone | Your Den from the realm picker (next to Play), Forge / Shape the ground, edit mode, props, paths, save/load, invites | people |
 | **Host a server** | `host-templates` | Core Team, Guide | the rulesets and presets, one post each | the team |
-| | `hosting-help` | everyone | help with the Host page and the Host pack | people |
+| | `hosting-help` | everyone | help with the Host page and the Host pack; the hosting guide in its topic | people |
 | | `list-your-realm` | everyone, 10 min slowmode | hosts tell people about their realm | people |
-| | `nodes` | everyone | running a node | people |
+| | `realm-seeds` | everyone | Realm Seeds (planned) and each Seed's road to Official | people |
+| | `nodes` | everyone | the relay mesh and "be a node" | people |
 | | `host-lounge` | Realm Host (private) | hosts among themselves | people |
 | | `node-keepers` | Node Keeper (private) | network changes first | the team |
 | **Mods & Workshop** | `workshop-submissions` | everyone, 10 min slowmode | a Workshop link to something you made, for the team to look at | people |
 | | `mods-and-addons` | everyone | talk, questions, problems with a mod | people |
-| | `modes-and-forks` | everyone | game modes and forks | people; the featured mode (bot) |
 | | `scripting-help` | everyone | realm scripts and mode files | people |
 | | `mode-jam` | everyone | the monthly mode jam (no prizes) | people |
 | | `jam-judges` | Mode Maker (private) | judging | people |
@@ -60,7 +92,8 @@ The server's name and icon stay as they are (owner, 1 Nov). The table uses the n
 | | `companions` | everyone | the in-game bots: `.recruit`, `.buddy`, `/comp` | people |
 | **Feedback** | `bug-reports` | everyone | one message per bug: what, where, what you expected | people; the in-game `.bug` feed (bridge). **Every person's message goes into the bugs manifest** |
 | | `feature-ideas` | everyone (Forum channel) | one idea per post; react to vote | people |
-| | `launcher-help` | everyone | installing, signing in, updates | people |
+| | `launcher-help` | everyone | installing, updates, the Hero Key (log in, make a new key, change your name) | people |
+| | `browser-and-mobile` | everyone | playing in the browser on a PC or a phone; touch controls (planned) | people |
 | **Forum** | `forum` (Forum channel) | linked accounts | the website forum, live: a post per forum thread, replies both ways; tags per forum category | the forum link (`WU_FORUM_DISCORD_CHANNELS`) |
 | **Team** | `roadmap` | Core Team (private) | what's next | the team |
 | | `mod-room` | Moderator, Guide (private) | moderation | the team |
@@ -76,7 +109,8 @@ if you use it for onboarding). Nobody gets Administrator; the bot's roles have n
 
 ### Permissions
 
-- **Read-only** channels (welcome, rules, announcements, changelog, live-realms, events, host-templates): @everyone
+- **Read-only** channels (welcome, rules, announcements, changelog, events, official-realms, community-realms,
+  host-templates): @everyone
   can read but not send or start threads; the named roles and the bot can post. The bot sets these overwrites when
   it makes a channel; for a channel you keep from before, copy them by hand (Edit Channel > Permissions).
 - **Private** channels: @everyone can't see them; only the named roles. The bot never makes one if a role it is
@@ -93,9 +127,9 @@ if you use it for onboarding). Nobody gets Administrator; the bot's roles have n
 | Poster | Where | Switch | Notes |
 |---|---|---|---|
 | Leyline bot, forum link | `forum` (Forum channel, one tag per category), `announcements` (forum Announcements) | `WU_FORUM_DISCORD=1`, `WU_FORUM_DISCORD_CHANNELS` | stream/forum_discord.py; replies come back only from linked accounts |
-| Leyline bot, growth | `live-realms`, `den-showcase`, `modes-and-forks`, `looking-for-group`; roles; AutoMod | `WU_DISCORD_FEED`, `WU_DISCORD_LFG`, `WU_DISCORD_ROLES`, `WU_DISCORD_AUTOMOD` | stream/discord_growth.py; channel by template key, so the new template keeps the same keys |
-| Bridge (wu-discord) | `world-chat` both ways; `bug-reports`: the `.bug` feed out, people's messages in to the manifest | `DISCORD_CHAT_CHANNEL_ID`, `DISCORD_BUG_CHANNEL_ID`, `WU_DISCORD_BUG_INTAKE` | hosting/discord; its own new-realm announcements stay **off** (`live-realms` covers it) |
-| GitHub webhook | `changelog` | a Discord webhook on the repo | Releases only; the text is the launcher's `CHANGELOG.md` section for that release |
+| Leyline bot, growth | `community-realms`, `den-showcase`, `modes-and-forks`, `looking-for-group`, `official-realms`, `azeroth-survivors`; roles; AutoMod | `WU_DISCORD_FEED`, `WU_DISCORD_LFG`, `WU_DISCORD_ROLES`, `WU_DISCORD_AUTOMOD`, `WU_DISCORD_OFFICIAL`, `WU_DISCORD_SURVIVORS` | stream/discord_growth.py; channel by template key; `community_realms` replaced `live_realms` and the old key is still accepted |
+| Bridge (wu-discord) | `world-chat` both ways; `bug-reports`: the `.bug` feed out, people's messages in to the manifest | `DISCORD_CHAT_CHANNEL_ID`, `DISCORD_BUG_CHANNEL_ID`, `WU_DISCORD_BUG_INTAKE` | hosting/discord; its own new-realm announcements stay **off** (`community-realms` covers it) |
+| GitHub webhooks | `changelog` | the same Discord webhook on both repos | Releases only; the text is that release's notes |
 
 Every bot post: no pings, no link previews. The bridge skips its own and other bots' messages, so the `.bug` feed in
 `bug-reports` is never counted twice in the manifest (game reports come into it from the realm's own table).
@@ -124,6 +158,8 @@ exactly this layout with these names, renames and moves the old channels, archiv
 | category Host | `Host a server` | |
 | category Play / PLAY | `Wrath Unleashed` | |
 | roadmap, mod-room | the same names | Team |
+| live-realms (2 Nov) | `community-realms` | Realms |
+| modes-and-forks (2 Nov) | the same name | Game modes |
 
 Anything else left over goes into the hidden ARCHIVE category (the reset script's pattern); nothing needs deleting.
 
@@ -150,14 +186,15 @@ Anything else left over goes into the hidden ARCHIVE category (the reset script'
    `WU_FORUM_DISCORD_CHANNELS=realms=<forum id>/<tag>,mods=<forum id>/<tag>,dens=<forum id>/<tag>,help=<forum id>/<tag>,general=<forum id>/<tag>,news=<announcements id>`,
    restart the portal. docs/FORUM.md "The Discord link" has the rest.
 8. **Changelog.** In Discord: `changelog` > Edit Channel > Integrations > Webhooks > New Webhook, name it
-   "Leyline releases", Copy Webhook URL. On GitHub: the Leyline repo > Settings > Webhooks > Add webhook, Payload URL
+   "Leyline releases", Copy Webhook URL. On GitHub, in both repos (orionopenwow/Leyline and
+   orionopenwow/Leyline-Launcher): Settings > Webhooks > Add webhook, Payload URL
    = the webhook URL with `/github` on the end, content type `application/json`, "Let me select individual events":
    **Releases** only. The URL is a secret: don't paste it in a chat or a file in the repo.
 9. **First posts.** Paste the drafts from [discord-initial-posts.md](discord-initial-posts.md) yourself (fill in the
    TODO(owner) lines), then hover > ... > **Pin Message**. The bots never post in Start here.
 10. **Onboarding** (Community servers): Server Settings > Onboarding: rules = `rules`, default channels = welcome,
-    announcements, hangout, bug-reports; a question "What do you do?" with Play / Build a Den / Host / Make mods,
-    each pointing at its category.
+    announcements, hangout, official-realms, bug-reports; a question "What do you do?" with Play / Build a Den / Host /
+    Make mods / Game modes, each pointing at its category.
 11. **Turn on the bot's parts** one at a time (docs/DISCORD.md step 8) and check HQ > Content > Discord.
 
 **Undo.** Remove `WU_DISCORD_TEMPLATE` from portal.env and restart the portal: the bot goes back to the old plan.

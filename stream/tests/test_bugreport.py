@@ -212,7 +212,15 @@ class DiscordPlan(unittest.TestCase):
             self.posts = f.read()
 
     def test_template_keeps_the_bot_working(self):
-        self.assertEqual(self.v2["posts"], self.v1["posts"])
+        # every kind of post v1 has, v2 sends to the same channel key, or to the key that replaced it (2 Nov:
+        # community_realms took over live_realms, and the bot still accepts the old one: LEGACY_KEYS); the mod posts go
+        # to mods in v1 and mods-and-addons in v2 (the 1 Nov plan)
+        for kind, k1 in self.v1["posts"].items():
+            k2 = self.v2["posts"][kind]
+            self.assertTrue(k2 == k1 or k1 in self.dg.LEGACY_KEYS.get(k2, ()) or (kind, k1, k2) == ("mod", "mods", "mods_and_addons"),
+                            (kind, k1, k2))
+        self.assertEqual(self.v2["posts"]["live"], "community_realms")
+        self.assertEqual(self.dg.LEGACY_KEYS["community_realms"], ("live_realms",))
         self.assertEqual([(r["key"], r["name"], r.get("auto")) for r in self.v2["roles"]],
                          [(r["key"], r["name"], r.get("auto")) for r in self.v1["roles"]])
         names = {c["name"].split("︱")[-1] for cat in self.v2["categories"] for c in cat["channels"]}
@@ -243,7 +251,11 @@ class DiscordPlan(unittest.TestCase):
         self.assertNotRegex(text, r"(?i)world\s*of\s*warcraft|\bwow\b|warcraft|lich\s*king|blizzard")
         self.assertNotRegex(text, r"\b\d+\.\d+(\.\d+)?[a-z]?\b", "no version numbers")
         hosts = {urllib.parse.urlsplit(u).hostname for u in re.findall(r"https?://[^\s)`]+", text)}
-        self.assertLessEqual(hosts, {"leylinelauncher.com", "play.openvanilla.app", "discord.gg", "discord.com", "reddit.com", "www.reddit.com"})
+        # github.com: the two public repos (orionopenwow/Leyline and orionopenwow/Leyline-Launcher), in #changelog
+        self.assertLessEqual(hosts, {"leylinelauncher.com", "play.openvanilla.app", "discord.gg", "discord.com", "reddit.com", "www.reddit.com",
+                                     "github.com", "survivors.leylinelauncher.com"})
+        for u in re.findall(r"https?://github\.com/[^\s)`]+", text):
+            self.assertRegex(u, r"^https://github\.com/orionopenwow/(Leyline|Leyline-Launcher)/?$", "only our own two repos")
         self.assertNotRegex(text, r"(?i)patreon|ko-?fi|paypal|donat|\btips?\b|buy me")
         self.assertIn("TODO(owner)", text)
         for need in ("How to report a bug", "How to share your Den", "How to host your own realm", "**The rules**"):

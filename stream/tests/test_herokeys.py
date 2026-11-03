@@ -255,8 +255,14 @@ def visible(body):
 # ---------------------------------------------------------------- signed out
 st, hd, body, sc, _ = req("GET", "/wrath/key")
 card = body[body.find('<div class="hk">'):body.find("<script nonce")]
-check("page signed out: 200, one card: Get your Hero Key and Sign in with your Hero Key", st == 200 and "Get your Hero Key" in body
-      and "Sign in with your Hero Key" in body and 'action="/wrath/key/start"' in body and 'action="/wrath/key/signin"' in body, body[:300])
+check("page signed out: 200, one card: Log in (key file, paste, the key kept here), Google, then Sign up (Create a Hero Key)", st == 200
+      and ">Log in</h1>" in body and "Drop your key file here" in body and 'id="hk-usesaved"' in body and "Create a Hero Key" in body
+      and 'action="/wrath/key/start"' in body and 'action="/wrath/key/signin"' in body
+      and body.index("/wrath/key/signin") < body.index("go/google") < body.index("/wrath/key/start"), body[:300])
+check("page signed out: What is a Hero Key? (your login, save it, a fingerprint only, lost it, one account)",
+      "What is a Hero Key?" in body and "only a fingerprint" in body and "A new key stops the old one" in body)
+check("page signed out: no Discord sign-in, no link to the old sign-in pages", "Continue with Discord" not in body and 'href="/login' not in body
+      and 'href="/key"' not in body)
 check("page: the Leyline look (the hub's header and tokens), noindex", 'class="hb-top"' in body and "--lk-surface" in body
       and hd.get("X-Robots-Tag", "").startswith("noindex"))
 check("page: no old logo, crest, side art or screenshot prompt in the card", not re.search(r"(?i)logo\.webp|crest|screenshot|<img", card), card[:400])
@@ -266,7 +272,7 @@ check("page: a form cookie for the signed-out forms (Path=/wrath/key, HttpOnly, 
     c.startswith("ly_hk=") and "Path=/wrath/key" in c and "HttpOnly" in c and "SameSite=Strict" in c for c in sc), sc)
 anon = jar_add("", sc)
 t_start = re.search(r'action="/wrath/key/start"[^>]*><input type="hidden" name="t" value="([0-9a-f]{32})"', body).group(1)
-t_sign = re.search(r'action="/wrath/key/signin"><input type="hidden" name="t" value="([0-9a-f]{32})"', body).group(1)
+t_sign = re.search(r'action="/wrath/key/signin" id="hk-login"><input type="hidden" name="t" value="([0-9a-f]{32})"', body).group(1)
 
 st, _, _, _, _ = req("POST", "/wrath/key/start", anon, {"t": "0" * 32})
 check("start: a wrong form token is refused", st == 403)
@@ -323,7 +329,7 @@ check("new key: the page shows it again after the reload, until it is saved", f'
 # sign in with a key on the site
 anon2 = jar_add("", req("GET", "/wrath/key")[3])
 b = req("GET", "/wrath/key", anon2)[2]
-t2 = re.search(r'action="/wrath/key/signin"><input type="hidden" name="t" value="([0-9a-f]{32})"', b).group(1)
+t2 = re.search(r'action="/wrath/key/signin" id="hk-login"><input type="hidden" name="t" value="([0-9a-f]{32})"', b).group(1)
 st, hd, body, _, _ = req("POST", "/wrath/key/signin", anon2, {"t": t2, "key": key1})
 check("site sign-in: the old key is refused, plainly", st == 401 and "replaced by a newer one" in body)
 st, hd, _, sc, _ = req("POST", "/wrath/key/signin", anon2, {"t": t2, "key": "  " + key2 + "\n"})
@@ -466,7 +472,7 @@ check("launcher sign-in: an uppercase prefix with a line break and a zero-width 
       st == 200 and S.token_acct(d.get("token", "")) == acctR, (st, d))
 anonR = jar_add("", req("GET", "/wrath/key")[3])
 bR = req("GET", "/wrath/key", anonR)[2]
-tR = re.search(r'action="/wrath/key/signin"><input type="hidden" name="t" value="([0-9a-f]{32})"', bR).group(1)
+tR = re.search(r'action="/wrath/key/signin" id="hk-login"><input type="hidden" name="t" value="([0-9a-f]{32})"', bR).group(1)
 st, hd, _, sc, _ = req("POST", "/wrath/key/signin", anonR, {"t": tR, "key": "Ovk1." + keyR[5:] + "\r\n"})
 check("site sign-in: a mixed-case prefix and a trailing line break sign in", st == 303 and any(c.startswith("wr_session=") for c in sc), (st, sc))
 webR = jar_add(anonR, sc)
@@ -480,7 +486,7 @@ check("stale: the session ran out inside the cache minute: the signed-out card, 
       and "Location" not in hd and "Sign in with your Hero Key" in body and "ran out" in body, (st, hd.get("Location")))
 check("stale: the dead website cookie is cleared", any(c.startswith("wr_session=;") and "Max-Age=0" in c and "Path=/" in c for c in sc), sc)
 st, hd, body, sc, _ = req("GET", "/wrath/key", "wr_session=junk")
-check("stale: a junk session cookie: the signed-out card and the cookie cleared", st == 200 and "Get your Hero Key" in body
+check("stale: a junk session cookie: the signed-out card and the cookie cleared", st == 200 and "Create a Hero Key" in body
       and any(c.startswith("wr_session=;") for c in sc), (st, sc))
 st, _, _, _, d = req("GET", "/wrath/api/social/herokey", "wr_session=junk")
 check("stale: the cookie API says sign in (401), plainly", st == 401 and d.get("error"), (st, d))

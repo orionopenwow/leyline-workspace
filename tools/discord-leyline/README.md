@@ -1,6 +1,6 @@
 # Leyline Discord: the redo (you run it, once)
 
-This sets your Discord server up the way [docs/DISCORD-PLAN.md](../../docs/DISCORD-PLAN.md) describes: ten
+This sets your Discord server up the way [docs/DISCORD-PLAN.md](../../docs/DISCORD-PLAN.md) describes: twelve
 categories, the eight roles, and the 30 Oct look: an emoji and the bar in front of every channel (`👋︱welcome`).
 The server's name, icon and banner are never touched. Channels you already have, from the 30 Oct reset (`✦︱welcome`,
 `◆︱general`, `⟡︱host-a-beacon`...) or from before, are **renamed and moved, so their history stays**; one already named right (`🤝︱looking-for-group`) keeps its name. Anything the
@@ -9,6 +9,13 @@ posts anything.
 
 Why a bot: Discord only lets a program change a server through a bot token. Running it as your own account is
 against Discord's terms. So you make a throwaway bot, use it for ten minutes, then kick it.
+
+**Already ran it on 1 Nov?** Run it again (preview first): it brings the server up to the 2 Nov plan.
+`🟢︱live-realms` is renamed `🟢︱community-realms` and moved to the new **Realms** category (its history stays),
+`🎲︱modes-and-forks` moves to the new **Game modes** category, and `⭐︱official-realms`, `🧟︱azeroth-survivors`,
+`🌱︱realm-seeds` and `📱︱browser-and-mobile` are made. A few topics change (changelog, den-help, launcher-help,
+hosting-help, nodes, list-your-realm). Nothing is deleted. Then press **Set up the Discord** in HQ once, so the
+website bot learns the new channels, and paste the new first posts.
 
 ## The steps (about 30 minutes)
 
@@ -45,11 +52,12 @@ against Discord's terms. So you make a throwaway bot, use it for ten minutes, th
    it just learns which channel is which, so its posts land in the right place.
 8. **The rest by hand** (the script prints these too):
    - **Onboarding**: Server Settings > Onboarding. Rules channel `rules`; default channels `welcome`,
-     `announcements`, `hangout`, `bug-reports`; a question "What do you do?" with Play / Build a Den / Host / Make
-     mods, each pointing at its category.
+     `announcements`, `hangout`, `official-realms`, `bug-reports`; a question "What do you do?" with Play / Build a
+     Den / Host / Make mods / Game modes, each pointing at its category.
    - **Changelog**: `#changelog` > Edit Channel > Integrations > Webhooks > New Webhook "Leyline releases" > Copy
-     Webhook URL. On GitHub: the Leyline repo > Settings > Webhooks > Add webhook: that URL with `/github` on the end,
-     `application/json`, "Let me select individual events": **Releases** only. The URL is a secret.
+     Webhook URL. On GitHub, in **both** repos (`orionopenwow/Leyline` and `orionopenwow/Leyline-Launcher`):
+     Settings > Webhooks > Add webhook: that URL with `/github` on the end, `application/json`, "Let me select
+     individual events": **Releases** only. The URL is a secret.
    - **Forum tags**: the script makes the five (Share your realm, Mods & addons, Dens & builds, Help, General). Rename
      or recolour them in `#forum` > Edit Channel > Tags if you like; the ids stay the same.
    - **Roles**: give Moderator, Guide and Core Team by hand. The earned roles come from the website bot
@@ -67,12 +75,14 @@ against Discord's terms. So you make a throwaway bot, use it for ten minutes, th
 | Category | Channels | Notes |
 |---|---|---|
 | **Start here** | `👋︱welcome`, `📜︱rules`, `📣︱announcements`, `📝︱changelog` | read-only; Core Team and Moderator post news, Core Team the changelog |
-| **Wrath Unleashed** | `💬︱hangout`, `📈︱levelling`, `🌍︱world-chat`, `🤝︱looking-for-group`, `🟢︱live-realms`, `🎉︱events` | `🟢︱live-realms` and `🎉︱events` read-only; `🌍︱world-chat` is live with the game |
+| **Wrath Unleashed** | `💬︱hangout`, `📈︱levelling`, `🌍︱world-chat`, `🤝︱looking-for-group`, `🎉︱events` | `🎉︱events` read-only; `🌍︱world-chat` is live with the game |
+| **Realms** | `⭐︱official-realms`, `🟢︱community-realms` | both read-only. Official: the bot keeps one status post per realm (online, players, uptime), edited in place. Community: players' realms as they go live (the old `live-realms`, renamed) |
+| **Game modes** | `🧟︱azeroth-survivors`, `🎲︱modes-and-forks` | `modes-and-forks` moved here from Mods & Workshop |
 | **Your Den** | `📸︱den-showcase`, `📦︱den-files` (1 min slowmode), `🔨︱den-help` | |
-| **Host a server** | `📋︱host-templates`, `🏰︱hosting-help`, `📢︱list-your-realm` (10 min slowmode), `🔗︱nodes`, `☕︱host-lounge`, `🔑︱node-keepers` | `📋︱host-templates` read-only; `☕︱host-lounge` only Realm Hosts, `🔑︱node-keepers` only Node Keepers |
-| **Mods & Workshop** | `📤︱workshop-submissions` (10 min slowmode), `🧩︱mods-and-addons`, `🎲︱modes-and-forks`, `💻︱scripting-help`, `🎮︱mode-jam`, `🔍︱jam-judges` | `🔍︱jam-judges` only Mode Makers |
+| **Host a server** | `📋︱host-templates`, `🏰︱hosting-help`, `📢︱list-your-realm` (10 min slowmode), `🌱︱realm-seeds`, `🔗︱nodes`, `☕︱host-lounge`, `🔑︱node-keepers` | `📋︱host-templates` read-only; `☕︱host-lounge` only Realm Hosts, `🔑︱node-keepers` only Node Keepers |
+| **Mods & Workshop** | `📤︱workshop-submissions` (10 min slowmode), `🧩︱mods-and-addons`, `💻︱scripting-help`, `🎮︱mode-jam`, `🔍︱jam-judges` | `🔍︱jam-judges` only Mode Makers |
 | **Claude & the companion** | `🤖︱claude-and-agents`, `🐾︱companions` | |
-| **Feedback** | `🐞︱bug-reports`, `💡︱feature-ideas` (forum channel), `🛟︱launcher-help` | every message in `🐞︱bug-reports` goes on the bug list |
+| **Feedback** | `🐞︱bug-reports`, `💡︱feature-ideas` (forum channel), `🛟︱launcher-help`, `📱︱browser-and-mobile` | every message in `🐞︱bug-reports` goes on the bug list |
 | **Forum** | `📚︱forum` (forum channel, 5 tags) | the website forum, live |
 | **Team** | `🧭︱roadmap`, `🔒︱mod-room` | private: Core Team; Moderators and Guides |
 | **Voice** | `🎧︱Dalaran lounge`, `🔊︱Group room 1`-`3`, `🎤︱Showcase stage` (Community only) | |
@@ -82,7 +92,8 @@ against Discord's terms. So you make a throwaway bot, use it for ten minutes, th
 
 Old names it picks up (the full list is `ALIASES` in the script): general / wrath-unleashed > `hangout`, help >
 `launcher-help`, host-a-beacon > `hosting-help`, mods-and-workshop / mods > `mods-and-addons`, showcase /
-builders-realm > `den-showcase`, building-help > `den-help`, Hangout (voice) > `Dalaran lounge`; categories START >
+builders-realm > `den-showcase`, building-help > `den-help`, Hangout (voice) > `Dalaran lounge`, live-realms >
+`community-realms` (2 Nov); categories START >
 Start here, PLAY > Wrath Unleashed, CREATE / Build > Your Den, Make > Mods & Workshop, Host > Host a server, FEEDBACK /
 Leyline > Feedback. `ideas` can't turn into a forum channel, so it goes to the archive with its history and
 `feature-ideas` is new. The names (emoji, the bar `︱`, then the name) are exactly the ones in
@@ -120,3 +131,7 @@ and `--post-first-posts` refuses any draft that breaks it. Please keep to it in 
 `python3 tools/discord-leyline/test_discord_leyline.py` runs the tests against a fake Discord on localhost
 (`LEYLINE_DISCORD_API` points the script at it). `LAYOUT` in the script and `stream/discord_template_v2.json` must
 agree (a test checks names, types, topics, slowmodes and permissions): change both together. Standard library only.
+
+The website bot's 2 Nov parts, each off until its line is in portal.env (docs/DISCORD.md): `WU_DISCORD_OFFICIAL=1`
+(the status posts in `official-realms`, edited in place) and `WU_DISCORD_SURVIVORS=1` (a post in `azeroth-survivors`
+when the Survivors site is back up). The community-realms cards stay under `WU_DISCORD_FEED=1`.

@@ -8,10 +8,24 @@ portal.env (docs/DISCORD.md has the checklist); nothing here ever posts on its o
                channels and roles in discord_template.json that the server doesn't have yet. Found by name (and type),
                so it is safe to run again: it never deletes, renames or changes anything that is already there.
                "Preview" first lists what it would make. Needs WU_DISCORD_GUILD (or a forum channel to learn it from).
-  live realms  WU_DISCORD_FEED=1: a realm on the network that goes live (first seen, or back after 6 hours away) gets
-               a card in live-realms: its name, mode, players, and its link (/r/<short> when the realm has one, else its
-               join link). At most WU_DISCORD_FEED_PER_HOUR (4) an hour, busiest first; a realm still waiting after an
-               hour is skipped. Realms already live when the feed is first turned on are not announced.
+  live realms  WU_DISCORD_FEED=1: a community realm on the network that goes live (first seen, or back after 6 hours
+               away) gets a card in the template's posts.live channel: community-realms in discord_template_v2.json
+               (key community_realms), live-realms in discord_template.json (key live_realms). A server set up before
+               the 2 Nov split keeps working: community_realms falls back to the live_realms channel setup found, and
+               setup counts the old "🟢︱live-realms" as community-realms (the channel's "was" names). The card: its
+               name, mode, players, and its link (/r/<short> when the realm has one, else its join link). At most
+               WU_DISCORD_FEED_PER_HOUR (4) an hour, busiest first; a realm still waiting after an hour is skipped.
+               Realms already live when the feed is first turned on are not announced. Official realms (ours: the
+               Hangout realm and network.vr_id()) never get a card: they have their own status post.
+  official     WU_DISCORD_OFFICIAL=1: one status post per official realm in official-realms (posts.official): online or
+               offline, players, how long it has been up, and its uptime over 7 days when the relay has one. Edited in
+               place (never posted again) when the text changes, checked every 5 minutes; a post someone deleted is
+               posted again. Our realm's numbers come from realm_status() (its own SOAP status), the second official
+               realm's from its relay record.
+  survivors    WU_DISCORD_SURVIVORS=1: when the Azeroth Survivors address (stream/survivors.py site_url()) comes back
+               after being off for SURVIVORS_DOWN (15 minutes) or more, a post in azeroth-survivors (posts.survivors)
+               with a Play link to /wrath/survivors. At most one every SURVIVORS_GAP (3 hours); the state when the bot
+               starts is only remembered, never announced.
   picks        Den of the week and the featured mode, picked by staff in HQ: a post in den-showcase / modes-and-forks
                (with WU_DISCORD_FEED=1); Den of the week also gives its maker the Den Architect fact.
   find a group WU_DISCORD_LFG=1: the forum's Discord page (website) and POST /wrath/forum/api/discord/group (launcher,
@@ -35,7 +49,8 @@ portal.env (docs/DISCORD.md has the checklist); nothing here ever posts on its o
                are recorded, never posted. listings.py calls mod_listed() and never waits on Discord or its errors.
 
 Tables (forum.sqlite3): dg_map (what setup found or made), dg_realms (the feed's memory), dg_posts (every post, its
-state; a mod post's ref is <listing id>@<revision>), dg_facts, dg_given (roles the bot gave), dg_picks. Standard library only.
+state; a mod post's ref is <listing id>@<revision>; an official status post's ref is its realm, its later edits only
+in meta dg.official), dg_facts, dg_given (roles the bot gave), dg_picks. Standard library only.
 """
 from __future__ import annotations
 
@@ -71,6 +86,12 @@ PENDING_FOR = 3600             # a card the hourly cap held back is dropped afte
 FEED_EVERY = 60
 HOST_DAYS = 7
 MOD_HOLD = 6 * 3600            # a mod post the hourly cap held back is dropped after this
+OFFICIAL_EVERY = 300           # how often the official realms' status posts are checked (edited only when changed)
+SURVIVORS_EVERY = 60
+SURVIVORS_DOWN = 15 * 60       # the Survivors address off at least this long: its return is announced
+SURVIVORS_GAP = 3 * 3600       # at most one "back up" post in this long
+# a template key that replaced an older one: the channel setup found under the old key still counts (2 Nov split)
+LEGACY_KEYS = {"community_realms": ("live_realms",)}
 PID_RE = re.compile(r"^[0-9a-f]{12}$")
 RULE_NAME = "Leyline blocked words"
 ACCT_RE = re.compile(r"^[A-Z0-9]{1,16}$")
@@ -122,6 +143,8 @@ class Config:
         self.automod = on("WU_DISCORD_AUTOMOD")
         self.mods = on("WU_DISCORD_MODS")
         self.mods_per_hour = _int(env.get("WU_DISCORD_MODS_PER_HOUR"), 6, 1, 60)
+        self.official = on("WU_DISCORD_OFFICIAL")
+        self.survivors = on("WU_DISCORD_SURVIVORS")
         self.template = env.get("WU_DISCORD_TEMPLATE", "").strip() or TEMPLATE_FILE
 
 
@@ -155,6 +178,9 @@ def check_template(doc) -> list[str]:
             ckeys.add(k)
             if ch.get("type", "text") not in TYPES:
                 bad.append(f"channel {k}: type is text, voice, stage or forum")
+            was = ch.get("was", [])
+            if not isinstance(was, list) or not all(isinstance(w, str) and w.strip() for w in was):
+                bad.append(f"channel {k}: was is a list of older names")
             for rk in list(ch.get("private") or []) + list(ch.get("posters") or []):
                 if rk not in rkeys:
                     bad.append(f"channel {k}: unknown role {rk!r}")
@@ -220,6 +246,8 @@ class Growth:
         self.next_feed = 0.0
         self.next_check = 0.0
         self.next_mods = 0.0
+        self.next_official = 0.0
+        self.next_survivors = 0.0
 
     # -- small helpers ---------------------------------------------------------------------------------------------
     def now(self) -> int:
@@ -245,8 +273,14 @@ class Growth:
         self.store.x("INSERT OR REPLACE INTO dg_map (kind, key, id, name) VALUES (?,?,?,?)", (kind, key, str(ident), name[:100]))
 
     def post_channel(self, what: str) -> str:
+        """The channel id for one kind of post (the template's posts.<what>), or "". A key that replaced an older one
+        (LEGACY_KEYS) falls back to the channel setup found under the old key."""
         key = ((self.template or {}).get("posts") or {}).get(what, "")
-        return self.mapped("channel", key) if key else ""
+        for k in ((key,) + LEGACY_KEYS.get(key, ())) if key else ():
+            cid = self.mapped("channel", k)
+            if cid:
+                return cid
+        return ""
 
     def pending(self, kind: str) -> bool:
         return bool(self.store.one("SELECT 1 FROM fd_outbox WHERE kind = ? LIMIT 1", (kind,)))
@@ -301,6 +335,13 @@ class Growth:
         if self.cfg.mods and mono >= self.next_mods:
             self.next_mods = mono + FEED_EVERY
             self.mods_tick()
+        if self.cfg.official and mono >= self.next_official:
+            self.next_official = mono + OFFICIAL_EVERY
+            if not self.pending("dg.official"):
+                self.link.enqueue("dg.official")
+        if self.cfg.survivors and mono >= self.next_survivors:
+            self.next_survivors = mono + SURVIVORS_EVERY
+            self.survivors_tick()
         if mono >= self.next_check:
             self.next_check = mono + 300
             t = self.now()
@@ -322,6 +363,8 @@ class Growth:
             self.sync_roles()
         elif kind == "dg.automod":
             self.push_automod()
+        elif kind == "dg.official":
+            self.official_update()
         else:
             log.warning("discord: unknown outbox item %s", kind)
 
@@ -393,8 +436,11 @@ class Growth:
                 typ = TYPES[ch.get("type", "text")]
                 label = ("stage " if typ == T_STAGE else "channel ") + ch["name"]
                 c = seen.get((ch["name"].lower(), typ))
+                old = next((w for w in ch.get("was") or [] if seen.get((w.lower(), typ))), "") if not c else ""
+                if old:   # an older name of this channel (the 1 Nov live-realms): found, never made again
+                    c = seen[(old.lower(), typ)]
                 if c:
-                    rep["found"].append(label)
+                    rep["found"].append(label + (f" (as {old})" if old else ""))
                     if not dry:
                         self.set_map("channel", ch["key"], str(c["id"]), ch["name"])
                     continue
@@ -491,9 +537,12 @@ class Growth:
         except Exception:   # noqa: BLE001
             return [], False
         net = self.fm.P("network")
+        vr = self._vr_id(net)
         out = []
         for r in realms or []:
             if not isinstance(r, dict) or not r.get("live") or r.get("hangout") or r.get("sample") or r.get("name_ok") is False:
+                continue
+            if r.get("official") or (vr and r.get("id") == vr):   # official realms have their own status post
                 continue
             try:
                 if net is not None and hasattr(net, "offered") and not net.offered(r.get("build")):
@@ -561,6 +610,146 @@ class Growth:
 
     def post_live(self, r: dict) -> int:
         return self.queue_post("live", r["id"], "live", self.live_text(r), ("Play", self.realm_url(r)))
+
+    # -- official realms --------------------------------------------------------------------------------------------
+    @staticmethod
+    def _vr_id(net) -> str:
+        try:
+            v = net.vr_id() if net is not None and hasattr(net, "vr_id") else None
+        except Exception:   # noqa: BLE001
+            v = None
+        return v if isinstance(v, str) else ""
+
+    @staticmethod
+    def _num(v):
+        return v if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else None
+
+    def official_realms(self) -> list[dict]:
+        """[{key, name, online, players, uptime_s, up7}] for the realms we run: our own realm (realm_status(), its relay
+        record for the 7-day uptime) and the second official realm (network.vr_id()) when there is one."""
+        out = []
+        cr = self.fm.P("community_realms")
+        try:
+            listed = [r for r in (cr()[0] if callable(cr) else []) if isinstance(r, dict)]
+        except Exception:   # noqa: BLE001
+            listed = []
+        rs = self.fm.P("realm_status")
+        try:
+            st = rs() if callable(rs) else {}
+        except Exception:   # noqa: BLE001
+            st = {}
+        st = st if isinstance(st, dict) else {}
+        home = next((r for r in listed if r.get("hangout")), {})
+        if st or home:
+            name = str(st.get("realm") or self.fm.P("REALM_NAME") or home.get("name") or "Wrath Unleashed")
+            out.append({"key": "main", "name": name, "online": bool(st.get("online")) if st else bool(home.get("live")),
+                        "players": self._num(st.get("players")) if st else self._num(home.get("players")),
+                        "uptime_s": self._num(st.get("uptime_s")), "up7": self._num(home.get("up7"))})
+        vr = self._vr_id(self.fm.P("network"))
+        r = next((x for x in listed if vr and x.get("id") == vr), None)
+        if r and str(r.get("name") or "").strip():
+            out.append({"key": vr, "name": str(r["name"]), "online": bool(r.get("live")), "players": self._num(r.get("players")),
+                        "uptime_s": None, "up7": self._num(r.get("up7"))})
+        return [o for o in out if not self.text_problem(o["name"])]
+
+    @staticmethod
+    def _span(sec: int) -> str:
+        d, h = sec // 86400, sec % 86400 // 3600
+        part = lambda n, w: f"{n} {w}{'' if n == 1 else 's'}"   # noqa: E731
+        if d:
+            return part(d, "day") + (f" {part(h, 'hour')}" if h else "")
+        return part(h, "hour") if h else "under an hour"   # no minutes: the post is edited at most hourly for this
+
+    def official_text(self, o: dict) -> str:
+        esc = self.fd.esc
+        if o["online"]:
+            line = "🟢 Online" + (f" · {o['players']} playing" if o["players"] is not None else "")
+            if o["uptime_s"]:
+                line += f" · up {self._span(o['uptime_s'])}"
+        else:
+            line = "🔴 Offline right now"
+        if o["up7"] is not None:
+            line += f" · {o['up7']}% up over 7 days"
+        return f"**{esc(o['name'])}** · Official realm\n{line}"
+
+    def official_update(self) -> dict:
+        """Each official realm's status post in official-realms: posted once, then edited in place when its text
+        changes. A post that is gone (deleted by hand) is posted again. Discord being down raises (the outbox retries)."""
+        E = self.fd.DiscordError
+        ch = self.post_channel("official")
+        state = self.jmeta("official") or {}
+        if not ch:
+            state["error"] = "no official-realms channel: run Set up the Discord first"
+            return self.jmeta("official", state)
+        posts = state.get("posts") if isinstance(state.get("posts"), dict) else {}
+        state["error"] = ""
+        for o in self.official_realms():
+            text = self.official_text(o)
+            cur = posts.get(o["key"]) if isinstance(posts.get(o["key"]), dict) else {}
+            if cur.get("ch") == ch and cur.get("msg") and cur.get("text") == text:
+                continue
+            body = {"content": text[:2000], "allowed_mentions": {"parse": []}, "flags": SUPPRESS_EMBEDS}
+            mid = cur.get("msg") if cur.get("ch") == ch else ""
+            try:
+                if mid:
+                    try:
+                        self.link.api.call("PATCH", f"/channels/{ch}/messages/{mid}", body)
+                    except E as ex:
+                        if ex.kind != "notfound":
+                            raise
+                        mid = ""
+                if not mid:
+                    mid = str((self.link.api.call("POST", f"/channels/{ch}/messages", body) or {}).get("id") or "")
+                    self.store.x("INSERT INTO dg_posts (at, kind, ref, channel, body, status, msg) VALUES (?,?,?,?,?,?,?)",
+                                 (self.now(), "official", o["key"][:64], "official", json.dumps(body, separators=(",", ":")),
+                                  "sent", mid))
+            except E as ex:
+                if ex.kind in ("auth", "down", "ratelimited"):
+                    self.jmeta("official", dict(state, posts=posts))
+                    raise
+                state["error"] = f"{o['name']}: {ex.kind}"[:200]
+                continue
+            posts[o["key"]] = {"ch": ch, "msg": mid, "text": text, "at": self.now()}
+        state.update(posts=posts, at=self.now())
+        return self.jmeta("official", state)
+
+    # -- Azeroth Survivors ------------------------------------------------------------------------------------------
+    def survivors_up(self):
+        """True when the Survivors address is set (stream/survivors.py site_url()), False when not, None when unknown."""
+        sv = self.fm.P("survivors")
+        fn = getattr(sv, "site_url", None) if sv is not None else None
+        if not callable(fn):
+            return None
+        try:
+            return bool(fn())
+        except Exception:   # noqa: BLE001
+            return None
+
+    def survivors_tick(self) -> str:
+        """A post in azeroth-survivors when the address comes back after SURVIVORS_DOWN or more. What happened: "",
+        "first" (remembered only), "posted", "quiet" (a post too recently), "short" (off only a moment)."""
+        up = self.survivors_up()
+        if up is None:
+            return ""
+        t = self.now()
+        st = self.jmeta("survivors")
+        if not isinstance(st, dict) or "up" not in st:
+            self.jmeta("survivors", {"up": up, "since": t})
+            return "first"
+        if bool(st["up"]) == up:
+            return ""
+        self.jmeta("survivors", {"up": up, "since": t})
+        if not up:
+            return ""
+        if t - int(st.get("since") or t) < SURVIVORS_DOWN:
+            return "short"
+        if self.sent_since("survivors", t - SURVIVORS_GAP):
+            return "quiet"
+        url = self.site_link("/wrath/survivors")
+        text = ("**Azeroth Survivors** is back up. Play it in your browser with your own game files."
+                + (f"\n[Play](<{url}>)" if url else ""))
+        self.queue_post("survivors", str(t), "survivors", text, ("Play", url))
+        return "posted"
 
     # -- listed mods -----------------------------------------------------------------------------------------------
     @staticmethod
@@ -926,7 +1115,8 @@ class Growth:
         n = self.store.one("SELECT COUNT(*) FROM fd_outbox WHERE kind LIKE 'dg.%'")[0]
         errs = [r[0] for r in self.store.q("SELECT error FROM fd_outbox WHERE kind LIKE 'dg.%' AND error != '' ORDER BY id LIMIT 5")]
         return {"guild": self.link.guild, "feed": self.cfg.feed, "lfg": self.cfg.lfg, "roles": self.cfg.roles,
-                "automod": self.cfg.automod, "mods": self.cfg.mods, "template": self.template_error or "ok", "waiting": n, "errors": errs,
+                "automod": self.cfg.automod, "mods": self.cfg.mods, "official": self.cfg.official, "survivors": self.cfg.survivors,
+                "official_last": self.jmeta("official"), "template": self.template_error or "ok", "waiting": n, "errors": errs,
                 "setup": self.jmeta("setup"), "roles_last": self.jmeta("roles_last"), "automod_last": self.jmeta("automod"),
                 "channels": int(self.store.one("SELECT COUNT(*) FROM dg_map WHERE kind = 'channel'")[0]),
                 "roles_mapped": int(self.store.one("SELECT COUNT(*) FROM dg_map WHERE kind = 'role'")[0])}
@@ -994,7 +1184,11 @@ class Growth:
                  f'<li>{chip(st["roles"])} Roles from accounts, nightly at {self.cfg.roles_hour:02d}:00 UTC <code>WU_DISCORD_ROLES</code></li>'
                  f'<li>{chip(st["automod"])} AutoMod with our blocked words <code>WU_DISCORD_AUTOMOD</code></li>'
                  f'<li>{chip(st["mods"])} Listed mods, new and updated, in mods <code>WU_DISCORD_MODS</code> '
-                 f'(at most {self.cfg.mods_per_hour} an hour)</li></ul>')
+                 f'(at most {self.cfg.mods_per_hour} an hour)</li>'
+                 f'<li>{chip(st["official"])} Official realms\' status posts, edited in place, in official-realms <code>WU_DISCORD_OFFICIAL</code>'
+                 + (f' (problem: {e((st["official_last"] or {}).get("error") or "")})' if (st["official_last"] or {}).get("error") else "")
+                 + '</li>'
+                 f'<li>{chip(st["survivors"])} Azeroth Survivors back up, in azeroth-survivors <code>WU_DISCORD_SURVIVORS</code></li></ul>')
         if st["template"] != "ok":
             feats += f'<p class="hq-warn">The template didn\'t load: {e(st["template"])}</p>'
         errs = ([self.link.last_error] if self.link.last_error else []) + st["errors"]

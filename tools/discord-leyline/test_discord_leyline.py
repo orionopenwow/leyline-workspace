@@ -394,8 +394,29 @@ class TestLayout(unittest.TestCase):
                          ("mods-and-workshop", "mods-and-addons"), ("mods", "mods-and-addons"),
                          ("host-a-beacon", "hosting-help"), ("showcase", "den-showcase"),
                          ("builders-realm", "den-showcase"), ("building-help", "den-help"),
-                         ("hangout", "dalaran-lounge")):
+                         ("hangout", "dalaran-lounge"), ("live-realms", "community-realms")):
             self.assertIn(old, dl.ALIASES[new], old)
+        # 2 Nov: the new channels and categories
+        for n in ("official-realms", "community-realms", "realm-seeds", "azeroth-survivors", "browser-and-mobile"):
+            self.assertIn(n, names)
+        cats = {c: [s["name"] for s in chans] for c, chans in dl.LAYOUT}
+        self.assertEqual(cats["Realms"], ["official-realms", "community-realms"])
+        self.assertEqual(cats["Game modes"], ["azeroth-survivors", "modes-and-forks"])
+        self.assertIn("realm-seeds", cats["Host a server"])
+        self.assertIn("browser-and-mobile", cats["Feedback"])
+        self.assertNotIn("modes-and-forks", cats["Mods & Workshop"])
+        self.assertEqual(dl.EMOJI["community-realms"], "🟢", "the old live-realms keeps its emoji")
+        topic = {s["name"]: s["topic"] or "" for _, chans in dl.LAYOUT for s in chans}
+        for n, want in (("launcher-help", "Hero Key"), ("launcher-help", "new key"), ("launcher-help", "name"),
+                        ("den-help", "next to Play"), ("den-help", "Shape the ground"),
+                        ("changelog", "orionopenwow/Leyline "), ("changelog", "orionopenwow/Leyline-Launcher"),
+                        ("hosting-help", "leylinelauncher.com/wrath/docs/hosting"),
+                        ("community-realms", "leylinelauncher.com/wrath/docs/hosting"),
+                        ("nodes", "be-a-node"), ("official-realms", "uptime")):
+            self.assertIn(want, topic[n], n)
+        for _, chans in dl.LAYOUT:
+            for s in chans:
+                self.assertIsNone(dl.MONEY.search(s["topic"] or ""), s["name"])
         for old, new in (("start", "start-here"), ("play", "wrath-unleashed"), ("create", "your-den"),
                          ("build", "your-den"), ("make", "mods-&-workshop"), ("host", "host-a-server"),
                          ("feedback", "feedback"), ("leyline", "feedback")):
@@ -511,7 +532,7 @@ class TestApply(Base):
         # read-only: @everyone can read, not post; the named roles can post
         mod, core, guide = self.role("Moderator"), self.role("Core Team"), self.role("Guide")
         for name, posters in (("welcome", []), ("announcements", [core, mod]), ("events", [core, mod, guide]),
-                              ("live-realms", [])):
+                              ("official-realms", [core]), ("community-realms", [])):
             ow = dl.ow_map(self.ch(name))
             self.assertTrue(int(ow[GID]["deny"]) & dl.P_SEND, name)
             self.assertFalse(int(ow[GID]["deny"]) & dl.P_VIEW, name)
@@ -591,6 +612,79 @@ class TestApply(Base):
             self.assertIn(s, p.stdout)
 
 
+def nov1_world():
+    """The server as the 1 Nov redo left it: live-realms in Wrath Unleashed, modes-and-forks in Mods & Workshop, and
+    their history."""
+    w = reset_world(community=True)
+    ro = [{"id": GID, "type": 0, "allow": "0", "deny": str(dl.P_NO_TALK)}]
+
+    def ch(i, name, t, parent=None, pos=0, ow=None, topic=None):
+        return {"id": i, "name": name, "type": t, "parent_id": parent, "position": pos, "guild_id": GID,
+                "permission_overwrites": ow or [], "topic": topic, "rate_limit_per_user": 0}
+    w["channels"] = [
+        ch("10", "Wrath Unleashed", 4, pos=0), ch("11", "Mods & Workshop", 4, pos=1), ch("12", "Feedback", 4, pos=2),
+        ch("40", "🟢︱live-realms", 0, "10", 0, ro, "Realms on the Leyline network as they go live."),
+        ch("41", "🎲︱modes-and-forks", 0, "11", 0, None, "Game modes and forks. The featured mode is posted here."),
+        ch("42", "🛟︱launcher-help", 0, "12", 0, None, "Help with the Leyline launcher: installing, signing in, updates."),
+        ch("43", "💬︱hangout", 0, "10", 1),
+        ch("44", "rules", 0, "10", 2),
+    ]
+    w["guild"].update(system_channel_id="44", rules_channel_id="44")
+    w["messages"] = {"40": [{"id": "400001", "content": "**Pine Hollow** is live", "author": {"id": "901"},
+                             "timestamp": "2026-11-01T10:00:00", "attachments": []}],
+                     "41": [{"id": "410001", "content": "Featured mode this week", "author": {"id": "901"},
+                             "timestamp": "2026-11-01T11:00:00", "attachments": []}]}
+    return w
+
+
+class TestFromTheFirstNovLayout(Base):
+    """2 Nov: live-realms becomes community-realms (renamed, history kept), modes-and-forks moves into Game modes,
+    official-realms, realm-seeds, azeroth-survivors and browser-and-mobile are new."""
+    community = True
+
+    def setUp(self):
+        super().setUp()
+        self.fake.w = nov1_world()
+
+    def test_preview_says_what_moves(self):
+        p = self.run_script()
+        self.assertEqual(self.fake.writes(), [])
+        for s in ("🟢︱live-realms -> 🟢︱community-realms (keeps its history; rename, move to Realms, topic)",
+                  "🎲︱modes-and-forks (keeps its name and history; move to Game modes)",
+                  "⭐︱official-realms in Realms, read-only", "🌱︱realm-seeds in Host a server",
+                  "🧟︱azeroth-survivors in Game modes", "📱︱browser-and-mobile in Feedback", "category Realms",
+                  "category Game modes"):
+            self.assertIn(s, p.stdout)
+
+    def test_renamed_and_moved_with_history(self):
+        self.apply()
+        w = self.fake.w
+        cats = {c["name"]: c["id"] for c in w["channels"] if c["type"] == 4}
+        lr, mf, lh = self.fake.chan("40"), self.fake.chan("41"), self.fake.chan("42")
+        self.assertEqual((lr["name"], lr["parent_id"]), ("🟢︱community-realms", cats["Realms"]))
+        self.assertEqual(lr["topic"], dict((s["name"], s["topic"]) for _, c in dl.LAYOUT for s in c)["community-realms"])
+        self.assertEqual((mf["name"], mf["parent_id"]), ("🎲︱modes-and-forks", cats["Game modes"]))
+        self.assertIn("Hero Key", lh["topic"])
+        self.assertEqual(len(w["messages"]["40"]), 1)
+        self.assertEqual(len(w["messages"]["41"]), 1)
+        self.assertFalse([c for c in w["channels"] if dl.slug(c["name"]) == "live-realms"])
+        self.assertEqual(sum(dl.slug(c["name"]) == "community-realms" for c in w["channels"]), 1)
+        off = self.ch("official-realms")
+        self.assertEqual(off["parent_id"], cats["Realms"])
+        ow = dl.ow_map(off)
+        self.assertTrue(int(ow[GID]["deny"]) & dl.P_SEND)
+        self.assertTrue(int(ow["64"]["allow"]) & dl.P_SEND, "the website bot may post its status posts")
+        for name, cat in (("realm-seeds", "Host a server"), ("azeroth-survivors", "Game modes"),
+                          ("browser-and-mobile", "Feedback")):
+            self.assertEqual(self.ch(name)["parent_id"], cats[cat], name)
+        order = [c["name"] for c in sorted((c for c in w["channels"] if c["type"] == 4), key=dl.okey)]
+        self.assertEqual(order[:4], ["Start here", "Wrath Unleashed", "Realms", "Game modes"])
+        # and again: nothing to do
+        n = len(self.fake.writes())
+        self.apply(stdin="")
+        self.assertEqual(len(self.fake.writes()), n, [x[:3] for x in self.fake.writes()[n:]])
+
+
 class TestFromTheResetPreview(Base):
     reset = True
     community = True
@@ -641,7 +735,7 @@ class TestFromTheReset(Base):
         # forum tags, and the website bot may post in the read-only and private channels
         forum = self.ch("forum", (15,))
         self.assertEqual([t["name"] for t in forum["available_tags"]], [t for _, t in dl.FORUM_TAGS])
-        for name in ("live-realms", "announcements", "roadmap"):
+        for name in ("official-realms", "community-realms", "announcements", "roadmap"):
             self.assertTrue(int(dl.ow_map(self.ch(name))["64"]["allow"]) & dl.P_SEND, name)
         self.assertNotIn("64", dl.ow_map(self.ch("hangout")))
         tag = forum["available_tags"][0]["id"]

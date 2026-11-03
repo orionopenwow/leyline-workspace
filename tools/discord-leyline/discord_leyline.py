@@ -5,6 +5,11 @@ his own PC.
 The owner runs this himself (the .bat files next to it). Discord only lets a program change a server through a bot
 token, so he makes a throwaway bot, invites it, pastes its token here, runs this, then kicks the bot. See README.md.
 
+2 Nov: realms split into Realms > official-realms (new) and community-realms (the old live-realms, renamed, history
+kept); a Game modes category with azeroth-survivors (new) and modes-and-forks (moved in from Mods & Workshop);
+realm-seeds in Host a server; browser-and-mobile in Feedback; refreshed topics (changelog, den-help, launcher-help,
+hosting-help, nodes).
+
 What it does, in order (the preview shows all of it first and changes nothing):
   1. backs up the server (settings, roles, channels and their permissions, the last N messages per text channel)
      to Desktop/Leyline-discord-backup-<stamp>/ before any change;
@@ -60,15 +65,18 @@ ARCHIVE = "ARCHIVE"
 GLYPH_SEP = "︱"
 EMOJI = {
     "welcome": "👋", "rules": "📜", "announcements": "📣", "changelog": "📝",
-    "hangout": "💬", "levelling": "📈", "world-chat": "🌍", "looking-for-group": "🤝", "live-realms": "🟢",
-    "events": "🎉",
+    "hangout": "💬", "levelling": "📈", "world-chat": "🌍", "looking-for-group": "🤝", "events": "🎉",
+    # 2 Nov: live-realms became community-realms (it keeps 🟢 and its history); official-realms is new
+    "official-realms": "⭐", "community-realms": "🟢",
+    "azeroth-survivors": "🧟",
     "den-showcase": "📸", "den-files": "📦", "den-help": "🔨",
-    "host-templates": "📋", "hosting-help": "🏰", "list-your-realm": "📢", "nodes": "🔗", "host-lounge": "☕",
+    "host-templates": "📋", "hosting-help": "🏰", "list-your-realm": "📢", "realm-seeds": "🌱", "nodes": "🔗",
+    "host-lounge": "☕",
     "node-keepers": "🔑",
     "workshop-submissions": "📤", "mods-and-addons": "🧩", "modes-and-forks": "🎲", "scripting-help": "💻",
     "mode-jam": "🎮", "jam-judges": "🔍",
     "claude-and-agents": "🤖", "companions": "🐾",
-    "bug-reports": "🐞", "feature-ideas": "💡", "launcher-help": "🛟",
+    "bug-reports": "🐞", "feature-ideas": "💡", "launcher-help": "🛟", "browser-and-mobile": "📱",
     "forum": "📚",
     "roadmap": "🧭", "mod-room": "🔒",
     "Dalaran lounge": "🎧", "Group room 1": "🔊", "Group room 2": "🔊", "Group room 3": "🔊", "Showcase stage": "🎤",
@@ -95,7 +103,8 @@ LAYOUT = [
           ro=True),
         C("announcements", topic="News from the Leyline team. Forum announcements show up here too.", ro=True,
           posters=["Core Team", "Moderator"]),
-        C("changelog", topic="What changed in the launcher, from its release notes. Posted automatically.", ro=True,
+        C("changelog", topic="What changed, from the release notes of both repos: github.com/orionopenwow/Leyline "
+                             "and github.com/orionopenwow/Leyline-Launcher. Posted automatically.", ro=True,
           posters=["Core Team"]),
     ]),
     ("Wrath Unleashed", [
@@ -104,23 +113,40 @@ LAYOUT = [
         C("world-chat", topic="Live with the game's World channel: what you write here shows in the game as "
                               "[Discord]."),
         C("looking-for-group", topic="Find people to play with. Find a group on the website posts here too."),
-        C("live-realms", topic="Realms on the Leyline network as they go live.", ro=True),
         C("events", topic="Weekly Dalaran events and community happenings.", ro=True,
           posters=["Core Team", "Moderator", "Guide"]),
+    ]),
+    # 2 Nov: the launcher and the site split realms into Official (ours, around the clock) and Community (players')
+    ("Realms", [
+        C("official-realms", topic="Our own realms, run by the Leyline team around the clock. The bot keeps one post "
+                                   "per realm up to date: online, players, uptime.", ro=True, posters=["Core Team"]),
+        C("community-realms", topic="Realms run by players, as they go live. A community realm may go offline. Host "
+                                    "your own: leylinelauncher.com/wrath/docs/hosting", ro=True),
+    ]),
+    ("Game modes", [
+        C("azeroth-survivors", topic="Azeroth Survivors: the mode you play in your browser at "
+                                     "survivors.leylinelauncher.com, with your own game files. Runs, advice, problems."),
+        C("modes-and-forks", topic="Game modes and forks. The featured mode is posted here."),
     ]),
     ("Your Den", [
         C("den-showcase", topic="Show your Den: screenshots and a line about it. Den of the week is posted here."),
         C("den-files", topic="Share a Den file: put it on the Workshop and post the link here. Links to the Workshop "
                              "only.", slow=60),
-        C("den-help", topic="Questions about building: edit mode (F7), props, paths, saving and loading, inviting "
+        C("den-help", topic="Building your Den: open Your Den from the realm picker, next to Play. Forge (Shape the "
+                            "ground) edits the terrain. Edit mode (F7), props, paths, saving and loading, inviting "
                             "friends."),
     ]),
     ("Host a server", [
         C("host-templates", topic="Ready-made rulesets and presets for your own realm, from the team. Ask about them "
                                   "in hosting-help.", ro=True, posters=["Core Team", "Guide"]),
-        C("hosting-help", topic="Help hosting a realm from the launcher's Host page or the Host pack."),
-        C("list-your-realm", topic="Tell people about your realm. One post every 10 minutes.", slow=600),
-        C("nodes", topic="Help carry the network: running a node."),
+        C("hosting-help", topic="Help hosting a realm from the launcher's Host page or the Host pack. The guide: "
+                                "leylinelauncher.com/wrath/docs/hosting"),
+        C("list-your-realm", topic="Tell people about your realm. One post every 10 minutes. Live realms also show in "
+                                   "community-realms by themselves.", slow=600),
+        C("realm-seeds", topic="Realm Seeds (planned): community-run versions of a realm, carried by the node network "
+                               "with players' own game files. Ideas, and each Seed's road to Official."),
+        C("nodes", topic="Help carry the network: be a node in the relay mesh. How: "
+                         "leylinelauncher.com/wrath/docs/be-a-node"),
         C("host-lounge", topic="For people who host a listed realm.",
           private=["Realm Host", "Core Team", "Moderator"]),
         C("node-keepers", topic="Network changes, first.", private=["Node Keeper", "Core Team"]),
@@ -129,7 +155,6 @@ LAYOUT = [
         C("workshop-submissions", topic="Made a mod, addon or mode? Post its Workshop link here for the team to look "
                                         "at. One post every 10 minutes.", slow=600),
         C("mods-and-addons", topic="Mods and addons: share, ask, report problems with one."),
-        C("modes-and-forks", topic="Game modes and forks. The featured mode is posted here."),
         C("scripting-help", topic="Help with realm scripts and mode files."),
         C("mode-jam", topic="The monthly mode jam. Bragging rights only, no prizes."),
         C("jam-judges", topic="Mode Makers judge the mode jam here.",
@@ -145,7 +170,11 @@ LAYOUT = [
         C("bug-reports", topic="Found a bug? Say what you did, what you expected and what happened, and where. Every "
                                "message here goes on the team's bug list."),
         C("feature-ideas", FORUM, topic="Ideas for Leyline, one per thread. React to the ones you want."),
-        C("launcher-help", topic="Help with the Leyline launcher: installing, signing in, updates."),
+        C("launcher-help", topic="Help with the Leyline launcher: installing, updates, and your Hero Key: signing "
+                                 "in, making a new key if you lost yours, changing your name. "
+                                 "leylinelauncher.com/wrath/docs/hero-key"),
+        C("browser-and-mobile", topic="Playing in your browser, on a PC or a phone: what works, what doesn't, and "
+                                      "touch controls for phones (planned). Say which browser and device."),
     ]),
     ("Forum", [
         C("forum", FORUM, topic="The Leyline forum, live: new threads and replies from "
@@ -169,6 +198,8 @@ LAYOUT = [
 CATEGORY_ALIASES = {
     "start-here": ["start-here", "start"],
     "wrath-unleashed": ["wrath-unleashed", "play"],
+    "realms": ["realms"],
+    "game-modes": ["game-modes", "modes"],
     "your-den": ["your-den", "build", "create"],
     "mods-&-workshop": ["mods-&-workshop", "make"],
     "host-a-server": ["host-a-server", "host"],
@@ -187,14 +218,19 @@ ALIASES = {
     "hangout": ["hangout", "general", "wrath-unleashed", "general-chat", "chat"],
     "levelling": ["levelling", "leveling"],
     "looking-for-group": ["looking-for-group", "lfg"],
+    # 2 Nov: live-realms is renamed community-realms (its history stays); official-realms is new
+    "community-realms": ["community-realms", "live-realms"],
+    "azeroth-survivors": ["azeroth-survivors", "survivors"],
     "den-showcase": ["den-showcase", "showcase", "builders-realm", "screenshots"],
     "den-help": ["den-help", "building-help"],
     "hosting-help": ["hosting-help", "host-a-beacon", "hosting"],
     "mods-and-addons": ["mods-and-addons", "mods-and-workshop", "mods", "addons", "workshop", "modding"],
-    "modes-and-forks": ["modes-and-forks", "modes"],
+    "modes-and-forks": ["modes-and-forks", "modes"],        # moved from Mods & Workshop to Game modes (2 Nov)
+    "realm-seeds": ["realm-seeds", "seeds"],
     "bug-reports": ["bug-reports", "bug-report", "bugs"],
     # TODO(owner): if the old #help was mostly about hosting, move "help" to hosting-help's list instead.
     "launcher-help": ["launcher-help", "help", "support"],
+    "browser-and-mobile": ["browser-and-mobile", "mobile", "browser"],
     "dalaran-lounge": ["dalaran-lounge", "hangout", "lounge", "general"],
 }
 
@@ -849,15 +885,16 @@ class Rebrand:
         m = []
         if self.community:
             m.append("Onboarding: Server Settings -> Onboarding. Rules: #rules. Default channels: #welcome, "
-                     "#announcements, #hangout, #bug-reports. A question \"What do you do?\" with Play / Build a Den / "
-                     "Host / Make mods, each pointing at its category.")
+                     "#announcements, #hangout, #official-realms, #bug-reports. A question \"What do you do?\" with Play / "
+                     "Build a Den / Host / Make mods / Game modes, each pointing at its category.")
             m.append("Description: Server Settings -> Community -> Overview -> Server Description (TODO(owner)).")
         else:
             m.append("Community: Server Settings -> Enable Community (rules channel: #rules), then run this again: "
                      "it makes the forum channels and the stage. Then Server Settings -> Onboarding.")
         m.append("Changelog: #changelog -> Edit Channel -> Integrations -> Webhooks -> New Webhook \"Leyline releases\" "
-                 "-> Copy Webhook URL. On GitHub: the Leyline repo -> Settings -> Webhooks -> Add webhook, the URL + "
-                 "/github, application/json, events: Releases only. The URL is a secret: paste it nowhere else.")
+                 "-> Copy Webhook URL. On GitHub, in BOTH repos (orionopenwow/Leyline and orionopenwow/Leyline-Launcher): "
+                 "Settings -> Webhooks -> Add webhook, the URL + /github, application/json, events: Releases only. "
+                 "The URL is a secret: paste it nowhere else.")
         m.append("The bots' settings (README step 7): the lines below go in portal.env and discord.env on the server.")
         if not self.portal_bot:
             m.append("The Leyline website bot isn't in the server (no bot role with 'leyline' in its name). After you "

@@ -70,7 +70,7 @@
 import { gamePointerEvent } from './input.js';
 import { makeDriver } from './touch-driver.js';
 
-export const TOUCH_BUILD = 'wrath 2026-10-24 (from 1.12 2026-10-24)';
+export const TOUCH_BUILD = 'wrath 2026-11-03 (ring layout, character creation taps where the finger is)';
 // the driver installTouch made (gameTicks below asks it for game updates)
 let DRIVER = null;
 
@@ -257,7 +257,7 @@ function style() {
     #ow-touch .key.far .face { filter: brightness(.75) sepia(1) hue-rotate(-40deg) saturate(4); }
     #ow-touch .key .count { position: absolute; right: 4px; bottom: 2px; font: 700 11px system-ui, sans-serif; color: #fff; text-shadow: 0 1px 2px #000; }
     #ow-touch .pressed { transform: scale(.92); filter: brightness(1.25); }
-    #ow-touch .dots { position: absolute; display: flex; gap: 6px; padding: 7px 9px; margin: -10px 0 0 -24px; border-radius: 13px; background: rgba(12, 10, 8, .55); box-shadow: inset 0 0 0 1px rgba(240, 215, 154, .35); }
+    #ow-touch .dots { position: absolute; display: flex; gap: 6px; padding: 7px 9px; transform: translate(-50%, -50%); border-radius: 13px; background: rgba(12, 10, 8, .55); box-shadow: inset 0 0 0 1px rgba(240, 215, 154, .35); }
     #ow-touch .dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(240, 215, 154, .3); }
     #ow-touch .dots i.on { background: #f0d79a; }
     #ow-touch .tray { position: absolute; display: flex; flex-direction: row-reverse; align-items: center; gap: 6px; }
@@ -333,7 +333,7 @@ function style() {
     #ow-touch .restore { position: absolute; right: 8px; top: 46%; display: none; pointer-events: auto; opacity: .75; }
     /* no bridge: the screen can't be told apart from the world in an older client, so a button
        switches between the world's controls and the glue screens' taps */
-    #ow-touch .flip { position: absolute; right: 8px; top: 40%; display: none; pointer-events: auto; opacity: .7; }
+    #ow-touch .flip { position: absolute; right: calc(env(safe-area-inset-right, 0px) + 56px); top: calc(env(safe-area-inset-top, 0px) + 10px); display: none; pointer-events: auto; opacity: .7; }
     #ow-touch.on.keys:not(.loading) .flip { display: flex; }
     #ow-touch.pcmode { display: block; }
     #ow-touch.pcmode .restore { display: flex; }
@@ -735,20 +735,35 @@ export function installTouch(bridge) {
     const home = { x: SAFE.l + STICK_HOME.left + 60, y: H - SAFE.b - STICK_HOME.bottom - 60 };
     stick.dataset.hx = home.x; stick.dataset.hy = home.y;
     if (!stick.classList.contains('live')) { stick.style.left = home.x + 'px'; stick.style.top = home.y + 'px'; }
-    // right-thumb cluster: Attack 20 px in from the right, its arc pivoting toward the corner
-    const ax = W - SAFE.r - 20 - 40, ay = H - SAFE.b - 40 - 38;
+    // right-thumb cluster (owner 3 Nov 01:41: "the buttons are misaligned"), laid out the way radial gamepads do it
+    // (RadialGamePad, Lemuroid's controls): every key on one ring round Attack, the same angle apart, each angle
+    // worked out from the ring's radius so neighbours keep GAP px between them (Material's 48 + 8 rule), and the
+    // whole cluster kept inside the safe area: the reticle on the ring up and right, the four keys on it to the
+    // left, Jump under Attack with its own gap, the page dots centred over the reticle.
+    const GAP = 8, EDGE = 8, RA = 48, RK = 24, RT = 23, JH = 30;
+    const TA = 62;                                                // the reticle's angle (up and right)
+    // the smallest ring on which the four keys fit between the reticle and the lowest angle a key may take (no key
+    // lower than Attack's bottom edge: Jump sits under it), each two the same angle apart with GAP px between them
+    const deg = (r) => r * 180 / Math.PI;
+    let R = RA + GAP + RK + 4, step = 0;
+    for (; R < 160; R += 2) {
+      step = deg(2 * Math.asin((RK + GAP / 2) / R)) + 1;
+      if (TA + 4 * step <= 180 + deg(Math.asin((RA - RK) / R))) break;
+    }
+    const ax = Math.round(W - SAFE.r - EDGE - Math.max(RA, R * Math.cos(TA * Math.PI / 180) + RT));
+    const ay = Math.round(H - SAFE.b - EDGE - JH - GAP - RA);    // room for Jump under it
     attack.style.left = ax + 'px'; attack.style.top = ay + 'px';
-    // the reticle sits straight above Attack, the four ability keys continue the same arc to the left
-    const at = (deg, R) => { const a = deg * Math.PI / 180; return [ax + R * Math.cos(a), ay - R * Math.sin(a)]; };
-    // the reticle up and to the right of Attack, the four keys hugging its left side (34 degrees apart)
-    const [tx, ty] = at(70, 90);
+    const at = (deg, r) => { const a = deg * Math.PI / 180; return [Math.round(ax + r * Math.cos(a)), Math.round(ay - r * Math.sin(a))]; };
+    const [tx, ty] = at(TA, R);
     const tgt = $('.target'); tgt.style.left = tx + 'px'; tgt.style.top = ty + 'px';
-    const ANG = [104, 138, 172, 206];
-    keys.forEach((k, i) => { const [x, y] = at(ANG[i], 86); k.style.left = x + 'px'; k.style.top = y + 'px'; });
+    const ANG = [0, 1, 2, 3].map((i) => TA + step * (i + 1));
+    keys.forEach((k, i) => { const [x, y] = at(ANG[i], R); k.style.left = x + 'px'; k.style.top = y + 'px'; });
     const d = $('.dots');
-    d.style.left = tx + 'px'; d.style.top = (ty - 23 - 14) + 'px';
+    const dw = d.offsetWidth || 52;
+    d.style.left = Math.min(tx, W - SAFE.r - EDGE - dw / 2) + 'px'; d.style.top = (ty - RT - GAP - 14) + 'px';
     const j = $('.jump');
-    j.style.left = ax + 'px'; j.style.top = (H - SAFE.b - 18) + 'px';
+    j.style.left = ax + 'px'; j.style.top = (ay + RA + GAP + JH / 2) + 'px';
+    status.layout = { W, H, ax, ay, R, step: Math.round(step), tx, ty };
     const st = $('.strip');
     st.style.left = (W / 2) + 'px'; st.style.top = (H - SAFE.b - 22 - 40) + 'px';
     const tr = $('.tray');
@@ -1242,7 +1257,7 @@ SetCVar("autoLootDefault", "${want}")`);
   lbuf.width = lbuf.height = 264;
   const lbx = lbuf.getContext('2d', { willReadFrequently: true });
   if (/[?&]touchdebug=1/.test(location.search)) root.classList.add('debug');
-  let targets = [], targetsAt = 0, glueLast = '';
+  let targets = [], targetsAt = 0, glueLast = '', glueNow = '';
   const rb = document.createElement('canvas');
   const rbx = rb.getContext('2d', { willReadFrequently: true });
   // read inside an animation frame (the only time the game's canvas can be read back), every 0.8 s
@@ -1321,11 +1336,16 @@ SetCVar("autoLootDefault", "${want}")`);
     } catch { targets = []; }   // a canvas that can't be read back: plain taps, no snapping
   }
   // the button a point means: inside one, or within a finger's width of its edge (nearest wins)
+  // Character creation never snaps (owner 3 Nov 01:42: "it fails to hit buttons on creating character, all of the boxes
+  // are misaligned"): Forever UI's creation screen is full of red art (frames, race and class boxes, sliders) that the
+  // scan takes for buttons, so a tap went to a neighbour's centre. There a tap clicks where the finger is (the ring shows
+  // it; touch and hold for the loupe). Elsewhere a tap snaps only straight above or below a button and close to it.
   function snap(x, y) {
+    if (glueNow === 'charcreate') return null;
     let best = null, bd = Infinity;
     for (const t of targets) {
-      // fingers land low more than sideways: a deep zone above and below, a narrow one at the ends
-      const padY = Math.max(16, t.h * 1.4), padX = 10;
+      // fingers land low more than sideways: a zone above and below, none past the ends
+      const padY = Math.max(10, t.h * 0.8), padX = 2;
       const dx = Math.max(t.x - x, 0, x - (t.x + t.w)), dy = Math.max(t.y - y, 0, y - (t.y + t.h));
       if (dx > padX || dy > padY) continue;
       const dd = Math.hypot(dx, dy * 1.4);
@@ -1333,6 +1353,7 @@ SetCVar("autoLootDefault", "${want}")`);
     }
     return best;
   }
+  status.snapAt = (x, y, ts) => { if (ts) targets = ts; return snap(x, y); };
   function flash(x, y, snapped) {
     ring.style.left = x + 'px'; ring.style.top = y + 'px';
     ring.classList.toggle('snap', snapped);
@@ -1475,6 +1496,7 @@ SetCVar("autoLootDefault", "${want}")`);
   if (root.classList.contains('debug')) setInterval(() => debugLine(), 1000);   // numbers from the start, not only after a tap
   const GLUE = (st) => st === 'login' || st === 'charselect' || st === 'charcreate' || /realm/i.test(st || '');
   const glueState = (st) => {
+    glueNow = st || '';
     root.classList.toggle('glue-touch', GLUE(st));
     root.classList.toggle('ingame', GLUE(st) || st === 'inworld');
   };

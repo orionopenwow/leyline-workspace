@@ -155,7 +155,7 @@ pub fn load(dir: &Path) -> Settings {
             Ok(mut s) => {
                 // names saved before the rule (a folder named after the game) are cleaned on load
                 for c in &mut s.clients {
-                    c.name = crate::clients::brandless(&c.name);
+                    c.name = crate::clients::tidy_name(&crate::clients::brandless(&c.name), c.build);
                 }
                 // the official realm saved under its old name (before the move to leylinelauncher.com) is the
                 // official realm still: shown and chosen as such (addresses.rs)

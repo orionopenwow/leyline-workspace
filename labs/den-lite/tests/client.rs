@@ -156,6 +156,17 @@ fn reparse(opcode: u16, body: &[u8]) -> Option<ServerOpcodeMessage> {
     }
     // the sandbox combat's messages (combat.rs, classes.rs), written by hand and read by hand in its test; the
     // values updates (health, power, the class's fields: SMSG_UPDATE_OBJECT of type 0) too
+    // the companion's flights and curved walks (flight.rs: Flying / Catmullrom, every point whole) and her flying
+    // switches, written by hand
+    if opcode == 0x00DD {
+        let n = 1 + body.first().map_or(0, |m| m.count_ones() as usize);
+        if body.get(n + 17) == Some(&0) && body.get(n + 18..n + 22).is_some_and(|f| u32::from_le_bytes(f.try_into().unwrap()) & 0x42000 != 0) {
+            return None;
+        }
+    }
+    if matches!(opcode, 0x422 | 0x423 | 0x4D3 | 0x4D4) {
+        return None;
+    }
     if den_lite::combat::SERVER_OPS.contains(&opcode) || opcode == 0x0129 || (opcode == 0x00A9 && body.get(4) == Some(&0)) {
         return None;
     }
@@ -818,8 +829,8 @@ fn the_den_grows_and_the_companion_talks_with_the_assistant() {
     let (sx, sy) = (mx + 12.0 + (0.75 * std::f32::consts::PI).cos() * 2.5, my + (0.75 * std::f32::consts::PI).sin() * 2.5);
     assert!((to.x - sx).abs() < 0.01 && (to.y - sy).abs() < 0.01, "{to:?}");
     assert!(mv.duration > 1000 && mv.duration < 3000, "{}", mv.duration);
-    // out of the Den: she stays
-    w.send(&heartbeat(mx + 40.0, my, mz, 0.0));
+    // far from the Den (past flight.rs AREA; she follows you anywhere nearer, 3 Nov): she stays
+    w.send(&heartbeat(mx + 400.0, my, mz, 0.0));
     let line = w.until(|f| match &f.msg {
         Some(ServerOpcodeMessage::SMSG_MESSAGECHAT(m)) if matches!(m.chat_type, SMSG_MESSAGECHAT_ChatType::System { .. }) => Some(m.message.clone()),
         _ => None,
@@ -2056,6 +2067,97 @@ fn the_class_picker_and_the_dummies_take_spells_and_swings() {
     let evs = den_lite::events::read(&dir);
     assert!(evs.iter().any(|l| l.ev == "class" && l.detail.starts_with("mage 80")));
     assert!(evs.iter().any(|l| l.ev == "cast" && l.detail.starts_with("143 ")));
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A companion move written by hand (flight.rs sky_body): (flags, duration, points).
+fn sky_move(f: &Frame) -> Option<(u32, u32, Vec<[f32; 3]>)> {
+    if f.opcode != 0x00DD {
+        return None;
+    }
+    let b = &f.body;
+    let mut at = 0;
+    if den_lite::combat::read_packed(b, &mut at)? != den_lite::companion::GUID {
+        return None;
+    }
+    at += 1 + 12 + 4;
+    if *b.get(at)? != 0 {
+        return None;
+    }
+    at += 1;
+    let flags = u32::from_le_bytes(b.get(at..at + 4)?.try_into().ok()?);
+    if flags & 0x42000 == 0 {
+        return None;
+    }
+    let ms = u32::from_le_bytes(b.get(at + 4..at + 8)?.try_into().ok()?);
+    let n = u32::from_le_bytes(b.get(at + 8..at + 12)?.try_into().ok()?) as usize;
+    let f = |k: usize| f32::from_le_bytes(b[k..k + 4].try_into().unwrap());
+    let pts = (0..n).map(|i| at + 12 + 12 * i).map(|k| [f(k), f(k + 4), f(k + 8)]).collect();
+    Some((flags, ms, pts))
+}
+
+#[test]
+fn the_companion_flies_with_you_lands_with_you_and_walks_around_props() {
+    let (srv, dir) = server_with("sky", HeroGender::Female, true);
+    let (key, _, address) = login(srv.login, "DEN", "den").expect("login");
+    let mut w = World::connect(&address, "DEN", key, 0);
+    w.send(&CMSG_CHAR_ENUM {});
+    let ch = w.until(|f| match &f.msg {
+        Some(ServerOpcodeMessage::SMSG_CHAR_ENUM(e)) => Some(e.characters[0].guid),
+        _ => None,
+    });
+    w.send(&CMSG_PLAYER_LOGIN { guid: ch });
+    assert_eq!(w.until_she_says().2, den_lite::companion::GREET);
+    let (mx, my, mz) = (16226.2f32, 16257.0f32, 13.25f32);
+    w.send(&heartbeat(mx, my, mz, 0.0));
+    std::thread::sleep(Duration::from_millis(2500));
+
+    // a prop right in her way: she walks around it, never through it
+    let a = srv.shared.companion.lock().unwrap().pos(u64::MAX);
+    let obj = den::find_objects("wooden chair").into_iter().next().expect("a chair");
+    srv.shared.den.lock().unwrap().stamp(&den::one_piece(obj), a.x, a.y, mz, 0.0);
+    let prop = srv.shared.den.lock().unwrap().props.last().unwrap().obj.clone();
+    let b = (2.0 * prop.x - a.x, 2.0 * prop.y - a.y);
+    let off = (0.75 * std::f32::consts::PI).sin_cos();
+    let p2 = (b.0 - off.1 * 2.5, b.1 - off.0 * 2.5);
+    w.send(&heartbeat(p2.0, p2.1, mz, 0.0));
+    let (flags, _, pts) = w.until(|f| sky_move(f));
+    assert_eq!(flags & 0x2000, 0, "on foot");
+    assert!(pts.len() >= 2, "a waypoint around the chair: {pts:?}");
+    for q in &pts {
+        assert!(((q[0] - prop.x).powi(2) + (q[1] - prop.y).powi(2)).sqrt() > 0.6, "never in the chair: {q:?}");
+    }
+    let end = pts.last().unwrap();
+    assert!(((end[0] - p2.0).powi(2) + (end[1] - p2.1).powi(2)).sqrt() >= 1.99, "never on top of you");
+
+    // fly: up in the air she flies too (told she flies, then a curved flight to above your height)
+    w.say(".den fly on");
+    w.until(|f| (f.opcode == 0x343).then_some(()));
+    let up = mz + 12.0;
+    w.send(&heartbeat(p2.0, p2.1, up, 0.0));
+    w.until(|f| (f.opcode == 0x422).then_some(()));
+    w.until(|f| (f.opcode == 0x4D3).then_some(()));
+    let (flags, ms, pts) = w.until(|f| sky_move(f));
+    assert_eq!(flags, 0x42000, "Flying | Catmullrom");
+    assert_eq!(pts.len(), 2);
+    let last = pts[1];
+    assert!((last[2] - (up + 0.8)).abs() < 0.01, "above your height: {last:?}");
+    assert!(ms >= 300);
+    // you fly on: she follows in the air
+    w.send(&heartbeat(p2.0 + 15.0, p2.1, up + 5.0, 0.0));
+    let (_, _, pts) = w.until(|f| sky_move(f).filter(|m| m.0 & 0x2000 != 0));
+    assert!((pts[1][0] - (p2.0 + 15.0 - 1.77)).abs() < 0.1 && pts[1][2] > up + 5.0);
+    // you land: she lands beside you (a flight down to the ground), then walks again
+    w.send(&heartbeat(p2.0 + 15.0, p2.1, mz, 0.0));
+    let (flags, _, pts) = w.until(|f| sky_move(f));
+    assert_eq!(flags, 0x2000);
+    assert!((pts[0][2] - 13.2).abs() < 0.2, "on the ground: {pts:?}");
+    w.until(|f| (f.opcode == 0x423).then_some(()));
+    w.until(|f| (f.opcode == 0x4D4).then_some(()));
+    let evs = den_lite::events::read(&dir);
+    assert!(evs.iter().any(|l| l.ev == "companion" && l.detail == "flies") && evs.iter().any(|l| l.ev == "companion" && l.detail == "lands"));
     drop(w);
     drop(srv);
     let _ = std::fs::remove_dir_all(&dir);

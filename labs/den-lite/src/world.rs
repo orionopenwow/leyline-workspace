@@ -1160,25 +1160,25 @@ fn order(c: &Writer, shared: &Shared, p: Pos, cmd: companion::Cmd) -> io::Result
             let here = comp.stay(ms);
             drop(comp);
             // she stops where she is (a walk of nothing ends the one she was on)
-            walk(c, here, here, 100, shared.companion.lock().unwrap().moves)?;
+            walk(c, here, here, 100, shared.companion.lock().unwrap().moves, &[])?;
             monster_say(c, companion::STAYING)
         }
         Cmd::Follow => {
             comp.follow_on();
             let step = comp.follow(p, ms);
-            let id = comp.moves;
+            let (id, via) = (comp.moves, comp.via.clone());
             drop(comp);
             if let Some((from, to, d)) = step {
-                walk(c, from, to, d, id)?;
+                walk(c, from, to, d, id, &via)?;
             }
             monster_say(c, companion::FOLLOWING)
         }
         Cmd::Come => {
             let step = comp.come_walk(p, ms);
-            let id = comp.moves;
+            let (id, via) = (comp.moves, comp.via.clone());
             drop(comp);
             if let Some((from, to, d)) = step {
-                walk(c, from, to, d, id)?;
+                walk(c, from, to, d, id, &via)?;
             }
             monster_say(c, companion::COMING)
         }
@@ -1792,8 +1792,14 @@ fn monster_say(c: &Writer, text: &str) -> io::Result<()> {
 }
 
 /// Her walk from one spot to another (SMSG_MONSTER_MOVE, one point, no spline flags: the client runs or walks her
-/// there in `ms`).
-fn walk(c: &Writer, from: At, to: At, ms: u32, id: u32) -> io::Result<()> {
+/// there in `ms`); around a prop (`via`, flight.rs), a curved path through its waypoints (Catmullrom: every point
+/// written whole).
+fn walk(c: &Writer, from: At, to: At, ms: u32, id: u32, via: &[At]) -> io::Result<()> {
+    if !via.is_empty() {
+        let mut pts = via.to_vec();
+        pts.push(to);
+        return c.send_raw(crate::flight::SMSG_MONSTER_MOVE, &crate::flight::sky_body(companion::GUID, from, &pts, id, crate::flight::SPLINE_CATMULLROM, ms));
+    }
     c.send(&SMSG_MONSTER_MOVE {
         guid: Guid::new(companion::GUID),
         unknown: 0,
@@ -1846,6 +1852,62 @@ pub fn companion_ticker(shared: Arc<Shared>) {
     }
 }
 
+/// The props' footprints she walks around (flight.rs), from their models' sizes when the table is there.
+fn companion_blocks(d: &den::Den) -> Vec<crate::flight::Block> {
+    d.props.iter().map(|x| crate::flight::block_of(x.obj.x, x.obj.y, x.obj.scale, crate::models::tile(x.obj.display).as_deref())).collect()
+}
+
+/// Every 300 ms or so (dojo_ticker): she flies with a flying player and lands with them (flight.rs).
+fn flight_tick(shared: &Shared) -> io::Result<()> {
+    use crate::flight;
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let ms = now_ms();
+    if ms < NEXT.load(Ordering::Relaxed) {
+        return Ok(());
+    }
+    NEXT.store(ms + flight::SKY_EVERY_MS, Ordering::Relaxed);
+    let live = shared.live.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let Some((_, w, p)) = live else { return Ok(()) };
+    let (fly_on, speed) = { let d = shared.dojo.lock().unwrap_or_else(|e| e.into_inner()); (d.fly, d.speed_now()) };
+    let ground = shared.den.lock().unwrap_or_else(|e| e.into_inner()).floor_at(p.x, p.y);
+    let up = flight::airborne(fly_on, p, ground);
+    let mut comp = shared.companion.lock().unwrap_or_else(|e| e.into_inner());
+    if !comp.out || comp.order == companion::Order::Stay {
+        return Ok(());
+    }
+    let here = comp.pos(ms);
+    if up {
+        let first = !comp.flying;
+        let target = flight::sky_spot(p);
+        if !first && (comp.pos(u64::MAX).x - target.x).hypot(comp.pos(u64::MAX).y - target.y) <= flight::SKY_SLACK && (comp.pos(u64::MAX).z - target.z).abs() <= flight::SKY_SLACK {
+            return Ok(());
+        }
+        comp.flying = true;
+        let (pts, t) = flight::sky_path(here, target, dojo::BASE_FLIGHT * speed as f32);
+        let id = comp.set_path(here, target, ms, t);
+        drop(comp);
+        if first {
+            w.send_raw(flight::SMSG_SPLINE_MOVE_SET_FLYING, &flight::guid_body(companion::GUID))?;
+            w.send_raw(flight::SMSG_SPLINE_MOVE_GRAVITY_DISABLE, &flight::guid_body(companion::GUID))?;
+            shared.event("companion", "", "flies");
+        }
+        w.send_raw(flight::SMSG_MONSTER_MOVE, &flight::sky_body(companion::GUID, here, &pts, id, flight::SPLINE_FLYING | flight::SPLINE_CATMULLROM, t))?;
+    } else if comp.flying {
+        // you landed: she lands beside you
+        comp.flying = false;
+        let g = shared.den.lock().unwrap_or_else(|e| e.into_inner()).floor_at(companion::spot(p).x, companion::spot(p).y);
+        let (pts, t) = flight::landing(here, p, g);
+        let to = pts[pts.len() - 1];
+        let id = comp.set_path(here, to, ms, t);
+        drop(comp);
+        w.send_raw(flight::SMSG_MONSTER_MOVE, &flight::sky_body(companion::GUID, here, &pts, id, flight::SPLINE_FLYING, t))?;
+        w.send_raw(flight::SMSG_SPLINE_MOVE_UNSET_FLYING, &flight::guid_body(companion::GUID))?;
+        w.send_raw(flight::SMSG_SPLINE_MOVE_GRAVITY_ENABLE, &flight::guid_body(companion::GUID))?;
+        shared.event("companion", "", "lands");
+    }
+    Ok(())
+}
+
 fn companion_tick(shared: &Shared, read: bool) -> io::Result<()> {
     let (now, ms) = (now(), now_ms());
     let live = shared.live.lock().unwrap().clone();
@@ -1853,11 +1915,17 @@ fn companion_tick(shared: &Shared, read: bool) -> io::Result<()> {
         shared.companion.lock().unwrap().read_lines(&shared.cfg.den_dir, now);
     }
     if let Some((_, w, p)) = live {
-        let inside = shared.den.lock().unwrap().inside(p.x, p.y, p.z);
+        // she keeps up anywhere near the Den (flight.rs AREA: past the Den's own circle she used to go, "fading
+        // away"); the props she walks around
+        let (inside, near, blocks) = {
+            let d = shared.den.lock().unwrap();
+            (d.inside(p.x, p.y, p.z), crate::flight::near_den(d.spot.x, d.spot.y, p), companion_blocks(&d))
+        };
         let (out, wanted) = { let c = shared.companion.lock().unwrap(); (c.out, c.wanted) };
         if out {
             let mut comp = shared.companion.lock().unwrap();
-            if !inside {
+            comp.blocks = blocks;
+            if !inside && !near {
                 comp.away();
                 drop(comp);
                 w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(companion::GUID), target_died: false })?;
@@ -1870,12 +1938,12 @@ fn companion_tick(shared: &Shared, read: bool) -> io::Result<()> {
                 w.send(&companion_create(at))?;
             } else {
                 let step = comp.follow(p, ms);
-                let id = comp.moves;
+                let (id, via) = (comp.moves, comp.via.clone());
                 // only the assistant's answers (she was asked): no tips nobody asked for (owner, 1 Nov 23:46)
                 let line = comp.next_line(now);
                 drop(comp);
                 if let Some((from, to, t)) = step {
-                    walk(&w, from, to, t, id)?;
+                    walk(&w, from, to, t, id, &via)?;
                 }
                 if let Some(l) = line {
                     monster_say(&w, &l)?;
@@ -2206,11 +2274,11 @@ fn jaina_build(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, name: &str) -> 
     let walked = {
         let mut comp = shared.companion.lock().unwrap_or_else(|e| e.into_inner());
         comp.heard_now(now());
-        comp.go_stay(stand, ms).map(|w| (w, comp.moves))
+        comp.go_stay(stand, ms).map(|w| (w, comp.moves, comp.via.clone()))
     };
     let walk_ms = match walked {
-        Some(((from, to, d), id)) => {
-            walk(c, from, to, d, id)?;
+        Some(((from, to, d), id, via)) => {
+            walk(c, from, to, d, id, &via)?;
             d as u64
         }
         None => 0,
@@ -2285,6 +2353,7 @@ pub fn dojo_ticker(shared: Arc<Shared>) {
 
 fn dojo_tick(shared: &Shared) -> io::Result<()> {
     sandbox::tick(shared);
+    let _ = flight_tick(shared);
     if shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).job.is_none() {
         return Ok(());
     }

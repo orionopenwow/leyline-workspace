@@ -14,6 +14,7 @@ pub mod den;
 pub mod dojo;
 pub mod events;
 pub mod gizmo;
+pub mod flight;
 pub mod guests;
 pub mod ovmod;
 pub mod login;

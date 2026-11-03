@@ -39,7 +39,7 @@ pub const OUT_FILE: &str = "companion-out.json";
 pub const FOLLOW: f32 = 2.5;
 pub const ANGLE: f32 = PI * 0.75;
 /// Further than this (a jump across the room): she comes back to the player's side at once.
-pub const FAR: f32 = 30.0;
+pub const FAR: f32 = 40.0;
 /// "Jaina, ..." is heard within this many yards.
 pub const HEAR: f32 = 10.0;
 /// She doesn't move for less than this ("following loosely").
@@ -260,6 +260,12 @@ pub struct Companion {
     pub order: Order,
     /// She is wanted by the player's side (not sent away): she comes back by herself when they step into the Den again.
     pub wanted: bool,
+    /// She flies with the player (flight.rs); the props she walks around, the player she keeps her distance from,
+    /// and the waypoints of the walk she is on (before its end).
+    pub flying: bool,
+    pub blocks: Vec<crate::flight::Block>,
+    pub near: Option<At>,
+    pub via: Vec<At>,
     /// The session: when the player came into the world, the last time they said anything to her, the nudge said.
     arrived: u64,
     last_heard: u64,
@@ -293,12 +299,14 @@ impl Companion {
             return self.to;
         }
         let t = (ms.saturating_sub(self.start)) as f32 / (self.arrive - self.start) as f32;
-        At { x: self.from.x + (self.to.x - self.from.x) * t, y: self.from.y + (self.to.y - self.from.y) * t, z: self.to.z, o: self.to.o }
+        At { x: self.from.x + (self.to.x - self.from.x) * t, y: self.from.y + (self.to.y - self.from.y) * t, z: self.from.z + (self.to.z - self.from.z) * t, o: self.to.o }
     }
 
     /// She comes to the player's side (or, out already, steps back to it): where she stands.
     pub fn come(&mut self, p: At, ms: u64) -> At {
         let at = spot(p);
+        (self.near, self.flying) = (Some(p), false);
+        self.via.clear();
         (self.out, self.wanted, self.order) = (true, true, Order::Follow);
         (self.from, self.to, self.start, self.arrive) = (at, at, ms, ms);
         at
@@ -366,6 +374,7 @@ impl Companion {
             return None;
         }
         self.order = Order::Follow;
+        self.near = Some(p);
         let now = self.pos(ms);
         if dist(now, spot(p)) <= 0.5 {
             return None;
@@ -380,10 +389,18 @@ impl Companion {
         }
         self.order = Order::Stay;
         let now = self.pos(ms);
-        let (from, to, d) = self.walk_to(now, target, ms);
+        let (from, to, d) = self.walk_steered(now, target, ms, false);
         // she arrives facing the way the build wants, not the way she walked
         self.to.o = target.o;
         Some((from, At { o: target.o, ..to }, d))
+    }
+
+    /// A path set from outside (her flight, flight.rs): from where she is to `to` in `ms`; the spline id.
+    pub fn set_path(&mut self, from: At, to: At, now: u64, ms: u32) -> u32 {
+        (self.from, self.to, self.start, self.arrive) = (from, to, now, now + ms as u64);
+        self.via.clear();
+        self.moves += 1;
+        self.moves
     }
 
     /// She turns where she stands (the Dojo's builds: to each piece): where she is, and the spline id to use.
@@ -395,10 +412,20 @@ impl Companion {
     }
 
     fn walk_to(&mut self, now: At, target: At, ms: u64) -> (At, At, u32) {
-        let d = dist(now, target);
+        self.walk_steered(now, target, ms, true)
+    }
+
+    /// `steer`: around the props in the way, never ending in one or on top of the player (flight.rs); the Dojo's
+    /// builds walk her straight to the spot the build wants.
+    fn walk_steered(&mut self, now: At, target: At, ms: u64, steer: bool) -> (At, At, u32) {
+        let pts = if steer { crate::flight::path(now, target, self.near, &self.blocks) } else { vec![target] };
+        let target = pts.last().copied().unwrap_or(target);
+        self.via = pts[..pts.len().saturating_sub(1)].to_vec();
+        let d = crate::flight::length(At { z: target.z, ..now }, &pts.iter().map(|p| At { z: target.z, ..*p }).collect::<Vec<_>>());
         let speed = if d > 6.0 { RUN } else { WALK };
         let duration = ((d / speed * 1000.0) as u32).max(100);
-        let o = (target.y - now.y).atan2(target.x - now.x).rem_euclid(2.0 * PI);
+        let last = self.via.last().copied().unwrap_or(now);
+        let o = (target.y - last.y).atan2(target.x - last.x).rem_euclid(2.0 * PI);
         let to = At { o, ..target };
         (self.from, self.to, self.start, self.arrive) = (now, to, ms, ms + duration as u64);
         self.moves += 1;
@@ -408,9 +435,10 @@ impl Companion {
     /// One step of following the player at `p`: a walk to start (from, to, milliseconds), or None while she is close
     /// enough (or already on her way there).
     pub fn follow(&mut self, p: At, ms: u64) -> Option<(At, At, u32)> {
-        if !self.out || self.order == Order::Stay {
+        if !self.out || self.order == Order::Stay || self.flying {
             return None;
         }
+        self.near = Some(p);
         let target = spot(p);
         let now = self.pos(ms);
         let walking = ms < self.arrive;

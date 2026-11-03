@@ -273,6 +273,13 @@ check("page: a form cookie for the signed-out forms (Path=/wrath/key, HttpOnly, 
 anon = jar_add("", sc)
 t_start = re.search(r'action="/wrath/key/start"[^>]*><input type="hidden" name="t" value="([0-9a-f]{32})"', body).group(1)
 t_sign = re.search(r'action="/wrath/key/signin" id="hk-login"><input type="hidden" name="t" value="([0-9a-f]{32})"', body).group(1)
+# the fresh computer test logs in here as a browser does (tools/first-run/first_run.py web_lines): its reading of the page
+_frs = importlib.util.spec_from_file_location("first_run_contract", os.path.join(ROOT, "tools", "first-run", "first_run.py"))
+FR = importlib.util.module_from_spec(_frs)
+_frs.loader.exec_module(FR)
+check("fresh computer test: it finds the Log in form's token and the signed-out card on this page",
+      FR.FORM_T.search(body) is not None and FR.FORM_T.search(body).group(1) == t_sign and FR.SIGNED_OUT_MARK in body
+      and FR.KEY_PAGE == "/wrath/key")
 
 st, _, gbody, _, _ = req("GET", "/wrath/key?guest=1", anon)
 check("?guest=1 (the sign-in page's Create a guest account): the form submits itself", 'id="hk-start" data-go="1"' in gbody and "st.submit()" in gbody)
@@ -341,6 +348,7 @@ check("saved: ok, and the service's 'stop showing it' cookie comes back", st == 
       and any(c.startswith("wr_herokey_play=;") for c in sc), (st, d, sc))
 web = jar_add(web, sc)
 st, _, body, _, _ = req("GET", "/wrath/key", web)
+check("fresh computer test: signed in, the page has no signed-out card", FR.SIGNED_OUT_MARK not in body)
 check("page after saving: no key shown, 'Your key is saved', when made and last used, Make a new key", "data-key=" not in body
       and "Your key is saved" in body and "Made <b>31 Oct 2026</b>" in body and 'id="hk-new"' in body, visible(body)[-800:])
 

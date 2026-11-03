@@ -71,6 +71,26 @@ class StepPaths(unittest.TestCase):
         self.assertNotIn("domain-off", ro)
         self.assertIn("read-only", steps["domain-check"][1])
 
+    def test_fresh_computer_steps(self):
+        """The fresh computer test (docs/FRESH-COMPUTER-TEST.md): fresh-test and fresh-sandbox run first_run.py; neither is
+        READ_ONLY (they start the game and make a test account), and first-run-test runs the same tool."""
+        steps = control_steps()
+        tree = ast.parse(read("tools/control/control.py"))
+        ro = next(ast.literal_eval(n.value) for n in tree.body
+                  if isinstance(n, ast.Assign) and any(getattr(t, "id", "") == "READ_ONLY" for t in n.targets))
+        for step, bat, mode in (("fresh-test", "tools/first-run/Fresh computer test.bat", " run %*"),
+                                ("fresh-sandbox", "tools/first-run/Fresh computer test - sandbox.bat", " sandbox --open %*"),
+                                ("first-run-test", "tools/first-run/First run test.bat", " run %*")):
+            got, _title, interactive = steps[step]
+            self.assertEqual(win(got), bat)
+            self.assertFalse(interactive)
+            self.assertNotIn(step, ro)
+            text = read(bat)
+            self.assertIn('first_run.py"' + mode, text)
+            with open(os.path.join(ROOT, bat), "rb") as f:
+                raw = f.read()
+            self.assertNotIn(b"\n", raw.replace(b"\r\n", b""), f"{bat}: CRLF")
+
     def test_fork_check_is_read_only(self):
         """The fork kit (docs/TOOLKIT.md): fork-check only reads (READ_ONLY), runs fork_kit.py check, CRLF like a bat."""
         bat, title, interactive = control_steps()["fork-check"]

@@ -88,6 +88,9 @@ labs/leyline-client-112/*.bundle
 /control/notes-from-owner.json
 tools/github-cleanup/PLAN.json
 tools/discord-leyline/token.txt
+tools/discord-leyline/token.txt.tmp
+# Leyline Control's Discord panel: the last preview's summary, do it and bot settings (no token in it)
+/control/discord.json
 tools/discord-leyline/.leyline-state.json
 # the note the move to Leyline leaves in the old folder
 MOVED-TO-LEYLINE.txt

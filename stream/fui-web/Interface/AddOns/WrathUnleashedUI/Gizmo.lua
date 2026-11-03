@@ -368,6 +368,8 @@ function G.Cancel()
     if G.armed == "axis" then send("grab off") elseif G.armed or G.dragging then send("preview off") end
     G.armed = nil
     G.dragging = nil
+    -- the press is spent: its let-go starts nothing
+    if down.LeftButton then down.LeftButton.prop = nil end
     if G.axis then G.SetAxis(nil) end
     local B = W.Builder
     if B and B.HandDone then B.HandDone() end
@@ -448,6 +450,8 @@ end
 -- A button let go: a drag drops the prop (one undo); a click (short, still) on the world: left places what is in
 -- hand, or selects what is under the cursor (Shift adds; empty ground clears); right stops placing.
 function G.MouseUp(button)
+    -- a quick flick (pressed, moved and let go within one frame) is a drag too
+    if button == "LeftButton" and not G.dragging then G.DragCheck() end
     local d = down[button]
     down[button] = nil
     if not G.build or not d then bindings(); return false end
@@ -638,7 +642,11 @@ function G.OnMessage(prefix, msg, channel, sender)
         bindings(); showTag()
     elseif name == "grabbed" then
         -- the drag's press found nothing to grab (or a locked prop): the drag is over
-        if data == "-" then G.dragging = nil; bindings(); showTag() end
+        if data == "-" then
+            G.dragging = nil
+            if down.LeftButton then down.LeftButton.prop = nil end
+            bindings(); showTag()
+        end
     elseif name == "ghost" then
         G.ghost = data
     elseif name == "state" then

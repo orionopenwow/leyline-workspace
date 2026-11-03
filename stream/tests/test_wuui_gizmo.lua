@@ -469,6 +469,15 @@ c = cmds(n)
 check("Esc while dragging: put back (preview off), no drop after", has(c, "preview off") and not has(c, "commit") and not G.dragging)
 answer("aim", "off")
 
+-- a quick flick (pressed, moved and let go before the next frame): a drag and a drop
+answer("hovered", "5 Wooden Chair")
+cursor = { 1400, 300 }
+n = #sent
+press(); cursor = { 1440, 330 }; release()
+c = cmds(n)
+check("a quick flick on a prop: dragged and dropped, not a camera drag", (c[1] or ""):find("^drag 0%.4583") and c[#c] == "commit" and not G.dragging)
+answer("aim", "off")
+
 -- a press on a prop that was gone by then: Den Lite says nothing was grabbed
 press(); cursor = { 1300, 300 }; tick(0.05)
 answer("grabbed", "-")

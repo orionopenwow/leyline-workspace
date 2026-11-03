@@ -1149,6 +1149,8 @@ KEY_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><
 def _send(h, status: int, body: bytes, cookies: list[str], nonce: str = "") -> None:
     if not cookies:
         return h.send(status, body, nonce=nonce, connect=True, headers={"X-Robots-Tag": "noindex, nofollow"})
+    if hasattr(h, "brand_file_body"):   # a community's own brand file (stream/brandfile.py; unset: unchanged)
+        body = h.brand_file_body(body)
     h.send_response(status)
     h.send_header("Content-Type", "text/html; charset=utf-8")
     h.send_header("Content-Length", str(len(body)))

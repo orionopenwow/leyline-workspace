@@ -160,6 +160,8 @@ Settings (environment, /srv/wrath/portal.env):
                          the one writable mount); WU_MODS_ADMINS, WU_GITHUB_TOKEN etc.: stream/projects.py
   WU_WORKSHOP_ITEMS_DIR  the approved Workshop items for /wrath/workshop (default /app/workshop =
                          /srv/wrath/portal/workshop, written by realm/custom/workshop-export.py)
+  WU_BRAND_FILE          a community's own brand.json (stream/brandfile.py: name, colours, logo, Discord link; written by
+                         tools/commons "Make my own Leyline"). Unset (the default): every page exactly as before
   WU_ART_DIR             the site art and theme (default /app/art = /srv/wrath/portal/art on the host,
                          installed from stream/www-files/art by fastloop.sh), served at /wrath/art/<name>
                          from a fixed list. Missing: the pages fall back to plain CSS.
@@ -443,6 +445,13 @@ _BRAND_HTML = re.compile(f"({_BRAND_SKIP}|{_BRAND_KEEP})|({_BRAND_OLD})", re.S)
 _BRAND_JSON = re.compile(f"(https?://[^\\s\"'<>]+|{_BRAND_KEEP})|({_BRAND_OLD})")
 
 
+# A community's own brand file (stream/brandfile.py; tools/commons "Make my own Leyline"; docs/BLANK-SLATE.md):
+# WU_BRAND_FILE=/path/brand.json gives the site another name, colours, logo and Discord link. Unset, missing or
+# refused: None, and every page reads exactly as before.
+_brandfile = _load_module("wu_brandfile", "brandfile.py")
+BRAND_FILE = _brandfile.load(os.environ.get("WU_BRAND_FILE", "").strip()) if _brandfile else None
+
+
 # The site's tab icon (owner 2 Nov: "give our site the logo for the tab"): every page gets the Leyline mark, put in
 # front of its <title> unless the page names an icon itself.
 TAB_ICON = (b'<link rel="icon" type="image/png" sizes="32x32" href="/wrath/art/leyline-favicon-32.png">'
@@ -577,7 +586,7 @@ ART_DIR = os.environ.get("WU_ART_DIR", "/app/art")
 FOREVERUI = "0" if os.environ.get("WU_FOREVERUI", "1").strip() == "0" else "1"
 SESSION_TTL = 12 * 3600
 CODE_TTL = 60
-DISCORD_URL = "https://discord.gg/RfChVr8J7T"
+DISCORD_URL = ((BRAND_FILE or {}).get("links") or {}).get("discord") or "https://discord.gg/RfChVr8J7T"
 GAME_FOLDER_HELP = "/wrath/docs/play#use-your-own-game-folder-to-go-anywhere"
 DISCORD_HELP = ("Need help finding or setting up your own game folder? Join our Discord and "
                 "people will help: " + DISCORD_URL)
@@ -1395,6 +1404,7 @@ ART_TYPES = {
     "wu-divider.webp": "image/webp", "wu-dragon-l.webp": "image/webp", "wu-dragon-r.webp": "image/webp",
     "Cinzel-SemiBold.woff2": "font/woff2", "Cinzel-OFL.txt": "text/plain; charset=utf-8",
     "wu-card.webp": "image/webp",   # the link-preview card (tools/art/wu-card.html, 1200 x 630)
+    "brand-logo.png": "image/png", "brand-logo.webp": "image/webp",   # a brand file's logo (stream/brandfile.py)
     "leyline-emblem.webp": "image/webp", "leyline-bg.webp": "image/webp",   # the Leyline page (owner's art)
     "leyline-shot-dalaran.webp": "image/webp", "leyline-shot-start.webp": "image/webp",   # gallery (live client shots)
     "leyline-shot-city.webp": "image/webp", "leyline-shot-durotar.webp": "image/webp",
@@ -3572,10 +3582,17 @@ class PageHandler(BaseHTTPRequestHandler):
         # Caddy sets X-Forwarded-For to the real address (header_up in the site's Caddyfile).
         return (self.headers.get("X-Forwarded-For", "").split(",")[-1].strip() or self.client_address[0])[:64]
 
+    def brand_file_body(self, body: bytes, ctype: str = "text/html; charset=utf-8") -> bytes:
+        """A page as the community's brand file says (WU_BRAND_FILE; unset: unchanged), for modules that answer with
+        cookies themselves (herokeys, profiles) instead of through send()."""
+        return _brandfile.apply(BRAND_FILE, body, ctype) if BRAND_FILE else body
+
     def send(self, status: int, body: bytes, ctype: str = "text/html; charset=utf-8", nonce: str = "",
              public: bool = False, same_origin: bool = False, connect: bool = False,
              headers: dict | None = None, loopback: bool = False) -> None:
         body = brand_body(body, ctype)   # the Leyline brand switch (off: unchanged)
+        if BRAND_FILE:   # a community's own brand file (WU_BRAND_FILE; unset: unchanged)
+            body = _brandfile.apply(BRAND_FILE, body, ctype)
         body = with_tab_icon(body, ctype)   # the Leyline mark on the browser tab (owner 2 Nov)
         body = legacy_body(body, ctype, self.headers.get("Host", ""))   # launcher documents on the old site name
         body = shutdown_body(body, ctype)   # the kill switch's banner (docs/KILL-SWITCH.md; no file: unchanged)

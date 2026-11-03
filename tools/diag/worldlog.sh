@@ -21,6 +21,8 @@ echo "== crash files inside the container"
 docker exec "$C" sh -c 'ls -lt /azerothcore/env/dist/bin/Crashes /azerothcore/env/dist/logs/Crashes 2>/dev/null | head -5; ls -lt /azerothcore/env/dist/bin 2>/dev/null | grep -i -E "crash|core" | head -5' 2>&1
 echo "== Lua (ALE) lines, last 3 h (2 Nov: the in-game .bug didn't answer the audit)"
 docker logs --since 3h "$C" 2>&1 | grep -i -E 'lua|ale\b|ov_reports|\.lua:' | grep -v -i -E 'password|Missing property ALE' | tail -40
+echo "  since the world server started (the load lines: errors, and which scripts ALE loaded):"
+docker logs "$C" 2>&1 | grep -i -E 'lua|ale\b|eluna|\.lua' | grep -v -i -E 'password|Missing property ALE' | grep -i -E 'error|fail|loaded|ov_reports|unable|attempt|expected|near' | head -40
 echo "  ov_reports.lua in the container: $(docker exec "$C" sh -c 'ls -l /azerothcore/env/dist/bin/lua_scripts/ov_reports.lua /azerothcore/lua_scripts/ov_reports.lua 2>/dev/null' 2>&1 | head -2)"
 echo "== out-of-memory kills, last 24 h (names only)"
 (journalctl -k --since "-24h" 2>/dev/null || dmesg 2>/dev/null) | grep -iE 'killed process|memory cgroup out of memory' | sed -E 's/.*(Killed process [0-9]+ \([^)]*\)).*/\1/; s/.*(Memory cgroup out of memory).*/\1/' | sort | uniq -c | tail -10

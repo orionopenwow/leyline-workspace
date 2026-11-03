@@ -2244,3 +2244,86 @@ fn any_items_look_goes_on_at_once_and_is_kept() {
     drop(srv);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// System lines until one starts with `prefix` (other lines, such as the companion staying behind, are skipped);
+/// every frame on the way and the line.
+fn until_said(w: &mut World, prefix: &str) -> (Vec<Frame>, String) {
+    let mut all = Vec::new();
+    loop {
+        let (frames, line) = w.until_line();
+        all.extend(frames);
+        if line.starts_with(prefix) {
+            return (all, line);
+        }
+    }
+}
+
+fn f32_at(b: &[u8], i: usize) -> f32 {
+    f32::from_le_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]])
+}
+
+/// Den anywhere (places.rs, owner 3 Nov): `.den go` on the same map is a near teleport the game answers, to another
+/// map a far one (TRANSFER_PENDING, NEW_WORLD, the game's WORLDPORT_ACK, then everything again: the player's own
+/// create with the self flag, the time sync, the world states, and no Den objects on a map the Den isn't on);
+/// `.den here` moves the Den, keeping the old place's props in its own file, and props go down at the new place.
+#[test]
+fn the_den_goes_anywhere_near_and_far_and_each_place_keeps_its_den() {
+    let (srv, dir) = server("places", HeroGender::Female);
+    let mut w = into_world(&srv, 0);
+    let me = den_lite::world::PLAYER_GUID;
+    w.say(".den place chair");
+    let (frames, _) = w.until_line();
+    let (made, _) = objects(&frames);
+    let chair = *made.keys().next().expect("the chair on the island");
+    // near: Orgrimmar is on the island's map
+    w.say(".den go orgrimmar");
+    let (frames, _) = until_said(&mut w, "Off to Orgrimmar");
+    let tp = frames.iter().find(|f| f.opcode == 0x0C7).expect("MSG_MOVE_TELEPORT_ACK");
+    assert_eq!(&tp.body[..2], &[0x01, 0x01], "the player's packed guid");
+    let counter = u32::from_le_bytes([tp.body[2], tp.body[3], tp.body[4], tp.body[5]]);
+    assert_eq!((f32_at(&tp.body, 16), f32_at(&tp.body, 20)), (1629.36, -4373.39));
+    assert!(!frames.iter().any(|f| f.opcode == 0x03E), "no loading screen on the same map");
+    let mut ack = vec![0x01, 0x01];
+    ack.extend_from_slice(&counter.to_le_bytes());
+    ack.extend_from_slice(&1000u32.to_le_bytes());
+    w.raw(0x0C7, &ack);
+    until_said(&mut w, "You are at Orgrimmar");
+    // far: Stormwind is on another map
+    w.say(".den go stormwind");
+    let (frames, _) = until_said(&mut w, "Off to Stormwind");
+    assert!(frames.iter().any(|f| f.opcode == 0x03F && f.body == 0u32.to_le_bytes()), "SMSG_TRANSFER_PENDING, map 0");
+    let nw = frames.iter().find(|f| f.opcode == 0x03E).expect("SMSG_NEW_WORLD");
+    assert_eq!((&nw.body[..4], f32_at(&nw.body, 4)), (&0u32.to_le_bytes()[..], -8833.38));
+    assert!(f32_at(&nw.body, 12) > 94.0, "a little above the ground: the game lands on its own");
+    w.raw(0x0DC, &[]);
+    let (frames, _) = until_said(&mut w, "You are at Stormwind");
+    assert_eq!(player_created(&frames, me), Some(true), "the player's own create again, with the self flag");
+    assert!(frames.iter().any(|f| f.opcode == 0x0390), "the time sync again");
+    assert!(objects(&frames).0.is_empty(), "the Den's props stay on the island's map");
+    // make my Den here: the island's chair goes, kept in its place's file
+    w.send(&heartbeat(-8830.0, 630.0, 94.0, 0.0));
+    w.say(".den here");
+    let (frames, line) = until_said(&mut w, "Your Den is here now: Stormwind");
+    assert!(objects(&frames).1.contains(&chair), "{line}");
+    assert!(dir.join("places").join("m1_16226_16257.den.json").is_file());
+    w.say(".den place chair");
+    let (frames, _) = w.until_line();
+    let (made, _) = objects(&frames);
+    let c = made.values().next().expect("a chair in Stormwind");
+    assert!((c.x + 8827.0).abs() < 1.0 && (c.y - 630.0).abs() < 1.0, "3 yards ahead, at the new place");
+    w.say(".den places");
+    let (_, line) = until_said(&mut w, "Your Den is at Stormwind");
+    assert!(line.contains("Dens you kept at other places"), "{line}");
+    // back to the island: no Den objects there now (the Den is in Stormwind)
+    w.say(".den go island");
+    until_said(&mut w, "Off to your first Den");
+    w.raw(0x0DC, &[]);
+    let (frames, _) = until_said(&mut w, "You are at your first Den");
+    assert!(objects(&frames).0.is_empty());
+    w.say(".den size city");
+    let (_, line) = until_said(&mut w, "Your Den is size 7 of 7");
+    assert!(line.contains("city-size"), "{line}");
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+}

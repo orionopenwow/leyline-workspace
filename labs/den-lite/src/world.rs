@@ -13,7 +13,7 @@
 use crate::companion::{self, Asked, At};
 use crate::den::{self, Change, WorldObject};
 use crate::notice::{self, Item, Old, Route};
-use crate::{dojo, gizmo, movewatch, ovmod, play, raw, testctl};
+use crate::{dojo, gizmo, movewatch, mymodels, ovmod, places, play, raw, testctl};
 use crate::{Gender as HeroGender, Shared};
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -183,6 +183,56 @@ fn others(shared: &Shared, sess: u64) -> Vec<Peer> {
     shared.players.lock().unwrap_or_else(|e| e.into_inner()).iter().filter(|p| p.sess != sess).cloned().collect()
 }
 
+/// The map a connection's player is on (Shared::seen; None: not in the world yet).
+fn map_of(shared: &Shared, w: &Writer) -> Option<u32> {
+    shared.seen.lock().unwrap_or_else(|e| e.into_inner()).get(&w.addr()).map(|s| s.0)
+}
+
+/// A friend's connection (their game gets the player's own models as stand-ins: mymodels.rs).
+fn is_guest(shared: &Shared, w: &Writer) -> bool {
+    shared.seen.lock().unwrap_or_else(|e| e.into_inner()).get(&w.addr()).is_some_and(|s| s.1)
+}
+
+fn set_map(shared: &Shared, w: &Writer, map: u32, guest: bool) {
+    shared.seen.lock().unwrap_or_else(|e| e.into_inner()).insert(w.addr(), (map, guest));
+}
+
+/// The Den's map now.
+fn den_map(shared: &Shared) -> u32 {
+    shared.den_map.load(Ordering::Relaxed)
+}
+
+/// Every other player on the same map as `w`'s (a friend in another city doesn't see your moves here).
+fn others_here(shared: &Shared, sess: u64, w: &Writer) -> Vec<Peer> {
+    let m = map_of(shared, w);
+    others(shared, sess).into_iter().filter(|o| map_of(shared, &o.w) == m).collect()
+}
+
+/// When a session ends: its map and guest mark go (a new connection may get the same address).
+struct ForgetOnDrop(Arc<Shared>, usize);
+impl Drop for ForgetOnDrop {
+    fn drop(&mut self) {
+        self.0.seen.lock().unwrap_or_else(|e| e.into_inner()).remove(&self.1);
+    }
+}
+
+/// A map id as the message crate takes it (places.rs MAPS and any map the game has); the island's map otherwise.
+fn wmap(id: u32) -> Map {
+    Map::try_from(id).unwrap_or(Map::Kalimdor)
+}
+
+/// An AreaTable id as the message crate takes it; 0 or unknown: the island's.
+fn warea(id: u32) -> Area {
+    if id == 0 { AREA } else { Area::try_from(id).unwrap_or(AREA) }
+}
+
+/// Where the Den is: its spot, the floor at its middle plus the spawn lift, its map and area for the messages.
+fn den_where(shared: &Shared) -> (den::Spot, f32, Map, Area) {
+    let d = shared.den.lock().unwrap_or_else(|e| e.into_inner());
+    let area = d.place.as_ref().map(|p| p.1).unwrap_or(0);
+    (d.spot, d.spawn_z(0.0), wmap(d.spot.map), if d.spot.is_home() { AREA } else { warea(area) })
+}
+
 /// A client's movement packet as the others get it: the mover's packed guid, then its movement info as sent.
 fn relay_body(guid: u64, body: &[u8]) -> Option<Vec<u8>> {
     let mask = *body.first()?;
@@ -288,6 +338,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
     let addons = addon_count(&auth.addon_info);
     let sess = Sess { id: SESSIONS.fetch_add(1, Ordering::Relaxed), addons: play::addon_names(&auth.addon_info), me };
     let _leave = LeaveOnDrop(shared.clone(), sess.id);
+    let _forget = ForgetOnDrop(shared.clone(), c.w.addr());
     c.send(&SMSG_ADDON_INFO {
         // one entry per addon only when every key CRC is the standard one (AzerothCore would send its public key for
         // the others, which Den Lite doesn't have): the real game (2 Nov 01:00) sent 23 addons with CRC 0, and answered
@@ -355,6 +406,50 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                     }
                 }
             }
+        }
+        // `.den go` (places.rs): the game's answer to a teleport. Near: it moved its character; far: the new map is
+        // loaded, and everything is sent again (arrive_far)
+        if (op == places::MSG_MOVE_TELEPORT_ACK as u32 || op == places::MSG_MOVE_WORLDPORT_ACK as u32) && pos.is_some() {
+            let trip = shared.trips.lock().unwrap_or_else(|e| e.into_inner()).remove(&sess.id);
+            if let Some(t) = trip {
+                let near_ok = op == places::MSG_MOVE_TELEPORT_ACK as u32
+                    && !t.far
+                    && places::teleport_ack(&body).is_some_and(|(g, n)| g == sess.me.guid && n == t.counter);
+                let far_ok = op == places::MSG_MOVE_WORLDPORT_ACK as u32 && t.far;
+                if near_ok || far_ok {
+                    let at = At { x: t.x, y: t.y, z: t.z, o: t.o };
+                    pos = Some(at);
+                    if let Some(l) = shared.live.lock().unwrap().as_mut().filter(|l| l.0 == sess.id) {
+                        l.2 = at;
+                    }
+                    if let Some(me) = shared.players.lock().unwrap().iter_mut().find(|x| x.sess == sess.id) {
+                        me.pos = at;
+                    }
+                    shared.event("arrived", &sess.me.name, &format!("{} map {} {:.1} {:.1} {:.1}: {}", if t.far { "far" } else { "near" }, t.map, t.x, t.y, t.z, t.title));
+                    if far_ok {
+                        // a new time in a world: the game takes its character again (SET_ACTIVE_MOVER: control said
+                        // once more), and its moves are watched afresh (movewatch.rs)
+                        let floor = shared.den.lock().unwrap_or_else(|e| e.into_inner()).floor_at(at.x, at.y);
+                        let w = movewatch::Watch::new(sess.id, at, if t.map == den_map(shared) { floor } else { at.z });
+                        if sess.me.host {
+                            *shared.moves.lock().unwrap_or_else(|e| e.into_inner()) = Some(w.clone());
+                        }
+                        watch = Some(w);
+                        gizmo::clear(&mut aids);
+                        arrive_far(&c.w, shared, &sess, &t)?;
+                    } else {
+                        for o in others_here(shared, sess.id, &c.w) {
+                            let _ = o.w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(sess.me.guid), target_died: false });
+                            let _ = o.w.send(&player_create(&sess.me, at, false));
+                        }
+                    }
+                    say(&c.w, &format!("You are at {}. .den here makes your Den here; .den go den takes you back.", t.title))?;
+                } else {
+                    // not this trip's answer: it still waits
+                    shared.trips.lock().unwrap_or_else(|e| e.into_inner()).insert(sess.id, t);
+                }
+            }
+            continue;
         }
         // the sandbox combat (sandbox.rs, combat.rs): casts, the target, swings, the bar; a start of movement stops a cast
         if sandbox::client_op(&c.w, shared, &sess, pos, op, &body)? {
@@ -433,7 +528,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 }
                 // the others see the move (not the game's own "I fly now", which is only for the server)
                 if let (Ok(code), Some(b), true) = (u16::try_from(op), relay_body(sess.me.guid, &body), op != dojo::CMSG_MOVE_SET_FLY) {
-                    for o in others(shared, sess.id) {
+                    for o in others_here(shared, sess.id, &c.w) {
                         let _ = o.w.send_raw(code, &b);
                     }
                 }
@@ -470,9 +565,11 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 let (start, ground, file, near) = {
                     let d = shared.den.lock().unwrap();
                     let start = At { x: d.spot.x + side, y: d.spot.y, z: d.spawn_z(side), o: std::f32::consts::FRAC_PI_2 };
-                    (start, d.floor_at(start.x, start.y), d.ground.is_some(), d.nearest_object(start.x, start.y))
+                    (start, d.floor_at(start.x, start.y), d.ground_here().is_some(), d.nearest_object(start.x, start.y))
                 };
                 shared.event("spawn", &sess.me.name, &movewatch::spawn_note(start, ground, file, near));
+                // the player comes in at the Den, wherever it is (places.rs: `.den here`)
+                set_map(shared, &c.w, den_map(shared), !sess.me.host);
                 let w = movewatch::Watch::new(sess.id, start, ground);
                 if sess.me.host {
                     *shared.moves.lock().unwrap_or_else(|e| e.into_inner()) = Some(w.clone());
@@ -494,8 +591,8 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 pos = Some(start);
                 loaded = false;
                 shared.event("in_world", &sess.me.name, &format!("{:.1} {:.1} {:.1}", start.x, start.y, start.z));
-                // the others: they see this player, this player sees them
-                for o in others(shared, sess.id) {
+                // the others on this map: they see this player, this player sees them
+                for o in others_here(shared, sess.id, &c.w) {
                     c.send(&player_create(&o.me, o.pos, false))?;
                     shared.event("peer_seen", &sess.me.name, &o.me.name);
                     if o.w.send(&player_create(&sess.me, start, false)).is_ok() {
@@ -580,7 +677,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                     }
                     // the others see the move
                     if let (Ok(code), Some(b)) = (u16::try_from(op), relay_body(sess.me.guid, &body)) {
-                        for o in others(shared, sess.id) {
+                        for o in others_here(shared, sess.id, &c.w) {
                             let _ = o.w.send_raw(code, &b);
                         }
                     }
@@ -959,7 +1056,7 @@ fn display_id(g: HeroGender) -> i32 {
 }
 
 pub fn character(shared: &Shared, me: &Me) -> Character {
-    let (spot, z) = { let d = shared.den.lock().unwrap(); (d.spot, d.spawn_z(0.0)) };
+    let (spot, z, map, area) = den_where(shared);
     let empty = CharacterGear { equipment_display_id: 0, inventory_type: InventoryType::NonEquip, enchantment: 0 };
     let mut equipment = [empty; 23];
     for &(slot, _, display, inv) in OUTFIT {
@@ -978,8 +1075,8 @@ pub fn character(shared: &Shared, me: &Me) -> Character {
         hair_color: 0,
         facial_hair: 0,
         level: Level::new(level),
-        area: AREA,
-        map: Map::Kalimdor,
+        area,
+        map,
         position: Vector3d { x: spot.x, y: spot.y, z },
         guild_id: 0,
         flags: 0,
@@ -1074,13 +1171,13 @@ fn login_time() -> DateTime {
 /// What the client needs from CMSG_PLAYER_LOGIN to the world on screen, in AzerothCore's order
 /// (WorldSession::HandlePlayerLogin, Player::SendInitialPacketsBeforeAddToMap / AfterAddToMap).
 fn enter_world(c: &Writer, shared: &Shared, account: &str, me: &Me, p: Pos) -> io::Result<()> {
-    let (spot, z) = { let d = shared.den.lock().unwrap(); (d.spot, d.spawn_z(0.0)) };
-    c.send(&SMSG_LOGIN_VERIFY_WORLD { map: Map::Kalimdor, position: Vector3d { x: p.x, y: p.y, z: p.z }, orientation: p.o })?;
+    let (spot, z, map, area) = den_where(shared);
+    c.send(&SMSG_LOGIN_VERIFY_WORLD { map, position: Vector3d { x: p.x, y: p.y, z: p.z }, orientation: p.o })?;
     c.send(&account_times(shared, account, &me.name, CacheMask::PER_CHARACTER_CACHE))?;
     c.send(&SMSG_FEATURE_SYSTEM_STATUS { complaint_status: ComplaintStatus::EnabledWithAutoIgnore, voice_chat_enabled: false })?;
     // no message of the day: it is a line in the chat (the Den bar or the welcome says hello instead)
     c.send(&SMSG_MOTD { motds: vec![] })?;
-    c.send(&SMSG_BINDPOINTUPDATE { position: Vector3d { x: spot.x, y: spot.y, z }, map: Map::Kalimdor, area: AREA })?;
+    c.send(&SMSG_BINDPOINTUPDATE { position: Vector3d { x: spot.x, y: spot.y, z }, map, area })?;
     // the class's spells and bar when one is picked (sandbox.rs), else none, as before
     sandbox::initial(c, shared, me)?;
     c.send(&SMSG_INITIALIZE_FACTIONS { factions: vec![FactionInitializer { flag: FactionFlag::empty(), standing: 0 }; 128] })?;
@@ -1092,10 +1189,89 @@ fn enter_world(c: &Writer, shared: &Shared, account: &str, me: &Me, p: Pos) -> i
     let looks = if me.host { shared.gear.lock().unwrap_or_else(|e| e.into_inner()).clone() } else { None };
     c.send(&player_create_as(me, p, true, sandbox::kit_for(shared, me).as_ref(), looks.as_ref()))?;
     c.send_raw(movewatch::SMSG_TIME_SYNC_REQ, &movewatch::time_sync_body(0))?;
-    c.send(&SMSG_INIT_WORLD_STATES { map: Map::Kalimdor, area: AREA, sub_area: AREA, states: vec![] })?;
+    c.send(&SMSG_INIT_WORLD_STATES { map, area, sub_area: area, states: vec![] })?;
     let objs = shared.den.lock().unwrap().everything();
     send_creates(c, shared, &objs)?;
     Ok(())
+}
+
+/// `.den go` (places.rs): the host's character to another spot. The same map: a near teleport (the game moves its
+/// character and answers); another map: a far one (its loading screen; `arrive_far` once it answers). Nothing moves
+/// on Den Lite's side until the game answers (the session's teleport acks).
+fn travel(c: &Writer, shared: &Shared, sess: &Sess, t: places::Target) -> io::Result<()> {
+    static TRIPS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+    if Map::try_from(t.map).is_err() {
+        return say(c, &format!("Your game has no map {}.", t.map));
+    }
+    let from = map_of(shared, c).unwrap_or_else(|| den_map(shared));
+    let far = !places::is_near(from, t.map);
+    let counter = TRIPS.fetch_add(1, Ordering::Relaxed);
+    let trip = places::Trip { map: t.map, x: t.x, y: t.y, z: t.z, o: t.o, far, counter, area: t.area, title: t.title.clone() };
+    shared.trips.lock().unwrap_or_else(|e| e.into_inner()).insert(sess.id, trip);
+    shared.event("travel", &sess.me.name, &format!("{} map {} {:.1} {:.1} {:.1}", if far { "far" } else { "near" }, t.map, t.x, t.y, t.z));
+    if far {
+        // the game drops every object it knows on a new map: the companion and the Dojo's build go quietly
+        if sess.me.host {
+            shared.companion.lock().unwrap_or_else(|e| e.into_inner()).away();
+            shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).job = None;
+        }
+        // the others on the old map lose this player
+        for o in others_here(shared, sess.id, c) {
+            let _ = o.w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(sess.me.guid), target_died: false });
+        }
+        c.send_raw(places::SMSG_TRANSFER_PENDING, &places::transfer_pending_body(t.map))?;
+        c.send_raw(places::SMSG_NEW_WORLD, &places::new_world_body(t.map, t.x, t.y, t.z, t.o))?;
+    } else {
+        c.send_raw(places::MSG_MOVE_TELEPORT_ACK, &places::teleport_body(sess.me.guid, counter, movewatch::server_ms(), t.x, t.y, t.z, t.o))?;
+    }
+    say(c, &format!("Off to {}...", t.title))
+}
+
+/// After a far `.den go`, once the game has the new map loaded (MSG_MOVE_WORLDPORT_ACK), in AzerothCore's order
+/// (`WorldSession::HandleMoveWorldportAck`: SendInitialPacketsBeforeAddToMap, the player added to the map,
+/// SendInitialPacketsAfterAddToMap): the bind point, spells, factions, the clock, the player's own create (the self
+/// flags 0x61, the server's clock: movewatch.rs, as at login), the time sync, the world states; then the Den and its
+/// dummies when they are on this map, and the friends on it.
+fn arrive_far(c: &Writer, shared: &Shared, sess: &Sess, t: &places::Trip) -> io::Result<()> {
+    let me = &sess.me;
+    let at = At { x: t.x, y: t.y, z: t.z, o: t.o };
+    set_map(shared, c, t.map, !me.host);
+    let (spot, z, home_map, home_area) = den_where(shared);
+    let area = t.area.map(warea).unwrap_or(if t.map == spot.map { home_area } else { AREA });
+    c.send(&SMSG_BINDPOINTUPDATE { position: Vector3d { x: spot.x, y: spot.y, z }, map: home_map, area: home_area })?;
+    sandbox::initial(c, shared, me)?;
+    c.send(&SMSG_INITIALIZE_FACTIONS { factions: vec![FactionInitializer { flag: FactionFlag::empty(), standing: 0 }; 128] })?;
+    c.send(&SMSG_LOGIN_SETTIMESPEED { datetime: login_time(), timescale: 1.0 / 60.0, unknown1: 0 })?;
+    let looks = if me.host { shared.gear.lock().unwrap_or_else(|e| e.into_inner()).clone() } else { None };
+    c.send(&player_create_as(me, at, true, sandbox::kit_for(shared, me).as_ref(), looks.as_ref()))?;
+    c.send_raw(movewatch::SMSG_TIME_SYNC_REQ, &movewatch::time_sync_body(0))?;
+    c.send(&SMSG_INIT_WORLD_STATES { map: wmap(t.map), area, sub_area: area, states: vec![] })?;
+    if t.map == spot.map {
+        let objs = shared.den.lock().unwrap_or_else(|e| e.into_inner()).everything();
+        send_creates(c, shared, &objs)?;
+        let dummies = shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).dummies.clone();
+        for d in &dummies {
+            c.send(&dummy_create(shared, d))?;
+        }
+    }
+    for o in others_here(shared, sess.id, c) {
+        c.send(&player_create(&o.me, o.pos, false))?;
+        let _ = o.w.send(&player_create(me, at, false));
+    }
+    Ok(())
+}
+
+/// The Dens kept at places (`<dens>/places`, den.rs `relocate`): (file name, place name, spot).
+fn kept_places(shared: &Shared) -> Vec<(String, String, den::Spot)> {
+    let dir = shared.cfg.den_dir.join(places::DIR);
+    den::list_names(&dir)
+        .into_iter()
+        .filter_map(|n| {
+            let doc = den::read_file(&dir.join(format!("{n}.den.json"))).ok()?;
+            let (spot, name, _) = den::place_of(&doc)?;
+            Some((n, name, spot))
+        })
+        .collect()
 }
 
 /// What a player is told on entering (after enter_world): the welcome, the first visit's cheer and the companion's
@@ -1233,6 +1409,18 @@ const TUTORIAL: &[&str] = &[
 /// Gameobject creates, each shown as the editor's mode says (gizmo.rs `shown`: in build mode props are goobers the
 /// client highlights and lets you right-click).
 fn send_creates(c: &Writer, shared: &Shared, objs: &[WorldObject]) -> io::Result<()> {
+    // only to a game on the Den's map (in a city elsewhere they would stand at these numbers there)
+    if map_of(shared, c).is_some_and(|m| m != den_map(shared)) {
+        return Ok(());
+    }
+    // a friend's game hasn't the player's own models (mymodels.rs): a stand-in in their place
+    let stand_ins: Vec<WorldObject>;
+    let objs = if is_guest(shared, c) {
+        stand_ins = objs.iter().map(mymodels::stand_in).collect();
+        &stand_ins[..]
+    } else {
+        objs
+    };
     let build = shared.build_look.load(Ordering::Relaxed);
     for body in raw::gameobject_creates_shown(objs, PER_UPDATE, |o| gizmo::shown(o, build)) {
         c.send_raw(raw::SMSG_UPDATE_OBJECT, &body)?;
@@ -1296,6 +1484,7 @@ const HELP: &[&str] = &[
     ".den class <class> [level]: any class at any level, every spell it learns (.den class: the list); the dummies take your hits",
     ".den gear <item number>|<slot> <item>|list <slot>|reset: any item's look on you (looks: thunderfury, warglaives...)",
     ".den mounts [list|off]: every mount in your spellbook; flying ones fly with .den fly on",
+    ".den go <place> (stormwind, goldshire, dalaran...) or .den go <map> <x> <y> <z>: go anywhere your game has; .den places: the list; .den here: make your Den here (each place keeps its own); .den size city: a whole-city Den",
 ];
 
 fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Result<()> {
@@ -1320,7 +1509,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
         }
         // where you stand against the ground, and what the game did with its character (movewatch.rs; the den-test asks)
         (".den", "where") => {
-            let (g, file) = { let d = shared.den.lock().unwrap(); (d.floor_at(p.x, p.y), d.ground.is_some()) };
+            let (g, file) = { let d = shared.den.lock().unwrap(); (d.floor_at(p.x, p.y), d.ground_here().is_some()) };
             let moves = shared.moves.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|w| w.sess == sess.id).map(|w| (w.summary(), w.ops_line()));
             let (moves, ops) = moves.unwrap_or_else(|| ("Nothing seen from your game yet".into(), "nothing".into()));
             say(c, &format!(
@@ -1481,23 +1670,71 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                 let mut d = shared.den.lock().unwrap();
                 d.look = l;
                 let destroyed = d.build_room();
-                let ch = Change { created: d.room.clone(), destroyed, skipped: 0, message: format!("The room is {} now.", l.name) };
+                let open = if d.ring() >= den::ROOM_RINGS && l.name != "white" { " (a city-size Den is open ground: .den size 4 or smaller for its floor and walls)" } else { "" };
+                let ch = Change { created: d.room.clone(), destroyed, skipped: 0, message: format!("The room is {} now.{open}", l.name) };
                 drop(d);
                 apply(c, shared, &ch)
             }
         },
+        // Den anywhere (places.rs, owner 3 Nov): go to a place, make the Den there, the list
+        (".den", "go") | (".den", "goto") | (".den", "tp") => {
+            let args: Vec<&str> = words[2..].iter().map(String::as_str).collect();
+            if matches!(args.as_slice(), ["den"] | ["home"] | ["back"] | ["my", "den"]) {
+                let (spot, z, _, _) = den_where(shared);
+                let title = shared.den.lock().unwrap_or_else(|e| e.into_inner()).place.as_ref().map(|p| format!("your Den ({})", p.0)).unwrap_or_else(|| "your Den".into());
+                return travel(c, shared, sess, places::Target { map: spot.map, x: spot.x, y: spot.y, z: z + places::TYPED_LIFT, o: 0.0, area: None, title });
+            }
+            match places::parse_go(&args) {
+                Ok(t) => travel(c, shared, sess, t),
+                Err(e) => {
+                    // one of your own Dens kept at a place, by its name
+                    let q: String = args.join(" ").to_lowercase();
+                    let kept = kept_places(shared).into_iter().find(|k| !q.is_empty() && (k.1.to_lowercase() == q || k.0 == q));
+                    match kept {
+                        Some((_, name, spot)) => travel(c, shared, sess, places::Target {
+                            map: spot.map, x: spot.x, y: spot.y, z: spot.z + places::TYPED_LIFT, o: 0.0, area: None, title: format!("your Den at {name}"),
+                        }),
+                        None => say(c, &e),
+                    }
+                }
+            }
+        }
+        (".den", "places") => {
+            for l in places::list_lines() {
+                say(c, &l)?;
+            }
+            let kept: Vec<String> = kept_places(shared).into_iter().map(|k| if k.1.is_empty() { k.0 } else { k.1 }).collect();
+            let now_at = shared.den.lock().unwrap_or_else(|e| e.into_inner()).place.as_ref().map(|p| p.0.clone()).unwrap_or_else(|| "the island".into());
+            say(c, &format!("Your Den is at {now_at}.{} .den go <place>, then .den here.", if kept.is_empty() { String::new() } else { format!(" Dens you kept at other places: {}.", kept.join(", ")) }))
+        }
+        (".den", "here") => {
+            let map = map_of(shared, c).unwrap_or_else(|| den_map(shared));
+            let near = places::near(map, p.x, p.y);
+            let typed: String = text.split_whitespace().skip(2).collect::<Vec<_>>().join(" ").chars().filter(|c| c.is_ascii_alphanumeric() || " '-".contains(*c)).take(40).collect();
+            let name = if !typed.trim().is_empty() { typed.trim().to_string() } else { near.map(|n| n.title.to_string()).unwrap_or_else(|| format!("map {map} at {:.0}, {:.0}", p.x, p.y)) };
+            let area = near.map(|n| n.area).unwrap_or(0);
+            let spot = den::Spot { map, x: p.x, y: p.y, z: p.z, half: 0.0 };
+            let ch = shared.den.lock().unwrap_or_else(|e| e.into_inner()).relocate(&shared.cfg.den_dir, spot, &name, area, now());
+            shared.den_map.store(map, Ordering::Relaxed);
+            shared.event("den_here", &sess.me.name, &format!("map {map} {:.1} {:.1} {:.1}: {name}", p.x, p.y, p.z));
+            apply(c, shared, &ch)?;
+            shared.autosave();
+            Ok(())
+        }
         (".den", "grow") | (".den", "size") => {
             let mut d = shared.den.lock().unwrap();
             let want = if w(1) == "grow" {
                 Some(d.ring() + 1)
             } else if w(2).is_empty() {
                 None
+            } else if w(2) == "city" {
+                Some(den::CITY_RING)
             } else {
                 match w(2).parse::<u32>() {
                     Ok(n) if (1..=den::RINGS).contains(&n) => Some(n - 1),
                     _ => {
                         drop(d);
-                        return say(c, &format!("Sizes are 1 to {}: .den size 2", den::RINGS));
+                        return say(c, &format!("Sizes are 1 to {} (5 to 7: a whole city): .den size 2, .den size city", den::RINGS));
                     }
                 }
             };
@@ -1591,7 +1828,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
         }
         (".den", "friends") => friends(c, shared, w(2), w(3)),
         (".den", "invite") | (".den", "forge") => ask_launcher(c, shared, w(1)),
-        (".den", _) | (".build", _) => say(c, "Den Lite knows: .den place, .den find, .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room, .den grow, .den size, .den companion, .den ask, .den mode, .den mods, .den friends, .den invite, .den forge, .den dojo, .den fly, .den speed, .den class, .den gear, .den mounts."),
+        (".den", _) | (".build", _) => say(c, "Den Lite knows: .den place, .den find, .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room, .den grow, .den size, .den companion, .den ask, .den mode, .den mods, .den friends, .den invite, .den forge, .den dojo, .den fly, .den speed, .den class, .den gear, .den mounts, .den go, .den here, .den places."),
         // Another server's commands (GM addons send ".server info", ".account onlinelist" on login): not said
         // aloud, and nothing to answer in a Den.
         (w0, _) if w0.starts_with('.') => Ok(()),
@@ -1946,9 +2183,11 @@ fn companion_tick(shared: &Shared, read: bool) -> io::Result<()> {
     if let Some((_, w, p)) = live {
         // she keeps up anywhere near the Den (flight.rs AREA: past the Den's own circle she used to go, "fading
         // away"); the props she walks around
+        // only on the Den's map (`.den go` elsewhere: she waits in the Den)
+        let on_map = map_of(shared, &w).map_or(true, |m| m == den_map(shared));
         let (inside, near, blocks) = {
             let d = shared.den.lock().unwrap();
-            (d.inside(p.x, p.y, p.z), crate::flight::near_den(d.spot.x, d.spot.y, p), companion_blocks(&d))
+            (on_map && d.inside(p.x, p.y, p.z), on_map && crate::flight::near_den(d.spot.x, d.spot.y, p), companion_blocks(&d))
         };
         let (out, wanted) = { let c = shared.companion.lock().unwrap(); (c.out, c.wanted) };
         if out {

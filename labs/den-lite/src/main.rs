@@ -10,7 +10,7 @@ const ALIVE: &str = "den-lite.alive";
 const STOP: &str = "den-lite.stop";
 
 const USAGE: &str = "den-lite [--dens <folder>] [--bind 127.0.0.1] [--stamps <folder>] [--password <word>] [--name <name>] \
-[--gender male|female] [--client <game folder>] [--login-port 3724] [--world-port 8085] [--no-companion] [--no-friends] [--test-control] [--ui-wait <ms>] [--ui-load <ms>]
+[--gender male|female] [--client <game folder>] [--login-port 3724] [--world-port 8085] [--no-companion] [--no-friends] [--friends-lan <this PC's network address>] [--friends-lan-ports 3724,8085] [--test-control] [--ui-wait <ms>] [--ui-load <ms>]
 den-lite guest add|list|revoke --dens <folder> [--name <name>] [--hours 24] [--verbose]
 
 A tiny local server for the 3.3.5a (12340) client: a white room to build in, on 127.0.0.1.
@@ -91,6 +91,15 @@ fn main() {
             "--verbose" => cfg.verbose = true,
             "--no-companion" => cfg.companion = false,
             "--no-friends" => cfg.remote_ports = None,
+            "--friends-lan" => cfg.friends_lan = Some(val().parse().unwrap_or_else(|_| fail("--friends-lan is this PC's address on its network, such as 192.168.1.20"))),
+            "--friends-lan-ports" => {
+                let v = val();
+                let mut it = v.split(',').map(|p| p.trim().parse::<u16>());
+                cfg.friends_lan_ports = match (it.next(), it.next()) {
+                    (Some(Ok(l)), Some(Ok(w))) => (l, w),
+                    _ => fail("--friends-lan-ports is two ports: 3724,8085"),
+                };
+            }
             "--test-control" => cfg.test_control = true,
             "--ui-wait" => cfg.ui_wait_ms = val().parse().unwrap_or_else(|_| fail("--ui-wait is milliseconds")),
             "--ui-load" => cfg.ui_load_ms = val().parse().unwrap_or_else(|_| fail("--ui-load is milliseconds")),

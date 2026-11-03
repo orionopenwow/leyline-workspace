@@ -18,6 +18,7 @@
 pub mod console;
 pub mod dens;
 pub mod denfiles; // My models: the player's own model files checked and renamed under our folder (host/denfiles.rs)
+pub mod denways; // Invite a friend: same network, your own address, the relay (host/denways.rs)
 pub mod denmodels; // My models: kept, listed for Den Lite, put in the Den's patch (host/denmodels.rs)
 pub mod lite; // Den Lite: the built-in Den server, no Docker (an interface; the program is labs/den-lite)
 pub mod litenet; // Your Den on the Leyline network with no Docker: the relay tunnel for Den Lite's friends (host/litenet.rs)

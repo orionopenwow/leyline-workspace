@@ -78,3 +78,7 @@ html[data-base="light"] .gate-card { background: var(--t-surface); }
 /* signed in, the website not answering: the chip says so, with Try again */
 .hf-me .hf-retry { flex: none; font-size: 12px; }
 @media (prefers-reduced-motion: reduce) { .gate-drop { transition: none; } }
+/* Not now (owner 2 Nov 22:49: the sign-in screen is never forced; Esc does the same) */
+.gate-card { position: relative; }
+.gate-x { position: absolute; top: 10px; right: 12px; background: none; border: 0; color: var(--t-muted, #9aa1ae); font: inherit; font-size: 13px; cursor: pointer; padding: 4px 6px; border-radius: 6px; }
+.gate-x:hover, .gate-x:focus-visible { color: var(--t-text, #eef0f4); background: rgba(255, 255, 255, 0.06); }

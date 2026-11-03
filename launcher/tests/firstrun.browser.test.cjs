@@ -246,10 +246,16 @@ test('a brand-new player, start to end: tour, game folders, realms, PLAY, Your D
   await page.goto(INDEX);
   await page.waitForFunction(() => window.LeylineNav && window.LeylineApp && window.LeylineApp.state());
 
-  // 0. the sign-in screen first: nothing of the launcher until logged in
+  // 0. no sign-in screen at the start (owner 2 Nov 22:49): the launcher works signed out; Log In (title bar) opens it
   await step(page, errors, 'sign-in', SMALL, async () => {
-    await page.waitForSelector('#gate-browser');
-    assert.equal(await page.evaluate(() => document.querySelector('.frame').inert), true);
+    await page.waitForSelector('#hf-signin');
+    assert.equal(await page.evaluate(() => document.querySelector('.frame').inert), false);
+    await page.click('#hf-signin');   // the title bar's Log In: Create my account (one click) first
+    await page.waitForSelector('#hf-code .sf-new');
+    assert.match(await page.textContent('#hf-code .sf-new'), /Create my account/);
+    await page.click('#hf-signin');   // closed again (Esc would also close the first-run tour)
+    await page.evaluate(() => window.LeylineGate.show(''));   // the same sign-in PLAY opens, with the key form
+    await page.waitForSelector('#gate-new-1');
   });
   await signIn(page);
 

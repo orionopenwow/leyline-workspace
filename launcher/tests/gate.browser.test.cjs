@@ -99,12 +99,25 @@ async function open(opts) {
 }
 const callsOf = (page, cmd) => page.evaluate((c) => window.__calls.filter(([x]) => x === c).map(([, a]) => a), cmd);
 const gateOpen = (page) => page.evaluate(() => !document.getElementById('gate').hidden);
+// never forced at the start (owner 2 Nov 22:49): it opens for PLAY on the official realm signed out (need), or here by show()
+const logIn = async (page) => { await page.waitForSelector('#hf-signin'); await page.evaluate(() => window.LeylineGate.show('')); };
 
-test('signed out: the screen covers the launcher; Log in | Sign up; no Discord; the browser sign-in, then name#tag and picture', async () => {
+test('signed out: the launcher works at once; Log In opens Log in | Sign up; no Discord; the browser sign-in, then name#tag and picture', async () => {
   const { page, errors } = await open();
+  await page.waitForSelector('#hf-signin');
+  assert.equal(await gateOpen(page), false, 'no screen at the start');
+  assert.equal(await page.evaluate(() => document.querySelector('.frame').inert), false, 'the launcher can be used signed out');
+  await logIn(page);
   await page.waitForSelector('#gate-browser');
   assert.ok(await gateOpen(page));
-  assert.ok(await page.evaluate(() => document.querySelector('.frame').inert), 'nothing behind it can be used');
+  assert.ok(await page.isVisible('#gate-new-1'), 'Create my account, one click, first');
+  await page.keyboard.press('Escape');
+  assert.equal(await gateOpen(page), false, 'Esc: Not now');
+  await logIn(page);
+  await page.click('#gate-notnow');
+  assert.equal(await gateOpen(page), false, 'Not now');
+  await logIn(page);
+  await page.waitForSelector('#gate-browser');
   assert.equal(await page.getAttribute('#gate-tab-login', 'aria-selected'), 'true');
   assert.equal(await page.getAttribute('#gate-tab-signup', 'aria-selected'), 'false');
   const text = await page.textContent('#gate');
@@ -131,6 +144,7 @@ test('signed out: the screen covers the launcher; Log in | Sign up; no Discord; 
 
 test('Google, a pasted Hero Key, a chosen key file; a file without a key says so', async () => {
   const { page, errors } = await open();
+  await logIn(page);
   await page.waitForSelector('#gate-google');
   await page.click('#gate-google');
   await page.waitForSelector('#gate-cancel');
@@ -155,11 +169,13 @@ test('Google, a pasted Hero Key, a chosen key file; a file without a key says so
   assert.deepEqual(await callsOf(page, 'social_key_signin'), [{ key: KEY }], 'only the key goes to the core');
   await page.click('#gate-go');
   assert.equal(await gateOpen(page), false);
-  // Sign out: the screen again
+  // Sign out: the launcher stays usable (no screen by itself); Log In opens it again
   await page.click('#hf-me-btn');
   await page.click('#hf-panel .ap-out');
+  await page.waitForSelector('#hf-signin');
+  assert.equal(await gateOpen(page), false);
+  await logIn(page);
   await page.waitForSelector('#gate-browser');
-  assert.ok(await gateOpen(page));
   // a pasted key (spaces and an upper-case prefix are fine)
   await page.fill('#gate-key', '  OVK1.' + KEY.slice(5) + ' ');
   await page.click('#gate-keyform button[type=submit]');
@@ -169,8 +185,9 @@ test('Google, a pasted Hero Key, a chosen key file; a file without a key says so
   await page.close();
 });
 
-test('Sign up: Create your Hero Key makes the account; Manage account shows the key once to save', async () => {
+test('Sign up: Create my account makes the account in one click; Manage account shows the key once to save', async () => {
   const { page, errors } = await open();
+  await logIn(page);
   await page.waitForSelector('#gate-tab-signup');
   await page.click('#gate-tab-signup');
   assert.equal(await page.getAttribute('#gate-tab-signup', 'aria-selected'), 'true');
@@ -199,6 +216,7 @@ test('a sign-in kept from before: straight in, offline too (never locked out)', 
 
 test('the website down: said plainly, Try again, Continue without; PLAY on the official realm opens sign-in, then goes on', async () => {
   const { page, errors } = await open({ down: true });
+  await logIn(page);
   await page.waitForSelector('#gate-down');
   assert.match(await page.textContent('#gate-down'), /website isn't answering/);
   await page.click('#gate-retry');   // still down: still said
@@ -312,8 +330,8 @@ test('switching official and community realms back and forth: PLAY each time sta
 
 test('signed out, the realm card Play on the official realm signs in first, then starts', async () => {
   const { page, errors } = await open({ down: true });
-  await page.waitForSelector('#gate-skip');
-  await page.click('#gate-skip');
+  await page.waitForSelector('#hf-signin');
+  assert.equal(await gateOpen(page), false);
   await page.click('.nav[data-page="realms"]');
   await page.click('#rl-tab-official');
   await page.waitForSelector('#rl-list .realm-card .rl-play');

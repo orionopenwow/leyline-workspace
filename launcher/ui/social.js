@@ -131,9 +131,10 @@
     if (!big) box.append(el("p", "sf-h", "Log in to Leyline"));
     // new here: an account and its Hero Key, right here
     const nw = el("button", "sf-way sf-new"); nw.type = "button"; nw.dataset.via = "new";
-    nw.append(svg(WAY_ICON.herokey), el("span", "", "Get your Hero Key"));
+    // one click (owner 2 Nov 22:49): a name and a Hero Key (its password) made for you, then logged in
+    nw.append(svg(WAY_ICON.herokey), el("span", "", "Create my account (one click)"));
     nw.onclick = newAccount;
-    box.append(nw, el("p", "sf-fine sf-new-t", "New here? This makes your free account with a name made for you. Change the name any time."));
+    box.append(nw, el("p", "sf-fine sf-new-t", "New here? Leyline makes your name and your Hero Key (your password) for you. Change the name any time."));
     const or = el("p", "sf-or"); or.append(el("span", "", "or log in"));
     box.append(or);
     const list = el("div", "sf-ways");

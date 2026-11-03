@@ -1,6 +1,7 @@
-// Leyline Launcher: the sign-in screen (owner 2 Nov: "create login flow for the launcher so people have to log in to use
-// it etc with hero key sensed from browser login or pasted"). Signed out, it covers the whole window: Log in or Sign up
-// first, then the launcher.
+// Leyline Launcher: the sign-in screen (owner 2 Nov: "create login flow for the launcher ... with hero key sensed from
+// browser login or pasted"). Owner 2 Nov 22:49: "function without login initially but has login button at top, remove
+// the blocking screen from it initially, make hero key creation as 1 click as possible". So it never opens by itself:
+// the title bar's Log In opens it, and PLAY on the official realm while signed out (need()). Not now / Esc closes it.
 //
 // Log in: Sign in with your browser (the website's code sign-in, social.js signIn: a browser already signed in on the
 // website, or keeping the Hero Key, approves it once), Continue with Google (the same, through Google), or the Hero
@@ -32,7 +33,7 @@
   // open: the screen shows; phase: checking (the core not asked yet) | in | welcome (signed in just now, a moment);
   // tab: login | signup; then: what goes on once signed in (a PLAY); why: the line saying why it opened for that;
   // here: a sign-in started on this screen (its welcome is shown); note: a line of ours (a file that isn't a key)
-  let open = true, phase = "checking", tab = "login", then = null, why = "", here = false, note = "", pw = false, over = false, welcomeT = 0;
+  let open = false, phase = "in", tab = "login", then = null, why = "", here = false, note = "", pw = false, over = false, welcomeT = 0;
 
   function setOpen(on) {
     open = on;
@@ -159,6 +160,8 @@
       tabs.append(t);
     }
     card.append(tabs);
+    const nn = el("button", "gate-x", "Not now"); nn.type = "button"; nn.id = "gate-notnow"; nn.title = "Close (Esc): use the launcher without logging in";
+    nn.onclick = skip; card.prepend(nn);
     if (why) { const w = el("p", "gate-why", why); w.id = "gate-why"; card.append(w); }
     const pane = el("div", "gate-pane"); pane.id = "gate-pane"; pane.setAttribute("role", "tabpanel"); pane.setAttribute("aria-labelledby", "gate-tab-" + tab);
     card.append(pane);
@@ -181,7 +184,12 @@
     const s = S();
     pane.append(el("p", "gate-lede", `One account for the launcher, the website and ${realmName()}.`));
     const ways = el("div", "gate-ways");
-    const br = el("button", "btn primary gate-big", "Log in with your browser"); br.type = "button"; br.id = "gate-browser";
+    // one click to a new account (owner 22:49): a name and a Hero Key (its password) made for you
+    const nw = el("button", "btn primary gate-big", "Create my account (one click)"); nw.type = "button"; nw.id = "gate-new-1";
+    nw.onclick = () => go(() => s.newAccount());
+    ways.append(nw, el("p", "sf-fine gate-under", "New here? Leyline makes your name and your Hero Key (your password) for you. Change the name any time."));
+    const or0 = el("p", "sf-or"); or0.append(el("span", "", "already have an account?")); ways.append(or0);
+    const br = el("button", "btn gate-big", "Log in with your browser"); br.type = "button"; br.id = "gate-browser";
     br.onclick = () => go(() => s.signIn(""));
     ways.append(br, el("p", "sf-fine gate-under", "Signed in on the website already, or your Hero Key kept in your browser? Approve once and you're in."));
     if (googleOn()) ways.append(way("sf-google", "Continue with Google", svg(IC.google), () => go(() => s.signIn("google")), "gate-google"));
@@ -248,11 +256,11 @@
 
   function signupPane(pane) {
     const s = S();
-    pane.append(el("p", "gate-lede", `Your Hero Key is your Leyline account: it signs you in here, on the website and on ${realmName()}. `
-        + "Leyline makes it now, free, with a name made for you that you can change."));
-    const nw = el("button", "btn primary gate-big", "Create your Hero Key"); nw.type = "button"; nw.id = "gate-new";
+    pane.append(el("p", "gate-lede", "One click and you have an account: Leyline picks a name for you (change it any time) "
+        + `and makes your Hero Key, which is your password for here, the website and ${realmName()}.`));
+    const nw = el("button", "btn primary gate-big", "Create my account"); nw.type = "button"; nw.id = "gate-new";
     nw.onclick = () => go(() => s.newAccount());
-    pane.append(nw, el("p", "sf-fine gate-under", `Next you see your key once: save it as ${FILE} and keep it like a password.`));
+    pane.append(nw, el("p", "sf-fine gate-under", `Then save your key: one button saves it as ${FILE}. Keep it like a password.`));
     if (googleOn()) {
       const or = el("p", "sf-or"); or.append(el("span", "", "or")); pane.append(or);
       pane.append(way("sf-google", "Sign up with Google", svg(IC.google), () => go(() => s.signIn("google")), "gate-google-up"));
@@ -272,8 +280,7 @@
   }
 
   // ---------------------------------------------------------------- in and out
-  // Continue without signing in (only offered while the website isn't answering): the launcher, signed out; PLAY on
-  // the official realm still opens this first
+  // Not now / Continue without logging in: the launcher, signed out; PLAY on the official realm still opens this first
   function skip() { then = null; why = ""; phase = "in"; setOpen(false); }
   function finish() {
     clearTimeout(welcomeT);
@@ -302,15 +309,14 @@
     welcomeT = setTimeout(finish, 1600);
   }
 
+  // never opens by itself (owner 22:49); signed in while it is open: the welcome, then closed
   document.addEventListener("leyline:status", (ev) => {
     const d = ev.detail || {};
-    if (!d.known || d.signedIn) { phase = "in"; setOpen(false); return; }
-    show();
+    if (!d.known || d.signedIn) { phase = "in"; if (open) setOpen(false); }
   });
   document.addEventListener("leyline:me", (ev) => {
     const d = ev.detail || {};
-    if (d.signedIn) { if (S().me()) signedInNow(); return; }
-    if (S().known() && !open) show("");   // signed out (Sign out, or the website refused the sign-in): the screen again
+    if (d.signedIn && S().me()) signedInNow();
   });
   document.addEventListener("leyline:signin", () => { if (open && phase !== "welcome" && phase !== "checking") render(); });
 
@@ -319,7 +325,10 @@
   wb("gate-min", (w) => w.minimize());
   wb("gate-max", (w) => w.toggleMaximize());
   wb("gate-close", (w) => w.close());
-  document.addEventListener("keydown", (e) => { if (open && e.key === "Escape" && S() && S().flow().stage === "waiting") S().cancelSignIn(); });
+  document.addEventListener("keydown", (e) => {
+    if (!open || e.key !== "Escape") return;
+    if (S() && S().flow().stage === "waiting") S().cancelSignIn(); else skip();   // Esc: Not now
+  });
 
   // PLAY on the official realm: signed in first (or no way to tell, or no screen): run now; else this screen, then it
   const ready = () => { const s = S(); return !s || !s.known() || s.signedIn(); };
@@ -330,10 +339,5 @@
   }
 
   window.LeylineGate = { isOpen: () => open, ready, need, show, skip, dropPath, dragOver: (on) => { if (over !== on) { over = on; const d = $("gate-drop"); if (d) d.classList.toggle("over", on); } } };
-  // social.js asked the core before this ran (its answer can come first): go by it
-  const s0 = S();
-  if (s0 && s0.checked()) {
-    if (!s0.known() || s0.signedIn()) { phase = "in"; setOpen(false); }
-    else show();
-  } else { setOpen(true); render(); }
+  setOpen(false);   // closed at the start, signed in or not
 })();

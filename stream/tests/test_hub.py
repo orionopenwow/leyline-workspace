@@ -1573,10 +1573,29 @@ check("upstream card: the licence chip (No licence when none), the credit line (
       and '<p class="hb-mk-credit" title="Alice · MIT · Installs from the author&#x27;s GitHub"><span>Alice</span>' in ska
       and '<span class="hb-dc-tag ui">Whole interface</span>' in elv and '<span class="hb-dc-tag">Meters</span>' in ska, (elv[-700:], ska[-700:]))
 check("upstream card: names are text, never markup", "<img src=x" not in ad and "&lt;img src=x onerror=alert(1)&gt;" in ad)
-check("tabs: Mods, Addons, Themes as links (the launcher's Discover has the same three), the current one marked",
-      '<nav class="hb-seg" aria-label="Mods, addons and themes"><a href="/wrath/leyline-preview/catalog">Mods</a>'
+check("tabs: Mods, Addons, Themes, Game modes, Loadouts as links (the launcher's Discover has the same three), the current one marked",
+      '<nav class="hb-seg" aria-label="Mods, addons, themes, game modes and loadouts"><a href="/wrath/leyline-preview/catalog">Mods</a>'
       '<a href="/wrath/leyline-preview/addons" class="on" aria-current="page">Addons</a>'
-      '<a href="/wrath/leyline-preview/catalog?cat=themes">Themes</a></nav>' in ad and '<h1 id="hb-pg-h">Addons</h1>' in ad)
+      '<a href="/wrath/leyline-preview/catalog?cat=themes">Themes</a><a href="/wrath/leyline-preview/game-modes">Game modes</a>'
+      '<a href="/wrath/leyline-preview/loadouts">Loadouts</a></nav>' in ad and '<h1 id="hb-pg-h">Addons</h1>' in ad)
+# Mods & Addons › Game modes and › Loadouts (owner 3 Nov 2026): both pages, their tabs, the templates' reviewed ids only
+st_gm, _h, gm = req("/wrath/leyline-preview/game-modes")
+gm = gm.decode()
+check("game modes: its own tab with the modes to play, Your Den, the Leyline Modes and the way to /modes",
+      st_gm == 200 and '<a href="/wrath/leyline-preview/game-modes" class="on" aria-current="page">Game modes</a>' in gm
+      and 'id="gm-den"' in gm and 'href="/wrath?go=' in gm and 'href="/wrath/leyline-preview/modes"' in gm
+      and 'href="/wrath/survivors"' in gm and not BANNED.search(visible(gm)), gm[:400])
+st_lo, _h, lo = req("/wrath/leyline-preview/loadouts")
+lo = lo.decode()
+raider = re.search(r'<article class="hb-mode hb-lo" id="lo-raider">.*?</article>', lo, re.S)
+raider = raider.group(0) if raider else ""
+check("loadouts: the page, its tab, Clean explained, templates with a share code",
+      st_lo == 200 and '<a href="/wrath/leyline-preview/loadouts" class="on" aria-current="page">Loadouts</a>' in lo
+      and "Clean" in lo and 'id="lo-best-graphics"' in lo and "leyline-loadout:1;" in lo and not BANNED.search(visible(lo)), lo[:400])
+check("loadouts: a template shows only reviewed addons (Skada here); unpublished ids never show, not even in its code",
+      "<li>Skada</li>" in raider and "up:skada" in raider and "up:krt" not in raider and "tellmewhen" not in raider.lower(), raider)
+check("Mods and Addons point to loadouts in one line", 'href="/wrath/leyline-preview/loadouts">How loadouts work</a>' in
+      req("/wrath/leyline-preview/addons")[2].decode())
 bar = re.search(r'<nav class="hb-mk-bar" aria-label="Addon types">.*?</nav>', ad, re.S)
 bar = bar.group(0) if bar else ""
 check("the marketplace's chips: All addons, the kinds that have an addon (in the launcher's order), Works on the official realm",

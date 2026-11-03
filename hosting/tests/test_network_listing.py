@@ -117,6 +117,18 @@ class Mods(unittest.TestCase):
         self.assertEqual(r["mods"], [{"id": "mode:coin-dash", "client": False},
                                      {"id": "mod:pings", "version": "0.1.0", "client": True}])
 
+    def test_loadout_ids_only_and_carried(self):
+        lo = listing.clean_loadout({"name": "Raid night", "items": ["up:skada", "https://x.example/a.zip", "up:skada", "local:Mine",
+                                                                    "leyline:addons", "mod:pings"], "gfx": "high"})
+        self.assertEqual(lo, {"name": "Raid night", "items": ["up:skada", "leyline:addons", "mod:pings"], "gfx": "high"})
+        self.assertEqual(listing.clean_loadout({"items": ["up:dominos"], "gfx": "turbo"}), {"name": "", "items": ["up:dominos"], "gfx": ""})
+        self.assertIsNone(listing.clean_loadout({"items": ["file:x"]}))
+        self.assertIsNone(listing.clean_loadout("up:skada"))
+        self.assertIsNone(listing.clean_record({"name": "A"})["loadout"], "older agents: none")
+        L, h, now = listing.Listing(cfg()), Host(), time.time()
+        L.heartbeat(h.beat(now, record={"name": "Frost Haven", "loadout": {"name": "Frost", "items": ["up:skada"]}}), "1.2.3.4", now=now)
+        self.assertEqual(L.realms_json(now)["realms"][0]["loadout"], {"name": "Frost", "items": ["up:skada"], "gfx": ""})
+
 
 class Uptime(unittest.TestCase):
     def test_uptime_24h_and_7d_from_heartbeats(self):

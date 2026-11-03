@@ -172,6 +172,88 @@
     render();
   }
 
+  // ------------------------------------------------------------------ Mods & Addons › Game modes (owner 3 Nov: "Game modes as a
+  // section somewhere in mods and addons"): every way to play something different in one tab: the modes to play now
+  // (modes.js: the Leyline Modes on our realm, Azeroth Survivors in the browser, in-game modes), Your Den on this PC
+  // (den.js), and the mods list's game modes with Install. The Modes page stays as it was.
+  const KIND_WORD = { realm: "On our realm", offline: "In your browser", "realm-type": "Its own realm type", "in-game": "In game" };
+  function modeCard(m) {
+    const art = el("article", "mod-card dc-card gm-card gm-play");
+    art.dataset.id = "mode:" + m.id;
+    const thumb = typeof cardThumb === "function" ? cardThumb({ id: "mode:" + m.id, name: m.title, category: "sandbox" }) : el("div", "dc-thumb");
+    thumb.append(el("span", "dc-tag", "Game mode"));
+    const body = el("div", "dc-body");
+    body.append(el("b", "name", m.title), el("p", "desc", m.line || ""));
+    const tags = el("div", "gm-tags");
+    if (m.status === "coming") tags.append(el("span", "gm-tag soon", "Coming"));
+    tags.append(el("span", "gm-tag", KIND_WORD[m.kind] || "Game mode"));
+    body.append(tags);
+    const acts = el("div", "acts");
+    const M = window.LeylineModes;
+    if (M && m.status === "live" && m.kind !== "realm-type" && M.play) {
+      const b = el("button", "btn small primary", "Play");
+      b.type = "button";
+      b.title = `Play ${m.title}`;
+      b.addEventListener("click", () => { M.show(m.id); M.play(m, b); });
+      acts.append(b);
+    }
+    if (M) {
+      const v = el("button", "btn small", m.kind === "realm-type" ? "Host it" : "Details");
+      v.type = "button";
+      v.addEventListener("click", () => M.show(m.id));
+      acts.append(v);
+    }
+    const foot = el("div", "dc-foot");
+    foot.append(el("div", "dc-meta"), acts);
+    body.append(foot);
+    art.append(thumb, body);
+    return art;
+  }
+  function denCard() {
+    const art = el("article", "mod-card dc-card gm-card gm-den");
+    art.dataset.id = "den";
+    const thumb = typeof cardThumb === "function" ? cardThumb({ id: "den", name: "Your Den", category: "builds" }) : el("div", "dc-thumb");
+    thumb.append(el("span", "dc-tag", "On this PC"));
+    const body = el("div", "dc-body");
+    body.append(el("b", "name", "Your Den"), el("p", "desc", "Your own building room on this PC: build, decorate and practise in the Dojo, then invite friends."));
+    const tags = el("div", "gm-tags");
+    tags.append(el("span", "gm-tag", "No server"), el("span", "gm-tag", "Works offline"));
+    body.append(tags);
+    const acts = el("div", "acts");
+    const b = el("button", "btn small primary", "Open Your Den");
+    b.type = "button";
+    b.addEventListener("click", () => { if (window.LeylineDen && window.LeylineDen.go) window.LeylineDen.go(); else if (window.LeylineNav) window.LeylineNav.show("den"); });
+    acts.append(b);
+    const foot = el("div", "dc-foot");
+    foot.append(el("div", "dc-meta"), acts);
+    body.append(foot);
+    art.append(thumb, body);
+    return art;
+  }
+  function renderSection() {
+    const box = $("gm-section");
+    if (!box) return;
+    const all = modes();
+    const live = all.filter((m) => m.status === "live" && m.kind !== "realm-type");
+    const other = all.filter((m) => !live.includes(m));
+    const grid = (cards) => { const g = el("div", "mod-grid dc-grid dc-big"); g.append(...cards); return g; };
+    const kids = [el("p", "hint shelf-line", "Minigames and modes that change how you play: on our realm, in your browser, or on this PC.")];
+    kids.push(el("h3", "gm-h", "Play now"), grid(live.map(modeCard).concat([denCard()])));
+    const mods = entries().filter((g) => g.kind === "mod");
+    if (mods.length) {
+      kids.push(el("h3", "gm-h", "Game mode mods"), el("p", "lede", "From the mods list. Install adds them to your game folder; turn them off any time in Installed or with a loadout."));
+      kids.push(grid(mods.map(card)));
+    }
+    if (other.length) kids.push(el("h3", "gm-h", "Coming and hosted"), grid(other.map(modeCard)));
+    box.replaceChildren(...kids);
+  }
+  async function showSection() {
+    renderSection();
+    await loadModes();
+    if (window.LeylineModes && window.LeylineModes.ensure) { try { await window.LeylineModes.ensure(); } catch (_) { /* the list as it is */ } }
+    renderSection();
+  }
+
   // ------------------------------------------------------------------ the join offer
   // What joining realm r with client c needs: the catalog mods with a client part this client lacks (get), the ones
   // it has, and the names the catalog doesn't know (left out: a realm can't make the launcher fetch anything else).
@@ -256,5 +338,5 @@
   }
 
   document.addEventListener("leyline:catalog", () => { const b = $("game-discover"); if (b && !b.hidden) render(); });
-  window.LeylineGameMods = { entries, render, show, plan, beforeJoin, realmMods, cleanMods, officialMods, runsOn, nameOf, card, loadModes };
+  window.LeylineGameMods = { showSection, renderSection, entries, render, show, plan, beforeJoin, realmMods, cleanMods, officialMods, runsOn, nameOf, card, loadModes };
 })();

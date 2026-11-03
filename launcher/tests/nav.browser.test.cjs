@@ -116,6 +116,9 @@ test('Mods & Addons: Installed and Discover tabs, each with Mods | Addons; the F
   // the arrow keys move between the page's tabs
   await page.focus('#tab-mods-discover');
   await page.keyboard.press('ArrowRight');
+  assert.deepEqual((await where(page)).panes, ['pane-gamemodes'], 'then Game modes (owner 3 Nov)');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'tab-mods-gamemodes');
+  await page.keyboard.press('ArrowRight');
   assert.deepEqual((await where(page)).panes, ['pane-installed']);
   assert.equal(await page.evaluate(() => document.activeElement.id), 'tab-mods-installed');
   // FIND ADDONS on Installed › Addons goes to Discover › Addons

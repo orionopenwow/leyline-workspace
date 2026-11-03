@@ -242,6 +242,9 @@ STEPS = {
     "firewall-check": ("tools/security/Firewall limits - dry run.bat", "Firewall limits: what would be added (read-only)", False),
     "firewall": ("tools/security/Firewall limits - apply.bat", "Firewall limits on game, relay and web ports + fail2ban for wrong passwords", False),
     "addons-curate": ("tools/addon-curate/Curate addons.bat", "Addon marketplace: curate upstream addons from their authors (new ones wait for review; then ship + signin)", False),
+    # The daily mods and addons run (docs/MODS-DAILY.md): curate, new thumbnails, checks, then what waits for review.
+    # It never approves anything; scouting and the index gate run in the cloud.
+    "mods-daily": ("tools/hub-index/Mods daily.bat", "Mods & addons daily: curate addons, new thumbnails, check the lists (everything new waits for your review; then ship + signin)", False),
     "tidy-check": ("tools/server-tidy/Server tidy - dry run.bat", "Read-only: what making room on the server would remove, and how much", False),
     "server-fix": ("tools/server-fix/Server fix.bat", "Server fix: the streamed-file folders root-only; a read-only look at why .bug didn't answer (no restart)", False),
     "tidy": ("tools/server-tidy/Server tidy.bat", "Make room on the server: build cache, old logs, old site backups, the parked VR browser slice (owner OK 1 Nov)", False),

@@ -64,6 +64,17 @@
    "description": "WoW Legacy Addon - Retail UI (3.3.5a)"
   },
   {
+   "repo": "https://github.com/absir/Bagshui",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 7,
+   "description": "All-in-one auto-categorizing and sorting inventory addon with customizable layout and rules for Vanilla WoW 1.12 (and Turtle WoW)"
+  },
+  {
    "repo": "https://github.com/Aethixdryad140461-coder/azerothcore-custom-resp-modules",
    "via": [
     "github-topic-page:vmangos",
@@ -812,6 +823,28 @@
    "description": "Integrated development environment (IDE), an editor for Smart Scripts (SAI/smart_scripts) for TrinityCore based servers."
   },
   {
+   "repo": "https://github.com/bkader/Compat-WotLK",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "3.3.5a"
+   ],
+   "stars": 6,
+   "description": "A simple structured library that provides addons with some functions brought from Retail, as well as some useful functions."
+  },
+  {
+   "repo": "https://github.com/bkader/LibCompat-1.0",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "3.3.5a"
+   ],
+   "stars": 5,
+   "description": "A utility library that provides extra useful functions to you addons, some were added in later expansions, others are useful for other things."
+  },
+  {
    "repo": "https://github.com/bkader/Skada-Cata",
    "via": [
     "github-topic-page:cata"
@@ -929,6 +962,28 @@
    "stars": 11
   },
   {
+   "repo": "https://github.com/cralor/TomTomVanilla",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 11,
+   "description": "Cladhaire's TomTom AddOn backported for 1.12"
+  },
+  {
+   "repo": "https://github.com/cralor/TourGuideVanilla",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 40,
+   "description": "See TourGuideClassic for 1.13!!         Tekkub's TourGuide Addon backported for WoW 1.12"
+  },
+  {
    "repo": "https://github.com/DanieltheDeveloper/azerothcore-transmog-3.3.5a",
    "via": [
     "github-topic-page:azerothcore-lua"
@@ -937,6 +992,17 @@
     "3.3.5a"
    ],
    "stars": 50
+  },
+  {
+   "repo": "https://github.com/darhanger/idTip-WotLK",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "3.3.5a"
+   ],
+   "stars": 6,
+   "description": "idTip WotLK, previously known as SpellAndItemID, is a lightweight World of Warcraft addon that adds useful technical information directly to in-game t"
   },
   {
    "repo": "https://github.com/Day36512/mod-reagent-bank-account",
@@ -1000,6 +1066,28 @@
    "stars": 16
   },
   {
+   "repo": "https://github.com/Drakensangs/Chromatic-WotLK",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "3.3.5a"
+   ],
+   "stars": 5,
+   "description": "Lightweight World of Warcraft Wrath of the Lich King 3.3.5a addon that color codes class names in item tooltips, item tooltip borders based on rarity,"
+  },
+  {
+   "repo": "https://github.com/Drakensangs/DungeonMapsVanilla",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 4,
+   "description": "World of Warcraft 1.12.1 addon that adds dungeon and raid maps to the game."
+  },
+  {
    "repo": "https://github.com/drfdev/turtle-wow-loot-navigator",
    "via": [
     "github-topic-page:turtle-wow"
@@ -1059,6 +1147,17 @@
    ],
    "builds": [],
    "stars": 11
+  },
+  {
+   "repo": "https://github.com/EinBaum/SP_SwingTimer",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 25,
+   "description": "WoW 1.12.1 Addon: Auto Attack Swing Timer"
   },
   {
    "repo": "https://github.com/ElunaLuaEngine/Eluna",
@@ -1272,6 +1371,17 @@
    "stars": 122
   },
   {
+   "repo": "https://github.com/FrancisEgan/Questline",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 5,
+   "description": "A modern look and feel questing addon for Vanilla / Octo WoW 1.12"
+  },
+  {
    "repo": "https://github.com/FusionWowCMS/FusionCMS",
    "via": [
     "github-topic-page:azerothcore"
@@ -1322,6 +1432,17 @@
    "stars": 34
   },
   {
+   "repo": "https://github.com/goamania/MouseHighlightCircle",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "3.3.5a"
+   ],
+   "stars": 8,
+   "description": "MouseHighlightCircle: An addon for Turtle WoW (1.12.1). Adds a pixelated white ring around the mouse cursor (transparent center) to reduce clutter. Id"
+  },
+  {
    "repo": "https://github.com/GoldpawsStuff/AzeriteUI5",
    "via": [
     "github-topic-page:tbc-classic"
@@ -1367,6 +1488,17 @@
    "builds": [],
    "stars": 34,
    "description": "A custom launcher and patcher for private servers."
+  },
+  {
+   "repo": "https://github.com/haha2345/SoloCollectionsPlatform",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "3.3.5a"
+   ],
+   "stars": 16,
+   "description": "WoW 3.3.5a account collections journal and Legion-style transmog platform (AddOn + AzerothCore C++ module + optional SoloCam)."
   },
   {
    "repo": "https://github.com/Helias/BG-Queue-Abuser-Viewer",
@@ -1573,6 +1705,17 @@
    "description": "Run CMaNGOS using Docker!"
   },
   {
+   "repo": "https://github.com/jsb/Gatherer",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 32,
+   "description": "Vanilla World of Warcraft (v.1.12.1) AddOn"
+  },
+  {
    "repo": "https://github.com/kasperfriend/friends-graphics",
    "via": [
     "web:github topic pages 2026-10-30"
@@ -1595,6 +1738,17 @@
    "stars": 1000
   },
   {
+   "repo": "https://github.com/KhalGH/BattleGroundHealers-WotLK",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "3.3.5a"
+   ],
+   "stars": 13,
+   "description": "WoW 3.3.5a Addon"
+  },
+  {
    "repo": "https://github.com/Kirazul/Transmorpher",
    "via": [
     "github-topic-page:wotlk"
@@ -1611,6 +1765,17 @@
    ],
    "builds": [],
    "stars": 19
+  },
+  {
+   "repo": "https://github.com/laytya/EQL3",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 24,
+   "description": "Extended Quest Log addon for World of Warcraft 1.12.1"
   },
   {
    "repo": "https://github.com/leoaviana/QuestTradutor",
@@ -1883,6 +2048,17 @@
    "description": "AzerothCore Playerbots Module"
   },
   {
+   "repo": "https://github.com/Monteo/SuperMacro",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 62,
+   "description": "Addons for World of Warcraft 1.12.1"
+  },
+  {
    "repo": "https://github.com/mostlynick3/azerothcore-lua-ah-bot",
    "via": [
     "github-topic-page:azerothcore-lua"
@@ -1989,6 +2165,39 @@
    "stars": 205
   },
   {
+   "repo": "https://github.com/NeticSoul/wow-335a-addon-wiki",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "3.3.5a"
+   ],
+   "stars": 25,
+   "description": "LLM-maintained knowledge base for WoW 3.3.5a addon development. 64 pages of API docs, concepts, widgets, and patterns built from the WoW Programming b"
+  },
+  {
+   "repo": "https://github.com/nidas-wow-oss/Nidhaus_UnitFrames",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "3.3.5a"
+   ],
+   "stars": 5,
+   "description": "PvP-focused UI addon for WoW WotLK 3.3.5a — Arena frames, trinket tracker, spec detection and more."
+  },
+  {
+   "repo": "https://github.com/nimeral/AuctionatorVanilla",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 8,
+   "description": "An addon for WoW 1.12.1, backported from TBC version"
+  },
+  {
    "repo": "https://github.com/noisiver/mod-assistant",
    "via": [
     "github-topic-page:azerothcore-module"
@@ -2085,6 +2294,17 @@
    ],
    "stars": 16,
    "description": "mod-nemesis-system turns selected open-world PvE deaths into persistent revenge targets."
+  },
+  {
+   "repo": "https://github.com/OldManAlpha/Puppeteer",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 45,
+   "description": "A unit frames addon for WoW Vanilla 1.12"
   },
   {
    "repo": "https://github.com/olive-spore-734/ProjectEpochWaterPatch",
@@ -2363,6 +2583,17 @@
    "description": "Vanilla WoW 1.12.1 and Turtle WoW addon. Enhances item tooltips by displaying profession icons for crafting ingredients."
   },
   {
+   "repo": "https://github.com/refaim/LibCrafts-1.0",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 12,
+   "description": "Vanilla WoW 1.12.1 addon library designed to provide an embeddable database of crafting spells, recipes, reagents, results, sources etc"
+  },
+  {
    "repo": "https://github.com/refaim/MasterTradeSkills",
    "via": [
     "github-topic-page:turtle-wow"
@@ -2396,6 +2627,28 @@
    "description": "Vanilla WoW 1.12.1 and Turtle WoW addon. Provides a searchable and filterable list of all items across all your characters on a single account."
   },
   {
+   "repo": "https://github.com/refaim/TradeSkillsData",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 7,
+   "description": "Vanilla WoW 1.12.1 addon. Provides database of trade skill recipes, vendors and sources."
+  },
+  {
+   "repo": "https://github.com/refaim/TrainerSkills",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 12,
+   "description": "Vanilla WoW 1.12.1 addon. Shows class/profession/pet/demon trainer frame from anywhere."
+  },
+  {
    "repo": "https://github.com/refaim/WIM",
    "via": [
     "github-topic-page:turtle-wow"
@@ -2405,6 +2658,28 @@
    ],
    "stars": 12,
    "description": "Vanilla WoW 1.12.1 and Turtle WoW addon. Gives whispers an instant messenger feel with individual chat windows for each conversation."
+  },
+  {
+   "repo": "https://github.com/Road-block/Cartographer",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 22,
+   "description": "Map AddOn for Vanilla (1.12)"
+  },
+  {
+   "repo": "https://github.com/Road-block/ColorSocialFrame",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 12,
+   "description": "Class Color Friends, Guild and Who List addon for vanilla WoW (1.12)"
   },
   {
    "repo": "https://github.com/Rochet2/AIO",
@@ -2486,6 +2761,17 @@
    "description": "Database viewer for TrinityCore based on aowow by @LordJZ, based on the JS-Engine of that one database website for World of Warcraft"
   },
   {
+   "repo": "https://github.com/Sattva-108/AdiBags",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "3.3.5a"
+   ],
+   "stars": 35,
+   "description": "AdiBags backport with improved UI and functions for 3.3.5 WoTLK client."
+  },
+  {
    "repo": "https://github.com/secretbis/tbcsim",
    "via": [
     "github-topic-page:tbc"
@@ -2536,6 +2822,17 @@
    ],
    "builds": [],
    "stars": 28
+  },
+  {
+   "repo": "https://github.com/shirsig/aux-addon-vanilla",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 41,
+   "description": "Auction House addOn for Vanilla (1.12) IMPORTANT: The folder name must be \"aux-addon\""
   },
   {
    "repo": "https://github.com/Shonik/lua-battlepass",
@@ -2666,6 +2963,17 @@
    "description": "An advanced wow 2.4.3 power auras"
   },
   {
+   "repo": "https://github.com/tempranova/turtlerp",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 9,
+   "description": "TurtleRP, an addon for vanilla WoW RPers."
+  },
+  {
    "repo": "https://github.com/tench-rt/tentacli",
    "via": [
     "github-topic-page:wotlk"
@@ -2708,6 +3016,17 @@
    ],
    "stars": 4,
    "description": "A TurtleWoW DLL plugin that exposes Lua functions for SQLite database access."
+  },
+  {
+   "repo": "https://github.com/tilare/FlightTracker",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 11,
+   "description": "Flight timer addon for 1.12.1"
   },
   {
    "repo": "https://github.com/trauntrow/mod-dungeon-master",
@@ -2806,6 +3125,17 @@
    ],
    "builds": [],
    "stars": 103
+  },
+  {
+   "repo": "https://github.com/warblups/mod-quest-radar",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "3.3.5a"
+   ],
+   "stars": 4,
+   "description": "AzerothCore 3.3.5a module + client addon: shows quest objective locations on the minimap (WotLK never had this natively)"
   },
   {
    "repo": "https://github.com/wardz/ClassicCastbars",
@@ -2989,6 +3319,28 @@
    "stars": 32
   },
   {
+   "repo": "https://github.com/xorann/BigWigs",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 14,
+   "description": "BigWigs is a World of Warcraft AddOn to predict certain AI behaviour to improve the players performance. This Modification is build for Patch 1.12.1 a"
+  },
+  {
+   "repo": "https://github.com/Xurkon/Routes",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "3.3.5a"
+   ],
+   "stars": 3,
+   "description": "Routes addon for WoW 3.3.5a - Draw optimized farming routes on your minimap and world map"
+  },
+  {
    "repo": "https://github.com/xVitali2/Addons-for-Vanilla-1.12.1",
    "via": [
     "github-topic-page:vanilla-addons"
@@ -3037,6 +3389,17 @@
     "3.3.5a"
    ],
    "stars": 14
+  },
+  {
+   "repo": "https://github.com/zetone/enemyFrames",
+   "via": [
+    "github-search:2026-11-02"
+   ],
+   "builds": [
+    "1.12"
+   ],
+   "stars": 22,
+   "description": "1.12.1 addon to display enemy players on BGs"
   },
   {
    "repo": "https://github.com/ZhengPeiRu21/mod-challenge-modes",

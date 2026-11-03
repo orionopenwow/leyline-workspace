@@ -44,6 +44,17 @@ class StepPaths(unittest.TestCase):
         for gone in ("ovrename", "ovland"):
             self.assertNotIn(gone, steps)
 
+    def test_mods_daily_chains_the_tools_and_approves_nothing(self):
+        """docs/MODS-DAILY.md: the PC's daily mods step runs the existing tools in order and never approves."""
+        bat, _title, interactive = control_steps()["mods-daily"]
+        self.assertEqual(win(bat), "tools/hub-index/Mods daily.bat")
+        self.assertFalse(interactive)
+        text = read(bat)
+        calls = [text.index(c) for c in ('curate.py" run', 'hub_index.py" thumbs --new', 'hub_index.py" check',
+                                         'looks.py" check', 'curate.py" list')]
+        self.assertEqual(calls, sorted(calls))
+        self.assertNotIn(" approve", text.replace("Nothing was approved", "").replace("never approved", ""))
+
     def test_domain_move_steps(self):
         """The move to leylinelauncher.com (docs/DOMAIN-MOVE.md): check is read-only, on and off are not."""
         steps = control_steps()

@@ -637,7 +637,11 @@ end
 -- The catcher is not a child of UIParent, so it stays when the interface is hidden.
 local shot
 local function shotEnd()
-    if shot then shot:Hide() end
+    if shot then
+        shot:Hide()
+        if shot.bound and ClearOverrideBindings then pcall(ClearOverrideBindings, shot) end
+        shot.bound = nil
+    end
     if not UIParent:IsShown() then UIParent:Show() end
 end
 function W.ScreenshotMode(on)
@@ -652,7 +656,10 @@ function W.ScreenshotMode(on)
         fs:SetAllPoints(shot)
         fs:SetText("Screenshot mode: Esc to bring the interface back")
         shot.text = fs
-        shot:EnableKeyboard(true)
+        -- 3 Nov (owner: "I can't move around"): a frame that takes the keyboard swallows W/A/S/D too, so screenshot mode
+        -- froze the character. Where the game has override bindings, only Esc is bound to the catcher and every other
+        -- key still walks; the keyboard catcher stays only for a client without them.
+        if not SetOverrideBindingClick then shot:EnableKeyboard(true) end
         shot:SetScript("OnKeyDown", function(_, key)
             if key == "ESCAPE" or (key == "Z" and IsAltKeyDown and IsAltKeyDown()) then return shotEnd() end
             if key == "PRINTSCREEN" and Screenshot then Screenshot() end
@@ -667,6 +674,9 @@ function W.ScreenshotMode(on)
     shot.left = 3
     UIParent:Hide()
     shot:Show()
+    if SetOverrideBindingClick and not (InCombatLockdown and InCombatLockdown()) then
+        shot.bound = pcall(SetOverrideBindingClick, shot, true, "ESCAPE", "WrathUnleashedShotMode")
+    end
 end
 -- Alt+Z (owner 31 Oct, the live check: it only fired the right bar's Alt+Z slot): a key binding that clicks a hidden
 -- button toggling screenshot mode. Bindings work while the interface is hidden; the catcher's Alt+Z and Esc bring it back.

@@ -17,7 +17,7 @@ set PY=py -3
 where py >nul 2>&1 || set PY=python
 %PY% -I "%TS%\survivors_rec.py" --wait-only 120 --upstream http://127.0.0.1:18093 || (echo The host did not start. & exit /b 1)
 echo PREVIEW UP: http://127.0.0.1:18093/ (20 minutes)
-timeout /t 1200 /nobreak >nul
+powershell -NoProfile -Command "Start-Sleep -Seconds 1200"
 for /f "tokens=2" %%p in ('tasklist /fi "windowtitle eq Survivors preview host*" /fo list ^| find "PID:"') do taskkill /pid %%p /f >nul 2>&1
 echo PREVIEW DONE
 exit /b 0

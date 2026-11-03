@@ -717,12 +717,13 @@ fn hovered_line(d: &Den, g: Option<u64>) -> String {
 /// The hover in build mode with nothing armed: the prop under the cursor glows, the one it left stops (not the
 /// selection's own glow), the addon is told its name. At most one change per [`HOVER_MS`] (the addon sends the
 /// cursor once more when it comes to rest, so the last one is never lost).
-fn hover_glow(d: &Den, sel: &Sel, a: &mut Aids, hit: Option<u64>, now: u64) -> AidOut {
+fn hover_glow(d: &Den, _sel: &Sel, a: &mut Aids, hit: Option<u64>, now: u64) -> AidOut {
     let mut out = AidOut::default();
     if hit == a.hovered || a.hover_ms.is_some_and(|t| now.saturating_sub(t) < HOVER_MS) {
         return out;
     }
-    if let Some(old) = a.hovered.filter(|g| d.placed(*g).is_some() && a.glowing != Some(*g) && !selected(sel, *g)) {
+    // off unless it is the selection's own glow (a.glowing): a selected prop with the gizmo off glowed only for the hover
+    if let Some(old) = a.hovered.filter(|g| d.placed(*g).is_some() && a.glowing != Some(*g)) {
         out.glow.push((old, 0));
     }
     if let Some(new) = hit.filter(|g| a.glowing != Some(*g)) {

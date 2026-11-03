@@ -285,7 +285,7 @@ local ED = S.ED
 -- vertex colour: white, muted, or gold when on. S.Icon("rotate") is the path.
 S.ICON_DIR = "Interface\\AddOns\\WrathUnleashedUI\\Media\\Icons\\"
 S.ICONS = { "all", "banners", "barrels", "build", "buildings", "class", "close", "crates", "decor", "delete", "dock", "dojo", "duplicate",
-    "favourites", "fences", "files", "fires", "floor", "furniture", "grid", "ground", "help", "invite", "keep", "lights", "lock", "market", "menu",
+    "favourites", "fences", "files", "fires", "floor", "furniture", "grid", "ground", "guide", "help", "invite", "keep", "keys", "lights", "lock", "market", "menu",
     "models", "move", "nature", "noimage", "objects", "path", "place", "play", "prefabs", "recent", "redo", "rotate", "scale",
     "search", "seating", "select", "snap", "stamp", "storage", "structure", "tables", "tents", "undo" }
 local iconSet = {}

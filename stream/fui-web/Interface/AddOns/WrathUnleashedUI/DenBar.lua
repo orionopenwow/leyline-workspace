@@ -438,6 +438,7 @@ local function buildBar()
     add("invite", "Invite", 70, function() D.Invite() end, "Invite one friend: a link to send")
     add("save", "Files", 62, function() local b = B(); if b then b.ShowFiles() end end, "Save and open your Den by name")
     add("menuBtn", "Menu", 66, function() D.ShowMenu() end, "Copy, paste, delete, groups, help...")
+    add("guide", "Guide", 62, function() if W.DenGuide then W.DenGuide.Toggle() end end, "The Den guide: how everything works")
     add("help", "?", 28, function() D.ShowIntro(#CARDS) end, "Keys and tips")
     add("close", "x", 28, function() D.Close() end, "Close the tools (Play)")
     bar.x = x
@@ -474,7 +475,8 @@ local function buildBar()
     for _, it in ipairs({ { "dojo", "Dojo", function() if W.Dojo then W.Dojo.Toggle() end end, "The training grounds" },
                           { "class", "Class", function() D.ShowClasses() end, "Try another class here" },
                           { "invite", "Invite", function() D.Invite() end, "Invite one friend: a link to send" },
-                          { "files", "Files", function() local b = B(); if b then b.ShowFiles() end end, "Your Den's saves by name" } }) do
+                          { "files", "Files", function() local b = B(); if b then b.ShowFiles() end end, "Your Den's saves by name" },
+                          { "guide", "Guide", function() if W.DenGuide then W.DenGuide.Toggle() end end, "The Den guide: how everything works" } }) do
         local c = chip(pill, it[2], nil, it[3], "TOPLEFT", px, -8 - S().ED_SIZE.chip - 6)
         c.edLabel = it[4]
         c.edTipAt, c.edTipTo = "LEFT", "RIGHT"
@@ -614,6 +616,7 @@ function D.Paint()
         bar.path:SetActive(b.mode == "path")
     end
     bar.dojo:SetActive(W.Dojo and W.Dojo.IsOpen and W.Dojo.IsOpen() or false)
+    if bar.guide then bar.guide:SetActive(W.DenGuide and W.DenGuide.IsOpen() or false) end
     -- what is only for a Den: the ground, Play, Invite
     for _, k in ipairs({ "ground", "playBtn", "invite" }) do if D.active then bar[k]:Show() else bar[k]:Hide() end end
 end
@@ -1030,7 +1033,7 @@ local function frameRect(f)
     return { x = l * k, y = b * k, w = w * k, h = h * k }
 end
 D.EDITOR_FRAMES = { "LeylineDenBar", "LeylineDenRail", "WrathUnleashedBuilderFrame", "LeylineEditorStatus", "WrathUnleashedPropsFrame",
-    "WrathUnleashedFilesFrame", "LeylineDenMenu", "LeylineDenDrawer" }
+    "WrathUnleashedFilesFrame", "LeylineDenMenu", "LeylineDenDrawer", "LeylineDenGuide" }
 D.GAME_FRAMES = { "MinimapCluster", "ChatFrame1", "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight",
     "MultiBarLeft", "PlayerFrame" }
 -- Which shown editor windows overlap which shown game frames (by more than 2 UI units): { "A/B", ... }
@@ -1077,6 +1080,7 @@ function D.Report(what)
                 (pv and pv:IsShown()) and "1" or "0", b.spin and "1" or "0")
         end
     end
+    if W.DenGuide then lines[#lines + 1] = W.DenGuide.Report() end
     local s = (b and b.state) or {}
     lines[#lines + 1] = string.format("state sel=%s n=%s undo=%s redo=%s clip=%s grid=%s lite=%s mode=%s tab=%s pick=%s", s.selName or "-",
         tostring(s.count or 0), s.undo or "?", s.redo or "?", s.clip or "?", s.grid or "?", s.lite or "0", tostring(b and b.mode),
@@ -1175,6 +1179,15 @@ function D.TestAction(text)
         return true
     end
     if a == "keys" then bar.help:Click(); return true end
+    if a == "guide" then   -- "guide" (the bar's Guide button), "guide <page>", "guide next", "guide close"
+        local G = W.DenGuide
+        if not G then return false end
+        if w[2] == "close" then G.Show(false); return true end
+        if w[2] == "next" then G.Go(G.page + 1); return true end
+        if w[2] then G.Show(true, G.Index(w[2]) or tonumber(w[2]) or 1); return true end
+        bar.guide:Click()
+        return G.IsOpen()
+    end
     if a == "intro" then D.ShowIntro(tonumber(w[2]) or 1); return true end
     if a == "play" then bar.playBtn:Click(); return true end
     if a == "build" then bar.pill.back:Click(); return true end

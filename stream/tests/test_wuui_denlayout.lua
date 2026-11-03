@@ -170,7 +170,7 @@ end
 -- own frame, every frame inside its parent (but what opens beside it on purpose: menus, the pill's note) and on screen.
 local ROOTS = { LeylineDenBar = true, LeylineDenRail = true, WrathUnleashedBuilderFrame = true, LeylineEditorStatus = true,
     WrathUnleashedPropsFrame = true, WrathUnleashedFilesFrame = true, LeylineDenPlayPill = true, LeylineDojoPanel = true,
-    LeylineDenHomePanel = true, LeylineDenModeBanner = true }
+    LeylineDenHomePanel = true, LeylineDenModeBanner = true, LeylineDenGuide = true }
 local function clipped(F)
     local out = {}
     local function add(e, why) if #out < 8 then out[#out + 1] = (e.root or "?") .. " " .. e.kind .. " '" .. tostring(e.f.text or e.f.name or "") .. "' " .. why end end
@@ -230,6 +230,13 @@ for _, scr in ipairs({ { 1280, 720 }, { 1920, 1080 }, { 2560, 1440 } }) do
         D.Invite(); F.toClient("wuden\tinvite\t1/1\thttps://relay.example.app/join/abcdefghijklmnop#ABCDEFGHJKLMNPQRSTUVWXYZ"); look("invite"); D.CloseDrawer()
         if W.Dojo then W.Dojo.Show(true); look("dojo"); W.Dojo.Show(false) end
         if W.DenHome then W.DenHome.Show(true); look("den home"); W.DenHome.Show(false) end
+        -- the Den guide, every page
+        if W.DenGuide then
+            for i = 1, #W.DenGuide.PAGES do W.DenGuide.Show(true, i); look("guide page " .. i) end
+            local gov = overlaps(F, { "LeylineDenGuide" }, STOCK)
+            for _, l in ipairs(gov) do bad[#bad + 1] = "overlap: " .. l end
+            W.DenGuide.Show(false)
+        end
         D.SetPlay(true); D.ShowClasses(true); look("play mode"); D.ShowClasses(false)
         check(tag .. "every Den window: no text clipped, nothing outside its frame or the screen", #bad == 0, table.concat(bad, " | "))
     end
@@ -297,6 +304,49 @@ do
     F.toClient("wubuild\tstate\t1/1\tmine=1/800;undo=1;redo=0;den=owner;room=1/800;yard=0/0;core=1;lite=1;grid=0;clip=0;area=den;code=-;"
         .. "sel=42,2562,Baked Bread;n=1;pos=1.00,2.00,3.00,0,1.00;rot=0,0,0;ids=42;gids=42;")
     check("a prop without a model: no preview", not pv:IsShown())
+end
+
+-- ---------------------------------------------------------------- the Den guide (owner 3 Nov): a paged help window
+do
+    local F, st, W = session(1920, 1080)
+    local D, G = W.DenBar, W.DenGuide
+    check("the guide: a Guide button on the Den bar", D.Bar().guide ~= nil)
+    D.Bar().guide:Click()
+    check("Guide opens it at its first page", G.IsOpen() and LeylineDenGuide:IsShown() and G.page == 1 and D.Bar().guide.edActive)
+    local need = { "start", "modes", "gallery", "place", "select", "stamps", "dojo", "class", "invite", "keys" }
+    local missing = {}
+    for _, k in ipairs(need) do if not G.Index(k) then missing[#missing + 1] = k end end
+    check("pages: Build and Play, the gallery, placing, selecting, stamps and Jaina, the Dojo, class, invite, keys", #missing == 0, table.concat(missing, ","))
+    local text = {}
+    for _, p in ipairs(G.PAGES) do text[#text + 1] = table.concat(p[5], " ") end
+    text = table.concat(text, " ")
+    for _, verb in ipairs({ ".den class", ".den mounts", ".den gear", ".den dojo", ".den jaina build", ".den fly", ".den speed", ".den grow",
+        ".build undo", "Invite", "Right-click", "F7", "Esc" }) do
+        check("the guide says " .. verb, text:find(verb, 1, true) ~= nil)
+    end
+    check("short sentences (none over 30 words)", (function()
+        for sent in text:gmatch("[^%.]+") do local n = 0; for _ in sent:gmatch("%S+") do n = n + 1 end; if n > 30 then return false end end
+        return true end)())
+    G.win = LeylineDenGuide
+    LeylineDenGuide.next:Click()
+    check("Next: the next page", G.page == 2 and LeylineDenGuide.heading:GetText() == G.PAGES[2][4])
+    LeylineDenGuide.back:Click()
+    check("Back: the page before", G.page == 1)
+    LeylineDenGuide.list[G.Index("dojo")]:Click()
+    check("a page from the list", G.PAGES[G.page][1] == "dojo" and LeylineDenGuide.icon.iconName == "dojo")
+    check("its icons are ours", (function() for _, p in ipairs(G.PAGES) do if not W.Style.Icon(p[3]):find("Media\\Icons\\" .. p[3], 1, true) then return false end end return true end)())
+    G.Show(false)
+    F.toClient("wuden\tguide\t1/1\topen")
+    check(".den help: Den Lite's 'guide open' opens it", G.IsOpen())
+    G.Show(false)
+    SlashCmdList["LEYLINEDEN"]("guide")
+    check("/den guide opens it", G.IsOpen())
+    SlashCmdList["LEYLINEDENGUIDE"]("keys")
+    check("/denguide keys: at that page", G.PAGES[G.page][1] == "keys")
+    check("the den-test's action and report", D.TestAction("guide stamps") and G.Report():find("open=1 page=" .. G.Index("stamps"), 1, true) ~= nil)
+    check("Esc closes it (a special frame)", (function() for _, n in ipairs(UISpecialFrames or {}) do if n == "LeylineDenGuide" then return true end end return false end)())
+    D.SetPlay(true)
+    check("play mode's corner has Guide too", D.Bar().pill.play.guide ~= nil)
 end
 
 -- ---------------------------------------------------------------- the chat: the Den's system lines go to the pill

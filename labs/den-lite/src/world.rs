@@ -1306,7 +1306,13 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
         return chat(c, shared, sess, p, &format!(".den dojo {}", words[1..].join(" ")));
     }
     match (w(0), w(1)) {
-        (".den", "") | (".den", "help") => {
+        // `.den help`: the Leyline UI's Den guide opens (a paged help window: Guide.lua) when the game has the UI;
+        // the commands in the chat as well without it, and always for `.den` alone or `.den commands`
+        (".den", "help") | (".den", "guide") if shared.notices.lock().unwrap_or_else(|e| e.into_inner()).has_ui(sess.id) => {
+            send_addon(c, sess.me.guid, "wuden", "guide", "open")?;
+            say(c, "The Den guide is open (Guide on the Den bar). .den commands lists the commands.")
+        }
+        (".den", "") | (".den", "help") | (".den", "guide") | (".den", "commands") => {
             for l in HELP {
                 say(c, l)?;
             }

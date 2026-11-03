@@ -458,6 +458,23 @@ def _(p):   # a tower with battlements
     p.rect(28, 40, 36, 56, r=2)
 
 
+@icon("guide")
+def _(p):   # an open book
+    p.line((32, 16), (32, 52))
+    p.line((32, 16), (22, 12), (8, 12), (8, 48), (22, 48), (32, 52))
+    p.line((32, 16), (42, 12), (56, 12), (56, 48), (42, 48), (32, 52))
+    p.line((15, 24), (25, 24))
+    p.line((15, 33), (25, 33))
+    p.line((39, 24), (49, 24))
+
+
+@icon("keys")
+def _(p):   # a key cap with a smaller one beside it
+    p.rect(6, 16, 38, 48, r=6)
+    p.line((14, 40), (30, 40))
+    p.rect(42, 26, 58, 48, r=4)
+
+
 @icon("noimage")
 def _(p):   # a dashed box
     for a, b in (((10, 10), (24, 10)), ((40, 10), (54, 10)), ((10, 54), (24, 54)), ((40, 54), (54, 54)),

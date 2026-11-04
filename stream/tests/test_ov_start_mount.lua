@@ -178,6 +178,87 @@ command(walker, ".mount")
 check(".mount at 30 without riding: told where riding comes from", #walker.casts == 0
     and joined(walker):find("riding trainer", 1, true) ~= nil, joined(walker))
 
+-- 8. the mount on the bars (owner 2026-11-03: "mount doesn't appear on bars yet"): once per character, the highest
+-- empty main-bar button, never over a button, never for a boosted character, shown to the client at once
+local ACTION, MARKS, SENT = {}, {}, 0
+local baseQuery = CharDBQuery
+CharDBQuery = function(sql)
+    local g = tonumber((sql:match("guid = (%d+)")))
+    if sql:find("FROM ov_start_mount_bar", 1, true) then
+        if MARKS[g] then return { GetUInt32 = function() return g end, NextRow = function() return false end } end
+        return nil
+    end
+    if sql:find("FROM character_action", 1, true) then
+        local rows = {}
+        for button, b in pairs(ACTION[g] or {}) do rows[#rows + 1] = { button, b[1], b[2] } end
+        if #rows == 0 then return nil end
+        local i = 1
+        return { GetUInt32 = function(_, c) return rows[i][c + 1] end,
+                 NextRow = function() i = i + 1; return i <= #rows end }
+    end
+    return baseQuery(sql)
+end
+CharDBExecute = function(sql)
+    local g, button = sql:match("ov_start_mount_bar %(guid, button, placed_at%) VALUES %((%d+), (%d+)")
+    if g then MARKS[tonumber(g)] = tonumber(button) end
+    local ins = sql:match("INSERT INTO character_action .- VALUES (.+) ON DUPLICATE")
+    if ins then
+        for gg, spec, b, action, t in ins:gmatch("%((%d+), (%d+), (%d+), (%d+), (%d+)%)") do
+            ACTION[tonumber(gg)] = ACTION[tonumber(gg)] or {}
+            ACTION[tonumber(gg)][tonumber(b)] = { tonumber(action), tonumber(t) }
+        end
+    end
+end
+CreatePacket = function() return { WriteUByte = function() end, WriteULong = function() end } end
+local function barPlayer(guid, race, level, opts)
+    local p = newPlayer(guid, race, 1, level or 1, opts)
+    function p:SaveToDB() self.saves = (self.saves or 0) + 1 end
+    function p:IsInWorld() return true end
+    function p:GetActiveSpec() return 0 end
+    function p:SendPacket() SENT = SENT + 1 end
+    return p
+end
+local function settle(p) for _ = 1, 4 do runTimers(p) end end
+
+ACTION[300] = { [0] = { 6603, 0 }, [1] = { 78, 0 }, [11] = { 117, 128 } }   -- attack, a spell, food on 12
+local nb = barPlayer(300, 10)
+local sent0 = SENT
+firstLogin(nb); settle(nb)
+check("bars: the blood elf's hawkstrider on the highest empty main-bar button (11, food kept on 12)",
+    ACTION[300][10] and ACTION[300][10][1] == 34795 and ACTION[300][10][2] == 0, ACTION[300][10] and ACTION[300][10][1])
+check("bars: the buttons already there are left alone", ACTION[300][0][1] == 6603 and ACTION[300][11][1] == 117)
+check("bars: saved before reading the buttons", (nb.saves or 0) >= 1)
+check("bars: the client is shown the buttons at once", SENT > sent0)
+check("bars: marked once", MARKS[300] == 10)
+check("bars: chat says it is on the bar", joined(nb):find("action bar", 1, true) ~= nil, joined(nb))
+login(nb); settle(nb)
+local count = 0
+for _, b in pairs(ACTION[300]) do if b[1] == 34795 then count = count + 1 end end
+check("bars: a relog places nothing again", count == 1, count)
+
+ACTION[301] = {}
+local moved = barPlayer(301, 1, 5, { spells = { RIDING, 458 } })
+MARKS[301] = 10                         -- placed before, then the player took it off the bar
+login(moved); settle(moved)
+check("bars: never put back after the player removed it", next(ACTION[301]) == nil)
+
+ACTION[302] = { [3] = { 458, 0 } }
+local there = barPlayer(302, 1, 4, { spells = { RIDING, 458 } })
+login(there); settle(there)
+check("bars: already on a button, nothing added", ACTION[302][11] == nil and MARKS[302] == 255)
+
+ACTION[303] = {}
+for b = 0, 143 do ACTION[303][b] = { 1, 0 } end
+local full = barPlayer(303, 2, 3, { spells = { RIDING, 580 } })
+login(full); settle(full)
+check("bars: no free button, nothing overwritten", ACTION[303][11][1] == 1 and MARKS[303] == 255)
+
+ACTION[304] = {}
+local tall = barPlayer(304, 2, 40, { spells = { RIDING, 580 } })
+login(tall); settle(tall)
+check("bars: a level 40 arranged their own bars: nothing placed", next(ACTION[304]) == nil and MARKS[304] == nil)
+CharDBQuery, CharDBExecute = baseQuery, function() end
+
 -- 7. player-facing words
 local all = {}
 for _, p in ipairs({ h, old, r, walker }) do all[#all + 1] = joined(p) end

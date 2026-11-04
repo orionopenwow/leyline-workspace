@@ -1394,21 +1394,83 @@ end
 
 local function announceStartMount(player)
     try(player, "RegisterEvent", function(_, _, _, p)
-        if p then say(p, "You can ride from level 1: type |cffffff00.mount|r, or find your mount in the " ..
-            "Character window (|cffffff00C|r), Pets tab, Mounts.") end
+        if p then say(p, "You can ride from level 1: press the mount on your action bar, type |cffffff00.mount|r, " ..
+            "or find it in the Character window (|cffffff00C|r), Pets tab, Mounts.") end
     end, 6000, 1)
+end
+
+-- The mount on the bars (owner 2026-11-03: "mount doesn't appear on bars yet"). The 3.3.5a client never places a
+-- learned spell, so once per character (ov_start_mount_bar) the race's mount goes on the highest empty main-bar
+-- button (12 down to 1), else the bottom left bar, and the client is shown it at once (SMSG_ACTION_BUTTONS). Only
+-- for a character that isn't boosted (the boost layout has its own mount buttons) and is below
+-- RIDING_CATCH_UP_BELOW; nothing is placed when the mount is already on a button or every button is taken. Saved
+-- first (so the rows read are the buttons as they are), then the row is written for the active spec. The server's
+-- in-memory buttons don't hold it until the next login, which only matters if the player moves it in this same
+-- session (the old spot comes back once at the next login).
+local MOUNT_BAR_BUTTONS = { 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71 }
+local mountBarBusy = {}
+local function mountBarMarked(guid)
+    local q = CharDBQuery(string.format("SELECT guid FROM ov_start_mount_bar WHERE guid = %d", guid))
+    return q ~= nil
+end
+local function markMountBar(guid, button)
+    CharDBExecute(string.format("INSERT IGNORE INTO ov_start_mount_bar (guid, button, placed_at) VALUES (%d, %d, %d)",
+        guid, button, os.time()))
+end
+
+local function placeStartMountNow(player, mount)
+    local guid = player:GetGUIDLow()
+    local active = try(player, "GetActiveSpec") or 0
+    local saved = savedButtons(guid, active)
+    for _, b in pairs(saved) do
+        if b[2] == ACTION_SPELL and b[1] == mount then markMountBar(guid, 255); return nil end
+    end
+    for _, button in ipairs(MOUNT_BAR_BUTTONS) do
+        if not saved[button] then
+            local new = { [button] = { mount, ACTION_SPELL } }
+            writeButtons(guid, active, new, { [button] = true })
+            saved[button] = new[button]
+            sendButtons(player, saved)
+            markMountBar(guid, button)
+            print(string.format("[ov_main] start mount: %s's mount %d on button %d", tostring(try(player, "GetName")),
+                mount, button))
+            return button
+        end
+    end
+    markMountBar(guid, 255)
+    print(string.format("[ov_main] start mount: no free button for %s's mount", tostring(try(player, "GetName"))))
+    return nil
+end
+
+local function placeStartMount(player)
+    if not startMountOn() or isBot(player) then return end
+    local guid = player:GetGUIDLow()
+    if mountBarBusy[guid] or barState[guid] then return end
+    if (try(player, "GetLevel") or 99) >= RIDING_CATCH_UP_BELOW then return end
+    local mount = START_MOUNT[try(player, "GetRace") or 0]
+    if not mount or try(player, "HasSpell", mount) ~= true or mountBarMarked(guid) then return end
+    mountBarBusy[guid] = true
+    later(player, 4000, "mount on the bar, save", function(p)
+        if try(p, "IsInWorld") == false then mountBarBusy[guid] = nil; return placeStartMount(p) end
+        try(p, "SaveToDB")
+        later(p, BAR_STEP_MS, "mount on the bar", function(q) placeStartMountNow(q, mount) end)
+    end)
 end
 
 -- First login: the grant and its one chat line (ON_LOGIN, which runs first, may already have learned the spells).
 local function startMountFirstLogin(player)
     local mount = giveStartMount(player)
-    if mount and try(player, "HasSpell", mount) == true then announceStartMount(player) end
+    if mount and try(player, "HasSpell", mount) == true then
+        announceStartMount(player)
+        placeStartMount(player)
+    end
 end
 
--- Any login: a character made before riding from level 1, still below 20, gets it quietly.
+-- Any login: a character made before riding from level 1, still below 20, gets it quietly (and on the bar).
 local function startMountCatchUp(player)
     if (try(player, "GetLevel") or 99) >= RIDING_CATCH_UP_BELOW then return end
     giveStartMount(player)
+    placeStartMount(player)
 end
 
 local function mountCommand(player)
@@ -1666,6 +1728,7 @@ local function onDelete(event, guid)
     if low > 0 then
         CharDBExecute(string.format("DELETE FROM ov_main_choice WHERE guid = %d", low))
         CharDBExecute(string.format("DELETE FROM ov_boost_bars WHERE guid = %d", low))
+        CharDBExecute(string.format("DELETE FROM ov_start_mount_bar WHERE guid = %d", low))
     end
 end
 
@@ -1696,6 +1759,13 @@ CharDBExecute([[CREATE TABLE IF NOT EXISTS ov_boost_bars (
     waiting1 VARCHAR(600) NOT NULL DEFAULT ''
 )]])
 
+-- Characters whose race mount was put on a bar once (button 255: it was already there, or no button was free).
+CharDBExecute([[CREATE TABLE IF NOT EXISTS ov_start_mount_bar (
+    guid INT UNSIGNED NOT NULL PRIMARY KEY,
+    button TINYINT UNSIGNED NOT NULL,
+    placed_at INT UNSIGNED NOT NULL
+)]])
+
 -- Talents of a boosted character: a short wait so a row of talent clicks is handled once.
 local function onTalent(event, player)
     if not on() or not player then return end
@@ -1724,4 +1794,5 @@ OV_MAIN_TEST = { BARS = BARS, RACIALS = RACIALS, INV_SLOTS = INV_SLOTS, resolveL
     SMSG_ACTION_BUTTONS = SMSG_ACTION_BUTTONS, MAX_ACTION_BUTTONS = MAX_ACTION_BUTTONS,
     START_KITS = START_KITS, fillStartKit = fillStartKit, SMART_MOUNT = SMART_MOUNT, MOUNTS = MOUNTS,
     flyButtons = flyButtons, smartMountButtons = smartMountButtons, barsWord = barsWord,
-    START_MOUNT = START_MOUNT, APPRENTICE_RIDING = APPRENTICE_RIDING, DK_MOUNT = DK_MOUNT }
+    START_MOUNT = START_MOUNT, APPRENTICE_RIDING = APPRENTICE_RIDING, DK_MOUNT = DK_MOUNT,
+    MOUNT_BAR_BUTTONS = MOUNT_BAR_BUTTONS }

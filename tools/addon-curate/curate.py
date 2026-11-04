@@ -21,6 +21,12 @@ stream/upstream_addons.py).
         Write stream/upstream-addons.json: the approved entries in the all.json project shape.
     python3 -I tools/addon-curate/curate.py list
         One line per entry: id, status, licence, files, flags.
+    python3 -I tools/addon-curate/curate.py discover [--limit 15] [--pages 2] [--no-code] [--report FILE]
+        Find more addons for this client on GitHub (repo searches, the TOC's Interface line by code search, the repos
+        of authors who backport often), leave out forks, collections, the hub index's blocklist and hard rules and
+        what the curator leaves out by choice, run the rules above over each (resolve + analyze, nothing kept), and add
+        the ones that pass to seeds-addons.json as seeds in our words (found "discover <date>"). They become pending
+        entries at the next run; nothing is approved.
 
 For the Admin Console (stream/admin.py): approve_entry(path, id, by, notes, works) and pending_entries(path) do the
 same as the commands, without printing.
@@ -42,6 +48,7 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 
@@ -744,6 +751,341 @@ def approve_entry(path: str, eid: str, by: str, notes: str = "", works: bool = F
     return e
 
 
+# ------------------------------------------------------------------------------------------------ discover
+# Repo searches for addons of this client, code search for its TOC line, and the repos of authors who backport often.
+DISCOVER_QUERIES = [
+    "topic:wotlk-addon", "topic:wotlk-addons", "topic:wow-addon 3.3.5", "topic:wow-addons wotlk", "topic:wotlk wow addon",
+    "3.3.5a addon", "3.3.5 addon", "3.3.5a addons", "wotlk addon", "wotlk addons", "wotlk backport", "backport 3.3.5",
+    "addon 3.3.5a backport", "wotlk ui", "wotlk unit frames", "wotlk nameplates", "wotlk raid frames", "wotlk bags",
+    "wotlk quest addon", "wotlk map addon", "wotlk auction addon", "wotlk tooltip addon", "wotlk chat addon",
+    "wotlk action bars", "wotlk weakauras", "wotlk boss mods", "wotlk damage meter", "wotlk cooldown addon",
+    "warmane addon", "dalaran addon", "335 addon", "interface 30300", "3.3.5a ui", "wotlk lua addon",
+    "ascension addon", "epoch addon",
+]
+DISCOVER_CODE = ['"## Interface: 30300" extension:toc', '"## Interface:30300" extension:toc']
+DISCOVER_AUTHORS = ["bkader", "s0h2x", "NoM0Re", "KhalGH", "Zidras", "refaim", "EinBaum", "shagu", "tdymel",
+                    "Drakensangs", "Bunny67", "Lanthaas", "TheLinuxITGuy", "Ennea", "NeticSoul", "noname7", "SabineWren",
+                    "Intervence", "laytya", "Mudvay", "Sattva-108", "Aviana", "gashole", "ElvUI-WotLK", "Wotlk-Addons"]
+# Not an install source: re-upload collections, things the curator leaves out by choice, and the index's hard rules.
+COLLECTION_RE = re.compile(r"(?i)\bcollection\b|\bcompilation\b|\baddons?[ _-]?(pack|list|backup|archive)\b|"
+                           r"\bmy[ _-]?(addons|ui|interface)\b|\bui[ _-]?pack\b|\ball[ _-]?(the[ _-]?)?addons\b|"
+                           r"(^|/)[^/]*(wow|wotlk|3\.3\.5a?)[ _-]*addons2?$|\bdotfiles\b|\binterface[ _-]?folder\b")
+LEFT_OUT_RE = re.compile(r"(?i)\brotation\b|one[ _-]?button|sequencer|\bdll\b|\bunlocker\b|\binject|\bmorpher\b|"
+                         r"\bpatched client\b|\bawesome ?wotlk\b|\bguides? (are )?(sold|paid)\b|\bzygor\b|\brestedxp\b|"
+                         r"\bmulti ?box|\bauto(mated)? (play|fish|loot farm)|\bbot\b|\bgold (seller|farm)")
+MAX_FOLDERS = 8
+DISCOVER_MIN_STARS = 1
+TAG_RULES = [
+    ("full-ui", r"\bcomplete (ui|interface)\b|\bui (replacement|overhaul)\b|\belvui\b|\btukui\b|\bui suite\b"),
+    ("unit-frames", r"unit ?frames?|player frame|target frame|\bfocus frame|party frames?"),
+    ("raid-frames", r"raid ?frames?|healer|healing frames|\bgrid\d?\b|vuhdo|\bheal ?bot"),
+    ("action-bars", r"action ?bars?|bartender|dominos|keybind|hotkeys?"),
+    ("nameplates", r"name ?plates?"),
+    ("meters", r"meters?\b|\bdps\b|\bthreat\b|recount|skada|\bdetails\b"),
+    ("boss-mods", r"boss ?mods?|\bdbm\b|bigwigs|encounter|\bboss\b"),
+    ("raid-tools", r"\braid\b|\bloot\b|ready ?check|\bdkp\b|\bgdkp\b|consumables?|\broster\b"),
+    ("auras", r"\bauras?\b|\bbuffs?\b|\bdebuffs?\b|weakauras|\bprocs?\b"),
+    ("cooldowns", r"cooldowns?|\bcds?\b|\btimers?\b|omnicc|interrupt"),
+    ("combat-text", r"combat ?text|\bsct\b|\bmsbt\b|scrolling"),
+    ("quests", r"\bquests?\b|questie|\bguides?\b|leveling|levelling"),
+    ("minimap", r"mini ?map"),
+    ("maps", r"\bmaps?\b|coordinates|\bcoords\b|world ?map|routes?\b|\bnodes?\b"),
+    ("bags", r"\bbags?\b|inventory|\bbank\b|\bbagnon\b"),
+    ("auction", r"auction|\bah\b|\bprices?\b|\bvendor"),
+    ("gear", r"\bgear\b|equipment|item ?level|\bilvl\b|outfit|transmog|\bitems?\b|\bloot table"),
+    ("tooltips", r"tool ?tips?"),
+    ("chat", r"\bchat\b|whispers?|\bemotes?\b"),
+    ("social", r"\bguild\b|friends|\blfg\b|group finder|\bsocial\b|\bpartying\b"),
+    ("class", r"\b(rogue|mage|warrior|hunter|priest|paladin|shaman|warlock|druid|death ?knight|class)\b|\bpets?\b|"
+              r"\btotems?\b|combo points|\brunes?\b"),
+    ("professions", r"profession|trade ?skill|crafting|\bfishing\b|cooking|enchant|alchemy|gathering|herbalism|mining"),
+    ("pvp", r"\bpvp\b|\barenas?\b|battlegrounds?|\bbgs?\b|honor"),
+    ("skins", r"\bskins?\b|\bthemes?\b|retexture|\bfonts?\b|\blooks?\b"),
+    ("libraries", r"^lib|\blibrar(y|ies)\b|\bframework\b"),
+]
+TAG_PHRASE = {
+    "full-ui": "A complete interface replacement", "unit-frames": "Unit frames", "raid-frames": "Party and raid frames",
+    "action-bars": "Action bars", "nameplates": "Nameplates", "meters": "A combat meter", "boss-mods": "Boss warnings",
+    "raid-tools": "A raid helper", "auras": "Aura tracking", "cooldowns": "Cooldown tracking",
+    "combat-text": "Combat text", "quests": "A quest helper", "maps": "A map helper", "minimap": "A minimap helper",
+    "bags": "A bag helper", "auction": "An auction house helper", "gear": "A gear helper", "tooltips": "Tooltip extras",
+    "chat": "Chat extras", "social": "A social helper", "class": "A class helper", "professions": "A profession helper",
+    "pvp": "A PvP helper", "skins": "A look for the interface", "libraries": "A shared library other addons use",
+    "quality-of-life": "A quality-of-life addon",
+}
+VERSION_IN_PROSE = re.compile(r"(?i)\b\d+\.\d+(\.\d+)*[a-z]?\b|\b(30300|11200|20400|12340|335a?)\b|\bpatch \d")
+
+
+def _hub():
+    """tools/hub-index/hub_index.py, for the index's own patterns and blocklist (None when it can't load)."""
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("wu_hub_index_c", os.path.join(ROOT, "tools", "hub-index", "hub_index.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception:            # the index needs stream/hub.py; curate must keep working without it
+        return None
+
+
+def discover_tags(text: str) -> list[str]:
+    t = (text or "").lower()
+    got = [tag for tag, rx in TAG_RULES if re.search(rx, t)]
+    return got[:3] or ["quality-of-life"]
+
+
+def discover_text(raw: str) -> str:
+    """Their one line as a sentence, or "" when it carries a brand word, a client version or a link (our words then)."""
+    s = re.sub(r"\|c[0-9a-fA-F]{8}|\|r", "", raw or "")
+    s = re.sub(r":[a-z_]+:|[^\w\s.,;:!?'()/&+-]", " ", s)
+    s = " ".join(s.split()).strip(" -:;,")
+    if not s or banned(s) or VERSION_IN_PROSE.search(s) or re.search(r"(?i)https?://|www\.|\.com\b|\bport(ed)?\b|"
+                                                                     r"\bbackport|\bserver\b|\brealm\b|\bprivate\b", s):
+        return ""
+    if len(s) < 12 or len(s) > 220 or not re.search(r"[a-zA-Z]{3}", s):
+        return ""
+    s = s[0].upper() + s[1:]
+    return s if s[-1] in ".!?" else s + "."
+
+
+def discover_name(raw: str) -> str:
+    """A TOC title as a display name: clean_name, then no version, build or edition words."""
+    s = clean_name(raw)
+    s = re.sub(r"(?i)\s*[\[(]?\b(v(er(sion)?)?\.?\s*)?\d+(\.\d+)+[a-z]?\b[\])]?|\b(30300|335a?|12340)\b|"
+               r"\s*[\[(]?\b(beta|alpha|backport(ed)?|edition|port|fix(ed)?)\b[\])]?", " ", s)
+    s = re.sub(r"\(\s*\)|\[\s*\]", " ", s)
+    return re.sub(r"\s{2,}", " ", s).strip(" -_.:*|") if not VERSION_IN_PROSE.search(re.sub(r"\s{2,}", " ", s)) else ""
+
+
+def discover_slug(name: str, taken: set) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:40].strip("-") or "addon"
+    sid, n = base, 2
+    while sid in taken or not name_ok(sid.replace("-", "_")):
+        sid, n = f"{base}-{n}", n + 1
+    taken.add(sid)
+    return sid
+
+
+def discover_reject(slug: str, meta: dict, block: dict, hub=None) -> str:
+    """Why a found repo is not a seed ("" when it may be one): fork, too few stars, a collection, left out by choice,
+    the index's blocklist and hard rules (repack, cheat, money, decompiled, current game)."""
+    owner = slug.split("/")[0].lower()
+    text = " ".join([slug.split("/")[-1].replace("_", " ").replace("-", " "), meta.get("description") or "",
+                     " ".join(meta.get("topics") or [])])
+    if meta.get("fork"):
+        return "a fork"
+    if (meta.get("stars") or 0) < DISCOVER_MIN_STARS:
+        return f"below the bar ({meta.get('stars') or 0} stars)"
+    if "chumpton" in (slug + " " + text).lower():
+        return "the Chumpton account"
+    key = "https://github.com/" + slug.lower()
+    for b in block.get("owners", []):
+        if b.get("owner", "").lower() == owner:
+            return "blocklist: " + b.get("reason", "")
+    for b in block.get("repos", []) + block.get("review", []):
+        if b.get("repo", "").lower() == key:
+            return "blocklist: " + b.get("reason", "")
+    for b in block.get("patterns", []):
+        if re.search(b["pattern"], key + " " + text, re.I):
+            return "blocklist: " + b.get("reason", "")
+    if COLLECTION_RE.search(slug) or COLLECTION_RE.search(meta.get("description") or ""):
+        return "looks like a re-upload collection of other people's addons"
+    if LEFT_OUT_RE.search(text):
+        return "left out by choice (rotation or one-button play, native code, a patched client, bots, paid guides)"
+    if hub is not None:
+        for rx, why in ((hub.DECOMP_RE, "decompiled, or from wowdecomp/Waystone"), (hub.REPACK_RE, "a repack or client patch"),
+                        (hub.CHEAT_RE, "a bot, cheat or exploit"), (hub.MONEY_RE, "built to sell things"),
+                        (hub.OTHER_GAME_RE, "made for the current game")):
+            if rx.search(text):
+                return why
+    return ""
+
+
+def discover_find(get, pages: int = 2, authors: bool = True, code: bool = True, sleep=time.sleep) -> dict:
+    """{owner/repo: meta} from the searches. get(url) -> decoded JSON or None."""
+    found: dict[str, dict] = {}
+
+    def take(d):
+        if isinstance(d, dict) and isinstance(d.get("full_name"), str) and "/" in d["full_name"]:
+            lic = d.get("license") if isinstance(d.get("license"), dict) else {}
+            found.setdefault(d["full_name"], {
+                "stars": d.get("stargazers_count") if isinstance(d.get("stargazers_count"), int) else None,
+                "description": d.get("description") or "", "topics": [t for t in d.get("topics") or [] if isinstance(t, str)],
+                "fork": bool(d.get("fork")), "archived": bool(d.get("archived")), "licence": lic.get("spdx_id") or "",
+                "default_branch": d.get("default_branch") or "", "pushed": (d.get("pushed_at") or "")[:10]})
+
+    def search(q, pg):
+        for page in range(1, pg + 1):
+            d = get("https://api.github.com/search/repositories?" + urllib.parse.urlencode(
+                {"q": q + " fork:false", "sort": "stars", "order": "desc", "per_page": 100, "page": page}))
+            sleep(2.2)
+            items = (d or {}).get("items") if isinstance(d, dict) else None
+            for i in items or []:
+                take(i)
+            if not items or len(items) < 100:
+                break
+
+    for q in DISCOVER_QUERIES:
+        search(q, pages)
+    if authors:                                    # their own repos (search: the one GitHub API every session has)
+        for a in DISCOVER_AUTHORS:
+            search(f"user:{a}", 3)
+    if code:
+        hits: list[str] = []
+        for q in DISCOVER_CODE:
+            for page in range(1, 11):
+                d = get("https://api.github.com/search/code?" + urllib.parse.urlencode({"q": q, "per_page": 100, "page": page}))
+                sleep(6.5)
+                items = (d or {}).get("items") if isinstance(d, dict) else None
+                for i in items or []:
+                    r = i.get("repository") if isinstance(i, dict) else None
+                    fn = r.get("full_name") if isinstance(r, dict) else None
+                    if isinstance(fn, str) and re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", fn) \
+                            and fn not in found and fn not in hits and not r.get("fork"):
+                        hits.append(fn)
+                if not items or len(items) < 100:
+                    break
+        batch: list[str] = []                      # stars and the rest: a repo search over a few repo: names at once
+        for fn in hits + [""]:
+            if fn and len(" ".join(f"repo:{x}" for x in batch + [fn])) <= 240:
+                batch.append(fn)
+                continue
+            if batch:
+                d = get("https://api.github.com/search/repositories?" + urllib.parse.urlencode(
+                    {"q": " ".join(f"repo:{x}" for x in batch), "per_page": 100}))
+                sleep(2.2)
+                for i in ((d or {}).get("items") if isinstance(d, dict) else None) or []:
+                    take(i)
+            batch = [fn] if fn else []
+    return found
+
+
+def discover_seed(slug: str, meta: dict, a: dict, taken: set, today: str) -> dict | None:
+    """A pending seed in our words from a repo that passed analyze(); None when no clean name is left."""
+    folders = sorted(a.get("addons") or {})
+    repo = slug.split("/")[-1]
+    primary = sorted(folders, key=lambda n: (n.lower() != repo.lower().split("-")[0].lower(), len(n)))[0]
+    toc = a["addons"][primary]
+    name = discover_name(toc.get("title") or "") or discover_name(primary)
+    if not name or banned(name) or len(name) < 2:
+        return None
+    text = " ".join([repo, primary, meta.get("description") or "", " ".join(meta.get("topics") or []), toc.get("title") or ""])
+    tags = discover_tags(text)
+    desc = discover_text(meta.get("description") or "")
+    if not desc:
+        desc = f"{TAG_PHRASE.get(tags[0], TAG_PHRASE['quality-of-life'])}: {name}."
+    seed = {"repo": slug, "id": discover_slug(name, taken), "display_name": name, "tags": tags, "description": desc,
+            "found": f"discover {today}"}
+    notes = []
+    if not licence_open(a.get("licence") or ""):
+        notes.append("no open licence found: installed from the author's repo only")
+    if a.get("blp_files"):
+        notes.append("ships its own .blp art: check it")
+    if len(folders) > 3:
+        notes.append(f"installs {len(folders)} folders: check it is one project")
+    if notes:
+        seed["notes"] = "; ".join(notes)[:200]
+    return seed
+
+
+def discover(doc: dict, get, check, today: str, limit: int = 200, pages: int = 2, log=print, found: dict | None = None,
+             block: dict | None = None, hub=None) -> dict:
+    """Search, vet and add pending seeds to doc (the seeds-addons.json document). check(seed) -> analyze()'s result
+    (resolve + analyze in a scratch folder). Nothing is approved: seeds only become pending entries at the next run.
+    Returns {added, rejected: [(repo, why)], failed: [(repo, why)]}."""
+    seeds = doc.setdefault("seeds", [])
+    known = {s["repo"].lower() for s in seeds}
+    taken = {s["id"] for s in seeds if s.get("id")}
+    found = found if found is not None else discover_find(get, pages)
+    block = block if block is not None else {}
+    out = {"added": [], "rejected": [], "failed": []}
+    have_folders = set()
+    for slug in sorted(found, key=lambda s: (-(found[s].get("stars") or 0), s.lower())):
+        if len(out["added"]) >= limit:
+            break
+        if slug.lower() in known:
+            continue
+        known.add(slug.lower())
+        why = discover_reject(slug, found[slug], block, hub)
+        if why:
+            out["rejected"].append((slug, why))
+            continue
+        try:
+            a = check({"repo": slug, "id": "discover", "branch": ""})
+        except (RuntimeError, ValueError, OSError, zipfile.BadZipFile, subprocess.TimeoutExpired, KeyError) as ex:
+            out["failed"].append((slug, str(ex)[:160]))
+            continue
+        if not a.get("ok"):
+            out["failed"].append((slug, a.get("problem", "?")[:160]))
+            continue
+        if len(a.get("addons") or {}) > MAX_FOLDERS:
+            out["rejected"].append((slug, f"{len(a['addons'])} addon folders: a collection, not one project"))
+            continue
+        if (a.get("licence") or "") in ("All rights reserved", "LicenseRef-custom") and not licence_open(a.get("licence") or ""):
+            out["rejected"].append((slug, f"its licence ({a['licence']}) is not an open one"))
+            continue
+        dup = sorted(set(n.lower() for n in a["addons"]) & have_folders)
+        seed = discover_seed(slug, found[slug], a, taken, today)
+        if seed is None:
+            out["rejected"].append((slug, "no clean name once brand words are taken out"))
+            continue
+        if dup:
+            seed["notes"] = (seed.get("notes", "") + "; " if seed.get("notes") else "") + \
+                "installs the same folder as another find (" + ", ".join(dup[:2]) + "): one or the other"
+        have_folders |= {n.lower() for n in a["addons"]}
+        seeds.append(seed)
+        out["added"].append(seed)
+        log(f"seed    {seed['id']:34} {slug}")
+    return out
+
+
+def _get_or_none(url: str):
+    try:
+        return http_json(url)
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
+def discover_main(args) -> int:
+    with open(SEEDS_PATH, encoding="utf-8") as f:
+        doc = json.load(f)
+    hub = _hub()
+    block = {}
+    try:
+        with open(os.path.join(ROOT, "tools", "hub-index", "blocklist.json"), encoding="utf-8") as f:
+            block = json.load(f)
+    except (OSError, ValueError):
+        pass
+    scratch = args.scratch or tempfile.mkdtemp(prefix="addon-discover-")
+    os.makedirs(scratch, exist_ok=True)
+
+    def check(seed):
+        work = tempfile.mkdtemp(prefix="dis-", dir=scratch)
+        try:
+            return analyze(read_zip(resolve(seed, work)["zip"]), seed)
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+
+    found = discover_find(_get_or_none, args.pages, code=not args.no_code)
+    out = discover(doc, _get_or_none, check, time.strftime("%Y-%m-%d", time.gmtime()), args.limit, found=found,
+                   block=block, hub=hub)
+    tmp = SEEDS_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(doc, f, indent=1, ensure_ascii=False)
+        f.write("\n")
+    os.replace(tmp, SEEDS_PATH)
+    lines = [f"discover: {len(found)} repos found, {len(out['added'])} new pending seeds, {len(out['rejected'])} left out, "
+             f"{len(out['failed'])} did not pass the rules"]
+    lines += [f"  seed      {s['id']}  {s['repo']}" for s in out["added"]]
+    lines += [f"  left out  {r}: {w}" for r, w in out["rejected"]]
+    lines += [f"  failed    {r}: {w}" for r, w in out["failed"]]
+    print(lines[0])
+    if args.report:
+        with open(args.report, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -759,7 +1101,15 @@ def main(argv=None) -> int:
     u.add_argument("id")
     sub.add_parser("publish")
     sub.add_parser("list")
+    d = sub.add_parser("discover")
+    d.add_argument("--limit", type=int, default=15, help="new seeds at most (default 15, the daily ceiling)")
+    d.add_argument("--pages", type=int, default=2)
+    d.add_argument("--no-code", action="store_true", help="skip the TOC code search (it needs a token)")
+    d.add_argument("--scratch", default="")
+    d.add_argument("--report", default="")
     args = ap.parse_args(argv)
+    if args.cmd == "discover":
+        return discover_main(args)
     doc = load_doc()
     if args.cmd == "run":
         seeds = json.load(open(SEEDS_PATH, encoding="utf-8"))["seeds"]

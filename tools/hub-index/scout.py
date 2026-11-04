@@ -3,12 +3,14 @@
 2026-10-30: "a robust scanning system for novel GitHubs and other things we can merge into this ultimate launcher").
 
     python3 -I tools/hub-index/scout.py run [--date YYYY-MM-DD] [--probe 40] [--max-pages 1] [--no-reddit]
-                                            [--report FILE]
+                                            [--report FILE] [--wide] [--jobs 4]
 
 Where it looks (read-only, rate-limit aware, works without a token: fewer results then):
   * GitHub search, per area (launchers, server cores and modules, bots, addons and UI, tools and editors, web and
     mobile clients, graphics): repos created in the last 30 days, and repos pushed in the last 14 days with stars
     (the risers; star velocity comes from scout-state.json's history, the pool's last-known stars as a baseline);
+  * with --wide (a catch-up sweep, run by hand): every area's queries plus WIDE_QUERIES, all-time with 3+ stars;
+    a find only the sweep saw joins the pool only once probed and judged listable (or held for a licence or a person);
   * Codeberg and GitLab, newest first, like hub_index.py discover;
   * r/wowservers, its public feeds only (new/.rss and top/.json?t=week) with a polite User-Agent: GitHub, GitLab
     and Codeberg links in the posts. 403 and 429 are taken as "not today". Nothing else is fetched from Reddit, and
@@ -66,14 +68,46 @@ log = HI.log
 AREAS = {
     "launchers": ["wow launcher", "realmlist launcher", "topic:wow-launcher", "private server launcher"],
     "server cores and modules": ["topic:azerothcore-module", "azerothcore module", "topic:trinitycore", "topic:vmangos",
-                                 "topic:cmangos"],
+                                 "topic:cmangos", "topic:eluna", "topic:azerothcore-lua"],
     "bots": ["playerbots", "npcbots", "topic:playerbots", "llm npc azerothcore"],
-    "addons and UI": ["topic:wow-addon", "topic:wotlk-addon", "topic:vanilla-addons", "3.3.5 addon"],
+    "addons and UI": ["topic:wow-addon", "topic:wotlk-addon", "topic:vanilla-addons", "3.3.5 addon", "1.12.1 addon",
+                      "2.4.3 addon", "wotlk addon"],
     "tools and editors": ["noggit", "wow map editor", "dbc editor", "wow model viewer", "azerothcore tool"],
     "web and mobile clients": ["wow web client", "wotlk webgl", "wow wasm", "wow android", "wow mobile client"],
     "graphics": ["wow hd textures", "wotlk graphics", "wow reshade", "dxvk wow"],
 }
 NEW_DAYS, RISER_DAYS, RISER_STARS = 30, 14, 15
+# run --wide (a catch-up sweep, not the daily run): every AREAS query and these too, all-time (no date filter), with
+# at least WIDE_STARS stars. A find seen only by the sweep joins the pool only when it was probed and the index rules
+# would list it, hold it for a licence, or hold it for a person (never "nothing says it is for the game").
+WIDE_STARS = 3
+WIDE_QUERIES = {
+    "launchers": ["wotlk launcher", "vanilla wow launcher", "wow private server launcher", "wow server launcher",
+                  "realmlist changer", "wow client launcher", "turtle wow launcher", "wow addon manager",
+                  "wow addon updater"],
+    "server cores and modules": ["topic:azerothcore-tools", "topic:mangos", "azerothcore lua", "eluna lua scripts",
+                                 "eluna scripts", "trinitycore 3.3.5", "trinitycore custom", "trinitycore scripts",
+                                 "trinitycore module", "cmangos module", "vmangos", "mangos zero", "cmangos wotlk",
+                                 "cmangos tbc", "azerothcore docker", "azerothcore custom", "mod-azerothcore",
+                                 "acore module", "wotlk server", "vanilla wow server", "tbc private server",
+                                 "wow emulator", "topic:wow-emulator", "topic:wow-server", "topic:wotlk-server"],
+    "bots": ["mod-playerbots", "azerothcore bots", "trinitycore bots", "cmangos playerbots", "wow companion bots"],
+    "addons and UI": ["topic:wow-addons", "topic:world-of-warcraft-addon", "topic:wotlk-addons", "topic:tbc-addon",
+                      "topic:vanilla-addon", "topic:turtle-wow", "3.3.5a addon", "wotlk backport", "vanilla wow addon",
+                      "1.12 addon", "tbc addon", "turtle wow addon", "wow 3.3.5 ui", "wotlk ui", "wotlk nameplates",
+                      "wotlk unit frames", "wotlk weakauras", "vanilla ui addon", "wow lua addon",
+                      "interface 30300", "interface 11200", "interface 20400"],
+    "tools and editors": ["wow dbc", "wdbx", "wow mpq tool", "m2 model", "wow map viewer", "wow armory",
+                          "azerothcore cms", "trinitycore cms", "azerothcore website", "wow registration page",
+                          "azerothcore discord bot", "keira3", "wow spell editor", "trinitycore creator",
+                          "wow database editor", "azerothcore api", "wow server status", "wow sniffer parser",
+                          "wow 3.3.5 tools"],
+    "web and mobile clients": ["wowser", "wow model viewer web", "wow webgl viewer", "wow three.js", "wow browser client",
+                               "wow ios", "wow winlator", "wow box64"],
+    "graphics": ["wow shaders", "wotlk reshade", "vanilla reshade", "wow dxvk", "wow vulkan", "wotlk hd", "vanilla hd",
+                 "wow graphics mod", "wow lighting mod"],
+}
+WIDE_POOL_OK = ("listed", "needs_licence", "review")
 CODEBERG_TERMS = ["azerothcore", "trinitycore", "wotlk", "vanilla-wow", "wow-addon", "mangos"]
 GITLAB_TOPICS = ["azerothcore", "trinitycore", "wow-addon", "world-of-warcraft", "wotlk"]
 REDDIT_FEEDS = ("https://www.reddit.com/r/wowservers/new/.rss", "https://www.reddit.com/r/wowservers/top/.json?t=week")
@@ -110,7 +144,9 @@ LURE_README = re.compile(r"(?i)download (it |the )?(latest |newest )?(version |b
                          r"\b(go|head) to (the )?releases?\b|download (the )?(setup|installer|\.exe|exe)\b|"
                          r"\bpassword\s*[:=]\s*\S+|\b(disable|turn off) (your )?(anti-?virus|defender|windows defender|av)\b|"
                          r"\brun (it )?as admin(istrator)?\b|extract (the )?(zip|rar|archive) and run")
-LURE_STRONG = re.compile(r"(?i)\bpassword\s*[:=]\s*\S+|\b(disable|turn off) (your )?(anti-?virus|defender|windows defender|av)\b")
+# The archive password of a release download, not a database login in a config example ("password = acore").
+LURE_STRONG = re.compile(r"(?i)\b(zip|rar|7z|archive|download|releases?|extract|unpack|installer)\b[^\n]{0,80}?\bpass(word)?"
+                         r"\s*[:=]\s*\S+|\b(disable|turn off) (your )?(anti-?virus|defender|windows defender|av)\b")
 LURE_SUFFIX = re.compile(r"(?i)[-_ ]?(pro|free|crack(ed)?|download|latest|full|premium|unlocked|20\d\d|v?\d+(\.\d+)*)$")
 SOURCE_SIGNS = ("cpp", "lua")
 GENERIC_NAMES = {re.sub(r"[^a-z0-9]", "", g) for g in HI.GENERIC} | {"addons", "scripts", "server", "launcher", "client",
@@ -184,8 +220,9 @@ def gitlab_find(item: dict) -> dict | None:
 # ------------------------------------------------------------------------------------------- gathering
 class Scout:
     def __init__(self, today: datetime.date, api=None, fetcher=None, probe_fn=None, max_pages: int = 1,
-                 reddit: bool = True, sleep=time.sleep):
+                 reddit: bool = True, sleep=time.sleep, wide: bool = False):
         self.today = today
+        self.wide = wide
         self.api = api or HI.Api()
         self.fetcher = fetcher or HI.Fetcher(page_base="https://www.reddit.com", page_hosts=REDDIT_HOSTS,
                                              image_hosts=frozenset())
@@ -248,6 +285,13 @@ class Scout:
                     break
                 for m in self.search(f"{q} pushed:>={push_since} stars:>={RISER_STARS} fork:false", "stars"):
                     self.add(m, "github:risers", area)
+        if self.wide:
+            for area in AREAS:
+                for q in AREAS[area] + WIDE_QUERIES.get(area, []):
+                    if self.api.limited:
+                        break
+                    for m in self.search(f"{q} stars:>={WIDE_STARS} fork:false", "stars"):
+                        self.add(m, "github:wide", area)
         if self.api.limited:
             self.notes.append("GitHub's API rate limit ran out during the run: fewer GitHub results than usual"
                               + ("" if self.api.token else " (no token: anonymous limits)") + ".")
@@ -568,6 +612,7 @@ def vet(fs: list[dict], probe_n: int, probe_fn, jobs: int = 4) -> None:
                                                                        f"{probe_n})")
             continue
         v = HI.judge(cand, facts, meta, block)
+        f["judged"] = v["verdict"]
         reason = v.get("reason", "")
         if v["verdict"] == "listed":
             f["verdict"], f["reason"] = "index", "passes the index rules: the daily build will propose it"
@@ -680,7 +725,13 @@ def digest(date: str, fs: list[dict], mentions: list[dict], notes: list[str], co
 
 
 # ------------------------------------------------------------------------------------------- the run
-def run(today: datetime.date, scout: Scout, probe_n: int = 40, out_dir: str | None = None, report: str = "") -> int:
+def wide_only(f: dict) -> bool:
+    """Seen only by the wide sweep (run --wide)."""
+    return bool(f["sources"]) and all(s == "github:wide" for s in f["sources"])
+
+
+def run(today: datetime.date, scout: Scout, probe_n: int = 40, out_dir: str | None = None, report: str = "",
+        jobs: int = 4) -> int:
     date = iso(today)
     state = HI.read_json(STATE, {"format": 1, "repos": {}, "reddit": {}})
     state.setdefault("repos", {})
@@ -698,7 +749,7 @@ def run(today: datetime.date, scout: Scout, probe_n: int = 40, out_dir: str | No
         f["velocity"] = velocity(f, state, pool, date)
         f["novel"] = f["key"] not in pool and f["key"] not in index_keys and f["key"] not in seed_keys \
             and f["key"] not in state["repos"]
-    vet(fs, probe_n, scout.probe_fn)
+    vet(fs, probe_n, scout.probe_fn, jobs)
     for f in fs:
         f["score"] = score(f)
     counts: dict[str, int] = {}
@@ -716,6 +767,8 @@ def run(today: datetime.date, scout: Scout, probe_n: int = 40, out_dir: str | No
     for f in fs:
         if f["verdict"] in ("rejected", "lure") or f["key"] in index_keys:
             continue
+        if wide_only(f) and f.get("judged") not in WIDE_POOL_OK:
+            continue                          # the sweep's finds join only once the index rules have read them
         build = (make_cand(f)["hint_builds"] or [""])[0]
         meta = {"repo": f["repo"], "stars": f.get("stars"), "licence": HI.spdx(f.get("licence") or ""),
                 "description": f.get("description") or "", "topics": f.get("topics") or [],
@@ -761,9 +814,13 @@ def main(argv: list[str]) -> int:
     r.add_argument("--max-pages", type=int, default=1)
     r.add_argument("--no-reddit", action="store_true")
     r.add_argument("--report", default="")
+    r.add_argument("--wide", action="store_true", help="a catch-up sweep: all-time searches with more keywords "
+                                                       "(WIDE_QUERIES); use a bigger --probe and --max-pages with it")
+    r.add_argument("--jobs", type=int, default=4, help="probes at once (default 4)")
     a = ap.parse_args(argv)
     today = datetime.date.fromisoformat(a.date) if a.date else datetime.datetime.now(datetime.timezone.utc).date()
-    return run(today, Scout(today, max_pages=a.max_pages, reddit=not a.no_reddit), a.probe, report=a.report)
+    return run(today, Scout(today, max_pages=a.max_pages, reddit=not a.no_reddit, wide=a.wide), a.probe,
+               report=a.report, jobs=a.jobs)
 
 
 if __name__ == "__main__":

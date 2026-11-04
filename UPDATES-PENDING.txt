@@ -827,3 +827,7 @@
 1324m worldlog  Read-only: the world server log (did .bug reach the script as a command or as chat)
 1325a client  Browser game: touch taps click (only scripted clicks reach the game; focus kept through a tap)
 1325b ship  Save as Orion: touch taps, .bug as chat, the audit's chat language, the Leyline README
+1325c addons-curate  Mods discovery: the 389 new addon seeds become pending entries (approves nothing)
+1325d mods-daily  Mods discovery: the daily index with the 557 new pending GitHub candidates (approves nothing)
+1325e ship  Save as Orion: the wide GitHub sweep, new pending addons and candidates
+1325f discord-read  Discord read (read-only): the newest messages in every channel into tools\discord-leyline\live\inbox-latest.md

@@ -66,6 +66,30 @@ The pool of credible 3.3.5a and 1.12 addon repos found today is about 600; at 5 
 the number of good items, not the search, is the limit. When a week's yield drops under 3 a day, widen the sources
 (below) before lowering the bar.
 
+### Catch-up sweeps (by hand, when the pool needs to grow)
+
+Two tools search wider than the daily run (owner, 3 Nov 2026: "as many GitHub mods and extensions as you can"). Both
+add **pending** items only.
+
+- `python3 -I tools/hub-index/scout.py run --wide --max-pages 3 --probe 2500 --jobs 8`: every area's queries plus
+  `WIDE_QUERIES` (launchers and addon managers, realm modules for AzerothCore, TrinityCore, CMaNGOS and VMaNGOS, bots,
+  addons and UI for the three classic clients, tools, editors and sites, web and mobile clients, graphics), all-time
+  with 3+ stars. A find only the sweep saw joins `candidates.json` only once probed and judged listable, or held for a
+  licence or a person.
+- `python3 -I tools/addon-curate/curate.py discover --limit N`: repo searches, the TOC's `## Interface: 30300` line by
+  code search, and the repos of authors who backport often; forks, collections, the hub blocklist and hard rules and
+  what we leave out by choice (one-key rotations, native code, patched clients, paid guides) stay out; each find must
+  pass the launcher's rules (`analyze`) before it becomes a seed with our words and `found: "discover <date>"`. Its
+  generated description is a draft: read it before approving. The daily default `--limit` is 15, the ceiling above.
+
+The first sweeps (3 Nov 2026): 557 new pending hub candidates (`docs/scout/2026-11-03.md`) and 389 new pending addon
+seeds (plus 11 new `exclude` lines: the game's own interface files, a paid guide viewer, templates, a spammer, reroll
+automation, collections). Of the 389: 241 state no open licence, 47 are another edition of an addon already seeded
+(their notes say which), 20 are ElvUI plugins, and 247 still carry a placeholder description that needs our words
+before approving (their notes say so). It also fixed three rules: other games (Minecraft,
+Factorio, Fallout) and one-key rotation addons are left out by the index, a weak build word is not its own game
+signal, and a database password in a README's config example is not a lure.
+
 ## Sources
 
 - GitHub search (`gh api search/repositories`, 30 a minute with a token): "3.3.5a addon", "wotlk addon",
@@ -114,6 +138,11 @@ the number of good items, not the search, is the limit. When a week's yield drop
 - Installs per addon from the launcher (when its counter exists) to rank what to review first.
 
 ## TODO(owner)
+
+- The 3 Nov sweeps added 389 pending addon seeds and 557 pending hub candidates. They become pending entries at the next
+  `addons-curate` / `mods-daily` run and the daily index build; nothing is approved. Review in batches, and decide
+  whether editions of the same addon (for example several AdiBags, Leatrix Plus or WeakAuras backports) should all be
+  offered or only the best one.
 
 - Review the 44 new pending addons (Admin Console › Mods). Ones with flags to look at first: `up:masque` and
   `up:atlasloot` (a folder name carries a brand word), `up:pretty-actionbar`, `up:pretty-lootalert`, `up:leatrix-maps`

@@ -154,6 +154,14 @@ GAME_SIGNAL = re.compile(r"(?i)\baddons?\b|\brealms?\b|azerothcore|trinitycore|\
                          r"\bguild\b|\bquests?\b|game ?server|worldserver|\bnpcs?\b")
 OTHER_GAME_RE = re.compile(r"(?i)\bretail\b.*\b(only|version)\b|\bdragonflight\b|\bthe war within\b|\bshadowlands\b|"
                            r"\bclassic era\b|\bseason of discovery\b|\bhardcore classic\b")
+# Projects for other games that a weak build word ("vanilla", "1.12", "HD") pulls in: Minecraft and Factorio mods, a
+# Fallout renderer, a Hackintosh build.
+ANOTHER_GAME_RE = re.compile(r"(?i)\bminecraft\b|\bfactorio\b|\bbukkit\b|\bspigot\b|\bpaper ?mc\b|\bthaumcraft\b|"
+                             r"\bgregtech\b|\bfallout\b|\bnew vegas\b|\bskyrim\b|\bterraria\b|\bhackintosh\b|"
+                             r"\bforge ?mod\b|\bskript\b")
+# A rotation played from one key: left out by choice, like macro sequencers (docs/MODS-DAILY.md).
+ROTATION_RE = re.compile(r"(?i)single[ _-]?button|one[ _-]?button|\brotation (helper|optimi[sz]er|addon|module|assist)|"
+                         r"\biwin ?button\b")
 STRONG_BUILD = {
     "1.12": re.compile(r"(?<![\d.])1\.12(\.[01x])?(?![\d.])|\bvmangos\b|mangos[ _-]?zero|mangos[ _-]?classic|\b5875\b"),
     "2.4.3": re.compile(r"(?<![\d.])2\.4\.3(?![\d.])|mangos[ _-]?one\b|mangos[ _-]?tbc|\b8606\b"),
@@ -786,6 +794,10 @@ def judge(cand: dict, facts: dict, meta: dict, block: dict) -> dict:
                                                  "on an open licence)"}
     if OTHER_GAME_RE.search(text):
         return {"verdict": "excluded", "reason": "made for the current game, not a classic client"}
+    if ANOTHER_GAME_RE.search(text):
+        return {"verdict": "excluded", "reason": "made for another game"}
+    if ROTATION_RE.search(text):
+        return {"verdict": "excluded", "reason": "plays a rotation from one key (left out by choice)"}
     builds, why = detect_builds(cand, facts, meta)
     if cand.get("builds_given"):
         given = [b for b in cand["builds_given"] if b in H.BUILDS or b == "any"]
@@ -799,7 +811,11 @@ def judge(cand: dict, facts: dict, meta: dict, block: dict) -> dict:
             why = "given"
     hint = [b for b in cand.get("hint_builds") or [] if b in H.BUILDS]
     conflict = why == "toc" and cand["origin"] == "discovered" and hint and not set(hint) & set(builds)
-    if why in ("name", "hint") and not GAME_SIGNAL.search(text + " " + readme[:20_000]):
+    signal = text + " " + readme[:20_000]
+    if why == "name":                  # the weak word that matched ("vanilla", "tbc") is not a sign on its own
+        for rx in WEAK_BUILD.values():
+            signal = rx.sub(" ", signal)
+    if why in ("name", "hint") and not GAME_SIGNAL.search(signal):
         return {"verdict": "excluded", "reason": "nothing says it is for the game (a name match only)"}
     if not builds:
         return {"verdict": "excluded", "reason": why}

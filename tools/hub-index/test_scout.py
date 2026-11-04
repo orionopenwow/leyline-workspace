@@ -12,6 +12,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+import urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location("scout", os.path.join(HERE, "scout.py"))
@@ -203,6 +204,10 @@ class ScoutRun(unittest.TestCase):
         f = {"key": "k", "name": "thing", "owner": "o", "age": 400}
         self.assertIn("antivirus", S.lure_reason(f, {"ok": True, "readme": "Please disable your antivirus first", "cpp": 5}, {}, {}))
         self.assertEqual(S.lure_reason(f, {"ok": True, "readme": "Download it from Releases.", "cpp": 50, "files_n": 300}, {}, {}), "")
+        self.assertIn("password", S.lure_reason(f, {"ok": True, "readme": "Get the zip from Releases. Password: 1234",
+                                                    "cpp": 50, "files_n": 300}, {}, {}))
+        conf = "Set the database login in worldserver.conf:\n\n    LoginDatabaseInfo user = acore\n    password = acore\n"
+        self.assertEqual(S.lure_reason(f, {"ok": True, "readme": conf, "cpp": 50, "files_n": 300}, {}, {}), "")
 
     def test_reddit_mentions_read_only(self):
         self.run_scout()
@@ -291,6 +296,60 @@ class ScoutRun(unittest.TestCase):
 
     def test_markdown_is_escaped(self):
         self.assertEqual(S.md("a|b [x](javascript:alert(1)) <img>"), "a\\|b \\[x\\](javascript:alert(1)) img")
+
+
+WIDE = [
+    gh("hank", "old-raid-frames", 60, "2019-05-01", "Raid frames addon for 3.3.5a", lic="", pushed="2024-01-01"),
+    gh("ivy", "random-dotfiles", 90, "2018-01-01", "My dotfiles"),
+    gh("jack", "acore-cms", 30, "2021-01-01", "A website for AzerothCore 3.3.5a realms"),
+]
+
+
+class WideApi(FakeApi):
+    def get(self, url, accept="application/vnd.github+json"):
+        if url.startswith("https://api.github.com/search/repositories?"):
+            q = urllib.parse.parse_qs(url.split("?", 1)[1])["q"][0]
+            if "created:" not in q and "pushed:" not in q:
+                self.urls.append(url)
+                return 200, {"items": WIDE if q.startswith("wotlk launcher ") else []}, {}
+        return super().get(url, accept)
+
+
+class WideSweep(ScoutRun):
+    def run_wide(self, probe_n=200):
+        self.api = WideApi(token="t")
+        sc = S.Scout(TODAY, api=self.api, fetcher=FakeReddit(), probe_fn=probe, sleep=lambda s: None, wide=True)
+        self.assertEqual(S.run(TODAY, sc, probe_n, out_dir=self.out), 0)
+        self.pool = {r["repo"]: r for r in HI.read_json(HI.CANDIDATES, {})["candidates"]}
+        self.state = HI.read_json(S.STATE, {})
+
+    def test_wide_searches_all_time_with_more_keywords(self):
+        self.run_wide()
+        qs = [urllib.parse.parse_qs(u.split("?", 1)[1])["q"][0] for u in self.api.urls
+              if u.startswith("https://api.github.com/search/repositories?")]
+        wide = [q for q in qs if "created:" not in q and "pushed:" not in q]
+        self.assertIn(f"wotlk launcher stars:>={S.WIDE_STARS} fork:false", wide)
+        self.assertIn(f"topic:wow-addon stars:>={S.WIDE_STARS} fork:false", wide)      # the daily areas too
+        self.assertEqual(len(wide), sum(len(S.AREAS[a]) + len(S.WIDE_QUERIES.get(a, [])) for a in S.AREAS))
+
+    def test_wide_finds_join_only_when_the_rules_read_them(self):
+        self.run_wide()
+        self.assertIn("scout:github:wide", self.pool["https://github.com/jack/acore-cms"]["via"])       # listable
+        self.assertIn("https://github.com/hank/old-raid-frames", self.pool)                             # held for a licence
+        self.assertNotIn("https://github.com/ivy/random-dotfiles", self.pool)       # nothing says it is for the game
+        self.tearDown()
+        self.setUp()
+        self.run_wide(probe_n=0)                                                    # not probed: not in the pool
+        for r in ("jack/acore-cms", "ivy/random-dotfiles"):
+            self.assertNotIn("https://github.com/" + r, self.pool)
+        self.assertIn("https://github.com/alice/leyline-web-viewer", self.pool)     # the daily finds as before
+
+    def test_daily_run_has_no_wide_queries(self):
+        self.run_scout()
+        qs = [urllib.parse.parse_qs(u.split("?", 1)[1])["q"][0] for u in self.api.urls
+              if u.startswith("https://api.github.com/search/repositories?")]
+        self.assertTrue(qs)
+        self.assertFalse(any("created:" not in q and "pushed:" not in q for q in qs))
 
 
 class Workflow(unittest.TestCase):

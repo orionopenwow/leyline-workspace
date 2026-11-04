@@ -25,7 +25,10 @@
     "AdiBags"
    ],
    "requires": [],
-   "conflicts": [],
+   "conflicts": [
+    "up:adibags-2",
+    "up:adibags-3"
+   ],
    "replaces_ui": false,
    "native": false,
    "blp": "none",
@@ -230,7 +233,10 @@
     "CarboniteTransfer"
    ],
    "requires": [],
-   "conflicts": [],
+   "conflicts": [
+    "up:carbonite-2",
+    "up:carbonite-3"
+   ],
    "replaces_ui": false,
    "native": false,
    "blp": "none",
@@ -576,6 +582,7 @@
    ],
    "requires": [],
    "conflicts": [
+    "up:autoinvite-plus",
     "up:gearscorelite-revised"
    ],
    "replaces_ui": false,
@@ -711,7 +718,9 @@
     "IdTip"
    ],
    "requires": [],
-   "conflicts": [],
+   "conflicts": [
+    "up:idtip-2"
+   ],
    "replaces_ui": false,
    "native": false,
    "blp": "none",
@@ -1048,7 +1057,9 @@
     "PallyPower"
    ],
    "requires": [],
-   "conflicts": [],
+   "conflicts": [
+    "up:pallypower-2"
+   ],
    "replaces_ui": false,
    "native": false,
    "blp": "none",
@@ -1116,7 +1127,9 @@
     "pfQuest-wotlk"
    ],
    "requires": [],
-   "conflicts": [],
+   "conflicts": [
+    "up:pfquest-pomod"
+   ],
    "replaces_ui": false,
    "native": false,
    "blp": "none",
@@ -1321,7 +1334,9 @@
     "Questie-335"
    ],
    "requires": [],
-   "conflicts": [],
+   "conflicts": [
+    "up:questie-ascension"
+   ],
    "replaces_ui": false,
    "native": false,
    "blp": "author-art",
@@ -1388,7 +1403,9 @@
     "RaidBrowser"
    ],
    "requires": [],
-   "conflicts": [],
+   "conflicts": [
+    "up:raid-browser"
+   ],
    "replaces_ui": false,
    "native": false,
    "blp": "none",
@@ -1659,7 +1676,9 @@
     "SkadaStorage"
    ],
    "requires": [],
-   "conflicts": [],
+   "conflicts": [
+    "up:skada-netic"
+   ],
    "replaces_ui": false,
    "native": false,
    "blp": "author-art",
@@ -1934,7 +1953,9 @@
    ],
    "requires": [],
    "conflicts": [
-    "up:weakauras"
+    "up:weakauras",
+    "up:weakauras-2",
+    "up:weakauras-3"
    ],
    "replaces_ui": false,
    "native": false,

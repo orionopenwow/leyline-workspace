@@ -524,7 +524,9 @@
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 30.5
+   "score": 30.5,
+   "thumb": "/wrath/art/hub-thumbs/zhengpeiru21__mod-challenge-modes.webp",
+   "thumb_credit": "Preview image from the project's GitHub page"
   },
   {
    "id": "link:9e1a1f59da11",
@@ -1488,7 +1490,9 @@
     "tag": "release-v1.08",
     "date": "2025-11-16",
     "url": "https://github.com/DustinHendrickson/mod-player-bot-level-brackets/releases/tag/release-v1.08"
-   }
+   },
+   "thumb": "/wrath/art/hub-thumbs/dustinhendrickson__mod-player-bot-level-brackets.webp",
+   "thumb_credit": "Preview image from the project's GitHub page"
   },
   {
    "id": "link:b38deb6b9bbb",
@@ -3327,7 +3331,9 @@
    "archived": false,
    "source": "seed",
    "needs": "AzerothCore",
-   "score": 34.9
+   "score": 34.9,
+   "thumb": "/wrath/art/hub-thumbs/azerothcore__mod-ale.webp",
+   "thumb_credit": "Preview image from the project's GitHub page"
   },
   {
    "id": "link:39b219549a64",

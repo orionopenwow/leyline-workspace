@@ -215,5 +215,104 @@ class Pipeline(unittest.TestCase):
             self.assertIn(must, out)
 
 
+def repo_doc(full, stars=10, desc="", topics=(), fork=False):
+    return {"full_name": full, "stargazers_count": stars, "description": desc, "topics": list(topics), "fork": fork,
+            "license": {"spdx_id": "MIT"}}
+
+
+class Discover(unittest.TestCase):
+    FOUND = {
+        "alice/NicePlates": {"stars": 40, "description": "Clean nameplates for WotLK 3.3.5a", "topics": []},
+        "bob/QuestLog": {"stars": 12, "description": "A bigger quest log with level colours", "topics": []},
+        "carl/WoW-3.3.5a-Addons": {"stars": 90, "description": "All my addons", "topics": []},
+        "dora/OneButton": {"stars": 30, "description": "One-button rotation helper", "topics": []},
+        "chumpton/Thing": {"stars": 30, "description": "x", "topics": []},
+        "mallory/Thing": {"stars": 30, "description": "x", "topics": []},
+        "erin/Fork": {"stars": 30, "description": "x", "topics": [], "fork": True},
+        "fred/Broken": {"stars": 5, "description": "Broken addon", "topics": []},
+        "gail/Many": {"stars": 5, "description": "Raid addon", "topics": []},
+        "hal/Zero": {"stars": 0, "description": "Bags", "topics": []},
+        "ElvUI-WotLK/ElvUI": {"stars": 500, "description": "known already", "topics": []},
+    }
+
+    def check(self, seed):
+        n = seed["repo"].split("/")[1]
+        if n == "Broken":
+            return {"ok": False, "problem": "x.m2: .m2 files are never allowed"}
+        if n == "Many":
+            return {"ok": True, "addons": {f"A{i}": {"title": f"A{i}"} for i in range(12)}, "licence": "MIT", "blp_files": []}
+        title = {"NicePlates": "|cff00ff00NicePlates|r (WotLK)", "QuestLog": "QuestLog"}[n]
+        return {"ok": True, "addons": {n: {"title": title}}, "licence": "MIT" if n == "NicePlates" else "", "blp_files": []}
+
+    def test_discover_adds_pending_seeds_in_our_words(self):
+        doc = {"seeds": [{"repo": "ElvUI-WotLK/ElvUI", "id": "elvui", "description": "x"}]}
+        block = {"owners": [{"owner": "Mallory", "reason": "a lure account"}]}
+        out = cu.discover(doc, None, self.check, "2026-11-03", found=dict(self.FOUND), block=block, log=lambda *_: None)
+        added = {s["repo"]: s for s in out["added"]}
+        self.assertEqual(sorted(added), ["alice/NicePlates", "bob/QuestLog"])
+        np_ = added["alice/NicePlates"]
+        self.assertEqual(np_["display_name"], "NicePlates")
+        self.assertEqual(np_["id"], "niceplates")
+        self.assertEqual(cu.discover_slug("ElvUI Extras", set()), "elvui-extras")
+        self.assertEqual(cu.discover_slug("Skada", {"skada"}), "skada-2")
+        self.assertEqual(cu.discover_name("LootCollector beta 0.8.8r"), "LootCollector")
+        self.assertEqual(cu.discover_name("|cff00ff00Recount|r (3.3.5a) v1.2"), "Recount")
+        self.assertIn("nameplates", np_["tags"])
+        self.assertFalse(cu.banned(np_["description"]) or cu.VERSION_IN_PROSE.search(np_["description"]))
+        self.assertEqual(np_["description"], "Nameplates: NicePlates.")           # their words had a brand word
+        ql = added["bob/QuestLog"]
+        self.assertEqual(ql["description"], "A bigger quest log with level colours.")
+        self.assertIn("no open licence", ql["notes"])
+        for s in out["added"]:
+            self.assertNotIn("review", s)                                       # seeds only: nothing approved
+            self.assertTrue(cu.name_ok(s["id"].replace("-", "_")))
+            self.assertEqual(s["found"], "discover 2026-11-03")
+        why = dict(out["rejected"])
+        self.assertIn("collection", why["carl/WoW-3.3.5a-Addons"])
+        self.assertIn("by choice", why["dora/OneButton"])
+        self.assertIn("blocklist", why["mallory/Thing"])
+        self.assertIn("Chumpton", why["chumpton/Thing"])
+        self.assertEqual(why["erin/Fork"], "a fork")
+        self.assertIn("12 addon folders", why["gail/Many"])
+        self.assertIn("below the bar", why["hal/Zero"])
+        self.assertIn(".m2", dict(out["failed"])["fred/Broken"])
+        self.assertNotIn("ElvUI-WotLK/ElvUI", why)                              # known seeds are not looked at again
+        self.assertEqual(len(doc["seeds"]), 3)
+
+    def test_discover_limit(self):
+        doc = {"seeds": []}
+        out = cu.discover(doc, None, self.check, "2026-11-03", limit=1, found=dict(self.FOUND), log=lambda *_: None)
+        self.assertEqual(len(out["added"]), 1)
+
+    def test_discover_find_uses_search_only(self):
+        urls = []
+
+        def get(url):
+            urls.append(url)
+            if "/search/code?" in url:
+                return {"items": [{"repository": {"full_name": "ivy/CodeHit"}}]} if "page=1" in url else {"items": []}
+            if "/search/repositories?" in url:
+                q = cu.urllib.parse.parse_qs(url.split("?", 1)[1])["q"][0]
+                if q.startswith("repo:ivy/CodeHit"):
+                    return {"items": [repo_doc("ivy/CodeHit", 7)]}
+                if q.startswith("user:bkader"):
+                    return {"items": [repo_doc("bkader/Thing", 3)]}
+                if q.startswith("topic:wotlk-addon "):
+                    return {"items": [repo_doc("alice/NicePlates", 40, "Nameplates"), repo_doc("x/Forked", 9, fork=True)]}
+                return {"items": []}
+            return None
+        found = cu.discover_find(get, 1, sleep=lambda s: None)
+        self.assertEqual(found["ivy/CodeHit"]["stars"], 7)
+        self.assertIn("bkader/Thing", found)
+        self.assertEqual(found["alice/NicePlates"]["description"], "Nameplates")
+        self.assertTrue(found["x/Forked"]["fork"])
+        self.assertTrue(all(u.startswith("https://api.github.com/search/") for u in urls))
+
+    def test_discover_text(self):
+        self.assertEqual(cu.discover_text("A tidy bag addon"), "A tidy bag addon.")
+        for bad in ("Backport of X for WotLK", "Addon for 3.3.5a", "See https://x.example", "short", "Made for Warmane server"):
+            self.assertEqual(cu.discover_text(bad), "", bad)
+
+
 if __name__ == "__main__":
     unittest.main()

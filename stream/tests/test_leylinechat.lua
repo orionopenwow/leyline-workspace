@@ -3,7 +3,9 @@
 -- the world, and checks the skin on ChatFrame1, the World tab (a World channel line, a "[Discord] Name: text"
 -- broadcast as a [D] line), timestamps, short channel names, class colours, the gold filter, the Tab channel cycle,
 -- /world, /lchat (the settings window, themes, off and on again), typed history, web links, the Lua 5.1 rules and
--- the brand words.
+-- the brand words; the fade (every texture and text the addon draws is hidden or at alpha 0 once the chat is faded,
+-- the input line's backdrop included), the channel label on the input line, unread counts on the tabs, "new lines
+-- below", the mouse wheel and clickable names.
 local dir = arg[1] or "stream/fui-web/Interface/AddOns/LeylineChat"
 
 local pass, fail = 0, 0
@@ -105,8 +107,16 @@ local function new(kind, name, parent)
     if name then _G[name] = f end
     return f
 end
-function Frame:CreateFontString(name) local r = new("FontString", name, self); table.insert(self.regions, r); return r end
-function Frame:CreateTexture(name) local r = new("Texture", name, self); table.insert(self.regions, r); return r end
+-- every texture and text the addon creates (for the fade checks)
+local trackOurs, ourRegions = false, {}
+local function region(kind, name, parent)
+    local r = new(kind, name, parent)
+    table.insert(parent.regions, r)
+    if trackOurs then ourRegions[#ourRegions + 1] = r end
+    return r
+end
+function Frame:CreateFontString(name) return region("FontString", name, self) end
+function Frame:CreateTexture(name) return region("Texture", name, self) end
 function CreateFrame(kind, name, parent, template)
     local f = new(kind, name, parent)
     f.template = template
@@ -147,7 +157,13 @@ local sent = {}
 function SendChatMessage(msg, kind, lang, target) table.insert(sent, { msg, kind, target }) end
 local joined = {}
 local channels = { General = 1, World = 5 }
-function GetChannelName(n) local id = channels[n]; if id then return id, n end; return 0 end
+function GetChannelName(n)
+    if type(n) == "number" then
+        for name, id in pairs(channels) do if id == n then return id, name end end
+        return 0
+    end
+    local id = channels[n]; if id then return id, n end; return 0
+end
 function JoinChannelByName(n) joined[#joined + 1] = n; channels[n] = 6 end
 function LeaveChannelByName(n) channels[n] = nil end
 local headerUpdates = 0
@@ -275,6 +291,33 @@ local function has(f, needle)
     return false
 end
 local function tick(dt) T = T + dt; for _, f in ipairs(frames) do if f.scripts.OnUpdate then f.scripts.OnUpdate(f, dt) end end end
+local function quiet(seconds) for _ = 1, seconds do tick(1) end end
+
+-- What still shows of ours: every texture (with something set) and text (not empty) the addon created that is
+-- visible with an alpha above 0 (its own alpha times its parents'). The separate dialogs (copy, link, settings,
+-- menu, expanded view) are not part of the chat window and do not fade.
+local DIALOGS = { LeylineChatLink = true, LeylineChatCopy = true, LeylineChatSettings = true, LeylineChatMenu = true,
+    LeylineChatExpanded = true, LeylineChatExpand = true }
+local function effAlpha(r)
+    local a, p = r.alpha or 1, r.parent
+    while p do a = a * (p.alpha or 1); p = p.parent end
+    return a
+end
+local function where(r)
+    local names, p = {}, r.parent
+    while p and p ~= UIParent do names[#names + 1] = p.name or "?"; p = p.parent end
+    return (r.name or r.kind) .. " in " .. table.concat(names, "<")
+end
+local function litPieces()
+    local out = {}
+    for _, r in ipairs(ourRegions) do
+        local dialog, p = false, r.parent
+        while p do if p.name and DIALOGS[p.name] then dialog = true end; p = p.parent end
+        local drawn = (r.kind == "Texture" and r.texture ~= nil) or (r.kind == "FontString" and r.text ~= nil and r.text ~= "")
+        if not dialog and drawn and r:IsVisible() and effAlpha(r) > 0.01 then out[#out + 1] = where(r) end
+    end
+    return out
+end
 
 -- ---------------------------------------------------------------- load in .toc order
 local toc = readFile(dir .. "/LeylineChat.toc")
@@ -287,6 +330,7 @@ for line in toc:gmatch("[^\r\n]+") do
     if not line:match("^%s*#") and line:match("%S") then files[#files + 1] = line:match("^%s*(.-)%s*$") end
 end
 local okAll, err = true, nil
+trackOurs = true
 for _, f in ipairs(files) do
     local ok, e = pcall(dofile, dir .. "/" .. f)
     if not ok then okAll, err = false, e end
@@ -382,7 +426,11 @@ event("CHAT_MSG_SYSTEM", "|cff7289da[Discord]|r Eve: |Hitem:1|h[x]|h")
 check("a stray | from a server is escaped (no link or texture from Discord)", C.world.lines[#C.world.lines].text:find("Eve: ||Hitem", 1, true) ~= nil)
 
 -- opening the World tab
+ChatFrame1EditBox:SetAttribute("chatType", "SAY"); ChatFrame1EditBox:SetAttribute("stickyType", "SAY")
 LeylineChatWorldTab:Fire("OnClick", "LeftButton")
+check("opening the World tab points the input line at World at once (sticky), before any Enter",
+    ChatFrame1EditBox:GetAttribute("chatType") == "CHANNEL" and ChatFrame1EditBox:GetAttribute("channelTarget") == 5
+    and ChatFrame1EditBox:GetAttribute("stickyType") == "CHANNEL")
 check("clicking the World tab opens the World view over the main window", C.worldView and LeylineChatWorldFrame:IsShown()
     and not ChatFrame1:IsShown() and #LeylineChatWorldFrame.messages == #C.world.lines)
 check("the edit box stays (it hangs off the screen, not the hidden window)", ChatFrame1EditBox:GetParent() == UIParent)
@@ -392,6 +440,8 @@ check("Enter in the World view writes to World", ChatFrame1EditBox:GetAttribute(
 ChatFrame3Tab:Fire("OnClick", "LeftButton")
 check("clicking a chat tab leaves the World view, then the stock click runs", not C.worldView and not LeylineChatWorldFrame:IsShown()
     and ChatFrame1:IsShown() and ChatFrame3Tab.clicked == 1)
+check("leaving the World tab puts Say back on the input line", ChatFrame1EditBox:GetAttribute("chatType") == "SAY"
+    and ChatFrame1EditBox:GetAttribute("stickyType") == "SAY")
 ChatFrame1EditBox:SetAttribute("chatType", "SAY")
 
 -- ---------------------------------------------------------------- the line pipeline
@@ -477,6 +527,145 @@ table.insert(ChatFrame1.channelList, "World")     -- the game lists the joined c
 tick(0.3)
 check("World listed in the main window again by the game goes back to its tab", not listed(ChatFrame1, "World"))
 
+-- ---------------------------------------------------------------- the fade (owner 4 Nov 14:21: "chat bar improperly
+-- still showing when faded"): the input line's backdrop hung off the screen and never faded
+selectedWindow = ChatFrame1
+C:LeaveWorld()
+local meb = ChatFrame1EditBox
+ACTIVE_CHAT_EDIT_BOX = nil; meb.focus = false; meb.text = ""
+meb:SetAttribute("chatType", "SAY"); meb:SetAttribute("stickyType", "SAY")
+check("the default: the chrome fades after 10 s of quiet", C.DEFAULTS.fade == "10" and C:Get("fade") == "10")
+local timeVisible
+ChatFrame1.SetTimeVisible = function(self, s) timeVisible = s end
+C:ThemeSkin(ChatFrame1.lcSkin)
+ChatFrame1.SetTimeVisible = nil
+check("... while the lines themselves stay the stock two minutes", timeVisible == 120)
+event("CHAT_MSG_SAY", "wake up", "Bob")
+tick(0.5)
+check("awake: the chrome is fully shown", C.chromeAlpha == 1 and k.panel.alpha == 1 and LeylineChatBar.alpha == 1)
+check("at rest the edit box's own backdrop is off; the panel's well (which fades with it) stands in",
+    meb:IsShown() and meb.lcBg.alpha == 0 and meb.lcEdge.alpha == 0 and k.panel.well:IsVisible())
+quiet(14)
+check("after 10 s of quiet the chrome fades out", C.chromeAlpha == 0)
+local lit = litPieces()
+check("faded: every texture and text we draw is hidden or at alpha 0 (panel, shadow, tabs, tab bar, well, label, edit box backdrop)"
+    .. (lit[1] and (": " .. table.concat(lit, ", ")) or ""), not lit[1])
+check("... the tabs, the tab bar, the shadow and the jump arrow too",
+    ChatFrame1Tab.alpha == 0 and ChatFrame3Tab.alpha == 0 and LeylineChatBar.alpha == 0 and k.back.alpha == 0 and k.jump.alpha == 0)
+ChatFrame1TabText:SetAlpha(0)      -- Forever UI dims every tab region at its own rest
+check("Forever UI cannot dim our tab names behind our fade", ChatFrame1TabText:GetAlpha() == 1)
+event("CHAT_MSG_SAY", "back again", "Bob")
+tick(0.3)
+check("a new line brings the chrome back", C.chromeAlpha == 1 and k.panel.alpha == 1 and ChatFrame1Tab.alpha == 1)
+quiet(14)
+MouseIsOver = function(fr) return fr == k.panel end
+tick(0.3)
+MouseIsOver = function() return false end
+check("the mouse over the chat brings it back", C.chromeAlpha == 1)
+
+-- ---------------------------------------------------------------- the input line says where you talk
+tick(0.3)
+local pill = ChatFrame1LCChannel
+check("the well shows where Enter talks: Say, in Say's colour", pill and pill:IsVisible() and pill.text.text == "Say"
+    and pill.text.color[1] == 1 and pill.text.color[2] == 1)
+pill:Fire("OnClick", "LeftButton")
+check("clicking the label steps to the next channel, kept for the next Enter", pill.text.text == "Guild"
+    and meb:GetAttribute("chatType") == "GUILD" and meb:GetAttribute("stickyType") == "GUILD")
+pill:Fire("OnClick", "LeftButton")
+check("... then World", pill.text.text == "World" and meb:GetAttribute("chatType") == "CHANNEL" and meb:GetAttribute("channelTarget") == 6)
+pill:Fire("OnClick", "RightButton")
+check("right-click steps back (Guild)", pill.text.text == "Guild")
+LeylineChatWorldTab:Fire("OnClick", "LeftButton")
+tick(0.3)
+check("in the World tab the label says World", LeylineChatWorldFrameLCChannel:IsVisible() and LeylineChatWorldFrameLCChannel.text.text == "World")
+ChatFrame1Tab:Fire("OnClick", "LeftButton")
+tick(0.3)
+check("back on a chat tab it says what that line had (Guild)", pill:IsVisible() and pill.text.text == "Guild")
+meb:SetAttribute("chatType", "WHISPER"); meb:SetAttribute("tellTarget", "Bob")
+C:RefreshInputLabels()
+check("a whisper reads To Bob", pill.text.text == "To Bob")
+pill:Fire("OnClick", "LeftButton")
+check("clicking it from a whisper steps to Say", meb:GetAttribute("chatType") == "SAY" and pill.text.text == "Say")
+local nOpened = #opened
+ChatFrame1LCWell:Fire("OnClick", "LeftButton")
+check("clicking the well starts typing", #opened == nOpened + 1 and opened[#opened] == "")
+ACTIVE_CHAT_EDIT_BOX = meb; meb.focus = true
+tick(0.1)
+check("typing: the edit box backdrop shows, the well's label steps aside, the header is clickable",
+    meb.lcBg.alpha > 0.5 and meb.lcEdge.alpha == 1 and not pill:IsShown() and meb.lcHeadBtn:IsShown())
+meb.text = "half a line"
+ChatFrame1EditBoxLCHeader:Fire("OnClick", "LeftButton")
+check("clicking the header (\"Say:\") steps to the next channel, the words kept", meb:GetAttribute("chatType") == "GUILD"
+    and meb.text == "half a line" and meb.focus)
+ACTIVE_CHAT_EDIT_BOX = nil; meb.focus = false; meb.text = ""
+meb:SetAttribute("chatType", "SAY"); meb:SetAttribute("stickyType", "SAY")
+tick(0.1)
+check("done typing: the backdrop goes, the label is back", meb.lcBg.alpha == 0 and pill:IsShown() and not meb.lcHeadBtn:IsShown())
+local altArrow
+meb.SetAltArrowKeyMode = function(self, v) altArrow = v end
+C:ApplyBehaviour()
+meb.SetAltArrowKeyMode = nil
+check("Up and Down recall what you typed without Alt", altArrow == false)
+
+-- the World view fades the same way
+LeylineChatWorldTab:Fire("OnClick", "LeftButton")
+event("CHAT_MSG_CHANNEL", "world wakes", "Alice", "Common", "6. World", "", "", 0, 6, "World")
+tick(0.3)
+check("World view awake: its panel shows", LeylineChatWorldFrameLCPanel.alpha == 1 and LeylineChatWorldFrameLCPanel:IsVisible())
+quiet(14)
+lit = litPieces()
+check("World view faded: nothing of ours left showing" .. (lit[1] and (": " .. table.concat(lit, ", ")) or ""),
+    not lit[1] and LeylineChatWorldFrameLCPanel.alpha == 0)
+local nRefs = #refs
+LeylineChatWorldFrame:Fire("OnHyperlinkClick", "player:Alice", "[Alice]", "LeftButton")
+check("a name in the World tab is clickable (the game's whisper / player menu link)", #refs == nRefs + 1 and refs[#refs] == "player:Alice")
+check("the World view scrolls with the mouse wheel", LeylineChatWorldFrame:GetScript("OnMouseWheel") == C.OnWheel)
+ChatFrame1Tab:Fire("OnClick", "LeftButton")
+
+-- ---------------------------------------------------------------- unread counts on the tabs
+selectedWindow = ChatFrame3; C:RefreshTabs(); selectedWindow = ChatFrame1; C:RefreshTabs()
+check("opening a tab clears its count", ChatFrame3Tab.lcCount == nil and not ChatFrame3Tab.lcBadge:IsShown()
+    and ChatFrame3Tab.width == ChatFrame3Tab.lcBase)
+event("CHAT_MSG_SAY", "one", "Bob"); event("CHAT_MSG_SAY", "two", "Bob"); event("CHAT_MSG_SAY", "three", "Bob")
+FCF_StartAlertFlash(ChatFrame3)
+check("lines on a tab you are not on: a count badge (3), the stock alert not counted twice", ChatFrame3Tab.lcCount == 3
+    and ChatFrame3Tab.lcBadge:IsShown() and ChatFrame3Tab.lcBadge.text == "3" and ChatFrame3Tab.lcDot.alpha == 1)
+check("... the tab grows to fit it, its name moves left", ChatFrame3Tab.width > ChatFrame3Tab.lcBase
+    and ChatFrame3Tab.width == ChatFrame3Tab.lcWant and ChatFrame3TabText.points[1][4] < 0)
+check("... dark figures on the gold badge", ChatFrame3Tab.lcBadge.color[1] < 0.2)
+check("the tab you are on gets no badge", not ChatFrame1Tab.lcBadge:IsShown() and ChatFrame1Tab.lcCount == nil)
+selectedWindow = ChatFrame3; C:RefreshTabs(); selectedWindow = ChatFrame1; C:RefreshTabs()
+check("opening it clears the badge and the tab shrinks back", ChatFrame3Tab.lcCount == nil and not ChatFrame3Tab.lcBadge:IsShown()
+    and ChatFrame3Tab.width == ChatFrame3Tab.lcBase)
+C:ViewWorld(); C:LeaveWorld()
+event("CHAT_MSG_CHANNEL", "w1", "Alice", "Common", "6. World", "", "", 0, 6, "World")
+event("CHAT_MSG_CHANNEL", "w2", "Alice", "Common", "6. World", "", "", 0, 6, "World")
+check("the World tab counts too", LeylineChatWorldTab.lcBadge:IsShown() and LeylineChatWorldTab.lcBadge.text == "2")
+LeylineChatWorldTab:Fire("OnClick", "LeftButton")
+check("... and opening it clears", not LeylineChatWorldTab.lcBadge:IsShown() and C.world.count == nil)
+ChatFrame1Tab:Fire("OnClick", "LeftButton")
+
+-- ---------------------------------------------------------------- new lines below, the mouse wheel
+ChatFrame1.GetCurrentScroll = function() return 4 end
+event("CHAT_MSG_SAY", "below one", "Bob"); event("CHAT_MSG_SAY", "below two", "Bob")
+tick(0.1)
+check("scrolled up: the jump button says how many lines came in below", ChatFrame1LCJump:IsShown()
+    and ChatFrame1LCJump.label.text == "2 new lines" and ChatFrame1LCJump.label:IsShown() and ChatFrame1LCJump.width > 20)
+ChatFrame1.ScrollToBottom = function(self) self.bottomed = (self.bottomed or 0) + 1 end
+ChatFrame1LCJump:Fire("OnClick", "LeftButton")
+ChatFrame1.GetCurrentScroll = nil
+tick(0.1)
+check("clicking it goes to the newest line and clears the count", ChatFrame1.bottomed == 1 and ChatFrame1.lcBelow == 0
+    and not ChatFrame1LCJump:IsShown())
+ChatFrame1.ScrollToTop = function(self) self.topped = true end
+ChatFrame1.ScrollUp = function(self) self.upped = true end
+local wheel = ChatFrame1:GetScript("OnMouseWheel")
+check("the chat scrolls with the mouse wheel", wheel == C.OnWheel)
+wheel(ChatFrame1, 1)
+shift = true; wheel(ChatFrame1, 1); wheel(ChatFrame1, -1); shift = false
+check("... Shift+wheel goes to the top and the bottom", ChatFrame1.upped and ChatFrame1.topped and ChatFrame1.bottomed == 2)
+ChatFrame1.ScrollToTop, ChatFrame1.ScrollUp, ChatFrame1.ScrollToBottom = nil, nil, nil
+
 -- ---------------------------------------------------------------- /lchat
 check("/lchat is a slash command (and does not clash with /chat)", SLASH_LEYLINECHAT1 == "/lchat" and SlashCmdList.LEYLINECHAT ~= nil)
 SlashCmdList.LEYLINECHAT("")
@@ -499,6 +688,8 @@ check("/lchat off: the stock chat comes back", not C.active and ChatFrame1Backgr
     and ChatFrame1Tab.lcOrig == nil and ChatFrame1TabLeft:IsShown())
 check("... Forever UI's chat pieces come back", fuiBar:IsShown() and fuiBack:IsShown())
 check("... the edit box goes back to its window", ChatFrame1EditBox:GetParent() == ChatFrame1)
+check("... the tab names' alpha is the stock code's again", rawget(ChatFrame1TabText, "SetAlpha") == nil
+    and rawget(ChatFrame1TabText, "lcSetAlpha") == nil)
 check("... World shows in the main window again, as before", listed(ChatFrame1, "World") and LeylineChatCharDB.worldMain == nil)
 check("... the game's timestamps are back", CHAT_TIMESTAMP_FORMAT == "%H:%M ")
 local plain = #ChatFrame1.messages

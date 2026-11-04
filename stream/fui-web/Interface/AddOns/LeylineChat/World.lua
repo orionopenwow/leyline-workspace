@@ -7,7 +7,8 @@
                        (Open, Discord, Join, Hide this tab; the chat menu, the settings or /lchat world bring a hidden
                        tab back); while it is hidden, World and [D] lines show in the main window as [W].
         [W]            World's short name in the other windows (Core.lua's ShortChannel)
-        Channel cycle  Tab in an empty input line: Say > Party > Raid > Guild > World (Shift+Tab back)
+        Channel cycle  Tab in an empty input line: Say > Party > Raid > Guild > World (Shift+Tab back); clicking the
+                       channel label on the input line (Skin.lua) steps the same list and keeps the choice
         /world <text>  say something in World from anywhere (/world alone opens the tab)
         Settings       "World tab", "Show Discord messages", "Join World chat"
 
@@ -120,15 +121,46 @@ function C:RenderWorld()
     for _, e in ipairs(self.world.lines) do self:Emit(f, e) end
 end
 
+-- Talking to World while its tab is open (owner 4 Nov 14:19: "when in World tab it doesn't switch to talking to the
+-- world"): every chat input line is pointed at the World channel, sticky, so Enter and the next line go there; leaving
+-- the tab puts back what each line had (unless the player picked something else meanwhile).
+function C:PointAtWorld(on)
+    local id = self:WorldId()
+    for _, eb in ipairs(C.EditBoxes()) do
+        if on and id > 0 then
+            if not eb.lcPrev then
+                eb.lcPrev = { C.EditAttr(eb, "chatType"), C.EditAttr(eb, "channelTarget"), C.EditAttr(eb, "stickyType") }
+            end
+            C.SetEditAttr(eb, "chatType", "CHANNEL")
+            C.SetEditAttr(eb, "channelTarget", id)
+            C.SetEditAttr(eb, "stickyType", "CHANNEL")
+        elseif not on and eb.lcPrev then
+            local p = eb.lcPrev
+            eb.lcPrev = nil
+            if C.EditAttr(eb, "chatType") == "CHANNEL" and tostring(C.EditAttr(eb, "channelTarget")) == tostring(id) then
+                C.SetEditAttr(eb, "chatType", p[1] or "SAY")
+                C.SetEditAttr(eb, "channelTarget", p[2])
+                C.SetEditAttr(eb, "stickyType", p[3] or p[1] or "SAY")
+            end
+        end
+        if ChatEdit_UpdateHeader then C.Try(ChatEdit_UpdateHeader, eb) end
+    end
+    return id > 0
+end
+
 function C:ViewWorld()
     if not self:WorldTabShown() then return end
+    if not self:PointAtWorld(true) and not self.worldHinted then
+        self.worldHinted = true
+        C.Print("You are not in World chat yet: it joins a few seconds after you log in, or type /join World.")
+    end
     local f = self:WorldFrame()
     if not self.worldView then
         self.hiddenFrame = self:Selected()
         if self.hiddenFrame and self.hiddenFrame ~= f then self.hiddenFrame:Hide() end
     end
     self.worldView = true
-    self.world.unread, self.world.mention = nil, nil
+    self.world.unread, self.world.mention, self.world.count = nil, nil, nil
     if self.SkinFrame then self:SkinFrame(f) end
     f:Show()
     self:RenderWorld()
@@ -138,6 +170,7 @@ end
 function C:LeaveWorld()
     if not self.worldView then return end
     self.worldView = nil
+    self:PointAtWorld(false)
     if self.worldFrame then self.worldFrame:Hide() end
     if self.hiddenFrame then self.hiddenFrame:Show() end
     self.hiddenFrame = nil
@@ -155,6 +188,7 @@ function C:AddWorldLine(text, r, g, b, mention)
         self:Emit(self.worldFrame, e)
     else
         self.world.unread = true
+        self.world.count = (self.world.count or 0) + 1
         if mention then self.world.mention = true end
         self:StyleWorldTab()
     end
@@ -307,6 +341,8 @@ function C:WorldTab()
     t.lcDot:SetWidth(6)
     t.lcDot:SetHeight(6)
     t.lcDot:SetPoint("TOPRIGHT", t, "TOPRIGHT", -3, -3)
+    t.lcBadge = t:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    t.lcBadge:Hide()
     t.mark = t:CreateTexture("LeylineChatWorldTabDiscord", "OVERLAY")
     t.mark:SetWidth(10)
     t.mark:SetHeight(10)
@@ -363,12 +399,15 @@ function C:PrepWorldTab()
     if discord then
         -- the mark, then the label right after it: never centred over the mark
         t.label:SetPoint("LEFT", t.mark, "RIGHT", 5, 0)
+        t.lcCentred = nil
         w = 6 + 10 + 5 + tw + 12
     else
         t.label:SetPoint("CENTER", t, "CENTER", 0, 1)
+        t.lcCentred = true
         w = tw + 20
     end
     if w < 44 then w = 44 end
+    t.lcBase = w
     t.lcWant = w
     t:SetWidth(w)
     t:Show()
@@ -380,6 +419,7 @@ function C:StyleWorldTab(theme)
     if not t or not t:IsShown() or not self.active then return end
     t.lcUnread = self.world.unread
     t.lcMention = self.world.mention
+    t.lcCount = self.world.count
     self:StyleTab(t, self.worldView and true or false, theme or self:Theme())
 end
 
@@ -395,12 +435,14 @@ function C:ChannelCycle()
     return list
 end
 
-function C:CycleChannel(eb, back)
+-- force: a click on the channel label, which always steps (from a whisper too, with words typed) and keeps the
+-- choice for the next Enter (stickyType).
+function C:CycleChannel(eb, back, force)
     if not eb then return false end
     local text = eb.GetText and eb:GetText() or ""
-    if text and not strfind(text, "^%s*$") then return false end
+    if not force and text and not strfind(text, "^%s*$") then return false end
     local t = C.EditAttr(eb, "chatType") or "SAY"
-    if t == "WHISPER" or t == "BN_WHISPER" then return false end   -- the stock Tab steps through tell targets
+    if not force and (t == "WHISPER" or t == "BN_WHISPER") then return false end   -- the stock Tab steps through tell targets
     local list = self:ChannelCycle()
     local n = #list
     local cur = 0
@@ -413,6 +455,7 @@ function C:CycleChannel(eb, back)
     local pick = list[nxt]
     C.SetEditAttr(eb, "chatType", pick[1])
     if pick[1] == "CHANNEL" then C.SetEditAttr(eb, "channelTarget", pick[2]) end
+    if force then C.SetEditAttr(eb, "stickyType", pick[1]) end
     if ChatEdit_UpdateHeader then C.Try(ChatEdit_UpdateHeader, eb) end
     return true
 end
@@ -428,7 +471,22 @@ end
 
 -- Enter while the World tab is open: you are writing to World.
 local openHooked = false
+local activateHooked = false
 local function hookOpenChat()
+    if not activateHooked and ChatEdit_ActivateChat then
+        activateHooked = C.Hook("ChatEdit_ActivateChat", function(eb)
+            if C.active and C.worldView and eb and C:InWorld() then
+                local t = C.EditAttr(eb, "chatType")
+                -- a whisper reply or a slash typed on purpose stays as it is
+                if t ~= "WHISPER" and t ~= "BN_WHISPER" and t ~= "REPLY" then
+                    if not eb.lcPrev then eb.lcPrev = { t, C.EditAttr(eb, "channelTarget"), C.EditAttr(eb, "stickyType") } end
+                    C.SetEditAttr(eb, "chatType", "CHANNEL")
+                    C.SetEditAttr(eb, "channelTarget", C:WorldId())
+                    if ChatEdit_UpdateHeader then C.Try(ChatEdit_UpdateHeader, eb) end
+                end
+            end
+        end)
+    end
     if openHooked then return end
     openHooked = C.Hook("ChatFrame_OpenChat", function(text)
         if C.active and C.worldView and (text == nil or text == "") and C:InWorld() then

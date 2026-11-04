@@ -800,3 +800,10 @@
 1321f addons  Leyline addons: the UI says why build mode doesn't stick (den-move reads it)
 1322a signin  Website: browser Play no longer loops on sign-in (the game page uses its new name after the domain move)
 1322b ship  Save as Orion: the browser Play sign-in loop fix
+1322c slice-health  Read-only: are every race and gender's models in the browser slice, and which files players' browsers missed
+1322d check  Read-only: the server and realm check
+1322e scripts  Realm scripts: a new character's mount goes on its action bar (live reload, nobody kicked)
+1322g ship  Save as Orion: the mount on the bars
+1323a signin  Website: the Game modes and Loadouts pages answer (they were 404)
+1323c ship  Save as Orion: the two pages and the audit's settings check
+1323d audit  Release audit again (after the site fix)

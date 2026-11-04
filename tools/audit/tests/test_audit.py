@@ -166,7 +166,8 @@ class Settings(unittest.TestCase):
         d = tempfile.mkdtemp()
         ok = {"schema": 1, "clients": [{"id": "a", "path": d}], "selected_client": "a"}
         self.assertEqual(pc.settings_problems(ok), [])
-        bad = {"schema": 2, "clients": [{"id": "a", "path": d + "/gone"}], "selected_client": "b"}
+        self.assertEqual(pc.settings_problems(dict(ok, schema=2)), [])   # today's launcher (settings.rs SCHEMA)
+        bad = {"schema": 9, "clients": [{"id": "a", "path": d + "/gone"}], "selected_client": "b"}
         self.assertEqual(len(pc.settings_problems(bad)), 3)
         self.assertEqual(pc.settings_problems([]), ["not a JSON object"])
 

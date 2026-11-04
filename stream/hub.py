@@ -5230,7 +5230,7 @@ def bind(lookup) -> None:
 # The hub's pages under the front door (owner 2026-10-30: "make this our main one"): with WU_HUB_FRONT on, every hub page
 # lives at /wrath/leyline/<page> and the old /wrath/leyline-preview/<page> addresses send a 301 there. Inside, the code
 # keeps BASE; what goes out (pages, Location headers) says /wrath/leyline (_Live).
-HUB_PAGES = ("catalog", "addons", "p", "creators", "beacon", "realms", "modes", "news", "gallery", "submit", "forge", "agents",
+HUB_PAGES = ("catalog", "addons", "p", "creators", "beacon", "realms", "modes", "game-modes", "loadouts", "news", "gallery", "submit", "forge", "agents",
              "approved.json", "turn-later")
 
 

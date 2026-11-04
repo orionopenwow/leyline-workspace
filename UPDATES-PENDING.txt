@@ -809,3 +809,8 @@
 1323e foreverui  Browser game: nameplates back to the game's own pill bar
 1323f addons  Leyline addons: the same
 1323g ship  Save as Orion: nameplates back to the original
+1323h foreverui  Browser game: Nameplates.lua emptied (no plate restyle even with an old file list)
+1323i addons  Leyline addons: the same
+1323j signin  Website: the .zip as a main download button beside the .exe
+1323k client  Browser game: "Slow loading?" line after 20 s (the desktop app, Download sections); the game address follows the domain move
+1323l ship  Save as Orion: Mods opens on Discover, the 30-minute update check, the zip button, Slow loading

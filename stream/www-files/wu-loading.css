@@ -114,3 +114,13 @@ html body #wenilla-boot .ly-tip, #wu-loading .ly-tip {
 html body #wenilla-boot .ly-tip.out, #wu-loading .ly-tip.out { opacity: 0; transform: translateY(4px); }
 @keyframes ly-tip-float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -3px; } }
 @media (prefers-reduced-motion: reduce) { html body #wenilla-boot .ly-tip, #wu-loading .ly-tip { animation: none; } }
+
+/* "Slow loading?" (wu-loading.js addSlowHelp): one quiet line under the tips after 20 s */
+html body #wenilla-boot .ly-slow, #wu-loading .ly-slow {
+  margin-top: 14px; max-width: 34rem; font: 13px/1.45 system-ui, sans-serif; color: rgba(255,255,255,.82); text-align: center;
+}
+html body #wenilla-boot .ly-slow a, #wu-loading .ly-slow a { color: #f2c94c; }
+html body #wenilla-boot .ly-slow button, #wu-loading .ly-slow button {
+  margin-left: 4px; padding: 3px 10px; font: inherit; color: #fff; cursor: pointer;
+  background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.3); border-radius: 6px;
+}

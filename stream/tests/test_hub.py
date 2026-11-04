@@ -445,11 +445,13 @@ if DM is not None:
           "Space opens it, no script), every row, All download options, the trust line",
           re.search(r'<div class="dlp"><div class="dlp-row"><a class="ly-btn dlp-main" href="https://github\.com/orionopenwow/Leyline/releases/download/'
                     r'launcher-latest/Leyline\.exe" rel="noopener noreferrer"><svg[^>]*>.*?</svg><span>Download for Windows</span></a>'
+                    r'<a class="ly-btn dlp-zip" href="https://github\.com/orionopenwow/Leyline/releases/download/launcher-latest/Leyline-portable\.zip" '
+                    r'rel="noopener noreferrer"><svg[^>]*>.*?</svg><span>Download \.zip</span> <span class="dl-sz">[^<]+</span></a>'
                     r'<details class="dlp-more"><summary class="dlp-sum">Other downloads<svg', pn, re.S)
           and all(f">{t}<" in pn for t in ("Windows installer", "Portable zip", "macOS", "Linux", "GitHub", "Checksums"))
           and '<a href="/wrath/download">All download options ›</a>' in pn
           and "Open source. Built on GitHub from the public code. Check the SHA-256 before you run it." in pn
-          and "Leyline.exe · 22 MB · also for macOS and Linux" in pn and "<script" not in pn, pn[:600])
+          and "Leyline.exe · 22 MB or the same in a .zip · also for macOS and Linux" in pn and "<script" not in pn, pn[:900])
     check("the Download choice: keyboard focus shows, the chevron turns, the menu a popover on wide screens and full width on a phone",
           ".dlp-sum:focus-visible" in DM.CSS and ".dlp-more[open] .dlp-chev{transform:rotate(180deg)}" in DM.CSS
           and "@media (min-width:700px){.dlp-menu{position:absolute" in DM.CSS and "@media (max-width:560px){.dlp-list li{grid-template-columns:minmax(0,1fr)}" in DM.CSS
@@ -468,6 +470,7 @@ if DM is not None:
           [o[0] for o in opts] == ["windows", "installer", "zip", "macos", "linux", "github", "checksums"]
           and '<h3>Windows</h3><span class="dl-badge">Recommended</span>' in dpg
           and 'class="ly-btn dl-big" href="https://github.com/orionopenwow/Leyline/releases/download/launcher-latest/Leyline.exe"' in dpg
+          and 'class="ly-btn dlp-zip" href="https://github.com/orionopenwow/Leyline/releases/download/launcher-latest/Leyline-portable.zip"' in dpg
           and "Leyline 0.8.9" in dpg and "Leyline.exe · 22 MB · one file, nothing to install" in dpg, opts)
     check("/wrath/download: Verify your download (certutil on Windows, shasum elsewhere), the SHA256SUMS files, each installer's SHA-256",
           '<section class="dl-verify" id="verify"' in dpg and "certutil -hashfile Leyline.exe SHA256" in dpg and "shasum -a 256 Leyline*" in dpg

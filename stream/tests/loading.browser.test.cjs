@@ -91,3 +91,44 @@ test('the cover names what it loads and shows the client\'s real progress', asyn
     srv.close();
   }
 });
+
+test('"Slow loading?": after a while on the cover, the desktop app and Download sections; never on a quick load', async () => {
+  const srv = await serve();
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 700 } });
+    await page.goto(`http://127.0.0.1:${srv.address().port}/page.html`);
+    await page.waitForFunction(() => window.st);
+    const { addSlowHelp } = await page.evaluate(async () => Object.keys(await import('./wu-loading.js')).includes('addSlowHelp') ? { addSlowHelp: true } : {});
+    assert.ok(addSlowHelp, 'wu-loading.js exports addSlowHelp');
+    // a quick load: the cover goes down before the line is due, and no line ever comes
+    await page.evaluate(async () => {
+      const m = await import('./wu-loading.js');
+      const c = document.getElementById('wu-loading') || (window.st.show('t'), document.getElementById('wu-loading'));
+      window.st.hide('t');
+      m.addSlowHelp(c.querySelector('.box'), 50);
+    });
+    await page.waitForTimeout(200);
+    assert.equal(await page.locator('#wu-loading .ly-slow').count(), 0, 'nothing after a quick load');
+    // a slow one: the page's Download sections button exists; the line offers both
+    await page.evaluate(async () => {
+      const dl = document.createElement('button'); dl.id = 'dl'; dl.onclick = () => { window.dlClicked = true; }; document.body.append(dl);
+      const m = await import('./wu-loading.js');
+      window.st.show('slow');
+      const box = document.querySelector('#wu-loading .box');
+      delete box.dataset.slowArmed;
+      m.addSlowHelp(box, 50);
+    });
+    await page.waitForSelector('#wu-loading .ly-slow');
+    const line = await page.textContent('#wu-loading .ly-slow');
+    assert.match(line, /^Slow loading\? Get the Leyline desktop app: it plays with your own game folder/);
+    assert.equal(await page.getAttribute('#wu-loading .ly-slow a', 'href'), 'https://play.openvanilla.app/wrath/download');
+    await page.click('#wu-loading .ly-slow button');
+    assert.equal(await page.evaluate(() => window.dlClicked), true, 'Download sections opens the page\'s panel');
+    assert.equal(await page.locator('#wu-loading .ly-slow').count(), 1, 'one line only');
+    assert.doesNotMatch(line, /World of Warcraft|Warcraft|WoW|Blizzard|Lich King|\d+\.\d+\.\d+/);
+  } finally {
+    await browser.close();
+    srv.close();
+  }
+});

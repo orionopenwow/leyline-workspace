@@ -41,6 +41,41 @@ export const TIPS = [
   'Host your own realm from the Leyline launcher in three steps.',
 ];
 
+// "Slow loading?" (owner 3 Nov): when a loading screen is still up after SLOW_MS, one line under the tips offers the two
+// faster ways: the desktop Leyline (it plays with the game folder the player already has, so nothing streams) and, on
+// a streamed slice, "Download sections" (the page's own button: whole parts of the game kept in this browser).
+export const SLOW_MS = 20000;
+const SITE = () => (onNewName() ? 'leylinelauncher.com' : 'play.openvanilla.app');
+/** Put the "Slow loading?" line in `box` after `ms` (once); nothing if the box left the page by then. */
+export function addSlowHelp(box, ms = SLOW_MS) {
+  if (!box || box.dataset.slowArmed) return;
+  box.dataset.slowArmed = '1';
+  setTimeout(() => {
+    if (!box.isConnected || box.querySelector(':scope > .ly-slow')) return;
+    const cover = box.closest('#wu-loading');
+    if (cover && !cover.classList.contains('on')) { delete box.dataset.slowArmed; return; }
+    const line = document.createElement('div');
+    line.className = 'ly-slow';
+    const b = document.createElement('b');
+    b.textContent = 'Slow loading? ';
+    const a = document.createElement('a');
+    a.href = `https://${SITE()}/wrath/download`;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = 'Get the Leyline desktop app';
+    line.append(b, a, document.createTextNode(': it plays with your own game folder, nothing to stream.'));
+    const dl = document.getElementById('dl');
+    if (dl && !dl.hidden) {
+      const go = document.createElement('button');
+      go.type = 'button';
+      go.textContent = 'Download sections';
+      go.addEventListener('click', () => dl.click());
+      line.append(document.createTextNode(' Or keep parts of the game in this browser: '), go);
+    }
+    box.append(line);
+  }, ms);
+}
+
 /** Put a rotating tip line in `box` (once); it stops when the box leaves the page. */
 export function addTips(box, start = Math.floor(Math.random() * TIPS.length)) {
   if (!box || box.querySelector(':scope > .ly-tip')) return null;
@@ -105,6 +140,7 @@ export function installLoading(opts = {}) {
     st.on = true;
     if (!measured) { bar.classList.add('pulse'); fill.style.width = ''; }
     cover.classList.add('on');
+    addSlowHelp(cover.querySelector('.box'));
     clearTimeout(safety);
     safety = setTimeout(() => hide('safety'), SAFETY_MS);
     busy();
@@ -205,7 +241,7 @@ export function installLoading(opts = {}) {
   }
   st.mirror = mirrorClient;
   // the boot overlay gets the same tips
-  const bootTips = () => { const b = document.querySelector('#wenilla-boot .box'); if (b) addTips(b); };
+  const bootTips = () => { const b = document.querySelector('#wenilla-boot .box'); if (b) { addTips(b); addSlowHelp(b); } };
 
   try {
     const mo = new MutationObserver(() => { readCorner(); mirrorClient(); bootTips(); busy(); });

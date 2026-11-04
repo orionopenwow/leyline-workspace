@@ -1,0 +1,3 @@
+-- Nameplates.lua: intentionally empty (owner 3 Nov: "return nameplates to original pill bar and dont edit it").
+-- It is not in WrathUnleashedUI.toc any more; this empty copy only stays so a game or browser that still has the
+-- old file list loads nothing that touches nameplates. Delete it once every player has the new list.

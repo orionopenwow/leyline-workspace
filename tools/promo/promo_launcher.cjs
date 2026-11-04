@@ -17,6 +17,8 @@ const INDEX = 'file://' + path.join(ROOT, 'launcher', 'ui', 'index.html');
 const PICTURE = path.join(ROOT, 'launcher', 'ui', 'art', 'leyline-bg.webp');
 const OUT = path.resolve(process.argv[2] || '/tmp/promo');
 const SIZE = { width: 1280, height: 800 };
+// PROMO_SHOTS=<dir>: also still pictures (PNG, twice the pixels, no cursor) of the home page, the addons and the host templates
+const SHOTS = process.env.PROMO_SHOTS || '';
 const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i;
 
 function firstRunFake() {
@@ -83,7 +85,7 @@ async function main() {
   let t0 = 0;
   const mark = (name) => marks.push({ name, t: (Date.now() - t0) / 1000 });
   try {
-    const ctx = await browser.newContext({ colorScheme: 'dark', viewport: SIZE, recordVideo: { dir: OUT, size: SIZE } });
+    const ctx = await browser.newContext({ colorScheme: 'dark', viewport: SIZE, recordVideo: { dir: OUT, size: SIZE }, deviceScaleFactor: SHOTS ? 2 : 1 });
     const page = await ctx.newPage();
     t0 = Date.now();
     const errors = [];
@@ -110,12 +112,33 @@ async function main() {
       await page.waitForTimeout(opts.pause ?? 250);
       if (opts.click !== false) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     };
+    const still = async (name) => {
+      if (!SHOTS) return;
+      fs.mkdirSync(SHOTS, { recursive: true });
+      // no cursor dot in a still; the live player count (true, but 0 at launch) left out of the picture
+      const hidden = await page.evaluate(() => {
+        const out = [];
+        for (const e of document.querySelectorAll('body *')) {
+          const own = [...e.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('');
+          if ((/playing on \d+ realm/i.test(own)) || (e.style && e.style.pointerEvents === 'none' && e.style.zIndex === '2147483647')) {
+            out.push([e, e.style.visibility]); e.style.visibility = 'hidden';
+          }
+        }
+        window.__stillHidden = out;
+        return out.length;
+      });
+      await page.waitForTimeout(350);
+      await page.screenshot({ path: path.join(SHOTS, name + '.png') });
+      await page.evaluate(() => { for (const [e, v] of window.__stillHidden || []) e.style.visibility = v; });
+      return hidden;
+    };
     const nav = async (name) => { await glide(`.side .nav[data-page="${name}"]`); await page.waitForFunction((n) => document.querySelector('#page-' + n + '.on'), name); };
 
     await nav('play');
     await page.waitForTimeout(600);
     mark('home');
     await page.waitForTimeout(1600);
+    await still('1-home');
     await glide('#pb-realm-btn');
     await page.waitForTimeout(1400);
     await page.keyboard.press('Escape');
@@ -128,6 +151,7 @@ async function main() {
     await glide('#discover-tabs .ly-tab[data-tab="addons"]');
     await page.waitForFunction(() => /AdiBags/.test(document.getElementById('pane-discover').textContent));
     await page.waitForTimeout(900);
+    await still('2-addons');
     await page.mouse.move(700, 500, { steps: 10 });
     for (let i = 0; i < 6; i++) { await page.mouse.wheel(0, 140); await page.waitForTimeout(260); }
     await page.waitForTimeout(400);
@@ -143,6 +167,8 @@ async function main() {
     await page.waitForTimeout(400);
     await page.locator('.hst-s2').scrollIntoViewIfNeeded();
     await page.waitForTimeout(900);
+    await page.waitForTimeout(300);
+    await still('3-host-templates');
     await glide('.hst-tpl[data-tpl="vanilla-plus"]');
     await page.waitForTimeout(1800);
     mark('den');

@@ -144,7 +144,9 @@ LURE_README = re.compile(r"(?i)download (it |the )?(latest |newest )?(version |b
                          r"\b(go|head) to (the )?releases?\b|download (the )?(setup|installer|\.exe|exe)\b|"
                          r"\bpassword\s*[:=]\s*\S+|\b(disable|turn off) (your )?(anti-?virus|defender|windows defender|av)\b|"
                          r"\brun (it )?as admin(istrator)?\b|extract (the )?(zip|rar|archive) and run")
-LURE_STRONG = re.compile(r"(?i)\bpassword\s*[:=]\s*\S+|\b(disable|turn off) (your )?(anti-?virus|defender|windows defender|av)\b")
+# The archive password of a release download, not a database login in a config example ("password = acore").
+LURE_STRONG = re.compile(r"(?i)\b(zip|rar|7z|archive|download|releases?|extract|unpack|installer)\b[^\n]{0,80}?\bpass(word)?"
+                         r"\s*[:=]\s*\S+|\b(disable|turn off) (your )?(anti-?virus|defender|windows defender|av)\b")
 LURE_SUFFIX = re.compile(r"(?i)[-_ ]?(pro|free|crack(ed)?|download|latest|full|premium|unlocked|20\d\d|v?\d+(\.\d+)*)$")
 SOURCE_SIGNS = ("cpp", "lua")
 GENERIC_NAMES = {re.sub(r"[^a-z0-9]", "", g) for g in HI.GENERIC} | {"addons", "scripts", "server", "launcher", "client",

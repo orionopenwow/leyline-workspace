@@ -204,6 +204,10 @@ class ScoutRun(unittest.TestCase):
         f = {"key": "k", "name": "thing", "owner": "o", "age": 400}
         self.assertIn("antivirus", S.lure_reason(f, {"ok": True, "readme": "Please disable your antivirus first", "cpp": 5}, {}, {}))
         self.assertEqual(S.lure_reason(f, {"ok": True, "readme": "Download it from Releases.", "cpp": 50, "files_n": 300}, {}, {}), "")
+        self.assertIn("password", S.lure_reason(f, {"ok": True, "readme": "Get the zip from Releases. Password: 1234",
+                                                    "cpp": 50, "files_n": 300}, {}, {}))
+        conf = "Set the database login in worldserver.conf:\n\n    LoginDatabaseInfo user = acore\n    password = acore\n"
+        self.assertEqual(S.lure_reason(f, {"ok": True, "readme": conf, "cpp": 50, "files_n": 300}, {}, {}), "")
 
     def test_reddit_mentions_read_only(self):
         self.run_scout()

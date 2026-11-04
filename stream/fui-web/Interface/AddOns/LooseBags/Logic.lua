@@ -1,37 +1,47 @@
 -- Loose Bags by Eric R (MIT, see LICENSE.txt), 0.1.3, ported to the 3.3.5a client for Leyline.
--- The layout rules: pure Lua, no game calls. Unchanged from the original apart from the event list and the
--- slash help line.
+-- The layout rules: pure Lua, no game calls. The original's rules, with the event list and the help, and Leyline's
+-- Forever UI geometry (cell pitch, chrome, the window fitted to its items, the money and free slots lines).
 local Logic = {}
 LooseBagsLogic = Logic
 
-Logic.ICON = 37
+-- Leyline: the window follows Forever UI's bag windows (Bags.lua: 37 px slots, 4 to 5 px apart, the purse at the
+-- bottom). ICON is the cell pitch every layout rule uses; the button drawn in it is SLOT wide, so neighbours that snap
+-- flush show the same gap as a Forever UI bag. Saved layouts from the old 37 px pitch are scaled once (NormalizeChar).
+Logic.ICON = 41
+Logic.SLOT = 37
+Logic.OLD_PITCH = 37
 Logic.GRID = 4
 Logic.GAP = 12
 Logic.REACH = 0.75
 Logic.DRAG_THRESHOLD = 8
-Logic.MAX_WIDTH = 320
-Logic.BAG_WIDTH = 400
+Logic.AUTO_COLS = 8
+-- The fitted window's room: eight cells and one category gap, so Clean Up's category blocks sit two by two
+-- (4 + 4, 3 + 5) in rows from the top left instead of leaving a column empty.
+Logic.BAG_WIDTH = Logic.AUTO_COLS * Logic.ICON + Logic.GAP
+Logic.MAX_WIDTH = Logic.BAG_WIDTH
 Logic.ZONE_MAX = 4
-Logic.MONEY_PAD = 12
 Logic.FRAME_TITLE = "Backpack"
-Logic.SIDE_INSET = 10
-Logic.GRIP_BOTTOM = 2
-Logic.COIN_LIFT = 2
-Logic.COIN_TEXT_H = 13
-Logic.COIN_BOX_H = 17
-Logic.COIN_GAP = 4
-Logic.TOP_BASE = 64
-Logic.SETTINGS_BAR = 34
-Logic.CHROME_MIN_W = 280
-Logic.CHROME_MIN_H = 160
-Logic.SETTINGS_ROW_W = 88 + 4 + 88 + 4 + 78 + 4 + 58 + 16 + 6 + 32
-Logic.SETTINGS_LEFT = 16
-Logic.SETTINGS_RIGHT = 12
+-- Chrome, in window pixels. TOP_BASE: title band and the search strip (Forever UI: header 48 + search strip,
+-- the grid starts 75 down). BOTTOM_PAD: the purse (14 up, 13 high) and the gap above it.
+Logic.SIDE_INSET = 9
+Logic.TOP_BASE = 74
+Logic.BAG_ROW = 40
+Logic.STRIP_GAP = 20
+Logic.PURSE_SIDE = 8
+Logic.PURSE_BOTTOM = 14
+Logic.PURSE_H = 13
+Logic.BOTTOM_PAD = Logic.PURSE_BOTTOM + Logic.PURSE_H + 7
+Logic.CHROME_MIN_W = 6 * Logic.ICON + 2 * Logic.SIDE_INSET
+Logic.CHROME_MIN_H = Logic.TOP_BASE + Logic.ICON + Logic.BOTTOM_PAD
 Logic.FRAME_MAX_W = 800
 Logic.FRAME_MAX_H = 800
+-- Where a bag opens until the player moves it: bottom right, above the bag bar, as the standard bags
+-- (CONTAINER_OFFSET_X / _Y; Forever UI's rightEdge and bottomEdge).
+Logic.HOME_RIGHT = 10
+Logic.HOME_BOTTOM = 85
 
 Logic.HELP = {
-	{ gesture = "Drag", detail = "Every item in the bag can be dragged, including miscellaneous items. Move one icon. A drop near an inner edge snaps flush to that edge, the same way it snaps to a neighbor, then to a 4 pixel grid. The icon can sit against the left and right edges and the top of the bag. The bottom edge sits just above the coins. While you drag, the icon stays inside the bag. The saved place changes only when you let go. A drop that would stack icons, or leave any icon outside the bag, puts every moved icon back where the drag started." },
+	{ gesture = "Drag", detail = "Every item in the bag can be dragged, including miscellaneous items. Move one icon. A drop near an inner edge snaps flush to that edge, the same way it snaps to a neighbor, then to a 4 pixel grid. The icon can sit against the left and right edges and the top of the bag. The bottom edge sits just above the money line. While you drag, the icon stays inside the bag. The saved place changes only when you let go. A drop that would stack icons, or leave any icon outside the bag, puts every moved icon back where the drag started." },
 	{ gesture = "Shift-drag", detail = "Move every icon sitting against the one you grab. They keep their gaps and snap as one group. Grab any icon in the group. The whole group snaps flush to the inner edges, the corners, and other icons, and stays inside the bag. If the group does not fit, they all go back. Dragging a group out of the bag does not pick it up." },
 	{ gesture = "Alt-drag", detail = "Move one icon, even if Shift is held." },
 	{ gesture = "Drag out", detail = "Drag one icon out of the bag to pick it up. Alt-click picks it up too." },
@@ -39,31 +49,24 @@ Logic.HELP = {
 	{ gesture = "Ctrl-click", detail = "Try the item on." },
 	{ gesture = "Shift-click", detail = "Link the item when chat is open. Shift alone does nothing." },
 	{ gesture = "Split", detail = "The stack-split key opens the split frame." },
-	{ gesture = "Clean Up Bags", detail = "The corner bag button sorts the bag and leaves a gap between categories. After that, a shift-drag grabs one category. When Zones is on, each category grows from the corner or edge nearest its tag, and the space between tags stays." },
-	{ gesture = "Auto-place", detail = "Put new items with their category. White text and a soft glow mean on. Gold means off. A new item keeps the shape you gave its group. It fills a gap in the group first, then finishes the last row, then starts a new row at the group's usual width. A group against the right or bottom edge grows the other way. If you sell an item and buy it back, it returns to its old spot. A category with no items yet goes to its zone tag when Zones is on. Auto-place never moves an item you placed, including the Hearthstone. Clean Up Bags still sorts every item into its zone." },
-	{ gesture = "Auto-order", detail = "On, Clean Up sorts the items inside each category. Off, Clean Up can move a category to its zone or push it clear of another, but keeps its shape and the order you set. New items then go to the nearest free spot beside their category. White text and a soft glow mean on. Gold means off. It starts on." },
-	{ gesture = "Same-type snap", detail = "Off, any item can snap or group with any other. On, a drop snaps only to the same category. A drop on a different category goes back. White text and a soft glow mean on." },
-	{ gesture = "Zones", detail = "On, each category grows from the corner or edge nearest its tag. Icons in a category stay tight on the grid. The space you left between tags stays, snapped to that grid. Off, Clean Up packs the bag the usual way. White text and a soft glow mean on. Gold means off." },
-	{ gesture = "Edit zones", detail = "The cog on the right edge of Zones hides the items and shows one tag per category. Drag a tag to say where that category sits. A tag only drags. It does not click. While you drag, the tag hides and only the box shows, as a soft glow. The box is where that category will land, sized to its item count, one slot for an empty category. The box snaps to the icon grid and sits flush on any inner edge or corner. Clean Up puts the items in that same box. Past the edge, the box stays at the nearest spot inside. A spot where the tag would cover another tag is skipped. On drop the tag shows again at the snapped spot. A tag left outside after the bag gets smaller comes back inside at the nearest free spot. Click the cog again to show the items." },
-	{ gesture = "New loot", detail = "New items wait on the strip under the bag until you move them or turn on Auto-place." },
-	{ gesture = "Collapse", detail = "The arrow left of Clean Up Bags shows or hides the settings row. It stays visible when that row is closed. After login or a reload the row starts closed." },
-	{ gesture = "First open", detail = "The first time this character has no saved layout, Loose Bags sizes the window so every item fits and sorts them the same way as Clean Up. Nothing starts outside the window. That size is remembered. Later logins and reloads leave the bag as you left it." },
-	{ gesture = "Resize", detail = "Drag the corner grip to change the width and the height. Icons stay inside the new size without sitting on each other. The size is remembered for this character. Login, camp, and reload restore that size. An icon that would sit outside the bag comes back inside. Other icons stay where you put them." },
-	{ gesture = "Lock", detail = "Freezes the bag's size. The grip hides until you unlock. Drag the title or the logo to move the bag while it is locked. A new character starts unlocked. Login, camp, and reload keep the size, the position, the lock, and each item's spot. Opening the bag before the items have loaded does not clear those spots. An unlocked bag does not resize itself." },
-	{ gesture = "/lbags", detail = "Toggle the bag. Login and reload leave it closed until you press B. /lbags on brings Loose Bags back. /lbags off goes back to the standard bags. /lbags reset clears the layout. /lbags sort cleans up. /lbags help opens this panel." },
+	{ gesture = "Search", detail = "Type in the box under the title. Items whose name or kind does not match go dark. Esc or the small x clears it." },
+	{ gesture = "Clean Up Bags", detail = "The Clean Up button at the top right sorts the bag into a tidy grid from the top left and leaves a gap between categories. After that, a shift-drag grabs one category. When Zones is on, each category grows from the corner or edge nearest its tag, and the space between tags stays." },
+	{ gesture = "Auto-place", detail = "Put new items with their category. A tick means on. A new item keeps the shape you gave its group. It fills a gap in the group first, then finishes the last row, then starts a new row at the group's usual width. A group against the right or bottom edge grows the other way. If you sell an item and buy it back, it returns to its old spot. A category with no items yet goes to its zone tag when Zones is on. Auto-place never moves an item you placed, including the Hearthstone. Clean Up Bags still sorts every item into its zone." },
+	{ gesture = "Auto-order", detail = "On, Clean Up sorts the items inside each category. Off, Clean Up can move a category to its zone or push it clear of another, but keeps its shape and the order you set. New items then go to the nearest free spot beside their category. It starts on." },
+	{ gesture = "Same-type snap", detail = "Off, any item can snap or group with any other. On, a drop snaps only to the same category. A drop on a different category goes back." },
+	{ gesture = "Zones", detail = "On, each category grows from the corner or edge nearest its tag. Icons in a category stay tight on the grid. The space you left between tags stays, snapped to that grid. Off, Clean Up packs the bag the usual way." },
+	{ gesture = "Edit zones", detail = "Edit zones, in the settings, hides the items and shows one tag per category. Drag a tag to say where that category sits. A tag only drags. It does not click. While you drag, the tag hides and only the box shows, as a soft glow. The box is where that category will land, sized to its item count, one slot for an empty category. The box snaps to the icon grid and sits flush on any inner edge or corner. Clean Up puts the items in that same box. Past the edge, the box stays at the nearest spot inside. A spot where the tag would cover another tag is skipped. On drop the tag shows again at the snapped spot. A tag left outside after the bag gets smaller comes back inside at the nearest free spot. Click Edit zones again to show the items." },
+	{ gesture = "New loot", detail = "New items wait on the New items strip at the bottom of the bag until you drag them into place, or turn on Auto-place. With Auto-place on they go straight to their category." },
+	{ gesture = "Bag slots", detail = "The bag button beside the settings cog shows your four bag slots. Point at one to light up only its items. Drop a bag on a slot to equip it." },
+	{ gesture = "Free slots", detail = "The number at the bottom left counts the empty slots in your bags. The money line beside it shows your gold, silver and copper." },
+	{ gesture = "Settings", detail = "The cog left of Clean Up Bags opens the settings: Auto-place, Auto-order, Same-type snap, Zones, Edit zones, Lock size, Fit to items and this help. After login or a reload they start closed." },
+	{ gesture = "First open", detail = "The first time this character has no saved layout, Loose Bags sorts every item the same way as Clean Up, from the top left. The window fits its items: a few items make a small bag, and it grows as items come, one free row below the last. Later logins and reloads leave the bag as you left it." },
+	{ gesture = "Resize", detail = "Drag the corner grip to choose your own width and height. The bag then stops fitting itself to its items. Fit to items, in the settings, goes back. Icons stay inside the new size without sitting on each other. The size is remembered for this character. Login, camp, and reload restore that size. An icon that would sit outside the bag comes back inside. Other icons stay where you put them." },
+	{ gesture = "Lock size", detail = "Freezes the bag's size. The grip hides until you unlock. Drag the title or the portrait to move the bag. It opens at the bottom right, above the bag bar, until you move it; then it remembers where you left it. A new character starts unlocked. Login, camp, and reload keep the size, the position, the lock, and each item's spot. Opening the bag before the items have loaded does not clear those spots. An unlocked bag does not resize itself." },
+	{ gesture = "/lbags", detail = "Toggle the bag. Login and reload leave it closed until you press B. /lbags on brings Loose Bags back. /lbags off goes back to the standard bags. /lbags reset clears the layout and the size. /lbags sort cleans up. /lbags help opens this panel." },
 }
 
-function Logic.CoinTop()
-	local rise = (Logic.COIN_BOX_H - Logic.COIN_TEXT_H) / 2
-	return Logic.GRIP_BOTTOM + Logic.COIN_LIFT + Logic.COIN_TEXT_H + rise
-end
-
-function Logic.BottomInset()
-	return Logic.CoinTop() + Logic.COIN_GAP
-end
-
 Logic.SIDE_PAD = Logic.SIDE_INSET * 2
-Logic.BOTTOM_PAD = Logic.BottomInset()
 
 local function plainHeight(value)
 	if type(issecretvalue) == "function" and issecretvalue(value) then
@@ -170,7 +173,7 @@ function Logic.MinHeightForWidth(width, bodyCount, heldCount, bar)
 	local bodyH = Logic.RowCount(bodyCount, cols) * Logic.ICON
 	local heldH = 0
 	if type(heldCount) == "number" and heldCount > 0 then
-		heldH = Logic.GAP + Logic.RowCount(heldCount, cols) * Logic.ICON
+		heldH = Logic.STRIP_GAP + Logic.RowCount(heldCount, cols) * Logic.ICON
 	end
 	local height = Logic.TOP_BASE + bar + bodyH + heldH + Logic.BOTTOM_PAD
 	local chrome = Logic.CHROME_MIN_H + bar
@@ -180,10 +183,8 @@ function Logic.MinHeightForWidth(width, bodyCount, heldCount, bar)
 	return height
 end
 
+-- (bar: the bag slots row's height when it shows; the settings sit in a drawer, so the width no longer depends on it.)
 function Logic.MinFrameWidth(bar)
-	if type(bar) == "number" and bar > 0 then
-		return math.max(Logic.CHROME_MIN_W, Logic.SETTINGS_LEFT + Logic.SETTINGS_ROW_W + Logic.SETTINGS_RIGHT)
-	end
 	return Logic.CHROME_MIN_W
 end
 
@@ -247,7 +248,7 @@ function Logic.LayoutSize(savedW, savedH, packW, packH, bodyCount, heldCount, ba
 	local height = Logic.TOP_BASE + (bar or 0) + packH + Logic.BOTTOM_PAD
 	if type(heldCount) == "number" and heldCount > 0 then
 		local holding = Logic.HoldingPositions(heldCount, Logic.ICON, packW)
-		height = height + Logic.GAP + holding.height
+		height = height + Logic.STRIP_GAP + holding.height
 	end
 	local remembered = type(savedW) == "number" and type(savedH) == "number"
 	if remembered then
@@ -330,7 +331,7 @@ function Logic.ContentBox(frameW, frameH, bar, heldCount)
 	local cols = Logic.ColumnCount(contentW, Logic.ICON)
 	local heldH = 0
 	if type(heldCount) == "number" and heldCount > 0 then
-		heldH = Logic.GAP + Logic.RowCount(heldCount, cols) * Logic.ICON
+		heldH = Logic.STRIP_GAP + Logic.RowCount(heldCount, cols) * Logic.ICON
 	end
 	local contentH = frameH - Logic.TOP_BASE - bar - Logic.BOTTOM_PAD - heldH
 	if contentH < Logic.ICON then
@@ -869,6 +870,7 @@ Logic.Events = {
 	"ITEM_LOCK_CHANGED",
 	"BAG_UPDATE_COOLDOWN",
 	"PLAYER_REGEN_ENABLED",
+	"PLAYER_MONEY",
 }
 
 Logic.CATEGORIES = {
@@ -1122,6 +1124,9 @@ function Logic.NormalizeChar(row)
 		end
 	end
 	row.places = places
+	Logic.MigratePitch(row)
+	row.bagRow = row.bagRow == true
+	row.moved = row.moved == true
 	if row.firstRun ~= true then
 		if Logic.FirstRunPending(row) then
 			row.firstRun = nil
@@ -1130,6 +1135,173 @@ function Logic.NormalizeChar(row)
 		end
 	end
 	return row
+end
+
+-- Leyline: a layout saved at another cell pitch (the port's first 37 px) is scaled to this one once, so icons keep
+-- their arrangement and never overlap. Its old size was made for the old pitch: the bag fits its items again. A bag
+-- still at the old default spot (screen centre) opens where the standard bags do from now on.
+function Logic.MigratePitch(row)
+	if type(row) ~= "table" or row.pitch == Logic.ICON then
+		return row
+	end
+	local old = row.pitch
+	if type(old) ~= "number" or old <= 0 then
+		old = Logic.OLD_PITCH
+	end
+	local k = Logic.ICON / old
+	local places = type(row.places) == "table" and row.places or {}
+	for index = 1, #places do
+		local place = places[index]
+		if type(place.x) == "number" then
+			place.x = place.x * k
+		end
+		if type(place.y) == "number" then
+			place.y = place.y * k
+		end
+	end
+	if type(row.homes) == "table" then
+		for _, home in pairs(row.homes) do
+			if type(home) == "table" and type(home.x) == "number" and type(home.y) == "number" then
+				home.x = home.x * k
+				home.y = home.y * k
+			end
+		end
+	end
+	if row.moved == nil then
+		local x, y = row.x, row.y
+		local atOldDefault = (row.point == nil or row.point == "CENTER") and (row.relPoint == nil or row.relPoint == "CENTER")
+			and (x == nil or x == 0) and (y == nil or y == 120)
+		row.moved = not atOldDefault
+	end
+	row.width = nil
+	row.height = nil
+	row.pitch = Logic.ICON
+	return row
+end
+
+-- The window fitted to its items (no size chosen with the grip): the default columns wide, as tall as the lowest
+-- item plus one free row to drop into, plus the new-loot strip. bar: the bag slots row; minRows: a floor (zone
+-- editing wants room for its tags). Returns frame width and height, then the content box.
+function Logic.AutoSize(places, bar, screenW, screenH, minRows)
+	places = places or {}
+	bar = bar or 0
+	local right = 0
+	local bottom = 0
+	local held = 0
+	for index = 1, #places do
+		local place = places[index]
+		if place.held then
+			held = held + 1
+		elseif type(place.x) == "number" and type(place.y) == "number" then
+			local edgeX = place.x + Logic.ICON / 2
+			local edgeY = place.y + Logic.ICON / 2
+			if edgeX > right then
+				right = edgeX
+			end
+			if edgeY > bottom then
+				bottom = edgeY
+			end
+		end
+	end
+	local contentW = Logic.BAG_WIDTH
+	if right > contentW then
+		contentW = math.ceil(right)
+	end
+	local contentH = Logic.ICON
+	if bottom > 0 then
+		contentH = math.ceil(bottom) + Logic.ICON
+	end
+	local floor = (type(minRows) == "number" and minRows or 1) * Logic.ICON
+	if contentH < floor then
+		contentH = floor
+	end
+	local maxW = Logic.FRAME_MAX_W
+	local maxH = Logic.FRAME_MAX_H
+	screenW = plainSize(screenW)
+	screenH = plainSize(screenH)
+	if screenW and screenW < maxW then
+		maxW = screenW
+	end
+	if screenH and screenH < maxH then
+		maxH = screenH
+	end
+	local frameW = contentW + Logic.SIDE_PAD
+	if frameW < Logic.CHROME_MIN_W then
+		frameW = Logic.CHROME_MIN_W
+	end
+	if frameW > maxW then
+		frameW = maxW
+	end
+	local cols = Logic.ColumnCount(frameW - Logic.SIDE_PAD, Logic.ICON)
+	local heldH = 0
+	if held > 0 then
+		heldH = Logic.STRIP_GAP + Logic.RowCount(held, cols) * Logic.ICON
+	end
+	local frameH = Logic.TOP_BASE + bar + contentH + heldH + Logic.BOTTOM_PAD
+	if frameH > maxH then
+		frameH = maxH
+	end
+	local boxW, boxH = Logic.ContentBox(frameW, frameH, bar, held)
+	return frameW, frameH, boxW, boxH
+end
+
+-- The bag's spot until the player moves it: bottom right, above the bag bar, left of any shown right-hand bars.
+function Logic.HomePoint(rightBars)
+	local right = Logic.HOME_RIGHT
+	if type(rightBars) == "number" and rightBars > 0 then
+		right = right + rightBars
+	end
+	return "BOTTOMRIGHT", "BOTTOMRIGHT", -right, Logic.HOME_BOTTOM
+end
+
+-- Copper to the three coins (all three always shown on the money line).
+function Logic.MoneyParts(money)
+	if type(money) ~= "number" or money ~= money or money < 0 then
+		money = 0
+	end
+	money = math.floor(money)
+	local gold = math.floor(money / 10000)
+	local silver = math.floor((money - gold * 10000) / 100)
+	local copper = money - gold * 10000 - silver * 100
+	return gold, silver, copper
+end
+
+-- 1234567 -> "1,234,567" (the gold amount; the client of this era has no number grouping of its own).
+function Logic.Grouped(number)
+	local text = tostring(math.floor(tonumber(number) or 0))
+	local sign = ""
+	if string.sub(text, 1, 1) == "-" then
+		sign = "-"
+		text = string.sub(text, 2)
+	end
+	local out = ""
+	while string.len(text) > 3 do
+		out = "," .. string.sub(text, -3) .. out
+		text = string.sub(text, 1, -4)
+	end
+	return sign .. text .. out
+end
+
+-- The free slots counter: "21 free", and its tooltip line.
+function Logic.FreeText(free, total)
+	free = type(free) == "number" and free or 0
+	total = type(total) == "number" and total or 0
+	return free .. " free", free .. " of " .. total .. " bag slots are free."
+end
+
+-- Search: a match on the item's name, its kind or its sub-kind (as Forever UI's bag search). Empty text matches all.
+function Logic.SearchMatch(text, name, kind, subKind)
+	if type(text) ~= "string" or text == "" then
+		return true
+	end
+	local fields = { name, kind, subKind }
+	for index = 1, 3 do
+		local field = fields[index]
+		if type(field) == "string" and string.find(string.lower(field), text, 1, true) then
+			return true
+		end
+	end
+	return false
 end
 
 function Logic.NextInst(places, itemID)
@@ -1621,6 +1793,86 @@ function Logic.Pack(entries, zones, maxWidth)
 	return { positions = positions, width = width, height = height }
 end
 
+-- Leyline: Clean Up's tidy grid. Categories in the original's order, each filling whole cells left to right from
+-- the top left, so every icon sits on one column grid. A category starts a new row band, GAP below the last; a small
+-- category that fits on the current band's single row joins it after one empty cell. No two categories touch, so a
+-- Shift-drag still picks up one category. Same return as Pack.
+function Logic.Bands(entries, zones, maxWidth)
+	maxWidth = maxWidth or Logic.MAX_WIDTH
+	zones = copyZones(zones)
+	local icon = Logic.ICON
+	local cols = math.floor(maxWidth / icon)
+	if cols < 1 then
+		cols = 1
+	end
+	local groups = {}
+	local order = {}
+	for index = 1, #entries do
+		local entry = entries[index]
+		local category = entry.category
+		if not RANK[category] then
+			category = "other"
+		end
+		if not groups[category] then
+			groups[category] = {}
+			order[#order + 1] = category
+		end
+		groups[category][#groups[category] + 1] = entry
+	end
+	table.sort(order, function(left, right)
+		if zones[left] ~= zones[right] then
+			return zones[left] < zones[right]
+		end
+		return RANK[left] < RANK[right]
+	end)
+	local positions = {}
+	local bandTop = 0
+	local bandRows = 0
+	local used = 0
+	local width = 0
+	local height = 0
+	for orderIndex = 1, #order do
+		local group = groups[order[orderIndex]]
+		local count = #group
+		local startCol = 0
+		local top
+		if bandRows == 1 and used > 0 and used + 1 + count <= cols then
+			startCol = used + 1
+			top = bandTop
+			used = startCol + count
+		else
+			if bandRows > 0 then
+				bandTop = bandTop + bandRows * icon + Logic.GAP
+			end
+			top = bandTop
+			bandRows = math.ceil(count / cols)
+			used = count
+			if bandRows > 1 then
+				used = cols
+			end
+		end
+		for itemIndex = 1, count do
+			local cell = startCol + itemIndex - 1
+			local col = cell % cols
+			local row = math.floor(cell / cols)
+			if startCol > 0 then
+				col = cell
+				row = 0
+			end
+			local x = icon / 2 + col * icon
+			local y = top + icon / 2 + row * icon
+			positions[group[itemIndex].id] = { x = x, y = y }
+			if x + icon / 2 > width then
+				width = x + icon / 2
+			end
+			if y + icon / 2 > height then
+				height = y + icon / 2
+			end
+		end
+	end
+	return { positions = positions, width = width, height = height }
+end
+
 function Logic.HoldingPositions(count, icon, maxWidth)
 	icon = icon or Logic.ICON
 	maxWidth = maxWidth or Logic.BAG_WIDTH
@@ -1660,7 +1912,7 @@ function Logic.FrameContent(packWidth, packHeight, holdingCount, barHeight)
 	end
 	local height = packHeight + barHeight
 	if holdingCount > 0 then
-		height = height + Logic.GAP + holding.height
+		height = height + Logic.STRIP_GAP + holding.height
 	end
 	return width, height
 end
@@ -1883,11 +2135,11 @@ function Logic.Arrange(entries, homes, maxWidth, maxHeight, taken)
 	end
 	entries = entries or {}
 	if not Logic.HasHomes(homes) then
-		return Logic.Pack(entries, nil, maxWidth)
+		return Logic.Bands(entries, nil, maxWidth)
 	end
 	local groups = groupEntries(entries)
 	if not categoryTagged(groups, homes) then
-		return Logic.Pack(entries, nil, maxWidth)
+		return Logic.Bands(entries, nil, maxWidth)
 	end
 	local positions = {}
 	local occupied = {}
@@ -2258,6 +2510,57 @@ function Logic.CommitFirstRun(row, plan)
 	row.places = plan.places
 	row.width = plan.width
 	row.height = plan.height
+	row.firstRun = true
+	return true
+end
+
+-- Leyline: the first open with the bag fitted to its items: Clean Up's tidy grid from the top left, no size chosen.
+-- Clean Up for a bag that fits its items: the default width first; a bag too tall for the screen at that width gets
+-- two more columns at a time. Returns the places and the width used.
+function Logic.AutoTidy(places, homes, keepOrder, screenH, bar)
+	local limit = plainSize(screenH)
+	if limit then
+		limit = limit - Logic.HOME_BOTTOM - 10
+	end
+	local cols = Logic.AUTO_COLS
+	local best, bestW
+	while true do
+		local width = cols * Logic.ICON + Logic.GAP
+		local tidy = Logic.Tidy(places, homes, width, width, keepOrder)
+		local _, height = Logic.AutoSize(tidy, bar or 0, nil, nil)
+		best, bestW = tidy, width
+		if not limit or height <= limit or cols >= Logic.AUTO_COLS + 8 then
+			break
+		end
+		cols = cols + 2
+	end
+	return best, bestW
+end
+
+function Logic.PlanAutoFirstRun(items, options)
+	options = options or {}
+	local blank = {}
+	items = items or {}
+	for index = 1, #items do
+		local item = items[index]
+		if type(item) == "table" and type(item.itemID) == "number" then
+			appendPlace(blank, item, 0, 0, false)
+		end
+	end
+	if #blank == 0 then
+		return { places = blank, auto = true }
+	end
+	local places = Logic.AutoTidy(blank, options.homes, options.keepOrder == true, options.screenH)
+	return { places = places, auto = true }
+end
+
+function Logic.CommitAutoFirstRun(row, plan)
+	if not Logic.FirstRunPending(row) or type(plan) ~= "table" or type(plan.places) ~= "table" then
+		return false
+	end
+	row.places = plan.places
+	row.width = nil
+	row.height = nil
 	row.firstRun = true
 	return true
 end
@@ -3026,22 +3329,6 @@ function Logic.ShiftGroup(originX, originY, snappedX, snappedY, starts)
 		moved[index] = { x = start.x + dx, y = start.y + dy }
 	end
 	return moved
-end
-
-function Logic.MoneyBoxWidth(frameWidth, contentLeft, pad)
-	if type(frameWidth) ~= "number" or type(contentLeft) ~= "number" then
-		return nil
-	end
-	if pad == nil then
-		pad = Logic.MONEY_PAD
-	end
-	if type(pad) ~= "number" then
-		return nil
-	end
-	if contentLeft >= pad then
-		return frameWidth
-	end
-	return frameWidth + (pad - contentLeft)
 end
 
 function Logic.FillSaved(saved)

@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "about": "The Leyline Discord at launch (docs/DISCORD-PLAN.md, 3 Nov): the 30 Oct server kept and tidied, 13 channels in START, PLAY, CREATE, FEEDBACK and STAFF. Names are \"<emoji>︱<name>\", the same as tools/discord-leyline/discord_leyline.py LAYOUT (a test checks they agree). The owner's Leyline Control runs that script (Discord card: Preview, then Do it); this file lets the website bot find the same channels (WU_DISCORD_TEMPLATE=/app/discord_template_launch.json). Set up the Discord only ever adds what is missing; a channel's \"was\" names count as it. The bigger plan, for later, is discord_template_v2.json.",
+  "about": "The Leyline Discord at launch (docs/DISCORD-PLAN.md, 3 Nov): the 30 Oct server kept and tidied, 14 channels (world-chat added 4 Nov) in START, PLAY, CREATE, FEEDBACK and STAFF. Names are \"<emoji>︱<name>\", the same as tools/discord-leyline/discord_leyline.py LAYOUT (a test checks they agree). The owner's Leyline Control runs that script (Discord card: Preview, then Do it); this file lets the website bot find the same channels (WU_DISCORD_TEMPLATE=/app/discord_template_launch.json). Set up the Discord only ever adds what is missing; a channel's \"was\" names count as it. The bigger plan, for later, is discord_template_v2.json.",
   "roles": [
     {"key": "moderator", "name": "Moderator", "color": "#8b5cf6", "hoist": true, "staff": true},
     {"key": "helper", "name": "Helper", "color": "#5b8def", "hoist": true, "staff": true}
@@ -13,6 +13,7 @@
     ]},
     {"key": "play", "name": "PLAY", "channels": [
       {"key": "general", "name": "💬︱general", "topic": "Talk about anything Leyline: the realms, Your Den, game modes, what you are up to."},
+      {"key": "world_chat", "name": "🌍︱world-chat", "topic": "Wrath Unleashed's World chat, both ways: World lines from the game show up here, and what you write here shows in the game as [Discord]. Keep it friendly; muted names stay muted.", "bot_posts": true},
       {"key": "help", "name": "🛟︱help", "topic": "Stuck? Ask here: installing, logging in, your Hero Key, game folders, playing, Your Den. The answers to common questions are in guides-and-faq."},
       {"key": "looking_for_group", "name": "🤝︱looking-for-group", "topic": "Find people to play with: say the realm, your level and what you want to do.", "bot_posts": true},
       {"key": "hangout", "name": "🎧︱Hangout", "type": "voice"}

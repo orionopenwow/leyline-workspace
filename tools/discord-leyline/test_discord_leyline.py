@@ -1,6 +1,6 @@
 """Leyline Discord (discord_leyline.py) against a fake Discord REST API on localhost.
 
-Covers: the launch layout (13 channels) agrees with stream/discord_template_launch.json (so the website bot's Set up the
+Covers: the launch layout (14 channels) agrees with stream/discord_template_launch.json (so the website bot's Set up the
 Discord finds every channel afterwards); today's server (the owner's 3 Nov screenshot) needs only the few changes the
 preview lists; the preview never writes; the backup lands before the first write; channels from earlier passes are
 renamed and moved with their history, not made twice; old channels go to a hidden read-only ARCHIVE, or are deleted
@@ -456,11 +456,11 @@ class TestLayout(unittest.TestCase):
         cats = {c: [s["name"] for s in chans] for c, chans in dl.LAYOUT}
         self.assertEqual(cats, {
             "START": ["welcome", "announcements", "guides-and-faq"],
-            "PLAY": ["general", "help", "looking-for-group", "Hangout"],
+            "PLAY": ["general", "world-chat", "help", "looking-for-group", "Hangout"],
             "CREATE": ["mods-and-workshop", "host-a-realm", "showcase"],
             "FEEDBACK": ["bug-reports", "ideas"],
             "🔒 STAFF": ["mod-log"]})
-        self.assertLessEqual(len(plan_names()), 13)
+        self.assertLessEqual(len(plan_names()), 14)   # 14: world-chat for the game bridge (owner 4 Nov)
         ro = {s["name"] for _, c in dl.LAYOUT for s in c if s["ro"]}
         self.assertEqual(ro, {"welcome", "announcements", "guides-and-faq"})
         self.assertEqual([s["private"] for _, c in dl.LAYOUT for s in c if s["private"]], [["Moderator", "Helper"]])
@@ -737,7 +737,7 @@ class TestApply(Base):
         for s in (f"DISCORD_BUG_CHANNEL_ID={bugs}", f"DISCORD_GUILD_ID={GID}", f"WU_DISCORD_GUILD={GID}",
                   "WU_DISCORD_TEMPLATE=/app/discord_template_launch.json", f"WU_FORUM_DISCORD_CHANNELS=news={ann}",
                   "WU_DISCORD_BUG_INTAKE=/srv/wrath/bugs/intake/discord.jsonl",
-                  "DISCORD_CHAT_CHANNEL_ID: the launch layout has no live game-chat channel"):
+                  "DISCORD_CHAT_CHANNEL_ID="):
             self.assertIn(s, p.stdout)
 
 

@@ -6,8 +6,8 @@ The owner runs this from Leyline Control's Discord card (Preview, then Do it aft
 .bat files next to it. Discord only lets a program change a server through a bot token: he makes a bot, invites it,
 pastes its token in Control, runs this, then kicks the bot. See README.md.
 
-3 Nov (launch): the 30 Oct server kept and tidied, 13 channels: START (welcome, announcements, guides-and-faq), PLAY
-(general, help, looking-for-group, the Hangout voice room), CREATE (mods-and-workshop, host-a-realm, showcase),
+3 Nov (launch): the 30 Oct server kept and tidied, 14 channels (world-chat added 4 Nov): START (welcome, announcements, guides-and-faq), PLAY
+(general, world-chat, help, looking-for-group, the Hangout voice room), CREATE (mods-and-workshop, host-a-realm, showcase),
 FEEDBACK (bug-reports, ideas), STAFF (mod-log). The bigger 2 Nov plan (stream/discord_template_v2.json) waits for later.
 
 What it does, in order (the preview shows all of it first and changes nothing; Do it runs the same code):
@@ -76,7 +76,7 @@ ARCHIVE = "ARCHIVE"
 GLYPH_SEP = "︱"
 EMOJI = {
     "welcome": "👋", "announcements": "📣", "guides-and-faq": "📖",
-    "general": "💬", "help": "🛟", "looking-for-group": "🤝", "Hangout": "🎧",
+    "general": "💬", "world-chat": "🌍", "help": "🛟", "looking-for-group": "🤝", "Hangout": "🎧",
     "mods-and-workshop": "🧩", "host-a-realm": "🏰", "showcase": "📸",
     "bug-reports": "🐞", "ideas": "💡",
     "mod-log": "🔒",
@@ -103,6 +103,8 @@ LAYOUT = [
     ]),
     ("PLAY", [
         C("general", topic="Talk about anything Leyline: the realms, Your Den, game modes, what you are up to."),
+        C("world-chat", topic="Wrath Unleashed's World chat, both ways: World lines from the game show up here, and what "
+                              "you write here shows in the game as [Discord]. Keep it friendly; muted names stay muted."),
         C("help", topic="Stuck? Ask here: installing, logging in, your Hero Key, game folders, playing, Your Den. The "
                         "answers to common questions are in guides-and-faq."),
         C("looking-for-group", topic="Find people to play with: say the realm, your level and what you want to do."),
@@ -147,6 +149,7 @@ ALIASES = {
     "general": ["general", "hangout", "general-chat", "chat", "wrath-unleashed"],
     "help": ["help", "launcher-help", "support"],
     "looking-for-group": ["looking-for-group", "lfg"],
+    "world-chat": ["world-chat", "world", "game-chat", "world-chat-bridge"],
     "hangout": ["hangout", "dalaran-lounge", "lounge", "general", "voice"],
     "mods-and-workshop": ["mods-and-workshop", "mods-and-addons", "workshop-submissions", "mods", "addons", "workshop",
                           "modding"],
@@ -944,8 +947,8 @@ class Rebrand:
             f"  DISCORD_GUILD_ID={self.gid}",
             f"  DISCORD_BUG_CHANNEL_ID={show(ids.get('bug-reports'))}",
             "  WU_DISCORD_BUG_INTAKE=/srv/wrath/bugs/intake/discord.jsonl",
-            "  (DISCORD_CHAT_CHANNEL_ID: the launch layout has no live game-chat channel. Keep yours as it is, or "
-            "leave it empty for none.)",
+            f"  DISCORD_CHAT_CHANNEL_ID={show(ids.get('world-chat'))}",
+            "  (Control's discord-bridge step writes these and the token for you and turns the bridge on.)",
         ]
 
     # -- printing -----------------------------------------------------------------------------------------------------

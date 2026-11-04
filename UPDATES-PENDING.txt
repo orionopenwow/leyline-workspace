@@ -841,4 +841,9 @@
 1326d addons  Addon pack for desktop players: the same, plus Loose Bags and Leyline Chat
 1326e ship  Save as Orion: today's Wrath+ sprint, bags, chat and guide
 1326f client-build  Build the browser client with the nameplate fix (about an hour; runs its tests)
-1326g client  New browser game build: nameplates on their unit at the stock size
+1326i client  New browser game build (upload again; the build is already in play\): nameplates on their unit at the stock size
+1327a client-build  Build the browser client: nameplates above the head, smaller (about 40 min)
+1327b client  New browser game build: nameplates above the head, smaller
+1327c foreverui  Browser game addons (ours only): Loose Bags in the Forever UI look with the money inside, Leyline Chat fade fix and channel label, the rounded guide, GM minimap buttons hidden
+1327d addons  Addon pack for desktop players: the same
+1327e ship  Save as Orion: bags, chat, guide, Discord link step, nameplates

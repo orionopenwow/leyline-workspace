@@ -5,12 +5,20 @@
         panel     a themed face behind each chat frame (opacity slider), a 1 px light top edge, the theme's edge art
                   and a soft shadow underneath. The main window's panel also holds the input line.
         tabs      flat tabs joined to the panel's top; the active one has an accent underline and new lines show a
-                  small dot (the stock tab glow no longer flashes). The game's dock still orders the tabs (and
-                  scrolls the whisper windows' tabs); the World tab sits after the fixed tabs.
-        input     the edit box inset into the panel, the channel name in its own colour.
+                  count badge (orange when you were mentioned; the stock tab glow no longer flashes); opening the tab
+                  clears it. The game's dock still orders the tabs (and scrolls the whisper windows' tabs); the World
+                  tab sits after the fixed tabs.
+        input     the panel's well at rest: where Enter will talk ("Say", "Guild", "World") as a coloured label,
+                  click it for the next channel (right-click back, like Tab / Shift+Tab), click the well to start
+                  typing. While typing, the edit box sits in the well with the stock header ("Say:") in the
+                  channel's colour, and clicking the header cycles too.
         buttons   the stock button column (scroll arrows, menu) is hidden; a thin scrollbar shows on hover, a "jump
-                  to latest" arrow when scrolled up, and the emote menu, Copy, Expand and settings sit on the tab bar.
-        fade      after 20 s (or a minute) of quiet the frame chrome fades; hover or a new line brings it back.
+                  to latest" arrow when scrolled up ("3 new lines" when lines came in below), and the emote menu,
+                  Copy, Expand and settings sit on the tab bar.
+        fade      after 10 s (20 s, a minute) of quiet everything we draw fades out: panel, shadow, tabs, tab bar,
+                  input well, jump arrow, and the edit box's own backdrop (it hangs off the screen, not the panel,
+                  so it is faded on its own: shown only while you type). Hover, typing or a new line brings it back.
+                  The lines themselves stay two minutes, as stock.
         resize    the corner grip resizes; moves and resizes snap to a 4 px grid and to the screen edges.
 
     Forever UI: its chat skin is left loaded (its Alt+drag text selection still works), but the two pieces it draws
@@ -27,6 +35,7 @@ C.PAD = { left = 6, right = 8, top = 4, bottom = 6, input = 28 }
 C.TAB_H = 20
 C.TAB_GAP = 1
 C.BUTTONS_W = 64
+C.LINE_SECONDS = 120        -- how long a line stays before it fades (the stock time), when fading is on
 C.skinned = {}
 
 local STOCK_TEXTURES = { "Background", "TopLeftTexture", "BottomLeftTexture", "TopRightTexture",
@@ -246,8 +255,36 @@ function C:SkinFor(f)
     p.wellLine:SetHeight(1)
     p.wellLine:SetPoint("BOTTOMLEFT", p.well, "TOPLEFT", 0, 0)
     p.wellLine:SetPoint("BOTTOMRIGHT", p.well, "TOPRIGHT", 0, 0)
+    -- clicking the well starts typing; the label at its left says where Enter will talk, and clicking it cycles
+    p.wellBtn = CreateFrame("Button", name .. "LCWell", p)
+    p.wellBtn:SetAllPoints(p.well)
+    p.wellBtn:SetScript("OnClick", function() C:OpenInput(f) end)
+    local pill = CreateFrame("Button", name .. "LCChannel", p)
+    pill:SetHeight(16)
+    pill:SetWidth(40)
+    pill:SetPoint("LEFT", p.well, "LEFT", 3, 0)
+    pill:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    pill.bg = pill:CreateTexture(nil, "BACKGROUND")
+    pill.bg:SetAllPoints(pill)
+    pill.text = pill:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    pill.text:SetPoint("CENTER", pill, "CENTER", 0, 0)
+    local phl = pill:CreateTexture(nil, "HIGHLIGHT")
+    phl:SetAllPoints(pill)
+    phl:SetTexture(1, 1, 1, 0.10)
+    pill:SetScript("OnClick", function(self, button) C:CycleInput(f, button == "RightButton") end)
+    pill:SetScript("OnEnter", function(self)
+        C.lastActivity = now()
+        if GameTooltip then
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText("Talking in " .. (self.text:GetText() or "Say"), 1, 1, 1)
+            GameTooltip:AddLine("Click for the next channel, right-click for the one before (Tab and Shift+Tab while typing).", 0.85, 0.85, 0.85, 1)
+            GameTooltip:Show()
+        end
+    end)
+    pill:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    p.pill = pill
     p.hint = p:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    p.hint:SetPoint("LEFT", p.well, "LEFT", 8, 0)
+    p.hint:SetPoint("LEFT", pill, "RIGHT", 6, 0)
     p.hint:SetText("Press Enter to chat")
 
     -- thin scrollbar on hover
@@ -261,15 +298,24 @@ function C:SkinFor(f)
     k.bar.thumb:SetWidth(3)
     k.bar:Hide()
 
-    -- jump to latest
+    -- jump to latest ("3 new lines" beside the arrow when lines came in below)
     k.jump = CreateFrame("Button", name .. "LCJump", f)
     k.jump:SetWidth(20)
     k.jump:SetHeight(20)
     k.jump:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 2, 0)
+    k.jump.bg = k.jump:CreateTexture(nil, "BACKGROUND")
+    k.jump.bg:SetAllPoints(k.jump)
+    k.jump.bg:Hide()
     k.jump.icon = k.jump:CreateTexture(nil, "ARTWORK")
-    k.jump.icon:SetAllPoints(k.jump)
+    k.jump.icon:SetWidth(20)
+    k.jump.icon:SetHeight(20)
+    k.jump.icon:SetPoint("RIGHT", k.jump, "RIGHT", 0, 0)
+    k.jump.label = k.jump:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    k.jump.label:SetPoint("RIGHT", k.jump.icon, "LEFT", 0, 0)
+    k.jump.label:Hide()
     k.jump:SetScript("OnClick", function(self)
         if f.ScrollToBottom then f:ScrollToBottom() end
+        f.lcBelow = 0
         self:Hide()
     end)
     k.jump:SetScript("OnEnter", function(self)
@@ -370,7 +416,12 @@ function C:ThemeSkin(k)
         for _, d in ipairs(SLICES) do k.shadow[d[1]]:Hide() end
     end
 
-    if docked then p.well:Show(); p.wellLine:Show(); p.hint:Show() else p.well:Hide(); p.wellLine:Hide(); p.hint:Hide() end
+    if docked then
+        p.well:Show(); p.wellLine:Show(); p.hint:Show()
+    else
+        p.well:Hide(); p.wellLine:Hide(); p.hint:Hide(); p.pill:Hide(); p.wellBtn:Hide()
+    end
+    if p.pill.text.SetFont then p.pill.text:SetFont("Fonts\\FRIZQT__.TTF", 10, theme.flags) end
     p.well:SetTexture(col(theme.inset, 1))
     p.well:SetAlpha(math.min(1, op + 0.1) * ((theme.faceAlpha and 0.8) or 1))
     p.wellLine:SetTexture(col(theme.edge, (theme.edgeAlpha or 0.8)))
@@ -391,11 +442,16 @@ function C:ThemeSkin(k)
     k.bar.thumb:SetTexture(col(theme.accent, 0.85))
     if not self:Art(k.jump.icon, "Chat_Arrow", nil) then k.jump.icon:SetTexture(col(theme.accent, 0.9)) end
     k.jump.icon:SetVertexColor(1, 1, 1)
+    k.jump.bg:SetTexture(col(theme.inset, 0.9))
+    if k.jump.label.SetFont then k.jump.label:SetFont("Fonts\\FRIZQT__.TTF", 10, theme.flags) end
+    k.jump.label:SetTextColor(col(theme.accent))
+    k.jump.lcShown = nil
     if not self:Art(k.grip.icon, "Chat_Grip", nil) then k.grip.icon:SetTexture(col(theme.muted, 0.5)) end
 
     self:ApplyFont(f)
 
-    -- fading text
+    -- fading text: lines stay the stock two minutes (the "fade" setting is the window's chrome, see C:Update);
+    -- "Never" keeps them for good
     if f.lcFading == nil then
         f.lcFading = (f.GetFading and f:GetFading()) and true or false
         f.lcTimeVisible = f.GetTimeVisible and f:GetTimeVisible() or 120
@@ -405,7 +461,7 @@ function C:ThemeSkin(k)
         if f.SetFading then f:SetFading(false) end
     else
         if f.SetFading then f:SetFading(true) end
-        if f.SetTimeVisible then f:SetTimeVisible(tonumber(fade) or 20) end
+        if f.SetTimeVisible then f:SetTimeVisible(self.LINE_SECONDS) end
     end
 end
 
@@ -422,6 +478,9 @@ function C:SkinFrame(f)
     k.bar:SetFrameLevel(lvl + 1)
     k.jump:SetFrameLevel(lvl + 2)
     k.grip:SetFrameLevel(lvl + 2)
+    -- the well's button and label sit over the resting edit box (lvl + 3), which the im chat style keeps shown
+    k.panel.wellBtn:SetFrameLevel(lvl + 4)
+    k.panel.pill:SetFrameLevel(lvl + 5)
     local name = f:GetName() or ""
     for _, s in ipairs(stockTextures()) do suppress(_G[name .. s]) end
     for _, s in ipairs(STOCK_FRAMES) do suppress(_G[name .. s]) end
@@ -475,7 +534,9 @@ function C:SkinTab(tab, f)
         tab.lcDot:SetWidth(6)
         tab.lcDot:SetHeight(6)
         tab.lcDot:SetPoint("TOPRIGHT", tab, "TOPRIGHT", -3, -3)
-        tab.lcOwn = { [tab.lcBg] = true, [tab.lcLine] = true, [tab.lcDot] = true }
+        tab.lcBadge = tab:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        tab.lcBadge:Hide()
+        tab.lcOwn = { [tab.lcBg] = true, [tab.lcLine] = true, [tab.lcDot] = true, [tab.lcBadge] = true }
     end
     tab.lcFrame = f
     if not tab.lcOrig then
@@ -512,6 +573,14 @@ function C:SkinTab(tab, f)
     if tab.lcOrig.level == nil then tab.lcOrig.level = tab:GetFrameLevel() or 1 end
     if f and f.GetFrameLevel and (tab:GetFrameLevel() or 0) <= (f:GetFrameLevel() or 1) then tab:SetFrameLevel((f:GetFrameLevel() or 1) + 1) end
     local fs = tab.lcOrig.fs
+    -- the label's alpha is ours: Forever UI dims every tab region at its own rest (1 s after the mouse leaves),
+    -- which left our lit tabs without their names; ours follow the window's fade (the tab frame's alpha)
+    if fs and not fs.lcSetAlpha then
+        local origFsAlpha = fs.SetAlpha
+        fs.lcSetAlpha = function(a) if origFsAlpha then origFsAlpha(fs, a) end end
+        fs.SetAlpha = NOOP
+    end
+    if fs and fs.lcSetAlpha then fs.lcSetAlpha(1) end
     if fs and fs.SetFont then fs:SetFont("Fonts\\FRIZQT__.TTF", 10, self:Theme().flags) end
     if fs then
         fs:ClearAllPoints()
@@ -520,6 +589,7 @@ function C:SkinTab(tab, f)
         local w = (fs.GetStringWidth and fs:GetStringWidth() or 30) + 20
         if tab.conversationIcon then w = w + 14 end
         if w < 40 then w = 40 end
+        tab.lcBase = w
         tab.lcWant = w
         tab:SetWidth(w)
     end
@@ -534,6 +604,8 @@ function C:UnskinTab(tab)
     for _, n in ipairs(TAB_PARTS) do unsuppress(_G[tname .. n]) end
     if tab.glow then unsuppress(tab.glow) end
     tab.lcBg:Hide(); tab.lcLine:Hide(); tab.lcDot:Hide()
+    if tab.lcBadge then tab.lcBadge:Hide() end
+    if o.fs and o.fs.lcSetAlpha then o.fs.SetAlpha = nil; o.fs.lcSetAlpha = nil end
     tab:SetScript("OnClick", o.click)
     if o.level then tab:SetFrameLevel(o.level) end
     if o.w and o.w > 0 then tab:SetWidth(o.w) end
@@ -546,19 +618,64 @@ function C:UnskinTab(tab)
         loadPoints(fs, o.fsPoints)
     end
     tab.lcOrig = nil
-    tab.lcWant = nil
-    tab.lcUnread, tab.lcMention = nil, nil
+    tab.lcWant, tab.lcBase = nil, nil
+    tab.lcUnread, tab.lcMention, tab.lcCount = nil, nil, nil
 end
 
--- Unread dot (replaces the stock tab glow).
-function C:MarkUnread(f, mention)
+-- Unread badge (replaces the stock tab glow). counted: one more line (the stock alert hooks only mark it unread,
+-- so a line is never counted twice).
+function C:MarkUnread(f, mention, counted)
     if not self.active then return end
     local tab = tabOf(f)
     if not tab or not tab.lcBg then return end
     if f == self:Selected() and f:IsVisible() then return end
     tab.lcUnread = true
+    if counted then tab.lcCount = (tab.lcCount or 0) + 1 end
     if mention then tab.lcMention = true end
     self:StyleTab(tab, false)
+end
+
+-- The badge: the dot alone (unread, no count known), or the count in a small pill at the tab's right end; the tab
+-- grows to fit it (the tabs are chained, so the ones after it move along).
+local function styleBadge(tab, unread, theme)
+    local dot, badge = tab.lcDot, tab.lcBadge
+    local n = unread and (tab.lcCount or 0) or 0
+    local extra = 0
+    dot:ClearAllPoints()
+    if n > 0 and badge then
+        badge:SetText(n > 99 and "99+" or tostring(n))
+        if badge.SetFont then badge:SetFont("Fonts\\FRIZQT__.TTF", 9, "") end
+        local bw = math.max(13, floor((badge:GetStringWidth() or 6) + 7))
+        dot:SetWidth(bw)
+        dot:SetHeight(12)
+        dot:SetPoint("RIGHT", tab, "RIGHT", -4, 1)
+        badge:ClearAllPoints()
+        badge:SetPoint("CENTER", dot, "CENTER", 0, 0)
+        local r, g, b
+        if tab.lcMention then r, g, b = 1, 0.62, 0.18 else r, g, b = col(theme.accent) end
+        -- dark figures on a light badge, white on a dark one
+        if 0.3 * r + 0.59 * g + 0.11 * b > 0.5 then badge:SetTextColor(0.07, 0.07, 0.08) else badge:SetTextColor(1, 1, 1) end
+        badge:Show()
+        extra = bw + 3
+    else
+        dot:SetWidth(6)
+        dot:SetHeight(6)
+        dot:SetPoint("TOPRIGHT", tab, "TOPRIGHT", -3, -3)
+        if badge then badge:Hide() end
+    end
+    dot:SetAlpha(unread and 1 or 0)
+    if tab.lcBase then
+        local want = tab.lcBase + extra
+        if tab.lcWant ~= want then
+            tab.lcWant = want
+            tab:SetWidth(want)
+        end
+        local fs = (tab.lcOrig and tab.lcOrig.fs) or (tab.lcCentred and tab.label)
+        if fs then
+            fs:ClearAllPoints()
+            fs:SetPoint("CENTER", tab, "CENTER", -floor(extra / 2), 1)
+        end
+    end
 end
 
 function C:StyleTab(tab, selected, theme)
@@ -574,11 +691,11 @@ function C:StyleTab(tab, selected, theme)
     tab.lcLine:SetAlpha(selected and 1 or 0)
     if not self:Art(tab.lcDot, "Chat_Dot", nil) then tab.lcDot:SetTexture(1, 1, 1, 1) end
     if tab.lcMention then tab.lcDot:SetVertexColor(1, 0.62, 0.18) else tab.lcDot:SetVertexColor(col(theme.accent)) end
-    tab.lcDot:SetAlpha((tab.lcUnread and not selected) and 1 or 0)
+    styleBadge(tab, (tab.lcUnread and not selected) and true or false, theme)
     local fs = tab.lcOrig and tab.lcOrig.fs or tab.label
     if fs then
         if selected then fs:SetTextColor(col(theme.text)) else fs:SetTextColor(col(theme.muted)) end
-        if fs.SetAlpha then fs:SetAlpha(1) end
+        if fs.lcSetAlpha then fs.lcSetAlpha(1) elseif fs.SetAlpha then fs:SetAlpha(1) end
     end
 end
 
@@ -591,11 +708,12 @@ function C:RefreshTabs()
         if tab and tab.lcBg and tab.lcOrig then
             local selected
             if self:IsDocked(f) then selected = (f == sel) else selected = not self.worldView end
-            if selected then tab.lcUnread, tab.lcMention = nil, nil end
+            if selected then tab.lcUnread, tab.lcMention, tab.lcCount = nil, nil, nil end
             self:StyleTab(tab, selected, theme)
         end
     end
     if self.StyleWorldTab then self:StyleWorldTab(theme) end
+    self:RefreshInputLabels()
 end
 
 -- -- The tab strip ---------------------------------------------------------------------------------
@@ -685,6 +803,18 @@ function C:SkinEditBox(eb, main)
         end
         o.header = _G[(eb:GetName() or "") .. "Header"]
         if o.header and o.header.GetFont then o.headerFont = { o.header:GetFont() } end
+        -- the header ("Say:") is clickable while typing: the next channel (right-click: the one before)
+        if o.header and not eb.lcHeadBtn then
+            local hb = CreateFrame("Button", (eb:GetName() or "LeylineChatEdit") .. "LCHeader", eb)
+            hb:SetAllPoints(o.header)
+            hb:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+            hb:SetScript("OnClick", function(_, button)
+                if C.CycleChannel then C:CycleChannel(eb, button == "RightButton", true) end
+                if eb.SetFocus then eb:SetFocus() end
+            end)
+            hb:Hide()
+            eb.lcHeadBtn = hb
+        end
         eb.lcOrig = o
         if self.HookEditBox then self:HookEditBox(eb) end
     end
@@ -701,7 +831,12 @@ function C:SkinEditBox(eb, main)
     eb.lcBg:Show()
     eb.lcEdge:Show()
     eb.lcBg:SetTexture(col(theme.inset, 1))
-    eb.lcBg:SetAlpha(math.min(1, (mainSkin.opacity or 0.85) + 0.15))
+    -- its backdrop shows only while you type (C:StyleInputs): at rest the panel's well (which fades with the
+    -- window) stands in. The box hangs off the screen, so the panel's fade never reached these two textures;
+    -- with the im chat style (and Forever UI) the box stays shown at rest, and they were the grey bar left
+    -- across the bottom of a faded chat.
+    eb.lcBgA = math.min(1, (mainSkin.opacity or 0.85) + 0.15)
+    eb.lcInputA = nil
     eb.lcEdge:SetTexture(col(theme.accent, 0.55))
     eb:ClearAllPoints()
     eb:SetPoint("BOTTOMLEFT", ChatFrame1, "BOTTOMLEFT", -self.PAD.left + 4, -self.PAD.input + 4)
@@ -721,6 +856,8 @@ function C:UnskinEditBox(eb)
     for _, r in ipairs(o.regions) do unsuppress(r) end
     eb.lcBg:Hide()
     eb.lcEdge:Hide()
+    eb.lcInputA = nil
+    if eb.lcHeadBtn then eb.lcHeadBtn:Hide() end
     if eb.lcReparented and o.parent then eb:SetParent(o.parent); eb.lcReparented = nil end
     loadPoints(eb, o.points)
     if o.h and o.h > 0 then eb:SetHeight(o.h) end
@@ -754,6 +891,111 @@ function C:ColourHeader(eb)
         h:SetTextColor(r, g, b)
         if eb.SetTextColor then eb:SetTextColor(r, g, b) end
     end
+    self:RefreshInputLabels()
+end
+
+-- -- Where you are talking: the well's label ----------------------------------------------------------
+
+local CHAT_NAMES = {
+    SAY = "Say", YELL = "Yell", EMOTE = "Emote", PARTY = "Party", RAID = "Raid", RAID_WARNING = "Raid warning",
+    BATTLEGROUND = "Battleground", GUILD = "Guild", OFFICER = "Officer", WHISPER = "Whisper", BN_WHISPER = "Whisper",
+    AFK = "Away", DND = "Busy",
+}
+
+-- "Say", "Guild", "World", "Trade", "To Bob", with the channel's colour.
+function C:ChannelLabel(eb)
+    if not eb then return "Say", 1, 1, 1 end
+    local t = C.EditAttr(eb, "chatType") or "SAY"
+    local label = CHAT_NAMES[t]
+    local info = ChatTypeInfo and ChatTypeInfo[t]
+    if t == "CHANNEL" then
+        local id = tonumber(C.EditAttr(eb, "channelTarget")) or 0
+        local _, name = C.Try(GetChannelName, id)
+        if type(name) == "string" and name ~= "" then
+            label = string.match(name, "^(.-)%s+%-%s+.*$") or name      -- "Trade - City" -> "Trade"
+        else
+            label = "Channel " .. id
+        end
+        info = ChatTypeInfo and (ChatTypeInfo["CHANNEL" .. id] or info)
+    elseif t == "WHISPER" or t == "BN_WHISPER" then
+        local who = C.EditAttr(eb, "tellTarget")
+        if type(who) == "string" and who ~= "" then label = "To " .. who end
+    end
+    if not label then label = string.upper(string.sub(t, 1, 1)) .. string.lower(string.sub(t, 2)) end
+    local r, g, b = 1, 1, 1
+    if info then r, g, b = info.r or 1, info.g or 1, info.b or 1 end
+    if self.inked then r, g, b = C.InkRGB(r, g, b) end
+    return label, r, g, b
+end
+
+-- The edit box Enter opens from this window (the stock choice when the client has it).
+function C:InputFor(f)
+    local own = (f and f ~= self.worldFrame) and f or nil
+    local eb = ChatEdit_ChooseBoxForSend and C.Try(ChatEdit_ChooseBoxForSend, own)
+    if not eb and own and own.editBox and GetCVar and C.Try(GetCVar, "chatStyle") == "im" then eb = own.editBox end
+    return eb or C.MainEditBox()
+end
+
+function C:OpenInput(f)
+    self.lastActivity = now()
+    if ChatFrame_OpenChat then C.Try(ChatFrame_OpenChat, "", (f and f ~= self.worldFrame) and f or nil) end
+end
+
+function C:CycleInput(f, back)
+    self.lastActivity = now()
+    local eb = self:InputFor(f)
+    if eb and self.CycleChannel then self:CycleChannel(eb, back, true) end
+    self:RefreshInputLabels()
+end
+
+-- Each docked panel's well: the label (and the click-to-type button) at rest, nothing over the box while typing.
+function C:RefreshInputLabels()
+    if not self.active or not self.skinOn then return end
+    local typing = self:Typing()
+    for _, f in ipairs(self.skinned) do
+        local k = f.lcSkin
+        local p = k and k.panel
+        if p and p.pill then
+            if k.docked and not typing then
+                local label, r, g, b = self:ChannelLabel(self:InputFor(f))
+                local pill = p.pill
+                if pill.text:GetText() ~= label then pill.text:SetText(label) end
+                pill.text:SetTextColor(r, g, b)
+                pill.bg:SetTexture(r, g, b, 0.16)
+                pill:SetWidth(math.max(28, floor((pill.text:GetStringWidth() or 24) + 12)))
+                pill:Show()
+                p.wellBtn:Show()
+                p.hint:Show()
+            else
+                p.pill:Hide()
+                p.wellBtn:Hide()
+                if k.docked then p.hint:Hide() end
+            end
+        end
+    end
+end
+
+-- The edit boxes' own backdrop: shown while that box is typed in, gone at rest. Answers whether anyone is typing.
+function C:StyleInputs()
+    local typing = false
+    for _, eb in ipairs(C.EditBoxes()) do
+        if eb.lcBg and eb.lcOrig then
+            local on = (eb:IsVisible() and (eb == ACTIVE_CHAT_EDIT_BOX or (eb.HasFocus and eb:HasFocus()))) and true or false
+            if on then typing = true end
+            local a = on and 1 or 0
+            if eb.lcInputA ~= a then
+                eb.lcInputA = a
+                eb.lcBg:SetAlpha(on and (eb.lcBgA or 1) or 0)
+                eb.lcEdge:SetAlpha(a)
+                if eb.lcHeadBtn then if on then eb.lcHeadBtn:Show() else eb.lcHeadBtn:Hide() end end
+            end
+        end
+    end
+    if typing ~= self.wasTyping then
+        self.wasTyping = typing
+        self:RefreshInputLabels()
+    end
+    return typing
 end
 
 -- -- Menu on the tab bar -------------------------------------------------------------------------
@@ -902,6 +1144,10 @@ function C:Skin()
     self:AnchorDock()
     self:LayoutTabs()
     self:RefreshTabs()
+    self.wasTyping = nil
+    self:StyleInputs()
+    self:RefreshInputLabels()
+    self:SetChrome(self.chromeAlpha or 1)
 end
 
 -- Tabs sit on top of a thick frame (Wildwood's carved wood) rather than under it.
@@ -955,7 +1201,27 @@ end
 function C:UpdateScroll(f)
     local k = f.lcSkin
     if not k then return end
-    if C.AtBottom(f) then k.jump:Hide() elseif f:IsVisible() then k.jump:Show() end
+    if C.AtBottom(f) then
+        f.lcBelow = 0
+        k.jump:Hide()
+    elseif f:IsVisible() then
+        local j = k.jump
+        local n = f.lcBelow or 0
+        if j.lcShown ~= n then
+            j.lcShown = n
+            if n > 0 then
+                j.label:SetText((n > 99 and "99+" or tostring(n)) .. (n == 1 and " new line" or " new lines"))
+                j.label:Show()
+                j.bg:Show()
+                j:SetWidth(20 + floor((j.label:GetStringWidth() or 40) + 8))
+            else
+                j.label:Hide()
+                j.bg:Hide()
+                j:SetWidth(20)
+            end
+        end
+        j:Show()
+    end
     local hovered = over(k.panel)
     local n = f.GetNumMessages and f:GetNumMessages() or 0
     local size = tonumber(self:Get("fontSize")) or 13
@@ -984,6 +1250,8 @@ function C:SetChrome(a)
         if k then
             k.panel:SetAlpha(a)
             k.back:SetAlpha(a)
+            k.jump:SetAlpha(a)
+            k.bar:SetAlpha(a)
         end
         local tab = tabOf(f)
         if tab and tab.lcSetAlpha and tab.lcOrig then tab.lcSetAlpha(a) end
@@ -1002,13 +1270,13 @@ function C:Update(elapsed)
     self.ctxFrame = nil                          -- a stale chat note never outlives a frame
     if not self.active or not self.skinOn then return end
     local t = now()
-    if self:Typing() or self:Hovered() then self.lastActivity = t end
+    if self:StyleInputs() or self:Hovered() then self.lastActivity = t end
     for _, f in ipairs(self.skinned) do
         if f:IsVisible() then self:UpdateScroll(f) end
     end
     local fade = self:Get("fade")
     local target = 1
-    if fade ~= "never" and t - (self.lastActivity or 0) > (tonumber(fade) or 20) then target = 0 end
+    if fade ~= "never" and t - (self.lastActivity or 0) > (tonumber(fade) or 10) then target = 0 end
     local a = self.chromeAlpha or 1
     if a ~= target then
         local step = (elapsed or 0.05) * ((target > a) and 5 or 0.8)
@@ -1025,6 +1293,7 @@ function C:Update(elapsed)
         end
         if self:TabsDrifted() then self:LayoutTabs() end
         self:StockStamps()
+        self:RefreshInputLabels()
         if self.WorldTick then self:WorldTick() end
     end
 end

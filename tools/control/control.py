@@ -302,6 +302,7 @@ STEPS = {
     "discord-preview": ("tools/discord-leyline/Control - Discord preview.bat", "Discord redo preview: what would change on your server (read-only)", False),
     "discord-apply": ("tools/discord-leyline/Control - Discord do it.bat", "Discord redo, done: the server backed up to your Desktop, then the changes the preview showed", False),
     "discord-read": ("tools/discord-leyline/Control - Discord read.bat", "Discord read (read-only): the newest messages in every channel since the last read, into tools\\discord-leyline\\live\\inbox-latest.md on this PC", False),
+    "discord-bridge": ("tools/discord-leyline/Control - Discord bridge.bat", "Link World chat to Discord: finds #world-chat, installs the bridge on the server with the saved bot token and turns it on (token never shown)", False),
     "discord-check": ("tools/discord-leyline/Control - Discord bot settings.bat", "Discord bot settings: the channel ids for the website bot and the game bridge (read-only)", False),
     # Quick Claude edits (tools/control/quick.py, README.md "Quick edits"): control/quick/<id>.json names the files, their
     # sha256 and one deploy step (signin, addons, scripts or none); apply-check only checks it, apply checks it again and

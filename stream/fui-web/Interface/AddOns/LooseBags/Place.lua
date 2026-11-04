@@ -136,7 +136,8 @@ local function Acquire(index, parent)
 	local name = "LooseBagsItem" .. index
 	local templated
 	button, templated = C.Make("Button", name, parent, "ContainerFrameItemButtonTemplate")
-	button:SetSize(Logic.ICON, Logic.ICON)
+	-- SLOT wide in an ICON cell: snapped neighbours keep Forever UI's gap between slots.
+	button:SetSize(Logic.SLOT, Logic.SLOT)
 	button.clientClick = templated
 	if templated then
 		-- Right-click (use, and its modified clicks) stays the client's own; left clicks and drags are ours.
@@ -149,20 +150,12 @@ local function Acquire(index, parent)
 	if button.SetHighlightTexture then
 		button:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
 	end
-	local border = button:CreateTexture(nil, "OVERLAY")
-	border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
-	border:SetBlendMode("ADD")
-	border:SetPoint("CENTER", button, "CENTER", 0, 0)
-	border:SetSize(Logic.ICON * 1.8, Logic.ICON * 1.8)
-	border:SetAlpha(0.7)
-	border:Hide()
-	button.QualityBorder = border
-	local fresh = button:CreateTexture(nil, "OVERLAY")
-	fresh:SetTexture("Interface\\Buttons\\CheckButtonHilight")
-	fresh:SetBlendMode("ADD")
-	fresh:SetAllPoints(button)
-	fresh:Hide()
-	button.NewItemTexture = fresh
+	-- Forever UI's slot look (Skin.lua): grey outline tinted by quality, the new-item glow, the search veil.
+	local look = LB.Skin.Slot(button, name)
+	button.lbOutline = look.outline
+	button.QualityBorder = look.glow
+	button.NewItemTexture = look.fresh
+	button.SearchVeil = look.veil
 	button:SetScript("OnMouseDown", function(self, mouseButton)
 		LB.BeginPress(self, mouseButton)
 	end)
@@ -213,19 +206,7 @@ local function SetLocked(button, locked)
 end
 
 local function SetQuality(button, item)
-	local border = button.QualityBorder
-	local quality = item and item.quality
-	if not border or type(quality) ~= "number" or quality < 2 then
-		C.SetShown(border, false)
-		return
-	end
-	local r, g, b = C.Call("GetItemQualityColor", quality)
-	if type(r) ~= "number" then
-		border:Hide()
-		return
-	end
-	border:SetVertexColor(r, g, b)
-	border:Show()
+	LB.Skin.Quality(button, item and item.quality)
 end
 
 -- The standard bags' quest marks: "!" starts a quest, the gold border is an item a quest wants.
@@ -273,16 +254,23 @@ function LB.ApplySearch()
 	if not frame then
 		return
 	end
+	-- Search (name, kind or sub-kind, as Forever UI's bag search) and the bag row's hover (only that bag's items)
+	-- veil what does not match in black, as Forever UI's bags do.
 	local text = frame.searchText or ""
+	local onlyBag = LB.hoverBag
 	for index = 1, #LB.buttons do
 		local button = LB.buttons[index]
 		if button:IsShown() then
-			local name = button.itemName
-			local match = true
-			if text ~= "" and type(name) == "string" then
-				match = string.find(string.lower(name), text, 1, true) ~= nil
+			local match = Logic.SearchMatch(text, button.itemName, button.itemKind, button.itemSubKind)
+			if onlyBag ~= nil and button.bag ~= onlyBag then
+				match = false
 			end
-			button:SetAlpha(match and 1 or 0.25)
+			if button.SearchVeil then
+				C.SetShown(button.SearchVeil, not match)
+			else
+				button:SetAlpha(match and 1 or 0.25)
+			end
+			button.dimmed = not match
 		end
 	end
 end
@@ -308,44 +296,22 @@ function LB.Layout()
 	LB.inLayout = true
 	local frame = LB.Ensure()
 	local char = LB.Char()
-	local bar = 0
-	if char.collapsed then
-		frame.Settings:Hide()
-	else
-		frame.Settings:Show()
-		bar = Logic.SETTINGS_BAR
-	end
-	local packW = Logic.BAG_WIDTH
-	local packH = Logic.ICON
+	-- bar: the bag slots row when it shows. It adds to the window's height, never takes from the items' room.
+	local bar = LB.BarHeight(char)
 	local held = {}
-	local bodyCount = 0
 	for index = 1, #char.places do
 		local place = char.places[index]
 		if place.held then
 			held[#held + 1] = place
-		else
-			bodyCount = bodyCount + 1
-			local right = place.x + Logic.ICON / 2
-			local bottom = place.y + Logic.ICON / 2
-			if right > packW then
-				packW = right
-			end
-			if bottom > packH then
-				packH = bottom
-			end
 		end
 	end
 	local screenW, screenH = ScreenSize()
+	-- No size chosen with the grip: the window fits its items (grows as they come). A chosen size stays.
 	local frameW, frameH = Logic.KeepFrame(char)
-	if not frameW then
-		local sizeW, sizeH = screenW, screenH
-		if bodyCount > 0 then
-			sizeW, sizeH = nil, nil
-		end
-		frameW, frameH = Logic.LayoutSize(nil, nil, packW, packH, bodyCount, #held, bar, sizeW, sizeH)
-		if bodyCount > 0 then
-			Logic.RememberSize(char, frameW, frameH)
-		end
+	if frameW then
+		frameH = frameH + bar
+	else
+		frameW, frameH = Logic.AutoSize(char.places, bar, screenW, screenH, LB.zoneEdit and 5 or 1)
 	end
 	local contentW, contentH = Logic.ContentBox(frameW, frameH, bar, #held)
 	char.homes = Logic.ClampHomes(char.homes, contentW, contentH)
@@ -372,18 +338,16 @@ function LB.Layout()
 	end
 	local top = Logic.TOP_BASE + bar
 	frame:SetSize(frameW, frameH)
-	if frame.SetResizeBounds then
-		local minW, minH, maxW, maxH = Logic.ResizeLimits(bar, frameW, frameH, screenW, screenH)
-		frame:SetResizeBounds(minW, minH, maxW, maxH)
-		frame:SetSize(frameW, frameH)
-	end
+	local minW, minH, maxW, maxH = Logic.ResizeLimits(bar, frameW, frameH, screenW, screenH)
+	C.SetResizeBounds(frame, minW, minH, maxW, maxH)
+	LB.Skin.Corners(frame)
 	frame.Content:ClearAllPoints()
 	frame.Content:SetPoint("TOPLEFT", frame, "TOPLEFT", Logic.SIDE_INSET, -top)
 	frame.Content:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -Logic.SIDE_INSET, -top)
 	frame.Content:SetHeight(contentH)
 	frame.Strip:ClearAllPoints()
-	frame.Strip:SetPoint("TOPLEFT", frame.Content, "BOTTOMLEFT", 0, -Logic.GAP)
-	frame.Strip:SetPoint("TOPRIGHT", frame.Content, "BOTTOMRIGHT", 0, -Logic.GAP)
+	frame.Strip:SetPoint("TOPLEFT", frame.Content, "BOTTOMLEFT", 0, -Logic.STRIP_GAP)
+	frame.Strip:SetPoint("TOPRIGHT", frame.Content, "BOTTOMRIGHT", 0, -Logic.STRIP_GAP)
 	frame.Strip:SetHeight(holding.height > 0 and holding.height or Logic.ICON)
 	if #held > 0 then
 		frame.Strip:Show()
@@ -421,6 +385,8 @@ function LB.Layout()
 		button.count = item and item.count or 0
 		button.place = place
 		button.itemName = item and item.name or nil
+		button.itemKind = item and item.kind or nil
+		button.itemSubKind = item and item.subKind or nil
 		if item and item.icon then
 			SetIcon(button, item.icon)
 		end
@@ -450,6 +416,9 @@ function LB.Layout()
 	LB.ApplySearch()
 	if LB.RefreshLock then
 		LB.RefreshLock()
+	end
+	if LB.UpdateFree then
+		LB.UpdateFree()
 	end
 	LB.inLayout = false
 end

@@ -74,7 +74,7 @@ C.THEMES = {
 C.DEFAULTS = {
     enabled = true,
     theme = "slate", opacity = 85, fontSize = 13,
-    timestamps = "24", channelNames = "short", fade = "20",
+    timestamps = "24", channelNames = "short", fade = "10",
     classColors = true, links = true, collapse = true, goldFilter = false,
     mentions = true, mentionSound = true, typedHistory = true,
     wheel = true, arrows = true, sticky = true, history = true, alerts = true,
@@ -102,7 +102,8 @@ C.SCHEMA = {
         { key = "channelNames", label = "Channel names", type = "choice",
           choices = choices({ { "short", "Short ([G], [T])" }, { "full", "Full names" } }) },
         { key = "fade", label = "Fade when quiet", type = "choice",
-          choices = choices({ { "20", "After 20 s" }, { "60", "After a minute" }, { "never", "Never" } }) },
+          sub = "The window's frame, tabs and input line fade away; hover or a new line brings them back. Lines stay two minutes.",
+          choices = choices({ { "10", "After 10 s" }, { "20", "After 20 s" }, { "60", "After a minute" }, { "never", "Never" } }) },
         { key = "classColors", label = "Class-coloured names", sub = "Names take their class colour once you have seen the player (group, guild, friends, target, /who)." },
         { key = "links", label = "Clickable web links", sub = "Web addresses in chat become links that open a box you can copy them from." },
         { key = "collapse", label = "Collapse repeats", sub = "The same line said again shows as \"\195\1512\", \"\195\1513\" instead of filling the window." },
@@ -603,9 +604,11 @@ function C:Add(frame, orig, msg, r, g, b, id, hold)
     self:Touch(frame, mention)
 end
 
--- A new line woke the window (fade timer) and marks its tab when you are on another one.
+-- A new line woke the window (fade timer), counts on its tab when you are on another one, and counts as "new below"
+-- when you have scrolled up to read.
 function C:Touch(frame, mention)
     self.lastActivity = now()
+    if frame and frame.lcSkin and not C.AtBottom(frame) then frame.lcBelow = (frame.lcBelow or 0) + 1 end
     if mention then
         frame.lcMention = true
         if self:Get("mentionSound") and now() - self.mentionAt > 4 then
@@ -613,7 +616,7 @@ function C:Touch(frame, mention)
             if PlaySound then C.Try(PlaySound, "MapPing") end
         end
     end
-    if self.MarkUnread then self:MarkUnread(frame, mention) end
+    if self.MarkUnread then self:MarkUnread(frame, mention, true) end
 end
 
 function C:HookFrame(f)

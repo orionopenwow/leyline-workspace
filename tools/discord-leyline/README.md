@@ -1,7 +1,7 @@
 # Leyline Discord: the launch layout (you run it, from Leyline Control)
 
 This sets your Discord server to the launch layout in [docs/DISCORD-PLAN.md](../../docs/DISCORD-PLAN.md) (3 Nov):
-**13 channels in five categories**, each dressed `<emoji>︱<name>` (`👋︱welcome`), with a clear topic, the right
+**14 channels in five categories**, each dressed `<emoji>︱<name>` (`👋︱welcome`), with a clear topic, the right
 permissions, and pinned guides. It is your server as it is today, kept and tidied: the channels you have are
 **renamed and moved, so their history stays**; one already right is left alone. The server's name, icon and banner
 are never touched. You run it from your own PC. Claude never connects to Discord and never posts anything.

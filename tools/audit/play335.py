@@ -61,6 +61,14 @@ SMSG_LOGOUT_COMPLETE = w.SMSG_LOGOUT_COMPLETE
 CHAR_DELETE_SUCCESS = 0x47
 CHAT_SYSTEM, CHAT_SAY, CHAT_MONSTER_SAY = 0x00, 0x01, 0x0C
 LANG_UNIVERSAL = 0
+# What a real client speaks in /say: its faction's language. The world server refuses LANG_UNIVERSAL from a player as a
+# hacking attempt before any command or script sees the line (3 Nov: the audit's .bug and .wu "got no answer").
+LANG_ORCISH, LANG_COMMON = 1, 7
+HORDE_RACES = {2, 5, 6, 8, 10}
+
+
+def say_language(race) -> int:
+    return LANG_ORCISH if race in HORDE_RACES else LANG_COMMON
 MOVE_FORWARD = 0x1
 
 # UpdateFields.h, 3.3.5a
@@ -448,7 +456,8 @@ class Session:
             self.closed = e
 
     async def say(self, text: str):
-        self.send(CMSG_MESSAGECHAT, struct.pack("<II", CHAT_SAY, LANG_UNIVERSAL) + text.encode() + b"\x00")
+        lang = say_language(getattr(self, "race", None))
+        self.send(CMSG_MESSAGECHAT, struct.pack("<II", CHAT_SAY, lang) + text.encode() + b"\x00")
         await self.flush()
 
     async def char_enum(self, timeout=20):
@@ -478,9 +487,11 @@ class Session:
             raise w.WowError("no answer to character delete")
         return ev[1][0]
 
-    async def enter(self, guid, timeout=60) -> dict:
+    async def enter(self, guid, timeout=60, race=None) -> dict:
         at = self.mark()
         self.me = guid
+        if race is not None:
+            self.race = race
         self.send(w.CMSG_PLAYER_LOGIN, struct.pack("<Q", guid))
         await self.flush()
         ev = await self.wait(lambda op, b: op in (w.SMSG_LOGIN_VERIFY_WORLD, w.SMSG_CHARACTER_LOGIN_FAILED), timeout, at)

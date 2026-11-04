@@ -82,7 +82,7 @@ async def new_char(s: p.Session):
 async def level_one(ctx, rec, s: p.Session, c):
     t = time.time()
     start = s.mark()
-    pos = await s.enter(c["guid"])
+    pos = await s.enter(c["guid"], race=c.get("race", RACE))
     rec.add(F, "Enter the world", PASS, f"map {pos['map']}, zone {c['zone']}", secs=time.time() - t)
 
     ev = await s.wait(lambda op, b: op == p.SMSG_GOSSIP_MESSAGE, 10, start)
@@ -204,7 +204,7 @@ async def boost(ctx, rec, s: p.Session):
         rec.add(F, "Boost to level 80 (a second test character)", FAIL, f"character create code {code:#x}", ACT)
         return
     start = s.mark()
-    await s.enter(c["guid"])
+    await s.enter(c["guid"], race=c.get("race", RACE))
     ev = await s.wait(lambda op, b: op == p.SMSG_GOSSIP_MESSAGE, 10, start)
     if not ev:
         at = s.mark()

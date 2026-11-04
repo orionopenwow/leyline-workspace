@@ -24,12 +24,18 @@ print = function() end
 local realm = "Wrath Unleashed"
 WrathUnleashedUI = { InDen = function() return realm == "Your Den" end }
 local aa, mini, side = frame("ma_bgframe"), frame("MiniGMFrame"), frame("ma_minibgframe")
+local mmButton, mmOther = frame("LibDBIcon10_AzerothAdmin"), frame("LibDBIcon10_Questie")
+Minimap = frame("Minimap")
+function Minimap:GetChildren() return mmButton, mmOther end
+function frame_name(f, n) f.GetName = function() return n end end
+frame_name(mmButton, "LibDBIcon10_AzerothAdmin"); frame_name(mmOther, "LibDBIcon10_Questie")
 dofile(file)
-local ev = frames[#frames]
+local ev; for _, f in ipairs(frames) do if f.events.PLAYER_ENTERING_WORLD then ev = f end end
 ev.OnEvent(ev, "PLAYER_ENTERING_WORLD")
 check("official realm: AzerothAdmin hidden", not aa.shown)
 check("official realm: MiniGM hidden", not mini.shown)
 check("official realm: side bar hidden", not side.shown)
+check("official realm: its minimap button hidden, another addon's kept", not mmButton.shown and mmOther.shown)
 side:Show()
 check("shown again by the addon: hidden at once", not side.shown)
 SlashCmdList.WUGMBAR("")

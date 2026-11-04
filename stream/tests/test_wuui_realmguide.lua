@@ -101,6 +101,8 @@ check("a round minimap button with the Leyline mark and the tracking border", b 
 b:Fire("OnClick")
 local win = _G.LeylineRealmGuide
 check("click opens the guide on Welcome", win and win:IsShown() and R.page == 1 and win.heading.text:find("Welcome", 1, true))
+check("rounded corners from our own corner texture (four, flipped into place), no square backdrop", win.edRoundPanel
+    and (function() local n = 0; for _, c in ipairs(created) do if c.parent == win and c.texture and c.texture:find("round%-corner") then n = n + 1 end end return n == 8 end)())
 check("the page shows its commands in gold", win.body.text:find("|cffe0a43a.wu|r", 1, true) ~= nil)
 check("Esc closes it (UISpecialFrames)", (function() for _, n in ipairs(UISpecialFrames) do if n == "LeylineRealmGuide" then return true end end end)())
 R.Go("commands")

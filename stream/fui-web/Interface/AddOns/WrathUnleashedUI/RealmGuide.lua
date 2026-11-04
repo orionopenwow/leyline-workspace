@@ -11,6 +11,8 @@ if not W then return end
 local R = { page = 1 }
 local WIN_W, WIN_H, LIST_W, PAD = 680, 440, 176, 14
 local GOLD = "|cffe0a43a"
+local MUTED = "|cff999ea8"
+local EDGE_GOLD = { 0.878, 0.643, 0.227, 0.55 }   -- the rounded edge: the accent, soft
 
 local function S() return W.Style end
 local function db()
@@ -43,7 +45,7 @@ function R.Index(key)
     return nil
 end
 
-local function cmdLine(c) return GOLD .. c[1] .. "|r  " .. c[2] end
+local function cmdLine(c) return GOLD .. c[1] .. "|r   " .. MUTED .. c[2] .. "|r" end
 
 -- The body text of a page.
 function R.Text(p)
@@ -59,7 +61,7 @@ function R.Text(p)
     if p.commands and #p.commands > 0 then
         local c = {}
         for _, x in ipairs(p.commands) do c[#c + 1] = cmdLine(x) end
-        t = t .. "\n\n" .. table.concat(c, "\n")
+        t = t .. "\n\n" .. MUTED .. "COMMANDS|r\n" .. table.concat(c, "\n")
     end
     return t
 end
@@ -94,7 +96,8 @@ local function build()
     win:RegisterForDrag("LeftButton")
     win:SetScript("OnDragStart", win.StartMoving)
     win:SetScript("OnDragStop", win.StopMovingOrSizing)
-    S().EdPanel(win, 0.95, S().ED.panel2)
+    -- rounded corners in every client (owner 4 Nov 14:18), a soft gold edge
+    if S().RoundPanel then S().RoundPanel(win, S().ED.panel2, EDGE_GOLD, 14, 1) else S().EdPanel(win, 0.95, S().ED.panel2) end
     if UISpecialFrames then tinsert(UISpecialFrames, "LeylineRealmGuide") end
     win.mark = win:CreateTexture(nil, "ARTWORK")
     win.mark:SetTexture(S().MARK)
@@ -112,6 +115,13 @@ local function build()
     end
     local x0 = PAD + LIST_W + PAD
     local bw = WIN_W - x0 - PAD
+    -- a hairline under the title and one between the list and the page
+    local function line(c) local t = win:CreateTexture(nil, "ARTWORK"); t:SetTexture(S().WHITE); t:SetVertexColor(c[1], c[2], c[3], c[4]); return t end
+    win.rule = line({ 0.878, 0.643, 0.227, 0.30 })
+    win.rule:SetPoint("TOPLEFT", win, "TOPLEFT", PAD, -34); win.rule:SetPoint("TOPRIGHT", win, "TOPRIGHT", -PAD, -34); win.rule:SetHeight(1)
+    win.split = line({ 1, 1, 1, 0.08 })
+    win.split:SetPoint("TOPLEFT", win, "TOPLEFT", PAD + LIST_W + PAD / 2, -44); win.split:SetPoint("BOTTOMLEFT", win, "BOTTOMLEFT", PAD + LIST_W + PAD / 2, 14)
+    win.split:SetWidth(1)
     win.icon = win:CreateTexture(nil, "ARTWORK")
     win.icon:SetWidth(28); win.icon:SetHeight(28)
     win.icon:SetPoint("TOPLEFT", x0, -40)

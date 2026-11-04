@@ -345,6 +345,59 @@ S.ED_EDGE = { 0.62, 0.64, 0.70, 0.55 }
 local ROUND = { bgFile = S.WHITE, edgeFile = S.ROUND_EDGE, tile = false, edgeSize = 12, insets = { left = 3, right = 3, top = 3, bottom = 3 } }
 local ROUND_SMALL = { bgFile = S.WHITE, edgeFile = S.ROUND_EDGE, tile = false, edgeSize = 9, insets = { left = 2, right = 2, top = 2, bottom = 2 } }
 S.ROUND, S.ROUND_SMALL = ROUND, ROUND_SMALL
+-- A rounded panel drawn from our own corner texture (Media\round-corner.tga, a white quarter disc tinted by vertex
+-- colour), so the corners are round in every client: the browser client drew the tooltip-edge backdrop square
+-- (owner 4 Nov 14:18: "rounded corners" on the guide). Two layers: the edge colour full size, the fill inset by
+-- `edge` px. Returns { set = function(fill, edgeColour) } to recolour.
+S.CORNER = MEDIA .. "round-corner"
+local function roundShape(frame, layer, c, r, inset)
+    local parts = {}
+    local function tex()
+        local t = frame:CreateTexture(nil, layer)
+        parts[#parts + 1] = t
+        return t
+    end
+    -- four corners: texcoords flip the top-left quarter disc into place
+    local corners = {
+        { "TOPLEFT", inset, -inset, 0, 1, 0, 1 },
+        { "TOPRIGHT", -inset, -inset, 1, 0, 0, 1 },
+        { "BOTTOMLEFT", inset, inset, 0, 1, 1, 0 },
+        { "BOTTOMRIGHT", -inset, inset, 1, 0, 1, 0 },
+    }
+    for _, k in ipairs(corners) do
+        local t = tex()
+        t:SetTexture(S.CORNER)
+        t:SetTexCoord(k[4], k[5], k[6], k[7])
+        t:SetWidth(r); t:SetHeight(r)
+        t:SetPoint(k[1], frame, k[1], k[2], k[3])
+    end
+    -- the cross: a full-height middle band and the left and right bands between the corners
+    local mid = tex(); mid:SetTexture(S.WHITE)
+    mid:SetPoint("TOPLEFT", frame, "TOPLEFT", inset + r, -inset)
+    mid:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -inset - r, inset)
+    local left = tex(); left:SetTexture(S.WHITE)
+    left:SetPoint("TOPLEFT", frame, "TOPLEFT", inset, -inset - r)
+    left:SetPoint("BOTTOMRIGHT", frame, "BOTTOMLEFT", inset + r, inset + r)
+    local right = tex(); right:SetTexture(S.WHITE)
+    right:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -inset, -inset - r)
+    right:SetPoint("BOTTOMLEFT", frame, "BOTTOMRIGHT", -inset - r, inset + r)
+    for _, t in ipairs(parts) do t:SetVertexColor(c[1], c[2], c[3], c[4] or 1) end
+    return parts
+end
+function S.RoundPanel(frame, fill, edgeColour, radius, edge)
+    radius, edge = radius or 12, edge or 1
+    if frame.SetBackdrop then pcall(frame.SetBackdrop, frame, nil) end
+    local p = {}
+    p.edge = roundShape(frame, "BACKGROUND", edgeColour or S.ED_EDGE, radius, 0)   -- 3.3.5 has no sublevels:
+    p.fill = roundShape(frame, "BORDER", fill or ED.panel2, radius - edge, edge)       -- the fill one layer up
+    function p.set(f, e)
+        for _, t in ipairs(p.fill) do if f then t:SetVertexColor(f[1], f[2], f[3], f[4] or 1) end end
+        for _, t in ipairs(p.edge) do if e then t:SetVertexColor(e[1], e[2], e[3], e[4] or 1) end end
+    end
+    frame.edRoundPanel = p
+    return p
+end
+
 function S.EdPanel(frame, alpha, fill)
     local c = fill or ED.panel
     c = { c[1], c[2], c[3], alpha or c[4] }

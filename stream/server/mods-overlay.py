@@ -28,7 +28,7 @@ import sys
 
 STATE = ".overlay-mods"
 WWW_KEY = "mods_overlay"
-RESERVED = {"foreverui", "wrathunleashedui"}
+RESERVED = {"foreverui", "wrathunleashedui", "loosebags", "leylinechat"}
 NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
 
 

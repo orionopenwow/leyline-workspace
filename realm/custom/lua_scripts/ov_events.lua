@@ -11,11 +11,12 @@
 --       Hide and seek (OV_EVENTS_HIDE): written by us from how the familiar event is described (a creature hides
 --         somewhere in Dalaran, hints come every few minutes, the first player to reach it and talk to it wins); none
 --         of that script's code. The hider is automatic (one of the SPOTS below) or a GM's: .events hide here [hint].
+--       Invasion (OV_EVENTS_INVASION): undead waves beside a level 80 in Northrend; .events join; most kills wins.
 --   * A weekly board of wins: .events top (characters.ov_event_wins). Bots never win.
 --   * Announcements are rate-limited (ANNOUNCE_GAP_S apart, ANNOUNCE_PER_HOUR at most); .events off mutes them for you.
 --
--- Player commands: .events (what's on next), .events top, .events off | on, .ans <answer>.
--- GM (rank 2+): .events trivia | hide [here [hint]] | stop.
+-- Player commands: .events (what's on next), .events top, .events off | on, .events join (an invasion), .ans <answer>.
+-- GM (rank 2+): .events trivia | hide [here [hint]] | invade | stop.
 -- Env (all off unless set; realm/profiles/main.env turns them on): OV_EVENTS, OV_EVENTS_STOCK, OV_EVENTS_TRIVIA,
 --   OV_EVENTS_HIDE; OV_EVENTS_TRIVIA_EVERY_H (2) and _AT (15: minute), OV_EVENTS_HIDE_EVERY_H (2), _OFFSET_H (1) and
 --   _AT (45); OV_EVENTS_LEAD_MIN (5: the "starting soon" lead); OV_EVENTS_MIN_PLAYERS (1: real players online for
@@ -330,6 +331,134 @@ local function hideTick()
     end
 end
 
+-- invasion (our own; owner 4 Nov, the Wrath+ sprint): undead land beside a level 80 out in Northrend --------------------------------
+-- Every few hours, when a real level 80 is out in the open in Northrend (not Dalaran, not an instance, not a battleground),
+-- three waves of invaders land where that player stands, then their captain. Anyone 70+ joins with .events join (a
+-- teleport, out of combat, from the open world). The most kills wins the week's board line (the captain counts 5);
+-- bragging rights only, like the other events. Whatever is still standing at the end leaves.
+-- Creature entries: the stock invasion's undead (TODO(check in game): 16299 shocktrooper, 16141 ghoul, 16298 soldier,
+-- 16143 captain), made level 80 with more health here; OV_EVENTS_INVADERS / OV_EVENTS_INVASION_BOSS change them.
+local INVASION_S = 900
+local WAVES, PER_WAVE, WAVE_GAP_S = 3, 5, 90
+local ADD_HP, BOSS_HP = 30000, 400000
+local JOIN_LEVEL = 70
+local NORTHREND = { [3537] = "Borean Tundra", [495] = "Howling Fjord", [65] = "Dragonblight", [394] = "Grizzly Hills",
+    [66] = "Zul'Drak", [3711] = "Sholazar Basin", [67] = "the Storm Peaks", [210] = "Icecrown", [2817] = "Crystalsong Forest" }
+local function entries()
+    local out = {}
+    for n in (os.getenv("OV_EVENTS_INVADERS") or "16299,16141,16298"):gmatch("%d+") do out[#out + 1] = tonumber(n) end
+    return out
+end
+local BOSS = math.floor(num("OV_EVENTS_INVASION_BOSS", 16143))
+
+-- A level 80 out in the open in Northrend, and the zone's name (nil when nobody fits).
+function E.invasionSpot()
+    for _, p in ipairs(players()) do
+        local zone = try(p, "GetZoneId")
+        local map = try(p, "GetMap")
+        local inside = map and (try(map, "IsDungeon") or try(map, "IsBattleground") or try(map, "IsArena") or try(map, "IsRaid"))
+        if try(p, "GetMapId") == DALARAN_MAP and (try(p, "GetLevel") or 0) >= 80 and NORTHREND[zone] and not inside
+            and not E.inDalaran(p) and not try(p, "IsDead") and not try(p, "IsFlying") and not try(p, "IsInFlight")
+            and not try(p, "IsTaxiFlying") then
+            return { p:GetX(), p:GetY(), p:GetZ(), p:GetO(), NORTHREND[zone] }
+        end
+    end
+    return nil
+end
+
+local function spawnOne(a, entry, hp, dx, dy)
+    if not PerformIngameSpawn then return nil end
+    local sp = a.spot
+    local ok, c = pcall(PerformIngameSpawn, 1, entry, DALARAN_MAP, 0, sp[1] + dx, sp[2] + dy, sp[3] + 1, sp[4], false,
+        INVASION_S * 1000)
+    if not ok or not c then return nil end
+    try(c, "SetLevel", 80)
+    try(c, "SetMaxHealth", hp)
+    try(c, "SetHealth", hp)
+    local guid = try(c, "GetGUID")
+    if guid then a.mobs[#a.mobs + 1] = guid end
+    return c
+end
+
+function E.wave(a)
+    a.wave = a.wave + 1
+    local list = entries()
+    if a.wave > WAVES then
+        a.boss = true
+        spawnOne(a, BOSS, BOSS_HP, 0, 0)
+        return broadcast("The invaders' captain has landed in " .. a.spot[5] .. ". Bring it down! (|cffffff00.events join|r)", "event")
+    end
+    for i = 1, PER_WAVE do
+        local ang = (i / PER_WAVE) * 2 * math.pi
+        spawnOne(a, list[((i - 1) % #list) + 1], ADD_HP, 12 * math.cos(ang), 12 * math.sin(ang))
+    end
+    broadcast(string.format("Invasion in %s: wave %d of %d is here. |cffffff00.events join|r to fight.", a.spot[5], a.wave, WAVES), "event")
+end
+
+local function invasion(by)
+    if E.active then return false end
+    local spot = E.invasionSpot()
+    if not spot then return false end
+    E.active = { kind = "invasion", spot = spot, started = now(), wave = 0, mobs = {}, kills = {}, nextWave = now() + 30 }
+    broadcast("Invasion! Undead are landing in " .. spot[5] .. " in 30 seconds. Level 70+: |cffffff00.events join|r takes "
+        .. "you there. Most kills wins bragging rights.", "event")
+    local d = rawget(_G, "OV_DISCORD_EVENT")
+    if type(d) == "function" then pcall(d, "Invasion in " .. spot[5] .. " on Wrath Unleashed! Log in and type .events join") end
+    return true
+end
+
+local function invasionEnd(text)
+    local a = E.active
+    if a and a.mobs and rawget(_G, "GetMapById") then
+        local ok, m = pcall(GetMapById, DALARAN_MAP, 0)
+        for _, guid in ipairs(a.mobs) do
+            local c = ok and m and try(m, "GetWorldObject", guid)
+            if c and not try(c, "IsDead") then try(c, "DespawnOrUnsummon", 0) end
+        end
+    end
+    local best, w = 0, nil
+    for _, k in pairs(a and a.kills or {}) do
+        if k.n > best or (k.n == best and w and k.name < w.name) then best, w = k.n, k end
+    end
+    if w then addWin(w.player, "invade") end
+    finish(text .. (w and string.format(" Top fighter: %s (%d).", w.name, w.n) or ""))
+end
+
+local function invasionTick()
+    local a = E.active
+    local t = now()
+    if t - a.started >= INVASION_S then return invasionEnd("The invaders pulled back.") end
+    if not a.boss and a.nextWave and t >= a.nextWave then
+        E.wave(a)
+        a.nextWave = (a.wave <= WAVES) and (t + WAVE_GAP_S) or nil
+    end
+end
+
+local function onKill(event, killer, killed)
+    local a = E.active
+    if not ON or not a or a.kind ~= "invasion" or not killer or isBot(killer) then return end
+    local guid, mine = try(killed, "GetGUID"), false
+    for _, g in ipairs(a.mobs) do if g == guid then mine = true end end
+    if not mine then return end
+    local isBoss = try(killed, "GetEntry") == BOSS
+    local k = a.kills[killer:GetGUIDLow()] or { n = 0, name = killer:GetName() }
+    k.n, k.player = k.n + (isBoss and 5 or 1), killer
+    a.kills[killer:GetGUIDLow()] = k
+    if isBoss then invasionEnd("The captain is down. " .. a.spot[5] .. " is safe!") end
+end
+
+local function join(p)
+    local a = E.active
+    if not a or a.kind ~= "invasion" then return say(p, "No invasion right now. |cffffff00.events|r shows the next one.") end
+    if (try(p, "GetLevel") or 0) < JOIN_LEVEL then return say(p, "Invasions are for level " .. JOIN_LEVEL .. " and up.") end
+    local map = try(p, "GetMap")
+    if try(p, "IsInCombat") or (map and (try(map, "IsDungeon") or try(map, "IsBattleground") or try(map, "IsArena"))) then
+        return say(p, "Leave combat (and any dungeon or battleground) first.")
+    end
+    local sp = a.spot
+    try(p, "Teleport", DALARAN_MAP, sp[1] + 6, sp[2] + 6, sp[3] + 1, sp[4])
+end
+
 -- stock events from game_event ---------------------------------------------------------------------------------------------
 -- Our own names (plain words, no brand); anything else periodic is left out. Holidays use the row's description.
 local STOCK_NAMES = {
@@ -393,6 +522,10 @@ function E.upcoming(t)
         list[#list + 1] = { kind = "hide", name = "Hide and seek in Dalaran", start = nextOwn(num("OV_EVENTS_HIDE_EVERY_H", 2),
             num("OV_EVENTS_HIDE_OFFSET_H", 1), num("OV_EVENTS_HIDE_AT", 45), t) }
     end
+    if flag("OV_EVENTS_INVASION") then
+        list[#list + 1] = { kind = "invasion", name = "An invasion in Northrend", start = nextOwn(num("OV_EVENTS_INVASION_EVERY_H", 3),
+            num("OV_EVENTS_INVASION_OFFSET_H", 2), num("OV_EVENTS_INVASION_AT", 30), t) }
+    end
     if flag("OV_EVENTS_STOCK") then
         local seen = {}
         for _, s in ipairs(E.stock) do
@@ -431,6 +564,8 @@ function E.fast()
         end
     elseif a.kind == "hide" then
         hideTick()
+    elseif a.kind == "invasion" then
+        invasionTick()
     end
 end
 
@@ -449,7 +584,7 @@ function E.tick()
         elseif e.kind ~= "stock" and not E.soon["go:" .. key] then
             E.soon["go:" .. key] = true
             if enough and not E.active then
-                if e.kind == "trivia" then trivia() else hide() end
+                if e.kind == "trivia" then trivia() elseif e.kind == "invasion" then invasion() else hide() end
             end
         end
     end
@@ -465,7 +600,8 @@ end
 local function showNext(p)
     if not ON then return say(p, "Events are off on this realm.") end
     local t, lines = now(), {}
-    if E.active then lines[#lines + 1] = (E.active.kind == "trivia" and "Trivia" or "Hide and seek") .. " is on now" end
+    local NOW = { trivia = "Trivia", hide = "Hide and seek", invasion = "An invasion (|cffffff00.events join|r)" }
+    if E.active then lines[#lines + 1] = (NOW[E.active.kind] or "An event") .. " is on now" end
     for i, e in ipairs(E.upcoming(t)) do
         if i > 3 then break end
         lines[#lines + 1] = e.name:gsub(":.*$", "") .. " " .. whenText(e.start, t)
@@ -492,13 +628,18 @@ local function onCommand(event, p, command)
     elseif sub == "top" then showTop(p)
     elseif sub == "off" then E.muted[p:GetGUIDLow()] = true; say(p, "Event announcements off for you (|cffffff00.events on|r turns them back on).")
     elseif sub == "on" then E.muted[p:GetGUIDLow()] = nil; say(p, "Event announcements on.")
+    elseif sub == "join" then join(p)
+    elseif gm and sub == "invade" then
+        if E.active then say(p, "An event is already running (|cffffff00.events stop|r).")
+        elseif not invasion(p) then say(p, "No level 80 is out in the open in Northrend right now.") end
     elseif gm and sub == "trivia" then if not trivia(p) then say(p, "An event is already running (|cffffff00.events stop|r).") end
     elseif gm and sub == "hide" then
         local here, hint = arg:match("^(here)%s*(.*)$")
         if here and not E.inDalaran(p) then say(p, "Stand in Dalaran to hide it here.")
         elseif not hide(p, here ~= nil, hint) then say(p, "An event is already running (|cffffff00.events stop|r).") end
     elseif gm and sub == "stop" then
-        if E.active then finish("The event was stopped by staff.") else say(p, "Nothing is running.") end
+        if E.active and E.active.kind == "invasion" then invasionEnd("The event was stopped by staff.")
+        elseif E.active then finish("The event was stopped by staff.") else say(p, "Nothing is running.") end
     else showNext(p) end
     return false
 end
@@ -525,7 +666,7 @@ if ON then
     E.loadStock()
     -- a tip for ov_qol.lua's login tips (they take turns)
     OV_EXTRA_TIPS = rawget(_G, "OV_EXTRA_TIPS") or {}
-    table.insert(OV_EXTRA_TIPS, { text = "|cffffff00.events|r shows what's on next: trivia, hide and seek, the arena chest, fishing." })
+    table.insert(OV_EXTRA_TIPS, { text = "|cffffff00.events|r shows what's on next: trivia, hide and seek, invasions, the arena chest, fishing." })
     if CreateLuaEvent then
         CreateLuaEvent(function() E.tick() end, TICK_MS, 0)
         CreateLuaEvent(function() E.fast() end, FAST_MS, 0)
@@ -533,6 +674,7 @@ if ON then
     end
     RegisterServerEvent(34, onGameEventStart)      -- GAME_EVENT_START
     RegisterPlayerEvent(18, onChat)                -- PLAYER_EVENT_ON_CHAT
+    RegisterPlayerEvent(7, onKill)                 -- PLAYER_EVENT_ON_KILL_CREATURE (invasion kills)
     if RegisterCreatureGossipEvent then RegisterCreatureGossipEvent(HIDER, 1, onGossip) end   -- GOSSIP_EVENT_ON_HELLO
 end
 RegisterPlayerEvent(42, onCommand)                 -- PLAYER_EVENT_ON_COMMAND (says "off" when the clock is off)
@@ -542,4 +684,6 @@ E.trivia, E.hide, E.answer, E.rightAnswer, E.norm, E.broadcast, E.found, E.onCom
     trivia, hide, answer, rightAnswer, norm, broadcast, found, onCommand, onChat, onGossip
 E.TICK_MS, E.FAST_MS, E.HIDE_S, E.HINT1_S, E.HINT2_S, E.QUESTION_S, E.PAUSE_S = TICK_MS, FAST_MS, HIDE_S, HINT1_S, HINT2_S, QUESTION_S, PAUSE_S
 E.onGameEventStart, E.ON = onGameEventStart, ON
+E.invasion, E.invasionEnd, E.onKill, E.join, E.INVASION_S, E.WAVE_GAP_S, E.WAVES, E.PER_WAVE, E.BOSS =
+    invasion, invasionEnd, onKill, join, INVASION_S, WAVE_GAP_S, WAVES, PER_WAVE, BOSS
 OV_EVENTS_TEST = E

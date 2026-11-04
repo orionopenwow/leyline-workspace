@@ -205,6 +205,14 @@ local bot = player({ guid = 26, level = 10, accName = "RNDBOT0042" })
 events[13](13, bot, 9); events[3](3, bot)
 check("bots skipped", #bot.queue == 0 and #bot.msgs == 0)
 
+-- .solo (owner 4 Nov): the scaling said plainly, with the dungeons for the level
+local so = player({ guid = 40, level = 75 })
+check(".solo handled", cmd(so, ".solo") == false)
+check(".solo: scaling and this level's dungeons", last(so):find("scales to the group", 1, true) and last(so):find("Utgarde Keep", 1, true))
+local so2 = player({ guid = 41, level = 5 })
+cmd(so2, "solo")
+check(".solo below 13: says when they open", last(so2):find("level 13", 1, true))
+
 -- .learnall with a 60 s guard
 local la = player({ guid = 27, level = 10 })
 check(".learnall handled", cmd(la, ".learnall") == false)

@@ -323,7 +323,14 @@ local function call(o, m, ...)
         if ok then return a, b, c, d, e end
     end
 end
-local function shownButton(b) return b and call(b, "IsShown") ~= false end
+-- Shown? The 3.3.5 client answers IsShown with 1 or nil, never true/false (owner 4 Nov 11:41: the menu's frame
+-- shrank to its header because "== true" counted no button); a button without IsShown counts as shown.
+local function shownButton(b)
+    if not b then return false end
+    if type(b.IsShown) ~= "function" then return true end
+    local ok, v = pcall(b.IsShown, b)
+    return ok and v ~= nil and v ~= false and v ~= 0
+end
 -- Report a bug (release goal 4): a box for what happened; Send files it with the realm's .bug (ov_reports.lua: where
 -- you are, level, class go with it; the bug list on the site and in HQ picks it up). Leyline realms only: another
 -- server has no .bug, so the button stays hidden there.
@@ -396,7 +403,7 @@ function W.LayoutForeverMenu(extra)
         else
             local b = _G[e[1]]
             if b and e.mac and not isMac then call(b, "Hide") end
-            if b and call(b, "IsShown") == true then place(b) end
+            if b and shownButton(b) then place(b) end
         end
     end
     call(f, "SetWidth", FUI_N.side + FUI_N.w + FUI_N.side)
@@ -415,7 +422,7 @@ function W.LayoutGameMenu()
         if type(GameMenuFrame.GetChildren) == "function" then
             local r = { pcall(GameMenuFrame.GetChildren, GameMenuFrame) }
             if r[1] then for i = 2, #r do local c = r[i]
-                if type(c) == "table" and not known[c] and call(c, "IsObjectType", "Button") and call(c, "IsShown") == true then
+                if type(c) == "table" and not known[c] and call(c, "IsObjectType", "Button") and shownButton(c) then
                     local t = call(c, "GetText")
                     if t and t ~= "" then others[#others + 1] = c end
                 end

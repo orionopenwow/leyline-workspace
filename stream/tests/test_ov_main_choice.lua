@@ -76,13 +76,14 @@ runTimers(b)
 check("after .boost seen, no resends", b.menus == 0)
 check("and the choice is still open", choices[102] == "pending")
 
--- 3. Goodbye: .boost later keeps it closed at the next login, .boost still opens the boost
+-- 3. Goodbye: .boost later stops it for this visit; still at level 1, the next login asks again (owner 4 Nov: "the
+-- immediate boost page is gone when loading in on a level 1"); .boost still opens the boost
 check(".boost later is handled", command(b, "boost later") == false)
 check("Goodbye: the choice is 'later'", choices[102] == "later")
 local b2 = newPlayer(102)
 fire(3, b2)
 runTimers(b2)
-check("next login: no menu after Goodbye", b2.menus == 0)
+check("next login at level 1: the choice again", b2.menus >= 1 and choices[102] == "pending", b2.menus)
 command(b2, "boost")
 -- (no kits in this fake: the spec menu step says so, which is past the "may this character boost" check)
 check(".boost still opens the boost (the spec menu)", b2.menus == 1 or (b2.said[#b2.said] or ""):find("No boost kit", 1, true) ~= nil)
@@ -99,6 +100,20 @@ fire(30, d)
 gossip(2, d, d, 0, 2)          -- Boost: the spec menu (the choice still pending)
 command(d, "boost later")
 check("closing after opening the boost menu this session doesn't record Goodbye", choices[104] == "pending")
+
+-- 5. at login (owner 4 Nov): a level-1 character with no choice row gets the window; an explicit level-1 pick does not;
+-- a character past level 1 that closed it is not asked again
+local e = newPlayer(105)
+fire(3, e); runTimers(e)
+check("no choice row, level 1: the window at login", e.menus >= 1 and choices[105] == "pending", e.menus)
+local f = newPlayer(103)
+fire(3, f); runTimers(f)
+check("picked 'Begin at level 1': no window at login", f.menus == 0 and choices[103] == "level1")
+choices[106] = "later"
+local g = newPlayer(106)
+function g:GetLevel() return 5 end
+fire(3, g); runTimers(g)
+check("level 5 that closed it: not asked again", g.menus == 0 and choices[106] == "later")
 
 realPrint(string.format("%d passed, %d failed", pass, fail))
 os.exit(fail == 0 and 0 or 1)

@@ -8,6 +8,10 @@ What goes in (ADDONS below), each as <Name>/... in the zip:
 
   WrathUnleashedUI   stream/fui-web/Interface/AddOns/WrathUnleashedUI   the in-game UI for our realm (the browser
                      client gets the same folder from the stream)
+  LooseBags          stream/fui-web/Interface/AddOns/LooseBags          the default bag (Loose Bags by Eric R, MIT, ported;
+                     a first-login choice and /lbags off give the standard bags back)
+  LeylineChat        stream/fui-web/Interface/AddOns/LeylineChat        the default chat (Orion's chat addon, ported: themes,
+                     the World tab with the Discord [D] lines, /world; /lchat for its settings, /lchat off for the stock chat)
   OVArmory           addons/OVArmory                                    /armory (talks to ov_armory.lua)
   OVQoL              addons/OVQoL                                       /qol (talks to ov_qol.lua)
   WUModCatalog       made here from mods/catalog.json (wu-mod.py)       the Workshop tab's list of the realm's mods
@@ -62,6 +66,8 @@ INTERFACE = "30300"
 BUILD = "3.3.5a"
 ADDONS = [
     ("WrathUnleashedUI", "stream/fui-web/Interface/AddOns/WrathUnleashedUI"),
+    ("LooseBags", "stream/fui-web/Interface/AddOns/LooseBags"),
+    ("LeylineChat", "stream/fui-web/Interface/AddOns/LeylineChat"),
     ("OVArmory", "addons/OVArmory"),
     ("OVQoL", "addons/OVQoL"),
 ]
@@ -74,7 +80,7 @@ SKIP_DIRS = {".git", "__pycache__", "tests"}
 MAX_FILE = 10 * 1024 * 1024
 MAX_PACK = 20 * 1024 * 1024   # addons.rs MAX_PACK
 NOTES = ("The Leyline addons for a 3.3.5a game folder: the Leyline window, game modes, golf, Edit mode and the "
-         "Builder, your Den, the Workshop tab, companions, the Armory and quality of life. Leyline installs and "
+         "Builder, your Den, the Workshop tab, companions, the chat, the Armory and quality of life. Leyline installs and "
          "updates them from its Clients and Mods pages; each file is checked against addonpack.json. Our code only.")
 # The launcher's own refusal list (launcher/src-tauri/src/mods.rs BLOCKED_EXT / BLOCKED_MAGIC).
 GAME_EXT = (".mpq", ".blp", ".m2", ".wmo", ".adt", ".dbc", ".db2", ".skin", ".anim", ".wdt", ".wdl", ".bls", ".casc")

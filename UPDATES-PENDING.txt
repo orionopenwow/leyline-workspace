@@ -831,3 +831,14 @@
 1325d mods-daily  Mods discovery: the daily index with the 557 new pending GitHub candidates (approves nothing)
 1325e ship  Save as Orion: the wide GitHub sweep, new pending addons and candidates
 1325f discord-read  Discord read (read-only): the newest messages in every channel into tools\discord-leyline\live\inbox-latest.md
+1325g discord-read  Discord read (read-only): the newest messages since the last read
+1325h discord-read  Discord read (read-only): the newest messages since the last read
+1325i discord-read  Discord read (read-only): the newest messages since the last read
+1325j discord-read  Discord read (read-only): the newest messages since the last read
+1326a realm  Realm settings and scripts (5-min restart): the start window back at level 1, cross-faction, max weapon skills, no charter signatures, instant mail, .solo, events off
+1326b signin  Website: the Wrath Unleashed notes page (Docs)
+1326h foreverui  Browser game addons, ours only (a few MB; Forever UI's art on the server stays): GM bars only in the Den, names over heads, Collections, the Game Menu fix, the Leyline guide button, Loose Bags, Leyline Chat
+1326d addons  Addon pack for desktop players: the same, plus Loose Bags and Leyline Chat
+1326e ship  Save as Orion: today's Wrath+ sprint, bags, chat and guide
+1326f client-build  Build the browser client with the nameplate fix (about an hour; runs its tests)
+1326g client  New browser game build: nameplates on their unit at the stock size

@@ -88,5 +88,15 @@ W.LeylineRealm = false
 GameMenuFrame:Show()
 check("another server: no Report a bug, Customize UI moves up", GameMenuButtonBugReport.shown == false and at(ForeverUIGameMenuButtonCustomize) == 300)
 
+-- the real 3.3.5 client answers IsShown with 1 or nil, not true/false (owner 4 Nov 11:41: the frame shrank to its
+-- header and the buttons hung below it)
+local realIsShown = Frame.IsShown
+Frame.IsShown = function(self) if self.shown then return 1 end return nil end
+W.LeylineRealm = true
+GameMenuFrame:Show()
+check("1/nil answers: every shown button placed, the frame fits them", at(GameMenuButtonContinue) == 540 and GameMenuFrame.h == 540 + 36 + 34, GameMenuFrame.h)
+check("1/nil answers: a hidden button (Ratings) still leaves no hole", at(GameMenuButtonAddOns) == 228)
+Frame.IsShown = realIsShown
+
 print(string.format("%d passed, %d failed", pass, fail))
 os.exit(fail == 0 and 0 or 1)

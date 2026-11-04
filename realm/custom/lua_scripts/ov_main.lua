@@ -457,6 +457,11 @@ local function levelOk(player)
     return player:GetLevel() < limit
 end
 
+-- At the level a new character of its class starts at (1; a Death Knight 55).
+local function atStartLevel(player)
+    return player:GetLevel() <= (player:GetClass() == CLASS_DK and 55 or 1)
+end
+
 -- Can this character boost now? (second value: why not)
 local function canBoost(player)
     if not on() then return false, "off" end
@@ -481,11 +486,11 @@ local function showChoice(player)
     if not canBoost(player) then return end
     player:GossipClearMenu()
     local dk = player:GetClass() == CLASS_DK
-    player:GossipMenuAddItem(0, dk and "Begin your adventure as a Death Knight (the Ebon Hold story)"
-        or "Begin your adventure at level 1", 0, 1, false,
+    player:GossipMenuAddItem(3, dk and "Begin your adventure as a Death Knight (the Ebon Hold story)"
+        or "Begin your adventure at level 1 (riding and your mount included)", 0, 1, false,
         "Play from the start. You can still type .boost until level " ..
         (dk and MAX_LEVEL_TO_BOOST_DK or MAX_LEVEL_TO_BOOST) .. ".")
-    player:GossipMenuAddItem(0, "Boost to level 80 (spec gear, professions, Dalaran)", 0, 2)
+    player:GossipMenuAddItem(9, "Boost to level 80: pick your spec, get its gear and two professions, start in Dalaran", 0, 2)
     sendMenu(player, TEXT_WELCOME)
 end
 
@@ -1680,9 +1685,18 @@ local function onLogin(event, player)
     barState[guid] = loadBarState(guid)
     if barState[guid] and not barState[guid].applied then startBars(player, 5000) end   -- logged out too soon
     if barState[guid] and barState[guid].applied then smartMountSoon(player) end      -- the drake button (SMART_MOUNT)
-    if choiceOf(guid) ~= "pending" then return end
+    -- A character still at its starting level that never picked (no choice row: made before this script ran, or on
+    -- another profile) or whose window was closed without a pick ("later": a loading screen, the browser dropping it,
+    -- Esc) gets the choice again at every login (owner 4 Nov: "the immediate boost page is gone when loading in on a
+    -- level 1"). Only an explicit "Begin at level 1" pick, or a boost, ends it; .boost still works below the limit.
+    local choice = choiceOf(guid)
+    if (choice == nil or choice == "" or choice == "later") and atStartLevel(player) and canBoost(player) then
+        setChoice(player, "pending", "")
+        choice = "pending"
+    end
+    if choice ~= "pending" then return end
     if canBoost(player) then
-        say(player, "You haven't chosen yet: type |cffffff00.boost|r to boost this character to 80, or just play on.")
+        say(player, "Pick how to begin: play from level 1, or boost to 80. Type |cffffff00.boost|r any time below level 10.")
         openMenuSoon(player)   -- the choice window again, once the client is in the world
     end
 end

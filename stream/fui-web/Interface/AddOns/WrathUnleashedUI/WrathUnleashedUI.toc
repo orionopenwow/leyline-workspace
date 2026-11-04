@@ -17,6 +17,8 @@ DenBar.lua
 Gizmo.lua
 Dojo.lua
 Guide.lua
+RealmGuideData.lua
+RealmGuide.lua
 Golf.lua
 ModeAPI.lua
 Modes.lua
@@ -29,4 +31,5 @@ Companions.lua
 Social.lua
 Host.lua
 SkinGM.lua
+GMHide.lua
 Leyline.lua

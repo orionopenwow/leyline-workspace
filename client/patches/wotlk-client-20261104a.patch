@@ -1,0 +1,316 @@
+diff --git a/crates/benilla-app/src/vplates.rs b/crates/benilla-app/src/vplates.rs
+index 24583425..19bd4aac 100644
+--- a/crates/benilla-app/src/vplates.rs
++++ b/crates/benilla-app/src/vplates.rs
+@@ -248,6 +248,42 @@ pub(crate) fn plate_basis(viewport: Vec2) -> f32 {
+     }
+ }
+ 
++/// The pixel space plates are seated and sized in: the window's logical size, the space the UI
++/// seam (`seam_scale(window.height())`) divides out. With no window (a headless run), the world
++/// camera's logical viewport.
++///
++/// The camera's viewport is not used for this: it is the window's only once Bevy has recomputed
++/// the camera's target for the latest scale factor ([`crate::world_backdrop`]). A camera still
++/// on an older factor (a browser zoom or a display hop that kept the canvas's physical size)
++/// reports `physical / old_factor`, and seating in that space drew every plate `new / old` times
++/// too large and that many times too far from the screen's bottom-left: a plate twice the stock
++/// size, far from its unit, on a 2× display.
++pub(crate) fn plate_space(cam_viewport: Vec2, window: Option<Vec2>) -> Vec2 {
++    match window {
++        Some(w) if w.x > 0.0 && w.y > 0.0 => w,
++        _ => cam_viewport,
++    }
++}
++
++/// A point projected into the world camera's logical viewport, in [`plate_space`] px: the same
++/// fraction of the screen, so the plate stays on its unit whatever pixel unit the camera reports.
++pub(crate) fn to_plate_px(p: Vec2, cam_viewport: Vec2, space: Vec2) -> Vec2 {
++    if cam_viewport.x > 0.0 && cam_viewport.y > 0.0 {
++        p * (space / cam_viewport)
++    } else {
++        p
++    }
++}
++
++/// A seated plate (Y-down [`plate_space`] px) to its top centre in UI units from the screen's
++/// bottom-left, the [`PlateState::top_centre`] the widget layer hangs the plate from.
++pub(crate) fn top_centre_units(plate: Rect, space: Vec2, seam: f32) -> (f32, f32) {
++    (
++        (plate.min.x + plate.max.x) * 0.5 / seam,
++        (space.y - plate.min.y) / seam,
++    )
++}
++
+ /// gx units to pixels for frame geometry; text takes [`text_px`].
+ pub(crate) fn gx_px(v: f32, basis: f32) -> f32 {
+     (v * basis).round()
+@@ -449,13 +485,16 @@ fn drive_vplates(
+         return;
+     };
+     let cam_tf = GlobalTransform::from(*cam_pose);
+-    let Some(viewport) = cam.logical_viewport_size() else {
++    let Some(cam_viewport) = cam.logical_viewport_size() else {
+         script.retire_nameplates();
+         return;
+     };
++    let window = world.window.single().ok();
++    // Everything below is in the window's logical px, the space the seam divides out: projected
++    // points are carried over from the camera's viewport ([`plate_space`]).
++    let viewport = plate_space(cam_viewport, window.map(|w| Vec2::new(w.width(), w.height())));
+     let basis = plate_basis(viewport);
+     let gx = |v: f32| gx_px(v, basis);
+-    let window = world.window.single().ok();
+     // Plates stop taking the mouse in freelook (`0x60f830`, called from `0x483e80`/`0x483e70` on
+     // the transitions), written on the edge per VM.
+     let looking = rig.is_looking();
+@@ -566,9 +605,13 @@ fn drive_vplates(
+             &anchor_q.3,
+             &anchor_q.4,
+         );
+-        let Some(screen) =
+-            crate::ui_pass::project_overlay(cam, &cam_tf, anchor + Vec3::Y * PLATE_LIFT, viewport)
+-        else {
++        let Some(screen) = crate::ui_pass::project_overlay(
++            cam,
++            &cam_tf,
++            anchor + Vec3::Y * PLATE_LIFT,
++            cam_viewport,
++        )
++        .map(|p| to_plate_px(p, cam_viewport, viewport)) else {
+             continue;
+         };
+         cands.push((
+@@ -673,8 +716,7 @@ fn drive_vplates(
+         // one global seam, so dividing by it here keeps plate pixels uiScale-blind.
+         // The raid-target index is 1-based here, 0-based for the atlas cell.
+         let mark = group.raid_target_index(guid.0);
+-        let x_units = (plate.min.x + plate.max.x) * 0.5 / seam;
+-        let y_units = (viewport.y - plate.min.y) / seam;
++        let (x_units, y_units) = top_centre_units(plate, viewport, seam);
+         if hovered_key == Some(guid.0) {
+             plate_hover.0 = Some(entity);
+         }
+@@ -914,6 +956,59 @@ mod tests {
+         assert_eq!((device_snap(10.9, 1.5) * 1.5).fract(), 0.0);
+     }
+ 
++    /// The owner's report (4 Nov, browser): a stock plate about twice its size, away from its
++    /// unit. One code path that draws exactly that: the world camera still reports its viewport
++    /// at a 1× factor on a 2× display (3200x1800 for a 1600x900 window, see
++    /// `world_backdrop::retarget_world_camera`), and the driver seated and sized plates in that
++    /// space while the seam divided by the window's. Seated in the window's space, the plate's top
++    /// centre lands on the projected head point at the window's stock size, under a UI scale that
++    /// is not 1.
++    #[test]
++    fn a_stale_camera_viewport_still_seats_the_plate_on_its_head_at_the_stock_size() {
++        let window = Vec2::new(1600.0, 900.0);
++        let stale = Vec2::new(3200.0, 1800.0);
++        let space = plate_space(stale, Some(window));
++        assert_eq!(space, window, "plates live in the window's logical px");
++        assert_eq!(plate_space(stale, None), stale, "headless: the camera's own");
++        assert_eq!(
++            plate_space(stale, Some(Vec2::ZERO)),
++            stale,
++            "a degenerate window is no space"
++        );
++
++        // The head point (plus the lift) projects three quarters across, a third down.
++        let head = to_plate_px(Vec2::new(2400.0, 600.0), stale, space);
++        assert_eq!(head, Vec2::new(1200.0, 300.0), "the same fraction of the screen");
++        // A camera that agrees with the window is untouched.
++        assert_eq!(
++            to_plate_px(Vec2::new(1200.0, 300.0), window, window),
++            Vec2::new(1200.0, 300.0)
++        );
++
++        // The stock size is the window's diagonal basis, not the stale viewport's.
++        let (pw, ph) = (
++            gx_px(PLATE_W, plate_basis(space)),
++            gx_px(PLATE_H, plate_basis(space)),
++        );
++        assert_eq!((pw, ph), (156.0, 39.0), "0.1 x 0.025 gx of the damped 1600x900 diagonal");
++        assert!(
++            gx_px(PLATE_W, plate_basis(stale)) > 1.5 * pw,
++            "the stale viewport's basis is the oversized plate"
++        );
++
++        // Seated top-centre on the head, at uiScale 0.75: the widget layer's units, scaled back
++        // by the seam, are the head point in window px (Y up from the bottom).
++        let seam = crate::ui_script::seam_scale(window.y, 0.75);
++        let plate = Rect::new(head.x - pw * 0.5, head.y, head.x + pw * 0.5, head.y + ph);
++        let (x, y) = top_centre_units(plate, space, seam);
++        assert!((x * seam - head.x).abs() < 1e-3, "centred on the head: {}", x * seam);
++        assert!(
++            (y * seam - (window.y - head.y)).abs() < 1e-3,
++            "its top on the head: {}",
++            y * seam
++        );
++    }
++
+     /// Name em 13 at 1152x648 as measured in the reference; at 2560x1440 the reference's 29 and
+     /// the native 13 damp to 21.
+     #[test]
+diff --git a/crates/benilla-app/src/world_backdrop.rs b/crates/benilla-app/src/world_backdrop.rs
+index 8316b42f..80d61baf 100644
+--- a/crates/benilla-app/src/world_backdrop.rs
++++ b/crates/benilla-app/src/world_backdrop.rs
+@@ -17,7 +17,7 @@
+ //! The camera's logical viewport must not move with it ([`render_target_for`]).
+ 
+ use bevy::asset::RenderAssetUsages;
+-use bevy::camera::RenderTarget;
++use bevy::camera::{Projection, RenderTarget};
+ use bevy::prelude::*;
+ use bevy::render::camera::MipBias;
+ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages};
+@@ -200,12 +200,20 @@ fn track_render_size(
+ /// scale. With the window's factor the logical viewport stays the window's, and render scale moves
+ /// size and factor together, so projection and picking never see it. Re-stamped when the image or
+ /// the factor changes, with the [`MipBias`] ([`mip_bias`]) inserted on every stamp.
++///
++/// Every stamp also marks the camera's [`Projection`] changed. Bevy's `camera_system` recomputes
++/// a camera's target info (its physical size and scale factor, so its logical viewport) only on a
++/// window or image asset event, a new camera or a changed projection, never on a rewritten
++/// `RenderTarget`. A stamp that moves only the factor (a browser zoom or a display hop that keeps
++/// the canvas's physical size, so no new image) therefore left the camera on the old factor: its
++/// logical viewport `physical / old_factor`, every `world_to_viewport`, nameplate and pick ray
++/// off by `new / old` against the window's logical px.
+ fn retarget_world_camera(
+     mut commands: Commands,
+     mut backdrop: ResMut<WorldBackdrop>,
+     windows: Query<&Window, With<PrimaryWindow>>,
+     added: Query<(), Added<WorldCamera>>,
+-    mut cameras: Query<(Entity, &mut RenderTarget), With<WorldCamera>>,
++    mut cameras: Query<(Entity, &mut RenderTarget, Option<&mut Projection>), With<WorldCamera>>,
+ ) {
+     let (px, window_factor) = windows.single().map_or((UVec2::ONE, 1.0), |w| {
+         (window_physical_size(w), w.resolution.scale_factor())
+@@ -220,11 +228,15 @@ fn retarget_world_camera(
+     }
+     backdrop.stamped = Some(want);
+     let bias = MipBias(mip_bias(scale_factor / window_factor));
+-    for (entity, mut current) in &mut cameras {
++    for (entity, mut current, projection) in &mut cameras {
+         *current = RenderTarget::Image(bevy::camera::ImageRenderTarget {
+             handle: backdrop.image.clone(),
+             scale_factor,
+         });
++        // The one input `camera_system` watches that we own: it re-reads the new target.
++        if let Some(mut projection) = projection {
++            projection.set_changed();
++        }
+         commands.entity(entity).insert(bias.clone());
+     }
+ }
+@@ -371,6 +383,69 @@ mod tests {
+         );
+     }
+ 
++    /// A factor-only move (a browser zoom or a display hop that keeps the canvas's physical size)
++    /// builds no new image, so no asset event reaches Bevy's `camera_system`, which re-reads an
++    /// image target only for that or a changed projection. The stamp must mark the projection, or
++    /// the camera keeps the old factor: its logical viewport `physical / old`, and the nameplates
++    /// seated in it drew `new / old` times too big and that far off their units.
++    #[test]
++    fn a_factor_only_restamp_makes_bevy_reread_the_cameras_target() {
++        #[derive(Resource, Default)]
++        struct Rereads(usize);
++        // `camera_system`'s own trigger for a camera whose target is an image.
++        fn count(
++            q: Query<(), (With<WorldCamera>, Changed<Projection>)>,
++            mut n: ResMut<Rereads>,
++        ) {
++            n.0 += q.iter().count();
++        }
++
++        let mut app = App::new();
++        app.add_plugins((MinimalPlugins, bevy::asset::AssetPlugin::default()))
++            .init_asset::<Image>()
++            .init_resource::<Rereads>();
++        let mut w = Window::default();
++        w.resolution.set_scale_factor(1.0);
++        let win = app.world_mut().spawn((w, PrimaryWindow)).id();
++        app.insert_resource(RenderScale(1.0))
++            .add_systems(Startup, setup_backdrop)
++            .add_systems(
++                Update,
++                (track_render_size, retarget_world_camera, count).chain(),
++            );
++        app.world_mut()
++            .spawn((WorldCamera, RenderTarget::default(), Projection::default()));
++        app.update();
++        let image = app.world().resource::<WorldBackdrop>().image.id();
++        app.world_mut().resource_mut::<Rereads>().0 = 0;
++
++        app.update();
++        assert_eq!(
++            app.world().resource::<Rereads>().0,
++            0,
++            "a frame with nothing to re-stamp leaves the projection alone"
++        );
++
++        // 1× to 2× at the same physical size: the browser's zoom.
++        app.world_mut()
++            .entity_mut(win)
++            .get_mut::<Window>()
++            .expect("the primary window")
++            .resolution
++            .set_scale_factor(2.0);
++        app.update();
++        assert_eq!(
++            app.world().resource::<WorldBackdrop>().image.id(),
++            image,
++            "the same physical size builds no new image: no asset event will re-read the target"
++        );
++        assert_eq!(
++            app.world().resource::<Rereads>().0,
++            1,
++            "the factor-only stamp must mark the projection, so camera_system re-reads the target"
++        );
++    }
++
+     /// A zero-size window (minimised on some platforms) still builds a legal texture.
+     #[test]
+     fn a_degenerate_size_still_builds_a_legal_texture() {
+diff --git a/crates/benilla-ui/src/script/tests/nameplate.rs b/crates/benilla-ui/src/script/tests/nameplate.rs
+index 27969177..a8729c62 100644
+--- a/crates/benilla-ui/src/script/tests/nameplate.rs
++++ b/crates/benilla-ui/src/script/tests/nameplate.rs
+@@ -874,3 +874,36 @@ fn the_modern_border_draws_under_the_fill_and_never_turns_white() {
+         "the target's border is not repainted white: {quads:?}"
+     );
+ }
++
++/// The seat the app's plate driver hands over (`vplates::top_centre_units`, 4 Nov): under a UI
++/// scale that is not 1 (0.75 on a 1600x900 window, a screen 1024 units tall), the plate's TOP
++/// centre lands exactly on `top_centre`, in units from the screen's bottom-left, at the
++/// geometry's size, with no scale of its own on top: the plate sits on its unit's head point at
++/// the stock size. A plate scaled twice, or hung from another point, drew far off its unit.
++#[test]
++fn the_plate_hangs_its_top_centre_on_the_seat_at_the_geometrys_size() {
++    let seam = 900.0 / 768.0 * 0.75;
++    let mut s = UiScript::new().unwrap();
++    s.set_screen_size(1600.0 / seam, 900.0 / seam);
++    s.run(r#"WorldFrame = CreateFrame("WorldFrame", "WorldFrame") WorldFrame:SetAllPoints()"#)
++        .unwrap();
++    s.resolve();
++    let mut boar = plate("Mottled Boar", 50.0, 71.0);
++    boar.top_centre = (1364.0, 682.0);
++    drive(&mut s, &[boar]);
++
++    let r: Vec<f32> = s
++        .eval(
++            "local p = WorldFrame:GetChildren() \
++             return { p:GetLeft(), p:GetRight(), p:GetTop(), p:GetBottom(), p:GetEffectiveScale() }",
++        )
++        .unwrap();
++    let want = [1300.0, 1428.0, 682.0, 650.0, 1.0];
++    assert_eq!(r.len(), want.len(), "an unresolved plate: {r:?}");
++    for (got, w) in r.iter().zip(want) {
++        assert!(
++            (got - w).abs() < 1e-3,
++            "left, right, top, bottom, scale: {r:?}, want {want:?}"
++        );
++    }
++}

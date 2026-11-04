@@ -193,6 +193,12 @@ end
 check("Toys says what's coming", pageSays(win.pages[3], "^Coming$") and pageSays(win.pages[3], "toys you own"))
 win.tabs[4]:Fire("OnClick")
 check("Appearances says what's coming", pageSays(win.pages[4], "^Coming$") and pageSays(win.pages[4], "transmog"))
+local said
+SendChatMessage = function(msg, kind) said = msg .. "|" .. kind end
+check("Appearances has the Warpweaver button", win.pages[4].action ~= nil)
+if win.pages[4].action then win.pages[4].action:Fire("OnClick") end
+check("the button calls the portable transmogrifier", said == ".transmog portable|SAY")
+win:Show(); win.tabs[4]:Fire("OnClick")
 
 -- toggle, slash with a tab name, events
 _G.WrathUnleashedCollectionsToggle:Fire("OnClick")
@@ -202,6 +208,24 @@ check("/collections pets opens on Pets", win:IsShown() and win.current == 2)
 companions.CRITTER[3] = { 7380, "Siamese Cat", 10677, "icon-cat2", false }
 for _, f in ipairs(frames) do if f.events.COMPANION_LEARNED then f:Fire("OnEvent", "COMPANION_LEARNED") end end
 check("a new pet shows on COMPANION_LEARNED", #visibleRows(Q) == 3)
+
+-- with Forever UI: mounts and pets open its own character sheet tabs; Toys and Appearances stay ours
+local opened = {}
+ForeverUI = { ToggleCharacterTab = function(k) opened[#opened + 1] = k end }
+CharacterFrame = {}
+win:Hide()
+SlashCmdList.WUCOLLECTIONS("")
+check("Forever UI: Shift-P opens its Mounts tab", opened[1] == "mounts" and not win:IsShown())
+SlashCmdList.WUCOLLECTIONS("pets")
+check("Forever UI: /collections pets opens its Pets tab", opened[2] == "pets")
+SlashCmdList.WUCOLLECTIONS("appearances")
+check("Forever UI: Appearances still opens ours", win:IsShown() and win.current == 4 and #opened == 2)
+local saved = companions.MOUNT
+companions.MOUNT = {}
+SlashCmdList.WUCOLLECTIONS("mounts")
+check("Forever UI, no mounts: a message, no empty sheet", #opened == 2)
+companions.MOUNT = saved
+ForeverUI, CharacterFrame = nil, nil
 
 -- a client without the companion API: no errors, empty lists
 GetNumCompanions, GetCompanionInfo = nil, nil

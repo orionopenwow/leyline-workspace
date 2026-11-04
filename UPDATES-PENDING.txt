@@ -814,3 +814,8 @@
 1323j signin  Website: the .zip as a main download button beside the .exe
 1323k client  Browser game: "Slow loading?" line after 20 s (the desktop app, Download sections); the game address follows the domain move
 1323l ship  Save as Orion: Mods opens on Discover, the 30-minute update check, the zip button, Slow loading
+1323m signin  Website: the guest-pass page says when passes are closed (no Try it that leads nowhere)
+1324a slice-health  Read-only: what wu-play answers and what players' browsers missed (browser stuck at Loading the ground)
+1324b check  Read-only: server check
+1324c ship  Save as Orion: the Leyline repo README without Wrath Unleashed (goes public with the export)
+1324d retag-leyline-check  Read-only: which Leyline release tags still point at the old account's commits, and the main SHA for CONFIRM-retag

@@ -168,7 +168,13 @@ check("streaming off: no pass", st == 503 and "resting" in body)
 os.environ["WU_STREAM"] = "1"; os.environ["WU_GUEST_DEMO"] = "0"
 
 # -- the section ----------------------------------------------------------------------------------
+off_sec = dm.section_html()
+check("section with guest passes off: says closed, offers the free account, no Try it",
+      "Guest passes are closed right now" in off_sec and ">Make a free account</a>" in off_sec
+      and "Try it" not in off_sec and "/wrath?demo=1" not in off_sec, off_sec[:300])
+os.environ["WU_GUEST_DEMO"] = "1"
 sec = dm.section_html()
+os.environ["WU_GUEST_DEMO"] = "0"
 check("section: title and Try it button", "Try Leyline in the Goldshire Inn" in sec and '>Try it</a>' in sec)
 check("section: goes to /wrath?demo=1", 'href="/wrath?demo=1"' in sec)
 check("section: Leyline page style (ly-panel, ly-btn, ly-fine)", 'class="ly-panel ly-demo"' in sec and 'class="ly-btn"' in sec and "ly-fine" in sec)

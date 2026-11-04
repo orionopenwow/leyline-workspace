@@ -252,6 +252,11 @@ class Discover(unittest.TestCase):
         self.assertEqual(sorted(added), ["alice/NicePlates", "bob/QuestLog"])
         np_ = added["alice/NicePlates"]
         self.assertEqual(np_["display_name"], "NicePlates")
+        self.assertEqual(np_["id"], "niceplates")
+        self.assertEqual(cu.discover_slug("ElvUI Extras", set()), "elvui-extras")
+        self.assertEqual(cu.discover_slug("Skada", {"skada"}), "skada-2")
+        self.assertEqual(cu.discover_name("LootCollector beta 0.8.8r"), "LootCollector")
+        self.assertEqual(cu.discover_name("|cff00ff00Recount|r (3.3.5a) v1.2"), "Recount")
         self.assertIn("nameplates", np_["tags"])
         self.assertFalse(cu.banned(np_["description"]) or cu.VERSION_IN_PROSE.search(np_["description"]))
         self.assertEqual(np_["description"], "Nameplates: NicePlates.")           # their words had a brand word

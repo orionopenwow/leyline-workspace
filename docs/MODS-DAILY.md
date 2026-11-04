@@ -66,6 +66,26 @@ The pool of credible 3.3.5a and 1.12 addon repos found today is about 600; at 5 
 the number of good items, not the search, is the limit. When a week's yield drops under 3 a day, widen the sources
 (below) before lowering the bar.
 
+### Catch-up sweeps (by hand, when the pool needs to grow)
+
+Two tools search wider than the daily run (owner, 3 Nov 2026: "as many GitHub mods and extensions as you can"). Both
+add **pending** items only.
+
+- `python3 -I tools/hub-index/scout.py run --wide --max-pages 3 --probe 2500 --jobs 8`: every area's queries plus
+  `WIDE_QUERIES` (launchers and addon managers, realm modules for AzerothCore, TrinityCore, CMaNGOS and VMaNGOS, bots,
+  addons and UI for the three classic clients, tools, editors and sites, web and mobile clients, graphics), all-time
+  with 3+ stars. A find only the sweep saw joins `candidates.json` only once probed and judged listable, or held for a
+  licence or a person.
+- `python3 -I tools/addon-curate/curate.py discover --limit N`: repo searches, the TOC's `## Interface: 30300` line by
+  code search, and the repos of authors who backport often; forks, collections, the hub blocklist and hard rules and
+  what we leave out by choice (one-key rotations, native code, patched clients, paid guides) stay out; each find must
+  pass the launcher's rules (`analyze`) before it becomes a seed with our words and `found: "discover <date>"`. Its
+  generated description is a draft: read it before approving. The daily default `--limit` is 15, the ceiling above.
+
+The first sweep (3 Nov 2026): see `docs/scout/2026-11-03.md`. It also fixed three rules: other games (Minecraft,
+Factorio, Fallout) and one-key rotation addons are left out by the index, a weak build word is not its own game
+signal, and a database password in a README's config example is not a lure.
+
 ## Sources
 
 - GitHub search (`gh api search/repositories`, 30 a minute with a token): "3.3.5a addon", "wotlk addon",

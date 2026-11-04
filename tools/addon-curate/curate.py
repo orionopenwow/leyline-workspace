@@ -848,8 +848,17 @@ def discover_text(raw: str) -> str:
     return s if s[-1] in ".!?" else s + "."
 
 
+def discover_name(raw: str) -> str:
+    """A TOC title as a display name: clean_name, then no version, build or edition words."""
+    s = clean_name(raw)
+    s = re.sub(r"(?i)\s*[\[(]?\b(v(er(sion)?)?\.?\s*)?\d+(\.\d+)+[a-z]?\b[\])]?|\b(30300|335a?|12340)\b|"
+               r"\s*[\[(]?\b(beta|alpha|backport(ed)?|edition|port|fix(ed)?)\b[\])]?", " ", s)
+    s = re.sub(r"\(\s*\)|\[\s*\]", " ", s)
+    return re.sub(r"\s{2,}", " ", s).strip(" -_.:*|") if not VERSION_IN_PROSE.search(re.sub(r"\s{2,}", " ", s)) else ""
+
+
 def discover_slug(name: str, taken: set) -> str:
-    base = re.sub(r"[^a-z0-9]+", "-", re.sub(r"([a-z])([A-Z])", r"\1-\2", name)).strip("-").lower()[:40].strip("-") or "addon"
+    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:40].strip("-") or "addon"
     sid, n = base, 2
     while sid in taken or not name_ok(sid.replace("-", "_")):
         sid, n = f"{base}-{n}", n + 1
@@ -957,7 +966,7 @@ def discover_seed(slug: str, meta: dict, a: dict, taken: set, today: str) -> dic
     repo = slug.split("/")[-1]
     primary = sorted(folders, key=lambda n: (n.lower() != repo.lower().split("-")[0].lower(), len(n)))[0]
     toc = a["addons"][primary]
-    name = clean_name(toc.get("title") or "") or clean_name(primary)
+    name = discover_name(toc.get("title") or "") or discover_name(primary)
     if not name or banned(name) or len(name) < 2:
         return None
     text = " ".join([repo, primary, meta.get("description") or "", " ".join(meta.get("topics") or []), toc.get("title") or ""])

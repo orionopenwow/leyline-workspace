@@ -1,0 +1,310 @@
+diff --git a/crates/benilla-app/src/cvars/table.rs b/crates/benilla-app/src/cvars/table.rs
+index ece3bc94..a70dd759 100644
+--- a/crates/benilla-app/src/cvars/table.rs
++++ b/crates/benilla-app/src/cvars/table.rs
+@@ -176,9 +176,9 @@ pub(crate) const REGISTERED_GRAPHICS: &[Registered] = &[
+ /// The awesome_wotlk CVars plate, camera and interaction addons read and write, registered so
+ /// `GetCVar`/`SetCVar` answer them and a written value persists. 12340 has none of them. Two
+ /// change what the client does, read by [`crate::vplates::PlateBackport`]: `nameplateDistance`
+-/// and `nameplateNonTargetAlpha`, and `cameraFov` drives the world camera
+-/// (`crate::graphics_plus`). Every other row is a stored value with no effect yet; its default is
+-/// the fork's documented one.
++/// and `nameplateNonTargetAlpha` (with our `nameplateScale`), and `cameraFov` drives the world
++/// camera (`crate::graphics_plus`). Every other row is a stored value with no effect yet; its
++/// default is the fork's documented one.
+ pub(crate) const REGISTERED_BACKPORT: &[Registered] = &[
+     // Not awesome_wotlk's: WrathUnleashed's switch for Forever UI (`ui_script::forever_ui`).
+     ours(
+@@ -198,6 +198,13 @@ pub(crate) const REGISTERED_BACKPORT: &[Registered] = &[
+         "awesome_wotlk's non-target plate alpha (the Forever look's 0.8); the stock game dims to \
+          0x7F",
+     ),
++    // Not awesome_wotlk's: WrathUnleashed's plate size (`crate::vplates::plate_px_basis`).
++    ours(
++        "nameplateScale",
++        "1",
++        "WrathUnleashed: the nameplate's size over the default (a 116 px health bar at 1080p), \
++         0.25 to 3; 1.25 is the stock frame",
++    ),
+     // The later clients' plate switches, which Forever UI and retail-style addons read and write:
+     // the two show switches drive the V-key plates both ways (`crate::vplates::VPlateMode`), so a
+     // `SetCVar` toggles them and the V keys' state persists (the filters sit per character below).
+diff --git a/crates/benilla-app/src/vplates.rs b/crates/benilla-app/src/vplates.rs
+index 19bd4aac..46b95853 100644
+--- a/crates/benilla-app/src/vplates.rs
++++ b/crates/benilla-app/src/vplates.rs
+@@ -7,10 +7,14 @@
+ //!   player (`0x606980`), and a player subject must also pass `CanCooperate` (equal faction-group
+ //!   masks); 20 yd; no occlusion; a unit not projected into view loses its plate (`0x60f600`).
+ //! - Anchor: the overhead head point (`0x608640`) plus 2/3 yd (`[0x80abfc]`), projected every
+-//!   frame (`0x483ee0`), the plate's top centre on it (`0x509ec0`), sized in gx units of the
+-//!   screen diagonal (`0x41ad10`), outside uiScale. Deviation: the basis is damped past
+-//!   [`PLATE_DIAG_KNEE`], because the reference's unbounded growth (`0x7705b0`) draws plates too
+-//!   large and soft at high resolutions.
++//!   frame (`0x483ee0`), the plate's BOTTOM centre on it (`0x509ec0`, whose rect grows up from
++//!   the point in the reference's Y-up space): the plate floats above the head, the lift its gap,
++//!   never over the model ([`seat_rect`]).
++//! - Size: a fixed frame in the UI's 768-unit-tall space, never scaled by distance or uiScale.
++//!   The stock frame is 128x32 of those units (an addon reading the stock plate's `GetSize()`
++//!   gets 128x32, and its health bar's BOTTOMLEFT at (3.968, 4) = 1280 x the gx offsets below).
++//!   Deviation: drawn at [`PLATE_DEFAULT_SIZE`] of that by default (owner, 4 Nov: "smaller, like
++//!   normal"), times the `nameplateScale` CVar ([`plate_px_basis`]).
+ //! - Highlight: the mouseover or the target (`0x606f20` into `0x607080`) lights the plate.
+ //!   Deviation: the bar fill brightens by `LIT_BOOST` in place of the reference's ADD
+ //!   `Nameplate-Glow` rim, which reads as hard edge lines under benilla's linear blending.
+@@ -149,16 +153,18 @@ fn class_colour(class: u8) -> Option<[f32; 3]> {
+         _ => return None,
+     })
+ }
+-/// `[0x80abfc]`.
++/// `[0x80abfc]`: the gap between the head point and the plate's bottom edge, in yards.
+ const PLATE_LIFT: f32 = 2.0 / 3.0;
+-/// The backport's two plate CVars this driver reads (`cvars::table::REGISTERED_BACKPORT`):
+-/// `nameplateDistance`, the plate range in yards (the stock game hardcodes 20; awesome_wotlk's
++/// The plate CVars this driver reads (`cvars::table::REGISTERED_BACKPORT`): awesome_wotlk's
++/// `nameplateDistance`, the plate range in yards (the stock game hardcodes 20; the fork's
+ /// default is 41), and `nameplateNonTargetAlpha`, the dim of every plate but the target's (the
+-/// reference's `0x7F`).
++/// reference's `0x7F`); and our `nameplateScale`, the plate's size over the default
++/// ([`plate_px_basis`]).
+ #[derive(Resource, Clone, Copy, Debug, PartialEq)]
+ pub(crate) struct PlateBackport {
+     pub(crate) distance: f32,
+     pub(crate) non_target_alpha: f32,
++    pub(crate) scale: f32,
+ }
+ 
+ impl Default for PlateBackport {
+@@ -166,16 +172,23 @@ impl Default for PlateBackport {
+         Self {
+             distance: 41.0,
+             non_target_alpha: 0.8,
++            scale: 1.0,
+         }
+     }
+ }
+ 
++/// `nameplateScale`'s range: a quarter of the default up to three times it.
++const PLATE_SCALE_MIN: f32 = 0.25;
++const PLATE_SCALE_MAX: f32 = 3.0;
++
+ /// The CVar observer for [`PlateBackport`]; a value out of range is clamped, as the fork clamps.
+ pub(crate) fn on_cvar(ev: On<crate::cvars::CvarChanged>, mut plate: ResMut<PlateBackport>) {
+     if ev.is("nameplateDistance") {
+         plate.distance = ev.num().clamp(0.0, 200.0);
+     } else if ev.is("nameplateNonTargetAlpha") {
+         plate.non_target_alpha = ev.num().clamp(0.0, 1.0);
++    } else if ev.is("nameplateScale") {
++        plate.scale = ev.num().clamp(PLATE_SCALE_MIN, PLATE_SCALE_MAX);
+     }
+ }
+ 
+@@ -237,8 +250,33 @@ const PLATE_DIAG_KNEE: f32 = 1280.0;
+ /// 0 pins the native size, 1 is the reference's rate.
+ const PLATE_GROWTH_DAMP: f32 = 0.5;
+ 
+-/// One gx unit in pixels: the screen diagonal (`0x41ad10`), never uiScale, damped past
+-/// [`PLATE_DIAG_KNEE`]. Shared with the chat bubble so its text holds the plate's em.
++/// The UI's height in its own units at every aspect (`0x41ad10`'s `f(screenH) = 768`).
++const UI_UNITS_TALL: f32 = 768.0;
++/// One gx unit of plate geometry in UI units: the stock frame is 0.1 x 0.025 gx and 128x32 units,
++/// as an addon reading the stock plate (`GetSize()`, the health bar's `GetPoint()`) finds it.
++const PLATE_UNITS_PER_GX: f32 = 1280.0;
++/// Deviation: the default plate is this fraction of the stock frame, 102x26 UI units: a 116 px
++/// health bar and a 14 px name at 1080p (owner, 4 Nov: the stock size read "improperly huge").
++/// `nameplateScale` 1.25 is the stock frame.
++const PLATE_DEFAULT_SIZE: f32 = 0.8;
++
++/// One gx unit of plate geometry in window logical px: a fixed size in the UI's 768-unit space
++/// (so it follows the window's height like the rest of the interface, never the camera distance
++/// or uiScale), [`PLATE_DEFAULT_SIZE`] of the stock frame, times `nameplateScale`.
++pub(crate) fn plate_px_basis(viewport: Vec2, scale: f32) -> f32 {
++    viewport.y / UI_UNITS_TALL * PLATE_UNITS_PER_GX * PLATE_DEFAULT_SIZE * scale
++}
++
++/// The plate's rect (Y-down px) for a projected seat point: its BOTTOM centre on the point, so
++/// the plate (name above the bar) rises from the lifted head point and never covers the model.
++/// The reference builds the rect upward from the point in its Y-up space (`0x509ec0`); Y-down,
++/// up is toward smaller `y`.
++pub(crate) fn seat_rect(point: Vec2, w: f32, h: f32) -> Rect {
++    Rect::new(point.x - w * 0.5, point.y - h, point.x + w * 0.5, point.y)
++}
++
++/// One gx unit in pixels for the chat bubble: the screen diagonal (`0x41ad10`), never uiScale,
++/// damped past [`PLATE_DIAG_KNEE`]. The plates themselves take [`plate_px_basis`] (4 Nov).
+ pub(crate) fn plate_basis(viewport: Vec2) -> f32 {
+     let d = viewport.x.hypot(viewport.y);
+     if d <= PLATE_DIAG_KNEE {
+@@ -493,7 +531,7 @@ fn drive_vplates(
+     // Everything below is in the window's logical px, the space the seam divides out: projected
+     // points are carried over from the camera's viewport ([`plate_space`]).
+     let viewport = plate_space(cam_viewport, window.map(|w| Vec2::new(w.width(), w.height())));
+-    let basis = plate_basis(viewport);
++    let basis = plate_px_basis(viewport, world.backport.scale);
+     let gx = |v: f32| gx_px(v, basis);
+     // Plates stop taking the mouse in freelook (`0x60f830`, called from `0x483e80`/`0x483e70` on
+     // the transitions), written on the edge per VM.
+@@ -654,14 +692,10 @@ fn drive_vplates(
+         // `WOW_VPLATE_TRACE=1` prints each plate rect in logical px.
+         static TRACE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+         let trace = *TRACE.get_or_init(|| std::env::var("WOW_VPLATE_TRACE").as_deref() == Ok("1"));
+-        // The seat (`0x509ec0`): the plate hangs from its top centre on the projected point, is
+-        // solved off the plates already claimed, then clamped half a plate inside the screen.
+-        let desired = Rect::new(
+-            screen.x - pw * 0.5,
+-            screen.y,
+-            screen.x + pw * 0.5,
+-            screen.y + ph,
+-        );
++        // The seat (`0x509ec0`): the plate stands on its bottom centre at the projected point
++        // (the head plus the lift), is solved off the plates already claimed, then clamped half
++        // a plate inside the screen. Hung from its top there, it covered the unit (4 Nov).
++        let desired = seat_rect(screen, pw, ph);
+         let solved = bucket.resolve(desired, viewport);
+         // Snap the left edge, not the centre, which an odd width would put between texels; the
+         // claim takes the snapped rect, so later plates dodge what is drawn.
+@@ -898,7 +932,8 @@ mod tests {
+             *app.world().resource::<PlateBackport>(),
+             PlateBackport {
+                 distance: 41.0,
+-                non_target_alpha: 0.8
++                non_target_alpha: 0.8,
++                scale: 1.0,
+             }
+         );
+         let change = |name: &str, new: &str| crate::cvars::CvarChanged {
+@@ -909,13 +944,19 @@ mod tests {
+         app.world_mut().trigger(change("NameplateDistance", "60"));
+         app.world_mut().trigger(change("nameplateNonTargetAlpha", "1.5"));
+         app.world_mut().trigger(change("nameplateAlphaSpeed", "9"));
++        app.world_mut().trigger(change("NamePlateScale", "1.5"));
+         assert_eq!(
+             *app.world().resource::<PlateBackport>(),
+             PlateBackport {
+                 distance: 60.0,
+-                non_target_alpha: 1.0
++                non_target_alpha: 1.0,
++                scale: 1.5,
+             }
+         );
++        app.world_mut().trigger(change("nameplateScale", "0"));
++        assert_eq!(app.world().resource::<PlateBackport>().scale, PLATE_SCALE_MIN);
++        app.world_mut().trigger(change("nameplateScale", "10"));
++        assert_eq!(app.world().resource::<PlateBackport>().scale, PLATE_SCALE_MAX);
+     }
+ 
+     /// `0x7cbd50` at level 30 (grayband[6] = 7: green down to 23, gray at 22) and the low edge.
+@@ -985,28 +1026,100 @@ mod tests {
+             Vec2::new(1200.0, 300.0)
+         );
+ 
+-        // The stock size is the window's diagonal basis, not the stale viewport's.
+-        let (pw, ph) = (
+-            gx_px(PLATE_W, plate_basis(space)),
+-            gx_px(PLATE_H, plate_basis(space)),
+-        );
+-        assert_eq!((pw, ph), (156.0, 39.0), "0.1 x 0.025 gx of the damped 1600x900 diagonal");
++        // The default size is the window's basis, not the stale viewport's.
++        let basis = plate_px_basis(space, 1.0);
++        let (pw, ph) = (gx_px(PLATE_W, basis), gx_px(PLATE_H, basis));
++        assert_eq!((pw, ph), (120.0, 30.0), "0.1 x 0.025 gx of the 900 px tall window");
+         assert!(
+-            gx_px(PLATE_W, plate_basis(stale)) > 1.5 * pw,
++            gx_px(PLATE_W, plate_px_basis(stale, 1.0)) > 1.5 * pw,
+             "the stale viewport's basis is the oversized plate"
+         );
+ 
+-        // Seated top-centre on the head, at uiScale 0.75: the widget layer's units, scaled back
+-        // by the seam, are the head point in window px (Y up from the bottom).
++        // Seated bottom-centre on the head, at uiScale 0.75: the widget layer's units, scaled
++        // back by the seam, put the plate's top one plate height above the head point in window
++        // px (Y up from the bottom), so its bottom is on the head point.
+         let seam = crate::ui_script::seam_scale(window.y, 0.75);
+-        let plate = Rect::new(head.x - pw * 0.5, head.y, head.x + pw * 0.5, head.y + ph);
++        let plate = seat_rect(head, pw, ph);
+         let (x, y) = top_centre_units(plate, space, seam);
+         assert!((x * seam - head.x).abs() < 1e-3, "centred on the head: {}", x * seam);
+         assert!(
+-            (y * seam - (window.y - head.y)).abs() < 1e-3,
+-            "its top on the head: {}",
+-            y * seam
++            (y * seam - ph - (window.y - head.y)).abs() < 1e-3,
++            "its bottom on the head: {}",
++            y * seam - ph
++        );
++    }
++
++    /// The owner's report (4 Nov, 14:17): three wolves' plates drawn over the wolves, the model
++    /// under the name. A unit whose head point projects to (960, 600) on a 1920x1080 window, the
++    /// lift putting the seat 24 px higher: the plate's bottom centre (the bar's bottom edge
++    /// under it) lands on the seat, every pixel of the plate above the head, and the solver and
++    /// the widget layer's units keep it there.
++    #[test]
++    fn a_plate_stands_on_its_bottom_centre_above_the_head_never_over_the_model() {
++        let vp = Vec2::new(1920.0, 1080.0);
++        let head = Vec2::new(960.0, 600.0);
++        let seat = head - Vec2::new(0.0, 24.0);
++        let basis = plate_px_basis(vp, 1.0);
++        let (pw, ph) = (gx_px(PLATE_W, basis), gx_px(PLATE_H, basis));
++        let desired = seat_rect(seat, pw, ph);
++        assert_eq!(desired.width(), pw);
++        assert_eq!(desired.height(), ph);
++        assert_eq!(desired.max.y, seat.y, "the bottom edge on the seat");
++        assert_eq!((desired.min.x + desired.max.x) * 0.5, seat.x, "centred on it");
++        assert!(desired.max.y < head.y, "the whole plate above the head point");
++        assert!(
++            desired.max.y - gx_px(BAR_OFF_Y, basis) < head.y,
++            "the health bar's bottom edge above the head"
++        );
++
++        // Alone on screen, the solver keeps the seat.
++        let solved = crate::smart_rect::SmartBucket::default().resolve(desired, vp);
++        for (got, want) in [
++            (solved.min.x, desired.min.x),
++            (solved.min.y, desired.min.y),
++            (solved.max.x, desired.max.x),
++            (solved.max.y, desired.max.y),
++        ] {
++            assert!((got - want).abs() < 1e-3, "unmoved: {solved:?} vs {desired:?}");
++        }
++
++        // The widget layer hangs the frame from its top centre: one plate height above the seat.
++        let seam = crate::ui_script::seam_scale(vp.y, 1.0);
++        let (x, y) = top_centre_units(desired, vp, seam);
++        assert!((x * seam - seat.x).abs() < 1e-3);
++        assert!(
++            (y * seam - ph - (vp.y - seat.y)).abs() < 1e-3,
++            "bottom (Y up) on the seat: {}",
++            y * seam - ph
++        );
++    }
++
++    /// The default plate at 1920x1080 (owner, 4 Nov: "smaller, like normal"): a 144x36 frame
++    /// with a 116x10 health bar, the name at 14 px and the level at 12; the same at any width for
++    /// that height (the UI's 768-unit space), and `nameplateScale` 1.25 is the stock 128x32-unit
++    /// frame.
++    #[test]
++    fn the_default_plate_at_1080p_is_a_116_px_bar() {
++        let basis = plate_px_basis(Vec2::new(1920.0, 1080.0), 1.0);
++        assert!((basis - 1440.0).abs() < 1e-2, "{basis}");
++        assert_eq!(gx_px(PLATE_W, basis), 144.0);
++        assert_eq!(gx_px(PLATE_H, basis), 36.0);
++        assert_eq!(gx_px(BAR_W, basis), 116.0);
++        assert_eq!(gx_px(BAR_H, basis), 10.0);
++        assert_eq!(text_px(NAME_H, basis), 14.0);
++        assert_eq!(text_px(LEVEL_H, basis), 12.0);
++        assert!(
++            gx_px(PLATE_W, basis) < 0.85 * gx_px(PLATE_W, plate_basis(Vec2::new(1920.0, 1080.0))),
++            "smaller than the 174 px plate before"
+         );
++        let wide = plate_px_basis(Vec2::new(2560.0, 1080.0), 1.0);
++        assert_eq!(gx_px(PLATE_W, wide), 144.0, "an ultrawide of the same height");
++
++        // The knob: 1.25 is the stock frame (128x32 units, px at 768 tall), 1.5 half again.
++        let stock = plate_px_basis(Vec2::new(1024.0, 768.0), 1.25);
++        assert_eq!((gx_px(PLATE_W, stock), gx_px(PLATE_H, stock)), (128.0, 32.0));
++        let big = plate_px_basis(Vec2::new(1920.0, 1080.0), 1.5);
++        assert_eq!((gx_px(PLATE_W, big), gx_px(BAR_W, big)), (216.0, 174.0));
+     }
+ 
+     /// Name em 13 at 1152x648 as measured in the reference; at 2560x1440 the reference's 29 and

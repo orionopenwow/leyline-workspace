@@ -208,8 +208,8 @@ Leyline is a **mod launcher** and a **peer-to-peer realm network** for classic g
   installs them into your own client in one click and checks every file first.
 - **Play in your browser** (nothing to install), or **with your own client**: the launcher finds the client you
   already have, points it at the realm you picked and starts it.
-- **A sample realm to try**: our temporary *Wrath Unleashed* (3.3.5a) is a Leyline realm like any other, and
-  it gets our client additions first.
+- **An official realm to try**: Leyline's own realm is a realm like any other on the network, and it gets our
+  client additions first.
 - **Open source**, MIT licensed. No game data is in this repo: hosts extract what their realm needs from their
   own install, on their own PC, and it never leaves it.
 
@@ -220,7 +220,7 @@ Leyline is a **mod launcher** and a **peer-to-peer realm network** for classic g
 
 The play bar at the bottom of every page is the whole play flow: pick a realm, press **Play**.
 
-- **Wrath Unleashed**, the official realm, is picked for you.
+- **The official realm** is picked for you.
 - **Your Den** is your own room to build in, on your PC: one click and you're in. Its page has **Invite friends** and
   **Ask Claude to edit it** (your own Claude builds with you, and every change waits for your OK).
 - **Your realms** lists the realms you host and the ones you played on, once there are any.
@@ -260,8 +260,8 @@ it on the launcher's **Realms** page.
 cd hosting/tests && python3 -m unittest discover -s . -p 'test_*.py'
 ```
 
-A few tests read files that only the WrathUnleashed repo has (realm profiles, CI workflows, its control
-panel); run those there.
+A few tests read files that live only in Leyline's main workspace (realm profiles, CI workflows, its control
+panel); they are skipped here.
 
 ## Layout
 
@@ -273,7 +273,7 @@ panel); run those there.
 | `hosting/discord/` | the Discord bridge |
 | `hosting/tests/` | tests for all of the above |
 | `realm/custom/lua_scripts/` | the realm-side scripts the Leyline window and the Discord bridge talk to |
-| `stream/fui-web/.../Leyline.lua` | the in-game Leyline window (`/leyline`); it runs inside the WrathUnleashed UI addon |
+| `stream/fui-web/.../Leyline.lua` | the in-game Leyline window (`/leyline`); it runs inside the Leyline UI addon |
 | `stream/links.py` | short share links for realms, hangouts, queues, mods and players |
 | `stream/www-files/art/` | the Leyline art and display font (SIL OFL 1.1) |
 | `mods/SPEC.md` | the mod package format |
@@ -283,16 +283,15 @@ panel); run those there.
 | `stream/loadouts.json` | the loadout templates (approved catalog ids only) the launcher's Host page checks against |
 | `launcher/` | the Leyline desktop launcher (Windows, macOS, Linux): clients, mods, realms, hosting. Build steps in `launcher/README.md` |
 
-The Mods & Workshop panel (`ModsPanel.lua`) uses the rest of the WrathUnleashed UI addon, so it stays in
-WrathUnleashed; the in-game window here opens from it.
+The Mods & Workshop panel (`ModsPanel.lua`) uses the rest of the UI addon, so it stays in Leyline's main
+workspace; the in-game window here opens from it.
 
 ## Where this comes from
 
-This repo is copied from [WrathUnleashed](https://github.com/orionopenwow/WrathUnleashed) by its
-`tools/leyline-repo/export.py`. Send changes there: anything changed only here is replaced on the next copy.
+This repo is published from Leyline's main workspace. Issues and pull requests are welcome here.
 
-- WrathUnleashed: https://github.com/orionopenwow/WrathUnleashed
-- The mod format and template: https://github.com/orionopenwow/WrathUnleashed/tree/main/mods
+- The mod format: `mods/SPEC.md`
+- Discord: https://discord.gg/RfChVr8J7T
 
 ## License
 

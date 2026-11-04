@@ -104,9 +104,11 @@ try:
     check("notices: the font's OFL and the third parties", all(s in (out1 / "THIRD-PARTY-NOTICES.md").read_text()
                                                               for s in ("SIL Open Font License", "AzerothCore", "ed25519")))
     readme = (out1 / "README.md").read_text()
-    check("README: what Leyline is, leyline host, relay, open source, links back",
-          all(s in readme for s in ("leyline host", "relay", "Open source", "browser",
-                                    "https://github.com/orionopenwow/WrathUnleashed", "## Layout", "## Quick start")))
+    check("README: what Leyline is, leyline host, relay, open source, the mod format, the Discord",
+          all(s in readme for s in ("leyline host", "relay", "Open source", "browser", "mods/SPEC.md",
+                                    "https://discord.gg/", "## Layout", "## Quick start")))
+    check("README: never names Wrath Unleashed (owner 3 Nov: 'rewrite readme to disclude wrathunleashed mentions')",
+          not re.search(r"(?i)wrath\s*unleashed", readme), re.findall(r"(?i).{30}wrath.{30}", readme))
     check("README: no brand words", not ex.brand_hits("README.md", readme.encode()))
     shots = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", readme)
     check("README: its launcher screenshots are exported with it", shots and all((out1 / p).is_file() for p in shots))

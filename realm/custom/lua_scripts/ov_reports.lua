@@ -275,6 +275,10 @@ local function onCommand(event, player, command)
     local raw = (command or ""):gsub("^[%.!]", "")
     local verb, rest = raw:match("^(%S+)%s*(.*)$")
     verb = (verb or ""):lower()
+    -- 3 Nov: the release audit's .bug and .wu got no answer; this line says whether the command reaches the script
+    if verb == "bug" or verb == "wu" then
+        print(string.format("[ov_reports] .%s from %s", verb, tostring(player.GetName and player:GetName() or "?")))
+    end
     if verb == "bug" or verb == "report" then
         fileReport(player, rest)
         return false
@@ -309,6 +313,7 @@ local function onLevel(event, player, oldLevel)
 end
 
 RegisterPlayerEvent(42, onCommand) -- PLAYER_EVENT_ON_COMMAND
+print(string.format("[ov_reports] loaded (OV_REPORTS %s, %d mount spells)", ON and "on" or "off", #MOUNT_SPELLS))
 RegisterPlayerEvent(3, onLogin)    -- PLAYER_EVENT_ON_LOGIN
 RegisterPlayerEvent(13, onLevel)   -- PLAYER_EVENT_ON_LEVEL_CHANGE
 

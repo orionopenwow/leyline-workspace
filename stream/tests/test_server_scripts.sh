@@ -296,6 +296,16 @@ ln -f "$ST/slices/mini/Interface/GlueXML/GlueXML.toc" "$T/toc.link"; ino=$(live_
 bash "$ST/fui-install.sh" reapply-slice mini > "$T/fui.log" 2>&1; rc=$?
 check "fui reapply on the live slice: laid over a copy, renamed in" "[ $rc = 0 ] && [ \$(live_ino) != $ino ] && [ -f $ST/slices/mini/Interface/AddOns/ForeverUI/ForeverUI.toc ] && grep -qx ForeverUIGlue.xml $ST/slices/mini/Interface/GlueXML/GlueXML.toc && [ ! -e $ST/slices/mini.prev ] && [ ! -e $ST/slices/mini.stage ] || { cat $T/fui.log; false; }"
 check "fui reapply: the stock GlueXML.toc the old slice served was not edited in place" "cmp -s $T/toc.link $T/toc.stock"
+# fui-install.sh ours: only our addons over the overlay already there (Forever UI's art kept), never a stranger's folder
+UP="$T/ours-up"; mkdir -p "$UP/kit" "$UP/ours/Interface/AddOns/LooseBags" "$UP/ours/Interface/AddOns/Stranger"
+echo '## Title: Loose Bags' > "$UP/ours/Interface/AddOns/LooseBags/LooseBags.toc"; echo x > "$UP/ours/Interface/AddOns/Stranger/Stranger.toc"
+ino=$(live_ino)
+bash "$ST/fui-install.sh" ours "$UP" > "$T/fui-ours.log" 2>&1; rc=$?
+check "fui ours: our addon laid over the live slice through a copy, Forever UI kept, a stranger's folder skipped" "[ $rc = 0 ] && [ \$(live_ino) != $ino ] && [ -f $ST/slices/mini/Interface/AddOns/LooseBags/LooseBags.toc ] && [ -f $ST/slices/mini/Interface/AddOns/ForeverUI/ForeverUI.toc ] && [ -f $OVF/Interface/AddOns/ForeverUI/ForeverUI.toc ] && [ ! -e $OVF/Interface/AddOns/Stranger ] && grep -q 'skipped Stranger' $T/fui-ours.log && [ ! -e $OVF.old ] && [ ! -e $OVF.new ] || { cat $T/fui-ours.log; false; }"
+mv "$OVF" "$T/ovf.keep"
+bash "$ST/fui-install.sh" ours "$UP" > "$T/fui-ours2.log" 2>&1; rc=$?
+check "fui ours: no Forever UI on the server yet -> says to run the full upload, nothing changed" "[ $rc != 0 ] && grep -q 'full once' $T/fui-ours2.log"
+mv "$T/ovf.keep" "$OVF"
 bash "$ST/fui-install.sh" remove > "$T/fui2.log" 2>&1; rc=$?
 check "fui remove: the live slice as uploaded again (through a copy)" "[ $rc = 0 ] && [ ! -e $ST/slices/mini/Interface/AddOns/ForeverUI ] && cmp -s $ST/slices/mini/Interface/GlueXML/GlueXML.toc $T/toc.stock && [ ! -e $ST/slices/mini/.overlay-foreverui ]"
 rm -rf "$ST/overlays" "$T/toc.link"

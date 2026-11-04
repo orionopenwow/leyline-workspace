@@ -4,6 +4,7 @@
 # sign-in cookie), like the slice itself, and is never put anywhere public.
 #
 #   fui-install.sh install <upload dir>      from "Add Forever UI to the stream.bat" (one SSH, tar on stdin)
+#   fui-install.sh ours <upload dir>         from "Add Forever UI to the stream.bat" (default): only our own addons
 #   fui-install.sh remove                    from "Remove Forever UI from the stream.bat"
 #   fui-install.sh reapply-slice <name> [<dir>]   slice-install.sh: lay it over a freshly uploaded slice
 #   fui-install.sh reapply-www               patch-index.sh: back into a freshly uploaded client's boot list
@@ -111,6 +112,45 @@ case "$cmd" in
     echo "  disk free now: $(df -h --output=avail "$ST" | tail -1 | tr -d ' ')"
     echo "  Forever UI is on in the stream (players: ?foreverui=0 on the page for the stock look)"
     ;;
+  ours)
+    # Only our own addons (WrathUnleashedUI, LooseBags, LeylineChat; owner 4 Nov: the 331 MB full upload stalled): the
+    # overlay already on the server keeps Forever UI's art; these folders in it are replaced, then laid over every
+    # slice like an install. Needs a full install first.
+    U="${2:?usage: fui-install.sh ours <upload dir>}"
+    [ -d "$OV" ] || die "Forever UI is not on the server yet: run Add Forever UI to the stream.bat full once"
+    [ -d "$U/ours/Interface/AddOns" ] || die "the upload holds no ours\Interface\AddOns folder"
+    log "our addons -> the Forever UI overlay"
+    mkdir -p "$BK"
+    for f in fui-install.sh fui-overlay.py slice-install.sh patch-index.sh; do
+      [ -f "$U/kit/$f" ] || continue
+      if [ -f "$ST/$f" ] && ! cmp -s "$U/kit/$f" "$ST/$f"; then cp -p "$ST/$f" "$BK/$f.$(date +%Y%m%d-%H%M%S)"; fi
+      install -m 755 "$U/kit/$f" "$ST/$f"
+    done
+    sed -i 's/\r$//' "$ST"/*.sh
+    chmod -R a+rX "$U/ours"
+    rm -rf "$OV.new" "$OV.old"
+    cp -al "$OV" "$OV.new"
+    for a in "$U"/ours/Interface/AddOns/*/; do
+      a=${a%/}; name=${a##*/}
+      case "$name" in WrathUnleashedUI|LooseBags|LeylineChat) ;; *) echo "  skipped $name (not one of ours)"; continue ;; esac
+      rm -rf "$OV.new/Interface/AddOns/$name"
+      cp -a "$a" "$OV.new/Interface/AddOns/$name"
+      echo "  $name: $(find "$OV.new/Interface/AddOns/$name" -type f | wc -l) files"
+    done
+    python3 -I "$ST/fui-overlay.py" check "$OV.new" || { rm -rf "$OV.new"; die "the new overlay does not check out: nothing changed"; }
+    if grep -qx 'LEYLINE_BRAND=1' "$WU/portal.env" 2>/dev/null; then fui brand-toc "$OV.new" on; fi
+    mv "$OV" "$OV.old"
+    mv "$OV.new" "$OV"
+    while read -r s; do
+      [ -n "$s" ] || continue
+      slice_restage "$s" fui apply-slice "$OV" || { rm -rf "$OV"; mv "$OV.old" "$OV"; slice_swapped_undo; restart_play 1; slice_swapped_done; die "could not lay the new addons over $s: every slice is as it was, the previous overlay is back"; }
+    done < <(slice_dirs)
+    rm -rf "$OV.old"
+    www_apply
+    restart_play 1
+    slice_swapped_done
+    echo "  our addons are live in the stream"
+    ;;
   remove)
     log "Forever UI off the streamed slice"
     while read -r s; do [ -n "$s" ] && { slice_restage "$s" fui unapply-slice || die "could not take Forever UI off $s (it is as it was)"; }; done < <(slice_dirs)
@@ -146,5 +186,5 @@ case "$cmd" in
     while read -r s; do [ -n "$s" ] && fui status "$s"; done < <(slice_dirs)
     if [ -f "$ST/www/boot-manifest.json" ] && [ -n "$(served_slice)" ]; then fui status "$(served_slice)" "$ST/www" | tail -1; fi
     ;;
-  *) die "usage: fui-install.sh install <dir> | remove | reapply-slice <name> [<dir>] | reapply-www | status | brand on|off" ;;
+  *) die "usage: fui-install.sh install <dir> | ours <dir> | remove | reapply-slice <name> [<dir>] | reapply-www | status | brand on|off" ;;
 esac

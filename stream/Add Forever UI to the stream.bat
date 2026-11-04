@@ -6,8 +6,11 @@ rem "mini" slice at wrath.openvanilla.app, so browser players get the same look 
 rem Its art comes from the modern WoW client: it goes ONLY into the gated stream (served by wu-play
 rem behind the sign-in, like the slice itself), never anywhere public.
 rem
-rem   "Add Forever UI to the stream.bat"                      from your WoW folder (play\Install Forever UI.bat)
-rem   "Add Forever UI to the stream.bat" D:\path\mod-forever-ui-main.zip   or a repo zip / .tgz / folder
+rem   "Add Forever UI to the stream.bat"                      only OUR addons (WrathUnleashedUI, LooseBags,
+rem                                                           LeylineChat; a few MB): Forever UI's art on the
+rem                                                           server stays (owner 4 Nov: the 331 MB upload stalled)
+rem   "Add Forever UI to the stream.bat" full                 everything, from your WoW folder (play\Install Forever UI.bat)
+rem   "Add Forever UI to the stream.bat" full D:\path\mod-forever-ui-main.zip   or a repo zip / .tgz / folder
 rem
 rem Where it takes Forever UI from, first found:
 rem   1 the folder or zip you give it
@@ -38,6 +41,8 @@ for %%d in ("%~dp0." "%~dp0.." "%~dp0..\.." "%USERPROFILE%\Desktop\Leyline" "%US
 
 set "TMPD=%TEMP%\fui-stream-src"
 set "STG=%TEMP%\fui-stream-up"
+if /i not "%~1"=="full" goto ours
+shift
 if exist "!TMPD!" rmdir /s /q "!TMPD!"
 mkdir "!TMPD!"
 
@@ -125,6 +130,26 @@ echo (stock look for one visit: add ?foreverui=0 to the address).
 echo Keep server\slice-install.sh and server\patch-index.sh from this kit in your stream folder:
 echo "Make mini slice.bat" uploads them, and they put Forever UI back over every new slice.
 pause
+exit /b 0
+
+rem Only our own addons over the Forever UI already on the server (fui-install.sh ours): a few MB, one SSH.
+:ours
+if exist "!STG!" rmdir /s /q "!STG!"
+mkdir "!STG!\kit" "!STG!\ours\Interface\AddOns"
+for %%f in (fui-install.sh fui-overlay.py slice-install.sh patch-index.sh stream-lib.sh slice-health.sh) do copy /y "%KIT%\%%f" "!STG!\kit\" >nul || goto fail
+for %%a in (WrathUnleashedUI LooseBags LeylineChat) do (
+  if exist "%~dp0fui-web\Interface\AddOns\%%a\%%a.toc" xcopy /e /i /y /q "%~dp0fui-web\Interface\AddOns\%%a" "!STG!\ours\Interface\AddOns\%%a\" >nul || goto fail
+)
+for /f %%b in ('powershell -NoProfile -Command "(Get-ChildItem -Recurse -File '!STG!' | Measure-Object Length -Sum).Sum"') do set "BYTES=%%b"
+for /f %%m in ('powershell -NoProfile -Command "[math]::Round(!BYTES! / 1MB, 1)"') do set "MB=%%m"
+echo Our addons: WrathUnleashedUI, LooseBags, LeylineChat ^(about !MB! MB^). Forever UI's art on the server stays.
+set "REMOTE=set -e; ST=/srv/wrath/stream; test -f $ST/stream-lib.sh || { echo The streaming kit is not on the server yet: run Make mini slice.bat first.; exit 1; }; mkdir -p $ST/overlays; U=$(mktemp -d $ST/overlays/.upload.XXXXXX); trap 'rm -rf $U' EXIT; tar -x -C $U -f - --no-same-owner --no-same-permissions; sed -i 's/\r$//' $U/kit/*.sh; install -m 0755 $U/kit/stream-lib.sh $U/kit/slice-health.sh $ST/; bash $U/kit/fui-install.sh ours $U"
+echo Uploading to the stream (one connection)...
+tar -cf - -C "!STG!" kit ours | %SSH% "!REMOTE!" || goto fail
+if exist "!STG!" rmdir /s /q "!STG!"
+echo.
+echo Done. Our addons are in the streamed client: reload https://leylinelauncher.com/wrath/play
+echo The whole of Forever UI again (a new Forever UI version): "Add Forever UI to the stream.bat" full
 exit /b 0
 
 rem Unpack a .zip / .tgz into TMPD and point SRC at the mod-forever-ui folder in it (MODE=repo).

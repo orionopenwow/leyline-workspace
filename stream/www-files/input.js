@@ -80,6 +80,9 @@ export function installInput() {
     const c = canvas();
     if (!c || e.target !== c) return;
     held |= 1 << e.button;
+    // touch.js's own presses: it keeps the game focused itself (mouse()), and a blur/focus flip right before its press
+    // (after any window blur, e.g. a click into DevTools) read as "the game lost focus" and the button never clicked
+    if (!e.isTrusted) return;
     if (document.hasFocus()) refocus(c);
     try {
       c.setPointerCapture(e.pointerId);
@@ -186,6 +189,19 @@ function pointerScale(canvas, stats) {
       ...extra,
     }));
   };
+  // With touch controls on (touch.js), only its own scripted mouse input may reach the game: a finger (or the browser's
+  // touch emulation on a desktop) that lands on the canvas itself went to the client as pointerType "touch", which
+  // the client takes as a touch, not a click (3 Nov: "mobile mode on desktop not clicking the buttons, it flashes").
+  // touch.js turns its layers back on for the next finger. A real mouse on a touch-screen PC still goes straight in.
+  const touchOn = () => !!(window.owTouch && window.owTouch.on);
+  for (const type of POINTER_TYPES) {
+    window.addEventListener(type, (e) => {
+      if (!e.isTrusted || e.pointerType === 'mouse' || !touchOn() || e.target !== canvas()) return;
+      e.stopImmediatePropagation();
+      if (e.cancelable) e.preventDefault();
+      if (type === 'pointerdown' && window.owTouch.fingerOnGame) window.owTouch.fingerOnGame(e);
+    }, true);
+  }
   for (const type of POINTER_TYPES) {
     window.addEventListener(type, (e) => {
       const c = canvas();

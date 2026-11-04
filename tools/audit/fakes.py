@@ -486,7 +486,12 @@ class FakeWrath:
                 self.events.append(("attack", g))
             elif op == p.CMSG_MESSAGECHAT:
                 text = b[8:].split(b"\x00")[0].decode()
-                if text == ".bug":
+                lang = struct.unpack_from("<I", b, 4)[0]
+                self.events.append(("lang", lang))
+                if lang == p.LANG_UNIVERSAL:
+                    # AzerothCore: a player's /say in the universal language is a "hacking attempt", dropped unseen
+                    pass
+                elif text == ".bug":
                     send(p.SMSG_MESSAGECHAT, chat(p.CHAT_SYSTEM, 0, "|cff66ccff[Wrath Unleashed]|r Type .bug and what happened, e.g. .bug the quest giver"))
                 elif text == ".boost" and lvl < 10:
                     send(p.SMSG_GOSSIP_MESSAGE, gossip(me, 60001, ["Begin your adventure at level 1", "Boost to level 80"]))

@@ -819,3 +819,11 @@
 1324b check  Read-only: server check
 1324c ship  Save as Orion: the Leyline repo README without Wrath Unleashed (goes public with the export)
 1324d retag-leyline-check  Read-only: which Leyline release tags still point at the old account's commits, and the main SHA for CONFIRM-retag
+1324e retag-leyline  Leyline repo: the 5 release tags on the old account's commits move onto Orion's main (CONFIRM-retag 7874f03)
+1324f retag-leyline-check  Read-only: confirm no tag is left on the old commits
+1324g scripts  Realm scripts: ov_reports.lua says when it loads and when .bug or .wu reaches it (live reload)
+1324i worldlog  Read-only: the world server log, for ov_reports.lua's new load and .bug lines
+1324j scripts  Realm scripts: .bug, .wu and the rest also work when typed commands reach the realm as chat (live reload)
+1324m worldlog  Read-only: the world server log (did .bug reach the script as a command or as chat)
+1325a client  Browser game: touch taps click (only scripted clicks reach the game; focus kept through a tap)
+1325b ship  Save as Orion: touch taps, .bug as chat, the audit's chat language, the Leyline README

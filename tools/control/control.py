@@ -287,6 +287,9 @@ STEPS = {
     "ov112-data-remove": ("tools/ov112-data/Old 1.12 data - remove.bat", "Remove the old 1.12 game files (the old site answers 410 for /data first; Wrath untouched)", False),
     "worldlog": ("tools/diag/World server log.bat", "Read-only: why the world server restarted (state, recent output, crash dumps)", False),
     "caddy-check": ("tools/security/Caddy check.bat", "Caddy and compose check: live config to the PC, secrets removed (read-only)", False),
+    # HTTP/3 off: browsers use HTTP/2 over TCP (4 Nov: downloads crawled at ~20 KB/s over HTTP/3). Backup, self-check, rollback.
+    "h3-off":  ("tools/security/Caddy - HTTP3 off.bat", "Website speed: HTTP/3 off, browsers use HTTP/2 (backup, self-check, rollback)", False),
+    "h3-on":   ("tools/security/Caddy - HTTP3 on again.bat", "Undo h3-off: HTTP/3 on again", False),
     # The bugs manifest (docs/BUGS-MANIFEST.md): every bug report (game, site, launcher, Discord) in one de-duplicated
     # backlog. Uploads tools/bugs/status.json, has the GM console rebuild, copies BUGS-MANIFEST.md and backlog.json to
     # tools/bugs/live/ (git-ignored). Touches only the bug backlog, so Autopilot may run it (READ_ONLY below).

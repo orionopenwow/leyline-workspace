@@ -806,4 +806,6 @@
 1322g ship  Save as Orion: the mount on the bars
 1323a signin  Website: the Game modes and Loadouts pages answer (they were 404)
 1323c ship  Save as Orion: the two pages and the audit's settings check
-1323d audit  Release audit again (after the site fix)
+1323e foreverui  Browser game: nameplates back to the game's own pill bar
+1323f addons  Leyline addons: the same
+1323g ship  Save as Orion: nameplates back to the original

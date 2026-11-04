@@ -352,7 +352,14 @@ background:rgba(18,22,54,.6)}
 
 
 def section_html() -> str:
-    """The "Try it in the Goldshire Inn" section (HTML only; style: SECTION_CSS)."""
+    """The "Try it in the Goldshire Inn" section (HTML only; style: SECTION_CSS). With guest passes off, the same section
+    says so and offers the free account: no "Try it" button that only leads to "closed" (3 Nov load test)."""
+    if not demo_on():
+        return ('<section class="ly-panel ly-demo" id="try" aria-labelledby="ly-try">'
+                '<h2 id="ly-try">Guest passes are closed right now</h2>'
+                '<p class="ly-demo-lede">Make a free account and you can play straight away, in your browser.</p>'
+                f'<div class="ly-demo-go"><a class="ly-btn" href="{html.escape(SIGNUP_PATH)}">Make a free account</a></div>'
+                '</section>')
     m = pass_minutes()
     return (
         '<section class="ly-panel ly-demo" id="try" aria-labelledby="ly-try">'

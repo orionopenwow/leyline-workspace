@@ -70,7 +70,7 @@
 import { gamePointerEvent } from './input.js';
 import { makeDriver } from './touch-driver.js';
 
-export const TOUCH_BUILD = 'wrath 2026-11-03 (ring layout, character creation taps where the finger is)';
+export const TOUCH_BUILD = 'wrath 2026-11-03b (only scripted clicks reach the game; focus kept through a tap)';
 // the driver installTouch made (gameTicks below asks it for game updates)
 let DRIVER = null;
 
@@ -566,6 +566,9 @@ const MOUSE_TWIN = { pointermove: 'mousemove', pointerdown: 'mousedown', pointer
 function mouse(type, x, y, button, buttons) {
   const c = gameCanvas();
   if (!c) return;
+  // the game only clicks for a press and release it had focus for (a blur in between read as alt-tab: the button
+  // showed pushed and never clicked, desktop touch emulation 3 Nov)
+  if (type !== 'pointermove' && document.activeElement !== c) { try { c.focus({ preventScroll: true }); } catch { /* fine */ } }
   const r = c.getBoundingClientRect();
   const [fx, fy] = pointerFactor(c);
   const at = { clientX: r.left + (x - r.left) / fx, clientY: r.top + (y - r.top) / fy };
@@ -1508,12 +1511,30 @@ SetCVar("autoLootDefault", "${want}")`);
   // A mouse (a touch-screen PC) goes straight to the game: the world layer is for fingers and pens.
   // Its drag-to-look turned the camera from page positions while the game turned it from the mouse
   // as well, and the two fought: the view snapped around. A finger or pen brings the layer back.
-  addEventListener('pointermove', (e) => { if (e.isTrusted && e.pointerType === 'mouse' && !e.buttons) root.classList.add('mouse'); }, true);
-  addEventListener('pointerdown', (e) => { if (e.isTrusted && e.pointerType !== 'mouse') root.classList.remove('mouse'); }, true);
+  // Only a real mouse moving counts (3 Nov): a desktop browser in phone emulation sends a stray mouse move (when the
+  // emulation is switched on, or the pointer crosses the page) that turned the world layer off, and the next taps
+  // went to the game as touches it doesn't click with. So: a fine pointer, a move that went somewhere, and no
+  // finger in the last 800 ms.
+  let lastFinger = 0;
+  const fine = () => { try { return matchMedia('(any-pointer: fine)').matches; } catch { return true; } };
+  addEventListener('pointermove', (e) => {
+    if (!e.isTrusted || e.pointerType !== 'mouse' || e.buttons) return;
+    if (performance.now() - lastFinger < 800 || !(e.movementX || e.movementY) || !fine()) return;
+    root.classList.add('mouse');
+  }, true);
+  addEventListener('pointerdown', (e) => {
+    if (e.isTrusted && e.pointerType !== 'mouse') { lastFinger = performance.now(); root.classList.remove('mouse'); }
+  }, true);
+  // a finger that reached the game's canvas anyway (input.js stops it there): the layers are back for the next one
+  // No compatibility mouse events or scrolling from a finger on our own layers (touch-action covers most browsers;
+  // this covers the rest and desktop touch emulation)
+  root.addEventListener('touchstart', (e) => { if (e.target.closest && e.target.closest('.zone, .ctl, .world, .glue')) e.preventDefault(); }, { passive: false });
+  status.fingerOnGame = () => { lastFinger = performance.now(); root.classList.remove('mouse'); status.strayTouches = (status.strayTouches || 0) + 1; };
   const touches = new Map();     // pointerId -> {x0,y0,x,y,t0,kind}
   let camBtn = 2;
   let lastTap = { t: 0, x: 0, y: 0 }, pinch = null, cam = null, hoverTimer = 0, uiDrag = null;
   world.addEventListener('pointerdown', (e) => {
+    e.preventDefault();                               // no compatibility mouse events: they took focus off the game
     world.setPointerCapture(e.pointerId);
     info.classList.remove('on');
     if (moving) { const from = moving; moving = null; lua(`${SLOT_FN}\nPlaceAction(slot(${from})) ClearCursor()`).then(() => refreshActions(true)); toast('Move cancelled', 900); }

@@ -126,6 +126,24 @@ class Rules(unittest.TestCase):
         v = HI.judge(cand("https://github.com/bank/tbc-sdk", hint_builds=["2.4.3"]), facts(), {**META, "description": "SDK"}, {})
         self.assertEqual(v["verdict"], "excluded")
 
+    def test_other_games_and_one_key_rotations(self):
+        for d in ("Reskins items within Bob's mods [Mod][Factorio]", "A Thaumcraft addon for Minecraft 1.12",
+                  "Fallout New Vegas vanilla-raster DLAA"):
+            v = self.j(f={}, m={"description": d})
+            self.assertEqual((v["verdict"], v["reason"]), ("excluded", "made for another game"), d)
+        for d in ("One-button rotation for feral druids", "Single Button Rotation (SBR)", "Rotation helper for mages"):
+            v = self.j(m={"description": d})
+            self.assertEqual(v["verdict"], "excluded", d)
+            self.assertIn("rotation", v["reason"])
+        # "vanilla" in the name is the match, so it can't be the sign too: a JS snake game is not a vanilla project
+        v = HI.judge(cand("https://github.com/q/Vanilla-JS-Snake"), facts(readme="Snake in vanilla JavaScript."),
+                     {**META, "description": "A snake game"}, {})
+        self.assertEqual(v["verdict"], "excluded")
+        self.assertIn("name match only", v["reason"])
+        v = HI.judge(cand("https://github.com/q/vanilla-tweaks"), facts(readme="An addon that tidies the bags."),
+                     {**META, "description": "Small fixes"}, {})
+        self.assertNotIn("name match only", v.get("reason", ""))
+
     def test_server_side_builds_and_types(self):
         v = self.j(c=cand("https://github.com/bob/mod-boss-rush"), f={"conf_dist": True, "cpp": 12},
                    m={"description": "Boss rush mode for AzerothCore"})

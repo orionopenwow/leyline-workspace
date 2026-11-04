@@ -1259,7 +1259,7 @@ check("switch on: /wrath/leyline/gallery is the gallery, indexable (no longer in
       and "/wrath/leyline/gallery" not in s)
 # the front door is the main site (owner 2026-10-30: "make this our main one"): every hub page at /wrath/leyline/<page>
 check("switch on: no link on the front page says leyline-preview", "leyline-preview" not in s)
-for pg in ("/realms", "/addons", "/addons?view=all", "/modes", "/news", "/creators", "/beacon", "/submit", "/forge", "/agents",
+for pg in ("/realms", "/addons", "/addons?view=all", "/modes", "/game-modes", "/loadouts", "/news", "/creators", "/beacon", "/submit", "/forge", "/agents",
            "/p/theme-night-sky"):
     st, h, b = req("/wrath/leyline" + pg)
     t = b.decode()

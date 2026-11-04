@@ -48,8 +48,9 @@ def settings_problems(doc) -> list[str]:
     if not isinstance(doc, dict):
         return ["not a JSON object"]
     out = []
-    if doc.get("schema") != 1:
-        out.append(f"schema {doc.get('schema')!r} (expected 1)")
+    # settings.rs SCHEMA: 2 since the game folders' tidy names (3 Nov); a launcher reads and upgrades every older one
+    if doc.get("schema") not in (1, 2):
+        out.append(f"schema {doc.get('schema')!r} (expected 1 or 2)")
     clients = doc.get("clients", [])
     if not isinstance(clients, list):
         return out + ["clients is not a list"]

@@ -301,6 +301,7 @@ STEPS = {
     # the owner types YES under its summary (OWNER_ONLY below); it backs up the server to the Desktop first.
     "discord-preview": ("tools/discord-leyline/Control - Discord preview.bat", "Discord redo preview: what would change on your server (read-only)", False),
     "discord-apply": ("tools/discord-leyline/Control - Discord do it.bat", "Discord redo, done: the server backed up to your Desktop, then the changes the preview showed", False),
+    "discord-read": ("tools/discord-leyline/Control - Discord read.bat", "Discord read (read-only): the newest messages in every channel since the last read, into tools\\discord-leyline\\live\\inbox-latest.md on this PC", False),
     "discord-check": ("tools/discord-leyline/Control - Discord bot settings.bat", "Discord bot settings: the channel ids for the website bot and the game bridge (read-only)", False),
     # Quick Claude edits (tools/control/quick.py, README.md "Quick edits"): control/quick/<id>.json names the files, their
     # sha256 and one deploy step (signin, addons, scripts or none); apply-check only checks it, apply checks it again and
@@ -318,7 +319,7 @@ STEPS = {
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "fresh-leyline-check", "retag-leyline-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
              "vr-data-check", "vr-site-check", "sv-site-check", "release-mirror-check", "fork-check", "bugs", "audit", "den-check", "domain-check",
-             "discord-preview", "discord-check", "apply-check", "feedback"}
+             "discord-preview", "discord-check", "discord-read", "apply-check", "feedback"}
 # Steps only the owner starts, by hand, from their own panel (never Autopilot, Launch all or a Waiting on you button)
 OWNER_ONLY = {"discord-apply"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}

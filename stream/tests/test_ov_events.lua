@@ -292,5 +292,66 @@ check("no gold or item prizes: the script never gives money, items or mail", (fu
         or src:find("AddTitle", 1, true) or src:find("SetKnownTitle", 1, true))
 end)())
 
+
+-- invasion (owner 4 Nov) -----------------------------------------------------------------------------------------------
+env = { OV_EVENTS = "1", OV_EVENTS_INVASION = "1" }
+events, server, gossip, timers, spawns = {}, {}, {}, {}, {}
+local made, n = {}, 0
+PerformIngameSpawn = function(kind, entry, map, inst, x, y, z, o, save, dur)
+    n = n + 1
+    local c = { entry = entry, x = x, y = y, z = z, guid = "MOB" .. n }
+    function c:GetGUID() return self.guid end
+    function c:GetEntry() return self.entry end
+    function c:SetLevel(l) self.level = l end
+    function c:SetMaxHealth(h) self.maxhp = h end
+    function c:SetHealth(h) self.hp = h end
+    made[#made + 1] = { c = c, map = map, save = save, dur = dur }
+    return c
+end
+local discord = {}
+OV_DISCORD_EVENT = function(t) discord[#discord + 1] = t; return true end
+dofile(file)
+E = OV_EVENTS_TEST
+check("invasion: the kill hook", events[7] ~= nil)
+local up2 = E.upcoming(clock)
+check("invasion on the schedule (every 3 h at :30, offset 2)", (function()
+    for _, e in ipairs(up2) do if e.kind == "invasion" then local d = os.date("*t", e.start); return d.min == 30 and (d.hour - 2) % 3 == 0 and e.start > clock and e.start - clock <= 3 * 3600 end end end)())
+local lowbie = player({ guid = 5, name = "Lowbie", level = 20, zone = 394 })
+function lowbie:GetLevel() return self.level end
+online = { lowbie }
+check("no level 80 out in Northrend: no invasion", E.invasion() == false and E.active == nil)
+local hero = player({ guid = 6, name = "Hero", level = 80, zone = 394, x = 3000, y = -3000, z = 100 })
+function hero:GetLevel() return self.level end
+function hero:IsInCombat() return false end
+function hero:Teleport(map, x, y, z, o) self.tp = { map, x, y, z } end
+online = { lowbie, hero }
+check("a level 80 in Grizzly Hills: it starts", E.invasion() == true and E.active and E.active.kind == "invasion")
+check("announced with the zone and .events join", has(hero, "Grizzly Hills") and has(hero, ".events join"))
+check("and to Discord, through the bridge", discord[1] and discord[1]:find("Grizzly Hills", 1, true) ~= nil)
+cmd(lowbie, "events join")
+check(".events join: too low is told", last(lowbie):find("level 70", 1, true) and not lowbie.tp)
+local a = E.active
+clock = clock + 31
+E.fast()
+check("wave 1: five invaders, level 80, not saved, timed", a.wave == 1 and #made == E.PER_WAVE and made[1].c.level == 80
+    and made[1].c.maxhp >= 20000 and made[1].save == false and made[1].dur == E.INVASION_S * 1000 and made[1].map == 571)
+check("around the spot (within 15 yards)", (function()
+    for _, m in ipairs(made) do if math.abs(m.c.x - 3000) > 15 or math.abs(m.c.y + 3000) > 15 then return false end end return true end)())
+cmd(hero, "events join")
+check(".events join teleports a level 80 to the fight", hero.tp and hero.tp[1] == 571 and math.abs(hero.tp[2] - 3000) < 10)
+events[7](7, hero, made[1].c)
+events[7](7, hero, { GetGUID = function() return "SOMEONE-ELSE" end })
+check("kills of our invaders count, others don't", a.kills[6] and a.kills[6].n == 1)
+for _ = 2, E.WAVES do clock = clock + E.WAVE_GAP_S; E.fast() end
+check("three waves", a.wave == E.WAVES and #made == E.WAVES * E.PER_WAVE)
+clock = clock + E.WAVE_GAP_S
+E.fast()
+local boss = made[#made].c
+check("then the captain, with far more health", a.boss and boss.entry == E.BOSS and boss.maxhp > made[1].c.maxhp)
+events[7](7, hero, boss)
+check("the captain down ends it, top fighter named", E.active == nil and has(hero, "Top fighter: Hero (6)"))
+check("a win on the board", (function() for _, v in pairs(wins) do if v.name == "Hero" then return true end end end)())
+OV_DISCORD_EVENT = nil
+
 print(string.format("\n%d/%d passed", pass, pass + fail))
 os.exit(fail == 0 and 0 or 1)

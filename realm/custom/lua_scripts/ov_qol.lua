@@ -655,6 +655,33 @@ local TIPS = {
     { text = "Found a bug? |cffffff00.bug|r and what happened. Stuck? |cffffff00.stuck|r takes you home." },
     { text = "|cffffff00.ov|r: free faction, race and appearance changes. |cffffff00.qol|r: what's switched on here." },
 }
+table.insert(TIPS, { text = "Dungeons scale to the group you bring, even just you: |cffffff00.solo|r shows which to run.", min = 10 })
+
+-- .solo (owner 4 Nov, the Wrath+ sprint): every dungeon and raid already scales to the group (mod-autobalance, minimum
+-- one player) and the Dungeon Finder queues one player alone (mod-solo-lfg); this says so, with the dungeons for your
+-- level. Names and level ranges are the dungeons' usual ones (plain words, no game data).
+local SOLO_DUNGEONS = {
+    { 13, 18, "Ragefire Chasm, Wailing Caverns, the Deadmines" },
+    { 18, 26, "Shadowfang Keep, Blackfathom Deeps, the Stockade" },
+    { 26, 36, "Gnomeregan, Razorfen Kraul, the Scarlet Monastery" },
+    { 36, 46, "Razorfen Downs, Uldaman, Zul'Farrak" },
+    { 46, 56, "Maraudon, the Sunken Temple, Blackrock Depths" },
+    { 56, 61, "Blackrock Spire, Dire Maul, Scholomance, Stratholme" },
+    { 61, 70, "Hellfire Ramparts, the Blood Furnace, the Slave Pens, the Underbog, Mana-Tombs, Auchenai Crypts" },
+    { 70, 71, "the Shattered Halls, the Steamvault, the Arcatraz, the Black Morass, Sethekk Halls, Shadow Labyrinth" },
+    { 71, 80, "Utgarde Keep, the Nexus, Azjol-Nerub, Ahn'kahet, Drak'Tharon Keep, the Violet Hold, Gundrak" },
+    { 80, 81, "every heroic, then the Forge of Souls and the Pit of Saron; raids scale too (|cffffff00.guide|r)" },
+}
+local function soloCommand(player)
+    local lvl = player:GetLevel()
+    local list = "none yet: dungeons open at level 13 (the Dungeon Finder from 10)"
+    for _, d in ipairs(SOLO_DUNGEONS) do
+        if lvl >= d[1] and lvl < d[2] then list = d[3] end
+    end
+    say(player, "Solo dungeons: every dungeon and raid here scales to the group you bring, even just you. Queue alone in "
+        .. "the Dungeon Finder (|cffffff00I|r) or walk in. For your level: " .. list .. ".")
+end
+
 local tipTurn = {}       -- player guid -> the next tip
 local invitedOn = {}     -- account id -> the day ("%Y-%m-%d") it was last invited to host
 
@@ -724,6 +751,9 @@ local function onCommand(event, player, command)
         return false
     elseif cmd == "xp" then
         xpCommand(player, arg)
+        return false
+    elseif cmd == "solo" then
+        soloCommand(player)
         return false
     elseif cmd == "hearth" then
         hearthCommand(player)

@@ -127,6 +127,18 @@ local function onChannelChat(event, player, msg, msgType, lang, channel)
     -- nothing returned: the line goes to the channel unchanged
 end
 
+-- Other scripts' announcements (ov_events.lua's invasions) go to the same Discord channel as a line from "Events",
+-- only while the bridge is pulling. Plain text only; capped like a player's line.
+function OV_DISCORD_EVENT(text)
+    if not ON or not active() then return false end
+    text = tostring(text or "")
+    if text:find("^%s*$") then return false end
+    seq = seq + 1
+    queue[#queue + 1] = { seq = seq, name = "Events", text = text:sub(1, MAX_TEXT) }
+    while #queue > QUEUE_MAX do table.remove(queue, 1) end
+    return true
+end
+
 -- console -------------------------------------------------------------------------------------------------------
 local function pull(rest, reply)
     local after, bugAfter, boot = rest:match("^(%d+)%s+(%-?%d+)%s*(%d*)%s*$")

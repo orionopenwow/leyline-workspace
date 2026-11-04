@@ -10,7 +10,7 @@
 #      instead of LFGDungeons.dbc's 15), AllowTwoSide.Interaction.Group = 1 (friends on either side can group).
 #      OV_AUTOLEARN = 1: ov_qol.lua's instant spell learn on level up (the profile had it at 0).
 #      OV_DUEL_RESET = 1 (owner 2026-10-31): health, power and cooldowns back after a duel (the duel corner).
-#      OV_EVENTS, _STOCK, _TRIVIA, _HIDE = 1: the events clock (ov_events.lua; bragging rights only).
+#      OV_EVENTS, _STOCK, _TRIVIA, _HIDE, _INVASION = 0: the events clock (ov_events.lua) off for now (owner 4 Nov: no events).
 #      No bots for now (owner 2026-10-31, realm/profiles/main.env): OV_COMPANIONS = 0 and AC_PLAYERBOTS_MAX_ADDED_BOTS = 0
 #      (this pass used to put the cap back to 9).
 #      Companions (ov_companions.lua, dungeons and 10-player raids): AC_PLAYERBOTS_MAX_ADDED_BOTS = 9 (the bot
@@ -21,6 +21,10 @@
 #      (no looting under free-for-all). AC_PLAYERBOTS_ALLOW_GUILD_BOTS = 0: own-account alts only.
 #      Chat anti-spam (docs/SECURITY-HARDENING.md): ChatFlood 6 messages / 1 s -> 30 s mute, ChatLevelReq Say 1,
 #      Channel 5, Whisper 5, ChatStrictLinkChecking Severity 1 / Kick 0. A first run with them restarts the realm.
+#      Cross-faction (owner 4 Nov, the Wrath+ sprint): AllowTwoSide.Interaction Chat, Channel, Guild, Arena, Auction and
+#      Calendar = 1 (Group was already on): one community, one auction house, mixed guilds and arena teams.
+#      Conveniences: AlwaysMaxSkillForLevel = 1 (weapon and defense skills at max on login and level up),
+#      MinPetitionSigns = 0 (a guild without charter signatures), MailDeliveryDelay = 0 (mail with items arrives at once).
 #   3b. Bot talent specs: mod-playerbots' premade specs (realm/playerbots-specs.env, 256 AC_PLAYERBOTS_PREMADE_SPEC_*
 #      lines) go into the profile, so ".recruit" can give each bot its role's talents.
 #   1b. The web armory (play.openvanilla.app/wrath/armory, stream/armory.py), when armory-export.py rides
@@ -257,14 +261,17 @@ echo "== 3. profile"
 sed -i 's/\r$//' "$PF"
 need=${need_npcs:-0}
 [ "${need_names:-0}" = 0 ] || need=1   # 1f: the name lists changed (read at a start)
-for kv in AC_DUNGEON_ACCESS_REQUIREMENTS_LFGLEVEL_DBCOVERRIDE=1 AC_ALLOW_TWO_SIDE_INTERACTION_GROUP=1 OV_AUTOLEARN=1 OV_DUEL_RESET=1 OV_EVENTS=1 OV_EVENTS_STOCK=1 OV_EVENTS_TRIVIA=1 OV_EVENTS_HIDE=1 OV_DUELS=1 \
+for kv in AC_DUNGEON_ACCESS_REQUIREMENTS_LFGLEVEL_DBCOVERRIDE=1 AC_ALLOW_TWO_SIDE_INTERACTION_GROUP=1 OV_AUTOLEARN=1 OV_DUEL_RESET=1 OV_EVENTS=0 OV_EVENTS_STOCK=0 OV_EVENTS_TRIVIA=0 OV_EVENTS_HIDE=0 OV_EVENTS_INVASION=0 OV_DUELS=1 \
     OV_COMPANIONS=0 AC_PLAYERBOTS_MAX_ADDED_BOTS=0 OV_COMPANIONS_PER_PLAYER_RAID=9 OV_COMPANIONS_GROUP_MAX=10 \
     OV_COMPANIONS_REALM_MAX=60 OV_COMPANIONS_RAID25=0 \
     AC_PLAYERBOTS_LOOT_NEED_ROLL_LEVEL=0 AC_PLAYERBOTS_LOOT_GREED_ROLL_LEVEL=0 AC_PLAYERBOTS_LOOT_ROLL_DISENCHANT=0 \
     AC_PLAYERBOTS_LOOT_ROLL_RECIPE=0 AC_PLAYERBOTS_FREE_METHOD_LOOT=0 AC_PLAYERBOTS_ALLOW_GUILD_BOTS=0 \
     AC_CHAT_FLOOD_MESSAGE_COUNT=6 AC_CHAT_FLOOD_MESSAGE_DELAY=1 AC_CHAT_FLOOD_MUTE_TIME=30 \
     AC_CHAT_LEVEL_REQ_SAY=1 AC_CHAT_LEVEL_REQ_CHANNEL=5 AC_CHAT_LEVEL_REQ_WHISPER=5 \
-    AC_CHAT_STRICT_LINK_CHECKING_SEVERITY=1 AC_CHAT_STRICT_LINK_CHECKING_KICK=0; do
+    AC_CHAT_STRICT_LINK_CHECKING_SEVERITY=1 AC_CHAT_STRICT_LINK_CHECKING_KICK=0 \
+    AC_ALLOW_TWO_SIDE_INTERACTION_CHAT=1 AC_ALLOW_TWO_SIDE_INTERACTION_CHANNEL=1 AC_ALLOW_TWO_SIDE_INTERACTION_GUILD=1 \
+    AC_ALLOW_TWO_SIDE_INTERACTION_ARENA=1 AC_ALLOW_TWO_SIDE_INTERACTION_AUCTION=1 AC_ALLOW_TWO_SIDE_INTERACTION_CALENDAR=1 \
+    AC_ALWAYS_MAX_SKILL_FOR_LEVEL=1 AC_MIN_PETITION_SIGNS=0 AC_MAIL_DELIVERY_DELAY=0; do
   k=${kv%%=*}; v=${kv#*=}
   if grep -qE "^$k=" "$PF"; then sed -i "s#^$k=.*#$k=$v#" "$PF"; else printf '%s=%s\n' "$k" "$v" >> "$PF"; fi
   [ "$(docker exec ov-ac-worldserver printenv "$k" 2>/dev/null || true)" = "$v" ] || need=1

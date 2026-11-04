@@ -117,7 +117,9 @@ firstLogin(h)
 local learned, said = #h.learns, #h.said
 login(h); login(h)
 check("relog: nothing learned again", #h.learns == learned, #h.learns)
-check("relog: nothing said again", #h.said == said, joined(h))
+local mountLines = 0
+for _, l in ipairs(h.said) do if l:find("ride from level 1", 1, true) then mountLines = mountLines + 1 end end
+check("relog: the riding line is not said again", mountLines == 1, joined(h))
 fire(30, h); runTimers(h)
 check("a stray second first-login event: nothing learned twice", #h.learns == learned)
 

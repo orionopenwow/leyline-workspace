@@ -1,0 +1,223 @@
+{
+  "about": "The Wrath Unleashed guide: one source for the site's notes page (docs/leyline/wrath-unleashed.md) and the in-game guide (WrathUnleashedUI/RealmGuideData.lua). Edit here, then run python3 tools/realm-guide/make_guide.py; stream/tests/test_realm_guide.py fails when either copy is stale. Plain words, no brand words, only what is switched on on the official realm.",
+  "title": "Wrath Unleashed notes",
+  "intro": "Everything that is different on Wrath Unleashed, in one place. In the game, the Leyline button on the minimap opens the same guide.",
+  "pages": [
+    {
+      "key": "start",
+      "name": "Welcome",
+      "icon": "guide",
+      "heading": "Welcome to Wrath Unleashed",
+      "lines": [
+        "A Wrath realm from level 1 with the things players ask for most: faster levelling, solo-friendly dungeons, one community across both factions.",
+        "Experience is 3x. Reputation and profession skill-ups are 2x. Gold, drops and honor stay normal.",
+        "Every new character can start at level 1 or take a one-time boost to 80.",
+        "Stuck or found a bug? .stuck takes you home, .bug tells us what happened."
+      ],
+      "commands": [
+        [
+          ".wu",
+          "every command on the realm"
+        ],
+        [
+          ".qol",
+          "what is switched on here"
+        ],
+        [
+          ".rules",
+          "the house rules"
+        ]
+      ]
+    },
+    {
+      "key": "boost",
+      "name": "Start and boost",
+      "icon": "up",
+      "heading": "Your first steps",
+      "lines": [
+        "A new character picks how to begin: play from level 1 (riding and your race's mount included), or boost to 80 with your spec's gear, two professions and a start in Dalaran.",
+        "Closed the window? It comes back at your next login at level 1, and .boost opens it any time below level 10.",
+        "Death Knights are open from your first character.",
+        "Spells are learned for you as you level, and weapon and defense skills stay at their best."
+      ],
+      "commands": [
+        [
+          ".boost",
+          "the start window again (below level 10, once per character)"
+        ],
+        [
+          ".learnall",
+          "learn every spell for your level now"
+        ],
+        [
+          ".xp off",
+          "stop gaining experience (.xp on to level again)"
+        ]
+      ]
+    },
+    {
+      "key": "dungeons",
+      "name": "Dungeons",
+      "icon": "dojo",
+      "heading": "Dungeons, solo or with friends",
+      "lines": [
+        "Every dungeon and raid scales to the group you bring, even just you.",
+        "The Dungeon Finder opens at level 10 and queues you alone if you like.",
+        "Loot from everything nearby with one click.",
+        "At 80: keystone dungeons that get harder each level. Talk to the keystone master in Dalaran."
+      ],
+      "commands": [
+        [
+          ".solo",
+          "which dungeons to run at your level"
+        ],
+        [
+          ".guide",
+          "where to go at 80: dungeons, gear, raids, PvP"
+        ],
+        [
+          ".hub keys",
+          "to the keystone master"
+        ]
+      ]
+    },
+    {
+      "key": "together",
+      "name": "One community",
+      "icon": "invite",
+      "heading": "Both factions, one community",
+      "lines": [
+        "Group, raid, chat and join guilds with players of either faction.",
+        "One auction house for both factions.",
+        "A guild needs no charter signatures, and mail with items arrives at once.",
+        "World chat can be bridged to our Discord: .discord off hides those lines for you."
+      ],
+      "commands": [
+        [
+          ".discord off",
+          "hide the Discord lines (.discord on brings them back)"
+        ],
+        [
+          "/leyline",
+          "the Leyline realms and your friends"
+        ]
+      ]
+    },
+    {
+      "key": "pvp",
+      "name": "Duels and PvP",
+      "icon": "range",
+      "heading": "Duels and PvP",
+      "lines": [
+        "The duel corner in Dalaran: health and cooldowns come back after every duel.",
+        "Level 80 duels count for a rating and weekly points, with leaderboards on the site.",
+        "The 1v1 arena: rated or for fun, queued from anywhere.",
+        "Battleground and arena queues are announced in chat, so a small realm still finds games."
+      ],
+      "commands": [
+        [
+          ".hub duels",
+          "to the duel corner"
+        ],
+        [
+          ".duel stats",
+          "your rating (.duel top: the best)"
+        ],
+        [
+          ".q1v1 rated",
+          "join the 1v1 arena (.q1v1 unrated for fun)"
+        ]
+      ]
+    },
+    {
+      "key": "looks",
+      "name": "Looks and collections",
+      "icon": "gearset",
+      "heading": "Looks, transmog and collections",
+      "lines": [
+        "Transmog: the Warpweaver changes how your gear looks. Call one to you anywhere.",
+        "Collections (Shift-P) shows your mounts and pets. Appearances calls the Warpweaver.",
+        "Free faction, race and appearance changes."
+      ],
+      "commands": [
+        [
+          ".transmog portable",
+          "call the Warpweaver to you"
+        ],
+        [
+          "/collections",
+          "mounts, pets and appearances (Shift-P)"
+        ],
+        [
+          ".ov",
+          "free faction, race and appearance changes"
+        ]
+      ]
+    },
+    {
+      "key": "challenge",
+      "name": "Challenges",
+      "icon": "lock",
+      "heading": "Hardcore and challenges",
+      "lines": [
+        "One life, slow experience and more: make a new character, pick Begin at level 1, then touch the Shrine of Challenge by your start zone's graveyard."
+      ],
+      "commands": [
+        [
+          ".hub hardcore",
+          "how to start"
+        ]
+      ]
+    },
+    {
+      "key": "fun",
+      "name": "Fun and modes",
+      "icon": "play",
+      "heading": "Minigolf, modes and your Den",
+      "lines": [
+        "Minigolf and minigames to play with friends, right in the world.",
+        "Your Den: a room of your own to build in, on your PC through the launcher. Invite a friend with one link.",
+        "The Workshop shares what players build."
+      ],
+      "commands": [
+        [
+          "/golf",
+          "minigolf"
+        ],
+        [
+          "/modes",
+          "minigames with friends"
+        ],
+        [
+          "/workshop",
+          "the Workshop"
+        ]
+      ]
+    },
+    {
+      "key": "help",
+      "name": "Help and settings",
+      "icon": "help",
+      "heading": "Help and settings",
+      "lines": [
+        "Names over heads: yours and friendly characters' are on. Change them in Interface, Names.",
+        "Items are never lost to one click: destroying one asks you to type DELETE.",
+        "Questions or ideas? Our Discord is on the site."
+      ],
+      "commands": [
+        [
+          ".bug what happened",
+          "report a bug, with where you are"
+        ],
+        [
+          ".stuck",
+          "home when you are stuck"
+        ],
+        [
+          ".hearth",
+          "your hearthstone ready again, now and then"
+        ]
+      ]
+    }
+  ]
+}

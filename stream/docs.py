@@ -32,6 +32,7 @@ PAGES = (
     ("network", "The network"),
     ("getting-started", "Getting started"),   # the player guide (the launcher's Help and Find your game files link it). TODO(owner): his words
     ("play", "Play"),
+    ("wrath-unleashed", "Wrath Unleashed notes"),   # the realm's features (docs/realm-guide/wrath-unleashed.json, tools/realm-guide)
     ("commands", "Commands"),
     ("mods", "Mod format"),
     ("publishing", "Publishing"),

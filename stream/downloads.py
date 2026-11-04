@@ -200,6 +200,18 @@ def _chips(links, cls="dl-chip") -> str:
     return "".join(out)
 
 
+def zip_button(doc: dict | None = None) -> str:
+    """The portable zip as a second main button beside the .exe (owner 3 Nov: "have the zip as the main thing next to
+    the exe in case people are deterred from the more info sequence"), or "" when the release has no zip."""
+    doc = doc if doc is not None else assets()
+    f = (doc.get("assets") or {}).get("zip")
+    if not f:
+        return ""
+    e = html.escape
+    sz = f' <span class="dl-sz">{e(size_text(f["size"]))}</span>' if f.get("size") else ""
+    return f'<a class="ly-btn dlp-zip" href="{e(f["url"])}"{_rel(f["url"])}>{DL_ICON}<span>Download .zip</span>{sz}</a>'
+
+
 def panel(primary: str = "", doc: dict | None = None, page_link: bool = True) -> str:
     """The small Download choice: Download for Windows (the recommended file) and Other downloads, a <details> list of
     every row (opens with Enter or Space, no script), All download options, the trust line."""
@@ -213,9 +225,10 @@ def panel(primary: str = "", doc: dict | None = None, page_link: bool = True) ->
             f'<div class="dlp-menu"><ul class="dlp-list" aria-label="Other downloads">{items}</ul>'
             + (f'<p class="dlp-all"><a href="{PAGE}">All download options ›</a></p>' if page_link else "")
             + "</div></details>")
+    zp = zip_button(doc)
     return (f'<div class="dlp"><div class="dlp-row"><a class="ly-btn dlp-main" href="{e(win[1])}"{_rel(win[1])}>{DL_ICON}'
-            f'<span>Download for Windows</span></a>{more}</div>'
-            f'<p class="dlp-meta">Leyline.exe{e(sz)} · also for macOS and Linux</p>'
+            f'<span>Download for Windows</span></a>{zp}{more}</div>'
+            f'<p class="dlp-meta">Leyline.exe{e(sz)}' + (" or the same in a .zip" if zp else "") + ' · also for macOS and Linux</p>'
             f'<p class="dlp-trust">{e(TRUST)}</p></div>')
 
 
@@ -262,7 +275,8 @@ def page_body(primary: str = "", doc: dict | None = None) -> str:
     ver = f'<p class="dl-ver">Leyline {e(doc["version"])}</p>' if doc.get("version") else ""
     sz = f" · {win[2]}" if win[2] else ""
     hero = (f'<h1>Download Leyline</h1><p class="sub">Free and open source. Pick the one for your computer.</p>{ver}'
-            f'<div class="dl-rec"><a class="ly-btn dl-big" href="{e(win[1])}"{_rel(win[1])}>{DL_ICON}<span>Download for Windows</span></a>'
+            f'<div class="dl-rec"><div class="dl-rec-row"><a class="ly-btn dl-big" href="{e(win[1])}"{_rel(win[1])}>{DL_ICON}<span>Download for Windows</span></a>'
+            f'{zip_button(doc)}</div>'
             f'<p class="dl-rec-m">Leyline.exe{e(sz)} · one file, nothing to install · Windows 10 and 11</p></div>'
             f'<p class="dl-trust">{e(TRUST)}</p>')
     lis = []
@@ -272,7 +286,8 @@ def page_body(primary: str = "", doc: dict | None = None) -> str:
                    f'<p>{e(r["line"])}</p><div class="dl-chips">{_chips(r["links"])}</div></li>')
     every = f'<section aria-labelledby="dl-all-h"><h2 id="dl-all-h">Every download</h2><ul class="dl-opts">{"".join(lis)}</ul></section>'
     first = ('<section class="dl-first" aria-labelledby="dl-first-h"><h2 id="dl-first-h">The first time you open it</h2><ul>'
-             '<li><b>Windows</b> may say it protected your PC: choose More info, then Run anyway. Builds are not code-signed yet.</li>'
+             '<li><b>Windows</b> may say it protected your PC: choose More info, then Run anyway. Builds are not code-signed yet. '
+             'The .zip holds the same Leyline.exe: unzip it anywhere and run it.</li>'
              '<li><b>macOS</b>: right-click Leyline and choose Open.</li>'
              '<li><b>Linux</b>: make the .AppImage executable, then run it.</li></ul>'
              '<p>After that Leyline keeps itself up to date. It uses the game folder you already have; it never downloads, '
@@ -284,6 +299,11 @@ CSS = """
 .dlp{margin:14px 0 4px;max-width:36rem}
 .dlp-row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px}
 .dlp-main{display:inline-flex;align-items:center;gap:8px;min-height:44px}
+.dlp-zip{display:inline-flex;align-items:center;gap:8px;min-height:44px;background:var(--lk-surface-2,rgba(255,255,255,.08));
+color:var(--lk-text,inherit);border:1px solid var(--lk-border-strong,rgba(255,255,255,.2))}
+.dlp-zip svg{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.dlp-zip .dl-sz{opacity:.7;font-weight:400}
+.dl-rec-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .dlp-main svg,.dl-big svg{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .dlp-more{position:relative;flex:1 1 15rem;min-width:0}
 .dlp-sum{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 16px;box-sizing:border-box;cursor:pointer;list-style:none;

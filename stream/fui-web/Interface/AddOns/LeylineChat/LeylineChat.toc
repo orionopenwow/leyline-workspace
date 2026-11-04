@@ -1,0 +1,15 @@
+## Interface: 30300
+## Title: Leyline Chat
+## Notes: A sleek, readable chat window: five themes, timestamps, class colours, clickable links, copy, spam control, a World tab with the realm's Discord lines marked [D], channel cycling with Tab, /world. Settings: /lchat.
+## Author: Leyline
+## Version: 2.0.0
+## OptionalDeps: ForeverUI
+## SavedVariables: LeylineChatDB
+## SavedVariablesPerCharacter: LeylineChatCharDB
+Kit.lua
+Core.lua
+Skin.lua
+Tools.lua
+World.lua
+Expand.lua
+Settings.lua

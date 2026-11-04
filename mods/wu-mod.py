@@ -1240,7 +1240,7 @@ CATALOG_DIST = os.path.join(HERE, "dist")
 CATALOG_FORMAT = 1
 CATALOG_ADDON = "WUModCatalog"     # the generated addon that tells the in-game Workshop tab what is installed
 # Addon folder names a catalog mod may not use: the realm's own addons ship through the foreverui step.
-RESERVED_ADDONS = {"foreverui", "wrathunleashedui", CATALOG_ADDON.lower()}
+RESERVED_ADDONS = {"foreverui", "wrathunleashedui", CATALOG_ADDON.lower(), "loosebags", "leylinechat"}
 
 
 def ui_addons(files):

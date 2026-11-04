@@ -2,7 +2,7 @@
 --   Mounts, Pets: the 3.3.5 companion lists (GetNumCompanions / GetCompanionInfo), with search, a 3D preview
 --                 and Summon. Click a row to preview it; double-click or Summon to ride or call it; drag a row
 --                 onto an action bar (PickupCompanion).
---   Toys, Appearances: coming.
+--   Toys: coming. Appearances: a button that calls mod-transmog's portable Warpweaver; the look list is coming.
 -- Opened by Shift-P (set once per character; Esc > Mods & Workshop > Default keys sets it again), /collections,
 -- and, with Forever UI, a Collections button on the micro menu.
 -- The companion handling follows Forever UI's MountsTab.lua (github.com/Adrestie/mod-forever-ui, GPL-2):
@@ -19,8 +19,10 @@ local TABS = {
     { name = "Mounts", kind = "MOUNT", noun = "mounts", none = "No mounts yet. Level 80s get every mount (type .mounts)." },
     { name = "Pets", kind = "CRITTER", noun = "pets", none = "No pets yet." },
     { name = "Toys", coming = "Coming: the toys you own (fun items with a use) in one place, used right from here." },
-    { name = "Appearances", coming = "Coming: every look you've unlocked for transmog, by slot, with a preview, "
-        .. "ready to apply at the transmogrifier." },
+    { name = "Appearances", coming = "Change how your gear looks with the Warpweaver (transmog): the button below "
+        .. "calls one to you (|cffffff00.transmog portable|r), or |cffffff00.hub transmog|r takes you to the one in "
+        .. "Dalaran. Every look you've unlocked, by slot, in this tab is coming.",
+      action = { text = "Call the Warpweaver", chat = ".transmog portable" } },
 }
 
 local win
@@ -240,6 +242,18 @@ local function buildComingPage(page, tab)
     label(page, tab.name, "GameFontNormalLarge", "TOPLEFT", 24, -24)
     label(page, "Coming", "GameFontHighlight", "TOPLEFT", 24, -52)
     label(page, tab.coming, "GameFontHighlightSmall", "TOPLEFT", 24, -76):SetWidth(WIN_W - 80)
+    -- Appearances: mod-transmog's portable Warpweaver (Transmogrification.EnablePortable=1 in realm/modules.env)
+    if tab.action then
+        local b = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
+        b:SetWidth(180); b:SetHeight(22)
+        b:SetText(tab.action.text)
+        b:SetPoint("TOPLEFT", page, "TOPLEFT", 24, -130)
+        b:SetScript("OnClick", function()
+            if SendChatMessage then pcall(SendChatMessage, tab.action.chat, "SAY") end
+            if win then win:Hide() end
+        end)
+        page.action = b
+    end
 end
 
 -- ---------------------------------------------------------------- Actions
@@ -317,7 +331,36 @@ local function build()
 end
 
 -- tab: optional number or name ("mounts", "pets", "toys", "appearances").
+-- With Forever UI, mounts and pets open its own screens (the character sheet's Mounts and Pets side tabs,
+-- ForeverUI.ToggleCharacterTab): the real Forever UI look (owner 4 Nov). Our window stays for a game without it,
+-- and for Toys and Appearances, which Forever UI doesn't have.
+local FUI_KEY = { mounts = { "mounts", "MOUNT", 1 }, pets = { "pets", "CRITTER", 2 } }
+function C.ForeverKey(tab)
+    if not (ForeverUI and type(ForeverUI.ToggleCharacterTab) == "function" and CharacterFrame) then return nil end
+    local name
+    if tab == nil or tab == "" then name = "mounts"
+    elseif type(tab) == "number" then name = (tab == 1 and "mounts") or (tab == 2 and "pets") or nil
+    elseif type(tab) == "string" then
+        local l = tab:lower()
+        if ("mounts"):find(l, 1, true) == 1 then name = "mounts" elseif ("pets"):find(l, 1, true) == 1 then name = "pets" end
+    end
+    return name and FUI_KEY[name] or nil
+end
+
 function W.ToggleCollections(tab)
+    local fk = C.ForeverKey(tab)
+    if fk then
+        local kind, n = fk[2], fk[3]
+        if (try(GetNumCompanions, kind) or 0) == 0 then
+            local msg = TABS[n].none
+            if UIErrorsFrame and UIErrorsFrame.AddMessage then UIErrorsFrame:AddMessage(msg, 1, 0.82, 0)
+            elseif DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage(msg) end
+            return
+        end
+        if win and win:IsShown() then win:Hide() end
+        pcall(ForeverUI.ToggleCharacterTab, fk[1])
+        return
+    end
     if not win then build() end
     local n
     if type(tab) == "number" then n = tab

@@ -576,6 +576,16 @@ function W.LeylineDefaults()
         if SetCVar then pcall(SetCVar, "lockActionBars", "1") end
         if LOCK_ACTIONBAR ~= nil then LOCK_ACTIONBAR = "1" end
     end
+    -- Names over heads (owner 4 Nov): your own character's and friendly NPCs', once per character so a player who
+    -- turns them off in Interface > Names keeps it off.
+    if not c.namesOn then
+        c.namesOn = true
+        if SetCVar then
+            pcall(SetCVar, "UnitNameOwn", "1")
+            pcall(SetCVar, "UnitNameNPC", "1")
+            pcall(SetCVar, "UnitNameFriendlyPlayerName", "1")
+        end
+    end
     -- Talent planner: 3.3.5's own preview mode (plan points, then Learn), on for everyone.
     if SetCVar then pcall(SetCVar, "previewTalents", "1"); pcall(SetCVar, "previewPetTalents", "1") end
     -- (No UIParent:SetScale here any more: on the desktop UIParent's scale is the game's UI size, and setting it

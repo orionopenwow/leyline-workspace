@@ -31,7 +31,7 @@ const BLOCKED_MAGIC = [['MPQ\x1a', 'an archive of game data'], ['MPQ\x1b', 'an a
 // What an addon folder may hold: its code and its own art, fonts and sounds (.tga for textures).
 export const ALLOWED_EXT = new Set(['.toc', '.lua', '.xml', '.tga', '.ttf', '.ogg', '.mp3', '.wav', '.txt', '.md', '.toml']);
 // Folder names the realm ships itself (mods-overlay.py RESERVED, wu-mod.py RESERVED_ADDONS).
-export const RESERVED = new Set(['foreverui', 'wrathunleashedui', 'wumodcatalog']);
+export const RESERVED = new Set(['foreverui', 'wrathunleashedui', 'wumodcatalog', 'loosebags', 'leylinechat']);
 export const NAME_RE = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
 const IGNORED = new Set(['.git', '__pycache__', '.ds_store', 'thumbs.db', 'desktop.ini', '.gitignore', '__macosx']);
 // a WU mod package's top level (wu-mod.py TOP_LEVEL_OK): only ui/ is installed in the browser

@@ -38,7 +38,7 @@ class Pack(unittest.TestCase):
     def test_the_real_pack(self):
         made = mp.build(self.out, "2026.1031.900")
         d = json.loads(made["json"].read_text())
-        self.assertEqual([a["name"] for a in d["addons"]], ["OVArmory", "OVQoL", "WUModCatalog", "WrathUnleashedUI"])
+        self.assertEqual([a["name"] for a in d["addons"]], ["LeylineChat", "LooseBags", "OVArmory", "OVQoL", "WUModCatalog", "WrathUnleashedUI"])
         self.assertEqual(d["build"], "3.3.5a")
         self.assertEqual(d["download"], "https://github.com/orionopenwow/Leyline/releases/download/leyline-addons/leyline-addons-2026.1031.900.zip")
         data = made["zip"].read_bytes()
@@ -55,6 +55,17 @@ class Pack(unittest.TestCase):
             self.assertIn("## Title: Leyline UI", toc)
             self.assertIn("## Title: Leyline Armory", z.read("OVArmory/OVArmory.toc").decode())
             self.assertIn("WU_MOD_CATALOG", z.read("WUModCatalog/WUModCatalog.lua").decode())
+            # Loose Bags (MIT, Eric R): its licence and credit travel with it; the .toc is not rebranded
+            self.assertIn("LooseBags/LICENSE.txt", names)
+            lb = z.read("LooseBags/LooseBags.toc").decode()
+            self.assertIn("## Author: Eric R", lb)
+            self.assertIn("## Interface: 30300", lb)
+            # Leyline Chat (the default chat, our own): its code and its own art (TGA) travel with it
+            lc = z.read("LeylineChat/LeylineChat.toc").decode()
+            self.assertIn("## Title: Leyline Chat", lc)
+            self.assertIn("## SavedVariables: LeylineChatDB", lc)
+            self.assertIn("LeylineChat/World.lua", names)
+            self.assertIn("LeylineChat/Media/Chat_Discord.tga", names)
         # Same files, same bytes.
         again = mp.build(self.t / "again", "2026.1031.900")
         self.assertEqual(again["zip"].read_bytes(), data)

@@ -101,6 +101,10 @@ rem wizard): it was never copied before 2026-10-31, so the game asked for it and
 if exist "%~dp0fui-web\Interface\GlueXML\ForeverUIGlueLeyline.lua" copy /y "%~dp0fui-web\Interface\GlueXML\ForeverUIGlueLeyline.lua" "!F!\GlueXML\" >nul || goto fail
 rem WrathUnleashedUI (fui-web\Interface\AddOns): our in-game defaults (every action bar on, a level 80's bars filled).
 if exist "%~dp0fui-web\Interface\AddOns\WrathUnleashedUI\WrathUnleashedUI.toc" xcopy /e /i /y /q "%~dp0fui-web\Interface\AddOns\WrathUnleashedUI" "!F!\AddOns\WrathUnleashedUI\" >nul || goto fail
+rem LooseBags (fui-web\Interface\AddOns): the default bag, Loose Bags by Eric R (MIT), ported; /lbags off for the standard bags.
+if exist "%~dp0fui-web\Interface\AddOns\LooseBags\LooseBags.toc" xcopy /e /i /y /q "%~dp0fui-web\Interface\AddOns\LooseBags" "!F!\AddOns\LooseBags\" >nul || goto fail
+rem LeylineChat (fui-web\Interface\AddOns): the default chat (themes, the World tab with Discord [D] lines); /lchat off for the stock chat.
+if exist "%~dp0fui-web\Interface\AddOns\LeylineChat\LeylineChat.toc" xcopy /e /i /y /q "%~dp0fui-web\Interface\AddOns\LeylineChat" "!F!\AddOns\LeylineChat\" >nul || goto fail
 if not exist "!F!\GlueXML\ForeverUIGlue.xml" (echo Forever UI's login screens ^(ForeverUIGlue.xml^) are missing from !SRC!. & goto fail)
 for /f %%b in ('powershell -NoProfile -Command "(Get-ChildItem -Recurse -File '!STG!' | Measure-Object Length -Sum).Sum"') do set "BYTES=%%b"
 for /f %%n in ('powershell -NoProfile -Command "(Get-ChildItem -Recurse -File '!STG!\foreverui').Count"') do set "NFILES=%%n"

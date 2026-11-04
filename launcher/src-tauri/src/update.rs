@@ -27,8 +27,10 @@ pub const RELEASES_PAGE: &str = "https://github.com/orionopenwow/Leyline/release
 pub const DOWNLOAD_PREFIX: &str = "https://github.com/orionopenwow/Leyline/releases/download/";
 pub const TAG_PREFIX: &str = "launcher-v";
 pub const MANIFEST_NAME: &str = "latest.json";
-/// How often the app looks for a new version while it runs (and once at start).
-pub const CHECK_EVERY_SECS: u64 = 6 * 60 * 60;
+/// How often the app looks for a new version while it runs (and once at start). 30 minutes (owner 3 Nov: a new release
+/// should reach every launcher soon): one GitHub API call per player per half hour, well under the unauthenticated
+/// limit of 60 an hour.
+pub const CHECK_EVERY_SECS: u64 = 30 * 60;
 
 /// Which releases the player wants.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

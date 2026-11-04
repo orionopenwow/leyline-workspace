@@ -2118,7 +2118,7 @@ fn launcher_update_restart(app: AppHandle, core: State<Core>) -> Result<(), Stri
     install_and_restart(&app, &core)
 }
 
-/// Check at start, then every 6 hours, for as long as Leyline runs. An update the last run downloaded and left
+/// Check at start, then every 30 minutes (update::CHECK_EVERY_SECS), for as long as Leyline runs. An update the last run downloaded and left
 /// waiting is finished by the first check (update::finish_now).
 fn start_update_timer(app: AppHandle) {
     {

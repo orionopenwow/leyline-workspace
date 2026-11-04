@@ -98,7 +98,10 @@ $("tb-account").addEventListener("click", () => openLink("account"));
 // friends and hub, which became the Forum on 2026-10-30) still work everywhere: show() maps them to the page + tab, so a remembered page, a
 // data-page-go button or a leyline:// link lands where it used to; a page with tabs alone opens its last tab. Modes has no menu item
 // but is still a page (Home's featured mode, Realms › MODES, show("modes")).
-const TABS = { mods: ["installed", "discover", "gamemodes"] };   // Game modes (owner 3 Nov): gamemods.js showSection
+const TABS = { mods: ["discover", "installed", "gamemodes"] };   // Game modes (owner 3 Nov): gamemods.js showSection
+// Mods & Addons opens on Discover every time it is clicked (owner 3 Nov: "make the discovery the main tab that opens when
+// its clicked"); a button or link that names a tab (Installed, Game modes) still lands there.
+const OPENS_ON = { mods: "discover" };
 const ALIASES = { mymods: ["mods", "installed"], installed: ["mods", "installed"], discover: ["mods", "discover"],
   community: ["forum", ""], friends: ["forum", ""], hub: ["forum", ""], chat: ["forum", ""] };
 const loaders = { "mods:discover": () => loadCatalog(), "mods:installed": () => loadInstalled(),
@@ -112,7 +115,7 @@ function resolvePage(page, tab) {
   if (ALIASES[page]) [page, tab] = ALIASES[page];
   if (!document.getElementById("page-" + page)) return ["play", ""];
   if (!TABS[page]) return [page, ""];
-  if (!TABS[page].includes(tab)) tab = TABS[page].includes(lastTab[page]) ? lastTab[page] : TABS[page][0];
+  if (!TABS[page].includes(tab)) tab = OPENS_ON[page] || (TABS[page].includes(lastTab[page]) ? lastTab[page] : TABS[page][0]);
   return [page, tab];
 }
 function show(want, noLoad, wantTab) {
@@ -3121,8 +3124,9 @@ $("host-start").addEventListener("click", () => hostStart(null));
 $("host-refresh").addEventListener("click", () => loadHost());
 
 // ------------------------------------------------------------------ the launcher's own updates
-// The core checks at start and every 6 hours and downloads in the background (app.rs). The UI only shows it:
-// One calm line in the title bar (owner 31 Oct): "Update ready — restart to finish" and Restart. Ignored, the update
+// The core checks at start and every 30 minutes and downloads in the background (app.rs). The UI only shows it:
+// One calm line in the title bar (owner 31 Oct): "Update ready — restart to finish" and Restart. Never a restart by
+// itself (owner 3 Nov: "make the restart to update button optional and appear and not auto"). Ignored, the update
 // finishes by itself the next time Leyline opens ("Finishing the update…"); never while a game Leyline started runs.
 let upd = null;
 function updLine(u) {

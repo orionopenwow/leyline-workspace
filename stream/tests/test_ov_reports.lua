@@ -245,5 +245,18 @@ local t1 = player(); events[42](42, t1, "wu")
 check("brand on: [Leyline]", t1.msgs[1]:find("|cff66ccff[Leyline]|r ", 1, true) == 1 and not t1.msgs[1]:find("WrathUnleashed", 1, true))
 _G.OVMod = nil
 
+-- typed as chat (3 Nov: the world server passed ".bug" and ".wu" on as a /say): handled and kept out of chat
+check("chat event registered", events[18] ~= nil)
+local cp = player()
+local nc = #sql
+check(".bug typed as chat: handled, not sent", events[18](18, cp, ".bug the door is stuck") == false)
+check(".bug typed as chat: one report filed", #sql == nc + 1 and sql[#sql]:match("^INSERT INTO ov_bug_reports") and sql[#sql]:match("the door is stuck"))
+local wp = player()
+check(".wu typed as chat: the commands listed", events[18](18, wp, ".wu") == false and wp.msgs[1] and wp.msgs[1]:find("Commands:", 1, true) ~= nil)
+local op = player()
+check("plain chat is left alone", events[18](18, op, "hello there") == nil and #op.msgs == 0)
+check("another script's command is left alone", events[18](18, op, ".boost") == nil and #op.msgs == 0)
+check("a dot in the middle is not a command", events[18](18, op, "see you at 5.30") == nil)
+
 print(string.format("\n%d/%d passed", pass, pass + fail))
 os.exit(fail == 0 and 0 or 1)

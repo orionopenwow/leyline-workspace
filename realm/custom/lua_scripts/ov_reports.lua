@@ -17,7 +17,8 @@
 --
 -- Reports are rate-limited per account (REPORTS_PER_HOUR) and capped in length; the text is escaped before
 -- it reaches SQL. Nothing is sent anywhere else: staff read them in the GM console or with SQL.
--- mod-ale events used: 3 ON_LOGIN, 13 ON_LEVEL_CHANGE, 42 ON_COMMAND (return false = handled, no "no such command").
+-- mod-ale events used: 3 ON_LOGIN, 13 ON_LEVEL_CHANGE, 18 ON_CHAT (the same commands typed as chat), 42 ON_COMMAND
+-- (return false = handled, no "no such command").
 
 -- The Leyline brand switch (ov_modapi.lua OVMod.Brand, realm/brand.sh): the project's name where players read it.
 local function brandName()
@@ -312,12 +313,28 @@ local function onLevel(event, player, oldLevel)
     maybeUnlockMounts(player)
 end
 
+-- The same commands typed as plain chat (3 Nov: the release audit's ".bug" and ".wu" never reached ON_COMMAND, while the
+-- script loaded and was on: the world server passed them on as a /say). A line that starts with "." or "!" and names
+-- one of these commands is handled here and kept out of chat (return false); everything else is left alone. A command
+-- that did reach ON_COMMAND never gets here (the core stops at the command), so nothing runs twice.
+local OWN = { bug = true, report = true, stuck = true, unstuck = true, mounts = true, guide = true, help80 = true,
+    rules = true, house = true, wu = true, commands = true }
+local function onChat(event, player, msg)
+    if not ON or not player or type(msg) ~= "string" then return end
+    local verb = msg:match("^[%.!](%S+)")
+    if not verb or not OWN[verb:lower()] then return end
+    print(string.format("[ov_reports] .%s came as chat from %s", verb:lower(), tostring(player.GetName and player:GetName() or "?")))
+    onCommand(42, player, msg)
+    return false
+end
+
 RegisterPlayerEvent(42, onCommand) -- PLAYER_EVENT_ON_COMMAND
+RegisterPlayerEvent(18, onChat)    -- PLAYER_EVENT_ON_CHAT (say, yell, emote; return false = not sent)
 print(string.format("[ov_reports] loaded (OV_REPORTS %s, %d mount spells)", ON and "on" or "off", #MOUNT_SPELLS))
 RegisterPlayerEvent(3, onLogin)    -- PLAYER_EVENT_ON_LOGIN
 RegisterPlayerEvent(13, onLevel)   -- PLAYER_EVENT_ON_LEVEL_CHANGE
 
 -- for tests
 OV_REPORTS_TEST = { esc = esc, allowReport = allowReport, fileReport = fileReport, unstick = unstick,
-    onCommand = onCommand, onLevel = onLevel, GUIDE = GUIDE, RULES = RULES, onLogin = onLogin, MOUNT_SPELLS = MOUNT_SPELLS,
+    onCommand = onCommand, onChat = onChat, onLevel = onLevel, GUIDE = GUIDE, RULES = RULES, onLogin = onLogin, MOUNT_SPELLS = MOUNT_SPELLS,
     MOUNTS_PER_TICK = MOUNTS_PER_TICK }

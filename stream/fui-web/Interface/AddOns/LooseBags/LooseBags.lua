@@ -97,7 +97,9 @@ function LB.ReadSlot(bag, slot)
 		questActive = info.questActive,
 		icon = info.iconFileID,
 		link = LB.Text(info.hyperlink),
-		name = LB.Text(info.itemName),
+		name = LB.Text(info.itemName) or (LB.Text(info.hyperlink) and string.match(info.hyperlink, "%[(.+)%]")),
+		kind = LB.Text(info.itemType),
+		subKind = LB.Text(info.itemSubType),
 		locked = info.isLocked == true,
 	}
 end
@@ -122,11 +124,18 @@ function LB.Scan()
 	return live, backpackSlots
 end
 
+-- The settings live in a drawer beside the window and the bag slots row adds to the window's height (Place.lua), so
+-- the room for items, and a size chosen with the grip, never depend on either.
 local function SettingsBar(char)
-	if char.collapsed then
-		return 0
+	return 0
+end
+
+function LB.BarHeight(char)
+	char = char or LB.Char()
+	if char.bagRow then
+		return Logic.BAG_ROW
 	end
-	return Logic.SETTINGS_BAR
+	return 0
 end
 
 local function CountHeld(places)
@@ -139,6 +148,27 @@ local function CountHeld(places)
 	return count
 end
 
+local function ViewSize()
+	if not UIParent or not UIParent.GetWidth or not UIParent.GetHeight then
+		return nil, nil
+	end
+	return LB.Plain(UIParent:GetWidth()), LB.Plain(UIParent:GetHeight())
+end
+
+-- The room new items, Clean Up and the zones work in. A size chosen with the grip gives its own; a bag that fits its
+-- items uses the width its items already take (at least the default) and a square of it.
+local function WorkBox(char)
+	if type(char.width) == "number" and type(char.height) == "number" then
+		return Logic.ContentBox(char.width, char.height, SettingsBar(char), CountHeld(char.places))
+	end
+	local _, _, boxW = Logic.AutoSize(char.places, 0, nil, nil)
+	if not boxW or boxW < Logic.BAG_WIDTH then
+		boxW = Logic.BAG_WIDTH
+	end
+	return boxW, boxW
+end
+LB.WorkBox = WorkBox
+
 function LB.Sync()
 	local char = LB.Char()
 	local live, backpackSlots = LB.Scan()
@@ -147,9 +177,8 @@ function LB.Sync()
 	end
 	local matched = Logic.Match(char.places, live)
 	LB.vacated = Logic.Vacate(LB.vacated, matched.vacated, matched.places)
-	local boxW, boxH = Logic.BAG_WIDTH, Logic.BAG_WIDTH
+	local boxW, boxH = WorkBox(char)
 	if type(char.width) == "number" and type(char.height) == "number" then
-		boxW, boxH = Logic.ContentBox(char.width, char.height, SettingsBar(char), CountHeld(char.places))
 		char.homes = Logic.ClampHomes(char.homes, boxW, boxH)
 	end
 	char.places = Logic.PlaceFresh(matched.places, matched.unmatched, char.autoPlace, Logic.ActiveHomes(char.useZones, char.homes), boxW, boxH, LB.vacated)
@@ -166,13 +195,6 @@ function LB.Refresh()
 	end
 end
 
-local function ViewSize()
-	if not UIParent or not UIParent.GetWidth or not UIParent.GetHeight then
-		return nil, nil
-	end
-	return LB.Plain(UIParent:GetWidth()), LB.Plain(UIParent:GetHeight())
-end
-
 function LB.Sort()
 	local char = LB.Sync()
 	local bar = SettingsBar(char)
@@ -183,6 +205,15 @@ function LB.Sort()
 	end
 	local homes = Logic.ActiveHomes(char.useZones, char.homes)
 	local keepOrder = char.autoOrder == false
+	if not saved then
+		-- Fitted to its items: the tidy grid from the top left, wider only if it would not fit on the screen.
+		local _, screenH = ViewSize()
+		char.places = Logic.AutoTidy(char.places, homes, keepOrder, screenH)
+		if LB.Layout then
+			LB.Layout()
+		end
+		return
+	end
 	char.places = Logic.Tidy(char.places, homes, tidyW, tidyH, keepOrder)
 	if saved then
 		local screenW, screenH = ViewSize()
@@ -217,23 +248,19 @@ function LB.ApplyFirstRun(reason)
 	if not Logic.FirstRunReady(reason, #items, slots) then
 		return false
 	end
-	local screenW, screenH = ViewSize()
-	local plan = Logic.PlanFirstRun(items, {
-		bar = Logic.SETTINGS_BAR,
-		screenW = screenW,
+	-- Leyline: Clean Up's tidy grid from the top left, and the window fitted to the items (no size remembered).
+	local _, screenH = ViewSize()
+	local plan = Logic.PlanAutoFirstRun(items, {
 		screenH = screenH,
 		homes = Logic.ActiveHomes(char.useZones, char.homes),
 		keepOrder = char.autoOrder == false,
 	})
-	return Logic.CommitFirstRun(char, plan)
+	return Logic.CommitAutoFirstRun(char, plan)
 end
 
 function LB.FileHeld()
 	local char = LB.Char()
-	local boxW, boxH = Logic.BAG_WIDTH, Logic.BAG_WIDTH
-	if type(char.width) == "number" and type(char.height) == "number" then
-		boxW, boxH = Logic.ContentBox(char.width, char.height, SettingsBar(char), CountHeld(char.places))
-	end
+	local boxW, boxH = WorkBox(char)
 	char.places = Logic.FileHeld(char.places, Logic.ActiveHomes(char.useZones, char.homes), boxW, boxH, LB.vacated)
 	if type(char.width) == "number" and type(char.height) == "number" then
 		local bar = SettingsBar(char)
@@ -249,8 +276,14 @@ function LB.ResetLayout()
 	local char = LB.Char()
 	char.places = {}
 	char.homes = {}
+	char.width = nil
+	char.height = nil
+	LB.zoneEdit = false
 	LB.Refresh()
-	LB.Say("Layout cleared.")
+	if LB.RefreshSettings then
+		LB.RefreshSettings()
+	end
+	LB.Say("Layout cleared. The bag fits its items again.")
 end
 
 function LB.Help()
@@ -364,6 +397,12 @@ function LB.OnEvent(_, event, name)
 		QueueDelayed()
 		return
 	end
+	if event == "PLAYER_MONEY" then
+		if LB.UpdateMoney then
+			LB.UpdateMoney()
+		end
+		return
+	end
 	if event == "PLAYER_REGEN_ENABLED" then
 		if LB.FlushProtected then
 			LB.FlushProtected()
@@ -381,6 +420,9 @@ function LB.OnEvent(_, event, name)
 		if LB.frame and LB.frame:IsShown() then
 			Logic.Apply(LB.Char(), { op = "refresh" })
 			LB.Refresh()
+			if LB.RefreshBagRow then
+				LB.RefreshBagRow()
+			end
 		end
 		return
 	end

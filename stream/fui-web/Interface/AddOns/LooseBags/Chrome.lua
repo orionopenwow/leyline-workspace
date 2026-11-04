@@ -1,9 +1,13 @@
 -- Loose Bags by Eric R (MIT, see LICENSE.txt), ported to the 3.3.5a client for Leyline.
--- The window. 3.3.5a has no portrait frame template, bag search box or atlases: the frame is drawn here from
--- the client's own backdrop, icon and button art, in the same places as the original.
+-- The window, in Forever UI's bag window style (Skin.lua draws it with Forever UI's own functions when Forever UI is
+-- loaded, and a clean look from the client's art otherwise): portrait ring and title, the red X, the search strip
+-- with the bag slots, settings and Clean Up buttons, the items, the new-loot strip, and the purse at the bottom with
+-- the free slots count and the money. Every piece is a child of the window and anchored to it, so all of it moves
+-- with the window.
 local Logic = LooseBagsLogic
 local LB = Logic.LB
 local C = LB.Compat
+local S = LB.Skin
 
 local function HideTip()
 	if GameTooltip_Hide then
@@ -27,33 +31,94 @@ local function Tip(owner, title, body)
 	end)
 	owner:SetScript("OnLeave", HideTip)
 end
+LB.Tip = Tip
 
 local function Title()
 	return Logic.FRAME_TITLE
 end
 
-local function SavePoint(frame)
-	local point, _, relPoint, x, y = frame:GetPoint(1)
+local function Plain(value)
+	if type(issecretvalue) == "function" and issecretvalue(value) then
+		return nil
+	end
+	if type(value) ~= "number" or value ~= value then
+		return nil
+	end
+	return value
+end
+
+-- Width of the right-hand action bars that show (the standard bags open left of them).
+local function RightBars()
+	local width = 0
+	local names = { "MultiBarRight", "MultiBarLeft" }
+	for index = 1, #names do
+		local bar = _G[names[index]]
+		if bar and bar.IsShown and bar:IsShown() and bar.GetWidth then
+			width = width + (Plain(bar:GetWidth()) or 0)
+		end
+	end
+	return width
+end
+
+-- Until the player moves it the bag opens bottom right, above the bag bar, as the standard bags; after a move it
+-- stays where it was left. Either way it is anchored by its bottom right corner, so a bag that grows with its items
+-- grows up and to the left and never off the bag bar.
+function LB.PlaceWindow(frame)
+	frame = frame or LB.frame
+	if not frame then
+		return
+	end
 	local char = LB.Char()
-	local plainX = LB.Plain(x)
-	local plainY = LB.Plain(y)
-	Logic.Apply(char, {
-		op = "move_frame",
-		window = 1,
-		x = plainX,
-		y = plainY,
-		point = type(point) == "string" and point or nil,
-		relPoint = type(relPoint) == "string" and relPoint or nil,
-	})
+	frame:ClearAllPoints()
+	if char.moved then
+		frame:SetPoint(char.point, UIParent, char.relPoint, char.x, char.y)
+		return
+	end
+	local point, relPoint, x, y = Logic.HomePoint(RightBars())
+	frame:SetPoint(point, UIParent, relPoint, x, y)
+end
+
+local function SavePoint(frame)
+	local char = LB.Char()
+	local right = Plain(frame.GetRight and frame:GetRight())
+	local bottom = Plain(frame.GetBottom and frame:GetBottom())
+	if right and bottom then
+		Logic.Apply(char, { op = "move_frame", window = 1, x = right, y = bottom, point = "BOTTOMRIGHT", relPoint = "BOTTOMLEFT" })
+		char.moved = true
+		frame:ClearAllPoints()
+		frame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMLEFT", right, bottom)
+		return
+	end
+	local point, _, relPoint, x, y = frame:GetPoint(1)
+	if type(x) == "number" and type(y) == "number" then
+		Logic.Apply(char, {
+			op = "move_frame",
+			window = 1,
+			x = x,
+			y = y,
+			point = type(point) == "string" and point or nil,
+			relPoint = type(relPoint) == "string" and relPoint or nil,
+		})
+		char.moved = true
+	end
 end
 
 local function StartMove(frame)
 	frame:StartMoving()
 end
 
+-- The client would also keep a moved frame's spot in its own layout cache and put it back at login, over ours: the
+-- spot is ours alone (saved per character, anchored by the bottom right corner).
+local function NotUserPlaced(frame)
+	if frame.SetUserPlaced then
+		pcall(frame.SetUserPlaced, frame, false)
+	end
+end
+
 local function StopMove(frame)
 	frame:StopMovingOrSizing()
 	SavePoint(frame)
+	NotUserPlaced(frame)
 end
 
 local function MoveHandle(frame)
@@ -66,99 +131,6 @@ local function MoveHandle(frame)
 		StopMove(frame)
 	end)
 	return handle
-end
-
-local function FitMoney(money)
-	if not money or not money.GetWidth or not money.GetLeft then
-		return
-	end
-	local frameWidth = LB.Plain(money:GetWidth())
-	local frameLeft = LB.Plain(money:GetLeft())
-	if not frameWidth or not frameLeft then
-		return
-	end
-	local name = money.GetName and money:GetName()
-	local buttons = { money.GoldButton, money.SilverButton, money.CopperButton }
-	if name then
-		buttons = { _G[name .. "GoldButton"], _G[name .. "SilverButton"], _G[name .. "CopperButton"] }
-	end
-	local contentLeft
-	for index = 1, #buttons do
-		local button = buttons[index]
-		if button and button.IsShown and button:IsShown() and button.GetLeft then
-			local left = LB.Plain(button:GetLeft())
-			if left then
-				local inset = left - frameLeft
-				if not contentLeft or inset < contentLeft then
-					contentLeft = inset
-				end
-			end
-		end
-	end
-	if not contentLeft then
-		return
-	end
-	local width = Logic.MoneyBoxWidth(frameWidth, contentLeft)
-	if width and width ~= frameWidth then
-		money:SetWidth(width)
-	end
-end
-
-local function EnsureGlow(button)
-	if button.looseGlow then
-		return button.looseGlow
-	end
-	local glow = button:CreateTexture(nil, "ARTWORK")
-	glow:SetAllPoints(button)
-	glow:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
-	glow:SetBlendMode("ADD")
-	glow:SetAlpha(0.45)
-	glow:Hide()
-	button.looseGlow = glow
-	return glow
-end
-
-local function PaintToggle(button, on)
-	if not button or not button.SetButtonState then
-		return
-	end
-	local state, _, showGlow = Logic.TogglePaint(on)
-	button:SetButtonState(state, state == "PUSHED")
-	Logic.PaintToggleFont(button, on)
-	if not button.CreateTexture then
-		return
-	end
-	local glow = EnsureGlow(button)
-	if showGlow then
-		glow:Show()
-	else
-		glow:Hide()
-	end
-end
-
-function LB.RefreshSettings()
-	local frame = LB.frame
-	if not frame then
-		return
-	end
-	local char = LB.Char()
-	PaintToggle(frame.AutoPlace, char.autoPlace)
-	PaintToggle(frame.AutoOrder, char.autoOrder)
-	PaintToggle(frame.SameType, char.sameTypeSnap)
-	PaintToggle(frame.Zones, char.useZones)
-	local closed = char.collapsed
-	if closed then
-		frame.Collapse:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-Up")
-		frame.Collapse:SetPushedTexture("Interface\\Buttons\\UI-PlusButton-Down")
-	else
-		frame.Collapse:SetNormalTexture("Interface\\Buttons\\UI-MinusButton-Up")
-		frame.Collapse:SetPushedTexture("Interface\\Buttons\\UI-MinusButton-Down")
-	end
-	if closed then
-		frame.Settings:Hide()
-	else
-		frame.Settings:Show()
-	end
 end
 
 local function TextBlockHeight(fontString)
@@ -297,7 +269,7 @@ local function AttachHelpChrome(frame)
 	end)
 	local close = C.Make("Button", "LooseBagsHelpClose", frame, "UIPanelCloseButton")
 	close:SetSize(24, 24)
-	close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -2)
+	S.Close(close, frame, -6, -6)
 	close:SetScript("OnClick", function()
 		frame:Hide()
 	end)
@@ -328,15 +300,10 @@ local function EnsureHelpFrame()
 	frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 	frame:SetFrameStrata("DIALOG")
 	frame:EnableMouse(true)
-	local bg = frame:CreateTexture(nil, "BACKGROUND")
-	bg:SetAllPoints(frame)
-	C.Solid(bg, 0.06, 0.05, 0.04, 0.94)
-	if frame.SetBackdrop then
-		frame:SetBackdrop({ edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 16 })
-	end
+	S.Panel(frame)
 	local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	title:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -14)
-	title:SetText("Help")
+	title:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -16)
+	title:SetText("Loose Bags help")
 	local scroll = CreateFrame("ScrollFrame", nil, frame)
 	scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -36)
 	scroll:EnableMouse(true)
@@ -386,73 +353,274 @@ function LB.ToggleHelp()
 	LB.OpenHelp()
 end
 
-function LB.RefreshLock()
+-- ---------------------------------------------------------------- settings, lock, bag row, money, free slots
+local TOGGLES = {
+	{ key = "autoPlace", label = "Auto-place", body = "Put new items with their category instead of on the New items strip." },
+	{ key = "autoOrder", label = "Auto-order", body = "On, Clean Up sorts inside each category. Off, it keeps each group's shape and order." },
+	{ key = "sameTypeSnap", label = "Same-type snap", body = "Snap and group only with the same kind of item." },
+	{ key = "useZones", label = "Zones", body = "Categories grow from the corner or edge nearest each tag. Edit zones places the tags." },
+	{ key = "locked", label = "Lock size", body = "Keep this size: the corner grip hides. Drag the title or the portrait to move the bag." },
+}
+
+local function Lit(button, on)
+	if not button then
+		return
+	end
+	if on and button.LockHighlight then
+		button:LockHighlight()
+	elseif not on and button.UnlockHighlight then
+		button:UnlockHighlight()
+	end
+end
+
+-- The drawer opens beside the window, on the side with room (left of a bag at the right of the screen).
+local function PlaceDrawer(frame)
+	local drawer = frame.Settings
+	if not drawer then
+		return
+	end
+	drawer:ClearAllPoints()
+	local left = Plain(frame.GetLeft and frame:GetLeft())
+	local width = Plain(drawer:GetWidth()) or 210
+	local gap = frame.forever and 16 or 4
+	if left == nil or left > width + gap + 8 then
+		drawer:SetPoint("TOPRIGHT", frame, "TOPLEFT", -gap, -24)
+	else
+		drawer:SetPoint("TOPLEFT", frame, "TOPRIGHT", gap, -24)
+	end
+end
+
+function LB.RefreshSettings()
 	local frame = LB.frame
-	if not frame or not frame.LockButton then
+	if not frame then
 		return
 	end
 	local char = LB.Char()
-	local up, down = Logic.LockTextures(char.locked)
-	frame.LockButton:SetNormalTexture(up)
-	frame.LockButton:SetPushedTexture(down)
-	if frame.Grip then
-		if char.locked then
-			frame.Grip:Hide()
-		else
-			frame.Grip:Show()
+	for index = 1, #TOGGLES do
+		local key = TOGGLES[index].key
+		local check = frame.Toggles and frame.Toggles[key]
+		if check and check.SetChecked then
+			check:SetChecked(char[key] and true or false)
 		end
+	end
+	if frame.ZoneButton then
+		frame.ZoneButton:SetText(LB.zoneEdit and "Done" or "Edit zones")
+	end
+	if frame.FitButton and frame.FitButton.Enable then
+		if type(char.width) == "number" then
+			frame.FitButton:Enable()
+		else
+			frame.FitButton:Disable()
+		end
+	end
+	if char.collapsed then
+		frame.Settings:Hide()
+	else
+		PlaceDrawer(frame)
+		frame.Settings:Show()
+	end
+	Lit(frame.Collapse, not char.collapsed)
+	Lit(frame.BagsButton, char.bagRow)
+end
+
+function LB.RefreshLock()
+	local frame = LB.frame
+	if not frame then
+		return
+	end
+	local char = LB.Char()
+	if frame.Grip then
+		C.SetShown(frame.Grip, not char.locked)
 	end
 	frame:SetResizable(not char.locked)
 end
 
-local BACKDROP = {
-	bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-	edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-	tile = true,
-	tileSize = 16,
-	edgeSize = 16,
-	insets = { left = 4, right = 4, top = 4, bottom = 4 },
-}
+-- The money line: gold, silver and copper, always all three, from the player's own money.
+function LB.UpdateMoney()
+	local frame = LB.frame
+	local purse = frame and frame.Money
+	if not purse or not purse.coins then
+		return
+	end
+	local money = C.Call("GetMoney")
+	local gold, silver, copper = Logic.MoneyParts(money)
+	purse.coins.gold.text:SetText(Logic.Grouped(gold))
+	purse.coins.silver.text:SetText(silver)
+	purse.coins.copper.text:SetText(copper)
+	purse.money = gold * 10000 + silver * 100 + copper
+end
 
-local function IconButton(parent, width, height, texture, crop)
-	local button = CreateFrame("Button", nil, parent)
-	button:SetSize(width, height)
-	button:SetNormalTexture(texture)
-	button:SetPushedTexture(texture)
-	local normal = button.GetNormalTexture and button:GetNormalTexture()
-	local pushed = button.GetPushedTexture and button:GetPushedTexture()
-	if crop then
-		if normal and normal.SetTexCoord then
-			normal:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-		end
-		if pushed and pushed.SetTexCoord then
-			pushed:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+-- Free slots in the general bags (a quiver, soul bag or profession bag holds only its own kind, so it is not counted,
+-- as the client's own free slot count).
+function LB.FreeSlots()
+	local free, total = 0, 0
+	local bags = LB.BagList()
+	for index = 1, #bags do
+		local bag = bags[index]
+		local slots = C.NumSlots(bag)
+		local open, bagType = C.Call("GetContainerNumFreeSlots", bag)
+		if slots > 0 and (type(bagType) ~= "number" or bagType == 0) then
+			total = total + slots
+			if type(open) == "number" then
+				free = free + open
+			end
 		end
 	end
-	if pushed and pushed.SetVertexColor then
-		pushed:SetVertexColor(0.6, 0.6, 0.6)
+	return free, total
+end
+
+function LB.UpdateFree()
+	local frame = LB.frame
+	if not frame or not frame.FreeText then
+		return
 	end
-	button:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+	local free, total = LB.FreeSlots()
+	local text, line = Logic.FreeText(free, total)
+	frame.FreeText:SetText(text)
+	frame.freeLine = line
+	if free == 0 then
+		frame.FreeText:SetTextColor(1, 0.25, 0.2)
+	else
+		frame.FreeText:SetTextColor(1, 1, 1)
+	end
+end
+
+local function BagInvID(bag)
+	if bag == 0 then
+		return nil
+	end
+	local id = C.Call("ContainerIDToInventoryID", bag)
+	if type(id) == "number" then
+		return id
+	end
+	return nil
+end
+
+function LB.RefreshBagRow()
+	local frame = LB.frame
+	if not frame or not frame.BagRow then
+		return
+	end
+	local row = frame.BagRow
+	C.SetShown(row, LB.Char().bagRow)
+	for index = 1, #row.slots do
+		local button = row.slots[index]
+		local bag = button.bag
+		local texture
+		if bag == 0 then
+			texture = S.BACKPACK_ICON
+		else
+			local invID = BagInvID(bag)
+			if invID then
+				texture = C.Call("GetInventoryItemTexture", "player", invID)
+			end
+		end
+		button.parts.icon:SetTexture(texture or S.EMPTY_BAG)
+		S.BagRing(button.parts, texture ~= nil)
+		local slots = C.NumSlots(bag)
+		button.Count:SetText(slots > 0 and slots or "")
+	end
+end
+
+local function BagSlotButton(row, bag, index)
+	local button = CreateFrame("Button", "LooseBagsBagSlot" .. bag, row)
+	button:SetSize(30, 30)
+	button:SetPoint("LEFT", row, "LEFT", (index - 1) * 34, 0)
+	button.bag = bag
+	button.parts = S.BagSlot(button)
+	local count = button:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+	count:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -2, 2)
+	button.Count = count
+	button:RegisterForDrag("LeftButton")
+	local function Put()
+		if bag == 0 then
+			C.Call("PutItemInBackpack")
+		else
+			local invID = BagInvID(bag)
+			if invID then
+				C.Call("PutItemInBag", invID)
+			end
+		end
+	end
+	button:SetScript("OnClick", function()
+		if CursorHasItem and CursorHasItem() then
+			Put()
+			return
+		end
+		local invID = BagInvID(bag)
+		if invID then
+			C.Call("PickupBagFromSlot", invID)
+		end
+	end)
+	button:SetScript("OnDragStart", function()
+		local invID = BagInvID(bag)
+		if invID then
+			C.Call("PickupBagFromSlot", invID)
+		end
+	end)
+	button:SetScript("OnReceiveDrag", Put)
+	button:SetScript("OnEnter", function(self)
+		LB.hoverBag = bag
+		if LB.ApplySearch then
+			LB.ApplySearch()
+		end
+		if not GameTooltip then
+			return
+		end
+		GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+		local invID = BagInvID(bag)
+		local shown = false
+		if invID and GameTooltip.SetInventoryItem then
+			shown = C.Call("GetInventoryItemTexture", "player", invID) ~= nil and select(1, pcall(GameTooltip.SetInventoryItem, GameTooltip, "player", invID))
+		end
+		if not shown then
+			GameTooltip:SetText(bag == 0 and "Backpack" or "Bag slot", 1, 1, 1)
+			if bag ~= 0 and GameTooltip.AddLine then
+				GameTooltip:AddLine("Drop a bag here to equip it.", 0.9, 0.9, 0.9, true)
+			end
+		end
+		GameTooltip:Show()
+	end)
+	button:SetScript("OnLeave", function()
+		LB.hoverBag = nil
+		if LB.ApplySearch then
+			LB.ApplySearch()
+		end
+		HideTip()
+	end)
 	return button
 end
 
+local function Coin(purse, which, anchor, gap)
+	local icon = purse:CreateTexture(nil, "ARTWORK")
+	S.Coin(icon, which)
+	if anchor then
+		icon:SetPoint("RIGHT", anchor, "LEFT", -gap, 0)
+	else
+		icon:SetPoint("RIGHT", purse, "RIGHT", -gap, 0)
+	end
+	local text = purse:CreateFontString(nil, "ARTWORK", "NumberFontNormal")
+	text:SetPoint("RIGHT", icon, "LEFT", -1, 0)
+	if text.SetJustifyH then
+		text:SetJustifyH("RIGHT")
+	end
+	text:SetText("0")
+	return { icon = icon, text = text }
+end
+
+-- ---------------------------------------------------------------- the window
 function LB.Ensure()
 	if LB.frame then
 		return LB.frame
 	end
 	local frame = CreateFrame("Frame", "LooseBagsFrame", UIParent)
-	frame:SetSize(420, 320)
+	frame:SetSize(Logic.CHROME_MIN_W, Logic.CHROME_MIN_H)
 	frame:SetFrameStrata("MEDIUM")
 	frame:SetMovable(true)
 	frame:SetResizable(true)
 	frame:SetClampedToScreen(true)
 	frame:SetToplevel(true)
 	frame:EnableMouse(true)
-	if frame.SetBackdrop then
-		frame:SetBackdrop(BACKDROP)
-		frame:SetBackdropColor(0.04, 0.04, 0.04, 0.94)
-		frame:SetBackdropBorderColor(0.62, 0.62, 0.62, 1)
-	end
 	frame:RegisterForDrag("LeftButton")
 	frame:SetScript("OnDragStart", function(self)
 		if LB.Char().locked then
@@ -463,8 +631,10 @@ function LB.Ensure()
 	frame:SetScript("OnDragStop", function(self)
 		StopMove(self)
 	end)
+	-- Only the grip's own resize is remembered (the window also changes size when it fits its items).
 	frame:SetScript("OnSizeChanged", function(self, width, height)
-		if LB.inLayout then
+		S.Corners(self)
+		if not LB.sizing or LB.inLayout then
 			return
 		end
 		local plainW = LB.Plain(width)
@@ -473,11 +643,8 @@ function LB.Ensure()
 			return
 		end
 		local char = LB.Char()
-		if char.locked then
-			return
-		end
 		char.width = plainW
-		char.height = plainH
+		char.height = plainH - LB.BarHeight(char)
 		LB.Layout()
 	end)
 	-- Esc closes the bag, as it does the standard ones.
@@ -486,63 +653,80 @@ function LB.Ensure()
 		if LB.SyncBagButtons then
 			LB.SyncBagButtons()
 		end
+		LB.UpdateMoney()
+		LB.UpdateFree()
 	end)
 	frame:SetScript("OnHide", function()
 		if LB.SyncBagButtons then
 			LB.SyncBagButtons()
 		end
+		LB.hoverBag = nil
+		local char = LB.Char()
+		char.collapsed = true
+		if frame.Settings then
+			frame.Settings:Hide()
+		end
 	end)
 
-	local portrait = frame:CreateTexture("LooseBagsFramePortrait", "ARTWORK")
-	portrait:SetSize(50, 50)
-	portrait:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -6)
-	if type(SetPortraitToTexture) == "function" then
-		SetPortraitToTexture(portrait, "Interface\\Icons\\INV_Misc_Bag_08")
-	else
-		portrait:SetTexture("Interface\\Icons\\INV_Misc_Bag_08")
-	end
-	frame.Portrait = portrait
-	local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	title:SetPoint("TOP", frame, "TOP", 10, -12)
-	title:SetText(Title())
-	frame.TitleText = title
+	-- Frame, portrait and title (Skin.lua: Forever UI's bag window, or the plain one).
+	local look = S.Window(frame, Title())
+	frame.forever = look.forever
+	frame.Portrait = look.portrait
+	frame.TitleText = look.title
 	local close = C.Make("Button", "LooseBagsFrameClose", frame, "UIPanelCloseButton")
-	close:SetSize(30, 30)
-	close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+	S.Close(close, frame)
+	if close.SetFrameLevel then
+		close:SetFrameLevel(frame:GetFrameLevel() + 6)
+	end
 	close:SetScript("OnClick", function()
 		LB.Hide()
 	end)
 	frame.CloseButton = close
-	MoveHandle(frame):SetAllPoints(portrait)
+	local portraitDrag = MoveHandle(frame)
+	portraitDrag:SetPoint("TOPLEFT", frame, "TOPLEFT", -4, 4)
+	portraitDrag:SetSize(40, 40)
 	local titleDrag = MoveHandle(frame)
-	titleDrag:SetPoint("TOPLEFT", frame, "TOPLEFT", 58, 0)
-	titleDrag:SetPoint("BOTTOMRIGHT", close, "BOTTOMLEFT", 0, 4)
+	titleDrag:SetPoint("TOPLEFT", frame, "TOPLEFT", 36, 0)
+	titleDrag:SetPoint("BOTTOMRIGHT", close, "BOTTOMLEFT", 0, 0)
+	LB.PlaceWindow(frame)
 
-	local char = LB.Char()
-	frame:ClearAllPoints()
-	frame:SetPoint(char.point, UIParent, char.relPoint, char.x, char.y)
-
-	local sort = IconButton(frame, 26, 26, "Interface\\Icons\\INV_Misc_Bag_10", true)
-	sort:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -9, -34)
+	-- The search strip: Clean Up in the corner (Forever UI's spot, TOPRIGHT -9, -40), the settings cog and the bag
+	-- slots button beside it, the search box filling the rest.
+	local sort = CreateFrame("Button", "LooseBagsCleanUp", frame)
+	S.SortButton(sort)
+	sort:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -9, -40)
 	sort:SetScript("OnClick", function()
 		C.Sound("igMainMenuOptionCheckBoxOn")
 		LB.Sort()
 	end)
-	Tip(sort, "Clean Up Bags", "Sort the bag. Zones grows each category from the corner or edge nearest its tag.")
+	Tip(sort, "Clean Up Bags", "Sort the bag into a tidy grid from the top left, one block per category. With Zones on, each category grows from its tag.")
 	frame.SortButton = sort
 
-	local collapse = CreateFrame("Button", nil, frame)
-	collapse:SetSize(16, 16)
-	collapse:SetPoint("RIGHT", sort, "LEFT", -6, 0)
-	collapse:SetHighlightTexture("Interface\\Buttons\\UI-PlusButton-Hilight", "ADD")
-	collapse:SetScript("OnClick", function()
+	local gear = CreateFrame("Button", "LooseBagsSettingsButton", frame)
+	S.SmallButton(gear, "questlog-icon-setting", S.Path("Interface", "Icons", "INV_Misc_Gear_01"), 18)
+	gear:SetPoint("RIGHT", sort, "LEFT", -5, 0)
+	gear:SetScript("OnClick", function()
 		local row = LB.Char()
 		row.collapsed = not row.collapsed
+		C.Sound(row.collapsed and "igMainMenuOptionCheckBoxOff" or "igMainMenuOptionCheckBoxOn")
+		LB.RefreshSettings()
+	end)
+	Tip(gear, "Settings", "Auto-place, Auto-order, Same-type snap, Zones, Lock size and help.")
+	frame.Collapse = gear
+
+	local bagsButton = CreateFrame("Button", "LooseBagsBagSlotsButton", frame)
+	S.SmallButton(bagsButton, "bag-main", S.BACKPACK_ICON, 20)
+	bagsButton:SetPoint("RIGHT", gear, "LEFT", -5, 0)
+	bagsButton:SetScript("OnClick", function()
+		local row = LB.Char()
+		row.bagRow = not row.bagRow
+		C.Sound("igMainMenuOptionCheckBoxOn")
+		LB.RefreshBagRow()
 		LB.RefreshSettings()
 		LB.Layout()
 	end)
-	Tip(collapse, "Settings", "Show or hide the settings row.")
-	frame.Collapse = collapse
+	Tip(bagsButton, "Bag slots", "Show or hide your bag slots. Point at a bag to light up its items.")
+	frame.BagsButton = bagsButton
 
 	local search, templated = C.Make("EditBox", "LooseBagsSearchBox", frame, "InputBoxTemplate")
 	if not templated then
@@ -550,28 +734,31 @@ function LB.Ensure()
 			search:SetFontObject(ChatFontNormal)
 		end
 		if search.SetBackdrop then
-			search:SetBackdrop(BACKDROP)
+			search:SetBackdrop({
+				bgFile = S.Path("Interface", "ChatFrame", "ChatFrameBackground"),
+				edgeFile = S.Path("Interface", "Tooltips", "UI-Tooltip-Border"),
+				tile = true, tileSize = 16, edgeSize = 12,
+				insets = { left = 3, right = 3, top = 3, bottom = 3 },
+			})
 			search:SetBackdropColor(0, 0, 0, 0.6)
 		end
-		if search.SetTextInsets then
-			search:SetTextInsets(6, 6, 0, 0)
-		end
-		search:SetScript("OnEscapePressed", function(self)
-			self:ClearFocus()
-		end)
 	end
 	search:SetAutoFocus(false)
-	search:SetPoint("TOPLEFT", frame, "TOPLEFT", 68, -37)
-	search:SetPoint("RIGHT", collapse, "LEFT", -8, 0)
-	search:SetHeight(20)
-	local hint = search:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-	hint:SetPoint("LEFT", search, "LEFT", templated and 2 or 8, 0)
-	hint:SetText("Search")
+	if search.SetMaxLetters then
+		search:SetMaxLetters(30)
+	end
+	search:SetHeight(18)
+	search:SetPoint("TOPLEFT", frame, "TOPLEFT", 42, -43)
+	search:SetPoint("RIGHT", bagsButton, "LEFT", -10, 0)
+	local box = S.Search(search)
+	local hint, clear = box.hint, box.clear
 	frame.SearchHint = hint
+	frame.SearchClear = clear
 	local function ShowHint(self)
 		local text = self:GetText() or ""
 		local focused = self.HasFocus and self:HasFocus()
 		C.SetShown(hint, text == "" and not focused)
+		C.SetShown(clear, text ~= "")
 	end
 	local function Hook(widget, script, fn)
 		if widget.HookScript and widget:GetScript(script) then
@@ -580,10 +767,31 @@ function LB.Ensure()
 			widget:SetScript(script, fn)
 		end
 	end
-	Hook(search, "OnEditFocusGained", function(self)
+	Hook(search, "OnEditFocusGained", function()
 		hint:Hide()
 	end)
 	Hook(search, "OnEditFocusLost", ShowHint)
+	search:SetScript("OnEscapePressed", function(self)
+		if (self:GetText() or "") ~= "" then
+			self:SetText("")
+		end
+		self:ClearFocus()
+	end)
+	search:SetScript("OnEnterPressed", function(self)
+		self:ClearFocus()
+	end)
+	-- Four identical characters in a row let go of the box (Forever UI's BagSearch_OnChar): a held key never traps
+	-- the player in it.
+	search:SetScript("OnChar", function(self)
+		local text = self:GetText() or ""
+		local length = string.len(text)
+		if length >= 4 then
+			local last = string.sub(text, length, length)
+			if string.sub(text, length - 3, length) == string.rep(last, 4) then
+				self:ClearFocus()
+			end
+		end
+	end)
 	local previousSearch = search:GetScript("OnTextChanged")
 	search:SetScript("OnTextChanged", function(self, userInput)
 		if previousSearch then
@@ -596,68 +804,28 @@ function LB.Ensure()
 			LB.ApplySearch()
 		end
 	end)
+	clear:SetScript("OnClick", function()
+		C.Sound("igMainMenuOptionCheckBoxOn")
+		search:SetText("")
+		search:ClearFocus()
+	end)
 	frame.Search = search
 	frame.searchText = ""
 
-	local settings = CreateFrame("Frame", nil, frame)
-	settings:Hide()
-	settings:SetHeight(32)
-	settings:SetPoint("TOPLEFT", frame, "TOPLEFT", Logic.SETTINGS_LEFT, -60)
-	settings:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -Logic.SETTINGS_RIGHT, -60)
-	local function PanelButton(name, text, width)
-		local button, made = C.Make("Button", name, settings, "UIPanelButtonTemplate")
-		if not made and button.SetNormalFontObject and GameFontNormal then
-			button:SetNormalFontObject(GameFontNormal)
-		end
-		button:SetSize(width, 22)
-		button:SetText(text)
-		return button
+	-- The bag slots row (toggled; the items move down by its height).
+	local bagRow = CreateFrame("Frame", "LooseBagsBagRow", frame)
+	bagRow:SetHeight(32)
+	bagRow:SetPoint("TOPLEFT", frame, "TOPLEFT", Logic.SIDE_INSET + 2, -(Logic.TOP_BASE - 2))
+	bagRow:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -Logic.SIDE_INSET, -(Logic.TOP_BASE - 2))
+	bagRow.slots = {}
+	local bags = LB.BagList()
+	for index = 1, #bags do
+		bagRow.slots[index] = BagSlotButton(bagRow, bags[index], index)
 	end
-	local function MakeToggle(text, width, anchor, point, gap, key, title, body, onTurnOn)
-		local button = PanelButton("LooseBagsToggle" .. key, text, width)
-		button:SetPoint("LEFT", anchor, point, gap, 0)
-		button:SetScript("OnClick", function()
-			local char = LB.Char()
-			char[key] = not char[key]
-			if char[key] and onTurnOn then
-				onTurnOn()
-			end
-			LB.RefreshSettings()
-		end)
-		Tip(button, title, body)
-		return button
-	end
-	local auto = MakeToggle("Auto-place", 88, settings, "LEFT", 0, "autoPlace", "Auto-place", "Put new items with their category. White means on.", function()
-		if LB.FileHeld then
-			LB.FileHeld()
-		end
-	end)
-	local order = MakeToggle("Auto-order", 88, auto, "RIGHT", 4, "autoOrder", "Auto-order", "On, Clean Up sorts inside each category. Off, it keeps each group's shape and order. White means on.")
-	local same = MakeToggle("Same-type", 78, order, "RIGHT", 4, "sameTypeSnap", "Same-type snap", "Snap and group only with the same kind of item. White means on.")
-	local zones = MakeToggle("Zones", 58, same, "RIGHT", 4, "useZones", "Zones", "Categories grow from the corner or edge nearest each tag. White means on.")
-	local gear = IconButton(settings, 16, 16, "Interface\\Icons\\INV_Misc_Gear_01", true)
-	gear:SetPoint("LEFT", zones, "RIGHT", 0, 0)
-	gear:SetScript("OnClick", function()
-		LB.zoneEdit = not LB.zoneEdit
-		if LB.Layout then
-			LB.Layout()
-		end
-	end)
-	Tip(gear, "Edit zones")
-	local help = PanelButton("LooseBagsHelpButton", "?", 32)
-	help:SetPoint("LEFT", gear, "RIGHT", 6, 0)
-	help:SetScript("OnClick", function()
-		LB.ToggleHelp()
-	end)
-	Tip(help, "Help", "How to use Loose Bags.")
-	frame.AutoPlace = auto
-	frame.AutoOrder = order
-	frame.SameType = same
-	frame.Zones = zones
-	frame.ZoneGear = gear
-	frame.HelpButton = help
-	frame.Settings = settings
+	bagRow:Hide()
+	frame.BagRow = bagRow
 
+	-- Items and the new-loot strip.
 	local function DropHere()
 		if CursorHasItem and CursorHasItem() then
 			LB.DropCursorInEmpty()
@@ -672,11 +840,57 @@ function LB.Ensure()
 	local strip = CreateFrame("Frame", nil, frame)
 	strip:EnableMouse(true)
 	strip:SetScript("OnReceiveDrag", DropHere)
+	local stripLabel = strip:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	stripLabel:SetPoint("BOTTOMLEFT", strip, "TOPLEFT", 2, 4)
+	stripLabel:SetText("New items")
+	local rule = strip:CreateTexture(nil, "ARTWORK")
+	rule:SetHeight(1)
+	rule:SetPoint("LEFT", stripLabel, "RIGHT", 6, 0)
+	rule:SetPoint("RIGHT", strip, "RIGHT", 0, 0)
+	S.Rule(rule)
+	Tip(strip, "New items", "New loot waits here. Drag it into place, or turn on Auto-place in the settings.")
+	strip.Label = stripLabel
 	frame.Strip = strip
 
-	local grip = CreateFrame("Button", nil, frame)
-	grip:SetSize(16, 16)
-	grip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, Logic.GRIP_BOTTOM)
+	-- The purse: inside the window at the bottom, Forever UI's place for it (8 in from each side, 14 up, 13 high).
+	-- Its own child frame, coins and texts: nothing in it is anchored outside the window.
+	local purse = CreateFrame("Frame", "LooseBagsPurse", frame)
+	purse:SetHeight(Logic.PURSE_H)
+	purse:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", Logic.PURSE_SIDE, Logic.PURSE_BOTTOM)
+	purse:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -Logic.PURSE_SIDE, Logic.PURSE_BOTTOM)
+	S.Purse(purse)
+	local copper = Coin(purse, "copper", nil, 7)
+	local silver = Coin(purse, "silver", copper.text, 5)
+	local gold = Coin(purse, "gold", silver.text, 5)
+	purse.coins = { gold = gold, silver = silver, copper = copper }
+	local freeText = purse:CreateFontString("LooseBagsFreeText", "ARTWORK", "GameFontHighlightSmall")
+	freeText:SetPoint("LEFT", purse, "LEFT", 9, 0)
+	frame.FreeText = freeText
+	local freeHover = CreateFrame("Frame", nil, purse)
+	freeHover:SetPoint("TOPLEFT", purse, "TOPLEFT", 0, 2)
+	freeHover:SetPoint("BOTTOMRIGHT", purse, "BOTTOM", 0, -2)
+	freeHover:EnableMouse(true)
+	freeHover:SetScript("OnEnter", function(self)
+		if not GameTooltip then
+			return
+		end
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:SetText("Free slots", 1, 1, 1)
+		if GameTooltip.AddLine and frame.freeLine then
+			GameTooltip:AddLine(frame.freeLine, 0.9, 0.9, 0.9, true)
+		end
+		GameTooltip:Show()
+	end)
+	freeHover:SetScript("OnLeave", HideTip)
+	frame.Money = purse
+
+	-- The resize grip: the bottom right corner, below the purse.
+	local grip = CreateFrame("Button", "LooseBagsGrip", frame)
+	grip:SetSize(12, 12)
+	grip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
+	if grip.SetFrameLevel then
+		grip:SetFrameLevel(frame:GetFrameLevel() + 8)
+	end
 	grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
 	grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
 	grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
@@ -687,85 +901,110 @@ function LB.Ensure()
 		if self.SetButtonState then
 			self:SetButtonState("PUSHED", true)
 		end
-		local highlight = self.GetHighlightTexture and self:GetHighlightTexture()
-		if highlight then
-			highlight:Hide()
-		end
+		LB.sizing = true
 		frame:StartSizing("BOTTOMRIGHT")
 	end)
 	grip:SetScript("OnMouseUp", function(self)
 		if self.SetButtonState then
 			self:SetButtonState("NORMAL", false)
 		end
-		local highlight = self.GetHighlightTexture and self:GetHighlightTexture()
-		if highlight then
-			highlight:Show()
-		end
 		frame:StopMovingOrSizing()
+		local wasSizing = LB.sizing
+		LB.sizing = false
 		local width = LB.Plain(frame:GetWidth())
 		local height = LB.Plain(frame:GetHeight())
-		if width and height and not LB.Char().locked then
+		if wasSizing and width and height and not LB.Char().locked then
 			local char = LB.Char()
 			char.width = width
-			char.height = height
+			char.height = height - LB.BarHeight(char)
+			SavePoint(frame)
+			NotUserPlaced(frame)
 			LB.Layout()
+			LB.RefreshSettings()
 		end
 	end)
+	Tip(grip, "Resize", "Drag to choose the bag's size. Fit to items, in the settings, makes it fit its items again.")
 	frame.Grip = grip
 
-	local lock = CreateFrame("Button", nil, frame)
-	lock:SetSize(20, 20)
-	lock:SetPoint("BOTTOMRIGHT", grip, "BOTTOMLEFT", -2, 0)
-	lock:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
-	lock:SetScript("OnClick", function()
-		local char = LB.Char()
-		char.locked = not char.locked
-		LB.RefreshLock()
-	end)
-	lock:SetScript("OnEnter", function(self)
-		if not GameTooltip then
-			return
-		end
-		local char = LB.Char()
-		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-		if char.locked then
-			GameTooltip:SetText("Locked", 1, 1, 1)
-			if GameTooltip.AddLine then
-				GameTooltip:AddLine("The bag keeps this size. Drag the title or the logo to move it.", 0.9, 0.9, 0.9, true)
-			end
-		else
-			GameTooltip:SetText("Unlocked", 1, 1, 1)
-			if GameTooltip.AddLine then
-				GameTooltip:AddLine("Drag the bag to move it. Drag the corner to resize it.", 0.9, 0.9, 0.9, true)
-			end
-		end
-		GameTooltip:Show()
-	end)
-	lock:SetScript("OnLeave", HideTip)
-	frame.LockButton = lock
-
-	-- The standard backpack's money line (SmallMoneyFrameTemplate, the player's own money).
-	local money, moneyMade = C.Make("Frame", "LooseBagsMoneyFrame", frame, "SmallMoneyFrameTemplate")
-	money:SetPoint("BOTTOMRIGHT", lock, "BOTTOMLEFT", -6, Logic.COIN_LIFT)
-	if moneyMade then
-		C.Call("MoneyFrame_SetType", money, "PLAYER")
-		C.Call("MoneyFrame_UpdateMoney", money)
+	-- The settings drawer (the cog): tick boxes, Edit zones, Fit to items and Help.
+	local drawer = CreateFrame("Frame", "LooseBagsSettings", frame)
+	drawer:SetSize(206, 76 + #TOGGLES * 24 + 58)
+	drawer:EnableMouse(true)
+	if drawer.SetFrameLevel then
+		drawer:SetFrameLevel(frame:GetFrameLevel() + 30)
 	end
-	frame.Money = money
-	if hooksecurefunc and type(MoneyFrame_Update) == "function" then
-		hooksecurefunc("MoneyFrame_Update", function(frameName)
-			local updated = frameName
-			if type(frameName) == "string" then
-				updated = _G[frameName]
+	S.Panel(drawer)
+	local heading = drawer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	heading:SetPoint("TOP", drawer, "TOP", 0, -18)
+	heading:SetText("Bag settings")
+	frame.Toggles = {}
+	for index = 1, #TOGGLES do
+		local spec = TOGGLES[index]
+		local check = C.Make("CheckButton", "LooseBagsToggle" .. spec.key, drawer, "UICheckButtonTemplate")
+		check:SetSize(22, 22)
+		check:SetPoint("TOPLEFT", drawer, "TOPLEFT", 18, -(38 + (index - 1) * 24))
+		S.Check(check)
+		local label = drawer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		label:SetPoint("LEFT", check, "RIGHT", 4, 1)
+		label:SetText(spec.label)
+		check.label = label
+		check:SetScript("OnClick", function()
+			local char = LB.Char()
+			char[spec.key] = not char[spec.key]
+			C.Sound(char[spec.key] and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
+			if spec.key == "autoPlace" and char.autoPlace and LB.FileHeld then
+				LB.FileHeld()
 			end
-			if updated == money then
-				FitMoney(money)
+			if spec.key == "locked" then
+				LB.RefreshLock()
 			end
+			LB.RefreshSettings()
 		end)
+		Tip(check, spec.label, spec.body)
+		frame.Toggles[spec.key] = check
 	end
+	frame.AutoPlace = frame.Toggles.autoPlace
+	frame.AutoOrder = frame.Toggles.autoOrder
+	frame.SameType = frame.Toggles.sameTypeSnap
+	frame.Zones = frame.Toggles.useZones
+	frame.LockButton = frame.Toggles.locked
+	local buttonsTop = -(38 + #TOGGLES * 24 + 6)
+	local function DrawerButton(name, text, x, y, onClick, title, body)
+		local button = C.Make("Button", name, drawer, "UIPanelButtonTemplate")
+		button:SetSize(82, 22)
+		button:SetPoint("TOPLEFT", drawer, "TOPLEFT", x, y)
+		button:SetText(text)
+		S.TextButton(button)
+		button:SetScript("OnClick", onClick)
+		Tip(button, title, body)
+		return button
+	end
+	frame.ZoneButton = DrawerButton("LooseBagsEditZones", "Edit zones", 18, buttonsTop, function()
+		LB.zoneEdit = not LB.zoneEdit
+		LB.Layout()
+		LB.RefreshSettings()
+	end, "Edit zones", "Hide the items and drag one tag per category to where it should sit.")
+	frame.FitButton = DrawerButton("LooseBagsFitItems", "Fit to items", 106, buttonsTop, function()
+		local char = LB.Char()
+		char.width = nil
+		char.height = nil
+		LB.Layout()
+		LB.RefreshSettings()
+	end, "Fit to items", "Forget the size chosen with the grip: the bag fits its items again and grows as they come.")
+	frame.HelpButton = DrawerButton("LooseBagsHelpButton", "Help", 18, buttonsTop - 26, function()
+		LB.ToggleHelp()
+	end, "Help", "How to use Loose Bags.")
+	local done = DrawerButton("LooseBagsSettingsDone", "Close", 106, buttonsTop - 26, function()
+		LB.Char().collapsed = true
+		LB.RefreshSettings()
+	end, "Close", "Close the settings.")
+	frame.SettingsDone = done
+	drawer:Hide()
+	frame.Settings = drawer
 
 	LB.frame = frame
 	LB.buttons = {}
+	LB.RefreshBagRow()
 	LB.RefreshSettings()
 	LB.RefreshLock()
 	frame:Hide()
@@ -776,8 +1015,14 @@ function LB.Show()
 	local frame = LB.Ensure()
 	LB.ApplyFirstRun("open")
 	local wasShown = frame:IsShown()
+	if not wasShown then
+		LB.PlaceWindow(frame)
+	end
 	frame:Show()
 	LB.Refresh()
+	LB.RefreshBagRow()
+	LB.UpdateMoney()
+	LB.UpdateFree()
 	if LB.CloseStock then
 		LB.CloseStock()
 	end

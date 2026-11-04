@@ -4,7 +4,11 @@
 -- buttons open it, items from fake bags show on the client's own item buttons (holder id = bag, button id = slot),
 -- a drag out and an Alt-click pick up the right bag/slot, a right-click uses it once through the client's own
 -- click code, a BAG_UPDATE burst is one pass, /lbags off gives the standard bags back (and Forever UI's hook on
--- them runs), /lbags on, reset and help, and no brand words where players read.
+-- them runs), /lbags on, reset and help, and no brand words where players read. The Forever UI redesign: the window
+-- fits its items and opens bottom right above the bag bar, the money line is the window's own (inside, anchored to it,
+-- all three coins), free slots, Clean Up's spot and tidy grid, search veils by name or kind, the bag slots row, the
+-- settings drawer, grip size and Fit to items, the old-pitch migration, and Forever UI's own functions drawing it
+-- (a fake ForeverUI), with a plain fallback when they fail.
 local dir = arg and arg[1] or "stream/fui-web/Interface/AddOns/LooseBags"
 
 local pass, fail = 0, 0
@@ -45,7 +49,11 @@ end
 function Frame:SetText(t) self.text = t end
 function Frame:GetText() return self.text end
 function Frame:SetTexture(t) self.texture = t end
-function Frame:SetNormalTexture(t) self.normal = t end
+function Frame:SetNormalTexture(t)
+    self.normal = t; self.normalTex = self.normalTex or self:CreateTexture(); self.normalTex.texture = t
+end
+function Frame:GetNormalTexture() return self.normalTex end
+function Frame:SetVertexColor(r, g, b) self.color = { r, g, b } end
 function Frame:RegisterEvent(e) self.events[e] = true end
 function Frame:UnregisterEvent(e) self.events[e] = nil end
 function Frame:GetName() return self.name end
@@ -89,6 +97,7 @@ function CreateFrame(kind, name, parent, template)
     return f
 end
 templates.UIPanelButtonTemplate = function() end
+templates.UICheckButtonTemplate = function(f) f.SetChecked = function(self, v) self.checked = v end end
 templates.UIPanelCloseButton = function() end
 templates.InputBoxTemplate = function() end
 templates.SmallMoneyFrameTemplate = function(f, name)
@@ -107,6 +116,7 @@ end
 
 UIParent = new("Frame", "UIParent"); UIParent.top = true; UIParent.w, UIParent.h = 1920, 1080
 UISpecialFrames = {}
+GameFontNormalSmall, GameFontHighlightSmall, GameFontDisableSmall = {}, {}, {}
 SlashCmdList = {}
 local said = {}
 DEFAULT_CHAT_FRAME = { AddMessage = function(_, m) said[#said + 1] = m end }
@@ -133,6 +143,7 @@ function CursorHasItem() return cursor.item ~= nil end
 function GetCursorInfo() if cursor.item then return "item", cursor.item, "|Hitem:" .. cursor.item .. ":0|h" end end
 function PlaySound(s) log.sounds[#log.sounds + 1] = s end
 function GetItemQualityColor(q) return 1, 0.5, q / 10 end
+ITEM_QUALITY_COLORS = { [2] = { r = 0.1, g = 1, b = 0 }, [3] = { r = 0, g = 0.4, b = 1 }, [4] = { r = 0.6, g = 0.2, b = 0.9 } }
 function hooksecurefunc(name, fn)
     local old = _G[name]
     _G[name] = function(...) local r = { old(...) }; fn(...); return unpack(r) end
@@ -164,7 +175,19 @@ function GetContainerItemInfo(bag, slot)
 end
 function GetContainerItemLink(bag, slot) local it = bags[bag] and bags[bag][slot]; return it and link(it.id) end
 function GetContainerItemQuestInfo() return nil, nil, nil end
-function GetContainerNumFreeSlots(bag) return 0, 0 end
+function GetContainerNumFreeSlots(bag)
+    local b = bags[bag]; if not b then return 0, 0 end
+    local free = 0
+    for slot = 1, b.size do if not b[slot] then free = free + 1 end end
+    return free, 0
+end
+local money = 1234567
+function GetMoney() return money end
+function ContainerIDToInventoryID(bag) return 19 + bag end
+function GetInventoryItemTexture(_, inv) if inv == 20 then return "Interface\\Icons\\INV_Misc_Bag_07" end end
+function PutItemInBag(inv) log.putbag = inv end
+function PickupBagFromSlot(inv) log.pickbag = inv end
+MultiBarRight = new("Frame", "MultiBarRight", UIParent); MultiBarRight.shown = false; MultiBarRight.w = 38
 function GetItemInfo(l)
     local id = tonumber(tostring(l):match("item:(%d+)")); local it = items[id]
     if not it then return nil end
@@ -215,7 +238,7 @@ for _, f in ipairs(files) do
         if hit then brandOk = false; print("  brand: " .. f .. " says " .. w) end
     end
 end
-check("every file is Lua 5.1 (no goto, //, bit operators, \\z, utf8, 5.2+ library calls)", syntaxOk and #files == 7)
+check("every file is Lua 5.1 (no goto, //, bit operators, \\z, utf8, 5.2+ library calls)", syntaxOk and #files == 8)
 check("no brand words in any file or the .toc", brandOk and not toc:find("Blizzard") and not toc:find("%f[%a]WoW%f[%A]"))
 
 -- ---------------------------------------------------------------- load
@@ -279,7 +302,43 @@ check("icon and stack count drawn", _G[pot.name .. "IconTexture"].texture == "In
     and _G[pot.name .. "Count"].text == 12)
 check("quality border on the epic, none on the common", toll.QualityBorder.shown and not hs.QualityBorder.shown)
 check("categories from the item class names", toll.place.classID == 4 and pot.place.classID == 0 and byID[36913].place.classID == 7)
-check("first open sized the bag to fit", type(LB.Char().width) == "number" and LB.Char().firstRun == true)
+-- (redesign) the first open tidies every item into a window fitted to them: no size remembered, nothing held
+local anyHeld = false
+for _, p in ipairs(LB.Char().places) do if p.held then anyHeld = true end end
+check("first open: every item tidied in, the window fitted to them (no size remembered)",
+    LB.Char().width == nil and LB.Char().firstRun == true and not anyHeld)
+check("...compact: the default columns wide, as tall as the items plus one free row",
+    frame.w == Logic.BAG_WIDTH + Logic.SIDE_PAD and frame.h < 260 and frame.h >= Logic.CHROME_MIN_H)
+local p1 = frame.points[1]
+check("it opens bottom right above the bag bar, as the standard bags",
+    p1 and p1[1] == "BOTTOMRIGHT" and p1[2] == UIParent and p1[3] == "BOTTOMRIGHT" and p1[4] == -10 and p1[5] == 85)
+local purse = frame.Money
+local function anchoredTo(region, host)
+    for _, pt in ipairs(region.points or {}) do if pt[2] ~= host then return false end end
+    return #(region.points or {}) > 0
+end
+local coinsInside = true
+for _, which in ipairs({ "gold", "silver", "copper" }) do
+    local c = purse.coins[which]
+    if c.icon.parent ~= purse or c.text.parent ~= purse then coinsInside = false end
+    for _, r in ipairs({ c.icon, c.text }) do
+        for _, pt in ipairs(r.points or {}) do if pt[2] == UIParent or pt[2] == nil then coinsInside = false end end
+    end
+end
+check("money line: a child of the window, anchored to the window's bottom on both sides, coins inside it",
+    purse.parent == frame and anchoredTo(purse, frame) and purse.points[1][1] == "BOTTOMLEFT" and purse.points[2][1] == "BOTTOMRIGHT"
+    and coinsInside)
+check("money line shows gold, silver and copper (123g 45s 67c)", purse.coins.gold.text.text == "123"
+    and purse.coins.silver.text.text == 45 and purse.coins.copper.text.text == 67)
+money = 50
+event("PLAYER_MONEY")
+check("...and follows the money (0g 0s 50c, every coin still shown)", purse.coins.gold.text.text == "0"
+    and purse.coins.silver.text.text == 0 and purse.coins.copper.text.text == 50 and purse.coins.gold.icon.shown)
+money = 1234567
+check("free slots counter in the window (21 of 26 general slots free)", frame.FreeText.text == "21 free"
+    and frame.FreeText.parent == purse)
+check("Clean Up in Forever UI's spot (top right, under the close button)", frame.SortButton.points[1][1] == "TOPRIGHT"
+    and frame.SortButton.points[1][2] == frame and frame.SortButton.points[1][4] == -9 and frame.SortButton.points[1][5] == -40)
 toll:Fire("OnEnter")
 check("tooltip through the client's own code reads bag 1 slot 3", toll.tipped and toll.tipped[1] == 1 and toll.tipped[2] == 3)
 OpenAllBags()
@@ -357,6 +416,118 @@ tick()
 local held = 0
 for _, b in ipairs(shownButtons()) do if b.place.held then held = held + 1 end end
 check("then the new item shows, on the new-loot strip", #shownButtons() == 6 and held == 1)
+local tallWithStrip = frame.h
+
+-- ---------------------------------------------------------------- search, bag slots, settings, size (the redesign)
+local search = LooseBagsSearchBox
+local function veiled(b) return b.SearchVeil.shown == true end
+search:SetText("trade"); search:Fire("OnTextChanged", true)
+check("search matches the kind too: trade goods stay lit, the rest is veiled in black",
+    not veiled(byID[36913]) and veiled(pot) and veiled(toll) and veiled(hs))
+check("...and the clear button shows", frame.SearchClear.shown)
+search:SetText(""); search:Fire("OnTextChanged", true)
+check("clearing the search lifts every veil", not veiled(byID[36913]) and not veiled(pot) and not veiled(toll))
+
+local h0 = frame.h
+LooseBagsBagSlotsButton:Fire("OnClick")
+check("the bag slots row opens and the window grows by its height (the items keep their room)",
+    LooseBagsBagRow.shown and LB.Char().bagRow and frame.h == h0 + Logic.BAG_ROW)
+check("...one slot per bag, the equipped bag's icon, an empty slot's art", LooseBagsBagSlot1.parts.icon.texture == "Interface\\Icons\\INV_Misc_Bag_07"
+    and LooseBagsBagSlot2.parts.icon.texture:find("UI%-PaperDoll%-Slot%-Bag") ~= nil and LooseBagsBagSlot0 ~= nil)
+LooseBagsBagSlot1:Fire("OnEnter")
+check("pointing at a bag lights only its items", not veiled(toll) and veiled(pot) and veiled(hs))
+LooseBagsBagSlot1:Fire("OnLeave")
+check("...until the pointer leaves", not veiled(pot))
+cursor.item = 9999
+LooseBagsBagSlot1:Fire("OnReceiveDrag")
+cursor.item = nil
+check("a bag dropped on a slot is equipped there", log.putbag == 20)
+LooseBagsBagSlotsButton:Fire("OnClick")
+check("...and the row closes again", not LooseBagsBagRow.shown and frame.h == h0)
+
+check("settings start tucked away", not LooseBagsSettings.shown)
+LooseBagsSettingsButton:Fire("OnClick")
+check("the cog opens the settings drawer beside the window", LooseBagsSettings.shown and LooseBagsSettings.parent == frame)
+LooseBagsToggleuseZones:Fire("OnClick")
+check("a tick box flips its setting", LB.Char().useZones == true and LooseBagsToggleuseZones.checked == true)
+LooseBagsToggleuseZones:Fire("OnClick")
+LooseBagsSettingsButton:Fire("OnClick")
+check("...and the cog closes it", not LooseBagsSettings.shown and LB.Char().useZones == false)
+
+local autoW = frame.w
+frame.w, frame.h = 500, 420
+LooseBagsGrip:Fire("OnMouseDown", "LeftButton")
+LooseBagsGrip:Fire("OnMouseUp", "LeftButton")
+check("the grip chooses a size, remembered", LB.Char().width == 500 and LB.Char().height == 420 and frame.w == 500)
+LooseBagsFitItems:Fire("OnClick")
+-- (moved below)
+check("Fit to items forgets it: the window fits its items again", LB.Char().width == nil and frame.w == autoW
+    and frame.h == tallWithStrip)
+
+LB.Char().moved = false   -- (the grip above saved the corner it dragged)
+LB.Hide(); MultiBarRight.shown = true; LB.Show()
+p1 = frame.points[1]
+check("an unmoved bag opens left of the shown right-hand bars", p1[1] == "BOTTOMRIGHT" and p1[4] == -48 and p1[5] == 85)
+MultiBarRight.shown = false
+frame.rect = { l = 400, r = 900, t = 600, b = 200 }
+frame:Fire("OnDragStop")
+check("a moved bag remembers its bottom right corner", LB.Char().moved == true and LB.Char().point == "BOTTOMRIGHT"
+    and LB.Char().relPoint == "BOTTOMLEFT" and LB.Char().x == 900 and LB.Char().y == 200)
+LB.Hide(); LB.Show()
+p1 = frame.points[1]
+check("...and opens there next time (it grows up and left from that corner)", p1[1] == "BOTTOMRIGHT" and p1[3] == "BOTTOMLEFT"
+    and p1[4] == 900 and p1[5] == 200)
+frame.rect = nil
+
+-- ---------------------------------------------------------------- the layout rules behind it (pure Logic)
+local old = Logic.NormalizeChar({ places = { { itemID = 1, inst = 1, x = 18.5, y = 18.5 }, { itemID = 2, inst = 1, x = 55.5, y = 18.5 } },
+    width = 420, height = 320, point = "CENTER", relPoint = "CENTER", x = 0, y = 120, firstRun = true,
+    homes = { armor = { x = 74, y = 37 } } })
+check("a layout saved at the old 37 px pitch is scaled to the new one, no overlap, its old size dropped",
+    old.places[1].x == 20.5 and old.places[2].x == 61.5 and old.homes.armor.x == 82 and old.width == nil and old.pitch == Logic.ICON
+    and old.moved == false and Logic.PlacesOk(old.places, Logic.ICON))
+Logic.NormalizeChar(old)
+check("...once", old.places[2].x == 61.5)
+local movedOld = Logic.NormalizeChar({ point = "TOPLEFT", relPoint = "BOTTOMLEFT", x = 300, y = 700 })
+check("an old bag the player had moved stays where it was", movedOld.moved == true and movedOld.x == 300)
+local few = {}
+for i = 1, 3 do few[i] = { x = 20.5 + (i - 1) * 41, y = 20.5 } end
+local many = {}
+for i = 1, 40 do many[i] = { x = 20.5 + ((i - 1) % 8) * 41, y = 20.5 + math.floor((i - 1) / 8) * 41 } end
+local _, hFew = Logic.AutoSize(few, 0, 1920, 1080)
+local wMany, hMany = Logic.AutoSize(many, 0, 1920, 1080)
+check("fitted window: small with a few items, taller as items come, one free row below the last",
+    hFew == Logic.TOP_BASE + 2 * Logic.ICON + Logic.BOTTOM_PAD and hMany == Logic.TOP_BASE + 6 * Logic.ICON + Logic.BOTTOM_PAD
+    and wMany == Logic.BAG_WIDTH + Logic.SIDE_PAD)
+local mix, mid = {}, 1
+for _, spec in ipairs({ { 11, 0 }, { 2, 4 }, { 3, 2 }, { 25, 7 } }) do
+    for _ = 1, spec[1] do mix[#mix + 1] = { itemID = mid, inst = 1, x = 0, y = 0, classID = spec[2], quality = 1 }; mid = mid + 1 end
+end
+local tidy = Logic.Tidy(mix, nil, Logic.BAG_WIDTH, Logic.BAG_WIDTH)
+local onGrid, minY = true, 1e9
+for _, p in ipairs(tidy) do
+    local col = (p.x - Logic.ICON / 2) / Logic.ICON
+    if col ~= math.floor(col) or col < 0 or col >= Logic.AUTO_COLS then onGrid = false end
+    if p.y < minY then minY = p.y end
+end
+local apart = true
+for _, a in ipairs(tidy) do for _, b in ipairs(tidy) do
+    if a ~= b and Logic.Category(a.classID, a.quality) ~= Logic.Category(b.classID, b.quality)
+        and math.abs(a.x - b.x) < Logic.ICON + 1 and math.abs(a.y - b.y) < Logic.ICON + 1 then apart = false end
+end end
+check("Clean Up: a tidy grid from the top left, every icon on one column grid, categories never touching",
+    onGrid and minY == Logic.ICON / 2 and apart and Logic.PlacesOk(tidy, Logic.ICON))
+local hundred = {}
+for i = 1, 100 do hundred[i] = { itemID = i, inst = 1, x = 0, y = 0, classID = ({ 0, 7, 15, 4, 2 })[i % 5 + 1], quality = 1 } end
+local wide, wideW = Logic.AutoTidy(hundred, nil, false, 768)
+local _, wideH = Logic.AutoSize(wide, 0, nil, nil)
+check("a full bag too tall for the screen at the default width gets more columns, and fits",
+    wideW > Logic.BAG_WIDTH and wideH <= 768 - Logic.HOME_BOTTOM and Logic.PlacesOk(wide, Logic.ICON))
+local g, sv, c = Logic.MoneyParts(1234567)
+check("money parts and grouping", g == 123 and sv == 45 and c == 67 and Logic.Grouped(1234567) == "1,234,567"
+    and Logic.Grouped(12) == "12" and select(1, Logic.MoneyParts(nil)) == 0)
+check("search matches name, kind or sub-kind", Logic.SearchMatch("lin", "Linen Cloth") and Logic.SearchMatch("cloth", "x", "Trade Goods", "Cloth")
+    and not Logic.SearchMatch("ore", "Linen Cloth", "Trade Goods", "Cloth") and Logic.SearchMatch("", nil))
 
 -- ---------------------------------------------------------------- /lbags off and on
 log.stock = {}
@@ -416,6 +587,80 @@ for _, t in ipairs(readable) do
     if t:find("3%.3%.5") or t:find("1%.12") then clean = false; print("  version in prose: " .. t) end
 end
 check("nothing a player reads names the game, its maker or a client version", clean and #readable > 30)
+
+-- ---------------------------------------------------------------- with Forever UI loaded: its own functions draw it
+local fuiLog = {}
+local function fakeForeverUI(throw)
+    local function rec(name, fn)
+        return function(...)
+            fuiLog[#fuiLog + 1] = { name, ... }
+            if throw then error("not in this client") end
+            if fn then return fn(...) end
+        end
+    end
+    ForeverUI = {
+        SetPanelArt = rec("SetPanelArt", function(f) f.foreverPanel = {}; return f.foreverPanel end),
+        UpdatePanelCorners = rec("UpdatePanelCorners"),
+        SetAtlas = rec("SetAtlas", function(t, name) t.atlas = name; return true end),
+        AtlasEntry = function(name) return { "file-" .. name, 0, 1, 0, 1, 32, 32 } end,
+        Templates = {
+            CloseButton = rec("CloseButton", function(b) return b end),
+            DialogFrame = rec("DialogFrame"),
+            ThreeSliceButton = rec("ThreeSliceButton", function(b) return b end),
+            Outline = rec("Outline", function(b) local t = b:CreateTexture(); b.foreverOutline = t; return t end),
+            Art = function(name) return { "file-" .. name } end,
+            Place = rec("Place", function(t, name) t.placed = name end),
+        },
+    }
+end
+local function fuiCalled(name, target)
+    for _, c in ipairs(fuiLog) do if c[1] == name and (target == nil or c[2] == target) then return true end end
+    return false
+end
+local function reload()
+    LooseBagsLogic = nil
+    for _, f in ipairs(files) do assert(loadfile(dir .. "/" .. f))() end
+    local L = LooseBagsLogic.LB
+    L.frame = nil
+    return L
+end
+fakeForeverUI(false)
+local LB3 = reload()
+local okF, errF = pcall(function() LB3.OnEvent(nil, "PLAYER_LOGIN"); LB3.Show() end)
+if not okF then print("  " .. tostring(errF)) end
+local f3 = LB3.frame
+check("Forever UI: the window is its bag frame (SetPanelArt), the red X its CloseButton", okF and f3.forever == true
+    and fuiCalled("SetPanelArt", f3) and fuiCalled("CloseButton", LooseBagsFrameClose))
+check("...Clean Up is its autosort button, the cog and bag buttons its atlases, the purse its coin box",
+    LooseBagsCleanUp.normalTex and LooseBagsCleanUp.normalTex.atlas == "bags-button-autosort-up"
+    and LooseBagsSettingsButton.normalTex.atlas == "questlog-icon-setting" and LooseBagsBagSlotsButton.normalTex.atlas == "bag-main"
+    and fuiCalled("SetAtlas") and (function() for _, c in ipairs(fuiLog) do if c[1] == "SetAtlas" and c[3] == "common-coinbox-left" then return true end end end)())
+check("...the search box has its magnifier and clear button", (function()
+    local m, x = false, false
+    for _, c in ipairs(fuiLog) do if c[1] == "SetAtlas" and c[3] == "common-search-magnifyingglass" then m = true end
+        if c[1] == "SetAtlas" and c[3] == "common-search-clearbutton" then x = true end end
+    return m and x end)())
+local fuiToll
+for _, b in ipairs(LB3.buttons) do if b:IsShown() and b.place.itemID == 40703 then fuiToll = b end end
+local fuiHs
+for _, b in ipairs(LB3.buttons) do if b:IsShown() and b.place.itemID == 6948 then fuiHs = b end end
+check("...item slots wear its outline: the epic in its quality colour, the common in its grey",
+    fuiToll and fuiToll.lbOutline and fuiToll.lbOutline.color[1] == 0.6 and fuiHs.lbOutline.color[1] == LB3.Skin.FRAME_GRAY
+    and fuiCalled("Outline", fuiToll))
+check("...settings drawer: its dialog frame, three-slice buttons and tick boxes", fuiCalled("DialogFrame", LooseBagsSettings)
+    and fuiCalled("ThreeSliceButton", LooseBagsHelpButton) and LooseBagsToggleautoPlace.normalTex.placed == "checkbox-minimal")
+check("...the money line is still the window's own, inside it", f3.Money.parent == f3 and anchoredTo(f3.Money, f3)
+    and f3.Money.coins.gold.text.text == "123")
+
+fuiLog = {}
+fakeForeverUI(true)
+local LB4 = reload()
+local okT, errT = pcall(function() LB4.OnEvent(nil, "PLAYER_LOGIN"); LB4.Show() end)
+if not okT then print("  " .. tostring(errT)) end
+check("a Forever UI whose calls fail: the bag still opens, in the plain look, with its items and money",
+    okT and LB4.frame:IsShown() and LB4.frame.forever == false and #LB4.buttons > 0 and #fuiLog > 0
+    and LB4.frame.Money.coins.copper.text.text == 67)
+ForeverUI = {}
 
 -- ---------------------------------------------------------------- a client without the templates
 for k in pairs(templates) do templates[k] = nil end

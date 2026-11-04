@@ -2,7 +2,7 @@
 ## Title: Loose Bags
 ## Notes: One loose backpack: items stay where you leave them. Loose Bags by Eric R (MIT), adapted for Leyline.
 ## Author: Eric R
-## Version: 0.1.3-leyline
+## Version: 0.2.0-leyline
 ## OptionalDeps: ForeverUI
 ## SavedVariables: LooseBagsDB
 ## X-License: MIT (LICENSE.txt)
@@ -10,6 +10,7 @@
 
 Logic.lua
 Compat.lua
+Skin.lua
 LooseBags.lua
 Chrome.lua
 Place.lua

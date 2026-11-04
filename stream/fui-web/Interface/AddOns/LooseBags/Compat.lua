@@ -91,7 +91,7 @@ function C.SlotInfo(bag, slot)
 	if not itemID then
 		return nil
 	end
-	local name, _, infoQuality, _, _, className = call("GetItemInfo", link)
+	local name, _, infoQuality, _, _, className, subClassName = call("GetItemInfo", link)
 	if type(quality) ~= "number" or quality < 0 then
 		quality = infoQuality
 	end
@@ -108,6 +108,8 @@ function C.SlotInfo(bag, slot)
 		iconFileID = texture,
 		hyperlink = link,
 		itemName = name,
+		itemType = className,
+		itemSubType = subClassName,
 	}
 end
 

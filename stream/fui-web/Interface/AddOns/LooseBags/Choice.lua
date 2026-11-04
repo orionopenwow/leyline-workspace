@@ -34,6 +34,9 @@ local function Option(frame, name, text, note, x, which)
 		button:SetNormalFontObject(GameFontNormal)
 	end
 	button:SetSize(160, 26)
+	if LB.Skin then
+		LB.Skin.TextButton(button)
+	end
 	button:SetPoint("TOP", frame, "TOP", x, -64)
 	button:SetText(text)
 	button:SetScript("OnClick", function()
@@ -65,16 +68,8 @@ local function Ensure()
 	frame:SetScript("OnDragStop", function(self)
 		self:StopMovingOrSizing()
 	end)
-	if frame.SetBackdrop then
-		frame:SetBackdrop({
-			bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-			edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-			tile = true,
-			tileSize = 32,
-			edgeSize = 32,
-			insets = { left = 11, right = 12, top = 12, bottom = 11 },
-		})
-	end
+	-- Forever UI's dialog frame when it is loaded (Skin.lua), else the client's dialog border.
+	LB.Skin.Panel(frame)
 	local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 	title:SetPoint("TOP", frame, "TOP", 0, -18)
 	title:SetText(LB.CHOICE_TITLE)
@@ -94,7 +89,7 @@ local function Ensure()
 	later:SetText(LB.CHOICE_LATER)
 	frame.later = later
 	local close = C.Make("Button", "LooseBagsChoiceClose", frame, "UIPanelCloseButton")
-	close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4)
+	LB.Skin.Close(close, frame, -6, -6)
 	close:SetScript("OnClick", function()
 		frame:Hide()
 	end)

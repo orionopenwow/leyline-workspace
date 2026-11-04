@@ -652,6 +652,30 @@ class Install(unittest.TestCase):
         self.assertNotIn("restart", read(os.path.join(self.state, "systemctl.log")))
 
 
+    def test_control_step_sends_settings_and_turns_it_on(self):
+        # Control's discord-bridge step (tools/discord-leyline/bridge_link.py): settings.env + turn-on in the upload
+        with open(os.path.join(self.src, "settings.env"), "w") as f:
+            f.write(f"DISCORD_BOT_TOKEN={TOKEN}\nDISCORD_CHAT_CHANNEL_ID=777\nDISCORD_BUG_CHANNEL_ID=888\n"
+                    "DISCORD_GUILD_ID=1\nWU_DISCORD_BUG_INTAKE=/srv/wrath/bugs/intake/discord.jsonl\nSOAP_PASS=evil\n")
+        open(os.path.join(self.src, "turn-on"), "w").close()
+        r = self.run_up()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue(r.stdout.strip().endswith("DISCORD BRIDGE OK"), r.stdout)
+        e = self.envf()
+        self.assertIn(f"DISCORD_BOT_TOKEN={TOKEN}\n", e); self.assertIn("DISCORD_CHAT_CHANNEL_ID=777\n", e)
+        self.assertIn("DISCORD_BUG_CHANNEL_ID=888\n", e)
+        self.assertNotIn("SOAP_PASS=evil", e)                      # only the bridge's own Discord keys
+        self.assertFalse(os.path.exists(os.path.join(self.src, "settings.env")))
+        self.assertNotIn(TOKEN, r.stdout + r.stderr)
+        self.assertIn("systemctl enable --now wu-discord", read(os.path.join(self.state, "systemctl.log")))
+
+    def test_turn_on_refused_when_incomplete(self):
+        open(os.path.join(self.src, "turn-on"), "w").close()
+        r = self.run_up()
+        self.assertEqual(r.returncode, 1)
+        self.assertNotIn("enable --now", read(os.path.join(self.state, "systemctl.log")))
+
+
 class Brand(unittest.TestCase):
     def test_no_game_brand_names_in_what_players_or_discord_see(self):
         for rel in ("hosting/discord/wudiscord/bridge.py", "realm/custom/lua_scripts/ov_discord.lua",

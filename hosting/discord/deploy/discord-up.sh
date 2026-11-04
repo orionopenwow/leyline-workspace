@@ -65,6 +65,21 @@ if [ -z "$(kv_get "$ENVF" SOAP_USER)" ] && [ -f "$SIGNUP_ENV" ]; then
   kv_set "$ENVF" SOAP_PASS "$(kv_get "$SIGNUP_ENV" SOAP_PASS)"
   note "SOAP login copied from $SIGNUP_ENV"
 fi
+# Settings sent along by Control's discord-bridge step (tools/discord-leyline/bridge_link.py): the token and the channel
+# ids, in a file inside the upload (never on a command line or in a log). Only these keys; the file is removed at once.
+if [ -f "$SRC/settings.env" ]; then
+  n=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    k=${line%%=*}; v=${line#*=}
+    case "$k" in
+      DISCORD_BOT_TOKEN|DISCORD_CHAT_CHANNEL_ID|DISCORD_BUG_CHANNEL_ID|DISCORD_GUILD_ID|WU_DISCORD_BUG_INTAKE)
+        kv_set "$ENVF" "$k" "$v"; n=$((n+1)) ;;
+    esac
+  done < "$SRC/settings.env"
+  rm -f "$SRC/settings.env"
+  chmod 600 "$ENVF"
+  note "$n settings written to discord.env (values not shown)"
+fi
 [ -f "$DIR/mutes.txt" ] || printf '# Muted both ways: one Discord user id or character name per line. Re-read live.\n' > "$DIR/mutes.txt"
 if [ "${WU_TEST:-0}" != 1 ]; then
   id -u wu-discord >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin wu-discord
@@ -97,6 +112,14 @@ if systemctl is-enabled wu-discord >/dev/null 2>&1; then
     systemctl restart wu-discord || true
     die "wu-discord did not stay up with the new code (journalctl -u wu-discord); the previous code is back"
   fi
+  echo "DISCORD BRIDGE OK"
+elif [ -f "$SRC/turn-on" ]; then
+  # the owner pressed Control's discord-bridge step: that is his "turn it on"
+  [ "$RC" = 0 ] || die "the settings are incomplete (see above): the bridge was not turned on"
+  systemctl enable --now wu-discord
+  sleep "${WU_SETTLE:-3}"
+  systemctl is-active wu-discord >/dev/null 2>&1 || die "wu-discord did not stay up (journalctl -u wu-discord); it stays installed, turned on at boot"
+  note "turned on: World chat <-> Discord, and the bug feed"
   echo "DISCORD BRIDGE OK"
 else
   note "not turned on (the owner does that):"

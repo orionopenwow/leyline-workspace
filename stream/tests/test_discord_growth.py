@@ -797,8 +797,8 @@ check("... and community_realms wins once setup has found it", G2.post_channel("
 # ------------------------------------------------------------------------------------- the launch layout (3 Nov)
 LT = os.path.join(STREAM, "discord_template_launch.json")
 TL = json.load(open(LT, encoding="utf-8"))
-check("launch template: valid, 13 channels, Find a group and mod posts have their channels", DGM.check_template(TL) == []
-      and sum(len(c["channels"]) for c in TL["categories"]) == 13 and TL["posts"]["lfg"] == "looking_for_group"
+check("launch template: valid, 14 channels, Find a group and mod posts have their channels", DGM.check_template(TL) == []
+      and sum(len(c["channels"]) for c in TL["categories"]) == 14 and TL["posts"]["lfg"] == "looking_for_group"
       and TL["posts"]["mod"] == "mods_and_workshop", DGM.check_template(TL))
 NEWS_ANN = add_channel("📣︱announcements", 5)      # a Community server's announcement channel
 OLD_HOST = add_channel("🏰︱host-a-beacon", 0)       # the 30 Oct name, not yet renamed by the owner's script

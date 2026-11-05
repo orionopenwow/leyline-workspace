@@ -2555,6 +2555,17 @@ pub fn run() {
             crate::forum::commands::forum_post,
             crate::forum::commands::forum_open,
             // List your mod: check, list, report, edit, remove with the launcher's sign-in (listing.rs)
+            // Mods & Addons › Dens: the shared Dens and stamps (denmarket.rs, stream/denmarket.py)
+            crate::denmarket::commands::dens_browse,
+            crate::denmarket::commands::dens_detail,
+            crate::denmarket::commands::dens_mine,
+            crate::denmarket::commands::dens_post,
+            crate::denmarket::commands::dens_share,
+            crate::denmarket::commands::dens_open,
+            crate::denmarket::commands::dens_stamp,
+            crate::denmarket::commands::dens_showcase,
+            crate::denmarket::commands::dens_shots,
+            crate::denmarket::commands::dens_page_open,
             crate::listing::commands::listing_post,
             crate::listing::commands::listing_mine,
             crate::listing::commands::listing_open,

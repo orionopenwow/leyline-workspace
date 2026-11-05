@@ -32,6 +32,9 @@ pub enum Link {
     Host(String),
     /// A friend's invite link (`join_link`): the launcher offers Join with it. Nothing joins until the player clicks.
     Join(String),
+    /// A shared Den's showcase on the website ("Open in Leyline", stream/denmarket.py): Mods & Addons › Dens opens
+    /// that build with its Open in my Den button. Nothing is downloaded until the player clicks.
+    Den(String),
 }
 
 /// The invite link a `leyline://join?link=` carries, when it is one (realms.rs parse_invite) on Leyline's own relay.
@@ -81,6 +84,7 @@ pub fn parse(url: &str) -> Option<Link> {
     match action {
         "install" if id_ok(&id) => Some(Link::Install(id)),
         "realm" if id == "official" || crate::realms::realm_id_ok(&id) => Some(Link::Realm(id)),
+        "den" if crate::denmarket::id_ok(&id) => Some(Link::Den(id)),
         _ => None,
     }
 }
@@ -235,6 +239,16 @@ mod tests {
         }
         let json = serde_json::to_value(Link::Realm("official".into())).unwrap();
         assert_eq!(json, serde_json::json!({"action": "realm", "id": "official"}));
+    }
+
+    #[test]
+    fn parses_shared_den_links() {
+        assert_eq!(parse("leyline://den/abcdefghij"), Some(Link::Den("abcdefghij".into())));
+        assert_eq!(parse("leyline://den/abcdefghij/?from=site"), Some(Link::Den("abcdefghij".into())));
+        for bad in ["leyline://den/", "leyline://den/abcdefghil", "leyline://den/../x", "leyline://den/ABCDEFGHIJ"] {
+            assert_eq!(parse(bad), None, "{bad}");
+        }
+        assert_eq!(serde_json::to_value(Link::Den("abcdefghij".into())).unwrap(), serde_json::json!({"action": "den", "id": "abcdefghij"}));
     }
 
     const GAME: &str = "core=azerothcore&preset=main&name=Frost%20Haven%27s&type=rppvp&xp=5&loot=2&start=level1&bots=40\

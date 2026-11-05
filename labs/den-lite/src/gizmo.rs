@@ -83,6 +83,17 @@ pub const GLOW: u32 = DYN_ACTIVATE | DYN_SPARKLE;
 /// The light under the selected prop (the halo): the game's own "Crate Highlight" (gameobject 190117, display 2233,
 /// the glow it puts round a quest crate), as an object of ours, sized to the prop's footprint, not selectable.
 pub const HALO: (u32, u32, &str) = (990_010, 2233, "Selected");
+/// The light under the prop the cursor is over (build mode, nothing in hand): the same glow as the selection's halo,
+/// a little smaller (the selection is the stronger one: the full halo, the sparkle and its arrows). Owner 5 Nov:
+/// "objects should be clickable, highlightable in build and select mode". Props are NOT_SELECTABLE in build mode, so
+/// the client's own mouse-over highlight is gone; the 3.3.5a client has no highlight flag for a gameobject
+/// (GameObjectDynamicLowFlags: ACTIVATE 0x01, ANIMATE 0x02, NO_INTERACT 0x04, SPARKLE 0x08, STOPPED 0x10; the
+/// HIGHLIGHT bit came in later clients), and no spell visual plays on one, so the hover is the sparkle ([`GLOW`],
+/// a values update, no respawn) and this light under it (one small object, made only when the prop under the cursor
+/// changes, at most every [`HOVER_MS`]).
+pub const HOVER: (u32, u32, &str) = (990_011, 2233, "Under the cursor");
+/// The hover's light against the prop's footprint (the selection's halo is 1).
+pub const HOVER_SIZE: f32 = 0.8;
 /// The cursor's ring (owner's LANDSCAPE editor, mega-placer.js 5 Nov: "a ring sits where the mouse meets the ground,
 /// every frame"; its colour says what a click does: gold place, teal grab, grey nothing). One object only the player
 /// sees (Den Lite sends it to that player alone), not selectable. The stock client can't tint a gameobject, so each
@@ -114,6 +125,9 @@ pub const FAR_MAX: f32 = 1500.0;
 pub const BUILD_BACK: f32 = 14.0;
 /// The hover's glow changes at most this often (ms).
 pub const HOVER_MS: u64 = 100;
+/// A building's copy (a WMO: it can't be a creature's model, glide.rs) is made anew at most this often (ms), and only
+/// when it moved: a building is heavy to make, and 30 creates a second of one flickered.
+pub const WMO_DRAW_MS: u64 = 150;
 
 const HIGH_GAMEOBJECT: u64 = 0xF110;
 /// The aids' own object counters (never a prop's: those count up from 1): the copy 0 and 1, the gizmo 0x10 ..= 0x15,
@@ -135,6 +149,9 @@ pub fn query(entry: u32) -> Option<(u8, u32, &'static str, f32)> {
     if entry == HALO.0 {
         return Some((GENERIC, HALO.1, HALO.2, 1.0));
     }
+    if entry == HOVER.0 {
+        return Some((GENERIC, HOVER.1, HOVER.2, 1.0));
+    }
     if let Some(r) = RING.iter().find(|r| r.0 == entry) {
         return Some((GENERIC, r.1, r.2, 1.0));
     }
@@ -153,8 +170,9 @@ pub fn is_ghost(g: u64) -> bool {
     matches!(counter(g).checked_sub(AID_BASE), Some(0 | 1))
 }
 
+/// The selection's halo (0x20, 0x21) or the hover's light (0x40, 0x41).
 pub fn is_halo(g: u64) -> bool {
-    matches!(counter(g).checked_sub(AID_BASE), Some(0x20 | 0x21))
+    matches!(counter(g).checked_sub(AID_BASE), Some(0x20 | 0x21 | 0x40 | 0x41))
 }
 
 pub fn is_ring(g: u64) -> bool {
@@ -431,6 +449,55 @@ pub struct Aids {
     /// The turn the next card placed starts with (radians): the last placed one's, or set by Q / E with nothing in
     /// hand or under the cursor (mega-placer.js: "the current turn carries to the next placement"). None: as you face.
     pub next_yaw: Option<f32>,
+    /// The gameobject displays this player's game can show as a creature (glide.rs: the Den's patch-T, the launcher's
+    /// marker; the world server sets it for the Den's owner). None: every copy is a gameobject made anew.
+    pub creature_models: Option<std::sync::Arc<std::collections::HashSet<u32>>>,
+    /// `gizmo glide off`: the copies are gameobjects again (to compare, or if a game draws the creature wrong).
+    pub glide_off: bool,
+    /// The copy in hand as a creature, gliding (glide.rs): where its glide under way goes.
+    pub slide: Option<Slide>,
+    /// The hover's light ([`HOVER`]): its guid and the prop it is under.
+    pub hover_halo: Option<(u64, u64)>,
+    /// How many times a copy was made (a gameobject copy each move; a creature once) and glided (the creature's
+    /// moves): den-check's den-move reads them (`aid_view`) to prove nothing flickers while an M2 prop is carried.
+    pub copies_made: u64,
+    pub copies_glided: u64,
+}
+
+/// The copy in hand as a creature (glide.rs), and its glide under way: from, to (x, y, z, facing), when it started
+/// (ms), how long (ms; 0: standing at `to`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Slide {
+    pub guid: u64,
+    pub display: u32,
+    pub scale: f32,
+    pub from: [f32; 4],
+    pub to: [f32; 4],
+    pub t0: u64,
+    pub ms: u32,
+}
+
+/// Where the gliding copy is at `now` (its facing stays the start's until it gets there: OrientationFixed).
+pub fn slide_now(s: &Slide, now: u64) -> [f32; 4] {
+    let k = if s.ms == 0 { 1.0 } else { (now.saturating_sub(s.t0) as f32 / s.ms as f32).clamp(0.0, 1.0) };
+    let (f, t) = (s.from, s.to);
+    [f[0] + (t[0] - f[0]) * k, f[1] + (t[1] - f[1]) * k, f[2] + (t[2] - f[2]) * k, if k >= 1.0 { t[3] } else { f[3] }]
+}
+
+/// The same spot and turn (within 2 cm and a third of a degree): nothing to send.
+fn same_spot(a: [f32; 4], b: [f32; 4]) -> bool {
+    let d2 = (a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2);
+    let turn = (a[3] - b[3]).rem_euclid(std::f32::consts::TAU);
+    d2 < 0.02 * 0.02 && (turn < 0.006 || turn > std::f32::consts::TAU - 0.006)
+}
+
+/// What the world server does with the copy as a creature (glide.rs): made (the object's place, its gameobject
+/// display worn as a creature's), or glided from where it is now to a new spot. It goes with `destroy`, as the
+/// gameobject copy does.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Glide {
+    Show(WorldObject),
+    Move { guid: u64, from: [f32; 4], to: [f32; 4], ms: u32 },
 }
 
 impl Aids {
@@ -491,6 +558,9 @@ pub struct AidOut {
     pub destroy: Vec<u64>,
     /// Values updates of GAMEOBJECT_DYNAMIC (guid, flags), after the creates: the selection's glow on and off.
     pub glow: Vec<(u64, u32)>,
+    /// The copy as a creature (glide.rs): after the creates, before the destroys (so it is there before the prop it
+    /// copies goes, and the real one is there before it goes).
+    pub glide: Vec<Glide>,
     /// The far-sight object (the snap-out and far-zoom camera).
     pub far: Option<FarOut>,
     /// `wubuild <name> <data>` to the addon.
@@ -522,6 +592,7 @@ impl AidOut {
         self.create.extend(o.create);
         self.destroy.extend(o.destroy);
         self.glow.extend(o.glow);
+        self.glide.extend(o.glide);
         self.addon.extend(o.addon);
         self.say.extend(o.say);
         self.state |= o.state;
@@ -710,6 +781,21 @@ fn aid_verb(d: &mut Den, sel: &mut Sel, a: &mut Aids, here: Here, text: &str, ca
             "x" | "y" | "z" => grab(d, sel, a, arg.chars().next().unwrap_or('x'), now),
             _ => AidOut::default().said("Usage: grab x|y|z (then move the mouse; click drops it, Esc puts it back)"),
         },
+        // the copy in hand as a gliding creature (glide.rs) or a gameobject made anew (`gizmo glide on|off`); the
+        // addon is told which it is now (`glide on|off|none`: none when this game has no creature rows)
+        "gizmo" if arg == "glide" => {
+            let off = w.get(2).is_some_and(|v| v.eq_ignore_ascii_case("off"));
+            a.glide_off = off;
+            let state = if !a.creature_models.as_ref().is_some_and(|c| !c.is_empty()) {
+                "none"
+            } else if off {
+                "off"
+            } else {
+                "on"
+            };
+            // the copy in hand now drawn the other way at the next hover
+            AidOut::default().tell("glide", state.into())
+        }
         // the cursor's ring on or off (`gizmo ring on|off`)
         "gizmo" if arg == "ring" => {
             a.ring_on = !w.get(2).is_some_and(|v| v.eq_ignore_ascii_case("off"));
@@ -885,9 +971,29 @@ fn hover_glow(d: &Den, _sel: &Sel, a: &mut Aids, hit: Option<u64>, now: u64) -> 
     if let Some(new) = hit.filter(|g| a.glowing != Some(*g)) {
         out.glow.push((new, GLOW));
     }
+    // the hover's light moves to the new one (made before the old goes); none under the selection, which has its halo
+    let old_halo = a.hover_halo.take();
+    let lit = hit.filter(|g| a.glowing != Some(*g)).and_then(|g| d.placed(g)).map(|p| p.obj.clone());
+    if let Some(o) = lit {
+        let n = 0x40 + old_halo.map_or(0, |(h, _)| 1 - (counter(h).saturating_sub(AID_BASE + 0x40)).min(1));
+        let h = hover_halo_of(&o, n);
+        a.hover_halo = Some((h.guid, o.guid));
+        out.create.push(h);
+    }
+    if let Some((h, _)) = old_halo {
+        out.destroy.push(h);
+    }
     a.hovered = hit;
     a.hover_ms = Some(now);
     out.tell("hovered", hovered_line(d, hit))
+}
+
+/// The hover's light ([`HOVER`]) under `o`: [`HOVER_SIZE`] of its footprint, on its foot, not selectable.
+fn hover_halo_of(o: &WorldObject, n: u64) -> WorldObject {
+    let (hx, hy, _) = world_extent(o);
+    let r = (hx.max(hy) * 2.0 * HOVER_SIZE).clamp(0.4, 24.0);
+    let base = crate::models::box_of(HOVER.1).map(|b| b.0.max(b.1)).filter(|v| *v > 0.1).unwrap_or(2.0);
+    WorldObject { guid: aid_guid(HOVER.0, n), entry: HOVER.0, display: HOVER.1, kind: GENERIC, scale: (r / base).clamp(0.2, 15.0), x: o.x, y: o.y, z: o.z + 0.05, o: o.o, pitch: 0.0, roll: 0.0 }
 }
 
 /// A click on the world: the prop under the cursor is the selection (its glow, the handles and the halo, the panel:
@@ -1020,6 +1126,9 @@ fn hover(d: &Den, sel: &Sel, a: &mut Aids, here: Here, u: f32, v: f32, aspect: O
             let mut out = AidOut::default();
             if let Some(old) = a.hovered.filter(|g| d.placed(*g).is_some() && a.glowing != Some(*g)) {
                 out.glow.push((old, 0));
+            }
+            if let Some((h, _)) = a.hover_halo.take() {
+                out.destroy.push(h);
             }
             a.hovered = None;
             a.hover_handle = Some(axis);
@@ -1333,8 +1442,13 @@ pub fn follow_player(d: &Den, sel: &Sel, a: &mut Aids, here: Here, now: u64) -> 
     draw(d, a, now, false)
 }
 
-/// The copy at `a.at`: made under the other guid, then the old one taken away. Not more often than [`DRAW_MS`]
-/// unless `force`. A dragged prop's copy glows as the selection does.
+/// The copy at `a.at`. Not more often than [`DRAW_MS`] unless `force`.
+///
+/// * A prop the player's game can show as a creature (glide.rs; owner 5 Nov: "dynamically move instead of
+///   disappearing, reappearing"): made once as a creature wearing its model, then glided from where it is to each new
+///   spot ([`Glide`]); nothing is made or taken away while it moves.
+/// * Otherwise a gameobject made under the other guid, then the old one taken away (a dragged prop's copy glows as the
+///   selection does). A building (WMO) only when it moved and at most every [`WMO_DRAW_MS`].
 fn draw(d: &Den, a: &mut Aids, now: u64, force: bool) -> AidOut {
     let mut out = AidOut::default();
     let (Some(armed), Some(at)) = (a.armed, a.at) else { return out };
@@ -1354,11 +1468,57 @@ fn draw(d: &Den, a: &mut Aids, now: u64, force: bool) -> AidOut {
             None => return out,
         },
     };
+    let spot = [at[0], at[1], at[2], at[3]];
+    let placed = WorldObject { x: at[0], y: at[1], z: at[2], o: at[3], ..base.clone() };
+    let glides = !a.glide_off && a.creature_models.as_ref().is_some_and(|c| crate::glide::fits(c, &placed));
+    if glides {
+        // the creature there already, the same model and size: it glides from where it is now
+        let ghost_guid = a.ghost.as_ref().map(|g| g.guid);
+        if let Some(s) = a.slide.filter(|s| s.display == base.display && (s.scale - base.scale).abs() < 1e-4 && ghost_guid == Some(s.guid)) {
+            if same_spot(s.to, spot) {
+                return out;
+            }
+            let from = slide_now(&s, now);
+            out.glide.push(Glide::Move { guid: s.guid, from, to: spot, ms: crate::glide::GLIDE_MS });
+            a.copies_glided += 1;
+            a.slide = Some(Slide { from, to: spot, t0: now, ms: crate::glide::GLIDE_MS, ..s });
+            if let Some(g) = a.ghost.as_mut() {
+                g.x = at[0];
+                g.y = at[1];
+                g.z = at[2];
+                g.o = at[3];
+            }
+            a.drawn_ms = now;
+            return out;
+        }
+        // made (under the other creature guid when it was another model: the old copy goes after)
+        a.flip = !a.flip;
+        let obj = WorldObject { guid: crate::glide::guid(a.flip), ..placed };
+        if let Some(old) = a.ghost.take() {
+            out.destroy.push(old.guid);
+        }
+        out.glide.push(Glide::Show(obj.clone()));
+        a.copies_made += 1;
+        a.slide = Some(Slide { guid: obj.guid, display: obj.display, scale: obj.scale, from: spot, to: spot, t0: now, ms: 0 });
+        a.ghost = Some(obj);
+        a.drawn_ms = now;
+        return out;
+    }
+    // a building: only when it moved, and not too often (made anew each time; it can't glide)
+    if crate::models::is_wmo(base.display) && !force {
+        if let Some(g) = a.ghost.as_ref().filter(|g| !crate::glide::is_glider(g.guid) && g.display == base.display) {
+            if now.saturating_sub(a.drawn_ms) < WMO_DRAW_MS || same_spot([g.x, g.y, g.z, g.o], spot) {
+                return out;
+            }
+        }
+    }
+    a.slide = None;
     a.flip = !a.flip;
-    let obj = WorldObject { guid: aid_guid(base.entry, a.flip as u64), x: at[0], y: at[1], z: at[2], o: at[3], ..base };
+    let obj = WorldObject { guid: aid_guid(base.entry, a.flip as u64), ..placed };
     if let Some(old) = a.ghost.take() {
         out.destroy.push(old.guid);
     }
+    a.copies_made += 1;
     out.create.push(obj.clone());
     if matches!(armed, Armed::Axis { .. }) || a.grip.is_some() {
         out.glow.push((obj.guid, GLOW));
@@ -1371,8 +1531,14 @@ fn draw(d: &Den, a: &mut Aids, now: u64, force: bool) -> AidOut {
 /// Esc: the copy taken away, a hidden prop shown again, nothing armed.
 fn cancel(d: &Den, a: &mut Aids) -> AidOut {
     let mut out = AidOut::default();
+    // the copy (a gameobject, or the gliding creature) goes after the real one is made again below
     if let Some(g) = a.ghost.take() {
         out.destroy.push(g.guid);
+    }
+    a.slide = None;
+    // something taken in hand (or put away): the hover's light goes with the hover
+    if let Some((h, _)) = a.hover_halo.take() {
+        out.destroy.push(h);
     }
     if let Some(Armed::Move(g) | Armed::Axis { guid: g, .. }) = a.armed {
         if let Some(p) = d.placed(g) {
@@ -1443,6 +1609,7 @@ pub fn commit(d: &mut Den, sel: &mut Sel, a: &mut Aids, now: u64, keep: bool) ->
         if let Some(g) = a.ghost.take() {
             out.destroy.push(g.guid);
         }
+        a.slide = None;
         if matches!(armed, Armed::Axis { .. }) {
             a.axis = None;
             out.addon.push(("axis".into(), "-".into()));
@@ -1454,7 +1621,6 @@ pub fn commit(d: &mut Den, sel: &mut Sel, a: &mut Aids, now: u64, keep: bool) ->
         a.grip = None;
         a.carry = false;
         a.at_edge = false;
-    a.at_edge = false;
         out.addon.push(("aim".into(), "off".into()));
     }
     // the prop was made anew: its glow and the gizmo anew
@@ -1563,6 +1729,13 @@ fn world_extent(o: &WorldObject) -> (f32, f32, f32) {
 /// prop is (a move, a turn, a size), as the prop's own create clears its glow.
 pub fn sync(d: &Den, sel: &Sel, a: &mut Aids) -> AidOut {
     let mut out = AidOut::default();
+    // the hover's light goes when its prop is the selection now (the halo is there) or is gone
+    if let Some((h, p)) = a.hover_halo {
+        if sel.guid == Some(p) || d.placed(p).is_none() {
+            out.destroy.push(h);
+            a.hover_halo = None;
+        }
+    }
     let moving = matches!(a.armed, Some(Armed::Move(g) | Armed::Axis { guid: g, .. }) if Some(g) == sel.guid);
     let on = sel.guid.filter(|_| a.gizmo_on).and_then(|g| d.placed(g));
     let want = on.filter(|_| !moving).map(|p| {
@@ -1777,6 +1950,8 @@ pub fn clear(a: &mut Aids) -> Vec<u64> {
     let mut v: Vec<u64> = a.gizmo.drain(..).collect();
     v.extend(a.ghost.take().map(|g| g.guid));
     v.extend(a.ring.take().map(|g| g.guid));
+    v.extend(a.hover_halo.take().map(|h| h.0));
+    a.slide = None;
     a.ring_kind = None;
     a.gizmo_for = None;
     a.glowing = None;
@@ -1893,6 +2068,11 @@ pub fn view(a: &Aids, sel: &Sel, build: bool) -> serde_json::Value {
         "glow": a.glowing.map(|g| g & 0xFF_FFFF), "drag": a.dragged, "cam": cam_line(a), "far_at": a.far_at, "zoom": a.zoom,
         "hovered": a.hovered.map(|g| g & 0xFF_FFFF), "sel_at": a.sel_at, "sel_uv": a.sel_uv, "build": a.build, "grip": a.grip.is_some(), "edge": a.at_edge,
         "handle": a.hover_handle.map(String::from), "draw_ms": DRAW_MS,
+        // the copy in hand: a gliding creature (glide.rs) or a gameobject made anew; how many made and glided so far
+        "copy": a.ghost.as_ref().map(|g| if crate::glide::is_glider(g.guid) { "creature" } else { "object" }),
+        "copies_made": a.copies_made, "copies_glided": a.copies_glided,
+        "glide": if a.glide_off { "off" } else if a.creature_models.as_ref().is_some_and(|c| !c.is_empty()) { "on" } else { "none" },
+        "hover_light": a.hover_halo.map(|h| h.1 & 0xFF_FFFF),
     })
 }
 
@@ -2940,5 +3120,183 @@ mod tests {
         assert!(((d.placed(g).unwrap().prop.yaw - y0 + 15.0).rem_euclid(360.0)).abs() < 0.01);
         assert!(cmd(&mut d, &mut sel, &mut a, here, "turnat 999999 15", true, 500).change.is_none());
         assert!(cmd(&mut d, &mut sel, &mut a, here, &format!("turnat {id} 15"), false, 600).change.is_none(), "builders only");
+    }
+
+    // ---- gr-den-glide 5 Nov (owner: "dynamically move instead of disappearing, reappearing"): unrun in the cloud
+
+    fn gliding(d: u32) -> Aids {
+        Aids { creature_models: Some(std::sync::Arc::new([d].into_iter().collect::<std::collections::HashSet<u32>>())), ..Aids::default() }
+    }
+
+    #[test]
+    fn a_card_in_hand_glides_as_a_creature_and_nothing_is_made_or_taken_away_while_it_moves() {
+        let (mut d, here) = den();
+        let disp = den::template(2413).unwrap().display;
+        let (mut sel, mut a) = (Sel::default(), gliding(disp));
+        cmd(&mut d, &mut sel, &mut a, here, "preview 2413", true, 1000);
+        // the first spot: made once, a creature wearing the chair's model
+        let out = cmd(&mut d, &mut sel, &mut a, here, "hover 0.2 -0.3 1.7778 12", true, 1100);
+        assert!(out.create.is_empty() && out.destroy.is_empty(), "no gameobject copy: {out:?}");
+        let c = match out.glide.as_slice() {
+            [Glide::Show(c)] => c.clone(),
+            g => panic!("one creature made: {g:?}"),
+        };
+        let at0 = a.at.unwrap();
+        assert!(crate::glide::is_glider(c.guid) && c.display == disp && c.entry == 2413);
+        assert!((c.x - at0[0]).abs() < 1e-4 && (c.y - at0[1]).abs() < 1e-4 && (c.z - at0[2]).abs() < 1e-4);
+        assert!(crate::glide::create(c.guid, c.display, c.scale, crate::glide::at(at0)).is_some());
+        // the cursor moves: it glides from where it stands to the new spot; nothing made, nothing taken away
+        let out = cmd(&mut d, &mut sel, &mut a, here, "hover 0.1 -0.3 1.7778 12", true, 1150);
+        let to1 = a.at.unwrap();
+        assert!(out.create.is_empty() && out.destroy.is_empty(), "{out:?}");
+        match out.glide.as_slice() {
+            [Glide::Move { guid, from, to, ms }] => {
+                assert_eq!((*guid, *ms), (c.guid, crate::glide::GLIDE_MS));
+                assert!(same_spot(*from, at0) && same_spot(*to, to1), "{from:?} -> {to:?}");
+            }
+            g => panic!("one glide: {g:?}"),
+        }
+        // halfway through that glide the next one starts from where it is then (never a jump back)
+        let out = cmd(&mut d, &mut sel, &mut a, here, "hover 0.0 -0.35 1.7778 12", true, 1150 + crate::glide::GLIDE_MS as u64 / 2);
+        match out.glide.as_slice() {
+            [Glide::Move { from, .. }] => {
+                let mid = [(at0[0] + to1[0]) / 2.0, (at0[1] + to1[1]) / 2.0, (at0[2] + to1[2]) / 2.0];
+                assert!((from[0] - mid[0]).abs() < 0.01 && (from[1] - mid[1]).abs() < 0.01 && (from[2] - mid[2]).abs() < 0.01, "{from:?} vs {mid:?}");
+            }
+            g => panic!("{g:?}"),
+        }
+        // too soon after: kept, not sent (the throttle); the same spot again: nothing at all
+        assert!(cmd(&mut d, &mut sel, &mut a, here, "hover 0.05 -0.35 1.7778 12", true, 1200).glide.is_empty());
+        let out = cmd(&mut d, &mut sel, &mut a, here, "hover 0.0 -0.35 1.7778 12", true, 1400);
+        assert!(out.glide.is_empty() && out.create.is_empty() && out.destroy.is_empty(), "{out:?}");
+        // a turn (Q / the wheel): the same spot, turned when it gets there
+        let out = cmd(&mut d, &mut sel, &mut a, here, "preview turn 15", true, 1500);
+        match out.glide.as_slice() {
+            [Glide::Move { to, .. }] => assert!((to[3] - a.yaw).abs() < 1e-4),
+            g => panic!("{g:?}"),
+        }
+        let glided = a.copies_glided;
+        assert!(a.copies_made == 1 && glided >= 3, "made once, glided since: {} {glided}", a.copies_made);
+        let v = view(&a, &sel, true);
+        assert_eq!((v["copy"].as_str(), v["glide"].as_str()), (Some("creature"), Some("on")));
+        // the click: the real chair made, then the creature goes (after it: never a frame without one)
+        let kept = a.at.unwrap();
+        let out = cmd(&mut d, &mut sel, &mut a, here, "commit", true, 1600);
+        let made = out.change.clone().unwrap().created[0].clone();
+        assert!((made.x - kept[0]).abs() < 0.01 && (made.y - kept[1]).abs() < 0.01, "placed where the creature stood");
+        assert!(out.destroy.contains(&c.guid) && out.glide.is_empty());
+        assert!(a.slide.is_none() && a.ghost.is_none() && a.armed.is_none());
+        // Esc after a pick: it goes too
+        cmd(&mut d, &mut sel, &mut a, here, "preview 2413 0.1 -0.3 1.7778 12", true, 2000);
+        let g = a.ghost.as_ref().map(|g| g.guid).unwrap();
+        assert!(crate::glide::is_glider(g));
+        let out = cmd(&mut d, &mut sel, &mut a, here, "preview off", true, 2100);
+        assert!(out.destroy.contains(&g) && a.slide.is_none());
+    }
+
+    #[test]
+    fn a_placed_prop_picked_up_or_dragged_glides_and_letting_go_drops_the_real_one() {
+        let (mut d, here) = den();
+        let disp = den::template(2413).unwrap().display;
+        let (mut sel, mut a) = (Sel::default(), gliding(disp));
+        let chair = d.spawn(2413, here.x + 6.0, here.y, here.z, 0.0).unwrap();
+        cmd(&mut d, &mut sel, &mut a, here, "mode build", true, 0);
+        let [u, v] = uv_of(&a, here, &chair);
+        // the click picks it up: the creature is made where the chair stands, then the chair goes (this player only)
+        let out = cmd(&mut d, &mut sel, &mut a, here, &format!("click {} carry", line(u, v)), true, 100);
+        assert!(out.destroy.contains(&chair.guid));
+        assert!(!out.create.iter().any(|o| is_ghost(o.guid)), "no gameobject copy");
+        let c = match out.glide.as_slice() {
+            [Glide::Show(c)] => c.clone(),
+            g => panic!("{g:?}"),
+        };
+        assert!((c.x - chair.x).abs() < 1e-3 && (c.y - chair.y).abs() < 1e-3, "where it stood (no jump)");
+        // it glides with the cursor and the next click puts the real one down there
+        let out = cmd(&mut d, &mut sel, &mut a, here, &format!("hover {}", line(u + 0.1, v - 0.05)), true, 200);
+        assert!(matches!(out.glide.as_slice(), [Glide::Move { .. }]) && out.create.is_empty() && out.destroy.is_empty(), "{out:?}");
+        let at = a.at.unwrap();
+        let out = cmd(&mut d, &mut sel, &mut a, here, "commit", true, 300);
+        let p = d.placed(chair.guid).unwrap().obj.clone();
+        assert!((p.x - at[0]).abs() < 0.05 && (p.y - at[1]).abs() < 0.05);
+        assert!(out.change.is_some() && out.destroy.contains(&c.guid));
+        // press and drag: the same glide
+        let [u, v] = uv_of(&a, here, &p);
+        let out = cmd(&mut d, &mut sel, &mut a, here, &format!("drag {}", line(u, v)), true, 400);
+        assert!(matches!(out.glide.as_slice(), [Glide::Show(_)]) && out.destroy.contains(&chair.guid), "{out:?}");
+        let out = cmd(&mut d, &mut sel, &mut a, here, &format!("hover {}", line(u - 0.05, v)), true, 500);
+        assert!(matches!(out.glide.as_slice(), [Glide::Move { .. }]) && out.create.is_empty());
+        cmd(&mut d, &mut sel, &mut a, here, "commit", true, 600);
+        assert!(a.slide.is_none());
+    }
+
+    #[test]
+    fn a_prop_the_game_cant_show_as_a_creature_is_a_gameobject_copy_as_before() {
+        let (mut d, here) = den();
+        let disp = den::template(2413).unwrap().display;
+        // not in the patch (another display covered): the gameobject copy
+        let (mut sel, mut a) = (Sel::default(), gliding(disp + 1));
+        cmd(&mut d, &mut sel, &mut a, here, "preview 2413", true, 0);
+        let out = cmd(&mut d, &mut sel, &mut a, here, "hover 0.2 -0.3 1.7778 12", true, 100);
+        assert!(out.glide.is_empty() && out.create.iter().any(|o| is_ghost(o.guid)));
+        assert_eq!(view(&a, &sel, true)["copy"].as_str(), Some("object"));
+        // covered, but `gizmo glide off`: the gameobject copy too (the next one drawn)
+        let (mut sel, mut a) = (Sel::default(), gliding(disp));
+        let out = cmd(&mut d, &mut sel, &mut a, here, "gizmo glide off", true, 0);
+        assert_eq!(out.addon, vec![("glide".to_string(), "off".to_string())]);
+        cmd(&mut d, &mut sel, &mut a, here, "preview 2413", true, 0);
+        let out = cmd(&mut d, &mut sel, &mut a, here, "hover 0.2 -0.3 1.7778 12", true, 100);
+        assert!(out.glide.is_empty() && out.create.iter().any(|o| is_ghost(o.guid)));
+        // back on: the creature takes over at the next spot, the gameobject copy goes after it is there
+        let old = a.ghost.as_ref().unwrap().guid;
+        cmd(&mut d, &mut sel, &mut a, here, "gizmo glide on", true, 200);
+        let out = cmd(&mut d, &mut sel, &mut a, here, "hover 0.1 -0.3 1.7778 12", true, 300);
+        assert!(matches!(out.glide.as_slice(), [Glide::Show(_)]) && out.destroy == vec![old], "{out:?}");
+        // no creature rows at all (a friend's game, or no patch): said so
+        let mut plain = Aids::default();
+        assert_eq!(cmd(&mut d, &mut sel, &mut plain, here, "gizmo glide on", true, 0).addon, vec![("glide".to_string(), "none".to_string())]);
+        // a tilted prop can't be a creature (it can't lean): the gameobject copy
+        let tilted = WorldObject { pitch: 0.2, ..d.spawn(2413, here.x + 3.0, here.y, here.z, 0.0).unwrap() };
+        assert!(!crate::glide::fits(&[disp].into_iter().collect::<std::collections::HashSet<u32>>(), &tilted));
+    }
+
+    #[test]
+    fn the_prop_under_the_cursor_gets_the_hover_light_and_the_selection_keeps_its_halo() {
+        // owner 5 Nov: "objects should be clickable, highlightable in build and select mode"
+        let (mut d, here) = den();
+        let (mut sel, mut a) = (Sel::default(), Aids::default());
+        let c1 = d.spawn(2413, here.x + 6.0, here.y - 1.5, here.z, 0.0).unwrap();
+        let c2 = d.spawn(2413, here.x + 6.0, here.y + 1.5, here.z, 0.0).unwrap();
+        cmd(&mut d, &mut sel, &mut a, here, "mode build", true, 0);
+        cmd(&mut d, &mut sel, &mut a, here, "gizmo on", true, 0);
+        let (p1, p2) = (uv_of(&a, here, &c1), uv_of(&a, here, &c2));
+        // over the first: the sparkle (a values update, no respawn) and the light under it
+        let out = cmd(&mut d, &mut sel, &mut a, here, &format!("hover {}", line(p1[0], p1[1])), true, 1000);
+        assert_eq!(out.glow, vec![(c1.guid, GLOW)]);
+        assert!(!out.create.iter().any(|o| o.guid == c1.guid) && !out.destroy.contains(&c1.guid), "the prop itself never made again");
+        let l1 = out.create.iter().find(|o| is_halo(o.guid)).cloned().expect("the hover's light");
+        assert_eq!((l1.entry, l1.display, shown(&l1, true)), (HOVER.0, HOVER.1, (GENERIC, NOT_SELECTABLE, HOVER.0)));
+        assert!((l1.x - c1.x).abs() < 1e-4 && (l1.y - c1.y).abs() < 1e-4);
+        assert_eq!(a.hover_halo, Some((l1.guid, c1.guid)));
+        assert_eq!(query(HOVER.0).map(|q| q.0), Some(GENERIC));
+        // to the second: the light moves (made under the other guid, then the old goes); one sparkle at a time
+        let out = cmd(&mut d, &mut sel, &mut a, here, &format!("hover {}", line(p2[0], p2[1])), true, 1200);
+        let l2 = out.create.iter().find(|o| is_halo(o.guid)).cloned().expect("the light again");
+        assert!(l2.guid != l1.guid && out.destroy.contains(&l1.guid) && (l2.y - c2.y).abs() < 1e-4);
+        assert!(out.glow.contains(&(c1.guid, 0)) && out.glow.contains(&(c2.guid, GLOW)));
+        // a click selects it: the selection's halo and arrows (the stronger one), the hover's light goes
+        let out = cmd(&mut d, &mut sel, &mut a, here, &format!("click {}", line(p2[0], p2[1])), true, 1300);
+        assert!(out.destroy.contains(&l2.guid) && a.hover_halo.is_none());
+        assert!(out.create.iter().any(|o| o.entry == HALO.0) && out.create.iter().filter(|o| gizmo_axis(o.guid).is_some()).count() == 3);
+        // off everything: nothing lit but the selection
+        let out = cmd(&mut d, &mut sel, &mut a, here, &format!("hover {}", line(p1[0], p1[1])), true, 1500);
+        assert!(out.create.iter().any(|o| o.entry == HOVER.0));
+        let out = cmd(&mut d, &mut sel, &mut a, here, &format!("hover {}", line(0.0, 0.95)), true, 1700);
+        assert!(a.hover_halo.is_none() && out.destroy.iter().any(|g| is_halo(*g)) && !out.create.iter().any(|o| is_halo(o.guid)));
+        // leaving the world clears it; picking one up takes it away with the hover
+        cmd(&mut d, &mut sel, &mut a, here, &format!("hover {}", line(p1[0], p1[1])), true, 1900);
+        let lit = a.hover_halo.unwrap().0;
+        assert!(clear(&mut a.clone()).contains(&lit));
+        let out = cmd(&mut d, &mut sel, &mut a, here, &format!("click {} carry", line(p1[0], p1[1])), true, 2000);
+        assert!(out.destroy.contains(&lit) && a.hover_halo.is_none());
     }
 }

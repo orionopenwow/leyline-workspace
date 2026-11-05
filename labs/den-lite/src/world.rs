@@ -377,6 +377,11 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
     let mut sel = ovmod::Sel::default();
     // the editor's placement aids (gizmo.rs): the live preview, the gizmo, the exact click
     let mut aids = gizmo::Aids::new(gizmo::Camera::load(&shared.cfg.den_dir));
+    // the copy in hand glides as a creature where this game has the rows for it (glide.rs: the Den's patch-T on this
+    // PC, so the Den's owner only; read again on each `mode`)
+    if sess.me.host {
+        aids.creature_models = crate::glide::read(&shared.cfg.den_dir).map(std::sync::Arc::new);
+    }
     let (mut moved_once, mut ready) = (false, false);
     // what the game does with its character (movewatch.rs: the events and `.den where`)
     let mut watch: Option<movewatch::Watch> = None;
@@ -752,6 +757,10 @@ fn addon(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Pos>, sel: &mut o
             if !data.trim_start().to_ascii_lowercase().starts_with("hover") {
                 shared.event("addon", &sess.me.name, &format!("wubuild aid {}", data.split_whitespace().take(2).collect::<Vec<_>>().join(" ")));
             }
+            // entering build mode: the launcher may have written the Den's patch since this session began (glide.rs)
+            if sess.me.host && data.trim_start().to_ascii_lowercase().starts_with("mode") {
+                aids.creature_models = crate::glide::read(&shared.cfg.den_dir).map(std::sync::Arc::new);
+            }
             let out = {
                 let mut d = shared.den.lock().unwrap_or_else(|e| e.into_inner());
                 gizmo::cmd(&mut d, sel, aids, h, data, can, now_ms())
@@ -797,6 +806,11 @@ fn aid_send(c: &Writer, shared: &Shared, sess: &Sess, sel: &ovmod::Sel, aids: &g
     if !out.create.is_empty() {
         send_creates(c, shared, &out.create)?;
     }
+    // the copy in hand as a creature (glide.rs): made (flying, no gravity: it stays at the height given), or glided;
+    // before the destroys, so the prop it copies goes only once it is there
+    for g in &out.glide {
+        aid_glide(c, g)?;
+    }
     for g in &out.destroy {
         c.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(*g), target_died: false })?;
     }
@@ -820,6 +834,20 @@ fn aid_send(c: &Writer, shared: &Shared, sess: &Sess, sel: &ovmod::Sel, aids: &g
         *shared.aid_view.lock().unwrap_or_else(|e| e.into_inner()) = gizmo::view(aids, sel, shared.build_look.load(Ordering::Relaxed));
     }
     Ok(())
+}
+
+/// The copy in hand as a creature (glide.rs, gizmo.rs `Glide`).
+fn aid_glide(c: &Writer, g: &gizmo::Glide) -> io::Result<()> {
+    use crate::{flight, glide};
+    match g {
+        gizmo::Glide::Show(o) => {
+            let Some(made) = glide::create(o.guid, o.display, o.scale, glide::at([o.x, o.y, o.z, o.o])) else { return Ok(()) };
+            c.send(&made)?;
+            c.send_raw(flight::SMSG_SPLINE_MOVE_SET_FLYING, &flight::guid_body(o.guid))?;
+            c.send_raw(flight::SMSG_SPLINE_MOVE_GRAVITY_DISABLE, &flight::guid_body(o.guid))
+        }
+        gizmo::Glide::Move { guid, from, to, ms } => c.send_raw(flight::SMSG_MONSTER_MOVE, &glide::move_body(*guid, *from, *to, (now_ms() & 0xFFFF_FFFF) as u32, *ms)),
+    }
 }
 
 /// The far camera's object (farsight.rs): made there and the view on it; moved with a short flying spline; the view
@@ -2267,6 +2295,9 @@ fn companion_create(at: At) -> SMSG_UPDATE_OBJECT {
 /// CMSG_CREATURE_QUERY: her name (what the client shows over her), "<Your companion>" under it, humanoid, her model.
 fn creature_answer(entry: u32) -> SMSG_CREATURE_QUERY_RESPONSE {
     if let Some(a) = crate::farsight::creature(entry) {
+        return a;
+    }
+    if let Some(a) = crate::glide::creature(entry) {
         return a;
     }
     if let Some(pet) = sandbox::pet_answer(entry) {

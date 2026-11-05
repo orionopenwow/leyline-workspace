@@ -17,6 +17,7 @@ pub mod dojo;
 pub mod events;
 pub mod farsight;
 pub mod gizmo;
+pub mod glide;
 pub mod flight;
 pub mod gear;
 pub mod gearsets;

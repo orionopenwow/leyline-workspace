@@ -2060,6 +2060,79 @@ fn the_editors_pick_place_select_drag_and_snap_out() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// The copy in hand glides as a creature (glide.rs; owner 5 Nov: "dynamically move instead of disappearing,
+/// reappearing"), over the wire: with the launcher's marker (the Den's patch-T gives the chair's model a creature
+/// display) the pick makes one creature wearing display 70000 + 39, each later hover is a SMSG_MONSTER_MOVE of it
+/// (facing angle, Flying | OrientationFixed), nothing is made or taken away while it moves, and the click makes the real
+/// chair before the creature goes. Without the marker the copy is a gameobject (the test above).
+#[test]
+fn a_card_in_hand_glides_as_a_creature_over_the_wire() {
+    use den_lite::{flight, gizmo, glide};
+    let (srv, dir) = server("glide", HeroGender::Female);
+    std::fs::write(dir.join(glide::MARKER), r#"{"format": "leyline-den-creature-models", "version": 1, "base": 70000, "displays": [39]}"#).unwrap();
+    let mut w = into_world(&srv, 2);
+    let s0 = Spot::default();
+    w.send(&heartbeat(s0.x, s0.y, s0.z, 0.0));
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tmode build");
+    assert_eq!(until_aid(&mut w, "mode").1, "build");
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tgizmo glide on");
+    assert_eq!(until_aid(&mut w, "glide").1, "on", "the marker was read for the Den's owner");
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tpreview 2413");
+    until_aid(&mut w, "aim");
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\thover 0.15 -0.25 1.7778 12");
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\twhere");
+    let (frames, _) = until_aid(&mut w, "ghost");
+    assert!(objects(&frames).0.keys().all(|g| !gizmo::is_ghost(*g)), "no gameobject copy");
+    let mut copy = None;
+    for f in &frames {
+        if let Some(ServerOpcodeMessage::SMSG_UPDATE_OBJECT(u)) = &f.msg {
+            for o in &u.objects {
+                if let Object::CreateObject { guid3, mask2: UpdateMask::Unit(m), object_type: ObjectType::Unit, .. } = o {
+                    if glide::is_glider(guid3.guid()) {
+                        copy = Some((guid3.guid(), m.object_entry(), m.unit_displayid(), m.unit_flags()));
+                    }
+                }
+            }
+        }
+    }
+    let (g, entry, display, flags) = copy.expect("the copy is a creature");
+    assert_eq!((entry, display), (Some(glide::ENTRY as i32), Some(70_039)), "wearing the chair's model");
+    assert_eq!(flags.map(|f| f as u32 & 0x0200_0000), Some(0x0200_0000), "not selectable");
+    assert!(frames.iter().any(|f| f.opcode == flight::SMSG_SPLINE_MOVE_GRAVITY_DISABLE), "no gravity: it stays at the height given");
+    // the cursor moves (hovers further apart than the redraw's 33 ms): it glides, nothing made or taken away
+    for u in ["0.05", "-0.05", "-0.15"] {
+        std::thread::sleep(Duration::from_millis(60));
+        w.addon("OVMOD", &format!("wubuild\tcmd\t1/1\thover {u} -0.25 1.7778 12"));
+    }
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\twhere");
+    let (frames, at) = until_aid(&mut w, "ghost");
+    let moves: Vec<&Frame> = frames.iter().filter(|f| f.opcode == flight::SMSG_MONSTER_MOVE).collect();
+    assert!(moves.len() >= 2, "it glides: {} moves", moves.len());
+    for m in &moves {
+        let n = 1 + m.body[0].count_ones() as usize;
+        assert_eq!(den_lite::combat::read_packed(&m.body, &mut 0), Some(g));
+        assert_eq!(m.body[n + 17], glide::FACING_ANGLE);
+        assert_eq!(u32::from_le_bytes(m.body[n + 22..n + 26].try_into().unwrap()), glide::SPLINE_FLYING | glide::SPLINE_ORIENTATION_FIXED);
+    }
+    let (made, gone) = objects(&frames);
+    assert!(made.is_empty() && gone.is_empty(), "no destroy / create while it glides: {made:?} {gone:?}");
+    assert!(unit_creates(&frames).is_empty());
+    // the click: the real chair where the creature is, then the creature goes
+    let at: Vec<f32> = at.split(',').map(|v| v.parse().unwrap()).collect();
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tcommit");
+    let (frames, placed) = until_aid(&mut w, "placed");
+    let id: u64 = placed.parse().unwrap();
+    let chair = (0xF110u64 << 48) | (2413u64 << 24) | id;
+    let made_at = frames.iter().position(|f| objects(std::slice::from_ref(f)).0.contains_key(&chair)).expect("the chair made");
+    let gone_at = frames.iter().position(|f| matches!(&f.msg, Some(ServerOpcodeMessage::SMSG_DESTROY_OBJECT(d)) if d.guid.guid() == g)).expect("the creature goes");
+    assert!(made_at < gone_at, "the real one first");
+    let real = objects(&frames).0[&chair].clone();
+    assert!((real.x - at[0]).abs() < 0.02 && (real.y - at[1]).abs() < 0.02);
+    drop(w);
+    drop(srv);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// The mouse, picked by Den Lite (gizmo.rs, pick.rs; owner 3 Nov: "clicking objects, having them highlighted, moving
 /// them around easily"), over the wire: in build mode the hover with nothing in hand makes the prop under the cursor
 /// glow (GAMEOBJECT_DYNAMIC) and names it (`hovered`), and leaving it takes the glow off; a click selects it

@@ -115,7 +115,7 @@
   }
   async function openForge() {
     const c = own();
-    if (!c) { say("Your Den's ground is made from your own game folder. Add it on the Clients page first.", "warn"); return; }
+    if (!c) { say("Your Den's ground is made from your own game folder. Add it on the Game folders page first.", "warn"); return; }
     try { say(await call("forge_open", { client: c.id }), "ok"); }
     catch (e) { say(oops(e, "Forge didn't open. Try again."), "bad"); }
     try { forge = await call("forge_state"); } catch (_) { /* as it was */ }
@@ -185,7 +185,7 @@
     const c = own();
     if (!c) {
       if (typeof addGameFolder === "function") addGameFolder("Your Den plays with your own game folder. Add it, then press Your Den again.", BUILD);
-      say("Your Den plays with your own game folder. Add it on the Clients page, then press Your Den again.", "warn", BUILD);
+      say("Your Den plays with your own game folder. Add it on the Game folders page, then press Your Den again.", "warn", BUILD);
       return;
     }
     const w = where();

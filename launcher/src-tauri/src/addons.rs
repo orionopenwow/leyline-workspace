@@ -534,7 +534,7 @@ pub fn should_offer(p: &ClientProfile, prefs: &Prefs) -> bool {
 
 // ------------------------------------------------------------------------------------------------ commands
 
-#[cfg(feature = "app")]
+#[cfg(all(feature = "app", desktop))] // desktop only: the phone app has its own short list (mobile.rs)
 pub(crate) mod commands {
     use super::*;
     use tauri::State;

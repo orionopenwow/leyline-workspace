@@ -16,7 +16,7 @@
 //! carry any of it (the site's flags file and the catalog are not involved at all).
 
 use crate::clientimport::{Caps, Job, Phase, GIB};
-#[cfg(feature = "torrent-engine")]
+#[cfg(torrent_engine)]
 use crate::clientimport::CANCELLED;
 use crate::p2p::bencode::{self, Value};
 use serde::{Deserialize, Serialize};
@@ -349,15 +349,15 @@ pub fn engine_error(e: &str) -> String {
     }
 }
 
-#[cfg(not(feature = "torrent-engine"))]
+#[cfg(not(torrent_engine))]
 pub fn fetch(_src: Src, _dest: &Path, _caps: &Caps, _share: bool, _job: &Job) -> Result<u64, String> {
     Err("This build of Leyline has no torrent downloads.".into())
 }
 
-#[cfg(feature = "torrent-engine")]
+#[cfg(torrent_engine)]
 pub use engine::fetch;
 
-#[cfg(feature = "torrent-engine")]
+#[cfg(torrent_engine)]
 mod engine {
     use super::*;
     use librqbit::{AddTorrent, AddTorrentOptions, AddTorrentResponse, Session, SessionOptions};

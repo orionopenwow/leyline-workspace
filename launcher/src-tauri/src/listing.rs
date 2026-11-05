@@ -89,7 +89,7 @@ pub fn mine(dir: &std::path::Path) -> Result<Value, String> {
     crate::social::call_as_player(dir, &format!("{}/mine", base()), None, TIMEOUT).map_err(friendly)
 }
 
-#[cfg(feature = "app")]
+#[cfg(all(feature = "app", desktop))] // desktop only: the phone app has its own short list (mobile.rs)
 pub mod commands {
     use super::*;
     use tauri::AppHandle;

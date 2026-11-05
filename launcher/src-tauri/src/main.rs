@@ -1,7 +1,7 @@
 // No console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-#[cfg(feature = "app")]
+#[cfg(all(feature = "app", desktop))]
 fn main() {
     mcp_first();
     // `Leyline den-play [--test]`: My Den with no launcher window (the owner's den-test step; denclick.rs)
@@ -32,7 +32,15 @@ fn main() {
     leyline_lib::run();
 }
 
+/// The phone app starts in the library (`mobile_entry_point`, mobile.rs); this is only here so the binary builds
+/// for a phone target too.
+#[cfg(all(feature = "app", mobile))]
+fn main() {
+    leyline_lib::run();
+}
+
 /// `Leyline mcp`: the local MCP server an agent's app starts (agents.rs), on stdin/stdout, with no window.
+#[cfg(any(desktop, not(feature = "app")))]
 fn mcp_first() {
     if std::env::args().nth(1).as_deref() == Some("mcp") {
         std::process::exit(leyline_lib::agents::serve_stdio());

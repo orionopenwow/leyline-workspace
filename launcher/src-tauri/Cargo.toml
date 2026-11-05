@@ -56,12 +56,16 @@ minisign-verify = "0.3"
 # sandboxed Lua 5.1 (the realm scripts' own Lua): math, string and table only, a memory and an instruction limit.
 # Only with the lua-recipes feature (off by default).
 mlua = { version = "0.10", default-features = false, features = ["lua51", "vendored"], optional = true }
-# The torrent engine (feature torrent-engine): rustls like the rest, upload switchable off at run time.
-librqbit = { version = "9.1.0", default-features = false, features = ["rust-tls", "disable-upload"], optional = true }
-tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"], optional = true }
 
 # The Den's ground (host/terrain.rs): our own MIT map tile code, also used by Den Lite (labs/den-lite).
 leyline-terrain = { path = "terrain" }
+
+# The torrent engine (feature torrent-engine): rustls like the rest, upload switchable off at run time. Desktop only: the
+# phone app (Android, docs/ANDROID.md) never downloads or seeds game clients, so it is not built there even with the
+# feature on (build.rs sets the `torrent_engine` cfg the code checks only for a desktop target).
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+librqbit = { version = "9.1.0", default-features = false, features = ["rust-tls", "disable-upload"], optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"], optional = true }
 
 [dev-dependencies]
 tempfile = "3"

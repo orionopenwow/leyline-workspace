@@ -439,7 +439,7 @@ fn preset_on(g: &crate::gfx::State, id: &str) -> bool {
     any
 }
 
-#[cfg(feature = "app")]
+#[cfg(all(feature = "app", desktop))] // desktop only: the phone app has its own short list (mobile.rs)
 pub mod commands {
     use super::*;
     use tauri::State as TState;

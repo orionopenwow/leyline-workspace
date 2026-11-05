@@ -315,7 +315,7 @@ pub fn send(dir: &Path, args: &Value, version: &str) -> Result<Value, String> {
     }
 }
 
-#[cfg(feature = "app")]
+#[cfg(all(feature = "app", desktop))] // desktop only: the phone app has its own short list (mobile.rs)
 pub mod commands {
     use super::*;
 

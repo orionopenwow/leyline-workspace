@@ -983,7 +983,7 @@ pub fn base64(b: &[u8]) -> String {
 // ------------------------------------------------------------------------------------------------ Tauri
 
 /// The commands the UI's `themes.js` calls (registered in `app.rs`).
-#[cfg(feature = "app")]
+#[cfg(all(feature = "app", desktop))] // desktop only: the phone app has its own short list (mobile.rs)
 pub mod commands {
     use super::*;
     use crate::catalog;

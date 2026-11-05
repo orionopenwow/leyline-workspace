@@ -511,7 +511,7 @@ pub fn view(app_dir: &Path, env: &dyn Env, started_as_node: bool) -> View {
         state,
         offered: env.site(app_dir, false).be_a_node,
         stats,
-        engine: cfg!(feature = "torrent-engine"),
+        engine: cfg!(torrent_engine),
         has_files: crate::releaselog::trusted_key().is_some(),
         autostart: autostart_supported(),
         started_as_node,

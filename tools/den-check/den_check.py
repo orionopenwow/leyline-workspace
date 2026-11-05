@@ -1467,13 +1467,16 @@ def camera_error(cam, samples):
     for sm in samples:
         # the zoom the sample was taken at (gizmo.rs Sample.dist): Den Lite's ray uses the addon's zoom over the
         # camera's own distance (Aids::view), so a fit must too, or samples at two zooms can't agree (review 4 Nov)
+        # (a far-view sample's distance is the zoom plus the view's pull-back: up to FAR_MAX past the game's 50)
         c = cam
-        if isinstance(sm.get("dist"), (int, float)) and 0.0 < sm["dist"] <= 60.0:
+        if isinstance(sm.get("dist"), (int, float)) and 0.0 < sm["dist"] <= SAMPLE_DIST_MAX:
             c = dict(cam, dist=float(sm["dist"]))
         hit = project(c, sm["player"], sm["u"], sm["v"], sm["aspect"], sm["dest"][2])
         tot += 900.0 if hit is None else (hit[0] - sm["dest"][0]) ** 2 + (hit[1] - sm["dest"][1]) ** 2
     return math.sqrt(tot / len(samples))
 
+
+SAMPLE_DIST_MAX = 1560.0   # gizmo.rs FAR_MAX (1500) + the game's own zoom limit, with room
 
 FIT_KEYS = ("fov", "pivot", "dist", "pitch")
 FIT_BOUNDS = {"fov": (0.3, 2.8), "pivot": (0.0, 5.0), "dist": (1.0, 40.0), "pitch": (-0.3, 1.5)}
@@ -1598,6 +1601,11 @@ def mouse_steps(rep, ui, aids, shot, with_pic, den_dir, wait):
     ui("gizmo carry %.4f %.4f" % (u, v))
     a = aids()
     carried = str(a.get("armed", "")).startswith("move,") and a.get("grip") is True
+    # picked up where it stands (review 4 Nov: it jumped about 2.5 yd to the ground behind the spot clicked)
+    jump = carry_jump(at0, a.get("at"))
+    if jump is not None:
+        rep.ok(jump <= 0.6, "mouse: picked up without a jump", "%.2f yd" % jump,
+               "It jumped %.2f yd when picked up: send logs\\den-move-latest.txt." % jump)
     ui("gizmo moveto %.4f %.4f" % (u - 0.15, v - 0.04))
     g1 = aids().get("ghost")
     ui("gizmo moveto %.4f %.4f" % (u - 0.2, v - 0.06))
@@ -1620,6 +1628,14 @@ def mouse_steps(rep, ui, aids, shot, with_pic, den_dir, wait):
     rep.add("INFO", "debug: what the editor sees", (dbg[-1][:300] if dbg else "the debug line comes in the game (/wudebug)"))
     ui("gizmo debug off")
     return True
+
+
+def carry_jump(at0, at):
+    """How far the copy in hand is from where the prop stood, the moment a click picked it up (yards; None: unknown)."""
+    try:
+        return math.hypot(float(at[0]) - float(at0[0]), float(at[1]) - float(at0[1]))
+    except (TypeError, ValueError, IndexError):
+        return None
 
 
 def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0, only_move=False):

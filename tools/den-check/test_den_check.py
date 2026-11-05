@@ -1185,6 +1185,25 @@ class PlacementAids(unittest.TestCase):
                          den_check.camera_error(dict(true, dist=9.0), [dict(samples[0], dist=None)]))
         self.assertEqual(den_check.camera_error({}, []), float("inf"))
 
+    def test_a_far_view_sample_uses_its_own_long_distance(self):
+        # placement review 4 Nov: a build-view sample is cast from the view's focus at the zoom plus the pull-back
+        # (gizmo.rs sample), past the game's own 50 yd: the fit uses that distance, not the camera's own
+        true = {"fov": 1.3, "pivot": 1.8, "dist": 12.0, "pitch": 0.5}
+        samples = []
+        for (fx, fy) in den_check.CAL_POINTS:
+            u, v = 2 * fx - 1, 1 - 2 * fy
+            d = den_check.project(dict(true, dist=26.0), (3.0, 1.0, 5.0, 0.4), u, v, 1.78, 5.0)
+            if d:
+                samples.append({"u": u, "v": v, "aspect": 1.78, "dist": 26.0, "player": [3.0, 1.0, 5.0, 0.4], "dest": [d[0], d[1], 5.0]})
+        self.assertTrue(samples)
+        self.assertLess(den_check.camera_error(true, samples), 1e-3)
+        self.assertGreater(den_check.camera_error(true, [dict(s, dist=None) for s in samples]), 0.5)
+
+    def test_a_carry_jump_is_measured_from_where_the_prop_stood(self):
+        self.assertAlmostEqual(den_check.carry_jump([1.0, 2.0, 0.0], [4.0, 6.0, 0.0, 0.0]), 5.0)
+        self.assertIsNone(den_check.carry_jump([1.0, 2.0], None))
+        self.assertIsNone(den_check.carry_jump(None, [1.0, 2.0]))
+
     def test_project_turns_with_the_player_and_reads_the_same_from_any_facing(self):
         cam = den_check.CAMERA
         for o in (0.0, 0.7, math.pi / 2, math.pi, -2.5):

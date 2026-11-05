@@ -557,12 +557,13 @@ test('the first slide is never bare at start: Leyline\'s own night sky at once, 
   await page.evaluate(() => document.dispatchEvent(new CustomEvent('leyline:news')));
   assert.equal(await page.evaluate(() => document.querySelector('.hero-slide[data-key="hangout"]').classList.contains('has-photo')), true, 'kept through a rebuild');
   // next start: home.json is slow to answer, the kept copy builds the screenshot slide at once
-  await page.route('https://leylinelauncher.com/wrath/art/home/home.json', async (r) => { await new Promise((ok) => setTimeout(ok, 4000)); r.fulfill({ status: 404, body: '' }); });
+  await page.route('https://leylinelauncher.com/wrath/art/home/home.json', async (r) => { await new Promise((ok) => setTimeout(ok, 9000)); r.fulfill({ status: 404, body: '' }); });
   await page.reload();
-  await page.waitForFunction(() => window.LeylineHome && document.querySelector('.hero-slide[data-key="hangout"] .hs-photo'), null, { timeout: 2500 });
+  await page.waitForFunction(() => window.LeylineHome && document.querySelector('.hero-slide[data-key="hangout"] .hs-photo'), null, { timeout: 7000 });
+  assert.ok(await page.evaluate(() => !!localStorage.getItem('leyline.homeArt')), 'built before the site answered');
   assert.equal(await page.getAttribute('.hero-slide[data-key="hangout"] .hs-photo', 'src'), 'https://leylinelauncher.com/wrath/art/home/hangout.webp');
   // the site says there is none any more: forgotten for next time
-  await page.waitForFunction(() => !localStorage.getItem('leyline.homeArt'), null, { timeout: 8000 });
+  await page.waitForFunction(() => !localStorage.getItem('leyline.homeArt'), null, { timeout: 15000 });
   assert.deepEqual(errors, []);
   await ctx.close();
 });

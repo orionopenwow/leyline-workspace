@@ -135,6 +135,9 @@ check("env: global name the client reads", txt.startswith("window.__wenilla_env 
 env = json.loads(txt.split("\n")[0][len("window.__wenilla_env = "):].rstrip(";"))
 check("env: Forever UI on by default", env.get("foreverui") == "1")
 check("env: ?foreverui= on the page is copied over the env (the env outranks the query)", "get('foreverui')" in txt and "e.foreverui=v" in txt)
+check("env: the realm's race/class pairs on by default (modern: today's 83)", env.get("moderncombos") == "1" and "allcombos" not in env, env)
+check("env: ?moderncombos= / ?allcombos= on the page are copied over the env, and =0 turns both off",
+      "['moderncombos','allcombos']" in txt and "if(e.moderncombos==='0')e.allcombos='0'" in txt)
 check("env: user/pass/host", env["user"] == "WR000123" and env["pass"] == "Pa55word1234abcd" and env["host"] == "play.openvanilla.app", env)
 check("env: no dev_query_creds", "dev_query_creds" not in env)
 check("env: no-store + same-origin", h.get("cache-control") == "no-store" and h.get("cross-origin-resource-policy") == "same-origin")

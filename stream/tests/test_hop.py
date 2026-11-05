@@ -154,6 +154,7 @@ check("hangout: a hop session through the relay", env.get("hop") == HANG and env
 check("hangout: the player's own Wrath login, marked as such", env.get("hop_home") == "1" and env.get("user") == "WR000123"
       and env.get("pass") == "Pa55word1234abcd", env)
 check("hangout: lands in Dalaran (ovgo h:dalaran for the account)", gos() == ["ovgo set WR000123 h:dalaran"], gos())
+check("hangout: this realm's race/class pairs (it is the same realm)", env.get("moderncombos") == "1", env)
 check("hangout: no account made or reset beyond the usual", not [c for c in SOAP_CMDS if "account create" in c.lower()
                                                                and "WR000123" not in c], SOAP_CMDS)
 wp.modes._recent.clear()
@@ -168,6 +169,7 @@ _, _, env, _ = session_env("/wrath/play?mini=mini&go=r:buildersrealm234")
 check("builders' realm: a hop with the player's own login", env.get("hop") == "buildersrealm234" and env.get("hop_home") == "1"
       and env.get("user") == "WR000123" and env.get("hop_ws") == "wss://relay.example/ws/buildersrealm234", env)
 check("builders' realm: no Dalaran intent", gos() == [], gos())
+check("builders' realm: not the main realm's race/class pairs", "moderncombos" not in env and "allcombos" not in env, env)
 check("builders' realm: no Hero Key sign-in for it", wp.herokey_issue_api("WR000123", "buildersrealm234", "web")[0] in (400, 404))
 # another Beacon: never the Wrath login, never a Dalaran intent
 wp.modes._recent.clear()
@@ -175,6 +177,8 @@ SOAP_CMDS.clear()
 _, _, env, txt = session_env(f"/wrath/play?mini=mini&go=r:{LIVE}")
 check("a community Beacon: no hop_home, no Wrath login", "hop_home" not in env and "pass" not in env and "Pa55word" not in txt)
 check("a community Beacon: no go intent", gos() == [], gos())
+check("a community Beacon: no race/class pairs of ours (its own rules; ?moderncombos=1 can still ask)",
+      "moderncombos" not in env and "allcombos" not in env, env)
 # Back to Wrath (wrath-page.js hopUrl('wrath')): /wrath?go=h:dalaran -> straight in, Dalaran on arrival
 wp.modes._recent.clear()
 SOAP_CMDS.clear()

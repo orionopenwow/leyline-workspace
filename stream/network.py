@@ -448,7 +448,9 @@ def realms_json(realms: list[dict], ok: bool, sample_status: dict | None = None,
            "network": totals(shown, sample_status),
            "sample": {"name": (sample or {}).get("name") or SAMPLE_NAME, "temporary": bool((sample or {}).get("temporary", True)),
                       # our realm's mod list, from its own config (hub official_mods): the launcher's join offer reads it
-                      "mods": clean_mods((sample or {}).get("mods"))},
+                      "mods": clean_mods((sample or {}).get("mods")),
+                      # its race/class preset (docs/RACE-CLASS-COMBOS.md): the launcher's character-creation tables follow it
+                      "combos": (sample or {}).get("combos") if (sample or {}).get("combos") in ("modern", "all", "off") else "modern"},
            "realms": [record_of(r, sample) for r in shown]}
     return (json.dumps(doc, ensure_ascii=False) + "\n").encode("utf-8")
 

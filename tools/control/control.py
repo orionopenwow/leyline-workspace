@@ -205,6 +205,13 @@ STEPS = {
     "scripts-reload": ("realm/Reload realm scripts.bat", "Realm scripts reloaded live even when unchanged (for a script that is there but silent)", False),
     "scripts": ("realm/Server pass - finder 10 and bug reports.bat", "Realm scripts (live reload)", False),
     "realm":   ("realm/Server pass - finder 10 and bug reports.bat", "Realm settings (5-min restart)", False),
+    # Race/class pairs at character creation (docs/RACE-CLASS-COMBOS.md): the realm's preset, its world tables, the
+    # website's copy (the browser page and the launcher follow it). "combos" keeps the realm's preset (modern the
+    # first time); the other two switch it. Backup first; "realm/Rollback character fix.bat" undoes it.
+    "combos": ("realm/Fix character create.bat", "Race/class combos: the realm's preset (modern: today's 83 retail pairs), start data, website told (world server restart)", False),
+    "combos-all": ("realm/Race class combos - all.bat", "Race/class combos: every race with every class (100 pairs; world server restart)", False),
+    "combos-modern": ("realm/Race class combos - modern.bat", "Race/class combos: back to today's 83 retail pairs (world server restart)", False),
+    "combos-check": ("realm/Diagnose character create.bat", "Race/class combos: what the realm has now (read-only)", False),
     "foreverui": ("stream/Add Forever UI to the stream.bat", "Forever UI look (menus and character select)", False),
     "slice":   ("stream/Make mini slice.bat", "Streamed game files (30-60 min)", False),
     # docs/INCIDENT-2026-11-01-SLICE.md: the streamed slice's files on the server, checked (read-only)
@@ -391,7 +398,7 @@ def watch_step(p, step: str, why: dict) -> threading.Event:
 
 
 # Autopilot runs only these by itself; anything else waits for "Launch all".
-READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
+READ_ONLY = {"check", "combos-check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "fresh-leyline-check", "retag-leyline-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
              "vr-data-check", "vr-site-check", "sv-site-check", "release-mirror-check", "fork-check", "bugs", "audit", "den-check", "domain-check",
              "discord-preview", "discord-check", "discord-read", "apply-check", "feedback", "reel-make"}

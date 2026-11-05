@@ -665,6 +665,13 @@
   // ---------------------------------------------------------------- Share on the Workshop
   function workshop(f) {
     const d = mk("div", "yd-share");
+    // Shared Dens (denmarket.js, docs/DEN-MARKETPLACE.md): one step, pictures from the game, a moderator's look
+    if (window.LeylineDenMarket) {
+      const one = btn("Share it on Leyline", "btn small primary", () => window.LeylineDenMarket.share(f.name));
+      one.className = "btn small primary yd-share-dm";
+      d.append(mk("p", "", `Share '${f.name}' with every Leyline player: a title, pictures your game takes, and a moderator's look.`), one,
+        mk("p", "yd-hint", "Or on your own GitHub, for the Workshop:"));
+    }
     d.append(mk("p", "", `To share '${f.name}' on the Workshop:`));
     const ol = mk("ol", "yd-steps-s");
     ol.append(mk("li", "", "Save a copy (below): the file lands in your Downloads."),

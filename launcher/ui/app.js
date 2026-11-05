@@ -98,14 +98,15 @@ $("tb-account").addEventListener("click", () => openLink("account"));
 // friends and hub, which became the Forum on 2026-10-30) still work everywhere: show() maps them to the page + tab, so a remembered page, a
 // data-page-go button or a leyline:// link lands where it used to; a page with tabs alone opens its last tab. Modes has no menu item
 // but is still a page (Home's featured mode, Realms › MODES, show("modes")).
-const TABS = { mods: ["discover", "installed", "gamemodes"] };   // Game modes (owner 3 Nov): gamemods.js showSection
+const TABS = { mods: ["discover", "installed", "gamemodes", "dens"] };   // Game modes (owner 3 Nov): gamemods.js showSection; Dens: denmarket.js
 // Mods & Addons opens on Discover every time it is clicked (owner 3 Nov: "make the discovery the main tab that opens when
 // its clicked"); a button or link that names a tab (Installed, Game modes) still lands there.
 const OPENS_ON = { mods: "discover" };
 const ALIASES = { mymods: ["mods", "installed"], installed: ["mods", "installed"], discover: ["mods", "discover"],
   community: ["forum", ""], friends: ["forum", ""], hub: ["forum", ""], chat: ["forum", ""] };
 const loaders = { "mods:discover": () => loadCatalog(), "mods:installed": () => loadInstalled(),
-  "mods:gamemodes": () => window.LeylineGameMods && window.LeylineGameMods.showSection(), realms: () => loadRealms(), host: () => loadHost(),
+  "mods:gamemodes": () => window.LeylineGameMods && window.LeylineGameMods.showSection(),
+  "mods:dens": () => window.LeylineDenMarket && window.LeylineDenMarket.load(), realms: () => loadRealms(), host: () => loadHost(),
   forum: () => window.LeylineForum && window.LeylineForum.load() };
 let currentPage = "play";
 let currentTab = "";
@@ -2232,6 +2233,13 @@ async function handleDeepLink() {
   if (link && link.action === "host" && typeof link.id === "string") return showHostLink(link.id);
   // a friend's invite (leyline://join?link=…, deeplink.rs): one Join button, nothing joins before it (solo.js)
   if (link && link.action === "join" && typeof link.id === "string") return window.LeylineSolo && window.LeylineSolo.offerJoin(link.id);
+  // a shared Den's "Open in Leyline" on the website (leyline://den/<id>): its detail in Mods & Addons › Dens (denmarket.js)
+  // (it may come before denmarket.js has loaded: then it takes the id when it does)
+  if (link && link.action === "den" && typeof link.id === "string") {
+    if (window.LeylineDenMarket) return window.LeylineDenMarket.focus(link.id);
+    window.LeylinePendingDen = link.id;
+    return;
+  }
   if (!link || link.action !== "install" || typeof link.id !== "string") return;
   if (link.id.startsWith("look:")) {   // the website's Looks page: Discover › Looks, that card (looks.js); nothing installs yet
     show("mods", true, "discover");

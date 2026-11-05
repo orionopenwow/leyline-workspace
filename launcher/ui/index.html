@@ -26,6 +26,7 @@
 <link rel="stylesheet" href="bugreport.css"><!-- Help › Report a bug (bugreport.js) -->
 <link rel="stylesheet" href="graphics.css"><!-- Mods & Addons › Discover › Graphics (graphics.js) -->
 <link rel="stylesheet" href="looks.css"><!-- Mods & Addons › Discover › Looks (looks.js) -->
+<link rel="stylesheet" href="denmarket.css"><!-- Mods & Addons › Dens: shared Dens and stamps (denmarket.js) -->
 <link rel="stylesheet" href="looks-art.css"><!-- the Looks drawings: a copy of stream/looks.py MOTIF_CSS -->
 <link rel="stylesheet" href="stone.css"><!-- the title bar and play bar on the owner's stone texture -->
 <link rel="stylesheet" href="slate.css"><!-- the pages on the stone: panels, cards, buttons, Realms (owner 31 Oct design pass) -->
@@ -209,6 +210,7 @@
           <button type="button" class="page-tab" role="tab" id="tab-mods-discover" data-group="mods" data-tab="discover" aria-controls="pane-discover">Discover</button>
           <button type="button" class="page-tab" role="tab" id="tab-mods-installed" data-group="mods" data-tab="installed" aria-controls="pane-installed">Installed<span class="badge" id="tab-mods-count" hidden></span></button>
           <button type="button" class="page-tab" role="tab" id="tab-mods-gamemodes" data-group="mods" data-tab="gamemodes" aria-controls="pane-gamemodes">Game modes</button>
+          <button type="button" class="page-tab" role="tab" id="tab-mods-dens" data-group="mods" data-tab="dens" aria-controls="pane-dens">Dens</button>
         </div></div>
       <div class="tabpane" id="pane-installed" role="tabpanel" aria-labelledby="tab-mods-installed" data-shelf="mods">
         <div class="ly-tabs inst-tabs" id="inst-tabs" role="tablist" aria-label="Installed">
@@ -275,6 +277,10 @@
       <!-- Game modes (owner 3 Nov: "Game modes as a section somewhere in mods and addons"): gamemods.js showSection -->
       <div class="tabpane" id="pane-gamemodes" role="tabpanel" aria-labelledby="tab-mods-gamemodes">
         <div class="game-box" id="gm-section"></div>
+      </div>
+      <!-- Dens: the Dens and stamps players shared, and Share for your own (denmarket.js, docs/DEN-MARKETPLACE.md) -->
+      <div class="tabpane" id="pane-dens" role="tabpanel" aria-labelledby="tab-mods-dens">
+        <div id="dm"></div>
       </div>
     </div>
   </section>
@@ -841,6 +847,7 @@
 <script src="hostflow-catalog.js"></script><!-- the Host page's settings and templates (window.LeylineHostCatalog; the core reads the same file, host/flow.rs) -->
 <script src="hostflow.js"></script><!-- Host: Private or Public, templates, settings, Ask Claude, Host (host/flow.rs; after hostmodes.js) -->
 <script src="den.js"></script><!-- Your Den: the one Den page and the Home entry (window.LeylineDen; after app.js and hostconsole.js) -->
+<script src="denmarket.js"></script><!-- Mods & Addons › Dens: shared Dens and stamps, Share (window.LeylineDenMarket; after app.js and den.js) -->
 <script src="single.js"></script><!-- Single player: its page, three steps, then Manage (window.LeylineSingle; after app.js, den.js and solo.js) -->
 <script src="singleupdate.js"></script><!-- Single player: the bots, always up to date (Update the bots, Bots updated; window.LeylineSingleUpdate) -->
 <script src="gmcenter.js"></script><!-- the GM command center for your own worlds (window.LeylineGM; after den.js) -->

@@ -1,0 +1,35 @@
+# mod-leyline-bossfights
+
+An AzerothCore module (3.3.5a, the mod-playerbots fork pinned in `realm/custom/sources.lock`) for Leyline's
+**Boss fights** mode. v1 has one fight, **The Frozen Throne**: the ICC raid's final fight, 10 players, normal or
+heroic. It starts in a fresh instance with the earlier bosses DONE. The fight is timed server-side from the pull to
+the 10% cast, and every attempt is recorded for the website's boards.
+
+The full description is in [docs/BOSS-FIGHTS.md](../../../../docs/BOSS-FIGHTS.md): the commands, the start, the
+clock, the addon messages, the table, the export, the settings and the owner's Control steps.
+
+| File | What |
+|---|---|
+| `src/Bossfights.cpp` | the scripts: commands, the lobby, the start, the tick, the hooks, bots, records |
+| `src/BossfightsLogic.h` | pure helpers: the bosses table, parsing, bot seats, the lobby decision, roster text, LYBF messages |
+| `src/mod_leyline_bossfights_loader.cpp` | `Addmod_leyline_bossfightsScripts()` |
+| `conf/mod_leyline_bossfights.conf.dist` | settings (all optional; the defaults are built in) |
+| `data/sql/db-characters/base/leyline_bossfights.sql` | `leyline_bossfight_runs`, `leyline_bossfight_instances` |
+| `tests/test_bossfights_logic.cpp` | `g++ -std=c++17 -Wall -Wextra -Werror -I../src test_bossfights_logic.cpp -o t && ./t` (no core needed) |
+
+**Build.** `realm/custom/fetch.sh` copies this folder into `acore/modules/` (without `tests/`), so
+"Build custom realm.bat" and the `wu-images` workflow build it like any other module.
+
+**mod-playerbots.** The module is optional at compile time (`__has_include`): without it the module still builds,
+and only the modes with players work. With it, the module adds its own addclass bots only to its own raids. It uses
+these calls:
+- `PlayerbotHolder::AddPlayerBot`, with the cap raised for that call only;
+- `PlayerbotFactory::InitTalentsBySpecNo`, `DestroyEquippedGear` and `AutoGear`;
+- `PlayerbotHolder::LogoutPlayerBot`.
+
+**Threads.** The boss-state hook (`GlobalScript::OnBeforeSetBossState`) and the spell hook
+(`AllSpellScript::OnSpellPrepare`) run in map threads. They only queue an event, under a mutex, for this module's own
+instances. Everything else runs in `WorldScript::OnUpdate`, after the map updates.
+
+**Words.** Players read "The Frozen Throne" and "the paladin in front of the throne". The boss's own name and the
+game's brand words appear nowhere (`stream/tests/test_bossfights_export.py` checks every string in the sources).

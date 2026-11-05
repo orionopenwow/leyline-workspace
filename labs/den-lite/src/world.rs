@@ -1400,7 +1400,10 @@ fn watch_landing(c: &Writer, shared: &Shared, sess: &Sess, landing: &mut Option<
             *landing = None;
             shared.event("lifted", &sess.me.name, "back");
             say(c, "The ground there didn't hold you: taking you back.")?;
-            go_back(c, shared, sess)
+            let r = go_back(c, shared, sess);
+            // the spot under the world that trip just kept for `.back` isn't one to go back to
+            let _ = places::back(sess.id);
+            r
         }
     }
 }

@@ -2626,6 +2626,12 @@ fn test_command(shared: &Shared, w: &Writer, id: u64, cmd: &str) -> io::Result<(
         "spawn": [w.spawn.x, w.spawn.y, w.spawn.z], "spawn_ground": w.ground,
         "ops": w.ops_line(), "time_sync": w.time_sync.is_some(),
     }));
+    let prop_flags = {
+        let build = shared.build_look.load(Ordering::Relaxed);
+        let d = shared.den.lock().unwrap_or_else(|e| e.into_inner());
+        let f: Option<u32> = d.props.first().map(|p| gizmo::shown(&p.obj, build).1);
+        f
+    };
     testctl::write_out(&shared.cfg.den_dir, &serde_json::json!({
         "id": id, "cmd": cmd, "said": cap.said, "created": cap.created, "destroyed": cap.destroyed,
         "props": props, "look": look, "size": size, "t": now_ms(), "ok": r.is_ok(),
@@ -2633,6 +2639,8 @@ fn test_command(shared: &Shared, w: &Writer, id: u64, cmd: &str) -> io::Result<(
         "aids": shared.aid_view.lock().unwrap_or_else(|e| e.into_inner()).clone(),
         "look_mode": if shared.build_look.load(Ordering::Relaxed) { "build" } else { "play" },
         "twin_queries": shared.twin_queries.load(Ordering::Relaxed),
+        // the flags the game is told for a prop now (gizmo::shown): NOT_SELECTABLE in build mode (5 Nov, den-move)
+        "prop_flags": prop_flags,
     }));
     r
 }

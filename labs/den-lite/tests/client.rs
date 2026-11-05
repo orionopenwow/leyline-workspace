@@ -1869,20 +1869,26 @@ fn the_editors_preview_gizmo_selection_and_exact_click() {
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tmode build");
     assert_eq!(until_aid(&mut w, "mode").1, "build");
 
-    // the gizmo on; a right-click on the chair selects it: the addon is told to open its menu
+    // the gizmo on; a use of the chair (props are sent not selectable in build mode since 5 Nov, so only a client
+    // that still took the click sends one) selects it and picks it up, as the Select tool's left click; Esc puts it back
+    // and the gizmo comes up round it
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tgizmo on");
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tselclear");
     w.until_addon("wubuild", "state");
     w.raw(gizmo::CMSG_GAMEOBJ_USE, &chair.to_le_bytes());
-    let (frames, picked) = until_aid(&mut w, "picked");
-    assert_eq!(picked, id.to_string());
+    let (_, carried) = until_aid(&mut w, "carried");
+    assert_eq!(carried, id.to_string());
+    w.addon("OVMOD", "wubuild\tcmd\t1/1\tpreview off");
+    let (frames, aim) = until_aid(&mut w, "aim");
+    assert_eq!(aim, "off");
     let (made, _) = objects(&frames);
     let flags: Vec<(u64, &Go)> = made.iter().filter(|(_, g)| (990_001..=990_003).contains(&g.entry)).map(|(k, g)| (*k, g)).collect();
     assert_eq!(flags.len(), 3, "the gizmo's three flags: {made:?}");
     let x = flags.iter().find(|f| f.1.entry == 990_001).unwrap();
     assert_eq!(x.1.display, 5913);
     assert!(x.1.x > s0.x + 3.0, "beside the chair, along x");
-    assert!(w.until_addon("wubuild", "state").contains(&format!("sel={id},2413")));
+    // the carry's state line (it came before Esc's answer)
+    assert!(frames.iter().filter_map(addon_text).any(|t| t.contains("\twubuild\tstate\t") && t.contains(&format!("sel={id},2413"))));
     // a handle right-clicked: its axis grabbed (the next test drags it); its entry answers the query as a goober
     let y = flags.iter().find(|f| f.1.entry == 990_002).unwrap().0;
     w.raw(gizmo::CMSG_GAMEOBJ_USE, &y.to_le_bytes());

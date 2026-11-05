@@ -9,7 +9,8 @@ text at the top of `control.py` lists everything on the page.
 
 One card for running the live side at a glance. It only reads files this PC already has; nothing on it changes
 anything until a button is pressed, and each button runs an existing step through the same `/api/do` checks as
-Waiting on you (`discord-apply` is never one of them: it stays on the Discord panel, after a preview and a typed YES).
+Waiting on you (`discord-apply` and `discord-announce` are never among them: they stay on the Discord panel, after a
+preview or a draft and a typed YES; see tools/discord-leyline/README.md "Announcements").
 
 | Line | From |
 |---|---|

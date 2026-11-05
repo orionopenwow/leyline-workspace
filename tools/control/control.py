@@ -15,6 +15,9 @@ Serves a page on http://127.0.0.1:8097 (this PC only) and opens it. The page sho
   * Discord: the Discord redo's bot token (pasted once, saved on this PC only in tools/discord-leyline/token.txt,
     git-ignored, never shown back, never in a log), Preview (read-only), and Do it: only after a fresh preview, and
     only when the owner types YES under it; never from Autopilot, Launch all or a Waiting on you button.
+    Its Pending announcements list (tools/discord-leyline/announce/pending, README "Announcements"): each draft Claude
+    wrote, exactly as it would post, with Check, Reject and "Post to #announcements" (only after a typed YES, and only
+    the draft as the owner read it: its sha256 goes with the YES). discord-announce is never a queued step.
   * Kill switch (docs/KILL-SWITCH.md, tools/killswitch): the farewell message and the parts to take down; Pause, Undo
     and Delete, each only after its own fresh preview and a typed phrase (SHUT DOWN LEYLINE, BRING LEYLINE BACK,
     DELETE LEYLINE FOREVER), from this card only: it is not a step, so never the queue, Autopilot or a button elsewhere.
@@ -67,6 +70,7 @@ DISCORD_DIR = ROOT / "tools" / "discord-leyline"
 DISCORD_TOKEN = DISCORD_DIR / "token.txt"            # git-ignored; the script reads it; Control never shows it
 DISCORD_DOC = ROOT / "control" / "discord.json"      # the last preview's summary, the last do it and bot settings
 DISCORD_FRESH = 3600                                  # Do it needs a preview from the last hour
+ANNOUNCE_DIR = DISCORD_DIR / "announce"              # announcement drafts: pending/, posted/, rejected/ (announce.py)
 # The kill switch (docs/KILL-SWITCH.md): its card's message, choices, last preview and runs (no secrets in it)
 KS_DIR = ROOT / "tools" / "killswitch"
 KS_DOC = ROOT / "control" / "killswitch.json"
@@ -323,6 +327,11 @@ STEPS = {
     "discord-read": ("tools/discord-leyline/Control - Discord read.bat", "Discord read (read-only): the newest messages in every channel since the last read, into tools\\discord-leyline\\live\\inbox-latest.md on this PC", False),
     "discord-bridge": ("tools/discord-leyline/Control - Discord bridge.bat", "Link World chat to Discord: finds #world-chat, installs the bridge on the server with the saved bot token and turns it on (token never shown)", False),
     "discord-check": ("tools/discord-leyline/Control - Discord bot settings.bat", "Discord bot settings: the channel ids for the website bot and the game bridge (read-only)", False),
+    # Milestone announcements (tools/discord-leyline/README.md "Announcements"): Claude drafts into announce/pending/,
+    # the owner reads each one on the Discord card and posts it there after typing YES (discord-announce, OWNER_ONLY:
+    # never from the queue). announce-check only checks the drafts (read-only, needs no token), so it may be queued.
+    "discord-announce": ("tools/discord-leyline/Control - Discord announce.bat", "Post one announcement you approved to #announcements (only from the Discord card, after you type YES)", False),
+    "announce-check": ("tools/discord-leyline/Control - Announce check.bat", "Announcement drafts check (read-only): length, words, links and ping rules for each draft waiting; posts nothing", False),
     # Quick Claude edits (tools/control/quick.py, README.md "Quick edits"): control/quick/<id>.json names the files, their
     # sha256 and one deploy step (signin, addons, scripts or none); apply-check only checks it, apply checks it again and
     # runs that step's own .bat. Anything else in a manifest is refused. No new .bat for each small change.
@@ -397,9 +406,9 @@ def watch_step(p, step: str, why: dict) -> threading.Event:
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "fresh-leyline-check", "retag-leyline-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
              "vr-data-check", "vr-site-check", "sv-site-check", "release-mirror-check", "fork-check", "bugs", "audit", "den-check", "domain-check",
-             "discord-preview", "discord-check", "discord-read", "apply-check", "feedback", "reel-make"}
+             "discord-preview", "discord-check", "discord-read", "apply-check", "feedback", "reel-make", "announce-check"}
 # Steps only the owner starts, by hand, from their own panel (never Autopilot, Launch all or a Waiting on you button)
-OWNER_ONLY = {"discord-apply"}
+OWNER_ONLY = {"discord-apply", "discord-announce"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}
 
 # Never in a log or on the page: passwords, tokens, keys, connection strings (scrub() on every line a step prints).
@@ -657,8 +666,9 @@ def run_all(ship_message: str, items=None, record=True) -> None:
                 write_last([item["id"]], False, item["step"])
                 return
             if item["step"] in OWNER_ONLY and not item.get("owner_confirmed"):
-                emit("line", f"!! '{item['step']}' runs only from Leyline Control's Discord panel, after you read the "
-                             "preview and type YES there. It was not run.")
+                what = "the draft (Pending announcements)" if item["step"] == "discord-announce" else "the preview"
+                emit("line", f"!! '{item['step']}' runs only from Leyline Control's Discord panel, after you read "
+                             f"{what} and type YES there. It was not run.")
                 emit("result", {"ok": False, "step": item["step"]})
                 if record:
                     state["auto_failed"] = pending_stamp()
@@ -690,7 +700,7 @@ def run_all(ship_message: str, items=None, record=True) -> None:
             # which line this is (quick.py finds its manifest by it: control/quick/<id>.json, or "quick:<name>" in the note)
             env["LEYLINE_CONTROL_ID"] = str(item.get("id") or "")
             env["LEYLINE_CONTROL_NOTE"] = str(item.get("note") or "")[:200]
-            for k in ("LEYLINE_DISCORD_OLD", "LEYLINE_DISCORD_PINS"):
+            for k in ("LEYLINE_DISCORD_OLD", "LEYLINE_DISCORD_PINS", "LEYLINE_ANNOUNCE_ID", "LEYLINE_ANNOUNCE_SHA"):
                 env.pop(k, None)
             if item["step"].startswith("discord-"):
                 env["LEYLINE_CONTROL_STEP"] = item["step"]
@@ -703,6 +713,9 @@ def run_all(ship_message: str, items=None, record=True) -> None:
                 env["LEYLINE_DISCORD_PINS"] = "1" if opts["pins"] else "0"
                 if item["step"] == "discord-apply":
                     env["LEYLINE_DISCORD_EXPECT_CHANGES"] = str(int(item["expect"]))
+                if item["step"] == "discord-announce":     # the one draft the owner read and typed YES under
+                    env["LEYLINE_ANNOUNCE_ID"] = str(item.get("announce_id") or "")
+                    env["LEYLINE_ANNOUNCE_SHA"] = str(item.get("announce_sha") or "")
             log = LOGS / f"{item['id']}-{item['step']}.log"
             with open(log, "w", encoding="utf-8") as lf:
                 p = subprocess.Popen(["cmd", "/c", "call", str(ROOT / bat)], cwd=str(ROOT), env=env,
@@ -865,11 +878,14 @@ def discord_summary(log: Path) -> dict:
 def discord_record(item: dict, rc: int, log: Path) -> None:
     """After a Discord step: the preview's summary (for the panel and for Do it), or how the last do it / bot
     settings went. A successful do it uses the preview up, so the next one needs a new preview."""
-    key = {"discord-preview": "preview", "discord-apply": "apply", "discord-check": "check"}.get(item["step"])
+    key = {"discord-preview": "preview", "discord-apply": "apply", "discord-check": "check",
+           "discord-announce": "announce"}.get(item["step"])
     if not key:
         return
     d = discord_doc()
     rec = {"id": item["id"], "at": time.time(), "ok": rc == 0, "log": log.name}
+    if key == "announce":
+        rec["draft"] = str(item.get("announce_id") or "")
     if key == "preview":
         rec.update(discord_summary(log))
         rec["ok"] = rc == 0 and rec["changes"] is not None
@@ -921,7 +937,66 @@ def discord_state() -> dict:
             r = dict(d[k])
             r["when"] = time.strftime("%d %b %H:%M", time.localtime(float(r.get("at") or 0)))
             out[k] = r
+    out["announce"] = announce_state(d)
     return out
+
+
+# ------------------------------------------------------------------ announcements (README "Announcements")
+# Claude writes drafts into tools/discord-leyline/announce/pending/ on this PC; the Discord card lists each one exactly
+# as it would post, checked by announce.py's own rules. Check and Reject happen here (no network); Post runs the
+# discord-announce step with the draft's id and sha256, only after the owner typed YES under that draft.
+_ANN = {}
+
+
+def announce_mod():
+    """tools/discord-leyline/announce.py, loaded once (it is the one place the rules live)."""
+    if "mod" not in _ANN:
+        import importlib.util
+        try:
+            spec = importlib.util.spec_from_file_location("leyline_announce", DISCORD_DIR / "announce.py")
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            _ANN["mod"], _ANN["error"] = m, ""
+        except Exception as e:                  # the card says so instead of breaking the page
+            _ANN["mod"], _ANN["error"] = None, f"{type(e).__name__}: {e}"[:200]
+    return _ANN["mod"]
+
+
+def announce_view(dr: dict) -> dict:
+    f = dr["front"]
+    return {"id": dr["id"], "title": f.get("title", ""), "kind": f.get("kind", ""), "ping": f.get("ping", ""),
+            "created": f.get("created", ""), "message": dr["message"], "length": len(dr["message"]),
+            "limit": 2000, "problems": dr["problems"], "sha": dr["sha"]}
+
+
+def announce_state(d: dict | None = None) -> dict:
+    """The pending drafts for the card (at most 20), and how the last post went."""
+    m = announce_mod()
+    out = {"drafts": [], "error": _ANN.get("error", "")}
+    if m is not None:
+        try:
+            out["drafts"] = [announce_view(x) for x in m.pending(ANNOUNCE_DIR)[:20]]
+        except Exception as e:
+            out["error"] = f"{type(e).__name__}: {e}"[:200]
+    last = (d if d is not None else discord_doc()).get("announce")
+    if isinstance(last, dict):
+        r = dict(last)
+        r["when"] = time.strftime("%d %b %H:%M", time.localtime(float(r.get("at") or 0)))
+        out["last"] = r
+    return out
+
+
+def announce_load(draft_id: str):
+    """(the draft, "") or (None, why)."""
+    m = announce_mod()
+    if m is None:
+        return None, "announce.py didn't load: " + _ANN.get("error", "")
+    if not m.valid_id(draft_id):
+        return None, "That isn't a draft id."
+    try:
+        return m.load(draft_id, ANNOUNCE_DIR), ""
+    except OSError:
+        return None, "That draft isn't waiting any more (posted, rejected or removed). Refresh."
 
 
 # ------------------------------------------------------------------ the kill switch (docs/KILL-SWITCH.md)
@@ -1659,6 +1734,35 @@ class H(http.server.BaseHTTPRequestHandler):
             if not start_run("", [item], False, "Discord redo"):
                 return self._send(409, '{"error":"already running"}')
             return self._send(200, '{"ok":true}')
+        if self.path in ("/api/discord/announce-check", "/api/discord/announce-reject", "/api/discord/announce-post"):
+            dr, why = announce_load(str(body.get("id") or ""))
+            if not dr:
+                return self._send(409, json.dumps({"error": why}))
+            if self.path == "/api/discord/announce-check":        # no network: the same rules announce.py posts by
+                return self._send(200, json.dumps({"ok": not dr["problems"], "draft": announce_view(dr)}))
+            if self.path == "/api/discord/announce-reject":
+                try:
+                    dest = announce_mod().reject(dr["id"], ANNOUNCE_DIR, str(body.get("why") or "")[:200])
+                except OSError as e:
+                    return self._send(500, json.dumps({"error": f"Couldn't move it ({type(e).__name__})."}))
+                emit("state", {})
+                return self._send(200, json.dumps({"ok": True, "moved": dest.name}))
+            # Post: a token, a draft with no problems, this very draft as the owner read it, and a typed YES
+            if not discord_token_status()["saved"]:
+                return self._send(409, json.dumps({"error": "Save the bot token first."}))
+            if dr["problems"]:
+                return self._send(409, json.dumps({"error": "This draft can't be posted yet: " + " ".join(dr["problems"])}))
+            if str(body.get("confirm") or "").strip() != "YES":
+                return self._send(400, json.dumps({"error": "Type YES under the draft to post it."}))
+            if str(body.get("sha") or "") != dr["sha"]:
+                return self._send(409, json.dumps({"error": "The draft changed since you read it. Read it again, then "
+                                                            "type YES again."}))
+            item = {"id": "discord-announce-" + time.strftime("%Y%m%d-%H%M%S"), "step": "discord-announce",
+                    "title": STEPS["discord-announce"][1], "note": f"draft {dr['id']}", "known": True,
+                    "owner_confirmed": True, "announce_id": dr["id"], "announce_sha": dr["sha"]}
+            if not start_run("", [item], False, "Discord announcement"):
+                return self._send(409, '{"error":"already running"}')
+            return self._send(200, '{"ok":true}')
         return self._send(404, '{"error":"not found"}')
 
 
@@ -1822,7 +1926,10 @@ color:var(--gold);background:rgba(0,0,0,.35);font-weight:600}.drop.over{backgrou
 .youbox h2+p{margin:0 0 6px;color:var(--dim);font-size:12.5px}
 #dtok.ok{color:var(--ok)}#dtok.no{color:var(--warn)}
 .dsum{margin-top:10px}.dsum ul{margin:4px 0 0;padding-left:18px;max-height:260px;overflow:auto}.dsum li.n{color:var(--dim);list-style:none}
-.dsum .sec{font-weight:600;margin-top:6px}.dgo{margin-top:10px;padding:10px;border:1px solid #8a6a2c;border-radius:8px;background:rgba(242,201,76,.06)}
+.dsum .sec{font-weight:600;margin-top:6px}.ann{margin-top:12px}.ann>.sec{font-weight:600}
+.anitem{margin-top:10px;padding:10px;border:1px solid var(--edge);border-radius:8px}
+.anmsg{height:auto;max-height:320px;white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}.anbad{margin:4px 0;padding-left:18px;color:var(--bad)}
+.dgo{margin-top:10px;padding:10px;border:1px solid #8a6a2c;border-radius:8px;background:rgba(242,201,76,.06)}
 .dgo input{max-width:140px;flex:0 1 140px}
 .dopt{margin-top:10px;display:flex;flex-direction:column;gap:6px}.dopt select{font:inherit;background:rgba(0,0,0,.5);color:var(--text);border:1px solid #0a0908;border-radius:7px;padding:4px 8px}
 .dopt .chk{display:flex;gap:8px;align-items:center}
@@ -1869,7 +1976,12 @@ color:var(--gold);background:rgba(0,0,0,.35);font-weight:600}.drop.over{backgrou
     <div class="dgo" id="dgo" hidden><div id="dask"></div>
       <div class="launch"><input id="dyes" autocomplete="off" placeholder="Type YES"><button class="primary" id="dapply">Do it</button></div>
       <div class="sub" id="dgonote">It backs up the server to your Desktop first (Leyline-discord-backup-...).</div></div>
-    <div class="sub" id="dwhy"></div><div class="dsum" id="dlast"></div></section>
+    <div class="sub" id="dwhy"></div><div class="dsum" id="dlast"></div>
+    <div class="ann" id="ann"><div class="sec">Pending announcements</div>
+      <div class="sub">Claude's drafts for #announcements (tools\discord-leyline\announce\pending). Nothing is posted
+        until you type YES under one and press Post. Milestones, big community bug fixes, long-standing bugs and schedule
+        updates; minor fixes don't get one. A draft with TODO(owner) in it can't be posted.</div>
+      <div id="anlist"></div><div class="sub" id="anlast"></div></div></section>
   <section class="card" id="gmcard"><h2>Discord &amp; GM</h2>
     <div class="sub">Read-only: the server, the Discord bridge and bot, open bug reports and what waits for your review, from
       this PC's latest checks. Each button runs an existing step, only when you press it.</div>
@@ -1949,7 +2061,7 @@ $("go").disabled=!!s.running||!(s.pending||[]).length;$("stop").hidden=!s.runnin
 const ar=$("areport");if(s.audit){ar.hidden=false;ar.href=`/audit?t=${T}`;ar.textContent=`Last audit ${s.audit.at}: ${s.audit.green?"all green":s.audit.result}`;ar.style.color=s.audit.green?"var(--ok)":"var(--bad)"}else ar.hidden=true;
 $("run").innerHTML=s.running?`<span class="spinner"></span>${esc(s.running.title||"Running")}…`:'<span class="sub">Idle</span>';
 $("hist").innerHTML=(s.history||[]).map(x=>`<div class="item fin"><span class="tag">${esc(x.step)}</span><div>${esc(x.note||x.id)} ${x.log?`<a href="/api/log?t=${T}&name=${encodeURIComponent(x.log)}" target="_blank">log</a>`:""}</div></div>`).join("")||'<div class="empty">No runs yet.</div>';
-discordPanel(s);ksPanel(s);gmPanel(gmBusy&&!s.running);gmBusy=!!s.running;
+discordPanel(s);annPanel(s);ksPanel(s);gmPanel(gmBusy&&!s.running);gmBusy=!!s.running;
 document.querySelectorAll("#gmacts [data-gmrun]").forEach(b=>{b.disabled=!!s.running});
 if(!$("con").childElementCount&&s.lines)s.lines.forEach(line)}
 let gmAt=0,gmBusy=false;
@@ -2004,6 +2116,27 @@ const dopt=()=>dpost("/api/discord/options",{old:$("dold").value,pins:$("dpins")
 $("dold").onchange=dopt;$("dpins").onchange=dopt;
 $("dapply").onclick=async()=>{const p=(last&&last.discord||{}).preview;if(!p)return;$("con").innerHTML="";
 if(await dpost("/api/discord/apply",{preview:p.id,confirm:$("dyes").value.trim()}))$("dyes").value=""};
+let annKey="";
+function annPanel(s,force){const d=s.discord||{},a=d.announce||{},busy=!!s.running,tok=!!(d.token||{}).saved,ds=a.drafts||[];
+const key=JSON.stringify([ds.map(x=>[x.id,x.sha,x.problems.length]),busy,tok,a.error||""]);
+if(key!==annKey||force){annKey=key;
+$("anlist").innerHTML=a.error?`<div class="empty">The drafts didn't load: ${esc(a.error)}</div>`:ds.length?ds.map(x=>{const ok=!x.problems.length;
+return `<div class="anitem" data-id="${esc(x.id)}" data-sha="${esc(x.sha)}"><div><b>${esc(x.title||x.id)}</b> <span class="tag">${esc(x.kind||"?")}</span>
+ ${x.ping==="everyone"?"pings @everyone":"no ping"} · ${x.length}/${x.limit} characters${x.created?` · ${esc(x.created)}`:""} <span class="sub">${esc(x.id)}</span></div>
+<pre class="console anmsg">${esc(x.message)}</pre>
+${ok?'<div style="color:var(--ok)">Passes the checks.</div>':`<ul class="anbad">${x.problems.map(p=>`<li>${esc(p)}</li>`).join("")}</ul>`}
+<div class="launch"><button data-an="check">Check</button><input data-an="yes" autocomplete="off" placeholder="Type YES"${ok&&tok?"":" disabled"}>
+<button class="primary" data-an="post"${ok&&tok&&!busy?"":" disabled"} title="${ok?(tok?"Posts exactly this to #announcements":"Save the bot token first"):"Fix the problems first"}">Post to #announcements</button>
+<button data-an="reject"${busy?" disabled":""}>Reject</button></div></div>`}).join(""):'<div class="empty">No drafts waiting.</div>'}
+const l=a.last;$("anlast").innerHTML=l?`Last announcement ${esc(l.when)} (${esc(l.draft||"")}): ${l.ok?'<span style="color:var(--ok)">posted</span>':'<span style="color:var(--bad)">not posted</span>'}${logLink(l.log)}`:""}
+async function anpost(u,b){const r=await fetch(u,{method:"POST",headers:{...H,"Content-Type":"application/json"},body:JSON.stringify(b||{})});
+let j={};try{j=await r.json()}catch(e){}if(!r.ok)alert(j.error||"That didn't work.");return r.ok?j:null}
+$("anlist").addEventListener("click",async e=>{const t=e.target.closest("button[data-an]");if(!t||t.disabled)return;
+const it=t.closest(".anitem"),id=it.dataset.id,sha=it.dataset.sha,act=t.dataset.an;
+if(act==="check"){const j=await anpost("/api/discord/announce-check",{id});if(j)alert(j.ok?"Passes every check. Nothing was posted.":"Not ready:\n- "+j.draft.problems.join("\n- "));annKey="";refresh()}
+else if(act==="reject"){if(!confirm("Reject this draft? It moves to announce\\rejected. Nothing is posted."))return;await anpost("/api/discord/announce-reject",{id});annKey="";refresh()}
+else if(act==="post"){const y=it.querySelector('input[data-an="yes"]').value.trim();if(y!=="YES"){alert("Type YES under the draft to post it.");return}
+$("con").innerHTML="";if(await anpost("/api/discord/announce-post",{id,sha,confirm:y}))annKey="";refresh()}});
 const KS_WORD={pause:"Pause",resume:"Undo pause",delete:"Delete"};let ksKey="",ksCfg="";
 function ksPanel(s){const k=s.killswitch||{};if(k.error){$("kswhy").textContent="The kill switch didn't load: "+k.error;return}
 const c=k.config||{},busy=!!s.running,ck=JSON.stringify(c);

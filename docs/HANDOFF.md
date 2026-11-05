@@ -127,6 +127,7 @@ The PC copy must match git before you overwrite it. Every time:
 | `sv-site` (also `sv-record`, `sv-export`, `sv-preview`) | Azeroth Survivors site and recording |
 | `addons-curate`, `mods-daily`, `thumbs` | Mods discovery (approves nothing; plan in docs/MODS-DAILY.md) |
 | `discord-preview` / `discord-apply` / `discord-check` | Discord redo. The owner pastes the bot token in Control's Discord card; it is kept in `tools/discord-leyline/token.txt`, git-ignored, never logged. `discord-apply` only runs from the card after a fresh preview and a typed YES, never from the queue |
+| `announce-check` / `discord-announce` | Milestone announcements: Claude writes drafts into `tools/discord-leyline/announce/pending/` (deploy pattern); `announce-check` is read-only; the owner posts each from Control > Discord > Pending announcements after a typed YES (README "Announcements") |
 | `fresh-leyline-check` / `fresh-leyline`, `fresh-check` / `fresh-history` | Rewrite repo history to one Orion commit (to wipe Chumpton). Needs CONFIRM files the owner makes; see §8 |
 | `worldlog`, `bugs`, `gm` | Diagnostics, the bug manifest, and the GM console |
 

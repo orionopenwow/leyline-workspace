@@ -339,7 +339,7 @@ def match(path: str) -> bool:
 
 
 def host() -> str:
-    return P("PUBLIC_HOST") or "play.openvanilla.app"
+    return P("PUBLIC_HOST") or "leylinelauncher.com"
 
 
 def _ratelimit():

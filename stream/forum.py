@@ -697,7 +697,7 @@ def _our_origin(origin: str) -> bool:
 
 
 def _public_host() -> str:
-    return P("PUBLIC_HOST") or "play.openvanilla.app"
+    return P("PUBLIC_HOST") or "leylinelauncher.com"
 
 
 def _hook(name: str, text: str):

@@ -157,7 +157,7 @@ def _our_origin(origin: str) -> bool:
         known = P("SITE_ORIGINS")
     except Exception:   # noqa: BLE001
         known = None
-    return origin in (known or {f"https://{P('PUBLIC_HOST') or 'play.openvanilla.app'}"})
+    return origin in (known or {f"https://{P('PUBLIC_HOST') or 'leylinelauncher.com'}"})
 
 
 def P(name):

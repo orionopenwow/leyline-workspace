@@ -434,7 +434,7 @@ def _our_origin(origin: str) -> bool:
         known = _get("SITE_ORIGINS")
     except Exception:   # noqa: BLE001
         known = None
-    return origin in (known or {f"https://{_get('PUBLIC_HOST') or 'play.openvanilla.app'}"})
+    return origin in (known or {f"https://{_get('PUBLIC_HOST') or 'leylinelauncher.com'}"})
 
 
 def bind(getter) -> None:
@@ -594,7 +594,7 @@ def get(h, path: str, query: dict) -> None:
     if store is None:
         return _json(h, 404, {"error": "Rankings are off here."})
     if path == FEED:
-        return _json(h, 200, feed_doc(query, _get("PUBLIC_HOST") or "play.openvanilla.app"), cors=True)
+        return _json(h, 200, feed_doc(query, _get("PUBLIC_HOST") or "leylinelauncher.com"), cors=True)
     sub = path[len(API):].strip("/")
     if sub == "me":
         mid = (query.get("id") or [""])[0]

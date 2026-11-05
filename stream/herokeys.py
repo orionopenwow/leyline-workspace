@@ -150,7 +150,7 @@ def _our_origin(origin: str) -> bool:
 
 
 def host() -> str:
-    return P("PUBLIC_HOST") or "play.openvanilla.app"
+    return P("PUBLIC_HOST") or "leylinelauncher.com"
 
 
 def _soc():
@@ -1179,27 +1179,28 @@ def _go(h, url: str, cookies: list[str] | None = None) -> None:
     h.end_headers()
 
 
-def _shell(h, inner: str, status: int = 200, cookies: list[str] | None = None, who=None) -> None:
+def _shell(h, inner: str, status: int = 200, cookies: list[str] | None = None, who=None, title: str = "") -> None:
     nonce = secrets.token_urlsafe(16)
+    title = title or "Your Hero Key · Leyline"
     page = f'<div class="hk">{inner}</div><script nonce="{nonce}">{JS}</script>'
     body = None
     hub = P("hub_mod")
     if hub is not None and getattr(hub, "hub", None) is not None:
         try:
             hub._REQ.who = who
-            body = hub.hub._shell("Your Hero Key · Leyline", page, PAGE, nonce=nonce, active="", css=CSS)
+            body = hub.hub._shell(title, page, PAGE, nonce=nonce, active="", css=CSS)
         except Exception:   # noqa: BLE001
             log.exception("herokeys: the hub's page failed")
             body = None
     if body is None:
         shell = P("ly_shell")
         try:
-            body = shell("Your Hero Key · Leyline", page, PAGE, "", "", CSS, noindex=True) if shell else None
+            body = shell(title, page, PAGE, "", "", CSS, noindex=True) if shell else None
         except Exception:   # noqa: BLE001
             body = None
     if body is None:
         body = (f"<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
-                f"<title>Your Hero Key · Leyline</title><style>{CSS}</style><main>{page}</main>").encode("utf-8")
+                f"<title>{html.escape(title)}</title><style>{CSS}</style><main>{page}</main>").encode("utf-8")
     _send(h, status, body, cookies or [], nonce)
 
 
@@ -1221,8 +1222,9 @@ WHAT_IS = ('<details><summary>What is a Hero Key?</summary><ul class="hk-what">'
            '<li>Lost it? Log in with Google if you linked it, then make a new key. A new key stops the old one at once.</li>'
            '<li>One account works on Wrath Unleashed, in the launcher and on every realm that accepts Hero Key.</li></ul></details>')
 
-DOWN_CARD = ('<section class="hk-card"><h1>Your Hero Key</h1><p>The website\'s sign-in isn\'t answering right now. '
-             'Try again shortly.</p></section>')
+DOWN_CARD = ('<section class="hk-card"><h1>Your Hero Key</h1><p role="status">The website\'s sign-in is busy or not '
+             'answering right now. Try again in a minute; nothing about your key has changed.</p>'
+             '<p><a class="hk-btn" href="/wrath/key">Try again</a></p></section>')   # site review 4 Nov: a bare 503
 STALE_SESSION = "wr_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax"
 
 
@@ -1283,7 +1285,7 @@ def page(h, query: dict, note: str = "", ok: str = "", status: int = 200, cookie
                  '<p class="hk-fine">Using the Leyline launcher? Log in with your browser there: it recognises you here at once.</p>'
                  + WHAT_IS +
                  '</section>')
-        return _shell(h, inner, status, set_c)
+        return _shell(h, inner, status, set_c, title="Log in · Leyline")   # signed out the page is Log in (site review 4 Nov)
     acct, shown = who
     soc = _soc()
     p = soc.ensure(acct, shown) if soc is not None else {"name": shown, "tag": ""}

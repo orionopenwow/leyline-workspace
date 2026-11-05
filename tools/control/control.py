@@ -334,7 +334,12 @@ HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}
 
 # Never in a log or on the page: passwords, tokens, keys, connection strings (scrub() on every line a step prints).
 SECRET_RES = [
-    (re.compile(r"(?i)\b([A-Z0-9_]*(?:PASSWORD|PASSWD|PASS|TOKEN|SECRET|API_?KEY|PRIVATE_?KEY)(?:_[A-Z0-9_]*)?\s*[=:]\s*)(\"[^\"]*\"|'[^']*'|\S+)"), r"\1[hidden]"),
+    # review 4 Nov: also *_KEY names (RELAY_BLOCK_FEED_KEY, HMAC_KEY...) and JSON's "token": "..." (the quote before the colon)
+    (re.compile(r"(?i)\b([A-Z0-9_]*(?:PASSWORD|PASSWD|PASS|TOKEN|SECRET|API_?KEY|PRIVATE_?KEY|_KEY)(?:_[A-Z0-9_]*)?[\"']?\s*[=:]\s*)(\"[^\"]*\"|'[^']*'|\S+)"), r"\1[hidden]"),
+    (re.compile(r"\bGOCSPX-[A-Za-z0-9_-]{10,}"), "[hidden]"),                 # a Google OAuth client secret
+    (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "[hidden]"),                      # an AWS access key id
+    (re.compile(r"\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}"), "[hidden]"),           # API keys of the sk- shape
+    (re.compile(r"(?i)(discord(?:app)?\.com/api/webhooks/\d+/)[A-Za-z0-9_-]+"), r"\1[hidden]"),   # a webhook's secret half
     (re.compile(r"\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}"), "[hidden]"),
     (re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"), "[hidden]"),
     (re.compile(r"(?i)\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{12,}"), r"\1 [hidden]"),
@@ -420,6 +425,12 @@ def history() -> list[dict]:
     out = []
     for sid in reversed([d for d in done if d]):
         step, note = notes.get(sid, ("?", ""))
+        if sid not in notes:
+            # the lines run_all adds by itself after a ship (review 4 Nov: they showed as "?" with no log)
+            if sid.endswith("-leyline-launcher"):
+                step, note = "leyline-launcher", "follows the Leyline repo"
+            elif sid.endswith("-leyline"):
+                step, note = "leyline", "follows Save to GitHub"
         log = LOGS / f"{sid}-{step}.log"
         out.append({"id": sid, "step": step, "note": note, "log": log.name if log.exists() else ""})
     return out[:30]
@@ -508,6 +519,16 @@ def restart_if_updated() -> None:
     os._exit(0)
 
 
+def autopilot_safe(items: list) -> list:
+    """With "Ask before deploys" on: the read-only steps at the front of the queue, up to the first one that isn't."""
+    safe = []
+    for it in items:
+        if it["step"] not in READ_ONLY:
+            break
+        safe.append(it)
+    return safe
+
+
 def autopilot_loop() -> None:
     """Runs Claude's new steps on their own while the switch is on; a server check every 3 hours."""
     next_check = time.time() + 300
@@ -520,11 +541,7 @@ def autopilot_loop() -> None:
             items = pending()
             failed = state.get("auto_failed")
             if confirm_on():   # "Ask before deploys": only the read-only steps at the front run by themselves
-                safe = []
-                for it in items:
-                    if it["step"] not in READ_ONLY:
-                        break
-                    safe.append(it)
+                safe = autopilot_safe(items)
                 if items and not safe and state.get("asked") != pending_stamp():
                     state["asked"] = pending_stamp()
                     emit("line", "== Ask before deploys is on: the next step waits for you (Launch all).")

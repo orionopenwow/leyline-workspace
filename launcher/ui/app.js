@@ -1179,7 +1179,10 @@ function localStep(L) {
   if (kit && kit.realm) return "busy";
   return "setup";
 }
+// Single player set up on the Built-in engine (single.js, host/engine.rs: no Host pack, no relay): its row plays it
+const soloBuiltin = (L) => L === LOCAL.solo && !!(window.LeylineSingle && window.LeylineSingle.builtin && window.LeylineSingle.builtin());
 function localSub(L) {
+  if (soloBuiltin(L)) return "On this PC";
   const step = localStep(L);
   if (step === "play") return "On this PC";
   if (step === "folder") return "Needs your game folder";
@@ -1188,6 +1191,7 @@ function localSub(L) {
   return L.setup;
 }
 function localGo(L) {
+  if (soloBuiltin(L)) { pendingLocal = null; window.LeylineSingle.play(); return; }
   const step = localStep(L);
   // My Den without a Docker Den running: Your Den's one click (Den Lite straight in, else its setup there), not
   // the Host page (owner 1 Nov 02:46: "clicking the button doesn't launch the den")

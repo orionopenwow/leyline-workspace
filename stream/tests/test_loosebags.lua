@@ -265,6 +265,12 @@ check("built hidden at login, Esc closes it", not frame:IsShown() and UISpecialF
 check("on by default before any choice", LB.Enabled())
 
 -- ---------------------------------------------------------------- the first-login choice
+-- not in Your Den (a building room: it came up over the editor, review 4 Nov); it waits for a real realm
+local realReal = GetRealmName
+GetRealmName = function() return "Your Den" end
+event("PLAYER_ENTERING_WORLD")
+check("Your Den: no bags question, still pending", not (LooseBagsChoice and LooseBagsChoice:IsShown()) and LB.ChoicePending() and LB.OfferChoice() == false)
+GetRealmName = realReal
 event("PLAYER_ENTERING_WORLD")
 local choice = LooseBagsChoice
 check("first login: the choice window shows", choice and choice:IsShown())

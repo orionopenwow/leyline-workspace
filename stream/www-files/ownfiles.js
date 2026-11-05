@@ -408,19 +408,31 @@ export function gamedataOff() {
 
 /// Does the page's own origin already serve the Data URL scheme (wenilla-host)? A 410 Gone (the killswitch),
 /// 403, 404 or anything not JSON is "no": the player's own folder then.
-export async function hostServesData() {
+/// A probe that never got an answer (a slow or busy line: 4 Nov the server sent at ~20 KB/s and the 8 s probe
+/// gave up) is not a "no": it is tried again with more time, and a streamed session (the page's env is not
+/// "own") keeps streaming after that instead of asking a phone for a game folder it cannot have.
+export const PROBE_WAITS_MS = [10000, 20000, 30000];
+async function probeOnce(ms) {
   const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), 8000);
+  const t = setTimeout(() => ac.abort(), ms);
   try {
     const r = await fetch(DATA_PREFIX + '__index', { signal: ac.signal, cache: 'no-store' });
     const ok = r.ok && /json/i.test(r.headers.get('content-type') || '');
     ac.abort();
-    return ok;
+    return ok ? 'yes' : 'no';
   } catch (_) {
-    return false;
+    return 'slow';   // our own timeout, or the network dropped: no answer either way
   } finally {
     clearTimeout(t);
   }
+}
+export async function hostServesData(waits = PROBE_WAITS_MS) {
+  for (const ms of waits) {
+    const r = await probeOnce(ms);
+    if (r !== 'slow') return r === 'yes';
+  }
+  const env = (typeof window !== 'undefined' && window.__wenilla_env) || null;
+  return !!env && env.mode !== 'own';
 }
 
 function getEngine(base) {

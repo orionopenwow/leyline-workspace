@@ -847,3 +847,9 @@
 1327c foreverui  Browser game addons (ours only): Loose Bags in the Forever UI look with the money inside, Leyline Chat fade fix and channel label, the rounded guide, GM minimap buttons hidden
 1327d addons  Addon pack for desktop players: the same
 1327e ship  Save as Orion: bags, chat, guide, Discord link step, nameplates
+1328a check  Server check: is the server sending slowly (memory, CPU, network)?
+1328c caddy-check  Website speed: measure on the server (CPU, network, HTTP/3, local and outbound speed); read-only
+1328d client-back  Put the previous browser game build back (before the nameplate change); run again to undo
+1328e h3-off  Website speed: HTTP/3 off, browsers use HTTP/2 (backup, self-check, rollback)
+1329a client  Browser game: the newer build back (nameplates) + no more "drop your game files" on a slow line
+1329b ship  Save as Orion: HTTP/3 off steps, speed check, the slow-line fix

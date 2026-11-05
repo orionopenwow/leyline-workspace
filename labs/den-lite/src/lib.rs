@@ -28,6 +28,7 @@ pub mod ovmod;
 pub mod login;
 pub mod models;
 pub mod movewatch;
+pub mod noggit; // the editor's conveniences, Noggit's way: duplicate by an offset, select near, lie on the slope, camera frame and marks
 pub mod notice;
 pub mod objects;
 pub mod pets;

@@ -735,9 +735,12 @@ fn aid_verb(d: &mut Den, sel: &mut Sel, a: &mut Aids, here: Here, text: &str, ca
             }
         }
         // Q / E with nothing in hand, selected or under the cursor: the next placement's turn (degrees)
+        // `yaw <degrees>` turns the next placement's start; `yaw set <degrees>` sets it (Ctrl+V: the copied turn)
         "yaw" => {
-            let deg = num(1).unwrap_or(15.0).clamp(-360.0, 360.0);
-            let y = (a.next_yaw.unwrap_or(here.o) + deg.to_radians()).rem_euclid(std::f32::consts::TAU);
+            let set = w.get(1).is_some_and(|v| v.eq_ignore_ascii_case("set"));
+            let deg = num(if set { 2 } else { 1 }).unwrap_or(15.0).clamp(-360.0, 360.0);
+            let base = if set { 0.0 } else { a.next_yaw.unwrap_or(here.o) };
+            let y = (base + deg.to_radians()).rem_euclid(std::f32::consts::TAU);
             a.next_yaw = Some(y);
             AidOut::default().tell("yaw", format!("{:.0}", y.to_degrees()))
         }
@@ -1851,7 +1854,17 @@ fn cam(d: &Den, sel: &Sel, a: &mut Aids, here: Here, w: &[&str], now: u64) -> Ai
         }
         "off" | "near" => a.far = None,
         "where" => return AidOut::default().tell("cam", cam_line(a)),
-        _ => return AidOut::default().said("Usage: cam build | snap | far <n> | pan <dir> <yards> | fly <f> <r> <u> <yaw> [1|s] | pitch <radians> | zoom <yards> | off"),
+        // F: the far view round the selection; Ctrl+1..3 keep where the view is, Shift+1..3 go back (noggit.rs)
+        "frame" => match crate::noggit::frame(d, sel, a, here) {
+            Some(f) => a.far = Some(f),
+            None => return AidOut::default().said("Select a prop first: F frames the selection."),
+        },
+        "mark" => return AidOut::default().tell("cammark", crate::noggit::mark(d, a, here)),
+        "to" => match crate::noggit::cam_to(d, w) {
+            Some(f) => a.far = Some(f),
+            None => return AidOut::default().said("Usage: cam to <x> <y> <z> <degrees> <back>"),
+        },
+        _ => return AidOut::default().said("Usage: cam build | snap | far <n> | pan <dir> <yards> | fly <f> <r> <u> <yaw> [1|s] | pitch <radians> | zoom <yards> | frame | mark | to <x> <y> <z> <deg> <back> | off"),
     }
     far_update(a, now)
 }
@@ -1899,7 +1912,9 @@ fn fly(d: &Den, a: &mut Aids, w: &[&str], now: u64) -> AidOut {
     let speed = match w.get(6).copied() {
         Some("1") => FLY_FAST,
         Some("s") | Some("S") => FLY_SLOW,
-        _ => FLY_SPEED,
+        // the addon's own speed (the wheel with the right mouse held; noggit.rs), Shift and Alt already in it
+        Some(word) => crate::noggit::fly_speed(word).unwrap_or(FLY_SPEED),
+        None => FLY_SPEED,
     };
     let (so, co) = yaw.sin_cos();
     // owner 5 Nov: "work like noggit camera": forward is along the view, its pitch too (looking down, W goes down

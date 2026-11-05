@@ -1876,7 +1876,7 @@ fn the_editors_preview_gizmo_selection_and_exact_click() {
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tselclear");
     w.until_addon("wubuild", "state");
     w.raw(gizmo::CMSG_GAMEOBJ_USE, &chair.to_le_bytes());
-    let (_, carried) = until_aid(&mut w, "carried");
+    let (picked, carried) = until_aid(&mut w, "carried");
     assert_eq!(carried, id.to_string());
     w.addon("OVMOD", "wubuild\tcmd\t1/1\tpreview off");
     let (frames, aim) = until_aid(&mut w, "aim");
@@ -1887,8 +1887,8 @@ fn the_editors_preview_gizmo_selection_and_exact_click() {
     let x = flags.iter().find(|f| f.1.entry == 990_001).unwrap();
     assert_eq!(x.1.display, 5913);
     assert!(x.1.x > s0.x + 3.0, "beside the chair, along x");
-    // the carry's state line (it came before Esc's answer)
-    assert!(frames.iter().filter_map(addon_text).any(|t| t.contains("\twubuild\tstate\t") && t.contains(&format!("sel={id},2413"))));
+    // the carry's state line (with the pick-up's answer or before Esc's)
+    assert!(picked.iter().chain(frames.iter()).filter_map(addon_text).any(|t| t.contains("\twubuild\tstate\t") && t.contains(&format!("sel={id},2413"))));
     // a handle right-clicked: its axis grabbed (the next test drags it); its entry answers the query as a goober
     let y = flags.iter().find(|f| f.1.entry == 990_002).unwrap().0;
     w.raw(gizmo::CMSG_GAMEOBJ_USE, &y.to_le_bytes());
@@ -1984,7 +1984,7 @@ fn the_editors_pick_place_select_drag_and_snap_out() {
     assert!(gone.contains(&copy[0].0), "the copy goes once the real one is there");
     let mut glow = None;
     let mut handles = Vec::new();
-    let mut frames2 = frames;
+    let frames2 = frames;
     // the state may come before "placed" (aid_send's order): look in what came already, else wait for it
     let st = match aid_parts(&frames2, "state") {
         Some(st) => st,

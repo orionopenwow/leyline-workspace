@@ -537,7 +537,7 @@ mod tests {
         for a in ["nagrandarena", "bladesedgearena", "ruinsoflordaeron", "dalaransewers", "ringofvalor"] {
             let p = find(a).unwrap();
             assert_eq!(p.cat, "arena");
-            assert!(p.map > 571, "an arena is its own map");
+            assert!(![0, 1, 530, 571].contains(&p.map), "an arena is its own map: {} on {}", p.name, p.map);
         }
         for p in PLACES {
             assert!(p.z.abs() < 5000.0 && p.o.is_finite() && (0.0..=6.3).contains(&p.o), "{}", p.name);

@@ -355,7 +355,16 @@ check("F7 in play mode: back to building, the Builder opens, the banner says Bui
     and _G.LeylineDenModeBanner.label:GetText() == "Build mode" and _G.LeylineDenBuildEdge:IsShown())
 _G.LeylineDenKeyBuild:Fire("OnClick", "LeftButton", true)
 check("F7 in build mode: play mode (one key both ways)", D.play == true)
+-- den-move reads the mode from the report (the open frames, the banner and the toast): Play, then Build
+local function reportLine(lines, head) for _, l in ipairs(lines) do if l:find("^" .. head) then return l end end end
+local rp = D.Report()
+check("the report in play mode: the play corner open, not the strip or the rail; the banner says Play",
+    reportLine(rp, "mode play=1 banner=Play_mode") ~= nil and reportLine(rp, "open "):find("LeylineDenPlayPill", 1, true)
+    and not reportLine(rp, "open "):find("LeylineDenRail", 1, true) and not reportLine(rp, "open "):find("LeylineDenBar,", 1, true))
 _G.LeylineDenKeyBuild:Fire("OnClick", "LeftButton", true)
+rp = D.Report()
+check("the report in build mode: the strip and the rail back, the banner says Build", reportLine(rp, "mode play=0 banner=Build_mode") ~= nil
+    and reportLine(rp, "open "):find("LeylineDenRail", 1, true) and not reportLine(rp, "open "):find("LeylineDenPlayPill", 1, true))
 
 -- ---------------------------------------------------------------- 4. keys only when free, and nowhere else
 bound.F8 = "TOGGLEAUTORUN"

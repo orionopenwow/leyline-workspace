@@ -1206,6 +1206,11 @@ function G.TestAction(w)
             G.Wanted() and 1 or 0, (D and D.active) and 1 or 0, (D and D.play) and 1 or 0,
             tostring(B and B.state and B.state.lite or "-"), (W.InDen and W.InDen()) and 1 or 0))
         report("seltrace " .. (#G.selTrace > 0 and table.concat(G.selTrace, " ") or "-"))
+        -- A / D slide (G.StrafeKeys) while build mode is at your character
+        local keys = {}
+        for k, cmd in pairs(G.StrafeKeys()) do keys[#keys + 1] = k .. "=" .. cmd end
+        table.sort(keys)
+        report(string.format("strafe on=%d keys=%s", G.strafing and 1 or 0, #keys > 0 and table.concat(keys, ",") or "-"))
         report(string.format("gizmo build=%d armed=%s axis=%s sel=%s camera=%d menu=%d cursor=%s,%s,%s ghost=%s zoom=%d far=%s snapkey=%s moved=%s hovered=%s dragging=%d button1=%d frame=%d",
             G.build and 1 or 0, G.armed or "-", G.axis or "-", tostring(G.sel or "-"), G.camera and 1 or 0,
             (menu and menu:IsShown()) and 1 or 0, u and string.format("%.3f", u) or "-", v and string.format("%.3f", v) or "-",

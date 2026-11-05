@@ -1003,7 +1003,7 @@ class FakeAids:
     def mouse(self, act, a):
         if act == "click":
             hit = self.under(float(a[2]), float(a[3]))
-            self.aids.update(sel=hit, glow=hit, gizmo=4 if hit else 0)
+            self.aids.update(sel=hit, glow=hit, gizmo=4 if hit else 0, hover_light=None)
         elif act == "press":
             hit = self.under(float(a[2]), float(a[3]))
             if hit:
@@ -1038,6 +1038,9 @@ class FakeAids:
         if self.aids["armed"] == "off":
             if self.aids["mode"] == "build":
                 self.aids["hovered"] = self.under(u, v)
+                # the hover light (gizmo.rs HOVER): under the hovered prop unless it is the selection
+                h = self.aids["hovered"]
+                self.aids["hover_light"] = h if h is not None and h != self.aids["sel"] and "light" not in self.broken else None
             return
         self.aids["cursor"] = [u, v, 16 / 9]
         if self.aids["armed"].startswith("axis,"):
@@ -1052,7 +1055,8 @@ class FakeAids:
         if cmd == ".den size":
             self.sync()
             look = "build" if self.aids["mode"] == "build" and "look" not in self.broken else "play"
-            r = {"props": self.props, "aids": dict(self.aids), "look_mode": look, "twin_queries": getattr(self, "twins", 0)}
+            r = {"props": self.props, "aids": dict(self.aids), "look_mode": look, "twin_queries": getattr(self, "twins", 0),
+                 "pos": self.player[:3], "facing": self.player[3]}
             if getattr(self, "before_glide", False):
                 for k in ("copy", "copies_made", "copies_glided", "glide"):
                     r["aids"].pop(k, None)
@@ -1093,6 +1097,19 @@ class FakeAids:
         if a[:1] == ["pick"]:
             # the gallery card (Builder.lua B.Choose, Gizmo.lua's hook): in hand, nothing shown yet
             self.aids.update(armed="place,%s,1543" % a[1], ghost=None, at=None)
+            return {"props": self.props, "said": []}
+        if a[:1] == ["report"]:
+            play = self.aids["mode"] == "play"
+            frames = "LeylineDenPlayPill" if play else "LeylineDenBar,LeylineDenRail,LeylineEditorStatus"
+            if "playframes" in self.broken:
+                frames += ",LeylineDenRail"
+            with open(self.dens / den_check.UI_REPORT, "a", encoding="utf-8") as f:
+                for line in ("open " + frames, "mode play=%d banner=%s toast=-" % (play, "Play_mode" if play else "Build_mode")):
+                    f.write(json.dumps({"t": den_check.now_ms(), "report": line}) + "\n")
+            return {"props": self.props, "said": []}
+        if a[:1] == ["build"]:
+            self.aids["mode"] = "build"
+            self.ev("build_mode", "build")
             return {"props": self.props, "said": []}
         if a[:1] != ["gizmo"] or (len(a) > 1 and a[1] in self.broken):
             return {"props": self.props}
@@ -1494,6 +1511,39 @@ class PlacementAids(unittest.TestCase):
         rows = {r[1]: r for r in rep.rows}
         self.assertEqual(rows["the test's empty Den"][0], "INFO")
         self.assertEqual([r for r in rep.rows if r[0] == "FAIL"], [])
+
+    def test_a_d_slide_the_hover_light_and_plays_frames(self):
+        # owner 5 Nov: A / D slide (not turn), the prop under the cursor lights, Play hides the editor and Build brings it back
+        den = FakeAids(self.dens)
+
+        def keys(scan, secs, turn=False):
+            o = den.player[3]
+            sign = 1 if scan == den_check.SCAN_D else -1
+            den.player[0] += sign * 1.5 * math.sin(o)
+            den.player[1] -= sign * 1.5 * math.cos(o)
+            if turn:
+                den.player[3] += 0.5 * sign
+            return ""
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, den, self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3, keys=keys)
+        rows = {r[1]: r for r in rep.rows}
+        for want in ("build mode: A / D slide you sideways (facing unchanged)", "hover: a light under the prop under the cursor, gone once it is selected",
+                     "play mode: the editor's frames hidden, it says Play", "build mode: the editor's frames back"):
+            self.assertEqual(rows[want][0], "PASS", rows.get(want))
+        self.assertIn("D: 1.50 yd right", rows["build mode: A / D slide you sideways (facing unchanged)"][2])
+        self.assertEqual(den.aids["mode"], "play", "left in play mode as before")
+        # A / D turning, no light, the rail left up in play mode: each fails with what it saw
+        dens = self.d / "dens-broken3"
+        dens.mkdir()
+        (dens / "den-lite.events").write_text("")
+        den = FakeAids(dens, broken={"light", "playframes"})
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, den, dens, self.shoot, self.d / "shots", settle=0, wait=0.3, keys=lambda sc, t: keys(sc, t, turn=True))
+        fails = {r[1] for r in rep.rows if r[0] == "FAIL"}
+        self.assertEqual(fails, {"build mode: A / D slide you sideways (facing unchanged)", "hover: a light under the prop under the cursor, gone once it is selected",
+                                 "play mode: the editor's frames hidden, it says Play"})
 
     def test_a_selection_lost_after_placing_says_what_cleared_it(self):
         # 5 Nov den-move step 3: "prop None, glow on None, 0 handles": the report now names the sender from both sides

@@ -703,6 +703,18 @@ answer("selected", "-")
 G.Bindings()
 check("build mode at your character: A / D and the arrows strafe", bindings.A == "STRAFELEFT" and bindings.D == "STRAFERIGHT"
     and bindings.LEFT == "STRAFELEFT" and bindings.RIGHT == "STRAFERIGHT" and G.strafing)
+do
+    -- den-move asks `gizmo report`: it says A / D slide (and what last cleared the selection)
+    local n0 = #sent
+    G.TestAction({ "gizmo", "report" })
+    local strafe, trace
+    for i = n0 + 1, #sent do
+        local t = sent[i][2] or ""
+        strafe = strafe or t:match("\tstrafe (on=%d keys=[^\t]*)$")
+        trace = trace or t:match("\tseltrace (.*)$")
+    end
+    check("the report says A / D slide and the selection's trace", strafe == "on=1 keys=A=STRAFELEFT,D=STRAFERIGHT,LEFT=STRAFELEFT,RIGHT=STRAFERIGHT" and trace ~= nil)
+end
 function GetBindingKey(cmd) if cmd == "TURNLEFT" then return "A", "NUMPAD4" elseif cmd == "TURNRIGHT" then return "D" end end
 G.Bindings()
 check("the player's own turning keys strafe instead", bindings.NUMPAD4 == "STRAFELEFT" and bindings.A == "STRAFELEFT"

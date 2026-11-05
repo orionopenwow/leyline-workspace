@@ -2726,7 +2726,7 @@ fn test_command(shared: &Shared, w: &Writer, id: u64, cmd: &str) -> io::Result<(
     testctl::write_out(&shared.cfg.den_dir, &serde_json::json!({
         "id": id, "cmd": cmd, "said": cap.said, "created": cap.created, "destroyed": cap.destroyed,
         "props": props, "look": look, "size": size, "t": now_ms(), "ok": r.is_ok(),
-        "pos": [p.x, p.y, p.z], "ground": ground, "on_ground": (p.z - ground).abs() <= movewatch::ON_GROUND, "me": me,
+        "pos": [p.x, p.y, p.z], "facing": p.o, "ground": ground, "on_ground": (p.z - ground).abs() <= movewatch::ON_GROUND, "me": me,
         "aids": shared.aid_view.lock().unwrap_or_else(|e| e.into_inner()).clone(),
         "look_mode": if shared.build_look.load(Ordering::Relaxed) { "build" } else { "play" },
         "twin_queries": shared.twin_queries.load(Ordering::Relaxed),

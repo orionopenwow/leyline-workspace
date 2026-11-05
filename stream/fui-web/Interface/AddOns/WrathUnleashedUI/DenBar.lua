@@ -1155,6 +1155,11 @@ function D.Report(what)
         rail and (rail.compact and "compact" or "labelled") or "-")
     local p = b and b.Pill and b.Pill()
     if p and p.line then lines[#lines + 1] = "pill " .. tostring(p.line:GetText() or "") end
+    -- what the player is told of the mode (den-move: after Play the toast and the banner say Play)
+    local cur = D.current
+    lines[#lines + 1] = string.format("mode play=%s banner=%s toast=%s", D.play and "1" or "0",
+        tostring(bar and bar.banner and bar.banner.label and bar.banner.label:GetText() or "-"):gsub("%s+", "_"),
+        tostring(type(cur) == "table" and (cur.text or cur[2]) or "-"):sub(1, 80):gsub("%s+", "_"))
     if what then lines[#lines + 1] = "mark " .. tostring(what) end
     for _, l in ipairs(lines) do report(l) end
     return lines

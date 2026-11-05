@@ -1842,7 +1842,7 @@ def carry_jump(at0, at):
         return None
 
 
-def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0, only_move=False):
+def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0, only_move=False, keys=None):
     """The editor's flow as the owner's video shows it (3 Nov: "it should function like this"), through the Leyline UI's
     own test actions, a picture after each step: build mode (props shown as things the game highlights); a gallery
     card picked (in hand, nothing in front of you); the real prop following the cursor; one click places it and it is
@@ -1915,6 +1915,9 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0, only_mo
             ui("gizmo report")
             why = wait_for(lambda: [x for x in ui_lines(den_dir, t2) if x.startswith("why ")], wait, 0.2) or []
             rep.add("INFO", "build mode: what the UI says", "; ".join(why) or "no report from the UI")
+        # A / D at your character (the far view off for it, then back)
+        if ok:
+            strafe_check(rep, ch, ui, keys, den_dir)
         if look is None:
             rep.add("INFO", "build mode: the props' goober looks", "this Den Lite is from before them (3 Nov): update Den Lite for the glow under the mouse")
         if not newer:
@@ -2027,6 +2030,7 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0, only_mo
             mouse_steps(rep, ui, aids, shot, with_pic, den_dir, wait)
         # the owner's own way, 5 Nov (his Gizmo.lua paths: the frame tick and the press and let-go)
         owner_flow_steps(rep, ui, aids, lambda: ch.send(".den size"), shot, with_pic, den_dir, wait)
+        hover_light_check(rep, ui, aids, den_dir)
         # the free flight (owner 4 Nov: "fly like a typical 3d model engine"): W held for a second glides the build
         # view on (about 16 yards a second, no stops), the let-go eases it out
         ui("gizmo cam build")
@@ -2082,6 +2086,8 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0, only_mo
         if pf != "-":
             rep.ok(pf == 0, "play mode: props usable again (a chair is sat on)", "flags %s" % pf,
                    "Den Lite still tells the game a prop isn't selectable in play mode (flags %s): send logs\\den-move-latest.txt." % pf)
+        # what the player sees of the modes: Play hides the editor's frames and says so, Build brings them back
+        play_ui_check(rep, ui, den_dir)
         return True
     finally:
         if before.is_file():
@@ -2548,6 +2554,157 @@ def key_events(scan, extended=False):
     return [(scan, base), (scan, base | KEYEVENTF_KEYUP)]
 
 
+SCAN_A = 0x1E
+SCAN_D = 0x20
+
+
+def hold_key(pid, scan, secs):
+    """A key held for `secs` as a keyboard does it (SendInput scan codes, the game's window in front): "" when done,
+    else why not. Windows only."""
+    if os.name != "nt":
+        return "keys are pressed on Windows only"
+    import ctypes
+    from ctypes import wintypes
+    u = ctypes.windll.user32
+
+    class KEYBDINPUT(ctypes.Structure):
+        _fields_ = [("wVk", wintypes.WORD), ("wScan", wintypes.WORD), ("dwFlags", wintypes.DWORD), ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+    class MOUSEINPUT(ctypes.Structure):
+        _fields_ = [("dx", wintypes.LONG), ("dy", wintypes.LONG), ("mouseData", wintypes.DWORD), ("dwFlags", wintypes.DWORD), ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+    class _U(ctypes.Union):
+        _fields_ = [("ki", KEYBDINPUT), ("mi", MOUSEINPUT)]
+
+    class INPUT(ctypes.Structure):
+        _fields_ = [("type", wintypes.DWORD), ("u", _U)]
+
+    def key(sc, flags):
+        i = INPUT(type=1, u=_U(ki=KEYBDINPUT(wVk=0, wScan=sc, dwFlags=flags, time=0, dwExtraInfo=0)))
+        return u.SendInput(1, ctypes.byref(i), ctypes.sizeof(INPUT))
+
+    h = game_window(pid)
+    if not h:
+        return "the game's window wasn't found"
+    key(0x38, KEYEVENTF_SCANCODE)
+    key(0x38, KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP)
+    u.ShowWindow(h, 9)
+    u.SetForegroundWindow(h)
+    time.sleep(0.3)
+    if u.GetForegroundWindow() != h:
+        return "the game's window couldn't be brought to the front"
+    n = key(scan, KEYEVENTF_SCANCODE)
+    time.sleep(secs)
+    n += key(scan, KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP)
+    return "" if n == 2 else "SendInput took %d of 2 key events" % n
+
+
+def strafe_check(rep, ch, ui, keys, den_dir, wait=4.0, hold=0.6):
+    """Owner 5 Nov: "when holding d or a the free roam camera just goes in circles". In build mode at your character
+    (the far view off) D and then A held: the character slides sideways (right, then left), its facing unchanged.
+    `keys(scan, seconds)` holds a key ("" when done). What the UI binds is said too (`gizmo report`: strafe)."""
+    name = "build mode: A / D slide you sideways (facing unchanged)"
+    if keys is None:
+        rep.add("SKIP", name, "keys are pressed on Windows only")
+        return None
+    ui("gizmo cam off")
+    t = now_ms()
+    ui("gizmo report")
+    said = wait_for(lambda: [x for x in ui_lines(den_dir, t) if x.startswith("strafe ")], wait, 0.2) or []
+
+    def where():
+        a = ch.send(".den size") or {}
+        p, o = a.get("pos"), a.get("facing")
+        return (p, o) if p and isinstance(o, (int, float)) else (None, None)
+    p0, o0 = where()
+    if p0 is None:
+        rep.add("INFO", name, "this Den Lite doesn't say the facing (from before 5 Nov evening): run den-lite")
+        ui("gizmo cam build")
+        return None
+    out = []
+    ok = True
+    for label, scan, sign in (("D", SCAN_D, 1), ("A", SCAN_A, -1)):
+        why = keys(scan, hold)
+        time.sleep(0.8)
+        p1, o1 = where()
+        if why or p1 is None:
+            rep.add("INFO", name, "%s: %s" % (label, why or "no answer"))
+            ui("gizmo cam build")
+            return None
+        dx, dy = p1[0] - p0[0], p1[1] - p0[1]
+        # the way you face (o), and your right: (sin o, -cos o)
+        fwd = dx * math.cos(o0) + dy * math.sin(o0)
+        side = dx * math.sin(o0) - dy * math.cos(o0)
+        turn = abs(math.atan2(math.sin(o1 - o0), math.cos(o1 - o0)))
+        good = side * sign > 0.4 and abs(fwd) < 0.5 * abs(side) and turn < 0.05
+        ok = ok and good
+        out.append("%s: %.2f yd %s, %.2f yd forward, turned %.1f deg" % (label, abs(side), "right" if side > 0 else "left", fwd, math.degrees(turn)))
+        p0, o0 = p1, o1
+    rep.ok(ok, name, "; ".join(out) + ((", the UI: " + said[-1]) if said else ""),
+           "A / D didn't slide the character (%s; the UI: %s): send logs\\den-move-latest.txt." % ("; ".join(out), said[-1] if said else "no report"))
+    ui("gizmo cam build")
+    return ok
+
+
+def hover_light_check(rep, ui, aids, den_dir):
+    """Owner 5 Nov: "objects should be clickable, highlightable": the prop under the cursor (not selected) gets the
+    hover light under it; selected, the light goes (the selection's halo is there). With the selection's place on the
+    screen from Den Lite (`sel_uv`): a click on the sky clears it, a hover there lights it, a click selects it."""
+    name = "hover: a light under the prop under the cursor, gone once it is selected"
+    a = aids()
+    if "hover_light" not in a:
+        rep.add("INFO", name, "this Den Lite is from before the hover light: run den-lite")
+        return None
+    sel, uv = a.get("sel"), a.get("sel_uv")
+    if sel is None or not uv or not all(-0.95 < c < 0.95 for c in uv):
+        rep.add("SKIP", name, "the selection (%s) isn't on the screen (%s)" % (sel, uv))
+        return None
+    u, v = uv
+    ui("gizmo click 0 0.95")
+    ui("gizmo hover %.4f %.4f" % (u, v))
+    lit = aids()
+    ui("gizmo click %.4f %.4f" % (u, v))
+    after = aids()
+    ok = lit.get("hovered") == sel and lit.get("hover_light") == sel and after.get("sel") == sel and after.get("hover_light") is None
+    rep.ok(ok, name, "prop %s lit under the cursor, then selected (light %s)" % (sel, after.get("hover_light")),
+           "Hovered %s, its light %s; then selected %s, the light %s (want the light on %s, then none): send logs\\den-move-latest.txt."
+           % (lit.get("hovered"), lit.get("hover_light"), after.get("sel"), after.get("hover_light"), sel))
+    return ok
+
+
+BUILD_FRAMES = ("LeylineDenBar", "LeylineDenRail", "WrathUnleashedBuilderFrame", "WrathUnleashedPropsFrame", "LeylineEditorStatus")
+
+
+def mode_report(ui, den_dir, wait=4.0):
+    """The UI's report after a mode change: (the open frames, the `mode` line), from DenBar.lua D.Report."""
+    t = now_ms()
+    ui("report mode")
+    lines = wait_for(lambda: (lambda ls: ls if any(x.startswith("mode ") for x in ls) else None)(ui_lines(den_dir, t)), wait, 0.2) or []
+    opened = next((x[5:] for x in reversed(lines) if x.startswith("open ")), None)
+    mode = next((x for x in reversed(lines) if x.startswith("mode ")), None)
+    return (set(filter(None, opened.split(","))) if opened is not None else None), mode
+
+
+def play_ui_check(rep, ui, den_dir):
+    """After Play (F7: the bar's Play) the editor's frames are hidden and the banner or toast says Play; after Build
+    they are back. Leaves play mode as it found it (play)."""
+    opened, mode = mode_report(ui, den_dir)
+    if mode is None:
+        rep.add("INFO", "play mode: the editor's frames hidden", "the UI's report has no mode line (an older Leyline UI): run ui-local")
+        return None
+    shown = sorted(set(BUILD_FRAMES) & (opened or set()))
+    says = "play=1" in mode and ("Play" in mode.split("banner=", 1)[-1])
+    rep.ok(not shown and says, "play mode: the editor's frames hidden, it says Play", mode[5:120],
+           "In play mode the UI still shows %s and says %s: send logs\\den-move-latest.txt." % (", ".join(shown) or "nothing", mode[5:120]))
+    ui("build")
+    opened, mode = mode_report(ui, den_dir)
+    back = {"LeylineDenBar", "LeylineDenRail"} <= (opened or set()) and mode is not None and "play=0" in mode
+    rep.ok(back, "build mode: the editor's frames back", (mode or "")[5:120],
+           "After Build the UI shows %s (%s): send logs\\den-move-latest.txt." % (", ".join(sorted(opened or [])) or "nothing", mode))
+    ui("gizmo build off")
+    return back
+
+
 def diag_blocks(evs):
     """The Leyline UI's answers (addon events `wudiag ...`), grouped by the tag of the ask they answer (`at:<tag>`;
     lines before any tag: "login")."""
@@ -2768,7 +2925,8 @@ def test(args, rep):
                 steps.add("FAIL", "the Den's smoke test", "stopped: %s" % str(e)[:200], "Send logs\\den-test-latest.txt.")
         if getattr(args, "move", False):
             try:
-                aids_features(steps, FileChannel(den_dir), den_dir, lambda out: screenshot(pid, out), logs / "den-move", only_move=True)
+                aids_features(steps, FileChannel(den_dir), den_dir, lambda out: screenshot(pid, out), logs / "den-move", only_move=True,
+                              keys=(lambda scan, secs: hold_key(pid, scan, secs)) if os.name == "nt" else None)
             except Exception as e:  # noqa: BLE001 - the game still gets its picture and is closed
                 steps.add("FAIL", "select and move", "stopped: %s" % str(e)[:200], "Send logs\\den-move-latest.txt.")
         elif getattr(args, "features", False):
@@ -2781,7 +2939,8 @@ def test(args, rep):
             except Exception as e:  # noqa: BLE001 - the game still gets its picture and is closed
                 steps.add("FAIL", "the Dojo's combat test", "stopped: %s" % str(e)[:200], "Send logs\\den-test-latest.txt.")
             try:
-                aids_features(steps, FileChannel(den_dir), den_dir, lambda out: screenshot(pid, out), logs / "den-features")
+                aids_features(steps, FileChannel(den_dir), den_dir, lambda out: screenshot(pid, out), logs / "den-features",
+                              keys=(lambda scan, secs: hold_key(pid, scan, secs)) if os.name == "nt" else None)
                 hover_calibration(steps, FileChannel(den_dir), den_dir, lambda out: screenshot(pid, out), logs / "den-features", win_mouse(pid))
             except Exception as e:  # noqa: BLE001 - the game still gets its picture and is closed
                 steps.add("FAIL", "the placement aids", "stopped: %s" % str(e)[:200], "Send logs\\den-test-latest.txt.")

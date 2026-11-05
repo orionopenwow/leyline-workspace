@@ -785,6 +785,9 @@ fn aid_far(c: &Writer, sess: &Sess, far: Option<gizmo::FarOut>) -> io::Result<()
             c.send_raw(raw::SMSG_UPDATE_OBJECT, &raw::farsight(sess.me.guid, farsight::GUID))
         }
         Some(gizmo::FarOut::Move(from, to)) => c.send_raw(flight::SMSG_MONSTER_MOVE, &farsight::move_body(from, to, (now_ms() & 0xFFFF_FFFF) as u32)),
+        Some(gizmo::FarOut::Glide(from, to, ms)) => {
+            c.send_raw(flight::SMSG_MONSTER_MOVE, &farsight::glide_body(from, to, (now_ms() & 0xFFFF_FFFF) as u32, ms))
+        }
         Some(gizmo::FarOut::Off) => {
             c.send_raw(raw::SMSG_UPDATE_OBJECT, &raw::farsight(sess.me.guid, 0))?;
             c.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(farsight::GUID), target_died: false })

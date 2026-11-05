@@ -111,3 +111,8 @@ pub fn at(p: [f32; 4]) -> At {
 pub fn move_body(from: [f32; 4], to: [f32; 4], id: u32) -> Vec<u8> {
     flight::sky_body(GUID, at(from), &[at(to)], id, flight::SPLINE_FLYING, MOVE_MS)
 }
+
+/// The free flight's move (gizmo.rs `fly`): the same flying spline, as long as asked (at least 1 ms).
+pub fn glide_body(from: [f32; 4], to: [f32; 4], id: u32, ms: u32) -> Vec<u8> {
+    flight::sky_body(GUID, at(from), &[at(to)], id, flight::SPLINE_FLYING, ms.max(1))
+}

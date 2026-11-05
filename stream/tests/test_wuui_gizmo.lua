@@ -315,7 +315,7 @@ check("the far view: the build camera posed again round Den Lite's camera object
 check("the arrows pan it while it is out", bindings.UP == "LeylineGizmoPanUP" and bindings.RIGHT == "LeylineGizmoPanRIGHT")
 n = #sent
 named.LeylineGizmoPanUP:Fire("OnClick")
-check("an arrow: cam pan", cmds(n)[1] == "cam pan fwd 4")
+check("an arrow: the free flight forward", (cmds(n)[1] or ""):find("^cam fly 1 0 0 ") ~= nil)
 n = #sent
 named.LeylineGizmoWheelUp:Fire("OnClick")
 check("wheel up while far: nearer (Den Lite)", cmds(n)[1] == "cam far -1")
@@ -500,16 +500,23 @@ n = #sent
 WorldFrame:Fire("OnMouseDown", "LeftButton"); clock = clock + 0.1; WorldFrame:Fire("OnMouseUp", "LeftButton")
 check("a click on empty ground: click (Den Lite clears the selection), never the old selclear", (cmds(n)[1] or ""):find("^click ") and not has(cmds(n), "selclear"))
 
--- a pan key held keeps panning; let go stops
+-- a fly key held: said at once and again while held (Den Lite glides ahead), one let-go when released; Space goes up
 n = #sent
 named.LeylineGizmoPanW:Fire("OnClick", "LeftButton", true)
 tick(0.25)
+named.LeylineGizmoPanSPACE:Fire("OnClick", "LeftButton", true)
 named.LeylineGizmoPanW:Fire("OnClick", "LeftButton", false)
+named.LeylineGizmoPanSPACE:Fire("OnClick", "LeftButton", false)
+tick(0.25)
 tick(0.25)
 c = cmds(n)
-local pans = 0
-for _, x in ipairs(c) do if x == "cam pan fwd 4" then pans = pans + 1 end end
-check("W held: the view pans on, and stops when let go", pans == 2)
+local fwd, ups, stops = 0, 0, 0
+for _, x in ipairs(c) do
+    if x:find("^cam fly 1 0 0 ") then fwd = fwd + 1 end
+    if x:find("^cam fly 0 0 1 ") or x:find("^cam fly 1 0 1 ") then ups = ups + 1 end
+    if x:find("^cam fly 0 0 0 ") then stops = stops + 1 end
+end
+check("W held: the view flies on, Space lifts it, and one let-go when released", fwd >= 2 and ups >= 1 and stops >= 1 and (c[#c] or ""):find("^cam fly 0 0 0 ") ~= nil)
 
 -- the den-test's mouse
 n = #sent

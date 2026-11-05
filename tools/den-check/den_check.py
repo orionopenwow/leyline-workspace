@@ -543,11 +543,11 @@ def walk_lines(rep, evs, where=None):
         why = "The game sent no movement at all: it isn't moving its character. Send logs\\den-test-latest.txt and the screenshot."
     # 4 Nov den-move: Your Den now opens in build mode (Den Lite's state is asked for at once), where W pans the build
     # view (Gizmo.lua LeylineGizmoPanW), so the launcher's steps forward moved the view, not the character
-    pans = [e for e in evs if e.get("ev") == "addon" and str(e.get("detail", "")).startswith("wubuild aid cam pan")]
+    pans = [e for e in evs if e.get("ev") == "addon" and str(e.get("detail", "")).startswith(("wubuild aid cam pan", "wubuild aid cam fly"))]
     built = any(e.get("ev") == "build_mode" and e.get("detail") == "build" for e in evs)
     if walked is None and built and pans and any("LeylineGizmoPan" in d for d in diag):
-        rep.add("INFO", "walking: not checked", "the Den opened in build mode, where W moves the build view: the steps "
-                "forward panned it %d times (play mode walks; den-test checks walking)" % len(pans))
+        rep.add("INFO", "walking: not checked", "the Den opened in build mode, where W flies the build view: the steps "
+                "forward moved it %d times (play mode walks; den-test checks walking)" % len(pans))
     else:
         rep.ok(walked is not None, "walking: the step forward walked the character",
                str(walked.get("detail", "")) if walked else "it never got a yard from where it came in", why)
@@ -1794,6 +1794,25 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0, only_mo
             rep.add("INFO", "the mouse: hover, click and drag", "this Den Lite is from before clicking and dragging props (3 Nov): update Den Lite")
         else:
             mouse_steps(rep, ui, aids, shot, with_pic, den_dir, wait)
+        # the free flight (owner 4 Nov: "fly like a typical 3d model engine"): W held for a second glides the build
+        # view on (about 16 yards a second, no stops), the let-go eases it out
+        ui("gizmo cam build")
+        a0 = (aids() or {}).get("far_at")
+        if a0:
+            ui("gizmo fly W down")
+            time.sleep(1.0)
+            mid = (aids() or {}).get("far_at")
+            ui("gizmo fly W up")
+            time.sleep(0.4)
+            a1 = (aids() or {}).get("far_at")
+            pic = shot("fly")
+            dist = lambda p, q: ((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2) ** 0.5 if p and q else 0.0
+            moved, still = dist(a0, a1), dist(mid, a1) > 0.5
+            rep.ok(8.0 <= moved <= 40.0 and still, "free flight: W held glides the view on, the let-go eases out",
+                   with_pic("moved %.1f yd in about a second (%s -> %s)" % (moved, a0, a1), pic),
+                   "The view didn't fly (moved %.1f yd): send logs\\den-move-latest.txt." % moved)
+        else:
+            rep.add("SKIP", "free flight", "the build view wasn't on (no camera object)")
         if newer:
             # 6. snap out: the view up and back over you (Den Lite's camera object), and back
             ui("gizmo snap")
@@ -2560,8 +2579,12 @@ MANUAL_STEPS = [
      "the real model follows the mouse; one click places it and selects it"),
     ("Shift adds", "Shift-click a second prop.",
      "both are selected"),
-    ("the views", "Press the snap key (or the wheel past the game's own zoom), then back; with the build view on, W A S D.",
-     "the view goes up high and back to you; W A S D move the view and never leave your Den"),
+    ("the views", "Press the snap key (or the wheel past the game's own zoom), then back.",
+     "the view goes up high and back to you"),
+    ("free flight", "In the high view, hold W, then W with A or D, then Space and X; turn with the right mouse button while "
+     "flying; hold Shift. Watch the 'flight:' line in the /wudebug box.",
+     "the view glides smoothly with no stops or jumps back; diagonals are smooth; Space rises, X sinks; it flies the way "
+     "the camera faces after a turn; Shift is faster; it eases to a stop when you let go"),
     ("play mode", "Press F7 (or Play on the Den bar). Walk with W.",
      "props are plain again (no glow), you walk; F7 brings Build back"),
     ("debug box off", "Type /wudebug again to hide the box.",

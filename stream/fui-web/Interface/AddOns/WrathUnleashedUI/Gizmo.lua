@@ -59,7 +59,9 @@ G.ZOOM_MIN = 2
 G.ZOOM_HARD = 50                -- the game's own camera never goes further than this
 G.SNAP_KEYS = { "J", "K", "F9", "F10" }   -- snap out: the first that nothing else uses
 G.PAN = 4                       -- yards an arrow key pans the far view
-G.PAN_EVERY = 0.2               -- seconds between pans while a pan key is held
+G.PAN_EVERY = 0.2               -- seconds between pans while a pan key is held (the test's `gizmo pan`)
+G.FLY_EVERY = 0.2               -- the free flight: the keys held said again this often (Den Lite glides 0.45 s ahead)
+G.FLY_TURN = 0.02               -- radians the camera turns before Den Lite is told (the cursor's ray follows it)
 G.SETTLE = 0.15                 -- the cursor came to rest: its place once more after this (Den Lite's glow keeps up)
 G.TURN = 15                     -- degrees Q / E (and the wheel while dragging) turn the prop
 
@@ -235,7 +237,10 @@ end
 -- ---------------------------------------------------------------- the keys: only while needed
 
 local owner, aimBtn, cancelBtn, wheelUp, wheelDown, snapBtn, tag, menu, grabBtn, tip, frame
-local PAN_KEYS = { UP = "fwd", DOWN = "back", LEFT = "left", RIGHT = "right", W = "fwd", S = "back", A = "left", D = "right" }
+-- the free flight's keys (owner 4 Nov: "fly like a typical 3d model engine"): forward, right, up while held
+local PAN_KEYS = { UP = { 1, 0, 0 }, DOWN = { -1, 0, 0 }, LEFT = { 0, -1, 0 }, RIGHT = { 0, 1, 0 },
+    W = { 1, 0, 0 }, S = { -1, 0, 0 }, A = { 0, -1, 0 }, D = { 0, 1, 0 }, SPACE = { 0, 0, 1 }, X = { 0, 0, -1 } }
+G.FLY_KEYS = PAN_KEYS
 local TURN_KEYS = { Q = 1, E = -1 }
 local down = {}
 
@@ -540,20 +545,55 @@ function G.TipUpdate()
     tip:Show()
 end
 
--- Pan keys held: the view keeps panning (one step at once, then every G.PAN_EVERY while held).
-local held = {}
-function G.PanKey(dir, isDown)
-    if isDown == false then held[dir] = nil; return false end
-    held[dir] = now()
-    return G.Pan(dir)
+-- The free flight: the keys held make a direction (forward, right, up, relative to the way the camera faces), said
+-- to Den Lite at once, again every G.FLY_EVERY while held, and once when all are let go (it eases out). Den Lite
+-- glides its camera object from wherever it is at that moment, so the view flies on without stops or snaps back.
+-- Shift: faster. The camera's facing is the player's (the mouse turns it); a turn alone is said too, so the
+-- cursor's ray keeps up.
+local held, fly = {}, { t = 0, yaw = nil, moving = false }
+local function facing() return (GetPlayerFacing and GetPlayerFacing()) or 0 end
+function G.FlyVector()
+    local f, r, u = 0, 0, 0
+    for k in pairs(held) do
+        local v = PAN_KEYS[k]
+        if v then f, r, u = f + v[1], r + v[2], u + v[3] end
+    end
+    local c = function(x) return x > 0 and 1 or x < 0 and -1 or 0 end
+    return c(f), c(r), c(u)
+end
+function G.FlySend()
+    if not G.far then return false end
+    local f, r, u = G.FlyVector()
+    local yaw = facing()
+    fly.t, fly.yaw, fly.moving = now(), yaw, (f ~= 0 or r ~= 0 or u ~= 0)
+    local fast = (IsShiftKeyDown and IsShiftKeyDown()) and " 1" or ""
+    return send(string.format("cam fly %d %d %d %.3f%s", f, r, u, yaw, fast))
+end
+function G.PanKey(key, isDown)
+    if isDown == nil then
+        -- a click from elsewhere (no key held): a short hop that way, then the let-go on the next tick
+        held[key] = true
+        local ok = G.FlySend()
+        held[key] = nil
+        return ok
+    end
+    if isDown == false then held[key] = nil else held[key] = true end
+    return G.FlySend()
 end
 function G.PanHeld()
-    if not G.far then for k in pairs(held) do held[k] = nil end; return false end
-    local t, sent = now(), false
-    for dir, last in pairs(held) do
-        if t - last >= G.PAN_EVERY then held[dir] = t; sent = G.Pan(dir) or sent end
+    if not G.far then
+        for k in pairs(held) do held[k] = nil end
+        fly.moving, fly.yaw = false, nil
+        return false
     end
-    return sent
+    local t = now()
+    if t - fly.t < G.FLY_EVERY then return false end
+    local f, r, u = G.FlyVector()
+    if f ~= 0 or r ~= 0 or u ~= 0 then return G.FlySend() end
+    -- nothing held: say a turn of the camera (the ray's facing), or the let-go if it wasn't said
+    local yaw = facing()
+    if fly.moving or (fly.yaw and math.abs(yaw - fly.yaw) > G.FLY_TURN) then return G.FlySend() end
+    return false
 end
 
 -- ---------------------------------------------------------------- the menu at the cursor
@@ -715,6 +755,9 @@ function G.DebugDraw()
             G.b1 and "ours" or "game", G.dragging and "yes" or "no", tostring(G.zoom), G.far and string.format("%.0f", G.far.back) or "-"),
         string.format("cursor=%s,%s  sent=%d/s  hover every %.0f ms", u and string.format("%.3f", u) or "-", v and string.format("%.3f", v) or "-",
             sent.rate, ((G.armed or G.dragging) and G.HOVER_FAST or G.HOVER_EVERY) * 1000),
+        string.format("flight: keys %d %d %d  facing %.2f  %s", G.FlyVector and select(1, G.FlyVector()) or 0,
+            G.FlyVector and select(2, G.FlyVector()) or 0, G.FlyVector and select(3, G.FlyVector()) or 0,
+            (GetPlayerFacing and GetPlayerFacing()) or 0, fly and fly.moving and "flying" or "still"),
         "|cff9fd0ffDen Lite|r",
     }
     for part in (G.dbgLine or "no answer yet: is Den Lite from 4 Nov or later?"):gmatch("[^;]+") do lines[#lines + 1] = part end
@@ -825,6 +868,10 @@ function G.TestAction(w)
     if a == "snap" then return G.Snap() end
     if a == "zoom" then local n = tonumber(w[3]) or 1; for _ = 1, math.min(40, math.abs(n)) do G.Zoom(n > 0 and 1 or -1) end; return true end
     if a == "pan" then return G.Pan(w[3] or "fwd") end
+    -- Den Lite's camera verbs as they are (`gizmo cam build`: the build view back over you)
+    if a == "cam" then return send("cam " .. table.concat(w, " ", 3)) end
+    -- the free flight's key, pressed or let go (`gizmo fly W down`, `gizmo fly W up`)
+    if a == "fly" then return G.PanKey(string.upper(w[3] or "W"), w[4] ~= "up") end
     if a == "cancel" then G.Cancel(); return true end
     if a == "axis" then G.SetAxis(w[3]); return true end
     if a == "wheel" then return G.Wheel(tonumber(w[3]) or 1) end
@@ -882,10 +929,10 @@ local function setup()
     snapBtn:SetScript("OnClick", function() G.Snap() end)
     snapBtn:Hide()
     -- a pan key: down pans at once and keeps panning while held; up stops (a click from elsewhere: one step)
-    for k, dir in pairs(PAN_KEYS) do
+    for k in pairs(PAN_KEYS) do
         local b = CreateFrame("Button", "LeylineGizmoPan" .. k, UIParent)
         if b.RegisterForClicks then b:RegisterForClicks("AnyDown", "AnyUp") end
-        b:SetScript("OnClick", function(_, _, isDown) G.PanKey(dir, isDown) end)
+        b:SetScript("OnClick", function(_, _, isDown) G.PanKey(k, isDown) end)
         b:Hide()
     end
     for k, sign in pairs(TURN_KEYS) do

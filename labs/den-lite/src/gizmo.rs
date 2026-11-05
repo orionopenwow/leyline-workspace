@@ -330,6 +330,8 @@ pub struct Far {
 pub enum FarOut {
     Show([f32; 4]),
     Move([f32; 4], [f32; 4]),
+    /// The free flight (`cam fly`): from where the object is now to `to`, taking this many ms.
+    Glide([f32; 4], [f32; 4], u32),
     Off,
 }
 
@@ -364,6 +366,11 @@ pub struct Aids {
     pub far: Option<Far>,
     /// Where the far-sight object is now (x, y, z, facing), when it is shown.
     pub far_at: Option<[f32; 4]>,
+    /// The far-sight object's move under way: from, to, when it started (ms), how long (ms). Each new move starts
+    /// from where the object is at that moment ([`far_now`]), so the view never snaps back to the last target.
+    pub glide: Option<([f32; 4], [f32; 4], u64, u32)>,
+    /// The free flight's last velocity (yards a second; x, y, z): a let-go eases out along it.
+    pub fly_v: [f32; 3],
     /// The drag's last distance along its axis (for the status line).
     pub dragged: f32,
     /// Build mode (`mode build`): the hover picks and glows.
@@ -631,7 +638,7 @@ fn aid_verb(d: &mut Den, sel: &mut Sel, a: &mut Aids, here: Here, text: &str, ca
             if !build && a.far.is_some() {
                 // leaving build mode: the view is the player's again
                 a.far = None;
-                out.merge(far_update(a));
+                out.merge(far_update(a, now));
             }
             out.merge(sync(d, sel, a));
             out.tell("mode", if build { "build".into() } else { "play".into() })
@@ -854,14 +861,20 @@ fn drag(d: &Den, sel: &mut Sel, a: &mut Aids, here: Here, u: f32, v: f32, aspect
 }
 
 /// The far-sight object where the far view now wants it: shown, moved, or taken away (and the addon's `cam` line).
-fn far_update(a: &mut Aids) -> AidOut {
+fn far_update(a: &mut Aids, now: u64) -> AidOut {
     let to = a.far.map(|f| far_spot(&a.cam, &f));
-    let far = match (a.far_at, to) {
+    let cur = far_now(a, now);
+    let far = match (cur, to) {
         (None, Some(t)) => Some(FarOut::Show(t)),
         (Some(f), Some(t)) if f != t => Some(FarOut::Move(f, t)),
         (Some(_), None) => Some(FarOut::Off),
         _ => None,
     };
+    a.glide = match far {
+        Some(FarOut::Move(f, t)) => Some((f, t, now, crate::farsight::MOVE_MS)),
+        _ => None,
+    };
+    a.fly_v = [0.0; 3];
     a.far_at = to;
     AidOut { far, ..Default::default() }.tell("cam", cam_line(a))
 }
@@ -1351,7 +1364,7 @@ fn cam(d: &Den, sel: &Sel, a: &mut Aids, here: Here, w: &[&str], now: u64) -> Ai
             // the view stays over your Den: at its edge the pan slides along it (4 Nov den-move: W in the build view
             // pans, and the test's three steps forward took the view 48 yards off the Den)
             let (ox, oy) = (x - d.spot.x, y - d.spot.y);
-            let (n, r) = ((ox * ox + oy * oy).sqrt(), d.spot.reach());
+            let (n, r) = ((ox * ox + oy * oy).sqrt(), d.spot.reach() + FLY_MARGIN);
             if n > r {
                 x = d.spot.x + ox * r / n;
                 y = d.spot.y + oy * r / n;
@@ -1370,11 +1383,83 @@ fn cam(d: &Den, sel: &Sel, a: &mut Aids, here: Here, w: &[&str], now: u64) -> Ai
         "build" => {
             a.far = Some(Far { focus: Here { z: d.floor_at(here.x, here.y), ..here }, back: BUILD_BACK, snap: false });
         }
+        // the free flight (owner 4 Nov: "fly like a typical 3d model engine"): `cam fly <fwd> <right> <up> <yaw>
+        // [fast]`, the keys held (-1, 0, 1 each) and the way the camera faces (radians). The addon says it again
+        // every FLY_EVERY ms while a key is held and once when they are let go.
+        "fly" => return fly(d, a, w, now),
         "off" | "near" => a.far = None,
         "where" => return AidOut::default().tell("cam", cam_line(a)),
-        _ => return AidOut::default().said("Usage: cam build | snap | far <n> | pan <dir> <yards> | zoom <yards> | off"),
+        _ => return AidOut::default().said("Usage: cam build | snap | far <n> | pan <dir> <yards> | fly <f> <r> <u> <yaw> [fast] | zoom <yards> | off"),
     }
-    far_update(a)
+    far_update(a, now)
+}
+
+/// The free flight's speeds (yards a second; Shift for the fast one), how far ahead each move goes (ms: longer than
+/// the addon's FLY_EVERY, so the object never stops between two of its messages), and the ease-out on a let-go.
+pub const FLY_SPEED: f32 = 16.0;
+pub const FLY_FAST: f32 = 48.0;
+pub const FLY_AHEAD_MS: u32 = 450;
+pub const FLY_EASE_MS: u32 = 160;
+/// How far past the Den's edge the view may fly (yards), and how high over the ground.
+pub const FLY_MARGIN: f32 = 80.0;
+pub const FLY_TOP: f32 = 250.0;
+
+/// Where the far-sight object is at `now`: along its move under way, else where it was put.
+pub fn far_now(a: &Aids, now: u64) -> Option<[f32; 4]> {
+    let cur = a.far_at?;
+    let Some((f, t, t0, ms)) = a.glide else { return Some(cur) };
+    let k = if ms == 0 { 1.0 } else { (now.saturating_sub(t0) as f32 / ms as f32).clamp(0.0, 1.0) };
+    Some([f[0] + (t[0] - f[0]) * k, f[1] + (t[1] - f[1]) * k, f[2] + (t[2] - f[2]) * k, t[3]])
+}
+
+/// The focus a far-sight object at `p` looks at (the inverse of [`far_spot`]), facing `yaw`.
+pub fn focus_of(cam: &Camera, p: [f32; 4], back: f32, yaw: f32) -> Here {
+    let (so, co) = yaw.sin_cos();
+    let (sp, cp) = cam.pitch.sin_cos();
+    let look = [cp * co, cp * so, -sp];
+    let pivot = add([p[0], p[1], p[2] + cam.far_pivot], look, back);
+    Here { x: pivot[0], y: pivot[1], z: pivot[2] - cam.pivot, o: yaw }
+}
+
+/// `cam fly`: the far-sight object glides from where it is now along the keys held, relative to the way the camera
+/// faces; a let-go eases it out a little along the last velocity. Only in the far view; it stays within
+/// [`FLY_MARGIN`] of the Den's edge and between 1 yard and [`FLY_TOP`] over the ground.
+fn fly(d: &Den, a: &mut Aids, w: &[&str], now: u64) -> AidOut {
+    let num = |i: usize| w.get(i).and_then(|v| v.parse::<f32>().ok()).filter(|v| v.is_finite());
+    let (Some(mut f), Some(cur)) = (a.far, far_now(a, now)) else { return AidOut::default() };
+    let (fw, rt, up) = (num(2).unwrap_or(0.0).clamp(-1.0, 1.0), num(3).unwrap_or(0.0).clamp(-1.0, 1.0), num(4).unwrap_or(0.0).clamp(-1.0, 1.0));
+    let yaw = num(5).unwrap_or(f.focus.o);
+    let fast = w.get(6).is_some_and(|v| *v == "1");
+    let (so, co) = yaw.sin_cos();
+    // forward is the way the camera faces over the ground; right is a quarter turn clockwise; up is up
+    let mut v = [fw * co + rt * so, fw * so - rt * co, up];
+    let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    let (to, ms) = if n > 1e-3 {
+        let sp = if fast { FLY_FAST } else { FLY_SPEED };
+        v = [v[0] / n * sp, v[1] / n * sp, v[2] / n * sp];
+        let k = FLY_AHEAD_MS as f32 / 1000.0;
+        (fly_bound(d, [cur[0] + v[0] * k, cur[1] + v[1] * k, cur[2] + v[2] * k, yaw]), FLY_AHEAD_MS)
+    } else {
+        let v0 = a.fly_v;
+        v = [0.0; 3];
+        let k = FLY_EASE_MS as f32 / 2000.0;
+        (fly_bound(d, [cur[0] + v0[0] * k, cur[1] + v0[1] * k, cur[2] + v0[2] * k, yaw]), FLY_EASE_MS)
+    };
+    a.fly_v = v;
+    f.focus = focus_of(&a.cam, to, f.back, yaw);
+    a.far = Some(f);
+    a.far_at = Some(to);
+    a.glide = Some((cur, to, now, ms));
+    AidOut { far: Some(FarOut::Glide(cur, to, ms)), ..Default::default() }.tell("cam", cam_line(a))
+}
+
+/// A flight spot kept near the Den: within FLY_MARGIN of its edge, 1 to FLY_TOP yards over the ground.
+fn fly_bound(d: &Den, p: [f32; 4]) -> [f32; 4] {
+    let (ox, oy) = (p[0] - d.spot.x, p[1] - d.spot.y);
+    let (n, r) = ((ox * ox + oy * oy).sqrt(), d.spot.reach() + FLY_MARGIN);
+    let (x, y) = if n > r { (d.spot.x + ox * r / n, d.spot.y + oy * r / n) } else { (p[0], p[1]) };
+    let g = d.floor_at(x, y);
+    [x, y, p[2].clamp(g + 1.0, g + FLY_TOP), p[3]]
 }
 
 /// The addon's `cam` line: `far,<back>,<snap 0|1>,<facing deg>` or `near`.
@@ -2168,13 +2253,53 @@ mod tests {
         }
         let f = a.far.unwrap().focus;
         let n = ((f.x - d.spot.x).powi(2) + (f.y - d.spot.y).powi(2)).sqrt();
-        assert!(n <= d.spot.reach() + 0.01, "the view's focus stays over the Den: {n}");
+        assert!(n <= d.spot.reach() + FLY_MARGIN + 0.01, "the view's focus stays near the Den: {n}");
+        cmd(&mut d, &mut sel, &mut a, here, "cam build", true, 100);
         cmd(&mut d, &mut sel, &mut a, here, "preview 2413", true, 200);
         for (i, (u, v)) in [(0.25, -0.35), (0.1, -0.3), (0.0, 0.2)].iter().enumerate() {
             cmd(&mut d, &mut sel, &mut a, here, &format!("hover {}", line(*u, *v)), true, 300 + 100 * i as u64);
             let g = a.ghost.clone().unwrap_or_else(|| panic!("a copy for ({u}, {v}): {:?}", a.at));
             assert!(d.inside(g.x, g.y, g.z), "drawn inside: {g:?}");
         }
+    }
+
+    #[test]
+    fn the_free_flight_glides_from_where_the_camera_is_and_never_snaps_back() {
+        // owner 4 Nov: "it doesn't dynamically fly like a typical 3d model engine": held keys glide on, each move
+        // starting where the camera is at that moment; a let-go eases out; the way the camera faces is forward
+        let (mut d, here) = den();
+        let (mut sel, mut a) = (Sel::default(), Aids::default());
+        cmd(&mut d, &mut sel, &mut a, here, "mode build", true, 0);
+        cmd(&mut d, &mut sel, &mut a, here, "cam build", true, 0);
+        assert!(cmd(&mut d, &mut sel, &mut a, here, "cam fly 1 0 0 0", true, 1000).far.is_some(), "far view on: it flies");
+        let Some(FarOut::Glide(f0, t0, ms)) = cmd(&mut d, &mut sel, &mut a, here, "cam fly 1 0 0 0", true, 1000).far else { panic!() };
+        assert_eq!(ms, FLY_AHEAD_MS);
+        assert!(t0[0] > f0[0] + 5.0 && (t0[1] - f0[1]).abs() < 0.01, "yaw 0 is +x: {f0:?} -> {t0:?}");
+        // 200 ms later (the addon's next message): the new move starts part way, not at the last target
+        let Some(FarOut::Glide(f1, _, _)) = cmd(&mut d, &mut sel, &mut a, here, "cam fly 1 0 0 0", true, 1200).far else { panic!() };
+        assert!(f1[0] > f0[0] && f1[0] < t0[0], "from where it is: {f1:?}");
+        // turning: forward follows the camera (yaw 90 degrees is +y), up goes up, Shift is faster
+        let Some(FarOut::Glide(f2, t2, _)) = cmd(&mut d, &mut sel, &mut a, here, "cam fly 1 0 1 1.5708 1", true, 1400).far else { panic!() };
+        assert!(t2[1] > f2[1] + 5.0 && t2[2] > f2[2], "{f2:?} -> {t2:?}");
+        assert!((a.far.unwrap().focus.o - 1.5708).abs() < 1e-3, "the cursor's ray faces the camera's way too");
+        // let go: a short ease-out, then still
+        let Some(FarOut::Glide(_, t3, ms3)) = cmd(&mut d, &mut sel, &mut a, here, "cam fly 0 0 0 1.5708", true, 1500).far else { panic!() };
+        assert_eq!(ms3, FLY_EASE_MS);
+        assert_eq!(far_now(&a, 5000), Some(t3));
+        // never off into the distance, never under the ground
+        for i in 0..200 {
+            cmd(&mut d, &mut sel, &mut a, here, "cam fly 1 0 -1 0 1", true, 2000 + i * 200);
+        }
+        let p = far_now(&a, 99_000).unwrap();
+        let n = ((p[0] - d.spot.x).powi(2) + (p[1] - d.spot.y).powi(2)).sqrt();
+        assert!(n <= d.spot.reach() + FLY_MARGIN + 0.01 && p[2] >= d.floor_at(p[0], p[1]) + 0.99, "{p:?}");
+        // the cursor's ray from up there still lands on the ground under the focus
+        let f = a.far.unwrap();
+        let back = far_spot(&a.cam, &f);
+        assert!((back[0] - a.far_at.unwrap()[0]).abs() < 0.01 && (back[1] - a.far_at.unwrap()[1]).abs() < 0.01, "focus and object agree");
+        // out of the far view: nothing
+        cmd(&mut d, &mut sel, &mut a, here, "cam off", true, 99_100);
+        assert!(cmd(&mut d, &mut sel, &mut a, here, "cam fly 1 0 0 0", true, 99_200).far.is_none());
     }
 
     #[test]

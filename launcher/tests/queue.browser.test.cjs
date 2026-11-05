@@ -61,7 +61,7 @@ async function open(opts) {
   await page.waitForTimeout(150);
   return { page, ctx, errors };
 }
-const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i;
+const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i;
 
 test('no line: no badge, no card, READY', async () => {
   const { page, ctx, errors } = await open({ status: { state: 'online', ping_ms: 10, players: 120, browser_waiting: 0 } });

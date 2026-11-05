@@ -26,7 +26,7 @@ const PACKS = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'strea
   id: m.id, name: m.name, line: m.line, version: m.version, author: m.author, based_on: m.based_on, status: m.status, profile: m.profile,
   scripts: m.scripts, env: m.env, mods: m.mods, den: m.den, tags: m.tags, jam: null, credit: m.credit || null, settings: m.settings,
   picture: null, own: false }));
-const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i;
+const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i;
 const WRATH = { id: 'c335a-1', name: 'My Wrath', path: 'C:\\Games\\Wrath', build: '3.3.5a', realmlist: '' };
 const VANILLA = { id: 'c1121-1', name: 'My Vanilla', path: 'D:\\Vanilla', build: '1.12.1', realmlist: '' };
 const NET = [

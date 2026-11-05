@@ -13,6 +13,9 @@
     return e;
   };
   const invoke = window.__TAURI__ && window.__TAURI__.core ? window.__TAURI__.core.invoke : async () => { throw "This is a preview page: open it in the Leyline app."; };
+  // never a raw error on the page (friendly.js; review 4 Nov): the core's sentences as they are, anything technical
+  // becomes the fallback (the raw text goes to the console)
+  const oops = (e, fb) => (window.LeylineFriendly ? window.LeylineFriendly(e, fb) : (fb || "Something went wrong. Try again."));
   const REPLACE = "ADDONS_REPLACE:";
 
   // the official realm's name: app.js HANGOUT (loaded first), the one place the launcher's UI keeps it
@@ -115,7 +118,7 @@
       ok = true;
       if (window.LeylineApp && window.LeylineApp.noteInstalled) window.LeylineApp.noteInstalled("leyline:addons", "addons");   // Installed opens on Addons
     } catch (e) {
-      notes[c.id] = [String(e), "bad"];
+      notes[c.id] = [oops(e, "Couldn't install the Leyline addons. Try again in a moment."), "bad"];
     }
     busy.delete(c.id);
     await load(false);
@@ -133,7 +136,7 @@
       if (r.restored && r.restored.length) t += ` Put your own copies back: ${r.restored.join(", ")}.`;
       if (r.still_backed_up && r.still_backed_up.length) t += ` Still in the backup (the place is taken): ${r.still_backed_up.join(", ")}.`;
       notes[c.id] = [t, (r.changed && r.changed.length) || (r.still_backed_up && r.still_backed_up.length) ? "warn" : "ok"];
-    } catch (e) { notes[c.id] = [String(e), "bad"]; }
+    } catch (e) { notes[c.id] = [oops(e, "Couldn't remove the Leyline addons. Close the game and try again."), "bad"]; }
     busy.delete(c.id);
     await load(false);
   }
@@ -318,7 +321,7 @@
       $("ad-set-ask-realm").textContent = OFFICIAL;
       const save = async (args, okText) => {
         try { ov.prefs = await invoke("addons_set_prefs", args); $("ad-set-status").textContent = okText; $("ad-set-status").className = "status ok"; }
-        catch (e) { $("ad-set-status").textContent = String(e); $("ad-set-status").className = "status bad"; }
+        catch (e) { $("ad-set-status").textContent = oops(e, "Couldn't save that. Try again."); $("ad-set-status").className = "status bad"; }
         renderSettings();
       };
       $("ad-set-auto").addEventListener("change", (e) => save({ autoUpdate: e.target.checked }, e.target.checked ? "They update when Leyline starts." : "They update only when you press Update."));
@@ -338,7 +341,7 @@
       const done = await invoke("addons_auto_update");
       for (const u of done || []) {
         const c = clients().find((x) => x.id === u.client);
-        if (c) notes[u.client] = u.error ? [`Couldn't update the Leyline addons: ${u.error}`, "warn"] : [`Updated the Leyline addons in ${c.name} to v${u.version}.`, "ok"];
+        if (c) notes[u.client] = u.error ? [oops(u.error, "Couldn't update the Leyline addons. Leyline tries again next start."), "warn"] : [`Updated the Leyline addons in ${c.name} to v${u.version}.`, "ok"];
       }
       if (done && done.length) await load(false);
     } catch (_) { /* tried again next start */ }

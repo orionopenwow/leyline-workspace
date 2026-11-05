@@ -125,7 +125,15 @@
     const skip = mk("button", "btn small", SKIP); skip.type = "button"; skip.id = "gd-tour-skip";
     const next = mk("button", "btn small primary", NEXT); next.type = "button"; next.id = "gd-tour-next";
     skip.addEventListener("click", () => endTour());
-    next.addEventListener("click", () => { if (tour.i < tour.steps.length - 1) { tour.i++; paintStep(); } else endTour(); });
+    // Next skips a step whose control is out of sight now (a small window, a page moved; review 4 Nov: the tour could
+    // point at nothing); the steps left are counted again so "2 of 3" stays true
+    next.addEventListener("click", () => {
+      const rest = tour.steps.slice(tour.i + 1).filter((t) => find(t));
+      if (!rest.length) { endTour(); return; }
+      tour.steps = tour.steps.slice(0, tour.i + 1).concat(rest);
+      tour.i++;
+      paintStep();
+    });
     row.append(skip, next);
     card.append(n, h, p, row);
     document.body.append(ring, card);

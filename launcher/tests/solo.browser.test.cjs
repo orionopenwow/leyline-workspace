@@ -112,7 +112,7 @@ const row = async (page, name) => (await rrows(page)).find((x) => x.startsWith(n
 const callsOf = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([c]) => c === cmd).map(([, a]) => a), cmd);
 const pageOn = (page) => page.evaluate(() => document.querySelector('.page.on').id);
 const bar = async (page) => [await page.textContent('#play-headline'), await page.textContent('#pb-detail')];
-const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i;
+const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i;
 async function shot(page, name) {
   if (!SHOTS) return;
   await page.screenshot({ path: path.join(SHOTS, name + '.png') });

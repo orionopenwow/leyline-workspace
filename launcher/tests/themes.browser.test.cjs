@@ -139,8 +139,10 @@ test('no painted art, display font or old theme names in the window', async () =
     assert.ok(!r.fonts.some((f) => /Cinzel|Leyline Display|Impact/.test(f)), r.fonts.join(' | '));
     assert.equal(r.brand.replace(/\s+/g, ' ').trim().toLowerCase(), 'leyline launcher');
     assert.match(r.mark, /art\/brand\/leyline-swirl-256\.webp/, 'the header mark is the spinning Leyline mark');
+    // the one legal line in Settings › About may name the publisher (the brand rule's exception)
+    const text = r.text.replace(/not affiliated with or endorsed by Blizzard Entertainment/g, '');
     for (const bad of ['Leyline Classic', 'Rounded', 'parchment', 'World of Warcraft', 'Warcraft', 'Blizzard', 'Lich King']) {
-      assert.ok(!r.text.includes(bad), `${bad} in the window`);
+      assert.ok(!text.includes(bad), `${bad} in the window`);
     }
     assert.ok(!/\bWoW\b/.test(r.text));
     await ctx.close();

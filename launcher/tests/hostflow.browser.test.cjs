@@ -32,7 +32,7 @@ const shot = async (page, name, opts) => {
   }
   else await page.screenshot({ path: path.join(SHOTS, name), fullPage: !!(opts && opts.full) });
 };
-const NO_BRANDS = /warcraft|\bwow\b|lich king|blizzard/i;
+const NO_BRANDS = /warcraft|\bwow\b|lich king|(?<!endorsed by )blizzard/i;
 
 const FAKE = (opts) => {
   const calls = (window.__calls = []);

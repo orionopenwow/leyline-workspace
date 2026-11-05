@@ -181,7 +181,7 @@ test('Looks: the tab, the cards, a preset, a pack in and out, a link, the filter
   assert.ok(!cat.some((id) => id.startsWith('look:')), JSON.stringify(cat));
   assert.ok(await page.isHidden('#looks-discover'));
   const text = await page.evaluate(() => document.body.innerText);
-  assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i);
+  assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

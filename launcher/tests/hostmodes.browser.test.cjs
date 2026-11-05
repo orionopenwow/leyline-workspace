@@ -21,7 +21,7 @@ const MODES = CAT.modes.map((m) => ({ id: m.id, name: m.name, line: m.line, vers
 const RID = 'abcdefghijk2345a';
 const SHOTS = process.env.SHOT_DIR;
 const shot = async (page, name, full) => { if (SHOTS) { await page.waitForTimeout(500); await page.screenshot({ path: path.join(SHOTS, name), fullPage: !!full }); } };   // after the page fade
-const NO_BRANDS = /warcraft|\bwow\b|lich king|blizzard/i;
+const NO_BRANDS = /warcraft|\bwow\b|lich king|(?<!endorsed by )blizzard/i;
 
 const FAKE = (opts) => {
   const calls = (window.__calls = []);

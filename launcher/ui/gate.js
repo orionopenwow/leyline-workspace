@@ -34,12 +34,16 @@
   const realmName = () => (window.LeylineApp && window.LeylineApp.HANGOUT ? window.LeylineApp.HANGOUT.name : "Wrath Unleashed");
   const FILE = "Leyline Hero Key.txt";
   const FIND_EVERY = 3000;
+  // the Downloads check stops after this long with the dialog open (review 4 Nov: a dialog left open for hours kept
+  // looking every 3 s); the window getting focus again starts it for another while
+  const FIND_FOR = 5 * 60 * 1000;
+  let findUntil = 0;
 
   // open: the dialog shows; then: what goes on once signed in (a PLAY); why: the line saying why it
   // opened for that; here: a sign-in started in this dialog (its welcome is shown); note: a line of ours; keyWays: the
   // Hero Key file and paste shown
   let open = false, phase = "in", then = null, why = "", here = false, note = "", keyWays = false, over = false,
-    welcomeT = 0, findT = 0, finding = false, lastFocus = null, known = null;
+    welcomeT = 0, findT = 0, finding = false, lastFocus = null, known = null, typedName = "";
 
   function setOpen(on) {
     if (open === on) return;
@@ -49,7 +53,7 @@
     document.body.classList.toggle("gated", on);
     const f = document.querySelector(".frame");
     if (f) { if (on) f.setAttribute("inert", ""); else f.removeAttribute("inert"); }
-    if (on) { lastFocus = document.activeElement; findSoon(); }
+    if (on) { lastFocus = document.activeElement; findUntil = Date.now() + FIND_FOR; findSoon(); }
     else {
       clearTimeout(findT);
       if (lastFocus && lastFocus.focus && document.contains(lastFocus)) { try { lastFocus.focus(); } catch (_) { /* fine */ } }
@@ -89,7 +93,7 @@
   }
   function findSoon() {
     clearTimeout(findT);
-    if (!open || !tauri) return;
+    if (!open || !tauri || Date.now() > findUntil) return;
     findT = setTimeout(async () => { await findKeyFile(); findSoon(); }, FIND_EVERY);
   }
   function toast(text, onClick) {
@@ -127,13 +131,24 @@
   function go(run) { here = true; note = ""; run(); }
 
   // ---------------------------------------------------------------- a password made for a new login
-  // 4 groups of 4 from letters and digits that can't be mistaken for each other: easy to read out, ~94 bits
+  // 4 groups of 4 from 31 letters and digits that can't be mistaken for each other: easy to read out, 16 x log2(31) =
+  // about 79 bits. Each letter is drawn evenly: a random byte at or over 248 (8 x 31) is thrown away and drawn again,
+  // so no letter comes up more often than another (review 4 Nov: r % 31 leaned a little to the first letters).
   function makePassword() {
     const A = "abcdefghjkmnpqrstuvwxyz23456789";
-    const r = new Uint32Array(16);
-    (window.crypto || window.msCrypto).getRandomValues(r);
+    const cr = window.crypto || window.msCrypto;
+    const LIMIT = 256 - (256 % A.length);
     let out = "";
-    for (let i = 0; i < 16; i++) { if (i && i % 4 === 0) out += "-"; out += A[r[i] % A.length]; }
+    for (let n = 0; n < 16;) {
+      const r = new Uint8Array(32);
+      cr.getRandomValues(r);
+      for (let i = 0; i < r.length && n < 16; i++) {
+        if (r[i] >= LIMIT) continue;
+        if (n && n % 4 === 0) out += "-";
+        out += A[r[i] % A.length];
+        n++;
+      }
+    }
     return out;
   }
   // Create a guest account: made, signed in, a password set; the login kept for Manage account › Your login
@@ -248,10 +263,23 @@
     if (why) { const w = el("p", "gate-why", why); w.id = "gate-why"; card.append(w); }
     const pane = el("div", "gate-pane"); pane.id = "gate-pane";
     card.append(pane);
-    const raw = (f.stage === "error" && f.note) || note;
+    // our own line is the newer one (a sign-in clears it when it starts): it wins over the last sign-in's error
+    const raw = note || (f.stage === "error" && f.note);
     const err = raw && window.LeylineFriendly ? window.LeylineFriendly(raw, "That didn't work. Try again, or use another way below.") : raw;
-    if (err) { const p = el("p", "sf-err", err); p.id = "gate-err"; p.setAttribute("role", "alert"); pane.append(p); }
-    if (down()) {
+    const isDown = down();
+    // the website down: its own box says it, so the error line isn't said twice
+    if (err && !isDown) { const p = el("p", "sf-err", err); p.id = "gate-err"; p.setAttribute("role", "alert"); pane.append(p); }
+    // the fields point at the line that says what went wrong, so a screen reader reads it with them (review 4 Nov)
+    const why2 = err && !isDown ? "gate-err" : isDown ? "gate-down" : "";
+    setTimeout(() => {
+      for (const id of ["gate-pwname", "gate-pw", "gate-key"]) {
+        const x = $(id);
+        if (!x) continue;
+        if (why2) x.setAttribute("aria-describedby", why2); else x.removeAttribute("aria-describedby");
+        if (err && !isDown) x.setAttribute("aria-invalid", "true"); else x.removeAttribute("aria-invalid");
+      }
+    }, 0);
+    if (isDown) {
       const d = el("div", "gate-down"); d.id = "gate-down";
       d.append(el("p", "", "The Leyline website isn't answering, so logging in can't work right now. Everything else in the launcher does."));
       const a = el("div", "gate-acts");
@@ -297,11 +325,21 @@
     const pf = el("form", "sf-form gate-pwform"); pf.id = "gate-pwform"; pf.noValidate = true; pf.autocomplete = "on";
     const l1 = el("label", "sf-label", "Name and #tag"); l1.htmlFor = "gate-pwname";
     const n = el("input"); n.id = "gate-pwname"; n.name = "username"; n.type = "text"; n.autocomplete = "username"; n.spellcheck = false; n.placeholder = "Brightfeather42#1234"; n.maxLength = 40;
+    // the name stays when the dialog is drawn again (a refused password, the website's answer): only the password is typed again
+    n.value = typedName;
+    n.addEventListener("input", () => { typedName = n.value; });
     const l2 = el("label", "sf-label", "Password"); l2.htmlFor = "gate-pw";
     const p = el("input"); p.id = "gate-pw"; p.name = "password"; p.type = "password"; p.autocomplete = "current-password"; p.maxLength = 128;
     const go2 = el("button", "btn small primary", "Log in"); go2.type = "submit"; go2.id = "gate-pwgo";
     const r2 = el("div", "sf-form-row"); r2.append(p, go2);
-    pf.append(l1, n, l2, r2);
+    // Caps Lock on while typing the password: said under it (review 4 Nov)
+    const caps = el("p", "sf-fine gate-caps", "Caps Lock is on."); caps.id = "gate-caps"; caps.hidden = true; caps.setAttribute("aria-live", "polite");
+    const capsCheck = (e) => { if (e.getModifierState) caps.hidden = !e.getModifierState("CapsLock"); };
+    p.addEventListener("keydown", capsCheck); p.addEventListener("keyup", capsCheck);
+    p.addEventListener("blur", () => { caps.hidden = true; });
+    // Enter on the name goes on to the password while it is empty (a password manager fills both: then it logs in)
+    n.addEventListener("keydown", (e) => { if (e.key === "Enter" && !p.value) { e.preventDefault(); p.focus(); } });
+    pf.append(l1, n, l2, r2, caps);
     pf.onsubmit = (e) => {
       e.preventDefault();
       const who = n.value.normalize("NFC").trim().replace(/\s*#\s*/, "#");
@@ -336,7 +374,10 @@
       form.append(lab, row);
       form.onsubmit = (e) => {
         e.preventDefault();
-        const k = findKey(i.value) || (/ovk1\./i.test(i.value) ? i.value : null);
+        // the strict shape, else the line cleaned of spaces and invisible characters, and only if it is all key letters
+        // (review 4 Nov: the raw input, spaces and all, was sent when the strict shape didn't match)
+        const clean = String(i.value || "").replace(/[\s\u00ad\u200b-\u200d\u2060\ufeff]+/g, "");
+        const k = findKey(clean) || (/^ovk1\.[A-Za-z0-9._-]{8,300}$/i.test(clean) ? "ovk1." + clean.slice(5) : null);
         if (!k) { say("That doesn't look like a Hero Key. It starts with ovk1. Paste the whole line."); const x = $("gate-key"); if (x) x.focus(); return; }
         go(() => s.keySignIn(k));
       };
@@ -400,6 +441,13 @@
     if (d.signedIn) { if (S().me()) signedInNow(); }
   });
   document.addEventListener("leyline:signin", () => { if (open && phase !== "welcome" && phase !== "making") render(); });
+  // back to the window (from the browser, where the key was just downloaded): look in Downloads again for a while
+  window.addEventListener("focus", () => {
+    if (!open) return;
+    const was = Date.now() > findUntil;
+    findUntil = Date.now() + FIND_FOR;
+    if (was) { findKeyFile(); findSoon(); }
+  });
 
   // Esc closes (while the browser waits for its code, Esc cancels that first); a click beside the card closes
   document.addEventListener("keydown", (e) => {

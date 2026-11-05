@@ -295,7 +295,7 @@ test('Get your Hero Key: a new account right here; its key shown once, hidden un
   const f = await page.evaluate(() => window.__file);
   assert.equal(f.name, 'Leyline Hero Key.txt');
   assert.match(f.text, /^Leyline Hero Key\r\n\r\nName: Alice#4821\r\nKey: ovk1\.AbCdEf1234\.k{43}\r\nMade: \d{1,2} \w+ \d{4}\r\n\r\nThis key logs you in to your Leyline account on Wrath Unleashed and on every realm that accepts Hero Key\./);
-  assert.doesNotMatch(f.text, /warcraft|wow|blizzard|open vanilla/i);
+  assert.doesNotMatch(f.text, /warcraft|wow|(?<!endorsed by )blizzard|open vanilla/i);
   assert.ok(await called(page, 'social_call', 'a.action === "herokey_saved"'), 'saved tells the website to stop showing it');
   await page.click('#ac-skip');
   await page.waitForSelector('#page-play.on');
@@ -444,7 +444,7 @@ test('Manage account: Play on another PC: the same account moves with the key fi
   assert.match(t, /Log In there with \S+#\d{4} and your password/);
   assert.match(t, /characters are on the realm/);
   assert.match(t, /yours alone/);
-  assert.doesNotMatch(t, /Sign in|world of warcraft|\bwow\b|warcraft|blizzard/i);
+  assert.doesNotMatch(t, /Sign in|world of warcraft|\bwow\b|warcraft|(?<!endorsed by )blizzard/i);
   assert.deepEqual(errors, []);
   await page.close();
 });

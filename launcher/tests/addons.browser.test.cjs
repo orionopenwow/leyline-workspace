@@ -123,7 +123,7 @@ test('Clients: the row on a 3.3.5a card only, Install, then Update and Remove', 
   await page.waitForFunction(() => /Removed the Leyline addons from My Wrath: 31 files\./.test(document.querySelector('#cl-list .ad-slot').textContent));
   assert.deepEqual(await calls(page, 'addons_remove'), [{ client: 'c335a-1' }]);
   const all = await page.textContent('body');
-  assert.doesNotMatch(all, /World of Warcraft|Warcraft|\bWoW\b|Lich King|Blizzard/);
+  assert.doesNotMatch(all, /World of Warcraft|Warcraft|\bWoW\b|Lich King|(?<!endorsed by )Blizzard/);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

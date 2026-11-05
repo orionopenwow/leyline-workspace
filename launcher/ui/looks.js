@@ -25,7 +25,8 @@
   let box = null;
 
   function friendly(e) {
-    return window.LeylineFriendly && window.LeylineFriendly.say ? window.LeylineFriendly.say(e) : String(e);
+    // friendly.js: never the raw error (there is no .say: the old check always fell through to the raw text)
+    return window.LeylineFriendly ? window.LeylineFriendly(e) : "Something went wrong. Try again.";
   }
   function clients() {
     const s = document.getElementById("play-client");

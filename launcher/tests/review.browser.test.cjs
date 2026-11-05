@@ -97,7 +97,7 @@ const callsOf = (page, cmd) => page.evaluate((c) => window.__calls.filter(([x]) 
 const gateOpen = (page) => page.evaluate(() => !document.getElementById('gate').hidden);
 
 // ---- tests
-const BRAND = /world\s*of\s*warcraft|warcraft|lich\s*king|blizzard|\bwow\b/i;
+const BRAND = /world\s*of\s*warcraft|warcraft|lich\s*king|(?<!endorsed by )blizzard|\bwow\b/i;
 const MONEY = /donat|patreon|ko-fi|paypal|tip jar|buy me a coffee|support us/i;
 
 test('website down, signed out: "Continue without logging in" then PLAY again does not open the same dialog again', async () => {
@@ -127,6 +127,22 @@ test('an unsaved guest who logs out can get back in: the dialog offers "Log in a
   await page.waitForSelector('#hf-me-btn');
   await page.click('#hf-me-btn');
   await page.click('#hf-panel .ap-out');
+  // Log out asks first while the guest's login isn't saved (review 4 Nov): Cancel keeps you in, Save my login opens
+  // Manage account, Log out anyway goes on
+  await page.waitForSelector('#so-dlg[open]');
+  assert.match(await page.textContent('#so-dlg-p'), /Brightfeather42#1234 has no saved login yet/);
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'so-save', 'Save my login has the focus');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.isVisible('#hf-me-btn'), true, 'Esc: still logged in');
+  assert.equal((await callsOf(page, 'social_signout')).length, 0);
+  await page.click('#hf-me-btn');
+  await page.click('#hf-panel .ap-out');
+  await page.click('#so-save');
+  await page.waitForSelector('#page-account.on');
+  assert.equal((await callsOf(page, 'social_signout')).length, 0, 'Save my login: not logged out');
+  await page.click('#hf-me-btn');
+  await page.click('#hf-panel .ap-out');
+  await page.click('#so-out');
   await page.waitForSelector('#hf-signin');
   await page.click('#hf-signin');
   await page.waitForSelector('#gate-guest-again');
@@ -247,10 +263,12 @@ test('a technical error from the core never shows raw in the Log in dialog', asy
   await page.click('#gate-keylink');
   await page.fill('#gate-key', KEY);
   await page.click('#gate-keyform button[type=submit]');
-  await page.waitForSelector('#gate-err');
-  const t = await page.textContent('#gate-err');
+  // a network failure reads as the website not answering: its box (with Continue without logging in), never the raw text
+  await page.waitForSelector('#gate-err, #gate-down');
+  const t = await page.textContent('#gate-pane');
   assert.doesNotMatch(t, /error sending|https?:|tls/i, t);
   assert.match(t, /Try again/);
+  assert.equal(await page.getAttribute('#gate-key', 'aria-describedby'), await page.$('#gate-down') ? 'gate-down' : 'gate-err', 'the field points at the line');
   assert.deepEqual(errors, []);
   await page.close();
 });
@@ -284,6 +302,108 @@ test('PLAY pressed before the sign-in check answers never starts the official re
   await page.waitForTimeout(2200);
   assert.deepEqual(await callsOf(page, 'play'), [], 'nothing started signed out');
   assert.equal(await gateOpen(page), true, 'the Log in dialog opened once the check said signed out');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+// ---- the fixes after the review (4 Nov, agent gr-fix-launcher)
+
+test('a realm card started a game: the rebuilt card\'s Play and the bar\'s PLAY are held a moment (one game, not two)', async () => {
+  const { page, errors } = await open({ signed: true, clients: [{ id: 'c335a-1', name: 'My Wrath', path: '/g/wrath', build: '3.3.5a', realmlist: '' }] });
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'realms_list'));
+  await page.click('.nav[data-page="realms"]');
+  await page.click('#rl-tab-community');
+  const play = () => page.locator('#rl-list .realm-card', { hasText: 'Busy Den' }).locator('.rl-play');
+  await play().click();
+  await page.waitForFunction(() => /Started/.test(document.getElementById('rl-status').textContent));
+  // the cards were rebuilt after the start: the new card's Play is off, and a forced click starts nothing
+  assert.equal(await play().isDisabled(), true, 'the rebuilt card is held too');
+  await play().click({ force: true });
+  assert.equal(await page.isDisabled('#play-go'), true, 'the bar\'s PLAY is held as well');
+  await page.waitForTimeout(300);
+  assert.equal((await callsOf(page, 'play_realm')).length, 1, 'one game');
+  await page.waitForFunction(() => !document.querySelector('#play-go').disabled, null, { timeout: 5000 });
+  assert.equal(await play().isDisabled(), false, 'Play comes back after the hold');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('the Log in dialog: a pasted key is cleaned or refused, the name stays after a refused password, Enter moves on', async () => {
+  const { page, errors } = await open({}, () => {
+    const inv = window.__TAURI__.core.invoke;
+    window.__TAURI__.core.invoke = async (cmd, args) => {
+      if (cmd === 'social_password_signin') { window.__calls.push([cmd, args]); throw "That name and password didn't match."; }
+      if (cmd === 'social_key_signin' && !/^ovk1\.[A-Za-z0-9._-]+$/.test(args.key)) { window.__calls.push([cmd, args]); throw 'bad key'; }
+      return inv(cmd, args);
+    };
+  });
+  await page.click('#hf-signin');
+  // Enter on the name goes to the password while it is empty
+  await page.fill('#gate-pwname', 'Alice#4821');
+  await page.press('#gate-pwname', 'Enter');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'gate-pw');
+  await page.fill('#gate-pw', 'wrong-password');
+  await page.press('#gate-pw', 'Enter');
+  await page.waitForSelector('#gate-err');
+  assert.match(await page.textContent('#gate-err'), /didn't match/);
+  assert.equal(await page.inputValue('#gate-pwname'), 'Alice#4821', 'the name is still there');
+  assert.equal(await page.getAttribute('#gate-pw', 'aria-describedby'), 'gate-err');
+  assert.equal(await page.getAttribute('#gate-pw', 'aria-invalid'), 'true');
+  // a key that isn't the strict shape: spaces and an invisible character come out before it is sent
+  await page.click('#gate-keylink');
+  await page.fill('#gate-key', 'ovk1.Abc d​.short');
+  await page.click('#gate-keyform button[type=submit]');
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'social_key_signin'));
+  assert.equal((await callsOf(page, 'social_key_signin'))[0].key, 'ovk1.Abcd.short', 'sent cleaned');
+  // not a key at all: refused here, nothing sent
+  await page.fill('#gate-key', 'ovk1. hello there!');
+  await page.click('#gate-keyform button[type=submit]');
+  await page.waitForFunction(() => /starts with ovk1/.test((document.getElementById('gate-err') || {}).textContent || ''));
+  assert.equal((await callsOf(page, 'social_key_signin')).length, 1);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('the Log in dialog stops looking in Downloads after five minutes open, and looks again when the window is back', async () => {
+  const page = await browser.newPage({ viewport: { width: 1400, height: 860 } });
+  await page.clock.install();
+  await page.route('https://play.openvanilla.app/**', (r) => r.abort());
+  await page.addInitScript(FAKE, {});
+  await page.goto(INDEX);
+  await page.clock.runFor(2000);
+  await page.click('#hf-signin');
+  const looks = () => page.evaluate(() => window.__calls.filter(([c]) => c === 'social_key_found').length);
+  await page.clock.runFor(60 * 1000);
+  const minute = await looks();
+  assert.ok(minute >= 15, `looks every few seconds at first (${minute})`);
+  await page.clock.runFor(5 * 60 * 1000);
+  const after = await looks();
+  await page.clock.runFor(5 * 60 * 1000);
+  assert.equal(await looks(), after, 'then stops');
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.clock.runFor(10 * 1000);
+  assert.ok(await looks() > after, 'the window back: it looks again');
+  await page.close();
+});
+
+test('Settings: the parts to jump to, About with the legal line, and it opens at its top every time', async () => {
+  const { page, errors } = await open({ signed: true });
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'get_state'));
+  await page.click('.nav[data-page="settings"]');
+  await page.waitForSelector('#set-jump .set-jump-b');
+  const jumps = await page.$$eval('#set-jump .set-jump-b', (b) => b.map((x) => x.textContent));
+  assert.equal(jumps[0], 'Your account');
+  assert.ok(jumps.includes('About') && jumps.includes('Advanced'), jumps.join(', '));
+  assert.ok(!jumps.includes('Built in') && !jumps.includes('Installed'), 'only the parts, not the boxes inside them');
+  assert.equal(await page.textContent('#set-legal'), 'Leyline is not affiliated with or endorsed by Blizzard Entertainment.');
+  const order = await page.$$eval('#page-settings .panel > *', (k) => k.map((x) => x.id).filter(Boolean));
+  assert.ok(order.indexOf('p2p-adv') < order.indexOf('set-about') && order.indexOf('set-about') === order.length - 1, 'Advanced, then About last');
+  await page.click('.set-jump-b:text-is("About")');
+  await page.waitForFunction(() => document.querySelector('main').scrollTop > 100);
+  await page.waitForTimeout(1000);   // the smooth scroll ends
+  await page.click('.nav[data-page="settings"]');
+  await page.waitForTimeout(100);
+  assert.equal(await page.evaluate(() => document.querySelector('main').scrollTop), 0, 'Settings again: at its top, not on Advanced');
   assert.deepEqual(errors, []);
   await page.close();
 });

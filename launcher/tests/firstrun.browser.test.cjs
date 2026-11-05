@@ -19,7 +19,7 @@ const { chromium } = require('playwright');
 const INDEX = 'file://' + path.join(__dirname, '..', 'ui', 'index.html');
 const PICTURE = path.join(__dirname, '..', 'ui', 'art', 'leyline-bg.webp');
 const SHOTS = process.env.FIRSTRUN_SHOTS || '';
-const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i;
+const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i;
 const OLD_NAME = /open ?vanilla|openvanilla\.app/i;
 // a version number inside a sentence ("your 3.3.5a folder", "Leyline 0.3 adds"); a chip holding only "3.3.5a" is fine
 const VERSION_PROSE = /[A-Za-z,][ \t]+v?\d+\.\d+(\.\d+)?[a-z]?[ \t]+[a-z]/;

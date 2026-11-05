@@ -139,7 +139,7 @@ async function open(o, scheme = 'dark') {
 const callsOf = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([c]) => c === cmd).map(([, a]) => a), cmd);
 const pageOn = (page) => page.evaluate(() => document.querySelector('.page.on').id);
 const states = (page) => page.$$eval('#sp .sp-step', (l) => l.map((x) => x.id.replace('sp-step-', '') + ':' + x.dataset.state));
-const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i;
+const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i;
 const TITLE = 'Just you and your bot companions, on this PC: dungeons and raids with helper bots, levelling at your pace';
 async function openSingle(page) {
   await page.click('.side .nav[data-page="single"]');

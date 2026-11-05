@@ -99,7 +99,7 @@ test('the picker: the client and its version; the drop-up list in its three grou
   assert.equal(await page.textContent('#pb-realm-ver'), '3.3.5a', 'the official realm runs 3.3.5a: the chip beside its name');
   assert.equal(await page.textContent('#pb-detail'), 'Pick My Wrath');
   const text = await page.evaluate(() => document.body.innerText);
-  assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i);
+  assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -145,7 +145,7 @@ test('no clients: every family greyed; a greyed row opens Find your game files; 
   assert.match(guide, /Windows[\s\S]*Mac[\s\S]*Linux/);
   assert.match(guide, /backup/i);
   assert.match(guide, /friend/i);
-  assert.doesNotMatch(guide, /world of warcraft|\bwow\b|warcraft|lich king|blizzard|torrent/i);
+  assert.doesNotMatch(guide, /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard|torrent/i);
   // the only ways out: the Discord (people help find or restore files) and the player guide; never a download
   assert.deepEqual(await page.$$eval('#page-findfiles a, #page-findfiles [data-link]', (l) => l.map((x) => x.dataset.link || x.href)), ['discord', 'gettingstarted']);
   assert.equal(await page.locator('#page-findfiles .ff-card').count(), 5);

@@ -13,6 +13,8 @@ cd "$(dirname "$0")"
   MARK_BEGIN="# >>> WrathUnleashed streaming (stream-up.sh)"; MARK_END="# <<< WrathUnleashed streaming";
   caddy_reload() { (cd "$CADDY_DIR" && docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile); }; }
 TS=$(date +%Y%m%d-%H%M%S); BK=${WU_BACKUPS:-/root/fastloop-backups}/$TS; mkdir -p "$BK"
+# keep the last ten backups (each holds the portal and its art: they filled the disk otherwise)
+ls -1d "${WU_BACKUPS:-/root/fastloop-backups}"/*/ 2>/dev/null | sort | head -n -10 | xargs -r rm -rf
 
 echo "== 1/2 sign-in page (wu-portal)"
 cp -p "$WU/portal/wrath_portal.py" "$BK/wrath_portal.py"
@@ -73,6 +75,9 @@ rm -f "$BK/bugreport.py"
 [ ! -f "$WU/portal/bugreport.py" ] || cp -p "$WU/portal/bugreport.py" "$BK/bugreport.py"
 # Submit a link, the feedback digest, HQ's Review pages: each backed up when there, removed on rollback when not
 for f in linkqueue.py link-blocklist.json feedback.py staffdesk.py loadouts.py loadouts.json; do rm -f "$BK/$f"; [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
+# Looks, the upstream addons list and the Leyline flags / Host pack listing: the same (review 4 Nov: they were installed
+# below but never backed up, so a rollback left the new copies in place)
+for f in looks.py looks.json upstream_addons.py upstream-addons.json leyline_net.py hostpack.json; do rm -f "$BK/$f"; [ ! -f "$WU/portal/$f" ] || cp -p "$WU/portal/$f" "$BK/$f"; done
 had_admin=""
 if [ -f "$WU/portal/admin.py" ]; then cp -p "$WU/portal/admin.py" "$BK/"; [ ! -f "$WU/portal/wu-mod.py" ] || cp -p "$WU/portal/wu-mod.py" "$BK/"; [ ! -f "$WU/portal/hq.py" ] || cp -p "$WU/portal/hq.py" "$BK/"; had_admin=1; fi
 had_hub=""
@@ -121,6 +126,7 @@ put_back() {
   if [ -n "$had_network" ]; then cp -p "$BK/network.py" "$WU/portal/network.py"; else rm -f "$WU/portal/network.py"; fi
   if [ -f "$BK/bugreport.py" ]; then cp -p "$BK/bugreport.py" "$WU/portal/bugreport.py"; else rm -f "$WU/portal/bugreport.py"; fi
   for f in linkqueue.py link-blocklist.json feedback.py staffdesk.py loadouts.py loadouts.json; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
+  for f in looks.py looks.json upstream_addons.py upstream-addons.json leyline_net.py hostpack.json; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
   if [ -n "$had_admin" ]; then cp -p "$BK/admin.py" "$WU/portal/admin.py"; [ ! -f "$BK/wu-mod.py" ] || cp -p "$BK/wu-mod.py" "$WU/portal/"
     if [ -f "$BK/hq.py" ]; then cp -p "$BK/hq.py" "$WU/portal/hq.py"; else rm -f "$WU/portal/hq.py"; fi
   else rm -f "$WU/portal/admin.py" "$WU/portal/wu-mod.py" "$WU/portal/hq.py"; fi
@@ -502,4 +508,10 @@ echo "  /wrath/leyline-preview hidden hub (200 = on): $c12"
 echo "  warm.html (public): $c1   /data (must stay gated, 302/401/403): $c2   /wrath signed out (200 = saved-key page): $c3"
 echo "  /wrath/art/wu-card.webp (200 = the art is served): $c4"
 echo "  backups: $BK"
+# review 4 Nov: the game data must stay behind the sign-in gate (a 200 here means anyone can download it); the step
+# fails loudly instead of printing FASTLOOP OK under it. Nothing is rolled back by this check: look at the Caddyfile.
+if [ "$c2" = 200 ]; then
+  echo "ERROR: /data/__index answered 200 signed out: the game data is not behind the sign-in gate. Check the Caddyfile's streaming block." >&2
+  exit 1
+fi
 echo "FASTLOOP OK"

@@ -70,7 +70,11 @@ def _int(v, lo=0, hi=2 ** 63):
 
 
 def host_ok(h) -> bool:
-    return isinstance(h, str) and bool(HOST_RE.match(h))
+    """A DNS name, never an IP literal (review 4 Nov: a signed relay record naming 127.0.0.1 or 10.x would make every
+    seed fetch that address, and launchers connect to it)."""
+    if not (isinstance(h, str) and HOST_RE.match(h)):
+        return False
+    return not re.fullmatch(r"[0-9.]+", h)
 
 
 def node_id(pub_hex: str) -> str:

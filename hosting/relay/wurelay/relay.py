@@ -427,7 +427,15 @@ class Relay:
         except FileNotFoundError:
             pass
         except (OSError, ValueError) as e:
-            log.error("state file unreadable (%s): starting empty, not overwriting until next save", e)
+            # review 4 Nov: the next save writes a fresh state over it (every realm's ports would be handed out
+            # again), so the unreadable file is kept beside it for the operator first
+            keep = f"{self.cfg.state_file}.unreadable-{time.strftime('%Y%m%d-%H%M%S')}"
+            try:
+                import shutil
+                shutil.copy2(self.cfg.state_file, keep)
+            except OSError:
+                keep = "(could not copy it)"
+            log.error("state file unreadable (%s): starting empty; the old file is kept as %s", e, keep)
         for rid, r in self.state["realms"].items():
             self.port_owner[r["auth"]] = (rid, 3724)
             self.port_owner[r["world"]] = (rid, 8085)

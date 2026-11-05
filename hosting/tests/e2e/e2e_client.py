@@ -23,12 +23,12 @@ import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from helpers import ws_opener  # noqa: E402  (also puts kit/tools and relay on sys.path)
-from wunet import srp6, wire335, ws  # noqa: E402
+from wunet import domains, srp6, wire335, ws  # noqa: E402
 
 
 def http(method, url, body=None):
     req = urllib.request.Request(url, data=json.dumps(body).encode() if body is not None else None, method=method,
-                                 headers={"Content-Type": "application/json", "Origin": "https://openvanilla.app"})
+                                 headers={"Content-Type": "application/json", "Origin": domains.SITE})  # the relay takes knocks only from the site (F5)
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             return r.status, json.loads(r.read() or b"null")

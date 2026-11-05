@@ -582,6 +582,19 @@ pub fn top_hold(was: P3, now: P3, tops: &[Top]) -> Option<f32> {
         .fold(None, |a: Option<f32>, z| Some(a.map_or(z, |m| m.max(z))))
 }
 
+/// How high a jump reaches (yards over where it started: the game's jump is about 1.6 yd at the top).
+pub const JUMP_REACH: f32 = 1.9;
+
+/// The guard rail on landing from a jump or a fall (the game's MSG_MOVE_FALL_LAND): landed inside a prop marked
+/// Solid whose top a jump reaches (its model has no collision, so the game let you come down through it): its top.
+/// Walking into its side lands nothing, so nothing happens then (the game alone stops you at a side).
+pub fn jump_hold(now: P3, tops: &[Top]) -> Option<f32> {
+    tops.iter()
+        .filter(|t| t.over([now[0], now[1]], 0.1) && now[2] < t.top - SINK && t.top - now[2] <= JUMP_REACH)
+        .map(|t| t.top + LIFT)
+        .fold(None, |a: Option<f32>, z| Some(a.map_or(z, |m| m.max(z))))
+}
+
 /// Fallen through the ground (the feet [`FALL_DEPTH`] under it).
 pub fn through_ground(z: f32, ground: f32) -> bool {
     z.is_finite() && ground.is_finite() && z < ground - FALL_DEPTH
@@ -802,6 +815,10 @@ mod tests {
         let hi = Top { top: 3.0, ..t };
         assert_eq!(top_hold([0.0, 0.0, 3.0], [0.0, 0.0, 2.0], &[t, hi]), Some(3.0 + LIFT));
         assert!(through_ground(-10.0, 0.0) && !through_ground(-2.0, 0.0));
+        // jumped onto it from the ground and came down through it: on top; a tall one a jump can't reach: not
+        assert_eq!(jump_hold([0.5, 0.0, 0.0], &[t]), Some(1.0 + LIFT));
+        assert_eq!(jump_hold([0.5, 0.0, 0.0], &[Top { top: 3.0, ..t }]), None);
+        assert_eq!(jump_hold([5.0, 0.0, 0.0], &[t]), None, "landed beside it");
         assert_eq!(top_under([0.0, 0.0], 2.0, &[t, hi]), Some(1.0), "the table's top, not the shelf above");
         assert_eq!(top_under([5.0, 0.0], 2.0, &[t]), None);
     }

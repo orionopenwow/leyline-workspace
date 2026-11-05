@@ -1068,7 +1068,8 @@ fn guard_rail(c: &Writer, shared: &Shared, sess: &Sess, was: Pos, n: Pos, op: u3
     static LAST: Mutex<Vec<(u64, u64)>> = Mutex::new(Vec::new());
     static COUNTER: AtomicU64 = AtomicU64::new(1_000_000);
     let flags = raw_move(op, body).and_then(|_| movewatch::raw_flags(body)).unwrap_or(0);
-    let up = buildtools::guard(&shared.den.lock().unwrap_or_else(|e| e.into_inner()), [was.x, was.y, was.z], [n.x, n.y, n.z], flags);
+    let landed = op == movewatch::MSG_MOVE_FALL_LAND;
+    let up = buildtools::guard(&shared.den.lock().unwrap_or_else(|e| e.into_inner()), [was.x, was.y, was.z], [n.x, n.y, n.z], flags, landed);
     let Some(z) = up else { return Ok(()) };
     let t = now_ms();
     {

@@ -158,10 +158,11 @@ pub fn tops(d: &Den, all: bool, leave_out: &[u64]) -> Vec<tools::Top> {
         .collect()
 }
 
-/// The guard rail (world.rs, on each move of the player's game): the height to put the player back at, or None.
-/// On a prop marked Solid that the game let you sink into, back on its top; fallen through the ground of a Den on
-/// its own island, back on the ground. Not while flying, swimming or on a transport.
-pub fn guard(d: &Den, was: [f32; 3], now: [f32; 3], flags: u32) -> Option<f32> {
+/// The guard rail (world.rs, on each move of the player's game; `landed`: the move is the game's landing): the height
+/// to put the player back at, or None. On a prop marked Solid that the game let you sink into, or come down through
+/// from a jump, back on its top; fallen through the ground of a Den on its own island, back on the ground. Not while
+/// flying, swimming or on a transport.
+pub fn guard(d: &Den, was: [f32; 3], now: [f32; 3], flags: u32, landed: bool) -> Option<f32> {
     use crate::movewatch::{CAN_FLY, FLYING, ON_TRANSPORT, SWIMMING};
     if flags & (FLYING | CAN_FLY | SWIMMING | ON_TRANSPORT) != 0 || !now.iter().chain(was.iter()).all(|v| v.is_finite()) {
         return None;
@@ -169,7 +170,8 @@ pub fn guard(d: &Den, was: [f32; 3], now: [f32; 3], flags: u32) -> Option<f32> {
     if !d.inside(now[0], now[1], d.floor_at(now[0], now[1])) {
         return None;
     }
-    if let Some(z) = tools::top_hold(was, now, &tops(d, false, &[])) {
+    let solid = tops(d, false, &[]);
+    if let Some(z) = tools::top_hold(was, now, &solid).or_else(|| if landed { tools::jump_hold(now, &solid) } else { None }) {
         return Some(z);
     }
     let ground = d.floor_at(now[0], now[1]);
@@ -1299,16 +1301,23 @@ mod tests {
     fn the_guard_keeps_you_on_a_solid_prop_and_out_of_the_ground() {
         let mut d = Den::new(Spot::default());
         let g = put(&mut d, 2413, 0.0, 0.0);
+        // half size: a yard high by the guess without the player's model table (gizmo.rs extent), a jump's reach
+        d.edit(g, |p| p.scale = Some(0.5)).unwrap();
         let s = d.spot;
         let top = tops(&d, true, &[])[0].top;
+        assert!(top - d.floor_at(s.x, s.y) <= tools::JUMP_REACH, "{top}");
         // not marked Solid: the game's own business
-        assert_eq!(guard(&d, [s.x, s.y, top], [s.x, s.y, top - 1.0], 0), None);
+        assert_eq!(guard(&d, [s.x, s.y, top], [s.x, s.y, top - 1.0], 0, false), None);
         let mut sel = Sel { guid: Some(g), ..Default::default() };
         run(&mut d, &mut sel, "solid on");
-        assert_eq!(guard(&d, [s.x, s.y, top], [s.x, s.y, top - 1.0], 0), Some(top + tools::LIFT));
-        assert_eq!(guard(&d, [s.x, s.y, top], [s.x, s.y, top - 1.0], crate::movewatch::FLYING), None, "flying: free");
+        assert_eq!(guard(&d, [s.x, s.y, top], [s.x, s.y, top - 1.0], 0, false), Some(top + tools::LIFT));
+        assert_eq!(guard(&d, [s.x, s.y, top], [s.x, s.y, top - 1.0], crate::movewatch::FLYING, false), None, "flying: free");
+        // jumped from beside it and landed in it: on top; walked into it (no landing): left alone
+        let floor = d.floor_at(s.x, s.y);
+        assert_eq!(guard(&d, [s.x + 2.0, s.y, floor], [s.x, s.y, floor], 0, true), Some(top + tools::LIFT));
+        assert_eq!(guard(&d, [s.x + 2.0, s.y, floor], [s.x, s.y, floor], 0, false), None);
         // through the ground of the Den's island
-        let fell = guard(&d, [s.x + 6.0, s.y, s.z], [s.x + 6.0, s.y, s.z - 20.0], 0);
+        let fell = guard(&d, [s.x + 6.0, s.y, s.z], [s.x + 6.0, s.y, s.z - 20.0], 0, false);
         assert_eq!(fell, Some(d.floor_at(s.x + 6.0, s.y) + tools::LIFT));
     }
 

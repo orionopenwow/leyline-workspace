@@ -962,7 +962,7 @@ def more_settings(vals: dict, errs: dict) -> str:
                                                                      ("level1", "Level 1 only")])
             + number("bots", "Bots", 0, 200, "0 to 200 (not on the Dalaran hangout or CMaNGOS)")
             + select("signup", "Who can make accounts", [("", "Open when public, invite link when private")] + list(SIGNUPS.items()))
-            + select("herokey", "Hero Key sign-in", [("", "Off"), ("on", "On: Leyline accounts sign in directly"), ("off", "Off")])
+            + select("herokey", "Hero Key sign-in", [("", "Off"), ("on", "On: Leyline accounts log in directly"), ("off", "Off")])
             + select("region", "Region", [("", "Not set")] + list(REGIONS.items()))
             + f'<label for="f-lang">Language<span class="hint">A code like en, de or pt-BR (optional)</span></label>'
               f'<input type="text" id="f-lang" name="lang" maxlength="6" value="{e(v("lang"))}">{er("lang")}'

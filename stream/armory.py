@@ -368,8 +368,8 @@ def index_page(query: dict, css: str, card_meta, realm_name: str, st: Store | No
                  + col("Recent level 80s", recent) + col("Achievement points", points) + col("Guilds", guilds)
                  + '</div></section>')
     parts.append(_footer(st))
-    meta = card_meta("/wrath/armory", f"Armory · {realm_name}")
-    return _page(f"Armory · {realm_name}", "".join(parts), css, meta)
+    meta = card_meta("/wrath/armory", "Armory · Leyline")
+    return _page("Armory · Leyline", "".join(parts), css, meta)
 
 
 def _slot(slot: int, items: dict) -> str:
@@ -389,7 +389,7 @@ def char_page(name: str, css: str, card_meta, realm_name: str, public_host: str,
         body = ('<header class="ly-hero"><h1>Armory</h1></header>'
                 '<section class="ly-panel"><h2>Not found</h2><p class="ly-fine">That character isn\'t in the armory.</p>'
                 + _search_form() + '</section>' + _footer(st))
-        return 404, _page(f"Armory · {realm_name}", body, css, card_meta("/wrath/armory", f"Armory · {realm_name}"))
+        return 404, _page("Armory · Leyline", body, css, card_meta("/wrath/armory", "Armory · Leyline"))
     n = c["name"]
     items = c["items"]
     ilvls = [it["ilvl"] for s, it in items.items() if s not in (3, 18) and it["ilvl"]]

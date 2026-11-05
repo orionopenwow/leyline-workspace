@@ -183,7 +183,7 @@ for label, cookie in (("signed out", ""), ("signed in", "wr_session=good")):
     odd = sorted(set(hosts) - HOSTS)
     check(f"{label}: outside links only to the hosts the site means to link", not odd, odd)
     check(f"{label}: no link to the hub's old preview address (each one a 301)", not preview, preview)
-    known_fail(f"{label}: every page title ends with Leyline (some say the realm's name)", not titles, sorted(set(titles))[:10])
+    known_fail(f"{label}: every page title ends with Leyline (some say the realm's name)", not titles, sorted(set(t for t in titles if "/wrath/b/" not in t))[:12] + sorted(set(titles))[:2])
     known_fail(f"{label}: the sign-in words are \"Log in\" (owner 2 Nov), not \"Sign in\"", not signin,
                f"{sum(signin.values())} on {len(signin)} pages: " + ", ".join(sorted(signin)[:12]))
     if label == "signed out":
@@ -232,6 +232,32 @@ for bad in ("-5", "abc"):
     c.putrequest("POST", "/wrath/leyline/submit"); c.putheader("X-Forwarded-For", "10.7.7.7"); c.putheader("Content-Length", bad)
     c.endheaders(); r = c.getresponse(); r.read()
     check(f"Submit a mod: Content-Length {bad} is a bad request (400), not 'too large'", r.status == 400, r.status)
+
+# ---------------------------------------------------------------- one same-site check for every form (fix round 4 Nov)
+for hd, want in (({"Sec-Fetch-Site": "cross-site"}, 403), ({"Origin": "https://evil.example"}, 403),
+                 ({"Origin": "https://leylinelauncher.com", "Sec-Fetch-Site": "same-origin"}, None),
+                 ({"Origin": "https://play.openvanilla.app"}, None)):
+    st, h, b = req("/wrath/leyline/submit", "POST", "repo=https://github.com/a/b", headers=hd)
+    check(f"Submit a mod: {hd} -> " + ("403 (another site)" if want else "not refused as another site"),
+          st == 403 if want else st != 403, st)
+for path in ("/wrath/bugs", "/wrath/submit"):
+    st, h, b = req(path, "POST", "text=x", cookie="wr_session=good", headers={"Origin": "https://evil.example"})
+    check(f"POST {path} from another site: 403 (the portal's same_site, not only the forum's)", st == 403, st)
+
+
+class _H:
+    def __init__(self, **hd):
+        self.headers = hd
+
+
+check("same_site: a missing Origin is ours, both names are ours, null only with same-origin",
+      wp.same_site(_H()) and wp.same_site(_H(Origin="https://leylinelauncher.com"))
+      and wp.same_site(_H(Origin="https://play.openvanilla.app")) and not wp.same_site(_H(Origin="null"))
+      and wp.same_site(_H(Origin="null", **{"Sec-Fetch-Site": "same-origin"})) and not wp.same_site(_H(Origin="https://x.leylinelauncher.com.evil")))
+check("guest passes off: /wrath?demo=1 is the same 200 as /wrath/demo",
+      req("/wrath?demo=1")[0] == 200 == req("/wrath/demo")[0])
+check("Admin Console for a player who isn't staff: a page with an h1", b"<h1>Staff only</h1>" in wp.admin.denied_page("WR1")
+      if getattr(wp, "admin", None) else True)
 
 # ---------------------------------------------------------------- the kill switch closes the front door too
 FILE = os.path.join(TMP, "data", "leyline", "shutdown.json")

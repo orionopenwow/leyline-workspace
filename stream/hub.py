@@ -5407,7 +5407,8 @@ def get(handler, path: str, query: dict) -> None:
         handler.end_headers()
         return
     limit = hub.portal("browse_limit")
-    if limit is not None and not limit.hit(handler.ip(), 600):
+    bucket = hub.portal("rl_bucket")   # one IPv6 /64 is one visitor, like every other limit (site review 4 Nov)
+    if limit is not None and not limit.hit(bucket(handler.ip()) if callable(bucket) else handler.ip(), 600):
         handler.send(429, b"too many requests\n", "text/plain")
         return
     if path == FEED:
@@ -5487,6 +5488,10 @@ def post(handler, path: str) -> None:
         handler = _Live(handler)
     if path != BASE + "/submit":
         handler.send(405, b"method not allowed\n", "text/plain")
+        return
+    same = hub.portal("same_site")   # site review 4 Nov: any site could queue an entry through this anonymous form
+    if callable(same) and not same(handler):
+        handler.send(403, b"that form came from another site\n", "text/plain")
         return
     try:
         length = int(handler.headers.get("Content-Length", "0"))

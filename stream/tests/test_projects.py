@@ -161,12 +161,12 @@ def err(h):
 
 # ---------------------------------------------------------------- sign-in required
 st, _, h = req("GET", "/wrath/mods/submit")
-check("signed out: a sign-in button, no form", st == 200 and "/login?next=%2Fwrath%2Fmods%2Fsubmit" in h and "<form class=\"wk-form\"" not in h)
+check("signed out: a Log in button, no form", st == 200 and "/wrath/signin?next=%2Fwrath%2Fmods%2Fsubmit" in h and "<form class=\"wk-form\"" not in h)
 st, _, h = req("POST", "/wrath/mods/submit", "", {"url": "https://github.com/alice/frame-kit", "category": "interface",
                                                   "builds": "any", "description": "Unit frames, rebuilt nicely."})
 check("signed out: POST refused, nothing stored", st == 403 and records() == [])
 st, _, h = req("GET", "/wrath/mods/submit", "nobody")
-check("an expired session is signed out", "Sign in to add a link" in h)
+check("an expired session is signed out", "Log in to add a link" in h)
 st, _, h = req("GET", "/wrath/mods/submit", "down")
 check("website down: a clear 503", st == 503 and "isn't answering" in h)
 st, _, h = req("GET", "/wrath/mods/submit", "alice")
@@ -454,7 +454,10 @@ case "$1" in
   *) exit 0 ;;
 esac
 """)
-for tool, body in (("curl", 'echo 200'), ("sleep", 'exit 0')):
+# The fake curl answers like the real site signed out: the game data and the Admin Console are not 200 (fastloop.sh
+# fails the step when they are, review 4 Nov), everything else is.
+CURL = 'for a in "$@"; do last="$a"; done\ncase "$last" in */data/__index|*/wrath/admin) echo 302;; *) echo 200;; esac'
+for tool, body in (("curl", CURL), ("sleep", 'exit 0')):
     open(os.path.join(FB, tool), "w").write("#!/usr/bin/env bash\n" + body + "\n")
 for f in os.listdir(FB):
     os.chmod(os.path.join(FB, f), 0o755)
@@ -462,7 +465,7 @@ open(os.path.join(FL, "Caddyfile"), "w").write("play.example {\n}\n")
 
 # ---------------------------------------------------------------- List your mod through the portal (stream/listings.py)
 st, hd, body = req("GET", "/wrath/mods/list")
-check("List your mod: the page is served (signed out: sign in)", st == 200 and "List your mod" in body and "Sign in" in body, st)
+check("List your mod: the page is served (signed out: Log in)", st == 200 and "List your mod" in body and "Log in" in body, st)
 st, hd, body = req("POST", "/wrath/api/listings/check", raw=b'{"url":"https://github.com/alice/frame-kit"}')
 check("List your mod: the API needs a sign-in", st in (400, 401, 503), (st, body[:200]))
 check("List your mod: HQ's listing actions are registered", wp.admin is None or "listing.approve" in wp.admin.ACTIONS)

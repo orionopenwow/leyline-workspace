@@ -379,6 +379,18 @@ if duels is not None:
     duels.bind(lambda name: globals()[name])
 
 
+def same_site(h) -> bool:
+    """A form POST from our own pages: not cross-site, and the Origin (when sent) is this site on either of its names
+    (SITE_ORIGINS). A sandboxed or privacy context can send "Origin: null": allowed only with Sec-Fetch-Site:
+    same-origin. One copy for every module (site review 4 Nov: the bug form and the link queue only checked this when
+    forum.py had loaded, and the hub's anonymous "Submit a mod" not at all)."""
+    sfs = h.headers.get("Sec-Fetch-Site", "")
+    if sfs == "cross-site":
+        return False
+    origin = h.headers.get("Origin", "")
+    return not origin or origin in SITE_ORIGINS or (origin == "null" and sfs == "same-origin")
+
+
 def signin_url(nxt: str = "/wrath") -> str:
     """The sign-in for a page of ours: the Leyline sign-in (stream/profiles.py), else the website's own."""
     if profiles is not None and profiles.store is not None:
@@ -439,6 +451,10 @@ if BRAND:
 else:
     REALM_NAME = os.environ.get("REALM_NAME", "WrathUnleashed")
     SITE_NAME = REALM_NAME
+# The name at the end of every page title (the browser tab): the site is Leyline whatever the realm is called (site
+# review 4 Nov: some tabs said "· WrathUnleashed", the realm's name, and the rest "· Leyline"). A community's brand
+# file renames it on the way out like every other "Leyline" (brandfile.apply).
+TITLE_NAME = "Leyline"
 # "Back to ..." on the hop bar and the in-game Leyline window: the main realm by its name.
 BACK_LABEL = f"Back to {REALM_NAME}" if BRAND else "Back to Wrath"
 # The brand switch's safety net (send() runs every text/html and JSON answer through it while BRAND is on): an old
@@ -1713,7 +1729,7 @@ def render(body: str, nonce: str = "", script: str = "", wide: bool = False, met
     styles the same classes itself, WU_BOX_CSS). path: the page's address (the frame's phone tip comes back to it)."""
     s = f'<script nonce="{nonce}">{script}</script>' if script else ""
     if chrome:
-        full = f"{title} · {SITE_NAME}" if title else SITE_NAME
+        full = f"{title} · {TITLE_NAME}" if title else TITLE_NAME
         framed = hub_frame(full, f'<div class="wu-pg{" wide" if wide else ""}"><div class="wu-box">{body}</div></div>{s}',
                            path, current, nonce=nonce if script else "", css=WU_BOX_CSS, meta=meta)
         if framed is not None:
@@ -1722,7 +1738,7 @@ def render(body: str, nonce: str = "", script: str = "", wide: bool = False, met
         body = f"<style>{css}</style>{body}"
     v = theme_version()
     theme = f'<link rel="stylesheet" href="{art_url("wu-theme.css")}?v={v}">' if v and not BRAND else ""   # brand on: the flat look
-    full = f"{title} · {SITE_NAME}" if title else SITE_NAME
+    full = f"{title} · {TITLE_NAME}" if title else TITLE_NAME
     top = (SKIP_LINK + site_nav(current, signed_in)) if chrome else ""
     end = ((next_block(next_step) if next_step else "") + site_footer()) if chrome else ""
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
@@ -1745,11 +1761,11 @@ RULE = '<hr class="rule wu-divider">'
 def signed_out_page() -> bytes:
     return render(
         f'{crest(REALM_NAME)}<p class="sub">Wrath · on the Leyline network</p>{RULE}'
-        f'<p class="center"><a class="btn primary" href="{html.escape(signin_url("/wrath"))}">Sign in</a></p>'
+        f'<p class="center"><a class="btn primary" href="{html.escape(signin_url("/wrath"))}">Log in</a></p>'
         '<p class="fine center">Played here before? Use the same sign-in. Your Wrath login appears here.</p>'
         '<p class="fine center"><a href="/wrath/realms">All realms</a>, including community realms hosted by players · '
         '<a href="/wrath/leyline">What is Leyline?</a></p>',
-        meta=card_meta("/wrath"), title="Sign in", current="play")
+        meta=card_meta("/wrath"), title="Log in", current="play")
 
 
 def stream_off_page() -> bytes:
@@ -1835,8 +1851,8 @@ document.body.appendChild(f);f.submit()},function(){if(!done){done=true;clearTim
 def auto_signin_page(nonce: str) -> bytes:
     return render(
         f'{crest(REALM_NAME)}<p class="sub">Signing you in…</p>{RULE}'
-        f'<p class="fine center"><a href="{SIGN_IN_URL}">Sign in another way</a></p>',
-        nonce, AUTO_SIGNIN_JS, meta=card_meta("/wrath"), title="Sign in", current="play")
+        f'<p class="fine center"><a href="{SIGN_IN_URL}">Log in another way</a></p>',
+        nonce, AUTO_SIGNIN_JS, meta=card_meta("/wrath"), title="Log in", current="play")
 
 REALM_CSS = """
 .realm{position:relative;border:1px solid #4a3b1c;border-radius:4px;padding:16px 18px;margin:14px 0;background:rgba(5,4,12,.55);box-shadow:inset 0 0 0 1px rgba(0,0,0,.4)}
@@ -1926,7 +1942,7 @@ def account_page(display: str, user: str, password: str, nonce: str) -> bytes:
         f'<code>set realmlist {html.escape(PUBLIC_HOST)}</code></li>'
         '<li>Log in with the account and password above. They are not your website sign-in: '
         'this account name and password are made for the game.</li></ol>'
-        '<p class="fine">This login is yours alone. Sign in here again any time to see it.</p></details></div>'
+        '<p class="fine">This login is yours alone. Log in here again any time to see it.</p></details></div>'
         f'<p class="fine foot">No game files? Dalaran needs none. For the whole world: '
         f'{html.escape(DISCORD_HELP.split(DISCORD_URL)[0])}<a href="{DISCORD_URL}">{html.escape(DISCORD_URL.split("//")[-1])}</a></p>'
         + host_plus("account") +
@@ -2209,7 +2225,7 @@ def realms_page(query: dict | None = None) -> bytes:
                 'is players online, uptime and staff picks: nothing can be bought. '
                 '<a href="/wrath/leyline">What is Leyline?</a></p>'
                 + (f'<p class="fine">{" · ".join(stamps)}</p>' if stamps else ''))
-        return render(body, wide=True, meta=card_meta("/wrath/realms", f"Realms · {REALM_NAME}"), title="Realms",
+        return render(body, wide=True, meta=card_meta("/wrath/realms", f"Realms · {TITLE_NAME}"), title="Realms",
                       current="realms", next_step="host")
     official = (
         f'<div class="realm"><h2>{html.escape(SAMPLER_NAME if SAMPLER else REALM_NAME)}</h2>'
@@ -2275,7 +2291,7 @@ def realms_page(query: dict | None = None) -> bytes:
             '(nobody sees anyone\'s home address). Each host sets their own house rules and is the GM there. '
             '<a href="/wrath/leyline">What is Leyline?</a></p>'
             + (f'<p class="fine">{" · ".join(stamps)}</p>' if stamps else ''))
-    return render(body, wide=True, meta=card_meta("/wrath/realms", f"Realms · {REALM_NAME}"), title="Realms",
+    return render(body, wide=True, meta=card_meta("/wrath/realms", f"Realms · {TITLE_NAME}"), title="Realms",
                   current="realms", next_step="host")
 
 
@@ -3055,7 +3071,7 @@ def leyline_page() -> bytes:
         + shot("durotar", "Every bar, ready", "A clean modern interface: every action bar on with common keys, sized to your screen.")
         + '</div><p class="ly-fine">Screenshots from the live browser client.</p></section>'
         '<section class="ly-panel" aria-labelledby="ly-what"><h2 id="ly-what">What Leyline does</h2><div class="ly-grid">'
-        + feat("Play in the browser", f"No install: sign in with a Hero Key and play the flagship realm, {REALM_NAME}. "
+        + feat("Play in the browser", f"No install: log in with a Hero Key and play the flagship realm, {REALM_NAME}. "
                "Dalaran hangout, level 1 or a boost to 80, and a Dungeon Finder where labelled bots fill the group.")
         + feat("Host your own realm", "Run a realm on your own PC with the Host pack: your own GM login, house rules and "
                "world preset. Private by invite link, or public on the realm list.")
@@ -3126,14 +3142,14 @@ def not_found_page() -> bytes:
             '<p class="ly-lede">Nothing lives at this address. The link may be old or mistyped. Everything else is one click away.</p>'
             '</header><section class="ly-panel" aria-labelledby="nf-go"><h2 id="nf-go">Where to next</h2>'
             f'<div class="ly-grid">{"".join(cards)}</div></section>')
-    framed = hub_frame(f"Not found · {REALM_NAME}",
+    framed = hub_frame(f"Not found · {TITLE_NAME}",
                        '<div class="wu-pg wide nf"><div class="wu-box"><h1>Not found</h1>'
                        '<p class="sub">Nothing lives at this address. The link may be old or mistyped. Everything else is one click away.</p>'
                        f'<h2 id="nf-go">Where to next</h2><div class="nf-grid">{"".join(cards)}</div></div></div>',
                        "/wrath", "", css=WU_BOX_CSS + NF_CARD_CSS, noindex=True)
     if framed is not None:
         return framed
-    return ly_shell(f"Not found · {REALM_NAME}", body, "/wrath/leyline", "", "play", NOT_FOUND_CSS, noindex=True)
+    return ly_shell(f"Not found · {TITLE_NAME}", body, "/wrath/leyline", "", "play", NOT_FOUND_CSS, noindex=True)
 
 
 # ----------------------------------------------------------------------------------------------
@@ -3326,7 +3342,7 @@ def start_page() -> bytes:
     head = '<h1>Start here</h1><p class="sub">New to Leyline? Pick one. Every one is free, and you can do the rest later.</p>'
     fine = ('<p class="fine">Want more? The <a href="/wrath/docs/getting-started">player guide</a> has the details, and the '
             f'<a href="{e(DISCORD_URL)}" rel="noopener noreferrer">Discord</a> has people to help.</p>')
-    title = f"Start here · {REALM_NAME}"
+    title = f"Start here · {TITLE_NAME}"
     meta = card_meta(START_PATH, "Start here · Leyline")
     framed = hub_frame(title, f'<div class="wu-pg wide st"><div class="wu-box">{head}{grid}{fine}</div></div>', START_PATH, "",
                        css=WU_BOX_CSS + START_CSS, meta=meta)
@@ -3352,7 +3368,7 @@ def download_page() -> bytes | None:
     if downloads_mod is None:
         return None
     inner = downloads_mod.page_body(launcher_download())
-    title = f"Download · {REALM_NAME}"
+    title = f"Download · {TITLE_NAME}"
     meta = card_meta(DOWNLOAD_PATH, "Download Leyline")
     framed = hub_frame(title, f'<div class="wu-pg wide"><div class="wu-box">{inner}</div></div>', DOWNLOAD_PATH, "",
                        css=WU_BOX_CSS + downloads_mod.CSS, meta=meta)
@@ -3379,7 +3395,7 @@ def looks_page(query: dict) -> bytes:
     except Exception:   # noqa: BLE001
         offered = None
     inner = looks_mod.body(q, labels=labels, offered=offered, download=download_link(), pictures=not gamedata_off())
-    title = f"Looks · {REALM_NAME}"
+    title = f"Looks · {TITLE_NAME}"
     meta = card_meta(LOOKS_PATH, "Looks · Leyline")
     framed = hub_frame(title, inner, LOOKS_PATH, "looks", css=WU_BOX_CSS + looks_mod.CSS, meta=meta)
     if framed is not None:

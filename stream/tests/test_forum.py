@@ -135,8 +135,8 @@ check("the forum: 200 signed out, the six categories in order", st == 200 and al
       and body.index("Share your realm") < body.index("Mods &amp; addons") < body.index("Announcements"), body[:300])
 check("the forum: the hub's look (its header and tokens), the Forum item lit, no script", 'class="hb-top"' in body and "--lk-bg" in body
       and re.search(r'class="hb-ni on" href="/wrath/leyline/forum" aria-current="page"', body) and "<script" not in body)
-check("the forum: a big Join the Discord and Sign in to post", "Join the Discord" in body and wp.DISCORD_URL in body
-      and "Sign in to post" in body and "/login?next=%2Fwrath%2Fleyline%2Fforum%2Fnew" in body)
+check("the forum: a big Join the Discord and Log in to post", "Join the Discord" in body and wp.DISCORD_URL in body
+      and "Log in to post" in body and "/login?next=%2Fwrath%2Fleyline%2Fforum%2Fnew" in body)
 check("the forum: Hub preview stays noindex while the front door is off", hd.get("X-Robots-Tag", "").startswith("noindex"))
 st, hd, _ = req("GET", "/wrath/leyline-preview/forum/c/help?page=2")
 check("the preview's address sends a 301 to the forum's own", st == 301 and hd.get("Location") == "/wrath/leyline/forum/c/help?page=2")
@@ -191,7 +191,7 @@ check("an image address is only a link (no <img> from a post), no HTML from the 
       "i.example/shot.png\"" not in body.replace('href="https://i.example/shot.png"', "") and "<img src=\"https://" not in body
       and "&lt;script&gt;alert(1)&lt;/script&gt; &lt;b&gt;bold&lt;/b&gt;" in body and 'href="javascript' not in body)
 check("line breaks kept as text (pre-wrap)", "white-space:pre-wrap" in body and "How do I share my realm?\nHere is a shot" in body)
-check("signed out: Sign in to reply, no reply form, no Report link", "Sign in to reply" in req("GET", f"/wrath/leyline/forum/t/{T1}")[2]
+check("signed out: Log in to reply, no reply form, no Report link", "Log in to reply" in req("GET", f"/wrath/leyline/forum/t/{T1}")[2]
       and 'action="/wrath/leyline/forum/t/' not in req("GET", f"/wrath/leyline/forum/t/{T1}")[2])
 
 # the rules for what is written (bob: also new, so space the posts out)
@@ -449,7 +449,7 @@ check("CSRF: the website cookie alone can't post to the JSON (Bearer only)", st 
 st, _, doc = tpost("reply", {"thread": TL, "body": "cross"}, cookie="alice", origin="https://evil.example")
 check("CSRF: a cross-site page with the visitor's cookie: refused", st == 401)
 st, _, doc = tpost("reply", {"thread": TL, "body": "x"}, "A" * 43)
-check("an unknown token: 401 (the launcher signs out)", st == 401 and "Sign in again" in doc.get("error", ""))
+check("an unknown token: 401 (the launcher signs out)", st == 401 and "Log in again" in doc.get("error", ""))
 st, _, doc = tpost("mine", {}, TOK)
 check("launcher: mine lists the player's own threads only", st == 200 and [t["id"] for t in doc.get("threads", [])][:1] == [TL]
       and all(F.thread(t["id"])["author_acct"] == "WR000004" for t in doc["threads"]), doc)
@@ -630,7 +630,7 @@ _, _, p2 = req("GET", f"/wrath/leyline/forum/t/{TA}?page=2", "bob")
 _, _, pz = req("GET", f"/wrath/leyline/forum/t/{TA}?page=abc")
 check("thread pages: page 1 has Later and no reply form", "Page 1 of 2" in p1 and f"?page=2" in p1 and 'name="body"' not in p1)
 check("... the last page has Earlier and the reply form", "Page 2 of 2" in p2 and "Earlier" in p2 and 'name="body"' in p2)
-check("... a bad page number reads as page 1, signed out", "Page 1 of 2" in pz and "Sign in to reply" not in pz)
+check("... a bad page number reads as page 1, signed out", "Page 1 of 2" in pz and "Log in to reply" not in pz)
 last = F.posts(TA, 2)[0][-1]["id"]
 check("page_of finds a post's page (the reply's redirect)", F.page_of(last) == 2)
 

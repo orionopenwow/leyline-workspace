@@ -1243,7 +1243,7 @@ def _auth(h, post: bool):
         tok = authz[7:].strip()
         acct = store.token_acct(tok)
         if not acct:
-            _json(h, 401, {"error": "Signed out. Sign in again from the launcher."})
+            _json(h, 401, {"error": "Signed out. Log in again from the launcher."})
             return None
         return acct, "token", tok
     if post:   # a cookie POST: not from another site, and the token from GET me
@@ -1260,7 +1260,7 @@ def _auth(h, post: bool):
         _json(h, 503, {"error": "The website isn't answering right now."})
         return None
     if who is None:
-        _json(h, 401, {"error": "Sign in first."})
+        _json(h, 401, {"error": "Log in first."})
         return None
     sess = _session(h.headers.get("Cookie", ""))
     if post and not hmac.compare_digest(h.headers.get("X-Leyline-CSRF", ""), csrf_for(sess)):
@@ -1592,7 +1592,7 @@ def link_page(h, query: dict, note: str = "", typed: str = "") -> None:
                 parts.append(
                     f'<p>Your Leyline launcher should show this code:</p><p class="code">{e(hs)}</p>'
                     f"<p>If it does, approve to sign it in as <b>{e(p['name'])}#{e(p['tag'])}</b>. "
-                    "<b>If someone sent you this link, don't</b>: approving would let their launcher sign in as you.</p>"
+                    "<b>If someone sent you this link, don't</b>: approving would let their launcher log in as you.</p>"
                     f'<div class="row">{approve}</div>' if same_ip else
                     f'<form id="sl-go" method="post" action="{LINK_PAGE}" hidden>'
                     f'<input type="hidden" name="code" value="{e(hint)}">'
@@ -1613,7 +1613,7 @@ def link_page(h, query: dict, note: str = "", typed: str = "") -> None:
             hs = hint[:4] + "-" + hint[4:]
             parts.append(f'<p>This link came with the code <span class="code">{e(hs)}</span>. Compare it with the code '
                          "your Leyline launcher shows on this computer. <b>If someone sent you this link, stop here</b>: "
-                         "approving it would let their launcher sign in as you.</p>")
+                         "approving it would let their launcher log in as you.</p>")
         parts.append(f'<form method="post" action="{LINK_PAGE}"><p><label>Type the code shown in your launcher: '
                      '<input type="text" name="code" maxlength="9" autocomplete="off" autocapitalize="characters" '
                      'spellcheck="false" placeholder="XXXX-XXXX" required></label> '

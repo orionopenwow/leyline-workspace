@@ -581,8 +581,11 @@ def post(h, path: str) -> None:
     if path != PAGE:
         h.send(405, b"method not allowed\n", "text/plain")
         return
+    same = P("same_site")   # the portal's one check (wrath_portal.same_site); the forum's copy if that is missing
     fm = P("forum")
-    if fm is not None and hasattr(fm, "_same_site") and not fm._same_site(h):
+    if not callable(same) and fm is not None and hasattr(fm, "_same_site"):
+        same = fm._same_site
+    if callable(same) and not same(h):
         h.send(403, page(None, "That form came from another site."))
         return
     form = _read_form(h)

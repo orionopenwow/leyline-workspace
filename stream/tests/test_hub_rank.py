@@ -258,8 +258,8 @@ st, _, h = call("POST", "/wrath/api/hub/rate", "id=theme%3Anight-sky&stars=1&t="
 check("item form: a wrong token is refused (sent back with a note)", st == 303 and "Reload" in urllib.parse.unquote(h["location"])
       and RK.store.mine(THEME, "WR000001") == 5)
 st, page, _ = call("GET", "/wrath/leyline-preview/p/" + LINK.replace(":", "-"))
-check("item page: a community link has no Install button, signed out sees Sign in to rate",
-      "leyline://" not in page and "Sign in</a> to rate" in page)
+check("item page: a community link has no Install button, signed out sees Log in to rate",
+      "leyline://" not in page and "Log in</a> to rate" in page)
 st, page, _ = call("GET", "/wrath/leyline-preview/p/theme-ember")
 check("item page: a theme without a download has no Install button", st == 200 and "leyline://" not in page)
 

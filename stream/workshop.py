@@ -452,7 +452,7 @@ class Workshop:
                           lambda mm: mm.group(1) + d + mm.group(2), meta)
         nav = ('<nav class="ly-nav" aria-label="Leyline"><div class="grp">'
                '<a href="/wrath/leyline">Hub</a><a href="/wrath/realms">Realms</a><a href="/wrath/mods">Mods</a></div>'
-               '<div class="grp"><a href="/login?next=%2Fwrath">Sign in</a><a class="hot" href="/wrath">Play now</a></div></nav>')
+               '<div class="grp"><a href="/wrath/signin?next=%2Fwrath">Log in</a><a class="hot" href="/wrath">Play now</a></div></nav>')
         return (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
                 f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">'
                 f'<title>{e(title)}</title>{meta}<style>{self.css()}{WORKSHOP_CSS}</style></head>'
@@ -816,8 +816,8 @@ class Workshop:
                         f'<input type="hidden" name="t" value="{self._token(req, "report:" + pid)}">'
                         '<button class="wk-btn quiet" type="submit">Report</button></form>')
         elif not hidden:
-            actions += (f'<a class="wk-btn quiet" href="/login?next={urllib.parse.quote("/wrath/mods/p/" + pid, safe="")}">'
-                        'Sign in to report</a>')
+            actions += (f'<a class="wk-btn quiet" href="/wrath/signin?next={urllib.parse.quote("/wrath/mods/p/" + pid, safe="")}">'
+                        'Log in to report</a>')
         if admin:
             act = "unhide" if hidden else "hide"
             actions += (f'<form method="post" action="/wrath/mods/p/{pid}/{act}">'
@@ -848,9 +848,9 @@ class Workshop:
             inner = '<p class="wk-msg" role="alert">The website isn\'t answering right now. Please try again shortly.</p>'
             status = 503
         elif not isinstance(me, dict) or not me:
-            inner = ('<p>Sign in with your Hero Key (or Google) to add a link. Each link shows its author, licence and '
+            inner = ('<p>Log in with your Hero Key (or Google) to add a link. Each link shows its author, licence and '
                      'repo, and most list straight away.</p><p class="wk-actions"><a class="wk-btn violet" '
-                     'href="/login?next=%2Fwrath%2Fmods%2Fsubmit">Sign in to add a link</a></p>')
+                     'href="/wrath/signin?next=%2Fwrath%2Fmods%2Fsubmit">Log in to add a link</a></p>')
         elif self.projects is None or not self.projects.writable():
             inner = '<p class="wk-msg" role="alert">Adding links is closed right now. Please try again later.</p>'
         else:

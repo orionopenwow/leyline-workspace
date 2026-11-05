@@ -2359,6 +2359,8 @@ pub fn run() {
             // Host pack, Docker, realm stop/logs/invite, P2P and torrent flags (src/p2p/cmds.rs)
             crate::p2p::cmds::hostpack_info,
             crate::p2p::cmds::hostpack_install,
+            crate::p2p::cmds::bots_status,
+            crate::p2p::cmds::bots_update,
             crate::p2p::cmds::docker_info,
             crate::p2p::cmds::docker_start, // Start Docker: Docker Desktop's own start, else its app (host/docker.rs start)
             crate::p2p::cmds::host_profiles, // host any client (host/profiles.rs)

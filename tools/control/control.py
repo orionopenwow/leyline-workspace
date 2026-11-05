@@ -205,6 +205,9 @@ STEPS = {
     "slice-health": ("stream/Slice health - check.bat", "Read-only: is the streamed slice whole (key files, its tier lists, what wu-play answers)", False),
     "ship":    ("Ship to GitHub.bat", "Save everything to GitHub", True),
     "ship-again": ("tools/ship/Save again as one fresh commit.bat", "Save to GitHub again as one fresh commit (after GitHub refused a save)", False),
+    # the bot smoke test (docs/BOTS-UPDATES.md): a throwaway realm from the canary images (bots-canary.yml) on this PC's
+    # own extracted game data, a headless player, the bots checked, all removed after. Touches no realm of yours.
+    "bots-smoke": ("realm/Bots smoke test.bat", "Bot smoke test: a throwaway realm from the newest canary bots, a test player, bots join, go into a dungeon, follow, fight one pull, leave; then removed (report in logs\\bots-smoke-latest.json)", False),
     "check":   ("realm/Server check.bat", "Server check (read-only)", False),
     # The release audit (docs/AUDIT.md): every feature as a new player meets it, the report in logs/audit-latest.html.
     # Read only but for the audit's own AUDIT account and its test characters, and a Den Lite temp folder on this PC.

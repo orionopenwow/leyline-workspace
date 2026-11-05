@@ -199,6 +199,8 @@ def hostpack_project(d: dict, public_base: str = "https://leylinelauncher.com") 
         "submitted_at": "", "last_checked": "", "version": d["version"], "kind": "hostpack", "permissions": None,
         "on_wrath": None, "download": d["download"], "sha256": d["sha256"], "size": d.get("size"),
         "torrent": d.get("torrent"),
+        # the bots the pack's realm runs (realm/bots.json): the launcher's "Update the bots" (host/bots.rs)
+        **({"bots": d["bots"]} if isinstance(d.get("bots"), dict) else {}),
     }
 
 

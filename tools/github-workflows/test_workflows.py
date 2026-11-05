@@ -31,7 +31,7 @@ def steps(doc, job):
 class Workflows(unittest.TestCase):
     def test_all_parse(self):
         names = sorted(p.name for p in HERE.glob("*.yml"))
-        self.assertEqual(names, ["den-lite.yml", "forge.yml", "hub-index.yml", "leyline-launcher.yml", "realm-scripts.yml", "scout.yml",
+        self.assertEqual(names, ["bots-canary.yml", "den-lite.yml", "forge.yml", "hub-index.yml", "leyline-launcher.yml", "realm-scripts.yml", "scout.yml",
                                  "survivors.yml", "wu-hosting.yml", "wu-images.yml"])
         for n in names:
             text, doc = load(n)
@@ -227,6 +227,46 @@ class Workflows(unittest.TestCase):
         self.assertIn("exit 1", realm[i_clean]["run"])
         owners = set(re.findall(r"ghcr\.io/([a-z0-9-]+)/", text)) | set(re.findall(r"github\.com/([A-Za-z0-9-]+)/", text))
         self.assertEqual(owners, {"orionopenwow"})
+
+    def test_bots_canary(self):
+        """Bots always up to date (docs/BOTS-UPDATES.md): weekly and by hand; the compat guard before the long build;
+        canary tags only (never :stable); the smoke test only on the self-hosted runner with the owner's own game
+        data, when BOTS_SMOKE_RUNNER is on; a pull request (draft while the smoke test is pending), never a merge;
+        the built-in token only."""
+        text, doc = load("bots-canary.yml")
+        self.assertEqual((REPO / ".github" / "workflows" / "bots-canary.yml").read_text(encoding="utf-8"), text)
+        self.assertIn("schedule", doc["on"])
+        self.assertIn("workflow_dispatch", doc["on"])
+        self.assertNotIn("push", doc["on"])
+        self.assertEqual(doc["permissions"], {"contents": "read"})
+        self.assertEqual(set(re.findall(r"secrets\.([A-Za-z_]+)", text)), {"GITHUB_TOKEN"})
+        jobs = doc["jobs"]
+        self.assertEqual(list(jobs), ["bump", "images", "smoke", "propose"])
+        bump = "\n".join(s.get("run", "") for s in steps(doc, "bump"))
+        self.assertLess(bump.index("compat.py"), bump.index("pins.py bump"))
+        self.assertIn("pins.py same", bump)
+        # canary tags only
+        tags = [t.strip() for s in steps(doc, "images") if s.get("uses", "").startswith("docker/build-push-action")
+                for t in s["with"]["tags"].splitlines() if t.strip()]
+        self.assertEqual(len(tags), 6)
+        self.assertTrue(all(":canary" in t for t in tags), tags)
+        code = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
+        self.assertNotIn(":stable", code)
+        self.assertEqual(jobs["images"]["permissions"], {"contents": "read", "packages": "write"})
+        img = "\n".join(s.get("run", "") for s in steps(doc, "images"))
+        self.assertIn("rm -rf realm/custom/acore/modules/mod-arac/patch-contents", img)
+        # the smoke test: the owner's own data on his own runner, only when switched on
+        self.assertEqual(jobs["smoke"]["runs-on"], ["self-hosted", "leyline-bots-smoke"])
+        self.assertIn("vars.BOTS_SMOKE_RUNNER == 'on'", jobs["smoke"]["if"])
+        self.assertIn("realm/bots/bots-smoke.sh", "\n".join(s.get("run", "") for s in steps(doc, "smoke")))
+        # the proposal: a pull request, never a merge; as Orion
+        self.assertEqual(jobs["propose"]["permissions"], {"contents": "write", "pull-requests": "write"})
+        run = "\n".join(s.get("run", "") for s in steps(doc, "propose"))
+        self.assertIn("gh pr create --draft", run)
+        self.assertNotIn("gh pr merge", text)
+        self.assertNotIn("git push origin main", text)
+        self.assertIn("user.name=Orion", run)
+        self.assertIn("needs.smoke.result == 'success' || needs.smoke.result == 'skipped'", jobs["propose"]["if"])
 
     def test_hosting_tests(self):
         text, doc = load("wu-hosting.yml")

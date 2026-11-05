@@ -1,0 +1,280 @@
+# Bots always up to date (owner 4 Nov, Single player Phase 4; docs/BOTS-UPDATES.md). Once a week: mod-playerbots and
+# the core branch it needs (its AzerothCore fork, realm/custom/sources.lock) move to their newest upstream commits in
+# a CANARY build, never in the stable one:
+#   bump     the newest commits (git ls-remote of the branches in sources.lock); nothing to do when they are the
+#            pins already. The compat guard (realm/bots/compat.py) reads the new source first: a renamed command,
+#            whisper, strategy, setting or mod-ale method fails here, in minutes, before the long build.
+#   images   the realm images with the canary pins, as wu-images.yml builds them, tagged :canary and
+#            :canary-<playerbots commit>, never :stable.
+#   smoke    the bot smoke test (realm/bots/bots-smoke.sh) on the canary images. A realm needs the dbc + maps from a
+#            game folder, which a GitHub runner never has and we never ship: it runs on a self-hosted runner that
+#            has the owner's own extracted volume (labels self-hosted + leyline-bots-smoke), only when the repo
+#            variable BOTS_SMOKE_RUNNER is "on". Without it, Control's bots-smoke step runs the same test on the PC.
+#   propose  smoke green: a pull request "Bots: promote ..." (sources.lock, realm/bots.json, realm/bots-candidate.json
+#            with the smoke report). Smoke not run: the same as a DRAFT pull request, marked smoke pending. Smoke red:
+#            no pull request; the run fails. Nothing is ever merged here: promotion to :stable is the owner merging
+#            (wu-images.yml then builds :stable from main).
+# Only the built-in token (packages: write for the canary images; contents + pull-requests: write for the proposal).
+#
+# Source copy: tools/github-workflows/bots-canary.yml ("Turn on GitHub builds.bat" copies it to .github/workflows/).
+name: bots-canary
+on:
+  schedule:
+    - cron: "17 9 * * 1"          # Mondays 09:17 UTC (Sunday night / early Monday in Phoenix)
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "build and test even if the pins are already the newest"
+        required: false
+        default: "no"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bots-canary
+  cancel-in-progress: false
+
+env:
+  REG: ghcr.io/orionopenwow
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      go: ${{ steps.up.outputs.go }}
+      playerbots: ${{ steps.up.outputs.playerbots }}
+      core: ${{ steps.up.outputs.core }}
+      short: ${{ steps.up.outputs.short }}
+      changes: ${{ steps.up.outputs.changes }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: the newest upstream commits
+        id: up
+        run: |
+          set -e
+          read -r _ pb_repo pb_branch pb_old < <(grep '^mod-playerbots ' realm/custom/sources.lock)
+          read -r _ core_repo core_branch core_old < <(grep '^core ' realm/custom/sources.lock)
+          pb=$(git ls-remote "$pb_repo" "refs/heads/$pb_branch" | cut -f1)
+          core=$(git ls-remote "$core_repo" "refs/heads/$core_branch" | cut -f1)
+          [[ "$pb" =~ ^[0-9a-f]{40}$ && "$core" =~ ^[0-9a-f]{40}$ ]] || { echo "upstream did not answer"; exit 1; }
+          echo "playerbots $pb_old -> $pb"; echo "core $core_old -> $core"
+          go=yes
+          if python3 realm/bots/pins.py same --playerbots "$pb" --core "$core" && [ "${{ inputs.force }}" != "yes" ]; then go=no; fi
+          # the playerbots commits since the pin (a count only: upstream's words are never shown to players)
+          git init -q "$RUNNER_TEMP/pb" && git -C "$RUNNER_TEMP/pb" remote add origin "$pb_repo"
+          git -C "$RUNNER_TEMP/pb" fetch -q --filter=blob:none --shallow-since=2025-01-01 origin "$pb_branch"
+          changes=$(git -C "$RUNNER_TEMP/pb" rev-list --count "$pb_old..$pb" 2>/dev/null || echo 0)
+          { echo "go=$go"; echo "playerbots=$pb"; echo "core=$core"; echo "short=${pb::7}"; echo "changes=$changes"; } >> "$GITHUB_OUTPUT"
+          echo "pb_repo=$pb_repo" >> "$GITHUB_ENV"
+      - name: the new mod-playerbots source and the pinned mod-ale (read only)
+        if: steps.up.outputs.go == 'yes'
+        run: |
+          set -e
+          get() { git init -q "$1" && git -C "$1" remote add origin "$2" && git -C "$1" fetch -q --depth 1 origin "$3" && git -C "$1" checkout -q FETCH_HEAD; }
+          get "$RUNNER_TEMP/pbsrc" "$pb_repo" "${{ steps.up.outputs.playerbots }}"
+          read -r _ ale_repo _ ale_commit < <(grep '^mod-ale ' realm/custom/sources.lock)
+          get "$RUNNER_TEMP/alesrc" "$ale_repo" "$ale_commit"
+      - name: compat guard (ov_companions.lua against the new source)
+        if: steps.up.outputs.go == 'yes'
+        run: |
+          python3 realm/bots/compat.py --playerbots "$RUNNER_TEMP/pbsrc" --ale "$RUNNER_TEMP/alesrc"
+          python3 realm/bots/compat.py --playerbots "$RUNNER_TEMP/pbsrc" --ale "$RUNNER_TEMP/alesrc" --json > compat.json
+      - name: the canary pins
+        if: steps.up.outputs.go == 'yes'
+        run: |
+          set -e
+          python3 realm/bots/pins.py bump --playerbots "${{ steps.up.outputs.playerbots }}" --core "${{ steps.up.outputs.core }}" \
+            --changes "${{ steps.up.outputs.changes }}"
+          # the premade talent specs as the new module ships them (the realm runs on env only)
+          python3 tools/playerbots-specs/make_specs_env.py "$RUNNER_TEMP/pbsrc/conf/playerbots.conf.dist" > realm/playerbots-specs.env
+          mkdir -p canary && cp realm/custom/sources.lock realm/bots.json realm/playerbots-specs.env compat.json canary/
+          git diff --stat
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.up.outputs.go == 'yes'
+        with:
+          name: canary-pins
+          path: canary/
+
+  images:
+    needs: bump
+    if: needs.bump.outputs.go == 'yes'
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: canary-pins
+          path: canary
+      - name: the canary pins in place
+        run: cp canary/sources.lock realm/custom/sources.lock && cp canary/bots.json realm/bots.json
+      - name: room on the runner (the compile needs ~20 GB)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          df -h /
+      - name: sources at the canary commits (realm/custom/fetch.sh, as wu-images.yml)
+        run: |
+          docker run --rm --entrypoint sh -v "$PWD/realm/custom:/w" alpine/git:latest /w/fetch.sh
+          sudo chown -R "$(id -u):$(id -g)" realm/custom/acore
+      - name: no game data in the build context
+        run: |
+          rm -rf realm/custom/acore/modules/mod-arac/patch-contents
+          rm -f realm/custom/acore/modules/mod-arac/*.MPQ realm/custom/acore/modules/mod-arac/*.mpq
+          bad=$(find realm/custom/acore -path '*/.git' -prune -o -type f \( -iname '*.dbc' -o -iname '*.db2' -o -iname '*.mpq' \
+                -o -iname '*.m2' -o -iname '*.wmo' -o -iname '*.adt' -o -iname '*.blp' -o -iname '*.vmtree' -o -iname '*.mmap' \) -print | head -20)
+          if [ -n "$bad" ]; then echo "game data in the build context, stopping:"; echo "$bad"; exit 1; fi
+          echo "clean"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: wu-ac-wotlk-worldserver (canary, the long one)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: realm/custom/acore
+          file: realm/custom/acore/apps/docker/Dockerfile
+          target: worldserver
+          build-args: |
+            CTOOLS_BUILD=db-only
+            CWITH_WARNINGS=OFF
+            CTYPE=Release
+          push: true
+          provenance: false
+          tags: |
+            ghcr.io/orionopenwow/wu-ac-wotlk-worldserver:canary
+            ${{ env.REG }}/wu-ac-wotlk-worldserver:canary-${{ needs.bump.outputs.short }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/orionopenwow/WrathUnleashed
+            org.leyline.playerbots=${{ needs.bump.outputs.playerbots }}
+            org.leyline.core=${{ needs.bump.outputs.core }}
+      - name: wu-ac-wotlk-authserver (canary)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: realm/custom/acore
+          file: realm/custom/acore/apps/docker/Dockerfile
+          target: authserver
+          build-args: |
+            CTOOLS_BUILD=db-only
+            CWITH_WARNINGS=OFF
+            CTYPE=Release
+          push: true
+          provenance: false
+          tags: |
+            ghcr.io/orionopenwow/wu-ac-wotlk-authserver:canary
+            ${{ env.REG }}/wu-ac-wotlk-authserver:canary-${{ needs.bump.outputs.short }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/orionopenwow/WrathUnleashed
+            org.leyline.playerbots=${{ needs.bump.outputs.playerbots }}
+            org.leyline.core=${{ needs.bump.outputs.core }}
+      - name: wu-ac-wotlk-db-import (canary)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: realm/custom/acore
+          file: realm/custom/acore/apps/docker/Dockerfile
+          target: db-import
+          build-args: |
+            CTOOLS_BUILD=db-only
+            CWITH_WARNINGS=OFF
+            CTYPE=Release
+          push: true
+          provenance: false
+          tags: |
+            ghcr.io/orionopenwow/wu-ac-wotlk-db-import:canary
+            ${{ env.REG }}/wu-ac-wotlk-db-import:canary-${{ needs.bump.outputs.short }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/orionopenwow/WrathUnleashed
+            org.leyline.playerbots=${{ needs.bump.outputs.playerbots }}
+            org.leyline.core=${{ needs.bump.outputs.core }}
+
+  smoke:
+    needs: [bump, images]
+    if: needs.bump.outputs.go == 'yes' && vars.BOTS_SMOKE_RUNNER == 'on'
+    runs-on: [self-hosted, leyline-bots-smoke]
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: canary-pins
+          path: canary
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: the new mod-playerbots source (for the static guard in the report)
+        run: |
+          read -r _ pb_repo _ _ < <(grep '^mod-playerbots ' realm/custom/sources.lock)
+          d="$RUNNER_TEMP/pbsrc"; rm -rf "$d"
+          git init -q "$d" && git -C "$d" remote add origin "$pb_repo" && git -C "$d" fetch -q --depth 1 origin "${{ needs.bump.outputs.playerbots }}" && git -C "$d" checkout -q FETCH_HEAD
+      - name: bot smoke test (canary images, the runner's own extracted game data)
+        run: bash realm/bots/bots-smoke.sh --tag "canary-${{ needs.bump.outputs.short }}" --playerbots-src "$RUNNER_TEMP/pbsrc" --out smoke.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: smoke-report
+          path: smoke.json
+          if-no-files-found: ignore
+
+  propose:
+    needs: [bump, images, smoke]
+    if: always() && needs.bump.outputs.go == 'yes' && needs.images.result == 'success' && (needs.smoke.result == 'success' || needs.smoke.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: canary-pins
+          path: canary
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: needs.smoke.result == 'success'
+        with:
+          name: smoke-report
+          path: smoke
+      - name: the proposal (never merged here)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SMOKE: ${{ needs.smoke.result }}
+          PB: ${{ needs.bump.outputs.playerbots }}
+          CORE: ${{ needs.bump.outputs.core }}
+          SHORT: ${{ needs.bump.outputs.short }}
+          CHANGES: ${{ needs.bump.outputs.changes }}
+        run: |
+          set -e
+          cp canary/sources.lock realm/custom/sources.lock
+          cp canary/bots.json realm/bots.json
+          cp canary/playerbots-specs.env realm/playerbots-specs.env
+          python3 realm/bots/candidate.py --smoke "${SMOKE}" --report smoke/smoke.json --compat canary/compat.json \
+            --images "canary-${SHORT}" --run "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --body pr-body.md > realm/bots-candidate.json
+          branch=bots/canary
+          git switch -C "$branch"
+          git add realm/custom/sources.lock realm/bots.json realm/playerbots-specs.env realm/bots-candidate.json
+          git -c user.name=Orion -c user.email=orionopenwow@users.noreply.github.com commit -q \
+            -m "Bots: promote mod-playerbots ${SHORT} (${CHANGES} upstream changes), smoke ${SMOKE}"
+          git push -f origin "$branch"
+          title="Bots: promote mod-playerbots ${SHORT}"
+          [ "$SMOKE" = success ] || title="$title (smoke test pending)"
+          if gh pr view "$branch" --json state -q .state 2>/dev/null | grep -q OPEN; then
+            gh pr edit "$branch" --title "$title" --body-file pr-body.md
+            [ "$SMOKE" = success ] && gh pr ready "$branch" || true
+          elif [ "$SMOKE" = success ]; then
+            gh pr create --head "$branch" --base main --title "$title" --body-file pr-body.md
+          else
+            gh pr create --draft --head "$branch" --base main --title "$title" --body-file pr-body.md
+          fi
+          cat pr-body.md >> "$GITHUB_STEP_SUMMARY"

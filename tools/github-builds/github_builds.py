@@ -52,7 +52,8 @@ WU_REPO_NEW = f"{OWNER}/leyline-workspace"
 LY_REPO = f"{OWNER}/Leyline"
 SRC = ROOT / "tools" / "github-workflows"
 NEED_SCOPES = ("workflow", "write:packages", "admin:org")
-WU_FILES = ("wu-images.yml", "wu-hosting.yml", "hub-index.yml", "scout.yml", "forge.yml", "den-lite.yml", "survivors.yml")
+WU_FILES = ("wu-images.yml", "wu-hosting.yml", "hub-index.yml", "scout.yml", "forge.yml", "den-lite.yml", "survivors.yml",
+            "bots-canary.yml")
 DEPLOY_FILE, DEPLOY_SECRET = "realm-scripts.yml", "WU_DEPLOY_SSH_KEY"
 LY_FILES = ("leyline-launcher.yml",)
 LY_TEMPLATES = ("submit-mod.yml",)                  # .github/ISSUE_TEMPLATE in Leyline: "Submit a mod" (hub index)

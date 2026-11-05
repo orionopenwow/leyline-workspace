@@ -103,6 +103,8 @@ def collect(kit: Path, realm: Path) -> dict[str, bytes]:
         if (realm / f).is_file():
             files[f"{rf}sql/{f}"] = (realm / f).read_bytes()
     files[f"{rf}build/sources.lock"] = (realm / "custom" / "sources.lock").read_bytes()
+    if (realm / "bots.json").is_file():      # the bots' pins (realm/bots/pins.py): "Update the bots" in the launcher
+        files[f"{rf}bots.json"] = (realm / "bots.json").read_bytes()
     files[f"{rf}build/fetch.sh"] = (realm / "custom" / "fetch.sh").read_bytes()
     for p in sorted((realm / "custom" / "patches").glob("*.patch")):
         files[f"{rf}build/patches/{p.name}"] = p.read_bytes()

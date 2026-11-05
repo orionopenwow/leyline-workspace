@@ -384,6 +384,7 @@
     acts.append(p, s, st, lg, se);
     if (window.LeylineSolo && window.LeylineSolo.inviteButton) acts.append(window.LeylineSolo.inviteButton((t, k) => say(t, k)));
     card.append(head, acts, mk("p", "sp-line", "Play starts it if it's stopped, then takes you in. Stop saves everyone and shuts it down."));
+    if (window.LeylineSingleUpdate) card.append(window.LeylineSingleUpdate.node((t, k) => say(t, k)));   // the bots (singleupdate.js)
     if (job && !job.idle && (job.running || job.code !== 0)) card.append(progress());
     if (logs !== null) { const pre = mk("pre", "sp-logs", logs); pre.id = "sp-logs"; card.append(pre); }
     return card;

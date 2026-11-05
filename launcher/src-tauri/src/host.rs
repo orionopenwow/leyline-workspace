@@ -15,6 +15,7 @@
 //! * the host console (`console`): the realm's health, GM controls, Check my realm and the realm tools, once a
 //!   realm is set up on this PC; and `leyline link` (a server the player already runs) in a window of its own.
 
+pub mod bots; // Bots always up to date: which bots run here, newer ones, Update the bots (host/bots.rs)
 pub mod console;
 pub mod dens;
 pub mod denfiles; // My models: the player's own model files checked and renamed under our folder (host/denfiles.rs)

@@ -117,6 +117,11 @@ def build(out: Path, version: str, kit: Path | None = None, realm: Path | None =
     (out / tname).write_bytes(torrent)
     desc = {"format": 1, "name": NAME, "version": version, "download": f"{BASE}/{zname}", "sha256": sha,
             "size": len(data), "torrent": f"{BASE}/{tname}", "info_hash": ih}
+    # the bots the pack's realm runs (realm/bots.json, docs/BOTS-UPDATES.md): the launcher offers "Update the bots"
+    bots = files.get("realm-files/bots.json")
+    if bots:
+        b = json.loads(bots)
+        desc["bots"] = {k: b[k] for k in ("playerbots", "core", "date", "changes") if k in b}
     (out / "hostpack.json").write_text(json.dumps(desc, indent=1) + "\n", encoding="utf-8")
     return {"zip": zpath, "torrent": out / tname, "json": out / "hostpack.json", "desc": desc, "files": len(files)}
 

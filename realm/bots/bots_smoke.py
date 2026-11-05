@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The bot smoke test's player (docs/BOTS-UPDATES.md). No game client: a headless 3.3.5a session (the kit's
+r"""The bot smoke test's player (docs/BOTS-UPDATES.md). No game client: a headless 3.3.5a session (the kit's
 wunet/wire335) logs in to a throwaway realm, and the realm's own console (SOAP) does what a GM would.
 
 What it proves, in order (each a named check in the report):
@@ -17,7 +17,14 @@ What it proves, in order (each a named check in the report):
   fight          one practice mob attacks us: the bots fight it and kill it
   dismiss        ov_companions.lua's `.dismiss all`: the group has no bots left
 
+    python3 -I bots_smoke.py smoke [--image ghcr.io/orionopenwow/wu-ac-wotlk] [--tag canary] [--playerbots-src DIR]
+                                   [--ale-src DIR] [--data-volume ov-client-data] [--out r.json] [--keep]
+        all of it: the throwaway realm (docker-compose.smoke.yml) from the images under test, the console's login,
+        the player, then the realm removed. Needs Docker and the dbc + maps volume extracted from YOUR OWN game
+        folder (realm\1-extract.bat makes ov-client-data); it is only read. Exit 3 without it. bots-smoke.sh and
+        realm\Bots smoke test.bat (Control step bots-smoke) run this.
     python3 -I bots_smoke.py run --auth 127.0.0.1:13724 --world 127.0.0.1:13785 --soap 127.0.0.1:17878 [--out r.json]
+        only the player, against a realm that is already up
         the SOAP login is SMOKE_SOAP_USER / SMOKE_SOAP_PASS (env; bots-smoke.sh makes it, see admin-sql)
     python3 -I bots_smoke.py admin-sql --creds FILE
         SQL for the console's own login (an administrator account with a random password, the way the core's
@@ -151,6 +158,13 @@ def judge_follow(rep, yards):
     return bool(bots) and not far, (f"all {len(bots)} within {yards} yards" if not far else "still far: " + ", ".join(far))
 
 
+def moved_to(rep, to, within):
+    me = (rep or {}).get("me") or {}
+    if me.get("x") is None or me.get("y") is None:
+        return False
+    return ((me["x"] - to[0]) ** 2 + (me["y"] - to[1]) ** 2) ** 0.5 <= within
+
+
 def judge_fight(samples):
     """ok when a bot was in combat at some point and the mob ended dead (or gone)."""
     if not samples:
@@ -202,8 +216,8 @@ def admin_sql(creds_path):
 
 # ---------------------------------------------------------------------------- the player
 class Player:
-    def __init__(self, w, guid, name, log):
-        self.w, self.guid, self.name, self.log = w, guid, name, log
+    def __init__(self, w, guid, name, log, poll=3.0):
+        self.w, self.guid, self.name, self.log, self.poll = w, guid, name, log, poll
         self.answers = asyncio.Queue()
         self.system = []
         self.map = None
@@ -259,8 +273,9 @@ class Player:
             if a.get("t") in (kind, "error"):
                 return a
 
-    async def until(self, what, kind, test, within, every=3.0):
+    async def until(self, what, kind, test, within, every=None):
         """Ask every few seconds until test(answer) is true; the last answer."""
+        every = self.poll if every is None else every
         end = time.monotonic() + within
         last = None
         while time.monotonic() < end:
@@ -325,10 +340,10 @@ async def run(a, rep):
     if not rep.add("character", code == wire335.CHAR_CREATE_SUCCESS and chars, f"{name} made (code {code:#x})"):
         return
     pos = await wire335.enter_world(w, chars[0]["guid"])
-    me = Player(w, chars[0]["guid"], chars[0]["name"], rep.log)
+    me = Player(w, chars[0]["guid"], chars[0]["name"], rep.log, a.poll)
     me.start()
     try:
-        await asyncio.sleep(2)
+        await asyncio.sleep(a.poll)
         soap(a.soap_host, a.soap_port, a.soap_user, a.soap_pass, f"character level {me.name} {LEVEL}")
         await me.say(".gm off")
         first, _ = await me.until("report", "report", lambda r: r.get("t") == "report", within=60)
@@ -339,7 +354,7 @@ async def run(a, rep):
     finally:
         try:
             await me.say(".dismiss all")
-            await asyncio.sleep(1)
+            await asyncio.sleep(min(1.0, a.poll))
         except Exception:  # noqa: BLE001 - best effort on the way out
             pass
         if me.task:
@@ -385,9 +400,13 @@ async def steps(a, rep, me):
     if a.follow:
         rr = await me.ask("report", "report")
         mine = (rr or {}).get("me") or {}
-        await me.say(".go xyz {:.2f} {:.2f} {:.2f}".format(*hop(rr, a.follow)))
-        r, ok = await me.until("report", "report", lambda r: judge_follow(r, a.follow_yards)[0], within=60)
-        rep.add("follow", ok, judge_follow(r, a.follow_yards)[1] if r else f"no report (we were on map {mine.get('map')})")
+        to = hop(rr, a.follow)
+        await me.say(".go xyz {:.2f} {:.2f} {:.2f}".format(*to))
+        # the hop counts once the realm has us there (after our teleport ack); then the bots must come after us
+        there = lambda r: moved_to(r, to, a.follow / 3)  # noqa: E731
+        r, ok = await me.until("report", "report", lambda r: there(r) and judge_follow(r, a.follow_yards)[0], within=60)
+        rep.add("follow", ok, judge_follow(r, a.follow_yards)[1] if r and there(r) else
+                "we never got there (map %s)" % mine.get("map") if r else "no report")
 
     # 6. one pull
     p = await me.ask(f"pull {a.mob}", "pull")
@@ -401,7 +420,7 @@ async def steps(a, rep, me):
             samples.append(s)
             if s.get("alive") is False and any(x.get("bots_in_combat") for x in samples):
                 break
-        await asyncio.sleep(3)
+        await asyncio.sleep(a.poll)
     rep.add("fight", *judge_fight(samples))
 
     # 7. dismiss
@@ -419,33 +438,118 @@ def hop(rep, yards):
     return x + yards * math.cos(o), y + yards * math.sin(o), z
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(description="The bot smoke test's player.")
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    s = sub.add_parser("admin-sql")
-    s.add_argument("--creds", required=True)
-    r = sub.add_parser("run")
-    r.add_argument("--auth", required=True)
-    r.add_argument("--world", required=True)
-    r.add_argument("--soap", required=True)
-    r.add_argument("--repo", default=REPO)
-    r.add_argument("--dungeon", default="deadmines", help="an id in ov_companions_dungeons.lua, or none")
-    r.add_argument("--want", type=int, default=3, help="bots .recruit party must bring")
-    r.add_argument("--follow", type=float, default=15.0, help="yards to hop for the follow check (0: skip)")
-    r.add_argument("--follow-yards", type=float, default=12.0)
-    r.add_argument("--mob", type=int, default=PRACTICE_MOB)
-    r.add_argument("--wait", type=int, default=1800, help="seconds to wait for the realm's console")
-    r.add_argument("--bot-wait", type=int, default=90)
-    r.add_argument("--fight-wait", type=int, default=120)
-    r.add_argument("--static", help="compat.py --json output to add to the report")
-    r.add_argument("--out")
-    r.add_argument("--quiet", action="store_true")
-    a = ap.parse_args(argv)
-    if a.cmd == "admin-sql":
-        sys.stdout.write(admin_sql(a.creds))
-        return 0
-    a.soap_host, a.soap_port = wire335.split_host_port(a.soap, 7878)
-    a.soap_user, a.soap_pass = os.environ.get("SMOKE_SOAP_USER", ""), os.environ.get("SMOKE_SOAP_PASS", "")
+# ---------------------------------------------------------------------------- the throwaway realm
+COMPOSE_FILE = os.path.join(HERE, "docker-compose.smoke.yml")
+PROJECT = "wu-bots-smoke"
+LUA_FILES = ("ov_companions.lua", "ov_companions_dungeons.lua", "ov_modapi.lua")
+PORTS = {"auth": 13724, "world": 13785, "soap": 17878}
+
+
+def docker(args, stdin=None, timeout=1800, quiet=False):
+    import subprocess
+    try:
+        p = subprocess.run(["docker", *args], input=stdin, capture_output=True, text=True, timeout=timeout)
+    except FileNotFoundError:
+        return 127, "Docker is not installed (or not on PATH)."
+    except subprocess.TimeoutExpired:
+        return -2, "Docker took too long."
+    return p.returncode, (p.stdout or "") + (p.stderr or "")
+
+
+def compose(work, *args, **kw):
+    return docker(["compose", "-p", PROJECT, "-f", COMPOSE_FILE, "--env-file", os.path.join(work, ".env"), *args], **kw)
+
+
+def prepare(work, repo, image, tag, data):
+    """The temp folder: the realm scripts the bots need plus the probe, and the compose .env (a random database
+    password; mode 600)."""
+    import shutil
+    lua = os.path.join(work, "lua")
+    os.makedirs(lua, exist_ok=True)
+    for f in LUA_FILES:
+        shutil.copy(os.path.join(repo, "realm", "custom", "lua_scripts", f), lua)
+    shutil.copy(os.path.join(HERE, "smoke", "ov_bots_probe.lua"), lua)
+    for f in os.listdir(lua):
+        os.chmod(os.path.join(lua, f), 0o644)
+    os.chmod(lua, 0o755)
+    env = {"SMOKE_DB_PASSWORD": secrets.token_hex(16), "SMOKE_IMAGE": image, "SMOKE_TAG": tag, "SMOKE_DATA_VOLUME": data,
+           "SMOKE_LUA_DIR": lua}
+    fd = os.open(os.path.join(work, ".env"), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write("".join(f"{k}={v}\n" for k, v in env.items()))
+    return env
+
+
+def static_check(pb_src, ale_src, repo):
+    """compat.py's result as JSON-able dict (the canary ran it already; here it goes in the report)."""
+    try:
+        pb = compat.playerbots_has(pb_src)
+        ale = compat.ale_has(ale_src) if ale_src else None
+    except ValueError as e:
+        return {"ok": False, "missing": [{"kind": "tree", "name": str(e), "fatal": True}]}
+    miss = compat.check(compat.needs(repo), pb, ale)
+    print(compat.report(miss))
+    return {"ok": not any(m[2] for m in miss), "missing": [{"kind": k, "name": x, "fatal": f} for k, x, f in miss]}
+
+
+def smoke(a):
+    """All of it. Returns the exit code."""
+    import shutil
+    import tempfile
+    rc, out = docker(["volume", "inspect", a.data_volume], timeout=60)
+    if rc != 0:
+        print(f"bots smoke: no '{a.data_volume}' volume here. It holds the dbc + maps extracted from your own game folder")
+        print("(realm\\1-extract.bat). The smoke test runs only where that volume is; nothing is downloaded.")
+        return 3
+    work = tempfile.mkdtemp(prefix="wu-bots-smoke-")
+    os.chmod(work, 0o700)
+    ok = False
+    try:
+        prepare(work, a.repo, a.image, a.tag, a.data_volume)
+        if a.playerbots_src:
+            print("== static guard (compat.py)", flush=True)
+            with open(os.path.join(work, "static.json"), "w") as f:
+                json.dump(static_check(a.playerbots_src, a.ale_src, a.repo), f)
+            a.static = os.path.join(work, "static.json")
+        print(f"== realm from {a.image}-*:{a.tag}", flush=True)
+        compose(work, "pull", "-q", "ac-db-import", "ac-authserver", "ac-worldserver")
+        for step in (("up", "-d", "--wait", "ac-database"), ("up", "-d", "ac-db-import", "ac-authserver", "ac-worldserver")):
+            rc, out = compose(work, *step)
+            if rc != 0:
+                print("the realm didn't start: " + (out.strip().splitlines() or ["?"])[-1][:300])
+                return 1
+        print("== the console's own login (random, never printed)", flush=True)
+        mysql = "mysql -uroot -p\"$MYSQL_ROOT_PASSWORD\""
+        end = time.monotonic() + a.wait
+        while time.monotonic() < end:
+            rc, out = compose(work, "exec", "-T", "ac-database", "sh", "-c",
+                              mysql + " -N -e 'SELECT 1 FROM acore_auth.realmlist LIMIT 1' 2>/dev/null", timeout=60)
+            if rc == 0 and out.strip().endswith("1"):
+                break
+            time.sleep(10)
+        creds = os.path.join(work, "creds")
+        compose(work, "exec", "-T", "ac-database", "sh", "-c", mysql + " --force acore_auth 2>/dev/null", stdin=admin_sql(creds), timeout=120)
+        got = dict(l.split("=", 1) for l in open(creds).read().split())
+        a.soap_user, a.soap_pass = got["SMOKE_SOAP_USER"], got["SMOKE_SOAP_PASS"]
+        a.auth, a.world = f"127.0.0.1:{PORTS['auth']}", f"127.0.0.1:{PORTS['world']}"
+        a.soap_host, a.soap_port = "127.0.0.1", PORTS["soap"]
+        print("== the player", flush=True)
+        code = play(a)
+        ok = code == 0
+        return code
+    finally:
+        if not ok or a.logs:
+            rc, out = compose(work, "logs", "--no-color", "--tail", "80", "ac-worldserver", timeout=60)
+            print("== worldserver, last lines")
+            print("\n".join(l for l in out.splitlines() if "password" not in l.lower()))
+        if a.keep:
+            print(f"kept: {work} (docker compose -p {PROJECT})")
+        else:
+            compose(work, "down", "-v", "--remove-orphans", timeout=300)
+            shutil.rmtree(work, ignore_errors=True)
+
+
+def play(a):
     rep = Report(a.quiet)
     if a.static:
         try:
@@ -454,7 +558,7 @@ def main(argv=None):
         except (OSError, ValueError) as e:
             rep.add("compat_static", False, f"no compat.py result: {e}")
     if not a.soap_user or not a.soap_pass:
-        rep.add("console", False, "no SMOKE_SOAP_USER / SMOKE_SOAP_PASS (bots-smoke.sh makes them with admin-sql)")
+        rep.add("console", False, "no SMOKE_SOAP_USER / SMOKE_SOAP_PASS (smoke makes them with admin-sql)")
     else:
         try:
             asyncio.run(run(a, rep))
@@ -466,6 +570,55 @@ def main(argv=None):
             json.dump(out, f, indent=1)
     print(("BOTS SMOKE OK" if rep.ok else "BOTS SMOKE FAILED") + f" ({sum(c['ok'] for c in rep.checks)}/{len(rep.checks)} checks)")
     return 0 if rep.ok else 1
+
+
+def player_args(r):
+    r.add_argument("--repo", default=REPO)
+    r.add_argument("--dungeon", default="deadmines", help="an id in ov_companions_dungeons.lua, or none")
+    r.add_argument("--want", type=int, default=3, help="bots .recruit party must bring")
+    r.add_argument("--follow", type=float, default=15.0, help="yards to hop for the follow check (0: skip)")
+    r.add_argument("--follow-yards", type=float, default=12.0)
+    r.add_argument("--mob", type=int, default=PRACTICE_MOB)
+    r.add_argument("--wait", type=int, default=1800, help="seconds to wait for the realm's console")
+    r.add_argument("--bot-wait", type=int, default=90)
+    r.add_argument("--fight-wait", type=int, default=120)
+    r.add_argument("--static", help="compat.py --json output to add to the report")
+    r.add_argument("--poll", type=float, default=3.0, help="seconds between two looks")
+    r.add_argument("--out")
+    r.add_argument("--quiet", action="store_true")
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="The bot smoke test.")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("admin-sql")
+    s.add_argument("--creds", required=True)
+    r = sub.add_parser("run")
+    r.add_argument("--auth", required=True)
+    r.add_argument("--world", required=True)
+    r.add_argument("--soap", required=True)
+    player_args(r)
+    m = sub.add_parser("smoke")
+    m.add_argument("--image", default=os.environ.get("SMOKE_IMAGE", "ghcr.io/orionopenwow/wu-ac-wotlk"))
+    m.add_argument("--tag", default=os.environ.get("SMOKE_TAG", "canary"))
+    m.add_argument("--data-volume", default=os.environ.get("SMOKE_DATA_VOLUME", "ov-client-data"))
+    m.add_argument("--playerbots-src")
+    m.add_argument("--ale-src")
+    m.add_argument("--keep", action="store_true")
+    m.add_argument("--logs", action="store_true", help="the worldserver's last lines even when it passed")
+    player_args(m)
+    a = ap.parse_args(argv)
+    if a.cmd == "admin-sql":
+        sys.stdout.write(admin_sql(a.creds))
+        return 0
+    if a.cmd == "smoke":
+        if not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", a.tag) or not re.fullmatch(r"[a-z0-9./_-]{1,128}", a.image):
+            print("bots smoke: that image or tag doesn't look right")
+            return 2
+        return smoke(a)
+    a.soap_host, a.soap_port = wire335.split_host_port(a.soap, 7878)
+    a.soap_user, a.soap_pass = os.environ.get("SMOKE_SOAP_USER", ""), os.environ.get("SMOKE_SOAP_PASS", "")
+    return play(a)
 
 
 if __name__ == "__main__":

@@ -29,6 +29,28 @@ pub struct DenFile {
     pub props: usize,
     /// When the realm saved it (UTC, as in the file), or "" when the file doesn't say.
     pub saved: String,
+    /// The last duel tournament fought in it (labs/den-lite tourney.rs, the file's `tournaments`): "Rowan won the
+    /// Spring Cup (round robin, 4 players)", for the Saved Dens card; "" when none.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub champion: String,
+}
+
+/// The Saved Dens card's line for a file's last tournament (`tournaments`, newest last), checked: names are letters.
+pub fn champion_line(doc: &Value) -> String {
+    let Some(t) = doc.get("tournaments").and_then(Value::as_array).and_then(|a| a.last()) else { return String::new() };
+    let word = |k: &str, n: usize| -> String { t.get(k).and_then(Value::as_str).unwrap_or("").chars().filter(|c| c.is_ascii_alphanumeric() || " '-".contains(*c)).take(n).collect() };
+    let champ = t.get("champion").and_then(Value::as_str).unwrap_or("").to_string();
+    if champ.is_empty() || champ.len() > 12 || !champ.chars().all(|c| c.is_ascii_alphabetic()) {
+        return String::new();
+    }
+    let format = match t.get("format").and_then(Value::as_str) {
+        Some("robin") => "round robin",
+        Some("king") => "king of the hill",
+        _ => "single elimination",
+    };
+    let n = t.get("players").and_then(Value::as_array).map_or(0, |p| p.len());
+    let title = word("title", 32);
+    format!("{champ} won {} ({format}, {n} players)", if title.trim().is_empty() { "a tournament".to_string() } else { format!("the {}", title.trim()) })
 }
 
 pub fn dir(kit: &Path) -> PathBuf {
@@ -96,8 +118,10 @@ pub fn list(kit: &Path) -> Vec<DenFile> {
         }
         let Some(name) = clean_name(&file) else { continue };
         let bytes = e.metadata().map(|m| m.len()).unwrap_or(0);
-        let (props, saved) = read(&e.path()).ok().and_then(|t| check(&t).ok()).map(|(n, s, _)| (n, s)).unwrap_or((0, String::new()));
-        out.push(DenFile { name, bytes, props, saved });
+        let text = read(&e.path()).ok();
+        let (props, saved) = text.as_deref().and_then(|t| check(t).ok()).map(|(n, s, _)| (n, s)).unwrap_or((0, String::new()));
+        let champion = text.as_deref().and_then(|t| serde_json::from_str::<Value>(t.trim_start_matches('\u{feff}')).ok()).map(|d| champion_line(&d)).unwrap_or_default();
+        out.push(DenFile { name, bytes, props, saved, champion });
     }
     out.sort_by(|a, b| b.saved.cmp(&a.saved).then(a.name.cmp(&b.name)));
     out
@@ -183,6 +207,22 @@ mod tests {
         assert!(check(&many).unwrap_err().contains("800"));
         let big = format!(r#"{{"format":"leyline-den","version":1,"props":[],"pad":"{}"}}"#, "x".repeat(600 * 1024));
         assert!(check(&big).unwrap_err().contains("too big"));
+    }
+
+    #[test]
+    fn the_last_tournament_on_the_card() {
+        let doc: Value = serde_json::from_str(r#"{"tournaments":[{"title":"Old","champion":"Ash","format":"king","players":["Ash","Fen"]},
+            {"title":"Spring Cup","champion":"Rowan","format":"robin","players":["Rowan","Briar","Ash","Fen"]}]}"#).unwrap();
+        assert_eq!(champion_line(&doc), "Rowan won the Spring Cup (round robin, 4 players)");
+        let none: Value = serde_json::from_str(r#"{"tournaments":[{"title":"x","champion":null,"players":[]}]}"#).unwrap();
+        assert_eq!(champion_line(&none), "", "called off: no champion");
+        assert_eq!(champion_line(&serde_json::json!({"tournaments":[{"champion":"<b>x"}]})), "", "only a plain name");
+        assert_eq!(champion_line(&serde_json::json!({})), "");
+        let k = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir(k.path())).unwrap();
+        let with = GOOD.replacen("\"props\":", "\"tournaments\":[{\"champion\":\"Briar\",\"format\":\"single\",\"players\":[\"Briar\",\"Ash\"]}],\"props\":", 1);
+        std::fs::write(dir(k.path()).join("arena.den.json"), with).unwrap();
+        assert_eq!(list(k.path())[0].champion, "Briar won a tournament (single elimination, 2 players)");
     }
 
     #[test]

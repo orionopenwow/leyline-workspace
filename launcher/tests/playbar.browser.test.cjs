@@ -232,7 +232,7 @@ test('the realm picker: Wrath Unleashed, Your Den and Single player, Host a serv
   assert.equal(await page.getAttribute('#pb-rmenu', 'role'), 'listbox');
   assert.deepEqual(await rrows(page), [
     'Wrath Unleashed|3.3.5a|5 playing|true|', 'Your Den||Make your Den|false|', 'Single player||Set it up once|false|', '---',
-    'Host a server…|||false|', 'Play in your browser|||false|', '---',
+    'Host a server…|||false|', 'Play in your browser|||false|', "Join a friend's Den…|||false|", '---',
     'My Wrath|3.3.5a|Game client|false|',
   ], 'no realms of the network, Single player under Your Den (owner 4 Nov: the flagship), no Make a realm or Find more; the client the realm plays with nearest the button');
   assert.equal(await page.getAttribute('#pb-rmenu .pb-client-opt', 'title'), 'My Wrath · C:\\Games\\Wrath\nPick another game client or add a folder', 'its path only in the tooltip');
@@ -279,7 +279,7 @@ test('the realm picker: Your realms only when there are any, the community realm
   assert.deepEqual(await rrows(page), [
     'Wrath Unleashed|3.3.5a|5 playing|false|', 'Your Den||Make your Den|false|', 'Single player||Set it up once|false|', '---',
     '# Your realms', 'Busy Den|3.3.5a|30 playing|true|', '---',
-    'Host a server…|||false|', 'Play in your browser|||false|', '---',
+    'Host a server…|||false|', 'Play in your browser|||false|', "Join a friend's Den…|||false|", '---',
     'My Wrath|3.3.5a|Game client|false|',
   ]);
   await page.click('#pb-rmenu >> text=Wrath Unleashed');

@@ -389,6 +389,25 @@ pub struct GuestLogin {
     pub expires: u64,
 }
 
+/// A friend's login as `den-lite guest list` prints it (never the password).
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, Serialize)]
+pub struct GuestInfo {
+    pub user: String,
+    pub name: String,
+    pub expires: u64,
+    #[serde(default)]
+    pub build: bool,
+    #[serde(default)]
+    pub keep: bool,
+}
+
+/// `den-lite guest list`'s output, checked (letters and digits only; an older Den Lite has no build or keep).
+pub fn parse_guest_list(stdout: &str) -> Result<Vec<GuestInfo>, String> {
+    let v: Vec<GuestInfo> = serde_json::from_str(stdout.trim()).map_err(|_| "Your Den's server didn't list your friends.".to_string())?;
+    let plain = |s: &str, n: usize| !s.is_empty() && s.len() <= n && s.chars().all(|c| c.is_ascii_alphanumeric());
+    Ok(v.into_iter().filter(|g| plain(&g.user, 16) && plain(&g.name, 12)).take(40).collect())
+}
+
 /// What Den Lite's `guest add` printed, checked (the shapes it makes: `G` + letters and digits, a 16-letter password).
 pub fn parse_guest(stdout: &str) -> Result<GuestLogin, String> {
     let g: GuestLogin = serde_json::from_str(stdout.trim()).map_err(|_| "Your Den's server didn't make a login for your friend.".to_string())?;
@@ -428,6 +447,28 @@ impl Binary {
     /// Every friend's login taken back.
     pub fn guest_revoke_all(&self) -> Result<(), String> {
         self.guest_cmd(&["revoke", "all"]).map(|_| ())
+    }
+
+    /// The friends' logins that still work (no secrets: account, character, until when, build, keep).
+    pub fn guest_list(&self) -> Result<Vec<GuestInfo>, String> {
+        parse_guest_list(&self.guest_cmd(&["list"])?)
+    }
+
+    /// One friend's Build or Keep switch (`what`: "build" or "keep"), by account or character name; kept in
+    /// guests.json, so it holds while Den Lite is stopped (host/denhost.rs asks a running one too).
+    pub fn guest_set(&self, who: &str, what: &str, on: bool) -> Result<(), String> {
+        if !matches!(what, "build" | "keep") || !(1..=16).contains(&who.len()) || !who.chars().all(|c| c.is_ascii_alphanumeric()) {
+            return Err("That isn't one of your friends.".into());
+        }
+        self.guest_cmd(&[what, who, if on { "on" } else { "off" }]).map(|_| ())
+    }
+
+    /// One friend's login taken back (Kick when they aren't in).
+    pub fn guest_revoke(&self, who: &str) -> Result<(), String> {
+        if !(1..=16).contains(&who.len()) || !who.chars().all(|c| c.is_ascii_alphanumeric()) || who == "all" {
+            return Err("That isn't one of your friends.".into());
+        }
+        self.guest_cmd(&["revoke", who]).map(|_| ())
     }
 }
 
@@ -519,6 +560,14 @@ mod tests {
         let b = Binary { exe: Some(exe), root: root(app.path()), client: None };
         let st = b.status();
         assert!(st.available && !st.can_get);
+    }
+
+    #[test]
+    fn the_friends_list_from_den_lite() {
+        let l = parse_guest_list(r#"[{"user":"GABCDE2345","name":"Rowan","expires":99,"build":true,"keep":false,"guid":100},{"user":"G<x>","name":"Bad","expires":1},{"user":"GOLD234567","name":"Ash","expires":5}]"#).unwrap();
+        assert_eq!(l.len(), 2, "a strange row is left out");
+        assert_eq!((l[0].name.as_str(), l[0].build, l[1].build, l[1].keep), ("Rowan", true, false, false), "an older Den Lite: no switches");
+        assert!(parse_guest_list("oops").is_err());
     }
 
     #[test]

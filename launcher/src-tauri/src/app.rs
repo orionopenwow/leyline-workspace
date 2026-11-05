@@ -623,7 +623,9 @@ struct GuestJoin {
 #[tauri::command]
 async fn join_invite(core: State<'_, Core>, client: String, link: String) -> Result<Joined, String> {
     core.client(&client)?;
-    let (relay, rid, secret) = realms::parse_invite(&link).ok_or("That is not an invite link (https://<relay>/join/<realm>#<code>).")?;
+    // a Den code (DEN-...: host/denhost.rs) is the same as its link, the relay way
+    let link = crate::host::denhost::link_from_code(&link, realms::RELAY).unwrap_or(link);
+    let (relay, rid, secret) = realms::parse_invite(&link).ok_or("That is not an invite link (https://<relay>/join/<realm>#<code>) or a Den code (DEN-...).")?;
     // a friend's Den (Den Lite): the same network first, then the friend's own address, then the relay (denways.rs)
     if let Some((user, pass)) = crate::host::litenet::guest_in(&link) {
         let profile = core.client(&client)?;
@@ -669,6 +671,8 @@ async fn join_invite(core: State<'_, Core>, client: String, link: String) -> Res
 #[derive(Serialize)]
 struct DenInvite {
     link: String,
+    /// The same way in as a code to paste (DEN-...: host/denhost.rs), the relay way.
+    code: String,
     name: String,
     expires: u64,
     tunnel: crate::host::litenet::TunnelState,
@@ -750,14 +754,9 @@ fn den_invite_with(name: Option<&str>, tunnel: bool) -> Result<DenInvite, String
         let seed = litenet::load_or_create_key(&litenet::key_path(&root))?;
         let secret = lite::invite_secret(&root)?;
         let tunnel = if tunnel {
-            litenet::start(litenet::Setup {
-                endpoint: litenet::Endpoint::relay(realms::RELAY),
-                relay_name: realms::RELAY.into(),
-                seed,
-                name: "Den Lite".into(),
-                invite_secret: secret.clone(),
-                den_dir: l.den_dir(),
-            })
+            // kept on for the next start of Leyline (host/denhost.rs: den_share_resume)
+            crate::host::denhost::set_sharing(&root, true);
+            den_tunnel(&l, &root)?
         } else {
             let public = litenet::public_key(&seed)?;
             litenet::TunnelState { relay: realms::RELAY.into(), realm_id: litenet::realm_id(&public), ..Default::default() }
@@ -781,9 +780,116 @@ fn den_invite_with(name: Option<&str>, tunnel: bool) -> Result<DenInvite, String
         } else {
             InviteWay { id: "relay", ok: false, line: format!("Leyline relay: {}", tunnel.last_error) }
         };
+        let code = crate::host::denhost::code_from_link(&link).unwrap_or_default();
         let link = crate::host::denways::with_ways(&link, lan.as_deref(), at.as_deref());
-        Ok(DenInvite { link, name: g.name, expires: g.expires, tunnel, ways: vec![lan_way, own_way, relay_way] })
+        Ok(DenInvite { link, code, name: g.name, expires: g.expires, tunnel, ways: vec![lan_way, own_way, relay_way] })
     }
+}
+
+/// The relay tunnel for this Den Lite (host/litenet.rs), as Invite friends and the resume start it.
+fn den_tunnel(l: &crate::host::lite::Binary, root: &Path) -> Result<crate::host::litenet::TunnelState, String> {
+    use crate::host::{lite::DenLite, litenet};
+    let seed = litenet::load_or_create_key(&litenet::key_path(root))?;
+    let secret = crate::host::lite::invite_secret(root)?;
+    Ok(litenet::start(litenet::Setup {
+        endpoint: litenet::Endpoint::relay(realms::RELAY),
+        relay_name: realms::RELAY.into(),
+        seed,
+        name: "Den Lite".into(),
+        invite_secret: secret,
+        den_dir: l.den_dir(),
+    }))
+}
+
+/// Sharing kept across restarts (owner 4 Nov: "it keeps working across restarts"): when Leyline starts and the host
+/// was sharing (host/denhost.rs `sharing`), Den Lite starts (no game) and the tunnel comes back, so friends' links
+/// work after the host's PC restarts. Stop sharing ends it.
+fn den_share_resume() -> Result<bool, String> {
+    use crate::host::{denhost, lite::{self, DenLite}, litenet};
+    let app = crate::settings::app_dir();
+    let root = lite::root(&app);
+    if !denhost::sharing(&root) {
+        return Ok(false);
+    }
+    let l = lite::Binary::find(&app);
+    if !l.available() {
+        return Ok(false);
+    }
+    if !l.status().running {
+        l.start()?;
+        for _ in 0..50 {
+            if litenet::remote_ports(&l.den_dir()).is_some() && l.status().running {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+    }
+    if litenet::remote_ports(&l.den_dir()).is_none() {
+        return Err("Your Den's server is from before friends could join.".into());
+    }
+    den_tunnel(&l, &root).map(|_| true)
+}
+
+/// The Friends list on Your Den (host/denhost.rs): who is in now, the friends' logins that still work, and whether
+/// the Den is shared.
+#[derive(Serialize)]
+struct DenFriends {
+    running: bool,
+    sharing: bool,
+    online: crate::host::denhost::Online,
+    invites: Vec<crate::host::lite::GuestInfo>,
+    tunnel: crate::host::litenet::TunnelState,
+}
+
+#[tauri::command]
+async fn den_friends() -> Result<DenFriends, String> {
+    blocking(|| {
+        use crate::host::{denhost, lite::{self, DenLite}};
+        let app = crate::settings::app_dir();
+        let l = lite::Binary::find(&app);
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let running = l.available() && l.status().running;
+        let mut online = denhost::read_online(&l.den_dir(), now);
+        if !running {
+            online = denhost::Online::default();
+        }
+        let invites = if l.exe.is_some() { l.guest_list().unwrap_or_default() } else { Vec::new() };
+        Ok(DenFriends { running, sharing: denhost::sharing(&lite::root(&app)), online, invites, tunnel: crate::host::litenet::state() })
+    })
+    .await
+}
+
+/// One thing the host does for a friend from the Friends list: `kick` (out now, their link stops), `build` (on or
+/// off; `who` "all" for every friend), `keep` (their link works a week from their last visit). The line to show.
+#[tauri::command]
+async fn den_friend(action: String, who: String, on: bool) -> Result<String, String> {
+    blocking(move || {
+        use crate::host::{denhost, lite::{self, DenLite}};
+        let line = denhost::ask_line(&action, &who, on).ok_or("That isn't something Your Den can do for a friend.")?;
+        let l = lite::Binary::find(&crate::settings::app_dir());
+        if l.exe.is_none() {
+            return Err("Press Play solo once first: it gets your Den's server.".into());
+        }
+        if l.status().running {
+            denhost::ask(&l.den_dir(), &line)?;
+            if let Some(said) = denhost::answer(&l.den_dir(), std::time::Duration::from_millis(2500)) {
+                return Ok(said);
+            }
+            // an older Den Lite doesn't read asks: what the file can do, it does
+            let _ = std::fs::remove_file(l.den_dir().join(denhost::HOST_ASK_FILE));
+        }
+        match action.as_str() {
+            "kick" => l.guest_revoke(&who).map(|_| "Their link no longer works.".to_string()),
+            "build" if who == "all" => Err("Start your Den first (Play solo): every friend's switch is for a Den that is running.".into()),
+            _ => l.guest_set(&who, &action, on).map(|_| match (action.as_str(), on) {
+                ("build", true) => "They can build when they come in.".to_string(),
+                ("build", false) => "They can look around, not build.".to_string(),
+                (_, true) => "Kept: their link works for a week from their last visit.".to_string(),
+                _ => "No longer kept.".to_string(),
+            }),
+        }
+    })
+    .await
 }
 
 /// "Your own address" for friends (host/denways.rs): a host name or IP (optionally `:port`) that reaches this PC
@@ -863,6 +969,7 @@ fn den_net_state() -> crate::host::litenet::TunnelState {
 async fn den_net_stop() -> Result<(), String> {
     blocking(|| {
         crate::host::litenet::stop();
+        crate::host::denhost::set_sharing(&crate::host::lite::root(&crate::settings::app_dir()), false);
         let l = crate::host::lite::Binary::find(&crate::settings::app_dir());
         if l.exe.is_some() {
             l.guest_revoke_all()?;
@@ -2154,6 +2261,12 @@ pub fn run() {
             start_update_timer(app.handle().clone());
             crate::p2p::cmds::magnet_from_args(); // a shared magnet: link (only with the magnet_links flag on)
             crate::agents::commands::start(app.handle().clone()); // Agents: the heartbeat `Leyline mcp` looks for (agents.rs)
+            // Your Den shared with friends before: back on the Leyline network by itself (host/denhost.rs)
+            std::thread::spawn(|| {
+                if let Err(e) = den_share_resume() {
+                    eprintln!("leyline: Your Den's sharing didn't come back: {e}");
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -2272,6 +2385,8 @@ pub fn run() {
             crate::p2p::cmds::den_share_move,
             den_play_lite,
             den_invite, // Invite friends on Den Lite: the relay tunnel and a login per friend (host/litenet.rs)
+            den_friends, // Your Den's Friends list: who's in, the logins that work, sharing (host/denhost.rs)
+            den_friend,  // kick, build on/off, keep for one friend (host/denhost.rs)
             den_net_state,
             den_net_stop,
             den_own_address, // Invite: your own address for friends (host/denways.rs)

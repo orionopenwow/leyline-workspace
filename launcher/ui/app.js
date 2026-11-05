@@ -1390,6 +1390,8 @@ function renderRealmMenu() {
     row("pb-act pb-host-act", "Host a server…", { title: "Host a realm on this PC from a template: one click", run: hostFromTemplate }),
     row("pb-browser pb-quiet", "Play in your browser", { selected: !online, title: "The official realm in your browser: nothing to install",
       run: () => setMode("browser") }),
+    // a friend's Den (docs/DEN-HOSTING.md): their link or code, pasted once
+    row("pb-act pb-join-den", "Join a friend's Den…", { title: "Paste the link or code your friend sent you", run: joinFriendsDen }),
   ];
   // the game client this realm plays with: one row (its path only in the tooltip; a click opens the client list, which
   // has Add a game folder…); none of the version it needs: one plain line and Add a game folder…
@@ -1424,6 +1426,16 @@ function denSub() {
   if (step === "switch" || step === "busy") return localSub(DEN);
   if (w === "docker") return "Stopped: one click starts it";
   return "Make your Den";
+}
+// Join a friend's Den…: Realms' invite box, open and ready for the link or code they sent (app.rs join_invite takes
+// both; host/denhost.rs)
+function joinFriendsDen() {
+  show("realms");
+  const o = $("rl-other");
+  if (o) o.open = true;
+  const i = $("rl-invite");
+  if (i) { i.focus(); if (i.scrollIntoView) i.scrollIntoView({ block: "center" }); }
+  say("rl-status", "Paste the link or code your friend sent you, then press Join. Your Leyline finds the way in.", "");
 }
 // Host a server…: the Host page's templates (hostmodes.js: one click to host from a template)
 function hostFromTemplate() {
@@ -3036,7 +3048,7 @@ $("rl-join").addEventListener("click", async () => {
   const c = needClient("rl-status");
   if (!c) return;
   const link = $("rl-invite").value.trim();
-  if (!link) return say("rl-status", "Paste the invite link first.", "bad");
+  if (!link) return say("rl-status", "Paste the invite link (or a friend's Den code) first.", "bad");
   try {
     const j = await invoke("join_invite", { client: c.id, link });
     // a friend's Den (host/litenet.rs): the game is already starting with your own login from the link

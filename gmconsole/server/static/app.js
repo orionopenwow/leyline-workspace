@@ -4,14 +4,14 @@
 (function () {
   const CSRF = document.querySelector('meta[name=csrf]').content;
   const TABS = [
-    ['overview', 'Overview'], ['players', 'Players'], ['updates', 'Updates'], ['streaming', 'Streaming'],
+    ['overview', 'Overview'], ['players', 'Players'], ['people', 'All players'], ['updates', 'Updates'], ['streaming', 'Streaming'],
     ['beacons', 'Beacons'], ['speed', 'Speed'], ['reports', 'Bug reports'], ['backlog', 'Backlog'], ['health', 'Health'], ['logs', 'Logs'],
   ];
   const app = document.getElementById('app');
   let tab = 'overview';
   let timer = null;
   let jobTimer = null;
-  const ui = { logs: { c: 'worldserver', n: 300, q: '', auto: true }, acctQ: '', reports: { status: 'new', q: '', tickets: true } };
+  const ui = { logs: { c: 'worldserver', n: 300, q: '', auto: true }, acctQ: '', people: { q: '', filter: 'all', sort: 'last', page: 0 }, reports: { status: 'new', q: '', tickets: true } };
 
   // ---- tiny DOM helpers -------------------------------------------------------------------
   function h(tag, attrs, ...kids) {
@@ -316,6 +316,63 @@
     ], list, 'No accounts match.');
   }
 
+  // ---- All players (review 4 Nov): every account with its characters, online, last seen, bans, mutes and a GM note -----
+  function people(d) {
+    const P = ui.people;
+    const q = h('input', { type: 'search', placeholder: 'Account or character name', value: P.q, maxlength: 32, class: 'grow' });
+    const go = () => { P.q = q.value.trim(); P.page = 0; load(true); };
+    q.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') go(); });
+    const sel = (name, opts, cur, onch) => {
+      const el = h('select', { 'aria-label': name }, opts.map(([v, l]) => h('option', { value: v, text: l })));
+      el.value = cur; el.addEventListener('change', () => { onch(el.value); P.page = 0; load(true); });
+      return el;
+    };
+    const filter = sel('Show', [['all', 'Everyone'], ['online', 'Online now'], ['new', 'New this week'], ['banned', 'Banned'],
+      ['muted', 'Muted'], ['noted', 'With a note']], P.filter, (v) => { P.filter = v; });
+    const sort = sel('Sort', [['last', 'Last login'], ['name', 'Name'], ['new', 'Newest']], P.sort, (v) => { P.sort = v; });
+    const pages = Math.max(1, Math.ceil((d.total || 0) / (d.page_size || 50)));
+    const pager = h('span', { class: 'row' },
+      btn('Previous', () => { if (P.page > 0) { P.page--; load(true); } }, 'small ghost'),
+      h('span', { class: 'muted small', text: `page ${P.page + 1} of ${pages} · ${num(d.total)} accounts` }),
+      btn('Next', () => { if (P.page + 1 < pages) { P.page++; load(true); } }, 'small ghost'));
+    const chars = (a) => h('span', null, a.characters.length ? a.characters.map((c, i) => h('span', null, i ? ', ' : '',
+      h('b', { text: c.name }), h('span', { class: 'muted', text: ` ${c.level} ${c.class}` }),
+      c.online ? badge('online', 'ok') : (c.last_seen ? h('span', { class: 'muted small', text: ' · ' + when(c.last_seen) }) : null))) :
+      h('span', { class: 'muted', text: 'no characters' }));
+    const state = (a) => h('span', null, a.online ? badge('online', 'ok') : null,
+      a.banned ? badge(a.ban_until ? 'banned until ' + when(a.ban_until).slice(0, 16) : 'banned (permanent)', 'bad') : null,
+      a.muted ? badge('muted', 'warn') : null, a.ban_reason ? h('div', { class: 'muted small', text: a.ban_reason }) : null);
+    const noteBtn = (a) => btn(a.note ? 'Edit note' : 'Note', async () => {
+      const v = await modal({ title: `Note on ${a.username}`, ok: 'Save', note: 'Only GMs see this. Leave it empty to remove the note.',
+        fields: [{ name: 'text', label: 'Note', type: 'textarea', value: a.note || '', max: 500 }] });
+      if (v) run('note', { id: a.id, text: v.text });
+    }, 'small ghost');
+    const tbl = table([
+      { t: 'Account', f: (a) => h('span', null, h('b', { class: 'mono', text: a.username }),
+        a.ip_tag ? h('div', { class: 'muted small mono', title: 'the last address as a short hash: two accounts with the same tag share it', text: 'net ' + a.ip_tag }) : null) },
+      { t: 'Characters', f: chars },
+      { t: 'Last seen', f: (a) => a.online ? badge('now', 'ok') : (a.last_seen ? when(a.last_seen) : (a.last_login || '-')), cls: 'hide-s' },
+      { t: 'Joined', f: (a) => (a.created || '-').slice(0, 10), cls: 'hide-s' },
+      { t: 'Played', f: (a) => a.played_h + ' h', cls: 'num hide-s' },
+      { t: 'State', f: state },
+      { t: 'Note', f: (a) => a.note ? h('span', { class: 'small', text: a.note }) : h('span', { class: 'muted', text: '-' }) },
+      { t: '', cls: 'act-cell', f: (a) => h('span', { class: 'acts' }, noteBtn(a), a.banned ?
+        btn('Unban', () => run('unban', { account: a.username }, { confirm: `Unban ${a.username}?`, ok: 'Unban' }), 'small') :
+        btn('Ban', async () => {
+          const v = await modal({ title: `Ban account ${a.username}`, danger: true, ok: 'Ban',
+            note: 'Bans the account (all its characters). Nothing is deleted; Unban lifts it.', fields: [
+              { name: 'duration', label: 'Duration', type: 'select', value: '7d',
+                options: [['1h', '1 hour'], ['1d', '1 day'], ['7d', '7 days'], ['30d', '30 days'], ['-1', 'Permanent']] },
+              { name: 'reason', label: 'Reason (required)', required: true, maxlength: 200 }] });
+          if (v) run('ban', { account: a.username, duration: v.duration, reason: v.reason, confirm: true });
+        }, 'small danger')) },
+    ], d.accounts, 'No accounts match.');
+    return [h('div', { class: 'tiles t3' }, tile('Accounts', num(d.total), d.filter === 'all' ? 'bots excluded' : 'shown: ' + d.filter),
+      tile('On this page', String(d.accounts.length), `${d.accounts.filter((a) => a.online).length} online`),
+      tile('GM notes', num(d.notes), 'accounts with a note')),
+    card('All players', pager, h('div', { class: 'row wrap' }, q, btn('Search', go, 'primary'), filter, sort), tbl)];
+  }
+
   // ---- Updates ------------------------------------------------------------------------------
   const FIX = {
     reload_ale: ['Reload realm scripts', () => run('reload_ale', {})],
@@ -599,6 +656,7 @@
   // ---- loading and refresh ------------------------------------------------------------------
   const PATH = {
     overview: () => '/api/overview', players: () => '/api/players', updates: () => '/api/updates',
+    people: () => `/api/people?q=${encodeURIComponent(ui.people.q)}&filter=${ui.people.filter}&sort=${ui.people.sort}&page=${ui.people.page}`,
     streaming: () => '/api/streaming', beacons: (f) => '/api/beacons' + (f ? '?fresh=1' : ''),
     speed: (f) => '/api/speed' + (f ? '?fresh=1' : ''),
     reports: () => `/api/reports?status=${encodeURIComponent(ui.reports.status)}&q=${encodeURIComponent(ui.reports.q)}&tickets=${ui.reports.tickets ? 1 : 0}`,
@@ -606,8 +664,8 @@
     health: () => '/api/health',
     logs: () => `/api/logs?c=${encodeURIComponent(ui.logs.c)}&n=${ui.logs.n}`,
   };
-  const RENDER = { overview, players, updates, streaming, beacons, speed, reports, backlog, health, logs };
-  const EVERY = { overview: 10000, players: 10000, updates: 15000, streaming: 15000, reports: 30000, backlog: 60000, health: 10000, logs: 5000 };
+  const RENDER = { overview, players, people, updates, streaming, beacons, speed, reports, backlog, health, logs };
+  const EVERY = { overview: 10000, players: 10000, people: 30000, updates: 15000, streaming: 15000, reports: 30000, backlog: 60000, health: 10000, logs: 5000 };
   let loading = 0;
   async function load(fresh) {
     const my = ++loading, t = tab;

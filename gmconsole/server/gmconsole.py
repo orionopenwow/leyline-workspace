@@ -79,17 +79,20 @@ def art_bytes(name):
         return None
 TOKEN_FILE = E("GM_TOKEN_FILE", WU + "/gmconsole.env")
 AUDIT_FILE = E("GM_AUDIT_FILE", WU + "/gmconsole-audit.log")
+# The All players tab's GM notes (one short note per account; owner-only file, like the audit log)
+NOTES_FILE = E("GM_NOTES_FILE", WU + "/gmconsole-notes.json")
 SPEED_FILE = E("GM_SPEED_FILE", WU + "/gmconsole-speed.json")
 BIND = E("GM_BIND", "127.0.0.1")
 PORT = int(E("GM_PORT", "8099"))
 DOCKER = E("GM_DOCKER", "docker")
-PUBLIC_HOST = E("GM_PUBLIC_HOST", "play.openvanilla.app")
+# the names players use now (review 4 Nov; the old play./wrath./relay.openvanilla.app still answer, and env wins)
+PUBLIC_HOST = E("GM_PUBLIC_HOST", "leylinelauncher.com")
 PUBLIC_URL = E("GM_PUBLIC_URL", "https://" + PUBLIC_HOST).rstrip("/")
-STREAM_URL = E("GM_STREAM_URL", "https://wrath.openvanilla.app").rstrip("/")
+STREAM_URL = E("GM_STREAM_URL", "https://play.leylinelauncher.com").rstrip("/")
 SITE_URL = E("GM_SITE_URL", "https://openvanilla.app").rstrip("/")
 STATUS_URL = E("GM_STATUS_URL", PUBLIC_URL + "/wrath/status.json")
 FEED_URL = E("GM_FEED_URL", PUBLIC_URL + "/community/feed.json")
-RELAY_HOST = E("GM_RELAY_HOST", "relay.openvanilla.app")
+RELAY_HOST = E("GM_RELAY_HOST", "relay.leylinelauncher.com")
 RELAY_URL = E("GM_RELAY_URL", "https://" + RELAY_HOST + "/healthz")
 PLAY_URL = E("GM_PLAY_URL", "").rstrip("/")   # wu-play's origin; empty = its container address
 SLUG = E("GM_REALM_SLUG", "wrathunleashed")
@@ -1166,6 +1169,131 @@ def api_accounts(q):
     return {"accounts": out}
 
 
+# ---- All players (review 4 Nov, ops 10: accounts, characters, online, last seen, bans, mutes and GM notes in one
+# place). Read-only SQL plus a notes file; bot accounts are left out like everywhere else in the console.
+PEOPLE_PAGE = 50
+PEOPLE_FILTERS = ("all", "online", "banned", "muted", "noted", "new")
+PEOPLE_SORTS = {"last": "a.last_login DESC", "name": "a.username", "new": "a.id DESC"}
+_notes_lock = threading.Lock()
+
+
+def notes_load():
+    try:
+        with open(NOTES_FILE, encoding="utf-8") as f:
+            d = json.load(f)
+        return {str(k): v for k, v in d.items() if isinstance(v, dict)} if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def notes_save(d):
+    tmp = NOTES_FILE + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(d, f, indent=1, sort_keys=True)
+    os.replace(tmp, NOTES_FILE)
+
+
+def people_sql(search, flt, sort, offset, noted_ids):
+    """The two read queries for one page of accounts (rows, then the count). Every value in them is checked here."""
+    bp = BOT_PREFIX.replace("'", "")
+    where = ["a.username NOT LIKE '%s%%'" % bp]
+    if search:
+        like = search.upper().replace("_", "\\_") + "%"
+        where.append("(a.username LIKE '%s' OR a.id IN (SELECT c.account FROM acore_characters.characters c WHERE c.name LIKE '%s'))"
+                     % (like, like))
+    if flt == "online":
+        where.append("a.online = 1")
+    elif flt == "banned":
+        where.append("EXISTS (SELECT 1 FROM account_banned b WHERE b.id = a.id AND b.active = 1)")
+    elif flt == "muted":
+        where.append("a.mutetime > UNIX_TIMESTAMP()")
+    elif flt == "noted":
+        where.append("a.id IN (%s)" % (",".join(str(int(i)) for i in noted_ids) or "0"))
+    elif flt == "new":
+        where.append("a.joindate > NOW() - INTERVAL 7 DAY")
+    w = " AND ".join(where)
+    rows = ("SELECT a.id, a.username, a.joindate, a.last_login, a.online, a.mutetime, "
+            "(SELECT COUNT(*) FROM account_banned b WHERE b.id = a.id AND b.active = 1), "
+            "(SELECT b.banreason FROM account_banned b WHERE b.id = a.id AND b.active = 1 ORDER BY b.bandate DESC LIMIT 1), "
+            "(SELECT b.unbandate FROM account_banned b WHERE b.id = a.id AND b.active = 1 ORDER BY b.bandate DESC LIMIT 1), "
+            "(SELECT b.bandate FROM account_banned b WHERE b.id = a.id AND b.active = 1 ORDER BY b.bandate DESC LIMIT 1), "
+            "(SELECT GROUP_CONCAT(CONCAT_WS(':', c.name, c.level, c.class, c.race, c.online, c.logout_time, c.zone) "
+            "ORDER BY c.online DESC, c.level DESC SEPARATOR ',') FROM acore_characters.characters c WHERE c.account = a.id), "
+            "(SELECT COALESCE(SUM(c.totaltime), 0) FROM acore_characters.characters c WHERE c.account = a.id), "
+            "a.last_ip "
+            "FROM account a WHERE %s ORDER BY %s LIMIT %d OFFSET %d;\n" % (w, PEOPLE_SORTS[sort], PEOPLE_PAGE, int(offset)))
+    count = "SELECT COUNT(*) FROM account a WHERE %s;\n" % w
+    return rows + count
+
+
+def api_people(q):
+    s = (q.get("q") or "").strip()
+    if s and not re.match(r"^[A-Za-z0-9_]{1,32}$", s):
+        raise Bad("search: 1-32 letters, digits or _")
+    flt = q.get("filter") or "all"
+    if flt not in PEOPLE_FILTERS:
+        raise Bad("filter: " + ", ".join(PEOPLE_FILTERS))
+    sort = q.get("sort") or "last"
+    if sort not in PEOPLE_SORTS:
+        raise Bad("sort: " + ", ".join(PEOPLE_SORTS))
+    page = intval(q.get("page") or 0, 0, 10000, "page")
+    notes = notes_load()
+    noted = [int(k) for k in notes if k.isdigit()]
+    rows = sql("acore_auth", people_sql(s, flt, sort, page * PEOPLE_PAGE, noted))
+    total, out, now = 0, [], time.time()
+    for r in rows:
+        if len(r) == 1:
+            total = int(r[0] or 0)
+            continue
+        if len(r) < 13:
+            continue
+        chars = []
+        for c in (r[10] or "").split(","):
+            f = c.split(":")
+            if len(f) < 7:
+                continue
+            chars.append({"name": f[0], "level": int(f[1] or 0), "class": CLASSES.get(int(f[2] or 0), f[2]),
+                          "race": RACES.get(int(f[3] or 0), f[3]), "online": f[4] == "1",
+                          "last_seen": int(f[5] or 0) or None, "zone": zone_name(f[6])})
+        unban = int(r[8] or 0)
+        acct_id = int(r[0])
+        out.append({"id": acct_id, "username": r[1], "created": r[2], "last_login": r[3], "online": r[4] == "1",
+                    "muted": int(r[5] or 0) > now, "muted_until": int(r[5] or 0) or None,
+                    "banned": int(r[6] or 0) > 0, "ban_reason": r[7] or "",
+                    "ban_until": None if not unban or unban == int(r[9] or 0) else unban,   # equal dates: permanent
+                    "characters": chars, "played_h": round(int(r[11] or 0) / 3600, 1),
+                    "last_seen": max([c["last_seen"] or 0 for c in chars] or [0]) or None,
+                    "note": (notes.get(str(acct_id)) or {}).get("text", ""),
+                    "note_at": (notes.get(str(acct_id)) or {}).get("at"),
+                    # the address is shown only as a short hash (enough to see two accounts share one, nothing more)
+                    "ip_tag": hashlib.sha256((r[12] or "").encode()).hexdigest()[:6] if r[12] and r[12] != "0.0.0.0" else ""})
+    return {"accounts": out, "total": total, "page": page, "page_size": PEOPLE_PAGE, "filter": flt, "sort": sort,
+            "notes": len(noted)}
+
+
+def a_note(a):
+    try:
+        acct_id = int(a.get("id"))
+    except (TypeError, ValueError):
+        raise Bad("id: an account id")
+    if acct_id <= 0:
+        raise Bad("id: an account id")
+    note = str(a.get("text") or "").replace("\r", " ").replace("\n", " ").strip()
+    note = " ".join(re.sub(r"[\x00-\x1f\x7f]", " ", note).split())[:500]
+    with _notes_lock:
+        d = notes_load()
+        if note:
+            d[str(acct_id)] = {"text": note, "at": now_iso()}
+        else:
+            d.pop(str(acct_id), None)
+        notes_save(d)
+    return "note saved" if note else "note removed"
+
+
+ACTIONS["note"] = (a_note, False, ("id", "text"))   # (defined here, after ACTIONS: the All players tab's GM note)
+
+
 def lua_files():
     d = WU + "/custom/lua_scripts"
     out = []
@@ -1682,7 +1810,7 @@ def query_tickets(status=None, search="", limit=200):
                % (" WHERE " + " AND ".join(where) if where else "", limit))
     out = []
     for r in rows:
-        if len(r) < 14:
+        if len(r) < 13:
             continue
         x, y, z, m = num_or(r[6], float), num_or(r[7], float), num_or(r[8], float), num_or(r[5])
         typ, viewed, cls = num_or(r[9]), num_or(r[10]) or 0, num_or(r[12])
@@ -1927,7 +2055,7 @@ def api_health(q):
             "stats_error": st.get("error"), "host": host_stats(), "errors": error_logs(20), "at": now_iso()}
 
 
-GETS = {"/api/overview": api_overview, "/api/players": api_players, "/api/accounts": api_accounts,
+GETS = {"/api/overview": api_overview, "/api/players": api_players, "/api/accounts": api_accounts, "/api/people": api_people,
         "/api/updates": api_updates, "/api/streaming": api_streaming, "/api/beacons": api_beacons,
         "/api/speed": api_speed, "/api/logs": api_logs, "/api/jobs": api_jobs,
         "/api/reports": api_reports, "/api/health": api_health, "/api/bugs": api_bugs}
@@ -2098,11 +2226,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(403, {"error": "loopback only"})
         now = time.time()
         _fails[:] = [x for x in _fails if now - x < 600]
-        if len(_fails) >= 20:
-            return self.send(429, {"error": "too many wrong tokens; wait 10 minutes"})
         auth = self.headers.get("Authorization") or ""
         tok = auth[7:].strip() if auth[:7].lower() == "bearer " else ""
-        if not tok or not hmac.compare_digest(tok.encode(), TOKEN.encode()):
+        good = bool(tok) and hmac.compare_digest(tok.encode(), TOKEN.encode())
+        # the lockout slows wrong guesses only: the right token always gets in (review 4 Nov: any local process could
+        # lock the owner out for 10 minutes)
+        if not good and len(_fails) >= 20:
+            return self.send(429, {"error": "too many wrong tokens; wait 10 minutes"})
+        if not good:
             _fails.append(now)
             time.sleep(0.5)
             return self.send(401, {"error": "Authorization: Bearer <GM_TOKEN> required"})
@@ -2116,9 +2247,10 @@ class Handler(BaseHTTPRequestHandler):
     def login(self, t):
         now = time.time()
         _fails[:] = [x for x in _fails if now - x < 600]
-        if len(_fails) >= 20:
+        good = bool(t) and hmac.compare_digest(t.encode(), TOKEN.encode())
+        if not good and len(_fails) >= 20:   # wrong guesses only: the owner's right token is never locked out
             return self.send(429, {"error": "too many wrong tokens; wait 10 minutes"})
-        if not t or not hmac.compare_digest(t.encode(), TOKEN.encode()):
+        if not good:
             _fails.append(now)
             time.sleep(0.5)
             return self.send(401, NOAUTH, "text/html; charset=utf-8")

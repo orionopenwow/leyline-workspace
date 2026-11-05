@@ -101,7 +101,8 @@ check("text: capped", len(gm.text("a" * 999, 120)) == 120)
 # ---------------------------------------------------------------- the lockout (last: it locks the login)
 for _ in range(25):
     req("GET", "/login?t=" + "y" * 40)
-check("20 wrong tokens in 10 minutes: 429", req("GET", "/login?t=" + TOK)[0] == 429)
+check("20 wrong tokens in 10 minutes: the next wrong one is 429", req("GET", "/login?t=" + "z" * 40)[0] == 429)
+check("... but the right token still gets in (nothing local can lock the owner out)", req("GET", "/login?t=" + TOK)[0] == 303)
 check("the audit log never holds the token", TOK not in open(os.environ["GM_AUDIT_FILE"]).read()
       if os.path.exists(os.environ["GM_AUDIT_FILE"]) else True)
 

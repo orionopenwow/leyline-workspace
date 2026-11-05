@@ -1062,13 +1062,19 @@ class Hub:
                 'with mods, addons, realm scripts and tools.">')
         css = ((self.portal("LOOK_VARS") or LOOK_FALLBACK) + SITE_TOKENS_CSS + (self.portal("SPIN_CSS") or "") + HUB_CSS + SITE_CSS
                + SIDE_CSS + STONE_CSS + STONE_MOBILE_CSS + DARK_ISLANDS + self._backdrop() + self._dl_css() + css)
-        return (f'<!doctype html><html lang="en" data-look="leyline"><head><meta charset="utf-8">'
+        page = (f'<!doctype html><html lang="en" data-look="leyline"><head><meta charset="utf-8">'
                 f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">'
                 f'<title>{e(title)}</title>{meta}{robots}<style>{css}</style></head>'
                 f'<body class="hb"><a class="hb-skip" href="#main">Skip to content</a>{top}{self._turn_hint(path)}'
                 f'<main id="main" class="hb-main{" hb-front" if front else ""}">{flag}{sub}{body}</main>{foot}'
                 + (f'<script nonce="{e(nonce)}">{HUB_JS}</script>' if nonce else "") + '</body></html>').replace(
-                    LIGHT_MQ, LIGHT_OFF).encode("utf-8")
+                    LIGHT_MQ, LIGHT_OFF)
+        # With the front door on, the frame's own links (header, footer) say /wrath/leyline: pages other modules draw in
+        # this frame (the Hero Key, Sign in, the leaderboards) don't pass through _Live, and sent every visitor through a
+        # 301 from the preview address (site review 4 Nov). Same swap as _Live and wrath_portal.hub_frame: idempotent.
+        if front_on():
+            page = page.replace(BASE, FRONT)
+        return page.encode("utf-8")
 
     def _dl_css(self) -> str:
         dm = self.portal("downloads_mod")
@@ -4398,7 +4404,7 @@ border:1px solid var(--lk-border);border-radius:12px;background:linear-gradient(
 .hb-main:has(>.hb-pg),.hb-main:has(>.fm),.hb-main:has(>.hf){padding:16px 16px 32px}
 .hb-pg-h{padding:14px 16px}.hb-pg-b{padding:16px}
 .hb-pg-h h1{font-size:20px}
-.hb-seg{display:flex;flex-wrap:nowrap;width:100%}.hb-seg a{flex:1 1 auto;justify-content:center;padding:0 10px;white-space:nowrap;font-size:14px}
+.hb-seg{display:flex;flex-wrap:nowrap;width:100%;overflow-x:auto;scrollbar-width:none}.hb-seg::-webkit-scrollbar{display:none}.hb-seg a{flex:1 0 auto;justify-content:center;padding:0 10px;white-space:nowrap;font-size:14px}
 .hb-pg-x{display:none}
 .hb-frow{grid-template-columns:minmax(0,1fr);gap:4px}.hb-flabel{padding-top:0}
 .hb-frow p,.hb-mk-bar .hb-chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:0 16px 2px}

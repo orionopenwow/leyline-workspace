@@ -2547,6 +2547,13 @@ fn watch_open(shared: &Arc<Shared>, w: Writer) -> StopOnDrop {
                     break;
                 }
             }
+            // the launcher's showcase (showcase.rs, a share from Mods & Addons › Dens): the camera over the build, and
+            // the Den bar takes the pictures with the game's own Screenshot()
+            if let Some(id) = crate::showcase::take_ask(&dir) {
+                if run_showcase(&shared, &w, &dir, &id).is_err() {
+                    break;
+                }
+            }
             // the launcher's ground file (after Forge closes): props and stamps stand on the new ground at once;
             // the game itself shows it after a restart (its map files load at start)
             let changed = shared.den.lk().reload_ground(&dir);
@@ -2628,6 +2635,35 @@ fn test_command(shared: &Shared, w: &Writer, id: u64, cmd: &str) -> io::Result<(
         "twin_queries": shared.twin_queries.load(Ordering::Relaxed),
     }));
     r
+}
+
+/// The showcase (showcase.rs): the far camera's object over the middle of what is built and the view on it, the Den
+/// bar told to take the pictures, then the view given back and the answer written for the launcher. Not in the world
+/// (no session): the answer says no pictures.
+fn run_showcase(shared: &Shared, w: &Writer, dir: &std::path::Path, id: &str) -> io::Result<()> {
+    use crate::{farsight, flight, showcase};
+    let (points, home) = {
+        let d = shared.den.lock().unwrap_or_else(|e| e.into_inner());
+        (d.props.iter().map(|p| (p.obj.x, p.obj.y, p.obj.z)).collect::<Vec<_>>(), (d.spot.x, d.spot.y, d.spot.z))
+    };
+    let (x, y, z, r) = showcase::pose(&points, home);
+    let live = shared.live.lock().unwrap_or_else(|e| e.into_inner()).is_some();
+    if !live {
+        let _ = std::fs::write(dir.join(showcase::DONE), showcase::done_doc(id, r, false));
+        return Ok(());
+    }
+    shared.event("showcase", "", &format!("start {} props r{}", points.len(), r.round()));
+    w.send(&farsight::create(farsight::at([x, y, z, 0.0])))?;
+    w.send_raw(flight::SMSG_SPLINE_MOVE_SET_FLYING, &flight::guid_body(farsight::GUID))?;
+    w.send_raw(flight::SMSG_SPLINE_MOVE_GRAVITY_DISABLE, &flight::guid_body(farsight::GUID))?;
+    w.send_raw(raw::SMSG_UPDATE_OBJECT, &raw::farsight(PLAYER_GUID, farsight::GUID))?;
+    send_addon(w, PLAYER_GUID, "wuden", "showcase", &showcase::addon_line(r))?;
+    std::thread::sleep(Duration::from_millis(showcase::total_ms() as u64));
+    w.send_raw(raw::SMSG_UPDATE_OBJECT, &raw::farsight(PLAYER_GUID, 0))?;
+    w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(farsight::GUID), target_died: false })?;
+    let _ = std::fs::write(dir.join(showcase::DONE), showcase::done_doc(id, r, true));
+    shared.event("showcase", "", "done");
+    Ok(())
 }
 
 fn check_open(shared: &Shared, w: &Writer, file: &str) -> io::Result<()> {

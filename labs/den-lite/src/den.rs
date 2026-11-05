@@ -22,6 +22,57 @@ pub const MAX_PATHS: usize = 100;
 /// ov_den_home.lua H.STAMP_MAX and H.STAMP_SPAN.
 pub const STAMP_MAX: usize = 60;
 pub const STAMP_SPAN: f64 = 40.0;
+/// The makers one Den names (stream/denmarket.py CREDITS_MAX).
+pub const CREDITS_MAX: usize = 32;
+
+/// Which entry of this Den's `credits` a piece from another file points at ([`Den::credit_map`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CreditMap {
+    /// The other file's own credit (who shared it), for its pieces that had none of their own.
+    own: Option<u64>,
+    /// Its `credits` list, entry by entry.
+    list: Vec<Option<u64>>,
+}
+
+impl CreditMap {
+    /// Nothing moves (a replace: the file's own list came along).
+    pub fn same() -> Self {
+        CreditMap { own: None, list: Vec::new() }
+    }
+
+    pub fn of(&self, piece: Option<u64>) -> Option<u64> {
+        if self.own.is_none() && self.list.is_empty() {
+            return piece;
+        }
+        match piece {
+            Some(i) => self.list.get(i as usize).copied().flatten().or(self.own),
+            None => self.own,
+        }
+    }
+}
+
+/// A credit entry worth keeping: an object with a maker (`by`) of plain text.
+fn credit_ok(c: &Value) -> bool {
+    c.get("by").and_then(Value::as_str).is_some_and(|b| !b.trim().is_empty() && b.len() <= 80 && !b.chars().any(char::is_control))
+}
+
+fn credit_key(c: &Value) -> String {
+    match c.get("id").and_then(Value::as_str) {
+        Some(id) if !id.is_empty() => format!("id:{id}"),
+        _ => format!("by:{}|{}", c.get("by").and_then(Value::as_str).unwrap_or(""), c.get("title").and_then(Value::as_str).unwrap_or("")),
+    }
+}
+
+/// What a Den keeps of a credit: id, title, by, licence, url (short text only).
+fn credit_line(c: &Value) -> Value {
+    let mut m = serde_json::Map::new();
+    for k in ["id", "title", "by", "licence", "url"] {
+        if let Some(v) = c.get(k).and_then(Value::as_str) {
+            m.insert(k.into(), Value::String(v.chars().filter(|c| !c.is_control()).take(200).collect()));
+        }
+    }
+    Value::Object(m)
+}
 /// How far inside the Den's reach a fitted stamp's farthest piece stands (yards; settle may move a piece a little).
 pub const STAMP_FIT_MARGIN: f32 = 1.0;
 /// What a locked prop says when it is moved or deleted.
@@ -253,6 +304,10 @@ pub struct Prop {
     /// `PASS_TWIN`); `true` Den Lite's guard rail keeps you on its top; none: as the game does with its model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub solid: Option<bool>,
+    /// A piece from someone else's shared stamp: its place in the Den file's `credits` list (who made it), so the
+    /// maker is still named when this Den is shared on (docs/DEN-MARKETPLACE.md "Credit").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credit: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -384,8 +439,11 @@ pub const LOCAL_MAX: usize = 400;
 static LOCAL: std::sync::Mutex<Option<std::path::PathBuf>> = std::sync::Mutex::new(None);
 /// Stamps the player made from a selection (the Builder's Stamps > Save, buildtools.rs): `<dens>/stamps-mine`.
 pub const MINE_DIR: &str = "stamps-mine";
+/// Stamps from the shared Dens (launcher denmarket.rs "Add as a stamp"): `<dens>/stamps-shared`, each with its maker's
+/// credit in it, which every piece keeps when it is placed (docs/DEN-MARKETPLACE.md).
+pub const SHARED_DIR: &str = "stamps-shared";
 
-/// Where this Den Lite's copied places are (`<dens>/stamps-local`; set at its start).
+/// Where this Den Lite's copied places are (`<dens>/stamps-local`; set at its start), and its shared stamps beside.
 pub fn set_local_stamps(dens: &Path) {
     *LOCAL.lock().unwrap_or_else(|e| e.into_inner()) = Some(dens.join(LOCAL_DIR));
 }
@@ -399,6 +457,10 @@ pub fn mine_dir() -> Option<std::path::PathBuf> {
     local_dir().and_then(|l| l.parent().map(|d| d.join(MINE_DIR)))
 }
 
+fn shared_dir() -> Option<std::path::PathBuf> {
+    local_dir().and_then(|l| l.parent().map(|d| d.join(SHARED_DIR)))
+}
+
 /// The stamps there are: the folder's, the built-in ones and the copied places made on this PC.
 pub fn stamp_names(dir: &Path) -> Vec<String> {
     let mut v = list_names(dir);
@@ -408,6 +470,9 @@ pub fn stamp_names(dir: &Path) -> Vec<String> {
     }
     if let Some(m) = mine_dir() {
         v.extend(list_names(&m));
+    }
+    if let Some(l) = shared_dir() {
+        v.extend(list_names(&l));
     }
     v.sort();
     v.dedup();
@@ -421,8 +486,12 @@ pub fn read_stamp(dir: &Path, name: &str) -> Result<DenDoc, String> {
     let local_file = |n: &str| {
         local.as_ref().map(|l| l.join(format!("{n}.den.json"))).filter(|p| p.is_file()).or_else(|| mine.as_ref().map(|m| m.join(format!("{n}.den.json"))).filter(|p| p.is_file()))
     };
+    let shared = shared_dir();
+    let shared_file = |n: &str| shared.as_ref().map(|l| l.join(format!("{n}.den.json"))).filter(|p| p.is_file());
     // another name for one ("tavern": the inn; stamps.rs NAMES), when there is no stamp called that
-    let known = |n: &str| dir.join(format!("{n}.den.json")).is_file() || BUILTIN_STAMPS.iter().any(|s| s.0 == n) || local_file(n).is_some();
+    let known = |n: &str| {
+        dir.join(format!("{n}.den.json")).is_file() || BUILTIN_STAMPS.iter().any(|s| s.0 == n) || local_file(n).is_some() || shared_file(n).is_some()
+    };
     let name = if known(name.as_str()) { name } else { crate::stamps::canonical(&name).filter(|n| known(*n)).map(str::to_string).unwrap_or(name) };
     let path = dir.join(format!("{name}.den.json"));
     let mut max = STAMP_MAX;
@@ -432,6 +501,8 @@ pub fn read_stamp(dir: &Path, name: &str) -> Result<DenDoc, String> {
         parse(b.1)
     } else if let Some(l) = local_file(name.as_str()) {
         max = LOCAL_MAX;
+        read_file(&l)
+    } else if let Some(l) = shared_file(name.as_str()) {
         read_file(&l)
     } else {
         Err(String::new())
@@ -752,6 +823,37 @@ impl Den {
         (made, skipped)
     }
 
+    /// Credit for pieces from another file (a shared stamp, or a Den added beside this one): that file's own
+    /// `credit` (who shared it) and its `credits` (the makers of the stamps in it) join this Den's `credits` (each
+    /// maker once, up to [`CREDITS_MAX`]); the map says which entry each piece points at now. A file without a
+    /// credit (your own stamps, the built-in ones) changes nothing.
+    pub fn credit_map(&mut self, doc: &DenDoc) -> CreditMap {
+        let own = doc.extra.get("credit").filter(|c| credit_ok(c)).cloned();
+        let theirs: Vec<Value> = doc.extra.get("credits").and_then(Value::as_array).cloned().unwrap_or_default();
+        if own.is_none() && theirs.is_empty() {
+            return CreditMap { own: None, list: Vec::new() };
+        }
+        let mut mine: Vec<Value> = self.extra.get("credits").and_then(Value::as_array).cloned().unwrap_or_default();
+        let mut put = |c: &Value| -> Option<u64> {
+            if !credit_ok(c) {
+                return None;
+            }
+            let key = credit_key(c);
+            if let Some(i) = mine.iter().position(|m| credit_key(m) == key) {
+                return Some(i as u64);
+            }
+            if mine.len() >= CREDITS_MAX {
+                return None;
+            }
+            mine.push(credit_line(c));
+            Some(mine.len() as u64 - 1)
+        };
+        let own_at = own.as_ref().and_then(&mut put);
+        let list = theirs.iter().map(&mut put).collect();
+        self.extra.insert("credits".into(), Value::Array(mine));
+        CreditMap { own: own_at, list }
+    }
+
     /// `.den stamp <name> now`: the stamp's pieces turned by `o` (15 degree steps) around the player at (x, y, z).
     pub fn stamp(&mut self, st: &DenDoc, x: f32, y: f32, z: f32, o: f32) -> Change {
         // fitted to the models' real sizes when Den Lite has them (stamps.rs): on table tops, nothing in another
@@ -761,6 +863,7 @@ impl Den {
         let o = ((o / step).round() * step).rem_euclid(2.0 * PI);
         let (c, s) = (o.cos() as f64, o.sin() as f64);
         let group = self.max_group() + 1;
+        let credit = self.credit_map(st);
         let props: Vec<Prop> = st
             .props
             .iter()
@@ -775,6 +878,7 @@ impl Den {
                 p.z = quiet_round((base - self.spot.z) as f64 + e.z);
                 p.yaw = quiet_round((o.to_degrees() as f64 + e.yaw).rem_euclid(360.0));
                 p.group = Some(group);
+                p.credit = credit.of(e.credit);
                 p
             })
             .collect();
@@ -1238,8 +1342,8 @@ impl Den {
             }
             self.paths = doc.paths.clone();
             self.extra = doc.extra.clone();
-            // the tournaments' results (tourney.rs) stay with the Den they were fought in
-            self.extra.retain(|k, _| k == "notes" || k == "door" || k == "mailbox" || k == "terrain" || k == "tournaments");
+            // the tournaments' results (tourney.rs) and a shared Den's credits (docs/DEN-MARKETPLACE.md) stay with it
+            self.extra.retain(|k, _| matches!(k.as_str(), "notes" | "door" | "mailbox" | "terrain" | "tournaments" | "credit" | "credits"));
             // the file's look and size (the room grows to fit what it was saved in; it never shrinks under props)
             let l = doc.room.as_ref().and_then(|r| look(&r.look)).unwrap_or(self.look);
             let half = doc.room.as_ref().filter(|r| r.size.is_finite()).map(|r| ring_half(ring_for(r.size))).unwrap_or(self.spot.half);
@@ -1253,12 +1357,15 @@ impl Den {
             self.paths.extend(doc.paths.iter().cloned());
         }
         let shift = if replace { 0 } else { self.max_group() };
+        // added beside what is here: its makers join this Den's credits (a replace brought its own list along)
+        let credit = if replace { CreditMap::same() } else { self.credit_map(doc) };
         let props: Vec<Prop> = doc
             .props
             .iter()
             .map(|p| {
                 let mut p = p.clone();
                 p.group = p.group.map(|g| g + shift);
+                p.credit = credit.of(p.credit);
                 p
             })
             .collect();
@@ -1414,6 +1521,44 @@ mod tests {
         let den = Den::new(Spot::default());
         let (x, y, too_big) = den.fit_stamp(&wide, den.spot.x + 10.0, den.spot.y, 0.0);
         assert!(too_big && (x - den.spot.x).abs() < 1e-3 && (y - den.spot.y).abs() < 1e-3);
+    }
+
+    /// A shared stamp keeps its maker in the Den it lands in (docs/DEN-MARKETPLACE.md "Credit"): each piece points at
+    /// the Den's `credits`, the same maker once, a stamp built from other people's stamps names them too, and the
+    /// list survives a save, an open and a Den added beside.
+    #[test]
+    fn shared_stamps_keep_their_makers_credit() {
+        let stamp = parse(r#"{"format":"leyline-den","version":1,"kind":"stamp","title":"Bea's camp","props":[{"entry":2413,"x":2,"y":0},
+            {"entry":2413,"x":4,"y":1,"credit":0}],"credits":[{"id":"cccccccccc","title":"Fire","by":"Cal"}],
+            "credit":{"id":"bbbbbbbbbb","title":"Bea's camp","by":"Bea","licence":"CC BY 4.0","made_with":"Made with Leyline"}}"#).unwrap();
+        let mine = parse(r#"{"format":"leyline-den","version":1,"kind":"stamp","props":[{"entry":2413,"x":1,"y":1}]}"#).unwrap();
+        let mut den = Den::new(Spot::default());
+        let (x, y) = (den.spot.x + 3.0, den.spot.y);
+        den.stamp(&mine, x, y, den.spot.z, 0.0);
+        assert!(den.props.iter().all(|p| p.prop.credit.is_none()) && !den.extra.contains_key("credits"), "your own stamp: nothing to credit");
+        den.stamp(&stamp, x, y, den.spot.z, 0.0);
+        den.stamp(&stamp, x - 6.0, y, den.spot.z, 0.0);
+        let credits = den.extra["credits"].as_array().unwrap().clone();
+        assert_eq!(credits.len(), 2, "Bea once, Cal once: {credits:?}");
+        assert_eq!((credits[0]["by"].as_str(), credits[1]["by"].as_str()), (Some("Bea"), Some("Cal")));
+        assert!(credits[0].get("made_with").is_none(), "only the short fields are kept");
+        let cr: Vec<Option<u64>> = den.props.iter().map(|p| p.prop.credit).collect();
+        assert_eq!(cr, vec![None, Some(0), Some(1), Some(0), Some(1)], "Bea's pieces, and the one she took from Cal");
+        // saved and opened again: the same list, the same pieces
+        let doc = den.to_doc("camp", 0);
+        let text = serde_json::to_string(&doc).unwrap();
+        let back = parse(&text).unwrap();
+        let mut other = Den::new(Spot::default());
+        other.open(&back, true);
+        assert_eq!(other.extra["credits"].as_array().unwrap().len(), 2);
+        assert_eq!(other.props.iter().map(|p| p.prop.credit).collect::<Vec<_>>(), cr);
+        // that Den added beside a Den with its own makers: the lists join, the pieces follow
+        let mut third = Den::new(Spot::default());
+        third.extra.insert("credits".into(), serde_json::json!([{"id": "dddddddddd", "by": "Dax"}, {"id": "cccccccccc", "by": "Cal"}]));
+        third.open(&back, false);
+        let l = third.extra["credits"].as_array().unwrap();
+        assert_eq!(l.iter().map(|c| c["by"].as_str().unwrap()).collect::<Vec<_>>(), ["Dax", "Cal", "Bea"]);
+        assert_eq!(third.props.iter().map(|p| p.prop.credit).collect::<Vec<_>>(), vec![None, Some(2), Some(1), Some(2), Some(1)]);
     }
 
     /// A ground file as the launcher writes it: the chunk the room stands in raised 10 yards (a hill under the room).

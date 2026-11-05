@@ -1003,6 +1003,10 @@ function D.OnMessage(prefix, msg, channel, sender)
         if W.DenDiag then pcall(W.DenDiag, plain(data)) end
     elseif name == "ui" then
         D.TestAction(data)
+    elseif name == "showcase" then
+        -- a share from the launcher (labs/den-lite showcase.rs): "<pictures>|<ms between>|<zoom yards>"
+        local n, step, zoom = data:match("^(%d+)|(%d+)|(%d+)$")
+        if n then D.Showcase(tonumber(n), tonumber(step) / 1000, tonumber(zoom)) end
     elseif name == "invite" and inviteOk(data) then
         D.link = data
         if D.active then
@@ -1214,6 +1218,51 @@ function D.TestAction(text)
     if a == "rail" then local r = bar[w[2] or ""]; if r and r.Click then r:Click(); return true end; return false end
     return false
 end
+
+-- ---------------------------------------------------------------- the showcase (labs/den-lite showcase.rs)
+-- When a player shares this Den from the launcher (Mods & Addons > Dens > Share, docs/DEN-MARKETPLACE.md), Den Lite
+-- puts the far camera over the build and asks for its pictures: the interface hides, the camera zooms out to fit it,
+-- and the game's own Screenshot() takes one picture on each side, a quarter turn between (FlipCameraYaw), ending
+-- where it began. The pictures go to the game's Screenshots folder as JPEGs; the launcher shows them and sends only
+-- the ones the player keeps. The timer runs on the world frame, so it keeps going while the interface is hidden.
+local shoot = CreateFrame("Frame", nil, WorldFrame or UIParent)
+shoot:Hide()
+function D.Showcase(n, step, zoom)
+    if shoot.left then return false end
+    shoot.left = math.max(1, math.min(tonumber(n) or 4, 8))
+    shoot.turn = 360 / shoot.left
+    shoot.step = math.max(0.5, math.min(tonumber(step) or 1.8, 5))
+    shoot.t, shoot.turned = shoot.step, true
+    shoot.ui = UIParent:IsShown()
+    shoot.cv = { GetCVar("screenshotFormat"), GetCVar("screenshotQuality") }
+    SetCVar("screenshotFormat", "jpeg")   -- small enough to share (900 KB a picture)
+    SetCVar("screenshotQuality", "6")
+    if not InCombatLockdown() then UIParent:Hide() end
+    if CameraZoomOut then CameraZoomOut(math.max(1, math.min(tonumber(zoom) or 20, 50))) end
+    shoot:Show()
+    return true
+end
+shoot:SetScript("OnUpdate", function(self, elapsed)
+    if not self.left then return self:Hide() end
+    self.t = self.t - (elapsed or 0)
+    if self.t > 0 then return end
+    if not self.turned then   -- the picture is written: a quarter round to the next side
+        if FlipCameraYaw then FlipCameraYaw(self.turn) end
+        self.turned, self.t = true, self.step - 0.4
+    elseif self.left > 0 then
+        if Screenshot then Screenshot() end
+        D.shots = (D.shots or 0) + 1
+        self.left = self.left - 1
+        self.turned, self.t = false, 0.4
+    else
+        self:Hide()
+        self.left = nil
+        if self.cv[1] then SetCVar("screenshotFormat", self.cv[1]) end
+        if self.cv[2] then SetCVar("screenshotQuality", self.cv[2]) end
+        if self.ui then UIParent:Show() end
+    end
+end)
+D.shootFrame = shoot
 
 local listener = CreateFrame("Frame")
 listener:RegisterEvent("CHAT_MSG_ADDON")

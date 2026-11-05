@@ -1601,6 +1601,97 @@ fn den_join_page(app: AppHandle, core: State<Core>) -> Result<(), String> {
     app.opener().open_url(link, None::<&str>).map_err(|e| e.to_string())
 }
 
+// ---- Single player's Built-in engine (host/engine.rs, docs/BUILTIN-ENGINE.md): no Docker. The page (single.js)
+// follows engine_progress as it follows host_progress for the Docker engine.
+
+fn engine_paths() -> crate::host::engine::Paths {
+    crate::host::engine::Paths::new(&settings::app_dir())
+}
+
+/// Installed, set up, running (each port), the player's login once made.
+#[tauri::command]
+async fn engine_status() -> Result<crate::host::engine::EngineStatus, String> {
+    blocking(|| Ok(crate::host::engine::status(&engine_paths()))).await
+}
+
+/// Set Single player up on the Built-in engine (whatever isn't done yet: the engine, the maps from this game folder,
+/// the database, the account) and start it. `update`: take the release's newer engine first.
+#[tauri::command]
+fn engine_setup(core: State<Core>, client: String, update: Option<bool>) -> Result<String, String> {
+    let profile = core.client(&client)?;
+    if profile.build != clients::Build::V335a {
+        return Err("Single player plays with a different game folder: pick one of its version.".into());
+    }
+    crate::host::engine::begin(&settings::app_dir(), Some(profile.path), update.unwrap_or(false))
+}
+
+/// Start it again (set up already).
+#[tauri::command]
+fn engine_start() -> Result<String, String> {
+    crate::host::engine::begin(&settings::app_dir(), None, false)
+}
+
+#[tauri::command]
+fn engine_progress() -> crate::host::engine::Job {
+    crate::host::engine::progress()
+}
+
+/// Everyone saved, everything stopped.
+#[tauri::command]
+async fn engine_stop() -> Result<String, String> {
+    blocking(|| crate::host::engine::stop(&engine_paths())).await
+}
+
+#[tauri::command]
+async fn engine_logs(lines: Option<usize>) -> Result<String, String> {
+    blocking(move || Ok(crate::host::engine::logs(&engine_paths(), lines.unwrap_or(200).clamp(20, 2000)))).await
+}
+
+/// A back-up of the saves (accounts, characters, the bots): the zip's path.
+#[tauri::command]
+async fn engine_backup() -> Result<String, String> {
+    blocking(|| crate::host::engine::backup(&engine_paths()).map(|p| p.display().to_string())).await
+}
+
+/// The release looked at for a newer engine; the status after.
+#[tauri::command]
+async fn engine_update_check() -> Result<crate::host::engine::EngineStatus, String> {
+    blocking(|| {
+        let p = engine_paths();
+        crate::host::engine::check_update(&p)?;
+        Ok(crate::host::engine::status(&p))
+    })
+    .await
+}
+
+#[derive(Serialize)]
+struct EnginePlay {
+    message: String,
+    account: String,
+    password: String,
+}
+
+/// Play Single player on the Built-in engine: the account filled in on the login screen and the realm picked after
+/// it (Config.wtf), the client pointed at 127.0.0.1:3724, then started.
+#[tauri::command]
+fn engine_play(core: State<Core>, client: String) -> Result<EnginePlay, String> {
+    use crate::host::engine;
+    let profile = core.client(&client)?;
+    if profile.build != clients::Build::V335a {
+        return Err("Single player plays with a different game folder: pick one of its version.".into());
+    }
+    let st = engine::status(&engine_paths());
+    if !st.set_up {
+        return Err("Set Single player up first: press Start on its page.".into());
+    }
+    if !st.running {
+        return Err("Single player isn't running: press Start first.".into());
+    }
+    let _ = crate::herokey::set_login(&profile.path, &st.account, Some(engine::REALM_NAME));
+    let (message, _) = point_and_play_with(&core, &client, engine::REALM, true, None, false)?;
+    Ok(EnginePlay { message, account: st.account, password: st.password })
+}
+
 /// Forge, the Den's terrain editor (host/forge.rs): installed or not, open or not, and what its last close did.
 #[tauri::command]
 fn forge_state() -> crate::host::forge::ForgeState {
@@ -2397,6 +2488,15 @@ pub fn run() {
             den_models_remove,
             den_prefill_account,
             den_join_page,
+            engine_status, // Single player's Built-in engine (host/engine.rs, ui/single.js)
+            engine_setup,
+            engine_start,
+            engine_progress,
+            engine_stop,
+            engine_logs,
+            engine_backup,
+            engine_update_check,
+            engine_play,
             forge_state, // Forge, the Den's terrain editor (host/forge.rs, ui/den.js "Open in Forge")
             forge_install,
             forge_open,

@@ -1,0 +1,338 @@
+# Single player's Built-in engine (docs/BUILTIN-ENGINE.md, owner's 4 Nov plan, Phase 2: no Docker): the same realm
+# the Docker images run, built natively for Windows and packed as one zip on the rolling release "engine-latest" of
+# this repo, always at the same addresses, each with its checksum:
+#   https://github.com/<this repo>/releases/download/engine-latest/leyline-engine-win64.zip        (+ .sha256)
+#   https://github.com/<this repo>/releases/download/engine-latest/leyline-engine-win64.json       (engine.json)
+# The launcher (launcher/src-tauri/src/host/engine.rs `install`) downloads the zip on the first Single player start
+# and checks it against its .sha256 before it unpacks it.
+#
+# The same sources as wu-images.yml: realm/custom/fetch.sh at the commits in realm/custom/sources.lock (the playerbot
+# fork of AzerothCore + every module + our patches + mod-sandbox-core), Release, scripts and modules static, mod-ale's
+# default Lua (5.2, static). The Windows toolchain follows the pinned fork's own windows_build.yml: MSVC from the
+# runner image, Boost 1.87.0 prebuilt, the MySQL 8.4.9 zip for libmysql (and, trimmed, as the bundled database
+# server: the same 8.4 the host kit's mysql:8.4 runs), the runner's OpenSSL.
+#
+# No game data: mod-arac's client files are removed before the build, and the job fails if any game-data file is in
+# the sources or in the package. The player's maps are extracted on their own PC by the bundled map_extractor.
+# Only the built-in token (contents: write for the release); no other secrets.
+#
+# Source copy: tools/github-workflows/engine-windows.yml. "Turn on GitHub builds.bat" copies it to .github/workflows/.
+# Not on every push: when the realm's sources, our scripts or profiles, or this file change, or by hand.
+name: engine-windows
+on:
+  push:
+    branches: [main]
+    paths:
+      - "realm/custom/sources.lock"
+      - "realm/custom/patches/**"
+      - "realm/custom/fetch.sh"
+      - "realm/custom/modules/**"
+      - "realm/custom/lua_scripts/**"
+      - "realm/profiles/**"
+      - "realm/modules.env"
+      - ".github/workflows/engine-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engine-latest
+  cancel-in-progress: false
+
+env:
+  BOOST_VERSION: "1.87.0"
+  MYSQL_VERSION: "8.4.9"
+  PKG_LAYOUT: "1"
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 350
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Sources at the pinned commits (realm/custom/fetch.sh, the same recipe as the Docker images)
+        shell: bash
+        run: |
+          set -euo pipefail
+          FETCH_DIR="$PWD/realm/custom" sh realm/custom/fetch.sh
+          git -C realm/custom/acore rev-parse HEAD
+
+      - name: No game data in the sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf realm/custom/acore/modules/mod-arac/patch-contents
+          rm -f realm/custom/acore/modules/mod-arac/*.MPQ realm/custom/acore/modules/mod-arac/*.mpq
+          bad=$(find realm/custom/acore -path '*/.git' -prune -o -type f \( -iname '*.dbc' -o -iname '*.db2' -o -iname '*.mpq' \
+                -o -iname '*.m2' -o -iname '*.wmo' -o -iname '*.adt' -o -iname '*.blp' -o -iname '*.vmtree' -o -iname '*.mmap' \) -print | head -20)
+          if [ -n "$bad" ]; then echo "game data in the sources, stopping:"; echo "$bad"; exit 1; fi
+          echo "clean"
+
+      - name: Boost and MySQL (the pinned fork's own recipe)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bu = $env:BOOST_VERSION -replace '\.', '_'
+          $broot = "C:\local\boost_$bu"
+          $boostExe = Join-Path $env:RUNNER_TEMP 'boost.exe'
+          $boostUrl = "https://downloads.sourceforge.net/project/boost/boost-binaries/$env:BOOST_VERSION/boost_$bu-msvc-14.3-64.exe"
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+              # SourceForge gives a page instead of the file to browser user agents
+              Invoke-WebRequest -Uri $boostUrl -OutFile $boostExe -UserAgent 'leyline-engine-ci' -ConnectionTimeoutSeconds 60 -OperationTimeoutSeconds 60
+              if (((Get-Item $boostExe).Length / 1MB) -lt 50) { throw 'not the installer (too small)' }
+              break
+            } catch {
+              Write-Host "Boost download attempt $attempt failed: $($_.Exception.Message)"
+              if ($attempt -eq 3) { throw }
+              Start-Sleep -Seconds 15
+            }
+          }
+          $p = Start-Process -FilePath $boostExe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$broot" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Boost installer exit code $($p.ExitCode)" }
+          if (-not (Test-Path "$broot\boost\version.hpp")) { throw 'Boost headers missing' }
+          "BOOST_ROOT=$broot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          # the archives CDN keeps every version; it wants a browser user agent
+          $mv = $env:MYSQL_VERSION
+          $mz = Join-Path $env:RUNNER_TEMP 'mysql.zip'
+          Invoke-WebRequest -Uri "https://cdn.mysql.com/archives/mysql-8.4/mysql-$mv-winx64.zip" -OutFile $mz -UserAgent 'Mozilla/5.0'
+          if (((Get-Item $mz).Length / 1MB) -lt 50) { throw 'MySQL zip looks wrong' }
+          $msha = (Get-FileHash -Algorithm SHA256 $mz).Hash.ToLower()
+          Write-Host "mysql-$mv-winx64.zip sha256 $msha"
+          "MYSQL_ZIP_SHA256=$msha" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          New-Item -ItemType Directory -Force -Path 'C:\tools\mysql' | Out-Null
+          Expand-Archive -Path $mz -DestinationPath 'C:\tools\mysql' -Force
+          Rename-Item "C:\tools\mysql\mysql-$mv-winx64" 'C:\tools\mysql\current'
+          if (-not (Test-Path 'C:\tools\mysql\current\lib\mysqlclient.lib')) { throw 'mysqlclient.lib missing' }
+
+          $ssl = @($env:OPENSSL_ROOT_DIR, 'C:\Program Files\OpenSSL', 'C:\Program Files\OpenSSL-Win64') |
+            Where-Object { $_ -and (Test-Path (Join-Path $_ 'include\openssl\opensslv.h')) } | Select-Object -First 1
+          if (-not $ssl) { throw 'No OpenSSL on the runner image' }
+          "OPENSSL_ROOT_DIR=$ssl" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "OpenSSL at $ssl"
+
+      - name: Configure (Release, every tool, scripts and modules static, as the Docker build)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # C: has the room (the build tree is 10+ GB)
+          cmake -S realm/custom/acore -B C:\acb -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_INSTALL_PREFIX=C:\acdist -DAPPS_BUILD=all -DTOOLS_BUILD=all -DSCRIPTS=static -DMODULES=static `
+            -DWITH_WARNINGS=OFF -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DBoost_USE_STATIC_LIBS=ON `
+            -DMYSQL_INCLUDE_DIR=C:\tools\mysql\current\include -DMYSQL_LIBRARY=C:\tools\mysql\current\lib\mysqlclient.lib `
+            -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR"
+          if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
+
+      - name: Build (the long one, 2-4 hours)
+        shell: pwsh
+        run: |
+          cmake --build C:\acb --config Release --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw "build failed" }
+          cmake --install C:\acb --config Release
+          if ($LASTEXITCODE -ne 0) { throw "install failed" }
+          Get-ChildItem -Recurse C:\acdist -Include *.exe | ForEach-Object { "{0,10:N0} KB  {1}" -f ($_.Length / 1KB), $_.FullName }
+
+      - name: Package (programs, a trimmed MySQL, the SQL, our scripts and profiles; never game data)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pkg = 'C:\pkg'
+          New-Item -ItemType Directory -Force -Path "$pkg\bin\configs\modules", "$pkg\tools", "$pkg\mysql\bin", "$pkg\source\data", `
+            "$pkg\source\modules", "$pkg\realm\profiles", "$pkg\realm\sql", "$pkg\LICENSES\modules" | Out-Null
+          $exe = @{}
+          Get-ChildItem -Recurse C:\acdist -Include *.exe | ForEach-Object { $exe[$_.BaseName] = $_.FullName }
+          foreach ($n in 'authserver', 'worldserver', 'dbimport') {
+            if (-not $exe[$n]) { throw "$n.exe was not built" }
+            Copy-Item $exe[$n] "$pkg\bin\"
+          }
+          foreach ($n in 'map_extractor', 'vmap4_extractor', 'vmap4_assembler', 'mmaps_generator') {
+            if (-not $exe[$n]) { throw "$n.exe was not built" }
+            Copy-Item $exe[$n] "$pkg\tools\"
+          }
+          # the configs: the apps' own beside them, the modules' in configs\modules (engine.rs copies .dist to .conf)
+          Get-ChildItem -Recurse C:\acdist -Filter *.conf.dist | ForEach-Object {
+            if ($_.Name -in 'worldserver.conf.dist', 'authserver.conf.dist', 'dbimport.conf.dist') { Copy-Item $_.FullName "$pkg\bin\configs\" }
+            else { Copy-Item $_.FullName "$pkg\bin\configs\modules\" }
+          }
+          # DLLs the programs need: what the install put beside them, libmysql, OpenSSL, the VC++ runtime (app-local)
+          $dlls = @()
+          $dlls += Get-ChildItem -Recurse C:\acdist -Filter *.dll | ForEach-Object FullName
+          $dlls += 'C:\tools\mysql\current\lib\libmysql.dll'
+          $dlls += Get-ChildItem "$env:OPENSSL_ROOT_DIR\bin" -Filter 'lib*-3-x64.dll' | ForEach-Object FullName
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $crt = Get-ChildItem "$vs\VC\Redist\MSVC\*\x64\Microsoft.VC143.CRT" -Directory | Sort-Object FullName | Select-Object -Last 1
+          if (-not $crt) { throw 'VC++ runtime folder not found' }
+          $dlls += Get-ChildItem $crt.FullName -Filter *.dll | ForEach-Object FullName
+          foreach ($d in ($dlls | Sort-Object -Unique)) { Copy-Item $d "$pkg\bin\" -Force; Copy-Item $d "$pkg\tools\" -Force }
+          # MySQL, trimmed: the server, the client, admin and dump, their DLLs, share\ (the VC++ runtime too)
+          $my = 'C:\tools\mysql\current'
+          foreach ($n in 'mysqld.exe', 'mysql.exe', 'mysqladmin.exe', 'mysqldump.exe') { Copy-Item "$my\bin\$n" "$pkg\mysql\bin\" }
+          Get-ChildItem "$my\bin" -Filter *.dll | ForEach-Object { Copy-Item $_.FullName "$pkg\mysql\bin\" }
+          Get-ChildItem $crt.FullName -Filter *.dll | ForEach-Object { Copy-Item $_.FullName "$pkg\mysql\bin\" -Force }
+          Copy-Item -Recurse "$my\share" "$pkg\mysql\share"
+          New-Item -ItemType Directory -Force -Path "$pkg\LICENSES\mysql" | Out-Null
+          Get-ChildItem $my -File | Where-Object { $_.Name -match '^(LICENSE|README)' } | ForEach-Object { Copy-Item $_.FullName "$pkg\LICENSES\mysql\" }
+          # the SQL the updater imports (SourceDirectory): the core's data\sql and each module's data\sql
+          $src = 'realm\custom\acore'
+          Copy-Item -Recurse "$src\data\sql" "$pkg\source\data\sql"
+          Get-ChildItem "$src\modules" -Directory | ForEach-Object {
+            if (Test-Path "$($_.FullName)\data\sql") {
+              New-Item -ItemType Directory -Force -Path "$pkg\source\modules\$($_.Name)\data" | Out-Null
+              Copy-Item -Recurse "$($_.FullName)\data\sql" "$pkg\source\modules\$($_.Name)\data\sql"
+            }
+            $lic = Get-ChildItem $_.FullName -File | Where-Object { $_.Name -match '^(LICENSE|COPYING)' } | Select-Object -First 1
+            if ($lic) { Copy-Item $lic.FullName "$pkg\LICENSES\modules\$($_.Name)-$($lic.Name)" }
+          }
+          Copy-Item "$src\LICENSE" "$pkg\LICENSES\azerothcore-LICENSE"
+          # ours: the Lua scripts, the profiles, modules.env, the profile SQL (as hosting/kit/make-kit.sh)
+          Copy-Item -Recurse 'realm\custom\lua_scripts' "$pkg\lua_scripts"
+          Copy-Item 'realm\profiles\*.env' "$pkg\realm\profiles\"
+          Copy-Item 'realm\modules.env' "$pkg\realm\"
+          foreach ($f in 'main_unbrawl.sql', 'main_world.sql', 'modern_combos.sql', 'brawl_world.sql', 'brawl_world_2.sql') {
+            if (Test-Path "realm\$f") { Copy-Item "realm\$f" "$pkg\realm\sql\" }
+          }
+
+      - name: Sources and engine.json (the GPL's corresponding source, the versions)
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg=/c/pkg
+          ver="$(date -u +%Y.%m.%d)-${GITHUB_SHA::7}"
+          {
+            echo "Leyline's Built-in engine $ver, built by .github/workflows/engine-windows.yml from $GITHUB_REPOSITORY@$GITHUB_SHA."
+            echo "Every program here is built from these sources at these exact commits (name repo branch commit):"
+            grep -v '^#' realm/custom/sources.lock | sed '/^$/d'
+            echo "Patches applied: realm/custom/patches/ in the same commit. mod-sandbox-core and the Lua scripts are ours (realm/custom/)."
+            echo "MySQL Community Server $MYSQL_VERSION: https://cdn.mysql.com/archives/mysql-8.4/mysql-$MYSQL_VERSION-winx64.zip (sha256 $MYSQL_ZIP_SHA256); source at https://github.com/mysql/mysql-server/tree/mysql-$MYSQL_VERSION"
+            echo "Boost $BOOST_VERSION (linked statically), OpenSSL from the build machine, Lua 5.2 (mod-ale's default, static)."
+            echo "No game data: the maps are read from the player's own game folder on their own PC."
+          } > "$pkg/SOURCES.txt"
+          python - "$pkg/engine.json" "$ver" <<'EOF'
+          import json, os, sys
+          mods = {}
+          core = ""
+          for line in open("realm/custom/sources.lock", encoding="utf-8"):
+              p = line.split()
+              if not p or p[0].startswith("#"):
+                  continue
+              if p[0] == "core":
+                  core = p[3]
+              else:
+                  mods[p[0]] = p[3]
+          doc = {"name": "leyline-engine", "version": sys.argv[2], "layout": int(os.environ["PKG_LAYOUT"]), "core": core,
+                 "modules": mods, "mysql": os.environ["MYSQL_VERSION"], "boost": os.environ["BOOST_VERSION"], "lua": "lua52",
+                 "built_from": os.environ["GITHUB_SHA"]}
+          json.dump(doc, open(sys.argv[1], "w", encoding="utf-8"), indent=2)
+          EOF
+          cat "$pkg/engine.json"
+
+      - name: No game data in the package
+        shell: bash
+        run: |
+          set -euo pipefail
+          bad=$(find /c/pkg -type f \( -iname '*.dbc' -o -iname '*.db2' -o -iname '*.mpq' -o -iname '*.m2' -o -iname '*.wmo' \
+                -o -iname '*.adt' -o -iname '*.blp' -o -iname '*.vmtree' -o -iname '*.mmap' -o -iname '*.map' \) -print | head -20)
+          if [ -n "$bad" ]; then echo "game data in the package, stopping:"; echo "$bad"; exit 1; fi
+          du -sh /c/pkg /c/pkg/*
+
+      - name: Smoke (every program starts; the trimmed MySQL runs; dbimport fills every database; the login server answers)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pkg = 'C:\pkg'
+          # a missing DLL shows as exit code -1073741515 (0xC0000135)
+          foreach ($p in "$pkg\bin\worldserver.exe", "$pkg\bin\authserver.exe", "$pkg\bin\dbimport.exe", "$pkg\mysql\bin\mysqld.exe") {
+            & $p --version | Select-Object -First 3
+            if ($LASTEXITCODE -eq -1073741515) { throw "$p is missing a DLL" }
+          }
+          foreach ($p in Get-ChildItem "$pkg\tools" -Filter *.exe) {
+            $o = & $p.FullName --help 2>&1 | Select-Object -First 2
+            if ($LASTEXITCODE -eq -1073741515) { throw "$($p.Name) is missing a DLL" }
+          }
+          $t = 'C:\smoke'
+          New-Item -ItemType Directory -Force -Path "$t\db", "$t\logs", "$t\tmp" | Out-Null
+          $pw = -join ((48..57) + (65..90) | Get-Random -Count 16 | ForEach-Object { [char]$_ })
+          $f = ($t -replace '\\', '/')
+          $mb = ("$pkg\mysql" -replace '\\', '/')
+          @"
+          [mysqld]
+          basedir=$mb
+          datadir=$f/db
+          port=13306
+          bind-address=127.0.0.1
+          mysqlx=OFF
+          skip-name-resolve
+          skip-log-bin
+          log-error=$f/logs/mysqld.err
+          "@ | Set-Content "$t\my.ini" -Encoding ascii
+          "CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED BY '$pw'; GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION; ALTER USER 'root'@'localhost' IDENTIFIED BY '$pw';" |
+            Set-Content "$t\init.sql" -Encoding ascii
+          & "$pkg\mysql\bin\mysqld.exe" "--defaults-file=$t\my.ini" --initialize-insecure "--init-file=$f/init.sql" --console
+          if ($LASTEXITCODE -ne 0) { Get-Content "$t\logs\mysqld.err" -ErrorAction SilentlyContinue; throw 'mysqld --initialize failed' }
+          $db = Start-Process -FilePath "$pkg\mysql\bin\mysqld.exe" -ArgumentList "--defaults-file=$t\my.ini" -PassThru -NoNewWindow
+          $up = $false
+          for ($i = 0; $i -lt 60 -and -not $up; $i++) { Start-Sleep 2; $up = (Test-NetConnection 127.0.0.1 -Port 13306 -WarningAction SilentlyContinue).TcpTestSucceeded }
+          if (-not $up) { Get-Content "$t\logs\mysqld.err"; throw 'mysqld did not answer' }
+          $env:AC_LOGIN_DATABASE_INFO = "127.0.0.1;13306;root;$pw;acore_auth"
+          $env:AC_WORLD_DATABASE_INFO = "127.0.0.1;13306;root;$pw;acore_world"
+          $env:AC_CHARACTER_DATABASE_INFO = "127.0.0.1;13306;root;$pw;acore_characters"
+          $env:AC_SOURCE_DIRECTORY = "$pkg\source"
+          $env:AC_MY_SQLEXECUTABLE = "$pkg\mysql\bin\mysql.exe"
+          $env:AC_LOGS_DIR = "$t\logs"
+          $env:AC_TEMP_DIR = "$t\tmp"
+          $env:AC_UPDATES_AUTO_SETUP = "1"
+          $env:AC_UPDATES_ENABLE_DATABASES = "7"
+          $env:AC_BIND_IP = "127.0.0.1"
+          Copy-Item "$pkg\bin\configs\dbimport.conf.dist" "$pkg\bin\configs\dbimport.conf"
+          Copy-Item "$pkg\bin\configs\authserver.conf.dist" "$pkg\bin\configs\authserver.conf"
+          Push-Location "$pkg\bin"
+          & .\dbimport.exe -c configs\dbimport.conf
+          $rc = $LASTEXITCODE
+          if ($rc -ne 0) { Pop-Location; throw "dbimport failed ($rc)" }
+          $n = & "$pkg\mysql\bin\mysql.exe" -h127.0.0.1 -P13306 -uroot "--password=$pw" -N -e "SELECT COUNT(*) FROM acore_world.creature_template"
+          Write-Host "creature_template rows: $n"
+          if ([int]$n -lt 1000) { Pop-Location; throw 'the world database looks empty' }
+          $auth = Start-Process -FilePath "$pkg\bin\authserver.exe" -ArgumentList '-c', 'configs\authserver.conf' -PassThru -NoNewWindow
+          $up = $false
+          for ($i = 0; $i -lt 30 -and -not $up; $i++) { Start-Sleep 2; $up = (Test-NetConnection 127.0.0.1 -Port 3724 -WarningAction SilentlyContinue).TcpTestSucceeded }
+          Pop-Location
+          Stop-Process -Id $auth.Id -Force -ErrorAction SilentlyContinue
+          & "$pkg\mysql\bin\mysqladmin.exe" -h127.0.0.1 -P13306 -uroot "--password=$pw" shutdown
+          if (-not $up) { throw 'the login server did not answer on 127.0.0.1:3724' }
+          # what the smoke made is not shipped
+          Remove-Item "$pkg\bin\configs\dbimport.conf", "$pkg\bin\configs\authserver.conf" -ErrorAction SilentlyContinue
+          Get-ChildItem "$pkg\bin" -Filter *.log | Remove-Item -ErrorAction SilentlyContinue
+          Write-Host "smoke OK"
+
+      - name: Zip with its checksum (deflate only, which the launcher reads)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /c/pkg
+          7z a -tzip -mm=Deflate -mx=7 "$GITHUB_WORKSPACE/leyline-engine-win64.zip" . > /dev/null
+          cd "$GITHUB_WORKSPACE"
+          sha256sum leyline-engine-win64.zip | awk '{print $1"  leyline-engine-win64.zip"}' > leyline-engine-win64.zip.sha256
+          cp /c/pkg/engine.json leyline-engine-win64.json
+          cat leyline-engine-win64.zip.sha256
+          ls -la leyline-engine-win64.zip
+
+      - name: Put it on engine-latest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ver="$(python -c 'import json; print(json.load(open("leyline-engine-win64.json"))["version"])')"
+          size="$(( $(stat -c %s leyline-engine-win64.zip) / 1048576 )) MB"
+          notes="Leyline's Built-in engine for Single player on Windows ($ver, $size), built from $GITHUB_SHA. The Leyline launcher downloads it on the first Single player start and checks it against its .sha256. It holds no game data: the maps are read from your own game folder on your PC. GPL software; SOURCES.txt inside lists every source at its exact commit. Not code-signed yet."
+          if gh release view engine-latest -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit engine-latest -R "$GITHUB_REPOSITORY" --title "Built-in engine (latest, $ver)" --notes "$notes" --prerelease=false
+          else
+            gh release create engine-latest -R "$GITHUB_REPOSITORY" --title "Built-in engine (latest, $ver)" --notes "$notes" --target "$GITHUB_SHA" --latest=false
+          fi
+          gh release upload engine-latest leyline-engine-win64.zip leyline-engine-win64.zip.sha256 leyline-engine-win64.json -R "$GITHUB_REPOSITORY" --clobber

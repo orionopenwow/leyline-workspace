@@ -638,7 +638,7 @@ function css() {
   (document.head || document.documentElement).append(style);
 }
 
-const WHERE = 'The folder you start the 3.3.5a game from: it holds a "Data" folder with common.MPQ and lichking.MPQ (the Data folder itself works too).';
+const WHERE = 'The folder you start the Wrath game from: it holds a "Data" folder with common.MPQ and lichking.MPQ (the Data folder itself works too).';
 
 /// The folder card. `opts.text`: { title, sub, stream } override the own-mode words.
 function createUi(opts) {
@@ -647,7 +647,7 @@ function createUi(opts) {
   const input = el('input', { type: 'file', class: 'hidden', webkitdirectory: '', multiple: '' });
   const chooseBtn = el('button', { class: 'primary', type: 'button', 'data-act': 'choose' }, 'Choose folder');
   const zone = el('div', { class: 'zone', 'data-zone': '' },
-    el('p', {}, 'Drop your 3.3.5a game folder here'),
+    el('p', {}, 'Drop your Wrath game folder here'),
     el('p', { class: 'where' }, WHERE),
     el('div', {}, chooseBtn));
   const continueBtn = el('button', { class: 'primary hidden', type: 'button', 'data-act': 'continue' }, 'Continue');
@@ -658,7 +658,7 @@ function createUi(opts) {
   const card = el('div', { class: 'card', role: 'dialog', 'aria-labelledby': 'wu-ownfiles-title' },
     el('a', { class: 'help', href: HELP_URL, target: '_blank', rel: 'noopener', title: 'Help: using your own game folder', 'aria-label': 'Help' }, '?'),
     el('h1', { id: 'wu-ownfiles-title' }, t.title || 'Use my own game files'),
-    el('p', { class: 'sub' }, t.sub || 'Play with the 3.3.5a (12340) game files already on this computer.'),
+    el('p', { class: 'sub' }, t.sub || 'Play with the Wrath game files already on this computer.'),
     zone,
     el('div', { class: 'privacy' }, el('span', {}, '🔒'),
       el('span', {}, 'Your game files stay on this computer. Nothing is uploaded: this browser tab reads the MPQ files straight from your disk.')),
@@ -837,7 +837,7 @@ export function ownFilesStats() {
 function chooser(opts, base, state) {
   return new Promise((resolve) => {
     const ui = createUi(gamedataOff() ? { ...opts, text: { ...(opts.text || {}),
-      sub: 'This realm needs your own game folder: drop your 3.3.5a game folder below. It streams no game files.' } } : opts);
+      sub: 'This realm needs your own game folder: drop your Wrath game folder below. It streams no game files.' } } : opts);
     const streamUrl = opts.streamUrl || STREAM_URL;
     if (window.WU_STREAM_AVAILABLE && !gamedataOff()) ui.streamBtn.classList.remove('hidden');
     ui.streamBtn.addEventListener('click', () => { location.href = streamUrl; });
@@ -998,7 +998,7 @@ async function bootLayer(opts, base) {
     let perm = 'prompt';
     try { perm = await rec.handle.queryPermission({ mode: 'read' }); } catch (_) {}
     if (perm === 'granted') {
-      const c = fresh ? cover('Opening the whole world…', 'Reading your 3.3.5a game folder. Nothing is uploaded.') : null;
+      const c = fresh ? cover('Opening the whole world…', 'Reading your Wrath game folder. Nothing is uploaded.') : null;
       try {
         result = await mountLayer(base, { type: 'handle', handle: rec.handle, label: rec.label });
       } catch (e) {
@@ -1088,7 +1088,7 @@ function layerCard(opts, base, state = {}) {
   return new Promise((resolve) => {
     const keeps = browserKeepsFolders();
     const ui = createUi({ ...opts, soft: layerState.phase === 'started', text: {
-      title: state.redrop ? 'Drop your game folder once more' : 'Use your 3.3.5a game folder',
+      title: state.redrop ? 'Drop your game folder once more' : 'Use your Wrath game folder',
       sub: state.redrop
         ? 'This browser cannot keep a folder across a page load, so it needs it once more to open the whole world.'
         : 'Streamed play covers Dalaran, the capitals and the starting areas. Your own game folder opens the rest of the world, on the same realm and characters.',

@@ -479,7 +479,7 @@ export function touchMaybe() {
 export const INTERFACE_KEY = 'wu:interface';
 export const INTERFACES = [
   { id: 'forever', label: 'Forever UI (default)' },
-  { id: 'classic', label: 'Classic 3.3.5' },
+  { id: 'classic', label: 'Classic' },
 ];
 
 /** The address to reload: the current one without its foreverui parameter. */
@@ -1431,7 +1431,7 @@ export function folderButton(panel, own = () => window.__wuOwnFiles) {
     const st = own()?.status?.();
     b.textContent = st?.mounted ? 'Game folder: on' : 'Use my game folder';
     b.title = st?.mounted ? `The whole world, from your game folder “${st.label}”. Nothing is uploaded.`
-      : 'Open the whole world with your own 3.3.5a game folder. Nothing is uploaded.';
+      : 'Open the whole world with your own Wrath game folder. Nothing is uploaded.';
   };
   label();
   setInterval(label, 3000);

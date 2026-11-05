@@ -80,7 +80,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   ok(r.status === 410 && calls.length === 1, '410: fetch not retried');
   ok(window.__wuGamedataOff === true, '410: __wuGamedataOff set');
   const note = findId(body, 'wu-gamedata-off');
-  ok(!!note && /needs your own game folder/.test(textOf(note)) && /3\.3\.5a game folder/.test(textOf(note)), '410: the page says what it needs');
+  ok(!!note && /needs your own game folder/.test(textOf(note)) && /Wrath game folder/.test(textOf(note)), '410: the page says what it needs');
   ok(!!note && JSON.stringify(note).includes('/?ownfiles=1'), '410: the note links to the game-folder page');
   plan = [410]; calls = [];
   const x = new XMLHttpRequest(); x.open('GET', '/data/a.blp', false); x.send();
@@ -123,7 +123,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   ok(!calls.some((u) => u.includes('/data')), 'ownfiles: killswitch: /data is never asked');
   ok(!settled, 'ownfiles: killswitch: ?data=host does not start a streamed client');
   const card = findId(body, 'wu-ownfiles');
-  ok(!!card && /needs your own game folder/.test(textOf(card)) && /3\.3\.5a game folder/.test(textOf(card)), 'ownfiles: the card says to drop the 3.3.5a game folder');
+  ok(!!card && /needs your own game folder/.test(textOf(card)) && /Wrath game folder/.test(textOf(card)), 'ownfiles: the card says to drop the 3.3.5a game folder');
   const stream = (function find(e) { if (!e || typeof e === 'string') return null; if (e.attrs && e.attrs['data-act'] === 'stream') return e; for (const k of e.kids || []) { const f = find(k); if (f) return f; } return null; })(card);
   ok(!!stream && stream.classList.contains('hidden'), 'ownfiles: killswitch: no "Stream a mini version" offer');
   for (const w of ['World of Warcraft', 'Warcraft', 'Blizzard', 'Lich King']) ok(!textOf(card).includes(w) && !textOf(note).includes(w), `no ${w} on the page`);

@@ -69,7 +69,7 @@
         h.textContent = 'This realm needs your own game folder.';
         var p = document.createElement('p');
         p.setAttribute('style', 'margin:0 0 1rem;color:#ccc');
-        p.textContent = 'It no longer streams game files. Drop your 3.3.5a game folder on the next page: it is read on your computer and never uploaded.';
+        p.textContent = 'It no longer streams game files. Drop your Wrath game folder on the next page: it is read on your computer and never uploaded.';
         var a = document.createElement('a');
         a.href = '/?ownfiles=1';
         a.textContent = 'Use my game folder';

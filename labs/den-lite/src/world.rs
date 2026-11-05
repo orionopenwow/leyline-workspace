@@ -13,7 +13,7 @@
 use crate::companion::{self, Asked, At};
 use crate::den::{self, Change, WorldObject};
 use crate::notice::{self, Item, Old, Route};
-use crate::{dojo, gizmo, movewatch, mymodels, ovmod, places, play, raw, testctl};
+use crate::{buildtools, dojo, gizmo, movewatch, mymodels, ovmod, places, play, raw, testctl};
 use crate::{Gender as HeroGender, Lock, Shared};
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -675,9 +675,11 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
             }
             other => {
                 if let (Some(p), Some(n)) = (pos.as_mut(), moved(&other)) {
+                    let was = *p;
                     *p = n;
                     moved_once = true;
                     track(shared, &sess, &mut watch, op, &body, n);
+                    guard_rail(&c.w, shared, &sess, was, n, op, &body)?;
                     aid_follow(&c.w, shared, &sess, &sel, &mut aids, n)?;
                     if let Some(l) = shared.live.lk().as_mut().filter(|l| l.0 == sess.id) {
                         l.2 = n;
@@ -707,6 +709,22 @@ fn addon(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Pos>, sel: &mut o
     let can = sess.me.host || shared.guests_build.load(Ordering::Relaxed);
     // the placement aids' verbs (gizmo.rs): hover comes about 10 a second, so it isn't written to the events
     if let Some(("wubuild", "cmd", data)) = ovmod::split(&m.text) {
+        // the Builder's tools (buildtools.rs: paths, stamps with the mouse, arrays, align, Solid, layers, history)
+        if buildtools::is_tool(data) {
+            let Some(h) = here else { return Ok(()) };
+            shared.event("addon", &sess.me.name, &format!("wubuild tool {}", data.split_whitespace().take(2).collect::<Vec<_>>().join(" ")));
+            let (out, follow) = {
+                let mut d = shared.den.lock().unwrap_or_else(|e| e.into_inner());
+                let ctx = buildtools::Ctx { dens: &shared.cfg.den_dir, stamps: &shared.cfg.stamps_dir, who: &sess.me.name, unix: now() };
+                let out = buildtools::cmd(&mut d, sel, aids, h, data, can, &ctx);
+                // the gizmo goes where the selection now is (a box select, a path laid)
+                (out, gizmo::sync(&d, sel, aids))
+            };
+            return quietly(c, shared, sess.id, sess.me.guid, || {
+                aid_send(c, shared, sess, sel, aids, out)?;
+                aid_send(c, shared, sess, sel, aids, follow)
+            });
+        }
         if gizmo::is_aid(data) {
             let Some(h) = here else { return Ok(()) };
             if !data.trim_start().to_ascii_lowercase().starts_with("hover") {
@@ -745,7 +763,7 @@ fn aid_send(c: &Writer, shared: &Shared, sess: &Sess, sel: &ovmod::Sel, aids: &g
         shared.event("build_mode", &sess.me.name, if build { "build" } else { "play" });
         if shared.build_look.swap(build, Ordering::Relaxed) != build {
             // every prop shown again in the new look, to everyone in the Den
-            let objs: Vec<WorldObject> = shared.den.lock().unwrap_or_else(|e| e.into_inner()).props.iter().map(|p| p.obj.clone()).collect();
+            let objs: Vec<WorldObject> = shared.den.lock().unwrap_or_else(|e| e.into_inner()).props.iter().filter(|p| p.prop.hidden != Some(true)).map(|p| p.obj.clone()).collect();
             for p in shared.players.lock().unwrap_or_else(|e| e.into_inner()).clone() {
                 for o in &objs {
                     let _ = p.w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(o.guid), target_died: false });
@@ -1041,6 +1059,29 @@ pub fn raw_move(op: u32, body: &[u8]) -> Option<Pos> {
     let f = |k: usize| body.get(at + 4 * k..at + 4 * k + 4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]));
     let (x, y, z, o) = (f(0)?, f(1)?, f(2)?, f(3)?);
     [x, y, z, o].iter().all(|v| v.is_finite() && v.abs() < 1.0e6).then_some(At { x, y, z, o })
+}
+
+/// The Builder's guard rail (buildtools.rs `guard`, docs/DEN-TOOLS.md): a player who sank into a prop marked Solid
+/// (its model has no collision, or the game hadn't drawn it yet) or fell through the Den's ground is put back on top
+/// by a near teleport, at most once a second and a half each.
+fn guard_rail(c: &Writer, shared: &Shared, sess: &Sess, was: Pos, n: Pos, op: u32, body: &[u8]) -> io::Result<()> {
+    static LAST: Mutex<Vec<(u64, u64)>> = Mutex::new(Vec::new());
+    static COUNTER: AtomicU64 = AtomicU64::new(1_000_000);
+    let flags = raw_move(op, body).and_then(|_| movewatch::raw_flags(body)).unwrap_or(0);
+    let up = buildtools::guard(&shared.den.lock().unwrap_or_else(|e| e.into_inner()), [was.x, was.y, was.z], [n.x, n.y, n.z], flags);
+    let Some(z) = up else { return Ok(()) };
+    let t = now_ms();
+    {
+        let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+        if last.iter().any(|(s, at)| *s == sess.id && t.saturating_sub(*at) < 1500) {
+            return Ok(());
+        }
+        last.retain(|(s, _)| *s != sess.id);
+        last.push((sess.id, t));
+    }
+    shared.event("guard", &sess.me.name, &format!("{:.1} {:.1} {:.1} -> {:.1}", n.x, n.y, n.z, z));
+    let counter = (COUNTER.fetch_add(1, Ordering::Relaxed) & 0xFFFF_FFFF) as u32;
+    c.send_raw(places::MSG_MOVE_TELEPORT_ACK, &places::teleport_body(sess.me.guid, counter, movewatch::server_ms(), n.x, n.y, z, n.o))
 }
 
 /// A move from the game: what the watch makes of it into the events (movewatch.rs), and the host's copy kept for

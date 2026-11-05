@@ -6,6 +6,7 @@
 //! See README.md for what works, what is verified only by the test client, and what multi-player would need.
 
 pub mod accdata;
+pub mod buildtools;
 pub mod cheers;
 pub mod creatures;
 pub mod classes;
@@ -37,6 +38,7 @@ pub mod specs;
 pub mod spells;
 pub mod stamps;
 pub mod testctl;
+pub mod tools;
 pub mod world;
 
 use std::collections::HashMap;

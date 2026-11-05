@@ -28,7 +28,7 @@ pub const STAMP_FIT_MARGIN: f32 = 1.0;
 pub const LOCKED: &str = "That prop is locked: Unlock it first.";
 
 /// ov_build.lua K.UNDO_DEPTH.
-pub const UNDO_DEPTH: usize = 50;
+pub const UNDO_DEPTH: usize = 200;
 /// A model prop's entry is this plus its display (ov_build.lua `.build models`); it is shown on the carrier.
 pub const MODEL_BASE: u64 = 2_000_000_000;
 /// OV_BUILD_MODEL_CARRIER: the catalog's Bottle.
@@ -127,6 +127,10 @@ pub struct Template {
 }
 
 pub fn template(entry: u32) -> Option<Template> {
+    // a prop with Solid off (tools.rs): its own template, told to the game as a door (sent open: walked through)
+    if crate::tools::is_pass(entry) {
+        return template(crate::tools::unpass(entry)).map(|t| Template { entry, kind: crate::tools::DOOR, ..t });
+    }
     OBJECTS
         .binary_search_by_key(&entry, |r| r.0)
         .ok()
@@ -245,6 +249,10 @@ pub struct Prop {
     /// Stamps only: "door", "mailbox", "house".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
+    /// The Builder's Solid (docs/DEN-TOOLS.md): `false` walk through it (the game is told an open door: tools.rs
+    /// `PASS_TWIN`); `true` Den Lite's guard rail keeps you on its top; none: as the game does with its model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub solid: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -374,6 +382,8 @@ pub const BUILTIN_STAMPS: &[(&str, &str)] = &[
 pub const LOCAL_DIR: &str = "stamps-local";
 pub const LOCAL_MAX: usize = 400;
 static LOCAL: std::sync::Mutex<Option<std::path::PathBuf>> = std::sync::Mutex::new(None);
+/// Stamps the player made from a selection (the Builder's Stamps > Save, buildtools.rs): `<dens>/stamps-mine`.
+pub const MINE_DIR: &str = "stamps-mine";
 
 /// Where this Den Lite's copied places are (`<dens>/stamps-local`; set at its start).
 pub fn set_local_stamps(dens: &Path) {
@@ -384,12 +394,20 @@ fn local_dir() -> Option<std::path::PathBuf> {
     LOCAL.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
+/// Where the player's own stamps are (`<dens>/stamps-mine`, beside the copied places).
+pub fn mine_dir() -> Option<std::path::PathBuf> {
+    local_dir().and_then(|l| l.parent().map(|d| d.join(MINE_DIR)))
+}
+
 /// The stamps there are: the folder's, the built-in ones and the copied places made on this PC.
 pub fn stamp_names(dir: &Path) -> Vec<String> {
     let mut v = list_names(dir);
     v.extend(BUILTIN_STAMPS.iter().map(|s| s.0.to_string()));
     if let Some(l) = local_dir() {
         v.extend(list_names(&l));
+    }
+    if let Some(m) = mine_dir() {
+        v.extend(list_names(&m));
     }
     v.sort();
     v.dedup();
@@ -399,7 +417,10 @@ pub fn stamp_names(dir: &Path) -> Vec<String> {
 pub fn read_stamp(dir: &Path, name: &str) -> Result<DenDoc, String> {
     let name = clean_name(name).ok_or("No such stamp.")?;
     let local = local_dir();
-    let local_file = |n: &str| local.as_ref().map(|l| l.join(format!("{n}.den.json"))).filter(|p| p.is_file());
+    let mine = mine_dir();
+    let local_file = |n: &str| {
+        local.as_ref().map(|l| l.join(format!("{n}.den.json"))).filter(|p| p.is_file()).or_else(|| mine.as_ref().map(|m| m.join(format!("{n}.den.json"))).filter(|p| p.is_file()))
+    };
     // another name for one ("tavern": the inn; stamps.rs NAMES), when there is no stamp called that
     let known = |n: &str| dir.join(format!("{n}.den.json")).is_file() || BUILTIN_STAMPS.iter().any(|s| s.0 == n) || local_file(n).is_some();
     let name = if known(name.as_str()) { name } else { crate::stamps::canonical(&name).filter(|n| known(*n)).map(str::to_string).unwrap_or(name) };
@@ -669,6 +690,8 @@ impl Den {
             let t = template(u32::try_from(p.entry).ok()?)?;
             (t.entry, t.display, t.kind, t.size)
         };
+        // Solid off: the walk-through twin (tools.rs), a door the game is told is open
+        let (entry, kind) = if p.solid == Some(false) { (crate::tools::pass(entry), crate::tools::DOOR) } else { (entry, kind) };
         let (x, y, z) = (self.spot.x + p.x as f32, self.spot.y + p.y as f32, self.spot.z + p.z as f32);
         if !self.inside(x, y, z) {
             return None;
@@ -824,6 +847,80 @@ impl Den {
     /// How many redo steps there are (the Builder's Redo n).
     pub fn redo_depth(&self) -> usize {
         self.redo.len()
+    }
+
+    /// The undo steps by name, the newest first (the Builder's History, buildtools.rs): "Placed 12", "Moved Chair".
+    pub fn history(&self) -> Vec<String> {
+        let name = |p: &Prop| template(p.entry as u32).map(|t| t.name).unwrap_or("prop");
+        self.undo
+            .iter()
+            .rev()
+            .map(|u| match u {
+                Undo::Placed(g) if g.len() == 1 => format!("Placed {}", self.placed(g[0]).map(|p| name(&p.prop)).unwrap_or("a prop")),
+                Undo::Placed(g) => format!("Placed {}", g.len()),
+                Undo::Replaced { added, removed, .. } => format!("Replaced {} with {}", removed.len(), added.len()),
+                Undo::Edited { before, .. } => format!("Changed {}", name(before)),
+                Undo::Deleted(p) => format!("Deleted {}", name(p)),
+                Undo::EditedMany(l) => format!("Changed {}", l.len()),
+            })
+            .collect()
+    }
+
+    /// The props of the last undo step when it is a placing (the Builder's staged stamp: put down again elsewhere
+    /// only while nothing else was done since).
+    pub fn last_placed(&self) -> Option<&[u64]> {
+        match self.undo.last() {
+            Some(Undo::Placed(g)) => Some(g.as_slice()),
+            _ => None,
+        }
+    }
+
+    /// Props placed as given (relative to the Den), as **one** undo step (a path, an array, a pasted group). What
+    /// doesn't fit is left out and counted.
+    pub fn place_many(&mut self, props: &[Prop]) -> Change {
+        let (made, skipped) = self.place(props);
+        if !made.is_empty() {
+            self.push_undo(Undo::Placed(made.iter().map(|o| o.guid).collect()));
+        }
+        Change { created: made, skipped, ..Default::default() }
+    }
+
+    /// Each (guid, its new prop) at once, as **one** undo step (align, distribute, Solid, a group). A locked prop, or
+    /// one that would leave the Den, is left as it is; an error when none changed.
+    pub fn edit_each(&mut self, list: Vec<(u64, Prop)>) -> Result<Change, String> {
+        let mut before = Vec::new();
+        let mut ch = Change::default();
+        for (g, mut p) in list {
+            let Some(b) = self.placed(g).map(|x| x.prop.clone()) else { continue };
+            if b.locked == Some(true) {
+                continue;
+            }
+            p.x = quiet_round(p.x);
+            p.y = quiet_round(p.y);
+            p.z = quiet_round(p.z);
+            p.yaw = quiet_round(p.yaw.rem_euclid(360.0));
+            if let Some(obj) = self.set_prop(g, p) {
+                before.push((g, b));
+                ch.destroyed.push(g);
+                ch.created.push(obj);
+            }
+        }
+        if before.is_empty() {
+            return Err("Nothing changed (locked, or it wouldn't fit in your Den).".into());
+        }
+        self.push_undo(Undo::EditedMany(before));
+        Ok(ch)
+    }
+
+    /// Some props taken away and others put down, as **one** undo step (a path laid again after its points were
+    /// edited): undo takes the new ones away and puts the old ones back.
+    pub fn replace_props(&mut self, remove: &[u64], add: &[Prop]) -> Change {
+        let removed: Vec<Prop> = self.props.iter().filter(|p| remove.contains(&p.obj.guid)).map(|p| p.prop.clone()).collect();
+        let destroyed: Vec<u64> = self.props.iter().filter(|p| remove.contains(&p.obj.guid)).map(|p| p.obj.guid).collect();
+        self.props.retain(|p| !remove.contains(&p.obj.guid));
+        let (made, skipped) = self.place(add);
+        self.push_undo(Undo::Replaced { added: made.iter().map(|o| o.guid).collect(), removed, look: self.look.name.to_string(), half: self.spot.half });
+        Change { created: made, destroyed, skipped, ..Default::default() }
     }
 
     /// Puts `prop` in place of the one with `guid`, keeping the guid: the new object, or None (no such prop, or
@@ -1259,7 +1356,8 @@ impl Den {
 
     /// Every object a client entering the Den is sent: the room, then the props.
     pub fn everything(&self) -> Vec<WorldObject> {
-        self.room.iter().cloned().chain(self.props.iter().map(|p| p.obj.clone())).collect()
+        // hidden props (the Builder's Hide, buildtools.rs) stay in the Den but aren't shown
+        self.room.iter().cloned().chain(self.props.iter().filter(|p| p.prop.hidden != Some(true)).map(|p| p.obj.clone())).collect()
     }
 
     /// Where a player comes in, `side` yards east of the Den's middle (a guest a step beside the host): **on** the

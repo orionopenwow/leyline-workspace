@@ -505,7 +505,8 @@ mod tests {
     fn the_game_archive_reader_reads_ours_and_encrypted_single_and_offset_ones() {
         let big: Vec<u8> = (0..20_000u32).flat_map(|i| format!("v {i}\n").into_bytes()).collect();
         let a = build(&[("World\\Maps\\Kalimdor\\Kalimdor_1_1.adt".into(), big.clone()), ("x\\y.txt".into(), b"hi".to_vec())]).unwrap();
-        let d = tempfile::tempdir().unwrap();
+        // a folder of its own (no tempfile crate: Den Lite builds this file too, labs/den-lite lib.rs `mpq`)
+        let d = TempDir::new("game-archive");
         // a user-data header in front (as some archives have), our archive 1024 bytes in
         let mut shifted = b"MPQ\x1b".to_vec();
         shifted.extend_from_slice(&[0u8; 4]);
@@ -537,6 +538,24 @@ mod tests {
         assert_eq!(read_own(&[r, p.clone()], "x\\y.txt").unwrap().unwrap(), b"hi");
         assert!(read_own(&[d.path().join("missing.MPQ"), p], "nope").unwrap().is_none());
         assert!(GameArchive::open(&d.path().join("missing.MPQ")).is_err());
+    }
+
+    struct TempDir(std::path::PathBuf);
+    impl TempDir {
+        fn new(tag: &str) -> TempDir {
+            let p = std::env::temp_dir().join(format!("leyline-mpq-{tag}-{}-{:?}", std::process::id(), std::thread::current().id()).replace(['(', ')'], ""));
+            let _ = std::fs::remove_dir_all(&p);
+            std::fs::create_dir_all(&p).unwrap();
+            TempDir(p)
+        }
+        fn path(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 
     fn fs_write(p: &std::path::Path, b: &[u8]) {

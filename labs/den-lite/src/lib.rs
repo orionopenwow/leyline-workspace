@@ -24,6 +24,32 @@ pub mod gearsets;
 pub mod guests;
 pub mod jaina;
 pub mod layoutstamps;
+// The launcher's own MPQ code and creature rows (launcher/src-tauri), built here too so Den Lite's `glide-rows`
+// (gliderows.rs) writes exactly the launcher's rows: one source for both.
+#[path = "../../../launcher/src-tauri/src/mpq.rs"]
+#[allow(dead_code)]
+pub mod mpq;
+#[path = "../../../launcher/src-tauri/src/host/creaturemodels.rs"]
+pub mod creaturemodels;
+pub mod gliderows;
+/// What creaturemodels.rs needs of the launcher's settings.rs: a file written whole or not at all.
+pub mod settings {
+    use std::io::Write;
+    pub fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+        let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(std::path::Path::new("."));
+        std::fs::create_dir_all(dir)?;
+        let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let tmp = dir.join(format!(".{name}.{}.tmp", std::process::id()));
+        {
+            let mut f = std::fs::File::create(&tmp)?;
+            f.write_all(bytes)?;
+            f.sync_all()?;
+        }
+        std::fs::rename(&tmp, path).inspect_err(|_| {
+            let _ = std::fs::remove_file(&tmp);
+        })
+    }
+}
 pub mod hosting;
 pub mod ovmod;
 pub mod login;

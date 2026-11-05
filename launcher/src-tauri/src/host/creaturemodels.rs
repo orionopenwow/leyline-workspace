@@ -24,6 +24,9 @@
 //! player's OWN, read from their own archives and put in the Den's patch-T on this PC (taken out whenever they play
 //! anywhere else); nothing is shipped. Den Lite is told which displays have rows by [`MARKER`] in the Dens folder
 //! (written only when the tables really went in and no later archive hides them).
+//!
+//! Den Lite builds this same file (labs/den-lite lib.rs, `#[path]`) for its `glide-rows` command (gliderows.rs: the
+//! rows on this PC before a launcher with them is out), so both write exactly the same rows.
 
 use leyline_terrain::dbc::Dbc;
 use std::path::Path;
@@ -223,10 +226,13 @@ mod tests {
         // the marker Den Lite reads
         let v: serde_json::Value = serde_json::from_str(&marker(&done)).unwrap();
         assert_eq!((v["format"].as_str(), v["base"].as_u64(), v["displays"][1].as_u64()), (Some(FORMAT), Some(70_000), Some(40)));
-        let dir = tempfile::tempdir().unwrap();
-        write_marker(dir.path(), Some(&done));
-        assert!(dir.path().join(MARKER).is_file());
-        write_marker(dir.path(), None);
-        assert!(!dir.path().join(MARKER).exists());
+        // a folder of its own (no tempfile crate: Den Lite builds this file too, labs/den-lite lib.rs `creaturemodels`)
+        let dir = std::env::temp_dir().join(format!("leyline-creaturemodels-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        write_marker(&dir, Some(&done));
+        assert!(dir.join(MARKER).is_file());
+        write_marker(&dir, None);
+        assert!(!dir.join(MARKER).exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -157,6 +157,10 @@ STEPS = {
     "den-test-variants": ("tools/den-check/Den test - variants.bat", "The Den test once (since 3 Nov the Den is the game's own grass and sky: nothing left to vary)", False),
     "den-test-invite": ("tools/den-check/Den test - invite.bat", "My Den test (the same as den-test: it always invites a test friend now)", False),
     "ui-local": ("tools/den-check/UI into my game.bat", "The newest in-game UI into this PC's game folder for testing (backup first; players still get it from addons)", False),
+    # the gliding copy's creature rows from this PC's own game tables (labs/den-lite gliderows.rs), before a launcher
+    # with them is out; den-move makes them itself when they're missing
+    "den-glide": ("tools/den-check/Den glide rows.bat", "The gliding copy in Your Den: Den Lite makes each prop model's creature rows from your own game's tables into Data\\patch-S.MPQ (backup first; den-glide-undo takes them away). Run den-lite first; close the game", False),
+    "den-glide-undo": ("tools/den-check/Den glide rows - undo.bat", "Takes the gliding copy's rows away (our Data\\patch-S.MPQ and the marker): the copy is a gameobject made anew again", False),
     "den-move": ("tools/den-check/Den move.bat", "The one Den test for now: select and move (build mode, a prop placed and selected, hover glow, click selects, press and drag moves it, snap out and back, zoom far and back; pictures in tools\\den-check\\logs\\den-move)", False),
     "den-features": ("tools/den-check/Den features.bat", "The Den editor's feature test: den-test, then the gallery (do the tiles show models?), five props placed, select, move, turn, copy, paste, delete, undo, redo, save and open, every panel and play mode, through the editor's own buttons; a screenshot after each (tools\\den-check\\logs\\den-features)", False),
     "client":  ("stream/Update browser client.bat", "New browser game build", False),

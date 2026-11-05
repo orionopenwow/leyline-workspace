@@ -83,9 +83,16 @@ pub fn parse(text: &str) -> Option<HashSet<u32>> {
     Some(set)
 }
 
-/// [`parse`] of `<dens>/`[`MARKER`].
+/// [`parse`] of `<dens>/`[`MARKER`]. A marker that names the archive holding the rows (`archive`: Den Lite's own
+/// `glide-rows`, gliderows.rs) counts only while that archive is still in the game's Data folder.
 pub fn read(dir: &Path) -> Option<HashSet<u32>> {
-    parse(&std::fs::read_to_string(dir.join(MARKER)).ok()?)
+    let text = std::fs::read_to_string(dir.join(MARKER)).ok()?;
+    if let Some(a) = serde_json::from_str::<serde_json::Value>(text.trim_start_matches('\u{feff}')).ok().and_then(|v| v["archive"].as_str().map(str::to_string)) {
+        if !Path::new(&a).is_file() {
+            return None;
+        }
+    }
+    parse(&text)
 }
 
 /// Whether the copy of `o` can glide as a creature: its display covered, a model that isn't a building's, upright

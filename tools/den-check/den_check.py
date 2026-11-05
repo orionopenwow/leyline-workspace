@@ -2299,6 +2299,46 @@ def den_lite_asset():
     return "den-lite-windows-x64.exe" if os.name == "nt" else "den-lite-linux-x64"
 
 
+GLIDE_MARKER = "den-creature-models.json"   # labs/den-lite glide.rs MARKER (launcher host/creaturemodels.rs)
+
+
+def glide_ready(den_dir):
+    """Whether Den Lite will glide the copy in hand: the marker is there and, when it names the archive holding the
+    rows (Den Lite's own glide-rows), that archive is still in the game's Data folder. (ok, why)."""
+    m = read_json(Path(den_dir) / GLIDE_MARKER)
+    if not isinstance(m, dict) or not m.get("displays"):
+        return False, "no creature rows marked yet"
+    a = m.get("archive")
+    if a and not Path(a).is_file():
+        return False, "the rows' archive %s is gone" % a
+    return True, "%d prop models can glide%s" % (len(m["displays"]), (" (%s)" % Path(a).name) if a else "")
+
+
+def glide_rows(rep, den_exe, game, den_dir, undo=False, run=subprocess.run):
+    """Den Lite's `glide-rows` (labs/den-lite gliderows.rs): the launcher's creature rows, from this PC's own game
+    tables, into Data/patch-S.MPQ (backup first; `undo` takes them away), so the copy in hand glides before a launcher
+    with them is out. A line in the report either way; True when the rows are there."""
+    name = "the gliding copy's rows (your own game's tables)"
+    if not Path(den_exe).is_file():
+        rep.add("INFO", name, "no Den Lite at %s: run den-lite first" % den_exe)
+        return False
+    cmd = [str(den_exe), "glide-rows", "--game", str(game), "--dens", str(den_dir)] + (["--undo"] if undo else [])
+    try:
+        r = run(cmd, capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as e:
+        rep.add("INFO", name, "Den Lite couldn't be run: %s" % e)
+        return False
+    if r.returncode == 2:
+        rep.add("INFO", name, "this Den Lite is from before glide-rows: run den-lite, then again")
+        return False
+    try:
+        out = json.loads((r.stdout or "").strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        out = {"ok": False, "said": (r.stderr or r.stdout or "no answer").strip()[:300]}
+    rep.ok(bool(out.get("ok")), name, str(out.get("said", "")), "%s: the copy stays a gameobject made anew (no glide)." % out.get("said", "it didn't work"))
+    return bool(out.get("ok"))
+
+
 def built_here(den):
     """True when Den Lite here was built on this PC by the den-lite step (tools/den-lite/Build Den Lite.bat writes
     den-lite.built-here beside it), and not replaced since: the test then runs that build, not the release's."""
@@ -2671,6 +2711,15 @@ def test(args, rep):
     stock_addons(rep, Path(c["path"]))
     if not args.no_update:
         den_lite_update(rep, root)
+    # the gliding copy (owner 5 Nov): its creature rows on this PC before the test, when they aren't there yet (the
+    # installed launcher doesn't write them; Den Lite's glide-rows does, from this PC's own tables)
+    if getattr(args, "move", False) or getattr(args, "features", False):
+        ok, why = glide_ready(den_dir)
+        if ok:
+            rep.add("INFO", "the gliding copy's rows", why)
+        else:
+            rep.add("INFO", "the gliding copy's rows", why + ": made now")
+            glide_rows(rep, root / "bin" / exe_name("den-lite"), Path(c["path"]), den_dir)
     hold = 300
     start = int(time.time() * 1000)
     proc = subprocess.Popen([str(exe), "den-play", "--test", "--client", c["id"], "--hold", str(hold)],
@@ -2894,7 +2943,7 @@ def manual(args, rep):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("mode", choices=["check", "test", "features", "move", "manual"])
+    ap.add_argument("mode", choices=["check", "test", "features", "move", "manual", "glide", "glide-undo"])
     ap.add_argument("--game")
     ap.add_argument("--app-dir")
     ap.add_argument("--no-login", action="store_true")
@@ -2903,6 +2952,17 @@ def main(argv=None):
     ap.add_argument("--timeout", type=int, default=150)
     a = ap.parse_args(argv)
     rep = Report()
+    if a.mode in ("glide", "glide-undo"):
+        # the Control step den-glide: the gliding copy's creature rows on this PC (or taken away)
+        app = Path(a.app_dir) if a.app_dir else app_dir()
+        c = {"path": a.game} if a.game else den_game(settings(app))
+        title = "DEN GLIDE ROWS"
+        print("%s (%s)" % (title, time.strftime("%Y-%m-%d %H:%M")))
+        if rep.ok(c is not None, "game folder for Your Den", c.get("path") if c else "", "Add your 3.3.5a game folder in the launcher."):
+            den_dir = app / "den-lite" / "state" / "dens"
+            glide_rows(rep, app / "den-lite" / "bin" / exe_name("den-lite"), Path(c["path"]), den_dir, undo=a.mode == "glide-undo")
+            rep.add("INFO", "Den Lite will glide", glide_ready(den_dir)[1])
+        return rep.end(title)
     a.move = a.mode == "move"
     a.features = a.mode == "features"
     if a.features or a.move:

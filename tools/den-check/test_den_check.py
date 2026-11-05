@@ -17,6 +17,7 @@ import json
 import math
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -959,14 +960,15 @@ class Control(unittest.TestCase):
         for node in tree.body:
             if isinstance(node, ast.Assign) and len(node.targets) == 1 and getattr(node.targets[0], "id", "") in ("STEPS", "READ_ONLY"):
                 vals[node.targets[0].id] = ast.literal_eval(node.value)
-        for step in ("den-check", "den-test", "den-test-invite", "den-features"):
+        for step in ("den-check", "den-test", "den-test-invite", "den-features", "den-glide", "den-glide-undo"):
             bat = vals["STEPS"][step][0]
             self.assertTrue((HERE.parent.parent / bat).is_file(), bat)
             self.assertFalse(bat.startswith("labs/"))
         self.assertIn("den-check", vals["READ_ONLY"])
         self.assertNotIn("den-test", vals["READ_ONLY"], "it starts the game: not for Autopilot on its own")
         self.assertNotIn("den-features", vals["READ_ONLY"], "it starts the game")
-        for bat in ("Den check.bat", "Den test.bat", "Den test - invite.bat", "Den features.bat"):
+        self.assertNotIn("den-glide", vals["READ_ONLY"], "it writes into the game folder")
+        for bat in ("Den check.bat", "Den test.bat", "Den test - invite.bat", "Den features.bat", "Den glide rows.bat", "Den glide rows - undo.bat"):
             self.assertIn(b"\r\n", (HERE / bat).read_bytes(), bat + " has Windows line ends")
 
 
@@ -1537,6 +1539,55 @@ class PlacementAids(unittest.TestCase):
         rep = den_check.Report()
         den_check.hover_calibration(rep, den, self.dens, self.shoot, self.d / "shots", None)
         self.assertEqual(rep.rows[0][0], "SKIP")
+
+class GlideRows(unittest.TestCase):
+    """Den Lite's glide-rows (labs/den-lite gliderows.rs) before den-move, and the den-glide step."""
+
+    def setUp(self):
+        self.d = Path(tempfile.mkdtemp(prefix="den-glide-"))
+        self.addCleanup(shutil.rmtree, self.d, True)
+        self.dens = self.d / "dens"
+        self.dens.mkdir()
+        self.exe = self.d / "den-lite.exe"
+        self.exe.write_bytes(b"x")
+        self.calls = []
+
+    def run_ok(self, cmd, **kw):
+        self.calls.append(cmd)
+        archive = self.d / "patch-S.MPQ"
+        if "--undo" in cmd:
+            (self.dens / den_check.GLIDE_MARKER).unlink()
+            return subprocess.CompletedProcess(cmd, 0, json.dumps({"ok": True, "said": "Data/patch-S.MPQ taken away"}), "")
+        archive.write_bytes(b"MPQ")
+        (self.dens / den_check.GLIDE_MARKER).write_text(json.dumps({"format": "leyline-den-creature-models", "base": 70000, "displays": [39, 40], "archive": str(archive)}))
+        return subprocess.CompletedProcess(cmd, 0, json.dumps({"ok": True, "said": "2 prop models can glide (Data/patch-S.MPQ, from your own game's tables)."}), "")
+
+    def test_the_rows_are_made_and_den_lite_will_glide_while_their_archive_is_there(self):
+        self.assertEqual(den_check.glide_ready(self.dens), (False, "no creature rows marked yet"))
+        rep = den_check.Report()
+        self.assertTrue(den_check.glide_rows(rep, self.exe, self.d / "game", self.dens, run=self.run_ok))
+        self.assertEqual(self.calls[0][1:3], ["glide-rows", "--game"])
+        self.assertEqual(rep.rows[0][0], "PASS")
+        ok, why = den_check.glide_ready(self.dens)
+        self.assertTrue(ok and why.startswith("2 prop models can glide (patch-S.MPQ)"), why)
+        (self.d / "patch-S.MPQ").unlink()
+        self.assertFalse(den_check.glide_ready(self.dens)[0], "the archive gone: no glide")
+        rep = den_check.Report()
+        den_check.glide_rows(rep, self.exe, self.d / "game", self.dens, undo=True, run=self.run_ok)
+        self.assertIn("--undo", self.calls[-1])
+
+    def test_a_refusal_or_an_older_den_lite_is_said(self):
+        rep = den_check.Report()
+        no = lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, json.dumps({"ok": False, "said": "Data/patch-S.MPQ belongs to another mod"}), "")
+        self.assertFalse(den_check.glide_rows(rep, self.exe, self.d, self.dens, run=no))
+        self.assertEqual(rep.rows[0][0], "FAIL")
+        self.assertIn("another mod", rep.rows[0][2] + rep.rows[0][3])
+        rep = den_check.Report()
+        old = lambda cmd, **kw: subprocess.CompletedProcess(cmd, 2, "", "den-lite: unknown option glide-rows")
+        self.assertFalse(den_check.glide_rows(rep, self.exe, self.d, self.dens, run=old))
+        self.assertEqual(rep.rows[0][0], "INFO")
+        self.assertIn("from before glide-rows", rep.rows[0][2])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

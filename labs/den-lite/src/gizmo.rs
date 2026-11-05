@@ -1301,6 +1301,12 @@ pub fn use_object(d: &Den, sel: &mut Sel, a: &mut Aids, guid: u64, build: bool, 
     if !build || d.placed(guid).is_none() {
         return AidOut::default();
     }
+    // something in hand: a use of another prop is the click that puts it down or away (the addon's), never a new
+    // selection under it (placement review 4 Nov: a left-drag turns you with the camera, TURNORACTION, whose click
+    // on a prop is a use)
+    if a.armed.is_some() {
+        return AidOut::default();
+    }
     if sel.guid != Some(guid) {
         sel.more.clear();
         sel.round = None;
@@ -2482,5 +2488,24 @@ mod tests {
         cmd(&mut d, &mut sel, &mut a, here, "cam where", true, 1000 + ms as u64 + 50);
         let (fe, _) = a.view(here);
         assert!((fe.x - target.x).abs() < 0.01 && (fe.y - target.y).abs() < 0.01, "{fe:?} vs {target:?}");
+    }
+
+    #[test]
+    fn using_a_prop_while_one_is_in_hand_selects_nothing() {
+        let (mut d, here) = den();
+        let (mut sel, mut a) = (Sel::default(), Aids::default());
+        let chair = d.spawn(2413, here.x + 6.0, here.y, here.z, 0.0).unwrap();
+        let other = d.spawn(2413, here.x + 9.0, here.y + 2.0, here.z, 0.0).unwrap();
+        cmd(&mut d, &mut sel, &mut a, here, "gizmo on", true, 0);
+        cmd(&mut d, &mut sel, &mut a, here, "mode build", true, 0);
+        let [u, v] = uv_of(&a, here, &chair);
+        cmd(&mut d, &mut sel, &mut a, here, &format!("click {} carry", line(u, v)), true, 100);
+        assert!(a.armed.is_some());
+        let out = use_object(&d, &mut sel, &mut a, other.guid, true, 200);
+        assert!(out.addon.is_empty() && sel.guid == Some(chair.guid), "{out:?}");
+        // put down: a use selects as before
+        cmd(&mut d, &mut sel, &mut a, here, "commit", true, 300);
+        let out = use_object(&d, &mut sel, &mut a, other.guid, true, 400);
+        assert!(sel.guid == Some(other.guid) && out.addon.iter().any(|(n, _)| n == "picked"));
     }
 }

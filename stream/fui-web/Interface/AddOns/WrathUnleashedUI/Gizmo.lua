@@ -274,10 +274,13 @@ end
 
 -- BUTTON1 turns you with the camera (TURNORACTION, the right button's own turn) over empty ground in build mode, not
 -- over a unit (Jaina, a dummy: a left click there targets as always). Never changed while a button is held.
+-- Not over a gameobject the game names either (its tooltip, no unit: a prop whose glow hasn't come yet, a door):
+-- TURNORACTION's click there would use it (Den Lite: a right-click select, `picked`).
 function G.TurnsWithCamera()
     if down.LeftButton then return G.b1turn and true or false end
     if not G.build or G.b1 then return false end
     if UnitExists and UnitExists("mouseover") then return false end
+    if G.OverObject() then return false end
     return true
 end
 
@@ -1059,9 +1062,10 @@ local function setup()
                 G.asked = 0
             end
             G.SetBuild(G.Wanted())
-            -- the cursor left a unit (no event says so): BUTTON1 turns you with the camera again
-            if G.build and not down.LeftButton and G.b1turn ~= (G.TurnsWithCamera() and SetOverrideBinding and true or false) then bindings() end
         end
+        -- the cursor onto or off a unit or a named object (no event says when it leaves): BUTTON1 follows, between
+        -- presses
+        if G.build and not down.LeftButton and G.b1turn ~= (G.TurnsWithCamera() and SetOverrideBinding and true or false) then bindings() end
         G.UpCheck()
         G.DragCheck()
         if G.armed or G.dragging or G.build then G.Tick(false) end

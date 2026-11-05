@@ -638,7 +638,13 @@ G.Bindings()
 check("over a unit (Jaina, a dummy): BUTTON1 is the game's (a click targets)", bindings.BUTTON1 == nil and not G.b1turn)
 mouseoverUnit = false
 tick(0.6)
-check("the cursor off the unit: turning again (no event says so; the half-second check)", bindings.BUTTON1 == "TURNORACTION")
+check("the cursor off the unit: turning again (no event says so; checked each frame)", bindings.BUTTON1 == "TURNORACTION")
+GameTooltip.shown = true
+tick(0.05)
+check("over a named object with no glow yet (its tooltip): BUTTON1 the game's (TURNORACTION would use it)", bindings.BUTTON1 == nil)
+GameTooltip.shown = false
+tick(0.05)
+check("...and turning again once off it", bindings.BUTTON1 == "TURNORACTION")
 answer("hovered", "5 Wooden Chair")
 check("over a prop: BUTTON1 grabs it", bindings.BUTTON1 == "LeylineGizmoGrab")
 answer("hovered", "-")
@@ -686,6 +692,19 @@ G.Bindings()
 check("the mark gone: Q / E back", bindings.Q == "LeylineGizmoTurnQ")
 answer("selected", "-")
 SetOverrideBinding = nil
+
+-- the cursor at another UI scale and window shape: the same spot on the screen gives the same u, v (placement review)
+do
+    local keepC, keepW, keepH, keepS = cursor, UIParent.w, UIParent.h, UIParent.scale
+    -- 1280 x 1024 pixels at UI scale 0.64: UIParent is 2000 x 1600 of its own units, the cursor in pixels
+    UIParent.w, UIParent.h, UIParent.scale = 2000, 1600, 0.64
+    cursor = { 960, 256 }   -- three quarters across, a quarter up
+    local u, v, asp = G.Cursor()
+    check("UI scale 0.64, a 5:4 window: u, v and the shape as on the screen", math.abs(u - 0.5) < 1e-6 and math.abs(v + 0.5) < 1e-6 and math.abs(asp - 1.25) < 1e-6)
+    cursor = { 5000, 256 }
+    check("off the window: no cursor (nothing sent)", G.Cursor() == nil)
+    cursor, UIParent.w, UIParent.h, UIParent.scale = keepC, keepW, keepH, keepS
+end
 
 -- leaving build mode: the view back, the frame and every binding gone
 W.DenBar.play = true

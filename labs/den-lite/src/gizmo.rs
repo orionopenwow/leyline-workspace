@@ -82,6 +82,15 @@ pub const GLOW: u32 = DYN_ACTIVATE | DYN_SPARKLE;
 /// The light under the selected prop (the halo): the game's own "Crate Highlight" (gameobject 190117, display 2233,
 /// the glow it puts round a quest crate), as an object of ours, sized to the prop's footprint, not selectable.
 pub const HALO: (u32, u32, &str) = (990_010, 2233, "Selected");
+/// The cursor's ring (owner's LANDSCAPE editor, mega-placer.js 5 Nov: "a ring sits where the mouse meets the ground,
+/// every frame"; its colour says what a click does: gold place, teal grab, grey nothing). One object only the player
+/// sees (Den Lite sends it to that player alone), not selectable. The stock client can't tint a gameobject, so each
+/// kind is its own entry with its own display: these three are the "Crate Highlight" glow for now (one look, the
+/// kind in its name and the addon's tip says gold / teal / grey); swap a display here when a better coloured ring is
+/// found in the player's own game (TODO(owner): pick the three looks in the Den).
+pub const RING: [(u32, u32, &str); 3] = [(990_021, 2233, "Place here"), (990_022, 2233, "Grab"), (990_023, 2233, "Nothing here")];
+/// The ring's size across (yards; mega-placer.js ringRadius 0.6 m).
+pub const RING_ACROSS: f32 = 1.2;
 
 /// The copy stands this far in front of the player when asked to (`follow`; the keyboard's place).
 pub const AHEAD: f32 = 2.5;
@@ -125,6 +134,9 @@ pub fn query(entry: u32) -> Option<(u8, u32, &'static str, f32)> {
     if entry == HALO.0 {
         return Some((GENERIC, HALO.1, HALO.2, 1.0));
     }
+    if let Some(r) = RING.iter().find(|r| r.0 == entry) {
+        return Some((GENERIC, r.1, r.2, 1.0));
+    }
     GIZMO.iter().find(|g| g.0 == entry).map(|g| (GOOBER, g.1, g.2, GIZMO_SCALE))
 }
 
@@ -142,6 +154,10 @@ pub fn is_ghost(g: u64) -> bool {
 
 pub fn is_halo(g: u64) -> bool {
     matches!(counter(g).checked_sub(AID_BASE), Some(0x20 | 0x21))
+}
+
+pub fn is_ring(g: u64) -> bool {
+    matches!(counter(g).checked_sub(AID_BASE), Some(0x30 | 0x31))
 }
 
 /// The gizmo handle's axis, for its guid.
@@ -183,7 +199,7 @@ pub fn query_any(entry: u32) -> Option<(u8, u32, &'static str, f32)> {
 /// editor shows takes the game's click: Gizmo.lua sees every click on the world and Den Lite picks with its own ray
 /// (pick.rs). Play mode sends the prop as it is (flags 0): a chair is sat on again.
 pub fn shown(o: &WorldObject, build: bool) -> (u8, u32, u32) {
-    if is_ghost(o.guid) || is_halo(o.guid) {
+    if is_ghost(o.guid) || is_halo(o.guid) || is_ring(o.guid) {
         (GENERIC, NOT_SELECTABLE, o.entry)
     } else if gizmo_axis(o.guid).is_some() {
         (GOOBER, NOT_SELECTABLE, o.entry)
@@ -405,6 +421,15 @@ pub struct Aids {
     /// camera drag when the game lets it (Gizmo.lua `G.PitchProbe`, `cam pitch <radians>`), so the pitch you turned
     /// to stays (as in Noggit) and the ray still matches it. 0: the pose's own (the calibrated `cam.pitch`).
     pub pitch_adj: f32,
+    /// The cursor's ring shown now, its kind (0 place, 1 grab, 2 nothing) and when it was last drawn (ms).
+    pub ring: Option<WorldObject>,
+    /// The ring asked for (`gizmo ring on`: the addon, on entering build mode).
+    pub ring_on: bool,
+    pub ring_kind: Option<u8>,
+    ring_ms: u64,
+    /// The turn the next card placed starts with (radians): the last placed one's, or set by Q / E with nothing in
+    /// hand or under the cursor (mega-placer.js: "the current turn carries to the next placement"). None: as you face.
+    pub next_yaw: Option<f32>,
 }
 
 impl Aids {
@@ -509,7 +534,7 @@ fn snap(g: f64, v: f32, mid: f32) -> f32 {
 /// The aids' verbs (`wubuild cmd <verb> ...`); everything else is the Builder's.
 pub fn is_aid(text: &str) -> bool {
     let v = text.split_whitespace().next().unwrap_or("").to_ascii_lowercase();
-    matches!(v.as_str(), "preview" | "hover" | "follow" | "commit" | "axis" | "grab" | "gizmo" | "mode" | "where" | "cam" | "click" | "drag" | "debug")
+    matches!(v.as_str(), "preview" | "hover" | "follow" | "commit" | "axis" | "grab" | "gizmo" | "mode" | "where" | "cam" | "click" | "drag" | "debug" | "yaw" | "turnat")
 }
 
 /// The addon's `aim` line: what is armed (`place,<entry>`, `move,<prop id>`, `axis,<prop id>,<x|y|z>` or `off`)
@@ -548,7 +573,7 @@ fn aid_verb(d: &mut Den, sel: &mut Sel, a: &mut Aids, here: Here, text: &str, ca
     let verb = w.first().map(|v| v.to_ascii_lowercase()).unwrap_or_default();
     let arg = w.get(1).map(|v| v.to_ascii_lowercase()).unwrap_or_default();
     let num = |i: usize| w.get(i).and_then(|v| v.parse::<f32>().ok()).filter(|v| v.is_finite());
-    let builds = matches!(verb.as_str(), "preview" | "commit" | "grab" | "drag") && arg != "off";
+    let builds = matches!(verb.as_str(), "preview" | "commit" | "grab" | "drag" | "turnat") && arg != "off";
     if builds && !can {
         return AidOut::default().said("Only the Den's owner builds here (they can let friends: .den friends build on).");
     }
@@ -595,7 +620,7 @@ fn aid_verb(d: &mut Den, sel: &mut Sel, a: &mut Aids, here: Here, text: &str, ca
                     out.addon.clear();
                     a.armed = Some(Armed::Place(entry));
                     a.lift = 0.0;
-                    a.yaw = here.o;
+                    a.yaw = a.next_yaw.unwrap_or(here.o);
                     a.cursor = None;
                     a.follow = false;
                     a.at = None;
@@ -610,7 +635,39 @@ fn aid_verb(d: &mut Den, sel: &mut Sel, a: &mut Aids, here: Here, text: &str, ca
         },
         "hover" => {
             let (Some(u), Some(v)) = (num(1), num(2)) else { return AidOut::default() };
-            hover(d, sel, a, here, u, v, num(3), num(4), now, false)
+            let mut out = hover(d, sel, a, here, u, v, num(3), num(4), now, false);
+            if a.build && a.ring_on {
+                out.merge(ring_update(d, a, here, u, v, num(3), now));
+            }
+            out
+        }
+        // Q / E over a prop with nothing in hand (mega-placer.js: "spin the piece under the cursor 15 degrees a
+        // press"): `turnat <prop id> <degrees>`, one undo
+        "turnat" => {
+            let (Some(id), Some(deg)) = (w.get(1).and_then(|v| v.parse::<u64>().ok()), num(2)) else {
+                return AidOut::default().said("Usage: turnat <prop id> <degrees>");
+            };
+            let Some(g) = d.props.iter().map(|p| p.obj.guid).find(|g| (g & 0xFF_FFFF) == id) else { return AidOut::default() };
+            let deg = deg.clamp(-360.0, 360.0) as f64;
+            match d.edit(g, |p| p.yaw = (p.yaw + deg).rem_euclid(360.0)) {
+                Ok(c) => {
+                    let mut out = AidOut { state: true, change: Some(c), ..Default::default() };
+                    // the prop is made anew: its glow and the gizmo anew
+                    a.gizmo_for = None;
+                    a.glowing = None;
+                    a.hovered = None;
+                    out.merge(sync(d, sel, a));
+                    out
+                }
+                Err(e) => AidOut::default().said(e),
+            }
+        }
+        // Q / E with nothing in hand, selected or under the cursor: the next placement's turn (degrees)
+        "yaw" => {
+            let deg = num(1).unwrap_or(15.0).clamp(-360.0, 360.0);
+            let y = (a.next_yaw.unwrap_or(here.o) + deg.to_radians()).rem_euclid(std::f32::consts::TAU);
+            a.next_yaw = Some(y);
+            AidOut::default().tell("yaw", format!("{:.0}", y.to_degrees()))
         }
         "follow" => {
             a.cursor = None;
@@ -652,6 +709,18 @@ fn aid_verb(d: &mut Den, sel: &mut Sel, a: &mut Aids, here: Here, text: &str, ca
             "x" | "y" | "z" => grab(d, sel, a, arg.chars().next().unwrap_or('x'), now),
             _ => AidOut::default().said("Usage: grab x|y|z (then move the mouse; click drops it, Esc puts it back)"),
         },
+        // the cursor's ring on or off (`gizmo ring on|off`)
+        "gizmo" if arg == "ring" => {
+            a.ring_on = !w.get(2).is_some_and(|v| v.eq_ignore_ascii_case("off"));
+            let mut out = AidOut::default();
+            if !a.ring_on {
+                if let Some(r) = a.ring.take() {
+                    out.destroy.push(r.guid);
+                }
+                a.ring_kind = None;
+            }
+            out
+        }
         "gizmo" => {
             a.gizmo_on = arg != "off";
             if !a.gizmo_on {
@@ -668,6 +737,12 @@ fn aid_verb(d: &mut Den, sel: &mut Sel, a: &mut Aids, here: Here, text: &str, ca
             a.gizmo_for = None;
             a.glowing = None;
             a.hovered = None;
+            if !build {
+                if let Some(r) = a.ring.take() {
+                    out.destroy.push(r.guid);
+                }
+                a.ring_kind = None;
+            }
             if !build && a.far.is_some() {
                 // leaving build mode: the view is the player's again
                 a.far = None;
@@ -1015,6 +1090,54 @@ fn hover(d: &Den, sel: &Sel, a: &mut Aids, here: Here, u: f32, v: f32, aspect: O
 /// A picked card's first copy when the cursor's first ray finds no ground: this far in front of the camera's focus.
 pub const FIRST_AHEAD: f32 = 5.0;
 
+/// The cursor's ring (build mode, every hover, at most every [`DRAW_MS`] unless its kind changed): where the cursor's
+/// ray meets the ground, or the top of a prop under that point (a table, a deck: within [`SURFACE_REACH`] of the
+/// ground, never the one in hand), as mega-placer.js's ring. Its kind: place (a card in hand), grab (nothing in hand,
+/// a prop or a handle under the cursor), nothing. Made under the other of two guids before the old one goes.
+fn ring_update(d: &Den, a: &mut Aids, here: Here, u: f32, v: f32, aspect: Option<f32>, now: u64) -> AidOut {
+    let mut out = AidOut::default();
+    let aspect = aspect.filter(|x| x.is_finite() && *x > 0.0).unwrap_or(16.0 / 9.0);
+    let (from, cam) = a.view(here);
+    let spot = ray(&cam, from, u, v, aspect).and_then(|(e, dir)| pick::on_ground(e, dir, cam.dist + REACH, |x, y| d.floor_at(x, y)));
+    let kind: u8 = match a.armed {
+        Some(Armed::Place(_)) => 0,
+        None if a.hovered.is_some() || a.hover_handle.is_some() => 1,
+        _ => 2,
+    };
+    let Some(p) = spot.filter(|p| d.inside(p[0], p[1], p[2])) else {
+        if let Some(r) = a.ring.take() {
+            out.destroy.push(r.guid);
+        }
+        a.ring_kind = None;
+        return out;
+    };
+    if a.ring_kind == Some(kind) && now.saturating_sub(a.ring_ms) < DRAW_MS {
+        return out;
+    }
+    let ground = d.floor_at(p[0], p[1]);
+    let own = match a.armed {
+        Some(Armed::Move(g)) => vec![g],
+        _ => Vec::new(),
+    };
+    let tops = crate::buildtools::tops(d, true, &own);
+    let z = crate::tools::top_under([p[0], p[1]], ground + SURFACE_REACH, &tops).filter(|t| *t > ground + 0.05).unwrap_or(ground);
+    let (entry, display, _) = RING[kind as usize];
+    let base = crate::models::box_of(display).map(|b| b.0.max(b.1)).filter(|v| *v > 0.1).unwrap_or(2.0);
+    let n = 0x30 + (a.ring.as_ref().map_or(0, |r| 1 - (counter(r.guid) - AID_BASE - 0x30).min(1)));
+    let obj = WorldObject { guid: aid_guid(entry, n), entry, display, kind: GENERIC, scale: (RING_ACROSS / base).clamp(0.1, 5.0), x: p[0], y: p[1], z: z + 0.05, o: 0.0, pitch: 0.0, roll: 0.0 };
+    if let Some(old) = a.ring.take() {
+        out.destroy.push(old.guid);
+    }
+    out.create.push(obj.clone());
+    if a.ring_kind != Some(kind) {
+        out = out.tell("ring", ["place", "grab", "none"][kind as usize].into());
+    }
+    a.ring = Some(obj);
+    a.ring_kind = Some(kind);
+    a.ring_ms = now;
+    out
+}
+
 /// The addon's `edge 1|0` when the copy in hand starts or stops being held at the Den's edge.
 fn edge_note(a: &Aids, was: bool, out: AidOut) -> AidOut {
     if a.at_edge == was {
@@ -1283,6 +1406,7 @@ pub fn commit(d: &mut Den, sel: &mut Sel, a: &mut Aids, now: u64, keep: bool) ->
     match armed {
         Armed::Place(entry) => match d.spawn(entry, at[0], at[1], at[2], at[3]) {
             Ok(obj) => {
+                a.next_yaw = Some(at[3]);
                 sel.guid = Some(obj.guid);
                 sel.more.clear();
                 sel.round = None;
@@ -1651,6 +1775,8 @@ pub fn cam_line(a: &Aids) -> String {
 pub fn clear(a: &mut Aids) -> Vec<u64> {
     let mut v: Vec<u64> = a.gizmo.drain(..).collect();
     v.extend(a.ghost.take().map(|g| g.guid));
+    v.extend(a.ring.take().map(|g| g.guid));
+    a.ring_kind = None;
     a.gizmo_for = None;
     a.glowing = None;
     a.armed = None;
@@ -2754,5 +2880,64 @@ mod tests {
         assert!((surface_z(&d, &a, crate_.x, crate_.y) - ground).abs() < 0.01);
         // a top far over the ground (a roof) is left alone
         assert!(top - ground <= SURFACE_REACH || (surface_z(&d, &Aids::default(), crate_.x, crate_.y) - ground).abs() < 0.01);
+    }
+
+    #[test]
+    fn the_cursors_ring_says_what_a_click_does_and_only_the_player_has_it() {
+        // owner's mega-placer.js (5 Nov): a ring where the cursor meets the ground; gold place, teal grab, grey nothing
+        let (mut d, here) = den();
+        let (mut sel, mut a) = (Sel::default(), Aids::default());
+        let chair = d.spawn(2413, here.x + 6.0, here.y, here.z, 0.0).unwrap();
+        cmd(&mut d, &mut sel, &mut a, here, "mode build", true, 0);
+        let out = cmd(&mut d, &mut sel, &mut a, here, &format!("hover {}", line(0.1, -0.3)), true, 100);
+        assert!(!out.create.iter().any(|o| is_ring(o.guid)), "off until the addon asks");
+        cmd(&mut d, &mut sel, &mut a, here, "gizmo ring on", true, 100);
+        let out = cmd(&mut d, &mut sel, &mut a, here, &format!("hover {}", line(0.1, -0.3)), true, 200);
+        let r = out.create.iter().find(|o| is_ring(o.guid)).cloned().expect("a ring");
+        assert_eq!(r.entry, RING[2].0, "nothing under the cursor: grey");
+        assert_eq!(shown(&r, true), (GENERIC, NOT_SELECTABLE, r.entry));
+        assert!(out.addon.contains(&("ring".to_string(), "none".to_string())));
+        assert!((r.z - d.floor_at(r.x, r.y) - 0.05).abs() < 0.01, "on the ground");
+        // over the chair: teal (grab), made under the other guid before the old goes
+        let [u, v] = uv_of(&a, here, &chair);
+        let out = cmd(&mut d, &mut sel, &mut a, here, &format!("hover {}", line(u, v)), true, 400);
+        let r2 = out.create.iter().find(|o| is_ring(o.guid)).cloned().expect("the ring again");
+        assert_eq!(r2.entry, RING[1].0);
+        assert!(r2.guid != r.guid && out.destroy.contains(&r.guid));
+        // a card in hand: gold
+        cmd(&mut d, &mut sel, &mut a, here, "preview 2413", true, 500);
+        let out = cmd(&mut d, &mut sel, &mut a, here, &format!("hover {}", line(-0.2, -0.3)), true, 600);
+        assert!(out.create.iter().any(|o| is_ring(o.guid) && o.entry == RING[0].0));
+        assert_eq!(query(RING[0].0).map(|q| q.0), Some(GENERIC));
+        // play mode: gone
+        let rg = a.ring.as_ref().unwrap().guid;
+        assert!(cmd(&mut d, &mut sel, &mut a, here, "mode play", true, 700).destroy.contains(&rg) && a.ring.is_none());
+    }
+
+    #[test]
+    fn the_turn_carries_to_the_next_card_and_q_turns_the_prop_under_the_cursor() {
+        let (mut d, here) = den();
+        let (mut sel, mut a) = (Sel::default(), Aids::default());
+        cmd(&mut d, &mut sel, &mut a, here, "mode build", true, 0);
+        cmd(&mut d, &mut sel, &mut a, here, "preview 2413", true, 0);
+        assert!((a.yaw - here.o).abs() < 1e-5, "the first: as you face");
+        cmd(&mut d, &mut sel, &mut a, here, "preview turn 45", true, 10);
+        cmd(&mut d, &mut sel, &mut a, here, &format!("hover {}", line(0.1, -0.3)), true, 100);
+        cmd(&mut d, &mut sel, &mut a, here, "commit", true, 200);
+        cmd(&mut d, &mut sel, &mut a, here, "preview 2413", true, 300);
+        assert!((a.yaw - 45f32.to_radians()).abs() < 1e-4, "the next starts turned as the last: {}", a.yaw);
+        cmd(&mut d, &mut sel, &mut a, here, "preview off", true, 310);
+        // Q with nothing anywhere: the next placement's turn
+        let out = cmd(&mut d, &mut sel, &mut a, here, "yaw 15", true, 320);
+        assert_eq!(out.addon, vec![("yaw".to_string(), "60".to_string())]);
+        // Q over a prop: that prop turns, one undo
+        let g = sel.guid.unwrap();
+        let id = g & 0xFF_FFFF;
+        let y0 = d.placed(g).unwrap().prop.yaw;
+        let out = cmd(&mut d, &mut sel, &mut a, here, &format!("turnat {id} -15"), true, 400);
+        assert!(out.change.is_some());
+        assert!(((d.placed(g).unwrap().prop.yaw - y0 + 15.0).rem_euclid(360.0)).abs() < 0.01);
+        assert!(cmd(&mut d, &mut sel, &mut a, here, "turnat 999999 15", true, 500).change.is_none());
+        assert!(cmd(&mut d, &mut sel, &mut a, here, &format!("turnat {id} 15"), false, 600).change.is_none(), "builders only");
     }
 }

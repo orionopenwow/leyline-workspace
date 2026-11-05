@@ -139,6 +139,7 @@ check("never a movement key", not (bindings.W or bindings.A or bindings.S or bin
 local n = #sent
 W.Builder.Choose({ id = 2413, name = "Wooden Chair" })
 c = cmds(n)
+check("build mode asks for the cursor's ring (mega-placer.js)", has(cmds(0), "gizmo ring on"))
 check("a gallery pick arms the preview, the cursor's place with it (the copy at once: owner 5 Nov)", c[1] == "preview 2413 0.0000 0.0000 1.7778 12" and #c == 1)
 answer("aim", "place,2413,1543")
 check("in hand: Esc, the exact-click key and Q / E (turn it) bound too, nothing else", G.armed == "place" and bindings.ESCAPE == "LeylineGizmoCancel"
@@ -427,6 +428,11 @@ n = #sent
 named.LeylineGizmoTurnQ:Fire("OnClick", "LeftButton", true)
 named.LeylineGizmoTurnE:Fire("OnClick", "LeftButton", true)
 check("Q turns it left, E right", cmds(n)[1] == "turn 15" and cmds(n)[2] == "turn -15")
+answer("hovered", "8 Barrel")
+n = #sent
+named.LeylineGizmoTurnQ:Fire("OnClick", "LeftButton", true)
+check("Q over another prop turns that one (mega-placer.js), one undo", cmds(n)[1] == "turnat 8 15")
+answer("hovered", "5 Chair")
 shift = true
 n = #sent
 press(); clock = clock + 0.1; release()

@@ -342,7 +342,8 @@ end
 -- Q / E are the Gizmo's (the selection, what is in hand) unless Den home's stamp mark or edit mode's prop waiting for
 -- its click has them (DenHome.lua H.UpdateKeys): one owner per key (review 4 Nov: Q had three).
 function G.OwnsTurnKeys()
-    if not G.build or not (G.sel or G.armed == "move" or G.armed == "place" or G.dragging) then return false end
+    -- (5 Nov, the owner's mega-placer.js: Q / E also turn the prop under the cursor)
+    if not G.build or not (G.sel or G.armed == "move" or G.armed == "place" or G.dragging or (G.hovered and G.hovered.id and G.hovered.id > 0)) then return false end
     local H, E = W.DenHome, W.EditMode
     if H and H.armed then return false end
     if E and E.pending and E.pending.kind == "prop" then return false end
@@ -442,6 +443,8 @@ function G.Turn(sign)
     if not G.build then return false end
     local deg = sign * G.TURN
     if G.dragging or G.armed == "move" or G.armed == "place" then return send("preview turn " .. deg) end
+    -- the prop under the cursor (mega-placer.js: "spin the piece under the cursor"), one undo; else the selection
+    if G.hovered and G.hovered.id and G.hovered.id > 0 and G.hovered.id ~= G.sel then return send(string.format("turnat %d %d", G.hovered.id, deg)) end
     if G.sel then return send("turn " .. deg) end
     return false
 end
@@ -541,6 +544,8 @@ function G.SetBuild(on)
     if on then
         send("mode build")
         send("gizmo on")
+        -- the cursor's ring (mega-placer.js): gold place, teal grab, grey nothing
+        send("gizmo ring on")
         G.CameraIn()
     else
         G.Cancel()
@@ -871,6 +876,9 @@ function G.OnMessage(prefix, msg, channel, sender)
                 or "Carrying: click to put it down, Esc puts it back")
         end
         bindings(); showTag()
+    elseif name == "ring" then
+        -- what a click does now (the ring under the cursor says it too): place, grab or none
+        G.ring = data
     elseif name == "edge" then
         -- Den Lite holds the copy at the Den's edge (the cursor is past it): the tag says why it stopped
         G.atEdge = data == "1"

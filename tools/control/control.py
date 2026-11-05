@@ -205,6 +205,9 @@ STEPS = {
     "scripts-reload": ("realm/Reload realm scripts.bat", "Realm scripts reloaded live even when unchanged (for a script that is there but silent)", False),
     "scripts": ("realm/Server pass - finder 10 and bug reports.bat", "Realm scripts (live reload)", False),
     "realm":   ("realm/Server pass - finder 10 and bug reports.bat", "Realm settings (5-min restart)", False),
+    # A new realm image (C++ modules, e.g. mod-leyline-bossfights; docs/BOSS-FIGHTS.md): the build GitHub made after a
+    # ship (wu-images), pulled on the server; backup, :rollback kept, 5-min warning, self-check, rollback on failure.
+    "realm-image": ("realm/Update realm image.bat", "New realm image: the C++ modules GitHub built after the last ship, live (backup, 5-min restart, self-check, rollback)", False),
     "foreverui": ("stream/Add Forever UI to the stream.bat", "Forever UI look (menus and character select)", False),
     "slice":   ("stream/Make mini slice.bat", "Streamed game files (30-60 min)", False),
     # docs/INCIDENT-2026-11-01-SLICE.md: the streamed slice's files on the server, checked (read-only)

@@ -1040,7 +1040,10 @@ class FakeAids:
         if cmd == ".den size":
             self.sync()
             look = "build" if self.aids["mode"] == "build" and "look" not in self.broken else "play"
-            return {"props": self.props, "aids": dict(self.aids), "look_mode": look, "twin_queries": getattr(self, "twins", 0)}
+            r = {"props": self.props, "aids": dict(self.aids), "look_mode": look, "twin_queries": getattr(self, "twins", 0)}
+            if not getattr(self, "before_5nov", False):
+                r["prop_flags"] = 0x10 if look == "build" and "flags" not in self.broken else 0
+            return r
         if w[:2] in ([".den", "save"], [".den", "load"]):
             if w[1] == "save":
                 (self.dens / ("%s.den.json" % w[2])).write_text("{}")
@@ -1050,6 +1053,10 @@ class FakeAids:
             self.aids.update(sel=7, gizmo=3)
         if a[:2] == ["key", "insert"] and "swap" not in self.broken and self.aids["sel"]:
             self.ev("den_change", "+1 -1")
+            return {"props": self.props, "said": []}
+        if a[:1] == ["pick"]:
+            # the gallery card (Builder.lua B.Choose, Gizmo.lua's hook): in hand, nothing shown yet
+            self.aids.update(armed="place,%s,1543" % a[1], ghost=None, at=None)
             return {"props": self.props, "said": []}
         if a[:1] != ["gizmo"] or (len(a) > 1 and a[1] in self.broken):
             return {"props": self.props}
@@ -1100,6 +1107,31 @@ class FakeAids:
             self.aids["axis"] = None if a[2] == "off" else a[2]
         elif act == "wheel":
             self.ev("den_change", "+1 -1")
+        elif act == "glide":
+            # Gizmo.lua's frame tick at (u, v): a hover; the copy (or the carried prop) where it lands
+            u, v = float(a[2]), float(a[3])
+            if self.aids["armed"].startswith("move,") and self.aids["grip"]:
+                self.moved = (u, v)
+                self.aids["at"] = [16227.0 + u * 10, 16259.0 + v * 10, 13.2, 0.0]
+            else:
+                self.hover(u, v)
+                if self.aids.get("ghost"):
+                    self.aids["at"] = self.aids["ghost"]
+        elif act == "mouse":
+            # Gizmo.lua's own press and let-go: in hand, put down; else what is under it picked up
+            u, v = float(a[2]), float(a[3])
+            if self.aids["armed"].startswith("place,"):
+                self.props += 1
+                self.ev("den_change", "+1 -0")
+                self.where[11] = [u, v, 16230.0, 16258.0, 13.2]
+                self.aids.update(armed="off", ghost=None, at=None, sel=11, glow=11, gizmo=4)
+            elif self.aids["armed"].startswith("move,") and self.aids["grip"]:
+                self.mouse("release", ["gizmo", "release"])
+            else:
+                hit = self.under(u, v)
+                if hit:
+                    self.moved = (u, v)
+                    self.aids.update(sel=hit, grip=True, armed="move,%s,1543" % hit)
         elif act in ("click", "press", "moveto", "release"):
             self.mouse(act, a)
         elif act == "menu" and a[2] == "2":
@@ -1234,7 +1266,9 @@ class PlacementAids(unittest.TestCase):
                      "gizmo: the wheel moves it along the picked axis", "swap: the selection becomes the gallery's pick", "menu: Duplicate",
                      "snap out: the view from up high", "snap out: and back to you", "zoom: out past the game's limit", "zoom: and back to you",
                      "play mode: props plain again", "mouse: the prop under the cursor glows", "mouse: a click selects it (a click on the sky clears)",
-                     "mouse: press and drag moves it"):
+                     "mouse: press and drag moves it", "build mode: props never take the game's click", "card: the copy glides under the cursor",
+                     "card: a click puts it down, selected", "select: a click on a prop picks it up, the next puts it down",
+                     "play mode: props usable again (a chair is sat on)"):
             self.assertIn(want, names)
         moved = [r for r in rep.rows if r[1] == "mouse: press and drag moves it"][0][2]
         self.assertTrue(moved.startswith("moved 2.06 yd") and moved.endswith("-mouse-dropped.png"), moved)
@@ -1266,7 +1300,8 @@ class PlacementAids(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             den_check.aids_features(rep, FakeAids(dens, broken={"mouse"}), dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
         fails = {r[1] for r in rep.rows if r[0] == "FAIL"}
-        self.assertEqual(fails, {"mouse: the prop under the cursor glows", "mouse: a click selects it (a click on the sky clears)", "mouse: press and drag moves it"})
+        self.assertEqual(fails, {"mouse: the prop under the cursor glows", "mouse: a click selects it (a click on the sky clears)", "mouse: press and drag moves it",
+                                 "card: a click puts it down, selected"})
         # a Den Lite from before the mouse: said, not failed
         class NoMouse(FakeAids):
             def send(self, cmd, wait=10.0):
@@ -1309,6 +1344,26 @@ class PlacementAids(unittest.TestCase):
             den_check.aids_features(rep, Before(self.dens), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
         self.assertTrue(any(r[0] == "INFO" and r[1] == "the editor's new flow" for r in rep.rows))
         self.assertNotIn("snap out: the view from up high", [r[1] for r in rep.rows])
+
+    def test_the_owners_5_nov_flow_fails_with_its_fix_and_an_older_den_lite_is_said(self):
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, FakeAids(self.dens, broken={"flags", "glide"}), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
+        fails = {r[1] for r in rep.rows if r[0] == "FAIL"}
+        self.assertIn("build mode: props never take the game's click", fails)
+        self.assertIn("card: the copy glides under the cursor", fails)
+        row = [r for r in rep.rows if r[1] == "build mode: props never take the game's click"][0]
+        self.assertIn("want 0x10", row[3])
+        dens = self.d / "dens-before-5nov"
+        dens.mkdir()
+        (dens / "den-lite.events").write_text("")
+        old = FakeAids(dens)
+        old.before_5nov = True
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, old, dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
+        self.assertTrue(any(r[0] == "INFO" and r[1] == "5 Nov: the editor's click fixes" for r in rep.rows))
+        self.assertEqual([r for r in rep.rows if r[0] == "FAIL"], [])
 
     def test_hover_calibration_fits_and_saves_the_camera(self):
         true = {"fov": 1.25, "pivot": 1.7, "dist": 10.0, "pitch": 0.45}

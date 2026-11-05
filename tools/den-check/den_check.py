@@ -1633,6 +1633,72 @@ def mouse_steps(rep, ui, aids, shot, with_pic, den_dir, wait):
     return True
 
 
+NOT_SELECTABLE = 0x10   # gizmo.rs: GO_FLAG_NOT_SELECTABLE, what Den Lite tells the game for props in build mode
+
+
+def owner_flow_steps(rep, ui, aids, size, shot, with_pic, den_dir, wait):
+    """The owner's live test of 5 Nov, as he does it, through the Leyline UI's own code paths (Gizmo.lua's frame tick
+    and its press and let-go, not the test's own hovers): props are sent so the game never takes a click on them
+    ("You are too far away."); a gallery card picked, its copy glides under the cursor as it moves over the world and a
+    click puts it down, selected; with nothing in hand a click on a placed prop picks it up (it glides), the next click
+    puts it down. Returns False when this Den Lite is from before."""
+    first = size() or {}
+    if "prop_flags" not in first:
+        rep.add("INFO", "5 Nov: the editor's click fixes", "this Den Lite is from before them: run den-lite, then den-move again")
+        return False
+    flags = first.get("prop_flags")
+    rep.ok(isinstance(flags, int) and flags & NOT_SELECTABLE, "build mode: props never take the game's click",
+           "the game is told flags 0x%x (not selectable): a click on a prop is the editor's" % (flags or 0),
+           "Den Lite told the game flags %s for a prop in build mode (want 0x10): a click would use the prop. Run den-lite." % flags)
+    # 1. a card from the gallery: its copy glides with the cursor (each move a new place), a click puts it down
+    ui("gizmo cancel")
+    p0 = int(first.get("props") or 0)
+    ui("pick 2413")
+    spots = []
+    for u, v in ((0.25, -0.35), (0.05, -0.3), (-0.15, -0.4)):
+        ui("gizmo glide %.2f %.2f" % (u, v))
+        spots.append(aids().get("at"))
+    armed = str(aids().get("armed", ""))
+    pic = shot("card-glides")
+    moved = all(spots) and len({tuple(round(c, 2) for c in sp[:2]) for sp in spots}) == 3
+    rep.ok(armed.startswith("place,2413") and moved, "card: the copy glides under the cursor",
+           with_pic("in hand %s, at %s" % (armed, " -> ".join(str([round(c, 1) for c in sp[:2]]) if sp else "-" for sp in spots)), pic),
+           "In hand %s; the copy's places %s: the cursor's moves didn't reach Den Lite. Send logs\\den-move-latest.txt and the picture." % (armed, spots))
+    t = now_ms()
+    ui("gizmo mouse -0.15 -0.4")
+    ev = wait_for(lambda: event_after(den_dir, "den_change", t), wait)
+    ans = size() or {}
+    a = aids_of(ans)
+    pic = shot("card-placed")
+    placed = ev is not None and int(ans.get("props") or 0) == p0 + 1
+    rep.ok(placed and a.get("armed") == "off" and a.get("sel") is not None and a.get("glow") == a.get("sel"), "card: a click puts it down, selected",
+           with_pic("prop %s, glowing %s" % (a.get("sel"), a.get("glow")), pic),
+           "Placed %s, in hand %s, selected %s, glow %s: send logs\\den-move-latest.txt and the picture." % (placed, a.get("armed"), a.get("sel"), a.get("glow")))
+    # 2. nothing in hand (the Select tool): a click on the placed prop picks it up, it glides, the next click puts it down
+    a = aids()
+    sel, uv, at0 = a.get("sel"), a.get("sel_uv"), a.get("sel_at")
+    if sel is None or not uv or not at0 or not all(-0.95 < c < 0.95 for c in uv):
+        rep.add("SKIP", "select: a click picks it up", "the selection (%s) isn't on the screen (%s)" % (sel, uv))
+        return True
+    u, v = uv
+    t = now_ms()
+    ui("gizmo mouse %.4f %.4f" % (u, v))
+    a = aids()
+    carried = str(a.get("armed", "")).startswith("move,%s," % sel) and a.get("grip") is True
+    ui("gizmo glide %.4f %.4f" % (u - 0.12, v - 0.03))
+    g1 = aids().get("at")
+    pic = shot("select-carried")
+    ui("gizmo mouse %.4f %.4f" % (u - 0.12, v - 0.03))
+    ev = wait_for(lambda: event_after(den_dir, "den_change", t), wait)
+    a = aids()
+    at1 = a.get("sel_at") or at0
+    yd = math.hypot(at1[0] - at0[0], at1[1] - at0[1])
+    rep.ok(carried and g1 and ev is not None and yd > 0.3 and a.get("armed") == "off", "select: a click on a prop picks it up, the next puts it down",
+           with_pic("moved %.2f yd" % yd, pic),
+           "Picked up %s, glided %s, put down %s, moved %.2f yd: send logs\\den-move-latest.txt and the picture." % (carried, bool(g1), ev is not None, yd))
+    return True
+
+
 def calibrated_aspect(samples):
     """The window's width over its height the calibration samples were taken at (their middle value), or None."""
     a = sorted(float(s["aspect"]) for s in samples if isinstance(s.get("aspect"), (int, float)) and 0.2 < s["aspect"] < 5.0)
@@ -1833,6 +1899,8 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0, only_mo
             rep.add("INFO", "the mouse: hover, click and drag", "this Den Lite is from before clicking and dragging props (3 Nov): update Den Lite")
         else:
             mouse_steps(rep, ui, aids, shot, with_pic, den_dir, wait)
+        # the owner's own way, 5 Nov (his Gizmo.lua paths: the frame tick and the press and let-go)
+        owner_flow_steps(rep, ui, aids, lambda: ch.send(".den size"), shot, with_pic, den_dir, wait)
         # the free flight (owner 4 Nov: "fly like a typical 3d model engine"): W held for a second glides the build
         # view on (about 16 yards a second, no stops), the let-go eases it out
         ui("gizmo cam build")
@@ -1884,6 +1952,10 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0, only_mo
         ev = wait_for(lambda: event_after(den_dir, "build_mode", t), wait)
         rep.ok(ev is not None and ev.get("detail") == "play", "play mode: props plain again", (ev or {}).get("detail", "no change"),
                "Play mode didn't come back: send logs\\den-features-latest.txt.")
+        pf = (ch.send(".den size") or {}).get("prop_flags", "-")
+        if pf != "-":
+            rep.ok(pf == 0, "play mode: props usable again (a chair is sat on)", "flags %s" % pf,
+                   "Den Lite still tells the game a prop isn't selectable in play mode (flags %s): send logs\\den-move-latest.txt." % pf)
         return True
     finally:
         if before.is_file():

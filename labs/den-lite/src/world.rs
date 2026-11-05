@@ -29,6 +29,10 @@ use wow_world_messages::{DateTime, Guid};
 /// The sandbox combat and the class picker (sandbox.rs: a child module, so these hooks stay small).
 #[path = "sandbox.rs"]
 mod sandbox;
+/// Jaina's brain in the world (jaina_world.rs: a child module, so these hooks stay small; owner 4 Nov).
+#[path = "jaina_world.rs"]
+mod jaina_world;
+use jaina_world::{brain_tick, build_or_offer, jaina_feed, jaina_panel, jaina_saw, jaina_word, step_send};
 
 pub const PLAYER_GUID: u64 = 1;
 /// The GM island's area (AreaTable 876), map 1.
@@ -290,6 +294,9 @@ fn leave(shared: &Shared, id: u64) {
         shared.companion.lock().unwrap_or_else(|e| e.into_inner()).away();
         shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).job = None;
         shared.autosave();
+    } else if gone.is_some() {
+        drop(live);
+        jaina_feed(shared, crate::jaina::Event::GuestLeft);
     }
 }
 
@@ -580,6 +587,9 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 }
                 enter_world(&c.w, shared, &user.to_string(), &sess.me, start)?;
                 arrive(&c.w, shared, &sess, start)?;
+                if !sess.me.host {
+                    jaina_feed(shared, crate::jaina::Event::GuestArrived);
+                }
                 // the Dojo: the game starts on foot at its normal speed; the training dummies up are shown
                 if sess.me.host {
                     shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).entered();
@@ -1387,10 +1397,11 @@ fn order(c: &Writer, shared: &Shared, p: Pos, cmd: companion::Cmd) -> io::Result
         Cmd::Follow => {
             comp.follow_on();
             let step = comp.follow(p, ms);
+            let hop = comp.take_hop();
             let (id, via) = (comp.moves, comp.via.clone());
             drop(comp);
             if let Some((from, to, d)) = step {
-                walk(c, from, to, d, id, &via)?;
+                step_send(c, from, to, d, id, &via, hop)?;
             }
             monster_say(c, companion::FOLLOWING)
         }
@@ -1404,10 +1415,14 @@ fn order(c: &Writer, shared: &Shared, p: Pos, cmd: companion::Cmd) -> io::Result
             monster_say(c, companion::COMING)
         }
         Cmd::Away => {
+            let left = comp.brain.leftovers();
             comp.dismiss();
             drop(comp);
             monster_say(c, companion::BYE)?;
             c.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(companion::GUID), target_died: false })?;
+            for g in left {
+                c.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(g), target_died: false })?;
+            }
             beat_now(shared);
             Ok(())
         }
@@ -1470,6 +1485,7 @@ fn apply(c: &Writer, shared: &Shared, ch: &Change) -> io::Result<()> {
     if !ch.created.is_empty() || !ch.destroyed.is_empty() {
         shared.event("den_change", "", &format!("+{} -{}", ch.created.len(), ch.destroyed.len()));
         testctl::note_change(ch.created.len(), ch.destroyed.len());
+        jaina_saw(shared, ch);
     }
     let to_all = |w: &Writer| -> io::Result<()> {
         for &g in &ch.destroyed {
@@ -1666,6 +1682,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                     say(c, &format!("Saved to a file ({n} props): {}", path.display()))?;
                     let name = path.file_name().and_then(|f| f.to_str()).unwrap_or("").trim_end_matches(".den.json").to_string();
                     bar_data(c, shared, sess.id, sess.me.guid, "saved", &name)?;
+                    jaina_feed(shared, crate::jaina::Event::Saved);
                     cheer(c, shared, sess, "first-save")
                 }
                 Err(e) => say(c, &e),
@@ -1785,6 +1802,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             match r {
                 Ok(ch) if ring > before => {
                     apply(c, shared, &ch)?;
+                    jaina_feed(shared, crate::jaina::Event::Grew);
                     cheer(c, shared, sess, "first-grow")
                 }
                 Ok(ch) => apply(c, shared, &ch),
@@ -1813,7 +1831,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
         (".den", "speed") => speed(c, shared, sess, w(2)),
         (".den", "companion") | (".den", "jaina") => match w(2) {
             "build" | "make" => match dojo::build_words(&words[2..].join(" ")) {
-                Some(name) => jaina_build(c, shared, sess, p, &name),
+                Some(name) => build_or_offer(c, shared, sess, p, &name),
                 None => say(c, "Build what? .den jaina build garden (.den stamps lists them; dojo is the training ring)."),
             },
             "away" | "dismiss" | "bye" | "go" => {
@@ -1826,6 +1844,11 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             "follow" => order(c, shared, p, companion::Cmd::Follow),
             "come" => order(c, shared, p, companion::Cmd::Come),
             "tips" | "tip" | "help" => order(c, shared, p, companion::Cmd::Help),
+            // her newer words (jaina.rs): quiet, talk, idea, yes, no, tidy, a pet, pets away, memory (the Den panel's
+            // Jaina row sends these)
+            _ if crate::jaina::word(&words[2..].join(" ")).is_some() => {
+                jaina_word(c, shared, sess, p, crate::jaina::word(&words[2..].join(" ")).unwrap_or(crate::jaina::Word::Memory))
+            }
             _ => {
                 if !shared.den.lk().inside(p.x, p.y, p.z) {
                     return say(c, "Your companion stays in your Den: come back inside first.");
@@ -1876,7 +1899,11 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             if let Some(words) = companion::heard(text) {
                 // "Jaina, build a garden": she builds a stamp (dojo.rs), wherever she is in the Den
                 if let Some(name) = dojo::build_words(&words) {
-                    return jaina_build(c, shared, sess, p, &name);
+                    return build_or_offer(c, shared, sess, p, &name);
+                }
+                // her newer words (jaina.rs): quiet, help, yes, no, tidy up, a pet...; then the short commands
+                if let Some(wd) = crate::jaina::word(&words) {
+                    return jaina_word(c, shared, sess, p, wd);
                 }
                 if let Some(cmd) = companion::command(&words) {
                     return order(c, shared, p, cmd);
@@ -2056,6 +2083,9 @@ fn creature_answer(entry: u32) -> SMSG_CREATURE_QUERY_RESPONSE {
             }),
         };
     }
+    if let Some(a) = jaina_world::critter_answer(entry) {
+        return a;
+    }
     if entry != companion::ENTRY {
         return SMSG_CREATURE_QUERY_RESPONSE { creature_entry: entry | 0x8000_0000, found: None };
     }
@@ -2200,6 +2230,7 @@ fn flight_tick(shared: &Shared) -> io::Result<()> {
             w.send_raw(flight::SMSG_SPLINE_MOVE_SET_FLYING, &flight::guid_body(companion::GUID))?;
             w.send_raw(flight::SMSG_SPLINE_MOVE_GRAVITY_DISABLE, &flight::guid_body(companion::GUID))?;
             shared.event("companion", "", "flies");
+            jaina_feed(shared, crate::jaina::Event::FlyStart);
         }
         w.send_raw(flight::SMSG_MONSTER_MOVE, &flight::sky_body(companion::GUID, here, &pts, id, flight::SPLINE_FLYING | flight::SPLINE_CATMULLROM, t))?;
     } else if comp.flying {
@@ -2213,6 +2244,7 @@ fn flight_tick(shared: &Shared) -> io::Result<()> {
         w.send_raw(flight::SMSG_SPLINE_MOVE_UNSET_FLYING, &flight::guid_body(companion::GUID))?;
         w.send_raw(flight::SMSG_SPLINE_MOVE_GRAVITY_ENABLE, &flight::guid_body(companion::GUID))?;
         shared.event("companion", "", "lands");
+        jaina_feed(shared, crate::jaina::Event::FlyEnd);
     }
     Ok(())
 }
@@ -2237,9 +2269,13 @@ fn companion_tick(shared: &Shared, read: bool) -> io::Result<()> {
             let mut comp = shared.companion.lk();
             comp.blocks = blocks;
             if !inside && !near {
+                let left = comp.brain.leftovers();
                 comp.away();
                 drop(comp);
                 w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(companion::GUID), target_died: false })?;
+                for g in left {
+                    w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(g), target_died: false })?;
+                }
                 notify_host(shared, Item::line("info", "Your companion stays in your Den and joins you again when you're back."))?;
                 beat_now(shared);
             } else if comp.too_far(p, ms) {
@@ -2248,17 +2284,25 @@ fn companion_tick(shared: &Shared, read: bool) -> io::Result<()> {
                 w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(companion::GUID), target_died: false })?;
                 w.send(&companion_create(at))?;
             } else {
+                // a hop that came down: she walks again
+                if comp.landed(ms) {
+                    w.send_raw(crate::flight::SMSG_SPLINE_MOVE_UNSET_FLYING, &crate::flight::guid_body(companion::GUID))?;
+                    w.send_raw(crate::flight::SMSG_SPLINE_MOVE_GRAVITY_ENABLE, &crate::flight::guid_body(companion::GUID))?;
+                }
                 let step = comp.follow(p, ms);
+                let hop = comp.take_hop();
                 let (id, via) = (comp.moves, comp.via.clone());
                 // only the assistant's answers (she was asked): no tips nobody asked for (owner, 1 Nov 23:46)
                 let line = comp.next_line(now);
                 drop(comp);
                 if let Some((from, to, t)) = step {
-                    walk(&w, from, to, t, id, &via)?;
+                    step_send(&w, from, to, t, id, &via, hop)?;
                 }
                 if let Some(l) = line {
                     monster_say(&w, &l)?;
                 }
+                // what she does by herself (jaina.rs): gestures, a look around, now and then a word or an idea
+                brain_tick(shared, &w, p, ms)?;
             }
         } else if wanted && inside {
             // back in the Den: she joins you again by herself, quietly
@@ -2392,7 +2436,11 @@ fn check_open(shared: &Shared, w: &Writer, file: &str) -> io::Result<()> {
 /// The Den bar's Dojo panel line (`wuden dojo <line>`), only when the bar is there.
 fn dojo_line(c: &Writer, shared: &Shared, sess: &Sess) -> io::Result<()> {
     let line = shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).line() + &sandbox::line_extra(shared);
-    bar_data(c, shared, sess.id, sess.me.guid, "dojo", &line)
+    bar_data(c, shared, sess.id, sess.me.guid, "dojo", &line)?;
+    if sess.me.host {
+        jaina_panel(shared, true)?;
+    }
+    Ok(())
 }
 
 /// `.den fly on|off` (alone: switches it): the game lets the character fly, or lands it.
@@ -2485,7 +2533,7 @@ fn dojo_cmd(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, args: &[String]) -
         "fly" => fly(c, shared, sess, a(1)),
         "speed" => speed(c, shared, sess, a(1)),
         "build" | "jaina" | "make" => match dojo::build_words(&args.join(" ")).or_else(|| (a(0) == "jaina").then(|| "dojo".into())) {
-            Some(name) => jaina_build(c, shared, sess, p, &name),
+            Some(name) => build_or_offer(c, shared, sess, p, &name),
             None => say(c, "Build what? .den dojo build garden (.den stamps lists them)."),
         },
         "status" => dojo_line(c, shared, sess),
@@ -2593,6 +2641,8 @@ fn jaina_build(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, name: &str) -> 
     let walked = {
         let mut comp = shared.companion.lock().unwrap_or_else(|e| e.into_inner());
         comp.heard_now(now());
+        // what she builds is hers until you move it ("Jaina, tidy up" may take it away, after asking)
+        comp.brain.adopt(&ch.created.iter().map(|o| (o.guid, o.x, o.y, o.z)).collect::<Vec<_>>());
         comp.go_stay(stand, ms).map(|w| (w, comp.moves, comp.via.clone()))
     };
     let walk_ms = match walked {
@@ -2727,6 +2777,7 @@ fn dojo_tick(shared: &Shared) -> io::Result<()> {
             }
             dojo::Step::Done { shown, admired } => {
                 shared.companion.lock().unwrap_or_else(|e| e.into_inner()).follow_on();
+                jaina_feed(shared, crate::jaina::Event::Built);
                 let (title, ring) = done.clone().unwrap_or_default();
                 shared.event("dojo", "", &format!("built {shown}"));
                 if ring {

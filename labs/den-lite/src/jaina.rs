@@ -450,6 +450,26 @@ pub fn critter_guid(entry: u32, n: u32) -> u64 {
     (0xF130u64 << 48) | ((entry as u64 & 0xFF_FFFF) << 24) | (0xA000 + (n as u64 & 0xFFF))
 }
 
+/// A critter's unit fields (pets.rs `create_unit_body`): its entry, level 1, one health, friendly to everyone
+/// (faction 35), nothing that lets it be attacked or talked to, its model.
+pub fn critter_fields(entry: u32, display: u32) -> Vec<(u16, u32)> {
+    vec![
+        (3, entry),
+        (23, 0),                  // UNIT_FIELD_BYTES_0
+        (24, 1),                  // UNIT_FIELD_HEALTH
+        (32, 1),                  // UNIT_FIELD_MAXHEALTH
+        (54, 1),                  // UNIT_FIELD_LEVEL
+        (55, 35),                 // UNIT_FIELD_FACTIONTEMPLATE: friendly to all
+        (59, 0x0000_0002),        // UNIT_FIELD_FLAGS: UNIT_FLAG_NON_ATTACKABLE
+        (65, 0.3f32.to_bits()),   // bounding radius
+        (66, 1.0f32.to_bits()),   // combat reach
+        (67, display),
+        (68, display),
+        (80, 1.0f32.to_bits()),   // UNIT_MOD_CAST_SPEED
+        (146, 1.0f32.to_bits()),  // UNIT_FIELD_HOVERHEIGHT
+    ]
+}
+
 /// The pieces of a set laid out in front of `at` (its spot, facing `o`): (entry, x, y, yaw in radians), the same turn
 /// as den.rs `stamp` (15 degree steps). The z is the caller's (the floor there).
 pub fn lay_out(t: &Theme, at: At) -> Vec<(u32, f32, f32, f32)> {
@@ -732,14 +752,16 @@ impl Brain {
         self.pending.drain(..n.saturating_sub(8));
     }
 
-    /// A Den change (world.rs `apply`): pieces made (guid, entry) and how many went; hers don't count as yours.
-    pub fn saw_change(&mut self, created: &[(u64, u32)], destroyed: usize, ms: u64) {
+    /// A Den change (world.rs `apply`): pieces made (guid, entry) and the guids gone; hers (a kept set, her tidy)
+    /// don't count as yours.
+    pub fn saw_change(&mut self, created: &[(u64, u32)], destroyed: &[u64], ms: u64) {
         let yours: Vec<u32> = created.iter().filter(|(g, _)| !self.is_mine(*g)).map(|(_, e)| *e).collect();
         if let Some(&entry) = yours.first() {
             self.feed(Event::Placed { entry, n: yours.len() }, ms);
         }
-        if destroyed > 0 {
-            self.feed(Event::Deleted { n: destroyed }, ms);
+        let gone = destroyed.iter().filter(|g| !self.is_mine(**g)).count();
+        if gone > 0 {
+            self.feed(Event::Deleted { n: gone }, ms);
         }
     }
 
@@ -883,6 +905,24 @@ impl Brain {
             self.critters[i].next = ms + t as u64 + self.rng.between(CRITTER_STEP_MIN_MS, CRITTER_STEP_MAX_MS);
         }
         out
+    }
+
+    /// What she has out in the world that isn't saved: the critters and an open suggestion's preview (their guids).
+    pub fn leftovers(&self) -> Vec<u64> {
+        let mut v: Vec<u64> = self.critters.iter().map(|c| c.guid).collect();
+        if let Some(Question::Offer { guids, .. }) = &self.question {
+            v.extend(guids);
+        }
+        v
+    }
+
+    /// She goes out of sight: the critters and an open preview go with her (the caller takes their objects away).
+    pub fn gone(&mut self) {
+        self.critters.clear();
+        if matches!(self.question, Some(Question::Offer { .. })) {
+            self.question = None;
+        }
+        self.doing = Doing::Following;
     }
 
     /// The critters go: their guids.
@@ -1278,16 +1318,16 @@ mod tests {
         let mut b = Brain::new(1);
         b.arrive(0);
         assert_eq!(b.memory.favourite(), None);
-        b.saw_change(&[(10, 2413)], 0, 1);
-        b.saw_change(&[(11, 180765)], 0, 2);
+        b.saw_change(&[(10, 2413)], &[], 1);
+        b.saw_change(&[(11, 180765)], &[], 2);
         assert_eq!(b.memory.favourite(), None, "once each: no favourite yet");
-        b.saw_change(&[(12, 2413)], 0, 3);
+        b.saw_change(&[(12, 2413)], &[], 3);
         assert_eq!(b.memory.favourite(), Some((2413, 2)));
         b.adopt(&[(50, 1.0, 2.0, 0.0), (51, 1.0, 3.0, 0.0)]);
-        b.saw_change(&[(50, 182093), (51, 182093)], 0, 4);
+        b.saw_change(&[(50, 182093), (51, 182093)], &[], 4);
         assert_eq!(b.memory.pieces, 3, "her own set isn't yours");
-        b.saw_change(&[], 2, 5);
-        assert_eq!(b.memory.deleted, 2);
+        b.saw_change(&[], &[10, 11, 50], 5);
+        assert_eq!(b.memory.deleted, 2, "her own tidy isn't your delete");
         let l = b.memory_line(|e| if e == 2413 { "Wooden Chair".into() } else { "?".into() });
         assert!(l.contains("Wooden Chair"), "{l}");
         let mut fresh = Brain::new(1);
@@ -1419,6 +1459,8 @@ mod tests {
         b.add_critter(None, home, 0).unwrap();
         b.add_critter(None, home, 0).unwrap();
         assert_eq!(b.add_critter(None, home, 0), Err("critter.full"));
+        b.offered("lights", home, vec![900], true, 0);
+        assert_eq!(b.leftovers().len(), 4);
         let gs: std::collections::BTreeSet<u64> = b.critters.iter().map(|c| c.guid).collect();
         assert_eq!(gs.len(), 3, "each its own guid");
         assert!(gs.iter().all(|g| g >> 48 == 0xF130 && (*g & 0xFF_FFFF) >= 0xA000));
@@ -1434,7 +1476,12 @@ mod tests {
         }
         assert!(steps >= 3 * 8, "{steps}");
         assert_eq!(b.critters_away().len(), 3);
+        let f = critter_fields(721, 328);
+        assert!(f.contains(&(3, 721)) && f.contains(&(67, 328)) && f.contains(&(55, 35)));
         assert!(b.critters.is_empty());
+        b.add_critter(None, home, 0).unwrap();
+        b.gone();
+        assert!(b.critters.is_empty() && b.question.is_none() && b.leftovers().is_empty());
     }
 
     #[test]

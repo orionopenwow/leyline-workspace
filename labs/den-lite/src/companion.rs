@@ -285,6 +285,8 @@ pub struct Companion {
     hop_new: bool,
     /// A look around: she stays there until this time (ms), unless you walk off.
     roam_until: u64,
+    /// Her brain's line last sent to the Den panel (world.rs sends it again only when it changes).
+    pub panel_sent: String,
 }
 
 impl Companion {
@@ -330,6 +332,9 @@ impl Companion {
     /// She goes out of sight (the player left the Den, or logged out); true when she was out. Still wanted: she
     /// comes back when they are in the Den again.
     pub fn away(&mut self) -> bool {
+        // her critters and an open suggestion go with her (world.rs takes their objects away first: brain.leftovers)
+        self.brain.gone();
+        (self.hop_until, self.hop_new, self.roam_until) = (0, false, 0);
         std::mem::replace(&mut self.out, false)
     }
 

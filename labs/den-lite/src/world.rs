@@ -83,6 +83,12 @@ impl Writer {
         g.0.write_all(&v)
     }
 
+    /// The connection closed (hosting.rs: the host's Kick). The session's read fails and it leaves as on a logout.
+    pub fn close(&self) {
+        let g = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = g.0.shutdown(std::net::Shutdown::Both);
+    }
+
     /// This connection, as notice.rs keeps lines for it.
     fn addr(&self) -> usize {
         Arc::as_ptr(&self.0) as *const () as usize
@@ -706,7 +712,7 @@ fn addon(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Pos>, sel: &mut o
         return Ok(());
     }
     let here = pos.map(|p| ovmod::Here { x: p.x, y: p.y, z: p.z, o: p.o });
-    let can = sess.me.host || shared.guests_build.load(Ordering::Relaxed);
+    let can = crate::hosting::may_build(shared, &sess.me);
     // the placement aids' verbs (gizmo.rs): hover comes about 10 a second, so it isn't written to the events
     if let Some(("wubuild", "cmd", data)) = ovmod::split(&m.text) {
         // the Builder's tools (buildtools.rs: paths, stamps with the mouse, arrays, align, Solid, layers, history)
@@ -787,7 +793,7 @@ fn aid_send(c: &Writer, shared: &Shared, sess: &Sess, sel: &ovmod::Sel, aids: &g
         send_addon(c, sess.me.guid, "wubuild", name, data)?;
     }
     if out.state {
-        let role = if sess.me.host { "owner" } else if shared.guests_build.load(Ordering::Relaxed) { "builder" } else { "visitor" };
+        let role = if sess.me.host { "owner" } else if crate::hosting::may_build(shared, &sess.me) { "builder" } else { "visitor" };
         let st = ovmod::state(&shared.den.lock().unwrap_or_else(|e| e.into_inner()), sel, role);
         send_addon(c, sess.me.guid, "wubuild", "state", &st)?;
     }
@@ -842,7 +848,7 @@ fn aid_follow(c: &Writer, shared: &Shared, sess: &Sess, sel: &ovmod::Sel, aids: 
 fn aid_packet(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Pos>, sel: &mut ovmod::Sel, aids: &mut gizmo::Aids, op: u32, body: &[u8]) -> io::Result<bool> {
     let Some(p) = pos else { return Ok(false) };
     let here = ovmod::Here { x: p.x, y: p.y, z: p.z, o: p.o };
-    let can = sess.me.host || shared.guests_build.load(Ordering::Relaxed);
+    let can = crate::hosting::may_build(shared, &sess.me);
     if op == gizmo::CMSG_CAST_SPELL {
         let Some(cast) = gizmo::parse_cast(body).filter(|c| c.spell == gizmo::PLACE_SPELL) else { return Ok(false) };
         // never cast: no message, no cooldown, no visual
@@ -890,7 +896,12 @@ fn addon_outs(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Pos>, ready:
             ovmod::Out::Change(ch) => apply(c, shared, &ch)?,
             ovmod::Out::DenCmd(t) => {
                 if let Some(p) = pos {
-                    chat(c, shared, sess, p, &format!(".den {t}"))?;
+                    // a friend's panel button goes through the same rules as what they type (hosting.rs)
+                    if sess.me.host {
+                        chat(c, shared, sess, p, &format!(".den {t}"))?;
+                    } else {
+                        guest_chat(c, shared, sess, p, &format!(".den {t}"))?;
+                    }
                 }
             }
             ovmod::Out::Ask(what) => ask_launcher(c, shared, &what)?,
@@ -925,7 +936,7 @@ fn addon_outs(c: &Writer, shared: &Shared, sess: &Sess, pos: Option<Pos>, ready:
 
 /// The Den bar's status line: your role, how many props, how long since the Den was last kept.
 fn status_line(shared: &Shared, sess: &Sess) -> String {
-    let role = if sess.me.host { "owner" } else if shared.guests_build.load(Ordering::Relaxed) { "builder" } else { "visitor" };
+    let role = if sess.me.host { "owner" } else if crate::hosting::may_build(shared, &sess.me) { "builder" } else { "visitor" };
     let props = shared.den.lock().unwrap_or_else(|e| e.into_inner()).props.len();
     let at = shared.autosaved_at.load(Ordering::Relaxed);
     let saved = if at == 0 { "-".to_string() } else { now().saturating_sub(at).to_string() };
@@ -937,6 +948,16 @@ fn send_addon(c: &Writer, guid: u64, md: &str, name: &str, data: &str) -> io::Re
         c.send_raw(ovmod::SMSG_MESSAGECHAT, &b)?;
     }
     Ok(())
+}
+
+/// An addon line to one player (hosting.rs, tourney.rs: the Tournament window).
+pub fn addon_to(c: &Writer, guid: u64, md: &str, name: &str, data: &str) -> io::Result<()> {
+    send_addon(c, guid, md, name, data)
+}
+
+/// A system line to one player (hosting.rs, tourney.rs).
+pub fn say_to(c: &Writer, text: &str) -> io::Result<()> {
+    say(c, text)
 }
 
 /// One toast in the session's Den bar.
@@ -1370,7 +1391,7 @@ fn arrive(c: &Writer, shared: &Shared, sess: &Sess, p: Pos) -> io::Result<()> {
     shared.notices.lock().unwrap_or_else(|e| e.into_inner()).entered(sess.id, now_ms() + shared.cfg.ui_load_ms);
     if !me.host {
         let host = shared.cfg.hero.name.clone();
-        let builds = shared.guests_build.load(Ordering::Relaxed);
+        let builds = crate::hosting::may_build(shared, me);
         return notify(c, shared, sess.id, me.guid, Item {
             kind: "info",
             toast: Some(format!("Welcome to {host}'s Den. What you say here, everyone in the Den hears.")),
@@ -1928,9 +1949,17 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             }
             Ok(())
         }
-        (".den", "friends") => friends(c, shared, w(2), w(3)),
+        (".den", "friends") => friends(c, shared, w(2), w(3), w(4)),
+        // duel tournaments (tourney.rs): the host runs one, everyone signs up, yields and watches
+        (".den", "tourney") | (".den", "tournament") | (".den", "t") | (".tourney", _) => {
+            let from = if w(0) == ".tourney" { 1 } else { 2 };
+            for l in crate::tourney::cmd(shared, &sess.me, p.x, p.y, &words[from.min(words.len())..]) {
+                say(c, &l)?;
+            }
+            Ok(())
+        }
         (".den", "invite") | (".den", "forge") => ask_launcher(c, shared, w(1)),
-        (".den", _) | (".build", _) => say(c, "Den Lite knows: .den place, .den find, .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room, .den grow, .den size, .den companion, .den ask, .den mode, .den mods, .den friends, .den invite, .den forge, .den dojo, .den fly, .den speed, .den class, .den gear, .den mounts, .den go, .den here, .den places."),
+        (".den", _) | (".build", _) => say(c, "Den Lite knows: .den place, .den find, .den stamps, .den stamp, .build undo, .den save, .den load, .den files, .den room, .den grow, .den size, .den companion, .den ask, .den mode, .den mods, .den friends, .den invite, .den forge, .den dojo, .den fly, .den speed, .den class, .den gear, .den mounts, .den go, .den here, .den places, .den tourney."),
         // Another server's commands (GM addons send ".server info", ".account onlinelist" on login): not said
         // aloud, and nothing to answer in a Den.
         (w0, _) if w0.starts_with('.') => Ok(()),
@@ -1982,9 +2011,16 @@ fn say_aloud(c: &Writer, shared: &Shared, sess: &Sess, text: &str) -> io::Result
     Ok(())
 }
 
-/// `.den friends` (the host): who is here, and whether friends may build (`build on|off`). The logins themselves
-/// are made and taken back by the launcher (`den-lite guest`).
-fn friends(c: &Writer, shared: &Shared, a: &str, b: &str) -> io::Result<()> {
+/// `.den friends` (the host): who is here, and whether friends may build (`build on|off`; one friend: `build <name>
+/// on|off`), `kick <name>` (hosting.rs: their login taken back, their game out of the Den). The logins themselves are
+/// made by the launcher (`den-lite guest`).
+fn friends(c: &Writer, shared: &Shared, a: &str, b: &str, v: &str) -> io::Result<()> {
+    if a == "kick" && !b.is_empty() {
+        return say(c, &crate::hosting::apply(shared, &crate::hosting::Ask::Kick(b.to_string())));
+    }
+    if a == "build" && !b.is_empty() && b != "on" && b != "off" && (v == "on" || v == "off") {
+        return say(c, &crate::hosting::apply(shared, &crate::hosting::Ask::Build(b.to_string(), v == "on")));
+    }
     if a == "build" && (b == "on" || b == "off") {
         shared.guests_build.store(b == "on", Ordering::Relaxed);
         let line = if b == "on" { "Your friends can build in your Den now." } else { "Only you build in your Den now." };
@@ -2010,19 +2046,26 @@ fn guest_chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> i
     if !text.trim_start().starts_with('.') {
         return say_aloud(c, shared, sess, text);
     }
+    if w(0) == ".tourney" {
+        return chat(c, shared, sess, p, text);
+    }
     if !matches!(w(0), ".den" | ".build") {
         return Ok(());
     }
     let builds = matches!((w(0), w(1)), (".den", "place") | (".den", "stamp") | (".build", "undo"));
     let looks = matches!((w(0), w(1)), (".den", "find") | (".den", "stamps") | (".den", "mode") | (".den", "modes") | (".den", "mods") | (".den", "addons"))
         || (w(0) == ".den" && w(1) == "size" && w(2).is_empty());
-    if looks || (builds && shared.guests_build.load(Ordering::Relaxed)) {
+    // tournaments: friends sign up, yield and read the bracket (tourney.rs says no to the host's verbs)
+    if matches!((w(0), w(1)), (".den", "tourney") | (".den", "tournament") | (".den", "t")) {
+        return chat(c, shared, sess, p, text);
+    }
+    if looks || (builds && crate::hosting::may_build(shared, &sess.me)) {
         return chat(c, shared, sess, p, text);
     }
     if builds {
         return say(c, "Your host builds here. They can let friends build too: .den friends build on.");
     }
-    say(c, "As a guest you can: .den find, .den stamps, .den size, .den mode, .den mods (and build, when your host lets you).")
+    say(c, "As a guest you can: .den find, .den stamps, .den size, .den mode, .den mods, .den tourney (and build, when your host lets you).")
 }
 
 /// An ask for the player's assistant: written down (companion-in.json `asks`), and she answers.

@@ -1238,7 +1238,8 @@ impl Den {
             }
             self.paths = doc.paths.clone();
             self.extra = doc.extra.clone();
-            self.extra.retain(|k, _| k == "notes" || k == "door" || k == "mailbox" || k == "terrain");
+            // the tournaments' results (tourney.rs) stay with the Den they were fought in
+            self.extra.retain(|k, _| k == "notes" || k == "door" || k == "mailbox" || k == "terrain" || k == "tournaments");
             // the file's look and size (the room grows to fit what it was saved in; it never shrinks under props)
             let l = doc.room.as_ref().and_then(|r| look(&r.look)).unwrap_or(self.look);
             let half = doc.room.as_ref().filter(|r| r.size.is_finite()).map(|r| ring_half(ring_for(r.size))).unwrap_or(self.spot.half);

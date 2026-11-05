@@ -22,6 +22,7 @@ pub mod gear;
 pub mod gearsets;
 pub mod guests;
 pub mod jaina;
+pub mod hosting;
 pub mod ovmod;
 pub mod login;
 pub mod models;
@@ -39,6 +40,7 @@ pub mod spells;
 pub mod stamps;
 pub mod testctl;
 pub mod tools;
+pub mod tourney;
 pub mod world;
 
 use std::collections::HashMap;
@@ -177,7 +179,8 @@ pub struct Shared {
     pub sessions: Mutex<HashMap<String, ([u8; 40], login::Who, bool)>>,
     /// Everyone in the world now (world.rs Peer): the host and their guests.
     pub players: Mutex<Vec<world::Peer>>,
-    /// Friends may build (`.den friends build on`); off at every start.
+    /// Every friend may build (`.den friends build on`); off at every start. One friend's own switch is kept in
+    /// guests.json (hosting.rs `may_build`).
     pub guests_build: std::sync::atomic::AtomicBool,
     remote_world: Mutex<Option<SocketAddr>>,
     pub den: Mutex<den::Den>,
@@ -447,6 +450,9 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
     std::thread::spawn(move || world::companion_ticker(s));
     let s = shared.clone();
     std::thread::spawn(move || world::dojo_ticker(s));
+    // the host's Friends list and asks, kept friends, the tournament's calls (hosting.rs, tourney.rs)
+    let s = shared.clone();
+    std::thread::spawn(move || hosting::run(s));
     Ok(Running { login: la, world: wa, remote: remote_addrs, shared })
 }
 

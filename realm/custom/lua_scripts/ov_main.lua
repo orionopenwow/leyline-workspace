@@ -1198,6 +1198,12 @@ local function doBoost(player, state)
         return false
     end
     if player:IsInCombat() then say(player, "Not in combat."); return false end
+    -- Review 4 Nov: a ghost would be teleported to Dalaran away from its body, and a level 55-57 Death Knight can be
+    -- in a battleground or arena (the boost's teleport would pull it out mid-match).
+    if try(player, "IsDead") == true then say(player, "Not while dead: release and get back to your body first."); return false end
+    if try(player, "InBattleground") == true or try(player, "InArena") == true then
+        say(player, "Not in a battleground or arena."); return false
+    end
     local kit = kitFor(player, state.spec)
     if not kit then return false end
 

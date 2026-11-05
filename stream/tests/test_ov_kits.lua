@@ -4,6 +4,7 @@
 local mainFile = assert(arg[1], "usage: lua5.1 test_ov_kits.lua <ov_main.lua>")
 
 -- ---- fake ALE ---------------------------------------------------------------------------------
+newproxy = newproxy or function() return io.stdout end   -- Lua 5.2+ (texlua): any userdata will do
 local events = {}
 local realGetenv = os.getenv
 os.getenv = function(k) if k == "OV_MAIN" or k == "OV_START_KIT" then return nil end return realGetenv(k) end

@@ -622,6 +622,10 @@ function G.OnMessage(prefix, msg, channel, sender)
         local kind, rest = data:match("^(%a+),?(.*)$")
         G.armed = (kind == "place" or kind == "move" or kind == "axis") and kind or nil
         if not G.armed then G.carried = nil end
+        -- something in hand: the prop that was under the cursor is the one in hand now (Den Lite stops its hover
+        -- without a `hovered -`), so the hover is let go here: no stale name by the cursor, BUTTON1 back to the
+        -- camera once it is put down (review 4 Nov)
+        if G.armed then G.hovered = nil; if tip then tip:Hide() end end
         if kind == "axis" then G.axis = rest:match(",(%a)$") or G.axis end
         if not G.armed then
             local B = W.Builder
@@ -674,6 +678,8 @@ function G.OnMessage(prefix, msg, channel, sender)
     elseif name == "carried" then
         -- picked up by a click (`<id>`, or `axis x|y|z` for an arrow): it follows the cursor; a click puts it down
         G.carried = data
+        -- the carried prop is the selection (Den Lite selected it): Q / E turn it after it is put down
+        if tonumber(data) then G.sel = tonumber(data) end
         local B = W.Builder
         if B and B.PillNote then
             B.PillNote(data:find("^axis") and ("Moving along " .. data:sub(6):upper() .. ": click to drop it, Esc puts it back")

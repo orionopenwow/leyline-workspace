@@ -535,6 +535,23 @@ answer("carried", "axis y")
 check("an arrow clicked: carried along Y", G.carried == "axis y")
 answer("aim", "off")
 
+-- review 4 Nov: picking a hovered prop up lets the hover go (no stale tooltip, BUTTON1 back to the camera after the
+-- drop), and the carried prop is the selection (Q / E turn it once it is down)
+answer("selected", "-")
+answer("hovered", "7 Garden Bench")
+check("carry: hovered first, BUTTON1 ours", G.hovered and G.hovered.id == 7 and bindings.BUTTON1 == "LeylineGizmoGrab")
+answer("aim", "move,7,1543")
+answer("carried", "7")
+check("carry: the hover let go once it is in hand (no name by the cursor)", G.hovered == nil and not named.LeylineGizmoHoverTip.shown)
+check("carry: the carried prop is the selection", G.sel == 7)
+check("carry: Esc and Q / E bound while carried", bindings.ESCAPE == "LeylineGizmoCancel" and bindings.Q == "LeylineGizmoTurnQ")
+answer("aim", "off")
+check("carry: put down on empty ground: BUTTON1 back to the camera, Q / E still turn it",
+    bindings.BUTTON1 == nil and not G.b1 and G.sel == 7 and bindings.Q == "LeylineGizmoTurnQ")
+answer("carried", "axis x")
+check("carry: an arrow's carry leaves the selection as it is", G.sel == 7 and G.carried == "axis x")
+answer("aim", "off")
+
 -- the debug overlay (/wudebug): shown and hidden, asks Den Lite, shows its line split up
 n = #sent
 check("debug: the slash command is there", SlashCmdList and SlashCmdList.LEYLINEBUILDDEBUG ~= nil)

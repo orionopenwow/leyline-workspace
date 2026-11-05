@@ -85,7 +85,7 @@ pub const HALO: (u32, u32, &str) = (990_010, 2233, "Selected");
 
 /// The copy stands this far in front of the player when asked to (`follow`; the keyboard's place).
 pub const AHEAD: f32 = 2.5;
-/// At most this often (ms) the copy is shown at a new place (about 10 a second); the place itself is always kept.
+/// At most this often (ms) the copy is shown at a new place (about 30 a second); the place itself is always kept.
 pub const DRAW_MS: u64 = 33;
 /// The farthest the ray may land from where the camera looks from (yards, past the camera's own distance).
 pub const REACH: f32 = 60.0;
@@ -916,7 +916,7 @@ fn hover(d: &Den, sel: &Sel, a: &mut Aids, here: Here, u: f32, v: f32, aspect: O
         let on = if a.carry { pick::on_ground(e, dir, cam.dist + REACH, |x, y| d.floor_at(x, y)).map(|p| [p[0], p[1]]) } else { None };
         return match on.or_else(|| pick::follow(e, dir, &g, cam.dist + REACH)) {
             Some([x, y]) => {
-                set_at(d, sel, a, x, y);
+                hover_at(d, sel, a, x, y);
                 draw(d, a, now, force)
             }
             None => AidOut::default(),
@@ -933,7 +933,7 @@ fn hover(d: &Den, sel: &Sel, a: &mut Aids, here: Here, u: f32, v: f32, aspect: O
     }
     match hit {
         Some((x, y)) => {
-            set_at(d, sel, a, x, y);
+            hover_at(d, sel, a, x, y);
             draw(d, a, now, force)
         }
         None => AidOut::default(),
@@ -1052,6 +1052,17 @@ fn ahead(d: &Den, sel: &Sel, here: Here) -> [f32; 4] {
 fn set_at(d: &Den, sel: &Sel, a: &mut Aids, x: f32, y: f32) {
     let (x, y) = (snap(sel.grid, x, d.spot.x), snap(sel.grid, y, d.spot.y));
     a.at = Some([x, y, d.floor_at(x, y) + a.lift, a.yaw]);
+}
+
+/// The cursor's spot for the copy (a hover): as [`set_at`], but past the Den's edge the copy stays at the last spot
+/// inside (it is drawn only inside), so the click puts it down where it is seen rather than failing with "outside
+/// your Den" (review 4 Nov). The first spot of a placing is kept even outside: the click then says why.
+fn hover_at(d: &Den, sel: &Sel, a: &mut Aids, x: f32, y: f32) {
+    let (sx, sy) = (snap(sel.grid, x, d.spot.x), snap(sel.grid, y, d.spot.y));
+    let z = d.floor_at(sx, sy) + a.lift;
+    if a.at.is_none() || d.inside(sx, sy, z) {
+        a.at = Some([sx, sy, z, a.yaw]);
+    }
 }
 
 /// The player moved: a copy put in front of them (`follow`) follows them.
@@ -2101,5 +2112,74 @@ mod tests {
         let out = cmd(&mut d, &mut sel, &mut a, here, "mode play", true, 30);
         assert_eq!(out.far, Some(FarOut::Off));
         assert!(a.far.is_none() && !a.build && out.addon.contains(&("cam".into(), "near".into())));
+    }
+
+    // ---- review 4 Nov (agent/review-den): unrun in the cloud (the crate needs crates.io); the den-lite-test step runs it
+
+    #[test]
+    fn a_carried_prop_past_the_dens_edge_stays_at_the_last_spot_inside_and_the_click_puts_it_there() {
+        let (mut d, mut here) = den();
+        let (mut sel, mut a) = (Sel::default(), Aids::default());
+        // the player near the edge, facing out
+        let r = d.spot.reach();
+        here.x = d.spot.x + r - 8.0;
+        let chair = d.spawn(2413, here.x + 5.0, here.y, here.z, 0.0).unwrap();
+        cmd(&mut d, &mut sel, &mut a, here, "gizmo on", true, 0);
+        cmd(&mut d, &mut sel, &mut a, here, "mode build", true, 0);
+        let [u, v] = uv_of(&a, here, &chair);
+        cmd(&mut d, &mut sel, &mut a, here, &format!("click {} carry", line(u, v)), true, 100);
+        assert!(a.carry && a.armed == Some(Armed::Move(chair.guid)));
+        let inside_at = a.at.unwrap();
+        assert!(d.inside(inside_at[0], inside_at[1], inside_at[2]));
+        // the cursor up toward the horizon: the ground there is past the edge
+        cmd(&mut d, &mut sel, &mut a, here, &format!("hover {}", line(0.0, 0.25)), true, 300);
+        let at = a.at.unwrap();
+        assert!(d.inside(at[0], at[1], at[2]), "kept inside: {at:?}");
+        let ghost = a.ghost.clone().unwrap();
+        assert!((ghost.x - at[0]).abs() < 0.01 && (ghost.y - at[1]).abs() < 0.01, "the copy is where the click goes");
+        let out = cmd(&mut d, &mut sel, &mut a, here, "commit", true, 400);
+        assert!(out.say.iter().all(|s| !s.contains("outside")), "{:?}", out.say);
+        let p = d.placed(chair.guid).unwrap().obj.clone();
+        assert!((p.x - at[0]).abs() < 0.05 && (p.y - at[1]).abs() < 0.05 && a.armed.is_none());
+    }
+
+    #[test]
+    fn the_verbs_answer_nonsense_quietly() {
+        let (mut d, here) = den();
+        let (mut sel, mut a) = (Sel::default(), Aids::default());
+        for t in ["click", "click x y", "drag", "drag nan 1", "hover nan nan", "hover 1e40 0", "grab", "grab w", "cam", "cam far nan", "cam pan up 5", "preview 0", "preview -1", "axis q", ""] {
+            let out = cmd(&mut d, &mut sel, &mut a, here, t, true, 10);
+            assert!(out.change.is_none() && d.props.is_empty(), "{t}: {out:?}");
+        }
+        assert!(a.armed.is_none() && a.ghost.is_none());
+        // a visitor may hover and click (select) but never carry or drop
+        let chair = d.spawn(2413, here.x + 6.0, here.y, here.z, 0.0).unwrap();
+        cmd(&mut d, &mut sel, &mut a, here, "mode build", false, 0);
+        let [u, v] = uv_of(&a, here, &chair);
+        let out = cmd(&mut d, &mut sel, &mut a, here, &format!("drag {}", line(u, v)), false, 20);
+        assert!(a.armed.is_none() && out.say.iter().any(|s| s.contains("Only the Den's owner")));
+        let out = cmd(&mut d, &mut sel, &mut a, here, "commit", false, 30);
+        assert!(out.change.is_none());
+    }
+
+    #[test]
+    fn hover_glow_never_leaves_two_props_glowing() {
+        let (mut d, here) = den();
+        let (mut sel, mut a) = (Sel::default(), Aids::default());
+        let c1 = d.spawn(2413, here.x + 6.0, here.y - 1.5, here.z, 0.0).unwrap();
+        let c2 = d.spawn(2413, here.x + 6.0, here.y + 1.5, here.z, 0.0).unwrap();
+        cmd(&mut d, &mut sel, &mut a, here, "mode build", true, 0);
+        let (p1, p2) = (uv_of(&a, here, &c1), uv_of(&a, here, &c2));
+        let mut lit: std::collections::HashMap<u64, u32> = Default::default();
+        let mut t = 1000;
+        for k in 0..12 {
+            let p = if k % 2 == 0 { p1 } else { p2 };
+            t += if k % 3 == 0 { 30 } else { 150 };
+            let out = cmd(&mut d, &mut sel, &mut a, here, &format!("hover {}", line(p[0], p[1])), true, t);
+            for (g, f) in out.glow {
+                lit.insert(g, f);
+            }
+            assert!(lit.values().filter(|f| **f != 0).count() <= 1, "step {k}: {lit:?}");
+        }
     }
 }

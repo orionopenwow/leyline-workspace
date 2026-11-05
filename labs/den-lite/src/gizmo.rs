@@ -946,7 +946,10 @@ fn hover(d: &Den, sel: &Sel, a: &mut Aids, here: Here, u: f32, v: f32, aspect: O
             Some([x, y]) => {
                 let was = a.at_edge;
                 hover_at(d, sel, a, x, y);
-                edge_note(a, was, draw(d, a, now, force))
+                {
+                    let out = draw(d, a, now, force);
+                    edge_note(a, was, out)
+                }
             }
             None => AidOut::default(),
         };
@@ -964,7 +967,10 @@ fn hover(d: &Den, sel: &Sel, a: &mut Aids, here: Here, u: f32, v: f32, aspect: O
         Some((x, y)) => {
             let was = a.at_edge;
             hover_at(d, sel, a, x, y);
-            edge_note(a, was, draw(d, a, now, force))
+            {
+                    let out = draw(d, a, now, force);
+                    edge_note(a, was, out)
+                }
         }
         None => AidOut::default(),
     }

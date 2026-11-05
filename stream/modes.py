@@ -127,6 +127,43 @@ def link(kind: str, ident: str) -> str:
     return f"/wrath/{kind}/{ident}"
 
 
+def play_go(go: str) -> str:
+    """/wrath?go=<go> for the boss fight and arena go kinds (stream/bossfights.py; not share links)."""
+    return "/wrath?go=" + go
+
+
+def _arena_card() -> str:
+    """The 1v1 arena queue (stream/modes_data.py ARENA_QUEUE): Queue goes to the play page with ?go=arena:1v1."""
+    e = html.escape
+    q = data.ARENA_QUEUE
+    return (f'<div class="md-card" id="md-arena-queue"><h3>{e(q["name"])}</h3><p>{e(q["line"])}</p>'
+            f'<div class="md-tags">{_tag("Level " + str(q["min"]))}{_tag("1 v 1")}{_tag("Players only")}</div>'
+            f'<a class="md-go" href="{e(play_go(q["go"]))}">Queue 1v1 arena</a>'
+            '<p class="md-hint"><a href="/wrath/arena">Duels and arena</a> · <a href="/wrath/leaderboards">the boards</a></p></div>')
+
+
+def _featured_bosses() -> str:
+    """The instant boss fights (stream/modes_data.py BOSS_FIGHTS) ahead of the raid list: straight to the boss."""
+    e = html.escape
+    cards = []
+    for b in data.BOSS_FIGHTS:
+        if not b.get("live"):
+            continue
+        cards.append(
+            f'<div class="md-card" id="md-bf-{e(b["id"])}"><h3>{e(b["name"])}</h3>'
+            f'<p>Straight to the final fight of {e(b["raid"])}, no wings to clear. Go now with companions, or queue with players.</p>'
+            f'<div class="md-tags">{_tag("Level " + str(b["level"]))}{_tag(str(b["size"]) + " players")}{_tag("Companions can fill", "bots")}</div>'
+            f'<a class="md-go" href="{e(play_go(data.boss_go(b["id"], "normal", "bots")))}">Fight now</a>'
+            f'<p class="md-hint"><a href="{e(play_go(data.boss_go(b["id"], "normal", "group")))}">Queue with players</a> · '
+            f'<a href="/wrath/bossfights">heroic, the board and more</a></p></div>')
+    if not cards:
+        return ""
+    nxt = ", ".join(n["name"] for n in data.BOSS_FIGHTS_NEXT)
+    return ('<h3 class="md-region">Instant boss fights <span>· straight to the boss</span></h3>'
+            f'<div class="md-cards">{"".join(cards)}</div>'
+            + (f'<p class="md-hint">Coming next: {e(nxt)}.</p>' if nxt else ""))
+
+
 def page(css: str, art_url, have, card_meta, realm_name: str = "WrathUnleashed",
          public_host: str = "play.openvanilla.app", games: str = "") -> bytes:
     """The /wrath/modes page. css is the portal's LEYLINE_CSS with its art filled in, art_url(name) the
@@ -148,6 +185,7 @@ def page(css: str, art_url, have, card_meta, realm_name: str = "WrathUnleashed",
         'Either of you can say no. Type <code>.wu</code> in game for every realm command.</p>'
         '<div class="md-cards">'
         + _card(duel["name"], duel["line"], [_tag(duel["tag"]), _tag("Players only")], link("h", duel["id"]), "Go duel")
+        + _arena_card()
         + '</div></section>')
 
     # Boss fights
@@ -180,7 +218,7 @@ def page(css: str, art_url, have, card_meta, realm_name: str = "WrathUnleashed",
         + '<p class="md-lede">Every raid, from Molten Core to the Frozen Throne. Go takes your character to the '
         'raid\'s door. Raids need a raid group (Party &rarr; Convert to Raid works with just one friend), and '
         'new characters can boost to 80 with <code>.boost</code>.</p>'
-        + "".join(raids_html) + '</section>')
+        + _featured_bosses() + "".join(raids_html) + '</section>')
 
     # Dungeons
     dung_html = []

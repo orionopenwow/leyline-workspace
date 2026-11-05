@@ -361,6 +361,7 @@ async function realmLoad() {
 }
 
 // A share link's deep link (stream/links.py): /r/<realm>, /h/<hangout>, /q/<queue>, /b/<raid or wing>, /m/<mod>, /u/<character>
+// (and the boss fight / arena go kinds below)
 // send people on to the page with ?go=<kind>:<id>. This only reads and checks it (the same allow-lists
 // as links.py) and leaves it on window.wuGo / the returned status for a later feature to act on; it
 // never navigates or runs anything. Returns { kind, id } or null.
@@ -371,6 +372,10 @@ const GO_RULES = {
   b: /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/,
   m: /^(?=.{3,32}$)[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/,
   u: /^[A-Za-z]{2,12}$/,
+  // an instant boss fight and the 1v1 arena queue (stream/bossfights.py check_go): bf:<boss>:<difficulty>:<mode>,
+  // arena:1v1. stages.js warms the fight's area from it; wu-loading.js says what it is getting ready.
+  bf: /^frozen-throne:(?:normal|heroic):(?:bots|group|group-only)$/,
+  arena: /^1v1$/,
 };
 export function goLink(search = location.search) {
   let v;

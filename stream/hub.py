@@ -972,6 +972,9 @@ class Hub:
             pass
         # the duel leaderboards (stream/duels.py; owner 2026-10-31: "leaderboards on site") lead the More menu
         more = [("leaderboards", "Leaderboards", "/wrath/leaderboards", "leaderboards"),
+                # instant boss fights and the 1v1 arena queue (stream/bossfights.py; owner 5 Nov: "these modes on the site")
+                ("bossfights", "Boss fights", "/wrath/bossfights", "bossfights"),
+                ("arena", "Duels and arena", "/wrath/arena", "arena"),
                 ("forge", "Forge", BASE + "/forge", "forge"), ("agents", "Agents", BASE + "/agents", "agents"),
                 ("docs", "Docs", "/wrath/docs", "docs"), ("guides", "Guides", "/wrath/guides", "guides"),   # the guide series (stream/site_pages.py)
                 ("news", "News", BASE + "/news", "news"),
@@ -5019,6 +5022,8 @@ NAV_ICONS = {
     "discord": '<path d="M4 6.5C4 5.1 5.1 4 6.5 4h11C18.9 4 20 5.1 20 6.5v8c0 1.4-1.1 2.5-2.5 2.5H11l-4.5 3.5V17h0C5.1 17 4 15.9 4 14.5z"/>'
                '<circle cx="9" cy="10.5" r="1.2"/><circle cx="15" cy="10.5" r="1.2"/>',
     "leaderboards": '<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8M10 17h4"/>',
+    "bossfights": '<path d="M12 3l2.2 4.6 5 .5-3.8 3.4 1.1 5L12 14l-4.5 2.5 1.1-5L4.8 8.1l5-.5z"/><path d="M8 20h8"/>',
+    "arena": '<path d="M5 19L15 9M15 5l4 4M9 5l-4 4M19 19L9 9"/><path d="M4 20l2-2M20 20l-2-2"/>',
 }
 # The gallery (Hub.gallery_tiles). Our in-game screenshots (stream/www-files/art, checked by eye: no logo, no game name;
 # behind the game data killswitch): name -> (width, height, title, line, alt). Words only; no client numbers, no game name.

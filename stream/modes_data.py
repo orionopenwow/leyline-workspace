@@ -236,6 +236,38 @@ RAIDS = [
      "bosses": ["Baltharus the Warborn", "Saviana Ragefire", "General Zarithrian", "Halion"]},
 ]
 
+# ---------------------------------------------------------------------------------------------
+# Instant boss fights (stream/bossfights.py, /wrath/bossfights) and the 1v1 arena queue (/wrath/arena)
+# ---------------------------------------------------------------------------------------------
+# Not go targets of ov_go.lua's PLACES (not in places(), so the generated Lua table is unchanged): their go kinds are
+#     bf:<boss>:<difficulty>:<mode>   difficulty normal | heroic; mode bots (fight now with companions),
+#                                     group (queue with players, companions fill the gaps) or group-only (players only)
+#     arena:1v1                       the unrated 1v1 arena queue (mod-1v1-arena's ".q1v1 unrated")
+# sent to the realm as "ovgo set <ACCOUNT> <go>"; the realm's boss-fight script runs ".bossfight join ..." at login
+# (docs/BOSS-FIGHTS.md). Player-facing names only: the final fight of Icecrown Citadel is always "The Frozen Throne".
+BF_DIFFICULTIES = ("normal", "heroic")
+BF_MODES = ("bots", "group", "group-only")
+BOSS_FIGHTS = [
+    {"id": "frozen-throne", "name": "The Frozen Throne", "raid": "Icecrown Citadel", "map": 631, "level": 80, "size": 10,
+     "pos": (631, 503.63, -2124.66, 840.86),   # the platform's centre (the encounter script in AzerothCore)
+     "tier": "icc-toc", "live": True},
+]
+# coming next, in the order the plan gives (small, self-contained rooms first): names only, no go link yet
+BOSS_FIGHTS_NEXT = [
+    {"id": "vault-of-archavon", "name": "Vault of Archavon", "raid": "Vault of Archavon", "map": 624},
+    {"id": "onyxia", "name": "Onyxia", "raid": "Onyxia's Lair", "map": 249},
+    {"id": "sartharion", "name": "Sartharion", "raid": "The Obsidian Sanctum", "map": 615},
+    {"id": "halion", "name": "Halion", "raid": "The Ruby Sanctum", "map": 724},
+]
+ARENA_QUEUE = {"id": "1v1", "name": "1v1 arena queue", "go": "arena:1v1", "min": 80,
+               "line": "Queue for a one-on-one arena match at level 80. You are matched with the next player in line."}
+
+
+def boss_go(boss: str, difficulty: str = "normal", mode: str = "bots") -> str:
+    """The go value for an instant boss fight: bf:<boss>:<difficulty>:<mode>."""
+    return f"bf:{boss}:{difficulty}:{mode}"
+
+
 KEYS_DUNGEON = "q"
 KEYS_RAID = "b"
 KEYS_HANGOUT = "h"

@@ -301,6 +301,7 @@
     try { v = await call("p2p_flags"); } catch (e) { note(advStatus, oops(e), "bad"); return; }
     advList.replaceChildren();
     for (const [name, label] of v.known) {
+      if (name === "be_a_node") continue; // its switch is the Host page's Be a node card (node.js): the site offers, each PC turns it on there
       const row = mk("label", "inline");
       const sel = mk("select", "");
       const local = Object.prototype.hasOwnProperty.call(v.local.overrides, name) ? v.local.overrides[name] : null;

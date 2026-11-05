@@ -82,7 +82,7 @@ test('the realm has a login queue: Busy · queue N on the row and PLAY, and the 
   assert.ok(await page.isVisible('#pbq-host') && await page.isVisible('#pbq-node'));
   assert.equal(await page.isVisible('#pbq-pc'), false, 'online already uses your game folder');
   await page.click('#pbq-node');
-  assert.ok(await page.evaluate(() => window.__calls.some(([c, a]) => c === 'open_link' && a.name === 'beanode')), 'Become a node opens the docs page');
+  assert.equal(await page.evaluate(() => document.querySelector('.page.on').id), 'page-host', 'Become a node opens the Host page\'s Be a node card');
   await page.click('#pbq-host');
   assert.equal(await page.evaluate(() => document.querySelector('.page.on').id), 'page-host', 'Host your own realm opens Host');
   assert.doesNotMatch(await page.evaluate(() => document.body.innerText), BRANDS);

@@ -1577,7 +1577,8 @@ function renderPlayBar() {
   renderQueueCard();
 }
 if ($("pbq-host")) $("pbq-host").addEventListener("click", () => show("host"));
-if ($("pbq-node")) $("pbq-node").addEventListener("click", () => openLink("beanode"));
+// Become a node: the Host page's Be a node card (node.js, 5 Nov), the website's guide only without it
+if ($("pbq-node")) $("pbq-node").addEventListener("click", () => (window.LeylineNode ? window.LeylineNode.focus() : openLink("beanode")));
 if ($("pbq-pc")) $("pbq-pc").addEventListener("click", () => setMode("online"));   // your own game folder: no browser seat
 if ($("pbq-x")) $("pbq-x").addEventListener("click", () => { queueCardShut = true; renderQueueCard(); });
 document.addEventListener("leyline:mode", () => { if (officialQueue.realm || officialQueue.browser) renderRealmRows(); });   // the row's count follows the mode

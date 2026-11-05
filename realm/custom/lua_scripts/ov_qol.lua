@@ -98,7 +98,9 @@ local function respecOn()    return flag("OV_FREE_RESPEC", true) end
 local function xpToggleOn()  return flag("OV_XP_TOGGLE", true) end
 local function restedOn()    return flag("OV_RESTED_NOTE", true) end
 local function hearthOn()    return flag("OV_HEARTH_RESET", true) end
-local function summonOn()    return flag("OV_BOT_SUMMON", true) end
+-- .summon is for bots: with none allowed on the realm (AC_PLAYERBOTS_MAX_ADDED_BOTS=0, main since the owner's "no
+-- bots", 31 Oct) it is off too, so .qol never advertises it there (review 4 Nov)
+local function summonOn()    return flag("OV_BOT_SUMMON", true) and os.getenv("AC_PLAYERBOTS_MAX_ADDED_BOTS") ~= "0" end
 local function duelResetOn() return flag("OV_DUEL_RESET", isBrawl()) end
 local function hubOn()       return flag("OV_QOL_HUB", isBrawl()) end
 local function repairOn()    return flag("OV_FREE_REPAIR", isBrawl()) end

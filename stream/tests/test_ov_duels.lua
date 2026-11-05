@@ -275,7 +275,7 @@ check("ending a streak of 5 is told", (function() for _, m in ipairs(alice.msgs)
     and db.stats[21].streak == 0 and db.stats[21].best_streak == 5)
 
 -- commands ---------------------------------------------------------------------------------------------------------------------
-check(".duel: help with the site", cmd(alice, "duel") == false and last(alice):find("play.openvanilla.app/wrath/leaderboards", 1, true))
+check(".duel: help with the site", cmd(alice, "duel") == false and last(alice):find("leylinelauncher.com/wrath/leaderboards", 1, true))
 cmd(alice, "duel stats")
 check(".duel stats: your own", last(alice):find("^%[Duels%] Rating %d+ %(best %d+%)%. Wins%-losses %d+%-%d+%. Streak") ~= nil, last(alice))
 cmd(alice, "duel stats carol")

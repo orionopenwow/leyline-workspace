@@ -42,7 +42,7 @@ local START_RATING = 1500
 local MIN_RATING = 100
 local PLACED_AFTER = 3          -- rated duels before a character is on the all-time board
 local STREAK_GAP_S = 30         -- streak lines at least this far apart, realm-wide
-local SITE = "play.openvanilla.app/wrath/leaderboards"
+local SITE = "leylinelauncher.com/wrath/leaderboards"   -- the site's name now (review 4 Nov; it was the old name unless the brand was on)
 local DUEL_INTERRUPTED, DUEL_WON, DUEL_FLED = 0, 1, 2
 local KIND_NAME = { [DUEL_INTERRUPTED] = "interrupted", [DUEL_WON] = "won", [DUEL_FLED] = "fled" }
 

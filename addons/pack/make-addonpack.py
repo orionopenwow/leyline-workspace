@@ -77,9 +77,12 @@ ALLOWED = (".toc", ".lua", ".xml", ".ttf", ".tga", ".txt")
 # Notes for people reading the repo, not part of an addon: left out without a word.
 SKIP = re.compile(r"^(readme(\..*)?|\.gitignore|\.ds_store|thumbs\.db|desktop\.ini)$", re.I)
 SKIP_DIRS = {".git", "__pycache__", "tests"}
+# Files kept in the repo only for games and browsers that still have an old file list, never shipped in the pack (its
+# .toc is the new list): the empty Nameplates.lua (owner 3 Nov, nameplates back to the stock pill bar; review 4 Nov).
+RETIRED = {"WrathUnleashedUI/Nameplates.lua"}
 MAX_FILE = 10 * 1024 * 1024
 MAX_PACK = 20 * 1024 * 1024   # addons.rs MAX_PACK
-NOTES = ("The Leyline addons for a 3.3.5a game folder: the Leyline window, game modes, golf, Edit mode and the "
+NOTES = ("The Leyline addons for your Wrath game folder: the Leyline window, game modes, golf, Edit mode and the "
          "Builder, your Den, the Workshop tab, companions, the chat, the Armory and quality of life. Leyline installs and "
          "updates them from its Clients and Mods pages; each file is checked against addonpack.json. Our code only.")
 # The launcher's own refusal list (launcher/src-tauri/src/mods.rs BLOCKED_EXT / BLOCKED_MAGIC).
@@ -149,7 +152,7 @@ def collect(repo: Path = REPO, branded: bool = True, with_catalog: bool = True) 
             for n in sorted(names):
                 p = Path(d) / n
                 inner = p.relative_to(root).as_posix()
-                if SKIP.match(n):
+                if SKIP.match(n) or f"{name}/{inner}" in RETIRED:
                     continue
                 if p.is_symlink():
                     bad.append(f"{name}/{inner}: a link")

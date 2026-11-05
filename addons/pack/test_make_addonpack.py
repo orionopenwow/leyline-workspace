@@ -51,6 +51,10 @@ class Pack(unittest.TestCase):
                 self.assertTrue(n.lower().endswith(mp.ALLOWED), n)
             self.assertFalse(any(n.lower().startswith("foreverui/") for n in names))
             self.assertNotIn("OVQoL/README.md", names)
+            # review 4 Nov: the retired empty Nameplates.lua stays out (the pack's .toc no longer lists it), and the
+            # release notes name no client version
+            self.assertNotIn("WrathUnleashedUI/Nameplates.lua", names)
+            self.assertNotRegex(mp.NOTES, r"\d\.\d+\.\d")
             toc = z.read("WrathUnleashedUI/WrathUnleashedUI.toc").decode()
             self.assertIn("## Title: Leyline UI", toc)
             self.assertIn("## Title: Leyline Armory", z.read("OVArmory/OVArmory.toc").decode())

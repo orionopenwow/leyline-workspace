@@ -1,11 +1,11 @@
 -- "Pings & World Markers" sample mod, server half. Rides on ov_modapi.lua (OVMOD addon messages).
 --
--- client -> server (mod "pings")
+-- client -> server (mod "markers")
 --   ping     x,y,z,mapId,kind                  kind: attack | onmyway | danger | assist
 --   marker   place,slot,x,y,z,mapId            slot 1-8; leader or assistant only
 --   marker   clear,slot                        slot 1-8, or 0 for all; leader or assistant only
 --   marker   sync                              re-send the group's markers for your map
--- server -> client (mod "pings")
+-- server -> client (mod "markers")
 --   ping     x,y,z,mapId,kind,senderGuidLow,senderName
 --   marker   set,slot,x,y,z,mapId,placerName
 --   marker   clear,slot                        slot 0 = all
@@ -19,7 +19,9 @@
 
 local OVMod = require("ov_modapi")
 
-local MOD = "pings"
+-- Mod id "markers", not "pings" (review 4 Nov): the Workshop's Pings mod (mods/catalog/pings, WUPings) owns "pings"
+-- with its own server half (message "map"), and no client in the repo speaks this sample's "ping" / "marker" yet.
+local MOD = "markers"
 local KINDS = { attack = true, onmyway = true, danger = true, assist = true }
 local RATE_COUNT, RATE_WINDOW = 5, 5
 local MAX_DISTANCE = 100

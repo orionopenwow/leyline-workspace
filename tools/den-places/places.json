@@ -1,0 +1,15 @@
+{"format": "leyline-den-place-list", "version": 1,
+ "note": "Places den_places.py rebuilds from the player's own game files. Names, maps and boxes only (world x0, y0, x1, y1, the same yards as .go uses): nothing of the game's layout is here. focus: words of the place's own building's file name (the first that matches is the middle); radius: only what stands that close to it. docs/DEN-PLACES.md.",
+ "places": [
+  {"name": "lionspride", "title": "The Lion's Pride Inn", "map": 0, "dir": "Azeroth", "box": [-9524, 2, -9404, 122], "focus": ["goldshireinn", "lionspride", "inn", "goldshire"], "radius": 24, "words": ["inn", "lionsprideinn"], "note": "the inn and what is in it (a stamp)"},
+  {"name": "goldshire", "title": "Goldshire", "map": 0, "dir": "Azeroth", "box": [-9564, -38, -9364, 162], "focus": ["goldshireinn", "lionspride", "inn"], "note": "the village round the inn (a Den: .den load)"},
+  {"name": "gurubashiarena", "title": "Gurubashi Arena", "map": 0, "dir": "Azeroth", "box": [-13347, 57, -13207, 197], "focus": ["gurubashi", "arena"]},
+  {"name": "circleofblood", "title": "Circle of Blood", "map": 530, "dir": "Expansion01", "box": [2794, 5885, 2884, 5975], "focus": ["arena", "ring"]},
+  {"name": "ringoftrials", "title": "The Ring of Trials", "map": 530, "dir": "Expansion01", "box": [-2045, 6536, -1955, 6626], "focus": ["arena", "ring"]},
+  {"name": "nagrandarena", "title": "Nagrand Arena", "map": 559, "dir": "NagrandArenaBattlegrounds", "box": [3986, 2849, 4126, 2989], "focus": ["nagrandarena", "arena"], "words": ["na"]},
+  {"name": "bladesedgearena", "title": "Blade's Edge Arena", "map": 562, "dir": "BladesEdgeArena", "box": [6163, 187, 6313, 337], "focus": ["bladesedgearena", "bladesedge", "arena"], "words": ["bea"]},
+  {"name": "ruinsoflordaeron", "title": "Ruins of Lordaeron", "map": 572, "dir": "RuinsofLordaeronBattlegrounds", "box": [1196, 1575, 1376, 1755], "focus": ["lordaeron", "arena"], "words": ["rol"]},
+  {"name": "dalaransewers", "title": "Dalaran Sewers", "map": 617, "dir": "DalaranArena", "box": [1199, 701, 1379, 881], "focus": ["dalaranarena", "dalaran", "sewer", "arena"], "words": ["sewers"]},
+  {"name": "ringofvalor", "title": "The Ring of Valor", "map": 618, "dir": "OrgrimmarArena", "box": [703, -345, 823, -225], "focus": ["orgrimmararena", "arena", "valor"], "words": ["rov"]}
+ ]
+}

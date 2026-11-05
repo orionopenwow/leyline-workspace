@@ -83,7 +83,7 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 | `.den dojo demo [seconds] [kind]`, `invulnerable on\|off`, `meter reset`, `pet off` | a practice run (your main bar cast for you, a number at the end), nothing hurts you, the meters again, your pet away |
 | `.den fly on\|off` / `.den speed 1-5` | fly (jump, then Space to rise, X to sink) / run and fly faster |
 | `.den jaina build <stamp>`, or say `Jaina, build a garden` (a tavern, a forge, a reading nook...) | she walks into its middle and builds it the way a person would (big pieces first, small last, things on tables at the end), casting at each piece, then steps back to look at it (`dojo` is the training ring; docs/DEN-STAMPS.md) |
-| `.den go <place>` / `.den go <map> <x> <y> <z>` | anywhere your game has: capitals, starting towns, Goldshire, Dalaran... (`.den places`); `.den go den` back to your Den ("Den anywhere", below) |
+| `.go <place>` (`.tele`, `.den go`) / `.go <map> <x> <y> <z>` / `.back` / `.den home` | anywhere your game has: 221 places (every zone, cities, towns, dungeon and raid doors, battlegrounds, arenas: `.den places [word]`, the Teleports window `/tp`); `.back` where you were; `.den home` your Den from any map; a fall through the world after a teleport is lifted back (docs/DEN-PLACES.md) |
 | `.den here [name]` | makes your Den here: the Den that was where you were is kept for that place, and the one kept for this place (if any) opens |
 | `.den size city` | the biggest Den (sizes 5 to 7: 128, 256 and 512 yards across, open ground) |
 | `.den copy lionspride` | the Lion's Pride copied from your own game files (made by the launcher into `stamps-local` when it starts the Den; never shipped): docs/DEN-STAMPS.md |

@@ -155,9 +155,21 @@ def by_id(mid: str) -> dict | None:
     return next((m for m in entries() if m["id"] == mid), None)
 
 
-def realm_ids() -> list[str]:
-    """The ids the realm may be asked to start: live realm modes."""
+# Realm modes that are another go kind underneath (stream/bossfights.py MODE_GO; test_playmodes.py keeps the two in
+# step): the instant boss fight and the 1v1 arena queue. They stay kind "realm" with {"go": "mode:<id>"}, so the
+# launcher lists them with no change; the site's Play links their own go, ?go=mode:<id> becomes that go
+# (wrath_portal.remember_go / go_param), and they are never sent as "ovplay go" (ov_playmode.lua has no starter).
+GO_AS = {"frozen-throne": "bf:frozen-throne:normal:bots", "arena-queue": "arena:1v1"}
+
+
+def live_realm_ids() -> list[str]:
+    """Every live realm-kind mode, the boss fight and the arena queue included."""
     return [m["id"] for m in entries() if m["kind"] == "realm" and m["status"] == "live"]
+
+
+def realm_ids() -> list[str]:
+    """The ids the realm may be asked to start ("ovplay go"): live realm modes, less those in GO_AS."""
+    return [i for i in live_realm_ids() if i not in GO_AS]
 
 
 def json_bytes() -> bytes:
@@ -184,7 +196,7 @@ def play_href(m: dict, host_href: str = "/wrath/host") -> str | None:
         return None
     s = m["start"]
     if m["kind"] == "realm":
-        return "/wrath?go=" + s["go"]
+        return "/wrath?go=" + GO_AS.get(m["id"], s["go"])
     if m["kind"] == "offline":
         return s["path"]
     if m["kind"] == "in-game":
@@ -229,11 +241,11 @@ def section(host_href: str = "/wrath/host") -> str:
 # --------------------------------------------------------------------------------------- the play intent
 
 def go_mode(value) -> str | None:
-    """The mode id of a ?go=mode:<id> value naming a live realm mode, else None."""
+    """The mode id of a ?go=mode:<id> value naming a live realm mode (GO_AS ones included), else None."""
     if not isinstance(value, str) or len(value) > 40 or not value.startswith("mode:"):
         return None
     mid = value[5:]
-    return mid if mid in realm_ids() else None
+    return mid if mid in live_realm_ids() else None
 
 
 def go_command(account: str, mid: str) -> str | None:

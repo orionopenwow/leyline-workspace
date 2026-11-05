@@ -377,6 +377,10 @@ if admin is not None:
 duels = _load_module("wu_duels", "duels.py")   # /wrath/leaderboards, /wrath/api/leaderboards: duel boards (stream/duels.py)
 if duels is not None:
     duels.bind(lambda name: globals()[name])
+# /wrath/bossfights, /wrath/arena, /wrath/api/bossfights and the ?go=bf:... / ?go=arena:1v1 go kinds (stream/bossfights.py)
+bossfights = _load_module("wu_bossfights", "bossfights.py")
+if bossfights is not None:
+    bossfights.bind(lambda name: globals()[name])
 
 
 def same_site(h) -> bool:
@@ -404,10 +408,16 @@ def host_plus(where: str) -> str:
 
 
 def go_param(query: dict) -> str:
-    """'&go=<kind>:<id>' for a share-link deep link carried through sign-in (checked again at every hop), else ''."""
+    """'&go=<kind>:<id>' for a share-link deep link carried through sign-in (checked again at every hop), else ''.
+    A boss fight (bf:<boss>:<difficulty>:<mode>) or the arena queue (arena:1v1) rides along the same way
+    (stream/bossfights.py check_go), so the game page can warm the fight's area and say what it is getting ready."""
+    v = (query.get("go") or [""])[0][:40]
+    if bossfights is not None and playmodes is not None and v.startswith("mode:"):
+        v = bossfights.mode_go(playmodes.go_mode(v)) or v   # the launcher's Modes page: ?go=mode:frozen-throne
+    if bossfights is not None and v and bossfights.check_go(v):
+        return "&go=" + urllib.parse.quote(v, safe=":")
     if links is None:
         return ""
-    v = (query.get("go") or [""])[0][:40]
     got = links.check_go(v) if v else None
     return "&go=" + urllib.parse.quote(links.go_value(*got), safe=":") if got else ""
 
@@ -1831,7 +1841,7 @@ SIGN_IN_URL = "/login?next=%2Fwrath"
 # The /login fetch sets wr_next=/wrath, so the realm's /auth/key lands on /wrath. No saved key, a
 # browser without the API, a refusal or 6 seconds of nothing: the normal sign-in page. Tried once per
 # tab (sessionStorage), so a failed key never loops.
-AUTO_SIGNIN_JS = """
+AUTO_SIGNIN_TPL = """
 (function(){
 var go=function(){location.replace('%s')};
 var tried=false;try{tried=sessionStorage.getItem('ov_autokey')==='1';sessionStorage.setItem('ov_autokey','1')}catch(e){}
@@ -1845,14 +1855,25 @@ var f=document.createElement('form');f.method='post';f.action='/auth/key';
 var i=document.createElement('input');i.type='hidden';i.name='key';i.value=c.password;f.appendChild(i);
 document.body.appendChild(f);f.submit()},function(){if(!done){done=true;clearTimeout(t);go()}});
 })();
-""" % (SIGN_IN_URL, SIGN_IN_URL)
+"""
+AUTO_SIGNIN_JS = AUTO_SIGNIN_TPL % (SIGN_IN_URL, SIGN_IN_URL)
 
 
-def auto_signin_page(nonce: str) -> bytes:
+def go_signin(query: dict) -> str:
+    """The sign-in for /wrath when it came with a go link (a boss fight, a share link): Log in first, then back to
+    /wrath with the same go (checked again by go_param). "" without one: the usual SIGN_IN_URL."""
+    go = go_param(query or {})
+    return signin_url("/wrath?" + go[1:]) if go else ""
+
+
+def auto_signin_page(nonce: str, signin: str = "") -> bytes:
+    """signin: where "no saved key" goes instead of SIGN_IN_URL (go_signin: a go link kept through the sign-in)."""
+    where = signin if signin and re.fullmatch(r"/[A-Za-z0-9/_.?=%&-]{1,300}", signin) else SIGN_IN_URL
+    js = AUTO_SIGNIN_JS if where == SIGN_IN_URL else AUTO_SIGNIN_TPL % (where, SIGN_IN_URL)
     return render(
         f'{crest(REALM_NAME)}<p class="sub">Signing you in…</p>{RULE}'
-        f'<p class="fine center"><a href="{SIGN_IN_URL}">Log in another way</a></p>',
-        nonce, AUTO_SIGNIN_JS, meta=card_meta("/wrath"), title="Log in", current="play")
+        f'<p class="fine center"><a href="{html.escape(where)}">Log in another way</a></p>',
+        nonce, js, meta=card_meta("/wrath"), title="Log in", current="play")
 
 REALM_CSS = """
 .realm{position:relative;border:1px solid #4a3b1c;border-radius:4px;padding:16px 18px;margin:14px 0;background:rgba(5,4,12,.55);box-shadow:inset 0 0 0 1px rgba(0,0,0,.4)}
@@ -2999,8 +3020,18 @@ def remember_go(user: str, query: dict) -> None:
     ("ovgo set", realm/custom/lua_scripts/ov_go.lua), at most 20 a minute per account. Never fails the page."""
     if playmodes is not None and (query.get("go") or [""])[0][:40].startswith("mode:"):   # a game mode (stream/playmodes.py)
         mid = playmodes.go_mode((query.get("go") or [""])[0][:40])
+        alias = bossfights.mode_go(mid) if bossfights is not None and mid else None
+        if alias:   # a catalog entry that is a boss fight or the arena queue (the launcher's Modes page): its own go
+            if gate_limit.hit("go:" + user.upper(), 20):
+                bossfights.go_intent(ac_soap, user, alias, log)
+            return
         if mid and gate_limit.hit("go:" + user.upper(), 20):
             playmodes.go_intent(ac_soap, user, mid, log)
+        return
+    bf = bossfights.check_go((query.get("go") or [""])[0][:40]) if bossfights is not None else None
+    if bf:   # a boss fight or the 1v1 arena queue: "ovgo set <ACCOUNT> <go>" (stream/bossfights.py, docs/BOSS-FIGHTS.md)
+        if gate_limit.hit("go:" + user.upper(), 20):
+            bossfights.go_intent(ac_soap, user, bf, log)
         return
     if modes is None or links is None:
         return
@@ -4417,6 +4448,9 @@ class PageHandler(BaseHTTPRequestHandler):
         if duels is not None and duels.match(path):   # the duel leaderboards and their JSON (stream/duels.py)
             duels.get(self, path, query)
             return
+        if bossfights is not None and bossfights.match(path):   # boss fights, duels and arena, their JSON (stream/bossfights.py)
+            bossfights.get(self, path, query)
+            return
         if forum is not None and forum.match(path):   # the forum and its JSON (stream/forum.py)
             forum.get(self, path, query)
             return
@@ -4603,11 +4637,11 @@ class PageHandler(BaseHTTPRequestHandler):
         ua = self.headers.get("User-Agent", "")
         if "wr_session=" not in cookie:
             nonce = secrets.token_urlsafe(16)   # a saved Hero Key signs in by itself, else the sign-in page
-            self.send(200, auto_signin_page(nonce), nonce=nonce, connect=True)
+            self.send(200, auto_signin_page(nonce, go_signin(query)), nonce=nonce, connect=True)
             return
         status, me = portal_get("/api/me", cookie, ip, ua)
         if status in (401, 403) or 300 <= status < 400:
-            return self.redirect(SIGN_IN_URL)
+            return self.redirect(go_signin(query) or SIGN_IN_URL)
         if status != 200 or not me:
             log.warning("api/me answered %s", status)
             self.send(503, error_page("The website isn't answering right now. Please try again shortly."))

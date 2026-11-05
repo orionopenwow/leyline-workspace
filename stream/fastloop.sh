@@ -63,6 +63,8 @@ had_downloads=""
 if [ -f "$WU/portal/downloads.py" ]; then cp -p "$WU/portal/downloads.py" "$BK/downloads.py"; had_downloads=1; fi
 had_duels=""
 if [ -f "$WU/portal/duels.py" ]; then cp -p "$WU/portal/duels.py" "$BK/duels.py"; had_duels=1; fi
+had_bossfights=""
+if [ -f "$WU/portal/bossfights.py" ]; then cp -p "$WU/portal/bossfights.py" "$BK/bossfights.py"; had_bossfights=1; fi
 had_survivors=""
 if [ -f "$WU/portal/survivors.py" ]; then cp -p "$WU/portal/survivors.py" "$BK/survivors.py"; had_survivors=1; fi
 had_profiles=""
@@ -120,6 +122,7 @@ put_back() {
   for f in discord_growth.py discord_template.json discord_template_v2.json discord_template_launch.json; do if [ -f "$BK/$f" ]; then cp -p "$BK/$f" "$WU/portal/$f"; else rm -f "$WU/portal/$f"; fi; done
   if [ -n "$had_downloads" ]; then cp -p "$BK/downloads.py" "$WU/portal/downloads.py"; else rm -f "$WU/portal/downloads.py"; fi
   if [ -n "$had_duels" ]; then cp -p "$BK/duels.py" "$WU/portal/duels.py"; else rm -f "$WU/portal/duels.py"; fi
+  if [ -n "$had_bossfights" ]; then cp -p "$BK/bossfights.py" "$WU/portal/bossfights.py"; else rm -f "$WU/portal/bossfights.py"; fi
   if [ -n "$had_survivors" ]; then cp -p "$BK/survivors.py" "$WU/portal/survivors.py"; else rm -f "$WU/portal/survivors.py"; fi
   if [ -n "$had_profiles" ]; then cp -p "$BK/profiles.py" "$WU/portal/profiles.py"; else rm -f "$WU/portal/profiles.py"; fi
   if [ -n "$had_herokeys" ]; then cp -p "$BK/herokeys.py" "$WU/portal/herokeys.py"; else rm -f "$WU/portal/herokeys.py"; fi
@@ -245,6 +248,9 @@ if [ -f downloads.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.ar
 # the duel leaderboards (/wrath/leaderboards, /wrath/api/leaderboards): optional; it reads $WU/portal/duels/, which
 # duels-export.py fills (realm/serverpass.sh step 1d)
 if [ -f duels.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' duels.py && install -m 644 duels.py "$WU/portal/duels.py"; fi
+# boss fights, duels and arena (/wrath/bossfights, /wrath/arena, /wrath/api/bossfights): optional; it reads
+# $WU/portal/duels/bossfights.json (realm/custom/bossfights-export.py) and modes_data.py beside it
+if [ -f bossfights.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' bossfights.py && install -m 644 bossfights.py "$WU/portal/bossfights.py"; fi
 # Azeroth Survivors' page and its address's gate (/wrath/survivors, /__auth?site=survivors): optional; its address is
 # $WU/portal/survivors.url (hosting/survivors/sv-site-up.sh)
 if [ -f survivors.py ]; then python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' survivors.py && install -m 644 survivors.py "$WU/portal/survivors.py"; fi
@@ -495,6 +501,8 @@ c7=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/mods 
 echo "  /wrath/mods Workshop (200 = on): $c7"
 c7m=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/modes.json || true)
 echo "  /wrath/modes.json game modes (200 = on): $c7m"
+c7b=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/api/bossfights || true)
+echo "  /wrath/api/bossfights boss fight boards (200 = on): $c7b"
 c8=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/docs || true)
 c8w=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://$SITE_NAME/wrath/workshop || true)
 echo "  /wrath/workshop player creations (200 = on): $c8w"

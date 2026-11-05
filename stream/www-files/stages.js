@@ -58,6 +58,31 @@ export const DEST_TILES = {
 // (human Azeroth_32_48 and orc / troll Kalimdor_39_33 are the homes themselves; Death Knights start in the
 // streamed Ebon Hold.)
 
+// Warm by destination for an instant boss fight (stream/bossfights.py, docs/BOSS-FIGHTS.md): a session that came with
+// ?go=bf:<boss>:... is taken from character select straight to the boss, so character select's focus becomes the
+// fight's own tile and boot.js warms the tier that holds it (frozen-throne: mini.json's icc-toc tier, which has the
+// whole of map 631) while the player is still picking a character. The tile is the platform's centre (631: 503.63,
+// -2124.66), as benilla-wdt world_to_tile (ahead.js tileOf) gives it; the map folder as Map.dbc spells it.
+// Only 'focus:' (character select): 'port:' is the realm's real teleport and is left alone.
+export const BOSS_TILES = {
+  'frozen-throne': ['IcecrownCitadel', 35, 31],
+};
+
+/** The boss of a boss-fight go ({ kind: 'bf', id: 'frozen-throne:normal:bots' }, or the string 'bf:...'), else null. */
+export function bossOf(go) {
+  let kind = null, id = null;
+  if (typeof go === 'string') { const i = go.indexOf(':'); kind = go.slice(0, i); id = go.slice(i + 1); }
+  else if (go && typeof go === 'object') { kind = go.kind; id = go.id; }
+  if (kind !== 'bf' || typeof id !== 'string') return null;
+  const m = /^([a-z0-9-]{2,24}):(?:normal|heroic):(?:bots|group|group-only)$/.exec(id);
+  return m && Object.hasOwn(BOSS_TILES, m[1]) ? m[1] : null;
+}
+
+/** The page's data-saving rules (ahead.js): Save-Data on, or a 2g/3g connection, warms nothing extra. */
+export function dataSaving(c) {
+  return !!(c && (c.saveData || ['slow-2g', '2g', '3g'].includes(c.effectiveType)));
+}
+
 /** A streamed session that warms our slice: env.slice set, not a hop to another realm, not own files only. */
 export function streamedSlice(env) {
   return !!(env && env.slice && !env.hop && env.mode !== 'own');
@@ -68,7 +93,7 @@ export function streamedSlice(env) {
  * stage on the destination tier's home ADT, written the same way (separator and folder kept). Anything else, or a
  * session that isn't streamed, comes back unchanged.
  */
-export function destFocus(stage, env) {
+export function destFocus(stage, env, go = null, conn = null) {
   const s = String(stage);
   const m = /^(focus|port):(.*)$/.exec(s);
   if (!m || !streamedSlice(env)) return s;
@@ -76,7 +101,8 @@ export function destFocus(stage, env) {
   const t = /(^|[\\/])(?:([A-Za-z0-9]+)([\\/]))?([A-Za-z0-9]+)_(\d+)_(\d+)(\.adt)?$/i.exec(adt);
   if (!t) return s;
   const [, lead, folder, sep, map, x, y, ext] = t;
-  const dest = DEST_TILES[`${map}_${Number(x)}_${Number(y)}`.toLowerCase()];
+  const boss = m[1] === 'focus' ? bossOf(go) : null;
+  const dest = boss && !dataSaving(conn) ? BOSS_TILES[boss] : DEST_TILES[`${map}_${Number(x)}_${Number(y)}`.toLowerCase()];
   if (!dest) return s;
   const [dm, dx, dy] = dest;
   const head = adt.slice(0, t.index) + lead;
@@ -116,7 +142,8 @@ export function installStages(wenilla) {
     if (typeof inner === 'function') {
       // boot.js warms what it is told: a new character's start tile becomes its destination (destFocus above);
       // the page's own marks and events keep the stage as the client sent it
-      const told = s.startsWith('focus:') || s.startsWith('port:') ? destFocus(s, window.__wenilla_env) : stage;
+      const told = s.startsWith('focus:') || s.startsWith('port:')
+        ? destFocus(s, window.__wenilla_env, window.wuGo, typeof navigator !== 'undefined' ? navigator.connection : null) : stage;
       if (told !== stage && told !== s) console.info(`${TAG} warm by destination: ${s} -> ${told}`);
       return inner(told === s ? stage : told);
     }

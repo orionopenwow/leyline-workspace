@@ -48,6 +48,8 @@
   // why a catalog mode has no solo world yet (the official realm's hub, or more than one player by design)
   const ONLINE_WHY = {
     "arena-1v1": "Two players by design: it pairs you with someone on the official realm.",
+    "arena-queue": "Two players by design: it pairs you with someone on the official realm.",
+    "frozen-throne": "It lives on the official realm for now: a raid of 10, with companions or players.",
     keystones: "It lives on the official realm's hub for now.",
     transmog: "It lives on the official realm's hub for now.",
     hardcore: "It lives on the official realm's hub for now.",

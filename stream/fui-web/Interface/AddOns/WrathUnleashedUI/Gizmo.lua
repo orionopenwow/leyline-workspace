@@ -551,7 +551,11 @@ function G.MouseUp(button)
     if button == "LeftButton" then
         if SpellIsTargeting and SpellIsTargeting() then return false end   -- the exact click: Den Lite gets the cast
         local shift = IsShiftKeyDown and IsShiftKeyDown()
-        if G.armed then
+        -- a tool waiting for a click on the world (BuildTools.lua: a path's point, a box's corner, a stamp's spot)
+        local BT = W.BuildTools
+        if BT and BT.mode and d.u and BT.Click(d.u, d.v, d.a, G.zoom, shift) then
+            done = true
+        elseif G.armed then
             G.Tick(true)
             -- Shift+click: placed, and another in hand
             local keep = G.armed == "place" and shift
@@ -567,7 +571,9 @@ function G.MouseUp(button)
             done = send("selclear")
         end
     elseif button == "RightButton" then
-        if G.armed then G.Cancel(); done = true end
+        local BT = W.BuildTools
+        if BT and BT.RightClick and BT.RightClick() then done = true
+        elseif G.armed then G.Cancel(); done = true end
     end
     bindings()
     return done

@@ -494,14 +494,20 @@ end
 -- What a tab lists: only the realm's catalog (and your prefabs, a Den's stamps), never anything else.
 function B.ListFor(tab, search)
     local q = tostring(search or ""):lower()
-    local function match(c) return q == "" or c.name:lower():find(q, 1, true) or (c.key and c.key:find(q, 1, true)) end
+    -- by name, by its key, and by its category as a tag ("light", "fence", "seat": the gallery's search box)
+    local function match(c)
+        return q == "" or c.name:lower():find(q, 1, true) or (c.key and c.key:find(q, 1, true)) or (c.cat and #q >= 3 and c.cat:find(q, 1, true))
+    end
     local out = {}
     if tab == "prefabs" then
         for _, f in ipairs(B.prefabs) do if match(f) then out[#out + 1] = f end end
         return out
     end
     if tab == "stamps" then
-        for _, st in ipairs((W.DenHome and W.DenHome.StampItems and W.DenHome.StampItems()) or {}) do if match(st) then out[#out + 1] = st end end
+        -- Den Lite's library (BuildTools.lua: Leyline's own, yours, copied places; by category), else Den home's six
+        local lib = W.BuildTools and W.BuildTools.StampItems and W.BuildTools.StampItems() or {}
+        if #lib == 0 then lib = (W.DenHome and W.DenHome.StampItems and W.DenHome.StampItems()) or {} end
+        for _, st in ipairs(lib) do if match(st) then out[#out + 1] = st end end
         return out
     end
     if SEARCHED[tab] then
@@ -943,7 +949,10 @@ function B.Place(item)
     if item.kind == "prefab" then
         ok = B.PastePrefab(item.name)
     elseif item.kind == "stamp" then
-        ok = W.DenHome and W.DenHome.Stamp(item.key, editing())   -- in edit mode: as the shelf's tiles
+        -- Den Lite: placed with the mouse (BuildTools.lua: a click on the ground puts it there, Enter keeps it)
+        local T = W.BuildTools
+        if T and T.Here() then ok = T.PlaceStamp(item.key); if ok then T.Show("stamps") end
+        else ok = W.DenHome and W.DenHome.Stamp(item.key, editing()) end   -- in edit mode: as the shelf's tiles
     end
     if item.kind then
         B.Arm(nil)
@@ -1972,11 +1981,12 @@ local function buildPanel()
     local function cmdFn(c) return function() B.Command(c) end end
     local _, my = flow(panel.more, {
         { "Select my last", cmdFn("selall"), "Select mine" },
-        { "Unlock", cmdFn("unlock"), nil, "full" }, { "Hide", cmdFn("hide"), nil, "full" },
-        { "Show all", cmdFn("show all"), nil, "full" }, { "Measure", cmdFn("measure"), nil, "full" },
-        { "Align X", cmdFn("align x"), nil, "full" }, { "Align Y", cmdFn("align y"), nil, "full" }, { "Align Z", cmdFn("align z"), nil, "full" },
-        { "Bottoms", cmdFn("align bottom"), nil, "full" }, { "Stack on", B.Stack, nil, "full" },
-        { "Group", cmdFn("group"), nil, "full" }, { "Ungroup", cmdFn("ungroup"), nil, "full" }, { "Put away", cmdFn("store"), nil, "full" },
+        -- Den Lite does these too since 4 Nov (its caps: buildtools.rs); "full": only the full Den's
+        { "Unlock", cmdFn("unlock"), nil, "unlock" }, { "Hide", cmdFn("hide"), nil, "hide" },
+        { "Show all", cmdFn("show all"), nil, "show" }, { "Measure", cmdFn("measure"), nil, "measure" },
+        { "Align X", cmdFn("align x"), nil, "align" }, { "Align Y", cmdFn("align y"), nil, "align" }, { "Align Z", cmdFn("align z"), nil, "align" },
+        { "Bottoms", cmdFn("align bottom"), nil, "align" }, { "Stack on", B.Stack, nil, "full" },
+        { "Group", cmdFn("group"), nil, "group" }, { "Ungroup", cmdFn("ungroup"), nil, "group" }, { "Put away", cmdFn("store"), nil, "full" },
     }, P, -12, MW - 2 * P, panel.tools)
     panel.tools.Near = panel.sel.Near
     panel.tools.Clear = panel.sel.Clear
@@ -1992,7 +2002,9 @@ local function buildPanel()
         for _, k in ipairs({ "Select mine", "Unlock", "Hide", "Show all", "Measure", "Align X", "Align Y", "Align Z", "Bottoms", "Stack on",
             "Group", "Ungroup", "Put away" }) do
             local c = panel.tools[k]
-            if c then if lite and c.only == "full" then c:Hide() else c:Show(); list[#list + 1] = c end end
+            -- on Den Lite: what it says it does (caps), never what only the full Den does
+            local off = lite and (c and (c.only == "full" or (c.only and not B.Can(c.only))))
+            if c then if off then c:Hide() else c:Show(); list[#list + 1] = c end end
         end
         local xx, yy = P, -12
         for _, c in ipairs(list) do

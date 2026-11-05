@@ -15,6 +15,7 @@ EditMode.lua
 DenHome.lua
 DenBar.lua
 Gizmo.lua
+BuildTools.lua
 Dojo.lua
 Guide.lua
 RealmGuideData.lua

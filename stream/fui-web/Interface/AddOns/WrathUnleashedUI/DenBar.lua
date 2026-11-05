@@ -338,8 +338,15 @@ function D.Tool(which)
         b.Focus(which)
     elseif which == "stamps" then
         b.ShowBuilder(true); b.ShowTab("stamps"); b.SetMode("stamps")
+        -- Den Lite's tools (BuildTools.lua): the library with pictures, turn / mirror / size, place with the mouse
+        local T = W.BuildTools
+        if T and T.Here() then T.Show("stamps") end
     elseif which == "path" then
-        b.Path()
+        local T = W.BuildTools
+        if T and T.Here() then b.SetMode("path"); T.Show("path") else b.Path() end
+    elseif which == "tools" then
+        local T = W.BuildTools
+        if T then T.Toggle() end
     end
     D.Refresh()
 end
@@ -352,6 +359,8 @@ D.RAIL = {
     { "rotate", "rotate", "Rotate", "Turn the selection (, and .)", function() D.Tool("rotate") end },
     { "stamps", "stamp", "Stamps", "Stamps: ready-made areas", function() D.Tool("stamps") end },
     { "path", "path", "Path", "Path: a line of the picked prop", function() D.Tool("path") end },
+    -- the builder's tools (BuildTools.lua, 4 Nov): box select, align, arrays, Solid, layers, history
+    { "tools", "grid", "Tools", "Tools: box select, align, arrays, Solid, layers, history", function() D.Tool("tools") end },
     { "ground", "ground", "Ground", "Shape the ground (opens Forge)", function() D.ShapeGround() end, "Shape ground" },
     { "dojo", "dojo", "Dojo", "The training grounds", function() if W.Dojo then W.Dojo.Toggle() end end },
     -- snap out (owner 3 Nov): the view up and back over where you stand, and back (Gizmo.lua; its key says the tooltip)

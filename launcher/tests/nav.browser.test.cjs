@@ -100,7 +100,7 @@ test('Mods & Addons: Installed and Discover tabs, each with Mods | Addons; the F
   const { page, ctx, errors } = await open();
   await page.click('.nav[data-page="mods"]');
   assert.deepEqual(await where(page), { nav: ['mods'], page: ['page-mods'], panes: ['pane-discover'] }, 'Mods opens on Discover');
-  assert.deepEqual(await page.$$eval('.page-tab[data-group="mods"]', (b) => b.map((x) => x.dataset.tab)), ['discover', 'installed', 'gamemodes'], 'Discover is the first tab');
+  assert.deepEqual(await page.$$eval('.page-tab[data-group="mods"]', (b) => b.map((x) => x.dataset.tab)), ['discover', 'installed', 'gamemodes', 'dens'], 'Discover is the first tab; Dens last (shared Dens, denmarket.js)');
   assert.equal(await page.textContent('#page-mods h2'), 'Mods & Addons');
   await page.click('#tab-mods-installed');
   assert.deepEqual(await page.$$eval('#inst-tabs .ly-tab', (b) => b.map((x) => x.textContent.replace(/\d+$/, ''))), ['Mods', 'Addons'], 'Installed is split too');
@@ -124,6 +124,8 @@ test('Mods & Addons: Installed and Discover tabs, each with Mods | Addons; the F
   await page.keyboard.press('ArrowRight');
   assert.deepEqual((await where(page)).panes, ['pane-gamemodes'], 'then Game modes (owner 3 Nov)');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'tab-mods-gamemodes');
+  await page.keyboard.press('ArrowRight');
+  assert.deepEqual((await where(page)).panes, ['pane-dens'], 'then Dens (shared Dens)');
   await page.click('#tab-mods-installed');
   // FIND ADDONS on Installed › Addons goes to Discover › Addons
   await page.click('#pane-installed [data-page-go="discover"]');

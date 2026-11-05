@@ -469,7 +469,11 @@ def with_tab_icon(body: bytes, ctype: str) -> bytes:
 # half. {"mode": "banner"}: a farewell banner on top of every page. {"mode": "closed"}: every page answers the farewell
 # page (503), but for what launchers and the owner still need: the /wrath/leyline/ feeds (News and the update notice
 # carry the message), the status document, the art and HQ. No file: nothing changes.
-SHUTDOWN_OPEN = ("/wrath/leyline/", "/wrath/art/", "/wrath/admin")
+SHUTDOWN_OPEN = ("/wrath/art/", "/wrath/admin")
+# Under /wrath/leyline/ only the launcher's feeds stay open (docs/KILL-SWITCH.md: "/wrath/leyline/*.json"), and the release
+# mirror: with the front door on, that prefix is also the whole site (Mods, the forum and its forms, Submit a mod), which
+# must close with the rest (site review 4 Nov).
+SHUTDOWN_FEEDS = ("/wrath/leyline/releases/",)
 SHUTDOWN_EXACT = frozenset({"/wrath/status.json", "/wrath/healthz", "/wrath/admin"})
 _shutdown = {"key": None, "doc": None}
 
@@ -502,7 +506,9 @@ def shutdown_doc() -> dict | None:
 
 def shutdown_open(path: str) -> bool:
     """What still answers while the site is closed."""
-    return path in SHUTDOWN_EXACT or path.startswith(SHUTDOWN_OPEN)
+    if path in SHUTDOWN_EXACT or path.startswith(SHUTDOWN_OPEN) or path.startswith(SHUTDOWN_FEEDS):
+        return True
+    return path.startswith("/wrath/leyline/") and path.count("/") == 3 and path.endswith(".json")
 
 
 def _shutdown_paras(text: str) -> str:

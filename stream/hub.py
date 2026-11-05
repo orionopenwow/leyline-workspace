@@ -5467,7 +5467,10 @@ def post(handler, path: str) -> None:
         length = int(handler.headers.get("Content-Length", "0"))
     except ValueError:
         length = -1
-    if length < 0 or length > MAX_FORM:
+    if length < 0:   # a missing number or a negative one is a bad request, not a big one
+        handler.send(400, b"bad request\n", "text/plain")
+        return
+    if length > MAX_FORM:
         handler.send(413, b"too large\n", "text/plain")
         return
     raw = handler.rfile.read(length).decode("utf-8", "replace")

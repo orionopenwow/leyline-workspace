@@ -391,6 +391,9 @@ pub struct Aids {
     /// The copy in hand is held at the Den's edge (the cursor is past it): the addon says so in the pill (review 4 Nov:
     /// "the drag stops silently at the Den's edge").
     pub at_edge: bool,
+    /// The time of the verb being answered (ms; [`cmd`] sets it): the far view's ray is cast from where the camera
+    /// object is at that moment of its glide.
+    pub clock: u64,
 }
 
 impl Aids {
@@ -408,7 +411,14 @@ impl Aids {
         match self.far {
             Some(f) => {
                 cam.dist += f.back;
-                (f.focus, cam)
+                // mid-glide (the free flight, a far move): from where the camera object is now, not where it is going
+                // (placement review 4 Nov: a flight's target is FLY_AHEAD_MS ahead, about 7 yd at its speed, so the
+                // copy in hand and the glow were that far off while flying)
+                let focus = match (self.glide, far_now(self, self.clock)) {
+                    (Some(_), Some(p)) => focus_of(&self.cam, p, f.back, f.focus.o),
+                    _ => f.focus,
+                };
+                (focus, cam)
             }
             None => (here, cam),
         }
@@ -501,6 +511,7 @@ fn name_of(d: &Den, g: u64) -> &'static str {
 
 /// One aid verb. `now`: milliseconds (the copy's throttle). `can`: may build.
 pub fn cmd(d: &mut Den, sel: &mut Sel, a: &mut Aids, here: Here, text: &str, can: bool, now: u64) -> AidOut {
+    a.clock = now;
     let out = aid_verb(d, sel, a, here, text, can, now);
     // where the selection is, on the ground and on the screen (the den-test reads them)
     let obj = sel.guid.and_then(|g| d.placed(g)).map(|p| p.obj.clone());
@@ -2448,5 +2459,28 @@ mod tests {
         assert!(!a.at_edge && out.addon.contains(&("edge".into(), "0".into())), "{:?}", out.addon);
         cmd(&mut d, &mut sel, &mut a, here, "preview off", true, 600);
         assert!(!a.at_edge);
+    }
+
+    #[test]
+    fn mid_flight_the_ray_starts_from_where_the_camera_object_is_now() {
+        let (mut d, here) = den();
+        let (mut sel, mut a) = (Sel::default(), Aids::default());
+        cmd(&mut d, &mut sel, &mut a, here, "mode build", true, 0);
+        cmd(&mut d, &mut sel, &mut a, here, "cam build", true, 0);
+        let Some(FarOut::Glide(from, to, ms)) = cmd(&mut d, &mut sel, &mut a, here, "cam fly 1 0 0 0", true, 1000).far else { panic!() };
+        let target = a.far.unwrap().focus;
+        // at the start of the glide: the focus where the object is (the start), not the target
+        let (f0, _) = a.view(here);
+        let start = focus_of(&a.cam, from, a.far.unwrap().back, target.o);
+        assert!((f0.x - start.x).abs() < 1e-3 && (f0.y - start.y).abs() < 1e-3, "{f0:?} vs {start:?}");
+        // half way: half way
+        cmd(&mut d, &mut sel, &mut a, here, "cam where", true, 1000 + ms as u64 / 2);
+        let (fh, _) = a.view(here);
+        let half = focus_of(&a.cam, [(from[0] + to[0]) / 2.0, (from[1] + to[1]) / 2.0, (from[2] + to[2]) / 2.0, to[3]], a.far.unwrap().back, target.o);
+        assert!((fh.x - half.x).abs() < 0.05 && (fh.y - half.y).abs() < 0.05, "{fh:?} vs {half:?}");
+        // done: the target
+        cmd(&mut d, &mut sel, &mut a, here, "cam where", true, 1000 + ms as u64 + 50);
+        let (fe, _) = a.view(here);
+        assert!((fe.x - target.x).abs() < 0.01 && (fe.y - target.y).abs() < 0.01, "{fe:?} vs {target:?}");
     }
 }

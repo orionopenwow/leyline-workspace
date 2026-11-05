@@ -596,7 +596,11 @@ local function build()
     local m = S().ED.muted
     win.status:SetTextColor(m[1], m[2], m[3])
     win:SetScript("OnShow", function() T.Refresh() end)
-    win:SetScript("OnHide", function() if T.mode and T.mode ~= "stamp" then T.SetMode(nil) end end)
+    -- closed: a waiting tool stops (a stamp that is down stays: Enter keeps it), the path's stakes go (its points stay)
+    win:SetScript("OnHide", function()
+        if T.mode and T.mode ~= "stamp" then T.SetMode(nil) end
+        if #T.pts > 0 then cmd("path hide") end
+    end)
     win:Hide()
 end
 

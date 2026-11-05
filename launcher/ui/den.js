@@ -47,7 +47,7 @@
   let jobTimer = null;
   let sharing = false;  // the Share with friends steps are open
   let busy = false;
-  let hint = "";        // one line under the status after Play solo (how to skip typing next time)
+  let hint = "";        // one line under the status after Open my Den (how to skip typing next time)
   let forge = null;     // forge_state
   let forgeBusy = "";   // "get" while Forge downloads
   let forgeGpl = false; // the GPL notice is open
@@ -434,7 +434,7 @@
       const m = await call("den_models_add", { files: payload, label: modelName.trim() || null });
       const miss = (m.missing || []).length;
       // TODO(owner): the words
-      say(`${m.name} is in your Den's gallery under My models ${liteUp() ? "after you close your game and press Play solo again" : "the next time you press Play solo"}.`
+      say(`${m.name} is in your Den's gallery under My models ${liteUp() ? "after you close your game and press Open my Den again" : "the next time you press Open my Den"}.`
         + (miss ? ` ${miss} texture${miss === 1 ? "" : "s"} it names weren't in your drop: they stay as they are (your game may have them).` : ""), "ok");
       modelName = "";
     } catch (e) { say(oops(e, "That model couldn't be added."), "bad"); }
@@ -443,7 +443,7 @@
     paint();
   }
   async function removeModel(m) {
-    try { await call("den_models_remove", { slug: m.slug }); say(`${m.name} is out of your Den's gallery (from the next Play solo).`, "ok"); }
+    try { await call("den_models_remove", { slug: m.slug }); say(`${m.name} is out of your Den's gallery (from the next Open my Den).`, "ok"); }
     catch (e) { say(oops(e), "bad"); }
     try { models = await call("den_models"); } catch (_) { /* as it was */ }
     paint();
@@ -635,8 +635,9 @@
     const chip = mk("span", "yd-chip " + kind, line);
     chip.id = "yd-state";
     head.append(h, chip);
-    // TODO(owner): "Play solo", his words
-    const play = btn(busy ? "Opening…" : "Play solo", "btn primary yd-play", go);
+    // "Open my Den", not "Play solo" (4 Nov: it clashed with Single player, the bots game on this PC)
+    // TODO(owner): "Open my Den", his words
+    const play = btn(busy ? "Opening…" : "Open my Den", "btn primary yd-play", go);
     play.id = "yd-play";
     play.disabled = busy;
     // the three things to do with your Den, one click each (owner 1 Nov: "invite friends, connect Claude to edit it")
@@ -651,7 +652,7 @@
     const acts = mk("div", "yd-row yd-acts");
     acts.append(play, invite, claude);
     root.append(head, mk("p", "lede", "Just you, on this PC: no internet or sign-in needed. A quiet green world to build in, with your companion to help. Invite friends when you like."),
-      acts, mk("p", "yd-hint yd-play-hint", where() === "lite" ? "Play solo starts your own server on this PC, signs you in and takes you into your Den, with your look and addons." : where() === "docker" ? "Play solo starts it if it's stopped, then plays." : "Play solo sets it up once, then plays."), status);
+      acts, mk("p", "yd-hint yd-play-hint", where() === "lite" ? "Open my Den starts your own server on this PC, signs you in and takes you into your Den, with your look and addons." : where() === "docker" ? "Open my Den starts it if it's stopped, then plays." : "Open my Den sets it up once, then plays."), status);
     if (hint) { const hl = mk("p", "yd-hint", hint); hl.id = "yd-login-hint"; root.append(hl); }
     // on the network (Den Lite's tunnel): one line, and Stop sharing
     if (net && net.running) {

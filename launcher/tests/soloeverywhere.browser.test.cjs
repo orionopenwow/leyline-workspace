@@ -358,7 +358,7 @@ test('GM command center: off while the realm is stopped; Your Den in game; the o
   assert.ok(await page.$$eval('.gm-grid button', (b) => b.every((x) => x.disabled)), 'every control off');
   await page.click('.gm-world[data-world="den"]');
   assert.match(await page.textContent('.gm-den'), /Den panel \(type \/den\)/);
-  assert.equal(await page.textContent('.gm-den .solo-go'), 'Play solo');
+  assert.equal(await page.textContent('.gm-den .solo-go'), 'Open my Den');
   await page.click('.gm-world[data-world="official"]');
   assert.match(await page.textContent('.gm-official'), /never run from here.*checks you are staff/);
   await page.click('.gm-official .btn');

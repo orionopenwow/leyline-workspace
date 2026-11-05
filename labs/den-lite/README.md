@@ -61,7 +61,8 @@ den-lite --dens <folder> --bind 127.0.0.1 [--stamps <folder>] [--password den] [
 | `.den size [1-4]` | how big the Den is; with a number, the room rebuilt at that size (smaller only when every prop still fits) |
 | `.den grow` | the next size: what counts as inside the Den grows (a stone or wood room is rebuilt bigger) |
 | `.den companion` (`.den jaina`) | your companion comes and follows you; again: back to your side. She is there from login by default (`--no-companion`: only when called) |
-| `.den companion stay\|follow\|come\|tips` | or say `Jaina, stay` (`wait`), `Jaina, follow`, `Jaina, come` (she walks over), `Jaina, tips` (`help`, `what next`): anywhere in the Den, never written down for the assistant |
+| `.den companion stay\|follow\|come\|tips` | or say `Jaina, stay` (`wait`), `Jaina, follow`, `Jaina, come` (she walks over), `Jaina, tips` (`what next`): anywhere in the Den, never written down for the assistant |
+| `.den jaina quiet\|talk\|chatty\|idea\|yes\|no\|tidy\|pet\|pets away`, or say `Jaina, quiet`, `Jaina, help`, `Jaina, build a cozy corner`, `Jaina, yes`, `Jaina, tidy up`, `Jaina, a rabbit`, `Jaina, what did I build?` | her brain (4 Nov, `src/jaina.rs`, docs/JAINA.md): how much she says unasked, a small set as a sparkling preview you keep or send away, tidying only her own untouched pieces, critters, what she remembers of this visit. The Dojo panel's Jaina rows send these |
 | `.den companion away` (`Jaina, go away`) | she goes until called again (leaving the Den or logging out only hides her: she is back when you are) |
 | `.den ask <words>`, or say `Jaina, <words>` within 10 yards of her | written down for your own assistant (Leyline's Agents page: `den_messages`); its `den_say` lines are hers |
 | `.den mode [id]` | Leyline's game modes and Host templates; with an id, what it is and how to run it on this PC (the full Den) |
@@ -246,8 +247,16 @@ to (no tips or nudges nobody asked for, and nothing when she rejoins you). With 
 is still a guide: an ask her built-in guide knows (`GUIDE`: placing, stamps, undo, save, load, grow, looks, mods,
 modes, Forge, friends, levelling, the assistant) gets its answer at once, and is still written down; with someone
 reading her notes (`read_at`), the assistant answers instead. `tips` picks the next step that fits the Den (a first
-piece, a first save, more room), then the general tips in turn. Her "help me" is a tip here (she doesn't fight). "Jaina, build a
-garden" is hers too: she builds it ("The Dojo", below).
+piece, a first save, more room), then the general tips in turn. "Jaina, help" (since 4 Nov) suggests a small set in
+front of you instead (docs/JAINA.md). "Jaina, build a garden" is hers too: she builds it ("The Dojo", below).
+
+**Her brain (4 Nov, `src/jaina.rs` and `src/jaina_world.rs`; docs/JAINA.md).** Needs, moods and a utility choice once a
+second (seeded, unit tested): she reacts to what you do (placing, deleting, saving, growing, flying, friends coming),
+mostly with a gesture; looks around the Den when you stand still; hops through the air when far; turns to you before
+a line. What she says unasked is rare (none in the first minute and a half, then at most one every three minutes and
+eight a visit, a toast in the Den bar) and none at all in quiet mode. Her sets (`THEMES`: in season first) are a
+preview until you say yes; critters (three at most) are never saved; "tidy up" asks first and takes only what she put
+down and you haven't moved.
 
 She talks through the same files as the full Den, in the Dens folder, so the launcher's Den tools for your assistant
 (`launcher/src-tauri/src/agents/den.rs`) work unchanged: `companion-in.json` (written every 10 seconds and after each

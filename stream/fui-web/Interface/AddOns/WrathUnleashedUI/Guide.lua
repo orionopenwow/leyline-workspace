@@ -49,7 +49,8 @@ G.PAGES = {
         "Say \"Jaina, build a garden\" or type .den jaina build garden. She walks over and builds it piece by piece.",
         "Type .den stamp garden now to put one down at once. .build undo takes it back.",
         "A stamp always goes inside your Den. A bigger room: .den grow.",
-        ".den companion calls her. Say \"Jaina, stay\", \"Jaina, follow\" or \"Jaina, tips\"." } },
+        ".den companion calls her. Say \"Jaina, stay\", \"Jaina, follow\" or \"Jaina, tips\".",
+        "Say \"Jaina, help\" for an idea: a small set sparkles in front of you. \"Jaina, yes\" keeps it, \"no\" sends it away. \"Jaina, quiet\" if she talks too much." } },
     { "dojo", "The Dojo", "dojo", "The Dojo", {
         "Dojo on the bar opens the training panel. .den dojo builds a ring with three training dummies.",
         "Practice: Pack, Mover, Healer, Tank, Boss (move out of its circles, interrupt its cast). Your numbers show as you hit.",

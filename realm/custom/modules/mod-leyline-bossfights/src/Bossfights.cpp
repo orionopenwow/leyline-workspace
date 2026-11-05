@@ -336,8 +336,8 @@ namespace
     void UnbindNow(Player* p, uint32 mapId)
     {
         for (uint8 d = 0; d < MAX_RAID_DIFFICULTY; ++d)
-            if (sInstanceSaveMgr->PlayerGetBoundInstance(p->GetGUID(), mapId, Difficulty(d)))
-                sInstanceSaveMgr->PlayerUnbindInstance(p->GetGUID(), mapId, Difficulty(d), true, p);
+            if (sInstanceSaveMgr->PlayerGetBoundInstance(p->GetGUID(), mapId, ::Difficulty(d)))
+                sInstanceSaveMgr->PlayerUnbindInstance(p->GetGUID(), mapId, ::Difficulty(d), true, p);
     }
 
     // Unbinding while inside the map is not safe (the core's own .instance unbind skips the current map): later.

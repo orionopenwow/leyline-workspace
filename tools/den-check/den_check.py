@@ -1653,11 +1653,13 @@ def owner_flow_steps(rep, ui, aids, size, shot, with_pic, den_dir, wait):
     # 1. a card from the gallery: its copy glides with the cursor (each move a new place), a click puts it down
     ui("gizmo cancel")
     p0 = int(first.get("props") or 0)
+    before = aids()
     ui("pick 2413")
     spots = []
     for u, v in ((0.25, -0.35), (0.05, -0.3), (-0.15, -0.4)):
         ui("gizmo glide %.2f %.2f" % (u, v))
         spots.append(aids().get("at"))
+    glide_check(rep, before, aids(), "card")
     armed = str(aids().get("armed", ""))
     pic = shot("card-glides")
     moved = all(spots) and len({tuple(round(c, 2) for c in sp[:2]) for sp in spots}) == 3
@@ -1682,11 +1684,15 @@ def owner_flow_steps(rep, ui, aids, size, shot, with_pic, den_dir, wait):
         return True
     u, v = uv
     t = now_ms()
+    before = aids()
     ui("gizmo mouse %.4f %.4f" % (u, v))
     a = aids()
     carried = str(a.get("armed", "")).startswith("move,%s," % sel) and a.get("grip") is True
     ui("gizmo glide %.4f %.4f" % (u - 0.12, v - 0.03))
+    ui("gizmo glide %.4f %.4f" % (u - 0.06, v - 0.05))
+    ui("gizmo glide %.4f %.4f" % (u - 0.12, v - 0.03))
     g1 = aids().get("at")
+    glide_check(rep, before, aids(), "select")
     pic = shot("select-carried")
     ui("gizmo mouse %.4f %.4f" % (u - 0.12, v - 0.03))
     ev = wait_for(lambda: event_after(den_dir, "den_change", t), wait)
@@ -1697,6 +1703,29 @@ def owner_flow_steps(rep, ui, aids, size, shot, with_pic, den_dir, wait):
            with_pic("moved %.2f yd" % yd, pic),
            "Picked up %s, glided %s, put down %s, moved %.2f yd: send logs\\den-move-latest.txt and the picture." % (carried, bool(g1), ev is not None, yd))
     return True
+
+
+def glide_check(rep, before, after, label):
+    """Owner 5 Nov: "dynamically move instead of disappearing, reappearing". The copy in hand (an M2 prop) is a creature
+    made once and glided (Den Lite glide.rs): between `before` and `after` (Den Lite's aid views) one copy was made
+    and it glided at least twice, with no gameobject copy made anew. A Den Lite from before, or a game without the
+    Den patch's creature rows (glide "none"), says so instead."""
+    name = "%s: the copy glides as one creature (no destroy / create)" % label
+    if "copies_made" not in after:
+        rep.add("INFO", name, "this Den Lite is from before the glide: run den-lite, then den-move again")
+        return None
+    if after.get("glide") != "on":
+        rep.add("INFO", name, "the copy is a gameobject made anew at each spot (glide %s): %s" % (after.get("glide"),
+                "start Your Den from the updated launcher (its patch gives the props' models creature rows), then den-move again"
+                if after.get("glide") == "none" else "turned off with gizmo glide off"))
+        return None
+    made = int(after.get("copies_made") or 0) - int(before.get("copies_made") or 0)
+    glided = int(after.get("copies_glided") or 0) - int(before.get("copies_glided") or 0)
+    ok = after.get("copy") == "creature" and made == 1 and glided >= 2
+    rep.ok(ok, name, "made once, glided %d times" % glided,
+           "The copy was %s, made %d times, glided %d times (want a creature made once, gliding): send logs\\den-move-latest.txt."
+           % (after.get("copy"), made, glided))
+    return ok
 
 
 def calibrated_aspect(samples):

@@ -982,7 +982,9 @@ class FakeAids:
         self.player = [16226.2, 16257.0, 13.2, 0.0]
         self.aids = {"armed": "off", "ghost": None, "at": None, "cursor": None, "axis": None, "gizmo": 0, "sel": None, "mode": "play",
                      "glow": None, "drag": 0.0, "cam": "near", "far_at": None, "zoom": 12,
-                     "hovered": None, "sel_at": None, "sel_uv": None, "grip": False}
+                     "hovered": None, "sel_at": None, "sel_uv": None, "grip": False,
+                     # the copy in hand (glide.rs): a creature made once and glided; "flicker": a gameobject made anew
+                     "copy": None, "copies_made": 0, "copies_glided": 0, "glide": "on"}
         self.zoom, self.back = 12, 0.0
         self.screen = (0.0, 0.0)
         # the props the mouse can find: id -> (u, v on the screen, x, y, z)
@@ -1014,6 +1016,14 @@ class FakeAids:
             self.ev("den_change", "+1 -1")
             self.aids.update(grip=False, armed="off", glow=self.aids["sel"])
 
+    def draw(self):
+        """The copy shown at a new spot: made the first time (a creature), glided after; broken "flicker": made anew."""
+        if self.aids["copy"] is None or "flicker" in self.broken:
+            self.aids["copies_made"] += 1
+            self.aids["copy"] = "object" if "flicker" in self.broken else "creature"
+        else:
+            self.aids["copies_glided"] += 1
+
     def sync(self):
         w = self.where.get(self.aids["sel"])
         self.aids.update(sel_uv=w[:2] if w else None, sel_at=w[2:] if w else None)
@@ -1041,6 +1051,9 @@ class FakeAids:
             self.sync()
             look = "build" if self.aids["mode"] == "build" and "look" not in self.broken else "play"
             r = {"props": self.props, "aids": dict(self.aids), "look_mode": look, "twin_queries": getattr(self, "twins", 0)}
+            if getattr(self, "before_glide", False):
+                for k in ("copy", "copies_made", "copies_glided", "glide"):
+                    r["aids"].pop(k, None)
             if not getattr(self, "before_5nov", False):
                 r["prop_flags"] = 0x10 if look == "build" and "flags" not in self.broken else 0
             return r
@@ -1102,7 +1115,7 @@ class FakeAids:
             self.aids["cam"] = ("far,%.1f,0,0" % self.back) if self.back >= 0.5 else "near"
             self.back = self.back if self.back >= 0.5 else 0.0
         elif act == "cancel":
-            self.aids.update(armed="off", ghost=None, cursor=None)
+            self.aids.update(armed="off", ghost=None, cursor=None, copy=None)
         elif act == "axis":
             self.aids["axis"] = None if a[2] == "off" else a[2]
         elif act == "wheel":
@@ -1113,10 +1126,13 @@ class FakeAids:
             if self.aids["armed"].startswith("move,") and self.aids["grip"]:
                 self.moved = (u, v)
                 self.aids["at"] = [16227.0 + u * 10, 16259.0 + v * 10, 13.2, 0.0]
+                self.draw()
             else:
                 self.hover(u, v)
                 if self.aids.get("ghost"):
                     self.aids["at"] = self.aids["ghost"]
+                    if self.aids["armed"] != "off":
+                        self.draw()
         elif act == "mouse":
             # Gizmo.lua's own press and let-go: in hand, put down; else what is under it picked up
             u, v = float(a[2]), float(a[3])
@@ -1124,14 +1140,16 @@ class FakeAids:
                 self.props += 1
                 self.ev("den_change", "+1 -0")
                 self.where[11] = [u, v, 16230.0, 16258.0, 13.2]
-                self.aids.update(armed="off", ghost=None, at=None, sel=11, glow=11, gizmo=4)
+                self.aids.update(armed="off", ghost=None, at=None, sel=11, glow=11, gizmo=4, copy=None)
             elif self.aids["armed"].startswith("move,") and self.aids["grip"]:
                 self.mouse("release", ["gizmo", "release"])
+                self.aids["copy"] = None
             else:
                 hit = self.under(u, v)
                 if hit:
                     self.moved = (u, v)
                     self.aids.update(sel=hit, grip=True, armed="move,%s,1543" % hit)
+                    self.draw()
         elif act in ("click", "press", "moveto", "release"):
             self.mouse(act, a)
         elif act == "menu" and a[2] == "2":
@@ -1268,6 +1286,7 @@ class PlacementAids(unittest.TestCase):
                      "play mode: props plain again", "mouse: the prop under the cursor glows", "mouse: a click selects it (a click on the sky clears)",
                      "mouse: press and drag moves it", "build mode: props never take the game's click", "card: the copy glides under the cursor",
                      "card: a click puts it down, selected", "select: a click on a prop picks it up, the next puts it down",
+                     "card: the copy glides as one creature (no destroy / create)", "select: the copy glides as one creature (no destroy / create)",
                      "play mode: props usable again (a chair is sat on)"):
             self.assertIn(want, names)
         moved = [r for r in rep.rows if r[1] == "mouse: press and drag moves it"][0][2]
@@ -1364,6 +1383,30 @@ class PlacementAids(unittest.TestCase):
             den_check.aids_features(rep, old, dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
         self.assertTrue(any(r[0] == "INFO" and r[1] == "5 Nov: the editor's click fixes" for r in rep.rows))
         self.assertEqual([r for r in rep.rows if r[0] == "FAIL"], [])
+
+    def test_the_carried_copy_must_glide_not_flicker(self):
+        # owner 5 Nov: "dynamically move instead of disappearing, reappearing": a copy made anew at each spot fails
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, FakeAids(self.dens, broken={"flicker"}), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
+        fails = {r[1]: r for r in rep.rows if r[0] == "FAIL"}
+        self.assertIn("card: the copy glides as one creature (no destroy / create)", fails)
+        self.assertIn("select: the copy glides as one creature (no destroy / create)", fails)
+        self.assertIn("The copy was object, made", fails["card: the copy glides as one creature (no destroy / create)"][3])
+        # a game without the Den patch's creature rows, and a Den Lite from before the glide: said, not failed
+        for kind, setup in (("none", lambda f: f.aids.update(glide="none")), ("before", lambda f: setattr(f, "before_glide", True))):
+            dens = self.d / ("dens-glide-" + kind)
+            dens.mkdir()
+            (dens / "den-lite.events").write_text("")
+            den = FakeAids(dens)
+            setup(den)
+            rep = den_check.Report()
+            with contextlib.redirect_stdout(io.StringIO()):
+                den_check.aids_features(rep, den, dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
+            rows = [r for r in rep.rows if r[1] == "card: the copy glides as one creature (no destroy / create)"]
+            self.assertEqual(rows[0][0], "INFO", kind)
+            self.assertIn("updated launcher" if kind == "none" else "from before the glide", rows[0][2])
+            self.assertEqual([r for r in rep.rows if r[0] == "FAIL"], [], kind)
 
     def test_hover_calibration_fits_and_saves_the_camera(self):
         true = {"fov": 1.25, "pivot": 1.7, "dist": 10.0, "pitch": 0.45}

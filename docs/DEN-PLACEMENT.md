@@ -59,6 +59,25 @@ See **DEN-EDITOR-PARITY.md** for the details:
   halo and its arrows.
 - **A / D slide** in build mode at your character (they turned you and the camera round).
 
+### The third live test (5 Nov evening: 40 PASS, 1 FAIL)
+
+- **Step 3 ("placed, and selected at once") read `sel None` a moment after the commit.** Den Lite's own path keeps
+  the selection after a commit and through everything the UI sends on its own afterwards (unit test
+  `a_card_placed_without_the_gallery_stays_selected_through_what_the_ui_sends_after`); only a click on empty ground,
+  `selclear` (Esc, Play, the menu) or a delete clears it. The run's log didn't say which came, so now both sides
+  name it: Den Lite keeps `sel_by` (`<was> -> <now>: <verb>`) in its aids view and writes a `sel` event; the
+  Builder's commands are written with their verb (`wubuild cmd selclear`); the UI's `gizmo report` has `seltrace`
+  (a click on the world, Esc, Play, with the time). den-move prints all three when a placed prop isn't selected.
+- **The test runs in an empty Den** (owner: "something blocking the view"): its layout is first kept as stamps
+  (`.den stamps from-layout`, layoutstamps.rs: the whole layout and each dressed group, Stamps > Mine, written once),
+  then `.den clear` (one undo); one kept stamp is put down and undone; the Den is loaded back and its count checked.
+- **The glide on this PC now:** `den-lite glide-rows` (Control `den-glide`, `den-glide-undo`) writes the launcher's
+  own creature rows (host/creaturemodels.rs and mpq.rs, built into Den Lite by `#[path]`) from the player's own tables
+  into `Data/patch-S.MPQ` (patch-T is rewritten by the installed launcher at every start). den-move makes them when
+  they're missing.
+- **New live checks:** A / D slide (SendInput, the facing unchanged), the hover light under a prop and gone once it is
+  selected, Play hides the editor's frames and says Play, Build brings them back.
+
 ## Checked and fine
 
 - **UI scale and aspect.** `G.Cursor` divides by UIParent's effective scale and size, so u, v are right at any UI

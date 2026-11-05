@@ -456,6 +456,7 @@ function G.Escape()
         return "cancel"
     end
     if G.Selected() then
+        G.NoteSel("escape")
         G.sel = nil
         local B = W.Builder
         if B and B.Deselect then B.Deselect() else send("selclear") end

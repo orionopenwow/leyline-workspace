@@ -96,7 +96,8 @@
       "fuck",
       "cunt",
       "motherf",
-      "bitch"
+      "bitch",
+      "cocksuck"
     ],
     "word": [
       "shit",
@@ -113,7 +114,20 @@
       "bastard",
       "prick",
       "asshole",
-      "arsehole"
+      "arsehole",
+      "dumbass",
+      "jackass",
+      "douche",
+      "douchebag",
+      "dickhead",
+      "asshat",
+      "fck",
+      "fuk",
+      "fuq",
+      "phuck",
+      "stfu",
+      "piss",
+      "pissed"
     ]
   },
   "staff": {
@@ -143,7 +157,8 @@
       "support",
       "admins",
       "moderators",
-      "employee"
+      "employee",
+      "gamemasters"
     ]
   },
   "allow": [

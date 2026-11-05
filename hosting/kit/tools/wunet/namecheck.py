@@ -546,6 +546,10 @@ def reserved_names(extra: list[dict] | None = None) -> dict[str, list[str]]:
     for w in ("gamemaster", "leylineteam", "leylinestaff", "leylinegm", "leylineadmin", "officialgm", "theadmin",
               "theowner", "realmadmin", "servergm", "headgm", "seniorgm", "admingm"):
         res.add(w)
+    # the owner's own names (owner 4 Nov 2026), whole names only: Game Master accounts may still use them
+    for w in ("orion", "orionn", "oriion", "orrion", "theorion", "lordorion", "kingorion", "orionthe", "campwilkins",
+              "orionopenwow", "openwow", "chumpton", "wrathunleashed", "leylineowner"):
+        res.add(w)
     for kind in ("slur", "sexual", "profanity"):
         for mode in MODES:
             for w in (doc.get(kind) or {}).get(mode) or []:

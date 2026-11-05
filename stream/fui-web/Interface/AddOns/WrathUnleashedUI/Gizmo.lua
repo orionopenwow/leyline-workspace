@@ -350,10 +350,42 @@ function G.OwnsTurnKeys()
     return true
 end
 
+-- A / D (and the arrows) strafe in build mode at your character (owner 5 Nov: "when holding d or a the free roam
+-- camera just goes in circles instead of normal expected function"): the game's default A / D are TURNLEFT /
+-- TURNRIGHT, which swing the character and the camera round; in the editor they slide you sideways, as in the far view
+-- (where they fly sideways: PAN_KEYS) and in Noggit. Whatever keys the player has on turning get strafing instead;
+-- without GetBindingKey, the game's defaults.
+G.STRAFE_DEFAULT = { TURNLEFT = { "A", "LEFT" }, TURNRIGHT = { "D", "RIGHT" } }
+G.STRAFE_OF = { TURNLEFT = "STRAFELEFT", TURNRIGHT = "STRAFERIGHT" }
+function G.StrafeKeys()
+    local out = {}
+    for turn, strafe in pairs(G.STRAFE_OF) do
+        local keys = {}
+        if GetBindingKey then
+            local k1, k2 = GetBindingKey(turn)
+            keys = { k1, k2 }
+        else
+            keys = G.STRAFE_DEFAULT[turn]
+        end
+        for _, k in pairs(keys) do
+            if k and k ~= "" and not TURN_KEYS[k] then out[k] = strafe end
+        end
+    end
+    return out
+end
+
 local function bindings()
     if not owner or not SetOverrideBindingClick or not ClearOverrideBindings then return end
     if InCombatLockdown and InCombatLockdown() then return end
     ClearOverrideBindings(owner)
+    -- near your character: turning keys strafe (in the far view PAN_KEYS below take A / D and the arrows)
+    G.strafing = false
+    if G.build and not G.far and SetOverrideBinding then
+        for k, cmd in pairs(G.StrafeKeys()) do
+            SetOverrideBinding(owner, true, k, cmd)
+            G.strafing = true
+        end
+    end
     G.b1 = G.WantsButton1()
     if G.b1 and grabBtn then SetOverrideBindingClick(owner, true, "BUTTON1", "LeylineGizmoGrab") end
     G.b1turn = G.TurnsWithCamera() and SetOverrideBinding and true or false
@@ -421,7 +453,7 @@ local function showTag()
             parts[#parts + 1] = "Far view: WASD flies where you look, Space / X up and down  ·  Shift fast, Alt slow  ·  zoom in to come back"
         end
     elseif G.build then
-        parts[#parts + 1] = "WASD walks  ·  wheel out past the end for the far view" .. (G.snapKey and ("  ·  " .. G.snapKey .. ": overview") or "")
+        parts[#parts + 1] = "W / S walk, A / D slide  ·  wheel out past the end for the far view" .. (G.snapKey and ("  ·  " .. G.snapKey .. ": overview") or "")
     end
     if #parts == 0 then tag:Hide(); return end
     tag.fs:SetText(table.concat(parts, "   |   "))
@@ -848,6 +880,10 @@ function G.OnMessage(prefix, msg, channel, sender)
         local what = (B and B.state and B.state.selName) or "it"
         G.lastMove = d and string.format("%s %s %s yd along %s", name == "drag" and "Moving" or "Moved", what, d, (axis or ""):upper()) or nil
         if G.lastMove and B and B.PillNote then B.PillNote(G.lastMove) end
+    elseif name == "glide" then
+        -- the copy in hand: a gliding creature (`on`), a gameobject made anew (`off`), or this game has no creature
+        -- rows for it (`none`: the launcher's Den patch); /wudebug shows it
+        G.glide = data
     elseif name == "cam" then
         local back, snap = data:match("^far,([%d%.]+),(%d)")
         local was = G.far

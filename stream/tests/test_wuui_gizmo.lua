@@ -391,13 +391,13 @@ check("build mode with a picking Den Lite: at your character (the zoom told), no
 check("the cursor is freed (no mouselook) on entering", looking == false)
 check("a BUILD frame round the screen", named.LeylineGizmoBuildFrame.shown and named.LeylineGizmoBuildFrame.word.text == "BUILD")
 check("the hint line", named.LeylineGizmoTag.shown and named.LeylineGizmoTag.fs.text:find("Click a prop to pick it up, click again to put it down  ·  Shift adds  ·  Q E or the wheel turn  ·  Del deletes  ·  F7 leaves Build", 1, true)
-    and named.LeylineGizmoTag.fs.text:find("WASD walks  ·  wheel out past the end for the far view  ·  K: overview", 1, true))
+    and named.LeylineGizmoTag.fs.text:find("W / S walk, A / D slide  ·  wheel out past the end for the far view  ·  K: overview", 1, true))
 answer("cam", "far,14.0,0,0")
 check("the view out: WASD and the arrows pan it, Q / E up and down (nothing selected: Noggit's), BUTTON1 still the game's",
     bindings.W == "LeylineGizmoPanW" and bindings.A == "LeylineGizmoPanA" and bindings.UP == "LeylineGizmoPanUP" and bindings.Q == "LeylineGizmoPanQ"
     and bindings.E == "LeylineGizmoPanE" and not bindings.BUTTON1)
 check("the tag: how to fly", named.LeylineGizmoTag.fs.text:find("Far view: WASD flies where you look, Space / X up and down  ·  Shift fast, Alt slow  ·  zoom in to come back", 1, true)
-    and not named.LeylineGizmoTag.fs.text:find("WASD walks", 1, true))
+    and not named.LeylineGizmoTag.fs.text:find("A / D slide", 1, true))
 
 -- the hover stream with nothing in hand
 cursor = { 1440, 270 }
@@ -698,6 +698,27 @@ W.DenHome = nil
 G.Bindings()
 check("the mark gone: Q / E back", bindings.Q == "LeylineGizmoTurnQ")
 answer("selected", "-")
+-- owner 5 Nov: "when holding d or a the free roam camera just goes in circles": at your character A / D (and the
+-- arrows) strafe in build mode, never turn; the far view flies sideways with them
+G.Bindings()
+check("build mode at your character: A / D and the arrows strafe", bindings.A == "STRAFELEFT" and bindings.D == "STRAFERIGHT"
+    and bindings.LEFT == "STRAFELEFT" and bindings.RIGHT == "STRAFERIGHT" and G.strafing)
+function GetBindingKey(cmd) if cmd == "TURNLEFT" then return "A", "NUMPAD4" elseif cmd == "TURNRIGHT" then return "D" end end
+G.Bindings()
+check("the player's own turning keys strafe instead", bindings.NUMPAD4 == "STRAFELEFT" and bindings.A == "STRAFELEFT"
+    and bindings.D == "STRAFERIGHT" and bindings.LEFT == nil)
+function GetBindingKey(cmd) if cmd == "TURNLEFT" then return "Q" end end
+G.Bindings()
+check("a turning key the Gizmo turns props with (Q) is left to it", bindings.Q ~= "STRAFELEFT")
+GetBindingKey = nil
+G.far = { back = 14 }
+G.Bindings()
+check("far view: A / D fly sideways (the camera's own strafe), never turn", bindings.A == "LeylineGizmoPanA" and bindings.D == "LeylineGizmoPanD"
+    and bindings.LEFT == "LeylineGizmoPanLEFT" and not G.strafing)
+G.far = nil
+G.Bindings()
+answer("glide", "on")
+check("Den Lite says the copy glides", G.glide == "on")
 SetOverrideBinding = nil
 
 -- the cursor at another UI scale and window shape: the same spot on the screen gives the same u, v (placement review)

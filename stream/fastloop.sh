@@ -320,6 +320,12 @@ if [ -d www-files/art ] && [ -f www-files/art/wu-theme.css ]; then
     find www-files/art/looks -maxdepth 1 -type f -name 'look-*.webp' -exec install -m 644 {} "$WU/portal/art/looks/" \;
     echo "  looks pictures: $(find www-files/art/looks -maxdepth 1 -type f -name 'look-*.webp' | wc -l) -> $WU/portal/art/looks"
   fi
+  # the picture and video slots of stream/site_pages.py (our own shots and films), served at /wrath/art/slots/
+  if [ -d www-files/art/slots ]; then
+    rm -rf "$WU/portal/art/slots"; install -d -m 755 "$WU/portal/art/slots"
+    find www-files/art/slots -maxdepth 1 -type f \( -name '*.webp' -o -name '*.webm' -o -name '*.mp4' \) -exec install -m 644 {} "$WU/portal/art/slots/" \;
+    echo "  slots: $(find www-files/art/slots -maxdepth 1 -type f | wc -l) -> $WU/portal/art/slots"
+  fi
   if [ -d www-files/art/hub-thumbs ]; then
     rm -rf "$WU/portal/art/hub-thumbs"; install -d -m 755 "$WU/portal/art/hub-thumbs"
     find www-files/art/hub-thumbs -maxdepth 1 -type f -name '*.webp' -exec install -m 644 {} "$WU/portal/art/hub-thumbs/" \;

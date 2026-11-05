@@ -323,8 +323,11 @@ hub_mod = _load_module("wu_hub", "hub.py")   # /wrath/leyline-preview: the hidde
 playmodes = _load_module("wu_playmodes", "playmodes.py")   # game modes: /wrath/modes.json, Games, ?go=mode: (stream/playmodes.py)
 modepacks = _load_module("wu_modepacks", "modepack.py")   # modes anyone can host and fork: /wrath/modes/<id>, /jam (stream/modepack.py)
 survivors = _load_module("wu_survivors", "survivors.py")   # Azeroth Survivors: /wrath/survivors and its own address's gate (stream/survivors.py)
+site_pages = _load_module("wu_site_pages", "site_pages.py")   # Single player, the Modes shelf, the guides, the press kit (stream/site_pages.py)
 if survivors is not None:
     survivors.bind(lambda name: globals()[name])
+if site_pages is not None:
+    site_pages.bind(lambda name: globals()[name])
 if modepacks is not None:
     modepacks.bind(lambda name: globals()[name])
 if hub_mod is not None:
@@ -1533,6 +1536,13 @@ AVATAR_ART_MAX = 16_000
 # Game pictures, so the killswitch takes them off too (410; the launcher keeps its plain gradient).
 HOME_ART_RE = re.compile(r"home/[a-z0-9][a-z0-9-]{0,40}\.(?:webp|jpg)")
 HOME_JSON = "home/home.json"
+
+# The picture and video slots of stream/site_pages.py (Single player, the Modes shelf, the guides, the press kit): our own
+# screenshots and short films of our realm, in ART_DIR/slots/ (www-files/art/slots/). Allowed by pattern: a real WebP,
+# WebM or MP4 of a sane size, nothing else. Game pictures, so behind the killswitch too (410; the page shows its panel).
+SLOT_ART_RE = re.compile(r"slots/[a-z0-9][a-z0-9-]{0,60}\.(?:webp|webm|mp4)")
+SLOT_TYPES = {"webp": "image/webp", "webm": "video/webm", "mp4": "video/mp4"}
+SLOT_ART_MAX = 4_000_000   # art_bytes reads at most this much: a longer film needs another home (owner)
 HOME_ART_MAX = 1_500_000
 HOME_JSON_MAX = 64_000
 HOME_ART_MAX_AGE = 3600   # an hour: a new screenshot under the same name shows the same day
@@ -1555,6 +1565,8 @@ def art_type(name: str) -> str:
         return "application/json; charset=utf-8"
     if HOME_ART_RE.fullmatch(name):
         return "image/webp" if name.endswith(".webp") else "image/jpeg"
+    if SLOT_ART_RE.fullmatch(name):
+        return SLOT_TYPES[name.rsplit(".", 1)[1]]
     return ""
 
 
@@ -1597,6 +1609,11 @@ def art_bytes(name: str) -> bytes | None:
         ok = len(body) <= AVATAR_ART_MAX and body.lstrip().startswith(b"<svg") and b"<script" not in body.lower()
         return body if ok else None
     webp = body[:4] == b"RIFF" and body[8:12] == b"WEBP"
+    if SLOT_ART_RE.fullmatch(name):                         # a slot: the real kind for its name, or nothing
+        kind = name.rsplit(".", 1)[1]
+        ok = len(body) < SLOT_ART_MAX and (webp if kind == "webp" else body[:4] == b"\x1a\x45\xdf\xa3" if kind == "webm"
+                                           else body[4:8] == b"ftyp")
+        return body if ok else None
     if home_art(name):                                      # a screenshot: a real WebP or JPEG of a sane size, or nothing
         jpeg = body[:3] == b"\xff\xd8\xff"
         ok = len(body) <= HOME_ART_MAX and (webp if name.endswith(".webp") else jpeg)
@@ -2621,6 +2638,10 @@ def site_nav(current: str = "", signed_in: bool = False) -> str:
         items.append(("armory", "Armory", "/wrath/armory"))
     if docs is not None:
         items.append(("docs", "Docs", "/wrath/docs"))
+    if site_pages is not None:   # stream/site_pages.py: the guides, and Single player once its flag is on
+        if site_pages.single_public():
+            items.insert(2, ("single", "Single player", site_pages.SINGLE))
+        items.append(("guides", "Guides", site_pages.GUIDES))
     links_html = "".join(_nav_item(k, label, href, current) for k, label, href in items)
     links_html += _nav_item("server", "Server", HOST_URL, current, external=True)
     links_html += _nav_item("discord", "Discord", DISCORD_URL, current, external=True)
@@ -2693,7 +2714,8 @@ def nav_key(path: str) -> str:
     for key, roots in (("realms", ("/wrath/realms", "/wrath/r", "/r")), ("modes", ("/wrath/modes", "/wrath/h", "/wrath/q", "/wrath/b", "/h", "/q", "/b")),
                        ("mods", ("/wrath/mods", "/wrath/m", "/m")), ("armory", ("/wrath/armory", "/wrath/u", "/u")),
                        ("workshop", ("/wrath/workshop", "/wrath/w", "/w")),
-                       ("docs", ("/wrath/docs",))):
+                       ("docs", ("/wrath/docs",)), ("guides", ("/wrath/guides",)), ("single", ("/wrath/single-player",)),
+                       ("press", ("/wrath/press",))):
         if any(p == r or p.startswith(r + "/") for r in roots):
             return key
     return ""
@@ -2738,7 +2760,8 @@ def site_chrome(page: bytes, path: str, next_step: str = "play") -> bytes:
 # unchanged: the same forms, endpoints, tokens and scripts (with the page's CSP nonce, which then also runs the hub's
 # small HUB_JS). Off, or without the hub: the old frames below, as before.
 
-HUB_ACTIVE = {"play": "play", "realms": "realms", "mods": "mods", "workshop": "mods", "docs": "docs", "host": "host", "looks": "looks"}
+HUB_ACTIVE = {"play": "play", "realms": "realms", "mods": "mods", "workshop": "mods", "docs": "docs", "host": "host", "looks": "looks",
+              "single": "single", "guides": "guides"}   # stream/site_pages.py's pages (Single player only with its flag on)
 _HUB_DESC_RE = re.compile(rb'<meta name="description" content="Leyline: one launcher[^"]*">')
 
 
@@ -3698,7 +3721,7 @@ class PageHandler(BaseHTTPRequestHandler):
     def art(self, name: str) -> None:
         """GET /wrath/art/<name>: the site art and theme, from the allow-list only, cached for a week.
         Readable from any site (fonts need CORS; it is our own art, nothing private)."""
-        if (name in GAMEDATA_ART or home_art(name) or LOOKS_ART_RE.fullmatch(name)) and gamedata_off():
+        if (name in GAMEDATA_ART or home_art(name) or LOOKS_ART_RE.fullmatch(name) or SLOT_ART_RE.fullmatch(name)) and gamedata_off():
             self.send(410, GAMEDATA_GONE, "application/json; charset=utf-8")
             return
         body = art_bytes(name)
@@ -4419,13 +4442,17 @@ class PageHandler(BaseHTTPRequestHandler):
                                             made=creations.card_item if creations is not None else None,
                                             labels=RULESET_LABELS, host=PUBLIC_HOST, get_launcher=download_link()))
             return
+        if site_pages is not None and site_pages.match(path):   # /wrath/single-player (flag), /wrath/modes/<way>, /wrath/guides, /wrath/press
+            site_pages.get(self, path, query)
+            return
         if path == "/wrath/modes" and modes is not None:
             if not browse_limit.hit(rl_bucket(self.ip()), 600):
                 self.send(429, busy_page(back=path))
                 return
             self.send(200, site_chrome(modes.page(leyline_css(), art_url, art_present, card_meta, REALM_NAME,
                                                   public_host=PUBLIC_HOST,
-                                                  games=(playmodes.section() if playmodes is not None else "")
+                                                  games=(site_pages.shelf() if site_pages is not None else "")   # the Modes shelf first (owner 4 Nov)
+                                                  + (playmodes.section() if playmodes is not None else "")
                                                   + (modepacks.section() if modepacks is not None else "")), path))
             return
         if survivors is not None and survivors.match(path):   # Azeroth Survivors' page and Play (stream/survivors.py)

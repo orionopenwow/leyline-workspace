@@ -118,7 +118,9 @@ PAGES = ["/wrath", "/wrath/leyline", "/wrath/download", "/wrath/start", "/wrath/
          "/wrath/armory/Arthas", "/wrath/armory/Nobody", "/wrath/q/258", "/wrath/u/Arthas", "/wrath/r/wrath",
          "/wrath/m/pings", "/wrath/demo", "/wrath/docs", "/wrath/docs/mods", "/wrath/docs/play", "/wrath/docs/hosting",
          "/wrath/docs/hero-key", "/wrath/docs/publishing", "/wrath/workshop", "/wrath/host", "/wrath/link",
-         "/wrath/admin", "/wrath/leyline-preview", "/wrath/no-such-page", "/wrath/play", "/wrath/play/end"]
+         "/wrath/admin", "/wrath/leyline-preview", "/wrath/no-such-page", "/wrath/play", "/wrath/play/end",
+         "/wrath/guides", "/wrath/guides/install-and-log-in", "/wrath/press", "/wrath/modes/official",
+         "/wrath/modes/seeded-realm", "/wrath/single-player"]   # stream/site_pages.py (Single player: the 404 while its flag is off)
 for path in PAGES:
     st, hd, page = get(path)
     ok = st < 500

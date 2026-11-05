@@ -395,7 +395,7 @@ test('Shape the ground: no game folder yet says what to do, and starts nothing',
   await ctx.close();
 });
 
-test('Play solo: one click, the game signs in by itself to character select; Solo leveling offered where Docker runs', async () => {
+test('Play solo: one click, the game signs in by itself to character select; Single player offered where Docker runs', async () => {
   const { page, ctx, errors } = await open({ lite: 'stopped', auto: true, dock: 'ready' });
   await page.click('#hm-den-go');
   await page.waitForFunction(() => /Your Den is open/.test(document.querySelector('#yd .yd-status').textContent));
@@ -403,18 +403,18 @@ test('Play solo: one click, the game signs in by itself to character select; Sol
   assert.doesNotMatch(await statusText(page), /password/, 'nothing to type');
   assert.equal(await page.$('#yd-login-hint'), null);
   assert.equal((await calls(page, 'den_play_lite')).length, 1, 'one click, one start');
-  // the bigger option: Solo leveling, worded as such, on the Host page with its ruleset picked
+  // the bigger option: Single player (owner 4 Nov: "Solo leveling" before), worded as such, on its own page (single.js)
   await page.waitForSelector('#yd-solo-go');
-  assert.match(await page.textContent('#yd-solo'), /level from 1.*helper bots.*Docker.*5 to 20 minutes/i);
-  const picked = page.evaluate(() => new Promise((r) => document.addEventListener('leyline:host-ruleset', (e) => r(e.detail), { once: true })));
+  assert.match(await page.textContent('#yd-solo'), /level from 1.*Single player.*helper bots.*Docker.*5 to 20 minutes/i);
+  assert.equal(await page.textContent('#yd-solo-go'), 'Single player');
   await page.click('#yd-solo-go');
-  assert.equal((await picked).profile, 'solo');
+  await page.waitForFunction(() => document.querySelector('#page-single.on'));
   await noBrands(page);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
 
-test('Play solo: no Docker on this PC, no Solo leveling offer (nothing that cannot work)', async () => {
+test('Play solo: no Docker on this PC, no Single player offer (nothing that cannot work)', async () => {
   const { page, ctx, errors } = await open({ lite: 'stopped', dock: 'missing', page: 'den' });
   await page.waitForSelector('#yd-play');
   await page.waitForFunction(() => window.__calls.some((c) => c[0] === 'docker_info'));

@@ -316,8 +316,14 @@ try:
     check("control.py: imports, every step's .bat exists", "leyline" in ctlmod.STEPS
           and all((REPO / b).is_file() for b, _, _ in ctlmod.STEPS.values()))
     check("control.py: the self-restart is still there", "restart_if_updated()" in ctl and "SELF_MTIME" in ctl)
+    ok_line = b'<p class="legal">Leyline is not affiliated with or endorsed by Blizzard Entertainment.</p>'
+    check("brand check: the legal line passes", ex.brand_hits("launcher/ui/index.html", ok_line) == [])
+    check("brand check: another brand word on the legal line still fails",
+          bool(ex.brand_hits("launcher/ui/index.html", b"Not affiliated with or endorsed by Blizzard Entertainment. Play Blizzard games.")))
+    check("brand check: a brand word elsewhere fails", bool(ex.brand_hits("docs/x.md", b"Blizzard made this")))
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
 print(f"\n{count - fails}/{count} passed")
 sys.exit(1 if fails else 0)
+

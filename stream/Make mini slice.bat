@@ -9,7 +9,7 @@ rem   2 asks the server which creatures and objects are spawned in the slice's p
 rem     and the models of every player mount (from its Spell.dbc; tier 0, the base)
 rem   3 wenilla-host --deps   walks the game data: maps, tiles, models, textures, per tier
 rem   4 wenilla-host --export copies those files out (item textures "lite"), tier by tier, until
-rem     the 3 GB budget, and prints the size of each tier
+rem     the budget (budgetMB in the slice JSON), and prints the size of each tier
 rem   5 streams the slice and its description (the maxTier that fit) to the server in one go
 rem     (no second copy on your disk or the server's)
 rem Three SSH connections in all (the server pauses SSH after many quick logins).
@@ -51,7 +51,9 @@ mkdir "%W%\kit" "%W%\kit\bin" "%W%\kit\lua" "%W%\kit\sql" "%W%\kit\slice-defs" "
 copy /y server\*.sh "%W%\kit\" >nul || goto fail
 copy /y server\displays.py "%W%\kit\" >nul || goto fail
 copy /y server\www-patch.py "%W%\kit\" >nul || goto fail
-copy /y www-files\*.js "%W%\kit\www-files\" >nul || goto fail
+rem the whole page layer (scripts, CSS, tab.html, art), like Update browser client.bat: www-patch.py skips the
+rem layer when one of its files is missing (review 4 Nov: only the scripts were copied)
+xcopy /e /i /q /y www-files "%W%\kit\www-files" >nul || goto fail
 copy /y wrath_portal.py "%W%\kit\" >nul || goto fail
 copy /y demo.py "%W%\kit\" >nul || goto fail
 if exist links.py copy /y links.py "%W%\kit\" >nul

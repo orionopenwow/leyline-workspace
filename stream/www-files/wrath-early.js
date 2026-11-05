@@ -69,10 +69,16 @@
         h.textContent = 'This realm needs your own game folder.';
         var p = document.createElement('p');
         p.setAttribute('style', 'margin:0 0 1rem;color:#ccc');
-        p.textContent = 'It no longer streams game files. Drop your Wrath game folder on the next page: it is read on your computer and never uploaded.';
+        // a phone or tablet has no folder to drop (no directory picker, no folder drop): say so plainly instead of
+        // offering a way that can't work there (review 4 Nov)
+        var phone = false;
+        try { phone = !('showDirectoryPicker' in window) && !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); } catch (e) { /* desktop */ }
+        p.textContent = phone
+          ? 'It no longer streams game files. Your own game folder works on a computer (Chrome or Edge): play from there for now.'
+          : 'It no longer streams game files. Drop your Wrath game folder on the next page: it is read on your computer and never uploaded.';
         var a = document.createElement('a');
-        a.href = '/?ownfiles=1';
-        a.textContent = 'Use my game folder';
+        a.href = phone ? '/wrath' : '/?ownfiles=1';
+        a.textContent = phone ? 'Back to Leyline' : 'Use my game folder';
         a.setAttribute('style', 'display:inline-block;padding:.5rem 1rem;background:#c9a24a;color:#111;border-radius:4px;text-decoration:none;font-weight:600');
         card.appendChild(h); card.appendChild(p); card.appendChild(a); box.appendChild(card);
         document.body.appendChild(box);

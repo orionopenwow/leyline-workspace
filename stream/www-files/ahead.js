@@ -16,11 +16,18 @@
 //     and a different spelling is a download the client never uses.
 //
 // Only network work: nothing is decoded but the ADT's name chunks. 3 at a time, 100 MB per
-// session at most; off on Save-Data or 2g/3g, and with ?noahead=1. window.owAhead for owdiag.
+// session at most (20 MB on mobile data); off on Save-Data or 2g/3g, and with ?noahead=1. window.owAhead for owdiag.
 
 export const TILE = 533.33333;
 const CONCURRENCY = 3;
 const BUDGET = 100 * 1024 * 1024;
+// a phone on mobile data (connection.type 'cellular', Chrome Android) on 4g/5g: a fifth of it (review 4 Nov: it still
+// pulled up to 100 MB of terrain on metered data)
+const CELL_BUDGET = 20 * 1024 * 1024;
+/** The session's look-ahead budget for this connection (bytes). */
+export function aheadBudget(c) {
+  return c && c.type === 'cellular' ? CELL_BUDGET : BUDGET;
+}
 const LOOK_SECS = 25;
 const LOOK_MIN = 300, LOOK_MAX = 2000;
 
@@ -89,6 +96,8 @@ export function installAhead(wenilla) {
   if (c && (c.saveData || ['slow-2g', '2g', '3g'].includes(c.effectiveType))) { st.state = 'off: slow connection'; return st; }
   if (!wenilla?.on) { st.state = 'off: no bridge'; return st; }
   const full = q.get('ahead') === 'full';
+  const budget = aheadBudget(c);
+  st.budget = budget;
   st.state = 'waiting for the bridge';
   let dirs = null, dirsP = null;
   const queue = [], queued = new Set();
@@ -98,13 +107,13 @@ export function installAhead(wenilla) {
     .then((b) => { dirs = parseMapDirs(b); })
     .catch((e) => { st.state = 'off: ' + e.message; }));
   const want = (url, kind) => {
-    if (queued.has(url) || st.bytes >= BUDGET) return;
+    if (queued.has(url) || st.bytes >= budget) return;
     queued.add(url);
     queue.push({ url, kind });
     pump();
   };
   function pump() {
-    while (running < CONCURRENCY && queue.length && st.bytes < BUDGET) {
+    while (running < CONCURRENCY && queue.length && st.bytes < budget) {
       const job = queue.shift();
       running += 1;
       fetch(job.url, { priority: 'low', credentials: 'same-origin' }).then(async (r) => {

@@ -39,6 +39,50 @@ export function stageMap(stage) {
   }
 }
 
+// Warm by destination, phase 0 (review 4 Nov, stream.md "Plan: warm by destination"): character select reports
+// the ADT under the selected character ('focus:<adt>'), and boot.js warms the streamed tier that holds it. A
+// brand-new character of most races stands on its race's own start tile, which no tier holds, so it entered cold
+// and was then moved (ov_slices.lua, mini.json starter notes) to a cold Northshire or Valley of Trials. These seven
+// tiles stand for the starter tier the realm moves them to (its home ADT, mini.json "home"; test_stream_review.py
+// keeps the two in step). Only on a streamed slice: own files and community-realm hops warm nothing of ours.
+const NORTHSHIRE = ['Azeroth', 32, 48];
+const VALLEY = ['Kalimdor', 39, 33];
+export const DEST_TILES = {
+  'azeroth_31_43': NORTHSHIRE,      // dwarf, gnome: Coldridge Valley
+  'kalimdor_30_12': NORTHSHIRE,     // night elf: Shadowglen
+  'expansion01_58_39': NORTHSHIRE,  // draenei: Ammen Vale
+  'azeroth_28_28': VALLEY,          // undead: Deathknell
+  'kalimdor_32_37': VALLEY,         // tauren: Camp Narache
+  'expansion01_43_12': VALLEY,      // blood elf: Sunstrider Isle
+};
+// (human Azeroth_32_48 and orc / troll Kalimdor_39_33 are the homes themselves; Death Knights start in the
+// streamed Ebon Hold.)
+
+/** A streamed session that warms our slice: env.slice set, not a hop to another realm, not own files only. */
+export function streamedSlice(env) {
+  return !!(env && env.slice && !env.hop && env.mode !== 'own');
+}
+
+/**
+ * The stage boot.js should see: 'focus:<adt>' / 'port:<adt>' on an unstreamed racial start tile becomes the same
+ * stage on the destination tier's home ADT, written the same way (separator and folder kept). Anything else, or a
+ * session that isn't streamed, comes back unchanged.
+ */
+export function destFocus(stage, env) {
+  const s = String(stage);
+  const m = /^(focus|port):(.*)$/.exec(s);
+  if (!m || !streamedSlice(env)) return s;
+  const adt = m[2];
+  const t = /(^|[\\/])(?:([A-Za-z0-9]+)([\\/]))?([A-Za-z0-9]+)_(\d+)_(\d+)(\.adt)?$/i.exec(adt);
+  if (!t) return s;
+  const [, lead, folder, sep, map, x, y, ext] = t;
+  const dest = DEST_TILES[`${map}_${Number(x)}_${Number(y)}`.toLowerCase()];
+  if (!dest) return s;
+  const [dm, dx, dy] = dest;
+  const head = adt.slice(0, t.index) + lead;
+  return `${m[1]}:${head}${folder ? dm + sep : ''}${dm}_${dx}_${dy}${ext || ''}`;
+}
+
 export function installStages(wenilla) {
   if (window.owStages) return window.owStages;
   const marks = {};
@@ -69,7 +113,13 @@ export function installStages(wenilla) {
       fire(ev);
     }
     if (s === 'world') afterFrame(() => mark('first-frame'));
-    if (typeof inner === 'function') return inner(stage);
+    if (typeof inner === 'function') {
+      // boot.js warms what it is told: a new character's start tile becomes its destination (destFocus above);
+      // the page's own marks and events keep the stage as the client sent it
+      const told = s.startsWith('focus:') || s.startsWith('port:') ? destFocus(s, window.__wenilla_env) : stage;
+      if (told !== stage && told !== s) console.info(`${TAG} warm by destination: ${s} -> ${told}`);
+      return inner(told === s ? stage : told);
+    }
     return undefined;
   };
   try {

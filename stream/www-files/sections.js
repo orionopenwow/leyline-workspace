@@ -27,7 +27,9 @@ const META = '/__sections/tier/';   // synthetic cache keys: what each tier down
 const INDEX_URL = '/data/__tier/index.json';
 const CONCURRENCY = 6;
 const ARENA_INITIAL = 8 * 1024 * 1024;
-const SYNC_TIMEOUT_MS = 60000;
+// a blocking read spins the page's main thread, so a worker that stopped answering must not cost a minute a file
+// (review 4 Nov): 10 s once, then the downloaded copies are skipped for this page (the network answers instead)
+const SYNC_TIMEOUT_MS = 10000;
 
 const state = {
   installed: false,
@@ -39,6 +41,7 @@ const state = {
   index: null,           // [{tier, name, files, bytes}]
   running: null,         // the tier being downloaded
   abort: false,
+  syncDead: false,       // the worker missed a blocking read: the rest of this page load reads from the network
 };
 
 function canRun() {
@@ -100,13 +103,18 @@ function startWorker() {
 /// A blocking read of one downloaded file through the worker: {status, body} or null (not in the
 /// cache after all, timeout: the caller falls back to the network).
 function syncRead(path, method) {
+  if (state.syncDead) return null;
   const ctl = state.ctl;
   for (let attempt = 0; attempt < 3; attempt++) {
     Atomics.store(ctl, 0, 0);
     state.worker.postMessage({ type: 'get', path, method });
     const t0 = performance.now();
     while (Atomics.load(ctl, 0) === 0) {
-      if (performance.now() - t0 > SYNC_TIMEOUT_MS) return null;
+      if (performance.now() - t0 > SYNC_TIMEOUT_MS) {
+        state.syncDead = true;
+        console.warn('[sections] the downloads worker did not answer in ' + SYNC_TIMEOUT_MS / 1000 + ' s: reading from the network for this visit');
+        return null;
+      }
     }
     const status = Atomics.load(ctl, 1);
     const len = Atomics.load(ctl, 2);

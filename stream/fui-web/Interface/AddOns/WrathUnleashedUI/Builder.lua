@@ -2492,6 +2492,7 @@ local function build()
     win.searchHint:SetPoint("LEFT", search, "LEFT", 8, 0)
     win.searchHint:SetTextColor(S().ED.off[1], S().ED.off[2], S().ED.off[3])
     win.searchHint:SetText("Search props...")
+    win.searchHint.placeholder = search   -- over its own box on purpose (the layout test knows)
     win.az = chip(win, "A-Z", 48, function() B.SetAZ(not B.az) end, "TOPLEFT", x0 + 248, -42)
     win.az.edLabel = "Sort by name"
     win.spinBtn = chip(win, "Spin", 52, function() B.SetSpin(not B.spin) end, "TOPLEFT", x0 + 302, -42)

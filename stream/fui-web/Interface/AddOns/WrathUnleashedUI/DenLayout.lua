@@ -59,10 +59,14 @@ function L.Area(slot)
     local right = sw - 200
     local ins = L.SlotRect("inspector")
     if ins then right = math.min(right, ins.l - L.GAP) end
-    if slot == "toast" then return { l = 222, b = math.floor(sh * 0.55), r = math.max(right, 222 + 480), t = under } end
+    -- and right of the player frame, or of play mode's corner when it is wider (owner's dojo-overlap.png)
+    local left = 222
+    local lft = L.SlotRect("left")
+    if lft then left = math.max(left, lft.r + L.GAP) end
+    if slot == "toast" then return { l = left, b = math.floor(sh * 0.55), r = math.max(right, left + 480), t = under } end
     if slot == "centre" then
         local top = under - L.StackHeight("toast")
-        return { l = 222, b = L.STATUS_BOTTOM + L.STATUS_H + L.GAP, r = math.max(right, 222 + 480), t = top }
+        return { l = left, b = L.STATUS_BOTTOM + L.STATUS_H + L.GAP, r = math.max(right, left + 480), t = top }
     end
     return { l = 0, b = 0, r = sw, t = sh }
 end

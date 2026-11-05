@@ -270,6 +270,13 @@ local realReal = GetRealmName
 GetRealmName = function() return "Your Den" end
 event("PLAYER_ENTERING_WORLD")
 check("Your Den: no bags question, still pending", not (LooseBagsChoice and LooseBagsChoice:IsShown()) and LB.ChoicePending() and LB.OfferChoice() == false)
+-- owner 5 Nov, live: "/lbags off switches to the..." bled in over the Den's editor; a choice made there says nothing
+do
+    local n = #said
+    LB.Choose("loose")
+    check("Your Den: the choice's line is not said there", #said == n and LB.Enabled())
+    LB.Char().chosen = nil
+end
 GetRealmName = realReal
 event("PLAYER_ENTERING_WORLD")
 local choice = LooseBagsChoice

@@ -18,12 +18,19 @@ local function Choose(which)
 		frame.chose = true
 		frame:Hide()
 	end
+	-- Not a word in Your Den (owner 5 Nov, live: "/lbags off switches to the..." bled in over the Den's editor at the
+	-- bottom left): the choice still counts, the line waits for nothing.
+	local quiet = LB.InDen()
 	if which == "standard" then
 		LB.TurnOff(true)
-		LB.Say("Standard bags. /lbags on switches to Loose Bags.")
+		if not quiet then
+			LB.Say("Standard bags. /lbags on switches to Loose Bags.")
+		end
 	else
 		LB.TurnOn(true, false)
-		LB.Say("Loose Bags on. Press B to open it. /lbags off switches to the standard bags.")
+		if not quiet then
+			LB.Say("Loose Bags on. Press B to open it. /lbags off switches to the standard bags.")
+		end
 	end
 end
 LB.Choose = Choose

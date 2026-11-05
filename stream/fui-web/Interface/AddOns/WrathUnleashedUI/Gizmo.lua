@@ -555,6 +555,13 @@ function G.SetBuild(on)
         G.hovered = nil
     end
     if frame then if on then frame:Show() else frame:Hide() end end
+    -- in a Den the strip says BUILD and DenBar.lua draws the gold edge: this frame's word (under the strip) and its
+    -- own edge would be a second of each (owner 5 Nov, "the ui is a mess")
+    if frame and frame.word and frame.word.Show then
+        local den = W.DenBar and W.DenBar.IsActive and W.DenBar.IsActive()
+        if den then frame.word:Hide() else frame.word:Show() end
+        for _, t in ipairs(frame.edges or {}) do if den then t:Hide() else t:Show() end end
+    end
     if tip and not on then tip:Hide() end
     bindings(); showTag()
 end
@@ -1154,6 +1161,8 @@ local function setup()
     local function edge(p1, p2, w, h)
         local t = frame.CreateTexture and frame:CreateTexture(nil, "OVERLAY")
         if not t then return end
+        frame.edges = frame.edges or {}
+        frame.edges[#frame.edges + 1] = t
         t:SetTexture(R, Gc, Bc, A)
         t:SetPoint(p1, frame, p1, 0, 0); t:SetPoint(p2, frame, p2, 0, 0)
         if w then t:SetWidth(w) end

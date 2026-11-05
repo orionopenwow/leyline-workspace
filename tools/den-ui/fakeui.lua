@@ -89,12 +89,13 @@ function Frame:SetSize(w, h) self.w, self.h = w, h end
 local function now(self) return F.anyRect(self) end
 -- the getters answer in the frame's own units (as the game: a frame at scale 0.8 is 100 wide in its units, 80 on
 -- UIParent)
-function Frame:GetWidth() local r = now(self); return r and r.w / F.effScale(self) or (self.w or 0) end
-function Frame:GetHeight() local r = now(self); return r and r.h / F.effScale(self) or (self.h or 0) end
-function Frame:GetLeft() local r = now(self); return r and r.x / F.effScale(self) end
-function Frame:GetRight() local r = now(self); return r and (r.x + r.w) / F.effScale(self) end
-function Frame:GetTop() local r = now(self); return r and (r.y + r.h) / F.effScale(self) end
-function Frame:GetBottom() local r = now(self); return r and r.y / F.effScale(self) end
+local function own(self, v) local k = F.effScale(self); if k == 1 then return v end return v / k end
+function Frame:GetWidth() local r = now(self); return r and own(self, r.w) or (self.w or 0) end
+function Frame:GetHeight() local r = now(self); return r and own(self, r.h) or (self.h or 0) end
+function Frame:GetLeft() local r = now(self); return r and own(self, r.x) end
+function Frame:GetRight() local r = now(self); return r and own(self, r.x + r.w) end
+function Frame:GetTop() local r = now(self); return r and own(self, r.y + r.h) end
+function Frame:GetBottom() local r = now(self); return r and own(self, r.y) end
 function Frame:GetCenter() local r = now(self); if r then local k = F.effScale(self); return (r.x + r.w / 2) / k, (r.y + r.h / 2) / k end end
 function Frame:SetScale(s) self.scale = tonumber(s) or 1 end
 function Frame:GetScale() return self.scale or 1 end
@@ -416,12 +417,13 @@ function F.rect(f, depth)
         local rr = F.rect(rel, depth + 1)
         if not rr then cache[f] = false; return nil end
         local ax, ay = anchorXY(rr, q.rp)
-        ax, ay = ax + q.x * k, ay + q.y * k
+        if k ~= 1 then ax, ay = ax + q.x * k, ay + q.y * k else ax, ay = ax + q.x, ay + q.y end
         local p = q.p
         if p:find("LEFT") then left = ax elseif p:find("RIGHT") then right = ax else cx = ax end
         if p:find("TOP") then top = ay elseif p:find("BOTTOM") then bottom = ay else cy = ay end
     end
-    w, h = (w or 0) * k, (h or 0) * k
+    w, h = w or 0, h or 0
+    if k ~= 1 then w, h = w * k, h * k end
     local x, y
     if left and right then f.autoW = nil end
     if left and right then x, w = left, right - left elseif left then x = left elseif right then x = right - w else x = (cx or 0) - w / 2 end
@@ -499,12 +501,12 @@ function F.dump(path, title, notes)
         local font = (f.kind == "FontString" or f.kind == "EditBox") and F.fontSize(f) or nil
         rows[#rows + 1] = string.format('{"n":%d,"kind":%s,"name":%s,"stock":%s,"x":%s,"y":%s,"w":%s,"h":%s,"strata":%d,"level":%d,"layer":%d,"alpha":%s,'
             .. '"color":%s,"file":%s,"text":%s,"font":%s,"tcolor":%s,"justify":%s,"model":%s,"desat":%s,"root":%s,"autoW":%s,'
-            .. '"bd":%s,"bdedge":%s,"edge":%s}',
+            .. '"bd":%s,"bdedge":%s,"edge":%s,"wrap":%s,"justifyV":%s}',
             f.n, jstr(f.kind), jstr(f.name), jstr(f.stock), jnum(e.x), jnum(e.y), jnum(e.w), jnum(e.h), e.strata, e.level, e.layer, jnum(e.alpha),
             jcol(f.color or (f.file and f.vcolor) or nil), jstr(f.file), jstr(text), font and tostring(font) or "null", jcol(f.tcolor), jstr(f.justify),
             jstr(f.model and f.kind:find("Model") and f.model or nil), f.desat and "true" or "false", jstr(e.root), f.autoW and "true" or "false",
             jcol(f.backdrop and f.backdrop.bgFile and (f.bdcolor or { 0, 0, 0, 1 }) or nil), jcol(f.backdrop and f.backdrop.edgeFile and f.bdborder or nil),
-            f.backdrop and tostring(f.backdrop.edgeSize or 0) or "null")
+            f.backdrop and tostring(f.backdrop.edgeSize or 0) or "null", f.wrap == false and "false" or "true", jstr(f.justifyV))
     end
     F.endLayout()
     local h = assert(io.open(path, "wb"))

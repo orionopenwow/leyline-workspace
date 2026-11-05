@@ -355,6 +355,10 @@ listings = sys.modules.get("wu_listings") or _load_module("wu_listings", "listin
 if listings is not None:
     sys.modules["wu_listings"] = listings
     listings.bind(lambda name: globals()[name])
+# Shared Dens (stream/denmarket.py): the builds marketplace for Your Den, /wrath/dens and /wrath/api/dens; WU_DENS (off)
+denmarket = _load_module("wu_denmarket", "denmarket.py")
+if denmarket is not None:
+    denmarket.bind(lambda name: globals()[name])
 bugreport = _load_module("wu_bugreport", "bugreport.py")   # Report a bug: /wrath/bugs, the launcher's /wrath/bugs/api/report (stream/bugreport.py)
 if bugreport is not None:
     bugreport.bind(lambda name: globals()[name])
@@ -3406,6 +3410,11 @@ if workshop is not None and admin is not None:
     workshop.blocked = getattr(admin, "blocked", None)   # site-wide sanctions: no new links (Leyline HQ)
 if listings is not None:
     listings.setup()   # the listings service and its hourly update check (stream/listings.py)
+if denmarket is not None:
+    try:
+        denmarket.setup()   # its store and Leyline HQ's buttons (den.approve ...), whatever WU_DENS says
+    except Exception:   # an unwritable data folder: the rest of the portal still starts (the routes answer 503 then)
+        log.exception("shared Dens not set up")
 
 
 _Window = ratelimit.Limiter   # stream/ratelimit.py
@@ -4271,6 +4280,9 @@ class PageHandler(BaseHTTPRequestHandler):
         if listings is not None and listings.match(path):   # List your mod: check, submit, report (stream/listings.py)
             listings.post(self, path)
             return
+        if denmarket is not None and denmarket.match(path):   # Shared Dens: share, like, report (stream/denmarket.py)
+            denmarket.post(self, path)
+            return
         if hub_rank is not None and hub_rank.match(path):   # POST /wrath/api/hub/install|rate (stream/hub_rank.py)
             hub_rank.post(self, path)
             return
@@ -4409,6 +4421,9 @@ class PageHandler(BaseHTTPRequestHandler):
             return
         if listings is not None and listings.match(path):   # /wrath/mods/list, /wrath/api/listings/mine (stream/listings.py)
             listings.get(self, path, query)
+            return
+        if denmarket is not None and denmarket.match(path):   # /wrath/dens, /wrath/api/dens (stream/denmarket.py; WU_DENS)
+            denmarket.get(self, path, query)
             return
         if hub_rank is not None and hub_rank.match(path):   # /wrath/leyline/mods.json, /wrath/api/hub/me (stream/hub_rank.py)
             hub_rank.get(self, path, query)

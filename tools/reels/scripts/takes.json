@@ -1,0 +1,104 @@
+{
+  "_about": "Every raw take the reels cut from: what it shows, how it is recorded, its named moments (marks). source: launcher-fake = takes.cjs, the launcher's own pages with the test core (anywhere with node and Playwright: the cloud or the PC); launcher / game = record.py on the owner's PC (the real launcher and game, ffmpeg gdigrab); site / phone = record.py on the PC (Edge driven over its debugging port, the live website), or takes.cjs from the site's own pages offline (offline: true); hand = record.py --hand: a box says what to do, the screen is recorded for `seconds` (Control step reel-record-hand). Nothing here types a password or makes an account.",
+  "takes": {
+    "lf-login": {
+      "source": "launcher-fake", "scene": "login", "seconds": 14,
+      "marks": ["gate", "key", "welcome", "home"],
+      "what": "The launcher opens on Log in; a Hero Key pasted; the signed-in moment; Home."
+    },
+    "lf-play-official": {
+      "source": "launcher-fake", "scene": "play-official", "seconds": 10,
+      "marks": ["picker", "picked", "play"],
+      "what": "The realm picker, Wrath Unleashed, PLAY: it starts and logs you in by itself."
+    },
+    "lf-switch": {
+      "source": "launcher-fake", "scene": "switch", "seconds": 16,
+      "marks": ["community", "picked-community", "play-community", "official", "play-official"],
+      "what": "Realms: Community, Frost Haven, PLAY; then back to Wrath Unleashed and PLAY again, nothing to change by hand."
+    },
+    "lf-single": {
+      "source": "launcher-fake", "scene": "single", "seconds": 12,
+      "marks": ["page", "steps", "start"],
+      "what": "Single player from the side menu: the three steps and Start."
+    },
+    "lf-mods-hd": {
+      "source": "launcher-fake", "scene": "mods-hd", "seconds": 13,
+      "marks": ["mods", "hd", "install"],
+      "what": "Mods & Addons, Discover: the HD pack (credited to Project Reforged), Install."
+    },
+    "lf-den-open": {
+      "source": "launcher-fake", "scene": "den-open", "seconds": 10,
+      "marks": ["picker", "den", "play"],
+      "what": "The realm picker: Your Den; its page; Play."
+    },
+    "lf-host": {
+      "source": "launcher-fake", "scene": "host", "seconds": 26,
+      "marks": ["host", "form", "typed", "start", "live", "realms", "row"],
+      "what": "Host: a template, a name, Start; You're live; the new realm in the Community list."
+    },
+    "lf-add-folder": {
+      "source": "launcher-fake", "scene": "add-folder", "seconds": 14,
+      "marks": ["find", "picked", "added", "play"],
+      "what": "Find your game files: a folder picked, the launcher reads its version and names it; PLAY."
+    },
+    "site-home": {
+      "source": "site", "url": "/wrath", "flow": "scroll", "seconds": 12, "offline": true,
+      "marks": ["top", "scrolled"],
+      "what": "leylinelauncher.com from the top, a slow scroll."
+    },
+    "site-queue": {
+      "source": "site", "url": "/wrath/queue-preview", "flow": "queue", "seconds": 10, "offline": true,
+      "marks": ["line", "skip"],
+      "what": "The browser game's line: your place and the wait (never the seat numbers), then Skip the line."
+    },
+    "phone-play": {
+      "source": "phone", "url": "/wrath", "flow": "phone-play", "seconds": 12, "offline": true,
+      "marks": ["top", "play"],
+      "what": "The website on a phone: the front page, then Play in the browser."
+    },
+    "game-official-world": {
+      "source": "game", "flow": "official-world", "seconds": 60,
+      "marks": ["started", "charselect", "world"],
+      "what": "The real game from PLAY on Wrath Unleashed (Leyline.exe play-test --official --world): it logs in by itself, character select, into the world."
+    },
+    "game-den-open": {
+      "source": "game", "flow": "den-open", "seconds": 45,
+      "marks": ["started", "world"],
+      "what": "Your Den from the launcher (Leyline.exe den-play --test): Den Lite and the game start, logged in by itself, in the Den."
+    },
+    "game-den-carry": {
+      "source": "game", "flow": "den-carry", "seconds": 30,
+      "marks": ["build", "place", "carry", "drop", "turn"],
+      "what": "In the Den: build mode, a piece placed from the gallery, picked up and carried, set down, turned (the Leyline UI's own buttons through its test actions)."
+    },
+    "game-den-fly": {
+      "source": "game", "flow": "den-fly", "seconds": 28,
+      "marks": ["build", "fly", "snap", "zoomout", "back"],
+      "what": "In the Den: the free flight (W held), snap out to the whole Den, zoom far out and back."
+    },
+    "hand-community": {
+      "source": "hand", "seconds": 40, "window": "screen",
+      "marks": [],
+      "prompt": "In the launcher: pick a community realm (Realms > Community), press PLAY, let it log in, then close the game; pick Wrath Unleashed again and PLAY. The whole screen is recorded.",
+      "what": "The real switch from a community realm back to the official one, in the game."
+    },
+    "hand-single-bots": {
+      "source": "hand", "seconds": 60, "window": "screen",
+      "marks": [],
+      "prompt": "Single player: press Start on the Single player page, enter the world, open the Bots window (the bar's Bots button), add a companion and a dungeon buddy.",
+      "what": "Single player from Start to companions at your side."
+    },
+    "hand-hd-before": {
+      "source": "hand", "seconds": 12, "window": "game",
+      "marks": [],
+      "prompt": "HD pack OFF: stand somewhere pretty (Dalaran's fountain works), camera still, recording for 12 s.",
+      "what": "The before shot of the HD before/after."
+    },
+    "hand-hd-after": {
+      "source": "hand", "seconds": 12, "window": "game",
+      "marks": [],
+      "prompt": "HD pack ON (Mods & Addons, Project Reforged): the same spot and camera as the before shot, recording for 12 s.",
+      "what": "The after shot of the HD before/after."
+    }
+  }
+}

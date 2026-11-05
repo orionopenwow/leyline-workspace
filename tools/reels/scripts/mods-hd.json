@@ -1,0 +1,58 @@
+{
+ "id": "mods-hd",
+ "kind": "reel",
+ "formats": [
+  "reel",
+  "wide"
+ ],
+ "title": "Mods and HD looks",
+ "kicker": "Mods & Addons",
+ "sub": "TODO(owner): Addons and looks, installed in one click and kept up to date.",
+ "end_line": "HD pack by Project Reforged, with their permission.",
+ "shots": [
+  {
+   "take": "lf-mods-hd",
+   "in": [
+    "mods",
+    -0.3
+   ],
+   "out": [
+    "hd",
+    1.2
+   ],
+   "caption": "Mods & Addons: Discover"
+  },
+  {
+   "take": "lf-mods-hd",
+   "in": [
+    "hd",
+    1.2
+   ],
+   "out": [
+    "install",
+    1.8
+   ],
+   "caption": "The HD pack by Project Reforged: Install"
+  },
+  {
+   "take": "hand-hd-before",
+   "in": 1,
+   "out": 5,
+   "caption": "Before"
+  },
+  {
+   "take": "hand-hd-after",
+   "in": 1,
+   "out": 5,
+   "caption": "After"
+  }
+ ],
+ "gif": {
+  "format": "wide",
+  "shots": [
+   2,
+   3
+  ],
+  "max_seconds": 8
+ }
+}

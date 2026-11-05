@@ -132,3 +132,6 @@ desktop.ini
 
 # Project Reforged patches downloaded for the Den only (tools/den-looks): never committed
 /looks/
+# the reel kit (tools/reels): raw takes and finished videos stay on the machine that made them
+/tools/reels/takes/
+/tools/reels/out/

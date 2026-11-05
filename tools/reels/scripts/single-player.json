@@ -1,0 +1,53 @@
+{
+ "id": "single-player",
+ "kind": "reel",
+ "formats": [
+  "reel",
+  "wide"
+ ],
+ "title": "Single player",
+ "kicker": "Play solo",
+ "sub": "TODO(owner): Your own realm on your own PC, with companions at your side.",
+ "end_line": "TODO(owner): Single player is in the launcher's side menu.",
+ "shots": [
+  {
+   "take": "lf-single",
+   "in": [
+    "page",
+    -0.3
+   ],
+   "out": [
+    "steps",
+    1.5
+   ],
+   "caption": "Single player, in the side menu"
+  },
+  {
+   "take": "lf-single",
+   "in": [
+    "steps",
+    1.5
+   ],
+   "out": [
+    "start",
+    1.5
+   ],
+   "caption": "Your game folder, then Start"
+  },
+  {
+   "take": "hand-single-bots",
+   "in": 4,
+   "out": 22,
+   "caption": "Companions and dungeon buddies",
+   "speed": 1.5
+  }
+ ],
+ "gif": {
+  "format": "wide",
+  "shots": [
+   1,
+   2
+  ],
+  "max_seconds": 8
+ }
+}

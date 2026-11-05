@@ -1,0 +1,70 @@
+{
+ "id": "flow-host",
+ "kind": "flow",
+ "formats": [
+  "wide",
+  "reel"
+ ],
+ "title": "Host a realm",
+ "kicker": "How to",
+ "sub": "From the launcher's Host page to listed for everyone.",
+ "end_line": "TODO(owner): The hosting guide is on leylinelauncher.com.",
+ "shots": [
+  {
+   "take": "lf-host",
+   "in": [
+    "host",
+    -0.3
+   ],
+   "out": [
+    "form",
+    0.5
+   ],
+   "caption": "1. Host: pick a template"
+  },
+  {
+   "take": "lf-host",
+   "in": [
+    "form",
+    0.5
+   ],
+   "out": [
+    "typed",
+    0.3
+   ],
+   "caption": "2. Name it and choose who can join"
+  },
+  {
+   "take": "lf-host",
+   "in": [
+    "typed",
+    0.3
+   ],
+   "out": [
+    "live",
+    1.5
+   ],
+   "caption": "3. Start: the launcher sets it all up"
+  },
+  {
+   "take": "lf-host",
+   "in": [
+    "live",
+    1.5
+   ],
+   "out": [
+    "row",
+    2
+   ],
+   "caption": "4. Listed on the network for everyone"
+  }
+ ],
+ "gif": {
+  "format": "wide",
+  "shots": [
+   2,
+   3
+  ],
+  "max_seconds": 8
+ }
+}

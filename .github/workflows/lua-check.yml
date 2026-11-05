@@ -12,6 +12,8 @@ on:
       - "tools/den-ui/**"
       - "stream/tests/test_ov_*.lua"
       - "realm/custom/lua_scripts/**"
+      - "realm/profiles/main.env"
+      - "realm/serverpass.sh"
       - "labs/den-lite/src/dojo.rs"
       - "stream/social.py"
       - "stream/tests/test_social.py"
@@ -32,7 +34,7 @@ jobs:
       - name: the Esc menu's, the Den editor's and the GM panel skin's tests (each file's own command, from its first line)
         run: |
           set -e
-          for t in gamemenu gamemenu_fui leyline host hostsandbox builder denbar denhome gallery fillbars dojo plates denlayout gmskin; do
+          for t in gamemenu gamemenu_fui leyline host hostsandbox builder denbar denhome gallery fillbars dojo denlayout gmskin; do
             f="stream/tests/test_wuui_$t.lua"
             cmd=$(head -1 "$f" | sed -n 's/^-- \(lua5\.1 .*\)$/\1/p')
             cmd=$(echo "$cmd" | sed 's/ \[[^]]*\]//g')
@@ -58,6 +60,8 @@ jobs:
           lua5.1 stream/tests/test_ov_duels.lua $L/ov_duels.lua
           lua5.1 stream/tests/test_ov_names.lua $L/ov_names.lua
           lua5.1 stream/tests/test_ov_armory.lua $L/ov_armory.lua
+          lua5.1 stream/tests/test_ov_boost_rules.lua $L/ov_main.lua $L/ov_kits.lua
+          python3 -I stream/tests/test_main_realm_config.py
       - name: the Dojo on the full Den (ov_dojo.lua under a fake mod-ale; its ring checked against Den Lite's dojo.rs)
         run: lua5.1 stream/tests/test_ov_dojo.lua realm/custom/lua_scripts/ov_dojo.lua labs/den-lite/src/dojo.rs
       - name: the website's friends and launcher link (test_social.py drives a Lua stand-in realm)

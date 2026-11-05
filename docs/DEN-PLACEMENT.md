@@ -49,14 +49,24 @@ See **DEN-EDITOR-PARITY.md** for the details:
 - **The far view flies like Noggit:** forward along the view's pitch, Alt slow, Q / E up and down. The camera's pitch
   stays after a drag where the game lets the addon read it.
 
+### The second live test (5 Nov)
+
+- **The copy in hand glides.** It is a creature wearing the prop's own model (the launcher's Den patch gives every prop
+  model a creature row, 70000 + its display, from the player's own tables), made once and glided with splines: no
+  destroy and create while it moves. Buildings keep the gameobject copy, at most every 150 ms. See
+  DEN-EDITOR-PARITY.md, "The second live test".
+- **Hover lights the prop** under Den Lite's ray: the sparkle and a light under it; the selection keeps the stronger
+  halo and its arrows.
+- **A / D slide** in build mode at your character (they turned you and the camera round).
+
 ## Checked and fine
 
 - **UI scale and aspect.** `G.Cursor` divides by UIParent's effective scale and size, so u, v are right at any UI
   scale or window shape (test at 0.64 and 5:4). Off the window: nothing is sent.
 - **Clicks vs drags.** 0.3 s and 6 px; a quick flick is a drag; a lost mouse-up is caught by `IsMouseButtonDown`.
 - **Picking.** Real model boxes with a margin and a minimum size; ties don't depend on list order (pick.rs).
-- **Latency.** Hovers 30 a second while holding something, the copy redrawn at most every 33 ms, the copy made under
-  a second guid before the old one goes (no frame without it).
+- **Latency.** Hovers 30 a second while holding something; the copy glides to each new spot at most every 33 ms (one
+  creature, 5 Nov), or, for a building, is made under a second guid before the old one goes, at most every 150 ms.
 - **Slopes on the Den's own ground.** `on_ground` marches the ray over the edited heights, so a carried prop climbs
   hills made in Forge.
 

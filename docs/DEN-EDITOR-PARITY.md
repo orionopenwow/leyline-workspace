@@ -40,6 +40,30 @@ From noggit3 (`src/noggit/camera.cpp`, `MapView.cpp`, the open-source map editor
 | Arrow keys pitch / turn | Not matched: the arrows fly (as W A S D). The client has no call to set the pitch, and a turn is the mouse's. |
 | Can't match | Roll; a pitch the game won't let an addon read (then it snaps back after a drag); speed presets (two modifiers instead). |
 
+## The second live test (5 Nov): the copy glides, the hover lights, A / D slide
+
+Owner, 5 Nov: "objects should be clickable, highlightable in build and select mode and dynamically move instead of
+disappearing, reappearing, you need to make sure it makes the video i gave you" and "when holding d or a the free roam
+camera just goes in circles instead of normal expected function". Branch `agent/gr-den-glide`.
+
+| # | Cause | Fix | Where |
+|---|---|---|---|
+| A1 | A gameobject's place can't change after its create in 3.3.5a, so the copy under the cursor was a gameobject made anew at each spot: about 30 creates a second, seen as a flicker | The copy is a **creature wearing the prop's own model**, made once and glided (SMSG_MONSTER_MOVE: facing angle, Flying, OrientationFixed so it never turns to the way it slides; 80 ms a glide, each from where it is then). The drop makes the real gameobject first, then the creature goes. Card, click-to-carry, press-and-drag and an arrow drag all glide | labs/den-lite `glide.rs`, gizmo.rs `draw` |
+| A1b | A creature's model comes from CreatureDisplayInfo.dbc and CreatureModelData.dbc | The launcher's Den patch (patch-T, from the player's OWN tables, nothing shipped) adds for every GameObjectDisplayInfo row with an `.m2` / `.mdx` model a creature display and model row **70000 + that display** naming the same file (scale 1). Layouts (3.3.5a 12340): CreatureDisplayInfo 16 fields (ModelID at 1, scale at 4, alpha at 5), CreatureModelData 28 fields (ModelName at 2, scale at 4, box at 17-22). Refused when a table isn't that shape or already uses ids past 70000. `<dens>/den-creature-models.json` lists the displays covered (not written when a later archive hides the tables); Den Lite glides only those, and only for the Den's owner (a friend's game has no such rows: their copy is the gameobject as before). The ground status says "N prop models can glide" or why not | launcher `host/creaturemodels.rs`, `host/terrain.rs` |
+| A1c | A building (WMO) can't be a creature's model; a tilted prop can't lean as a creature | Their copy stays a gameobject made anew, but only when it moved and at most every 150 ms (`WMO_DRAW_MS`) for a building. `gizmo glide off` turns the creature copy off (to compare); the addon is told `glide on|off|none` | gizmo.rs |
+| A2 | Props are NOT_SELECTABLE in build mode (the first test's "You are too far away."), so the client's own mouse-over highlight is gone. The 3.3.5a client has no highlight flag for a gameobject (GameObjectDynamicLowFlags: ACTIVATE 0x01, ANIMATE 0x02, NO_INTERACT 0x04, SPARKLE 0x08, STOPPED 0x10; the HIGHLIGHT bit is a later client's) and plays no spell visual on one | The prop under Den Lite's own ray pick gets the sparkle (GAMEOBJECT_DYNAMIC in a values update: no respawn) **and a light under it** (the "Crate Highlight" glow, 0.8 of its footprint, one small object made only when the hovered prop changes, at most every 100 ms). The selection is the stronger one: the full halo, the sparkle and its arrows; the hover's light goes when it is selected or picked up | gizmo.rs `HOVER`, `hover_glow` |
+| A3 | Clicks | Unchanged: Den Lite's ray decides what a left click hits; props stay non-usable so the game never eats the click | |
+| B | Near your character A / D are the game's TURNLEFT / TURNRIGHT: the character and the camera swing round | In build mode at your character, the keys the player has on turning (A / D and the arrows by default) get STRAFELEFT / STRAFERIGHT override bindings (not Q / E: they turn props). The far view already flies sideways with them; its maths was checked (right = facing minus a quarter turn: (sin o, -cos o)). The tag says "W / S walk, A / D slide" | Gizmo.lua `G.StrafeKeys`, `bindings` |
+
+**The video's flow (C), re-read from the frames:** f17-f18 pick a card, the model is under the cursor at once; f18-f23
+it glides with the cursor (now one creature gliding, no flicker); f24 a click places it, selected (sparkle, halo,
+arrows); a placed piece pressed and dragged glides and the let-go drops it (mega-placer.js 3); hovering a piece lights
+it (mega-placer.js teal "grab"). Not matched: the outline shader (no such thing in the stock client: sparkle and light).
+
+**Needs the owner's live check:** that the stock client draws a gameobject's `.m2` on a creature at the right size and
+facing (expected: the same file, scale 1, the creature's origin at its feet as a gameobject's), that the sparkle shows
+on a not-selectable prop, and that A / D slide.
+
 ## Parity with the video and the editor's files
 
 Each row gives what the frames (or the owner's file notes) show, what the Den has, the gap, and what changed today.
@@ -53,7 +77,7 @@ Each row gives what the frames (or the owner's file notes) show, what the Den ha
 | 5 | Gallery bottom left: EVERYTHING, colour dots, search, A–Z, a filter, ×; category column; tiles with names; "1–20 of 53" | Builder gallery: Everything and every category, search, A–Z, Spin, pages | Colour-dot filter: no |
 | 6 | f17–f18: click a card (Birch): the real model is under the cursor at once; panel "BIRCH · in hand · click the ground" with its picture | Card → `preview` → the real prop under the cursor; panel "in hand" | **Fixed today** (bug 1): build mode at once, the cursor's place with the pick, a copy even when the first ray finds no ground |
 | 7 | build-tool-core.js: drag a card from the palette and drop it under the cursor | A tile dragged out of the window was placed in front of you | **Done:** in Den Lite's build mode the drag picks the card up, its copy glides over the world (Gizmo.lua counts the world as under the cursor while a card is dragged out of the window), and letting go on the ground puts it down (one undo) and selects it. Let go over the window: still in hand |
-| 8 | f18–f23: the copy glides with the cursor | Hovers 30 a second while in hand, the copy redrawn every 33 ms | Same |
+| 8 | f18–f23: the copy glides with the cursor | Hovers 30 a second while in hand; the copy is one creature gliding to each new spot (glide.rs), a building's copy redrawn at most every 150 ms | **Done 5 Nov (second test):** no flicker for an `.m2` prop |
 | 9 | f24: a click places it; it is selected with a white outline glow and the move arrows | `commit`: placed, selected, the sparkle glow, halo, red / green / blue handles | No outline shader in the stock client: sparkle and halo instead |
 | 10 | f24+: panel PIECE: Position X Y Z in red / green / blue with ± steps; Move · Turn · Size pad with 0.1 / 0.5 / 1 / 5; Rotation, Scale; Settle; Swap with (picture, Swap, "All in Longhouse"); key help; Selection n | Builder's selection panel: position, the pad, turn, size, Swap / Swap all of its kind, Land (settle), lock | Same set; "All in <area>" is "all of its kind" |
 | 11 | Bottom status line: "Raise/Lower · r 8 · strength 1.5 · falloff 4 · Moved Cottage +4.43 m · 1 selected" | The pill: "Place · Wooden Chair · snap off · 15° · …" plus the Gizmo tag | Same |
@@ -92,7 +116,8 @@ Press, in Control:
 
 1. **`den-lite`** builds Den Lite (the Rust changes; or `den-lite-test` / `den-lite-all` for its tests first).
 2. **`addons`** publishes the Leyline addons (Gizmo.lua, Builder.lua).
-3. **`den-move`**. Its new lines:
+3. **`den-move`**. Its new lines (and, after the glide, "card: the copy glides as one creature (no destroy / create)"
+   and "select: the copy glides as one creature ..."; they say INFO until the new launcher has rebuilt the Den patch):
    - "build mode: props never take the game's click";
    - "card: the copy glides under the cursor";
    - "card: a click puts it down, selected";

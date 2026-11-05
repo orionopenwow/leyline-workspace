@@ -49,6 +49,10 @@
 -- binding never changes while a button is held, and a lost mouse-up is caught by IsMouseButtonDown.
 -- The override bindings (Esc, G, the wheel, the snap key, BUTTON1 over a prop, Q / E with a selection, WASD and the
 -- arrows while the view is out) exist only in build mode and only while needed, and are cleared after.
+-- The editor's own keys (1 / 2 / 3 tools, Ctrl+Z / C / V / D, Del, G grid, F frame, the view marks, the flight's
+-- speed on the right mouse + wheel) are DenKeys.lua's, bound and cleared with these (G.Bindings calls its K.Bind).
+-- Esc in build mode (G.Escape): the first press cancels what is going on, the next deselects, the third is the
+-- game's own (its menu: "Back to building" / "Play your Den").
 -- Talks over OVMOD as the Builder does (`wubuild cmd ...`); answers come as
 -- `wubuild aim|axis|picked|placed|drag|moved|cam|mode|ghost|state|hovered|selected|grabbed`.
 
@@ -151,6 +155,8 @@ local function overWorld()
     local f = GetMouseFocus()
     return f == nil or f == WorldFrame
 end
+G.OverWorld = overWorld
+local function K() return W.DenKeys end
 
 -- Den Lite picks with the mouse itself (its caps say `click`): a Den Lite from before only knew right-clicks.
 function G.Picks()
@@ -163,6 +169,8 @@ end
 -- in build mode with nothing in hand (Den Lite picks: the prop under the cursor glows). The cursor at rest: its place
 -- once more after G.SETTLE (Den Lite changes the glow at most every 100 ms, so the last change is never lost).
 function G.Tick(force)
+    -- a Turn drag (DenKeys.lua) keeps the copy where it stood: the cursor's place isn't sent
+    if K() and K().drag then return false end
     if not (G.armed or G.dragging or (G.build and G.Picks())) or not overWorld() then return false end
     local t = now()
     local every = (G.armed or G.dragging) and G.HOVER_FAST or G.HOVER_EVERY
@@ -376,7 +384,9 @@ end
 
 local function bindings()
     if not owner or not SetOverrideBindingClick or not ClearOverrideBindings then return end
-    if InCombatLockdown and InCombatLockdown() then return end
+    -- the game refuses binding changes in combat: done when it ends (DenKeys.lua's PLAYER_REGEN_ENABLED)
+    if InCombatLockdown and InCombatLockdown() then G.bindPending = true; return end
+    G.bindPending = nil
     ClearOverrideBindings(owner)
     -- near your character: turning keys strafe (in the far view PAN_KEYS below take A / D and the arrows)
     G.strafing = false
@@ -393,7 +403,8 @@ local function bindings()
     if G.OwnsTurnKeys() then
         for k in pairs(TURN_KEYS) do SetOverrideBindingClick(owner, true, k, "LeylineGizmoTurn" .. k) end
     end
-    if G.armed or G.axis or G.dragging or (menu and menu:IsShown()) then
+    -- Esc: cancel, then deselect (G.Escape); with neither, the game's own Esc
+    if G.armed or G.axis or G.dragging or (menu and menu:IsShown()) or (K() and K().drag) or (G.build and G.Selected()) then
         SetOverrideBindingClick(owner, true, "ESCAPE", "LeylineGizmoCancel")
     end
     if (G.armed == "place" or G.armed == "move") and aimBtn then
@@ -414,8 +425,38 @@ local function bindings()
             for k in pairs(LIFT_KEYS) do SetOverrideBindingClick(owner, true, k, "LeylineGizmoPan" .. k) end
         end
     end
+    -- the editor's own keys (DenKeys.lua): set or cleared with these
+    if K() and K().Bind then K().Bind() end
 end
 G.Bindings = bindings
+
+-- Something selected (this file's, DenKeys.lua's or the Builder's view of it).
+function G.Selected()
+    if G.sel then return G.sel end
+    local k, B = K(), W.Builder
+    return (k and k.sel and k.sel.id) or (B and B.state and B.state.selId) or nil
+end
+
+-- Esc in build mode: the first press cancels what is going on (in hand, dragged, an axis, the menu, a Turn drag),
+-- the next lets go of the selection; with neither, Esc isn't bound here and the game's own menu opens (never
+-- anything that changes the Den).
+function G.Escape()
+    if G.armed or G.axis or G.dragging or (menu and menu:IsShown()) or (K() and K().drag) then
+        G.Cancel()
+        return "cancel"
+    end
+    if G.Selected() then
+        G.sel = nil
+        local B = W.Builder
+        if B and B.Deselect then B.Deselect() else send("selclear") end
+        if K() then K().sel = nil end
+        bindings()
+        if G.ShowTag then G.ShowTag() end
+        return "deselect"
+    end
+    bindings()
+    return nil
+end
 
 local AXIS_TEXT = { x = "X (red)", y = "Y (green)", z = "Z (blue, up)" }
 local function handName()
@@ -427,13 +468,18 @@ function G.Hint()
     local D = W.DenBar
     local key = (D and D.keys and D.keys.build) or "F7"
     if not G.Picks() then return "Right-click a prop to select it  ·  " .. key .. " to play" end
+    if K() and K().Hint then return K().Hint() .. "  ·  " .. key .. " plays" end
     return "Click a prop to pick it up, click again to put it down  ·  Shift adds  ·  Q E or the wheel turn  ·  Del deletes  ·  " .. key .. " leaves Build"
 end
 
 local function showTag()
     if not tag then return end
     local parts = {}
-    if G.dragging then
+    local k = K()
+    if k and k.drag then
+        parts[#parts + 1] = (k.drag.kind == "rotate" and "Turning: move the mouse left or right" or "Sizing: move the mouse up or down")
+            .. ", let go to keep it  ·  Esc puts it back"
+    elseif G.dragging then
         parts[#parts + 1] = "Moving: let go to drop it  ·  wheel or Q E turns it  ·  Esc puts it back"
     elseif G.armed == "place" then
         parts[#parts + 1] = handName() .. " in hand: click the ground  ·  wheel or Q E turns it  ·  Shift+click places more  ·  Esc puts it away"
@@ -451,6 +497,7 @@ local function showTag()
             parts[#parts + 1] = "Overview: " .. (G.snapKey and (G.snapKey .. " or ") or "") .. "zoom in to come back  ·  WASD flies"
         else
             parts[#parts + 1] = "Far view: WASD flies where you look, Space / X up and down  ·  Shift fast, Alt slow  ·  zoom in to come back"
+                .. ((k and k.SpeedText) and ("  ·  " .. k.SpeedText() .. "  ·  Home: back to you") or "")
         end
     elseif G.build then
         parts[#parts + 1] = "W / S walk, A / D slide  ·  wheel out past the end for the far view" .. (G.snapKey and ("  ·  " .. G.snapKey .. ": overview") or "")
@@ -487,6 +534,9 @@ end
 function G.Wheel(sign)
     local B = W.Builder
     local ctrl = IsControlKeyDown and IsControlKeyDown()
+    local k = K()
+    -- the right mouse held (looking round): the wheel sets the flight's speed (Noggit's), shown in the status line
+    if G.build and k and k.RightHeld and k.RightHeld() and not ctrl then return k.SpeedStep(sign) end
     if (G.dragging or G.armed == "move" or G.armed == "place") and not ctrl then
         if IsShiftKeyDown and IsShiftKeyDown() then return G.build and send("preview turn " .. (sign * G.TURN_FINE)) or false end
         return G.Turn(sign)
@@ -499,6 +549,8 @@ function G.Wheel(sign)
         if B and B.Move then return B.Move(G.axis, sign) end
         return send(string.format("move %s %s", G.axis, tostring(0.25 * sign)))
     end
+    -- the Turn and Size tools (2, 3): the wheel turns or sizes the selection (Ctrl: the zoom)
+    if G.build and not ctrl and k and k.ToolWheel and k.ToolWheel(sign) then return true end
     if G.build then return G.Zoom(-sign) end
     return false
 end
@@ -552,6 +604,7 @@ function G.Cancel()
     G.armed = nil
     G.dragging = nil
     G.atEdge = nil
+    if K() and K().DragCancel then K().DragCancel() end
     -- the press is spent: its let-go starts nothing
     if down.LeftButton then down.LeftButton.prop = nil end
     if G.axis then G.SetAxis(nil) end
@@ -631,8 +684,15 @@ end
 function G.DragCheck()
     local d = down.LeftButton
     if not d or G.dragging or G.armed or not G.build or not d.prop or not d.u or not G.Picks() then return false end
+    if K() and K().drag then return false end
     local x, y = at()
     if math.abs(x - d.x) <= G.CLICK_MOVE and math.abs(y - d.y) <= G.CLICK_MOVE then return false end
+    -- the Turn and Size tools (DenKeys.lua): the drag turns or sizes the prop pressed on, it doesn't move it
+    if K() and K().DragStart and K().DragStart(d) then
+        if tip then tip:Hide() end
+        bindings(); showTag()
+        return true
+    end
     G.dragging = true
     if tip then tip:Hide() end
     send(string.format("drag %.4f %.4f %.4f %d", d.u, d.v, d.a or (16 / 9), G.zoom))
@@ -649,6 +709,11 @@ function G.MouseUp(button)
     if button == "LeftButton" and not G.dragging then G.DragCheck() end
     local d = down[button]
     down[button] = nil
+    if button == "LeftButton" and K() and K().drag then
+        K().DragEnd()
+        bindings(); showTag()
+        return true
+    end
     if not G.build or not d then bindings(); return false end
     if button == "LeftButton" and G.dragging then
         G.Tick(true)
@@ -754,8 +819,9 @@ function G.FlySend()
     local f, r, u = G.FlyVector()
     local yaw = facing()
     fly.t, fly.yaw, fly.moving = now(), yaw, (f ~= 0 or r ~= 0 or u ~= 0)
-    -- Shift: fast; Alt: slow (Noggit's modifiers)
-    local fast = (IsShiftKeyDown and IsShiftKeyDown()) and " 1" or ((IsAltKeyDown and IsAltKeyDown()) and " s" or "")
+    -- Shift: fast; Alt: slow (Noggit's modifiers); the speed picked with the right mouse + wheel (DenKeys.lua)
+    local fast = (K() and K().SpeedWord) and K().SpeedWord()
+        or ((IsShiftKeyDown and IsShiftKeyDown()) and " 1" or ((IsAltKeyDown and IsAltKeyDown()) and " s" or ""))
     return send(string.format("cam fly %d %d %d %.3f%s", f, r, u, yaw, fast))
 end
 function G.PanKey(key, isDown)
@@ -934,7 +1000,12 @@ function G.OnMessage(prefix, msg, channel, sender)
     elseif name == "state" then
         local sc = data:match("pos=[^;]-,([%d%.]+);")
         G.scale = tonumber(sc) or G.scale
+        local was = G.sel
         if data:find("sel=-;", 1, true) then G.sel = nil end
+        -- a selection made another way (a box, Ctrl+A, Ctrl+D): Del, Esc and F follow it
+        local sid = tonumber(data:match("sel=(%d+),") or "")
+        if sid then G.sel = sid end
+        if G.build and (was == nil) ~= (G.sel == nil) then bindings() end
     end
 end
 
@@ -1152,7 +1223,7 @@ local function setup()
         end
     end
     cancelBtn = CreateFrame("Button", "LeylineGizmoCancel", UIParent)
-    cancelBtn:SetScript("OnClick", function() G.Cancel() end)
+    cancelBtn:SetScript("OnClick", function() G.Escape() end)
     cancelBtn:Hide()
     wheelUp = CreateFrame("Button", "LeylineGizmoWheelUp", UIParent)
     wheelUp:SetScript("OnClick", function() G.Wheel(1) end)

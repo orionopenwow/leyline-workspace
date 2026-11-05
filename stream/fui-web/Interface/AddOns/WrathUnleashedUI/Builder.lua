@@ -1546,20 +1546,37 @@ end
 -- you, End puts it on the ground, Ctrl+Z / Ctrl+Shift+Z undo and redo, Tab the next, Esc lets go; numpad + / - size it.
 -- Override bindings to hidden buttons, only while there is a selection and its panel is open, given back after; never
 -- the movement keys (WASD, Q / E, the arrows) or the camera's mouse.
+-- In Den Lite's build mode the same keys are DenKeys.lua's and Gizmo.lua's too (two owners may bind a key): these
+-- then do what those do (Esc's cancel-then-deselect, Ctrl+V under the cursor, Ctrl+D by the last offset, Home back
+-- to you from the far view), so whichever binding the game picks, a key does one thing.
+local function denKeys()
+    local G = W.Gizmo
+    return (G and G.build) and W.DenKeys or nil
+end
 B.KEYS = {
     DELETE = function() return B.Command("delete") end,
     U = function() return B.Command("copy") end,
     INSERT = function() return B.Swap(false) end, ["SHIFT-INSERT"] = function() return B.Swap(true) end,
     [","] = function() return B.Nudge("turn", 1) end, ["."] = function() return B.Nudge("turn", -1) end,
     PAGEUP = function() return B.Nudge("z", 1) end, PAGEDOWN = function() return B.Nudge("z", -1) end,
-    HOME = function() return B.Pad("bring") end, END = function() return B.Command("floor") end,
+    HOME = function()
+        local G = W.Gizmo
+        if G and G.build and G.far then return G.Send("cam off") end
+        return B.Pad("bring")
+    end,
+    END = function() return B.Command("floor") end,
     NUMPADPLUS = function() return B.Nudge("scale", 1) end, NUMPADMINUS = function() return B.Nudge("scale", -1) end,
     TAB = function() return B.SelectNext() end,
-    ESCAPE = function() return B.Deselect() end,
+    ESCAPE = function()
+        local G = W.Gizmo
+        if G and G.build and G.Escape then return G.Escape() end
+        return B.Deselect()
+    end,
     ["CTRL-Z"] = function() return B.Command("undo") end, ["CTRL-SHIFT-Z"] = function() return B.Command("redo") end,
     ["CTRL-Y"] = function() return B.Command("redo") end,
-    ["CTRL-C"] = function() return B.Command("copy") end, ["CTRL-V"] = function() return B.Paste() end,
-    ["CTRL-D"] = function() return B.Command("dup") end,
+    ["CTRL-C"] = function() local k = denKeys(); if k then return k.Copy() end; return B.Command("copy") end,
+    ["CTRL-V"] = function() local k = denKeys(); if k then return k.Paste() end; return B.Paste() end,
+    ["CTRL-D"] = function() local k = denKeys(); if k then return k.Duplicate() end; return B.Command("dup") end,
     -- while a picked prop waits to be placed (B.Arm): Enter places it
     ENTER = function() return B.PlaceArmed() end, NUMPADENTER = function() return B.PlaceArmed() end,
 }
@@ -2430,7 +2447,7 @@ function B.Layout()
         win:SetHeight(winHeight(B.rows))
         win:ClearAllPoints()
         win:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x / k, b / k)
-        B.placedAt = { x, b }
+        B.galleryAt = { x, b }   -- where the gallery went (B.placedAt is the time of the last placing: a table there broke the state)
     else
         B.rows = B.FitRows()
         win:SetHeight(winHeight(B.rows))

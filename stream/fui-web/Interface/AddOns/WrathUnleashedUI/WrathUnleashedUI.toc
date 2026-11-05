@@ -16,6 +16,7 @@ EditMode.lua
 DenHome.lua
 DenBar.lua
 Gizmo.lua
+DenKeys.lua
 BuildTools.lua
 Dojo.lua
 DenTourney.lua

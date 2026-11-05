@@ -55,7 +55,20 @@ local CARDS = {
     { "Build mode", "F7 switches between Build mode (the tools, a thin gold edge) and Play mode. Click a prop in the gallery, then Enter or double-click to place it." },
     { "Shape ground", "Opens the world editor on your Den's ground: raise hills, dig, paint the ground. Your game shows it after a restart." },
     { "Play mode and invite", "Play mode (F7) hides every tool so you just walk your Den: Dojo, Class, Invite and Files stay in the corner." },
-    { "Keys", "F7 build / play · click a prop to carry it, click to drop · Q / E or wheel turn it · wheel far out: fly with WASD · PgUp / PgDn lift · + / - size · Del deletes · Esc lets go · Ctrl+Z / Ctrl+Y undo, redo." },
+    -- the editor's whole key map (DenKeys.lua, Gizmo.lua; docs/DEN-TOOLS.md "Keys"): this card grows to fit it
+    { "Keys", table.concat({
+        "F7 build / play  ·  Esc cancels, then deselects",
+        "1 2 3 tools: Move, Turn, Size  ·  Q / E turn  ·  Del deletes",
+        "Click a prop to carry it, drag to slide it  ·  Shift adds",
+        "Ctrl+drag box select  ·  Ctrl+A everything near you",
+        "Ctrl+Z / Ctrl+Y undo, redo  ·  Ctrl+C / Ctrl+V copy, paste",
+        "Ctrl+D duplicate (again: the same offset)",
+        "G grid (Shift+G its size)  ·  R turn step  ·  Shift+R scatter",
+        "L lie on the slope, Shift+L upright  ·  F frame it",
+        "Wheel far out: fly with WASD, Space / X  ·  Shift fast",
+        "Right mouse + wheel: fly speed  ·  Home: back to you",
+        "Ctrl+1 2 3 keep the view, Shift+1 2 3 go back",
+    }, "\n") },
 }
 D.CARDS = CARDS
 
@@ -855,6 +868,10 @@ function D.ShowIntro(n)
     intro.body:SetText(c[2])
     intro.count:SetText(D.card .. " / " .. #CARDS)
     intro.next:SetText(D.card == #CARDS and "Start building" or "Next")
+    -- the keys card is the long one: the window grows to hold its lines
+    local lines = 1
+    for _ in c[2]:gmatch("\n") do lines = lines + 1 end
+    intro:SetHeight(lines > 3 and math.max(220, 130 + lines * 18) or 220)
     if D.card == #CARDS then intro.skip:Hide() else intro.skip:Show() end
     intro:Show()
     return D.card

@@ -18,6 +18,9 @@ F.sent = {}
 F.chat = {}
 F.cvars = {}
 F.overrides = {}
+-- override bindings by their owner (frame name): ClearOverrideBindings(owner) clears that owner's only, as the game
+-- does; F.overrides is every owner's together (key -> button or command), the newest set winning
+F.byOwner = {}
 F.clock = 100
 
 -- the stock fonts' sizes (FRIZQT 10 / 12 / 16), and the game's own font files by path
@@ -239,6 +242,7 @@ end
 -- ---------------------------------------------------------------- the screen and the stock frames
 function F.setup(w, h)
     for k in pairs(F.overrides) do F.overrides[k] = nil end
+    for k in pairs(F.byOwner) do F.byOwner[k] = nil end
     UIParent = new("Frame", "UIParent", nil, { _root = true, w = w, h = h, level = 0 })
     WorldFrame = new("Frame", "WorldFrame", nil, { _root = true, w = w, h = h, level = 0 })
     F.screen = { w = w, h = h }
@@ -287,8 +291,33 @@ function SaveBindings() end
 function GetCurrentBindingSet() return 1 end
 function GetCVar(k) return F.cvars[k] end
 function SetCVar(k, v) F.cvars[k] = tostring(v) end
-function SetOverrideBindingClick(_, _, key, button) F.overrides[key] = button end
-function ClearOverrideBindings() for k in pairs(F.overrides) do F.overrides[k] = nil end end
+local function ownerName(o) return type(o) == "table" and (o.name or tostring(o)) or tostring(o) end
+local function rebuild()
+    for k in pairs(F.overrides) do F.overrides[k] = nil end
+    for _, keys in pairs(F.byOwner) do for k, v in pairs(keys) do F.overrides[k] = v end end
+end
+function SetOverrideBindingClick(owner, _, key, button)
+    local n = ownerName(owner)
+    F.byOwner[n] = F.byOwner[n] or {}
+    F.byOwner[n][key] = button
+    F.overrides[key] = button
+end
+function SetOverrideBinding(owner, _, key, command)
+    local n = ownerName(owner)
+    F.byOwner[n] = F.byOwner[n] or {}
+    F.byOwner[n][key] = command
+    F.overrides[key] = command
+end
+function ClearOverrideBindings(owner)
+    F.byOwner[ownerName(owner)] = nil
+    rebuild()
+end
+-- the override bindings an owner holds now (a frame name): key -> button or command
+function F.bound(owner)
+    local out = {}
+    for k, v in pairs(F.byOwner[owner] or {}) do out[k] = v end
+    return out
+end
 function GetBindingAction() return "" end
 function GetBindingKey() return nil end
 function GetUnitSpeed() return 0 end

@@ -271,8 +271,8 @@ answer("aim", "place,2413,1543")
 local hd = handDone
 answer("placed", "7")
 answer("aim", "off")
-check("placed: the new prop is the selection, nothing in hand, the in-hand keys given back", G.sel == 7 and G.armed == nil and handDone > hd
-    and not bindings.G and not bindings.ESCAPE)
+check("placed: the new prop is the selection, nothing in hand, the in-hand keys given back (Esc stays: it deselects next)", G.sel == 7 and G.armed == nil and handDone > hd
+    and not bindings.G and bindings.ESCAPE == "LeylineGizmoCancel")
 
 -- a handle grabbed: the prop follows the cursor along its axis; the wheel steps; a click drops it
 answer("aim", "axis,7,x")

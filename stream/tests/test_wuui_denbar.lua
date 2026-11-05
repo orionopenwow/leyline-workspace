@@ -193,8 +193,10 @@ check("F7 and F8 bound in the Den (free: a stock game binds neither)", overrides
 local intro = D.Intro()
 check("the first time: the intro's first card", intro and intro:IsShown() and intro.head:GetText() == "This is your Den"
     and intro.body:GetText():find("empty white world that's yours") and intro.count:GetText() == "1 / 5")
+-- (5 Nov, the noggit keys: the keys card is the whole key map, one short line each, the window grows to fit)
 check("four short cards and the keys", #D.CARDS == 5 and (function()
-    for i, c in ipairs(D.CARDS) do if (i < 5 and #c[2] > 160) or #c[2] > 220 or #c[1] > 20 then return false end end
+    for i, c in ipairs(D.CARDS) do if (i < 5 and #c[2] > 160) or (i == 5 and #c[2] > 720) or #c[1] > 20 then return false end end
+    for line in D.CARDS[5][2]:gmatch("[^\n]+") do if #line > 66 then return false end end
     return D.CARDS[2][1] == "Build mode" and D.CARDS[2][2]:find("F7") and D.CARDS[3][1] == "Shape ground" and D.CARDS[4][2]:find("Invite") and D.CARDS[5][1] == "Keys"
 end)())
 intro.next:Fire("OnClick")

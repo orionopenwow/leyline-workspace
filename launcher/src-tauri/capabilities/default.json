@@ -1,7 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window. Its title bar is the launcher's own, so it may move, minimise, maximise and close itself. Folder picking, links and the browser client go through Leyline's own commands, not the plugins' web APIs.",
+  "description": "The main window. Its title bar is the launcher's own, so it may move, minimise, maximise and close itself. Folder picking, links and the browser client go through Leyline's own commands, not the plugins' web APIs. Desktop only: the phone app has its own (mobile.json).",
+  "platforms": [
+    "linux",
+    "macOS",
+    "windows"
+  ],
   "windows": [
     "main"
   ],

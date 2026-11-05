@@ -3,6 +3,7 @@ host kit pulls, with only the built-in token, from the realm's own build recipe,
 
     python3 tools/github-workflows/test_workflows.py        (needs PyYAML)
 """
+import json
 import os
 import re
 import unittest
@@ -31,7 +32,7 @@ def steps(doc, job):
 class Workflows(unittest.TestCase):
     def test_all_parse(self):
         names = sorted(p.name for p in HERE.glob("*.yml"))
-        self.assertEqual(names, ["bots-canary.yml", "den-lite.yml", "engine-windows.yml", "forge.yml", "hub-index.yml", "leyline-launcher.yml", "realm-scripts.yml", "scout.yml",
+        self.assertEqual(names, ["bots-canary.yml", "den-lite.yml", "engine-windows.yml", "forge.yml", "hub-index.yml", "leyline-android.yml", "leyline-launcher.yml", "realm-scripts.yml", "scout.yml",
                                  "survivors.yml", "wu-hosting.yml", "wu-images.yml"])
         for n in names:
             text, doc = load(n)
@@ -351,6 +352,77 @@ class Workflows(unittest.TestCase):
         # the update check reads the same (public) repo's releases
         upd = (REPO / "launcher" / "src-tauri" / "src" / "update.rs").read_text()
         self.assertIn('"https://api.github.com/repos/orionopenwow/Leyline/releases', upd)
+
+    def test_android(self):
+        """The phone app (docs/ANDROID.md): on launcher changes and by hand; the Android project made fresh by
+        `tauri android init` (gen/ never committed), the crystal icon and the full-screen activity; a debug APK for arm64
+        and x86_64, the release APK only with the release key in the secrets (never in a file); an API 34 x86_64
+        emulator starts it, takes the screenshots and fails on a crash; no game data in the APK."""
+        text, doc = load("leyline-android.yml")
+        self.assertEqual(doc["on"]["push"]["branches"], ["main"])
+        self.assertIn("launcher/**", doc["on"]["push"]["paths"])
+        self.assertIn(".github/workflows/leyline-android.yml", doc["on"]["push"]["paths"])
+        self.assertEqual(doc["on"]["pull_request"]["paths"], ["launcher/**"])
+        self.assertIn("workflow_dispatch", doc["on"])
+        self.assertEqual(doc["permissions"], {"contents": "read"})
+        self.assertEqual(set(re.findall(r"secrets\.(\w+)", text)),
+                         {"ANDROID_KEYSTORE_B64", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD"})
+        jobs = doc["jobs"]
+        self.assertEqual(list(jobs), ["apk", "smoke"])
+        apk = jobs["apk"]
+        self.assertNotIn("permissions", apk, "no write access: artifacts only")
+        names = [s.get("name", s.get("uses", "")) for s in apk["steps"]]
+        run = "\n".join(s.get("run", "") for s in apk["steps"])
+        java = next(s for s in apk["steps"] if s.get("uses", "").startswith("actions/setup-java"))
+        self.assertEqual(java["with"]["java-version"], "17")
+        rust = next(s for s in apk["steps"] if s.get("uses", "").startswith("dtolnay/rust-toolchain"))
+        self.assertEqual(set(rust["with"]["targets"].split(",")), {"aarch64-linux-android", "armv7-linux-androideabi", "x86_64-linux-android"})
+        self.assertIn("sdkmanager", run)
+        self.assertRegex(str(doc["env"]["ANDROID_NDK"]), r"^\d+\.\d+\.\d+$")
+        self.assertEqual(doc["env"]["ANDROID_API"], "34")
+        self.assertIn("npm ci --no-audit --no-fund", run)
+        self.assertNotRegex(run, r"npm install\b")
+        # the Android project is made here, never committed; the activity and the icon are ours
+        self.assertIn("npx tauri android init", run)
+        self.assertIn("src-tauri/gen/", (REPO / "launcher" / ".gitignore").read_text(encoding="utf-8"), "gen/ is never committed")
+        self.assertIn("src-tauri/mobile/android/MainActivity.kt", run)
+        self.assertTrue((REPO / "launcher" / "src-tauri" / "mobile" / "android" / "MainActivity.kt").is_file())
+        self.assertIn("npx tauri icon ../stream/www-files/art/leyline-crystal-512.png", run)
+        self.assertTrue((REPO / "stream" / "www-files" / "art" / "leyline-crystal-512.png").is_file())
+        order = [next(i for i, n in enumerate(names) if n.startswith(k)) for k in
+                 ("Android SDK", "Install the Tauri CLI", "The Android project", "The app icon", "Build the debug APK", "No game data in the APK")]
+        self.assertEqual(order, sorted(order))
+        self.assertIn("npx tauri android build --debug --apk --target aarch64 --target x86_64", run)
+        self.assertRegex(run, r"(?i)\\\.\(mpq\|m2\|wmo\|adt\|blp\|dbc")
+        # release signing: only with the key in the secrets, decoded to the runner's temp and deleted
+        rel = [s for s in apk["steps"] if "apksigner" in s.get("run", "")]
+        self.assertEqual(len(rel), 1)
+        self.assertEqual(rel[0]["if"], "env.HAS_RELEASE_KEY == 'true'")
+        self.assertEqual(apk["env"]["HAS_RELEASE_KEY"], "${{ secrets.ANDROID_KEYSTORE_B64 != '' }}")
+        self.assertIn('trap \'rm -f "$ks"\' EXIT', rel[0]["run"])
+        self.assertIn('"$RUNNER_TEMP/leyline-release.jks"', rel[0]["run"])
+        self.assertIn("apksigner\" verify", rel[0]["run"])
+        ups = {s["with"]["name"]: s for s in apk["steps"] if s.get("uses", "").startswith("actions/upload-artifact")}
+        self.assertEqual(set(ups), {"leyline-android-debug", "leyline-android-release"})
+        self.assertEqual(ups["leyline-android-release"]["if"], "env.HAS_RELEASE_KEY == 'true'")
+        for f in (".jks", ".keystore", "keystore.properties"):
+            self.assertNotIn(f, " ".join(str(s.get("with", {}).get("path", "")) for s in ups.values()))
+        # the emulator: Android 14 x86_64, our smoke script, its screenshots kept even when it fails
+        smoke = jobs["smoke"]
+        self.assertEqual(smoke["needs"], "apk")
+        emu = next(s for s in smoke["steps"] if s.get("uses", "").startswith("reactivecircus/android-emulator-runner"))
+        self.assertEqual((emu["with"]["api-level"], emu["with"]["arch"]), (34, "x86_64"))
+        self.assertIn("launcher/scripts/android-smoke.sh apk/Leyline-debug.apk", emu["with"]["script"])
+        self.assertIn("com.leylinelauncher.app", emu["with"]["script"])
+        art = [s for s in smoke["steps"] if s.get("uses", "").startswith("actions/upload-artifact")][0]
+        self.assertEqual(art["if"], "always()")
+        sh = (REPO / "launcher" / "scripts" / "android-smoke.sh").read_text(encoding="utf-8")
+        for bit in ("adb install", "screencap -p", "FATAL EXCEPTION", "Fatal signal", "pidof", "user_rotation 1"):
+            self.assertIn(bit, sh)
+        conf = json.loads((REPO / "launcher" / "src-tauri" / "tauri.android.conf.json").read_text(encoding="utf-8"))
+        self.assertEqual(conf["identifier"], doc["env"]["APP_ID"])
+        self.assertGreaterEqual(conf["bundle"]["android"]["minSdkVersion"], 26)
+        self.assertNotRegex(run, r"(?i)\bData/")
 
     def test_launcher_every_ship_is_a_release_for_everyone(self):
         # owner 31 Oct: "any update to this launcher from now on is auto queued for restart update for everyone"

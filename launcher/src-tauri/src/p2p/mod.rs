@@ -31,5 +31,5 @@ pub mod share;
 pub mod torrent;
 pub mod transfer;
 
-#[cfg(feature = "app")]
+#[cfg(all(feature = "app", desktop))] // desktop only (mobile.rs)
 pub mod cmds;

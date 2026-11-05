@@ -215,7 +215,7 @@ pub struct Status {
 /// is emptied. `chain` is the verified release log (None without a trusted key: nothing is shared).
 pub fn pass(app_dir: &Path, chain: Option<&Chain>, on: bool, flags: &Flags, swarm: &dyn Swarm) -> (Status, Vec<(Item, Vec<u8>)>) {
     let d = dir(app_dir);
-    let engine = cfg!(feature = "torrent-engine");
+    let engine = cfg!(torrent_engine);
     let (Some(chain), true) = (chain, on) else {
         let _ = fs::remove_dir_all(&d);
         return (Status { on: false, engine, ..Default::default() }, vec![]);
@@ -241,16 +241,16 @@ pub fn run(app_dir: &Path) -> Status {
     // seeder alone (it would otherwise empty the folder while "Help share" itself is off)
     if super::node::owns_share(app_dir, &site) {
         RUNNING.store(false, Ordering::SeqCst);
-        return Status { on: true, notes: vec!["shared by Be a node".into()], engine: cfg!(feature = "torrent-engine"), ..Default::default() };
+        return Status { on: true, notes: vec!["shared by Be a node".into()], engine: cfg!(torrent_engine), ..Default::default() };
     }
     let local = super::flags::load_local(app_dir);
     let on = super::flags::share_allowed(&site, &local);
     let flags = super::flags::effective(&site, &local);
     let chain = crate::releaselog::trusted_key().map(|k| crate::releaselog::load(app_dir, k));
     let (st, seeds) = pass(app_dir, chain.as_ref(), on, &flags, &transfer::NoSwarm);
-    #[cfg(feature = "torrent-engine")]
+    #[cfg(torrent_engine)]
     seeder::set(app_dir, seeds, flags.limits.seed_upload_kbps);
-    #[cfg(not(feature = "torrent-engine"))]
+    #[cfg(not(torrent_engine))]
     drop(seeds);
     RUNNING.store(false, Ordering::SeqCst);
     st
@@ -279,18 +279,18 @@ pub fn node_share(app_dir: &Path, refill: bool, upload_kbps: u32) -> Option<usiz
     }
     let seeds = last_seeds().lock().map(|l| l.clone()).unwrap_or_default();
     let n = seeds.len();
-    #[cfg(feature = "torrent-engine")]
+    #[cfg(torrent_engine)]
     seeder::set(app_dir, seeds, upload_kbps);
-    #[cfg(not(feature = "torrent-engine"))]
+    #[cfg(not(torrent_engine))]
     drop((seeds, upload_kbps));
     Some(n)
 }
 
 /// Stop seeding (the node rests, is paused or off). The files stay, so it picks up again without fetching.
 pub fn node_stop(app_dir: &Path) {
-    #[cfg(feature = "torrent-engine")]
+    #[cfg(torrent_engine)]
     seeder::set(app_dir, vec![], 0);
-    #[cfg(not(feature = "torrent-engine"))]
+    #[cfg(not(torrent_engine))]
     let _ = app_dir;
 }
 
@@ -306,7 +306,7 @@ static UP_DONE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new
 static UP_NOW: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static PEERS_NOW: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
-#[cfg(feature = "torrent-engine")]
+#[cfg(torrent_engine)]
 mod seeder {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -342,7 +342,7 @@ mod seeder {
     }
 }
 
-#[cfg(feature = "torrent-engine")]
+#[cfg(torrent_engine)]
 pub mod engine {
     //! Seeding with the librqbit engine (the same one clienttorrent.rs uses), upload capped, for the torrents
     //! `seedable` returned and nothing else. Runs until `stop` is set.

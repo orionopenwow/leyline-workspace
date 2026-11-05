@@ -588,6 +588,8 @@ pub mod commands {
     }
 
     /// Save as text file: the native save dialog, then the text (a Hero Key's .txt; at most 4 KB). false: cancelled.
+    /// Desktop only: on a phone the key is shown to copy (mobile.rs).
+    #[cfg(desktop)]
     #[tauri::command]
     pub async fn save_text_file(app: AppHandle, name: String, text: String) -> Result<bool, String> {
         use tauri_plugin_dialog::DialogExt;

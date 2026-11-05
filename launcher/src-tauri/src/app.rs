@@ -87,6 +87,12 @@ struct AppState {
     data_dir: String,
 }
 
+/// What the UI runs on (ui/platform.js): a computer here; the phone app answers the same command (mobile.rs).
+#[tauri::command]
+fn platform() -> crate::Platform {
+    crate::platform()
+}
+
 #[tauri::command]
 fn get_state(core: State<Core>) -> AppState {
     AppState {
@@ -2404,6 +2410,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            platform,
             get_state,
             pick_folder,
             detect_client,

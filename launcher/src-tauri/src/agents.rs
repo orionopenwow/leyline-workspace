@@ -961,7 +961,7 @@ fn backup(path: &Path) -> Result<Option<PathBuf>, String> {
 
 // ------------------------------------------------------------------------------------------------ the launcher's side
 
-#[cfg(feature = "app")]
+#[cfg(all(feature = "app", desktop))] // desktop only: the phone app has its own short list (mobile.rs)
 pub(crate) mod commands {
     use super::*;
     use tauri::{AppHandle, State};

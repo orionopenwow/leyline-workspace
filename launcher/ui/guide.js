@@ -161,7 +161,7 @@
   // quiet: the page already says it (the Host page's "You're live" box), so it only counts as shown
   function moment(key, quiet) {
     const m = MOMENTS[key] ? key : MOMENTS["cheer-" + key] ? "cheer-" + key : null;
-    if (!m || !readSeen() || seen.includes(m) || queue.includes(m) || (toast && toast.dataset.key === m)) return false;
+    if (!m || phone() || !readSeen() || seen.includes(m) || queue.includes(m) || (toast && toast.dataset.key === m)) return false;
     mark(m);   // once, even if the window closes before it fades
     if (quiet) return false;
     queue.push(m);
@@ -210,9 +210,12 @@
     setTimeout(nextToast, 400);
   }
 
+  function phone() { return !!(window.LeylinePlatform && window.LeylinePlatform.mobile); }
+
   // ---------------------------------------------------------------- start: once the launcher has its state
   async function boot() {
     for (let i = 0; i < 50 && !app(); i++) await new Promise((r) => setTimeout(r, 100));
+    if (phone()) return;   // the phone app (phone.js): the tour shows the desktop's menus, so none there
     if (!readSeen()) return;   // an older core: no guide
     if (seen.includes("tour")) return;
     // the sign-in screen first (gate.js): the tour starts once it closes

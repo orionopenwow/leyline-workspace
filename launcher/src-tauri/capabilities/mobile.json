@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "mobile",
+  "description": "The phone app's one window (docs/ANDROID.md). Links, the browser game and the sign-in page go through Leyline's own commands (mobile.rs), not the plugins' web APIs; the app keeps its files in its own data folder only.",
+  "platforms": [
+    "android",
+    "iOS"
+  ],
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default"
+  ]
+}

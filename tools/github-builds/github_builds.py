@@ -15,7 +15,8 @@
        engine on the rolling release engine-latest, docs/BUILTIN-ENGINE.md), survivors.yml (Azeroth Survivors' browser build and
        its Windows host on the rolling release survivors-latest, built when its lock changes), and realm-scripts.yml once the deploy
        secret exists ("setup\\Set up automatic deploys.bat"), so its deploy job can't fail for lack of it;
-     Leyline (the public repo, <workspace>\\.repos\\leyline-public): leyline-launcher.yml. Launcher releases go
+     Leyline (the public repo, <workspace>\\.repos\\leyline-public): leyline-launcher.yml, and leyline-android.yml
+       (the phone app's APK and its emulator test, docs/ANDROID.md; built when launcher/ changes). Launcher releases go
        there because players can't download release files from the private repo, and Actions minutes are free
        on a public repo.
    The commit is made on top of GitHub's own main in a throwaway worktree: the folders' branches, working
@@ -56,7 +57,7 @@ NEED_SCOPES = ("workflow", "write:packages", "admin:org")
 WU_FILES = ("wu-images.yml", "wu-hosting.yml", "hub-index.yml", "scout.yml", "forge.yml", "den-lite.yml", "survivors.yml",
             "bots-canary.yml", "engine-windows.yml")
 DEPLOY_FILE, DEPLOY_SECRET = "realm-scripts.yml", "WU_DEPLOY_SSH_KEY"
-LY_FILES = ("leyline-launcher.yml",)
+LY_FILES = ("leyline-launcher.yml", "leyline-android.yml")   # the desktop launcher; the phone app (docs/ANDROID.md)
 LY_TEMPLATES = ("submit-mod.yml",)                  # .github/ISSUE_TEMPLATE in Leyline: "Submit a mod" (hub index)
 LY_LABELS = (("mod-submission", "5fe3ff", "A Submit a mod issue (hub index)"),
              ("approved", "5ef0a0", "Approved for the hub index: the weekly refresh picks it up"))

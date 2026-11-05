@@ -192,6 +192,8 @@ class TurnOn(unittest.TestCase):
         self.assertNotIn(".github/workflows/leyline-launcher.yml", wu_files)   # the launcher builds in Leyline
         self.assertNotIn("work-in-progress.txt", wu_files)
         self.assertIn(".github/workflows/leyline-launcher.yml", self.remote_files("Leyline"))
+        self.assertIn(".github/workflows/leyline-android.yml", self.remote_files("Leyline"))   # the phone app (docs/ANDROID.md)
+        self.assertNotIn(".github/workflows/leyline-android.yml", wu_files)
         # the hub index: its workflow in WrathUnleashed (and leave to open PRs), the issue form and labels in Leyline
         self.assertIn(".github/workflows/hub-index.yml", wu_files)
         self.assertTrue(self.gh.pr_ok)

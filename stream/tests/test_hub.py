@@ -943,11 +943,11 @@ kinds = [t[1] for t in tiles]
 check("gallery: the first tiles are in game, mods and launcher taken in turn", len(tiles) >= 8
       and kinds[:6] == ["game", "mods", "launcher"] * 2 and {"game", "mods", "launcher"} <= set(kinds), kinds)
 check("gallery: the first tile is the big featured modpack shot, with its authors' credit and a link out (no Install)",
-      tiles and "big" in tiles[0][0] and tiles[0][2] == "g-coa-ultrahd"
-      and 'src="/wrath/art/leyline-shot-coa-ultrahd.webp"' in tiles[0][3] and "<i>Screenshot: Project Reforged</i>" in tiles[0][3]
+      tiles and "big" in tiles[0][0] and tiles[0][2] == "g-project-reforged"
+      and 'src="/wrath/art/leyline-shot-project-reforged.webp"' in tiles[0][3] and "<i>Screenshot: Project Reforged</i>" in tiles[0][3]
       and f'<a class="hb-gt-i" href="{html.escape(HB.FEATURED_MOD["url"])}" rel="noopener nofollow ugc" target="_blank">See Project Reforged</a>' in tiles[0][3]
       and "Install" not in tiles[0][3] and "<small>Featured mod</small>" in tiles[0][3], tiles[0][:3] if tiles else "")
-check("gallery: then the in-game shots, the hangout first", [t[2] for t in tiles if t[1] == "game"][:2] == ["g-coa-ultrahd", "g-dalaran"])
+check("gallery: then the in-game shots, the hangout first", [t[2] for t in tiles if t[1] == "game"][:2] == ["g-project-reforged", "g-dalaran"])
 mt = [t for t in tiles if t[1] == "mods"]
 check("gallery: the first mod is the Mod of the week (top Hot), then the rest of Hot",
       mt and mt[0][2] == "m-" + HOT["id"].replace(":", "-") and "Mod of the week" in mt[0][3], [t[2] for t in mt])
@@ -971,10 +971,10 @@ check("gallery: every picture has alt text, a width and a height, and loads lazi
       for i in re.findall(r'<img\b[^>]*>', "".join(t[3] for t in GALS.findall(gal + gsec)))), imgs[:3])
 tiles_all = GALS.findall(gal)
 check("gallery page: every eligible picture (the featured modpack and 4 in game, 4 launcher, the mods) and no game shot missing",
-      sum(1 for t in tiles_all if t[1] == "game") == 5 and sum(1 for t in tiles_all if t[1] == "launcher") == 4
+      sum(1 for t in tiles_all if t[1] == "game") == 8 and sum(1 for t in tiles_all if t[1] == "launcher") == 4
       and sum(1 for t in tiles_all if t[1] == "mods") >= 4 and 'data-gal="all"' in gal, [t[1] for t in tiles_all])
 check("gallery: without script each tile is a link: the image itself, or the mod's page", all(
-      re.search(r'<a class="hb-gt-a" href="(/wrath/art/leyline-(?:shot|ui)-[a-z-]+\.webp|/wrath/leyline-preview/p/[a-z0-9-]+|/wrath)" data-lb', t[3])
+      re.search(r'<a class="hb-gt-a" href="(/wrath/art/leyline-(?:shot|ui)-[a-z0-9-]+\.webp|/wrath/leyline-preview/p/[a-z0-9-]+|/wrath)" data-lb', t[3])
       for t in tiles_all))
 chips = re.findall(r'<a class="hb-chip( on)?" href="([^"]+)" data-f="([a-z]*)"(?: aria-current="true")?>([^<]+)</a>', gsec)
 check("gallery filters: All, In game, Mods, Launcher, links to the gallery page (?f=) that work without script",
@@ -1031,7 +1031,7 @@ check("killswitch on: one flat Leyline tile with the mark instead, still In game
                     r'<span class="hb-gt-art flat" aria-hidden="true"><span class="ly-spin slow"', gk)
       and fk_tiles[1][1] == "mods" and fk_tiles[2][1] == "launcher", [t[:3] for t in fk_tiles][:4])
 check("killswitch on: no featured modpack section and no modpack tile; its picture answers 410",
-      'id="featured-mod"' not in fk and "g-coa-ultrahd" not in fk and req("/wrath/art/leyline-shot-coa-ultrahd.webp")[0] == 410)
+      'id="featured-mod"' not in fk and "g-project-reforged" not in fk and req("/wrath/art/leyline-shot-project-reforged.webp")[0] == 410)
 check("killswitch on: Game modes shows the launcher's Modes page instead of the Minigolf loop (and the loop answers 410)",
       "<video" not in fk and re.search(r'id="f-modes".*?<img src="/wrath/art/leyline-ui-modes\.webp"', fk, re.S)
       and req("/wrath/art/leyline-shot-minigolf.mp4")[0] == 410 and req("/wrath/art/leyline-shot-minigolf.webm")[0] == 410)
@@ -1049,9 +1049,11 @@ check("featured mod: on the front page right under how it works, before the feat
 coa = coa.group(0) if coa else ""
 check("featured mod: label, title, the screenshot (served, sized, alt), a TODO for the owner's copy",
       '<p class="hb-coa-k"><span aria-hidden="true"></span>Featured mod</p>' in coa and "Project Reforged</h2>" in coa and "Conquest" not in coa
-      and re.search(r'<img src="/wrath/art/leyline-shot-coa-ultrahd\.webp" alt="[^"]{30,}" width="845" height="577" loading="lazy"', coa)
-      and "leyline-shot-coa-ultrahd.webp" in wp.ART_TYPES and "leyline-shot-coa-ultrahd.webp" in wp.GAMEDATA_ART
-      and os.path.isfile(os.path.join(HERE, "www-files", "art", "leyline-shot-coa-ultrahd.webp")) and "TODO(owner)" in coa)
+      and re.search(r'<img src="/wrath/art/leyline-shot-project-reforged\.webp" alt="[^"]{30,}" width="1280" height="540" loading="lazy"', coa)
+      and all(f"leyline-shot-{k}.webp" in wp.ART_TYPES and f"leyline-shot-{k}.webp" in wp.GAMEDATA_ART
+              and os.path.isfile(os.path.join(HERE, "www-files", "art", f"leyline-shot-{k}.webp"))
+              for k in ["project-reforged"] + [m[0] for m in HB.FEATURED_MOD["more"]])
+      and "coa-ultrahd" not in coa and "TODO(owner)" in coa)
 check("featured mod: the external note and the credit, word for word",
       '<p class="hb-coa-n">External download, made and hosted by Project Reforged; not checked or hosted by Leyline</p>' in coa
       and '<p class="hb-coa-cr">Screenshot: Project Reforged</p>' in coa)
@@ -1063,7 +1065,10 @@ check("featured mod: the first slide has one link out, See Project Reforged (noo
       len(links) == 1 and f'href="{html.escape(HB.FEATURED_MOD["url"])}"' in links[0][0] and 'rel="noopener nofollow ugc"' in links[0][0]
       and 'target="_blank"' in links[0][0] and links[0][1].startswith("See Project Reforged")
       and not re.search(r"(?i)install|leyline://|download\"", coa1.replace("External download", "")) and "/wrath/mods/" not in coa1)
-more = coa_slides[1:]
+npr = 1 + len(HB.FEATURED_MOD["more"])
+check("featured slider: Project Reforged's own shots first, each credited and linked to them",
+      all(f'href="{html.escape(HB.FEATURED_MOD["url"])}"' in x and "Screenshot: Project Reforged" in x for x in coa_slides[:npr]))
+more = coa_slides[npr:]
 check("featured slider: then up to five of the best mods with a picture, each a link to its own page here (no Install, no link out)",
       len(coa_slides) <= 6 and all(re.search(r'<a class="hb-cta sm" href="/wrath/[a-z-]+/p/[^"]+">See the mod</a>', x) for x in more)
       and not any(re.search(r"(?i)leyline://|target=\"_blank\"", x) for x in more))

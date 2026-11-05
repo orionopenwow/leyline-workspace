@@ -1440,7 +1440,9 @@ ART_TYPES = {
     "leyline-emblem.webp": "image/webp", "leyline-bg.webp": "image/webp",   # the Leyline page (owner's art)
     "leyline-shot-dalaran.webp": "image/webp", "leyline-shot-start.webp": "image/webp",   # gallery (live client shots)
     "leyline-shot-city.webp": "image/webp", "leyline-shot-durotar.webp": "image/webp",
-    "leyline-shot-coa-ultrahd.webp": "image/webp",   # the front page's featured mod (Project Reforged's screenshot)
+    "leyline-shot-project-reforged.webp": "image/webp",   # the front page's featured mod: Project Reforged's own shots
+    "leyline-shot-project-reforged-2.webp": "image/webp", "leyline-shot-project-reforged-3.webp": "image/webp",
+    "leyline-shot-project-reforged-4.webp": "image/webp",
     # the owner's Minigolf recording for the Game modes section: a short muted loop and its poster
     "leyline-shot-minigolf.mp4": "video/mp4", "leyline-shot-minigolf.webm": "video/webm", "leyline-shot-minigolf.webp": "image/webp",
     "leyline-mode-azeroth-survivors.webp": "image/webp", "leyline-mode-azeroth-survivors-play.webp": "image/webp",   # the mode's key art (the owner's; crest cropped out)
@@ -1463,7 +1465,8 @@ ART_TYPES = {
     # the owner's screenshots for /wrath/modes (stream/modes.py); a missing one leaves a painted panel
     "leyline-shot-dalaran.webp": "image/webp", "leyline-shot-start.webp": "image/webp",
     "leyline-shot-city.webp": "image/webp", "leyline-shot-durotar.webp": "image/webp",
-    "leyline-shot-coa-ultrahd.webp": "image/webp",
+    "leyline-shot-project-reforged.webp": "image/webp", "leyline-shot-project-reforged-2.webp": "image/webp",
+    "leyline-shot-project-reforged-3.webp": "image/webp", "leyline-shot-project-reforged-4.webp": "image/webp",
     "leyline-shot-minigolf.mp4": "video/mp4", "leyline-shot-minigolf.webm": "video/webm", "leyline-shot-minigolf.webp": "image/webp",
     # the round Leyline mark, split so the swirl turns while the crystal stays upright (SPIN_CSS, the hub)
     "leyline-swirl-256.webp": "image/webp", "leyline-crystal-256.webp": "image/webp",

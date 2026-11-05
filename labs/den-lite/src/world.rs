@@ -14,7 +14,7 @@ use crate::companion::{self, Asked, At};
 use crate::den::{self, Change, WorldObject};
 use crate::notice::{self, Item, Old, Route};
 use crate::{dojo, gizmo, movewatch, mymodels, ovmod, places, play, raw, testctl};
-use crate::{Gender as HeroGender, Shared};
+use crate::{Gender as HeroGender, Lock, Shared};
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -312,7 +312,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
         return Err(bad("expected CMSG_AUTH_SESSION"));
     };
     let user = NormalizedString::new(&auth.username).map_err(|_| bad("bad account name"))?;
-    let found = shared.sessions.lock().unwrap().get(&user.to_string()).cloned();
+    let found = shared.sessions.lk().get(&user.to_string()).cloned();
     // the host's login never comes in from outside this PC (nor one made on the remote login listener in here)
     let found = found.filter(|(_, who, from_remote)| *who != crate::login::Who::Host || (!remote && !*from_remote));
     let Some((key, who, _)) = found else {
@@ -328,7 +328,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
         .map_err(|_| bad("the session proof doesn't match"))?;
     let (enc, dec) = crypto.split();
     c.dec = Some(dec);
-    c.w.0.lock().unwrap().1 = Some(enc);
+    c.w.0.lk().1 = Some(enc);
     c.send(&SMSG_AUTH_RESPONSE::AuthOk {
         billing_flags: BillingPlanFlags::empty(),
         billing_rested: 0,
@@ -419,10 +419,10 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 if near_ok || far_ok {
                     let at = At { x: t.x, y: t.y, z: t.z, o: t.o };
                     pos = Some(at);
-                    if let Some(l) = shared.live.lock().unwrap().as_mut().filter(|l| l.0 == sess.id) {
+                    if let Some(l) = shared.live.lk().as_mut().filter(|l| l.0 == sess.id) {
                         l.2 = at;
                     }
-                    if let Some(me) = shared.players.lock().unwrap().iter_mut().find(|x| x.sess == sess.id) {
+                    if let Some(me) = shared.players.lk().iter_mut().find(|x| x.sess == sess.id) {
                         me.pos = at;
                     }
                     shared.event("arrived", &sess.me.name, &format!("{} map {} {:.1} {:.1} {:.1}: {}", if t.far { "far" } else { "near" }, t.map, t.x, t.y, t.z, t.title));
@@ -470,10 +470,10 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
             shared.event("dojo_ack", &sess.me.name, &format!("{what} {}", dojo::ack_counter(&body).unwrap_or(0)));
             if let (Some(p), Some(n)) = (pos.as_mut(), dojo::ack_pos(&body)) {
                 *p = n;
-                if let Some(l) = shared.live.lock().unwrap().as_mut().filter(|l| l.0 == sess.id) {
+                if let Some(l) = shared.live.lk().as_mut().filter(|l| l.0 == sess.id) {
                     l.2 = n;
                 }
-                if let Some(me) = shared.players.lock().unwrap().iter_mut().find(|x| x.sess == sess.id) {
+                if let Some(me) = shared.players.lk().iter_mut().find(|x| x.sess == sess.id) {
                     me.pos = n;
                 }
             }
@@ -520,10 +520,10 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 moved_once = true;
                 track(shared, &sess, &mut watch, op, &body, n);
                 aid_follow(&c.w, shared, &sess, &sel, &mut aids, n)?;
-                if let Some(l) = shared.live.lock().unwrap().as_mut().filter(|l| l.0 == sess.id) {
+                if let Some(l) = shared.live.lk().as_mut().filter(|l| l.0 == sess.id) {
                     l.2 = n;
                 }
-                if let Some(me) = shared.players.lock().unwrap().iter_mut().find(|x| x.sess == sess.id) {
+                if let Some(me) = shared.players.lk().iter_mut().find(|x| x.sess == sess.id) {
                     me.pos = n;
                 }
                 // the others see the move (not the game's own "I fly now", which is only for the server)
@@ -563,7 +563,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 // a guest a step to the side of the host's spot; on the ground (movewatch::SPAWN_LIFT), not a yard up
                 let side = if sess.me.host { 0.0 } else { 2.0 + (sess.me.guid % 4) as f32 };
                 let (start, ground, file, near) = {
-                    let d = shared.den.lock().unwrap();
+                    let d = shared.den.lk();
                     let start = At { x: d.spot.x + side, y: d.spot.y, z: d.spawn_z(side), o: std::f32::consts::FRAC_PI_2 };
                     (start, d.floor_at(start.x, start.y), d.ground_here().is_some(), d.nearest_object(start.x, start.y))
                 };
@@ -602,9 +602,9 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                         let _ = notify(&o.w, shared, o.sess, o.me.guid, Item::line("ok", format!("{} is in your Den.", sess.me.name)));
                     }
                 }
-                shared.players.lock().unwrap().push(Peer { sess: sess.id, me: sess.me.clone(), w: c.w.clone(), pos: start });
+                shared.players.lk().push(Peer { sess: sess.id, me: sess.me.clone(), w: c.w.clone(), pos: start });
                 if sess.me.host {
-                    *shared.live.lock().unwrap() = Some((sess.id, c.w.clone(), start));
+                    *shared.live.lk() = Some((sess.id, c.w.clone(), start));
                     _watcher = Some(watch_open(shared, c.w.clone()));
                 }
             }
@@ -612,7 +612,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
             ClientOpcodeMessage::CMSG_NAME_QUERY(q) => {
                 let g = q.guid.guid();
                 let who = if g == sess.me.guid { Some(sess.me.clone()) } else if g == PLAYER_GUID { Some(Me::host(shared)) } else {
-                    shared.players.lock().unwrap().iter().find(|p| p.me.guid == g).map(|p| p.me.clone())
+                    shared.players.lk().iter().find(|p| p.me.guid == g).map(|p| p.me.clone())
                 };
                 if let Some(m) = who {
                     let class = if m.host { sandbox::class_of(shared).0 } else { Class::Warrior };
@@ -669,10 +669,10 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                     moved_once = true;
                     track(shared, &sess, &mut watch, op, &body, n);
                     aid_follow(&c.w, shared, &sess, &sel, &mut aids, n)?;
-                    if let Some(l) = shared.live.lock().unwrap().as_mut().filter(|l| l.0 == sess.id) {
+                    if let Some(l) = shared.live.lk().as_mut().filter(|l| l.0 == sess.id) {
                         l.2 = n;
                     }
-                    if let Some(me) = shared.players.lock().unwrap().iter_mut().find(|x| x.sess == sess.id) {
+                    if let Some(me) = shared.players.lk().iter_mut().find(|x| x.sess == sess.id) {
                         me.pos = n;
                     }
                     // the others see the move
@@ -1219,7 +1219,7 @@ fn enter_world(c: &Writer, shared: &Shared, account: &str, me: &Me, p: Pos) -> i
     c.send_raw(movewatch::SMSG_TIME_SYNC_REQ, &movewatch::time_sync_body(0))?;
     sandbox::after_create(c, shared, me)?;
     c.send(&SMSG_INIT_WORLD_STATES { map, area, sub_area: area, states: vec![] })?;
-    let objs = shared.den.lock().unwrap().everything();
+    let objs = shared.den.lk().everything();
     send_creates(c, shared, &objs)?;
     Ok(())
 }
@@ -1329,7 +1329,7 @@ fn arrive(c: &Writer, shared: &Shared, sess: &Sess, p: Pos) -> io::Result<()> {
             ],
         });
     }
-    let n = shared.den.lock().unwrap().props.len();
+    let n = shared.den.lk().props.len();
     let first = cheer_line(shared, "first-visit");
     let mut old = vec![Old::Line(format!("Welcome to your Den: {n} props. {BUILDER_HINT}"))];
     old.extend(TUTORIAL.iter().map(|l| Old::Line(l.to_string())));
@@ -1337,9 +1337,9 @@ fn arrive(c: &Writer, shared: &Shared, sess: &Sess, p: Pos) -> io::Result<()> {
     let toast = first.map(String::from).unwrap_or_else(|| if n == 0 { "Welcome back to your Den.".into() } else { format!("Welcome back: {n} props, as you left them.") });
     notify(c, shared, sess.id, me.guid, Item { kind: if first.is_some() { "cheer" } else { "info" }, toast: Some(toast), old })?;
     // the companion: at your side from the start (Config::companion), one greeting, then quiet until spoken to
-    let mut comp = shared.companion.lock().unwrap();
+    let mut comp = shared.companion.lk();
     comp.arrive(now());
-    let inside = shared.den.lock().unwrap().inside(p.x, p.y, p.z);
+    let inside = shared.den.lk().inside(p.x, p.y, p.z);
     if shared.cfg.companion && inside && !comp.out {
         let at = comp.come(p, now_ms());
         drop(comp);
@@ -1352,7 +1352,7 @@ fn arrive(c: &Writer, shared: &Shared, sess: &Sess, p: Pos) -> io::Result<()> {
 
 /// What the tips look at (companion::TipCtx): the Den now.
 fn tip_ctx(shared: &Shared) -> companion::TipCtx {
-    let (props, size) = { let d = shared.den.lock().unwrap(); (d.props.len(), d.ring() + 1) };
+    let (props, size) = { let d = shared.den.lk(); (d.props.len(), d.ring() + 1) };
     let saved = den::list_names(&shared.cfg.den_dir).iter().any(|n| n != "backup" && n != den::AUTOSAVE);
     companion::TipCtx { props, saved, size }
 }
@@ -1363,14 +1363,14 @@ fn order(c: &Writer, shared: &Shared, p: Pos, cmd: companion::Cmd) -> io::Result
     let (ms, t) = (now_ms(), now());
     if cmd == Cmd::Help {
         let ctx = tip_ctx(shared);
-        let mut comp = shared.companion.lock().unwrap();
+        let mut comp = shared.companion.lk();
         comp.heard_now(t);
         let tip = comp.tip(ctx);
         let out = comp.out;
         drop(comp);
         return if out { monster_say(c, tip) } else { say(c, tip) };
     }
-    let mut comp = shared.companion.lock().unwrap();
+    let mut comp = shared.companion.lk();
     if !comp.out {
         drop(comp);
         return say(c, "Your companion isn't here: .den companion calls her.");
@@ -1381,7 +1381,7 @@ fn order(c: &Writer, shared: &Shared, p: Pos, cmd: companion::Cmd) -> io::Result
             let here = comp.stay(ms);
             drop(comp);
             // she stops where she is (a walk of nothing ends the one she was on)
-            walk(c, here, here, 100, shared.companion.lock().unwrap().moves, &[])?;
+            walk(c, here, here, 100, shared.companion.lk().moves, &[])?;
             monster_say(c, companion::STAYING)
         }
         Cmd::Follow => {
@@ -1545,7 +1545,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
         }
         // where you stand against the ground, and what the game did with its character (movewatch.rs; the den-test asks)
         (".den", "where") => {
-            let (g, file) = { let d = shared.den.lock().unwrap(); (d.floor_at(p.x, p.y), d.ground_here().is_some()) };
+            let (g, file) = { let d = shared.den.lk(); (d.floor_at(p.x, p.y), d.ground_here().is_some()) };
             let moves = shared.moves.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|w| w.sess == sess.id).map(|w| (w.summary(), w.ops_line()));
             let (moves, ops) = moves.unwrap_or_else(|| ("Nothing seen from your game yet".into(), "nothing".into()));
             say(c, &format!(
@@ -1588,7 +1588,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                     *shared.last_stamp.lock().unwrap_or_else(|e| e.into_inner()) = None;
                     return say(c, "The stamp is down. .build undo takes it back.");
                 }
-                let ch = shared.den.lock().unwrap().undo();
+                let ch = shared.den.lk().undo();
                 apply(c, shared, &ch)?;
                 if w(2) == "cancel" {
                     *shared.last_stamp.lock().unwrap_or_else(|e| e.into_inner()) = None;
@@ -1600,7 +1600,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                 return match den::read_stamp(&shared.cfg.stamps_dir, &name) {
                     Err(e) => say(c, &e),
                     Ok(st) => {
-                        let ch = shared.den.lock().unwrap().stamp(&st, x, y, z, o + turn.to_radians());
+                        let ch = shared.den.lk().stamp(&st, x, y, z, o + turn.to_radians());
                         *shared.last_stamp.lock().unwrap_or_else(|e| e.into_inner()) = Some((name, x, y, z, o, turn));
                         apply(c, shared, &ch)
                     }
@@ -1616,7 +1616,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                     // all of it inside the Den: moved toward the middle when the player stands near its edge
                     let o = p.o + deg.to_radians();
                     let (ch, fx, fy) = {
-                        let mut d = shared.den.lock().unwrap();
+                        let mut d = shared.den.lk();
                         let (fx, fy, _) = d.fit_stamp(&st, p.x, p.y, o);
                         (d.stamp(&st, fx, fy, p.z, o), fx, fy)
                     };
@@ -1650,16 +1650,16 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                 return say(c, &format!("Nothing called '{q}' here. .den find <word> lists what there is."));
             };
             let st = den::one_piece(obj);
-            let ch = shared.den.lock().unwrap().stamp(&st, p.x, p.y, p.z, p.o);
+            let ch = shared.den.lk().stamp(&st, p.x, p.y, p.z, p.o);
             apply(c, shared, &ch)?;
             if ch.created.is_empty() { Ok(()) } else { cheer(c, shared, sess, "first-piece") }
         }
         (".build", "undo") => {
-            let ch = shared.den.lock().unwrap().undo();
+            let ch = shared.den.lk().undo();
             apply(c, shared, &ch)
         }
         (".den", "save") => {
-            let r = shared.den.lock().unwrap().save(&shared.cfg.den_dir, w(2), now());
+            let r = shared.den.lk().save(&shared.cfg.den_dir, w(2), now());
             match r {
                 Ok((path, n)) => {
                     shared.event("den_save", "", w(2));
@@ -1681,7 +1681,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                 Ok(d) => d,
                 Err(e) => return say(c, &e),
             };
-            let mut d = shared.den.lock().unwrap();
+            let mut d = shared.den.lk();
             let replace = match w(3) {
                 "replace" => true,
                 "add" => false,
@@ -1703,7 +1703,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
         (".den", "room") => match den::look(w(2)) {
             None => say(c, "Looks: white, stone, wood."),
             Some(l) => {
-                let mut d = shared.den.lock().unwrap();
+                let mut d = shared.den.lk();
                 d.look = l;
                 let destroyed = d.build_room();
                 let open = if d.ring() >= den::ROOM_RINGS && l.name != "white" { " (a city-size Den is open ground: .den size 4 or smaller for its floor and walls)" } else { "" };
@@ -1758,7 +1758,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             Ok(())
         }
         (".den", "grow") | (".den", "size") => {
-            let mut d = shared.den.lock().unwrap();
+            let mut d = shared.den.lk();
             let want = if w(1) == "grow" {
                 Some(d.ring() + 1)
             } else if w(2).is_empty() {
@@ -1817,7 +1817,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                 None => say(c, "Build what? .den jaina build garden (.den stamps lists them; dojo is the training ring)."),
             },
             "away" | "dismiss" | "bye" | "go" => {
-                if !shared.companion.lock().unwrap().out {
+                if !shared.companion.lk().out {
                     return say(c, "Your companion isn't here.");
                 }
                 order(c, shared, p, companion::Cmd::Away)
@@ -1827,10 +1827,10 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             "come" => order(c, shared, p, companion::Cmd::Come),
             "tips" | "tip" | "help" => order(c, shared, p, companion::Cmd::Help),
             _ => {
-                if !shared.den.lock().unwrap().inside(p.x, p.y, p.z) {
+                if !shared.den.lk().inside(p.x, p.y, p.z) {
                     return say(c, "Your companion stays in your Den: come back inside first.");
                 }
-                let mut comp = shared.companion.lock().unwrap();
+                let mut comp = shared.companion.lk();
                 let was = comp.out;
                 let at = comp.come(p, now_ms());
                 drop(comp);
@@ -1881,7 +1881,7 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                 if let Some(cmd) = companion::command(&words) {
                     return order(c, shared, p, cmd);
                 }
-                let comp = shared.companion.lock().unwrap();
+                let comp = shared.companion.lk();
                 let near = comp.out && {
                     let at = comp.pos(now_ms());
                     ((at.x - p.x).powi(2) + (at.y - p.y).powi(2)).sqrt() <= companion::HEAR
@@ -1919,12 +1919,12 @@ fn friends(c: &Writer, shared: &Shared, a: &str, b: &str) -> io::Result<()> {
     if a == "build" && (b == "on" || b == "off") {
         shared.guests_build.store(b == "on", Ordering::Relaxed);
         let line = if b == "on" { "Your friends can build in your Den now." } else { "Only you build in your Den now." };
-        for p in shared.players.lock().unwrap().clone() {
+        for p in shared.players.lk().clone() {
             let _ = say(&p.w, line);
         }
         return Ok(());
     }
-    let here: Vec<String> = shared.players.lock().unwrap().iter().filter(|p| !p.me.host).map(|p| p.me.name.clone()).collect();
+    let here: Vec<String> = shared.players.lk().iter().filter(|p| !p.me.host).map(|p| p.me.name.clone()).collect();
     let live = crate::guests::list(&shared.cfg.den_dir).into_iter().filter(|g| g.live(now())).count();
     say(c, &format!(
         "Friends here: {}. Invites that still work: {live}. They {} build (.den friends build on|off). Invite friends from the launcher's Your Den page.",
@@ -1959,11 +1959,11 @@ fn guest_chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> i
 /// An ask for the player's assistant: written down (companion-in.json `asks`), and she answers.
 fn ask(c: &Writer, shared: &Shared, p: Pos, text: &str) -> io::Result<()> {
     let (spot, inside) = {
-        let d = shared.den.lock().unwrap();
+        let d = shared.den.lk();
         (d.spot, d.inside(p.x, p.y, p.z))
     };
     let rel = inside.then_some(At { x: p.x - spot.x, y: p.y - spot.y, z: p.z - spot.z, o: p.o });
-    let r = shared.companion.lock().unwrap().ask(&shared.cfg.den_dir, text, rel, now());
+    let r = shared.companion.lk().ask(&shared.cfg.den_dir, text, rel, now());
     match r {
         Err(e) => say(c, &e),
         Ok(Asked::Busy(line)) => monster_say(c, line),
@@ -2120,8 +2120,8 @@ fn walk(c: &Writer, from: At, to: At, ms: u32, id: u32, via: &[At]) -> io::Resul
 /// The heartbeat's `owner` and `room` (companion-in.json, as ov_den_companion.lua writes them).
 fn beat_parts(shared: &Shared) -> (serde_json::Value, serde_json::Value) {
     use serde_json::json;
-    let live = shared.live.lock().unwrap().as_ref().map(|l| l.2);
-    let d = shared.den.lock().unwrap();
+    let live = shared.live.lk().as_ref().map(|l| l.2);
+    let d = shared.den.lk();
     let r1 = |v: f32| (v as f64 * 10.0).round() / 10.0;
     let owner = match live {
         Some(p) => json!({"online": true, "inside": d.inside(p.x, p.y, p.z), "x": r1(p.x - d.spot.x), "y": r1(p.y - d.spot.y),
@@ -2135,7 +2135,7 @@ fn beat_parts(shared: &Shared) -> (serde_json::Value, serde_json::Value) {
 
 fn beat_now(shared: &Shared) {
     let (owner, room) = beat_parts(shared);
-    shared.companion.lock().unwrap().beat(&shared.cfg.den_dir, now(), true, owner, room);
+    shared.companion.lk().beat(&shared.cfg.den_dir, now(), true, owner, room);
 }
 
 /// Twice a second, for as long as Den Lite runs: the companion follows the player in the world and says the lines
@@ -2219,9 +2219,9 @@ fn flight_tick(shared: &Shared) -> io::Result<()> {
 
 fn companion_tick(shared: &Shared, read: bool) -> io::Result<()> {
     let (now, ms) = (now(), now_ms());
-    let live = shared.live.lock().unwrap().clone();
+    let live = shared.live.lk().clone();
     if read {
-        shared.companion.lock().unwrap().read_lines(&shared.cfg.den_dir, now);
+        shared.companion.lk().read_lines(&shared.cfg.den_dir, now);
     }
     if let Some((_, w, p)) = live {
         // she keeps up anywhere near the Den (flight.rs AREA: past the Den's own circle she used to go, "fading
@@ -2229,12 +2229,12 @@ fn companion_tick(shared: &Shared, read: bool) -> io::Result<()> {
         // only on the Den's map (`.den go` elsewhere: she waits in the Den)
         let on_map = map_of(shared, &w).map_or(true, |m| m == den_map(shared));
         let (inside, near, blocks) = {
-            let d = shared.den.lock().unwrap();
+            let d = shared.den.lk();
             (on_map && d.inside(p.x, p.y, p.z), on_map && crate::flight::near_den(d.spot.x, d.spot.y, p), companion_blocks(&d))
         };
-        let (out, wanted) = { let c = shared.companion.lock().unwrap(); (c.out, c.wanted) };
+        let (out, wanted) = { let c = shared.companion.lk(); (c.out, c.wanted) };
         if out {
-            let mut comp = shared.companion.lock().unwrap();
+            let mut comp = shared.companion.lk();
             comp.blocks = blocks;
             if !inside && !near {
                 comp.away();
@@ -2262,13 +2262,13 @@ fn companion_tick(shared: &Shared, read: bool) -> io::Result<()> {
             }
         } else if wanted && inside {
             // back in the Den: she joins you again by herself, quietly
-            let at = shared.companion.lock().unwrap().come(p, ms);
+            let at = shared.companion.lk().come(p, ms);
             w.send(&companion_create(at))?;
             beat_now(shared);
         }
     }
     let (owner, room) = beat_parts(shared);
-    shared.companion.lock().unwrap().beat(&shared.cfg.den_dir, now, false, owner, room);
+    shared.companion.lk().beat(&shared.cfg.den_dir, now, false, owner, room);
     Ok(())
 }
 
@@ -2291,7 +2291,7 @@ fn watch_open(shared: &Arc<Shared>, w: Writer) -> StopOnDrop {
             }
             // the launcher's ground file (after Forge closes): props and stamps stand on the new ground at once;
             // the game itself shows it after a restart (its map files load at start)
-            let changed = shared.den.lock().unwrap().reload_ground(&dir);
+            let changed = shared.den.lk().reload_ground(&dir);
             let line = match changed {
                 Some(Ok(true)) => Some(Item::line("ok", "Your Den's ground changed: new props stand on it now. Restart your game to see it.")),
                 Some(Err(_)) => Some(Item::line("warn", "Your Den's ground file couldn't be read: props stand on the flat floor.")),
@@ -2378,7 +2378,7 @@ fn check_open(shared: &Shared, w: &Writer, file: &str) -> io::Result<()> {
         Err(e) => return say(w, &format!("The launcher asked to open '{file}': {e}")),
     };
     say(w, &format!("Opening '{file}' from the launcher."))?;
-    let mut d = shared.den.lock().unwrap();
+    let mut d = shared.den.lk();
     if !d.props.is_empty() {
         let _ = d.save(&shared.cfg.den_dir, "backup", now());
     }

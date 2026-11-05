@@ -82,9 +82,8 @@ if PM is None:
     print(f"\n{passed}/{passed + failed} passed"); sys.exit(1)
 check("the catalog passes its check", PM.ERRORS == [] and PM.CATALOG is not None, PM.ERRORS)
 ids = [m["id"] for m in PM.entries()]
-check("the seed modes", ids == ["minigolf", "bumper-balls", "coin-dash", "community", "frozen-throne", "arena-queue", "brawl",
-                               "azeroth-survivors", "hordes-of-azeroth",
-                               "arena-1v1", "keystones", "transmog", "hardcore"], ids)
+check("the seed modes", ids == ["minigolf", "bumper-balls", "coin-dash", "community", "brawl", "azeroth-survivors", "hordes-of-azeroth",
+                               "arena-1v1", "keystones", "transmog", "hardcore", "frozen-throne", "arena-queue"], ids)
 INGAME = {"arena-1v1": ".hub arena", "keystones": ".hub keys", "transmog": ".hub transmog", "hardcore": ".hub hardcore"}
 check("the in-game modes: live, found with .hub", all(PM.by_id(k)["kind"] == "in-game" and PM.by_id(k)["status"] == "live"
       and PM.by_id(k)["start"] == {"cmd": v} for k, v in INGAME.items()))

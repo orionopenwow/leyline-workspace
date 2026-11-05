@@ -72,7 +72,7 @@ test('Modes page: its menu item under Realms, Realms › MODES opens it, cards, 
   assert.ok(await page.isVisible('#page-modes'));
   const names = await page.$$eval('#md-list .md-card .name', (n) => n.map((x) => x.textContent));
   assert.deepEqual(names, CATALOG.modes.map((m) => m.title));
-  assert.equal(await page.textContent('#md-net'), '9 to play · 2 coming soon');
+  assert.equal(await page.textContent('#md-net'), '11 to play · 2 coming soon');
   const golf = await card(page, 'minigolf').textContent();
   assert.match(golf, /1-8 players/); assert.match(golf, /On our realm/); assert.match(golf, /Play/);
   assert.doesNotMatch(golf, /Coming soon/);

@@ -20,10 +20,13 @@ function serve() {
   const srv = http.createServer((req, res) => {
     const u = new URL(req.url, 'http://x');
     if (u.pathname === '/page.html') {
+      // ?go=<kind:id>: the session's go link, as wrath-page.js leaves it on window.wuGo (set after this module runs)
+      const go = u.searchParams.get('go');
+      const set = go ? `setTimeout(() => { window.wuGo = { kind: ${JSON.stringify(go.split(':')[0])}, id: ${JSON.stringify(go.slice(go.indexOf(':') + 1))} }; }, 0);` : '';
       res.writeHead(200, { 'content-type': 'text/html' });
       return res.end('<!doctype html><html><head><meta charset="utf-8"><title>t</title>'
         + '<link rel="stylesheet" href="./wu-loading.css"></head><body style="margin:0;background:#000">'
-        + '<script type="module">import { installLoading } from "./wu-loading.js"; window.st = installLoading();</script>'
+        + `<script type="module">import { installLoading } from "./wu-loading.js"; window.st = installLoading(); ${set}</script>`
         + '</body></html>');
     }
     const f = path.join(WWW, path.normalize(u.pathname).replace(/^([/\\])+/, ''));
@@ -127,6 +130,42 @@ test('"Slow loading?": after a while on the cover, the desktop app and Download 
     assert.equal(await page.evaluate(() => window.dlClicked), true, 'Download sections opens the page\'s panel');
     assert.equal(await page.locator('#wu-loading .ly-slow').count(), 1, 'one line only');
     assert.doesNotMatch(line, /World of Warcraft|Warcraft|WoW|Blizzard|Lich King|\d+\.\d+\.\d+/);
+  } finally {
+    await browser.close();
+    srv.close();
+  }
+});
+
+test('a boss fight session: the cover says what it gets ready, no numbers; other sessions say nothing', async () => {
+  const srv = await serve();
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 760 } });
+    const note = () => page.evaluate(() => { const n = document.querySelector('#wu-loading .ly-go'); return n ? n.textContent : null; });
+    const base = `http://127.0.0.1:${srv.address().port}/page.html`;
+    await page.goto(base + '?go=bf:frozen-throne:normal:bots');
+    await page.waitForFunction(() => window.st && window.wuGo);
+    await page.evaluate(() => dispatchEvent(new CustomEvent('ow:progress', { detail: 'enter' })));
+    assert.equal(await note(), 'Boss fight: The Frozen Throne \u2014 getting your raid ready');
+    const order = await page.evaluate(() => [...document.querySelector('#wu-loading .box').children].map((c) => c.className));
+    assert.ok(order.indexOf('ly-go') < order.indexOf('ly-tip'), 'the note sits above the tips: ' + order);
+    assert.doesNotMatch(await note(), /\d/, 'no seat counts or places in line');
+    if (process.env.SHOTS) await page.screenshot({ path: path.join(process.env.SHOTS, 'loading-bossfight-phone.png') });
+
+    await page.goto(base + '?go=bf:frozen-throne:heroic:group');
+    await page.waitForFunction(() => window.st && window.wuGo);
+    await page.evaluate(() => dispatchEvent(new CustomEvent('ow:progress', { detail: 'enter' })));
+    assert.equal(await note(), 'Boss fight: The Frozen Throne (heroic) \u2014 getting your raid ready');
+
+    for (const go of ['h:dalaran', 'bf:somewhere:normal:bots', 'bf:frozen-throne:mythic:bots', '']) {
+      await page.goto(base + (go ? '?go=' + go : ''));
+      await page.waitForFunction(() => window.st);
+      await page.evaluate(() => new Promise((ok) => setTimeout(ok, 20)));
+      await page.evaluate(() => dispatchEvent(new CustomEvent('ow:progress', { detail: 'enter' })));
+      assert.equal(await note(), null, 'no note for ' + (go || 'no go'));
+    }
+    const { goNote } = await page.evaluate(async () => ({ goNote: (await import('./wu-loading.js')).goNote('arena:1v1') }));
+    assert.equal(goNote, '1v1 arena \u2014 getting you into the queue');
   } finally {
     await browser.close();
     srv.close();

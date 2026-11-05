@@ -558,7 +558,7 @@ def boss_page(query: dict, signed_in: bool, d: dict | None = None) -> tuple[str,
     how = ('<ul class="bf-how" aria-label="How it works">'
            f'<li><b>{b["size"]} players</b>A raid of {b["size"]} at level {b["level"]}. New characters can boost to 80 first.</li>'
            '<li><b>Go now or queue</b>Fight now and companions fill the raid around you. Queue with players and the raid '
-           'forms from the line; companions fill any seats left.</li>'
+           'forms from the line; companions fill the gaps.</li>'
            '<li><b>Normal or heroic</b>Heroic is harder and has its own board. Pick it above before you go.</li>'
            '<li><b>The clock</b>Time starts on the pull and stops when the fight is won. A wipe sends the raid back to '
            'the start of the platform to try again.</li></ul>')

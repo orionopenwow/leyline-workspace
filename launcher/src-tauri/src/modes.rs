@@ -345,7 +345,7 @@ mod tests {
     #[test]
     fn builtin_catalog_parses_whole() {
         let ids: Vec<String> = builtin().into_iter().map(|x| x.id).collect();
-        assert_eq!(ids, ["minigolf", "bumper-balls", "coin-dash", "community", "frozen-throne", "arena-queue", "brawl", "azeroth-survivors", "hordes-of-azeroth", "arena-1v1", "keystones", "transmog", "hardcore"]);
+        assert_eq!(ids, ["minigolf", "bumper-balls", "coin-dash", "community", "brawl", "azeroth-survivors", "hordes-of-azeroth", "arena-1v1", "keystones", "transmog", "hardcore", "frozen-throne", "arena-queue"]);
         let t = all_in_game();
         assert_eq!(t.iter().map(|x| x.start.cmd.as_deref().unwrap()).collect::<Vec<_>>(), [".hub arena", ".hub keys", ".hub transmog", ".hub hardcore"]);
         assert!(t.iter().all(|x| x.live() && !x.realm_live()));

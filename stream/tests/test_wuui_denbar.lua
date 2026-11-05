@@ -434,5 +434,15 @@ do
     check("showcase: a bad line does nothing", not f:IsShown())
 end
 
+-- 5 Nov den-move on the owner's PC: a pick before the gallery's cards came did nothing ("in hand off"); Den Lite
+-- knows the prop by its number, so the card is picked by it
+do
+    local keep = B.catalog
+    B.catalog = {}
+    local ok = D.active and D.TestAction("pick 2413")
+    check("a test pick before the gallery's cards came: picked by its number", (not D.active) or (ok and B.pick and B.pick.id == 2413))
+    B.catalog = keep
+end
+
 print(string.format("\n%d/%d passed", pass, pass + fail))
 if fail > 0 then os.exit(1) end

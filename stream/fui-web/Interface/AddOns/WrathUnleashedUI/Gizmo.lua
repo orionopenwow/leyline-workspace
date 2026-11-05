@@ -1009,6 +1009,11 @@ function G.TestAction(w)
     local a = w[2] or ""
     if a == "build" then
         local on = w[3] ~= "off"
+        -- the Den bar's own Play / Build (F7) first: this file follows it every half second (G.Wanted), so a build
+        -- mode turned off here alone came back half a second later (5 Nov den-move on the owner's PC: "play mode:
+        -- props usable again" read flags 16). The test turns it as the owner does.
+        local D = W.DenBar
+        if D and D.active and D.SetPlay and (D.play and true or false) == on then D.SetPlay(not on) end
         if on and not stateKnown() then G.AskState() end
         -- already so: say the mode again (Den Lite answers the look each time; the den-test reads that)
         if on == G.build then send(on and "mode build" or "mode play") else G.SetBuild(on) end

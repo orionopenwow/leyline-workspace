@@ -1172,9 +1172,17 @@ function D.TestAction(text)
     end
     if a == "page" then return b.Page(tonumber(w[2]) or 1) end
     if a == "pick" or a == "place" then
-        local c = find(w[2])
-        if not c then report("missing " .. tostring(w[2])); return false end
+        -- the gallery first (it asks Den Lite for its cards the first time it opens), then the card
         if not (b.Window() and b.Window():IsShown()) then bar.build:Click() end
+        local c = find(w[2])
+        -- 5 Nov den-move on the owner's PC: the gallery had never been opened in that run, its cards hadn't come
+        -- yet, and the pick did nothing ("in hand off"). Den Lite knows the prop by its number: the card is picked by
+        -- it, and the report says the gallery wasn't filled yet.
+        if not c and tonumber(w[2]) then
+            report("pick " .. w[2] .. " before the gallery's cards came")
+            c = { id = tonumber(w[2]), name = "Prop " .. w[2] }
+        end
+        if not c then report("missing " .. tostring(w[2])); return false end
         b.ShowTab("all")
         b.Choose(c)
         if a == "place" then b.Window().spawn:Click() end

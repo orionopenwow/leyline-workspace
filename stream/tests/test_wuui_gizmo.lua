@@ -802,6 +802,18 @@ G.PanKey("Q", false)
 IsAltKeyDown = nil
 G.far = nil
 
+-- the test's `gizmo build off` is the Den bar's own Play (this file follows it every half second): 5 Nov den-move,
+-- a build mode turned off alone came back half a second later (props not usable in play mode)
+local plays = {}
+W.DenBar.SetPlay = function(on) plays[#plays + 1] = on; W.DenBar.play = on; return on end
+G.TestAction({ "gizmo", "build", "off" })
+tick(0.6)
+check("test build off: the Den bar's Play, and build mode stays off", plays[1] == true and not G.build)
+G.TestAction({ "gizmo", "build", "on" })
+tick(0.6)
+check("test build on: the Den bar back to building, and build mode stays on", plays[2] == false and G.build)
+W.DenBar.SetPlay = nil
+
 -- leaving build mode: the view back, the frame and every binding gone
 W.DenBar.play = true
 n = #sent

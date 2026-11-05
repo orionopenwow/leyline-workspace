@@ -1654,7 +1654,12 @@ def owner_flow_steps(rep, ui, aids, size, shot, with_pic, den_dir, wait):
     ui("gizmo cancel")
     p0 = int(first.get("props") or 0)
     before = aids()
+    t = now_ms()
     ui("pick 2413")
+    if not str(aids().get("armed", "")).startswith("place,2413"):
+        # what the UI said (5 Nov: the gallery's cards hadn't come, the pick did nothing)
+        said = [x for x in ui_lines(den_dir, t) if "pick" in x or "missing" in x]
+        rep.add("INFO", "card: the pick", "; ".join(said) or "the UI said nothing about the pick")
     spots = []
     for u, v in ((0.25, -0.35), (0.05, -0.3), (-0.15, -0.4)):
         ui("gizmo glide %.2f %.2f" % (u, v))
@@ -1677,6 +1682,9 @@ def owner_flow_steps(rep, ui, aids, size, shot, with_pic, den_dir, wait):
            with_pic("prop %s, glowing %s" % (a.get("sel"), a.get("glow")), pic),
            "Placed %s, in hand %s, selected %s, glow %s: send logs\\den-move-latest.txt and the picture." % (placed, a.get("armed"), a.get("sel"), a.get("glow")))
     # 2. nothing in hand (the Select tool): a click on the placed prop picks it up, it glides, the next click puts it down
+    # (5 Nov: when step 1 left something in hand, this click put it down instead: each step starts empty-handed)
+    if aids().get("armed") not in (None, "off"):
+        ui("gizmo cancel")
     a = aids()
     sel, uv, at0 = a.get("sel"), a.get("sel_uv"), a.get("sel_at")
     if sel is None or not uv or not at0 or not all(-0.95 < c < 0.95 for c in uv):
@@ -1832,8 +1840,12 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0, only_mo
         ui("gizmo arm 2413")
         a = aids()
         pic = shot("pick")
-        rep.ok(str(a.get("armed", "")).startswith("place,2413") and (not newer or not a.get("ghost")), "pick: the card in hand",
-               with_pic("armed %s, nothing shown until the cursor is on the ground" % a.get("armed"), pic),
+        # since 5 Nov (owner: "it does not appear on mouse") the copy shows at once when the cursor is over the world
+        # (or 5 yd in front of the view); with the cursor off the world nothing shows yet. Either is right: the pick
+        # is what this checks (the first den-move of 5 Nov failed it for showing the copy at once)
+        rep.ok(str(a.get("armed", "")).startswith("place,2413"), "pick: the card in hand",
+               with_pic("armed %s, %s" % (a.get("armed"), "its copy shown at once at %s" % ([round(c, 1) for c in a["ghost"][:3]],)
+                        if a.get("ghost") else "nothing shown until the cursor is over the world"), pic),
                "Den Lite didn't take the pick: send logs\\den-features-latest.txt.")
         # 2. the real prop follows the cursor on the ground
         ui("gizmo hover 0.25 -0.35")

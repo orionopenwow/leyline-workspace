@@ -1077,11 +1077,14 @@ class FakeAids:
         if act == "build":
             self.aids["mode"] = "play" if a[2:] == ["off"] else "build"
             self.ev("build_mode", self.aids["mode"])
+            if "sticky" in self.broken:
+                # 5 Nov: the UI's half-second check turned build mode on again after the test's "build off"
+                self.aids["mode"] = "build"
             if self.aids["mode"] == "build":
                 self.twins = getattr(self, "twins", 0) + 3
         elif act == "arm":
-            # in hand: nothing shown until the cursor is on the ground
-            self.aids.update(armed="place,%s,1543" % a[2], ghost=None)
+            # in hand: nothing shown until the cursor is on the ground (since 5 Nov: shown at once, `shows_at_once`)
+            self.aids.update(armed="place,%s,1543" % a[2], ghost=[16229.0, 16257.0, 13.2, 0.0] if "shows_at_once" in self.broken else None)
         elif act == "hover":
             self.hover(float(a[2]), float(a[3]))
         elif act == "commit":
@@ -1383,6 +1386,17 @@ class PlacementAids(unittest.TestCase):
             den_check.aids_features(rep, old, dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
         self.assertTrue(any(r[0] == "INFO" and r[1] == "5 Nov: the editor's click fixes" for r in rep.rows))
         self.assertEqual([r for r in rep.rows if r[0] == "FAIL"], [])
+
+    def test_a_copy_shown_at_once_passes_and_build_mode_coming_back_fails_play_mode(self):
+        # the owner's PC 5 Nov: "pick" failed for showing the copy at once (the right thing since that morning), and
+        # "play mode: props usable again" read flags 16 (build mode came back half a second after the test's "build off")
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, FakeAids(self.dens, broken={"shows_at_once", "sticky"}), self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3)
+        rows = {r[1]: r for r in rep.rows}
+        self.assertEqual(rows["pick: the card in hand"][0], "PASS")
+        self.assertIn("its copy shown at once", rows["pick: the card in hand"][2])
+        self.assertEqual(rows["play mode: props usable again (a chair is sat on)"][0], "FAIL")
 
     def test_the_carried_copy_must_glide_not_flicker(self):
         # owner 5 Nov: "dynamically move instead of disappearing, reappearing": a copy made anew at each spot fails

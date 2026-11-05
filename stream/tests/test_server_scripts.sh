@@ -122,7 +122,7 @@ check "portal.env WU_STREAM=1" "grep -qx WU_STREAM=1 $WU/portal.env && grep -qx 
 check "portal.env WU_OWNFILES=1" "grep -qx WU_OWNFILES=1 $WU/portal.env"
 check "wu-portal recreated like deploy.sh" "grep -q 'run -d --name wu-portal .*--network wenilla-realm_default --network-alias mangosd' $WU/docker.log && grep -q 'network connect ov-wotlk_edge wu-portal' $WU/docker.log"
 run=$(grep 'run -d --name wu-play' "$WU/docker.log")
-check "wu-play: bookworm-slim, 256m, read-only, only-listed" "[[ '$run' == *'--memory 256m'* && '$run' == *'--read-only'* && '$run' == *'debian:bookworm-slim'* && '$run' == *'--only-listed'* && '$run' == *'--upstream play.openvanilla.app'* ]]"
+check "wu-play: bookworm-slim, 512m (raised from 256m: 8bd4f37), read-only, only-listed" "[[ '$run' == *'--memory 512m'* && '$run' == *'--read-only'* && '$run' == *'debian:bookworm-slim'* && '$run' == *'--only-listed'* && '$run' == *'--upstream play.openvanilla.app'* ]]"
 check "wu-play: slice and www mounted read-only" "[[ '$run' == *'/slices/mini:/slice:ro'* && '$run' == *'/www:/www:ro'* ]]"
 check "Caddy block added once" "[ \$(grep -c '^wrath.openvanilla.app, play.leylinelauncher.com {' $WU_CADDYFILE) = 1 ]"
 check "Caddy: forward_auth /__auth, gate to wu-portal, rest to wu-play" "grep -q 'uri /__auth' $WU_CADDYFILE && grep -q '@gate path /__gate /__env.js' $WU_CADDYFILE && grep -q 'reverse_proxy wu-play:8090' $WU_CADDYFILE"

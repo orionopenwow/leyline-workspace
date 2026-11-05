@@ -1058,6 +1058,13 @@ fn set_at(d: &Den, sel: &Sel, a: &mut Aids, x: f32, y: f32) {
 /// inside (it is drawn only inside), so the click puts it down where it is seen rather than failing with "outside
 /// your Den" (review 4 Nov). The first spot of a placing is kept even outside: the click then says why.
 fn hover_at(d: &Den, sel: &Sel, a: &mut Aids, x: f32, y: f32) {
+    // past the edge: the spot on the edge toward the cursor (4 Nov den-move: the build view panned off the Den, the
+    // ray landed outside and no copy was drawn at all), a grid step inside so the snap keeps it in
+    let (cx, cy) = (d.spot.x, d.spot.y);
+    let r = (d.spot.reach() - (sel.grid as f32).max(0.5)).max(1.0);
+    let (dx, dy) = (x - cx, y - cy);
+    let n = (dx * dx + dy * dy).sqrt();
+    let (x, y) = if n > r { (cx + dx * r / n, cy + dy * r / n) } else { (x, y) };
     let (sx, sy) = (snap(sel.grid, x, d.spot.x), snap(sel.grid, y, d.spot.y));
     let z = d.floor_at(sx, sy) + a.lift;
     if a.at.is_none() || d.inside(sx, sy, z) {
@@ -1340,9 +1347,14 @@ fn cam(d: &Den, sel: &Sel, a: &mut Aids, here: Here, w: &[&str], now: u64) -> Ai
             let Some((dx, dy, _)) = crate::ovmod::step_offset(&w.get(2).map(|s| s.to_ascii_lowercase()).unwrap_or_default(), f.focus.o, v as f64) else {
                 return AidOut::default().said("Usage: cam pan fwd|back|left|right <yards>");
             };
-            let (x, y) = (f.focus.x + dx as f32, f.focus.y + dy as f32);
-            if ((x - d.spot.x).powi(2) + (y - d.spot.y).powi(2)).sqrt() > FAR_MAX {
-                return AidOut::default();
+            let (mut x, mut y) = (f.focus.x + dx as f32, f.focus.y + dy as f32);
+            // the view stays over your Den: at its edge the pan slides along it (4 Nov den-move: W in the build view
+            // pans, and the test's three steps forward took the view 48 yards off the Den)
+            let (ox, oy) = (x - d.spot.x, y - d.spot.y);
+            let (n, r) = ((ox * ox + oy * oy).sqrt(), d.spot.reach());
+            if n > r {
+                x = d.spot.x + ox * r / n;
+                y = d.spot.y + oy * r / n;
             }
             f.focus = Here { x, y, z: d.floor_at(x, y), ..f.focus };
             a.far = Some(f);
@@ -2141,6 +2153,28 @@ mod tests {
         assert!(out.say.iter().all(|s| !s.contains("outside")), "{:?}", out.say);
         let p = d.placed(chair.guid).unwrap().obj.clone();
         assert!((p.x - at[0]).abs() < 0.05 && (p.y - at[1]).abs() < 0.05 && a.armed.is_none());
+    }
+
+    #[test]
+    fn the_build_views_pan_stays_over_the_den_and_a_card_aimed_past_the_edge_is_drawn_on_it() {
+        // 4 Nov den-move: twelve W presses panned the build view 48 yards north, off the Den; the cursor's ray then
+        // landed outside, and the card in hand showed nothing ("at None, then None")
+        let (mut d, here) = den();
+        let (mut sel, mut a) = (Sel::default(), Aids::default());
+        cmd(&mut d, &mut sel, &mut a, here, "mode build", true, 0);
+        cmd(&mut d, &mut sel, &mut a, here, "cam build", true, 0);
+        for i in 0..30 {
+            cmd(&mut d, &mut sel, &mut a, here, "cam pan fwd 4", true, i);
+        }
+        let f = a.far.unwrap().focus;
+        let n = ((f.x - d.spot.x).powi(2) + (f.y - d.spot.y).powi(2)).sqrt();
+        assert!(n <= d.spot.reach() + 0.01, "the view's focus stays over the Den: {n}");
+        cmd(&mut d, &mut sel, &mut a, here, "preview 2413", true, 200);
+        for (i, (u, v)) in [(0.25, -0.35), (0.1, -0.3), (0.0, 0.2)].iter().enumerate() {
+            cmd(&mut d, &mut sel, &mut a, here, &format!("hover {}", line(*u, *v)), true, 300 + 100 * i as u64);
+            let g = a.ghost.clone().unwrap_or_else(|| panic!("a copy for ({u}, {v}): {:?}", a.at));
+            assert!(d.inside(g.x, g.y, g.z), "drawn inside: {g:?}");
+        }
     }
 
     #[test]

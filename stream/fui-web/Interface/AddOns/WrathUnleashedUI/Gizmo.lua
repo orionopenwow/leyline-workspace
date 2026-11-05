@@ -295,7 +295,7 @@ function G.Hint()
     local D = W.DenBar
     local key = (D and D.keys and D.keys.build) or "F7"
     if not G.Picks() then return "Right-click a prop to select it  ·  " .. key .. " to play" end
-    return "Click a prop to select  ·  drag to move  ·  Shift adds  ·  Q E turn  ·  Del deletes  ·  " .. key .. " leaves Build"
+    return "Click a prop to pick it up, click again to put it down  ·  Shift adds  ·  Q E turn  ·  Del deletes  ·  " .. key .. " leaves Build"
 end
 
 local function showTag()
@@ -767,6 +767,8 @@ function G.TestAction(w)
         if on and not stateKnown() then G.AskState() end
         -- already so: say the mode again (Den Lite answers the look each time; the den-test reads that)
         if on == G.build then send(on and "mode build" or "mode play") else G.SetBuild(on) end
+        -- the build view back over you (4 Nov den-move: the launcher's W steps had panned it off the Den)
+        if on then send("cam build") end
         return true
     end
     if a == "arm" then return G.Arm(w[3]) end

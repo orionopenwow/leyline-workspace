@@ -541,8 +541,16 @@ def walk_lines(rep, evs, where=None):
         why = "The game moves its character but the step forward didn't walk it: see the keys line (the game says) below, then send logs\\den-test-latest.txt."
     else:
         why = "The game sent no movement at all: it isn't moving its character. Send logs\\den-test-latest.txt and the screenshot."
-    rep.ok(walked is not None, "walking: the step forward walked the character",
-           str(walked.get("detail", "")) if walked else "it never got a yard from where it came in", why)
+    # 4 Nov den-move: Your Den now opens in build mode (Den Lite's state is asked for at once), where W pans the build
+    # view (Gizmo.lua LeylineGizmoPanW), so the launcher's steps forward moved the view, not the character
+    pans = [e for e in evs if e.get("ev") == "addon" and str(e.get("detail", "")).startswith("wubuild aid cam pan")]
+    built = any(e.get("ev") == "build_mode" and e.get("detail") == "build" for e in evs)
+    if walked is None and built and pans and any("LeylineGizmoPan" in d for d in diag):
+        rep.add("INFO", "walking: not checked", "the Den opened in build mode, where W moves the build view: the steps "
+                "forward panned it %d times (play mode walks; den-test checks walking)" % len(pans))
+    else:
+        rep.ok(walked is not None, "walking: the step forward walked the character",
+               str(walked.get("detail", "")) if walked else "it never got a yard from where it came in", why)
     if isinstance(where, dict) and isinstance(where.get("pos"), list) and len(where["pos"]) == 3 and where.get("ground") is not None:
         z, g = float(where["pos"][2]), float(where["ground"])
         ok = abs(z - g) <= ON_GROUND
@@ -2525,9 +2533,100 @@ def _quiet_add(r):
     return add
 
 
+# ------------------------------------------------------------------------------------------------ the manual pass
+# Owner 4 Nov: "give me the test to run as a bat i can do manually in den mode". Your Den is started the way the My Den
+# button starts it (no test keys, the game stays open); then each check is shown here, you try it in the game and
+# answer. What Den Lite heard during each check goes in the log with your answer.
+MANUAL_STEPS = [
+    ("debug box", "Type /wudebug in the game's chat. A box opens at the top left: the editor's state and Den Lite's.",
+     "the box shows build=on (press Build on the Den bar if it says off)"),
+    ("hover glow", "Move the mouse over a prop (place one from the Builder first if your Den is empty), then off it.",
+     "the prop under the mouse glows; it stops glowing when the mouse leaves; only one glows at a time"),
+    ("click picks up", "Left-click a prop once and let go of the button. Move the mouse.",
+     "it comes up at once and its foot follows the mouse over the ground, no button held, no lag"),
+    ("over the ground", "While carrying, sweep the mouse over raised ground or a slope (Shape ground first if it is flat).",
+     "the prop rides the ground: never sunk into it, never floating"),
+    ("the edge", "While carrying, move the mouse past your Den's edge.",
+     "the prop stops at the edge and waits there; back inside it follows again"),
+    ("click puts down", "Left-click again.",
+     "it is put down where you saw it, stays selected (glow and halo) with three flags: red X, green Y, blue Z"),
+    ("the arrows", "Press and drag the red flag, then the green, then the blue. Let go each time.",
+     "red moves it along X only, green along Y only, blue up and down; it stays where you let go"),
+    ("turn", "With it selected (or carried), press Q and E.",
+     "it turns left and right"),
+    ("Esc", "Click it to pick it up again, move it, then press Esc.",
+     "it goes back where it was, nothing changed"),
+    ("a card", "Pick a prop in the Builder (the gallery), move the mouse over the ground, click.",
+     "the real model follows the mouse; one click places it and selects it"),
+    ("Shift adds", "Shift-click a second prop.",
+     "both are selected"),
+    ("the views", "Press the snap key (or the wheel past the game's own zoom), then back; with the build view on, W A S D.",
+     "the view goes up high and back to you; W A S D move the view and never leave your Den"),
+    ("play mode", "Press F7 (or Play on the Den bar). Walk with W.",
+     "props are plain again (no glow), you walk; F7 brings Build back"),
+    ("debug box off", "Type /wudebug again to hide the box.",
+     "the box goes; nothing else changed"),
+]
+
+
+def manual(args, rep):
+    app = Path(args.app_dir) if args.app_dir else app_dir()
+    root = app / "den-lite"
+    den_dir = root / "state" / "dens"
+    exe = launcher_exe()
+    if not rep.ok(exe is not None and exe.is_file(), "the launcher program", str(exe), "Run \"Open Leyline Launcher.bat\" once (it puts .launcher\\Leyline.exe in place)."):
+        return
+    c = den_game(settings(app))
+    if not rep.ok(c is not None, "game folder for Your Den", c.get("path") if c else "", "Add your 3.3.5a game folder in the launcher."):
+        return
+    if not args.no_update:
+        den_lite_update(rep, root)
+    start = now_ms()
+    subprocess.Popen([str(exe), "den-play", "--client", c["id"]], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    rep.add("INFO", "started", "%s den-play (the My Den button; the game stays open)" % exe.name)
+    print("Starting Your Den: the game signs in by itself. Wait until you stand in your Den...")
+    end = time.time() + args.timeout
+    inw = None
+    while time.time() < end and inw is None:
+        inw = event_after(den_dir, "in_world", start)
+        time.sleep(0.5)
+    if not rep.ok(inw is not None, "in your Den", str((inw or {}).get("detail", "")), "The game didn't get into your Den: run den-move and send its log."):
+        return
+    print()
+    print("In your Den. Each check: try it in the game, then answer here.")
+    print("  Enter = it works   n = it doesn't   s = skip   (after n you can type what you saw)")
+    for i, (name, do, want) in enumerate(MANUAL_STEPS, 1):
+        print()
+        print("%d/%d  %s" % (i, len(MANUAL_STEPS), name.upper()))
+        print("  Do:     " + do)
+        print("  Expect: " + want)
+        t = now_ms()
+        try:
+            ans = input("  Works? [Enter/n/s] ").strip().lower()
+        except EOFError:
+            ans = "s"
+        note = ""
+        if ans.startswith("n"):
+            try:
+                note = input("  What did you see? ").strip()
+            except EOFError:
+                note = ""
+        heard = [str(e.get("detail", "")) for e in events(den_dir, t) if e.get("ev") == "addon" and "wubuild" in str(e.get("detail", ""))]
+        said = [e.get("ev") + " " + str(e.get("detail", "")) for e in events(den_dir, t) if e.get("ev") in ("den_change", "build_mode", "error", "refused")]
+        heard_txt = "; ".join(heard[-12:] + said[-6:])[:600] or "nothing from the editor"
+        if ans.startswith("s"):
+            rep.add("SKIP", "manual: " + name, "skipped")
+        else:
+            rep.ok(not ans.startswith("n"), "manual: " + name, want if not ans.startswith("n") else (note or "it didn't"),
+                   "Den Lite heard: " + heard_txt)
+        rep.add("INFO", "manual: %s: Den Lite heard" % name, heard_txt)
+    print()
+    print("Done: you can close the game.")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("mode", choices=["check", "test", "features", "move"])
+    ap.add_argument("mode", choices=["check", "test", "features", "move", "manual"])
     ap.add_argument("--game")
     ap.add_argument("--app-dir")
     ap.add_argument("--no-login", action="store_true")
@@ -2541,6 +2640,17 @@ def main(argv=None):
     if a.features or a.move:
         a.mode = "test"
         a.timeout = max(a.timeout, 150)
+    if a.mode == "manual":
+        title = "DEN MANUAL PASS"
+        print("%s (%s)" % (title, time.strftime("%Y-%m-%d %H:%M")))
+        manual(a, rep)
+        code = rep.end(title)
+        logs = HERE / "logs"
+        logs.mkdir(exist_ok=True)
+        (logs / "den-manual-latest.txt").write_text("%s (%s)\n%s\n%s" % (title, time.strftime("%Y-%m-%d %H:%M"), rep.text(),
+                                                    "PASS" if code == 0 else "FAIL"), encoding="utf-8")
+        print("Saved %s" % (logs / "den-manual-latest.txt"))
+        return code
     title = "DEN CHECK" if a.mode == "check" else ("DEN MOVE TEST" if a.move else "DEN FEATURE TEST" if a.features else "DEN TEST")
     print("%s (%s)" % (title, time.strftime("%Y-%m-%d %H:%M")))
     (check if a.mode == "check" else test)(a, rep)

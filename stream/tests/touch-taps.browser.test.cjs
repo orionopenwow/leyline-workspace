@@ -115,3 +115,36 @@ test('a real mouse on a touch-screen PC still goes straight to the game', async 
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+// Menu > Boss fights (WrathUnleashedUI BossFights.lua): through the bridge its window opens by a Lua chunk; without
+// the bridge's Lua (the keys path) the slash command is typed. A big button like the sheet's others.
+test('Menu > Boss fights opens the boss fights window', async () => {
+  const { ctx, p, errors } = await open('inworld');
+  await p.evaluate(() => {
+    window.RAN = []; window.SAID = [];
+    const lua0 = window.wenilla.lua;
+    window.wenilla.lua = async (chunk, ms) => { RAN.push(chunk); return lua0(chunk, ms); };
+    window.wenilla.chat = (t) => SAID.push(t);
+    window.KEYS = [];
+    document.getElementById('benilla').addEventListener('keydown', (e) => KEYS.push(e.key));
+  });
+  const btn = p.locator('#ow-touch .sheet.menu .grid button', { hasText: 'Boss fights' });
+  assert.equal(await btn.count(), 1, 'one Boss fights button in the Menu sheet');
+  // the keys path (no bridge Lua): the slash command typed into the chat box (Enter, /bf, Enter)
+  await btn.evaluate((b) => b.click());
+  await p.waitForTimeout(300);
+  assert.equal((await p.evaluate(() => KEYS)).join(''), 'Enter/bfEnter', 'without the bridge: /bf typed');
+  // the bridge: the window by Lua, nothing typed
+  await p.evaluate(() => { RAN.length = 0; SAID.length = 0; window.wenilla.ready = true; });
+  await btn.evaluate((b) => b.click());
+  await p.waitForTimeout(100);
+  const ran = await p.evaluate(() => RAN);
+  assert.ok(ran.some((c) => /WrathUnleashedUI\.BossFights/.test(c) && /B\.Show\(true\)/.test(c)), 'its window opened through the bridge');
+  assert.deepEqual(await p.evaluate(() => SAID), [], 'nothing typed with the bridge');
+  // the sheet open: the button as big as the others (at least 44 px)
+  await p.evaluate(() => document.querySelector('#ow-touch .sheet.menu').classList.add('open'));
+  const box = await btn.boundingBox();
+  assert.ok(box && box.height >= 44 && box.width >= 44, `the button is 44 px or more (${box && box.height})`);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

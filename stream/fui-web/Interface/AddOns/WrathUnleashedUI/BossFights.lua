@@ -366,6 +366,8 @@ function BF.Tick()
         return
     end
     if not bar or not bar:IsShown() then return end
+    -- touch controls turned on or off while the bar is up: its size and place again
+    if math.abs(BF.ScaleFor(BF.CTRL, BAR_W) - (tonumber((bar:GetScale())) or 1)) > 0.01 then BF.PlaceBar() end
     bar.line:SetText(BF.BarText())
     -- the line runs up to Leave, or up to the clock while there is one
     if BF.timer then bar.clock:SetText(BF.Format(BF.Elapsed())); bar.line:SetWidth(BAR_W - 170)

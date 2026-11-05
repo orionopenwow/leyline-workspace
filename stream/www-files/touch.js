@@ -171,7 +171,8 @@ const ROLE_SAY = {
   spirit: 'Double-tap them to come back to life here',
 };
 
-// The Menu sheet: one big button per window. `cmd` = a binding fired through the bridge.
+// The Menu sheet: one big button per window. `cmd` = a binding fired through the bridge; `lua` = a chunk run
+// through the bridge (an addon's window), with `chat` (its slash command) when there is no bridge.
 const MENU = [
   { label: 'Character', cmd: 'TOGGLECHARACTER0', icon: 'Interface\\Icons\\INV_Chest_Chain_05' },
   { label: 'Spellbook', cmd: 'TOGGLESPELLBOOK', icon: 'Interface\\Icons\\INV_Misc_Book_09' },
@@ -183,6 +184,9 @@ const MENU = [
   { label: 'Achievements', cmd: 'TOGGLEACHIEVEMENT', icon: 'Interface\\Icons\\Achievement_Quests_Completed_08' },
   { label: 'Dungeon Finder', cmd: 'TOGGLELFGPARENT', icon: 'Interface\\Icons\\INV_Misc_GroupLooking' },
   { label: 'PvP', cmd: 'TOGGLECHARACTER4', icon: 'Interface\\Icons\\INV_BannerPVP_02' },
+  // Boss fights (WrathUnleashedUI BossFights.lua): its window, scaled there so every control is 44 px or more
+  { label: 'Boss fights', lua: 'local B = WrathUnleashedUI and WrathUnleashedUI.BossFights if B then B.Show(true) return "ok" end return "no"',
+    chat: '/bf', icon: 'Interface\\Icons\\Spell_Frost_ChainsOfIce' },
   { label: 'Game menu', cmd: 'TOGGLEGAMEMENU', icon: 'Interface\\Icons\\INV_Misc_QuestionMark' },
 ];
 
@@ -1042,7 +1046,7 @@ return table.concat(t, "\\n")`;
   }
   $$('.grid button').forEach((b) => b.addEventListener('click', () => {
     const m = MENU[+b.dataset.m];
-    if (m.cmd) wenilla.fire(m.cmd); else if (m.chat) wenilla.chat(m.chat);
+    if (m.lua && wenilla.live) lua(m.lua); else if (m.cmd) wenilla.fire(m.cmd); else if (m.chat) wenilla.chat(m.chat);
     if (m.cmd !== 'TOGGLEGAMEMENU') showCloser();
     openSheet(null);
   }));

@@ -129,3 +129,6 @@ desktop.ini
 /site-art/
 # the feedback step's copies (player text stays off GitHub)
 /tools/feedback/live/
+
+# Project Reforged patches downloaded for the Den only (tools/den-looks): never committed
+/looks/

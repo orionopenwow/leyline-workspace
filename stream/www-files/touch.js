@@ -70,7 +70,7 @@
 import { gamePointerEvent } from './input.js';
 import { makeDriver } from './touch-driver.js';
 
-export const TOUCH_BUILD = 'wrath 2026-11-03b (only scripted clicks reach the game; focus kept through a tap)';
+export const TOUCH_BUILD = 'wrath 2026-11-05a (full screen on lift; home screen button; viewport tag)';
 // the driver installTouch made (gameTicks below asks it for game updates)
 let DRIVER = null;
 
@@ -357,6 +357,9 @@ function style() {
     #ow-touch .fsgo { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
       background: rgba(5, 4, 10, .72); color: #f0d79a; font: 600 17px 'OW Cinzel', Georgia, serif; letter-spacing: .05em; pointer-events: auto; }
     #ow-touch .fsgo svg { width: 46px; height: 46px; }
+    #ow-touch .fsgo .inst, #ow-touch .rotate .inst { display: none; margin-top: 2px; padding: 8px 16px; border-radius: 18px; border: 1px solid #6b5a2e;
+      background: rgba(20,16,10,.7); color: #e8d9a8; font: 13px system-ui, sans-serif; }
+    #ow-touch.caninstall .fsgo .inst, #ow-touch.caninstall .rotate .inst { display: inline-block; }
     #ow-touch .fsgo .skip { margin-top: 2px; padding: 8px 14px; border: 0; background: none; color: #a99a78; font: 13px system-ui, sans-serif; text-decoration: underline; }
     @media (orientation: landscape) { #ow-touch.on.ingame.phone.canfs.wantfs:not(.pcmode) .fsgo { display: flex; } }
     #ow-touch:not(.inworld) .play, #ow-touch.loading .play { display: none; }
@@ -708,8 +711,8 @@ export function installTouch(bridge) {
     <div class="ctl rbtn kbd" aria-label="Keyboard">${ICON.keyboard}</div>
     <input class="ghost" autocomplete="off" autocapitalize="off" spellcheck="false" aria-hidden="true">
     <div class="toast"></div>
-    <div class="fsgo">${ICON.full}<div>Tap to play full screen</div><button type="button" class="skip">Not now</button></div>
-    <div class="rotate">${ICON.rotate}<div>Turn your phone sideways</div><div class="sub">The game is laid out for landscape</div><button type="button" class="go">Play full screen</button></div>`;
+    <div class="fsgo">${ICON.full}<div>Tap to play full screen</div><button type="button" class="inst">Add Leyline to your home screen</button><button type="button" class="skip">Not now</button></div>
+    <div class="rotate">${ICON.rotate}<div>Turn your phone sideways</div><div class="sub">The game is laid out for landscape</div><button type="button" class="go">Play full screen</button><button type="button" class="inst">Add Leyline to your home screen</button></div>`;
   document.body.append(root);
   const $ = (s) => root.querySelector(s);
   const $$ = (s) => [...root.querySelectorAll(s)];
@@ -1958,12 +1961,49 @@ end`;
     root.classList.toggle('canfs', canFs && !installed());
     root.classList.toggle('wantfs', !fsEl() && !fsSkip);
   }
-  const takeTap = (el, fn) => el.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); fn(e); });
+  // Acted on when the finger LIFTS (5 Nov: "the fullscreen tap to activate sometimes breaks"). A browser lets a page go
+  // full screen, lock the orientation or show its install prompt only from a user gesture, and a touch only counts as
+  // one on pointerup / touchend (a finger's pointerdown does not; a mouse's does, and it still holds at its pointerup).
+  // Run from pointerdown, full screen only worked when an earlier tap had happened to leave the page "activated".
+  // The press is still taken (nothing reaches the game under the button).
+  const takeTap = (el, fn) => {
+    let downId = null;
+    el.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); downId = e.pointerId; });
+    el.addEventListener('pointerup', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      if (downId !== e.pointerId) return;
+      downId = null;
+      fn(e);
+    });
+    el.addEventListener('pointercancel', () => { downId = null; });
+  };
+  // "Add Leyline to your home screen" (5 Nov): the installed app opens full screen and landscape with the Leyline icon
+  // (www-patch.py adds the manifest). Android Chrome hands us its install prompt; iPhone Safari has none, so it says how.
+  let installEvt = null;
+  const iOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const installState = () => root.classList.toggle('caninstall', !installed() && (!!installEvt || iOS() || phone()));
+  addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; installState(); });
+  addEventListener('appinstalled', () => { installEvt = null; installState(); toast('Leyline is on your home screen: play from the new icon', 5000); });
+  function install() {
+    if (installEvt) {
+      const ev = installEvt;
+      installEvt = null;
+      try { Promise.resolve(ev.prompt()).catch(() => {}); } catch { /* refused */ }
+      installState();
+      return;
+    }
+    if (iOS()) toast('Tap Share (the square with the arrow), then Add to Home Screen. Play from the new Leyline icon', 9000);
+    else toast('Open your browser menu, then Add to Home screen (or Install app). Play from the new Leyline icon', 9000);
+  }
+  status.install = install;
+  installState();
   takeTap($('.fsgo'), (e) => {
+    if (e.target.closest('.inst')) { install(); return; }
     if (e.target.closest('.skip')) { fsSkip = true; try { sessionStorage.setItem('ow:fs-skip', '1'); } catch { /* fine */ } fsState(); return; }
     fullscreen();
   });
-  takeTap($('.rotate .go'), () => fullscreen());   // Android: full screen and turns to landscape by itself
+  takeTap($('.rotate .go'), () => fullscreen());
+  takeTap($('.rotate .inst'), () => install());   // Android: full screen and turns to landscape by itself
   for (const ev of ['fullscreenchange', 'webkitfullscreenchange']) document.addEventListener(ev, () => { fsState(); layout(); });
   addEventListener('resize', fsState);
   screen.orientation?.addEventListener?.('change', () => { fsState(); if (fsEl()) lockLandscape(); });

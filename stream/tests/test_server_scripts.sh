@@ -132,7 +132,9 @@ check "Caddyfile backup" "cmp -s $WU/Caddyfile.before-stream $T/Caddyfile.orig"
 # --- again: idempotent
 bash "$ST/stream-up.sh" > "$T/up2.log" 2>&1; rc=$?
 check "second run succeeds" "[ $rc = 0 ]"
+check "www: the page has the phone viewport tag (5 Nov: phones laid it out 980 px wide)" "grep -q 'name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\"' $ST/www/index.html"
 check "www edits not doubled" "[ \$(grep -c \"from './sections.js'\" $ST/www/index.html) = 1 ] && [ \$(grep -c 'const dataReady = Promise.resolve' $ST/www/boot.js) = 1 ]"
+check "one viewport tag after a second run" "[ \$(grep -c 'name=\"viewport\"' $ST/www/index.html) = 1 ]"
 check "still one Caddy block, one env.js tag" "[ \$(grep -c '^wrath.openvanilla.app, play.leylinelauncher.com {' $WU_CADDYFILE) = 1 ] && [ \$(grep -c '__env.js\"' $ST/www/index.html) = 1 ]"
 check "the first backup is kept" "cmp -s $WU/Caddyfile.before-stream $T/Caddyfile.orig && grep -q 'old portal' $WU/portal/wrath_portal.py.before-stream"
 

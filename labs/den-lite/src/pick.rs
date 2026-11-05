@@ -84,37 +84,39 @@ pub fn hit(eye: V3, dir: V3, b: &Body) -> Option<(f32, f32)> {
     (t1 >= 0.0).then_some((t0, t1))
 }
 
-/// The prop under the cursor: the nearest box the ray enters within `reach` yards. Ties (two boxes entered at the
-/// same distance, within [`TIE`]): the smaller box (a cup on a shelf, not the shelf), then the newer prop (the
-/// higher id: the copy you just made). A box the eye is inside of (a house round the camera) only counts when
-/// nothing else is hit, the smallest such. Returns the prop's id and the distance to the hit.
+/// The prop under the cursor: the nearest box the ray enters within `reach` yards. Ties (boxes entered within
+/// [`TIE`] of the nearest): the smaller box (a cup on a shelf, not the shelf), then the newer prop (the higher id: the
+/// copy you just made). The tie is measured from the nearest hit, so the answer doesn't depend on the order the props
+/// come in (review 4 Nov: chained near-ties used to). A box the eye is inside of (a house round the camera) only
+/// counts when nothing else is hit, the smallest such. Returns the prop's id and the distance to the hit.
 pub fn pick(eye: V3, dir: V3, bodies: &[Body], reach: f32) -> Option<(u64, f32)> {
-    let mut best: Option<(&Body, f32)> = None;
+    let mut hits: Vec<(&Body, f32)> = Vec::new();
     let mut inside: Option<&Body> = None;
     for b in bodies {
         let Some((t0, _)) = hit(eye, dir, b) else { continue };
         if t0 < 0.0 {
-            if inside.map_or(true, |cur| b.volume() < cur.volume()) {
+            let better = inside.map_or(true, |cur| {
+                let (vb, vc) = (b.volume(), cur.volume());
+                if (vb - vc).abs() > 1e-4 { vb < vc } else { b.id > cur.id }
+            });
+            if better {
                 inside = Some(b);
             }
             continue;
         }
-        if t0 > reach {
-            continue;
+        if t0 <= reach {
+            hits.push((b, t0));
         }
-        best = match best {
-            None => Some((b, t0)),
-            Some((cur, ct)) => {
-                let better = if (t0 - ct).abs() <= TIE {
-                    let (vb, vc) = (b.volume(), cur.volume());
-                    if (vb - vc).abs() > 1e-4 { vb < vc } else { b.id > cur.id }
-                } else {
-                    t0 < ct
-                };
-                if better { Some((b, t0)) } else { Some((cur, ct)) }
-            }
-        };
     }
+    let nearest = hits.iter().map(|h| h.1).fold(f32::INFINITY, f32::min);
+    let best = hits.into_iter().filter(|h| h.1 - nearest <= TIE).fold(None::<(&Body, f32)>, |cur, (b, t)| match cur {
+        None => Some((b, t)),
+        Some((c, ct)) => {
+            let (vb, vc) = (b.volume(), c.volume());
+            let better = if (vb - vc).abs() > 1e-4 { vb < vc } else { b.id > c.id };
+            if better { Some((b, t)) } else { Some((c, ct)) }
+        }
+    });
     best.map(|(b, t)| (b.id, t)).or_else(|| inside.map(|b| (b.id, 0.0)))
 }
 
@@ -355,5 +357,81 @@ mod tests {
         // the walk may step over a sliver this thin; whichever it finds, it is on the ground there
         let p = p.unwrap();
         assert!((p[2] - floor(p[0], 0.0)).abs() < 1e-4, "{p:?}");
+    }
+
+    // ---- review 4 Nov (agent/review-den)
+
+    #[test]
+    fn chained_near_ties_pick_the_same_prop_whatever_the_order() {
+        // a big box at 1.00, a small one at 1.04, a tiny one at 1.08 along the ray: the tiny one is past TIE from the
+        // nearest, so the small one wins, in every order the props may come in (they come from a list that changes)
+        let dir = [1.0, 0.0, 0.0];
+        let big = Body::new(1, [3.0, 0.0, 0.0], 0.0, [2.0, 2.0], -1.0, 2.0);
+        let small = Body::new(2, [1.04 + 0.5, 0.0, 0.0], 0.0, [0.5, 0.5], -1.0, 2.0);
+        let tiny = Body::new(3, [1.08 + 0.25, 0.0, 0.0], 0.0, [0.25, 0.25], -0.5, 1.0);
+        let eye = [0.0, 0.0, 0.0];
+        let orders = [[big, small, tiny], [big, tiny, small], [small, big, tiny], [small, tiny, big], [tiny, big, small], [tiny, small, big]];
+        for o in orders.iter() {
+            assert_eq!(pick(eye, dir, o, 100.0).map(|p| p.0), Some(2), "{:?}", o.iter().map(|b| b.id).collect::<Vec<_>>());
+        }
+    }
+
+    #[test]
+    fn two_boxes_round_the_eye_of_the_same_size_go_to_the_newer() {
+        let a = Body::new(4, [0.0, 0.0, -1.0], 0.0, [5.0, 5.0], 0.0, 5.0);
+        let b = Body::new(8, [0.0, 0.0, -1.0], 0.0, [5.0, 5.0], 0.0, 5.0);
+        let up = [0.0, 0.0, 1.0];
+        assert_eq!(pick([0.0, 0.0, 0.0], up, &[a, b], 100.0), Some((8, 0.0)));
+        assert_eq!(pick([0.0, 0.0, 0.0], up, &[b, a], 100.0), Some((8, 0.0)));
+    }
+
+    #[test]
+    fn a_hit_exactly_at_reach_counts_and_just_past_does_not() {
+        let b = cube(1, 10.0, 0.0, 0.5, 1.0);
+        let dir = [1.0, 0.0, 0.0];
+        assert_eq!(pick([0.0, 0.0, 0.5], dir, &[b], 9.5).map(|p| p.0), Some(1));
+        assert!(pick([0.0, 0.0, 0.5], dir, &[b], 9.4).is_none());
+    }
+
+    #[test]
+    fn no_bodies_and_a_zero_direction_pick_nothing() {
+        assert!(pick([0.0; 3], [1.0, 0.0, 0.0], &[], 100.0).is_none());
+        let b = cube(1, 0.0, 0.0, 1.0, 1.0);
+        // a zero direction from outside never meets it (every axis is "level", the eye isn't between the faces)
+        assert!(pick([5.0, 5.0, 5.0], [0.0, 0.0, 0.0], &[b], 100.0).is_none());
+        assert!(pick([f32::NAN, 0.0, 0.0], [1.0, 0.0, 0.0], &[b], 100.0).is_none());
+    }
+
+    #[test]
+    fn a_body_with_nonsense_sizes_is_still_clickable() {
+        let b = Body::new(1, [0.0, 0.0, 0.0], f32::NAN, [f32::NAN, -3.0], f32::INFINITY, 0.0);
+        assert_eq!(b.yaw, 0.0);
+        assert_eq!(b.half, [MIN_HALF, MIN_HALF]);
+        assert_eq!(b.bottom, 0.0);
+        assert_eq!(b.height, MIN_HEIGHT);
+        assert!(pick([0.0, 0.0, 5.0], [0.0, 0.0, -1.0], &[b], 100.0).is_some());
+    }
+
+    #[test]
+    fn a_drag_on_a_plane_the_ray_runs_along_or_away_from_goes_nowhere() {
+        let g = Grip { z: 0.0, off: [1.0, 2.0] };
+        assert!(follow([0.0, 0.0, 5.0], [1.0, 0.0, 0.0], &g, 100.0).is_none(), "level");
+        assert!(follow([0.0, 0.0, 5.0], [0.0, 0.0, 1.0], &g, 100.0).is_none(), "up, away");
+        assert!(follow([0.0, 0.0, 5.0], [0.0, 0.0, -1.0], &g, 4.0).is_none(), "past reach");
+        assert_eq!(follow([0.0, 0.0, 5.0], [0.0, 0.0, -1.0], &g, 10.0), Some([1.0, 2.0]));
+    }
+
+    #[test]
+    fn the_ground_under_a_carried_prop_is_found_on_a_slope_to_within_a_hair() {
+        // a slope rising 0.3 yd per yd along x; the ray comes down at 45 degrees from 20 up: it meets the slope where
+        // 20 - t/sqrt2 = 0.3 * t/sqrt2, at x = 20 / 1.3
+        let floor = |x: f32, _y: f32| 0.3 * x;
+        let p = on_ground([0.0, 0.0, 20.0], unit([1.0, 0.0, -1.0]), 100.0, floor).unwrap();
+        let x = 20.0 / 1.3;
+        assert!((p[0] - x).abs() < 0.01 && (p[2] - 0.3 * x).abs() < 0.01, "{p:?}");
+        // a floor that isn't a number (outside the edited ground) is never ground
+        assert!(on_ground([0.0, 0.0, 20.0], unit([1.0, 0.0, -1.0]), 100.0, |_, _| f32::NAN).is_none());
+        // no reach: nothing
+        assert!(on_ground([0.0, 0.0, 20.0], unit([1.0, 0.0, -1.0]), 0.0, floor).is_none());
     }
 }

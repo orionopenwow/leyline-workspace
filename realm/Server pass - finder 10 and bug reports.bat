@@ -54,6 +54,9 @@ rem Duel ratings and points (.duel stats, .duel top; ov_duels.lua), and duels-ex
 rem with its 5-minute cron (step 1d) to fill play.openvanilla.app/wrath/leaderboards.
 if exist "custom\lua_scripts\ov_duels.lua" copy /y "custom\lua_scripts\ov_duels.lua" "%T%\" >nul
 if exist "custom\duels-export.py" copy /y "custom\duels-export.py" "%T%\" >nul
+rem Boss fights boards (mod-leyline-bossfights): bossfights-export.py, which serverpass.sh installs with its 5-minute
+rem cron (step 1g) to write bossfights.json and arena.json next to the duel boards.
+if exist "custom\bossfights-export.py" copy /y "custom\bossfights-export.py" "%T%\" >nul
 rem The Leyline Workshop (Esc > Mods & Workshop > Workshop, /wrath/workshop): player-made courses, modes and builds,
 rem GM review and one-click Play; needs ov_modapi.lua. workshop-export.py fills the web page (step 1c).
 if exist "custom\lua_scripts\ov_workshop.lua" copy /y "custom\lua_scripts\ov_workshop.lua" "%T%\" >nul
@@ -71,7 +74,7 @@ rem step 1f fills reserved_name / profanity_name from the portal's namecheck.py)
 if exist "custom\lua_scripts\ov_names.lua" copy /y "custom\lua_scripts\ov_names.lua" "%T%\" >nul
 copy /y serverpass.sh "%T%\serverpass.sh.txt" >nul
 tar -cf "%TEMP%\wu-serverpass.tar" -C "%T%" . || (echo Packing failed. & pause & exit /b 1)
-ssh -i "%KEY%" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 root@play.openvanilla.app "T=$(mktemp -d) && tar -x -C $T -f - && sed 's/\r$//' $T/serverpass.sh.txt > $T/sp.sh && rm -f $T/serverpass.sh.txt && (cd $T && tar -cf - *.lua $(ls leyline-fetch.py armory-export.py workshop-export.py duels-export.py 2>/dev/null)) | SERVERPASS_WARN_MIN=%WARN% SERVERPASS_RELOAD=%RELOAD% bash $T/sp.sh 2>&1 | tee /tmp/wu-serverpass.log; rm -rf $T; grep -q '^SERVERPASS OK' /tmp/wu-serverpass.log" < "%TEMP%\wu-serverpass.tar"
+ssh -i "%KEY%" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 root@play.openvanilla.app "T=$(mktemp -d) && tar -x -C $T -f - && sed 's/\r$//' $T/serverpass.sh.txt > $T/sp.sh && rm -f $T/serverpass.sh.txt && (cd $T && tar -cf - *.lua $(ls leyline-fetch.py armory-export.py workshop-export.py duels-export.py bossfights-export.py 2>/dev/null)) | SERVERPASS_WARN_MIN=%WARN% SERVERPASS_RELOAD=%RELOAD% bash $T/sp.sh 2>&1 | tee /tmp/wu-serverpass.log; rm -rf $T; grep -q '^SERVERPASS OK' /tmp/wu-serverpass.log" < "%TEMP%\wu-serverpass.tar"
 if errorlevel 1 (echo. & echo It did not report success; see above. & del /q "%TEMP%\wu-serverpass.tar" & rmdir /s /q "%T%" & pause & exit /b 1)
 del /q "%TEMP%\wu-serverpass.tar" & rmdir /s /q "%T%"
 echo.

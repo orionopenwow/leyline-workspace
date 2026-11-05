@@ -43,6 +43,14 @@
 #      which writes /srv/wrath/portal/duels/leaderboards.json (wu-portal's /app/duels) from cron every 5 minutes, and
 #      runs it once. Read only, names only (no account details), bots and opted-out characters left out.
 #      OV_DUELS = 1 (owner 2026-10-31): ov_duels.lua's ratings and points (a new setting: the world server restarts).
+#   1g. The Boss fights boards (docs/BOSS-FIGHTS.md), when bossfights-export.py rides along: makes
+#      mod-leyline-bossfights' two tables (bossfights-export.py --schema, the module's own text, so the export works
+#      before the new realm image runs), installs /srv/wrath/bossfights-export.py, which writes bossfights.json and
+#      arena.json into /srv/wrath/portal/duels (wu-portal's /app/duels, next to the duel boards) from cron every
+#      5 minutes, and runs it once. Read only, names only, GM runs and opted-out characters left out.
+#      Boss fight settings (realm/profiles/main.env): AC_PLAYERBOTS_ENABLE_ICCBUFFS = 0 (no bot-module assist
+#      auras, so times compare), AC_AUTO_BALANCE_DISABLE_PER_INSTANCE = 631 (a fixed 10-player fight),
+#      LEYLINE_BOSSFIGHT_BOTS = 1 (the module may add bots to its own fights only; the owner's call).
 #   4. Announces a restart (SERVERPASS_WARN_MIN, default 5) and recreates the world server; if only the Lua
 #      changed, a live "reload ale" instead.
 # Never prints a password: MySQL runs in its container with the container's own root password.
@@ -172,6 +180,26 @@ if [ -f "$T/duels-export.py" ]; then
   fi
 fi
 
+# The Boss fights boards' export (see 1g above). Safe to run again: CREATE TABLE IF NOT EXISTS, install, one cron file.
+if [ -f "$T/bossfights-export.py" ]; then
+  echo "== 1g. boss fights boards export"
+  sed -i 's/\r$//' "$T/bossfights-export.py"
+  if python3 -I -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' "$T/bossfights-export.py"; then
+    [ -f /srv/wrath/bossfights-export.py ] && cp -p /srv/wrath/bossfights-export.py "$BK/bossfights-export.py"
+    [ -f /etc/cron.d/wu-bossfights ] && cp -p /etc/cron.d/wu-bossfights "$BK/cron.wu-bossfights"
+    python3 -I "$T/bossfights-export.py" --schema | docker exec -i ov-ac-database sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot -N -B acore_characters' \
+      || die "could not make the boss fight tables"
+    install -m 755 "$T/bossfights-export.py" /srv/wrath/bossfights-export.py
+    install -d -m 755 /srv/wrath/portal/duels
+    printf '*/5 * * * * root python3 -I /srv/wrath/bossfights-export.py >/dev/null 2>&1\n' > /etc/cron.d/wu-bossfights
+    chmod 644 /etc/cron.d/wu-bossfights
+    if out=$(python3 -I /srv/wrath/bossfights-export.py 2>&1); then echo "  $out (cron every 5 min)"
+    else echo "  NOTE: the first boss fights export failed (${out:0:200}); cron tries again in 5 minutes"; fi
+  else
+    echo "  NOTE: bossfights-export.py doesn't parse; skipped"
+  fi
+fi
+
 # 1f. Blocked names (owner 2026-10-31: "username blocks, in game name blocks"; ov_names.lua, stream/namecheck.py): the
 # one blocklist's whole names go into AzerothCore's reserved_name (names that pass for the team) and profanity_name
 # (the rest), so character create, guild charters and pet names refuse them (the world server reads both at a start:
@@ -287,7 +315,8 @@ for kv in AC_DUNGEON_ACCESS_REQUIREMENTS_LFGLEVEL_DBCOVERRIDE=1 AC_ALLOW_TWO_SID
     AC_CHAT_STRICT_LINK_CHECKING_SEVERITY=1 AC_CHAT_STRICT_LINK_CHECKING_KICK=0 \
     AC_ALLOW_TWO_SIDE_INTERACTION_CHAT=1 AC_ALLOW_TWO_SIDE_INTERACTION_CHANNEL=1 AC_ALLOW_TWO_SIDE_INTERACTION_GUILD=1 \
     AC_ALLOW_TWO_SIDE_INTERACTION_ARENA=1 AC_ALLOW_TWO_SIDE_INTERACTION_AUCTION=1 AC_ALLOW_TWO_SIDE_INTERACTION_CALENDAR=1 \
-    AC_ALWAYS_MAX_SKILL_FOR_LEVEL=1 AC_MIN_PETITION_SIGNS=0 AC_MAIL_DELIVERY_DELAY=0; do
+    AC_ALWAYS_MAX_SKILL_FOR_LEVEL=1 AC_MIN_PETITION_SIGNS=0 AC_MAIL_DELIVERY_DELAY=0 \
+    AC_PLAYERBOTS_ENABLE_ICCBUFFS=0 AC_AUTO_BALANCE_DISABLE_PER_INSTANCE=631 LEYLINE_BOSSFIGHT_BOTS=1; do
   k=${kv%%=*}; v=${kv#*=}
   if grep -qE "^$k=" "$PF"; then sed -i "s#^$k=.*#$k=$v#" "$PF"; else printf '%s=%s\n' "$k" "$v" >> "$PF"; fi
   [ "$(docker exec ov-ac-worldserver printenv "$k" 2>/dev/null || true)" = "$v" ] || need=1

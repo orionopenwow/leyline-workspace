@@ -20,6 +20,9 @@
 --                  window opened with Modes.lua "open").
 --   coin-dash      the same.
 --   community      opens the Leyline Modes window (Modes.lua "open"), where the published modes are.
+--   frozen-throne  Boss fights (mod-leyline-bossfights, docs/BOSS-FIGHTS.md): the character runs
+--                  .bossfight join frozen-throne normal bots (the module checks level, group and the rest).
+--   arena-queue    the 1v1 arena queue (mod-1v1-arena): the character runs .q1v1 unrated.
 -- Player commands: .playmode (the list), .playmode <id>, .playmode cancel. A brand new character's first login
 -- is never interrupted: the mode waits for .playmode.
 -- Table (auth DB, created here): ov_playmode_intents (account_id, mode, expires_at), so an intent survives a restart.
@@ -49,6 +52,9 @@ local MODES = {
     ["bumper-balls"] = { title = "Bumper Balls", mod = "wumodes", solo = { "solo", "bumper" }, party = { "host", "bumper" } },
     ["coin-dash"] = { title = "Coin Dash", mod = "wumodes", solo = { "solo", "coindash" }, party = { "host", "coindash" } },
     ["community"] = { title = "Community modes", open = true },
+    -- cmd: a command the character runs (Player:RunCommand); the module behind it answers in chat
+    ["frozen-throne"] = { title = "The Frozen Throne", cmd = "bossfight join frozen-throne normal bots" },
+    ["arena-queue"] = { title = "The 1v1 arena queue", cmd = "q1v1 unrated" },
 }
 
 local pending = {}   -- account -> { mode, exp, set (when it was saved), seen (a login has had its turn) }
@@ -128,6 +134,14 @@ local function start(player, id)
     if stop then
         say(player, m.title .. ": " .. stop .. ". Type |cffffff00.playmode " .. id .. "|r when you're free.")
         return false
+    end
+    if m.cmd then
+        if not player.RunCommand then
+            say(player, m.title .. " can't be started from here on this realm yet.")
+            return false
+        end
+        player:RunCommand(m.cmd)
+        return true
     end
     if m.open then
         OVMod.Send(player, "wumodes", "open", "")

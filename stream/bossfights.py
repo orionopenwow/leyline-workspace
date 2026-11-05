@@ -434,7 +434,7 @@ radial-gradient(60% 80% at 90% 80%,rgba(150,110,255,.25),transparent 70%),linear
 .bf-card .hb-play,.bf-card .hb-ghost{align-self:flex-start;margin-top:auto;min-height:40px;display:inline-flex;align-items:center}
 .bf-card code,.bf-how code{font-size:13px}
 @media (max-width:640px){.bf-t th,.bf-t td{padding:7px 7px}.bf-t .hide-s{display:none}.bf-acts{flex-direction:column;align-items:stretch}
-.bf-acts .hb-play,.bf-acts .hb-ghost{justify-content:center}.bf-hero img{opacity:.25}}
+.bf-acts .hb-play,.bf-acts .hb-ghost{justify-content:center}.bf-hero img{display:none}}
 """
 
 

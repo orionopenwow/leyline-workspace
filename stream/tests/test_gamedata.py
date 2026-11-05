@@ -49,7 +49,10 @@ lib = open(os.path.join(STREAM, "server", "stream-lib.sh")).read()
 here = re.search(r"cat >> \"\$CF\" <<EOF\n(.*?)\nEOF\n", up, re.S).group(1)
 mb = re.search(r'MARK_BEGIN="([^"]+)"', lib).group(1)
 me = re.search(r'MARK_END="([^"]+)"', lib).group(1)
-site = (here.replace("$MARK_BEGIN", mb).replace("$MARK_END", me).replace("$STREAM_HOST", "wrath.openvanilla.app"))
+# stream-up.sh names the site "$STREAM_NAMES {" (stream-lib.sh: the stream host plus the domain move's other name)
+site = (here.replace("$MARK_BEGIN", mb).replace("$MARK_END", me)
+        .replace("$STREAM_NAMES", "wrath.openvanilla.app, play.leylinelauncher.com")
+        .replace("$STREAM_HOST", "wrath.openvanilla.app"))
 other = "play.openvanilla.app {\n\thandle {\n\t\treverse_proxy ovlive-realm:8090\n\t}\n}\n"
 cf = other + "\n" + site + "\n"
 check("caddy: the markers match stream-up.sh's", mb == gdc.STREAM_BEGIN and me == gdc.STREAM_END)
@@ -59,7 +62,7 @@ check("caddy: status after add is on", gdc.status(on) == "on")
 i_block, i_gate, i_client, i_auth = (on.index(gdc.BEGIN), on.index("@gate path"), on.index("@client path"),
                                      on.index("\tforward_auth"))
 check("caddy: the 410 block comes first in the site (before the gate, the client route and forward_auth)",
-      on.index("wrath.openvanilla.app {") < i_block < i_gate < i_client < i_auth)
+      on.index("wrath.openvanilla.app, play.leylinelauncher.com {") < i_block < i_gate < i_client < i_auth)
 check("caddy: it closes /data, /data/* and both manifests",
       "@gamedata_off path /data /data/* /boot-manifest.json /world-manifest.json" in on)
 check("caddy: it answers 410 with a JSON body", re.search(r"respond `\{.*\}` 410\n", on) is not None)

@@ -227,6 +227,44 @@ function installShim() {
   state.installed = true;
 }
 
+// World data never changes under its name within a slice (the same list as wrath-sw.js KEEP and stream-up.sh's
+// @dataworld); everything else (Interface\, DBFilesClient\, Fonts\, WTF\...) can change with a new slice or a Forever UI
+// update, so a download made for another slice must not keep answering it.
+const WORLD_DATA = /^(world|creature|character|item|spells|sound|dungeons|environments|tileset|textures|xtextures|particles)[\\/]/i;
+const SLICE_KEY = '/__sections/slice';
+
+/// The slice a download belongs to: the tier index as the host lists it (a new export changes its sizes).
+export function sliceStamp(index) {
+  return JSON.stringify((index || []).map((t) => [t.tier, t.files, t.bytes]));
+}
+
+/// A new slice since the last visit: drop the downloaded files that may have changed under their names (all but
+/// world data) and mark every section partly downloaded, so its Download button fetches the new ones.
+async function forgetOtherSlice(index) {
+  const c = await caches.open(CACHE);
+  const stamp = sliceStamp(index);
+  const kept = await c.match(SLICE_KEY);
+  let old = null;
+  try { old = kept ? (await kept.json()).stamp : null; } catch (_) { old = null; }
+  if (old === stamp) return 0;
+  let dropped = 0;
+  for (const req of await c.keys()) {
+    const p = new URL(req.url).pathname;
+    if (p.startsWith(META)) {
+      const m = await c.match(req).then((r) => r.json()).catch(() => null);
+      if (m && m.done) await c.put(req, new Response(JSON.stringify({ ...m, done: false, stale: true }), { headers: { 'content-type': 'application/json' } }));
+      continue;
+    }
+    if (!p.startsWith('/data/')) continue;
+    let name = '';
+    try { name = decodeURIComponent(p.slice(6)); } catch (_) { name = ''; }
+    if (!WORLD_DATA.test(name)) { await c.delete(req); dropped++; }
+  }
+  await c.put(SLICE_KEY, new Response(JSON.stringify({ stamp, at: Date.now() }), { headers: { 'content-type': 'application/json' } }));
+  if (dropped) console.info(`sections: a new slice; ${dropped} downloaded interface and table files will load again`);
+  return dropped;
+}
+
 /// Install the cache-backed reads when this origin streams a slice with tier lists. Never throws.
 export async function installSections() {
   try {
@@ -234,6 +272,7 @@ export async function installSections() {
     const index = await loadIndex();
     if (!index) return { installed: false };
     state.index = index;
+    await forgetOtherSlice(index).catch((e) => console.warn('sections: slice check', e));
     state.have = await loadHave();
     if (!(await startWorker())) return { installed: false };
     installShim();

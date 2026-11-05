@@ -1467,13 +1467,16 @@ def camera_error(cam, samples):
     for sm in samples:
         # the zoom the sample was taken at (gizmo.rs Sample.dist): Den Lite's ray uses the addon's zoom over the
         # camera's own distance (Aids::view), so a fit must too, or samples at two zooms can't agree (review 4 Nov)
+        # (a far-view sample's distance is the zoom plus the view's pull-back: up to FAR_MAX past the game's 50)
         c = cam
-        if isinstance(sm.get("dist"), (int, float)) and 0.0 < sm["dist"] <= 60.0:
+        if isinstance(sm.get("dist"), (int, float)) and 0.0 < sm["dist"] <= SAMPLE_DIST_MAX:
             c = dict(cam, dist=float(sm["dist"]))
         hit = project(c, sm["player"], sm["u"], sm["v"], sm["aspect"], sm["dest"][2])
         tot += 900.0 if hit is None else (hit[0] - sm["dest"][0]) ** 2 + (hit[1] - sm["dest"][1]) ** 2
     return math.sqrt(tot / len(samples))
 
+
+SAMPLE_DIST_MAX = 1560.0   # gizmo.rs FAR_MAX (1500) + the game's own zoom limit, with room
 
 FIT_KEYS = ("fov", "pivot", "dist", "pitch")
 FIT_BOUNDS = {"fov": (0.3, 2.8), "pivot": (0.0, 5.0), "dist": (1.0, 40.0), "pitch": (-0.3, 1.5)}
@@ -1554,6 +1557,9 @@ def mouse_steps(rep, ui, aids, shot, with_pic, den_dir, wait):
         rep.add("SKIP", "the mouse: hover, click and drag", "the selection (%s) isn't on the screen (%s)" % (sel, uv))
         return False
     u, v = uv
+    note = aspect_note(den_dir, a.get("cursor"))
+    if note:
+        rep.add("INFO", "mouse: the camera's window shape", note)
     ui("gizmo click 0 0.95")
     cleared = aids().get("sel") is None
     ui("gizmo hover %.4f %.4f" % (u, v))
@@ -1598,6 +1604,11 @@ def mouse_steps(rep, ui, aids, shot, with_pic, den_dir, wait):
     ui("gizmo carry %.4f %.4f" % (u, v))
     a = aids()
     carried = str(a.get("armed", "")).startswith("move,") and a.get("grip") is True
+    # picked up where it stands (review 4 Nov: it jumped about 2.5 yd to the ground behind the spot clicked)
+    jump = carry_jump(at0, a.get("at"))
+    if jump is not None:
+        rep.ok(jump <= 0.6, "mouse: picked up without a jump", "%.2f yd" % jump,
+               "It jumped %.2f yd when picked up: send logs\\den-move-latest.txt." % jump)
     ui("gizmo moveto %.4f %.4f" % (u - 0.15, v - 0.04))
     g1 = aids().get("ghost")
     ui("gizmo moveto %.4f %.4f" % (u - 0.2, v - 0.06))
@@ -1620,6 +1631,34 @@ def mouse_steps(rep, ui, aids, shot, with_pic, den_dir, wait):
     rep.add("INFO", "debug: what the editor sees", (dbg[-1][:300] if dbg else "the debug line comes in the game (/wudebug)"))
     ui("gizmo debug off")
     return True
+
+
+def calibrated_aspect(samples):
+    """The window's width over its height the calibration samples were taken at (their middle value), or None."""
+    a = sorted(float(s["aspect"]) for s in samples if isinstance(s.get("aspect"), (int, float)) and 0.2 < s["aspect"] < 5.0)
+    return round(a[len(a) // 2], 3) if a else None
+
+
+def aspect_note(den_dir, cursor):
+    """A line when the build camera was measured at another window shape than the game's now (None: same, or not
+    known). The ray's field of view is fitted as a diagonal one; if the game keeps it another way, a new shape shifts
+    every hover a little."""
+    try:
+        cal = float(json.loads((Path(den_dir) / CAMERA_FILE).read_text(encoding="utf-8")).get("aspect"))
+        now = float(cursor[2])
+    except (OSError, ValueError, TypeError, AttributeError, IndexError):
+        return None
+    if abs(cal - now) <= 0.05:
+        return None
+    return "the build camera was measured at a window %.2f wide to 1 high; the game is %.2f now: run the hover calibration again if hovers are off" % (cal, now)
+
+
+def carry_jump(at0, at):
+    """How far the copy in hand is from where the prop stood, the moment a click picked it up (yards; None: unknown)."""
+    try:
+        return math.hypot(float(at[0]) - float(at0[0]), float(at[1]) - float(at0[1]))
+    except (TypeError, ValueError, IndexError):
+        return None
 
 
 def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0, only_move=False):
@@ -1982,7 +2021,13 @@ def hover_calibration(rep, ch, den_dir, shoot, outdir, mouse, settle=0.8, wait=4
                "No camera fits within 0.6 yd (the camera moved during the test?): send logs\\den-features-latest.txt and the pictures.")
         if err <= 0.6 and err < err0:
             try:
-                (den_dir / CAMERA_FILE).write_text(json.dumps({k: round(cam[k], 4) for k in FIT_KEYS}), encoding="utf-8")
+                saved = {k: round(cam[k], 4) for k in FIT_KEYS}
+                # the window's shape it was measured at (Den Lite ignores it): the field of view is fitted as a
+                # diagonal one, which may not be how the game keeps it, so another shape is worth measuring again
+                asp = calibrated_aspect(samples)
+                if asp:
+                    saved["aspect"] = asp
+                (den_dir / CAMERA_FILE).write_text(json.dumps(saved), encoding="utf-8")
                 rep.add("INFO", "hover calibration: saved", "%s (Den Lite uses it from the next Den start)" % CAMERA_FILE)
             except OSError as e:
                 rep.add("INFO", "hover calibration: not saved", str(e)[:120])

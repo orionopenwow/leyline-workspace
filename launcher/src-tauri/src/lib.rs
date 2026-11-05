@@ -25,6 +25,7 @@ pub mod clienttorrent; // magnets and .torrents for game clients: the owner's te
 pub mod clients;
 pub mod cover; // the sign-in cover: Leyline's "Logging you in…" screen over the game while the launcher signs in (cover.rs)
 pub mod deeplink; // leyline://install/<id> (hub rankings agent)
+pub mod denmarket; // Mods & Addons › Dens: shared Dens and stamps, Share, Open in my Den, Add as a stamp (stream/denmarket.py)
 pub mod denclick; // My Den in one click on the desktop game: sign-in keys, the game's asks, the den-play command (denclick.rs)
 pub mod gfx; // Mods & Addons › Graphics: the client's own graphics settings in Config.wtf (gfx.rs)
 pub mod forum; // the Forum page: reading the website's forum (stream/forum.py)

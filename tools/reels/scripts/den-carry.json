@@ -1,0 +1,70 @@
+{
+ "id": "den-carry",
+ "kind": "reel",
+ "formats": [
+  "reel",
+  "wide"
+ ],
+ "title": "Build your Den",
+ "kicker": "Your Den",
+ "sub": "TODO(owner): Your own place to build, one click from the launcher.",
+ "end_line": "TODO(owner): Build it, save it, invite your friends.",
+ "shots": [
+  {
+   "take": "lf-den-open",
+   "in": [
+    "picker",
+    -0.3
+   ],
+   "out": [
+    "play",
+    1.2
+   ],
+   "caption": "Your Den: one click"
+  },
+  {
+   "take": "game-den-carry",
+   "in": [
+    "place",
+    -0.5
+   ],
+   "out": [
+    "carry",
+    0
+   ],
+   "caption": "Pick a piece from the gallery"
+  },
+  {
+   "take": "game-den-carry",
+   "in": [
+    "carry",
+    0
+   ],
+   "out": [
+    "drop",
+    0.8
+   ],
+   "caption": "Click to pick it up and carry it"
+  },
+  {
+   "take": "game-den-carry",
+   "in": [
+    "drop",
+    0.8
+   ],
+   "out": [
+    "turn",
+    2
+   ],
+   "caption": "Set it down. Turn it. Done."
+  }
+ ],
+ "gif": {
+  "format": "wide",
+  "shots": [
+   2,
+   3
+  ],
+  "max_seconds": 8
+ }
+}

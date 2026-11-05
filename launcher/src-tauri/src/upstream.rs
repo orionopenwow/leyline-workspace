@@ -400,6 +400,12 @@ fn agent() -> ureq::Agent {
 /// Download `url` into `dest`, following at most 5 redirects by hand and only where `redirect_ok` says. At most
 /// `max` bytes. Returns (bytes, sha256).
 pub fn download(url: &str, dest: &Path, max: u64) -> Result<(u64, String), String> {
+    download_progress(url, dest, max, &|_, _| {})
+}
+
+/// [`download`], telling `progress` (bytes so far, the size when the server said it) as it goes: Single player's
+/// Built-in engine (host/engine.rs) is a big one-time download and its page shows how far it is.
+pub fn download_progress(url: &str, dest: &Path, max: u64, progress: &dyn Fn(u64, Option<u64>)) -> Result<(u64, String), String> {
     use sha2::{Digest, Sha256};
     let mut at = url.to_string();
     let mut resp = None;
@@ -422,7 +428,8 @@ pub fn download(url: &str, dest: &Path, max: u64) -> Result<(u64, String), Strin
         break;
     }
     let resp = resp.ok_or("too many redirects")?;
-    if resp.header("Content-Length").and_then(|v| v.trim().parse::<u64>().ok()).is_some_and(|n| n > max) {
+    let size = resp.header("Content-Length").and_then(|v| v.trim().parse::<u64>().ok());
+    if size.is_some_and(|n| n > max) {
         return Err(format!("the download is larger than {} MB", max / 1_048_576));
     }
     let result = (|| {
@@ -442,6 +449,7 @@ pub fn download(url: &str, dest: &Path, max: u64) -> Result<(u64, String), Strin
             }
             h.update(&buf[..n]);
             f.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+            progress(total, size);
         }
         Ok((total, net::hex(&h.finalize())))
     })();
@@ -592,7 +600,7 @@ fn parse_toc(text: &str) -> BTreeMap<String, String> {
 pub fn plan_of(u: &Unpacked, inst: &Install, build: Build) -> Plan {
     let mut plan = Plan::default();
     if build != Build::V335a {
-        plan.errors.push(format!("this addon is for 3.3.5a clients; this one is {}", build.catalog_tag()));
+        plan.errors.push(format!("this addon is for Wrath game folders; this one is {}", build.era().unwrap_or("another build")));
         return plan;
     }
     let names: BTreeSet<&String> = inst.folders.values().collect();

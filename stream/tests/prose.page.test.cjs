@@ -53,7 +53,11 @@ test('no brand word or client version in the page files\' player sentences', () 
 test('the gamedata-off note and the game-folder card say "game folder" without a version', () => {
   const early = fs.readFileSync(path.join(ROOT, 'wrath-early.js'), 'utf8');
   assert.match(early, /This realm needs your own game folder\./);
-  assert.doesNotMatch(early.match(/p\.textContent = '([^']*)'/)[1], VERSION);
+  const note = early.slice(early.indexOf('p.textContent = '), early.indexOf("var a = document.createElement('a')"));
+  const lines = note.match(/'[^']{20,}'/g) || [];
+  assert.ok(lines.length >= 2, 'the computer and the phone wording');
+  for (const l of lines) assert.doesNotMatch(l, VERSION);
+  assert.match(note, /works on a computer/, 'a phone is told plainly that the folder needs a computer');
   const page = fs.readFileSync(path.join(ROOT, 'wrath-page.js'), 'utf8');
   assert.match(page, /label: 'Classic' \}/, 'the dock\'s Interface menu: Forever UI or Classic');
 });

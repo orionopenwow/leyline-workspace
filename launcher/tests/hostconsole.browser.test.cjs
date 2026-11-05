@@ -125,7 +125,7 @@ async function open(setUp, light) {
   return { page, errors };
 }
 const calls = (page, cmd) => page.evaluate((c) => window.__calls.filter(([x]) => x === c).map(([, a]) => a), cmd);
-const NO_BRANDS = /warcraft|\bwow\b|lich king|blizzard/i;
+const NO_BRANDS = /warcraft|\bwow\b|lich king|(?<!endorsed by )blizzard/i;
 
 test('a realm set up on this PC: the Host page is its console', async () => {
   const { page, errors } = await open(true);

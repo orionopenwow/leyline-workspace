@@ -3,8 +3,8 @@
 // with a copy built into Leyline).
 //
 // Loaded before app.js: it adds its own page, so app.js's navigation and its client pickers (.client-pick) pick it up
-// like the others. It has no menu item since the side menu matches the website's (owner 2026-10-30): Home's featured
-// gallery, Realms › MODES and show("modes") (window.LeylineNav) open it. PLAY follows the Home page's play setting (localStorage
+// like the others. Its side menu item is under Realms (4 Nov: the website's menu gets a Modes page, and the launcher's
+// menu matches the website's); Home's featured gallery, Realms › MODES and show("modes") (window.LeylineNav) open it too. PLAY follows the Home page's play setting (localStorage
 // "leyline.mode"): in the browser it opens the mode's link; on the desktop it writes the pick into your 3.3.5a
 // client (mode_prepare_desktop) and starts it on the official realm (app.rs "play"). The UI only ever names a
 // mode id: every address is built by the core. Everything from the catalog is shown with textContent.

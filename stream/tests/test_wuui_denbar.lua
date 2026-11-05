@@ -411,5 +411,26 @@ do
         and said:find("W*=", 1, true) ~= nil)
 end
 
+-- the showcase (labs/den-lite showcase.rs): a share's pictures, taken by the game itself, the interface hidden
+do
+    local shots, turns, zoomed = 0, {}, 0
+    Screenshot = function() shots = shots + 1; check("showcase: the interface is hidden for each picture", not UIParent:IsShown()) end
+    FlipCameraYaw = function(a) turns[#turns + 1] = a end
+    CameraZoomOut = function(n) zoomed = n end
+    cv.screenshotFormat = "tga"
+    UIParent:Show()
+    fireClient("wuden\tshowcase\t1/1\t4|1800|24")
+    local f = D.shootFrame
+    check("showcase: it starts, zoomed out to fit the build, as JPEGs", f:IsShown() and zoomed == 24 and cv.screenshotFormat == "jpeg")
+    check("showcase: one at a time", D.Showcase(4, 1.8, 24) == false)
+    for _ = 1, 60 do if f:IsShown() then f:Fire("OnUpdate", 0.5) end end
+    check("showcase: four pictures, a quarter turn after each, back where it began", shots == 4 and #turns == 4
+        and turns[1] == 90 and turns[4] == 90)
+    check("showcase: then the interface and the player's own settings are back", not f:IsShown() and UIParent:IsShown()
+        and cv.screenshotFormat == "tga")
+    fireClient("wuden\tshowcase\t1/1\tnot numbers")
+    check("showcase: a bad line does nothing", not f:IsShown())
+end
+
 print(string.format("\n%d/%d passed", pass, pass + fail))
 if fail > 0 then os.exit(1) end

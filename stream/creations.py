@@ -303,7 +303,7 @@ def item_page(raw: str, css: str, card_meta, realm_name: str, public_host: str, 
             f'<p class="ly-lede">{e(KINDS[it["kind"]][1])} by {e(it["author"])}</p>'
             + (f'<p>{e(it["descr"])}</p>' if it["descr"] else "")
             + f'<p><a class="ws-play big" href="{e(play_href(it["id"]))}">Play</a></p>'
-            f'<p class="ly-fine">{e(HOW[it["kind"]])} You sign in first if you haven\'t.</p>'
+            f'<p class="ly-fine">{e(HOW[it["kind"]])} You log in first if you haven\'t.</p>'
             '<dl>'
             f'<dt>Plays</dt><dd>{it["plays"]}</dd>'
             f'<dt>Rating</dt><dd>{_rating(it)}</dd>'

@@ -61,6 +61,16 @@ jobs:
           lua5.1 stream/tests/test_ov_names.lua $L/ov_names.lua
           lua5.1 stream/tests/test_ov_armory.lua $L/ov_armory.lua
           lua5.1 stream/tests/test_ov_boost_rules.lua $L/ov_main.lua $L/ov_kits.lua
+          lua5.1 stream/tests/test_ov_reports.lua $L/ov_reports.lua
+          python3 -I stream/tests/test_serverpass_safety.py
+      - name: "the in-game UI's other tests (review 4 Nov, Collections, the realm guide, GMHide, Leyline friends, UI scale were never run)"
+        run: |
+          set -e
+          lua5.1 stream/tests/test_wuui_collections.lua
+          lua5.1 stream/tests/test_wuui_realmguide.lua
+          lua5.1 stream/tests/test_wuui_gmhide.lua
+          lua5.1 stream/tests/test_wuui_social.lua
+          lua5.1 stream/tests/test_wuui_uiscale.lua
           python3 -I stream/tests/test_main_realm_config.py
           python3 -I stream/tests/test_realm_player_strings.py
       - name: the Dojo on the full Den (ov_dojo.lua under a fake mod-ale; its ring checked against Den Lite's dojo.rs)

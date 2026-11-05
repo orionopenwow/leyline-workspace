@@ -99,7 +99,7 @@ test('the picker: the client and its version; the drop-up list in its three grou
   assert.equal(await page.textContent('#pb-realm-ver'), '3.3.5a', 'the official realm runs 3.3.5a: the chip beside its name');
   assert.equal(await page.textContent('#pb-detail'), 'Pick My Wrath');
   const text = await page.evaluate(() => document.body.innerText);
-  assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i);
+  assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -145,7 +145,7 @@ test('no clients: every family greyed; a greyed row opens Find your game files; 
   assert.match(guide, /Windows[\s\S]*Mac[\s\S]*Linux/);
   assert.match(guide, /backup/i);
   assert.match(guide, /friend/i);
-  assert.doesNotMatch(guide, /world of warcraft|\bwow\b|warcraft|lich king|blizzard|torrent/i);
+  assert.doesNotMatch(guide, /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard|torrent/i);
   // the only ways out: the Discord (people help find or restore files) and the player guide; never a download
   assert.deepEqual(await page.$$eval('#page-findfiles a, #page-findfiles [data-link]', (l) => l.map((x) => x.dataset.link || x.href)), ['discord', 'gettingstarted']);
   assert.equal(await page.locator('#page-findfiles .ff-card').count(), 5);
@@ -232,7 +232,7 @@ test('the realm picker: Wrath Unleashed, Your Den and Single player, Host a serv
   assert.equal(await page.getAttribute('#pb-rmenu', 'role'), 'listbox');
   assert.deepEqual(await rrows(page), [
     'Wrath Unleashed|3.3.5a|5 playing|true|', 'Your Den||Make your Den|false|', 'Single player||Set it up once|false|', '---',
-    'Host a server…|||false|', 'Play in your browser|||false|', '---',
+    'Host a server…|||false|', 'Play in your browser|||false|', "Join a friend's Den…|||false|", '---',
     'My Wrath|3.3.5a|Game client|false|',
   ], 'no realms of the network, Single player under Your Den (owner 4 Nov: the flagship), no Make a realm or Find more; the client the realm plays with nearest the button');
   assert.equal(await page.getAttribute('#pb-rmenu .pb-client-opt', 'title'), 'My Wrath · C:\\Games\\Wrath\nPick another game client or add a folder', 'its path only in the tooltip');
@@ -279,7 +279,7 @@ test('the realm picker: Your realms only when there are any, the community realm
   assert.deepEqual(await rrows(page), [
     'Wrath Unleashed|3.3.5a|5 playing|false|', 'Your Den||Make your Den|false|', 'Single player||Set it up once|false|', '---',
     '# Your realms', 'Busy Den|3.3.5a|30 playing|true|', '---',
-    'Host a server…|||false|', 'Play in your browser|||false|', '---',
+    'Host a server…|||false|', 'Play in your browser|||false|', "Join a friend's Den…|||false|", '---',
     'My Wrath|3.3.5a|Game client|false|',
   ]);
   await page.click('#pb-rmenu >> text=Wrath Unleashed');

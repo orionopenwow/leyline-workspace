@@ -96,16 +96,17 @@ $("tb-account").addEventListener("click", () => openLink("account"));
 // and Addons), Host, Forum, News, then Settings and Help. Mods & Addons is one page with tabs, Installed and Discover,
 // each split into Mods and Addons (shelf.js; Discover also has Themes). The page ids from before (mymods, discover, and community,
 // friends and hub, which became the Forum on 2026-10-30) still work everywhere: show() maps them to the page + tab, so a remembered page, a
-// data-page-go button or a leyline:// link lands where it used to; a page with tabs alone opens its last tab. Modes has no menu item
-// but is still a page (Home's featured mode, Realms › MODES, show("modes")).
-const TABS = { mods: ["discover", "installed", "gamemodes"] };   // Game modes (owner 3 Nov): gamemods.js showSection
+// data-page-go button or a leyline:// link lands where it used to; a page with tabs alone opens its last tab. Modes has its
+// menu item under Realms (4 Nov: the website's menu gets Single player, Modes and Guides; the launcher has pages for the first two).
+const TABS = { mods: ["discover", "installed", "gamemodes", "dens"] };   // Game modes (owner 3 Nov): gamemods.js showSection; Dens: denmarket.js
 // Mods & Addons opens on Discover every time it is clicked (owner 3 Nov: "make the discovery the main tab that opens when
 // its clicked"); a button or link that names a tab (Installed, Game modes) still lands there.
 const OPENS_ON = { mods: "discover" };
 const ALIASES = { mymods: ["mods", "installed"], installed: ["mods", "installed"], discover: ["mods", "discover"],
   community: ["forum", ""], friends: ["forum", ""], hub: ["forum", ""], chat: ["forum", ""] };
 const loaders = { "mods:discover": () => loadCatalog(), "mods:installed": () => loadInstalled(),
-  "mods:gamemodes": () => window.LeylineGameMods && window.LeylineGameMods.showSection(), realms: () => loadRealms(), host: () => loadHost(),
+  "mods:gamemodes": () => window.LeylineGameMods && window.LeylineGameMods.showSection(),
+  "mods:dens": () => window.LeylineDenMarket && window.LeylineDenMarket.load(), realms: () => loadRealms(), host: () => loadHost(),
   forum: () => window.LeylineForum && window.LeylineForum.load() };
 let currentPage = "play";
 let currentTab = "";
@@ -121,7 +122,8 @@ function resolvePage(page, tab) {
 function show(want, noLoad, wantTab) {
   const [page, tab] = resolvePage(want, wantTab);
   // another page starts at its top (smoke O9: Your Den from Home's banner opened scrolled, its title cut off)
-  if (page !== currentPage) { const m = document.querySelector("main"); if (m && m.scrollTo) m.scrollTo({ top: 0, behavior: "instant" }); }
+  // Settings opens at its top every time it is opened (known 3 Nov: it had opened on Advanced: peer-to-peer)
+  if (page !== currentPage || page === "settings") { const m = document.querySelector("main"); if (m && m.scrollTo) m.scrollTo({ top: 0, behavior: "instant" }); }
   currentPage = page;
   currentTab = tab;
   document.querySelectorAll(".nav[data-page]").forEach((b) => b.classList.toggle("on", b.dataset.page === page));
@@ -158,6 +160,28 @@ document.querySelectorAll(".page-tab[data-group]").forEach((b) => {
   });
 });
 window.LeylineNav = { show, current: () => ({ page: currentPage, tab: currentTab }), TABS, ALIASES };
+
+// Settings › the parts of the page (review 4 Nov: one long page): a row of jumps built from the page's own headings when
+// it opens (themes.js and host.js add theirs after load), each to its heading. The page itself always opens at its top.
+function renderSetJump() {
+  const nav = $("set-jump");
+  const panel = nav && nav.closest(".panel");
+  if (!panel) return;
+  // the parts only: a heading straight in the page, or the first one of a part's own box (not Themes' Built in / Installed)
+  const heads = [...panel.querySelectorAll("h3")].filter((h) => h.offsetParent !== null && h.textContent.trim()
+    && (h.parentElement === panel || h.parentElement.querySelector("h3") === h) && !h.closest(".themes-group"));
+  nav.replaceChildren(...heads.map((h, i) => {
+    const words = h.textContent.trim().replace(/^Advanced:\s*/i, "Advanced: ");
+    if (!h.id) h.id = "set-h-" + i;
+    h.tabIndex = -1;
+    const b = el("button", "set-jump-b", words.replace(/^Advanced: peer-to-peer$/i, "Advanced"));
+    b.type = "button";
+    b.addEventListener("click", () => { h.scrollIntoView({ block: "start", behavior: "smooth" }); h.focus({ preventScroll: true }); });
+    return b;
+  }));
+  nav.hidden = heads.length < 3;
+}
+document.addEventListener("leyline:page", (e) => { if (e.detail && e.detail.page === "settings") setTimeout(renderSetJump, 0); });
 
 // ------------------------------------------------------------------ the backdrop behind the pages
 // The website's picture (stream/hub.py BACKDROP), fetched from the site when Leyline starts, never shipped with the
@@ -1179,7 +1203,10 @@ function localStep(L) {
   if (kit && kit.realm) return "busy";
   return "setup";
 }
+// Single player set up on the Built-in engine (single.js, host/engine.rs: no Host pack, no relay): its row plays it
+const soloBuiltin = (L) => L === LOCAL.solo && !!(window.LeylineSingle && window.LeylineSingle.builtin && window.LeylineSingle.builtin());
 function localSub(L) {
+  if (soloBuiltin(L)) return "On this PC";
   const step = localStep(L);
   if (step === "play") return "On this PC";
   if (step === "folder") return "Needs your game folder";
@@ -1188,6 +1215,7 @@ function localSub(L) {
   return L.setup;
 }
 function localGo(L) {
+  if (soloBuiltin(L)) { pendingLocal = null; window.LeylineSingle.play(); return; }
   const step = localStep(L);
   // My Den without a Docker Den running: Your Den's one click (Den Lite straight in, else its setup there), not
   // the Host page (owner 1 Nov 02:46: "clicking the button doesn't launch the den")
@@ -1390,6 +1418,8 @@ function renderRealmMenu() {
     row("pb-act pb-host-act", "Host a server…", { title: "Host a realm on this PC from a template: one click", run: hostFromTemplate }),
     row("pb-browser pb-quiet", "Play in your browser", { selected: !online, title: "The official realm in your browser: nothing to install",
       run: () => setMode("browser") }),
+    // a friend's Den (docs/DEN-HOSTING.md): their link or code, pasted once
+    row("pb-act pb-join-den", "Join a friend's Den…", { title: "Paste the link or code your friend sent you", run: joinFriendsDen }),
   ];
   // the game client this realm plays with: one row (its path only in the tooltip; a click opens the client list, which
   // has Add a game folder…); none of the version it needs: one plain line and Add a game folder…
@@ -1424,6 +1454,16 @@ function denSub() {
   if (step === "switch" || step === "busy") return localSub(DEN);
   if (w === "docker") return "Stopped: one click starts it";
   return "Make your Den";
+}
+// Join a friend's Den…: Realms' invite box, open and ready for the link or code they sent (app.rs join_invite takes
+// both; host/denhost.rs)
+function joinFriendsDen() {
+  show("realms");
+  const o = $("rl-other");
+  if (o) o.open = true;
+  const i = $("rl-invite");
+  if (i) { i.focus(); if (i.scrollIntoView) i.scrollIntoView({ block: "center" }); }
+  say("rl-status", "Paste the link or code your friend sent you, then press Join. Your Leyline finds the way in.", "");
 }
 // Host a server…: the Host page's templates (hostmodes.js: one click to host from a template)
 function hostFromTemplate() {
@@ -1537,7 +1577,8 @@ function renderPlayBar() {
   renderQueueCard();
 }
 if ($("pbq-host")) $("pbq-host").addEventListener("click", () => show("host"));
-if ($("pbq-node")) $("pbq-node").addEventListener("click", () => openLink("beanode"));
+// Become a node: the Host page's Be a node card (node.js, 5 Nov), the website's guide only without it
+if ($("pbq-node")) $("pbq-node").addEventListener("click", () => (window.LeylineNode ? window.LeylineNode.focus() : openLink("beanode")));
 if ($("pbq-pc")) $("pbq-pc").addEventListener("click", () => setMode("online"));   // your own game folder: no browser seat
 if ($("pbq-x")) $("pbq-x").addEventListener("click", () => { queueCardShut = true; renderQueueCard(); });
 document.addEventListener("leyline:mode", () => { if (officialQueue.realm || officialQueue.browser) renderRealmRows(); });   // the row's count follows the mode
@@ -1558,6 +1599,7 @@ $("play-form").addEventListener("submit", async (ev) => {
   if (!c) { openFindFiles(); return; }   // no game folder yet: where to find one (and browser play)
   // the official realm signs in by itself with your Leyline account, so never a start signed out (it opened at the
   // stock login screen): the sign-in screen first, then this PLAY goes on (gate.js)
+  if (playHeld()) return;   // a game started a moment ago (holdPlay)
   if (isOfficial() && !signedInFirst(() => $("play-form").requestSubmit())) return;
   const realm = chosenRealm();
   if (!realm) { show("realms"); $("play-custom").focus(); return say("play-status", "Type a realm address.", "bad"); }
@@ -1587,12 +1629,22 @@ $("play-form").addEventListener("submit", async (ev) => {
 
 // A game just started: PLAY stays off a moment, so a double click (or an impatient second press) never starts a second
 // game (review 4 Nov: the core answers as soon as the game is spawned, and PLAY was on again at once).
+// The hold is the launcher's, not one button's: the realm cards are rebuilt after a start (renderRealms), so a second
+// click on the new card's Play, or PLAY in the bar right after a card's Play, is held too (review 4 Nov).
 const PLAY_HOLD_MS = 2500;
+let playHeldUntil = 0;
+const playHeld = () => Date.now() < playHeldUntil;
 function holdPlay(btn, started) {
+  if (started) {
+    playHeldUntil = Date.now() + PLAY_HOLD_MS;
+    // the bar's PLAY shows it is held too when a card started the game (it is never off for another reason)
+    const bar = $("play-go");
+    if (bar && bar !== btn) { bar.disabled = true; setTimeout(() => { bar.disabled = false; }, PLAY_HOLD_MS); }
+  }
   if (!btn) return;
-  if (!started) { btn.disabled = false; return; }
+  if (!started && !playHeld()) { btn.disabled = false; return; }
   btn.disabled = true;
-  setTimeout(() => { btn.disabled = false; }, PLAY_HOLD_MS);
+  setTimeout(() => { btn.disabled = false; }, Math.max(0, playHeldUntil - Date.now()));
 }
 
 // ------------------------------------------------------------------ clients
@@ -1901,8 +1953,10 @@ $("cat-sort").addEventListener("change", async () => {
   renderCatalog();
 });
 let catFailed = false;   // the Workshop could not be read and there is nothing to show: the status line says so, alone
+let catalogIn = false;   // the first mods list has answered (or failed): until then simple.js draws placeholder rows
 async function loadCatalog(quiet) {
   if (!quiet) say("cat-status", "Loading mods…");
+  if (!catalogIn && window.LeylineSimple) window.LeylineSimple.render();   // the placeholder rows at once, not a bare pane
   try {
     catalog = await invoke("mods_catalog");
     if (window.LeylineThemes) catalog = window.LeylineThemes.takeThemes(catalog); // themes.js: theme packs go under Discover › Themes
@@ -1921,6 +1975,7 @@ async function loadCatalog(quiet) {
     catFailed = !catalog.projects.length;
     say("cat-status", "Can't load the mods. Try again.", "bad");
   }
+  catalogIn = true;
   await loadRanks(true);
   renderModTiles();
   document.dispatchEvent(new CustomEvent("leyline:catalog"));  // Home's Workshop spotlight and Mods to try (home.js)
@@ -2216,6 +2271,13 @@ async function handleDeepLink() {
   if (link && link.action === "host" && typeof link.id === "string") return showHostLink(link.id);
   // a friend's invite (leyline://join?link=…, deeplink.rs): one Join button, nothing joins before it (solo.js)
   if (link && link.action === "join" && typeof link.id === "string") return window.LeylineSolo && window.LeylineSolo.offerJoin(link.id);
+  // a shared Den's "Open in Leyline" on the website (leyline://den/<id>): its detail in Mods & Addons › Dens (denmarket.js)
+  // (it may come before denmarket.js has loaded: then it takes the id when it does)
+  if (link && link.action === "den" && typeof link.id === "string") {
+    if (window.LeylineDenMarket) return window.LeylineDenMarket.focus(link.id);
+    window.LeylinePendingDen = link.id;
+    return;
+  }
   if (!link || link.action !== "install" || typeof link.id !== "string") return;
   if (link.id.startsWith("look:")) {   // the website's Looks page: Discover › Looks, that card (looks.js); nothing installs yet
     show("mods", true, "discover");
@@ -2866,7 +2928,8 @@ function renderRealms() {
       um.title = rmods.map((m) => window.LeylineGameMods.nameOf(m.id) + (m.version ? " " + m.version : "")).join(", ");
       main.append(um);
     }
-    if (r.build && !fit) main.append(el("div", "rl-note", `Needs your own ${r.build} client`));
+    // never a version in the sentence (the card's gold chip already shows it)
+    if (r.build && !fit) main.append(el("div", "rl-note", "Needs your own game folder for this version"));
     // the realm's own links, quiet
     const links = el("div", "rl-links");
     if (r.join_url) links.append(linkBtn("Make an account", r.join_url));
@@ -2904,8 +2967,11 @@ function renderRealms() {
     }
     const play = el("button", "btn small primary rl-play", "Play");
     if (!state.settings.clients.length) { play.disabled = true; play.title = "Add a game client first"; }
-    else if (!fit) { play.title = `This realm runs ${r.build}: PLAY says what is missing`; }
+    else if (!fit) { play.title = "This realm needs another game folder: Play says which"; }
     else play.title = `Plays with ${fit.name}`;
+    // said before Play, not after it (review 4 Nov): the list's own word, and Play still tries
+    if (!live && state.settings.clients.length) play.title = "The list says this realm is offline right now: Play tries anyway";
+    if (playHeld()) holdPlay(play, false);   // rebuilt right after a start: held like the one it replaces
     play.addEventListener("click", () => playRealm(r, play));
     acts.prepend(play);
     if (window.LeylineHostModes) window.LeylineHostModes.realmRow(r, main, acts);   // its mode, "based on", Fork this mode (hostmodes.js)
@@ -2972,6 +3038,7 @@ invoke("p2p_flags").then((v) => {
 const CORE_LABELS = { azerothcore: "AzerothCore", trinitycore: "TrinityCore", cmangos: "CMaNGOS", vmangos: "vMaNGOS", mangos: "MaNGOS", other: "Other server" };
 $("rl-mine").addEventListener("change", () => renderRealms());
 async function playRealm(r, btn) {
+  if (playHeld()) return;   // a game started a moment ago (holdPlay): the rebuilt card's Play too
   if (r.official && !signedInFirst(() => playRealm(r, btn))) return;
   // the play bar follows the card: this realm, and the client its picker takes for it (the picked one when it can
   // play there, else one of the version it needs), so PLAY and the bar say the same afterwards
@@ -2980,6 +3047,7 @@ async function playRealm(r, btn) {
   if (!c) return;
   if (!clientFits(r, c)) return say("rl-status", wrongClientText(r, c), "warn");   // never another client by itself
   btn.disabled = true;
+  let started = false;
   say("rl-status", `Starting ${c.name} on ${r.name}…`);
   try {
     // the realm's suggested loadout (loadouts.js), then its mods (gamemods.js): "This realm uses X, Y: Get them and play"
@@ -2988,18 +3056,22 @@ async function playRealm(r, btn) {
     if (!j.go) { say("rl-status", ""); btn.disabled = false; return; }
     if (window.LeylineAddons && r.official && !j.leyline) await window.LeylineAddons.beforePlay(c);   // offers the Leyline addons (addons.js)
     const msg = await invoke("play_realm", { client: c.id, slug: r.slug });
+    started = true;
+    holdPlay(null, true);
     say("rl-status", msg + (r.official ? "" : ` ${r.name} has its own accounts: log in with yours there`
       + (r.join_url ? ", or make one with Make an account." : ".")), "ok");
     await refresh();
     renderRealms();
   } catch (e) { sayErr("rl-status", e); }
-  btn.disabled = false;
+  holdPlay(btn, started);
 }
 
 // "Sign in with your Hero Key" (the herokey_sso flag): the realm sets a one-time login for this player's account
 // there; the client starts with the account name filled in, and the password is shown here to type (the client
 // can't take one from outside). Nothing is saved.
+let ssoClearT = 0;
 async function playRealmHeroKey(r, btn) {
+  if (playHeld()) return;
   const picked = needClient("rl-status");
   if (!picked) return;
   if (!clientFits(r, picked)) return say("rl-status", wrongClientText(r, picked), "warn");
@@ -3009,12 +3081,21 @@ async function playRealmHeroKey(r, btn) {
     const l = await invoke("play_realm_herokey", { client: picked.id, slug: r.slug });
     const mins = Math.max(1, Math.round((l.valid_s || 600) / 60));
     if (l.auto) say("rl-status", `Started on ${r.name} as ${l.user}. The game signs you in by itself.`, "ok");
-    else say("rl-status", `Started on ${r.name} as ${l.user}. At the login screen type this one-time password: ${l.pass} `
-      + `(it works for ${mins} minutes and is not saved).` + (l.auto_why ? ` (Signing in by itself didn't work here: ${l.auto_why})` : ""), "ok");
+    else {
+      const line = `Started on ${r.name} as ${l.user}. At the login screen type this one-time password: ${l.pass} `
+        + `(it works for ${mins} minutes and is not saved).` + (l.auto_why ? ` Signing in by itself didn't work here: ${oops(l.auto_why, "the game's login screen didn't take it.")}` : "");
+      say("rl-status", line, "ok");
+      // the password leaves the screen once it stops working (review 4 Nov: it stayed until the next status line)
+      clearTimeout(ssoClearT);
+      ssoClearT = setTimeout(() => {
+        if ($("rl-status").textContent === line) say("rl-status", `The one-time password for ${r.name} has expired. Log in with your Hero Key again for a new one.`);
+      }, (l.valid_s || 600) * 1000);
+    }
+    holdPlay(null, true);
     await refresh();
     renderRealms();
   } catch (e) { sayErr("rl-status", e); }
-  btn.disabled = false;
+  holdPlay(btn, false);
 }
 
 $("rl-refresh").addEventListener("click", () => loadRealms());
@@ -3036,7 +3117,7 @@ $("rl-join").addEventListener("click", async () => {
   const c = needClient("rl-status");
   if (!c) return;
   const link = $("rl-invite").value.trim();
-  if (!link) return say("rl-status", "Paste the invite link first.", "bad");
+  if (!link) return say("rl-status", "Paste the invite link (or a friend's Den code) first.", "bad");
   try {
     const j = await invoke("join_invite", { client: c.id, link });
     // a friend's Den (host/litenet.rs): the game is already starting with your own login from the link
@@ -3194,13 +3275,14 @@ function renderUpdate() {
   if (upd.error && !upd.ready && !upd.downloading) { text += (text ? " " : "") + oops(upd.error, "The download didn't finish: Leyline tries again later."); kind = "warn"; }
   say("upd-status", text, kind);
 }
-// Every minute; every second for the first half minute and while a check, a download or the finish is going.
+// Every minute; every second while a check, a download or the finish is going, and at start until the first check has
+// answered (at most half a minute; review 4 Nov: it asked every second for the whole first half minute regardless).
 const updStarted = Date.now();
 let updTimer = null;
 async function loadUpdateState() {
   clearTimeout(updTimer);
   try { upd = await invoke("launcher_update_state"); renderUpdate(); } catch (_) { /* preview page */ }
-  const fast = (upd && (upd.checking || upd.downloading || upd.finishing)) || Date.now() - updStarted < 30000;
+  const fast = (upd && (upd.checking || upd.downloading || upd.finishing)) || (Date.now() - updStarted < 30000 && !(upd && upd.checked_at));
   updTimer = setTimeout(loadUpdateState, fast ? 1000 : 60000);
 }
 async function checkUpdate() {

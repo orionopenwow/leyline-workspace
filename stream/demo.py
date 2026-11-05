@@ -217,8 +217,8 @@ class Demo:
 
     def start(self, ip: str):
         """GET /wrath?demo=1. ("redirect", url) or ("page", status, body)."""
-        if not demo_on():
-            return "page", 404, self.notice("Guest passes are closed right now",
+        if not demo_on():   # 200 like /wrath/demo (site review 4 Nov: one said 404, the other 200, for the same page)
+            return "page", 200, self.notice("Guest passes are closed right now",
                                             "Make a free account and you can play straight away.")
         info = self.slice_info(demo_slice()) if self.stream_on() else None
         if not info:
@@ -317,7 +317,7 @@ class Demo:
     def page(self, title: str, body: str) -> bytes:
         return (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
                 f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">'
-                f'<title>{html.escape(title)}</title><style>{self.base_css()}{SECTION_CSS}</style></head>'
+                f'<title>{html.escape(title if title.endswith("Leyline") else title + " · Leyline")}</title><style>{self.base_css()}{SECTION_CSS}</style></head>'
                 f'<body class="ly"><div class="ly-wrap">{body}</div></body></html>').encode("utf-8")
 
     def notice(self, title: str, text: str) -> bytes:
@@ -328,7 +328,9 @@ class Demo:
                                 f'<a class="ly-demo-alt" href="/wrath/leyline">Back to Leyline</a></div></section>')
 
     def preview(self) -> bytes:
-        return self.page("Try Leyline in the Goldshire Inn", section_html())
+        # the tab says the passes are closed while they are (site review 4 Nov)
+        return self.page("Try Leyline in the Goldshire Inn" if demo_on() else "Guest passes are closed right now",
+                         section_html())
 
 
 # -- the section for the main page -----------------------------------------------------------------

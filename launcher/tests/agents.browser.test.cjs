@@ -110,7 +110,7 @@ test('the Agents item, off by default, the tiers in plain words, Connect and the
   assert.deepEqual((await calls(page, 'agents_connect')).pop(), { target: 'claude_code', on: false });
   await page.waitForFunction(() => document.getElementById('ag-cc-state').textContent === 'Not added');
   const text = await page.evaluate(() => document.getElementById('page-agents').innerText);
-  assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|blizzard|3\.3\.5|1\.12/i);
+  assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard|3\.3\.5|1\.12/i);
   assert.deepEqual(errors, []);
   await page.close();
 });

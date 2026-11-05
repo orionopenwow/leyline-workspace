@@ -215,6 +215,11 @@ html[data-base="light"] .hs-side { box-shadow: 0 14px 30px rgba(16, 24, 40, .12)
 /* ---------------------------------------------------------------- the launch slide: Join the official realm */
 .hs-hangout { --hs-wash: radial-gradient(95% 90% at 82% 18%, color-mix(in srgb, var(--t-accent-2) 30%, transparent), transparent 62%),
   radial-gradient(80% 75% at 0% 100%, color-mix(in srgb, var(--t-accent) 22%, transparent), transparent 62%); }
+/* until the site's screenshot is in (or with none): Leyline's own night sky, shipped with the app, under the wash, so the
+   first slide is never a bare panel at start (review 4 Nov) */
+.hs-hangout { background: url("art/leyline-bg.webp") 50% 40% / cover no-repeat; }
+html[data-base="light"] .hs-hangout { background: none; }
+.hero-slide.photo-kept .hs-photo { transition: none; }
 .hs-hangout .hs-title { font-size: 42px; }
 .hs-hangout .hs-line { -webkit-line-clamp: 3; }
 .hs-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; }

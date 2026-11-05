@@ -384,15 +384,18 @@ camera = {}
 n = #sent
 tick()
 c = cmds(n)
-check("build mode with a picking Den Lite: the editor's own view (cam build) after the zoom", G.build and has(c, "mode build")
-    and at(c, "cam build") and at(c, "cam zoom 12") and at(c, "cam build") > at(c, "cam zoom 12"))
+check("build mode with a picking Den Lite: at your character (the zoom told), not the far view: W A S D walk on arrival",
+    G.build and has(c, "mode build") and at(c, "cam zoom 12") and not at(c, "cam build")
+    and not (bindings.W or bindings.A or bindings.S or bindings.D or bindings.SPACE))
 check("the cursor is freed (no mouselook) on entering", looking == false)
 check("a BUILD frame round the screen", named.LeylineGizmoBuildFrame.shown and named.LeylineGizmoBuildFrame.word.text == "BUILD")
-check("the hint line", named.LeylineGizmoTag.shown and named.LeylineGizmoTag.fs.text:find("Click a prop to pick it up, click again to put it down  ·  Shift adds  ·  Q E turn  ·  Del deletes  ·  F7 leaves Build", 1, true))
+check("the hint line", named.LeylineGizmoTag.shown and named.LeylineGizmoTag.fs.text:find("Click a prop to pick it up, click again to put it down  ·  Shift adds  ·  Q E or the wheel turn  ·  Del deletes  ·  F7 leaves Build", 1, true)
+    and named.LeylineGizmoTag.fs.text:find("WASD walks  ·  wheel out past the end for the far view  ·  K: overview", 1, true))
 answer("cam", "far,14.0,0,0")
 check("the view out: WASD and the arrows pan it, Q / E not yet (nothing selected), BUTTON1 still the game's",
     bindings.W == "LeylineGizmoPanW" and bindings.A == "LeylineGizmoPanA" and bindings.UP == "LeylineGizmoPanUP" and not bindings.Q and not bindings.BUTTON1)
-check("the tag: how to pan", named.LeylineGizmoTag.fs.text:find("WASD pans  ·  wheel zooms", 1, true))
+check("the tag: how to fly", named.LeylineGizmoTag.fs.text:find("Far view: WASD flies, Space / X up and down  ·  zoom in to come back", 1, true)
+    and not named.LeylineGizmoTag.fs.text:find("WASD walks", 1, true))
 
 -- the hover stream with nothing in hand
 cursor = { 1440, 270 }
@@ -592,6 +595,116 @@ check("a full Den's state (lite=0): build mode off", not G.build)
 W.Builder.state = keepState
 tick(0.6)
 check("Den Lite's state back: build mode on again", G.build)
+
+-- ---------------------------------------------------------------- gr-fix-den 4 Nov: the wheel, the camera's facing, one owner for Q
+-- the wheel turns what is in hand (it zoomed a carried prop); Shift a fine turn; Ctrl the zoom
+answer("aim", "move,5,1543")
+n = #sent
+named.LeylineGizmoWheelUp:Fire("OnClick")
+check("carrying: the wheel turns it (not the zoom)", cmds(n)[1] == "preview turn 15" and #cmds(n) == 1)
+shift = true
+n = #sent
+named.LeylineGizmoWheelDown:Fire("OnClick")
+check("carrying: Shift+wheel turns it a little", cmds(n)[1] == "preview turn -5")
+shift = false
+local ctrl = false
+function IsControlKeyDown() return ctrl end
+ctrl = true
+n = #sent
+named.LeylineGizmoWheelDown:Fire("OnClick")
+check("carrying: Ctrl+wheel zooms", (cmds(n)[1] or ""):find("^cam ") ~= nil)
+ctrl = false
+answer("aim", "place,2413,1543")
+n = #sent
+named.LeylineGizmoWheelUp:Fire("OnClick")
+check("a gallery card in hand: the wheel turns it too", cmds(n)[1] == "preview turn 15")
+-- the Den's edge: the tag says why the copy stopped
+answer("edge", "1")
+check("at the edge: the tag says so", G.atEdge and named.LeylineGizmoTag.fs.text:find("Edge of your Den: it stays inside", 1, true))
+answer("edge", "0")
+check("...and not once it is back inside", not named.LeylineGizmoTag.fs.text:find("Edge of your Den", 1, true))
+answer("aim", "off")
+
+-- BUTTON1 over empty ground turns you with the camera (TURNORACTION): the 3.3.5a API has no camera yaw, so the
+-- player's facing is made the view's
+function SetOverrideBinding(owner, prio, key, command) bindings[key] = command end
+local facing = 0.5
+function GetPlayerFacing() return facing end
+answer("hovered", "-")
+G.Bindings()
+check("empty ground in build mode: BUTTON1 turns you with the camera", bindings.BUTTON1 == "TURNORACTION" and G.b1turn)
+mouseoverUnit = true
+G.Bindings()
+check("over a unit (Jaina, a dummy): BUTTON1 is the game's (a click targets)", bindings.BUTTON1 == nil and not G.b1turn)
+mouseoverUnit = false
+tick(0.6)
+check("the cursor off the unit: turning again (no event says so; checked each frame)", bindings.BUTTON1 == "TURNORACTION")
+GameTooltip.shown = true
+tick(0.05)
+check("over a named object with no glow yet (its tooltip): BUTTON1 the game's (TURNORACTION would use it)", bindings.BUTTON1 == nil)
+GameTooltip.shown = false
+tick(0.05)
+check("...and turning again once off it", bindings.BUTTON1 == "TURNORACTION")
+answer("hovered", "5 Wooden Chair")
+check("over a prop: BUTTON1 grabs it", bindings.BUTTON1 == "LeylineGizmoGrab")
+answer("hovered", "-")
+-- a quick turn-drag: the cursor stays still while mouselook turns you, so the facing says it was a turn, not a click
+camera = {}
+n = #sent
+mouseHeld.LeftButton = true
+WorldFrame:Fire("OnMouseDown", "LeftButton")
+facing = 0.9
+clock = clock + 0.1
+mouseHeld.LeftButton = nil
+WorldFrame:Fire("OnMouseUp", "LeftButton")
+c = cmds(n)
+local clicked = false
+for _, x in ipairs(c) do if x:find("^click ") or x == "selclear" then clicked = true end end
+check("a short turn with the camera is no click: nothing picked up or cleared", not clicked)
+check("...and the build camera's pitch put back (the turn stays: view 2 is kept relative to you)", has(camera, "set 2"))
+-- a still click on empty ground is a click
+n = #sent
+mouseHeld.LeftButton = true
+WorldFrame:Fire("OnMouseDown", "LeftButton")
+clock = clock + 0.1
+mouseHeld.LeftButton = nil
+WorldFrame:Fire("OnMouseUp", "LeftButton")
+check("a still click on empty ground still clicks (carry or clear)", (cmds(n)[1] or ""):find("^click ") ~= nil)
+-- the far view: a turn tells Den Lite the new facing at once (forward is where you look)
+answer("cam", "far,40.0,0,0")
+n = #sent
+mouseHeld.LeftButton = true
+WorldFrame:Fire("OnMouseDown", "LeftButton")
+facing = 1.6
+clock = clock + 0.5
+mouseHeld.LeftButton = nil
+WorldFrame:Fire("OnMouseUp", "LeftButton")
+check("far view: the turn's facing told (cam fly ... 1.600)", has(cmds(n), "cam fly 0 0 0 1.600"))
+answer("cam", "near")
+-- one owner for Q / E: Den home's stamp mark has them while it is marked
+answer("selected", "5")
+check("a selection: Q / E are the build mode's", bindings.Q == "LeylineGizmoTurnQ")
+W.DenHome = { armed = { kind = "stamp" } }
+G.Bindings()
+check("a stamp marked in Den home: Q / E left to it", bindings.Q == nil and bindings.E == nil)
+W.DenHome = nil
+G.Bindings()
+check("the mark gone: Q / E back", bindings.Q == "LeylineGizmoTurnQ")
+answer("selected", "-")
+SetOverrideBinding = nil
+
+-- the cursor at another UI scale and window shape: the same spot on the screen gives the same u, v (placement review)
+do
+    local keepC, keepW, keepH, keepS = cursor, UIParent.w, UIParent.h, UIParent.scale
+    -- 1280 x 1024 pixels at UI scale 0.64: UIParent is 2000 x 1600 of its own units, the cursor in pixels
+    UIParent.w, UIParent.h, UIParent.scale = 2000, 1600, 0.64
+    cursor = { 960, 256 }   -- three quarters across, a quarter up
+    local u, v, asp = G.Cursor()
+    check("UI scale 0.64, a 5:4 window: u, v and the shape as on the screen", math.abs(u - 0.5) < 1e-6 and math.abs(v + 0.5) < 1e-6 and math.abs(asp - 1.25) < 1e-6)
+    cursor = { 5000, 256 }
+    check("off the window: no cursor (nothing sent)", G.Cursor() == nil)
+    cursor, UIParent.w, UIParent.h, UIParent.scale = keepC, keepW, keepH, keepS
+end
 
 -- leaving build mode: the view back, the frame and every binding gone
 W.DenBar.play = true

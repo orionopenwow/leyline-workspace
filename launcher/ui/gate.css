@@ -117,3 +117,6 @@ html[data-base="light"] .gate-card { background: var(--t-surface); }
 .gate-h { text-align: center; font-size: 20px; margin: 0 0 6px; }
 .gate .gate-lede { text-align: center; }
 button.gate-toast { cursor: pointer; text-align: left; font: inherit; }
+
+/* Caps Lock on, under the password (gate.js) */
+.gate-caps { margin: 4px 0 0; color: var(--t-warn, #e0b44c); }

@@ -53,7 +53,8 @@ const BEAT_MS = 4 * 60 * 1000;          // the realm lease (the portal keeps it 
 const ASK_WAIT_MS = 20000;              // the one-click card at boot: then streamed play starts by itself
 
 // Tunables (tests shorten them): the sync wait, and how long a silent worker counts as dead.
-export const TIMING = { syncTimeoutMs: 120000, deadMs: 20000, asyncTimeoutMs: 60000, restartWaitMs: 1000 };
+// syncTimeoutMs: a dead worker froze the tab for 2 minutes before the restart path ran (review 4 Nov); deadMs is 20 s
+export const TIMING = { syncTimeoutMs: 30000, deadMs: 20000, asyncTimeoutMs: 60000, restartWaitMs: 1000 };
 
 // --- IndexedDB ---------------------------------------------------------------------------------------
 function idb() {

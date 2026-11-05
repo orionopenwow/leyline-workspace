@@ -1,8 +1,8 @@
 @echo off
 setlocal
-title WrathUnleashed - sign-in and warm-up
+title Leyline - sign-in and warm-up
 rem The server half of the faster start (run "Update browser client.bat" first, for the new client):
-rem  - play.openvanilla.app/wrath signs in by itself with a Hero Key saved in the browser,
+rem  - leylinelauncher.com/wrath signs in by itself with a Hero Key saved in the browser,
 rem  - the realm list downloads the browser client in the background while you read it,
 rem  - the client's own files (no game data) skip the sign-in gate so that download can happen.
 rem Backs up first and puts things back if anything refuses. One upload and one SSH login.
@@ -116,6 +116,7 @@ if errorlevel 1 (
 )
 del /q "%T%" 2>nul
 echo.
-echo Done. Open https://leylinelauncher.com/wrath signed out: a Hero Key saved in this browser signs you in.
+echo Done: the website is updated at https://leylinelauncher.com/wrath (the old name still answers).
+echo Open it signed out: a Hero Key saved in this browser logs you in.
 pause
 exit /b 0

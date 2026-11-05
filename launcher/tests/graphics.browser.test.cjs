@@ -97,7 +97,7 @@ test('Graphics: the tab, a preset, a change saved, back to how it was', async ()
   await page.click('#discover-tabs .ly-tab[data-tab="mods"]');
   assert.ok(await page.isHidden('#graphics-discover'));
   const text = await page.evaluate(() => document.body.innerText);
-  assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i);
+  assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

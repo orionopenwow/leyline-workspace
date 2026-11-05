@@ -157,7 +157,7 @@ def _our_origin(origin: str) -> bool:
         known = P("SITE_ORIGINS")
     except Exception:   # noqa: BLE001
         known = None
-    return origin in (known or {f"https://{P('PUBLIC_HOST') or 'play.openvanilla.app'}"})
+    return origin in (known or {f"https://{P('PUBLIC_HOST') or 'leylinelauncher.com'}"})
 
 
 def P(name):
@@ -165,6 +165,17 @@ def P(name):
         return _get(name) if _get else None
     except Exception:   # noqa: BLE001
         return None
+
+def _signin(path: str) -> str:
+    """The Leyline Log in page for a page of ours (the portal's signin_url: stream/profiles.py), coming back to path.
+    Review 4 Nov: these links still said /login?next=, the old sign-in that Caddy now only redirects."""
+    fn = P("signin_url")
+    if callable(fn):
+        try:
+            return fn(path)
+        except Exception:   # noqa: BLE001
+            pass
+    return "/wrath/signin?next=" + urllib.parse.quote(path, safe="")
 
 
 def e(v) -> str:
@@ -779,11 +790,11 @@ def who(h, path: str):
     """(account, display) for the signed-in website account, or None after answering (sign-in or an error)."""
     cookie = h.headers.get("Cookie", "")
     if "wr_session=" not in cookie:
-        h.redirect("/login?next=" + urllib.parse.quote(path, safe=""))
+        h.redirect(_signin(path))
         return None
     status, me = P("portal_get")("/api/me", cookie, h.ip(), h.headers.get("User-Agent", ""))
     if status in (401, 403) or 300 <= status < 400:
-        h.redirect("/login?next=" + urllib.parse.quote(path, safe=""))
+        h.redirect(_signin(path))
         return None
     acct = _account(me) if status == 200 else ""
     if not acct:

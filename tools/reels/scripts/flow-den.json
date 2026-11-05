@@ -1,0 +1,71 @@
+{
+ "id": "flow-den",
+ "kind": "flow",
+ "formats": [
+  "wide",
+  "reel"
+ ],
+ "title": "Open your Den",
+ "kicker": "How to",
+ "sub": "From the realm picker to building, in about a minute.",
+ "end_line": "TODO(owner): The Den guide is on leylinelauncher.com.",
+ "shots": [
+  {
+   "take": "lf-den-open",
+   "in": [
+    "picker",
+    -0.3
+   ],
+   "out": [
+    "den",
+    0.8
+   ],
+   "caption": "1. The realm picker: Your Den"
+  },
+  {
+   "take": "lf-den-open",
+   "in": [
+    "den",
+    0.8
+   ],
+   "out": [
+    "play",
+    1.4
+   ],
+   "caption": "2. Play"
+  },
+  {
+   "take": "game-den-open",
+   "in": [
+    "started",
+    0
+   ],
+   "out": [
+    "world",
+    3
+   ],
+   "caption": "3. It starts and logs you in by itself",
+   "speed": 2.0
+  },
+  {
+   "take": "game-den-carry",
+   "in": [
+    "build",
+    -0.5
+   ],
+   "out": [
+    "carry",
+    2
+   ],
+   "caption": "4. Build: pick a piece, place it"
+  }
+ ],
+ "gif": {
+  "format": "wide",
+  "shots": [
+   2,
+   3
+  ],
+  "max_seconds": 8
+ }
+}

@@ -196,6 +196,13 @@ local function say(rest, reply)
         if okN and type(mn) == "string" then name = mn end
         if okT and type(mt) == "string" then text = mt end
     end
+    -- Review 4 Nov: a Discord display name can pass for staff ("GM", "Admin", "Orion's helper"). The name guard's staff
+    -- list (ov_names.lua NameHit, kind "staff") already keeps those off characters; a Discord name it flags is shown as
+    -- "Discord user" instead (the text still comes through, filtered like game chat).
+    if names and type(names.NameHit) == "function" then
+        local okH, kind = pcall(names.NameHit, name)
+        if okH and kind == "staff" then name = "Discord user" end
+    end
     if name == "" or text == "" then reply("wudiscord: empty"); return end
     if not allowSay() then reply("wudiscord busy: too many lines this minute"); return end
     local line, shown = DISCORD_TAG .. name .. ": " .. text, 0

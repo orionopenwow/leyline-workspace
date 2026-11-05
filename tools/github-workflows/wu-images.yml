@@ -1,6 +1,8 @@
 # WrathUnleashed: build and publish the images the host kit pulls (hosting/INSTALL-OPERATE.md 9.4).
 #   ghcr.io/orionopenwow/wu-ac-wotlk-{db-import,authserver,worldserver}:stable   AzerothCore (mod-playerbots fork)
 #                                                                              + the modules in sources.lock
+#                                                                              labels org.leyline.playerbots / .core:
+#                                                                              the bots' pins (docs/BOTS-UPDATES.md)
 #   ghcr.io/orionopenwow/wu-host-tools:1    the host agent, setup and self-check (hosting/kit/tools)
 #   ghcr.io/orionopenwow/wu-relay:1         the Beacons relay (hosting/relay)
 # each also as :sha-<commit>. The realm images are built exactly like realm/"Build custom realm.bat"
@@ -131,6 +133,9 @@ jobs:
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
           df -h /
+      - name: the bots' pins (image labels the launcher reads for "Update the bots", realm/bots/pins.py)
+        id: pins
+        run: python3 realm/bots/pins.py show | tr ' ' '=' >> "$GITHUB_OUTPUT"
       - name: sources at the pinned commits (realm/custom/fetch.sh, the same container as Build custom realm.bat)
         run: |
           docker run --rm --entrypoint sh -v "$PWD/realm/custom:/w" alpine/git:latest /w/fetch.sh
@@ -165,7 +170,10 @@ jobs:
           tags: |
             ghcr.io/orionopenwow/wu-ac-wotlk-worldserver:stable
             ${{ env.REG }}/wu-ac-wotlk-worldserver:${{ steps.t.outputs.sha }}
-          labels: org.opencontainers.image.source=https://github.com/orionopenwow/WrathUnleashed
+          labels: |
+            org.opencontainers.image.source=https://github.com/orionopenwow/WrathUnleashed
+            org.leyline.playerbots=${{ steps.pins.outputs.playerbots }}
+            org.leyline.core=${{ steps.pins.outputs.core }}
       - name: wu-ac-wotlk-authserver
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
@@ -181,7 +189,10 @@ jobs:
           tags: |
             ghcr.io/orionopenwow/wu-ac-wotlk-authserver:stable
             ${{ env.REG }}/wu-ac-wotlk-authserver:${{ steps.t.outputs.sha }}
-          labels: org.opencontainers.image.source=https://github.com/orionopenwow/WrathUnleashed
+          labels: |
+            org.opencontainers.image.source=https://github.com/orionopenwow/WrathUnleashed
+            org.leyline.playerbots=${{ steps.pins.outputs.playerbots }}
+            org.leyline.core=${{ steps.pins.outputs.core }}
       - name: wu-ac-wotlk-db-import
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
@@ -197,4 +208,7 @@ jobs:
           tags: |
             ghcr.io/orionopenwow/wu-ac-wotlk-db-import:stable
             ${{ env.REG }}/wu-ac-wotlk-db-import:${{ steps.t.outputs.sha }}
-          labels: org.opencontainers.image.source=https://github.com/orionopenwow/WrathUnleashed
+          labels: |
+            org.opencontainers.image.source=https://github.com/orionopenwow/WrathUnleashed
+            org.leyline.playerbots=${{ steps.pins.outputs.playerbots }}
+            org.leyline.core=${{ steps.pins.outputs.core }}

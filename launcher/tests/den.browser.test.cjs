@@ -13,7 +13,7 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 
 const INDEX = 'file://' + path.join(__dirname, '..', 'ui', 'index.html');
-const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i;
+const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i;
 
 const FAKE = (o) => {
   const calls = (window.__calls = []);
@@ -144,7 +144,8 @@ test('the entries: Your Den in the realm list next to PLAY (not the side menu), 
   await page.keyboard.press('Escape');
   const order = await page.$$eval('#home-more > .hm-sec', (s) => s.map((x) => x.id));
   assert.equal(order[0], 'hm-den', 'the banner leads the rows under the hero');
-  assert.equal((await page.textContent('#hm-den-go')).trim(), 'Play solo');
+  assert.equal((await page.textContent('#hm-den-go')).trim(), 'Open my Den');
+  assert.equal((await page.textContent('#hm-den .hm-den-txt b')).trim(), 'Your Den', 'not "Play solo": that clashed with Single player');
   await page.evaluate(() => window.LeylineNav.show('den'));   // the page itself still opens (Home's banner, the realm list)
   await page.waitForSelector('#yd-play');
   assert.match(await page.textContent('#yd-state'), /Ready on this PC: no setup needed/);
@@ -259,7 +260,7 @@ test('the Docker Den: Invite a friend, Make my account, and Play with its accoun
 test('one click from Your Den: Invite friends and Ask Claude to edit it, beside Play', async () => {
   const { page, ctx, errors } = await open({ lite: 'stopped', page: 'den' });
   await page.waitForSelector('#yd-play');
-  assert.deepEqual(await page.$$eval('#yd .yd-acts button', (b) => b.map((x) => x.textContent)), ['Play solo', 'Invite friends', 'Ask Claude to edit it']);
+  assert.deepEqual(await page.$$eval('#yd .yd-acts button', (b) => b.map((x) => x.textContent)), ['Open my Den', 'Invite friends', 'Ask Claude to edit it']);
   // Den Lite: Invite friends puts it on the network from this PC (no Docker steps; the full test is below)
   await page.click('#yd-friends');
   await page.waitForFunction(() => window.__calls.some((c) => c[0] === 'den_invite'));

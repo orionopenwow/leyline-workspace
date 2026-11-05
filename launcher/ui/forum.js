@@ -34,7 +34,7 @@
   function postFailed(e) {
     const m = String(e);
     if (m === "signed_out") { if (S()) S().refresh(); return "You were signed out. Log in again from Manage account."; }
-    return oops(e, m || DOWN);
+    return oops(e, DOWN);   // the fallback is ours, never the raw text
   }
   function asWho() {
     const me = S() && S().me();

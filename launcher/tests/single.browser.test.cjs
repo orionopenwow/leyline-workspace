@@ -2,8 +2,12 @@
 // with a fake Tauri core:
 //   * its side menu item (the sword mark), Home's row and the realm picker's row (under Your Den) all lead to its page;
 //   * the page's three steps, each with its state, and the progress line: Your game folder (the added folders of its
-//     version, or drop / choose one through app.js's own add paths), Engine (Built-in coming soon and off; Docker
-//     checked live: not installed with Get Docker, not running with Start Docker, Re-check), Start;
+//     version, or drop / choose one through app.js's own add paths), Engine (Built-in recommended and picked where it
+//     is made for the PC, off with "Windows only for now" elsewhere; Docker the fallback, checked live: not installed
+//     with Get Docker, not running with Start Docker, Re-check), Start;
+//   * Built-in (Phase 2, docs/BUILTIN-ENGINE.md): Start is engine_setup with the folder, its steps from engine_progress
+//     with the download's and the maps' own %, then in (engine_play); Manage: Play, Stop, Start, Logs, Back up, the
+//     login made for the player with Copy, Update the engine; the realm picker's row plays it; Docker still pickable;
 //   * Start: the Host pack once, host_choose solo, host_start_quiet (private, no questions, no password), its steps,
 //     then in as the picker's row plays it (host_invite, join_invite, PLAY); My Den running here: the Host page asks;
 //   * once set up: the Manage card (Play, Stop, Start, Logs, Settings); no brand names, "Log in" never "Sign in".
@@ -31,6 +35,11 @@ const KIT = (profile, name) => ({ dir: '/home/me/kit', is_kit: true, has_windows
 const NO_KIT = { dir: null, is_kit: false, problems: [], seeds: [], realm: null };
 const READY = { state: 'ready', version: '27', help: '', get_url: 'https://docs.docker.com/desktop/', can_start: false };
 const MISSING = { state: 'missing', version: null, help: 'Get Docker Desktop: free for personal use.', get_url: 'https://docs.docker.com/desktop/', can_start: false };
+// engine_status (host/engine.rs EngineStatus): not made for this PC (the Docker tests), made but not set up, set up
+const ES_NO = { supported: false, installed: false, can_get: false, set_up: false, running: false, update: false, account: '', password: '' };
+const ES_NEW = Object.assign({}, ES_NO, { supported: true, can_get: true });
+const ES_READY = Object.assign({}, ES_NEW, { installed: true, can_get: false, maps: true, db: true, filled: true, account_made: true, set_up: true,
+  running: true, db_up: true, auth_up: true, world_up: true, account: 'SOLO', password: 'ABCD2345', realm: '127.0.0.1:3724', version: '2026.11.04-abc1234' });
 const STOPPED = { state: 'desktop_stopped', version: null, help: 'Open Docker Desktop.', get_url: 'https://docs.docker.com/desktop/', can_start: true };
 
 const FAKE = (o) => {
@@ -40,6 +49,8 @@ const FAKE = (o) => {
   window.__dock = o.docker;
   window.__prog = { idle: true, kind: 'host', running: false, code: null, step: '', n: 0, of: 8, secs: 0, problem: null };
   window.__stopped = !!o.stopped;
+  window.__es = o.engine || { supported: false, installed: false, can_get: false, set_up: false, running: false, update: false, account: '', password: '' };
+  window.__eprog = { idle: true, kind: 'engine', running: false, code: null, step: '', n: 0, of: 7, secs: 0, problem: null, pct: null, detail: '' };
   const st = (window.__st = { version: 'test', settings: { clients: o.clients, selected_client: o.clients[0] ? o.clients[0].id : null, selected_realm: 'play.openvanilla.app',
     wine: { enabled: false, command: 'wine', prefix: '' } }, official_realm: 'play.openvanilla.app', browser_url: 'https://play.openvanilla.app/wrath', windows: true, data_dir: '/tmp' });
   const offer = (id) => ({ id, label: 'x', version: '3.3.5a', core: 'azerothcore', in_kit: true,
@@ -75,6 +86,17 @@ const FAKE = (o) => {
       case 'hostpack_info': return window.__kit.is_kit ? { installed: { version: '7' }, available: { version: '7' }, update: false, kit_dir: '/home/me/kit' }
         : { installed: null, available: { version: '7', size: 400000 }, update: false, kit_dir: '/home/me/kit' };
       case 'docker_info': return JSON.parse(JSON.stringify(window.__dock));
+      // the Built-in engine (host/engine.rs)
+      case 'engine_status': return JSON.parse(JSON.stringify(window.__es));
+      case 'engine_setup': case 'engine_start':
+        window.__eprog = { idle: false, kind: 'engine', running: true, code: null, step: 'Getting the engine (a one-time download)', n: 1, of: 7, secs: 3, problem: null, pct: 0, detail: '' };
+        return 'Getting the engine…';
+      case 'engine_progress': return JSON.parse(JSON.stringify(window.__eprog));
+      case 'engine_stop': window.__es = Object.assign({}, window.__es, { running: false, world_up: false, auth_up: false, db_up: false }); return 'Stopped. Everyone was saved.';
+      case 'engine_logs': return 'setup: done\nworld: World initialized';
+      case 'engine_backup': return 'C:\\Users\\me\\AppData\\Roaming\\Leyline\\engine\\backups\\single-player-2026-11-04-200509.zip';
+      case 'engine_update_check': return JSON.parse(JSON.stringify(window.__es));
+      case 'engine_play': return { message: 'Started My Wrath on 127.0.0.1:3724.', account: window.__es.account, password: window.__es.password };
       case 'docker_start': window.__dock = Object.assign({}, window.__dock, { state: 'ready', can_start: false }); return 'Starting Docker…';
       case 'open_link': return null;
       case 'host_scan': return null;
@@ -117,7 +139,7 @@ async function open(o, scheme = 'dark') {
 const callsOf = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([c]) => c === cmd).map(([, a]) => a), cmd);
 const pageOn = (page) => page.evaluate(() => document.querySelector('.page.on').id);
 const states = (page) => page.$$eval('#sp .sp-step', (l) => l.map((x) => x.id.replace('sp-step-', '') + ':' + x.dataset.state));
-const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i;
+const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i;
 const TITLE = 'Just you and your bot companions, on this PC: dungeons and raids with helper bots, levelling at your pace';
 async function openSingle(page) {
   await page.click('.side .nav[data-page="single"]');
@@ -178,9 +200,10 @@ test('a new player (no folder, no Docker): each step says its state; Built-in is
     assert.equal(await page.$$eval('#sp .sp-folder', (l) => l.length), 0, 'the 1.12.1 folder is not offered');
     assert.match(await page.textContent('#sp-step-folder'), /Drop your game folder here/);
     assert.equal(await page.textContent('#sp-step-folder .rl-ver'), '3.3.5a', 'the version as a chip');
-    // step 2: Built-in off, Docker not installed
+    // step 2: Built-in off (not made for this PC), Docker not installed
     assert.equal(await page.getAttribute('#sp-engine-builtin', 'aria-disabled'), 'true');
-    assert.match(await page.textContent('#sp-engine-builtin'), /Coming soon/);
+    assert.match(await page.textContent('#sp-engine-builtin'), /Windows only for now/);
+    assert.equal(await page.getAttribute('#sp-engine-docker', 'aria-checked'), 'true');
     assert.equal(await page.textContent('#sp-dock'), 'Not installed');
     assert.match(await page.textContent('#sp-engine-docker'), /Get Docker Desktop: free/);
     await page.click('#sp-dock-get');
@@ -328,6 +351,170 @@ test('My Den runs on this PC: Start says so, and the Host page asks before it sw
   await page.click('#hc-confirm-yes');
   await page.waitForFunction(() => window.__calls.some(([c]) => c === 'host_start_quiet'));
   assert.deepEqual(await callsOf(page, 'host_start_quiet'), [{ answers: { name: 'Single player', visibility: 'private', gm: null } }]);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+// ---------------------------------------------------------------- the Built-in engine (Phase 2)
+async function openBuiltin(page) {
+  await page.click('.side .nav[data-page="single"]');
+  await page.waitForFunction(() => document.querySelector('#page-single.on') && window.__calls.some(([c]) => c === 'engine_status')
+    && document.querySelector('#sp-engine-builtin em') && !/Checking/.test(document.querySelector('#sp-engine-builtin em').textContent));
+}
+
+test('Built-in (a Windows PC): recommended and picked, Docker not needed; Start sets it up with the folder, its steps with their %, then in', async () => {
+  for (const scheme of ['dark', 'light']) {
+    const { page, ctx, errors } = await open({ clients: [VANILLA, WRATH], engine: ES_NEW, docker: MISSING }, scheme);
+    await openBuiltin(page);
+    assert.deepEqual(await states(page), ['folder:done', 'engine:done', 'start:now'], 'no Docker needed');
+    assert.equal(await page.getAttribute('#sp-engine-builtin', 'aria-checked'), 'true');
+    assert.equal(await page.getAttribute('#sp-engine-builtin', 'aria-disabled'), null);
+    assert.equal(await page.textContent('#sp-engine-builtin em'), 'Recommended');
+    assert.equal(await page.textContent('#sp-builtin-chip'), 'Downloads at Start');
+    assert.equal(await page.getAttribute('#sp-engine-docker', 'aria-checked'), 'false');
+    assert.equal(await page.$('#sp-dock-get'), null, "Docker's own buttons only when Docker is the pick");
+    assert.match(await page.textContent('#sp-start-hint'), /gets the engine, reads the maps from your game folder and fills the world/);
+    await wording(page);
+    await shot(page, 'single-builtin-new-' + scheme);
+    if (scheme === 'light') { await ctx.close(); continue; }
+    await page.click('#sp-start');
+    await page.waitForSelector('#sp-prog');
+    assert.deepEqual(await callsOf(page, 'engine_setup'), [{ client: 'c335a-1' }], 'the 3.3.5a folder');
+    for (const c of ['hostpack_install', 'host_choose', 'host_start_quiet']) assert.equal((await callsOf(page, c)).length, 0, c);
+    // the download, with its own %
+    await page.evaluate(() => { Object.assign(window.__eprog, { pct: 42, detail: '84 MB of 200 MB', secs: 20 }); });
+    await page.waitForFunction(() => document.querySelector('#sp-prog-d') && document.querySelector('#sp-prog-d').textContent === '42% · 84 MB of 200 MB', null, { timeout: 10000 });
+    assert.match(await page.textContent('#sp-prog'), /Getting the engine \(a one-time download\)/);
+    assert.match(await page.textContent('#sp-prog'), /Step 1 of 7/);
+    assert.equal(await page.getAttribute('#sp-step-start', 'data-state'), 'run');
+    // unpacking, the maps, the first start
+    for (const [n, step, pct, detail] of [[2, 'Checking and unpacking it', null, ''], [3, 'Reading the maps from your game folder', 60, 'Extracting maps'],
+      [7, 'Starting the realm', null, 'The world (the first start can take several minutes)']]) {
+      await page.evaluate((x) => { Object.assign(window.__eprog, { n: x[0], step: x[1], pct: x[2], detail: x[3] }); }, [n, step, pct, detail]);
+      await page.waitForFunction((s) => document.querySelector('#sp-prog') && document.querySelector('#sp-prog').textContent.includes(s), step, { timeout: 10000 });
+      assert.match(await page.textContent('#sp-prog'), new RegExp(`Step ${n} of 7`));
+      if (pct !== null) assert.match(await page.textContent('#sp-prog-d'), new RegExp(`^${pct}%`));
+    }
+    await wording(page);
+    await shot(page, 'single-builtin-starting-dark');
+    // done: set up and running, and in by itself
+    await page.evaluate((r) => { window.__es = r; Object.assign(window.__eprog, { running: false, code: 0, step: 'Ready', n: 7, pct: null }); }, ES_READY);
+    await page.waitForFunction(() => window.__calls.some(([c]) => c === 'engine_play'), null, { timeout: 10000 });
+    assert.deepEqual(await callsOf(page, 'engine_play'), [{ client: 'c335a-1' }]);
+    assert.equal((await callsOf(page, 'play')).length, 0, 'not through the relay');
+    await page.waitForSelector('#sp-manage[data-engine="builtin"]');
+    assert.match(await page.textContent('#sp-login'), /Your login: SOLO · password ABCD2345/);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  }
+});
+
+test('Manage on the Built-in engine: Play, Stop, Start, Logs, Back up, the login with Copy, Update when newer; Home says Play', async () => {
+  for (const scheme of ['dark', 'light']) {
+    const { page, ctx, errors } = await open({ engine: ES_READY, docker: MISSING }, scheme);
+    await page.waitForFunction(() => window.__calls.some(([c]) => c === 'engine_status'));
+    await page.waitForFunction(() => document.getElementById('hm-single-go').textContent === 'Play');
+    await page.click('.side .nav[data-page="single"]');
+    await page.waitForFunction(() => document.querySelector('#sp-run') && document.querySelector('#sp-run').textContent === 'Running');
+    assert.equal(await page.$('#sp .sp-steps'), null, 'no steps once set up');
+    assert.deepEqual(await page.$$eval('#sp-manage .sp-row > button', (l) => l.map((x) => x.textContent)), ['Play', 'Stop', 'Start', 'Logs', 'Back up']);
+    assert.equal(await page.$('#sp-settings'), null, 'the Host page is for the Docker engine');
+    assert.ok(await page.isDisabled('#sp-start-again'), 'running: Start is off');
+    assert.match(await page.textContent('#sp-manage'), /Built-in engine/);
+    await wording(page);
+    await shot(page, 'single-builtin-manage-' + scheme);
+    if (scheme === 'light') { await ctx.close(); continue; }
+    await page.click('#sp-logs-btn');
+    await page.waitForFunction(() => document.querySelector('#sp-logs') && /World initialized/.test(document.querySelector('#sp-logs').textContent));
+    assert.deepEqual(await callsOf(page, 'engine_logs'), [{ lines: 200 }]);
+    assert.equal((await callsOf(page, 'host_logs')).length, 0);
+    await page.click('#sp-backup');
+    await page.waitForFunction(() => /Backed up: .*single-player-2026-11-04-200509\.zip/.test(document.getElementById('sp-status').textContent));
+    await page.click('#sp-login-copy');
+    await page.waitForFunction(() => /Password copied|Your password: ABCD2345/.test(document.getElementById('sp-status').textContent));
+    await page.click('#sp-play');
+    await page.waitForFunction(() => window.__calls.some(([c]) => c === 'engine_play'));
+    await page.click('#sp-stop');
+    await page.waitForFunction(() => document.querySelector('#sp-run').textContent === 'Stopped');
+    assert.equal((await callsOf(page, 'engine_stop')).length, 1);
+    assert.equal((await callsOf(page, 'host_stop')).length, 0);
+    await page.click('#sp-start-again');
+    await page.waitForFunction(() => window.__calls.some(([c]) => c === 'engine_start'));
+    await page.evaluate((r) => { window.__es = r; Object.assign(window.__eprog, { running: false, code: 0, step: 'Ready', n: 7 }); }, ES_READY);
+    await page.waitForFunction(() => document.querySelector('#sp-run').textContent === 'Running', null, { timeout: 10000 });
+    // stopped, Play starts it first and then goes in
+    await page.click('#sp-stop');
+    await page.waitForFunction(() => document.querySelector('#sp-run').textContent === 'Stopped');
+    const plays = (await callsOf(page, 'engine_play')).length;
+    await page.click('#sp-play');
+    await page.waitForFunction(() => window.__calls.filter(([c]) => c === 'engine_start').length === 2);
+    await page.evaluate((r) => { window.__es = r; Object.assign(window.__eprog, { running: false, code: 0, step: 'Ready', n: 7 }); }, ES_READY);
+    await page.waitForFunction((n) => window.__calls.filter(([c]) => c === 'engine_play').length === n + 1, plays, { timeout: 10000 });
+    // a newer engine on the release
+    await page.evaluate((r) => { window.__es = Object.assign({}, r, { update: true }); }, ES_READY);
+    await page.evaluate(() => window.LeylineSingle.load());
+    await page.waitForSelector('#sp-update');
+    await page.click('#sp-update');
+    await page.waitForFunction(() => window.__calls.some(([c, a]) => c === 'engine_setup' && a && a.update === true));
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  }
+});
+
+test('Docker can still be picked on a Windows PC: the pick is kept, its checks show, Start goes through the Host pack', async () => {
+  const { page, ctx, errors } = await open({ engine: ES_NEW, docker: MISSING });
+  await openBuiltin(page);
+  await page.click('#sp-engine-docker');
+  assert.equal(await page.getAttribute('#sp-engine-docker', 'aria-checked'), 'true');
+  assert.equal(await page.getAttribute('#sp-engine-builtin', 'aria-checked'), 'false');
+  assert.equal(await page.evaluate(() => localStorage.getItem('leyline.single.engine')), 'docker');
+  assert.ok(await page.$('#sp-dock-get'), 'Get Docker');
+  assert.deepEqual(await states(page), ['folder:done', 'engine:now', 'start:todo']);
+  assert.equal(await page.textContent('#sp-start-hint'), 'Docker first (step 2).');
+  // and back, with the keyboard
+  await page.focus('#sp-engine-builtin');
+  await page.keyboard.press('Enter');
+  assert.deepEqual(await states(page), ['folder:done', 'engine:done', 'start:now']);
+  // Docker picked and ready: Start is the Host pack's, never the engine's
+  await page.click('#sp-engine-docker');
+  await page.evaluate((d) => { window.__dock = d; }, READY);
+  await page.click('#sp-dock-check');
+  await page.waitForFunction(() => document.querySelector('#sp-step-engine[data-state="done"]'));
+  await page.click('#sp-start');
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'host_start_quiet'));
+  assert.equal((await callsOf(page, 'engine_setup')).length, 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('a Built-in start that stops: says why, with Try again (resumes) and Logs (the engine log)', async () => {
+  const { page, ctx, errors } = await open({ engine: ES_NEW });
+  await openBuiltin(page);
+  await page.click('#sp-start');
+  await page.waitForSelector('#sp-prog');
+  await page.evaluate(() => { Object.assign(window.__eprog, { running: false, code: 1, n: 3, step: 'Reading the maps from your game folder', pct: null,
+    problem: "That game folder has no Data folder, so its maps can't be read. Pick the folder the game itself is in." }); });
+  await page.waitForFunction(() => /Setting up stopped/.test(document.querySelector('#sp-prog').textContent), null, { timeout: 10000 });
+  assert.match(await page.textContent('#sp-prog'), /no Data folder/);
+  await page.click('#sp-prog >> text=Logs');
+  await page.waitForFunction(() => document.querySelector('#sp-logs') && /World initialized/.test(document.querySelector('#sp-logs').textContent));
+  await page.click('#sp-prog >> text=Try again');
+  await page.waitForFunction(() => window.__calls.filter(([c]) => c === 'engine_setup').length === 2);
+  assert.equal((await callsOf(page, 'engine_play')).length, 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('the realm picker: Single player on the Built-in engine is "On this PC" and plays it straight away', async () => {
+  const { page, ctx, errors } = await open({ engine: ES_READY });
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'engine_status'));
+  await page.waitForFunction(() => window.LeylineSingle.builtin());
+  await page.click('#pb-realm-btn');
+  assert.equal(await page.textContent('#pb-rmenu .pb-solo .pb-opt-sub'), 'On this PC');
+  await page.click('#pb-rmenu .pb-solo');
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'engine_play'));
+  assert.deepEqual(await callsOf(page, 'engine_play'), [{ client: 'c335a-1' }]);
+  assert.equal((await callsOf(page, 'host_invite')).length, 0, 'no relay knock');
   assert.deepEqual(errors, []);
   await ctx.close();
 });

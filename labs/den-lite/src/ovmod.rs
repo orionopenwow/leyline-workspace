@@ -165,6 +165,10 @@ pub struct Sel {
     pub more: Vec<u64>,
     /// `selnext`: where the round started (the props in order of their distance from here, wrapping).
     pub round: Option<[f32; 3]>,
+    /// The Path tool's points (world x, y; buildtools.rs: kept here, an addon line is too short for them) and the
+    /// path being edited (its group), if any.
+    pub path: Vec<[f32; 2]>,
+    pub path_group: Option<u64>,
 }
 
 /// The verbs this Den Lite answers (the state's `caps=`: the editor hides a button whose verb isn't here).
@@ -276,11 +280,12 @@ fn guid_of(d: &Den, id: u64) -> Option<u64> {
 pub fn state(d: &Den, sel: &Sel, role: &str) -> String {
     let n = d.props.len();
     let mut s = format!(
-        "mine={n}/{MAX_PROPS};pts={n}/{MAX_PROPS};undo={};redo={};stored=0;grp=0;den={role};room={n}/{MAX_PROPS};yard=0/0;core=1;lite=1;grid={};clip={};area=den;code=-;caps={CAPS};",
+        "mine={n}/{MAX_PROPS};pts={n}/{MAX_PROPS};undo={};redo={};stored=0;grp=0;den={role};room={n}/{MAX_PROPS};yard=0/0;core=1;lite=1;grid={};clip={};area=den;code=-;caps={CAPS},{};",
         d.undo_depth(),
         d.redo_depth(),
         sel.grid,
-        sel.clip.is_some() as u8
+        sel.clip.is_some() as u8,
+        crate::buildtools::CAPS
     );
     match sel.guid.and_then(|g| d.placed(g)) {
         Some(p) => {
@@ -302,6 +307,8 @@ pub fn state(d: &Den, sel: &Sel, role: &str) -> String {
                 p.prop.roll.unwrap_or(0.0),
                 (p.prop.locked == Some(true)) as u8
             ));
+            // the Tools window's: Solid, what the game does with its model, the group (buildtools.rs)
+            s.push_str(&crate::buildtools::state_extra(d, sel));
         }
         None => s.push_str("sel=-;n=0;ids=;gids=;"),
     }
@@ -315,7 +322,8 @@ fn num(s: Option<&&str>) -> Option<f64> {
 const BUILDER_HELP: &str = "Den Lite's Builder: place a prop from the gallery, Near picks the closest, then move (x, y, z), turn, tilt, size, Copy, Paste, Duplicate, Delete, Undo and Redo. Your Den keeps itself; Files saves it by name.";
 
 /// What only the full Den does: Den Lite says so plainly (the editor hides these on Den Lite: the state's `lite=1`).
-const FULL_ONLY: &[&str] = &["group", "ungroup", "store", "hide", "show", "measure", "align", "stack", "path", "prefab", "plot", "share", "selbox", "stackon", "pasteat", "placeat"];
+/// (group, hide, show, measure, align and path are Den Lite's too since 4 Nov: buildtools.rs, which sees them first.)
+const FULL_ONLY: &[&str] = &["store", "stack", "prefab", "plot", "share", "selbox", "stackon", "pasteat", "placeat"];
 
 /// The pad's step (`step <dir> <yards>`) as (dx, dy, dz) for someone facing `o` (radians): forward is the way they
 /// face, left a quarter turn to their left.
@@ -983,8 +991,10 @@ mod tests {
         assert!(((p.x / 2.0).round() * 2.0 - p.x).abs() < 0.01 && ((p.y / 2.0).round() * 2.0 - p.y).abs() < 0.01, "on the 2 yard grid: {p:?}");
         let o = builder_cmd(&mut d, &mut sel, here, "find chair", true);
         assert!(matches!(&o[0], Out::Addon(a, b, c) if a == "wubuild" && b == "found" && c.starts_with("objects,1,0;") && c.contains(",Wooden Chair,")), "{o:?}");
-        let o = builder_cmd(&mut d, &mut sel, here, "group", true);
+        // group is Den Lite's own since 4 Nov (buildtools.rs, which world.rs asks first); stack is still the full Den's
+        let o = builder_cmd(&mut d, &mut sel, here, "stack", true);
         assert!(matches!(&o[0], Out::Say(s) if s.contains("full Den")));
+        assert!(state(&d, &sel, "owner").contains(",tool,path,array,"), "the tools' caps");
         assert!(state(&d, &sel, "owner").contains("lite=1;grid=2;"));
         let m = AddonMsg { prefix: "OVMOD".into(), text: "wuden\treport\t1/1\tgallery tiles=20 model=18".into() };
         assert_eq!(handle(&mut d, &mut sel, None, &m, true, true), vec![Out::Report("gallery tiles=20 model=18".into())]);

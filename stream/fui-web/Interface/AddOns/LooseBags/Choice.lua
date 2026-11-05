@@ -115,8 +115,19 @@ function LB.ChoicePending()
 	return char.chosen ~= true
 end
 
+-- Not in Your Den (the launcher's Den Lite realm, WrathUnleashedUI W.DEN_REALM): a building room, where the window
+-- came up over the editor at the first visit (review 4 Nov). The choice waits, still pending, for a real realm.
+LB.DEN_REALM = "Your Den"
+function LB.InDen()
+	if not GetRealmName then
+		return false
+	end
+	local ok, name = pcall(GetRealmName)
+	return ok and name == LB.DEN_REALM
+end
+
 function LB.OfferChoice()
-	if not LB.ChoicePending() then
+	if not LB.ChoicePending() or LB.InDen() then
 		return false
 	end
 	local frame = Ensure()

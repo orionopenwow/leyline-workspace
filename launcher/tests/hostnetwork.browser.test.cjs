@@ -87,7 +87,7 @@ async function open(opts, viewport) {
   return { page, errors };
 }
 const calls = (page, cmd) => page.evaluate((c) => window.__calls.filter(([x]) => x === c).map(([, a]) => a), cmd);
-const NO_BRANDS = /warcraft|\bwow\b|lich king|blizzard/i;
+const NO_BRANDS = /warcraft|\bwow\b|lich king|(?<!endorsed by )blizzard/i;
 const status = (page) => page.textContent('.hc-net-status');
 
 test('the Network tab: its own tab, the realm on the list, Hero Key with its self-test', async () => {

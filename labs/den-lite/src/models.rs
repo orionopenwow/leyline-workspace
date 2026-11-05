@@ -123,6 +123,11 @@ pub fn box_of(display: u32) -> Option<(f32, f32, f32, f32)> {
     BOXES.get()?.get(&display).copied()
 }
 
+/// Whether a display is a building (a WMO: the game makes it solid all over, floors and walls; buildtools.rs Solid).
+pub fn is_wmo(display: u32) -> bool {
+    WMOS.get().is_some_and(|w| w.contains(&display))
+}
+
 /// The model path of a display id, if the table was there.
 pub fn of(display: u32) -> Option<&'static str> {
     PATHS.get()?.get(&display).map(String::as_str)

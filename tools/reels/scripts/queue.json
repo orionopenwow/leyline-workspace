@@ -1,0 +1,43 @@
+{
+ "id": "queue",
+ "kind": "reel",
+ "formats": [
+  "reel",
+  "wide"
+ ],
+ "title": "Busy? Skip the line",
+ "kicker": "The browser game",
+ "sub": "TODO(owner): When the browser game is full, you keep your place, or skip the line and grow the network.",
+ "end_line": "TODO(owner): Play on your own PC: no line at all.",
+ "shots": [
+  {
+   "take": "site-queue",
+   "in": [
+    "line",
+    -0.2
+   ],
+   "out": [
+    "skip",
+    0
+   ],
+   "caption": "Your place in line, kept for you"
+  },
+  {
+   "take": "site-queue",
+   "in": [
+    "skip",
+    0
+   ],
+   "out": -0.2,
+   "caption": "Or skip it: your own PC, host a realm, or help carry the network"
+  }
+ ],
+ "gif": {
+  "format": "wide",
+  "shots": [
+   0,
+   1
+  ],
+  "max_seconds": 8
+ }
+}

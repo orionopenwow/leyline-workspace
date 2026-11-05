@@ -9,6 +9,7 @@ first come, first served; a freed seat is held for the first in line, who then g
 checks; a place whose page stops asking, or a held seat not taken, is dropped. The wu_q cookie is only a turn: never
 a session, never another account's place. GET /wrath/api/queue and status.json's "browser_queue" give the numbers.
 """
+import re
 import http.client, importlib.util, json, os, re, sys, tempfile, threading, time, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from xml.sax.saxutils import escape
@@ -334,5 +335,16 @@ st2 = [q2.admit(f"WRM{i:05d}", f"10.9.1.{i}", "", "mini", "", set(), now=t0)["st
 check("WU_PLAY_LOADING=0: no loading limit", all(x == "go" for x in st2), st2)
 wp.PLAY_CAPACITY, wp.PLAY_LOADING, wp.PLAY_LOAD_S = saved
 
+# ---- the waiting page itself (fix round 4 Nov): the place in the tab, back at once from the background, Leave asks
+qp = wp.queue_page({"state": "line", "position": 3, "wait_min": 7, "token": "t"}, "n0nce", "/wrath/play").decode("utf-8")
+check("queue page: the tab title carries the place", "<title>(#3) In line · Leyline</title>" in qp, qp[qp.find("<title>"):qp.find("</title>") + 8])
+js = qp.split('<script nonce="n0nce">')[-1].split("</script>")[0]
+check("queue page: asks at once when the page comes back (visibilitychange), says Your turn in the tab, Leave asks first",
+      "visibilitychange" in js and "Your turn!" in js and "confirm(" in js and "In line" in js)
+check("queue page: no seat numbers (owner 4 Nov)", "seats" not in qp.lower() and f"of {wp.PLAY_CAPACITY}" not in qp)
+import shutil as _sh, subprocess as _sp
+if _sh.which("node"):
+    r = _sp.run(["node", "-e", "new Function(require('fs').readFileSync(0,'utf8'))"], input=js, capture_output=True, text=True)
+    check("queue page: its script parses", r.returncode == 0, r.stderr[:300])
 print(f"\n{count - fails}/{count} passed")
 sys.exit(1 if fails else 0)

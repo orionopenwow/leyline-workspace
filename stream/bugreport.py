@@ -71,6 +71,17 @@ def P(name):
     except Exception:   # noqa: BLE001
         return None
 
+def _signin(path: str) -> str:
+    """The Leyline Log in page for a page of ours (the portal's signin_url: stream/profiles.py), coming back to path.
+    Review 4 Nov: these links still said /login?next=, the old sign-in that Caddy now only redirects."""
+    fn = P("signin_url")
+    if callable(fn):
+        try:
+            return fn(path)
+        except Exception:   # noqa: BLE001
+            pass
+    return "/wrath/signin?next=" + urllib.parse.quote(path, safe="")
+
 
 def e(v) -> str:
     return html.escape(str(v), quote=True)
@@ -226,9 +237,9 @@ def page(who: dict | None, msg: str = "", done: str = "", where: str = "", pg: s
                 'We read every one.</p><p><a href="/wrath">Back to Leyline</a> · <a href="' + PAGE + '">Report another</a></p>'
                 f'{other}</section>')
     elif who is None:
-        body = ('<section class="realm"><h1>Report a bug</h1><p>Sign in first, so we know who to thank and can '
+        body = ('<section class="realm"><h1>Report a bug</h1><p>Log in first, so we know who to thank and can '
                 'tell your report apart from spam.</p>'
-                f'<p><a class="btn primary" href="/login?next={urllib.parse.quote(PAGE, safe="")}">Sign in</a></p>'
+                f'<p><a class="btn primary" href="{e(_signin(PAGE))}">Log in</a></p>'
                 f'{other}</section>')
     else:
         opts = "".join(f'<option value="{k}"{" selected" if k == where else ""}>{e(t)}</option>' for k, t in WHERE)
@@ -305,12 +316,12 @@ def post(h, path: str) -> None:
     if path == API:
         doc = _read(h, "json")
         if not h.headers.get("Authorization", "").startswith("Bearer "):
-            return _jpost(h, 401, {"error": "Sign in from the launcher first."})
+            return _jpost(h, 401, {"error": "Log in from the launcher first."})
         if doc is None:
             return _jpost(h, 400, {"error": "Bad request."})
         who, err = _viewer(h, token=True)
         if who is None:
-            return _jpost(h, err or 401, {"error": "Signed out. Sign in again from the launcher." if err != 503
+            return _jpost(h, err or 401, {"error": "Signed out. Log in again from the launcher." if err != 503
                                           else "Sign-in isn't available right now."})
         s = lambda k: doc.get(k) if isinstance(doc.get(k), str) else ""
         status, out = submit(who, "launcher", _net(h), s("text"), s("where") or "launcher", s("page"), s("app"))
@@ -318,8 +329,11 @@ def post(h, path: str) -> None:
     if path != PAGE:
         h.send(405, b"method not allowed\n", "text/plain")
         return
+    same = P("same_site")   # the portal's one check (wrath_portal.same_site); the forum's copy if that is missing
     fm = P("forum")
-    if fm is not None and hasattr(fm, "_same_site") and not fm._same_site(h):
+    if not callable(same) and fm is not None and hasattr(fm, "_same_site"):
+        same = fm._same_site
+    if callable(same) and not same(h):
         h.send(403, page(None, "That form came from another site."))
         return
     form = _read(h, "form")

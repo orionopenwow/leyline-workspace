@@ -252,7 +252,7 @@ p.map, p.zone = LATER_MAP, 0; fire(28, p); runTimers()
 check("an instance in a tier above the mark refused: sent to Dalaran", #p.tp == 1 and p.tp[1][1] == 571, LATER_MAP)
 check("whisper says drop your game folder + the help page + Discord", p.msgs[#p.msgs]:match("Drop your own game folder on the game page")
     and p.msgs[#p.msgs]:match("Use my game folder") and p.msgs[#p.msgs]:match("nothing is uploaded")
-    and p.msgs[#p.msgs]:match("play.openvanilla.app/wrath/docs/play") and p.msgs[#p.msgs]:match("discord.gg/RfChVr8J7T"))
+    and p.msgs[#p.msgs]:match("leylinelauncher.com/wrath/docs/play") and p.msgs[#p.msgs]:match("discord.gg/RfChVr8J7T"))
 check("centre text too: drop the game folder", #p.center == 1 and p.center[1]:match("drop your game folder on the page"))
 do
     local bad = false
@@ -618,7 +618,7 @@ do
     local m = s80.msgs[#s80.msgs]
     check("sampler message: add your own game folder to explore the whole world",
         m:match("Add your own game folder to explore the whole world") and m:match("Use my game folder")
-        and m:match("nothing is uploaded") and m:match("play.openvanilla.app/wrath/docs/play"), m)
+        and m:match("nothing is uploaded") and m:match("leylinelauncher.com/wrath/docs/play"), m)
     check("sampler message: points to community realms on Leyline", m:match("community realm from Leyline") ~= nil, m)
     check("sampler centre text: add your own game folder", s80.center[1] == "Add your own game folder to explore the whole world", s80.center[1])
     check("sampler messages: no game-brand words", noBrand(m) and noBrand(s80.center[1]) and noBrand(s80.msgs[1]))

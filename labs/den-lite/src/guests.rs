@@ -41,6 +41,14 @@ pub struct Guest {
     pub revoked: bool,
     /// Its character's guid (stable for this login).
     pub guid: u64,
+    /// This friend may build (the host's Build switch for them on the launcher's Friends list, or
+    /// `.den friends build <name> on`; docs/DEN-HOSTING.md). Kept across restarts, unlike the Den-wide switch.
+    #[serde(default)]
+    pub build: bool,
+    /// A friend kept (the launcher's Keep): their login lasts a week from their last visit instead of 24 hours from
+    /// the invite (hosting.rs renews it while they are in), so the same link works again next time.
+    #[serde(default)]
+    pub keep: bool,
 }
 
 impl Guest {
@@ -149,7 +157,7 @@ pub fn add(dir: &Path, name: Option<&str>, host_name: &str, hours: u64, now: u64
     );
     let guid = (GUID_BASE..).find(|n| !all.iter().any(|g| g.guid == *n)).unwrap_or(GUID_BASE);
     let expires = now + hours.clamp(1, MAX_HOURS) * 3600;
-    all.push(Guest { user: user.clone(), name: name.clone(), salt: hex(v.salt()), verifier: hex(v.password_verifier()), made: now, expires, revoked: false, guid });
+    all.push(Guest { user: user.clone(), name: name.clone(), salt: hex(v.salt()), verifier: hex(v.password_verifier()), made: now, expires, revoked: false, guid, build: false, keep: false });
     let n = all.len();
     all.drain(..n.saturating_sub(MAX_GUESTS));
     save(dir, &all)?;
@@ -166,6 +174,42 @@ pub fn revoke(dir: &Path, user: &str, now: u64) -> Result<usize, String> {
     }
     save(dir, &all)?;
     Ok(n)
+}
+
+/// One switch on a live login (`build` or `keep`), by account or character name (any case). Keep on: the login
+/// works for [`MAX_HOURS`] from now. The guest, as it is now.
+pub fn set(dir: &Path, who: &str, what: &str, on: bool, now: u64) -> Result<Guest, String> {
+    let mut all = list(dir);
+    let g = all
+        .iter_mut()
+        .find(|g| g.live(now) && (g.user.eq_ignore_ascii_case(who) || g.name.eq_ignore_ascii_case(who)))
+        .ok_or_else(|| format!("No friend's login called {who} works now."))?;
+    match what {
+        "build" => g.build = on,
+        "keep" => {
+            g.keep = on;
+            if on {
+                g.expires = g.expires.max(now + MAX_HOURS * 3600);
+            }
+        }
+        _ => return Err("build or keep".into()),
+    }
+    let out = g.clone();
+    save(dir, &all)?;
+    Ok(out)
+}
+
+/// A kept friend who is in the Den now: their login runs a week from now again (written only when it gained an hour
+/// or more, so the file isn't rewritten every tick). True when it wrote.
+pub fn renew(dir: &Path, guid: u64, now: u64) -> bool {
+    let mut all = list(dir);
+    let Some(g) = all.iter_mut().find(|g| g.guid == guid && g.keep && g.live(now)) else { return false };
+    let want = now + MAX_HOURS * 3600;
+    if want < g.expires + 3600 {
+        return false;
+    }
+    g.expires = want;
+    save(dir, &all).is_ok()
 }
 
 #[cfg(test)]
@@ -199,5 +243,31 @@ mod tests {
         assert!(list(&d).iter().all(|g| !g.live(2000)));
         assert!(add(&d, Some("Wren"), "Wren", 24, 1000).is_err() && add(&d, Some("x1"), "Wren", 24, 1000).is_err());
         let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn build_and_keep_per_friend_survive_a_restart() {
+        let d = dir("set");
+        let a = add(&d, Some("Rowan"), "Wren", 24, 1000).unwrap();
+        let b = add(&d, Some("Briar"), "Wren", 24, 1000).unwrap();
+        assert!(!find(&d, &a.user, 1001).unwrap().build, "nobody builds until the host says so");
+        assert!(set(&d, "rowan", "build", true, 1001).unwrap().build, "by character name");
+        assert!(find(&d, &a.user, 1002).unwrap().build, "kept in the file (a restart reads it again)");
+        assert!(!find(&d, &b.user, 1002).unwrap().build, "only that friend");
+        // an old guests.json (before these fields) still reads
+        fs::write(d.join(FILE), r#"{"guests":[{"user":"GOLD","name":"Ash","salt":"","verifier":"","made":1,"expires":99,"guid":100}]}"#).unwrap();
+        let old = list(&d);
+        assert_eq!((old.len(), old[0].build, old[0].keep), (1, false, false));
+        // keep: a week from now, renewed while they visit
+        let d2 = dir("keep");
+        let c = add(&d2, None, "Wren", 24, 1000).unwrap();
+        let g = set(&d2, &c.user, "keep", true, 2000).unwrap();
+        assert_eq!(g.expires, 2000 + MAX_HOURS * 3600);
+        assert!(!renew(&d2, g.guid, 2100), "not rewritten for a few minutes");
+        assert!(renew(&d2, g.guid, 2000 + 7200));
+        assert!(find(&d2, &c.user, 2000 + MAX_HOURS * 3600 + 3600).is_some(), "still in after the first week");
+        assert!(set(&d2, "nobody", "keep", true, 2000).is_err() && set(&d2, &c.user, "fly", true, 2000).is_err());
+        let _ = fs::remove_dir_all(&d);
+        let _ = fs::remove_dir_all(&d2);
     }
 }

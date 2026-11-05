@@ -31,7 +31,7 @@ def steps(doc, job):
 class Workflows(unittest.TestCase):
     def test_all_parse(self):
         names = sorted(p.name for p in HERE.glob("*.yml"))
-        self.assertEqual(names, ["den-lite.yml", "forge.yml", "hub-index.yml", "leyline-launcher.yml", "realm-scripts.yml", "scout.yml",
+        self.assertEqual(names, ["bots-canary.yml", "den-lite.yml", "engine-windows.yml", "forge.yml", "hub-index.yml", "leyline-launcher.yml", "realm-scripts.yml", "scout.yml",
                                  "survivors.yml", "wu-hosting.yml", "wu-images.yml"])
         for n in names:
             text, doc = load(n)
@@ -93,6 +93,51 @@ class Workflows(unittest.TestCase):
             self.assertIn(f'"{name}"', lite, f"the launcher downloads {name}")
             self.assertNotRegex(run, r"(?i)\.mpq|\bData/")
         self.assertIn('releases/download/den-lite-latest/"', lite)
+
+    def test_engine_windows(self):
+        """Single player's Built-in engine (docs/BUILTIN-ENGINE.md): the realm's own sources (fetch.sh at the pinned
+        commits, the same paths as wu-images) built natively for Windows; versions pinned; the built-in token only; no
+        game data in the sources or the package (checked before the zip); a smoke before the release; the zip, its
+        sha256 and engine.json on the rolling release engine-latest at the names the launcher downloads; the .github
+        copy byte for byte the source copy."""
+        text, doc = load("engine-windows.yml")
+        self.assertEqual((REPO / ".github" / "workflows" / "engine-windows.yml").read_text(encoding="utf-8"), text)
+        paths = doc["on"]["push"]["paths"]
+        for p in ("realm/custom/sources.lock", "realm/custom/patches/**", "realm/custom/fetch.sh", "realm/custom/modules/**",
+                  "realm/custom/lua_scripts/**", "realm/profiles/**", "realm/modules.env", ".github/workflows/engine-windows.yml"):
+            self.assertIn(p, paths)
+        self.assertEqual(doc["on"]["push"]["branches"], ["main"])
+        self.assertIn("workflow_dispatch", doc["on"])
+        self.assertNotIn("pull_request", doc["on"])
+        self.assertEqual(doc["permissions"], {"contents": "read"})
+        self.assertEqual(set(re.findall(r"secrets\.([A-Za-z_]+)", text)), {"GITHUB_TOKEN"})
+        self.assertEqual(doc["env"]["MYSQL_VERSION"], "8.4.9")   # the host kit runs mysql:8.4; the fork's own CI links 8.4.9
+        self.assertRegex(doc["env"]["BOOST_VERSION"], r"^\d+\.\d+\.\d+$")
+        job = doc["jobs"]["windows"]
+        self.assertEqual(job["runs-on"], "windows-2022")
+        self.assertEqual(job["permissions"], {"contents": "write"})
+        names = [s.get("name", "") for s in job["steps"]]
+        run = "\n".join(s.get("run", "") for s in job["steps"])
+        self.assertIn('FETCH_DIR="$PWD/realm/custom" sh realm/custom/fetch.sh', run)
+        self.assertIn('cd "${FETCH_DIR:-/w}"', (REPO / "realm" / "custom" / "fetch.sh").read_text(encoding="utf-8"),
+                      "fetch.sh still runs in the Docker container at /w")
+        self.assertIn("rm -rf realm/custom/acore/modules/mod-arac/patch-contents", run)
+        for flag in ("-DTOOLS_BUILD=all", "-DSCRIPTS=static", "-DMODULES=static", "-DWITH_WARNINGS=OFF", "-DCMAKE_BUILD_TYPE=Release"):
+            self.assertIn(flag, run)
+        order = [next(i for i, n in enumerate(names) if n.startswith(k)) for k in
+                 ("Sources", "No game data in the sources", "Configure", "Build", "Package", "No game data in the package", "Smoke",
+                  "Zip", "Put it on engine-latest")]
+        self.assertEqual(order, sorted(order))
+        for prog in ("worldserver", "authserver", "dbimport", "map_extractor", "mmaps_generator", "mysqld.exe", "mysqldump.exe"):
+            self.assertIn(prog, run)
+        self.assertIn("-mm=Deflate", run, "the launcher's unzip has deflate only")
+        self.assertIn("gh release upload engine-latest leyline-engine-win64.zip leyline-engine-win64.zip.sha256 leyline-engine-win64.json", run)
+        self.assertIn("SOURCES.txt", run)
+        self.assertIn("bind-address=127.0.0.1", run)
+        eng = (REPO / "launcher" / "src-tauri" / "src" / "host" / "engine.rs").read_text(encoding="utf-8")
+        self.assertIn('"leyline-engine-win64.zip"', eng)
+        self.assertIn('releases/download/engine-latest/"', eng)
+        self.assertNotRegex(run, r"(?i)\bData/|common\.mpq")
 
     def test_survivors(self):
         """Azeroth Survivors (docs/SURVIVORS.md): only when its lock or build script changes, or by hand; only upstream's
@@ -227,6 +272,46 @@ class Workflows(unittest.TestCase):
         self.assertIn("exit 1", realm[i_clean]["run"])
         owners = set(re.findall(r"ghcr\.io/([a-z0-9-]+)/", text)) | set(re.findall(r"github\.com/([A-Za-z0-9-]+)/", text))
         self.assertEqual(owners, {"orionopenwow"})
+
+    def test_bots_canary(self):
+        """Bots always up to date (docs/BOTS-UPDATES.md): weekly and by hand; the compat guard before the long build;
+        canary tags only (never :stable); the smoke test only on the self-hosted runner with the owner's own game
+        data, when BOTS_SMOKE_RUNNER is on; a pull request (draft while the smoke test is pending), never a merge;
+        the built-in token only."""
+        text, doc = load("bots-canary.yml")
+        self.assertEqual((REPO / ".github" / "workflows" / "bots-canary.yml").read_text(encoding="utf-8"), text)
+        self.assertIn("schedule", doc["on"])
+        self.assertIn("workflow_dispatch", doc["on"])
+        self.assertNotIn("push", doc["on"])
+        self.assertEqual(doc["permissions"], {"contents": "read"})
+        self.assertEqual(set(re.findall(r"secrets\.([A-Za-z_]+)", text)), {"GITHUB_TOKEN"})
+        jobs = doc["jobs"]
+        self.assertEqual(list(jobs), ["bump", "images", "smoke", "propose"])
+        bump = "\n".join(s.get("run", "") for s in steps(doc, "bump"))
+        self.assertLess(bump.index("compat.py"), bump.index("pins.py bump"))
+        self.assertIn("pins.py same", bump)
+        # canary tags only
+        tags = [t.strip() for s in steps(doc, "images") if s.get("uses", "").startswith("docker/build-push-action")
+                for t in s["with"]["tags"].splitlines() if t.strip()]
+        self.assertEqual(len(tags), 6)
+        self.assertTrue(all(":canary" in t for t in tags), tags)
+        code = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
+        self.assertNotIn(":stable", code)
+        self.assertEqual(jobs["images"]["permissions"], {"contents": "read", "packages": "write"})
+        img = "\n".join(s.get("run", "") for s in steps(doc, "images"))
+        self.assertIn("rm -rf realm/custom/acore/modules/mod-arac/patch-contents", img)
+        # the smoke test: the owner's own data on his own runner, only when switched on
+        self.assertEqual(jobs["smoke"]["runs-on"], ["self-hosted", "leyline-bots-smoke"])
+        self.assertIn("vars.BOTS_SMOKE_RUNNER == 'on'", jobs["smoke"]["if"])
+        self.assertIn("realm/bots/bots-smoke.sh", "\n".join(s.get("run", "") for s in steps(doc, "smoke")))
+        # the proposal: a pull request, never a merge; as Orion
+        self.assertEqual(jobs["propose"]["permissions"], {"contents": "write", "pull-requests": "write"})
+        run = "\n".join(s.get("run", "") for s in steps(doc, "propose"))
+        self.assertIn("gh pr create --draft", run)
+        self.assertNotIn("gh pr merge", text)
+        self.assertNotIn("git push origin main", text)
+        self.assertIn("user.name=Orion", run)
+        self.assertIn("needs.smoke.result == 'success' || needs.smoke.result == 'skipped'", jobs["propose"]["if"])
 
     def test_hosting_tests(self):
         text, doc = load("wu-hosting.yml")

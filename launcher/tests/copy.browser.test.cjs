@@ -73,7 +73,7 @@ async function open(opts) {
 }
 const go = (page, p, tab) => page.evaluate(([p, t]) => window.LeylineNav.show(p, false, t), [p, tab]);
 const text = (page, sel) => page.evaluate((s) => document.querySelector(s).innerText, sel);
-const BANNED = /world\s+of\s+warcraft|\bwow\b|warcraft|lich\s+king|blizzard/i;
+const BANNED = /world\s+of\s+warcraft|\bwow\b|warcraft|lich\s+king|(?<!endorsed by )blizzard/i;
 
 test('friendly.js: a sentence for players stays, a raw error never shows, its tail is dropped, it reaches the console', async () => {
   const { page, ctx, errors } = await open();

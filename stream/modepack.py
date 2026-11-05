@@ -920,7 +920,7 @@ def get(h, path: str, query: dict) -> None:
     if shell is None:
         h.send(status, body.encode("utf-8"))
         return
-    h.send(status, shell(title, body, p, "modes", next_step="host", css=CSS))
+    h.send(status, shell(f"{title} · Leyline", body, p, "modes", next_step="host", css=CSS))   # tabs end with Leyline (site review 4 Nov)
 
 
 def _main(argv: list[str]) -> int:

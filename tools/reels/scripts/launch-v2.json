@@ -1,0 +1,77 @@
+{
+ "id": "launch-v2",
+ "kind": "launch",
+ "formats": [
+  "wide",
+  "reel"
+ ],
+ "title": "Leyline",
+ "kicker": "TODO(owner): The launch video",
+ "sub": "TODO(owner): Every realm, your Den, single player, mods, hosting: one launcher.",
+ "end_line": "TODO(owner): See you in the world.",
+ "parts": [
+  {
+   "reel": "login-to-playing",
+   "shots": [
+    0,
+    2,
+    3
+   ]
+  },
+  {
+   "reel": "realm-switch",
+   "shots": [
+    0,
+    2
+   ]
+  },
+  {
+   "reel": "single-player",
+   "shots": [
+    1,
+    2
+   ]
+  },
+  {
+   "reel": "den-carry",
+   "shots": [
+    2,
+    3
+   ]
+  },
+  {
+   "reel": "den-fly",
+   "shots": [
+    1,
+    2
+   ]
+  },
+  {
+   "reel": "mods-hd",
+   "shots": [
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "reel": "flow-host",
+   "shots": [
+    2,
+    3
+   ]
+  },
+  {
+   "reel": "phone",
+   "shots": [
+    1
+   ]
+  },
+  {
+   "reel": "queue",
+   "shots": [
+    1
+   ]
+  }
+ ]
+}

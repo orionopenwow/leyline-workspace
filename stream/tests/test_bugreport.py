@@ -107,7 +107,7 @@ class Pages(unittest.TestCase):
         h = H(); BR.get(h, "/wrath/bugs", {})
         st, body = h.sent[:2]
         self.assertEqual(st, 200)
-        self.assertIn("/login?next=%2Fwrath%2Fbugs", body)
+        self.assertIn("/wrath/signin?next=%2Fwrath%2Fbugs", body)
         self.assertIn(".bug", body); self.assertIn("#bug-reports", body)
         self.assertIn('href="https://discord.gg/leyline"', body)
         self.assertNotIn("<form", body)

@@ -62,10 +62,11 @@ async function open(opts = {}) {
 const card = (page, id) => page.locator(`#md-list .md-card[data-mode="${id}"]`);
 const calls = (page, name) => page.evaluate((n) => window.__calls.filter(([c]) => c === n).map(([, a]) => a), name);
 
-test('Modes page: no menu item, Realms › MODES opens it, cards, credit, Coming soon', async () => {
+test('Modes page: its menu item under Realms, Realms › MODES opens it, cards, credit, Coming soon', async () => {
   const { page, errors } = await open();
   const navs = await page.$$eval('aside nav .nav', (b) => b.map((x) => x.dataset.page));
-  assert.ok(!navs.includes('modes'), 'Modes left the side menu');
+  // 4 Nov: the website's menu gets a Modes page, and the launcher's menu matches it
+  assert.equal(navs[navs.indexOf('realms') + 1], 'modes', 'Modes is in the side menu, under Realms');
   await page.click('.nav[data-page="realms"]');
   await page.click('#page-realms [data-page-go="modes"]');
   assert.ok(await page.isVisible('#page-modes'));
@@ -90,7 +91,7 @@ test('Modes page: no menu item, Realms › MODES opens it, cards, credit, Coming
   assert.deepEqual(await calls(page, 'mode_open_credit'), [{ id: 'hordes-of-azeroth', n: 1 }, { id: 'azeroth-survivors', n: 0 }]);
   assert.match(await page.textContent('#md-how'), /starts your game client/);
   const text = await page.textContent('#page-modes');
-  assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i);
+  assert.doesNotMatch(text, /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i);
   assert.deepEqual(errors, []);
   await page.close();
 });

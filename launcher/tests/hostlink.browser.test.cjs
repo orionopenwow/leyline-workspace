@@ -55,7 +55,7 @@ test('leyline://host?<choices>: the Host page with the choices, and the website 
   assert.deepEqual(call[1], { query: Q }, 'the core checks the same query again');
   assert.match(await page.textContent('#host-status-line'), /website's host page is open with your choices/);
   const text = await page.textContent('#host-from-game');
-  assert.doesNotMatch(text, /warcraft|\bwow\b|lich king|blizzard/i);
+  assert.doesNotMatch(text, /warcraft|\bwow\b|lich king|(?<!endorsed by )blizzard/i);
 });
 
 test('leyline://host?manage=<what>: the Host page says what to do for that control', async () => {

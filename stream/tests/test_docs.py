@@ -8,8 +8,12 @@ import html, http.client, importlib.util, os, re, shutil, subprocess, sys, tempf
 from http.server import ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DOCS_PY = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "..", "docs.py"))
-PORTAL = os.path.abspath(sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.path.dirname(DOCS_PY), "wrath_portal.py"))
+_ARGS = sys.argv[1:]
+# like every other portal suite, the portal alone as the argument works too (site review 4 Nov: it crashed)
+if len(_ARGS) == 1 and os.path.basename(_ARGS[0]) == "wrath_portal.py":
+    _ARGS = [os.path.join(os.path.dirname(_ARGS[0]), "docs.py"), _ARGS[0]]
+DOCS_PY = os.path.abspath(_ARGS[0] if _ARGS else os.path.join(HERE, "..", "docs.py"))
+PORTAL = os.path.abspath(_ARGS[1] if len(_ARGS) > 1 else os.path.join(os.path.dirname(DOCS_PY), "wrath_portal.py"))
 STREAM = os.path.dirname(DOCS_PY)
 ROOT = os.path.dirname(STREAM)
 DOCS_DIR = os.path.join(ROOT, "docs", "leyline")

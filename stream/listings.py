@@ -1054,7 +1054,7 @@ class Listings:
         if RULES is None:
             return False, "Listing mods is closed right now (the rules file is missing here)."
         if not acct:
-            return False, "Sign in to list a mod."
+            return False, "Log in to list a mod."
         try:
             src = parse_source(url)
         except ValueError as e:
@@ -1374,6 +1374,17 @@ def bind(getter) -> None:
             return None
     _get = get
 
+def _signin(path: str) -> str:
+    """The Leyline Log in page (the portal's signin_url: stream/profiles.py), coming back to path. Review 4 Nov: these
+    links still said /login?next=, the old sign-in that Caddy now only redirects."""
+    fn = _get("signin_url")
+    if callable(fn):
+        try:
+            return fn(path)
+        except Exception:   # noqa: BLE001
+            pass
+    return "/wrath/signin?next=" + urllib.parse.quote(path, safe="")
+
 
 def _projects_store():
     w = _get("workshop")
@@ -1555,7 +1566,7 @@ def get(h, path: str, query: dict) -> None:
         v = "down"
     if path == API + "/mine":
         if v in (None, "down"):
-            return _json(h, 401 if v is None else 503, {"error": "Sign in first."})
+            return _json(h, 401 if v is None else 503, {"error": "Log in first."})
         doc = {"ok": True, "listings": mine(v[0])}
         if v[2] == "cookie":
             doc["csrf"] = _csrf(v[3])
@@ -1629,9 +1640,9 @@ def _page(h, v, form=None, answer=None, step="", error="", status=200, query=Non
         inner = '<p class="wk-msg" role="alert">The website isn\'t answering right now. Please try again shortly.</p>'
         status = 503
     elif v is None:
-        inner = ('<p>Sign in to list your mod. Any player can list one: paste your repo link, we check it and show '
+        inner = ('<p>Log in to list your mod. Any player can list one: paste your repo link, we check it and show '
                  'exactly what one click will install.</p><p class="wk-actions"><a class="wk-btn violet" '
-                 'href="/login?next=%2Fwrath%2Fmods%2Flist">Sign in</a></p>')
+                 f'href="{html.escape(_signin("/wrath/mods/list"))}">Log in</a></p>')
     else:
         csrf = _csrf(v[3])
         hid = f'<input type="hidden" name="csrf" value="{e(csrf)}">'

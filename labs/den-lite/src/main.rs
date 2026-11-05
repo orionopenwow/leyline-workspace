@@ -11,7 +11,7 @@ const STOP: &str = "den-lite.stop";
 
 const USAGE: &str = "den-lite [--dens <folder>] [--bind 127.0.0.1] [--stamps <folder>] [--password <word>] [--name <name>] \
 [--gender male|female] [--client <game folder>] [--login-port 3724] [--world-port 8085] [--no-companion] [--no-friends] [--friends-lan <this PC's network address>] [--friends-lan-ports 3724,8085] [--test-control] [--ui-wait <ms>] [--ui-load <ms>]
-den-lite guest add|list|revoke --dens <folder> [--name <name>] [--hours 24] [--verbose]
+den-lite guest add|list|revoke|build|keep --dens <folder> [--name <name>] [--hours 24] [--verbose]
 
 A tiny local server for the 3.3.5a (12340) client: a white room to build in, on 127.0.0.1.
 Any account name (the launcher fills in DEN) logs in with the password (default \"den\"; also DEN_LITE_PASSWORD).
@@ -20,7 +20,9 @@ Stamps come from --stamps (default: den-stamps beside the program), else the one
 
 /// `den-lite guest add|list|revoke --dens <folder> ...`: friends' logins (guests.rs), for the launcher's Invite
 /// friends. `add [--name <name>] [--hours 24] [--host <host's character>]` prints {"user","pass","name","expires"}
-/// once (JSON on one line); `list` prints the live ones without secrets; `revoke <account|all>` takes them back.
+/// once (JSON on one line); `list` prints the live ones without secrets; `revoke <account|all>` takes them back;
+/// `build <account|name> on|off` and `keep <account|name> on|off` set one friend's switches (guests.rs `set`; the
+/// launcher's Friends list, docs/DEN-HOSTING.md).
 fn guest(args: Vec<String>) -> ! {
     let mut dens = PathBuf::from("dens");
     let (mut name, mut hours, mut host, mut rest) = (None, den_lite::guests::DEFAULT_HOURS, "Wren".to_string(), Vec::new());
@@ -40,9 +42,15 @@ fn guest(args: Vec<String>) -> ! {
     let out = match cmd.as_str() {
         "add" => den_lite::guests::add(&dens, name.as_deref(), &host, hours, now).map(|m| serde_json::to_string(&m).unwrap_or_default()),
         "list" => Ok(serde_json::to_string(&den_lite::guests::list(&dens).into_iter().filter(|g| g.live(now))
-            .map(|g| serde_json::json!({"user": g.user, "name": g.name, "expires": g.expires})).collect::<Vec<_>>()).unwrap_or_default()),
+            .map(|g| serde_json::json!({"user": g.user, "name": g.name, "expires": g.expires, "build": g.build, "keep": g.keep, "guid": g.guid}))
+            .collect::<Vec<_>>()).unwrap_or_default()),
+        "build" | "keep" => match (rest.first(), rest.get(1).map(String::as_str)) {
+            (Some(who), Some(v @ ("on" | "off"))) => den_lite::guests::set(&dens, who, &cmd, v == "on", now)
+                .map(|g| serde_json::json!({"user": g.user, "name": g.name, "expires": g.expires, "build": g.build, "keep": g.keep}).to_string()),
+            _ => Err(format!("den-lite guest {cmd} <account|name> on|off --dens <folder>")),
+        },
         "revoke" => den_lite::guests::revoke(&dens, rest.first().map(String::as_str).unwrap_or("all"), now).map(|n| format!("{{\"revoked\":{n}}}")),
-        _ => fail("den-lite guest add|list|revoke --dens <folder>"),
+        _ => fail("den-lite guest add|list|revoke|build|keep --dens <folder>"),
     };
     match out {
         Ok(t) => {

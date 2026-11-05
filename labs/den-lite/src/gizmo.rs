@@ -388,6 +388,12 @@ pub struct Aids {
     /// den-test clicks and drags there.
     pub sel_at: Option<[f32; 3]>,
     pub sel_uv: Option<[f32; 2]>,
+    /// The copy in hand is held at the Den's edge (the cursor is past it): the addon says so in the pill (review 4 Nov:
+    /// "the drag stops silently at the Den's edge").
+    pub at_edge: bool,
+    /// The time of the verb being answered (ms; [`cmd`] sets it): the far view's ray is cast from where the camera
+    /// object is at that moment of its glide.
+    pub clock: u64,
 }
 
 impl Aids {
@@ -405,7 +411,14 @@ impl Aids {
         match self.far {
             Some(f) => {
                 cam.dist += f.back;
-                (f.focus, cam)
+                // mid-glide (the free flight, a far move): from where the camera object is now, not where it is going
+                // (placement review 4 Nov: a flight's target is FLY_AHEAD_MS ahead, about 7 yd at its speed, so the
+                // copy in hand and the glow were that far off while flying)
+                let focus = match (self.glide, far_now(self, self.clock)) {
+                    (Some(_), Some(p)) => focus_of(&self.cam, p, f.back, f.focus.o),
+                    _ => f.focus,
+                };
+                (focus, cam)
             }
             None => (here, cam),
         }
@@ -498,6 +511,7 @@ fn name_of(d: &Den, g: u64) -> &'static str {
 
 /// One aid verb. `now`: milliseconds (the copy's throttle). `can`: may build.
 pub fn cmd(d: &mut Den, sel: &mut Sel, a: &mut Aids, here: Here, text: &str, can: bool, now: u64) -> AidOut {
+    a.clock = now;
     let out = aid_verb(d, sel, a, here, text, can, now);
     // where the selection is, on the ground and on the screen (the den-test reads them)
     let obj = sel.guid.and_then(|g| d.placed(g)).map(|p| p.obj.clone());
@@ -842,14 +856,15 @@ fn drag(d: &Den, sel: &mut Sel, a: &mut Aids, here: Here, u: f32, v: f32, aspect
     // carried (a click; owner 4 Nov: "the object follows the mouse instantly across the terrain"): the foot right
     // where the cursor's ray meets the ground, over hills too; a press and drag keeps the grabbed spot under the cursor
     a.carry = carry;
+    a.at_edge = false;
     if carry {
-        if let Some(g) = a.grip {
-            a.grip = Some(pick::Grip { z: g.z, off: [0.0, 0.0] });
-        }
-        if let Some(gp) = ground_hit(d, a, here, e, dir) {
-            let (x, y) = (snap(sel.grid, gp[0], d.spot.x), snap(sel.grid, gp[1], d.spot.y));
-            a.at = Some([x, y, d.floor_at(x, y) + a.lift, a.yaw]);
-        }
+        // the prop stays where it is at the click (review 4 Nov: the foot went to where the ray met the ground, behind
+        // the spot clicked on its body: a 3 yd prop seen at 30 degrees jumped about 2.5 yd): the foot keeps its offset
+        // from that ground point, at most the prop's own footprint (a click high on a tall prop seen from the side
+        // would otherwise hold it far in front of the cursor)
+        let off = ground_hit(d, a, here, e, dir).map(|gp| carry_offset(&p.obj, [o.x - gp[0], o.y - gp[1]])).unwrap_or([0.0, 0.0]);
+        let z = a.grip.map(|g| g.z).unwrap_or(o.z);
+        a.grip = Some(pick::Grip { z, off });
     }
     a.hovered = None;
     a.hover_handle = None;
@@ -926,11 +941,12 @@ fn hover(d: &Den, sel: &Sel, a: &mut Aids, here: Here, u: f32, v: f32, aspect: O
     // a mouse drag: the grabbed spot stays under the cursor (the foot on the grid and the ground)
     if let (Armed::Move(_), Some(g)) = (armed, a.grip) {
         let Some((e, dir)) = ray(&cam, from, u, v, aspect) else { return AidOut::default() };
-        let on = if a.carry { pick::on_ground(e, dir, cam.dist + REACH, |x, y| d.floor_at(x, y)).map(|p| [p[0], p[1]]) } else { None };
+        let on = if a.carry { pick::on_ground(e, dir, cam.dist + REACH, |x, y| d.floor_at(x, y)).map(|p| [p[0] + g.off[0], p[1] + g.off[1]]) } else { None };
         return match on.or_else(|| pick::follow(e, dir, &g, cam.dist + REACH)) {
             Some([x, y]) => {
+                let was = a.at_edge;
                 hover_at(d, sel, a, x, y);
-                draw(d, a, now, force)
+                edge_note(a, was, draw(d, a, now, force))
             }
             None => AidOut::default(),
         };
@@ -946,11 +962,32 @@ fn hover(d: &Den, sel: &Sel, a: &mut Aids, here: Here, u: f32, v: f32, aspect: O
     }
     match hit {
         Some((x, y)) => {
+            let was = a.at_edge;
             hover_at(d, sel, a, x, y);
-            draw(d, a, now, force)
+            edge_note(a, was, draw(d, a, now, force))
         }
         None => AidOut::default(),
     }
+}
+
+/// The addon's `edge 1|0` when the copy in hand starts or stops being held at the Den's edge.
+fn edge_note(a: &Aids, was: bool, out: AidOut) -> AidOut {
+    if a.at_edge == was {
+        return out;
+    }
+    out.tell("edge", if a.at_edge { "1" } else { "0" }.into())
+}
+
+/// A carried prop's foot from the ground point under the cursor at pickup: the offset kept, at most the prop's own
+/// footprint radius over the ground (its turned box), at least half a yard.
+pub fn carry_offset(o: &WorldObject, off: [f32; 2]) -> [f32; 2] {
+    if !off.iter().all(|v| v.is_finite()) {
+        return [0.0, 0.0];
+    }
+    let (hx, hy, _) = world_extent(o);
+    let r = hx.max(hy).max(0.5);
+    let n = (off[0] * off[0] + off[1] * off[1]).sqrt();
+    if n > r { [off[0] * r / n, off[1] * r / n] } else { off }
 }
 
 /// Where the cursor's ray meets the Den's ground (its edited heights; flat ground otherwise).
@@ -968,7 +1005,7 @@ fn handle_under(d: &Den, sel: &Sel, a: &mut Aids, here: Here, u: f32, v: f32, as
     }
     let o = sel.guid.and_then(|g| d.placed(g))?.obj.clone();
     let (e, dir, reach) = cursor_ray(a, here, u, v, aspect, zoom)?;
-    let (hx, hy, h) = extent(&o);
+    let (hx, hy, h) = world_extent(&o);
     let spots = [[o.x + hx + GIZMO_MARGIN, o.y, o.z], [o.x, o.y + hy + GIZMO_MARGIN, o.z], [o.x, o.y, o.z + h + 0.5]];
     let hs: Vec<pick::Body> = spots.iter().enumerate().map(|(i, p)| pick::Body::new(i as u64 + 1, *p, 0.0, [0.45, 0.45], -0.1, 1.0)).collect();
     // a handle in front of the prop wins; one behind it doesn't
@@ -1016,13 +1053,17 @@ fn drag_to(d: &Den, sel: &Sel, a: &mut Aids, s: f32, now: u64, force: bool) -> A
     let s = if sel.grid > 0.0 { ((s as f64 / sel.grid).round() * sel.grid) as f32 } else { s };
     let s = s.clamp(-DRAG_MAX, DRAG_MAX);
     let p = add(from, axis_dir(axis), s);
+    let was = a.at_edge;
     if !d.inside(p[0], p[1], p[2]) {
-        return AidOut::default();
+        // it stays at the last spot inside; the pill says why (it stopped silently, review 4 Nov)
+        a.at_edge = true;
+        return edge_note(a, was, AidOut::default());
     }
+    a.at_edge = false;
     a.dragged = s;
     a.at = Some([p[0], p[1], p[2], a.yaw]);
     // the copy redrawn at most every DRAW_MS; the status (and where a click drops it) at every hover
-    draw(d, a, now, force).tell("drag", format!("{axis},{s:+.2}"))
+    edge_note(a, was, draw(d, a, now, force).tell("drag", format!("{axis},{s:+.2}")))
 }
 
 /// Grab the selection's handle for `axis`: its real object hidden (for this player), a copy dragged instead.
@@ -1077,6 +1118,7 @@ fn hover_at(d: &Den, sel: &Sel, a: &mut Aids, x: f32, y: f32) {
     let r = (d.spot.reach() - (sel.grid as f32).max(0.5)).max(1.0);
     let (dx, dy) = (x - cx, y - cy);
     let n = (dx * dx + dy * dy).sqrt();
+    a.at_edge = n > r;
     let (x, y) = if n > r { (cx + dx * r / n, cy + dy * r / n) } else { (x, y) };
     let (sx, sy) = (snap(sel.grid, x, d.spot.x), snap(sel.grid, y, d.spot.y));
     let z = d.floor_at(sx, sy) + a.lift;
@@ -1159,6 +1201,7 @@ fn cancel(d: &Den, a: &mut Aids) -> AidOut {
     a.follow = false;
     a.grip = None;
     a.carry = false;
+    a.at_edge = false;
     out.tell("aim", "off".into())
 }
 
@@ -1218,6 +1261,8 @@ pub fn commit(d: &mut Den, sel: &mut Sel, a: &mut Aids, now: u64, keep: bool) ->
         a.follow = false;
         a.grip = None;
         a.carry = false;
+        a.at_edge = false;
+    a.at_edge = false;
         out.addon.push(("aim".into(), "off".into()));
     }
     // the prop was made anew: its glow and the gizmo anew
@@ -1256,6 +1301,12 @@ pub fn use_object(d: &Den, sel: &mut Sel, a: &mut Aids, guid: u64, build: bool, 
     if !build || d.placed(guid).is_none() {
         return AidOut::default();
     }
+    // something in hand: a use of another prop is the click that puts it down or away (the addon's), never a new
+    // selection under it (placement review 4 Nov: a left-drag turns you with the camera, TURNORACTION, whose click
+    // on a prop is a use)
+    if a.armed.is_some() {
+        return AidOut::default();
+    }
     if sel.guid != Some(guid) {
         sel.more.clear();
         sel.round = None;
@@ -1273,6 +1324,15 @@ fn extent(o: &WorldObject) -> (f32, f32, f32) {
         Some((w, dp, h, _)) if w > 0.0 && dp > 0.0 && h > 0.0 => (w / 2.0 * o.scale, dp / 2.0 * o.scale, h * o.scale),
         _ => (GIZMO_OFF * o.scale.max(0.5) - GIZMO_MARGIN, GIZMO_OFF * o.scale.max(0.5) - GIZMO_MARGIN, 2.0 * o.scale.max(0.5)),
     }
+}
+
+/// [`extent`] over the world's axes: the half width (x) and depth (y) of the prop's box as it is turned, and its
+/// height. The X / Y arrows stand just outside these (review 4 Nov: placed by the model's own half sizes, a long prop
+/// turned 90 degrees had its X arrow inside it).
+fn world_extent(o: &WorldObject) -> (f32, f32, f32) {
+    let (hx, hy, h) = extent(o);
+    let (s, c) = if o.o.is_finite() { (o.o.sin().abs(), o.o.cos().abs()) } else { (0.0, 1.0) };
+    (c * hx + s * hy, s * hx + c * hy, h)
 }
 
 /// The gizmo where it should be: around the selected prop while it is on (not while that prop is being moved): the
@@ -1309,7 +1369,7 @@ pub fn sync(d: &Den, sel: &Sel, a: &mut Aids) -> AidOut {
     if let Some((g, q, o)) = want {
         a.gizmo_flip = !a.gizmo_flip;
         let flip = if a.gizmo_flip { 3 } else { 0 };
-        let (hx, hy, h) = extent(&o);
+        let (hx, hy, h) = world_extent(&o);
         let at = [(hx + GIZMO_MARGIN, 0.0, 0.0, 0.0f32), (0.0, hy + GIZMO_MARGIN, 0.0, std::f32::consts::FRAC_PI_2), (0.0, 0.0, h + 0.5, 0.0)];
         for (i, (e, display, _, _)) in GIZMO.iter().enumerate() {
             let n = 0x10 + i as u64 + flip;
@@ -1482,6 +1542,7 @@ pub fn clear(a: &mut Aids) -> Vec<u64> {
     a.far_at = None;
     a.grip = None;
     a.carry = false;
+    a.at_edge = false;
     a.hovered = None;
     v
 }
@@ -1560,7 +1621,10 @@ pub fn clear_cooldown_body(spell: u32, guid: u64) -> Vec<u8> {
     b
 }
 
-/// One calibration sample: the last hover and where the exact click landed, with the player's place and facing.
+/// One calibration sample: the last hover and where the exact click landed, with the place and facing the ray was
+/// cast from (the player's, or in the far view its focus) and the distance it used (the zoom, plus the far view's
+/// pull-back). Placement review 4 Nov: it kept the player's place and the zoom only, so a calibration taken in the
+/// build view (where `gizmo build on` puts the camera) fitted a camera 14 yd off its real pose.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Sample {
     pub u: f32,
@@ -1573,7 +1637,8 @@ pub struct Sample {
 
 pub fn sample(a: &Aids, here: Here, dest: [f32; 3]) -> Option<Sample> {
     let c = a.cursor?;
-    Some(Sample { u: c[0], v: c[1], aspect: c[2], dist: a.zoom.unwrap_or(a.cam.dist), player: [here.x, here.y, here.z, here.o], dest })
+    let (from, cam) = a.view(here);
+    Some(Sample { u: c[0], v: c[1], aspect: c[2], dist: cam.dist, player: [from.x, from.y, from.z, from.o], dest })
 }
 
 /// What the den-test reads of the aids (`.den` commands' test-out: "aids").
@@ -1582,7 +1647,7 @@ pub fn view(a: &Aids, sel: &Sel, build: bool) -> serde_json::Value {
         "armed": aim(a), "ghost": a.ghost.as_ref().map(|g| [g.x, g.y, g.z, g.o]), "at": a.at, "cursor": a.cursor,
         "axis": a.axis.map(String::from), "gizmo": a.gizmo.len(), "sel": sel.guid.map(|g| g & 0xFF_FFFF), "mode": if build { "build" } else { "play" },
         "glow": a.glowing.map(|g| g & 0xFF_FFFF), "drag": a.dragged, "cam": cam_line(a), "far_at": a.far_at, "zoom": a.zoom,
-        "hovered": a.hovered.map(|g| g & 0xFF_FFFF), "sel_at": a.sel_at, "sel_uv": a.sel_uv, "build": a.build, "grip": a.grip.is_some(),
+        "hovered": a.hovered.map(|g| g & 0xFF_FFFF), "sel_at": a.sel_at, "sel_uv": a.sel_uv, "build": a.build, "grip": a.grip.is_some(), "edge": a.at_edge,
         "handle": a.hover_handle.map(String::from), "draw_ms": DRAW_MS,
     })
 }
@@ -1945,6 +2010,12 @@ mod tests {
         a.cursor = Some([0.1, -0.2, 1.7]);
         let s = sample(&a, here, c.dest.unwrap()).unwrap();
         assert_eq!((s.u, s.dest[0]), (0.1, here.x + 4.0));
+        assert_eq!((s.dist, s.player[0]), (12.0, here.x), "the near view: the player and the zoom");
+        // the far view: its focus and the zoom plus its pull-back, the pose the ray was cast from
+        a.far = Some(Far { focus: Here { x: here.x + 3.0, ..here }, back: BUILD_BACK, snap: false });
+        let s = sample(&a, here, c.dest.unwrap()).unwrap();
+        assert_eq!((s.dist, s.player[0]), (12.0 + BUILD_BACK, here.x + 3.0));
+        a.far = None;
         let out = dest(&mut d, &mut sel, &mut a, here.x + 4.0, here.y - 2.0, 10, true);
         let made = &out.change.unwrap().created[0];
         assert!((made.x - (here.x + 4.0)).abs() < 0.01 && (made.y - (here.y - 2.0)).abs() < 0.01 && (made.z - d.floor_at(made.x, made.y)).abs() < 0.01);
@@ -2086,14 +2157,19 @@ mod tests {
         assert_eq!((sel.guid, a.armed, a.carry), (Some(chair.guid), Some(Armed::Move(chair.guid)), true));
         assert!(out.addon.contains(&("carried".into(), (chair.guid & 0xFF_FFFF).to_string())), "{:?}", out.addon);
         assert!(out.destroy.contains(&chair.guid));
-        // the cursor moves: the foot is where the ray meets the ground (flat here: the ground's height)
+        // picked up where it stands: no jump (review 4 Nov: the foot went to the ground behind the spot clicked)
+        let at0 = a.at.unwrap();
+        assert!((at0[0] - chair.x).abs() < 1e-3 && (at0[1] - chair.y).abs() < 1e-3, "{at0:?}");
+        let off = a.grip.unwrap().off;
+        // the cursor moves: the foot is where the ray meets the ground (flat here: the ground's height), plus the
+        // offset kept from the pickup
         let [u2, v2] = [u + 0.15, v - 0.05];
         cmd(&mut d, &mut sel, &mut a, here, &format!("hover {}", line(u2, v2)), true, 300);
         let at = a.at.unwrap();
         let (from, cam) = a.view(here);
         let (e, dir) = ray(&cam, from, u2, v2, 16.0 / 9.0).unwrap();
         let g = pick::on_ground(e, dir, 100.0, |x, y| d.floor_at(x, y)).unwrap();
-        assert!((at[0] - g[0]).abs() < 0.05 && (at[1] - g[1]).abs() < 0.05, "{at:?} vs {g:?}");
+        assert!((at[0] - g[0] - off[0]).abs() < 0.05 && (at[1] - g[1] - off[1]).abs() < 0.05, "{at:?} vs {g:?} + {off:?}");
         assert!((at[2] - d.floor_at(at[0], at[1])).abs() < 1e-3, "on the ground");
         // the next click: put down there, still selected (the arrows come back), one undo
         let undo = d.undo_depth();
@@ -2340,5 +2416,96 @@ mod tests {
             }
             assert!(lit.values().filter(|f| **f != 0).count() <= 1, "step {k}: {lit:?}");
         }
+    }
+
+    // ---- gr-fix-den 4 Nov: unrun in the cloud (the crate needs crates.io); the den-lite-test step runs it
+
+    #[test]
+    fn a_carry_offset_is_kept_up_to_the_props_footprint_and_nonsense_is_none() {
+        let mut o = WorldObject { guid: 1, entry: 1, display: 0, kind: GENERIC, scale: 1.0, x: 0.0, y: 0.0, z: 0.0, o: 0.0, pitch: 0.0, roll: 0.0 };
+        let (hx, hy, _) = world_extent(&o);
+        let r = hx.max(hy).max(0.5);
+        assert_eq!(carry_offset(&o, [0.2, -0.1]), [0.2, -0.1], "inside the footprint: kept as it is");
+        let far = carry_offset(&o, [30.0, 0.0]);
+        assert!((far[0] - r).abs() < 1e-4 && far[1] == 0.0, "far behind (a tall prop seen from the side): at most its footprint: {far:?}");
+        assert_eq!(carry_offset(&o, [f32::NAN, 1.0]), [0.0, 0.0]);
+        // turned a quarter: the world extents swap
+        o.o = std::f32::consts::FRAC_PI_2;
+        let (wx, wy, _) = world_extent(&o);
+        assert!((wx - hy).abs() < 1e-3 && (wy - hx).abs() < 1e-3);
+        o.o = f32::NAN;
+        assert!(world_extent(&o).0.is_finite());
+    }
+
+    #[test]
+    fn the_arrows_stand_outside_a_turned_prop_and_the_den_edge_is_said() {
+        let (mut d, mut here) = den();
+        let (mut sel, mut a) = (Sel::default(), Aids::default());
+        let chair = d.spawn(2413, here.x + 6.0, here.y, here.z, 1.2).unwrap();
+        cmd(&mut d, &mut sel, &mut a, here, "gizmo on", true, 0);
+        cmd(&mut d, &mut sel, &mut a, here, "mode build", true, 0);
+        let [u, v] = uv_of(&a, here, &chair);
+        cmd(&mut d, &mut sel, &mut a, here, &format!("click {}", line(u, v)), true, 100);
+        let p = d.placed(chair.guid).unwrap().obj.clone();
+        let out = sync(&d, &sel, &mut Aids { gizmo_on: true, ..Aids::default() });
+        let (wx, _, _) = world_extent(&p);
+        let xa = out.create.iter().find(|o| gizmo_axis(o.guid) == Some('x')).expect("the X arrow");
+        assert!((xa.x - (p.x + wx + GIZMO_MARGIN)).abs() < 1e-3, "the X arrow past the turned box: {} vs {}", xa.x, p.x + wx);
+        // carried toward the edge: `edge 1` once, and `edge 0` coming back
+        let r = d.spot.reach();
+        here.x = d.spot.x + r - 8.0;
+        let c2 = d.spawn(2413, here.x + 5.0, here.y, here.z, 0.0).unwrap();
+        let [u, v] = uv_of(&a, here, &c2);
+        cmd(&mut d, &mut sel, &mut a, here, &format!("click {} carry", line(u, v)), true, 200);
+        let out = cmd(&mut d, &mut sel, &mut a, here, &format!("hover {}", line(0.0, 0.25)), true, 300);
+        assert!(a.at_edge && out.addon.contains(&("edge".into(), "1".into())), "{:?}", out.addon);
+        let out = cmd(&mut d, &mut sel, &mut a, here, &format!("hover {}", line(0.0, 0.26)), true, 400);
+        assert!(out.addon.iter().all(|(n, _)| n != "edge"), "said once");
+        let out = cmd(&mut d, &mut sel, &mut a, here, &format!("hover {}", line(u, v)), true, 500);
+        assert!(!a.at_edge && out.addon.contains(&("edge".into(), "0".into())), "{:?}", out.addon);
+        cmd(&mut d, &mut sel, &mut a, here, "preview off", true, 600);
+        assert!(!a.at_edge);
+    }
+
+    #[test]
+    fn mid_flight_the_ray_starts_from_where_the_camera_object_is_now() {
+        let (mut d, here) = den();
+        let (mut sel, mut a) = (Sel::default(), Aids::default());
+        cmd(&mut d, &mut sel, &mut a, here, "mode build", true, 0);
+        cmd(&mut d, &mut sel, &mut a, here, "cam build", true, 0);
+        let Some(FarOut::Glide(from, to, ms)) = cmd(&mut d, &mut sel, &mut a, here, "cam fly 1 0 0 0", true, 1000).far else { panic!() };
+        let target = a.far.unwrap().focus;
+        // at the start of the glide: the focus where the object is (the start), not the target
+        let (f0, _) = a.view(here);
+        let start = focus_of(&a.cam, from, a.far.unwrap().back, target.o);
+        assert!((f0.x - start.x).abs() < 1e-3 && (f0.y - start.y).abs() < 1e-3, "{f0:?} vs {start:?}");
+        // half way: half way
+        cmd(&mut d, &mut sel, &mut a, here, "cam where", true, 1000 + ms as u64 / 2);
+        let (fh, _) = a.view(here);
+        let half = focus_of(&a.cam, [(from[0] + to[0]) / 2.0, (from[1] + to[1]) / 2.0, (from[2] + to[2]) / 2.0, to[3]], a.far.unwrap().back, target.o);
+        assert!((fh.x - half.x).abs() < 0.05 && (fh.y - half.y).abs() < 0.05, "{fh:?} vs {half:?}");
+        // done: the target
+        cmd(&mut d, &mut sel, &mut a, here, "cam where", true, 1000 + ms as u64 + 50);
+        let (fe, _) = a.view(here);
+        assert!((fe.x - target.x).abs() < 0.01 && (fe.y - target.y).abs() < 0.01, "{fe:?} vs {target:?}");
+    }
+
+    #[test]
+    fn using_a_prop_while_one_is_in_hand_selects_nothing() {
+        let (mut d, here) = den();
+        let (mut sel, mut a) = (Sel::default(), Aids::default());
+        let chair = d.spawn(2413, here.x + 6.0, here.y, here.z, 0.0).unwrap();
+        let other = d.spawn(2413, here.x + 9.0, here.y + 2.0, here.z, 0.0).unwrap();
+        cmd(&mut d, &mut sel, &mut a, here, "gizmo on", true, 0);
+        cmd(&mut d, &mut sel, &mut a, here, "mode build", true, 0);
+        let [u, v] = uv_of(&a, here, &chair);
+        cmd(&mut d, &mut sel, &mut a, here, &format!("click {} carry", line(u, v)), true, 100);
+        assert!(a.armed.is_some());
+        let out = use_object(&d, &mut sel, &mut a, other.guid, true, 200);
+        assert!(out.addon.is_empty() && sel.guid == Some(chair.guid), "{out:?}");
+        // put down: a use selects as before
+        cmd(&mut d, &mut sel, &mut a, here, "commit", true, 300);
+        let out = use_object(&d, &mut sel, &mut a, other.guid, true, 400);
+        assert!(sel.guid == Some(other.guid) && out.addon.iter().any(|(n, _)| n == "picked"));
     }
 }

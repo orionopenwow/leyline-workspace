@@ -96,8 +96,8 @@
 
   function paintNone(body) {
     const p = mk("div", "gm-empty");
-    p.append(mk("p", "", "No world of yours on this PC yet. Play solo once, and it shows here."),
-      btn("Play solo", "btn primary solo-go", () => { if (window.LeylineNav) window.LeylineNav.show("play"); const g = $("hm-den-go"); if (g) g.click(); }));
+    p.append(mk("p", "", "No world of yours on this PC yet. Open your Den once, and it shows here."),
+      btn("Open my Den", "btn primary solo-go", () => { if (window.LeylineNav) window.LeylineNav.show("play"); const g = $("hm-den-go"); if (g) g.click(); }));
     body.append(p);
   }
 
@@ -112,7 +112,7 @@
     const p = mk("div", "gm-empty gm-den");
     p.append(mk("p", "", "Your Den on Den Lite keeps its controls in the game: open the Den panel (type /den) for speed, fly, weather, building and the rest. The full sandbox below is for your realm on this PC (Host pack)."));
     const acts = mk("div", "gm-acts");
-    acts.append(btn("Play solo", "btn small solo-go", () => { if (window.LeylineDen) { if (window.LeylineNav) window.LeylineNav.show("den"); window.LeylineDen.go(); } }));
+    acts.append(btn("Open my Den", "btn small solo-go", () => { if (window.LeylineDen) { if (window.LeylineNav) window.LeylineNav.show("den"); window.LeylineDen.go(); } }));
     if (window.LeylineSolo) acts.append(window.LeylineSolo.inviteButton((t, k) => say(t, k)));
     p.append(acts);
     body.append(p);

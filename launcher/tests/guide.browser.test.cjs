@@ -12,7 +12,7 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 
 const INDEX = 'file://' + path.join(__dirname, '..', 'ui', 'index.html');
-const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i;
+const BRANDS = /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i;
 const SHOTS = process.env.GUIDE_SHOTS || '';
 
 const FAKE = (o) => {

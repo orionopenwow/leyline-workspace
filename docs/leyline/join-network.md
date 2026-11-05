@@ -1,6 +1,6 @@
 # Bring your server
 
-Already run a server? Put it on the Leyline network. Players find it on the realm list, hop to it from inside the game, and sign in with their Hero Key: no new account, no password to type.
+Already run a server? Put it on the Leyline network. Players find it on the realm list, hop to it from inside the game, and log in with their Hero Key: no new account, no password to type.
 
 **For:** AzerothCore and TrinityCore servers for the Wrath client. Other cores are not ready for Hero Key sign-in yet: you can still list them with **Link my server** (see [Keep your realm up 24/7](always-on.md)).
 
@@ -17,7 +17,7 @@ One small helper runs next to your server. It:
 
 - talks out to the Leyline relay, so players reach you without knowing your address;
 - puts your server on the realm list and keeps its line up to date;
-- makes an account for each Hero Key player the first time they sign in, named `HK` and 14 letters.
+- makes an account for each Hero Key player the first time they log in, named `HK` and 14 letters.
 
 It changes nothing else: not your realm list, other accounts, characters or files. The database password is asked once, kept in `state/link-db.env` (only you can read it) and never shown.
 

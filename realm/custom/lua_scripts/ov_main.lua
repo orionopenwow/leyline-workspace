@@ -1713,8 +1713,8 @@ local function onCommand(event, player, command)
     local cmd = (command or ""):gsub("^[%.!]", ""):lower():gsub("%s+$", "")
     -- WrathUnleashedUI (Modes.lua, "the start-choice window") answers the choice menu, which a client closes without
     -- telling the realm: "boost seen" = it arrived (no more resends this session: touched, above); "boost later" =
-    -- closed with Goodbye without a pick: kept for the character (choice "later"), so no login opens it again.
-    -- .boost still opens it while the character may boost.
+    -- closed with Goodbye without a pick: kept for the character (choice "later"); the next login at level 1 opens it
+    -- again (onLogin, owner 4 Nov), and .boost still opens it while the character may boost.
     if cmd == "boost seen" or cmd == "boost later" then
         if not on() then return end
         local guid = player:GetGUIDLow()

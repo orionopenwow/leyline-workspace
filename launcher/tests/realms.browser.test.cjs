@@ -99,7 +99,7 @@ test('Realms page: two tabs, Official first; the slim line, one tag, players, Re
   assert.deepEqual(await badges(0), ['Featured'], 'no badge pile: Official or Featured only');
   assert.deepEqual(await badges(1), []);
   assert.equal(await cards.nth(0).locator('.rl-ok').getAttribute('title'), 'Verified host: checked by Leyline staff');
-  assert.equal(await cards.nth(0).locator('.rl-note').textContent(), 'Needs your own 1.12.1 client', 'a quiet note only when it applies');
+  assert.equal(await cards.nth(0).locator('.rl-note').textContent(), 'Needs your own game folder for this version', 'a quiet note only when it applies (no version in the sentence: the chip shows it)');
   assert.equal(await cards.nth(1).locator('.rl-note').count(), 0);
   assert.equal(await page.locator('#rl-list .rl-addr').count(), 0, 'no address chip');
   assert.equal(await cards.nth(0).locator('.rl-meta').textContent(), 'PvE', 'one line: type and style, no server software name');

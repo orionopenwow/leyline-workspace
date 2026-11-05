@@ -393,7 +393,7 @@ def _nav() -> str:
     return ('<nav class="ly-nav" aria-label="Leyline"><div class="grp">'
             '<a href="/wrath/leyline">Hub</a><a href="/wrath/modes">Modes</a><a href="/wrath/realms">Realms</a>'
             '<a href="/wrath/mods">Mods</a><a href="/wrath/docs">Docs</a></div>'
-            '<div class="grp"><a href="/login?next=%2Fwrath">Sign in</a><a class="hot" href="/wrath">Play now</a></div></nav>')
+            '<div class="grp"><a href="/wrath/signin?next=%2Fwrath">Log in</a><a class="hot" href="/wrath">Play now</a></div></nav>')
 
 
 def _toc(current: str, heads: list) -> str:

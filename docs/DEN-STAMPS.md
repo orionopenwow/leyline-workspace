@@ -15,6 +15,8 @@ What changed:
 - **Jaina builds like a person** (`labs/den-lite/src/dojo.rs`): she walks into the place's middle, builds the big pieces
   first and the small ones last, turns and casts at each, and then steps back on your side to look at it.
 - **Copy a place from your own game** (`.den copy lionspride`): see the last section.
+- **4 Nov: the stamp library, pictures, turn / mirror / size, placing with the mouse and saving a selection as a
+  stamp** are the builder's Tools window: docs/DEN-TOOLS.md.
 
 ## 1. How the game's own small places are put together
 

@@ -10,6 +10,11 @@
 --   Moving        Fly (on / off), Speed 1 / 2 / 4
 --   Jaina builds  Garden, Campfire, Market, Inn (Den Lite: she walks over and builds it piece by piece; the full Den:
 --                 the stamp at once)
+--   Jaina         Follow, Stay, Quiet (she says nothing unasked; again: she chimes in now and then), Pet (a critter)
+--   Her ideas     Idea (a small set in front of you as a sparkling copy), Keep, No (her question: keep the set, tidy
+--                 up), Tidy (she asks, then takes away only what she put down and you haven't moved). Den Lite's
+--                 brain (labs/den-lite jaina.rs, owner 4 Nov); each is one ".den jaina <word>" (EditMode.lua DenCmd).
+--                 On the full Den only Follow and Stay (its ov_den_companion.lua knows those).
 --   Practice      Pack, Mover, Healer, Tank, Boss: the sandbox combat's dummies (Den Lite, labs/den-lite combat.rs:
 --                 on when its line says combat=1)
 --   Range         Levels (dummies three levels below and above you, light and heavy armour), Group (the healing
@@ -35,10 +40,11 @@
 --                               [;combat=1;class=<word|->;level=<n>;fight=0|1;parse=<minutes|->;best=<secs|->;god=0|1]
 --                      dps      dps=<n>;total=<n>;secs=<s>;dummy=<name>[;hps=<n>;healed=<n>][;done=1]
 --                      loadout  class=<word>;spec=<word>;specs=<a,b,c>;bars=<name|->;saved=<a,b>;set=<name|->;tiers=<1,2>;mine=<a,b>
+--                      jaina    talk=quiet|normal|chatty;doing=<word>;mood=<word>;offer=<set|->;ask=offer|tidy<n>|-;mine=<n>;critters=<n>;...
 -- Their lines come back as the Den bar's toasts. Nothing the server sends is run; texts are shown plain.
 
 local W = WrathUnleashedUI
-local J = { line = {}, dps = nil, bossAt = 1, classAt = 1, specAt = 1, barAt = 1, gearAt = 1, page = "train",
+local J = { line = {}, jaina = {}, dps = nil, bossAt = 1, classAt = 1, specAt = 1, barAt = 1, gearAt = 1, page = "train",
     loadout = { saved = {}, tiers = {}, mine = {} } }
 local MOD = "wuden"
 J.STAMPS = { "garden", "campfire", "market", "inn" }
@@ -95,6 +101,15 @@ function J.Cmd(text)
     if E and E.DenCmd then return E.DenCmd(t) end
     return send("cmd", (t:gsub("[^%w%s%-_]", ""):sub(1, 60)))
 end
+
+-- One word for Jaina: ".den jaina <word>" (her brain on Den Lite: jaina.rs `word`; follow and stay on both servers).
+function J.Jaina(word)
+    local t = "jaina " .. tostring(word or "")
+    local E = W.EditMode
+    if E and E.DenCmd then return E.DenCmd(t) end
+    return send("cmd", (t:gsub("[^%w%s%-_]", ""):sub(1, 60)))
+end
+J.JAINA_LITE = "Den Lite's companion (Your Den in the launcher)"
 
 function J.Lite() return J.line.server == "lite" end
 function J.Combat() return J.line.combat == "1" end
@@ -232,6 +247,22 @@ local function build()
         x = x + (tonumber((b:GetWidth())) or 52) + 4
     end
     widest = math.max(widest, x)
+    panel.jainaRow, at = row("Jaina")
+    chips({
+        { "jFollow", "Follow", 54, function() J.Jaina("follow") end, "She follows you" },
+        { "jStay", "Stay", 44, function() J.Jaina("stay") end, "She waits where she is" },
+        { "jQuiet", "Quiet", 50, function() J.Jaina(J.jaina.talk == "quiet" and "talk" or "quiet") end,
+            "Quiet: she says nothing unasked (gestures only). Again: she chimes in now and then" },
+        { "jPet", "Pet", 40, function() J.Jaina("pet") end, "A small critter by you (three at most; they go when you leave)" },
+    }, nil, at)
+    panel.ideasRow, at = row("Her ideas")
+    chips({
+        { "jIdea", "Idea", 44, function() J.Jaina("idea") end, "She suggests a small set in front of you: a sparkling copy you keep or send away" },
+        { "jYes", "Keep", 46, function() J.Jaina("yes") end, "Keep her set (one undo takes it back), or yes to her question" },
+        { "jNo", "No", 36, function() J.Jaina("no") end, "Send her set away, or no to her question" },
+        { "jTidy", "Tidy", 44, function() J.Jaina("tidy") end, "She asks first, then takes away only what she put down and you haven't moved" },
+    }, nil, at)
+    for _, k in ipairs({ "jIdea", "jTidy", "jPet", "jQuiet" }) do panel[k].edLabel0 = panel[k].edLabel end
     local function verbRow(name, key, list, x0)
         local l, at2 = row(name)
         panel[key] = {}
@@ -405,6 +436,20 @@ function J.Paint()
     end
     if l.best and l.best ~= "-" then parts[#parts + 1] = "Best boss time: " .. l.best .. " s" end
     if l.building == "1" then parts[#parts + 1] = "Jaina is building..." end
+    -- Jaina's row: lit from her line (Den Lite); without it only Follow and Stay (the full Den knows those)
+    local jl = J.jaina or {}
+    local brain = jl.talk ~= nil
+    panel.jFollow:SetActive(jl.doing ~= nil and jl.doing ~= "stay")
+    panel.jStay:SetActive(jl.doing == "stay")
+    panel.jQuiet:SetActive(jl.talk == "quiet")
+    for _, k in ipairs({ "jIdea", "jTidy", "jPet", "jQuiet" }) do
+        local b = panel[k]
+        if brain then b:Enable(); b.edLabel = b.edLabel0 else b:Disable(); b.edLabel = J.JAINA_LITE end
+    end
+    local asking = brain and jl.ask ~= nil and jl.ask ~= "-"
+    for _, k in ipairs({ "jYes", "jNo" }) do if asking then panel[k]:Enable() else panel[k]:Disable() end end
+    if brain and jl.offer and jl.offer ~= "-" then parts[#parts + 1] = "Jaina's idea: " .. title(jl.offer) .. " (Keep or No)"
+    elseif brain and jl.ask and jl.ask:match("^tidy") then parts[#parts + 1] = "Jaina asks: tidy up? (Keep or No)" end
     if combat and l.class and l.class ~= "-" then
         parts[#parts + 1] = title(l.class) .. " " .. (l.level or "") .. ((lo.spec and lo.class == l.class) and (" " .. title(lo.spec)) or "")
     end
@@ -431,6 +476,11 @@ function J.OnMessage(prefix, msg, channel, sender)
         J.line = l
         J.Paint()
         if W.DenBar and W.DenBar.Paint then W.DenBar.Paint() end
+    elseif name == "jaina" then
+        local t = fields(data, 24)
+        if t.talk ~= "quiet" and t.talk ~= "normal" and t.talk ~= "chatty" then return end
+        J.jaina = t
+        J.Paint()
     elseif name == "dps" then
         local t = fields(data, 40)
         local dps, total = tonumber(t.dps or ""), tonumber(t.total or "")

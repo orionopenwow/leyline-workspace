@@ -55,7 +55,7 @@ local CARDS = {
     { "Build mode", "F7 switches between Build mode (the tools, a thin gold edge) and Play mode. Click a prop in the gallery, then Enter or double-click to place it." },
     { "Shape ground", "Opens the world editor on your Den's ground: raise hills, dig, paint the ground. Your game shows it after a restart." },
     { "Play mode and invite", "Play mode (F7) hides every tool so you just walk your Den: Dojo, Class, Invite and Files stay in the corner." },
-    { "Keys", "F7 build / play · click a tile, Enter places · arrows move, PgUp / PgDn lift, Q / E turn, + / - size · Tab next · Del deletes · Esc lets go · Ctrl+Z / Ctrl+Y undo, redo." },
+    { "Keys", "F7 build / play · click a prop to carry it, click to drop · Q / E or wheel turn it · wheel far out: fly with WASD · PgUp / PgDn lift · + / - size · Del deletes · Esc lets go · Ctrl+Z / Ctrl+Y undo, redo." },
 }
 D.CARDS = CARDS
 
@@ -338,8 +338,15 @@ function D.Tool(which)
         b.Focus(which)
     elseif which == "stamps" then
         b.ShowBuilder(true); b.ShowTab("stamps"); b.SetMode("stamps")
+        -- Den Lite's tools (BuildTools.lua): the library with pictures, turn / mirror / size, place with the mouse
+        local T = W.BuildTools
+        if T and T.Here() then T.Show("stamps") end
     elseif which == "path" then
-        b.Path()
+        local T = W.BuildTools
+        if T and T.Here() then b.SetMode("path"); T.Show("path") else b.Path() end
+    elseif which == "tools" then
+        local T = W.BuildTools
+        if T then T.Toggle() end
     end
     D.Refresh()
 end
@@ -352,8 +359,12 @@ D.RAIL = {
     { "rotate", "rotate", "Rotate", "Turn the selection (, and .)", function() D.Tool("rotate") end },
     { "stamps", "stamp", "Stamps", "Stamps: ready-made areas", function() D.Tool("stamps") end },
     { "path", "path", "Path", "Path: a line of the picked prop", function() D.Tool("path") end },
+    -- the builder's tools (BuildTools.lua, 4 Nov): box select, align, arrays, Solid, layers, history
+    { "tools", "grid", "Tools", "Tools: box select, align, arrays, Solid, layers, history", function() D.Tool("tools") end },
     { "ground", "ground", "Ground", "Shape the ground (opens Forge)", function() D.ShapeGround() end, "Shape ground" },
     { "dojo", "dojo", "Dojo", "The training grounds", function() if W.Dojo then W.Dojo.Toggle() end end },
+    -- duel tournaments (DenTourney.lua): the bracket, sign-ups, the ring
+    { "arena", "banners", "Arena", "Duel tournaments: the bracket, sign-ups, the ring", function() if W.Tourney then W.Tourney.Toggle() end end },
     -- snap out (owner 3 Nov): the view up and back over where you stand, and back (Gizmo.lua; its key says the tooltip)
     { "view", "camera", "View", "Snap out: the view from up high, and back", function() if W.Gizmo and W.Gizmo.Snap then W.Gizmo.Snap() end end },
 }
@@ -475,6 +486,7 @@ local function buildBar()
     pill.play = {}
     local px = 8
     for _, it in ipairs({ { "dojo", "Dojo", function() if W.Dojo then W.Dojo.Toggle() end end, "The training grounds" },
+                          { "arena", "Arena", function() if W.Tourney then W.Tourney.Toggle() end end, "Duel tournaments: sign up, watch, fight" },
                           { "class", "Class", function() D.ShowClasses() end, "Try another class here" },
                           { "invite", "Invite", function() D.Invite() end, "Invite one friend: a link to send" },
                           { "files", "Files", function() local b = B(); if b then b.ShowFiles() end end, "Your Den's saves by name" },
@@ -618,6 +630,7 @@ function D.Paint()
         bar.path:SetActive(b.mode == "path")
     end
     bar.dojo:SetActive(W.Dojo and W.Dojo.IsOpen and W.Dojo.IsOpen() or false)
+    if bar.arena then bar.arena:SetActive(W.Tourney and W.Tourney.IsOpen and W.Tourney.IsOpen() or false) end
     if bar.guide then bar.guide:SetActive(W.DenGuide and W.DenGuide.IsOpen() or false) end
     -- what is only for a Den: the ground, Play, Invite
     for _, k in ipairs({ "ground", "playBtn", "invite" }) do if D.active then bar[k]:Show() else bar[k]:Hide() end end
@@ -990,6 +1003,10 @@ function D.OnMessage(prefix, msg, channel, sender)
         if W.DenDiag then pcall(W.DenDiag, plain(data)) end
     elseif name == "ui" then
         D.TestAction(data)
+    elseif name == "showcase" then
+        -- a share from the launcher (labs/den-lite showcase.rs): "<pictures>|<ms between>|<zoom yards>"
+        local n, step, zoom = data:match("^(%d+)|(%d+)|(%d+)$")
+        if n then D.Showcase(tonumber(n), tonumber(step) / 1000, tonumber(zoom)) end
     elseif name == "invite" and inviteOk(data) then
         D.link = data
         if D.active then
@@ -1201,6 +1218,51 @@ function D.TestAction(text)
     if a == "rail" then local r = bar[w[2] or ""]; if r and r.Click then r:Click(); return true end; return false end
     return false
 end
+
+-- ---------------------------------------------------------------- the showcase (labs/den-lite showcase.rs)
+-- When a player shares this Den from the launcher (Mods & Addons > Dens > Share, docs/DEN-MARKETPLACE.md), Den Lite
+-- puts the far camera over the build and asks for its pictures: the interface hides, the camera zooms out to fit it,
+-- and the game's own Screenshot() takes one picture on each side, a quarter turn between (FlipCameraYaw), ending
+-- where it began. The pictures go to the game's Screenshots folder as JPEGs; the launcher shows them and sends only
+-- the ones the player keeps. The timer runs on the world frame, so it keeps going while the interface is hidden.
+local shoot = CreateFrame("Frame", nil, WorldFrame or UIParent)
+shoot:Hide()
+function D.Showcase(n, step, zoom)
+    if shoot.left then return false end
+    shoot.left = math.max(1, math.min(tonumber(n) or 4, 8))
+    shoot.turn = 360 / shoot.left
+    shoot.step = math.max(0.5, math.min(tonumber(step) or 1.8, 5))
+    shoot.t, shoot.turned = shoot.step, true
+    shoot.ui = UIParent:IsShown()
+    shoot.cv = { GetCVar("screenshotFormat"), GetCVar("screenshotQuality") }
+    SetCVar("screenshotFormat", "jpeg")   -- small enough to share (900 KB a picture)
+    SetCVar("screenshotQuality", "6")
+    if not InCombatLockdown() then UIParent:Hide() end
+    if CameraZoomOut then CameraZoomOut(math.max(1, math.min(tonumber(zoom) or 20, 50))) end
+    shoot:Show()
+    return true
+end
+shoot:SetScript("OnUpdate", function(self, elapsed)
+    if not self.left then return self:Hide() end
+    self.t = self.t - (elapsed or 0)
+    if self.t > 0 then return end
+    if not self.turned then   -- the picture is written: a quarter round to the next side
+        if FlipCameraYaw then FlipCameraYaw(self.turn) end
+        self.turned, self.t = true, self.step - 0.4
+    elseif self.left > 0 then
+        if Screenshot then Screenshot() end
+        D.shots = (D.shots or 0) + 1
+        self.left = self.left - 1
+        self.turned, self.t = false, 0.4
+    else
+        self:Hide()
+        self.left = nil
+        if self.cv[1] then SetCVar("screenshotFormat", self.cv[1]) end
+        if self.cv[2] then SetCVar("screenshotQuality", self.cv[2]) end
+        if self.ui then UIParent:Show() end
+    end
+end)
+D.shootFrame = shoot
 
 local listener = CreateFrame("Frame")
 listener:RegisterEvent("CHAT_MSG_ADDON")

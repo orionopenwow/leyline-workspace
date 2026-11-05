@@ -11,7 +11,7 @@
 //! the host's fixed local login never works from outside this PC. Its realm list names the address friends reach the
 //! world server at (`<dens>/den-lite.public`, written by the launcher's tunnel), never 127.0.0.1.
 
-use crate::Shared;
+use crate::{Lock, Shared};
 use std::io::{self, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
@@ -179,7 +179,7 @@ fn session(mut s: TcpStream, shared: &Shared, remote: bool, address: Option<Stri
             return Ok(());
         }
     };
-    shared.sessions.lock().unwrap().insert(user.to_string(), (*server.session_key(), who, remote));
+    shared.sessions.lk().insert(user.to_string(), (*server.session_key(), who, remote));
     shared.log(&format!("login: {} signed in", user));
     shared.event("auth_ok", &user.to_string(), if remote { "remote" } else { "local" });
     send(

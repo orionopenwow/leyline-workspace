@@ -587,7 +587,7 @@ st, d4 = api("report", {"id": d2["id"], "reason": "spam"}, {"Cookie": "wr_sessio
 check("API: report (own listing refused)", st == 400 and "your own" in d4["error"])
 h = H("GET", L.PAGE)
 L.get(h, L.PAGE, {})
-check("page: signed out asks to sign in", h.sent[0] == 200 and "Sign in" in h.sent[1] and "List your mod" in h.sent[1])
+check("page: signed out asks to log in", h.sent[0] == 200 and "Log in" in h.sent[1] and "List your mod" in h.sent[1])
 h = H("GET", L.PAGE, b"", {"Cookie": "wr_session=s1"})
 L.get(h, L.PAGE, {})
 check("page: signed in shows the link form and your listings", 'name="url"' in h.sent[1] and "Your listings" in h.sent[1])

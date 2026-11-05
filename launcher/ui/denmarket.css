@@ -1,0 +1,58 @@
+/* Mods & Addons › Dens (denmarket.js): shared Dens and stamps, a build's detail, Share, Your shared Dens. */
+#dm .dm-bar { flex-wrap: wrap; gap: 8px; }
+#dm #dm-q { min-width: 220px; flex: 1; max-width: 420px; }
+#dm .dm-bar .btn.on { border-color: var(--t-accent); color: var(--t-accent); }
+#dm .dm-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 12px; }
+#dm .dm-chips select { height: 30px; }
+#dm .dm-status:empty { display: none; }
+#dm .dm-status[data-kind="ok"] { color: var(--t-ok, #4ab07a); }
+#dm .dm-status[data-kind="warn"] { color: var(--t-warn, #e0a43a); }
+#dm .dm-status[data-kind="bad"] { color: var(--t-bad, #e05a4a); }
+#dm h3 { font-size: 14px; margin: 14px 0 8px; }
+#dm .dm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+#dm .dm-card { display: flex; flex-direction: column; text-align: left; padding: 0; border-radius: 12px; overflow: hidden; cursor: pointer;
+  background: var(--t-raised); border: 1px solid var(--t-border); color: inherit; font: inherit; }
+#dm .dm-card:hover, #dm .dm-card:focus-visible { border-color: var(--t-accent); }
+#dm .dm-pic { position: relative; aspect-ratio: 16 / 9; background: linear-gradient(135deg, #2a2440, #14202c); }
+#dm .dm-pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+#dm .dm-pic-kind { position: absolute; left: 8px; top: 8px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
+  padding: 2px 7px; border-radius: 999px; background: rgba(0, 0, 0, .55); color: #fff; }
+#dm .dm-t { display: flex; flex-direction: column; gap: 2px; padding: 9px 11px 11px; }
+#dm .dm-by, #dm .dm-nums { font-size: 12px; color: var(--t-muted); }
+#dm .dm-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+#dm .dm-tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--t-accent-soft); }
+#dm .dm-feat-tag { color: var(--t-accent); }
+#dm .dm-pages { justify-content: center; gap: 10px; margin: 12px 0; }
+#dm .dm-made { margin-top: 14px; }
+#dm .dm-detail { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 18px; margin-top: 8px; }
+@media (max-width: 900px) { #dm .dm-detail { grid-template-columns: 1fr; } }
+#dm .dm-big { aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: linear-gradient(135deg, #2a2440, #14202c);
+  display: flex; align-items: center; justify-content: center; }
+#dm .dm-big img { width: 100%; height: 100%; object-fit: cover; }
+#dm .dm-thumbs { display: flex; gap: 6px; margin-top: 8px; }
+#dm .dm-thumb { width: 84px; height: 48px; padding: 0; border-radius: 6px; overflow: hidden; border: 2px solid transparent; cursor: pointer; }
+#dm .dm-thumb.on { border-color: var(--t-accent); }
+#dm .dm-thumb img { width: 100%; height: 100%; object-fit: cover; }
+#dm .dm-kind { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--t-muted); }
+#dm .dm-name { font-size: 18px; margin: 2px 0 4px; }
+#dm .dm-credit, #dm .dm-lineage { margin: 2px 0; }
+#dm .linkish { background: none; border: 0; padding: 0; color: var(--t-accent); cursor: pointer; font: inherit; text-decoration: underline; }
+#dm .dm-facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 10px 0; font-size: 12.5px; }
+#dm .dm-facts dt { color: var(--t-muted); }
+#dm .dm-facts dd { margin: 0; }
+#dm .dm-acts { flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+#dm .dm-report summary { cursor: pointer; height: 30px; line-height: 30px; padding: 0 10px; border: 1px solid var(--t-border); border-radius: 8px; font-size: 11.5px; }
+#dm .dm-report[open] { display: flex; flex-wrap: wrap; gap: 6px; }
+#dm .dm-share { max-width: 720px; display: flex; flex-direction: column; gap: 10px; }
+#dm .dm-field { display: flex; flex-direction: column; gap: 4px; }
+#dm .dm-field > span { font-size: 12px; color: var(--t-muted); }
+#dm .dm-share-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+#dm .dm-strip { display: flex; flex-wrap: wrap; gap: 8px; }
+#dm .dm-shot { position: relative; width: 160px; height: 90px; border-radius: 8px; overflow: hidden; }
+#dm .dm-shot img { width: 100%; height: 100%; object-fit: cover; }
+#dm .dm-shot-x { position: absolute; right: 4px; bottom: 4px; }
+#dm .dm-share-acts { gap: 8px; }
+#dm .dm-mine-list { list-style: none; padding: 0; margin: 0; }
+#dm .dm-mine-list li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--t-border); }
+#dm .dm-mine-list li > div:first-child { display: flex; flex-direction: column; gap: 2px; }
+#dm .dm-state { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--t-accent-soft); align-self: flex-start; }

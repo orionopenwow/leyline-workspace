@@ -18,8 +18,10 @@ G.PAGES = {
         "Use Back and Next below, or pick a page on the left." } },
     { "modes", "Build and Play", "play", "Build mode and Play mode", {
         "Build mode shows the tools: the bar at the top, the tools down the left, the gallery.",
-        "Build mode has its own camera: up and back over your Den, with a gold frame round the screen.",
-        "In Build mode your props glow under the mouse, and the name shows by the cursor. Click one to pick it.",
+        "Build mode starts at your character, with a gold frame round the screen. W A S D walk as always.",
+        "Roll the wheel out past the end and the view keeps going: the far view. W A S D fly it, Space and X go up and down. Roll back in to come back.",
+        "Drag the left mouse button on the ground to look around: you turn with the camera, so W always goes where you look.",
+        "In Build mode your props glow under the mouse, and the name shows by the cursor. Click one to pick it up.",
         "Play mode hides the tools. You just walk your Den. Props work as they should: a chair is a seat.",
         "In Play mode the corner keeps Dojo, Class, Invite, Files and this guide.",
         "Press F7, or Play on the bar, to switch." } },
@@ -35,8 +37,8 @@ G.PAGES = {
         "G shows a circle on the ground for the exact spot. Click to place it there.",
         "Snap on the bar lines props up on a grid. 15, 45 and 90 set how far Q and E turn." } },
     { "select", "Selecting", "select", "Selecting and changing", {
-        "Click a prop to select it. Click empty ground to let go. Shift and click adds another.",
-        "Press on a prop and drag it. Let go to drop it. Esc while dragging puts it back. The wheel or Q and E turn it.",
+        "Click a prop to pick it up. Click again to put it down. Esc puts it back. Shift and click adds one.",
+        "Or press on a prop and drag it. While you hold one, the wheel or Q and E turn it.",
         "Right-click a prop for its menu: Delete, Duplicate, Move, Rotate, Bigger, Smaller, Snap to floor, Lock, Copy, Properties.",
         "Three flags stand around it: red for X, green for Y, blue for Z.",
         "Right-click a flag, then roll the wheel. The prop moves along that line.",
@@ -47,7 +49,8 @@ G.PAGES = {
         "Say \"Jaina, build a garden\" or type .den jaina build garden. She walks over and builds it piece by piece.",
         "Type .den stamp garden now to put one down at once. .build undo takes it back.",
         "A stamp always goes inside your Den. A bigger room: .den grow.",
-        ".den companion calls her. Say \"Jaina, stay\", \"Jaina, follow\" or \"Jaina, tips\"." } },
+        ".den companion calls her. Say \"Jaina, stay\", \"Jaina, follow\" or \"Jaina, tips\".",
+        "Say \"Jaina, help\" for an idea: a small set sparkles in front of you. \"Jaina, yes\" keeps it, \"no\" sends it away. \"Jaina, quiet\" if she talks too much." } },
     { "dojo", "The Dojo", "dojo", "The Dojo", {
         "Dojo on the bar opens the training panel. .den dojo builds a ring with three training dummies.",
         "Practice: Pack, Mover, Healer, Tank, Boss (move out of its circles, interrupt its cast). Your numbers show as you hit.",

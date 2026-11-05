@@ -5,7 +5,8 @@
 # Runs inside the alpine/git container started by "Build custom realm.bat"; /w is realm\custom.
 # Safe to run again: anything already at the right commit is left alone.
 set -e
-cd /w
+# FETCH_DIR: realm\custom somewhere else (the Windows engine build, .github/workflows/engine-windows.yml)
+cd "${FETCH_DIR:-/w}"
 git config --global --add safe.directory '*'
 git config --global core.autocrlf false
 fetch() { # dir repo commit

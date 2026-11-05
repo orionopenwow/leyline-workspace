@@ -88,6 +88,25 @@ impl Events {
     }
 }
 
+impl Events {
+    /// A panic (lib.rs [`crate::note_panics`]): as [`Events::note`], but it never waits for the log's lock (the
+    /// panicking thread may hold it) and writes even past [`MAX_LINES`] (a crash is the line most wanted).
+    pub fn note_panic(&self, detail: &str) {
+        let mut g = match self.out.try_lock() {
+            Ok(g) => g,
+            Err(std::sync::TryLockError::Poisoned(e)) => e.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return,
+        };
+        let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+        let line = serde_json::json!({ "t": t, "ev": "panic", "who": "", "detail": clean(detail, 200) });
+        if let Some(f) = g.0.as_mut() {
+            if writeln!(f, "{line}").and_then(|_| f.flush()).is_ok() {
+                g.1 += 1;
+            }
+        }
+    }
+}
+
 /// One line of the log, read back (tests and the launcher's own copy of this reader).
 #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
 pub struct Line {
@@ -110,6 +129,27 @@ pub fn read(dir: &Path) -> Vec<Line> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_panic_line_is_written_even_with_the_log_poisoned_and_never_waits() {
+        let d = std::env::temp_dir().join(format!("den-ev-panic-{}", std::process::id()));
+        let e = std::sync::Arc::new(Events::new(&d));
+        // a thread that panics holding the log's lock leaves it poisoned: the panic line still goes
+        let e2 = e.clone();
+        let _ = std::thread::spawn(move || {
+            let _g = e2.out.lock().unwrap();
+            panic!("held");
+        })
+        .join();
+        e.note_panic("world.rs:12: boom");
+        // held by this very thread: skipped, not a deadlock
+        let g = e.out.lock().unwrap_or_else(|p| p.into_inner());
+        e.note_panic("never written");
+        drop(g);
+        let l = read(&d);
+        assert_eq!(l.iter().filter(|x| x.ev == "panic").map(|x| x.detail.as_str()).collect::<Vec<_>>(), vec!["world.rs:12: boom"]);
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     #[test]
     fn a_line_per_milestone_and_nothing_else() {

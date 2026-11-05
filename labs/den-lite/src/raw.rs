@@ -107,8 +107,10 @@ pub fn gameobject_block_shown(out: &mut Vec<u8>, o: &WorldObject, kind: u8, flag
     fields[GAMEOBJECT_FLAGS] = Some(flags);
     // the parent rotation: identity (no transport)
     fields[GAMEOBJECT_PARENTROTATION + 3] = Some(1.0f32.to_bits());
-    // state ready, the type, art kit 0, anim progress 100
-    fields[GAMEOBJECT_BYTES_1] = Some(GO_STATE_READY as u32 | (kind as u32) << 8 | 100 << 24);
+    // state ready, the type, art kit 0, anim progress 100; a prop with Solid off (tools.rs PASS_TWIN, told to the game
+    // as a door) is sent open, which the game walks through
+    let state = if kind == crate::tools::DOOR && crate::tools::is_pass(entry) { crate::tools::GO_STATE_ACTIVE } else { GO_STATE_READY };
+    fields[GAMEOBJECT_BYTES_1] = Some(state as u32 | (kind as u32) << 8 | 100 << 24);
     let mut mask = 0u32;
     for (i, f) in fields.iter().enumerate() {
         if f.is_some() {
@@ -275,5 +277,19 @@ mod tests {
         assert_eq!(p >> 42, 0);
         assert_eq!(p & ((1 << 21) - 1), (0.70710677f32 * (1 << 20) as f32) as u64);
         assert_eq!(packed_rotation(quaternion(0.0, 0.0, 0.0)), 0);
+    }
+
+    #[test]
+    fn a_prop_with_solid_off_is_sent_as_an_open_door() {
+        let o = WorldObject { guid: 0xF110_0009_6D00_0001, entry: crate::tools::pass(2413), display: 39, kind: crate::tools::DOOR, scale: 1.0, x: 1.0, y: 2.0, z: 3.0, o: 0.0, pitch: 0.0, roll: 0.0 };
+        let mut a = Vec::new();
+        gameobject_block(&mut a, &o);
+        let bytes1 = u32::from_le_bytes(a[a.len() - 4..].try_into().unwrap());
+        assert_eq!(bytes1 & 0xFF, crate::tools::GO_STATE_ACTIVE as u32, "open");
+        assert_eq!((bytes1 >> 8) & 0xFF, crate::tools::DOOR as u32, "a door");
+        // the same prop solid (its own entry): ready, as every prop
+        let mut b = Vec::new();
+        gameobject_block(&mut b, &WorldObject { entry: 2413, kind: 7, ..o });
+        assert_eq!(u32::from_le_bytes(b[b.len() - 4..].try_into().unwrap()) & 0xFF, GO_STATE_READY as u32);
     }
 }

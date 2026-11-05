@@ -244,7 +244,7 @@ test('offline rankings: the catalog order, the tabs and chips still work; Count 
   assert.deepEqual(await calls(page, 'set_count_installs'), [{ on: false }]);
   const text = await page.textContent('#page-settings');
   assert.match(text, /no account, nothing about you or your PC/);
-  assert.doesNotMatch(text + await page.textContent('#page-mods'), /world of warcraft|\bwow\b|warcraft|lich king|blizzard/i);
+  assert.doesNotMatch(text + await page.textContent('#page-mods'), /world of warcraft|\bwow\b|warcraft|lich king|(?<!endorsed by )blizzard/i);
   assert.deepEqual(errors, []);
   await page.close();
 });

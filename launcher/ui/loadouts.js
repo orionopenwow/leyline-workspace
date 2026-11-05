@@ -217,6 +217,8 @@
         say(`Installing ${p.name}…`, "");
         const run = () => invoke("mod_install", { client: c.id, project: p.id });
         await (typeof withNativeOk === "function" ? withNativeOk(run) : run());
+        // Installed opens on the tab of what went in last (Mods or Addons; app.js noteInstalled)
+        if (window.LeylineApp && window.LeylineApp.noteInstalled) window.LeylineApp.noteInstalled(p.id, window.LeylineShelf ? window.LeylineShelf.of(p) : "");
         done.push(p.name);
       } catch (e) {
         left.push(nameOf(id));

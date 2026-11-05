@@ -56,17 +56,27 @@ PF=profiles/main.env
 BK=/root/serverpass-backups/$(date +%Y%m%d-%H%M%S); mkdir -p "$BK"
 cp -p "$PF" "$BK/profile.env"
 sqlq() { docker exec -i ov-ac-database sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot -N -B acore_world' <<<"$1"; }
+# Review 4 Nov: a restart that never reported ready left the new scripts and profile in place (only the reload path
+# put things back). put_back restores both from $BK and moves this pass's brand-new scripts aside, so docker's own
+# restart of the world server loads what ran before. The profile's keys take effect at the next recreate.
+put_back() {
+  for b in "$BK"/*.lua; do [ -f "$b" ] && cp -p "$b" "$DST/"; done
+  mkdir -p "$BK/added-by-this-pass"
+  for b in $ADDED; do [ -f "$DST/$b" ] && mv -f "$DST/$b" "$BK/added-by-this-pass/$b"; done
+  cp -p "$BK/profile.env" "$PF"
+  echo "  put back: the previous scripts and $PF from $BK (this pass's new scripts are in $BK/added-by-this-pass)" >&2
+}
 
 echo "== 1. realm scripts"
 DST=custom/lua_scripts
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 tar -x -C "$T" -f -
-n=0; changed=0; NEW=""
+n=0; changed=0; NEW=""; ADDED=""   # ADDED: scripts this pass put there for the first time (no backup to restore)
 for f in "$T"/*.lua; do
   [ -f "$f" ] || continue
   b=$(basename "$f"); sed -i 's/\r$//' "$f"; n=$((n+1))
   if [ -f "$DST/$b" ] && cmp -s "$f" "$DST/$b"; then echo "  $b unchanged"; continue; fi
-  if [ -f "$DST/$b" ]; then cp -p "$DST/$b" "$BK/$b"; else NEW="$NEW $b"; fi
+  if [ -f "$DST/$b" ]; then cp -p "$DST/$b" "$BK/$b"; else NEW="$NEW $b"; ADDED="$ADDED $b"; fi
   install -m 644 "$f" "$DST/$b"; echo "  $b installed"; changed=$((changed+1))
 done
 [ "$n" -gt 0 ] || die "no .lua files in the upload"
@@ -218,7 +228,13 @@ docker exec ov-ac-database sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldum
   | gzip > "$BK/dungeon_access_template.sql.gz"
 gzip -dc "$BK/dungeon_access_template.sql.gz" | grep -q 'CREATE TABLE' || die "could not back up dungeon_access_template; nothing changed in the database"
 MAPS="389,43,36,33"
+# the exact undo, row by row, before the change (review 4 Nov: the backup was there, the way back wasn't written down)
+sqlq "SELECT CONCAT('UPDATE dungeon_access_template SET min_level = ', min_level, ' WHERE map_id = ', map_id, ' AND difficulty = 0;') FROM dungeon_access_template WHERE map_id IN ($MAPS) AND difficulty = 0 AND min_level > 10" \
+  > "$BK/UNDO-dungeon-levels.sql" || true
 sqlq "UPDATE dungeon_access_template SET min_level = 10 WHERE map_id IN ($MAPS) AND difficulty = 0 AND min_level > 10" >/dev/null
+if [ -s "$BK/UNDO-dungeon-levels.sql" ]; then
+  echo "  undo: docker exec -i ov-ac-database sh -c 'MYSQL_PWD=\"\$MYSQL_ROOT_PASSWORD\" exec mysql -uroot acore_world' < $BK/UNDO-dungeon-levels.sql"
+fi
 sqlq "SELECT map_id, min_level, max_level FROM dungeon_access_template WHERE map_id IN ($MAPS) AND difficulty = 0 ORDER BY map_id" \
   | while read -r m lo hi; do echo "  map $m: levels $lo-$hi"; done
 missing=$(sqlq "SELECT COUNT(*) FROM (SELECT 389 m UNION SELECT 43 UNION SELECT 36 UNION SELECT 33) w WHERE m NOT IN (SELECT map_id FROM dungeon_access_template WHERE difficulty = 0)")
@@ -607,19 +623,23 @@ else
     docker restart ov-ac-worldserver >/dev/null
   fi
   sleep 3
-  [ "$(started)" != "$before" ] || die "the world server did not restart. Backups: $BK"
+  [ "$(started)" != "$before" ] || { put_back; die "the world server did not restart. The previous scripts and profile are back in place. Backups: $BK"; }
   ok=0
   for i in $(seq 1 120); do
     if docker logs --since "$(started)" ov-ac-worldserver 2>&1 | grep -F 'ready...' >/dev/null; then ok=1; break; fi
     if (( i % 6 == 0 )); then echo "  still starting ($((i * 10 / 60)) min)..."; fi
     sleep 10
   done
-  [ "$ok" = 1 ] || die "the world server did not report ready in 20 min: docker logs --tail 80 ov-ac-worldserver. Backups: $BK"
+  [ "$ok" = 1 ] || { put_back; die "the world server did not report ready in 20 min: docker logs --tail 80 ov-ac-worldserver. The previous scripts and profile are back in place (docker restarts it with them). Backups: $BK"; }
   echo "  world server ready"
   mark_loaded
 fi
 sleep 2
-if docker logs --since 60s ov-ac-worldserver 2>&1 | grep -iE 'lua.*(error|failed)|ALE.*error' | tail -5 | grep . ; then
+# the scripts load at the start of a 2-10 minute boot: after a restart read the log from the server's start, not the
+# last 60 s (review 4 Nov: load errors were older than that and were missed)
+LOG_SINCE=60s
+[ -n "${before:-}" ] && LOG_SINCE=$(docker inspect -f '{{.State.StartedAt}}' ov-ac-worldserver 2>/dev/null || echo 60s)
+if docker logs --since "$LOG_SINCE" ov-ac-worldserver 2>&1 | grep -iE 'lua.*(error|failed)|ALE.*error' | tail -5 | grep . ; then
   echo "  (the lines above are Lua errors: check them)"
 fi
 echo "  backups: $BK"

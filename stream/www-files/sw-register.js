@@ -56,7 +56,8 @@ export async function installServiceWorker() {
       const ch = (e) => { if (e.data?.type === 'status') { navigator.serviceWorker.removeEventListener('message', ch); resolve(e.data.status); } };
       navigator.serviceWorker.addEventListener('message', ch);
       post({ type: 'status' });
-      setTimeout(() => resolve({ controlled: !!navigator.serviceWorker.controller, mode }), 3000);
+      // no answer in 3 s: the listener goes too (review 4 Nov: it stayed behind on every timeout)
+      setTimeout(() => { navigator.serviceWorker.removeEventListener('message', ch); resolve({ controlled: !!navigator.serviceWorker.controller, mode }); }, 3000);
     }),
     clear: () => post({ type: 'clear' }),
     off: () => { LS('ow:sw', 'off'); return off(); },

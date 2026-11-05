@@ -196,4 +196,12 @@ W.FitToScreen()
 check("browser: Fit to screen gives it back to the client's pixel mode", cvars.uiScaleMode == "pixel" and db.uiScaleOwn == nil)
 browser = false
 
+-- review 4 Nov: the talent planner is set on once per character, so a player who turns it off keeps it off
+cvars.previewTalents = nil; WrathUnleashedUIChar = {}   -- a new character
+W.LeylineDefaults()
+check("talent planner: on the first time", cvars.previewTalents == "1")
+cvars.previewTalents = "0"
+W.LeylineDefaults()
+check("talent planner: the player's own off stays off at the next login", cvars.previewTalents == "0")
+
 print(("\n%d/%d passed"):format(pass, pass + fail)); os.exit(fail == 0 and 0 or 1)

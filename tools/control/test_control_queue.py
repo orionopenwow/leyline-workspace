@@ -40,6 +40,28 @@ class FakeProc:
         return self.rc
 
 
+class HangProc:
+    """A step that prints one line and then waits for ever (an ssh asking about a host key), until it is killed."""
+    killed = []
+
+    def __init__(self, argv, **kw):
+        r, self._w = os.pipe()
+        os.write(self._w, b"waiting for an answer...\r\n")
+        self.stdout = os.fdopen(r, "rb")
+        self.stdin = io.BytesIO()
+        self.pid = None
+        self.rc = None
+
+    def kill(self):
+        HangProc.killed.append(True)
+        if self.rc is None:
+            self.rc = -9
+            os.close(self._w)
+
+    def wait(self):
+        return self.rc
+
+
 class Queue(unittest.TestCase):
     def setUp(self):
         self.t = Path(tempfile.mkdtemp(prefix="leyline-control-q-"))
@@ -128,6 +150,39 @@ class Queue(unittest.TestCase):
             self.assertNotIn(gone, ctl.scrub(line), line)
         for plain in ("keys: 3 found", "== Release audit: done", "realm key: 4 ok", "FASTLOOP OK"):
             self.assertEqual(ctl.scrub(plain), plain)
+
+    def _hang(self, stop_after=None):
+        import threading
+        ctl.subprocess.Popen = HangProc
+        HangProc.killed = []
+        old = ctl.step_timeout_s
+        ctl.step_timeout_s = (lambda step: 2) if stop_after is None else (lambda step: 3600)
+        if stop_after is not None:
+            threading.Timer(stop_after, lambda: ctl.state.__setitem__("stop", True)).start()
+        try:
+            self.pend("1311a check  a step that hangs\n1311b check  the next one\n")
+            ctl.run_all("")
+        finally:
+            ctl.step_timeout_s = old
+        return (ctl.LOGS / "1311a-check.log").read_text()
+
+    def test_a_hung_step_is_stopped_at_its_time_limit(self):
+        log = self._hang()
+        self.assertTrue(HangProc.killed)
+        self.assertIn("ran past its", log)
+        self.assertEqual(self.done(), [], "the hung step is not done and the run stops there")
+        self.assertTrue(json.loads(ctl.LAST.read_text())["failed_step"] == "check")
+
+    def test_stop_button_stops_the_running_step(self):
+        log = self._hang(stop_after=0.5)
+        self.assertTrue(HangProc.killed)
+        self.assertIn("Stopped by you", log)
+        self.assertEqual(self.done(), [])
+
+    def test_timeouts(self):
+        self.assertEqual(ctl.step_timeout_s("check"), 90 * 60)
+        self.assertGreaterEqual(ctl.step_timeout_s("client-build"), 6 * 3600)
+        self.assertTrue(all(k in ctl.STEPS for k in ctl.STEP_TIMEOUT_MIN), [k for k in ctl.STEP_TIMEOUT_MIN if k not in ctl.STEPS])
 
     def test_ask_before_deploys(self):
         mk = lambda sid, step: {"id": sid, "step": step, "known": True}   # noqa: E731

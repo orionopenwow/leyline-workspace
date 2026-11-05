@@ -6,4 +6,8 @@
 	<Binding name="WUBOTS_PASSIVE">WrathUnleashedUI.Companions.Key("passive")</Binding>
 	<Binding name="WUBOTS_PULL">WrathUnleashedUI.Companions.Key("pull")</Binding>
 	<Binding name="WUBOTS_WINDOW">WrathUnleashedUI.Companions.Key("window")</Binding>
+	<!-- Leyline travel (Teleports.lua): Back to my Den is Shift-Home in Your Den until the player sets a key of their own. -->
+	<Binding name="LEYLINE_DENHOME" header="LEYLINETRAVEL">WrathUnleashedUI.Teleports.Home()</Binding>
+	<Binding name="LEYLINE_BACK">WrathUnleashedUI.Teleports.Back()</Binding>
+	<Binding name="LEYLINE_TELEPORTS">WrathUnleashedUI.Teleports.Toggle()</Binding>
 </Bindings>

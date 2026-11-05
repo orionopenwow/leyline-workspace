@@ -697,7 +697,7 @@ def _our_origin(origin: str) -> bool:
 
 
 def _public_host() -> str:
-    return P("PUBLIC_HOST") or "play.openvanilla.app"
+    return P("PUBLIC_HOST") or "leylinelauncher.com"
 
 
 def _hook(name: str, text: str):
@@ -869,7 +869,7 @@ def token_viewer(h) -> dict | None:
     tok = authz[7:].strip()
     acct = st.token_acct(tok)
     if not acct:
-        raise ForumError(401, "Signed out. Sign in again from the launcher.")
+        raise ForumError(401, "Signed out. Log in again from the launcher.")
     name, tag = _names(acct, "")
     return {"acct": acct, "name": name, "tag": tag, "staff": False, "session": "", "display": name, "via": "launcher"}
 
@@ -1161,7 +1161,7 @@ def page_index(h, who) -> None:
                     f'<span class="fm-n">{c["threads"]} thread{"" if c["threads"] == 1 else "s"} · {c["posts"]} post{"" if c["posts"] == 1 else "s"}</span>'
                     f'<span class="fm-line">{e(c["line"])}<br><small>{lst}</small></span></a></li>')
     new = (f'<a class="fm-btn" href="{PAGE}/new">New thread</a>' if who else
-           f'<a class="fm-btn" href="{_signin_url(PAGE + "/new")}">Sign in to post</a>')
+           f'<a class="fm-btn" href="{_signin_url(PAGE + "/new")}">Log in to post</a>')
     # TODO(owner): the forum's heading line
     body = ('<section class="fm-head"><div><h1>Forum</h1><p>Share your realms, mods and builds, ask for help, and keep the '
             f'good answers in one place.</p></div><div class="fm-acts">{_search_form()}{new}</div></section>'
@@ -1180,7 +1180,7 @@ def page_cat(h, who, cat: str, query: dict) -> None:
     ts, more = store.threads(cat, page)
     can = who and (not c[3] or who["staff"])
     new = (f'<a class="fm-btn" href="{PAGE}/new?c={cat}">New thread</a>' if can else
-           ("" if who else f'<a class="fm-btn" href="{_signin_url(PAGE + "/new?c=" + cat)}">Sign in to post</a>'))
+           ("" if who else f'<a class="fm-btn" href="{_signin_url(PAGE + "/new?c=" + cat)}">Log in to post</a>'))
     nav = ""
     if page > 1 or more:
         nav = ('<nav class="fm-pages" aria-label="Pages">' + (f'<a href="{PAGE}/c/{cat}?page={page - 1}">Newer</a>' if page > 1 else "")
@@ -1208,7 +1208,7 @@ def _reply_form(who, th: dict, note: str = "", text: str = "") -> str:
     if th["locked"] and not (who and who["staff"]):
         return '<p class="fm-fine">This thread is locked, so no new replies.</p>'
     if not who:
-        return (f'<p class="fm-acts"><a class="fm-btn" href="{_signin_url(PAGE + "/t/" + str(th["id"]) + "/reply")}">Sign in to reply</a>'
+        return (f'<p class="fm-acts"><a class="fm-btn" href="{_signin_url(PAGE + "/t/" + str(th["id"]) + "/reply")}">Log in to reply</a>'
                 '<span class="fm-fine">Use your Hero Key or Google sign-in on this website.</span></p>')
     err = f'<p class="fm-msg err" role="alert">{e(note)}</p>' if note else ""
     return (f'<section class="fm-box" aria-labelledby="fm-rp"><h2 id="fm-rp">Reply</h2>'
@@ -1449,7 +1449,7 @@ def api_post(h, sub: str) -> None:
     if sub not in POST_API:   # the reading calls are GET only
         return _jpost(h, 405, {"error": "Method not allowed."})
     if not h.headers.get("Authorization", "").startswith("Bearer "):
-        return _jpost(h, 401, {"error": "Sign in from the launcher first."})
+        return _jpost(h, 401, {"error": "Log in from the launcher first."})
     if doc is None:
         return _jpost(h, 400, {"error": "Bad request."})
     lim = P("browse_limit")

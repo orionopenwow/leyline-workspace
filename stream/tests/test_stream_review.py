@@ -83,5 +83,14 @@ check("every file the warm-up fetches is in @client (else it gets the sign-in re
       not missing, missing)
 check("@client holds no game data path", not [p for p in client if p.startswith("/data")], client)
 
+# --- the realm list's warm-up waits for a line that can take it (fix round 4 Nov) --------------------------------------
+acct = wp.account_page("Tester", "WR1", "pw", "n0nce").decode("utf-8")
+if 'id="wu-warm"' in acct:
+    check("warm-up: the iframe waits in a template (nothing fetched until the script says so)",
+          re.search(r'<template id="wu-warm"><iframe src="https://[^"]+/warm\.html"', acct) is not None
+          and not re.search(r'(?<!<template id="wu-warm">)<iframe src="https://[^"]+/warm\.html"', acct))
+    check("warm-up: skipped on Save-Data, cellular and slow lines", all(w in wp.WARM_JS for w in ("saveData", "'cellular'", "effectiveType")))
+else:
+    check("warm-up: no streamed realm here, nothing to warm", "warm.html" not in acct)
 print(f"\n{count - fails}/{count} passed")
 sys.exit(1 if fails else 0)

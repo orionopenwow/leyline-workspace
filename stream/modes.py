@@ -218,7 +218,7 @@ def page(css: str, art_url, have, card_meta, realm_name: str = "WrathUnleashed",
     body = (
         '<div class="ly-wrap"><header class="ly-hero"><h1>Modes</h1>'
         f'<p class="ly-lede">Duels, boss fights, dungeons and hangouts on {e(realm_name)}. Every card is one click: '
-        'sign in, and your character is taken there.</p>'
+        'log in, and your character is taken there.</p>'
         '<nav class="md-jump" aria-label="Modes">' + ('<a href="#games">Games</a>' if games else '') + '<a href="#duels">Duels</a><a href="#bosses">Boss fights</a>'
         '<a href="#dungeons">Dungeons</a><a href="#hangouts">Hangouts</a></nav></header>'
         + games + duels + bosses + dungeons + hangouts

@@ -6,6 +6,7 @@
 //! See README.md for what works, what is verified only by the test client, and what multi-player would need.
 
 pub mod accdata;
+pub mod buildtools;
 pub mod cheers;
 pub mod creatures;
 pub mod classes;
@@ -20,6 +21,8 @@ pub mod flight;
 pub mod gear;
 pub mod gearsets;
 pub mod guests;
+pub mod jaina;
+pub mod hosting;
 pub mod ovmod;
 pub mod login;
 pub mod models;
@@ -32,17 +35,62 @@ pub mod places;
 pub mod play;
 pub mod mymodels;
 pub mod raw;
+pub mod showcase; // the shared Dens' pictures: the camera over the build, the game's own Screenshot() (docs/DEN-MARKETPLACE.md)
 pub mod specs;
 pub mod spells;
 pub mod stamps;
 pub mod testctl;
+pub mod tools;
+pub mod tourney;
 pub mod world;
 
 use std::collections::HashMap;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
+
+/// A lock that never stops the Den: a thread that panicked while it held the lock leaves it poisoned, and
+/// `lock().unwrap()` then panicked in every other session thread too, so one bad message stopped the Den for the host
+/// and every guest (review 4 Nov). The data is used as the panicking thread left it; the panic itself is in the
+/// events log (`panic`, [`note_panics`]).
+pub trait Lock<T> {
+    fn lk(&self) -> MutexGuard<'_, T>;
+}
+
+impl<T> Lock<T> for Mutex<T> {
+    fn lk(&self) -> MutexGuard<'_, T> {
+        self.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// Where a panic is told: the running Den Lite's events log (`<dens>/den-lite.events`, ev `panic`, the place and the
+/// first words of the message; never anything secret: a panic message is code's own text). The launcher reads the
+/// events file. The hook is set once; the game goes on with the next Den Lite started in this process.
+static PANIC_TO: Mutex<Option<std::sync::Weak<Shared>>> = Mutex::new(None);
+static PANIC_HOOK: std::sync::Once = std::sync::Once::new();
+
+pub fn note_panics(shared: &Arc<Shared>) {
+    *PANIC_TO.lk() = Some(Arc::downgrade(shared));
+    PANIC_HOOK.call_once(|| {
+        let before = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            // try_lock: a panic while this very lock is held must not wait for itself
+            let to = PANIC_TO.try_lock().ok().and_then(|g| g.as_ref().and_then(|w| w.upgrade()));
+            if let Some(s) = to {
+                s.events.note_panic(&panic_line(info.location(), info.payload()));
+            }
+            before(info);
+        }));
+    });
+}
+
+/// `file:line: message` of a panic, cut short.
+pub fn panic_line(at: Option<&std::panic::Location<'_>>, payload: &(dyn std::any::Any + Send)) -> String {
+    let at = at.map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
+    let msg = payload.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| payload.downcast_ref::<String>().cloned()).unwrap_or_default();
+    format!("{at}: {msg}").chars().take(180).collect()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Gender {
@@ -132,7 +180,8 @@ pub struct Shared {
     pub sessions: Mutex<HashMap<String, ([u8; 40], login::Who, bool)>>,
     /// Everyone in the world now (world.rs Peer): the host and their guests.
     pub players: Mutex<Vec<world::Peer>>,
-    /// Friends may build (`.den friends build on`); off at every start.
+    /// Every friend may build (`.den friends build on`); off at every start. One friend's own switch is kept in
+    /// guests.json (hosting.rs `may_build`).
     pub guests_build: std::sync::atomic::AtomicBool,
     remote_world: Mutex<Option<SocketAddr>>,
     pub den: Mutex<den::Den>,
@@ -195,7 +244,7 @@ impl Shared {
     /// An open.json id seen for the first time (here or in `<dens>/.open-done`): true, and it is kept as done.
     pub fn mark_opened(&self, dir: &std::path::Path, id: &str) -> bool {
         let done = dir.join(".open-done");
-        let mut seen = self.opened.lock().unwrap();
+        let mut seen = self.opened.lk();
         if seen.contains(id) || std::fs::read_to_string(&done).map(|t| t.lines().any(|l| l == id)).unwrap_or(false) {
             seen.insert(id.to_string());
             return false;
@@ -228,12 +277,12 @@ impl Shared {
 
     /// The friends' world listener, as a last resort for their realm list (the tunnel's address belongs there).
     pub fn remote_world_address(&self) -> String {
-        self.remote_world.lock().unwrap().map(|a| a.to_string()).unwrap_or_else(|| self.world_address())
+        self.remote_world.lk().map(|a| a.to_string()).unwrap_or_else(|| self.world_address())
     }
 
     /// The realm list's address for the world server.
     pub fn world_address(&self) -> String {
-        self.world.lock().unwrap().to_string()
+        self.world.lk().to_string()
     }
 }
 
@@ -383,6 +432,7 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
         trips: Mutex::new(HashMap::new()),
         den_map: std::sync::atomic::AtomicU32::new(den_map),
     });
+    note_panics(&shared);
     let s = shared.clone();
     std::thread::spawn(move || login::serve(login, s, false));
     let s = shared.clone();
@@ -401,5 +451,32 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
     std::thread::spawn(move || world::companion_ticker(s));
     let s = shared.clone();
     std::thread::spawn(move || world::dojo_ticker(s));
+    // the host's Friends list and asks, kept friends, the tournament's calls (hosting.rs, tourney.rs)
+    let s = shared.clone();
+    std::thread::spawn(move || hosting::run(s));
     Ok(Running { login: la, world: wa, remote: remote_addrs, shared })
+}
+
+#[cfg(test)]
+mod lock_tests {
+    use super::*;
+
+    #[test]
+    fn a_poisoned_lock_is_still_used_and_a_panic_line_names_its_place() {
+        let m = Arc::new(Mutex::new(5));
+        let m2 = m.clone();
+        let _ = std::thread::spawn(move || {
+            let mut g = m2.lock().unwrap();
+            *g = 6;
+            panic!("one bad message");
+        })
+        .join();
+        assert!(m.is_poisoned());
+        assert_eq!(*m.lk(), 6, "used as the panicking thread left it: the Den goes on for everyone else");
+        let here = std::panic::Location::caller();
+        let line = panic_line(Some(here), &"boom");
+        assert!(line.ends_with(": boom") && line.contains("lib.rs:"), "{line}");
+        assert_eq!(panic_line(None, &String::from("x".repeat(500))).chars().count(), 180);
+        assert_eq!(panic_line(None, &42u8), ": ");
+    }
 }

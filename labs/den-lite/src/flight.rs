@@ -10,6 +10,11 @@
 //!   you (a path down to the ground, then SMSG_SPLINE_MOVE_UNSET_FLYING and GRAVITY_ENABLE).
 //! * **Around props.** Her walk to her spot goes around a prop standing in the straight line (a waypoint beside it,
 //!   [`path`]), never ends inside one, and never closer than [`PERSONAL`] yards to you.
+//! * **Hopping when far** (owner 4 Nov: "flying with flight.rs when far, landing"): following on foot and more than
+//!   [`HOP`] yards from her spot (but not past `companion::FAR`, where she is put back at once), she hops: told it
+//!   flies, an arc up over whatever stands between ([`hop_path`]), and down beside you, told it walks again.
+//! * **Smoother walks.** A waypoint not needed (the straight line past it is clear) is dropped ([`smooth`]), and of
+//!   the two sides of a prop she takes the shorter way round.
 //! * **Keeping up.** She stayed in the Den's own circle (22 yards at size 1): past it she went, which looked like
 //!   fading away. Now she follows you anywhere within [`AREA`] yards of the Den, and past [`crate::companion::FAR`]
 //!   yards (a jump, fast flying) she is put back behind you at once.
@@ -41,6 +46,11 @@ pub const PERSONAL: f32 = 2.0;
 pub const AREA: f32 = 300.0;
 /// Room around a prop.
 pub const CLEAR: f32 = 0.6;
+/// Further than this from her spot (on foot): a hop through the air. Her hop's speed and its arc's height.
+pub const HOP: f32 = 24.0;
+pub const HOP_SPEED: f32 = 14.0;
+pub const HOP_TOP_MIN: f32 = 3.0;
+pub const HOP_TOP_MAX: f32 = 10.0;
 
 /// A prop's footprint: a circle.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -147,18 +157,51 @@ pub fn path(from: At, to: At, player: Option<At>, blocks: &[Block]) -> Vec<At> {
     let mut at = from;
     for _ in 0..4 {
         let Some((blk, _)) = crossing(at, end, blocks) else { break };
-        // beside it, on the side the line passes (else the left), clear of it
+        // beside it, on the side the line passes (else the left), clear of it; when the waypoint on that side stands
+        // in another prop and the other side's doesn't, the other side
         let (dx, dy) = (end.x - at.x, end.y - at.y);
         let len = (dx * dx + dy * dy).sqrt().max(1e-3);
         let (nx, ny) = (-dy / len, dx / len);
         let side = if (blk.x - at.x) * nx + (blk.y - at.y) * ny > 0.0 { -1.0 } else { 1.0 };
         let r = blk.r + CLEAR + 0.4;
-        let w = At { x: blk.x + nx * side * r, y: blk.y + ny * side * r, z: (at.z + end.z) / 2.0, o: end.o };
+        let beside = |sd: f32| At { x: blk.x + nx * sd * r, y: blk.y + ny * sd * r, z: (at.z + end.z) / 2.0, o: end.o };
+        let inside = |w: At| blocks.iter().any(|b| *b != blk && ((w.x - b.x).powi(2) + (w.y - b.y).powi(2)).sqrt() < b.r + CLEAR * 0.5);
+        let w = if inside(beside(side)) && !inside(beside(-side)) { beside(-side) } else { beside(side) };
         points.push(w);
         at = w;
     }
     points.push(end);
+    smooth(from, points, blocks)
+}
+
+/// The waypoints she doesn't need: one whose neighbours see each other past every prop goes.
+pub fn smooth(from: At, mut points: Vec<At>, blocks: &[Block]) -> Vec<At> {
+    let mut i = 0;
+    while points.len() > 1 && i < points.len() - 1 {
+        let prev = if i == 0 { from } else { points[i - 1] };
+        if crossing(prev, points[i + 1], blocks).is_none() {
+            points.remove(i);
+        } else {
+            i += 1;
+        }
+    }
     points
+}
+
+/// Her hop from `from` to `to`: points along an arc (a parabola up to a fifth of the way, between HOP_TOP_MIN and
+/// HOP_TOP_MAX yards over the straight line), ending at `to`; how long at HOP_SPEED.
+pub fn hop_path(from: At, to: At) -> (Vec<At>, u32) {
+    let top = (d2(from, to) * 0.2).clamp(HOP_TOP_MIN, HOP_TOP_MAX);
+    let o = (to.y - from.y).atan2(to.x - from.x).rem_euclid(2.0 * PI);
+    let at = |t: f32| At {
+        x: from.x + (to.x - from.x) * t,
+        y: from.y + (to.y - from.y) * t,
+        z: from.z + (to.z - from.z) * t + top * 4.0 * t * (1.0 - t),
+        o,
+    };
+    let pts = vec![at(0.25), at(0.5), at(0.75), At { o, ..to }];
+    let ms = ((length(from, &pts) / HOP_SPEED) * 1000.0).max(600.0) as u32;
+    (pts, ms)
 }
 
 /// SMSG_MONSTER_MOVE along a path, uncompressed (Flying and/or Catmullrom): packed guid, a byte 0, the start, the
@@ -230,6 +273,42 @@ mod tests {
         for (a, b) in [(at(0.0, 0.0), p[0]), (p[0], p[1])] {
             assert!(crossing(a, b, &blocks).is_none());
         }
+    }
+
+    #[test]
+    fn smoother_walks_and_the_clear_side() {
+        // two props side by side across the line: the waypoint beside the first on the near side would stand in the
+        // second, so she goes round the other way
+        let blocks = [Block { x: 5.0, y: 0.2, r: 1.0 }, Block { x: 5.0, y: -2.4, r: 1.0 }];
+        let p = path(at(0.0, 0.0), at(10.0, 0.0), None, &blocks);
+        assert!(p.len() >= 2, "{p:?}");
+        assert!(p[0].y > 0.0, "round the free side: {:?}", p[0]);
+        let mut a = at(0.0, 0.0);
+        for q in &p {
+            assert!(crossing(a, *q, &blocks).is_none(), "{a:?} -> {q:?}");
+            a = *q;
+        }
+        // a waypoint with a clear view past it goes
+        let pts = smooth(at(0.0, 0.0), vec![at(5.0, 3.0), at(10.0, 0.0)], &[]);
+        assert_eq!(pts, vec![at(10.0, 0.0)]);
+        let pts = smooth(at(0.0, 0.0), vec![at(5.0, 3.0), at(10.0, 0.0)], &[Block { x: 5.0, y: 0.0, r: 1.0 }]);
+        assert_eq!(pts.len(), 2, "still needed");
+    }
+
+    #[test]
+    fn a_hop_arcs_up_and_lands_where_it_should() {
+        let from = At { x: 0.0, y: 0.0, z: 10.0, o: 0.0 };
+        let to = At { x: 30.0, y: 0.0, z: 10.0, o: 0.0 };
+        let (pts, ms) = hop_path(from, to);
+        assert_eq!(pts.len(), 4);
+        assert_eq!((pts[3].x, pts[3].y, pts[3].z), (30.0, 0.0, 10.0));
+        assert!((pts[1].z - 16.0).abs() < 1e-3, "the top: a fifth of 30 yards: {:?}", pts[1]);
+        assert!(pts[0].z > 10.0 && pts[2].z > 10.0 && pts[0].x < pts[1].x && pts[1].x < pts[2].x);
+        assert!(ms > 2000 && ms < 3000, "{ms}");
+        let (short, ms) = hop_path(from, At { x: 5.0, ..from });
+        assert!((short[1].z - 13.0).abs() < 1e-3 && ms >= 600, "at least HOP_TOP_MIN up");
+        let (long, _) = hop_path(from, At { x: 200.0, ..from });
+        assert!((long[1].z - 20.0).abs() < 1e-3, "at most HOP_TOP_MAX up");
     }
 
     #[test]

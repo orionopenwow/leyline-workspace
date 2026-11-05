@@ -58,7 +58,7 @@ local CHECK_EVERY_MS = 5000    -- the position check for box-bounded areas
 local GOSSIP_MAX = 30          -- 3.3.5a shows at most 32 gossip items
 
 local DISCORD = "https://discord.gg/RfChVr8J7T"
-local HELP = "play.openvanilla.app/wrath/docs/play"
+local HELP = "leylinelauncher.com/wrath/docs/play"   -- the site's name now (review 4 Nov)
 -- The page reads a dropped 3.3.5a game folder in the browser (stream/www-files/ownfiles.js) and the realm
 -- then lifts this rule for the account; the in-game button is Esc > Mods & Workshop > Leyline realms.
 local BYOC = "This part of the world isn't streamed to the browser. Drop your own game folder on the "

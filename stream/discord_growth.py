@@ -1270,7 +1270,7 @@ def group_http(fm, h, link) -> None:
     if g is None or not g.cfg.lfg:
         return fm._jpost(h, 404, {"error": "Find a group isn't on yet."})
     if not h.headers.get("Authorization", "").startswith("Bearer "):
-        return fm._jpost(h, 401, {"error": "Sign in from the launcher first."})
+        return fm._jpost(h, 401, {"error": "Log in from the launcher first."})
     if not isinstance(doc, dict):
         return fm._jpost(h, 400, {"error": "Bad request."})
     lim = fm.P("browse_limit")

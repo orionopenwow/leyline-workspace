@@ -51,6 +51,8 @@ FAKE_CURL = r"""#!/bin/sh
 for a in "$@"; do last="$a"; done
 case "$last" in
   */data/__index) cat "$FAKE_DIR/data-code" 2>/dev/null || printf 302;;
+  */wrath/admin) cat "$FAKE_DIR/admin-code" 2>/dev/null || printf 302;;
+  */wrath) cat "$FAKE_DIR/site-code" 2>/dev/null || printf 200;;
   *) printf 200;;
 esac
 """
@@ -121,7 +123,9 @@ class Run(unittest.TestCase):
     def test_healthy_run_and_gate(self):
         rc, out = self.run_script()
         self.assertEqual(rc, 0, out[-2000:])
-        self.assertTrue(out.rstrip().endswith("FASTLOOP OK"), out[-500:])
+        self.assertTrue(out.rstrip().splitlines()[-1].startswith("FASTLOOP OK"), out[-500:])
+        self.assertIn("https://leylinelauncher.com/wrath", out.rstrip().splitlines()[-1], "the closing line names the new site")
+        self.assertIn("WARN: HTTP/3 is on", out, "no 'protocols h1 h2' in the Caddyfile is said out loud")
         self.assertNotEqual(open(os.path.join(self.wu, "portal", "looks.py")).read(), "# old looks.py\n")
         with open(os.path.join(self.tmp, "data-code"), "w") as f:
             f.write("200")
@@ -129,6 +133,45 @@ class Run(unittest.TestCase):
         self.assertEqual(rc, 1, out[-1000:])
         self.assertIn("not behind the sign-in gate", out)
         self.assertNotIn("FASTLOOP OK", out)
+
+    def _fails_with(self, name, code, words):
+        with open(os.path.join(self.tmp, name), "w") as f:
+            f.write(code)
+        rc, out = self.run_script()
+        self.assertEqual(rc, 1, out[-1000:])
+        self.assertIn(words, out)
+        self.assertNotIn("FASTLOOP OK", out)
+
+    def test_admin_open_signed_out_fails(self):
+        self._fails_with("admin-code", "200", "Admin Console must be hidden")
+
+    def test_site_down_fails(self):
+        self._fails_with("site-code", "502", "the site is not answering")
+
+    def test_gamedata_off_needs_410(self):
+        open(os.path.join(self.wu, "portal", "gamedata-off"), "w").close()
+        rc, out = self.run_script()
+        self.assertEqual(rc, 1, out[-1000:])
+        self.assertIn("not 410", out)
+        self._fails_with("data-code", "302", "not 410")
+        with open(os.path.join(self.tmp, "data-code"), "w") as f:
+            f.write("410")
+        rc, out = self.run_script()
+        self.assertEqual(rc, 0, out[-1000:])
+
+    def test_checks_ask_the_new_names(self):
+        src = open(SCRIPT, encoding="utf-8").read()
+        chk = src[src.index('echo "== check"'):]
+        self.assertGreaterEqual(chk.count("https://$SITE_NAME/"), 10)
+        old = [ln for ln in chk.splitlines() if "curl" in ln and "openvanilla.app/" in ln]
+        self.assertEqual(len(old), 2, "one old-name check for the site and one for the game data, no more")
+
+    def test_h3_off_no_warning(self):
+        with open(self.cf, "a") as f:
+            f.write("{\n\tservers {\n\t\tprotocols h1 h2\n\t}\n}\n")
+        rc, out = self.run_script()
+        self.assertEqual(rc, 0, out[-1000:])
+        self.assertNotIn("HTTP/3 is on", out)
 
     def test_old_backups_pruned(self):
         for i in range(14):

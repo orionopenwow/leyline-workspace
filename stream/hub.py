@@ -962,10 +962,19 @@ class Hub:
                 ("looks", "Looks", "/wrath/looks", "looks"),   # owner 1 Nov 14:38: graphics and UI looks, a main part of the site
                 ("host", "Host", "/wrath/host", "host"),
                 ("forum", "Forum", FORUM, "forum")]   # owner 2026-10-30: "change community to forum"
+        sp = self.portal("site_pages")
+        try:
+            # Single player beside Realms, where the ways to play live (owner 4 Nov: a blatant, top-level choice), only
+            # once its flag is on (stream/site_pages.py SINGLE_PLAYER_PUBLIC: dark until the grand release)
+            if sp is not None and sp.single_public():
+                main.insert(2, ("single", "Single player", sp.SINGLE, "single"))
+        except Exception:   # noqa: BLE001
+            pass
         # the duel leaderboards (stream/duels.py; owner 2026-10-31: "leaderboards on site") lead the More menu
         more = [("leaderboards", "Leaderboards", "/wrath/leaderboards", "leaderboards"),
                 ("forge", "Forge", BASE + "/forge", "forge"), ("agents", "Agents", BASE + "/agents", "agents"),
-                ("docs", "Docs", "/wrath/docs", "docs"), ("news", "News", BASE + "/news", "news"),
+                ("docs", "Docs", "/wrath/docs", "docs"), ("guides", "Guides", "/wrath/guides", "guides"),   # the guide series (stream/site_pages.py)
+                ("news", "News", BASE + "/news", "news"),
                 ("creators", "Creators", BASE + "/creators", "creators")]   # Modes, Gallery and Status left the menu (owner 2026-10-30)
         return main, more
 
@@ -1042,8 +1051,10 @@ class Hub:
         flag = '<p class="hb-flag">Preview: this page is hidden while it is being built.</p>' if not front_on() else ""
         repo = self.portal("LEYLINE_REPO") or "https://github.com/orionopenwow/Leyline"
         discord = self.portal("DISCORD_URL") or ""
-        foot_links = [("Docs", "/wrath/docs"), ("Download", dl), ("Forum", FORUM), ("Status", f"{home}#status"),
-                      ("Mods", f"{BASE}/catalog"), ("Creators", f"{BASE}/creators"), ("Submit a mod", f"{BASE}/submit")]
+        foot_links = [("Docs", "/wrath/docs"), ("Guides", "/wrath/guides"), ("Modes", "/wrath/modes"), ("Download", dl),
+                      ("Forum", FORUM), ("Status", f"{home}#status"),
+                      ("Mods", f"{BASE}/catalog"), ("Creators", f"{BASE}/creators"), ("Submit a mod", f"{BASE}/submit"),
+                      ("Press", "/wrath/press")]
         social = [("GitHub", repo)]
         hs = self.health_state()
         health = (f'<a class="hb-health {hs}" href="{home}#status"><span class="hb-hdot" aria-hidden="true"></span>'
@@ -2275,10 +2286,21 @@ class Hub:
             # mod, four feature sections, the forum and the status bar. The counters, the community posters, the Hero
             # Key line and Mods in play repeated what is already above them (their methods stay, off the page, to bring back).
             + self.realm_section(got) + self.how_strip() + den_week_html() + self.featured_mod(items)
+            + self.site_sections()   # Ways to play and (flag on) Single player, after the featured mod (stream/site_pages.py)
+           
             + self.features(got) + self.community(items) + status +
             '<p class="hb-fine">Community projects are links: nothing of theirs is hosted here. Each belongs to its '
             'authors, under the licence they chose. Leyline is an independent open-source project.</p>')
         return self._shell("Leyline", body, path, nonce)
+
+    def site_sections(self) -> str:
+        """The front page's Ways to play (the Modes shelf) and, once its flag is on, Single player (stream/site_pages.py,
+        owner 4 Nov); "" without that module."""
+        sp = self.portal("site_pages")
+        try:
+            return sp.front_sections() if sp is not None else ""
+        except Exception:   # noqa: BLE001
+            return ""
 
     def _network(self):
         """(network module, realms, ok, the sample's status) from the portal, or None when it has no realm list."""
@@ -4978,6 +5000,9 @@ BACKDROP = "leyline-shot-backdrop.webp"   # the site backdrop (Hub._backdrop)
 # The header's line icons (the launcher's sidebar style: 24x24 strokes, currentColor).
 NAV_ICONS = {
     "play": '<circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l6-3.5z"/>',
+    # the launcher's sword mark for Single player (launcher/ui/single.js SWORD), and a book with a play mark for Guides
+    "single": '<path d="M19.8 4.2 10.5 13.5l-1.35-1.35M19.8 4.2l-.6 3.15M19.8 4.2l-3.15.6M6.6 12.9l4.5 4.5M8.85 15.15 4.5 19.5"/>',
+    "guides": '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M10.5 7.5v5l4-2.5z"/>',
     "realms": ICONS["realms"], "mods": ICONS["mods"], "modes": ICONS["modes"], "host": ICONS["host"], "looks": ICONS["looks"],
     "community": ICONS["community"], "forge": ICONS["forge"], "agents": ICONS["agents"],
     "forum": '<path d="M4 4h11a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H9l-4 3.5V13H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/>'
@@ -5382,7 +5407,8 @@ def get(handler, path: str, query: dict) -> None:
         handler.end_headers()
         return
     limit = hub.portal("browse_limit")
-    if limit is not None and not limit.hit(handler.ip(), 600):
+    bucket = hub.portal("rl_bucket")   # one IPv6 /64 is one visitor, like every other limit (site review 4 Nov)
+    if limit is not None and not limit.hit(bucket(handler.ip()) if callable(bucket) else handler.ip(), 600):
         handler.send(429, b"too many requests\n", "text/plain")
         return
     if path == FEED:
@@ -5462,6 +5488,10 @@ def post(handler, path: str) -> None:
         handler = _Live(handler)
     if path != BASE + "/submit":
         handler.send(405, b"method not allowed\n", "text/plain")
+        return
+    same = hub.portal("same_site")   # site review 4 Nov: any site could queue an entry through this anonymous form
+    if callable(same) and not same(handler):
+        handler.send(403, b"that form came from another site\n", "text/plain")
         return
     try:
         length = int(handler.headers.get("Content-Length", "0"))

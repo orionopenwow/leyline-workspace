@@ -12,7 +12,7 @@ const { chromium } = require('playwright');
 
 const COVER = 'file://' + path.join(__dirname, '..', 'ui', 'cover.html');
 const INDEX = 'file://' + path.join(__dirname, '..', 'ui', 'index.html');
-const BRAND = /World of Warcraft|\bWoW\b|Warcraft|Lich King|Blizzard/;
+const BRAND = /World of Warcraft|\bWoW\b|Warcraft|Lich King|(?<!endorsed by )Blizzard/;
 
 // the core's cover_state, changed by the test through window.__view
 const COVER_FAKE = (view) => {

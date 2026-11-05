@@ -386,6 +386,12 @@ def inbox_items() -> tuple[list[dict], list[str]]:
             items += lst.hq_items(A, _item)
         except Exception:   # noqa: BLE001
             problems.append("listed mods")
+    dm = P("denmarket")
+    if dm is not None:   # shared Dens and stamps waiting, their updates, their reports (stream/denmarket.py)
+        try:
+            items += dm.hq_items(A, _item)
+        except Exception:   # noqa: BLE001
+            problems.append("shared Dens")
     ok, ws, err = A.ws_list("pending")
     if not ok:
         problems.append("the Workshop queue (" + err + ")")
@@ -428,7 +434,7 @@ INBOX_WORDS = {"bug": ("bug report", "bug reports"), "msg": ("message report", "
                "forum": ("forum report", "forum reports"), "link": ("link report", "link reports"),
                "realm": ("realm report", "realm reports"), "ws": ("Workshop item waiting", "Workshop items waiting"),
                "hub": ("index submission", "index submissions"), "theme": ("theme pack waiting", "theme packs waiting"),
-               "listing": ("listed mod waiting", "listed mods waiting")}
+               "listing": ("listed mod waiting", "listed mods waiting"), "den": ("shared Den item", "shared Den items")}
 
 
 def inbox_counts(items: list[dict]) -> str:
@@ -1580,7 +1586,8 @@ NET_SWITCHES = (("herokey_sso", "Hero Key sign-in on community realms"),
                 ("relay_volunteer", "Offer Help carry the network in the launcher"),
                 ("mesh_relays", "Players use community nodes when they are closer"),
                 ("mesh_realms", "Launchers read the realm list from the mesh"),
-                ("share_own_files", "Offer Help share Leyline's own files in the launcher"))
+                ("share_own_files", "Offer Help share Leyline's own files in the launcher"),
+                ("be_a_node", "Offer Be a node on the launcher's Host page (off: every node stops within 30 minutes)"))
 
 
 def _relay_base() -> str:

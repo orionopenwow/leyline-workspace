@@ -54,6 +54,9 @@
   border: var(--t-border-w, 1px) solid var(--t-border); }
 .sp-engine.on { border-color: var(--t-accent); }
 .sp-engine.off { opacity: .6; cursor: not-allowed; border-style: dashed; }
+.sp-engine[tabindex] { cursor: pointer; }
+.sp-engine[tabindex]:hover { border-color: color-mix(in srgb, var(--t-accent) 60%, var(--t-border)); }
+.sp-engine[tabindex]:focus-visible { outline: 2px solid var(--t-accent); outline-offset: 2px; }
 .sp-engine-h { display: flex; align-items: center; gap: 8px; }
 .sp-engine-h b { font-size: 13.5px; color: var(--t-text); }
 .sp-engine-h em { font-style: normal; font-size: 11px; color: var(--t-muted); padding: 1px 6px; border-radius: 999px;
@@ -64,6 +67,7 @@
 .sp-prog { display: grid; gap: 6px; padding: 10px 12px; border-radius: var(--t-radius, 10px); border: 1px solid var(--t-border); }
 .sp-prog.bad { border-color: var(--t-bad); }
 .sp-prog-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.sp-prog-d { font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Manage */
 .sp-manage { margin-top: 16px; display: grid; gap: 10px; padding: 14px 16px; border-radius: var(--t-radius, 10px);
@@ -72,5 +76,9 @@
 .sp-manage-h b { font: 700 15px var(--t-font); color: var(--t-text); }
 .sp-logs { margin: 0; max-height: 260px; overflow: auto; padding: 10px; font-size: 11.5px; line-height: 1.4; white-space: pre-wrap;
   border-radius: 8px; background: color-mix(in srgb, var(--t-bg, #000) 70%, transparent); color: var(--t-text); }
+/* the Built-in engine's login (made for the player) */
+.sp-login code { font: 600 12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 1px 6px; border-radius: 6px;
+  background: color-mix(in srgb, var(--t-bg, #000) 60%, transparent); color: var(--t-text); user-select: all; }
+.sp-manage-h .sp-fine { margin-left: auto; }
 .sp .sp-status { margin-top: 12px; }
 @media (max-width: 900px) { .sp-body { margin-left: 0; } }

@@ -2,10 +2,10 @@
 
 There are three ways to play Wrath: streamed in the browser, in the browser with your own game folder, or in your own game client with the [Leyline launcher](launcher.md). They all use the same realm, the same account and the same characters. New here? Start with [Getting started](getting-started.md).
 
-## Sign in
+## Log in
 
 1. Open [leylinelauncher.com/wrath](https://leylinelauncher.com/wrath).
-2. Sign in with your [Hero Key](hero-key.md) or Google.
+2. Log in with your [Hero Key](hero-key.md) or Google.
 3. The site makes your game account for you. There are no separate Wrath accounts to ask for.
 
 A Hero Key saved in your browser signs you in by itself the next time. If that fails, you get the normal sign-in page.
@@ -67,7 +67,7 @@ You need your own game install: the official realm runs the Wrath-era game {{v:3
 1. Get the [Leyline launcher](launcher.md) and open it.
 2. Add your game folder: press **PLAY**, or pick **Add a game folder…** in the play bar. The launcher reads the version itself.
 3. Press **PLAY**. The launcher points your game at the realm (your original realm setting is kept as a backup) and starts it.
-4. Log in with your game account: sign in at [leylinelauncher.com/wrath](https://leylinelauncher.com/wrath) and open **Play with the desktop client or the player package** to see your account name and password.
+4. Log in with your game account: log in at [leylinelauncher.com/wrath](https://leylinelauncher.com/wrath) and open **Play with the desktop client or the player package** to see your account name and password.
 
 **Without the launcher.** Open `Data\enUS\realmlist.wtf` (or `Data\enGB\...`) in a text editor, change the line to `set realmlist leylinelauncher.com`, delete the `Cache` folder next to the game, then start it.
 

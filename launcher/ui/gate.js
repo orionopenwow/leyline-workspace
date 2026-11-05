@@ -417,8 +417,27 @@
   wb("gate-close", (w) => w.close());
 
   // PLAY on the official realm: signed in first (or no way to tell): run now; else this dialog, then it
-  const ready = () => { const s = S(); return !s || !s.known() || s.signedIn() || skipped; };
+  // Not ready while the core's first sign-in check hasn't answered (a cold start: PLAY pressed at once used to start the
+  // official realm signed out; review 4 Nov): need() waits for it, at most WAIT_MS, then decides.
+  const WAIT_MS = 5000;
+  let waitedOut = false;
+  const ready = () => { const s = S(); return !s || (!s.checked() && waitedOut) || (s.checked() && !s.known()) || s.signedIn() || skipped; };
   function need(reason, next) {
+    const s = S();
+    if (s && !s.checked() && !waitedOut) {
+      let done = false;
+      const again = (out) => {
+        if (done) return;
+        done = true;
+        document.removeEventListener("leyline:status", onStatus);
+        if (out) waitedOut = true;   // no answer at all: as before, no way to tell, go on
+        need(reason, next);
+      };
+      const onStatus = () => again(false);
+      document.addEventListener("leyline:status", onStatus);
+      setTimeout(() => again(!S().checked()), WAIT_MS);
+      return false;
+    }
     if (ready()) { next(); return true; }
     show(reason, next);
     return false;

@@ -254,3 +254,36 @@ test('a technical error from the core never shows raw in the Log in dialog', asy
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+// KNOWN FAILURE (owner decision, not fixed): a player's own game folder path is shown as it is under Game folders ›
+// Details ("Folder: C:\Games\World of Warcraft 3.3.5a"), so a brand word reaches the screen. Masking it (e.g. "C:\Games\…")
+// changes what the player recognises as their folder, so it is left for Orion. ui/app.js renderClients ("Folder: " + c.path).
+test('Game folders: a folder path with a brand word in it does not show the brand word', { todo: 'owner decision: mask brand words in shown folder paths (app.js renderClients)' }, async () => {
+  const clients = [{ id: 'c335a-1', name: 'Wrath 3.3.5a', path: 'C:\\Games\\World of Warcraft 3.3.5a', build: '3.3.5a', realmlist: '' }];
+  const { page, errors } = await open({ signed: true, clients });
+  await page.waitForFunction(() => document.querySelector('#hf-me-btn'));
+  await page.evaluate(() => window.LeylineNav.show('clients'));
+  await page.waitForSelector('#cl-list .card');
+  await page.$$eval('#cl-list details', (d) => d.forEach((x) => { x.open = true; }));
+  assert.doesNotMatch(await page.textContent('#cl-list'), BRAND);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('PLAY pressed before the sign-in check answers never starts the official realm signed out', async () => {
+  // social_status is slow on a cold start (the keychain); a fast PLAY used to see "no way to tell" and start at once
+  const { page, errors } = await open({}, () => {
+    const inv = window.__TAURI__.core.invoke;
+    window.__TAURI__.core.invoke = async (cmd, args) => {
+      if (cmd === 'social_status') { await new Promise((r) => setTimeout(r, 1500)); }
+      return inv(cmd, args);
+    };
+  });
+  await page.waitForFunction(() => window.__calls.some(([c]) => c === 'realms_list'));
+  await page.click('#play-go');
+  await page.waitForTimeout(2200);
+  assert.deepEqual(await callsOf(page, 'play'), [], 'nothing started signed out');
+  assert.equal(await gateOpen(page), true, 'the Log in dialog opened once the check said signed out');
+  assert.deepEqual(errors, []);
+  await page.close();
+});

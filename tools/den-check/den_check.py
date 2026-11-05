@@ -1746,6 +1746,51 @@ def why_unselected(rep, ui, den_dir, since, aids_now, label, wait=4.0):
     rep.add("INFO", "%s: what the UI says" % label, "; ".join(x[:240] for x in lines) or "no report from the UI")
 
 
+def layout_stamps(den_dir, since):
+    """The stamps Den Lite kept from the layout (its `layout_stamps` event: `name:props:new|kept ...`), [(name, n, new)]."""
+    out = []
+    for e in events(Path(den_dir), since):
+        if e.get("ev") == "layout_stamps":
+            for part in str(e.get("detail", "")).split():
+                bits = part.split(":")
+                if len(bits) == 3 and bits[1].isdigit():
+                    out.append((bits[0], int(bits[1]), bits[2] == "new"))
+    return out
+
+
+def empty_den(rep, ch, den_dir, owners, wait=4.0):
+    """The Den emptied for the editor's test (owner 5 Nov), after its layout is kept as stamps (Den Lite
+    layoutstamps.rs, `.den stamps from-layout`: once, a stamp already there isn't written again); then one of those
+    stamps put down in the empty Den (its props come) and one undo takes it away. Returns the props cleared."""
+    if owners <= 0:
+        rep.add("INFO", "the test's empty Den", "your Den had no props")
+        return 0
+    t = now_ms()
+    ch.send(".den stamps from-layout")
+    made = wait_for(lambda: layout_stamps(den_dir, t), wait, 0.2) or []
+    if made:
+        rep.ok(True, "your layout kept as stamps (Stamps > Mine)",
+               ", ".join("%s (%d%s)" % (n, k, ", new" if new else "") for n, k, new in made), "")
+    else:
+        rep.add("INFO", "your layout kept as stamps", "this Den Lite is from before `.den stamps from-layout`: your Den is saved as %s-before and put back after" % AIDS_SAVE)
+    r = ch.send(".den clear") or {}
+    left = r.get("props")
+    if left is None or int(left) != 0:
+        rep.add("INFO", "the test's empty Den", "this Den Lite can't clear the Den (%s props there): the test runs among them" % left)
+        return 0
+    rep.ok(True, "the test's empty Den", "%d props cleared (kept in %s-before, put back after)" % (owners, AIDS_SAVE), "")
+    # one of the new stamps put down here, and one undo takes it back (the smallest dressed group: it fits)
+    groups = sorted([m for m in made if not m[0].startswith("my-den-")], key=lambda m: m[1]) or sorted(made, key=lambda m: m[1])
+    if groups:
+        name, n, _ = groups[0]
+        got = (ch.send(".den stamp %s" % name) or {}).get("props")
+        undone = (ch.send(".build undo") or {}).get("props")
+        rep.ok(got is not None and int(got) > 0 and undone is not None and int(undone) == 0, "a kept stamp goes down, one undo takes it back",
+               "%s: %s props down, then %s" % (name, got, undone),
+               "The stamp %s put %s props down and undo left %s (want some, then 0): send logs\\den-move-latest.txt." % (name, got, undone))
+    return owners
+
+
 def glide_check(rep, before, after, label):
     """Owner 5 Nov: "dynamically move instead of disappearing, reappearing". The copy in hand (an M2 prop) is a creature
     made once and glided (Den Lite glide.rs): between `before` and `after` (Den Lite's aid views) one copy was made
@@ -1840,7 +1885,12 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0, only_mo
     before = den_dir / ("%s-before.den.json" % AIDS_SAVE)
     kept = stash([before, den_dir / "backup.den.json"])
     ch.send(".den save %s-before" % AIDS_SAVE)
+    owners = int(first.get("props") or 0)
     try:
+        # an empty Den for the test (owner 5 Nov: "something blocking the view in your tests you can remove everything
+        # from den for these tests"): its layout kept as stamps first, then every prop away (one undo); the save above
+        # puts it back at the end
+        empty_den(rep, ch, den_dir, owners)
         # build mode: Den Lite says the look (an event every time it is asked: 3 Nov the editor was already in build
         # mode, so none came); since 3 Nov its props go out under their build twins (gizmo.rs `twin`), which the
         # game asks for once each, as goobers (a glow under the mouse, right-click uses them)
@@ -2035,13 +2085,15 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0, only_mo
         return True
     finally:
         if before.is_file():
-            ch.send(".den load %s-before replace" % AIDS_SAVE)
+            back = ch.send(".den load %s-before replace" % AIDS_SAVE) or {}
+            n = back.get("props")
+            if n is not None and int(n) != owners and kept.get(before) is None:
+                # not put back: the saved Den stays for the owner (never taken away with the test's files)
+                kept.pop(before, None)
+            if n is not None:
+                rep.ok(int(n) == owners, "your Den put back as it was", "%d props, as before the test" % owners,
+                       "Your Den has %s props after the test, %d before: .den load %s-before replace puts it back (the file is kept)." % (n, owners, AIDS_SAVE))
         unstash(kept)
-        if kept.get(before) is None:
-            try:
-                before.unlink()
-            except OSError:
-                pass
 
 
 def win_mouse(pid):

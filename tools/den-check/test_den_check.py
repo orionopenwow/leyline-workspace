@@ -1059,8 +1059,29 @@ class FakeAids:
             return r
         if w[:2] in ([".den", "save"], [".den", "load"]):
             if w[1] == "save":
-                (self.dens / ("%s.den.json" % w[2])).write_text("{}")
+                (self.dens / ("%s.den.json" % w[2])).write_text(json.dumps({"props": self.props}))
+            elif "noload" in self.broken:
+                self.props = 7   # the load went wrong: not what was saved
+            else:
+                self.props = json.loads((self.dens / ("%s.den.json" % w[2])).read_text()).get("props", self.props)
             return {"props": self.props}
+        if getattr(self, "before_clear", False) and w[:2] in ([".den", "clear"], [".den", "stamps"]):
+            return {"props": self.props, "said": []}
+        if w[:3] == [".den", "stamps", "from-layout"]:
+            self.ev("layout_stamps", "my-den-5-nov:%d:new tent-with-lanterns:2:new" % self.props)
+            return {"props": self.props, "said": []}
+        if w[:2] == [".den", "clear"]:
+            self.cleared, self.props = self.props, 0
+            self.ev("den_clear", str(self.cleared))
+            return {"props": 0, "said": []}
+        if w[:2] == [".den", "stamp"]:
+            self.stamped = 2
+            self.props += 2
+            return {"props": self.props, "said": []}
+        if w[:2] == [".build", "undo"]:
+            self.props -= getattr(self, "stamped", 0)
+            self.stamped = 0
+            return {"props": self.props, "said": []}
         a = w[2:]
         if a and a[0] == "select" and "select" not in self.broken:
             self.aids.update(sel=7, gizmo=3)
@@ -1431,6 +1452,46 @@ class PlacementAids(unittest.TestCase):
             self.assertEqual(rows[0][0], "INFO", kind)
             self.assertIn("updated launcher" if kind == "none" else "from before the glide", rows[0][2])
             self.assertEqual([r for r in rep.rows if r[0] == "FAIL"], [], kind)
+
+    def test_the_test_runs_in_an_empty_den_its_layout_kept_as_stamps_and_put_back(self):
+        # owner 5 Nov: "remove everything from den for these tests ... remember ... a few dressed buildings and areas as
+        # stamps for testing"
+        den = FakeAids(self.dens)
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, den, self.dens, self.shoot, self.d / "shots", settle=0, wait=0.3, only_move=True)
+        rows = {r[1]: r for r in rep.rows}
+        self.assertEqual(rows["your layout kept as stamps (Stamps > Mine)"][0], "PASS")
+        self.assertIn("my-den-5-nov (2, new)", rows["your layout kept as stamps (Stamps > Mine)"][2])
+        self.assertEqual(rows["the test's empty Den"][0], "PASS")
+        self.assertEqual(den.cleared, 2)
+        row = rows["a kept stamp goes down, one undo takes it back"]
+        self.assertEqual(row[0], "PASS", row)
+        self.assertTrue(row[2].startswith("tent-with-lanterns: 2 props down, then 0"), row[2])
+        self.assertEqual(rows["your Den put back as it was"][0], "PASS")
+        self.assertEqual(den.props, 2, "the owner's two props back")
+        self.assertFalse((self.dens / "aidstest-before.den.json").exists())
+        # the load didn't put it back: failed, and the saved file is kept
+        dens = self.d / "dens-noload"
+        dens.mkdir()
+        (dens / "den-lite.events").write_text("")
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, FakeAids(dens, broken={"noload"}), dens, self.shoot, self.d / "shots", settle=0, wait=0.3, only_move=True)
+        self.assertEqual({r[1]: r for r in rep.rows}["your Den put back as it was"][0], "FAIL")
+        self.assertTrue((dens / "aidstest-before.den.json").exists(), "kept for the owner")
+        # a Den Lite from before `.den clear`: said, the test runs among the props
+        dens = self.d / "dens-old"
+        dens.mkdir()
+        (dens / "den-lite.events").write_text("")
+        old = FakeAids(dens)
+        old.before_clear = True
+        rep = den_check.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            den_check.aids_features(rep, old, dens, self.shoot, self.d / "shots", settle=0, wait=0.3, only_move=True)
+        rows = {r[1]: r for r in rep.rows}
+        self.assertEqual(rows["the test's empty Den"][0], "INFO")
+        self.assertEqual([r for r in rep.rows if r[0] == "FAIL"], [])
 
     def test_a_selection_lost_after_placing_says_what_cleared_it(self):
         # 5 Nov den-move step 3: "prop None, glow on None, 0 handles": the report now names the sender from both sides

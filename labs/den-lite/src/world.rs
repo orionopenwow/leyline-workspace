@@ -1817,6 +1817,42 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             let rest: String = text.split_whitespace().skip(2).collect::<Vec<_>>().join(" ");
             send_addon(c, sess.me.guid, "wuden", "ui", &rest)
         }
+        // the den-test's empty Den (owner 5 Nov: "remove everything from den for these tests"): every prop away as one
+        // undo, a `backup` Den file first; the owner's, and only with the test's channel
+        (".den", "clear") if shared.cfg.test_control => {
+            if !sess.me.host {
+                return say(c, "Only the Den's owner clears it.");
+            }
+            let ch = {
+                let mut d = shared.den.lk();
+                if !d.props.is_empty() {
+                    let _ = d.save(&shared.cfg.den_dir, "backup", now());
+                }
+                d.clear_props()
+            };
+            shared.event("den_clear", &sess.me.name, &ch.destroyed.len().to_string());
+            apply(c, shared, &ch)
+        }
+        // the layout kept as stamps (layoutstamps.rs): the whole of it and its dressed groups, in Stamps > Mine, once
+        (".den", "stamps") if w(2) == "from-layout" => {
+            if !sess.me.host {
+                return say(c, "Only the Den's owner keeps its layout as stamps.");
+            }
+            let made = {
+                let d = shared.den.lk();
+                crate::layoutstamps::from_layout(&d, &shared.cfg.den_dir, &sess.me.name, now())
+            };
+            match made {
+                Err(e) => say(c, &e),
+                Ok(made) => {
+                    let list: Vec<String> = made.iter().map(|m| format!("{}:{}:{}", m.name, m.props, if m.new { "new" } else { "kept" })).collect();
+                    shared.event("layout_stamps", &sess.me.name, &list.join(" "));
+                    let ctx = buildtools::Ctx { dens: &shared.cfg.den_dir, stamps: &shared.cfg.stamps_dir, who: &sess.me.name, unix: now() };
+                    send_addon(c, sess.me.guid, "wubuild", "stamps", &buildtools::stamp_list(&ctx))?;
+                    say(c, &crate::layoutstamps::line(&made))
+                }
+            }
+        }
         (".den", "stamps") => {
             let names = den::stamp_names(&shared.cfg.stamps_dir);
             say(c, &format!("Stamps: {}.", if names.is_empty() { "none here".into() } else { names.join(", ") }))

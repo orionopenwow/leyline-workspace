@@ -23,6 +23,7 @@ pub mod gear;
 pub mod gearsets;
 pub mod guests;
 pub mod jaina;
+pub mod layoutstamps;
 pub mod hosting;
 pub mod ovmod;
 pub mod login;

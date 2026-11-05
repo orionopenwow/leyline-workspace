@@ -1116,6 +1116,25 @@ impl Den {
         self.placed(guid).is_some_and(|p| p.prop.locked == Some(true))
     }
 
+    /// `.den clear` (the den-test, owner 5 Nov: "remove everything from den for these tests"): every prop taken away
+    /// as **one** undo step (undo puts them all back where they were), the room, paths and notes kept.
+    pub fn clear_props(&mut self) -> Change {
+        if self.props.is_empty() {
+            return Change { message: "Your Den has no props to clear.".into(), ..Default::default() };
+        }
+        let mut destroyed = Vec::new();
+        let mut removed = Vec::new();
+        for p in self.props.drain(..) {
+            destroyed.push(p.obj.guid);
+            removed.push(p.prop);
+        }
+        let n = removed.len();
+        let look = self.look.name.to_string();
+        let half = self.spot.half;
+        self.push_undo(Undo::Replaced { added: Vec::new(), removed, look, half });
+        Change { destroyed, message: format!("Cleared {n} props. .build undo puts them all back."), ..Default::default() }
+    }
+
     /// The Builder's Delete: the prop taken away (undo puts it back).
     pub fn delete(&mut self, guid: u64) -> Result<Change, String> {
         let i = self.props.iter().position(|p| p.obj.guid == guid).ok_or("Select a prop first (Near picks the closest).")?;
@@ -1783,6 +1802,24 @@ mod tests {
         assert_eq!(back.props, doc.props);
         assert_eq!(back.paths, doc.paths);
         assert_eq!(back.extra.get("notes"), doc.extra.get("notes"));
+    }
+
+    #[test]
+    fn clear_takes_every_prop_away_as_one_undo_and_undo_puts_them_back_exactly() {
+        let mut d = Den::new(Spot::default());
+        let s = d.spot;
+        for i in 0..4 {
+            d.spawn(2413, s.x + i as f32, s.y + 2.0, s.z, 0.3 * i as f32).unwrap();
+        }
+        let before: Vec<Prop> = d.props.iter().map(|p| p.prop.clone()).collect();
+        let ch = d.clear_props();
+        assert!(d.props.is_empty() && ch.destroyed.len() == 4 && ch.message.starts_with("Cleared 4 props"));
+        assert_eq!(d.history()[0], "Replaced 4 with 0");
+        let back = d.undo();
+        assert_eq!(back.created.len(), 4);
+        let after: Vec<Prop> = d.props.iter().map(|p| p.prop.clone()).collect();
+        assert_eq!(before, after, "every prop back as it was");
+        assert!(Den::new(Spot::default()).clear_props().destroyed.is_empty());
     }
 
     #[test]

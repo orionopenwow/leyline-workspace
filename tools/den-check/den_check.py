@@ -1704,6 +1704,11 @@ def aids_features(rep, ch, den_dir, shoot, outdir, settle=1.0, wait=6.0, only_mo
         rep.ok(len(cur) >= 2 and abs(cur[0] - 0.25) < 0.01 and abs(cur[1] + 0.35) < 0.01 and g1 and a.get("ghost") and a.get("ghost") != g1,
                "follow: the real prop goes where the cursor points", with_pic("at %s, then %s" % (g1, a.get("ghost")), pic),
                "The prop didn't follow the cursor: send logs\\den-features-latest.txt.")
+        if not (g1 and a.get("ghost")):
+            # what Den Lite saw (4 Nov: "at None, then None"): the cursor it got, what is armed, where the copy should
+            # go, the camera and its zoom, the far view
+            rep.add("INFO", "follow: what Den Lite saw", "cursor %s, armed %s, at %s, cam %s, zoom %s, far %s, build %s, draw %s ms" % (
+                a.get("cursor"), a.get("armed"), a.get("at"), a.get("cam"), a.get("zoom"), a.get("far_at"), a.get("build"), a.get("draw_ms")))
         # 3. one click: placed and selected at once (glow, handles, halo), placing over
         p0 = props() or 0
         t = now_ms()

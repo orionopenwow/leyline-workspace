@@ -25,6 +25,7 @@ never something to post.
 Needs ffmpeg and Pillow. Nothing here uploads or posts anything.
 """
 import argparse
+import functools
 import json
 import os
 import re
@@ -421,7 +422,7 @@ def shots_of(script, scripts):
     return out
 
 
-def make(script, scripts, takes_cat, takes_dir, out_dir, formats=None, placeholders=False, final=False, fast=False, log=print):
+def make(script, scripts, takes_cat, takes_dir, out_dir, formats=None, placeholders=False, final=False, fast=False, log=functools.partial(print, flush=True)):
     """Cut one script into its videos. Returns {"files": [...], "missing": [take ids], "draft": bool}."""
     sid = script["id"]
     draft = is_draft(script, scripts)
@@ -564,7 +565,7 @@ def main(argv=None):
             made += bool(r["files"])
         except (ScriptError, RuntimeError) as e:
             failed += 1
-            print("FAIL %s: %s" % (i, e))
+            print("FAIL %s: %s" % (i, e), flush=True)
     print("REELS: %d made, %d failed, out in %s" % (made, failed, a.out))
     return 1 if failed else 0
 

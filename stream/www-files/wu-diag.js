@@ -52,7 +52,7 @@ export function createDiag(wenilla) {
       env: envKeys(),
       bridge: { ready: !!wenilla?.ready, commands: wenilla?.commands?.length || 0, state: wenilla?.state?.session?.state || null },
       stages: window.owStages?.summary?.() || null,
-      touch: t ? { on: t.on, inworld: t.inworld, via: t.bridge, presses: t.presses, taps: t.taps, drags: t.drags, errors: t.errors, layout: t.layout, driver: t.driver } : null,
+      touch: t ? { on: t.on, inworld: t.inworld, via: t.bridge, presses: t.presses, taps: t.tapCount ?? t.taps, lastTaps: Array.isArray(t.taps) ? t.taps.slice(-5) : undefined, drags: t.drags, errors: t.errors, layout: t.layout, driver: t.driver } : null,
       input: window.owInput || null,
       sw,
       ahead: window.owAhead || null,

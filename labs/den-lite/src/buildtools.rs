@@ -4,17 +4,19 @@
 //!
 //! The verbs (world.rs sends them here before the placement aids and ovmod.rs see them, [`is_tool`]):
 //!
-//! * `tool point <u> <v> <aspect> <zoom>`: where the cursor meets the ground (the build camera's ray, gizmo.rs), told
-//!   back as `wubuild point x,y,z`: the Path tool's clicks.
+//! * `tool point <u> <v> <aspect> <zoom> [<i>]`: where the cursor meets the ground (the build camera's ray, gizmo.rs):
+//!   the Path tool's next point (or point i moved there). The points are kept here, in the session's Sel (an addon
+//!   line holds 255 letters, too few for them), and told back as `wubuild pathpts <n>|<group>|<length>|x,y;...`.
 //! * `tool box <u1> <v1> <u2> <v2> <aspect> <zoom> [add]`: every prop whose middle is inside that box on the screen is
 //!   selected (box select).
 //! * `tool stamp <name> <u> <v> <aspect> <zoom> <turn> <none|lr|fb> <size>`: the stamp put down where the cursor meets
 //!   the ground, turned, mirrored and sized; clicked again elsewhere, it moves there (still one undo); `stamp again
 //!   <turn> <mirror> <size>` puts it down again with new numbers; `stamp keep` keeps it; `stamp cancel` takes it back.
-//! * `path show <pts>` / `path hide`: stakes at the path's points (this player only); `path lay <entry> <every>
-//!   <smooth 0|1> <along|across> <mid 0|1> <sides 0-3> <offset> <pts>`: the props along it (one group, one undo,
-//!   the path kept in the Den file's `paths` so it can be edited); `path edit`: the selection's path back to the
-//!   addon (`wubuild pathedit`); `path relay <group> ...`: laid again from edited points (one undo).
+//! * `path show` / `hide` / `undo` / `del <i>` / `clear`: the points' stakes (this player only), the last point or
+//!   point i taken away; `path lay <entry> <every> <smooth 0|1> <along|across> <mid 0|1> <sides 0-3> <offset>`: the
+//!   props along the points (one group, one undo, the path kept in the Den file's `paths` so it can be edited);
+//!   `path edit`: the selection's path's points back (`wubuild pathedit`), and the next Lay lays it again in place
+//!   (one undo).
 //! * `array <n> <dx> <dy> <dz>`, `ring <n> <radius> [in|out|along|keep] [me]`: copies (one undo).
 //! * `align x|y|z|bottom|top [min|max|mid|first]`, `distribute x|y|z`: the selection lined up or spread (one undo).
 //! * `land`: the selection put on what is under it (a prop's top or the ground: surface snap).
@@ -288,7 +290,13 @@ fn tool(d: &mut Den, sel: &mut Sel, a: &mut Aids, here: Here, w: &[&str], ctx: &
     match w.get(1).map(|s| s.to_ascii_lowercase()).as_deref() {
         Some("point") => match (num(w, 2), num(w, 3), num(w, 4)) {
             (Some(u), Some(v), Some(asp)) => match ground_at(d, a, here, u, v, asp, num(w, 5)) {
-                Some(p) if d.inside(p[0], p[1], p[2]) => tell(AidOut::default(), "point", format!("{:.2},{:.2},{:.2}", p[0], p[1], p[2])),
+                Some(p) if d.inside(p[0], p[1], p[2]) => {
+                    // `tool point <u> <v> <aspect> <zoom> [<i>]`: the path's next point, or point i moved there
+                    let i = w.get(6).and_then(|i| i.parse::<usize>().ok());
+                    let mut out = path_point(d, sel, p, i);
+                    out.addon.push(("point".into(), format!("{:.2},{:.2},{:.2}", p[0], p[1], p[2])));
+                    out
+                }
                 Some(_) => said("That is outside your Den."),
                 None => said("Click on the ground."),
             },
@@ -461,32 +469,63 @@ fn path_record(d: &Den, group: u64, entry: u32, l: &Lay, pts: &[tools::P2]) -> V
     })
 }
 
+/// The Path tool's points back to the addon (`wubuild pathpts <n>|<group or 0>|x,y;...`) and their stakes.
+fn points_out(d: &Den, sel: &Sel) -> AidOut {
+    let mut out = stakes(d, &sel.path);
+    let len = tools::length(&tools::smooth(&sel.path, tools::SMOOTH_STEPS));
+    out.addon.push(("pathpts".into(), format!("{}|{}|{:.1}|{}", sel.path.len(), sel.path_group.unwrap_or(0), len, tools::write_points(&sel.path))));
+    out
+}
+
+/// A point added to the path (or point `i` moved there): the Path tool's click on the ground.
+pub fn path_point(d: &Den, sel: &mut Sel, p: [f32; 3], i: Option<usize>) -> AidOut {
+    match i {
+        Some(i) if i < sel.path.len() => sel.path[i] = [p[0], p[1]],
+        _ if sel.path.len() >= tools::POINTS_MAX => return said(format!("A path has up to {} points.", tools::POINTS_MAX)),
+        _ => sel.path.push([p[0], p[1]]),
+    }
+    points_out(d, sel)
+}
+
 fn path(d: &mut Den, sel: &mut Sel, w: &[&str]) -> AidOut {
     let sub = w.get(1).map(|s| s.to_ascii_lowercase()).unwrap_or_default();
     match sub.as_str() {
-        "show" => stakes(d, &tools::parse_points(w.get(2).copied().unwrap_or(""))),
+        "show" => points_out(d, sel),
         "hide" => stakes(d, &[]),
-        "lay" | "relay" => {
-            let (group, at) = if sub == "relay" { (w.get(2).and_then(|g| g.parse::<u64>().ok()), 3) } else { (None, 2) };
-            if sub == "relay" && group.is_none() {
-                return said("path relay <group> ...");
+        "undo" => {
+            sel.path.pop();
+            points_out(d, sel)
+        }
+        "del" => {
+            if let Some(i) = w.get(2).and_then(|i| i.parse::<usize>().ok()).filter(|i| *i < sel.path.len()) {
+                sel.path.remove(i);
             }
-            let Some(entry) = w.get(at).and_then(|e| e.parse::<u32>().ok()).filter(|e| den::template(*e).is_some()) else {
+            points_out(d, sel)
+        }
+        "clear" => {
+            sel.path.clear();
+            sel.path_group = None;
+            points_out(d, sel)
+        }
+        "lay" => {
+            let Some(entry) = w.get(2).and_then(|e| e.parse::<u32>().ok()).filter(|e| den::template(*e).is_some()) else {
                 return said("Pick the prop the path is made of first (a fence, a lamp, a road tile...).");
             };
-            let l = lay_of(w, at + 1);
-            let pts = tools::parse_points(w.get(at + 7).copied().unwrap_or(""));
+            let l = lay_of(w, 3);
+            let pts = sel.path.clone();
             if pts.is_empty() {
                 return said("Click on the ground where the path goes first.");
             }
-            let g = group.unwrap_or_else(|| next_group(d));
+            // laid again when it is a path being edited (its group still there), else a new one
+            let relay = sel.path_group.filter(|g| d.props.iter().any(|p| p.prop.group == Some(*g)));
+            let g = relay.unwrap_or_else(|| next_group(d));
             let props = path_props(d, entry, &pts, &l, g);
             let room = den::MAX_PROPS.saturating_sub(d.props.len());
-            let old: Vec<u64> = if sub == "relay" { d.props.iter().filter(|p| p.prop.group == Some(g)).map(|p| p.obj.guid).collect() } else { Vec::new() };
+            let old: Vec<u64> = if relay.is_some() { members(d, g) } else { Vec::new() };
             if props.len() > room + old.len() {
                 return said(format!("That path is {} props; your Den has room for {}. Space them wider.", props.len(), room + old.len()));
             }
-            let ch = if sub == "relay" { d.replace_props(&old, &props) } else { d.place_many(&props) };
+            let ch = if relay.is_some() { d.replace_props(&old, &props) } else { d.place_many(&props) };
             let n = ch.created.len();
             // the path kept with the Den (its points, so it can be edited and laid again)
             let rec = path_record(d, g, entry, &l, &pts);
@@ -495,12 +534,14 @@ fn path(d: &mut Den, sel: &mut Sel, w: &[&str]) -> AidOut {
                 d.paths.push(rec);
             }
             let left = if ch.skipped > 0 { format!(" ({} left out: outside your Den)", ch.skipped) } else { String::new() };
-            let mut out = changed(ch, format!("Path {}: {n} {} along {:.0} yd{left}. Undo takes it back.", if sub == "relay" { "laid again" } else { "laid" }, name_by_entry(entry), tools::length(&tools::smooth(&pts, if l.smooth { tools::SMOOTH_STEPS } else { 0 }))));
-            let gone = stakes(d, &[]);
-            out.destroy = gone.destroy;
+            let len = tools::length(&tools::smooth(&pts, if l.smooth { tools::SMOOTH_STEPS } else { 0 }));
+            let mut out = changed(ch, format!("Path {}: {n} {} along {len:.0} yd{left}. Undo takes it back.", if relay.is_some() { "laid again" } else { "laid" }, name_by_entry(entry)));
+            out.destroy = stakes(d, &[]).destroy;
+            sel.path.clear();
+            sel.path_group = None;
+            out.addon.push(("pathpts".into(), "0|0|0|".into()));
             // the new path's props selected (one group: Move, Delete, Hide take them all)
-            let all: Vec<u64> = d.props.iter().filter(|p| p.prop.group == Some(g)).map(|p| p.obj.guid).collect();
-            select(sel, &all);
+            select(sel, &members(d, g));
             out
         }
         "edit" => {
@@ -510,14 +551,15 @@ fn path(d: &mut Den, sel: &mut Sel, w: &[&str]) -> AidOut {
             let Some(rec) = d.paths.iter().find(|p| p.get("group").and_then(Value::as_u64) == Some(g) && p.get("points").is_some()).cloned() else {
                 return said("That prop isn't on a path made with the Path tool.");
             };
-            let pts: Vec<tools::P2> = rec
+            sel.path = rec
                 .get("points")
                 .and_then(Value::as_array)
-                .map(|a| a.iter().filter_map(|p| Some([p.get(0)?.as_f64()? as f32 + d.spot.x, p.get(1)?.as_f64()? as f32 + d.spot.y])).collect())
+                .map(|a| a.iter().filter_map(|p| Some([p.get(0)?.as_f64()? as f32 + d.spot.x, p.get(1)?.as_f64()? as f32 + d.spot.y])).take(tools::POINTS_MAX).collect())
                 .unwrap_or_default();
+            sel.path_group = Some(g);
             let f = |k: &str| rec.get(k).cloned().unwrap_or(Value::Null);
             let line = format!(
-                "{g}|{}|{}|{}|{}|{}|{}|{}|{}",
+                "{g}|{}|{}|{}|{}|{}|{}|{}",
                 f("entry").as_u64().unwrap_or(0),
                 short(f("every").as_f64().unwrap_or(3.0)),
                 (f("smooth") != Value::Bool(false)) as u8,
@@ -525,15 +567,14 @@ fn path(d: &mut Den, sel: &mut Sel, w: &[&str]) -> AidOut {
                 (f("mid") == Value::Bool(true)) as u8,
                 f("sides").as_u64().unwrap_or(0),
                 short(f("offset").as_f64().unwrap_or(0.0)),
-                tools::write_points(&pts)
             );
-            let mut out = stakes(d, &pts);
+            let mut out = points_out(d, sel);
             out.addon.push(("pathedit".into(), line));
-            out.say.push("The path's points are back: drag a point by clicking it then the ground, add or take away points, then Lay again.".into());
+            out.say.push("The path's points are back: click a point's number then the ground to move it, add or take away points, then Lay again.".into());
             out
         }
         _ if sub.parse::<u64>().is_ok() => said("Den Lite lays paths with the Path tool: click the ground along the way, then Lay."),
-        _ => said("path show | hide | lay | edit | relay"),
+        _ => said("path show | hide | undo | del <n> | clear | lay | edit"),
     }
 }
 
@@ -1144,7 +1185,7 @@ mod tests {
 
     #[test]
     fn the_tools_verbs_are_known_and_said_in_caps() {
-        assert!(is_tool("path lay 2413 3 1 along 0 0 0 1,1;2,2"));
+        assert!(is_tool("path lay 2413 3 1 along 0 0 0"));
         assert!(is_tool("ALIGN x") && is_tool("tool point 0 0 1.7 12"));
         assert!(!is_tool("move x 1") && !is_tool("hover 0 0") && !is_tool(""));
         assert!(CAPS.split(',').all(|c| !gizmo::is_aid(c)), "none of them is a placement aid's");
@@ -1155,17 +1196,31 @@ mod tests {
         let mut d = Den::new(Spot::default());
         let mut sel = Sel::default();
         let s = d.spot;
-        let pts = format!("{},{};{},{}", s.x, s.y, s.x + 9.0, s.y);
-        let out = run(&mut d, &mut sel, &format!("path lay 2413 3 1 along 0 0 0 {pts}"));
+        path_point(&d, &mut sel, [s.x, s.y, s.z], None);
+        let out = path_point(&d, &mut sel, [s.x + 9.0, s.y, s.z], None);
+        assert!(out.addon.iter().any(|a| a.0 == "pathpts" && a.1.starts_with("2|0|9.0|")), "{:?}", out.addon);
+        assert_eq!(out.create.len(), 2, "a stake at each point");
+        let out = run(&mut d, &mut sel, "path lay 2413 3 1 along 0 0 0");
         let ch = out.change.expect("a change");
         assert_eq!(ch.created.len(), 4, "0, 3, 6, 9");
+        assert_eq!(out.destroy.len(), tools::POINTS_MAX, "the stakes go");
         assert_eq!(d.props.len(), 4);
         let g = d.props[0].prop.group;
         assert!(g.is_some() && d.props.iter().all(|p| p.prop.group == g), "one group");
         assert_eq!(d.paths.len(), 1, "the path kept with its points");
         assert_eq!(chosen(&d, &sel).len(), 4, "the new path selected");
+        assert!(sel.path.is_empty(), "the points used");
         d.undo();
         assert!(d.props.is_empty(), "one undo takes it all");
+        // the points: one moved, the last taken away, all cleared
+        path_point(&d, &mut sel, [s.x, s.y, s.z], None);
+        path_point(&d, &mut sel, [s.x + 1.0, s.y, s.z], None);
+        path_point(&d, &mut sel, [s.x + 5.0, s.y, s.z], Some(0));
+        assert_eq!(sel.path[0], [s.x + 5.0, s.y]);
+        run(&mut d, &mut sel, "path undo");
+        assert_eq!(sel.path.len(), 1);
+        run(&mut d, &mut sel, "path clear");
+        assert!(sel.path.is_empty());
     }
 
     #[test]
@@ -1173,15 +1228,19 @@ mod tests {
         let mut d = Den::new(Spot::default());
         let mut sel = Sel::default();
         let s = d.spot;
-        run(&mut d, &mut sel, &format!("path lay 2413 2 0 along 0 0 0 {},{};{},{}", s.x, s.y, s.x + 4.0, s.y));
+        path_point(&d, &mut sel, [s.x, s.y, s.z], None);
+        path_point(&d, &mut sel, [s.x + 4.0, s.y, s.z], None);
+        run(&mut d, &mut sel, "path lay 2413 2 0 along 0 0 0");
         assert_eq!(d.props.len(), 3);
         let g = d.props[0].prop.group.unwrap();
         let out = run(&mut d, &mut sel, "path edit");
         let line = &out.addon.iter().find(|a| a.0 == "pathedit").expect("the path back").1;
-        assert!(line.starts_with(&format!("{g}|2413|2|0|along|0|0|0|")), "{line}");
+        assert_eq!(line, &format!("{g}|2413|2|0|along|0|0|0"));
+        assert_eq!(sel.path.len(), 2, "its points back");
         assert!(!out.create.is_empty(), "its stakes shown");
-        run(&mut d, &mut sel, &format!("path relay {g} 2413 2 0 along 0 0 0 {},{};{},{}", s.x, s.y, s.x + 8.0, s.y));
-        assert_eq!(d.props.len(), 5, "longer: five");
+        path_point(&d, &mut sel, [s.x + 8.0, s.y, s.z], Some(1));
+        run(&mut d, &mut sel, "path lay 2413 2 0 along 0 0 0");
+        assert_eq!(d.props.len(), 5, "longer: five, in place of the three");
         assert_eq!(d.paths.len(), 1, "still one path");
         d.undo();
         assert_eq!(d.props.len(), 3, "undo: the old path back");

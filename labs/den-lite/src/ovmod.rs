@@ -165,6 +165,10 @@ pub struct Sel {
     pub more: Vec<u64>,
     /// `selnext`: where the round started (the props in order of their distance from here, wrapping).
     pub round: Option<[f32; 3]>,
+    /// The Path tool's points (world x, y; buildtools.rs: kept here, an addon line is too short for them) and the
+    /// path being edited (its group), if any.
+    pub path: Vec<[f32; 2]>,
+    pub path_group: Option<u64>,
 }
 
 /// The verbs this Den Lite answers (the state's `caps=`: the editor hides a button whose verb isn't here).

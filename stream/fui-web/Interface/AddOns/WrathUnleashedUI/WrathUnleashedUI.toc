@@ -27,7 +27,10 @@ ModeExamples.lua
 ModeScript.lua
 GameFolder.lua
 Workshop.lua
+CompanionsData.lua
 Companions.lua
+CompanionsTabs.lua
+BotBar.lua
 Social.lua
 Host.lua
 SkinGM.lua

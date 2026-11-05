@@ -262,8 +262,14 @@ check("/comp opens the window; Esc closes it", win and win:IsShown() and UISpeci
 check("empty: says so and offers the group buttons", win.empty:GetText():find("No bots with you") and win.sub:GetText() == "0 of 4 bots in your party")
 check("orders wait for bots", win.prepare.enabled == false and win.passive.enabled == false)
 
+-- a widget with that text anywhere inside parent (the window's tabs keep their widgets on pages)
+local function inside(f, parent)
+    local p = f.parent
+    while p do if p == parent then return true end; p = p.parent end
+    return false
+end
 local function find(parent, text)
-    for _, f in ipairs(created) do if f.parent == parent and f.text == text then return f end end
+    for _, f in ipairs(created) do if inside(f, parent) and f.text == text then return f end end
 end
 find(win, "Fill party"):Fire("OnClick")
 check("Fill party: the realm recruits 4", #player.cmds == 4 and win.status:GetText():find("Recruiting 4 bots"))

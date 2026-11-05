@@ -1,0 +1,9 @@
+<Bindings>
+	<!-- The orders bar's keys (BotBar.lua): Esc > Key Bindings > Bots. Unbound until the player sets them. -->
+	<Binding name="WUBOTS_FOLLOW" header="WUBOTS">WrathUnleashedUI.Companions.Key("follow")</Binding>
+	<Binding name="WUBOTS_STAY">WrathUnleashedUI.Companions.Key("stay")</Binding>
+	<Binding name="WUBOTS_ATTACK">WrathUnleashedUI.Companions.Key("attack")</Binding>
+	<Binding name="WUBOTS_PASSIVE">WrathUnleashedUI.Companions.Key("passive")</Binding>
+	<Binding name="WUBOTS_PULL">WrathUnleashedUI.Companions.Key("pull")</Binding>
+	<Binding name="WUBOTS_WINDOW">WrathUnleashedUI.Companions.Key("window")</Binding>
+</Bindings>

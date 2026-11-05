@@ -67,6 +67,7 @@ local function newPlayer(name, guid, account)
     return p
 end
 function P:GetGUIDLow() return self.guid end
+function P:RunCommand(c) self.ran = self.ran or {}; self.ran[#self.ran + 1] = c end
 function P:GetName() return self.name end
 function P:GetAccountId() return self.account end
 function P:GetGMRank() return 0 end
@@ -133,7 +134,7 @@ local function said(p, pat) for _, m in ipairs(p.chat) do if m:find(pat, 1, true
 local function clear(p) p.chat, p.addon, p.timers = {}, {}, {} end
 
 check("loaded", type(PM) == "table" and PM.MODES ~= nil and OVMod.Dispatch ~= nil)
-check("the table: four live realm modes", PM.MODES["minigolf"] and PM.MODES["bumper-balls"] and PM.MODES["coin-dash"]
+check("the table: the live realm modes", PM.MODES["minigolf"] and PM.MODES["bumper-balls"] and PM.MODES["coin-dash"]
     and PM.MODES["community"] and PM.validMode("minigolf") and not PM.validMode("brawl") and not PM.validMode("x;y"))
 check("the intent table is made", authSql[1]:find("CREATE TABLE IF NOT EXISTS ov_playmode_intents", 1, true) ~= nil)
 
@@ -267,6 +268,16 @@ tick(10)
 clear(ann)
 command(ann, ".playmode community")
 check("community: opens the Modes window", has(inbox(ann, "wumodes"), "open") ~= nil and said(ann, "/modes"))
+
+-- the command modes: Boss fights and the 1v1 arena queue (their modules answer in chat)
+tick(10)
+clear(ann)
+command(ann, ".playmode frozen-throne")
+check("frozen-throne: runs .bossfight join frozen-throne normal bots", ann.ran and ann.ran[#ann.ran] == "bossfight join frozen-throne normal bots")
+tick(10)
+command(ann, ".playmode arena-queue")
+check("arena-queue: runs .q1v1 unrated", ann.ran and ann.ran[#ann.ran] == "q1v1 unrated")
+check("command modes are in the table", PM.validMode("frozen-throne") and PM.validMode("arena-queue"))
 
 -- the desktop addon's ask, and refusals
 tick(10)

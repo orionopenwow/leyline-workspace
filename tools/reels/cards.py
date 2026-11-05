@@ -185,7 +185,7 @@ def _rule(im, x, y, length, thick):
 def lower_third(fmt, text, sub=""):
     """A caption panel over the clip (RGBA, frame-sized, transparent elsewhere): the launcher's panel (surface, 88%),
     a blue-to-purple bar on its left, the caption in Inter SemiBold, an optional muted second line. On a reel it sits
-    above the bottom quarter (the apps put their own buttons and text at the very bottom)."""
+    under the picture (brand.STAGE), above the bottom where the apps put their own buttons and text."""
     w, h = size(fmt)
     tall = h > w
     im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
@@ -201,7 +201,7 @@ def lower_third(fmt, text, sub=""):
     pw = int(tw + padx * 2 + s * 0.25)
     ph = int(lh * len(lines) + slh * len(sub_lines) + pady * 2 - (s * 0.25))
     x0 = margin if not tall else (w - pw) // 2
-    y1 = int(h * (0.74 if tall else 0.9))
+    y1 = int(h * (0.875 if tall else 0.9))
     y0 = y1 - ph
     r = int(s * 0.55)
     # the soft shadow under it

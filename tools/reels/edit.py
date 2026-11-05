@@ -169,8 +169,23 @@ def validate(script, takes, scripts=None):
 
 
 # ---------------------------------------------------------------- takes
+def tool(name):
+    """ffmpeg or ffprobe: on PATH, or where winget put it (winget adds it to PATH only for consoles opened later)."""
+    f = shutil.which(name)
+    if f:
+        return f
+    base = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "WinGet", "Packages")
+    if os.path.isdir(base):
+        for d in sorted(os.listdir(base)):
+            if d.startswith("Gyan.FFmpeg"):
+                for top, _dirs, files in os.walk(os.path.join(base, d)):
+                    if name + ".exe" in files:
+                        return os.path.join(top, name + ".exe")
+    return None
+
+
 def ffprobe_seconds(path):
-    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", path],
+    r = subprocess.run([tool("ffprobe") or "ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", path],
                        capture_output=True, text=True)
     try:
         return float(r.stdout.strip())
@@ -237,7 +252,7 @@ def per(shot, key, fmt, default):
 
 
 def frame_size(path):
-    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", path],
+    r = subprocess.run([tool("ffprobe") or "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", path],
                        capture_output=True, text=True)
     try:
         w, h = (int(x) for x in r.stdout.strip().split(",")[:2])
@@ -263,6 +278,7 @@ def at(ref, meta):
 
 # ---------------------------------------------------------------- ffmpeg
 def run(cmd):
+    cmd = [tool(cmd[0]) or cmd[0]] + list(cmd[1:])
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError("ffmpeg failed (%d): %s\n%s" % (r.returncode, " ".join(cmd[:6]) + " ...", r.stderr[-1500:]))
@@ -292,12 +308,13 @@ def still(img, seconds, out, enc, zoom=0.0):
 
 def frames_clip(frames, out, enc):
     w, h = frames[0].size
-    p = subprocess.Popen(["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "%dx%d" % (w, h), "-r", str(B.FPS),
+    p = subprocess.Popen([tool("ffmpeg") or "ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "%dx%d" % (w, h), "-r", str(B.FPS),
                           "-i", "-"] + enc.args + [out], stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     for fr in frames:
         p.stdin.write(fr.tobytes())
     p.stdin.close()
     err = p.stderr.read().decode("utf-8", "replace")
+    p.stderr.close()
     if p.wait() != 0:
         raise RuntimeError("ffmpeg (sting) failed: " + err[-800:])
     return len(frames) / B.FPS
@@ -307,6 +324,8 @@ def shot_clip(src, t_in, t_out, fmt, shot, out, work, enc):
     """One shot: the take's piece, at its speed, fitted to the frame over a blurred, darkened copy of itself, with its
     lower third fading in and out. Returns its length in seconds."""
     W, H = B.FORMATS[fmt]
+    st = B.STAGE[fmt]
+    SX, SY, SW, SH = int(st[0] * W), int(st[1] * H), int(st[2] * W) // 2 * 2, int(st[3] * H) // 2 * 2
     speed = float(shot.get("speed", 1))
     dur = max(0.3, (t_out - t_in) / speed)
     sw, sh_ = frame_size(src)
@@ -316,16 +335,14 @@ def shot_clip(src, t_in, t_out, fmt, shot, out, work, enc):
     zoom = float(per(shot, "zoom", fmt, auto))
     fx, fy = per(shot, "focus", fmt, [0.5, 0.5])
     fit = per(shot, "fit", fmt, "contain")
-    if fit == "cover":
-        fg = "scale=%d:%d:force_original_aspect_ratio=increase" % (W * zoom, H * zoom)
-    else:
-        fg = "scale=%d:%d:force_original_aspect_ratio=decrease" % (W * zoom, H * zoom)
-    # the zoomed picture cut to the frame around the focus point (a crop no bigger than the picture or the frame)
-    crop = "crop=w='min(iw,%d)':h='min(ih,%d)':x='(iw-ow)*%f':y='(ih-oh)*%f'" % (W, H, fx, fy)
+    grow = "increase" if fit == "cover" else "decrease"
+    fg = "scale=%d:%d:force_original_aspect_ratio=%s" % (SW * zoom, SH * zoom, grow)
+    # the zoomed picture cut to the stage around the focus point (a crop no bigger than the picture or the stage)
+    crop = "crop=w='min(iw,%d)':h='min(ih,%d)':x='(iw-ow)*%f':y='(ih-oh)*%f'" % (SW, SH, fx, fy)
     vf = ("[0:v]trim=start=%.3f:end=%.3f,setpts=(PTS-STARTPTS)/%f,fps=%d,split[a][b];"
-          "[a]scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,boxblur=28:2,eq=brightness=-0.16:saturation=0.8[bg];"
+          "[a]scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,boxblur=28:2,eq=brightness=-0.18:saturation=0.8[bg];"
           "[b]%s,%s,scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];"
-          "[bg][fg]overlay=x=(W-w)/2:y=(H-h)/2,setsar=1[v0]") % (t_in, t_out, speed, B.FPS, W, H, W, H, fg, crop)
+          "[bg][fg]overlay=x=%d+(%d-w)/2:y=%d+(%d-h)/2,setsar=1[v0]") % (t_in, t_out, speed, B.FPS, W, H, W, H, fg, crop, SX, SW, SY, SH)
     inputs = ["-i", src]
     last = "v0"
     if shot.get("caption"):
@@ -415,16 +432,16 @@ def make(script, scripts, takes_cat, takes_dir, out_dir, formats=None, placehold
     dest = os.path.join(out_dir, sid)
     os.makedirs(dest, exist_ok=True)
     result = {"files": [], "missing": [], "draft": draft}
-    plan = []
-    for origin, sh in shots_of(script, scripts):
+    plan = []   # (where it came from, the shot, its take, the take's meta, its index in shots_of)
+    for k, (origin, sh) in enumerate(shots_of(script, scripts)):
         mp4, meta = find_take(takes_dir, sh["take"])
         if mp4 is None:
             if sh["take"] not in result["missing"]:
                 result["missing"].append(sh["take"])
             if placeholders:
-                plan.append((origin, sh, None, None))
+                plan.append((origin, sh, None, None, k))
             continue
-        plan.append((origin, sh, mp4, meta))
+        plan.append((origin, sh, mp4, meta, k))
     if not plan:
         log("%s: no takes recorded yet (%s): nothing to cut" % (sid, ", ".join(result["missing"])))
         return result
@@ -440,7 +457,7 @@ def make(script, scripts, takes_cat, takes_dir, out_dir, formats=None, placehold
             parts.append((p, still(cards.title_card(fmt, shown(script["title"]), shown(script.get("kicker", "")), shown(script.get("sub", ""))),
                                    float(script.get("title_seconds", B.TITLE_SECONDS)), p, enc, zoom=0.025)))
             first_shot = len(parts)
-            for i, (_origin, sh, mp4, meta) in enumerate(plan):
+            for i, (_origin, sh, mp4, meta, _k) in enumerate(plan):
                 p = os.path.join(work, "%s-shot%02d.mp4" % (fmt, i))
                 if mp4 is None:
                     t = takes_cat.get(sh["take"], {})
@@ -468,7 +485,7 @@ def make(script, scripts, takes_cat, takes_dir, out_dir, formats=None, placehold
             srt = os.path.join(dest, "%s-%s.srt" % (sid, fmt))
             with open(srt, "w", encoding="utf-8") as f:
                 n = 0
-                for i, (_o, sh, _m, _meta) in enumerate(plan):
+                for i, (_o, sh, _m, _meta, _k) in enumerate(plan):
                     if sh.get("caption"):
                         n += 1
                         a, b = starts[first_shot + i], starts[first_shot + i] + parts[first_shot + i][1] - B.XFADE
@@ -479,8 +496,9 @@ def make(script, scripts, takes_cat, takes_dir, out_dir, formats=None, placehold
             result["files"].append(sh_path)
             g = script.get("gif") or {}
             if fmt == g.get("format", "wide") or (len(formats) == 1 and g):
-                idx = [i for i in g.get("shots", []) if i < len(plan) and plan[i][2] is not None] if g.get("shots") else \
-                    [i for i in range(len(plan)) if plan[i][2] is not None][:2]
+                # the GIF's shots by their number in the script; the ones cut here (a missing take isn't)
+                want = g.get("shots") or [plan[i][4] for i in range(len(plan)) if plan[i][2] is not None][:2]
+                idx = [i for i in range(len(plan)) if plan[i][4] in want and plan[i][2] is not None]
                 if idx:
                     a = starts[first_shot + idx[0]] + B.XFADE / 2
                     b = starts[first_shot + idx[-1]] + parts[first_shot + idx[-1]][1] - B.XFADE
@@ -535,7 +553,7 @@ def main(argv=None):
             print("%-24s %-6s %d/%d takes%s%s" % (i, scripts[i]["kind"], len(have), len(need), "  DRAFT" if is_draft(scripts[i], scripts) else "",
                                                  ("  needs: " + ", ".join(t for t in need if t not in have)) if len(have) < len(need) else ""))
         return 0
-    if not shutil.which("ffmpeg"):
+    if not tool("ffmpeg"):
         print("ffmpeg is needed (winget install Gyan.FFmpeg, or ffmpeg.org) and wasn't found.")
         return 1
     fmts = [f for f in a.formats.split(",") if f] or None

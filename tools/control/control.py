@@ -324,6 +324,14 @@ STEPS = {
     "hq-inbox": ("tools/hq/HQ sync.bat", "Leyline HQ: fetch the owner's notes to Claude (and sync)", False),
     # The commons kit (tools/commons, docs/BLANK-SLATE.md): the directory and "Make my own Leyline" check themselves.
     "commons-check": ("tools/commons/Commons check.bat", "Commons kit check: the directory and Make my own Leyline's tests (read-only, a temp folder)", False),
+    # The reel kit (tools/reels, docs/growth/README.md; owner 4 Nov: reels showing features in Leyline's style, a launch
+    # video kept up to date, flow videos). reel-record plays the takes on this PC through the launcher's own tests (your
+    # game, Your Den: saved first and put back) and records them with ffmpeg; reel-record-hand shows a box per take you
+    # play yourself (OK starts it, it stops by itself); reel-make cuts everything recorded into the finished videos.
+    # Nothing is ever posted: the videos wait in tools\reels\out for you.
+    "reel-record": ("tools/reels/Reel record.bat", "Reels: record the takes (the launcher's own tests start your game: PLAY into the world, Your Den, carry a piece, free flight; the launcher's pages if node is here) into tools\\reels\\takes", False),
+    "reel-record-hand": ("tools/reels/Reel record - hand takes.bat", "Reels: the takes you play yourself (a community realm, Single player with bots, HD before and after): a box says what to do, OK records a set time", False),
+    "reel-make": ("tools/reels/Reel make.bat", "Reels: cut the recorded takes into the reels, flow videos and the launch video (9:16 and 16:9 MP4s, a GIF for Reddit) in tools\\reels\\out; nothing is posted", False),
 }
 # Steps that change nothing in production. With "Ask before deploys" on (control/autopilot.json "confirm"),
 # How long a step may run before Control stops it (review 4 Nov: a step waiting on a question, such as an ssh asking
@@ -380,7 +388,7 @@ def watch_step(p, step: str, why: dict) -> threading.Event:
 READ_ONLY = {"check", "ov112-check", "ov112-realm-check", "build-realm-check", "ghclean-check", "sampler-check", "brand-check", "builds-why",
              "fresh-check", "fresh-leyline-check", "retag-leyline-check", "hq-sync", "hqnote", "hq-inbox", "firewall-check", "caddy-check", "ov112-data-check", "ov112-data-remove-check", "worldlog", "tidy-check",
              "vr-data-check", "vr-site-check", "sv-site-check", "release-mirror-check", "fork-check", "bugs", "audit", "den-check", "domain-check",
-             "discord-preview", "discord-check", "discord-read", "apply-check", "feedback"}
+             "discord-preview", "discord-check", "discord-read", "apply-check", "feedback", "reel-make"}
 # Steps only the owner starts, by hand, from their own panel (never Autopilot, Launch all or a Waiting on you button)
 OWNER_ONLY = {"discord-apply"}
 HQ_STEPS = {"hq-sync", "hqnote", "hq-inbox"}

@@ -63,6 +63,9 @@ FORMATS = {
     "reel": (1080, 1920),   # 9:16: Shorts, Reels, TikTok, a phone-first Reddit post
     "wide": (1920, 1080),   # 16:9: the launch video, flow videos, YouTube, the website
 }
+# where the picture goes in each format (x, y, w, h as parts of the frame): the reel keeps the top and the bottom for
+# the caption and the apps' own buttons (they cover the lowest fifth or so), so the take sits above them
+STAGE = {"reel": (0.0, 0.055, 1.0, 0.72), "wide": (0.0, 0.0, 1.0, 1.0)}
 STING_SECONDS = 1.0
 TITLE_SECONDS = 1.8
 END_SECONDS = 2.6

@@ -96,19 +96,93 @@ Each row gives what the frames (or the owner's file notes) show, what the Den ha
 | 24 | ed-history-core.js: one undo history for all of it | Den Lite's undo covers placing, moving, turning, tools and stamps (History tab) | Same |
 | 25 | terrain-editor-core.js: a brush ring under the cursor (raise, lower, paint, foliage) | Forge (the launcher) edits the Den's ground | Gap: no in-game brush (the client can't change its terrain live) |
 
-### Key map (proposal for the owner)
+### Key map (built 5 Nov, branch `agent/den-noggit`)
 
-The handle-mode keys W / T / V clash with W as fly-forward in the far view, and with W walking near your character.
-The Den keeps W A S D for moving the camera everywhere. Proposed:
+The proposal is built, with the view marks added: see **docs/DEN-TOOLS.md, "Keys (build mode only)"** for the whole
+map. In short: 1 / 2 / 3 Move / Turn / Size (not W / T / V: W walks and flies); Q / E turn; Del, Ctrl+C / V / D,
+Ctrl+Z / Y, Ctrl+A, Ctrl+drag box; G grid (Shift+G size), R turn step, Shift+R scatter; L slope, Shift+L upright;
+F frame, Home back to you, Ctrl+1..3 keep a view, Shift+1..3 go back; right mouse + wheel the flight's speed; Esc
+cancel, then deselect, then the game's menu. Every one exists only in build mode.
 
-| Key | Does | When |
+## Noggit pass (5 Nov, branch `agent/den-noggit`): every reference feature and where it stands
+
+Owner, 5 Nov: "Continue to work on the den until everything functions especially the moving the objects, distinctly
+being in play vs build mode, camera working, move objects working and every other convenient and noggit feature
+possible build right into the den and base software for the launcher". New files: `DenKeys.lua` (the editor's keys),
+`labs/den-lite/src/noggit.rs` (their Den Lite verbs); small hooks in Gizmo.lua, Builder.lua, DenBar.lua, Guide.lua,
+gizmo.rs (`cam frame|mark|to`, the `v<speed>` word, `yaw set`), ovmod.rs (the verbs and caps).
+
+Status: **done** (built and tested here; the Rust unit tests are written but not compiled in the cloud), **partial**,
+**missing**.
+
+| Reference (video frame, file or Noggit) | Status | The Den |
 |---|---|---|
-| 1 / 2 / 3 | Handle mode: move / turn / size | Only while a prop is selected and the right mouse isn't held. **Not built**: there are no turn or size handles yet |
-| Q / E | Turn 15° (Shift+wheel 5°) | What is in hand, the prop under the cursor, else the selection. Flies up / down in the far view when none of these |
-| Space / X | Fly up / down | Far view |
-| Shift / Alt | Fast / slow flight | Far view |
-| G | The exact click (the ground-target circle) | A card or prop in hand |
-| Del, Ins, Esc | Delete, swap, put back | As now |
+| Play vs build, unmistakable | done | Build: the gold edge (one: DenBar's; the Gizmo's own frame and word hide in a Den), the strip, rail and gallery, the "Build mode" banner, the hint line with the tool's keys, the editor's cursor (casting with something in hand, the hand over a prop), props not selectable (gizmo.rs). Play: every editor frame hidden, the "Play mode" banner, the game's cursor and keys, props usable. F7 toggles |
+| No editor key in play mode | done | Every override binding of the Gizmo, DenKeys, the selection panel and the tools' window is gone after F7, after leaving the Den and after a reload (the game drops them); a change asked for in combat (the game refuses it) is done when combat ends. test_wuui_denkeys.lua checks each owner |
+| Esc: cancel, deselect, nothing destructive | done | G.Escape; the selection panel's Esc does the same in build mode |
+| f01-f04 wrench menu, World Editor (F4) | partial | The Den bar's Build / Play (F7) and Files; no light editor or look sliders |
+| f05-f08 the camera rises to a free editor view | partial | Kept at your character on arrival (4 Nov decision); the wheel out, the snap key, or **F** (frame) give the far view |
+| Noggit camera: right mouse held looks | done | The game's own mouselook; the pitch kept where the client lets it be read |
+| Noggit camera: W / S along the view, A / D strafe, up / down | done | Far view: `cam fly` (pitch included), Space / X and Q / E up / down; near you A / D slide, never turn |
+| Noggit camera: Shift fast, Alt slow | done | x3 and x1/3 of the chosen speed |
+| Noggit camera: speed presets / O P | done (another way) | Right mouse + wheel: 2 to 96 yd/s, kept, shown in the status line |
+| Frame the selection | done | F (`cam frame`): the far view round the whole selection |
+| Back to the character | done | Home / Numpad 0 in the far view; zooming back in still does it |
+| Camera bookmarks | done | Ctrl+1..3 keep, Shift+1..3 go back (saved settings) |
+| Arrow keys pitch / turn | missing | The client has no call to set the pitch; the arrows fly |
+| f05+ top bar: undo / redo n, snap, 15 / 45 / 90 | done | The strip; plus Ctrl+Z / Y, G / Shift+G, R |
+| Time of day, brush shapes | missing | Forge has the ground's tools |
+| Left rail of tools | done | Select, Build, Move, Rotate (and 1 / 2 / 3: Move, Turn, Size), Stamps, Path, Tools |
+| Gallery (categories, search, A-Z, pages) | done | Builder gallery |
+| Gallery colour-dot filter | missing | |
+| f17-f18 a card: the real model under the cursor | done | (5 Nov fixes) |
+| Drag a card out of the palette | done | |
+| f18-f23 the copy glides | done | glide.rs (creature copy) |
+| f24 click places, selected, outline glow | partial | Sparkle, halo and arrows: no outline shader in the stock client |
+| PIECE panel: position, pad, rotation, scale, settle, swap | done | The selection panel |
+| Status line | done | The pill and the Gizmo's tag (tool, keys, speed) |
+| Selection: Shift adds, Del deletes | done | |
+| Selection: Ctrl+drag box | done | Ctrl+drag (Den Lite projects every prop with its build camera: `tool box`) |
+| Selection: Alt-drag circle, L area | partial | Ctrl+A: every prop within 30 yd of you (`selnear`); no circle drawn |
+| Move / rotate / scale modes (W / T / V) | partial | 1 / 2 / 3 tools: Move drags, Turn drags (live, one undo), Size drags (applied on the let-go, no live size: the copy can't be sized while carried) and the wheel; no rotate or scale handles in the world (no ring or box model) |
+| Copy / paste | done | Ctrl+C; Ctrl+V puts the copy in hand under the cursor with its turn, then its size |
+| Duplicate keeping the offset | done | Ctrl+D (`dupby`: the whole selection, one undo; again: the same offset as the last copy was moved) |
+| Delete key | done | Del with a selection, whatever window is open |
+| Undo / redo keys | done | Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z in all of build mode |
+| Snap to grid, its size | done | G on / off, Shift+G 0.5 / 1 / 2 / 5 yd |
+| Angle snap 15 / 45 / 90 | done | R, and the strip |
+| Align to the ground's normal / upright | done | L (`slope`: on the ground and tilted to it, the whole selection, one undo), Shift+L upright |
+| PLACEMENT: random yaw, scale | done | Shift+R scatter: a random turn on each card (seen before the click), a random size 0.85-1.15 on each placed prop (one more undo step each) |
+| Tilt at random | missing | |
+| Place again | done | Shift+click keeps the card in hand |
+| ARRAY, ring | done | Tools > Arrange |
+| Fill box / fill gap | missing | |
+| Stamps | done | Tools > Stamps |
+| mega-placer.js 1: the ring under the cursor | done | TODO(owner): its three looks |
+| mega-placer.js 2-4: armed place, press-drag move, Z / X turn | done | Q / E turn |
+| mega-placer.js 5: topmost hit, terrain never picked | done | pick.rs |
+| mega-placer.js 6: positions to 0.05 | missing | Free placement keeps the cursor's spot |
+| ed-ground.js: on what is under it | done | surface_z |
+| build-multi.js: moving several together | partial | The panel's move and the keys move them all; the glide carries one |
+| ed-history-core.js: one undo history | done | History tab, 200 deep |
+| terrain-editor-core.js: a brush ring | missing | Forge (the client can't change its terrain live) |
+
+**Needs the owner's live check** (Rust not compiled in the cloud; the Lua is tested on the fake client):
+
+1. Press **`den-lite-test`** (noggit.rs's 8 tests and the gizmo.rs / ovmod.rs edits), then **`den-lite`** and
+   **`addons`** (DenKeys.lua is a new file in the .toc).
+2. In Your Den, build mode: select a chair, Ctrl+D three times (a row a yard apart), move the last one 3 yd, Ctrl+D:
+   the next is 3 yd on. Ctrl+Z takes one copy at a time.
+3. Ctrl+C a turned, sized prop, Ctrl+V: it is in hand under the cursor turned as it was; click: placed at its size.
+4. Press 2, press on a prop and drag right: it turns live in 15° steps; let go; Ctrl+Z undoes it in one go. Press 3,
+   drag up: bigger on the let-go.
+5. Ctrl+drag on the grass round three props: they are selected. Ctrl+A: everything near you.
+6. On a hill (after Forge), L: the prop lies on the slope; Shift+L: upright.
+7. F with a selection: the view flies out round it. Hold the right mouse and roll the wheel: the status line's
+   speed changes; WASD flies at it. Ctrl+1, fly elsewhere, Shift+1: back. Home: back to you.
+8. Check the editor's cursor: with a card in hand over the grass it should be the casting cursor, over a prop the
+   hand. (SetCursor from an addon each frame: if it flickers or sticks, say so and it goes.)
+9. F7 to play: Q, E, 1, 2, 3, G, R, L, F, Del and Ctrl+Z are the game's own again (try 1: the action bar).
 
 ## Live checks for the owner
 

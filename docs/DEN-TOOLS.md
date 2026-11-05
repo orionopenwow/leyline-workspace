@@ -125,7 +125,59 @@ What can't be done (said in the window and here):
 - **Hide** is a view: hidden props aren't sent, but a redo of a step that changed a hidden prop shows it until the
   next login. Undo of a hide isn't a step (as Lock).
 
+## Keys (build mode only)
+
+Owner, 5 Nov: "distinctly being in play vs build mode, camera working, move objects working and every other
+convenient and noggit feature possible". Every key below is an override binding that exists **only in build mode**
+(DenKeys.lua, Gizmo.lua, Builder.lua's selection panel); play mode, leaving the Den and a reload give every one back
+(test_wuui_denkeys.lua checks each owner's bindings after F7, after leaving, and after combat). In play mode the
+only Den keys are F7 / F8 (DenBar.lua) to come back.
+
+| Key | Does | When |
+|---|---|---|
+| F7 (F8) | Build mode / play mode | In the Den (Ctrl+F7 / Ctrl+F8 when the player bound F7 / F8 to something) |
+| Esc | 1st: cancel what is going on (in hand, a drag, an axis, the menu). 2nd: let go of the selection. 3rd: the game's own menu | Build mode |
+| 1 / 2 / 3 | Tool: **Move** (click carries, drag slides), **Turn** (drag left / right turns it live, one undo; the wheel turns the selection by the turn step, Shift+wheel 5°), **Size** (drag up / down, one grow on the let-go; the wheel sizes by 10%) | Build mode (the rail's Move / Rotate set the same) |
+| Click / Shift+click | Pick up and put down / add to the selection | |
+| Ctrl+drag, Ctrl+Shift+drag | Box select / add (Den Lite's `tool box`); a still Ctrl+click adds the prop there | |
+| Ctrl+A | Every prop within 30 yd of you (`selnear 30`) | |
+| Q / E (wheel) | Turn what is in hand, under the cursor, else the selection | |
+| Del | Delete the selection | Something selected |
+| Ctrl+C / Ctrl+V | Copy / paste: the copy is **in hand under the cursor** with the copied turn (`yaw set`), and gets its size once put down | Ctrl+V once something is copied |
+| Ctrl+D | Duplicate the whole selection (one undo, `dupby`); again carries on the row by the offset the last copy was moved to | Something selected |
+| Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z) | Undo / redo | |
+| G / Shift+G | Snap to the grid on or off / its size (0.5, 1, 2, 5 yd) | G is the exact-spot circle while something is in hand |
+| R | The turn step: 15°, 45°, 90° | |
+| Shift+R | Scatter: each card starts at a random turn, each prop placed gets a random size (0.85 to 1.15; one more undo step) | |
+| Shift+click (in hand) | Place and keep the card in hand ("place again") | |
+| L / Shift+L | Lie on the ground's slope (`slope`) / stand upright | Something selected |
+| PgUp / PgDn, + / -, Ins, Tab, End | Lift, size, swap, the next prop, to the ground (the selection panel's) | The panel open |
+| F | Frame the selection: the far view round it (`cam frame`) | Something selected |
+| Home, Numpad 0 | The view back to your character | The far view |
+| W A S D, Space / X, Q / E | Near your character: walk, A / D slide (never turn). Far view: fly along the view (pitch included), up / down | |
+| Shift / Alt | Fly three times as fast / a third | Far view |
+| Right mouse held | Look round (the game's own mouselook) | |
+| Right mouse + wheel | The flight's speed: 2, 4, 8, 16, 24, 32, 48, 64, 96 yd/s (kept; the status line shows it) | Build mode |
+| Wheel | Zoom; past the game's limit, the far view | |
+| Ctrl+1..3 / Shift+1..3 | Keep where the view is / go back to it (kept between sessions) | Build mode |
+| J (or K, F9, F10) | Snap out: the overview | Build mode |
+
+The status line's left part (Gizmo.lua's tag) says the tool and its keys ("Move (1): click a prop to carry it ...",
+"Turn (2): drag a prop left or right ..."), the flight's speed in the far view, and what a drag is doing. The Den
+bar's **?** (the Keys card) and the Guide's Keys page list the whole map.
+
+Key choices, and why: the handle-mode keys of the reference editor (W / T / V) would steal W from walking and
+flying, so the tools are 1 / 2 / 3; view marks would have liked 1..3 too, so they recall on Shift+1..3 (this takes
+the game's action-bar page keys in build mode only).
+
 ## Den Lite's verbs (over `wubuild cmd`)
+
+The editor's conveniences (noggit.rs, 5 Nov): `dupby <dx> <dy> <dz>` (the selection copied by the offset, one undo,
+the copies selected), `selnear <yards>`, `slope` (on the ground and tilted to its slope, one undo for the selection),
+`cam frame`, `cam mark` (answers `cammark x,y,z,deg,back`), `cam to <x> <y> <z> <deg> <back>`, `cam fly ... v<yd/s>`
+(the flight's own speed), `yaw set <deg>` (the next placement's turn outright). The state's `caps=` lists
+`dupby,selnear,slope,camframe,cammark,camto,flyspeed`; without them the keys fall back (Ctrl+D `dup`, Ctrl+V the
+Builder's paste in front of you, Ctrl+A `selall`, L `ground`).
 
 `tool point|box|stamp ...`, `path show|hide|undo|del|clear|lay|edit`, `array`, `ring`, `align`, `distribute`,
 `land`, `solid on|off|auto`, `hide`, `show`, `group`, `ungroup`, `selgroup`, `groups`, `layer <id> ...`, `measure`,

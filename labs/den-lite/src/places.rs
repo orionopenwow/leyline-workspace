@@ -16,6 +16,13 @@
 //!
 //! A Den belongs to a place: its `spot` (den.rs) is the map and the middle; props are kept relative to it. `.den here`
 //! keeps the Den that was there in `<dens>/places/<key>.den.json` and opens the one kept for the new spot, if any.
+//!
+//! Anywhere, fast (owner 4 Nov): the GM ways too (`.go <place>`, `.tele <place>`, `.go xyz x y z [map]`), `.back` (the
+//! spot before the last teleport), `.den home` (your Den, from any map); [`search`] for the Teleports window and
+//! `.den places <word>`; [`Landing`]: a character that falls through the world after a teleport is lifted back.
+//! docs/DEN-PLACES.md has all of it.
+
+use std::collections::HashMap;
 
 /// The server's MSG_MOVE_TELEPORT_ACK (the client answers with the same opcode).
 pub const MSG_MOVE_TELEPORT_ACK: u16 = 0x0C7;
@@ -45,49 +52,39 @@ pub const MAPS: &[(u32, &[&str])] = &[
 pub struct Place {
     pub name: &'static str,
     pub title: &'static str,
+    /// The Teleports window's tab (tools/den-places/gen_teleports.py CATS): city, town, start, zone, dungeon, raid,
+    /// bg, arena, spot, den.
+    pub cat: &'static str,
     pub words: &'static [&'static str],
     pub map: u32,
     pub x: f32,
     pub y: f32,
     pub z: f32,
     pub o: f32,
-    /// AreaTable id (the character list's zone; the game finds its own zone from the map).
+    /// AreaTable id (the character list's zone; the game finds its own zone from the map); 0 when not known.
     pub area: u32,
 }
 
-macro_rules! place {
-    ($name:expr, $title:expr, [$($w:expr),*], $map:expr, $x:expr, $y:expr, $z:expr, $o:expr, $area:expr) => {
-        Place { name: $name, title: $title, words: &[$($w),*], map: $map, x: $x, y: $y, z: $z, o: $o, area: $area }
-    };
-}
+/// The named places (owner 4 Nov: "teleport anywhere from the Den, fast"): every zone of the four maps, the cities
+/// and towns, the starting areas, the doors of the dungeons and raids, the battlegrounds, the arenas and some sights.
+/// One list for Den Lite and the in-game Teleports window: tools/den-places/teleports.json, written into
+/// `placelist.rs` (and the addon's TeleportsData.lua) by tools/den-places/gen_teleports.py. The numbers are where a
+/// character stands, as AzerothCore's `game_tele` (and for the arenas the game's own start spots) have them: facts,
+/// picked one by one (docs/DEN-PLACES.md says why that is fine and what to do if the owner wants none of them).
+pub const PLACES: &[Place] = include!("placelist.rs");
 
-/// The named places: capitals, starting towns and a few more (game_tele's numbers).
-pub const PLACES: &[Place] = &[
-    place!("den", "your first Den (the island)", ["home", "island", "gmisland"], 1, 16226.2, 16257.0, 13.2, 1.5708, 876),
-    place!("stormwind", "Stormwind", ["sw", "stormwind-city"], 0, -8833.38, 628.628, 94.0066, 1.06535, 1519),
-    place!("goldshire", "Goldshire", ["lionspride"], 0, -9464.0, 62.0, 56.0, 0.0, 87),
-    place!("northshire", "Northshire", ["northshire-abbey"], 0, -8913.23, -137.43, 80.53, 0.0, 9),
-    place!("ironforge", "Ironforge", ["if"], 0, -4918.88, -940.406, 501.564, 5.42347, 1537),
-    place!("coldridge", "Coldridge Valley", ["coldridge-valley"], 0, -6240.32, 331.033, 382.758, 6.17716, 132),
-    place!("undercity", "Undercity", ["uc"], 0, 1584.07, 241.987, -52.1534, 0.049647, 1497),
-    place!("deathknell", "Deathknell", [], 0, 1676.71, 1678.31, 121.67, 2.70526, 154),
-    place!("bootybay", "Booty Bay", ["booty", "booty-bay"], 0, -14297.2, 530.993, 8.77916, 3.98863, 35),
-    place!("menethil", "Menethil Harbor", ["menethil-harbor"], 0, -3740.29, -755.08, 10.9643, 0.0, 150),
-    place!("darnassus", "Darnassus", ["darn"], 1, 9949.56, 2284.21, 1341.4, 1.59587, 1657),
-    place!("shadowglen", "Shadowglen", [], 1, 10311.3, 832.463, 1326.41, 5.69632, 188),
-    place!("orgrimmar", "Orgrimmar", ["org", "orgr"], 1, 1629.36, -4373.39, 31.2564, 3.54839, 1637),
-    place!("razorhill", "Razor Hill", ["razor-hill"], 1, 315.72, -4743.4, 10.4867, 0.0, 362),
-    place!("valleyoftrials", "Valley of Trials", ["valley", "trials", "valley-of-trials"], 1, -618.518, -4251.67, 38.718, 0.0, 363),
-    place!("thunderbluff", "Thunder Bluff", ["tb", "thunder-bluff"], 1, -1277.37, 124.804, 131.287, 5.22274, 1638),
-    place!("narache", "Camp Narache", ["camp-narache"], 1, -2917.58, -257.98, 52.9968, 0.0, 222),
-    place!("gadgetzan", "Gadgetzan", [], 1, -7177.15, -3785.34, 8.36981, 6.10237, 976),
-    place!("ratchet", "Ratchet", [], 1, -956.664, -3754.71, 5.33239, 0.996637, 392),
-    place!("exodar", "The Exodar", ["the-exodar"], 530, -3965.7, -11653.6, -138.844, 0.852154, 3557),
-    place!("ammenvale", "Ammen Vale", ["ammen-vale"], 530, -3961.64, -13931.2, 100.615, 2.08364, 3526),
-    place!("silvermoon", "Silvermoon City", ["smc", "silvermoon-city"], 530, 9487.69, -7279.2, 14.2866, 6.16478, 3487),
-    place!("sunstrider", "Sunstrider Isle", ["sunstrider-isle"], 530, 10349.6, -6357.29, 33.4026, 5.31605, 3431),
-    place!("shattrath", "Shattrath City", ["shatt", "shattrath-city"], 530, -1838.16, 5301.79, -12.428, 5.9517, 3703),
-    place!("dalaran", "Dalaran", ["dal"], 571, 5804.15, 624.771, 647.767, 1.64, 4395),
+/// The categories, in the window's order, with their titles.
+pub const CATS: &[(&str, &str)] = &[
+    ("city", "Cities"),
+    ("town", "Towns"),
+    ("start", "Starting areas"),
+    ("zone", "Zones"),
+    ("dungeon", "Dungeons"),
+    ("raid", "Raids"),
+    ("bg", "Battlegrounds"),
+    ("arena", "Arenas"),
+    ("spot", "Sights"),
+    ("den", "Your Den"),
 ];
 
 /// Where `.den go` sends you.
@@ -107,14 +104,50 @@ fn norm(s: &str) -> String {
     s.trim().to_lowercase().chars().filter(|c| c.is_ascii_alphanumeric()).collect()
 }
 
-/// A named place: its whole name or one of its words first, then the start of one.
+/// A place's names as typed: its name, its other words and its title ("Thunder Bluff": `thunderbluff`).
+fn names_of(p: &Place) -> Vec<String> {
+    std::iter::once(norm(p.name)).chain(std::iter::once(norm(p.title))).chain(p.words.iter().map(|w| norm(w))).collect()
+}
+
+/// How well `q` (normed) names a place: 4 its whole name or word, 3 the start of its name, 2 the start of a word or of
+/// its title, 1 inside its title (4 letters or more typed), 0 not at all.
+fn score(p: &Place, q: &str) -> u8 {
+    let names = names_of(p);
+    if names.iter().any(|n| n == q) {
+        4
+    } else if q.len() >= 2 && norm(p.name).starts_with(q) {
+        3
+    } else if q.len() >= 2 && names.iter().any(|n| n.starts_with(q)) {
+        2
+    } else if q.len() >= 4 && names.iter().any(|n| n.contains(q)) {
+        1
+    } else {
+        0
+    }
+}
+
+/// A named place: its whole name, a word or its title first, then the start of one (3 letters at least).
 pub fn find(q: &str) -> Option<&'static Place> {
     let q = norm(q);
     if q.is_empty() {
         return None;
     }
-    let names = |p: &Place| std::iter::once(norm(p.name)).chain(p.words.iter().map(|w| norm(w))).collect::<Vec<_>>();
-    PLACES.iter().find(|p| names(p).contains(&q)).or_else(|| (q.len() >= 3).then(|| PLACES.iter().find(|p| names(p).iter().any(|n| n.starts_with(&q)))).flatten())
+    PLACES.iter().find(|p| score(p, &q) == 4).or_else(|| (q.len() >= 3).then(|| PLACES.iter().find(|p| score(p, &q) >= 2)).flatten())
+}
+
+/// The places a search names, best first (then the list's order), at most `max`. A category's id or title (`raid`,
+/// `Raids`) gives that category.
+pub fn search(q: &str, max: usize) -> Vec<&'static Place> {
+    let q = norm(q);
+    if q.is_empty() {
+        return Vec::new();
+    }
+    if let Some((cat, _)) = CATS.iter().find(|(c, t)| norm(c) == q || norm(t) == q || format!("{}s", norm(c)) == q) {
+        return PLACES.iter().filter(|p| p.cat == *cat).take(max).collect();
+    }
+    let mut hits: Vec<(u8, usize, &'static Place)> = PLACES.iter().enumerate().map(|(i, p)| (score(p, &q), i, p)).filter(|h| h.0 > 0).collect();
+    hits.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    hits.into_iter().take(max).map(|h| h.2).collect()
 }
 
 /// A map by number or name.
@@ -128,17 +161,46 @@ pub fn map_named(w: &str) -> Option<u32> {
 
 /// `.den go` 's words (after `go`): a place's name (several words joined), or `<map> <x> <y> <z>`.
 pub fn parse_go(args: &[&str]) -> Result<Target, String> {
+    parse_go_on(args, None)
+}
+
+/// `.den go` / `.go` / `.tele` with the map the player is on (for a point without a map): a place's name, `<map> <x>
+/// <y> <z>`, `<x> <y> <z>` (this map), or the GM way, `xyz <x> <y> <z> [map]`.
+pub fn parse_go_on(args: &[&str], here: Option<u32>) -> Result<Target, String> {
     if args.is_empty() {
         return Err(usage());
     }
+    let nums = |s: &[&str]| s.iter().map(|w| w.trim_end_matches(',').parse::<f32>()).collect::<Result<Vec<f32>, _>>().ok();
+    let (first, rest) = (args[0].to_lowercase(), &args[1..]);
+    if first == "xyz" && (rest.len() == 3 || rest.len() == 4) {
+        let map = if rest.len() == 4 { map_named(rest[3]) } else { here };
+        if let (Some(v), Some(map)) = (nums(&rest[..3]), map) {
+            return point(map, v[0], v[1], v[2]);
+        }
+        return Err(usage());
+    }
     if args.len() == 4 {
-        if let (Some(map), Ok(x), Ok(y), Ok(z)) = (map_named(args[0]), args[1].parse::<f32>(), args[2].parse::<f32>(), args[3].parse::<f32>()) {
-            return point(map, x, y, z);
+        if let (Some(map), Some(v)) = (map_named(args[0]), nums(&args[1..])) {
+            return point(map, v[0], v[1], v[2]);
         }
     }
+    if let (3, Some(map), Some(v)) = (args.len(), here, nums(args)) {
+        return point(map, v[0], v[1], v[2]);
+    }
     let q = args.join(" ");
-    find(&q).map(|p| Target { map: p.map, x: p.x, y: p.y, z: p.z + LIFT, o: p.o, area: Some(p.area), title: p.title.into() })
-        .ok_or_else(|| format!("No place called '{q}'. {}", usage()))
+    find(&q).map(to_target).ok_or_else(|| {
+        let like: Vec<&str> = search(&q, 4).iter().map(|p| p.name).collect();
+        if like.is_empty() {
+            format!("No place called '{q}'. {}", usage())
+        } else {
+            format!("No place called '{q}'. Did you mean {}? (.den places {q} lists them)", like.join(", "))
+        }
+    })
+}
+
+/// Where a named place sends you: a little above its spot (the game falls onto its own ground).
+pub fn to_target(p: &Place) -> Target {
+    Target { map: p.map, x: p.x, y: p.y, z: p.z + LIFT, o: p.o, area: (p.area != 0).then_some(p.area), title: p.title.into() }
 }
 
 /// A typed point, checked: on the world's maps' grid, a sensible height.
@@ -150,19 +212,165 @@ pub fn point(map: u32, x: f32, y: f32, z: f32) -> Result<Target, String> {
 }
 
 pub fn usage() -> String {
-    ".den go <place> (.den places lists them) or .den go <map> <x> <y> <z> (maps: 0 eastern, 1 kalimdor, 530 outland, 571 northrend).".into()
+    ".go <place> (or .den go; .den places <word> finds one), .go <map> <x> <y> <z>, .back (where you were), .den home (your Den). Maps: 0 eastern, 1 kalimdor, 530 outland, 571 northrend.".into()
 }
 
-/// The places, in one line per map.
-pub fn list_lines() -> Vec<String> {
+/// A chat line at most this long (the list is cut into lines of whole names).
+pub const LINE: usize = 230;
+
+/// `.den places [word]`: without a word, one line per category (its title, then its names); with one, the places it
+/// finds (or a category's). Lines of at most [`LINE`] letters.
+pub fn list_lines(q: Option<&str>) -> Vec<String> {
     let mut out = Vec::new();
-    for (map, words) in MAPS {
-        let names: Vec<&str> = PLACES.iter().filter(|p| p.map == *map).map(|p| p.name).collect();
-        if !names.is_empty() {
-            out.push(format!("{}: {}.", words[0].replace('-', " "), names.join(", ")));
+    let mut push = |head: String, names: Vec<&str>| {
+        let mut line = head.clone();
+        for (i, n) in names.iter().enumerate() {
+            if line.len() + n.len() + 2 > LINE {
+                out.push(format!("{line},"));
+                line = format!("  {n}");
+            } else {
+                line = if i == 0 { format!("{line} {n}") } else { format!("{line}, {n}") };
+            }
+        }
+        out.push(format!("{line}."));
+    };
+    match q.map(str::trim).filter(|q| !q.is_empty()) {
+        None => {
+            for (cat, title) in CATS {
+                let names: Vec<&str> = PLACES.iter().filter(|p| p.cat == *cat).map(|p| p.name).collect();
+                if !names.is_empty() {
+                    push(format!("{title}:"), names);
+                }
+            }
+        }
+        Some(q) => {
+            let hits = search(q, 40);
+            if hits.is_empty() {
+                out.push(format!("No place matches '{q}'. .den places lists them all."));
+            } else {
+                push(format!("{q}:"), hits.iter().map(|p| p.name).collect());
+            }
         }
     }
     out
+}
+
+// ---------------------------------------------------------------- back: where you were
+
+/// One spot a player left by a teleport (`.back` goes there).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Spot {
+    pub map: u32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub o: f32,
+    pub title: String,
+}
+
+/// How many spots `.back` remembers per session.
+pub const BACKS: usize = 10;
+
+static BACK: std::sync::OnceLock<std::sync::Mutex<HashMap<u64, Vec<Spot>>>> = std::sync::OnceLock::new();
+
+fn backs() -> std::sync::MutexGuard<'static, HashMap<u64, Vec<Spot>>> {
+    BACK.get_or_init(|| std::sync::Mutex::new(HashMap::new())).lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// A teleport leaves `from` (kept for `.back`; the newest last, at most [`BACKS`]). Kept by session: a session's
+/// spots go when it ends ([`forget`]). (A static rather than a `Shared` field: places.rs's own, no shared file.)
+pub fn left(sess: u64, from: Spot) {
+    let mut b = backs();
+    let v = b.entry(sess).or_default();
+    // the same spot twice in a row (a second .back) is one
+    if v.last().is_some_and(|l| l.map == from.map && (l.x - from.x).hypot(l.y - from.y) < 2.0) {
+        return;
+    }
+    v.push(from);
+    if v.len() > BACKS {
+        v.remove(0);
+    }
+}
+
+/// `.back`: the newest spot left (taken off the list), if any.
+pub fn back(sess: u64) -> Option<Spot> {
+    backs().get_mut(&sess).and_then(|v| v.pop())
+}
+
+/// The newest spot left, still kept (the window's Back button says where it goes).
+pub fn peek(sess: u64) -> Option<Spot> {
+    backs().get(&sess).and_then(|v| v.last().cloned())
+}
+
+pub fn forget(sess: u64) {
+    backs().remove(&sess);
+}
+
+// ---------------------------------------------------------------- landing: a safe arrival anywhere
+
+/// Falling this far below the last ground the character stood on: under the world (the typed height was inside a
+/// hill, or the ground there isn't the height given). Higher than any cliff the game has, so a jump off one never
+/// counts.
+pub const RESCUE_DROP: f32 = 400.0;
+/// ... and the character is put back this far above that ground, flying (each time once more).
+pub const RESCUE_LIFT: f32 = 30.0;
+/// At most this many lifts after one teleport (then back where it came from).
+pub const RESCUES: u8 = 3;
+/// movewatch.rs FALLING and FLYING (the movement flags).
+const FALLING: u32 = 0x1000;
+const FLYING: u32 = 0x200_0000;
+
+/// What a [`Landing`] says to do with a character that fell through the world.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Rescue {
+    /// Put it here (over the last ground), flying.
+    Lift(f32, f32, f32),
+    /// The lifts didn't hold: back where it came from (`.back`, else its Den).
+    Back,
+}
+
+/// The title of a lift's trip (world.rs keeps the landing's count through it).
+pub const LIFTED: &str = "a safe spot over the ground";
+
+/// After a teleport to anywhere: Den Lite knows no ground there (the game has it, from the player's own files), so it
+/// watches. Every move on the ground is the last ground; a fall far under it ([`RESCUE_DROP`]) is a fall through the
+/// world, and the character is lifted back over the last ground with flying on, to come down on the game's own ground.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Landing {
+    pub map: u32,
+    /// The last ground: where it arrived, then where it last stood.
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub rescues: u8,
+}
+
+impl Landing {
+    pub fn new(map: u32, x: f32, y: f32, z: f32) -> Landing {
+        Landing { map, x, y, z, rescues: 0 }
+    }
+
+    /// A move of the character (its map, spot and movement flags): what to do when it fell through.
+    pub fn check(&mut self, map: u32, x: f32, y: f32, z: f32, flags: u32) -> Option<Rescue> {
+        if map != self.map || !(x.is_finite() && y.is_finite() && z.is_finite()) {
+            return None;
+        }
+        let falling = flags & FALLING != 0 && flags & FLYING == 0;
+        if !falling {
+            (self.x, self.y, self.z) = (x, y, z);
+            return None;
+        }
+        if z >= self.z - RESCUE_DROP || self.rescues > RESCUES {
+            return None;
+        }
+        self.rescues += 1;
+        if self.rescues > RESCUES {
+            return Some(Rescue::Back);
+        }
+        // higher each time: 30, 120, 270 yards over the last ground (a typed height deep inside a mountain)
+        let n = self.rescues as f32;
+        Some(Rescue::Lift(self.x, self.y, self.z + RESCUE_LIFT * n * n))
+    }
 }
 
 /// The file name (without `.den.json`) of the Den kept for a spot: `m<map>_<x>_<y>`, whole yards (letters, digits,
@@ -274,7 +482,7 @@ mod tests {
         assert!(find("zz").is_none() && find("").is_none());
         // every place is on the map's grid and has a unique name
         for p in PLACES {
-            assert!(p.x.abs() < EDGE && p.y.abs() < EDGE && MAPS.iter().any(|m| m.0 == p.map), "{}", p.name);
+            assert!(p.x.abs() < EDGE && p.y.abs() < EDGE && p.map < 1000, "{}", p.name);
             assert_eq!(PLACES.iter().filter(|q| q.name == p.name).count(), 1);
             assert!(crate::den::clean_name(&key(p.map, p.x, p.y)).is_some(), "{}", key(p.map, p.x, p.y));
         }
@@ -313,6 +521,123 @@ mod tests {
         assert!(is_near(0, 0) && !is_near(0, 1));
         assert_eq!(near(0, -9460.0, 70.0).unwrap().name, "goldshire");
         assert!(near(0, 0.0, 0.0).is_none());
-        assert!(list_lines().iter().any(|l| l.starts_with("northrend: dalaran")));
+        assert!(list_lines(None).iter().any(|l| l.starts_with("Cities: stormwind")));
+    }
+
+    #[test]
+    fn the_list_is_whole_and_sane() {
+        // every category has places; the four maps' zones are there; dungeons, raids, arenas
+        for (cat, _) in CATS {
+            assert!(PLACES.iter().any(|p| p.cat == *cat), "{cat}");
+        }
+        assert!(PLACES.len() >= 200, "{}", PLACES.len());
+        for m in [0, 1, 530, 571] {
+            assert!(PLACES.iter().filter(|p| p.cat == "zone" && p.map == m).count() >= 8, "zones of map {m}");
+        }
+        for a in ["nagrandarena", "bladesedgearena", "ruinsoflordaeron", "dalaransewers", "ringofvalor"] {
+            let p = find(a).unwrap();
+            assert_eq!(p.cat, "arena");
+            assert!(p.map > 571, "an arena is its own map");
+        }
+        for p in PLACES {
+            assert!(p.z.abs() < 5000.0 && p.o.is_finite() && (0.0..=6.3).contains(&p.o), "{}", p.name);
+            assert!(CATS.iter().any(|c| c.0 == p.cat), "{}", p.name);
+            // a place finds itself by its name and by its title
+            assert_eq!(find(p.name).unwrap().name, p.name);
+            assert_eq!(find(p.title).map(|q| q.name), Some(p.name), "{}", p.title);
+            let t = p.title.to_lowercase();
+            for w in ["warcraft", "blizzard", "lich king"] {
+                assert!(!t.contains(w), "{}", p.title);
+            }
+        }
+        // the generated table and the addon's are the same list (tools/den-places/gen_teleports.py --check runs in its
+        // own tests; here: the addon file names every place)
+        let lua = include_str!("../../../stream/fui-web/Interface/AddOns/WrathUnleashedUI/TeleportsData.lua");
+        for p in PLACES {
+            assert!(lua.contains(&format!("{{ \"{}\", ", p.name)), "{}", p.name);
+        }
+    }
+
+    #[test]
+    fn search_ranks_names_then_starts_then_insides() {
+        let names = |q: &str| search(q, 10).iter().map(|p| p.name).collect::<Vec<_>>();
+        assert_eq!(names("stormwind")[0], "stormwind");
+        assert!(names("stormwind").contains(&"stormwindharbor"));
+        assert_eq!(names("icc"), vec!["icecrowncitadel"]);
+        assert!(names("raids").len() == 10 && search("raid", 99).iter().all(|p| p.cat == "raid"));
+        assert!(names("arena").contains(&"ringofvalor"), "a category by its id");
+        assert!(names("sorrows").contains(&"swampofsorrows"), "inside a title");
+        assert!(names("zz").is_empty() && names("").is_empty());
+        assert_eq!(find("Un'Goro Crater").unwrap().name, "ungoro");
+        assert_eq!(find("thunder bluff").unwrap().name, "thunderbluff");
+        let l = list_lines(Some("plague"));
+        assert_eq!(l.len(), 1);
+        assert!(l[0].contains("westernplaguelands") && l[0].contains("easternplaguelands"));
+        assert!(list_lines(Some("qqqq"))[0].starts_with("No place matches"));
+        for l in list_lines(None) {
+            assert!(l.len() <= LINE + 2, "{l}");
+        }
+        assert!(list_lines(None).iter().any(|l| l.starts_with("Zones:")));
+    }
+
+    #[test]
+    fn the_gm_ways_to_go() {
+        let t = parse_go_on(&["xyz", "1", "2", "3"], Some(571)).unwrap();
+        assert_eq!((t.map, t.x, t.y, t.z), (571, 1.0, 2.0, 3.0 + TYPED_LIFT));
+        assert_eq!(parse_go_on(&["xyz", "1", "2", "3", "530"], Some(0)).unwrap().map, 530);
+        assert_eq!(parse_go_on(&["-8833.4,", "628.6,", "94"], Some(0)).unwrap().map, 0, "commas as copied");
+        assert!(parse_go_on(&["1", "2", "3"], None).is_err(), "no map known: not a point");
+        assert!(parse_go_on(&["xyz", "1", "2"], Some(0)).is_err());
+        let e = parse_go(&["stormw", "harbour"]).unwrap_err();
+        assert!(e.starts_with("No place called"), "{e}");
+        let e = parse_go(&["blackrok"]).unwrap_err();
+        assert!(e.contains("Did you mean") || e.contains("No place"), "{e}");
+        assert_eq!(parse_go(&["dalaran", "sewers"]).unwrap().map, 617);
+        assert_eq!(parse_go(&["goldshire"]).unwrap().area, Some(87));
+        assert_eq!(parse_go(&["lakeshire"]).unwrap().area, None, "no area id known: the game finds its zone");
+    }
+
+    #[test]
+    fn back_remembers_the_spots_left() {
+        let s = |x: f32| Spot { map: 0, x, y: 0.0, z: 0.0, o: 0.0, title: format!("at {x}") };
+        let sess = 0xBAC0;
+        assert!(back(sess).is_none());
+        left(sess, s(1.0));
+        left(sess, s(1.5)); // the same spot again: one
+        left(sess, s(100.0));
+        assert_eq!(peek(sess).unwrap().x, 100.0);
+        assert_eq!(back(sess).unwrap().x, 100.0);
+        assert_eq!(back(sess).unwrap().x, 1.0);
+        assert!(back(sess).is_none());
+        for i in 0..(BACKS + 5) {
+            left(sess, s(i as f32 * 10.0));
+        }
+        assert_eq!(backs().get(&sess).unwrap().len(), BACKS);
+        forget(sess);
+        assert!(peek(sess).is_none());
+    }
+
+    #[test]
+    fn a_fall_through_the_world_is_lifted_back() {
+        let mut l = Landing::new(0, 10.0, 20.0, 50.0);
+        // arrives a little high and falls onto the ground: nothing
+        assert_eq!(l.check(0, 10.0, 20.0, 49.0, FALLING), None);
+        assert_eq!(l.check(0, 11.0, 20.0, 48.0, 0), None);
+        assert_eq!((l.x, l.z), (11.0, 48.0), "the last ground");
+        // a jump off a high cliff lands: nothing
+        assert_eq!(l.check(0, 30.0, 20.0, -200.0, FALLING), None);
+        assert_eq!(l.check(0, 30.0, 20.0, -210.0, 0), None);
+        // under the world: lifted over the last ground, higher each time, three times at most
+        let deep = -210.0 - RESCUE_DROP - 1.0;
+        assert_eq!(l.check(0, 30.0, 20.0, deep, FALLING), Some(Rescue::Lift(30.0, 20.0, -210.0 + RESCUE_LIFT)));
+        assert_eq!(l.check(0, 30.0, 20.0, deep - 50.0, FALLING), Some(Rescue::Lift(30.0, 20.0, -210.0 + 4.0 * RESCUE_LIFT)));
+        assert_eq!(l.check(0, 30.0, 20.0, deep, FALLING), Some(Rescue::Lift(30.0, 20.0, -210.0 + 9.0 * RESCUE_LIFT)));
+        assert_eq!(l.check(0, 30.0, 20.0, deep, FALLING), Some(Rescue::Back), "then back where it came from");
+        assert_eq!(l.check(0, 30.0, 20.0, deep, FALLING), None, "once");
+        // flying down isn't falling; another map's moves aren't this landing's
+        let mut l = Landing::new(0, 0.0, 0.0, 0.0);
+        assert_eq!(l.check(0, 0.0, 0.0, -900.0, FALLING | FLYING), None);
+        assert_eq!(l.check(1, 0.0, 0.0, -900.0, FALLING), None);
+        assert_eq!(l.check(0, 0.0, 0.0, f32::NAN, FALLING), None);
     }
 }

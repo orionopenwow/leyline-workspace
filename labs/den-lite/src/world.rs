@@ -277,6 +277,8 @@ impl Drop for LeaveOnDrop {
 
 fn leave(shared: &Shared, id: u64) {
     shared.notices.lock().unwrap_or_else(|e| e.into_inner()).gone(id);
+    // `.back`'s spots are this time in the world's (places.rs)
+    places::forget(id);
     // gone for the others
     let gone = {
         let mut ps = shared.players.lock().unwrap_or_else(|e| e.into_inner());
@@ -378,6 +380,8 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
     let (mut moved_once, mut ready) = (false, false);
     // what the game does with its character (movewatch.rs: the events and `.den where`)
     let mut watch: Option<movewatch::Watch> = None;
+    // after a teleport: a fall through the world is lifted back (places.rs Landing)
+    let mut landing: Option<places::Landing> = None;
     // past the loading screen (notice.rs: the Den bar's hello is waited for from then)
     let mut loaded = false;
     loop {
@@ -439,6 +443,10 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                         me.pos = at;
                     }
                     shared.event("arrived", &sess.me.name, &format!("{} map {} {:.1} {:.1} {:.1}: {}", if t.far { "far" } else { "near" }, t.map, t.x, t.y, t.z, t.title));
+                    // Den Lite knows no ground there: watched (a lift keeps its count, so lifts end)
+                    if t.title != places::LIFTED || landing.is_none() {
+                        landing = Some(places::Landing::new(t.map, t.x, t.y, t.z));
+                    }
                     if far_ok {
                         // a new time in a world: the game takes its character again (SET_ACTIVE_MOVER: control said
                         // once more), and its moves are watched afresh (movewatch.rs)
@@ -450,13 +458,19 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                         watch = Some(w);
                         gizmo::clear(&mut aids);
                         arrive_far(&c.w, shared, &sess, &t)?;
+                        // a new world forgets flying and the speed: they come back as they were (the free camera
+                        // and flying work anywhere; docs/DEN-PLACES.md)
+                        moves_again(&c.w, shared, &sess)?;
                     } else {
                         for o in others_here(shared, sess.id, &c.w) {
                             let _ = o.w.send(&SMSG_DESTROY_OBJECT { guid: Guid::new(sess.me.guid), target_died: false });
                             let _ = o.w.send(&player_create(&sess.me, at, false));
                         }
                     }
-                    say(&c.w, &format!("You are at {}. .den here makes your Den here; .den go den takes you back.", t.title))?;
+                    if t.title != places::LIFTED {
+                        say(&c.w, &format!("You are at {}. .back goes back, .den home to your Den; .den here makes your Den here.", t.title))?;
+                    }
+                    places_line(&c.w, shared, &sess)?;
                 } else {
                     // not this trip's answer: it still waits
                     shared.trips.lock().unwrap_or_else(|e| e.into_inner()).insert(sess.id, t);
@@ -532,6 +546,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                 *p = n;
                 moved_once = true;
                 track(shared, &sess, &mut watch, op, &body, n);
+                watch_landing(&c.w, shared, &sess, &mut landing, &body, n)?;
                 aid_follow(&c.w, shared, &sess, &sel, &mut aids, n)?;
                 if let Some(l) = shared.live.lk().as_mut().filter(|l| l.0 == sess.id) {
                     l.2 = n;
@@ -686,6 +701,7 @@ fn session(s: TcpStream, shared: &Arc<Shared>, remote: bool) -> io::Result<()> {
                     moved_once = true;
                     track(shared, &sess, &mut watch, op, &body, n);
                     guard_rail(&c.w, shared, &sess, was, n, op, &body)?;
+                    watch_landing(&c.w, shared, &sess, &mut landing, &body, n)?;
                     aid_follow(&c.w, shared, &sess, &sel, &mut aids, n)?;
                     if let Some(l) = shared.live.lk().as_mut().filter(|l| l.0 == sess.id) {
                         l.2 = n;
@@ -1308,6 +1324,11 @@ fn travel(c: &Writer, shared: &Shared, sess: &Sess, t: places::Target) -> io::Re
     let from = map_of(shared, c).unwrap_or_else(|| den_map(shared));
     let far = !places::is_near(from, t.map);
     let counter = TRIPS.fetch_add(1, Ordering::Relaxed);
+    // where the player was, for `.back` (places.rs): named by the nearest place
+    if let Some(at) = where_now(shared, sess) {
+        let title = places::near(from, at.x, at.y).map(|n| n.title.to_string()).unwrap_or_else(|| format!("map {from} at {:.0}, {:.0}", at.x, at.y));
+        places::left(sess.id, places::Spot { map: from, x: at.x, y: at.y, z: at.z, o: at.o, title });
+    }
     let trip = places::Trip { map: t.map, x: t.x, y: t.y, z: t.z, o: t.o, far, counter, area: t.area, title: t.title.clone() };
     shared.trips.lock().unwrap_or_else(|e| e.into_inner()).insert(sess.id, trip);
     shared.event("travel", &sess.me.name, &format!("{} map {} {:.1} {:.1} {:.1}", if far { "far" } else { "near" }, t.map, t.x, t.y, t.z));
@@ -1327,6 +1348,88 @@ fn travel(c: &Writer, shared: &Shared, sess: &Sess, t: places::Target) -> io::Re
         c.send_raw(places::MSG_MOVE_TELEPORT_ACK, &places::teleport_body(sess.me.guid, counter, movewatch::server_ms(), t.x, t.y, t.z, t.o))?;
     }
     say(c, &format!("Off to {}...", t.title))
+}
+
+/// Where a player stands now (the players list; None before they are in the world).
+fn where_now(shared: &Shared, sess: &Sess) -> Option<Pos> {
+    shared.players.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|x| x.sess == sess.id).map(|x| x.pos)
+}
+
+/// Your Den's spot as a trip's end (`.den home`, `.den go den`, the Teleports window's Back to my Den): from any map.
+fn home_target(shared: &Shared) -> places::Target {
+    let (spot, z, _, _) = den_where(shared);
+    let title = shared.den.lock().unwrap_or_else(|e| e.into_inner()).place.as_ref().map(|p| format!("your Den ({})", p.0)).unwrap_or_else(|| "your Den".into());
+    places::Target { map: spot.map, x: spot.x, y: spot.y, z: z + places::TYPED_LIFT, o: 0.0, area: None, title }
+}
+
+/// `.back`: the spot before the last teleport (places.rs `back`); none kept: your Den.
+fn go_back(c: &Writer, shared: &Shared, sess: &Sess) -> io::Result<()> {
+    match places::back(sess.id) {
+        Some(s) => travel(c, shared, sess, places::Target { map: s.map, x: s.x, y: s.y, z: s.z + places::TYPED_LIFT, o: s.o, area: None, title: s.title }),
+        None => travel(c, shared, sess, home_target(shared)),
+    }
+}
+
+/// A fall through the world after a teleport (places.rs Landing): put back over the last ground, flying, by a near
+/// teleport the game answers like any other (its trip is titled [`places::LIFTED`], so the landing keeps its count).
+fn lift(c: &Writer, shared: &Shared, sess: &Sess, x: f32, y: f32, z: f32) -> io::Result<()> {
+    static LIFTS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1_000_000);
+    let map = map_of(shared, c).unwrap_or_else(|| den_map(shared));
+    let counter = LIFTS.fetch_add(1, Ordering::Relaxed);
+    let trip = places::Trip { map, x, y, z, o: 0.0, far: false, counter, area: None, title: places::LIFTED.into() };
+    shared.trips.lock().unwrap_or_else(|e| e.into_inner()).insert(sess.id, trip);
+    shared.event("lifted", &sess.me.name, &format!("map {map} {x:.1} {y:.1} {z:.1}"));
+    let flying = shared.dojo.lock().unwrap_or_else(|e| e.into_inner()).fly;
+    if !flying {
+        fly(c, shared, sess, "on")?;
+    }
+    c.send_raw(places::MSG_MOVE_TELEPORT_ACK, &places::teleport_body(sess.me.guid, counter, movewatch::server_ms(), x, y, z, 0.0))?;
+    say(c, "You fell through the ground there: you are back over it, flying. Hold X to come down onto it (.den fly off lands you), or .back.")
+}
+
+/// Every move after a teleport: a fall through the world is lifted back (three times, higher each time), then the
+/// player goes back where they came from.
+fn watch_landing(c: &Writer, shared: &Shared, sess: &Sess, landing: &mut Option<places::Landing>, body: &[u8], n: Pos) -> io::Result<()> {
+    let Some(l) = landing.as_mut() else { return Ok(()) };
+    let map = map_of(shared, c).unwrap_or_else(|| den_map(shared));
+    let flags = movewatch::raw_flags(body).unwrap_or(0);
+    match l.check(map, n.x, n.y, n.z, flags) {
+        None => Ok(()),
+        Some(places::Rescue::Lift(x, y, z)) => lift(c, shared, sess, x, y, z),
+        Some(places::Rescue::Back) => {
+            *landing = None;
+            shared.event("lifted", &sess.me.name, "back");
+            say(c, "The ground there didn't hold you: taking you back.")?;
+            go_back(c, shared, sess)
+        }
+    }
+}
+
+/// After a far teleport (a new world: the game forgot them): flying and the speed as they were.
+fn moves_again(c: &Writer, shared: &Shared, sess: &Sess) -> io::Result<()> {
+    let (fly_on, speed, a, b, f) = {
+        let mut d = shared.dojo.lock().unwrap_or_else(|e| e.into_inner());
+        (d.fly, d.speed_now(), d.counter(), d.counter(), d.counter())
+    };
+    if fly_on {
+        c.send_raw(dojo::SMSG_MOVE_SET_CAN_FLY, &dojo::can_fly_body(sess.me.guid, f))?;
+    }
+    if speed > 1 {
+        c.send_raw(dojo::SMSG_FORCE_RUN_SPEED_CHANGE, &dojo::run_speed_body(sess.me.guid, a, dojo::BASE_RUN * speed as f32))?;
+        c.send_raw(dojo::SMSG_FORCE_FLIGHT_SPEED_CHANGE, &dojo::flight_speed_body(sess.me.guid, b, dojo::BASE_FLIGHT * speed as f32))?;
+    }
+    Ok(())
+}
+
+/// The Teleports window's line (Teleports.lua, the Den bar only): `wuden places` `den=<your Den's place>;map=<the map
+/// you are on>;back=<where .back goes|->;kept=<your Dens kept at places, comma separated>`.
+fn places_line(c: &Writer, shared: &Shared, sess: &Sess) -> io::Result<()> {
+    let clean = |s: &str| s.chars().filter(|c| c.is_ascii_alphanumeric() || " '-".contains(*c)).take(40).collect::<String>();
+    let den = shared.den.lock().unwrap_or_else(|e| e.into_inner()).place.as_ref().map(|p| clean(p.0.as_str())).unwrap_or_else(|| "the island".into());
+    let map = map_of(shared, c).unwrap_or_else(|| den_map(shared));
+    let back = places::peek(sess.id).map(|s| clean(s.title.as_str())).unwrap_or_else(|| "-".into());
+    let kept: Vec<String> = kept_places(shared).into_iter().map(|k| clean(if k.1.is_empty() { k.0.as_str() } else { k.1.as_str() })).take(12).collect();
+    bar_data(c, shared, sess.id, sess.me.guid, "places", &format!("den={den};map={map};back={back};kept={}", kept.join(",")))
 }
 
 /// After a far `.den go`, once the game has the new map loaded (MSG_MOVE_WORLDPORT_ACK), in AzerothCore's order
@@ -1599,7 +1702,8 @@ const HELP: &[&str] = &[
     ".den class <class> [level]: any class at any level, every spell it learns (.den class: the list); the dummies take your hits",
     ".den gear <item number>|<slot> <item>|list <slot>|reset: any item's look on you (looks: thunderfury, warglaives...)",
     ".den mounts [list|off]: every mount in your spellbook; flying ones fly with .den fly on",
-    ".den go <place> (stormwind, goldshire, dalaran...) or .den go <map> <x> <y> <z>: go anywhere your game has; .den places: the list; .den here: make your Den here (each place keeps its own); .den size city: a whole-city Den",
+    ".go <place> (stormwind, goldshire, icc, nagrand arena...) or .go <map> <x> <y> <z>: go anywhere your game has; .back: where you were; .den home: your Den, from anywhere; .den places [word]: the list; /tp: the Teleports window",
+    ".den here: make your Den here (each place keeps its own); .den size city: a whole-city Den; .den copy <place>: a place from your own game files",
 ];
 
 fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Result<()> {
@@ -1608,6 +1712,14 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
     // `.dojo ...` is `.den dojo ...` (the full Den's ov_dojo.lua has both)
     if w(0) == ".dojo" {
         return chat(c, shared, sess, p, &format!(".den dojo {}", words[1..].join(" ")));
+    }
+    // the GM ways to travel (places.rs; owner 4 Nov: "GM-style commands"): `.go`, `.tele`, `.teleport` and `.tp` are
+    // `.den go`; `.back` and `.home` are `.den back` and `.den home`
+    if matches!(w(0), ".go" | ".tele" | ".teleport" | ".tp") {
+        return chat(c, shared, sess, p, &format!(".den go {}", words[1..].join(" ")));
+    }
+    if matches!(w(0), ".back" | ".home") {
+        return chat(c, shared, sess, p, &format!(".den {}", w(0).trim_start_matches('.')));
     }
     match (w(0), w(1)) {
         // `.den help`: the Leyline UI's Den guide opens (a paged help window: Guide.lua) when the game has the UI;
@@ -1793,14 +1905,16 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             }
         },
         // Den anywhere (places.rs, owner 3 Nov): go to a place, make the Den there, the list
-        (".den", "go") | (".den", "goto") | (".den", "tp") => {
+        (".den", "go") | (".den", "goto") | (".den", "tp") | (".den", "home") => {
             let args: Vec<&str> = words[2..].iter().map(String::as_str).collect();
-            if matches!(args.as_slice(), ["den"] | ["home"] | ["back"] | ["my", "den"]) {
-                let (spot, z, _, _) = den_where(shared);
-                let title = shared.den.lock().unwrap_or_else(|e| e.into_inner()).place.as_ref().map(|p| format!("your Den ({})", p.0)).unwrap_or_else(|| "your Den".into());
-                return travel(c, shared, sess, places::Target { map: spot.map, x: spot.x, y: spot.y, z: z + places::TYPED_LIFT, o: 0.0, area: None, title });
+            if w(1) == "home" || matches!(args.as_slice(), ["den"] | ["home"] | ["my", "den"] | ["mine"]) {
+                return travel(c, shared, sess, home_target(shared));
             }
-            match places::parse_go(&args) {
+            if matches!(args.as_slice(), ["back"]) {
+                return go_back(c, shared, sess);
+            }
+            let here = map_of(shared, c).unwrap_or_else(|| den_map(shared));
+            match places::parse_go_on(&args, Some(here)) {
                 Ok(t) => travel(c, shared, sess, t),
                 Err(e) => {
                     // one of your own Dens kept at a place, by its name
@@ -1815,9 +1929,16 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
                 }
             }
         }
-        (".den", "places") => {
-            for l in places::list_lines() {
+        (".den", "back") => go_back(c, shared, sess),
+        // the Teleports window asks for its line (Teleports.lua)
+        (".den", "places") if w(2) == "status" => places_line(c, shared, sess),
+        (".den", "places") | (".den", "find-place") => {
+            let q = words[2..].join(" ");
+            for l in places::list_lines(Some(q.as_str()).filter(|q| !q.is_empty())) {
                 say(c, &l)?;
+            }
+            if !q.is_empty() {
+                return Ok(());
             }
             let kept: Vec<String> = kept_places(shared).into_iter().map(|k| if k.1.is_empty() { k.0 } else { k.1 }).collect();
             let now_at = shared.den.lock().unwrap_or_else(|e| e.into_inner()).place.as_ref().map(|p| p.0.clone()).unwrap_or_else(|| "the island".into());
@@ -1877,7 +1998,12 @@ fn chat(c: &Writer, shared: &Shared, sess: &Sess, p: Pos, text: &str) -> io::Res
             let places = crate::stamps::copy_places();
             let want = crate::stamps::canonical(w(2)).unwrap_or(w(2));
             match places.iter().find(|pl| pl.0 == want) {
-                None => say(c, &format!("Copy a place from your own game: {}.", places.iter().map(|pl| format!(".den copy {} ({})", pl.0, pl.1)).collect::<Vec<_>>().join(", "))),
+                // a place the importer made on this PC (tools/den-places/den_places.py: `<dens>/stamps-local`)
+                None if !want.is_empty() && den::read_stamp(&shared.cfg.stamps_dir, want).is_ok() => jaina_build(c, shared, sess, p, want),
+                None => say(c, &format!(
+                    "Copy a place from your own game: {}. Places you imported from your own game files (tools/den-places): .den copy <name>, or .den load <name> for a big one.",
+                    places.iter().map(|pl| format!(".den copy {} ({})", pl.0, pl.1)).collect::<Vec<_>>().join(", ")
+                )),
                 Some(&(name, title)) => match den::read_stamp(&shared.cfg.stamps_dir, name) {
                     Ok(_) => jaina_build(c, shared, sess, p, name),
                     Err(_) => say(c, &crate::stamps::not_copied(title)),

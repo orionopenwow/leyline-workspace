@@ -1457,7 +1457,12 @@ def camera_error(cam, samples):
         return float("inf")
     tot = 0.0
     for sm in samples:
-        hit = project(cam, sm["player"], sm["u"], sm["v"], sm["aspect"], sm["dest"][2])
+        # the zoom the sample was taken at (gizmo.rs Sample.dist): Den Lite's ray uses the addon's zoom over the
+        # camera's own distance (Aids::view), so a fit must too, or samples at two zooms can't agree (review 4 Nov)
+        c = cam
+        if isinstance(sm.get("dist"), (int, float)) and 0.0 < sm["dist"] <= 60.0:
+            c = dict(cam, dist=float(sm["dist"]))
+        hit = project(c, sm["player"], sm["u"], sm["v"], sm["aspect"], sm["dest"][2])
         tot += 900.0 if hit is None else (hit[0] - sm["dest"][0]) ** 2 + (hit[1] - sm["dest"][1]) ** 2
     return math.sqrt(tot / len(samples))
 

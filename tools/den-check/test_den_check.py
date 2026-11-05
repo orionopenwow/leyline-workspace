@@ -1166,6 +1166,34 @@ class PlacementAids(unittest.TestCase):
         cam, err = den_check.fit_camera(samples)
         self.assertLess(err, 0.05, "fitted: %s %.3f" % (cam, err))
 
+    def test_samples_at_two_zooms_fit_the_same_camera(self):
+        # review 4 Nov: each sample keeps the zoom it was taken at (gizmo.rs Sample.dist), and Den Lite's ray uses
+        # that zoom (Aids::view): the fit must use it too (it found fov 0.39 and a 1.3 yd error before)
+        true = {"fov": 1.2, "pivot": 1.6, "dist": 9.0, "pitch": 0.42}
+        samples = []
+        for i, (fx, fy) in enumerate(den_check.CAL_POINTS * 2):
+            dist = 8.0 if i % 2 else 16.0
+            u, v = 2 * fx - 1, 1 - 2 * fy
+            d = den_check.project(dict(true, dist=dist), (0.0, 0.0, 5.0, 0.7), u, v, 1.6, 5.0)
+            samples.append({"u": u, "v": v, "aspect": 1.6, "dist": dist, "player": [0.0, 0.0, 5.0, 0.7], "dest": [d[0], d[1], 5.0]})
+        cam, err = den_check.fit_camera(samples)
+        self.assertLess(err, 0.05, "fitted: %s %.3f" % (cam, err))
+        self.assertAlmostEqual(cam["fov"], 1.2, places=2)
+        self.assertAlmostEqual(cam["pitch"], 0.42, places=2)
+        # a sample with no zoom, or a zoom that isn't one, falls back to the camera's own distance
+        self.assertEqual(den_check.camera_error(true, [dict(samples[0], dist=None)]),
+                         den_check.camera_error(dict(true, dist=9.0), [dict(samples[0], dist=None)]))
+        self.assertEqual(den_check.camera_error({}, []), float("inf"))
+
+    def test_project_turns_with_the_player_and_reads_the_same_from_any_facing(self):
+        cam = den_check.CAMERA
+        for o in (0.0, 0.7, math.pi / 2, math.pi, -2.5):
+            p = den_check.project(cam, (10.0, -4.0, 3.0, o), 0.0, 0.0, 16 / 9, 3.0)
+            ahead = math.hypot(p[0] - 10.0, p[1] + 4.0)
+            q = den_check.project(cam, (10.0, -4.0, 3.0, 0.0), 0.0, 0.0, 16 / 9, 3.0)
+            self.assertAlmostEqual(ahead, math.hypot(q[0] - 10.0, q[1] + 4.0), places=4)
+            self.assertAlmostEqual(math.atan2(p[1] + 4.0, p[0] - 10.0) % (2 * math.pi), o % (2 * math.pi), places=4)
+
     def test_every_aid_passes_with_a_picture(self):
         rep = den_check.Report()
         with contextlib.redirect_stdout(io.StringIO()):

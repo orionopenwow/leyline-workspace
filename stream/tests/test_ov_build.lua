@@ -1265,8 +1265,8 @@ end
 
 -- Any object, models, lock / hide, measure, align, stack, tilt, setrot (2026-10-30, Den editor) -------------------
 do
-    local dora = player({ guid = 70, name = "Dora", x = AREA.x, y = AREA.y - 30 })
-    cmd(gm, "build grant Dora")
+    local dora = player({ guid = 70, name = "Dorrit", x = AREA.x, y = AREA.y - 30 })
+    cmd(gm, "build grant Dorrit")
     local X = T.X
     local B0 = X.MODEL_BASE
     local function lastAddon(p, name)

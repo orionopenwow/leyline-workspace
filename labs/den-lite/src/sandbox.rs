@@ -138,12 +138,9 @@ pub(super) fn after_create(c: &Writer, shared: &Shared, me: &Me) -> io::Result<(
         c.send_raw(specs::SMSG_TALENTS_INFO, &specs::talents_info_body(&k.talents, 0))?;
     }
     // a fresh game knows none of the items yet
-    SENT_WEAPONS.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    shared.sent_weapons.lock().unwrap_or_else(|e| e.into_inner()).clear();
     send_weapons(c, shared, me.guid)
 }
-
-/// The weapon items the game has been sent (their guids), this session.
-static SENT_WEAPONS: std::sync::Mutex<Vec<(u8, u64)>> = std::sync::Mutex::new(Vec::new());
 
 /// The weapons worn (main hand, off hand, ranged: what the player's Item.dbc says is a weapon or a shield) as real
 /// items: the ones no longer worn destroyed, the new ones created, the player's inventory fields pointing at them.
@@ -158,7 +155,8 @@ pub(super) fn send_weapons(c: &Writer, shared: &Shared, me: u64) -> io::Result<(
             (k.0 == 2 || (k.0 == 4 && k.1 == 6)).then(|| (slot, pets::item_guid(((e & 0xF_FFFF) << 4) | slot as u32), e))
         })
         .collect();
-    let mut sent = SENT_WEAPONS.lock().unwrap_or_else(|e| e.into_inner());
+    // the weapon items this game was sent (Shared, per server: lib.rs `sent_weapons`)
+    let mut sent = shared.sent_weapons.lock().unwrap_or_else(|e| e.into_inner());
     for (_, g) in sent.iter().filter(|(_, g)| !now.iter().any(|n| n.1 == *g)) {
         c.send_raw(pets::SMSG_DESTROY_OBJECT, &pets::destroy_body(*g))?;
     }

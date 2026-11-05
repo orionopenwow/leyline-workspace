@@ -1813,6 +1813,26 @@ fn aid_parts(frames: &[Frame], name: &str) -> Option<String> {
     whole
 }
 
+/// Every whole `wubuild <name>` answer in frames already read, in order (each joined from its parts).
+fn aid_all<'a>(frames: impl IntoIterator<Item = &'a Frame>, name: &str) -> Vec<String> {
+    let want = format!("OVMOD\twubuild\t{name}\t");
+    let (mut parts, mut all) = (Vec::new(), Vec::new());
+    for f in frames {
+        let Some(rest) = addon_text(f).and_then(|t| t.strip_prefix(&want).map(String::from)) else { continue };
+        let Some((pn, data)) = rest.split_once('\t') else { continue };
+        let Some((i, n)) = pn.split_once('/') else { continue };
+        let (Ok(i), Ok(n)) = (i.parse::<usize>(), n.parse::<usize>()) else { continue };
+        if i == 1 {
+            parts.clear();
+        }
+        parts.push(data.to_string());
+        if i == n && parts.len() == n {
+            all.push(parts.concat());
+        }
+    }
+    all
+}
+
 fn until_aid(w: &mut World, name: &str) -> (Vec<Frame>, String) {
     let want = format!("OVMOD\twubuild\t{name}\t1/1\t");
     let mut got = Vec::new();
@@ -1888,7 +1908,10 @@ fn the_editors_preview_gizmo_selection_and_exact_click() {
     assert_eq!(x.1.display, 5913);
     assert!(x.1.x > s0.x + 3.0, "beside the chair, along x");
     // the carry's state line (with the pick-up's answer or before Esc's)
-    assert!(picked.iter().chain(frames.iter()).filter_map(addon_text).any(|t| t.contains("\twubuild\tstate\t") && t.contains(&format!("sel={id},2413"))));
+    // (joined from its parts: the state line is longer than one addon message, and where it is cut moves with the
+    // caps list and the counts, so "sel=" may straddle two parts; the owner's PC, 5 Nov: failed reading part by part)
+    let states = aid_all(picked.iter().chain(frames.iter()), "state");
+    assert!(states.iter().any(|t| t.contains(&format!("sel={id},2413"))), "{states:?}");
     // a handle right-clicked: its axis grabbed (the next test drags it); its entry answers the query as a goober
     let y = flags.iter().find(|f| f.1.entry == 990_002).unwrap().0;
     w.raw(gizmo::CMSG_GAMEOBJ_USE, &y.to_le_bytes());

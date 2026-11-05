@@ -222,6 +222,10 @@ pub struct Shared {
     pub combat: Mutex<combat::Combat>,
     /// The character's looks (`.den gear`, gear.rs; kept in the Dens folder).
     pub gear: Mutex<Option<gear::Gear>>,
+    /// The weapon items this server's game was sent (slot, item guid; sandbox.rs `send_weapons`). Per server, not a
+    /// process-wide static: the tests run many servers in one process, and another test's Enter World cleared a
+    /// shared list, so `.den gearset off` had nothing to take away and the gear test waited for ever (owner's PC 5 Nov).
+    pub sent_weapons: Mutex<Vec<(u8, u64)>>,
     /// Each connection in the world (world.rs Writer address): the map its player is on and whether it is a guest
     /// (a friend's game gets the player's own models as stand-ins: mymodels.rs).
     pub seen: Mutex<HashMap<usize, (u32, bool)>>,
@@ -429,6 +433,7 @@ pub fn start(mut cfg: Config) -> io::Result<Running> {
         pick: Mutex::new(pick),
         combat: Mutex::new(combat::Combat::new(world::PLAYER_GUID)),
         gear: Mutex::new(looks),
+        sent_weapons: Mutex::new(Vec::new()),
         seen: Mutex::new(HashMap::new()),
         trips: Mutex::new(HashMap::new()),
         den_map: std::sync::atomic::AtomicU32::new(den_map),

@@ -1199,6 +1199,16 @@ class PlacementAids(unittest.TestCase):
         self.assertLess(den_check.camera_error(true, samples), 1e-3)
         self.assertGreater(den_check.camera_error(true, [dict(s, dist=None) for s in samples]), 0.5)
 
+    def test_the_calibrated_window_shape_is_kept_and_another_shape_is_noted(self):
+        self.assertEqual(den_check.calibrated_aspect([{"aspect": 1.6}, {"aspect": 1.78}, {"aspect": 1.78}, {"aspect": "x"}]), 1.78)
+        self.assertIsNone(den_check.calibrated_aspect([]))
+        (self.dens / den_check.CAMERA_FILE).write_text(json.dumps({"fov": 1.3, "aspect": 1.778}), encoding="utf-8")
+        self.assertIsNone(den_check.aspect_note(self.dens, [0, 0, 1.7778]))
+        self.assertIn("1.33", den_check.aspect_note(self.dens, [0, 0, 1.3333]))
+        self.assertIsNone(den_check.aspect_note(self.dens, None))
+        (self.dens / den_check.CAMERA_FILE).unlink()
+        self.assertIsNone(den_check.aspect_note(self.dens, [0, 0, 1.3333]))
+
     def test_a_carry_jump_is_measured_from_where_the_prop_stood(self):
         self.assertAlmostEqual(den_check.carry_jump([1.0, 2.0, 0.0], [4.0, 6.0, 0.0, 0.0]), 5.0)
         self.assertIsNone(den_check.carry_jump([1.0, 2.0], None))
@@ -1313,7 +1323,7 @@ class PlacementAids(unittest.TestCase):
         self.assertIn("PASS hover calibration: the camera fitted: fov", text)
         self.assertIn("INFO hover calibration: before: the preview was", text)
         saved = json.loads((self.dens / den_check.CAMERA_FILE).read_text())
-        self.assertEqual(set(saved), {"fov", "pivot", "dist", "pitch"})
+        self.assertEqual(set(saved), {"fov", "pivot", "dist", "pitch", "aspect"}, "the fitted camera and the window shape it was measured at")
         self.assertEqual(sum(1 for s in self.shots if s.startswith("calibrate-")), len(den_check.CAL_POINTS))
         self.assertEqual(den.aids["mode"], "play", "build mode left again")
         # clicks not measured (G didn't start the cursor): failed, nothing saved

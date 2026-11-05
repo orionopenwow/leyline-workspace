@@ -1557,6 +1557,9 @@ def mouse_steps(rep, ui, aids, shot, with_pic, den_dir, wait):
         rep.add("SKIP", "the mouse: hover, click and drag", "the selection (%s) isn't on the screen (%s)" % (sel, uv))
         return False
     u, v = uv
+    note = aspect_note(den_dir, a.get("cursor"))
+    if note:
+        rep.add("INFO", "mouse: the camera's window shape", note)
     ui("gizmo click 0 0.95")
     cleared = aids().get("sel") is None
     ui("gizmo hover %.4f %.4f" % (u, v))
@@ -1628,6 +1631,26 @@ def mouse_steps(rep, ui, aids, shot, with_pic, den_dir, wait):
     rep.add("INFO", "debug: what the editor sees", (dbg[-1][:300] if dbg else "the debug line comes in the game (/wudebug)"))
     ui("gizmo debug off")
     return True
+
+
+def calibrated_aspect(samples):
+    """The window's width over its height the calibration samples were taken at (their middle value), or None."""
+    a = sorted(float(s["aspect"]) for s in samples if isinstance(s.get("aspect"), (int, float)) and 0.2 < s["aspect"] < 5.0)
+    return round(a[len(a) // 2], 3) if a else None
+
+
+def aspect_note(den_dir, cursor):
+    """A line when the build camera was measured at another window shape than the game's now (None: same, or not
+    known). The ray's field of view is fitted as a diagonal one; if the game keeps it another way, a new shape shifts
+    every hover a little."""
+    try:
+        cal = float(json.loads((Path(den_dir) / CAMERA_FILE).read_text(encoding="utf-8")).get("aspect"))
+        now = float(cursor[2])
+    except (OSError, ValueError, TypeError, AttributeError, IndexError):
+        return None
+    if abs(cal - now) <= 0.05:
+        return None
+    return "the build camera was measured at a window %.2f wide to 1 high; the game is %.2f now: run the hover calibration again if hovers are off" % (cal, now)
 
 
 def carry_jump(at0, at):
@@ -1998,7 +2021,13 @@ def hover_calibration(rep, ch, den_dir, shoot, outdir, mouse, settle=0.8, wait=4
                "No camera fits within 0.6 yd (the camera moved during the test?): send logs\\den-features-latest.txt and the pictures.")
         if err <= 0.6 and err < err0:
             try:
-                (den_dir / CAMERA_FILE).write_text(json.dumps({k: round(cam[k], 4) for k in FIT_KEYS}), encoding="utf-8")
+                saved = {k: round(cam[k], 4) for k in FIT_KEYS}
+                # the window's shape it was measured at (Den Lite ignores it): the field of view is fitted as a
+                # diagonal one, which may not be how the game keeps it, so another shape is worth measuring again
+                asp = calibrated_aspect(samples)
+                if asp:
+                    saved["aspect"] = asp
+                (den_dir / CAMERA_FILE).write_text(json.dumps(saved), encoding="utf-8")
                 rep.add("INFO", "hover calibration: saved", "%s (Den Lite uses it from the next Den start)" % CAMERA_FILE)
             except OSError as e:
                 rep.add("INFO", "hover calibration: not saved", str(e)[:120])

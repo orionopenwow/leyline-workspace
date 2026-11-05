@@ -545,27 +545,30 @@ impl Tourney {
         }
     }
 
-    /// The Tournament window's status line (`wuden tourney`), under 200 characters: the names fit (12 letters).
+    /// The Tournament window's status line (`wuden tourney`), under 200 characters: the names fit (12 letters). `me`:
+/// host, in (signed up) or out; `in`: signed up (the host may be too).
     pub fn panel_line(&self, me: &str) -> String {
         let (a, b, wa, wb) = match self.current.map(|i| &self.matches[i]) {
             Some(m) => (m.a.as_str(), m.b.as_str(), m.wa, m.wb),
             None => ("-", "-", 0, 0),
         };
+        let signed = self.players.iter().any(|p| p.eq_ignore_ascii_case(me));
         let role = if me.eq_ignore_ascii_case(&self.host) {
             "host"
-        } else if self.players.iter().any(|p| p.eq_ignore_ascii_case(me)) {
+        } else if signed {
             "in"
         } else {
             "out"
         };
         format!(
-            "fmt={};bo={};phase={};n={};a={a};b={b};wa={wa};wb={wb};champ={};ring={};me={role};twist={};title={}",
+            "fmt={};bo={};phase={};n={};a={a};b={b};wa={wa};wb={wb};champ={};ring={};me={role};in={};twist={};title={}",
             self.format.word(),
             self.best_of,
             self.phase_word(),
             self.players.len(),
             self.champion.as_deref().unwrap_or("-"),
             self.ring.is_some() as u8,
+            signed as u8,
             if self.twist.is_empty() { "-" } else { self.twist.as_str() },
             self.title.chars().take(32).collect::<String>(),
         )
@@ -1190,7 +1193,7 @@ mod tests {
         assert!(matches!(t.phase, Phase::Waiting(_)), "the next match is called");
         let line = t.panel_line("Rowan");
         assert!(line.len() < 200 && line.contains("fmt=single;bo=3;phase=waiting;n=4") && line.contains("me=in"), "{line}");
-        assert!(t.panel_line("Wren").contains("me=host") && t.panel_line("Moss").contains("me=out"));
+        assert!(t.panel_line("Wren").contains("me=host;in=0") && t.panel_line("Moss").contains("me=out") && line.contains("me=in;in=1"));
         let mut big = signed(Format::Single, 1, 11);
         for p in ["Abcdefghijkl", "Bcdefghijklm", "Cdefghijklmn", "Defghijklmno", "Efghijklmnop"] {
             big.join(p).unwrap();

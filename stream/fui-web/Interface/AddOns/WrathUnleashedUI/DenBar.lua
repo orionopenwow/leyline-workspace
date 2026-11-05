@@ -363,6 +363,8 @@ D.RAIL = {
     { "tools", "grid", "Tools", "Tools: box select, align, arrays, Solid, layers, history", function() D.Tool("tools") end },
     { "ground", "ground", "Ground", "Shape the ground (opens Forge)", function() D.ShapeGround() end, "Shape ground" },
     { "dojo", "dojo", "Dojo", "The training grounds", function() if W.Dojo then W.Dojo.Toggle() end end },
+    -- duel tournaments (DenTourney.lua): the bracket, sign-ups, the ring
+    { "arena", "banners", "Arena", "Duel tournaments: the bracket, sign-ups, the ring", function() if W.Tourney then W.Tourney.Toggle() end end },
     -- snap out (owner 3 Nov): the view up and back over where you stand, and back (Gizmo.lua; its key says the tooltip)
     { "view", "camera", "View", "Snap out: the view from up high, and back", function() if W.Gizmo and W.Gizmo.Snap then W.Gizmo.Snap() end end },
 }
@@ -484,6 +486,7 @@ local function buildBar()
     pill.play = {}
     local px = 8
     for _, it in ipairs({ { "dojo", "Dojo", function() if W.Dojo then W.Dojo.Toggle() end end, "The training grounds" },
+                          { "arena", "Arena", function() if W.Tourney then W.Tourney.Toggle() end end, "Duel tournaments: sign up, watch, fight" },
                           { "class", "Class", function() D.ShowClasses() end, "Try another class here" },
                           { "invite", "Invite", function() D.Invite() end, "Invite one friend: a link to send" },
                           { "files", "Files", function() local b = B(); if b then b.ShowFiles() end end, "Your Den's saves by name" },
@@ -627,6 +630,7 @@ function D.Paint()
         bar.path:SetActive(b.mode == "path")
     end
     bar.dojo:SetActive(W.Dojo and W.Dojo.IsOpen and W.Dojo.IsOpen() or false)
+    if bar.arena then bar.arena:SetActive(W.Tourney and W.Tourney.IsOpen and W.Tourney.IsOpen() or false) end
     if bar.guide then bar.guide:SetActive(W.DenGuide and W.DenGuide.IsOpen() or false) end
     -- what is only for a Den: the ground, Play, Invite
     for _, k in ipairs({ "ground", "playBtn", "invite" }) do if D.active then bar[k]:Show() else bar[k]:Hide() end end

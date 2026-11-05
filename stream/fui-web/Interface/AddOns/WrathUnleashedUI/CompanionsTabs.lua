@@ -55,7 +55,8 @@ local function specText(spec)
     if not spec then return "Any" end
     local short = U.specLabel(spec)
     local first = short:match("^(%a+)")
-    return SPEC_NAMES[first or ""] and (SPEC_NAMES[first] .. short:sub(#first + 1)) or short
+    local long = first and SPEC_NAMES[first:lower()]
+    return long and (long .. short:sub(#first + 1)) or short
 end
 
 -- What a class may learn for a role: the realm's list (the roster's S lines) or the fallback.

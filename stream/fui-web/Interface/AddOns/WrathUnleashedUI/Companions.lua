@@ -95,15 +95,15 @@ function C.Ask()
 end
 
 -- Every order: the bots' whispered answers stay hidden for a moment; the realm's answer lands in the window.
-local function act(name, data, note)
+local function act(name, data, note, fromBar)
     C.quietUntil = math.max(C.quietUntil, now() + QUIET_ORDER)
     C.waiting, C.actedAt = true, now()
-    C.lastMsg, C.fromBar = nil, nil
+    C.lastMsg, C.fromBar = nil, fromBar and now() or nil
     status(note or "Asking the realm...")
     return send(name, data)
 end
 
-function C.Order(what, target) return act("order", what .. " " .. (target or "all")) end
+function C.Order(what, target, fromBar) return act("order", what .. " " .. (target or "all"), nil, fromBar) end
 function C.Formation(f) return act("formation", f) end
 function C.Prepare() return act("prepare", "", "Getting your bots ready...") end
 function C.Fill(kind, picks)
@@ -126,8 +126,7 @@ function C.BarOrder(what)
     if (what == "attack" or what == "pull") and UnitExists and not UnitExists("target") then
         return C.Notice("Target something first.")
     end
-    C.Order(what, "all")
-    C.fromBar = now()
+    return C.Order(what, "all", true)
 end
 
 -- ---------------------------------------------------------------- reading the realm's answers

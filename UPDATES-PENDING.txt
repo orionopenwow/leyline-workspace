@@ -852,4 +852,6 @@
 1328d client-back  Put the previous browser game build back (before the nameplate change); run again to undo
 1328e h3-off  Website speed: HTTP/3 off, browsers use HTTP/2 (backup, self-check, rollback)
 1329a client  Browser game: the newer build back (nameplates) + no more "drop your game files" on a slow line
-1329b ship  Save as Orion: HTTP/3 off steps, speed check, the slow-line fix
+1329b ship  Save as Orion: HTTP/3 off steps, speed check
+1330a signin  Website: Project Reforged credited with their own screenshots (no Conquest of Azeroth left), the launch queue (100 seats, 30 starting at a time, no seat numbers)
+1330b ship  Save as Orion: Project Reforged, the spike queue and spike-test step, the name blocks

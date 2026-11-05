@@ -6,9 +6,9 @@
 -- names in reserved_name and profanity_name at character create (the scripts step fills them; read at a restart);
 -- this script catches the rest (look-alikes, digits for letters, run-together words) without deleting anything:
 --   * a character whose name trips the list is flagged (characters.ov_name_flags) when it is made and when it logs in.
---     Slurs, sexual terms, profanity and the owner's words: the character is asked for a new name at its next login
---     (the same flag as the GM command .character rename). Names that pass for the team (Admin, GM...): flagged for a
---     Game Master, who renames from Leyline HQ (Needs you > Force a rename) or in game.
+--     Slurs, sexual terms, profanity, the owner's words and names that pass for the team (Admin, GM, Mod, the owner's
+--     own names such as Orion; owner 4 Nov 2026): the character is asked for a new name at its next login (the same
+--     flag as the GM command .character rename). Game Master accounts may use the team names.
 --   * a guild whose name trips it is flagged for a Game Master (nothing is renamed or disbanded).
 --   * public chat (say, yell, emote, chat channels): the list's words are starred out. Nothing is muted; whispers,
 --     party, raid and guild chat are left alone. Item and spell links are kept whole.
@@ -29,7 +29,7 @@ local function env(k, d) local v = os.getenv and os.getenv(k); if v == nil or v 
 local ON = env("OV_NAMES", "1") ~= "0"
 local CHAT = env("OV_NAMES_CHAT", "1") ~= "0"
 local AT_LOGIN_RENAME = 0x01
-local AUTO = { slur = true, sexual = true, profanity = true, custom = true, brand = true }
+local AUTO = { slur = true, sexual = true, profanity = true, custom = true, brand = true, staff = true }   -- staff: owner 4 Nov "block admin and mod names" (Game Masters exempt)
 
 -- >>> blocklist (generated: python3 stream/namecheck.py --lua <this file>; do not edit by hand)
 local LISTS = {
@@ -37,10 +37,10 @@ local LISTS = {
         word = { "fag", "fags", "kike", "spic", "chink", "gook", "coon", "dyke", "tranny", "retard", "nazi", "kys", "paki", "jap", "wop", "zipperhead", "jigaboo", "porchmonkey", "sambo" } },
     sexual = { inside = { "porn", "dildo", "vagina", "rapist", "molest", "pedophile", "paedophile", "incest", "blowjob", "handjob", "cumshot", "jizz", "hentai", "masturbat", "orgasm", "bestiality" },
         word = { "rape", "raped", "raping", "penis", "cock", "dick", "pussy", "cum", "sex", "sexy", "anal", "anus", "tits", "titty", "titties", "boob", "boobs", "slut", "whore", "hooker", "pedo", "paedo", "nude", "nudes", "milf", "horny", "clit", "scrotum", "testicle", "semen", "boner", "nsfw", "xxx", "onlyfans" } },
-    profanity = { inside = { "fuck", "cunt", "motherf", "bitch" },
-        word = { "shit", "shitty", "bullshit", "shithead", "shitface", "shitlord", "dipshit", "horseshit", "twat", "wank", "wanker", "bastard", "prick", "asshole", "arsehole" } },
+    profanity = { inside = { "fuck", "cunt", "motherf", "bitch", "cocksuck" },
+        word = { "shit", "shitty", "bullshit", "shithead", "shitface", "shitlord", "dipshit", "horseshit", "twat", "wank", "wanker", "bastard", "prick", "asshole", "arsehole", "dumbass", "jackass", "douche", "douchebag", "dickhead", "asshat", "fck", "fuk", "fuq", "phuck", "stfu", "piss", "pissed" } },
     staff = { edge = { "admin", "administrator", "moderator", "gamemaster", "leyline", "openvanilla", "sysadmin", "sysop", "developer", "customerservice", "helpdesk" },
-        word = { "gm", "gms", "mod", "mods", "dev", "devs", "staff", "owner", "official", "support", "admins", "moderators", "employee" } },
+        word = { "gm", "gms", "mod", "mods", "dev", "devs", "staff", "owner", "official", "support", "admins", "moderators", "employee", "gamemasters" } },
     allow = { "scunthorpe", "penistone", "shiitake", "shitake", "therapist", "therapists", "snigger", "sniggers", "sniggering", "niggard", "niggardly", "bitchute", "cocktail", "cockpit", "peacock", "hancock", "cockburn", "dickens", "analyst", "analysis", "canal", "sussex", "essex", "middlesex", "grape", "drape", "scrape", "cassandra", "assassin", "classic", "spice", "spicy", "chinking", "racoon", "raccoon", "cocoon", "tycoon", "nazir", "japan", "japanese", "document", "cumulus", "cucumber", "circumstance", "pakistan", "badminton", "manuscript", "cocker", "dicker", "toshitaka" },
 }
 -- <<< blocklist
@@ -196,6 +196,10 @@ local function tokens(text)
 end
 
 local BRANDS = { "worldofwarcraft", "warcraft", "lichking", "blizzard" }
+-- The owner's own names (owner 4 Nov 2026: "reserve character names that involve orion"). Characters and guilds only:
+-- the website's names keep its own protected-name list (HQ), so the owner's profile name is untouched. At the start or
+-- end of a name or a word in it (Orion, Orionx, Darkorion, 0rion); Game Masters are exempt like the other team names.
+local OWNER = { "orion", "campwilkins", "orionopenwow", "chumpton" }
 
 local function staffHit(original, toks, joined)
     local cased = fold(original):gsub("%A", "")
@@ -207,6 +211,10 @@ local function staffHit(original, toks, joined)
         for _, t in ipairs(toks) do
             if t:match("^" .. e.p) or t:match(e.p .. "$") then return "staff", e.w end
         end
+    end
+    for _, w in ipairs(OWNER) do
+        local p = pat(w)
+        if joined:match("^" .. p) or joined:match(p .. "$") then return "staff", w end
     end
     for _, e in ipairs(staffWord) do
         if fullWith(joined, e.p, { "", "s" }) then return "staff", e.w end

@@ -285,7 +285,7 @@ check("/wrath/looks: link-only looks open their author's page (never a file), wi
       all(c[2] == "link" and "Install with Leyline" not in c[3] and "Author's page</a>" in c[3]
           and 'rel="noopener nofollow ugc"' in c[3] for c in cards if c[0] in ("forever-ui", "ultrahd", "epoch-water", "pfui")))
 check("/wrath/looks: each card credits its author, licence (or that none is stated) and source",
-      "Forever UI by Adrestie · GPL-2.0 · github.com" in lp and "UltraHD Graphics Modpack by the Conquest of Azeroth modpack authors · licence not stated · reddit.com" in lp
+      "Forever UI by Adrestie · GPL-2.0 · github.com" in lp and "Project Reforged by Project Reforged · licence not stated · projectreforged.github.io" in lp and "Conquest" not in lp
       and all('class="lk-credit"' in c[3] for c in cards))
 check("/wrath/looks: what it changes, its size or that it needs no download, which clients (chips, in words)",
       all('class="lk-ch"><b>Changes:</b>' in c[3] and 'class="lk-meta"' in c[3] and 'class="lk-chips"' in c[3] for c in cards)

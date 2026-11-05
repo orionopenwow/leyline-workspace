@@ -377,18 +377,18 @@
   {
    "id": "look:ultrahd",
    "source": "look",
-   "name": "UltraHD Graphics Modpack",
-   "description": "Higher-resolution textures, new models, richer lighting and denser foliage for the classic client, made for the Conquest community client.",
+   "name": "Project Reforged",
+   "description": "High-definition textures, models and lighting for the classic and third-era clients, made by Project Reforged.",
    "category": "graphics",
    "builds": [
     "3.3.5a"
    ],
-   "author": "the Conquest of Azeroth modpack authors",
-   "author_url": "",
+   "author": "Project Reforged",
+   "author_url": "https://projectreforged.github.io/",
    "licence": "",
    "licence_source": "",
    "repo": "",
-   "page": "https://www.reddit.com/r/wowservers/comments/1xiqhdg/conquest_of_azeroth_ultrahd_graphics_modpack/",
+   "page": "https://projectreforged.github.io/",
    "size": null,
    "look": {
     "type": "graphics-pack",

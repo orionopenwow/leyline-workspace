@@ -63,7 +63,7 @@ Play in the browser, streamed (a small "mini" slice of the game, never the full 
                                (ownfiles.js). Lands on https://<STREAM_HOST>/?ownfiles=1. Works with
                                streaming off (WU_STREAM=0); needs WU_OWNFILES=1 (stream-up.sh sets it:
                                the stream site must exist). Clears an earlier stream mark first.
-         GET /wrath/api/queue  the browser queue: {capacity, in_use, waiting, wait_min}; ?me=1 adds this browser's
+         GET /wrath/api/queue  the browser queue: {waiting, wait_min, line} (no seat numbers); ?me=1 adds this browser's
                                place ("you", from the wu_q cookie). POST /wrath/api/queue/leave gives it up.
                                status.json carries the same numbers as "browser_queue" (docs/QUEUE.md)
          GET /wrath/play/end   ends the player's sessions and clears the realm mark, so their
@@ -130,7 +130,7 @@ Settings (environment, /srv/wrath/portal.env):
   SOAP_TIMEOUT           seconds for one AzerothCore SOAP call, and the longest one waits for its turn (8)
   WU_STREAM              1 = browser streaming on, 0 = off (default 0)
   STREAM_HOST            the game's name (default: ADDRESSES below, by LEYLINE_DOMAIN_MOVE)
-  WU_PLAY_CAPACITY       streamed browser seats (default 250, the owner's number; 0 = no line). Past it /wrath/play
+  WU_PLAY_CAPACITY       streamed browser seats (default 100 for launch, owner 4 Nov; 0 = no line). Past it /wrath/play
                          shows the browser queue (docs/QUEUE.md); own game files need no seat
   WU_PLAY_IDLE           seconds without game traffic before a seat counts free (600)
   WU_QUEUE_MAX, WU_QUEUE_PER_IP, WU_QUEUE_BEAT, WU_QUEUE_HOLD, WU_QUEUE_SEAT_MIN   the line: its length (500), places per
@@ -969,7 +969,12 @@ def _env_int(name: str, default: int, lo: int, hi: int) -> int:
 # The browser queue (docs/QUEUE.md). Streamed play (the slice, "Dalaran in the browser") is the one thing this server
 # hands out that costs it real bandwidth and CPU per player. WU_PLAY_CAPACITY seats; past them a fair line.
 # The owner's numbers (3 Nov): a line from about 250 players, and 180 s to come back without losing your place.
-PLAY_CAPACITY = _env_int("WU_PLAY_CAPACITY", 250, 0, Sessions.MAX_SESSIONS)   # 0 = no line at all
+PLAY_CAPACITY = _env_int("WU_PLAY_CAPACITY", 100, 0, Sessions.MAX_SESSIONS)   # 0 = no line at all (launch: 100, owner 4 Nov)
+# Loading at once: a new browser player pulls the client and their zone in their first minutes, and that is the
+# bandwidth that runs out in a spike. At most WU_PLAY_LOADING new seats are handed out per WU_PLAY_LOAD_S seconds;
+# past that the line holds people a little, so everyone loads quickly in turn instead of everyone crawling together.
+PLAY_LOADING = _env_int("WU_PLAY_LOADING", 30, 0, 10000)        # 0 = no loading limit
+PLAY_LOAD_S = _env_int("WU_PLAY_LOAD_S", 120, 10, 1800)
 PLAY_IDLE = _env_int("WU_PLAY_IDLE", 600, 60, 6 * 3600)        # a seat with no game traffic this long is free again
 QUEUE_MAX = _env_int("WU_QUEUE_MAX", 500, 1, 20000)            # the longest line; past it: "the line is full"
 QUEUE_BEAT = _env_int("WU_QUEUE_BEAT", 180, 30, 900)           # the reconnect grace: a place whose page stopped asking this long is dropped
@@ -994,6 +999,17 @@ class PlayQueue:
         self.lock = threading.Lock()
         self.line: list[dict] = []          # FIFO: {token, user, ip, slug, go, joined, beat, ready_until}
         self.freed: collections.deque = collections.deque(maxlen=64)   # when seats were taken by the line (the wait guess)
+        self.started: collections.deque = collections.deque(maxlen=20000)   # when new seats were handed out (loading)
+
+    def _loading(self, now: float) -> int:
+        """New seats handed out in the last PLAY_LOAD_S seconds: players still pulling the client and their zone."""
+        return sum(1 for s in self.started if s > now - PLAY_LOAD_S)
+
+    def _can_load(self, now: float, held: int = 0) -> int:
+        """How many more may start loading now (a big number when there is no loading limit)."""
+        if PLAY_LOADING <= 0:
+            return 1 << 30
+        return PLAY_LOADING - self._loading(now) - held
 
     def capacity(self) -> int:
         return PLAY_CAPACITY
@@ -1004,7 +1020,8 @@ class PlayQueue:
 
     def _promote(self, in_use: int, now: float) -> None:
         """Hold each free seat for the next in line."""
-        free = self.capacity() - in_use - sum(1 for t in self.line if t["ready_until"])
+        held = sum(1 for t in self.line if t["ready_until"])
+        free = min(self.capacity() - in_use - held, self._can_load(now, held))
         for t in self.line:
             if free <= 0:
                 break
@@ -1046,8 +1063,10 @@ class PlayQueue:
             if mine and mine["ready_until"]:
                 self.line.remove(mine)
                 self.freed.append(now)
+                self.started.append(now)
                 return {"state": "go", "used": mine["token"]}
-            if not mine and not self.line and len(seated) < cap:
+            if not mine and not self.line and len(seated) < cap and self._can_load(now) > 0:
+                self.started.append(now)
                 return {"state": "go", "used": ""}
             if mine:
                 mine["beat"] = now
@@ -1064,6 +1083,7 @@ class PlayQueue:
             if t["ready_until"]:   # a seat was free for it at once (the ones ahead hold theirs): no page in between
                 self.line.remove(t)
                 self.freed.append(now)
+                self.started.append(now)
                 return {"state": "go", "used": ""}
             return {**self._view(t, now), "token": t["token"]}
 
@@ -1090,7 +1110,8 @@ class PlayQueue:
             self.line = [t for t in self.line if t["user"] != user.upper()]
 
     def status(self, in_use: int, now: float | None = None) -> dict:
-        """The public numbers: {capacity, in_use, waiting, wait_min} (capacity 0: no line here)."""
+        """The numbers: {capacity, in_use, waiting, wait_min} (capacity 0: no line here). Internal: the public ones
+        (queue_public) leave the seat numbers out (owner 4 Nov: "don't tell how many seats there are")."""
         now = time.time() if now is None else now
         with self.lock:
             self._sweep(now)
@@ -1110,6 +1131,13 @@ def seated_now() -> set:
 
 def queue_status() -> dict:
     return play_queue.status(len(seated_now()))
+
+
+def queue_public() -> dict:
+    """What players, the launcher and status.json see: whether there is a line, how long, and the wait. Never the
+    number of seats or how many are taken (owner 4 Nov)."""
+    st = queue_status()
+    return {"waiting": int(st["waiting"]), "wait_min": int(st["wait_min"]), "line": bool(st["waiting"])}
 
 
 def realm_mark(user: str, slug: str, tier: int, seconds: int) -> None:
@@ -1412,7 +1440,9 @@ ART_TYPES = {
     "leyline-emblem.webp": "image/webp", "leyline-bg.webp": "image/webp",   # the Leyline page (owner's art)
     "leyline-shot-dalaran.webp": "image/webp", "leyline-shot-start.webp": "image/webp",   # gallery (live client shots)
     "leyline-shot-city.webp": "image/webp", "leyline-shot-durotar.webp": "image/webp",
-    "leyline-shot-coa-ultrahd.webp": "image/webp",   # the front page's featured modpack (its authors' screenshot)
+    "leyline-shot-project-reforged.webp": "image/webp",   # the front page's featured mod: Project Reforged's own shots
+    "leyline-shot-project-reforged-2.webp": "image/webp", "leyline-shot-project-reforged-3.webp": "image/webp",
+    "leyline-shot-project-reforged-4.webp": "image/webp",
     # the owner's Minigolf recording for the Game modes section: a short muted loop and its poster
     "leyline-shot-minigolf.mp4": "video/mp4", "leyline-shot-minigolf.webm": "video/webm", "leyline-shot-minigolf.webp": "image/webp",
     "leyline-mode-azeroth-survivors.webp": "image/webp", "leyline-mode-azeroth-survivors-play.webp": "image/webp",   # the mode's key art (the owner's; crest cropped out)
@@ -1435,7 +1465,8 @@ ART_TYPES = {
     # the owner's screenshots for /wrath/modes (stream/modes.py); a missing one leaves a painted panel
     "leyline-shot-dalaran.webp": "image/webp", "leyline-shot-start.webp": "image/webp",
     "leyline-shot-city.webp": "image/webp", "leyline-shot-durotar.webp": "image/webp",
-    "leyline-shot-coa-ultrahd.webp": "image/webp",
+    "leyline-shot-project-reforged.webp": "image/webp", "leyline-shot-project-reforged-2.webp": "image/webp",
+    "leyline-shot-project-reforged-3.webp": "image/webp", "leyline-shot-project-reforged-4.webp": "image/webp",
     "leyline-shot-minigolf.mp4": "video/mp4", "leyline-shot-minigolf.webm": "video/webm", "leyline-shot-minigolf.webp": "image/webp",
     # the round Leyline mark, split so the swirl turns while the crystal stays upright (SPIN_CSS, the hub)
     "leyline-swirl-256.webp": "image/webp", "leyline-crystal-256.webp": "image/webp",
@@ -3102,7 +3133,7 @@ QUEUE_API = "/wrath/api/queue"
 QUEUE_POLL_S = 15
 QUEUE_CSS = """
 .q-now{max-width:640px;margin:10px auto 22px;text-align:center}
-.q-now h1{margin:.2em 0 .1em}
+.q-now h1{margin:.2em 0 .1em;font-size:clamp(1.5rem,3.6vw,2.2rem);line-height:1.15;letter-spacing:.04em}
 .q-pos{font-size:clamp(2.4rem,7vw,3.6rem);font-weight:800;line-height:1.05;margin:14px 0 4px;letter-spacing:.01em}
 .q-wait{font-size:1.1rem;opacity:.9;margin:0 0 6px}
 .q-fine{font-size:.9rem;opacity:.75}
@@ -3111,9 +3142,14 @@ QUEUE_CSS = """
 .q-skip{max-width:960px;margin:8px auto 0}
 .q-skip h2{text-align:center;margin:0 0 4px}
 .q-skip>p{text-align:center;margin:0 0 16px;opacity:.85}
-.q-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;list-style:none;margin:0;padding:0}
-@media (max-width:900px){.q-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.q-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;list-style:none;margin:0;padding:0}
 @media (max-width:520px){.q-cards{grid-template-columns:1fr}}
+.q-while{max-width:960px;margin:18px auto 0;text-align:center}
+.q-while h2{margin:0 0 10px;font-size:1.1rem}
+.q-while ul{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;list-style:none;margin:0;padding:0}
+.q-while a{display:inline-block;padding:9px 14px;border-radius:8px;border:1px solid rgba(120,150,255,.3);
+  background:rgba(16,20,40,.55);color:inherit;text-decoration:none}
+.q-while a:hover,.q-while a:focus-visible{border-color:var(--ly-cyan,#7cf)}
 .q-card{display:flex;flex-direction:column;gap:6px;height:100%;box-sizing:border-box;padding:16px;border-radius:10px;
   border:1px solid rgba(120,150,255,.3);background:rgba(16,20,40,.55);color:inherit;text-decoration:none}
 .q-card:hover,.q-card:focus-visible{border-color:var(--ly-cyan,#7cf)}
@@ -3140,6 +3176,8 @@ def skip_line_cards(only_pc: bool = False) -> str:
     cards = [("q-pc", links["launcher"], "Play on your own PC", pc_line, "Get the launcher")]
     if not only_pc:
         cards += [
+            ("q-community", "/wrath/realms", "Play a community realm",
+             "Realms run by players, with room right now. Same account, no line here.", "See the realms"),
             ("q-host", links["host"], "Host your own realm",
              "Run a realm on your own PC with the Host pack. Your friends join you, and it shows up for everyone.",
              "Host a realm"),
@@ -3167,29 +3205,31 @@ def queue_page(v: dict, nonce: str, retry: str) -> bytes:
     elif state == "limit":
         head, pos, wait = "Lots of people from your network are already in line", "", "Try again shortly, or skip the line below."
     else:
-        head = "The browser game is full right now"   # TODO(owner): his words for the line
+        head = "The browser game is busy right now"   # TODO(owner): his words for the line
         pos = f"You're #{int(v.get('position') or 1)} in line"
         wait = f"About {int(v.get('wait_min') or 1)} min"
     own = ('<p class="q-fine">Have your game folder on this computer? <a id="q-own" href="/wrath/play?mode=own">'
            'Use it in the browser instead</a>: no line.</p>') if ownfiles_on() else ""
     leave = ('<p><button type="button" class="q-leave" id="q-leave">Leave the line</button></p>'
              if v.get("token") else "")
-    seats = (f'<p class="q-fine" id="q-seats">{int(st["in_use"])} of {int(st["capacity"])} browser seats in use · '
-             f'{int(st["waiting"])} waiting</p>') if st["capacity"] else ""
+    seats = ""   # never the seat numbers (owner 4 Nov)
     body = (f'<section class="q-now" aria-labelledby="q-head"><h1 id="q-head">{e(head)}</h1>'
             f'<p class="q-pos" id="q-pos" aria-live="polite">{e(pos, quote=False)}</p><p class="q-wait" id="q-wait" aria-live="polite">{e(wait)}</p>'
             f'{seats}<p class="q-fine">Keep this page open: it moves you in by itself when a seat frees up.</p>{own}{leave}</section>'
             '<section class="q-skip ly-panel" aria-labelledby="q-skip-h"><h2 id="q-skip-h">Skip the line</h2>'
-            '<p>The browser game is a small taste on one server. These need no seat here, and the last three '
-            'make room for more players.</p>'   # TODO(owner): his pitch for growing the network
-            f'{skip_line_cards()}</section>')
+            '<p>The browser game is a small taste on one server. None of these needs a place in this line, and '
+            'the last three make room for more players.</p>'   # TODO(owner): his pitch for growing the network
+            f'{skip_line_cards()}</section>'
+            '<section class="q-while" aria-labelledby="q-while-h"><h2 id="q-while-h">While you wait</h2><ul>'
+            '<li><a id="q-survivors" href="/wrath/survivors" target="_blank" rel="noopener">Play Azeroth Survivors</a></li>'
+            '<li><a id="q-notes" href="/wrath/docs/wrath-unleashed" target="_blank" rel="noopener">Read the Wrath Unleashed notes</a></li>'
+            '</ul><p class="q-fine">Keep this tab open: your place stays yours.</p></section>')
     script = ("(function(){var api=" + json.dumps(QUEUE_API) + ",retry=" + json.dumps(retry) + ",ms=" + str(QUEUE_POLL_S * 1000) + ";"
               "function $(i){return document.getElementById(i)}"
               "function tick(){fetch(api+'?me=1',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json()})"
               ".then(function(d){var y=d&&d.you;if(!y){location.replace(retry);return}"
               "if(y.state==='ready'){$('q-pos').textContent=\"It's your turn\";$('q-wait').textContent='Starting…';location.replace(y.go);return}"
               "$('q-pos').textContent=\"You're #\"+y.position+' in line';$('q-wait').textContent='About '+y.wait_min+' min';"
-              "if($('q-seats'))$('q-seats').textContent=d.in_use+' of '+d.capacity+' browser seats in use · '+d.waiting+' waiting';"
               "setTimeout(tick,ms)}).catch(function(){setTimeout(tick,ms*2)})}"
               "setTimeout(tick,ms);"
               "var b=$('q-leave');if(b)b.addEventListener('click',function(){b.disabled=true;"
@@ -3207,7 +3247,8 @@ def queue_page(v: dict, nonce: str, retry: str) -> bytes:
 def queue_json(token: str | None) -> dict:
     """GET /wrath/api/queue: the public numbers, and with ?me=1 and a place's cookie, that place ("you")."""
     seated = seated_now()
-    doc = play_queue.status(len(seated))
+    st = play_queue.status(len(seated))
+    doc = {"waiting": int(st["waiting"]), "wait_min": int(st["wait_min"]), "line": bool(st["waiting"])}   # no seat numbers
     if token is not None:
         doc["you"] = play_queue.poll(token, len(seated)) if token else None
     return doc
@@ -3542,7 +3583,7 @@ def status_with_gamedata(body: bytes) -> bytes:
     if not isinstance(doc, dict):
         return body
     doc.update(gamedata_state())
-    doc["browser_queue"] = queue_status()   # the browser queue (docs/QUEUE.md): the launcher shows "Busy · queue N"
+    doc["browser_queue"] = queue_public()   # the browser queue (docs/QUEUE.md): the launcher shows "Busy · queue N"
     return (json.dumps(doc, separators=(",", ":")) + "\n").encode("utf-8")
 
 
@@ -3828,7 +3869,7 @@ class PageHandler(BaseHTTPRequestHandler):
         return t if QUEUE_TOKEN_RE.match(t or "") else ""
 
     def queue_api(self, query: dict) -> None:
-        """GET /wrath/api/queue: {capacity, in_use, waiting, wait_min}; ?me=1 adds this browser's place ("you")."""
+        """GET /wrath/api/queue: {waiting, wait_min, line}; ?me=1 adds this browser's place ("you")."""
         if not gate_limit.hit("queue:" + rl_bucket(self.ip()), 90):
             self.json_reply(429, {"error": "too many requests"})
             return

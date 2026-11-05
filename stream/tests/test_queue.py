@@ -114,7 +114,8 @@ check("capacity from WU_PLAY_CAPACITY", wp.PLAY_CAPACITY == 2)
 os.environ.pop("WU_PLAY_CAPACITY", None)
 spec2 = importlib.util.spec_from_file_location("wp_default", sys.argv[1])
 wp2 = importlib.util.module_from_spec(spec2); spec2.loader.exec_module(wp2)
-check("default capacity: the owner's 250", wp2.PLAY_CAPACITY == 250)
+check("default capacity: the launch number, 100 (owner 4 Nov)", wp2.PLAY_CAPACITY == 100)
+check("default loading limit: 30 new seats per 120 s", (wp2.PLAY_LOADING, wp2.PLAY_LOAD_S) == (30, 120))
 os.environ["WU_PLAY_CAPACITY"] = "nonsense"
 check("a bad value falls back to the default", wp2._env_int("WU_PLAY_CAPACITY", 5000, 0, 5000) == 5000)
 os.environ["WU_PLAY_CAPACITY"] = "-4"
@@ -131,7 +132,8 @@ st, h, _ = play(2, "10.8.0.2")
 check("player 2: in", st == 302 and "/__gate?code=" in h["location"])
 c2 = gate(h, "10.8.0.2")
 st, _, doc = api(me=False)
-check("api: capacity 2, in use 2, nobody waiting", (doc["capacity"], doc["in_use"], doc["waiting"]) == (2, 2, 0), doc)
+check("api: nobody waiting, and never the seat numbers", doc["waiting"] == 0 and "capacity" not in doc and "in_use" not in doc, doc)
+check("inside: capacity 2, in use 2", (wp.queue_status()["capacity"], wp.queue_status()["in_use"]) == (2, 2))
 st, h, _ = play(1, "10.8.0.1")
 check("a seated account playing again (a reload, another tab) never queues", st == 302 and "/__gate?code=" in h["location"])
 c1 = gate(h, "10.8.0.1")
@@ -181,7 +183,7 @@ check("refused page: tries again by itself", b'<meta http-equiv="refresh" conten
 
 # --- the JSON
 st, h, doc = api(me=False)
-check("api: capacity, in use, waiting, a wait", (doc["capacity"], doc["in_use"], doc["waiting"]) == (2, 2, 3) and doc["wait_min"] >= 1, doc)
+check("api: waiting, a wait, a line, no seat numbers", (doc["waiting"], doc["line"]) == (3, True) and doc["wait_min"] >= 1 and "capacity" not in doc and "in_use" not in doc, doc)
 check("api: public numbers, readable from anywhere", h.get("access-control-allow-origin") == "*" and "you" not in doc)
 st, h, doc = api(q4)
 check("api ?me=1: this browser's place", doc["you"]["state"] == "waiting" and doc["you"]["position"] == 2
@@ -194,7 +196,7 @@ st, h, b = req("GET", "/wrath/api/queue?me=1", "wu_q=../../etc", ip="10.8.9.9")
 check("api: a malformed cookie is ignored", st == 200 and json.loads(b)["you"] is None)
 st, h, b = req("GET", "/wrath/status.json")
 bq = json.loads(b).get("browser_queue")
-check("status.json: browser_queue for the launcher", bq and (bq["capacity"], bq["in_use"], bq["waiting"]) == (2, 2, 3), bq)
+check("status.json: browser_queue for the launcher, no seat numbers", bq and bq["waiting"] == 3 and "capacity" not in bq and "in_use" not in bq, bq)
 
 # --- a place is only a turn
 st, h, b = req("GET", "/wrath/play?mini=mini", f"wu_q={q3}", ip="10.8.0.3")
@@ -222,14 +224,14 @@ check("player 3: the place cookie cleared", h.get("set-cookie", "").startswith("
 c3 = gate(h, "10.8.0.3")
 check("player 3's place is gone", all(t["user"] != "WRQ00003" for t in wp.play_queue.line))
 st, h, doc = api(me=False)
-check("api: 2 in use, 2 waiting", (doc["in_use"], doc["waiting"]) == (2, 2), doc)
+check("api: 2 waiting (2 in use inside)", doc["waiting"] == 2 and wp.queue_status()["in_use"] == 2, doc)
 
 # --- a seat whose game went quiet frees itself
 sid2 = c2.split("=", 1)[1]
 with wp.sessions.lock:
     wp.sessions.seen[sid2] = time.time() - wp.PLAY_IDLE - 5
 st, h, doc = api(q4)
-check("player 2 quiet past WU_PLAY_IDLE: player 4 ready", doc["you"]["state"] == "ready" and doc["in_use"] == 1, doc)
+check("player 2 quiet past WU_PLAY_IDLE: player 4 ready", doc["you"]["state"] == "ready" and wp.queue_status()["in_use"] == 1, doc)
 st, h, b = req("GET", "/__env.js", c2, ip="10.8.0.2")
 check("game traffic marks the seat taken again (/__env.js)", wp.sessions.seen[sid2] > time.time() - 5)
 st, h, b = req("GET", "/__auth", c2, ip="10.8.0.2", headers={"X-Forwarded-Uri": "/data/x"})
@@ -305,6 +307,32 @@ check("a deep link (go) is kept for the way back in", G.poll(gv["token"], 2, t0)
 # --- the gate and the rest are unchanged
 st, h, _ = req("GET", "/__gate?code=bogus")
 check("GET /__gate unchanged", st == 302 and h["location"] == "https://play.openvanilla.app/wrath")
+
+# --- the loading limit (owner 4 Nov, ready for a spike): at most PLAY_LOADING new seats per PLAY_LOAD_S seconds
+saved = (wp.PLAY_CAPACITY, wp.PLAY_LOADING, wp.PLAY_LOAD_S)
+wp.PLAY_CAPACITY, wp.PLAY_LOADING, wp.PLAY_LOAD_S = 100, 3, 120
+q = wp.PlayQueue()
+t0 = 1_000_000.0
+seated = set()
+got = []
+for i in range(5):
+    r = q.admit(f"WRL{i:05d}", f"10.9.0.{i}", "", "mini", "", seated, now=t0 + i)
+    got.append(r["state"])
+    if r["state"] == "go":
+        seated.add(f"WRL{i:05d}")
+check("loading limit: 3 start at once, the next wait though seats are free", got == ["go", "go", "go", "waiting", "waiting"], got)
+r = q.admit("WRL00003", "10.9.0.3", "", "mini", "", seated, now=t0 + 60)
+check("loading limit: still in line a minute later", r["state"] == "waiting", r)
+r = q.admit("WRL00003", "10.9.0.3", "", "mini", "", seated, now=t0 + 125)
+check("loading limit: once the first ones have loaded, the next go in", r["state"] == "go", r)
+seated.add("WRL00003")
+r = q.admit("WRL00000", "10.9.0.0", "", "mini", "", seated, now=t0 + 126)
+check("loading limit: a seated player reloading never waits", r["state"] == "go", r)
+wp.PLAY_LOADING = 0
+q2 = wp.PlayQueue()
+st2 = [q2.admit(f"WRM{i:05d}", f"10.9.1.{i}", "", "mini", "", set(), now=t0)["state"] for i in range(10)]
+check("WU_PLAY_LOADING=0: no loading limit", all(x == "go" for x in st2), st2)
+wp.PLAY_CAPACITY, wp.PLAY_LOADING, wp.PLAY_LOAD_S = saved
 
 print(f"\n{count - fails}/{count} passed")
 sys.exit(1 if fails else 0)

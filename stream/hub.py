@@ -1749,8 +1749,12 @@ class Hub:
         gallery's ranked order. At most six."""
         f = FEATURED_MOD
         out = [{"label": f["label"], "title": f["title"], "line": f["line"], "href": f["url"], "button": f["button"], "ext": True,
-                "note": f["note"], "credit": f["credit"],
+                "note": f["note"], "credit": f["credit"], "full": True,
                 "img": (f"/wrath/art/leyline-shot-{f['key']}.webp", f["w"], f["h"], f["alt"])}]
+        for key, cap, alt in f.get("more") or ():
+            out.append({"label": f["label"], "title": f["title"], "line": cap, "href": f["url"], "button": f["button"], "ext": True,
+                        "note": "", "credit": f["credit"], "full": True,
+                        "img": (f"/wrath/art/leyline-shot-{key}.webp", f["w"], f["h"], alt)})
         for t in self.gallery_tiles(items):
             if t["k"] != "mods" or not t.get("img") or len(out) >= 6:
                 continue
@@ -1778,10 +1782,10 @@ class Hub:
                     if sl["ext"] else f'<a class="hb-cta sm" href="{e(sl["href"])}">{e(sl["button"])}</a>')
             # the modpack's screenshot fills the slide; a mod's smaller picture is framed on the right over a soft blur of itself
             pic = (f'<div class="hb-coa-pic"><img src="{e(src)}" alt="{e(alt)}" width="{int(w)}" height="{int(h)}" loading="lazy" decoding="async"></div>'
-                   if n == 0 else
+                   if sl.get("full") else
                    f'<div class="hb-coa-pic soft" aria-hidden="true"><img src="{e(src)}" alt="" width="{int(w)}" height="{int(h)}" loading="lazy" decoding="async"></div>'
                    f'<figure class="hb-coa-fr"><img src="{e(src)}" alt="{e(alt)}" width="{int(w)}" height="{int(h)}" loading="lazy" decoding="async"></figure>')
-            out.append(f'<div class="hb-coa-s{"" if n == 0 else " mod"}" role="group" aria-roledescription="slide" aria-label="{n + 1} of {len(slides)}">'
+            out.append(f'<div class="hb-coa-s{"" if sl.get("full") else " mod"}" role="group" aria-roledescription="slide" aria-label="{n + 1} of {len(slides)}">'
                        f'{pic}<div class="hb-coa-in"><div class="hb-coa-t">'
                        f'<p class="hb-coa-k"><span aria-hidden="true"></span>{e(sl["label"])}</p><h2{hid}>{e(neutral(sl["title"]))}</h2>'
                        + ('<!-- TODO(owner): the featured modpack\'s final copy -->' if n == 0 else "")
@@ -2069,6 +2073,14 @@ class Hub:
             game.append({"k": "game", "id": "g-" + f["key"], "title": f["title"], "line": f["short"], "credit": f["credit"],
                          "label": f["label"], "img": (src, f["w"], f["h"], f["alt"]), "art": "", "href": src, "ext": True,
                          "acts": [(f["url"], f["button"], True)]})
+        pr_more = []   # Project Reforged's other shots: after our own, so the gallery stays a mix
+        if self.featured_mod_ok():
+            f = FEATURED_MOD
+            for key, cap, alt in f.get("more") or ():
+                src2 = f"/wrath/art/leyline-shot-{key}.webp"
+                pr_more.append({"k": "game", "id": "g-" + key, "title": f["title"], "line": cap, "credit": f["credit"],
+                                "label": f["label"], "img": (src2, f["w"], f["h"], alt), "art": "", "href": src2, "ext": True,
+                                "acts": [(f["url"], f["button"], True)]})
         if self.game_shots_on():
             for key, (w, h, title, line, alt) in GAME_SHOTS.items():
                 name = f"leyline-shot-{key}.webp"
@@ -2081,6 +2093,7 @@ class Hub:
                     game.append({"k": "game", "id": "g-" + key, "title": title, "line": line, "credit": "In game, on our own realm",
                                  "label": "In game", "img": (src, w, h, alt), "art": "", "href": src,
                                  "acts": [("/wrath", "Play in your browser", True)]})
+        game += pr_more
         if not game:   # the killswitch (or no shots): one flat Leyline tile with the mark, no game picture at all
             game.append({"k": "game", "id": "g-leyline", "title": "See it in game", "line": "Start the game in a browser tab and look around.",
                          "credit": "Leyline", "label": "In game", "img": None, "flat": True,
@@ -5078,22 +5091,33 @@ KIND_WORDS = {"addon": ("Addon", "an addon", "addons"), "mod": ("Mod", "a mod", 
               "theme": ("Theme", "a theme", "creators")}
 GALLERY_FILTERS = (("", "All"), ("game", "In game"), ("mods", "Mods"), ("launcher", "Launcher"))
 
-# The front page's featured mod (owner 2026-10-30: "under this show a screenshot ... the CoA ultra hd modpack feature"): a
-# community graphics modpack, linked out only (never hosted or checked by us). Its screenshot is the authors' (banner
-# cropped, a player name removed), a game picture: behind the game data killswitch like the other leyline-shot- files.
+# The front page's featured mod (owner 2026-10-30: "the ultra hd modpack feature"; 4 Nov: credited as Project Reforged,
+# the original, linked to https://projectreforged.github.io/): a community graphics pack, linked out only (never hosted
+# or checked by us). Its screenshot is the authors' (banner cropped, a player name removed), a game picture: behind
+# the game data killswitch like the other leyline-shot- files.
 # The link is only an href; the words on the page never name the game.
 FEATURED_MOD = {
-    "key": "coa-ultrahd", "w": 845, "h": 577, "label": "Featured mod", "title": "Conquest of Azeroth: UltraHD",
+    "key": "project-reforged", "w": 1280, "h": 540, "label": "Featured mod", "title": "Project Reforged",
     # TODO(owner): the final wording for the featured modpack
-    "line": "A community graphics modpack for the classic client: higher-resolution textures, richer lighting and "
+    "line": "High-definition textures, models and lighting for the classic and third-era clients: richer light and "
             "denser foliage, from the same game folder you already play with.",
-    "short": "Higher-resolution textures, lighting and foliage for the classic client.",
-    "alt": "Screenshot from the Conquest of Azeroth UltraHD modpack: characters on a flowered lawn in front of a stone "
-           "chapel, under tall trees in warm light.",
-    "note": "External download, made and hosted by its authors; not checked or hosted by Leyline",
-    "credit": "Screenshot: the modpack's authors",
-    "url": "https://www.reddit.com/r/wowservers/comments/1xiqhdg/conquest_of_azeroth_ultrahd_graphics_modpack/",
-    "button": "See the modpack",
+    "short": "High-definition textures, models and lighting, by Project Reforged.",
+    "alt": "Screenshot from Project Reforged: a cobbled village road between timbered houses and tall trees, a lantern "
+           "on a post in the foreground.",
+    # more of their shots (owner 4 Nov: "promote project reforged with good looking gallery shots"; their team agreed),
+    # each its own slide and gallery tile, credited and linked the same way: (key, caption, alt)
+    "more": (
+        ("project-reforged-2", "A cottage at the forest's edge, in their richer light and foliage.",
+         "Screenshot from Project Reforged: a blue-roofed cottage with an archery target, an adventurer standing by."),
+        ("project-reforged-3", "Northern pines under a bright aurora sky.",
+         "Screenshot from Project Reforged: a misty pine forest on a hillside under a pale sky with aurora streaks."),
+        ("project-reforged-4", "A forest road, the way their pack draws it.",
+         "Screenshot from Project Reforged: a cobbled road through a sunlit forest, a lantern post and a fence."),
+    ),
+    "note": "External download, made and hosted by Project Reforged; not checked or hosted by Leyline",
+    "credit": "Screenshot: Project Reforged",
+    "url": "https://projectreforged.github.io/",
+    "button": "See Project Reforged",
 }
 FEATURED_REL = "noopener nofollow ugc"
 

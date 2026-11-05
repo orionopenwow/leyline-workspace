@@ -119,8 +119,32 @@ check("login: the message names no word", not p.msgs[1]:lower():find("shit", 1, 
 sql = {}
 p = player("LeylineGM"); p.guid = 503
 fire(3, p)
-check("login: a team-looking name is flagged for a GM only (no rename, no message)",
-    anySql("'char', 503, 'LeylineGM', 'staff'") and p.flags == 0 and #p.msgs == 0)
+check("login: a team-looking name (owner 4 Nov: blocked) is flagged and must be renamed",
+    anySql("'char', 503, 'LeylineGM', 'staff'") and p.flags == 1 and #p.msgs == 1)
+for i, nm in ipairs({ "Orion", "Orionx", "Darkorion", "0rion", "Campwilkins", "Moderator", "Admin" }) do
+    sql = {}
+    p = player(nm); p.guid = 600 + i
+    fire(3, p)
+    check("login: " .. nm .. " (team or owner name) must be renamed", p.flags == 1)
+end
+for i, nm in ipairs({ "Orion", "Oriongo" }) do
+    sql = {}
+    p = player(nm, 3); p.guid = 620 + i
+    fire(3, p)
+    check("login: a GM's own " .. nm .. " is left alone", #sql == 0 and p.flags == 0)
+end
+for i, nm in ipairs({ "Dumbass", "Jackass", "Cocksucker", "Fuk" }) do
+    sql = {}
+    p = player(nm); p.guid = 640 + i
+    fire(3, p)
+    check("login: " .. nm .. " must be renamed", p.flags == 1)
+end
+for i, nm in ipairs({ "Orin", "Ryan", "Arion", "Modest", "Morgan" }) do
+    sql = {}
+    p = player(nm); p.guid = 660 + i
+    fire(3, p)
+    check("login: " .. nm .. " is fine", p.flags == 0)
+end
 sql = {}
 p = player("LeylineGM", 3); p.guid = 504
 fire(3, p)

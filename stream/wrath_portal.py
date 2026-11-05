@@ -1879,6 +1879,13 @@ def realm_status() -> dict:
         return {}
 
 
+# The realm list's client warm-up (account_page's <template id="wu-warm">): put in only where the line can take ~20 MB
+# without the player asking. A phone on mobile data, Save-Data or a 2G/3G line gets the download when it presses Play.
+WARM_JS = ("(function(){var t=document.getElementById('wu-warm');if(!t||!t.content)return;"
+           "var c=navigator.connection||{};if(c.saveData||c.type==='cellular'||(c.effectiveType&&c.effectiveType!=='4g'))return;"
+           "t.parentNode.insertBefore(t.content.cloneNode(true),t)})();")
+
+
 def account_page(display: str, user: str, password: str, nonce: str) -> bytes:
     """The realm list a signed-in player lands on: Dalaran (instant, in the browser) first."""
     st = realm_status()
@@ -1916,8 +1923,10 @@ def account_page(display: str, user: str, password: str, nonce: str) -> bytes:
         # Warm the browser client while the player reads this page: the stream site's public
         # warm.html stores the client's wasm in that origin's Cache Storage and its scripts in the
         # HTTP cache (same site, so the game page reads the same copies). No game data, no sign-in.
-        + (f'<iframe src="https://{html.escape(STREAM_HOST)}/warm.html" hidden aria-hidden="true" '
-           'tabindex="-1" loading="eager" style="display:none"></iframe>' if streamed else '')
+        # Review 4 Nov (stream 9): it is about 20 MB, so it waits in a <template> and WARM_JS puts it in only on a
+        # line that isn't metered or slow (no Save-Data, not cellular, effectiveType 4g or unknown).
+        + (f'<template id="wu-warm"><iframe src="https://{html.escape(STREAM_HOST)}/warm.html" hidden aria-hidden="true" '
+           'tabindex="-1" loading="eager" style="display:none"></iframe></template>' if streamed else '')
         + ('<p class="fine end"><a href="/wrath/play/end">End my browser pass</a></p>' if streamed else '')
         + '</div>'
         # 2. The whole world: own game files
@@ -1948,7 +1957,7 @@ def account_page(display: str, user: str, password: str, nonce: str) -> bytes:
         + host_plus("account") +
         '<p class="fine"><a href="/wrath/realms">Community realms</a>: Dalaran hangouts and realms hosted by players</p>'
         '<p class="fine"><a href="/wrath/modes">Modes</a>: duels, boss fights, dungeons and hangouts, one click each</p>')
-    return render(body, nonce, COPY_JS, wide=True, title="Choose a realm", current="play", signed_in=True, css=REALM_CSS,
+    return render(body, nonce, COPY_JS + WARM_JS, wide=True, title="Choose a realm", current="play", signed_in=True, css=REALM_CSS,
                   path="/wrath/account")
 
 
